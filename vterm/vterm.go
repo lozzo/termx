@@ -1,0 +1,308 @@
+package vterm
+
+import (
+	"bytes"
+	"fmt"
+	"image/color"
+	"strings"
+	"sync"
+	"unicode/utf8"
+
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
+	charmvt "github.com/charmbracelet/x/vt"
+	"golang.org/x/text/unicode/norm"
+)
+
+type Cell struct {
+	Content string
+	Width   int
+	Style   CellStyle
+}
+
+type CellStyle struct {
+	FG            string
+	BG            string
+	Bold          bool
+	Italic        bool
+	Underline     bool
+	Blink         bool
+	Reverse       bool
+	Strikethrough bool
+}
+
+type CursorShape string
+
+const (
+	CursorBlock     CursorShape = "block"
+	CursorUnderline CursorShape = "underline"
+	CursorBar       CursorShape = "bar"
+)
+
+type CursorState struct {
+	Row     int
+	Col     int
+	Visible bool
+	Shape   CursorShape
+	Blink   bool
+}
+
+type TerminalModes struct {
+	AlternateScreen   bool
+	MouseTracking     bool
+	BracketedPaste    bool
+	ApplicationCursor bool
+	AutoWrap          bool
+}
+
+type ScreenData struct {
+	Cells             [][]Cell
+	IsAlternateScreen bool
+}
+
+// ResponseHandler is called when the emulator produces a response (e.g. DSR
+// cursor position report). The data should be written to the PTY's stdin so
+// the child process receives it.
+type ResponseHandler func(data []byte)
+
+type VTerm struct {
+	emu *charmvt.SafeEmulator
+
+	mu     sync.RWMutex
+	cursor CursorState
+	modes  TerminalModes
+
+	done chan struct{} // closed when drain goroutine exits
+}
+
+func New(cols, rows int, scrollbackSize int, onResponse ResponseHandler) *VTerm {
+	emu := charmvt.NewSafeEmulator(cols, rows)
+	emu.SetScrollbackSize(scrollbackSize)
+
+	v := &VTerm{
+		emu: emu,
+		cursor: CursorState{
+			Visible: true,
+			Shape:   CursorBlock,
+		},
+		modes: TerminalModes{AutoWrap: true},
+		done:  make(chan struct{}),
+	}
+	emu.SetCallbacks(charmvt.Callbacks{
+		AltScreen: func(on bool) {
+			// Called from within Write(), which already holds v.mu.Lock()
+			v.modes.AlternateScreen = on
+		},
+		CursorVisibility: func(visible bool) {
+			v.cursor.Visible = visible
+		},
+		CursorStyle: func(style charmvt.CursorStyle, blink bool) {
+			switch style {
+			case charmvt.CursorUnderline:
+				v.cursor.Shape = CursorUnderline
+			case charmvt.CursorBar:
+				v.cursor.Shape = CursorBar
+			default:
+				v.cursor.Shape = CursorBlock
+			}
+			v.cursor.Blink = blink
+		},
+		EnableMode: func(mode ansi.Mode) {
+			v.setMode(mode, true)
+		},
+		DisableMode: func(mode ansi.Mode) {
+			v.setMode(mode, false)
+		},
+	})
+
+	// Drain the emulator's response pipe. Without this, programs that send
+	// DSR (Device Status Report, e.g. vi/vim) will deadlock because the
+	// emulator writes the response to an io.Pipe and nobody reads it,
+	// blocking the Write() call that holds the lock.
+	go v.drainResponses(onResponse)
+
+	return v
+}
+
+// drainResponses reads from the emulator's response pipe and forwards data
+// to the handler. Exits when the emulator is closed (Read returns error).
+func (v *VTerm) drainResponses(handler ResponseHandler) {
+	defer close(v.done)
+	buf := make([]byte, 256)
+	for {
+		n, err := v.emu.Read(buf)
+		if n > 0 && handler != nil {
+			data := make([]byte, n)
+			copy(data, buf[:n])
+			handler(data)
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+func (v *VTerm) Write(data []byte) (int, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	normalized := normalizeRenderableUTF8(data)
+	n, err := v.emu.Write(normalized)
+	pos := v.emu.CursorPosition()
+	v.cursor.Row = pos.Y
+	v.cursor.Col = pos.X
+	v.modes.AlternateScreen = v.emu.IsAltScreen()
+	return n, err
+}
+
+func (v *VTerm) Resize(cols, rows int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.emu.Resize(cols, rows)
+	pos := v.emu.CursorPosition()
+	v.cursor.Row = pos.Y
+	v.cursor.Col = pos.X
+}
+
+func (v *VTerm) CellAt(x, y int) Cell {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return convertCell(v.emu.CellAt(x, y))
+}
+
+func (v *VTerm) ScreenContent() ScreenData {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	height := v.emu.Height()
+	width := v.emu.Width()
+	rows := make([][]Cell, height)
+	for y := 0; y < height; y++ {
+		row := make([]Cell, width)
+		for x := 0; x < width; x++ {
+			row[x] = convertCell(v.emu.CellAt(x, y))
+		}
+		rows[y] = row
+	}
+	return ScreenData{
+		Cells:             rows,
+		IsAlternateScreen: v.emu.IsAltScreen(),
+	}
+}
+
+func (v *VTerm) ScrollbackContent() [][]Cell {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	count := v.emu.ScrollbackLen()
+	width := v.emu.Width()
+	rows := make([][]Cell, 0, count)
+	for y := 0; y < count; y++ {
+		row := make([]Cell, 0, width)
+		for x := 0; x < width; x++ {
+			cell := v.emu.ScrollbackCellAt(x, y)
+			if cell == nil && x >= len(row) {
+				row = append(row, Cell{})
+				continue
+			}
+			row = append(row, convertCell(cell))
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+func (v *VTerm) CursorState() CursorState {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.cursor
+}
+
+func (v *VTerm) Modes() TerminalModes {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.modes
+}
+
+func (v *VTerm) IsAltScreen() bool {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.emu.IsAltScreen()
+}
+
+func (v *VTerm) setMode(mode ansi.Mode, enabled bool) {
+	switch mode {
+	case ansi.ModeCursorKeys:
+		v.modes.ApplicationCursor = enabled
+	case ansi.ModeNumericKeypad:
+		// x/vt uses "numeric keypad" mode for keypad application mode.
+		// Keep this for future input translation support if needed.
+	case ansi.ModeBracketedPaste:
+		v.modes.BracketedPaste = enabled
+	case ansi.ModeAutoWrap:
+		v.modes.AutoWrap = enabled
+	}
+}
+
+func (v *VTerm) RenderLines() []string {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	rendered := v.emu.Render()
+	if rendered == "" {
+		return nil
+	}
+	return strings.Split(rendered, "\n")
+}
+
+func (v *VTerm) SendKey(key uv.KeyEvent) {
+	v.emu.SendKey(key)
+}
+
+func (v *VTerm) SendText(text string) {
+	v.emu.SendText(text)
+}
+
+func (v *VTerm) Paste(text string) {
+	v.emu.Paste(text)
+}
+
+func convertCell(cell *uv.Cell) Cell {
+	if cell == nil {
+		return Cell{}
+	}
+	style := CellStyle{}
+	if cell.Style.Fg != nil {
+		style.FG = colorToString(cell.Style.Fg)
+	}
+	if cell.Style.Bg != nil {
+		style.BG = colorToString(cell.Style.Bg)
+	}
+	style.Bold = cell.Style.Attrs&uv.AttrBold != 0
+	style.Italic = cell.Style.Attrs&uv.AttrItalic != 0
+	style.Underline = cell.Style.Underline != 0
+	style.Blink = cell.Style.Attrs&uv.AttrBlink != 0
+	style.Reverse = cell.Style.Attrs&uv.AttrReverse != 0
+	style.Strikethrough = cell.Style.Attrs&uv.AttrStrikethrough != 0
+	return Cell{
+		Content: cell.Content,
+		Width:   cell.Width,
+		Style:   style,
+	}
+}
+
+func colorToString(c color.Color) string {
+	if c == nil {
+		return ""
+	}
+	r, g, b, _ := c.RGBA()
+	return fmt.Sprintf("#%02x%02x%02x", uint8(r>>8), uint8(g>>8), uint8(b>>8))
+}
+
+func normalizeRenderableUTF8(data []byte) []byte {
+	if len(data) == 0 || bytes.IndexByte(data, 0x1b) >= 0 || !utf8.Valid(data) {
+		return data
+	}
+
+	normalized := norm.NFC.Bytes(data)
+	if bytes.Equal(normalized, data) {
+		return data
+	}
+	return normalized
+}
