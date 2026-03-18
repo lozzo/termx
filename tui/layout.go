@@ -93,6 +93,52 @@ func (n *LayoutNode) LeafIDs() []string {
 	return out
 }
 
+func (n *LayoutNode) SwapWithNeighbor(paneID string, delta int) bool {
+	if n == nil || delta == 0 {
+		return false
+	}
+	leaves := n.leafNodes()
+	if len(leaves) < 2 {
+		return false
+	}
+	idx := -1
+	for i, leaf := range leaves {
+		if leaf != nil && leaf.PaneID == paneID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return false
+	}
+	target := idx + delta
+	if target < 0 || target >= len(leaves) {
+		return false
+	}
+	leaves[idx].PaneID, leaves[target].PaneID = leaves[target].PaneID, leaves[idx].PaneID
+	return true
+}
+
+func (n *LayoutNode) ContainsPane(paneID string) bool {
+	if n == nil {
+		return false
+	}
+	if n.IsLeaf() {
+		return n.PaneID == paneID
+	}
+	return n.First.ContainsPane(paneID) || n.Second.ContainsPane(paneID)
+}
+
+func (n *LayoutNode) AdjustPaneBoundary(paneID string, dir Direction, step, minSpan int, root Rect) bool {
+	if n == nil || step <= 0 || root.W <= 0 || root.H <= 0 {
+		return false
+	}
+	if minSpan <= 0 {
+		minSpan = 1
+	}
+	return n.adjustPaneBoundary(paneID, dir, step, minSpan, root)
+}
+
 func (n *LayoutNode) Rects(root Rect) map[string]Rect {
 	out := make(map[string]Rect)
 	n.fillRects(root, out)
@@ -189,4 +235,109 @@ func edgeDistance(base, other Rect, dir Direction) float64 {
 
 func rangesOverlap(a0, a1, b0, b1 int) bool {
 	return a0 < b1 && b0 < a1
+}
+
+func (n *LayoutNode) adjustPaneBoundary(paneID string, dir Direction, step, minSpan int, root Rect) bool {
+	if n == nil || n.IsLeaf() {
+		return false
+	}
+	firstRect, secondRect := n.splitRects(root)
+	inFirst := n.First.ContainsPane(paneID)
+	inSecond := n.Second.ContainsPane(paneID)
+
+	if inFirst && n.First.adjustPaneBoundary(paneID, dir, step, minSpan, firstRect) {
+		return true
+	}
+	if inSecond && n.Second.adjustPaneBoundary(paneID, dir, step, minSpan, secondRect) {
+		return true
+	}
+
+	switch n.Direction {
+	case SplitVertical:
+		switch {
+		case dir == DirectionRight && inFirst:
+			return n.adjustRatio(step, root.W, minSpan)
+		case dir == DirectionLeft && inSecond:
+			return n.adjustRatio(-step, root.W, minSpan)
+		}
+	case SplitHorizontal:
+		switch {
+		case dir == DirectionDown && inFirst:
+			return n.adjustRatio(step, root.H, minSpan)
+		case dir == DirectionUp && inSecond:
+			return n.adjustRatio(-step, root.H, minSpan)
+		}
+	}
+	return false
+}
+
+func (n *LayoutNode) leafNodes() []*LayoutNode {
+	if n == nil {
+		return nil
+	}
+	if n.IsLeaf() {
+		return []*LayoutNode{n}
+	}
+	out := n.First.leafNodes()
+	out = append(out, n.Second.leafNodes()...)
+	return out
+}
+
+func (n *LayoutNode) splitRects(root Rect) (Rect, Rect) {
+	if n == nil {
+		return Rect{}, Rect{}
+	}
+	ratio := n.Ratio
+	if ratio <= 0 || ratio >= 1 {
+		ratio = 0.5
+	}
+	if n.Direction == SplitHorizontal {
+		firstH := int(math.Round(float64(root.H) * ratio))
+		if firstH < 1 {
+			firstH = 1
+		}
+		if firstH >= root.H {
+			firstH = root.H - 1
+		}
+		return Rect{X: root.X, Y: root.Y, W: root.W, H: firstH},
+			Rect{X: root.X, Y: root.Y + firstH, W: root.W, H: root.H - firstH}
+	}
+	firstW := int(math.Round(float64(root.W) * ratio))
+	if firstW < 1 {
+		firstW = 1
+	}
+	if firstW >= root.W {
+		firstW = root.W - 1
+	}
+	return Rect{X: root.X, Y: root.Y, W: firstW, H: root.H},
+		Rect{X: root.X + firstW, Y: root.Y, W: root.W - firstW, H: root.H}
+}
+
+func (n *LayoutNode) adjustRatio(delta, span, minSpan int) bool {
+	if n == nil || span <= 1 {
+		return false
+	}
+	ratio := n.Ratio
+	if ratio <= 0 || ratio >= 1 {
+		ratio = 0.5
+	}
+	minRatio := float64(minSpan) / float64(span)
+	if minRatio < 0 {
+		minRatio = 0
+	}
+	if minRatio > 0.45 {
+		minRatio = 0.45
+	}
+	next := ratio + float64(delta)/float64(span)
+	if next < minRatio {
+		next = minRatio
+	}
+	if next > 1-minRatio {
+		next = 1 - minRatio
+	}
+	if math.Abs(next-ratio) < 0.0001 {
+		return false
+	}
+	n.Ratio = next
+	return true
 }

@@ -71,23 +71,31 @@ type VTerm struct {
 	mu     sync.RWMutex
 	cursor CursorState
 	modes  TerminalModes
+	resp   ResponseHandler
+	sbSize int
 
 	done chan struct{} // closed when drain goroutine exits
 }
 
 func New(cols, rows int, scrollbackSize int, onResponse ResponseHandler) *VTerm {
-	emu := charmvt.NewSafeEmulator(cols, rows)
-	emu.SetScrollbackSize(scrollbackSize)
-
 	v := &VTerm{
-		emu: emu,
 		cursor: CursorState{
 			Visible: true,
 			Shape:   CursorBlock,
 		},
-		modes: TerminalModes{AutoWrap: true},
-		done:  make(chan struct{}),
+		modes:  TerminalModes{AutoWrap: true},
+		resp:   onResponse,
+		sbSize: scrollbackSize,
+		done:   make(chan struct{}),
 	}
+	v.resetEmulator(cols, rows)
+	return v
+}
+
+func (v *VTerm) resetEmulator(cols, rows int) {
+	emu := charmvt.NewSafeEmulator(cols, rows)
+	emu.SetScrollbackSize(v.sbSize)
+	v.emu = emu
 	emu.SetCallbacks(charmvt.Callbacks{
 		AltScreen: func(on bool) {
 			// Called from within Write(), which already holds v.mu.Lock()
@@ -119,18 +127,20 @@ func New(cols, rows int, scrollbackSize int, onResponse ResponseHandler) *VTerm 
 	// DSR (Device Status Report, e.g. vi/vim) will deadlock because the
 	// emulator writes the response to an io.Pipe and nobody reads it,
 	// blocking the Write() call that holds the lock.
-	go v.drainResponses(onResponse)
-
-	return v
+	done := make(chan struct{})
+	v.done = done
+	go func(emu *charmvt.SafeEmulator) {
+		defer close(done)
+		v.drainResponses(emu, v.resp)
+	}(emu)
 }
 
 // drainResponses reads from the emulator's response pipe and forwards data
 // to the handler. Exits when the emulator is closed (Read returns error).
-func (v *VTerm) drainResponses(handler ResponseHandler) {
-	defer close(v.done)
+func (v *VTerm) drainResponses(emu *charmvt.SafeEmulator, handler ResponseHandler) {
 	buf := make([]byte, 256)
 	for {
-		n, err := v.emu.Read(buf)
+		n, err := emu.Read(buf)
 		if n > 0 && handler != nil {
 			data := make([]byte, n)
 			copy(data, buf[:n])
@@ -152,6 +162,69 @@ func (v *VTerm) Write(data []byte) (int, error) {
 	v.cursor.Col = pos.X
 	v.modes.AlternateScreen = v.emu.IsAltScreen()
 	return n, err
+}
+
+func (v *VTerm) LoadSnapshot(screen ScreenData, cursor CursorState, modes TerminalModes) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	if v.emu != nil {
+		_ = v.emu.Close()
+		<-v.done
+	}
+
+	height := len(screen.Cells)
+	width := 1
+	for _, row := range screen.Cells {
+		if len(row) > width {
+			width = len(row)
+		}
+	}
+	if width < 1 {
+		width = 1
+	}
+	if height < 1 {
+		height = 1
+	}
+	if cursor.Col+1 > width {
+		width = cursor.Col + 1
+	}
+	if cursor.Row+1 > height {
+		height = cursor.Row + 1
+	}
+
+	v.cursor = cursor
+	v.modes = modes
+	v.resetEmulator(width, height)
+	if modes.AlternateScreen {
+		_, _ = v.emu.Write([]byte("\x1b[?1049h"))
+	}
+	for y, row := range screen.Cells {
+		for x, cell := range row {
+			v.emu.SetCell(x, y, uvCell(cell))
+		}
+	}
+	if cursor.Visible {
+		_, _ = v.emu.Write([]byte("\x1b[?25h"))
+	} else {
+		_, _ = v.emu.Write([]byte("\x1b[?25l"))
+	}
+	if modes.ApplicationCursor {
+		_, _ = v.emu.Write([]byte("\x1b[?1h"))
+	} else {
+		_, _ = v.emu.Write([]byte("\x1b[?1l"))
+	}
+	if modes.BracketedPaste {
+		_, _ = v.emu.Write([]byte("\x1b[?2004h"))
+	} else {
+		_, _ = v.emu.Write([]byte("\x1b[?2004l"))
+	}
+	if !modes.AutoWrap {
+		_, _ = v.emu.Write([]byte("\x1b[?7l"))
+	}
+	if cursor.Row >= 0 && cursor.Col >= 0 {
+		_, _ = v.emu.Write([]byte(fmt.Sprintf("\x1b[%d;%dH", cursor.Row+1, cursor.Col+1)))
+	}
 }
 
 func (v *VTerm) Resize(cols, rows int) {
@@ -186,6 +259,12 @@ func (v *VTerm) ScreenContent() ScreenData {
 		Cells:             rows,
 		IsAlternateScreen: v.emu.IsAltScreen(),
 	}
+}
+
+func (v *VTerm) Size() (int, int) {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.emu.Width(), v.emu.Height()
 }
 
 func (v *VTerm) ScrollbackContent() [][]Cell {
@@ -257,6 +336,48 @@ func (v *VTerm) SendKey(key uv.KeyEvent) {
 
 func (v *VTerm) SendText(text string) {
 	v.emu.SendText(text)
+}
+
+func uvCell(cell Cell) *uv.Cell {
+	c := &uv.Cell{
+		Content: cell.Content,
+		Width:   cell.Width,
+	}
+	if c.Content == "" {
+		c.Content = " "
+	}
+	if c.Width <= 0 {
+		c.Width = 1
+	}
+	if cell.Style.FG != "" {
+		if rgb := ansi.XParseColor(cell.Style.FG); rgb != nil {
+			c.Style.Fg = rgb
+		}
+	}
+	if cell.Style.BG != "" {
+		if rgb := ansi.XParseColor(cell.Style.BG); rgb != nil {
+			c.Style.Bg = rgb
+		}
+	}
+	if cell.Style.Bold {
+		c.Style.Attrs |= uv.AttrBold
+	}
+	if cell.Style.Italic {
+		c.Style.Attrs |= uv.AttrItalic
+	}
+	if cell.Style.Blink {
+		c.Style.Attrs |= uv.AttrBlink
+	}
+	if cell.Style.Reverse {
+		c.Style.Attrs |= uv.AttrReverse
+	}
+	if cell.Style.Strikethrough {
+		c.Style.Attrs |= uv.AttrStrikethrough
+	}
+	if cell.Style.Underline {
+		c.Style.Underline = uv.UnderlineSingle
+	}
+	return c
 }
 
 func (v *VTerm) Paste(text string) {

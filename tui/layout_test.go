@@ -34,3 +34,28 @@ func TestLayoutAdjacent(t *testing.T) {
 		t.Fatalf("expected p2 above p3, got %q", got)
 	}
 }
+
+func TestLayoutSwapWithNeighbor(t *testing.T) {
+	root := NewLeaf("p1")
+	root.Split("p1", SplitVertical, "p2")
+	root.Split("p2", SplitHorizontal, "p3")
+
+	if ok := root.SwapWithNeighbor("p3", -1); !ok {
+		t.Fatal("expected swap with previous leaf to succeed")
+	}
+
+	got := root.LeafIDs()
+	want := []string{"p1", "p3", "p2"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d leaves, got %d", len(want), len(got))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected leaf order %v, got %v", want, got)
+		}
+	}
+
+	if ok := root.SwapWithNeighbor("p1", -1); ok {
+		t.Fatal("expected swap before first leaf to fail")
+	}
+}

@@ -28,16 +28,20 @@ type drawCell struct {
 }
 
 type composedCanvas struct {
-	width  int
-	height int
-	cells  [][]drawCell
+	width    int
+	height   int
+	cells    [][]drawCell
+	rowCache []string
+	rowDirty []bool
 }
 
 func newComposedCanvas(width, height int) *composedCanvas {
 	c := &composedCanvas{
-		width:  width,
-		height: height,
-		cells:  make([][]drawCell, height),
+		width:    width,
+		height:   height,
+		cells:    make([][]drawCell, height),
+		rowCache: make([]string, height),
+		rowDirty: make([]bool, height),
 	}
 	for y := 0; y < height; y++ {
 		row := make([]drawCell, width)
@@ -45,12 +49,12 @@ func newComposedCanvas(width, height int) *composedCanvas {
 			row[x] = blankDrawCell()
 		}
 		c.cells[y] = row
+		c.rowDirty[y] = true
 	}
 	return c
 }
 
 func (m *Model) renderTabComposite(tab *Tab, width, height int) string {
-	canvas := newComposedCanvas(width, height)
 	rootRect := Rect{X: 0, Y: 0, W: width, H: height}
 	rects := tab.Root.Rects(rootRect)
 	if tab.ZoomedPaneID != "" {
@@ -58,11 +62,43 @@ func (m *Model) renderTabComposite(tab *Tab, width, height int) string {
 			rects = map[string]Rect{tab.ZoomedPaneID: rootRect}
 		}
 	}
-	for paneID, rect := range rects {
-		pane := tab.Panes[paneID]
-		canvas.drawPane(rect, pane, paneID == tab.ActivePaneID)
+
+	cache := tab.renderCache
+	if cache == nil || cache.width != width || cache.height != height || cache.zoomedPaneID != tab.ZoomedPaneID || !sameRects(cache.rects, rects) {
+		canvas := newComposedCanvas(width, height)
+		for paneID, rect := range rects {
+			pane := tab.Panes[paneID]
+			canvas.drawPane(rect, pane, paneID == tab.ActivePaneID)
+		}
+		tab.renderCache = &tabRenderCache{
+			canvas:       canvas,
+			rects:        cloneRects(rects),
+			width:        width,
+			height:       height,
+			activePaneID: tab.ActivePaneID,
+			zoomedPaneID: tab.ZoomedPaneID,
+		}
+		return canvas.String()
 	}
-	return canvas.String()
+
+	if cache.activePaneID != tab.ActivePaneID {
+		if rect, ok := cache.rects[cache.activePaneID]; ok {
+			cache.canvas.drawPane(rect, tab.Panes[cache.activePaneID], false)
+		}
+		if rect, ok := cache.rects[tab.ActivePaneID]; ok {
+			cache.canvas.drawPane(rect, tab.Panes[tab.ActivePaneID], true)
+		}
+		cache.activePaneID = tab.ActivePaneID
+	}
+
+	for paneID, rect := range cache.rects {
+		pane := tab.Panes[paneID]
+		if pane == nil || !pane.renderDirty {
+			continue
+		}
+		cache.canvas.drawPane(rect, pane, paneID == tab.ActivePaneID)
+	}
+	return cache.canvas.String()
 }
 
 func blankDrawCell() drawCell {
@@ -81,9 +117,16 @@ func (c *composedCanvas) set(x, y int, cell drawCell) {
 		cell.Width = 1
 	}
 	cell.Continuation = false
+	if c.cells[y][x] != cell {
+		c.rowDirty[y] = true
+	}
 	c.cells[y][x] = cell
 	for i := 1; i < cell.Width && x+i < c.width; i++ {
-		c.cells[y][x+i] = drawCell{Continuation: true}
+		cont := drawCell{Continuation: true}
+		if c.cells[y][x+i] != cont {
+			c.rowDirty[y] = true
+		}
+		c.cells[y][x+i] = cont
 	}
 }
 
@@ -102,9 +145,9 @@ func (c *composedCanvas) drawPane(rect Rect, pane *Pane, active bool) {
 
 	contentRect := Rect{X: rect.X + 1, Y: rect.Y + 1, W: rect.W - 2, H: rect.H - 2}
 	c.fill(contentRect, blankDrawCell())
-	c.drawGrid(contentRect, paneCells(pane))
+	c.drawGrid(contentRect, paneCellsForViewport(pane, contentRect.W, contentRect.H))
 	if active {
-		c.drawCursor(contentRect, pane)
+		c.drawCursor(contentRect, pane, contentRect.W, contentRect.H)
 	}
 }
 
@@ -152,8 +195,8 @@ func (c *composedCanvas) drawGrid(rect Rect, grid [][]drawCell) {
 	}
 }
 
-func (c *composedCanvas) drawCursor(rect Rect, pane *Pane) {
-	cursor := paneCursor(pane)
+func (c *composedCanvas) drawCursor(rect Rect, pane *Pane, viewW, viewH int) {
+	cursor := paneCursorForViewport(pane, viewW, viewH)
 	if !cursor.Visible || cursor.Row < 0 || cursor.Col < 0 {
 		return
 	}
@@ -208,12 +251,12 @@ func (c *composedCanvas) fill(rect Rect, cell drawCell) {
 }
 
 func (c *composedCanvas) String() string {
-	var out strings.Builder
-	current := drawStyle{}
 	for y := 0; y < c.height; y++ {
-		if y > 0 {
-			out.WriteByte('\n')
+		if !c.rowDirty[y] && c.rowCache[y] != "" {
+			continue
 		}
+		var row strings.Builder
+		current := drawStyle{}
 		for x := 0; x < c.width; x++ {
 			cell := c.cells[y][x]
 			if cell.Continuation {
@@ -224,15 +267,44 @@ func (c *composedCanvas) String() string {
 				content = " "
 			}
 			if current != cell.Style {
-				out.WriteString(styleDiffANSI(current, cell.Style))
+				row.WriteString(styleDiffANSI(current, cell.Style))
 				current = cell.Style
 			}
-			out.WriteString(content)
+			row.WriteString(content)
 		}
-		out.WriteString("\x1b[0m")
-		current = drawStyle{}
+		row.WriteString("\x1b[0m")
+		c.rowCache[y] = row.String()
+		c.rowDirty[y] = false
+	}
+
+	var out strings.Builder
+	for y := 0; y < c.height; y++ {
+		if y > 0 {
+			out.WriteByte('\n')
+		}
+		out.WriteString(c.rowCache[y])
 	}
 	return out.String()
+}
+
+func sameRects(a, b map[string]Rect) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for key, rect := range a {
+		if other, ok := b[key]; !ok || other != rect {
+			return false
+		}
+	}
+	return true
+}
+
+func cloneRects(src map[string]Rect) map[string]Rect {
+	out := make(map[string]Rect, len(src))
+	for key, value := range src {
+		out[key] = value
+	}
+	return out
 }
 
 func paneCells(pane *Pane) [][]drawCell {
@@ -258,6 +330,14 @@ func paneCells(pane *Pane) [][]drawCell {
 	return grid
 }
 
+func paneCellsForViewport(pane *Pane, viewW, viewH int) [][]drawCell {
+	grid := paneCells(pane)
+	if pane == nil || pane.Mode != ViewportModeFixed {
+		return grid
+	}
+	return cropDrawGrid(grid, pane.Offset, viewW, viewH)
+}
+
 func paneCursor(pane *Pane) localvterm.CursorState {
 	if pane == nil {
 		return localvterm.CursorState{}
@@ -275,6 +355,69 @@ func paneCursor(pane *Pane) localvterm.CursorState {
 		}
 	}
 	return localvterm.CursorState{}
+}
+
+func paneCursorForViewport(pane *Pane, viewW, viewH int) localvterm.CursorState {
+	cursor := paneCursor(pane)
+	if pane == nil || pane.Mode != ViewportModeFixed {
+		return cursor
+	}
+	cursor.Row -= pane.Offset.Y
+	cursor.Col -= pane.Offset.X
+	if cursor.Row < 0 || cursor.Col < 0 || cursor.Row >= viewH || cursor.Col >= viewW {
+		cursor.Visible = false
+	}
+	return cursor
+}
+
+func cropDrawGrid(grid [][]drawCell, offset Point, width, height int) [][]drawCell {
+	if width <= 0 || height <= 0 {
+		return nil
+	}
+
+	out := make([][]drawCell, height)
+	for y := 0; y < height; y++ {
+		row := make([]drawCell, width)
+		for x := range row {
+			row[x] = blankDrawCell()
+		}
+
+		srcY := offset.Y + y
+		if srcY < 0 || srcY >= len(grid) {
+			out[y] = row
+			continue
+		}
+
+		srcRow := grid[srcY]
+		for x := 0; x < width; x++ {
+			srcX := offset.X + x
+			if srcX < 0 || srcX >= len(srcRow) {
+				continue
+			}
+
+			cell := srcRow[srcX]
+			if cell.Continuation {
+				continue
+			}
+			if cell.Content == "" {
+				cell = blankDrawCell()
+			}
+			if cell.Width <= 0 {
+				cell.Width = max(1, xansi.StringWidth(cell.Content))
+			}
+			if x+cell.Width > width {
+				continue
+			}
+
+			row[x] = cell
+			for i := 1; i < cell.Width && x+i < width; i++ {
+				row[x+i] = drawCell{Continuation: true}
+			}
+		}
+
+		out[y] = row
+	}
+	return out
 }
 
 func rowToANSI(row []drawCell) string {

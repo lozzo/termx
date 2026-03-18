@@ -9,6 +9,7 @@ import (
 type Client interface {
 	Close() error
 	Create(ctx context.Context, command []string, name string, size protocol.Size) (*protocol.CreateResult, error)
+	List(ctx context.Context) (*protocol.ListResult, error)
 	Attach(ctx context.Context, terminalID string, mode string) (*protocol.AttachResult, error)
 	Snapshot(ctx context.Context, terminalID string, offset, limit int) (*protocol.Snapshot, error)
 	Input(ctx context.Context, channel uint16, data []byte) error
@@ -33,6 +34,10 @@ func (c *ProtocolClient) Create(ctx context.Context, command []string, name stri
 		Name:    name,
 		Size:    size,
 	})
+}
+
+func (c *ProtocolClient) List(ctx context.Context) (*protocol.ListResult, error) {
+	return c.inner.List(ctx)
 }
 
 func (c *ProtocolClient) Attach(ctx context.Context, terminalID string, mode string) (*protocol.AttachResult, error) {

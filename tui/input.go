@@ -18,6 +18,14 @@ type inputEventMsg struct {
 }
 
 func (m *Model) handleInputEvent(event uv.Event) tea.Cmd {
+	if m.terminalPicker != nil {
+		return m.handleTerminalPickerEvent(event)
+	}
+
+	if m.prompt != nil {
+		return m.handlePromptEvent(event)
+	}
+
 	switch event := event.(type) {
 	case uv.KeyPressEvent:
 		return m.handleKeyPressEvent(event)
@@ -38,6 +46,7 @@ func (m *Model) handleKeyPressEvent(event uv.KeyPressEvent) tea.Cmd {
 		switch {
 		case event.MatchString("esc"), event.MatchString("q"), event.MatchString("?"):
 			m.showHelp = false
+			m.invalidateRender()
 		}
 		return nil
 	}
@@ -45,11 +54,14 @@ func (m *Model) handleKeyPressEvent(event uv.KeyPressEvent) tea.Cmd {
 	if m.prefixActive {
 		m.prefixActive = false
 		m.prefixSeq++
+		m.invalidateRender()
 		return m.handlePrefixEvent(event)
 	}
 
 	if event.MatchString("ctrl+a") {
-		return m.activatePrefix()
+		cmd := m.activatePrefix()
+		m.invalidateRender()
+		return cmd
 	}
 
 	return m.sendKeyToActive(event)
@@ -74,6 +86,7 @@ func (m *Model) handlePrefixEvent(event uv.KeyPressEvent) tea.Cmd {
 	case event.MatchString("c"):
 		m.workspace.Tabs = append(m.workspace.Tabs, newTab(nextTabName(m.workspace.Tabs)))
 		m.workspace.ActiveTab = len(m.workspace.Tabs) - 1
+		m.invalidateRender()
 		return m.createPaneCmd(m.workspace.ActiveTab, "", "")
 	case event.MatchString("n"):
 		if len(m.workspace.Tabs) > 0 {
@@ -95,19 +108,73 @@ func (m *Model) handlePrefixEvent(event uv.KeyPressEvent) tea.Cmd {
 			}
 		}
 		return m.resizeVisiblePanesCmd()
+	case event.MatchString("{"):
+		m.swapActivePane(-1)
+		return m.resizeVisiblePanesCmd()
+	case event.MatchString("}"):
+		m.swapActivePane(1)
+		return m.resizeVisiblePanesCmd()
+	case event.MatchString("H"), event.MatchString("shift+h"):
+		m.resizeActivePane(DirectionLeft, 2)
+		return m.resizeVisiblePanesCmd()
+	case event.MatchString("J"), event.MatchString("shift+j"):
+		m.resizeActivePane(DirectionDown, 2)
+		return m.resizeVisiblePanesCmd()
+	case event.MatchString("K"), event.MatchString("shift+k"):
+		m.resizeActivePane(DirectionUp, 2)
+		return m.resizeVisiblePanesCmd()
+	case event.MatchString("L"), event.MatchString("shift+l"):
+		m.resizeActivePane(DirectionRight, 2)
+		return m.resizeVisiblePanesCmd()
+	case event.MatchString("space"):
+		m.cycleActiveLayout()
+		return m.resizeVisiblePanesCmd()
+	case event.MatchString(","):
+		m.beginRenameTab()
+		return nil
+	case event.MatchString("f"):
+		return m.openTerminalPickerCmd()
 	case event.MatchString("x"):
-		return m.killActivePaneCmd()
+		return m.closeActivePaneCmd()
+	case event.MatchString("X"), event.MatchString("shift+x"):
+		return m.killActiveTerminalCmd()
+	case event.MatchString("M"), event.MatchString("shift+m"):
+		m.toggleActiveViewportMode()
+		return m.resizeVisiblePanesCmd()
+	case event.MatchString("P"), event.MatchString("shift+p"):
+		m.toggleActiveViewportPin()
+		return nil
+	case event.MatchString("R"), event.MatchString("shift+r"):
+		m.toggleActiveViewportReadonly()
+		return nil
+	case event.MatchString("ctrl+h"), event.MatchString("ctrl+left"):
+		m.panActiveViewport(-4, 0)
+		return nil
+	case event.MatchString("ctrl+j"), event.MatchString("ctrl+down"):
+		m.panActiveViewport(0, 2)
+		return nil
+	case event.MatchString("ctrl+k"), event.MatchString("ctrl+up"):
+		m.panActiveViewport(0, -2)
+		return nil
+	case event.MatchString("ctrl+l"), event.MatchString("ctrl+right"):
+		m.panActiveViewport(4, 0)
+		return nil
+	case event.MatchString("&"):
+		return m.killActiveTabCmd()
 	case event.MatchString("d"):
 		m.quitting = true
+		m.invalidateRender()
 		return tea.Quit
 	case event.MatchString("?"):
 		m.showHelp = true
+		m.invalidateRender()
 	default:
 		for i := 1; i <= 9; i++ {
 			if event.MatchString(string(rune('0' + i))) {
 				if i-1 < len(m.workspace.Tabs) {
 					m.workspace.ActiveTab = i - 1
 				}
+				m.invalidateRender()
 				return m.resizeVisiblePanesCmd()
 			}
 		}
@@ -135,6 +202,25 @@ func (m *Model) pasteToActive(text string) tea.Cmd {
 
 func nextTabName(tabs []*Tab) string {
 	return itoa(len(tabs) + 1)
+}
+
+func (m *Model) handlePromptEvent(event uv.Event) tea.Cmd {
+	switch event := event.(type) {
+	case uv.KeyPressEvent:
+		switch {
+		case event.MatchString("esc"):
+			m.prompt = nil
+		case event.MatchString("enter"):
+			m.commitPrompt()
+		case event.MatchString("backspace"):
+			m.deletePromptRune()
+		case event.Text != "":
+			m.appendPrompt(event.Text)
+		}
+	case uv.PasteEvent:
+		m.appendPrompt(event.Content)
+	}
+	return nil
 }
 
 func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() error, error) {
