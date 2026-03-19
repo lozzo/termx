@@ -63,37 +63,33 @@ C-a }           与后一个 Viewport 交换位置
 C-a Space       循环切换预定义布局
 ```
 
-### 分屏时 Join 已有 Terminal
+### 新建 Viewport（选择已有 Terminal 或新建）
 
-默认分屏（`C-a %` / `C-a "`）总是创建新 Terminal。但你也可以把已有的 Terminal 拉进来：
-
-```
-方式 1：先分屏再 attach（两步，正交）
-  C-a %       → 分屏，新 Viewport 里是新 Terminal
-  C-a f       → 打开 Picker，选一个已有 Terminal
-  Enter       → 替换当前 Viewport 的 Terminal
-
-方式 2：Picker 里直接分屏（一步）
-  C-a f       → 打开 Picker
-  搜索找到目标 Terminal
-  Tab         → 在当前 Viewport 旁边分屏 + attach 选中的 Terminal
-
-方式 3：命令模式
-  C-a : attach <terminal-id>    → 将指定 Terminal attach 到当前 Viewport
-```
-
-两种方式的区别：
+分屏、开新 Tab、开浮窗时，termx 会先给你一个 chooser：
 
 ```
-方式 1（先分屏再 attach）：
-  → 会创建一个临时 Terminal（分屏时创建的）
-  → attach 后临时 Terminal 变成 orphan
-  → 适合"我先开个位置，再决定放什么"
+C-a % / C-a "   新分屏
+C-a c           新 Tab
+C-a w           新浮动 Viewport
+```
 
-方式 2（Picker 里 Tab）：
-  → 不创建临时 Terminal
-  → 直接分屏 + attach，一步到位
-  → 适合"我知道我要哪个 Terminal"
+chooser 的顶部固定是 `+ new terminal`，所以：
+
+```
+Enter           在这个新 Viewport 里创建一个新 Terminal
+搜索 + Enter    在这个新 Viewport 里 attach 已有 Terminal
+Esc             取消，不创建新 Viewport
+```
+
+如果你已经在当前布局里，并且只是想把某个 Terminal 换进来，仍然可以走旧的 attach 流程：
+
+```
+C-a f       → 打开 Picker
+Enter       → attach 到当前 Viewport（替换当前 Terminal）
+Tab         → 在当前 Viewport 旁边分屏 + attach
+
+C-a : attach <terminal-id>
+           → 将指定 Terminal attach 到当前 Viewport
 ```
 
 **关闭 vs Kill 的区别**：
@@ -117,7 +113,7 @@ C-a X  Kill Terminal
 ### 浮动 Viewport
 
 ```
-C-a w       创建浮动 Viewport（居中，80% 宽高，新 Terminal）
+C-a w       打开 chooser，新建或 attach 一个浮动 Viewport（默认 fixed）
 C-a W       切换所有浮动 Viewport 的显示/隐藏
 Esc         焦点从浮动层回到平铺层
 ```
@@ -125,7 +121,7 @@ Esc         焦点从浮动层回到平铺层
 ### Tab 操作
 
 ```
-C-a c       新建 Tab
+C-a c       打开 chooser，新建或 attach 一个 Tab
 C-a ,       重命名当前 Tab
 C-a 1-9     跳转到第 N 个 Tab
 C-a n       下一个 Tab
@@ -139,6 +135,23 @@ C-a &       关闭当前 Tab（关闭所有 Viewport，Terminal 继续运行）
 C-a s       列出 Workspace（Picker 模式）
 C-a $       重命名当前 Workspace
 C-a d       Detach（退出 TUI，所有 Terminal 继续运行）
+```
+
+### 诊断日志
+
+termx 现在支持把 CLI / daemon / TUI 的关键日志写到文件：
+
+```bash
+termx --log-file /tmp/termx.log
+TERMX_LOG_FILE=/tmp/termx.log termx
+```
+
+默认路径：
+
+```bash
+$XDG_STATE_HOME/termx/termx.log
+# 或
+~/.local/state/termx/termx.log
 ```
 
 ### Terminal Picker（核心交互）
@@ -174,6 +187,9 @@ Terminal Picker 是 termx 的核心交互入口，不只是"找 terminal"：
 - `Tab` — 在当前 Viewport 旁边分屏，新 Viewport attach 选中的 Terminal
 - `C-k` — Kill 选中的 Terminal
 - `Esc` — 取消
+
+在新建分屏 / 新 Tab / 浮窗时使用的 chooser 也会复用这份 Terminal 列表，
+只是顶部会额外增加一个 `+ new terminal` 入口。
 
 **这是 termx 的杀手功能**。tmux 的 `C-b s` 只能在 session 间切换，而且切换的是整个 session 视图。termx 的 picker 让你在 terminal 粒度上操作——任何 terminal 都可以被拉进当前视图。
 
@@ -283,7 +299,8 @@ C-a C-a     发送原始 Ctrl-a 给 Terminal
 :list-orphans                       列出无人观察的 Terminal
 
 :save-layout <name>                 保存当前布局为模板
-:load-layout <name>                 加载布局到新 Workspace
+:load-layout <name> [create|prompt|skip]
+                                    加载布局到新 Workspace
 :list-layouts                       列出所有可用布局
 :edit-layout <name>                 用 $EDITOR 打开布局文件
 :delete-layout <name>               删除布局文件
@@ -381,12 +398,13 @@ termx
   │          ├──────────┤
   │          │ [exited] │  ← 显示退出标记
   │          │          │
-  │          │ [r]estart│  ← 提示可重启
+  │          │ [r]estart│  ← 当前 viewport 可直接重启
   │          │ [c]lose  │
   └──────────┴──────────┘
 
   按 r → 用相同的 command 创建新 Terminal
-       → Viewport 自动绑定，位置不变
+       → 只重绑当前触发 restart 的 Viewport，其他观察旧 Terminal 的 viewport 保持 exited
+       → Viewport 自动绑定，位置 / fixed offset / pin / readonly 保持不变
        → "模板"复活
 ```
 

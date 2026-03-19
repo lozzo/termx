@@ -73,6 +73,11 @@
   - TUI attach 该 Terminal
   - 观察内存使用、CPU、渲染帧率
   - 触发 SyncLost 后验证 Snapshot 恢复是否正确
+
+当前补充结论（2026-03-19）：
+  [x] client `Close()` 会等待协议 read loop 退出，并同步失败所有挂起请求
+  [x] daemon shutdown / context cancel 不会再被 idle transport session 卡住
+      （已有回归测试覆盖 unix socket idle client 场景）
 ```
 
 ## V4. 同一 Terminal 多 Viewport 的 VTerm 一致性
@@ -133,6 +138,39 @@
   在当前 TUI 代码中实现简单的浮窗渲染
   用 pprof 测量 View() 耗时
   对比有/无浮窗的性能差异
+
+当前补充结论（2026-03-19）：
+  [x] benchmark harness 已修正为 chooser-first 工作流，避免把“未真正创建 pane/floating”当成性能结果
+  [x] 样本基准（Intel Xeon E5-2450 v2）：
+      - floating tiled-dirty: `~2.02ms/op`（整 pane dirty，保守上界）
+      - floating tiled-dirty rows: `~0.54ms/op`（局部 row dirty）
+      - floating tiled-dirty span: `~0.46ms/op`（单行列区间 dirty）
+      - floating active tiled-dirty span: `~2.59ms/op`（live active pane 仍保守全量 redraw）
+      - floating floating-dirty: `~0.35ms/op`
+      - fixed viewport recrop: `~0.14ms/op`
+      - terminal picker dirty filter (100 items): `~0.60ms/op`
+  [x] terminal picker dirty path 已通过缓存显著收敛：
+      - 约 `8.07ms/op -> 0.60ms/op`
+      - 约 `1.42MB/op -> 308KB/op`
+      - 约 `2732 allocs/op -> 480 allocs/op`
+  [x] pane body blank-row fill cache 已落地，render hot path 新增单测覆盖
+  [x] incremental dirty-row tracking 已落地：
+      - 普通单行输出优先记录 dirty row range，而不是整 pane 脏
+      - 当前先应用在非 active pane 的 body redraw，避免影响正在输入的 pane 正确性
+      - 遇到 escape sequence / 高风险滚屏场景时保守回退到整 pane redraw
+      - 局部 row dirty benchmark 相比整 pane dirty 约 `2.02ms/op -> 0.54ms/op`
+  [x] incremental dirty-span tracking 已落地：
+      - 同行、无 escape、无换行的简单输出继续收紧到列区间
+      - tiled dirty span benchmark 相比整 pane dirty 约 `2.02ms/op -> 0.46ms/op`
+      - active pane 目前仅对 snapshot/非 live 路径启用；live active pane 仍保守走完整 body redraw
+  [x] 当前典型热点仍在 16ms 帧预算内，可作为后续功能开发的性能基线
+  [x] 可延期到后续专项的优化 TODO：
+      - active + live VTerm 的安全局部重绘
+      - dirty region 合并 / 批处理
+      - 更细粒度 pprof 与大规模场景 benchmark
+
+建议复跑命令：
+  `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -run '^$' -bench 'Benchmark(RenderTabCompositeFloatingOverlay(TiledDirty|TiledDirtyRows|TiledDirtySpan|ActiveTiledDirtySpan|FloatingDirty)|PaneCellsForViewportFixed(Cached|Recrop)|ModelViewTerminalPicker100Items(DirtyFilter)?)$' -benchmem`
 ```
 
 ## V7. Workspace state 自动保存/恢复
@@ -142,6 +180,26 @@
 假设：TUI 退出时自动保存 workspace state 到 JSON，启动时自动恢复。
 
 ```
+当前补充结论（2026-03-19）：
+  [x] workspace state JSON 骨架已落地，TUI 正常退出后会自动保存
+  [x] 启动时会优先尝试恢复 workspace state；仍在运行的 Terminal 会重新 attach
+  [x] 恢复时缺失的 Terminal 先保守显示为 `[exited]` viewport
+  [x] exited viewport 现在支持原地 `r` restart：新建 terminal、复用 command+tags、仅重绑触发 restart 的 viewport
+  [x] restart 已补充单测与 TUI e2e 回归（attach exited shell -> restart -> 继续执行命令）
+  [x] save-layout / load-layout 第一阶段已纳入 floating viewport：
+      - 导出 YAML 会保留 floating entry 的 terminal 声明和尺寸
+      - load-layout / `--layout` 会恢复 floating viewport，并支持已有 terminal attach / create 缺失 terminal
+      - 已补充单测与 TUI e2e 覆盖 startup layout -> floating viewport 恢复路径
+  [x] `load-layout <name> prompt` 已落地第一阶段：
+      - 未匹配 terminal 时会逐个打开 chooser
+      - 可手动 attach 已有 terminal、create new、或 Esc 跳过保留 waiting viewport
+      - 已补充单测与 TUI e2e 覆盖 prompt attach 流程
+  [x] 启动优先级链第一版已落地：`--layout` → workspace state → 项目级自动 layout → 用户级默认 layout → chooser
+  [x] state 文件已升级为多 workspace 格式，同时保持单 workspace 兼容读取
+  [x] `C-a s` workspace picker 已落地第一版，可创建 / 切换 workspace
+  [x] workspace 切换会保留各自布局；切回时对 running terminal 重新 attach
+  [x] 同一个 Terminal 可以被不同 workspace 独立观察（有回归测试）
+
 需要验证：
   [ ] TUI 被 kill -9 时能否保存 state（可能需要定期自动保存而非仅退出时保存）
   [ ] state 文件中的 Terminal ID 在 daemon 重启后是否仍然有效
@@ -207,44 +265,24 @@
 
 ## V11. 组合键在不同终端中的可识别性
 
-来源：[interaction.md](interaction.md) — Fixed 模式完整交互、浮动层键盘操作
+来源：[interaction-v2.md](interaction-v2.md) — 分层 prefix 系统
 
-假设：`C-a Ctrl-hjkl`、`C-a Alt-hjkl`、`C-a Ctrl-Arrow`、`C-a Tab` 等组合键能被 TUI 稳定接收。
+**v2 更新**：分层 prefix 系统消除了所有 Ctrl-组合和 Alt-组合键。原来的 `C-a Ctrl-hjkl`、`C-a Alt-hjkl`、`C-a Ctrl-Arrow` 全部变成了子模式下的普通字母键。V11 的大部分风险已消除。
 
 ```
-需要验证：
-  [ ] C-a Ctrl-h — Ctrl-h 在很多终端里等价于 Backspace (0x08)
-      bubbletea 能否区分 Ctrl-h 和 Backspace？
-  [ ] C-a Alt-h/j/k/l — Alt 在不同终端里的表现：
-      - 有些终端发 ESC 前缀 (ESC + h)
-      - 有些终端发 Meta bit (0x80 | h)
-      - bubbletea 的 Alt 键处理是否统一？
-  [ ] C-a Ctrl-←/→/↑/↓ — Ctrl+Arrow 的 escape sequence 不统一：
-      - xterm: ESC[1;5A
-      - rxvt: ESC[Oa
-      - 有些终端根本不支持
-  [ ] C-a Tab — Tab 键在 prefix 后是否能被正确识别
-      （Tab = 0x09，和 Ctrl-I 相同）
+剩余需要验证的：
+  [ ] C-a 后接子 prefix 键（t/w/o/v）的识别是否稳定
+      → 这些都是普通字母键，风险极低
+  [ ] Floating sticky 模式下 Esc 键的识别
+      → Esc 在某些终端里是 Alt 键的前缀，可能有 timing 问题
+      → bubbletea 通常能正确处理，但需要验证
+  [ ] C-a Tab 的识别（Tab = 0x09 = Ctrl-I）
+      → 已移到 C-a o 子模式内部，变成 floating 模式下的普通 Tab
+      → 风险降低但仍需验证
 
 验证方法：
-  在以下终端中测试所有组合键的可识别性：
-  - macOS Terminal.app
-  - iTerm2
-  - Alacritty
-  - kitty
-  - WezTerm
-  - GNOME Terminal / xterm
-  - tmux 内嵌（termx 跑在 tmux 里的场景）
-  - SSH 远程连接
-
-  写一个最小 bubbletea 程序，打印收到的 tea.KeyMsg：
-  - 按下每个组合键，记录 Type / Runes / Alt 字段
-  - 标记哪些终端无法区分的键
-
-降级方案（如果某些键不可用）：
-  C-a Ctrl-h 不可用 → 改用 C-a Alt-Shift-h 或其他组合
-  C-a Alt-* 不可用  → 改用 C-a 后接两次按键（如 C-a o h = offset left）
-  C-a Ctrl-Arrow 不可用 → 只保留 C-a Ctrl-hjkl，删除 Arrow 变体
+  在主流终端中测试 C-a → t/w/o/v → 后续键 的完整链路
+  重点验证 Esc 退出 sticky 模式的可靠性
 ```
 
 ---
@@ -256,7 +294,7 @@
 | P0 | V1 | render tick batching | 渲染架构的基础假设，错了要重新设计 |
 | P0 | V5 | fixed 模式 VTerm 尺寸 | 影响核心 Viewport 模型的可行性 |
 | P0 | V4 | 多 Viewport VTerm 一致性 | 影响 Terminal 复用的核心 feature |
-| P0 | V11 | 组合键可识别性 | 键位方案不可用则交互设计要改 |
+| P0 | V11 | 组合键可识别性 | v2 分层 prefix 消除了大部分风险，降为 P2 |
 | P1 | V3 | 背压和 SyncLost 恢复 | 影响稳定性，但有降级方案 |
 | P1 | V9 | GC 架构归属 | 影响 server/client 职责划分 |
 | P1 | V10 | 自动 tag 语义 | 已定为"出生证明"，剩余 Picker UX 待确认 |

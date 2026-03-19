@@ -3,7 +3,9 @@ package protocol
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -48,6 +50,10 @@ func TestClientRequestStreamAndProtocolError(t *testing.T) {
 	}
 	if len(list.Terminals) != 1 || list.Terminals[0].ID != "term-1" {
 		t.Fatalf("unexpected list result: %#v", list)
+	}
+
+	if err := client.SetTags(ctx, "term-1", map[string]string{"role": "shell"}); err != nil {
+		t.Fatalf("set tags failed: %v", err)
 	}
 
 	attach, err := client.Attach(ctx, "term-1", "collaborator")
@@ -148,6 +154,108 @@ func TestClientEvents(t *testing.T) {
 	}
 }
 
+func TestClientAttachBuffersFramesThatArriveBeforeStreamRegistration(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+	defer serverTransport.Close()
+
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- runBufferedAttachServer(serverTransport)
+	}()
+
+	client := NewClient(clientTransport)
+	defer client.Close()
+
+	if err := client.Hello(ctx, Hello{Version: Version, Client: "test"}); err != nil {
+		t.Fatalf("hello failed: %v", err)
+	}
+
+	attach, err := client.Attach(ctx, "term-1", "collaborator")
+	if err != nil {
+		t.Fatalf("attach failed: %v", err)
+	}
+
+	stream, stop := client.Stream(attach.Channel)
+	defer stop()
+
+	select {
+	case msg := <-stream:
+		if msg.Type != TypeOutput || string(msg.Payload) != "early-output" {
+			t.Fatalf("unexpected buffered stream frame: %#v", msg)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for buffered output")
+	}
+
+	select {
+	case msg := <-stream:
+		if msg.Type != TypeClosed {
+			t.Fatalf("expected closed frame, got %#v", msg)
+		}
+		code, err := DecodeClosedPayload(msg.Payload)
+		if err != nil {
+			t.Fatalf("decode closed payload failed: %v", err)
+		}
+		if code != 0 {
+			t.Fatalf("expected exit code 0, got %d", code)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for buffered closed frame")
+	}
+
+	if err := <-serverDone; err != nil {
+		t.Fatalf("fake server failed: %v", err)
+	}
+}
+
+func TestClientCloseWaitsForReadLoopAndUnblocksPendingRequest(t *testing.T) {
+	clientTransport, serverTransport := memory.NewPair()
+	defer serverTransport.Close()
+
+	client := NewClient(clientTransport)
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := client.List(context.Background())
+		errCh <- err
+	}()
+
+	frameReceived := make(chan struct{})
+	go func() {
+		_, _ = serverTransport.Recv()
+		close(frameReceived)
+	}()
+
+	select {
+	case <-frameReceived:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for request frame")
+	}
+
+	if err := client.Close(); err != nil {
+		t.Fatalf("close failed: %v", err)
+	}
+
+	select {
+	case <-client.done:
+	default:
+		t.Fatal("expected Close to wait for readLoop shutdown")
+	}
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, io.EOF) {
+			t.Fatalf("expected EOF from pending request, got %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for pending request to fail")
+	}
+}
+
 func runFakeProtocolServer(tr *memory.Transport) error {
 	if err := expectHello(tr); err != nil {
 		return err
@@ -177,6 +285,21 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 		}},
 	})
 	if err := sendResponse(tr, req.ID, listResult); err != nil {
+		return err
+	}
+
+	req, err = expectRequest(tr, "set-tags")
+	if err != nil {
+		return err
+	}
+	var setTags SetTagsParams
+	if err := json.Unmarshal(req.Params, &setTags); err != nil {
+		return err
+	}
+	if setTags.TerminalID != "term-1" || setTags.Tags["role"] != "shell" {
+		return fmt.Errorf("unexpected set-tags params: %#v", setTags)
+	}
+	if err := sendResponse(tr, req.ID, json.RawMessage(`{}`)); err != nil {
 		return err
 	}
 
@@ -277,6 +400,28 @@ func runFakeEventServer(tr *memory.Transport) error {
 		return err
 	}
 	return tr.Close()
+}
+
+func runBufferedAttachServer(tr *memory.Transport) error {
+	if err := expectHello(tr); err != nil {
+		return err
+	}
+	if err := respondHello(tr); err != nil {
+		return err
+	}
+
+	req, err := expectRequest(tr, "attach")
+	if err != nil {
+		return err
+	}
+	if err := sendFrame(tr, 7, TypeOutput, []byte("early-output")); err != nil {
+		return err
+	}
+	if err := sendFrame(tr, 7, TypeClosed, EncodeClosedPayload(0)); err != nil {
+		return err
+	}
+	attachResult, _ := json.Marshal(AttachResult{Mode: "collaborator", Channel: 7})
+	return sendResponse(tr, req.ID, attachResult)
 }
 
 func expectHello(tr *memory.Transport) error {

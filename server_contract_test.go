@@ -442,6 +442,53 @@ func TestServerListenAndServeOverUnixSocket(t *testing.T) {
 	}
 }
 
+func TestServerListenAndServeShutdownDoesNotHangWithIdleClient(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "termx.sock")
+	serverCtx, cancelServer := context.WithCancel(context.Background())
+	defer cancelServer()
+
+	srv := NewServer(WithSocketPath(path))
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.ListenAndServe(serverCtx)
+	}()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("socket did not appear: %v", err)
+	}
+
+	conn, err := unixtransport.Dial(path)
+	if err != nil {
+		t.Fatalf("dial failed: %v", err)
+	}
+	client := protocol.NewClient(conn)
+	defer client.Close()
+
+	clientCtx, cancelClient := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelClient()
+	if err := client.Hello(clientCtx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+		t.Fatalf("hello failed: %v", err)
+	}
+
+	cancelServer()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("listen and serve failed: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for server shutdown with idle client")
+	}
+}
+
 func TestHandleRequestDetachReleasesChannelOnce(t *testing.T) {
 	ctx := context.Background()
 	srv := NewServer(WithDefaultKeepAfterExit(2 * time.Second))

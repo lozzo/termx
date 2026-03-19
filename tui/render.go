@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"sync"
 
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
@@ -28,20 +29,38 @@ type drawCell struct {
 }
 
 type composedCanvas struct {
-	width    int
-	height   int
-	cells    [][]drawCell
-	rowCache []string
-	rowDirty []bool
+	width     int
+	height    int
+	cells     [][]drawCell
+	rowCache  []string
+	rowDirty  []bool
+	fullCache string
+	fullDirty bool
+}
+
+type paneRenderEntry struct {
+	PaneID string
+	Rect   Rect
+	Title  string
+}
+
+var styleANSICache sync.Map
+var borderTitleCellCache sync.Map
+var blankFillRowCache = struct {
+	mu   sync.RWMutex
+	rows map[int][]drawCell
+}{
+	rows: make(map[int][]drawCell),
 }
 
 func newComposedCanvas(width, height int) *composedCanvas {
 	c := &composedCanvas{
-		width:    width,
-		height:   height,
-		cells:    make([][]drawCell, height),
-		rowCache: make([]string, height),
-		rowDirty: make([]bool, height),
+		width:     width,
+		height:    height,
+		cells:     make([][]drawCell, height),
+		rowCache:  make([]string, height),
+		rowDirty:  make([]bool, height),
+		fullDirty: true,
 	}
 	for y := 0; y < height; y++ {
 		row := make([]drawCell, width)
@@ -55,24 +74,30 @@ func newComposedCanvas(width, height int) *composedCanvas {
 }
 
 func (m *Model) renderTabComposite(tab *Tab, width, height int) string {
-	rootRect := Rect{X: 0, Y: 0, W: width, H: height}
-	rects := tab.Root.Rects(rootRect)
-	if tab.ZoomedPaneID != "" {
-		if _, ok := rects[tab.ZoomedPaneID]; ok {
-			rects = map[string]Rect{tab.ZoomedPaneID: rootRect}
-		}
+	entries := m.paneRenderEntries(tab, width, height)
+	rects := make(map[string]Rect, len(entries))
+	order := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		rects[entry.PaneID] = entry.Rect
+		order = append(order, entry.PaneID)
 	}
 
 	cache := tab.renderCache
-	if cache == nil || cache.width != width || cache.height != height || cache.zoomedPaneID != tab.ZoomedPaneID || !sameRects(cache.rects, rects) {
+	if cache == nil || cache.width != width || cache.height != height || cache.zoomedPaneID != tab.ZoomedPaneID || !sameRects(cache.rects, rects) || !sameOrder(cache.order, order) {
 		canvas := newComposedCanvas(width, height)
-		for paneID, rect := range rects {
-			pane := tab.Panes[paneID]
-			canvas.drawPane(rect, pane, paneID == tab.ActivePaneID)
+		frameKeys := make(map[string]string, len(rects))
+		for _, entry := range entries {
+			pane := tab.Panes[entry.PaneID]
+			active := entry.PaneID == tab.ActivePaneID
+			frameKey := paneFrameKey(entry.Title, active, entry.Rect)
+			canvas.drawPaneWithTitle(entry.Rect, pane, entry.Title, active)
+			frameKeys[entry.PaneID] = frameKey
 		}
 		tab.renderCache = &tabRenderCache{
 			canvas:       canvas,
 			rects:        cloneRects(rects),
+			order:        append([]string(nil), order...),
+			frameKeys:    frameKeys,
 			width:        width,
 			height:       height,
 			activePaneID: tab.ActivePaneID,
@@ -81,23 +106,24 @@ func (m *Model) renderTabComposite(tab *Tab, width, height int) string {
 		return canvas.String()
 	}
 
-	if cache.activePaneID != tab.ActivePaneID {
-		if rect, ok := cache.rects[cache.activePaneID]; ok {
-			cache.canvas.drawPane(rect, tab.Panes[cache.activePaneID], false)
+	damage := make([]Rect, 0, len(entries))
+	for _, entry := range entries {
+		pane := tab.Panes[entry.PaneID]
+		active := entry.PaneID == tab.ActivePaneID
+		nextFrameKey := paneFrameKey(entry.Title, active, entry.Rect)
+		if cache.frameKeys[entry.PaneID] != nextFrameKey || overlapsAnyRect(entry.Rect, damage) {
+			cache.canvas.drawPaneWithTitle(entry.Rect, pane, entry.Title, active)
+			cache.frameKeys[entry.PaneID] = nextFrameKey
+			damage = append(damage, entry.Rect)
+			continue
 		}
-		if rect, ok := cache.rects[tab.ActivePaneID]; ok {
-			cache.canvas.drawPane(rect, tab.Panes[tab.ActivePaneID], true)
-		}
-		cache.activePaneID = tab.ActivePaneID
-	}
-
-	for paneID, rect := range cache.rects {
-		pane := tab.Panes[paneID]
 		if pane == nil || !pane.renderDirty {
 			continue
 		}
-		cache.canvas.drawPane(rect, pane, paneID == tab.ActivePaneID)
+		cache.canvas.drawPaneBody(entry.Rect, pane, active)
+		damage = append(damage, entry.Rect)
 	}
+	cache.activePaneID = tab.ActivePaneID
 	return cache.canvas.String()
 }
 
@@ -119,18 +145,36 @@ func (c *composedCanvas) set(x, y int, cell drawCell) {
 	cell.Continuation = false
 	if c.cells[y][x] != cell {
 		c.rowDirty[y] = true
+		c.fullDirty = true
 	}
 	c.cells[y][x] = cell
 	for i := 1; i < cell.Width && x+i < c.width; i++ {
 		cont := drawCell{Continuation: true}
 		if c.cells[y][x+i] != cont {
 			c.rowDirty[y] = true
+			c.fullDirty = true
 		}
 		c.cells[y][x+i] = cont
 	}
 }
 
 func (c *composedCanvas) drawPane(rect Rect, pane *Pane, active bool) {
+	c.drawPaneWithTitle(rect, pane, paneTitle(pane), active)
+}
+
+func (c *composedCanvas) drawPaneWithTitle(rect Rect, pane *Pane, title string, active bool) {
+	if rect.W < 2 || rect.H < 2 {
+		return
+	}
+	c.drawPaneFrameWithTitle(rect, title, active)
+	c.drawPaneBody(rect, pane, active)
+}
+
+func (c *composedCanvas) drawPaneFrame(rect Rect, pane *Pane, active bool) {
+	c.drawPaneFrameWithTitle(rect, paneTitle(pane), active)
+}
+
+func (c *composedCanvas) drawPaneFrameWithTitle(rect Rect, title string, active bool) {
 	if rect.W < 2 || rect.H < 2 {
 		return
 	}
@@ -140,14 +184,110 @@ func (c *composedCanvas) drawPane(rect Rect, pane *Pane, active bool) {
 		border = drawStyle{FG: "#22c55e", Bold: true}
 		titleStyle = drawStyle{FG: "#ecfccb", BG: "#111827", Bold: true}
 	}
+	c.drawRectBorder(rect, title, border, titleStyle)
+}
 
-	c.drawRectBorder(rect, paneTitle(pane), border, titleStyle)
-
+func (c *composedCanvas) drawPaneBody(rect Rect, pane *Pane, active bool) {
+	if rect.W < 2 || rect.H < 2 {
+		return
+	}
 	contentRect := Rect{X: rect.X + 1, Y: rect.Y + 1, W: rect.W - 2, H: rect.H - 2}
-	c.fill(contentRect, blankDrawCell())
-	c.drawGrid(contentRect, paneCellsForViewport(pane, contentRect.W, contentRect.H))
+	if pane == nil || (active && pane.live) || !c.drawPaneBodyDirtyRows(contentRect, pane) {
+		c.fill(contentRect, blankDrawCell())
+		if !c.drawPaneSource(contentRect, pane) {
+			c.drawGrid(contentRect, paneCellsForViewport(pane, contentRect.W, contentRect.H))
+			if pane != nil {
+				pane.clearDirtyRegion()
+			}
+		}
+	}
 	if active {
 		c.drawCursor(contentRect, pane, contentRect.W, contentRect.H)
+	}
+}
+
+func (c *composedCanvas) drawPaneBodyDirtyRows(contentRect Rect, pane *Pane) bool {
+	if pane == nil || !pane.dirtyRowsKnown || !pane.renderDirty {
+		return false
+	}
+	switch {
+	case pane.live && pane.VTerm != nil:
+	case snapshotHasVisibleContent(pane.Snapshot):
+	default:
+		return false
+	}
+	offset := paneVisibleOffset(pane)
+	start := max(pane.dirtyRowStart-offset.Y, 0)
+	end := min(pane.dirtyRowEnd-offset.Y, contentRect.H-1)
+	if start > end {
+		pane.clearDirtyRegion()
+		pane.renderDirty = false
+		return true
+	}
+	for row := start; row <= end; row++ {
+		rowRect := Rect{X: contentRect.X, Y: contentRect.Y + row, W: contentRect.W, H: 1}
+		viewColStart := 0
+		if pane.dirtyColsKnown && pane.dirtyRowStart == pane.dirtyRowEnd && row == start {
+			colStart := max(pane.dirtyColStart-offset.X, 0)
+			colEnd := min(pane.dirtyColEnd-offset.X, contentRect.W-1)
+			if colStart <= colEnd {
+				viewColStart = colStart
+				rowRect.X += colStart
+				rowRect.W = colEnd - colStart + 1
+			}
+		}
+		c.fill(rowRect, blankDrawCell())
+		c.drawPaneSourceRow(rowRect, pane, row, viewColStart)
+	}
+	pane.renderDirty = false
+	pane.clearDirtyRegion()
+	return true
+}
+
+func (c *composedCanvas) drawPaneSource(rect Rect, pane *Pane) bool {
+	if pane == nil {
+		return false
+	}
+	offset := paneVisibleOffset(pane)
+	switch {
+	case pane.live && pane.VTerm != nil:
+		c.drawVTermRegion(rect, pane.VTerm, offset)
+		pane.renderDirty = false
+		return true
+	case snapshotHasVisibleContent(pane.Snapshot):
+		c.drawProtocolRegion(rect, pane.Snapshot.Screen.Cells, offset)
+		pane.renderDirty = false
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *composedCanvas) drawPaneSourceRow(rect Rect, pane *Pane, viewRow, viewColStart int) bool {
+	if pane == nil {
+		return false
+	}
+	offset := paneVisibleOffset(pane)
+	rowOffset := Point{X: offset.X + viewColStart, Y: offset.Y + viewRow}
+	switch {
+	case pane.live && pane.VTerm != nil:
+		contentW, contentH := pane.VTerm.Size()
+		c.drawSourceRegion(rect, rowOffset, contentW, contentH, func(x, y int) drawCell {
+			return drawCellFromVTermCell(pane.VTerm.CellAt(x, y))
+		})
+		return true
+	case snapshotHasVisibleContent(pane.Snapshot):
+		rows := pane.Snapshot.Screen.Cells
+		c.drawSourceRegion(rect, rowOffset, 0, len(rows), func(x, y int) drawCell {
+			row := rows[y]
+			if x < 0 || x >= len(row) {
+				return drawCell{}
+			}
+			return drawCellFromProtocolCell(row[x])
+		})
+		return true
+	default:
+		return false
 	}
 }
 
@@ -168,8 +308,7 @@ func (c *composedCanvas) drawRectBorder(rect Rect, title string, borderStyle, ti
 	if rect.W <= 2 {
 		return
 	}
-	title = truncateTextToWidth(" "+title+" ", rect.W-2)
-	for x, cell := range stringToDrawCells(title, titleStyle) {
+	for x, cell := range borderTitleCells(title, rect.W-2, titleStyle) {
 		if x >= rect.W-2 {
 			break
 		}
@@ -188,6 +327,59 @@ func (c *composedCanvas) drawGrid(rect Rect, grid [][]drawCell) {
 				break
 			}
 			if cell.Continuation {
+				continue
+			}
+			c.set(rect.X+x, rect.Y+y, cell)
+		}
+	}
+}
+
+func (c *composedCanvas) drawVTermRegion(rect Rect, vt *localvterm.VTerm, offset Point) {
+	if vt == nil {
+		return
+	}
+	contentW, contentH := vt.Size()
+	c.drawSourceRegion(rect, offset, contentW, contentH, func(x, y int) drawCell {
+		return drawCellFromVTermCell(vt.CellAt(x, y))
+	})
+}
+
+func (c *composedCanvas) drawProtocolRegion(rect Rect, rows [][]protocol.Cell, offset Point) {
+	contentH := len(rows)
+	c.drawSourceRegion(rect, offset, 0, contentH, func(x, y int) drawCell {
+		row := rows[y]
+		if x < 0 || x >= len(row) {
+			return drawCell{}
+		}
+		return drawCellFromProtocolCell(row[x])
+	})
+}
+
+func (c *composedCanvas) drawSourceRegion(rect Rect, offset Point, contentW, contentH int, cellAt func(x, y int) drawCell) {
+	for y := 0; y < rect.H; y++ {
+		srcY := offset.Y + y
+		if srcY < 0 || srcY >= contentH {
+			continue
+		}
+		for x := 0; x < rect.W; x++ {
+			srcX := offset.X + x
+			if contentW > 0 && (srcX < 0 || srcX >= contentW) {
+				continue
+			}
+			cell := cellAt(srcX, srcY)
+			if cell.Continuation {
+				continue
+			}
+			if cell.Content == "" {
+				if cell.Style == (drawStyle{}) {
+					continue
+				}
+				cell = blankDrawCell()
+			}
+			if cell.Width <= 0 {
+				cell.Width = max(1, xansi.StringWidth(cell.Content))
+			}
+			if x+cell.Width > rect.W {
 				continue
 			}
 			c.set(rect.X+x, rect.Y+y, cell)
@@ -227,6 +419,32 @@ func (c *composedCanvas) drawCursor(rect Rect, pane *Pane, viewW, viewH int) {
 	c.set(x, y, cell)
 }
 
+func (c *composedCanvas) drawPaneCursorOnly(rect Rect, pane *Pane, active bool) {
+	if rect.W < 2 || rect.H < 2 || pane == nil {
+		return
+	}
+	contentRect := Rect{X: rect.X + 1, Y: rect.Y + 1, W: rect.W - 2, H: rect.H - 2}
+	cursor := paneCursorForViewport(pane, contentRect.W, contentRect.H)
+	if !cursor.Visible || cursor.Row < 0 || cursor.Col < 0 || cursor.Row >= contentRect.H || cursor.Col >= contentRect.W {
+		return
+	}
+	cell, startCol, ok := paneVisibleCell(pane, cursor.Col, cursor.Row, contentRect.W, contentRect.H)
+	if !ok {
+		cell = blankDrawCell()
+		startCol = cursor.Col
+	}
+	if active {
+		cell.Style.Reverse = !cell.Style.Reverse
+		switch cursor.Shape {
+		case localvterm.CursorUnderline:
+			cell.Style.Underline = true
+		case localvterm.CursorBar:
+			cell.Style.Bold = true
+		}
+	}
+	c.set(contentRect.X+startCol, contentRect.Y+cursor.Row, cell)
+}
+
 func (c *composedCanvas) drawText(rect Rect, lines []string, style drawStyle) {
 	for y := 0; y < rect.H && y < len(lines); y++ {
 		cells := stringToDrawCells(truncateTextToWidth(lines[y], rect.W), style)
@@ -243,6 +461,34 @@ func (c *composedCanvas) drawText(rect Rect, lines []string, style drawStyle) {
 }
 
 func (c *composedCanvas) fill(rect Rect, cell drawCell) {
+	if rect.W <= 0 || rect.H <= 0 {
+		return
+	}
+	if rect.X < 0 {
+		rect.W += rect.X
+		rect.X = 0
+	}
+	if rect.Y < 0 {
+		rect.H += rect.Y
+		rect.Y = 0
+	}
+	if rect.X >= c.width || rect.Y >= c.height {
+		return
+	}
+	rect.W = min(rect.W, c.width-rect.X)
+	rect.H = min(rect.H, c.height-rect.Y)
+	if rect.W <= 0 || rect.H <= 0 {
+		return
+	}
+	if cell == blankDrawCell() {
+		row := cachedBlankFillRow(rect.W)
+		for y := rect.Y; y < rect.Y+rect.H; y++ {
+			copy(c.cells[y][rect.X:rect.X+rect.W], row)
+			c.rowDirty[y] = true
+		}
+		c.fullDirty = true
+		return
+	}
 	for y := rect.Y; y < rect.Y+rect.H; y++ {
 		for x := rect.X; x < rect.X+rect.W; x++ {
 			c.set(x, y, cell)
@@ -250,7 +496,57 @@ func (c *composedCanvas) fill(rect Rect, cell drawCell) {
 	}
 }
 
+func cachedBlankFillRow(width int) []drawCell {
+	if width <= 0 {
+		return nil
+	}
+	blankFillRowCache.mu.RLock()
+	row := blankFillRowCache.rows[width]
+	blankFillRowCache.mu.RUnlock()
+	if row != nil {
+		return row
+	}
+	row = make([]drawCell, width)
+	row[0] = blankDrawCell()
+	for filled := 1; filled < width; filled *= 2 {
+		copy(row[filled:], row[:min(filled, width-filled)])
+	}
+	blankFillRowCache.mu.Lock()
+	if cached := blankFillRowCache.rows[width]; cached != nil {
+		row = cached
+	} else {
+		blankFillRowCache.rows[width] = row
+	}
+	blankFillRowCache.mu.Unlock()
+	return row
+}
+
+func (c *composedCanvas) blit(src *composedCanvas, dstX, dstY int) {
+	if c == nil || src == nil {
+		return
+	}
+	for y := 0; y < src.height; y++ {
+		targetY := dstY + y
+		if targetY < 0 || targetY >= c.height {
+			continue
+		}
+		startX := max(0, dstX)
+		endX := min(c.width, dstX+src.width)
+		if startX >= endX {
+			continue
+		}
+		srcStart := startX - dstX
+		srcEnd := srcStart + (endX - startX)
+		copy(c.cells[targetY][startX:endX], src.cells[y][srcStart:srcEnd])
+		c.rowDirty[targetY] = true
+		c.fullDirty = true
+	}
+}
+
 func (c *composedCanvas) String() string {
+	if !c.fullDirty && c.fullCache != "" {
+		return c.fullCache
+	}
 	for y := 0; y < c.height; y++ {
 		if !c.rowDirty[y] && c.rowCache[y] != "" {
 			continue
@@ -284,7 +580,23 @@ func (c *composedCanvas) String() string {
 		}
 		out.WriteString(c.rowCache[y])
 	}
-	return out.String()
+	c.fullCache = out.String()
+	c.fullDirty = false
+	return c.fullCache
+}
+
+func paneFrameKey(title string, active bool, rect Rect) string {
+	if title == "" {
+		if active {
+			return "active:nil:" + itoa(rect.W) + ":" + itoa(rect.H)
+		}
+		return "inactive:nil:" + itoa(rect.W) + ":" + itoa(rect.H)
+	}
+	state := "inactive"
+	if active {
+		state = "active"
+	}
+	return state + ":" + title + ":" + itoa(rect.W) + ":" + itoa(rect.H)
 }
 
 func sameRects(a, b map[string]Rect) bool {
@@ -305,6 +617,68 @@ func cloneRects(src map[string]Rect) map[string]Rect {
 		out[key] = value
 	}
 	return out
+}
+
+func sameOrder(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func overlapsAnyRect(rect Rect, others []Rect) bool {
+	for _, other := range others {
+		if rectsOverlap(rect, other) {
+			return true
+		}
+	}
+	return false
+}
+
+func rectsOverlap(a, b Rect) bool {
+	return a.X < b.X+b.W && b.X < a.X+a.W && a.Y < b.Y+b.H && b.Y < a.Y+a.H
+}
+
+func (m *Model) paneRenderEntries(tab *Tab, width, height int) []paneRenderEntry {
+	if tab == nil {
+		return nil
+	}
+	rootRect := Rect{X: 0, Y: 0, W: width, H: height}
+	entries := make([]paneRenderEntry, 0, len(tab.Panes))
+	if tab.Root != nil {
+		tilingRects := tab.Root.Rects(rootRect)
+		tilingIDs := tab.Root.LeafIDs()
+		if tab.ZoomedPaneID != "" {
+			if _, ok := tilingRects[tab.ZoomedPaneID]; ok {
+				tilingRects = map[string]Rect{tab.ZoomedPaneID: rootRect}
+				tilingIDs = []string{tab.ZoomedPaneID}
+			}
+		}
+		for _, paneID := range tilingIDs {
+			rect, ok := tilingRects[paneID]
+			if !ok {
+				continue
+			}
+			entries = append(entries, paneRenderEntry{
+				PaneID: paneID,
+				Rect:   rect,
+				Title:  paneFrameTitle(tab, paneID, tab.Panes[paneID]),
+			})
+		}
+	}
+	for _, floating := range m.visibleFloatingPanes(tab) {
+		entries = append(entries, paneRenderEntry{
+			PaneID: floating.PaneID,
+			Rect:   floating.Rect,
+			Title:  paneFrameTitle(tab, floating.PaneID, tab.Panes[floating.PaneID]),
+		})
+	}
+	return entries
 }
 
 func paneCells(pane *Pane) [][]drawCell {
@@ -331,11 +705,124 @@ func paneCells(pane *Pane) [][]drawCell {
 }
 
 func paneCellsForViewport(pane *Pane, viewW, viewH int) [][]drawCell {
-	grid := paneCells(pane)
-	if pane == nil || pane.Mode != ViewportModeFixed {
-		return grid
+	if pane == nil {
+		return nil
 	}
-	return cropDrawGrid(grid, pane.Offset, viewW, viewH)
+	if pane.Mode != ViewportModeFixed {
+		return paneCells(pane)
+	}
+	viewW = max(1, viewW)
+	viewH = max(1, viewH)
+	if pane.viewportCache != nil &&
+		pane.viewportOffset == pane.Offset &&
+		pane.viewportWidth == viewW &&
+		pane.viewportHeight == viewH &&
+		pane.viewportVersion == pane.cellVersion {
+		return pane.viewportCache
+	}
+
+	if grid, ok := fixedViewportGridFromSource(pane, viewW, viewH); ok {
+		pane.viewportCache = grid
+		pane.viewportOffset = pane.Offset
+		pane.viewportWidth = viewW
+		pane.viewportHeight = viewH
+		pane.viewportVersion = pane.cellVersion
+		pane.renderDirty = false
+		return pane.viewportCache
+	}
+
+	grid := paneCells(pane)
+	pane.viewportCache = cropDrawGrid(grid, pane.Offset, viewW, viewH)
+	pane.viewportOffset = pane.Offset
+	pane.viewportWidth = viewW
+	pane.viewportHeight = viewH
+	pane.viewportVersion = pane.cellVersion
+	return pane.viewportCache
+}
+
+func paneVisibleOffset(pane *Pane) Point {
+	if pane == nil || pane.Mode != ViewportModeFixed {
+		return Point{}
+	}
+	return pane.Offset
+}
+
+func paneVisibleCell(pane *Pane, viewX, viewY, viewW, viewH int) (drawCell, int, bool) {
+	if pane == nil {
+		return drawCell{}, 0, false
+	}
+	offset := paneVisibleOffset(pane)
+	srcX := offset.X + viewX
+	srcY := offset.Y + viewY
+
+	switch {
+	case pane.live && pane.VTerm != nil:
+		contentW, contentH := pane.VTerm.Size()
+		if srcX < 0 || srcY < 0 || srcX >= contentW || srcY >= contentH {
+			return drawCell{}, 0, false
+		}
+		for srcX > 0 {
+			cell := drawCellFromVTermCell(pane.VTerm.CellAt(srcX, srcY))
+			if !cell.Continuation {
+				break
+			}
+			srcX--
+		}
+		cell := drawCellFromVTermCell(pane.VTerm.CellAt(srcX, srcY))
+		startCol := srcX - offset.X
+		if cell.Continuation || startCol < 0 || startCol >= viewW || startCol+cell.Width > viewW {
+			return drawCell{}, 0, false
+		}
+		return cell, startCol, true
+	case snapshotHasVisibleContent(pane.Snapshot):
+		if srcY < 0 || srcY >= len(pane.Snapshot.Screen.Cells) {
+			return drawCell{}, 0, false
+		}
+		row := pane.Snapshot.Screen.Cells[srcY]
+		if srcX < 0 || srcX >= len(row) {
+			return drawCell{}, 0, false
+		}
+		for srcX > 0 {
+			cell := drawCellFromProtocolCell(row[srcX])
+			if !cell.Continuation {
+				break
+			}
+			srcX--
+		}
+		cell := drawCellFromProtocolCell(row[srcX])
+		startCol := srcX - offset.X
+		if cell.Continuation || startCol < 0 || startCol >= viewW || startCol+cell.Width > viewW {
+			return drawCell{}, 0, false
+		}
+		return cell, startCol, true
+	default:
+		grid := paneCellsForViewport(pane, viewW, viewH)
+		if viewY < 0 || viewY >= len(grid) || viewX < 0 || viewX >= len(grid[viewY]) {
+			return drawCell{}, 0, false
+		}
+		startCol := viewX
+		for startCol > 0 && grid[viewY][startCol].Continuation {
+			startCol--
+		}
+		cell := grid[viewY][startCol]
+		if cell.Continuation || startCol+cell.Width > viewW {
+			return drawCell{}, 0, false
+		}
+		return cell, startCol, true
+	}
+}
+
+func fixedViewportGridFromSource(pane *Pane, viewW, viewH int) ([][]drawCell, bool) {
+	switch {
+	case pane == nil:
+		return nil, false
+	case pane.live && pane.VTerm != nil:
+		return convertVTermViewport(pane.VTerm, pane.Offset, viewW, viewH), true
+	case snapshotHasVisibleContent(pane.Snapshot):
+		return convertProtocolViewport(pane.Snapshot.Screen.Cells, pane.Offset, viewW, viewH), true
+	default:
+		return nil, false
+	}
 }
 
 func paneCursor(pane *Pane) localvterm.CursorState {
@@ -375,16 +862,12 @@ func cropDrawGrid(grid [][]drawCell, offset Point, width, height int) [][]drawCe
 		return nil
 	}
 
-	out := make([][]drawCell, height)
+	out := blankDrawGrid(width, height)
 	for y := 0; y < height; y++ {
-		row := make([]drawCell, width)
-		for x := range row {
-			row[x] = blankDrawCell()
-		}
+		row := out[y]
 
 		srcY := offset.Y + y
 		if srcY < 0 || srcY >= len(grid) {
-			out[y] = row
 			continue
 		}
 
@@ -414,7 +897,17 @@ func cropDrawGrid(grid [][]drawCell, offset Point, width, height int) [][]drawCe
 				row[x+i] = drawCell{Continuation: true}
 			}
 		}
+	}
+	return out
+}
 
+func blankDrawGrid(width, height int) [][]drawCell {
+	out := make([][]drawCell, height)
+	for y := range out {
+		row := make([]drawCell, width)
+		for x := range row {
+			row[x] = blankDrawCell()
+		}
 		out[y] = row
 	}
 	return out
@@ -462,22 +955,7 @@ func convertVTermGrid(rows [][]localvterm.Cell) [][]drawCell {
 	for y, row := range rows {
 		out[y] = make([]drawCell, len(row))
 		for x, cell := range row {
-			continuation := cell.Content == "" && cell.Width == 0
-			out[y][x] = drawCell{
-				Content:      cell.Content,
-				Width:        max(1, cell.Width),
-				Continuation: continuation,
-				Style: drawStyle{
-					FG:        cell.Style.FG,
-					BG:        cell.Style.BG,
-					Bold:      cell.Style.Bold,
-					Italic:    cell.Style.Italic,
-					Underline: cell.Style.Underline,
-					Blink:     cell.Style.Blink,
-					Reverse:   cell.Style.Reverse,
-					Strike:    cell.Style.Strikethrough,
-				},
-			}
+			out[y][x] = drawCellFromVTermCell(cell)
 		}
 	}
 	return out
@@ -488,29 +966,111 @@ func convertProtocolGrid(rows [][]protocol.Cell) [][]drawCell {
 	for y, row := range rows {
 		out[y] = make([]drawCell, len(row))
 		for x, cell := range row {
-			width := cell.Width
-			continuation := cell.Content == "" && width == 0
-			if width == 0 {
-				width = max(1, xansi.StringWidth(cell.Content))
-			}
-			out[y][x] = drawCell{
-				Content:      cell.Content,
-				Width:        max(1, width),
-				Continuation: continuation,
-				Style: drawStyle{
-					FG:        cell.Style.FG,
-					BG:        cell.Style.BG,
-					Bold:      cell.Style.Bold,
-					Italic:    cell.Style.Italic,
-					Underline: cell.Style.Underline,
-					Blink:     cell.Style.Blink,
-					Reverse:   cell.Style.Reverse,
-					Strike:    cell.Style.Strikethrough,
-				},
-			}
+			out[y][x] = drawCellFromProtocolCell(cell)
 		}
 	}
 	return out
+}
+
+func convertVTermViewport(vt *localvterm.VTerm, offset Point, width, height int) [][]drawCell {
+	out := blankDrawGrid(width, height)
+	if vt == nil {
+		return out
+	}
+	contentW, contentH := vt.Size()
+	for y := 0; y < height; y++ {
+		srcY := offset.Y + y
+		if srcY < 0 || srcY >= contentH {
+			continue
+		}
+		fillViewportRow(out[y], width, offset.X, contentW, func(srcX int) drawCell {
+			return drawCellFromVTermCell(vt.CellAt(srcX, srcY))
+		})
+	}
+	return out
+}
+
+func convertProtocolViewport(rows [][]protocol.Cell, offset Point, width, height int) [][]drawCell {
+	out := blankDrawGrid(width, height)
+	for y := 0; y < height; y++ {
+		srcY := offset.Y + y
+		if srcY < 0 || srcY >= len(rows) {
+			continue
+		}
+		row := rows[srcY]
+		fillViewportRow(out[y], width, offset.X, len(row), func(srcX int) drawCell {
+			return drawCellFromProtocolCell(row[srcX])
+		})
+	}
+	return out
+}
+
+func fillViewportRow(dst []drawCell, viewW, offsetX, contentW int, cellAt func(srcX int) drawCell) {
+	for x := 0; x < viewW; x++ {
+		srcX := offsetX + x
+		if srcX < 0 || srcX >= contentW {
+			continue
+		}
+		cell := cellAt(srcX)
+		if cell.Continuation {
+			continue
+		}
+		if cell.Content == "" {
+			cell = blankDrawCell()
+		}
+		if cell.Width <= 0 {
+			cell.Width = max(1, xansi.StringWidth(cell.Content))
+		}
+		if x+cell.Width > viewW {
+			continue
+		}
+		dst[x] = cell
+		for i := 1; i < cell.Width && x+i < viewW; i++ {
+			dst[x+i] = drawCell{Continuation: true}
+		}
+	}
+}
+
+func drawCellFromVTermCell(cell localvterm.Cell) drawCell {
+	continuation := cell.Content == "" && cell.Width == 0
+	return drawCell{
+		Content:      cell.Content,
+		Width:        max(1, cell.Width),
+		Continuation: continuation,
+		Style: drawStyle{
+			FG:        cell.Style.FG,
+			BG:        cell.Style.BG,
+			Bold:      cell.Style.Bold,
+			Italic:    cell.Style.Italic,
+			Underline: cell.Style.Underline,
+			Blink:     cell.Style.Blink,
+			Reverse:   cell.Style.Reverse,
+			Strike:    cell.Style.Strikethrough,
+		},
+	}
+}
+
+func drawCellFromProtocolCell(cell protocol.Cell) drawCell {
+	width := cell.Width
+	continuation := cell.Content == "" && width == 0
+	if width == 0 {
+		width = max(1, xansi.StringWidth(cell.Content))
+	}
+	return drawCell{
+		Content:      cell.Content,
+		Width:        max(1, width),
+		Continuation: continuation,
+		Style: drawStyle{
+			FG:        cell.Style.FG,
+			BG:        cell.Style.BG,
+			Bold:      cell.Style.Bold,
+			Italic:    cell.Style.Italic,
+			Underline: cell.Style.Underline,
+			Blink:     cell.Style.Blink,
+			Reverse:   cell.Style.Reverse,
+			Strike:    cell.Style.Strikethrough,
+		},
+	}
 }
 
 func textLinesToGrid(lines []string) [][]drawCell {
@@ -583,11 +1143,69 @@ func paneTitle(pane *Pane) string {
 	if pane == nil {
 		return "pane"
 	}
-	return coalesce(pane.Title, pane.TerminalID, pane.ID)
+	title := coalesce(pane.Title, pane.TerminalID, pane.ID)
+	switch paneTerminalState(pane) {
+	case "waiting":
+		return "[waiting] " + title
+	case "killed":
+		return "[killed] " + title
+	case "exited":
+		if pane.ExitCode != nil {
+			return "[exited code=" + itoa(*pane.ExitCode) + "] " + title
+		}
+		return "[exited] " + title
+	default:
+		return title
+	}
+}
+
+func paneFrameTitle(tab *Tab, paneID string, pane *Pane) string {
+	title := paneTitle(pane)
+	z, total, ok := floatingPaneOrder(tab, paneID)
+	if !ok {
+		return title
+	}
+	if total > 1 {
+		return title + " [floating z:" + itoa(z) + "]"
+	}
+	return title + " [floating]"
 }
 
 func welcomePaneLines(pane *Pane) []string {
 	title := paneTitle(pane)
+	switch paneTerminalState(pane) {
+	case "waiting":
+		return []string{
+			"waiting for terminal",
+			"",
+			"viewport: " + title,
+			"",
+			"load-layout can create or attach a matching terminal later",
+		}
+	case "killed":
+		return []string{
+			"terminal was killed",
+			"",
+			"viewport: " + title,
+			"",
+			"close this viewport with Ctrl-a x",
+			"or attach another terminal with Ctrl-a f",
+		}
+	case "exited":
+		code := ""
+		if pane != nil && pane.ExitCode != nil {
+			code = " (exit code " + itoa(*pane.ExitCode) + ")"
+		}
+		return []string{
+			"terminal exited" + code,
+			"",
+			"viewport: " + title,
+			"",
+			"scrollback remains readable",
+			"press r to restart in this viewport",
+			"attach another terminal with Ctrl-a f if needed",
+		}
+	}
 	return []string{
 		"termx interactive pane",
 		"",
@@ -605,40 +1223,84 @@ func styleDiffANSI(from, to drawStyle) string {
 	if from == to {
 		return ""
 	}
-	if to == (drawStyle{}) {
-		return "\x1b[0m"
+	return styleANSI(to)
+}
+
+func styleANSI(to drawStyle) string {
+	if cached, ok := styleANSICache.Load(to); ok {
+		return cached.(string)
 	}
-	codes := make([]string, 0, 12)
-	codes = append(codes, "0")
+	var b strings.Builder
+	b.WriteString("\x1b[0")
+	if to == (drawStyle{}) {
+		b.WriteByte('m')
+		ansi := b.String()
+		styleANSICache.Store(to, ansi)
+		return ansi
+	}
 	if to.FG != "" {
 		if rgb, ok := hexToRGB(to.FG); ok {
-			codes = append(codes, "38", "2", itoa(rgb[0]), itoa(rgb[1]), itoa(rgb[2]))
+			b.WriteString(";38;2;")
+			b.WriteString(itoa(rgb[0]))
+			b.WriteByte(';')
+			b.WriteString(itoa(rgb[1]))
+			b.WriteByte(';')
+			b.WriteString(itoa(rgb[2]))
 		}
 	}
 	if to.BG != "" {
 		if rgb, ok := hexToRGB(to.BG); ok {
-			codes = append(codes, "48", "2", itoa(rgb[0]), itoa(rgb[1]), itoa(rgb[2]))
+			b.WriteString(";48;2;")
+			b.WriteString(itoa(rgb[0]))
+			b.WriteByte(';')
+			b.WriteString(itoa(rgb[1]))
+			b.WriteByte(';')
+			b.WriteString(itoa(rgb[2]))
 		}
 	}
 	if to.Bold {
-		codes = append(codes, "1")
+		b.WriteString(";1")
 	}
 	if to.Italic {
-		codes = append(codes, "3")
+		b.WriteString(";3")
 	}
 	if to.Underline {
-		codes = append(codes, "4")
+		b.WriteString(";4")
 	}
 	if to.Blink {
-		codes = append(codes, "5")
+		b.WriteString(";5")
 	}
 	if to.Reverse {
-		codes = append(codes, "7")
+		b.WriteString(";7")
 	}
 	if to.Strike {
-		codes = append(codes, "9")
+		b.WriteString(";9")
 	}
-	return "\x1b[" + strings.Join(codes, ";") + "m"
+	b.WriteByte('m')
+	ansi := b.String()
+	styleANSICache.Store(to, ansi)
+	return ansi
+}
+
+func borderTitleCells(title string, width int, style drawStyle) []drawCell {
+	if width <= 0 {
+		return nil
+	}
+	key := struct {
+		Title string
+		Width int
+		Style drawStyle
+	}{
+		Title: title,
+		Width: width,
+		Style: style,
+	}
+	if cached, ok := borderTitleCellCache.Load(key); ok {
+		return cached.([]drawCell)
+	}
+	cells := stringToDrawCells(truncateTextToWidth(" "+title+" ", width), style)
+	borderTitleCellCache.Store(key, cells)
+	return cells
 }
 
 func itoa(v int) string {

@@ -319,7 +319,8 @@ C-a : save-layout mysetup
     - 绑定的 Terminal 的 command（用于创建）
     - Viewport 模式（fit/fixed）
     - 分割方向和比例
-    - 浮动 Viewport 的位置和大小
+    - 浮动 Viewport 的大小（第一阶段）
+    - 浮动 Viewport 的位置锚点由布局文件的 `position` 或默认 `center` 决定
 → 写入 ~/.config/termx/layouts/mysetup.yaml
 ```
 
@@ -434,7 +435,8 @@ workspace state（快照）：
 TUI 命令模式：
 ```
 :save-layout <name>              保存当前布局为模板
-:load-layout <name>              加载布局到新 Workspace
+:load-layout <name> [create|prompt|skip]
+                                 加载布局到新 Workspace
 :list-layouts                    列出所有可用布局
 :edit-layout <name>              用 $EDITOR 打开布局文件
 :delete-layout <name>            删除布局文件

@@ -12,6 +12,7 @@ require (
 	github.com/charmbracelet/x/vt v0.0.0-20260316093931-f2fb44ab3145
 	github.com/creack/pty v1.1.24
 	github.com/spf13/cobra v1.10.2
+	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/term v0.41.0
 )
 

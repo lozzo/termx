@@ -325,7 +325,7 @@ Viewport 显示的内容：
 默认：跟随光标
   光标移动 → viewport 自动平移，保持光标在可见区域内
 
-锚定（pin）：快捷键 C-a P
+锚定（pin）：快捷键 C-a v p
   固定当前视角，不再跟随光标
   再按一次 → 取消锚定，恢复跟随
 
@@ -392,7 +392,7 @@ VP-C 和 VP-D 观察同一个 T3：
 - 每个浮动 Viewport 有独立的位置 (x, y)、大小 (w, h)、z-order
 - 默认居中创建，80% 宽高
 - 可拖动移动、拖动边缘调整大小
-- `C-a W` 切换所有浮动 Viewport 的显示/隐藏
+- `C-a o v` 切换所有浮动 Viewport 的显示/隐藏
 
 ### 两层的关系
 
@@ -499,7 +499,7 @@ Viewport 属性：
     → 状态栏显示 [readonly] 标记
     → 仍可使用 C-a 前缀键操作 TUI 本身
 
-  切换：C-a R（toggle readonly）
+  切换：C-a v r（toggle readonly）
 
   用途：
     - 观察 AI agent 工作时，避免误触

@@ -9,6 +9,7 @@ import (
 type Client interface {
 	Close() error
 	Create(ctx context.Context, command []string, name string, size protocol.Size) (*protocol.CreateResult, error)
+	SetTags(ctx context.Context, terminalID string, tags map[string]string) error
 	List(ctx context.Context) (*protocol.ListResult, error)
 	Attach(ctx context.Context, terminalID string, mode string) (*protocol.AttachResult, error)
 	Snapshot(ctx context.Context, terminalID string, offset, limit int) (*protocol.Snapshot, error)
@@ -34,6 +35,10 @@ func (c *ProtocolClient) Create(ctx context.Context, command []string, name stri
 		Name:    name,
 		Size:    size,
 	})
+}
+
+func (c *ProtocolClient) SetTags(ctx context.Context, terminalID string, tags map[string]string) error {
+	return c.inner.SetTags(ctx, terminalID, tags)
 }
 
 func (c *ProtocolClient) List(ctx context.Context) (*protocol.ListResult, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -19,6 +20,20 @@ import (
 	"golang.org/x/term"
 )
 
+var (
+	isInteractiveTerminal = func() bool {
+		return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
+	}
+	runTUI               = tui.Run
+	dialOrStartTUIClient = func(path string, logFile string, logger *slog.Logger) (tui.Client, error) {
+		client, err := dialOrStartClient(path, logFile, logger)
+		if err != nil {
+			return nil, err
+		}
+		return tui.NewProtocolClient(client), nil
+	}
+)
+
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -28,29 +43,45 @@ func main() {
 
 func newRootCmd() *cobra.Command {
 	var socket string
+	var logFile string
+	var layout string
 	cmd := &cobra.Command{
 		Use: "termx",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd())) {
-				return fmt.Errorf("termx TUI requires an interactive terminal; use `termx --help` or subcommands like `new`, `ls`, `attach`, `kill`, `daemon`")
-			}
-			client, err := dialOrStartClient(resolveSocket(socket))
+			logger, closeLogger, logPath, err := openLogFileLogger(logFile)
 			if err != nil {
 				return err
 			}
+			defer closeLogger()
+			logger.Info("starting tui root command", "socket", resolveSocket(socket), "log_file", logPath, "layout", layout)
+			if !isInteractiveTerminal() {
+				return fmt.Errorf("termx TUI requires an interactive terminal; use `termx --help` or subcommands like `new`, `ls`, `attach`, `kill`, `daemon`")
+			}
+			client, err := dialOrStartTUIClient(resolveSocket(socket), logPath, logger)
+			if err != nil {
+				logger.Error("failed to connect to daemon", "error", err)
+				return err
+			}
 			defer client.Close()
-			return tui.Run(tui.NewProtocolClient(client), tui.Config{
-				DefaultShell: os.Getenv("SHELL"),
-				Workspace:    "main",
+			return runTUI(client, tui.Config{
+				DefaultShell:       os.Getenv("SHELL"),
+				Workspace:          "main",
+				StartupLayout:      layout,
+				WorkspaceStatePath: resolveWorkspaceStatePath(),
+				StartupAutoLayout:  true,
+				StartupPicker:      true,
+				Logger:             logger,
 			}, os.Stdin, os.Stdout)
 		},
 	}
 	cmd.PersistentFlags().StringVar(&socket, "socket", "", "socket path")
+	cmd.PersistentFlags().StringVar(&logFile, "log-file", "", "log file path (default: $TERMX_LOG_FILE or XDG state dir)")
+	cmd.Flags().StringVar(&layout, "layout", "", "startup layout name or YAML path")
 	cmd.AddCommand(daemonCommand(&socket))
-	cmd.AddCommand(newCommand(&socket))
-	cmd.AddCommand(lsCommand(&socket))
-	cmd.AddCommand(killCommand(&socket))
-	cmd.AddCommand(attachCommand(&socket))
+	cmd.AddCommand(newCommand(&socket, &logFile))
+	cmd.AddCommand(lsCommand(&socket, &logFile))
+	cmd.AddCommand(killCommand(&socket, &logFile))
+	cmd.AddCommand(attachCommand(&socket, &logFile))
 	return cmd
 }
 
@@ -58,24 +89,42 @@ func daemonCommand(socket *string) *cobra.Command {
 	return &cobra.Command{
 		Use: "daemon",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			logFile, _ := cmd.Flags().GetString("log-file")
+			logger, closeLogger, logPath, err := openLogFileLogger(logFile)
+			if err != nil {
+				return err
+			}
+			defer closeLogger()
+			logger.Info("starting daemon", "socket", resolveSocket(*socket), "log_file", logPath)
 			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
-			opts := []termx.ServerOption{}
+			opts := []termx.ServerOption{termx.WithLogger(logger)}
 			if *socket != "" {
 				opts = append(opts, termx.WithSocketPath(*socket))
 			}
 			srv := termx.NewServer(opts...)
-			return srv.ListenAndServe(ctx)
+			err = srv.ListenAndServe(ctx)
+			if err != nil {
+				logger.Error("daemon exited with error", "error", err)
+			} else {
+				logger.Info("daemon exited")
+			}
+			return err
 		},
 	}
 }
 
-func newCommand(socket *string) *cobra.Command {
+func newCommand(socket *string, logFile *string) *cobra.Command {
 	var name string
 	cmd := &cobra.Command{
 		Use:  "new -- CMD [ARGS...]",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			logger, closeLogger, logPath, err := openLogFileLogger(*logFile)
+			if err != nil {
+				return err
+			}
+			defer closeLogger()
 			if len(args) == 0 {
 				shell := os.Getenv("SHELL")
 				if shell == "" {
@@ -83,7 +132,8 @@ func newCommand(socket *string) *cobra.Command {
 				}
 				args = []string{shell}
 			}
-			client, err := dialOrStartClient(resolveSocket(*socket))
+			logger.Info("creating terminal", "socket", resolveSocket(*socket), "command", strings.Join(args, " "), "log_file", logPath)
+			client, err := dialOrStartClient(resolveSocket(*socket), logPath, logger)
 			if err != nil {
 				return err
 			}
@@ -94,8 +144,10 @@ func newCommand(socket *string) *cobra.Command {
 				Size:    currentSize(),
 			})
 			if err != nil {
+				logger.Error("create terminal failed", "error", err)
 				return err
 			}
+			logger.Info("created terminal", "terminal_id", created.TerminalID)
 			fmt.Fprintln(cmd.OutOrStdout(), created.TerminalID)
 			return nil
 		},
@@ -104,19 +156,26 @@ func newCommand(socket *string) *cobra.Command {
 	return cmd
 }
 
-func lsCommand(socket *string) *cobra.Command {
+func lsCommand(socket *string, logFile *string) *cobra.Command {
 	return &cobra.Command{
 		Use: "ls",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := dialOrStartClient(resolveSocket(*socket))
+			logger, closeLogger, _, err := openLogFileLogger(*logFile)
+			if err != nil {
+				return err
+			}
+			defer closeLogger()
+			client, err := dialOrStartClient(resolveSocket(*socket), resolveLogFilePath(*logFile), logger)
 			if err != nil {
 				return err
 			}
 			defer client.Close()
 			list, err := client.List(context.Background())
 			if err != nil {
+				logger.Error("list terminals failed", "error", err)
 				return err
 			}
+			logger.Info("listed terminals", "count", len(list.Terminals))
 			for _, item := range list.Terminals {
 				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%dx%d\n",
 					item.ID, item.Name, strings.Join(item.Command, " "), item.State, item.Size.Cols, item.Size.Rows)
@@ -126,105 +185,54 @@ func lsCommand(socket *string) *cobra.Command {
 	}
 }
 
-func killCommand(socket *string) *cobra.Command {
+func killCommand(socket *string, logFile *string) *cobra.Command {
 	return &cobra.Command{
 		Use:  "kill <id>",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := dialOrStartClient(resolveSocket(*socket))
+			logger, closeLogger, logPath, err := openLogFileLogger(*logFile)
+			if err != nil {
+				return err
+			}
+			defer closeLogger()
+			logger.Info("killing terminal", "terminal_id", args[0], "socket", resolveSocket(*socket), "log_file", logPath)
+			client, err := dialOrStartClient(resolveSocket(*socket), logPath, logger)
 			if err != nil {
 				return err
 			}
 			defer client.Close()
-			return client.Kill(context.Background(), args[0])
+			err = client.Kill(context.Background(), args[0])
+			if err != nil {
+				logger.Error("kill terminal failed", "terminal_id", args[0], "error", err)
+			}
+			return err
 		},
 	}
 }
 
-func attachCommand(socket *string) *cobra.Command {
+func attachCommand(socket *string, logFile *string) *cobra.Command {
 	return &cobra.Command{
 		Use:  "attach <id>",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := dialOrStartClient(resolveSocket(*socket))
+			logger, closeLogger, logPath, err := openLogFileLogger(*logFile)
+			if err != nil {
+				return err
+			}
+			defer closeLogger()
+			logger.Info("starting attach tui", "terminal_id", args[0], "socket", resolveSocket(*socket), "log_file", logPath)
+			client, err := dialOrStartTUIClient(resolveSocket(*socket), logPath, logger)
 			if err != nil {
 				return err
 			}
 			defer client.Close()
-
-			attach, err := client.Attach(context.Background(), args[0], string(termx.ModeCollaborator))
-			if err != nil {
-				return err
-			}
-			stream, stop := client.Stream(attach.Channel)
-			defer stop()
-
-			snap, err := client.Snapshot(context.Background(), args[0], 0, 200)
-			if err == nil {
-				renderSnapshot(cmd.OutOrStdout(), snap)
-			}
-
-			fd := int(os.Stdin.Fd())
-			oldState, err := term.MakeRaw(fd)
-			if err == nil {
-				defer term.Restore(fd, oldState)
-			}
-
-			if size := currentSize(); size.Cols > 0 && size.Rows > 0 {
-				_ = client.Resize(context.Background(), attach.Channel, size.Cols, size.Rows)
-			}
-
-			errCh := make(chan error, 2)
-			go func() {
-				buf := make([]byte, 1024)
-				var escapes int
-				for {
-					n, err := os.Stdin.Read(buf)
-					if err != nil {
-						errCh <- err
-						return
-					}
-					data := buf[:n]
-					if len(data) == 1 && data[0] == 0x1c {
-						escapes++
-						if escapes == 2 {
-							errCh <- nil
-							return
-						}
-						continue
-					}
-					escapes = 0
-					if err := client.Input(context.Background(), attach.Channel, data); err != nil {
-						errCh <- err
-						return
-					}
-				}
-			}()
-
-			for {
-				select {
-				case err := <-errCh:
-					if err == nil || err == io.EOF {
-						return nil
-					}
-					return err
-				case msg, ok := <-stream:
-					if !ok {
-						return nil
-					}
-					switch msg.Type {
-					case protocol.TypeOutput:
-						_, _ = cmd.OutOrStdout().Write(msg.Payload)
-					case protocol.TypeSyncLost:
-						snap, err := client.Snapshot(context.Background(), args[0], 0, 200)
-						if err == nil {
-							renderSnapshot(cmd.OutOrStdout(), snap)
-						}
-					case protocol.TypeClosed:
-						return nil
-					}
-				}
-			}
+			return runTUI(client, tui.Config{
+				DefaultShell:       os.Getenv("SHELL"),
+				Workspace:          "main",
+				AttachID:           args[0],
+				WorkspaceStatePath: resolveWorkspaceStatePath(),
+				Logger:             logger,
+			}, os.Stdin, os.Stdout)
 		},
 	}
 }
@@ -244,12 +252,18 @@ func dialClient(path string) (*protocol.Client, error) {
 	return client, nil
 }
 
-func dialOrStartClient(path string) (*protocol.Client, error) {
+func dialOrStartClient(path string, logFile string, logger *slog.Logger) (*protocol.Client, error) {
 	client, err := dialClient(path)
 	if err == nil {
+		if logger != nil {
+			logger.Debug("connected to existing daemon", "socket", path)
+		}
 		return client, nil
 	}
-	if startErr := startDaemon(path); startErr != nil {
+	if logger != nil {
+		logger.Warn("initial daemon dial failed, attempting auto-start", "socket", path, "error", err)
+	}
+	if startErr := startDaemon(path, logFile); startErr != nil {
 		return nil, err
 	}
 	if waitErr := tui.WaitForSocket(path, 5*time.Second, func() error {
@@ -262,15 +276,23 @@ func dialOrStartClient(path string) (*protocol.Client, error) {
 	}); waitErr != nil {
 		return nil, waitErr
 	}
+	if logger != nil {
+		logger.Info("auto-started daemon became ready", "socket", path)
+	}
 	return dialClient(path)
 }
 
-func startDaemon(path string) error {
+func startDaemon(path string, logFile string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(exe, "--socket", path, "daemon")
+	args := []string{"--socket", path}
+	if logFile != "" {
+		args = append(args, "--log-file", logFile)
+	}
+	args = append(args, "daemon")
+	cmd := exec.Command(exe, args...)
 	cmd.Stdin = nil
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
@@ -293,21 +315,4 @@ func currentSize() protocol.Size {
 		return protocol.Size{}
 	}
 	return protocol.Size{Cols: uint16(cols), Rows: uint16(rows)}
-}
-
-func renderSnapshot(w io.Writer, snap *protocol.Snapshot) {
-	for _, row := range snap.Scrollback {
-		fmt.Fprintln(w, rowString(row))
-	}
-	for _, row := range snap.Screen.Cells {
-		fmt.Fprintln(w, rowString(row))
-	}
-}
-
-func rowString(row []protocol.Cell) string {
-	var b strings.Builder
-	for _, cell := range row {
-		b.WriteString(cell.Content)
-	}
-	return strings.TrimRight(b.String(), " ")
 }

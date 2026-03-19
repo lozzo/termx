@@ -71,6 +71,117 @@ func TestTerminalLifecycleAndSnapshot(t *testing.T) {
 	}
 }
 
+func TestSubscribeAfterExitReplaysSnapshotAndClosed(t *testing.T) {
+	ctx := context.Background()
+	bus := NewEventBus(nil)
+
+	term, err := newTerminal(ctx, bus, terminalConfig{
+		ID:             "exit1234",
+		Name:           "env",
+		Command:        []string{"sh", "-c", "echo replay-me; sleep 0.1; exit 0"},
+		Size:           Size{Cols: 80, Rows: 24},
+		ScrollbackSize: 128,
+		KeepAfterExit:  time.Second,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("new terminal failed: %v", err)
+	}
+	defer term.Close()
+
+	select {
+	case <-term.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for terminal exit")
+	}
+
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stream := term.Subscribe(streamCtx)
+
+	select {
+	case msg, ok := <-stream:
+		if !ok {
+			t.Fatal("expected replay output frame")
+		}
+		if msg.Type != StreamOutput || !strings.Contains(string(msg.Output), "replay-me") {
+			t.Fatalf("expected replay output, got %#v", msg)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for replay output")
+	}
+
+	select {
+	case msg, ok := <-stream:
+		if !ok {
+			t.Fatal("expected closed frame")
+		}
+		if msg.Type != StreamClosed {
+			t.Fatalf("expected closed frame, got %#v", msg)
+		}
+		if msg.ExitCode == nil || *msg.ExitCode != 0 {
+			t.Fatalf("expected exit code 0, got %#v", msg.ExitCode)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for closed frame")
+	}
+}
+
+func TestTerminalDeliversTrailingOutputBeforeClosedFrame(t *testing.T) {
+	ctx := context.Background()
+	bus := NewEventBus(nil)
+
+	term, err := newTerminal(ctx, bus, terminalConfig{
+		ID:             "trail123",
+		Name:           "cat",
+		Command:        []string{"cat", "-vet"},
+		Size:           Size{Cols: 80, Rows: 24},
+		ScrollbackSize: 128,
+		KeepAfterExit:  time.Second,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("new terminal failed: %v", err)
+	}
+	defer term.Close()
+
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stream := term.Subscribe(streamCtx)
+
+	if err := term.WriteInput([]byte("A\t\x1bB\n\x04")); err != nil {
+		t.Fatalf("write input failed: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	sawOutput := false
+	for time.Now().Before(deadline) {
+		msg, ok := <-stream
+		if !ok {
+			break
+		}
+		switch msg.Type {
+		case StreamOutput:
+			if strings.Contains(string(msg.Output), "A^I^[B$") {
+				sawOutput = true
+			}
+		case StreamClosed:
+			if !sawOutput {
+				t.Fatalf("stream closed before trailing output arrived")
+			}
+			return
+		}
+	}
+	if !sawOutput {
+		t.Fatal("expected trailing output before close")
+	}
+	t.Fatal("timed out waiting for closed frame")
+}
+
 func snapshotContains(s *Snapshot, needle string) bool {
 	for _, row := range s.Scrollback {
 		if rowToString(row) == needle {

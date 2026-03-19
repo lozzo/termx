@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -128,6 +129,7 @@ func (s *Server) Create(ctx context.Context, opts CreateOptions) (*TerminalInfo,
 	if name == "" {
 		name = id
 	}
+	s.cfg.logger.Info("server create terminal requested", "terminal_id", id, "name", name)
 
 	s.mu.Lock()
 	if _, exists := s.terminals[id]; exists {
@@ -161,6 +163,7 @@ func (s *Server) Create(ctx context.Context, opts CreateOptions) (*TerminalInfo,
 	}
 	s.terminals[id] = term
 	s.invalidateProtocolListCacheLocked()
+	s.cfg.logger.Info("server created terminal", "terminal_id", id, "name", name)
 	return term.Info(), nil
 }
 
@@ -199,6 +202,7 @@ func (s *Server) Kill(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	s.cfg.logger.Info("server kill terminal requested", "terminal_id", id)
 	info := term.Info()
 	if info.State == StateExited {
 		s.removeTerminal(id, "killed")
@@ -318,8 +322,10 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	if s.closed.Load() {
 		return ErrServerClosed
 	}
+	s.cfg.logger.Info("server listen starting", "socket_path", s.cfg.socketPath)
 	listener, err := unixtransport.NewListener(s.cfg.socketPath)
 	if err != nil {
+		s.cfg.logger.Error("server listen failed", "socket_path", s.cfg.socketPath, "error", err)
 		return err
 	}
 	s.listeners = append(s.listeners, listener)
@@ -338,13 +344,16 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		conn, err := listener.Accept(ctx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, transport.ErrListenerClosed) {
+				s.cfg.logger.Info("server listen stopping", "socket_path", s.cfg.socketPath)
 				return nil
 			}
+			s.cfg.logger.Warn("server accept failed", "socket_path", s.cfg.socketPath, "error", err)
 			continue
 		}
 		wg.Add(1)
 		go func(c transport.Transport) {
 			defer wg.Done()
+			s.cfg.logger.Info("server accepted transport", "remote", listener.Addr())
 			_ = s.handleTransport(ctx, c, listener.Addr())
 		}(conn)
 	}
@@ -489,9 +498,20 @@ type sessionAttachment struct {
 
 func (s *Server) handleTransport(ctx context.Context, t transport.Transport, remote string) error {
 	defer t.Close()
+	s.cfg.logger.Info("transport session opened", "remote", remote)
+	defer s.cfg.logger.Info("transport session closed", "remote", remote)
 
 	sessionCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	sessionClosed := make(chan struct{})
+	go func() {
+		select {
+		case <-sessionCtx.Done():
+			_ = t.Close()
+		case <-sessionClosed:
+		}
+	}()
+	defer close(sessionClosed)
 
 	allocator := protocol.NewChannelAllocator()
 	attachments := make(map[uint16]*sessionAttachment)
@@ -526,10 +546,15 @@ func (s *Server) handleTransport(ctx context.Context, t transport.Transport, rem
 
 		raw, err := t.Recv()
 		if err != nil {
+			if sessionCtx.Err() != nil || errors.Is(err, io.EOF) {
+				return nil
+			}
+			s.cfg.logger.Warn("transport recv failed", "remote", remote, "error", err)
 			return err
 		}
 		channel, typ, payload, err := protocol.DecodeFrame(raw)
 		if err != nil {
+			s.cfg.logger.Warn("transport decode failed", "remote", remote, "error", err)
 			return err
 		}
 
@@ -540,6 +565,7 @@ func (s *Server) handleTransport(ctx context.Context, t transport.Transport, rem
 				if err := json.Unmarshal(payload, &hello); err != nil {
 					return sendProtocolError(sendFrame, 0, 0, 400, err.Error())
 				}
+				s.cfg.logger.Debug("transport hello", "remote", remote, "client", hello.Client, "version", hello.Version)
 				resp, _ := json.Marshal(protocol.Hello{
 					Version:      protocol.Version,
 					Server:       "termx",
@@ -556,6 +582,7 @@ func (s *Server) handleTransport(ctx context.Context, t transport.Transport, rem
 					}
 					continue
 				}
+				s.cfg.logger.Debug("transport request", "remote", remote, "method", req.Method, "id", req.ID)
 				var (
 					result json.RawMessage
 					code   int
@@ -591,6 +618,7 @@ func (s *Server) handleTransport(ctx context.Context, t transport.Transport, rem
 		switch typ {
 		case protocol.TypeInput:
 			if err := s.WriteInput(sessionCtx, attachment.terminalID, payload); err != nil && !errors.Is(err, ErrTerminalExited) {
+				s.cfg.logger.Warn("transport input failed", "remote", remote, "terminal_id", attachment.terminalID, "error", err)
 				return err
 			}
 		case protocol.TypeResize:
@@ -602,6 +630,7 @@ func (s *Server) handleTransport(ctx context.Context, t transport.Transport, rem
 				continue
 			}
 			if err := s.Resize(sessionCtx, attachment.terminalID, cols, rows); err != nil && !errors.Is(err, ErrTerminalExited) {
+				s.cfg.logger.Warn("transport resize failed", "remote", remote, "terminal_id", attachment.terminalID, "error", err)
 				return err
 			}
 		}
@@ -734,6 +763,7 @@ func (s *Server) handleRequest(
 		attachments[ch] = attachment
 		attachmentsMu.Unlock()
 		term.AddAttachment(attachmentID, remote, AttachMode(params.Mode))
+		s.cfg.logger.Info("server attached terminal", "terminal_id", params.TerminalID, "remote", remote, "channel", ch, "mode", params.Mode)
 		stream := term.Subscribe(subCtx)
 		go func() {
 			defer attachment.cleanup()

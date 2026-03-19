@@ -8,43 +8,48 @@ import (
 	"github.com/lozzow/termx/protocol"
 )
 
+var (
+	benchmarkStringSink string
+	benchmarkGridSink   [][]drawCell
+)
+
 func BenchmarkModelViewSinglePaneCached(b *testing.B) {
 	model := benchmarkModelWithPanes(b, 1, 120, 40)
-	_ = model.View()
+	benchmarkStringSink = model.View()
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = model.View()
+		benchmarkStringSink = model.View()
 	}
 }
 
 func BenchmarkModelViewFourPanesCached(b *testing.B) {
 	model := benchmarkModelWithPanes(b, 4, 160, 48)
-	_ = model.View()
+	benchmarkStringSink = model.View()
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = model.View()
+		benchmarkStringSink = model.View()
 	}
 }
 
 func BenchmarkModelViewSinglePaneFixedPinnedCached(b *testing.B) {
 	model := benchmarkFixedViewportModel(b, 32, 14, true)
-	_ = model.View()
+	benchmarkStringSink = model.View()
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = model.View()
+		benchmarkStringSink = model.View()
 	}
 }
 
 func BenchmarkModelViewFourPanesOneDirty(b *testing.B) {
 	model := benchmarkModelWithPanes(b, 4, 160, 48)
 	tab := model.currentTab()
-	_ = model.View()
+	benchmarkStringSink = model.View()
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -54,19 +59,180 @@ func BenchmarkModelViewFourPanesOneDirty(b *testing.B) {
 			b.Fatal("expected active pane")
 		}
 		active.renderDirty = true
-		_ = model.View()
+		benchmarkStringSink = model.View()
 	}
 }
 
 func BenchmarkRenderTabCompositeFourPanes(b *testing.B) {
 	model := benchmarkModelWithPanes(b, 4, 160, 48)
 	tab := model.currentTab()
-	_ = model.View()
+	benchmarkStringSink = model.View()
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = model.renderTabComposite(tab, model.width, model.height-2)
+		benchmarkStringSink = model.renderTabComposite(tab, model.width, model.height-2)
+	}
+}
+
+func BenchmarkRenderTabCompositeFourPanesActiveSwitch(b *testing.B) {
+	model := benchmarkModelWithPanes(b, 4, 160, 48)
+	tab := model.currentTab()
+	ids := tab.Root.LeafIDs()
+	if len(ids) < 2 {
+		b.Fatal("expected multiple panes")
+	}
+	benchmarkStringSink = model.View()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tab.ActivePaneID = ids[i%len(ids)]
+		benchmarkStringSink = model.renderTabComposite(tab, model.width, model.height-2)
+	}
+}
+
+func BenchmarkRenderTabCompositeFourPanesContentOnlyDirty(b *testing.B) {
+	model := benchmarkModelWithPanes(b, 4, 160, 48)
+	tab := model.currentTab()
+	benchmarkStringSink = model.View()
+
+	active := tab.Panes[tab.ActivePaneID]
+	if active == nil {
+		b.Fatal("expected active pane")
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		active.renderDirty = true
+		benchmarkStringSink = model.renderTabComposite(tab, model.width, model.height-2)
+	}
+}
+
+func BenchmarkRenderTabCompositeFourPanesCursorOnly(b *testing.B) {
+	model := benchmarkModelWithPanes(b, 4, 160, 48)
+	tab := model.currentTab()
+	ids := tab.Root.LeafIDs()
+	if len(ids) < 2 {
+		b.Fatal("expected multiple panes")
+	}
+	benchmarkStringSink = model.View()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		prev := tab.Panes[tab.ActivePaneID]
+		if prev != nil {
+			prev.renderDirty = false
+		}
+		tab.ActivePaneID = ids[i%len(ids)]
+		benchmarkStringSink = model.renderTabComposite(tab, model.width, model.height-2)
+	}
+}
+
+func BenchmarkRenderTabCompositeFloatingOverlayTiledDirty(b *testing.B) {
+	model := benchmarkModelWithFloatingOverlay(b, 160, 48)
+	tab := model.currentTab()
+	basePane := tab.Panes[firstTiledPaneID(tab)]
+	if basePane == nil {
+		b.Fatal("expected tiled pane")
+	}
+	benchmarkStringSink = model.View()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		basePane.renderDirty = true
+		benchmarkStringSink = model.renderTabComposite(tab, model.width, model.height-2)
+	}
+}
+
+func BenchmarkRenderTabCompositeFloatingOverlayTiledDirtyRows(b *testing.B) {
+	model := benchmarkModelWithFloatingOverlay(b, 160, 48)
+	tab := model.currentTab()
+	basePane := tab.Panes[firstTiledPaneID(tab)]
+	if basePane == nil {
+		b.Fatal("expected tiled pane")
+	}
+	benchmarkStringSink = model.View()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		basePane.renderDirty = true
+		basePane.dirtyRowsKnown = true
+		basePane.dirtyRowStart = 0
+		basePane.dirtyRowEnd = 0
+		benchmarkStringSink = model.renderTabComposite(tab, model.width, model.height-2)
+	}
+}
+
+func BenchmarkRenderTabCompositeFloatingOverlayTiledDirtySpan(b *testing.B) {
+	model := benchmarkModelWithFloatingOverlay(b, 160, 48)
+	tab := model.currentTab()
+	basePane := tab.Panes[firstTiledPaneID(tab)]
+	if basePane == nil {
+		b.Fatal("expected tiled pane")
+	}
+	benchmarkStringSink = model.View()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		basePane.renderDirty = true
+		basePane.dirtyRowsKnown = true
+		basePane.dirtyRowStart = 0
+		basePane.dirtyRowEnd = 0
+		basePane.dirtyColsKnown = true
+		basePane.dirtyColStart = 0
+		basePane.dirtyColEnd = 7
+		benchmarkStringSink = model.renderTabComposite(tab, model.width, model.height-2)
+	}
+}
+
+func BenchmarkRenderTabCompositeFloatingOverlayActiveTiledDirtySpan(b *testing.B) {
+	model := benchmarkModelWithFloatingOverlay(b, 160, 48)
+	tab := model.currentTab()
+	baseID := firstTiledPaneID(tab)
+	basePane := tab.Panes[baseID]
+	if basePane == nil {
+		b.Fatal("expected tiled pane")
+	}
+	tab.ActivePaneID = baseID
+	benchmarkStringSink = model.View()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		basePane.renderDirty = true
+		basePane.dirtyRowsKnown = true
+		basePane.dirtyRowStart = 0
+		basePane.dirtyRowEnd = 0
+		basePane.dirtyColsKnown = true
+		basePane.dirtyColStart = 0
+		basePane.dirtyColEnd = 8
+		benchmarkStringSink = model.renderTabComposite(tab, model.width, model.height-2)
+	}
+}
+
+func BenchmarkRenderTabCompositeFloatingOverlayFloatingDirty(b *testing.B) {
+	model := benchmarkModelWithFloatingOverlay(b, 160, 48)
+	tab := model.currentTab()
+	if len(tab.Floating) == 0 {
+		b.Fatal("expected floating pane")
+	}
+	floatPane := tab.Panes[tab.Floating[0].PaneID]
+	if floatPane == nil {
+		b.Fatal("expected floating pane")
+	}
+	benchmarkStringSink = model.View()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		floatPane.renderDirty = true
+		benchmarkStringSink = model.renderTabComposite(tab, model.width, model.height-2)
 	}
 }
 
@@ -88,7 +254,7 @@ func BenchmarkHandlePaneOutputAndViewFourPanes(b *testing.B) {
 				Payload: []byte(fmt.Sprintf("tick-%d\r\n", i)),
 			},
 		})
-		_ = model.View()
+		benchmarkStringSink = model.View()
 	}
 }
 
@@ -96,7 +262,7 @@ func BenchmarkHandlePaneOutputViewBatchedWithoutTick(b *testing.B) {
 	model := benchmarkModelWithPanes(b, 4, 160, 48)
 	model.renderBatching = true
 	model.program = &tea.Program{}
-	_ = model.View()
+	benchmarkStringSink = model.View()
 
 	tab := model.currentTab()
 	active := tab.Panes[tab.ActivePaneID]
@@ -114,7 +280,7 @@ func BenchmarkHandlePaneOutputViewBatchedWithoutTick(b *testing.B) {
 				Payload: []byte("batched\r\n"),
 			},
 		})
-		_ = model.View()
+		benchmarkStringSink = model.View()
 	}
 }
 
@@ -122,7 +288,7 @@ func BenchmarkHandlePaneOutputViewBatchedWithTick(b *testing.B) {
 	model := benchmarkModelWithPanes(b, 4, 160, 48)
 	model.renderBatching = true
 	model.program = &tea.Program{}
-	_ = model.View()
+	benchmarkStringSink = model.View()
 
 	tab := model.currentTab()
 	active := tab.Panes[tab.ActivePaneID]
@@ -141,7 +307,7 @@ func BenchmarkHandlePaneOutputViewBatchedWithTick(b *testing.B) {
 			},
 		})
 		_, _ = model.Update(renderTickMsg{})
-		_ = model.View()
+		benchmarkStringSink = model.View()
 	}
 }
 
@@ -163,7 +329,40 @@ func BenchmarkHandlePaneOutputViewFixedFollow(b *testing.B) {
 				Payload: []byte(fmt.Sprintf("fixed-%04d 0123456789abcdefghijklmnop\r\n", i)),
 			},
 		})
-		_ = model.View()
+		benchmarkStringSink = model.View()
+	}
+}
+
+func BenchmarkPaneCellsForViewportFixedCached(b *testing.B) {
+	model := benchmarkFixedViewportModel(b, 32, 14, true)
+	tab := model.currentTab()
+	pane := tab.Panes[tab.ActivePaneID]
+	if pane == nil {
+		b.Fatal("expected active pane")
+	}
+
+	benchmarkGridSink = paneCellsForViewport(pane, 30, 12)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		benchmarkGridSink = paneCellsForViewport(pane, 30, 12)
+	}
+}
+
+func BenchmarkPaneCellsForViewportFixedRecrop(b *testing.B) {
+	model := benchmarkFixedViewportModel(b, 32, 14, true)
+	tab := model.currentTab()
+	pane := tab.Panes[tab.ActivePaneID]
+	if pane == nil {
+		b.Fatal("expected active pane")
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		pane.Offset = Point{X: 24 + (i % 2), Y: 8}
+		benchmarkGridSink = paneCellsForViewport(pane, 30, 12)
 	}
 }
 
@@ -189,60 +388,119 @@ func BenchmarkModelViewTerminalPicker100Items(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = model.View()
+		benchmarkStringSink = model.View()
 	}
 }
 
-func benchmarkModelWithPanes(b *testing.B, paneCount, width, height int) *Model {
-	b.Helper()
+func BenchmarkModelViewTerminalPicker100ItemsDirtyFilter(b *testing.B) {
+	model := benchmarkModelWithPanes(b, 1, 160, 48)
+	items := make([]terminalPickerItem, 0, 100)
+	for i := 0; i < 100; i++ {
+		items = append(items, terminalPickerItem{
+			Info: protocol.TerminalInfo{
+				ID:      fmt.Sprintf("bench-%03d", i),
+				Name:    fmt.Sprintf("worker-%03d", i),
+				Command: []string{"tail", "-f", fmt.Sprintf("worker-%03d.log", i)},
+				State:   "running",
+			},
+			Observed: i%3 != 0,
+			Orphan:   i%3 == 0,
+			Location: "ws:main / tab:1",
+		})
+	}
+	model.terminalPicker = &terminalPicker{Items: items}
+	model.terminalPicker.applyFilter()
+	benchmarkStringSink = model.View()
+
+	queries := []string{"w", "wo", "wor", "worker-0", "log", "bench-0", "tail"}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		model.terminalPicker.Query = queries[i%len(queries)]
+		model.terminalPicker.applyFilter()
+		model.invalidateRender()
+		benchmarkStringSink = model.View()
+	}
+}
+
+func TestBenchmarkModelWithPanesBuildsRequestedLayout(t *testing.T) {
+	model := benchmarkModelWithPanes(t, 4, 160, 48)
+	tab := model.currentTab()
+	if tab == nil {
+		t.Fatal("expected active tab")
+	}
+	if len(tab.Root.LeafIDs()) != 4 {
+		t.Fatalf("expected 4 leaves, got %d", len(tab.Root.LeafIDs()))
+	}
+	if len(tab.Panes) != 4 {
+		t.Fatalf("expected 4 panes, got %d", len(tab.Panes))
+	}
+}
+
+func TestBenchmarkModelWithFloatingOverlayBuildsFloatingPane(t *testing.T) {
+	model := benchmarkModelWithFloatingOverlay(t, 160, 48)
+	tab := model.currentTab()
+	if tab == nil {
+		t.Fatal("expected active tab")
+	}
+	if len(tab.Floating) != 1 {
+		t.Fatalf("expected 1 floating pane, got %d", len(tab.Floating))
+	}
+}
+
+func benchmarkModelWithPanes(tb testing.TB, paneCount, width, height int) *Model {
+	tb.Helper()
 	client := &fakeClient{}
 	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
 	model.width = width
 	model.height = height
 
-	msg := mustRunCmdForBenchmark(b, model.Init())
+	msg := mustRunCmdForBenchmark(tb, model.Init())
 	_, cmd := model.Update(msg)
-	runCmdForBenchmark(b, model, cmd)
+	runCmdForBenchmark(tb, model, cmd)
 
 	splits := []rune{'%', '"', '%', '"', '%', '"'}
 	for i := 1; i < paneCount; i++ {
 		_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
 		_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{splits[(i-1)%len(splits)]}})
-		msg = mustRunCmdForBenchmark(b, cmd)
+		msg = mustRunCmdForBenchmark(tb, cmd)
+		_, _ = model.Update(msg)
+		_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		msg = mustRunCmdForBenchmark(tb, cmd)
 		_, cmd = model.Update(msg)
-		runCmdForBenchmark(b, model, cmd)
+		runCmdForBenchmark(tb, model, cmd)
 	}
 
 	tab := model.currentTab()
 	for i, paneID := range tab.Root.LeafIDs() {
 		pane := tab.Panes[paneID]
 		if pane == nil {
-			b.Fatalf("missing pane %q", paneID)
+			tb.Fatalf("missing pane %q", paneID)
 		}
-		writeBenchmarkContent(b, pane, i)
+		writeBenchmarkContent(tb, pane, i)
 	}
-	_ = model.View()
+	benchmarkStringSink = model.View()
 	return model
 }
 
-func benchmarkFixedViewportModel(b *testing.B, width, height int, pinned bool) *Model {
-	b.Helper()
-	model := benchmarkModelWithPanes(b, 1, width, height)
+func benchmarkFixedViewportModel(tb testing.TB, width, height int, pinned bool) *Model {
+	tb.Helper()
+	model := benchmarkModelWithPanes(tb, 1, width, height)
 	tab := model.currentTab()
 	pane := tab.Panes[tab.ActivePaneID]
 	if pane == nil {
-		b.Fatal("expected active pane")
+		tb.Fatal("expected active pane")
 	}
 
 	pane.VTerm.Resize(120, 40)
-	writeBenchmarkContent(b, pane, 0)
+	writeBenchmarkContent(tb, pane, 0)
 	pane.Mode = ViewportModeFixed
 	pane.Pin = pinned
 	pane.Offset = Point{X: 24, Y: 8}
 	if !pinned {
 		viewW, viewH, ok := model.paneViewportSizeInTab(tab, pane.ID)
 		if !ok {
-			b.Fatal("expected visible fixed viewport")
+			tb.Fatal("expected visible fixed viewport")
 		}
 		_ = model.syncViewport(pane, viewW, viewH)
 	}
@@ -251,33 +509,64 @@ func benchmarkFixedViewportModel(b *testing.B, width, height int, pinned bool) *
 	return model
 }
 
-func writeBenchmarkContent(b *testing.B, pane *Pane, index int) {
-	b.Helper()
+func benchmarkModelWithFloatingOverlay(tb testing.TB, width, height int) *Model {
+	tb.Helper()
+	model := benchmarkModelWithPanes(tb, 1, width, height)
+
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	msg := mustRunCmdForBenchmark(tb, cmd)
+	_, _ = model.Update(msg)
+	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	msg = mustRunCmdForBenchmark(tb, cmd)
+	_, cmd = model.Update(msg)
+	runCmdForBenchmark(tb, model, cmd)
+
+	tab := model.currentTab()
+	if len(tab.Floating) == 0 {
+		tb.Fatal("expected floating pane")
+	}
+	floating := tab.Floating[0]
+	floating.Rect = Rect{X: 20, Y: 6, W: 48, H: 16}
+	floatPane := tab.Panes[floating.PaneID]
+	if floatPane == nil {
+		tb.Fatal("expected floating pane")
+	}
+	floatPane.Title = "bench-float"
+	writeBenchmarkContent(tb, floatPane, 9)
+	tab.renderCache = nil
+	model.renderDirty = true
+	benchmarkStringSink = model.View()
+	return model
+}
+
+func writeBenchmarkContent(tb testing.TB, pane *Pane, index int) {
+	tb.Helper()
 	if pane == nil || pane.VTerm == nil {
-		b.Fatal("expected live pane")
+		tb.Fatal("expected live pane")
 	}
 	for row := 0; row < 30; row++ {
 		line := fmt.Sprintf("\x1b[3%dm[pane-%d row-%02d] benchmark text 0123456789 abcdefghijklmnopqrstuvwxyz\r\n", (index+row)%7, index, row)
 		if _, err := pane.VTerm.Write([]byte(line)); err != nil {
-			b.Fatalf("write benchmark content failed: %v", err)
+			tb.Fatalf("write benchmark content failed: %v", err)
 		}
 	}
 	pane.live = true
 	pane.renderDirty = true
 }
 
-func runCmdForBenchmark(b *testing.B, model *Model, cmd tea.Cmd) {
-	b.Helper()
+func runCmdForBenchmark(tb testing.TB, model *Model, cmd tea.Cmd) {
+	tb.Helper()
 	for cmd != nil {
-		msg := mustRunCmdForBenchmark(b, cmd)
+		msg := mustRunCmdForBenchmark(tb, cmd)
 		var next tea.Cmd
 		_, next = model.Update(msg)
 		cmd = next
 	}
 }
 
-func mustRunCmdForBenchmark(b *testing.B, cmd tea.Cmd) tea.Msg {
-	b.Helper()
+func mustRunCmdForBenchmark(tb testing.TB, cmd tea.Cmd) tea.Msg {
+	tb.Helper()
 	if cmd == nil {
 		return nil
 	}

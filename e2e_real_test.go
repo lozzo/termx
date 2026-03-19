@@ -10,6 +10,7 @@ import (
 
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/transport/memory"
+	"github.com/lozzow/termx/tui"
 )
 
 // skipIfMissing skips the test if the given command is not in PATH.
@@ -427,7 +428,7 @@ func TestE2EReal_EnvAndWorkDir(t *testing.T) {
 	ctx := context.Background()
 
 	created, err := client.Create(ctx, protocol.CreateParams{
-		Command: []string{"sh", "-c", "echo MY_VAR=$MY_VAR; pwd; exit 0"},
+		Command: []string{"sh", "-c", "sleep 0.1; echo MY_VAR=$MY_VAR; pwd; exit 0"},
 		Name:    "env-test",
 		Size:    protocol.Size{Cols: 80, Rows: 24},
 		Env:     []string{"MY_VAR=hello_termx"},
@@ -539,6 +540,234 @@ func TestE2EReal_CatEcho(t *testing.T) {
 	}
 
 	waitStreamClosed(t, stream, 5*time.Second)
+}
+
+// =============================================================================
+// Real TUI workflow: startup create -> split create -> floating reuse
+// =============================================================================
+
+func TestE2ERealTUI_WorkflowCreateSplitAndFloatingReuse(t *testing.T) {
+	_, client, cleanup := newE2ERealClient(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	reuseCreated, err := client.Create(ctx, protocol.CreateParams{
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Name:    "real-reuse",
+		Size:    protocol.Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted: %v", err)
+		}
+		t.Fatalf("create reuse terminal failed: %v", err)
+	}
+
+	h := newTUIScreenHarnessWithConfig(t, client, 120, 30, tui.Config{
+		DefaultShell:  "/bin/sh",
+		Workspace:     "main",
+		StartupPicker: true,
+	})
+	defer h.Close()
+
+	h.waitForStableScreenContains("Choose Terminal", 10*time.Second)
+	h.pressEnter()
+
+	h.sendText("echo REAL-ROOT")
+	h.pressEnter()
+	screen := h.waitForStableScreenContains("REAL-ROOT", 10*time.Second)
+	if strings.Contains(screen, "Choose Terminal") {
+		t.Fatalf("expected startup chooser to close after create, got:\n%s", screen)
+	}
+
+	h.sendPrefixRune('%')
+	h.waitForStableScreenContains("Open Viewport", 10*time.Second)
+	h.pressEnter()
+	h.sendText("echo REAL-SPLIT")
+	h.pressEnter()
+	screen = h.waitForStableScreenContains("REAL-SPLIT", 10*time.Second)
+	if strings.Count(screen, "┌") < 2 {
+		t.Fatalf("expected split create to show multiple panes, got:\n%s", screen)
+	}
+
+	h.sendPrefixRune('w')
+	h.waitForStableScreenContains("Open Floating Viewport", 10*time.Second)
+	h.sendText(reuseCreated.TerminalID)
+	h.pressEnter()
+	screen = h.waitForStableScreenContains("real-reuse", 10*time.Second)
+	if !strings.Contains(screen, "[floating]") {
+		t.Fatalf("expected floating reused terminal to stay visible, got:\n%s", screen)
+	}
+
+	h.sendText("echo REAL-FLOAT")
+	h.pressEnter()
+	screen = h.waitForStableScreenContains("REAL-FLOAT", 10*time.Second)
+	if !strings.Contains(screen, "[floating]") {
+		t.Fatalf("expected floating marker to remain after command, got:\n%s", screen)
+	}
+}
+
+// =============================================================================
+// Real TUI workflow: startup attach existing -> duplicate in floating -> keep alive
+// =============================================================================
+
+func TestE2ERealTUI_StartupAttachAndFloatingReuseSameTerminal(t *testing.T) {
+	_, client, cleanup := newE2ERealClient(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	created, err := client.Create(ctx, protocol.CreateParams{
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Name:    "real-shared",
+		Size:    protocol.Size{Cols: 100, Rows: 28},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted: %v", err)
+		}
+		t.Fatalf("create shared terminal failed: %v", err)
+	}
+
+	h := newTUIScreenHarnessWithConfig(t, client, 120, 30, tui.Config{
+		DefaultShell:  "/bin/sh",
+		Workspace:     "main",
+		StartupPicker: true,
+	})
+	defer h.Close()
+
+	h.waitForStableScreenContains("Choose Terminal", 10*time.Second)
+	h.sendText(created.TerminalID)
+	h.pressEnter()
+	screen := h.waitForStableScreenContains("real-shared", 10*time.Second)
+	if strings.Contains(screen, "Choose Terminal") {
+		t.Fatalf("expected startup attach chooser to close, got:\n%s", screen)
+	}
+
+	h.sendPrefixRune('w')
+	h.waitForStableScreenContains("Open Floating Viewport", 10*time.Second)
+	h.sendText(created.TerminalID)
+	h.pressEnter()
+	screen = h.waitForStableScreenContains("[floating]", 10*time.Second)
+	if !strings.Contains(screen, "real-shared") {
+		t.Fatalf("expected reused terminal title to remain visible, got:\n%s", screen)
+	}
+
+	h.sendText("echo REAL-SHARED")
+	h.pressEnter()
+	screen = h.waitForStableScreenContains("REAL-SHARED", 10*time.Second)
+	if !strings.Contains(screen, "[floating]") {
+		t.Fatalf("expected floating duplicate to remain active after command, got:\n%s", screen)
+	}
+
+	snap, err := client.Snapshot(ctx, created.TerminalID, 0, 200)
+	if err != nil {
+		t.Fatalf("snapshot shared terminal failed: %v", err)
+	}
+	if !protocolSnapshotContains(snap, "REAL-SHARED") {
+		t.Fatalf("expected shared terminal snapshot to contain command output, got %#v", snap)
+	}
+}
+
+// =============================================================================
+// Real TUI workflow: create tab -> create shell -> picker replace with existing
+// =============================================================================
+
+func TestE2ERealTUI_TabCreateAndPickerReuse(t *testing.T) {
+	_, client, cleanup := newE2ERealClient(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	created, err := client.Create(ctx, protocol.CreateParams{
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Name:    "real-picker",
+		Size:    protocol.Size{Cols: 90, Rows: 26},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted: %v", err)
+		}
+		t.Fatalf("create picker terminal failed: %v", err)
+	}
+
+	h := newTUIScreenHarness(t, client, 120, 30)
+	defer h.Close()
+
+	h.waitForStableScreenContains("ws:main", 10*time.Second)
+	h.sendPrefixRune('c')
+	h.waitForStableScreenContains("Open Tab", 10*time.Second)
+	h.pressEnter()
+
+	h.sendText("echo REAL-TAB")
+	h.pressEnter()
+	screen := h.waitForStableScreenContains("REAL-TAB", 10*time.Second)
+	if strings.Contains(screen, "Open Tab") {
+		t.Fatalf("expected tab chooser to close after create, got:\n%s", screen)
+	}
+
+	h.sendPrefixRune('f')
+	h.waitForStableScreenContains("Terminal Picker", 10*time.Second)
+	h.sendText(created.TerminalID)
+	h.pressEnter()
+	screen = h.waitForStableScreenContains("real-picker", 10*time.Second)
+	if strings.Contains(screen, "Terminal Picker") {
+		t.Fatalf("expected picker to close after attach, got:\n%s", screen)
+	}
+
+	h.sendText("echo REAL-PICKER")
+	h.pressEnter()
+	screen = h.waitForStableScreenContains("REAL-PICKER", 10*time.Second)
+	if !strings.Contains(screen, "real-picker") {
+		t.Fatalf("expected picker-reused terminal to stay attached, got:\n%s", screen)
+	}
+}
+
+// =============================================================================
+// Real TUI workflow: close floating viewport and keep session interactive
+// =============================================================================
+
+func TestE2ERealTUI_CloseFloatingKeepsSessionAlive(t *testing.T) {
+	_, client, cleanup := newE2ERealClient(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	reuseCreated, err := client.Create(ctx, protocol.CreateParams{
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Name:    "real-close-float",
+		Size:    protocol.Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted: %v", err)
+		}
+		t.Fatalf("create reuse terminal failed: %v", err)
+	}
+
+	h := newTUIScreenHarness(t, client, 120, 30)
+	defer h.Close()
+
+	h.waitForStableScreenContains("ws:main", 10*time.Second)
+	h.sendText("echo REAL-CLOSE-BASE")
+	h.pressEnter()
+	h.waitForStableScreenContains("REAL-CLOSE-BASE", 10*time.Second)
+
+	h.sendPrefixRune('w')
+	h.waitForStableScreenContains("Open Floating Viewport", 10*time.Second)
+	h.sendText(reuseCreated.TerminalID)
+	h.pressEnter()
+	h.waitForStableScreenContains("[floating]", 10*time.Second)
+
+	h.sendPrefixRune('x')
+	screen := h.waitForStableScreenWithout("[floating]", 10*time.Second)
+	if !strings.Contains(screen, "REAL-CLOSE-BASE") {
+		t.Fatalf("expected base terminal to remain visible after closing floating pane, got:\n%s", screen)
+	}
+
+	h.sendText("echo REAL-CLOSE-AFTER")
+	h.pressEnter()
+	screen = h.waitForStableScreenContains("REAL-CLOSE-AFTER", 10*time.Second)
+	if !strings.Contains(screen, "REAL-CLOSE-AFTER") {
+		t.Fatalf("expected session to remain interactive after closing floating pane, got:\n%s", screen)
+	}
 }
 
 // =============================================================================

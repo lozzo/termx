@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,7 +59,8 @@ type Terminal struct {
 	attachMu    sync.Mutex
 	attachments map[string]AttachInfo
 
-	done chan struct{}
+	done     chan struct{}
+	readDone chan struct{}
 }
 
 func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Terminal, error) {
@@ -95,6 +97,7 @@ func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Te
 		updateFunc:    cfg.UpdateFunc,
 		attachments:   make(map[string]AttachInfo),
 		done:          make(chan struct{}),
+		readDone:      make(chan struct{}),
 	}
 
 	t.events.Publish(Event{
@@ -130,6 +133,32 @@ func (t *Terminal) Done() <-chan struct{} {
 }
 
 func (t *Terminal) Subscribe(ctx context.Context) <-chan StreamMessage {
+	t.mu.RLock()
+	state := t.state
+	exitCode := copyIntPtr(t.exitCode)
+	t.mu.RUnlock()
+	if state == StateExited {
+		snap := t.Snapshot(0, 500)
+		replay := snapshotReplayPayload(snap)
+		ch := make(chan StreamMessage, 2)
+		go func() {
+			defer close(ch)
+			if len(replay) > 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case ch <- StreamMessage{Type: StreamOutput, Output: replay}:
+				}
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case ch <- StreamMessage{Type: StreamClosed, ExitCode: exitCode}:
+			}
+		}()
+		return ch
+	}
+
 	src := t.stream.Subscribe(ctx)
 	dst := make(chan StreamMessage, 256)
 	go func() {
@@ -296,6 +325,7 @@ func (t *Terminal) RevokeCollaborators() int {
 }
 
 func (t *Terminal) readLoop() {
+	defer close(t.readDone)
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := t.pty.Read(buf)
@@ -321,6 +351,11 @@ func (t *Terminal) readLoop() {
 func (t *Terminal) waitLoop() {
 	<-t.pty.Wait()
 	code := t.pty.ExitCode()
+
+	select {
+	case <-t.readDone:
+	case <-time.After(500 * time.Millisecond):
+	}
 
 	t.mu.Lock()
 	oldState := t.state
@@ -403,6 +438,35 @@ func copyIntPtr(v *int) *int {
 	}
 	n := *v
 	return &n
+}
+
+func snapshotReplayPayload(s *Snapshot) []byte {
+	if s == nil {
+		return nil
+	}
+	lines := make([]string, 0, len(s.Scrollback)+len(s.Screen.Cells))
+	for _, row := range s.Scrollback {
+		if line := snapshotRowString(row); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	for _, row := range s.Screen.Cells {
+		if line := snapshotRowString(row); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	return []byte(strings.Join(lines, "\n") + "\n")
+}
+
+func snapshotRowString(row []Cell) string {
+	var b strings.Builder
+	for _, cell := range row {
+		b.WriteString(cell.Content)
+	}
+	return strings.TrimRight(b.String(), " ")
 }
 
 func (t *Terminal) invalidateProtocolInfoCacheLocked() {

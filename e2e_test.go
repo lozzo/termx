@@ -18,7 +18,7 @@ func newE2EClient(t *testing.T, opts ...ServerOption) (*Server, *protocol.Client
 
 	defaults := []ServerOption{
 		WithDefaultScrollback(128),
-		WithDefaultKeepAfterExit(200 * time.Millisecond),
+		WithDefaultKeepAfterExit(2 * time.Second),
 	}
 	srv := NewServer(append(defaults, opts...)...)
 

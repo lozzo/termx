@@ -2,7 +2,7 @@
 
 本文档定义 termx TUI 从设计到实现的完整路线，分为两个阶段：技术验证（Spike）和功能实现（Build）。
 
-## 当前进展（2026-03-18）
+## 当前进展（2026-03-19）
 
 ```
 已完成 / 已落地：
@@ -16,15 +16,100 @@
   - M7 第一阶段渲染优化
     - render tick batching
     - View() / tab canvas / row cache
+    - canvas joined-string cache / ANSI style cache
+    - dirty pane content-only redraw（frame/title 未变时跳过边框重绘）
+    - title cell cache / cursor-only redraw path / active-switch benchmarks
+    - fixed viewport crop cache
+    - fixed viewport direct visible-region rendering（避免每帧全量 VTerm grid 转换）
+    - fit/live/snapshot pane direct visible-region rendering
     - SyncLost snapshot 恢复
     - catching-up 退化路径
+    - fixed viewport render benchmarks（cached / recrop）
+    - floating overlay damage-aware repaint（底层 dirty 时重绘受影响上层，避免闪烁/丢边框）
+    - floating overlay render benchmarks（tiled dirty / floating dirty）
+    - benchmark harness 跟随 chooser-first 交互更新，避免基准退化成空布局/假快路径
+    - terminal picker dirty-filter benchmark（100 items）
+    - terminal picker search/render cache（预计算 lowercase search text / row body / width-bound trimmed lines）
+    - pane body blank-row fill cache（降低大面积 body clear 的重复构造成本）
+    - incremental dirty-row tracking（简单 shell 输出优先走局部 body redraw）
+    - floating overlay tiled-dirty row benchmark（验证局部重绘路径）
+    - incremental dirty-span tracking（单行追加输出进一步缩小到列区间）
+    - floating overlay tiled-dirty span benchmark（验证局部列区间重绘）
+    - active pane 保守策略：live VTerm 仍走完整 body redraw，snapshot/非 live 可走局部 dirty span
+    - terminal-level floating overlay e2e harness（Bubble Tea ANSI output -> VTerm screenshot）
+    - e2e failure artifacts（latest frame + recent terminal frames dump）
+    - 当前作为“可继续迭代的性能基线”封存，允许切回后续功能章节
   - M8 的 readonly 基础能力
     - C-a R toggle readonly
     - readonly 下仅 Ctrl-C 透传
+  - 诊断基础设施
+    - CLI / daemon / TUI 统一日志落盘
+    - 支持 `--log-file` 与 `TERMX_LOG_FILE`
+    - attach / chooser / pane stream / daemon transport 关键路径打点
+    - transport 生命周期加固：idle client 不再阻塞 daemon shutdown
+    - protocol client `Close()` 等待 read loop 退出，避免挂起请求与测试清理竞态
+  - M3 Terminal Picker 第一阶段增强
+    - 列表显示 running/exited、运行时长、tags
+    - kill 后已观察的 viewport 保留并显示 [killed]
+    - startup chooser：进入 `termx` 时先选择 attach 现有 terminal 或新建
+    - `termx attach <id>` 进入完整 TUI layout，而不是 raw shell passthrough
+    - 新 Viewport chooser：`C-a %` / `C-a "` / `C-a c` / `C-a w` 支持 attach 现有 terminal 或新建
+    - exited viewport 恢复：活动 viewport 按 `r` 可用原 command+tags 重建新 terminal，并只重绑当前 viewport
+    - exited restart 覆盖单测 + TUI e2e（chooser attach -> exit -> restart -> shell 可继续执行）
+  - M4 第一阶段基础设施
+    - YAML layout 解析与校验骨架
+    - tag 匹配（严格 AND）与稳定排序 / _hint_id 选择器
+    - 当前 workspace 导出为可回读的 layout YAML
+    - LayoutSpec -> Workspace builder 骨架（匹配复用 / waiting placeholder / create plan）
+    - load-layout runtime 骨架（替换 workspace、attach 已匹配 terminal、create 缺失 terminal）
+    - floating layout 第一阶段集成：save-layout 导出 floating entry 尺寸，load-layout / `--layout` 可恢复 floating viewport
+    - `load-layout <name> prompt` 第一阶段：未匹配 terminal 时弹 chooser，支持手动 attach / create / Esc skip
+    - layout create 路径会回写声明式 tag，保证第二次 load 同一 layout 时优先复用已有 terminal
+    - 命令模式接入 save-layout / load-layout / list-layouts / delete-layout
+    - load-layout 支持项目级 `.termx/layouts/<name>.yaml` 优先于用户级
+    - `termx --layout <name|path>` 启动直接进入 layout 恢复路径，优先于 startup chooser
+    - 命令结果状态提示（save/load/list）
+  - M6 第一阶段基础设施
+    - `workspace-state.json` 导出 / 解析 / 运行时恢复骨架
+    - TUI 正常退出后自动保存 workspace state
+    - 启动优先级链第一版：`--layout` → workspace state → 项目级 `.termx/layout.yaml` → 用户级 `default-layout.yaml` → chooser
+    - state 恢复对缺失 terminal 保守降级为 `[exited]` viewport，对仍在运行的 terminal 重新 attach
+    - workspace state 升级为多 workspace 格式（保留单 workspace 兼容读取）
+    - `C-a s` Workspace Picker 骨架（创建 / 切换 workspace）
+    - workspace 切换时当前 workspace layout 保留，切回时重建 attach
+    - 同一个 terminal 可被不同 workspace 独立观察
 
 进行中：
-  - M2 / M7 持续补边界条件与性能基准
+  - M5 浮动层第一阶段
+    - Tab 支持 floating layer 数据结构与渲染
+    - C-a w 通过 chooser 创建 / attach floating viewport（默认 fixed）
+    - C-a W toggle floating layer show/hide
+    - C-a Tab cycle floating focus
+    - C-a ] / C-a _ 调整 floating z-order
+    - Esc 从 floating focus 返回 tiling focus
+    - C-a Alt-h/j/k/l 移动浮窗
+    - C-a Alt-H/J/K/L 调整浮窗大小
+    - 外层 resize 时 floating rect clamp
+    - 浮窗标题显示 [floating] / [floating z:n]
+    - help/status 暴露 floating layer 状态与快捷键
+    - 浮窗渲染回归测试（边框/标题/底层重绘不遮挡）
+    - 浮窗 terminal-frame e2e（持久边框 / hide-show）
+    - 浮窗 terminal-frame e2e（z-order / top window 可见性）
+  - M4 load/save-layout 运行时集成
+  - M4 / M5 完成后继续推进 M6 Workspace 管理
   - 后续里程碑按 roadmap 继续推进
+
+性能基线已封存（可后续继续优化，不阻塞功能开发）：
+  - 当前基线目标已达成：有 benchmark、有 row/span dirty path、有 e2e/real-e2e 回归覆盖
+  - 当前策略：
+    - non-active pane：可走 dirty row / dirty span
+    - active live pane：仍保守走完整 body redraw，优先保证正确性
+  - 后续 TODO（不阻塞 roadmap 继续）：
+    - active + live VTerm 的安全局部重绘
+    - 高频输出下 dirty region 合并 / 批处理
+    - pprof 拆解 `fill` / `drawSourceRegion` / `String()`
+    - 更大规模 benchmark：多浮窗 / 多 tab / 长时间输出
+    - 如后续功能引入新渲染热点，再回到 M7 第二阶段集中处理
 ```
 
 ## 阶段一：技术验证（Spike）
@@ -343,6 +428,32 @@ M8 AI 场景验证（可在 M1 后开始）
   - readonly 模式下除 Ctrl-C 外不转发输入
 ```
 
+### M9. 键位迁移（v1 → v2 分层 prefix）
+
+```
+依赖：M5（浮动层基本完成后再迁移，避免改两次）
+
+参考：interaction-v2.md 的变更记录和对照表
+
+第一步：引入子 prefix 分发框架
+  - 在 handlePrefixEvent 里加入 t/w/o/v 四个子 prefix 入口
+  - 新增 floatingMode / offsetPanMode / subPrefix 状态字段
+  - 实现 handleTabSubPrefix / handleWorkspaceSubPrefix /
+    handleFloatingMode / handleViewportSubPrefix / handleOffsetPanMode
+  - 同时保留所有 v1 直接键作为兼容
+
+第二步：逐步移除 v1 直接键
+  - 确认子模式稳定后，移除 v1 的冗余绑定
+  - 保留 C-a c 作为 C-a t c 的快捷方式（高频操作例外）
+  - help 浮窗更新为 v2 键位
+
+验收标准：
+  - 所有子模式正常工作（one-shot 和 sticky）
+  - sticky 模式下状态栏显示当前可用操作
+  - Esc 退出 sticky 模式可靠
+  - 无 Ctrl-组合或 Alt-组合键
+```
+
 ## 总览
 
 ```
@@ -359,6 +470,7 @@ M8 AI 场景验证（可在 M1 后开始）
   M6 Workspace 管理        ← 高级功能
   M7 渲染优化              ← 可在任意阶段穿插
   M8 AI 场景验证           ← 可在 M1 后开始
+  M9 键位迁移 v1→v2        ← M5 完成后
 
-关键路径：S1/S4/S5 → M1 → M2 → M5
+关键路径：S1/S4/S5 → M1 → M2 → M5 → M9
 ```

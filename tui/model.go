@@ -3,10 +3,14 @@ package tui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -21,8 +25,15 @@ import (
 )
 
 type Config struct {
-	DefaultShell string
-	Workspace    string
+	DefaultShell       string
+	Workspace          string
+	AttachID           string
+	StartupLayout      string
+	WorkspaceStatePath string
+	StartupAutoLayout  bool
+	StartupPicker      bool
+	Logger             *slog.Logger
+	RequestTimeout     time.Duration
 }
 
 type Workspace struct {
@@ -32,19 +43,29 @@ type Workspace struct {
 }
 
 type Tab struct {
-	Name         string
-	Root         *LayoutNode
-	Panes        map[string]*Pane
-	ActivePaneID string
-	ZoomedPaneID string
-	LayoutPreset int
+	Name            string
+	Root            *LayoutNode
+	Panes           map[string]*Pane
+	Floating        []*FloatingPane
+	FloatingVisible bool
+	ActivePaneID    string
+	ZoomedPaneID    string
+	LayoutPreset    int
 
 	renderCache *tabRenderCache
+}
+
+type FloatingPane struct {
+	PaneID string
+	Rect   Rect
+	Z      int
 }
 
 type tabRenderCache struct {
 	canvas       *composedCanvas
 	rects        map[string]Rect
+	order        []string
+	frameKeys    map[string]string
 	width        int
 	height       int
 	activePaneID string
@@ -64,26 +85,43 @@ type Point struct {
 }
 
 type Viewport struct {
-	TerminalID string
-	Channel    uint16
-	VTerm      *localvterm.VTerm
-	Snapshot   *protocol.Snapshot
-	Mode       ViewportMode
-	Offset     Point
-	Pin        bool
-	Readonly   bool
-	stopStream func()
+	TerminalID    string
+	Channel       uint16
+	VTerm         *localvterm.VTerm
+	Snapshot      *protocol.Snapshot
+	Name          string
+	Command       []string
+	Tags          map[string]string
+	TerminalState string
+	ExitCode      *int
+	Mode          ViewportMode
+	Offset        Point
+	Pin           bool
+	Readonly      bool
+	stopStream    func()
 
-	cellCache    [][]drawCell
-	renderDirty  bool
-	live         bool
-	syncLost     bool
-	droppedBytes uint64
-	recovering   bool
-	catchingUp   bool
-	dirtyTicks   int
-	cleanTicks   int
-	skipTick     bool
+	cellCache       [][]drawCell
+	cellVersion     uint64
+	viewportCache   [][]drawCell
+	viewportOffset  Point
+	viewportWidth   int
+	viewportHeight  int
+	viewportVersion uint64
+	renderDirty     bool
+	live            bool
+	syncLost        bool
+	droppedBytes    uint64
+	recovering      bool
+	catchingUp      bool
+	dirtyTicks      int
+	cleanTicks      int
+	skipTick        bool
+	dirtyRowsKnown  bool
+	dirtyRowStart   int
+	dirtyRowEnd     int
+	dirtyColsKnown  bool
+	dirtyColStart   int
+	dirtyColEnd     int
 }
 
 type Pane struct {
@@ -99,22 +137,76 @@ type textPrompt struct {
 }
 
 type terminalPicker struct {
-	Query    string
-	Items    []terminalPickerItem
-	Filtered []terminalPickerItem
-	Selected int
+	Title       string
+	Footer      string
+	Query       string
+	Items       []terminalPickerItem
+	Filtered    []terminalPickerItem
+	Selected    int
+	Action      terminalPickerAction
+	OpenedAt    time.Time
+	RenderWidth int
+}
+
+type workspacePicker struct {
+	Title       string
+	Footer      string
+	Query       string
+	Items       []workspacePickerItem
+	Filtered    []workspacePickerItem
+	Selected    int
+	RenderWidth int
 }
 
 type terminalPickerItem struct {
-	Info     protocol.TerminalInfo
-	Observed bool
-	Orphan   bool
-	Location string
+	Info            protocol.TerminalInfo
+	Observed        bool
+	Orphan          bool
+	Location        string
+	CreateNew       bool
+	Label           string
+	Description     string
+	searchTextLower string
+	lineBody        string
+	lineWidth       int
+	lineNormal      string
+	lineActive      string
+}
+
+type workspacePickerItem struct {
+	Name            string
+	Description     string
+	CreateNew       bool
+	searchTextLower string
+	lineBody        string
+	lineWidth       int
+	lineNormal      string
+	lineActive      string
+}
+
+type terminalPickerActionKind int
+
+const (
+	terminalPickerActionReplace terminalPickerActionKind = iota
+	terminalPickerActionBootstrap
+	terminalPickerActionNewTab
+	terminalPickerActionSplit
+	terminalPickerActionFloating
+	terminalPickerActionLayoutResolve
+)
+
+type terminalPickerAction struct {
+	Kind     terminalPickerActionKind
+	TabIndex int
+	TargetID string
+	Split    SplitDirection
+	PaneID   string
 }
 
 type Model struct {
 	client Client
 	cfg    Config
+	logger *slog.Logger
 
 	program *tea.Program
 
@@ -126,26 +218,35 @@ type Model struct {
 	renderTickerRunning bool
 	renderPending       atomic.Bool
 
-	workspace      Workspace
-	width          int
-	height         int
-	prefixActive   bool
-	prefixSeq      int
-	prefixTimeout  time.Duration
-	rawPending     []byte
-	showHelp       bool
-	prompt         *textPrompt
-	terminalPicker *terminalPicker
-	nextPane       int
-	nextTab        int
-	quitting       bool
-	err            error
+	workspace       Workspace
+	width           int
+	height          int
+	prefixActive    bool
+	prefixSeq       int
+	prefixTimeout   time.Duration
+	rawPending      []byte
+	showHelp        bool
+	prompt          *textPrompt
+	terminalPicker  *terminalPicker
+	workspacePicker *workspacePicker
+	nextPane        int
+	nextTab         int
+	quitting        bool
+	notice          string
+	err             error
+
+	workspaceStore  map[string]Workspace
+	workspaceOrder  []string
+	activeWorkspace int
+	layoutPromptQueue   []LayoutCreatePlan
+	layoutPromptCurrent *LayoutCreatePlan
 }
 
 type paneCreatedMsg struct {
 	tabIndex int
 	targetID string
 	split    SplitDirection
+	floating bool
 	pane     *Pane
 }
 
@@ -165,6 +266,10 @@ type paneResizeMsg struct {
 	rows    uint16
 }
 
+type paneDetachedMsg struct {
+	paneID string
+}
+
 type tabClosedMsg struct {
 	tabIndex int
 }
@@ -182,8 +287,31 @@ type rawInputMsg struct {
 }
 
 type terminalPickerLoadedMsg struct {
-	items []terminalPickerItem
-	err   error
+	picker *terminalPicker
+	err    error
+}
+
+type terminalPickerSelectionMsg struct {
+	Action terminalPickerAction
+	Item   terminalPickerItem
+}
+
+type workspacePickerLoadedMsg struct {
+	picker *workspacePicker
+}
+
+type workspaceActivatedMsg struct {
+	workspace Workspace
+	index     int
+	notice    string
+}
+
+type workspaceStateLoadedMsg struct {
+	workspace Workspace
+	store     map[string]Workspace
+	order     []string
+	active    int
+	notice    string
 }
 
 type terminalClosedMsg struct {
@@ -199,6 +327,16 @@ type paneRecoveredMsg struct {
 type paneRecoveryFailedMsg struct {
 	paneID string
 	err    error
+}
+
+type layoutLoadedMsg struct {
+	workspace Workspace
+	notice    string
+	prompt    []LayoutCreatePlan
+}
+
+type noticeMsg struct {
+	text string
 }
 
 const (
@@ -224,9 +362,17 @@ func NewModel(client Client, cfg Config) *Model {
 	if cfg.Workspace == "" {
 		cfg.Workspace = "main"
 	}
+	if cfg.RequestTimeout <= 0 {
+		cfg.RequestTimeout = 3 * time.Second
+	}
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
 	return &Model{
 		client: client,
 		cfg:    cfg,
+		logger: logger,
 		workspace: Workspace{
 			Name: cfg.Workspace,
 			Tabs: []*Tab{newTab("1")},
@@ -236,7 +382,36 @@ func NewModel(client Client, cfg Config) *Model {
 		width:          80,
 		height:         24,
 		prefixTimeout:  800 * time.Millisecond,
+		workspaceStore: map[string]Workspace{
+			cfg.Workspace: {
+				Name: cfg.Workspace,
+				Tabs: []*Tab{newTab("1")},
+			},
+		},
+		workspaceOrder:  []string{cfg.Workspace},
+		activeWorkspace: 0,
 	}
+}
+
+func (m *Model) requestContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), m.cfg.RequestTimeout)
+}
+
+func (m *Model) wrapClientError(op string, err error, attrs ...any) error {
+	if err == nil {
+		return nil
+	}
+	logAttrs := append([]any{"operation", op, "error", err}, attrs...)
+	if errors.Is(err, context.DeadlineExceeded) {
+		m.logger.Error("tui client operation timed out", logAttrs...)
+		return fmt.Errorf("%s timed out after %s", op, m.cfg.RequestTimeout)
+	}
+	if errors.Is(err, context.Canceled) {
+		m.logger.Warn("tui client operation canceled", logAttrs...)
+		return fmt.Errorf("%s canceled", op)
+	}
+	m.logger.Error("tui client operation failed", logAttrs...)
+	return err
 }
 
 func (m *Model) SetProgram(program *tea.Program) {
@@ -361,6 +536,22 @@ func (m *Model) updateBackpressureState() bool {
 }
 
 func (m *Model) Init() tea.Cmd {
+	if m.cfg.AttachID != "" {
+		m.logger.Info("tui init attach bootstrap", "terminal_id", m.cfg.AttachID)
+		return m.attachInitialTerminalCmd(0, m.cfg.AttachID)
+	}
+	if strings.TrimSpace(m.cfg.StartupLayout) != "" {
+		m.logger.Info("tui init startup layout", "layout", m.cfg.StartupLayout)
+		return m.loadLayoutCmd(m.cfg.StartupLayout, LayoutResolveCreate)
+	}
+	if strings.TrimSpace(m.cfg.WorkspaceStatePath) != "" || m.cfg.StartupAutoLayout {
+		return m.startStartupBootstrapCmd()
+	}
+	if m.cfg.StartupPicker {
+		m.logger.Info("tui init startup chooser")
+		return m.openBootstrapTerminalPickerCmd(0)
+	}
+	m.logger.Info("tui init create first pane")
 	return m.createPaneCmd(0, "", "")
 }
 
@@ -368,16 +559,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.clampFloatingPanes()
 		m.invalidateRender()
 		return m, m.resizeVisiblePanesCmd()
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	case paneCreatedMsg:
 		m.attachPane(msg)
-		return m, m.resizeVisiblePanesCmd()
+		return m, tea.Batch(m.resizeVisiblePanesCmd(), m.advanceLayoutPromptAfterPaneMsg("", msg.pane))
 	case paneReplacedMsg:
 		m.replacePane(msg)
-		return m, m.resizeVisiblePanesCmd()
+		return m, tea.Batch(m.resizeVisiblePanesCmd(), m.advanceLayoutPromptAfterPaneMsg(msg.paneID, msg.pane))
 	case paneOutputMsg:
 		cmd := m.handlePaneOutput(msg)
 		if m.quitting {
@@ -386,6 +578,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case paneResizeMsg:
 		m.handlePaneResize(msg)
+		return m, nil
+	case paneDetachedMsg:
+		if m.removePane(msg.paneID) {
+			m.quitting = true
+			return m, tea.Quit
+		}
 		return m, nil
 	case tabClosedMsg:
 		if m.removeTab(msg.tabIndex) {
@@ -400,19 +598,49 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case terminalPickerLoadedMsg:
 		if msg.err != nil {
 			m.err = msg.err
+			m.logger.Error("terminal picker load failed", "error", msg.err)
 			m.invalidateRender()
 			return m, nil
 		}
-		m.terminalPicker = &terminalPicker{Items: msg.items}
-		m.terminalPicker.applyFilter()
+		if msg.picker != nil {
+			m.logger.Info("terminal picker opened", "title", msg.picker.Title, "items", len(msg.picker.Items))
+		}
+		m.terminalPicker = msg.picker
 		m.invalidateRender()
 		return m, nil
-	case terminalClosedMsg:
-		if m.removeTerminal(msg.terminalID) {
-			m.quitting = true
-			return m, tea.Quit
-		}
+	case workspacePickerLoadedMsg:
+		m.workspacePicker = msg.picker
+		m.invalidateRender()
 		return m, nil
+	case terminalPickerSelectionMsg:
+		return m, m.resolveTerminalPickerSelection(msg.Action, msg.Item, false)
+	case workspaceActivatedMsg:
+		m.notice = msg.notice
+		m.err = nil
+		m.activeWorkspace = msg.index
+		m.replaceWorkspace(msg.workspace)
+		m.invalidateRender()
+		return m, m.resizeVisiblePanesCmd()
+	case workspaceStateLoadedMsg:
+		m.notice = msg.notice
+		m.err = nil
+		m.workspaceStore = msg.store
+		m.workspaceOrder = msg.order
+		m.activeWorkspace = msg.active
+		m.replaceWorkspace(msg.workspace)
+		m.invalidateRender()
+		return m, m.resizeVisiblePanesCmd()
+	case terminalClosedMsg:
+		m.markTerminalKilled(msg.terminalID)
+		return m, nil
+	case layoutLoadedMsg:
+		m.notice = msg.notice
+		m.err = nil
+		m.replaceWorkspace(msg.workspace)
+		m.layoutPromptQueue = append([]LayoutCreatePlan(nil), msg.prompt...)
+		m.layoutPromptCurrent = nil
+		m.invalidateRender()
+		return m, tea.Batch(m.resizeVisiblePanesCmd(), m.advanceLayoutPromptCmd())
 	case paneRecoveredMsg:
 		m.handlePaneRecovered(msg)
 		return m, nil
@@ -429,7 +657,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case errMsg:
+		m.notice = ""
 		m.err = msg.err
+		m.invalidateRender()
+		return m, nil
+	case noticeMsg:
+		m.notice = msg.text
+		m.err = nil
 		m.invalidateRender()
 		return m, nil
 	}
@@ -441,6 +675,10 @@ func (m *Model) View() string {
 		return "loading..."
 	}
 
+	if !m.renderDirty && m.renderCache != "" && (m.workspacePicker != nil || m.terminalPicker != nil || m.showHelp || m.prompt != nil) {
+		return m.renderCache
+	}
+
 	if m.renderBatching && !m.renderDirty && m.renderCache != "" {
 		if m.program != nil || !m.anyPaneDirty() {
 			return m.renderCache
@@ -448,6 +686,13 @@ func (m *Model) View() string {
 	}
 
 	var out string
+	if m.workspacePicker != nil {
+		out = m.renderWorkspacePicker()
+		m.renderCache = out
+		m.renderDirty = false
+		return out
+	}
+
 	if m.terminalPicker != nil {
 		out = m.renderTerminalPicker()
 		m.renderCache = out
@@ -486,6 +731,10 @@ func (m *Model) View() string {
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.workspacePicker != nil {
+		return m, m.handleWorkspacePickerKey(msg)
+	}
+
 	if m.terminalPicker != nil {
 		return m, m.handleTerminalPickerKey(msg)
 	}
@@ -523,6 +772,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	if msg.Type == tea.KeyEsc {
+		if m.focusTiledPane() {
+			return m, nil
+		}
+	}
+
+	if cmd := m.handleExitedPaneKey(msg); cmd != nil {
+		return m, cmd
+	}
+
 	if tab := m.currentTab(); tab != nil {
 		pane := tab.Panes[tab.ActivePaneID]
 		if pane != nil {
@@ -534,6 +793,17 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m *Model) handleExitedPaneKey(msg tea.KeyMsg) tea.Cmd {
+	pane := activePane(m.currentTab())
+	if paneTerminalState(pane) != "exited" {
+		return nil
+	}
+	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'r' {
+		return m.restartActivePaneCmd()
+	}
+	return nil
 }
 
 func (m *Model) handlePrefixKey(msg tea.KeyMsg) tea.Cmd {
@@ -597,10 +867,7 @@ func (m *Model) handlePrefixKey(msg tea.KeyMsg) tea.Cmd {
 	case "l":
 		m.moveFocus(DirectionRight)
 	case "c":
-		m.workspace.Tabs = append(m.workspace.Tabs, newTab(fmt.Sprintf("%d", len(m.workspace.Tabs)+1)))
-		m.workspace.ActiveTab = len(m.workspace.Tabs) - 1
-		m.invalidateRender()
-		return m.createPaneCmd(m.workspace.ActiveTab, "", "")
+		return m.openNewTabTerminalPickerCmd()
 	case "n":
 		if len(m.workspace.Tabs) > 0 {
 			m.workspace.ActiveTab = (m.workspace.ActiveTab + 1) % len(m.workspace.Tabs)
@@ -647,6 +914,25 @@ func (m *Model) handlePrefixKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case "f":
 		return m.openTerminalPickerCmd()
+	case "s":
+		return m.openWorkspacePickerCmd()
+	case "w":
+		return m.openFloatingTerminalPickerCmd(m.workspace.ActiveTab)
+	case "W":
+		m.toggleFloatingLayerVisibility()
+		return nil
+	case "tab":
+		m.cycleFloatingFocus()
+		return nil
+	case "]":
+		m.raiseActiveFloatingPane()
+		return nil
+	case "_":
+		m.lowerActiveFloatingPane()
+		return nil
+	case ":":
+		m.beginCommandPrompt()
+		return nil
 	case "x":
 		return m.closeActivePaneCmd()
 	case "X":
@@ -692,6 +978,18 @@ func (m *Model) handleRawInput(data []byte) tea.Cmd {
 	var background []tea.Cmd
 
 	for len(m.rawPending) > 0 {
+		if m.workspacePicker != nil {
+			consumed, cmd, ok := m.consumeWorkspacePickerInput()
+			if !ok {
+				break
+			}
+			m.rawPending = m.rawPending[consumed:]
+			if cmd != nil {
+				ordered = append(ordered, cmd)
+			}
+			continue
+		}
+
 		if m.terminalPicker != nil {
 			consumed, cmd, ok := m.consumeTerminalPickerInput()
 			if !ok {
@@ -737,6 +1035,18 @@ func (m *Model) handleRawInput(data []byte) tea.Cmd {
 			continue
 		}
 
+		if active := activePane(m.currentTab()); paneTerminalState(active) == "exited" {
+			consumed, cmd, ok := m.consumeExitedPaneInput()
+			if !ok {
+				break
+			}
+			m.rawPending = m.rawPending[consumed:]
+			if cmd != nil {
+				ordered = append(ordered, cmd)
+			}
+			continue
+		}
+
 		idx := bytes.IndexByte(m.rawPending, 0x01)
 		if idx < 0 {
 			payload, keep := rewriteInputForActivePane(m.currentTab(), m.rawPending)
@@ -769,6 +1079,28 @@ func (m *Model) handleRawInput(data []byte) tea.Cmd {
 	return combineCmdsOrdered(ordered, background)
 }
 
+func (m *Model) consumeExitedPaneInput() (int, tea.Cmd, bool) {
+	if len(m.rawPending) == 0 {
+		return 0, nil, false
+	}
+	if m.rawPending[0] == 0x01 {
+		return 1, m.activatePrefix(), true
+	}
+
+	r, size := utf8.DecodeRune(m.rawPending)
+	if r == utf8.RuneError && size == 1 {
+		if !utf8.FullRune(m.rawPending) {
+			return 0, nil, false
+		}
+	}
+	switch r {
+	case 'r':
+		return size, m.restartActivePaneCmd(), true
+	default:
+		return size, nil, true
+	}
+}
+
 func (m *Model) consumeHelpInput() (int, bool) {
 	if len(m.rawPending) == 0 {
 		return 0, false
@@ -794,7 +1126,7 @@ func (m *Model) handlePromptKey(msg tea.KeyMsg) tea.Cmd {
 	case tea.KeyEsc:
 		m.prompt = nil
 	case tea.KeyEnter:
-		m.commitPrompt()
+		return m.commitPrompt()
 	case tea.KeyBackspace:
 		m.deletePromptRune()
 	case tea.KeySpace:
@@ -813,8 +1145,7 @@ func (m *Model) consumePromptInput() (int, tea.Cmd, bool) {
 	}
 	switch m.rawPending[0] {
 	case '\r', '\n':
-		m.commitPrompt()
-		return 1, nil, true
+		return 1, m.commitPrompt(), true
 	case 0x7f, 0x08:
 		m.deletePromptRune()
 		return 1, nil, true
@@ -872,7 +1203,9 @@ func (m *Model) consumePrefixInput() (int, tea.Cmd, bool) {
 		return 1, m.sendToActive([]byte{0x01}), true
 	case 0x08, 0x0a, 0x0b, 0x0c:
 		return 1, m.handlePrefixKey(prefixCtrlKey(b)), true
-	case '"', '%', ',', 'f', 'h', 'j', 'k', 'l', 'H', 'J', 'K', 'L', 'M', 'P', 'R', 'X', 'c', 'n', 'p', 'z', '{', '}', ' ', 'x', '&', 'd', '?':
+	case '\t':
+		return 1, m.handlePrefixKey(prefixTabKey()), true
+	case '"', '%', ',', ':', 'W', ']', '_', 'f', 'h', 'j', 'k', 'l', 'w', 'H', 'J', 'K', 'L', 'M', 'P', 'R', 'X', 'c', 'n', 'p', 'z', '{', '}', ' ', 'x', '&', 'd', '?':
 		return 1, m.handlePrefixKey(prefixRuneKey(rune(b))), true
 	default:
 		if b >= '1' && b <= '9' {
@@ -890,25 +1223,29 @@ func (m *Model) splitActivePane(dir SplitDirection) tea.Cmd {
 	if tab == nil || tab.ActivePaneID == "" {
 		return nil
 	}
-	return m.createPaneCmd(m.workspace.ActiveTab, tab.ActivePaneID, dir)
+	return m.openSplitTerminalPickerCmd(m.workspace.ActiveTab, tab.ActivePaneID, dir)
 }
 
 func (m *Model) createPaneCmd(tabIndex int, targetID string, split SplitDirection) tea.Cmd {
 	return func() tea.Msg {
+		ctx, cancel := m.requestContext()
+		defer cancel()
+		m.logger.Debug("creating pane terminal", "tab_index", tabIndex, "target_id", targetID, "split", split)
 		size := protocol.Size{Cols: 80, Rows: 24}
-		created, err := m.client.Create(context.Background(), []string{m.cfg.DefaultShell}, "", size)
+		created, err := m.client.Create(ctx, []string{m.cfg.DefaultShell}, "", size)
 		if err != nil {
-			return errMsg{err}
+			return errMsg{m.wrapClientError("create terminal", err)}
 		}
-		attached, err := m.client.Attach(context.Background(), created.TerminalID, "collaborator")
+		attached, err := m.client.Attach(ctx, created.TerminalID, "collaborator")
 		if err != nil {
-			return errMsg{err}
+			return errMsg{m.wrapClientError("attach terminal", err, "terminal_id", created.TerminalID)}
 		}
-		snap, err := m.client.Snapshot(context.Background(), created.TerminalID, 0, 200)
+		snap, err := m.client.Snapshot(ctx, created.TerminalID, 0, 200)
 		if err != nil {
-			return errMsg{err}
+			return errMsg{m.wrapClientError("snapshot terminal", err, "terminal_id", created.TerminalID)}
 		}
 		paneID := m.nextPaneID()
+		m.logger.Info("created pane terminal", "pane_id", paneID, "terminal_id", created.TerminalID, "tab_index", tabIndex)
 		return paneCreatedMsg{
 			tabIndex: tabIndex,
 			targetID: targetID,
@@ -922,11 +1259,170 @@ func (m *Model) createPaneCmd(tabIndex int, targetID string, split SplitDirectio
 	}
 }
 
+func (m *Model) restartActivePaneCmd() tea.Cmd {
+	tab := m.currentTab()
+	pane := activePane(tab)
+	if pane == nil || paneTerminalState(pane) != "exited" {
+		return nil
+	}
+
+	paneID := pane.ID
+	command := append([]string(nil), pane.Command...)
+	if len(command) == 0 {
+		command = []string{m.cfg.DefaultShell}
+	}
+	name := pane.Name
+	tags := cloneStringMap(pane.Tags)
+	mode := pane.Mode
+	offset := pane.Offset
+	pin := pane.Pin
+	readonly := pane.Readonly
+	size := paneCreateSize(pane)
+	if viewW, viewH, ok := m.paneViewportSizeInTab(tab, pane.ID); ok {
+		size = paneRestartSize(pane, size, viewW, viewH)
+	}
+
+	return func() tea.Msg {
+		ctx, cancel := m.requestContext()
+		defer cancel()
+
+		m.logger.Info("restarting exited pane", "pane_id", paneID, "terminal_id", pane.TerminalID)
+		created, err := m.client.Create(ctx, command, name, size)
+		if err != nil {
+			return errMsg{m.wrapClientError("restart terminal", err, "pane_id", paneID, "terminal_id", pane.TerminalID)}
+		}
+		if len(tags) > 0 {
+			if err := m.client.SetTags(ctx, created.TerminalID, tags); err != nil {
+				return errMsg{m.wrapClientError("set terminal tags", err, "pane_id", paneID, "terminal_id", created.TerminalID)}
+			}
+		}
+		attached, err := m.client.Attach(ctx, created.TerminalID, "collaborator")
+		if err != nil {
+			return errMsg{m.wrapClientError("attach terminal", err, "pane_id", paneID, "terminal_id", created.TerminalID)}
+		}
+		snap, err := m.client.Snapshot(ctx, created.TerminalID, 0, 200)
+		if err != nil {
+			return errMsg{m.wrapClientError("snapshot terminal", err, "pane_id", paneID, "terminal_id", created.TerminalID)}
+		}
+		if snap != nil {
+			if snap.Size.Cols < size.Cols {
+				snap.Size.Cols = size.Cols
+			}
+			if snap.Size.Rows < size.Rows {
+				snap.Size.Rows = size.Rows
+			}
+		}
+
+		view := m.newViewport(created.TerminalID, attached.Channel, snap)
+		if view.VTerm != nil {
+			view.VTerm.Resize(int(size.Cols), int(size.Rows))
+		}
+		view.Name = name
+		view.Command = command
+		view.Tags = cloneStringMap(tags)
+		view.TerminalState = "running"
+		view.Mode = mode
+		view.Offset = offset
+		view.Pin = pin
+		view.Readonly = readonly
+
+		return paneReplacedMsg{
+			paneID: paneID,
+			pane: &Pane{
+				ID:       paneID,
+				Title:    paneTitleForCommand(name, firstCommandWord(command), created.TerminalID),
+				Viewport: view,
+			},
+		}
+	}
+}
+
+func paneCreateSize(pane *Pane) protocol.Size {
+	if pane != nil {
+		if pane.VTerm != nil {
+			cols, rows := pane.VTerm.Size()
+			if cols > 0 && rows > 0 {
+				return protocol.Size{Cols: uint16(cols), Rows: uint16(rows)}
+			}
+		}
+		if pane.Snapshot != nil && pane.Snapshot.Size.Cols > 0 && pane.Snapshot.Size.Rows > 0 {
+			return pane.Snapshot.Size
+		}
+	}
+	return protocol.Size{Cols: 80, Rows: 24}
+}
+
+func paneRestartSize(pane *Pane, base protocol.Size, viewW, viewH int) protocol.Size {
+	size := base
+	if pane == nil {
+		return size
+	}
+	if pane.Mode == ViewportModeFixed && pane.Pin {
+		minCols := uint16(max(80, viewW+pane.Offset.X))
+		minRows := uint16(max(24, viewH+pane.Offset.Y))
+		if size.Cols < minCols {
+			size.Cols = minCols
+		}
+		if size.Rows < minRows {
+			size.Rows = minRows
+		}
+	}
+	return size
+}
+
+func (m *Model) createFloatingPaneCmd(tabIndex int) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := m.requestContext()
+		defer cancel()
+		m.logger.Debug("creating floating terminal", "tab_index", tabIndex)
+		size := protocol.Size{Cols: 80, Rows: 24}
+		created, err := m.client.Create(ctx, []string{m.cfg.DefaultShell}, "", size)
+		if err != nil {
+			return errMsg{m.wrapClientError("create terminal", err)}
+		}
+		attached, err := m.client.Attach(ctx, created.TerminalID, "collaborator")
+		if err != nil {
+			return errMsg{m.wrapClientError("attach terminal", err, "terminal_id", created.TerminalID)}
+		}
+		snap, err := m.client.Snapshot(ctx, created.TerminalID, 0, 200)
+		if err != nil {
+			return errMsg{m.wrapClientError("snapshot terminal", err, "terminal_id", created.TerminalID)}
+		}
+		paneID := m.nextPaneID()
+		view := m.newViewport(created.TerminalID, attached.Channel, snap)
+		view.Mode = ViewportModeFixed
+		m.logger.Info("created floating terminal", "pane_id", paneID, "terminal_id", created.TerminalID, "tab_index", tabIndex)
+		return paneCreatedMsg{
+			tabIndex: tabIndex,
+			floating: true,
+			pane: &Pane{
+				ID:       paneID,
+				Title:    paneTitleForCommand("", m.cfg.DefaultShell, created.TerminalID),
+				Viewport: view,
+			},
+		}
+	}
+}
+
 func (m *Model) attachPane(msg paneCreatedMsg) {
 	if msg.tabIndex >= len(m.workspace.Tabs) {
 		return
 	}
 	tab := m.workspace.Tabs[msg.tabIndex]
+	if msg.floating {
+		tab.Panes[msg.pane.ID] = msg.pane
+		tab.Floating = append(tab.Floating, &FloatingPane{
+			PaneID: msg.pane.ID,
+			Rect:   m.defaultFloatingRectForPane(msg.pane),
+			Z:      len(tab.Floating),
+		})
+		tab.FloatingVisible = true
+		tab.ActivePaneID = msg.pane.ID
+		m.startPaneStream(msg.pane)
+		m.logger.Info("attached floating pane", "pane_id", msg.pane.ID, "terminal_id", msg.pane.TerminalID, "tab_index", msg.tabIndex)
+		m.invalidateRender()
+		return
+	}
 	if tab.Root == nil {
 		tab.Root = NewLeaf(msg.pane.ID)
 	} else if msg.targetID != "" {
@@ -936,15 +1432,8 @@ func (m *Model) attachPane(msg paneCreatedMsg) {
 	tab.Panes[msg.pane.ID] = msg.pane
 	tab.ActivePaneID = msg.pane.ID
 
-	stream, stop := m.client.Stream(msg.pane.Channel)
-	msg.pane.stopStream = stop
-	if m.program != nil {
-		go func(paneID string) {
-			for frame := range stream {
-				m.program.Send(paneOutputMsg{paneID: paneID, frame: frame})
-			}
-		}(msg.pane.ID)
-	}
+	m.startPaneStream(msg.pane)
+	m.logger.Info("attached pane", "pane_id", msg.pane.ID, "terminal_id", msg.pane.TerminalID, "tab_index", msg.tabIndex, "target_id", msg.targetID, "split", msg.split)
 	m.invalidateRender()
 }
 
@@ -958,6 +1447,16 @@ func (m *Model) replacePane(msg paneReplacedMsg) {
 	}
 	pane.Title = msg.pane.Title
 	pane.Viewport = msg.pane.Viewport
+	m.startPaneStream(pane)
+	m.logger.Info("replaced pane terminal", "pane_id", pane.ID, "terminal_id", pane.TerminalID)
+	m.invalidateRender()
+}
+
+func (m *Model) startPaneStream(pane *Pane) {
+	if pane == nil {
+		return
+	}
+	m.logger.Debug("starting pane stream", "pane_id", pane.ID, "terminal_id", pane.TerminalID, "channel", pane.Channel)
 	stream, stop := m.client.Stream(pane.Channel)
 	pane.stopStream = stop
 	if m.program != nil {
@@ -965,9 +1464,9 @@ func (m *Model) replacePane(msg paneReplacedMsg) {
 			for frame := range stream {
 				m.program.Send(paneOutputMsg{paneID: paneID, frame: frame})
 			}
+			m.logger.Debug("pane stream closed", "pane_id", paneID)
 		}(pane.ID)
 	}
-	m.invalidateRender()
 }
 
 func (m *Model) handlePaneOutput(msg paneOutputMsg) tea.Cmd {
@@ -977,9 +1476,18 @@ func (m *Model) handlePaneOutput(msg paneOutputMsg) tea.Cmd {
 	}
 	switch msg.frame.Type {
 	case protocol.TypeOutput:
+		beforeCursor := pane.VTerm.CursorState()
+		beforeAlt := pane.VTerm.IsAltScreen()
+		termCols, termRows := pane.VTerm.Size()
 		_, _ = pane.VTerm.Write(msg.frame.Payload)
+		afterCursor := pane.VTerm.CursorState()
+		afterAlt := pane.VTerm.IsAltScreen()
 		pane.live = true
+		pane.TerminalState = "running"
+		pane.ExitCode = nil
+		pane.cellVersion++
 		pane.renderDirty = true
+		applyViewportDirtyRegionForOutput(pane.Viewport, msg.frame.Payload, beforeCursor, afterCursor, beforeAlt, afterAlt, termCols, termRows)
 		pane.syncLost = false
 		pane.recovering = false
 		if tab := m.tabForPane(pane.ID); tab != nil {
@@ -989,9 +1497,8 @@ func (m *Model) handlePaneOutput(msg paneOutputMsg) tea.Cmd {
 		}
 		m.scheduleRender()
 	case protocol.TypeClosed:
-		if m.removeTerminal(pane.TerminalID) {
-			m.quitting = true
-		}
+		code, _ := protocol.DecodeClosedPayload(msg.frame.Payload)
+		m.markTerminalExited(pane.TerminalID, code)
 	case protocol.TypeSyncLost:
 		dropped, _ := protocol.DecodeSyncLostPayload(msg.frame.Payload)
 		pane.syncLost = true
@@ -1007,6 +1514,174 @@ func (m *Model) handlePaneOutput(msg paneOutputMsg) tea.Cmd {
 	return nil
 }
 
+func applyViewportDirtyRegionForOutput(view *Viewport, payload []byte, beforeCursor, afterCursor localvterm.CursorState, beforeAlt, afterAlt bool, cols, rows int) {
+	if view == nil {
+		return
+	}
+	if rowStart, rowEnd, colStart, colEnd, ok := dirtyRegionForOutput(payload, beforeCursor, afterCursor, beforeAlt, afterAlt, cols, rows); ok {
+		view.markDirtyRegion(rowStart, rowEnd, colStart, colEnd)
+		return
+	}
+	view.clearDirtyRegion()
+}
+
+func dirtyRegionForOutput(payload []byte, beforeCursor, afterCursor localvterm.CursorState, beforeAlt, afterAlt bool, cols, rows int) (int, int, int, int, bool) {
+	if rows <= 0 || beforeAlt != afterAlt || len(payload) == 0 {
+		return 0, 0, 0, 0, false
+	}
+	lineBreaks := 0
+	carriageReturn := false
+	for _, b := range payload {
+		switch {
+		case b == 0x1b:
+			return 0, 0, 0, 0, false
+		case b == '\n':
+			lineBreaks++
+		case b == '\r':
+			carriageReturn = true
+		case b == '\t' || b == '\b':
+		case b < 0x20:
+			return 0, 0, 0, 0, false
+		}
+	}
+	if lineBreaks > 1 {
+		return 0, 0, 0, 0, false
+	}
+	if lineBreaks == 1 && beforeCursor.Row >= rows-1 {
+		return 0, 0, 0, 0, false
+	}
+	start := clampDirtyRow(min(beforeCursor.Row, afterCursor.Row), rows)
+	end := clampDirtyRow(max(beforeCursor.Row, afterCursor.Row), rows)
+	if carriageReturn {
+		start = clampDirtyRow(min(start, beforeCursor.Row), rows)
+		end = clampDirtyRow(max(end, beforeCursor.Row), rows)
+	}
+	if start > end {
+		return 0, 0, 0, 0, false
+	}
+	colStart, colEnd, colsKnown := dirtyColsForOutput(payload, beforeCursor, afterCursor, carriageReturn, cols)
+	if !colsKnown {
+		colStart = 0
+		colEnd = 0
+	}
+	return start, end, colStart, colEnd, true
+}
+
+func dirtyRowsForOutput(payload []byte, beforeCursor, afterCursor localvterm.CursorState, beforeAlt, afterAlt bool, rows int) (int, int, bool) {
+	start, end, _, _, ok := dirtyRegionForOutput(payload, beforeCursor, afterCursor, beforeAlt, afterAlt, 0, rows)
+	return start, end, ok
+}
+
+func dirtyColsForOutput(payload []byte, beforeCursor, afterCursor localvterm.CursorState, carriageReturn bool, cols int) (int, int, bool) {
+	if carriageReturn || beforeCursor.Row != afterCursor.Row {
+		return 0, 0, false
+	}
+	if beforeCursor.Col < 0 || afterCursor.Col < 0 {
+		return 0, 0, false
+	}
+	if beforeCursor.Col == afterCursor.Col {
+		return clampDirtyCol(beforeCursor.Col, cols), clampDirtyCol(beforeCursor.Col, cols), true
+	}
+	start := clampDirtyCol(min(beforeCursor.Col, afterCursor.Col), cols)
+	end := clampDirtyCol(max(beforeCursor.Col, afterCursor.Col), cols)
+	if end < start {
+		end = start
+	}
+	return start, end, true
+}
+
+func clampDirtyRow(row, rows int) int {
+	if rows <= 0 {
+		return 0
+	}
+	if row < 0 {
+		return 0
+	}
+	if row >= rows {
+		return rows - 1
+	}
+	return row
+}
+
+func (v *Viewport) markDirtyRows(start, end int) {
+	if v == nil {
+		return
+	}
+	if start > end {
+		start, end = end, start
+	}
+	if start < 0 {
+		start = 0
+	}
+	if end < 0 {
+		end = 0
+	}
+	if !v.dirtyRowsKnown {
+		v.dirtyRowsKnown = true
+		v.dirtyRowStart = start
+		v.dirtyRowEnd = end
+		return
+	}
+	v.dirtyRowStart = min(v.dirtyRowStart, start)
+	v.dirtyRowEnd = max(v.dirtyRowEnd, end)
+}
+
+func (v *Viewport) markDirtyRegion(rowStart, rowEnd, colStart, colEnd int) {
+	if v == nil {
+		return
+	}
+	v.markDirtyRows(rowStart, rowEnd)
+	if rowStart != rowEnd || colStart > colEnd {
+		v.dirtyColsKnown = false
+		v.dirtyColStart = 0
+		v.dirtyColEnd = 0
+		return
+	}
+	if !v.dirtyColsKnown {
+		v.dirtyColsKnown = true
+		v.dirtyColStart = colStart
+		v.dirtyColEnd = colEnd
+		return
+	}
+	v.dirtyColStart = min(v.dirtyColStart, colStart)
+	v.dirtyColEnd = max(v.dirtyColEnd, colEnd)
+}
+
+func (v *Viewport) clearDirtyRows() {
+	if v == nil {
+		return
+	}
+	v.dirtyRowsKnown = false
+	v.dirtyRowStart = 0
+	v.dirtyRowEnd = 0
+}
+
+func (v *Viewport) clearDirtyRegion() {
+	if v == nil {
+		return
+	}
+	v.clearDirtyRows()
+	v.dirtyColsKnown = false
+	v.dirtyColStart = 0
+	v.dirtyColEnd = 0
+}
+
+func clampDirtyCol(col, cols int) int {
+	if cols <= 0 {
+		if col < 0 {
+			return 0
+		}
+		return col
+	}
+	if col < 0 {
+		return 0
+	}
+	if col >= cols {
+		return cols - 1
+	}
+	return col
+}
+
 func (m *Model) handlePaneRecovered(msg paneRecoveredMsg) {
 	pane := findPane(m.workspace.Tabs, msg.paneID)
 	if pane == nil || msg.snapshot == nil {
@@ -1015,10 +1690,13 @@ func (m *Model) handlePaneRecovered(msg paneRecoveredMsg) {
 	pane.Snapshot = msg.snapshot
 	pane.VTerm.LoadSnapshot(protocolScreenToVTerm(msg.snapshot.Screen), protocolCursorToVTerm(msg.snapshot.Cursor), protocolModesToVTerm(msg.snapshot.Modes))
 	pane.live = true
+	pane.TerminalState = "running"
 	pane.syncLost = false
 	pane.recovering = false
 	pane.droppedBytes = msg.droppedBytes
+	pane.cellVersion++
 	pane.renderDirty = true
+	pane.clearDirtyRegion()
 	pane.cellCache = nil
 	if tab := m.tabForPane(pane.ID); tab != nil {
 		if viewW, viewH, ok := m.paneViewportSizeInTab(tab, pane.ID); ok && m.syncViewport(pane, viewW, viewH) {
@@ -1043,15 +1721,487 @@ func (m *Model) recoverPaneSnapshotCmd(paneID, terminalID string, dropped uint64
 		return nil
 	}
 	return func() tea.Msg {
-		snap, err := m.client.Snapshot(context.Background(), terminalID, 0, 200)
+		ctx, cancel := m.requestContext()
+		defer cancel()
+		snap, err := m.client.Snapshot(ctx, terminalID, 0, 200)
 		if err != nil {
-			return paneRecoveryFailedMsg{paneID: paneID, err: err}
+			return paneRecoveryFailedMsg{paneID: paneID, err: m.wrapClientError("recover snapshot", err, "terminal_id", terminalID)}
 		}
 		return paneRecoveredMsg{
 			paneID:       paneID,
 			snapshot:     snap,
 			droppedBytes: dropped,
 		}
+	}
+}
+
+func (m *Model) loadLayoutSpecCmd(layout *LayoutSpec, workspaceName string, policy LayoutResolvePolicy) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := m.requestContext()
+		defer cancel()
+		result, err := m.client.List(ctx)
+		if err != nil {
+			return errMsg{m.wrapClientError("list terminals", err)}
+		}
+		workspace, plans, err := BuildWorkspaceFromLayoutSpec(layout, workspaceName, result.Terminals, policy)
+		if err != nil {
+			return errMsg{err}
+		}
+		m.applyLayoutFloatingRects(workspace, layout)
+		for _, tab := range workspace.Tabs {
+			if tab == nil {
+				continue
+			}
+			for paneID, pane := range tab.Panes {
+				if pane == nil || pane.TerminalID == "" || paneTerminalState(pane) == "waiting" {
+					continue
+				}
+				info := findTerminalInfo(result.Terminals, pane.TerminalID)
+				attached, err := m.client.Attach(ctx, pane.TerminalID, "collaborator")
+				if err != nil {
+					return errMsg{m.wrapClientError("attach terminal", err, "terminal_id", pane.TerminalID)}
+				}
+				snap, err := m.client.Snapshot(ctx, pane.TerminalID, 0, 200)
+				if err != nil {
+					return errMsg{m.wrapClientError("snapshot terminal", err, "terminal_id", pane.TerminalID)}
+				}
+				view := m.newViewport(pane.TerminalID, attached.Channel, snap)
+				if info != nil {
+					view = viewportWithTerminalInfo(view, *info)
+				} else {
+					view.TerminalState = pane.TerminalState
+				}
+				view.Mode = pane.Mode
+				view.Offset = pane.Offset
+				view.Pin = pane.Pin
+				view.Readonly = pane.Readonly
+				pane.Viewport = view
+				m.startPaneStream(pane)
+				tab.Panes[paneID] = pane
+			}
+		}
+		if policy == LayoutResolveCreate {
+			for _, plan := range plans {
+				pane := findPane(workspace.Tabs, plan.PaneID)
+				if pane == nil {
+					return errMsg{fmt.Errorf("missing pane for create plan %q", plan.PaneID)}
+				}
+				command := commandStringToSlice(plan.Terminal.Command)
+				if len(command) == 0 {
+					command = []string{m.cfg.DefaultShell}
+				}
+				created, err := m.client.Create(ctx, command, "", protocol.Size{Cols: 80, Rows: 24})
+				if err != nil {
+					return errMsg{m.wrapClientError("create terminal", err)}
+				}
+				if len(pane.Tags) > 0 {
+					if err := m.client.SetTags(ctx, created.TerminalID, pane.Tags); err != nil {
+						return errMsg{m.wrapClientError("set terminal tags", err, "terminal_id", created.TerminalID)}
+					}
+				}
+				attached, err := m.client.Attach(ctx, created.TerminalID, "collaborator")
+				if err != nil {
+					return errMsg{m.wrapClientError("attach terminal", err, "terminal_id", created.TerminalID)}
+				}
+				snap, err := m.client.Snapshot(ctx, created.TerminalID, 0, 200)
+				if err != nil {
+					return errMsg{m.wrapClientError("snapshot terminal", err, "terminal_id", created.TerminalID)}
+				}
+				view := m.newViewport(created.TerminalID, attached.Channel, snap)
+				view.Name = pane.Name
+				view.Command = command
+				view.Tags = cloneStringMap(pane.Tags)
+				view.TerminalState = "running"
+				view.Mode = pane.Mode
+				view.Offset = pane.Offset
+				view.Pin = pane.Pin
+				view.Readonly = pane.Readonly
+				pane.TerminalID = created.TerminalID
+				pane.Title = paneTitleForCommand("", firstCommandWord(command), created.TerminalID)
+				pane.Viewport = view
+				m.startPaneStream(pane)
+			}
+		}
+		m.applyLayoutFloatingRects(workspace, layout)
+		msg := layoutLoadedMsg{workspace: *workspace}
+		if policy == LayoutResolvePrompt && len(plans) > 0 {
+			msg.prompt = append([]LayoutCreatePlan(nil), plans...)
+		}
+		return msg
+	}
+}
+
+func (m *Model) advanceLayoutPromptAfterPaneMsg(paneID string, pane *Pane) tea.Cmd {
+	if m.layoutPromptCurrent == nil {
+		return nil
+	}
+	if paneID == "" && pane != nil {
+		paneID = pane.ID
+	}
+	if paneID == "" || paneID != m.layoutPromptCurrent.PaneID {
+		return nil
+	}
+	return m.advanceLayoutPromptCmd()
+}
+
+func (m *Model) advanceLayoutPromptCmd() tea.Cmd {
+	if m.layoutPromptCurrent != nil {
+		m.layoutPromptCurrent = nil
+	}
+	if len(m.layoutPromptQueue) == 0 {
+		return nil
+	}
+	plan := m.layoutPromptQueue[0]
+	m.layoutPromptQueue = m.layoutPromptQueue[1:]
+	m.layoutPromptCurrent = &plan
+	m.focusPaneByID(plan.PaneID)
+	return m.openLayoutResolvePickerCmd(plan)
+}
+
+func (m *Model) focusPaneByID(paneID string) {
+	if paneID == "" {
+		return
+	}
+	for tabIndex, tab := range m.workspace.Tabs {
+		if tab == nil || tab.Panes[paneID] == nil {
+			continue
+		}
+		m.workspace.ActiveTab = tabIndex
+		tab.ActivePaneID = paneID
+		return
+	}
+}
+
+func (m *Model) executeCommandPrompt(value string) tea.Cmd {
+	value = strings.TrimSpace(strings.TrimPrefix(value, ":"))
+	if value == "" {
+		return nil
+	}
+	fields := strings.Fields(value)
+	if len(fields) == 0 {
+		return nil
+	}
+	switch fields[0] {
+	case "save-layout":
+		if len(fields) < 2 {
+			m.notice = ""
+			m.err = fmt.Errorf("save-layout requires a name")
+			m.invalidateRender()
+			return nil
+		}
+		return m.saveLayoutCmd(fields[1])
+	case "load-layout":
+		if len(fields) < 2 {
+			m.notice = ""
+			m.err = fmt.Errorf("load-layout requires a name")
+			m.invalidateRender()
+			return nil
+		}
+		policy, err := parseLayoutResolvePolicy(fields[2:])
+		if err != nil {
+			m.notice = ""
+			m.err = err
+			m.invalidateRender()
+			return nil
+		}
+		return m.loadLayoutCmd(fields[1], policy)
+	case "list-layouts":
+		return m.listLayoutsCmd()
+	case "delete-layout":
+		if len(fields) < 2 {
+			m.notice = ""
+			m.err = fmt.Errorf("delete-layout requires a name")
+			m.invalidateRender()
+			return nil
+		}
+		return m.deleteLayoutCmd(fields[1])
+	default:
+		m.notice = ""
+		m.err = fmt.Errorf("unknown command: %s", fields[0])
+		m.invalidateRender()
+		return nil
+	}
+}
+
+func parseLayoutResolvePolicy(args []string) (LayoutResolvePolicy, error) {
+	policy := LayoutResolveCreate
+	if len(args) == 0 {
+		return policy, nil
+	}
+	if len(args) > 1 {
+		return "", fmt.Errorf("load-layout accepts at most one policy")
+	}
+	value := strings.TrimSpace(args[0])
+	switch value {
+	case "create", "--create":
+		return LayoutResolveCreate, nil
+	case "prompt", "--prompt":
+		return LayoutResolvePrompt, nil
+	case "skip", "--skip":
+		return LayoutResolveSkip, nil
+	default:
+		return "", fmt.Errorf("unsupported load-layout policy: %s", value)
+	}
+}
+
+func (m *Model) startStartupBootstrapCmd() tea.Cmd {
+	return func() tea.Msg {
+		if path := strings.TrimSpace(m.cfg.WorkspaceStatePath); path != "" {
+			if exists, err := fileExists(path); err != nil {
+				return errMsg{err}
+			} else if exists {
+				m.logger.Info("tui startup restoring workspace state", "path", path)
+				if cmd := m.loadWorkspaceStateCmd(path); cmd != nil {
+					return cmd()
+				}
+			}
+		}
+		if m.cfg.StartupAutoLayout {
+			path, err := m.resolveAutoStartupLayoutPath()
+			if err != nil {
+				return errMsg{err}
+			}
+			if path != "" {
+				m.logger.Info("tui startup auto layout discovered", "path", path)
+				if cmd := m.loadLayoutCmd(path, LayoutResolveCreate); cmd != nil {
+					return cmd()
+				}
+			}
+		}
+		if m.cfg.StartupPicker {
+			m.logger.Info("tui startup falling back to chooser")
+			if cmd := m.openBootstrapTerminalPickerCmd(0); cmd != nil {
+				return cmd()
+			}
+			return nil
+		}
+		m.logger.Info("tui startup falling back to first pane creation")
+		if cmd := m.createPaneCmd(0, "", ""); cmd != nil {
+			return cmd()
+		}
+		return nil
+	}
+}
+
+func (m *Model) saveLayoutCmd(name string) tea.Cmd {
+	return func() tea.Msg {
+		data, err := ExportLayoutYAML(name, &m.workspace)
+		if err != nil {
+			return errMsg{err}
+		}
+		path, err := m.layoutFilePath(name)
+		if err != nil {
+			return errMsg{err}
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return errMsg{err}
+		}
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			return errMsg{err}
+		}
+		return noticeMsg{text: "saved layout: " + name}
+	}
+}
+
+func (m *Model) loadLayoutCmd(name string, policy LayoutResolvePolicy) tea.Cmd {
+	return func() tea.Msg {
+		path, err := m.resolveLayoutFilePath(name)
+		if err != nil {
+			return errMsg{err}
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return errMsg{err}
+		}
+		layout, err := ParseLayoutYAML(data)
+		if err != nil {
+			return errMsg{err}
+		}
+		if cmd := m.loadLayoutSpecCmd(layout, layout.Name, policy); cmd != nil {
+			msg := cmd()
+			if loaded, ok := msg.(layoutLoadedMsg); ok {
+				loaded.notice = "loaded layout: " + layout.Name
+				return loaded
+			}
+			return msg
+		}
+		return noticeMsg{text: "loaded layout: " + layout.Name}
+	}
+}
+
+func (m *Model) layoutFilePath(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("layout name is required")
+	}
+	if strings.ContainsRune(name, os.PathSeparator) {
+		if filepath.Ext(name) == "" {
+			name += ".yaml"
+		}
+		return name, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	if filepath.Ext(name) == "" {
+		name += ".yaml"
+	}
+	return filepath.Join(home, ".config", "termx", "layouts", name), nil
+}
+
+func (m *Model) resolveLayoutFilePath(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("layout name is required")
+	}
+	if strings.ContainsRune(name, os.PathSeparator) {
+		if filepath.Ext(name) == "" {
+			name += ".yaml"
+		}
+		return name, nil
+	}
+
+	fileName := name
+	if filepath.Ext(fileName) == "" {
+		fileName += ".yaml"
+	}
+
+	projectDirs, err := projectLayoutDirs()
+	if err != nil {
+		return "", err
+	}
+	for _, dir := range projectDirs {
+		path := filepath.Join(dir, fileName)
+		if exists, err := fileExists(path); err != nil {
+			return "", err
+		} else if exists {
+			return path, nil
+		}
+	}
+
+	userPath, err := m.layoutFilePath(name)
+	if err != nil {
+		return "", err
+	}
+	if exists, err := fileExists(userPath); err != nil {
+		return "", err
+	} else if exists {
+		return userPath, nil
+	}
+	return "", fmt.Errorf("layout %q not found", name)
+}
+
+func (m *Model) listLayoutsCmd() tea.Cmd {
+	return func() tea.Msg {
+		names, err := m.listLayoutNames()
+		if err != nil {
+			return errMsg{err}
+		}
+		if len(names) == 0 {
+			return noticeMsg{text: "layouts: none"}
+		}
+		return noticeMsg{text: "layouts: " + strings.Join(names, ", ")}
+	}
+}
+
+func (m *Model) deleteLayoutCmd(name string) tea.Cmd {
+	return func() tea.Msg {
+		path, err := m.resolveLayoutFilePath(name)
+		if err != nil {
+			return errMsg{err}
+		}
+		if err := os.Remove(path); err != nil {
+			return errMsg{err}
+		}
+		return noticeMsg{text: "deleted layout: " + strings.TrimSpace(name)}
+	}
+}
+
+func (m *Model) listLayoutNames() ([]string, error) {
+	seen := map[string]struct{}{}
+	names := make([]string, 0)
+	addDir := func(dir string) error {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name, ok := layoutNameForFile(entry.Name())
+			if !ok {
+				continue
+			}
+			if _, exists := seen[name]; exists {
+				continue
+			}
+			seen[name] = struct{}{}
+			names = append(names, name)
+		}
+		return nil
+	}
+
+	projectDirs, err := projectLayoutDirs()
+	if err != nil {
+		return nil, err
+	}
+	for _, dir := range projectDirs {
+		if err := addDir(dir); err != nil {
+			return nil, err
+		}
+	}
+
+	userPath, err := m.layoutFilePath("placeholder")
+	if err != nil {
+		return nil, err
+	}
+	if err := addDir(filepath.Dir(userPath)); err != nil {
+		return nil, err
+	}
+
+	slices.Sort(names)
+	return names, nil
+}
+
+func projectLayoutDirs() ([]string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	dirs := make([]string, 0, 8)
+	for {
+		dirs = append(dirs, filepath.Join(cwd, ".termx", "layouts"))
+		parent := filepath.Dir(cwd)
+		if parent == cwd {
+			break
+		}
+		cwd = parent
+	}
+	return dirs, nil
+}
+
+func fileExists(path string) (bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return !info.IsDir(), nil
+}
+
+func layoutNameForFile(name string) (string, bool) {
+	switch ext := filepath.Ext(name); ext {
+	case ".yaml", ".yml":
+		return strings.TrimSuffix(name, ext), true
+	default:
+		return "", false
 	}
 }
 
@@ -1064,7 +2214,9 @@ func (m *Model) handlePaneResize(msg paneResizeMsg) {
 	if pane.Snapshot != nil {
 		pane.Snapshot.Size = protocol.Size{Cols: msg.cols, Rows: msg.rows}
 	}
+	pane.cellVersion++
 	pane.renderDirty = true
+	pane.clearDirtyRegion()
 	pane.cellCache = nil
 	if tab := m.tabForPane(pane.ID); tab != nil {
 		if viewW, viewH, ok := m.paneViewportSizeInTab(tab, pane.ID); ok && m.syncViewport(pane, viewW, viewH) {
@@ -1114,7 +2266,14 @@ func (m *Model) resizeActivePane(dir Direction, step int) {
 
 func (m *Model) visiblePaneRects(tab *Tab) map[string]Rect {
 	if tab == nil || tab.Root == nil {
-		return nil
+		rects := make(map[string]Rect)
+		for _, floating := range m.visibleFloatingPanes(tab) {
+			rects[floating.PaneID] = floating.Rect
+		}
+		if len(rects) == 0 {
+			return nil
+		}
+		return rects
 	}
 	rootRect := Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}
 	rects := tab.Root.Rects(rootRect)
@@ -1123,7 +2282,92 @@ func (m *Model) visiblePaneRects(tab *Tab) map[string]Rect {
 			rects = map[string]Rect{tab.ZoomedPaneID: rootRect}
 		}
 	}
+	for _, floating := range m.visibleFloatingPanes(tab) {
+		rects[floating.PaneID] = floating.Rect
+	}
 	return rects
+}
+
+func (m *Model) visibleFloatingPanes(tab *Tab) []*FloatingPane {
+	if tab == nil || !tab.FloatingVisible || len(tab.Floating) == 0 {
+		return nil
+	}
+	rootRect := Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}
+	out := make([]*FloatingPane, 0, len(tab.Floating))
+	for _, floating := range tab.Floating {
+		if floating == nil {
+			continue
+		}
+		entry := *floating
+		entry.Rect = clampFloatingRect(entry.Rect, rootRect)
+		out = append(out, &entry)
+	}
+	slices.SortStableFunc(out, func(a, b *FloatingPane) int {
+		if a.Z != b.Z {
+			return a.Z - b.Z
+		}
+		return strings.Compare(a.PaneID, b.PaneID)
+	})
+	return out
+}
+
+func (m *Model) clampFloatingPanes() {
+	tab := m.currentTab()
+	if tab == nil || len(tab.Floating) == 0 {
+		return
+	}
+	bounds := Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}
+	changed := false
+	for _, floating := range tab.Floating {
+		if floating == nil {
+			continue
+		}
+		next := clampFloatingRect(floating.Rect, bounds)
+		if next != floating.Rect {
+			floating.Rect = next
+			changed = true
+		}
+	}
+	if changed {
+		tab.renderCache = nil
+	}
+}
+
+func clampFloatingRect(rect, bounds Rect) Rect {
+	if bounds.W <= 0 || bounds.H <= 0 {
+		return Rect{W: max(1, rect.W), H: max(1, rect.H)}
+	}
+	rect.W = max(8, min(rect.W, bounds.W))
+	rect.H = max(4, min(rect.H, bounds.H))
+	if rect.X < bounds.X {
+		rect.X = bounds.X
+	}
+	if rect.Y < bounds.Y {
+		rect.Y = bounds.Y
+	}
+	maxX := bounds.X + bounds.W - rect.W
+	maxY := bounds.Y + bounds.H - rect.H
+	if rect.X > maxX {
+		rect.X = maxX
+	}
+	if rect.Y > maxY {
+		rect.Y = maxY
+	}
+	return rect
+}
+
+func removeFloatingPane(entries []*FloatingPane, paneID string) []*FloatingPane {
+	if len(entries) == 0 {
+		return nil
+	}
+	out := entries[:0]
+	for _, entry := range entries {
+		if entry == nil || entry.PaneID == paneID {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 func (m *Model) paneViewportSizeInTab(tab *Tab, paneID string) (int, int, bool) {
@@ -1310,6 +2554,199 @@ func (m *Model) panActiveViewport(dx, dy int) {
 	m.invalidateRender()
 }
 
+func (m *Model) toggleFloatingLayerVisibility() {
+	tab := m.currentTab()
+	if tab == nil || len(tab.Floating) == 0 {
+		return
+	}
+	tab.FloatingVisible = !tab.FloatingVisible
+	if !tab.FloatingVisible {
+		_ = m.focusTiledPane()
+	}
+	tab.renderCache = nil
+	m.invalidateRender()
+}
+
+func (m *Model) cycleFloatingFocus() {
+	tab := m.currentTab()
+	if tab == nil {
+		return
+	}
+	floating := m.visibleFloatingPanes(tab)
+	if len(floating) == 0 {
+		return
+	}
+	if !isFloatingPane(tab, tab.ActivePaneID) {
+		tab.ActivePaneID = floating[0].PaneID
+		tab.renderCache = nil
+		m.invalidateRender()
+		return
+	}
+	for i, entry := range floating {
+		if entry.PaneID != tab.ActivePaneID {
+			continue
+		}
+		tab.ActivePaneID = floating[(i+1)%len(floating)].PaneID
+		tab.renderCache = nil
+		m.invalidateRender()
+		return
+	}
+	tab.ActivePaneID = floating[0].PaneID
+	tab.renderCache = nil
+	m.invalidateRender()
+}
+
+func (m *Model) raiseActiveFloatingPane() {
+	tab := m.currentTab()
+	if tab == nil || !isFloatingPane(tab, tab.ActivePaneID) {
+		return
+	}
+	reorderFloatingPanes(tab, tab.ActivePaneID, true)
+	tab.renderCache = nil
+	m.invalidateRender()
+}
+
+func (m *Model) lowerActiveFloatingPane() {
+	tab := m.currentTab()
+	if tab == nil || !isFloatingPane(tab, tab.ActivePaneID) {
+		return
+	}
+	reorderFloatingPanes(tab, tab.ActivePaneID, false)
+	tab.renderCache = nil
+	m.invalidateRender()
+}
+
+func (m *Model) focusTiledPane() bool {
+	tab := m.currentTab()
+	if tab == nil || !isFloatingPane(tab, tab.ActivePaneID) {
+		return false
+	}
+	if paneID := firstTiledPaneID(tab); paneID != "" {
+		tab.ActivePaneID = paneID
+		tab.renderCache = nil
+		m.invalidateRender()
+		return true
+	}
+	return false
+}
+
+func (m *Model) moveActiveFloatingPane(dx, dy int) {
+	tab := m.currentTab()
+	if tab == nil || !isFloatingPane(tab, tab.ActivePaneID) {
+		return
+	}
+	bounds := Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}
+	for _, entry := range tab.Floating {
+		if entry == nil || entry.PaneID != tab.ActivePaneID {
+			continue
+		}
+		rect := entry.Rect
+		rect.X += dx
+		rect.Y += dy
+		entry.Rect = clampFloatingRect(rect, bounds)
+		tab.renderCache = nil
+		m.invalidateRender()
+		return
+	}
+}
+
+func (m *Model) resizeActiveFloatingPane(dw, dh int) {
+	tab := m.currentTab()
+	if tab == nil || !isFloatingPane(tab, tab.ActivePaneID) {
+		return
+	}
+	bounds := Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}
+	for _, entry := range tab.Floating {
+		if entry == nil || entry.PaneID != tab.ActivePaneID {
+			continue
+		}
+		rect := entry.Rect
+		rect.W += dw
+		rect.H += dh
+		entry.Rect = clampFloatingRect(rect, bounds)
+		tab.renderCache = nil
+		m.invalidateRender()
+		return
+	}
+}
+
+func (m *Model) defaultFloatingRect() Rect {
+	bounds := Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}
+	rect := Rect{
+		W: max(24, bounds.W/2),
+		H: max(8, bounds.H/2),
+	}
+	rect = clampFloatingRect(rect, bounds)
+	rect.X = bounds.X + max(0, (bounds.W-rect.W)/2)
+	rect.Y = bounds.Y + max(0, (bounds.H-rect.H)/2)
+	return clampFloatingRect(rect, bounds)
+}
+
+func (m *Model) defaultFloatingRectForPane(pane *Pane) Rect {
+	bounds := Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}
+	contentW, contentH := paneContentSize(pane)
+	rect := Rect{
+		W: max(24, contentW+2),
+		H: max(8, contentH+2),
+	}
+	rect = clampFloatingRect(rect, bounds)
+	rect.X = bounds.X + max(0, (bounds.W-rect.W)/2)
+	rect.Y = bounds.Y + max(0, (bounds.H-rect.H)/2)
+	return clampFloatingRect(rect, bounds)
+}
+
+func (m *Model) applyLayoutFloatingRects(workspace *Workspace, layout *LayoutSpec) {
+	if workspace == nil || layout == nil {
+		return
+	}
+	limit := min(len(workspace.Tabs), len(layout.Tabs))
+	for i := 0; i < limit; i++ {
+		tab := workspace.Tabs[i]
+		tabSpec := layout.Tabs[i]
+		if tab == nil || len(tab.Floating) == 0 || len(tabSpec.Floating) == 0 {
+			continue
+		}
+		for j, entry := range tab.Floating {
+			if entry == nil || j >= len(tabSpec.Floating) {
+				continue
+			}
+			pane := tab.Panes[entry.PaneID]
+			entry.Rect = m.layoutFloatingRect(tabSpec.Floating[j], pane)
+			entry.Z = j
+		}
+	}
+}
+
+func (m *Model) layoutFloatingRect(spec FloatingEntrySpec, pane *Pane) Rect {
+	rect := m.defaultFloatingRectForPane(pane)
+	if spec.Width > 0 {
+		rect.W = spec.Width
+	}
+	if spec.Height > 0 {
+		rect.H = spec.Height
+	}
+	bounds := Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}
+	rect = clampFloatingRect(rect, bounds)
+	switch strings.TrimSpace(spec.Position) {
+	case "top-left":
+		rect.X = bounds.X
+		rect.Y = bounds.Y
+	case "top-right":
+		rect.X = bounds.X + max(0, bounds.W-rect.W)
+		rect.Y = bounds.Y
+	case "bottom-left":
+		rect.X = bounds.X
+		rect.Y = bounds.Y + max(0, bounds.H-rect.H)
+	case "bottom-right":
+		rect.X = bounds.X + max(0, bounds.W-rect.W)
+		rect.Y = bounds.Y + max(0, bounds.H-rect.H)
+	default:
+		rect.X = bounds.X + max(0, (bounds.W-rect.W)/2)
+		rect.Y = bounds.Y + max(0, (bounds.H-rect.H)/2)
+	}
+	return clampFloatingRect(rect, bounds)
+}
+
 func (m *Model) cycleActiveLayout() {
 	tab := m.currentTab()
 	if tab == nil || tab.Root == nil {
@@ -1332,7 +2769,7 @@ func (m *Model) cycleActiveLayout() {
 
 func (m *Model) resizeVisiblePanesCmd() tea.Cmd {
 	tab := m.currentTab()
-	if tab == nil || tab.Root == nil {
+	if tab == nil {
 		return nil
 	}
 	rects := m.visiblePaneRects(tab)
@@ -1344,6 +2781,11 @@ func (m *Model) resizeVisiblePanesCmd() tea.Cmd {
 		}
 		cols := uint16(max(2, rect.W-2))
 		rows := uint16(max(2, rect.H-2))
+		if !paneAllowsResize(pane) {
+			tab.renderCache = nil
+			m.invalidateRender()
+			continue
+		}
 		if pane.Mode == ViewportModeFixed {
 			_ = m.syncViewport(pane, int(cols), int(rows))
 			tab.renderCache = nil
@@ -1352,8 +2794,10 @@ func (m *Model) resizeVisiblePanesCmd() tea.Cmd {
 		}
 		cmds = append(cmds, func(channel uint16, cols, rows uint16) tea.Cmd {
 			return func() tea.Msg {
-				if err := m.client.Resize(context.Background(), channel, cols, rows); err != nil {
-					return errMsg{err}
+				ctx, cancel := m.requestContext()
+				defer cancel()
+				if err := m.client.Resize(ctx, channel, cols, rows); err != nil {
+					return errMsg{m.wrapClientError("resize terminal", err, "channel", channel)}
 				}
 				return paneResizeMsg{channel: channel, cols: cols, rows: rows}
 			}
@@ -1373,7 +2817,7 @@ func (m *Model) closeActivePaneCmd() tea.Cmd {
 	}
 	paneID := pane.ID
 	return func() tea.Msg {
-		return paneOutputMsg{paneID: paneID, frame: protocol.StreamFrame{Type: protocol.TypeClosed}}
+		return paneDetachedMsg{paneID: paneID}
 	}
 }
 
@@ -1387,8 +2831,10 @@ func (m *Model) killActiveTerminalCmd() tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		if err := m.client.Kill(context.Background(), pane.TerminalID); err != nil {
-			return errMsg{err}
+		ctx, cancel := m.requestContext()
+		defer cancel()
+		if err := m.client.Kill(ctx, pane.TerminalID); err != nil {
+			return errMsg{m.wrapClientError("kill terminal", err, "terminal_id", pane.TerminalID)}
 		}
 		return terminalClosedMsg{terminalID: pane.TerminalID}
 	}
@@ -1415,8 +2861,11 @@ func (m *Model) killActiveTabCmd() tea.Cmd {
 
 	return func() tea.Msg {
 		for _, terminalID := range terminalIDs {
-			if err := m.client.Kill(context.Background(), terminalID); err != nil {
-				return errMsg{err}
+			ctx, cancel := m.requestContext()
+			err := m.client.Kill(ctx, terminalID)
+			cancel()
+			if err != nil {
+				return errMsg{m.wrapClientError("kill terminal", err, "terminal_id", terminalID)}
 			}
 		}
 		return tabClosedMsg{tabIndex: tabIndex}
@@ -1435,7 +2884,10 @@ func (m *Model) removePane(paneID string) bool {
 			pane.stopStream()
 		}
 		delete(tab.Panes, paneID)
-		tab.Root = tab.Root.Remove(paneID)
+		tab.Floating = removeFloatingPane(tab.Floating, paneID)
+		if tab.Root != nil {
+			tab.Root = tab.Root.Remove(paneID)
+		}
 		tab.LayoutPreset = layoutPresetCustom
 		if tab.ZoomedPaneID == paneID {
 			tab.ZoomedPaneID = ""
@@ -1478,6 +2930,99 @@ func (m *Model) removeTerminal(terminalID string) bool {
 			return true
 		}
 	}
+}
+
+func (m *Model) markTerminalKilled(terminalID string) {
+	if terminalID == "" {
+		return
+	}
+	changed := false
+	for _, tab := range m.workspace.Tabs {
+		if tab == nil {
+			continue
+		}
+		for _, pane := range tab.Panes {
+			if pane == nil || pane.TerminalID != terminalID {
+				continue
+			}
+			if pane.stopStream != nil {
+				pane.stopStream()
+				pane.stopStream = nil
+			}
+			pane.live = false
+			pane.Snapshot = nil
+			pane.TerminalState = "killed"
+			pane.ExitCode = nil
+			pane.cellVersion++
+			pane.renderDirty = true
+			pane.clearDirtyRegion()
+			pane.cellCache = nil
+			tab.renderCache = nil
+			changed = true
+		}
+	}
+	if changed {
+		m.invalidateRender()
+	}
+}
+
+func (m *Model) markTerminalExited(terminalID string, exitCode int) {
+	if terminalID == "" {
+		return
+	}
+	changed := false
+	for _, tab := range m.workspace.Tabs {
+		if tab == nil {
+			continue
+		}
+		for _, pane := range tab.Panes {
+			if pane == nil || pane.TerminalID != terminalID {
+				continue
+			}
+			if pane.stopStream != nil {
+				pane.stopStream()
+				pane.stopStream = nil
+			}
+			pane.live = pane.VTerm != nil
+			pane.TerminalState = "exited"
+			code := exitCode
+			pane.ExitCode = &code
+			pane.renderDirty = true
+			pane.cellVersion++
+			pane.clearDirtyRegion()
+			changed = true
+		}
+	}
+	if changed {
+		m.invalidateRender()
+	}
+}
+
+func (m *Model) replaceWorkspace(workspace Workspace) {
+	for _, tab := range m.workspace.Tabs {
+		if tab == nil {
+			continue
+		}
+		for _, pane := range tab.Panes {
+			if pane != nil && pane.stopStream != nil {
+				pane.stopStream()
+				pane.stopStream = nil
+			}
+		}
+	}
+	m.workspace = workspace
+	if len(m.workspace.Tabs) == 0 {
+		m.workspace.Tabs = []*Tab{newTab("1")}
+		m.workspace.ActiveTab = 0
+	}
+	if m.workspace.ActiveTab < 0 || m.workspace.ActiveTab >= len(m.workspace.Tabs) {
+		m.workspace.ActiveTab = 0
+	}
+	if tab := m.currentTab(); tab != nil && tab.ActivePaneID == "" {
+		tab.ActivePaneID = firstPaneID(tab.Panes)
+	}
+	m.renderCache = ""
+	m.invalidateRender()
 }
 
 func (m *Model) removeTab(index int) bool {
@@ -1523,6 +3068,9 @@ func (m *Model) sendToActive(data []byte) tea.Cmd {
 	if pane == nil {
 		return nil
 	}
+	if !paneAcceptsInput(pane) {
+		return nil
+	}
 	if pane.Readonly {
 		data = filterReadonlyInput(data)
 		if len(data) == 0 {
@@ -1530,8 +3078,10 @@ func (m *Model) sendToActive(data []byte) tea.Cmd {
 		}
 	}
 	return func() tea.Msg {
-		if err := m.client.Input(context.Background(), pane.Channel, data); err != nil {
-			return errMsg{err}
+		ctx, cancel := m.requestContext()
+		defer cancel()
+		if err := m.client.Input(ctx, pane.Channel, data); err != nil {
+			return errMsg{m.wrapClientError("send input", err, "channel", pane.Channel)}
 		}
 		return nil
 	}
@@ -1548,6 +3098,21 @@ func filterReadonlyInput(data []byte) []byte {
 		}
 	}
 	return out
+}
+
+func paneAcceptsInput(pane *Pane) bool {
+	return pane != nil && paneTerminalState(pane) == "running"
+}
+
+func paneAllowsResize(pane *Pane) bool {
+	return pane != nil && paneTerminalState(pane) == "running"
+}
+
+func paneTerminalState(pane *Pane) string {
+	if pane == nil || pane.Viewport == nil || pane.TerminalState == "" {
+		return "running"
+	}
+	return pane.TerminalState
 }
 
 func (m *Model) currentTab() *Tab {
@@ -1599,6 +3164,7 @@ func (m *Model) renderStatus() string {
 	}
 
 	parts := []string{"C-a ? help", "split:\"/%", "nav:hjkl", "resize:HJKL", "swap:{/}", "layout:Space", "tab:c , n/p &", "zoom:z", "detach:d"}
+	prefixParts := make([]string, 0, 3)
 	if m.prefixActive {
 		parts = append(parts, "[prefix]")
 	}
@@ -1607,15 +3173,28 @@ func (m *Model) renderStatus() string {
 	}
 	if tab := m.currentTab(); tab != nil {
 		if pane := tab.Panes[tab.ActivePaneID]; pane != nil {
+			parts = append(parts, paneLayerStatusParts(tab, tab.ActivePaneID)...)
 			parts = append(parts, "pane:"+pane.TerminalID)
 			parts = append(parts, viewportStatusParts(pane)...)
+			switch paneTerminalState(pane) {
+			case "exited":
+				prefixParts = append(prefixParts, "restart:r", "attach:C-a f", "close:C-a x")
+			case "killed":
+				prefixParts = append(prefixParts, "attach:C-a f", "close:C-a x")
+			}
 			if pane.syncLost || pane.recovering || pane.catchingUp {
 				parts = append(parts, fmt.Sprintf("catching-up:%dB", pane.droppedBytes))
 			}
 		}
 	}
+	if len(prefixParts) > 0 {
+		parts = append(prefixParts, parts...)
+	}
+	if m.notice != "" {
+		parts = append([]string{m.notice}, parts...)
+	}
 	if m.err != nil {
-		parts = append(parts, "err:"+m.err.Error())
+		parts = append([]string{"err:" + m.err.Error()}, parts...)
 	}
 	left := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#e2e8f0")).
@@ -1638,7 +3217,7 @@ func viewportStatusParts(pane *Pane) []string {
 	if pane == nil {
 		return nil
 	}
-	parts := []string{"mode:" + string(pane.Mode)}
+	parts := []string{"state:" + paneTerminalState(pane), "mode:" + string(pane.Mode)}
 	if pane.Mode == ViewportModeFixed {
 		parts = append(parts, fmt.Sprintf("offset:%d,%d", pane.Offset.X, pane.Offset.Y))
 		if pane.Pin {
@@ -1647,6 +3226,18 @@ func viewportStatusParts(pane *Pane) []string {
 	}
 	if pane.Readonly {
 		parts = append(parts, "readonly")
+	}
+	return parts
+}
+
+func paneLayerStatusParts(tab *Tab, paneID string) []string {
+	z, total, ok := floatingPaneOrder(tab, paneID)
+	if !ok {
+		return nil
+	}
+	parts := []string{"layer:floating"}
+	if total > 1 {
+		parts = append(parts, "z:"+itoa(z))
 	}
 	return parts
 }
@@ -1665,9 +3256,10 @@ func (m *Model) paneLines(pane *Pane) []string {
 
 func newTab(name string) *Tab {
 	return &Tab{
-		Name:         name,
-		Panes:        make(map[string]*Pane),
-		LayoutPreset: layoutPresetCustom,
+		Name:            name,
+		Panes:           make(map[string]*Pane),
+		FloatingVisible: true,
+		LayoutPreset:    layoutPresetCustom,
 	}
 }
 
@@ -1779,6 +3371,11 @@ func (m *Model) beginRenameTab() {
 	m.invalidateRender()
 }
 
+func (m *Model) beginCommandPrompt() {
+	m.prompt = &textPrompt{Title: "command"}
+	m.invalidateRender()
+}
+
 func (m *Model) appendPrompt(value string) {
 	if m.prompt == nil || value == "" {
 		return
@@ -1796,9 +3393,15 @@ func (m *Model) deletePromptRune() {
 	m.invalidateRender()
 }
 
-func (m *Model) commitPrompt() {
+func (m *Model) commitPrompt() tea.Cmd {
 	if m.prompt == nil {
-		return
+		return nil
+	}
+	if m.prompt.Title == "command" {
+		value := strings.TrimSpace(m.prompt.Value)
+		m.prompt = nil
+		m.invalidateRender()
+		return m.executeCommandPrompt(value)
 	}
 	value := strings.TrimSpace(m.prompt.Value)
 	if value == "" {
@@ -1809,6 +3412,7 @@ func (m *Model) commitPrompt() {
 	}
 	m.prompt = nil
 	m.invalidateRender()
+	return nil
 }
 
 func findPaneByChannel(tabs []*Tab, channel uint16) *Pane {
@@ -1838,6 +3442,98 @@ func firstPaneID(panes map[string]*Pane) string {
 		return id
 	}
 	return ""
+}
+
+func firstTiledPaneID(tab *Tab) string {
+	if tab == nil || tab.Root == nil {
+		return ""
+	}
+	ids := tab.Root.LeafIDs()
+	for _, paneID := range ids {
+		if paneID != "" {
+			return paneID
+		}
+	}
+	return ""
+}
+
+func isFloatingPane(tab *Tab, paneID string) bool {
+	if tab == nil || paneID == "" {
+		return false
+	}
+	for _, entry := range tab.Floating {
+		if entry != nil && entry.PaneID == paneID {
+			return true
+		}
+	}
+	return false
+}
+
+func floatingPaneOrder(tab *Tab, paneID string) (int, int, bool) {
+	if tab == nil || paneID == "" {
+		return 0, 0, false
+	}
+	total := 0
+	z := 0
+	ok := false
+	for _, entry := range tab.Floating {
+		if entry == nil {
+			continue
+		}
+		total++
+		if entry.PaneID == paneID {
+			z = entry.Z + 1
+			ok = true
+		}
+	}
+	return z, total, ok
+}
+
+func reorderFloatingPanes(tab *Tab, paneID string, bringToFront bool) {
+	if tab == nil || len(tab.Floating) < 2 {
+		return
+	}
+	ordered := slices.Clone(tab.Floating)
+	slices.SortStableFunc(ordered, func(a, b *FloatingPane) int {
+		if a == nil || b == nil {
+			return 0
+		}
+		if a.Z != b.Z {
+			return a.Z - b.Z
+		}
+		return strings.Compare(a.PaneID, b.PaneID)
+	})
+	target := -1
+	for i, entry := range ordered {
+		if entry != nil && entry.PaneID == paneID {
+			target = i
+			break
+		}
+	}
+	if target < 0 {
+		return
+	}
+	entry := ordered[target]
+	ordered = append(ordered[:target], ordered[target+1:]...)
+	if bringToFront {
+		ordered = append(ordered, entry)
+	} else {
+		ordered = append([]*FloatingPane{entry}, ordered...)
+	}
+	for i, floating := range ordered {
+		if floating != nil {
+			floating.Z = i
+		}
+	}
+}
+
+func findTerminalInfo(terminals []protocol.TerminalInfo, terminalID string) *protocol.TerminalInfo {
+	for i := range terminals {
+		if terminals[i].ID == terminalID {
+			return &terminals[i]
+		}
+	}
+	return nil
 }
 
 func (m *Model) nextPaneID() string {
@@ -1909,6 +3605,10 @@ func prefixDirectionKey(dir Direction) tea.KeyMsg {
 	default:
 		return tea.KeyMsg{}
 	}
+}
+
+func prefixTabKey() tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyTab}
 }
 
 func prefixCtrlKey(b byte) tea.KeyMsg {
@@ -2373,6 +4073,7 @@ func (m *Model) emptyStateLines() []string {
 		"  - Ctrl-a c  new tab",
 		"  - Ctrl-a ,  rename current tab",
 		"  - Ctrl-a f  terminal picker",
+		"  - Ctrl-a s  workspace picker",
 		"  - Ctrl-a Space  cycle layout presets",
 		"  - Ctrl-a &  close current tab",
 		"  - Ctrl-a h/j/k/l  move focus",
@@ -2508,6 +4209,7 @@ func (m *Model) renderHelpScreen() string {
 		"Ctrl-a %       split vertically",
 		"Ctrl-a \"       split horizontally",
 		"Ctrl-a f       terminal picker",
+		"Ctrl-a s       workspace picker",
 		"Ctrl-a h/j/k/l move focus",
 		"Ctrl-a c       new tab",
 		"Ctrl-a ,       rename current tab",
@@ -2518,13 +4220,15 @@ func (m *Model) renderHelpScreen() string {
 		"Ctrl-a H/J/K/L resize current pane",
 		"Ctrl-a { / }   swap pane position",
 		"Ctrl-a z       zoom current pane",
-		"Ctrl-a M       toggle fit/fixed viewport mode",
-		"Ctrl-a P       toggle viewport pin in fixed mode",
-		"Ctrl-a R       toggle readonly viewport mode",
+		"Ctrl-a M / Ctrl-a P / Ctrl-a R viewport mode, pin, readonly",
 		"Ctrl-a Ctrl-h/j/k/l pan fixed viewport offset",
 		"Ctrl-a x       close current viewport",
 		"Ctrl-a X       kill current terminal",
 		"Ctrl-a d       detach from TUI",
+		"Ctrl-a w / Ctrl-a W / Ctrl-a Tab floating create, toggle, focus",
+		"Ctrl-a ] / _   raise or lower floating z-order",
+		"Ctrl-a Alt-h/j/k/l move floating viewport",
+		"Ctrl-a Alt-H/J/K/L resize floating viewport",
 		"Ctrl-a Ctrl-a  send raw Ctrl-a",
 		"",
 		"Colors come from your shell ANSI output and your outer terminal theme/font.",
@@ -2610,10 +4314,12 @@ func forceHeight(s string, height int) string {
 
 func Run(client Client, cfg Config, input io.Reader, output io.Writer) error {
 	model := NewModel(client, cfg)
+	model.logger.Info("tui run starting", "workspace", cfg.Workspace, "startup_picker", cfg.StartupPicker, "attach_id", cfg.AttachID)
 	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithInput(nil), tea.WithOutput(output))
 	model.SetProgram(program)
 	stopInput, restoreInput, err := startInputForwarder(program, input)
 	if err != nil {
+		model.logger.Error("failed to start input forwarder", "error", err)
 		return err
 	}
 	defer func() {
@@ -2621,7 +4327,21 @@ func Run(client Client, cfg Config, input io.Reader, output io.Writer) error {
 	}()
 	defer stopInput()
 	defer model.StopRenderTicker()
-	_, err = program.Run()
+	defer func() {
+		if r := recover(); r != nil {
+			model.logger.Error("tui panic", "panic", r, "stack", string(debug.Stack()))
+			panic(r)
+		}
+	}()
+	finalModel, err := program.Run()
+	if err != nil {
+		model.logger.Error("tui run failed", "error", err)
+	} else {
+		model.logger.Info("tui run stopped cleanly")
+	}
+	if persistErr := persistWorkspaceState(finalModel, cfg.WorkspaceStatePath, model.logger); persistErr != nil {
+		model.logger.Error("failed to persist workspace state", "path", cfg.WorkspaceStatePath, "error", persistErr)
+	}
 	return err
 }
 

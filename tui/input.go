@@ -18,6 +18,10 @@ type inputEventMsg struct {
 }
 
 func (m *Model) handleInputEvent(event uv.Event) tea.Cmd {
+	if m.workspacePicker != nil {
+		return m.handleWorkspacePickerEvent(event)
+	}
+
 	if m.terminalPicker != nil {
 		return m.handleTerminalPickerEvent(event)
 	}
@@ -64,13 +68,54 @@ func (m *Model) handleKeyPressEvent(event uv.KeyPressEvent) tea.Cmd {
 		return cmd
 	}
 
+	if cmd := m.handleExitedPaneEvent(event); cmd != nil {
+		return cmd
+	}
+
 	return m.sendKeyToActive(event)
+}
+
+func (m *Model) handleExitedPaneEvent(event uv.KeyPressEvent) tea.Cmd {
+	pane := activePane(m.currentTab())
+	if paneTerminalState(pane) != "exited" {
+		return nil
+	}
+	switch {
+	case event.MatchString("r"):
+		return m.restartActivePaneCmd()
+	default:
+		return nil
+	}
 }
 
 func (m *Model) handlePrefixEvent(event uv.KeyPressEvent) tea.Cmd {
 	switch {
 	case event.MatchString("ctrl+a"):
 		return m.sendToActive([]byte{0x01})
+	case event.Mod&uv.ModAlt != 0 && (event.MatchString("h") || event.MatchString("left")):
+		m.moveActiveFloatingPane(-4, 0)
+		return nil
+	case event.Mod&uv.ModAlt != 0 && (event.MatchString("j") || event.MatchString("down")):
+		m.moveActiveFloatingPane(0, 2)
+		return nil
+	case event.Mod&uv.ModAlt != 0 && (event.MatchString("k") || event.MatchString("up")):
+		m.moveActiveFloatingPane(0, -2)
+		return nil
+	case event.Mod&uv.ModAlt != 0 && (event.MatchString("l") || event.MatchString("right")):
+		m.moveActiveFloatingPane(4, 0)
+		return nil
+	case event.Mod&uv.ModAlt != 0 && (event.MatchString("H") || event.MatchString("shift+h")):
+		m.resizeActiveFloatingPane(-4, 0)
+		return nil
+	case event.Mod&uv.ModAlt != 0 && (event.MatchString("J") || event.MatchString("shift+j")):
+		m.resizeActiveFloatingPane(0, 2)
+		return nil
+	case event.Mod&uv.ModAlt != 0 && (event.MatchString("K") || event.MatchString("shift+k")):
+		m.resizeActiveFloatingPane(0, -2)
+		return nil
+	case event.Mod&uv.ModAlt != 0 && (event.MatchString("L") || event.MatchString("shift+l")):
+		m.resizeActiveFloatingPane(4, 0)
+		return nil
 	case event.MatchString("\""):
 		return m.splitActivePane(SplitHorizontal)
 	case event.MatchString("%"):
@@ -84,10 +129,7 @@ func (m *Model) handlePrefixEvent(event uv.KeyPressEvent) tea.Cmd {
 	case event.MatchString("l"), event.MatchString("right"):
 		m.moveFocus(DirectionRight)
 	case event.MatchString("c"):
-		m.workspace.Tabs = append(m.workspace.Tabs, newTab(nextTabName(m.workspace.Tabs)))
-		m.workspace.ActiveTab = len(m.workspace.Tabs) - 1
-		m.invalidateRender()
-		return m.createPaneCmd(m.workspace.ActiveTab, "", "")
+		return m.openNewTabTerminalPickerCmd()
 	case event.MatchString("n"):
 		if len(m.workspace.Tabs) > 0 {
 			m.workspace.ActiveTab = (m.workspace.ActiveTab + 1) % len(m.workspace.Tabs)
@@ -134,6 +176,25 @@ func (m *Model) handlePrefixEvent(event uv.KeyPressEvent) tea.Cmd {
 		return nil
 	case event.MatchString("f"):
 		return m.openTerminalPickerCmd()
+	case event.MatchString("s"):
+		return m.openWorkspacePickerCmd()
+	case event.MatchString("w"):
+		return m.openFloatingTerminalPickerCmd(m.workspace.ActiveTab)
+	case event.MatchString("W"), event.MatchString("shift+w"):
+		m.toggleFloatingLayerVisibility()
+		return nil
+	case event.MatchString("tab"):
+		m.cycleFloatingFocus()
+		return nil
+	case event.MatchString("]"):
+		m.raiseActiveFloatingPane()
+		return nil
+	case event.MatchString("_"):
+		m.lowerActiveFloatingPane()
+		return nil
+	case event.MatchString(":"):
+		m.beginCommandPrompt()
+		return nil
 	case event.MatchString("x"):
 		return m.closeActivePaneCmd()
 	case event.MatchString("X"), event.MatchString("shift+x"):
@@ -211,7 +272,7 @@ func (m *Model) handlePromptEvent(event uv.Event) tea.Cmd {
 		case event.MatchString("esc"):
 			m.prompt = nil
 		case event.MatchString("enter"):
-			m.commitPrompt()
+			return m.commitPrompt()
 		case event.MatchString("backspace"):
 			m.deletePromptRune()
 		case event.Text != "":

@@ -2,6 +2,7 @@ package memory
 
 import (
 	"bytes"
+	"io"
 	"testing"
 )
 
@@ -21,5 +22,18 @@ func TestPairRoundTrip(t *testing.T) {
 	}
 	if !bytes.Equal(got, payload) {
 		t.Fatalf("unexpected payload: %q", string(got))
+	}
+}
+
+func TestSendAfterLocalCloseReturnsEOF(t *testing.T) {
+	client, server := NewPair()
+	defer server.Close()
+
+	if err := client.Close(); err != nil {
+		t.Fatalf("client close failed: %v", err)
+	}
+
+	if err := client.Send([]byte("hello")); err == nil || err != io.EOF {
+		t.Fatalf("expected EOF after local close, got %v", err)
 	}
 }

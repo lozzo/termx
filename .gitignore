@@ -4,3 +4,4 @@ bin/
 cover.out
 .swp
 .toolchain/
+/termx

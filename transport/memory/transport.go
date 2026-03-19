@@ -43,19 +43,29 @@ func NewPair() (*Transport, *Transport) {
 	return a, b
 }
 
-func (t *Transport) Send(frame []byte) error {
+func (t *Transport) Send(frame []byte) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = io.EOF
+		}
+	}()
 	select {
 	case <-t.done:
 		return io.EOF
 	default:
 	}
 	data := append([]byte(nil), frame...)
+	var sent bool
 	select {
 	case <-t.done:
 		return io.EOF
 	case t.outgoing <- data:
+		sent = true
+	}
+	if sent {
 		return nil
 	}
+	return io.EOF
 }
 
 func (t *Transport) Recv() ([]byte, error) {
