@@ -82,6 +82,12 @@ type SetTagsParams struct {
 	Tags       map[string]string `json:"tags"`
 }
 
+type SetMetadataParams struct {
+	TerminalID string            `json:"terminal_id"`
+	Name       string            `json:"name,omitempty"`
+	Tags       map[string]string `json:"tags,omitempty"`
+}
+
 type AttachParams struct {
 	TerminalID string `json:"terminal_id"`
 	Mode       string `json:"mode"`

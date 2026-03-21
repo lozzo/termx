@@ -14,6 +14,10 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+var safeEmulatorWrite = func(emu *charmvt.SafeEmulator, data []byte) (int, error) {
+	return emu.Write(data)
+}
+
 type Cell struct {
 	Content string
 	Width   int
@@ -152,11 +156,17 @@ func (v *VTerm) drainResponses(emu *charmvt.SafeEmulator, handler ResponseHandle
 	}
 }
 
-func (v *VTerm) Write(data []byte) (int, error) {
+func (v *VTerm) Write(data []byte) (n int, err error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	defer func() {
+		if r := recover(); r != nil {
+			n = 0
+			err = fmt.Errorf("vterm write panic: %v", r)
+		}
+	}()
 	normalized := normalizeRenderableUTF8(data)
-	n, err := v.emu.Write(normalized)
+	n, err = safeEmulatorWrite(v.emu, normalized)
 	pos := v.emu.CursorPosition()
 	v.cursor.Row = pos.Y
 	v.cursor.Col = pos.X

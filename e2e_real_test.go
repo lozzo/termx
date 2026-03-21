@@ -572,6 +572,7 @@ func TestE2ERealTUI_WorkflowCreateSplitAndFloatingReuse(t *testing.T) {
 
 	h.waitForStableScreenContains("Choose Terminal", 10*time.Second)
 	h.pressEnter()
+	h.completeDefaultTerminalCreate()
 
 	h.sendText("echo REAL-ROOT")
 	h.pressEnter()
@@ -581,8 +582,9 @@ func TestE2ERealTUI_WorkflowCreateSplitAndFloatingReuse(t *testing.T) {
 	}
 
 	h.sendPrefixRune('%')
-	h.waitForStableScreenContains("Open Viewport", 10*time.Second)
+	h.waitForStableScreenContains("Open Pane", 10*time.Second)
 	h.pressEnter()
+	h.completeDefaultTerminalCreate()
 	h.sendText("echo REAL-SPLIT")
 	h.pressEnter()
 	screen = h.waitForStableScreenContains("REAL-SPLIT", 10*time.Second)
@@ -591,7 +593,7 @@ func TestE2ERealTUI_WorkflowCreateSplitAndFloatingReuse(t *testing.T) {
 	}
 
 	h.sendPrefixRune('w')
-	h.waitForStableScreenContains("Open Floating Viewport", 10*time.Second)
+	h.waitForStableScreenContains("Open Floating Pane", 10*time.Second)
 	h.sendText(reuseCreated.TerminalID)
 	h.pressEnter()
 	screen = h.waitForStableScreenContains("real-reuse", 10*time.Second)
@@ -644,7 +646,7 @@ func TestE2ERealTUI_StartupAttachAndFloatingReuseSameTerminal(t *testing.T) {
 	}
 
 	h.sendPrefixRune('w')
-	h.waitForStableScreenContains("Open Floating Viewport", 10*time.Second)
+	h.waitForStableScreenContains("Open Floating Pane", 10*time.Second)
 	h.sendText(created.TerminalID)
 	h.pressEnter()
 	screen = h.waitForStableScreenContains("[floating]", 10*time.Second)
@@ -696,6 +698,7 @@ func TestE2ERealTUI_TabCreateAndPickerReuse(t *testing.T) {
 	h.sendPrefixRune('c')
 	h.waitForStableScreenContains("Open Tab", 10*time.Second)
 	h.pressEnter()
+	h.completeDefaultTerminalCreate()
 
 	h.sendText("echo REAL-TAB")
 	h.pressEnter()
@@ -751,7 +754,7 @@ func TestE2ERealTUI_CloseFloatingKeepsSessionAlive(t *testing.T) {
 	h.waitForStableScreenContains("REAL-CLOSE-BASE", 10*time.Second)
 
 	h.sendPrefixRune('w')
-	h.waitForStableScreenContains("Open Floating Viewport", 10*time.Second)
+	h.waitForStableScreenContains("Open Floating Pane", 10*time.Second)
 	h.sendText(reuseCreated.TerminalID)
 	h.pressEnter()
 	h.waitForStableScreenContains("[floating]", 10*time.Second)

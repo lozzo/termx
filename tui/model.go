@@ -19,9 +19,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	uv "github.com/charmbracelet/ultraviolet"
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
 	localvterm "github.com/lozzow/termx/vterm"
+	"go.yaml.in/yaml/v3"
 )
 
 type Config struct {
@@ -43,14 +45,15 @@ type Workspace struct {
 }
 
 type Tab struct {
-	Name            string
-	Root            *LayoutNode
-	Panes           map[string]*Pane
-	Floating        []*FloatingPane
-	FloatingVisible bool
-	ActivePaneID    string
-	ZoomedPaneID    string
-	LayoutPreset    int
+	Name              string
+	Root              *LayoutNode
+	Panes             map[string]*Pane
+	Floating          []*FloatingPane
+	FloatingVisible   bool
+	ActivePaneID      string
+	ZoomedPaneID      string
+	LayoutPreset      int
+	AutoAcquireResize bool
 
 	renderCache *tabRenderCache
 }
@@ -85,20 +88,22 @@ type Point struct {
 }
 
 type Viewport struct {
-	TerminalID    string
-	Channel       uint16
-	VTerm         *localvterm.VTerm
-	Snapshot      *protocol.Snapshot
-	Name          string
-	Command       []string
-	Tags          map[string]string
-	TerminalState string
-	ExitCode      *int
-	Mode          ViewportMode
-	Offset        Point
-	Pin           bool
-	Readonly      bool
-	stopStream    func()
+	TerminalID     string
+	Channel        uint16
+	AttachMode     string
+	VTerm          *localvterm.VTerm
+	Snapshot       *protocol.Snapshot
+	Name           string
+	Command        []string
+	Tags           map[string]string
+	TerminalState  string
+	ExitCode       *int
+	Mode           ViewportMode
+	Offset         Point
+	Pin            bool
+	Readonly       bool
+	ResizeAcquired bool
+	stopStream     func()
 
 	cellCache       [][]drawCell
 	cellVersion     uint64
@@ -131,10 +136,69 @@ type Pane struct {
 }
 
 type textPrompt struct {
+	Kind     string
 	Title    string
 	Value    string
 	Original string
+	Hint     string
 }
+
+type terminalCreateDraft struct {
+	Action      terminalPickerAction
+	Command     []string
+	DefaultName string
+	Name        string
+	Tags        map[string]string
+}
+
+type terminalMetadataDraft struct {
+	TerminalID   string
+	DefaultName  string
+	Name         string
+	OriginalTags map[string]string
+	Tags         map[string]string
+}
+
+type resizeAcquireDraft struct {
+	PaneID      string
+	TerminalID  string
+	WarningMode string
+}
+
+type prefixMode int
+
+const (
+	prefixModeRoot prefixMode = iota
+	prefixModePane
+	prefixModeResize
+	prefixModeTab
+	prefixModeWorkspace
+	prefixModeViewport
+	prefixModeFloating
+	prefixModeOffsetPan
+	prefixModeGlobal
+)
+
+type prefixFallback int
+
+const (
+	prefixFallbackNone prefixFallback = iota
+	prefixFallbackFloatingCreate
+)
+
+type prefixDispatchResult struct {
+	cmd   tea.Cmd
+	keep  bool
+	rearm bool
+}
+
+type mouseDragMode int
+
+const (
+	mouseDragNone mouseDragMode = iota
+	mouseDragMove
+	mouseDragResize
+)
 
 type terminalPicker struct {
 	Title       string
@@ -201,6 +265,7 @@ type terminalPickerAction struct {
 	TargetID string
 	Split    SplitDirection
 	PaneID   string
+	PaneIDs  []string
 }
 
 type Model struct {
@@ -208,38 +273,61 @@ type Model struct {
 	cfg    Config
 	logger *slog.Logger
 
-	program *tea.Program
+	program    *tea.Program
+	paneWriter func(*Pane, []byte) (int, error)
 
-	renderInterval      time.Duration
-	renderCache         string
-	renderDirty         bool
-	renderBatching      bool
-	renderTickerStop    chan struct{}
-	renderTickerRunning bool
-	renderPending       atomic.Bool
+	renderInterval          time.Duration
+	renderFastInterval      time.Duration
+	renderInteractiveWindow time.Duration
+	renderStatsInterval     time.Duration
+	renderCache             string
+	renderDirty             bool
+	renderBatching          bool
+	renderTickerStop        chan struct{}
+	renderTickerRunning     bool
+	renderPending           atomic.Bool
+	renderInteractiveUntil  time.Time
+	renderLastFlush         time.Time
+	timeNow                 func() time.Time
+	renderViewCalls         atomic.Uint64
+	renderFrames            atomic.Uint64
+	renderCacheHits         atomic.Uint64
 
 	workspace       Workspace
 	width           int
 	height          int
 	prefixActive    bool
+	directMode      bool
 	prefixSeq       int
 	prefixTimeout   time.Duration
+	prefixMode      prefixMode
+	prefixFallback  prefixFallback
 	rawPending      []byte
 	showHelp        bool
 	prompt          *textPrompt
 	terminalPicker  *terminalPicker
 	workspacePicker *workspacePicker
+	inputBlocked    bool
 	nextPane        int
 	nextTab         int
+	nextTerminal    int
 	quitting        bool
 	notice          string
 	err             error
+	eventsStarted   bool
+	eventsCancel    context.CancelFunc
 
-	workspaceStore  map[string]Workspace
-	workspaceOrder  []string
-	activeWorkspace int
-	layoutPromptQueue   []LayoutCreatePlan
-	layoutPromptCurrent *LayoutCreatePlan
+	workspaceStore        map[string]Workspace
+	workspaceOrder        []string
+	activeWorkspace       int
+	layoutPromptQueue     []LayoutCreatePlan
+	layoutPromptCurrent   *LayoutCreatePlan
+	mouseDragPaneID       string
+	mouseDragOffset       Point
+	mouseDragMode         mouseDragMode
+	pendingTerminalCreate *terminalCreateDraft
+	pendingTerminalEdit   *terminalMetadataDraft
+	pendingResizeAcquire  *resizeAcquireDraft
 }
 
 type paneCreatedMsg struct {
@@ -253,6 +341,11 @@ type paneCreatedMsg struct {
 type paneReplacedMsg struct {
 	paneID string
 	pane   *Pane
+}
+
+type paneGroupReplacedMsg struct {
+	promptPaneID string
+	panes        []paneReplacedMsg
 }
 
 type paneOutputMsg struct {
@@ -275,6 +368,12 @@ type tabClosedMsg struct {
 }
 
 type errMsg struct{ err error }
+
+type terminalMetadataUpdatedMsg struct {
+	TerminalID string
+	Name       string
+	Tags       map[string]string
+}
 
 type prefixTimeoutMsg struct {
 	seq int
@@ -304,6 +403,7 @@ type workspaceActivatedMsg struct {
 	workspace Workspace
 	index     int
 	notice    string
+	bootstrap bool
 }
 
 type workspaceStateLoadedMsg struct {
@@ -312,10 +412,15 @@ type workspaceStateLoadedMsg struct {
 	order     []string
 	active    int
 	notice    string
+	bootstrap bool
 }
 
 type terminalClosedMsg struct {
 	terminalID string
+}
+
+type terminalEventMsg struct {
+	event protocol.Event
 }
 
 type paneRecoveredMsg struct {
@@ -373,15 +478,25 @@ func NewModel(client Client, cfg Config) *Model {
 		client: client,
 		cfg:    cfg,
 		logger: logger,
+		paneWriter: func(pane *Pane, data []byte) (int, error) {
+			if pane == nil || pane.VTerm == nil {
+				return 0, fmt.Errorf("pane runtime unavailable")
+			}
+			return pane.VTerm.Write(data)
+		},
 		workspace: Workspace{
 			Name: cfg.Workspace,
 			Tabs: []*Tab{newTab("1")},
 		},
-		renderInterval: 16 * time.Millisecond,
-		renderDirty:    true,
-		width:          80,
-		height:         24,
-		prefixTimeout:  800 * time.Millisecond,
+		renderInterval:          16 * time.Millisecond,
+		renderFastInterval:      8 * time.Millisecond,
+		renderInteractiveWindow: 200 * time.Millisecond,
+		renderStatsInterval:     10 * time.Second,
+		renderDirty:             true,
+		width:                   80,
+		height:                  24,
+		prefixTimeout:           2500 * time.Millisecond,
+		timeNow:                 time.Now,
 		workspaceStore: map[string]Workspace{
 			cfg.Workspace: {
 				Name: cfg.Workspace,
@@ -395,6 +510,27 @@ func NewModel(client Client, cfg Config) *Model {
 
 func (m *Model) requestContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), m.cfg.RequestTimeout)
+}
+
+func (m *Model) startTerminalEventForwarder() {
+	if m == nil || m.client == nil || m.program == nil || m.eventsStarted {
+		return
+	}
+	m.eventsStarted = true
+	ctx, cancel := context.WithCancel(context.Background())
+	m.eventsCancel = cancel
+	go func() {
+		events, err := m.client.Events(ctx, protocol.EventsParams{
+			Types: []protocol.EventType{protocol.EventTerminalRemoved},
+		})
+		if err != nil {
+			m.logger.Error("failed to subscribe terminal events", "error", m.wrapClientError("subscribe terminal events", err))
+			return
+		}
+		for evt := range events {
+			m.program.Send(terminalEventMsg{event: evt})
+		}
+	}()
 }
 
 func (m *Model) wrapClientError(op string, err error, attrs ...any) error {
@@ -416,6 +552,7 @@ func (m *Model) wrapClientError(op string, err error, attrs ...any) error {
 
 func (m *Model) SetProgram(program *tea.Program) {
 	m.program = program
+	m.startTerminalEventForwarder()
 	m.renderBatching = true
 	m.startRenderTicker()
 }
@@ -424,6 +561,10 @@ func (m *Model) StopRenderTicker() {
 	if m.renderTickerStop != nil {
 		close(m.renderTickerStop)
 		m.renderTickerStop = nil
+	}
+	if m.eventsCancel != nil {
+		m.eventsCancel()
+		m.eventsCancel = nil
 	}
 	m.renderTickerRunning = false
 }
@@ -435,11 +576,20 @@ func (m *Model) startRenderTicker() {
 	stop := make(chan struct{})
 	m.renderTickerStop = stop
 	m.renderTickerRunning = true
-	interval := m.renderInterval
+	interval := minPositiveDuration(m.renderFastInterval, m.renderInterval)
+	if interval <= 0 {
+		interval = m.renderInterval
+	}
+	statsInterval := m.renderStatsInterval
 	program := m.program
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
+		var statsTicker *time.Ticker
+		if statsInterval > 0 {
+			statsTicker = time.NewTicker(statsInterval)
+			defer statsTicker.Stop()
+		}
 		for {
 			select {
 			case <-stop:
@@ -449,6 +599,8 @@ func (m *Model) startRenderTicker() {
 					continue
 				}
 				program.Send(renderTickMsg{})
+			case <-tickerChan(statsTicker):
+				m.logRenderStats()
 			}
 		}
 	}()
@@ -471,6 +623,11 @@ func (m *Model) flushPendingRender() {
 		m.invalidateRender()
 		return
 	}
+	now := m.now()
+	interval := m.currentRenderInterval(now)
+	if interval > 0 && !m.renderLastFlush.IsZero() && now.Sub(m.renderLastFlush) < interval {
+		return
+	}
 	if !m.updateBackpressureState() {
 		return
 	}
@@ -478,7 +635,91 @@ func (m *Model) flushPendingRender() {
 		return
 	}
 	m.renderPending.Store(false)
+	m.renderLastFlush = now
 	m.invalidateRender()
+}
+
+func (m *Model) now() time.Time {
+	if m != nil && m.timeNow != nil {
+		return m.timeNow()
+	}
+	return time.Now()
+}
+
+func tickerChan(ticker *time.Ticker) <-chan time.Time {
+	if ticker == nil {
+		return nil
+	}
+	return ticker.C
+}
+
+func (m *Model) noteInteraction() {
+	if m == nil || m.renderInteractiveWindow <= 0 {
+		return
+	}
+	until := m.now().Add(m.renderInteractiveWindow)
+	if until.After(m.renderInteractiveUntil) {
+		m.renderInteractiveUntil = until
+	}
+}
+
+func (m *Model) requestInteractiveRender() {
+	if !m.renderBatching || m.program == nil {
+		m.invalidateRender()
+		return
+	}
+	now := m.now()
+	interval := m.currentRenderInterval(now)
+	if interval <= 0 || m.renderLastFlush.IsZero() || now.Sub(m.renderLastFlush) >= interval {
+		m.invalidateRender()
+		m.renderLastFlush = now
+		return
+	}
+	m.renderPending.Store(true)
+}
+
+func (m *Model) logRenderStats() {
+	if m == nil || m.logger == nil || m.renderStatsInterval <= 0 {
+		return
+	}
+	viewCalls := m.renderViewCalls.Swap(0)
+	frames := m.renderFrames.Swap(0)
+	cacheHits := m.renderCacheHits.Swap(0)
+	fps := 0.0
+	if seconds := m.renderStatsInterval.Seconds(); seconds > 0 {
+		fps = float64(frames) / seconds
+	}
+	m.logger.Info("tui render stats",
+		"window", m.renderStatsInterval.String(),
+		"view_calls", viewCalls,
+		"frames", frames,
+		"cache_hits", cacheHits,
+		"fps", fmt.Sprintf("%.2f", fps),
+	)
+}
+
+func (m *Model) currentRenderInterval(now time.Time) time.Duration {
+	interval := m.renderInterval
+	if interval <= 0 {
+		interval = m.renderFastInterval
+	}
+	if !m.renderInteractiveUntil.IsZero() && now.Before(m.renderInteractiveUntil) && m.renderFastInterval > 0 && (interval <= 0 || m.renderFastInterval < interval) {
+		return m.renderFastInterval
+	}
+	return interval
+}
+
+func minPositiveDuration(a, b time.Duration) time.Duration {
+	switch {
+	case a <= 0:
+		return b
+	case b <= 0:
+		return a
+	case a < b:
+		return a
+	default:
+		return b
+	}
 }
 
 func (m *Model) anyPaneDirty() bool {
@@ -562,14 +803,32 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clampFloatingPanes()
 		m.invalidateRender()
 		return m, m.resizeVisiblePanesCmd()
+	case tea.MouseMsg:
+		switch {
+		case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress:
+			return m, m.handleInputEvent(uv.MouseClickEvent{X: msg.X, Y: msg.Y, Button: uv.MouseLeft})
+		case msg.Action == tea.MouseActionMotion:
+			return m, m.handleInputEvent(uv.MouseMotionEvent{X: msg.X, Y: msg.Y, Button: uv.MouseLeft})
+		case msg.Action == tea.MouseActionRelease:
+			return m, m.handleInputEvent(uv.MouseReleaseEvent{X: msg.X, Y: msg.Y, Button: uv.MouseLeft})
+		}
+		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	case paneCreatedMsg:
+		m.inputBlocked = false
 		m.attachPane(msg)
 		return m, tea.Batch(m.resizeVisiblePanesCmd(), m.advanceLayoutPromptAfterPaneMsg("", msg.pane))
 	case paneReplacedMsg:
+		m.inputBlocked = false
 		m.replacePane(msg)
 		return m, tea.Batch(m.resizeVisiblePanesCmd(), m.advanceLayoutPromptAfterPaneMsg(msg.paneID, msg.pane))
+	case paneGroupReplacedMsg:
+		m.inputBlocked = false
+		for _, paneMsg := range msg.panes {
+			m.replacePane(paneMsg)
+		}
+		return m, tea.Batch(m.resizeVisiblePanesCmd(), m.advanceLayoutPromptAfterPaneMsg(msg.promptPaneID, nil))
 	case paneOutputMsg:
 		cmd := m.handlePaneOutput(msg)
 		if m.quitting {
@@ -620,7 +879,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activeWorkspace = msg.index
 		m.replaceWorkspace(msg.workspace)
 		m.invalidateRender()
-		return m, m.resizeVisiblePanesCmd()
+		if msg.bootstrap {
+			return m, m.startEmptyWorkspaceBootstrapCmd()
+		}
+		return m, tea.Batch(m.resizeVisiblePanesCmd(), m.autoAcquireCurrentTabResizeCmd())
 	case workspaceStateLoadedMsg:
 		m.notice = msg.notice
 		m.err = nil
@@ -629,10 +891,30 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activeWorkspace = msg.active
 		m.replaceWorkspace(msg.workspace)
 		m.invalidateRender()
-		return m, m.resizeVisiblePanesCmd()
+		if msg.bootstrap {
+			return m, m.startEmptyWorkspaceBootstrapCmd()
+		}
+		return m, tea.Batch(m.resizeVisiblePanesCmd(), m.autoAcquireCurrentTabResizeCmd())
 	case terminalClosedMsg:
-		m.markTerminalKilled(msg.terminalID)
+		removed, quit := m.removeTerminal(msg.terminalID)
+		if removed > 0 {
+			suffix := "panes"
+			if removed == 1 {
+				suffix = "pane"
+			}
+			m.notice = fmt.Sprintf("terminal %q removed; closed %d bound %s", msg.terminalID, removed, suffix)
+			m.err = nil
+			m.invalidateRender()
+		} else {
+			m.markTerminalKilled(msg.terminalID)
+		}
+		if quit {
+			m.quitting = true
+			return m, tea.Quit
+		}
 		return m, nil
+	case terminalEventMsg:
+		return m, m.handleTerminalEvent(msg.event)
 	case layoutLoadedMsg:
 		m.notice = msg.notice
 		m.err = nil
@@ -652,14 +934,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case prefixTimeoutMsg:
 		if m.prefixActive && msg.seq == m.prefixSeq {
-			m.prefixActive = false
+			fallback := m.prefixFallback
+			m.clearPrefixState()
 			m.invalidateRender()
+			return m, m.prefixFallbackCmd(fallback)
 		}
 		return m, nil
 	case errMsg:
+		m.inputBlocked = false
 		m.notice = ""
 		m.err = msg.err
 		m.invalidateRender()
+		return m, nil
+	case terminalMetadataUpdatedMsg:
+		m.inputBlocked = false
+		m.err = nil
+		m.applyTerminalMetadataUpdate(msg.TerminalID, msg.Name, msg.Tags)
 		return m, nil
 	case noticeMsg:
 		m.notice = msg.text
@@ -672,15 +962,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) View() string {
 	if m.width <= 0 || m.height <= 0 {
+		m.renderViewCalls.Add(1)
+		m.renderFrames.Add(1)
 		return "loading..."
 	}
+	m.renderViewCalls.Add(1)
 
 	if !m.renderDirty && m.renderCache != "" && (m.workspacePicker != nil || m.terminalPicker != nil || m.showHelp || m.prompt != nil) {
+		m.renderCacheHits.Add(1)
 		return m.renderCache
 	}
 
 	if m.renderBatching && !m.renderDirty && m.renderCache != "" {
 		if m.program != nil || !m.anyPaneDirty() {
+			m.renderCacheHits.Add(1)
 			return m.renderCache
 		}
 	}
@@ -690,6 +985,8 @@ func (m *Model) View() string {
 		out = m.renderWorkspacePicker()
 		m.renderCache = out
 		m.renderDirty = false
+		m.renderLastFlush = m.now()
+		m.renderFrames.Add(1)
 		return out
 	}
 
@@ -697,6 +994,8 @@ func (m *Model) View() string {
 		out = m.renderTerminalPicker()
 		m.renderCache = out
 		m.renderDirty = false
+		m.renderLastFlush = m.now()
+		m.renderFrames.Add(1)
 		return out
 	}
 
@@ -704,30 +1003,39 @@ func (m *Model) View() string {
 		out = m.renderHelpScreen()
 		m.renderCache = out
 		m.renderDirty = false
+		m.renderLastFlush = m.now()
+		m.renderFrames.Add(1)
 		return out
 	}
 
-	tabBar := m.renderTabBar()
-	status := m.renderStatus()
+	if m.prompt != nil && m.prompt.Kind != "command" {
+		out = m.renderPromptScreen()
+		m.renderCache = out
+		m.renderDirty = false
+		m.renderLastFlush = m.now()
+		m.renderFrames.Add(1)
+		return out
+	}
+
+	out = strings.Join([]string{m.renderTabBar(), m.renderContentBody(), m.renderStatus()}, "\n")
+	m.renderCache = out
+	m.renderDirty = false
+	m.renderLastFlush = m.now()
+	m.renderFrames.Add(1)
+	return out
+}
+
+func (m *Model) renderContentBody() string {
 	contentHeight := m.height - 2
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
 
 	tab := m.currentTab()
-	var body string
 	if tab == nil || tab.Root == nil {
-		canvas := newCanvas(m.width, contentHeight)
-		canvas.drawText(Rect{X: 2, Y: 2, W: max(1, m.width-4), H: max(1, contentHeight-4)}, m.emptyStateLines())
-		body = canvas.String()
-	} else {
-		body = m.renderTabComposite(tab, m.width, contentHeight)
+		return m.renderEmptyStateBody(contentHeight)
 	}
-
-	out = strings.Join([]string{tabBar, body, status}, "\n")
-	m.renderCache = out
-	m.renderDirty = false
-	return out
+	return m.renderTabComposite(tab, m.width, contentHeight)
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -741,6 +1049,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.prompt != nil {
 		return m, m.handlePromptKey(msg)
+	}
+
+	if m.inputBlocked {
+		return m, nil
 	}
 
 	if m.showHelp {
@@ -760,10 +1072,18 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if m.prefixActive && m.directMode {
+		if cmd := m.directModeCmdForKey(msg); cmd != nil {
+			return m, cmd
+		}
+	}
+
 	if m.prefixActive {
-		m.prefixActive = false
-		m.invalidateRender()
-		return m, m.handlePrefixKey(msg)
+		return m, m.handleActivePrefixKey(msg)
+	}
+
+	if cmd := m.directModeCmdForKey(msg); cmd != nil {
+		return m, cmd
 	}
 
 	if msg.Type == tea.KeyCtrlA {
@@ -804,6 +1124,526 @@ func (m *Model) handleExitedPaneKey(msg tea.KeyMsg) tea.Cmd {
 		return m.restartActivePaneCmd()
 	}
 	return nil
+}
+
+func (m *Model) directModeCmdForKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.Type {
+	case tea.KeyCtrlP:
+		return m.enterDirectMode(prefixModePane)
+	case tea.KeyCtrlR:
+		return m.enterDirectMode(prefixModeResize)
+	case tea.KeyCtrlT:
+		return m.enterDirectMode(prefixModeTab)
+	case tea.KeyCtrlW:
+		return m.enterDirectMode(prefixModeWorkspace)
+	case tea.KeyCtrlO:
+		return m.enterDirectMode(prefixModeFloating)
+	case tea.KeyCtrlV:
+		return m.enterDirectMode(prefixModeViewport)
+	case tea.KeyCtrlG:
+		return m.enterDirectMode(prefixModeGlobal)
+	case tea.KeyCtrlF:
+		return m.openTerminalPickerCmd()
+	default:
+		return nil
+	}
+}
+
+func (m *Model) clearPrefixState() {
+	m.prefixActive = false
+	m.directMode = false
+	m.prefixMode = prefixModeRoot
+	m.prefixFallback = prefixFallbackNone
+}
+
+func (m *Model) prefixFallbackCmd(fallback prefixFallback) tea.Cmd {
+	switch fallback {
+	case prefixFallbackFloatingCreate:
+		return m.openFloatingTerminalPickerCmd(m.workspace.ActiveTab)
+	default:
+		return nil
+	}
+}
+
+func (m *Model) enterPrefixMode(mode prefixMode, fallback prefixFallback) tea.Cmd {
+	m.prefixActive = true
+	m.directMode = false
+	m.prefixMode = mode
+	m.prefixFallback = fallback
+	if mode == prefixModeFloating {
+		if tab := m.currentTab(); tab != nil {
+			floating := m.visibleFloatingPanes(tab)
+			if len(floating) > 0 && !isFloatingPane(tab, tab.ActivePaneID) {
+				tab.ActivePaneID = floating[len(floating)-1].PaneID
+			}
+		}
+	}
+	if m.isStickyModeActive() {
+		m.prefixSeq++
+		m.invalidateRender()
+		return nil
+	}
+	m.invalidateRender()
+	return m.armPrefixTimeout()
+}
+
+func isStickyPrefixMode(mode prefixMode) bool {
+	return mode == prefixModeFloating || mode == prefixModeOffsetPan
+}
+
+func (m *Model) enterDirectMode(mode prefixMode) tea.Cmd {
+	m.prefixActive = true
+	m.directMode = true
+	m.prefixMode = mode
+	m.prefixFallback = prefixFallbackNone
+	m.prefixSeq++
+	m.invalidateRender()
+	return nil
+}
+
+func (m *Model) isStickyModeActive() bool {
+	return m.directMode || isStickyPrefixMode(m.prefixMode)
+}
+
+func (m *Model) armPrefixTimeout() tea.Cmd {
+	if !m.prefixActive || m.isStickyModeActive() || m.prefixTimeout <= 0 {
+		return nil
+	}
+	m.prefixSeq++
+	seq := m.prefixSeq
+	timeout := m.prefixTimeout
+	return tea.Tick(timeout, func(time.Time) tea.Msg {
+		return prefixTimeoutMsg{seq: seq}
+	})
+}
+
+func (m *Model) handleActivePrefixKey(msg tea.KeyMsg) tea.Cmd {
+	result := m.dispatchPrefixKey(msg)
+	if !result.keep {
+		m.clearPrefixState()
+		m.invalidateRender()
+		return result.cmd
+	}
+	m.invalidateRender()
+	if result.rearm {
+		return tea.Batch(result.cmd, m.armPrefixTimeout())
+	}
+	return result.cmd
+}
+
+func (m *Model) dispatchPrefixKey(msg tea.KeyMsg) prefixDispatchResult {
+	switch m.prefixMode {
+	case prefixModePane:
+		return m.dispatchPaneModeKey(msg)
+	case prefixModeResize:
+		return m.dispatchResizeModeKey(msg)
+	case prefixModeTab:
+		return m.dispatchTabSubPrefixKey(msg)
+	case prefixModeWorkspace:
+		return m.dispatchWorkspaceSubPrefixKey(msg)
+	case prefixModeViewport:
+		return m.dispatchViewportSubPrefixKey(msg)
+	case prefixModeFloating:
+		return m.dispatchFloatingModeKey(msg)
+	case prefixModeOffsetPan:
+		return m.dispatchOffsetPanModeKey(msg)
+	case prefixModeGlobal:
+		return m.dispatchGlobalModeKey(msg)
+	default:
+		return m.dispatchRootPrefixKey(msg)
+	}
+}
+
+func (m *Model) dispatchRootPrefixKey(msg tea.KeyMsg) prefixDispatchResult {
+	switch msg.String() {
+	case "t":
+		return prefixDispatchResult{cmd: m.enterPrefixMode(prefixModeTab, prefixFallbackNone), keep: true}
+	case "v":
+		return prefixDispatchResult{cmd: m.enterPrefixMode(prefixModeViewport, prefixFallbackNone), keep: true}
+	case "o":
+		return prefixDispatchResult{cmd: m.enterPrefixMode(prefixModeFloating, prefixFallbackNone), keep: true}
+	case "w":
+		return prefixDispatchResult{cmd: m.enterPrefixMode(prefixModeWorkspace, prefixFallbackFloatingCreate), keep: true}
+	}
+	cmd := m.handlePrefixKey(msg)
+	keep := shouldKeepPrefixKey(msg)
+	return prefixDispatchResult{cmd: cmd, keep: keep, rearm: keep}
+}
+
+func shouldKeepPrefixKey(msg tea.KeyMsg) bool {
+	switch msg.Type {
+	case tea.KeyLeft, tea.KeyRight, tea.KeyUp, tea.KeyDown,
+		tea.KeyCtrlLeft, tea.KeyCtrlRight, tea.KeyCtrlUp, tea.KeyCtrlDown,
+		tea.KeyCtrlH, tea.KeyCtrlJ, tea.KeyCtrlK, tea.KeyCtrlL:
+		return true
+	case tea.KeyRunes:
+		if len(msg.Runes) != 1 {
+			return false
+		}
+		switch msg.Runes[0] {
+		case 'h', 'j', 'k', 'l', 'H', 'J', 'K', 'L':
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) modeResult(cmd tea.Cmd, keep bool) prefixDispatchResult {
+	if m.directMode {
+		return prefixDispatchResult{cmd: cmd, keep: true}
+	}
+	return prefixDispatchResult{cmd: cmd, keep: keep, rearm: keep}
+}
+
+func (m *Model) dispatchPaneModeKey(msg tea.KeyMsg) prefixDispatchResult {
+	if msg.Type == tea.KeyEsc {
+		return prefixDispatchResult{}
+	}
+	cmd := m.handlePrefixKey(msg)
+	if cmd == nil && !shouldKeepPrefixKey(msg) && msg.Type != tea.KeyRunes && msg.Type != tea.KeyTab {
+		return m.modeResult(nil, false)
+	}
+	return m.modeResult(cmd, shouldKeepPrefixKey(msg))
+}
+
+func (m *Model) dispatchResizeModeKey(msg tea.KeyMsg) prefixDispatchResult {
+	if msg.Type == tea.KeyEsc {
+		return prefixDispatchResult{}
+	}
+	switch msg.Type {
+	case tea.KeyLeft:
+		m.resizeActivePane(DirectionLeft, 2)
+		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true}
+	case tea.KeyDown:
+		m.resizeActivePane(DirectionDown, 2)
+		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true}
+	case tea.KeyUp:
+		m.resizeActivePane(DirectionUp, 2)
+		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true}
+	case tea.KeyRight:
+		m.resizeActivePane(DirectionRight, 2)
+		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true}
+	}
+	switch msg.String() {
+	case "h":
+		m.resizeActivePane(DirectionLeft, 2)
+		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true}
+	case "j":
+		m.resizeActivePane(DirectionDown, 2)
+		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true}
+	case "k":
+		m.resizeActivePane(DirectionUp, 2)
+		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true}
+	case "l":
+		m.resizeActivePane(DirectionRight, 2)
+		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true}
+	case "H":
+		m.resizeActivePane(DirectionLeft, 4)
+		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true}
+	case "J":
+		m.resizeActivePane(DirectionDown, 4)
+		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true}
+	case "K":
+		m.resizeActivePane(DirectionUp, 4)
+		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true}
+	case "L":
+		m.resizeActivePane(DirectionRight, 4)
+		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true}
+	case "a":
+		return prefixDispatchResult{cmd: m.acquireActivePaneResizeCmd(), keep: true}
+	case "=":
+		if tab := m.currentTab(); tab != nil && tab.Root != nil {
+			resetLayoutRatios(tab.Root)
+		}
+		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true}
+	case " ":
+		m.cycleActiveLayout()
+		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true}
+	default:
+		return prefixDispatchResult{keep: true}
+	}
+}
+
+func (m *Model) dispatchTabSubPrefixKey(msg tea.KeyMsg) prefixDispatchResult {
+	if m.directMode && msg.Type == tea.KeyEsc {
+		return prefixDispatchResult{}
+	}
+	switch msg.String() {
+	case "c":
+		return m.modeResult(m.openNewTabTerminalPickerCmd(), false)
+	case ",":
+		if m.directMode {
+			m.beginRenameTab()
+			return prefixDispatchResult{}
+		}
+		m.beginRenameTab()
+		return prefixDispatchResult{}
+	case "r":
+		m.beginRenameTab()
+		return m.modeResult(nil, false)
+	case "n":
+		if len(m.workspace.Tabs) > 0 {
+			next := (m.workspace.ActiveTab + 1) % len(m.workspace.Tabs)
+			return m.modeResult(m.activateTab(next), false)
+		}
+		return m.modeResult(nil, false)
+	case "p":
+		if len(m.workspace.Tabs) > 0 {
+			next := (m.workspace.ActiveTab - 1 + len(m.workspace.Tabs)) % len(m.workspace.Tabs)
+			return m.modeResult(m.activateTab(next), false)
+		}
+		return m.modeResult(nil, false)
+	case "f":
+		return m.modeResult(m.openTerminalPickerCmd(), false)
+	case "x":
+		return m.modeResult(m.killActiveTabCmd(), false)
+	default:
+		if m.directMode && msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+			r := msg.Runes[0]
+			if r >= '1' && r <= '9' {
+				if int(r-'1') < len(m.workspace.Tabs) {
+					return m.modeResult(m.activateTab(int(r-'1')), false)
+				}
+				return m.modeResult(nil, false)
+			}
+		}
+		if m.directMode {
+			return prefixDispatchResult{keep: true}
+		}
+		return prefixDispatchResult{}
+	}
+}
+
+func (m *Model) dispatchWorkspaceSubPrefixKey(msg tea.KeyMsg) prefixDispatchResult {
+	if m.directMode && msg.Type == tea.KeyEsc {
+		return prefixDispatchResult{}
+	}
+	switch msg.String() {
+	case "s":
+		return m.modeResult(m.openWorkspacePickerCmd(), false)
+	case "c":
+		return m.modeResult(m.createWorkspaceCmd(nextWorkspaceName(m.workspaceOrder)), false)
+	case "r":
+		m.beginRenameWorkspace()
+		return m.modeResult(nil, false)
+	case "x":
+		return m.modeResult(m.deleteCurrentWorkspaceCmd(), false)
+	case "n":
+		return m.modeResult(m.activateWorkspaceByOffset(1), false)
+	case "p":
+		return m.modeResult(m.activateWorkspaceByOffset(-1), false)
+	case "f":
+		return m.modeResult(m.openWorkspacePickerCmd(), false)
+	default:
+		if m.directMode {
+			return prefixDispatchResult{keep: true}
+		}
+		return prefixDispatchResult{}
+	}
+}
+
+func (m *Model) dispatchViewportSubPrefixKey(msg tea.KeyMsg) prefixDispatchResult {
+	if m.directMode && msg.Type == tea.KeyEsc {
+		return prefixDispatchResult{}
+	}
+	switch msg.Type {
+	case tea.KeyLeft:
+		m.panActiveViewport(-4, 0)
+		return m.modeResult(nil, false)
+	case tea.KeyRight:
+		m.panActiveViewport(4, 0)
+		return m.modeResult(nil, false)
+	case tea.KeyUp:
+		m.panActiveViewport(0, -2)
+		return m.modeResult(nil, false)
+	case tea.KeyDown:
+		m.panActiveViewport(0, 2)
+		return m.modeResult(nil, false)
+	}
+	switch msg.String() {
+	case "m":
+		m.toggleActiveViewportMode()
+		return m.modeResult(m.resizeVisiblePanesCmd(), false)
+	case "r":
+		m.toggleActiveViewportReadonly()
+		return m.modeResult(nil, false)
+	case "p":
+		m.toggleActiveViewportPin()
+		return m.modeResult(nil, false)
+	case "h":
+		m.panActiveViewport(-4, 0)
+		return m.modeResult(nil, false)
+	case "j":
+		m.panActiveViewport(0, 2)
+		return m.modeResult(nil, false)
+	case "k":
+		m.panActiveViewport(0, -2)
+		return m.modeResult(nil, false)
+	case "l":
+		m.panActiveViewport(4, 0)
+		return m.modeResult(nil, false)
+	case "0":
+		m.setActiveViewportOffset(0, 0)
+		return m.modeResult(nil, false)
+	case "$":
+		m.setActiveViewportOffset(int(^uint(0)>>1), 0)
+		return m.modeResult(nil, false)
+	case "g":
+		m.setActiveViewportOffset(0, 0)
+		return m.modeResult(nil, false)
+	case "G":
+		m.setActiveViewportOffset(0, int(^uint(0)>>1))
+		return m.modeResult(nil, false)
+	case "z":
+		pane := activePane(m.currentTab())
+		if pane != nil {
+			pane.Offset = Point{}
+			pane.Pin = false
+			if pane.Mode != ViewportModeFit {
+				pane.Mode = ViewportModeFit
+			}
+		}
+		return m.modeResult(m.resizeVisiblePanesCmd(), false)
+	case "o":
+		if m.directMode {
+			return prefixDispatchResult{keep: true}
+		}
+		return prefixDispatchResult{cmd: m.enterPrefixMode(prefixModeOffsetPan, prefixFallbackNone), keep: true}
+	default:
+		if m.directMode {
+			return prefixDispatchResult{keep: true}
+		}
+		return prefixDispatchResult{}
+	}
+}
+
+func (m *Model) dispatchFloatingModeKey(msg tea.KeyMsg) prefixDispatchResult {
+	switch msg.Type {
+	case tea.KeyEsc:
+		_ = m.focusTiledPane()
+		return prefixDispatchResult{}
+	case tea.KeyTab:
+		m.cycleFloatingFocus()
+		return m.modeResult(nil, true)
+	}
+	switch msg.String() {
+	case "n":
+		return m.modeResult(m.openFloatingTerminalPickerCmd(m.workspace.ActiveTab), false)
+	case "x":
+		return m.modeResult(m.closeActivePaneCmd(), true)
+	case "v":
+		m.toggleFloatingLayerVisibility()
+		return m.modeResult(nil, true)
+	case "]":
+		m.raiseActiveFloatingPane()
+		return m.modeResult(nil, true)
+	case "[":
+		m.lowerActiveFloatingPane()
+		return m.modeResult(nil, true)
+	case "h":
+		m.moveActiveFloatingPane(-4, 0)
+		return m.modeResult(nil, true)
+	case "j":
+		m.moveActiveFloatingPane(0, 2)
+		return m.modeResult(nil, true)
+	case "k":
+		m.moveActiveFloatingPane(0, -2)
+		return m.modeResult(nil, true)
+	case "l":
+		m.moveActiveFloatingPane(4, 0)
+		return m.modeResult(nil, true)
+	case "H":
+		m.resizeActiveFloatingPane(-4, 0)
+		return m.modeResult(nil, true)
+	case "J":
+		m.resizeActiveFloatingPane(0, 2)
+		return m.modeResult(nil, true)
+	case "K":
+		m.resizeActiveFloatingPane(0, -2)
+		return m.modeResult(nil, true)
+	case "L":
+		m.resizeActiveFloatingPane(4, 0)
+		return m.modeResult(nil, true)
+	case "f":
+		return m.modeResult(m.openTerminalPickerCmd(), false)
+	default:
+		if m.directMode {
+			return prefixDispatchResult{keep: true}
+		}
+		return prefixDispatchResult{}
+	}
+}
+
+func (m *Model) dispatchOffsetPanModeKey(msg tea.KeyMsg) prefixDispatchResult {
+	switch msg.Type {
+	case tea.KeyEsc:
+		return prefixDispatchResult{}
+	case tea.KeyLeft:
+		m.panActiveViewport(-4, 0)
+		return prefixDispatchResult{keep: true}
+	case tea.KeyRight:
+		m.panActiveViewport(4, 0)
+		return prefixDispatchResult{keep: true}
+	case tea.KeyUp:
+		m.panActiveViewport(0, -2)
+		return prefixDispatchResult{keep: true}
+	case tea.KeyDown:
+		m.panActiveViewport(0, 2)
+		return prefixDispatchResult{keep: true}
+	}
+	switch msg.String() {
+	case "h":
+		m.panActiveViewport(-4, 0)
+		return prefixDispatchResult{keep: true}
+	case "j":
+		m.panActiveViewport(0, 2)
+		return prefixDispatchResult{keep: true}
+	case "k":
+		m.panActiveViewport(0, -2)
+		return prefixDispatchResult{keep: true}
+	case "l":
+		m.panActiveViewport(4, 0)
+		return prefixDispatchResult{keep: true}
+	case "0":
+		m.setActiveViewportOffset(0, 0)
+		return prefixDispatchResult{keep: true}
+	case "$":
+		m.setActiveViewportOffset(int(^uint(0)>>1), 0)
+		return prefixDispatchResult{keep: true}
+	case "g":
+		m.setActiveViewportOffset(0, 0)
+		return prefixDispatchResult{keep: true}
+	case "G":
+		m.setActiveViewportOffset(0, int(^uint(0)>>1))
+		return prefixDispatchResult{keep: true}
+	default:
+		return prefixDispatchResult{}
+	}
+}
+
+func (m *Model) dispatchGlobalModeKey(msg tea.KeyMsg) prefixDispatchResult {
+	if msg.Type == tea.KeyEsc {
+		return prefixDispatchResult{}
+	}
+	switch msg.String() {
+	case "?":
+		m.showHelp = true
+		m.invalidateRender()
+		return prefixDispatchResult{}
+	case ":":
+		m.beginCommandPrompt()
+		return prefixDispatchResult{}
+	case "d":
+		m.quitting = true
+		m.invalidateRender()
+		return prefixDispatchResult{cmd: tea.Quit}
+	case "q":
+		m.quitting = true
+		m.invalidateRender()
+		return prefixDispatchResult{cmd: tea.Quit}
+	default:
+		return prefixDispatchResult{keep: true}
+	}
 }
 
 func (m *Model) handlePrefixKey(msg tea.KeyMsg) tea.Cmd {
@@ -870,14 +1710,16 @@ func (m *Model) handlePrefixKey(msg tea.KeyMsg) tea.Cmd {
 		return m.openNewTabTerminalPickerCmd()
 	case "n":
 		if len(m.workspace.Tabs) > 0 {
-			m.workspace.ActiveTab = (m.workspace.ActiveTab + 1) % len(m.workspace.Tabs)
+			next := (m.workspace.ActiveTab + 1) % len(m.workspace.Tabs)
+			return m.activateTab(next)
 		}
-		return m.resizeVisiblePanesCmd()
+		return nil
 	case "p":
 		if len(m.workspace.Tabs) > 0 {
-			m.workspace.ActiveTab = (m.workspace.ActiveTab - 1 + len(m.workspace.Tabs)) % len(m.workspace.Tabs)
+			next := (m.workspace.ActiveTab - 1 + len(m.workspace.Tabs)) % len(m.workspace.Tabs)
+			return m.activateTab(next)
 		}
-		return m.resizeVisiblePanesCmd()
+		return nil
 	case "z":
 		tab := m.currentTab()
 		if tab != nil {
@@ -959,10 +1801,9 @@ func (m *Model) handlePrefixKey(msg tea.KeyMsg) tea.Cmd {
 		if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
 			idx := int(key[0] - '1')
 			if idx < len(m.workspace.Tabs) {
-				m.workspace.ActiveTab = idx
+				return m.activateTab(idx)
 			}
-			m.invalidateRender()
-			return m.resizeVisiblePanesCmd()
+			return nil
 		}
 	}
 	return nil
@@ -970,6 +1811,9 @@ func (m *Model) handlePrefixKey(msg tea.KeyMsg) tea.Cmd {
 
 func (m *Model) handleRawInput(data []byte) tea.Cmd {
 	if len(data) == 0 {
+		return nil
+	}
+	if m.inputBlocked {
 		return nil
 	}
 
@@ -1154,7 +1998,7 @@ func (m *Model) consumePromptInput() (int, tea.Cmd, bool) {
 			return n, nil, true
 		}
 		if len(m.rawPending) == 1 {
-			m.prompt = nil
+			m.cancelPrompt()
 			return 1, nil, true
 		}
 		return 0, nil, false
@@ -1173,6 +2017,23 @@ func (m *Model) consumePromptInput() (int, tea.Cmd, bool) {
 	return size, nil, true
 }
 
+func (m *Model) cancelPrompt() {
+	if m.prompt == nil {
+		return
+	}
+	if strings.HasPrefix(m.prompt.Kind, "create-terminal") {
+		m.pendingTerminalCreate = nil
+	}
+	if strings.HasPrefix(m.prompt.Kind, "edit-terminal") {
+		m.pendingTerminalEdit = nil
+	}
+	if strings.HasPrefix(m.prompt.Kind, "confirm-acquire-resize") {
+		m.pendingResizeAcquire = nil
+	}
+	m.prompt = nil
+	m.invalidateRender()
+}
+
 func (m *Model) consumePrefixInput() (int, tea.Cmd, bool) {
 	if len(m.rawPending) == 0 {
 		return 0, nil, false
@@ -1181,39 +2042,36 @@ func (m *Model) consumePrefixInput() (int, tea.Cmd, bool) {
 	if n, key, ok, incomplete := parseCtrlArrowPrefix(m.rawPending); incomplete {
 		return 0, nil, false
 	} else if ok {
-		m.prefixActive = false
-		m.prefixSeq++
-		return n, m.handlePrefixKey(key), true
+		return n, m.handleActivePrefixKey(key), true
 	}
 
 	if n, dir, ok, incomplete := parseArrowPrefix(m.rawPending); incomplete {
 		return 0, nil, false
 	} else if ok {
-		m.prefixActive = false
-		m.prefixSeq++
-		return n, m.handlePrefixKey(prefixDirectionKey(dir)), true
+		return n, m.handleActivePrefixKey(prefixDirectionKey(dir)), true
 	}
 
 	b := m.rawPending[0]
-	m.prefixActive = false
-	m.prefixSeq++
-
 	switch b {
 	case 0x01:
-		return 1, m.sendToActive([]byte{0x01}), true
+		return 1, m.handleActivePrefixKey(tea.KeyMsg{Type: tea.KeyCtrlA}), true
 	case 0x08, 0x0a, 0x0b, 0x0c:
-		return 1, m.handlePrefixKey(prefixCtrlKey(b)), true
+		return 1, m.handleActivePrefixKey(prefixCtrlKey(b)), true
 	case '\t':
-		return 1, m.handlePrefixKey(prefixTabKey()), true
-	case '"', '%', ',', ':', 'W', ']', '_', 'f', 'h', 'j', 'k', 'l', 'w', 'H', 'J', 'K', 'L', 'M', 'P', 'R', 'X', 'c', 'n', 'p', 'z', '{', '}', ' ', 'x', '&', 'd', '?':
-		return 1, m.handlePrefixKey(prefixRuneKey(rune(b))), true
+		return 1, m.handleActivePrefixKey(prefixTabKey()), true
+	case 0x1b:
+		if len(m.rawPending) == 1 {
+			return 1, m.handleActivePrefixKey(tea.KeyMsg{Type: tea.KeyEsc}), true
+		}
+		return 0, nil, false
+	case '"', '%', ',', ':', 'W', ']', '_', '[', 'f', 'h', 'j', 'k', 'l', 'w', 'v', 't', 'o', 'r', 'p', 'm', 'H', 'J', 'K', 'L', 'M', 'P', 'R', 'X', 'c', 'n', 'N', 's', 'x', 'g', 'G', '0', '$', 'a', 'd', '?', '&', ' ', 'z', '{', '}':
+		return 1, m.handleActivePrefixKey(prefixRuneKey(rune(b))), true
 	default:
 		if b >= '1' && b <= '9' {
-			return 1, m.handlePrefixKey(prefixRuneKey(rune(b))), true
+			return 1, m.handleActivePrefixKey(prefixRuneKey(rune(b))), true
 		}
-		if b == 0x1b {
-			return 0, nil, false
-		}
+		m.clearPrefixState()
+		m.invalidateRender()
 		return 1, nil, true
 	}
 }
@@ -1226,15 +2084,31 @@ func (m *Model) splitActivePane(dir SplitDirection) tea.Cmd {
 	return m.openSplitTerminalPickerCmd(m.workspace.ActiveTab, tab.ActivePaneID, dir)
 }
 
+type terminalCreateSpec struct {
+	Command []string
+	Name    string
+	Tags    map[string]string
+}
+
 func (m *Model) createPaneCmd(tabIndex int, targetID string, split SplitDirection) tea.Cmd {
+	return m.createPaneCmdWithSpec(tabIndex, targetID, split, terminalCreateSpec{})
+}
+
+func (m *Model) createPaneCmdWithSpec(tabIndex int, targetID string, split SplitDirection, spec terminalCreateSpec) tea.Cmd {
+	command, name, tags := m.resolveTerminalCreateSpec(spec)
 	return func() tea.Msg {
 		ctx, cancel := m.requestContext()
 		defer cancel()
 		m.logger.Debug("creating pane terminal", "tab_index", tabIndex, "target_id", targetID, "split", split)
 		size := protocol.Size{Cols: 80, Rows: 24}
-		created, err := m.client.Create(ctx, []string{m.cfg.DefaultShell}, "", size)
+		created, err := m.client.Create(ctx, command, name, size)
 		if err != nil {
 			return errMsg{m.wrapClientError("create terminal", err)}
+		}
+		if len(tags) > 0 {
+			if err := m.client.SetTags(ctx, created.TerminalID, tags); err != nil {
+				return errMsg{m.wrapClientError("set terminal tags", err, "terminal_id", created.TerminalID)}
+			}
 		}
 		attached, err := m.client.Attach(ctx, created.TerminalID, "collaborator")
 		if err != nil {
@@ -1251,9 +2125,16 @@ func (m *Model) createPaneCmd(tabIndex int, targetID string, split SplitDirectio
 			targetID: targetID,
 			split:    split,
 			pane: &Pane{
-				ID:       paneID,
-				Title:    paneTitleForCommand("", m.cfg.DefaultShell, created.TerminalID),
-				Viewport: m.newViewport(created.TerminalID, attached.Channel, snap),
+				ID:    paneID,
+				Title: paneTitleForCommand(name, firstCommandWord(command), created.TerminalID),
+				Viewport: func() *Viewport {
+					view := m.newViewport(created.TerminalID, attached.Channel, snap)
+					view.AttachMode = attached.Mode
+					view.Name = name
+					view.Command = append([]string(nil), command...)
+					view.Tags = cloneStringMap(tags)
+					return view
+				}(),
 			},
 		}
 	}
@@ -1314,6 +2195,7 @@ func (m *Model) restartActivePaneCmd() tea.Cmd {
 		}
 
 		view := m.newViewport(created.TerminalID, attached.Channel, snap)
+		view.AttachMode = attached.Mode
 		if view.VTerm != nil {
 			view.VTerm.Resize(int(size.Cols), int(size.Rows))
 		}
@@ -1371,14 +2253,24 @@ func paneRestartSize(pane *Pane, base protocol.Size, viewW, viewH int) protocol.
 }
 
 func (m *Model) createFloatingPaneCmd(tabIndex int) tea.Cmd {
+	return m.createFloatingPaneCmdWithSpec(tabIndex, terminalCreateSpec{})
+}
+
+func (m *Model) createFloatingPaneCmdWithSpec(tabIndex int, spec terminalCreateSpec) tea.Cmd {
+	command, name, tags := m.resolveTerminalCreateSpec(spec)
 	return func() tea.Msg {
 		ctx, cancel := m.requestContext()
 		defer cancel()
 		m.logger.Debug("creating floating terminal", "tab_index", tabIndex)
 		size := protocol.Size{Cols: 80, Rows: 24}
-		created, err := m.client.Create(ctx, []string{m.cfg.DefaultShell}, "", size)
+		created, err := m.client.Create(ctx, command, name, size)
 		if err != nil {
 			return errMsg{m.wrapClientError("create terminal", err)}
+		}
+		if len(tags) > 0 {
+			if err := m.client.SetTags(ctx, created.TerminalID, tags); err != nil {
+				return errMsg{m.wrapClientError("set terminal tags", err, "terminal_id", created.TerminalID)}
+			}
 		}
 		attached, err := m.client.Attach(ctx, created.TerminalID, "collaborator")
 		if err != nil {
@@ -1390,6 +2282,10 @@ func (m *Model) createFloatingPaneCmd(tabIndex int) tea.Cmd {
 		}
 		paneID := m.nextPaneID()
 		view := m.newViewport(created.TerminalID, attached.Channel, snap)
+		view.AttachMode = attached.Mode
+		view.Name = name
+		view.Command = append([]string(nil), command...)
+		view.Tags = cloneStringMap(tags)
 		view.Mode = ViewportModeFixed
 		m.logger.Info("created floating terminal", "pane_id", paneID, "terminal_id", created.TerminalID, "tab_index", tabIndex)
 		return paneCreatedMsg{
@@ -1397,11 +2293,23 @@ func (m *Model) createFloatingPaneCmd(tabIndex int) tea.Cmd {
 			floating: true,
 			pane: &Pane{
 				ID:       paneID,
-				Title:    paneTitleForCommand("", m.cfg.DefaultShell, created.TerminalID),
+				Title:    paneTitleForCommand(name, firstCommandWord(command), created.TerminalID),
 				Viewport: view,
 			},
 		}
 	}
+}
+
+func (m *Model) resolveTerminalCreateSpec(spec terminalCreateSpec) ([]string, string, map[string]string) {
+	command := append([]string(nil), spec.Command...)
+	if len(command) == 0 {
+		command = []string{m.cfg.DefaultShell}
+	}
+	name := strings.TrimSpace(spec.Name)
+	if name == "" {
+		name = m.nextTerminalName(command)
+	}
+	return command, name, cloneStringMap(spec.Tags)
 }
 
 func (m *Model) attachPane(msg paneCreatedMsg) {
@@ -1410,10 +2318,12 @@ func (m *Model) attachPane(msg paneCreatedMsg) {
 	}
 	tab := m.workspace.Tabs[msg.tabIndex]
 	if msg.floating {
+		rect := m.defaultFloatingRectForPane(msg.pane)
+		rect = m.staggerFloatingRect(rect, len(tab.Floating))
 		tab.Panes[msg.pane.ID] = msg.pane
 		tab.Floating = append(tab.Floating, &FloatingPane{
 			PaneID: msg.pane.ID,
-			Rect:   m.defaultFloatingRectForPane(msg.pane),
+			Rect:   rect,
 			Z:      len(tab.Floating),
 		})
 		tab.FloatingVisible = true
@@ -1476,10 +2386,34 @@ func (m *Model) handlePaneOutput(msg paneOutputMsg) tea.Cmd {
 	}
 	switch msg.frame.Type {
 	case protocol.TypeOutput:
+		if !m.ensurePaneRuntime(pane) {
+			return nil
+		}
 		beforeCursor := pane.VTerm.CursorState()
 		beforeAlt := pane.VTerm.IsAltScreen()
 		termCols, termRows := pane.VTerm.Size()
-		_, _ = pane.VTerm.Write(msg.frame.Payload)
+		n, err := m.paneWriter(pane, msg.frame.Payload)
+		if err != nil {
+			m.logger.Warn("pane write failed; recovering from snapshot",
+				"pane_id", pane.ID,
+				"terminal_id", pane.TerminalID,
+				"channel", pane.Channel,
+				"bytes", len(msg.frame.Payload),
+				"written", n,
+				"error", err,
+			)
+			pane.syncLost = true
+			if dropped := len(msg.frame.Payload) - max(0, n); dropped > 0 {
+				pane.droppedBytes += uint64(dropped)
+			}
+			pane.renderDirty = true
+			m.scheduleRender()
+			if pane.recovering {
+				return nil
+			}
+			pane.recovering = true
+			return m.recoverPaneSnapshotCmd(pane.ID, pane.TerminalID, pane.droppedBytes)
+		}
 		afterCursor := pane.VTerm.CursorState()
 		afterAlt := pane.VTerm.IsAltScreen()
 		pane.live = true
@@ -1510,6 +2444,23 @@ func (m *Model) handlePaneOutput(msg paneOutputMsg) tea.Cmd {
 		}
 		pane.recovering = true
 		return m.recoverPaneSnapshotCmd(pane.ID, pane.TerminalID, pane.droppedBytes)
+	}
+	return nil
+}
+
+func (m *Model) handleTerminalEvent(evt protocol.Event) tea.Cmd {
+	if evt.Type != protocol.EventTerminalRemoved || evt.TerminalID == "" {
+		return nil
+	}
+	removed, quit := m.removeTerminal(evt.TerminalID)
+	if removed > 0 {
+		m.notice = fmt.Sprintf("terminal %q was removed by another client", evt.TerminalID)
+		m.err = nil
+		m.invalidateRender()
+	}
+	if quit {
+		m.quitting = true
+		return tea.Quit
 	}
 	return nil
 }
@@ -1687,8 +2638,11 @@ func (m *Model) handlePaneRecovered(msg paneRecoveredMsg) {
 	if pane == nil || msg.snapshot == nil {
 		return
 	}
+	if !m.ensurePaneRuntime(pane) {
+		return
+	}
 	pane.Snapshot = msg.snapshot
-	pane.VTerm.LoadSnapshot(protocolScreenToVTerm(msg.snapshot.Screen), protocolCursorToVTerm(msg.snapshot.Cursor), protocolModesToVTerm(msg.snapshot.Modes))
+	loadSnapshotIntoVTerm(pane.VTerm, msg.snapshot)
 	pane.live = true
 	pane.TerminalState = "running"
 	pane.syncLost = false
@@ -1698,6 +2652,9 @@ func (m *Model) handlePaneRecovered(msg paneRecoveredMsg) {
 	pane.renderDirty = true
 	pane.clearDirtyRegion()
 	pane.cellCache = nil
+	if msg.snapshot.Size.Cols > 0 && msg.snapshot.Size.Rows > 0 {
+		m.resizeTerminalPanes(pane.TerminalID, pane.ID, msg.snapshot.Size.Cols, msg.snapshot.Size.Rows)
+	}
 	if tab := m.tabForPane(pane.ID); tab != nil {
 		if viewW, viewH, ok := m.paneViewportSizeInTab(tab, pane.ID); ok && m.syncViewport(pane, viewW, viewH) {
 			tab.renderCache = nil
@@ -1766,6 +2723,7 @@ func (m *Model) loadLayoutSpecCmd(layout *LayoutSpec, workspaceName string, poli
 					return errMsg{m.wrapClientError("snapshot terminal", err, "terminal_id", pane.TerminalID)}
 				}
 				view := m.newViewport(pane.TerminalID, attached.Channel, snap)
+				view.AttachMode = attached.Mode
 				if info != nil {
 					view = viewportWithTerminalInfo(view, *info)
 				} else {
@@ -1781,6 +2739,7 @@ func (m *Model) loadLayoutSpecCmd(layout *LayoutSpec, workspaceName string, poli
 			}
 		}
 		if policy == LayoutResolveCreate {
+			createdByHint := make(map[string]string)
 			for _, plan := range plans {
 				pane := findPane(workspace.Tabs, plan.PaneID)
 				if pane == nil {
@@ -1790,24 +2749,36 @@ func (m *Model) loadLayoutSpecCmd(layout *LayoutSpec, workspaceName string, poli
 				if len(command) == 0 {
 					command = []string{m.cfg.DefaultShell}
 				}
-				created, err := m.client.Create(ctx, command, "", protocol.Size{Cols: 80, Rows: 24})
-				if err != nil {
-					return errMsg{m.wrapClientError("create terminal", err)}
+				terminalID := ""
+				hintID := strings.TrimSpace(plan.Terminal.HintID)
+				if hintID != "" {
+					terminalID = createdByHint[hintID]
 				}
-				if len(pane.Tags) > 0 {
-					if err := m.client.SetTags(ctx, created.TerminalID, pane.Tags); err != nil {
-						return errMsg{m.wrapClientError("set terminal tags", err, "terminal_id", created.TerminalID)}
+				if terminalID == "" {
+					created, err := m.client.Create(ctx, command, "", protocol.Size{Cols: 80, Rows: 24})
+					if err != nil {
+						return errMsg{m.wrapClientError("create terminal", err)}
+					}
+					terminalID = created.TerminalID
+					if hintID != "" {
+						createdByHint[hintID] = terminalID
+					}
+					if len(pane.Tags) > 0 {
+						if err := m.client.SetTags(ctx, terminalID, pane.Tags); err != nil {
+							return errMsg{m.wrapClientError("set terminal tags", err, "terminal_id", terminalID)}
+						}
 					}
 				}
-				attached, err := m.client.Attach(ctx, created.TerminalID, "collaborator")
+				attached, err := m.client.Attach(ctx, terminalID, "collaborator")
 				if err != nil {
-					return errMsg{m.wrapClientError("attach terminal", err, "terminal_id", created.TerminalID)}
+					return errMsg{m.wrapClientError("attach terminal", err, "terminal_id", terminalID)}
 				}
-				snap, err := m.client.Snapshot(ctx, created.TerminalID, 0, 200)
+				snap, err := m.client.Snapshot(ctx, terminalID, 0, 200)
 				if err != nil {
-					return errMsg{m.wrapClientError("snapshot terminal", err, "terminal_id", created.TerminalID)}
+					return errMsg{m.wrapClientError("snapshot terminal", err, "terminal_id", terminalID)}
 				}
-				view := m.newViewport(created.TerminalID, attached.Channel, snap)
+				view := m.newViewport(terminalID, attached.Channel, snap)
+				view.AttachMode = attached.Mode
 				view.Name = pane.Name
 				view.Command = command
 				view.Tags = cloneStringMap(pane.Tags)
@@ -1816,8 +2787,8 @@ func (m *Model) loadLayoutSpecCmd(layout *LayoutSpec, workspaceName string, poli
 				view.Offset = pane.Offset
 				view.Pin = pane.Pin
 				view.Readonly = pane.Readonly
-				pane.TerminalID = created.TerminalID
-				pane.Title = paneTitleForCommand("", firstCommandWord(command), created.TerminalID)
+				pane.TerminalID = terminalID
+				pane.Title = paneTitleForCommand("", firstCommandWord(command), terminalID)
 				pane.Viewport = view
 				m.startPaneStream(pane)
 			}
@@ -1853,9 +2824,21 @@ func (m *Model) advanceLayoutPromptCmd() tea.Cmd {
 	}
 	plan := m.layoutPromptQueue[0]
 	m.layoutPromptQueue = m.layoutPromptQueue[1:]
+	paneIDs := []string{plan.PaneID}
+	if hintID := strings.TrimSpace(plan.Terminal.HintID); hintID != "" {
+		remaining := m.layoutPromptQueue[:0]
+		for _, queued := range m.layoutPromptQueue {
+			if strings.TrimSpace(queued.Terminal.HintID) == hintID {
+				paneIDs = append(paneIDs, queued.PaneID)
+				continue
+			}
+			remaining = append(remaining, queued)
+		}
+		m.layoutPromptQueue = remaining
+	}
 	m.layoutPromptCurrent = &plan
 	m.focusPaneByID(plan.PaneID)
-	return m.openLayoutResolvePickerCmd(plan)
+	return m.openLayoutResolvePickerCmd(plan, paneIDs)
 }
 
 func (m *Model) focusPaneByID(paneID string) {
@@ -1915,6 +2898,39 @@ func (m *Model) executeCommandPrompt(value string) tea.Cmd {
 			return nil
 		}
 		return m.deleteLayoutCmd(fields[1])
+	case "edit-terminal":
+		pane := activePane(m.currentTab())
+		if pane == nil || strings.TrimSpace(pane.TerminalID) == "" {
+			m.notice = ""
+			m.err = fmt.Errorf("edit-terminal requires an active terminal")
+			m.invalidateRender()
+			return nil
+		}
+		m.beginTerminalEditPrompt(protocol.TerminalInfo{
+			ID:      pane.TerminalID,
+			Name:    pane.Name,
+			Command: append([]string(nil), pane.Command...),
+			Tags:    cloneStringMap(pane.Tags),
+		})
+		return nil
+	case "acquire-resize":
+		return m.acquireActivePaneResizeCmd()
+	case "tab-auto-acquire":
+		if len(fields) < 2 {
+			m.notice = ""
+			m.err = fmt.Errorf("tab-auto-acquire requires on or off")
+			m.invalidateRender()
+			return nil
+		}
+		return m.setCurrentTabAutoAcquireCmd(fields[1])
+	case "set-size-lock":
+		if len(fields) < 2 {
+			m.notice = ""
+			m.err = fmt.Errorf("set-size-lock requires off or warn")
+			m.invalidateRender()
+			return nil
+		}
+		return m.setActiveTerminalSizeLockCmd(fields[1])
 	default:
 		m.notice = ""
 		m.err = fmt.Errorf("unknown command: %s", fields[0])
@@ -1952,7 +2968,18 @@ func (m *Model) startStartupBootstrapCmd() tea.Cmd {
 			} else if exists {
 				m.logger.Info("tui startup restoring workspace state", "path", path)
 				if cmd := m.loadWorkspaceStateCmd(path); cmd != nil {
-					return cmd()
+					msg := cmd()
+					if failed, ok := msg.(errMsg); ok {
+						m.logger.Warn("tui startup ignoring workspace state restore failure", "path", path, "error", failed.err)
+					} else if loaded, ok := msg.(workspaceStateLoadedMsg); ok {
+						if !workspaceHasPanes(&loaded.workspace) {
+							m.logger.Info("tui startup restored empty workspace state; bootstrapping chooser", "path", path, "workspace", loaded.workspace.Name)
+							loaded.bootstrap = true
+							loaded.notice = "restored empty workspace state"
+							return loaded
+						}
+						return msg
+					}
 				}
 			}
 		}
@@ -1983,9 +3010,19 @@ func (m *Model) startStartupBootstrapCmd() tea.Cmd {
 	}
 }
 
+func (m *Model) startEmptyWorkspaceBootstrapCmd() tea.Cmd {
+	m.logger.Info("tui empty workspace bootstrapping chooser", "workspace", m.workspace.Name)
+	return m.openBootstrapTerminalPickerCmd(m.workspace.ActiveTab)
+}
+
 func (m *Model) saveLayoutCmd(name string) tea.Cmd {
 	return func() tea.Msg {
-		data, err := ExportLayoutYAML(name, &m.workspace)
+		spec, err := ExportLayoutSpec(name, &m.workspace)
+		if err != nil {
+			return errMsg{err}
+		}
+		m.applyFloatingPositionsToLayoutSpec(spec)
+		data, err := yaml.Marshal(spec)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -2000,6 +3037,26 @@ func (m *Model) saveLayoutCmd(name string) tea.Cmd {
 			return errMsg{err}
 		}
 		return noticeMsg{text: "saved layout: " + name}
+	}
+}
+
+func (m *Model) applyFloatingPositionsToLayoutSpec(spec *LayoutSpec) {
+	if spec == nil {
+		return
+	}
+	limit := min(len(spec.Tabs), len(m.workspace.Tabs))
+	for i := 0; i < limit; i++ {
+		tabSpec := &spec.Tabs[i]
+		tab := m.workspace.Tabs[i]
+		if tab == nil {
+			continue
+		}
+		for j := range tabSpec.Floating {
+			if j >= len(tab.Floating) || tab.Floating[j] == nil {
+				continue
+			}
+			tabSpec.Floating[j].Position = m.floatingRectPositionAnchor(tab.Floating[j].Rect)
+		}
 	}
 }
 
@@ -2210,19 +3267,7 @@ func (m *Model) handlePaneResize(msg paneResizeMsg) {
 	if pane == nil {
 		return
 	}
-	pane.VTerm.Resize(int(msg.cols), int(msg.rows))
-	if pane.Snapshot != nil {
-		pane.Snapshot.Size = protocol.Size{Cols: msg.cols, Rows: msg.rows}
-	}
-	pane.cellVersion++
-	pane.renderDirty = true
-	pane.clearDirtyRegion()
-	pane.cellCache = nil
-	if tab := m.tabForPane(pane.ID); tab != nil {
-		if viewW, viewH, ok := m.paneViewportSizeInTab(tab, pane.ID); ok && m.syncViewport(pane, viewW, viewH) {
-			tab.renderCache = nil
-		}
-	}
+	m.resizeTerminalPanes(pane.TerminalID, "", msg.cols, msg.rows)
 	m.invalidateRender()
 }
 
@@ -2368,6 +3413,18 @@ func removeFloatingPane(entries []*FloatingPane, paneID string) []*FloatingPane 
 		out = append(out, entry)
 	}
 	return out
+}
+
+func floatingPaneByID(tab *Tab, paneID string) *FloatingPane {
+	if tab == nil || paneID == "" {
+		return nil
+	}
+	for _, entry := range tab.Floating {
+		if entry != nil && entry.PaneID == paneID {
+			return entry
+		}
+	}
+	return nil
 }
 
 func (m *Model) paneViewportSizeInTab(tab *Tab, paneID string) (int, int, bool) {
@@ -2554,6 +3611,22 @@ func (m *Model) panActiveViewport(dx, dy int) {
 	m.invalidateRender()
 }
 
+func (m *Model) setActiveViewportOffset(x, y int) {
+	tab := m.currentTab()
+	pane := activePane(tab)
+	if pane == nil || pane.Mode != ViewportModeFixed || !pane.Pin {
+		return
+	}
+	viewW, viewH, ok := m.paneViewportSizeInTab(tab, pane.ID)
+	if !ok {
+		return
+	}
+	pane.Offset = Point{X: x, Y: y}
+	_ = normalizeViewportOffset(pane, viewW, viewH)
+	tab.renderCache = nil
+	m.invalidateRender()
+}
+
 func (m *Model) toggleFloatingLayerVisibility() {
 	tab := m.currentTab()
 	if tab == nil || len(tab.Floating) == 0 {
@@ -2578,7 +3651,6 @@ func (m *Model) cycleFloatingFocus() {
 	}
 	if !isFloatingPane(tab, tab.ActivePaneID) {
 		tab.ActivePaneID = floating[0].PaneID
-		tab.renderCache = nil
 		m.invalidateRender()
 		return
 	}
@@ -2587,12 +3659,10 @@ func (m *Model) cycleFloatingFocus() {
 			continue
 		}
 		tab.ActivePaneID = floating[(i+1)%len(floating)].PaneID
-		tab.renderCache = nil
 		m.invalidateRender()
 		return
 	}
 	tab.ActivePaneID = floating[0].PaneID
-	tab.renderCache = nil
 	m.invalidateRender()
 }
 
@@ -2623,7 +3693,6 @@ func (m *Model) focusTiledPane() bool {
 	}
 	if paneID := firstTiledPaneID(tab); paneID != "" {
 		tab.ActivePaneID = paneID
-		tab.renderCache = nil
 		m.invalidateRender()
 		return true
 	}
@@ -2643,8 +3712,55 @@ func (m *Model) moveActiveFloatingPane(dx, dy int) {
 		rect := entry.Rect
 		rect.X += dx
 		rect.Y += dy
-		entry.Rect = clampFloatingRect(rect, bounds)
-		tab.renderCache = nil
+		next := clampFloatingRect(rect, bounds)
+		if next == entry.Rect {
+			return
+		}
+		entry.Rect = next
+		m.invalidateRender()
+		return
+	}
+}
+
+func (m *Model) dragFloatingPaneTo(tab *Tab, paneID string, x, y int) {
+	if tab == nil || paneID == "" {
+		return
+	}
+	bounds := Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}
+	for _, entry := range tab.Floating {
+		if entry == nil || entry.PaneID != paneID {
+			continue
+		}
+		rect := entry.Rect
+		rect.X = x
+		rect.Y = y
+		next := clampFloatingRect(rect, bounds)
+		if next == entry.Rect {
+			return
+		}
+		entry.Rect = next
+		m.invalidateRender()
+		return
+	}
+}
+
+func (m *Model) resizeFloatingPaneTo(tab *Tab, paneID string, width, height int) {
+	if tab == nil || paneID == "" {
+		return
+	}
+	bounds := Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}
+	for _, entry := range tab.Floating {
+		if entry == nil || entry.PaneID != paneID {
+			continue
+		}
+		rect := entry.Rect
+		rect.W = width
+		rect.H = height
+		next := clampFloatingRect(rect, bounds)
+		if next == entry.Rect {
+			return
+		}
+		entry.Rect = next
 		m.invalidateRender()
 		return
 	}
@@ -2663,8 +3779,11 @@ func (m *Model) resizeActiveFloatingPane(dw, dh int) {
 		rect := entry.Rect
 		rect.W += dw
 		rect.H += dh
-		entry.Rect = clampFloatingRect(rect, bounds)
-		tab.renderCache = nil
+		next := clampFloatingRect(rect, bounds)
+		if next == entry.Rect {
+			return
+		}
+		entry.Rect = next
 		m.invalidateRender()
 		return
 	}
@@ -2692,6 +3811,20 @@ func (m *Model) defaultFloatingRectForPane(pane *Pane) Rect {
 	rect = clampFloatingRect(rect, bounds)
 	rect.X = bounds.X + max(0, (bounds.W-rect.W)/2)
 	rect.Y = bounds.Y + max(0, (bounds.H-rect.H)/2)
+	return clampFloatingRect(rect, bounds)
+}
+
+func (m *Model) staggerFloatingRect(rect Rect, index int) Rect {
+	if index <= 0 {
+		return rect
+	}
+	bounds := Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}
+	stepX := 4
+	stepY := 2
+	maxStepsX := max(1, max(0, bounds.W-rect.W)/stepX+1)
+	offsetIndex := index % maxStepsX
+	rect.X += offsetIndex * stepX
+	rect.Y += index * stepY
 	return clampFloatingRect(rect, bounds)
 }
 
@@ -2747,6 +3880,112 @@ func (m *Model) layoutFloatingRect(spec FloatingEntrySpec, pane *Pane) Rect {
 	return clampFloatingRect(rect, bounds)
 }
 
+func (m *Model) floatingRectPositionAnchor(rect Rect) string {
+	bounds := Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}
+	rect = clampFloatingRect(rect, bounds)
+	type candidate struct {
+		name string
+		rect Rect
+	}
+	candidates := []candidate{
+		{name: "center", rect: centeredFloatingRect(bounds, rect.W, rect.H)},
+		{name: "top-left", rect: Rect{X: bounds.X, Y: bounds.Y, W: rect.W, H: rect.H}},
+		{name: "top-right", rect: Rect{X: bounds.X + max(0, bounds.W-rect.W), Y: bounds.Y, W: rect.W, H: rect.H}},
+		{name: "bottom-left", rect: Rect{X: bounds.X, Y: bounds.Y + max(0, bounds.H-rect.H), W: rect.W, H: rect.H}},
+		{name: "bottom-right", rect: Rect{X: bounds.X + max(0, bounds.W-rect.W), Y: bounds.Y + max(0, bounds.H-rect.H), W: rect.W, H: rect.H}},
+	}
+	best := candidates[0]
+	bestScore := floatingAnchorDistance(rect, best.rect)
+	for _, candidate := range candidates[1:] {
+		score := floatingAnchorDistance(rect, candidate.rect)
+		if score < bestScore {
+			best = candidate
+			bestScore = score
+		}
+	}
+	return best.name
+}
+
+func (m *Model) mouseContentPoint(screenX, screenY int) (int, int, bool) {
+	if screenY < 1 || screenY >= m.height-1 || screenX < 0 || screenX >= m.width {
+		return 0, 0, false
+	}
+	return screenX, screenY - 1, true
+}
+
+func (m *Model) paneAtPoint(tab *Tab, x, y int) (string, Rect, bool) {
+	if tab == nil {
+		return "", Rect{}, false
+	}
+	floating := m.visibleFloatingPanes(tab)
+	for i := len(floating) - 1; i >= 0; i-- {
+		entry := floating[i]
+		if entry == nil {
+			continue
+		}
+		if pointInRect(x, y, entry.Rect) {
+			return entry.PaneID, entry.Rect, true
+		}
+	}
+	if tab.Root == nil {
+		return "", Rect{}, false
+	}
+	rects := tab.Root.Rects(Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)})
+	if tab.ZoomedPaneID != "" {
+		if _, ok := rects[tab.ZoomedPaneID]; ok {
+			rects = map[string]Rect{tab.ZoomedPaneID: Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}}
+		}
+	}
+	for _, paneID := range tab.Root.LeafIDs() {
+		rect, ok := rects[paneID]
+		if ok && pointInRect(x, y, rect) {
+			return paneID, rect, false
+		}
+	}
+	return "", Rect{}, false
+}
+
+func floatingResizeHandleContains(rect Rect, x, y int) bool {
+	if rect.W < 2 || rect.H < 2 {
+		return false
+	}
+	handleX := max(rect.X+rect.W-2, rect.X)
+	handleY := max(rect.Y+rect.H-2, rect.Y)
+	return x >= handleX && x < rect.X+rect.W && y >= handleY && y < rect.Y+rect.H
+}
+
+func pointInRect(x, y int, rect Rect) bool {
+	return x >= rect.X && x < rect.X+rect.W && y >= rect.Y && y < rect.Y+rect.H
+}
+
+func resetLayoutRatios(node *LayoutNode) {
+	if node == nil || node.IsLeaf() {
+		return
+	}
+	node.Ratio = 0.5
+	resetLayoutRatios(node.First)
+	resetLayoutRatios(node.Second)
+}
+
+func centeredFloatingRect(bounds Rect, width, height int) Rect {
+	rect := Rect{W: width, H: height}
+	rect = clampFloatingRect(rect, bounds)
+	rect.X = bounds.X + max(0, (bounds.W-rect.W)/2)
+	rect.Y = bounds.Y + max(0, (bounds.H-rect.H)/2)
+	return clampFloatingRect(rect, bounds)
+}
+
+func floatingAnchorDistance(a, b Rect) int {
+	return abs(a.X-b.X) + abs(a.Y-b.Y)
+}
+
+func abs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
 func (m *Model) cycleActiveLayout() {
 	tab := m.currentTab()
 	if tab == nil || tab.Root == nil {
@@ -2774,6 +4013,7 @@ func (m *Model) resizeVisiblePanesCmd() tea.Cmd {
 	}
 	rects := m.visiblePaneRects(tab)
 	cmds := make([]tea.Cmd, 0, len(rects))
+	resizedTerminals := make(map[string]struct{}, len(rects))
 	for paneID, rect := range rects {
 		pane := tab.Panes[paneID]
 		if pane == nil {
@@ -2792,6 +4032,15 @@ func (m *Model) resizeVisiblePanesCmd() tea.Cmd {
 			m.invalidateRender()
 			continue
 		}
+		if !paneShouldSubmitResize(m.workspace.Tabs, pane) {
+			tab.renderCache = nil
+			m.invalidateRender()
+			continue
+		}
+		if _, ok := resizedTerminals[pane.TerminalID]; ok {
+			continue
+		}
+		resizedTerminals[pane.TerminalID] = struct{}{}
 		cmds = append(cmds, func(channel uint16, cols, rows uint16) tea.Cmd {
 			return func() tea.Msg {
 				ctx, cancel := m.requestContext()
@@ -2828,6 +4077,12 @@ func (m *Model) killActiveTerminalCmd() tea.Cmd {
 	}
 	pane := tab.Panes[tab.ActivePaneID]
 	if pane == nil {
+		return nil
+	}
+	if pane.Readonly {
+		m.notice = ""
+		m.err = fmt.Errorf("readonly pane cannot kill/remove terminal")
+		m.invalidateRender()
 		return nil
 	}
 	return func() tea.Msg {
@@ -2917,17 +4172,18 @@ func (m *Model) removePane(paneID string) bool {
 	return false
 }
 
-func (m *Model) removeTerminal(terminalID string) bool {
+func (m *Model) removeTerminal(terminalID string) (removed int, quit bool) {
 	if terminalID == "" {
-		return false
+		return 0, false
 	}
 	for {
 		pane := findPaneByTerminalID(m.workspace.Tabs, terminalID)
 		if pane == nil {
-			return false
+			return removed, false
 		}
+		removed++
 		if m.removePane(pane.ID) {
-			return true
+			return removed, true
 		}
 	}
 }
@@ -2998,6 +4254,202 @@ func (m *Model) markTerminalExited(terminalID string, exitCode int) {
 	}
 }
 
+func (m *Model) applyTerminalMetadataUpdate(terminalID string, name string, tags map[string]string) {
+	if strings.TrimSpace(terminalID) == "" {
+		return
+	}
+	changed := updateWorkspaceTerminalMetadata(&m.workspace, terminalID, name, tags)
+	for workspaceName, workspace := range m.workspaceStore {
+		if updateWorkspaceTerminalMetadata(&workspace, terminalID, name, tags) {
+			m.workspaceStore[workspaceName] = workspace
+			changed = true
+		}
+	}
+	if changed {
+		m.notice = "updated terminal metadata"
+		m.invalidateRender()
+	}
+}
+
+func (m *Model) acquireActivePaneResizeCmd() tea.Cmd {
+	tab := m.currentTab()
+	pane := activePane(tab)
+	if pane == nil || strings.TrimSpace(pane.TerminalID) == "" {
+		m.notice = ""
+		m.err = fmt.Errorf("acquire-resize requires an active terminal")
+		m.invalidateRender()
+		return nil
+	}
+	if !paneAllowsResize(pane) {
+		m.notice = ""
+		m.err = fmt.Errorf("acquire-resize requires a running terminal")
+		m.invalidateRender()
+		return nil
+	}
+	if mode := terminalSizeLockMode(pane); mode == "warn" {
+		m.pendingResizeAcquire = &resizeAcquireDraft{
+			PaneID:      pane.ID,
+			TerminalID:  pane.TerminalID,
+			WarningMode: mode,
+		}
+		m.prompt = &textPrompt{
+			Kind:  "confirm-acquire-resize",
+			Title: "size change warning",
+		}
+		m.notice = ""
+		m.err = nil
+		m.invalidateRender()
+		return nil
+	}
+	return m.forceAcquirePaneResize(pane)
+}
+
+func (m *Model) forceAcquirePaneResize(pane *Pane) tea.Cmd {
+	if pane == nil || strings.TrimSpace(pane.TerminalID) == "" {
+		return nil
+	}
+	clearTerminalResizeAcquire(m.workspace.Tabs, pane.TerminalID)
+	pane.ResizeAcquired = true
+	m.notice = fmt.Sprintf("acquired resize control for terminal %q", terminalDisplayNameForNotice(pane))
+	m.err = nil
+	m.invalidateRender()
+	return m.resizeVisiblePanesCmd()
+}
+
+func terminalSizeLockMode(pane *Pane) string {
+	if pane == nil {
+		return "off"
+	}
+	switch strings.TrimSpace(pane.Tags["termx.size_lock"]) {
+	case "warn":
+		return "warn"
+	default:
+		return "off"
+	}
+}
+
+func clearTerminalResizeAcquire(tabs []*Tab, terminalID string) {
+	if strings.TrimSpace(terminalID) == "" {
+		return
+	}
+	for _, tab := range tabs {
+		if tab == nil {
+			continue
+		}
+		for _, pane := range tab.Panes {
+			if pane != nil && pane.TerminalID == terminalID {
+				pane.ResizeAcquired = false
+			}
+		}
+	}
+}
+
+func terminalDisplayNameForNotice(pane *Pane) string {
+	if pane == nil {
+		return ""
+	}
+	if name := strings.TrimSpace(pane.Name); name != "" {
+		return name
+	}
+	if title := strings.TrimSpace(pane.Title); title != "" {
+		return title
+	}
+	return pane.TerminalID
+}
+
+func (m *Model) setCurrentTabAutoAcquireCmd(value string) tea.Cmd {
+	tab := m.currentTab()
+	if tab == nil {
+		return nil
+	}
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "on", "true", "1":
+		tab.AutoAcquireResize = true
+		m.notice = "tab auto-acquire resize enabled"
+		m.err = nil
+		m.invalidateRender()
+		return nil
+	case "off", "false", "0":
+		tab.AutoAcquireResize = false
+		m.notice = "tab auto-acquire resize disabled"
+		m.err = nil
+		m.invalidateRender()
+		return nil
+	default:
+		m.notice = ""
+		m.err = fmt.Errorf("tab-auto-acquire requires on or off")
+		m.invalidateRender()
+		return nil
+	}
+}
+
+func (m *Model) setActiveTerminalSizeLockCmd(value string) tea.Cmd {
+	tab := m.currentTab()
+	pane := activePane(tab)
+	if pane == nil || strings.TrimSpace(pane.TerminalID) == "" {
+		m.notice = ""
+		m.err = fmt.Errorf("set-size-lock requires an active terminal")
+		m.invalidateRender()
+		return nil
+	}
+
+	lockValue := strings.ToLower(strings.TrimSpace(value))
+	switch lockValue {
+	case "off", "warn":
+	default:
+		m.notice = ""
+		m.err = fmt.Errorf("set-size-lock requires off or warn")
+		m.invalidateRender()
+		return nil
+	}
+
+	tags := cloneStringMap(pane.Tags)
+	if tags == nil {
+		tags = make(map[string]string)
+	}
+	tags["termx.size_lock"] = lockValue
+	return func() tea.Msg {
+		ctx, cancel := m.requestContext()
+		defer cancel()
+		if err := m.client.SetMetadata(ctx, pane.TerminalID, pane.Name, tags); err != nil {
+			return errMsg{m.wrapClientError("set terminal metadata", err, "terminal_id", pane.TerminalID)}
+		}
+		return terminalMetadataUpdatedMsg{
+			TerminalID: pane.TerminalID,
+			Name:       pane.Name,
+			Tags:       tags,
+		}
+	}
+}
+
+func updateWorkspaceTerminalMetadata(workspace *Workspace, terminalID string, name string, tags map[string]string) bool {
+	if workspace == nil {
+		return false
+	}
+	changed := false
+	for _, tab := range workspace.Tabs {
+		if tab == nil {
+			continue
+		}
+		tabChanged := false
+		for _, pane := range tab.Panes {
+			if pane == nil || pane.TerminalID != terminalID {
+				continue
+			}
+			pane.Name = name
+			pane.Tags = cloneStringMap(tags)
+			pane.Title = paneTitleForCommand(name, firstCommandWord(pane.Command), pane.TerminalID)
+			pane.renderDirty = true
+			tabChanged = true
+			changed = true
+		}
+		if tabChanged {
+			tab.renderCache = nil
+		}
+	}
+	return changed
+}
+
 func (m *Model) replaceWorkspace(workspace Workspace) {
 	for _, tab := range m.workspace.Tabs {
 		if tab == nil {
@@ -3060,6 +4512,7 @@ func (m *Model) sendToActive(data []byte) tea.Cmd {
 	if len(data) == 0 {
 		return nil
 	}
+	m.noteInteraction()
 	tab := m.currentTab()
 	if tab == nil {
 		return nil
@@ -3108,11 +4561,75 @@ func paneAllowsResize(pane *Pane) bool {
 	return pane != nil && paneTerminalState(pane) == "running"
 }
 
+func paneShouldSubmitResize(tabs []*Tab, pane *Pane) bool {
+	if pane == nil {
+		return false
+	}
+	if terminalBindingCount(tabs, pane.TerminalID) <= 1 {
+		return true
+	}
+	return pane.ResizeAcquired
+}
+
+func terminalBindingCount(tabs []*Tab, terminalID string) int {
+	if strings.TrimSpace(terminalID) == "" {
+		return 0
+	}
+	count := 0
+	for _, tab := range tabs {
+		if tab == nil {
+			continue
+		}
+		for _, pane := range tab.Panes {
+			if pane != nil && pane.TerminalID == terminalID {
+				count++
+			}
+		}
+	}
+	return count
+}
+
 func paneTerminalState(pane *Pane) string {
 	if pane == nil || pane.Viewport == nil || pane.TerminalState == "" {
 		return "running"
 	}
 	return pane.TerminalState
+}
+
+func (m *Model) paneByID(paneID string) *Pane {
+	if strings.TrimSpace(paneID) == "" {
+		return nil
+	}
+	for _, tab := range m.workspace.Tabs {
+		if tab == nil {
+			continue
+		}
+		if pane := tab.Panes[paneID]; pane != nil {
+			return pane
+		}
+	}
+	return nil
+}
+
+func (m *Model) activateTab(index int) tea.Cmd {
+	if index < 0 || index >= len(m.workspace.Tabs) {
+		return nil
+	}
+	m.workspace.ActiveTab = index
+	m.invalidateRender()
+	return tea.Batch(m.resizeVisiblePanesCmd(), m.autoAcquireCurrentTabResizeCmd())
+}
+
+func (m *Model) autoAcquireCurrentTabResizeCmd() tea.Cmd {
+	tab := m.currentTab()
+	if tab == nil || !tab.AutoAcquireResize {
+		return nil
+	}
+	pane := activePane(tab)
+	if pane == nil || strings.TrimSpace(pane.TerminalID) == "" || !paneAllowsResize(pane) {
+		return nil
+	}
+	return m.forceAcquirePaneResize(pane)
 }
 
 func (m *Model) currentTab() *Tab {
@@ -3122,102 +4639,368 @@ func (m *Model) currentTab() *Tab {
 	return m.workspace.Tabs[m.workspace.ActiveTab]
 }
 
+func (m *Model) CurrentTabForTest() *Tab {
+	return m.currentTab()
+}
+
+func (m *Model) ActiveModeForTest() string {
+	if m == nil || !m.prefixActive {
+		return ""
+	}
+	switch m.prefixMode {
+	case prefixModePane:
+		return "pane"
+	case prefixModeResize:
+		return "resize"
+	case prefixModeTab:
+		return "tab"
+	case prefixModeWorkspace:
+		return "workspace"
+	case prefixModeViewport:
+		return "view"
+	case prefixModeFloating:
+		return "floating"
+	case prefixModeOffsetPan:
+		return "offset-pan"
+	case prefixModeGlobal:
+		return "global"
+	default:
+		return "root"
+	}
+}
+
+func (m *Model) InputBlockedForTest() bool {
+	if m == nil {
+		return false
+	}
+	return m.inputBlocked
+}
+
+func (m *Model) PromptKindForTest() string {
+	if m == nil || m.prompt == nil {
+		return ""
+	}
+	return m.prompt.Kind
+}
+
+func (m *Model) SetCurrentTabAutoAcquireForTest(enabled bool) {
+	if m == nil {
+		return
+	}
+	tab := m.currentTab()
+	if tab == nil {
+		return
+	}
+	tab.AutoAcquireResize = enabled
+}
+
+func (m *Model) SetTerminalTagForTest(terminalID, key, value string) {
+	if m == nil || strings.TrimSpace(terminalID) == "" || strings.TrimSpace(key) == "" {
+		return
+	}
+	for _, tab := range m.workspace.Tabs {
+		if tab == nil {
+			continue
+		}
+		for _, pane := range tab.Panes {
+			if pane == nil || pane.TerminalID != terminalID {
+				continue
+			}
+			if pane.Tags == nil {
+				pane.Tags = make(map[string]string)
+			}
+			pane.Tags[key] = value
+		}
+	}
+}
+
+func (m *Model) ActivateTabForTest(index int) {
+	if m == nil {
+		return
+	}
+	m.runCmdForTest(m.activateTab(index))
+}
+
+func (m *Model) runCmdForTest(cmd tea.Cmd) {
+	if cmd == nil {
+		return
+	}
+	msg := cmd()
+	switch batch := msg.(type) {
+	case tea.BatchMsg:
+		for _, sub := range batch {
+			m.runCmdForTest(sub)
+		}
+	default:
+		_, next := m.Update(msg)
+		if next != nil {
+			m.runCmdForTest(next)
+		}
+	}
+}
+
 func (m *Model) renderTabBar() string {
-	items := make([]string, 0, len(m.workspace.Tabs))
+	workspaceLabel := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#e2e8f0")).
+		Background(lipgloss.Color("#0f172a")).
+		Padding(0, 1).
+		Render("[" + m.workspace.Name + "]")
+
+	items := make([]string, 0, len(m.workspace.Tabs)+1)
+	items = append(items, workspaceLabel)
 	for i, tab := range m.workspace.Tabs {
-		label := fmt.Sprintf(" %d:%s ", i+1, tab.Name)
+		name := strings.TrimSpace(tab.Name)
+		if name == "" || name == itoa(i+1) {
+			name = "tab " + itoa(i+1)
+		}
+		labelText := fmt.Sprintf("%d:%s", i+1, name)
+		label := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#94a3b8")).
+			Background(lipgloss.Color("#020617")).
+			Render(labelText)
 		if i == m.workspace.ActiveTab {
 			label = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("#0f172a")).
-				Background(lipgloss.Color("#fbbf24")).
-				Render(label)
-		} else {
-			label = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#cbd5e1")).
-				Background(lipgloss.Color("#334155")).
-				Render(label)
+				Underline(true).
+				Foreground(lipgloss.Color("#e2e8f0")).
+				Background(lipgloss.Color("#020617")).
+				Render("[" + labelText + "]")
 		}
 		items = append(items, label)
 	}
 	left := strings.Join(items, " ")
 	right := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#93c5fd")).
-		Background(lipgloss.Color("#0f172a")).
-		Bold(true).
-		Render(" ws:" + m.workspace.Name + " ")
-	return fillHorizontal(left, right, m.width, lipgloss.NewStyle().Background(lipgloss.Color("#0f172a")))
+		Foreground(lipgloss.Color("#94a3b8")).
+		Background(lipgloss.Color("#020617")).
+		Render("ws:" + m.workspace.Name)
+	return fillHorizontal(left, right, m.width, lipgloss.NewStyle().Background(lipgloss.Color("#020617")))
 }
 
 func (m *Model) renderStatus() string {
-	if m.prompt != nil {
+	if m.prompt != nil && m.prompt.Kind == "command" {
 		left := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#f8fafc")).
 			Background(lipgloss.Color("#1d4ed8")).
 			Bold(true).
-			Render(" " + m.prompt.Title + ": " + m.prompt.Value + "_" + " ")
+			Padding(0, 1).
+			Render(m.prompt.Title + ": " + m.prompt.Value + "_")
+		hint := "enter save  esc cancel"
+		if m.prompt.Hint != "" {
+			hint = m.prompt.Hint
+		}
 		right := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#dbeafe")).
 			Background(lipgloss.Color("#1d4ed8")).
-			Render(" enter save | esc cancel ")
+			Padding(0, 1).
+			Render(hint)
 		return fillHorizontal(left, right, m.width, lipgloss.NewStyle().Background(lipgloss.Color("#1d4ed8")))
 	}
 
-	parts := []string{"C-a ? help", "split:\"/%", "nav:hjkl", "resize:HJKL", "swap:{/}", "layout:Space", "tab:c , n/p &", "zoom:z", "detach:d"}
-	prefixParts := make([]string, 0, 3)
-	if m.prefixActive {
-		parts = append(parts, "[prefix]")
+	leftParts := m.statusShortcutParts()
+	rightParts := m.statusStateParts()
+	left := renderStatusHints(leftParts)
+	right := renderStatusSummary(rightParts)
+	return fillStatusSections(left, right, m.width, lipgloss.NewStyle().Background(lipgloss.Color("#020617")))
+}
+
+func (m *Model) statusShortcutParts() []string {
+	parts := make([]string, 0, 12)
+	actionParts := make([]string, 0, 4)
+	if m.prefixActive && m.directMode {
+		switch m.prefixMode {
+		case prefixModePane:
+			parts = append(parts, "[PANE]", "\":split", "%:split", "hjkl:focus", "{}:swap", "z:zoom", "x:close", "X:kill", "c:new-tab", "f:pick", "Esc:exit")
+		case prefixModeResize:
+			parts = append(parts, "[RESIZE]", "hjkl:resize", "HJKL:coarse", "=:balance", "Space:layout", "Esc:exit")
+		case prefixModeTab:
+			parts = append(parts, "[TAB]", "1-9:jump", "n/p:next-prev", "c:new", "r:rename", "x:close", "f:pick", "Esc:exit")
+		case prefixModeWorkspace:
+			parts = append(parts, "[WORKSPACE]", "s:switch", "c:new", "r:rename", "x:delete", "n/p:next-prev", "f:pick", "Esc:exit")
+		case prefixModeViewport:
+			parts = append(parts, "[DISPLAY]", "m:fit/fixed", "r:readonly", "p:pin", "hjkl:pan", "0/$/g/G:jump", "z:reset", "Esc:exit")
+		case prefixModeFloating:
+			parts = append(parts, "[FLOAT]", "n:new", "Tab:focus", "[]:z-order", "hjkl:move", "HJKL:size", "v:toggle", "x:close", "f:pick", "Esc:exit")
+		case prefixModeGlobal:
+			parts = append(parts, "[GLOBAL]", "?:help", "::command", "d:detach", "q:quit", "Esc:exit")
+		}
+	} else if m.prefixActive {
+		switch m.prefixMode {
+		case prefixModeTab:
+			parts = append(parts, "prefix:t", "tab:c", "rename:,", "close:x")
+		case prefixModeWorkspace:
+			parts = append(parts, "prefix:w", "ws:s", "create:c", "rename:r", "delete:x")
+		case prefixModeViewport:
+			parts = append(parts, "prefix:v", "display:m", "readonly:r", "pin:p", "pan:o")
+		case prefixModeFloating:
+			parts = append(parts, "mode:floating", "new:n", "move:hjkl", "size:HJKL", "Esc")
+		case prefixModeOffsetPan:
+			parts = append(parts, "mode:offset-pan", "pan:hjkl", "jump:0/$/g/G", "Esc")
+		default:
+			parts = append(parts, "prefix", "move:hjkl", "resize:HJKL")
+		}
+	}
+	if len(parts) == 0 {
+		parts = append(parts, "[NORMAL]", "Ctrl-p pane", "Ctrl-r resize", "Ctrl-t tab", "Ctrl-w ws", "Ctrl-o float", "Ctrl-v display", "Ctrl-f picker", "Ctrl-g global")
+	} else if !m.prefixActive {
+		parts = append(parts, "[NORMAL]", "Ctrl-p pane", "Ctrl-r resize", "Ctrl-t tab", "Ctrl-w ws", "Ctrl-o float", "Ctrl-v display", "Ctrl-f picker", "Ctrl-g global")
+	}
+	if tab := m.currentTab(); tab != nil {
+		if pane := tab.Panes[tab.ActivePaneID]; pane != nil {
+			switch paneTerminalState(pane) {
+			case "exited":
+				actionParts = append(actionParts, "restart:r", "attach:f", "close:x")
+			case "killed":
+				actionParts = append(actionParts, "attach:f", "close:x")
+			}
+		}
+	}
+	if len(actionParts) > 0 {
+		parts = append(actionParts, parts...)
 	}
 	if m.showHelp {
 		parts = append(parts, "[help]")
 	}
-	if tab := m.currentTab(); tab != nil {
-		if pane := tab.Panes[tab.ActivePaneID]; pane != nil {
-			parts = append(parts, paneLayerStatusParts(tab, tab.ActivePaneID)...)
-			parts = append(parts, "pane:"+pane.TerminalID)
-			parts = append(parts, viewportStatusParts(pane)...)
-			switch paneTerminalState(pane) {
-			case "exited":
-				prefixParts = append(prefixParts, "restart:r", "attach:C-a f", "close:C-a x")
-			case "killed":
-				prefixParts = append(prefixParts, "attach:C-a f", "close:C-a x")
-			}
-			if pane.syncLost || pane.recovering || pane.catchingUp {
-				parts = append(parts, fmt.Sprintf("catching-up:%dB", pane.droppedBytes))
-			}
-		}
-	}
-	if len(prefixParts) > 0 {
-		parts = append(prefixParts, parts...)
-	}
+	return parts
+}
+
+func (m *Model) statusStateParts() []string {
+	parts := make([]string, 0, 12)
 	if m.notice != "" {
 		parts = append([]string{m.notice}, parts...)
 	}
 	if m.err != nil {
 		parts = append([]string{"err:" + m.err.Error()}, parts...)
 	}
-	left := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#e2e8f0")).
-		Background(lipgloss.Color("#1e293b")).
-		Render(" " + strings.Join(parts, " | ") + " ")
-	right := ""
 	if tab := m.currentTab(); tab != nil {
+		visibleFloating := m.visibleFloatingPanes(tab)
+		if len(visibleFloating) > 0 {
+			parts = append(parts, "floating:"+itoa(len(visibleFloating)))
+			if isFloatingPane(tab, tab.ActivePaneID) {
+				parts = append(parts, "focus:float", "Esc->tiled")
+			} else {
+				parts = append(parts, "focus:tiled", "Tab->float")
+			}
+		}
 		if pane := tab.Panes[tab.ActivePaneID]; pane != nil {
-			right = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#fde68a")).
-				Background(lipgloss.Color("#1e293b")).
-				Bold(true).
-				Render(" " + pane.TerminalID + " ")
+			parts = append(parts, paneLayerStatusParts(tab, tab.ActivePaneID)...)
+			parts = append(parts, "pane:"+paneDisplayLabel(pane))
+			if formatted := formatTerminalTags(pane.Tags); formatted != "tags:-" {
+				parts = append(parts, "tags:"+formatted)
+			}
+			parts = append(parts, viewportStatusParts(pane)...)
+			if pane.syncLost || pane.recovering || pane.catchingUp {
+				parts = append(parts, fmt.Sprintf("catching-up:%dB", pane.droppedBytes))
+			}
 		}
 	}
-	return fillHorizontal(left, right, m.width, lipgloss.NewStyle().Background(lipgloss.Color("#1e293b")))
+	return parts
+}
+
+func renderStatusHints(parts []string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	badge := renderModeBadge(parts[0])
+	if len(parts) == 1 {
+		return badge
+	}
+	hints := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#94a3b8")).
+		Background(lipgloss.Color("#020617")).
+		Render(strings.Join(parts[1:], "  "))
+	return badge + " " + hints
+}
+
+func renderStatusSummary(parts []string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	items := make([]string, 0, len(parts))
+	for _, part := range parts {
+		style := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#cbd5e1")).
+			Background(lipgloss.Color("#020617"))
+		switch {
+		case strings.HasPrefix(part, "err:"):
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("#fee2e2")).Background(lipgloss.Color("#7f1d1d")).Bold(true)
+		case strings.Contains(part, "saved "), strings.Contains(part, "loaded "), strings.Contains(part, "deleted "), strings.HasPrefix(part, "updated "), strings.HasPrefix(part, "workspace:"):
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("#dcfce7")).Background(lipgloss.Color("#166534")).Bold(true)
+		case strings.HasPrefix(part, "focus:"), strings.Contains(part, "Tab->float"), strings.Contains(part, "Esc->tiled"):
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("#fef3c7")).Background(lipgloss.Color("#020617")).Bold(true)
+		case strings.HasPrefix(part, "pane:"), strings.HasPrefix(part, "state:"), strings.HasPrefix(part, "mode:"), strings.HasPrefix(part, "display:"), strings.HasPrefix(part, "floating:"), strings.HasPrefix(part, "layer:"), strings.HasPrefix(part, "tags:"), strings.HasPrefix(part, "z:"), strings.HasPrefix(part, "offset:"), strings.HasPrefix(part, "access:"), part == "readonly", part == "pinned":
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("#e2e8f0")).Background(lipgloss.Color("#020617"))
+		case strings.HasPrefix(part, "restart:"), strings.HasPrefix(part, "attach:"), strings.HasPrefix(part, "close:"), strings.HasPrefix(part, "catching-up:"):
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("#fde68a")).Background(lipgloss.Color("#020617"))
+		}
+		items = append(items, style.Render(part))
+	}
+	return strings.Join(items, "  ")
+}
+
+func renderModeBadge(mode string) string {
+	style := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#020617")).
+		Background(lipgloss.Color("#93c5fd")).
+		Bold(true).
+		Padding(0, 1)
+	switch mode {
+	case "[PANE]":
+		style = style.Background(lipgloss.Color("#93c5fd"))
+	case "[RESIZE]":
+		style = style.Background(lipgloss.Color("#fca5a5"))
+	case "[TAB]":
+		style = style.Background(lipgloss.Color("#86efac"))
+	case "[WORKSPACE]":
+		style = style.Background(lipgloss.Color("#fcd34d"))
+	case "[FLOAT]":
+		style = style.Background(lipgloss.Color("#fde047"))
+	case "[DISPLAY]":
+		style = style.Background(lipgloss.Color("#c4b5fd"))
+	case "[GLOBAL]":
+		style = style.Background(lipgloss.Color("#e5e7eb"))
+	default:
+		style = style.Background(lipgloss.Color("#67e8f9"))
+	}
+	return style.Render(mode)
+}
+
+func fillStatusSections(left, right string, width int, filler lipgloss.Style) string {
+	leftW := xansi.StringWidth(left)
+	rightW := xansi.StringWidth(right)
+	if width <= 0 {
+		return ""
+	}
+	if left == "" {
+		return forceWidthANSI(right, width)
+	}
+	if right == "" {
+		return forceWidthANSI(left, width)
+	}
+	if leftW+rightW < width {
+		return left + filler.Render(strings.Repeat(" ", width-leftW-rightW)) + right
+	}
+	gap := 1
+	maxLeft := max(0, width-rightW-gap)
+	if maxLeft > 0 {
+		return forceWidthANSI(left, maxLeft) + filler.Render(" ") + forceWidthANSI(right, width-maxLeft-gap)
+	}
+	return forceWidthANSI(right, width)
 }
 
 func viewportStatusParts(pane *Pane) []string {
 	if pane == nil {
 		return nil
 	}
-	parts := []string{"state:" + paneTerminalState(pane), "mode:" + string(pane.Mode)}
+	parts := []string{"state:" + paneTerminalState(pane), "display:" + string(pane.Mode)}
+	if access := paneAccessMode(pane); access != "" {
+		switch access {
+		case "collaborator":
+			parts = append(parts, "access:collab")
+		default:
+			parts = append(parts, "access:"+access)
+		}
+	}
 	if pane.Mode == ViewportModeFixed {
 		parts = append(parts, fmt.Sprintf("offset:%d,%d", pane.Offset.X, pane.Offset.Y))
 		if pane.Pin {
@@ -3228,6 +5011,17 @@ func viewportStatusParts(pane *Pane) []string {
 		parts = append(parts, "readonly")
 	}
 	return parts
+}
+
+func paneAccessMode(pane *Pane) string {
+	if pane == nil || pane.Viewport == nil || strings.TrimSpace(pane.TerminalID) == "" {
+		return ""
+	}
+	mode := strings.TrimSpace(strings.ToLower(pane.AttachMode))
+	if mode == "" {
+		return "collaborator"
+	}
+	return mode
 }
 
 func paneLayerStatusParts(tab *Tab, paneID string) []string {
@@ -3365,14 +5159,71 @@ func (m *Model) beginRenameTab() {
 		return
 	}
 	m.prompt = &textPrompt{
+		Kind:     "rename-tab",
 		Title:    "rename tab",
 		Original: tab.Name,
 	}
 	m.invalidateRender()
 }
 
+func (m *Model) beginRenameWorkspace() {
+	m.ensureWorkspaceStore()
+	name := strings.TrimSpace(m.workspace.Name)
+	if name == "" {
+		name = nextWorkspaceName(m.workspaceOrder)
+	}
+	m.prompt = &textPrompt{
+		Kind:     "rename-workspace",
+		Title:    "rename workspace",
+		Original: name,
+	}
+	m.invalidateRender()
+}
+
 func (m *Model) beginCommandPrompt() {
-	m.prompt = &textPrompt{Title: "command"}
+	m.prompt = &textPrompt{Kind: "command", Title: "command"}
+	m.invalidateRender()
+}
+
+func (m *Model) beginTerminalEditPrompt(info protocol.TerminalInfo) {
+	if strings.TrimSpace(info.ID) == "" {
+		return
+	}
+	name := terminalDisplayLabel(info.Name, info.Command)
+	m.pendingTerminalEdit = &terminalMetadataDraft{
+		TerminalID:   info.ID,
+		DefaultName:  name,
+		Name:         name,
+		OriginalTags: cloneStringMap(info.Tags),
+		Tags:         cloneStringMap(info.Tags),
+	}
+	m.prompt = &textPrompt{
+		Kind:     "edit-terminal-name",
+		Title:    "edit terminal name",
+		Value:    name,
+		Original: name,
+		Hint:     "enter next  esc cancel",
+	}
+	m.invalidateRender()
+}
+
+func (m *Model) beginTerminalCreatePrompt(action terminalPickerAction, command []string) {
+	if len(command) == 0 {
+		command = []string{m.cfg.DefaultShell}
+	}
+	defaultName := m.nextTerminalName(command)
+	m.pendingTerminalCreate = &terminalCreateDraft{
+		Action:      action,
+		Command:     append([]string(nil), command...),
+		DefaultName: defaultName,
+	}
+	m.prompt = &textPrompt{
+		Kind:     "create-terminal-name",
+		Title:    "new terminal name",
+		Value:    defaultName,
+		Original: defaultName,
+		Hint:     "enter next  esc cancel",
+	}
 	m.invalidateRender()
 }
 
@@ -3397,22 +5248,166 @@ func (m *Model) commitPrompt() tea.Cmd {
 	if m.prompt == nil {
 		return nil
 	}
-	if m.prompt.Title == "command" {
+	if m.prompt.Kind == "command" {
 		value := strings.TrimSpace(m.prompt.Value)
 		m.prompt = nil
 		m.invalidateRender()
 		return m.executeCommandPrompt(value)
 	}
 	value := strings.TrimSpace(m.prompt.Value)
-	if value == "" {
+	if value == "" && m.prompt.Kind != "create-terminal-tags" && m.prompt.Kind != "edit-terminal-tags" {
 		value = m.prompt.Original
 	}
-	if tab := m.currentTab(); tab != nil && value != "" {
-		tab.Name = value
+	switch m.prompt.Kind {
+	case "create-terminal-name":
+		if m.pendingTerminalCreate == nil {
+			m.prompt = nil
+			m.invalidateRender()
+			return nil
+		}
+		m.pendingTerminalCreate.Name = value
+		m.prompt = &textPrompt{
+			Kind:  "create-terminal-tags",
+			Title: "new terminal tags",
+			Hint:  "key=value key2=value2  enter create  esc cancel",
+		}
+		m.invalidateRender()
+		return nil
+	case "create-terminal-tags":
+		if m.pendingTerminalCreate == nil {
+			m.prompt = nil
+			m.invalidateRender()
+			return nil
+		}
+		tags, err := parseTerminalTagsInput(value)
+		if err != nil {
+			m.err = err
+			m.invalidateRender()
+			return nil
+		}
+		draft := *m.pendingTerminalCreate
+		draft.Tags = tags
+		m.pendingTerminalCreate = nil
+		m.prompt = nil
+		m.invalidateRender()
+		cmd := m.finishPendingTerminalCreate(draft)
+		if cmd != nil {
+			m.inputBlocked = true
+			m.notice = "opening pane"
+			m.invalidateRender()
+		}
+		return cmd
+	case "edit-terminal-name":
+		if m.pendingTerminalEdit == nil {
+			m.prompt = nil
+			m.invalidateRender()
+			return nil
+		}
+		m.pendingTerminalEdit.Name = value
+		tagsValue := formatTerminalTagsInput(m.pendingTerminalEdit.Tags)
+		m.prompt = &textPrompt{
+			Kind:     "edit-terminal-tags",
+			Title:    "edit terminal tags",
+			Value:    tagsValue,
+			Original: tagsValue,
+			Hint:     "key=value key2=value2  enter save  esc cancel",
+		}
+		m.invalidateRender()
+		return nil
+	case "edit-terminal-tags":
+		if m.pendingTerminalEdit == nil {
+			m.prompt = nil
+			m.invalidateRender()
+			return nil
+		}
+		tags, err := parseTerminalTagsInput(value)
+		if err != nil {
+			m.err = err
+			m.invalidateRender()
+			return nil
+		}
+		draft := *m.pendingTerminalEdit
+		draft.Tags = tags
+		m.pendingTerminalEdit = nil
+		m.prompt = nil
+		m.invalidateRender()
+		cmd := m.finishPendingTerminalEdit(draft)
+		if cmd != nil {
+			m.inputBlocked = true
+			m.notice = "updating terminal metadata"
+			m.invalidateRender()
+		}
+		return cmd
+	case "confirm-acquire-resize":
+		if m.pendingResizeAcquire == nil {
+			m.prompt = nil
+			m.invalidateRender()
+			return nil
+		}
+		draft := *m.pendingResizeAcquire
+		m.pendingResizeAcquire = nil
+		m.prompt = nil
+		m.invalidateRender()
+		pane := m.paneByID(draft.PaneID)
+		if pane == nil || pane.TerminalID != draft.TerminalID {
+			m.notice = ""
+			m.err = fmt.Errorf("resize acquire target is no longer available")
+			m.invalidateRender()
+			return nil
+		}
+		return m.forceAcquirePaneResize(pane)
+	case "rename-workspace":
+		if value != "" {
+			m.renameCurrentWorkspace(value)
+		}
+	default:
+		if tab := m.currentTab(); tab != nil && value != "" {
+			tab.Name = value
+		}
 	}
 	m.prompt = nil
 	m.invalidateRender()
 	return nil
+}
+
+func (m *Model) finishPendingTerminalCreate(draft terminalCreateDraft) tea.Cmd {
+	spec := terminalCreateSpec{
+		Command: append([]string(nil), draft.Command...),
+		Name:    strings.TrimSpace(coalesce(draft.Name, draft.DefaultName)),
+		Tags:    cloneStringMap(draft.Tags),
+	}
+	switch draft.Action.Kind {
+	case terminalPickerActionBootstrap:
+		return m.createPaneCmdWithSpec(draft.Action.TabIndex, "", "", spec)
+	case terminalPickerActionNewTab:
+		m.workspace.Tabs = append(m.workspace.Tabs, newTab(nextTabName(m.workspace.Tabs)))
+		m.workspace.ActiveTab = len(m.workspace.Tabs) - 1
+		m.invalidateRender()
+		return m.createPaneCmdWithSpec(m.workspace.ActiveTab, "", "", spec)
+	case terminalPickerActionSplit:
+		return m.createPaneCmdWithSpec(draft.Action.TabIndex, draft.Action.TargetID, draft.Action.Split, spec)
+	case terminalPickerActionFloating:
+		return m.createFloatingPaneCmdWithSpec(draft.Action.TabIndex, spec)
+	default:
+		return nil
+	}
+}
+
+func (m *Model) finishPendingTerminalEdit(draft terminalMetadataDraft) tea.Cmd {
+	name := strings.TrimSpace(coalesce(draft.Name, draft.DefaultName))
+	tags := cloneStringMap(draft.Tags)
+	return func() tea.Msg {
+		ctx, cancel := m.requestContext()
+		defer cancel()
+		if err := m.client.SetMetadata(ctx, draft.TerminalID, name, tags); err != nil {
+			return errMsg{m.wrapClientError("set terminal metadata", err, "terminal_id", draft.TerminalID)}
+		}
+		return terminalMetadataUpdatedMsg{
+			TerminalID: draft.TerminalID,
+			Name:       name,
+			Tags:       tags,
+		}
+	}
 }
 
 func findPaneByChannel(tabs []*Tab, channel uint16) *Pane {
@@ -3427,14 +5422,25 @@ func findPaneByChannel(tabs []*Tab, channel uint16) *Pane {
 }
 
 func findPaneByTerminalID(tabs []*Tab, terminalID string) *Pane {
+	for _, pane := range findPanesByTerminalID(tabs, terminalID) {
+		return pane
+	}
+	return nil
+}
+
+func findPanesByTerminalID(tabs []*Tab, terminalID string) []*Pane {
+	if terminalID == "" {
+		return nil
+	}
+	var panes []*Pane
 	for _, tab := range tabs {
 		for _, pane := range tab.Panes {
 			if pane != nil && pane.TerminalID == terminalID {
-				return pane
+				panes = append(panes, pane)
 			}
 		}
 	}
-	return nil
+	return panes
 }
 
 func firstPaneID(panes map[string]*Pane) string {
@@ -3442,6 +5448,110 @@ func firstPaneID(panes map[string]*Pane) string {
 		return id
 	}
 	return ""
+}
+
+func workspaceHasPanes(workspace *Workspace) bool {
+	if workspace == nil {
+		return false
+	}
+	for _, tab := range workspace.Tabs {
+		if tab != nil && len(tab.Panes) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) ensurePaneRuntime(pane *Pane) bool {
+	if pane == nil {
+		return false
+	}
+	if pane.Viewport == nil {
+		pane.Viewport = &Viewport{
+			TerminalID:    pane.TerminalID,
+			Channel:       pane.Channel,
+			Snapshot:      pane.Snapshot,
+			Name:          pane.Name,
+			Command:       append([]string(nil), pane.Command...),
+			Tags:          cloneStringMap(pane.Tags),
+			TerminalState: defaultTerminalState(pane.TerminalState),
+			ExitCode:      pane.ExitCode,
+			Mode:          defaultViewportMode(pane.Mode, ViewportModeFit),
+			Offset:        pane.Offset,
+			Pin:           pane.Pin,
+			Readonly:      pane.Readonly,
+			renderDirty:   true,
+		}
+	}
+	if pane.VTerm != nil {
+		return true
+	}
+	cols, rows := 80, 24
+	if pane.Snapshot != nil {
+		if pane.Snapshot.Size.Cols > 0 {
+			cols = int(max(20, pane.Snapshot.Size.Cols))
+		}
+		if pane.Snapshot.Size.Rows > 0 {
+			rows = int(max(5, pane.Snapshot.Size.Rows))
+		}
+	}
+	channel := pane.Channel
+	pane.VTerm = localvterm.New(cols, rows, 10000, func(data []byte) {
+		ctx, cancel := m.requestContext()
+		defer cancel()
+		_ = m.client.Input(ctx, channel, data)
+	})
+	if pane.Snapshot != nil {
+		loadSnapshotIntoVTerm(pane.VTerm, pane.Snapshot)
+	}
+	pane.renderDirty = true
+	pane.cellCache = nil
+	pane.viewportCache = nil
+	m.logger.Warn("recreated missing pane runtime", "pane_id", pane.ID, "terminal_id", pane.TerminalID, "channel", pane.Channel)
+	return true
+}
+
+func loadSnapshotIntoVTerm(vt *localvterm.VTerm, snap *protocol.Snapshot) {
+	if vt == nil || snap == nil {
+		return
+	}
+	cols, rows := vt.Size()
+	vt.LoadSnapshot(protocolScreenToVTerm(snap.Screen), protocolCursorToVTerm(snap.Cursor), protocolModesToVTerm(snap.Modes))
+	if cols > 0 && rows > 0 {
+		vt.Resize(cols, rows)
+	}
+}
+
+func (m *Model) resizeTerminalPanes(terminalID, skipPaneID string, cols, rows uint16) {
+	if terminalID == "" || cols == 0 || rows == 0 {
+		return
+	}
+	for _, tab := range m.workspace.Tabs {
+		if tab == nil {
+			continue
+		}
+		for _, pane := range tab.Panes {
+			if pane == nil || pane.ID == skipPaneID || pane.TerminalID != terminalID {
+				continue
+			}
+			if !m.ensurePaneRuntime(pane) {
+				continue
+			}
+			pane.VTerm.Resize(int(cols), int(rows))
+			if pane.Snapshot != nil {
+				pane.Snapshot.Size = protocol.Size{Cols: cols, Rows: rows}
+			}
+			pane.cellVersion++
+			pane.renderDirty = true
+			pane.clearDirtyRegion()
+			pane.cellCache = nil
+			if viewW, viewH, ok := m.paneViewportSizeInTab(tab, pane.ID); ok && m.syncViewport(pane, viewW, viewH) {
+				tab.renderCache = nil
+				continue
+			}
+			tab.renderCache = nil
+		}
+	}
 }
 
 func firstTiledPaneID(tab *Tab) string {
@@ -3541,6 +5651,11 @@ func (m *Model) nextPaneID() string {
 	return fmt.Sprintf("pane-%03d", m.nextPane)
 }
 
+func (m *Model) nextTerminalName(command []string) string {
+	m.nextTerminal++
+	return fmt.Sprintf("%s-%d", terminalDisplayLabel("", command), m.nextTerminal)
+}
+
 func encodeKey(msg tea.KeyMsg) []byte {
 	switch msg.Type {
 	case tea.KeyCtrlC:
@@ -3574,15 +5689,10 @@ func encodeKey(msg tea.KeyMsg) []byte {
 
 func (m *Model) activatePrefix() tea.Cmd {
 	m.prefixActive = true
-	m.prefixSeq++
-	if m.prefixTimeout <= 0 {
-		return nil
-	}
-	seq := m.prefixSeq
-	timeout := m.prefixTimeout
-	return tea.Tick(timeout, func(time.Time) tea.Msg {
-		return prefixTimeoutMsg{seq: seq}
-	})
+	m.prefixMode = prefixModeRoot
+	m.prefixFallback = prefixFallbackNone
+	m.invalidateRender()
+	return m.armPrefixTimeout()
 }
 
 func prefixRuneKey(r rune) tea.KeyMsg {
@@ -4061,30 +6171,198 @@ func (c *canvas) String() string {
 	return strings.Join(lines, "\n")
 }
 
+func (c *canvas) StringFixedWidth() string {
+	lines := make([]string, len(c.cells))
+	for i, row := range c.cells {
+		var line strings.Builder
+		for _, cell := range row {
+			if cell.Continuation {
+				continue
+			}
+			content := cell.Content
+			if content == "" {
+				content = " "
+			}
+			line.WriteString(content)
+		}
+		lines[i] = line.String()
+	}
+	return strings.Join(lines, "\n")
+}
+
 func (m *Model) emptyStateLines() []string {
 	return []string{
-		"termx",
-		"",
-		"Flat terminal pool with a local TUI workspace.",
-		"",
-		"Quick start",
-		"  - Ctrl-a %  split vertically",
-		"  - Ctrl-a \"  split horizontally",
-		"  - Ctrl-a c  new tab",
-		"  - Ctrl-a ,  rename current tab",
-		"  - Ctrl-a f  terminal picker",
-		"  - Ctrl-a s  workspace picker",
-		"  - Ctrl-a Space  cycle layout presets",
-		"  - Ctrl-a &  close current tab",
-		"  - Ctrl-a h/j/k/l  move focus",
-		"  - Ctrl-a H/J/K/L  resize current pane",
-		"  - Ctrl-a { / }  swap pane position",
-		"  - Ctrl-a z  zoom current pane",
-		"  - Ctrl-a x  close current viewport",
-		"  - Ctrl-a X  kill current terminal",
-		"  - Ctrl-a d  detach",
-		"  - Ctrl-a ?  help",
+		"Start New Terminal",
+		"Attach Existing Terminal",
+		"Open Workspace Picker",
+		"Help Manual",
 	}
+}
+
+func (m *Model) renderEmptyStateBody(contentHeight int) string {
+	lines := []string{
+		"termx workspace",
+		"",
+		"  Enter      Start New Terminal",
+		"  Ctrl-f     Attach Existing Terminal",
+		"  Ctrl-w     Open Workspace Picker",
+		"  Ctrl-g ?   Help Manual",
+	}
+	cardWidth := min(max(42, m.width/2), max(34, m.width-12))
+	cardWidth = max(34, cardWidth)
+	contentWidth := max(24, cardWidth-2)
+	cardLines := make([]string, 0, len(lines)+2)
+	cardLines = append(cardLines, centeredPromptBorderLine("top", contentWidth, "termx workspace"))
+	cardLines = append(cardLines, centeredPromptContentLine("", contentWidth))
+	for _, line := range lines[2:] {
+		cardLines = append(cardLines, centeredPromptContentLine(line, contentWidth))
+	}
+	cardLines = append(cardLines, centeredPromptContentLine("", contentWidth))
+	cardLines = append(cardLines, centeredPromptBorderLine("bottom", contentWidth, "v1"))
+	card := strings.Join(cardLines, "\n")
+	body := lipgloss.Place(
+		m.width,
+		contentHeight,
+		lipgloss.Center,
+		lipgloss.Center,
+		card,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceBackground(lipgloss.Color("#020617")),
+	)
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#e2e8f0")).
+		Background(lipgloss.Color("#020617")).
+		Render(forceHeight(body, contentHeight))
+}
+
+func (m *Model) renderPromptScreen() string {
+	tabBar := m.renderTabBar()
+	status := m.renderStatus()
+	contentHeight := max(1, m.height-2)
+	title, lines, footer := m.promptModalContent()
+	if title == "" {
+		return strings.Join([]string{tabBar, m.renderContentBody(), status}, "\n")
+	}
+	contentWidth := min(max(38, m.width/2), max(30, m.width-12))
+	contentWidth = max(28, contentWidth-2)
+	cardLines := make([]string, 0, len(lines)+2)
+	cardLines = append(cardLines, centeredPromptBorderLine("top", contentWidth, title))
+	for _, line := range lines {
+		cardLines = append(cardLines, centeredPromptContentLine(line, contentWidth))
+	}
+	cardLines = append(cardLines, centeredPromptContentLine("", contentWidth))
+	cardLines = append(cardLines, centeredPromptContentLine(footer, contentWidth))
+	cardLines = append(cardLines, centeredPromptBorderLine("bottom", contentWidth, ""))
+	card := strings.Join(cardLines, "\n")
+	body := lipgloss.Place(
+		m.width,
+		contentHeight,
+		lipgloss.Center,
+		lipgloss.Center,
+		card,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceBackground(lipgloss.Color("#020617")),
+	)
+	body = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#e2e8f0")).
+		Background(lipgloss.Color("#020617")).
+		Render(forceHeight(body, contentHeight))
+	return strings.Join([]string{tabBar, body, status}, "\n")
+}
+
+func (m *Model) promptModalContent() (string, []string, string) {
+	if m.prompt == nil {
+		return "", nil, ""
+	}
+	fieldLabel := "value"
+	title := strings.Title(m.prompt.Title)
+	footer := "Enter save  Esc cancel"
+	lines := make([]string, 0, 4)
+	switch m.prompt.Kind {
+	case "create-terminal-name":
+		title = "New Terminal"
+		fieldLabel = "name"
+		footer = "Enter next  Esc cancel"
+	case "create-terminal-tags":
+		title = "New Terminal"
+		fieldLabel = "tags"
+		footer = "Enter create  Esc cancel"
+	case "edit-terminal-name":
+		title = "Edit Terminal"
+		fieldLabel = "name"
+		footer = "Enter next  Esc cancel"
+		lines = append(lines, "updates all panes attached to this terminal")
+	case "edit-terminal-tags":
+		title = "Edit Terminal"
+		fieldLabel = "tags"
+		footer = "Enter save  Esc cancel"
+		lines = append(lines, "updates all panes attached to this terminal")
+	case "rename-tab":
+		title = "Rename Tab"
+		fieldLabel = "name"
+	case "rename-workspace":
+		title = "Rename Workspace"
+		fieldLabel = "name"
+	case "confirm-acquire-resize":
+		title = "Size Change Warning"
+		footer = "Enter continue  Esc cancel"
+		lines = []string{
+			"this terminal may be running an interactive tui program",
+			"changing terminal size can affect internal rendering",
+		}
+		if draft := m.pendingResizeAcquire; draft != nil {
+			lines = append(lines,
+				"",
+				fmt.Sprintf("terminal: %s", draft.TerminalID),
+				fmt.Sprintf("lock mode: %s", draft.WarningMode),
+			)
+		}
+		return title, lines, footer
+	default:
+		fieldLabel = "value"
+	}
+	inputLine := fmt.Sprintf("%s:  [ %s_ ]", fieldLabel, m.prompt.Value)
+	if len(lines) > 0 {
+		lines = append([]string{inputLine, ""}, lines...)
+	} else {
+		lines = append(lines, inputLine)
+	}
+	return title, lines, footer
+}
+
+func centeredPromptBorderLine(edge string, innerWidth int, title string) string {
+	borderStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#5fafff"))
+	titleStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#f8fafc")).
+		Background(lipgloss.Color("#0f172a")).
+		Bold(true)
+	switch edge {
+	case "top":
+		title = xansi.Truncate(" "+title+" ", innerWidth, "")
+		return borderStyle.Render("┌") +
+			titleStyle.Render(title) +
+			borderStyle.Render(strings.Repeat("─", max(0, innerWidth-xansi.StringWidth(title)))) +
+			borderStyle.Render("┐")
+	case "bottom":
+		if strings.TrimSpace(title) == "" {
+			return borderStyle.Render("└" + strings.Repeat("─", innerWidth) + "┘")
+		}
+		title = xansi.Truncate(" "+title+" ", innerWidth, "")
+		return borderStyle.Render("└") +
+			borderStyle.Render(strings.Repeat("─", max(0, innerWidth-xansi.StringWidth(title)))) +
+			titleStyle.Render(title) +
+			borderStyle.Render("┘")
+	default:
+		return borderStyle.Render("└" + strings.Repeat("─", innerWidth) + "┘")
+	}
+}
+
+func centeredPromptContentLine(content string, innerWidth int) string {
+	borderStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#5fafff"))
+	panelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2e8f0")).Background(lipgloss.Color("#0b1220"))
+	return borderStyle.Render("│") +
+		panelStyle.Render(forceWidthANSI(content, innerWidth)) +
+		borderStyle.Render("│")
 }
 
 func (c *canvas) fill(rect Rect, ch rune) {
@@ -4174,7 +6452,7 @@ func (m *Model) renderPaneBlock(pane *Pane, width, height int, active bool) []st
 
 	title := " pane "
 	if pane != nil {
-		title = " " + coalesce(pane.Title, pane.TerminalID, pane.ID) + " "
+		title = " " + paneTitle(pane) + " "
 	}
 	title = xansi.Truncate(title, innerW, "")
 	top := borderStyle.Render("┌") +
@@ -4203,35 +6481,37 @@ func (m *Model) renderHelpScreen() string {
 	canvas := newCanvas(m.width, contentHeight)
 	rect := Rect{X: 2, Y: 1, W: max(1, m.width-4), H: max(1, contentHeight-2)}
 	lines := []string{
-		"Help",
+		"Help / Shortcut Map",
 		"",
-		"Ctrl-a ?       close this help",
-		"Ctrl-a %       split vertically",
-		"Ctrl-a \"       split horizontally",
-		"Ctrl-a f       terminal picker",
-		"Ctrl-a s       workspace picker",
-		"Ctrl-a h/j/k/l move focus",
-		"Ctrl-a c       new tab",
-		"Ctrl-a ,       rename current tab",
-		"Ctrl-a n / p   next or previous tab",
-		"Ctrl-a 1-9     jump to tab",
-		"Ctrl-a Space   cycle layout presets",
-		"Ctrl-a &       close current tab",
-		"Ctrl-a H/J/K/L resize current pane",
-		"Ctrl-a { / }   swap pane position",
-		"Ctrl-a z       zoom current pane",
-		"Ctrl-a M / Ctrl-a P / Ctrl-a R viewport mode, pin, readonly",
-		"Ctrl-a Ctrl-h/j/k/l pan fixed viewport offset",
-		"Ctrl-a x       close current viewport",
-		"Ctrl-a X       kill current terminal",
-		"Ctrl-a d       detach from TUI",
-		"Ctrl-a w / Ctrl-a W / Ctrl-a Tab floating create, toggle, focus",
-		"Ctrl-a ] / _   raise or lower floating z-order",
-		"Ctrl-a Alt-h/j/k/l move floating viewport",
-		"Ctrl-a Alt-H/J/K/L resize floating viewport",
-		"Ctrl-a Ctrl-a  send raw Ctrl-a",
+		"Concepts:",
+		"  workspace = one whole session, contains tabs",
+		"  tab = one page inside a workspace",
+		"  pane = one visible area bound to a terminal",
+		"  pane display = fit/fixed/readonly/pin for that pane",
+		"  floating = a pane shown as an overlay window above the tiled layout",
 		"",
-		"Colors come from your shell ANSI output and your outer terminal theme/font.",
+		"Modes: Ctrl-p pane mode   Ctrl-r resize mode   Ctrl-t tab mode",
+		"Modes: Ctrl-w workspace   Ctrl-o floating      Ctrl-v display mode",
+		"Modes: Ctrl-f picker      Ctrl-g global mode",
+		"",
+		"Core: Ctrl-g ? help   Ctrl-g : command line   edit-terminal edits active terminal metadata",
+		"Core: Ctrl-g d detach   Ctrl-g q quit   Esc exits any mode",
+		"",
+		"Panes: Ctrl-p then % / \"  split vertically / horizontally",
+		"Panes: Ctrl-p then h/j/k/l or arrows  move focus   { / } swap   z zoom   x / X close / kill",
+		"Resize: Ctrl-r then h/j/k/l or H/J/K/L resize   = / Space balance / layout",
+		"Tabs: Ctrl-t then 1-9 / n / p / c / r / x  jump, cycle, new, rename, close",
+		"Workspace: Ctrl-w then s / c / r / x / n / p  switch, create, rename, delete, cycle",
+		"",
+		"Display: Ctrl-v then m/r/p  fit/fixed, readonly, pin",
+		"Display: Ctrl-v then h/j/k/l or arrows  pan fixed pane",
+		"Display: Ctrl-v then 0/$/g/G/z        jump / reset display state",
+		"Floating: Ctrl-o then n / Tab / v / x  new, focus, toggle, close",
+		"Floating: Ctrl-o then h/j/k/l move  H/J/K/L resize  [ / ] z-order",
+		"Mouse: drag body to move, drag bottom-right corner to resize",
+		"Picker: Ctrl-f type to filter  Enter attach  Tab split  Ctrl-e edit  Ctrl-k kill",
+		"Reuse: one terminal can be attached by multiple panes; acquire resize control before changing PTY size",
+		"Legacy Ctrl-a shortcuts still work during migration.",
 	}
 	if len(lines) > rect.H {
 		lines = lines[:rect.H]
@@ -4240,7 +6520,7 @@ func (m *Model) renderHelpScreen() string {
 	body := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#e2e8f0")).
 		Background(lipgloss.Color("#0f172a")).
-		Render(forceHeight(canvas.String(), contentHeight))
+		Render(forceHeight(canvas.StringFixedWidth(), contentHeight))
 	return strings.Join([]string{tabBar, body, status}, "\n")
 }
 
@@ -4288,7 +6568,78 @@ func paneTitleForCommand(name string, command string, fallback string) string {
 		}
 		return command
 	}
-	return fallback
+	if strings.TrimSpace(fallback) != "" {
+		return "terminal"
+	}
+	return "terminal"
+}
+
+func terminalDisplayLabel(name string, command []string) string {
+	if trimmed := strings.TrimSpace(name); trimmed != "" {
+		return trimmed
+	}
+	base := filepath.Base(strings.TrimSpace(firstCommandWord(command)))
+	switch base {
+	case "", ".", string(filepath.Separator):
+		return "terminal"
+	case "sh", "bash", "zsh":
+		return "shell"
+	default:
+		return base
+	}
+}
+
+func paneDisplayLabel(pane *Pane) string {
+	if pane == nil {
+		return "terminal"
+	}
+	if strings.TrimSpace(pane.Title) != "" && pane.Title != "terminal" {
+		return pane.Title
+	}
+	return terminalDisplayLabel(pane.Name, pane.Command)
+}
+
+func formatTerminalTagsInput(tags map[string]string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(tags))
+	for key := range tags {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+tags[key])
+	}
+	return strings.Join(parts, " ")
+}
+
+func parseTerminalTagsInput(input string) (map[string]string, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return nil, nil
+	}
+	fields := strings.FieldsFunc(input, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\n' || r == '\t'
+	})
+	tags := make(map[string]string, len(fields))
+	for _, field := range fields {
+		if field == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(field, "=")
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if !ok || key == "" || value == "" {
+			return nil, fmt.Errorf("invalid tag %q; use key=value", field)
+		}
+		tags[key] = value
+	}
+	if len(tags) == 0 {
+		return nil, nil
+	}
+	return tags, nil
 }
 
 func forceWidthANSI(s string, width int) string {
@@ -4317,6 +6668,12 @@ func Run(client Client, cfg Config, input io.Reader, output io.Writer) error {
 	model.logger.Info("tui run starting", "workspace", cfg.Workspace, "startup_picker", cfg.StartupPicker, "attach_id", cfg.AttachID)
 	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithInput(nil), tea.WithOutput(output))
 	model.SetProgram(program)
+	if output != nil {
+		_ = uv.EncodeMouseMode(output, uv.MouseModeDrag)
+		defer func() {
+			_ = uv.EncodeMouseMode(output, uv.MouseModeNone)
+		}()
+	}
 	stopInput, restoreInput, err := startInputForwarder(program, input)
 	if err != nil {
 		model.logger.Error("failed to start input forwarder", "error", err)

@@ -247,9 +247,6 @@ func SelectTerminalForLayout(terminals []protocol.TerminalInfo, decl LayoutTermi
 	if decl.HintID != "" {
 		for i := range terminals {
 			if terminals[i].ID == decl.HintID {
-				if _, ok := used[terminals[i].ID]; ok {
-					break
-				}
 				return &terminals[i]
 			}
 		}

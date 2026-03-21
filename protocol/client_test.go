@@ -55,6 +55,9 @@ func TestClientRequestStreamAndProtocolError(t *testing.T) {
 	if err := client.SetTags(ctx, "term-1", map[string]string{"role": "shell"}); err != nil {
 		t.Fatalf("set tags failed: %v", err)
 	}
+	if err := client.SetMetadata(ctx, "term-1", "dev-shell", map[string]string{"role": "shell", "team": "infra"}); err != nil {
+		t.Fatalf("set metadata failed: %v", err)
+	}
 
 	attach, err := client.Attach(ctx, "term-1", "collaborator")
 	if err != nil {
@@ -288,7 +291,7 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 		return err
 	}
 
-	req, err = expectRequest(tr, "set-tags")
+	req, err = expectRequest(tr, "set_tags")
 	if err != nil {
 		return err
 	}
@@ -297,7 +300,22 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 		return err
 	}
 	if setTags.TerminalID != "term-1" || setTags.Tags["role"] != "shell" {
-		return fmt.Errorf("unexpected set-tags params: %#v", setTags)
+		return fmt.Errorf("unexpected set_tags params: %#v", setTags)
+	}
+	if err := sendResponse(tr, req.ID, json.RawMessage(`{}`)); err != nil {
+		return err
+	}
+
+	req, err = expectRequest(tr, "set_metadata")
+	if err != nil {
+		return err
+	}
+	var setMetadata SetMetadataParams
+	if err := json.Unmarshal(req.Params, &setMetadata); err != nil {
+		return err
+	}
+	if setMetadata.TerminalID != "term-1" || setMetadata.Name != "dev-shell" || setMetadata.Tags["team"] != "infra" {
+		return fmt.Errorf("unexpected set_metadata params: %#v", setMetadata)
 	}
 	if err := sendResponse(tr, req.ID, json.RawMessage(`{}`)); err != nil {
 		return err

@@ -34,6 +34,17 @@ var (
 	}
 )
 
+func nestedTUIBlocked() bool {
+	return os.Getenv("TERMX") == "1" && os.Getenv("TERMX_ALLOW_NESTED") != "1"
+}
+
+func rejectNestedTUI() error {
+	if !nestedTUIBlocked() {
+		return nil
+	}
+	return fmt.Errorf("refusing to start termx TUI inside a termx-managed terminal; use a normal shell, or set TERMX_ALLOW_NESTED=1 if you really want nesting")
+}
+
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -56,6 +67,10 @@ func newRootCmd() *cobra.Command {
 			logger.Info("starting tui root command", "socket", resolveSocket(socket), "log_file", logPath, "layout", layout)
 			if !isInteractiveTerminal() {
 				return fmt.Errorf("termx TUI requires an interactive terminal; use `termx --help` or subcommands like `new`, `ls`, `attach`, `kill`, `daemon`")
+			}
+			if err := rejectNestedTUI(); err != nil {
+				logger.Warn("blocked nested tui launch")
+				return err
 			}
 			client, err := dialOrStartTUIClient(resolveSocket(socket), logPath, logger)
 			if err != nil {
@@ -221,6 +236,10 @@ func attachCommand(socket *string, logFile *string) *cobra.Command {
 			}
 			defer closeLogger()
 			logger.Info("starting attach tui", "terminal_id", args[0], "socket", resolveSocket(*socket), "log_file", logPath)
+			if err := rejectNestedTUI(); err != nil {
+				logger.Warn("blocked nested attach tui", "terminal_id", args[0])
+				return err
+			}
 			client, err := dialOrStartTUIClient(resolveSocket(*socket), logPath, logger)
 			if err != nil {
 				return err

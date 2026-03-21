@@ -144,11 +144,13 @@
   [x] 样本基准（Intel Xeon E5-2450 v2）：
       - floating tiled-dirty: `~2.02ms/op`（整 pane dirty，保守上界）
       - floating tiled-dirty rows: `~0.54ms/op`（局部 row dirty）
-      - floating tiled-dirty span: `~0.46ms/op`（单行列区间 dirty）
-      - floating active tiled-dirty span: `~2.59ms/op`（live active pane 仍保守全量 redraw）
-      - floating floating-dirty: `~0.35ms/op`
+      - floating tiled-dirty span: `~0.45-0.52ms/op`（单行列区间 dirty）
+      - floating active tiled-dirty span: `~2.40ms/op`（live active pane 仍保守全量 redraw）
+      - floating floating-dirty: `~0.36-0.55ms/op`
+      - floating floating-move: `~2.40ms/op`
       - fixed viewport recrop: `~0.14ms/op`
       - terminal picker dirty filter (100 items): `~0.60ms/op`
+      - batched output + render tick: `~0.03-0.04ms/op`
   [x] terminal picker dirty path 已通过缓存显著收敛：
       - 约 `8.07ms/op -> 0.60ms/op`
       - 约 `1.42MB/op -> 308KB/op`
@@ -163,14 +165,41 @@
       - 同行、无 escape、无换行的简单输出继续收紧到列区间
       - tiled dirty span benchmark 相比整 pane dirty 约 `2.02ms/op -> 0.46ms/op`
       - active pane 目前仅对 snapshot/非 live 路径启用；live active pane 仍保守走完整 body redraw
+  [x] floating move damage repaint 已落地：
+      - 浮窗位移/resize 不再强制丢弃整个 tab canvas cache
+      - 会清理旧 rect + 新 rect 的 damage 区域，并仅重绘受影响 pane
+      - floating move benchmark 约 `2.95ms/op -> 2.40ms/op`
+      - 分配量约 `671KB/op -> 105KB/op`
+  [x] render tick 已补交互帧节奏：
+      - 空闲维持 `16ms` batching 节奏
+      - 输入/鼠标交互窗口提升到 `8ms`
+      - 已补单测覆盖 idle/interactive flush 间隔切换
+  [x] 鼠标拖拽已补 motion coalescing：
+      - 交互窗口内的高频 drag motion 会先更新 rect，再挂到下一次 fast tick flush
+      - 避免每个 mouse motion 都同步重绘整帧
+      - 已补单测覆盖“geometry 立即更新、render 延后到 tick flush”语义
+  [x] 错误 prefix/sticky 组合键已降级为安全忽略：
+      - 浮窗 sticky / offset-pan sticky 下输错键会自动退出前缀态
+      - raw 输入路径同样会消费并清理 prefix，不再出现“按错后卡住”
+  [x] 渲染调优日志已补：
+      - render ticker 每 `10s` 输出一次 `view_calls / frames / cache_hits / fps`
+      - 已补单测覆盖统计日志字段
+  [x] workspace-state 解析已更稳健：
+      - 允许读取首个合法 JSON 对象后忽略尾随脏数据
+      - startup 遇到损坏 state 会自动降级到后续 bootstrap，而不是直接把错误抛给用户
   [x] 当前典型热点仍在 16ms 帧预算内，可作为后续功能开发的性能基线
+  [x] 浮窗交互基线已补齐：
+      - 新建多个浮窗会默认错位摆放，避免标题栏和边框完全重叠
+      - 状态栏会显示 floating 数量、当前焦点层以及 `Esc` / `C-a Tab` 切换提示
+      - 鼠标点击浮窗会聚焦并置顶，左键拖拽会移动浮窗，越界时自动 clamp
+      - 已补充单测与 terminal-frame e2e 覆盖错位展示 / status hint / 鼠标拖拽边界
   [x] 可延期到后续专项的优化 TODO：
       - active + live VTerm 的安全局部重绘
       - dirty region 合并 / 批处理
       - 更细粒度 pprof 与大规模场景 benchmark
 
 建议复跑命令：
-  `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -run '^$' -bench 'Benchmark(RenderTabCompositeFloatingOverlay(TiledDirty|TiledDirtyRows|TiledDirtySpan|ActiveTiledDirtySpan|FloatingDirty)|PaneCellsForViewportFixed(Cached|Recrop)|ModelViewTerminalPicker100Items(DirtyFilter)?)$' -benchmem`
+  `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -run '^$' -bench 'Benchmark(RenderTabCompositeFloatingOverlay(TiledDirty|TiledDirtyRows|TiledDirtySpan|ActiveTiledDirtySpan|FloatingDirty|FloatingMove)|HandlePaneOutputViewBatchedWithTick|PaneCellsForViewportFixed(Cached|Recrop)|ModelViewTerminalPicker100Items(DirtyFilter)?)$' -benchmem`
 ```
 
 ## V7. Workspace state 自动保存/恢复
@@ -188,17 +217,46 @@
   [x] restart 已补充单测与 TUI e2e 回归（attach exited shell -> restart -> 继续执行命令）
   [x] save-layout / load-layout 第一阶段已纳入 floating viewport：
       - 导出 YAML 会保留 floating entry 的 terminal 声明和尺寸
+      - save-layout 现会额外导出 floating position 锚点（center / 四角）
       - load-layout / `--layout` 会恢复 floating viewport，并支持已有 terminal attach / create 缺失 terminal
       - 已补充单测与 TUI e2e 覆盖 startup layout -> floating viewport 恢复路径
   [x] `load-layout <name> prompt` 已落地第一阶段：
       - 未匹配 terminal 时会逐个打开 chooser
       - 可手动 attach 已有 terminal、create new、或 Esc 跳过保留 waiting viewport
       - 已补充单测与 TUI e2e 覆盖 prompt attach 流程
+  [x] `arrange` 第一阶段已落地：
+      - `grid` / `horizontal` / `vertical` 会把匹配到的多个 terminal 展开为多 pane
+      - 按现有 layout 匹配排序规则稳定展开，并避开同一 layout 内已使用 terminal
+      - 无匹配时保守降级为单个 waiting viewport
+      - 已补充单测与 startup-layout TUI e2e 覆盖
   [x] 启动优先级链第一版已落地：`--layout` → workspace state → 项目级自动 layout → 用户级默认 layout → chooser
   [x] state 文件已升级为多 workspace 格式，同时保持单 workspace 兼容读取
   [x] `C-a s` workspace picker 已落地第一版，可创建 / 切换 workspace
   [x] workspace 切换会保留各自布局；切回时对 running terminal 重新 attach
   [x] 同一个 Terminal 可以被不同 workspace 独立观察（有回归测试）
+  [x] workspace picker 选中后的清屏已补齐：
+      - 创建/切换 workspace 后不再遗留 chooser 标题、query、footer 边框残影
+      - 空 workspace welcome body 改为整宽输出，避免 Bubble Tea diff 留下旧字符
+      - 已补 e2e 覆盖 create/switch/Esc-close/bootstrap-then-switch-back 路径
+  [x] 若恢复出的 active workspace 为空，不再停留在无边框欢迎页：
+      - 有可选 terminal 时自动进入 startup chooser
+      - 无可选 terminal 时自动创建首个 pane
+  [x] pane runtime 保护已补齐：流式 output / resize / recover 遇到缺失 VTerm 不再 panic
+  [x] picker 呈现已从左侧抽屉切到页面中部 modal：
+      - startup / split / floating / new-tab / layout-resolve / workspace picker 走统一居中渲染
+      - 已补单测与 e2e 回归 startup / split / floating chooser 主路径
+  [x] picker / chrome 第一轮视觉收敛已完成：
+      - modal 改为窄一些的居中卡片，补上 backdrop / shadow / 更完整的边框
+      - picker 行项补了高亮态与 create-row 强调态
+      - 顶部 tab bar 和底部状态栏改成 pill/segment 风格，默认 `1:1` 标签不再裸露显示
+      - picker body 改为固定宽度背景，避免左右两侧底色不一致 / 右上角边框看起来被截断
+      - picker modal 已切换为 lipgloss 直接居中渲染，不再让 ANSI 样式文本经过 canvas 宽度计算
+  [x] picker 选中后的过渡输入已收口：
+      - pane create / attach 完成前暂时阻断输入，避免字符漏进旧 pane
+  [x] prefix / status 交互已做第二轮收敛：
+      - prefix 默认时长已延长，避免必须极快连按
+      - 方向移动 / pane resize / viewport pan / 浮窗 move+resize 现支持在同一 prefix 窗口内连续触发
+      - 状态栏已从长句式命令提示收缩为短 chip，优先保留当前 pane / floating / focus / prefix 关键信息
 
 需要验证：
   [ ] TUI 被 kill -9 时能否保存 state（可能需要定期自动保存而非仅退出时保存）
@@ -229,6 +287,51 @@
   如果后续有大规模场景再评估。
   标记为低优先级。
 ```
+
+## V11. v2 分层 prefix 迁移
+
+来源：[interaction-v2.md](interaction-v2.md)
+
+当前补充结论（2026-03-19）：
+  [x] 第一阶段分层 prefix 状态机已落地：
+      - `C-a t` / `C-a w` / `C-a v` one-shot 子前缀
+      - `C-a o` floating sticky 模式
+  [x] v2 子前缀已复用现有能力：
+      - tab：create / rename / close
+      - workspace：switch / create / rename / delete
+      - viewport：mode / readonly / pin / pan / offset-pan
+      - floating：create / close / hide / focus / z-order / move / resize
+  [x] `C-a w` 与 v1 `new floating viewport` 冲突的兼容策略已落地：
+      - 单独 `C-a w` 超时后仍回退到旧的 floating chooser
+      - `C-a w s/c/r/x` 进入 workspace 子前缀
+  [x] help / status 已补齐 v2 提示；floating chooser 从 sticky 模式打开后会自动退出 sticky，避免后续 shell 输入被吞
+  [x] 单测、TUI e2e、render benchmark harness 已跟随新入口更新并全绿
+
+后续未完成：
+  [ ] 第二阶段移除冲突/冗余的 v1 直接键
+  [ ] 按 interaction-v2.md 收紧 help 文案，切到 v2 为主、v1 为兼容别名
+  [ ] 进一步评估 `C-a w` 超时兼容是否保留，还是在后续版本完全切到 `C-a o n`
+
+## V12. AI 场景主链路
+
+来源：[ai-scenarios.md](ai-scenarios.md)
+
+当前补充结论（2026-03-19）：
+  [x] 低层 API 主链路已具备：Create / Attach / Input / Snapshot / Subscribe / SetTags / Kill 在 e2e 覆盖下可用
+  [x] readonly 规则已落地并有单测：
+      - 普通输入被拦截
+      - `Ctrl-C` 是 readonly 下唯一允许透传的控制键
+  [x] TUI + API 协作 e2e 已补齐：
+      - 外部 API 写入的 agent 输出会实时显示在已 attach 的 TUI viewport 中
+      - 人类随后可在同一 terminal 中继续输入，验证共享终端状态
+  [x] readonly + agent e2e 已补齐：
+      - API 启动长任务（`sleep 30`）
+      - TUI 切到 readonly 后仍可发送 `Ctrl-C` 中断
+      - readonly 下普通输入继续被拦截
+
+后续未完成：
+  [ ] 更系统的人机共写冲突/仲裁验证（交错输入、长时间共写）
+  [ ] 多 agent 编排场景的端到端回归（arrange grid + tags + 长任务）
 
 ## V9. GC 宽限期的实现
 

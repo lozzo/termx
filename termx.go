@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -218,6 +219,17 @@ func (s *Server) SetTags(ctx context.Context, id string, tags map[string]string)
 		return err
 	}
 	term.SetTags(tags)
+	s.invalidateProtocolListCache()
+	return nil
+}
+
+func (s *Server) SetMetadata(ctx context.Context, id string, name string, tags map[string]string) error {
+	_ = ctx
+	term, err := s.getTerminal(id)
+	if err != nil {
+		return err
+	}
+	term.SetMetadata(name, tags)
 	s.invalidateProtocolListCache()
 	return nil
 }
@@ -692,6 +704,9 @@ func (s *Server) handleRequest(
 		if err := json.Unmarshal(req.Params, &params); err != nil {
 			return nil, 400, err
 		}
+		if err := requireControlPermission(attachments, attachmentsMu, params.TerminalID); err != nil {
+			return nil, protocolErrorCode(err), err
+		}
 		if err := s.Kill(ctx, params.TerminalID); err != nil {
 			return nil, protocolErrorCode(err), err
 		}
@@ -711,6 +726,15 @@ func (s *Server) handleRequest(
 			return nil, 400, err
 		}
 		if err := s.SetTags(ctx, params.TerminalID, params.Tags); err != nil {
+			return nil, protocolErrorCode(err), err
+		}
+		return json.RawMessage(`{}`), 0, nil
+	case "set_metadata":
+		var params protocol.SetMetadataParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return nil, 400, err
+		}
+		if err := s.SetMetadata(ctx, params.TerminalID, params.Name, params.Tags); err != nil {
 			return nil, protocolErrorCode(err), err
 		}
 		return json.RawMessage(`{}`), 0, nil
@@ -891,6 +915,28 @@ func (a *sessionAttachment) mode() AttachMode {
 	return mode
 }
 
+func requireControlPermission(attachments map[uint16]*sessionAttachment, attachmentsMu *sync.RWMutex, terminalID string) error {
+	if strings.TrimSpace(terminalID) == "" || attachmentsMu == nil {
+		return nil
+	}
+	attachmentsMu.RLock()
+	defer attachmentsMu.RUnlock()
+	seen := false
+	for _, attachment := range attachments {
+		if attachment == nil || attachment.terminalID != terminalID {
+			continue
+		}
+		seen = true
+		if attachment.mode() == ModeCollaborator {
+			return nil
+		}
+	}
+	if seen {
+		return fmt.Errorf("%w: observer/readonly attachments cannot kill/remove terminal %q", ErrPermissionDenied, terminalID)
+	}
+	return nil
+}
+
 func sendRawFrame(sendFrame func(uint16, uint8, []byte) error, frame []byte) error {
 	ch, typ, payload, err := protocol.DecodeFrame(frame)
 	if err != nil {
@@ -916,6 +962,8 @@ func protocolErrorCode(err error) int {
 		return 404
 	case errors.Is(err, ErrDuplicateID):
 		return 409
+	case errors.Is(err, ErrPermissionDenied):
+		return 403
 	case errors.Is(err, ErrInvalidCommand), errors.Is(err, ErrTerminalExited):
 		return 400
 	default:

@@ -210,6 +210,53 @@ func TestSelectTerminalForLayoutSupportsKeyOnlyTagsAndAvoidsReusingUsedTerminal(
 	}
 }
 
+func TestBuildWorkspaceFromLayoutSpecAllowsExplicitHintReuseAcrossPanes(t *testing.T) {
+	layout, err := ParseLayoutYAML([]byte(`
+name: shared
+tabs:
+  - name: dev
+    tiling:
+      terminal:
+        _hint_id: "term-001"
+        tag: "role=shell"
+        command: "bash"
+    floating:
+      - terminal:
+          _hint_id: "term-001"
+          tag: "role=shell"
+          command: "bash"
+        width: 50
+        height: 12
+`))
+	if err != nil {
+		t.Fatalf("ParseLayoutYAML returned error: %v", err)
+	}
+
+	workspace, plans, err := BuildWorkspaceFromLayoutSpec(layout, "", []protocol.TerminalInfo{
+		{ID: "term-001", Name: "shared-shell", Command: []string{"bash"}, State: "running", Tags: map[string]string{"role": "shell"}},
+	}, LayoutResolveCreate)
+	if err != nil {
+		t.Fatalf("BuildWorkspaceFromLayoutSpec returned error: %v", err)
+	}
+	if len(plans) != 0 {
+		t.Fatalf("expected explicit hint reuse to avoid create plans, got %#v", plans)
+	}
+	tab := workspace.Tabs[0]
+	if tab == nil || len(tab.Panes) != 2 || len(tab.Floating) != 1 {
+		t.Fatalf("expected tiled+floating shared panes, got %#v", tab)
+	}
+	ids := make(map[string]int)
+	for _, pane := range tab.Panes {
+		if pane == nil {
+			continue
+		}
+		ids[pane.TerminalID]++
+	}
+	if ids["term-001"] != 2 {
+		t.Fatalf("expected both panes to bind same explicit hint terminal, got %#v", ids)
+	}
+}
+
 func TestExportLayoutYAMLRoundTripsCurrentWorkspace(t *testing.T) {
 	client := &fakeClient{}
 	model := NewModel(client, Config{DefaultShell: "/bin/sh", Workspace: "dev"})

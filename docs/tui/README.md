@@ -1,31 +1,42 @@
-# TUI 客户端设计文档
+# TUI 文档入口
 
-termx TUI 是 termx 终端运行时的内置客户端。它通过 Unix socket 连接本地 termx daemon，提供分屏布局、多 tab、workspace 管理和浮动面板等功能。
+这一轮不再继续在旧设计稿上打补丁。
 
-本目录包含 TUI 客户端的完整设计文档，按主题拆分为独立文件。
+`docs/tui/deprecated/` 里保留了之前所有 TUI 设计文档，作为历史归档；从现在开始，以本目录下的新文档为准。
 
-## 文档索引
+## 当前主文档
 
-| 文档 | 内容 |
+- [`product-spec.md`](product-spec.md)
+  - 当前正式 TUI 产品规格书
+  - 产品评审、交互收口、开发对齐时优先看这一份
+
+## 配套文档索引
+
+| 文档 | 作用 |
 |------|------|
-| [positioning.md](positioning.md) | 产品定位：termx 是什么、不是什么，与 tmux/zellij 的本质区别 |
-| [model.md](model.md) | 核心模型：Terminal Pool、Viewport、fit/fixed 模式、多客户端仲裁 |
-| [interaction.md](interaction.md) | 交互设计 v1（已废弃，保留作为参考） |
-| [interaction-v2.md](interaction-v2.md) | 交互设计 v2（当前）：分层 prefix 系统、快捷键、Terminal Picker |
-| [layout.md](layout.md) | 声明式布局：YAML 配置、tag 匹配、workspace 管理 |
-| [rendering.md](rendering.md) | 渲染架构：batching、dirty tracking、背压、viewport 裁剪 |
-| [ai-scenarios.md](ai-scenarios.md) | AI 场景：Agent 宿主、人机协作、编排、Terminal 作为 I/O 通道 |
-| [wireframes.md](wireframes.md) | TUI 线稿集：16 个 Frame 覆盖所有界面状态和组件拆解 |
-| [verification.md](verification.md) | 待验证事项：设计中的假设和未验证方案，按优先级排序 |
-| [roadmap.md](roadmap.md) | 路线图：技术验证（Spike）顺序 + 功能实现（Build）里程碑 |
+| [`product-spec.md`](product-spec.md) | 正式产品规格书，定义定位、概念、主流程、视觉与验收标准 |
+| [`interaction-spec.md`](interaction-spec.md) | 交互规格，定义模式、焦点、pane 生命周期、picker/prompt 行为 |
+| [`workspace-layout-spec.md`](workspace-layout-spec.md) | workspace 与 layout 关系、启动/恢复/保存规则 |
+| [`wireframes-v2.md`](wireframes-v2.md) | 纯文本线稿，表达主界面、picker、floating、共享 terminal resize 等关键状态 |
+| [`implementation-roadmap.md`](implementation-roadmap.md) | 代码级实施路线图，说明当前代码哪些保留、哪些重构、按什么顺序 TDD 推进 |
+| [`scenarios.md`](scenarios.md) | 全量用户使用场景清单，按启动、导航、复用、恢复等主题拆分 |
+| [`design-reset.md`](design-reset.md) | 重置背景与概念收口说明，解释为什么不再沿用旧补丁式设计 |
+| [`e2e-plan.md`](e2e-plan.md) | 端到端测试矩阵：场景、目标行为、现有测试、待补测试 |
 
-## 阅读顺序
+## 阅读建议
 
-建议按以下顺序阅读：
+- 看正式规格：先读 `docs/tui/product-spec.md`
+- 看交互落地：读 `docs/tui/interaction-spec.md`
+- 看 workspace/layout 语义：读 `docs/tui/workspace-layout-spec.md`
+- 看页面和交互长相：读 `docs/tui/wireframes-v2.md`
+- 看用户任务是否覆盖完整：再读 `docs/tui/scenarios.md`
+- 看为什么这样收口：再读 `docs/tui/design-reset.md`
+- 看测试是否跟上：最后读 `docs/tui/e2e-plan.md`
 
-1. **positioning** — 先理解 termx 的产品定位和核心差异
-2. **model** — 理解 Viewport 统一模型，这是所有设计的基础
-3. **interaction** — TUI 的交互逻辑和快捷键
-4. **layout** — 声明式布局系统
-5. **rendering** — 渲染管线的技术细节
-6. **ai-scenarios** — AI 时代的扩展场景
+## 当前原则
+
+1. 先以产品规格统一语言，再推进交互和代码
+2. 用户可见概念尽量收口到 `workspace / tab / pane / terminal`
+3. UI 体验尽量接近 zellij，但不伪装成 zellij
+4. 必须体现 termx 的核心差异：TUI 与 server 托管 terminal runtime 解耦
+5. 所有主线能力优先用场景化 e2e 锁住

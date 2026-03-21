@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/lozzow/termx/protocol"
@@ -61,6 +62,76 @@ func TestRootCmdLayoutFlagPassesStartupLayoutToTUI(t *testing.T) {
 	}
 }
 
+func TestRootCmdBlocksNestedTUIByDefault(t *testing.T) {
+	oldInteractive := isInteractiveTerminal
+	oldDial := dialOrStartTUIClient
+	oldRun := runTUI
+	t.Cleanup(func() {
+		isInteractiveTerminal = oldInteractive
+		dialOrStartTUIClient = oldDial
+		runTUI = oldRun
+	})
+
+	isInteractiveTerminal = func() bool { return true }
+	dialOrStartTUIClient = func(path string, logFile string, logger *slog.Logger) (tui.Client, error) {
+		t.Fatal("expected nested TUI block before dialing daemon")
+		return nil, nil
+	}
+	runTUI = func(client tui.Client, cfg tui.Config, input io.Reader, output io.Writer) error {
+		t.Fatal("expected nested TUI block before starting TUI")
+		return nil
+	}
+
+	t.Setenv("TERMX", "1")
+	t.Setenv("TERMX_ALLOW_NESTED", "")
+
+	cmd := newRootCmd()
+	cmd.SetArgs(nil)
+	cmd.SetIn(bytes.NewBuffer(nil))
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "refusing to start termx TUI inside a termx-managed terminal") {
+		t.Fatalf("expected nested TUI rejection, got %v", err)
+	}
+}
+
+func TestAttachCmdAllowsNestedTUIWhenOverrideIsSet(t *testing.T) {
+	oldDial := dialOrStartTUIClient
+	oldRun := runTUI
+	t.Cleanup(func() {
+		dialOrStartTUIClient = oldDial
+		runTUI = oldRun
+	})
+
+	dialOrStartTUIClient = func(path string, logFile string, logger *slog.Logger) (tui.Client, error) {
+		return &stubTUIClient{}, nil
+	}
+
+	var got tui.Config
+	runTUI = func(client tui.Client, cfg tui.Config, input io.Reader, output io.Writer) error {
+		got = cfg
+		return nil
+	}
+
+	t.Setenv("TERMX", "1")
+	t.Setenv("TERMX_ALLOW_NESTED", "1")
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"attach", "term-001"})
+	cmd.SetIn(bytes.NewBuffer(nil))
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("expected attach override to succeed, got %v", err)
+	}
+	if got.AttachID != "term-001" {
+		t.Fatalf("expected attach id to pass through, got %q", got.AttachID)
+	}
+}
+
 type stubTUIClient struct{}
 
 func (c *stubTUIClient) Close() error { return nil }
@@ -73,8 +144,18 @@ func (c *stubTUIClient) SetTags(ctx context.Context, terminalID string, tags map
 	return nil
 }
 
+func (c *stubTUIClient) SetMetadata(ctx context.Context, terminalID string, name string, tags map[string]string) error {
+	return nil
+}
+
 func (c *stubTUIClient) List(ctx context.Context) (*protocol.ListResult, error) {
 	return nil, nil
+}
+
+func (c *stubTUIClient) Events(ctx context.Context, params protocol.EventsParams) (<-chan protocol.Event, error) {
+	ch := make(chan protocol.Event)
+	close(ch)
+	return ch, nil
 }
 
 func (c *stubTUIClient) Attach(ctx context.Context, terminalID string, mode string) (*protocol.AttachResult, error) {

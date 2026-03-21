@@ -95,8 +95,16 @@ func (c *Client) Kill(ctx context.Context, terminalID string) error {
 }
 
 func (c *Client) SetTags(ctx context.Context, terminalID string, tags map[string]string) error {
-	return c.doRequest(ctx, "set-tags", SetTagsParams{
+	return c.doRequest(ctx, "set_tags", SetTagsParams{
 		TerminalID: terminalID,
+		Tags:       tags,
+	}, nil)
+}
+
+func (c *Client) SetMetadata(ctx context.Context, terminalID string, name string, tags map[string]string) error {
+	return c.doRequest(ctx, "set_metadata", SetMetadataParams{
+		TerminalID: terminalID,
+		Name:       name,
 		Tags:       tags,
 	}, nil)
 }

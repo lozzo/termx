@@ -1,6 +1,7 @@
 package vterm
 
 import (
+	charmvt "github.com/charmbracelet/x/vt"
 	"strings"
 	"sync"
 	"testing"
@@ -99,6 +100,24 @@ func TestVTermNormalizesPlainUTF8CombiningText(t *testing.T) {
 	row := vt.ScreenContent().Cells[0]
 	if got := rowToString(row); !strings.Contains(got, "é🙂한글") {
 		t.Fatalf("expected normalized text in row, got %q", got)
+	}
+}
+
+func TestVTermWriteRecoversFromEmulatorPanic(t *testing.T) {
+	vt := New(20, 5, 10, nil)
+
+	prev := safeEmulatorWrite
+	safeEmulatorWrite = func(_ *charmvt.SafeEmulator, _ []byte) (int, error) {
+		panic("boom")
+	}
+	t.Cleanup(func() {
+		safeEmulatorWrite = prev
+	})
+
+	if _, err := vt.Write([]byte("hello")); err == nil {
+		t.Fatal("expected write to convert emulator panic into error")
+	} else if !strings.Contains(err.Error(), "panic") {
+		t.Fatalf("expected panic context in error, got %v", err)
 	}
 }
 

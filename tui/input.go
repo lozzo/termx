@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"io"
+	"os"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,6 +19,11 @@ type inputEventMsg struct {
 }
 
 func (m *Model) handleInputEvent(event uv.Event) tea.Cmd {
+	switch event.(type) {
+	case uv.KeyPressEvent, uv.MouseClickEvent, uv.MouseMotionEvent, uv.MouseReleaseEvent, uv.PasteEvent:
+		m.noteInteraction()
+	}
+
 	if m.workspacePicker != nil {
 		return m.handleWorkspacePickerEvent(event)
 	}
@@ -29,10 +35,19 @@ func (m *Model) handleInputEvent(event uv.Event) tea.Cmd {
 	if m.prompt != nil {
 		return m.handlePromptEvent(event)
 	}
+	if m.inputBlocked {
+		return nil
+	}
 
 	switch event := event.(type) {
 	case uv.KeyPressEvent:
 		return m.handleKeyPressEvent(event)
+	case uv.MouseClickEvent:
+		return m.handleMouseClickEvent(event)
+	case uv.MouseMotionEvent:
+		return m.handleMouseMotionEvent(event)
+	case uv.MouseReleaseEvent:
+		return m.handleMouseReleaseEvent(event)
 	case uv.PasteEvent:
 		return m.pasteToActive(event.Content)
 	case uv.UnknownEvent:
@@ -55,11 +70,19 @@ func (m *Model) handleKeyPressEvent(event uv.KeyPressEvent) tea.Cmd {
 		return nil
 	}
 
+	if m.prefixActive && m.directMode {
+		if cmd := m.directModeCmdForEvent(event); cmd != nil {
+			return cmd
+		}
+	}
+
 	if m.prefixActive {
-		m.prefixActive = false
-		m.prefixSeq++
+		return m.handleActivePrefixEvent(event)
+	}
+
+	if cmd := m.directModeCmdForEvent(event); cmd != nil {
 		m.invalidateRender()
-		return m.handlePrefixEvent(event)
+		return cmd
 	}
 
 	if event.MatchString("ctrl+a") {
@@ -73,6 +96,29 @@ func (m *Model) handleKeyPressEvent(event uv.KeyPressEvent) tea.Cmd {
 	}
 
 	return m.sendKeyToActive(event)
+}
+
+func (m *Model) directModeCmdForEvent(event uv.KeyPressEvent) tea.Cmd {
+	switch {
+	case event.MatchString("ctrl+p"):
+		return m.enterDirectMode(prefixModePane)
+	case event.MatchString("ctrl+r"):
+		return m.enterDirectMode(prefixModeResize)
+	case event.MatchString("ctrl+t"):
+		return m.enterDirectMode(prefixModeTab)
+	case event.MatchString("ctrl+w"):
+		return m.enterDirectMode(prefixModeWorkspace)
+	case event.MatchString("ctrl+o"):
+		return m.enterDirectMode(prefixModeFloating)
+	case event.MatchString("ctrl+v"):
+		return m.enterDirectMode(prefixModeViewport)
+	case event.MatchString("ctrl+g"):
+		return m.enterDirectMode(prefixModeGlobal)
+	case event.MatchString("ctrl+f"):
+		return m.openTerminalPickerCmd()
+	default:
+		return nil
+	}
 }
 
 func (m *Model) handleExitedPaneEvent(event uv.KeyPressEvent) tea.Cmd {
@@ -132,14 +178,16 @@ func (m *Model) handlePrefixEvent(event uv.KeyPressEvent) tea.Cmd {
 		return m.openNewTabTerminalPickerCmd()
 	case event.MatchString("n"):
 		if len(m.workspace.Tabs) > 0 {
-			m.workspace.ActiveTab = (m.workspace.ActiveTab + 1) % len(m.workspace.Tabs)
+			next := (m.workspace.ActiveTab + 1) % len(m.workspace.Tabs)
+			return m.activateTab(next)
 		}
-		return m.resizeVisiblePanesCmd()
+		return nil
 	case event.MatchString("p"):
 		if len(m.workspace.Tabs) > 0 {
-			m.workspace.ActiveTab = (m.workspace.ActiveTab - 1 + len(m.workspace.Tabs)) % len(m.workspace.Tabs)
+			next := (m.workspace.ActiveTab - 1 + len(m.workspace.Tabs)) % len(m.workspace.Tabs)
+			return m.activateTab(next)
 		}
-		return m.resizeVisiblePanesCmd()
+		return nil
 	case event.MatchString("z"):
 		tab := m.currentTab()
 		if tab != nil {
@@ -233,13 +281,437 @@ func (m *Model) handlePrefixEvent(event uv.KeyPressEvent) tea.Cmd {
 		for i := 1; i <= 9; i++ {
 			if event.MatchString(string(rune('0' + i))) {
 				if i-1 < len(m.workspace.Tabs) {
-					m.workspace.ActiveTab = i - 1
+					return m.activateTab(i - 1)
 				}
-				m.invalidateRender()
-				return m.resizeVisiblePanesCmd()
+				return nil
 			}
 		}
 	}
+	return nil
+}
+
+func (m *Model) handleActivePrefixEvent(event uv.KeyPressEvent) tea.Cmd {
+	result := m.dispatchPrefixEvent(event)
+	if !result.keep {
+		m.clearPrefixState()
+		m.invalidateRender()
+		return result.cmd
+	}
+	m.invalidateRender()
+	if result.rearm {
+		return tea.Batch(result.cmd, m.armPrefixTimeout())
+	}
+	return result.cmd
+}
+
+func (m *Model) dispatchPrefixEvent(event uv.KeyPressEvent) prefixDispatchResult {
+	switch m.prefixMode {
+	case prefixModePane:
+		return m.dispatchPaneModeEvent(event)
+	case prefixModeResize:
+		return m.dispatchResizeModeEvent(event)
+	case prefixModeTab:
+		return m.dispatchTabSubPrefixEvent(event)
+	case prefixModeWorkspace:
+		return m.dispatchWorkspaceSubPrefixEvent(event)
+	case prefixModeViewport:
+		return m.dispatchViewportSubPrefixEvent(event)
+	case prefixModeFloating:
+		return m.dispatchFloatingModeEvent(event)
+	case prefixModeOffsetPan:
+		return m.dispatchOffsetPanModeEvent(event)
+	case prefixModeGlobal:
+		return m.dispatchGlobalModeEvent(event)
+	default:
+		switch {
+		case event.MatchString("t"):
+			return prefixDispatchResult{cmd: m.enterPrefixMode(prefixModeTab, prefixFallbackNone), keep: true}
+		case event.MatchString("v"):
+			return prefixDispatchResult{cmd: m.enterPrefixMode(prefixModeViewport, prefixFallbackNone), keep: true}
+		case event.MatchString("o"):
+			return prefixDispatchResult{cmd: m.enterPrefixMode(prefixModeFloating, prefixFallbackNone), keep: true}
+		case event.MatchString("w"):
+			return prefixDispatchResult{cmd: m.enterPrefixMode(prefixModeWorkspace, prefixFallbackFloatingCreate), keep: true}
+		default:
+			cmd := m.handlePrefixEvent(event)
+			keep := shouldKeepPrefixEvent(event)
+			return prefixDispatchResult{cmd: cmd, keep: keep, rearm: keep}
+		}
+	}
+}
+
+func (m *Model) modeEventResult(cmd tea.Cmd, keep bool) prefixDispatchResult {
+	if m.directMode {
+		return prefixDispatchResult{cmd: cmd, keep: true}
+	}
+	return prefixDispatchResult{cmd: cmd, keep: keep, rearm: keep}
+}
+
+func (m *Model) dispatchPaneModeEvent(event uv.KeyPressEvent) prefixDispatchResult {
+	if event.MatchString("esc") {
+		return prefixDispatchResult{}
+	}
+	cmd := m.handlePrefixEvent(event)
+	return m.modeEventResult(cmd, shouldKeepPrefixEvent(event))
+}
+
+func (m *Model) dispatchResizeModeEvent(event uv.KeyPressEvent) prefixDispatchResult {
+	if event.MatchString("esc") {
+		return prefixDispatchResult{}
+	}
+	switch {
+	case event.MatchString("h"), event.MatchString("left"):
+		m.resizeActivePane(DirectionLeft, 2)
+	case event.MatchString("j"), event.MatchString("down"):
+		m.resizeActivePane(DirectionDown, 2)
+	case event.MatchString("k"), event.MatchString("up"):
+		m.resizeActivePane(DirectionUp, 2)
+	case event.MatchString("l"), event.MatchString("right"):
+		m.resizeActivePane(DirectionRight, 2)
+	case event.MatchString("H"), event.MatchString("shift+h"):
+		m.resizeActivePane(DirectionLeft, 4)
+	case event.MatchString("J"), event.MatchString("shift+j"):
+		m.resizeActivePane(DirectionDown, 4)
+	case event.MatchString("K"), event.MatchString("shift+k"):
+		m.resizeActivePane(DirectionUp, 4)
+	case event.MatchString("L"), event.MatchString("shift+l"):
+		m.resizeActivePane(DirectionRight, 4)
+	case event.MatchString("a"):
+		return prefixDispatchResult{cmd: m.acquireActivePaneResizeCmd(), keep: true}
+	case event.MatchString("="):
+		if tab := m.currentTab(); tab != nil && tab.Root != nil {
+			resetLayoutRatios(tab.Root)
+		}
+	case event.MatchString("space"):
+		m.cycleActiveLayout()
+	default:
+		return prefixDispatchResult{keep: true}
+	}
+	return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true}
+}
+
+func (m *Model) dispatchTabSubPrefixEvent(event uv.KeyPressEvent) prefixDispatchResult {
+	switch {
+	case m.directMode && event.MatchString("esc"):
+		return prefixDispatchResult{}
+	case event.MatchString("c"):
+		return m.modeEventResult(m.openNewTabTerminalPickerCmd(), false)
+	case event.MatchString(","):
+		m.beginRenameTab()
+		return m.modeEventResult(nil, false)
+	case event.MatchString("r"):
+		m.beginRenameTab()
+		return m.modeEventResult(nil, false)
+	case event.MatchString("n"):
+		if len(m.workspace.Tabs) > 0 {
+			next := (m.workspace.ActiveTab + 1) % len(m.workspace.Tabs)
+			return m.modeEventResult(m.activateTab(next), false)
+		}
+		return m.modeEventResult(nil, false)
+	case event.MatchString("p"):
+		if len(m.workspace.Tabs) > 0 {
+			next := (m.workspace.ActiveTab - 1 + len(m.workspace.Tabs)) % len(m.workspace.Tabs)
+			return m.modeEventResult(m.activateTab(next), false)
+		}
+		return m.modeEventResult(nil, false)
+	case event.MatchString("f"):
+		return m.modeEventResult(m.openTerminalPickerCmd(), false)
+	case event.MatchString("x"):
+		return m.modeEventResult(m.killActiveTabCmd(), false)
+	default:
+		if m.directMode {
+			for i := 1; i <= 9; i++ {
+				if event.MatchString(string(rune('0' + i))) {
+					if i-1 < len(m.workspace.Tabs) {
+						return m.modeEventResult(m.activateTab(i-1), false)
+					}
+					return m.modeEventResult(nil, false)
+				}
+			}
+			return prefixDispatchResult{keep: true}
+		}
+		return prefixDispatchResult{}
+	}
+}
+
+func (m *Model) dispatchWorkspaceSubPrefixEvent(event uv.KeyPressEvent) prefixDispatchResult {
+	switch {
+	case m.directMode && event.MatchString("esc"):
+		return prefixDispatchResult{}
+	case event.MatchString("s"):
+		return m.modeEventResult(m.openWorkspacePickerCmd(), false)
+	case event.MatchString("c"):
+		return m.modeEventResult(m.createWorkspaceCmd(nextWorkspaceName(m.workspaceOrder)), false)
+	case event.MatchString("r"):
+		m.beginRenameWorkspace()
+		return m.modeEventResult(nil, false)
+	case event.MatchString("x"):
+		return m.modeEventResult(m.deleteCurrentWorkspaceCmd(), false)
+	case event.MatchString("n"):
+		return m.modeEventResult(m.activateWorkspaceByOffset(1), false)
+	case event.MatchString("p"):
+		return m.modeEventResult(m.activateWorkspaceByOffset(-1), false)
+	case event.MatchString("f"):
+		return m.modeEventResult(m.openWorkspacePickerCmd(), false)
+	default:
+		if m.directMode {
+			return prefixDispatchResult{keep: true}
+		}
+		return prefixDispatchResult{}
+	}
+}
+
+func (m *Model) dispatchViewportSubPrefixEvent(event uv.KeyPressEvent) prefixDispatchResult {
+	switch {
+	case m.directMode && event.MatchString("esc"):
+		return prefixDispatchResult{}
+	case event.MatchString("m"):
+		m.toggleActiveViewportMode()
+		return m.modeEventResult(m.resizeVisiblePanesCmd(), false)
+	case event.MatchString("r"):
+		m.toggleActiveViewportReadonly()
+		return m.modeEventResult(nil, false)
+	case event.MatchString("p"):
+		m.toggleActiveViewportPin()
+		return m.modeEventResult(nil, false)
+	case event.MatchString("h"), event.MatchString("left"):
+		m.panActiveViewport(-4, 0)
+		return m.modeEventResult(nil, false)
+	case event.MatchString("j"), event.MatchString("down"):
+		m.panActiveViewport(0, 2)
+		return m.modeEventResult(nil, false)
+	case event.MatchString("k"), event.MatchString("up"):
+		m.panActiveViewport(0, -2)
+		return m.modeEventResult(nil, false)
+	case event.MatchString("l"), event.MatchString("right"):
+		m.panActiveViewport(4, 0)
+		return m.modeEventResult(nil, false)
+	case event.MatchString("0"), event.MatchString("g"):
+		m.setActiveViewportOffset(0, 0)
+		return m.modeEventResult(nil, false)
+	case event.MatchString("$"):
+		m.setActiveViewportOffset(int(^uint(0)>>1), 0)
+		return m.modeEventResult(nil, false)
+	case event.MatchString("G"), event.MatchString("shift+g"):
+		m.setActiveViewportOffset(0, int(^uint(0)>>1))
+		return m.modeEventResult(nil, false)
+	case event.MatchString("z"):
+		pane := activePane(m.currentTab())
+		if pane != nil {
+			pane.Offset = Point{}
+			pane.Pin = false
+			pane.Mode = ViewportModeFit
+		}
+		return m.modeEventResult(m.resizeVisiblePanesCmd(), false)
+	case event.MatchString("o"):
+		if m.directMode {
+			return prefixDispatchResult{keep: true}
+		}
+		return prefixDispatchResult{cmd: m.enterPrefixMode(prefixModeOffsetPan, prefixFallbackNone), keep: true}
+	default:
+		if m.directMode {
+			return prefixDispatchResult{keep: true}
+		}
+		return prefixDispatchResult{}
+	}
+}
+
+func (m *Model) dispatchFloatingModeEvent(event uv.KeyPressEvent) prefixDispatchResult {
+	switch {
+	case event.MatchString("esc"):
+		_ = m.focusTiledPane()
+		return prefixDispatchResult{}
+	case event.MatchString("tab"):
+		m.cycleFloatingFocus()
+		return m.modeEventResult(nil, true)
+	case event.MatchString("n"):
+		return m.modeEventResult(m.openFloatingTerminalPickerCmd(m.workspace.ActiveTab), false)
+	case event.MatchString("x"):
+		return m.modeEventResult(m.closeActivePaneCmd(), true)
+	case event.MatchString("v"):
+		m.toggleFloatingLayerVisibility()
+		return m.modeEventResult(nil, true)
+	case event.MatchString("]"):
+		m.raiseActiveFloatingPane()
+		return m.modeEventResult(nil, true)
+	case event.MatchString("["):
+		m.lowerActiveFloatingPane()
+		return m.modeEventResult(nil, true)
+	case event.MatchString("h"), event.MatchString("left"):
+		m.moveActiveFloatingPane(-4, 0)
+		return m.modeEventResult(nil, true)
+	case event.MatchString("j"), event.MatchString("down"):
+		m.moveActiveFloatingPane(0, 2)
+		return m.modeEventResult(nil, true)
+	case event.MatchString("k"), event.MatchString("up"):
+		m.moveActiveFloatingPane(0, -2)
+		return m.modeEventResult(nil, true)
+	case event.MatchString("l"), event.MatchString("right"):
+		m.moveActiveFloatingPane(4, 0)
+		return m.modeEventResult(nil, true)
+	case event.MatchString("H"), event.MatchString("shift+h"):
+		m.resizeActiveFloatingPane(-4, 0)
+		return m.modeEventResult(nil, true)
+	case event.MatchString("J"), event.MatchString("shift+j"):
+		m.resizeActiveFloatingPane(0, 2)
+		return m.modeEventResult(nil, true)
+	case event.MatchString("K"), event.MatchString("shift+k"):
+		m.resizeActiveFloatingPane(0, -2)
+		return m.modeEventResult(nil, true)
+	case event.MatchString("L"), event.MatchString("shift+l"):
+		m.resizeActiveFloatingPane(4, 0)
+		return m.modeEventResult(nil, true)
+	case event.MatchString("f"):
+		return m.modeEventResult(m.openTerminalPickerCmd(), false)
+	default:
+		if m.directMode {
+			return prefixDispatchResult{keep: true}
+		}
+		return prefixDispatchResult{}
+	}
+}
+
+func (m *Model) dispatchOffsetPanModeEvent(event uv.KeyPressEvent) prefixDispatchResult {
+	switch {
+	case event.MatchString("esc"):
+		return prefixDispatchResult{}
+	case event.MatchString("h"), event.MatchString("left"):
+		m.panActiveViewport(-4, 0)
+		return prefixDispatchResult{keep: true}
+	case event.MatchString("j"), event.MatchString("down"):
+		m.panActiveViewport(0, 2)
+		return prefixDispatchResult{keep: true}
+	case event.MatchString("k"), event.MatchString("up"):
+		m.panActiveViewport(0, -2)
+		return prefixDispatchResult{keep: true}
+	case event.MatchString("l"), event.MatchString("right"):
+		m.panActiveViewport(4, 0)
+		return prefixDispatchResult{keep: true}
+	case event.MatchString("0"), event.MatchString("g"):
+		m.setActiveViewportOffset(0, 0)
+		return prefixDispatchResult{keep: true}
+	case event.MatchString("$"):
+		m.setActiveViewportOffset(int(^uint(0)>>1), 0)
+		return prefixDispatchResult{keep: true}
+	case event.MatchString("G"), event.MatchString("shift+g"):
+		m.setActiveViewportOffset(0, int(^uint(0)>>1))
+		return prefixDispatchResult{keep: true}
+	default:
+		return prefixDispatchResult{}
+	}
+}
+
+func (m *Model) dispatchGlobalModeEvent(event uv.KeyPressEvent) prefixDispatchResult {
+	switch {
+	case event.MatchString("esc"):
+		return prefixDispatchResult{}
+	case event.MatchString("?"):
+		m.showHelp = true
+		m.invalidateRender()
+		return prefixDispatchResult{}
+	case event.MatchString(":"):
+		m.beginCommandPrompt()
+		return prefixDispatchResult{}
+	case event.MatchString("d"), event.MatchString("q"):
+		m.quitting = true
+		m.invalidateRender()
+		return prefixDispatchResult{cmd: tea.Quit}
+	default:
+		return prefixDispatchResult{keep: true}
+	}
+}
+
+func shouldKeepPrefixEvent(event uv.KeyPressEvent) bool {
+	switch {
+	case event.Mod&uv.ModAlt != 0 && (event.MatchString("h") || event.MatchString("left") || event.MatchString("j") || event.MatchString("down") || event.MatchString("k") || event.MatchString("up") || event.MatchString("l") || event.MatchString("right")):
+		return true
+	case event.Mod&uv.ModAlt != 0 && (event.MatchString("H") || event.MatchString("shift+h") || event.MatchString("J") || event.MatchString("shift+j") || event.MatchString("K") || event.MatchString("shift+k") || event.MatchString("L") || event.MatchString("shift+l")):
+		return true
+	case event.MatchString("h"), event.MatchString("left"),
+		event.MatchString("j"), event.MatchString("down"),
+		event.MatchString("k"), event.MatchString("up"),
+		event.MatchString("l"), event.MatchString("right"),
+		event.MatchString("H"), event.MatchString("shift+h"),
+		event.MatchString("J"), event.MatchString("shift+j"),
+		event.MatchString("K"), event.MatchString("shift+k"),
+		event.MatchString("L"), event.MatchString("shift+l"),
+		event.MatchString("ctrl+h"), event.MatchString("ctrl+left"),
+		event.MatchString("ctrl+j"), event.MatchString("ctrl+down"),
+		event.MatchString("ctrl+k"), event.MatchString("ctrl+up"),
+		event.MatchString("ctrl+l"), event.MatchString("ctrl+right"):
+		return true
+	default:
+		return false
+	}
+}
+
+func (m *Model) handleMouseClickEvent(event uv.MouseClickEvent) tea.Cmd {
+	mouse := event.Mouse()
+	if mouse.Button != uv.MouseLeft {
+		return nil
+	}
+	tab := m.currentTab()
+	if tab == nil {
+		return nil
+	}
+	x, y, ok := m.mouseContentPoint(mouse.X, mouse.Y)
+	if !ok {
+		return nil
+	}
+	if paneID, rect, floating := m.paneAtPoint(tab, x, y); paneID != "" {
+		tab.ActivePaneID = paneID
+		if floating {
+			reorderFloatingPanes(tab, paneID, true)
+			m.mouseDragPaneID = paneID
+			if floatingResizeHandleContains(rect, x, y) {
+				m.mouseDragMode = mouseDragResize
+				m.mouseDragOffset = Point{}
+			} else {
+				m.mouseDragMode = mouseDragMove
+				m.mouseDragOffset = Point{X: x - rect.X, Y: y - rect.Y}
+			}
+		} else {
+			m.mouseDragPaneID = ""
+			m.mouseDragOffset = Point{}
+			m.mouseDragMode = mouseDragNone
+		}
+		tab.renderCache = nil
+		m.invalidateRender()
+	}
+	return nil
+}
+
+func (m *Model) handleMouseMotionEvent(event uv.MouseMotionEvent) tea.Cmd {
+	mouse := event.Mouse()
+	if mouse.Button != uv.MouseLeft || m.mouseDragPaneID == "" {
+		return nil
+	}
+	tab := m.currentTab()
+	if tab == nil {
+		return nil
+	}
+	x, y, ok := m.mouseContentPoint(mouse.X, mouse.Y)
+	if !ok {
+		return nil
+	}
+	switch m.mouseDragMode {
+	case mouseDragResize:
+		entry := floatingPaneByID(tab, m.mouseDragPaneID)
+		if entry == nil {
+			return nil
+		}
+		m.resizeFloatingPaneTo(tab, m.mouseDragPaneID, x-entry.Rect.X+1, y-entry.Rect.Y+1)
+	default:
+		m.dragFloatingPaneTo(tab, m.mouseDragPaneID, x-m.mouseDragOffset.X, y-m.mouseDragOffset.Y)
+	}
+	return nil
+}
+
+func (m *Model) handleMouseReleaseEvent(event uv.MouseReleaseEvent) tea.Cmd {
+	_ = event
+	m.mouseDragPaneID = ""
+	m.mouseDragOffset = Point{}
+	m.mouseDragMode = mouseDragNone
 	return nil
 }
 
@@ -270,7 +742,7 @@ func (m *Model) handlePromptEvent(event uv.Event) tea.Cmd {
 	case uv.KeyPressEvent:
 		switch {
 		case event.MatchString("esc"):
-			m.prompt = nil
+			m.cancelPrompt()
 		case event.MatchString("enter"):
 			return m.commitPrompt()
 		case event.MatchString("backspace"):
@@ -308,24 +780,27 @@ func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() 
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
+	eventc := make(chan uv.Event, 128)
+	terminalReader := uv.NewTerminalReader(reader, os.Getenv("TERM"))
 	go func() {
 		defer close(done)
-		buf := make([]byte, 4096)
+		streamDone := make(chan struct{})
+		go func() {
+			defer close(streamDone)
+			_ = terminalReader.StreamEvents(ctx, eventc)
+			close(eventc)
+		}()
 		for {
 			select {
 			case <-ctx.Done():
+				<-streamDone
 				return
-			default:
-			}
-
-			n, err := reader.Read(buf)
-			if n > 0 {
-				data := make([]byte, n)
-				copy(data, buf[:n])
-				program.Send(rawInputMsg{data: data})
-			}
-			if err != nil {
-				return
+			case event, ok := <-eventc:
+				if !ok {
+					<-streamDone
+					return
+				}
+				program.Send(inputEventMsg{event: event})
 			}
 		}
 	}()

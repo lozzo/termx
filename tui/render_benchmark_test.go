@@ -236,6 +236,24 @@ func BenchmarkRenderTabCompositeFloatingOverlayFloatingDirty(b *testing.B) {
 	}
 }
 
+func BenchmarkRenderTabCompositeFloatingOverlayFloatingMove(b *testing.B) {
+	model := benchmarkModelWithFloatingOverlay(b, 160, 48)
+	tab := model.currentTab()
+	if len(tab.Floating) == 0 {
+		b.Fatal("expected floating pane")
+	}
+	entry := tab.Floating[0]
+	base := entry.Rect
+	benchmarkStringSink = model.View()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		entry.Rect = Rect{X: base.X + (i % 6), Y: base.Y + (i % 4), W: base.W, H: base.H}
+		benchmarkStringSink = model.renderTabComposite(tab, model.width, model.height-2)
+	}
+}
+
 func BenchmarkHandlePaneOutputAndViewFourPanes(b *testing.B) {
 	model := benchmarkModelWithPanes(b, 4, 160, 48)
 	tab := model.currentTab()
@@ -466,6 +484,9 @@ func benchmarkModelWithPanes(tb testing.TB, paneCount, width, height int) *Model
 		msg = mustRunCmdForBenchmark(tb, cmd)
 		_, _ = model.Update(msg)
 		_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		if cmd == nil {
+			cmd = commitDefaultTerminalCreatePrompt(tb, model)
+		}
 		msg = mustRunCmdForBenchmark(tb, cmd)
 		_, cmd = model.Update(msg)
 		runCmdForBenchmark(tb, model, cmd)
@@ -514,13 +535,19 @@ func benchmarkModelWithFloatingOverlay(tb testing.TB, width, height int) *Model 
 	model := benchmarkModelWithPanes(tb, 1, width, height)
 
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
-	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	runCmdForBenchmark(tb, model, cmd)
+	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	msg := mustRunCmdForBenchmark(tb, cmd)
 	_, _ = model.Update(msg)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		cmd = commitDefaultTerminalCreatePrompt(tb, model)
+	}
 	msg = mustRunCmdForBenchmark(tb, cmd)
 	_, cmd = model.Update(msg)
 	runCmdForBenchmark(tb, model, cmd)
+	model.clearPrefixState()
 
 	tab := model.currentTab()
 	if len(tab.Floating) == 0 {

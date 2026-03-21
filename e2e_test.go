@@ -46,6 +46,33 @@ func newE2EClient(t *testing.T, opts ...ServerOption) (*Server, *protocol.Client
 	return srv, client, cleanup
 }
 
+func newE2EProtocolClient(t *testing.T, srv *Server) (*protocol.Client, func()) {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	clientTransport, serverTransport := memory.NewPair()
+
+	go func() {
+		_ = srv.handleTransport(ctx, serverTransport, "memory")
+	}()
+
+	client := protocol.NewClient(clientTransport)
+	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "e2e-test"}); err != nil {
+		cancel()
+		clientTransport.Close()
+		serverTransport.Close()
+		t.Fatalf("hello failed: %v", err)
+	}
+
+	cleanup := func() {
+		client.Close()
+		cancel()
+		clientTransport.Close()
+		serverTransport.Close()
+	}
+	return client, cleanup
+}
+
 // e2eCreateTerminal is a helper that creates a bash terminal via protocol.
 func e2eCreateTerminal(t *testing.T, client *protocol.Client, name string, tags map[string]string) string {
 	t.Helper()
@@ -314,7 +341,7 @@ func TestE2E_EventsSubscription(t *testing.T) {
 // =============================================================================
 
 func TestE2E_ObserverCannotWrite(t *testing.T) {
-	_, client, cleanup := newE2EClient(t)
+	srv, client, cleanup := newE2EClient(t)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -338,8 +365,32 @@ func TestE2E_ObserverCannotWrite(t *testing.T) {
 		t.Fatal("observer was able to write input — should be rejected")
 	}
 
-	if err := client.Kill(ctx, termID); err != nil {
-		t.Fatalf("kill failed: %v", err)
+	if err := srv.Kill(ctx, termID); err != nil {
+		t.Fatalf("cleanup kill failed: %v", err)
+	}
+}
+
+func TestE2E_ObserverCannotKill(t *testing.T) {
+	srv, client, cleanup := newE2EClient(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	termID := e2eCreateTerminal(t, client, "observer-kill-test", nil)
+	_, _, stop := e2eAttach(t, client, termID, "observer")
+	defer stop()
+
+	err := client.Kill(ctx, termID)
+	if err == nil || !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("expected observer kill to be denied, got %v", err)
+	}
+
+	if _, err := srv.Get(ctx, termID); err != nil {
+		t.Fatalf("expected terminal to remain after denied observer kill, got %v", err)
+	}
+
+	if err := srv.Kill(ctx, termID); err != nil {
+		t.Fatalf("cleanup kill failed: %v", err)
 	}
 }
 

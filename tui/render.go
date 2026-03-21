@@ -39,9 +39,10 @@ type composedCanvas struct {
 }
 
 type paneRenderEntry struct {
-	PaneID string
-	Rect   Rect
-	Title  string
+	PaneID   string
+	Rect     Rect
+	Title    string
+	Floating bool
 }
 
 var styleANSICache sync.Map
@@ -83,14 +84,44 @@ func (m *Model) renderTabComposite(tab *Tab, width, height int) string {
 	}
 
 	cache := tab.renderCache
-	if cache == nil || cache.width != width || cache.height != height || cache.zoomedPaneID != tab.ZoomedPaneID || !sameRects(cache.rects, rects) || !sameOrder(cache.order, order) {
+	if cache == nil || cache.width != width || cache.height != height || cache.zoomedPaneID != tab.ZoomedPaneID || !sameOrder(cache.order, order) {
 		canvas := newComposedCanvas(width, height)
 		frameKeys := make(map[string]string, len(rects))
 		for _, entry := range entries {
 			pane := tab.Panes[entry.PaneID]
 			active := entry.PaneID == tab.ActivePaneID
-			frameKey := paneFrameKey(entry.Title, active, entry.Rect)
-			canvas.drawPaneWithTitle(entry.Rect, pane, entry.Title, active)
+			frameKey := paneFrameKey(entry.Title, active, entry.Floating, entry.Rect)
+			canvas.drawPaneWithTitleFull(entry.Rect, pane, entry.Title, active, entry.Floating)
+			frameKeys[entry.PaneID] = frameKey
+		}
+		tab.renderCache = &tabRenderCache{
+			canvas:       canvas,
+			rects:        cloneRects(rects),
+			order:        append([]string(nil), order...),
+			frameKeys:    frameKeys,
+			width:        width,
+			height:       height,
+			activePaneID: tab.ActivePaneID,
+			zoomedPaneID: tab.ZoomedPaneID,
+		}
+		return canvas.String()
+	}
+	if !sameRects(cache.rects, rects) {
+		if !floatingRectsChanged(cache.rects, rects, entries) {
+			if damage, ok := incrementalRectDamage(cache.rects, rects); ok {
+				cache.canvas.redrawDamage(entries, tab.Panes, tab.ActivePaneID, damage)
+				cache.rects = cloneRects(rects)
+				cache.activePaneID = tab.ActivePaneID
+				return cache.canvas.String()
+			}
+		}
+		canvas := newComposedCanvas(width, height)
+		frameKeys := make(map[string]string, len(rects))
+		for _, entry := range entries {
+			pane := tab.Panes[entry.PaneID]
+			active := entry.PaneID == tab.ActivePaneID
+			frameKey := paneFrameKey(entry.Title, active, entry.Floating, entry.Rect)
+			canvas.drawPaneWithTitleFull(entry.Rect, pane, entry.Title, active, entry.Floating)
 			frameKeys[entry.PaneID] = frameKey
 		}
 		tab.renderCache = &tabRenderCache{
@@ -110,9 +141,10 @@ func (m *Model) renderTabComposite(tab *Tab, width, height int) string {
 	for _, entry := range entries {
 		pane := tab.Panes[entry.PaneID]
 		active := entry.PaneID == tab.ActivePaneID
-		nextFrameKey := paneFrameKey(entry.Title, active, entry.Rect)
-		if cache.frameKeys[entry.PaneID] != nextFrameKey || overlapsAnyRect(entry.Rect, damage) {
-			cache.canvas.drawPaneWithTitle(entry.Rect, pane, entry.Title, active)
+		nextFrameKey := paneFrameKey(entry.Title, active, entry.Floating, entry.Rect)
+		overlapped := overlapsAnyRect(entry.Rect, damage)
+		if cache.frameKeys[entry.PaneID] != nextFrameKey || overlapped {
+			cache.canvas.drawPaneWithTitleFull(entry.Rect, pane, entry.Title, active, entry.Floating)
 			cache.frameKeys[entry.PaneID] = nextFrameKey
 			damage = append(damage, entry.Rect)
 			continue
@@ -125,6 +157,21 @@ func (m *Model) renderTabComposite(tab *Tab, width, height int) string {
 	}
 	cache.activePaneID = tab.ActivePaneID
 	return cache.canvas.String()
+}
+
+func (c *composedCanvas) redrawDamage(entries []paneRenderEntry, panes map[string]*Pane, activePaneID string, damage []Rect) {
+	if c == nil || len(damage) == 0 {
+		return
+	}
+	for _, rect := range damage {
+		c.fill(rect, blankDrawCell())
+	}
+	for _, entry := range entries {
+		if !overlapsAnyRect(entry.Rect, damage) {
+			continue
+		}
+		c.drawPaneWithTitleFull(entry.Rect, panes[entry.PaneID], entry.Title, entry.PaneID == activePaneID, entry.Floating)
+	}
 }
 
 func blankDrawCell() drawCell {
@@ -159,30 +206,45 @@ func (c *composedCanvas) set(x, y int, cell drawCell) {
 }
 
 func (c *composedCanvas) drawPane(rect Rect, pane *Pane, active bool) {
-	c.drawPaneWithTitle(rect, pane, paneTitle(pane), active)
+	c.drawPaneWithTitle(rect, pane, paneTitle(pane), active, false)
 }
 
-func (c *composedCanvas) drawPaneWithTitle(rect Rect, pane *Pane, title string, active bool) {
+func (c *composedCanvas) drawPaneWithTitle(rect Rect, pane *Pane, title string, active bool, floating bool) {
 	if rect.W < 2 || rect.H < 2 {
 		return
 	}
-	c.drawPaneFrameWithTitle(rect, title, active)
+	c.drawPaneFrameWithTitle(rect, title, active, floating)
 	c.drawPaneBody(rect, pane, active)
 }
 
-func (c *composedCanvas) drawPaneFrame(rect Rect, pane *Pane, active bool) {
-	c.drawPaneFrameWithTitle(rect, paneTitle(pane), active)
-}
-
-func (c *composedCanvas) drawPaneFrameWithTitle(rect Rect, title string, active bool) {
+func (c *composedCanvas) drawPaneWithTitleFull(rect Rect, pane *Pane, title string, active bool, floating bool) {
 	if rect.W < 2 || rect.H < 2 {
 		return
 	}
-	border := drawStyle{FG: "#475569"}
-	titleStyle := drawStyle{FG: "#cbd5e1", BG: "#111827", Bold: true}
-	if active {
-		border = drawStyle{FG: "#22c55e", Bold: true}
-		titleStyle = drawStyle{FG: "#ecfccb", BG: "#111827", Bold: true}
+	c.drawPaneFrameWithTitle(rect, title, active, floating)
+	c.drawPaneBodyFull(rect, pane, active)
+}
+
+func (c *composedCanvas) drawPaneFrame(rect Rect, pane *Pane, active bool) {
+	c.drawPaneFrameWithTitle(rect, paneTitle(pane), active, false)
+}
+
+func (c *composedCanvas) drawPaneFrameWithTitle(rect Rect, title string, active bool, floating bool) {
+	if rect.W < 2 || rect.H < 2 {
+		return
+	}
+	border := drawStyle{FG: "#4b5563"}
+	titleStyle := drawStyle{FG: "#9ca3af", BG: "#0b1220", Bold: true}
+	switch {
+	case floating && active:
+		border = drawStyle{FG: "#fde047", Bold: true}
+		titleStyle = drawStyle{FG: "#fef9c3", BG: "#1f2937", Bold: true}
+	case floating:
+		border = drawStyle{FG: "#78716c"}
+		titleStyle = drawStyle{FG: "#d6d3d1", BG: "#111827", Bold: true}
+	case active:
+		border = drawStyle{FG: "#5fafff", Bold: true}
+		titleStyle = drawStyle{FG: "#eff6ff", BG: "#0f172a", Bold: true}
 	}
 	c.drawRectBorder(rect, title, border, titleStyle)
 }
@@ -206,12 +268,32 @@ func (c *composedCanvas) drawPaneBody(rect Rect, pane *Pane, active bool) {
 	}
 }
 
+func (c *composedCanvas) drawPaneBodyFull(rect Rect, pane *Pane, active bool) {
+	if rect.W < 2 || rect.H < 2 {
+		return
+	}
+	contentRect := Rect{X: rect.X + 1, Y: rect.Y + 1, W: rect.W - 2, H: rect.H - 2}
+	c.fill(contentRect, blankDrawCell())
+	if !c.drawPaneSource(contentRect, pane) {
+		c.drawGrid(contentRect, paneCellsForViewport(pane, contentRect.W, contentRect.H))
+		if pane != nil {
+			pane.clearDirtyRegion()
+		}
+	}
+	if active {
+		c.drawCursor(contentRect, pane, contentRect.W, contentRect.H)
+	}
+}
+
 func (c *composedCanvas) drawPaneBodyDirtyRows(contentRect Rect, pane *Pane) bool {
 	if pane == nil || !pane.dirtyRowsKnown || !pane.renderDirty {
 		return false
 	}
 	switch {
 	case pane.live && pane.VTerm != nil:
+		if pane.VTerm.IsAltScreen() {
+			return false
+		}
 	case snapshotHasVisibleContent(pane.Snapshot):
 	default:
 		return false
@@ -251,11 +333,21 @@ func (c *composedCanvas) drawPaneSource(rect Rect, pane *Pane) bool {
 	offset := paneVisibleOffset(pane)
 	switch {
 	case pane.live && pane.VTerm != nil:
-		c.drawVTermRegion(rect, pane.VTerm, offset)
+		contentW, contentH := pane.VTerm.Size()
+		c.drawSourceRegion(rect, offset, contentW, contentH, func(x, y int) drawCell {
+			return normalizePaneDrawCellStyle(pane, drawCellFromVTermCell(pane.VTerm.CellAt(x, y)))
+		})
 		pane.renderDirty = false
 		return true
 	case snapshotHasVisibleContent(pane.Snapshot):
-		c.drawProtocolRegion(rect, pane.Snapshot.Screen.Cells, offset)
+		rows := pane.Snapshot.Screen.Cells
+		c.drawSourceRegion(rect, offset, 0, len(rows), func(x, y int) drawCell {
+			row := rows[y]
+			if x < 0 || x >= len(row) {
+				return drawCell{}
+			}
+			return normalizePaneDrawCellStyle(pane, drawCellFromProtocolCell(row[x]))
+		})
 		pane.renderDirty = false
 		return true
 	default:
@@ -273,7 +365,7 @@ func (c *composedCanvas) drawPaneSourceRow(rect Rect, pane *Pane, viewRow, viewC
 	case pane.live && pane.VTerm != nil:
 		contentW, contentH := pane.VTerm.Size()
 		c.drawSourceRegion(rect, rowOffset, contentW, contentH, func(x, y int) drawCell {
-			return drawCellFromVTermCell(pane.VTerm.CellAt(x, y))
+			return normalizePaneDrawCellStyle(pane, drawCellFromVTermCell(pane.VTerm.CellAt(x, y)))
 		})
 		return true
 	case snapshotHasVisibleContent(pane.Snapshot):
@@ -283,7 +375,7 @@ func (c *composedCanvas) drawPaneSourceRow(rect Rect, pane *Pane, viewRow, viewC
 			if x < 0 || x >= len(row) {
 				return drawCell{}
 			}
-			return drawCellFromProtocolCell(row[x])
+			return normalizePaneDrawCellStyle(pane, drawCellFromProtocolCell(row[x]))
 		})
 		return true
 	default:
@@ -585,10 +677,16 @@ func (c *composedCanvas) String() string {
 	return c.fullCache
 }
 
-func paneFrameKey(title string, active bool, rect Rect) string {
+func paneFrameKey(title string, active bool, floating bool, rect Rect) string {
 	if title == "" {
 		if active {
+			if floating {
+				return "active:floating:nil:" + itoa(rect.W) + ":" + itoa(rect.H)
+			}
 			return "active:nil:" + itoa(rect.W) + ":" + itoa(rect.H)
+		}
+		if floating {
+			return "inactive:floating:nil:" + itoa(rect.W) + ":" + itoa(rect.H)
 		}
 		return "inactive:nil:" + itoa(rect.W) + ":" + itoa(rect.H)
 	}
@@ -596,7 +694,11 @@ func paneFrameKey(title string, active bool, rect Rect) string {
 	if active {
 		state = "active"
 	}
-	return state + ":" + title + ":" + itoa(rect.W) + ":" + itoa(rect.H)
+	layer := "tiled"
+	if floating {
+		layer = "floating"
+	}
+	return state + ":" + layer + ":" + title + ":" + itoa(rect.W) + ":" + itoa(rect.H)
 }
 
 func sameRects(a, b map[string]Rect) bool {
@@ -617,6 +719,45 @@ func cloneRects(src map[string]Rect) map[string]Rect {
 		out[key] = value
 	}
 	return out
+}
+
+func incrementalRectDamage(previous, next map[string]Rect) ([]Rect, bool) {
+	if len(previous) != len(next) {
+		return nil, false
+	}
+	damage := make([]Rect, 0, len(previous)*2)
+	for paneID, prev := range previous {
+		current, ok := next[paneID]
+		if !ok {
+			return nil, false
+		}
+		if prev == current {
+			continue
+		}
+		damage = append(damage, prev, current)
+	}
+	for paneID := range next {
+		if _, ok := previous[paneID]; !ok {
+			return nil, false
+		}
+	}
+	return damage, true
+}
+
+func floatingRectsChanged(previous, next map[string]Rect, entries []paneRenderEntry) bool {
+	for _, entry := range entries {
+		if !entry.Floating {
+			continue
+		}
+		prev, ok := previous[entry.PaneID]
+		if !ok {
+			return true
+		}
+		if current, ok := next[entry.PaneID]; !ok || prev != current {
+			return true
+		}
+	}
+	return false
 }
 
 func sameOrder(a, b []string) bool {
@@ -665,17 +806,19 @@ func (m *Model) paneRenderEntries(tab *Tab, width, height int) []paneRenderEntry
 				continue
 			}
 			entries = append(entries, paneRenderEntry{
-				PaneID: paneID,
-				Rect:   rect,
-				Title:  paneFrameTitle(tab, paneID, tab.Panes[paneID]),
+				PaneID:   paneID,
+				Rect:     rect,
+				Title:    paneFrameTitle(tab, paneID, tab.Panes[paneID]),
+				Floating: false,
 			})
 		}
 	}
 	for _, floating := range m.visibleFloatingPanes(tab) {
 		entries = append(entries, paneRenderEntry{
-			PaneID: floating.PaneID,
-			Rect:   floating.Rect,
-			Title:  paneFrameTitle(tab, floating.PaneID, tab.Panes[floating.PaneID]),
+			PaneID:   floating.PaneID,
+			Rect:     floating.Rect,
+			Title:    paneFrameTitle(tab, floating.PaneID, tab.Panes[floating.PaneID]),
+			Floating: true,
 		})
 	}
 	return entries
@@ -698,6 +841,7 @@ func paneCells(pane *Pane) [][]drawCell {
 	default:
 		grid = textLinesToGrid(welcomePaneLines(pane))
 	}
+	grid = normalizePaneGridStyle(pane, grid)
 
 	pane.cellCache = grid
 	pane.renderDirty = false
@@ -722,6 +866,7 @@ func paneCellsForViewport(pane *Pane, viewW, viewH int) [][]drawCell {
 	}
 
 	if grid, ok := fixedViewportGridFromSource(pane, viewW, viewH); ok {
+		grid = normalizePaneGridStyle(pane, grid)
 		pane.viewportCache = grid
 		pane.viewportOffset = pane.Offset
 		pane.viewportWidth = viewW
@@ -773,7 +918,7 @@ func paneVisibleCell(pane *Pane, viewX, viewY, viewW, viewH int) (drawCell, int,
 		if cell.Continuation || startCol < 0 || startCol >= viewW || startCol+cell.Width > viewW {
 			return drawCell{}, 0, false
 		}
-		return cell, startCol, true
+		return normalizePaneDrawCellStyle(pane, cell), startCol, true
 	case snapshotHasVisibleContent(pane.Snapshot):
 		if srcY < 0 || srcY >= len(pane.Snapshot.Screen.Cells) {
 			return drawCell{}, 0, false
@@ -794,7 +939,7 @@ func paneVisibleCell(pane *Pane, viewX, viewY, viewW, viewH int) (drawCell, int,
 		if cell.Continuation || startCol < 0 || startCol >= viewW || startCol+cell.Width > viewW {
 			return drawCell{}, 0, false
 		}
-		return cell, startCol, true
+		return normalizePaneDrawCellStyle(pane, cell), startCol, true
 	default:
 		grid := paneCellsForViewport(pane, viewW, viewH)
 		if viewY < 0 || viewY >= len(grid) || viewX < 0 || viewX >= len(grid[viewY]) {
@@ -810,6 +955,33 @@ func paneVisibleCell(pane *Pane, viewX, viewY, viewW, viewH int) (drawCell, int,
 		}
 		return cell, startCol, true
 	}
+}
+
+func normalizePaneGridStyle(pane *Pane, grid [][]drawCell) [][]drawCell {
+	if pane == nil || paneTerminalState(pane) != "exited" || len(grid) == 0 {
+		return grid
+	}
+	for y := range grid {
+		for x := range grid[y] {
+			grid[y][x] = normalizePaneDrawCellStyle(pane, grid[y][x])
+		}
+	}
+	return grid
+}
+
+func normalizePaneDrawCellStyle(pane *Pane, cell drawCell) drawCell {
+	if pane == nil || paneTerminalState(pane) != "exited" {
+		return cell
+	}
+	if cell.Continuation {
+		return cell
+	}
+	if strings.TrimSpace(cell.Content) == "" {
+		cell.Style = drawStyle{}
+		return cell
+	}
+	cell.Style = drawStyle{FG: "#e2e8f0"}
+	return cell
 }
 
 func fixedViewportGridFromSource(pane *Pane, viewW, viewH int) ([][]drawCell, bool) {
@@ -1144,6 +1316,7 @@ func paneTitle(pane *Pane) string {
 		return "pane"
 	}
 	title := coalesce(pane.Title, pane.TerminalID, pane.ID)
+	title += paneTitleBadges(pane)
 	switch paneTerminalState(pane) {
 	case "waiting":
 		return "[waiting] " + title
@@ -1159,12 +1332,30 @@ func paneTitle(pane *Pane) string {
 	}
 }
 
+func paneTitleBadges(pane *Pane) string {
+	if pane == nil {
+		return ""
+	}
+	badges := make([]string, 0, 2)
+	if paneAccessMode(pane) == "observer" {
+		badges = append(badges, "[obs]")
+	}
+	if pane.Readonly {
+		badges = append(badges, "[ro]")
+	}
+	if len(badges) == 0 {
+		return ""
+	}
+	return " " + strings.Join(badges, " ")
+}
+
 func paneFrameTitle(tab *Tab, paneID string, pane *Pane) string {
 	title := paneTitle(pane)
 	z, total, ok := floatingPaneOrder(tab, paneID)
 	if !ok {
 		return title
 	}
+	title = "float:" + title
 	if total > 1 {
 		return title + " [floating z:" + itoa(z) + "]"
 	}
@@ -1178,7 +1369,7 @@ func welcomePaneLines(pane *Pane) []string {
 		return []string{
 			"waiting for terminal",
 			"",
-			"viewport: " + title,
+			"pane: " + title,
 			"",
 			"load-layout can create or attach a matching terminal later",
 		}
@@ -1186,9 +1377,9 @@ func welcomePaneLines(pane *Pane) []string {
 		return []string{
 			"terminal was killed",
 			"",
-			"viewport: " + title,
+			"pane: " + title,
 			"",
-			"close this viewport with Ctrl-a x",
+			"close this pane with Ctrl-a x",
 			"or attach another terminal with Ctrl-a f",
 		}
 	case "exited":
@@ -1199,10 +1390,10 @@ func welcomePaneLines(pane *Pane) []string {
 		return []string{
 			"terminal exited" + code,
 			"",
-			"viewport: " + title,
+			"pane: " + title,
 			"",
 			"scrollback remains readable",
-			"press r to restart in this viewport",
+			"press r to restart in this pane",
 			"attach another terminal with Ctrl-a f if needed",
 		}
 	}
@@ -1212,10 +1403,10 @@ func welcomePaneLines(pane *Pane) []string {
 		"connected terminal: " + title,
 		"",
 		"type normally to send input to the shell",
-		"press Ctrl-a then % to split vertically",
-		"press Ctrl-a then \" to split horizontally",
-		"press Ctrl-a then c to open a new tab",
-		"press Ctrl-a then ? for the full cheat sheet",
+		"press Ctrl-p then % to split vertically",
+		"press Ctrl-p then \" to split horizontally",
+		"press Ctrl-t then c to open a new tab",
+		"press Ctrl-g then ? for the full shortcut sheet",
 	}
 }
 

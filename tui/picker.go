@@ -11,14 +11,24 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	uv "github.com/charmbracelet/ultraviolet"
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
 	localvterm "github.com/lozzow/termx/vterm"
 )
 
 var (
-	terminalPickerTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#f8fafc")).Background(lipgloss.Color("#0f172a")).Bold(true)
-	terminalPickerQueryStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#dbeafe")).Background(lipgloss.Color("#1d4ed8")).Bold(true)
-	terminalPickerBodyStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#e2e8f0")).Background(lipgloss.Color("#0f172a"))
+	terminalPickerTitleStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#f8fafc")).Background(lipgloss.Color("#0f172a")).Bold(true)
+	terminalPickerQueryStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#dbeafe")).Background(lipgloss.Color("#0b1220")).Bold(true)
+	terminalPickerBodyStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#e2e8f0")).Background(lipgloss.Color("#020617"))
+	pickerBackdropStyle          = lipgloss.NewStyle().Background(lipgloss.Color("#020617"))
+	pickerShadowStyle            = lipgloss.NewStyle().Background(lipgloss.Color("#01040b"))
+	pickerBorderStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("#5fafff"))
+	pickerPanelStyle             = lipgloss.NewStyle().Foreground(lipgloss.Color("#e2e8f0")).Background(lipgloss.Color("#0b1220"))
+	pickerFooterStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("#cbd5e1")).Background(lipgloss.Color("#0b1220"))
+	pickerLineStyle              = lipgloss.NewStyle().Foreground(lipgloss.Color("#cbd5e1")).Background(lipgloss.Color("#0b1220"))
+	pickerSelectedLineStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#020617")).Background(lipgloss.Color("#cbd5e1")).Bold(true)
+	pickerSelectedWorkspaceStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#020617")).Background(lipgloss.Color("#bfdbfe")).Bold(true)
+	pickerCreateRowStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("#d1fae5")).Background(lipgloss.Color("#123524")).Bold(true)
 )
 
 func (m *Model) newViewport(terminalID string, channel uint16, snap *protocol.Snapshot) *Viewport {
@@ -28,14 +38,17 @@ func (m *Model) newViewport(terminalID string, channel uint16, snap *protocol.Sn
 		cols = int(max(20, snap.Size.Cols))
 		rows = int(max(5, snap.Size.Rows))
 	}
+	vt := localvterm.New(cols, rows, 10000, func(data []byte) {
+		ctx, cancel := m.requestContext()
+		defer cancel()
+		_ = m.client.Input(ctx, channel, data)
+	})
+	loadSnapshotIntoVTerm(vt, snap)
 	return &Viewport{
-		TerminalID: terminalID,
-		Channel:    channel,
-		VTerm: localvterm.New(cols, rows, 10000, func(data []byte) {
-			ctx, cancel := m.requestContext()
-			defer cancel()
-			_ = m.client.Input(ctx, channel, data)
-		}),
+		TerminalID:    terminalID,
+		Channel:       channel,
+		AttachMode:    "collaborator",
+		VTerm:         vt,
 		Snapshot:      snap,
 		Command:       []string{m.cfg.DefaultShell},
 		TerminalState: "running",
@@ -54,7 +67,7 @@ func (m *Model) openTerminalPickerCmd() tea.Cmd {
 	return m.openPickerCmd(
 		action,
 		"Terminal Picker",
-		"[Enter] attach  [Tab] split+attach  [Ctrl-k] kill  [Esc] close",
+		"[Enter] attach  [Tab] split+attach  [Ctrl-e] edit  [Ctrl-k] kill  [Esc] close",
 		allowCreate,
 	)
 }
@@ -63,7 +76,7 @@ func (m *Model) openBootstrapTerminalPickerCmd(tabIndex int) tea.Cmd {
 	return m.openPickerCmd(
 		terminalPickerAction{Kind: terminalPickerActionBootstrap, TabIndex: tabIndex},
 		"Choose Terminal",
-		"[Enter] open selected terminal or create new  [Esc] close",
+		"[Enter] open selected terminal or create new  [Ctrl-e] edit  [Esc] close",
 		true,
 	)
 }
@@ -72,7 +85,7 @@ func (m *Model) openNewTabTerminalPickerCmd() tea.Cmd {
 	return m.openPickerCmd(
 		terminalPickerAction{Kind: terminalPickerActionNewTab},
 		"Open Tab",
-		"[Enter] open selected terminal or create new  [Esc] close",
+		"[Enter] open selected terminal or create new  [Ctrl-e] edit  [Esc] close",
 		true,
 	)
 }
@@ -80,8 +93,8 @@ func (m *Model) openNewTabTerminalPickerCmd() tea.Cmd {
 func (m *Model) openSplitTerminalPickerCmd(tabIndex int, targetID string, split SplitDirection) tea.Cmd {
 	return m.openPickerCmd(
 		terminalPickerAction{Kind: terminalPickerActionSplit, TabIndex: tabIndex, TargetID: targetID, Split: split},
-		"Open Viewport",
-		"[Enter] open selected terminal or create new  [Esc] close",
+		"Open Pane",
+		"[Enter] open selected terminal or create new  [Ctrl-e] edit  [Esc] close",
 		true,
 	)
 }
@@ -89,19 +102,22 @@ func (m *Model) openSplitTerminalPickerCmd(tabIndex int, targetID string, split 
 func (m *Model) openFloatingTerminalPickerCmd(tabIndex int) tea.Cmd {
 	return m.openPickerCmd(
 		terminalPickerAction{Kind: terminalPickerActionFloating, TabIndex: tabIndex},
-		"Open Floating Viewport",
-		"[Enter] open selected terminal or create new  [Esc] close",
+		"Open Floating Pane",
+		"[Enter] open selected terminal or create new  [Ctrl-e] edit  [Esc] close",
 		true,
 	)
 }
 
-func (m *Model) openLayoutResolvePickerCmd(plan LayoutCreatePlan) tea.Cmd {
-	title := "Resolve Layout Viewport"
+func (m *Model) openLayoutResolvePickerCmd(plan LayoutCreatePlan, paneIDs []string) tea.Cmd {
+	title := "Resolve Layout Pane"
 	if plan.Terminal.Command != "" {
-		title = "Resolve Layout Viewport: " + plan.Terminal.Command
+		title = "Resolve Layout Pane: " + plan.Terminal.Command
+	}
+	if len(paneIDs) == 0 {
+		paneIDs = []string{plan.PaneID}
 	}
 	return m.openPickerCmd(
-		terminalPickerAction{Kind: terminalPickerActionLayoutResolve, PaneID: plan.PaneID},
+		terminalPickerAction{Kind: terminalPickerActionLayoutResolve, PaneID: plan.PaneID, PaneIDs: append([]string(nil), paneIDs...)},
 		title,
 		"[Enter] attach  [Create New] first row  [Esc] skip",
 		true,
@@ -116,18 +132,6 @@ func (m *Model) openPickerCmd(action terminalPickerAction, title, footer string,
 		result, err := m.client.List(ctx)
 		if err != nil {
 			return terminalPickerLoadedMsg{err: m.wrapClientError("list terminals", err, "title", title)}
-		}
-		if allowCreate && len(result.Terminals) == 0 && action.Kind != terminalPickerActionLayoutResolve {
-			m.logger.Info("picker empty, auto-creating terminal", "title", title)
-			cmd := m.resolveTerminalPickerSelection(action, terminalPickerItem{
-				CreateNew:   true,
-				Label:       "new terminal",
-				Description: "Create a new terminal in this viewport",
-			}, false)
-			if cmd == nil {
-				return nil
-			}
-			return cmd()
 		}
 		picker := &terminalPicker{
 			Title:    title,
@@ -148,7 +152,7 @@ func (m *Model) buildTerminalPickerItems(terminals []protocol.TerminalInfo, allo
 		item := terminalPickerItem{
 			CreateNew:   true,
 			Label:       "new terminal",
-			Description: "Create a new terminal in this viewport",
+			Description: "Create a new terminal in this pane",
 		}
 		item.primeCaches(now)
 		items = append(items, item)
@@ -282,30 +286,28 @@ func (i terminalPickerItem) searchTextValue() string {
 
 func (i terminalPickerItem) lineBodyValue(now time.Time) string {
 	if i.CreateNew {
-		return fmt.Sprintf("+ %s | %s", i.Label, i.Description)
+		return fmt.Sprintf("+ %s  %s", i.Label, i.Description)
 	}
 	marker := "○"
 	if i.Observed {
 		marker = "●"
 	}
-	location := i.Location
-	if location == "" {
-		location = "(orphan)"
-	}
+	label := terminalDisplayLabel(i.Info.Name, i.Info.Command)
 	command := strings.Join(i.Info.Command, " ")
-	if command == "" {
-		command = i.Info.Name
+	state := terminalInfoStateLabel(i.Info)
+	age := formatTerminalAge(i.Info.CreatedAt, now)
+	tags := ""
+	if formatted := formatTerminalTags(i.Info.Tags); formatted != "tags:-" {
+		tags = " | " + formatted
 	}
-	return fmt.Sprintf(
-		"%s %s %s | %s | %s | %s [%s]",
-		marker,
-		i.Info.ID,
-		strings.TrimSpace(command),
-		terminalInfoStateLabel(i.Info),
-		formatTerminalAge(i.Info.CreatedAt, now),
-		formatTerminalTags(i.Info.Tags),
-		location,
-	)
+	location := ""
+	if i.Location != "" && i.Location != "(orphan)" {
+		location = " @" + i.Location
+	}
+	if command == "" || strings.TrimSpace(command) == label {
+		return fmt.Sprintf("%s %s  %s | %s%s%s", marker, label, state, age, tags, location)
+	}
+	return fmt.Sprintf("%s %s  %s | %s | %s%s%s", marker, label, strings.TrimSpace(command), state, age, tags, location)
 }
 
 func (i *terminalPickerItem) line(width int, selected bool) string {
@@ -320,8 +322,14 @@ func (i *terminalPickerItem) line(width int, selected bool) string {
 	}
 	if i.lineWidth != width {
 		i.lineWidth = width
-		i.lineNormal = trimToWidth("  "+i.lineBody, width)
-		i.lineActive = trimToWidth("> "+i.lineBody, width)
+		plain := forceWidthANSI(" "+i.lineBody+" ", width)
+		active := forceWidthANSI(" "+i.lineBody+" ", width)
+		if i.CreateNew {
+			i.lineNormal = pickerCreateRowStyle.Render(plain)
+		} else {
+			i.lineNormal = pickerLineStyle.Render(plain)
+		}
+		i.lineActive = pickerSelectedLineStyle.Render(active)
 	}
 	if selected {
 		return i.lineActive
@@ -373,6 +381,8 @@ func (m *Model) consumeTerminalPickerInput() (int, tea.Cmd, bool) {
 		return 1, m.attachPickerSelection(false), true
 	case '\t':
 		return 1, m.attachPickerSelection(true), true
+	case 0x05:
+		return 1, m.editPickerSelection(), true
 	case 0x7f, 0x08:
 		m.deletePickerRune()
 		return 1, nil, true
@@ -405,6 +415,8 @@ func (m *Model) handleTerminalPickerEvent(event uv.Event) tea.Cmd {
 			return m.attachPickerSelection(false)
 		case event.MatchString("tab"):
 			return m.attachPickerSelection(true)
+		case event.MatchString("ctrl+e"):
+			return m.editPickerSelection()
 		case event.MatchString("up"):
 			m.movePickerSelection(-1)
 		case event.MatchString("down"):
@@ -472,8 +484,16 @@ func (m *Model) attachPickerSelection(split bool) tea.Cmd {
 		m.logger.Info("terminal picker selected terminal", "title", m.terminalPicker.Title, "action", action.Kind, "split", split, "terminal_id", item.Info.ID)
 	}
 	m.terminalPicker = nil
+	m.inputBlocked = false
+	m.notice = ""
 	m.invalidateRender()
-	return m.resolveTerminalPickerSelection(action, item, split)
+	cmd := m.resolveTerminalPickerSelection(action, item, split)
+	if cmd != nil {
+		m.inputBlocked = true
+		m.notice = "opening pane"
+		m.invalidateRender()
+	}
+	return cmd
 }
 
 func (m *Model) closeTerminalPicker() tea.Cmd {
@@ -482,6 +502,7 @@ func (m *Model) closeTerminalPicker() tea.Cmd {
 	}
 	action := m.terminalPicker.Action
 	m.terminalPicker = nil
+	m.inputBlocked = false
 	m.invalidateRender()
 	if action.Kind == terminalPickerActionLayoutResolve {
 		return m.advanceLayoutPromptCmd()
@@ -489,34 +510,60 @@ func (m *Model) closeTerminalPicker() tea.Cmd {
 	return nil
 }
 
+func (m *Model) editPickerSelection() tea.Cmd {
+	if m.terminalPicker == nil || len(m.terminalPicker.Filtered) == 0 {
+		return nil
+	}
+	item := m.terminalPicker.Filtered[m.terminalPicker.Selected]
+	if item.CreateNew || m.terminalPicker.Action.Kind == terminalPickerActionLayoutResolve {
+		return nil
+	}
+	m.logger.Info("terminal picker editing metadata", "title", m.terminalPicker.Title, "terminal_id", item.Info.ID)
+	m.terminalPicker = nil
+	m.inputBlocked = false
+	m.notice = ""
+	m.beginTerminalEditPrompt(item.Info)
+	return nil
+}
+
 func (m *Model) resolveTerminalPickerSelection(action terminalPickerAction, item terminalPickerItem, split bool) tea.Cmd {
 	switch action.Kind {
 	case terminalPickerActionBootstrap:
 		if item.CreateNew {
-			return m.createPaneCmd(action.TabIndex, "", "")
+			m.beginTerminalCreatePrompt(action, nil)
+			return nil
 		}
 		return m.attachTerminalToBootstrapCmd(action.TabIndex, item)
 	case terminalPickerActionNewTab:
+		if item.CreateNew {
+			m.beginTerminalCreatePrompt(action, nil)
+			return nil
+		}
 		m.workspace.Tabs = append(m.workspace.Tabs, newTab(nextTabName(m.workspace.Tabs)))
 		m.workspace.ActiveTab = len(m.workspace.Tabs) - 1
 		m.invalidateRender()
-		if item.CreateNew {
-			return m.createPaneCmd(m.workspace.ActiveTab, "", "")
-		}
 		return m.attachTerminalToBootstrapCmd(m.workspace.ActiveTab, item)
 	case terminalPickerActionSplit:
 		if item.CreateNew {
-			return m.createPaneCmd(action.TabIndex, action.TargetID, action.Split)
+			m.beginTerminalCreatePrompt(action, nil)
+			return nil
 		}
 		return m.attachTerminalToNewPaneCmd(action.TabIndex, action.TargetID, action.Split, item)
 	case terminalPickerActionFloating:
 		if item.CreateNew {
-			return m.createFloatingPaneCmd(action.TabIndex)
+			m.beginTerminalCreatePrompt(action, nil)
+			return nil
 		}
 		return m.attachTerminalToFloatingPaneCmd(action.TabIndex, item)
 	case terminalPickerActionLayoutResolve:
 		if item.CreateNew {
+			if len(action.PaneIDs) > 1 {
+				return m.createTerminalForPaneGroupCmd(action.PaneID, action.PaneIDs)
+			}
 			return m.createTerminalForPaneCmd(action.PaneID)
+		}
+		if len(action.PaneIDs) > 1 {
+			return m.attachTerminalToPaneGroupCmd(action.PaneID, action.PaneIDs, item)
 		}
 		return m.attachTerminalToPaneCmd(action.PaneID, item)
 	default:
@@ -566,67 +613,221 @@ func (m *Model) attachTerminalToActivePaneCmd(item terminalPickerItem) tea.Cmd {
 }
 
 func (m *Model) attachTerminalToPaneCmd(paneID string, item terminalPickerItem) tea.Cmd {
-	existing := findPane(m.workspace.Tabs, paneID)
-	mode := ViewportModeFit
-	offset := Point{}
-	pin := false
-	readonly := false
-	if existing != nil {
-		mode = existing.Mode
-		offset = existing.Offset
-		pin = existing.Pin
-		readonly = existing.Readonly
+	return m.attachTerminalToPaneGroupCmd(paneID, []string{paneID}, item)
+}
+
+func (m *Model) attachTerminalToPaneGroupCmd(promptPaneID string, paneIDs []string, item terminalPickerItem) tea.Cmd {
+	if len(paneIDs) == 0 {
+		return nil
+	}
+	group := make([]string, 0, len(paneIDs))
+	seen := make(map[string]struct{}, len(paneIDs))
+	for _, paneID := range paneIDs {
+		if strings.TrimSpace(paneID) == "" {
+			continue
+		}
+		if _, ok := seen[paneID]; ok {
+			continue
+		}
+		seen[paneID] = struct{}{}
+		group = append(group, paneID)
+	}
+	if len(group) == 0 {
+		return nil
+	}
+	if len(group) == 1 {
+		paneID := group[0]
+		existing := findPane(m.workspace.Tabs, paneID)
+		mode := ViewportModeFit
+		offset := Point{}
+		pin := false
+		readonly := false
+		if existing != nil {
+			mode = existing.Mode
+			offset = existing.Offset
+			pin = existing.Pin
+			readonly = existing.Readonly
+		}
+		return func() tea.Msg {
+			m.logger.Debug("attaching terminal to active pane", "pane_id", paneID, "terminal_id", item.Info.ID)
+			ctx, cancel := m.requestContext()
+			defer cancel()
+			attached, err := m.client.Attach(ctx, item.Info.ID, "collaborator")
+			if err != nil {
+				return errMsg{m.wrapClientError("attach terminal", err, "pane_id", paneID, "terminal_id", item.Info.ID)}
+			}
+			snap, err := m.client.Snapshot(ctx, item.Info.ID, 0, 200)
+			if err != nil {
+				return errMsg{m.wrapClientError("snapshot terminal", err, "pane_id", paneID, "terminal_id", item.Info.ID)}
+			}
+			return paneReplacedMsg{
+				paneID: paneID,
+				pane: &Pane{
+					ID:    paneID,
+					Title: paneTitleForTerminal(item.Info),
+					Viewport: func() *Viewport {
+						view := viewportWithTerminalInfo(m.newViewport(item.Info.ID, attached.Channel, snap), item.Info)
+						view.AttachMode = attached.Mode
+						view.Mode = mode
+						view.Offset = offset
+						view.Pin = pin
+						view.Readonly = readonly
+						return view
+					}(),
+				},
+			}
+		}
 	}
 	return func() tea.Msg {
-		m.logger.Debug("attaching terminal to active pane", "pane_id", paneID, "terminal_id", item.Info.ID)
+		m.logger.Debug("attaching terminal to pane group", "prompt_pane_id", promptPaneID, "pane_ids", group, "terminal_id", item.Info.ID)
 		ctx, cancel := m.requestContext()
 		defer cancel()
-		attached, err := m.client.Attach(ctx, item.Info.ID, "collaborator")
-		if err != nil {
-			return errMsg{m.wrapClientError("attach terminal", err, "pane_id", paneID, "terminal_id", item.Info.ID)}
+		replaced := make([]paneReplacedMsg, 0, len(group))
+		for _, paneID := range group {
+			existing := findPane(m.workspace.Tabs, paneID)
+			if existing == nil {
+				return errMsg{fmt.Errorf("missing pane %q for layout resolve attach", paneID)}
+			}
+			attached, err := m.client.Attach(ctx, item.Info.ID, "collaborator")
+			if err != nil {
+				return errMsg{m.wrapClientError("attach terminal", err, "pane_id", paneID, "terminal_id", item.Info.ID)}
+			}
+			snap, err := m.client.Snapshot(ctx, item.Info.ID, 0, 200)
+			if err != nil {
+				return errMsg{m.wrapClientError("snapshot terminal", err, "pane_id", paneID, "terminal_id", item.Info.ID)}
+			}
+			view := viewportWithTerminalInfo(m.newViewport(item.Info.ID, attached.Channel, snap), item.Info)
+			view.AttachMode = attached.Mode
+			view.Mode = existing.Mode
+			view.Offset = existing.Offset
+			view.Pin = existing.Pin
+			view.Readonly = existing.Readonly
+			replaced = append(replaced, paneReplacedMsg{
+				paneID: paneID,
+				pane: &Pane{
+					ID:       paneID,
+					Title:    paneTitleForTerminal(item.Info),
+					Viewport: view,
+				},
+			})
 		}
-		snap, err := m.client.Snapshot(ctx, item.Info.ID, 0, 200)
-		if err != nil {
-			return errMsg{m.wrapClientError("snapshot terminal", err, "pane_id", paneID, "terminal_id", item.Info.ID)}
-		}
-		return paneReplacedMsg{
-			paneID: paneID,
-			pane: &Pane{
-				ID:    paneID,
-				Title: paneTitleForTerminal(item.Info),
-				Viewport: func() *Viewport {
-					view := viewportWithTerminalInfo(m.newViewport(item.Info.ID, attached.Channel, snap), item.Info)
-					view.Mode = mode
-					view.Offset = offset
-					view.Pin = pin
-					view.Readonly = readonly
-					return view
-				}(),
-			},
-		}
+		return paneGroupReplacedMsg{promptPaneID: promptPaneID, panes: replaced}
 	}
 }
 
 func (m *Model) createTerminalForPaneCmd(paneID string) tea.Cmd {
-	pane := findPane(m.workspace.Tabs, paneID)
-	if pane == nil {
+	return m.createTerminalForPaneGroupCmd(paneID, []string{paneID})
+}
+
+func (m *Model) createTerminalForPaneGroupCmd(promptPaneID string, paneIDs []string) tea.Cmd {
+	if len(paneIDs) == 0 {
 		return nil
 	}
+	group := make([]string, 0, len(paneIDs))
+	seen := make(map[string]struct{}, len(paneIDs))
+	for _, paneID := range paneIDs {
+		if strings.TrimSpace(paneID) == "" {
+			continue
+		}
+		if _, ok := seen[paneID]; ok {
+			continue
+		}
+		seen[paneID] = struct{}{}
+		group = append(group, paneID)
+	}
+	if len(group) == 0 {
+		return nil
+	}
+	if len(group) == 1 {
+		paneID := group[0]
+		pane := findPane(m.workspace.Tabs, paneID)
+		if pane == nil {
+			return nil
+		}
 
-	command := append([]string(nil), pane.Command...)
+		command := append([]string(nil), pane.Command...)
+		if len(command) == 0 {
+			command = []string{m.cfg.DefaultShell}
+		}
+		name := pane.Name
+		tags := cloneStringMap(pane.Tags)
+		mode := pane.Mode
+		offset := pane.Offset
+		pin := pane.Pin
+		readonly := pane.Readonly
+		size := paneCreateSize(pane)
+		tab := m.tabForPane(paneID)
+		if viewW, viewH, ok := m.paneViewportSizeInTab(tab, paneID); ok {
+			size = paneRestartSize(pane, size, viewW, viewH)
+		}
+
+		return func() tea.Msg {
+			ctx, cancel := m.requestContext()
+			defer cancel()
+
+			created, err := m.client.Create(ctx, command, name, size)
+			if err != nil {
+				return errMsg{m.wrapClientError("create terminal", err, "pane_id", paneID)}
+			}
+			if len(tags) > 0 {
+				if err := m.client.SetTags(ctx, created.TerminalID, tags); err != nil {
+					return errMsg{m.wrapClientError("set terminal tags", err, "pane_id", paneID, "terminal_id", created.TerminalID)}
+				}
+			}
+			attached, err := m.client.Attach(ctx, created.TerminalID, "collaborator")
+			if err != nil {
+				return errMsg{m.wrapClientError("attach terminal", err, "pane_id", paneID, "terminal_id", created.TerminalID)}
+			}
+			snap, err := m.client.Snapshot(ctx, created.TerminalID, 0, 200)
+			if err != nil {
+				return errMsg{m.wrapClientError("snapshot terminal", err, "pane_id", paneID, "terminal_id", created.TerminalID)}
+			}
+			if snap != nil {
+				if snap.Size.Cols < size.Cols {
+					snap.Size.Cols = size.Cols
+				}
+				if snap.Size.Rows < size.Rows {
+					snap.Size.Rows = size.Rows
+				}
+			}
+			view := m.newViewport(created.TerminalID, attached.Channel, snap)
+			view.AttachMode = attached.Mode
+			if view.VTerm != nil {
+				view.VTerm.Resize(int(size.Cols), int(size.Rows))
+			}
+			view.Name = name
+			view.Command = command
+			view.Tags = cloneStringMap(tags)
+			view.TerminalState = "running"
+			view.Mode = mode
+			view.Offset = offset
+			view.Pin = pin
+			view.Readonly = readonly
+			return paneReplacedMsg{
+				paneID: paneID,
+				pane: &Pane{
+					ID:       paneID,
+					Title:    paneTitleForCommand(name, firstCommandWord(command), created.TerminalID),
+					Viewport: view,
+				},
+			}
+		}
+	}
+
+	source := findPane(m.workspace.Tabs, group[0])
+	if source == nil {
+		return nil
+	}
+	command := append([]string(nil), source.Command...)
 	if len(command) == 0 {
 		command = []string{m.cfg.DefaultShell}
 	}
-	name := pane.Name
-	tags := cloneStringMap(pane.Tags)
-	mode := pane.Mode
-	offset := pane.Offset
-	pin := pane.Pin
-	readonly := pane.Readonly
-	size := paneCreateSize(pane)
-	tab := m.tabForPane(paneID)
-	if viewW, viewH, ok := m.paneViewportSizeInTab(tab, paneID); ok {
-		size = paneRestartSize(pane, size, viewW, viewH)
+	name := source.Name
+	tags := cloneStringMap(source.Tags)
+	size := paneCreateSize(source)
+	tab := m.tabForPane(group[0])
+	if viewW, viewH, ok := m.paneViewportSizeInTab(tab, group[0]); ok {
+		size = paneRestartSize(source, size, viewW, viewH)
 	}
 
 	return func() tea.Msg {
@@ -635,49 +836,58 @@ func (m *Model) createTerminalForPaneCmd(paneID string) tea.Cmd {
 
 		created, err := m.client.Create(ctx, command, name, size)
 		if err != nil {
-			return errMsg{m.wrapClientError("create terminal", err, "pane_id", paneID)}
+			return errMsg{m.wrapClientError("create terminal", err, "pane_id", promptPaneID)}
 		}
 		if len(tags) > 0 {
 			if err := m.client.SetTags(ctx, created.TerminalID, tags); err != nil {
-				return errMsg{m.wrapClientError("set terminal tags", err, "pane_id", paneID, "terminal_id", created.TerminalID)}
+				return errMsg{m.wrapClientError("set terminal tags", err, "pane_id", promptPaneID, "terminal_id", created.TerminalID)}
 			}
 		}
-		attached, err := m.client.Attach(ctx, created.TerminalID, "collaborator")
-		if err != nil {
-			return errMsg{m.wrapClientError("attach terminal", err, "pane_id", paneID, "terminal_id", created.TerminalID)}
-		}
-		snap, err := m.client.Snapshot(ctx, created.TerminalID, 0, 200)
-		if err != nil {
-			return errMsg{m.wrapClientError("snapshot terminal", err, "pane_id", paneID, "terminal_id", created.TerminalID)}
-		}
-		if snap != nil {
-			if snap.Size.Cols < size.Cols {
-				snap.Size.Cols = size.Cols
+		replaced := make([]paneReplacedMsg, 0, len(group))
+		for _, paneID := range group {
+			pane := findPane(m.workspace.Tabs, paneID)
+			if pane == nil {
+				return errMsg{fmt.Errorf("missing pane %q for layout resolve create", paneID)}
 			}
-			if snap.Size.Rows < size.Rows {
-				snap.Size.Rows = size.Rows
+			attached, err := m.client.Attach(ctx, created.TerminalID, "collaborator")
+			if err != nil {
+				return errMsg{m.wrapClientError("attach terminal", err, "pane_id", paneID, "terminal_id", created.TerminalID)}
 			}
+			snap, err := m.client.Snapshot(ctx, created.TerminalID, 0, 200)
+			if err != nil {
+				return errMsg{m.wrapClientError("snapshot terminal", err, "pane_id", paneID, "terminal_id", created.TerminalID)}
+			}
+			if snap != nil {
+				if snap.Size.Cols < size.Cols {
+					snap.Size.Cols = size.Cols
+				}
+				if snap.Size.Rows < size.Rows {
+					snap.Size.Rows = size.Rows
+				}
+			}
+			view := m.newViewport(created.TerminalID, attached.Channel, snap)
+			view.AttachMode = attached.Mode
+			if view.VTerm != nil {
+				view.VTerm.Resize(int(size.Cols), int(size.Rows))
+			}
+			view.Name = pane.Name
+			view.Command = command
+			view.Tags = cloneStringMap(tags)
+			view.TerminalState = "running"
+			view.Mode = pane.Mode
+			view.Offset = pane.Offset
+			view.Pin = pane.Pin
+			view.Readonly = pane.Readonly
+			replaced = append(replaced, paneReplacedMsg{
+				paneID: paneID,
+				pane: &Pane{
+					ID:       paneID,
+					Title:    paneTitleForCommand(name, firstCommandWord(command), created.TerminalID),
+					Viewport: view,
+				},
+			})
 		}
-		view := m.newViewport(created.TerminalID, attached.Channel, snap)
-		if view.VTerm != nil {
-			view.VTerm.Resize(int(size.Cols), int(size.Rows))
-		}
-		view.Name = name
-		view.Command = command
-		view.Tags = cloneStringMap(tags)
-		view.TerminalState = "running"
-		view.Mode = mode
-		view.Offset = offset
-		view.Pin = pin
-		view.Readonly = readonly
-		return paneReplacedMsg{
-			paneID: paneID,
-			pane: &Pane{
-				ID:       paneID,
-				Title:    paneTitleForCommand(name, firstCommandWord(command), created.TerminalID),
-				Viewport: view,
-			},
-		}
+		return paneGroupReplacedMsg{promptPaneID: promptPaneID, panes: replaced}
 	}
 }
 
@@ -724,9 +934,13 @@ func (m *Model) attachTerminalToBootstrapCmd(tabIndex int, item terminalPickerIt
 		return paneCreatedMsg{
 			tabIndex: tabIndex,
 			pane: &Pane{
-				ID:       paneID,
-				Title:    title,
-				Viewport: viewportWithTerminalInfo(m.newViewport(item.Info.ID, attached.Channel, snap), item.Info),
+				ID:    paneID,
+				Title: title,
+				Viewport: func() *Viewport {
+					view := viewportWithTerminalInfo(m.newViewport(item.Info.ID, attached.Channel, snap), item.Info)
+					view.AttachMode = attached.Mode
+					return view
+				}(),
 			},
 		}
 	}
@@ -751,9 +965,13 @@ func (m *Model) attachTerminalToNewPaneCmd(tabIndex int, targetID string, split 
 			targetID: targetID,
 			split:    split,
 			pane: &Pane{
-				ID:       paneID,
-				Title:    paneTitleForTerminal(item.Info),
-				Viewport: viewportWithTerminalInfo(m.newViewport(item.Info.ID, attached.Channel, snap), item.Info),
+				ID:    paneID,
+				Title: paneTitleForTerminal(item.Info),
+				Viewport: func() *Viewport {
+					view := viewportWithTerminalInfo(m.newViewport(item.Info.ID, attached.Channel, snap), item.Info)
+					view.AttachMode = attached.Mode
+					return view
+				}(),
 			},
 		}
 	}
@@ -774,6 +992,7 @@ func (m *Model) attachTerminalToFloatingPaneCmd(tabIndex int, item terminalPicke
 		}
 		paneID := m.nextPaneID()
 		view := viewportWithTerminalInfo(m.newViewport(item.Info.ID, attached.Channel, snap), item.Info)
+		view.AttachMode = attached.Mode
 		view.Mode = ViewportModeFixed
 		return paneCreatedMsg{
 			tabIndex: tabIndex,
@@ -815,24 +1034,17 @@ func viewportWithTerminalInfo(viewport *Viewport, info protocol.TerminalInfo) *V
 }
 
 func (m *Model) renderTerminalPicker() string {
-	tabBar := m.renderTabBar()
-	status := m.renderStatus()
-	contentHeight := max(1, m.height-2)
-	canvas := newCanvas(m.width, contentHeight)
 	title := "Terminal Picker"
 	if m.terminalPicker != nil && m.terminalPicker.Title != "" {
 		title = m.terminalPicker.Title
 	}
-	contentWidth := max(1, m.width-4)
-	canvas.drawText(Rect{X: 2, Y: 1, W: contentWidth, H: 1}, []string{terminalPickerTitleStyle.Render(title)})
 	query := ""
 	if m.terminalPicker != nil {
 		query = m.terminalPicker.Query
 	}
-	canvas.drawText(Rect{X: 2, Y: 3, W: contentWidth, H: 1}, []string{terminalPickerQueryStyle.Render(" query: " + query + "_" + " ")})
-
-	lines := make([]string, 0, max(0, contentHeight-7))
+	lines := make([]string, 0, 16)
 	if m.terminalPicker != nil {
+		contentWidth := m.centeredPickerInnerWidth()
 		if m.terminalPicker.RenderWidth != contentWidth {
 			m.terminalPicker.RenderWidth = contentWidth
 			for i := range m.terminalPicker.Items {
@@ -847,13 +1059,76 @@ func (m *Model) renderTerminalPicker() string {
 	if len(lines) == 0 {
 		lines = []string{"  no terminals match"}
 	}
-	canvas.drawText(Rect{X: 2, Y: 5, W: contentWidth, H: max(1, contentHeight-7)}, lines)
-	canvas.drawText(Rect{X: 2, Y: max(6, contentHeight-2), W: contentWidth, H: 1}, []string{
-		trimToWidth(coalesce(m.terminalPicker.Footer, "[Enter] attach  [Tab] split+attach  [Ctrl-k] kill  [Esc] close"), contentWidth),
-	})
+	return m.renderCenteredPickerModal(
+		title,
+		query,
+		lines,
+		coalesce(m.terminalPicker.Footer, "[Enter] attach  [Tab] split+attach  [Ctrl-e] edit  [Ctrl-k] kill  [Esc] close"),
+	)
+}
 
-	body := terminalPickerBodyStyle.Render(forceHeight(canvas.String(), contentHeight))
+func (m *Model) centeredPickerInnerWidth() int {
+	modalWidth := min(max(54, m.width/2), 84)
+	modalWidth = min(modalWidth, max(30, m.width-12))
+	return max(24, modalWidth-2)
+}
+
+func (m *Model) renderCenteredPickerModal(title, query string, items []string, footer string) string {
+	tabBar := m.renderTabBar()
+	status := m.renderStatus()
+	contentHeight := max(1, m.height-2)
+	innerWidth := m.centeredPickerInnerWidth()
+	maxListHeight := max(4, min(10, contentHeight-8))
+	listHeight := min(max(4, len(items)), maxListHeight)
+	modalHeight := min(max(8, listHeight+4), max(8, contentHeight-2))
+	listHeight = max(1, modalHeight-4)
+
+	lines := make([]string, 0, modalHeight)
+	lines = append(lines, centeredPickerBorderLine("top", innerWidth, title))
+	lines = append(lines, centeredPickerContentLine("", innerWidth))
+	lines = append(lines, centeredPickerContentLine(terminalPickerQueryStyle.Render(forceWidthANSI("search: "+query+"_", innerWidth)), innerWidth))
+	for i := 0; i < listHeight; i++ {
+		content := ""
+		if i < len(items) {
+			content = items[i]
+		}
+		lines = append(lines, centeredPickerContentLine(content, innerWidth))
+	}
+	lines = append(lines, centeredPickerContentLine("", innerWidth))
+	lines = append(lines, centeredPickerContentLine(pickerFooterStyle.Render(forceWidthANSI(footer, innerWidth)), innerWidth))
+	lines = append(lines, centeredPickerBorderLine("bottom", innerWidth, ""))
+
+	card := strings.Join(lines, "\n")
+	body := lipgloss.Place(
+		m.width,
+		contentHeight,
+		lipgloss.Center,
+		lipgloss.Center,
+		card,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceBackground(lipgloss.Color("#020617")),
+	)
+	body = terminalPickerBodyStyle.Render(forceHeight(body, contentHeight))
 	return strings.Join([]string{tabBar, body, status}, "\n")
+}
+
+func centeredPickerBorderLine(edge string, innerWidth int, title string) string {
+	switch edge {
+	case "top":
+		title = xansi.Truncate(" "+title+" ", innerWidth, "")
+		return pickerBorderStyle.Render("┌") +
+			terminalPickerTitleStyle.Render(title) +
+			pickerBorderStyle.Render(strings.Repeat("─", max(0, innerWidth-xansi.StringWidth(title)))) +
+			pickerBorderStyle.Render("┐")
+	default:
+		return pickerBorderStyle.Render("└" + strings.Repeat("─", innerWidth) + "┘")
+	}
+}
+
+func centeredPickerContentLine(content string, innerWidth int) string {
+	return pickerBorderStyle.Render("│") +
+		forceWidthANSI(content, innerWidth) +
+		pickerBorderStyle.Render("│")
 }
 
 func terminalInfoStateLabel(info protocol.TerminalInfo) string {

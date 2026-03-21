@@ -612,6 +612,76 @@ func TestObserverAttachCannotWriteOrResize(t *testing.T) {
 	}
 }
 
+func TestHandleRequestKillDeniedForObserverAttachment(t *testing.T) {
+	ctx := context.Background()
+	srv := NewServer()
+
+	info, err := srv.Create(ctx, CreateOptions{
+		ID:      "observer-kill-01",
+		Command: []string{"bash", "--noprofile", "--norc"},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create failed: %v", err)
+	}
+
+	allocator := protocol.NewChannelAllocator()
+	attachments := make(map[uint16]*sessionAttachment)
+	var attachmentsMu sync.RWMutex
+	sendFrame := func(uint16, uint8, []byte) error { return nil }
+
+	mustAttachChannel(t, srv, ctx, "memory", allocator, attachments, &attachmentsMu, info.ID, string(ModeObserver), sendFrame)
+
+	_, code, err := srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+		ID:     1,
+		Method: "kill",
+		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
+	}, sendFrame)
+	if !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("expected ErrPermissionDenied, got %v", err)
+	}
+	if code != 403 {
+		t.Fatalf("expected 403 for observer kill, got %d", code)
+	}
+}
+
+func TestHandleRequestKillAllowedForCollaboratorAttachment(t *testing.T) {
+	ctx := context.Background()
+	srv := NewServer()
+
+	info, err := srv.Create(ctx, CreateOptions{
+		ID:      "collab-kill-01",
+		Command: []string{"bash", "--noprofile", "--norc"},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create failed: %v", err)
+	}
+
+	allocator := protocol.NewChannelAllocator()
+	attachments := make(map[uint16]*sessionAttachment)
+	var attachmentsMu sync.RWMutex
+	sendFrame := func(uint16, uint8, []byte) error { return nil }
+
+	mustAttachChannel(t, srv, ctx, "memory", allocator, attachments, &attachmentsMu, info.ID, string(ModeCollaborator), sendFrame)
+
+	_, code, err := srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+		ID:     1,
+		Method: "kill",
+		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
+	}, sendFrame)
+	if err != nil {
+		t.Fatalf("expected collaborator kill to succeed, got %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("expected success code 0, got %d", code)
+	}
+}
+
 func TestRevokeCollaboratorsTurnsCollaboratorChannelReadOnly(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -755,6 +825,9 @@ func TestServerOptionsAndHelpers(t *testing.T) {
 	}
 	if got := protocolErrorCode(ErrDuplicateID); got != 409 {
 		t.Fatalf("unexpected duplicate-id code: %d", got)
+	}
+	if got := protocolErrorCode(ErrPermissionDenied); got != 403 {
+		t.Fatalf("unexpected permission-denied code: %d", got)
 	}
 	if got := protocolErrorCode(ErrInvalidCommand); got != 400 {
 		t.Fatalf("unexpected invalid-command code: %d", got)
@@ -902,7 +975,7 @@ func TestServerSendKeysCtrlCStopsForegroundProcess(t *testing.T) {
 	})
 }
 
-func TestHandleRequestGetResizeSetTagsAndSnapshot(t *testing.T) {
+func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 	ctx := context.Background()
 	srv := NewServer(WithDefaultKeepAfterExit(10 * time.Second))
 
@@ -955,6 +1028,14 @@ func TestHandleRequestGetResizeSetTagsAndSnapshot(t *testing.T) {
 		t.Fatalf("set_tags request failed: %v", err)
 	}
 
+	if _, _, err := srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+		ID:     4,
+		Method: "set_metadata",
+		Params: mustJSON(t, protocol.SetMetadataParams{TerminalID: info.ID, Name: "dev-shell", Tags: map[string]string{"status": "idle", "team": "infra"}}),
+	}, sendFrame); err != nil {
+		t.Fatalf("set_metadata request failed: %v", err)
+	}
+
 	result, _, err = srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
 		ID:     30,
 		Method: "get",
@@ -963,10 +1044,11 @@ func TestHandleRequestGetResizeSetTagsAndSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get after update failed: %v", err)
 	}
+	got = protocol.TerminalInfo{}
 	if err := json.Unmarshal(result, &got); err != nil {
 		t.Fatalf("unmarshal updated get result failed: %v", err)
 	}
-	if got.Size != (protocol.Size{Cols: 100, Rows: 40}) || got.Tags["status"] != "idle" {
+	if got.Size != (protocol.Size{Cols: 100, Rows: 40}) || got.Tags["status"] != "idle" || got.Tags["team"] != "infra" || got.Tags["group"] != "" || got.Name != "dev-shell" {
 		t.Fatalf("stale get result after updates: %#v", got)
 	}
 
@@ -1097,7 +1179,7 @@ func TestHandleRequestRejectsMalformedParams(t *testing.T) {
 	var attachmentsMu sync.RWMutex
 	sendFrame := func(uint16, uint8, []byte) error { return nil }
 
-	methods := []string{"create", "get", "kill", "resize", "set_tags", "snapshot", "attach", "detach"}
+	methods := []string{"create", "get", "kill", "resize", "set_tags", "set_metadata", "snapshot", "attach", "detach"}
 	for _, method := range methods {
 		t.Run(method, func(t *testing.T) {
 			_, code, err := srv.handleRequest(context.Background(), "memory", allocator, attachments, &attachmentsMu, protocol.Request{

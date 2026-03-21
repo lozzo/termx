@@ -272,6 +272,16 @@ func (t *Terminal) SetTags(tags map[string]string) {
 	t.invalidateProtocolInfoCacheLocked()
 }
 
+func (t *Terminal) SetMetadata(name string, tags map[string]string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if trimmed := strings.TrimSpace(name); trimmed != "" {
+		t.name = trimmed
+	}
+	t.tags = copyTags(tags)
+	t.invalidateProtocolInfoCacheLocked()
+}
+
 func (t *Terminal) AddAttachment(id, remote string, mode AttachMode) {
 	t.attachMu.Lock()
 	defer t.attachMu.Unlock()

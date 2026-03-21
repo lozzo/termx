@@ -306,6 +306,21 @@ C-a s → Picker 列出所有 Workspace → 选择切换
 切换 Workspace 不影响任何 Terminal 的运行状态
 ```
 
+### Metadata 变更语义
+
+- terminal 的 `name` / `tags` 是可变元数据，可以在运行中的 TUI 里修改
+- 已经存在的 workspace / pane 绑定关系仍然以 `terminal_id` 为准
+  - 也就是说，改了 tags 之后，现有 workspace 不会自动重排、不会把 pane 挪走
+  - 这样可以保证用户眼前的布局稳定，不会因为元数据调整而“跳布局”
+- metadata 改动会立即反映到所有已 attach 该 terminal 的 pane 标题 / tags 展示
+- 只有后续重新加载 layout、重新做一次 resolve / arrange、或者新开 picker / 搜索时，新的 tags 才会参与匹配
+
+换句话说：
+
+1. `terminal_id` 决定“当前已经绑上的 pane 还在不在”
+2. `tags` 决定“未来再次匹配 / 组织时怎么选”
+3. 如果想按新 tags 重新整理布局，应该触发一次显式的 reload / re-resolve，而不是隐式自动搬动
+
 ### 布局保存
 
 当前运行时的布局可以保存为 YAML 文件：
@@ -319,8 +334,8 @@ C-a : save-layout mysetup
     - 绑定的 Terminal 的 command（用于创建）
     - Viewport 模式（fit/fixed）
     - 分割方向和比例
-    - 浮动 Viewport 的大小（第一阶段）
-    - 浮动 Viewport 的位置锚点由布局文件的 `position` 或默认 `center` 决定
+    - 浮动 Viewport 的大小
+    - 浮动 Viewport 的位置锚点（center / 四角）
 → 写入 ~/.config/termx/layouts/mysetup.yaml
 ```
 

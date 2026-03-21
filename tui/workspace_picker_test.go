@@ -35,11 +35,15 @@ func TestPrefixSOpensWorkspacePickerAndCreatesWorkspace(t *testing.T) {
 	if len(model.workspacePicker.Filtered) != 2 {
 		t.Fatalf("expected create row plus current workspace, got %d items", len(model.workspacePicker.Filtered))
 	}
-
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd != nil {
 		if next := mustRunCmd(t, cmd); next != nil {
-			_, _ = model.Update(next)
+			_, nextCmd := model.Update(next)
+			if nextCmd != nil {
+				if follow := mustRunCmd(t, nextCmd); follow != nil {
+					_, _ = model.Update(follow)
+				}
+			}
 		}
 	}
 
@@ -49,12 +53,18 @@ func TestPrefixSOpensWorkspacePickerAndCreatesWorkspace(t *testing.T) {
 	if model.workspace.Name != "workspace-2" {
 		t.Fatalf("expected new workspace name workspace-2, got %q", model.workspace.Name)
 	}
+	if model.terminalPicker == nil {
+		t.Fatal("expected empty new workspace to bootstrap terminal chooser when reusable terminals already exist")
+	}
+	if model.terminalPicker.Title != "Choose Terminal" {
+		t.Fatalf("expected bootstrap chooser title, got %q", model.terminalPicker.Title)
+	}
 	tab := model.currentTab()
 	if tab == nil {
 		t.Fatal("expected current tab in new workspace")
 	}
 	if len(tab.Panes) != 0 {
-		t.Fatalf("expected new workspace to start blank, got %d panes", len(tab.Panes))
+		t.Fatalf("expected new workspace to remain empty until chooser selection, got %d panes", len(tab.Panes))
 	}
 }
 
@@ -98,6 +108,44 @@ func TestWorkspacePickerSwitchRestoresPreviousWorkspaceLayout(t *testing.T) {
 	}
 	if len(client.attachedIDs) < originalAttached+2 {
 		t.Fatalf("expected switching back to reattach both panes, got %v", client.attachedIDs)
+	}
+}
+
+func TestCreateWorkspaceBootstrapsCenteredTerminalChooserWhenReusableTerminalsExist(t *testing.T) {
+	client := &fakeClient{
+		listResult: []protocol.TerminalInfo{
+			{ID: "shared-001", Name: "worker", Command: []string{"tail", "-f", "worker.log"}, State: "running"},
+		},
+	}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh", Workspace: "main"})
+	model.width = 120
+	model.height = 40
+
+	msg := mustRunCmd(t, model.Init())
+	_, cmd := model.Update(msg)
+	if cmd != nil {
+		if next := mustRunCmd(t, cmd); next != nil {
+			_, _ = model.Update(next)
+		}
+	}
+
+	cmd = model.createWorkspaceCmd("workspace-2")
+	msg = mustRunCmd(t, cmd)
+	_, cmd = model.Update(msg)
+	if cmd != nil {
+		if next := mustRunCmd(t, cmd); next != nil {
+			_, _ = model.Update(next)
+		}
+	}
+
+	if model.workspace.Name != "workspace-2" {
+		t.Fatalf("expected switched workspace, got %q", model.workspace.Name)
+	}
+	if model.terminalPicker == nil {
+		t.Fatal("expected empty workspace bootstrap to open terminal chooser when terminals already exist")
+	}
+	if model.terminalPicker.Title != "Choose Terminal" {
+		t.Fatalf("expected bootstrap chooser title, got %q", model.terminalPicker.Title)
 	}
 }
 

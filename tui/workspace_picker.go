@@ -96,8 +96,13 @@ func (i *workspacePickerItem) line(width int, selected bool) string {
 	}
 	if i.lineWidth != width {
 		i.lineWidth = width
-		i.lineNormal = trimToWidth("  "+i.lineBody, width)
-		i.lineActive = trimToWidth("> "+i.lineBody, width)
+		plain := forceWidthANSI(" "+i.lineBody+" ", width)
+		if i.CreateNew {
+			i.lineNormal = pickerCreateRowStyle.Render(plain)
+		} else {
+			i.lineNormal = pickerLineStyle.Render(plain)
+		}
+		i.lineActive = pickerSelectedWorkspaceStyle.Render(plain)
 	}
 	if selected {
 		return i.lineActive
@@ -241,24 +246,17 @@ func (m *Model) activateWorkspacePickerSelection() tea.Cmd {
 }
 
 func (m *Model) renderWorkspacePicker() string {
-	tabBar := m.renderTabBar()
-	status := m.renderStatus()
-	contentHeight := max(1, m.height-2)
-	canvas := newCanvas(m.width, contentHeight)
 	title := "Workspace Picker"
 	if m.workspacePicker != nil && m.workspacePicker.Title != "" {
 		title = m.workspacePicker.Title
 	}
-	contentWidth := max(1, m.width-4)
-	canvas.drawText(Rect{X: 2, Y: 1, W: contentWidth, H: 1}, []string{terminalPickerTitleStyle.Render(title)})
 	query := ""
 	if m.workspacePicker != nil {
 		query = m.workspacePicker.Query
 	}
-	canvas.drawText(Rect{X: 2, Y: 3, W: contentWidth, H: 1}, []string{terminalPickerQueryStyle.Render(" query: " + query + "_" + " ")})
-
-	lines := make([]string, 0, max(0, contentHeight-7))
+	lines := make([]string, 0, 16)
 	if m.workspacePicker != nil {
+		contentWidth := m.centeredPickerInnerWidth()
 		if m.workspacePicker.RenderWidth != contentWidth {
 			m.workspacePicker.RenderWidth = contentWidth
 			for i := range m.workspacePicker.Items {
@@ -273,16 +271,11 @@ func (m *Model) renderWorkspacePicker() string {
 	if len(lines) == 0 {
 		lines = []string{"  no workspaces match"}
 	}
-	canvas.drawText(Rect{X: 2, Y: 5, W: contentWidth, H: max(1, contentHeight-7)}, lines)
 	footer := "[Enter] switch or create  [Esc] close"
 	if m.workspacePicker != nil && m.workspacePicker.Footer != "" {
 		footer = m.workspacePicker.Footer
 	}
-	canvas.drawText(Rect{X: 2, Y: max(6, contentHeight-2), W: contentWidth, H: 1}, []string{
-		trimToWidth(footer, contentWidth),
-	})
-	body := terminalPickerBodyStyle.Render(forceHeight(canvas.String(), contentHeight))
-	return strings.Join([]string{tabBar, body, status}, "\n")
+	return m.renderCenteredPickerModal(title, query, lines, footer)
 }
 
 func (m *Model) snapshotCurrentWorkspace() {
@@ -342,10 +335,12 @@ func (m *Model) createWorkspaceCmd(name string) tea.Cmd {
 		index = len(m.workspaceOrder) - 1
 	}
 	return func() tea.Msg {
+		workspace := m.workspaceStore[name]
 		return workspaceActivatedMsg{
-			workspace: m.workspaceStore[name],
+			workspace: workspace,
 			index:     index,
 			notice:    "workspace: " + name,
+			bootstrap: workspaceNeedsBootstrap(workspace),
 		}
 	}
 }
@@ -371,8 +366,92 @@ func (m *Model) switchWorkspaceCmd(name string) tea.Cmd {
 			workspace: workspace,
 			index:     index,
 			notice:    "workspace: " + name,
+			bootstrap: workspaceNeedsBootstrap(workspace),
 		}
 	}
+}
+
+func (m *Model) activateWorkspaceByOffset(delta int) tea.Cmd {
+	m.ensureWorkspaceStore()
+	if len(m.workspaceOrder) == 0 || delta == 0 {
+		return nil
+	}
+	next := (m.activeWorkspace + delta) % len(m.workspaceOrder)
+	if next < 0 {
+		next += len(m.workspaceOrder)
+	}
+	return m.switchWorkspaceCmd(m.workspaceOrder[next])
+}
+
+func (m *Model) renameCurrentWorkspace(name string) {
+	m.ensureWorkspaceStore()
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	oldName := strings.TrimSpace(m.workspace.Name)
+	if oldName == "" {
+		oldName = nextWorkspaceName(m.workspaceOrder)
+	}
+	if name == oldName {
+		return
+	}
+	if _, exists := m.workspaceStore[name]; exists {
+		return
+	}
+	delete(m.workspaceStore, oldName)
+	m.workspace.Name = name
+	if m.activeWorkspace >= 0 && m.activeWorkspace < len(m.workspaceOrder) {
+		m.workspaceOrder[m.activeWorkspace] = name
+	}
+	m.workspaceStore[name] = m.workspace
+}
+
+func (m *Model) deleteCurrentWorkspaceCmd() tea.Cmd {
+	m.ensureWorkspaceStore()
+	if len(m.workspaceOrder) <= 1 || m.activeWorkspace < 0 || m.activeWorkspace >= len(m.workspaceOrder) {
+		return nil
+	}
+	index := m.activeWorkspace
+	name := m.workspaceOrder[index]
+	delete(m.workspaceStore, name)
+	m.workspaceOrder = append(m.workspaceOrder[:index], m.workspaceOrder[index+1:]...)
+	if index >= len(m.workspaceOrder) {
+		index = len(m.workspaceOrder) - 1
+	}
+	nextName := m.workspaceOrder[index]
+	workspace := m.workspaceStore[nextName]
+	return func() tea.Msg {
+		ctx, cancel := m.requestContext()
+		defer cancel()
+		result, err := m.client.List(ctx)
+		if err != nil {
+			return errMsg{m.wrapClientError("list terminals", err)}
+		}
+		if err := m.hydrateWorkspaceRuntime(&workspace, result.Terminals); err != nil {
+			return errMsg{err}
+		}
+		return workspaceActivatedMsg{
+			workspace: workspace,
+			index:     index,
+			notice:    "workspace: " + nextName,
+			bootstrap: workspaceNeedsBootstrap(workspace),
+		}
+	}
+}
+
+func workspaceNeedsBootstrap(workspace Workspace) bool {
+	if len(workspace.Tabs) == 0 {
+		return true
+	}
+	if workspace.ActiveTab < 0 || workspace.ActiveTab >= len(workspace.Tabs) {
+		return true
+	}
+	tab := workspace.Tabs[workspace.ActiveTab]
+	if tab == nil {
+		return true
+	}
+	return len(tab.Panes) == 0
 }
 
 func (m *Model) hydrateWorkspaceRuntime(workspace *Workspace, terminals []protocol.TerminalInfo) error {
@@ -407,6 +486,7 @@ func (m *Model) hydrateWorkspaceRuntime(workspace *Workspace, terminals []protoc
 				return m.wrapClientError("snapshot terminal", err, "terminal_id", pane.TerminalID)
 			}
 			view := m.newViewport(pane.TerminalID, attached.Channel, snap)
+			view.AttachMode = attached.Mode
 			view = viewportWithTerminalInfo(view, *info)
 			view.Mode = pane.Mode
 			view.Offset = pane.Offset

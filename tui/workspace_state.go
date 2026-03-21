@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -27,14 +28,15 @@ type workspaceStateEntry struct {
 }
 
 type workspaceStateTab struct {
-	Name            string                   `json:"name"`
-	ActivePaneID    string                   `json:"active_pane_id,omitempty"`
-	ZoomedPaneID    string                   `json:"zoomed_pane_id,omitempty"`
-	LayoutPreset    int                      `json:"layout_preset,omitempty"`
-	FloatingVisible bool                     `json:"floating_visible"`
-	Root            *workspaceStateNode      `json:"root,omitempty"`
-	Panes           []workspaceStatePane     `json:"panes"`
-	Floating        []workspaceStateFloating `json:"floating,omitempty"`
+	Name              string                   `json:"name"`
+	ActivePaneID      string                   `json:"active_pane_id,omitempty"`
+	ZoomedPaneID      string                   `json:"zoomed_pane_id,omitempty"`
+	LayoutPreset      int                      `json:"layout_preset,omitempty"`
+	FloatingVisible   bool                     `json:"floating_visible"`
+	AutoAcquireResize bool                     `json:"auto_acquire_resize,omitempty"`
+	Root              *workspaceStateNode      `json:"root,omitempty"`
+	Panes             []workspaceStatePane     `json:"panes"`
+	Floating          []workspaceStateFloating `json:"floating,omitempty"`
 }
 
 type workspaceStatePane struct {
@@ -247,13 +249,14 @@ func exportWorkspaceStateEntry(workspace *Workspace) (*workspaceStateEntry, erro
 			continue
 		}
 		tabEntry := workspaceStateTab{
-			Name:            tab.Name,
-			ActivePaneID:    tab.ActivePaneID,
-			ZoomedPaneID:    tab.ZoomedPaneID,
-			LayoutPreset:    tab.LayoutPreset,
-			FloatingVisible: tab.FloatingVisible,
-			Panes:           make([]workspaceStatePane, 0, len(tab.Panes)),
-			Floating:        make([]workspaceStateFloating, 0, len(tab.Floating)),
+			Name:              tab.Name,
+			ActivePaneID:      tab.ActivePaneID,
+			ZoomedPaneID:      tab.ZoomedPaneID,
+			LayoutPreset:      tab.LayoutPreset,
+			FloatingVisible:   tab.FloatingVisible,
+			AutoAcquireResize: tab.AutoAcquireResize,
+			Panes:             make([]workspaceStatePane, 0, len(tab.Panes)),
+			Floating:          make([]workspaceStateFloating, 0, len(tab.Floating)),
 		}
 		if tab.Root != nil {
 			tabEntry.Root = exportWorkspaceStateNode(tab.Root)
@@ -301,7 +304,10 @@ func exportWorkspaceStateEntry(workspace *Workspace) (*workspaceStateEntry, erro
 func parseWorkspaceStateJSON(data []byte) (*workspaceStateFile, error) {
 	var state workspaceStateFile
 	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, err
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		if decodeErr := decoder.Decode(&state); decodeErr != nil {
+			return nil, err
+		}
 	}
 	if state.Version == 0 {
 		state.Version = 1
@@ -365,6 +371,7 @@ func buildWorkspaceFromStateEntry(entry workspaceStateEntry, terminals []protoco
 		tab.ZoomedPaneID = tabState.ZoomedPaneID
 		tab.LayoutPreset = tabState.LayoutPreset
 		tab.FloatingVisible = tabState.FloatingVisible
+		tab.AutoAcquireResize = tabState.AutoAcquireResize
 		for _, paneState := range tabState.Panes {
 			pane := &Pane{
 				ID:    paneState.ID,

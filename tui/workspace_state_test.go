@@ -9,6 +9,24 @@ import (
 	"github.com/lozzow/termx/protocol"
 )
 
+func TestParseWorkspaceStateJSONAllowsTrailingGarbageAfterFirstObject(t *testing.T) {
+	state, err := parseWorkspaceStateJSON([]byte(`{
+  "version": 1,
+  "workspace": {
+    "name": "main",
+    "active_tab": 0,
+    "tabs": []
+  }
+}
+noise`))
+	if err != nil {
+		t.Fatalf("expected trailing garbage to be ignored, got %v", err)
+	}
+	if state.Workspace.Name != "main" {
+		t.Fatalf("expected workspace main, got %q", state.Workspace.Name)
+	}
+}
+
 func TestLoadWorkspaceStateCmdRestoresRunningAndMissingPanes(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -193,6 +211,145 @@ tabs:
 	}
 	if tab := model.currentTab(); tab == nil || tab.Name != "state-tab" {
 		t.Fatalf("expected restored state tab, got %#v", tab)
+	}
+}
+
+func TestInitWithEmptyWorkspaceStateFallsBackToStartupPicker(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	statePath := filepath.Join(home, "workspace-state.json")
+	if err := os.WriteFile(statePath, []byte(`{
+  "version": 1,
+  "workspace": {
+    "name": "empty-ws",
+    "active_tab": 0,
+    "tabs": [
+      {
+        "name": "empty-tab",
+        "floating_visible": true,
+        "panes": []
+      }
+    ]
+  }
+}`), 0o644); err != nil {
+		t.Fatalf("write workspace state: %v", err)
+	}
+
+	model := NewModel(&fakeClient{
+		listResult: []protocol.TerminalInfo{
+			{ID: "shared-001", Name: "worker", Command: []string{"tail", "-f", "worker.log"}, State: "running"},
+		},
+	}, Config{
+		DefaultShell:       "/bin/sh",
+		StartupPicker:      true,
+		WorkspaceStatePath: statePath,
+	})
+
+	msg := mustRunCmd(t, model.Init())
+	_, cmd := model.Update(msg)
+	if cmd != nil {
+		if next := mustRunCmd(t, cmd); next != nil {
+			_, _ = model.Update(next)
+		}
+	}
+
+	if model.workspace.Name != "empty-ws" {
+		t.Fatalf("expected empty workspace state to be restored first, got %q", model.workspace.Name)
+	}
+	if model.terminalPicker == nil {
+		t.Fatal("expected empty workspace state to fall back to startup picker")
+	}
+	if model.terminalPicker.Title != "Choose Terminal" {
+		t.Fatalf("expected startup picker title, got %q", model.terminalPicker.Title)
+	}
+	if tab := model.currentTab(); tab == nil || len(tab.Panes) != 0 {
+		t.Fatalf("expected empty workspace tab to remain empty before picker selection, got %#v", tab)
+	}
+}
+
+func TestInitWithInvalidWorkspaceStateFallsBackToStartupPicker(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	statePath := filepath.Join(home, "workspace-state.json")
+	if err := os.WriteFile(statePath, []byte("not-json"), 0o644); err != nil {
+		t.Fatalf("write workspace state: %v", err)
+	}
+
+	model := NewModel(&fakeClient{
+		listResult: []protocol.TerminalInfo{
+			{ID: "shared-001", Name: "worker", Command: []string{"tail", "-f", "worker.log"}, State: "running"},
+		},
+	}, Config{
+		DefaultShell:       "/bin/sh",
+		StartupPicker:      true,
+		WorkspaceStatePath: statePath,
+	})
+
+	msg := mustRunCmd(t, model.Init())
+	_, cmd := model.Update(msg)
+	if cmd != nil {
+		if next := mustRunCmd(t, cmd); next != nil {
+			_, _ = model.Update(next)
+		}
+	}
+
+	if model.terminalPicker == nil {
+		t.Fatal("expected invalid workspace state to fall back to startup picker")
+	}
+	if model.err != nil {
+		t.Fatalf("expected invalid workspace state to be downgraded, got %v", model.err)
+	}
+}
+
+func TestInitWithEmptyWorkspaceStateAndNoTerminalsCreatesFirstPane(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	statePath := filepath.Join(home, "workspace-state.json")
+	if err := os.WriteFile(statePath, []byte(`{
+  "version": 1,
+  "workspace": {
+    "name": "empty-ws",
+    "active_tab": 0,
+    "tabs": [
+      {
+        "name": "empty-tab",
+        "floating_visible": false,
+        "panes": []
+      }
+    ]
+  }
+}`), 0o644); err != nil {
+		t.Fatalf("write workspace state: %v", err)
+	}
+
+	model := NewModel(&fakeClient{}, Config{
+		DefaultShell:       "/bin/sh",
+		StartupPicker:      true,
+		WorkspaceStatePath: statePath,
+	})
+
+	msg := mustRunCmd(t, model.Init())
+	_, cmd := model.Update(msg)
+	if cmd != nil {
+		if next := mustRunCmd(t, cmd); next != nil {
+			_, nextCmd := model.Update(next)
+			if nextCmd != nil {
+				if follow := mustRunCmd(t, nextCmd); follow != nil {
+					_, _ = model.Update(follow)
+				}
+			}
+		}
+	}
+
+	tab := model.currentTab()
+	if tab == nil || len(tab.Panes) != 0 {
+		t.Fatalf("expected empty workspace startup to wait for explicit terminal creation, got %#v", tab)
+	}
+	if model.terminalPicker == nil || len(model.terminalPicker.Filtered) != 1 || !model.terminalPicker.Filtered[0].CreateNew {
+		t.Fatalf("expected empty workspace startup to open create-only terminal picker, got %#v", model.terminalPicker)
 	}
 }
 
@@ -563,5 +720,181 @@ func TestLoadWorkspaceStateCmdRestoresWorkspaceSetAndSwitchesBetweenThem(t *test
 	}
 	if pane := model.currentTab().Panes[model.currentTab().ActivePaneID]; pane == nil || pane.TerminalID != "term-001" {
 		t.Fatalf("expected restored main workspace pane, got %#v", pane)
+	}
+}
+
+func TestLoadWorkspaceStateCmdRestoresActiveTabAutoAcquireResize(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	statePath := filepath.Join(home, "workspace-state.json")
+	if err := os.WriteFile(statePath, []byte(`{
+  "version": 1,
+  "workspace": {
+    "name": "restore-ws",
+    "active_tab": 1,
+    "tabs": [
+      {
+        "name": "left",
+        "active_pane_id": "pane-1",
+        "floating_visible": false,
+        "root": {"pane_id": "pane-1"},
+        "panes": [
+          {
+            "id": "pane-1",
+            "title": "shared-left",
+            "terminal_id": "term-001",
+            "command": ["bash"],
+            "terminal_state": "running",
+            "mode": "fit"
+          }
+        ]
+      },
+      {
+        "name": "right",
+        "active_pane_id": "pane-2",
+        "floating_visible": false,
+        "auto_acquire_resize": true,
+        "root": {"pane_id": "pane-2"},
+        "panes": [
+          {
+            "id": "pane-2",
+            "title": "shared-right",
+            "terminal_id": "term-001",
+            "command": ["bash"],
+            "terminal_state": "running",
+            "mode": "fit"
+          }
+        ]
+      }
+    ]
+  }
+}`), 0o644); err != nil {
+		t.Fatalf("write workspace state: %v", err)
+	}
+
+	client := &fakeClient{
+		listResult: []protocol.TerminalInfo{
+			{ID: "term-001", Name: "shared", Command: []string{"bash"}, State: "running"},
+		},
+	}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 120
+	model.height = 30
+
+	msg := mustRunCmd(t, model.loadWorkspaceStateCmd(statePath))
+	_, cmd := model.Update(msg)
+	runAllCmds(t, cmd)
+
+	tab := model.currentTab()
+	if tab == nil || !tab.AutoAcquireResize {
+		t.Fatalf("expected restored active tab auto-acquire, got %#v", tab)
+	}
+	pane := tab.Panes[tab.ActivePaneID]
+	if pane == nil || !pane.ResizeAcquired {
+		t.Fatalf("expected restored active pane to auto-acquire resize, got %#v", pane)
+	}
+	if client.resizeCalls == 0 {
+		t.Fatal("expected workspace restore to trigger resize after auto-acquire")
+	}
+}
+
+func TestWorkspaceSwitchRestoresAutoAcquireResizeOnActivatedWorkspace(t *testing.T) {
+	client := &fakeClient{
+		listResult: []protocol.TerminalInfo{
+			{ID: "term-001", Name: "shared", Command: []string{"bash"}, State: "running"},
+		},
+	}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh", Workspace: "main"})
+	model.width = 120
+	model.height = 30
+
+	model.workspace = Workspace{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*Tab{
+			{
+				Name:         "main-tab",
+				ActivePaneID: "pane-main",
+				Root:         NewLeaf("pane-main"),
+				Panes: map[string]*Pane{
+					"pane-main": {
+						ID:    "pane-main",
+						Title: "main",
+						Viewport: &Viewport{
+							TerminalID:    "term-main",
+							Command:       []string{"bash"},
+							TerminalState: "running",
+							Mode:          ViewportModeFit,
+						},
+					},
+				},
+			},
+		},
+	}
+	model.workspaceStore = map[string]Workspace{
+		"main": model.workspace,
+		"shared": {
+			Name:      "shared",
+			ActiveTab: 1,
+			Tabs: []*Tab{
+				{
+					Name:         "left",
+					ActivePaneID: "pane-1",
+					Root:         NewLeaf("pane-1"),
+					Panes: map[string]*Pane{
+						"pane-1": {
+							ID:    "pane-1",
+							Title: "left",
+							Viewport: &Viewport{
+								TerminalID:    "term-001",
+								Command:       []string{"bash"},
+								TerminalState: "running",
+								Mode:          ViewportModeFit,
+							},
+						},
+					},
+				},
+				{
+					Name:              "right",
+					ActivePaneID:      "pane-2",
+					AutoAcquireResize: true,
+					Root:              NewLeaf("pane-2"),
+					Panes: map[string]*Pane{
+						"pane-2": {
+							ID:    "pane-2",
+							Title: "right",
+							Viewport: &Viewport{
+								TerminalID:    "term-001",
+								Command:       []string{"bash"},
+								TerminalState: "running",
+								Mode:          ViewportModeFit,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	model.workspaceOrder = []string{"main", "shared"}
+	model.activeWorkspace = 0
+
+	msg := mustRunCmd(t, model.switchWorkspaceCmd("shared"))
+	_, cmd := model.Update(msg)
+	runAllCmds(t, cmd)
+
+	tab := model.currentTab()
+	if model.workspace.Name != "shared" {
+		t.Fatalf("expected to switch to shared workspace, got %q", model.workspace.Name)
+	}
+	if tab == nil || !tab.AutoAcquireResize {
+		t.Fatalf("expected switched workspace tab auto-acquire, got %#v", tab)
+	}
+	pane := tab.Panes[tab.ActivePaneID]
+	if pane == nil || !pane.ResizeAcquired {
+		t.Fatalf("expected switched workspace active pane to auto-acquire resize, got %#v", pane)
+	}
+	if client.resizeCalls == 0 {
+		t.Fatal("expected workspace switch to trigger resize after auto-acquire")
 	}
 }

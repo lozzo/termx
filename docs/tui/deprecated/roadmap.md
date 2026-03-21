@@ -36,12 +36,27 @@
     - incremental dirty-span tracking（单行追加输出进一步缩小到列区间）
     - floating overlay tiled-dirty span benchmark（验证局部列区间重绘）
     - active pane 保守策略：live VTerm 仍走完整 body redraw，snapshot/非 live 可走局部 dirty span
+    - floating rect move / resize 复用 tab canvas cache，仅重绘 damage 区域而非整屏重建
+    - floating move benchmark（验证拖拽/位移路径不会每帧退化成全量 canvas rebuild）
+    - interactive frame pacing：空闲 16ms、交互窗口 8ms，降低输入后的可感知刷新延迟
+    - mouse drag render coalescing：拖拽高频 motion 在交互窗口内转为 deferred flush，避免每个 motion 都同步重绘
+    - 错误 prefix / sticky 组合键自动清退，不再因误触卡在前缀态
+    - TUI 渲染统计日志：每 10s 记录一次 view/render/cache-hit，用于后续调优
     - terminal-level floating overlay e2e harness（Bubble Tea ANSI output -> VTerm screenshot）
     - e2e failure artifacts（latest frame + recent terminal frames dump）
     - 当前作为“可继续迭代的性能基线”封存，允许切回后续功能章节
   - M8 的 readonly 基础能力
     - C-a R toggle readonly
     - readonly 下仅 Ctrl-C 透传
+    - agent/API 协作 e2e：外部 API 写入会实时反映到 TUI，TUI 侧可继续在同一 terminal 中操作
+    - readonly agent e2e：readonly 观察态下普通输入仍被拦截，但 Ctrl-C 仍可中断长任务
+  - M9 第一阶段骨架
+    - 引入分层 prefix 状态机：`C-a t` / `C-a w` / `C-a v` / `C-a o`
+    - `C-a o` 浮窗 sticky 模式：`n/x/v/Tab/[ / ]/hjkl/HJKL/Esc`
+    - `C-a t` / `C-a w` / `C-a v` one-shot 子前缀已接入现有 tab/workspace/viewport 动作
+    - `C-a w` 与 v1 旧浮窗入口冲突时，当前采用兼容回退：单独 `C-a w` 超时后仍打开旧的 floating chooser
+    - help/status 已暴露 v2 子前缀入口与当前 sticky 模式提示
+    - 单测 + e2e + benchmark harness 已跟随新入口更新
   - 诊断基础设施
     - CLI / daemon / TUI 统一日志落盘
     - 支持 `--log-file` 与 `TERMX_LOG_FILE`
@@ -63,7 +78,9 @@
     - LayoutSpec -> Workspace builder 骨架（匹配复用 / waiting placeholder / create plan）
     - load-layout runtime 骨架（替换 workspace、attach 已匹配 terminal、create 缺失 terminal）
     - floating layout 第一阶段集成：save-layout 导出 floating entry 尺寸，load-layout / `--layout` 可恢复 floating viewport
+    - save-layout 现在也会导出浮窗位置锚点（center / 四角），便于后续 load-layout 稳定回放
     - `load-layout <name> prompt` 第一阶段：未匹配 terminal 时弹 chooser，支持手动 attach / create / Esc skip
+    - arrange 第一阶段：`grid` / `horizontal` / `vertical` 可把多 terminal tag 匹配展开成多 pane
     - layout create 路径会回写声明式 tag，保证第二次 load 同一 layout 时优先复用已有 terminal
     - 命令模式接入 save-layout / load-layout / list-layouts / delete-layout
     - load-layout 支持项目级 `.termx/layouts/<name>.yaml` 优先于用户级
@@ -78,6 +95,8 @@
     - `C-a s` Workspace Picker 骨架（创建 / 切换 workspace）
     - workspace 切换时当前 workspace layout 保留，切回时重建 attach
     - 同一个 terminal 可被不同 workspace 独立观察
+    - workspace picker 提交/切换后的 overlay 残影已清除；空 workspace welcome body 改为整宽重绘，避免 modal 关闭后旧字符残留
+    - workspace 切换 e2e 已覆盖：新 workspace 空态清屏、Esc 关闭 picker、bootstrap terminal 后切回恢复 tiled + floating
 
 进行中：
   - M5 浮动层第一阶段
@@ -89,12 +108,15 @@
     - Esc 从 floating focus 返回 tiling focus
     - C-a Alt-h/j/k/l 移动浮窗
     - C-a Alt-H/J/K/L 调整浮窗大小
+    - 新建浮窗默认错位摆放，避免多浮窗完全重叠
+    - 鼠标左键点击浮窗可聚焦并置顶，拖拽可移动浮窗
     - 外层 resize 时 floating rect clamp
     - 浮窗标题显示 [floating] / [floating z:n]
-    - help/status 暴露 floating layer 状态与快捷键
+    - help/status 暴露 floating layer 状态、数量与切换提示
     - 浮窗渲染回归测试（边框/标题/底层重绘不遮挡）
     - 浮窗 terminal-frame e2e（持久边框 / hide-show）
     - 浮窗 terminal-frame e2e（z-order / top window 可见性）
+    - 浮窗 terminal-frame e2e（错位展示 / status hint）
   - M4 load/save-layout 运行时集成
   - M4 / M5 完成后继续推进 M6 Workspace 管理
   - 后续里程碑按 roadmap 继续推进
@@ -104,6 +126,8 @@
   - 当前策略：
     - non-active pane：可走 dirty row / dirty span
     - active live pane：仍保守走完整 body redraw，优先保证正确性
+    - floating move / resize：复用已有 canvas，仅对旧/新 rect 及其覆盖区域做 damage repaint
+    - render pacing：空闲态 16ms，输入/鼠标交互窗口提升到 8ms
   - 后续 TODO（不阻塞 roadmap 继续）：
     - active + live VTerm 的安全局部重绘
     - 高频输出下 dirty region 合并 / 批处理
