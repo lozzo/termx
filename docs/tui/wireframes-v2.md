@@ -27,8 +27,8 @@
 - 默认有一个可输入 shell pane
 
 ```text
-[tmp-workspace]  [1:shell]                                                             ws:tmp-workspace
-┌─ shell-1 [Primary] ────────────────────────────────────────────────────────────────────────────────┐
+[tmp-workspace]  [1:shell]                                                pane:1  term:1
+┌─ shell-1                                                            ● run  ⇄ fit ─────────────────┐
 │ $                                                                                                 │
 │                                                                                                   │
 │                                                                                                   │
@@ -40,7 +40,7 @@
 │                                                                                                   │
 │                                                                                                   │
 └───────────────────────────────────────────────────────────────────────────────────────────────────┘
-[ NORMAL ]  pane split  tab new  float new  picker terminal                             focus:tiled
+Ctrl + <g> LOCK  <p> PANE  <t> TAB  <r> RESIZE  <f> PICK    shell-1  ▣ tiled
 ```
 
 要点：
@@ -48,6 +48,8 @@
 - 不再先落到说明页
 - 用户直接能输入
 - 默认 terminal 继承当前 cwd 和 env
+- pane 标题直接使用 terminal 真名，不强调 pane 独立命名
+- pane 顶部 chrome 使用单线边框表达
 
 ---
 
@@ -59,18 +61,18 @@
 - 有明显 active pane
 
 ```text
-[project-api]  [1:dev]  2:logs  3:build                                                 ws:project-api
-┌─ api-dev [Primary] ───────────────────────────────┬─ watcher [Muted] ────────────────────────────┐
+[project-api]  [1:dev]  2:logs  3:build                                   pane:3  term:3  float:0
+┌─ api-dev                                                        ● run  ⇄ fit ─┬─ watcher  ● run  ⇄ fit ─┐
 │ $ npm run dev                                     │ > tsc -w                                      │
 │ ready on :3000                                    │ Found 0 errors.                               │
 │                                                   │                                                │
 │                                                   │                                                │
-├─ git-shell [Muted] ───────────────────────────────┴───────────────────────────────────────────────┤
+├─ git-shell                                                      ● run  ⇄ fit ─────────────────────┤
 │ $ git status                                                                                      │
 │ On branch main                                                                                    │
 │ nothing to commit, working tree clean                                                             │
 └───────────────────────────────────────────────────────────────────────────────────────────────────┘
-[ NORMAL ]  pane split  tab switch  workspace switch  terminal picker                    focus:tiled
+Ctrl + <g> LOCK  <p> PANE  <t> TAB  <w> WS  <f> PICK    api-dev  ▣ tiled
 ```
 
 ---
@@ -128,6 +130,42 @@
 
 ---
 
+## 4.1 Terminal manager
+
+目标：
+
+- 全屏管理 terminal pool
+- 左侧选 terminal，右侧看详情
+- 从当前 pane / 新 tab / floating 打开 terminal
+
+```text
+[project-api]  [1:dev]                                                             ws:project-api
+┌─ Running Terminals ───────────────────────────────────────┬─ Terminal Details ───────────────────┐
+│ search: api_                                              │ api-dev                              │
+│                                                           │                                      │
+│ NEW                                                       │ state: running                       │
+│   + new terminal                                          │ visibility: visible                  │
+│                                                           │ command: npm run dev                 │
+│ VISIBLE                                                   │ id: T-12                             │
+│ [Invert] ● api-dev                                        │ open panes: 2                        │
+│                                                           │ shown in:                            │
+│ PARKED                                                    │ - ws:project-api / tab:dev / pane:api-dev │
+│   ● api-log                                               │ - ws:project-api / tab:dev / float:api-log │
+│                                                           │                                      │
+│ EXITED                                                    │ Enter brings this terminal here      │
+│   ○ old-api                                               │ Ctrl-t opens in new tab              │
+└───────────────────────────────────────────────────────────┴──────────────────────────────────────┘
+Ctrl + <Enter> HERE  <t> NEW TAB  <o> FLOAT  <e> EDIT  <k> STOP    api-dev  visible  shown:2
+```
+
+说明：
+
+- 默认优先选中“当前 pane 没在看的 terminal”
+- stop 后列表立即刷新
+- 如果 terminal 被移除，当前布局中的 pane 会保留成 saved pane
+
+---
+
 ## 5. Workspace picker
 
 目标：
@@ -164,12 +202,12 @@
 - 状态栏明确当前 focus 在 floating
 
 ```text
-[project-api]  [1:dev]                                                             ws:project-api
+[project-api]  [1:dev]                                                pane:2  term:1  float:1
 ┌─ api-dev [Muted] ─────────────────────────────────────────────────────────────────────────────────┐
 │ $ npm run dev                                                                                     │
 │ ready on :3000                                                                                    │
 │                                                                                                   │
-│                    ┌─ float:htop [Accent] [floating] ─────────────────────────┐                  │
+│                    ┌─ htop                                                  ● run  ⇄ fit  ◫ float ┐                  │
 │                    │  1  1234 user   20   0  321m  42m R  12.0  1.1 node       │                  │
 │                    │  2  9911 user   20   0  111m  11m S   4.0  0.2 bash       │                  │
 │                    │                                                            │                  │
@@ -177,8 +215,18 @@
 │                    └────────────────────────────────────────────────────────────┘                  │
 │                                                                                                   │
 └───────────────────────────────────────────────────────────────────────────────────────────────────┘
-[ FLOAT ]  focus float  move  resize  hide  close                                        focus:float
+Ctrl + <Tab> NEXT  <h/j/k/l> MOVE  <H/J/K/L> SIZE  <c> CENTER  <x> CLOSE    htop  ◫ float  ⇄ fit
 ```
+
+补充说明：
+
+- 顶栏右侧是 workspace 级计数/notice，不再重复显示 workspace 名称
+- pane 标题栏右侧吸收运行态 badge
+- 底栏右侧只保留当前焦点 pane 的短摘要
+- active pane 边框是高亮绿色，inactive pane 边框是亮灰色
+- 若启用 Nerd Font，可把 `● / ⇄ / ◫ / ▣` 替换为更强的图标集
+- floating pane 可以移动到 tab 主内容区域之外
+- `center` 表示把当前 floating pane 呼回并居中
 
 ---
 
@@ -204,7 +252,7 @@
 │       └────────────────────────────────────────────────────────────────────────┘                  │
 │                                                                                                   │
 └───────────────────────────────────────────────────────────────────────────────────────────────────┘
-[ FLOAT ]  cycle  raise  lower  move  resize                                               floating:2
+Ctrl + <Tab> NEXT  <[/>] Z  <h/j/k/l> MOVE  <H/J/K/L> SIZE  <c> CENTER    floating:2
 ```
 
 ---
@@ -223,7 +271,10 @@
 │                        ┌─ Edit Terminal [Warn] ────────────────────────────┐                      │
 │                        │ name:  [ api-prod_ ]                              │                      │
 │                        │                                                   │                      │
-│                        │ updates all panes attached to this terminal       │                      │
+│                        │ step 1/2                                          │                      │
+│                        │ terminal id: term-api-prod                        │                      │
+│                        │ command: /bin/zsh                                 │                      │
+│                        │ updates terminal metadata for every attached pane  │                      │
 │                        │                                                   │                      │
 │                        │ [Enter] next   [Esc] cancel                      │                      │
 │                        └───────────────────────────────────────────────────┘                      │
@@ -237,7 +288,11 @@
 ┌─ Edit Terminal [Warn] ───────────────────────────────────────────────┐
 │ tags:  [ role=api team=infra termx.size_lock=warn_ ]                │
 │                                                                      │
-│ updates all panes attached to this terminal                          │
+│ step 2/2                                                             │
+│ terminal id: term-api-prod                                           │
+│ name: api-prod                                                       │
+│ command: /bin/zsh                                                    │
+│ updates terminal metadata for every attached pane                    │
 │                                                                      │
 │ [Enter] save   [Esc] cancel                                          │
 └──────────────────────────────────────────────────────────────────────┘
@@ -368,12 +423,12 @@ all attached panes show the same exited state
 
 ---
 
-## 14. kill/remove terminal 后 pane 自动消失
+## 14. stop/remove terminal 后 pane 保留为 saved pane
 
 目标：
 
 - terminal 被明确移除
-- 所有绑定 pane 一并关闭
+- 所有绑定 pane 保留为可继续复用的 saved pane
 
 移除前：
 
@@ -389,23 +444,25 @@ all attached panes show the same exited state
 
 ```text
 [project-api]  [1:ops]                                                             ws:project-api
-┌─ logs [Primary] ─────────────────────────────────────────────────────────────────────────────────┐
-│ tail -f app.log                                                                                    │
-│                                                                                                   │
-└───────────────────────────────────────────────────────────────────────────────────────────────────┘
-[ notice ] terminal 'shared-shell' removed; closed 2 bound panes
+┌─ shared-shell [Muted] ───────────────────────────────┬─ logs [Primary] ──────────────────────────┐
+│ saved pane                                           │ tail -f app.log                            │
+│ previous terminal was removed                        │                                             │
+│ Ctrl-f attach terminal                               │                                             │
+│ Ctrl-g then t open terminal manager                  │                                             │
+└──────────────────────────────────────────────────────┴─────────────────────────────────────────────┘
+[ notice ] terminal 'shared-shell' was removed by another client; left 2 saved panes
 ```
 
 如果是另一个客户端执行的 remove：
 
 ```text
-[ notice ] terminal 'shared-shell' was removed by another client
+[ notice ] terminal 'shared-shell' was removed by another client; left 2 saved panes
 ```
 
 如果系统能识别身份：
 
 ```text
-[ notice ] terminal 'shared-shell' was removed by lozzow@host
+[ notice ] terminal 'shared-shell' was removed by lozzow@host; left 2 saved panes
 ```
 
 多人共享时的确认弹窗建议：
@@ -413,7 +470,7 @@ all attached panes show the same exited state
 ```text
 ┌─ Remove Shared Terminal [Warn] ─────────────────────────────────────────┐
 │ This terminal is attached by 2 clients and 3 panes.                    │
-│ Removing it will close all bound panes for everyone.                   │
+│ Removing it will unbind those panes and save their slots.              │
 │                                                                        │
 │ terminal: shared-shell                                                 │
 │                                                                        │

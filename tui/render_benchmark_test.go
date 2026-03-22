@@ -479,7 +479,7 @@ func benchmarkModelWithPanes(tb testing.TB, paneCount, width, height int) *Model
 
 	splits := []rune{'%', '"', '%', '"', '%', '"'}
 	for i := 1; i < paneCount; i++ {
-		_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+		_ = activatePrefixForTest(model)
 		_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{splits[(i-1)%len(splits)]}})
 		msg = mustRunCmdForBenchmark(tb, cmd)
 		_, _ = model.Update(msg)
@@ -534,10 +534,9 @@ func benchmarkModelWithFloatingOverlay(tb testing.TB, width, height int) *Model 
 	tb.Helper()
 	model := benchmarkModelWithPanes(tb, 1, width, height)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
-	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
-	runCmdForBenchmark(tb, model, cmd)
-	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	_ = activatePrefixForTest(model)
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	msg := mustRunCmdForBenchmark(tb, cmd)
 	_, _ = model.Update(msg)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})

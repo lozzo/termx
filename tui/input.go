@@ -2,12 +2,16 @@ package tui
 
 import (
 	"context"
+	"image/color"
 	"io"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	uv "github.com/charmbracelet/ultraviolet"
+	xansi "github.com/charmbracelet/x/ansi"
 	charmvt "github.com/charmbracelet/x/vt"
 	localvterm "github.com/lozzow/termx/vterm"
 	"github.com/muesli/cancelreader"
@@ -28,6 +32,10 @@ func (m *Model) handleInputEvent(event uv.Event) tea.Cmd {
 		return m.handleWorkspacePickerEvent(event)
 	}
 
+	if m.terminalManager != nil {
+		return m.handleTerminalManagerEvent(event)
+	}
+
 	if m.terminalPicker != nil {
 		return m.handleTerminalPickerEvent(event)
 	}
@@ -40,6 +48,17 @@ func (m *Model) handleInputEvent(event uv.Event) tea.Cmd {
 	}
 
 	switch event := event.(type) {
+	case uv.ForegroundColorEvent:
+		m.applyHostTerminalColors(event.Color, nil)
+		return nil
+	case uv.BackgroundColorEvent:
+		m.applyHostTerminalColors(nil, event.Color)
+		return nil
+	case uv.UnknownOscEvent:
+		if index, c, ok := parsePaletteColorEvent(string(event)); ok {
+			m.applyHostTerminalPaletteColor(index, c)
+		}
+		return nil
 	case uv.KeyPressEvent:
 		return m.handleKeyPressEvent(event)
 	case uv.MouseClickEvent:
@@ -58,6 +77,28 @@ func (m *Model) handleInputEvent(event uv.Event) tea.Cmd {
 	default:
 		return nil
 	}
+}
+
+func parsePaletteColorEvent(raw string) (int, color.Color, bool) {
+	if raw == "" {
+		return 0, nil, false
+	}
+	raw = strings.TrimPrefix(raw, "\x1b]")
+	raw = strings.TrimSuffix(raw, "\x07")
+	raw = strings.TrimSuffix(raw, "\x1b\\")
+	parts := strings.Split(raw, ";")
+	if len(parts) != 3 || parts[0] != "4" {
+		return 0, nil, false
+	}
+	index, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err != nil || index < 0 || index > 255 {
+		return 0, nil, false
+	}
+	c := xansi.XParseColor(strings.TrimSpace(parts[2]))
+	if c == nil {
+		return 0, nil, false
+	}
+	return index, c, true
 }
 
 func (m *Model) handleKeyPressEvent(event uv.KeyPressEvent) tea.Cmd {
@@ -86,9 +127,7 @@ func (m *Model) handleKeyPressEvent(event uv.KeyPressEvent) tea.Cmd {
 	}
 
 	if event.MatchString("ctrl+a") {
-		cmd := m.activatePrefix()
-		m.invalidateRender()
-		return cmd
+		return m.sendToActive([]byte{0x01})
 	}
 
 	if cmd := m.handleExitedPaneEvent(event); cmd != nil {
@@ -151,16 +190,24 @@ func (m *Model) handlePrefixEvent(event uv.KeyPressEvent) tea.Cmd {
 		m.moveActiveFloatingPane(4, 0)
 		return nil
 	case event.Mod&uv.ModAlt != 0 && (event.MatchString("H") || event.MatchString("shift+h")):
-		m.resizeActiveFloatingPane(-4, 0)
+		if m.resizeActiveFloatingPane(-4, 0) {
+			return m.resizeVisiblePanesCmd()
+		}
 		return nil
 	case event.Mod&uv.ModAlt != 0 && (event.MatchString("J") || event.MatchString("shift+j")):
-		m.resizeActiveFloatingPane(0, 2)
+		if m.resizeActiveFloatingPane(0, 2) {
+			return m.resizeVisiblePanesCmd()
+		}
 		return nil
 	case event.Mod&uv.ModAlt != 0 && (event.MatchString("K") || event.MatchString("shift+k")):
-		m.resizeActiveFloatingPane(0, -2)
+		if m.resizeActiveFloatingPane(0, -2) {
+			return m.resizeVisiblePanesCmd()
+		}
 		return nil
 	case event.Mod&uv.ModAlt != 0 && (event.MatchString("L") || event.MatchString("shift+l")):
-		m.resizeActiveFloatingPane(4, 0)
+		if m.resizeActiveFloatingPane(4, 0) {
+			return m.resizeVisiblePanesCmd()
+		}
 		return nil
 	case event.MatchString("\""):
 		return m.splitActivePane(SplitHorizontal)
@@ -550,16 +597,24 @@ func (m *Model) dispatchFloatingModeEvent(event uv.KeyPressEvent) prefixDispatch
 		m.moveActiveFloatingPane(4, 0)
 		return m.modeEventResult(nil, true)
 	case event.MatchString("H"), event.MatchString("shift+h"):
-		m.resizeActiveFloatingPane(-4, 0)
+		if m.resizeActiveFloatingPane(-4, 0) {
+			return m.modeEventResult(m.resizeVisiblePanesCmd(), true)
+		}
 		return m.modeEventResult(nil, true)
 	case event.MatchString("J"), event.MatchString("shift+j"):
-		m.resizeActiveFloatingPane(0, 2)
+		if m.resizeActiveFloatingPane(0, 2) {
+			return m.modeEventResult(m.resizeVisiblePanesCmd(), true)
+		}
 		return m.modeEventResult(nil, true)
 	case event.MatchString("K"), event.MatchString("shift+k"):
-		m.resizeActiveFloatingPane(0, -2)
+		if m.resizeActiveFloatingPane(0, -2) {
+			return m.modeEventResult(m.resizeVisiblePanesCmd(), true)
+		}
 		return m.modeEventResult(nil, true)
 	case event.MatchString("L"), event.MatchString("shift+l"):
-		m.resizeActiveFloatingPane(4, 0)
+		if m.resizeActiveFloatingPane(4, 0) {
+			return m.modeEventResult(m.resizeVisiblePanesCmd(), true)
+		}
 		return m.modeEventResult(nil, true)
 	case event.MatchString("f"):
 		return m.modeEventResult(m.openTerminalPickerCmd(), false)
@@ -609,6 +664,8 @@ func (m *Model) dispatchGlobalModeEvent(event uv.KeyPressEvent) prefixDispatchRe
 		m.showHelp = true
 		m.invalidateRender()
 		return prefixDispatchResult{}
+	case event.MatchString("t"):
+		return prefixDispatchResult{cmd: m.openTerminalManagerCmd()}
 	case event.MatchString(":"):
 		m.beginCommandPrompt()
 		return prefixDispatchResult{}
@@ -700,7 +757,9 @@ func (m *Model) handleMouseMotionEvent(event uv.MouseMotionEvent) tea.Cmd {
 		if entry == nil {
 			return nil
 		}
-		m.resizeFloatingPaneTo(tab, m.mouseDragPaneID, x-entry.Rect.X+1, y-entry.Rect.Y+1)
+		if m.resizeFloatingPaneTo(tab, m.mouseDragPaneID, x-entry.Rect.X+1, y-entry.Rect.Y+1) {
+			return m.resizeVisiblePanesCmd()
+		}
 	default:
 		m.dragFloatingPaneTo(tab, m.mouseDragPaneID, x-m.mouseDragOffset.X, y-m.mouseDragOffset.Y)
 	}
@@ -746,12 +805,16 @@ func (m *Model) handlePromptEvent(event uv.Event) tea.Cmd {
 		case event.MatchString("enter"):
 			return m.commitPrompt()
 		case event.MatchString("backspace"):
-			m.deletePromptRune()
-		case event.Text != "":
+			if m.promptAcceptsText() {
+				m.deletePromptRune()
+			}
+		case event.Text != "" && m.promptAcceptsText():
 			m.appendPrompt(event.Text)
 		}
 	case uv.PasteEvent:
-		m.appendPrompt(event.Content)
+		if m.promptAcceptsText() {
+			m.appendPrompt(event.Content)
+		}
 	}
 	return nil
 }

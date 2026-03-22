@@ -43,12 +43,18 @@ func (m *Model) newViewport(terminalID string, channel uint16, snap *protocol.Sn
 		defer cancel()
 		_ = m.client.Input(ctx, channel, data)
 	})
+	vt.SetDefaultColors(m.hostDefaultFG, m.hostDefaultBG)
+	for index, value := range m.hostPalette {
+		vt.SetIndexedColor(index, value)
+	}
 	loadSnapshotIntoVTerm(vt, snap)
 	return &Viewport{
 		TerminalID:    terminalID,
 		Channel:       channel,
 		AttachMode:    "collaborator",
 		VTerm:         vt,
+		DefaultFG:     m.hostDefaultFG,
+		DefaultBG:     m.hostDefaultBG,
 		Snapshot:      snap,
 		Command:       []string{m.cfg.DefaultShell},
 		TerminalState: "running",
@@ -60,8 +66,11 @@ func (m *Model) newViewport(terminalID string, channel uint16, snap *protocol.Sn
 func (m *Model) openTerminalPickerCmd() tea.Cmd {
 	action := terminalPickerAction{Kind: terminalPickerActionReplace, TabIndex: m.workspace.ActiveTab}
 	allowCreate := false
-	if activePane(m.currentTab()) == nil {
+	pane := activePane(m.currentTab())
+	if pane == nil {
 		action.Kind = terminalPickerActionBootstrap
+		allowCreate = true
+	} else if strings.TrimSpace(pane.TerminalID) == "" {
 		allowCreate = true
 	}
 	return m.openPickerCmd(
@@ -229,6 +238,66 @@ func (m *Model) terminalLocations() map[string][]string {
 		}
 	}
 	return locations
+}
+
+func (m *Model) terminalDisplayLocations() map[string][]string {
+	m.snapshotCurrentWorkspace()
+	locations := make(map[string][]string)
+	for _, workspaceName := range m.workspaceOrder {
+		workspace, ok := m.workspaceStore[workspaceName]
+		if !ok {
+			continue
+		}
+		for tabIndex, tab := range workspace.Tabs {
+			if tab == nil {
+				continue
+			}
+			floating := make(map[string]struct{}, len(tab.Floating))
+			for _, entry := range tab.Floating {
+				if entry != nil {
+					floating[entry.PaneID] = struct{}{}
+				}
+			}
+			paneIDs := make([]string, 0, len(tab.Panes))
+			for paneID := range tab.Panes {
+				paneIDs = append(paneIDs, paneID)
+			}
+			slices.Sort(paneIDs)
+			for _, paneID := range paneIDs {
+				pane := tab.Panes[paneID]
+				if pane == nil || strings.TrimSpace(pane.TerminalID) == "" {
+					continue
+				}
+				locationType := "pane"
+				if _, ok := floating[paneID]; ok {
+					locationType = "float"
+				}
+				location := fmt.Sprintf(
+					"ws:%s / tab:%s / %s:%s",
+					workspace.Name,
+					tabDisplayName(tab, tabIndex),
+					locationType,
+					paneDisplayLabel(pane),
+				)
+				locations[pane.TerminalID] = append(locations[pane.TerminalID], location)
+			}
+		}
+	}
+	for terminalID := range locations {
+		slices.Sort(locations[terminalID])
+	}
+	return locations
+}
+
+func tabDisplayName(tab *Tab, index int) string {
+	if tab == nil {
+		return "tab " + itoa(index+1)
+	}
+	name := strings.TrimSpace(tab.Name)
+	if name == "" || name == itoa(index+1) {
+		return "tab " + itoa(index+1)
+	}
+	return name
 }
 
 func (p *terminalPicker) applyFilter() {
@@ -567,6 +636,10 @@ func (m *Model) resolveTerminalPickerSelection(action terminalPickerAction, item
 		}
 		return m.attachTerminalToPaneCmd(action.PaneID, item)
 	default:
+		if item.CreateNew {
+			m.beginTerminalCreatePrompt(action, nil)
+			return nil
+		}
 		if split {
 			tab := m.currentTab()
 			if tab == nil {
@@ -589,14 +662,7 @@ func (m *Model) killPickerSelection() tea.Cmd {
 	m.logger.Warn("terminal picker killing terminal", "terminal_id", item.Info.ID)
 	m.terminalPicker = nil
 	m.invalidateRender()
-	return func() tea.Msg {
-		ctx, cancel := m.requestContext()
-		defer cancel()
-		if err := m.client.Kill(ctx, item.Info.ID); err != nil {
-			return errMsg{m.wrapClientError("kill terminal", err, "terminal_id", item.Info.ID)}
-		}
-		return terminalClosedMsg{terminalID: item.Info.ID}
-	}
+	return m.beginTerminalStopPrompt(item.Info.ID, terminalDisplayLabel(item.Info.Name, item.Info.Command), terminalBindingCount(m.workspace.Tabs, item.Info.ID), "terminal picker")
 }
 
 func (m *Model) attachTerminalToActivePaneCmd(item terminalPickerItem) tea.Cmd {
@@ -716,10 +782,18 @@ func (m *Model) attachTerminalToPaneGroupCmd(promptPaneID string, paneIDs []stri
 }
 
 func (m *Model) createTerminalForPaneCmd(paneID string) tea.Cmd {
-	return m.createTerminalForPaneGroupCmd(paneID, []string{paneID})
+	return m.createTerminalForPaneCmdWithSpec(paneID, terminalCreateSpec{})
+}
+
+func (m *Model) createTerminalForPaneCmdWithSpec(paneID string, spec terminalCreateSpec) tea.Cmd {
+	return m.createTerminalForPaneGroupCmdWithSpec(paneID, []string{paneID}, spec)
 }
 
 func (m *Model) createTerminalForPaneGroupCmd(promptPaneID string, paneIDs []string) tea.Cmd {
+	return m.createTerminalForPaneGroupCmdWithSpec(promptPaneID, paneIDs, terminalCreateSpec{})
+}
+
+func (m *Model) createTerminalForPaneGroupCmdWithSpec(promptPaneID string, paneIDs []string, spec terminalCreateSpec) tea.Cmd {
 	if len(paneIDs) == 0 {
 		return nil
 	}
@@ -745,12 +819,15 @@ func (m *Model) createTerminalForPaneGroupCmd(promptPaneID string, paneIDs []str
 			return nil
 		}
 
-		command := append([]string(nil), pane.Command...)
-		if len(command) == 0 {
-			command = []string{m.cfg.DefaultShell}
+		command, name, tags := m.resolveTerminalCreateSpec(spec)
+		if len(spec.Command) == 0 && len(spec.Tags) == 0 && strings.TrimSpace(spec.Name) == "" {
+			command = append([]string(nil), pane.Command...)
+			if len(command) == 0 {
+				command = []string{m.cfg.DefaultShell}
+			}
+			name = pane.Name
+			tags = cloneStringMap(pane.Tags)
 		}
-		name := pane.Name
-		tags := cloneStringMap(pane.Tags)
 		mode := pane.Mode
 		offset := pane.Offset
 		pin := pane.Pin
@@ -818,12 +895,15 @@ func (m *Model) createTerminalForPaneGroupCmd(promptPaneID string, paneIDs []str
 	if source == nil {
 		return nil
 	}
-	command := append([]string(nil), source.Command...)
-	if len(command) == 0 {
-		command = []string{m.cfg.DefaultShell}
+	command, name, tags := m.resolveTerminalCreateSpec(spec)
+	if len(spec.Command) == 0 && len(spec.Tags) == 0 && strings.TrimSpace(spec.Name) == "" {
+		command = append([]string(nil), source.Command...)
+		if len(command) == 0 {
+			command = []string{m.cfg.DefaultShell}
+		}
+		name = source.Name
+		tags = cloneStringMap(source.Tags)
 	}
-	name := source.Name
-	tags := cloneStringMap(source.Tags)
 	size := paneCreateSize(source)
 	tab := m.tabForPane(group[0])
 	if viewW, viewH, ok := m.paneViewportSizeInTab(tab, group[0]); ok {

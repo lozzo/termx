@@ -56,6 +56,8 @@ func newRootCmd() *cobra.Command {
 	var socket string
 	var logFile string
 	var layout string
+	var iconSet string
+	var prefixTimeout time.Duration
 	cmd := &cobra.Command{
 		Use: "termx",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -81,6 +83,8 @@ func newRootCmd() *cobra.Command {
 			return runTUI(client, tui.Config{
 				DefaultShell:       os.Getenv("SHELL"),
 				Workspace:          "main",
+				IconSet:            iconSet,
+				PrefixTimeout:      prefixTimeout,
 				StartupLayout:      layout,
 				WorkspaceStatePath: resolveWorkspaceStatePath(),
 				StartupAutoLayout:  true,
@@ -91,12 +95,14 @@ func newRootCmd() *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&socket, "socket", "", "socket path")
 	cmd.PersistentFlags().StringVar(&logFile, "log-file", "", "log file path (default: $TERMX_LOG_FILE or XDG state dir)")
+	cmd.PersistentFlags().StringVar(&iconSet, "icon-set", os.Getenv("TERMX_ICON_SET"), "icon set: ascii, unicode, nerd")
+	cmd.PersistentFlags().DurationVar(&prefixTimeout, "prefix-timeout", tui.DefaultPrefixTimeout, "mode hold timeout after Ctrl+ shortcuts")
 	cmd.Flags().StringVar(&layout, "layout", "", "startup layout name or YAML path")
 	cmd.AddCommand(daemonCommand(&socket))
 	cmd.AddCommand(newCommand(&socket, &logFile))
 	cmd.AddCommand(lsCommand(&socket, &logFile))
 	cmd.AddCommand(killCommand(&socket, &logFile))
-	cmd.AddCommand(attachCommand(&socket, &logFile))
+	cmd.AddCommand(attachCommand(&socket, &logFile, &iconSet))
 	return cmd
 }
 
@@ -225,7 +231,7 @@ func killCommand(socket *string, logFile *string) *cobra.Command {
 	}
 }
 
-func attachCommand(socket *string, logFile *string) *cobra.Command {
+func attachCommand(socket *string, logFile *string, iconSet *string) *cobra.Command {
 	return &cobra.Command{
 		Use:  "attach <id>",
 		Args: cobra.ExactArgs(1),
@@ -249,6 +255,7 @@ func attachCommand(socket *string, logFile *string) *cobra.Command {
 				DefaultShell:       os.Getenv("SHELL"),
 				Workspace:          "main",
 				AttachID:           args[0],
+				IconSet:            *iconSet,
 				WorkspaceStatePath: resolveWorkspaceStatePath(),
 				Logger:             logger,
 			}, os.Stdin, os.Stdout)

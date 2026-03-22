@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image/color"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -72,11 +73,14 @@ type ResponseHandler func(data []byte)
 type VTerm struct {
 	emu *charmvt.SafeEmulator
 
-	mu     sync.RWMutex
-	cursor CursorState
-	modes  TerminalModes
-	resp   ResponseHandler
-	sbSize int
+	mu        sync.RWMutex
+	cursor    CursorState
+	modes     TerminalModes
+	resp      ResponseHandler
+	sbSize    int
+	defaultFG string
+	defaultBG string
+	palette   map[int]string
 
 	done chan struct{} // closed when drain goroutine exits
 }
@@ -99,6 +103,7 @@ func New(cols, rows int, scrollbackSize int, onResponse ResponseHandler) *VTerm 
 func (v *VTerm) resetEmulator(cols, rows int) {
 	emu := charmvt.NewSafeEmulator(cols, rows)
 	emu.SetScrollbackSize(v.sbSize)
+	v.applyDefaultColorsToEmulator(emu)
 	v.emu = emu
 	emu.SetCallbacks(charmvt.Callbacks{
 		AltScreen: func(on bool) {
@@ -249,7 +254,7 @@ func (v *VTerm) Resize(cols, rows int) {
 func (v *VTerm) CellAt(x, y int) Cell {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
-	return convertCell(v.emu.CellAt(x, y))
+	return v.convertCell(v.emu.CellAt(x, y))
 }
 
 func (v *VTerm) ScreenContent() ScreenData {
@@ -261,7 +266,7 @@ func (v *VTerm) ScreenContent() ScreenData {
 	for y := 0; y < height; y++ {
 		row := make([]Cell, width)
 		for x := 0; x < width; x++ {
-			row[x] = convertCell(v.emu.CellAt(x, y))
+			row[x] = v.convertCell(v.emu.CellAt(x, y))
 		}
 		rows[y] = row
 	}
@@ -291,7 +296,7 @@ func (v *VTerm) ScrollbackContent() [][]Cell {
 				row = append(row, Cell{})
 				continue
 			}
-			row = append(row, convertCell(cell))
+			row = append(row, v.convertCell(cell))
 		}
 		rows = append(rows, row)
 	}
@@ -360,14 +365,10 @@ func uvCell(cell Cell) *uv.Cell {
 		c.Width = 1
 	}
 	if cell.Style.FG != "" {
-		if rgb := ansi.XParseColor(cell.Style.FG); rgb != nil {
-			c.Style.Fg = rgb
-		}
+		c.Style.Fg = decodeTerminalColor(cell.Style.FG)
 	}
 	if cell.Style.BG != "" {
-		if rgb := ansi.XParseColor(cell.Style.BG); rgb != nil {
-			c.Style.Bg = rgb
-		}
+		c.Style.Bg = decodeTerminalColor(cell.Style.BG)
 	}
 	if cell.Style.Bold {
 		c.Style.Attrs |= uv.AttrBold
@@ -394,16 +395,61 @@ func (v *VTerm) Paste(text string) {
 	v.emu.Paste(text)
 }
 
-func convertCell(cell *uv.Cell) Cell {
+func (v *VTerm) SetDefaultColors(fg, bg string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.defaultFG = normalizeColorString(fg)
+	v.defaultBG = normalizeColorString(bg)
+	v.applyDefaultColorsToEmulator(v.emu)
+}
+
+func (v *VTerm) DefaultColors() (fg, bg string) {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.defaultFG, v.defaultBG
+}
+
+func (v *VTerm) SetIndexedColor(index int, value string) {
+	if index < 0 || index > 255 {
+		return
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	value = normalizeColorString(value)
+	if value == "" {
+		if v.palette != nil {
+			delete(v.palette, index)
+		}
+	} else {
+		if v.palette == nil {
+			v.palette = make(map[int]string)
+		}
+		v.palette[index] = value
+	}
+	if v.emu != nil {
+		v.emu.SetIndexedColor(index, ansi.XParseColor(value))
+	}
+}
+
+func (v *VTerm) IndexedColor(index int) string {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	if v.palette == nil {
+		return ""
+	}
+	return v.palette[index]
+}
+
+func (v *VTerm) convertCell(cell *uv.Cell) Cell {
 	if cell == nil {
 		return Cell{}
 	}
 	style := CellStyle{}
 	if cell.Style.Fg != nil {
-		style.FG = colorToString(cell.Style.Fg)
+		style.FG = v.resolveColorString(cell.Style.Fg)
 	}
 	if cell.Style.Bg != nil {
-		style.BG = colorToString(cell.Style.Bg)
+		style.BG = v.resolveColorString(cell.Style.Bg)
 	}
 	style.Bold = cell.Style.Attrs&uv.AttrBold != 0
 	style.Italic = cell.Style.Attrs&uv.AttrItalic != 0
@@ -418,12 +464,68 @@ func convertCell(cell *uv.Cell) Cell {
 	}
 }
 
+func (v *VTerm) resolveColorString(c color.Color) string {
+	if c == nil {
+		return ""
+	}
+	switch value := c.(type) {
+	case ansi.BasicColor:
+		return encodeBasicColor(value)
+	case ansi.IndexedColor:
+		return encodeIndexedColor(value)
+	}
+	return colorToString(c)
+}
+
+func encodeBasicColor(c ansi.BasicColor) string {
+	return "ansi:" + strconv.Itoa(int(c))
+}
+
+func encodeIndexedColor(c ansi.IndexedColor) string {
+	return "idx:" + strconv.Itoa(int(c))
+}
+
+func decodeTerminalColor(value string) color.Color {
+	value = strings.TrimSpace(value)
+	switch {
+	case strings.HasPrefix(value, "ansi:"):
+		index, err := strconv.Atoi(strings.TrimPrefix(value, "ansi:"))
+		if err == nil && index >= 0 && index <= 15 {
+			return ansi.BasicColor(index)
+		}
+	case strings.HasPrefix(value, "idx:"):
+		index, err := strconv.Atoi(strings.TrimPrefix(value, "idx:"))
+		if err == nil && index >= 0 && index <= 255 {
+			return ansi.IndexedColor(index)
+		}
+	}
+	return ansi.XParseColor(value)
+}
+
 func colorToString(c color.Color) string {
 	if c == nil {
 		return ""
 	}
 	r, g, b, _ := c.RGBA()
 	return fmt.Sprintf("#%02x%02x%02x", uint8(r>>8), uint8(g>>8), uint8(b>>8))
+}
+
+func normalizeColorString(value string) string {
+	if rgb := ansi.XParseColor(strings.TrimSpace(value)); rgb != nil {
+		return colorToString(rgb)
+	}
+	return ""
+}
+
+func (v *VTerm) applyDefaultColorsToEmulator(emu *charmvt.SafeEmulator) {
+	if emu == nil {
+		return
+	}
+	emu.Emulator.SetDefaultForegroundColor(ansi.XParseColor(v.defaultFG))
+	emu.Emulator.SetDefaultBackgroundColor(ansi.XParseColor(v.defaultBG))
+	for index, value := range v.palette {
+		emu.SetIndexedColor(index, ansi.XParseColor(value))
+	}
 }
 
 func normalizeRenderableUTF8(data []byte) []byte {

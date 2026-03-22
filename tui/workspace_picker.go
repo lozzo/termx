@@ -410,6 +410,9 @@ func (m *Model) renameCurrentWorkspace(name string) {
 func (m *Model) deleteCurrentWorkspaceCmd() tea.Cmd {
 	m.ensureWorkspaceStore()
 	if len(m.workspaceOrder) <= 1 || m.activeWorkspace < 0 || m.activeWorkspace >= len(m.workspaceOrder) {
+		m.notice = ""
+		m.err = fmt.Errorf("cannot delete the last workspace")
+		m.invalidateRender()
 		return nil
 	}
 	index := m.activeWorkspace

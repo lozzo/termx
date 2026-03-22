@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 	"sync"
 
@@ -42,6 +43,7 @@ type paneRenderEntry struct {
 	PaneID   string
 	Rect     Rect
 	Title    string
+	Meta     string
 	Floating bool
 }
 
@@ -90,8 +92,8 @@ func (m *Model) renderTabComposite(tab *Tab, width, height int) string {
 		for _, entry := range entries {
 			pane := tab.Panes[entry.PaneID]
 			active := entry.PaneID == tab.ActivePaneID
-			frameKey := paneFrameKey(entry.Title, active, entry.Floating, entry.Rect)
-			canvas.drawPaneWithTitleFull(entry.Rect, pane, entry.Title, active, entry.Floating)
+			frameKey := paneFrameKey(entry.Title, entry.Meta, active, entry.Floating, entry.Rect)
+			canvas.drawPaneWithTitleFull(entry.Rect, pane, entry.Title, entry.Meta, active, entry.Floating)
 			frameKeys[entry.PaneID] = frameKey
 		}
 		tab.renderCache = &tabRenderCache{
@@ -120,8 +122,8 @@ func (m *Model) renderTabComposite(tab *Tab, width, height int) string {
 		for _, entry := range entries {
 			pane := tab.Panes[entry.PaneID]
 			active := entry.PaneID == tab.ActivePaneID
-			frameKey := paneFrameKey(entry.Title, active, entry.Floating, entry.Rect)
-			canvas.drawPaneWithTitleFull(entry.Rect, pane, entry.Title, active, entry.Floating)
+			frameKey := paneFrameKey(entry.Title, entry.Meta, active, entry.Floating, entry.Rect)
+			canvas.drawPaneWithTitleFull(entry.Rect, pane, entry.Title, entry.Meta, active, entry.Floating)
 			frameKeys[entry.PaneID] = frameKey
 		}
 		tab.renderCache = &tabRenderCache{
@@ -141,10 +143,10 @@ func (m *Model) renderTabComposite(tab *Tab, width, height int) string {
 	for _, entry := range entries {
 		pane := tab.Panes[entry.PaneID]
 		active := entry.PaneID == tab.ActivePaneID
-		nextFrameKey := paneFrameKey(entry.Title, active, entry.Floating, entry.Rect)
+		nextFrameKey := paneFrameKey(entry.Title, entry.Meta, active, entry.Floating, entry.Rect)
 		overlapped := overlapsAnyRect(entry.Rect, damage)
 		if cache.frameKeys[entry.PaneID] != nextFrameKey || overlapped {
-			cache.canvas.drawPaneWithTitleFull(entry.Rect, pane, entry.Title, active, entry.Floating)
+			cache.canvas.drawPaneWithTitleFull(entry.Rect, pane, entry.Title, entry.Meta, active, entry.Floating)
 			cache.frameKeys[entry.PaneID] = nextFrameKey
 			damage = append(damage, entry.Rect)
 			continue
@@ -170,7 +172,7 @@ func (c *composedCanvas) redrawDamage(entries []paneRenderEntry, panes map[strin
 		if !overlapsAnyRect(entry.Rect, damage) {
 			continue
 		}
-		c.drawPaneWithTitleFull(entry.Rect, panes[entry.PaneID], entry.Title, entry.PaneID == activePaneID, entry.Floating)
+		c.drawPaneWithTitleFull(entry.Rect, panes[entry.PaneID], entry.Title, entry.Meta, entry.PaneID == activePaneID, entry.Floating)
 	}
 }
 
@@ -206,47 +208,42 @@ func (c *composedCanvas) set(x, y int, cell drawCell) {
 }
 
 func (c *composedCanvas) drawPane(rect Rect, pane *Pane, active bool) {
-	c.drawPaneWithTitle(rect, pane, paneTitle(pane), active, false)
+	c.drawPaneWithTitle(rect, pane, paneTitle(pane), "", active, false)
 }
 
-func (c *composedCanvas) drawPaneWithTitle(rect Rect, pane *Pane, title string, active bool, floating bool) {
+func (c *composedCanvas) drawPaneWithTitle(rect Rect, pane *Pane, title string, meta string, active bool, floating bool) {
 	if rect.W < 2 || rect.H < 2 {
 		return
 	}
-	c.drawPaneFrameWithTitle(rect, title, active, floating)
+	c.drawPaneFrameWithTitle(rect, title, meta, active, floating)
 	c.drawPaneBody(rect, pane, active)
 }
 
-func (c *composedCanvas) drawPaneWithTitleFull(rect Rect, pane *Pane, title string, active bool, floating bool) {
+func (c *composedCanvas) drawPaneWithTitleFull(rect Rect, pane *Pane, title string, meta string, active bool, floating bool) {
 	if rect.W < 2 || rect.H < 2 {
 		return
 	}
-	c.drawPaneFrameWithTitle(rect, title, active, floating)
+	c.drawPaneFrameWithTitle(rect, title, meta, active, floating)
 	c.drawPaneBodyFull(rect, pane, active)
 }
 
 func (c *composedCanvas) drawPaneFrame(rect Rect, pane *Pane, active bool) {
-	c.drawPaneFrameWithTitle(rect, paneTitle(pane), active, false)
+	c.drawPaneFrameWithTitle(rect, paneTitle(pane), "", active, false)
 }
 
-func (c *composedCanvas) drawPaneFrameWithTitle(rect Rect, title string, active bool, floating bool) {
+func (c *composedCanvas) drawPaneFrameWithTitle(rect Rect, title string, meta string, active bool, floating bool) {
 	if rect.W < 2 || rect.H < 2 {
 		return
 	}
-	border := drawStyle{FG: "#4b5563"}
-	titleStyle := drawStyle{FG: "#9ca3af", BG: "#0b1220", Bold: true}
-	switch {
-	case floating && active:
-		border = drawStyle{FG: "#fde047", Bold: true}
-		titleStyle = drawStyle{FG: "#fef9c3", BG: "#1f2937", Bold: true}
-	case floating:
-		border = drawStyle{FG: "#78716c"}
-		titleStyle = drawStyle{FG: "#d6d3d1", BG: "#111827", Bold: true}
-	case active:
-		border = drawStyle{FG: "#5fafff", Bold: true}
-		titleStyle = drawStyle{FG: "#eff6ff", BG: "#0f172a", Bold: true}
+	border := drawStyle{FG: "#d1d5db"}
+	titleStyle := drawStyle{FG: "#e5e7eb", Bold: true}
+	if active {
+		border = drawStyle{FG: "#4ade80", Bold: true}
+		titleStyle = drawStyle{FG: "#f0fdf4", Bold: true}
+	} else if floating {
+		titleStyle = drawStyle{FG: "#f3f4f6", Bold: true}
 	}
-	c.drawRectBorder(rect, title, border, titleStyle)
+	c.drawRectBorder(rect, title, meta, border, titleStyle)
 }
 
 func (c *composedCanvas) drawPaneBody(rect Rect, pane *Pane, active bool) {
@@ -383,7 +380,7 @@ func (c *composedCanvas) drawPaneSourceRow(rect Rect, pane *Pane, viewRow, viewC
 	}
 }
 
-func (c *composedCanvas) drawRectBorder(rect Rect, title string, borderStyle, titleStyle drawStyle) {
+func (c *composedCanvas) drawRectBorder(rect Rect, title string, meta string, borderStyle, titleStyle drawStyle) {
 	for x := rect.X; x < rect.X+rect.W; x++ {
 		c.set(x, rect.Y, drawCell{Content: "─", Width: 1, Style: borderStyle})
 		c.set(x, rect.Y+rect.H-1, drawCell{Content: "─", Width: 1, Style: borderStyle})
@@ -400,15 +397,114 @@ func (c *composedCanvas) drawRectBorder(rect Rect, title string, borderStyle, ti
 	if rect.W <= 2 {
 		return
 	}
-	for x, cell := range borderTitleCells(title, rect.W-2, titleStyle) {
-		if x >= rect.W-2 {
-			break
+	c.drawBorderTopLabels(rect, title, meta, titleStyle)
+}
+
+func (c *composedCanvas) drawBorderTopLabels(rect Rect, title string, meta string, style drawStyle) {
+	innerW := rect.W - 2
+	if innerW <= 0 {
+		return
+	}
+	title = strings.TrimSpace(title)
+	meta = strings.TrimSpace(meta)
+	if title == "" && meta == "" {
+		return
+	}
+
+	leftX := rect.X + 2
+	rightLimit := rect.X + rect.W - 2
+	available := max(0, rightLimit-leftX)
+	titleCells := borderTitleCells(" "+title+" ", available, style)
+	metaCells := borderTitleCells(" "+meta+" ", available, style)
+	titleWidth := drawCellsWidth(titleCells)
+	metaWidth := drawCellsWidth(metaCells)
+	if titleWidth > 0 && metaWidth > 0 && titleWidth+metaWidth >= available {
+		remainingMetaWidth := available - titleWidth - 1
+		if remainingMetaWidth < 6 {
+			metaCells = nil
+			metaWidth = 0
+		} else {
+			metaCells = borderTitleCells(" "+meta+" ", remainingMetaWidth, style)
+			metaWidth = drawCellsWidth(metaCells)
 		}
+	}
+
+	if len(titleCells) > 0 {
+		for x, cell := range titleCells {
+			if cell.Continuation {
+				continue
+			}
+			drawX := leftX + x
+			if drawX >= rightLimit {
+				break
+			}
+			c.set(drawX, rect.Y, cell)
+		}
+	}
+	if len(metaCells) == 0 {
+		return
+	}
+	metaStart := rect.X + rect.W - 2 - metaWidth
+	if metaStart <= leftX {
+		available := max(1, metaStart-leftX-1)
+		titleCells = borderTitleCells(" "+title+" ", available, style)
+		if len(titleCells) > 0 {
+			for x, cell := range titleCells {
+				if cell.Continuation {
+					continue
+				}
+				drawX := leftX + x
+				if drawX >= metaStart-1 {
+					break
+				}
+				c.set(drawX, rect.Y, cell)
+			}
+		}
+	}
+	for x, cell := range metaCells {
 		if cell.Continuation {
 			continue
 		}
-		c.set(rect.X+1+x, rect.Y, cell)
+		drawX := metaStart + x
+		if drawX >= rightLimit {
+			break
+		}
+		c.set(drawX, rect.Y, cell)
 	}
+}
+
+type borderTitleCacheKey struct {
+	Text  string
+	Width int
+	Style drawStyle
+}
+
+func borderTitleCells(text string, maxWidth int, style drawStyle) []drawCell {
+	if maxWidth <= 0 {
+		return nil
+	}
+	key := borderTitleCacheKey{
+		Text:  truncateTextToWidth(text, maxWidth),
+		Width: maxWidth,
+		Style: style,
+	}
+	if cached, ok := borderTitleCellCache.Load(key); ok {
+		return cached.([]drawCell)
+	}
+	cells := stringToDrawCells(key.Text, style)
+	borderTitleCellCache.Store(key, cells)
+	return cells
+}
+
+func drawCellsWidth(cells []drawCell) int {
+	width := 0
+	for _, cell := range cells {
+		if cell.Continuation {
+			continue
+		}
+		width += max(1, cell.Width)
+	}
+	return width
 }
 
 func (c *composedCanvas) drawGrid(rect Rect, grid [][]drawCell) {
@@ -677,8 +773,8 @@ func (c *composedCanvas) String() string {
 	return c.fullCache
 }
 
-func paneFrameKey(title string, active bool, floating bool, rect Rect) string {
-	if title == "" {
+func paneFrameKey(title string, meta string, active bool, floating bool, rect Rect) string {
+	if title == "" && meta == "" {
 		if active {
 			if floating {
 				return "active:floating:nil:" + itoa(rect.W) + ":" + itoa(rect.H)
@@ -698,7 +794,7 @@ func paneFrameKey(title string, active bool, floating bool, rect Rect) string {
 	if floating {
 		layer = "floating"
 	}
-	return state + ":" + layer + ":" + title + ":" + itoa(rect.W) + ":" + itoa(rect.H)
+	return state + ":" + layer + ":" + title + ":" + meta + ":" + itoa(rect.W) + ":" + itoa(rect.H)
 }
 
 func sameRects(a, b map[string]Rect) bool {
@@ -808,7 +904,8 @@ func (m *Model) paneRenderEntries(tab *Tab, width, height int) []paneRenderEntry
 			entries = append(entries, paneRenderEntry{
 				PaneID:   paneID,
 				Rect:     rect,
-				Title:    paneFrameTitle(tab, paneID, tab.Panes[paneID]),
+				Title:    m.paneFrameTitle(tab, paneID, tab.Panes[paneID]),
+				Meta:     m.paneFrameMeta(tab, paneID, tab.Panes[paneID], false),
 				Floating: false,
 			})
 		}
@@ -817,7 +914,8 @@ func (m *Model) paneRenderEntries(tab *Tab, width, height int) []paneRenderEntry
 		entries = append(entries, paneRenderEntry{
 			PaneID:   floating.PaneID,
 			Rect:     floating.Rect,
-			Title:    paneFrameTitle(tab, floating.PaneID, tab.Panes[floating.PaneID]),
+			Title:    m.paneFrameTitle(tab, floating.PaneID, tab.Panes[floating.PaneID]),
+			Meta:     m.paneFrameMeta(tab, floating.PaneID, tab.Panes[floating.PaneID], true),
 			Floating: true,
 		})
 	}
@@ -970,10 +1068,13 @@ func normalizePaneGridStyle(pane *Pane, grid [][]drawCell) [][]drawCell {
 }
 
 func normalizePaneDrawCellStyle(pane *Pane, cell drawCell) drawCell {
-	if pane == nil || paneTerminalState(pane) != "exited" {
+	if cell.Continuation {
 		return cell
 	}
-	if cell.Continuation {
+	if pane == nil {
+		return cell
+	}
+	if paneTerminalState(pane) != "exited" {
 		return cell
 	}
 	if strings.TrimSpace(cell.Content) == "" {
@@ -1315,21 +1416,29 @@ func paneTitle(pane *Pane) string {
 	if pane == nil {
 		return "pane"
 	}
-	title := coalesce(pane.Title, pane.TerminalID, pane.ID)
-	title += paneTitleBadges(pane)
 	switch paneTerminalState(pane) {
 	case "waiting":
-		return "[waiting] " + title
+		return "waiting pane" + paneTitleBadges(pane)
+	case "unbound":
+		return "saved pane" + paneTitleBadges(pane)
 	case "killed":
-		return "[killed] " + title
+		return "saved pane" + paneTitleBadges(pane)
 	case "exited":
+		title := paneDisplayTitle(pane) + paneTitleBadges(pane)
 		if pane.ExitCode != nil {
 			return "[exited code=" + itoa(*pane.ExitCode) + "] " + title
 		}
 		return "[exited] " + title
 	default:
-		return title
+		return paneDisplayTitle(pane) + paneTitleBadges(pane)
 	}
+}
+
+func paneDisplayTitle(pane *Pane) string {
+	if pane == nil {
+		return "pane"
+	}
+	return coalesce(strings.TrimSpace(pane.Name), strings.TrimSpace(pane.Title), strings.TrimSpace(pane.TerminalID), strings.TrimSpace(pane.ID), "terminal")
 }
 
 func paneTitleBadges(pane *Pane) string {
@@ -1349,17 +1458,65 @@ func paneTitleBadges(pane *Pane) string {
 	return " " + strings.Join(badges, " ")
 }
 
-func paneFrameTitle(tab *Tab, paneID string, pane *Pane) string {
-	title := paneTitle(pane)
+func (m *Model) paneFrameTitle(tab *Tab, paneID string, pane *Pane) string {
+	if pane == nil {
+		return "pane"
+	}
+	title := paneDisplayTitle(pane)
 	z, total, ok := floatingPaneOrder(tab, paneID)
 	if !ok {
 		return title
 	}
-	title = "float:" + title
 	if total > 1 {
 		return title + " [floating z:" + itoa(z) + "]"
 	}
 	return title + " [floating]"
+}
+
+func (m *Model) paneFrameMeta(tab *Tab, paneID string, pane *Pane, floating bool) string {
+	if pane == nil {
+		return ""
+	}
+	parts := make([]string, 0, 8)
+	switch paneTerminalState(pane) {
+	case "waiting":
+		parts = append(parts, m.icons.token("waiting", m.icons.Waiting))
+	case "unbound":
+		parts = append(parts, m.icons.token("saved", m.icons.Unbound))
+	case "killed":
+		parts = append(parts, m.icons.token("killed", m.icons.Killed))
+	case "exited":
+		code := ""
+		if pane.ExitCode != nil {
+			code = itoa(*pane.ExitCode)
+		} else {
+			code = "done"
+		}
+		parts = append(parts, m.icons.pairToken("exit", m.icons.Exited, code))
+	default:
+		parts = append(parts, m.icons.token("live", m.icons.Running))
+	}
+	if pane.Mode == ViewportModeFixed {
+		parts = append(parts, m.icons.token("fixed", m.icons.Fixed))
+	} else {
+		parts = append(parts, m.icons.token("fit", m.icons.Fit))
+	}
+	if count := terminalBindingCount(m.workspace.Tabs, pane.TerminalID); count > 1 {
+		parts = append(parts, m.icons.countToken("share", m.icons.Shared, count))
+	}
+	if paneAccessMode(pane) == "observer" {
+		parts = append(parts, m.icons.token("obs", m.icons.Observer))
+	}
+	if pane.Readonly {
+		parts = append(parts, m.icons.token("ro", m.icons.Readonly))
+	}
+	if pane.Pin {
+		parts = append(parts, m.icons.token("pin", m.icons.Pinned))
+	}
+	if strings.TrimSpace(pane.Tags["termx.size_lock"]) == "warn" {
+		parts = append(parts, m.icons.token("lock", m.icons.LockWarn))
+	}
+	return strings.Join(parts, " ")
 }
 
 func welcomePaneLines(pane *Pane) []string {
@@ -1373,14 +1530,24 @@ func welcomePaneLines(pane *Pane) []string {
 			"",
 			"load-layout can create or attach a matching terminal later",
 		}
+	case "unbound":
+		return []string{
+			"saved pane",
+			"",
+			"No terminal in this pane",
+			"",
+			"Enter start new terminal",
+			"Ctrl-f bring running terminal here",
+			"Ctrl-g then t open terminal manager",
+		}
 	case "killed":
 		return []string{
 			"terminal was killed",
 			"",
 			"pane: " + title,
 			"",
-			"close this pane with Ctrl-a x",
-			"or attach another terminal with Ctrl-a f",
+			"press Ctrl-p then x to close this pane",
+			"or press Ctrl-f to attach another terminal",
 		}
 	case "exited":
 		code := ""
@@ -1394,7 +1561,7 @@ func welcomePaneLines(pane *Pane) []string {
 			"",
 			"scrollback remains readable",
 			"press r to restart in this pane",
-			"attach another terminal with Ctrl-a f if needed",
+			"press Ctrl-f to attach another terminal",
 		}
 	}
 	return []string{
@@ -1430,7 +1597,9 @@ func styleANSI(to drawStyle) string {
 		return ansi
 	}
 	if to.FG != "" {
-		if rgb, ok := hexToRGB(to.FG); ok {
+		if seq := ansiColorSequence(to.FG, true); seq != "" {
+			b.WriteString(seq)
+		} else if rgb, ok := hexToRGB(to.FG); ok {
 			b.WriteString(";38;2;")
 			b.WriteString(itoa(rgb[0]))
 			b.WriteByte(';')
@@ -1440,7 +1609,9 @@ func styleANSI(to drawStyle) string {
 		}
 	}
 	if to.BG != "" {
-		if rgb, ok := hexToRGB(to.BG); ok {
+		if seq := ansiColorSequence(to.BG, false); seq != "" {
+			b.WriteString(seq)
+		} else if rgb, ok := hexToRGB(to.BG); ok {
 			b.WriteString(";48;2;")
 			b.WriteString(itoa(rgb[0]))
 			b.WriteByte(';')
@@ -1473,25 +1644,36 @@ func styleANSI(to drawStyle) string {
 	return ansi
 }
 
-func borderTitleCells(title string, width int, style drawStyle) []drawCell {
-	if width <= 0 {
-		return nil
+func ansiColorSequence(value string, foreground bool) string {
+	value = strings.TrimSpace(value)
+	switch {
+	case strings.HasPrefix(value, "ansi:"):
+		index, err := strconv.Atoi(strings.TrimPrefix(value, "ansi:"))
+		if err != nil || index < 0 || index > 15 {
+			return ""
+		}
+		switch {
+		case index < 8 && foreground:
+			return ";3" + itoa(index)
+		case index < 8:
+			return ";4" + itoa(index)
+		case foreground:
+			return ";9" + itoa(index-8)
+		default:
+			return ";10" + itoa(index-8)
+		}
+	case strings.HasPrefix(value, "idx:"):
+		index, err := strconv.Atoi(strings.TrimPrefix(value, "idx:"))
+		if err != nil || index < 0 || index > 255 {
+			return ""
+		}
+		if foreground {
+			return ";38;5;" + strconv.Itoa(index)
+		}
+		return ";48;5;" + strconv.Itoa(index)
+	default:
+		return ""
 	}
-	key := struct {
-		Title string
-		Width int
-		Style drawStyle
-	}{
-		Title: title,
-		Width: width,
-		Style: style,
-	}
-	if cached, ok := borderTitleCellCache.Load(key); ok {
-		return cached.([]drawCell)
-	}
-	cells := stringToDrawCells(truncateTextToWidth(" "+title+" ", width), style)
-	borderTitleCellCache.Store(key, cells)
-	return cells
 }
 
 func itoa(v int) string {

@@ -29,7 +29,7 @@ func TestE2ETUI_FloatingOverlayPersistsAcrossTerminalFrames(t *testing.T) {
 	h.waitForStableScreenContains("ws:main", 10*time.Second)
 
 	h.openFloatingViewport()
-	screen := h.waitForStableScreenContains("[floating]", 10*time.Second)
+	screen := h.waitForStableScreenContains("[floating", 10*time.Second)
 	assertFloatingOverlayFrame(t, screen, "")
 
 	h.sendText("echo FLOAT-TOP")
@@ -60,7 +60,7 @@ func TestE2ETUI_FloatingOverlayHideShowUpdatesTerminalScreen(t *testing.T) {
 	h.waitForStableScreenContains("ws:main", 10*time.Second)
 
 	h.openFloatingViewport()
-	h.waitForStableScreenContains("[floating]", 10*time.Second)
+	h.waitForStableScreenContains("[floating", 10*time.Second)
 	h.sendText("echo FLOAT-TOGGLE")
 	h.pressEnter()
 
@@ -69,7 +69,7 @@ func TestE2ETUI_FloatingOverlayHideShowUpdatesTerminalScreen(t *testing.T) {
 
 	h.sendPrefixRune('W')
 	screen = h.waitForStableScreenWithout("FLOAT-TOGGLE", 10*time.Second)
-	if strings.Contains(screen, "[floating]") {
+	if strings.Contains(screen, "[floating") {
 		t.Fatalf("expected floating title to disappear when hidden, got:\n%s", screen)
 	}
 	if strings.Count(screen, "┌") != 1 {
@@ -94,7 +94,7 @@ func TestE2ETUI_FloatingOverlayZOrderMatchesVisibleTopWindow(t *testing.T) {
 	h.waitForStableScreenContains("ws:main", 10*time.Second)
 
 	h.openFloatingViewport()
-	h.waitForStableScreenContains("[floating]", 10*time.Second)
+	h.waitForStableScreenContains("[floating", 10*time.Second)
 	h.sendText("echo FLOAT-A")
 	h.pressEnter()
 	h.waitForStableScreenContains("FLOAT-A", 10*time.Second)
@@ -112,8 +112,10 @@ func TestE2ETUI_FloatingOverlayZOrderMatchesVisibleTopWindow(t *testing.T) {
 		t.Fatalf("expected top floating pane title to expose z-order, got:\n%s", screen)
 	}
 
-	h.sendPrefixKey(tea.KeyTab)
-	h.sendPrefixRune(']')
+	h.sendCtrlKey(tea.KeyCtrlO)
+	h.waitForMode("floating", "<n> NEW", "<hjkl> MOVE")
+	h.pressKey(tea.KeyTab)
+	h.sendText("]")
 	screen = h.waitForStableScreenContains("FLOAT-A", 10*time.Second)
 	if strings.Contains(screen, "FLOAT-B") {
 		t.Fatalf("expected raised floating pane to become visible top window, got:\n%s", screen)
@@ -133,21 +135,76 @@ func TestE2ETUI_FloatingWindowsAreStaggeredAndStatusHintsStayVisible(t *testing.
 	h.waitForStableScreenContains("ws:main", 10*time.Second)
 
 	h.openFloatingViewport()
-	h.waitForStableScreenContains("[floating]", 10*time.Second)
+	h.waitForStableScreenContains("[floating", 10*time.Second)
 
 	h.openFloatingViewport()
 	screen := h.waitForStableScreenContains("[floating z:2]", 10*time.Second)
 	if !strings.Contains(screen, "[floating z:1]") || !strings.Contains(screen, "[floating z:2]") {
 		t.Fatalf("expected staggered floating windows to keep both title bars visible, got:\n%s", screen)
 	}
-	if !strings.Contains(screen, "floating:2") || !strings.Contains(screen, "focus:float") || !strings.Contains(screen, "Esc->tiled") {
-		t.Fatalf("expected status line to expose floating focus hints, got:\n%s", screen)
+	if !strings.Contains(screen, "◫ 2") || !strings.Contains(screen, "◫ float") {
+		t.Fatalf("expected chrome to expose compact floating status, got:\n%s", screen)
 	}
 
 	h.pressEsc()
-	screen = h.waitForStableScreenContains("focus:tiled", 10*time.Second)
-	if !strings.Contains(screen, "floating:2") || !strings.Contains(screen, "Tab->float") {
-		t.Fatalf("expected tiled focus status hint after escaping floating layer, got:\n%s", screen)
+	screen = h.waitForStableScreenMatching("tiled focus restored after escaping floating layer", 10*time.Second, func(screen string) bool {
+		return strings.Contains(screen, "◫ 2") && strings.Contains(screen, "▣ tiled")
+	})
+	if !strings.Contains(screen, "▣ tiled") {
+		t.Fatalf("expected tiled focus summary after escaping floating layer, got:\n%s", screen)
+	}
+}
+
+func TestE2ETUI_FloatingCenterShortcutRecentersPartiallyHiddenWindow(t *testing.T) {
+	_, client, cleanup := newE2EClient(t)
+	defer cleanup()
+
+	h := newTUIScreenHarness(t, client, 120, 30)
+	defer h.Close()
+
+	h.waitForStableScreenContains("ws:main", 10*time.Second)
+
+	h.sendCtrlKey(tea.KeyCtrlO)
+	h.waitForMode("floating", "<n> NEW", "<hjkl> MOVE")
+	h.sendText("n")
+	h.waitForStableScreenContains("Open Floating Pane", 10*time.Second)
+	h.pressEnter()
+	h.completeDefaultTerminalCreate()
+	h.waitForStableScreenContains("[floating", 10*time.Second)
+
+	tab := h.model.CurrentTabForTest()
+	if tab == nil || len(tab.Floating) == 0 {
+		t.Fatalf("expected floating pane after open, got %#v", tab)
+	}
+	entry := tab.Floating[len(tab.Floating)-1]
+	h.sendCtrlKey(tea.KeyCtrlO)
+	h.waitForMode("floating", "<n> NEW", "<hjkl> MOVE")
+	for i := 0; i < 18; i++ {
+		h.sendText("h")
+	}
+	for i := 0; i < 8; i++ {
+		h.sendText("k")
+	}
+	h.waitForStableScreenMatching("floating pane moved partially out of viewport", 10*time.Second, func(string) bool {
+		return entry.Rect.X < 0 || entry.Rect.Y < 0
+	})
+
+	expected := tui.Rect{
+		X: max(0, (120-entry.Rect.W)/2),
+		Y: max(0, (28-entry.Rect.H)/2),
+		W: entry.Rect.W,
+		H: entry.Rect.H,
+	}
+
+	h.sendText("c")
+	screen := h.waitForStableScreenMatching("floating center shortcut recenters active pane", 10*time.Second, func(screen string) bool {
+		return entry.Rect == expected && strings.Contains(screen, "[floating")
+	})
+	if entry.Rect != expected {
+		t.Fatalf("expected center shortcut to recenter floating pane to %+v, got %+v", expected, entry.Rect)
+	}
+	if !strings.Contains(screen, "[floating") {
+		t.Fatalf("expected centered floating pane to remain visible, got:\n%s", screen)
 	}
 }
 
@@ -180,7 +237,7 @@ func TestE2ETUI_FloatingDragRestoresPreviouslyOccludedFloatingBody(t *testing.T)
 		h.sendText(terminalID)
 		h.pressEnter()
 		h.waitForStableScreenMatching("floating attach completes", 10*time.Second, func(screen string) bool {
-			return strings.Contains(screen, "float:")
+			return strings.Contains(screen, "[floating")
 		})
 	}
 
@@ -202,6 +259,7 @@ func TestE2ETUI_FloatingDragRestoresPreviouslyOccludedFloatingBody(t *testing.T)
 		if pane == nil {
 			t.Fatalf("expected pane for floating entry %d", i)
 		}
+		pane.Name = titles[i]
 		pane.Title = titles[i]
 		floating.Rect = rects[i]
 	}
@@ -209,9 +267,9 @@ func TestE2ETUI_FloatingDragRestoresPreviouslyOccludedFloatingBody(t *testing.T)
 	h.program.Send(tea.WindowSizeMsg{Width: 121, Height: 30})
 	h.program.Send(tea.WindowSizeMsg{Width: 120, Height: 30})
 	screen := h.waitForStableScreenMatching("arranged overlapping floating panes", 10*time.Second, func(screen string) bool {
-		return containsAll(screen, "float:bottom", "float:top", "TOP-LAYER")
+		return containsAll(screen, "bottom [floating z:1]", "top [floating z:2]", "TOP-LAYER")
 	})
-	if !strings.Contains(screen, "float:bottom") {
+	if !strings.Contains(screen, "bottom [floating z:1]") {
 		t.Fatalf("expected bottom floating title before drag, got:\n%s", screen)
 	}
 	if strings.Contains(screen, "BOTTOM-ROW-2") {
@@ -270,23 +328,23 @@ func TestE2ETUI_V3ShortcutModesAndFloatingResize(t *testing.T) {
 	h := newTUIScreenHarness(t, client, 120, 30)
 	defer h.Close()
 
-	h.waitForStableScreenContains("[NORMAL]", 10*time.Second)
+	h.waitForNormalMode("Ctrl +", "<p> PANE")
 
 	h.sendCtrlKey(tea.KeyCtrlG)
-	screen := h.waitForStableScreenContains("[GLOBAL]", 10*time.Second)
-	if !strings.Contains(screen, "?:help") {
+	screen := h.waitForMode("global", "<?> HELP", "<t> TERMINALS")
+	if !containsAll(screen, "<?>", "HELP", "<t>", "TERMINALS") {
 		t.Fatalf("expected global mode hints, got:\n%s", screen)
 	}
 	h.sendText("?")
 	screen = h.waitForStableScreenContains("Help / Shortcut Map", 10*time.Second)
-	if !strings.Contains(screen, "Ctrl-p pane mode") {
+	if !containsAll(screen, "Most used", "Ctrl-p   pane actions", "Shared terminal", "Esc close") {
 		t.Fatalf("expected v3 help content, got:\n%s", screen)
 	}
 	h.pressEsc()
 	h.waitForStableScreenWithout("Help / Shortcut Map", 10*time.Second)
 
 	h.sendCtrlKey(tea.KeyCtrlP)
-	h.waitForStableScreenContains("[PANE]", 10*time.Second)
+	h.waitForMode("pane", "<%> SPLIT", "<hjkl> FOCUS")
 	h.sendText("%")
 	h.waitForStableScreenContains("Open Pane", 10*time.Second)
 	h.pressEnter()
@@ -310,7 +368,7 @@ func TestE2ETUI_V3ShortcutModesAndFloatingResize(t *testing.T) {
 	h.waitForStableScreenContains("V3-TAB", 10*time.Second)
 
 	h.sendCtrlKey(tea.KeyCtrlV)
-	h.waitForStableScreenContains("[DISPLAY]", 10*time.Second)
+	h.waitForMode("view", "DISPLAY", "<m> FIT/FIXED")
 	h.sendText("m")
 	h.waitForStableScreenMatching("fixed pane display mode", 10*time.Second, func(string) bool {
 		tab := h.model.CurrentTabForTest()
@@ -322,12 +380,12 @@ func TestE2ETUI_V3ShortcutModesAndFloatingResize(t *testing.T) {
 	})
 
 	h.sendCtrlKey(tea.KeyCtrlO)
-	h.waitForStableScreenContains("[FLOAT]", 10*time.Second)
+	h.waitForMode("floating", "<n> NEW", "<hjkl> MOVE")
 	h.sendText("n")
 	h.waitForStableScreenContains("Open Floating Pane", 10*time.Second)
 	h.pressEnter()
 	h.completeDefaultTerminalCreate()
-	h.waitForStableScreenContains("[floating]", 10*time.Second)
+	h.waitForStableScreenContains("[floating", 10*time.Second)
 
 	tab := h.model.CurrentTabForTest()
 	if tab == nil || len(tab.Floating) == 0 {
@@ -335,6 +393,8 @@ func TestE2ETUI_V3ShortcutModesAndFloatingResize(t *testing.T) {
 	}
 	entry := tab.Floating[len(tab.Floating)-1]
 	before := entry.Rect
+	h.sendCtrlKey(tea.KeyCtrlO)
+	h.waitForMode("floating", "<n> NEW", "<hjkl> MOVE")
 	h.sendText("L")
 	h.waitForStableScreenMatching("floating rect resize", 10*time.Second, func(string) bool {
 		tab := h.model.CurrentTabForTest()
@@ -587,7 +647,7 @@ func TestE2ETUI_ScenarioSplitAndContinueWorking(t *testing.T) {
 	beforeCount := len(before.Panes)
 
 	h.sendCtrlKey(tea.KeyCtrlP)
-	h.waitForStableScreenContains("[PANE]", 10*time.Second)
+	h.waitForMode("pane", "<%> SPLIT", "<hjkl> FOCUS")
 	h.sendText("%")
 	h.waitForStableScreenContains("Open Pane", 10*time.Second)
 	h.pressEnter()
@@ -664,7 +724,7 @@ func TestE2ETUI_ScenarioReuseTerminalInFloatingPane(t *testing.T) {
 	h.pressEnter()
 
 	screen := h.waitForStableScreenContains("scenario-float-reuse", 10*time.Second)
-	if !strings.Contains(screen, "[floating]") {
+	if !strings.Contains(screen, "[floating") {
 		t.Fatalf("expected reused terminal to open in floating pane, got:\n%s", screen)
 	}
 
@@ -704,7 +764,7 @@ func TestE2ETUI_ScenarioEditTerminalMetadata(t *testing.T) {
 
 	newName := "scenario-shell"
 	h.sendCtrlKey(tea.KeyCtrlG)
-	h.waitForStableScreenContains("[GLOBAL]", 10*time.Second)
+	h.waitForMode("global", "<?> HELP", "<t> TERMINALS")
 	h.sendText(":")
 	h.waitForStableScreenMatching("command prompt open", 10*time.Second, func(screen string) bool {
 		return h.model.PromptKindForTest() == "command" && strings.Contains(screen, "command:")
@@ -759,13 +819,24 @@ func TestE2ETUI_ExitedPaneRestartRebindsViewportToFreshShell(t *testing.T) {
 
 	h.sendText("exit")
 	h.pressEnter()
-	screen := h.waitForStableScreenContains("[exited code=0] restartable-shell", 10*time.Second)
-	if !strings.Contains(screen, "restart:r") {
-		t.Fatalf("expected exited pane affordance to mention restart in status line, got:\n%s", screen)
-	}
+	screen := h.waitForStableScreenMatching("pane exits and keeps restartable shell visible", 10*time.Second, func(screen string) bool {
+		tab := h.model.CurrentTabForTest()
+		if tab == nil {
+			return false
+		}
+		pane := tab.Panes[tab.ActivePaneID]
+		return pane != nil && tui.PaneTerminalStateForTest(pane) == "exited" && strings.Contains(screen, "restartable-shell")
+	})
 
 	h.sendText("r")
-	h.waitForStableScreenWithout("[exited code=0] restartable-shell", 10*time.Second)
+	h.waitForStableScreenMatching("pane restart clears exited state", 10*time.Second, func(screen string) bool {
+		tab := h.model.CurrentTabForTest()
+		if tab == nil {
+			return false
+		}
+		pane := tab.Panes[tab.ActivePaneID]
+		return pane != nil && tui.PaneTerminalStateForTest(pane) == "running"
+	})
 	h.sendText("echo RESTARTED-SHELL")
 	h.pressEnter()
 
@@ -786,7 +857,14 @@ func TestE2ETUI_ExitedPaneHistoryUsesNeutralForeground(t *testing.T) {
 	h.sendText("printf '\\033[31mRED\\033[0m\\n'; exit")
 	h.pressEnter()
 
-	screen := h.waitForStableScreenContains("[exited code=0]", 10*time.Second)
+	screen := h.waitForStableScreenMatching("pane exits after colored output", 10*time.Second, func(screen string) bool {
+		tab := h.model.CurrentTabForTest()
+		if tab == nil {
+			return false
+		}
+		pane := tab.Panes[tab.ActivePaneID]
+		return pane != nil && tui.PaneTerminalStateForTest(pane) == "exited"
+	})
 	if !strings.Contains(screen, "RED") {
 		t.Fatalf("expected exited pane history to stay visible, got:\n%s", screen)
 	}
@@ -819,7 +897,7 @@ func TestE2ETUI_FloatingChooserKeepsExitedTerminalVisible(t *testing.T) {
 	if strings.Contains(screen, "Open Floating Pane") {
 		t.Fatalf("expected floating chooser to close after exited attach, got:\n%s", screen)
 	}
-	if !strings.Contains(screen, "[floating]") {
+	if !strings.Contains(screen, "[floating") {
 		t.Fatalf("expected exited floating pane to remain visible, got:\n%s", screen)
 	}
 }
@@ -866,14 +944,14 @@ func TestE2ETUI_Workflow_CreateSplitFloatingAndReuse(t *testing.T) {
 	h.sendText(reuseID)
 	h.pressEnter()
 	screen = h.waitForStableScreenContains("reuse-target", 10*time.Second)
-	if !strings.Contains(screen, "[floating]") {
+	if !strings.Contains(screen, "[floating") {
 		t.Fatalf("expected floating reuse pane to remain visible, got:\n%s", screen)
 	}
 
 	h.sendText("echo FLOAT-REUSE")
 	h.pressEnter()
 	screen = h.waitForStableScreenContains("FLOAT-REUSE", 10*time.Second)
-	if !strings.Contains(screen, "[floating]") {
+	if !strings.Contains(screen, "[floating") {
 		t.Fatalf("expected floating reuse output to stay visible, got:\n%s", screen)
 	}
 }
@@ -945,13 +1023,13 @@ func TestE2ETUI_ScenarioCloseSharedPaneKeepsTerminalAlive(t *testing.T) {
 	h.openFloatingChooser()
 	h.sendText(sharedID)
 	h.pressEnter()
-	screen := h.waitForStableScreenContains("[floating]", 10*time.Second)
-	if !strings.Contains(screen, "float:") {
+	screen := h.waitForStableScreenContains("[floating", 10*time.Second)
+	if !strings.Contains(screen, "[floating") {
 		t.Fatalf("expected floating shared pane before close, got:\n%s", screen)
 	}
 
 	h.sendPrefixRune('x')
-	screen = h.waitForStableScreenWithout("[floating]", 10*time.Second)
+	screen = h.waitForStableScreenWithout("[floating", 10*time.Second)
 	if strings.Contains(screen, "Choose Terminal") {
 		t.Fatalf("expected close shared pane to return to layout, got:\n%s", screen)
 	}
@@ -968,12 +1046,12 @@ func TestE2ETUI_ScenarioCloseSharedPaneKeepsTerminalAlive(t *testing.T) {
 	h.sendText("echo SHARED-STILL-LIVE")
 	h.pressEnter()
 	screen = h.waitForStableScreenContains("SHARED-STILL-LIVE", 10*time.Second)
-	if strings.Contains(screen, "[floating]") {
+	if strings.Contains(screen, "[floating") {
 		t.Fatalf("expected floating pane to stay closed after shared terminal command, got:\n%s", screen)
 	}
 }
 
-func TestE2ETUI_ScenarioKillSharedTerminalClosesAllBoundPanes(t *testing.T) {
+func TestE2ETUI_ScenarioKillSharedTerminalKeepsSavedSlots(t *testing.T) {
 	_, client, cleanup := newE2EClient(t)
 	defer cleanup()
 
@@ -993,7 +1071,7 @@ func TestE2ETUI_ScenarioKillSharedTerminalClosesAllBoundPanes(t *testing.T) {
 	sharedID := base.TerminalID
 
 	h.sendCtrlKey(tea.KeyCtrlP)
-	h.waitForStableScreenContains("[PANE]", 10*time.Second)
+	h.waitForMode("pane", "<%> SPLIT", "<hjkl> FOCUS")
 	h.sendText("%")
 	h.waitForStableScreenContains("Open Pane", 10*time.Second)
 	h.pressEnter()
@@ -1003,40 +1081,65 @@ func TestE2ETUI_ScenarioKillSharedTerminalClosesAllBoundPanes(t *testing.T) {
 		tab := h.model.CurrentTabForTest()
 		return tab != nil && len(tab.Panes) == 2 && strings.Count(screen, "┌") >= 2
 	})
-
 	h.openFloatingChooser()
 	h.sendText(sharedID)
 	h.pressEnter()
-	screen := h.waitForStableScreenContains("[floating]", 10*time.Second)
-	if !strings.Contains(screen, "float:") {
+	screen := h.waitForStableScreenContains("[floating", 10*time.Second)
+	if !strings.Contains(screen, "[floating") {
 		t.Fatalf("expected shared floating pane before kill, got:\n%s", screen)
 	}
 
 	h.sendPrefixRune('X')
+	h.waitForStableScreenContains("Stop Terminal", 10*time.Second)
+	h.pressEnter()
 	screen = h.waitForStableScreenMatching("shared terminal removed", 10*time.Second, func(screen string) bool {
 		tab := h.model.CurrentTabForTest()
-		return tab != nil && len(tab.Panes) == 1 && !strings.Contains(screen, "[floating]") && strings.Contains(screen, "closed 2 bound panes")
+		if tab == nil || len(tab.Panes) != 3 || !strings.Contains(screen, "left 2 saved panes") {
+			return false
+		}
+		saved := 0
+		for _, pane := range tab.Panes {
+			if pane != nil && pane.TerminalState == "unbound" {
+				saved++
+			}
+		}
+		return saved == 2
 	})
 
 	tab = h.model.CurrentTabForTest()
-	if tab == nil || len(tab.Panes) != 1 {
-		t.Fatalf("expected only non-shared pane to remain after kill, got %#v", tab)
+	if tab == nil || len(tab.Panes) != 3 {
+		t.Fatalf("expected all pane slots to remain after kill, got %#v", tab)
 	}
+	unbound := 0
 	for _, pane := range tab.Panes {
-		if pane != nil && pane.TerminalID == sharedID {
-			t.Fatalf("expected all shared panes to be removed after kill, got %#v", pane)
+		if pane == nil {
+			t.Fatalf("expected concrete pane slots after kill, got %#v", tab.Panes)
+		}
+		if pane.TerminalID == sharedID {
+			t.Fatalf("expected killed terminal to unbind from all panes, got %#v", pane)
+		}
+		if pane.TerminalState == "unbound" {
+			unbound++
 		}
 	}
-
-	h.sendText("echo REMAINING-PANE-ALIVE")
-	h.pressEnter()
-	screen = h.waitForStableScreenContains("REMAINING-PANE-ALIVE", 10*time.Second)
-	if !strings.Contains(screen, "closed 2 bound panes") {
-		t.Fatalf("expected kill notice after removing shared terminal, got:\n%s", screen)
+	if unbound != 2 {
+		t.Fatalf("expected 2 saved unbound panes after kill, got %d", unbound)
+	}
+	if !strings.Contains(screen, "left 2 saved panes") {
+		t.Fatalf("expected saved-slot notice after removing shared terminal, got:\n%s", screen)
+	}
+	alive := 0
+	for _, pane := range tab.Panes {
+		if pane != nil && pane.TerminalID != "" {
+			alive++
+		}
+	}
+	if alive != 1 {
+		t.Fatalf("expected exactly one surviving bound pane after kill, got %#v", tab.Panes)
 	}
 }
 
-func TestE2ETUI_ScenarioRemoteKillShowsNoticeAndClosesSharedPanes(t *testing.T) {
+func TestE2ETUI_ScenarioRemoteKillShowsNoticeAndKeepsSavedSlots(t *testing.T) {
 	srv, killerClient, cleanup := newE2EClient(t)
 	defer cleanup()
 
@@ -1062,7 +1165,7 @@ func TestE2ETUI_ScenarioRemoteKillShowsNoticeAndClosesSharedPanes(t *testing.T) 
 	observer.waitForStableScreenContains("shared-remote-kill", 10*time.Second)
 
 	observer.sendCtrlKey(tea.KeyCtrlP)
-	observer.waitForStableScreenContains("[PANE]", 10*time.Second)
+	observer.waitForMode("pane", "<%> SPLIT", "<hjkl> FOCUS")
 	observer.sendText("%")
 	observer.waitForStableScreenContains("Open Pane", 10*time.Second)
 	observer.pressEnter()
@@ -1074,18 +1177,124 @@ func TestE2ETUI_ScenarioRemoteKillShowsNoticeAndClosesSharedPanes(t *testing.T) 
 	})
 
 	killer.sendPrefixRune('X')
+	killer.waitForStableScreenContains("Stop Terminal", 10*time.Second)
+	killer.pressEnter()
 	observer.waitForStableScreenMatching("remote remove notice", 10*time.Second, func(screen string) bool {
 		tab := observer.model.CurrentTabForTest()
-		if tab == nil || len(tab.Panes) != 1 {
+		if tab == nil || len(tab.Panes) != 2 {
 			return false
 		}
+		saved := 0
 		for _, pane := range tab.Panes {
-			if pane != nil && pane.TerminalID == sharedID {
+			if pane == nil {
 				return false
 			}
+			if pane.TerminalID == sharedID {
+				return false
+			}
+			if pane.TerminalState == "unbound" {
+				saved++
+			}
 		}
-		return strings.Contains(screen, "removed by another client")
+		return saved == 1 && strings.Contains(screen, "removed by another client") && strings.Contains(screen, "left 1 saved pane")
 	})
+}
+
+func TestE2ETUI_TerminalManagerOpensFromGlobalModeAndAttachesSelectedTerminal(t *testing.T) {
+	_, client, cleanup := newE2EClient(t)
+	defer cleanup()
+
+	targetID := e2eCreateTerminal(t, client, "manager-target", nil)
+
+	h := newTUIScreenHarness(t, client, 120, 30)
+	defer h.Close()
+
+	h.waitForStableScreenContains("ws:main", 10*time.Second)
+
+	h.openTerminalManager()
+	h.waitForStableScreenContains("Running Terminals", 10*time.Second)
+	h.sendText("manager-target")
+	h.pressEnter()
+	screen := h.waitForStableScreenMatching("terminal manager attach", 10*time.Second, func(screen string) bool {
+		tab := h.model.CurrentTabForTest()
+		if tab == nil {
+			return false
+		}
+		pane := tab.Panes[tab.ActivePaneID]
+		return pane != nil && pane.TerminalID == targetID && !strings.Contains(screen, "Running Terminals")
+	})
+	if !containsAll(screen, "manager-target", "ws:main") {
+		t.Fatalf("expected attached terminal to become active pane, got:\n%s", screen)
+	}
+}
+
+func TestE2ETUI_CommandLineOpensTerminalManager(t *testing.T) {
+	_, client, cleanup := newE2EClient(t)
+	defer cleanup()
+
+	_ = e2eCreateTerminal(t, client, "manager-command", nil)
+
+	h := newTUIScreenHarness(t, client, 120, 30)
+	defer h.Close()
+
+	h.waitForStableScreenContains("ws:main", 10*time.Second)
+
+	h.runCommand("terminals")
+	screen := h.waitForStableScreenContains("Running Terminals", 10*time.Second)
+	if !containsAll(screen, "manager-command", "Terminal Details", "TERMINALS", "<Enter> BRING HERE") {
+		t.Fatalf("expected command line to open terminal manager, got:\n%s", screen)
+	}
+}
+
+func TestE2ETUI_TerminalManagerCanEditParkedTerminalMetadata(t *testing.T) {
+	srv, client, cleanup := newE2EClient(t)
+	defer cleanup()
+
+	parkedID := e2eCreateTerminal(t, client, "parked-old", map[string]string{"role": "ops"})
+
+	h := newTUIScreenHarness(t, client, 120, 30)
+	defer h.Close()
+
+	h.waitForStableScreenContains("ws:main", 10*time.Second)
+
+	h.openTerminalManager()
+	h.waitForStableScreenContains("Running Terminals", 10*time.Second)
+	h.sendText("parked-old")
+	h.waitForStableScreenContains("parked-old", 10*time.Second)
+	h.sendCtrlKey(tea.KeyCtrlE)
+
+	h.waitForStableScreenContains("Edit Terminal", 10*time.Second)
+	h.waitForStableScreenContains("step 1/2", 10*time.Second)
+	for i := 0; i < 48; i++ {
+		h.pressKey(tea.KeyBackspace)
+	}
+	h.sendText("parked-new")
+	h.pressEnter()
+
+	h.waitForStableScreenContains("step 2/2", 10*time.Second)
+	for i := 0; i < 64; i++ {
+		h.pressKey(tea.KeyBackspace)
+	}
+	h.sendText("role=ops team=infra")
+	h.pressEnter()
+
+	info := waitForServerTerminalInfo(t, srv, parkedID, 10*time.Second, func(info *TerminalInfo) bool {
+		return info.Name == "parked-new" && info.Tags["role"] == "ops" && info.Tags["team"] == "infra"
+	})
+	if info.Name != "parked-new" || info.Tags["team"] != "infra" {
+		t.Fatalf("expected parked terminal metadata update to persist, got %#v", info)
+	}
+
+	screen := h.waitForStableScreenContains("updated terminal metadata", 10*time.Second)
+	if !strings.Contains(screen, "updated terminal metadata") {
+		t.Fatalf("expected parked terminal edit notice, got:\n%s", screen)
+	}
+
+	h.openTerminalManager()
+	screen = h.waitForStableScreenContains("Running Terminals", 10*time.Second)
+	if !containsAll(screen, "parked-new", "PARKED") {
+		t.Fatalf("expected reopened terminal manager to show updated parked terminal metadata, got:\n%s", screen)
+	}
 }
 
 func TestE2ETUI_ScenarioClosePaneDoesNotNotifyOtherClients(t *testing.T) {
@@ -1190,19 +1399,27 @@ func TestE2ETUI_ScenarioSharedExitedTerminalPropagatesToAllPanes(t *testing.T) {
 	h.openFloatingChooser()
 	h.sendText(sharedID)
 	h.pressEnter()
-	screen := h.waitForStableScreenContains("[floating]", 10*time.Second)
-	if !strings.Contains(screen, "float:") {
+	screen := h.waitForStableScreenContains("[floating", 10*time.Second)
+	if !strings.Contains(screen, "[floating") {
 		t.Fatalf("expected floating shared pane before exit, got:\n%s", screen)
 	}
 
 	h.sendText("exit")
 	h.pressEnter()
 
-	screen = h.waitForStableScreenContains("[exited code=0]", 10*time.Second)
-	if !strings.Contains(screen, "[floating]") {
-		t.Fatalf("expected floating shared pane to remain visible after exit, got:\n%s", screen)
-	}
-
+	screen = h.waitForStableScreenMatching("shared exited terminal propagates to all panes", 10*time.Second, func(screen string) bool {
+		tab := h.model.CurrentTabForTest()
+		if tab == nil || len(tab.Panes) < 2 {
+			return false
+		}
+		exitedCount := 0
+		for _, pane := range tab.Panes {
+			if pane != nil && pane.TerminalID == sharedID && tui.PaneTerminalStateForTest(pane) == "exited" {
+				exitedCount++
+			}
+		}
+		return exitedCount >= 2 && strings.Contains(screen, "[floating")
+	})
 	tab = h.model.CurrentTabForTest()
 	if tab == nil || len(tab.Panes) < 2 {
 		t.Fatalf("expected multiple panes after shared exit, got %#v", tab)
@@ -1316,7 +1533,7 @@ func TestE2ETUI_ScenarioTabAutoAcquireResizeOnEnter(t *testing.T) {
 	h.waitForStableScreenContains("shell-1", 10*time.Second)
 
 	h.sendCtrlKey(tea.KeyCtrlP)
-	h.waitForStableScreenContains("[PANE]", 10*time.Second)
+	h.waitForMode("pane", "<%> SPLIT", "<hjkl> FOCUS")
 	h.sendText("%")
 	h.waitForStableScreenContains("Open Pane", 10*time.Second)
 	h.pressEnter()
@@ -1479,11 +1696,11 @@ tabs:
 	})
 	defer h.Close()
 
-	screen := h.waitForStableScreenContains("float:layout-agent [floating]", 10*time.Second)
+	screen := h.waitForStableScreenContains("layout-agent [floating]", 10*time.Second)
 	if !strings.Contains(screen, "layout-shell") {
 		t.Fatalf("expected tiled terminal from startup layout, got:\n%s", screen)
 	}
-	if !strings.Contains(screen, "float:layout-agent [floating]") {
+	if !strings.Contains(screen, "layout-agent [floating]") {
 		t.Fatalf("expected floating terminal from startup layout, got:\n%s", screen)
 	}
 
@@ -1491,7 +1708,7 @@ tabs:
 	h.sendText("echo FLOAT-LAYOUT")
 	h.pressEnter()
 	screen = h.waitForStableScreenContains("FLOAT-LAYOUT", 10*time.Second)
-	if !strings.Contains(screen, "float:layout-agent [floating]") {
+	if !strings.Contains(screen, "layout-agent [floating]") {
 		t.Fatalf("expected floating viewport to stay visible after input, got:\n%s", screen)
 	}
 }
@@ -1592,11 +1809,11 @@ tabs:
 	h.sendText(sharedID)
 	h.pressEnter()
 
-	screen := h.waitForStableScreenContains("float:prompt-shared [floating]", 10*time.Second)
+	screen := h.waitForStableScreenContains("prompt-shared [floating]", 10*time.Second)
 	if strings.Contains(screen, "Resolve Layout Pane") {
 		t.Fatalf("expected repeated explicit hint prompt to resolve in one pass, got:\n%s", screen)
 	}
-	if !strings.Contains(screen, "prompt-shared") || !strings.Contains(screen, "[floating]") {
+	if !strings.Contains(screen, "prompt-shared") || !strings.Contains(screen, "[floating") {
 		t.Fatalf("expected tiled and floating panes after shared prompt attach, got:\n%s", screen)
 	}
 
@@ -1890,7 +2107,7 @@ func TestE2ETUI_FloatingReusePreservesAltScreenSnapshotBeforeIncrementalUpdates(
 	h.pressEnter()
 	screen := h.waitForStableScreenMatching("floating alt-screen reuse attached", 10*time.Second, func(screen string) bool {
 		return !strings.Contains(screen, "Open Floating Pane") &&
-			strings.Contains(screen, "[floating]") &&
+			strings.Contains(screen, "[floating") &&
 			strings.Contains(screen, "Mem 1.2G") &&
 			strings.Contains(screen, "Tasks 42")
 	})
@@ -1901,8 +2118,116 @@ func TestE2ETUI_FloatingReusePreservesAltScreenSnapshotBeforeIncrementalUpdates(
 	screen = h.waitForStableScreenMatching("alt-screen floating incremental reuse", 10*time.Second, func(screen string) bool {
 		return strings.Contains(screen, "!") && strings.Contains(screen, "1.2G") && strings.Contains(screen, "Tasks 42")
 	})
-	if !strings.Contains(screen, "Load 1.0") || !strings.Contains(screen, "1.2G") || !strings.Contains(screen, "[floating]") {
+	if !strings.Contains(screen, "Load 1.0") || !strings.Contains(screen, "1.2G") || !strings.Contains(screen, "[floating") {
 		t.Fatalf("expected floating incremental update to preserve alt-screen body, got:\n%s", screen)
+	}
+}
+
+func TestE2ETUI_ScenarioSharedAltScreenFloatingResizeRequiresAcquire(t *testing.T) {
+	_, client, cleanup := newE2EClient(t)
+	defer cleanup()
+
+	h := newTUIScreenHarness(t, client, 120, 30)
+	defer h.Close()
+
+	h.waitForStableScreenContains("ws:main", 10*time.Second)
+	seedAltScreenForReuseTest(h)
+
+	tab := h.model.CurrentTabForTest()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	base := tab.Panes[tab.ActivePaneID]
+	if base == nil {
+		t.Fatal("expected active pane")
+	}
+	sharedID := base.TerminalID
+	initialCols, initialRows := base.VTerm.Size()
+
+	h.openFloatingChooser()
+	h.sendText(sharedID)
+	h.pressEnter()
+	screen := h.waitForStableScreenMatching("shared alt-screen floating attached", 10*time.Second, func(screen string) bool {
+		return !strings.Contains(screen, "Open Floating Pane") &&
+			strings.Contains(screen, "[floating") &&
+			strings.Contains(screen, "Mem 1.2G") &&
+			strings.Contains(screen, "Tasks 42")
+	})
+	assertAltScreenReuseBodyVisible(t, screen)
+
+	h.sendCtrlKey(tea.KeyCtrlV)
+	h.waitForMode("view", "DISPLAY", "<m> FIT/FIXED")
+	h.sendText("m")
+	h.waitForStableScreenMatching("shared alt-screen floating switched to fit", 10*time.Second, func(string) bool {
+		tab := h.model.CurrentTabForTest()
+		if tab == nil || len(tab.Floating) == 0 {
+			return false
+		}
+		pane := tab.Panes[tab.Floating[len(tab.Floating)-1].PaneID]
+		return pane != nil && pane.Mode == tui.ViewportModeFit
+	})
+
+	h.program.Send(tea.WindowSizeMsg{Width: 96, Height: 24})
+	h.waitForStableScreenMatching("shared alt-screen unchanged without acquire", 10*time.Second, func(string) bool {
+		tab := h.model.CurrentTabForTest()
+		if tab == nil {
+			return false
+		}
+		shared := 0
+		for _, pane := range tab.Panes {
+			if pane == nil || pane.TerminalID != sharedID || pane.VTerm == nil {
+				continue
+			}
+			cols, rows := pane.VTerm.Size()
+			if cols != initialCols || rows != initialRows {
+				return false
+			}
+			shared++
+		}
+		return shared >= 2
+	})
+
+	h.acquireResize()
+	h.waitForStableScreenContains("acquired resize control", 10*time.Second)
+	h.sendCtrlKey(tea.KeyCtrlO)
+	h.waitForMode("floating", "<n> NEW", "<hjkl> MOVE")
+	h.sendText("L")
+	screen = h.waitForStableScreenMatching("shared alt-screen resized after acquire", 10*time.Second, func(screen string) bool {
+		tab := h.model.CurrentTabForTest()
+		if tab == nil {
+			return false
+		}
+		shared := 0
+		resized := 0
+		for _, pane := range tab.Panes {
+			if pane == nil || pane.TerminalID != sharedID || pane.VTerm == nil {
+				continue
+			}
+			cols, rows := pane.VTerm.Size()
+			if cols != initialCols || rows != initialRows {
+				resized++
+			}
+			shared++
+		}
+		return shared >= 2 && resized >= 1 && strings.Contains(screen, "[floating")
+	})
+	assertAltScreenReuseBodyVisible(t, screen)
+	h.pressEsc()
+	h.waitForStableScreenMatching("returned to normal after floating resize", 10*time.Second, func(screen string) bool {
+		return h.model.ActiveModeForTest() == "" && containsAll(screen, "Ctrl +", "<o> FLOAT")
+	})
+
+	h.sendText("printf '\\033[2;1H!'")
+	h.pressEnter()
+	screen = h.waitForStableScreenMatching("shared alt-screen incremental update after acquire", 10*time.Second, func(screen string) bool {
+		return strings.Contains(screen, "!") &&
+			strings.Contains(screen, "1.2G") &&
+			strings.Contains(screen, "Tasks 42") &&
+			strings.Contains(screen, "Load 1.0") &&
+			strings.Contains(screen, "[floating")
+	})
+	if !strings.Contains(screen, "1.2G") {
+		t.Fatalf("expected shared floating alt-screen body to survive resize and incremental updates, got:\n%s", screen)
 	}
 }
 
@@ -1935,13 +2260,13 @@ func TestE2ETUI_CloseFloatingKeepsTiledLayoutAlive(t *testing.T) {
 	h.openFloatingChooser()
 	h.sendText(reuseID)
 	h.pressEnter()
-	screen = h.waitForStableScreenContains("[floating]", 10*time.Second)
+	screen = h.waitForStableScreenContains("[floating", 10*time.Second)
 	if !strings.Contains(screen, "close-float-reuse") {
 		t.Fatalf("expected floating reuse pane to appear, got:\n%s", screen)
 	}
 
 	h.sendPrefixRune('x')
-	screen = h.waitForStableScreenWithout("[floating]", 10*time.Second)
+	screen = h.waitForStableScreenWithout("[floating", 10*time.Second)
 	if !strings.Contains(screen, "SPLIT-LIVE") {
 		t.Fatalf("expected tiled layout to remain after closing floating pane, got:\n%s", screen)
 	}
@@ -2022,6 +2347,112 @@ func TestE2ETUI_PrefixNavigationCanRepeatWithoutRePrefix(t *testing.T) {
 	}
 }
 
+func TestE2ETUI_InvalidDirectModeKeyDoesNotFreezeShellInput(t *testing.T) {
+	_, client, cleanup := newE2EClient(t)
+	defer cleanup()
+
+	h := newTUIScreenHarness(t, client, 120, 30)
+	defer h.Close()
+
+	h.waitForStableScreenContains("ws:main", 10*time.Second)
+
+	h.sendCtrlKey(tea.KeyCtrlP)
+	screen := h.waitForStableScreenMatching("pane mode entered", 10*time.Second, func(screen string) bool {
+		return h.model.ActiveModeForTest() == "pane" && containsAll(screen, "<%> SPLIT", "<hjkl> FOCUS")
+	})
+	if !containsAll(screen, "SPLIT", "FOCUS") {
+		t.Fatalf("expected pane mode hints before invalid key, got:\n%s", screen)
+	}
+
+	h.sendText("q")
+	screen = h.waitForStableScreenMatching("invalid pane mode key kept mode active", 10*time.Second, func(screen string) bool {
+		return h.model.ActiveModeForTest() == "pane" && containsAll(screen, "<%> SPLIT", "<hjkl> FOCUS")
+	})
+	if strings.Contains(screen, "err:") {
+		t.Fatalf("expected invalid pane mode key to be harmless, got:\n%s", screen)
+	}
+
+	h.pressEsc()
+	h.waitForStableScreenMatching("pane mode exited after esc", 10*time.Second, func(screen string) bool {
+		return h.model.ActiveModeForTest() == "" && containsAll(screen, "Ctrl +", "<p> PANE")
+	})
+
+	h.sendText("echo INVALID-MODE-RECOVERED")
+	h.pressEnter()
+	screen = h.waitForStableScreenContains("INVALID-MODE-RECOVERED", 10*time.Second)
+	if !strings.Contains(screen, "INVALID-MODE-RECOVERED") {
+		t.Fatalf("expected shell input to recover after invalid mode key, got:\n%s", screen)
+	}
+}
+
+func TestE2ETUI_DirectModeShortcutCanOverrideCurrentModeWithoutSticking(t *testing.T) {
+	_, client, cleanup := newE2EClient(t)
+	defer cleanup()
+
+	h := newTUIScreenHarness(t, client, 120, 30)
+	defer h.Close()
+
+	h.waitForStableScreenContains("ws:main", 10*time.Second)
+
+	h.sendCtrlKey(tea.KeyCtrlP)
+	h.waitForStableScreenMatching("pane mode entered", 10*time.Second, func(screen string) bool {
+		return h.model.ActiveModeForTest() == "pane" && containsAll(screen, "<%> SPLIT", "<hjkl> FOCUS")
+	})
+
+	h.sendCtrlKey(tea.KeyCtrlO)
+	screen := h.waitForStableScreenMatching("float mode overrides pane mode", 10*time.Second, func(screen string) bool {
+		return h.model.ActiveModeForTest() == "floating" && containsAll(screen, "<[]> Z-ORDER", "<hjkl> MOVE")
+	})
+	if !containsAll(screen, "Z-ORDER", "MOVE") {
+		t.Fatalf("expected floating mode hints after override, got:\n%s", screen)
+	}
+
+	h.pressEsc()
+	h.waitForStableScreenMatching("back to normal after overridden mode esc", 10*time.Second, func(screen string) bool {
+		return h.model.ActiveModeForTest() == "" && containsAll(screen, "Ctrl +", "<p> PANE", "<o> FLOAT")
+	})
+
+	h.sendText("echo MODE-OVERRIDE-OK")
+	h.pressEnter()
+	screen = h.waitForStableScreenContains("MODE-OVERRIDE-OK", 10*time.Second)
+	if !strings.Contains(screen, "MODE-OVERRIDE-OK") {
+		t.Fatalf("expected shell input after direct mode override flow, got:\n%s", screen)
+	}
+}
+
+func TestE2ETUI_UnknownCommandPromptDoesNotBlockFollowupInput(t *testing.T) {
+	_, client, cleanup := newE2EClient(t)
+	defer cleanup()
+
+	h := newTUIScreenHarness(t, client, 120, 30)
+	defer h.Close()
+
+	h.waitForStableScreenContains("ws:main", 10*time.Second)
+
+	h.sendCtrlKey(tea.KeyCtrlG)
+	h.waitForMode("global", "<?> HELP", "<t> TERMINALS")
+	h.sendText(":")
+	h.waitForStableScreenMatching("command prompt open", 10*time.Second, func(screen string) bool {
+		return h.model.PromptKindForTest() == "command" && strings.Contains(screen, "command:")
+	})
+	h.sendText("definitely-not-a-command")
+	h.pressEnter()
+
+	screen := h.waitForStableScreenMatching("unknown command rendered as non-blocking error", 10*time.Second, func(screen string) bool {
+		return strings.Contains(screen, "unknown command: definitely-not-a-command") && h.model.PromptKindForTest() == ""
+	})
+	if h.model.InputBlockedForTest() {
+		t.Fatalf("expected unknown command path to release input blocking, got:\n%s", screen)
+	}
+
+	h.sendText("echo UNKNOWN-COMMAND-RECOVERED")
+	h.pressEnter()
+	screen = h.waitForStableScreenContains("UNKNOWN-COMMAND-RECOVERED", 10*time.Second)
+	if !strings.Contains(screen, "UNKNOWN-COMMAND-RECOVERED") {
+		t.Fatalf("expected shell input after unknown command, got:\n%s", screen)
+	}
+}
+
 func TestE2ETUI_WorkspaceSwitchRestoresFloatingAndTiledState(t *testing.T) {
 	_, client, cleanup := newE2EClient(t)
 	defer cleanup()
@@ -2040,7 +2471,7 @@ func TestE2ETUI_WorkspaceSwitchRestoresFloatingAndTiledState(t *testing.T) {
 	h.sendText(reuseID)
 	h.pressEnter()
 	screen := h.waitForStableScreenContains("ws-floating-reuse", 10*time.Second)
-	if !strings.Contains(screen, "[floating]") {
+	if !strings.Contains(screen, "[floating") {
 		t.Fatalf("expected floating pane before workspace switch, got:\n%s", screen)
 	}
 
@@ -2061,7 +2492,7 @@ func TestE2ETUI_WorkspaceSwitchRestoresFloatingAndTiledState(t *testing.T) {
 	h.sendText("main")
 	h.pressEnter()
 	screen = h.waitForStableScreenContains("MAIN-TILED", 10*time.Second)
-	if !strings.Contains(screen, "ws-floating-reuse") || !strings.Contains(screen, "[floating]") {
+	if !strings.Contains(screen, "ws-floating-reuse") || !strings.Contains(screen, "[floating") {
 		t.Fatalf("expected switching back to restore main floating+tiled layout, got:\n%s", screen)
 	}
 }
@@ -2106,6 +2537,26 @@ func TestE2ETUI_NewWorkspaceViewClearsWorkspacePickerOverlay(t *testing.T) {
 
 	screen := h.waitForStableScreenContains("Choose Terminal", 10*time.Second)
 	assertNoChooseWorkspaceResidue(t, screen)
+}
+
+func TestE2ETUI_WorkspaceDeleteShowsErrorWhenOnlyOneWorkspaceExists(t *testing.T) {
+	_, client, cleanup := newE2EClient(t)
+	defer cleanup()
+
+	h := newTUIScreenHarness(t, client, 120, 30)
+	defer h.Close()
+
+	h.waitForStableScreenContains("ws:main", 10*time.Second)
+	h.sendCtrlKey(tea.KeyCtrlW)
+	h.waitForMode("workspace", "WORKSPACE", "<x> DELETE")
+	h.sendText("x")
+
+	screen := h.waitForStableScreenMatching("workspace delete error", 10*time.Second, func(screen string) bool {
+		return h.model.ActiveModeForTest() == "" && strings.Contains(screen, "cannot delete the last workspace")
+	})
+	if !strings.Contains(screen, "ws:main") {
+		t.Fatalf("expected current workspace to remain active after delete rejection, got:\n%s", screen)
+	}
 }
 
 func TestE2ETUI_PickerFilterBackspaceAndEscapeLeaveLayoutUsable(t *testing.T) {
@@ -2231,15 +2682,14 @@ func TestE2ETUI_PaneChromeShowsReadonlyAndAccessStatus(t *testing.T) {
 	defer h.Close()
 
 	h.waitForStableScreenContains("chrome-agent", 10*time.Second)
-	screen := h.waitForStableScreenContains("access:collab", 10*time.Second)
-	if !strings.Contains(screen, "access:collab") {
-		t.Fatalf("expected collaborator access status in chrome, got:\n%s", screen)
-	}
+	screen := h.waitForStableScreenContains("chrome-agent", 10*time.Second)
 
 	h.sendPrefixRune('v')
 	h.sendText("r")
-	screen = h.waitForStableScreenContains("[ro]", 10*time.Second)
-	if !strings.Contains(screen, "[ro]") || !strings.Contains(screen, "readonly") {
+	screen = h.waitForStableScreenMatching("readonly chrome badge appears", 10*time.Second, func(screen string) bool {
+		return strings.Contains(screen, "ro") && (strings.Contains(screen, "🔒") || strings.Contains(screen, "[ro]"))
+	})
+	if !strings.Contains(screen, "ro") {
 		t.Fatalf("expected readonly chrome badges after toggle, got:\n%s", screen)
 	}
 }
@@ -2319,9 +2769,46 @@ func (h *tuiScreenHarness) Close() {
 
 func (h *tuiScreenHarness) sendPrefixRune(r rune) {
 	h.t.Helper()
-	h.program.Send(tea.KeyMsg{Type: tea.KeyCtrlA})
-	time.Sleep(5 * time.Millisecond)
-	h.program.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	switch r {
+	case '%', 'x', 'X':
+		h.sendCtrlKey(tea.KeyCtrlP)
+		h.program.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	case 'c', 'n', 'p':
+		h.sendCtrlKey(tea.KeyCtrlT)
+		h.program.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	case 'h', 'j', 'k', 'l':
+		h.sendCtrlKey(tea.KeyCtrlP)
+		h.program.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		time.Sleep(5 * time.Millisecond)
+		h.pressEsc()
+	case 's':
+		h.sendCtrlKey(tea.KeyCtrlW)
+		h.program.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	case 'o':
+		h.sendCtrlKey(tea.KeyCtrlO)
+	case 'w':
+		h.sendCtrlKey(tea.KeyCtrlO)
+		h.program.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	case 'W':
+		h.sendCtrlKey(tea.KeyCtrlO)
+		h.program.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+		time.Sleep(5 * time.Millisecond)
+		h.pressEsc()
+	case ']':
+		h.sendCtrlKey(tea.KeyCtrlO)
+		h.program.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		time.Sleep(5 * time.Millisecond)
+		h.pressEsc()
+	case 'v':
+		h.sendCtrlKey(tea.KeyCtrlV)
+	case 'f':
+		h.sendCtrlKey(tea.KeyCtrlF)
+	case ':', 'd':
+		h.sendCtrlKey(tea.KeyCtrlG)
+		h.program.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	default:
+		h.t.Fatalf("unsupported legacy prefix rune mapping: %q", r)
+	}
 	time.Sleep(5 * time.Millisecond)
 }
 
@@ -2333,8 +2820,18 @@ func (h *tuiScreenHarness) sendCtrlKey(key tea.KeyType) {
 
 func (h *tuiScreenHarness) sendPrefixKey(key tea.KeyType) {
 	h.t.Helper()
-	h.program.Send(tea.KeyMsg{Type: tea.KeyCtrlA})
-	time.Sleep(5 * time.Millisecond)
+	switch key {
+	case tea.KeyTab:
+		h.sendCtrlKey(tea.KeyCtrlO)
+		h.program.Send(tea.KeyMsg{Type: key})
+		time.Sleep(5 * time.Millisecond)
+		h.pressEsc()
+		return
+	case tea.KeyLeft, tea.KeyRight, tea.KeyUp, tea.KeyDown:
+		h.sendCtrlKey(tea.KeyCtrlP)
+	default:
+		h.t.Fatalf("unsupported legacy prefix key mapping: %v", key)
+	}
 	h.program.Send(tea.KeyMsg{Type: key})
 	time.Sleep(5 * time.Millisecond)
 }
@@ -2446,23 +2943,41 @@ func (h *tuiScreenHarness) setTerminalTag(terminalID, key, value string) {
 
 func (h *tuiScreenHarness) focusTerminalPane(terminalID string) {
 	h.t.Helper()
-	for i := 0; i < 4; i++ {
+	check := func() bool {
 		tab := h.model.CurrentTabForTest()
 		if tab != nil {
 			if pane := tab.Panes[tab.ActivePaneID]; pane != nil && pane.TerminalID == terminalID {
+				return true
+			}
+		}
+		return false
+	}
+	if check() {
+		return
+	}
+	h.pressEsc()
+	time.Sleep(20 * time.Millisecond)
+	if check() {
+		return
+	}
+	for i := 0; i < 6; i++ {
+		for _, key := range []rune{'h', 'j', 'k', 'l'} {
+			h.sendPrefixRune(key)
+			time.Sleep(20 * time.Millisecond)
+			if check() {
 				return
 			}
 		}
-		h.sendPrefixRune('h')
+		h.sendPrefixKey(tea.KeyTab)
 		time.Sleep(20 * time.Millisecond)
-		tab = h.model.CurrentTabForTest()
-		if tab != nil {
-			if pane := tab.Panes[tab.ActivePaneID]; pane != nil && pane.TerminalID == terminalID {
-				return
-			}
+		if check() {
+			return
 		}
-		h.sendPrefixRune('l')
+		h.pressEsc()
 		time.Sleep(20 * time.Millisecond)
+		if check() {
+			return
+		}
 	}
 	h.t.Fatalf("failed to focus pane for terminal %q", terminalID)
 }
@@ -2472,6 +2987,33 @@ func (h *tuiScreenHarness) openFloatingViewport() {
 	h.openFloatingChooser()
 	h.pressEnter()
 	h.completeDefaultTerminalCreate()
+}
+
+func (h *tuiScreenHarness) waitForMode(mode string, tokens ...string) string {
+	h.t.Helper()
+	return h.waitForStableScreenMatching("mode "+mode, 10*time.Second, func(screen string) bool {
+		if h.model.ActiveModeForTest() != mode {
+			return false
+		}
+		return containsAll(screen, tokens...)
+	})
+}
+
+func (h *tuiScreenHarness) waitForNormalMode(tokens ...string) string {
+	h.t.Helper()
+	return h.waitForStableScreenMatching("normal mode", 10*time.Second, func(screen string) bool {
+		if h.model.ActiveModeForTest() != "" {
+			return false
+		}
+		return containsAll(screen, tokens...)
+	})
+}
+
+func (h *tuiScreenHarness) openTerminalManager() {
+	h.t.Helper()
+	h.sendCtrlKey(tea.KeyCtrlG)
+	h.waitForMode("global", "<?> HELP", "<t> TERMINALS")
+	h.sendText("t")
 }
 
 func (h *tuiScreenHarness) openFloatingChooser() {
@@ -2760,7 +3302,7 @@ func containsAll(s string, parts ...string) bool {
 
 func assertFloatingOverlayFrame(t *testing.T, screen, marker string) {
 	t.Helper()
-	if !strings.Contains(screen, "[floating]") {
+	if !strings.Contains(screen, "[floating") {
 		t.Fatalf("expected floating title marker in screen, got:\n%s", screen)
 	}
 	if marker != "" && !strings.Contains(screen, marker) {

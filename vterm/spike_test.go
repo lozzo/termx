@@ -90,6 +90,20 @@ func TestVTermTracksApplicationCursorMode(t *testing.T) {
 	}
 }
 
+func TestVTermPreservesAnsiIndexedColorSemantic(t *testing.T) {
+	vt := New(10, 3, 10, nil)
+	vt.SetIndexedColor(1, "#123456")
+
+	if _, err := vt.Write([]byte("\x1b[31mR\x1b[0m")); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	cell := vt.CellAt(0, 0)
+	if cell.Style.FG != "ansi:1" {
+		t.Fatalf("expected ANSI semantic color token, got %#v", cell.Style)
+	}
+}
+
 func TestVTermNormalizesPlainUTF8CombiningText(t *testing.T) {
 	vt := New(20, 5, 10, nil)
 

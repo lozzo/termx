@@ -21,7 +21,7 @@ func TestPrefixSOpensWorkspacePickerAndCreatesWorkspace(t *testing.T) {
 		}
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -172,7 +172,7 @@ func TestSameTerminalCanAppearInDifferentWorkspaces(t *testing.T) {
 		}
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -190,7 +190,7 @@ func TestSameTerminalCanAppearInDifferentWorkspaces(t *testing.T) {
 		t.Fatalf("expected second workspace, got %q", model.workspace.Name)
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -212,7 +212,7 @@ func TestSameTerminalCanAppearInDifferentWorkspaces(t *testing.T) {
 func openWorkspacePickerAndSelect(t *testing.T, model *Model, query string) {
 	t.Helper()
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	msg := mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)

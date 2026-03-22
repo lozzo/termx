@@ -1,321 +1,239 @@
 # termx TUI 实施路线图
 
-状态：Draft v1
+状态：2026-03-22
 
-本文件把当前产品规格落到“先改哪些代码、为什么先改、哪些地方能复用、哪些地方要重构”。
+这份 roadmap 不再按旧设计稿追历史，而是只基于“当前代码 + 当前产品结论”继续推进。
 
 ---
 
-## 1. 当前代码基线判断
+## 1. 当前总体判断
 
-结论：
+当前 TUI 不需要推倒重写。
 
-- 旧设计文档应继续废弃
-- 现有 TUI 代码不建议整体推倒重写
-- 正确路线是：保留底层可复用资产，在现有代码上按 TDD 做分层重构
+正确策略是：
+
+- 保留已稳定的 server / protocol / vterm / e2e 基础设施
+- 在现有 TUI 上继续做 TDD 增量重构
+- 先收口文档和交互，再做进一步视觉与能力扩展
 
 原因：
 
-- 已有 server / protocol / vterm / TUI harness / e2e 基础设施
-- 已有 attach、picker、floating、workspace state 的可运行基础
-- 直接重写会把已经修好的链路重新做坏
+- 基础主链路已经能跑
+- 生命周期语义已经初步正确
+- terminal manager / picker / metadata / restore 都已有真实代码
+- 全重写会丢失已经修好的复杂边界
 
 ---
 
-## 2. 当前代码阅读结论
+## 2. 当前已完成
 
-## 2.1 已有可复用资产
-
-- `protocol/`
-  - create / attach / list / snapshot / resize / set_metadata / set_tags 已有通路
-- `termx.go`
-  - server 侧 terminal create / attach / resize / kill 已成熟
-- `vterm/`
-  - 终端渲染底层已可复用
-- `tui_e2e_test.go`
-  - 已有稳定的屏幕级 e2e harness
-- `tui/workspace_state.go`
-  - 已有 workspace state 持久化基础
-
-## 2.2 当前最需要改的逻辑
-
-### resize 语义还是“几何变化即 resize”
-
-当前 `tui/model.go` 里的 `resizeVisiblePanesCmd()` 会遍历所有可见 pane，并直接对 running pane 发送 `client.Resize(...)`。
-
-这意味着：
-
-- 只要布局变化
-- 或 window size 变化
-- 或 split/floating 几何变化
-
-就会自动改写 terminal size。
-
-这与新规格冲突，因为新规格要求：
-
-- resize 必须显式 acquire
-- pane 几何变化本身不应自动触发 PTY resize
-
-### shared terminal resize 会同步到所有 pane runtime
-
-当前 `handlePaneResize()` 会调用 `resizeTerminalPanes(terminalID, "", cols, rows)`，并且现有单测已经锁定了“同 terminal 的所有 pane 一起 resize”这一旧行为。
-
-这部分需要重构成：
-
-- terminal runtime size 更新
-- pane display size 独立
-- acquire/lock 驱动 terminal size 变更
-
-### pane close 和 terminal kill 语义还未完全分层
-
-当前：
-
-- `closeActivePaneCmd()` 只是发 `paneDetachedMsg`
-- `killActiveTerminalCmd()` 直接 kill terminal
-- `removeTerminal()` 会把所有绑定 pane 都删掉
-
-基础方向是对的，但还缺：
-
-- 多客户端广播语义
-- close/detach 的静默规则
-- remove 的 notice/confirm
-
-### 快捷键与 mode 仍然偏旧模型
-
-当前 `tui/input.go` / `tui/model.go` 中：
-
-- resize mode 仍然直接联动 `resizeVisiblePanesCmd()`
-- 底层实现仍保留 `viewport` 命名，`fit/fixed/readonly/pin` 也还是通过 `Ctrl-v` 入口管理
-
-这需要后续继续往：
-
-- `workspace / tab / pane / terminal`
-
-收口。
-
----
-
-## 3. 文件级改造建议
-
-## 3.1 优先保留
-
-- `protocol/`
-- `termx.go`
-- `terminal.go`
-- `vterm/`
-- `tui/render.go`
-- `tui/workspace_state.go`
-- `tui_e2e_test.go`
-
-## 3.2 优先重构
-
-- `tui/model.go`
-  - resize 触发路径
-  - shared terminal runtime 同步逻辑
-  - pane close / terminal remove / exited retained
-  - notice / prompt / confirm
-- `tui/input.go`
-  - acquire resize 入口
-  - tab auto-acquire 入口
-  - kill/remove confirm 路径
-- `tui/client.go`
-  - 若协议需要新增事件/命令，从这里扩展
-- `tui/workspace_state.go`
-  - 持久化 `size_lock` / tab auto-acquire 等新状态
-
-## 3.3 后续逐步清理
-
-- 底层 `viewport` 命名与对外 `pane/display` 文案之间的实现层鸿沟
-- 旧 resize mode 行为
-- 更细的 help / status 精简与视觉分层
-
----
-
-## 4. TDD 实施顺序
-
-## 4.1 第一阶段：共享 terminal 生命周期
-
-先补 e2e：
-
-- `TestE2ETUI_ScenarioCloseSharedPaneKeepsTerminalAlive`
-- `TestE2ETUI_ScenarioKillSharedTerminalClosesAllBoundPanes`
-- `TestE2ETUI_ScenarioSharedExitedTerminalPropagatesToAllPanes`
-
-原因：
-
-- 这几项最接近当前实现
-- 风险低
-- 能先把 pane/terminal 语义锁住
-
-## 4.2 第二阶段：共享 terminal resize acquire
-
-再补 e2e：
-
-- `TestE2ETUI_ScenarioSharedTerminalResizeRequiresExplicitAcquire`
-- `TestE2ETUI_ScenarioTabAutoAcquireResizeOnEnter`
-- `TestE2ETUI_ScenarioSharedTerminalResizeWarnsWhenSizeLockEnabled`
-
-然后重构：
-
-- `resizeVisiblePanesCmd()`
-- `handlePaneResize()`
-- shared terminal runtime 同步逻辑
-
-## 4.3 第三阶段：多客户端协作通知
-
-补 e2e / integration：
-
-- close pane 不广播
-- detach 不广播
-- remove 广播 notice
-- readonly/observer 禁止 remove
-
-当前状态：
-
-- 已完成：
-  - `TestE2ETUI_ScenarioClosePaneDoesNotNotifyOtherClients`
-  - `TestE2ETUI_ScenarioDetachDoesNotInterruptOtherClients`
-  - `TestE2ETUI_ScenarioRemoteKillShowsNoticeAndClosesSharedPanes`
-  - TUI 已订阅 `EventTerminalRemoved`，远端 remove 会关闭本地绑定 pane 并显示 notice
-  - observer attachment 现在不能通过 protocol `kill/remove`
-  - readonly pane 现在不能通过 TUI `kill/remove`
-  - TUI chrome 已显示 `access:collab|observer` 与 `[obs]/[ro]` 轻量标记
-- 已落地测试：
-  - `TestHandleRequestKillDeniedForObserverAttachment`
-  - `TestHandleRequestKillAllowedForCollaboratorAttachment`
-  - `TestE2E_ObserverCannotKill`
-  - `TestReadonlyViewportBlocksKillTerminal`
-  - `TestRenderStatusShowsAccessModeInRuntimeSummary`
-  - `TestPaneTitleAddsObserverAndReadonlyBadges`
-  - `TestE2ETUI_PaneChromeShowsReadonlyAndAccessStatus`
-- 待完成：
-  - 若未来协议补充操作者身份，可把 notice 升级为“被谁移除”
-
-## 4.4 第四阶段：workspace/layout 恢复
-
-补 e2e：
-
-- layout -> workspace instance
-- workspace restore
-- shared terminal binding restore
-- tab auto-acquire restore
-
-当前状态：
-
-- 已完成：
-  - workspace state 恢复后，active tab 的 `auto-acquire resize` 会立即生效
-  - workspace 切换到带 `auto-acquire resize` 的 tab 时会立即生效
-  - startup workspace restore 已覆盖 shared terminal binding 场景
-  - startup layout 现在允许通过重复 `_hint_id` 显式复用同一个 terminal 到多个 pane
-  - 当重复 `_hint_id` 当前未命中 terminal 时：
-    - `create` 现在只创建一次并复用到所有同 hint pane
-    - `prompt` 现在只提示一次并把 attach 结果传播到所有同 hint pane
-  - layout `skip` 降级路径已有真实 e2e 覆盖
-- 已落地测试：
-  - `TestLoadWorkspaceStateCmdRestoresActiveTabAutoAcquireResize`
-  - `TestWorkspaceSwitchRestoresAutoAcquireResizeOnActivatedWorkspace`
-  - `TestE2ETUI_ScenarioStartupRestoresWorkspaceStateWithSharedTerminalBinding`
-  - `TestBuildWorkspaceFromLayoutSpecAllowsExplicitHintReuseAcrossPanes`
-  - `TestE2ETUI_StartupLayoutCanReuseExplicitHintAcrossTiledAndFloatingPanes`
-  - `TestLoadLayoutSpecCmdPromptPolicyAttachReusesExplicitHintAcrossPanes`
-  - `TestLoadLayoutSpecCmdCreatePolicyReusesExplicitHintAcrossPanes`
-  - `TestE2ETUI_CommandLoadLayoutPromptReusesExplicitHintAcrossPanes`
-  - `TestE2ETUI_CommandLoadLayoutSkipLeavesWaitingPaneAndKeepsLayoutUsable`
-- 待完成：
-  - layout `skip` 对重复 `_hint_id` 的整组跳过语义，可再补一条更直接的场景测试
-
-## 4.5 第五阶段：用户可见术语与帮助文案收口
+### M1. 基础工作台
 
 已完成：
 
-- picker / prompt / notice 中面向用户的 `viewport` 文案已收口为 `pane`
-- 状态栏与 help 中 `Ctrl-v` 已改为 `display` 语义，不再把 `view` 当成一等用户概念
-- help 中共享 terminal 文案已改成“先 acquire resize control，再改 PTY size”
-- 相关单测、e2e、real e2e 已随文案一起锁定
+- 默认启动进入可工作 workspace
+- 默认 shell pane
+- split / tab / floating 基本可用
+- 顶栏 / pane 标题栏 / 底栏 基础结构已存在
 
-待完成：
-
-- 若后续继续重构输入模型，可把内部 `prefixModeViewport` / `ViewportMode*` 与外部文案进一步解耦
-- help/status 仍可继续压缩，给后续视觉重做留空间
-
-## 4.6 第六阶段：full-screen / alt-screen 复用渲染回归基线
+### M2. terminal 复用与管理
 
 已完成：
 
-- attach 现有 terminal 到新 tab 时，已锁定“snapshot 先落地，再接后续增量输出”
-- 现在额外补上了 split / floating 两条回归覆盖
-- 针对 full-screen / alternate-screen terminal 的复用，tab / split / floating 三条 attach 路径都有 e2e 基线
-- 对 floating 几何变化的增量重绘，已补上“旧遮挡区域必须整 pane 恢复”的单测基线
-- 当前实现策略是：floating move/resize 直接重建该 tab 的合成画布；同时所有 full rebuild 路径都强制整 pane 绘制，避免 `htop`/`vim` 类按 dirty-row 增量刷新的 pane 在重叠区出现闪烁、短暂消失或残影
+- terminal picker
+- terminal manager 全屏页
+- bring here / new tab / floating
+- terminal manager 分组：`NEW / VISIBLE / PARKED / EXITED`
+- terminal manager 专用状态栏
 
-待完成：
+### M3. 生命周期语义
 
-- 若后续继续出现 `htop` / `vim` / `less` 类真实程序复用异常，可再补 real e2e 回归
+已完成：
 
----
+- close pane 保留 terminal
+- stop terminal 先确认
+- stop/remove 后保留 saved pane
+- remote remove notice
+- exited terminal 保留历史并进入 exited 状态
 
-## 5. 第一批实际编码切入点
+### M4. metadata
 
-## Step 1
+已完成：
 
-先在测试层写出 3 个共享 terminal 生命周期 e2e：
+- terminal name / tags 编辑
+- picker 可进入 metadata 编辑
+- terminal manager 可进入 metadata 编辑
+- 两步 prompt：name -> tags
+- prompt 显示 step / terminal id / command
+- parked terminal metadata 编辑可用
 
-- close shared pane
-- kill shared terminal
-- shared exited retained
+### M5. restore / layout 基线
 
-## Step 2
+已完成：
 
-最小实现修改：
+- workspace state 恢复基础
+- layout create / prompt / skip 基础
+- 重复 `_hint_id` 的共享复用基线
 
-- 校正 pane close 后的布局与 active pane 选择
-- 校正 kill terminal 后 notice 和批量 pane 移除
-- 校正 exited retained 在多个 pane 的一致传播
+### M6. 测试基线
 
-## Step 3
+已完成：
 
-跑：
-
-- `go test ./... -count=1`
-
-## Step 4
-
-再进入 resize acquire 重构。
-
----
-
-## 6. 明确暂不做的事
-
-以下内容先不在第一批编码中处理：
-
-- 完整重做全部快捷键
-- 最终 observer/collaborator 权限系统 UI
-- layout 文件格式最终定版
-- 底层 `viewport` 实现命名整体改名
-
-这些留到主线稳定后再继续。
+- 单测大量覆盖 TUI 状态机与渲染规则
+- e2e 已覆盖主线场景和若干复杂场景
+- 当前全量 `go test ./... -count=1` 通过
 
 ---
 
-## 7. 里程碑
+## 3. 当前在做但还没完全封口的事情
 
-### M1
+### R1. 快捷键与帮助系统收口
 
-- shared terminal close / kill / exited 语义稳定
+目标：
 
-### M2
+- 降低模式心智负担
+- 让新用户更容易理解 `Ctrl-p/r/t/w/o/v/f/g`
+- 移除用户态 legacy `Ctrl-a`
+- 把底栏快捷键提示改成接近 zellij 的连续 segment 样式
 
-- resize acquire / size_lock / tab auto-acquire 稳定
+当前状态：
 
-### M3
+- 基本结构已存在
+- 底栏左侧 segment 化已经落地
+- 普通态底栏只保留 `Ctrl+` 模式入口，不再混入 exited/unbound 直达动作
+- 用户态 `Ctrl-a` 已移除，按下时直接透传给 terminal
+- mode hold 默认 3 秒，可通过 `--prefix-timeout` 调整
+- `resize / floating move / floating resize / pane focus / viewport pan` 等连续动作会续期 3 秒窗口
+- help 已进入居中 overlay 体系，不再是整屏说明文字
+- help 已初步改成分组式操作卡片，不再是线性文案堆叠
+- 但 help、mode 文案、用户记忆成本仍偏高
 
-- 多客户端通知与权限语义稳定
+### R2. shared terminal 的最终一致性
 
-### M4
+目标：
 
-- workspace/layout 恢复链路稳定
+- 让 resize / acquire / auto-acquire / size-lock 语义稳定且可理解
+- 把复杂共享场景进一步锁进 e2e
 
-### M5
+当前状态：
 
-- 用户可见术语已基本收口到 `workspace / tab / pane / terminal`
-- 当前代码具备继续做 help/status/UI 重绘的稳定基线
+- 已有基线
+- `shared + floating + fit + acquire + alt-screen` 组合场景已补进回归
+- 仍需继续补复杂边界测试
+
+### R3. UI 视觉统一
+
+目标：
+
+- modal / picker / manager 风格统一
+- 顶栏、pane 标题栏、底栏信息进一步重新分配
+- 降低信息堆叠感
+- pane 顶部 chrome 收口成单线表达
+- pane 标题默认显示 terminal 真实名称，不强调 pane 独立命名
+- floating pane 补“呼回并居中”快捷动作
+
+当前状态：
+
+- 结构已成型
+- pane 标题默认显示 terminal 真名已落地
+- floating pane 呼回并居中已落地
+- 底栏右侧焦点摘要已压缩，关系状态主要上移到 pane chrome
+- modal / picker / manager 的统一视觉还没完全收口
+
+---
+
+## 4. 下一阶段推荐顺序
+
+### Phase 1. 文档收口
+
+目标：
+
+- 以新整理的 4 份主文档为准
+- 清理旧补丁式文档
+- 确认术语、心智模型、当前状态描述一致
+
+完成标准：
+
+- 用户确认主文档没问题
+- 非主文档整体归档或删除
+
+### Phase 2. 交互减负
+
+目标：
+
+- 重写 help 的表达方式
+- 收口 mode 文案
+- 把更多状态上移到顶栏和 pane 标题栏
+- 继续压缩底栏
+- 明确 pane 标题展示 terminal 真实名称
+- 给 floating pane 增加呼回并居中的标准快捷键
+
+建议测试：
+
+- 单测：状态栏与 help 文案
+- e2e：新用户主路径可发现性
+
+### Phase 3. shared terminal 边界补测
+
+目标：
+
+- 扩大复杂共享场景覆盖
+- 尤其是 tiled + floating + full-screen TUI 程序复用场景
+
+建议重点：
+
+- htop / alt-screen 类程序
+- 同 terminal 多 pane 同时显示
+- resize / acquire / stop / exit 混合场景
+
+### Phase 4. UI 视觉统一与 modernize
+
+目标：
+
+- 统一 modal / picker / manager 的背景、边框、留白、状态表达
+- 继续优化 pane 标题栏状态布局
+- 让 terminal manager 看起来更像真正的资源管理页
+- 底栏左侧快捷键统一为 zellij 风格 segment 带
+- pane 顶部 chrome 统一为单线边框
+
+### Phase 5. terminal 更完整管理模型
+
+目标：
+
+- 继续明确 tags / rules / workspace/layout 的关系
+- 决定是否引入更完整的 terminal-only 管理面
+- 决定终端属性编辑的长期模型
+
+---
+
+## 5. 当前明确暂缓
+
+这些事情现在不建议先做：
+
+- 全量重写 TUI
+- 再造一套全新概念体系
+- 过早扩展过多 terminal rules UI
+- 脱离测试直接大改输入系统
+- 先做花哨视觉而不先收口交互
+
+---
+
+## 6. 当前推荐开发原则
+
+后续继续开发时，统一遵守：
+
+1. 先补测试，再改实现
+2. 优先补 e2e 锁主场景
+3. 用户可见概念只用 `workspace / tab / pane / terminal`
+4. 所有复杂行为都要能用一句用户语言解释清楚
+5. 不再新增补丁式文档；改动必须回到主文档
+
+---
+
+## 7. 当前一句话路线图
+
+termx TUI 下一阶段的主线不是“继续发散设计”，而是：
+
+- `先把文档和概念彻底收口`
+- `再把交互负担和复杂边界继续压平`
+- `最后把视觉和高级管理能力做完整`

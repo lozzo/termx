@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image/color"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -19,6 +20,13 @@ import (
 	localvterm "github.com/lozzow/termx/vterm"
 	"golang.org/x/text/unicode/norm"
 )
+
+func activatePrefixForTest(model *Model) tea.Cmd {
+	if model == nil {
+		return nil
+	}
+	return model.activatePrefix()
+}
 
 func TestModelPrefixActions(t *testing.T) {
 	client := &fakeClient{}
@@ -80,7 +88,7 @@ func TestModelViewShowsWelcomeAndHelp(t *testing.T) {
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
 	helpView := model.View()
-	if !containsAll(helpView, "Help / Shortcut Map", "Ctrl-p pane mode", "Ctrl-v display mode", "Ctrl-g d", "acquire resize control") {
+	if !containsAll(helpView, "Help / Shortcut Map", "Most used", "Ctrl-p   pane actions", "Shared terminal", "acquire resize control", "Exit", "close current mode/modal") {
 		t.Fatalf("help overlay missing expected content:\n%s", helpView)
 	}
 
@@ -398,7 +406,7 @@ func TestSplitCommandOpensChooserAndCanAttachExistingTerminal(t *testing.T) {
 		}
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'%'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -441,7 +449,7 @@ func TestPickerSelectionBlocksInputUntilPaneArrives(t *testing.T) {
 		}
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'%'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -488,7 +496,7 @@ func TestNewTabCommandOpensChooserAndCanAttachExistingTerminal(t *testing.T) {
 		}
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -536,7 +544,7 @@ func TestNewTabCreateSelectionOpensTerminalCreatePrompt(t *testing.T) {
 	_, _ = model.Update(msg)
 	createCallsBefore := client.createCalls
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -563,7 +571,7 @@ func TestNewTabCreatePromptUsesCustomNameAndTags(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -623,7 +631,7 @@ func TestTerminalCreatePromptUsesFriendlyDefaultName(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -807,24 +815,31 @@ func TestTerminalMetadataPromptCanClearTags(t *testing.T) {
 	}
 }
 
-func TestStatusStatePartsUseFriendlyPaneLabelAndTags(t *testing.T) {
+func TestStatusStatePartsUseFriendlyPaneLabelAndMinimalRuntimeSummary(t *testing.T) {
 	client := &fakeClient{}
-	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model := NewModel(client, Config{DefaultShell: "/bin/sh", IconSet: "ascii"})
 
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
 	pane := model.currentTab().Panes[model.currentTab().ActivePaneID]
 	pane.Name = "api-shell"
-	pane.Tags = map[string]string{"role": "api", "team": "infra"}
+	pane.Tags = map[string]string{"role": "api", "termx.size_lock": "warn"}
 	pane.Title = "api-shell"
+	clone := *pane
+	clone.ID = "pane-shared"
+	clone.Tags = cloneStringMap(pane.Tags)
+	model.currentTab().Panes[clone.ID] = &clone
 
 	status := strings.Join(model.statusStateParts(), " ")
 	if !strings.Contains(status, "pane:api-shell") {
 		t.Fatalf("expected friendly pane label in status, got %q", status)
 	}
-	if !strings.Contains(status, "tags:role=api team=infra") {
-		t.Fatalf("expected tags in status, got %q", status)
+	if !containsAll(status, "layer:tiled", "state:running") {
+		t.Fatalf("expected minimal runtime summary in status, got %q", status)
+	}
+	if containsAll(status, "shared:2", "size-lock:warn") || strings.Contains(status, "display:") {
+		t.Fatalf("expected pane relationship badges to stay in pane chrome, got %q", status)
 	}
 	if strings.Contains(status, pane.TerminalID) {
 		t.Fatalf("expected status to avoid raw terminal id, got %q", status)
@@ -872,7 +887,7 @@ func TestNewTabAttachSeedsVTermFromSnapshotBeforeIncrementalOutput(t *testing.T)
 		}
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -916,7 +931,7 @@ func TestSplitAttachSeedsVTermFromSnapshotBeforeIncrementalOutput(t *testing.T) 
 		}
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'%'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -955,10 +970,8 @@ func TestFloatingAttachSeedsVTermFromSnapshotBeforeIncrementalOutput(t *testing.
 		}
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
-	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
-	msg = mustRunCmd(t, cmd)
-	_, _ = model.Update(msg)
+	_ = activatePrefixForTest(model)
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	if cmd != nil {
@@ -1034,7 +1047,7 @@ func TestNewTabCommandCancelKeepsCurrentTab(t *testing.T) {
 
 	originalTab := model.workspace.ActiveTab
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -1072,7 +1085,7 @@ func TestSplitCommandCancelKeepsCurrentLayout(t *testing.T) {
 
 	originalPaneID := model.currentTab().ActivePaneID
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'%'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -1173,7 +1186,7 @@ func TestFloatingViewportCanBeHiddenWithPrefixWUpper(t *testing.T) {
 		t.Fatalf("expected floating content in visible render, got:\n%s", visibleView)
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'W'}})
 	if cmd != nil {
 		t.Fatalf("expected toggle floating visibility to be synchronous")
@@ -1217,7 +1230,7 @@ func TestPrefixTabCyclesFloatingFocusByZOrder(t *testing.T) {
 		t.Fatalf("expected last created floating pane active, got %q", topID)
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if cmd != nil {
 		t.Fatalf("expected floating focus cycle to be synchronous")
@@ -1231,7 +1244,7 @@ func TestPrefixTabCyclesFloatingFocusByZOrder(t *testing.T) {
 		t.Fatalf("expected esc to return focus to tiled pane, got %q", tab.ActivePaneID)
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if tab.ActivePaneID != tab.Floating[0].PaneID {
 		t.Fatalf("expected Tab from tiled focus to enter floating layer at bottom z, got %q", tab.ActivePaneID)
@@ -1281,7 +1294,7 @@ func TestFloatingViewportZOrderCommandsAffectRender(t *testing.T) {
 		t.Fatalf("expected top floating viewport to occlude bottom one, got:\n%s", view)
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'_'}})
 	if cmd != nil {
 		t.Fatalf("expected z-order change to be synchronous")
@@ -1294,7 +1307,7 @@ func TestFloatingViewportZOrderCommandsAffectRender(t *testing.T) {
 		t.Fatalf("expected lowered floating viewport to move behind bottom one, got:\n%s", view)
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
 	firstFloat.renderDirty = true
 	secondFloat.renderDirty = true
@@ -1346,8 +1359,44 @@ func TestFloatingViewportAltMoveUpdatesRectAndClamps(t *testing.T) {
 		model.prefixActive = true
 		_, _ = model.Update(inputEventMsg{event: uv.KeyPressEvent{Code: 'h', Text: "h", Mod: uv.ModAlt}})
 	}
-	if floating.Rect.X != 0 {
-		t.Fatalf("expected floating pane to clamp at left edge, got %+v", floating.Rect)
+	if floating.Rect.X >= 0 {
+		t.Fatalf("expected floating pane to be allowed outside the left edge, got %+v", floating.Rect)
+	}
+}
+
+func TestFloatingViewportCenterShortcutRecentersActiveRect(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 80
+	model.height = 24
+
+	msg := mustRunCmd(t, model.Init())
+	_, cmd := model.Update(msg)
+	if cmd != nil {
+		if next := mustRunCmd(t, cmd); next != nil {
+			_, _ = model.Update(next)
+		}
+	}
+
+	tab := model.currentTab()
+	createFloatingPaneViaPicker(t, model)
+
+	if len(tab.Floating) != 1 {
+		t.Fatalf("expected floating pane, got %#v", tab)
+	}
+	entry := tab.Floating[0]
+	entry.Rect = Rect{X: -18, Y: 15, W: 24, H: 8}
+	expected := centeredFloatingRect(Rect{X: 0, Y: 0, W: 80, H: 22}, entry.Rect.W, entry.Rect.H)
+
+	model.prefixActive = true
+	model.prefixMode = prefixModeFloating
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+
+	if entry.Rect != expected {
+		t.Fatalf("expected center shortcut to recenter floating rect to %+v, got %+v", expected, entry.Rect)
+	}
+	if !model.prefixActive || model.prefixMode != prefixModeFloating {
+		t.Fatalf("expected floating sticky mode to remain active after center, active=%v mode=%v", model.prefixActive, model.prefixMode)
 	}
 }
 
@@ -1464,7 +1513,7 @@ func TestFloatingViewportRenderKeepsFrameVisibleAcrossUnderlyingRedraws(t *testi
 	_, _ = floatPane.VTerm.Write([]byte("FLOAT-TOP"))
 
 	view := xansi.Strip(model.View())
-	if !containsAll(view, "float:float-monitor [floating]", "FLOAT-TOP") {
+	if !containsAll(view, "float-monitor", "FLOAT-TOP") {
 		t.Fatalf("expected floating frame and body in initial render, got:\n%s", view)
 	}
 
@@ -1473,7 +1522,7 @@ func TestFloatingViewportRenderKeepsFrameVisibleAcrossUnderlyingRedraws(t *testi
 		basePane.renderDirty = true
 
 		view = xansi.Strip(model.View())
-		if !containsAll(view, "float:float-monitor [floating]", "FLOAT-TOP") {
+		if !containsAll(view, "float-monitor", "FLOAT-TOP") {
 			t.Fatalf("expected floating frame to remain visible after tiled redraw %d, got:\n%s", i, view)
 		}
 	}
@@ -1481,7 +1530,7 @@ func TestFloatingViewportRenderKeepsFrameVisibleAcrossUnderlyingRedraws(t *testi
 
 func TestFloatingViewportTitlesIncludeZOrder(t *testing.T) {
 	client := &fakeClient{}
-	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model := NewModel(client, Config{DefaultShell: "/bin/sh", IconSet: "ascii"})
 	model.width = 120
 	model.height = 30
 
@@ -1509,14 +1558,14 @@ func TestFloatingViewportTitlesIncludeZOrder(t *testing.T) {
 	tab.Panes[tab.Floating[1].PaneID].renderDirty = true
 
 	view := xansi.Strip(model.View())
-	if !containsAll(view, "float:float-a [floating z:1]", "float:float-b [floating z:2]") {
+	if !containsAll(view, "shell-2 [floating z:1]", "shell-3 [floating z:2]") {
 		t.Fatalf("expected floating titles to include z-order, got:\n%s", view)
 	}
 }
 
 func TestHelpAndStatusShowViewportControlsAndState(t *testing.T) {
 	client := &fakeClient{}
-	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model := NewModel(client, Config{DefaultShell: "/bin/sh", IconSet: "ascii"})
 	model.width = 120
 	model.height = 16
 
@@ -1534,33 +1583,36 @@ func TestHelpAndStatusShowViewportControlsAndState(t *testing.T) {
 	pane.live = true
 	pane.renderDirty = true
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'M'}})
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}})
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
 	pane.Offset = Point{X: 4, Y: 0}
 	pane.renderDirty = true
 
 	model.width = 240
 	status := xansi.Strip(model.renderStatus())
-	if !containsAll(status, "display:fixed", "state:running") {
-		t.Fatalf("expected status to expose pane display state, got:\n%s", status)
+	if !containsAll(status, "shell-1", "live") {
+		t.Fatalf("expected status to expose minimal pane runtime state, got:\n%s", status)
+	}
+	if strings.Contains(status, "fixed") {
+		t.Fatalf("expected pane display state to stay in pane chrome instead of bottom summary, got:\n%s", status)
 	}
 
 	model.height = 40
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
 	helpView := xansi.Strip(model.View())
-	if !containsAll(helpView, "Display: Ctrl-v then m/r/p", "Ctrl-v then h/j/k/l", "0/$/g/G/z", "acquire resize control") {
+	if !containsAll(helpView, "Ctrl-v   display actions", "acquire resize control", "size lock warn", "Ctrl-g   global actions") {
 		t.Fatalf("expected help to include display controls, got:\n%s", helpView)
 	}
 }
 
 func TestFloatingViewportStatusAndHelpExposeFloatingControls(t *testing.T) {
 	client := &fakeClient{}
-	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model := NewModel(client, Config{DefaultShell: "/bin/sh", IconSet: "ascii"})
 	model.width = 240
 	model.height = 40
 
@@ -1575,21 +1627,21 @@ func TestFloatingViewportStatusAndHelpExposeFloatingControls(t *testing.T) {
 	createFloatingPaneViaPicker(t, model)
 
 	status := xansi.Strip(model.renderStatus())
-	if !containsAll(status, "layer:floating", "focus:float", "Esc->tiled") {
+	if !containsAll(status, "float", "live") {
 		t.Fatalf("expected status to expose floating layer state, got:\n%s", status)
 	}
 
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
 	helpView := xansi.Strip(model.View())
-	if !containsAll(helpView, "Ctrl-o then n / Tab / v / x", "Ctrl-o then h/j/k/l", "drag bottom-right corner to resize") {
+	if !containsAll(helpView, "Ctrl-o   floating actions", "Ctrl-f   terminal picker", "drag body to move", "drag bottom-right corner to resize") {
 		t.Fatalf("expected help to include floating pane controls, got:\n%s", helpView)
 	}
 }
 
 func TestFloatingViewportStatusShowsSwitchHintFromTiledFocus(t *testing.T) {
 	client := &fakeClient{}
-	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model := NewModel(client, Config{DefaultShell: "/bin/sh", IconSet: "ascii"})
 	model.width = 240
 	model.height = 32
 
@@ -1603,9 +1655,9 @@ func TestFloatingViewportStatusShowsSwitchHintFromTiledFocus(t *testing.T) {
 	}
 	_ = model.focusTiledPane()
 
-	status := xansi.Strip(model.renderStatus())
-	if !containsAll(status, "floating:1", "focus:tiled", "Tab->float") {
-		t.Fatalf("expected tiled focus status to expose floating switch hint, got:\n%s", status)
+	bar := xansi.Strip(model.renderTabBar())
+	if !containsAll(bar, "pane:2", "term:2", "float:1") {
+		t.Fatalf("expected top bar to expose compact workspace counts, got:\n%s", bar)
 	}
 }
 
@@ -1726,15 +1778,15 @@ func TestMouseDragFloatingPaneClampsToViewportBounds(t *testing.T) {
 
 	_, _ = model.Update(inputEventMsg{event: uv.MouseClickEvent{X: entry.Rect.X + 2, Y: entry.Rect.Y + 1, Button: uv.MouseLeft}})
 	_, _ = model.Update(inputEventMsg{event: uv.MouseMotionEvent{X: 0, Y: 1, Button: uv.MouseLeft}})
-	if entry.Rect.X != 0 || entry.Rect.Y != 0 {
-		t.Fatalf("expected drag to clamp to top-left bounds, got %+v", entry.Rect)
+	if entry.Rect.X != -2 || entry.Rect.Y != 0 {
+		t.Fatalf("expected drag to allow partial top-left out-of-bounds visibility, got %+v", entry.Rect)
 	}
 
 	_, _ = model.Update(inputEventMsg{event: uv.MouseMotionEvent{X: 79, Y: 18, Button: uv.MouseLeft}})
 	_, _ = model.Update(inputEventMsg{event: uv.MouseReleaseEvent{X: 79, Y: 18, Button: uv.MouseLeft}})
 
-	if entry.Rect.X != 52 || entry.Rect.Y != 10 {
-		t.Fatalf("expected drag to clamp to bottom-right bounds, got %+v", entry.Rect)
+	if entry.Rect.X != 76 || entry.Rect.Y != 16 {
+		t.Fatalf("expected drag to keep only a visible floating edge in bounds, got %+v", entry.Rect)
 	}
 }
 
@@ -2083,7 +2135,7 @@ func TestMouseDragFloatingPaneKeepsPreviouslyOccludedLivePaneVisible(t *testing.
 	_, _ = top.VTerm.Write([]byte("TOP-LAYER"))
 
 	initial := xansi.Strip(model.View())
-	if !containsAll(initial, "float:bottom", "float:top") {
+	if !containsAll(initial, "BOTTOM-ROW-0", "TOP-LAYER") {
 		t.Fatalf("expected both floating panes before drag, got:\n%s", initial)
 	}
 
@@ -2092,7 +2144,7 @@ func TestMouseDragFloatingPaneKeepsPreviouslyOccludedLivePaneVisible(t *testing.
 	_, _ = model.Update(inputEventMsg{event: uv.MouseReleaseEvent{X: 52, Y: 4, Button: uv.MouseLeft}})
 
 	out := xansi.Strip(model.View())
-	if !containsAll(out, "float:bottom", "float:top", "BOTTOM-ROW-0", "BOTTOM-ROW-1", "BOTTOM-ROW-2") {
+	if !containsAll(out, "TOP-LAYER", "BOTTOM-ROW-0", "BOTTOM-ROW-1", "BOTTOM-ROW-2") {
 		t.Fatalf("expected mouse drag to keep bottom floating pane visible, got:\n%s", out)
 	}
 }
@@ -2137,7 +2189,7 @@ func TestPrefixColonBeginsCommandPrompt(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
 
 	if model.prompt == nil || model.prompt.Title != "command" {
@@ -2180,7 +2232,7 @@ func TestTerminalPickerViewUsesRenderCacheUntilDirty(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -2298,6 +2350,104 @@ func TestExitedSnapshotHistoryUsesNeutralForeground(t *testing.T) {
 	}
 	if !strings.Contains(view, "38;2;226;232;240") {
 		t.Fatalf("expected exited snapshot history to use neutral foreground:\n%s", view)
+	}
+}
+
+func TestLivePaneRenderPreservesDefaultTerminalColors(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 90
+	model.height = 20
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	tab := model.currentTab()
+	pane := tab.Panes[tab.ActivePaneID]
+	if pane == nil {
+		t.Fatal("expected active pane")
+	}
+	if _, err := pane.VTerm.Write([]byte("HOST")); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+	pane.live = true
+	pane.renderDirty = true
+
+	model.handleInputEvent(uv.ForegroundColorEvent{Color: color.RGBA{R: 0x11, G: 0x22, B: 0x33, A: 0xff}})
+	model.handleInputEvent(uv.BackgroundColorEvent{Color: color.RGBA{R: 0xaa, G: 0xbb, B: 0xcc, A: 0xff}})
+
+	view := model.View()
+	if strings.Contains(view, "38;2;17;34;51") || strings.Contains(view, "48;2;170;187;204") {
+		t.Fatalf("expected live pane content to preserve default terminal colors without baking RGB values:\n%s", view)
+	}
+}
+
+func TestHostTerminalColorsApplyToNewViewportDefaults(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	model.applyHostTerminalColors(
+		color.RGBA{R: 0x22, G: 0x44, B: 0x66, A: 0xff},
+		color.RGBA{R: 0x11, G: 0x33, B: 0x55, A: 0xff},
+	)
+
+	view := model.newViewport("term-001", 7, nil)
+	if view == nil || view.VTerm == nil {
+		t.Fatal("expected viewport runtime")
+	}
+	if view.DefaultFG != "#224466" {
+		t.Fatalf("expected viewport foreground default, got %q", view.DefaultFG)
+	}
+	if view.DefaultBG != "#113355" {
+		t.Fatalf("expected viewport background default, got %q", view.DefaultBG)
+	}
+	if fg, bg := view.VTerm.DefaultColors(); fg != "#224466" || bg != "#113355" {
+		t.Fatalf("expected vterm defaults to match host colors, got fg=%q bg=%q", fg, bg)
+	}
+}
+
+func TestLivePaneRenderPreservesAnsiPaletteIndices(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 90
+	model.height = 20
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	tab := model.currentTab()
+	pane := tab.Panes[tab.ActivePaneID]
+	if pane == nil {
+		t.Fatal("expected active pane")
+	}
+	if _, err := pane.VTerm.Write([]byte("\x1b[31mRED\x1b[0m")); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+	pane.live = true
+	pane.renderDirty = true
+
+	model.handleInputEvent(uv.UnknownOscEvent("\x1b]4;1;rgb:12/34/56\x07"))
+
+	view := model.View()
+	if !strings.Contains(view, "[31m") && !strings.Contains(view, "[0;31m") {
+		t.Fatalf("expected live pane to preserve ANSI palette index instead of baking RGB:\n%s", view)
+	}
+}
+
+func TestHostPaletteColorAppliesToNewViewport(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	model.handleInputEvent(uv.UnknownOscEvent("\x1b]4;1;rgb:ab/cd/ef\x07"))
+
+	view := model.newViewport("term-001", 7, nil)
+	if view == nil || view.VTerm == nil {
+		t.Fatal("expected viewport runtime")
+	}
+	if color := view.VTerm.IndexedColor(1); color != "#abcdef" {
+		t.Fatalf("expected inherited palette color, got %q", color)
+	}
+	if _, err := view.VTerm.Write([]byte("\x1b[31mR\x1b[0m")); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+	if cell := view.VTerm.CellAt(0, 0); cell.Style.FG != "ansi:1" {
+		t.Fatalf("expected new viewport to preserve ANSI color semantic, got %#v", cell.Style)
 	}
 }
 
@@ -2421,7 +2571,7 @@ func TestReadonlyViewportBlocksInputExceptCtrlC(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
 
 	pane := model.currentTab().Panes[model.currentTab().ActivePaneID]
@@ -2434,11 +2584,8 @@ func TestReadonlyViewportBlocksInputExceptCtrlC(t *testing.T) {
 		_ = mustRunCmd(t, cmd)
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
-	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
-	if cmd != nil {
-		_ = mustRunCmd(t, cmd)
-	}
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if cmd == nil {
@@ -2463,7 +2610,7 @@ func TestReadonlyViewportBlocksRawInputButAllowsCtrlC(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
 
 	_, cmd := model.Update(rawInputMsg{data: []byte("ab\x03cd")})
@@ -2488,10 +2635,10 @@ func TestReadonlyViewportBlocksKillTerminal(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
 	if cmd != nil {
 		t.Fatalf("expected readonly kill to be blocked locally, got cmd %#v", cmd)
@@ -2501,6 +2648,84 @@ func TestReadonlyViewportBlocksKillTerminal(t *testing.T) {
 	}
 	if model.err == nil || !strings.Contains(model.err.Error(), "readonly pane cannot kill/remove terminal") {
 		t.Fatalf("expected readonly kill error, got %v", model.err)
+	}
+}
+
+func TestKillActiveTerminalOpensStopConfirmationPrompt(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 100
+	model.height = 24
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	cmd := activatePrefixForTest(model)
+	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
+	if cmd != nil {
+		t.Fatalf("expected stop-terminal request to open confirm prompt before killing, got %#v", cmd)
+	}
+	if client.kills != 0 {
+		t.Fatalf("expected stop-terminal confirmation to defer kill, got %d", client.kills)
+	}
+	if model.prompt == nil || model.prompt.Kind != "confirm-stop-terminal" {
+		t.Fatalf("expected confirm-stop-terminal prompt, got %#v", model.prompt)
+	}
+	view := xansi.Strip(model.View())
+	if !containsAll(view, "Stop Terminal", "Stopping this terminal will affect every pane", "Enter stop") {
+		t.Fatalf("expected stop confirmation prompt in view, got:\n%s", view)
+	}
+
+	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	msg = mustRunCmd(t, cmd)
+	_, _ = model.Update(msg)
+
+	if client.kills != 1 {
+		t.Fatalf("expected confirmed stop to issue kill request, got %d", client.kills)
+	}
+}
+
+func TestCloseActivePaneShowsTerminalKeepsRunningNotice(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 120
+	model.height = 30
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	tab := model.currentTab()
+	base := tab.Panes[tab.ActivePaneID]
+	if base == nil {
+		t.Fatal("expected base pane")
+	}
+	other := &Pane{
+		ID:    "pane-2",
+		Title: "other",
+		Viewport: &Viewport{
+			TerminalID:    "term-002",
+			Channel:       base.Channel + 1,
+			VTerm:         localvterm.New(80, 24, 100, nil),
+			Snapshot:      &protocol.Snapshot{TerminalID: "term-002", Size: protocol.Size{Cols: 80, Rows: 24}},
+			TerminalState: "running",
+			Mode:          ViewportModeFit,
+		},
+	}
+	tab.Panes[other.ID] = other
+	_ = tab.Root.Split(base.ID, SplitVertical, other.ID)
+	tab.ActivePaneID = base.ID
+
+	var cmd tea.Cmd
+	cmd = activatePrefixForTest(model)
+	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	msg = mustRunCmd(t, cmd)
+	_, _ = model.Update(msg)
+
+	if len(tab.Panes) != 1 {
+		t.Fatalf("expected one pane to remain after closing active pane, got %d", len(tab.Panes))
+	}
+	if model.notice != "pane closed; terminal keeps running" {
+		t.Fatalf("unexpected close-pane notice: %q", model.notice)
 	}
 }
 
@@ -2569,18 +2794,29 @@ func TestRawPrefixCtrlAForwardsLiteralCtrlA(t *testing.T) {
 
 	_, cmd := model.Update(rawInputMsg{data: []byte{0x01}})
 	_ = mustRunCmd(t, cmd)
-	if !model.prefixActive {
-		t.Fatal("expected prefix mode to be active")
-	}
-
-	_, cmd = model.Update(rawInputMsg{data: []byte{0x01}})
-	_ = mustRunCmd(t, cmd)
-
 	if model.prefixActive {
-		t.Fatal("expected literal ctrl-a to clear prefix mode")
+		t.Fatal("expected literal ctrl-a to bypass prefix mode")
 	}
 	if len(client.inputs) != 1 || string(client.inputs[0]) != "\x01" {
 		t.Fatalf("expected forwarded ctrl-a, got %#v", client.inputs)
+	}
+}
+
+func TestCtrlADoesNotActivatePrefixMode(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = mustRunCmd(t, cmd)
+
+	if model.prefixActive {
+		t.Fatal("expected ctrl-a to stop activating prefix mode")
+	}
+	if len(client.inputs) != 1 || string(client.inputs[0]) != "\x01" {
+		t.Fatalf("expected ctrl-a to forward literal input, got %#v", client.inputs)
 	}
 }
 
@@ -2775,7 +3011,7 @@ func TestPrefixTimeoutClearsPrefixMode(t *testing.T) {
 	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
 	model.prefixTimeout = time.Millisecond
 
-	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	cmd := activatePrefixForTest(model)
 	if !model.prefixActive {
 		t.Fatal("expected prefix mode to be active")
 	}
@@ -2783,6 +3019,52 @@ func TestPrefixTimeoutClearsPrefixMode(t *testing.T) {
 	_, _ = model.Update(msg)
 	if model.prefixActive {
 		t.Fatal("expected prefix timeout to clear prefix mode")
+	}
+}
+
+func TestDirectModeTimeoutClearsMode(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.prefixTimeout = time.Millisecond
+
+	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	if !model.prefixActive || model.prefixMode != prefixModePane {
+		t.Fatalf("expected pane mode to activate, active=%v mode=%v", model.prefixActive, model.prefixMode)
+	}
+	msg := mustRunCmd(t, cmd)
+	_, _ = model.Update(msg)
+	if model.prefixActive {
+		t.Fatal("expected direct pane mode to clear after timeout")
+	}
+}
+
+func TestResizeModeActionRearmsTimeout(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.prefixTimeout = 5 * time.Millisecond
+
+	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	if !model.prefixActive || model.prefixMode != prefixModeResize {
+		t.Fatalf("expected resize mode to activate, active=%v mode=%v", model.prefixActive, model.prefixMode)
+	}
+	initialSeq := model.prefixSeq
+	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	if !model.prefixActive {
+		t.Fatal("expected resize action to keep mode active")
+	}
+	if model.prefixSeq <= initialSeq {
+		t.Fatalf("expected resize action to rearm timeout, seq before=%d after=%d", initialSeq, model.prefixSeq)
+	}
+	rearmedSeq := model.prefixSeq
+	_, _ = model.Update(prefixTimeoutMsg{seq: initialSeq})
+	if !model.prefixActive {
+		t.Fatal("expected original timer to be ignored after resize rearm")
+	}
+	msg := mustRunCmd(t, cmd)
+	_ = msg
+	_, _ = model.Update(prefixTimeoutMsg{seq: rearmedSeq})
+	if model.prefixActive {
+		t.Fatal("expected resize mode to clear after rearmed timeout")
 	}
 }
 
@@ -2798,7 +3080,7 @@ func TestPrefixTabSubPrefixRenameOpensPrompt(t *testing.T) {
 		}
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
 	if !model.prefixActive || model.prefixMode != prefixModeTab {
 		t.Fatalf("expected tab sub-prefix mode, active=%v mode=%v", model.prefixActive, model.prefixMode)
@@ -2830,7 +3112,7 @@ func TestPrefixWorkspaceSubPrefixCreateActivatesNewWorkspace(t *testing.T) {
 		}
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
 	if !model.prefixActive || model.prefixMode != prefixModeWorkspace {
 		t.Fatalf("expected workspace sub-prefix mode, active=%v mode=%v", model.prefixActive, model.prefixMode)
@@ -2868,7 +3150,7 @@ func TestPrefixWorkspaceSubPrefixTimeoutFallsBackToFloatingChooser(t *testing.T)
 		}
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
 	timeoutMsg := mustRunCmd(t, cmd)
 	_, cmd = model.Update(timeoutMsg)
@@ -2880,6 +3162,35 @@ func TestPrefixWorkspaceSubPrefixTimeoutFallsBackToFloatingChooser(t *testing.T)
 
 	if model.terminalPicker == nil || model.terminalPicker.Title != "Open Floating Pane" {
 		t.Fatalf("expected legacy C-a w fallback to floating chooser, got %#v", model.terminalPicker)
+	}
+}
+
+func TestWorkspaceDeleteShowsNoticeWhenOnlyOneWorkspaceExists(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh", Workspace: "main"})
+
+	msg := mustRunCmd(t, model.Init())
+	_, cmd := model.Update(msg)
+	if cmd != nil {
+		if next := mustRunCmd(t, cmd); next != nil {
+			_, _ = model.Update(next)
+		}
+	}
+
+	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
+	if !model.prefixActive || model.prefixMode != prefixModeWorkspace {
+		t.Fatalf("expected workspace mode, active=%v mode=%v", model.prefixActive, model.prefixMode)
+	}
+
+	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if cmd != nil {
+		t.Fatalf("expected last-workspace delete to stay local, got %#v", cmd)
+	}
+	if model.err == nil || !strings.Contains(model.err.Error(), "cannot delete the last workspace") {
+		t.Fatalf("expected last-workspace delete notice, got err=%v notice=%q", model.err, model.notice)
+	}
+	if model.workspace.Name != "main" || len(model.workspaceOrder) != 1 {
+		t.Fatalf("expected workspace to remain unchanged, got name=%q order=%v", model.workspace.Name, model.workspaceOrder)
 	}
 }
 
@@ -2909,7 +3220,7 @@ func TestPrefixWorkspaceSubPrefixRenameAndDelete(t *testing.T) {
 	model.workspaceOrder = []string{"main", "workspace-2"}
 	model.activeWorkspace = 1
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 	if cmd != nil {
@@ -2931,7 +3242,7 @@ func TestPrefixWorkspaceSubPrefixRenameAndDelete(t *testing.T) {
 		t.Fatalf("expected workspace rename to update active workspace, got name=%q order=%v", model.workspace.Name, model.workspaceOrder)
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 	msg = mustRunCmd(t, cmd)
@@ -2966,7 +3277,7 @@ func TestPrefixViewportSubPrefixToggleMode(t *testing.T) {
 		t.Fatalf("expected active fit pane before viewport sub-prefix toggle, got %#v", pane)
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
 	if cmd != nil {
@@ -2986,7 +3297,7 @@ func TestPrefixViewportSubPrefixToggleMode(t *testing.T) {
 
 func TestDirectModeTriggersAndStatus(t *testing.T) {
 	client := &fakeClient{}
-	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model := NewModel(client, Config{DefaultShell: "/bin/sh", IconSet: "ascii"})
 	model.width = 200
 	model.height = 32
 
@@ -3001,10 +3312,10 @@ func TestDirectModeTriggersAndStatus(t *testing.T) {
 		t.Fatalf("expected ctrl-p to enter pane mode, active=%v direct=%v mode=%v", model.prefixActive, model.directMode, model.prefixMode)
 	}
 	status := xansi.Strip(model.renderStatus())
-	if !containsAll(status, "[PANE]", "%:split", "hjkl:focus", "Esc:exit") {
+	if !containsAll(status, "PANE", "<%> SPLIT", "<hjkl> FOCUS", "<Esc> EXIT") {
 		t.Fatalf("expected pane mode status hints, got:\n%s", status)
 	}
-	if strings.Contains(status, "pane:") && strings.Index(status, "[PANE]") > strings.Index(status, "pane:") {
+	if strings.Contains(status, "pane:") && strings.Index(status, "PANE") > strings.Index(status, "pane:") {
 		t.Fatalf("expected shortcut hints to stay on the left of runtime state, got:\n%s", status)
 	}
 
@@ -3013,17 +3324,75 @@ func TestDirectModeTriggersAndStatus(t *testing.T) {
 		t.Fatal("expected esc to leave direct mode")
 	}
 	status = xansi.Strip(model.renderStatus())
-	if !containsAll(status, "[NORMAL]", "Ctrl-p pane", "Ctrl-r resize", "Ctrl-t tab", "Ctrl-o float", "Ctrl-f picker") {
+	if !containsAll(status, "Ctrl +", "<p> PANE", "<r> RESIZE", "<t> TAB", "<o> FLOAT", "<f> PICKER") {
 		t.Fatalf("expected normal status mode bar, got:\n%s", status)
 	}
-	if strings.Contains(status, "pane:") && strings.Index(status, "[NORMAL]") > strings.Index(status, "pane:") {
+	if strings.Contains(status, "pane:") && strings.Index(status, "Ctrl +") > strings.Index(status, "pane:") {
 		t.Fatalf("expected normal shortcut section to stay left of runtime state, got:\n%s", status)
 	}
 }
 
-func TestRenderStatusShowsAccessModeInRuntimeSummary(t *testing.T) {
+func TestRenderStatusHintsUseDirectionalShortcutBadges(t *testing.T) {
+	got := xansi.Strip(renderStatusHints([]string{"[NORMAL]", "Ctrl-p pane", "Esc:exit", "prefix"}))
+	if !containsAll(got, "Ctrl + ", "<p> PANE ", "<Esc> EXIT ", "PREFIX ") {
+		t.Fatalf("expected arrow shortcut segments, got %q", got)
+	}
+	if strings.Contains(got, "") {
+		t.Fatalf("expected status bar arrows to use single separators, got %q", got)
+	}
+}
+
+func TestStatusShortcutPartsDoNotShowExitedActionsInNormalBar(t *testing.T) {
 	client := &fakeClient{}
 	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 160
+	model.height = 32
+
+	msg := mustRunCmd(t, model.Init())
+	_, cmd := model.Update(msg)
+	if cmd != nil {
+		_, _ = model.Update(mustRunCmd(t, cmd))
+	}
+
+	pane := model.currentTab().Panes[model.currentTab().ActivePaneID]
+	pane.TerminalState = "exited"
+	status := xansi.Strip(model.renderStatus())
+	if containsAny(status, "<r> RESTART", "<f> ATTACH", "<x> CLOSE") {
+		t.Fatalf("expected exited quick actions to stay out of normal status bar, got:\n%s", status)
+	}
+	if !containsAll(status, "Ctrl +", "<p> PANE", "<o> FLOAT") {
+		t.Fatalf("expected normal ctrl shortcuts to remain visible, got:\n%s", status)
+	}
+}
+
+func TestDrawPaneFrameUsesGreenActiveAndGrayInactiveBorders(t *testing.T) {
+	activeCanvas := newComposedCanvas(32, 6)
+	activeCanvas.drawPaneFrameWithTitle(Rect{X: 0, Y: 0, W: 32, H: 6}, "active", "run", true, false)
+	active := activeCanvas.String()
+	if !strings.Contains(active, "38;2;74;222;128") {
+		t.Fatalf("expected active pane border to use green accent, got %q", active)
+	}
+
+	inactiveCanvas := newComposedCanvas(32, 6)
+	inactiveCanvas.drawPaneFrameWithTitle(Rect{X: 0, Y: 0, W: 32, H: 6}, "inactive", "run", false, false)
+	inactive := inactiveCanvas.String()
+	if !strings.Contains(inactive, "38;2;209;213;219") {
+		t.Fatalf("expected inactive pane border to use bright gray, got %q", inactive)
+	}
+}
+
+func TestDrawPaneFrameKeepsTopRuleVisibleAroundTitleAndMeta(t *testing.T) {
+	canvas := newComposedCanvas(40, 6)
+	canvas.drawPaneFrameWithTitle(Rect{X: 0, Y: 0, W: 40, H: 6}, "shell-1", "live fit", true, false)
+	firstLine := strings.Split(xansi.Strip(canvas.String()), "\n")[0]
+	if !containsAll(firstLine, "shell-1", "live fit", "┌─", "─┐") {
+		t.Fatalf("expected top border to keep visible rule around title and meta, got %q", firstLine)
+	}
+}
+
+func TestRenderStatusKeepsAccessFlagsOutOfRuntimeSummary(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh", IconSet: "ascii"})
 	model.width = 160
 	model.height = 32
 
@@ -3041,8 +3410,11 @@ func TestRenderStatusShowsAccessModeInRuntimeSummary(t *testing.T) {
 	pane.Readonly = true
 
 	status := xansi.Strip(model.renderStatus())
-	if !containsAll(status, "access:observer", "readonly") {
-		t.Fatalf("expected runtime status to expose observer/readonly, got:\n%s", status)
+	if !containsAll(status, "shell-1", "tiled", "live") {
+		t.Fatalf("expected runtime status to keep only compact focus summary, got:\n%s", status)
+	}
+	if containsAll(status, "obs", "ro") {
+		t.Fatalf("expected observer/readonly to stay in pane title badges, got:\n%s", status)
 	}
 }
 
@@ -3064,14 +3436,44 @@ func TestPaneTitleAddsObserverAndReadonlyBadges(t *testing.T) {
 	}
 }
 
+func TestPaneTitlePrefersTerminalNameOverPaneTitle(t *testing.T) {
+	pane := &Pane{
+		ID:    "pane-1",
+		Title: "pane-observer-slot",
+		Viewport: &Viewport{
+			TerminalID:    "term-001",
+			Name:          "real-terminal-name",
+			TerminalState: "running",
+		},
+	}
+
+	if got := paneTitle(pane); !strings.Contains(got, "real-terminal-name") || strings.Contains(got, "pane-observer-slot") {
+		t.Fatalf("expected pane title to prefer terminal name, got %q", got)
+	}
+}
+
+func TestPaneTitleUsesSavedPaneLabelWhenUnbound(t *testing.T) {
+	pane := &Pane{
+		ID:    "pane-1",
+		Title: "stale-title",
+		Viewport: &Viewport{
+			TerminalState: "unbound",
+		},
+	}
+
+	if got := paneTitle(pane); got != "saved pane" {
+		t.Fatalf("expected unbound pane title to collapse to saved pane, got %q", got)
+	}
+}
+
 func TestRenderTabBarUsesWorkspaceBadgeAndBracketedActiveTab(t *testing.T) {
-	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh", Workspace: "project-x"})
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh", Workspace: "project-x", IconSet: "ascii"})
 	model.width = 120
 	model.workspace.Tabs = []*Tab{newTab("dev"), newTab("logs"), newTab("build")}
 	model.workspace.ActiveTab = 1
 
 	bar := xansi.Strip(model.renderTabBar())
-	if !containsAll(bar, "[project-x]", "1:dev", "[2:logs]", "3:build", "ws:project-x") {
+	if !containsAll(bar, "[project-x]", "1:dev", "[2:logs]", "3:build", "pane:0") {
 		t.Fatalf("expected lightweight workspace/tab bar, got:\n%s", bar)
 	}
 }
@@ -3086,6 +3488,28 @@ func TestEmptyStateViewUsesLauncherCard(t *testing.T) {
 	view := xansi.Strip(model.View())
 	if !containsAll(view, "termx workspace", "Start New Terminal", "Attach Existing Terminal", "Open Workspace Picker") {
 		t.Fatalf("expected launcher-style empty state card, got:\n%s", view)
+	}
+}
+
+func TestHelpScreenRendersCenteredModal(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	model.width = 100
+	model.height = 24
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+	model.showHelp = true
+
+	view := model.View()
+	if idx := lineIndexContaining(view, "┌ Help / Shortcut Map"); idx < 4 {
+		t.Fatalf("expected centered help modal, got:\n%s", xansi.Strip(view))
+	}
+	line := lineContaining(view, "┌ Help / Shortcut Map")
+	if !strings.Contains(line, "┐") {
+		t.Fatalf("expected help modal top border to close cleanly, got:\n%s", xansi.Strip(view))
+	}
+	if strings.Contains(line, "workspace = one whole session") {
+		t.Fatalf("expected help title row to stay isolated inside modal chrome, got:\n%s", xansi.Strip(view))
 	}
 }
 
@@ -3106,8 +3530,34 @@ func TestEditTerminalPromptRendersCenteredModal(t *testing.T) {
 	})
 
 	view := xansi.Strip(model.View())
-	if !containsAll(view, "Edit Terminal", "name:", "api-shell", "updates all panes attached to this terminal", "Enter next", "Esc cancel") {
+	if !containsAll(view, "Edit Terminal", "step 1/2", "name:", "api-shell", "terminal id:", pane.TerminalID, "command: /bin/zsh", "updates terminal metadata", "Enter next", "Esc cancel") {
 		t.Fatalf("expected centered edit-terminal modal, got:\n%s", view)
+	}
+}
+
+func TestNewTerminalPromptShowsTargetAndCommandContext(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/zsh"})
+	model.width = 100
+	model.height = 24
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	model.beginTerminalCreatePrompt(terminalPickerAction{Kind: terminalPickerActionFloating, TabIndex: 0}, []string{"/bin/zsh", "-l"})
+
+	view := xansi.Strip(model.View())
+	if !containsAll(view, "New Terminal", "step 1/2", "opens in: floating pane", "command: /bin/zsh -l", "name:", "Enter next", "Esc cancel") {
+		t.Fatalf("expected create-terminal prompt to describe target and command, got:\n%s", view)
+	}
+}
+
+func TestApplyTerminalMetadataUpdateShowsNoticeWithoutAttachedPanes(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+
+	model.applyTerminalMetadataUpdate("term-parked", "parked-shell", map[string]string{"role": "ops"})
+
+	if model.notice != "updated terminal metadata" {
+		t.Fatalf("expected metadata update notice even for parked terminal, got %q", model.notice)
 	}
 }
 
@@ -3187,23 +3637,13 @@ func TestPrefixFloatingStickyModeMovesPaneAndEscapes(t *testing.T) {
 	}
 	before := tab.Floating[0].Rect
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
-	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
-	if cmd != nil {
-		if next := mustRunCmd(t, cmd); next != nil {
-			_, _ = model.Update(next)
-		}
-	}
+	_ = activatePrefixForTest(model)
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	if !model.prefixActive || model.prefixMode != prefixModeFloating {
 		t.Fatalf("expected floating sticky prefix mode, active=%v mode=%v", model.prefixActive, model.prefixMode)
 	}
 
-	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
-	if cmd != nil {
-		if next := mustRunCmd(t, cmd); next != nil {
-			_, _ = model.Update(next)
-		}
-	}
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
 	after := tab.Floating[0].Rect
 	if after.X != before.X-4 {
 		t.Fatalf("expected floating sticky move left by 4, before=%+v after=%+v", before, after)
@@ -3240,7 +3680,7 @@ func TestPrefixFloatingStickyModeInvalidKeyClearsMode(t *testing.T) {
 
 	createFloatingPaneViaPicker(t, model)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	if !model.prefixActive || model.prefixMode != prefixModeFloating {
 		t.Fatalf("expected floating sticky mode, active=%v mode=%v", model.prefixActive, model.prefixMode)
@@ -3272,7 +3712,7 @@ func TestPrefixArrowNavigationMovesFocus(t *testing.T) {
 		t.Fatal("expected split to focus the new pane")
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyLeft})
 	if model.currentTab().ActivePaneID != original {
 		t.Fatalf("expected left arrow to move focus back to %q, got %q", original, model.currentTab().ActivePaneID)
@@ -3304,7 +3744,7 @@ func TestPrefixResizeStaysActiveForRepeatedResize(t *testing.T) {
 		t.Fatal("expected split layout")
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}})
 	if cmd != nil {
 		_, _ = model.Update(mustRunCmd(t, cmd))
@@ -3340,7 +3780,7 @@ func TestPrefixSwapMovesActivePanePosition(t *testing.T) {
 	activeID := tab.ActivePaneID
 	before := tab.Root.Rects(Rect{X: 0, Y: 0, W: model.width, H: model.height - 2})[activeID]
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'{'}})
 	_, resizeCmd := model.Update(mustRunCmd(t, cmd))
 	if resizeCmd != nil {
@@ -3381,7 +3821,7 @@ func TestClosingCurrentTabKillsItsPanesAndReturnsToPreviousTab(t *testing.T) {
 		killedIDs[pane.TerminalID] = true
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'&'}})
 	msg = mustRunCmd(t, cmd)
 	_, cmd = model.Update(msg)
@@ -3418,7 +3858,7 @@ func TestClosingLastTabQuitsTUI(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'&'}})
 	msg = mustRunCmd(t, cmd)
 	_, cmd = model.Update(msg)
@@ -3449,7 +3889,7 @@ func TestTerminalPickerEnterReplacesCurrentViewport(t *testing.T) {
 
 	original := model.currentTab().Panes[model.currentTab().ActivePaneID].TerminalID
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -3488,7 +3928,7 @@ func TestTerminalPickerTabSplitsAndAttachesExistingTerminal(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -3529,13 +3969,8 @@ func TestFloatingCommandOpensChooserAndCanAttachExistingTerminal(t *testing.T) {
 		}
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
-	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
-	if cmd != nil {
-		if next := mustRunCmd(t, cmd); next != nil {
-			_, _ = model.Update(next)
-		}
-	}
+	_ = activatePrefixForTest(model)
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -3583,13 +4018,8 @@ func TestFloatingChooserKeepsExitedTerminalVisible(t *testing.T) {
 		}
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
-	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
-	if cmd != nil {
-		if next := mustRunCmd(t, cmd); next != nil {
-			_, _ = model.Update(next)
-		}
-	}
+	_ = activatePrefixForTest(model)
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -3859,7 +4289,7 @@ func TestClosingViewportDetachesWithoutKillingTerminal(t *testing.T) {
 	tab := model.currentTab()
 	orphanID := tab.Panes[tab.ActivePaneID].TerminalID
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 	msg = mustRunCmd(t, cmd)
 	_, cmd = model.Update(msg)
@@ -3877,7 +4307,7 @@ func TestClosingViewportDetachesWithoutKillingTerminal(t *testing.T) {
 		t.Fatalf("expected one viewport to remain, got %d", len(model.currentTab().Panes))
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -3899,7 +4329,7 @@ func TestClosingLastViewportQuitsTUIWithoutKillingTerminal(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 	msg = mustRunCmd(t, cmd)
 	_, cmd = model.Update(msg)
@@ -3915,7 +4345,7 @@ func TestClosingLastViewportQuitsTUIWithoutKillingTerminal(t *testing.T) {
 	}
 }
 
-func TestKillingSharedTerminalClosesAllBoundPanes(t *testing.T) {
+func TestKillingSharedTerminalKeepsBoundPanesAsSavedSlots(t *testing.T) {
 	client := &fakeClient{
 		listResult: []protocol.TerminalInfo{
 			{ID: "shared-001", Name: "worker", Command: []string{"tail", "-f", "worker.log"}, State: "running"},
@@ -3928,7 +4358,7 @@ func TestKillingSharedTerminalClosesAllBoundPanes(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -3937,7 +4367,7 @@ func TestKillingSharedTerminalClosesAllBoundPanes(t *testing.T) {
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -3953,26 +4383,48 @@ func TestKillingSharedTerminalClosesAllBoundPanes(t *testing.T) {
 		t.Fatalf("expected duplicated terminal to be visible in two viewports, got %d panes", len(model.currentTab().Panes))
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
+	if cmd != nil {
+		t.Fatalf("expected shared terminal stop to open confirm prompt first, got %#v", cmd)
+	}
+	if model.prompt == nil || model.prompt.Kind != "confirm-stop-terminal" {
+		t.Fatalf("expected confirm-stop-terminal prompt, got %#v", model.prompt)
+	}
+	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	msg = mustRunCmd(t, cmd)
 	_, cmd = model.Update(msg)
 
 	if client.kills != 1 || len(client.killedIDs) != 1 || client.killedIDs[0] != "shared-001" {
 		t.Fatalf("expected shared terminal kill request, got kills=%d ids=%v", client.kills, client.killedIDs)
 	}
-	if !model.quitting {
-		t.Fatal("expected killing the only shared terminal to close all bound panes and quit")
+	if model.quitting {
+		t.Fatal("expected killing a shared terminal to keep pane slots instead of quitting")
 	}
-	if cmd == nil {
-		t.Fatal("expected kill to quit the TUI after removing all bound panes")
+	if cmd != nil {
+		t.Fatalf("expected no quit command after killing shared terminal, got %#v", cmd)
 	}
-	if len(model.workspace.Tabs) != 0 {
-		t.Fatalf("expected removing the only shared terminal to close all tabs, got %d tabs", len(model.workspace.Tabs))
+	tab := model.currentTab()
+	if tab == nil || len(tab.Panes) != 2 {
+		t.Fatalf("expected both pane slots to remain after kill, got %#v", tab)
+	}
+	for _, pane := range tab.Panes {
+		if pane == nil {
+			t.Fatalf("expected concrete pane slot, got %#v", tab.Panes)
+		}
+		if pane.TerminalID != "" {
+			t.Fatalf("expected killed terminal to unbind from pane, got %#v", pane)
+		}
+		if pane.TerminalState != "unbound" {
+			t.Fatalf("expected pane to become unbound slot, got state %q", pane.TerminalState)
+		}
+	}
+	if !strings.Contains(model.notice, "left 2 saved panes") {
+		t.Fatalf("expected saved slot notice after kill, got %q", model.notice)
 	}
 }
 
-func TestRemoteTerminalRemovedEventClosesBoundPanesAndShowsNotice(t *testing.T) {
+func TestRemoteTerminalRemovedEventKeepsSavedSlotsAndShowsNotice(t *testing.T) {
 	client := &fakeClient{}
 	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
 	model.width = 120
@@ -3986,6 +4438,7 @@ func TestRemoteTerminalRemovedEventClosesBoundPanesAndShowsNotice(t *testing.T) 
 	if shared == nil {
 		t.Fatal("expected initial pane")
 	}
+	sharedID := shared.TerminalID
 
 	localPane := &Pane{
 		ID:    "pane-local",
@@ -4011,17 +4464,310 @@ func TestRemoteTerminalRemovedEventClosesBoundPanesAndShowsNotice(t *testing.T) 
 		Removed:    &protocol.TerminalRemovedData{Reason: "killed"},
 	}})
 
-	if len(tab.Panes) != 1 {
-		t.Fatalf("expected remote removal to close only shared panes, got %d panes", len(tab.Panes))
+	if len(tab.Panes) != 2 {
+		t.Fatalf("expected remote removal to keep pane slot, got %d panes", len(tab.Panes))
 	}
-	if _, ok := tab.Panes[shared.ID]; ok {
-		t.Fatalf("expected shared pane to be removed after remote terminal removal, panes=%#v", tab.Panes)
+	if slot := tab.Panes[shared.ID]; slot == nil || slot.TerminalState != "unbound" || slot.TerminalID != "" {
+		t.Fatalf("expected shared pane to become an unbound slot after remote terminal removal, got %#v", slot)
 	}
-	if model.notice != fmt.Sprintf("terminal %q was removed by another client", shared.TerminalID) {
+	if model.notice != fmt.Sprintf("terminal %q was removed by another client; left 1 saved pane", sharedID) {
 		t.Fatalf("unexpected remote removal notice: %q", model.notice)
 	}
 	if model.quitting {
 		t.Fatal("expected surviving local pane to keep TUI running")
+	}
+}
+
+func TestCommandTerminalsOpensTerminalManager(t *testing.T) {
+	client := &fakeClient{
+		listResult: []protocol.TerminalInfo{
+			{ID: "term-001", Name: "api", Command: []string{"bash"}, State: "running"},
+		},
+	}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 120
+	model.height = 30
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	cmd := model.executeCommandPrompt("terminals")
+	msg = mustRunCmd(t, cmd)
+	_, _ = model.Update(msg)
+
+	if model.terminalManager == nil {
+		t.Fatal("expected terminal manager to open from command prompt")
+	}
+	view := xansi.Strip(model.View())
+	if !containsAll(view, "Running Terminals", "api", "TERMINALS", "<Enter> BRING HERE") {
+		t.Fatalf("expected terminal manager chrome, got:\n%s", view)
+	}
+}
+
+func TestTerminalManagerEnterAttachesSelectionToActivePane(t *testing.T) {
+	client := &fakeClient{
+		listResult: []protocol.TerminalInfo{
+			{ID: "term-001", Name: "api", Command: []string{"bash"}, State: "running"},
+		},
+	}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 120
+	model.height = 30
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	cmd := model.loadTerminalManagerCmd("", "term-001")
+	msg = mustRunCmd(t, cmd)
+	_, _ = model.Update(msg)
+	if model.terminalManager == nil {
+		t.Fatal("expected terminal manager to open")
+	}
+
+	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	msg = mustRunCmd(t, cmd)
+	_, _ = model.Update(msg)
+
+	pane := model.currentTab().Panes[model.currentTab().ActivePaneID]
+	if pane == nil || pane.TerminalID != "term-001" {
+		t.Fatalf("expected terminal manager enter to attach selected terminal, got %#v", pane)
+	}
+	if model.terminalManager != nil {
+		t.Fatal("expected terminal manager to close after attach")
+	}
+}
+
+func TestTerminalManagerDefaultsToAnotherTerminalWhenActivePaneAlreadyBound(t *testing.T) {
+	client := &fakeClient{
+		listResult: []protocol.TerminalInfo{
+			{ID: "term-001", Name: "api", Command: []string{"bash"}, State: "running"},
+		},
+	}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 120
+	model.height = 30
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	active := activePane(model.currentTab())
+	if active == nil || active.TerminalID == "" {
+		t.Fatal("expected init to bind an active pane terminal")
+	}
+
+	cmd := model.openTerminalManagerCmd()
+	msg = mustRunCmd(t, cmd)
+	_, _ = model.Update(msg)
+	if model.terminalManager == nil {
+		t.Fatal("expected terminal manager to open")
+	}
+
+	item := model.selectedTerminalManagerItem()
+	if item == nil {
+		t.Fatal("expected terminal manager selection")
+	}
+	if item.CreateNew {
+		t.Fatal("expected terminal manager to default to a real terminal")
+	}
+	if item.Info.ID == active.TerminalID {
+		t.Fatalf("expected terminal manager to prefer another terminal over the active pane binding, got %q", item.Info.ID)
+	}
+}
+
+func TestTerminalManagerDetailShowsVisibilityAndLocations(t *testing.T) {
+	client := &fakeClient{
+		listResult: []protocol.TerminalInfo{
+			{ID: "term-001", Name: "api", Command: []string{"bash"}, State: "running"},
+		},
+	}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 120
+	model.height = 30
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	tab := model.currentTab()
+	base := activePane(tab)
+	base.TerminalID = "term-001"
+	base.Name = "api"
+	base.Title = "api"
+	base.Command = []string{"bash"}
+	base.TerminalState = "running"
+
+	floatPane := &Pane{
+		ID:    "pane-float",
+		Title: "api-float",
+		Viewport: &Viewport{
+			TerminalID:    "term-001",
+			Channel:       base.Channel + 1,
+			VTerm:         localvterm.New(80, 24, 100, nil),
+			Snapshot:      &protocol.Snapshot{TerminalID: "term-001", Size: protocol.Size{Cols: 80, Rows: 24}},
+			TerminalState: "running",
+			Mode:          ViewportModeFit,
+		},
+	}
+	tab.Panes[floatPane.ID] = floatPane
+	tab.Floating = append(tab.Floating, &FloatingPane{PaneID: floatPane.ID, Rect: Rect{X: 4, Y: 3, W: 40, H: 10}, Z: 0})
+
+	cmd := model.loadTerminalManagerCmd("", "term-001")
+	msg = mustRunCmd(t, cmd)
+	_, _ = model.Update(msg)
+	model.terminalManager.selectID("term-001")
+
+	lines := model.renderTerminalManagerDetail(60)
+	detail := strings.Join(lines, "\n")
+	if !containsAll(detail, "visibility: visible", "shown in:", "ws:main / tab:tab 1 / pane:api", "ws:main / tab:tab 1 / float:api-float") {
+		t.Fatalf("expected terminal manager detail to show visibility and locations, got:\n%s", detail)
+	}
+}
+
+func TestTerminalManagerViewGroupsVisibleParkedAndExitedTerminals(t *testing.T) {
+	exitCode := 0
+	client := &fakeClient{
+		listResult: []protocol.TerminalInfo{
+			{ID: "term-visible", Name: "api", Command: []string{"bash"}, State: "running"},
+			{ID: "term-parked", Name: "logs", Command: []string{"tail", "-f", "app.log"}, State: "running"},
+			{ID: "term-exited", Name: "old-build", Command: []string{"make", "test"}, State: "exited", ExitCode: &exitCode},
+		},
+	}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 140
+	model.height = 30
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	tab := model.currentTab()
+	base := activePane(tab)
+	base.TerminalID = "term-visible"
+	base.Name = "api"
+	base.Title = "api"
+	base.Command = []string{"bash"}
+	base.TerminalState = "running"
+
+	cmd := model.loadTerminalManagerCmd("", "term-visible")
+	msg = mustRunCmd(t, cmd)
+	_, _ = model.Update(msg)
+
+	view := xansi.Strip(model.View())
+	if !containsAll(view, "VISIBLE", "PARKED", "EXITED", "api", "logs", "old-build") {
+		t.Fatalf("expected terminal manager to group visible/parked/exited terminals, got:\n%s", view)
+	}
+}
+
+func TestTerminalManagerStatusBarUsesManagerActionsAndSummary(t *testing.T) {
+	client := &fakeClient{
+		listResult: []protocol.TerminalInfo{
+			{ID: "term-visible", Name: "api", Command: []string{"bash"}, State: "running"},
+			{ID: "term-parked", Name: "logs", Command: []string{"tail", "-f", "app.log"}, State: "running"},
+		},
+	}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh", IconSet: "ascii"})
+	model.width = 160
+	model.height = 30
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	tab := model.currentTab()
+	base := activePane(tab)
+	base.TerminalID = "term-visible"
+	base.Name = "api"
+	base.Title = "api"
+	base.Command = []string{"bash"}
+	base.TerminalState = "running"
+
+	cmd := model.loadTerminalManagerCmd("", "term-visible")
+	msg = mustRunCmd(t, cmd)
+	_, _ = model.Update(msg)
+
+	status := xansi.Strip(model.renderStatus())
+	if !containsAll(status, "TERMINALS", "<Enter> BRING HERE", "<t> NEW TAB", "<k> STOP TERMINAL", "api", "visible", "shown:1") {
+		t.Fatalf("expected terminal manager status bar to expose manager actions and summary, got:\n%s", status)
+	}
+	if strings.Contains(status, "Ctrl +") {
+		t.Fatalf("expected terminal manager status to replace normal shortcut bar, got:\n%s", status)
+	}
+}
+
+func TestTerminalManagerCtrlEOpensEditPromptForSelectedTerminal(t *testing.T) {
+	client := &fakeClient{
+		listResult: []protocol.TerminalInfo{
+			{ID: "term-parked", Name: "parked-shell", Command: []string{"bash", "--noprofile"}, State: "running"},
+		},
+	}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 140
+	model.height = 30
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	cmd := model.loadTerminalManagerCmd("", "term-parked")
+	msg = mustRunCmd(t, cmd)
+	_, _ = model.Update(msg)
+
+	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	if cmd != nil {
+		t.Fatalf("expected terminal manager edit to be synchronous, got %#v", cmd)
+	}
+	if model.terminalManager != nil {
+		t.Fatal("expected terminal manager to close when editing terminal metadata")
+	}
+	if model.prompt == nil || model.prompt.Kind != "edit-terminal-name" {
+		t.Fatalf("expected edit-terminal-name prompt, got %#v", model.prompt)
+	}
+	view := xansi.Strip(model.View())
+	if !containsAll(view, "Edit Terminal", "step 1/2", "terminal id: term-parked", "command: bash --noprofile") {
+		t.Fatalf("expected metadata prompt context after terminal manager edit, got:\n%s", view)
+	}
+}
+
+func TestWelcomePaneLinesDescribeSavedPaneActions(t *testing.T) {
+	pane := &Pane{
+		ID:    "pane-1",
+		Title: "saved pane",
+		Viewport: &Viewport{
+			TerminalState: "unbound",
+		},
+	}
+	lines := welcomePaneLines(pane)
+	body := strings.Join(lines, "\n")
+	if !containsAll(body, "No terminal in this pane", "Enter start new terminal", "Ctrl-f bring running terminal here", "Ctrl-g then t open terminal manager") {
+		t.Fatalf("expected saved-pane guidance, got:\n%s", body)
+	}
+}
+
+func TestPaneFrameMetaUsesRelationshipBadges(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	model.width = 100
+	model.height = 24
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	tab := model.currentTab()
+	base := activePane(tab)
+	base.Mode = ViewportModeFixed
+	base.Readonly = true
+	base.Tags = map[string]string{"termx.size_lock": "warn"}
+	shared := &Pane{
+		ID:    "pane-2",
+		Title: "shared",
+		Viewport: &Viewport{
+			TerminalID:    base.TerminalID,
+			Channel:       base.Channel + 1,
+			VTerm:         localvterm.New(80, 24, 100, nil),
+			Snapshot:      &protocol.Snapshot{TerminalID: base.TerminalID, Size: protocol.Size{Cols: 80, Rows: 24}},
+			TerminalState: "running",
+			Mode:          ViewportModeFit,
+		},
+	}
+	tab.Panes[shared.ID] = shared
+	meta := xansi.Strip(model.paneFrameMeta(tab, base.ID, base, false))
+	if !containsAll(meta, "live", "fixed", "2", "ro", "lock") {
+		t.Fatalf("expected layered relationship badges, got %q", meta)
 	}
 }
 
@@ -4060,7 +4806,7 @@ func TestTerminalPickerShowsStateRuntimeAndTags(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -4098,7 +4844,7 @@ func TestTerminalPickerSearchMatchesTagsAndWorkspaceLocation(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -4761,7 +5507,7 @@ func TestCommandSaveLayoutWritesYAMLFile(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("save-layout demo")})
 	if cmd != nil {
@@ -4809,7 +5555,7 @@ func TestCommandSaveLayoutWritesFloatingPositionAnchor(t *testing.T) {
 	floatPane.Command = []string{"claude-code"}
 	tab.Floating[0].Rect = Rect{X: 74, Y: 0, W: 46, H: 14}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("save-layout demo")})
 	if cmd != nil {
@@ -4896,7 +5642,7 @@ tabs:
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("load-layout demo")})
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -4953,7 +5699,7 @@ tabs:
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("load-layout demo prompt")})
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -5086,7 +5832,7 @@ tabs:
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("load-layout demo")})
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -5143,7 +5889,7 @@ func TestCommandListLayoutsShowsAvailableLayoutNames(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("list-layouts")})
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -5153,9 +5899,9 @@ func TestCommandListLayoutsShowsAvailableLayoutNames(t *testing.T) {
 		}
 	}
 
-	status := xansi.Strip(model.renderStatus())
-	if !strings.Contains(status, "layouts: demo, ops, user-only") {
-		t.Fatalf("expected deduped layout list in status, got %q", status)
+	bar := xansi.Strip(model.renderTabBar())
+	if !strings.Contains(bar, "layouts: demo, ops, user-only") {
+		t.Fatalf("expected deduped layout list in top bar notice, got %q", bar)
 	}
 }
 
@@ -5191,7 +5937,7 @@ func TestCommandDeleteLayoutRemovesResolvedProjectLayoutFirst(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("delete-layout demo")})
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -5207,8 +5953,8 @@ func TestCommandDeleteLayoutRemovesResolvedProjectLayoutFirst(t *testing.T) {
 	if _, err := os.Stat(userPath); err != nil {
 		t.Fatalf("expected user layout to remain, stat err=%v", err)
 	}
-	if got := xansi.Strip(model.renderStatus()); !strings.Contains(got, "deleted layout: demo") {
-		t.Fatalf("expected delete notice in status, got %q", got)
+	if got := xansi.Strip(model.renderTabBar()); !strings.Contains(got, "deleted layout: demo") {
+		t.Fatalf("expected delete notice in top bar, got %q", got)
 	}
 }
 
@@ -5224,7 +5970,7 @@ func TestCommandDeleteLayoutShowsErrorWhenLayoutMissing(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("delete-layout missing")})
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -5234,8 +5980,8 @@ func TestCommandDeleteLayoutShowsErrorWhenLayoutMissing(t *testing.T) {
 		}
 	}
 
-	if got := xansi.Strip(model.renderStatus()); !strings.Contains(got, `err:layout "missing" not found`) {
-		t.Fatalf("expected missing-layout error in status, got %q", got)
+	if got := xansi.Strip(model.renderTabBar()); !strings.Contains(got, `layout "missing" not found`) {
+		t.Fatalf("expected missing-layout error in top bar, got %q", got)
 	}
 }
 
@@ -5251,7 +5997,7 @@ func TestRawPickerInputNavigatesAndKillsSelection(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -5261,11 +6007,18 @@ func TestRawPickerInputNavigatesAndKillsSelection(t *testing.T) {
 		_, _ = model.Update(msg)
 	}
 	_, cmd = model.Update(rawInputMsg{data: []byte{0x7f, '2', 0x0b}})
+	if cmd != nil {
+		t.Fatalf("expected raw ctrl-k to open stop confirmation first, got %#v", cmd)
+	}
+	if model.prompt == nil || model.prompt.Kind != "confirm-stop-terminal" {
+		t.Fatalf("expected confirm-stop-terminal prompt, got %#v", model.prompt)
+	}
+	_, cmd = model.Update(rawInputMsg{data: []byte{'\r'}})
 	msg = mustRunCmd(t, cmd)
 	_, cmd = model.Update(msg)
 
-	if model.terminalPicker != nil {
-		t.Fatal("expected picker to close after ctrl-k")
+	if model.prompt != nil {
+		t.Fatal("expected stop confirmation prompt to close after enter")
 	}
 	if len(client.killedIDs) != 1 || client.killedIDs[0] != "orphan-002" {
 		t.Fatalf("expected ctrl-k to kill the selected terminal, got %v", client.killedIDs)
@@ -5286,7 +6039,7 @@ func TestInputEventPickerPasteAndEnterAttach(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	msg = mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -5367,7 +6120,7 @@ func TestPrefixResizeAdjustsVerticalBoundary(t *testing.T) {
 	activeID := tab.ActivePaneID
 	before := tab.Root.Rects(Rect{X: 0, Y: 0, W: model.width, H: model.height - 2})[activeID]
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}})
 	if msg := mustRunCmd(t, cmd); msg != nil {
 		_, _ = model.Update(msg)
@@ -5400,7 +6153,7 @@ func TestPrefixResizeAdjustsHorizontalBoundary(t *testing.T) {
 	activeID := tab.ActivePaneID
 	before := tab.Root.Rects(Rect{X: 0, Y: 0, W: model.width, H: model.height - 2})[activeID]
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'K'}})
 	if msg := mustRunCmd(t, cmd); msg != nil {
 		_, _ = model.Update(msg)
@@ -5434,7 +6187,7 @@ func TestPrefixSpaceCyclesPredefinedLayouts(t *testing.T) {
 	tab := model.currentTab()
 	rootRect := Rect{X: 0, Y: 0, W: model.width, H: model.height - 2}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeySpace})
 	if msg := mustRunCmd(t, cmd); msg != nil {
 		_, _ = model.Update(msg)
@@ -5446,7 +6199,7 @@ func TestPrefixSpaceCyclesPredefinedLayouts(t *testing.T) {
 		}
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeySpace})
 	if msg := mustRunCmd(t, cmd); msg != nil {
 		_, _ = model.Update(msg)
@@ -5458,7 +6211,7 @@ func TestPrefixSpaceCyclesPredefinedLayouts(t *testing.T) {
 		}
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeySpace})
 	if msg := mustRunCmd(t, cmd); msg != nil {
 		_, _ = model.Update(msg)
@@ -5470,7 +6223,7 @@ func TestPrefixSpaceCyclesPredefinedLayouts(t *testing.T) {
 		t.Fatalf("expected main-horizontal first pane to be wide, got %#v", main)
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeySpace})
 	if msg := mustRunCmd(t, cmd); msg != nil {
 		_, _ = model.Update(msg)
@@ -5482,7 +6235,7 @@ func TestPrefixSpaceCyclesPredefinedLayouts(t *testing.T) {
 		t.Fatalf("expected main-vertical first pane to be tall, got %#v", main)
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeySpace})
 	if msg := mustRunCmd(t, cmd); msg != nil {
 		_, _ = model.Update(msg)
@@ -5502,7 +6255,7 @@ func TestPrefixRenameTabCommitsNewName(t *testing.T) {
 	msg := mustRunCmd(t, model.Init())
 	_, _ = model.Update(msg)
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{','}})
 
 	for _, r := range []rune("editor") {
@@ -5524,7 +6277,7 @@ func TestRawRenameTabCanBeCanceled(t *testing.T) {
 
 	original := model.currentTab().Name
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{','}})
 
 	_, cmd := model.Update(rawInputMsg{data: []byte("logs")})
@@ -5752,6 +6505,114 @@ func TestResizeVisiblePanesUsesAcquiredSharedPane(t *testing.T) {
 	}
 	if client.resizeChannel != base.Channel {
 		t.Fatalf("expected acquired pane channel %d to drive resize, got %d", base.Channel, client.resizeChannel)
+	}
+}
+
+func TestFloatingModeResizeUsesAcquiredSharedPane(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 120
+	model.height = 40
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	tab := model.currentTab()
+	base := tab.Panes[tab.ActivePaneID]
+	if base == nil {
+		t.Fatal("expected active pane")
+	}
+
+	floatPane := &Pane{
+		ID:    "pane-shared-float",
+		Title: "shared-float",
+		Viewport: &Viewport{
+			TerminalID: base.TerminalID,
+			Channel:    base.Channel + 100,
+			VTerm:      localvterm.New(64, 16, 100, nil),
+			Snapshot: &protocol.Snapshot{
+				TerminalID: base.TerminalID,
+				Size:       protocol.Size{Cols: 64, Rows: 16},
+			},
+			Mode:           ViewportModeFit,
+			ResizeAcquired: true,
+			renderDirty:    true,
+		},
+	}
+	tab.Panes[floatPane.ID] = floatPane
+	tab.Floating = append(tab.Floating, &FloatingPane{
+		PaneID: floatPane.ID,
+		Rect:   Rect{X: 6, Y: 3, W: 40, H: 12},
+		Z:      1,
+	})
+	tab.ActivePaneID = floatPane.ID
+
+	result := model.dispatchFloatingModeKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+	runAllCmds(t, result.cmd)
+
+	if client.resizeCalls != 1 {
+		t.Fatalf("expected floating resize to trigger one resize call after acquire, got %d", client.resizeCalls)
+	}
+	if client.resizeChannel != floatPane.Channel {
+		t.Fatalf("expected floating pane channel %d to drive resize, got %d", floatPane.Channel, client.resizeChannel)
+	}
+	if tab.Floating[0].Rect.W <= 40 {
+		t.Fatalf("expected floating rect width to grow, got %+v", tab.Floating[0].Rect)
+	}
+}
+
+func TestMouseResizeFloatingPaneUsesAcquiredSharedPane(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 120
+	model.height = 40
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	tab := model.currentTab()
+	base := tab.Panes[tab.ActivePaneID]
+	if base == nil {
+		t.Fatal("expected active pane")
+	}
+
+	floatPane := &Pane{
+		ID:    "pane-shared-float",
+		Title: "shared-float",
+		Viewport: &Viewport{
+			TerminalID: base.TerminalID,
+			Channel:    base.Channel + 100,
+			VTerm:      localvterm.New(64, 16, 100, nil),
+			Snapshot: &protocol.Snapshot{
+				TerminalID: base.TerminalID,
+				Size:       protocol.Size{Cols: 64, Rows: 16},
+			},
+			Mode:           ViewportModeFit,
+			ResizeAcquired: true,
+			renderDirty:    true,
+		},
+	}
+	tab.Panes[floatPane.ID] = floatPane
+	tab.Floating = append(tab.Floating, &FloatingPane{
+		PaneID: floatPane.ID,
+		Rect:   Rect{X: 6, Y: 3, W: 40, H: 12},
+		Z:      1,
+	})
+	tab.ActivePaneID = floatPane.ID
+	model.mouseDragPaneID = floatPane.ID
+	model.mouseDragMode = mouseDragResize
+
+	cmd := model.handleMouseMotionEvent(uv.MouseMotionEvent{X: 52, Y: 18, Button: uv.MouseLeft})
+	runAllCmds(t, cmd)
+
+	if client.resizeCalls != 1 {
+		t.Fatalf("expected mouse resize to trigger one resize call after acquire, got %d", client.resizeCalls)
+	}
+	if client.resizeChannel != floatPane.Channel {
+		t.Fatalf("expected floating pane channel %d to drive resize, got %d", floatPane.Channel, client.resizeChannel)
+	}
+	if tab.Floating[0].Rect.W <= 40 || tab.Floating[0].Rect.H <= 12 {
+		t.Fatalf("expected mouse resize to grow floating rect, got %+v", tab.Floating[0].Rect)
 	}
 }
 
@@ -6248,7 +7109,7 @@ func TestContinuousDirtyPaneEntersCatchingUpAndEventuallyRecovers(t *testing.T) 
 	if !pane.catchingUp {
 		t.Fatal("expected pane to enter catching-up mode after sustained dirty ticks")
 	}
-	if got := xansi.Strip(model.renderStatus()); !strings.Contains(got, "catching-up") {
+	if got := xansi.Strip(model.renderStatus()); !strings.Contains(got, "0B") {
 		t.Fatalf("expected status to mention catching-up, got %q", got)
 	}
 
@@ -6286,7 +7147,7 @@ func TestFixedModeViewportRendersCroppedContentAroundCursor(t *testing.T) {
 	pane.live = true
 	pane.renderDirty = true
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, resizeCmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'M'}})
 	if resizeCmd != nil {
 		if next := mustRunCmd(t, resizeCmd); next != nil {
@@ -6323,16 +7184,16 @@ func TestPinnedFixedViewportAllowsManualOffsetPan(t *testing.T) {
 	pane.live = true
 	pane.renderDirty = true
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'M'}})
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}})
 
 	pane.Offset = Point{X: 0, Y: 0}
 	pane.renderDirty = true
 	before := xansi.Strip(model.View())
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
 	after := xansi.Strip(model.View())
 
@@ -6364,13 +7225,13 @@ func TestPinnedFixedViewportPanClampsToContentBounds(t *testing.T) {
 	pane.live = true
 	pane.renderDirty = true
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'M'}})
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}})
 
 	for i := 0; i < 8; i++ {
-		_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+		_ = activatePrefixForTest(model)
 		_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
 	}
 	if pane.Offset.X != 2 {
@@ -6378,7 +7239,7 @@ func TestPinnedFixedViewportPanClampsToContentBounds(t *testing.T) {
 	}
 
 	for i := 0; i < 4; i++ {
-		_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+		_ = activatePrefixForTest(model)
 		_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlK})
 	}
 	if pane.Offset.Y != 0 {
@@ -6406,13 +7267,13 @@ func TestUnpinnedFixedViewportResumesCursorFollow(t *testing.T) {
 	pane.live = true
 	pane.renderDirty = true
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'M'}})
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}})
 	pane.Offset = Point{X: 0, Y: 0}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}})
 
 	if pane.Pin {
@@ -6438,13 +7299,13 @@ func TestViewportModeToggleBackToFitClearsFixedStateAndResizes(t *testing.T) {
 	}
 
 	pane := model.currentTab().Panes[model.currentTab().ActivePaneID]
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'M'}})
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}})
 	pane.Offset = Point{X: 3, Y: 2}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'M'}})
 	if cmd != nil {
 		if next := mustRunCmd(t, cmd); next != nil {
@@ -6546,7 +7407,7 @@ func TestFixedViewportDoesNotSendResizeToTerminal(t *testing.T) {
 	pane := model.currentTab().Panes[model.currentTab().ActivePaneID]
 	resizesBefore := client.resizeCalls
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'M'}})
 	_, cmd = model.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	if cmd != nil {
@@ -7230,12 +8091,11 @@ func lineContaining(view, needle string) string {
 func createFloatingPaneViaPicker(t *testing.T, model *Model) {
 	t.Helper()
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
-	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
-	msg := mustRunCmd(t, cmd)
-	_, _ = model.Update(msg)
+	_ = activatePrefixForTest(model)
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 
-	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	var msg tea.Msg
+	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	if cmd != nil {
 		msg = mustRunCmd(t, cmd)
 		_, _ = model.Update(msg)
@@ -7267,7 +8127,7 @@ func createSplitPaneViaPicker(t *testing.T, model *Model, dir SplitDirection) {
 		key = '"'
 	}
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
 	msg := mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -7292,7 +8152,7 @@ func createSplitPaneViaPicker(t *testing.T, model *Model, dir SplitDirection) {
 func createNewTabViaPicker(t *testing.T, model *Model) {
 	t.Helper()
 
-	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	_ = activatePrefixForTest(model)
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	msg := mustRunCmd(t, cmd)
 	_, _ = model.Update(msg)
@@ -7543,6 +8403,15 @@ func containsAll(s string, parts ...string) bool {
 		}
 	}
 	return true
+}
+
+func containsAny(s string, parts ...string) bool {
+	for _, part := range parts {
+		if strings.Contains(s, part) {
+			return true
+		}
+	}
+	return false
 }
 
 func firstCellPtr(grid [][]drawCell) *drawCell {

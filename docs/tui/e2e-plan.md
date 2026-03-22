@@ -58,6 +58,7 @@
 
 - tiled 与 floating 同时观察同一 terminal
 - 焦点切换、z-order、尺寸更新稳定
+- 标题展示 terminal 真名，而不是把 pane 当独立命名对象
 
 建议测试名：
 
@@ -69,10 +70,25 @@
 
 - 从 picker 或全局入口编辑 terminal `name/tags`
 - 所有 attach pane 同步刷新
+- parked terminal 也可从 terminal manager 编辑，且保存后有明确成功反馈
 
 现有覆盖：
 
 - `TestE2ETUI_ScenarioEditTerminalMetadata`
+- `TestE2ETUI_TerminalManagerCanEditParkedTerminalMetadata`
+
+## S5.1 Terminal manager 管理 terminal pool
+
+目标：
+
+- 从 `Ctrl-g t` 或 `:terminals` 打开 terminal manager
+- 过滤 terminal 并 attach 到当前 pane
+- manager 内的动作不会留下脏 UI
+
+现有覆盖：
+
+- `TestE2ETUI_TerminalManagerOpensFromGlobalModeAndAttachesSelectedTerminal`
+- `TestE2ETUI_CommandLineOpensTerminalManager`
 
 ## S6. terminal 退出后恢复
 
@@ -124,6 +140,7 @@
 ## 第二批场景
 
 - 多浮窗管理
+- 浮窗移出 tab 主视口后可通过快捷键呼回并居中
 - picker 大量 terminal 搜索
 - attach 后 metadata 同步
 - workspace 恢复失败降级
@@ -145,6 +162,7 @@
 1. 新增 2~4 个“场景名”更清晰的 e2e 测试
 2. 保持全量测试通过
 3. 再开始重构 workspace 入口、概念文案和 UI 结构
+4. 增加底栏 zellij 风格快捷键 segment 渲染断言
 
 ## 第三批必须补齐的共享 terminal 场景
 
@@ -195,17 +213,18 @@
 
 - `TestE2ETUI_ScenarioCloseSharedPaneKeepsTerminalAlive`
 
-### S13. 销毁 terminal 后所有共享 pane 一并关闭
+### S13. 销毁 terminal 后共享 pane 变成 saved pane
 
 目标：
 
 - kill/remove terminal
-- 所有绑定该 terminal 的 pane 自动消失
-- tab 自动重排，不留空壳 pane
+- 所有绑定该 terminal 的 pane 进入 saved pane
+- tab / floating 布局保持
+- 用户仍可继续在原布局里 attach / create / close
 
 建议测试名：
 
-- `TestE2ETUI_ScenarioKillSharedTerminalClosesAllBoundPanes`
+- `TestE2ETUI_ScenarioKillSharedTerminalKeepsSavedSlots`
 
 ### S14. 共享 terminal exited retained 后多 pane 一致进入 exited
 
@@ -249,11 +268,35 @@
 
 - A 客户端 kill/remove terminal
 - B 客户端收到 notice
-- B 客户端对应 shared pane 自动关闭
+- B 客户端对应 shared pane 进入 saved pane
 
 现有覆盖：
 
-- `TestE2ETUI_ScenarioRemoteKillShowsNoticeAndClosesSharedPanes`
+- `TestE2ETUI_ScenarioRemoteKillShowsNoticeAndKeepsSavedSlots`
+
+### S17.1 floating pane 呼回并居中
+
+目标：
+
+- 用户把 floating pane 移出 tab 主视口
+- 通过快捷键把当前 floating pane 呼回
+- 呼回后浮窗重新居中到可视区域
+
+建议测试名：
+
+- `TestE2ETUI_ScenarioFloatingPaneRecallAndCenter`
+
+### S17.2 pane 标题默认使用 terminal 真名
+
+目标：
+
+- live pane / floating pane 标题展示 terminal 真名
+- 不把 pane 当成独立命名对象向用户暴露
+- saved pane / waiting pane 才显示 pane 状态名
+
+建议测试名：
+
+- `TestE2ETUI_ScenarioPaneTitleUsesTerminalNameByDefault`
 
 ### S18. startup workspace restore 恢复 shared terminal 绑定
 
