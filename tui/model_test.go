@@ -4537,12 +4537,8 @@ func TestTerminalManagerEnterAttachesSelectionToActivePane(t *testing.T) {
 	}
 }
 
-func TestTerminalManagerDefaultsToAnotherTerminalWhenActivePaneAlreadyBound(t *testing.T) {
-	client := &fakeClient{
-		listResult: []protocol.TerminalInfo{
-			{ID: "term-001", Name: "api", Command: []string{"bash"}, State: "running"},
-		},
-	}
+func TestTerminalManagerDefaultsToActiveTerminalWhenPaneAlreadyBound(t *testing.T) {
+	client := &fakeClient{}
 	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
 	model.width = 120
 	model.height = 30
@@ -4553,6 +4549,10 @@ func TestTerminalManagerDefaultsToAnotherTerminalWhenActivePaneAlreadyBound(t *t
 	active := activePane(model.currentTab())
 	if active == nil || active.TerminalID == "" {
 		t.Fatal("expected init to bind an active pane terminal")
+	}
+	client.listResult = []protocol.TerminalInfo{
+		{ID: active.TerminalID, Name: "current", Command: []string{"bash"}, State: "running"},
+		{ID: "term-002", Name: "other", Command: []string{"bash"}, State: "running"},
 	}
 
 	cmd := model.openTerminalManagerCmd()
@@ -4569,8 +4569,131 @@ func TestTerminalManagerDefaultsToAnotherTerminalWhenActivePaneAlreadyBound(t *t
 	if item.CreateNew {
 		t.Fatal("expected terminal manager to default to a real terminal")
 	}
-	if item.Info.ID == active.TerminalID {
-		t.Fatalf("expected terminal manager to prefer another terminal over the active pane binding, got %q", item.Info.ID)
+	if item.Info.ID != active.TerminalID {
+		t.Fatalf("expected terminal manager to default to current active terminal %q, got %q", active.TerminalID, item.Info.ID)
+	}
+}
+
+func TestPaneRenderEntriesZoomedTiledPaneHidesFloatingLayer(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+
+	tab := newTab("main")
+	tab.Root = NewLeaf("pane-a")
+	tab.Root.Split("pane-a", SplitVertical, "pane-b")
+	tab.Panes = map[string]*Pane{
+		"pane-a": {ID: "pane-a", Viewport: &Viewport{}},
+		"pane-b": {ID: "pane-b", Viewport: &Viewport{}},
+		"pane-f": {ID: "pane-f", Viewport: &Viewport{Mode: ViewportModeFixed}},
+	}
+	tab.FloatingVisible = true
+	tab.Floating = []*FloatingPane{{PaneID: "pane-f", Rect: Rect{X: 10, Y: 4, W: 30, H: 10}, Z: 1}}
+	tab.ZoomedPaneID = "pane-a"
+
+	entries := model.paneRenderEntries(tab, 120, 38)
+	if len(entries) != 1 {
+		t.Fatalf("expected only zoomed tiled pane to render, got %#v", entries)
+	}
+	if entries[0].PaneID != "pane-a" {
+		t.Fatalf("expected zoomed tiled pane to render, got %q", entries[0].PaneID)
+	}
+	if entries[0].Rect != (Rect{X: 0, Y: 0, W: 120, H: 38}) {
+		t.Fatalf("expected zoomed tiled pane to fill root rect, got %+v", entries[0].Rect)
+	}
+	if entries[0].Floating {
+		t.Fatal("expected zoomed tiled pane to render as full-screen content, not floating overlay")
+	}
+}
+
+func TestPaneRenderEntriesZoomedFloatingPaneFillsRootRect(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+
+	tab := newTab("main")
+	tab.Root = NewLeaf("pane-a")
+	tab.Panes = map[string]*Pane{
+		"pane-a": {ID: "pane-a", Viewport: &Viewport{}},
+		"pane-f": {ID: "pane-f", Viewport: &Viewport{Mode: ViewportModeFixed}},
+	}
+	tab.FloatingVisible = true
+	tab.Floating = []*FloatingPane{{PaneID: "pane-f", Rect: Rect{X: 8, Y: 3, W: 40, H: 12}, Z: 1}}
+	tab.ZoomedPaneID = "pane-f"
+
+	entries := model.paneRenderEntries(tab, 100, 26)
+	if len(entries) != 1 {
+		t.Fatalf("expected only zoomed floating pane to render, got %#v", entries)
+	}
+	if entries[0].PaneID != "pane-f" {
+		t.Fatalf("expected zoomed floating pane to render, got %q", entries[0].PaneID)
+	}
+	if entries[0].Rect != (Rect{X: 0, Y: 0, W: 100, H: 26}) {
+		t.Fatalf("expected zoomed floating pane to fill root rect, got %+v", entries[0].Rect)
+	}
+}
+
+func TestVisiblePaneRectsZoomedFloatingPaneReturnsOnlyFullScreenPane(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	model.width = 120
+	model.height = 30
+
+	tab := newTab("main")
+	tab.Root = NewLeaf("pane-a")
+	tab.Panes = map[string]*Pane{
+		"pane-a": {ID: "pane-a", Viewport: &Viewport{}},
+		"pane-f": {ID: "pane-f", Viewport: &Viewport{Mode: ViewportModeFixed}},
+	}
+	tab.FloatingVisible = true
+	tab.Floating = []*FloatingPane{{PaneID: "pane-f", Rect: Rect{X: 8, Y: 3, W: 40, H: 12}, Z: 1}}
+	tab.ZoomedPaneID = "pane-f"
+
+	rects := model.visiblePaneRects(tab)
+	if len(rects) != 1 {
+		t.Fatalf("expected only zoomed floating pane rect, got %#v", rects)
+	}
+	if rects["pane-f"] != (Rect{X: 0, Y: 0, W: 120, H: 28}) {
+		t.Fatalf("expected zoomed floating pane rect to fill content area, got %+v", rects["pane-f"])
+	}
+}
+
+func TestClampFloatingRectKeepsWindowSmallerThanViewport(t *testing.T) {
+	bounds := Rect{X: 0, Y: 0, W: 80, H: 24}
+
+	rect := clampFloatingRect(Rect{X: 0, Y: 0, W: 80, H: 24}, bounds)
+	if rect.W >= bounds.W {
+		t.Fatalf("expected floating width to stay smaller than viewport width, got %+v within %+v", rect, bounds)
+	}
+	if rect.H >= bounds.H {
+		t.Fatalf("expected floating height to stay smaller than viewport height, got %+v within %+v", rect, bounds)
+	}
+
+	loose := clampFloatingRectLoose(Rect{X: 0, Y: 0, W: 80, H: 24}, bounds)
+	if loose.W >= bounds.W {
+		t.Fatalf("expected loose floating width to stay smaller than viewport width, got %+v within %+v", loose, bounds)
+	}
+	if loose.H >= bounds.H {
+		t.Fatalf("expected loose floating height to stay smaller than viewport height, got %+v within %+v", loose, bounds)
+	}
+}
+
+func TestDefaultFloatingRectForPaneStaysSmallerThanViewport(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	model.width = 80
+	model.height = 24
+
+	pane := &Pane{
+		ID: "pane-001",
+		Viewport: &Viewport{
+			Mode:  ViewportModeFixed,
+			VTerm: localvterm.New(200, 80, 100, nil),
+			live:  true,
+		},
+	}
+
+	rect := model.defaultFloatingRectForPane(pane)
+	bounds := Rect{X: 0, Y: 0, W: model.width, H: model.height - 2}
+	if rect.W >= bounds.W {
+		t.Fatalf("expected default floating width to stay smaller than viewport width, got %+v within %+v", rect, bounds)
+	}
+	if rect.H >= bounds.H {
+		t.Fatalf("expected default floating height to stay smaller than viewport height, got %+v within %+v", rect, bounds)
 	}
 }
 

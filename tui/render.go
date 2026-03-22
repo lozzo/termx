@@ -886,16 +886,20 @@ func (m *Model) paneRenderEntries(tab *Tab, width, height int) []paneRenderEntry
 		return nil
 	}
 	rootRect := Rect{X: 0, Y: 0, W: width, H: height}
+	if paneID, rect, ok := m.zoomedPaneRect(tab, rootRect); ok {
+		pane := tab.Panes[paneID]
+		return []paneRenderEntry{{
+			PaneID:   paneID,
+			Rect:     rect,
+			Title:    m.paneFrameTitle(tab, paneID, pane),
+			Meta:     m.paneFrameMeta(tab, paneID, pane, isFloatingPane(tab, paneID)),
+			Floating: false,
+		}}
+	}
 	entries := make([]paneRenderEntry, 0, len(tab.Panes))
 	if tab.Root != nil {
 		tilingRects := tab.Root.Rects(rootRect)
 		tilingIDs := tab.Root.LeafIDs()
-		if tab.ZoomedPaneID != "" {
-			if _, ok := tilingRects[tab.ZoomedPaneID]; ok {
-				tilingRects = map[string]Rect{tab.ZoomedPaneID: rootRect}
-				tilingIDs = []string{tab.ZoomedPaneID}
-			}
-		}
 		for _, paneID := range tilingIDs {
 			rect, ok := tilingRects[paneID]
 			if !ok {

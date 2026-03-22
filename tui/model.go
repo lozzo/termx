@@ -3461,7 +3461,14 @@ func (m *Model) resizeActivePane(dir Direction, step int) {
 }
 
 func (m *Model) visiblePaneRects(tab *Tab) map[string]Rect {
-	if tab == nil || tab.Root == nil {
+	if tab == nil {
+		return nil
+	}
+	rootRect := Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}
+	if paneID, rect, ok := m.zoomedPaneRect(tab, rootRect); ok {
+		return map[string]Rect{paneID: rect}
+	}
+	if tab.Root == nil {
 		rects := make(map[string]Rect)
 		for _, floating := range m.visibleFloatingPanes(tab) {
 			rects[floating.PaneID] = floating.Rect
@@ -3471,13 +3478,7 @@ func (m *Model) visiblePaneRects(tab *Tab) map[string]Rect {
 		}
 		return rects
 	}
-	rootRect := Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}
 	rects := tab.Root.Rects(rootRect)
-	if tab.ZoomedPaneID != "" {
-		if _, ok := rects[tab.ZoomedPaneID]; ok {
-			rects = map[string]Rect{tab.ZoomedPaneID: rootRect}
-		}
-	}
 	for _, floating := range m.visibleFloatingPanes(tab) {
 		rects[floating.PaneID] = floating.Rect
 	}
@@ -3533,8 +3534,8 @@ func clampFloatingRect(rect, bounds Rect) Rect {
 	if bounds.W <= 0 || bounds.H <= 0 {
 		return Rect{W: max(1, rect.W), H: max(1, rect.H)}
 	}
-	rect.W = max(8, min(rect.W, bounds.W))
-	rect.H = max(4, min(rect.H, bounds.H))
+	rect.W = clampFloatingDimension(rect.W, bounds.W, 8)
+	rect.H = clampFloatingDimension(rect.H, bounds.H, 4)
 	if rect.X < bounds.X {
 		rect.X = bounds.X
 	}
@@ -3556,8 +3557,8 @@ func clampFloatingRectLoose(rect, bounds Rect) Rect {
 	if bounds.W <= 0 || bounds.H <= 0 {
 		return Rect{W: max(1, rect.W), H: max(1, rect.H)}
 	}
-	rect.W = max(8, min(rect.W, bounds.W))
-	rect.H = max(4, min(rect.H, bounds.H))
+	rect.W = clampFloatingDimension(rect.W, bounds.W, 8)
+	rect.H = clampFloatingDimension(rect.H, bounds.H, 4)
 
 	minVisibleX := min(4, rect.W)
 	minVisibleY := min(2, rect.H)
@@ -3579,6 +3580,18 @@ func clampFloatingRectLoose(rect, bounds Rect) Rect {
 		rect.Y = maxY
 	}
 	return rect
+}
+
+func clampFloatingDimension(value, bound, minSize int) int {
+	if bound <= 0 {
+		return max(1, value)
+	}
+	minAllowed := min(minSize, bound)
+	maxAllowed := bound
+	if bound > minAllowed {
+		maxAllowed = max(minAllowed, bound-2)
+	}
+	return max(minAllowed, min(value, maxAllowed))
 }
 
 func removeFloatingPane(entries []*FloatingPane, paneID string) []*FloatingPane {
@@ -3614,6 +3627,20 @@ func (m *Model) paneViewportSizeInTab(tab *Tab, paneID string) (int, int, bool) 
 		return 0, 0, false
 	}
 	return max(1, rect.W-2), max(1, rect.H-2), true
+}
+
+func (m *Model) zoomedPaneRect(tab *Tab, rootRect Rect) (string, Rect, bool) {
+	if tab == nil {
+		return "", Rect{}, false
+	}
+	paneID := strings.TrimSpace(tab.ZoomedPaneID)
+	if paneID == "" {
+		return "", Rect{}, false
+	}
+	if tab.Panes[paneID] == nil {
+		return "", Rect{}, false
+	}
+	return paneID, rootRect, true
 }
 
 func paneContentSize(pane *Pane) (int, int) {
@@ -4117,6 +4144,13 @@ func (m *Model) paneAtPoint(tab *Tab, x, y int) (string, Rect, bool) {
 	if tab == nil {
 		return "", Rect{}, false
 	}
+	rootRect := Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}
+	if paneID, rect, ok := m.zoomedPaneRect(tab, rootRect); ok {
+		if pointInRect(x, y, rect) {
+			return paneID, rect, isFloatingPane(tab, paneID)
+		}
+		return "", Rect{}, false
+	}
 	floating := m.visibleFloatingPanes(tab)
 	for i := len(floating) - 1; i >= 0; i-- {
 		entry := floating[i]
@@ -4130,12 +4164,7 @@ func (m *Model) paneAtPoint(tab *Tab, x, y int) (string, Rect, bool) {
 	if tab.Root == nil {
 		return "", Rect{}, false
 	}
-	rects := tab.Root.Rects(Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)})
-	if tab.ZoomedPaneID != "" {
-		if _, ok := rects[tab.ZoomedPaneID]; ok {
-			rects = map[string]Rect{tab.ZoomedPaneID: Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}}
-		}
-	}
+	rects := tab.Root.Rects(rootRect)
 	for _, paneID := range tab.Root.LeafIDs() {
 		rect, ok := rects[paneID]
 		if ok && pointInRect(x, y, rect) {

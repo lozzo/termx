@@ -71,10 +71,13 @@ func (m *Model) defaultTerminalManagerSelectionID(manager *terminalManager) stri
 		if item.CreateNew {
 			continue
 		}
+		if activeTerminalID != "" && item.Info.ID == activeTerminalID {
+			return item.Info.ID
+		}
 		if fallback == "" {
 			fallback = item.Info.ID
 		}
-		if activeTerminalID == "" || item.Info.ID != activeTerminalID {
+		if activeTerminalID == "" {
 			return item.Info.ID
 		}
 	}
