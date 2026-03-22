@@ -1500,10 +1500,12 @@ func (m *Model) paneFrameMeta(tab *Tab, paneID string, pane *Pane, floating bool
 	default:
 		parts = append(parts, m.icons.token("live", m.icons.Running))
 	}
-	if pane.Mode == ViewportModeFixed {
-		parts = append(parts, m.icons.token("fixed", m.icons.Fixed))
-	} else {
-		parts = append(parts, m.icons.token("fit", m.icons.Fit))
+	if connection := paneConnectionStatus(m.workspace.Tabs, pane); connection != "" {
+		if connection == "owner" {
+			parts = append(parts, m.icons.token("owner", m.icons.Owner))
+		} else {
+			parts = append(parts, m.icons.token("follower", m.icons.Follower))
+		}
 	}
 	if count := terminalBindingCount(m.workspace.Tabs, pane.TerminalID); count > 1 {
 		parts = append(parts, m.icons.countToken("share", m.icons.Shared, count))

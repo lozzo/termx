@@ -1465,7 +1465,7 @@ func (m *Model) dispatchResizeModeKey(msg tea.KeyMsg) prefixDispatchResult {
 		m.resizeActivePane(DirectionRight, 4)
 		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true, rearm: true}
 	case "a":
-		return prefixDispatchResult{cmd: m.acquireActivePaneResizeCmd(), keep: true, rearm: true}
+		return m.modeResult(m.acquireActivePaneResizeCmd(), false)
 	case "=":
 		if tab := m.currentTab(); tab != nil && tab.Root != nil {
 			resetLayoutRatios(tab.Root)
@@ -1576,6 +1576,8 @@ func (m *Model) dispatchViewportSubPrefixKey(msg tea.KeyMsg) prefixDispatchResul
 		return m.modeResult(nil, true)
 	}
 	switch msg.String() {
+	case "a":
+		return m.modeResult(m.acquireActivePaneResizeCmd(), false)
 	case "m":
 		m.toggleActiveViewportMode()
 		return m.modeResult(m.resizeVisiblePanesCmd(), false)
@@ -2490,30 +2492,91 @@ func (m *Model) replacePane(msg paneReplacedMsg) {
 	if pane == nil {
 		return
 	}
-	if pane.stopStream != nil {
-		pane.stopStream()
-	}
+	previousTerminalID := pane.TerminalID
+	ownedStream := pane.stopStream != nil
+	m.stopPaneStream(pane)
 	pane.Title = msg.pane.Title
 	pane.Viewport = msg.pane.Viewport
 	m.startPaneStream(pane)
+	if ownedStream && previousTerminalID != "" && previousTerminalID != pane.TerminalID {
+		m.promoteTerminalStream(previousTerminalID)
+	}
 	m.logger.Info("replaced pane terminal", "pane_id", pane.ID, "terminal_id", pane.TerminalID)
 	m.invalidateRender()
 }
 
 func (m *Model) startPaneStream(pane *Pane) {
-	if pane == nil {
+	if pane == nil || pane.Channel == 0 || m.client == nil {
+		return
+	}
+	if pane.stopStream != nil {
+		return
+	}
+	if owner := m.terminalStreamOwner(pane.TerminalID, pane.ID); owner != nil {
+		m.logger.Debug("reusing shared terminal stream owner", "pane_id", pane.ID, "terminal_id", pane.TerminalID, "owner_pane_id", owner.ID, "channel", pane.Channel)
 		return
 	}
 	m.logger.Debug("starting pane stream", "pane_id", pane.ID, "terminal_id", pane.TerminalID, "channel", pane.Channel)
 	stream, stop := m.client.Stream(pane.Channel)
 	pane.stopStream = stop
-	if m.program != nil {
-		go func(paneID string) {
-			for frame := range stream {
-				m.program.Send(paneOutputMsg{paneID: paneID, frame: frame})
+	if m.program == nil {
+		return
+	}
+	go func(paneID string) {
+		for frame := range stream {
+			m.program.Send(paneOutputMsg{paneID: paneID, frame: frame})
+		}
+		m.logger.Debug("pane stream closed", "pane_id", paneID)
+	}(pane.ID)
+}
+
+func (m *Model) stopPaneStream(pane *Pane) {
+	if pane == nil || pane.stopStream == nil {
+		return
+	}
+	pane.stopStream()
+	pane.stopStream = nil
+}
+
+func (m *Model) panesForTerminal(terminalID string) []*Pane {
+	if strings.TrimSpace(terminalID) == "" {
+		return nil
+	}
+	var panes []*Pane
+	for _, tab := range m.workspace.Tabs {
+		if tab == nil {
+			continue
+		}
+		for _, pane := range tab.Panes {
+			if pane == nil || pane.TerminalID != terminalID {
+				continue
 			}
-			m.logger.Debug("pane stream closed", "pane_id", paneID)
-		}(pane.ID)
+			panes = append(panes, pane)
+		}
+	}
+	return panes
+}
+
+func (m *Model) terminalStreamOwner(terminalID, excludePaneID string) *Pane {
+	for _, pane := range m.panesForTerminal(terminalID) {
+		if pane == nil || pane.ID == excludePaneID || pane.stopStream == nil {
+			continue
+		}
+		return pane
+	}
+	return nil
+}
+
+func (m *Model) promoteTerminalStream(terminalID string) {
+	if strings.TrimSpace(terminalID) == "" || m.terminalStreamOwner(terminalID, "") != nil {
+		return
+	}
+	for _, pane := range m.panesForTerminal(terminalID) {
+		if pane == nil || pane.stopStream != nil {
+			continue
+		}
+		m.startPaneStream(pane)
+		return
 	}
 }
 
@@ -2522,66 +2585,83 @@ func (m *Model) handlePaneOutput(msg paneOutputMsg) tea.Cmd {
 	if pane == nil {
 		return nil
 	}
+	targets := m.panesForTerminal(pane.TerminalID)
+	if len(targets) == 0 {
+		targets = []*Pane{pane}
+	}
 	switch msg.frame.Type {
 	case protocol.TypeOutput:
-		if !m.ensurePaneRuntime(pane) {
-			return nil
-		}
-		beforeCursor := pane.VTerm.CursorState()
-		beforeAlt := pane.VTerm.IsAltScreen()
-		termCols, termRows := pane.VTerm.Size()
-		n, err := m.paneWriter(pane, msg.frame.Payload)
-		if err != nil {
-			m.logger.Warn("pane write failed; recovering from snapshot",
-				"pane_id", pane.ID,
-				"terminal_id", pane.TerminalID,
-				"channel", pane.Channel,
-				"bytes", len(msg.frame.Payload),
-				"written", n,
-				"error", err,
-			)
-			pane.syncLost = true
-			if dropped := len(msg.frame.Payload) - max(0, n); dropped > 0 {
-				pane.droppedBytes += uint64(dropped)
-			}
-			pane.renderDirty = true
-			m.scheduleRender()
-			if pane.recovering {
-				return nil
-			}
-			pane.recovering = true
-			return m.recoverPaneSnapshotCmd(pane.ID, pane.TerminalID, pane.droppedBytes)
-		}
-		afterCursor := pane.VTerm.CursorState()
-		afterAlt := pane.VTerm.IsAltScreen()
-		pane.live = true
-		pane.TerminalState = "running"
-		pane.ExitCode = nil
-		pane.cellVersion++
-		pane.renderDirty = true
-		applyViewportDirtyRegionForOutput(pane.Viewport, msg.frame.Payload, beforeCursor, afterCursor, beforeAlt, afterAlt, termCols, termRows)
-		pane.syncLost = false
-		pane.recovering = false
-		if tab := m.tabForPane(pane.ID); tab != nil {
-			if viewW, viewH, ok := m.paneViewportSizeInTab(tab, pane.ID); ok && m.syncViewport(pane, viewW, viewH) {
-				tab.renderCache = nil
+		var recoverCmd tea.Cmd
+		for _, target := range targets {
+			if cmd := m.applyOutputToPane(target, msg.frame.Payload); cmd != nil && recoverCmd == nil {
+				recoverCmd = cmd
 			}
 		}
 		m.scheduleRender()
+		return recoverCmd
 	case protocol.TypeClosed:
 		code, _ := protocol.DecodeClosedPayload(msg.frame.Payload)
 		m.markTerminalExited(pane.TerminalID, code)
 	case protocol.TypeSyncLost:
 		dropped, _ := protocol.DecodeSyncLostPayload(msg.frame.Payload)
-		pane.syncLost = true
-		pane.droppedBytes += dropped
-		pane.renderDirty = true
+		needsRecovery := !pane.recovering
+		for _, target := range targets {
+			target.syncLost = true
+			target.droppedBytes += dropped
+			target.renderDirty = true
+			target.recovering = true
+		}
 		m.scheduleRender()
+		if !needsRecovery {
+			return nil
+		}
+		return m.recoverPaneSnapshotCmd(pane.ID, pane.TerminalID, pane.droppedBytes)
+	}
+	return nil
+}
+
+func (m *Model) applyOutputToPane(pane *Pane, payload []byte) tea.Cmd {
+	if pane == nil || !m.ensurePaneRuntime(pane) {
+		return nil
+	}
+	beforeCursor := pane.VTerm.CursorState()
+	beforeAlt := pane.VTerm.IsAltScreen()
+	termCols, termRows := pane.VTerm.Size()
+	n, err := m.paneWriter(pane, payload)
+	if err != nil {
+		m.logger.Warn("pane write failed; recovering from snapshot",
+			"pane_id", pane.ID,
+			"terminal_id", pane.TerminalID,
+			"channel", pane.Channel,
+			"bytes", len(payload),
+			"written", n,
+			"error", err,
+		)
+		pane.syncLost = true
+		if dropped := len(payload) - max(0, n); dropped > 0 {
+			pane.droppedBytes += uint64(dropped)
+		}
+		pane.renderDirty = true
 		if pane.recovering {
 			return nil
 		}
 		pane.recovering = true
 		return m.recoverPaneSnapshotCmd(pane.ID, pane.TerminalID, pane.droppedBytes)
+	}
+	afterCursor := pane.VTerm.CursorState()
+	afterAlt := pane.VTerm.IsAltScreen()
+	pane.live = true
+	pane.TerminalState = "running"
+	pane.ExitCode = nil
+	pane.cellVersion++
+	pane.renderDirty = true
+	applyViewportDirtyRegionForOutput(pane.Viewport, payload, beforeCursor, afterCursor, beforeAlt, afterAlt, termCols, termRows)
+	pane.syncLost = false
+	pane.recovering = false
+	if tab := m.tabForPane(pane.ID); tab != nil {
+		if viewW, viewH, ok := m.paneViewportSizeInTab(tab, pane.ID); ok && m.syncViewport(pane, viewW, viewH) {
+			tab.renderCache = nil
+		}
 	}
 	return nil
 }
@@ -2779,27 +2859,33 @@ func (m *Model) handlePaneRecovered(msg paneRecoveredMsg) {
 	if pane == nil || msg.snapshot == nil {
 		return
 	}
-	if !m.ensurePaneRuntime(pane) {
-		return
+	targets := m.panesForTerminal(pane.TerminalID)
+	if len(targets) == 0 {
+		targets = []*Pane{pane}
 	}
-	pane.Snapshot = msg.snapshot
-	loadSnapshotIntoVTerm(pane.VTerm, msg.snapshot)
-	pane.live = true
-	pane.TerminalState = "running"
-	pane.syncLost = false
-	pane.recovering = false
-	pane.droppedBytes = msg.droppedBytes
-	pane.cellVersion++
-	pane.renderDirty = true
-	pane.clearDirtyRegion()
-	pane.cellCache = nil
+	for _, target := range targets {
+		if !m.ensurePaneRuntime(target) {
+			continue
+		}
+		target.Snapshot = msg.snapshot
+		loadSnapshotIntoVTerm(target.VTerm, msg.snapshot)
+		target.live = true
+		target.TerminalState = "running"
+		target.syncLost = false
+		target.recovering = false
+		target.droppedBytes = msg.droppedBytes
+		target.cellVersion++
+		target.renderDirty = true
+		target.clearDirtyRegion()
+		target.cellCache = nil
+		if tab := m.tabForPane(target.ID); tab != nil {
+			if viewW, viewH, ok := m.paneViewportSizeInTab(tab, target.ID); ok && m.syncViewport(target, viewW, viewH) {
+				tab.renderCache = nil
+			}
+		}
+	}
 	if msg.snapshot.Size.Cols > 0 && msg.snapshot.Size.Rows > 0 {
 		m.resizeTerminalPanes(pane.TerminalID, pane.ID, msg.snapshot.Size.Cols, msg.snapshot.Size.Rows)
-	}
-	if tab := m.tabForPane(pane.ID); tab != nil {
-		if viewW, viewH, ok := m.paneViewportSizeInTab(tab, pane.ID); ok && m.syncViewport(pane, viewW, viewH) {
-			tab.renderCache = nil
-		}
 	}
 	m.invalidateRender()
 }
@@ -2809,7 +2895,13 @@ func (m *Model) handlePaneRecoveryFailed(msg paneRecoveryFailedMsg) {
 	if pane == nil {
 		return
 	}
-	pane.recovering = false
+	targets := m.panesForTerminal(pane.TerminalID)
+	if len(targets) == 0 {
+		targets = []*Pane{pane}
+	}
+	for _, target := range targets {
+		target.recovering = false
+	}
 	m.err = msg.err
 	m.invalidateRender()
 }
@@ -3764,7 +3856,10 @@ func (m *Model) toggleActiveViewportMode() {
 func (m *Model) toggleActiveViewportPin() {
 	tab := m.currentTab()
 	pane := activePane(tab)
-	if pane == nil || pane.Mode != ViewportModeFixed {
+	if pane == nil {
+		return
+	}
+	if !m.ensureViewportPinned(tab, pane) {
 		return
 	}
 	pane.Pin = !pane.Pin
@@ -3788,10 +3883,29 @@ func (m *Model) toggleActiveViewportReadonly() {
 	m.invalidateRender()
 }
 
+func (m *Model) ensureViewportPinned(tab *Tab, pane *Pane) bool {
+	if tab == nil || pane == nil {
+		return false
+	}
+	viewW, viewH, ok := m.paneViewportSizeInTab(tab, pane.ID)
+	if !ok {
+		return false
+	}
+	if pane.Mode != ViewportModeFixed {
+		pane.Mode = ViewportModeFixed
+		pane.Pin = false
+		_ = m.syncViewport(pane, viewW, viewH)
+	}
+	if !pane.Pin {
+		pane.Pin = true
+	}
+	return true
+}
+
 func (m *Model) panActiveViewport(dx, dy int) {
 	tab := m.currentTab()
 	pane := activePane(tab)
-	if pane == nil || pane.Mode != ViewportModeFixed || !pane.Pin {
+	if pane == nil || !m.ensureViewportPinned(tab, pane) {
 		return
 	}
 	viewW, viewH, ok := m.paneViewportSizeInTab(tab, pane.ID)
@@ -3813,7 +3927,7 @@ func (m *Model) panActiveViewport(dx, dy int) {
 func (m *Model) setActiveViewportOffset(x, y int) {
 	tab := m.currentTab()
 	pane := activePane(tab)
-	if pane == nil || pane.Mode != ViewportModeFixed || !pane.Pin {
+	if pane == nil || !m.ensureViewportPinned(tab, pane) {
 		return
 	}
 	viewW, viewH, ok := m.paneViewportSizeInTab(tab, pane.ID)
@@ -4251,9 +4365,10 @@ func (m *Model) resizeVisiblePanesCmd() tea.Cmd {
 			_ = m.syncViewport(pane, int(cols), int(rows))
 			tab.renderCache = nil
 			m.invalidateRender()
-			continue
-		}
-		if !paneShouldSubmitResize(m.workspace.Tabs, pane) {
+			if !paneShouldSubmitResize(m.workspace.Tabs, pane) {
+				continue
+			}
+		} else if !paneShouldSubmitResize(m.workspace.Tabs, pane) {
 			tab.renderCache = nil
 			m.invalidateRender()
 			continue
@@ -4356,11 +4471,16 @@ func (m *Model) removePane(paneID string) bool {
 		if tab == nil {
 			continue
 		}
-		if _, ok := tab.Panes[paneID]; !ok {
+		pane, ok := tab.Panes[paneID]
+		if !ok {
 			continue
 		}
-		if pane := tab.Panes[paneID]; pane != nil && pane.stopStream != nil {
-			pane.stopStream()
+		terminalID := ""
+		ownedStream := false
+		if pane != nil {
+			terminalID = pane.TerminalID
+			ownedStream = pane.stopStream != nil
+			m.stopPaneStream(pane)
 		}
 		delete(tab.Panes, paneID)
 		tab.Floating = removeFloatingPane(tab.Floating, paneID)
@@ -4385,10 +4505,16 @@ func (m *Model) removePane(paneID string) bool {
 			if current := m.currentTab(); current != nil && current.ActivePaneID == "" {
 				current.ActivePaneID = firstPaneID(current.Panes)
 			}
+			if ownedStream {
+				m.promoteTerminalStream(terminalID)
+			}
 			return false
 		}
 		if tab.ActivePaneID == paneID || tab.ActivePaneID == "" {
 			tab.ActivePaneID = firstPaneID(tab.Panes)
+		}
+		if ownedStream {
+			m.promoteTerminalStream(terminalID)
 		}
 		m.invalidateRender()
 		return false
@@ -4422,10 +4548,9 @@ func (m *Model) unbindPaneTerminal(pane *Pane) {
 	if pane == nil || pane.Viewport == nil {
 		return
 	}
-	if pane.stopStream != nil {
-		pane.stopStream()
-		pane.stopStream = nil
-	}
+	terminalID := pane.TerminalID
+	ownedStream := pane.stopStream != nil
+	m.stopPaneStream(pane)
 	if pane.Snapshot == nil && pane.VTerm != nil {
 		cols, rows := pane.VTerm.Size()
 		pane.Snapshot = snapshotFromVTerm(pane.TerminalID, protocol.Size{Cols: uint16(cols), Rows: uint16(rows)}, pane.VTerm)
@@ -4442,6 +4567,9 @@ func (m *Model) unbindPaneTerminal(pane *Pane) {
 	pane.catchingUp = false
 	pane.droppedBytes = 0
 	pane.renderDirty = true
+	if ownedStream {
+		m.promoteTerminalStream(terminalID)
+	}
 }
 
 func (m *Model) markTerminalKilled(terminalID string) {
@@ -4829,6 +4957,16 @@ func paneShouldSubmitResize(tabs []*Tab, pane *Pane) bool {
 	return pane.ResizeAcquired
 }
 
+func paneConnectionStatus(tabs []*Tab, pane *Pane) string {
+	if pane == nil || strings.TrimSpace(pane.TerminalID) == "" {
+		return ""
+	}
+	if paneShouldSubmitResize(tabs, pane) {
+		return "owner"
+	}
+	return "follower"
+}
+
 func terminalBindingCount(tabs []*Tab, terminalID string) int {
 	if strings.TrimSpace(terminalID) == "" {
 		return 0
@@ -4915,7 +5053,7 @@ func (m *Model) ActiveModeForTest() string {
 	case prefixModeWorkspace:
 		return "workspace"
 	case prefixModeViewport:
-		return "view"
+		return "connection"
 	case prefixModeFloating:
 		return "floating"
 	case prefixModeOffsetPan:
@@ -5087,7 +5225,7 @@ func (m *Model) statusShortcutParts() []string {
 		case prefixModeWorkspace:
 			parts = append(parts, "[WORKSPACE]", "s:switch", "c:new", "r:rename", "x:delete", "n/p:next-prev", "f:pick", "Esc:exit")
 		case prefixModeViewport:
-			parts = append(parts, "[DISPLAY]", "m:fit/fixed", "r:readonly", "p:pin", "hjkl:pan", "0/$/g/G:jump", "z:reset", "Esc:exit")
+			parts = append(parts, "[CONNECTION]", "a:take owner", "r:readonly", "p:pin view", "hjkl:move view", "0/$/g/G:jump", "z:follow", "Esc:exit")
 		case prefixModeFloating:
 			parts = append(parts, "[FLOAT]", "n:new", "Tab:focus", "[]:z-order", "hjkl:move", "HJKL:size", "c:center", "v:toggle", "x:close", "f:pick", "Esc:exit")
 		case prefixModeGlobal:
@@ -5100,7 +5238,7 @@ func (m *Model) statusShortcutParts() []string {
 		case prefixModeWorkspace:
 			parts = append(parts, "prefix:w", "ws:s", "create:c", "rename:r", "delete:x")
 		case prefixModeViewport:
-			parts = append(parts, "prefix:v", "display:m", "readonly:r", "pin:p", "pan:o")
+			parts = append(parts, "prefix:v", "owner:a", "readonly:r", "pin:p", "view:hjkl")
 		case prefixModeFloating:
 			parts = append(parts, "mode:floating", "new:n", "move:hjkl", "size:HJKL", "center:c", "Esc")
 		case prefixModeOffsetPan:
@@ -5110,9 +5248,9 @@ func (m *Model) statusShortcutParts() []string {
 		}
 	}
 	if len(parts) == 0 {
-		parts = append(parts, "[NORMAL]", "Ctrl-p pane", "Ctrl-r resize", "Ctrl-t tab", "Ctrl-w ws", "Ctrl-o float", "Ctrl-v display", "Ctrl-f picker", "Ctrl-g global")
+		parts = append(parts, "[NORMAL]", "Ctrl-p pane", "Ctrl-r resize", "Ctrl-t tab", "Ctrl-w ws", "Ctrl-o float", "Ctrl-v connection", "Ctrl-f picker", "Ctrl-g global")
 	} else if !m.prefixActive {
-		parts = append(parts, "[NORMAL]", "Ctrl-p pane", "Ctrl-r resize", "Ctrl-t tab", "Ctrl-w ws", "Ctrl-o float", "Ctrl-v display", "Ctrl-f picker", "Ctrl-g global")
+		parts = append(parts, "[NORMAL]", "Ctrl-p pane", "Ctrl-r resize", "Ctrl-t tab", "Ctrl-w ws", "Ctrl-o float", "Ctrl-v connection", "Ctrl-f picker", "Ctrl-g global")
 	}
 	if m.showHelp {
 		parts = append(parts, "[help]")
@@ -5149,6 +5287,9 @@ func (m *Model) statusStateParts() []string {
 				parts = append(parts, "layer:tiled")
 			}
 			parts = append(parts, "state:"+paneTerminalState(pane))
+			if connection := paneConnectionStatus(m.workspace.Tabs, pane); connection != "" {
+				parts = append(parts, "connection:"+connection)
+			}
 			if pane.syncLost || pane.recovering || pane.catchingUp {
 				parts = append(parts, fmt.Sprintf("catching-up:%dB", pane.droppedBytes))
 			}
@@ -5196,7 +5337,7 @@ func renderStatusSummary(parts []string, icons iconSet) string {
 			style = lipgloss.NewStyle().Foreground(lipgloss.Color("#f8fafc")).Background(lipgloss.Color("#020617")).Bold(true)
 		case strings.HasPrefix(part, "term:"):
 			style = lipgloss.NewStyle().Foreground(lipgloss.Color("#f8fafc")).Background(lipgloss.Color("#020617")).Bold(true)
-		case strings.HasPrefix(part, "state:"), strings.HasPrefix(part, "display:"), strings.HasPrefix(part, "layer:"), strings.HasPrefix(part, "shared:"), strings.HasPrefix(part, "access:"), strings.HasPrefix(part, "size-lock:"), part == "readonly", part == "pinned":
+		case strings.HasPrefix(part, "state:"), strings.HasPrefix(part, "connection:"), strings.HasPrefix(part, "display:"), strings.HasPrefix(part, "layer:"), strings.HasPrefix(part, "shared:"), strings.HasPrefix(part, "access:"), strings.HasPrefix(part, "size-lock:"), part == "readonly", part == "pinned":
 			style = lipgloss.NewStyle().Foreground(lipgloss.Color("#e2e8f0")).Background(lipgloss.Color("#020617"))
 		case strings.HasPrefix(part, "visibility:"), strings.HasPrefix(part, "shown:"), strings.HasPrefix(part, "tags:"):
 			style = lipgloss.NewStyle().Foreground(lipgloss.Color("#e2e8f0")).Background(lipgloss.Color("#020617"))
@@ -5297,6 +5438,12 @@ func formatSummaryPart(part string, icons iconSet) string {
 		default:
 			return icons.token("live", icons.Running)
 		}
+	case strings.HasPrefix(part, "connection:"):
+		mode := strings.TrimPrefix(part, "connection:")
+		if mode == "owner" {
+			return icons.token("owner", icons.Owner)
+		}
+		return icons.token("follower", icons.Follower)
 	case strings.HasPrefix(part, "display:"):
 		mode := strings.TrimPrefix(part, "display:")
 		if mode == string(ViewportModeFixed) {
@@ -5381,7 +5528,7 @@ func renderModeBadge(mode string) string {
 		bg = "#fcd34d"
 	case "FLOAT":
 		bg = "#fde047"
-	case "DISPLAY":
+	case "CONNECTION":
 		bg = "#c4b5fd"
 	case "GLOBAL":
 		bg = "#67e8f9"
@@ -5497,7 +5644,11 @@ func viewportStatusParts(pane *Pane) []string {
 	if pane == nil {
 		return nil
 	}
-	parts := []string{"state:" + paneTerminalState(pane), "display:" + string(pane.Mode)}
+	parts := []string{"state:" + paneTerminalState(pane)}
+	if connection := viewportConnectionStatus(pane); connection != "" {
+		parts = append(parts, "connection:"+connection)
+	}
+	parts = append(parts, "display:"+string(pane.Mode))
 	if access := paneAccessMode(pane); access != "" {
 		switch access {
 		case "collaborator":
@@ -5516,6 +5667,16 @@ func viewportStatusParts(pane *Pane) []string {
 		parts = append(parts, "readonly")
 	}
 	return parts
+}
+
+func viewportConnectionStatus(pane *Pane) string {
+	if pane == nil || strings.TrimSpace(pane.TerminalID) == "" {
+		return ""
+	}
+	if pane.ResizeAcquired {
+		return "owner"
+	}
+	return "follower"
 }
 
 func paneAccessMode(pane *Pane) string {
@@ -7195,7 +7356,7 @@ func (m *Model) renderHelpScreen() string {
 		"  Ctrl-t   tab actions",
 		"  Ctrl-w   workspace actions",
 		"  Ctrl-o   floating actions",
-		"  Ctrl-v   display actions",
+		"  Ctrl-v   connection actions",
 		"  Ctrl-f   terminal picker",
 		"  Ctrl-g   global actions",
 		"",
@@ -7205,7 +7366,8 @@ func (m *Model) renderHelpScreen() string {
 		"  manager  terminal pool page for attach/edit/stop",
 		"",
 		"Shared terminal",
-		"  acquire resize control before changing PTY size",
+		"  take ownership before changing PTY size",
+		"  p pins the current view, z returns to follow output",
 		"  size lock warn warns before risky size changes",
 		"  one terminal can appear in multiple panes",
 		"",

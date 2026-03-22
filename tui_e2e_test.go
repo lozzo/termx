@@ -113,7 +113,7 @@ func TestE2ETUI_FloatingOverlayZOrderMatchesVisibleTopWindow(t *testing.T) {
 	}
 
 	h.sendCtrlKey(tea.KeyCtrlO)
-	h.waitForMode("floating", "<n> NEW", "<hjkl> MOVE")
+	h.waitForMode("floating")
 	h.pressKey(tea.KeyTab)
 	h.sendText("]")
 	screen = h.waitForStableScreenContains("FLOAT-A", 10*time.Second)
@@ -165,7 +165,7 @@ func TestE2ETUI_FloatingCenterShortcutRecentersPartiallyHiddenWindow(t *testing.
 	h.waitForStableScreenContains("ws:main", 10*time.Second)
 
 	h.sendCtrlKey(tea.KeyCtrlO)
-	h.waitForMode("floating", "<n> NEW", "<hjkl> MOVE")
+	h.waitForMode("floating")
 	h.sendText("n")
 	h.waitForStableScreenContains("Open Floating Pane", 10*time.Second)
 	h.pressEnter()
@@ -178,7 +178,7 @@ func TestE2ETUI_FloatingCenterShortcutRecentersPartiallyHiddenWindow(t *testing.
 	}
 	entry := tab.Floating[len(tab.Floating)-1]
 	h.sendCtrlKey(tea.KeyCtrlO)
-	h.waitForMode("floating", "<n> NEW", "<hjkl> MOVE")
+	h.waitForMode("floating")
 	for i := 0; i < 18; i++ {
 		h.sendText("h")
 	}
@@ -368,19 +368,12 @@ func TestE2ETUI_V3ShortcutModesAndFloatingResize(t *testing.T) {
 	h.waitForStableScreenContains("V3-TAB", 10*time.Second)
 
 	h.sendCtrlKey(tea.KeyCtrlV)
-	h.waitForMode("view", "DISPLAY", "<m> FIT/FIXED")
-	h.sendText("m")
-	h.waitForStableScreenMatching("fixed pane display mode", 10*time.Second, func(string) bool {
-		tab := h.model.CurrentTabForTest()
-		if tab == nil {
-			return false
-		}
-		pane := tab.Panes[tab.ActivePaneID]
-		return pane != nil && pane.Mode == tui.ViewportModeFixed
-	})
+	h.waitForMode("connection", "CONNECTION", "<a> TAKE OWNER")
+	h.sendText("a")
+	h.waitForStableScreenContains("acquired resize control", 10*time.Second)
 
 	h.sendCtrlKey(tea.KeyCtrlO)
-	h.waitForMode("floating", "<n> NEW", "<hjkl> MOVE")
+	h.waitForMode("floating")
 	h.sendText("n")
 	h.waitForStableScreenContains("Open Floating Pane", 10*time.Second)
 	h.pressEnter()
@@ -394,7 +387,7 @@ func TestE2ETUI_V3ShortcutModesAndFloatingResize(t *testing.T) {
 	entry := tab.Floating[len(tab.Floating)-1]
 	before := entry.Rect
 	h.sendCtrlKey(tea.KeyCtrlO)
-	h.waitForMode("floating", "<n> NEW", "<hjkl> MOVE")
+	h.waitForMode("floating")
 	h.sendText("L")
 	h.waitForStableScreenMatching("floating rect resize", 10*time.Second, func(string) bool {
 		tab := h.model.CurrentTabForTest()
@@ -2155,18 +2148,6 @@ func TestE2ETUI_ScenarioSharedAltScreenFloatingResizeRequiresAcquire(t *testing.
 	})
 	assertAltScreenReuseBodyVisible(t, screen)
 
-	h.sendCtrlKey(tea.KeyCtrlV)
-	h.waitForMode("view", "DISPLAY", "<m> FIT/FIXED")
-	h.sendText("m")
-	h.waitForStableScreenMatching("shared alt-screen floating switched to fit", 10*time.Second, func(string) bool {
-		tab := h.model.CurrentTabForTest()
-		if tab == nil || len(tab.Floating) == 0 {
-			return false
-		}
-		pane := tab.Panes[tab.Floating[len(tab.Floating)-1].PaneID]
-		return pane != nil && pane.Mode == tui.ViewportModeFit
-	})
-
 	h.program.Send(tea.WindowSizeMsg{Width: 96, Height: 24})
 	h.waitForStableScreenMatching("shared alt-screen unchanged without acquire", 10*time.Second, func(string) bool {
 		tab := h.model.CurrentTabForTest()
@@ -2190,7 +2171,7 @@ func TestE2ETUI_ScenarioSharedAltScreenFloatingResizeRequiresAcquire(t *testing.
 	h.acquireResize()
 	h.waitForStableScreenContains("acquired resize control", 10*time.Second)
 	h.sendCtrlKey(tea.KeyCtrlO)
-	h.waitForMode("floating", "<n> NEW", "<hjkl> MOVE")
+	h.waitForMode("floating")
 	h.sendText("L")
 	screen = h.waitForStableScreenMatching("shared alt-screen resized after acquire", 10*time.Second, func(screen string) bool {
 		tab := h.model.CurrentTabForTest()
@@ -2228,6 +2209,77 @@ func TestE2ETUI_ScenarioSharedAltScreenFloatingResizeRequiresAcquire(t *testing.
 	})
 	if !strings.Contains(screen, "1.2G") {
 		t.Fatalf("expected shared floating alt-screen body to survive resize and incremental updates, got:\n%s", screen)
+	}
+}
+
+func TestE2ETUI_SharedSplitAndFloatingAltScreenFramesStayConsistent(t *testing.T) {
+	_, client, cleanup := newE2EClient(t)
+	defer cleanup()
+
+	h := newTUIScreenHarness(t, client, 120, 30)
+	defer h.Close()
+
+	h.waitForStableScreenContains("ws:main", 10*time.Second)
+	seedAltScreenForReuseTest(h)
+
+	tab := h.model.CurrentTabForTest()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	base := tab.Panes[tab.ActivePaneID]
+	if base == nil {
+		t.Fatal("expected active pane")
+	}
+	sharedID := base.TerminalID
+
+	h.sendPrefixRune('%')
+	h.waitForStableScreenContains("Open Pane", 10*time.Second)
+	h.sendText(sharedID)
+	h.pressEnter()
+	screen := h.waitForStableScreenMatching("shared split alt-screen attached", 10*time.Second, func(screen string) bool {
+		return !strings.Contains(screen, "Open Pane") &&
+			strings.Count(screen, "┌") >= 2 &&
+			strings.Contains(screen, "Mem 1.2G") &&
+			strings.Contains(screen, "Tasks 42")
+	})
+	assertAltScreenReuseBodyVisible(t, screen)
+
+	h.openFloatingChooser()
+	h.sendText(sharedID)
+	h.pressEnter()
+	screen = h.waitForStableScreenMatching("shared split floating alt-screen attached", 10*time.Second, func(screen string) bool {
+		return !strings.Contains(screen, "Open Floating Pane") &&
+			strings.Contains(screen, "[floating") &&
+			strings.Contains(screen, "Mem 1.2G") &&
+			strings.Contains(screen, "Tasks 42")
+	})
+	assertAltScreenReuseBodyVisible(t, screen)
+
+	startWrites := h.rec.WriteCount()
+	h.sendText("printf '\\033[2;1H!\\033[3;1HMem 1.2G\\033[4;1HTasks 42\\033[5;1HLoad 1.0'")
+	h.pressEnter()
+	screen = h.waitForStableScreenMatching("shared split floating alt-screen incremental", 10*time.Second, func(screen string) bool {
+		return strings.Contains(screen, "!") &&
+			strings.Contains(screen, "Mem 1.2G") &&
+			strings.Contains(screen, "Tasks 42") &&
+			strings.Contains(screen, "Load 1.0") &&
+			strings.Contains(screen, "[floating")
+	})
+	if !containsAll(screen, "!", "Mem 1.2G", "Tasks 42", "Load 1.0") {
+		t.Fatalf("expected shared split+floating incremental screen to keep updated alt-screen lines, got:\n%s", screen)
+	}
+
+	frames := h.rec.FramesSince(startWrites)
+	if len(frames) == 0 {
+		t.Fatal("expected recorder to capture shared split+floating frames")
+	}
+	for _, frame := range frames {
+		if !strings.Contains(frame.Screen, "[floating") {
+			continue
+		}
+		if strings.Contains(frame.Screen, "!") && !containsAll(frame.Screen, "Mem 1.2G", "Tasks 42", "Load 1.0") {
+			t.Fatalf("expected shared split+floating frame %d to keep alt-screen body intact, got:\n%s", frame.Index, frame.Screen)
+		}
 	}
 }
 

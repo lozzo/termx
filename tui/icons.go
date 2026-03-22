@@ -13,6 +13,8 @@ type iconSet struct {
 	Killed    string
 	Waiting   string
 	Unbound   string
+	Owner     string
+	Follower  string
 	Fit       string
 	Fixed     string
 	Observer  string
@@ -53,6 +55,8 @@ func resolveIconSet(name string) iconSet {
 			Killed:    "kill",
 			Waiting:   "wait",
 			Unbound:   "slot",
+			Owner:     "owner",
+			Follower:  "follow",
 			Fit:       "fit",
 			Fixed:     "fixed",
 			Observer:  "obs",
@@ -77,6 +81,8 @@ func resolveIconSet(name string) iconSet {
 			Killed:    "󰅙",
 			Waiting:   "󱞁",
 			Unbound:   "󱞊",
+			Owner:     "󰒃",
+			Follower:  "󰈈",
 			Fit:       "󰹑",
 			Fixed:     "󰆾",
 			Observer:  "󰈈",
@@ -101,6 +107,8 @@ func resolveIconSet(name string) iconSet {
 			Killed:    "✕",
 			Waiting:   "…",
 			Unbound:   "◌",
+			Owner:     "◆",
+			Follower:  "◇",
 			Fit:       "⇄",
 			Fixed:     "↔",
 			Observer:  "◌",

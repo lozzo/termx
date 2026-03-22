@@ -88,7 +88,7 @@ func TestModelViewShowsWelcomeAndHelp(t *testing.T) {
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
 	helpView := model.View()
-	if !containsAll(helpView, "Help / Shortcut Map", "Most used", "Ctrl-p   pane actions", "Shared terminal", "acquire resize control", "Exit", "close current mode/modal") {
+	if !containsAll(helpView, "Help / Shortcut Map", "Most used", "Ctrl-p   pane actions", "Shared terminal", "take ownership before changing PTY size", "Exit", "close current mode/modal") {
 		t.Fatalf("help overlay missing expected content:\n%s", helpView)
 	}
 
@@ -835,7 +835,7 @@ func TestStatusStatePartsUseFriendlyPaneLabelAndMinimalRuntimeSummary(t *testing
 	if !strings.Contains(status, "pane:api-shell") {
 		t.Fatalf("expected friendly pane label in status, got %q", status)
 	}
-	if !containsAll(status, "layer:tiled", "state:running") {
+	if !containsAll(status, "layer:tiled", "state:running", "connection:follower") {
 		t.Fatalf("expected minimal runtime summary in status, got %q", status)
 	}
 	if containsAll(status, "shared:2", "size-lock:warn") || strings.Contains(status, "display:") {
@@ -1605,8 +1605,8 @@ func TestHelpAndStatusShowViewportControlsAndState(t *testing.T) {
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
 	helpView := xansi.Strip(model.View())
-	if !containsAll(helpView, "Ctrl-v   display actions", "acquire resize control", "size lock warn", "Ctrl-g   global actions") {
-		t.Fatalf("expected help to include display controls, got:\n%s", helpView)
+	if !containsAll(helpView, "Ctrl-v   connection actions", "take ownership before changing PTY size", "size lock warn", "Ctrl-g   global actions") {
+		t.Fatalf("expected help to include connection controls, got:\n%s", helpView)
 	}
 }
 
@@ -4976,7 +4976,7 @@ func TestPaneFrameMetaUsesRelationshipBadges(t *testing.T) {
 	}
 	tab.Panes[shared.ID] = shared
 	meta := xansi.Strip(model.paneFrameMeta(tab, base.ID, base, false))
-	if !containsAll(meta, "live", "fixed", "2", "ro", "lock") {
+	if !containsAll(meta, "live", "follower", "2", "ro", "lock") {
 		t.Fatalf("expected layered relationship badges, got %q", meta)
 	}
 }
@@ -6826,6 +6826,154 @@ func TestMouseResizeFloatingPaneUsesAcquiredSharedPane(t *testing.T) {
 	}
 }
 
+func TestStartPaneStreamSkipsDuplicateSharedTerminalStreams(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+
+	first := &Pane{
+		ID:    "pane-1",
+		Title: "one",
+		Viewport: &Viewport{
+			TerminalID: "term-shared",
+			Channel:    1,
+		},
+	}
+	second := &Pane{
+		ID:    "pane-2",
+		Title: "two",
+		Viewport: &Viewport{
+			TerminalID: "term-shared",
+			Channel:    2,
+		},
+	}
+	model.workspace.Tabs = []*Tab{{
+		Name:         "1",
+		Panes:        map[string]*Pane{first.ID: first, second.ID: second},
+		ActivePaneID: first.ID,
+	}}
+
+	model.startPaneStream(first)
+	model.startPaneStream(second)
+
+	if client.streamCalls != 1 {
+		t.Fatalf("expected one stream source for shared terminal, got %d calls on channels %v", client.streamCalls, client.streamChannels)
+	}
+	if first.stopStream == nil {
+		t.Fatal("expected first pane to own shared terminal stream")
+	}
+	if second.stopStream != nil {
+		t.Fatal("expected second pane to mirror shared terminal without starting another stream")
+	}
+}
+
+func TestRemovePanePromotesSharedTerminalStreamOwner(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+
+	first := &Pane{
+		ID:    "pane-1",
+		Title: "one",
+		Viewport: &Viewport{
+			TerminalID: "term-shared",
+			Channel:    1,
+		},
+	}
+	second := &Pane{
+		ID:    "pane-2",
+		Title: "two",
+		Viewport: &Viewport{
+			TerminalID: "term-shared",
+			Channel:    2,
+		},
+	}
+	tab := &Tab{
+		Name:         "1",
+		Panes:        map[string]*Pane{first.ID: first, second.ID: second},
+		ActivePaneID: first.ID,
+		Root:         NewLeaf(first.ID),
+	}
+	tab.Root.Split(first.ID, SplitVertical, second.ID)
+	model.workspace.Tabs = []*Tab{tab}
+
+	model.startPaneStream(first)
+	model.startPaneStream(second)
+	if client.streamCalls != 1 {
+		t.Fatalf("expected one initial stream source, got %d", client.streamCalls)
+	}
+
+	if removed := model.removePane(first.ID); removed {
+		t.Fatal("expected tab to remain after removing first shared pane")
+	}
+
+	if client.streamCalls != 2 {
+		t.Fatalf("expected second shared pane to become stream owner after removal, got %d calls on channels %v", client.streamCalls, client.streamChannels)
+	}
+	if second.stopStream == nil {
+		t.Fatal("expected second pane to own stream after first pane removal")
+	}
+}
+
+func TestHandlePaneOutputMirrorsSharedTerminalToAllPanes(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 120
+	model.height = 30
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	tab := model.currentTab()
+	base := tab.Panes[tab.ActivePaneID]
+	if base == nil {
+		t.Fatal("expected active pane")
+	}
+	floatPane := &Pane{
+		ID:    "pane-shared-float",
+		Title: "shared-float",
+		Viewport: &Viewport{
+			TerminalID: base.TerminalID,
+			Channel:    base.Channel + 100,
+			VTerm:      localvterm.New(80, 24, 100, nil),
+			Snapshot: &protocol.Snapshot{
+				TerminalID: base.TerminalID,
+				Size:       protocol.Size{Cols: 80, Rows: 24},
+			},
+			Mode:        ViewportModeFixed,
+			renderDirty: true,
+		},
+	}
+	tab.Panes[floatPane.ID] = floatPane
+	tab.Floating = append(tab.Floating, &FloatingPane{
+		PaneID: floatPane.ID,
+		Rect:   Rect{X: 8, Y: 3, W: 40, H: 12},
+		Z:      1,
+	})
+
+	payload := []byte("\x1b[?1049h\x1b[2J\x1b[HSL-ROW-0\r\nSL-ROW-1\r\nSL-ROW-2")
+	if cmd := model.handlePaneOutput(paneOutputMsg{
+		paneID: base.ID,
+		frame: protocol.StreamFrame{
+			Type:    protocol.TypeOutput,
+			Payload: payload,
+		},
+	}); cmd != nil {
+		t.Fatalf("expected mirror output path not to require recovery, got cmd")
+	}
+
+	for _, pane := range []*Pane{base, floatPane} {
+		if pane == nil || pane.VTerm == nil {
+			t.Fatalf("expected runtime for pane %#v", pane)
+		}
+		if !pane.VTerm.IsAltScreen() {
+			t.Fatalf("expected pane %q to mirror alternate screen state", pane.ID)
+		}
+		body := xansi.Strip(strings.Join(model.paneLines(pane), "\n"))
+		if !containsAll(body, "SL-ROW-0", "SL-ROW-1", "SL-ROW-2") {
+			t.Fatalf("expected pane %q to mirror shared output, got:\n%s", pane.ID, body)
+		}
+	}
+}
+
 func TestModelHandlePaneOutputWriteErrorTriggersRecovery(t *testing.T) {
 	client := &fakeClient{
 		snapshotByID: map[string]*protocol.Snapshot{
@@ -7352,6 +7500,13 @@ func TestFixedModeViewportRendersCroppedContentAroundCursor(t *testing.T) {
 	if pane == nil {
 		t.Fatal("expected active pane")
 	}
+	model.currentTab().Panes["pane-follower"] = &Pane{
+		ID: "pane-follower",
+		Viewport: &Viewport{
+			TerminalID: pane.TerminalID,
+			Channel:    pane.Channel + 1,
+		},
+	}
 	pane.VTerm.Resize(20, 6)
 	_, _ = pane.VTerm.Write([]byte("0123456789ABCDEFGHIJ"))
 	pane.live = true
@@ -7600,7 +7755,7 @@ func TestConsumePrefixInputInvalidByteClearsStickyMode(t *testing.T) {
 	}
 }
 
-func TestFixedViewportDoesNotSendResizeToTerminal(t *testing.T) {
+func TestFollowerFixedViewportDoesNotSendResizeToTerminal(t *testing.T) {
 	client := &fakeClient{}
 	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
 	model.width = 80
@@ -7615,6 +7770,13 @@ func TestFixedViewportDoesNotSendResizeToTerminal(t *testing.T) {
 	}
 
 	pane := model.currentTab().Panes[model.currentTab().ActivePaneID]
+	model.currentTab().Panes["pane-follower"] = &Pane{
+		ID: "pane-follower",
+		Viewport: &Viewport{
+			TerminalID: pane.TerminalID,
+			Channel:    pane.Channel + 1,
+		},
+	}
 	resizesBefore := client.resizeCalls
 
 	_ = activatePrefixForTest(model)
@@ -7629,6 +7791,9 @@ func TestFixedViewportDoesNotSendResizeToTerminal(t *testing.T) {
 	}
 	if pane.Mode != ViewportModeFixed {
 		t.Fatalf("expected viewport mode fixed, got %q", pane.Mode)
+	}
+	if connection := paneConnectionStatus(model.workspace.Tabs, pane); connection != "follower" {
+		t.Fatalf("expected fixed pane to remain follower without ownership, got %q", connection)
 	}
 }
 
@@ -8404,33 +8569,35 @@ func commitDefaultTerminalCreatePrompt(t testing.TB, model *Model) tea.Cmd {
 }
 
 type fakeClient struct {
-	next          int
-	createCalls   int
-	nextChannel   uint16
-	inputs        [][]byte
-	resizeCalls   int
-	resizeCols    uint16
-	resizeRows    uint16
-	resizeChannel uint16
-	kills         int
-	killedIDs     []string
-	attachedIDs   []string
-	listResult    []protocol.TerminalInfo
-	snapshotByID  map[string]*protocol.Snapshot
-	snapshotCalls int
-	snapshotErr   error
-	terminalByID  map[string]protocol.TerminalInfo
-	terminalOrder []string
-	createDelay   time.Duration
-	listDelay     time.Duration
-	attachDelay   time.Duration
-	snapshotDelay time.Duration
-	inputDelay    time.Duration
-	resizeDelay   time.Duration
-	killDelay     time.Duration
-	metadataCalls int
-	events        chan protocol.Event
-	eventsCalls   int
+	next           int
+	createCalls    int
+	nextChannel    uint16
+	inputs         [][]byte
+	resizeCalls    int
+	resizeCols     uint16
+	resizeRows     uint16
+	resizeChannel  uint16
+	kills          int
+	killedIDs      []string
+	attachedIDs    []string
+	listResult     []protocol.TerminalInfo
+	snapshotByID   map[string]*protocol.Snapshot
+	snapshotCalls  int
+	snapshotErr    error
+	terminalByID   map[string]protocol.TerminalInfo
+	terminalOrder  []string
+	createDelay    time.Duration
+	listDelay      time.Duration
+	attachDelay    time.Duration
+	snapshotDelay  time.Duration
+	inputDelay     time.Duration
+	resizeDelay    time.Duration
+	killDelay      time.Duration
+	metadataCalls  int
+	events         chan protocol.Event
+	eventsCalls    int
+	streamCalls    int
+	streamChannels []uint16
 }
 
 func (f *fakeClient) Close() error { return nil }
@@ -8549,6 +8716,8 @@ func (f *fakeClient) Resize(ctx context.Context, channel uint16, cols, rows uint
 	return nil
 }
 func (f *fakeClient) Stream(channel uint16) (<-chan protocol.StreamFrame, func()) {
+	f.streamCalls++
+	f.streamChannels = append(f.streamChannels, channel)
 	ch := make(chan protocol.StreamFrame)
 	close(ch)
 	return ch, func() {}
