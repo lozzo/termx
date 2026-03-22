@@ -738,6 +738,64 @@ func TestE2ETUI_ScenarioReuseTerminalInFloatingPane(t *testing.T) {
 	}
 }
 
+func TestE2ETUI_SharedFloatingAttachKeepsOriginalOwner(t *testing.T) {
+	_, client, cleanup := newE2EClient(t)
+	defer cleanup()
+
+	h := newTUIScreenHarness(t, client, 120, 30)
+	defer h.Close()
+
+	h.waitForStableScreenContains("ws:main", 10*time.Second)
+
+	tab := h.model.CurrentTabForTest()
+	if tab == nil {
+		t.Fatal("expected startup tab")
+	}
+	base := tab.Panes[tab.ActivePaneID]
+	if base == nil || strings.TrimSpace(base.TerminalID) == "" {
+		t.Fatalf("expected startup pane with terminal, got %#v", base)
+	}
+	if !base.ResizeAcquired {
+		t.Fatalf("expected startup pane to carry explicit resize ownership, got %#v", base)
+	}
+	sharedID := base.TerminalID
+	basePaneID := base.ID
+
+	h.openFloatingChooser()
+	h.sendText(sharedID)
+	h.pressEnter()
+
+	screen := h.waitForStableScreenMatching("shared floating attach keeps original owner", 10*time.Second, func(screen string) bool {
+		tab := h.model.CurrentTabForTest()
+		if tab == nil || len(tab.Floating) == 0 {
+			return false
+		}
+		tiled := tab.Panes[basePaneID]
+		floatPane := tab.Panes[tab.Floating[len(tab.Floating)-1].PaneID]
+		return tiled != nil &&
+			floatPane != nil &&
+			tiled.TerminalID == sharedID &&
+			floatPane.TerminalID == sharedID &&
+			tiled.ResizeAcquired &&
+			!floatPane.ResizeAcquired &&
+			strings.Contains(screen, "owner") &&
+			strings.Contains(screen, "follower")
+	})
+
+	tab = h.model.CurrentTabForTest()
+	tiled := tab.Panes[basePaneID]
+	floatPane := tab.Panes[tab.Floating[len(tab.Floating)-1].PaneID]
+	if tiled == nil || !tiled.ResizeAcquired {
+		t.Fatalf("expected original tiled pane to keep owner after floating attach, got %#v", tiled)
+	}
+	if floatPane == nil || floatPane.ResizeAcquired {
+		t.Fatalf("expected floating pane to stay follower after attach, got %#v", floatPane)
+	}
+	if !containsAll(screen, "owner", "follower") {
+		t.Fatalf("expected screen to show owner and follower badges, got:\n%s", screen)
+	}
+}
+
 func TestE2ETUI_ScenarioEditTerminalMetadata(t *testing.T) {
 	srv, client, cleanup := newE2EClient(t)
 	defer cleanup()
@@ -1428,7 +1486,7 @@ func TestE2ETUI_ScenarioSharedExitedTerminalPropagatesToAllPanes(t *testing.T) {
 	}
 }
 
-func TestE2ETUI_ScenarioSharedTerminalResizeRequiresExplicitAcquire(t *testing.T) {
+func TestE2ETUI_ScenarioSharedTerminalPreservesOwnerUntilExplicitAcquire(t *testing.T) {
 	_, client, cleanup := newE2EClient(t)
 	defer cleanup()
 
@@ -1452,30 +1510,28 @@ func TestE2ETUI_ScenarioSharedTerminalResizeRequiresExplicitAcquire(t *testing.T
 	h.waitForStableScreenContains("Open Pane", 10*time.Second)
 	h.sendText(sharedID)
 	h.pressEnter()
-	screen := h.waitForStableScreenContains("shell-1", 10*time.Second)
-	if strings.Count(screen, "┌") < 2 {
-		t.Fatalf("expected split attach to create a shared pane before acquire test, got:\n%s", screen)
-	}
-
-	h.program.Send(tea.WindowSizeMsg{Width: 96, Height: 24})
-	h.waitForStableScreenMatching("shared terminal unchanged without acquire", 10*time.Second, func(screen string) bool {
+	screen := h.waitForStableScreenMatching("shared terminal keeps original owner", 10*time.Second, func(screen string) bool {
 		tab := h.model.CurrentTabForTest()
 		if tab == nil {
 			return false
 		}
-		shared := 0
+		owners := 0
+		followers := 0
 		for _, pane := range tab.Panes {
 			if pane == nil || pane.TerminalID != sharedID || pane.VTerm == nil {
 				continue
 			}
-			cols, rows := pane.VTerm.Size()
-			if cols != initialCols || rows != initialRows {
-				return false
+			if pane.ResizeAcquired {
+				owners++
+			} else {
+				followers++
 			}
-			shared++
 		}
-		return shared >= 2
+		return owners == 1 && followers >= 1 && strings.Count(screen, "owner") >= 1 && strings.Count(screen, "follower") >= 1
 	})
+	if strings.Count(screen, "┌") < 2 {
+		t.Fatalf("expected split attach to create a shared pane before acquire test, got:\n%s", screen)
+	}
 
 	h.acquireResize()
 	h.waitForStableScreenContains("acquired resize control", 10*time.Second)
@@ -1579,7 +1635,7 @@ func TestE2ETUI_ScenarioTabAutoAcquireResizeOnEnter(t *testing.T) {
 	})
 }
 
-func TestE2ETUI_ScenarioSharedTerminalResizeWarnsWhenSizeLockEnabled(t *testing.T) {
+func TestE2ETUI_ScenarioSharedTerminalWarnsBeforeOwnershipTransferWhenSizeLockEnabled(t *testing.T) {
 	_, client, cleanup := newE2EClient(t)
 	defer cleanup()
 
@@ -1607,22 +1663,21 @@ func TestE2ETUI_ScenarioSharedTerminalResizeWarnsWhenSizeLockEnabled(t *testing.
 
 	h.setTerminalTag(sharedID, "termx.size_lock", "warn")
 
-	h.program.Send(tea.WindowSizeMsg{Width: 96, Height: 24})
-	h.waitForStableScreenMatching("shared terminal unchanged before warn acquire", 10*time.Second, func(string) bool {
+	h.waitForStableScreenMatching("shared terminal keeps one owner before warn acquire", 10*time.Second, func(string) bool {
 		tab := h.model.CurrentTabForTest()
 		if tab == nil {
 			return false
 		}
+		owners := 0
 		for _, pane := range tab.Panes {
 			if pane == nil || pane.TerminalID != sharedID || pane.VTerm == nil {
 				continue
 			}
-			cols, rows := pane.VTerm.Size()
-			if cols != initialCols || rows != initialRows {
-				return false
+			if pane.ResizeAcquired {
+				owners++
 			}
 		}
-		return true
+		return owners == 1
 	})
 
 	h.acquireResize()

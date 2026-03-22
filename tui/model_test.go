@@ -835,7 +835,7 @@ func TestStatusStatePartsUseFriendlyPaneLabelAndMinimalRuntimeSummary(t *testing
 	if !strings.Contains(status, "pane:api-shell") {
 		t.Fatalf("expected friendly pane label in status, got %q", status)
 	}
-	if !containsAll(status, "layer:tiled", "state:running", "connection:follower") {
+	if !containsAll(status, "layer:tiled", "state:running", "connection:owner") {
 		t.Fatalf("expected minimal runtime summary in status, got %q", status)
 	}
 	if containsAll(status, "shared:2", "size-lock:warn") || strings.Contains(status, "display:") {
@@ -4976,7 +4976,7 @@ func TestPaneFrameMetaUsesRelationshipBadges(t *testing.T) {
 	}
 	tab.Panes[shared.ID] = shared
 	meta := xansi.Strip(model.paneFrameMeta(tab, base.ID, base, false))
-	if !containsAll(meta, "live", "follower", "2", "ro", "lock") {
+	if !containsAll(meta, "live", "owner", "2", "ro", "lock") {
 		t.Fatalf("expected layered relationship badges, got %q", meta)
 	}
 }
@@ -6626,7 +6626,7 @@ func TestModelResizeMessageResizesAllSharedTerminalVTerms(t *testing.T) {
 	}
 }
 
-func TestResizeVisiblePanesSkipsSharedTerminalWithoutAcquire(t *testing.T) {
+func TestResizeVisiblePanesUsesPreservedSharedOwner(t *testing.T) {
 	client := &fakeClient{}
 	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
 	model.width = 120
@@ -6665,8 +6665,11 @@ func TestResizeVisiblePanesSkipsSharedTerminalWithoutAcquire(t *testing.T) {
 
 	runAllCmds(t, model.resizeVisiblePanesCmd())
 
-	if client.resizeCalls != 0 {
-		t.Fatalf("expected shared terminal resize to require explicit acquire, got %d resize calls", client.resizeCalls)
+	if client.resizeCalls != 1 {
+		t.Fatalf("expected shared terminal resize to keep using preserved owner, got %d resize calls", client.resizeCalls)
+	}
+	if client.resizeChannel != base.Channel {
+		t.Fatalf("expected preserved owner channel %d to drive resize, got %d", base.Channel, client.resizeChannel)
 	}
 }
 
@@ -6732,6 +6735,7 @@ func TestFloatingModeResizeUsesAcquiredSharedPane(t *testing.T) {
 	if base == nil {
 		t.Fatal("expected active pane")
 	}
+	clearTerminalResizeAcquire(model.workspace.Tabs, base.TerminalID)
 
 	floatPane := &Pane{
 		ID:    "pane-shared-float",
@@ -6771,6 +6775,60 @@ func TestFloatingModeResizeUsesAcquiredSharedPane(t *testing.T) {
 	}
 }
 
+func TestAttachFloatingSharedPaneKeepsExistingResizeOwner(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 120
+	model.height = 40
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	tab := model.currentTab()
+	base := tab.Panes[tab.ActivePaneID]
+	if base == nil {
+		t.Fatal("expected active pane")
+	}
+	if connection := paneConnectionStatus(model.workspace.Tabs, base); connection != "owner" {
+		t.Fatalf("expected initial pane to start as owner, got %q", connection)
+	}
+
+	floatPane := &Pane{
+		ID:    "pane-shared-float",
+		Title: "shared-float",
+		Viewport: &Viewport{
+			TerminalID: base.TerminalID,
+			Channel:    base.Channel + 100,
+			VTerm:      localvterm.New(64, 16, 100, nil),
+			Snapshot: &protocol.Snapshot{
+				TerminalID: base.TerminalID,
+				Size:       protocol.Size{Cols: 64, Rows: 16},
+			},
+			Mode:        ViewportModeFit,
+			renderDirty: true,
+		},
+	}
+
+	model.attachPane(paneCreatedMsg{
+		tabIndex: model.workspace.ActiveTab,
+		floating: true,
+		pane:     floatPane,
+	})
+
+	if !base.ResizeAcquired {
+		t.Fatal("expected existing tiled pane to keep resize ownership after floating attach")
+	}
+	if floatPane.ResizeAcquired {
+		t.Fatal("expected newly attached floating pane to stay follower by default")
+	}
+	if connection := paneConnectionStatus(model.workspace.Tabs, base); connection != "owner" {
+		t.Fatalf("expected tiled pane to remain owner, got %q", connection)
+	}
+	if connection := paneConnectionStatus(model.workspace.Tabs, floatPane); connection != "follower" {
+		t.Fatalf("expected floating pane to start as follower, got %q", connection)
+	}
+}
+
 func TestMouseResizeFloatingPaneUsesAcquiredSharedPane(t *testing.T) {
 	client := &fakeClient{}
 	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
@@ -6785,6 +6843,7 @@ func TestMouseResizeFloatingPaneUsesAcquiredSharedPane(t *testing.T) {
 	if base == nil {
 		t.Fatal("expected active pane")
 	}
+	clearTerminalResizeAcquire(model.workspace.Tabs, base.TerminalID)
 
 	floatPane := &Pane{
 		ID:    "pane-shared-float",
@@ -7500,13 +7559,15 @@ func TestFixedModeViewportRendersCroppedContentAroundCursor(t *testing.T) {
 	if pane == nil {
 		t.Fatal("expected active pane")
 	}
-	model.currentTab().Panes["pane-follower"] = &Pane{
+	follower := &Pane{
 		ID: "pane-follower",
 		Viewport: &Viewport{
 			TerminalID: pane.TerminalID,
 			Channel:    pane.Channel + 1,
 		},
 	}
+	model.currentTab().Panes[follower.ID] = follower
+	ensureTerminalResizeOwner(model.workspace.Tabs, pane.TerminalID, follower.ID)
 	pane.VTerm.Resize(20, 6)
 	_, _ = pane.VTerm.Write([]byte("0123456789ABCDEFGHIJ"))
 	pane.live = true
@@ -7526,6 +7587,9 @@ func TestFixedModeViewportRendersCroppedContentAroundCursor(t *testing.T) {
 	}
 	if strings.Contains(view, "0123456789ABCDEFGHIJ") {
 		t.Fatalf("expected fixed viewport to crop instead of showing the full line, got:\n%s", view)
+	}
+	if connection := paneConnectionStatus(model.workspace.Tabs, pane); connection != "follower" {
+		t.Fatalf("expected fixed viewport under shared terminal to remain follower, got %q", connection)
 	}
 }
 
@@ -7770,13 +7834,15 @@ func TestFollowerFixedViewportDoesNotSendResizeToTerminal(t *testing.T) {
 	}
 
 	pane := model.currentTab().Panes[model.currentTab().ActivePaneID]
-	model.currentTab().Panes["pane-follower"] = &Pane{
+	follower := &Pane{
 		ID: "pane-follower",
 		Viewport: &Viewport{
 			TerminalID: pane.TerminalID,
 			Channel:    pane.Channel + 1,
 		},
 	}
+	model.currentTab().Panes[follower.ID] = follower
+	ensureTerminalResizeOwner(model.workspace.Tabs, pane.TerminalID, follower.ID)
 	resizesBefore := client.resizeCalls
 
 	_ = activatePrefixForTest(model)

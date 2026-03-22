@@ -2456,6 +2456,10 @@ func (m *Model) attachPane(msg paneCreatedMsg) {
 	if msg.tabIndex >= len(m.workspace.Tabs) {
 		return
 	}
+	preferredOwnerID := preferredTerminalResizeOwnerID(m.workspace.Tabs, msg.pane.TerminalID, "")
+	if preferredOwnerID == "" {
+		preferredOwnerID = msg.pane.ID
+	}
 	tab := m.workspace.Tabs[msg.tabIndex]
 	if msg.floating {
 		rect := m.defaultFloatingRectForPane(msg.pane)
@@ -2468,6 +2472,7 @@ func (m *Model) attachPane(msg paneCreatedMsg) {
 		})
 		tab.FloatingVisible = true
 		tab.ActivePaneID = msg.pane.ID
+		ensureTerminalResizeOwner(m.workspace.Tabs, msg.pane.TerminalID, preferredOwnerID)
 		m.startPaneStream(msg.pane)
 		m.logger.Info("attached floating pane", "pane_id", msg.pane.ID, "terminal_id", msg.pane.TerminalID, "tab_index", msg.tabIndex)
 		m.invalidateRender()
@@ -2482,6 +2487,7 @@ func (m *Model) attachPane(msg paneCreatedMsg) {
 	tab.Panes[msg.pane.ID] = msg.pane
 	tab.ActivePaneID = msg.pane.ID
 
+	ensureTerminalResizeOwner(m.workspace.Tabs, msg.pane.TerminalID, preferredOwnerID)
 	m.startPaneStream(msg.pane)
 	m.logger.Info("attached pane", "pane_id", msg.pane.ID, "terminal_id", msg.pane.TerminalID, "tab_index", msg.tabIndex, "target_id", msg.targetID, "split", msg.split)
 	m.invalidateRender()
@@ -2493,14 +2499,26 @@ func (m *Model) replacePane(msg paneReplacedMsg) {
 		return
 	}
 	previousTerminalID := pane.TerminalID
+	previousResizeOwner := pane.ResizeAcquired
+	preferredOwnerID := preferredTerminalResizeOwnerID(m.workspace.Tabs, msg.pane.TerminalID, msg.paneID)
 	ownedStream := pane.stopStream != nil
 	m.stopPaneStream(pane)
 	pane.Title = msg.pane.Title
 	pane.Viewport = msg.pane.Viewport
+	if previousTerminalID == pane.TerminalID && previousResizeOwner {
+		pane.ResizeAcquired = true
+	}
 	m.startPaneStream(pane)
 	if ownedStream && previousTerminalID != "" && previousTerminalID != pane.TerminalID {
 		m.promoteTerminalStream(previousTerminalID)
 	}
+	if previousTerminalID != "" && previousTerminalID != pane.TerminalID {
+		ensureTerminalResizeOwner(m.workspace.Tabs, previousTerminalID, "")
+	}
+	if preferredOwnerID == "" {
+		preferredOwnerID = pane.ID
+	}
+	ensureTerminalResizeOwner(m.workspace.Tabs, pane.TerminalID, preferredOwnerID)
 	m.logger.Info("replaced pane terminal", "pane_id", pane.ID, "terminal_id", pane.TerminalID)
 	m.invalidateRender()
 }
@@ -4516,6 +4534,7 @@ func (m *Model) removePane(paneID string) bool {
 		if ownedStream {
 			m.promoteTerminalStream(terminalID)
 		}
+		ensureTerminalResizeOwner(m.workspace.Tabs, terminalID, "")
 		m.invalidateRender()
 		return false
 	}
@@ -4570,6 +4589,7 @@ func (m *Model) unbindPaneTerminal(pane *Pane) {
 	if ownedStream {
 		m.promoteTerminalStream(terminalID)
 	}
+	ensureTerminalResizeOwner(m.workspace.Tabs, terminalID, "")
 }
 
 func (m *Model) markTerminalKilled(terminalID string) {
@@ -4727,6 +4747,69 @@ func clearTerminalResizeAcquire(tabs []*Tab, terminalID string) {
 				pane.ResizeAcquired = false
 			}
 		}
+	}
+}
+
+func preferredTerminalResizeOwnerID(tabs []*Tab, terminalID, excludePaneID string) string {
+	if strings.TrimSpace(terminalID) == "" {
+		return ""
+	}
+	fallback := ""
+	for _, tab := range tabs {
+		if tab == nil {
+			continue
+		}
+		for _, pane := range tab.Panes {
+			if pane == nil || pane.ID == excludePaneID || pane.TerminalID != terminalID {
+				continue
+			}
+			if pane.ResizeAcquired {
+				return pane.ID
+			}
+			if fallback == "" {
+				fallback = pane.ID
+			}
+		}
+	}
+	return fallback
+}
+
+func ensureTerminalResizeOwner(tabs []*Tab, terminalID, preferredPaneID string) {
+	if strings.TrimSpace(terminalID) == "" {
+		return
+	}
+	var panes []*Pane
+	var target *Pane
+	for _, tab := range tabs {
+		if tab == nil {
+			continue
+		}
+		for _, pane := range tab.Panes {
+			if pane == nil || pane.TerminalID != terminalID {
+				continue
+			}
+			panes = append(panes, pane)
+			if pane.ID == preferredPaneID && target == nil {
+				target = pane
+			}
+		}
+	}
+	if len(panes) == 0 {
+		return
+	}
+	if target == nil {
+		for _, pane := range panes {
+			if pane.ResizeAcquired {
+				target = pane
+				break
+			}
+		}
+	}
+	if target == nil {
+		target = panes[0]
+	}
+	for _, pane := range panes {
+		pane.ResizeAcquired = pane == target
 	}
 }
 
