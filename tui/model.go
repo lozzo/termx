@@ -579,12 +579,8 @@ func (m *Model) applyHostTerminalColors(fg, bg color.Color) {
 			if pane.VTerm != nil {
 				pane.VTerm.SetDefaultColors(nextFG, nextBG)
 			}
-			pane.renderDirty = true
-			pane.cellVersion++
-			pane.clearDirtyRegion()
 		}
 	}
-	m.invalidateRender()
 }
 
 func (m *Model) applyHostTerminalPaletteColor(index int, c color.Color) {
@@ -608,12 +604,8 @@ func (m *Model) applyHostTerminalPaletteColor(index int, c color.Color) {
 				continue
 			}
 			pane.VTerm.SetIndexedColor(index, value)
-			pane.renderDirty = true
-			pane.cellVersion++
-			pane.clearDirtyRegion()
 		}
 	}
-	m.invalidateRender()
 }
 
 func (m *Model) startTerminalEventForwarder() {

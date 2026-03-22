@@ -2451,6 +2451,93 @@ func TestHostPaletteColorAppliesToNewViewport(t *testing.T) {
 	}
 }
 
+func TestHostTerminalColorChangeDoesNotDirtyRenderedPane(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 90
+	model.height = 20
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	tab := model.currentTab()
+	pane := tab.Panes[tab.ActivePaneID]
+	if pane == nil {
+		t.Fatal("expected active pane")
+	}
+	if _, err := pane.VTerm.Write([]byte("HOST")); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+	pane.live = true
+	pane.renderDirty = true
+
+	beforeView := model.View()
+	beforeVersion := pane.cellVersion
+	if pane.renderDirty {
+		t.Fatal("expected pane to be clean after render")
+	}
+	model.renderDirty = false
+
+	model.handleInputEvent(uv.ForegroundColorEvent{Color: color.RGBA{R: 0x12, G: 0x34, B: 0x56, A: 0xff}})
+	model.handleInputEvent(uv.BackgroundColorEvent{Color: color.RGBA{R: 0x65, G: 0x43, B: 0x21, A: 0xff}})
+
+	if pane.renderDirty {
+		t.Fatal("expected host default color change not to dirty rendered pane")
+	}
+	if pane.cellVersion != beforeVersion {
+		t.Fatalf("expected host default color change not to invalidate pane cell cache version, got %d want %d", pane.cellVersion, beforeVersion)
+	}
+	if model.renderDirty {
+		t.Fatal("expected host default color change not to force immediate full rerender")
+	}
+	if afterView := model.View(); afterView != beforeView {
+		t.Fatalf("expected cached view to remain stable after host default color change")
+	}
+}
+
+func TestHostPaletteColorChangeDoesNotDirtyRenderedPane(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 90
+	model.height = 20
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	tab := model.currentTab()
+	pane := tab.Panes[tab.ActivePaneID]
+	if pane == nil {
+		t.Fatal("expected active pane")
+	}
+	if _, err := pane.VTerm.Write([]byte("\x1b[31mRED\x1b[0m")); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+	pane.live = true
+	pane.renderDirty = true
+
+	beforeView := model.View()
+	beforeVersion := pane.cellVersion
+	if pane.renderDirty {
+		t.Fatal("expected pane to be clean after render")
+	}
+	model.renderDirty = false
+
+	model.handleInputEvent(uv.UnknownOscEvent("\x1b]4;1;rgb:12/34/56\x07"))
+
+	if pane.renderDirty {
+		t.Fatal("expected host palette color change not to dirty rendered pane")
+	}
+	if pane.cellVersion != beforeVersion {
+		t.Fatalf("expected host palette color change not to invalidate pane cell cache version, got %d want %d", pane.cellVersion, beforeVersion)
+	}
+	if model.renderDirty {
+		t.Fatal("expected host palette color change not to force immediate full rerender")
+	}
+	if afterView := model.View(); afterView != beforeView {
+		t.Fatalf("expected cached view to remain stable after host palette color change")
+	}
+}
+
 func TestModelViewRendersCJKWithoutInsertedSpaces(t *testing.T) {
 	client := &fakeClient{}
 	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
