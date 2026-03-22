@@ -11,6 +11,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tui"
 	localvterm "github.com/lozzow/termx/vterm"
@@ -791,8 +792,15 @@ func TestE2ETUI_SharedFloatingAttachKeepsOriginalOwner(t *testing.T) {
 	if floatPane == nil || floatPane.ResizeAcquired {
 		t.Fatalf("expected floating pane to stay follower after attach, got %#v", floatPane)
 	}
-	if !containsAll(screen, "owner", "follower") {
-		t.Fatalf("expected screen to show owner and follower badges, got:\n%s", screen)
+	stripped := xansi.Strip(screen)
+	if strings.Count(stripped, "owner") != 1 {
+		t.Fatalf("expected screen to show exactly one owner badge, got:\n%s", stripped)
+	}
+	if !strings.Contains(stripped, "follower") {
+		t.Fatalf("expected screen to show a follower badge, got:\n%s", stripped)
+	}
+	if tab.ActivePaneID != floatPane.ID {
+		t.Fatalf("expected focus to move to floating pane after attach, got active=%q float=%q", tab.ActivePaneID, floatPane.ID)
 	}
 }
 

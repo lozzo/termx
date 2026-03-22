@@ -6829,6 +6829,65 @@ func TestAttachFloatingSharedPaneKeepsExistingResizeOwner(t *testing.T) {
 	}
 }
 
+func TestViewRefreshesOwnerBadgesAndFocusBordersAfterSharedFloatingAttach(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 120
+	model.height = 30
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	initial := model.View()
+	if !strings.Contains(initial, "38;2;74;222;128") {
+		t.Fatalf("expected initial active pane to render green border, got:\n%s", initial)
+	}
+
+	tab := model.currentTab()
+	base := tab.Panes[tab.ActivePaneID]
+	if base == nil {
+		t.Fatal("expected active pane")
+	}
+	floatPane := &Pane{
+		ID:    "pane-shared-float",
+		Title: "shared-float",
+		Viewport: &Viewport{
+			TerminalID: base.TerminalID,
+			Channel:    base.Channel + 100,
+			VTerm:      localvterm.New(64, 16, 100, nil),
+			Snapshot: &protocol.Snapshot{
+				TerminalID: base.TerminalID,
+				Size:       protocol.Size{Cols: 64, Rows: 16},
+			},
+			Mode:        ViewportModeFit,
+			renderDirty: true,
+		},
+	}
+	model.attachPane(paneCreatedMsg{
+		tabIndex: model.workspace.ActiveTab,
+		floating: true,
+		pane:     floatPane,
+	})
+
+	screen := model.View()
+	stripped := xansi.Strip(screen)
+	if strings.Count(stripped, "owner") != 1 {
+		t.Fatalf("expected exactly one owner badge after floating attach, got:\n%s", stripped)
+	}
+	if strings.Count(stripped, "owner") > 1 {
+		t.Fatalf("expected floating attach not to duplicate owner badges, got:\n%s", stripped)
+	}
+	if !strings.Contains(stripped, "follower") {
+		t.Fatalf("expected floating attach to show a follower badge, got:\n%s", stripped)
+	}
+	if !strings.Contains(screen, "38;2;74;222;128") {
+		t.Fatalf("expected focused pane to keep green border, got:\n%s", screen)
+	}
+	if !strings.Contains(screen, "38;2;209;213;219") {
+		t.Fatalf("expected unfocused pane to redraw with gray border, got:\n%s", screen)
+	}
+}
+
 func TestMouseResizeFloatingPaneUsesAcquiredSharedPane(t *testing.T) {
 	client := &fakeClient{}
 	model := NewModel(client, Config{DefaultShell: "/bin/sh"})

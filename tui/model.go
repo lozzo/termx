@@ -2472,6 +2472,7 @@ func (m *Model) attachPane(msg paneCreatedMsg) {
 		})
 		tab.FloatingVisible = true
 		tab.ActivePaneID = msg.pane.ID
+		tab.renderCache = nil
 		ensureTerminalResizeOwner(m.workspace.Tabs, msg.pane.TerminalID, preferredOwnerID)
 		m.startPaneStream(msg.pane)
 		m.logger.Info("attached floating pane", "pane_id", msg.pane.ID, "terminal_id", msg.pane.TerminalID, "tab_index", msg.tabIndex)
@@ -2486,6 +2487,7 @@ func (m *Model) attachPane(msg paneCreatedMsg) {
 	}
 	tab.Panes[msg.pane.ID] = msg.pane
 	tab.ActivePaneID = msg.pane.ID
+	tab.renderCache = nil
 
 	ensureTerminalResizeOwner(m.workspace.Tabs, msg.pane.TerminalID, preferredOwnerID)
 	m.startPaneStream(msg.pane)
@@ -2507,6 +2509,9 @@ func (m *Model) replacePane(msg paneReplacedMsg) {
 	pane.Viewport = msg.pane.Viewport
 	if previousTerminalID == pane.TerminalID && previousResizeOwner {
 		pane.ResizeAcquired = true
+	}
+	if tab := m.tabForPane(pane.ID); tab != nil {
+		tab.renderCache = nil
 	}
 	m.startPaneStream(pane)
 	if ownedStream && previousTerminalID != "" && previousTerminalID != pane.TerminalID {
@@ -3102,6 +3107,7 @@ func (m *Model) focusPaneByID(paneID string) {
 		}
 		m.workspace.ActiveTab = tabIndex
 		tab.ActivePaneID = paneID
+		tab.renderCache = nil
 		return
 	}
 }
@@ -4024,6 +4030,7 @@ func (m *Model) focusTiledPane() bool {
 	}
 	if paneID := firstTiledPaneID(tab); paneID != "" {
 		tab.ActivePaneID = paneID
+		tab.renderCache = nil
 		m.invalidateRender()
 		return true
 	}
