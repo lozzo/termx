@@ -328,7 +328,7 @@ func TestE2ETUI_V3ShortcutModesAndFloatingResize(t *testing.T) {
 	h := newTUIScreenHarness(t, client, 120, 30)
 	defer h.Close()
 
-	h.waitForNormalMode("Ctrl +", "<p> PANE")
+	h.waitForNormalMode("Ctrl", "▸", "<p> PANE")
 
 	h.sendCtrlKey(tea.KeyCtrlG)
 	screen := h.waitForMode("global", "<?> HELP", "<t> TERMINALS")
@@ -2214,7 +2214,7 @@ func TestE2ETUI_ScenarioSharedAltScreenFloatingResizeRequiresAcquire(t *testing.
 	assertAltScreenReuseBodyVisible(t, screen)
 	h.pressEsc()
 	h.waitForStableScreenMatching("returned to normal after floating resize", 10*time.Second, func(screen string) bool {
-		return h.model.ActiveModeForTest() == "" && containsAll(screen, "Ctrl +", "<o> FLOAT")
+		return h.model.ActiveModeForTest() == "" && containsAll(screen, "Ctrl", "▸", "<p> PANE")
 	})
 
 	h.sendText("printf '\\033[2;1H!'")
@@ -2374,7 +2374,7 @@ func TestE2ETUI_InvalidDirectModeKeyDoesNotFreezeShellInput(t *testing.T) {
 
 	h.pressEsc()
 	h.waitForStableScreenMatching("pane mode exited after esc", 10*time.Second, func(screen string) bool {
-		return h.model.ActiveModeForTest() == "" && containsAll(screen, "Ctrl +", "<p> PANE")
+		return h.model.ActiveModeForTest() == "" && containsAll(screen, "Ctrl", "▸", "<p> PANE")
 	})
 
 	h.sendText("echo INVALID-MODE-RECOVERED")
@@ -2409,7 +2409,7 @@ func TestE2ETUI_DirectModeShortcutCanOverrideCurrentModeWithoutSticking(t *testi
 
 	h.pressEsc()
 	h.waitForStableScreenMatching("back to normal after overridden mode esc", 10*time.Second, func(screen string) bool {
-		return h.model.ActiveModeForTest() == "" && containsAll(screen, "Ctrl +", "<p> PANE", "<o> FLOAT")
+		return h.model.ActiveModeForTest() == "" && containsAll(screen, "Ctrl", "▸", "<p> PANE", "<o> FLOAT")
 	})
 
 	h.sendText("echo MODE-OVERRIDE-OK")

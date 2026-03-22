@@ -5433,32 +5433,28 @@ func renderStatusLead(mode string) string {
 	if !strings.EqualFold(strings.Trim(strings.TrimSpace(mode), "[]"), "NORMAL") {
 		return ""
 	}
-	lead := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#f8fafc")).
-		Background(lipgloss.Color("#020617")).
-		Bold(true).
-		Render("Ctrl + ")
-	arrow := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#b8b8b8")).
-		Background(lipgloss.Color("#020617")).
-		Bold(true).
-		Render("")
-	return lead + arrow
+	return renderStatusChip("Ctrl", "#020617", "#f8fafc") + renderStatusSeparator()
 }
 
 func renderDirectionalSegment(label, bg, fg string) string {
-	block := lipgloss.NewStyle().
+	return renderStatusChip(label, bg, fg) + renderStatusSeparator()
+}
+
+func renderStatusChip(label, bg, fg string) string {
+	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(fg)).
 		Background(lipgloss.Color(bg)).
 		Bold(true).
 		Padding(0, 1).
 		Render(label)
-	arrow := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(bg)).
+}
+
+func renderStatusSeparator() string {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#64748b")).
 		Background(lipgloss.Color("#020617")).
 		Bold(true).
-		Render("")
-	return block + arrow
+		Render(" ▸ ")
 }
 
 func displayShortcutKey(key string) string {

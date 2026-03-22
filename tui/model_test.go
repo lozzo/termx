@@ -3411,21 +3411,21 @@ func TestDirectModeTriggersAndStatus(t *testing.T) {
 		t.Fatal("expected esc to leave direct mode")
 	}
 	status = xansi.Strip(model.renderStatus())
-	if !containsAll(status, "Ctrl +", "<p> PANE", "<r> RESIZE", "<t> TAB", "<o> FLOAT", "<f> PICKER") {
+	if !containsAll(status, "Ctrl", "▸", "<p> PANE", "<r> RESIZE", "<t> TAB", "<o> FLOAT", "<f> PICKER") {
 		t.Fatalf("expected normal status mode bar, got:\n%s", status)
 	}
-	if strings.Contains(status, "pane:") && strings.Index(status, "Ctrl +") > strings.Index(status, "pane:") {
+	if strings.Contains(status, "pane:") && strings.Index(status, "Ctrl") > strings.Index(status, "pane:") {
 		t.Fatalf("expected normal shortcut section to stay left of runtime state, got:\n%s", status)
 	}
 }
 
 func TestRenderStatusHintsUseDirectionalShortcutBadges(t *testing.T) {
 	got := xansi.Strip(renderStatusHints([]string{"[NORMAL]", "Ctrl-p pane", "Esc:exit", "prefix"}))
-	if !containsAll(got, "Ctrl + ", "<p> PANE ", "<Esc> EXIT ", "PREFIX ") {
-		t.Fatalf("expected arrow shortcut segments, got %q", got)
+	if !containsAll(got, "Ctrl", "▸", "<p> PANE", "<Esc> EXIT", "PREFIX") {
+		t.Fatalf("expected guided shortcut segments, got %q", got)
 	}
-	if strings.Contains(got, "") {
-		t.Fatalf("expected status bar arrows to use single separators, got %q", got)
+	if strings.Contains(got, "") {
+		t.Fatalf("expected status bar to avoid nerd-font arrows in safe mode, got %q", got)
 	}
 }
 
@@ -3447,7 +3447,7 @@ func TestStatusShortcutPartsDoNotShowExitedActionsInNormalBar(t *testing.T) {
 	if containsAny(status, "<r> RESTART", "<f> ATTACH", "<x> CLOSE") {
 		t.Fatalf("expected exited quick actions to stay out of normal status bar, got:\n%s", status)
 	}
-	if !containsAll(status, "Ctrl +", "<p> PANE", "<o> FLOAT") {
+	if !containsAll(status, "Ctrl", "▸", "<p> PANE", "<o> FLOAT") {
 		t.Fatalf("expected normal ctrl shortcuts to remain visible, got:\n%s", status)
 	}
 }
