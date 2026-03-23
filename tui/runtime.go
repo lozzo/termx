@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/protocol"
+	btui "github.com/lozzow/termx/tui/bt"
 	"golang.org/x/term"
 )
 
@@ -29,23 +29,24 @@ type Config struct {
 
 const DefaultPrefixTimeout = 3 * time.Second
 
-var errRuntimeLoopNotImplemented = errors.New("termx TUI runtime loop is not implemented yet")
-
 type runtimeDependencies struct {
 	Planner          StartupPlanner
 	TaskExecutor     StartupTaskExecutor
 	SessionBootstrap RuntimeSessionBootstrapper
+	ProgramRunner    ProgramRunner
+	Renderer         btui.Renderer
 	TerminalSize     func(input io.Reader, output io.Writer) protocol.Size
 }
 
-// Run 目前只作为新架构迁移期的兼容壳存在。
-// 当前先把 startup plan、bootstrap task 和 runtime session bootstrap 串起来。
-// 真正的 Bubble Tea 生命周期还未接回，因此在完成前置接线后仍返回明确占位错误，避免假成功。
+// Run 当前会先完成 startup 规划、bootstrap task 和 runtime session 接线，
+// 再启动一个最小 Bubble Tea 程序，后续继续在这条主线上补 renderer 和真实交互循环。
 func Run(client Client, cfg Config, input io.Reader, output io.Writer) error {
 	return runWithDependencies(client, cfg, input, output, runtimeDependencies{
 		Planner:          NewStartupPlanner(nil),
 		TaskExecutor:     NewStartupTaskExecutor(),
 		SessionBootstrap: NewRuntimeSessionBootstrapper(),
+		ProgramRunner:    bubbleteaProgramRunner{},
+		Renderer:         runtimeRenderer{},
 		TerminalSize:     currentTerminalSize,
 	})
 }
@@ -59,6 +60,12 @@ func runWithDependencies(client Client, cfg Config, input io.Reader, output io.W
 	}
 	if deps.SessionBootstrap == nil {
 		deps.SessionBootstrap = NewRuntimeSessionBootstrapper()
+	}
+	if deps.ProgramRunner == nil {
+		deps.ProgramRunner = bubbleteaProgramRunner{}
+	}
+	if deps.Renderer == nil {
+		deps.Renderer = runtimeRenderer{}
 	}
 	if deps.TerminalSize == nil {
 		deps.TerminalSize = currentTerminalSize
@@ -89,7 +96,14 @@ func runWithDependencies(client Client, cfg Config, input io.Reader, output io.W
 	}
 	defer stopRuntimeSessions(sessions)
 
-	return errRuntimeLoopNotImplemented
+	model := btui.NewModel(btui.ModelConfig{
+		InitialState:  bootstrapped.State,
+		Mapper:        btui.NewIntentMapper(btui.Config{PrefixTimeout: cfg.PrefixTimeout}),
+		Reducer:       nil,
+		EffectHandler: btui.RuntimeEffectHandler{Executor: btui.DefaultRuntimeExecutor{}},
+		Renderer:      deps.Renderer,
+	})
+	return deps.ProgramRunner.Run(model, input, output)
 }
 
 func currentTerminalSize(_ io.Reader, output io.Writer) protocol.Size {

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lozzow/termx/protocol"
+	btui "github.com/lozzow/termx/tui/bt"
 	"github.com/lozzow/termx/tui/domain/types"
 )
 
@@ -34,18 +35,21 @@ func TestRunOrchestratesStartupPlanBootstrapAndSessionLifecycle(t *testing.T) {
 			},
 		},
 	}
+	runner := &stubProgramRunner{}
 	deps := runtimeDependencies{
 		Planner:          planner,
 		TaskExecutor:     executor,
 		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
 		TerminalSize: func(io.Reader, io.Writer) protocol.Size {
 			return protocol.Size{Cols: 120, Rows: 40}
 		},
 	}
 
 	err := runWithDependencies(&stubStartupClient{}, Config{DefaultShell: "/bin/zsh"}, nil, io.Discard, deps)
-	if !errors.Is(err, errRuntimeLoopNotImplemented) {
-		t.Fatalf("expected runtime placeholder error after bootstrap, got %v", err)
+	if err != nil {
+		t.Fatalf("expected runtime orchestration to succeed, got %v", err)
 	}
 	if planner.calls != 1 {
 		t.Fatalf("expected planner to run once, got %d", planner.calls)
@@ -56,8 +60,14 @@ func TestRunOrchestratesStartupPlanBootstrapAndSessionLifecycle(t *testing.T) {
 	if bootstrapper.calls != 1 {
 		t.Fatalf("expected session bootstrapper to run once, got %d", bootstrapper.calls)
 	}
+	if runner.calls != 1 {
+		t.Fatalf("expected program runner to run once, got %d", runner.calls)
+	}
+	if runner.view == "" {
+		t.Fatalf("expected renderer to produce non-empty view")
+	}
 	if bootstrapperStopCalls != 1 {
-		t.Fatalf("expected bootstrap session stop on placeholder exit, got %d", bootstrapperStopCalls)
+		t.Fatalf("expected bootstrap session stop on program exit, got %d", bootstrapperStopCalls)
 	}
 }
 
@@ -100,6 +110,24 @@ func TestRunReturnsSessionBootstrapError(t *testing.T) {
 	})
 	if !errors.Is(err, errRuntimeRunBoom) {
 		t.Fatalf("expected session bootstrap error, got %v", err)
+	}
+}
+
+func TestRunReturnsProgramRunnerError(t *testing.T) {
+	planner := &stubRunPlanner{plan: StartupPlan{State: connectedRunAppState()}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: connectedRunAppState()}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{err: errRuntimeRunBoom}
+
+	err := runWithDependencies(&stubStartupClient{}, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if !errors.Is(err, errRuntimeRunBoom) {
+		t.Fatalf("expected program runner error, got %v", err)
 	}
 }
 
@@ -153,6 +181,21 @@ func (b *stubRunSessionBootstrapper) Bootstrap(context.Context, Client, types.Ap
 		return RuntimeSessions{}, b.err
 	}
 	return b.sessions, nil
+}
+
+type stubProgramRunner struct {
+	err   error
+	calls int
+	view  string
+}
+
+func (r *stubProgramRunner) Run(model *btui.Model, _ io.Reader, _ io.Writer) error {
+	r.calls++
+	r.view = model.View()
+	if r.err != nil {
+		return r.err
+	}
+	return nil
 }
 
 func connectedRunAppState() types.AppState {
