@@ -304,6 +304,43 @@ func TestReducerSubmitCreateWorkspacePromptCreatesWorkspaceAndFocusesNewPane(t *
 	}
 }
 
+func TestReducerSubmitMetadataPromptUpdatesTerminalAndEmitsEffect(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenPromptIntent{
+		PromptKind: PromptKindEditTerminalMetadata,
+		TerminalID: types.TerminalID("term-2"),
+	})
+	submitted := reducer.Reduce(opened.State, intent.SubmitPromptIntent{
+		Value: "build-log-v2\nenv=prod,team=platform",
+	})
+
+	if submitted.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected prompt to close after metadata submit, got %q", submitted.State.UI.Overlay.Kind)
+	}
+	terminal := submitted.State.Domain.Terminals[types.TerminalID("term-2")]
+	if terminal.Name != "build-log-v2" {
+		t.Fatalf("expected terminal name to update, got %+v", terminal)
+	}
+	if terminal.Tags["env"] != "prod" || terminal.Tags["team"] != "platform" {
+		t.Fatalf("expected terminal tags to update, got %+v", terminal.Tags)
+	}
+	if len(submitted.Effects) != 1 {
+		t.Fatalf("expected one metadata effect, got %d", len(submitted.Effects))
+	}
+	effect, ok := submitted.Effects[0].(UpdateTerminalMetadataEffect)
+	if !ok {
+		t.Fatalf("expected metadata effect, got %T", submitted.Effects[0])
+	}
+	if effect.TerminalID != types.TerminalID("term-2") || effect.Name != "build-log-v2" {
+		t.Fatalf("unexpected metadata effect payload: %+v", effect)
+	}
+	if effect.Tags["env"] != "prod" || effect.Tags["team"] != "platform" {
+		t.Fatalf("expected metadata effect tags, got %+v", effect.Tags)
+	}
+}
+
 func TestReducerModeTimedOutClearsActiveMode(t *testing.T) {
 	reducer := New()
 	state := newAppStateWithSinglePane()
@@ -591,6 +628,32 @@ func TestE2EReducerScenarioWorkspacePickerCreateWorkspaceFlow(t *testing.T) {
 	}
 	if submitted.State.UI.Focus.Layer != types.FocusLayerTiled {
 		t.Fatalf("expected focus to land in new workspace pane, got %+v", submitted.State.UI.Focus)
+	}
+}
+
+func TestE2EReducerScenarioTerminalManagerEditMetadataFlow(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	openedManager := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	moved := reducer.Reduce(openedManager.State, intent.TerminalManagerMoveIntent{Delta: 1})
+	handoff := reducer.Reduce(moved.State, intent.TerminalManagerEditMetadataIntent{})
+	if len(handoff.Effects) != 1 {
+		t.Fatalf("expected metadata prompt handoff effect, got %d", len(handoff.Effects))
+	}
+	promptOpened := reducer.Reduce(handoff.State, intent.OpenPromptIntent{
+		PromptKind: PromptKindEditTerminalMetadata,
+		TerminalID: types.TerminalID("term-2"),
+	})
+	submitted := reducer.Reduce(promptOpened.State, intent.SubmitPromptIntent{
+		Value: "build-log-v2\nenv=prod",
+	})
+
+	if submitted.State.Domain.Terminals[types.TerminalID("term-2")].Name != "build-log-v2" {
+		t.Fatalf("expected terminal metadata to update, got %+v", submitted.State.Domain.Terminals[types.TerminalID("term-2")])
+	}
+	if submitted.State.UI.Focus.Layer != types.FocusLayerTiled || submitted.State.UI.Focus.PaneID != types.PaneID("pane-1") {
+		t.Fatalf("expected focus to return to originating pane, got %+v", submitted.State.UI.Focus)
 	}
 }
 

@@ -47,6 +47,14 @@ func (ConnectTerminalInFloatingPaneEffect) effectName() string {
 	return "connect_terminal_in_floating_pane"
 }
 
+type UpdateTerminalMetadataEffect struct {
+	TerminalID types.TerminalID
+	Name       string
+	Tags       map[string]string
+}
+
+func (UpdateTerminalMetadataEffect) effectName() string { return "update_terminal_metadata" }
+
 type OpenPromptEffect struct {
 	PromptKind string
 	TerminalID types.TerminalID
@@ -135,7 +143,7 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 	case intent.TerminalManagerStopIntent:
 		applyTerminalManagerStop(&result)
 	case intent.SubmitPromptIntent:
-		applySubmitPrompt(&result.State, intentValue)
+		result.Effects = append(result.Effects, applySubmitPrompt(&result.State, intentValue)...)
 	case intent.CancelPromptIntent:
 		applyCancelPrompt(&result.State)
 	case intent.ActivateModeIntent:
@@ -537,23 +545,23 @@ func applyTerminalManagerStop(result *Result) {
 	applyCloseOverlay(&result.State)
 }
 
-func applySubmitPrompt(state *types.AppState, in intent.SubmitPromptIntent) {
+func applySubmitPrompt(state *types.AppState, in intent.SubmitPromptIntent) []Effect {
 	promptState, ok := promptState(state)
 	if !ok {
-		return
+		return nil
 	}
 	value := strings.TrimSpace(in.Value)
 	if value == "" {
-		return
+		return nil
 	}
 	switch promptState.Kind {
 	case promptdomain.KindCreateWorkspace:
 		applyCreateWorkspace(state, value)
+		return nil
 	case promptdomain.KindEditTerminalMetadata:
-		// metadata prompt 的实际提交还未开始落地，这里先保留 prompt 状态不做提交。
-		return
+		return applyUpdateTerminalMetadataFromPrompt(state, promptState, value)
 	default:
-		return
+		return nil
 	}
 }
 
@@ -602,6 +610,23 @@ func applyCreateWorkspace(state *types.AppState, name string) {
 		TabID:       tabID,
 		PaneID:      paneID,
 	}
+}
+
+func applyUpdateTerminalMetadataFromPrompt(state *types.AppState, promptState *promptdomain.State, value string) []Effect {
+	terminal, ok := state.Domain.Terminals[promptState.TerminalID]
+	if !ok {
+		return nil
+	}
+	name, tags := parseTerminalMetadataPrompt(value, terminal)
+	terminal.Name = name
+	terminal.Tags = tags
+	state.Domain.Terminals[promptState.TerminalID] = terminal
+	applyCloseOverlay(state)
+	return []Effect{UpdateTerminalMetadataEffect{
+		TerminalID: promptState.TerminalID,
+		Name:       name,
+		Tags:       cloneStringMap(tags),
+	}}
 }
 
 func applyActivateMode(state *types.AppState, in intent.ActivateModeIntent) {
@@ -855,4 +880,47 @@ func sanitizeID(in string) string {
 		out = out[:len(out)-1]
 	}
 	return string(out)
+}
+
+func parseTerminalMetadataPrompt(value string, current types.TerminalRef) (string, map[string]string) {
+	lines := strings.Split(strings.TrimSpace(value), "\n")
+	name := strings.TrimSpace(lines[0])
+	if name == "" {
+		name = current.Name
+	}
+	tags := make(map[string]string)
+	if len(lines) < 2 {
+		if current.Tags != nil {
+			return name, cloneStringMap(current.Tags)
+		}
+		return name, tags
+	}
+	for _, item := range strings.Split(lines[1], ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		parts := strings.SplitN(item, "=", 2)
+		key := strings.TrimSpace(parts[0])
+		if key == "" {
+			continue
+		}
+		val := ""
+		if len(parts) == 2 {
+			val = strings.TrimSpace(parts[1])
+		}
+		tags[key] = val
+	}
+	return name, tags
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
