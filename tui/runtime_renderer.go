@@ -245,6 +245,7 @@ func renderOverlayLines(overlay types.OverlayState) []string {
 func renderWorkspacePickerLines(picker *workspacedomain.PickerState) []string {
 	lines := []string{
 		fmt.Sprintf("workspace_picker_query: %s", picker.Query()),
+		fmt.Sprintf("workspace_picker_row_count: %d", len(picker.VisibleRows())),
 	}
 	if node, ok := picker.SelectedNode(); ok {
 		lines = append(lines,
