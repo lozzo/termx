@@ -8,6 +8,7 @@ import (
 	btui "github.com/lozzow/termx/tui/bt"
 	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
 	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
+	terminalpickerdomain "github.com/lozzow/termx/tui/domain/terminalpicker"
 	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
 	"github.com/lozzow/termx/tui/domain/types"
 )
@@ -191,5 +192,27 @@ func TestRuntimeRendererRendersPromptOverlay(t *testing.T) {
 	}
 	if !strings.Contains(view, "> [tags] Tags: group=build") {
 		t.Fatalf("expected active tags field in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersTerminalPickerOverlay(t *testing.T) {
+	state := runtimeStateWithTerminalManagerTargets()
+	picker := terminalpickerdomain.NewState(state.Domain, state.UI.Focus)
+	picker.AppendQuery("ops")
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayTerminalPicker,
+		Data: picker,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "terminal_picker_query: ops") {
+		t.Fatalf("expected picker query in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "terminal_picker_rows:") {
+		t.Fatalf("expected picker rows section in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "> [terminal] ops-watch") {
+		t.Fatalf("expected selected picker row in rendered view, got:\n%s", view)
 	}
 }

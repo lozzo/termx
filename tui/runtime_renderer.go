@@ -8,6 +8,7 @@ import (
 	btui "github.com/lozzow/termx/tui/bt"
 	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
 	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
+	terminalpickerdomain "github.com/lozzow/termx/tui/domain/terminalpicker"
 	"github.com/lozzow/termx/tui/domain/types"
 	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
 )
@@ -125,6 +126,12 @@ func renderOverlayLines(overlay types.OverlayState) []string {
 			return nil
 		}
 		return renderTerminalManagerLines(manager)
+	case types.OverlayTerminalPicker:
+		picker, ok := overlay.Data.(*terminalpickerdomain.State)
+		if !ok || picker == nil {
+			return nil
+		}
+		return renderTerminalPickerLines(picker)
 	case types.OverlayPrompt:
 		prompt, ok := overlay.Data.(*promptdomain.State)
 		if !ok || prompt == nil {
@@ -216,6 +223,22 @@ func renderPromptLines(prompt *promptdomain.State) []string {
 			prefix = "> "
 		}
 		lines = append(lines, fmt.Sprintf("%s[%s] %s: %s", prefix, field.Key, field.Label, field.Value))
+	}
+	return lines
+}
+
+func renderTerminalPickerLines(picker *terminalpickerdomain.State) []string {
+	lines := []string{
+		fmt.Sprintf("terminal_picker_query: %s", picker.Query()),
+		"terminal_picker_rows:",
+	}
+	selected, hasSelection := picker.SelectedRow()
+	for _, row := range picker.VisibleRows() {
+		prefix := "  "
+		if hasSelection && row.Kind == selected.Kind && row.TerminalID == selected.TerminalID && row.Label == selected.Label {
+			prefix = "> "
+		}
+		lines = append(lines, fmt.Sprintf("%s[%s] %s", prefix, row.Kind, row.Label))
 	}
 	return lines
 }
