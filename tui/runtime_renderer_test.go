@@ -173,6 +173,9 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "terminal_manager_detail: api-dev") {
 		t.Fatalf("expected manager detail header in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "detail_terminal: term-1") {
+		t.Fatalf("expected manager detail terminal id in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "detail_command: npm run dev") {
 		t.Fatalf("expected manager detail command in rendered view, got:\n%s", view)
 	}

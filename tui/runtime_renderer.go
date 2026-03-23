@@ -273,6 +273,7 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 	if detail, ok := manager.SelectedDetail(); ok {
 		lines = append(lines,
 			fmt.Sprintf("terminal_manager_detail: %s", detail.Name),
+			fmt.Sprintf("detail_terminal: %s", detail.TerminalID),
 			fmt.Sprintf("detail_state: %s", detail.State),
 			fmt.Sprintf("detail_visibility: %s", detail.VisibilityLabel),
 			fmt.Sprintf("detail_connected_panes: %d", detail.ConnectedPaneCount),
