@@ -69,6 +69,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 45. 第四十一轮 TDD 已补上 terminal manager 的 runtime renderer 可视化闭环
 46. 第四十二轮 TDD 已补上 prompt overlay 的 runtime renderer 可视化闭环
 47. 第四十三轮 TDD 已补上 terminal picker 的 runtime renderer 可视化闭环
+48. 第四十四轮 TDD 已补上 layout resolve 的 runtime renderer 可视化闭环
 
 对应文档：
 
@@ -341,9 +342,14 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `runtimeRenderer` 现在会渲染 `terminal_picker_query` 和 `terminal_picker_rows`
 - terminal picker 行现在会展示 create/terminal 两类投影，并标出当前选择
 - 已补上一条 runtime E2E：`Ctrl-F` 打开 terminal picker 并输入查询后，view 会直接出现 picker 内容
+- `runtimeRenderer` 现在会渲染 `layout_resolve_role`、`layout_resolve_hint` 和 `layout_resolve_rows`
+- layout resolve 行现在会展示动作类型标签，并标出当前选择
+- 已补上一条 runtime E2E：layout resolve 中的选择移动会直接反映到 view 中
 
 本轮验证：
 
+- `go test ./tui -run 'TestRuntimeRendererRendersLayoutResolveOverlay|TestE2ERunScenarioLayoutResolveMoveUpdatesView' -count=1`
+- `go test ./tui -count=1`
 - `go test ./tui -run 'TestRuntimeRendererRendersTerminalPickerOverlay|TestE2ERunScenarioCtrlFOpensTerminalPickerInView' -count=1`
 - `go test ./tui -count=1`
 - `go test ./tui -run 'TestRuntimeRendererRendersPromptOverlay|TestE2ERunScenarioTerminalManagerEditOpensPromptInView' -count=1`

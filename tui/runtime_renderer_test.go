@@ -6,6 +6,7 @@ import (
 
 	"github.com/lozzow/termx/protocol"
 	btui "github.com/lozzow/termx/tui/bt"
+	layoutresolvedomain "github.com/lozzow/termx/tui/domain/layoutresolve"
 	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
 	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
 	terminalpickerdomain "github.com/lozzow/termx/tui/domain/terminalpicker"
@@ -214,5 +215,30 @@ func TestRuntimeRendererRendersTerminalPickerOverlay(t *testing.T) {
 	}
 	if !strings.Contains(view, "> [terminal] ops-watch") {
 		t.Fatalf("expected selected picker row in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersLayoutResolveOverlay(t *testing.T) {
+	state := buildSinglePaneAppState("main", "shell", types.PaneSlotWaiting)
+	resolve := layoutresolvedomain.NewState(types.PaneID("pane-1"), "backend-dev", "env=dev service=api")
+	resolve.MoveSelection(1)
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayLayoutResolve,
+		Data: resolve,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "layout_resolve_role: backend-dev") {
+		t.Fatalf("expected resolve role in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "layout_resolve_hint: env=dev service=api") {
+		t.Fatalf("expected resolve hint in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "layout_resolve_rows:") {
+		t.Fatalf("expected resolve rows section in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "> [create_new] create new") {
+		t.Fatalf("expected selected resolve row in rendered view, got:\n%s", view)
 	}
 }

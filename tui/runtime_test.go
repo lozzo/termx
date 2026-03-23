@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
 	btui "github.com/lozzow/termx/tui/bt"
+	layoutresolvedomain "github.com/lozzow/termx/tui/domain/layoutresolve"
 	"github.com/lozzow/termx/tui/domain/types"
 )
 
@@ -746,6 +747,44 @@ func TestE2ERunScenarioCtrlFOpensTerminalPickerInView(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioLayoutResolveMoveUpdatesView(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithLayoutResolveTarget()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			if view := model.View(); !strings.Contains(view, "> [connect_existing] connect existing") {
+				t.Fatalf("expected initial resolve selection in view, got:\n%s", view)
+			}
+			nextModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+			current := nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "> [create_new] create new") {
+				t.Fatalf("expected down key to move resolve selection in view, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 var (
 	errRuntimeRunBoom     = errors.New("run boom")
 	bootstrapperStopCalls int
@@ -952,5 +991,18 @@ func runtimeStateWithTerminalManagerTargets() types.AppState {
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1")},
 		OwnerPaneID:      types.PaneID("pane-1"),
 	}
+	return state
+}
+
+func runtimeStateWithLayoutResolveTarget() types.AppState {
+	state := buildSinglePaneAppState("main", "shell", types.PaneSlotWaiting)
+	state.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayLayoutResolve,
+		Data:        layoutresolvedomain.NewState(types.PaneID("pane-1"), "backend-dev", "env=dev service=api"),
+		ReturnFocus: state.UI.Focus,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+	state.UI.Focus.OverlayTarget = types.OverlayLayoutResolve
+	state.UI.Mode = types.ModeState{Active: types.ModePicker}
 	return state
 }

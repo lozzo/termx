@@ -6,6 +6,7 @@ import (
 
 	"github.com/lozzow/termx/protocol"
 	btui "github.com/lozzow/termx/tui/bt"
+	layoutresolvedomain "github.com/lozzow/termx/tui/domain/layoutresolve"
 	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
 	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
 	terminalpickerdomain "github.com/lozzow/termx/tui/domain/terminalpicker"
@@ -132,6 +133,12 @@ func renderOverlayLines(overlay types.OverlayState) []string {
 			return nil
 		}
 		return renderTerminalPickerLines(picker)
+	case types.OverlayLayoutResolve:
+		resolve, ok := overlay.Data.(*layoutresolvedomain.State)
+		if !ok || resolve == nil {
+			return nil
+		}
+		return renderLayoutResolveLines(resolve)
 	case types.OverlayPrompt:
 		prompt, ok := overlay.Data.(*promptdomain.State)
 		if !ok || prompt == nil {
@@ -239,6 +246,23 @@ func renderTerminalPickerLines(picker *terminalpickerdomain.State) []string {
 			prefix = "> "
 		}
 		lines = append(lines, fmt.Sprintf("%s[%s] %s", prefix, row.Kind, row.Label))
+	}
+	return lines
+}
+
+func renderLayoutResolveLines(resolve *layoutresolvedomain.State) []string {
+	lines := []string{
+		fmt.Sprintf("layout_resolve_role: %s", resolve.Role),
+		fmt.Sprintf("layout_resolve_hint: %s", resolve.Hint),
+		"layout_resolve_rows:",
+	}
+	selected, hasSelection := resolve.SelectedRow()
+	for _, row := range resolve.Rows() {
+		prefix := "  "
+		if hasSelection && row.Action == selected.Action && row.Label == selected.Label {
+			prefix = "> "
+		}
+		lines = append(lines, fmt.Sprintf("%s[%s] %s", prefix, row.Action, row.Label))
 	}
 	return lines
 }
