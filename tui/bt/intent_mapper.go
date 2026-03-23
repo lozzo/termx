@@ -53,6 +53,8 @@ func NewIntentMapper(cfg Config) IntentMapper {
 // 这里不直接改状态，后续无论接 shell、鼠标还是 server 事件，都统一走 reducer。
 func (m DefaultIntentMapper) MapKey(state types.AppState, msg tea.KeyMsg) []intent.Intent {
 	switch state.UI.Overlay.Kind {
+	case types.OverlayTerminalPicker:
+		return mapTerminalPickerKey(msg)
 	case types.OverlayWorkspacePicker:
 		return mapWorkspacePickerKey(msg)
 	case types.OverlayTerminalManager:
@@ -68,6 +70,8 @@ func (m DefaultIntentMapper) MapKey(state types.AppState, msg tea.KeyMsg) []inte
 
 func (m DefaultIntentMapper) mapRootKey(state types.AppState, msg tea.KeyMsg) []intent.Intent {
 	switch msg.String() {
+	case "ctrl+f":
+		return []intent.Intent{intent.OpenTerminalPickerIntent{}}
 	case "ctrl+w":
 		return []intent.Intent{intent.OpenWorkspacePickerIntent{}}
 	case "ctrl+g":
@@ -95,6 +99,26 @@ func (m DefaultIntentMapper) mapGlobalModeKey(state types.AppState, msg tea.KeyM
 	case "esc":
 		return []intent.Intent{intent.ActivateModeIntent{Mode: types.ModeNone}}
 	default:
+		return nil
+	}
+}
+
+func mapTerminalPickerKey(msg tea.KeyMsg) []intent.Intent {
+	switch msg.String() {
+	case "up", "k":
+		return []intent.Intent{intent.TerminalPickerMoveIntent{Delta: -1}}
+	case "down", "j":
+		return []intent.Intent{intent.TerminalPickerMoveIntent{Delta: 1}}
+	case "enter":
+		return []intent.Intent{intent.TerminalPickerSubmitIntent{}}
+	case "esc":
+		return []intent.Intent{intent.CloseOverlayIntent{}}
+	case "backspace", "delete":
+		return []intent.Intent{intent.TerminalPickerBackspaceIntent{}}
+	default:
+		if text := inputText(msg); text != "" {
+			return []intent.Intent{intent.TerminalPickerAppendQueryIntent{Text: text}}
+		}
 		return nil
 	}
 }

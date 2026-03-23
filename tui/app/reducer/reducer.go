@@ -9,6 +9,7 @@ import (
 	"github.com/lozzow/termx/tui/app/intent"
 	"github.com/lozzow/termx/tui/domain/connection"
 	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
+	terminalpickerdomain "github.com/lozzow/termx/tui/domain/terminalpicker"
 	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
 	"github.com/lozzow/termx/tui/domain/types"
 	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
@@ -115,6 +116,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyWorkspaceTreeJump(&result.State, intentValue)
 	case intent.ClosePaneIntent:
 		applyClosePane(&result.State, intentValue)
+	case intent.OpenTerminalPickerIntent:
+		applyOpenTerminalPicker(&result.State)
 	case intent.OpenWorkspacePickerIntent:
 		applyOpenWorkspacePicker(&result.State)
 	case intent.OpenTerminalManagerIntent:
@@ -135,6 +138,14 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyWorkspacePickerCollapse(&result.State)
 	case intent.WorkspacePickerSubmitIntent:
 		result.Effects = append(result.Effects, applyWorkspacePickerSubmit(&result.State)...)
+	case intent.TerminalPickerMoveIntent:
+		applyTerminalPickerMove(&result.State, intentValue)
+	case intent.TerminalPickerAppendQueryIntent:
+		applyTerminalPickerAppendQuery(&result.State, intentValue)
+	case intent.TerminalPickerBackspaceIntent:
+		applyTerminalPickerBackspace(&result.State)
+	case intent.TerminalPickerSubmitIntent:
+		applyTerminalPickerSubmit(&result)
 	case intent.TerminalManagerMoveIntent:
 		applyTerminalManagerMove(&result.State, intentValue)
 	case intent.TerminalManagerAppendQueryIntent:
@@ -296,6 +307,24 @@ func applyOpenWorkspacePicker(state *types.AppState) {
 	}
 }
 
+func applyOpenTerminalPicker(state *types.AppState) {
+	returnFocus := state.UI.Focus
+	returnFocus.OverlayTarget = ""
+	state.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayTerminalPicker,
+		Data:        terminalpickerdomain.NewState(state.Domain, returnFocus),
+		ReturnFocus: returnFocus,
+	}
+	state.UI.Focus = types.FocusState{
+		Layer:         types.FocusLayerOverlay,
+		WorkspaceID:   returnFocus.WorkspaceID,
+		TabID:         returnFocus.TabID,
+		PaneID:        returnFocus.PaneID,
+		OverlayTarget: types.OverlayTerminalPicker,
+	}
+	state.UI.Mode = types.ModeState{Active: types.ModePicker}
+}
+
 func applyOpenTerminalManager(state *types.AppState) {
 	returnFocus := state.UI.Focus
 	returnFocus.OverlayTarget = ""
@@ -359,6 +388,30 @@ func applyWorkspacePickerAppendQuery(state *types.AppState, in intent.WorkspaceP
 		return
 	}
 	picker.AppendQuery(in.Text)
+}
+
+func applyTerminalPickerMove(state *types.AppState, in intent.TerminalPickerMoveIntent) {
+	picker, ok := terminalPicker(state)
+	if !ok {
+		return
+	}
+	picker.MoveSelection(in.Delta)
+}
+
+func applyTerminalPickerAppendQuery(state *types.AppState, in intent.TerminalPickerAppendQueryIntent) {
+	picker, ok := terminalPicker(state)
+	if !ok {
+		return
+	}
+	picker.AppendQuery(in.Text)
+}
+
+func applyTerminalPickerBackspace(state *types.AppState) {
+	picker, ok := terminalPicker(state)
+	if !ok {
+		return
+	}
+	picker.BackspaceQuery()
 }
 
 func applyWorkspacePickerBackspace(state *types.AppState) {
@@ -494,6 +547,38 @@ func applyTerminalManagerConnectHere(result *Result, _ intent.TerminalManagerCon
 		TerminalID: terminalID,
 	})
 	applyCloseOverlay(&result.State)
+}
+
+func applyTerminalPickerSubmit(result *Result) {
+	picker, ok := terminalPicker(&result.State)
+	if !ok {
+		return
+	}
+	row, ok := picker.SelectedRow()
+	if !ok {
+		return
+	}
+	switch row.Kind {
+	case terminalpickerdomain.RowKindCreate:
+		result.Effects = append(result.Effects, CreateTerminalEffect{
+			PaneID:  result.State.UI.Overlay.ReturnFocus.PaneID,
+			Command: defaultCreateTerminalCommand(),
+			Name:    defaultCreateTerminalName(result.State.UI.Overlay.ReturnFocus),
+		})
+		applyCloseOverlay(&result.State)
+	case terminalpickerdomain.RowKindTerminal:
+		paneID := result.State.UI.Overlay.ReturnFocus.PaneID
+		applyConnectTerminal(&result.State, intent.ConnectTerminalIntent{
+			PaneID:     paneID,
+			TerminalID: row.TerminalID,
+			Source:     intent.ConnectSourcePicker,
+		})
+		result.Effects = append(result.Effects, ConnectTerminalEffect{
+			PaneID:     paneID,
+			TerminalID: row.TerminalID,
+		})
+		applyCloseOverlay(&result.State)
+	}
 }
 
 func applyTerminalManagerConnectInNewTab(result *Result) {
@@ -832,6 +917,14 @@ func workspacePicker(state *types.AppState) (*workspacedomain.PickerState, bool)
 		return nil, false
 	}
 	picker, ok := state.UI.Overlay.Data.(*workspacedomain.PickerState)
+	return picker, ok
+}
+
+func terminalPicker(state *types.AppState) (*terminalpickerdomain.State, bool) {
+	if state.UI.Overlay.Kind != types.OverlayTerminalPicker || state.UI.Overlay.Data == nil {
+		return nil, false
+	}
+	picker, ok := state.UI.Overlay.Data.(*terminalpickerdomain.State)
 	return picker, ok
 }
 

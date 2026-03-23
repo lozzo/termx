@@ -6,10 +6,16 @@ import (
 
 	"github.com/lozzow/termx/tui/app/intent"
 	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
+	terminalpickerdomain "github.com/lozzow/termx/tui/domain/terminalpicker"
 	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
 	"github.com/lozzow/termx/tui/domain/types"
 	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
 )
+
+type terminalPickerOverlay interface {
+	Query() string
+	SelectedRow() (terminalpickerdomain.Row, bool)
+}
 
 type workspacePickerOverlay interface {
 	Query() string
@@ -127,6 +133,23 @@ func TestReducerOpenWorkspacePickerMovesFocusToOverlayAndStoresReturnFocus(t *te
 	}
 }
 
+func TestReducerOpenTerminalPickerMovesFocusToOverlayAndStoresReturnFocus(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	result := reducer.Reduce(state, intent.OpenTerminalPickerIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayTerminalPicker {
+		t.Fatalf("expected terminal picker overlay, got %q", result.State.UI.Overlay.Kind)
+	}
+	if result.State.UI.Focus.Layer != types.FocusLayerOverlay {
+		t.Fatalf("expected overlay focus layer, got %+v", result.State.UI.Focus)
+	}
+	if result.State.UI.Overlay.ReturnFocus.PaneID != types.PaneID("pane-1") {
+		t.Fatalf("expected previous pane focus retained, got %+v", result.State.UI.Overlay.ReturnFocus)
+	}
+}
+
 func TestReducerCloseOverlayRestoresPreviousPaneFocus(t *testing.T) {
 	reducer := New()
 	state := newAppStateWithTwoWorkspaces()
@@ -160,6 +183,70 @@ func TestReducerWorkspacePickerSubmitPaneJumpsAndClosesOverlay(t *testing.T) {
 	}
 	if submitted.State.UI.Focus.PaneID != types.PaneID("pane-float") || submitted.State.UI.Focus.Layer != types.FocusLayerFloating {
 		t.Fatalf("expected focus to jump to target pane, got %+v", submitted.State.UI.Focus)
+	}
+}
+
+func TestReducerTerminalPickerSearchMovesSelectionToMatchedTerminal(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalPickerIntent{})
+	typed := reducer.Reduce(opened.State, intent.TerminalPickerAppendQueryIntent{Text: "ops"})
+
+	picker, ok := typed.State.UI.Overlay.Data.(terminalPickerOverlay)
+	if !ok {
+		t.Fatalf("expected terminal picker overlay data, got %T", typed.State.UI.Overlay.Data)
+	}
+	if picker.Query() != "ops" {
+		t.Fatalf("expected query to update, got %q", picker.Query())
+	}
+	row, ok := picker.SelectedRow()
+	if !ok || row.TerminalID != types.TerminalID("term-3") {
+		t.Fatalf("expected search to select ops terminal, got %+v ok=%v", row, ok)
+	}
+}
+
+func TestReducerTerminalPickerSubmitConnectsSelectedTerminalAndClosesOverlay(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalPickerIntent{})
+	moved := reducer.Reduce(opened.State, intent.TerminalPickerMoveIntent{Delta: 1})
+	result := reducer.Reduce(moved.State, intent.TerminalPickerSubmitIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected terminal picker overlay to close, got %q", result.State.UI.Overlay.Kind)
+	}
+	pane := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
+	if pane.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected picker to connect selected terminal, got %+v", pane)
+	}
+	if len(result.Effects) != 1 {
+		t.Fatalf("expected one connect effect, got %d", len(result.Effects))
+	}
+	effect, ok := result.Effects[0].(ConnectTerminalEffect)
+	if !ok || effect.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("unexpected picker connect effect: %+v %T", result.Effects[0], result.Effects[0])
+	}
+}
+
+func TestReducerTerminalPickerSubmitCreateRowEmitsCreateEffect(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalPickerIntent{})
+	moved := reducer.Reduce(opened.State, intent.TerminalPickerMoveIntent{Delta: -100})
+	result := reducer.Reduce(moved.State, intent.TerminalPickerSubmitIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected picker overlay to close, got %q", result.State.UI.Overlay.Kind)
+	}
+	if len(result.Effects) != 1 {
+		t.Fatalf("expected one create effect, got %d", len(result.Effects))
+	}
+	effect, ok := result.Effects[0].(CreateTerminalEffect)
+	if !ok || effect.Name != "ws-1-tab-1-pane-1" {
+		t.Fatalf("unexpected picker create effect: %+v %T", result.Effects[0], result.Effects[0])
 	}
 }
 
@@ -725,6 +812,23 @@ func TestE2EReducerScenarioTerminalManagerConnectsSelectedTerminalHere(t *testin
 	pane := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
 	if pane.TerminalID != types.TerminalID("term-2") || pane.SlotState != types.PaneSlotConnected {
 		t.Fatalf("expected pane to show selected terminal after manager flow, got %+v", pane)
+	}
+}
+
+func TestE2EReducerScenarioTerminalPickerSearchesAndConnectsSelectedTerminal(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalPickerIntent{})
+	typed := reducer.Reduce(opened.State, intent.TerminalPickerAppendQueryIntent{Text: "ops"})
+	result := reducer.Reduce(typed.State, intent.TerminalPickerSubmitIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected overlay to close after picker submit, got %q", result.State.UI.Overlay.Kind)
+	}
+	pane := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
+	if pane.TerminalID != types.TerminalID("term-3") || pane.SlotState != types.PaneSlotConnected {
+		t.Fatalf("expected picker flow to connect searched terminal, got %+v", pane)
 	}
 }
 

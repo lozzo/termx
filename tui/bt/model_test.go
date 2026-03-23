@@ -246,6 +246,37 @@ func TestE2EModelScenarioCtrlWQueryAndEnterJumpsToPane(t *testing.T) {
 	}
 }
 
+func TestE2EModelScenarioCtrlFSearchesAndConnectsTerminal(t *testing.T) {
+	model := NewModel(ModelConfig{
+		InitialState:  newManagerAppState(),
+		Mapper:        NewIntentMapper(Config{Clock: fixedClock{}}),
+		Reducer:       reducer.New(),
+		EffectHandler: RuntimeEffectHandler{Executor: DefaultRuntimeExecutor{}},
+		Renderer:      StaticRenderer{},
+	})
+
+	sequence := []tea.KeyMsg{
+		{Type: tea.KeyCtrlF},
+		{Type: tea.KeyRunes, Runes: []rune("ops")},
+		{Type: tea.KeyEnter},
+	}
+
+	current := model
+	for _, key := range sequence {
+		next, _ := current.Update(key)
+		current = next.(*Model)
+	}
+
+	state := current.State()
+	if state.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected overlay to close after picker submit, got %q", state.UI.Overlay.Kind)
+	}
+	pane := state.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
+	if pane.TerminalID != types.TerminalID("term-3") || pane.SlotState != types.PaneSlotConnected {
+		t.Fatalf("expected picker flow to connect searched terminal, got %+v", pane)
+	}
+}
+
 func TestE2EModelScenarioTerminalManagerEditOpensMetadataPrompt(t *testing.T) {
 	model := NewModel(ModelConfig{
 		InitialState:  newManagerAppState(),
@@ -352,6 +383,13 @@ func newManagerAppState() types.AppState {
 		State:   types.TerminalRunStateRunning,
 		Command: []string{"tail", "-f", "build.log"},
 		Tags:    map[string]string{"group": "build"},
+	}
+	state.Domain.Terminals[types.TerminalID("term-3")] = types.TerminalRef{
+		ID:      types.TerminalID("term-3"),
+		Name:    "ops-watch",
+		State:   types.TerminalRunStateRunning,
+		Command: []string{"journalctl", "-f"},
+		Tags:    map[string]string{"team": "ops"},
 	}
 	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
 		TerminalID:       types.TerminalID("term-1"),

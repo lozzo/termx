@@ -46,6 +46,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 22. 第十八轮 TDD 已补上最小 runtime effect executor 回流链路
 23. 第十九轮 TDD 已补上 terminal manager 动作键映射
 24. 第二十轮 TDD 已补上 runtime feedback 错误与 notice 通道
+25. 第二十一轮 TDD 已补上 terminal picker 主线接线
 
 对应文档：
 
@@ -64,6 +65,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - `tui/domain/workspace`
 - `tui/domain/prompt`
 - `tui/domain/terminalmanager`
+- `tui/domain/terminalpicker`
 - `tui/app/intent`
 - `tui/app/reducer`
 - `tui/bt`
@@ -100,6 +102,11 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - `TerminalManagerEditMetadataIntent`
 - `TerminalManagerStopIntent`
 - `TerminalManagerCreateTerminalIntent`
+- `OpenTerminalPickerIntent`
+- `TerminalPickerMoveIntent`
+- `TerminalPickerAppendQueryIntent`
+- `TerminalPickerBackspaceIntent`
+- `TerminalPickerSubmitIntent`
 - `SubmitPromptIntent`
 - `CancelPromptIntent`
 - `PromptAppendInputIntent`
@@ -197,9 +204,16 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - runtime effect 执行失败不再静默吞掉，`RuntimeEffectHandler` 现在会把错误转换成 `error notice`
 - `Model.Update` 已支持消费 notice feedback message，并保留当前 notice 列表供后续 renderer 接线
 - 已补上一条跨层场景型 E2E：`terminal manager stop` 失败后记录 error notice
+- 已新增 `tui/domain/terminalpicker`，提供最小 terminal picker 列表态、搜索、选择和 create row
+- 根层已支持 `Ctrl-f -> terminal picker`
+- `terminal picker` 已接上键盘映射：移动、query 输入、回退、提交、关闭
+- `terminal picker` 已支持 `connect existing terminal`
+- `terminal picker` 已支持 `+ new terminal` 入口并复用统一默认参数策略
+- 已补上一条跨层场景型 E2E：`Ctrl-f -> query -> connect selected terminal`
 
 本轮验证：
 
+- `go test ./tui/domain/terminalpicker ./tui/app/reducer ./tui/bt -count=1`
 - `go test ./tui/bt -run TestE2E -count=1`
 - `go test ./tui/bt -count=1`
 - `go test ./tui/bt -run TestE2EModelScenario -count=1`
@@ -218,7 +232,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 当前还没有正式开始的部分：
 
 1. 新版 renderer
-2. 新版 terminal picker / restore 流程
+2. restore 流程
 3. 新主线真实 TUI E2E 回迁
 4. notice timeout / 清理策略
 
@@ -229,7 +243,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 下一阶段最高优先级不是补 UI，而是先把下面几个边界立住：
 
 1. 更完整的 `intent -> reducer -> effect -> runtime feedback` 契约
-2. terminal picker 接线
+2. restore 流程
 3. 真实 TUI E2E 场景壳
 4. 新版 renderer 最小骨架
 
@@ -265,12 +279,12 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 当前最合适的下一步是：
 
-1. 把 terminal picker 接进当前 shell 主线
-2. 给 notice 补 timeout / 清理策略
+1. 给 notice 补 timeout / 清理策略
+2. 把 restore 流程接进当前 shell 主线
 3. 继续扩真实 TUI E2E 场景壳
 
 ---
 
 ## 7. 当前一句话状态
 
-termx TUI 现在已经进入“picker / manager / prompt 三条主状态机已打通核心提交路径，runtime feedback 的错误与 notice 通道也已接回，下一步继续按 TDD 接 terminal picker、补 notice 生命周期并扩真实 TUI E2E 壳”的阶段。
+termx TUI 现在已经进入“picker / manager / prompt 三条 overlay 主线都已接入当前 shell 容器，runtime feedback 的错误与 notice 通道也已接回，下一步继续按 TDD 补 notice 生命周期、接 restore 并扩真实 TUI E2E 壳”的阶段。

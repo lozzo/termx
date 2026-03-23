@@ -56,6 +56,10 @@ type ClosePaneIntent struct {
 
 func (ClosePaneIntent) intentName() string { return "close_pane" }
 
+type OpenTerminalPickerIntent struct{}
+
+func (OpenTerminalPickerIntent) intentName() string { return "open_terminal_picker" }
+
 type OpenWorkspacePickerIntent struct{}
 
 func (OpenWorkspacePickerIntent) intentName() string { return "open_workspace_picker" }
@@ -102,6 +106,26 @@ func (WorkspacePickerCollapseIntent) intentName() string { return "workspace_pic
 type WorkspacePickerSubmitIntent struct{}
 
 func (WorkspacePickerSubmitIntent) intentName() string { return "workspace_picker_submit" }
+
+type TerminalPickerMoveIntent struct {
+	Delta int
+}
+
+func (TerminalPickerMoveIntent) intentName() string { return "terminal_picker_move" }
+
+type TerminalPickerAppendQueryIntent struct {
+	Text string
+}
+
+func (TerminalPickerAppendQueryIntent) intentName() string { return "terminal_picker_append_query" }
+
+type TerminalPickerBackspaceIntent struct{}
+
+func (TerminalPickerBackspaceIntent) intentName() string { return "terminal_picker_backspace" }
+
+type TerminalPickerSubmitIntent struct{}
+
+func (TerminalPickerSubmitIntent) intentName() string { return "terminal_picker_submit" }
 
 type TerminalManagerMoveIntent struct {
 	Delta int

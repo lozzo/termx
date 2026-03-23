@@ -34,6 +34,21 @@ func TestIntentMapperRootCtrlWOpensWorkspacePicker(t *testing.T) {
 	}
 }
 
+func TestIntentMapperRootCtrlFOpensTerminalPicker(t *testing.T) {
+	mapper := NewIntentMapper(Config{
+		Clock:         fixedClock{now: time.Date(2026, 3, 23, 12, 0, 0, 0, time.UTC)},
+		PrefixTimeout: 3 * time.Second,
+	})
+
+	intents := mapper.MapKey(newAppStateWithSinglePane(), tea.KeyMsg{Type: tea.KeyCtrlF})
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	if _, ok := intents[0].(intent.OpenTerminalPickerIntent); !ok {
+		t.Fatalf("expected open terminal picker intent, got %T", intents[0])
+	}
+}
+
 func TestIntentMapperRootCtrlGArmsGlobalModeAndTOpensTerminalManager(t *testing.T) {
 	now := time.Date(2026, 3, 23, 12, 0, 0, 0, time.UTC)
 	mapper := NewIntentMapper(Config{
@@ -101,6 +116,51 @@ func TestIntentMapperWorkspacePickerMapsNavigationAndQuery(t *testing.T) {
 			name: "query",
 			key:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ops")},
 			want: intent.WorkspacePickerAppendQueryIntent{Text: "ops"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			intents := mapper.MapKey(state, tc.key)
+			if len(intents) != 1 {
+				t.Fatalf("expected one intent, got %d", len(intents))
+			}
+			if intents[0] != tc.want {
+				t.Fatalf("expected %+v, got %+v", tc.want, intents[0])
+			}
+		})
+	}
+}
+
+func TestIntentMapperTerminalPickerMapsNavigationAndQuery(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+	state := newAppStateWithSinglePane()
+	state.UI.Overlay = types.OverlayState{Kind: types.OverlayTerminalPicker}
+
+	cases := []struct {
+		name string
+		key  tea.KeyMsg
+		want any
+	}{
+		{
+			name: "down",
+			key:  tea.KeyMsg{Type: tea.KeyDown},
+			want: intent.TerminalPickerMoveIntent{Delta: 1},
+		},
+		{
+			name: "submit",
+			key:  tea.KeyMsg{Type: tea.KeyEnter},
+			want: intent.TerminalPickerSubmitIntent{},
+		},
+		{
+			name: "backspace",
+			key:  tea.KeyMsg{Type: tea.KeyBackspace},
+			want: intent.TerminalPickerBackspaceIntent{},
+		},
+		{
+			name: "query",
+			key:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ops")},
+			want: intent.TerminalPickerAppendQueryIntent{Text: "ops"},
 		},
 	}
 
