@@ -202,6 +202,26 @@ func TestIntentMapperTerminalManagerMapsSelectionAndQuery(t *testing.T) {
 			want: intent.TerminalManagerConnectHereIntent{},
 		},
 		{
+			name: "new tab",
+			key:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")},
+			want: intent.TerminalManagerConnectInNewTabIntent{},
+		},
+		{
+			name: "floating",
+			key:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")},
+			want: intent.TerminalManagerConnectInFloatingPaneIntent{},
+		},
+		{
+			name: "edit",
+			key:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")},
+			want: intent.TerminalManagerEditMetadataIntent{},
+		},
+		{
+			name: "stop",
+			key:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")},
+			want: intent.TerminalManagerStopIntent{},
+		},
+		{
 			name: "cancel",
 			key:  tea.KeyMsg{Type: tea.KeyEsc},
 			want: intent.CloseOverlayIntent{},

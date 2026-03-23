@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tui/app/intent"
 	"github.com/lozzow/termx/tui/app/reducer"
+	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
 	"github.com/lozzow/termx/tui/domain/types"
 )
 
@@ -190,4 +191,80 @@ func TestE2EModelScenarioCtrlWQueryAndEnterJumpsToPane(t *testing.T) {
 	if state.UI.Focus.PaneID != types.PaneID("pane-float") || state.UI.Focus.Layer != types.FocusLayerFloating {
 		t.Fatalf("expected focus to land on target pane, got %+v", state.UI.Focus)
 	}
+}
+
+func TestE2EModelScenarioTerminalManagerEditOpensMetadataPrompt(t *testing.T) {
+	model := NewModel(ModelConfig{
+		InitialState:  newManagerAppState(),
+		Mapper:        NewIntentMapper(Config{Clock: fixedClock{}}),
+		Reducer:       reducer.New(),
+		EffectHandler: RuntimeEffectHandler{Executor: DefaultRuntimeExecutor{}},
+		Renderer:      StaticRenderer{},
+	})
+
+	sequence := []tea.KeyMsg{
+		{Type: tea.KeyCtrlG},
+		{Type: tea.KeyRunes, Runes: []rune("t")},
+		{Type: tea.KeyRunes, Runes: []rune("e")},
+	}
+
+	current := model
+	var feedback tea.Msg
+	for _, key := range sequence {
+		next, cmd := current.Update(key)
+		current = next.(*Model)
+		if cmd != nil {
+			feedback = cmd()
+		}
+	}
+	if feedback == nil {
+		t.Fatalf("expected prompt feedback after edit action")
+	}
+	next, _ := current.Update(feedback)
+	current = next.(*Model)
+
+	state := current.State()
+	if state.UI.Overlay.Kind != types.OverlayPrompt {
+		t.Fatalf("expected prompt overlay after metadata edit, got %q", state.UI.Overlay.Kind)
+	}
+	prompt, ok := state.UI.Overlay.Data.(*promptdomain.State)
+	if !ok {
+		t.Fatalf("expected prompt overlay data, got %T", state.UI.Overlay.Data)
+	}
+	if prompt.Kind != promptdomain.KindEditTerminalMetadata || prompt.TerminalID != types.TerminalID("term-1") {
+		t.Fatalf("unexpected prompt payload: %+v", prompt)
+	}
+}
+
+func newManagerAppState() types.AppState {
+	state := newAppStateWithSinglePane()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	pane := tab.Panes[types.PaneID("pane-1")]
+	pane.SlotState = types.PaneSlotConnected
+	pane.TerminalID = types.TerminalID("term-1")
+	tab.Panes[types.PaneID("pane-1")] = pane
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:      types.TerminalID("term-1"),
+		Name:    "api-dev",
+		State:   types.TerminalRunStateRunning,
+		Command: []string{"npm", "run", "dev"},
+		Tags:    map[string]string{"group": "api"},
+	}
+	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
+		ID:      types.TerminalID("term-2"),
+		Name:    "build-log",
+		State:   types.TerminalRunStateRunning,
+		Command: []string{"tail", "-f", "build.log"},
+		Tags:    map[string]string{"group": "build"},
+	}
+	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-1"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1")},
+		OwnerPaneID:      types.PaneID("pane-1"),
+	}
+	return state
 }

@@ -131,6 +131,14 @@ func mapTerminalManagerKey(msg tea.KeyMsg) []intent.Intent {
 		return []intent.Intent{intent.TerminalManagerMoveIntent{Delta: 1}}
 	case "enter":
 		return []intent.Intent{intent.TerminalManagerConnectHereIntent{}}
+	case "t":
+		return []intent.Intent{intent.TerminalManagerConnectInNewTabIntent{}}
+	case "o":
+		return []intent.Intent{intent.TerminalManagerConnectInFloatingPaneIntent{}}
+	case "e":
+		return []intent.Intent{intent.TerminalManagerEditMetadataIntent{}}
+	case "k":
+		return []intent.Intent{intent.TerminalManagerStopIntent{}}
 	case "esc":
 		return []intent.Intent{intent.CloseOverlayIntent{}}
 	case "backspace", "delete":
