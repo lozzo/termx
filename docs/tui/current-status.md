@@ -43,6 +43,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 19. 第十五轮 TDD 已补上 `prompt` 的反向字段切换和深拷贝语义
 20. 第十六轮 TDD 已补上最小 bubbletea 输入映射层
 21. 第十七轮 TDD 已补上最小 bubbletea shell 容器
+22. 第十八轮 TDD 已补上最小 runtime effect executor 回流链路
 
 对应文档：
 
@@ -182,11 +183,17 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - shell 容器当前已抽出 `EffectHandler` / `Renderer` 接口，后续可继续接 runtime executor 和真实 render
 - `Model` 已支持对非键盘消息保持稳定忽略，避免输入层误改状态
 - 已补上一条跨层场景型 E2E：`KeyMsg -> Model.Update -> workspace picker jump`
+- `tui/bt` 已补上 `RuntimeExecutor` 和 `RuntimeEffectHandler`
+- `OpenPromptEffect` 现在已能回流成 `OpenPromptIntent` 并重新进入 reducer
+- `ConnectTerminal / CreateTerminal / StopTerminal / UpdateTerminalMetadata / new tab / floating` effect 已有稳定的 runtime service 接口落点
+- `Model.Update` 已支持消费 effect feedback message，形成 `key -> effect -> feedback intent -> reducer` 闭环
+- 已补上一条跨层场景型 E2E：`workspace picker create row -> OpenPromptEffect -> prompt overlay`
 
 本轮验证：
 
-- `go test ./tui/bt -run TestE2EModelScenario -count=1`
+- `go test ./tui/bt -run TestE2E -count=1`
 - `go test ./tui/bt -count=1`
+- `go test ./tui/bt -run TestE2EModelScenario -count=1`
 - `go test ./tui/bt -run TestE2EIntentMapperScenario -count=1`
 - `go test ./tui/domain/prompt ./tui/app/reducer -count=1`
 - `go test ./tui/app/reducer -run TestE2EReducerScenario -count=1`
@@ -204,7 +211,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 1. 新版 renderer
 2. 新版 terminal picker / restore 流程
 3. 新主线真实 TUI E2E 回迁
-4. runtime effect executor 接回
+4. runtime feedback 错误与 notice 通道
 
 ---
 
@@ -213,8 +220,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 下一阶段最高优先级不是补 UI，而是先把下面几个边界立住：
 
 1. 更完整的 `intent -> reducer -> effect -> runtime feedback` 契约
-2. 真实 TUI E2E 场景壳
-3. terminal picker / restore 流程
+2. terminal manager 动作键到 effect 的完整映射
+3. 真实 TUI E2E 场景壳
 4. 新版 renderer 最小骨架
 
 原因：
@@ -249,12 +256,12 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 当前最合适的下一步是：
 
-1. 把 `EffectHandler` 接到 runtime effect executor
-2. 为输入层补 `terminal manager` 动作键映射与回归测试
+1. 为输入层补 `terminal manager` 动作键映射与回归测试
+2. 给 runtime feedback 补错误/notice message 通道
 3. 继续扩真实 TUI E2E 场景壳
 
 ---
 
 ## 7. 当前一句话状态
 
-termx TUI 现在已经进入“picker / manager / prompt 三条主状态机已打通核心提交路径，最小 bubbletea 输入映射层和 shell 容器都已落地，下一步继续按 TDD 接 runtime 契约、扩动作映射和真实 TUI E2E 壳”的阶段。
+termx TUI 现在已经进入“picker / manager / prompt 三条主状态机已打通核心提交路径，最小 bubbletea 输入映射层、shell 容器和 runtime effect executor 都已落地，下一步继续按 TDD 扩动作映射、补 runtime feedback 错误通道和真实 TUI E2E 壳”的阶段。

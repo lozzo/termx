@@ -2,6 +2,7 @@ package bt
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/tui/app/intent"
 	"github.com/lozzow/termx/tui/app/reducer"
 	"github.com/lozzow/termx/tui/domain/types"
 )
@@ -75,12 +76,19 @@ func (m *Model) Init() tea.Cmd {
 // Update 是最小 bubbletea 壳的统一入口。
 // 当前只把键盘事件归一化为 intent，再交给 reducer 和 effect handler，避免输入层直接改状态。
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	key, ok := msg.(tea.KeyMsg)
-	if !ok {
+	switch msgValue := msg.(type) {
+	case tea.KeyMsg:
+		return m.applyIntents(m.mapper.MapKey(m.state, msgValue))
+	case effectIntentsMsg:
+		return m.applyIntents(msgValue.Intents)
+	default:
 		return m, nil
 	}
+}
+
+func (m *Model) applyIntents(intents []intent.Intent) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	for _, in := range m.mapper.MapKey(m.state, key) {
+	for _, in := range intents {
 		result := m.reducer.Reduce(m.state, in)
 		m.state = result.State
 		cmd = batchCmd(cmd, m.effects.Handle(result.Effects))
