@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tui"
@@ -129,6 +130,38 @@ func TestAttachCmdAllowsNestedTUIWhenOverrideIsSet(t *testing.T) {
 	}
 	if got.AttachID != "term-001" {
 		t.Fatalf("expected attach id to pass through, got %q", got.AttachID)
+	}
+}
+
+func TestAttachCmdPassesPrefixTimeoutToTUI(t *testing.T) {
+	oldDial := dialOrStartTUIClient
+	oldRun := runTUI
+	t.Cleanup(func() {
+		dialOrStartTUIClient = oldDial
+		runTUI = oldRun
+	})
+
+	dialOrStartTUIClient = func(path string, logFile string, logger *slog.Logger) (tui.Client, error) {
+		return &stubTUIClient{}, nil
+	}
+
+	var got tui.Config
+	runTUI = func(client tui.Client, cfg tui.Config, input io.Reader, output io.Writer) error {
+		got = cfg
+		return nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--prefix-timeout", "5s", "attach", "term-001"})
+	cmd.SetIn(bytes.NewBuffer(nil))
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("expected attach command to succeed, got %v", err)
+	}
+	if got.PrefixTimeout != 5*time.Second {
+		t.Fatalf("expected prefix timeout 5s, got %s", got.PrefixTimeout)
 	}
 }
 

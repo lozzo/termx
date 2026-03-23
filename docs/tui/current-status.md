@@ -61,6 +61,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 37. 第三十三轮 TDD 已补上关键 runtime 状态向 reducer/domain 的回灌闭环
 38. 第三十四轮 TDD 已补上 `state_changed` 剩余状态的 runtime 同步闭环
 39. 第三十五轮 TDD 已补上 `resized / collaborators_revoked` 的 runtime 观测与输入阻断闭环
+40. 第三十六轮 TDD 已补上 `cmd/termx attach` 的 `PrefixTimeout` 配置透传闭环
 
 对应文档：
 
@@ -310,9 +311,11 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `Run()` 成功退出时会主动清理已建立的 runtime session，避免 stream 句柄泄漏
 - 已补上一组 runtime 编排测试覆盖 planner/task/session 的调用顺序和错误传播
 - 已补上一条 runtime 测试覆盖 program runner 调用和 renderer 输出
+- `cmd/termx attach` 现在会把 CLI 的 `--prefix-timeout` 继续透传到 `tui.Run`，与 root TUI 入口保持一致按键前缀超时语义
 
 本轮验证：
 
+- `go test ./cmd/termx -count=1`
 - `go test ./tui/... -run 'TestRuntimeUpdateHandlerResizedEventUpdatesStoreSnapshotSize|TestRuntimeUpdateHandlerCollaboratorsRevokedMarksObserverOnlyAndNotice|TestRuntimeTerminalInputHandlerBlocksObserverOnlyTerminalInput|TestE2ERunScenarioCollaboratorsRevokedBlocksSubsequentInput' -count=1`
 - `go test ./tui/... -run 'TestReducerSyncTerminalState|TestRuntimeUpdateHandlerStateChangedStoppedFeedsSyncStateIntent|TestRuntimeUpdateHandlerStateChangedRunningFeedsSyncStateIntent|TestRuntimeUpdateHandlerStateChangedExitedWithoutCodeFeedsSyncStateIntent|TestE2ERunScenarioStateChangedStoppedFeedsReducerAndClearsPane' -count=1`
 - `go test ./tui/... -run 'TestReducerTerminalRemoved|TestRuntimeUpdateHandlerTypeClosedFeedsProgramExitedIntent|TestRuntimeUpdateHandlerRemovedEventFeedsTerminalRemovedIntent|TestRuntimeUpdateHandlerStateChangedExitedFeedsProgramExitedIntent|TestE2ERunScenarioClosedFrameFeedsReducerAndMarksPaneExited' -count=1`

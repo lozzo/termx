@@ -102,7 +102,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newCommand(&socket, &logFile))
 	cmd.AddCommand(lsCommand(&socket, &logFile))
 	cmd.AddCommand(killCommand(&socket, &logFile))
-	cmd.AddCommand(attachCommand(&socket, &logFile, &iconSet))
+	cmd.AddCommand(attachCommand(&socket, &logFile, &iconSet, &prefixTimeout))
 	return cmd
 }
 
@@ -231,7 +231,7 @@ func killCommand(socket *string, logFile *string) *cobra.Command {
 	}
 }
 
-func attachCommand(socket *string, logFile *string, iconSet *string) *cobra.Command {
+func attachCommand(socket *string, logFile *string, iconSet *string, prefixTimeout *time.Duration) *cobra.Command {
 	return &cobra.Command{
 		Use:  "attach <id>",
 		Args: cobra.ExactArgs(1),
@@ -256,6 +256,7 @@ func attachCommand(socket *string, logFile *string, iconSet *string) *cobra.Comm
 				Workspace:          "main",
 				AttachID:           args[0],
 				IconSet:            *iconSet,
+				PrefixTimeout:      *prefixTimeout,
 				WorkspaceStatePath: resolveWorkspaceStatePath(),
 				Logger:             logger,
 			}, os.Stdin, os.Stdout)
