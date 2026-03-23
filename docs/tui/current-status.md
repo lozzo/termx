@@ -87,6 +87,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 63. 第五十九轮 TDD 已补上 terminal picker 选中终端状态的 renderer 可见性闭环
 64. 第六十轮 TDD 已补上 terminal manager 选中 terminal 的 renderer 可见性闭环
 65. 第六十一轮 TDD 已补上 layout resolve 选中动作的 renderer 可见性闭环
+66. 第六十二轮 TDD 已补上 terminal manager 选中终端状态的 renderer 可见性闭环
 
 对应文档：
 
@@ -167,6 +168,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- runtime renderer 已显式展示 terminal manager 的 `terminal_manager_selected_state`
+- terminal manager 打开后当前主视图可直接看到选中 terminal 的运行状态
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t` 打开后主视图显示 `terminal_manager_selected_state: running`
 - runtime renderer 已显式展示 layout resolve 的 `layout_resolve_selected`
 - layout resolve 打开后当前主视图可直接看到当前选中的动作
 - 已补上一条 runtime 场景型 E2E：移动选择后主视图显示 `layout_resolve_selected: create_new`
