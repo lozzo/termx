@@ -195,6 +195,66 @@ func TestE2ERunScenarioRendersSnapshotAndForwardsActivePaneInput(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioWindowResizeResizesActiveTerminal(t *testing.T) {
+	client := &stubRunClient{}
+	planner := &stubRunPlanner{plan: StartupPlan{State: connectedRunAppState()}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: connectedRunAppState()}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Channel:    21,
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 80, Rows: 24},
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{
+									{Content: "h"},
+									{Content: "i"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			_, cmd := model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+			if cmd == nil {
+				t.Fatal("expected runtime resize command")
+			}
+			if msg := cmd(); msg != nil {
+				_, _ = model.Update(msg)
+			}
+			if len(client.resizeCalls) != 1 {
+				t.Fatalf("expected one runtime resize call, got %d", len(client.resizeCalls))
+			}
+			if client.resizeCalls[0].channel != 21 || client.resizeCalls[0].cols != 120 || client.resizeCalls[0].rows != 40 {
+				t.Fatalf("unexpected runtime resize payload: %+v", client.resizeCalls[0])
+			}
+			if view := model.View(); !strings.Contains(view, "runtime_size: 120x40") {
+				t.Fatalf("expected runtime view to expose resized size, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioActivePaneCoreViewVisible(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithActiveTerminalMetadata()
@@ -3036,19 +3096,21 @@ func (r *stubProgramRunner) Run(model *btui.Model, _ io.Reader, _ io.Writer) err
 }
 
 type stubRunClient struct {
-	inputs      []runtimeInputCall
-	snapshots   map[string]*protocol.Snapshot
-	snapshotErr error
-	createCalls []runtimeCreateCall
+	inputs        []runtimeInputCall
+	snapshots     map[string]*protocol.Snapshot
+	snapshotErr   error
+	createCalls   []runtimeCreateCall
 	metadataCalls []runtimeMetadataCall
-	killCalls []string
-	newTabCalls []runtimeNewTabCall
+	killCalls     []string
+	newTabCalls   []runtimeNewTabCall
 	floatingCalls []runtimeFloatingCall
-	createErr error
-	metadataErr error
-	killErr error
-	newTabErr error
-	floatingErr error
+	resizeCalls   []runtimeResizeCall
+	createErr     error
+	metadataErr   error
+	killErr       error
+	newTabErr     error
+	floatingErr   error
+	resizeErr     error
 }
 
 type runtimeCreateCall struct {
@@ -3072,6 +3134,12 @@ type runtimeFloatingCall struct {
 	workspaceID types.WorkspaceID
 	tabID       types.TabID
 	terminalID  types.TerminalID
+}
+
+type runtimeResizeCall struct {
+	channel uint16
+	cols    uint16
+	rows    uint16
 }
 
 func (c *stubRunClient) Close() error { return nil }
@@ -3133,7 +3201,17 @@ func (c *stubRunClient) Input(_ context.Context, channel uint16, data []byte) er
 	return nil
 }
 
-func (c *stubRunClient) Resize(context.Context, uint16, uint16, uint16) error { return nil }
+func (c *stubRunClient) Resize(_ context.Context, channel uint16, cols, rows uint16) error {
+	c.resizeCalls = append(c.resizeCalls, runtimeResizeCall{
+		channel: channel,
+		cols:    cols,
+		rows:    rows,
+	})
+	if c.resizeErr != nil {
+		return c.resizeErr
+	}
+	return nil
+}
 
 func (c *stubRunClient) Stream(uint16) (<-chan protocol.StreamFrame, func()) {
 	ch := make(chan protocol.StreamFrame)

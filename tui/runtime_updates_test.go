@@ -196,6 +196,100 @@ func TestRuntimeUpdateHandlerRefreshesSnapshotAfterSyncLost(t *testing.T) {
 	}
 }
 
+func TestRuntimeUpdateHandlerWindowResizeResizesActiveTerminalAndUpdatesStore(t *testing.T) {
+	store := NewRuntimeTerminalStore(RuntimeSessions{
+		Terminals: map[types.TerminalID]TerminalRuntimeSession{
+			types.TerminalID("term-1"): {
+				TerminalID: types.TerminalID("term-1"),
+				Channel:    7,
+				Snapshot: &protocol.Snapshot{
+					TerminalID: "term-1",
+					Size:       protocol.Size{Cols: 80, Rows: 24},
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{{{Content: "o"}, {Content: "k"}}},
+					},
+					Cursor: protocol.CursorState{Row: 0, Col: 2, Visible: true},
+				},
+			},
+		},
+	})
+	client := &stubRuntimeSnapshotClient{}
+	handler := NewRuntimeUpdateHandler(RuntimeSessions{}, store, client)
+	defer handler.Stop()
+
+	handled, cmd := handler.HandleMessage(connectedRunAppState(), tea.WindowSizeMsg{Width: 120, Height: 40})
+	if !handled {
+		t.Fatal("expected window resize to be handled")
+	}
+	if cmd == nil {
+		t.Fatal("expected window resize command")
+	}
+	if msgs := runCmdMessages(cmd); len(msgs) != 0 {
+		t.Fatalf("expected successful resize to return no feedback msg, got %#v", msgs)
+	}
+	if len(client.resizeCalls) != 1 {
+		t.Fatalf("expected one resize call, got %d", len(client.resizeCalls))
+	}
+	if client.resizeCalls[0].channel != 7 || client.resizeCalls[0].cols != 120 || client.resizeCalls[0].rows != 40 {
+		t.Fatalf("unexpected resize call payload: %+v", client.resizeCalls[0])
+	}
+	status, ok := store.Status(types.TerminalID("term-1"))
+	if !ok {
+		t.Fatal("expected runtime status after resize")
+	}
+	if status.Size.Cols != 120 || status.Size.Rows != 40 {
+		t.Fatalf("expected store size updated after resize, got %+v", status.Size)
+	}
+}
+
+func TestRuntimeUpdateHandlerWindowResizeFailureReturnsNotice(t *testing.T) {
+	store := NewRuntimeTerminalStore(RuntimeSessions{
+		Terminals: map[types.TerminalID]TerminalRuntimeSession{
+			types.TerminalID("term-1"): {
+				TerminalID: types.TerminalID("term-1"),
+				Channel:    7,
+				Snapshot: &protocol.Snapshot{
+					TerminalID: "term-1",
+					Size:       protocol.Size{Cols: 80, Rows: 24},
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{{{Content: "o"}, {Content: "k"}}},
+					},
+					Cursor: protocol.CursorState{Row: 0, Col: 2, Visible: true},
+				},
+			},
+		},
+	})
+	client := &stubRuntimeSnapshotClient{resizeErr: errors.New("resize failed")}
+	handler := NewRuntimeUpdateHandler(RuntimeSessions{}, store, client)
+	defer handler.Stop()
+
+	handled, cmd := handler.HandleMessage(connectedRunAppState(), tea.WindowSizeMsg{Width: 120, Height: 40})
+	if !handled {
+		t.Fatal("expected window resize to be handled")
+	}
+	if cmd == nil {
+		t.Fatal("expected resize failure command")
+	}
+	msgs := runCmdMessages(cmd)
+	if len(msgs) != 1 {
+		t.Fatalf("expected one feedback msg, got %#v", msgs)
+	}
+	feedback, ok := msgs[0].(btui.FeedbackMsg)
+	if !ok {
+		t.Fatalf("expected feedback msg, got %#v", msgs[0])
+	}
+	if len(feedback.Notices) != 1 || !strings.Contains(feedback.Notices[0].Text, "resize failed") {
+		t.Fatalf("unexpected resize feedback notices: %+v", feedback.Notices)
+	}
+	status, ok := store.Status(types.TerminalID("term-1"))
+	if !ok {
+		t.Fatal("expected runtime status after failed resize")
+	}
+	if status.Size.Cols != 80 || status.Size.Rows != 24 {
+		t.Fatalf("expected failed resize to keep previous size, got %+v", status.Size)
+	}
+}
+
 func TestRuntimeUpdateHandlerTypeClosedFeedsProgramExitedIntent(t *testing.T) {
 	store := NewRuntimeTerminalStore(RuntimeSessions{
 		Terminals: map[types.TerminalID]TerminalRuntimeSession{
@@ -622,8 +716,10 @@ func newAppStateForRuntimeUpdate() types.AppState {
 }
 
 type stubRuntimeSnapshotClient struct {
-	snapshots map[string]*protocol.Snapshot
-	err       error
+	snapshots   map[string]*protocol.Snapshot
+	err         error
+	resizeCalls []runtimeResizeCall
+	resizeErr   error
 }
 
 func (c stubRuntimeSnapshotClient) Snapshot(_ context.Context, terminalID string, _, _ int) (*protocol.Snapshot, error) {
@@ -631,6 +727,18 @@ func (c stubRuntimeSnapshotClient) Snapshot(_ context.Context, terminalID string
 		return nil, c.err
 	}
 	return cloneSnapshot(c.snapshots[terminalID]), nil
+}
+
+func (c *stubRuntimeSnapshotClient) Resize(_ context.Context, channel uint16, cols, rows uint16) error {
+	c.resizeCalls = append(c.resizeCalls, runtimeResizeCall{
+		channel: channel,
+		cols:    cols,
+		rows:    rows,
+	})
+	if c.resizeErr != nil {
+		return c.resizeErr
+	}
+	return nil
 }
 
 func runCmdMessages(cmd tea.Cmd) []tea.Msg {

@@ -147,6 +147,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 123. 第一百一十九轮 TDD 已补上 runtime 剩余 prompt 与 resolve 字段投影的测试闭环
 124. 第一百二十轮 TDD 已补上 runtime effect 执行链路的测试闭环
 125. 第一百二十一轮 TDD 已补上 runtime effect 失败路径的测试闭环
+126. 第一百二十二轮 TDD 已补上 runtime 拓扑动作不支持时的显式失败语义
+127. 第一百二十三轮 TDD 已补上 runtime 窗口尺寸变化到 resize 下发闭环
 
 对应文档：
 
@@ -253,6 +255,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 已补上一条 runtime 场景型 E2E：workspace picker create row 打开 prompt 时主视图显式显示 `focus_overlay_target: prompt`
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t` 打开 terminal manager 时主视图显式显示 `overlay: terminal_manager` 与 `focus_overlay_target: terminal_manager`
 - 已补上一条 runtime 场景型 E2E：terminal manager edit 打开 prompt 时主视图显式显示 `overlay: prompt`
+- runtime terminal service 对 `new tab / floating pane` 的客户端能力缺失不再静默成功，改为显式错误返回
+- 已补上 runtime handler 单测：`WindowSizeMsg` 会真正下发 `Resize(channel, cols, rows)`，并同步刷新 runtime store 中的 `runtime_size`
+- 已补上一条 runtime 场景型 E2E：活动 terminal 收到窗口尺寸变化后，主视图会显示更新后的 `runtime_size: 120x40`
 - 已补上一条 runtime 场景型 E2E：`Ctrl-f` 打开 terminal picker 时主视图显式显示 `overlay: terminal_picker` 与 `focus_overlay_target: terminal_picker`
 - 已补上一条 runtime 场景型 E2E：workspace picker / prompt / terminal manager / terminal picker / layout resolve 关闭后主视图不再残留 `focus_overlay_target`
 - 已补上一条 runtime 场景型 E2E：terminal manager 与 layout resolve 关闭后主视图不再残留临时 `mode`

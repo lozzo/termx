@@ -16,6 +16,10 @@ type RuntimeSnapshotClient interface {
 	Snapshot(ctx context.Context, terminalID string, offset, limit int) (*protocol.Snapshot, error)
 }
 
+type runtimeTerminalResizeClient interface {
+	Resize(ctx context.Context, channel uint16, cols, rows uint16) error
+}
+
 type runtimeUpdateHandler struct {
 	store          *runtimeTerminalStore
 	snapshotClient RuntimeSnapshotClient
@@ -79,7 +83,7 @@ func (h *runtimeUpdateHandler) Stop() {
 	close(h.updates)
 }
 
-func (h *runtimeUpdateHandler) HandleMessage(_ types.AppState, msg tea.Msg) (bool, tea.Cmd) {
+func (h *runtimeUpdateHandler) HandleMessage(state types.AppState, msg tea.Msg) (bool, tea.Cmd) {
 	switch msgValue := msg.(type) {
 	case runtimeStreamFrameMsg:
 		return true, h.handleStreamFrame(msgValue)
@@ -87,6 +91,8 @@ func (h *runtimeUpdateHandler) HandleMessage(_ types.AppState, msg tea.Msg) (boo
 		return true, h.handleProtocolEvent(msgValue.Event)
 	case runtimeSnapshotRefreshedMsg:
 		return true, h.handleSnapshotRefreshed(msgValue)
+	case tea.WindowSizeMsg:
+		return true, h.handleWindowSize(state, msgValue)
 	default:
 		return false, nil
 	}
@@ -170,6 +176,38 @@ func (h *runtimeUpdateHandler) handleSnapshotRefreshed(msg runtimeSnapshotRefres
 	}
 	h.store.LoadSnapshot(msg.TerminalID, msg.Snapshot)
 	return nextCmd
+}
+
+func (h *runtimeUpdateHandler) handleWindowSize(state types.AppState, msg tea.WindowSizeMsg) tea.Cmd {
+	session, ok := activeTerminalSession(state, h.store)
+	if !ok || session.Channel == 0 {
+		return nil
+	}
+	client, ok := h.snapshotClient.(runtimeTerminalResizeClient)
+	if !ok {
+		return btui.FeedbackCmd(btui.ExecutionResult{
+			Notices: []btui.Notice{{
+				Level: btui.NoticeLevelError,
+				Text:  fmt.Sprintf("runtime resize client missing for %s", session.TerminalID),
+			}},
+		})
+	}
+	size := protocol.Size{
+		Cols: uint16(max(1, msg.Width)),
+		Rows: uint16(max(1, msg.Height)),
+	}
+	return func() tea.Msg {
+		if err := client.Resize(context.Background(), session.Channel, size.Cols, size.Rows); err != nil {
+			return btui.FeedbackMsg{
+				Notices: []btui.Notice{{
+					Level: btui.NoticeLevelError,
+					Text:  err.Error(),
+				}},
+			}
+		}
+		h.store.Resize(session.TerminalID, size)
+		return nil
+	}
 }
 
 func (h *runtimeUpdateHandler) refreshSnapshotCmd(terminalID types.TerminalID) tea.Cmd {

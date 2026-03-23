@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/lozzow/termx/protocol"
 	btui "github.com/lozzow/termx/tui/bt"
@@ -16,6 +18,8 @@ type runtimeTerminalTopologyClient interface {
 	ConnectTerminalInNewTab(workspaceID types.WorkspaceID, terminalID types.TerminalID) error
 	ConnectTerminalInFloatingPane(workspaceID types.WorkspaceID, tabID types.TabID, terminalID types.TerminalID) error
 }
+
+var errRuntimeTopologyUnsupported = errors.New("runtime topology action unsupported by client")
 
 func newRuntimeTerminalService(client Client) btui.TerminalService {
 	if client == nil {
@@ -45,7 +49,7 @@ func (s runtimeTerminalService) UpdateTerminalMetadata(terminalID types.Terminal
 func (s runtimeTerminalService) ConnectTerminalInNewTab(workspaceID types.WorkspaceID, terminalID types.TerminalID) error {
 	client, ok := s.client.(runtimeTerminalTopologyClient)
 	if !ok {
-		return nil
+		return fmt.Errorf("%w: connect terminal %s in new tab for workspace %s", errRuntimeTopologyUnsupported, terminalID, workspaceID)
 	}
 	return client.ConnectTerminalInNewTab(workspaceID, terminalID)
 }
@@ -53,7 +57,7 @@ func (s runtimeTerminalService) ConnectTerminalInNewTab(workspaceID types.Worksp
 func (s runtimeTerminalService) ConnectTerminalInFloatingPane(workspaceID types.WorkspaceID, tabID types.TabID, terminalID types.TerminalID) error {
 	client, ok := s.client.(runtimeTerminalTopologyClient)
 	if !ok {
-		return nil
+		return fmt.Errorf("%w: connect terminal %s in floating pane for %s/%s", errRuntimeTopologyUnsupported, terminalID, workspaceID, tabID)
 	}
 	return client.ConnectTerminalInFloatingPane(workspaceID, tabID, terminalID)
 }
