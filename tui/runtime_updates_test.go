@@ -290,6 +290,46 @@ func TestRuntimeUpdateHandlerWindowResizeFailureReturnsNotice(t *testing.T) {
 	}
 }
 
+func TestRuntimeUpdateHandlerWindowResizeFollowerDoesNotResizeSharedTerminal(t *testing.T) {
+	store := NewRuntimeTerminalStore(RuntimeSessions{
+		Terminals: map[types.TerminalID]TerminalRuntimeSession{
+			types.TerminalID("term-1"): {
+				TerminalID: types.TerminalID("term-1"),
+				Channel:    7,
+				Snapshot: &protocol.Snapshot{
+					TerminalID: "term-1",
+					Size:       protocol.Size{Cols: 80, Rows: 24},
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{{{Content: "o"}, {Content: "k"}}},
+					},
+					Cursor: protocol.CursorState{Row: 0, Col: 2, Visible: true},
+				},
+			},
+		},
+	})
+	client := &stubRuntimeSnapshotClient{}
+	handler := NewRuntimeUpdateHandler(RuntimeSessions{}, store, client)
+	defer handler.Stop()
+
+	handled, cmd := handler.HandleMessage(runtimeStateWithFollowerActivePane(), tea.WindowSizeMsg{Width: 120, Height: 40})
+	if !handled {
+		t.Fatal("expected window resize to be handled")
+	}
+	if cmd != nil {
+		t.Fatalf("expected follower resize to be ignored without command, got %v", cmd)
+	}
+	if len(client.resizeCalls) != 0 {
+		t.Fatalf("expected follower pane to skip resize call, got %+v", client.resizeCalls)
+	}
+	status, ok := store.Status(types.TerminalID("term-1"))
+	if !ok {
+		t.Fatal("expected runtime status after ignored resize")
+	}
+	if status.Size.Cols != 80 || status.Size.Rows != 24 {
+		t.Fatalf("expected ignored resize to keep previous size, got %+v", status.Size)
+	}
+}
+
 func TestRuntimeUpdateHandlerTypeClosedFeedsProgramExitedIntent(t *testing.T) {
 	store := NewRuntimeTerminalStore(RuntimeSessions{
 		Terminals: map[types.TerminalID]TerminalRuntimeSession{

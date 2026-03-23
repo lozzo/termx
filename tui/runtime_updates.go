@@ -183,6 +183,9 @@ func (h *runtimeUpdateHandler) handleWindowSize(state types.AppState, msg tea.Wi
 	if !ok || session.Channel == 0 {
 		return nil
 	}
+	if !activePaneCanResizeTerminal(state, session.TerminalID) {
+		return nil
+	}
 	client, ok := h.snapshotClient.(runtimeTerminalResizeClient)
 	if !ok {
 		return btui.FeedbackCmd(btui.ExecutionResult{
@@ -208,6 +211,20 @@ func (h *runtimeUpdateHandler) handleWindowSize(state types.AppState, msg tea.Wi
 		h.store.Resize(session.TerminalID, size)
 		return nil
 	}
+}
+
+// activePaneCanResizeTerminal 用共享 terminal 的 owner/follower 规则约束隐式 resize。
+// 窗口尺寸变化属于控制面动作，只有 owner pane 才允许继续下发到 terminal。
+func activePaneCanResizeTerminal(state types.AppState, terminalID types.TerminalID) bool {
+	pane, ok := activePane(state)
+	if !ok || pane.TerminalID != terminalID {
+		return false
+	}
+	conn, ok := state.Domain.Connections[terminalID]
+	if !ok || conn.TerminalID == "" || conn.OwnerPaneID == "" {
+		return true
+	}
+	return conn.OwnerPaneID == pane.ID
 }
 
 func (h *runtimeUpdateHandler) refreshSnapshotCmd(terminalID types.TerminalID) tea.Cmd {

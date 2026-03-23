@@ -255,6 +255,63 @@ func TestE2ERunScenarioWindowResizeResizesActiveTerminal(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioFollowerPaneWindowResizeDoesNotResizeSharedTerminal(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithFollowerActivePane()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Channel:    21,
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 80, Rows: 24},
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{
+									{Content: "h"},
+									{Content: "i"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			_, cmd := model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					t.Fatalf("expected follower resize to produce no message, got %#v", msg)
+				}
+			}
+			if len(client.resizeCalls) != 0 {
+				t.Fatalf("expected follower pane to skip runtime resize call, got %+v", client.resizeCalls)
+			}
+			if view := model.View(); !strings.Contains(view, "connection_role: follower") || strings.Contains(view, "runtime_size: 120x40") {
+				t.Fatalf("expected follower pane to keep old runtime size, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected follower resize scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioActivePaneCoreViewVisible(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithActiveTerminalMetadata()
@@ -3268,6 +3325,31 @@ func connectedRunAppState() types.AppState {
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1")},
 		OwnerPaneID:      types.PaneID("pane-1"),
 	}
+	return state
+}
+
+func runtimeStateWithFollowerActivePane() types.AppState {
+	state := connectedRunAppState()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+
+	follower := types.PaneState{
+		ID:         types.PaneID("pane-2"),
+		Kind:       types.PaneKindTiled,
+		Rect:       types.Rect{X: 40, Y: 0, W: 40, H: 24},
+		TerminalID: types.TerminalID("term-1"),
+		SlotState:  types.PaneSlotConnected,
+	}
+	tab.Panes[follower.ID] = follower
+	tab.ActivePaneID = follower.ID
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.UI.Focus.PaneID = follower.ID
+
+	conn := state.Domain.Connections[types.TerminalID("term-1")]
+	conn.ConnectedPaneIDs = []types.PaneID{types.PaneID("pane-1"), types.PaneID("pane-2")}
+	conn.OwnerPaneID = types.PaneID("pane-1")
+	state.Domain.Connections[types.TerminalID("term-1")] = conn
 	return state
 }
 
