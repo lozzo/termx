@@ -275,6 +275,7 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 			fmt.Sprintf("terminal_manager_selected_kind: %s", row.Kind),
 			fmt.Sprintf("terminal_manager_selected_section: %s", row.Section),
 			fmt.Sprintf("terminal_manager_selected_state: %s", row.State),
+			fmt.Sprintf("terminal_manager_selected_connected_panes: %d", row.ConnectedPaneCount),
 		)
 	} else if terminalID, ok := manager.SelectedTerminalID(); ok {
 		lines = append(lines, fmt.Sprintf("terminal_manager_selected: %s", terminalID))

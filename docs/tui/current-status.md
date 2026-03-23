@@ -98,6 +98,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 74. 第七十轮 TDD 已补上 terminal picker 选中行类型的 renderer 可见性闭环
 75. 第七十一轮 TDD 已补上 terminal manager 选中行类型的 renderer 可见性闭环
 76. 第七十二轮 TDD 已补上 prompt 活动字段标签的 renderer 可见性闭环
+77. 第七十三轮 TDD 已补上 terminal manager 选中行连接计数的 renderer 可见性闭环
 
 对应文档：
 
@@ -178,6 +179,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- runtime renderer 已显式展示 terminal manager 的 `terminal_manager_selected_connected_panes`
+- terminal manager 打开后当前主视图可直接看到当前选中 terminal 的连接 pane 数量
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t` 打开后主视图显示 `terminal_manager_selected_connected_panes: 1`
 - runtime renderer 已显式展示 prompt overlay 的 `prompt_active_label`
 - prompt 打开后当前主视图可直接看到当前活动字段的标签
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> e` 进入 prompt 后主视图显示 `prompt_active_label: Name`
