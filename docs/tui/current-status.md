@@ -66,6 +66,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 42. 第三十八轮 TDD 已补上 notice 聚合/去重与 timeout 刷新闭环
 43. 第三十九轮 TDD 已补上 runtime renderer 的 notice 可见性闭环
 44. 第四十轮 TDD 已补上 workspace picker 的 runtime renderer 可视化闭环
+45. 第四十一轮 TDD 已补上 terminal manager 的 runtime renderer 可视化闭环
 
 对应文档：
 
@@ -329,9 +330,14 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `runtimeRenderer` 现在会渲染 `workspace_picker_query` 和 `workspace_picker_rows`
 - workspace picker 树行现在会展示选中标记、层级缩进和节点类型标签
 - 已补上一条 runtime E2E：`Ctrl-W` 打开 picker 后，view 会直接出现 workspace tree 内容
+- `runtimeRenderer` 现在会渲染 `terminal_manager_query`、`terminal_manager_rows` 和当前选中 terminal 的 detail
+- terminal manager 行现在会展示 header/create/terminal 三类投影，并标出当前选择
+- 已补上一条 runtime E2E：`Ctrl-G` -> `t` 打开 terminal manager 后，view 会直接出现 manager 内容
 
 本轮验证：
 
+- `go test ./tui -run 'TestRuntimeRendererRendersTerminalManagerOverlay|TestE2ERunScenarioCtrlGTOpensTerminalManagerInView' -count=1`
+- `go test ./tui -count=1`
 - `go test ./tui -run 'TestRuntimeRendererRendersWorkspacePickerOverlay|TestE2ERunScenarioCtrlWOpensWorkspacePickerInView' -count=1`
 - `go test ./tui ./tui/bt -count=1`
 - `go test ./tui ./tui/bt -run 'TestModelViewPassesCurrentNoticesToRenderer|TestRuntimeRendererRendersNoticeSection|TestE2ERunScenarioBlockedInputNoticeAppearsInView' -count=1`

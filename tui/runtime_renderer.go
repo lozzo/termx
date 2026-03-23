@@ -6,6 +6,7 @@ import (
 
 	"github.com/lozzow/termx/protocol"
 	btui "github.com/lozzow/termx/tui/bt"
+	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
 	"github.com/lozzow/termx/tui/domain/types"
 	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
 )
@@ -117,6 +118,12 @@ func renderOverlayLines(overlay types.OverlayState) []string {
 			return nil
 		}
 		return renderWorkspacePickerLines(picker)
+	case types.OverlayTerminalManager:
+		manager, ok := overlay.Data.(*terminalmanagerdomain.State)
+		if !ok || manager == nil {
+			return nil
+		}
+		return renderTerminalManagerLines(manager)
 	default:
 		return nil
 	}
@@ -136,6 +143,47 @@ func renderWorkspacePickerLines(picker *workspacedomain.PickerState) []string {
 		lines = append(lines, fmt.Sprintf("%s%s[%s] %s", prefix, strings.Repeat("  ", row.Depth), row.Node.Kind, row.Node.Label))
 	}
 	return lines
+}
+
+func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
+	lines := []string{
+		fmt.Sprintf("terminal_manager_query: %s", manager.Query()),
+		"terminal_manager_rows:",
+	}
+	selected, hasSelection := manager.SelectedRow()
+	for _, row := range manager.VisibleRows() {
+		prefix := "  "
+		if hasSelection && row.Kind != terminalmanagerdomain.RowKindHeader && row.Kind == selected.Kind && row.TerminalID == selected.TerminalID && row.Label == selected.Label {
+			prefix = "> "
+		}
+		lines = append(lines, fmt.Sprintf("%s[%s] %s", prefix, row.Kind, row.Label))
+	}
+	if detail, ok := manager.SelectedDetail(); ok {
+		lines = append(lines,
+			fmt.Sprintf("terminal_manager_detail: %s", detail.Name),
+			fmt.Sprintf("detail_state: %s", detail.State),
+			fmt.Sprintf("detail_visibility: %s", detail.VisibilityLabel),
+			fmt.Sprintf("detail_command: %s", detail.Command),
+		)
+		if detail.OwnerSlotLabel != "" {
+			lines = append(lines, fmt.Sprintf("detail_owner: %s", detail.OwnerSlotLabel))
+		}
+		if tags := renderDetailTags(detail.Tags); tags != "" {
+			lines = append(lines, fmt.Sprintf("detail_tags: %s", tags))
+		}
+	}
+	return lines
+}
+
+func renderDetailTags(tags []terminalmanagerdomain.Tag) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		parts = append(parts, fmt.Sprintf("%s=%s", tag.Key, tag.Value))
+	}
+	return strings.Join(parts, ",")
 }
 
 func renderNoticeLines(notices []btui.Notice) []string {

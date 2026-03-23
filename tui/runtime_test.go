@@ -622,6 +622,47 @@ func TestE2ERunScenarioCtrlWOpensWorkspacePickerInView(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioCtrlGTOpensTerminalManagerInView(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyRunes, Runes: []rune("build")},
+			} {
+				nextModel, cmd := model.Update(key)
+				model = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = model.Update(msg)
+						model = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := model.View(); !strings.Contains(view, "terminal_manager_rows:") || !strings.Contains(view, "terminal_manager_query: build") || !strings.Contains(view, "build-log") {
+				t.Fatalf("expected ctrl-g t flow to render terminal manager, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 var (
 	errRuntimeRunBoom     = errors.New("run boom")
 	bootstrapperStopCalls int
@@ -789,6 +830,44 @@ func runtimeStateWithWorkspacePickerTarget() types.AppState {
 				},
 			},
 		},
+	}
+	return state
+}
+
+func runtimeStateWithTerminalManagerTargets() types.AppState {
+	state := buildSinglePaneAppState("main", "shell", types.PaneSlotConnected)
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	pane := tab.Panes[types.PaneID("pane-1")]
+	pane.TerminalID = types.TerminalID("term-1")
+	tab.Panes[types.PaneID("pane-1")] = pane
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:      types.TerminalID("term-1"),
+		Name:    "api-dev",
+		State:   types.TerminalRunStateRunning,
+		Command: []string{"npm", "run", "dev"},
+		Visible: true,
+	}
+	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
+		ID:      types.TerminalID("term-2"),
+		Name:    "build-log",
+		State:   types.TerminalRunStateRunning,
+		Command: []string{"tail", "-f", "build.log"},
+		Tags:    map[string]string{"group": "build"},
+	}
+	state.Domain.Terminals[types.TerminalID("term-3")] = types.TerminalRef{
+		ID:      types.TerminalID("term-3"),
+		Name:    "ops-watch",
+		State:   types.TerminalRunStateRunning,
+		Command: []string{"journalctl", "-f"},
+		Tags:    map[string]string{"team": "ops"},
+	}
+	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-1"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1")},
+		OwnerPaneID:      types.PaneID("pane-1"),
 	}
 	return state
 }

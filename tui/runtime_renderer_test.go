@@ -6,6 +6,7 @@ import (
 
 	"github.com/lozzow/termx/protocol"
 	btui "github.com/lozzow/termx/tui/bt"
+	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
 	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
 	"github.com/lozzow/termx/tui/domain/types"
 )
@@ -126,5 +127,36 @@ func TestRuntimeRendererRendersWorkspacePickerOverlay(t *testing.T) {
 	}
 	if !strings.Contains(view, "  [tab] logs") {
 		t.Fatalf("expected nested tab row in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
+	state := runtimeStateWithTerminalManagerTargets()
+	manager := terminalmanagerdomain.NewState(state.Domain, state.UI.Focus)
+	manager.AppendQuery("build")
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayTerminalManager,
+		Data: manager,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "terminal_manager_query: build") {
+		t.Fatalf("expected manager query in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "terminal_manager_rows:") {
+		t.Fatalf("expected manager rows section in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "> [terminal] build-log") {
+		t.Fatalf("expected selected manager row in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "terminal_manager_detail: build-log") {
+		t.Fatalf("expected manager detail header in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "detail_command: tail -f build.log") {
+		t.Fatalf("expected manager detail command in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "detail_tags: group=build") {
+		t.Fatalf("expected manager detail tags in rendered view, got:\n%s", view)
 	}
 }
