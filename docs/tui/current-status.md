@@ -7,14 +7,14 @@
 
 ## 1. 当前判断
 
-termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overlay、恢复入口状态机、启动规划层、启动任务执行层和 restore store 读写闭环已按 TDD 落地”的阶段。
+termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overlay、恢复入口状态机、启动规划层、启动任务执行层、restore store 读写闭环和 runtime session bootstrap 已按 TDD 落地”的阶段。
 
 现状可以概括为：
 
 - 旧版 TUI 已归档到 `deprecated/tui-legacy/`
 - 新主线文档已经建立并持续作为实现约束
 - 新主线代码已进入 reducer / state machine 落地期
-- 当前已进入 bubbletea shell 的恢复入口、启动规划、启动任务执行和 restore store 读写闭环阶段，但 renderer 仍未接线
+- 当前已进入 bubbletea shell 的恢复入口、启动规划、启动任务执行、restore store 读写闭环和 runtime session bootstrap 阶段，但 renderer 仍未接线
 
 ---
 
@@ -53,6 +53,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 29. 第二十五轮 TDD 已补上 startup task executor 和 attach 启动最小闭环
 30. 第二十六轮 TDD 已补上 restore store 最小加载与降级链路
 31. 第二十七轮 TDD 已补上 restore save 最小持久化闭环
+32. 第二十八轮 TDD 已补上 runtime session bootstrap 的 attach/event 最小闭环
 
 对应文档：
 
@@ -78,6 +79,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `tui/bt`
 - `tui/startup_plan.go`
 - `tui/startup_bootstrap.go`
+- `tui/runtime_session.go`
 - `tui/runtime.go`
 - `tui/client.go`
 
@@ -252,9 +254,15 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `WorkspaceStore` 现在已支持 `SaveWorkspace`，可把当前 domain state 稳定落盘
 - 已补上一条 store 单测覆盖 `SaveWorkspace -> LoadWorkspace` round-trip
 - 已补上一条跨层 E2E：默认启动 -> bootstrap -> save -> restore reload
+- 已新增 `RuntimeSessionBootstrapper`，负责从当前 connected terminal 集合建立 runtime attach session
+- runtime session bootstrap 现在会先订阅全局 `Events`，再为每个 connected terminal 建立 `Attach + Snapshot + Stream`
+- shared terminal 在 runtime session bootstrap 中会按 terminal 去重，只 attach 一次
+- attach / snapshot 失败时会主动清理已建立的 stream stop 句柄，避免半连接泄漏
+- 已补上一条 runtime E2E：restore plan 产出的 connected pane 可直接 bootstrap 出 attach channel 和 event stream
 
 本轮验证：
 
+- `go test ./tui -run TestRuntimeSession -count=1`
 - `go test ./tui -count=1`
 - `go test ./tui/... -count=1`
 - `go test ./tui ./tui/bt -count=1`
@@ -280,7 +288,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 1. 新版 renderer
 2. 真实 TUI E2E 壳与 renderer 结合
-3. event stream / attach channel 接回真实 runtime
+3. 把 runtime session bootstrap 接进 `Run()` 和真实 bubbletea 生命周期
 4. notice 聚合/去重策略
 
 ---
@@ -290,7 +298,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 下一阶段最高优先级不是补 UI，而是先把下面几个边界立住：
 
 1. 更完整的 `intent -> reducer -> effect -> runtime feedback` 契约
-2. event stream / attach channel 接回真实 runtime
+2. 把 runtime session bootstrap 接进 `Run()` 和真实 bubbletea 生命周期
 3. 真实 TUI E2E 场景壳
 4. 新版 renderer 最小骨架
 
@@ -326,7 +334,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 当前最合适的下一步是：
 
-1. 把 event stream / attach channel 接进当前 shell 主线
+1. 把 runtime session bootstrap 接进当前 shell 主线
 2. 给 notice 补聚合/去重策略
 3. 继续扩真实 TUI E2E 场景壳
 
@@ -334,4 +342,4 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 ## 7. 当前一句话状态
 
-termx TUI 现在已经进入“picker / manager / prompt / layout resolve 四条 overlay 主线、startup planner、startup task executor 和 restore store 读写闭环都已落地，runtime feedback 的错误与 notice 生命周期也已接回，下一步继续按 TDD 把 event stream / attach channel 接进真实 runtime，并扩真实 TUI E2E 壳”的阶段。
+termx TUI 现在已经进入“picker / manager / prompt / layout resolve 四条 overlay 主线、startup planner、startup task executor、restore store 读写闭环和 runtime session bootstrap 都已落地，runtime feedback 的错误与 notice 生命周期也已接回，下一步继续按 TDD 把 runtime session bootstrap 接进真实 `Run()` 生命周期，并扩真实 TUI E2E 壳”的阶段。
