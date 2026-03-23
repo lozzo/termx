@@ -136,6 +136,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 112. 第一百零八轮 TDD 已补上 terminal manager search 与 create row 场景的测试闭环
 113. 第一百零九轮 TDD 已补上 terminal manager 剩余动作键路径的测试闭环
 114. 第一百一十轮 TDD 已补上 terminal picker 主要动作路径的测试闭环
+115. 第一百一十一轮 TDD 已补上 workspace picker 主要动作路径与 terminal picker submit 的测试闭环
 
 对应文档：
 
@@ -216,6 +217,12 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- 已补上一条 runtime 场景型 E2E：`Ctrl-f -> ops -> Enter` 后主视图显示 `terminal: term-3`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-w -> ops -> Backspace` 后主视图显示 `workspace_picker_query: op`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-w -> ops -> Enter` 后主视图显示 `workspace: ops`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-w -> ↑ -> Enter` 后主视图显示 `prompt_title: create workspace`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-w -> Esc` 后主视图显示 `overlay: none`
+- workspace picker 的查询回退、jump、create row 与关闭路径现在被 runtime 场景测试锁住
 - 已补上一条 runtime 场景型 E2E：`Ctrl-f -> ops -> Backspace` 后主视图显示 `terminal_picker_query: op`
 - 已补上一条 runtime 场景型 E2E：`Ctrl-f -> missing` 后主视图显示 `> [create] + new terminal`
 - 已补上一条 runtime 场景型 E2E：`Ctrl-f -> missing -> Enter` 后主视图显示 `overlay: none`
