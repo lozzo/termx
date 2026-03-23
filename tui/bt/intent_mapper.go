@@ -178,6 +178,8 @@ func mapTerminalManagerKey(msg tea.KeyMsg) []intent.Intent {
 		return []intent.Intent{intent.TerminalManagerConnectInFloatingPaneIntent{}}
 	case "e":
 		return []intent.Intent{intent.TerminalManagerEditMetadataIntent{}}
+	case "a":
+		return []intent.Intent{intent.TerminalManagerAcquireOwnerIntent{}}
 	case "k":
 		return []intent.Intent{intent.TerminalManagerStopIntent{}}
 	case "esc":

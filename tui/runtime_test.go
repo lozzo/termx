@@ -312,6 +312,88 @@ func TestE2ERunScenarioFollowerPaneWindowResizeDoesNotResizeSharedTerminal(t *te
 	}
 }
 
+func TestE2ERunScenarioFollowerPaneAcquireOwnerEnablesResize(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithFollowerActivePane()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Channel:    21,
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 80, Rows: 24},
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{
+									{Content: "h"},
+									{Content: "i"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			current := model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyRunes, Runes: []rune("a")},
+				{Type: tea.KeyEsc},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "connection_role: owner") {
+				t.Fatalf("expected acquire owner flow to promote active pane, got:\n%s", view)
+			}
+			nextModel, cmd := current.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+			current = nextModel.(*btui.Model)
+			if cmd == nil {
+				t.Fatal("expected acquired owner resize command")
+			}
+			if msg := cmd(); msg != nil {
+				nextModel, _ = current.Update(msg)
+				current = nextModel.(*btui.Model)
+			}
+			if len(client.resizeCalls) != 1 {
+				t.Fatalf("expected one runtime resize call after owner acquire, got %d", len(client.resizeCalls))
+			}
+			if client.resizeCalls[0].channel != 21 || client.resizeCalls[0].cols != 120 || client.resizeCalls[0].rows != 40 {
+				t.Fatalf("unexpected runtime resize payload after owner acquire: %+v", client.resizeCalls[0])
+			}
+			if view := current.View(); !strings.Contains(view, "runtime_size: 120x40") || !strings.Contains(view, "connection_role: owner") {
+				t.Fatalf("expected acquired owner resize flow to expose updated runtime size, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected acquire owner resize scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioActivePaneCoreViewVisible(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithActiveTerminalMetadata()

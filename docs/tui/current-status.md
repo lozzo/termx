@@ -150,6 +150,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 126. 第一百二十二轮 TDD 已补上 runtime 拓扑动作不支持时的显式失败语义
 127. 第一百二十三轮 TDD 已补上 runtime 窗口尺寸变化到 resize 下发闭环
 128. 第一百二十四轮 TDD 已补上 shared terminal 下 owner/follower 的 runtime resize 约束
+129. 第一百二十五轮 TDD 已补上 terminal manager 的 acquire owner 最小闭环
 
 对应文档：
 
@@ -262,6 +263,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - runtime 的窗口尺寸变化现在会遵守 shared terminal 的 owner/follower 规则，follower pane 不再隐式下发 terminal resize
 - 已补上 runtime handler 单测：共享 terminal 的 follower 收到 `WindowSizeMsg` 时不会发出 `Resize`，也不会改写 `runtime_size`
 - 已补上一条 runtime 场景型 E2E：follower pane 成为活动 pane 时，窗口尺寸变化不会越权改写 shared terminal 的运行尺寸
+- terminal manager 现在已支持对当前选中 terminal 发起 `acquire owner`
+- reducer 现在会把 owner 转移到 overlay 的 return-focus pane，并重建 terminal manager 投影，保证 `selected_owner/detail_owner` 同步更新
+- 已补上一条 runtime 场景型 E2E：follower pane 可先通过 terminal manager 获取 owner，再继续触发 runtime resize
 - 已补上一条 runtime 场景型 E2E：`Ctrl-f` 打开 terminal picker 时主视图显式显示 `overlay: terminal_picker` 与 `focus_overlay_target: terminal_picker`
 - 已补上一条 runtime 场景型 E2E：workspace picker / prompt / terminal manager / terminal picker / layout resolve 关闭后主视图不再残留 `focus_overlay_target`
 - 已补上一条 runtime 场景型 E2E：terminal manager 与 layout resolve 关闭后主视图不再残留临时 `mode`

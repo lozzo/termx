@@ -782,6 +782,56 @@ func TestReducerTerminalManagerConnectInFloatingPaneEmitsPlanningEffect(t *testi
 	}
 }
 
+func TestReducerTerminalManagerAcquireOwnerTransfersOwnershipToReturnFocusPane(t *testing.T) {
+	reducer := New()
+	state := newFollowerManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	result := reducer.Reduce(opened.State, intent.TerminalManagerAcquireOwnerIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayTerminalManager {
+		t.Fatalf("expected manager overlay to stay open, got %q", result.State.UI.Overlay.Kind)
+	}
+	conn := result.State.Domain.Connections[types.TerminalID("term-1")]
+	if conn.OwnerPaneID != types.PaneID("pane-2") {
+		t.Fatalf("expected owner to transfer to pane-2, got %+v", conn)
+	}
+	manager, ok := result.State.UI.Overlay.Data.(*terminalmanagerdomain.State)
+	if !ok {
+		t.Fatalf("expected terminal manager overlay data, got %T", result.State.UI.Overlay.Data)
+	}
+	row, ok := manager.SelectedRow()
+	if !ok || row.TerminalID != types.TerminalID("term-1") || row.OwnerSlotLabel != "pane:pane-2" {
+		t.Fatalf("expected selected row owner projection to refresh, got %+v ok=%v", row, ok)
+	}
+	detail, ok := manager.SelectedDetail()
+	if !ok || detail.OwnerSlotLabel != "pane:pane-2" {
+		t.Fatalf("expected detail owner projection to refresh, got %+v ok=%v", detail, ok)
+	}
+}
+
+func TestReducerTerminalManagerAcquireOwnerIgnoresUnconnectedRequestorPane(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	moved := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: 1})
+	result := reducer.Reduce(moved.State, intent.TerminalManagerAcquireOwnerIntent{})
+
+	conn := result.State.Domain.Connections[types.TerminalID("term-2")]
+	if conn.OwnerPaneID != "" {
+		t.Fatalf("expected parked terminal without requestor connection to keep empty owner, got %+v", conn)
+	}
+	manager, ok := result.State.UI.Overlay.Data.(*terminalmanagerdomain.State)
+	if !ok {
+		t.Fatalf("expected terminal manager overlay data, got %T", result.State.UI.Overlay.Data)
+	}
+	detail, ok := manager.SelectedDetail()
+	if !ok || detail.OwnerSlotLabel != "" {
+		t.Fatalf("expected detail owner to stay empty, got %+v ok=%v", detail, ok)
+	}
+}
+
 func TestReducerTerminalManagerCreateNewTerminalEmitsCreateEffect(t *testing.T) {
 	reducer := New()
 	state := newManagerAppState()
@@ -1268,6 +1318,33 @@ func newManagerAppState() types.AppState {
 	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
 		TerminalID:       types.TerminalID("term-1"),
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1"), types.PaneID("float-2")},
+		OwnerPaneID:      types.PaneID("pane-1"),
+	}
+	return state
+}
+
+func newFollowerManagerAppState() types.AppState {
+	state := newManagerAppState()
+	workspace := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := workspace.Tabs[types.TabID("tab-1")]
+	tab.Panes[types.PaneID("pane-2")] = types.PaneState{
+		ID:         types.PaneID("pane-2"),
+		Kind:       types.PaneKindTiled,
+		SlotState:  types.PaneSlotConnected,
+		TerminalID: types.TerminalID("term-1"),
+	}
+	tab.ActivePaneID = types.PaneID("pane-2")
+	workspace.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = workspace
+	state.UI.Focus = types.FocusState{
+		Layer:       types.FocusLayerTiled,
+		WorkspaceID: types.WorkspaceID("ws-1"),
+		TabID:       types.TabID("tab-1"),
+		PaneID:      types.PaneID("pane-2"),
+	}
+	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-1"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1"), types.PaneID("pane-2"), types.PaneID("float-2")},
 		OwnerPaneID:      types.PaneID("pane-1"),
 	}
 	return state

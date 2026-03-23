@@ -204,6 +204,10 @@ type TerminalManagerEditMetadataIntent struct{}
 
 func (TerminalManagerEditMetadataIntent) intentName() string { return "terminal_manager_edit_metadata" }
 
+type TerminalManagerAcquireOwnerIntent struct{}
+
+func (TerminalManagerAcquireOwnerIntent) intentName() string { return "terminal_manager_acquire_owner" }
+
 type TerminalManagerStopIntent struct{}
 
 func (TerminalManagerStopIntent) intentName() string { return "terminal_manager_stop" }

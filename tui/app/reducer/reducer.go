@@ -173,6 +173,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyTerminalManagerConnectInFloatingPane(&result)
 	case intent.TerminalManagerEditMetadataIntent:
 		applyTerminalManagerEditMetadata(&result)
+	case intent.TerminalManagerAcquireOwnerIntent:
+		applyTerminalManagerAcquireOwner(&result.State)
 	case intent.TerminalManagerStopIntent:
 		applyTerminalManagerStop(&result)
 	case intent.TerminalManagerCreateTerminalIntent:
@@ -770,6 +772,24 @@ func applyTerminalManagerEditMetadata(result *Result) {
 	})
 }
 
+func applyTerminalManagerAcquireOwner(state *types.AppState) {
+	manager, ok := terminalManager(state)
+	if !ok {
+		return
+	}
+	terminalID, ok := manager.SelectedTerminalID()
+	if !ok {
+		return
+	}
+	requestorPaneID := state.UI.Overlay.ReturnFocus.PaneID
+	conn := connection.FromSnapshot(state.Domain.Connections[terminalID])
+	if !conn.Acquire(requestorPaneID) {
+		return
+	}
+	state.Domain.Connections[terminalID] = conn.Snapshot()
+	refreshTerminalManagerOverlay(state)
+}
+
 func applyTerminalManagerStop(result *Result) {
 	manager, ok := terminalManager(&result.State)
 	if !ok {
@@ -1089,6 +1109,14 @@ func terminalManager(state *types.AppState) (*terminalmanagerdomain.State, bool)
 	}
 	manager, ok := state.UI.Overlay.Data.(*terminalmanagerdomain.State)
 	return manager, ok
+}
+
+func refreshTerminalManagerOverlay(state *types.AppState) {
+	manager, ok := terminalManager(state)
+	if !ok {
+		return
+	}
+	state.UI.Overlay.Data = manager.Reproject(state.Domain, state.UI.Overlay.ReturnFocus)
 }
 
 // disconnectPaneFromCurrentTerminal 保证 pane 改连新 terminal 时，旧 terminal 的连接快照会同步清理。

@@ -277,6 +277,11 @@ func TestIntentMapperTerminalManagerMapsSelectionAndQuery(t *testing.T) {
 			want: intent.TerminalManagerEditMetadataIntent{},
 		},
 		{
+			name: "acquire owner",
+			key:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")},
+			want: intent.TerminalManagerAcquireOwnerIntent{},
+		},
+		{
 			name: "stop",
 			key:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")},
 			want: intent.TerminalManagerStopIntent{},

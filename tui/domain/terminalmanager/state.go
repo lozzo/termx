@@ -179,6 +179,30 @@ func (s *State) SelectedDetail() (Detail, bool) {
 	return detail, ok
 }
 
+// Reproject 用最新 domain 快照重建 terminal manager 投影，同时尽量保留当前 query 和选中项。
+func (s *State) Reproject(domain types.DomainState, focus types.FocusState) *State {
+	next := NewState(domain, focus)
+	if s == nil {
+		return next
+	}
+	selectedRow, selected := s.SelectedRow()
+	next.query = s.query
+	if next.query != "" {
+		next.resetSelectionForQuery()
+	}
+	switch {
+	case !selected:
+		next.clampSelection()
+	case selectedRow.Kind == RowKindCreate:
+		next.selectedIndex = 0
+	case selectedRow.Kind == RowKindTerminal:
+		next.selectTerminal(selectedRow.TerminalID)
+	default:
+		next.clampSelection()
+	}
+	return next
+}
+
 func (s *State) clampSelection() {
 	rows := s.selectableRows()
 	if len(rows) == 0 {
@@ -310,6 +334,17 @@ func (s *State) resetSelectionForQuery() {
 	}
 	// `0` 保留给 create row，搜索命中后默认跳到第一条 terminal 结果。
 	s.selectedIndex = 1
+}
+
+func (s *State) selectTerminal(terminalID types.TerminalID) {
+	rows := s.selectableRows()
+	for index, row := range rows {
+		if row.Kind == RowKindTerminal && row.TerminalID == terminalID {
+			s.selectedIndex = index
+			return
+		}
+	}
+	s.clampSelection()
 }
 
 func rowsInSection(rows []Row, section Section) []Row {
