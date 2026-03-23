@@ -139,6 +139,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 115. 第一百一十一轮 TDD 已补上 workspace picker 主要动作路径与 terminal picker submit 的测试闭环
 116. 第一百一十二轮 TDD 已补上 prompt 主要交互路径的测试闭环
 117. 第一百一十三轮 TDD 已补上 layout resolve 主要动作路径的测试闭环
+118. 第一百一十四轮 TDD 已补上 workspace picker 树展开收起的测试闭环
 
 对应文档：
 
@@ -219,6 +220,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- 已补上一条 runtime 场景型 E2E：`Ctrl-w -> ops -> Right` 后主视图显示 `workspace_picker_selected_expanded: true`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-w -> ops -> Right -> Left` 后主视图显示 `workspace_picker_selected_expanded: false`
+- workspace picker 的树展开与收起路径现在被 runtime 场景测试锁住
 - 已补上一条 runtime 场景型 E2E：`layout resolve -> Enter` 后主视图显示 `overlay: terminal_picker`
 - 已补上一条 runtime 场景型 E2E：`layout resolve -> ↓ -> Enter` 后主视图显示 `overlay: none`
 - 已补上一条 runtime 场景型 E2E：`layout resolve -> ↓ -> ↓ -> Enter` 后主视图显示 `overlay: none`

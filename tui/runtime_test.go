@@ -714,6 +714,91 @@ func TestE2ERunScenarioWorkspacePickerSubmitJumpsToWorkspace(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioWorkspacePickerExpandShowsChildren(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithWorkspacePickerTarget()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlW},
+				{Type: tea.KeyRunes, Runes: []rune("ops")},
+				{Type: tea.KeyRight},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "workspace_picker_query: ops") || !strings.Contains(view, "workspace_picker_selected: ws-2") || !strings.Contains(view, "workspace_picker_selected_kind: workspace") || !strings.Contains(view, "workspace_picker_selected_expanded: true") || !strings.Contains(view, "workspace_picker_selected_match: true") || !strings.Contains(view, "workspace_picker_selected_depth: 0") || !strings.Contains(view, "workspace_picker_row_count: 6") || !strings.Contains(view, "> [workspace] ops") || !strings.Contains(view, "  [tab] logs") {
+				t.Fatalf("expected workspace picker expand flow to reveal children, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioWorkspacePickerCollapseHidesChildren(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithWorkspacePickerTarget()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlW},
+				{Type: tea.KeyRunes, Runes: []rune("ops")},
+				{Type: tea.KeyRight},
+				{Type: tea.KeyLeft},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "workspace_picker_query: ops") || !strings.Contains(view, "workspace_picker_selected: ws-2") || !strings.Contains(view, "workspace_picker_selected_kind: workspace") || !strings.Contains(view, "workspace_picker_selected_expanded: false") || !strings.Contains(view, "workspace_picker_row_count: 5") || !strings.Contains(view, "> [workspace] ops") || strings.Contains(view, "  [tab] logs") {
+				t.Fatalf("expected workspace picker collapse flow to hide children, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioWorkspacePickerCreateRowOpensPrompt(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithWorkspacePickerTarget()
