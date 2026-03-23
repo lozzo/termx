@@ -244,6 +244,9 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "detail_visible: false") {
 		t.Fatalf("expected manager detail visible flag in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "detail_visibility: hidden") {
+		t.Fatalf("expected manager detail visibility label in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "detail_command: tail -f build.log") {
 		t.Fatalf("expected manager detail command in rendered view, got:\n%s", view)
 	}
