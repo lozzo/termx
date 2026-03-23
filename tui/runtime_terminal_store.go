@@ -21,7 +21,9 @@ type RuntimeTerminalStore interface {
 type RuntimeTerminalStatus struct {
 	State                string
 	ExitCode             *int
+	Size                 protocol.Size
 	Closed               bool
+	ObserverOnly         bool
 	SyncLost             bool
 	SyncLostDroppedBytes uint64
 	RemovedReason        string
@@ -102,6 +104,7 @@ func (s *runtimeTerminalStore) WriteOutput(terminalID types.TerminalID, payload 
 		return err
 	}
 	record.snapshot = snapshotFromVTerm(string(terminalID), record.vt)
+	record.status.Size = record.snapshot.Size
 	record.status.SyncLost = false
 	record.status.SyncLostDroppedBytes = 0
 	return nil
@@ -116,6 +119,9 @@ func (s *runtimeTerminalStore) LoadSnapshot(terminalID types.TerminalID, snapsho
 		s.terminals[terminalID] = record
 	}
 	record.loadSnapshot(cloneSnapshot(snapshot))
+	if snapshot != nil {
+		record.status.Size = snapshot.Size
+	}
 	record.status.SyncLost = false
 	record.status.SyncLostDroppedBytes = 0
 }
@@ -134,6 +140,7 @@ func (s *runtimeTerminalStore) Resize(terminalID types.TerminalID, size protocol
 	record.vt.Resize(cols, rows)
 	record.snapshot = snapshotFromVTerm(string(terminalID), record.vt)
 	record.snapshot.Size = protocol.Size{Cols: uint16(cols), Rows: uint16(rows)}
+	record.status.Size = record.snapshot.Size
 }
 
 func (s *runtimeTerminalStore) MarkClosed(terminalID types.TerminalID, exitCode int) {
@@ -177,6 +184,7 @@ func (s *runtimeTerminalStore) ApplyEvent(evt protocol.Event) []string {
 			record.vt.Resize(cols, rows)
 			record.snapshot = snapshotFromVTerm(string(terminalID), record.vt)
 			record.snapshot.Size = evt.Resized.NewSize
+			record.status.Size = evt.Resized.NewSize
 		}
 	case protocol.EventTerminalStateChanged:
 		if evt.StateChanged != nil {
@@ -196,7 +204,8 @@ func (s *runtimeTerminalStore) ApplyEvent(evt protocol.Event) []string {
 			return []string{evt.ReadError.Error}
 		}
 	case protocol.EventCollaboratorsRevoked:
-		return []string{"terminal collaborator revoked"}
+		record.status.ObserverOnly = true
+		return []string{"terminal switched to observer-only mode"}
 	}
 	return nil
 }
@@ -207,6 +216,7 @@ func (r *runtimeTerminalRecord) loadSnapshot(snapshot *protocol.Snapshot) {
 	if snapshot == nil {
 		return
 	}
+	r.status.Size = snapshot.Size
 	r.ensureVTerm()
 }
 

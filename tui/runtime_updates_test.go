@@ -433,6 +433,98 @@ func TestRuntimeUpdateHandlerStateChangedExitedWithoutCodeFeedsSyncStateIntent(t
 	}
 }
 
+func TestRuntimeUpdateHandlerResizedEventUpdatesStoreSnapshotSize(t *testing.T) {
+	store := NewRuntimeTerminalStore(RuntimeSessions{
+		Terminals: map[types.TerminalID]TerminalRuntimeSession{
+			types.TerminalID("term-1"): {
+				TerminalID: types.TerminalID("term-1"),
+				Snapshot: &protocol.Snapshot{
+					TerminalID: "term-1",
+					Size:       protocol.Size{Cols: 80, Rows: 24},
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{{{Content: "o"}, {Content: "k"}}},
+					},
+					Cursor: protocol.CursorState{Row: 0, Col: 2, Visible: true},
+				},
+			},
+		},
+	})
+	events := make(chan protocol.Event, 1)
+	events <- protocol.Event{
+		Type:       protocol.EventTerminalResized,
+		TerminalID: "term-1",
+		Resized: &protocol.TerminalResizedData{
+			OldSize: protocol.Size{Cols: 80, Rows: 24},
+			NewSize: protocol.Size{Cols: 120, Rows: 40},
+		},
+	}
+	handler := NewRuntimeUpdateHandler(RuntimeSessions{EventStream: events}, store, nil)
+	defer handler.Stop()
+
+	msg := handler.InitCmd()()
+	handled, cmd := handler.HandleMessage(newAppStateForRuntimeUpdate(), msg)
+	if !handled {
+		t.Fatal("expected resized event to be handled")
+	}
+	if cmd == nil {
+		t.Fatal("expected next listen cmd after resized event")
+	}
+	snapshot, ok := store.Snapshot(types.TerminalID("term-1"))
+	if !ok || snapshot == nil {
+		t.Fatal("expected resized snapshot to remain available")
+	}
+	if snapshot.Size.Cols != 120 || snapshot.Size.Rows != 40 {
+		t.Fatalf("expected resized snapshot size 120x40, got %+v", snapshot.Size)
+	}
+	status, ok := store.Status(types.TerminalID("term-1"))
+	if !ok {
+		t.Fatal("expected runtime status after resize")
+	}
+	if status.Size.Cols != 120 || status.Size.Rows != 40 {
+		t.Fatalf("expected runtime status size 120x40, got %+v", status.Size)
+	}
+}
+
+func TestRuntimeUpdateHandlerCollaboratorsRevokedMarksObserverOnlyAndNotice(t *testing.T) {
+	store := NewRuntimeTerminalStore(RuntimeSessions{
+		Terminals: map[types.TerminalID]TerminalRuntimeSession{
+			types.TerminalID("term-1"): {TerminalID: types.TerminalID("term-1")},
+		},
+	})
+	events := make(chan protocol.Event, 1)
+	events <- protocol.Event{
+		Type:                 protocol.EventCollaboratorsRevoked,
+		TerminalID:           "term-1",
+		CollaboratorsRevoked: &protocol.CollaboratorsRevokedData{},
+	}
+	handler := NewRuntimeUpdateHandler(RuntimeSessions{EventStream: events}, store, nil)
+	defer handler.Stop()
+
+	msg := handler.InitCmd()()
+	handled, cmd := handler.HandleMessage(newAppStateForRuntimeUpdate(), msg)
+	if !handled || cmd == nil {
+		t.Fatalf("expected revoked event to be handled with feedback cmd, handled=%v cmd=%v", handled, cmd)
+	}
+	msgs := runCmdMessages(cmd)
+	if len(msgs) != 1 {
+		t.Fatalf("expected one feedback msg, got %#v", msgs)
+	}
+	feedback, ok := msgs[0].(btui.FeedbackMsg)
+	if !ok {
+		t.Fatalf("expected feedback msg, got %#v", msgs[0])
+	}
+	if len(feedback.Notices) != 1 || !strings.Contains(feedback.Notices[0].Text, "observer") {
+		t.Fatalf("expected revoke notice, got %+v", feedback.Notices)
+	}
+	status, ok := store.Status(types.TerminalID("term-1"))
+	if !ok {
+		t.Fatal("expected runtime status after revoke")
+	}
+	if !status.ObserverOnly {
+		t.Fatalf("expected observer-only status after revoke, got %+v", status)
+	}
+}
+
 func TestRuntimeUpdateHandlerReportsRefreshFailureAsNotice(t *testing.T) {
 	store := NewRuntimeTerminalStore(RuntimeSessions{
 		Terminals: map[types.TerminalID]TerminalRuntimeSession{

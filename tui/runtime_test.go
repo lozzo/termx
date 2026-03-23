@@ -380,6 +380,79 @@ func TestE2ERunScenarioStateChangedStoppedFeedsReducerAndClearsPane(t *testing.T
 	}
 }
 
+func TestE2ERunScenarioCollaboratorsRevokedBlocksSubsequentInput(t *testing.T) {
+	events := make(chan protocol.Event, 1)
+	client := &stubRunClient{}
+	planner := &stubRunPlanner{plan: StartupPlan{State: connectedRunAppState()}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: connectedRunAppState()}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			EventStream: events,
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Channel:    21,
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 80, Rows: 24},
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{{{Content: "h"}, {Content: "i"}}},
+						},
+						Cursor: protocol.CursorState{Row: 0, Col: 2, Visible: true},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			initCmd := model.Init()
+			if initCmd == nil {
+				t.Fatal("expected runtime init command")
+			}
+			events <- protocol.Event{
+				Type:                 protocol.EventCollaboratorsRevoked,
+				TerminalID:           "term-1",
+				CollaboratorsRevoked: &protocol.CollaboratorsRevokedData{},
+			}
+			msg := initCmd()
+			if msg == nil {
+				t.Fatal("expected runtime revoke message")
+			}
+			_, cmd := model.Update(msg)
+			for _, nextMsg := range runCmdMessages(cmd) {
+				_, _ = model.Update(nextMsg)
+			}
+			if view := model.View(); !strings.Contains(view, "runtime_access: observer_only") {
+				t.Fatalf("expected runtime view to show observer-only status, got:\n%s", view)
+			}
+			_, inputCmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+			if inputCmd == nil {
+				t.Fatal("expected blocked input to produce notice command")
+			}
+			feedback, ok := inputCmd().(btui.FeedbackMsg)
+			if !ok || len(feedback.Notices) != 1 {
+				t.Fatalf("expected blocked input notice, got %#v", inputCmd())
+			}
+			if len(client.inputs) != 0 {
+				t.Fatalf("expected no forwarded input after revoke, got %+v", client.inputs)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 var (
 	errRuntimeRunBoom     = errors.New("run boom")
 	bootstrapperStopCalls int

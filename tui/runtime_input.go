@@ -37,6 +37,14 @@ func (h runtimeTerminalInputHandler) HandleKey(state types.AppState, msg tea.Key
 	if !ok || session.Channel == 0 {
 		return nil
 	}
+	if status, ok := h.store.Status(session.TerminalID); ok && status.ObserverOnly {
+		return btui.FeedbackCmd(btui.ExecutionResult{
+			Notices: []btui.Notice{{
+				Level: btui.NoticeLevelError,
+				Text:  "terminal is observer-only",
+			}},
+		})
+	}
 	data, ok := encodeTerminalInput(msg)
 	if !ok {
 		return nil

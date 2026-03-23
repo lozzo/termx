@@ -65,6 +65,12 @@ func renderRuntimeStatusLines(status RuntimeTerminalStatus) []string {
 	if status.Closed && status.ExitCode != nil {
 		lines = append(lines, fmt.Sprintf("runtime_exit_code: %d", *status.ExitCode))
 	}
+	if status.Size.Cols > 0 || status.Size.Rows > 0 {
+		lines = append(lines, fmt.Sprintf("runtime_size: %dx%d", status.Size.Cols, status.Size.Rows))
+	}
+	if status.ObserverOnly {
+		lines = append(lines, "runtime_access: observer_only")
+	}
 	if status.SyncLost {
 		lines = append(lines, fmt.Sprintf("runtime_sync_lost: %d", status.SyncLostDroppedBytes))
 	}

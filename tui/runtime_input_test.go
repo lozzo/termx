@@ -2,9 +2,11 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/protocol"
 	btui "github.com/lozzow/termx/tui/bt"
 	"github.com/lozzow/termx/tui/domain/types"
 )
@@ -79,6 +81,40 @@ func TestRuntimeTerminalInputHandlerSkipsWhenModeActive(t *testing.T) {
 	}
 	if len(client.inputs) != 0 {
 		t.Fatalf("expected no input call while mode active, got %+v", client.inputs)
+	}
+}
+
+func TestRuntimeTerminalInputHandlerBlocksObserverOnlyTerminalInput(t *testing.T) {
+	client := &stubRuntimeInputClient{}
+	store := NewRuntimeTerminalStore(RuntimeSessions{
+		Terminals: map[types.TerminalID]TerminalRuntimeSession{
+			types.TerminalID("term-1"): {
+				TerminalID: types.TerminalID("term-1"),
+				Channel:    17,
+			},
+		},
+	})
+	store.ApplyEvent(protocol.Event{
+		Type:                 protocol.EventCollaboratorsRevoked,
+		TerminalID:           "term-1",
+		CollaboratorsRevoked: &protocol.CollaboratorsRevokedData{},
+	})
+	handler := NewRuntimeTerminalInputHandler(client, store)
+
+	cmd := handler.HandleKey(connectedRunAppState(), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	if cmd == nil {
+		t.Fatal("expected observer-only terminal to surface notice command")
+	}
+	msg := cmd()
+	feedback, ok := msg.(btui.FeedbackMsg)
+	if !ok {
+		t.Fatalf("expected feedback msg, got %#v", msg)
+	}
+	if len(feedback.Notices) != 1 || !strings.Contains(feedback.Notices[0].Text, "observer") {
+		t.Fatalf("expected observer-only notice, got %+v", feedback.Notices)
+	}
+	if len(client.inputs) != 0 {
+		t.Fatalf("expected input to be blocked after revoke, got %+v", client.inputs)
 	}
 }
 
