@@ -214,6 +214,9 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "terminal_manager_selected_connected_panes: 0") {
 		t.Fatalf("expected manager selected terminal connection count in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "terminal_manager_selected_location_count: 0") {
+		t.Fatalf("expected manager selected terminal location count in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "terminal_manager_selected_command: tail -f build.log") {
 		t.Fatalf("expected manager selected terminal command in rendered view, got:\n%s", view)
 	}

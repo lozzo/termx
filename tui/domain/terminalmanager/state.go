@@ -44,6 +44,7 @@ type Row struct {
 	VisibilityLabel    string
 	Tags               map[string]string
 	OwnerSlotLabel     string
+	LocationCount      int
 	SearchText         string
 	Command            string
 	ConnectedPaneCount int
@@ -225,6 +226,7 @@ func buildRows(domain types.DomainState) []Row {
 			VisibilityLabel:    visibilityLabel(terminal, connectedPaneCount),
 			Tags:               cloneStringMap(terminal.Tags),
 			OwnerSlotLabel:     ownerSlotLabel(domain, terminalID),
+			LocationCount:      len(collectLocations(domain, terminalID)),
 			SearchText:         searchText(terminalID, terminal),
 			Command:            strings.Join(terminal.Command, " "),
 			ConnectedPaneCount: connectedPaneCount,
