@@ -988,6 +988,32 @@ func TestE2EReducerScenarioTerminalManagerCreatesNewTerminalFromCreateRow(t *tes
 	}
 }
 
+func TestE2EReducerScenarioTerminalManagerEnterOnCreateRowCreatesNewTerminal(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	createRow := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: -100})
+	result := reducer.Reduce(createRow.State, intent.TerminalManagerConnectHereIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected overlay to close after create row submit, got %q", result.State.UI.Overlay.Kind)
+	}
+	if result.State.UI.Focus.Layer != types.FocusLayerTiled || result.State.UI.Focus.PaneID != types.PaneID("pane-1") {
+		t.Fatalf("expected focus to return to current pane, got %+v", result.State.UI.Focus)
+	}
+	if len(result.Effects) != 1 {
+		t.Fatalf("expected one create terminal effect, got %d", len(result.Effects))
+	}
+	effect, ok := result.Effects[0].(CreateTerminalEffect)
+	if !ok {
+		t.Fatalf("expected create terminal effect, got %T", result.Effects[0])
+	}
+	if effect.Name != "ws-1-tab-1-pane-1" || len(effect.Command) == 0 {
+		t.Fatalf("expected create effect defaults to be populated, got %+v", effect)
+	}
+}
+
 func TestE2EReducerScenarioWorkspacePickerSearchesAndJumpsToPane(t *testing.T) {
 	reducer := New()
 	state := newAppStateWithTwoWorkspaces()

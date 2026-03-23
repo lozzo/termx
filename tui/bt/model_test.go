@@ -599,6 +599,37 @@ func TestE2EModelScenarioTerminalManagerEditOpensMetadataPrompt(t *testing.T) {
 	}
 }
 
+func TestE2EModelScenarioTerminalManagerEnterOnCreateRowClosesOverlay(t *testing.T) {
+	model := NewModel(ModelConfig{
+		InitialState:  newManagerAppState(),
+		Mapper:        NewIntentMapper(Config{Clock: fixedClock{}}),
+		Reducer:       reducer.New(),
+		EffectHandler: RuntimeEffectHandler{Executor: DefaultRuntimeExecutor{}},
+		Renderer:      StaticRenderer{},
+	})
+
+	sequence := []tea.KeyMsg{
+		{Type: tea.KeyCtrlG},
+		{Type: tea.KeyRunes, Runes: []rune("t")},
+		{Type: tea.KeyUp},
+		{Type: tea.KeyEnter},
+	}
+
+	current := model
+	for _, key := range sequence {
+		next, _ := current.Update(key)
+		current = next.(*Model)
+	}
+
+	state := current.State()
+	if state.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected overlay to close after create row submit, got %q", state.UI.Overlay.Kind)
+	}
+	if state.UI.Focus.Layer != types.FocusLayerTiled || state.UI.Focus.PaneID != types.PaneID("pane-1") {
+		t.Fatalf("expected focus to return to current pane, got %+v", state.UI.Focus)
+	}
+}
+
 func TestE2EModelScenarioFailedStopRecordsErrorNotice(t *testing.T) {
 	service := &failingTerminalService{stopErr: errBoom}
 	scheduler := &stubNoticeScheduler{msg: noticeTimeoutMsg{ID: "notice-1"}}

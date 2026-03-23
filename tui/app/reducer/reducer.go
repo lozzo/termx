@@ -630,6 +630,15 @@ func applyTerminalManagerConnectHere(result *Result, _ intent.TerminalManagerCon
 	if !ok {
 		return
 	}
+	if row, ok := manager.SelectedRow(); ok && row.Kind == terminalmanagerdomain.RowKindCreate {
+		result.Effects = append(result.Effects, CreateTerminalEffect{
+			PaneID:  result.State.UI.Overlay.ReturnFocus.PaneID,
+			Command: defaultCreateTerminalCommand(),
+			Name:    defaultCreateTerminalName(result.State.UI.Overlay.ReturnFocus),
+		})
+		applyCloseOverlay(&result.State)
+		return
+	}
 	terminalID, ok := manager.SelectedTerminalID()
 	if !ok {
 		return

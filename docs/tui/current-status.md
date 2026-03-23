@@ -133,6 +133,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 109. 第一百零五轮 TDD 已补上 terminal manager parked selected 剩余字段的测试闭环
 110. 第一百零六轮 TDD 已补上 terminal manager overlay 结构字段的测试闭环
 111. 第一百零七轮 TDD 已补上 terminal manager edit 与 stop 场景的测试闭环
+112. 第一百零八轮 TDD 已补上 terminal manager search 与 create row 场景的测试闭环
 
 对应文档：
 
@@ -213,6 +214,13 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ops` 后主视图显示 `terminal_manager_query: ops`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ops` 后主视图显示 `terminal_manager_selected: term-3`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ops` 后主视图显示 `detail_tags: team=ops`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↑` 后主视图显示 `> [create] + new terminal`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↑ -> Enter` 后主视图显示 `overlay: none`
+- 已补上一条 reducer/model/runtime 联动闭环：terminal manager 的 create row 现在可通过真实 `Enter` 路径触发
+- terminal manager 的 search 过滤与 create row 提交结果现在被场景测试锁住
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> e` 后主视图显示 `prompt_kind: edit_terminal_metadata`
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> e` 后主视图显示 `> [name] Name: api-dev`
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> e` 后主视图显示 `  [tags] Tags: `

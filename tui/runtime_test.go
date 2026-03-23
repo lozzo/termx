@@ -711,6 +711,47 @@ func TestE2ERunScenarioTerminalManagerMoveShowsSelectedTags(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioTerminalManagerSearchUpdatesView(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyRunes, Runes: []rune("ops")},
+			} {
+				nextModel, cmd := model.Update(key)
+				model = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = model.Update(msg)
+						model = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := model.View(); !strings.Contains(view, "terminal_manager_query: ops") || !strings.Contains(view, "terminal_manager_selected: term-3") || !strings.Contains(view, "terminal_manager_selected_label: ops-watch") || !strings.Contains(view, "terminal_manager_selected_kind: terminal") || !strings.Contains(view, "terminal_manager_selected_section: PARKED") || !strings.Contains(view, "terminal_manager_selected_state: running") || !strings.Contains(view, "terminal_manager_selected_visible: false") || !strings.Contains(view, "terminal_manager_selected_visibility: hidden") || !strings.Contains(view, "terminal_manager_selected_connected_panes: 0") || !strings.Contains(view, "terminal_manager_selected_location_count: 0") || !strings.Contains(view, "terminal_manager_selected_command: journalctl -f") || !strings.Contains(view, "terminal_manager_selected_owner: ") || !strings.Contains(view, "terminal_manager_selected_tags: team=ops") || !strings.Contains(view, "terminal_manager_row_count: 4") || !strings.Contains(view, "terminal_manager_rows:") || !strings.Contains(view, "> [terminal] ops-watch") || !strings.Contains(view, "terminal_manager_detail: ops-watch") || !strings.Contains(view, "detail_terminal: term-3") || !strings.Contains(view, "detail_state: running") || !strings.Contains(view, "detail_visible: false") || !strings.Contains(view, "detail_visibility: hidden") || !strings.Contains(view, "detail_connected_panes: 0") || !strings.Contains(view, "detail_location_count: 0") || !strings.Contains(view, "detail_command: journalctl -f") || !strings.Contains(view, "detail_owner: ") || !strings.Contains(view, "detail_tags: team=ops") {
+				t.Fatalf("expected terminal manager search flow to render filtered selection, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioTerminalManagerEditOpensPromptInView(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithTerminalManagerTargets()
@@ -789,6 +830,66 @@ func TestE2ERunScenarioTerminalManagerStopClosesOverlayAndClearsPane(t *testing.
 			terminal := current.State().Domain.Terminals[types.TerminalID("term-1")]
 			if terminal.State != types.TerminalRunStateStopped {
 				t.Fatalf("expected stop flow to mark terminal stopped, got %+v", terminal)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioTerminalManagerCreateRowSubmitClosesOverlay(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			nextModel, cmd := current.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyUp},
+			} {
+				nextModel, cmd = current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "terminal_manager_query: ") || !strings.Contains(view, "terminal_manager_row_count: 7") || !strings.Contains(view, "terminal_manager_rows:") || !strings.Contains(view, "> [create] + new terminal") || strings.Contains(view, "terminal_manager_detail:") {
+				t.Fatalf("expected create row selection in terminal manager view, got:\n%s", view)
+			}
+			nextModel, cmd = current.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "terminal_manager_rows:") {
+				t.Fatalf("expected create row submit to close overlay, got:\n%s", view)
 			}
 			return nil
 		},
