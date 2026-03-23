@@ -775,7 +775,7 @@ func TestE2ERunScenarioLayoutResolveMoveUpdatesView(t *testing.T) {
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "> [create_new] create new") {
+			if view := current.View(); !strings.Contains(view, "layout_resolve_pane: pane-1") || !strings.Contains(view, "> [create_new] create new") {
 				t.Fatalf("expected down key to move resolve selection in view, got:\n%s", view)
 			}
 			return nil

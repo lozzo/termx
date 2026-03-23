@@ -362,6 +362,7 @@ func renderTerminalPickerLines(picker *terminalpickerdomain.State) []string {
 
 func renderLayoutResolveLines(resolve *layoutresolvedomain.State) []string {
 	lines := []string{
+		fmt.Sprintf("layout_resolve_pane: %s", resolve.PaneID),
 		fmt.Sprintf("layout_resolve_role: %s", resolve.Role),
 		fmt.Sprintf("layout_resolve_hint: %s", resolve.Hint),
 		"layout_resolve_rows:",

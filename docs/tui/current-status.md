@@ -80,6 +80,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 56. 第五十二轮 TDD 已补上 active pane 形态的 renderer 可见性闭环
 57. 第五十三轮 TDD 已补上 active tab layer 的 renderer 可见性闭环
 58. 第五十四轮 TDD 已补上 prompt handoff 目标 terminal 的 renderer 可见性闭环
+59. 第五十五轮 TDD 已补上 layout resolve 目标 pane 的 renderer 可见性闭环
 
 对应文档：
 
@@ -160,6 +161,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- runtime renderer 已显式展示 layout resolve overlay 的 `layout_resolve_pane`
+- waiting pane 做 resolve 时，当前主视图可直接看到目标 pane ID
+- 已补上一条 runtime 场景型 E2E：layout resolve 选择移动时视图同时保留 `layout_resolve_pane: pane-1`
 - runtime renderer 已显式展示 prompt overlay 的 `prompt_terminal`
 - `edit terminal metadata` prompt 现在可直接看见当前 handoff 目标 terminal
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> e` 进入 prompt 后主视图显示 `prompt_terminal: term-1`
