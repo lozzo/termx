@@ -155,6 +155,7 @@ type OverlayKind string
 
 const (
 	OverlayNone            OverlayKind = "none"
+	OverlayLayoutResolve   OverlayKind = "layout_resolve"
 	OverlayTerminalPicker  OverlayKind = "terminal_picker"
 	OverlayTerminalManager OverlayKind = "terminal_manager"
 	OverlayWorkspacePicker OverlayKind = "workspace_picker"

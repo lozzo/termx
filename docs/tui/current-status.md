@@ -7,14 +7,14 @@
 
 ## 1. 当前判断
 
-termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状态机已按 TDD 落地”的阶段。
+termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overlay 和第一批恢复入口状态机已按 TDD 落地”的阶段。
 
 现状可以概括为：
 
 - 旧版 TUI 已归档到 `deprecated/tui-legacy/`
 - 新主线文档已经建立并持续作为实现约束
 - 新主线代码已进入 reducer / state machine 落地期
-- 当前仍未进入 bubbletea shell 和 renderer 恢复阶段
+- 当前已进入 bubbletea shell 的恢复入口落地阶段，但 renderer 仍未接线
 
 ---
 
@@ -48,6 +48,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 24. 第二十轮 TDD 已补上 runtime feedback 错误与 notice 通道
 25. 第二十一轮 TDD 已补上 terminal picker 主线接线
 26. 第二十二轮 TDD 已补上 notice timeout / 清理策略
+27. 第二十三轮 TDD 已补上 `layout resolve` 最小恢复闭环
 
 对应文档：
 
@@ -67,6 +68,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - `tui/domain/prompt`
 - `tui/domain/terminalmanager`
 - `tui/domain/terminalpicker`
+- `tui/domain/layoutresolve`
 - `tui/app/intent`
 - `tui/app/reducer`
 - `tui/bt`
@@ -108,6 +110,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - `TerminalPickerAppendQueryIntent`
 - `TerminalPickerBackspaceIntent`
 - `TerminalPickerSubmitIntent`
+- `OpenLayoutResolveIntent`
+- `LayoutResolveMoveIntent`
+- `LayoutResolveSubmitIntent`
 - `SubmitPromptIntent`
 - `CancelPromptIntent`
 - `PromptAppendInputIntent`
@@ -215,9 +220,17 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - shell 容器已接上可替换的 `NoticeScheduler`，默认通过 `tea.Tick` 调度 timeout
 - `Model.Update` 已支持消费 `notice timeout` message，并按 notice ID 清理过期项
 - 已补上一条跨层场景型 E2E：error notice 经 timeout 后自动清理
+- 已新增 `tui/domain/layoutresolve`，提供 waiting pane 的最小 resolve 选择状态
+- `layout resolve` 已支持三种显式动作：`connect existing / create new / skip`
+- `layout resolve` 已接入 reducer，可把 waiting pane handoff 到 `terminal picker`
+- `layout resolve` 已支持直接创建新 terminal 的 effect 产出，以及 `skip` 后保留 waiting pane
+- `tui/bt` 已接上 `layout resolve` 的移动、提交、关闭键映射
+- 已补上一条 reducer 场景型 E2E：waiting pane 从 resolve 进入 terminal picker 并 connect terminal
+- 已补上一条 shell 场景型 E2E：`layout resolve -> terminal picker -> connect existing`
 
 本轮验证：
 
+- `go test ./tui/domain/layoutresolve ./tui/app/reducer ./tui/bt -count=1`
 - `go test ./tui/bt -count=1`
 - `go test ./tui/domain/terminalpicker ./tui/app/reducer ./tui/bt -count=1`
 - `go test ./tui/bt -run TestE2E -count=1`
@@ -238,8 +251,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 当前还没有正式开始的部分：
 
 1. 新版 renderer
-2. restore 流程
-3. 新主线真实 TUI E2E 回迁
+2. 真实 TUI E2E 壳与 renderer 结合
+3. restore 的启动入口与 layout 文件加载
 4. notice 聚合/去重策略
 
 ---
@@ -249,7 +262,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 下一阶段最高优先级不是补 UI，而是先把下面几个边界立住：
 
 1. 更完整的 `intent -> reducer -> effect -> runtime feedback` 契约
-2. restore 流程
+2. restore 的启动入口和 layout 文件载入
 3. 真实 TUI E2E 场景壳
 4. 新版 renderer 最小骨架
 
@@ -285,7 +298,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 当前最合适的下一步是：
 
-1. 把 restore 流程接进当前 shell 主线
+1. 把 restore 的启动入口和 layout 文件解析接进当前 shell 主线
 2. 给 notice 补聚合/去重策略
 3. 继续扩真实 TUI E2E 场景壳
 
@@ -293,4 +306,4 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 ## 7. 当前一句话状态
 
-termx TUI 现在已经进入“picker / manager / prompt 三条 overlay 主线都已接入当前 shell 容器，runtime feedback 的错误与 notice 生命周期也已接回，下一步继续按 TDD 接 restore、补 notice 聚合策略并扩真实 TUI E2E 壳”的阶段。
+termx TUI 现在已经进入“picker / manager / prompt / layout resolve 四条 overlay 主线都已接入当前 shell 容器，runtime feedback 的错误与 notice 生命周期也已接回，下一步继续按 TDD 接 restore 启动入口、补 notice 聚合策略并扩真实 TUI E2E 壳”的阶段。

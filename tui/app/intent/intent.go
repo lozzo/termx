@@ -60,6 +60,14 @@ type OpenTerminalPickerIntent struct{}
 
 func (OpenTerminalPickerIntent) intentName() string { return "open_terminal_picker" }
 
+type OpenLayoutResolveIntent struct {
+	PaneID types.PaneID
+	Role   string
+	Hint   string
+}
+
+func (OpenLayoutResolveIntent) intentName() string { return "open_layout_resolve" }
+
 type OpenWorkspacePickerIntent struct{}
 
 func (OpenWorkspacePickerIntent) intentName() string { return "open_workspace_picker" }
@@ -126,6 +134,16 @@ func (TerminalPickerBackspaceIntent) intentName() string { return "terminal_pick
 type TerminalPickerSubmitIntent struct{}
 
 func (TerminalPickerSubmitIntent) intentName() string { return "terminal_picker_submit" }
+
+type LayoutResolveMoveIntent struct {
+	Delta int
+}
+
+func (LayoutResolveMoveIntent) intentName() string { return "layout_resolve_move" }
+
+type LayoutResolveSubmitIntent struct{}
+
+func (LayoutResolveSubmitIntent) intentName() string { return "layout_resolve_submit" }
 
 type TerminalManagerMoveIntent struct {
 	Delta int

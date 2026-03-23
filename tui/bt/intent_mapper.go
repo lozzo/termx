@@ -53,6 +53,8 @@ func NewIntentMapper(cfg Config) IntentMapper {
 // 这里不直接改状态，后续无论接 shell、鼠标还是 server 事件，都统一走 reducer。
 func (m DefaultIntentMapper) MapKey(state types.AppState, msg tea.KeyMsg) []intent.Intent {
 	switch state.UI.Overlay.Kind {
+	case types.OverlayLayoutResolve:
+		return mapLayoutResolveKey(msg)
 	case types.OverlayTerminalPicker:
 		return mapTerminalPickerKey(msg)
 	case types.OverlayWorkspacePicker:
@@ -119,6 +121,21 @@ func mapTerminalPickerKey(msg tea.KeyMsg) []intent.Intent {
 		if text := inputText(msg); text != "" {
 			return []intent.Intent{intent.TerminalPickerAppendQueryIntent{Text: text}}
 		}
+		return nil
+	}
+}
+
+func mapLayoutResolveKey(msg tea.KeyMsg) []intent.Intent {
+	switch msg.String() {
+	case "up", "k":
+		return []intent.Intent{intent.LayoutResolveMoveIntent{Delta: -1}}
+	case "down", "j":
+		return []intent.Intent{intent.LayoutResolveMoveIntent{Delta: 1}}
+	case "enter":
+		return []intent.Intent{intent.LayoutResolveSubmitIntent{}}
+	case "esc":
+		return []intent.Intent{intent.CloseOverlayIntent{}}
+	default:
 		return nil
 	}
 }
