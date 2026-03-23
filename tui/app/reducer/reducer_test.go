@@ -533,6 +533,30 @@ func TestReducerTerminalManagerSearchMovesSelectionToMatchedTerminal(t *testing.
 	}
 }
 
+func TestReducerTerminalManagerDetailsExposePaneLocations(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	manager, ok := opened.State.UI.Overlay.Data.(*terminalmanagerdomain.State)
+	if !ok {
+		t.Fatalf("expected terminal manager overlay data, got %T", opened.State.UI.Overlay.Data)
+	}
+	detail, ok := manager.SelectedDetail()
+	if !ok {
+		t.Fatalf("expected selected detail")
+	}
+	if len(detail.Locations) != 2 {
+		t.Fatalf("expected two projected locations, got %+v", detail.Locations)
+	}
+	if detail.Locations[0].SlotLabel != "pane:pane-1" {
+		t.Fatalf("expected tiled location first, got %+v", detail.Locations[0])
+	}
+	if detail.Locations[1].SlotLabel != "float:float-2" {
+		t.Fatalf("expected floating location second, got %+v", detail.Locations[1])
+	}
+}
+
 func TestReducerTerminalManagerEditMetadataClosesOverlayAndEmitsPrompt(t *testing.T) {
 	reducer := New()
 	state := newManagerAppState()
@@ -842,6 +866,32 @@ func newSharedTerminalAppState() types.AppState {
 
 func newManagerAppState() types.AppState {
 	state := newConnectedAppState()
+	state.Domain.WorkspaceOrder = append(state.Domain.WorkspaceOrder, types.WorkspaceID("ws-2"))
+	state.Domain.Workspaces[types.WorkspaceID("ws-2")] = types.WorkspaceState{
+		ID:          types.WorkspaceID("ws-2"),
+		Name:        "ws-2",
+		ActiveTabID: types.TabID("tab-2"),
+		TabOrder:    []types.TabID{types.TabID("tab-2")},
+		Tabs: map[types.TabID]types.TabState{
+			types.TabID("tab-2"): {
+				ID:           types.TabID("tab-2"),
+				Name:         "tab-2",
+				ActivePaneID: types.PaneID("float-2"),
+				ActiveLayer:  types.FocusLayerFloating,
+				FloatingOrder: []types.PaneID{
+					types.PaneID("float-2"),
+				},
+				Panes: map[types.PaneID]types.PaneState{
+					types.PaneID("float-2"): {
+						ID:         types.PaneID("float-2"),
+						Kind:       types.PaneKindFloating,
+						SlotState:  types.PaneSlotConnected,
+						TerminalID: types.TerminalID("term-1"),
+					},
+				},
+			},
+		},
+	}
 	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
 		ID:      types.TerminalID("term-2"),
 		Name:    "build-log",
@@ -855,6 +905,11 @@ func newManagerAppState() types.AppState {
 		State:   types.TerminalRunStateRunning,
 		Command: []string{"journalctl", "-f"},
 		Tags:    map[string]string{"team": "ops"},
+	}
+	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-1"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1"), types.PaneID("float-2")},
+		OwnerPaneID:      types.PaneID("pane-1"),
 	}
 	return state
 }

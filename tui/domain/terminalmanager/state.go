@@ -29,6 +29,7 @@ const (
 // 这里维护“可选条目”和“可渲染投影”两套视图，避免 UI 选择逻辑和 header 行耦在一起。
 type State struct {
 	rows          []Row
+	details       map[types.TerminalID]Detail
 	query         string
 	selectedIndex int
 }
@@ -52,11 +53,21 @@ type Detail struct {
 	Visible            bool
 	Command            string
 	ConnectedPaneCount int
+	Locations          []Location
+}
+
+type Location struct {
+	WorkspaceName string
+	TabName       string
+	SlotLabel     string
 }
 
 func NewState(domain types.DomainState, focus types.FocusState) *State {
 	rows := buildRows(domain)
-	state := &State{rows: rows}
+	state := &State{
+		rows:    rows,
+		details: buildDetails(domain),
+	}
 	state.selectedIndex = state.defaultSelectionIndex(domain, focus)
 	return state
 }
@@ -71,6 +82,7 @@ func (s *State) CloneOverlayData() types.OverlayData {
 	}
 	clone := &State{
 		rows:          append([]Row(nil), s.rows...),
+		details:       cloneDetails(s.details),
 		query:         s.query,
 		selectedIndex: s.selectedIndex,
 	}
@@ -151,14 +163,8 @@ func (s *State) SelectedDetail() (Detail, bool) {
 	if !ok || row.Kind != RowKindTerminal {
 		return Detail{}, false
 	}
-	return Detail{
-		TerminalID:         row.TerminalID,
-		Name:               row.Label,
-		State:              row.State,
-		Visible:            row.Visible,
-		Command:            row.Command,
-		ConnectedPaneCount: row.ConnectedPaneCount,
-	}, true
+	detail, ok := s.details[row.TerminalID]
+	return detail, ok
 }
 
 func (s *State) clampSelection() {
@@ -232,6 +238,26 @@ func buildRows(domain types.DomainState) []Row {
 	return rows
 }
 
+func buildDetails(domain types.DomainState) map[types.TerminalID]Detail {
+	out := make(map[types.TerminalID]Detail, len(domain.Terminals))
+	for terminalID, terminal := range domain.Terminals {
+		label := terminal.Name
+		if label == "" {
+			label = string(terminalID)
+		}
+		out[terminalID] = Detail{
+			TerminalID:         terminalID,
+			Name:               label,
+			State:              terminal.State,
+			Visible:            terminal.Visible,
+			Command:            strings.Join(terminal.Command, " "),
+			ConnectedPaneCount: len(domain.Connections[terminalID].ConnectedPaneIDs),
+			Locations:          collectLocations(domain, terminalID),
+		}
+	}
+	return out
+}
+
 func (s *State) visibleTerminalRows() []Row {
 	rows := s.rows
 	if s.query == "" {
@@ -294,6 +320,56 @@ func cmpSection(a, b Section) int {
 		SectionExited:  3,
 	}
 	return order[a] - order[b]
+}
+
+func collectLocations(domain types.DomainState, terminalID types.TerminalID) []Location {
+	var out []Location
+	for _, workspaceID := range domain.WorkspaceOrder {
+		workspace, ok := domain.Workspaces[workspaceID]
+		if !ok {
+			continue
+		}
+		for _, tabID := range workspace.TabOrder {
+			tab, ok := workspace.Tabs[tabID]
+			if !ok {
+				continue
+			}
+			paneIDs := make([]types.PaneID, 0, len(tab.Panes))
+			for paneID := range tab.Panes {
+				paneIDs = append(paneIDs, paneID)
+			}
+			slices.Sort(paneIDs)
+			for _, paneID := range paneIDs {
+				pane := tab.Panes[paneID]
+				if pane.TerminalID != terminalID {
+					continue
+				}
+				slotPrefix := "pane"
+				if pane.Kind == types.PaneKindFloating {
+					slotPrefix = "float"
+				}
+				out = append(out, Location{
+					WorkspaceName: workspace.Name,
+					TabName:       tab.Name,
+					SlotLabel:     slotPrefix + ":" + string(paneID),
+				})
+			}
+		}
+	}
+	return out
+}
+
+func cloneDetails(in map[types.TerminalID]Detail) map[types.TerminalID]Detail {
+	if in == nil {
+		return nil
+	}
+	out := make(map[types.TerminalID]Detail, len(in))
+	for id, detail := range in {
+		clone := detail
+		clone.Locations = append([]Location(nil), detail.Locations...)
+		out[id] = clone
+	}
+	return out
 }
 
 func searchText(terminalID types.TerminalID, terminal types.TerminalRef) string {

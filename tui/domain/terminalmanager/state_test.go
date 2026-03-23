@@ -138,18 +138,27 @@ func TestManagerStateSelectedDetailTracksCurrentTerminal(t *testing.T) {
 	if detail.TerminalID != types.TerminalID("term-2") || detail.Name != "beta" {
 		t.Fatalf("unexpected selected detail: %+v", detail)
 	}
-	if detail.ConnectedPaneCount != 1 {
+	if detail.ConnectedPaneCount != 2 {
 		t.Fatalf("expected connected pane count, got %+v", detail)
 	}
 	if detail.Command != "npm run build" {
 		t.Fatalf("expected command projection, got %+v", detail)
+	}
+	if len(detail.Locations) != 2 {
+		t.Fatalf("expected projected locations, got %+v", detail.Locations)
+	}
+	if detail.Locations[0].WorkspaceName != "ws-1" || detail.Locations[0].SlotLabel != "pane:pane-1" {
+		t.Fatalf("expected tiled location first, got %+v", detail.Locations[0])
+	}
+	if detail.Locations[1].WorkspaceName != "ws-2" || detail.Locations[1].SlotLabel != "float:float-1" {
+		t.Fatalf("expected floating location second, got %+v", detail.Locations[1])
 	}
 }
 
 func sampleDomainState() types.DomainState {
 	return types.DomainState{
 		ActiveWorkspaceID: types.WorkspaceID("ws-1"),
-		WorkspaceOrder:    []types.WorkspaceID{types.WorkspaceID("ws-1")},
+		WorkspaceOrder:    []types.WorkspaceID{types.WorkspaceID("ws-1"), types.WorkspaceID("ws-2")},
 		Workspaces: map[types.WorkspaceID]types.WorkspaceState{
 			types.WorkspaceID("ws-1"): {
 				ID:          types.WorkspaceID("ws-1"),
@@ -172,6 +181,31 @@ func sampleDomainState() types.DomainState {
 					},
 				},
 			},
+			types.WorkspaceID("ws-2"): {
+				ID:          types.WorkspaceID("ws-2"),
+				Name:        "ws-2",
+				ActiveTabID: types.TabID("tab-2"),
+				TabOrder:    []types.TabID{types.TabID("tab-2")},
+				Tabs: map[types.TabID]types.TabState{
+					types.TabID("tab-2"): {
+						ID:           types.TabID("tab-2"),
+						Name:         "tab-2",
+						ActivePaneID: types.PaneID("float-1"),
+						ActiveLayer:  types.FocusLayerFloating,
+						FloatingOrder: []types.PaneID{
+							types.PaneID("float-1"),
+						},
+						Panes: map[types.PaneID]types.PaneState{
+							types.PaneID("float-1"): {
+								ID:         types.PaneID("float-1"),
+								Kind:       types.PaneKindFloating,
+								SlotState:  types.PaneSlotConnected,
+								TerminalID: types.TerminalID("term-2"),
+							},
+						},
+					},
+				},
+			},
 		},
 		Terminals: map[types.TerminalID]types.TerminalRef{
 			types.TerminalID("term-1"): {ID: types.TerminalID("term-1"), Name: "alpha", Tags: map[string]string{"group": "api"}, Command: []string{"tail", "-f", "api.log"}},
@@ -181,7 +215,7 @@ func sampleDomainState() types.DomainState {
 		Connections: map[types.TerminalID]types.ConnectionState{
 			types.TerminalID("term-2"): {
 				TerminalID:       types.TerminalID("term-2"),
-				ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1")},
+				ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1"), types.PaneID("float-1")},
 				OwnerPaneID:      types.PaneID("pane-1"),
 			},
 		},
