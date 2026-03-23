@@ -32,6 +32,13 @@ type CreateTerminalTask struct {
 
 func (CreateTerminalTask) startupTaskName() string { return "create_terminal" }
 
+type AttachTerminalTask struct {
+	PaneID     types.PaneID
+	TerminalID types.TerminalID
+}
+
+func (AttachTerminalTask) startupTaskName() string { return "attach_terminal" }
+
 type StartupPlan struct {
 	State    types.AppState
 	Tasks    []StartupTask
@@ -65,6 +72,9 @@ func NewStartupPlanner(loader LayoutLoader) StartupPlanner {
 // Plan 先把启动阶段收敛成纯规划，避免 runtime 刚接回时就把加载、降级和 UI 初始化搅在一起。
 // 这一层只负责生成初始状态和启动任务，不直接触碰 daemon、PTY 或 Bubble Tea 程序生命周期。
 func (p startupPlanner) Plan(ctx context.Context, cfg Config) (StartupPlan, error) {
+	if strings.TrimSpace(cfg.AttachID) != "" {
+		return attachStartupPlan(cfg), nil
+	}
 	if strings.TrimSpace(cfg.StartupLayout) == "" {
 		return defaultStartupPlan(cfg), nil
 	}
@@ -106,6 +116,17 @@ func defaultStartupPlan(cfg Config) StartupPlan {
 			PaneID:  types.PaneID("pane-1"),
 			Command: []string{defaultShell(cfg)},
 			Name:    "ws-1-tab-1-pane-1",
+		}},
+	}
+}
+
+func attachStartupPlan(cfg Config) StartupPlan {
+	state := buildSinglePaneAppState(firstNonEmpty(cfg.Workspace, "main"), "shell", types.PaneSlotEmpty)
+	return StartupPlan{
+		State: state,
+		Tasks: []StartupTask{AttachTerminalTask{
+			PaneID:     types.PaneID("pane-1"),
+			TerminalID: types.TerminalID(cfg.AttachID),
 		}},
 	}
 }

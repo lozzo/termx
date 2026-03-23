@@ -7,14 +7,14 @@
 
 ## 1. 当前判断
 
-termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overlay、恢复入口状态机和启动规划层已按 TDD 落地”的阶段。
+termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overlay、恢复入口状态机、启动规划层和启动任务执行层已按 TDD 落地”的阶段。
 
 现状可以概括为：
 
 - 旧版 TUI 已归档到 `deprecated/tui-legacy/`
 - 新主线文档已经建立并持续作为实现约束
 - 新主线代码已进入 reducer / state machine 落地期
-- 当前已进入 bubbletea shell 的恢复入口和启动规划落地阶段，但 renderer 仍未接线
+- 当前已进入 bubbletea shell 的恢复入口、启动规划和启动任务执行落地阶段，但 renderer 仍未接线
 
 ---
 
@@ -50,6 +50,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 26. 第二十二轮 TDD 已补上 notice timeout / 清理策略
 27. 第二十三轮 TDD 已补上 `layout resolve` 最小恢复闭环
 28. 第二十四轮 TDD 已补上 startup planner 与 layout YAML 最小导入
+29. 第二十五轮 TDD 已补上 startup task executor 和 attach 启动最小闭环
 
 对应文档：
 
@@ -74,6 +75,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `tui/app/reducer`
 - `tui/bt`
 - `tui/startup_plan.go`
+- `tui/startup_bootstrap.go`
 - `tui/runtime.go`
 - `tui/client.go`
 
@@ -234,9 +236,15 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `--layout` 启动现在可加载最小 YAML，并直接落到 waiting pane + `layout resolve`
 - layout 加载失败时，若启用 `StartupAutoLayout`，会稳定降级到默认 workspace 启动
 - 已补上一条启动层 E2E：`layout file -> resolve overlay -> terminal picker -> connect existing`
+- startup planner 现在已支持 `attach` 启动路径，并产出独立 `AttachTerminalTask`
+- 已新增 `StartupTaskExecutor`，负责执行启动任务并把 runtime 结果回填到纯状态
+- 默认启动的 `CreateTerminalTask` 现在可以真正调用 client create 并把 pane 回填成 connected
+- `attach` 启动现在会通过 `List` 校验目标 terminal，并把 metadata / state 回填到 pane 和 terminal ref
+- 已补上一条启动层 E2E：默认启动经 startup bootstrap 后直接进入 connected pane
 
 本轮验证：
 
+- `go test ./tui -count=1`
 - `go test ./tui ./tui/bt -count=1`
 - `go test ./tui/domain/layoutresolve ./tui/app/reducer ./tui/bt -count=1`
 - `go test ./tui/bt -count=1`
@@ -260,7 +268,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 1. 新版 renderer
 2. 真实 TUI E2E 壳与 renderer 结合
-3. startup task / attach / restore store 接回真实 runtime
+3. restore store / event stream / attach channel 接回真实 runtime
 4. notice 聚合/去重策略
 
 ---
@@ -270,7 +278,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 下一阶段最高优先级不是补 UI，而是先把下面几个边界立住：
 
 1. 更完整的 `intent -> reducer -> effect -> runtime feedback` 契约
-2. startup planner 产物接回真实 runtime
+2. restore store / attach channel / event stream 接回真实 runtime
 3. 真实 TUI E2E 场景壳
 4. 新版 renderer 最小骨架
 
@@ -306,7 +314,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 当前最合适的下一步是：
 
-1. 把 startup task / attach / restore store 接进当前 shell 主线
+1. 把 restore store / attach channel / event stream 接进当前 shell 主线
 2. 给 notice 补聚合/去重策略
 3. 继续扩真实 TUI E2E 场景壳
 
@@ -314,4 +322,4 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 ## 7. 当前一句话状态
 
-termx TUI 现在已经进入“picker / manager / prompt / layout resolve 四条 overlay 主线和 startup planner 都已落地，runtime feedback 的错误与 notice 生命周期也已接回，下一步继续按 TDD 把 startup task / attach / restore store 接进真实 runtime，并扩真实 TUI E2E 壳”的阶段。
+termx TUI 现在已经进入“picker / manager / prompt / layout resolve 四条 overlay 主线、startup planner 和 startup task executor 都已落地，runtime feedback 的错误与 notice 生命周期也已接回，下一步继续按 TDD 把 restore store / attach channel / event stream 接进真实 runtime，并扩真实 TUI E2E 壳”的阶段。
