@@ -1,11 +1,16 @@
 package bt
 
 import (
+	"fmt"
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tui/app/intent"
 	"github.com/lozzow/termx/tui/app/reducer"
 	"github.com/lozzow/termx/tui/domain/types"
 )
+
+const defaultNoticeTimeout = 5 * time.Second
 
 type EffectHandler interface {
 	Handle(effects []reducer.Effect) tea.Cmd
@@ -15,21 +20,30 @@ type Renderer interface {
 	Render(state types.AppState) string
 }
 
+type NoticeScheduler interface {
+	ScheduleTimeout(id string, after time.Duration) tea.Cmd
+}
+
 type ModelConfig struct {
-	InitialState  types.AppState
-	Mapper        IntentMapper
-	Reducer       reducer.StateReducer
-	EffectHandler EffectHandler
-	Renderer      Renderer
+	InitialState    types.AppState
+	Mapper          IntentMapper
+	Reducer         reducer.StateReducer
+	EffectHandler   EffectHandler
+	Renderer        Renderer
+	NoticeScheduler NoticeScheduler
+	NoticeTimeout   time.Duration
 }
 
 type Model struct {
-	state   types.AppState
-	notices []Notice
-	mapper  IntentMapper
-	reducer reducer.StateReducer
-	effects EffectHandler
-	view    Renderer
+	state           types.AppState
+	notices         []Notice
+	nextNoticeID    int
+	mapper          IntentMapper
+	reducer         reducer.StateReducer
+	effects         EffectHandler
+	view            Renderer
+	noticeScheduler NoticeScheduler
+	noticeTimeout   time.Duration
 }
 
 type NoopEffectHandler struct{}
@@ -42,6 +56,21 @@ type StaticRenderer struct{}
 
 func (StaticRenderer) Render(_ types.AppState) string {
 	return ""
+}
+
+type teaNoticeScheduler struct{}
+
+type noticeTimeoutMsg struct {
+	ID string
+}
+
+func (teaNoticeScheduler) ScheduleTimeout(id string, after time.Duration) tea.Cmd {
+	if id == "" || after <= 0 {
+		return nil
+	}
+	return tea.Tick(after, func(time.Time) tea.Msg {
+		return noticeTimeoutMsg{ID: id}
+	})
 }
 
 func NewModel(cfg ModelConfig) *Model {
@@ -61,12 +90,22 @@ func NewModel(cfg ModelConfig) *Model {
 	if view == nil {
 		view = StaticRenderer{}
 	}
+	noticeScheduler := cfg.NoticeScheduler
+	if noticeScheduler == nil {
+		noticeScheduler = teaNoticeScheduler{}
+	}
+	noticeTimeout := cfg.NoticeTimeout
+	if noticeTimeout <= 0 {
+		noticeTimeout = defaultNoticeTimeout
+	}
 	return &Model{
-		state:   cfg.InitialState,
-		mapper:  mapper,
-		reducer: rd,
-		effects: effects,
-		view:    view,
+		state:           cfg.InitialState,
+		mapper:          mapper,
+		reducer:         rd,
+		effects:         effects,
+		view:            view,
+		noticeScheduler: noticeScheduler,
+		noticeTimeout:   noticeTimeout,
 	}
 }
 
@@ -81,8 +120,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.applyIntents(m.mapper.MapKey(m.state, msgValue))
 	case effectResultMsg:
-		m.appendNotices(msgValue.Notices)
-		return m.applyIntents(msgValue.Intents)
+		noticeCmd := m.appendNotices(msgValue.Notices)
+		nextModel, intentCmd := m.applyIntents(msgValue.Intents)
+		return nextModel, batchCmd(noticeCmd, intentCmd)
+	case noticeTimeoutMsg:
+		m.removeNotice(msgValue.ID)
+		return m, nil
 	default:
 		return m, nil
 	}
@@ -110,11 +153,42 @@ func (m *Model) Notices() []Notice {
 	return append([]Notice(nil), m.notices...)
 }
 
-func (m *Model) appendNotices(notices []Notice) {
+func (m *Model) appendNotices(notices []Notice) tea.Cmd {
 	if len(notices) == 0 {
+		return nil
+	}
+	var cmd tea.Cmd
+	for _, notice := range notices {
+		next := notice
+		if next.ID == "" {
+			next.ID = m.nextNoticeIDValue()
+		}
+		if next.CreatedAt.IsZero() {
+			next.CreatedAt = time.Now()
+		}
+		m.notices = append(m.notices, next)
+		cmd = batchCmd(cmd, m.noticeScheduler.ScheduleTimeout(next.ID, m.noticeTimeout))
+	}
+	return cmd
+}
+
+func (m *Model) removeNotice(id string) {
+	if id == "" || len(m.notices) == 0 {
 		return
 	}
-	m.notices = append(m.notices, notices...)
+	filtered := m.notices[:0]
+	for _, notice := range m.notices {
+		if notice.ID == id {
+			continue
+		}
+		filtered = append(filtered, notice)
+	}
+	m.notices = filtered
+}
+
+func (m *Model) nextNoticeIDValue() string {
+	m.nextNoticeID++
+	return fmt.Sprintf("notice-%d", m.nextNoticeID)
 }
 
 func batchCmd(current tea.Cmd, next tea.Cmd) tea.Cmd {

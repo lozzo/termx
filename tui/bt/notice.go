@@ -1,5 +1,7 @@
 package bt
 
+import "time"
+
 type NoticeLevel string
 
 const (
@@ -8,6 +10,8 @@ const (
 )
 
 type Notice struct {
+	ID        string
 	Level NoticeLevel
-	Text  string
+	Text      string
+	CreatedAt time.Time
 }

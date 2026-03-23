@@ -47,6 +47,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 23. 第十九轮 TDD 已补上 terminal manager 动作键映射
 24. 第二十轮 TDD 已补上 runtime feedback 错误与 notice 通道
 25. 第二十一轮 TDD 已补上 terminal picker 主线接线
+26. 第二十二轮 TDD 已补上 notice timeout / 清理策略
 
 对应文档：
 
@@ -210,9 +211,14 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - `terminal picker` 已支持 `connect existing terminal`
 - `terminal picker` 已支持 `+ new terminal` 入口并复用统一默认参数策略
 - 已补上一条跨层场景型 E2E：`Ctrl-f -> query -> connect selected terminal`
+- `Notice` 已补上稳定 `ID` 和创建时间，便于后续 renderer 展示与精确清理
+- shell 容器已接上可替换的 `NoticeScheduler`，默认通过 `tea.Tick` 调度 timeout
+- `Model.Update` 已支持消费 `notice timeout` message，并按 notice ID 清理过期项
+- 已补上一条跨层场景型 E2E：error notice 经 timeout 后自动清理
 
 本轮验证：
 
+- `go test ./tui/bt -count=1`
 - `go test ./tui/domain/terminalpicker ./tui/app/reducer ./tui/bt -count=1`
 - `go test ./tui/bt -run TestE2E -count=1`
 - `go test ./tui/bt -count=1`
@@ -234,7 +240,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 1. 新版 renderer
 2. restore 流程
 3. 新主线真实 TUI E2E 回迁
-4. notice timeout / 清理策略
+4. notice 聚合/去重策略
 
 ---
 
@@ -279,12 +285,12 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 当前最合适的下一步是：
 
-1. 给 notice 补 timeout / 清理策略
-2. 把 restore 流程接进当前 shell 主线
+1. 把 restore 流程接进当前 shell 主线
+2. 给 notice 补聚合/去重策略
 3. 继续扩真实 TUI E2E 场景壳
 
 ---
 
 ## 7. 当前一句话状态
 
-termx TUI 现在已经进入“picker / manager / prompt 三条 overlay 主线都已接入当前 shell 容器，runtime feedback 的错误与 notice 通道也已接回，下一步继续按 TDD 补 notice 生命周期、接 restore 并扩真实 TUI E2E 壳”的阶段。
+termx TUI 现在已经进入“picker / manager / prompt 三条 overlay 主线都已接入当前 shell 容器，runtime feedback 的错误与 notice 生命周期也已接回，下一步继续按 TDD 接 restore、补 notice 聚合策略并扩真实 TUI E2E 壳”的阶段。

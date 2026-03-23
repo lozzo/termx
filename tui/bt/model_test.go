@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tui/app/intent"
@@ -63,6 +64,23 @@ func (r *stubRenderer) Render(state types.AppState) string {
 
 type effectsHandledMsg struct {
 	Count int
+}
+
+type stubNoticeScheduler struct {
+	ids       []string
+	durations []time.Duration
+	msg       tea.Msg
+}
+
+func (s *stubNoticeScheduler) ScheduleTimeout(id string, after time.Duration) tea.Cmd {
+	s.ids = append(s.ids, id)
+	s.durations = append(s.durations, after)
+	if s.msg == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		return s.msg
+	}
 }
 
 type failingTerminalService struct {
@@ -175,10 +193,12 @@ func TestModelUpdateIgnoresNonKeyMessages(t *testing.T) {
 }
 
 func TestModelUpdateStoresNoticesFromEffectFeedback(t *testing.T) {
+	scheduler := &stubNoticeScheduler{}
 	model := NewModel(ModelConfig{
-		InitialState: newAppStateWithSinglePane(),
-		Mapper:       NewIntentMapper(Config{}),
-		Reducer:      reducer.New(),
+		InitialState:    newAppStateWithSinglePane(),
+		Mapper:          NewIntentMapper(Config{}),
+		Reducer:         reducer.New(),
+		NoticeScheduler: scheduler,
 	})
 
 	updatedModel, cmd := model.Update(effectResultMsg{
@@ -191,8 +211,38 @@ func TestModelUpdateStoresNoticesFromEffectFeedback(t *testing.T) {
 	if len(updated.Notices()) != 1 {
 		t.Fatalf("expected one notice, got %d", len(updated.Notices()))
 	}
+	if len(scheduler.ids) != 1 || scheduler.ids[0] == "" {
+		t.Fatalf("expected one scheduled notice timeout, got %+v", scheduler.ids)
+	}
 	if updated.Notices()[0].Text != "stop terminal failed" {
 		t.Fatalf("unexpected notice payload: %+v", updated.Notices()[0])
+	}
+}
+
+func TestModelUpdateNoticeTimeoutRemovesMatchingNotice(t *testing.T) {
+	scheduler := &stubNoticeScheduler{msg: noticeTimeoutMsg{ID: "notice-1"}}
+	model := NewModel(ModelConfig{
+		InitialState:    newAppStateWithSinglePane(),
+		Mapper:          NewIntentMapper(Config{}),
+		Reducer:         reducer.New(),
+		NoticeScheduler: scheduler,
+	})
+
+	updatedModel, cmd := model.Update(effectResultMsg{
+		Notices: []Notice{{ID: "notice-1", Level: NoticeLevelError, Text: "stop terminal failed"}},
+	})
+	updated := updatedModel.(*Model)
+	if cmd == nil {
+		t.Fatalf("expected notice timeout command")
+	}
+	timeoutMsg := cmd()
+	nextModel, nextCmd := updated.Update(timeoutMsg)
+	next := nextModel.(*Model)
+	if nextCmd != nil {
+		t.Fatalf("expected nil command after timeout handling, got %v", nextCmd)
+	}
+	if len(next.Notices()) != 0 {
+		t.Fatalf("expected timed out notice removed, got %+v", next.Notices())
 	}
 }
 
@@ -322,12 +372,14 @@ func TestE2EModelScenarioTerminalManagerEditOpensMetadataPrompt(t *testing.T) {
 
 func TestE2EModelScenarioFailedStopRecordsErrorNotice(t *testing.T) {
 	service := &failingTerminalService{stopErr: errBoom}
+	scheduler := &stubNoticeScheduler{msg: noticeTimeoutMsg{ID: "notice-1"}}
 	model := NewModel(ModelConfig{
-		InitialState:  newManagerAppState(),
-		Mapper:        NewIntentMapper(Config{Clock: fixedClock{}}),
-		Reducer:       reducer.New(),
-		EffectHandler: RuntimeEffectHandler{Executor: DefaultRuntimeExecutor{TerminalService: service}},
-		Renderer:      StaticRenderer{},
+		InitialState:    newManagerAppState(),
+		Mapper:          NewIntentMapper(Config{Clock: fixedClock{}}),
+		Reducer:         reducer.New(),
+		EffectHandler:   RuntimeEffectHandler{Executor: DefaultRuntimeExecutor{TerminalService: service}},
+		Renderer:        StaticRenderer{},
+		NoticeScheduler: scheduler,
 	})
 
 	sequence := []tea.KeyMsg{
@@ -356,6 +408,45 @@ func TestE2EModelScenarioFailedStopRecordsErrorNotice(t *testing.T) {
 	}
 	if current.Notices()[0].Level != NoticeLevelError {
 		t.Fatalf("expected error notice, got %+v", current.Notices()[0])
+	}
+}
+
+func TestE2EModelScenarioNoticeTimeoutClearsErrorNotice(t *testing.T) {
+	service := &failingTerminalService{stopErr: errBoom}
+	scheduler := &stubNoticeScheduler{msg: noticeTimeoutMsg{ID: "notice-1"}}
+	model := NewModel(ModelConfig{
+		InitialState:    newManagerAppState(),
+		Mapper:          NewIntentMapper(Config{Clock: fixedClock{}}),
+		Reducer:         reducer.New(),
+		EffectHandler:   RuntimeEffectHandler{Executor: DefaultRuntimeExecutor{TerminalService: service}},
+		Renderer:        StaticRenderer{},
+		NoticeScheduler: scheduler,
+	})
+
+	current := model
+	var feedback tea.Msg
+	for _, key := range []tea.KeyMsg{
+		{Type: tea.KeyCtrlG},
+		{Type: tea.KeyRunes, Runes: []rune("t")},
+		{Type: tea.KeyRunes, Runes: []rune("k")},
+	} {
+		next, cmd := current.Update(key)
+		current = next.(*Model)
+		if cmd != nil {
+			feedback = cmd()
+		}
+	}
+	next, timeoutCmd := current.Update(feedback)
+	current = next.(*Model)
+	if timeoutCmd == nil {
+		t.Fatalf("expected timeout command after notice feedback")
+	}
+	timeoutMsg := timeoutCmd()
+	next, _ = current.Update(timeoutMsg)
+	current = next.(*Model)
+
+	if len(current.Notices()) != 0 {
+		t.Fatalf("expected notice to clear after timeout, got %+v", current.Notices())
 	}
 }
 
