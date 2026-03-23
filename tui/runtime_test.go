@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/tui/app/intent"
 	btui "github.com/lozzow/termx/tui/bt"
 	layoutresolvedomain "github.com/lozzow/termx/tui/domain/layoutresolve"
 	"github.com/lozzow/termx/tui/domain/types"
@@ -1995,6 +1996,140 @@ func TestE2ERunScenarioCtrlGShowsGlobalModeInView(t *testing.T) {
 	}
 
 	err := runWithDependencies(client, Config{PrefixTimeout: 3 * time.Second}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioCtrlGEscClearsGlobalModeInView(t *testing.T) {
+	client := &stubRunClient{}
+	initial := buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty)
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyEsc},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); strings.Contains(view, "mode: global") {
+				t.Fatalf("expected esc to clear global mode in view, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioModeTimeoutClearsGlobalModeInView(t *testing.T) {
+	client := &stubRunClient{}
+	initial := buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty)
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			nextModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
+			current := nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "mode: global") {
+				t.Fatalf("expected ctrl-g to activate global mode before timeout, got:\n%s", view)
+			}
+			deadline := current.State().UI.Mode.DeadlineAt
+			if deadline == nil {
+				t.Fatalf("expected global mode deadline to be set")
+			}
+			nextModel, cmd = current.Update(btui.FeedbackMsg{
+				Intents: []intent.Intent{intent.ModeTimedOutIntent{Now: deadline.Add(time.Second)}},
+			})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); strings.Contains(view, "mode: global") {
+				t.Fatalf("expected timeout to clear global mode in view, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioCtrlGTReplacesGlobalModeWithPickerMode(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "mode: picker") || strings.Contains(view, "mode: global") || !strings.Contains(view, "overlay: terminal_manager") {
+				t.Fatalf("expected ctrl-g t to replace global mode with picker mode, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
 		Planner:          planner,
 		TaskExecutor:     executor,
 		SessionBootstrap: bootstrapper,

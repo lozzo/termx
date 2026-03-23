@@ -140,6 +140,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 116. 第一百一十二轮 TDD 已补上 prompt 主要交互路径的测试闭环
 117. 第一百一十三轮 TDD 已补上 layout resolve 主要动作路径的测试闭环
 118. 第一百一十四轮 TDD 已补上 workspace picker 树展开收起的测试闭环
+119. 第一百一十五轮 TDD 已补上 shell mode/global 路径的测试闭环
 
 对应文档：
 
@@ -220,6 +221,10 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> Esc` 后主视图不再显示 `mode: global`
+- 已补上一条 runtime 场景型 E2E：global mode timeout 后主视图不再显示 `mode: global`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t` 后主视图显示 `mode: picker` 且不再显示 `mode: global`
+- shell 的 mode/global 激活、取消、超时与进入 overlay 的切换路径现在被 runtime 场景测试锁住
 - 已补上一条 runtime 场景型 E2E：`Ctrl-w -> ops -> Right` 后主视图显示 `workspace_picker_selected_expanded: true`
 - 已补上一条 runtime 场景型 E2E：`Ctrl-w -> ops -> Right -> Left` 后主视图显示 `workspace_picker_selected_expanded: false`
 - workspace picker 的树展开与收起路径现在被 runtime 场景测试锁住
