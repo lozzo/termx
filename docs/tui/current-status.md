@@ -142,6 +142,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 118. 第一百一十四轮 TDD 已补上 workspace picker 树展开收起的测试闭环
 119. 第一百一十五轮 TDD 已补上 shell mode/global 路径的测试闭环
 120. 第一百一十六轮 TDD 已补上 runtime 观测字段剩余可见性的测试闭环
+121. 第一百一十七轮 TDD 已补上 runtime status 与初始状态投影的测试闭环
 
 对应文档：
 
@@ -222,6 +223,15 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- 已补上一条 runtime 场景型 E2E：connected pane 在没有 snapshot 时主视图不会渲染 `screen:`
+- 已补上一条 runtime 场景型 E2E：closed frame 后主视图显式显示 `runtime_state/runtime_exit_code`
+- 已补上一条 runtime 场景型 E2E：sync lost 期间主视图显示 `runtime_sync_lost`，snapshot refresh 后自动清除
+- 已补上一条 runtime 场景型 E2E：resized event 后主视图显示 `runtime_size: 120x40`
+- 已补上一条 runtime 场景型 E2E：removed event 在 reducer 清空 pane 前主视图先显示 `runtime_removed`
+- 已补上一条 runtime 场景型 E2E：read error event 后主视图显示 `runtime_read_error`
+- 已补上一条 runtime 场景型 E2E：layout resolve 初始主视图显式锁住 `focus_overlay_target: layout_resolve` 与 `mode: picker`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g` 后主视图显式锁住 `mode_sticky: false`
+- runtime status 的 `closed/sync_lost/size/removed/read_error` 与初始 `layout resolve/global mode` 投影现在被场景测试锁住
 - 已补上一条 runtime 场景型 E2E：active pane 主视图现在显式锁住 `title/tab_layer/pane_kind/terminal_state/screen`
 - 已补上一条 runtime 场景型 E2E：重复 notice 在主视图中聚合为 `(x2)` 显示
 - 已补上一条 runtime 场景型 E2E：owner 连接角色在主视图中显示 `connection_role: owner`

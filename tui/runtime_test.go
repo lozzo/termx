@@ -251,6 +251,33 @@ func TestE2ERunScenarioActivePaneCoreViewVisible(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioConnectedPaneWithoutSnapshotSkipsScreenSection(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithActiveTerminalMetadata()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			if view := model.View(); strings.Contains(view, "screen:") || !strings.Contains(view, "terminal: term-1") {
+				t.Fatalf("expected runtime view without snapshot to skip screen section but keep active terminal metadata, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioStreamOutputTriggersViewRefresh(t *testing.T) {
 	stream := make(chan protocol.StreamFrame, 1)
 	client := &stubRunClient{}
@@ -351,11 +378,84 @@ func TestE2ERunScenarioClosedFrameFeedsReducerAndMarksPaneExited(t *testing.T) {
 			if view := model.View(); !strings.Contains(view, "slot: exited") {
 				t.Fatalf("expected runtime view to mark pane exited, got:\n%s", view)
 			}
-			if view := model.View(); !strings.Contains(view, "terminal_state: exited") || !strings.Contains(view, "terminal_exit_code: 7") || !strings.Contains(view, "pane_exit_code: 7") {
+			if view := model.View(); !strings.Contains(view, "terminal_state: exited") || !strings.Contains(view, "terminal_exit_code: 7") || !strings.Contains(view, "pane_exit_code: 7") || !strings.Contains(view, "runtime_state: exited") || !strings.Contains(view, "runtime_exit_code: 7") {
 				t.Fatalf("expected runtime view to expose exited terminal state, got:\n%s", view)
 			}
 			if terminal := model.State().Domain.Terminals[types.TerminalID("term-1")]; terminal.ExitCode == nil || *terminal.ExitCode != 7 {
 				t.Fatalf("expected reducer to retain exit code, got %+v", terminal)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioSyncLostShowsRuntimeStatusAndRefreshesSnapshot(t *testing.T) {
+	stream := make(chan protocol.StreamFrame, 1)
+	client := &stubRunClient{
+		snapshots: map[string]*protocol.Snapshot{
+			"term-1": {
+				TerminalID: "term-1",
+				Size:       protocol.Size{Cols: 6, Rows: 1},
+				Screen: protocol.ScreenData{
+					Cells: [][]protocol.Cell{{{Content: "n"}, {Content: "e"}, {Content: "w"}}},
+				},
+				Cursor: protocol.CursorState{Row: 0, Col: 3, Visible: true},
+			},
+		},
+	}
+	initial := connectedRunAppState()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Channel:    21,
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 4, Rows: 1},
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{{{Content: "o"}, {Content: "l"}, {Content: "d"}}},
+						},
+						Cursor: protocol.CursorState{Row: 0, Col: 3, Visible: true},
+					},
+					Stream: stream,
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			initCmd := model.Init()
+			if initCmd == nil {
+				t.Fatal("expected runtime init command")
+			}
+			stream <- protocol.StreamFrame{Type: protocol.TypeSyncLost, Payload: protocol.EncodeSyncLostPayload(32)}
+			msg := initCmd()
+			if msg == nil {
+				t.Fatal("expected runtime sync-lost message")
+			}
+			_, cmd := model.Update(msg)
+			if view := model.View(); !strings.Contains(view, "runtime_sync_lost: 32") {
+				t.Fatalf("expected runtime view to expose pending sync-lost status, got:\n%s", view)
+			}
+			for _, nextMsg := range runCmdMessages(cmd) {
+				_, _ = model.Update(nextMsg)
+			}
+			if view := model.View(); !strings.Contains(view, "screen:") || !strings.Contains(view, "new") || strings.Contains(view, "runtime_sync_lost: 32") {
+				t.Fatalf("expected runtime view to refresh snapshot and clear sync-lost status, got:\n%s", view)
 			}
 			return nil
 		},
@@ -442,6 +542,72 @@ func TestE2ERunScenarioStateChangedStoppedFeedsReducerAndClearsPane(t *testing.T
 	}
 }
 
+func TestE2ERunScenarioResizedEventUpdatesRuntimeSizeInView(t *testing.T) {
+	events := make(chan protocol.Event, 1)
+	client := &stubRunClient{}
+	initial := connectedRunAppState()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			EventStream: events,
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Channel:    21,
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 80, Rows: 24},
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{{{Content: "o"}, {Content: "k"}}},
+						},
+						Cursor: protocol.CursorState{Row: 0, Col: 2, Visible: true},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			initCmd := model.Init()
+			if initCmd == nil {
+				t.Fatal("expected runtime init command")
+			}
+			events <- protocol.Event{
+				Type:       protocol.EventTerminalResized,
+				TerminalID: "term-1",
+				Resized: &protocol.TerminalResizedData{
+					OldSize: protocol.Size{Cols: 80, Rows: 24},
+					NewSize: protocol.Size{Cols: 120, Rows: 40},
+				},
+			}
+			msg := initCmd()
+			if msg == nil {
+				t.Fatal("expected runtime resized message")
+			}
+			_, cmd := model.Update(msg)
+			if cmd == nil {
+				t.Fatal("expected resized event to keep runtime listener active")
+			}
+			if view := model.View(); !strings.Contains(view, "runtime_size: 120x40") {
+				t.Fatalf("expected runtime view to expose resized size, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioCreatedEventRegistersDetachedTerminal(t *testing.T) {
 	events := make(chan protocol.Event, 1)
 	client := &stubRunClient{}
@@ -485,6 +651,103 @@ func TestE2ERunScenarioCreatedEventRegistersDetachedTerminal(t *testing.T) {
 			}
 			if terminal.Visible {
 				t.Fatalf("expected detached created terminal to remain non-visible, got %+v", terminal)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioRemovedReasonVisibleInView(t *testing.T) {
+	events := make(chan protocol.Event, 1)
+	client := &stubRunClient{}
+	initial := connectedRunAppState()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{EventStream: events},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			initCmd := model.Init()
+			if initCmd == nil {
+				t.Fatal("expected runtime init command")
+			}
+			events <- protocol.Event{
+				Type:       protocol.EventTerminalRemoved,
+				TerminalID: "term-1",
+				Removed:    &protocol.TerminalRemovedData{Reason: "server_shutdown"},
+			}
+			msg := initCmd()
+			if msg == nil {
+				t.Fatal("expected runtime removed message")
+			}
+			_, cmd := model.Update(msg)
+			if view := model.View(); !strings.Contains(view, "runtime_removed: server_shutdown") {
+				t.Fatalf("expected runtime view to expose removed reason before reducer clears pane, got:\n%s", view)
+			}
+			for _, nextMsg := range runCmdMessages(cmd) {
+				_, _ = model.Update(nextMsg)
+			}
+			if view := model.View(); !strings.Contains(view, "slot: empty") || strings.Contains(view, "terminal: term-1") {
+				t.Fatalf("expected removed feedback to clear active pane after reason was exposed, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioReadErrorVisibleInView(t *testing.T) {
+	events := make(chan protocol.Event, 1)
+	client := &stubRunClient{}
+	initial := connectedRunAppState()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{EventStream: events},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			initCmd := model.Init()
+			if initCmd == nil {
+				t.Fatal("expected runtime init command")
+			}
+			events <- protocol.Event{
+				Type:       protocol.EventTerminalReadError,
+				TerminalID: "term-1",
+				ReadError:  &protocol.TerminalReadErrorData{Error: "pty read failed"},
+			}
+			msg := initCmd()
+			if msg == nil {
+				t.Fatal("expected runtime read-error message")
+			}
+			_, cmd := model.Update(msg)
+			for _, nextMsg := range runCmdMessages(cmd) {
+				_, _ = model.Update(nextMsg)
+			}
+			if view := model.View(); !strings.Contains(view, "runtime_read_error: pty read failed") || !strings.Contains(view, "notices:") {
+				t.Fatalf("expected runtime view to expose read error status and notice, got:\n%s", view)
 			}
 			return nil
 		},
@@ -1877,7 +2140,7 @@ func TestE2ERunScenarioLayoutResolveMoveUpdatesView(t *testing.T) {
 	bootstrapper := &stubRunSessionBootstrapper{}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
-			if view := model.View(); !strings.Contains(view, "> [connect_existing] connect existing") {
+			if view := model.View(); !strings.Contains(view, "> [connect_existing] connect existing") || !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: layout_resolve") || !strings.Contains(view, "mode: picker") {
 				t.Fatalf("expected initial resolve selection in view, got:\n%s", view)
 			}
 			nextModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyDown})
@@ -2079,7 +2342,7 @@ func TestE2ERunScenarioCtrlGShowsGlobalModeInView(t *testing.T) {
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "mode: global") {
+			if view := current.View(); !strings.Contains(view, "mode: global") || !strings.Contains(view, "mode_sticky: false") {
 				t.Fatalf("expected ctrl-g to show global mode in view, got:\n%s", view)
 			}
 			return nil
@@ -2414,7 +2677,9 @@ func (r *stubProgramRunner) Run(model *btui.Model, _ io.Reader, _ io.Writer) err
 }
 
 type stubRunClient struct {
-	inputs []runtimeInputCall
+	inputs      []runtimeInputCall
+	snapshots   map[string]*protocol.Snapshot
+	snapshotErr error
 }
 
 func (c *stubRunClient) Close() error { return nil }
@@ -2441,8 +2706,11 @@ func (c *stubRunClient) Attach(context.Context, string, string) (*protocol.Attac
 	return nil, nil
 }
 
-func (c *stubRunClient) Snapshot(context.Context, string, int, int) (*protocol.Snapshot, error) {
-	return nil, nil
+func (c *stubRunClient) Snapshot(_ context.Context, terminalID string, _, _ int) (*protocol.Snapshot, error) {
+	if c.snapshotErr != nil {
+		return nil, c.snapshotErr
+	}
+	return cloneSnapshot(c.snapshots[terminalID]), nil
 }
 
 func (c *stubRunClient) Input(_ context.Context, channel uint16, data []byte) error {
