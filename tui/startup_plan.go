@@ -24,6 +24,7 @@ type LayoutLoader interface {
 
 type WorkspaceStore interface {
 	LoadWorkspace(ctx context.Context, path string) (types.DomainState, error)
+	SaveWorkspace(ctx context.Context, path string, domain types.DomainState) error
 }
 
 type StartupTask interface {
@@ -303,4 +304,15 @@ func (fileWorkspaceStore) LoadWorkspace(_ context.Context, path string) (types.D
 		return types.DomainState{}, fmt.Errorf("decode workspace state %s: %w", filepath.Base(path), err)
 	}
 	return domain, nil
+}
+
+func (fileWorkspaceStore) SaveWorkspace(_ context.Context, path string, domain types.DomainState) error {
+	content, err := json.MarshalIndent(domain, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode workspace state %s: %w", filepath.Base(path), err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, content, 0o644)
 }

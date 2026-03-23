@@ -7,14 +7,14 @@
 
 ## 1. 当前判断
 
-termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overlay、恢复入口状态机、启动规划层、启动任务执行层和 restore store 最小加载链路已按 TDD 落地”的阶段。
+termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overlay、恢复入口状态机、启动规划层、启动任务执行层和 restore store 读写闭环已按 TDD 落地”的阶段。
 
 现状可以概括为：
 
 - 旧版 TUI 已归档到 `deprecated/tui-legacy/`
 - 新主线文档已经建立并持续作为实现约束
 - 新主线代码已进入 reducer / state machine 落地期
-- 当前已进入 bubbletea shell 的恢复入口、启动规划、启动任务执行和 restore store 落地阶段，但 renderer 仍未接线
+- 当前已进入 bubbletea shell 的恢复入口、启动规划、启动任务执行和 restore store 读写闭环阶段，但 renderer 仍未接线
 
 ---
 
@@ -52,6 +52,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 28. 第二十四轮 TDD 已补上 startup planner 与 layout YAML 最小导入
 29. 第二十五轮 TDD 已补上 startup task executor 和 attach 启动最小闭环
 30. 第二十六轮 TDD 已补上 restore store 最小加载与降级链路
+31. 第二十七轮 TDD 已补上 restore save 最小持久化闭环
 
 对应文档：
 
@@ -248,6 +249,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - restore 文件缺失时会静默回落到默认启动；restore 解码失败时会记录 warning 并降级
 - 已补上一条 workspace store 单测覆盖 JSON round-trip
 - 已补上一条 restore 启动测试覆盖“成功恢复后无 bootstrap task”
+- `WorkspaceStore` 现在已支持 `SaveWorkspace`，可把当前 domain state 稳定落盘
+- 已补上一条 store 单测覆盖 `SaveWorkspace -> LoadWorkspace` round-trip
+- 已补上一条跨层 E2E：默认启动 -> bootstrap -> save -> restore reload
 
 本轮验证：
 
@@ -276,7 +280,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 1. 新版 renderer
 2. 真实 TUI E2E 壳与 renderer 结合
-3. event stream / attach channel / restore save 接回真实 runtime
+3. event stream / attach channel 接回真实 runtime
 4. notice 聚合/去重策略
 
 ---
@@ -286,7 +290,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 下一阶段最高优先级不是补 UI，而是先把下面几个边界立住：
 
 1. 更完整的 `intent -> reducer -> effect -> runtime feedback` 契约
-2. event stream / attach channel / restore save 接回真实 runtime
+2. event stream / attach channel 接回真实 runtime
 3. 真实 TUI E2E 场景壳
 4. 新版 renderer 最小骨架
 
@@ -322,7 +326,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 当前最合适的下一步是：
 
-1. 把 event stream / attach channel / restore save 接进当前 shell 主线
+1. 把 event stream / attach channel 接进当前 shell 主线
 2. 给 notice 补聚合/去重策略
 3. 继续扩真实 TUI E2E 场景壳
 
@@ -330,4 +334,4 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 ## 7. 当前一句话状态
 
-termx TUI 现在已经进入“picker / manager / prompt / layout resolve 四条 overlay 主线、startup planner、startup task executor 和 restore store 都已落地，runtime feedback 的错误与 notice 生命周期也已接回，下一步继续按 TDD 把 event stream / attach channel / restore save 接进真实 runtime，并扩真实 TUI E2E 壳”的阶段。
+termx TUI 现在已经进入“picker / manager / prompt / layout resolve 四条 overlay 主线、startup planner、startup task executor 和 restore store 读写闭环都已落地，runtime feedback 的错误与 notice 生命周期也已接回，下一步继续按 TDD 把 event stream / attach channel 接进真实 runtime，并扩真实 TUI E2E 壳”的阶段。

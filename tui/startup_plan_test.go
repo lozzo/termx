@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tui/app/reducer"
 	"github.com/lozzow/termx/tui/bt"
 	"github.com/lozzow/termx/tui/domain/layoutresolve"
@@ -357,6 +358,109 @@ func TestWorkspaceStoreFileRoundTrip(t *testing.T) {
 	}
 }
 
+func TestWorkspaceStoreSaveWorkspaceWritesRoundTripFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "workspace-state.json")
+	store := fileWorkspaceStore{}
+	want := types.DomainState{
+		ActiveWorkspaceID: types.WorkspaceID("ws-save"),
+		WorkspaceOrder:    []types.WorkspaceID{types.WorkspaceID("ws-save")},
+		Workspaces: map[types.WorkspaceID]types.WorkspaceState{
+			types.WorkspaceID("ws-save"): {
+				ID:          types.WorkspaceID("ws-save"),
+				Name:        "saved",
+				ActiveTabID: types.TabID("tab-1"),
+				TabOrder:    []types.TabID{types.TabID("tab-1")},
+				Tabs: map[types.TabID]types.TabState{
+					types.TabID("tab-1"): {
+						ID:           types.TabID("tab-1"),
+						Name:         "shell",
+						ActivePaneID: types.PaneID("pane-1"),
+						ActiveLayer:  types.FocusLayerTiled,
+						Panes: map[types.PaneID]types.PaneState{
+							types.PaneID("pane-1"): {
+								ID:         types.PaneID("pane-1"),
+								Kind:       types.PaneKindTiled,
+								SlotState:  types.PaneSlotConnected,
+								TerminalID: types.TerminalID("term-1"),
+							},
+						},
+						RootSplit: &types.SplitNode{PaneID: types.PaneID("pane-1")},
+					},
+				},
+			},
+		},
+		Terminals: map[types.TerminalID]types.TerminalRef{
+			types.TerminalID("term-1"): {
+				ID:      types.TerminalID("term-1"),
+				Name:    "api-dev",
+				Command: []string{"npm", "run", "dev"},
+				State:   types.TerminalRunStateRunning,
+			},
+		},
+		Connections: map[types.TerminalID]types.ConnectionState{
+			types.TerminalID("term-1"): {
+				TerminalID:       types.TerminalID("term-1"),
+				ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1")},
+				OwnerPaneID:      types.PaneID("pane-1"),
+			},
+		},
+	}
+
+	if err := store.SaveWorkspace(context.Background(), path, want); err != nil {
+		t.Fatalf("expected save workspace to succeed, got %v", err)
+	}
+	got, err := store.LoadWorkspace(context.Background(), path)
+	if err != nil {
+		t.Fatalf("expected saved workspace to load, got %v", err)
+	}
+	if got.ActiveWorkspaceID != want.ActiveWorkspaceID || got.Workspaces[types.WorkspaceID("ws-save")].Name != "saved" {
+		t.Fatalf("unexpected saved workspace round-trip: %+v", got)
+	}
+}
+
+func TestE2ERestoreSaveAndReloadRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "workspace-state.json")
+	store := fileWorkspaceStore{}
+	planner := NewStartupPlannerWithStores(nil, store)
+	executor := NewStartupTaskExecutor()
+	client := &stubStartupClient{
+		createResult: &protocol.CreateResult{
+			TerminalID: "term-1",
+			State:      "running",
+		},
+	}
+
+	plan, err := planner.Plan(context.Background(), Config{
+		DefaultShell:       "/bin/zsh",
+		Workspace:          "main",
+		WorkspaceStatePath: path,
+	})
+	if err != nil {
+		t.Fatalf("expected initial plan to succeed, got %v", err)
+	}
+	bootstrapped, err := executor.Execute(context.Background(), client, protocol.Size{Cols: 100, Rows: 30}, plan)
+	if err != nil {
+		t.Fatalf("expected startup execution to succeed, got %v", err)
+	}
+	if err := store.SaveWorkspace(context.Background(), path, bootstrapped.State.Domain); err != nil {
+		t.Fatalf("expected save after bootstrap to succeed, got %v", err)
+	}
+
+	restored, err := planner.Plan(context.Background(), Config{
+		WorkspaceStatePath: path,
+	})
+	if err != nil {
+		t.Fatalf("expected restore plan to succeed, got %v", err)
+	}
+	if len(restored.Tasks) != 0 {
+		t.Fatalf("expected restored plan to avoid bootstrap tasks, got %d", len(restored.Tasks))
+	}
+	pane := restored.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
+	if pane.SlotState != types.PaneSlotConnected || pane.TerminalID != types.TerminalID("term-1") {
+		t.Fatalf("expected restored state to keep connected pane, got %+v", pane)
+	}
+}
+
 type stubLayoutLoader struct {
 	docs map[string]string
 	errs map[string]error
@@ -382,4 +486,8 @@ func (s stubWorkspaceStore) LoadWorkspace(context.Context, string) (types.Domain
 		return types.DomainState{}, s.err
 	}
 	return s.domain, nil
+}
+
+func (s stubWorkspaceStore) SaveWorkspace(context.Context, string, types.DomainState) error {
+	return s.err
 }
