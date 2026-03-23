@@ -231,6 +231,9 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "detail_connected_panes: 1") {
 		t.Fatalf("expected manager detail connection count in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "detail_location_count: 1") {
+		t.Fatalf("expected manager detail location count in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "detail_locations:") || !strings.Contains(view, "- main/shell/pane:pane-1") {
 		t.Fatalf("expected manager detail locations in rendered view, got:\n%s", view)
 	}

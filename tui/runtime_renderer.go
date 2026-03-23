@@ -307,6 +307,7 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 			fmt.Sprintf("detail_visible: %t", detail.Visible),
 			fmt.Sprintf("detail_visibility: %s", detail.VisibilityLabel),
 			fmt.Sprintf("detail_connected_panes: %d", detail.ConnectedPaneCount),
+			fmt.Sprintf("detail_location_count: %d", len(detail.Locations)),
 			fmt.Sprintf("detail_command: %s", detail.Command),
 		)
 		if detail.OwnerSlotLabel != "" {
