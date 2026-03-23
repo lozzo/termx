@@ -29,6 +29,7 @@ type Row struct {
 	Command    string
 	Visible    bool
 	Tags       map[string]string
+	ConnectedPaneCount int
 	SearchText string
 }
 
@@ -174,14 +175,15 @@ func buildRows(domain types.DomainState) []Row {
 			label = string(terminalID)
 		}
 		rows = append(rows, Row{
-			Kind:       RowKindTerminal,
-			TerminalID: terminalID,
-			Label:      label,
-			State:      terminal.State,
-			Command:    strings.Join(terminal.Command, " "),
-			Visible:    terminal.Visible,
-			Tags:       mapsClone(terminal.Tags),
-			SearchText: buildSearchText(domain, terminalID, terminal),
+			Kind:               RowKindTerminal,
+			TerminalID:         terminalID,
+			Label:              label,
+			State:              terminal.State,
+			Command:            strings.Join(terminal.Command, " "),
+			Visible:            terminal.Visible,
+			Tags:               mapsClone(terminal.Tags),
+			ConnectedPaneCount: len(domain.Connections[terminalID].ConnectedPaneIDs),
+			SearchText:         buildSearchText(domain, terminalID, terminal),
 		})
 	}
 	return rows

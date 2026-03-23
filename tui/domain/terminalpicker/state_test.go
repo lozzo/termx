@@ -80,6 +80,21 @@ func TestPickerStateSelectedRowCarriesTags(t *testing.T) {
 	}
 }
 
+func TestPickerStateSelectedRowCarriesConnectedPaneCount(t *testing.T) {
+	state := sampleDomainState()
+	picker := NewState(state, types.FocusState{})
+
+	picker.AppendQuery("api")
+
+	row, ok := picker.SelectedRow()
+	if !ok {
+		t.Fatal("expected selected row")
+	}
+	if row.ConnectedPaneCount != 1 {
+		t.Fatalf("expected selected row connected pane count, got %d", row.ConnectedPaneCount)
+	}
+}
+
 func TestPickerStateVisibleRowsKeepCreateRowWhenFiltering(t *testing.T) {
 	state := sampleDomainState()
 	picker := NewState(state, types.FocusState{})
@@ -145,6 +160,13 @@ func sampleDomainState() types.DomainState {
 				State:   types.TerminalRunStateRunning,
 				Tags:    map[string]string{"group": "build"},
 				Visible: false,
+			},
+		},
+		Connections: map[types.TerminalID]types.ConnectionState{
+			types.TerminalID("term-1"): {
+				TerminalID:       types.TerminalID("term-1"),
+				ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1")},
+				OwnerPaneID:      types.PaneID("pane-1"),
 			},
 		},
 	}
