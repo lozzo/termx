@@ -265,6 +265,9 @@ func TestRuntimeRendererRendersPromptOverlay(t *testing.T) {
 	if !strings.Contains(view, "prompt_active_index: 1") {
 		t.Fatalf("expected prompt active index in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "prompt_field_count: 2") {
+		t.Fatalf("expected prompt field count in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "prompt_fields:") {
 		t.Fatalf("expected prompt fields section in rendered view, got:\n%s", view)
 	}
