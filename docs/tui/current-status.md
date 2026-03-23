@@ -115,6 +115,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 91. 第八十七轮 TDD 已补上 workspace picker 数量的 renderer 可见性闭环
 92. 第八十八轮 TDD 已补上 terminal manager 数量的 renderer 可见性闭环
 93. 第八十九轮 TDD 已补上 terminal picker 命令的 renderer 可见性闭环
+94. 第九十轮 TDD 已补上 terminal picker 可见性的 renderer 可见性闭环
 
 对应文档：
 
@@ -195,6 +196,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- runtime renderer 已显式展示 terminal picker 的 `terminal_picker_selected_visible`
+- terminal picker 搜索后当前主视图可直接看到当前选中 terminal 的可见性布尔状态
+- 已补上一条 runtime 场景型 E2E：`Ctrl-f` 搜索后主视图显示 `terminal_picker_selected_visible: false`
 - runtime renderer 已显式展示 terminal picker 的 `terminal_picker_selected_command`
 - terminal picker 搜索后当前主视图可直接看到当前选中 terminal 的命令
 - 已补上一条 runtime 场景型 E2E：`Ctrl-f` 搜索后主视图显示 `terminal_picker_selected_command: journalctl -f`

@@ -50,6 +50,21 @@ func TestPickerStateSelectedRowCarriesCommand(t *testing.T) {
 	}
 }
 
+func TestPickerStateSelectedRowCarriesVisibleFlag(t *testing.T) {
+	state := sampleDomainState()
+	picker := NewState(state, types.FocusState{})
+
+	picker.AppendQuery("api")
+
+	row, ok := picker.SelectedRow()
+	if !ok {
+		t.Fatal("expected selected row")
+	}
+	if !row.Visible {
+		t.Fatal("expected selected row visible flag to be true")
+	}
+}
+
 func TestPickerStateVisibleRowsKeepCreateRowWhenFiltering(t *testing.T) {
 	state := sampleDomainState()
 	picker := NewState(state, types.FocusState{})
@@ -106,6 +121,7 @@ func sampleDomainState() types.DomainState {
 				Command: []string{"npm", "run", "dev"},
 				State:   types.TerminalRunStateRunning,
 				Tags:    map[string]string{"team": "backend"},
+				Visible: true,
 			},
 			types.TerminalID("term-2"): {
 				ID:      types.TerminalID("term-2"),
@@ -113,6 +129,7 @@ func sampleDomainState() types.DomainState {
 				Command: []string{"tail", "-f", "build.log"},
 				State:   types.TerminalRunStateRunning,
 				Tags:    map[string]string{"group": "build"},
+				Visible: false,
 			},
 		},
 	}

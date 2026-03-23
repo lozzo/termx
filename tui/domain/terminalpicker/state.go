@@ -27,6 +27,7 @@ type Row struct {
 	Label      string
 	State      types.TerminalRunState
 	Command    string
+	Visible    bool
 	SearchText string
 }
 
@@ -177,6 +178,7 @@ func buildRows(domain types.DomainState) []Row {
 			Label:      label,
 			State:      terminal.State,
 			Command:    strings.Join(terminal.Command, " "),
+			Visible:    terminal.Visible,
 			SearchText: buildSearchText(domain, terminalID, terminal),
 		})
 	}
