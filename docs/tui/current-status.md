@@ -29,6 +29,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 5. 第一批 TDD 代码骨架已经落地
 6. 第二轮 TDD 已补上 `close pane` 语义和 workspace picker 树状态机
 7. 第三轮 TDD 已补上 `overlay / mode / workspace picker navigation` 状态迁移
+8. 第四轮 TDD 已补上 `terminal manager here / new tab / floating` effect 契约和管理状态骨架
+9. 第五轮 TDD 已补上 `workspace picker query / backspace / create row prompt handoff`
 
 对应文档：
 
@@ -45,6 +47,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - `tui/domain/layout`
 - `tui/domain/connection`
 - `tui/domain/workspace`
+- `tui/domain/terminalmanager`
 - `tui/app/intent`
 - `tui/app/reducer`
 - `tui/runtime.go`
@@ -64,9 +67,16 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - `OpenWorkspacePickerIntent`
 - `CloseOverlayIntent`
 - `WorkspacePickerMoveIntent`
+- `WorkspacePickerAppendQueryIntent`
+- `WorkspacePickerBackspaceIntent`
 - `WorkspacePickerExpandIntent`
 - `WorkspacePickerCollapseIntent`
 - `WorkspacePickerSubmitIntent`
+- `OpenTerminalManagerIntent`
+- `TerminalManagerMoveIntent`
+- `TerminalManagerConnectHereIntent`
+- `TerminalManagerConnectInNewTabIntent`
+- `TerminalManagerConnectInFloatingPaneIntent`
 - `ActivateModeIntent`
 - `ModeTimedOutIntent`
 
@@ -81,9 +91,20 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - 关闭 overlay 时会恢复原 pane 焦点
 - picker 回车已能跳转 workspace / tab / pane，并在成功后关闭 overlay
 - 非 sticky mode 超时后会自动清空
+- `terminal manager` 已支持独立 overlay 状态对象和默认选中当前 pane 所连接 terminal
+- `terminal manager` 已支持选择移动和稳定排序
+- `terminal manager` 已支持 `connect here`
+- `terminal manager` 已支持产出 `new tab / floating` 的 effect plan
+- pane 改连新 terminal 时，旧 terminal 的 connection snapshot 会同步清理，避免 owner/follower 脏引用
+- `workspace picker` 已支持 query 追加输入
+- `workspace picker` 已支持 backspace 回退 query
+- query 命中后会把选择移动到首个匹配节点，便于直接回车 jump
+- 选中 `+ create workspace` 回车时，reducer 已能关闭 picker 并产出 `OpenPromptEffect{create_workspace}`
+- 已补上一条 reducer 场景型 E2E：搜索后直接跳到目标 pane
 
 本轮验证：
 
+- `go test ./tui/domain/terminalmanager ./tui/app/reducer -count=1`
 - `go test ./tui/domain/workspace ./tui/app/reducer -count=1`
 - `go test ./tui/... -count=1`
 - `go test ./... -count=1`
@@ -94,8 +115,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 当前还没有正式开始的部分：
 
-1. `workspace picker` 的 query 输入、backspace 和 create row 流程
-2. `terminal manager connect here / new tab / floating` reducer / effect
+1. `terminal manager` 的 search / 分组 / details / edit / stop
+2. `workspace picker` 的 create workspace prompt / confirm 流程完整状态机
 3. 新版 bubbletea shell
 4. 新版 renderer
 5. 新版 terminal picker / restore 流程
@@ -107,8 +128,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 下一阶段最高优先级不是补 UI，而是先把下面几个边界立住：
 
-1. `terminal manager connect here` reducer / effect
-2. `workspace picker` 输入类 intent
+1. `terminal manager` 的 search / edit / stop
+2. `workspace picker` 的 create workspace prompt / submit / cancel
 3. 更完整的 `intent -> reducer -> effect` 契约
 4. 新版 bubbletea shell 接口
 5. 真实 TUI E2E 场景壳
@@ -145,8 +166,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 当前最合适的下一步是：
 
-1. 继续补 `terminal manager` 的 connect here / new tab / floating
-2. 补 `workspace picker` 的 query 编辑和 create row intent
+1. 补 `terminal manager` 的 search / details / edit / stop
+2. 补 `workspace picker` 的 create workspace prompt / submit / cancel
 3. 为 reducer 补更多场景级测试
 4. 再进入 bubbletea shell 最小接线
 
@@ -154,4 +175,4 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 ## 7. 当前一句话状态
 
-termx TUI 现在已经进入“文档稳定、第一批领域状态机已落地、继续按 TDD 扩 reducer 和 overlay 行为”的阶段。
+termx TUI 现在已经进入“workspace picker 输入链路和 terminal manager 主动作都已落到 reducer，继续按 TDD 扩 prompt 流程与 runtime 契约”的阶段。

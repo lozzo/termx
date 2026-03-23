@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/lozzow/termx/tui/domain/types"
 )
@@ -47,6 +48,27 @@ func NewPickerState(state types.DomainState) *PickerState {
 
 func (p *PickerState) SetQuery(query string) {
 	p.query = strings.TrimSpace(strings.ToLower(query))
+	p.resetSelectionForQuery()
+}
+
+func (p *PickerState) Query() string {
+	return p.query
+}
+
+func (p *PickerState) AppendQuery(text string) {
+	if text == "" {
+		return
+	}
+	p.query += strings.TrimSpace(strings.ToLower(text))
+	p.resetSelectionForQuery()
+}
+
+func (p *PickerState) BackspaceQuery() {
+	if p.query == "" {
+		return
+	}
+	_, size := utf8.DecodeLastRuneInString(p.query)
+	p.query = p.query[:len(p.query)-size]
 	p.clampSelection()
 }
 
@@ -241,6 +263,21 @@ func (p *PickerState) clampSelection() {
 	if p.selectedIndex >= len(rows) {
 		p.selectedIndex = len(rows) - 1
 	}
+}
+
+func (p *PickerState) resetSelectionForQuery() {
+	if p.query == "" {
+		p.selectedIndex = p.defaultSelectionIndex()
+		return
+	}
+	rows := p.VisibleRows()
+	for index, row := range rows {
+		if row.Match && row.Node.Kind != TreeNodeKindCreate {
+			p.selectedIndex = index
+			return
+		}
+	}
+	p.clampSelection()
 }
 
 func cloneTreeNodes(nodes []TreeNode) []TreeNode {

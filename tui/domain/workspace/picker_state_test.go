@@ -147,6 +147,36 @@ func TestPickerStateClearQueryRestoresDefaultAndManualExpansion(t *testing.T) {
 	}
 }
 
+func TestPickerStateAppendQuerySelectsFirstMatchedPane(t *testing.T) {
+	state := sampleDomainStateForPicker()
+
+	picker := NewPickerState(state)
+	picker.AppendQuery("deploy")
+
+	if picker.Query() != "deploy" {
+		t.Fatalf("expected query to append, got %q", picker.Query())
+	}
+	row, ok := picker.SelectedRow()
+	if !ok {
+		t.Fatalf("expected selected row after query")
+	}
+	if row.Node.Kind != TreeNodeKindPane || row.Node.PaneID != types.PaneID("pane-log") {
+		t.Fatalf("expected first matched pane to be selected, got %+v", row.Node)
+	}
+}
+
+func TestPickerStateBackspaceRemovesLastQueryRune(t *testing.T) {
+	state := sampleDomainStateForPicker()
+
+	picker := NewPickerState(state)
+	picker.AppendQuery("deploy")
+	picker.BackspaceQuery()
+
+	if picker.Query() != "deplo" {
+		t.Fatalf("expected query to remove last rune, got %q", picker.Query())
+	}
+}
+
 func sampleDomainStateForPicker() types.DomainState {
 	return types.DomainState{
 		ActiveWorkspaceID: types.WorkspaceID("ws-1"),

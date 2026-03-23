@@ -5,8 +5,15 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/tui/app/intent"
+	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
 	"github.com/lozzow/termx/tui/domain/types"
+	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
 )
+
+type workspacePickerOverlay interface {
+	Query() string
+	SelectedRow() (workspacedomain.TreeRow, bool)
+}
 
 func TestReducerConnectTerminalMarksPaneConnectedAndEmitsEffect(t *testing.T) {
 	reducer := New()
@@ -155,6 +162,69 @@ func TestReducerWorkspacePickerSubmitPaneJumpsAndClosesOverlay(t *testing.T) {
 	}
 }
 
+func TestReducerWorkspacePickerInputQueryMovesSelectionToMatchedPane(t *testing.T) {
+	reducer := New()
+	state := newAppStateWithTwoWorkspaces()
+
+	opened := reducer.Reduce(state, intent.OpenWorkspacePickerIntent{})
+	typed := reducer.Reduce(opened.State, intent.WorkspacePickerAppendQueryIntent{Text: "float-dev"})
+
+	picker, ok := typed.State.UI.Overlay.Data.(workspacePickerOverlay)
+	if !ok {
+		t.Fatalf("expected workspace picker overlay data, got %T", typed.State.UI.Overlay.Data)
+	}
+	if picker.Query() != "float-dev" {
+		t.Fatalf("expected query to update, got %q", picker.Query())
+	}
+	row, ok := picker.SelectedRow()
+	if !ok {
+		t.Fatalf("expected selected row after typing query")
+	}
+	if row.Node.Kind != workspacedomain.TreeNodeKindPane || row.Node.PaneID != types.PaneID("pane-float") {
+		t.Fatalf("expected query to select matched pane, got %+v", row.Node)
+	}
+}
+
+func TestReducerWorkspacePickerBackspaceShrinksQuery(t *testing.T) {
+	reducer := New()
+	state := newAppStateWithTwoWorkspaces()
+
+	opened := reducer.Reduce(state, intent.OpenWorkspacePickerIntent{})
+	typed := reducer.Reduce(opened.State, intent.WorkspacePickerAppendQueryIntent{Text: "float"})
+	backspaced := reducer.Reduce(typed.State, intent.WorkspacePickerBackspaceIntent{})
+
+	picker, ok := backspaced.State.UI.Overlay.Data.(workspacePickerOverlay)
+	if !ok {
+		t.Fatalf("expected workspace picker overlay data, got %T", backspaced.State.UI.Overlay.Data)
+	}
+	if picker.Query() != "floa" {
+		t.Fatalf("expected query to shrink after backspace, got %q", picker.Query())
+	}
+}
+
+func TestReducerWorkspacePickerSubmitCreateRowEmitsPromptEffect(t *testing.T) {
+	reducer := New()
+	state := newAppStateWithSinglePane()
+
+	opened := reducer.Reduce(state, intent.OpenWorkspacePickerIntent{})
+	movedToCreate := reducer.Reduce(opened.State, intent.WorkspacePickerMoveIntent{Delta: -100})
+	result := reducer.Reduce(movedToCreate.State, intent.WorkspacePickerSubmitIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected overlay to close before prompt handoff, got %q", result.State.UI.Overlay.Kind)
+	}
+	if len(result.Effects) != 1 {
+		t.Fatalf("expected one prompt effect, got %d", len(result.Effects))
+	}
+	effect, ok := result.Effects[0].(OpenPromptEffect)
+	if !ok {
+		t.Fatalf("expected open prompt effect, got %T", result.Effects[0])
+	}
+	if effect.PromptKind != PromptKindCreateWorkspace {
+		t.Fatalf("expected create-workspace prompt kind, got %q", effect.PromptKind)
+	}
+}
+
 func TestReducerModeTimedOutClearsActiveMode(t *testing.T) {
 	reducer := New()
 	state := newAppStateWithSinglePane()
@@ -174,6 +244,165 @@ func TestReducerModeTimedOutClearsActiveMode(t *testing.T) {
 	}
 	if result.State.UI.Mode.DeadlineAt != nil {
 		t.Fatalf("expected mode deadline cleared, got %+v", result.State.UI.Mode.DeadlineAt)
+	}
+}
+
+func TestReducerConnectTerminalReplacesOldConnectionSnapshot(t *testing.T) {
+	reducer := New()
+	state := newConnectedAppState()
+	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
+		ID:    types.TerminalID("term-2"),
+		Name:  "log-stream",
+		State: types.TerminalRunStateRunning,
+	}
+
+	result := reducer.Reduce(state, intent.ConnectTerminalIntent{
+		PaneID:     types.PaneID("pane-1"),
+		TerminalID: types.TerminalID("term-2"),
+		Source:     intent.ConnectSourceManagerHere,
+	})
+
+	pane := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
+	if pane.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected pane to connect to new terminal, got %+v", pane)
+	}
+	if _, ok := result.State.Domain.Connections[types.TerminalID("term-1")]; ok {
+		t.Fatalf("expected old terminal connection snapshot removed")
+	}
+	conn := result.State.Domain.Connections[types.TerminalID("term-2")]
+	if len(conn.ConnectedPaneIDs) != 1 || conn.ConnectedPaneIDs[0] != types.PaneID("pane-1") {
+		t.Fatalf("expected new terminal connection snapshot to contain pane-1, got %+v", conn)
+	}
+}
+
+func TestReducerOpenTerminalManagerMovesFocusToOverlay(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	result := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayTerminalManager {
+		t.Fatalf("expected terminal manager overlay, got %q", result.State.UI.Overlay.Kind)
+	}
+	if result.State.UI.Focus.Layer != types.FocusLayerOverlay {
+		t.Fatalf("expected overlay focus, got %+v", result.State.UI.Focus)
+	}
+	manager, ok := result.State.UI.Overlay.Data.(*terminalmanagerdomain.State)
+	if !ok {
+		t.Fatalf("expected terminal manager overlay data, got %T", result.State.UI.Overlay.Data)
+	}
+	selected, ok := manager.SelectedTerminalID()
+	if !ok || selected != types.TerminalID("term-1") {
+		t.Fatalf("expected focused pane terminal to be selected, got %q ok=%v", selected, ok)
+	}
+}
+
+func TestReducerTerminalManagerConnectHereUsesSelectedTerminalAndClosesOverlay(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	moved := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: 1})
+	result := reducer.Reduce(moved.State, intent.TerminalManagerConnectHereIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected manager overlay to close, got %q", result.State.UI.Overlay.Kind)
+	}
+	pane := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
+	if pane.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected current pane to connect selected terminal, got %+v", pane)
+	}
+	if len(result.Effects) != 1 {
+		t.Fatalf("expected one connect effect, got %d", len(result.Effects))
+	}
+	effect, ok := result.Effects[0].(ConnectTerminalEffect)
+	if !ok {
+		t.Fatalf("expected connect terminal effect, got %T", result.Effects[0])
+	}
+	if effect.PaneID != types.PaneID("pane-1") || effect.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("unexpected effect payload: %+v", effect)
+	}
+}
+
+func TestReducerTerminalManagerConnectInNewTabEmitsPlanningEffect(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	moved := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: 1})
+	result := reducer.Reduce(moved.State, intent.TerminalManagerConnectInNewTabIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected manager overlay to close, got %q", result.State.UI.Overlay.Kind)
+	}
+	if len(result.Effects) != 1 {
+		t.Fatalf("expected one new-tab effect, got %d", len(result.Effects))
+	}
+	effect, ok := result.Effects[0].(ConnectTerminalInNewTabEffect)
+	if !ok {
+		t.Fatalf("expected new-tab effect, got %T", result.Effects[0])
+	}
+	if effect.WorkspaceID != types.WorkspaceID("ws-1") || effect.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("unexpected effect payload: %+v", effect)
+	}
+}
+
+func TestReducerTerminalManagerConnectInFloatingPaneEmitsPlanningEffect(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	moved := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: 1})
+	result := reducer.Reduce(moved.State, intent.TerminalManagerConnectInFloatingPaneIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected manager overlay to close, got %q", result.State.UI.Overlay.Kind)
+	}
+	if len(result.Effects) != 1 {
+		t.Fatalf("expected one floating effect, got %d", len(result.Effects))
+	}
+	effect, ok := result.Effects[0].(ConnectTerminalInFloatingPaneEffect)
+	if !ok {
+		t.Fatalf("expected floating effect, got %T", result.Effects[0])
+	}
+	if effect.WorkspaceID != types.WorkspaceID("ws-1") || effect.TabID != types.TabID("tab-1") || effect.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("unexpected effect payload: %+v", effect)
+	}
+}
+
+func TestE2EReducerScenarioTerminalManagerConnectsSelectedTerminalHere(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	moved := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: 1})
+	result := reducer.Reduce(moved.State, intent.TerminalManagerConnectHereIntent{})
+
+	if result.State.UI.Focus.Layer != types.FocusLayerTiled || result.State.UI.Focus.PaneID != types.PaneID("pane-1") {
+		t.Fatalf("expected focus to return to current pane, got %+v", result.State.UI.Focus)
+	}
+	pane := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
+	if pane.TerminalID != types.TerminalID("term-2") || pane.SlotState != types.PaneSlotConnected {
+		t.Fatalf("expected pane to show selected terminal after manager flow, got %+v", pane)
+	}
+}
+
+func TestE2EReducerScenarioWorkspacePickerSearchesAndJumpsToPane(t *testing.T) {
+	reducer := New()
+	state := newAppStateWithTwoWorkspaces()
+
+	opened := reducer.Reduce(state, intent.OpenWorkspacePickerIntent{})
+	typed := reducer.Reduce(opened.State, intent.WorkspacePickerAppendQueryIntent{Text: "float-dev"})
+	result := reducer.Reduce(typed.State, intent.WorkspacePickerSubmitIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected overlay to close after jump, got %q", result.State.UI.Overlay.Kind)
+	}
+	if result.State.Domain.ActiveWorkspaceID != types.WorkspaceID("ws-2") {
+		t.Fatalf("expected jump to workspace ws-2, got %q", result.State.Domain.ActiveWorkspaceID)
+	}
+	if result.State.UI.Focus.PaneID != types.PaneID("pane-float") || result.State.UI.Focus.Layer != types.FocusLayerFloating {
+		t.Fatalf("expected focus to land on matched pane, got %+v", result.State.UI.Focus)
 	}
 }
 
@@ -261,13 +490,24 @@ func newAppStateWithTwoWorkspaces() types.AppState {
 				},
 				Panes: map[types.PaneID]types.PaneState{
 					types.PaneID("pane-float"): {
-						ID:        types.PaneID("pane-float"),
-						Kind:      types.PaneKindFloating,
-						SlotState: types.PaneSlotEmpty,
+						ID:         types.PaneID("pane-float"),
+						Kind:       types.PaneKindFloating,
+						SlotState:  types.PaneSlotConnected,
+						TerminalID: types.TerminalID("term-float"),
 					},
 				},
 			},
 		},
+	}
+	state.Domain.Terminals[types.TerminalID("term-float")] = types.TerminalRef{
+		ID:    types.TerminalID("term-float"),
+		Name:  "float-dev",
+		State: types.TerminalRunStateRunning,
+	}
+	state.Domain.Connections[types.TerminalID("term-float")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-float"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-float")},
+		OwnerPaneID:      types.PaneID("pane-float"),
 	}
 	return state
 }
@@ -302,6 +542,16 @@ func newSharedTerminalAppState() types.AppState {
 		TerminalID:       types.TerminalID("term-1"),
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1"), types.PaneID("pane-2")},
 		OwnerPaneID:      types.PaneID("pane-1"),
+	}
+	return state
+}
+
+func newManagerAppState() types.AppState {
+	state := newConnectedAppState()
+	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
+		ID:    types.TerminalID("term-2"),
+		Name:  "build-log",
+		State: types.TerminalRunStateRunning,
 	}
 	return state
 }

@@ -60,6 +60,10 @@ type OpenWorkspacePickerIntent struct{}
 
 func (OpenWorkspacePickerIntent) intentName() string { return "open_workspace_picker" }
 
+type OpenTerminalManagerIntent struct{}
+
+func (OpenTerminalManagerIntent) intentName() string { return "open_terminal_manager" }
+
 type CloseOverlayIntent struct{}
 
 func (CloseOverlayIntent) intentName() string { return "close_overlay" }
@@ -69,6 +73,16 @@ type WorkspacePickerMoveIntent struct {
 }
 
 func (WorkspacePickerMoveIntent) intentName() string { return "workspace_picker_move" }
+
+type WorkspacePickerAppendQueryIntent struct {
+	Text string
+}
+
+func (WorkspacePickerAppendQueryIntent) intentName() string { return "workspace_picker_append_query" }
+
+type WorkspacePickerBackspaceIntent struct{}
+
+func (WorkspacePickerBackspaceIntent) intentName() string { return "workspace_picker_backspace" }
 
 type WorkspacePickerExpandIntent struct{}
 
@@ -81,6 +95,28 @@ func (WorkspacePickerCollapseIntent) intentName() string { return "workspace_pic
 type WorkspacePickerSubmitIntent struct{}
 
 func (WorkspacePickerSubmitIntent) intentName() string { return "workspace_picker_submit" }
+
+type TerminalManagerMoveIntent struct {
+	Delta int
+}
+
+func (TerminalManagerMoveIntent) intentName() string { return "terminal_manager_move" }
+
+type TerminalManagerConnectHereIntent struct{}
+
+func (TerminalManagerConnectHereIntent) intentName() string { return "terminal_manager_connect_here" }
+
+type TerminalManagerConnectInNewTabIntent struct{}
+
+func (TerminalManagerConnectInNewTabIntent) intentName() string {
+	return "terminal_manager_connect_in_new_tab"
+}
+
+type TerminalManagerConnectInFloatingPaneIntent struct{}
+
+func (TerminalManagerConnectInFloatingPaneIntent) intentName() string {
+	return "terminal_manager_connect_in_floating_pane"
+}
 
 type ActivateModeIntent struct {
 	Mode       types.ModeKind

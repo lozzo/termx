@@ -5,6 +5,7 @@ import (
 
 	"github.com/lozzow/termx/tui/app/intent"
 	"github.com/lozzow/termx/tui/domain/connection"
+	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
 	"github.com/lozzow/termx/tui/domain/types"
 	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
 )
@@ -25,6 +26,33 @@ type StopTerminalEffect struct {
 }
 
 func (StopTerminalEffect) effectName() string { return "stop_terminal" }
+
+type ConnectTerminalInNewTabEffect struct {
+	WorkspaceID types.WorkspaceID
+	TerminalID  types.TerminalID
+}
+
+func (ConnectTerminalInNewTabEffect) effectName() string { return "connect_terminal_in_new_tab" }
+
+type ConnectTerminalInFloatingPaneEffect struct {
+	WorkspaceID types.WorkspaceID
+	TabID       types.TabID
+	TerminalID  types.TerminalID
+}
+
+func (ConnectTerminalInFloatingPaneEffect) effectName() string {
+	return "connect_terminal_in_floating_pane"
+}
+
+type OpenPromptEffect struct {
+	PromptKind string
+}
+
+func (OpenPromptEffect) effectName() string { return "open_prompt" }
+
+const (
+	PromptKindCreateWorkspace = "create_workspace"
+)
 
 type Result struct {
 	State   types.AppState
@@ -67,16 +95,30 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyClosePane(&result.State, intentValue)
 	case intent.OpenWorkspacePickerIntent:
 		applyOpenWorkspacePicker(&result.State)
+	case intent.OpenTerminalManagerIntent:
+		applyOpenTerminalManager(&result.State)
 	case intent.CloseOverlayIntent:
 		applyCloseOverlay(&result.State)
 	case intent.WorkspacePickerMoveIntent:
 		applyWorkspacePickerMove(&result.State, intentValue)
+	case intent.WorkspacePickerAppendQueryIntent:
+		applyWorkspacePickerAppendQuery(&result.State, intentValue)
+	case intent.WorkspacePickerBackspaceIntent:
+		applyWorkspacePickerBackspace(&result.State)
 	case intent.WorkspacePickerExpandIntent:
 		applyWorkspacePickerExpand(&result.State)
 	case intent.WorkspacePickerCollapseIntent:
 		applyWorkspacePickerCollapse(&result.State)
 	case intent.WorkspacePickerSubmitIntent:
-		applyWorkspacePickerSubmit(&result.State)
+		result.Effects = append(result.Effects, applyWorkspacePickerSubmit(&result.State)...)
+	case intent.TerminalManagerMoveIntent:
+		applyTerminalManagerMove(&result.State, intentValue)
+	case intent.TerminalManagerConnectHereIntent:
+		applyTerminalManagerConnectHere(&result, intentValue)
+	case intent.TerminalManagerConnectInNewTabIntent:
+		applyTerminalManagerConnectInNewTab(&result)
+	case intent.TerminalManagerConnectInFloatingPaneIntent:
+		applyTerminalManagerConnectInFloatingPane(&result)
 	case intent.ActivateModeIntent:
 		applyActivateMode(&result.State, intentValue)
 	case intent.ModeTimedOutIntent:
@@ -87,6 +129,7 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 }
 
 func applyConnectTerminal(state *types.AppState, in intent.ConnectTerminalIntent) {
+	disconnectPaneFromCurrentTerminal(state, in.PaneID, in.TerminalID)
 	setPaneState(state, in.PaneID, func(pane *types.PaneState) {
 		pane.TerminalID = in.TerminalID
 		pane.SlotState = types.PaneSlotConnected
@@ -207,6 +250,26 @@ func applyOpenWorkspacePicker(state *types.AppState) {
 	}
 }
 
+func applyOpenTerminalManager(state *types.AppState) {
+	returnFocus := state.UI.Focus
+	returnFocus.OverlayTarget = ""
+	state.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayTerminalManager,
+		Data:        terminalmanagerdomain.NewState(state.Domain, returnFocus),
+		ReturnFocus: returnFocus,
+	}
+	state.UI.Focus = types.FocusState{
+		Layer:         types.FocusLayerOverlay,
+		WorkspaceID:   returnFocus.WorkspaceID,
+		TabID:         returnFocus.TabID,
+		PaneID:        returnFocus.PaneID,
+		OverlayTarget: types.OverlayTerminalManager,
+	}
+	state.UI.Mode = types.ModeState{
+		Active: types.ModePicker,
+	}
+}
+
 func applyCloseOverlay(state *types.AppState) {
 	if state.UI.Overlay.Kind == types.OverlayNone {
 		return
@@ -227,6 +290,22 @@ func applyWorkspacePickerMove(state *types.AppState, in intent.WorkspacePickerMo
 	picker.MoveSelection(in.Delta)
 }
 
+func applyWorkspacePickerAppendQuery(state *types.AppState, in intent.WorkspacePickerAppendQueryIntent) {
+	picker, ok := workspacePicker(state)
+	if !ok {
+		return
+	}
+	picker.AppendQuery(in.Text)
+}
+
+func applyWorkspacePickerBackspace(state *types.AppState) {
+	picker, ok := workspacePicker(state)
+	if !ok {
+		return
+	}
+	picker.BackspaceQuery()
+}
+
 func applyWorkspacePickerExpand(state *types.AppState) {
 	picker, ok := workspacePicker(state)
 	if !ok {
@@ -243,16 +322,7 @@ func applyWorkspacePickerCollapse(state *types.AppState) {
 	picker.CollapseSelected()
 }
 
-func applyWorkspacePickerSubmit(state *types.AppState) {
-	picker, ok := workspacePicker(state)
-	if !ok {
-		return
-	}
-	node, ok := picker.SelectedNode()
-	if !ok {
-		return
-	}
-
+func applyWorkspacePickerSubmitNode(state *types.AppState, node workspacedomain.TreeNode) {
 	switch node.Kind {
 	case workspacedomain.TreeNodeKindWorkspace:
 		workspace, ok := state.Domain.Workspaces[node.WorkspaceID]
@@ -298,6 +368,87 @@ func applyWorkspacePickerSubmit(state *types.AppState) {
 	if state.UI.Mode.Active == types.ModePicker {
 		state.UI.Mode = types.ModeState{Active: types.ModeNone}
 	}
+}
+
+func applyWorkspacePickerSubmit(resultState *types.AppState) []Effect {
+	picker, ok := workspacePicker(resultState)
+	if !ok {
+		return nil
+	}
+	node, ok := picker.SelectedNode()
+	if !ok {
+		return nil
+	}
+	if node.Kind != workspacedomain.TreeNodeKindCreate {
+		applyWorkspacePickerSubmitNode(resultState, node)
+		return nil
+	}
+	applyCloseOverlay(resultState)
+	return []Effect{OpenPromptEffect{PromptKind: PromptKindCreateWorkspace}}
+}
+
+func applyTerminalManagerMove(state *types.AppState, in intent.TerminalManagerMoveIntent) {
+	manager, ok := terminalManager(state)
+	if !ok {
+		return
+	}
+	manager.MoveSelection(in.Delta)
+}
+
+func applyTerminalManagerConnectHere(result *Result, _ intent.TerminalManagerConnectHereIntent) {
+	manager, ok := terminalManager(&result.State)
+	if !ok {
+		return
+	}
+	terminalID, ok := manager.SelectedTerminalID()
+	if !ok {
+		return
+	}
+	paneID := result.State.UI.Overlay.ReturnFocus.PaneID
+	applyConnectTerminal(&result.State, intent.ConnectTerminalIntent{
+		PaneID:     paneID,
+		TerminalID: terminalID,
+		Source:     intent.ConnectSourceManagerHere,
+	})
+	result.Effects = append(result.Effects, ConnectTerminalEffect{
+		PaneID:     paneID,
+		TerminalID: terminalID,
+	})
+	applyCloseOverlay(&result.State)
+}
+
+func applyTerminalManagerConnectInNewTab(result *Result) {
+	manager, ok := terminalManager(&result.State)
+	if !ok {
+		return
+	}
+	terminalID, ok := manager.SelectedTerminalID()
+	if !ok {
+		return
+	}
+	workspaceID := result.State.UI.Overlay.ReturnFocus.WorkspaceID
+	result.Effects = append(result.Effects, ConnectTerminalInNewTabEffect{
+		WorkspaceID: workspaceID,
+		TerminalID:  terminalID,
+	})
+	applyCloseOverlay(&result.State)
+}
+
+func applyTerminalManagerConnectInFloatingPane(result *Result) {
+	manager, ok := terminalManager(&result.State)
+	if !ok {
+		return
+	}
+	terminalID, ok := manager.SelectedTerminalID()
+	if !ok {
+		return
+	}
+	result.Effects = append(result.Effects, ConnectTerminalInFloatingPaneEffect{
+		WorkspaceID: result.State.UI.Overlay.ReturnFocus.WorkspaceID,
+		TabID:       result.State.UI.Overlay.ReturnFocus.TabID,
+		TerminalID:  terminalID,
+	})
+	applyCloseOverlay(&result.State)
 }
 
 func applyActivateMode(state *types.AppState, in intent.ActivateModeIntent) {
@@ -448,4 +599,41 @@ func cloneTimePtr(in *time.Time) *time.Time {
 	}
 	value := *in
 	return &value
+}
+
+func terminalManager(state *types.AppState) (*terminalmanagerdomain.State, bool) {
+	if state.UI.Overlay.Kind != types.OverlayTerminalManager || state.UI.Overlay.Data == nil {
+		return nil, false
+	}
+	manager, ok := state.UI.Overlay.Data.(*terminalmanagerdomain.State)
+	return manager, ok
+}
+
+// disconnectPaneFromCurrentTerminal 保证 pane 改连新 terminal 时，旧 terminal 的连接快照会同步清理。
+// 否则 owner/follower 关系会在旧 terminal 上留下脏引用，后续控制权判断会失真。
+func disconnectPaneFromCurrentTerminal(state *types.AppState, paneID types.PaneID, nextTerminalID types.TerminalID) {
+	currentTerminalID := findPaneTerminalID(state, paneID)
+	if currentTerminalID == "" || currentTerminalID == nextTerminalID {
+		return
+	}
+	snapshot := state.Domain.Connections[currentTerminalID]
+	conn := connection.FromSnapshot(snapshot)
+	conn.Disconnect(paneID)
+	next := conn.Snapshot()
+	if len(next.ConnectedPaneIDs) == 0 {
+		delete(state.Domain.Connections, currentTerminalID)
+		return
+	}
+	state.Domain.Connections[currentTerminalID] = next
+}
+
+func findPaneTerminalID(state *types.AppState, paneID types.PaneID) types.TerminalID {
+	for _, workspace := range state.Domain.Workspaces {
+		for _, tab := range workspace.Tabs {
+			if pane, ok := tab.Panes[paneID]; ok {
+				return pane.TerminalID
+			}
+		}
+	}
+	return ""
 }
