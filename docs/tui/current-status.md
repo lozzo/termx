@@ -138,6 +138,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 114. 第一百一十轮 TDD 已补上 terminal picker 主要动作路径的测试闭环
 115. 第一百一十一轮 TDD 已补上 workspace picker 主要动作路径与 terminal picker submit 的测试闭环
 116. 第一百一十二轮 TDD 已补上 prompt 主要交互路径的测试闭环
+117. 第一百一十三轮 TDD 已补上 layout resolve 主要动作路径的测试闭环
 
 对应文档：
 
@@ -218,6 +219,11 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- 已补上一条 runtime 场景型 E2E：`layout resolve -> Enter` 后主视图显示 `overlay: terminal_picker`
+- 已补上一条 runtime 场景型 E2E：`layout resolve -> ↓ -> Enter` 后主视图显示 `overlay: none`
+- 已补上一条 runtime 场景型 E2E：`layout resolve -> ↓ -> ↓ -> Enter` 后主视图显示 `overlay: none`
+- 已补上一条 runtime 场景型 E2E：`layout resolve -> Esc` 后主视图显示 `overlay: none`
+- layout resolve 的 connect existing、create new、skip 与关闭路径现在被 runtime 场景测试锁住
 - 已补上一条 runtime 场景型 E2E：`Ctrl-w -> ↑ -> Enter -> 输入/退格 -> Enter` 后主视图显示 `workspace: ops-center`
 - 已补上一条 runtime 场景型 E2E：`Ctrl-w -> ↑ -> Enter -> Esc` 后主视图显示 `workspace: main`
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓ -> e -> Tab -> Enter` 后状态中的 `term-2` 会更新为 `build-log-v2`
