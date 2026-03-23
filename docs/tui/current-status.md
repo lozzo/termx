@@ -132,6 +132,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 108. 第一百零四轮 TDD 已补上 terminal manager parked detail 剩余字段的测试闭环
 109. 第一百零五轮 TDD 已补上 terminal manager parked selected 剩余字段的测试闭环
 110. 第一百零六轮 TDD 已补上 terminal manager overlay 结构字段的测试闭环
+111. 第一百零七轮 TDD 已补上 terminal manager edit 与 stop 场景的测试闭环
 
 对应文档：
 
@@ -212,6 +213,13 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> e` 后主视图显示 `prompt_kind: edit_terminal_metadata`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> e` 后主视图显示 `> [name] Name: api-dev`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> e` 后主视图显示 `  [tags] Tags: `
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> k` 后主视图显示 `overlay: none`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> k` 后主视图显示 `focus_layer: tiled`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> k` 后主视图显示 `slot: empty`
+- terminal manager 的 edit prompt 结构字段与 stop 收口结果现在被 runtime 场景测试锁住
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t` 后主视图显示 `terminal_manager_query: `
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t` 后主视图显示 `> [terminal] api-dev`
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图显示 `terminal_manager_query: `

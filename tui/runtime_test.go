@@ -734,11 +734,61 @@ func TestE2ERunScenarioTerminalManagerEditOpensPromptInView(t *testing.T) {
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "prompt_title: edit terminal metadata") || !strings.Contains(view, "prompt_terminal: term-1") || !strings.Contains(view, "prompt_active_field: name") || !strings.Contains(view, "prompt_active_label: Name") || !strings.Contains(view, "prompt_active_value: api-dev") || !strings.Contains(view, "prompt_active_index: 0") || !strings.Contains(view, "prompt_field_count: 2") || !strings.Contains(view, "prompt_fields:") || !strings.Contains(view, "Name: api-dev") {
+			if view := current.View(); !strings.Contains(view, "prompt_title: edit terminal metadata") || !strings.Contains(view, "prompt_kind: edit_terminal_metadata") || !strings.Contains(view, "prompt_terminal: term-1") || !strings.Contains(view, "prompt_active_field: name") || !strings.Contains(view, "prompt_active_label: Name") || !strings.Contains(view, "prompt_active_value: api-dev") || !strings.Contains(view, "prompt_active_index: 0") || !strings.Contains(view, "prompt_field_count: 2") || !strings.Contains(view, "prompt_fields:") || !strings.Contains(view, "> [name] Name: api-dev") || !strings.Contains(view, "  [tags] Tags: ") {
 				t.Fatalf("expected terminal manager edit flow to render prompt, got:\n%s", view)
 			}
 			if view := current.View(); !strings.Contains(view, "focus_layer: prompt") || !strings.Contains(view, "focus_overlay_target: prompt") {
 				t.Fatalf("expected prompt flow to expose focus state in view, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioTerminalManagerStopClosesOverlayAndClearsPane(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyRunes, Runes: []rune("k")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "slot: empty") || strings.Contains(view, "terminal_manager_rows:") {
+				t.Fatalf("expected terminal manager stop flow to close overlay and clear pane, got:\n%s", view)
+			}
+			pane := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
+			if pane.TerminalID != "" || pane.SlotState != types.PaneSlotEmpty {
+				t.Fatalf("expected stop flow to clear active pane terminal, got %+v", pane)
+			}
+			terminal := current.State().Domain.Terminals[types.TerminalID("term-1")]
+			if terminal.State != types.TerminalRunStateStopped {
+				t.Fatalf("expected stop flow to mark terminal stopped, got %+v", terminal)
 			}
 			return nil
 		},
