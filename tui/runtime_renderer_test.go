@@ -167,6 +167,9 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "terminal_manager_query: ") {
 		t.Fatalf("expected manager query in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "terminal_manager_selected: term-1") {
+		t.Fatalf("expected manager selected terminal id in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "terminal_manager_rows:") {
 		t.Fatalf("expected manager rows section in rendered view, got:\n%s", view)
 	}

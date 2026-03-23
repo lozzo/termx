@@ -263,8 +263,11 @@ func renderWorkspacePickerLines(picker *workspacedomain.PickerState) []string {
 func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 	lines := []string{
 		fmt.Sprintf("terminal_manager_query: %s", manager.Query()),
-		"terminal_manager_rows:",
 	}
+	if terminalID, ok := manager.SelectedTerminalID(); ok {
+		lines = append(lines, fmt.Sprintf("terminal_manager_selected: %s", terminalID))
+	}
+	lines = append(lines, "terminal_manager_rows:")
 	selected, hasSelection := manager.SelectedRow()
 	for _, row := range manager.VisibleRows() {
 		prefix := "  "
