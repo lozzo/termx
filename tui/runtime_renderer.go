@@ -304,6 +304,7 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 			fmt.Sprintf("terminal_manager_detail: %s", detail.Name),
 			fmt.Sprintf("detail_terminal: %s", detail.TerminalID),
 			fmt.Sprintf("detail_state: %s", detail.State),
+			fmt.Sprintf("detail_visible: %t", detail.Visible),
 			fmt.Sprintf("detail_visibility: %s", detail.VisibilityLabel),
 			fmt.Sprintf("detail_connected_panes: %d", detail.ConnectedPaneCount),
 			fmt.Sprintf("detail_command: %s", detail.Command),
