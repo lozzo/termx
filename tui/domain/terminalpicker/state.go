@@ -28,6 +28,7 @@ type Row struct {
 	State      types.TerminalRunState
 	Command    string
 	Visible    bool
+	Tags       map[string]string
 	SearchText string
 }
 
@@ -179,10 +180,22 @@ func buildRows(domain types.DomainState) []Row {
 			State:      terminal.State,
 			Command:    strings.Join(terminal.Command, " "),
 			Visible:    terminal.Visible,
+			Tags:       mapsClone(terminal.Tags),
 			SearchText: buildSearchText(domain, terminalID, terminal),
 		})
 	}
 	return rows
+}
+
+func mapsClone(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
 
 func buildSearchText(domain types.DomainState, terminalID types.TerminalID, terminal types.TerminalRef) string {

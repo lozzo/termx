@@ -65,6 +65,21 @@ func TestPickerStateSelectedRowCarriesVisibleFlag(t *testing.T) {
 	}
 }
 
+func TestPickerStateSelectedRowCarriesTags(t *testing.T) {
+	state := sampleDomainState()
+	picker := NewState(state, types.FocusState{})
+
+	picker.AppendQuery("build")
+
+	row, ok := picker.SelectedRow()
+	if !ok {
+		t.Fatal("expected selected row")
+	}
+	if row.Tags["group"] != "build" {
+		t.Fatalf("expected selected row tags, got %+v", row.Tags)
+	}
+}
+
 func TestPickerStateVisibleRowsKeepCreateRowWhenFiltering(t *testing.T) {
 	state := sampleDomainState()
 	picker := NewState(state, types.FocusState{})

@@ -404,6 +404,9 @@ func renderTerminalPickerLines(picker *terminalpickerdomain.State) []string {
 			fmt.Sprintf("terminal_picker_selected_command: %s", row.Command),
 			fmt.Sprintf("terminal_picker_selected_visible: %t", row.Visible),
 		)
+		if tags := renderTerminalTags(row.Tags); tags != "" {
+			lines = append(lines, fmt.Sprintf("terminal_picker_selected_tags: %s", tags))
+		}
 	} else if terminalID, ok := picker.SelectedTerminalID(); ok {
 		lines = append(lines, fmt.Sprintf("terminal_picker_selected: %s", terminalID))
 	}
