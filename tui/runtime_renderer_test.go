@@ -6,6 +6,7 @@ import (
 
 	"github.com/lozzow/termx/protocol"
 	btui "github.com/lozzow/termx/tui/bt"
+	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
 	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
 	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
 	"github.com/lozzow/termx/tui/domain/types"
@@ -158,5 +159,37 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	}
 	if !strings.Contains(view, "detail_tags: group=build") {
 		t.Fatalf("expected manager detail tags in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersPromptOverlay(t *testing.T) {
+	state := runtimeStateWithTerminalManagerTargets()
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayPrompt,
+		Data: &promptdomain.State{
+			Kind:       promptdomain.KindEditTerminalMetadata,
+			Title:      "edit terminal metadata",
+			TerminalID: types.TerminalID("term-2"),
+			Fields: []promptdomain.Field{
+				{Key: "name", Label: "Name", Value: "build-log"},
+				{Key: "tags", Label: "Tags", Value: "group=build"},
+			},
+			Active: 1,
+		},
+	}
+	state.UI.Focus.Layer = types.FocusLayerPrompt
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "prompt_title: edit terminal metadata") {
+		t.Fatalf("expected prompt title in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "prompt_fields:") {
+		t.Fatalf("expected prompt fields section in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "  [name] Name: build-log") {
+		t.Fatalf("expected name field in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "> [tags] Tags: group=build") {
+		t.Fatalf("expected active tags field in rendered view, got:\n%s", view)
 	}
 }

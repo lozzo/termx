@@ -67,6 +67,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 43. 第三十九轮 TDD 已补上 runtime renderer 的 notice 可见性闭环
 44. 第四十轮 TDD 已补上 workspace picker 的 runtime renderer 可视化闭环
 45. 第四十一轮 TDD 已补上 terminal manager 的 runtime renderer 可视化闭环
+46. 第四十二轮 TDD 已补上 prompt overlay 的 runtime renderer 可视化闭环
 
 对应文档：
 
@@ -333,9 +334,14 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `runtimeRenderer` 现在会渲染 `terminal_manager_query`、`terminal_manager_rows` 和当前选中 terminal 的 detail
 - terminal manager 行现在会展示 header/create/terminal 三类投影，并标出当前选择
 - 已补上一条 runtime E2E：`Ctrl-G` -> `t` 打开 terminal manager 后，view 会直接出现 manager 内容
+- `runtimeRenderer` 现在会渲染 `prompt_title`、`prompt_kind` 和 `prompt_fields`
+- prompt 结构化字段现在会展示 active field 标记，便于后续真实 TUI 壳继续套样式
+- 已补上一条 runtime E2E：terminal manager `e` 打开的 metadata prompt 会直接出现在 view 中
 
 本轮验证：
 
+- `go test ./tui -run 'TestRuntimeRendererRendersPromptOverlay|TestE2ERunScenarioTerminalManagerEditOpensPromptInView' -count=1`
+- `go test ./tui -count=1`
 - `go test ./tui -run 'TestRuntimeRendererRendersTerminalManagerOverlay|TestE2ERunScenarioCtrlGTOpensTerminalManagerInView' -count=1`
 - `go test ./tui -count=1`
 - `go test ./tui -run 'TestRuntimeRendererRendersWorkspacePickerOverlay|TestE2ERunScenarioCtrlWOpensWorkspacePickerInView' -count=1`

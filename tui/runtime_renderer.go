@@ -6,6 +6,7 @@ import (
 
 	"github.com/lozzow/termx/protocol"
 	btui "github.com/lozzow/termx/tui/bt"
+	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
 	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
 	"github.com/lozzow/termx/tui/domain/types"
 	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
@@ -124,6 +125,12 @@ func renderOverlayLines(overlay types.OverlayState) []string {
 			return nil
 		}
 		return renderTerminalManagerLines(manager)
+	case types.OverlayPrompt:
+		prompt, ok := overlay.Data.(*promptdomain.State)
+		if !ok || prompt == nil {
+			return nil
+		}
+		return renderPromptLines(prompt)
 	default:
 		return nil
 	}
@@ -184,6 +191,33 @@ func renderDetailTags(tags []terminalmanagerdomain.Tag) string {
 		parts = append(parts, fmt.Sprintf("%s=%s", tag.Key, tag.Value))
 	}
 	return strings.Join(parts, ",")
+}
+
+func renderPromptLines(prompt *promptdomain.State) []string {
+	lines := []string{
+		fmt.Sprintf("prompt_title: %s", prompt.Title),
+		fmt.Sprintf("prompt_kind: %s", prompt.Kind),
+	}
+	if len(prompt.Fields) == 0 {
+		lines = append(lines,
+			"prompt_fields:",
+			fmt.Sprintf("> [draft] %s", prompt.Draft),
+		)
+		return lines
+	}
+	lines = append(lines, "prompt_fields:")
+	active := prompt.Active
+	if active < 0 || active >= len(prompt.Fields) {
+		active = 0
+	}
+	for idx, field := range prompt.Fields {
+		prefix := "  "
+		if idx == active {
+			prefix = "> "
+		}
+		lines = append(lines, fmt.Sprintf("%s[%s] %s: %s", prefix, field.Key, field.Label, field.Value))
+	}
+	return lines
 }
 
 func renderNoticeLines(notices []btui.Notice) []string {
