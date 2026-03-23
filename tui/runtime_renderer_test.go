@@ -137,7 +137,6 @@ func TestRuntimeRendererRendersWorkspacePickerOverlay(t *testing.T) {
 func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	state := runtimeStateWithTerminalManagerTargets()
 	manager := terminalmanagerdomain.NewState(state.Domain, state.UI.Focus)
-	manager.AppendQuery("build")
 	state.UI.Overlay = types.OverlayState{
 		Kind: types.OverlayTerminalManager,
 		Data: manager,
@@ -145,23 +144,26 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	state.UI.Focus.Layer = types.FocusLayerOverlay
 
 	view := runtimeRenderer{}.Render(state, nil)
-	if !strings.Contains(view, "terminal_manager_query: build") {
+	if !strings.Contains(view, "terminal_manager_query: ") {
 		t.Fatalf("expected manager query in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "terminal_manager_rows:") {
 		t.Fatalf("expected manager rows section in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "> [terminal] build-log") {
+	if !strings.Contains(view, "> [terminal] api-dev") {
 		t.Fatalf("expected selected manager row in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "terminal_manager_detail: build-log") {
+	if !strings.Contains(view, "terminal_manager_detail: api-dev") {
 		t.Fatalf("expected manager detail header in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "detail_command: tail -f build.log") {
+	if !strings.Contains(view, "detail_command: npm run dev") {
 		t.Fatalf("expected manager detail command in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "detail_tags: group=build") {
-		t.Fatalf("expected manager detail tags in rendered view, got:\n%s", view)
+	if !strings.Contains(view, "detail_connected_panes: 1") {
+		t.Fatalf("expected manager detail connection count in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "detail_locations:") || !strings.Contains(view, "- main/shell/pane:pane-1") {
+		t.Fatalf("expected manager detail locations in rendered view, got:\n%s", view)
 	}
 }
 

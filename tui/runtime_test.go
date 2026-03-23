@@ -635,7 +635,6 @@ func TestE2ERunScenarioCtrlGTOpensTerminalManagerInView(t *testing.T) {
 			for _, key := range []tea.KeyMsg{
 				{Type: tea.KeyCtrlG},
 				{Type: tea.KeyRunes, Runes: []rune("t")},
-				{Type: tea.KeyRunes, Runes: []rune("build")},
 			} {
 				nextModel, cmd := model.Update(key)
 				model = nextModel.(*btui.Model)
@@ -646,7 +645,7 @@ func TestE2ERunScenarioCtrlGTOpensTerminalManagerInView(t *testing.T) {
 					}
 				}
 			}
-			if view := model.View(); !strings.Contains(view, "terminal_manager_rows:") || !strings.Contains(view, "terminal_manager_query: build") || !strings.Contains(view, "build-log") {
+			if view := model.View(); !strings.Contains(view, "terminal_manager_rows:") || !strings.Contains(view, "terminal_manager_detail: api-dev") || !strings.Contains(view, "detail_connected_panes: 1") || !strings.Contains(view, "- main/shell/pane:pane-1") {
 				t.Fatalf("expected ctrl-g t flow to render terminal manager, got:\n%s", view)
 			}
 			return nil

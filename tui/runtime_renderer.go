@@ -195,6 +195,7 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 			fmt.Sprintf("terminal_manager_detail: %s", detail.Name),
 			fmt.Sprintf("detail_state: %s", detail.State),
 			fmt.Sprintf("detail_visibility: %s", detail.VisibilityLabel),
+			fmt.Sprintf("detail_connected_panes: %d", detail.ConnectedPaneCount),
 			fmt.Sprintf("detail_command: %s", detail.Command),
 		)
 		if detail.OwnerSlotLabel != "" {
@@ -202,6 +203,10 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 		}
 		if tags := renderDetailTags(detail.Tags); tags != "" {
 			lines = append(lines, fmt.Sprintf("detail_tags: %s", tags))
+		}
+		if locations := renderDetailLocations(detail.Locations); len(locations) > 0 {
+			lines = append(lines, "detail_locations:")
+			lines = append(lines, locations...)
 		}
 	}
 	return lines
@@ -216,6 +221,17 @@ func renderDetailTags(tags []terminalmanagerdomain.Tag) string {
 		parts = append(parts, fmt.Sprintf("%s=%s", tag.Key, tag.Value))
 	}
 	return strings.Join(parts, ",")
+}
+
+func renderDetailLocations(locations []terminalmanagerdomain.Location) []string {
+	if len(locations) == 0 {
+		return nil
+	}
+	lines := make([]string, 0, len(locations))
+	for _, location := range locations {
+		lines = append(lines, fmt.Sprintf("- %s/%s/%s", location.WorkspaceName, location.TabName, location.SlotLabel))
+	}
+	return lines
 }
 
 func renderPromptLines(prompt *promptdomain.State) []string {

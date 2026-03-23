@@ -71,6 +71,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 47. 第四十三轮 TDD 已补上 terminal picker 的 runtime renderer 可视化闭环
 48. 第四十四轮 TDD 已补上 layout resolve 的 runtime renderer 可视化闭环
 49. 第四十五轮 TDD 已补上 runtime mode 状态的 renderer 可见性闭环
+50. 第四十六轮 TDD 已补上 terminal manager detail 连接信息的 renderer 可视化闭环
 
 对应文档：
 
@@ -349,9 +350,14 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `runtimeRenderer` 现在会渲染 `mode` 和 `mode_sticky`
 - `Ctrl-G` 进入 global 前缀模式后，运行态 view 现在能直接看到当前 mode
 - 已补上一条 runtime E2E：`Ctrl-G` 后全局模式会直接反映到 view 中
+- `runtimeRenderer` 现在会渲染 terminal manager detail 的 `connected_panes` 和 `locations`
+- terminal manager 详情区现在能直接看到 terminal 当前出现的位置
+- 已补上一条 runtime E2E：打开 terminal manager 后，当前选中 terminal 的连接信息会直接出现在 view 中
 
 本轮验证：
 
+- `go test ./tui -run 'TestRuntimeRendererRendersTerminalManagerOverlay|TestE2ERunScenarioCtrlGTOpensTerminalManagerInView' -count=1`
+- `go test ./tui -count=1`
 - `go test ./tui -run 'TestRuntimeRendererRendersActiveMode|TestE2ERunScenarioCtrlGShowsGlobalModeInView' -count=1`
 - `go test ./tui -count=1`
 - `go test ./tui -run 'TestRuntimeRendererRendersLayoutResolveOverlay|TestE2ERunScenarioLayoutResolveMoveUpdatesView' -count=1`
