@@ -356,6 +356,7 @@ func renderPromptLines(prompt *promptdomain.State) []string {
 			"prompt_active_field: draft",
 			"prompt_active_label: draft",
 			fmt.Sprintf("prompt_active_value: %s", prompt.Draft),
+			"prompt_active_index: 0",
 			"prompt_fields:",
 			fmt.Sprintf("> [draft] %s", prompt.Draft),
 		)
@@ -369,6 +370,7 @@ func renderPromptLines(prompt *promptdomain.State) []string {
 		fmt.Sprintf("prompt_active_field: %s", prompt.Fields[active].Key),
 		fmt.Sprintf("prompt_active_label: %s", prompt.Fields[active].Label),
 		fmt.Sprintf("prompt_active_value: %s", prompt.Fields[active].Value),
+		fmt.Sprintf("prompt_active_index: %d", active),
 		"prompt_fields:",
 	)
 	for idx, field := range prompt.Fields {
