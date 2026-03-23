@@ -611,8 +611,8 @@ func TestE2ERunScenarioCtrlWOpensWorkspacePickerInView(t *testing.T) {
 			if view := current.View(); !strings.Contains(view, "workspace_picker_rows:") || !strings.Contains(view, "[workspace] ops") {
 				t.Fatalf("expected ctrl-w to open picker in view, got:\n%s", view)
 			}
-			if view := current.View(); !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: workspace_picker") {
-				t.Fatalf("expected ctrl-w to expose overlay focus state in view, got:\n%s", view)
+			if view := current.View(); !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: workspace_picker") || !strings.Contains(view, "tab_layer: tiled") {
+				t.Fatalf("expected ctrl-w to expose overlay focus and preserved tab layer in view, got:\n%s", view)
 			}
 			return nil
 		},
@@ -894,7 +894,7 @@ func TestE2ERunScenarioFloatingPaneKindVisibleInView(t *testing.T) {
 	bootstrapper := &stubRunSessionBootstrapper{}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
-			if view := model.View(); !strings.Contains(view, "pane_kind: floating") || !strings.Contains(view, "focus_layer: floating") {
+			if view := model.View(); !strings.Contains(view, "pane_kind: floating") || !strings.Contains(view, "focus_layer: floating") || !strings.Contains(view, "tab_layer: floating") {
 				t.Fatalf("expected runtime view to expose floating pane state, got:\n%s", view)
 			}
 			return nil

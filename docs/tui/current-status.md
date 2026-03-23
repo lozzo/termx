@@ -78,6 +78,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 54. 第五十轮 TDD 已补上 active pane 连接计数的 renderer 可见性闭环
 55. 第五十一轮 TDD 已补上 active terminal 元数据的 renderer 可见性闭环
 56. 第五十二轮 TDD 已补上 active pane 形态的 renderer 可见性闭环
+57. 第五十三轮 TDD 已补上 active tab layer 的 renderer 可见性闭环
 
 对应文档：
 
@@ -158,6 +159,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- runtime renderer 已显式展示 active tab 的 `tab_layer`
+- 当前主视图现在可区分“当前焦点层”和“tab 本身停留层”
+- 已补上两条 runtime 场景型 E2E：`Ctrl-w` 打开 overlay 时保留 `tab_layer: tiled`，以及 floating tab 启动时显示 `tab_layer: floating`
 - runtime renderer 已显式展示 active pane 的 `pane_kind`
 - 当前主视图现在可直接区分 `tiled / floating` pane
 - 已补上一条 runtime 场景型 E2E：floating pane 启动后主视图可直接看到 `pane_kind: floating`

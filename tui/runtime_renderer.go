@@ -38,6 +38,7 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	lines := []string{
 		fmt.Sprintf("workspace: %s", workspace.Name),
 		fmt.Sprintf("tab: %s", tab.Name),
+		fmt.Sprintf("tab_layer: %s", tab.ActiveLayer),
 		fmt.Sprintf("pane: %s", pane.ID),
 		fmt.Sprintf("slot: %s", pane.SlotState),
 		fmt.Sprintf("overlay: %s", state.UI.Overlay.Kind),
