@@ -130,6 +130,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 106. 第一百零二轮 TDD 已补上 terminal manager parked detail 连接数量的测试闭环
 107. 第一百零三轮 TDD 已补上 terminal manager parked detail 位置数量的测试闭环
 108. 第一百零四轮 TDD 已补上 terminal manager parked detail 剩余字段的测试闭环
+109. 第一百零五轮 TDD 已补上 terminal manager parked selected 剩余字段的测试闭环
 
 对应文档：
 
@@ -210,6 +211,14 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图同时显示 `terminal_manager_selected_kind: terminal`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图同时显示 `terminal_manager_selected_state: running`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图同时显示 `terminal_manager_selected_visible: false`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图同时显示 `terminal_manager_selected_visibility: hidden`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图同时显示 `terminal_manager_selected_connected_panes: 0`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图同时显示 `terminal_manager_selected_location_count: 0`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图同时显示 `terminal_manager_selected_owner: `
+- terminal manager 停放 terminal 的 selected 剩余关键字段现在被场景测试统一锁住
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图同时显示 `detail_terminal: term-2`
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图同时显示 `detail_state: running`
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图同时显示 `detail_visible: false`
