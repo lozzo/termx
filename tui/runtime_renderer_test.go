@@ -179,6 +179,9 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "terminal_manager_selected_label: api-dev") {
 		t.Fatalf("expected manager selected terminal label in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "terminal_manager_selected_kind: terminal") {
+		t.Fatalf("expected manager selected row kind in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "terminal_manager_selected_section: VISIBLE") {
 		t.Fatalf("expected manager selected terminal section in rendered view, got:\n%s", view)
 	}

@@ -96,6 +96,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 72. 第六十八轮 TDD 已补上 workspace picker 选中节点标签的 renderer 可见性闭环
 73. 第六十九轮 TDD 已补上 terminal manager 选中终端分区的 renderer 可见性闭环
 74. 第七十轮 TDD 已补上 terminal picker 选中行类型的 renderer 可见性闭环
+75. 第七十一轮 TDD 已补上 terminal manager 选中行类型的 renderer 可见性闭环
 
 对应文档：
 
@@ -176,6 +177,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- runtime renderer 已显式展示 terminal manager 的 `terminal_manager_selected_kind`
+- terminal manager 打开后当前主视图可直接看到当前选中行的类型
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t` 打开后主视图显示 `terminal_manager_selected_kind: terminal`
 - runtime renderer 已显式展示 terminal picker 的 `terminal_picker_selected_kind`
 - terminal picker 搜索后当前主视图可直接看到当前选中行的类型
 - 已补上一条 runtime 场景型 E2E：`Ctrl-f` 搜索后主视图显示 `terminal_picker_selected_kind: terminal`

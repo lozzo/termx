@@ -272,6 +272,7 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 		lines = append(lines,
 			fmt.Sprintf("terminal_manager_selected: %s", row.TerminalID),
 			fmt.Sprintf("terminal_manager_selected_label: %s", row.Label),
+			fmt.Sprintf("terminal_manager_selected_kind: %s", row.Kind),
 			fmt.Sprintf("terminal_manager_selected_section: %s", row.Section),
 			fmt.Sprintf("terminal_manager_selected_state: %s", row.State),
 		)
