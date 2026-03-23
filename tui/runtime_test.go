@@ -758,6 +758,106 @@ func TestE2ERunScenarioWorkspacePickerCreateRowOpensPrompt(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioCreateWorkspacePromptSubmitCreatesWorkspace(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithWorkspacePickerTarget()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlW},
+				{Type: tea.KeyUp},
+				{Type: tea.KeyUp},
+				{Type: tea.KeyUp},
+				{Type: tea.KeyEnter},
+				{Type: tea.KeyRunes, Runes: []rune("ops-cente")},
+				{Type: tea.KeyBackspace},
+				{Type: tea.KeyRunes, Runes: []rune("er")},
+				{Type: tea.KeyEnter},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "workspace: ops-center") || !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "prompt_title: create workspace") {
+				t.Fatalf("expected create workspace prompt submit flow to create workspace and close prompt, got:\n%s", view)
+			}
+			if current.State().Domain.ActiveWorkspaceID == types.WorkspaceID("ws-1") {
+				t.Fatalf("expected active workspace to switch after prompt submit, got %+v", current.State().Domain.ActiveWorkspaceID)
+			}
+			workspace := current.State().Domain.Workspaces[current.State().Domain.ActiveWorkspaceID]
+			if workspace.Name != "ops-center" {
+				t.Fatalf("expected workspace created from prompt draft, got %+v", workspace)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioCreateWorkspacePromptEscCancels(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithWorkspacePickerTarget()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlW},
+				{Type: tea.KeyUp},
+				{Type: tea.KeyUp},
+				{Type: tea.KeyUp},
+				{Type: tea.KeyEnter},
+				{Type: tea.KeyEsc},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "workspace: main") || strings.Contains(view, "prompt_title: create workspace") {
+				t.Fatalf("expected create workspace prompt esc flow to cancel and restore pane, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioWorkspacePickerEscClosesOverlay(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithWorkspacePickerTarget()
@@ -991,6 +1091,60 @@ func TestE2ERunScenarioTerminalManagerEditOpensPromptInView(t *testing.T) {
 			}
 			if view := current.View(); !strings.Contains(view, "focus_layer: prompt") || !strings.Contains(view, "focus_overlay_target: prompt") {
 				t.Fatalf("expected prompt flow to expose focus state in view, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioMetadataPromptTabSubmitUpdatesTerminal(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyDown},
+				{Type: tea.KeyRunes, Runes: []rune("e")},
+				{Type: tea.KeyRunes, Runes: []rune("-v2")},
+				{Type: tea.KeyTab},
+				{Type: tea.KeyRunes, Runes: []rune(",env=prod")},
+				{Type: tea.KeyEnter},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "prompt_title: edit terminal metadata") {
+				t.Fatalf("expected metadata prompt submit flow to close prompt, got:\n%s", view)
+			}
+			terminal := current.State().Domain.Terminals[types.TerminalID("term-2")]
+			if terminal.Name != "build-log-v2" {
+				t.Fatalf("expected metadata prompt to update terminal name, got %+v", terminal)
+			}
+			if terminal.Tags["group"] != "build" || terminal.Tags["env"] != "prod" {
+				t.Fatalf("expected metadata prompt to update terminal tags, got %+v", terminal.Tags)
 			}
 			return nil
 		},
