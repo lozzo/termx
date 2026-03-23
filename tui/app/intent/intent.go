@@ -48,6 +48,15 @@ type TerminalRemovedIntent struct {
 
 func (TerminalRemovedIntent) intentName() string { return "terminal_removed" }
 
+type RegisterTerminalIntent struct {
+	TerminalID types.TerminalID
+	Name       string
+	Command    []string
+	State      types.TerminalRunState
+}
+
+func (RegisterTerminalIntent) intentName() string { return "register_terminal" }
+
 type SyncTerminalStateIntent struct {
 	TerminalID types.TerminalID
 	State      types.TerminalRunState

@@ -117,6 +117,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applySyncTerminalState(&result.State, intentValue)
 	case intent.TerminalRemovedIntent:
 		applyTerminalRemoved(&result.State, intentValue)
+	case intent.RegisterTerminalIntent:
+		applyRegisterTerminal(&result.State, intentValue)
 	case intent.WorkspaceTreeJumpIntent:
 		applyWorkspaceTreeJump(&result.State, intentValue)
 	case intent.ClosePaneIntent:
@@ -291,6 +293,18 @@ func applyTerminalRemoved(state *types.AppState, in intent.TerminalRemovedIntent
 	})
 	delete(state.Domain.Terminals, in.TerminalID)
 	delete(state.Domain.Connections, in.TerminalID)
+}
+
+// applyRegisterTerminal 只同步 runtime 新出现的 terminal 基本信息，
+// 不在这里推断连接关系，避免把 detached terminal 误标成 visible。
+func applyRegisterTerminal(state *types.AppState, in intent.RegisterTerminalIntent) {
+	terminal := state.Domain.Terminals[in.TerminalID]
+	terminal.ID = in.TerminalID
+	terminal.Name = in.Name
+	terminal.Command = append([]string(nil), in.Command...)
+	terminal.State = in.State
+	terminal.ExitCode = nil
+	state.Domain.Terminals[in.TerminalID] = terminal
 }
 
 func applyWorkspaceTreeJump(state *types.AppState, in intent.WorkspaceTreeJumpIntent) {

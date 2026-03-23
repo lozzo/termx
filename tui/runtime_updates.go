@@ -249,6 +249,16 @@ func (h *runtimeUpdateHandler) send(msg tea.Msg) {
 func runtimeEventIntents(evt protocol.Event) []intent.Intent {
 	terminalID := types.TerminalID(evt.TerminalID)
 	switch evt.Type {
+	case protocol.EventTerminalCreated:
+		if evt.Created == nil {
+			return nil
+		}
+		return []intent.Intent{intent.RegisterTerminalIntent{
+			TerminalID: terminalID,
+			Name:       evt.Created.Name,
+			Command:    append([]string(nil), evt.Created.Command...),
+			State:      types.TerminalRunStateRunning,
+		}}
 	case protocol.EventTerminalStateChanged:
 		if evt.StateChanged == nil {
 			return nil

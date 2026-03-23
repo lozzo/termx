@@ -91,6 +91,38 @@ func TestReducerTerminalRemovedClearsPaneAndTerminalState(t *testing.T) {
 	}
 }
 
+func TestReducerRegisterTerminalAddsDetachedTerminalRef(t *testing.T) {
+	reducer := New()
+	state := newAppStateWithSinglePane()
+
+	result := reducer.Reduce(state, intent.RegisterTerminalIntent{
+		TerminalID: types.TerminalID("term-2"),
+		Name:       "build-log",
+		Command:    []string{"tail", "-f", "build.log"},
+		State:      types.TerminalRunStateRunning,
+	})
+
+	terminal, ok := result.State.Domain.Terminals[types.TerminalID("term-2")]
+	if !ok {
+		t.Fatal("expected registered terminal to be stored in domain")
+	}
+	if terminal.ID != types.TerminalID("term-2") || terminal.Name != "build-log" {
+		t.Fatalf("unexpected registered terminal identity: %+v", terminal)
+	}
+	if terminal.State != types.TerminalRunStateRunning {
+		t.Fatalf("expected registered terminal to be running, got %+v", terminal)
+	}
+	if len(terminal.Command) != 3 || terminal.Command[0] != "tail" {
+		t.Fatalf("expected registered command to be cloned, got %+v", terminal.Command)
+	}
+	if terminal.Visible {
+		t.Fatalf("expected detached runtime terminal to remain non-visible, got %+v", terminal)
+	}
+	if len(result.Effects) != 0 {
+		t.Fatalf("expected register terminal to be side-effect free, got %+v", result.Effects)
+	}
+}
+
 func TestReducerSyncTerminalStateStoppedClearsPaneConnection(t *testing.T) {
 	reducer := New()
 	state := newConnectedAppState()

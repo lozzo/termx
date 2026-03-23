@@ -380,6 +380,66 @@ func TestE2ERunScenarioStateChangedStoppedFeedsReducerAndClearsPane(t *testing.T
 	}
 }
 
+func TestE2ERunScenarioCreatedEventRegistersDetachedTerminal(t *testing.T) {
+	events := make(chan protocol.Event, 1)
+	client := &stubRunClient{}
+	initial := buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty)
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			EventStream: events,
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			initCmd := model.Init()
+			if initCmd == nil {
+				t.Fatal("expected runtime init command")
+			}
+			events <- protocol.Event{
+				Type:       protocol.EventTerminalCreated,
+				TerminalID: "term-2",
+				Created: &protocol.TerminalCreatedData{
+					Name:    "build-log",
+					Command: []string{"tail", "-f", "build.log"},
+					Size:    protocol.Size{Cols: 120, Rows: 40},
+				},
+			}
+			msg := initCmd()
+			if msg == nil {
+				t.Fatal("expected runtime created message")
+			}
+			_, cmd := model.Update(msg)
+			for _, nextMsg := range runCmdMessages(cmd) {
+				_, _ = model.Update(nextMsg)
+			}
+			terminal, ok := model.State().Domain.Terminals[types.TerminalID("term-2")]
+			if !ok {
+				t.Fatal("expected runtime created terminal to be registered")
+			}
+			if terminal.Name != "build-log" || terminal.State != types.TerminalRunStateRunning {
+				t.Fatalf("unexpected created terminal state: %+v", terminal)
+			}
+			if terminal.Visible {
+				t.Fatalf("expected detached created terminal to remain non-visible, got %+v", terminal)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioCollaboratorsRevokedBlocksSubsequentInput(t *testing.T) {
 	events := make(chan protocol.Event, 1)
 	client := &stubRunClient{}

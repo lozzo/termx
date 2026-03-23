@@ -62,6 +62,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 38. 第三十四轮 TDD 已补上 `state_changed` 剩余状态的 runtime 同步闭环
 39. 第三十五轮 TDD 已补上 `resized / collaborators_revoked` 的 runtime 观测与输入阻断闭环
 40. 第三十六轮 TDD 已补上 `cmd/termx attach` 的 `PrefixTimeout` 配置透传闭环
+41. 第三十七轮 TDD 已补上 `EventTerminalCreated` 到 `register_terminal` 的 runtime 回灌闭环
 
 对应文档：
 
@@ -312,9 +313,15 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 已补上一组 runtime 编排测试覆盖 planner/task/session 的调用顺序和错误传播
 - 已补上一条 runtime 测试覆盖 program runner 调用和 renderer 输出
 - `cmd/termx attach` 现在会把 CLI 的 `--prefix-timeout` 继续透传到 `tui.Run`，与 root TUI 入口保持一致按键前缀超时语义
+- 已新增 `RegisterTerminalIntent`，用于表达 runtime 期间新出现但尚未 connect 的 terminal
+- reducer 现在已能消费 `RegisterTerminalIntent`，把 detached terminal 注册进 `Domain.Terminals`
+- `runtimeUpdateHandler` 现在会把 `EventTerminalCreated` 回流成 `RegisterTerminalIntent`
+- 已补上一条 runtime E2E：`EventTerminalCreated` 经 runtime feedback 回流 reducer 后，detached terminal 会进入 domain 状态
 
 本轮验证：
 
+- `go test ./tui ./tui/app/reducer -count=1`
+- `go test ./tui/... -run 'TestReducerRegisterTerminalAddsDetachedTerminalRef|TestRuntimeUpdateHandlerCreatedEventFeedsRegisterTerminalIntent|TestE2ERunScenarioCreatedEventRegistersDetachedTerminal' -count=1`
 - `go test ./cmd/termx -count=1`
 - `go test ./tui/... -run 'TestRuntimeUpdateHandlerResizedEventUpdatesStoreSnapshotSize|TestRuntimeUpdateHandlerCollaboratorsRevokedMarksObserverOnlyAndNotice|TestRuntimeTerminalInputHandlerBlocksObserverOnlyTerminalInput|TestE2ERunScenarioCollaboratorsRevokedBlocksSubsequentInput' -count=1`
 - `go test ./tui/... -run 'TestReducerSyncTerminalState|TestRuntimeUpdateHandlerStateChangedStoppedFeedsSyncStateIntent|TestRuntimeUpdateHandlerStateChangedRunningFeedsSyncStateIntent|TestRuntimeUpdateHandlerStateChangedExitedWithoutCodeFeedsSyncStateIntent|TestE2ERunScenarioStateChangedStoppedFeedsReducerAndClearsPane' -count=1`

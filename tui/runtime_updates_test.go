@@ -275,6 +275,52 @@ func TestRuntimeUpdateHandlerRemovedEventFeedsTerminalRemovedIntent(t *testing.T
 	}
 }
 
+func TestRuntimeUpdateHandlerCreatedEventFeedsRegisterTerminalIntent(t *testing.T) {
+	store := NewRuntimeTerminalStore(RuntimeSessions{})
+	events := make(chan protocol.Event, 1)
+	events <- protocol.Event{
+		Type:       protocol.EventTerminalCreated,
+		TerminalID: "term-2",
+		Created: &protocol.TerminalCreatedData{
+			Name:    "build-log",
+			Command: []string{"tail", "-f", "build.log"},
+			Size:    protocol.Size{Cols: 120, Rows: 40},
+		},
+	}
+	handler := NewRuntimeUpdateHandler(RuntimeSessions{EventStream: events}, store, nil)
+	defer handler.Stop()
+
+	msg := handler.InitCmd()()
+	handled, cmd := handler.HandleMessage(newAppStateForRuntimeUpdate(), msg)
+	if !handled || cmd == nil {
+		t.Fatalf("expected created event to be handled with feedback cmd, handled=%v cmd=%v", handled, cmd)
+	}
+	msgs := runCmdMessages(cmd)
+	if len(msgs) != 1 {
+		t.Fatalf("expected one feedback msg, got %#v", msgs)
+	}
+	feedback, ok := msgs[0].(btui.FeedbackMsg)
+	if !ok {
+		t.Fatalf("expected feedback msg, got %#v", msgs[0])
+	}
+	if len(feedback.Intents) != 1 {
+		t.Fatalf("expected one register terminal intent, got %+v", feedback.Intents)
+	}
+	registerIntent, ok := feedback.Intents[0].(intent.RegisterTerminalIntent)
+	if !ok {
+		t.Fatalf("expected RegisterTerminalIntent, got %T", feedback.Intents[0])
+	}
+	if registerIntent.TerminalID != types.TerminalID("term-2") || registerIntent.Name != "build-log" {
+		t.Fatalf("unexpected register terminal payload: %+v", registerIntent)
+	}
+	if registerIntent.State != types.TerminalRunStateRunning {
+		t.Fatalf("expected created terminal to default running, got %+v", registerIntent)
+	}
+	if len(registerIntent.Command) != 3 || registerIntent.Command[0] != "tail" {
+		t.Fatalf("expected created command to pass through, got %+v", registerIntent.Command)
+	}
+}
+
 func TestRuntimeUpdateHandlerStateChangedExitedFeedsProgramExitedIntent(t *testing.T) {
 	store := NewRuntimeTerminalStore(RuntimeSessions{})
 	exitCode := 13
