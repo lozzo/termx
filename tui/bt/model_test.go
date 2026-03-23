@@ -377,6 +377,74 @@ func TestModelUpdateNoticeTimeoutRemovesMatchingNotice(t *testing.T) {
 	}
 }
 
+func TestModelUpdateDeduplicatesMatchingNoticesAndBumpsCount(t *testing.T) {
+	scheduler := &stubNoticeScheduler{}
+	model := NewModel(ModelConfig{
+		InitialState:    newAppStateWithSinglePane(),
+		Mapper:          NewIntentMapper(Config{}),
+		Reducer:         reducer.New(),
+		NoticeScheduler: scheduler,
+	})
+
+	firstModel, _ := model.Update(effectResultMsg{
+		Notices: []Notice{{Level: NoticeLevelError, Text: "stop terminal failed"}},
+	})
+	current := firstModel.(*Model)
+	first := current.Notices()[0]
+
+	secondModel, _ := current.Update(effectResultMsg{
+		Notices: []Notice{{Level: NoticeLevelError, Text: "stop terminal failed"}},
+	})
+	next := secondModel.(*Model)
+
+	if len(next.Notices()) != 1 {
+		t.Fatalf("expected duplicate notice to collapse into one entry, got %+v", next.Notices())
+	}
+	deduped := next.Notices()[0]
+	if deduped.Count != 2 {
+		t.Fatalf("expected deduplicated notice count 2, got %+v", deduped)
+	}
+	if deduped.ID == first.ID {
+		t.Fatalf("expected deduplicated notice to refresh timeout identity, old=%q new=%q", first.ID, deduped.ID)
+	}
+	if len(scheduler.ids) != 2 {
+		t.Fatalf("expected timeout to be scheduled for both deliveries, got %+v", scheduler.ids)
+	}
+}
+
+func TestModelUpdateStaleNoticeTimeoutDoesNotRemoveDeduplicatedNotice(t *testing.T) {
+	model := NewModel(ModelConfig{
+		InitialState:    newAppStateWithSinglePane(),
+		Mapper:          NewIntentMapper(Config{}),
+		Reducer:         reducer.New(),
+		NoticeScheduler: &stubNoticeScheduler{},
+	})
+
+	firstModel, _ := model.Update(effectResultMsg{
+		Notices: []Notice{{Level: NoticeLevelError, Text: "stop terminal failed"}},
+	})
+	current := firstModel.(*Model)
+	firstID := current.Notices()[0].ID
+
+	secondModel, _ := current.Update(effectResultMsg{
+		Notices: []Notice{{Level: NoticeLevelError, Text: "stop terminal failed"}},
+	})
+	current = secondModel.(*Model)
+	secondID := current.Notices()[0].ID
+
+	nextModel, _ := current.Update(noticeTimeoutMsg{ID: firstID})
+	next := nextModel.(*Model)
+	if len(next.Notices()) != 1 || next.Notices()[0].ID != secondID {
+		t.Fatalf("expected stale timeout to keep refreshed notice, got %+v", next.Notices())
+	}
+
+	finalModel, _ := next.Update(noticeTimeoutMsg{ID: secondID})
+	final := finalModel.(*Model)
+	if len(final.Notices()) != 0 {
+		t.Fatalf("expected refreshed notice to clear on latest timeout, got %+v", final.Notices())
+	}
+}
+
 func TestModelViewDelegatesToRenderer(t *testing.T) {
 	renderer := &stubRenderer{view: "workspace-picker"}
 	model := NewModel(ModelConfig{
@@ -578,6 +646,45 @@ func TestE2EModelScenarioNoticeTimeoutClearsErrorNotice(t *testing.T) {
 
 	if len(current.Notices()) != 0 {
 		t.Fatalf("expected notice to clear after timeout, got %+v", current.Notices())
+	}
+}
+
+func TestE2EModelScenarioRepeatedFailedStopDeduplicatesErrorNotice(t *testing.T) {
+	service := &failingTerminalService{stopErr: errBoom}
+	scheduler := &stubNoticeScheduler{}
+	model := NewModel(ModelConfig{
+		InitialState:    newManagerAppState(),
+		Mapper:          NewIntentMapper(Config{Clock: fixedClock{}}),
+		Reducer:         reducer.New(),
+		EffectHandler:   RuntimeEffectHandler{Executor: DefaultRuntimeExecutor{TerminalService: service}},
+		Renderer:        StaticRenderer{},
+		NoticeScheduler: scheduler,
+	})
+
+	current := model
+	for i := 0; i < 2; i++ {
+		for _, key := range []tea.KeyMsg{
+			{Type: tea.KeyCtrlG},
+			{Type: tea.KeyRunes, Runes: []rune("t")},
+			{Type: tea.KeyRunes, Runes: []rune("k")},
+		} {
+			next, cmd := current.Update(key)
+			current = next.(*Model)
+			if cmd != nil {
+				next, _ = current.Update(cmd())
+				current = next.(*Model)
+			}
+		}
+	}
+
+	if len(current.Notices()) != 1 {
+		t.Fatalf("expected repeated failure to keep one deduplicated notice, got %+v", current.Notices())
+	}
+	if current.Notices()[0].Count != 2 {
+		t.Fatalf("expected deduplicated notice count 2, got %+v", current.Notices()[0])
+	}
+	if len(scheduler.ids) != 2 {
+		t.Fatalf("expected timeout to reschedule for repeated failure, got %+v", scheduler.ids)
 	}
 }
 

@@ -11,7 +11,8 @@ const (
 
 type Notice struct {
 	ID        string
-	Level NoticeLevel
+	Level     NoticeLevel
 	Text      string
+	Count     int
 	CreatedAt time.Time
 }

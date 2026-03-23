@@ -63,6 +63,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 39. 第三十五轮 TDD 已补上 `resized / collaborators_revoked` 的 runtime 观测与输入阻断闭环
 40. 第三十六轮 TDD 已补上 `cmd/termx attach` 的 `PrefixTimeout` 配置透传闭环
 41. 第三十七轮 TDD 已补上 `EventTerminalCreated` 到 `register_terminal` 的 runtime 回灌闭环
+42. 第三十八轮 TDD 已补上 notice 聚合/去重与 timeout 刷新闭环
 
 对应文档：
 
@@ -317,9 +318,15 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - reducer 现在已能消费 `RegisterTerminalIntent`，把 detached terminal 注册进 `Domain.Terminals`
 - `runtimeUpdateHandler` 现在会把 `EventTerminalCreated` 回流成 `RegisterTerminalIntent`
 - 已补上一条 runtime E2E：`EventTerminalCreated` 经 runtime feedback 回流 reducer 后，detached terminal 会进入 domain 状态
+- `bt.Model` 现在会按 `notice level + text` 聚合同类 notice，避免重复 runtime 错误刷屏
+- notice 聚合后会刷新 timeout 身份，旧 timeout 不会把新一轮聚合 notice 提前删掉
+- 已补上一条 model E2E：重复失败的 stop 流程只保留一条 notice，并累计重复次数
 
 本轮验证：
 
+- `go test ./tui/bt -run 'TestModelUpdateDeduplicatesMatchingNoticesAndBumpsCount|TestModelUpdateStaleNoticeTimeoutDoesNotRemoveDeduplicatedNotice|TestE2EModelScenarioRepeatedFailedStopDeduplicatesErrorNotice' -count=1`
+- `go test ./tui/bt -count=1`
+- `go test ./tui ./tui/bt -count=1`
 - `go test ./tui ./tui/app/reducer -count=1`
 - `go test ./tui/... -run 'TestReducerRegisterTerminalAddsDetachedTerminalRef|TestRuntimeUpdateHandlerCreatedEventFeedsRegisterTerminalIntent|TestE2ERunScenarioCreatedEventRegistersDetachedTerminal' -count=1`
 - `go test ./cmd/termx -count=1`
@@ -356,8 +363,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 1. 新版 renderer 深化
 2. 真实 TUI E2E 壳与 renderer 结合
-3. 把 runtime event / stream 对 domain 的剩余关键状态继续回灌到 reducer 主线里
-4. notice 聚合/去重策略
+3. 把 runtime size / access / read error 这类观测状态是否进入 domain 继续收口
 
 ---
 
@@ -366,9 +372,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 下一阶段最高优先级不是补 UI，而是先把下面几个边界立住：
 
 1. 更完整的 `intent -> reducer -> effect -> runtime feedback` 契约
-2. 把 runtime event / stream 的剩余关键状态回灌到 reducer/domain
-3. 真实 TUI E2E 场景壳
-4. 新版 renderer 深化
+2. 真实 TUI E2E 场景壳
+3. 新版 renderer 深化
+4. 把 runtime size / access / read error 这类观测状态是否需要 domain 建模继续收口
 
 原因：
 
@@ -402,12 +408,12 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 当前最合适的下一步是：
 
-1. 把 terminal `resized / collaborator_revoked` 之后剩余的 runtime 事件进一步规范化回灌
-2. 给 notice 补聚合/去重策略
-3. 继续扩真实 TUI E2E 场景壳
+1. 继续扩真实 TUI E2E 场景壳
+2. 推进新版 renderer 深化
+3. 判断 `runtime_size / observer_only / read_error` 是否要进入 domain 统一建模
 
 ---
 
 ## 7. 当前一句话状态
 
-termx TUI 现在已经进入“picker / manager / prompt / layout resolve 四条 overlay 主线、startup planner、startup task executor、restore store 读写闭环、runtime session bootstrap、最小 Bubble Tea 运行主线，以及 active pane 的 terminal snapshot/input、stream/event 增量消费与关键 runtime 观测/控制状态都已落地，runtime feedback 的错误与 notice 生命周期也已接回，下一步继续按 TDD 把剩余 runtime 状态事件规范化回灌到 reducer/domain，并扩真实 TUI E2E 壳”的阶段。
+termx TUI 现在已经进入“picker / manager / prompt / layout resolve 四条 overlay 主线、startup planner、startup task executor、restore store 读写闭环、runtime session bootstrap、最小 Bubble Tea 运行主线、关键 runtime 事件回灌，以及 notice 聚合/去重都已落地，下一步继续按 TDD 扩真实 TUI E2E 壳并深化 renderer”的阶段。

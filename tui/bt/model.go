@@ -190,6 +190,23 @@ func (m *Model) appendNotices(notices []Notice) tea.Cmd {
 	var cmd tea.Cmd
 	for _, notice := range notices {
 		next := notice
+		if next.Count <= 0 {
+			next.Count = 1
+		}
+		if idx, ok := m.findNotice(next); ok {
+			existing := m.notices[idx]
+			next.ID = m.nextNoticeIDValue()
+			if existing.Count > 0 {
+				next.Count += existing.Count
+			}
+			if existing.CreatedAt.IsZero() {
+				existing.CreatedAt = time.Now()
+			}
+			next.CreatedAt = existing.CreatedAt
+			m.notices[idx] = next
+			cmd = batchCmd(cmd, m.noticeScheduler.ScheduleTimeout(next.ID, m.noticeTimeout))
+			continue
+		}
 		if next.ID == "" {
 			next.ID = m.nextNoticeIDValue()
 		}
@@ -200,6 +217,16 @@ func (m *Model) appendNotices(notices []Notice) tea.Cmd {
 		cmd = batchCmd(cmd, m.noticeScheduler.ScheduleTimeout(next.ID, m.noticeTimeout))
 	}
 	return cmd
+}
+
+// findNotice 用 level+text 做最小 notice 聚合键，避免 runtime 重复错误刷屏。
+func (m *Model) findNotice(target Notice) (int, bool) {
+	for idx, notice := range m.notices {
+		if notice.Level == target.Level && notice.Text == target.Text {
+			return idx, true
+		}
+	}
+	return 0, false
 }
 
 func (m *Model) removeNotice(id string) {
