@@ -17,7 +17,7 @@ type EffectHandler interface {
 }
 
 type Renderer interface {
-	Render(state types.AppState) string
+	Render(state types.AppState, notices []Notice) string
 }
 
 type UnmappedKeyHandler interface {
@@ -68,7 +68,7 @@ func (NoopEffectHandler) Handle(_ []reducer.Effect) tea.Cmd {
 
 type StaticRenderer struct{}
 
-func (StaticRenderer) Render(_ types.AppState) string {
+func (StaticRenderer) Render(_ types.AppState, _ []Notice) string {
 	return ""
 }
 
@@ -172,7 +172,7 @@ func (m *Model) applyIntents(intents []intent.Intent) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) View() string {
-	return m.view.Render(m.state)
+	return m.view.Render(m.state, m.notices)
 }
 
 func (m *Model) State() types.AppState {

@@ -64,6 +64,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 40. 第三十六轮 TDD 已补上 `cmd/termx attach` 的 `PrefixTimeout` 配置透传闭环
 41. 第三十七轮 TDD 已补上 `EventTerminalCreated` 到 `register_terminal` 的 runtime 回灌闭环
 42. 第三十八轮 TDD 已补上 notice 聚合/去重与 timeout 刷新闭环
+43. 第三十九轮 TDD 已补上 runtime renderer 的 notice 可见性闭环
 
 对应文档：
 
@@ -321,9 +322,14 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `bt.Model` 现在会按 `notice level + text` 聚合同类 notice，避免重复 runtime 错误刷屏
 - notice 聚合后会刷新 timeout 身份，旧 timeout 不会把新一轮聚合 notice 提前删掉
 - 已补上一条 model E2E：重复失败的 stop 流程只保留一条 notice，并累计重复次数
+- `bt.Renderer` 现在会收到当前 notice 列表，view 不再只能看到纯 domain state
+- `runtimeRenderer` 现在会渲染 `notices:` 区段，并展示聚合后的重复次数
+- 已补上一条 runtime E2E：observer-only 阻断输入后的 notice 会直接出现在 runtime view 中
 
 本轮验证：
 
+- `go test ./tui ./tui/bt -run 'TestModelViewPassesCurrentNoticesToRenderer|TestRuntimeRendererRendersNoticeSection|TestE2ERunScenarioBlockedInputNoticeAppearsInView' -count=1`
+- `go test ./tui ./tui/bt -count=1`
 - `go test ./tui/bt -run 'TestModelUpdateDeduplicatesMatchingNoticesAndBumpsCount|TestModelUpdateStaleNoticeTimeoutDoesNotRemoveDeduplicatedNotice|TestE2EModelScenarioRepeatedFailedStopDeduplicatesErrorNotice' -count=1`
 - `go test ./tui/bt -count=1`
 - `go test ./tui ./tui/bt -count=1`

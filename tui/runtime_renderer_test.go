@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lozzow/termx/protocol"
+	btui "github.com/lozzow/termx/tui/bt"
 	"github.com/lozzow/termx/tui/domain/types"
 )
 
@@ -45,7 +46,7 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 		}),
 	}
 
-	view := renderer.Render(state)
+	view := renderer.Render(state, nil)
 	if !strings.Contains(view, "title: api-dev") {
 		t.Fatalf("expected terminal title in rendered view, got:\n%s", view)
 	}
@@ -58,8 +59,23 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 }
 
 func TestRuntimeRendererSkipsScreenSectionWhenNoSnapshot(t *testing.T) {
-	view := runtimeRenderer{}.Render(connectedRunAppState())
+	view := runtimeRenderer{}.Render(connectedRunAppState(), nil)
 	if strings.Contains(view, "screen:") {
 		t.Fatalf("expected renderer without runtime screen store to skip screen section, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersNoticeSection(t *testing.T) {
+	view := runtimeRenderer{}.Render(connectedRunAppState(), []btui.Notice{{
+		Level: btui.NoticeLevelError,
+		Text:  "terminal switched to observer-only mode",
+		Count: 2,
+	}})
+
+	if !strings.Contains(view, "notices:") {
+		t.Fatalf("expected notice section in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "[error] terminal switched to observer-only mode (x2)") {
+		t.Fatalf("expected aggregated notice line in rendered view, got:\n%s", view)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/lozzow/termx/protocol"
+	btui "github.com/lozzow/termx/tui/bt"
 	"github.com/lozzow/termx/tui/domain/types"
 )
 
@@ -14,7 +15,7 @@ type runtimeRenderer struct {
 
 // Render 先提供一个稳定、可测试的文本视图，优先把生命周期打通。
 // 这里不追求视觉完成度，只把当前 workspace / tab / pane / overlay 这些主语义明确展示出来。
-func (r runtimeRenderer) Render(state types.AppState) string {
+func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) string {
 	workspace, ok := state.Domain.Workspaces[state.Domain.ActiveWorkspaceID]
 	if !ok {
 		return "termx\nno workspace"
@@ -54,6 +55,7 @@ func (r runtimeRenderer) Render(state types.AppState) string {
 			}
 		}
 	}
+	lines = append(lines, renderNoticeLines(notices)...)
 	return strings.Join(lines, "\n")
 }
 
@@ -103,4 +105,25 @@ func renderSnapshotRow(row []protocol.Cell) string {
 		builder.WriteString(cell.Content)
 	}
 	return strings.TrimRight(builder.String(), " ")
+}
+
+func renderNoticeLines(notices []btui.Notice) []string {
+	if len(notices) == 0 {
+		return nil
+	}
+	lines := []string{"notices:"}
+	for _, notice := range notices {
+		if notice.Text == "" {
+			continue
+		}
+		line := fmt.Sprintf("[%s] %s", notice.Level, notice.Text)
+		if notice.Count > 1 {
+			line = fmt.Sprintf("%s (x%d)", line, notice.Count)
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) == 1 {
+		return nil
+	}
+	return lines
 }

@@ -53,12 +53,14 @@ func (h *stubEffectHandler) Handle(effects []reducer.Effect) tea.Cmd {
 }
 
 type stubRenderer struct {
-	seen []types.AppState
-	view string
+	seen        []types.AppState
+	seenNotices [][]Notice
+	view        string
 }
 
-func (r *stubRenderer) Render(state types.AppState) string {
+func (r *stubRenderer) Render(state types.AppState, notices []Notice) string {
 	r.seen = append(r.seen, state)
+	r.seenNotices = append(r.seenNotices, append([]Notice(nil), notices...))
 	return r.view
 }
 
@@ -459,6 +461,34 @@ func TestModelViewDelegatesToRenderer(t *testing.T) {
 	}
 	if len(renderer.seen) != 1 {
 		t.Fatalf("expected renderer to see one state, got %d", len(renderer.seen))
+	}
+	if len(renderer.seenNotices) != 1 || len(renderer.seenNotices[0]) != 0 {
+		t.Fatalf("expected renderer to see empty notice list, got %+v", renderer.seenNotices)
+	}
+}
+
+func TestModelViewPassesCurrentNoticesToRenderer(t *testing.T) {
+	renderer := &stubRenderer{view: "runtime"}
+	model := NewModel(ModelConfig{
+		InitialState: newAppStateWithSinglePane(),
+		Mapper:       NewIntentMapper(Config{}),
+		Reducer:      reducer.New(),
+		Renderer:     renderer,
+	})
+
+	nextModel, _ := model.Update(effectResultMsg{
+		Notices: []Notice{{Level: NoticeLevelError, Text: "stop terminal failed", Count: 2}},
+	})
+	current := nextModel.(*Model)
+
+	if got := current.View(); got != "runtime" {
+		t.Fatalf("expected renderer output, got %q", got)
+	}
+	if len(renderer.seenNotices) != 1 || len(renderer.seenNotices[0]) != 1 {
+		t.Fatalf("expected renderer to receive one notice, got %+v", renderer.seenNotices)
+	}
+	if renderer.seenNotices[0][0].Text != "stop terminal failed" || renderer.seenNotices[0][0].Count != 2 {
+		t.Fatalf("unexpected renderer notices: %+v", renderer.seenNotices[0])
 	}
 }
 
