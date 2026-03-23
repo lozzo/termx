@@ -33,10 +33,12 @@ type ExecutionResult struct {
 	Notices []Notice
 }
 
-type effectResultMsg struct {
+type FeedbackMsg struct {
 	Intents []intent.Intent
 	Notices []Notice
 }
+
+type effectResultMsg = FeedbackMsg
 
 func (h RuntimeEffectHandler) Handle(effects []reducer.Effect) tea.Cmd {
 	if len(effects) == 0 || h.Executor == nil {
@@ -59,13 +61,17 @@ func (h RuntimeEffectHandler) Handle(effects []reducer.Effect) tea.Cmd {
 			result.Intents = append(result.Intents, next.Intents...)
 			result.Notices = append(result.Notices, next.Notices...)
 		}
-		if len(result.Intents) == 0 && len(result.Notices) == 0 {
-			return nil
-		}
-		return effectResultMsg{
-			Intents: result.Intents,
-			Notices: result.Notices,
-		}
+		return feedbackMsg(result)
+	}
+}
+
+func FeedbackCmd(result ExecutionResult) tea.Cmd {
+	msg := feedbackMsg(result)
+	if msg == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		return msg
 	}
 }
 
@@ -110,6 +116,16 @@ func (e DefaultRuntimeExecutor) Execute(effect reducer.Effect) (ExecutionResult,
 		}, nil
 	default:
 		return ExecutionResult{}, nil
+	}
+}
+
+func feedbackMsg(result ExecutionResult) tea.Msg {
+	if len(result.Intents) == 0 && len(result.Notices) == 0 {
+		return nil
+	}
+	return FeedbackMsg{
+		Intents: result.Intents,
+		Notices: result.Notices,
 	}
 }
 

@@ -62,6 +62,16 @@ func (r *stubRenderer) Render(state types.AppState) string {
 	return r.view
 }
 
+type stubUnmappedKeyHandler struct {
+	keys []tea.KeyMsg
+	cmd  tea.Cmd
+}
+
+func (h *stubUnmappedKeyHandler) HandleKey(_ types.AppState, msg tea.KeyMsg) tea.Cmd {
+	h.keys = append(h.keys, msg)
+	return h.cmd
+}
+
 type effectsHandledMsg struct {
 	Count int
 }
@@ -140,11 +150,11 @@ func TestModelUpdateRunsMapperReducerAndEffectHandler(t *testing.T) {
 	effects := &stubEffectHandler{}
 
 	model := NewModel(ModelConfig{
-		InitialState:   initial,
-		Mapper:         mapper,
-		Reducer:        rd,
-		EffectHandler:  effects,
-		Renderer:       &stubRenderer{view: "state"},
+		InitialState:  initial,
+		Mapper:        mapper,
+		Reducer:       rd,
+		EffectHandler: effects,
+		Renderer:      &stubRenderer{view: "state"},
 	})
 
 	updatedModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
@@ -171,6 +181,70 @@ func TestModelUpdateRunsMapperReducerAndEffectHandler(t *testing.T) {
 	handled, ok := msg.(effectsHandledMsg)
 	if !ok || handled.Count != 1 {
 		t.Fatalf("expected effect cmd to yield handled msg, got %#v", msg)
+	}
+}
+
+func TestModelUpdateFallsBackToUnmappedKeyHandler(t *testing.T) {
+	initial := newAppStateWithSinglePane()
+	mapper := &stubIntentMapper{}
+	handler := &stubUnmappedKeyHandler{
+		cmd: func() tea.Msg {
+			return effectsHandledMsg{Count: 1}
+		},
+	}
+	rd := &stubReducer{}
+
+	model := NewModel(ModelConfig{
+		InitialState:       initial,
+		Mapper:             mapper,
+		Reducer:            rd,
+		UnmappedKeyHandler: handler,
+		Renderer:           &stubRenderer{view: "state"},
+	})
+
+	updatedModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	updated := updatedModel.(*Model)
+	if len(handler.keys) != 1 || handler.keys[0].String() != "a" {
+		t.Fatalf("expected unmapped key handler to receive rune key, got %+v", handler.keys)
+	}
+	if len(rd.intents) != 0 {
+		t.Fatalf("expected reducer to stay idle for unmapped key, got %+v", rd.intents)
+	}
+	if !reflect.DeepEqual(updated.State(), initial) {
+		t.Fatalf("expected state to remain unchanged, got %+v", updated.State())
+	}
+	msg := cmd()
+	if handled, ok := msg.(effectsHandledMsg); !ok || handled.Count != 1 {
+		t.Fatalf("expected handler command result, got %#v", msg)
+	}
+}
+
+func TestModelUpdateMappedIntentDoesNotInvokeUnmappedKeyHandler(t *testing.T) {
+	mapper := &stubIntentMapper{
+		intents: []intent.Intent{intent.OpenWorkspacePickerIntent{}},
+	}
+	handler := &stubUnmappedKeyHandler{}
+	next := newAppStateWithSinglePane()
+	next.UI.Overlay = types.OverlayState{Kind: types.OverlayWorkspacePicker}
+	rd := &stubReducer{
+		result: reducer.Result{State: next},
+	}
+
+	model := NewModel(ModelConfig{
+		InitialState:       newAppStateWithSinglePane(),
+		Mapper:             mapper,
+		Reducer:            rd,
+		UnmappedKeyHandler: handler,
+		Renderer:           &stubRenderer{view: "state"},
+	})
+
+	updatedModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
+	updated := updatedModel.(*Model)
+	if len(handler.keys) != 0 {
+		t.Fatalf("expected mapped key to bypass unmapped key handler, got %+v", handler.keys)
+	}
+	if updated.State().UI.Overlay.Kind != types.OverlayWorkspacePicker {
+		t.Fatalf("expected reducer result to win, got %+v", updated.State().UI.Overlay)
 	}
 }
 

@@ -96,12 +96,24 @@ func runWithDependencies(client Client, cfg Config, input io.Reader, output io.W
 	}
 	defer stopRuntimeSessions(sessions)
 
+	terminalStore := NewRuntimeTerminalStore(sessions)
+	renderer := deps.Renderer
+	switch rendererValue := renderer.(type) {
+	case runtimeRenderer:
+		rendererValue.Screens = terminalStore
+		renderer = rendererValue
+	case *runtimeRenderer:
+		rendererValue.Screens = terminalStore
+		renderer = rendererValue
+	}
+
 	model := btui.NewModel(btui.ModelConfig{
-		InitialState:  bootstrapped.State,
-		Mapper:        btui.NewIntentMapper(btui.Config{PrefixTimeout: cfg.PrefixTimeout}),
-		Reducer:       nil,
-		EffectHandler: btui.RuntimeEffectHandler{Executor: btui.DefaultRuntimeExecutor{}},
-		Renderer:      deps.Renderer,
+		InitialState:       bootstrapped.State,
+		Mapper:             btui.NewIntentMapper(btui.Config{PrefixTimeout: cfg.PrefixTimeout}),
+		Reducer:            nil,
+		EffectHandler:      btui.RuntimeEffectHandler{Executor: btui.DefaultRuntimeExecutor{}},
+		Renderer:           renderer,
+		UnmappedKeyHandler: NewRuntimeTerminalInputHandler(client, terminalStore),
 	})
 	return deps.ProgramRunner.Run(model, input, output)
 }

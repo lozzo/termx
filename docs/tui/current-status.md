@@ -7,14 +7,14 @@
 
 ## 1. 当前判断
 
-termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overlay、恢复入口状态机、启动规划层、启动任务执行层、restore store 读写闭环、runtime session bootstrap 和最小 Bubble Tea 运行主线已按 TDD 落地”的阶段。
+termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overlay、恢复入口状态机、启动规划层、启动任务执行层、restore store 读写闭环、runtime session bootstrap、最小 Bubble Tea 运行主线，以及 active pane 的最小 terminal snapshot/input 消费链路已按 TDD 落地”的阶段。
 
 现状可以概括为：
 
 - 旧版 TUI 已归档到 `deprecated/tui-legacy/`
 - 新主线文档已经建立并持续作为实现约束
 - 新主线代码已进入 reducer / state machine 落地期
-- 当前已进入 bubbletea shell 的恢复入口、启动规划、启动任务执行、restore store 读写闭环、runtime session bootstrap 和最小运行主线阶段，renderer 已有最小占位实现
+- 当前已进入 bubbletea shell 的恢复入口、启动规划、启动任务执行、restore store 读写闭环、runtime session bootstrap、最小运行主线，以及 active pane 的最小 terminal snapshot/input 消费阶段
 
 ---
 
@@ -56,6 +56,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 32. 第二十八轮 TDD 已补上 runtime session bootstrap 的 attach/event 最小闭环
 33. 第二十九轮 TDD 已补上 `Run()` 最小生命周期编排
 34. 第三十轮 TDD 已补上最小 Bubble Tea program runner 与 runtime renderer
+35. 第三十一轮 TDD 已补上 active pane 的最小 terminal snapshot 渲染与输入转发
 
 对应文档：
 
@@ -266,12 +267,20 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `Run()` 现在已能串起 `startup planner -> startup task executor -> runtime session bootstrap`
 - `Run()` 现在会在完成前置编排后启动最小 Bubble Tea program runner
 - 已新增最小 `runtimeRenderer`，先稳定展示 `workspace / tab / pane / slot / overlay / terminal`
+- 已新增 `RuntimeTerminalStore`，把 runtime session 的 snapshot/channel 以接口形式提供给 renderer 与输入层复用
+- `runtimeRenderer` 现在已能渲染 active pane 所连接 terminal 的初始 snapshot 文本内容
+- `tui/bt.Model` 已补上 `UnmappedKeyHandler`，让未命中 intent 的按键可安全下沉到 runtime terminal 输入层
+- 已新增最小 `RuntimeTerminalInputHandler`，会把 active pane 的字符输入转发到 attach channel
+- 输入转发当前会在 `overlay == none` 且 `mode == none` 时生效，避免打穿 picker / prompt / prefix mode
+- runtime input 失败现在会回流成 `FeedbackMsg` notice，而不是静默丢失
+- 已补上一条 runtime E2E：`Run()` 已能同时渲染 active pane snapshot，并把按键输入转发到 runtime session channel
 - `Run()` 成功退出时会主动清理已建立的 runtime session，避免 stream 句柄泄漏
 - 已补上一组 runtime 编排测试覆盖 planner/task/session 的调用顺序和错误传播
 - 已补上一条 runtime 测试覆盖 program runner 调用和 renderer 输出
 
 本轮验证：
 
+- `go test ./tui -run 'TestRun|TestRuntimeSession|TestRuntimeRenderer|TestRuntimeTerminalInputHandler' -count=1`
 - `go test ./tui -run 'TestRun|TestRuntimeSession' -count=1`
 - `go test ./tui -run TestRuntimeSession -count=1`
 - `go test ./tui -count=1`
@@ -299,7 +308,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 1. 新版 renderer 深化
 2. 真实 TUI E2E 壳与 renderer 结合
-3. 把真实 terminal viewport / input / snapshot 消费接到运行主线里
+3. 把 runtime stream/event 增量更新接到当前 terminal viewport 主线里
 4. notice 聚合/去重策略
 
 ---
@@ -309,9 +318,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 下一阶段最高优先级不是补 UI，而是先把下面几个边界立住：
 
 1. 更完整的 `intent -> reducer -> effect -> runtime feedback` 契约
-2. 把真实 terminal viewport / input / snapshot 消费接到运行主线里
+2. 把 runtime stream / event 增量更新接到运行主线里
 3. 真实 TUI E2E 场景壳
-4. 新版 renderer 最小骨架
+4. 新版 renderer 深化
 
 原因：
 
@@ -353,4 +362,4 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 ## 7. 当前一句话状态
 
-termx TUI 现在已经进入“picker / manager / prompt / layout resolve 四条 overlay 主线、startup planner、startup task executor、restore store 读写闭环、runtime session bootstrap 和最小 Bubble Tea 运行主线都已落地，runtime feedback 的错误与 notice 生命周期也已接回，下一步继续按 TDD 把真实 terminal viewport / input / snapshot 消费接进运行主线，并扩真实 TUI E2E 壳”的阶段。
+termx TUI 现在已经进入“picker / manager / prompt / layout resolve 四条 overlay 主线、startup planner、startup task executor、restore store 读写闭环、runtime session bootstrap、最小 Bubble Tea 运行主线，以及 active pane 的最小 terminal snapshot/input 消费都已落地，runtime feedback 的错误与 notice 生命周期也已接回，下一步继续按 TDD 把 runtime stream / event 增量更新接进运行主线，并扩真实 TUI E2E 壳”的阶段。

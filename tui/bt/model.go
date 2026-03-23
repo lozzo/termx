@@ -20,18 +20,23 @@ type Renderer interface {
 	Render(state types.AppState) string
 }
 
+type UnmappedKeyHandler interface {
+	HandleKey(state types.AppState, msg tea.KeyMsg) tea.Cmd
+}
+
 type NoticeScheduler interface {
 	ScheduleTimeout(id string, after time.Duration) tea.Cmd
 }
 
 type ModelConfig struct {
-	InitialState    types.AppState
-	Mapper          IntentMapper
-	Reducer         reducer.StateReducer
-	EffectHandler   EffectHandler
-	Renderer        Renderer
-	NoticeScheduler NoticeScheduler
-	NoticeTimeout   time.Duration
+	InitialState       types.AppState
+	Mapper             IntentMapper
+	Reducer            reducer.StateReducer
+	EffectHandler      EffectHandler
+	Renderer           Renderer
+	UnmappedKeyHandler UnmappedKeyHandler
+	NoticeScheduler    NoticeScheduler
+	NoticeTimeout      time.Duration
 }
 
 type Model struct {
@@ -42,6 +47,7 @@ type Model struct {
 	reducer         reducer.StateReducer
 	effects         EffectHandler
 	view            Renderer
+	unmappedKeys    UnmappedKeyHandler
 	noticeScheduler NoticeScheduler
 	noticeTimeout   time.Duration
 }
@@ -104,6 +110,7 @@ func NewModel(cfg ModelConfig) *Model {
 		reducer:         rd,
 		effects:         effects,
 		view:            view,
+		unmappedKeys:    cfg.UnmappedKeyHandler,
 		noticeScheduler: noticeScheduler,
 		noticeTimeout:   noticeTimeout,
 	}
@@ -118,8 +125,15 @@ func (m *Model) Init() tea.Cmd {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msgValue := msg.(type) {
 	case tea.KeyMsg:
-		return m.applyIntents(m.mapper.MapKey(m.state, msgValue))
-	case effectResultMsg:
+		intents := m.mapper.MapKey(m.state, msgValue)
+		if len(intents) > 0 {
+			return m.applyIntents(intents)
+		}
+		if m.unmappedKeys != nil {
+			return m, m.unmappedKeys.HandleKey(m.state, msgValue)
+		}
+		return m, nil
+	case FeedbackMsg:
 		noticeCmd := m.appendNotices(msgValue.Notices)
 		nextModel, intentCmd := m.applyIntents(msgValue.Intents)
 		return nextModel, batchCmd(noticeCmd, intentCmd)

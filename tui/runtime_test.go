@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
 	btui "github.com/lozzow/termx/tui/bt"
 	"github.com/lozzow/termx/tui/domain/types"
@@ -131,6 +133,65 @@ func TestRunReturnsProgramRunnerError(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioRendersSnapshotAndForwardsActivePaneInput(t *testing.T) {
+	client := &stubRunClient{}
+	planner := &stubRunPlanner{plan: StartupPlan{State: connectedRunAppState()}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: connectedRunAppState()}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Channel:    21,
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{
+									{Content: "h"},
+									{Content: "i"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			if view := model.View(); !strings.Contains(view, "hi") {
+				t.Fatalf("expected runtime view to include snapshot content, got:\n%s", view)
+			}
+			_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+			if cmd == nil {
+				t.Fatal("expected key input to produce runtime command")
+			}
+			if msg := cmd(); msg != nil {
+				_, _ = model.Update(msg)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+	if len(client.inputs) != 1 {
+		t.Fatalf("expected one forwarded input call, got %d", len(client.inputs))
+	}
+	if client.inputs[0].channel != 21 || string(client.inputs[0].data) != "a" {
+		t.Fatalf("unexpected forwarded input payload: %+v", client.inputs[0])
+	}
+}
+
 var (
 	errRuntimeRunBoom     = errors.New("run boom")
 	bootstrapperStopCalls int
@@ -187,16 +248,72 @@ type stubProgramRunner struct {
 	err   error
 	calls int
 	view  string
+	run   func(model *btui.Model) error
 }
 
 func (r *stubProgramRunner) Run(model *btui.Model, _ io.Reader, _ io.Writer) error {
 	r.calls++
 	r.view = model.View()
+	if r.run != nil {
+		if err := r.run(model); err != nil {
+			return err
+		}
+	}
 	if r.err != nil {
 		return r.err
 	}
 	return nil
 }
+
+type stubRunClient struct {
+	inputs []runtimeInputCall
+}
+
+func (c *stubRunClient) Close() error { return nil }
+
+func (c *stubRunClient) Create(context.Context, []string, string, protocol.Size) (*protocol.CreateResult, error) {
+	return nil, nil
+}
+
+func (c *stubRunClient) SetTags(context.Context, string, map[string]string) error { return nil }
+
+func (c *stubRunClient) SetMetadata(context.Context, string, string, map[string]string) error {
+	return nil
+}
+
+func (c *stubRunClient) List(context.Context) (*protocol.ListResult, error) { return nil, nil }
+
+func (c *stubRunClient) Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error) {
+	ch := make(chan protocol.Event)
+	close(ch)
+	return ch, nil
+}
+
+func (c *stubRunClient) Attach(context.Context, string, string) (*protocol.AttachResult, error) {
+	return nil, nil
+}
+
+func (c *stubRunClient) Snapshot(context.Context, string, int, int) (*protocol.Snapshot, error) {
+	return nil, nil
+}
+
+func (c *stubRunClient) Input(_ context.Context, channel uint16, data []byte) error {
+	c.inputs = append(c.inputs, runtimeInputCall{
+		channel: channel,
+		data:    append([]byte(nil), data...),
+	})
+	return nil
+}
+
+func (c *stubRunClient) Resize(context.Context, uint16, uint16, uint16) error { return nil }
+
+func (c *stubRunClient) Stream(uint16) (<-chan protocol.StreamFrame, func()) {
+	ch := make(chan protocol.StreamFrame)
+	close(ch)
+	return ch, func() {}
+}
+
+func (c *stubRunClient) Kill(context.Context, string) error { return nil }
 
 func connectedRunAppState() types.AppState {
 	state := buildSinglePaneAppState("main", "shell", types.PaneSlotConnected)
