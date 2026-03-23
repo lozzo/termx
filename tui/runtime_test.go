@@ -2009,8 +2009,12 @@ func TestE2ERunScenarioMetadataPromptSubmitFailureShowsNoticeInView(t *testing.T
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
+			if view := current.View(); !strings.Contains(view, "overlay: prompt") || !strings.Contains(view, "prompt_title: edit terminal metadata") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
 				t.Fatalf("expected metadata failure to surface notice in runtime view, got:\n%s", view)
+			}
+			terminal := current.State().Domain.Terminals[types.TerminalID("term-2")]
+			if terminal.Name != "build-log" || terminal.Tags["group"] != "build" || len(terminal.Tags) != 1 {
+				t.Fatalf("expected metadata failure to keep terminal unchanged, got %+v", terminal)
 			}
 			return nil
 		},
@@ -2207,8 +2211,12 @@ func TestE2ERunScenarioTerminalManagerStopFailureShowsNoticeInView(t *testing.T)
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "slot: empty") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
-				t.Fatalf("expected failed stop to keep local reducer result and surface notice, got:\n%s", view)
+			if view := current.View(); !strings.Contains(view, "overlay: terminal_manager") || !strings.Contains(view, "terminal_manager_rows:") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
+				t.Fatalf("expected failed stop to keep terminal manager open and surface notice, got:\n%s", view)
+			}
+			pane := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
+			if pane.TerminalID != types.TerminalID("term-1") || pane.SlotState != types.PaneSlotConnected {
+				t.Fatalf("expected failed stop to keep pane connected, got %+v", pane)
 			}
 			return nil
 		},

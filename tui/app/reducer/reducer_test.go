@@ -593,7 +593,7 @@ func TestReducerSubmitCreateWorkspacePromptCreatesWorkspaceAndFocusesNewPane(t *
 	}
 }
 
-func TestReducerSubmitMetadataPromptUpdatesTerminalAndEmitsEffect(t *testing.T) {
+func TestReducerSubmitMetadataPromptKeepsPromptOpenUntilSuccessAndEmitsEffect(t *testing.T) {
 	reducer := New()
 	state := newManagerAppState()
 
@@ -605,15 +605,15 @@ func TestReducerSubmitMetadataPromptUpdatesTerminalAndEmitsEffect(t *testing.T) 
 		Value: "build-log-v2\nenv=prod,team=platform",
 	})
 
-	if submitted.State.UI.Overlay.Kind != types.OverlayNone {
-		t.Fatalf("expected prompt to close after metadata submit, got %q", submitted.State.UI.Overlay.Kind)
+	if submitted.State.UI.Overlay.Kind != types.OverlayPrompt {
+		t.Fatalf("expected prompt to stay open until metadata service success, got %q", submitted.State.UI.Overlay.Kind)
 	}
 	terminal := submitted.State.Domain.Terminals[types.TerminalID("term-2")]
-	if terminal.Name != "build-log-v2" {
-		t.Fatalf("expected terminal name to update, got %+v", terminal)
+	if terminal.Name != "build-log" {
+		t.Fatalf("expected terminal name to stay unchanged before success feedback, got %+v", terminal)
 	}
-	if terminal.Tags["env"] != "prod" || terminal.Tags["team"] != "platform" {
-		t.Fatalf("expected terminal tags to update, got %+v", terminal.Tags)
+	if terminal.Tags["group"] != "build" || len(terminal.Tags) != 1 {
+		t.Fatalf("expected terminal tags to stay unchanged before success feedback, got %+v", terminal.Tags)
 	}
 	if len(submitted.Effects) != 1 {
 		t.Fatalf("expected one metadata effect, got %d", len(submitted.Effects))
@@ -627,6 +627,35 @@ func TestReducerSubmitMetadataPromptUpdatesTerminalAndEmitsEffect(t *testing.T) 
 	}
 	if effect.Tags["env"] != "prod" || effect.Tags["team"] != "platform" {
 		t.Fatalf("expected metadata effect tags, got %+v", effect.Tags)
+	}
+}
+
+func TestReducerUpdateTerminalMetadataSucceededUpdatesTerminalAndClosesPrompt(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenPromptIntent{
+		PromptKind: PromptKindEditTerminalMetadata,
+		TerminalID: types.TerminalID("term-2"),
+	})
+	result := reducer.Reduce(opened.State, intent.UpdateTerminalMetadataSucceededIntent{
+		TerminalID: types.TerminalID("term-2"),
+		Name:       "build-log-v2",
+		Tags: map[string]string{
+			"group": "build",
+			"env":   "prod",
+		},
+	})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected prompt to close after metadata success, got %q", result.State.UI.Overlay.Kind)
+	}
+	terminal := result.State.Domain.Terminals[types.TerminalID("term-2")]
+	if terminal.Name != "build-log-v2" {
+		t.Fatalf("expected terminal name to update after success, got %+v", terminal)
+	}
+	if terminal.Tags["group"] != "build" || terminal.Tags["env"] != "prod" {
+		t.Fatalf("expected terminal tags to update after success, got %+v", terminal.Tags)
 	}
 }
 
@@ -718,8 +747,16 @@ func TestReducerMetadataPromptStructuredInputSwitchesFieldAndSubmits(t *testing.
 	switched := reducer.Reduce(nameEdited.State, intent.PromptNextFieldIntent{})
 	tagsEdited := reducer.Reduce(switched.State, intent.PromptAppendInputIntent{Text: ",env=prod"})
 	submitted := reducer.Reduce(tagsEdited.State, intent.SubmitPromptIntent{})
+	completed := reducer.Reduce(submitted.State, intent.UpdateTerminalMetadataSucceededIntent{
+		TerminalID: types.TerminalID("term-2"),
+		Name:       "build-log-v2",
+		Tags: map[string]string{
+			"group": "build",
+			"env":   "prod",
+		},
+	})
 
-	terminal := submitted.State.Domain.Terminals[types.TerminalID("term-2")]
+	terminal := completed.State.Domain.Terminals[types.TerminalID("term-2")]
 	if terminal.Name != "build-log-v2" {
 		t.Fatalf("expected structured name edit, got %+v", terminal)
 	}
@@ -740,8 +777,15 @@ func TestReducerMetadataPromptPreviousFieldReturnsFocusToNameField(t *testing.T)
 	returned := reducer.Reduce(switched.State, intent.PromptPreviousFieldIntent{})
 	edited := reducer.Reduce(returned.State, intent.PromptAppendInputIntent{Text: "-v3"})
 	submitted := reducer.Reduce(edited.State, intent.SubmitPromptIntent{})
+	completed := reducer.Reduce(submitted.State, intent.UpdateTerminalMetadataSucceededIntent{
+		TerminalID: types.TerminalID("term-2"),
+		Name:       "build-log-v3",
+		Tags: map[string]string{
+			"group": "build",
+		},
+	})
 
-	terminal := submitted.State.Domain.Terminals[types.TerminalID("term-2")]
+	terminal := completed.State.Domain.Terminals[types.TerminalID("term-2")]
 	if terminal.Name != "build-log-v3" {
 		t.Fatalf("expected previous field to return focus to name, got %+v", terminal)
 	}
@@ -1073,7 +1117,7 @@ func TestReducerTerminalManagerEditMetadataWithoutOwnerKeepsManagerOpenAndEmitsN
 	}
 }
 
-func TestReducerTerminalManagerStopSelectedTerminalUpdatesStateAndEmitsEffect(t *testing.T) {
+func TestReducerTerminalManagerStopSelectedTerminalKeepsManagerOpenUntilSuccessAndEmitsEffect(t *testing.T) {
 	reducer := New()
 	state := newManagerAppState()
 
@@ -1081,12 +1125,12 @@ func TestReducerTerminalManagerStopSelectedTerminalUpdatesStateAndEmitsEffect(t 
 	moved := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: 1})
 	result := reducer.Reduce(moved.State, intent.TerminalManagerStopIntent{})
 
-	if result.State.UI.Overlay.Kind != types.OverlayNone {
-		t.Fatalf("expected manager overlay to close after stop, got %q", result.State.UI.Overlay.Kind)
+	if result.State.UI.Overlay.Kind != types.OverlayTerminalManager {
+		t.Fatalf("expected manager overlay to stay open until stop success, got %q", result.State.UI.Overlay.Kind)
 	}
 	terminal := result.State.Domain.Terminals[types.TerminalID("term-2")]
-	if terminal.State != types.TerminalRunStateStopped {
-		t.Fatalf("expected selected terminal to become stopped, got %+v", terminal)
+	if terminal.State != types.TerminalRunStateRunning {
+		t.Fatalf("expected selected terminal to stay running before success feedback, got %+v", terminal)
 	}
 	if len(result.Effects) != 1 {
 		t.Fatalf("expected one stop effect, got %d", len(result.Effects))
@@ -1097,6 +1141,25 @@ func TestReducerTerminalManagerStopSelectedTerminalUpdatesStateAndEmitsEffect(t 
 	}
 	if effect.TerminalID != types.TerminalID("term-2") {
 		t.Fatalf("unexpected stop effect payload: %+v", effect)
+	}
+}
+
+func TestReducerStopTerminalSucceededUpdatesStateAndClosesManager(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	moved := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: 1})
+	result := reducer.Reduce(moved.State, intent.StopTerminalSucceededIntent{
+		TerminalID: types.TerminalID("term-2"),
+	})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected manager overlay to close after stop success, got %q", result.State.UI.Overlay.Kind)
+	}
+	terminal := result.State.Domain.Terminals[types.TerminalID("term-2")]
+	if terminal.State != types.TerminalRunStateStopped {
+		t.Fatalf("expected selected terminal to become stopped after success, got %+v", terminal)
 	}
 }
 
@@ -1166,7 +1229,10 @@ func TestE2EReducerScenarioTerminalManagerSearchesAndStopsSelectedTerminal(t *te
 
 	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
 	typed := reducer.Reduce(opened.State, intent.TerminalManagerAppendQueryIntent{Text: "ops"})
-	result := reducer.Reduce(typed.State, intent.TerminalManagerStopIntent{})
+	triggered := reducer.Reduce(typed.State, intent.TerminalManagerStopIntent{})
+	result := reducer.Reduce(triggered.State, intent.StopTerminalSucceededIntent{
+		TerminalID: types.TerminalID("term-3"),
+	})
 
 	if result.State.UI.Overlay.Kind != types.OverlayNone {
 		t.Fatalf("expected overlay to close after stop, got %q", result.State.UI.Overlay.Kind)
@@ -1282,8 +1348,16 @@ func TestE2EReducerScenarioTerminalManagerEditMetadataFlow(t *testing.T) {
 		PromptKind: PromptKindEditTerminalMetadata,
 		TerminalID: types.TerminalID("term-2"),
 	})
-	submitted := reducer.Reduce(promptOpened.State, intent.SubmitPromptIntent{
+	triggered := reducer.Reduce(promptOpened.State, intent.SubmitPromptIntent{
 		Value: "build-log-v2\nenv=prod",
+	})
+	submitted := reducer.Reduce(triggered.State, intent.UpdateTerminalMetadataSucceededIntent{
+		TerminalID: types.TerminalID("term-2"),
+		Name:       "build-log-v2",
+		Tags: map[string]string{
+			"group": "build",
+			"env":   "prod",
+		},
 	})
 
 	if submitted.State.Domain.Terminals[types.TerminalID("term-2")].Name != "build-log-v2" {

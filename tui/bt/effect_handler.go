@@ -89,14 +89,28 @@ func (e DefaultRuntimeExecutor) Execute(effect reducer.Effect) (ExecutionResult,
 		return ExecutionResult{}, nil
 	case reducer.StopTerminalEffect:
 		if e.TerminalService != nil {
-			return ExecutionResult{}, e.TerminalService.StopTerminal(effectValue.TerminalID)
+			if err := e.TerminalService.StopTerminal(effectValue.TerminalID); err != nil {
+				return ExecutionResult{}, err
+			}
 		}
-		return ExecutionResult{}, nil
+		return ExecutionResult{
+			Intents: []intent.Intent{intent.StopTerminalSucceededIntent{
+				TerminalID: effectValue.TerminalID,
+			}},
+		}, nil
 	case reducer.UpdateTerminalMetadataEffect:
 		if e.TerminalService != nil {
-			return ExecutionResult{}, e.TerminalService.UpdateTerminalMetadata(effectValue.TerminalID, effectValue.Name, cloneStringMap(effectValue.Tags))
+			if err := e.TerminalService.UpdateTerminalMetadata(effectValue.TerminalID, effectValue.Name, cloneStringMap(effectValue.Tags)); err != nil {
+				return ExecutionResult{}, err
+			}
 		}
-		return ExecutionResult{}, nil
+		return ExecutionResult{
+			Intents: []intent.Intent{intent.UpdateTerminalMetadataSucceededIntent{
+				TerminalID: effectValue.TerminalID,
+				Name:       effectValue.Name,
+				Tags:       cloneStringMap(effectValue.Tags),
+			}},
+		}, nil
 	case reducer.ConnectTerminalInNewTabEffect:
 		if e.TerminalService != nil {
 			return ExecutionResult{}, e.TerminalService.ConnectTerminalInNewTab(effectValue.WorkspaceID, effectValue.TerminalID)

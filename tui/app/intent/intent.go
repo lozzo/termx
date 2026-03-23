@@ -35,6 +35,12 @@ type StopTerminalIntent struct {
 
 func (StopTerminalIntent) intentName() string { return "stop_terminal" }
 
+type StopTerminalSucceededIntent struct {
+	TerminalID types.TerminalID
+}
+
+func (StopTerminalSucceededIntent) intentName() string { return "stop_terminal_succeeded" }
+
 type TerminalProgramExitedIntent struct {
 	TerminalID types.TerminalID
 	ExitCode   int
@@ -223,6 +229,16 @@ type SubmitPromptIntent struct {
 }
 
 func (SubmitPromptIntent) intentName() string { return "submit_prompt" }
+
+type UpdateTerminalMetadataSucceededIntent struct {
+	TerminalID types.TerminalID
+	Name       string
+	Tags       map[string]string
+}
+
+func (UpdateTerminalMetadataSucceededIntent) intentName() string {
+	return "update_terminal_metadata_succeeded"
+}
 
 type CancelPromptIntent struct{}
 

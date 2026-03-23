@@ -669,6 +669,13 @@ func TestE2EModelScenarioFailedStopRecordsErrorNotice(t *testing.T) {
 	if current.Notices()[0].Level != NoticeLevelError {
 		t.Fatalf("expected error notice, got %+v", current.Notices()[0])
 	}
+	if current.State().UI.Overlay.Kind != types.OverlayTerminalManager {
+		t.Fatalf("expected failed stop to keep manager open, got %q", current.State().UI.Overlay.Kind)
+	}
+	pane := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
+	if pane.TerminalID != types.TerminalID("term-1") || pane.SlotState != types.PaneSlotConnected {
+		t.Fatalf("expected failed stop to keep active pane connected, got %+v", pane)
+	}
 }
 
 func TestE2EModelScenarioNoticeTimeoutClearsErrorNotice(t *testing.T) {
@@ -723,18 +730,17 @@ func TestE2EModelScenarioRepeatedFailedStopDeduplicatesErrorNotice(t *testing.T)
 	})
 
 	current := model
-	for i := 0; i < 2; i++ {
-		for _, key := range []tea.KeyMsg{
-			{Type: tea.KeyCtrlG},
-			{Type: tea.KeyRunes, Runes: []rune("t")},
-			{Type: tea.KeyRunes, Runes: []rune("k")},
-		} {
-			next, cmd := current.Update(key)
+	for _, key := range []tea.KeyMsg{
+		{Type: tea.KeyCtrlG},
+		{Type: tea.KeyRunes, Runes: []rune("t")},
+		{Type: tea.KeyRunes, Runes: []rune("k")},
+		{Type: tea.KeyRunes, Runes: []rune("k")},
+	} {
+		next, cmd := current.Update(key)
+		current = next.(*Model)
+		if cmd != nil {
+			next, _ = current.Update(cmd())
 			current = next.(*Model)
-			if cmd != nil {
-				next, _ = current.Update(cmd())
-				current = next.(*Model)
-			}
 		}
 	}
 

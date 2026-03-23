@@ -155,6 +155,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 131. 第一百二十七轮 TDD 已补上 metadata 控制面的 owner 权限约束
 132. 第一百二十八轮 TDD 已补上 workspace tree jump 的 tab auto-acquire owner
 133. 第一百二十九轮 TDD 已补上 stop terminal 控制面的 owner 权限约束
+134. 第一百三十轮 TDD 已补上 stop / metadata 控制面的成功回灌语义
 
 对应文档：
 
@@ -282,6 +283,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `stop terminal` 现在也被收紧到 owner 控制面：shared terminal 的 follower 不能直接 stop，必须先 acquire owner
 - 已补上 reducer 测试：terminal manager 在无 owner 权限时 stop 会保留 overlay，并回流 acquire-owner notice
 - 已补上两条 runtime 场景型 E2E：follower 直接 stop 会显示 owner notice；获取 owner 后再 stop 会真正 kill shared terminal 并清空全部连接 pane
+- `stop terminal` 与 metadata submit 现在都改成 runtime service 成功后再回灌 success intent，不再由 reducer 先做乐观本地提交
+- metadata 更新失败时，prompt 会保留并显示错误 notice，避免出现“标题已变但服务失败”的假成功
+- stop terminal 失败时，terminal manager 会保留并显示错误 notice，避免出现“pane 已清空但 kill 失败”的假成功
 - 已补上一条 runtime 场景型 E2E：`Ctrl-f` 打开 terminal picker 时主视图显式显示 `overlay: terminal_picker` 与 `focus_overlay_target: terminal_picker`
 - 已补上一条 runtime 场景型 E2E：workspace picker / prompt / terminal manager / terminal picker / layout resolve 关闭后主视图不再残留 `focus_overlay_target`
 - 已补上一条 runtime 场景型 E2E：terminal manager 与 layout resolve 关闭后主视图不再残留临时 `mode`

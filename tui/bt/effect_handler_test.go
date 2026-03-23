@@ -171,12 +171,18 @@ func TestDefaultRuntimeExecutorCallsTerminalServiceAndTranslatesOverlayEffects(t
 		Command: []string{"sh", "-l"},
 		Name:    "ws-tab-pane",
 	})
-	_, _ = executor.Execute(reducer.StopTerminalEffect{TerminalID: types.TerminalID("term-2")})
-	_, _ = executor.Execute(reducer.UpdateTerminalMetadataEffect{
+	stopResult, err := executor.Execute(reducer.StopTerminalEffect{TerminalID: types.TerminalID("term-2")})
+	if err != nil {
+		t.Fatalf("unexpected stop error: %v", err)
+	}
+	metadataResult, err := executor.Execute(reducer.UpdateTerminalMetadataEffect{
 		TerminalID: types.TerminalID("term-3"),
 		Name:       "build-log",
 		Tags:       map[string]string{"group": "build"},
 	})
+	if err != nil {
+		t.Fatalf("unexpected metadata error: %v", err)
+	}
 	_, _ = executor.Execute(reducer.ConnectTerminalInNewTabEffect{
 		WorkspaceID: types.WorkspaceID("ws-1"),
 		TerminalID:  types.TerminalID("term-4"),
@@ -206,6 +212,23 @@ func TestDefaultRuntimeExecutorCallsTerminalServiceAndTranslatesOverlayEffects(t
 	}
 	if len(service.createCalls) != 1 || len(service.stopCalls) != 1 || len(service.metadataCalls) != 1 {
 		t.Fatalf("expected create/stop/metadata service calls, got create=%d stop=%d metadata=%d", len(service.createCalls), len(service.stopCalls), len(service.metadataCalls))
+	}
+	if len(stopResult.Intents) != 1 {
+		t.Fatalf("expected stop success feedback intent, got %+v", stopResult.Intents)
+	}
+	stopIntent, ok := stopResult.Intents[0].(intent.StopTerminalSucceededIntent)
+	if !ok || stopIntent.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("unexpected stop success feedback payload: %+v", stopResult.Intents[0])
+	}
+	if len(metadataResult.Intents) != 1 {
+		t.Fatalf("expected metadata success feedback intent, got %+v", metadataResult.Intents)
+	}
+	metadataIntent, ok := metadataResult.Intents[0].(intent.UpdateTerminalMetadataSucceededIntent)
+	if !ok || metadataIntent.TerminalID != types.TerminalID("term-3") || metadataIntent.Name != "build-log" {
+		t.Fatalf("unexpected metadata success feedback payload: %+v", metadataResult.Intents[0])
+	}
+	if metadataIntent.Tags["group"] != "build" {
+		t.Fatalf("unexpected metadata success tags: %+v", metadataIntent.Tags)
 	}
 	if len(service.newTabCalls) != 1 || len(service.floatingCalls) != 1 {
 		t.Fatalf("expected new-tab/floating service calls, got newTab=%d floating=%d", len(service.newTabCalls), len(service.floatingCalls))

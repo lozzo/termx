@@ -123,6 +123,11 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		result.Effects = append(result.Effects, StopTerminalEffect{
 			TerminalID: intentValue.TerminalID,
 		})
+	case intent.StopTerminalSucceededIntent:
+		applyStopTerminal(&result.State, intent.StopTerminalIntent{
+			TerminalID: intentValue.TerminalID,
+		})
+		applyCloseTerminalManagerForTerminal(&result.State, intentValue.TerminalID)
 	case intent.TerminalProgramExitedIntent:
 		applyProgramExited(&result.State, intentValue)
 	case intent.SyncTerminalStateIntent:
@@ -193,6 +198,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyTerminalManagerCreateTerminal(&result)
 	case intent.SubmitPromptIntent:
 		result.Effects = append(result.Effects, applySubmitPrompt(&result.State, intentValue)...)
+	case intent.UpdateTerminalMetadataSucceededIntent:
+		applyUpdateTerminalMetadataSucceeded(&result.State, intentValue)
 	case intent.CancelPromptIntent:
 		applyCancelPrompt(&result.State)
 	case intent.PromptAppendInputIntent:
@@ -832,9 +839,7 @@ func applyTerminalManagerStop(result *Result) {
 		})
 		return
 	}
-	applyStopTerminal(&result.State, intent.StopTerminalIntent{TerminalID: terminalID})
 	result.Effects = append(result.Effects, StopTerminalEffect{TerminalID: terminalID})
-	applyCloseOverlay(&result.State)
 }
 
 func applyTerminalManagerCreateTerminal(result *Result) {
@@ -966,15 +971,47 @@ func applyUpdateTerminalMetadataFromPrompt(state *types.AppState, promptState *p
 		}}
 	}
 	name, tags := parseTerminalMetadataPrompt(value, terminal)
-	terminal.Name = name
-	terminal.Tags = tags
-	state.Domain.Terminals[promptState.TerminalID] = terminal
-	applyCloseOverlay(state)
 	return []Effect{UpdateTerminalMetadataEffect{
 		TerminalID: promptState.TerminalID,
 		Name:       name,
 		Tags:       cloneStringMap(tags),
 	}}
+}
+
+// applyUpdateTerminalMetadataSucceeded 只在 runtime service 成功后回灌本地状态。
+// 这样 metadata 失败时不会出现“prompt 已关闭、标题已变化”的假成功。
+func applyUpdateTerminalMetadataSucceeded(state *types.AppState, in intent.UpdateTerminalMetadataSucceededIntent) {
+	terminal, ok := state.Domain.Terminals[in.TerminalID]
+	if !ok {
+		return
+	}
+	terminal.Name = in.Name
+	terminal.Tags = cloneStringMap(in.Tags)
+	state.Domain.Terminals[in.TerminalID] = terminal
+	applyClosePromptForTerminal(state, in.TerminalID)
+}
+
+func applyClosePromptForTerminal(state *types.AppState, terminalID types.TerminalID) {
+	prompt, ok := promptState(state)
+	if !ok {
+		return
+	}
+	if prompt.Kind != promptdomain.KindEditTerminalMetadata || prompt.TerminalID != terminalID {
+		return
+	}
+	applyCloseOverlay(state)
+}
+
+func applyCloseTerminalManagerForTerminal(state *types.AppState, terminalID types.TerminalID) {
+	manager, ok := terminalManager(state)
+	if !ok {
+		return
+	}
+	selectedTerminalID, ok := manager.SelectedTerminalID()
+	if !ok || selectedTerminalID != terminalID {
+		return
+	}
+	applyCloseOverlay(state)
 }
 
 func applyActivateMode(state *types.AppState, in intent.ActivateModeIntent) {
