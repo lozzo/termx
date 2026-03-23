@@ -91,6 +91,29 @@ func TestReducerTerminalRemovedClearsPaneAndTerminalState(t *testing.T) {
 	}
 }
 
+func TestReducerTerminalRemovedRefreshesTerminalManagerProjection(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	result := reducer.Reduce(opened.State, intent.TerminalRemovedIntent{
+		TerminalID: types.TerminalID("term-1"),
+	})
+
+	manager, ok := result.State.UI.Overlay.Data.(*terminalmanagerdomain.State)
+	if !ok {
+		t.Fatalf("expected terminal manager overlay data, got %T", result.State.UI.Overlay.Data)
+	}
+	row, ok := manager.SelectedRow()
+	if !ok || row.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected selection to fall through to next terminal after removal, got %+v ok=%v", row, ok)
+	}
+	detail, ok := manager.SelectedDetail()
+	if !ok || detail.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected detail projection to refresh after removal, got %+v ok=%v", detail, ok)
+	}
+}
+
 func TestReducerRegisterTerminalAddsDetachedTerminalRef(t *testing.T) {
 	reducer := New()
 	state := newAppStateWithSinglePane()
@@ -142,6 +165,33 @@ func TestReducerSyncTerminalStateStoppedClearsPaneConnection(t *testing.T) {
 	}
 	if _, ok := result.State.Domain.Connections[types.TerminalID("term-1")]; ok {
 		t.Fatalf("expected stopped terminal connection to disappear")
+	}
+}
+
+func TestReducerSyncTerminalStateStoppedRefreshesTerminalManagerProjection(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	result := reducer.Reduce(opened.State, intent.SyncTerminalStateIntent{
+		TerminalID: types.TerminalID("term-1"),
+		State:      types.TerminalRunStateStopped,
+	})
+
+	manager, ok := result.State.UI.Overlay.Data.(*terminalmanagerdomain.State)
+	if !ok {
+		t.Fatalf("expected terminal manager overlay data, got %T", result.State.UI.Overlay.Data)
+	}
+	detail, ok := manager.SelectedDetail()
+	if !ok {
+		t.Fatalf("expected selected detail after state sync")
+	}
+	if detail.TerminalID != types.TerminalID("term-1") || detail.State != types.TerminalRunStateStopped || detail.ConnectedPaneCount != 0 || detail.VisibilityLabel != "hidden" {
+		t.Fatalf("expected stopped terminal detail to refresh, got %+v", detail)
+	}
+	row, ok := manager.SelectedRow()
+	if !ok || row.TerminalID != types.TerminalID("term-1") || row.State != types.TerminalRunStateStopped || row.ConnectedPaneCount != 0 || row.VisibilityLabel != "hidden" {
+		t.Fatalf("expected stopped terminal row to refresh, got %+v ok=%v", row, ok)
 	}
 }
 

@@ -2389,6 +2389,72 @@ func TestE2ERunScenarioTerminalManagerCreateRowFailureShowsNoticeInView(t *testi
 	}
 }
 
+func TestE2ERunScenarioTerminalManagerRefreshesAfterRuntimeRemoval(t *testing.T) {
+	events := make(chan protocol.Event, 1)
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{EventStream: events},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			current := model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			initCmd := current.Init()
+			if initCmd == nil {
+				t.Fatal("expected runtime init command")
+			}
+			events <- protocol.Event{
+				Type:       protocol.EventTerminalRemoved,
+				TerminalID: "term-1",
+				Removed:    &protocol.TerminalRemovedData{Reason: "server_shutdown"},
+			}
+			msg := initCmd()
+			if msg == nil {
+				t.Fatal("expected runtime removed event message")
+			}
+			nextModel, cmd := current.Update(msg)
+			current = nextModel.(*btui.Model)
+			if cmd == nil {
+				t.Fatal("expected feedback command from removed event")
+			}
+			for _, nextMsg := range runCmdMessages(cmd) {
+				nextModel, _ = current.Update(nextMsg)
+				current = nextModel.(*btui.Model)
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: terminal_manager") || !strings.Contains(view, "terminal_manager_selected: term-2") || !strings.Contains(view, "terminal_manager_detail: build-log") || !strings.Contains(view, "detail_terminal: term-2") || !strings.Contains(view, "terminal_manager_row_count: 5") || strings.Contains(view, "detail_terminal: term-1") {
+				t.Fatalf("expected runtime removal to refresh terminal manager projection, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected terminal manager refresh scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioCtrlFOpensTerminalPickerInView(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithTerminalManagerTargets()

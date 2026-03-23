@@ -197,6 +197,10 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyModeTimedOut(&result.State, intentValue)
 	}
 
+	if result.State.UI.Overlay.Kind == types.OverlayTerminalManager {
+		refreshTerminalManagerOverlay(&result.State)
+	}
+
 	return result
 }
 
