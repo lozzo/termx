@@ -380,8 +380,11 @@ func renderLayoutResolveLines(resolve *layoutresolvedomain.State) []string {
 		fmt.Sprintf("layout_resolve_pane: %s", resolve.PaneID),
 		fmt.Sprintf("layout_resolve_role: %s", resolve.Role),
 		fmt.Sprintf("layout_resolve_hint: %s", resolve.Hint),
-		"layout_resolve_rows:",
 	}
+	if row, ok := resolve.SelectedRow(); ok {
+		lines = append(lines, fmt.Sprintf("layout_resolve_selected: %s", row.Action))
+	}
+	lines = append(lines, "layout_resolve_rows:")
 	selected, hasSelection := resolve.SelectedRow()
 	for _, row := range resolve.Rows() {
 		prefix := "  "

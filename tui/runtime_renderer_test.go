@@ -273,6 +273,9 @@ func TestRuntimeRendererRendersLayoutResolveOverlay(t *testing.T) {
 	if !strings.Contains(view, "layout_resolve_pane: pane-1") {
 		t.Fatalf("expected resolve pane id in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "layout_resolve_selected: create_new") {
+		t.Fatalf("expected resolve selected action in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "layout_resolve_hint: env=dev service=api") {
 		t.Fatalf("expected resolve hint in rendered view, got:\n%s", view)
 	}
