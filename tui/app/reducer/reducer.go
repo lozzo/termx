@@ -1,6 +1,8 @@
 package reducer
 
 import (
+	"time"
+
 	"github.com/lozzow/termx/tui/app/intent"
 	"github.com/lozzow/termx/tui/domain/connection"
 	"github.com/lozzow/termx/tui/domain/types"
@@ -63,6 +65,22 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyWorkspaceTreeJump(&result.State, intentValue)
 	case intent.ClosePaneIntent:
 		applyClosePane(&result.State, intentValue)
+	case intent.OpenWorkspacePickerIntent:
+		applyOpenWorkspacePicker(&result.State)
+	case intent.CloseOverlayIntent:
+		applyCloseOverlay(&result.State)
+	case intent.WorkspacePickerMoveIntent:
+		applyWorkspacePickerMove(&result.State, intentValue)
+	case intent.WorkspacePickerExpandIntent:
+		applyWorkspacePickerExpand(&result.State)
+	case intent.WorkspacePickerCollapseIntent:
+		applyWorkspacePickerCollapse(&result.State)
+	case intent.WorkspacePickerSubmitIntent:
+		applyWorkspacePickerSubmit(&result.State)
+	case intent.ActivateModeIntent:
+		applyActivateMode(&result.State, intentValue)
+	case intent.ModeTimedOutIntent:
+		applyModeTimedOut(&result.State, intentValue)
 	}
 
 	return result
@@ -167,6 +185,139 @@ func applyClosePane(state *types.AppState, in intent.ClosePaneIntent) {
 	}
 }
 
+// applyOpenWorkspacePicker 只负责切到 overlay 焦点，并挂上可变的 picker 状态。
+// 这样后续 shell 只要把键盘输入翻译成 intent，就不会再直接改 UI 内部结构。
+func applyOpenWorkspacePicker(state *types.AppState) {
+	returnFocus := state.UI.Focus
+	returnFocus.OverlayTarget = ""
+	state.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayWorkspacePicker,
+		Data:        workspacedomain.NewPickerState(state.Domain),
+		ReturnFocus: returnFocus,
+	}
+	state.UI.Focus = types.FocusState{
+		Layer:         types.FocusLayerOverlay,
+		WorkspaceID:   returnFocus.WorkspaceID,
+		TabID:         returnFocus.TabID,
+		PaneID:        returnFocus.PaneID,
+		OverlayTarget: types.OverlayWorkspacePicker,
+	}
+	state.UI.Mode = types.ModeState{
+		Active: types.ModePicker,
+	}
+}
+
+func applyCloseOverlay(state *types.AppState) {
+	if state.UI.Overlay.Kind == types.OverlayNone {
+		return
+	}
+	state.UI.Focus = state.UI.Overlay.ReturnFocus
+	state.UI.Focus.OverlayTarget = ""
+	state.UI.Overlay = types.OverlayState{Kind: types.OverlayNone}
+	if state.UI.Mode.Active == types.ModePicker {
+		state.UI.Mode = types.ModeState{Active: types.ModeNone}
+	}
+}
+
+func applyWorkspacePickerMove(state *types.AppState, in intent.WorkspacePickerMoveIntent) {
+	picker, ok := workspacePicker(state)
+	if !ok {
+		return
+	}
+	picker.MoveSelection(in.Delta)
+}
+
+func applyWorkspacePickerExpand(state *types.AppState) {
+	picker, ok := workspacePicker(state)
+	if !ok {
+		return
+	}
+	picker.ExpandSelected()
+}
+
+func applyWorkspacePickerCollapse(state *types.AppState) {
+	picker, ok := workspacePicker(state)
+	if !ok {
+		return
+	}
+	picker.CollapseSelected()
+}
+
+func applyWorkspacePickerSubmit(state *types.AppState) {
+	picker, ok := workspacePicker(state)
+	if !ok {
+		return
+	}
+	node, ok := picker.SelectedNode()
+	if !ok {
+		return
+	}
+
+	switch node.Kind {
+	case workspacedomain.TreeNodeKindWorkspace:
+		workspace, ok := state.Domain.Workspaces[node.WorkspaceID]
+		if !ok {
+			return
+		}
+		tabID := workspace.ActiveTabID
+		tab, ok := workspace.Tabs[tabID]
+		if !ok {
+			return
+		}
+		applyWorkspaceTreeJump(state, intent.WorkspaceTreeJumpIntent{
+			WorkspaceID: node.WorkspaceID,
+			TabID:       tabID,
+			PaneID:      tab.ActivePaneID,
+		})
+	case workspacedomain.TreeNodeKindTab:
+		workspace, ok := state.Domain.Workspaces[node.WorkspaceID]
+		if !ok {
+			return
+		}
+		tab, ok := workspace.Tabs[node.TabID]
+		if !ok {
+			return
+		}
+		applyWorkspaceTreeJump(state, intent.WorkspaceTreeJumpIntent{
+			WorkspaceID: node.WorkspaceID,
+			TabID:       node.TabID,
+			PaneID:      tab.ActivePaneID,
+		})
+	case workspacedomain.TreeNodeKindPane:
+		applyWorkspaceTreeJump(state, intent.WorkspaceTreeJumpIntent{
+			WorkspaceID: node.WorkspaceID,
+			TabID:       node.TabID,
+			PaneID:      node.PaneID,
+		})
+	default:
+		return
+	}
+
+	state.UI.Overlay = types.OverlayState{Kind: types.OverlayNone}
+	state.UI.Focus.OverlayTarget = ""
+	if state.UI.Mode.Active == types.ModePicker {
+		state.UI.Mode = types.ModeState{Active: types.ModeNone}
+	}
+}
+
+func applyActivateMode(state *types.AppState, in intent.ActivateModeIntent) {
+	state.UI.Mode = types.ModeState{
+		Active:     in.Mode,
+		Sticky:     in.Sticky,
+		DeadlineAt: cloneTimePtr(in.DeadlineAt),
+	}
+}
+
+func applyModeTimedOut(state *types.AppState, in intent.ModeTimedOutIntent) {
+	if state.UI.Mode.Active == types.ModeNone || state.UI.Mode.Sticky || state.UI.Mode.DeadlineAt == nil {
+		return
+	}
+	if in.Now.Before(*state.UI.Mode.DeadlineAt) {
+		return
+	}
+	state.UI.Mode = types.ModeState{Active: types.ModeNone}
+}
+
 func setPaneState(state *types.AppState, paneID types.PaneID, mutate func(*types.PaneState)) {
 	for workspaceID, workspace := range state.Domain.Workspaces {
 		changedWorkspace := false
@@ -239,6 +390,18 @@ func cloneAppState(state types.AppState) types.AppState {
 			AutoAcquirePolicy: conn.AutoAcquirePolicy,
 		}
 	}
+	next.UI.Mode = types.ModeState{
+		Active:     state.UI.Mode.Active,
+		Sticky:     state.UI.Mode.Sticky,
+		DeadlineAt: cloneTimePtr(state.UI.Mode.DeadlineAt),
+	}
+	next.UI.Overlay = types.OverlayState{
+		Kind:        state.UI.Overlay.Kind,
+		ReturnFocus: state.UI.Overlay.ReturnFocus,
+	}
+	if state.UI.Overlay.Data != nil {
+		next.UI.Overlay.Data = state.UI.Overlay.Data.CloneOverlayData()
+	}
 	return next
 }
 
@@ -269,4 +432,20 @@ func removePaneFromSplit(node *types.SplitNode, paneID types.PaneID) *types.Spli
 	default:
 		return node
 	}
+}
+
+func workspacePicker(state *types.AppState) (*workspacedomain.PickerState, bool) {
+	if state.UI.Overlay.Kind != types.OverlayWorkspacePicker || state.UI.Overlay.Data == nil {
+		return nil, false
+	}
+	picker, ok := state.UI.Overlay.Data.(*workspacedomain.PickerState)
+	return picker, ok
+}
+
+func cloneTimePtr(in *time.Time) *time.Time {
+	if in == nil {
+		return nil
+	}
+	value := *in
+	return &value
 }

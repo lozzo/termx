@@ -49,6 +49,104 @@ func TestPickerStateQueryMatchPaneExpandsAncestors(t *testing.T) {
 	}
 }
 
+func TestPickerStateDefaultsSelectionToActivePane(t *testing.T) {
+	state := sampleDomainStateForPicker()
+
+	picker := NewPickerState(state)
+	row, ok := picker.SelectedRow()
+	if !ok {
+		t.Fatalf("expected selected row")
+	}
+	if row.Node.Kind != TreeNodeKindPane || row.Node.PaneID != types.PaneID("pane-api") {
+		t.Fatalf("expected active pane row to be selected, got %+v", row.Node)
+	}
+}
+
+func TestPickerStateMoveSelectionAndClamp(t *testing.T) {
+	state := sampleDomainStateForPicker()
+
+	picker := NewPickerState(state)
+	picker.MoveSelection(-10)
+	first, ok := picker.SelectedRow()
+	if !ok {
+		t.Fatalf("expected selected row after moving to top")
+	}
+	if first.Node.Kind != TreeNodeKindCreate {
+		t.Fatalf("expected selection to clamp to create row, got %+v", first.Node)
+	}
+
+	picker.MoveSelection(100)
+	last, ok := picker.SelectedRow()
+	if !ok {
+		t.Fatalf("expected selected row after moving to bottom")
+	}
+	if last.Node.Kind != TreeNodeKindTab || last.Node.Label != "logs" {
+		t.Fatalf("expected selection to clamp to last visible row, got %+v", last.Node)
+	}
+}
+
+func TestPickerStateExpandAndCollapseSelectedNode(t *testing.T) {
+	state := sampleDomainStateForPicker()
+
+	picker := NewPickerState(state)
+	picker.MoveSelection(-10)
+	if changed := picker.ExpandSelected(); changed {
+		t.Fatalf("expected create row expand to be ignored")
+	}
+
+	picker.MoveSelection(1)
+	row, ok := picker.SelectedRow()
+	if !ok || row.Node.Kind != TreeNodeKindWorkspace {
+		t.Fatalf("expected workspace row selected, got %+v", row.Node)
+	}
+	if !row.Expanded {
+		t.Fatalf("expected active workspace default expanded")
+	}
+
+	if changed := picker.CollapseSelected(); !changed {
+		t.Fatalf("expected workspace collapse to change state")
+	}
+	rows := picker.VisibleRows()
+	if len(rows) != 2 {
+		t.Fatalf("expected workspace children hidden after collapse, got %d rows", len(rows))
+	}
+
+	if changed := picker.ExpandSelected(); !changed {
+		t.Fatalf("expected workspace expand to change state")
+	}
+	rows = picker.VisibleRows()
+	if len(rows) <= 2 {
+		t.Fatalf("expected workspace children restored after expand, got %d rows", len(rows))
+	}
+}
+
+func TestPickerStateClearQueryRestoresDefaultAndManualExpansion(t *testing.T) {
+	state := sampleDomainStateForPicker()
+
+	picker := NewPickerState(state)
+	picker.MoveSelection(-10)
+	picker.MoveSelection(1)
+	picker.ExpandSelected()
+
+	picker.SetQuery("deploy-log")
+	queriedRows := picker.VisibleRows()
+	if len(queriedRows) < 5 {
+		t.Fatalf("expected query rows to reveal matched path, got %d", len(queriedRows))
+	}
+
+	picker.SetQuery("")
+	rows := picker.VisibleRows()
+	var foundLogsTab bool
+	for _, row := range rows {
+		if row.Node.Kind == TreeNodeKindTab && row.Node.TabID == types.TabID("tab-logs") {
+			foundLogsTab = true
+		}
+	}
+	if !foundLogsTab {
+		t.Fatalf("expected manual expansion to survive query clear, got rows %+v", rows)
+	}
+}
+
 func sampleDomainStateForPicker() types.DomainState {
 	return types.DomainState{
 		ActiveWorkspaceID: types.WorkspaceID("ws-1"),

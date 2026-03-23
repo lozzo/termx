@@ -2,6 +2,7 @@ package reducer
 
 import (
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/tui/app/intent"
 	"github.com/lozzow/termx/tui/domain/types"
@@ -98,6 +99,81 @@ func TestReducerClosePaneKeepsTerminalAliveAndMigratesOwner(t *testing.T) {
 	}
 	if len(conn.ConnectedPaneIDs) != 1 || conn.ConnectedPaneIDs[0] != types.PaneID("pane-2") {
 		t.Fatalf("expected only pane-2 to remain connected, got %+v", conn.ConnectedPaneIDs)
+	}
+}
+
+func TestReducerOpenWorkspacePickerMovesFocusToOverlayAndStoresReturnFocus(t *testing.T) {
+	reducer := New()
+	state := newAppStateWithTwoWorkspaces()
+
+	result := reducer.Reduce(state, intent.OpenWorkspacePickerIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayWorkspacePicker {
+		t.Fatalf("expected workspace picker overlay, got %q", result.State.UI.Overlay.Kind)
+	}
+	if result.State.UI.Focus.Layer != types.FocusLayerOverlay {
+		t.Fatalf("expected overlay focus layer, got %+v", result.State.UI.Focus)
+	}
+	if result.State.UI.Overlay.ReturnFocus.PaneID != types.PaneID("pane-1") {
+		t.Fatalf("expected previous pane focus to be retained, got %+v", result.State.UI.Overlay.ReturnFocus)
+	}
+}
+
+func TestReducerCloseOverlayRestoresPreviousPaneFocus(t *testing.T) {
+	reducer := New()
+	state := newAppStateWithTwoWorkspaces()
+
+	opened := reducer.Reduce(state, intent.OpenWorkspacePickerIntent{})
+	closed := reducer.Reduce(opened.State, intent.CloseOverlayIntent{})
+
+	if closed.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected overlay to close, got %q", closed.State.UI.Overlay.Kind)
+	}
+	if closed.State.UI.Focus.Layer != types.FocusLayerTiled || closed.State.UI.Focus.PaneID != types.PaneID("pane-1") {
+		t.Fatalf("expected focus to return to original pane, got %+v", closed.State.UI.Focus)
+	}
+}
+
+func TestReducerWorkspacePickerSubmitPaneJumpsAndClosesOverlay(t *testing.T) {
+	reducer := New()
+	state := newAppStateWithTwoWorkspaces()
+
+	opened := reducer.Reduce(state, intent.OpenWorkspacePickerIntent{})
+	movedToWorkspace := reducer.Reduce(opened.State, intent.WorkspacePickerMoveIntent{Delta: 2})
+	expanded := reducer.Reduce(movedToWorkspace.State, intent.WorkspacePickerExpandIntent{})
+	movedToPane := reducer.Reduce(expanded.State, intent.WorkspacePickerMoveIntent{Delta: 2})
+	submitted := reducer.Reduce(movedToPane.State, intent.WorkspacePickerSubmitIntent{})
+
+	if submitted.State.Domain.ActiveWorkspaceID != types.WorkspaceID("ws-2") {
+		t.Fatalf("expected active workspace to switch to ws-2, got %q", submitted.State.Domain.ActiveWorkspaceID)
+	}
+	if submitted.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected overlay to close after submit, got %q", submitted.State.UI.Overlay.Kind)
+	}
+	if submitted.State.UI.Focus.PaneID != types.PaneID("pane-float") || submitted.State.UI.Focus.Layer != types.FocusLayerFloating {
+		t.Fatalf("expected focus to jump to target pane, got %+v", submitted.State.UI.Focus)
+	}
+}
+
+func TestReducerModeTimedOutClearsActiveMode(t *testing.T) {
+	reducer := New()
+	state := newAppStateWithSinglePane()
+	deadline := time.Date(2026, 3, 23, 12, 0, 0, 0, time.UTC)
+
+	activated := reducer.Reduce(state, intent.ActivateModeIntent{
+		Mode:       types.ModeResize,
+		Sticky:     false,
+		DeadlineAt: &deadline,
+	})
+	result := reducer.Reduce(activated.State, intent.ModeTimedOutIntent{
+		Now: deadline.Add(time.Second),
+	})
+
+	if result.State.UI.Mode.Active != types.ModeNone {
+		t.Fatalf("expected mode to clear after timeout, got %+v", result.State.UI.Mode)
+	}
+	if result.State.UI.Mode.DeadlineAt != nil {
+		t.Fatalf("expected mode deadline cleared, got %+v", result.State.UI.Mode.DeadlineAt)
 	}
 }
 

@@ -11,7 +11,10 @@ type PickerState struct {
 	rootNodes         []TreeNode
 	activeWorkspaceID types.WorkspaceID
 	activeTabID       types.TabID
+	activePaneID      types.PaneID
+	selectedIndex     int
 	manuallyExpanded  map[string]bool
+	manuallyCollapsed map[string]bool
 }
 
 type TreeRow struct {
@@ -23,19 +26,111 @@ type TreeRow struct {
 
 func NewPickerState(state types.DomainState) *PickerState {
 	activeTabID := types.TabID("")
+	activePaneID := types.PaneID("")
 	if ws, ok := state.Workspaces[state.ActiveWorkspaceID]; ok {
 		activeTabID = ws.ActiveTabID
+		if tab, ok := ws.Tabs[activeTabID]; ok {
+			activePaneID = tab.ActivePaneID
+		}
 	}
-	return &PickerState{
+	picker := &PickerState{
 		rootNodes:         BuildPickerTree(state),
 		activeWorkspaceID: state.ActiveWorkspaceID,
 		activeTabID:       activeTabID,
+		activePaneID:      activePaneID,
 		manuallyExpanded:  make(map[string]bool),
+		manuallyCollapsed: make(map[string]bool),
 	}
+	picker.selectedIndex = picker.defaultSelectionIndex()
+	return picker
 }
 
 func (p *PickerState) SetQuery(query string) {
 	p.query = strings.TrimSpace(strings.ToLower(query))
+	p.clampSelection()
+}
+
+func (p *PickerState) OverlayKind() types.OverlayKind {
+	return types.OverlayWorkspacePicker
+}
+
+func (p *PickerState) CloneOverlayData() types.OverlayData {
+	if p == nil {
+		return nil
+	}
+	clone := &PickerState{
+		query:             p.query,
+		rootNodes:         cloneTreeNodes(p.rootNodes),
+		activeWorkspaceID: p.activeWorkspaceID,
+		activeTabID:       p.activeTabID,
+		activePaneID:      p.activePaneID,
+		selectedIndex:     p.selectedIndex,
+		manuallyExpanded:  make(map[string]bool, len(p.manuallyExpanded)),
+		manuallyCollapsed: make(map[string]bool, len(p.manuallyCollapsed)),
+	}
+	for key, expanded := range p.manuallyExpanded {
+		clone.manuallyExpanded[key] = expanded
+	}
+	for key, collapsed := range p.manuallyCollapsed {
+		clone.manuallyCollapsed[key] = collapsed
+	}
+	return clone
+}
+
+func (p *PickerState) SelectedRow() (TreeRow, bool) {
+	rows := p.VisibleRows()
+	if len(rows) == 0 {
+		return TreeRow{}, false
+	}
+	index := p.selectedIndex
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(rows) {
+		index = len(rows) - 1
+	}
+	return rows[index], true
+}
+
+func (p *PickerState) MoveSelection(delta int) {
+	p.selectedIndex += delta
+	p.clampSelection()
+}
+
+func (p *PickerState) ExpandSelected() bool {
+	row, ok := p.SelectedRow()
+	if !ok || !row.Node.isExpandable() {
+		return false
+	}
+	delete(p.manuallyCollapsed, row.Node.Key)
+	if row.Expanded && p.manuallyExpanded[row.Node.Key] {
+		return false
+	}
+	p.manuallyExpanded[row.Node.Key] = true
+	p.clampSelection()
+	return true
+}
+
+func (p *PickerState) CollapseSelected() bool {
+	row, ok := p.SelectedRow()
+	if !ok || !row.Node.isExpandable() {
+		return false
+	}
+	delete(p.manuallyExpanded, row.Node.Key)
+	if !row.Expanded && p.manuallyCollapsed[row.Node.Key] {
+		return false
+	}
+	p.manuallyCollapsed[row.Node.Key] = true
+	p.clampSelection()
+	return true
+}
+
+func (p *PickerState) SelectedNode() (TreeNode, bool) {
+	row, ok := p.SelectedRow()
+	if !ok {
+		return TreeNode{}, false
+	}
+	return row.Node, true
 }
 
 func (p *PickerState) VisibleRows() []TreeRow {
@@ -68,6 +163,9 @@ func (p *PickerState) appendVisibleRows(rows *[]TreeRow, node TreeNode, depth in
 
 func (p *PickerState) shouldExpand(node TreeNode, descendantMatch bool) bool {
 	if node.Kind == TreeNodeKindCreate || node.Kind == TreeNodeKindPane {
+		return false
+	}
+	if p.manuallyCollapsed[node.Key] {
 		return false
 	}
 	if descendantMatch && p.query != "" {
@@ -103,4 +201,61 @@ func (p *PickerState) nodeMatches(node TreeNode) (bool, bool) {
 		}
 	}
 	return match, descendant
+}
+
+func (p *PickerState) defaultSelectionIndex() int {
+	rows := p.VisibleRows()
+	for index, row := range rows {
+		if row.Node.Kind == TreeNodeKindPane &&
+			row.Node.WorkspaceID == p.activeWorkspaceID &&
+			row.Node.TabID == p.activeTabID &&
+			row.Node.PaneID == p.activePaneID {
+			return index
+		}
+	}
+	for index, row := range rows {
+		if row.Node.Kind == TreeNodeKindTab &&
+			row.Node.WorkspaceID == p.activeWorkspaceID &&
+			row.Node.TabID == p.activeTabID {
+			return index
+		}
+	}
+	for index, row := range rows {
+		if row.Node.Kind == TreeNodeKindWorkspace && row.Node.WorkspaceID == p.activeWorkspaceID {
+			return index
+		}
+	}
+	return 0
+}
+
+func (p *PickerState) clampSelection() {
+	rows := p.VisibleRows()
+	if len(rows) == 0 {
+		p.selectedIndex = 0
+		return
+	}
+	if p.selectedIndex < 0 {
+		p.selectedIndex = 0
+		return
+	}
+	if p.selectedIndex >= len(rows) {
+		p.selectedIndex = len(rows) - 1
+	}
+}
+
+func cloneTreeNodes(nodes []TreeNode) []TreeNode {
+	if len(nodes) == 0 {
+		return nil
+	}
+	out := make([]TreeNode, 0, len(nodes))
+	for _, node := range nodes {
+		clone := node
+		clone.Children = cloneTreeNodes(node.Children)
+		out = append(out, clone)
+	}
+	return out
+}
+
+func (n TreeNode) isExpandable() bool {
+	return n.Kind == TreeNodeKindWorkspace || n.Kind == TreeNodeKindTab
 }

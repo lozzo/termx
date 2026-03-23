@@ -1,6 +1,10 @@
 package intent
 
-import "github.com/lozzow/termx/tui/domain/types"
+import (
+	"time"
+
+	"github.com/lozzow/termx/tui/domain/types"
+)
 
 type Intent interface {
 	intentName() string
@@ -51,3 +55,43 @@ type ClosePaneIntent struct {
 }
 
 func (ClosePaneIntent) intentName() string { return "close_pane" }
+
+type OpenWorkspacePickerIntent struct{}
+
+func (OpenWorkspacePickerIntent) intentName() string { return "open_workspace_picker" }
+
+type CloseOverlayIntent struct{}
+
+func (CloseOverlayIntent) intentName() string { return "close_overlay" }
+
+type WorkspacePickerMoveIntent struct {
+	Delta int
+}
+
+func (WorkspacePickerMoveIntent) intentName() string { return "workspace_picker_move" }
+
+type WorkspacePickerExpandIntent struct{}
+
+func (WorkspacePickerExpandIntent) intentName() string { return "workspace_picker_expand" }
+
+type WorkspacePickerCollapseIntent struct{}
+
+func (WorkspacePickerCollapseIntent) intentName() string { return "workspace_picker_collapse" }
+
+type WorkspacePickerSubmitIntent struct{}
+
+func (WorkspacePickerSubmitIntent) intentName() string { return "workspace_picker_submit" }
+
+type ActivateModeIntent struct {
+	Mode       types.ModeKind
+	Sticky     bool
+	DeadlineAt *time.Time
+}
+
+func (ActivateModeIntent) intentName() string { return "activate_mode" }
+
+type ModeTimedOutIntent struct {
+	Now time.Time
+}
+
+func (ModeTimedOutIntent) intentName() string { return "mode_timed_out" }

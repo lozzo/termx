@@ -111,14 +111,17 @@ type TerminalRef struct {
 }
 
 type FocusState struct {
-	Layer       FocusLayer
-	WorkspaceID WorkspaceID
-	TabID       TabID
-	PaneID      PaneID
+	Layer         FocusLayer
+	WorkspaceID   WorkspaceID
+	TabID         TabID
+	PaneID        PaneID
+	OverlayTarget OverlayKind
 }
 
 type UIState struct {
-	Focus FocusState
+	Focus   FocusState
+	Overlay OverlayState
+	Mode    ModeState
 }
 
 type DomainState struct {
@@ -159,6 +162,18 @@ const (
 	OverlayPrompt          OverlayKind = "prompt"
 	OverlayConfirm         OverlayKind = "confirm"
 )
+
+// OverlayData 用接口隔离各类 overlay 自身状态，避免 UIState 直接依赖具体实现包。
+type OverlayData interface {
+	OverlayKind() OverlayKind
+	CloneOverlayData() OverlayData
+}
+
+type OverlayState struct {
+	Kind        OverlayKind
+	Data        OverlayData
+	ReturnFocus FocusState
+}
 
 type ModeKind string
 
