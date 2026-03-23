@@ -144,6 +144,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 120. 第一百一十六轮 TDD 已补上 runtime 观测字段剩余可见性的测试闭环
 121. 第一百一十七轮 TDD 已补上 runtime status 与初始状态投影的测试闭环
 122. 第一百一十八轮 TDD 已补上 runtime overlay 进入与退出投影的测试闭环
+123. 第一百一十九轮 TDD 已补上 runtime 剩余 prompt 与 resolve 字段投影的测试闭环
 
 对应文档：
 
@@ -224,6 +225,13 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- 已补上一条 runtime 场景型 E2E：terminal manager 初始详情区现在显式锁住 `detail_locations:`
+- 已补上一条 runtime 场景型 E2E：terminal manager create row 选中态显式锁住 `overlay: terminal_manager` 与 `focus_overlay_target: terminal_manager`
+- 已补上一条 runtime 场景型 E2E：metadata prompt `Tab` 到第二字段后主视图显式锁住 `prompt_terminal/prompt_active_field=tags/prompt_active_label/prompt_active_value/prompt_active_index`
+- 已补上一条 runtime 场景型 E2E：terminal picker missing query create row 显式锁住 `overlay: terminal_picker` 与 `focus_overlay_target: terminal_picker`
+- 已补上一条 runtime 场景型 E2E：layout resolve 初始主视图显式锁住 `layout_resolve_role` 与 `layout_resolve_hint`
+- 已补上一条 runtime 场景型 E2E：layout resolve create new / skip 关闭后主视图不再残留 `focus_overlay_target` 与 `mode`
+- runtime 剩余的 prompt 第二字段、resolve role/hint、manager detail locations 与 picker create row 打开态现在被场景测试锁住
 - 已补上一条 runtime 场景型 E2E：`Ctrl-w` 打开 workspace picker 时主视图显式显示 `overlay: workspace_picker`
 - 已补上一条 runtime 场景型 E2E：workspace picker create row 打开 prompt 时主视图显式显示 `focus_overlay_target: prompt`
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t` 打开 terminal manager 时主视图显式显示 `overlay: terminal_manager` 与 `focus_overlay_target: terminal_manager`

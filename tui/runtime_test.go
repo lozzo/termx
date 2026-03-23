@@ -1360,7 +1360,7 @@ func TestE2ERunScenarioCtrlGTOpensTerminalManagerInView(t *testing.T) {
 					}
 				}
 			}
-			if view := model.View(); !strings.Contains(view, "overlay: terminal_manager") || !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: terminal_manager") || !strings.Contains(view, "terminal_manager_query: ") || !strings.Contains(view, "terminal_manager_selected: term-1") || !strings.Contains(view, "terminal_manager_selected_label: api-dev") || !strings.Contains(view, "terminal_manager_selected_kind: terminal") || !strings.Contains(view, "terminal_manager_selected_section: VISIBLE") || !strings.Contains(view, "terminal_manager_selected_state: running") || !strings.Contains(view, "terminal_manager_selected_visible: true") || !strings.Contains(view, "terminal_manager_selected_visibility: visible") || !strings.Contains(view, "terminal_manager_selected_connected_panes: 1") || !strings.Contains(view, "terminal_manager_selected_location_count: 1") || !strings.Contains(view, "terminal_manager_selected_command: npm run dev") || !strings.Contains(view, "terminal_manager_selected_owner: pane:pane-1") || !strings.Contains(view, "terminal_manager_row_count: 7") || !strings.Contains(view, "terminal_manager_rows:") || !strings.Contains(view, "> [terminal] api-dev") || !strings.Contains(view, "terminal_manager_detail: api-dev") || !strings.Contains(view, "detail_terminal: term-1") || !strings.Contains(view, "detail_state: running") || !strings.Contains(view, "detail_visible: true") || !strings.Contains(view, "detail_visibility: visible") || !strings.Contains(view, "detail_connected_panes: 1") || !strings.Contains(view, "detail_location_count: 1") || !strings.Contains(view, "detail_command: npm run dev") || !strings.Contains(view, "detail_owner: pane:pane-1") || !strings.Contains(view, "- main/shell/pane:pane-1") {
+			if view := model.View(); !strings.Contains(view, "overlay: terminal_manager") || !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: terminal_manager") || !strings.Contains(view, "terminal_manager_query: ") || !strings.Contains(view, "terminal_manager_selected: term-1") || !strings.Contains(view, "terminal_manager_selected_label: api-dev") || !strings.Contains(view, "terminal_manager_selected_kind: terminal") || !strings.Contains(view, "terminal_manager_selected_section: VISIBLE") || !strings.Contains(view, "terminal_manager_selected_state: running") || !strings.Contains(view, "terminal_manager_selected_visible: true") || !strings.Contains(view, "terminal_manager_selected_visibility: visible") || !strings.Contains(view, "terminal_manager_selected_connected_panes: 1") || !strings.Contains(view, "terminal_manager_selected_location_count: 1") || !strings.Contains(view, "terminal_manager_selected_command: npm run dev") || !strings.Contains(view, "terminal_manager_selected_owner: pane:pane-1") || !strings.Contains(view, "terminal_manager_row_count: 7") || !strings.Contains(view, "terminal_manager_rows:") || !strings.Contains(view, "> [terminal] api-dev") || !strings.Contains(view, "terminal_manager_detail: api-dev") || !strings.Contains(view, "detail_terminal: term-1") || !strings.Contains(view, "detail_state: running") || !strings.Contains(view, "detail_visible: true") || !strings.Contains(view, "detail_visibility: visible") || !strings.Contains(view, "detail_connected_panes: 1") || !strings.Contains(view, "detail_location_count: 1") || !strings.Contains(view, "detail_command: npm run dev") || !strings.Contains(view, "detail_owner: pane:pane-1") || !strings.Contains(view, "detail_locations:") || !strings.Contains(view, "- main/shell/pane:pane-1") {
 				t.Fatalf("expected ctrl-g t flow to render terminal manager, got:\n%s", view)
 			}
 			return nil
@@ -1531,6 +1531,50 @@ func TestE2ERunScenarioTerminalManagerEditOpensPromptInView(t *testing.T) {
 			}
 			if view := current.View(); !strings.Contains(view, "focus_layer: prompt") || !strings.Contains(view, "focus_overlay_target: prompt") {
 				t.Fatalf("expected prompt flow to expose focus state in view, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioMetadataPromptTabShowsTagsFieldInView(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyDown},
+				{Type: tea.KeyRunes, Runes: []rune("e")},
+				{Type: tea.KeyTab},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: prompt") || !strings.Contains(view, "prompt_terminal: term-2") || !strings.Contains(view, "prompt_active_field: tags") || !strings.Contains(view, "prompt_active_label: Tags") || !strings.Contains(view, "prompt_active_value: group=build") || !strings.Contains(view, "prompt_active_index: 1") || !strings.Contains(view, "  [name] Name: build-log") || !strings.Contains(view, "> [tags] Tags: group=build") {
+				t.Fatalf("expected metadata prompt tab flow to focus tags field in view, got:\n%s", view)
 			}
 			return nil
 		},
@@ -1853,7 +1897,7 @@ func TestE2ERunScenarioTerminalManagerCreateRowSubmitClosesOverlay(t *testing.T)
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "terminal_manager_query: ") || !strings.Contains(view, "terminal_manager_row_count: 7") || !strings.Contains(view, "terminal_manager_rows:") || !strings.Contains(view, "> [create] + new terminal") || strings.Contains(view, "terminal_manager_detail:") {
+			if view := current.View(); !strings.Contains(view, "overlay: terminal_manager") || !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: terminal_manager") || !strings.Contains(view, "terminal_manager_query: ") || !strings.Contains(view, "terminal_manager_row_count: 7") || !strings.Contains(view, "terminal_manager_rows:") || !strings.Contains(view, "> [create] + new terminal") || strings.Contains(view, "terminal_manager_detail:") {
 				t.Fatalf("expected create row selection in terminal manager view, got:\n%s", view)
 			}
 			nextModel, cmd = current.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -1988,7 +2032,7 @@ func TestE2ERunScenarioTerminalPickerMissingQueryShowsCreateRow(t *testing.T) {
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "terminal_picker_query: missing") || !strings.Contains(view, "terminal_picker_row_count: 1") || !strings.Contains(view, "terminal_picker_rows:") || !strings.Contains(view, "> [create] + new terminal") || strings.Contains(view, "terminal_picker_selected:") {
+			if view := current.View(); !strings.Contains(view, "overlay: terminal_picker") || !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: terminal_picker") || !strings.Contains(view, "terminal_picker_query: missing") || !strings.Contains(view, "terminal_picker_row_count: 1") || !strings.Contains(view, "terminal_picker_rows:") || !strings.Contains(view, "> [create] + new terminal") || strings.Contains(view, "terminal_picker_selected:") {
 				t.Fatalf("expected terminal picker missing-query flow to show create row, got:\n%s", view)
 			}
 			return nil
@@ -2140,7 +2184,7 @@ func TestE2ERunScenarioLayoutResolveMoveUpdatesView(t *testing.T) {
 	bootstrapper := &stubRunSessionBootstrapper{}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
-			if view := model.View(); !strings.Contains(view, "> [connect_existing] connect existing") || !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: layout_resolve") || !strings.Contains(view, "mode: picker") {
+			if view := model.View(); !strings.Contains(view, "> [connect_existing] connect existing") || !strings.Contains(view, "layout_resolve_role: backend-dev") || !strings.Contains(view, "layout_resolve_hint: env=dev service=api") || !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: layout_resolve") || !strings.Contains(view, "mode: picker") {
 				t.Fatalf("expected initial resolve selection in view, got:\n%s", view)
 			}
 			nextModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyDown})
@@ -2227,7 +2271,7 @@ func TestE2ERunScenarioLayoutResolveCreateNewClosesOverlay(t *testing.T) {
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "slot: waiting") || strings.Contains(view, "layout_resolve_rows:") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "slot: waiting") || strings.Contains(view, "layout_resolve_rows:") || strings.Contains(view, "focus_overlay_target:") || strings.Contains(view, "mode:") {
 				t.Fatalf("expected layout resolve create-new flow to close overlay, got:\n%s", view)
 			}
 			return nil
@@ -2269,7 +2313,7 @@ func TestE2ERunScenarioLayoutResolveSkipClosesOverlay(t *testing.T) {
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "slot: waiting") || strings.Contains(view, "layout_resolve_rows:") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "slot: waiting") || strings.Contains(view, "layout_resolve_rows:") || strings.Contains(view, "focus_overlay_target:") || strings.Contains(view, "mode:") {
 				t.Fatalf("expected layout resolve skip flow to close overlay, got:\n%s", view)
 			}
 			return nil
