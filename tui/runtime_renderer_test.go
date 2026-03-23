@@ -56,6 +56,9 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "title: api-dev") {
 		t.Fatalf("expected terminal title in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "terminal_state: running") {
+		t.Fatalf("expected terminal state in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "screen:") {
 		t.Fatalf("expected screen section in rendered view, got:\n%s", view)
 	}
@@ -278,5 +281,33 @@ func TestRuntimeRendererRendersFocusOverlayTarget(t *testing.T) {
 	}
 	if !strings.Contains(view, "focus_overlay_target: layout_resolve") {
 		t.Fatalf("expected overlay focus target in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersExitedPaneState(t *testing.T) {
+	state := connectedRunAppState()
+	exitCode := 7
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	pane := tab.Panes[types.PaneID("pane-1")]
+	pane.SlotState = types.PaneSlotExited
+	pane.LastExitCode = &exitCode
+	tab.Panes[types.PaneID("pane-1")] = pane
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	terminal := state.Domain.Terminals[types.TerminalID("term-1")]
+	terminal.State = types.TerminalRunStateExited
+	terminal.ExitCode = &exitCode
+	state.Domain.Terminals[types.TerminalID("term-1")] = terminal
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "terminal_state: exited") {
+		t.Fatalf("expected exited terminal state in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "terminal_exit_code: 7") {
+		t.Fatalf("expected terminal exit code in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "pane_exit_code: 7") {
+		t.Fatalf("expected pane exit code in rendered view, got:\n%s", view)
 	}
 }

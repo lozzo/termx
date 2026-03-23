@@ -73,6 +73,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 49. 第四十五轮 TDD 已补上 runtime mode 状态的 renderer 可见性闭环
 50. 第四十六轮 TDD 已补上 terminal manager detail 连接信息的 renderer 可视化闭环
 51. 第四十七轮 TDD 已补上 runtime focus 状态的 renderer 可见性闭环
+52. 第四十八轮 TDD 已补上 exited pane 终态信息的 renderer 可见性闭环
 
 对应文档：
 
@@ -153,6 +154,10 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- runtime renderer 已显式展示 `terminal_state`
+- runtime renderer 已显式展示 `terminal_exit_code`
+- runtime renderer 已显式展示 `pane_exit_code`
+- 已补上一条 runtime 场景型 E2E：`closed frame -> exited pane` 时终态和退出码在视图中可见
 - runtime renderer 已显式展示 `focus_layer`
 - runtime renderer 已显式展示 `focus_overlay_target`
 - 已补上两条 runtime 场景型 E2E：`Ctrl-w -> workspace picker`、`Ctrl-g -> t -> e -> prompt` 时焦点状态在视图中可见

@@ -294,6 +294,9 @@ func TestE2ERunScenarioClosedFrameFeedsReducerAndMarksPaneExited(t *testing.T) {
 			if view := model.View(); !strings.Contains(view, "slot: exited") {
 				t.Fatalf("expected runtime view to mark pane exited, got:\n%s", view)
 			}
+			if view := model.View(); !strings.Contains(view, "terminal_state: exited") || !strings.Contains(view, "terminal_exit_code: 7") || !strings.Contains(view, "pane_exit_code: 7") {
+				t.Fatalf("expected runtime view to expose exited terminal state, got:\n%s", view)
+			}
 			if terminal := model.State().Domain.Terminals[types.TerminalID("term-1")]; terminal.ExitCode == nil || *terminal.ExitCode != 7 {
 				t.Fatalf("expected reducer to retain exit code, got %+v", terminal)
 			}

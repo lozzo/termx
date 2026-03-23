@@ -43,6 +43,7 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	}
 	lines = append(lines, renderFocusLines(state.UI.Focus)...)
 	lines = append(lines, renderModeLines(state.UI.Mode)...)
+	lines = append(lines, renderPaneStateLines(pane)...)
 	if pane.TerminalID != "" {
 		lines = append(lines, fmt.Sprintf("terminal: %s", pane.TerminalID))
 		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok {
@@ -51,6 +52,7 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 				label = string(terminal.ID)
 			}
 			lines = append(lines, fmt.Sprintf("title: %s", label))
+			lines = append(lines, renderTerminalStateLines(terminal)...)
 		}
 		if r.Screens != nil {
 			if snapshot, ok := r.Screens.Snapshot(pane.TerminalID); ok && snapshot != nil {
@@ -67,12 +69,30 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	return strings.Join(lines, "\n")
 }
 
+func renderPaneStateLines(pane types.PaneState) []string {
+	if pane.LastExitCode == nil {
+		return nil
+	}
+	return []string{fmt.Sprintf("pane_exit_code: %d", *pane.LastExitCode)}
+}
+
 // renderFocusLines 把当前焦点层和 overlay 目标显式投影到文本视图里，
 // 这样 runtime E2E 可以直接验证交互是否切到了预期焦点。
 func renderFocusLines(focus types.FocusState) []string {
 	lines := []string{fmt.Sprintf("focus_layer: %s", focus.Layer)}
 	if focus.OverlayTarget != "" {
 		lines = append(lines, fmt.Sprintf("focus_overlay_target: %s", focus.OverlayTarget))
+	}
+	return lines
+}
+
+func renderTerminalStateLines(terminal types.TerminalRef) []string {
+	var lines []string
+	if terminal.State != "" {
+		lines = append(lines, fmt.Sprintf("terminal_state: %s", terminal.State))
+	}
+	if terminal.ExitCode != nil {
+		lines = append(lines, fmt.Sprintf("terminal_exit_code: %d", *terminal.ExitCode))
 	}
 	return lines
 }
