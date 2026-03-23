@@ -104,6 +104,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 80. 第七十六轮 TDD 已补上 terminal manager 选中行可见性的 renderer 可见性闭环
 81. 第七十七轮 TDD 已补上 workspace picker 选中节点展开态的 renderer 可见性闭环
 82. 第七十八轮 TDD 已补上 workspace picker 选中节点命中态的 renderer 可见性闭环
+83. 第七十九轮 TDD 已补上 workspace picker 选中节点深度的 renderer 可见性闭环
 
 对应文档：
 
@@ -184,6 +185,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- runtime renderer 已显式展示 workspace picker 的 `workspace_picker_selected_depth`
+- workspace picker 打开后当前主视图可直接看到当前选中节点在树中的深度
+- 已补上一条 runtime 场景型 E2E：`Ctrl-w` 打开 picker 后主视图显示默认选中节点深度 `workspace_picker_selected_depth: 2`
 - runtime renderer 已显式展示 workspace picker 的 `workspace_picker_selected_match`
 - workspace picker 打开后当前主视图可直接看到当前选中节点是否命中 query
 - 已补上一条 runtime 场景型 E2E：`Ctrl-w` 打开 picker 后主视图显示默认选中节点命中态 `workspace_picker_selected_match: false`
