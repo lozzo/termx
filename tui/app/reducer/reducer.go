@@ -1,10 +1,13 @@
 package reducer
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lozzow/termx/tui/app/intent"
 	"github.com/lozzow/termx/tui/domain/connection"
+	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
 	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
 	"github.com/lozzow/termx/tui/domain/types"
 	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
@@ -99,6 +102,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyOpenWorkspacePicker(&result.State)
 	case intent.OpenTerminalManagerIntent:
 		applyOpenTerminalManager(&result.State)
+	case intent.OpenPromptIntent:
+		applyOpenPrompt(&result.State, intentValue)
 	case intent.CloseOverlayIntent:
 		applyCloseOverlay(&result.State)
 	case intent.WorkspacePickerMoveIntent:
@@ -129,6 +134,10 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyTerminalManagerEditMetadata(&result)
 	case intent.TerminalManagerStopIntent:
 		applyTerminalManagerStop(&result)
+	case intent.SubmitPromptIntent:
+		applySubmitPrompt(&result.State, intentValue)
+	case intent.CancelPromptIntent:
+		applyCancelPrompt(&result.State)
 	case intent.ActivateModeIntent:
 		applyActivateMode(&result.State, intentValue)
 	case intent.ModeTimedOutIntent:
@@ -277,6 +286,27 @@ func applyOpenTerminalManager(state *types.AppState) {
 	}
 	state.UI.Mode = types.ModeState{
 		Active: types.ModePicker,
+	}
+}
+
+func applyOpenPrompt(state *types.AppState, in intent.OpenPromptIntent) {
+	returnFocus := state.UI.Focus
+	returnFocus.OverlayTarget = ""
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayPrompt,
+		Data: &promptdomain.State{
+			Kind:       promptKindFromString(in.PromptKind),
+			Title:      promptTitle(in.PromptKind),
+			TerminalID: in.TerminalID,
+		},
+		ReturnFocus: returnFocus,
+	}
+	state.UI.Focus = types.FocusState{
+		Layer:         types.FocusLayerPrompt,
+		WorkspaceID:   returnFocus.WorkspaceID,
+		TabID:         returnFocus.TabID,
+		PaneID:        returnFocus.PaneID,
+		OverlayTarget: types.OverlayPrompt,
 	}
 }
 
@@ -507,6 +537,73 @@ func applyTerminalManagerStop(result *Result) {
 	applyCloseOverlay(&result.State)
 }
 
+func applySubmitPrompt(state *types.AppState, in intent.SubmitPromptIntent) {
+	promptState, ok := promptState(state)
+	if !ok {
+		return
+	}
+	value := strings.TrimSpace(in.Value)
+	if value == "" {
+		return
+	}
+	switch promptState.Kind {
+	case promptdomain.KindCreateWorkspace:
+		applyCreateWorkspace(state, value)
+	case promptdomain.KindEditTerminalMetadata:
+		// metadata prompt 的实际提交还未开始落地，这里先保留 prompt 状态不做提交。
+		return
+	default:
+		return
+	}
+}
+
+func applyCancelPrompt(state *types.AppState) {
+	if state.UI.Overlay.Kind != types.OverlayPrompt {
+		return
+	}
+	applyCloseOverlay(state)
+}
+
+// applyCreateWorkspace 为新 workspace 建立最小可工作骨架：
+// 一个默认 tab，一个未连接 terminal 的 pane，并把焦点直接落过去。
+func applyCreateWorkspace(state *types.AppState, name string) {
+	workspaceID := nextWorkspaceID(state, name)
+	tabID := types.TabID(fmt.Sprintf("%s-tab-1", workspaceID))
+	paneID := types.PaneID(fmt.Sprintf("%s-pane-1", workspaceID))
+	tab := types.TabState{
+		ID:           tabID,
+		Name:         "main",
+		ActivePaneID: paneID,
+		ActiveLayer:  types.FocusLayerTiled,
+		Panes: map[types.PaneID]types.PaneState{
+			paneID: {
+				ID:        paneID,
+				Kind:      types.PaneKindTiled,
+				SlotState: types.PaneSlotEmpty,
+			},
+		},
+		RootSplit: &types.SplitNode{PaneID: paneID},
+	}
+	state.Domain.Workspaces[workspaceID] = types.WorkspaceState{
+		ID:          workspaceID,
+		Name:        name,
+		ActiveTabID: tabID,
+		TabOrder:    []types.TabID{tabID},
+		Tabs: map[types.TabID]types.TabState{
+			tabID: tab,
+		},
+	}
+	state.Domain.WorkspaceOrder = append(state.Domain.WorkspaceOrder, workspaceID)
+	state.Domain.ActiveWorkspaceID = workspaceID
+	state.UI.Overlay = types.OverlayState{Kind: types.OverlayNone}
+	state.UI.Focus = types.FocusState{
+		Layer:       types.FocusLayerTiled,
+		WorkspaceID: workspaceID,
+		TabID:       tabID,
+		PaneID:      paneID,
+	}
+}
+
 func applyActivateMode(state *types.AppState, in intent.ActivateModeIntent) {
 	state.UI.Mode = types.ModeState{
 		Active:     in.Mode,
@@ -692,4 +789,70 @@ func findPaneTerminalID(state *types.AppState, paneID types.PaneID) types.Termin
 		}
 	}
 	return ""
+}
+
+func promptState(state *types.AppState) (*promptdomain.State, bool) {
+	if state.UI.Overlay.Kind != types.OverlayPrompt || state.UI.Overlay.Data == nil {
+		return nil, false
+	}
+	prompt, ok := state.UI.Overlay.Data.(*promptdomain.State)
+	return prompt, ok
+}
+
+func promptKindFromString(kind string) promptdomain.Kind {
+	switch kind {
+	case PromptKindEditTerminalMetadata:
+		return promptdomain.KindEditTerminalMetadata
+	default:
+		return promptdomain.KindCreateWorkspace
+	}
+}
+
+func promptTitle(kind string) string {
+	switch kind {
+	case PromptKindEditTerminalMetadata:
+		return "edit terminal metadata"
+	default:
+		return "create workspace"
+	}
+}
+
+func nextWorkspaceID(state *types.AppState, name string) types.WorkspaceID {
+	base := sanitizeID(name)
+	if base == "" {
+		base = "workspace"
+	}
+	candidate := types.WorkspaceID("ws-" + base)
+	if _, exists := state.Domain.Workspaces[candidate]; !exists {
+		return candidate
+	}
+	for index := 2; ; index++ {
+		candidate = types.WorkspaceID(fmt.Sprintf("ws-%s-%d", base, index))
+		if _, exists := state.Domain.Workspaces[candidate]; !exists {
+			return candidate
+		}
+	}
+}
+
+func sanitizeID(in string) string {
+	in = strings.TrimSpace(strings.ToLower(in))
+	var out []rune
+	lastDash := false
+	for _, r := range in {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			out = append(out, r)
+			lastDash = false
+		case r == ' ' || r == '-' || r == '_':
+			if len(out) == 0 || lastDash {
+				continue
+			}
+			out = append(out, '-')
+			lastDash = true
+		}
+	}
+	if len(out) > 0 && out[len(out)-1] == '-' {
+		out = out[:len(out)-1]
+	}
+	return string(out)
 }

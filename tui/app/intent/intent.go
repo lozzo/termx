@@ -64,6 +64,13 @@ type OpenTerminalManagerIntent struct{}
 
 func (OpenTerminalManagerIntent) intentName() string { return "open_terminal_manager" }
 
+type OpenPromptIntent struct {
+	PromptKind string
+	TerminalID types.TerminalID
+}
+
+func (OpenPromptIntent) intentName() string { return "open_prompt" }
+
 type CloseOverlayIntent struct{}
 
 func (CloseOverlayIntent) intentName() string { return "close_overlay" }
@@ -135,6 +142,16 @@ func (TerminalManagerEditMetadataIntent) intentName() string { return "terminal_
 type TerminalManagerStopIntent struct{}
 
 func (TerminalManagerStopIntent) intentName() string { return "terminal_manager_stop" }
+
+type SubmitPromptIntent struct {
+	Value string
+}
+
+func (SubmitPromptIntent) intentName() string { return "submit_prompt" }
+
+type CancelPromptIntent struct{}
+
+func (CancelPromptIntent) intentName() string { return "cancel_prompt" }
 
 type ActivateModeIntent struct {
 	Mode       types.ModeKind

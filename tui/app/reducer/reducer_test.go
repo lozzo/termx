@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/tui/app/intent"
+	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
 	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
 	"github.com/lozzow/termx/tui/domain/types"
 	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
@@ -222,6 +223,84 @@ func TestReducerWorkspacePickerSubmitCreateRowEmitsPromptEffect(t *testing.T) {
 	}
 	if effect.PromptKind != PromptKindCreateWorkspace {
 		t.Fatalf("expected create-workspace prompt kind, got %q", effect.PromptKind)
+	}
+}
+
+func TestReducerOpenPromptMovesFocusToPromptLayer(t *testing.T) {
+	reducer := New()
+	state := newAppStateWithSinglePane()
+
+	result := reducer.Reduce(state, intent.OpenPromptIntent{
+		PromptKind: PromptKindCreateWorkspace,
+	})
+
+	if result.State.UI.Overlay.Kind != types.OverlayPrompt {
+		t.Fatalf("expected prompt overlay, got %q", result.State.UI.Overlay.Kind)
+	}
+	if result.State.UI.Focus.Layer != types.FocusLayerPrompt {
+		t.Fatalf("expected prompt focus layer, got %+v", result.State.UI.Focus)
+	}
+	prompt, ok := result.State.UI.Overlay.Data.(*promptdomain.State)
+	if !ok {
+		t.Fatalf("expected prompt overlay data, got %T", result.State.UI.Overlay.Data)
+	}
+	if prompt.Kind != promptdomain.KindCreateWorkspace {
+		t.Fatalf("expected create-workspace prompt state, got %+v", prompt)
+	}
+}
+
+func TestReducerCancelPromptRestoresPreviousPaneFocus(t *testing.T) {
+	reducer := New()
+	state := newAppStateWithSinglePane()
+
+	opened := reducer.Reduce(state, intent.OpenPromptIntent{
+		PromptKind: PromptKindCreateWorkspace,
+	})
+	cancelled := reducer.Reduce(opened.State, intent.CancelPromptIntent{})
+
+	if cancelled.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected prompt overlay to close, got %q", cancelled.State.UI.Overlay.Kind)
+	}
+	if cancelled.State.UI.Focus.Layer != types.FocusLayerTiled || cancelled.State.UI.Focus.PaneID != types.PaneID("pane-1") {
+		t.Fatalf("expected focus to restore to pane, got %+v", cancelled.State.UI.Focus)
+	}
+}
+
+func TestReducerSubmitCreateWorkspacePromptCreatesWorkspaceAndFocusesNewPane(t *testing.T) {
+	reducer := New()
+	state := newAppStateWithSinglePane()
+
+	opened := reducer.Reduce(state, intent.OpenPromptIntent{
+		PromptKind: PromptKindCreateWorkspace,
+	})
+	submitted := reducer.Reduce(opened.State, intent.SubmitPromptIntent{
+		Value: "ops-center",
+	})
+
+	if submitted.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected prompt to close after submit, got %q", submitted.State.UI.Overlay.Kind)
+	}
+	if submitted.State.Domain.ActiveWorkspaceID == types.WorkspaceID("ws-1") {
+		t.Fatalf("expected active workspace to switch to newly created one")
+	}
+	createdID := submitted.State.Domain.ActiveWorkspaceID
+	workspace, ok := submitted.State.Domain.Workspaces[createdID]
+	if !ok {
+		t.Fatalf("expected new workspace in state, got %q", createdID)
+	}
+	if workspace.Name != "ops-center" {
+		t.Fatalf("expected workspace name to match prompt, got %+v", workspace)
+	}
+	if len(workspace.TabOrder) != 1 {
+		t.Fatalf("expected default tab to exist, got %+v", workspace.TabOrder)
+	}
+	tab := workspace.Tabs[workspace.ActiveTabID]
+	pane := tab.Panes[tab.ActivePaneID]
+	if pane.SlotState != types.PaneSlotEmpty || pane.TerminalID != "" {
+		t.Fatalf("expected default pane to be unconnected, got %+v", pane)
+	}
+	if submitted.State.UI.Focus.WorkspaceID != createdID || submitted.State.UI.Focus.TabID != workspace.ActiveTabID || submitted.State.UI.Focus.PaneID != tab.ActivePaneID {
+		t.Fatalf("expected focus to land on new workspace pane, got %+v", submitted.State.UI.Focus)
 	}
 }
 
@@ -489,6 +568,29 @@ func TestE2EReducerScenarioWorkspacePickerSearchesAndJumpsToPane(t *testing.T) {
 	}
 	if result.State.UI.Focus.PaneID != types.PaneID("pane-float") || result.State.UI.Focus.Layer != types.FocusLayerFloating {
 		t.Fatalf("expected focus to land on matched pane, got %+v", result.State.UI.Focus)
+	}
+}
+
+func TestE2EReducerScenarioWorkspacePickerCreateWorkspaceFlow(t *testing.T) {
+	reducer := New()
+	state := newAppStateWithSinglePane()
+
+	openedPicker := reducer.Reduce(state, intent.OpenWorkspacePickerIntent{})
+	createRow := reducer.Reduce(openedPicker.State, intent.WorkspacePickerMoveIntent{Delta: -100})
+	handoff := reducer.Reduce(createRow.State, intent.WorkspacePickerSubmitIntent{})
+	if len(handoff.Effects) != 1 {
+		t.Fatalf("expected create row to emit prompt handoff effect, got %d", len(handoff.Effects))
+	}
+	promptOpened := reducer.Reduce(handoff.State, intent.OpenPromptIntent{
+		PromptKind: PromptKindCreateWorkspace,
+	})
+	submitted := reducer.Reduce(promptOpened.State, intent.SubmitPromptIntent{Value: "ops-center"})
+
+	if submitted.State.Domain.ActiveWorkspaceID == types.WorkspaceID("ws-1") {
+		t.Fatalf("expected created workspace to become active")
+	}
+	if submitted.State.UI.Focus.Layer != types.FocusLayerTiled {
+		t.Fatalf("expected focus to land in new workspace pane, got %+v", submitted.State.UI.Focus)
 	}
 }
 
