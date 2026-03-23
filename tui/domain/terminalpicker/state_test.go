@@ -35,6 +35,21 @@ func TestPickerStateAppendQuerySelectsFirstMatchedTerminal(t *testing.T) {
 	}
 }
 
+func TestPickerStateSelectedRowCarriesCommand(t *testing.T) {
+	state := sampleDomainState()
+	picker := NewState(state, types.FocusState{})
+
+	picker.AppendQuery("build")
+
+	row, ok := picker.SelectedRow()
+	if !ok {
+		t.Fatal("expected selected row")
+	}
+	if row.Command != "tail -f build.log" {
+		t.Fatalf("expected selected row command, got %q", row.Command)
+	}
+}
+
 func TestPickerStateVisibleRowsKeepCreateRowWhenFiltering(t *testing.T) {
 	state := sampleDomainState()
 	picker := NewState(state, types.FocusState{})

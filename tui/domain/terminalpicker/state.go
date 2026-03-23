@@ -26,6 +26,7 @@ type Row struct {
 	TerminalID types.TerminalID
 	Label      string
 	State      types.TerminalRunState
+	Command    string
 	SearchText string
 }
 
@@ -175,6 +176,7 @@ func buildRows(domain types.DomainState) []Row {
 			TerminalID: terminalID,
 			Label:      label,
 			State:      terminal.State,
+			Command:    strings.Join(terminal.Command, " "),
 			SearchText: buildSearchText(domain, terminalID, terminal),
 		})
 	}

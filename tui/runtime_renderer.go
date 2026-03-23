@@ -401,6 +401,7 @@ func renderTerminalPickerLines(picker *terminalpickerdomain.State) []string {
 			fmt.Sprintf("terminal_picker_selected_label: %s", row.Label),
 			fmt.Sprintf("terminal_picker_selected_kind: %s", row.Kind),
 			fmt.Sprintf("terminal_picker_selected_state: %s", row.State),
+			fmt.Sprintf("terminal_picker_selected_command: %s", row.Command),
 		)
 	} else if terminalID, ok := picker.SelectedTerminalID(); ok {
 		lines = append(lines, fmt.Sprintf("terminal_picker_selected: %s", terminalID))
