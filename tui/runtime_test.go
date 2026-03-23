@@ -737,7 +737,7 @@ func TestE2ERunScenarioCtrlFOpensTerminalPickerInView(t *testing.T) {
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "terminal_picker_rows:") || !strings.Contains(view, "terminal_picker_query: ops") || !strings.Contains(view, "terminal_picker_selected: term-3") || !strings.Contains(view, "ops-watch") {
+			if view := current.View(); !strings.Contains(view, "terminal_picker_rows:") || !strings.Contains(view, "terminal_picker_query: ops") || !strings.Contains(view, "terminal_picker_selected: term-3") || !strings.Contains(view, "terminal_picker_selected_state: running") || !strings.Contains(view, "ops-watch") {
 				t.Fatalf("expected ctrl-f flow to render terminal picker, got:\n%s", view)
 			}
 			return nil
