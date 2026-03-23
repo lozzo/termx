@@ -598,6 +598,37 @@ func TestReducerSubmitMetadataPromptUpdatesTerminalAndEmitsEffect(t *testing.T) 
 	}
 }
 
+func TestReducerSubmitMetadataPromptWithoutOwnerKeepsPromptOpenAndEmitsNotice(t *testing.T) {
+	reducer := New()
+	state := newFollowerManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenPromptIntent{
+		PromptKind: PromptKindEditTerminalMetadata,
+		TerminalID: types.TerminalID("term-1"),
+	})
+	submitted := reducer.Reduce(opened.State, intent.SubmitPromptIntent{
+		Value: "api-dev-v2\nenv=prod",
+	})
+
+	if submitted.State.UI.Overlay.Kind != types.OverlayPrompt {
+		t.Fatalf("expected prompt to stay open without owner, got %q", submitted.State.UI.Overlay.Kind)
+	}
+	terminal := submitted.State.Domain.Terminals[types.TerminalID("term-1")]
+	if terminal.Name != "api-dev" {
+		t.Fatalf("expected terminal metadata to remain unchanged without owner, got %+v", terminal)
+	}
+	if len(submitted.Effects) != 1 {
+		t.Fatalf("expected one notice effect when owner missing, got %d", len(submitted.Effects))
+	}
+	effect, ok := submitted.Effects[0].(NoticeEffect)
+	if !ok {
+		t.Fatalf("expected notice effect, got %T", submitted.Effects[0])
+	}
+	if effect.Level != NoticeLevelError || effect.Text != "terminal metadata update requires owner; acquire owner first" {
+		t.Fatalf("unexpected notice effect payload: %+v", effect)
+	}
+}
+
 func TestReducerOpenMetadataPromptSeedsDraftFromCurrentTerminal(t *testing.T) {
 	reducer := New()
 	state := newManagerAppState()
@@ -985,6 +1016,28 @@ func TestReducerTerminalManagerEditMetadataClosesOverlayAndEmitsPrompt(t *testin
 	}
 	if effect.PromptKind != PromptKindEditTerminalMetadata || effect.TerminalID != types.TerminalID("term-2") {
 		t.Fatalf("unexpected edit prompt effect: %+v", effect)
+	}
+}
+
+func TestReducerTerminalManagerEditMetadataWithoutOwnerKeepsManagerOpenAndEmitsNotice(t *testing.T) {
+	reducer := New()
+	state := newFollowerManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	result := reducer.Reduce(opened.State, intent.TerminalManagerEditMetadataIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayTerminalManager {
+		t.Fatalf("expected manager overlay to stay open without owner, got %q", result.State.UI.Overlay.Kind)
+	}
+	if len(result.Effects) != 1 {
+		t.Fatalf("expected one notice effect, got %d", len(result.Effects))
+	}
+	effect, ok := result.Effects[0].(NoticeEffect)
+	if !ok {
+		t.Fatalf("expected notice effect, got %T", result.Effects[0])
+	}
+	if effect.Level != NoticeLevelError || effect.Text != "terminal metadata update requires owner; acquire owner first" {
+		t.Fatalf("unexpected notice effect payload: %+v", effect)
 	}
 }
 

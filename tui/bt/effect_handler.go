@@ -114,6 +114,13 @@ func (e DefaultRuntimeExecutor) Execute(effect reducer.Effect) (ExecutionResult,
 				TerminalID: effectValue.TerminalID,
 			}},
 		}, nil
+	case reducer.NoticeEffect:
+		return ExecutionResult{
+			Notices: []Notice{{
+				Level: noticeLevelFromReducer(effectValue.Level),
+				Text:  effectValue.Text,
+			}},
+		}, nil
 	default:
 		return ExecutionResult{}, nil
 	}
@@ -138,4 +145,15 @@ func cloneStringMap(in map[string]string) map[string]string {
 		out[key] = value
 	}
 	return out
+}
+
+func noticeLevelFromReducer(level string) NoticeLevel {
+	switch level {
+	case reducer.NoticeLevelInfo:
+		return NoticeLevelInfo
+	case reducer.NoticeLevelError:
+		return NoticeLevelError
+	default:
+		return NoticeLevelError
+	}
 }

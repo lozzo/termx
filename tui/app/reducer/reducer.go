@@ -73,9 +73,21 @@ type OpenPromptEffect struct {
 
 func (OpenPromptEffect) effectName() string { return "open_prompt" }
 
+type NoticeEffect struct {
+	Level string
+	Text  string
+}
+
+func (NoticeEffect) effectName() string { return "notice" }
+
 const (
 	PromptKindCreateWorkspace      = "create_workspace"
 	PromptKindEditTerminalMetadata = "edit_terminal_metadata"
+)
+
+const (
+	NoticeLevelInfo  = "info"
+	NoticeLevelError = "error"
 )
 
 type Result struct {
@@ -769,6 +781,14 @@ func applyTerminalManagerEditMetadata(result *Result) {
 	if !ok {
 		return
 	}
+	requestorPaneID := result.State.UI.Overlay.ReturnFocus.PaneID
+	if !paneCanControlTerminal(result.State, requestorPaneID, terminalID) {
+		result.Effects = append(result.Effects, NoticeEffect{
+			Level: NoticeLevelError,
+			Text:  "terminal metadata update requires owner; acquire owner first",
+		})
+		return
+	}
 	applyCloseOverlay(&result.State)
 	result.Effects = append(result.Effects, OpenPromptEffect{
 		PromptKind: PromptKindEditTerminalMetadata,
@@ -928,6 +948,13 @@ func applyUpdateTerminalMetadataFromPrompt(state *types.AppState, promptState *p
 	terminal, ok := state.Domain.Terminals[promptState.TerminalID]
 	if !ok {
 		return nil
+	}
+	requestorPaneID := state.UI.Overlay.ReturnFocus.PaneID
+	if !paneCanControlTerminal(*state, requestorPaneID, promptState.TerminalID) {
+		return []Effect{NoticeEffect{
+			Level: NoticeLevelError,
+			Text:  "terminal metadata update requires owner; acquire owner first",
+		}}
 	}
 	name, tags := parseTerminalMetadataPrompt(value, terminal)
 	terminal.Name = name
@@ -1121,6 +1148,23 @@ func refreshTerminalManagerOverlay(state *types.AppState) {
 		return
 	}
 	state.UI.Overlay.Data = manager.Reproject(state.Domain, state.UI.Overlay.ReturnFocus)
+}
+
+// paneCanControlTerminal 收口 terminal 控制面权限判断。
+// 目前规则是：只要 terminal 已有连接关系，就必须由 owner pane 执行控制动作；
+// 没有任何连接的 parked terminal 暂时允许直接更新 metadata。
+func paneCanControlTerminal(state types.AppState, paneID types.PaneID, terminalID types.TerminalID) bool {
+	if paneID == "" || terminalID == "" {
+		return false
+	}
+	conn, ok := state.Domain.Connections[terminalID]
+	if !ok || len(conn.ConnectedPaneIDs) == 0 {
+		return true
+	}
+	if conn.OwnerPaneID == "" {
+		return false
+	}
+	return conn.OwnerPaneID == paneID
 }
 
 // disconnectPaneFromCurrentTerminal 保证 pane 改连新 terminal 时，旧 terminal 的连接快照会同步清理。

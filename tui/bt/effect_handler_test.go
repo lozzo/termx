@@ -32,12 +32,12 @@ func (e *stubRuntimeExecutor) Execute(effect reducer.Effect) (ExecutionResult, e
 }
 
 type stubTerminalService struct {
-	connectCalls    []connectCall
-	createCalls     []createCall
-	stopCalls       []types.TerminalID
-	metadataCalls   []metadataCall
-	newTabCalls     []newTabCall
-	floatingCalls   []floatingCall
+	connectCalls  []connectCall
+	createCalls   []createCall
+	stopCalls     []types.TerminalID
+	metadataCalls []metadataCall
+	newTabCalls   []newTabCall
+	floatingCalls []floatingCall
 }
 
 type connectCall struct {
@@ -209,6 +209,17 @@ func TestDefaultRuntimeExecutorCallsTerminalServiceAndTranslatesOverlayEffects(t
 	}
 	if len(service.newTabCalls) != 1 || len(service.floatingCalls) != 1 {
 		t.Fatalf("expected new-tab/floating service calls, got newTab=%d floating=%d", len(service.newTabCalls), len(service.floatingCalls))
+	}
+
+	result, err = executor.Execute(reducer.NoticeEffect{
+		Level: reducer.NoticeLevelError,
+		Text:  "terminal metadata update requires owner; acquire owner first",
+	})
+	if err != nil {
+		t.Fatalf("unexpected notice effect error: %v", err)
+	}
+	if len(result.Notices) != 1 || result.Notices[0].Level != NoticeLevelError || result.Notices[0].Text != "terminal metadata update requires owner; acquire owner first" {
+		t.Fatalf("expected notice effect to translate into feedback notice, got %+v", result.Notices)
 	}
 }
 

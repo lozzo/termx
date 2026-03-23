@@ -152,6 +152,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 128. 第一百二十四轮 TDD 已补上 shared terminal 下 owner/follower 的 runtime resize 约束
 129. 第一百二十五轮 TDD 已补上 terminal manager 的 acquire owner 最小闭环
 130. 第一百二十六轮 TDD 已补上 terminal manager 跟随 runtime/domain 变化的投影刷新
+131. 第一百二十七轮 TDD 已补上 metadata 控制面的 owner 权限约束
 
 对应文档：
 
@@ -270,6 +271,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - reducer 现在会在 terminal manager 打开期间跟随 domain 变化自动重建 overlay 投影，避免 terminal state/selection/detail 陈旧
 - 已补上 reducer 测试：terminal removed 与 terminal stopped 都会刷新 terminal manager 的 selected row/detail
 - 已补上一条 runtime 场景型 E2E：terminal manager 打开时收到 runtime removed event，主视图会直接切到新的选中 terminal 详情
+- terminal metadata 现在被明确收紧到 owner 控制面：有连接关系时，只有 owner pane 可以发起或提交 metadata 更新
+- 已新增本地 `notice effect`，用于把 reducer 里的权限拒绝回流到 runtime notice，而不是静默失败
+- 已补上一条 runtime 场景型 E2E：follower pane 直接编辑 metadata 会留在 terminal manager 并显示 acquire-owner notice；获取 owner 后再编辑可正常进入 prompt
 - 已补上一条 runtime 场景型 E2E：`Ctrl-f` 打开 terminal picker 时主视图显式显示 `overlay: terminal_picker` 与 `focus_overlay_target: terminal_picker`
 - 已补上一条 runtime 场景型 E2E：workspace picker / prompt / terminal manager / terminal picker / layout resolve 关闭后主视图不再残留 `focus_overlay_target`
 - 已补上一条 runtime 场景型 E2E：terminal manager 与 layout resolve 关闭后主视图不再残留临时 `mode`
