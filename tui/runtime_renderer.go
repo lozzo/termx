@@ -246,7 +246,10 @@ func renderWorkspacePickerLines(picker *workspacedomain.PickerState) []string {
 		fmt.Sprintf("workspace_picker_query: %s", picker.Query()),
 	}
 	if node, ok := picker.SelectedNode(); ok {
-		lines = append(lines, fmt.Sprintf("workspace_picker_selected: %s", node.Key))
+		lines = append(lines,
+			fmt.Sprintf("workspace_picker_selected: %s", node.Key),
+			fmt.Sprintf("workspace_picker_selected_kind: %s", node.Kind),
+		)
 	}
 	lines = append(lines, "workspace_picker_rows:")
 	selected, hasSelection := picker.SelectedRow()
