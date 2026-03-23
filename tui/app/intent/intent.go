@@ -102,6 +102,16 @@ type TerminalManagerMoveIntent struct {
 
 func (TerminalManagerMoveIntent) intentName() string { return "terminal_manager_move" }
 
+type TerminalManagerAppendQueryIntent struct {
+	Text string
+}
+
+func (TerminalManagerAppendQueryIntent) intentName() string { return "terminal_manager_append_query" }
+
+type TerminalManagerBackspaceIntent struct{}
+
+func (TerminalManagerBackspaceIntent) intentName() string { return "terminal_manager_backspace" }
+
 type TerminalManagerConnectHereIntent struct{}
 
 func (TerminalManagerConnectHereIntent) intentName() string { return "terminal_manager_connect_here" }
@@ -117,6 +127,14 @@ type TerminalManagerConnectInFloatingPaneIntent struct{}
 func (TerminalManagerConnectInFloatingPaneIntent) intentName() string {
 	return "terminal_manager_connect_in_floating_pane"
 }
+
+type TerminalManagerEditMetadataIntent struct{}
+
+func (TerminalManagerEditMetadataIntent) intentName() string { return "terminal_manager_edit_metadata" }
+
+type TerminalManagerStopIntent struct{}
+
+func (TerminalManagerStopIntent) intentName() string { return "terminal_manager_stop" }
 
 type ActivateModeIntent struct {
 	Mode       types.ModeKind

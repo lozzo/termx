@@ -2,6 +2,8 @@ package terminalmanager
 
 import (
 	"slices"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/lozzow/termx/tui/domain/types"
 )
@@ -10,6 +12,7 @@ import (
 // 这里先只承载选择和列表投影，后续再补搜索、分组和详情面板。
 type State struct {
 	rows          []Row
+	query         string
 	selectedIndex int
 }
 
@@ -18,6 +21,7 @@ type Row struct {
 	Label      string
 	State      types.TerminalRunState
 	Visible    bool
+	SearchText string
 }
 
 func NewState(domain types.DomainState, focus types.FocusState) *State {
@@ -37,13 +41,36 @@ func (s *State) CloneOverlayData() types.OverlayData {
 	}
 	clone := &State{
 		rows:          append([]Row(nil), s.rows...),
+		query:         s.query,
 		selectedIndex: s.selectedIndex,
 	}
 	return clone
 }
 
 func (s *State) VisibleRows() []Row {
-	return append([]Row(nil), s.rows...)
+	rows := s.visibleRows()
+	return append([]Row(nil), rows...)
+}
+
+func (s *State) Query() string {
+	return s.query
+}
+
+func (s *State) AppendQuery(text string) {
+	if text == "" {
+		return
+	}
+	s.query += strings.TrimSpace(strings.ToLower(text))
+	s.resetSelectionForQuery()
+}
+
+func (s *State) BackspaceQuery() {
+	if s.query == "" {
+		return
+	}
+	_, size := utf8.DecodeLastRuneInString(s.query)
+	s.query = s.query[:len(s.query)-size]
+	s.resetSelectionForQuery()
 }
 
 func (s *State) MoveSelection(delta int) {
@@ -52,21 +79,23 @@ func (s *State) MoveSelection(delta int) {
 }
 
 func (s *State) SelectedTerminalID() (types.TerminalID, bool) {
-	if len(s.rows) == 0 {
+	rows := s.visibleRows()
+	if len(rows) == 0 {
 		return "", false
 	}
 	index := s.selectedIndex
 	if index < 0 {
 		index = 0
 	}
-	if index >= len(s.rows) {
-		index = len(s.rows) - 1
+	if index >= len(rows) {
+		index = len(rows) - 1
 	}
-	return s.rows[index].TerminalID, true
+	return rows[index].TerminalID, true
 }
 
 func (s *State) clampSelection() {
-	if len(s.rows) == 0 {
+	rows := s.visibleRows()
+	if len(rows) == 0 {
 		s.selectedIndex = 0
 		return
 	}
@@ -74,8 +103,8 @@ func (s *State) clampSelection() {
 		s.selectedIndex = 0
 		return
 	}
-	if s.selectedIndex >= len(s.rows) {
-		s.selectedIndex = len(s.rows) - 1
+	if s.selectedIndex >= len(rows) {
+		s.selectedIndex = len(rows) - 1
 	}
 }
 
@@ -104,6 +133,7 @@ func buildRows(terminals map[types.TerminalID]types.TerminalRef) []Row {
 			Label:      label,
 			State:      terminal.State,
 			Visible:    terminal.Visible,
+			SearchText: searchText(terminalID, terminal),
 		})
 	}
 	slices.SortFunc(rows, func(a, b Row) int {
@@ -123,6 +153,43 @@ func buildRows(terminals map[types.TerminalID]types.TerminalRef) []Row {
 		return 1
 	})
 	return rows
+}
+
+func (s *State) visibleRows() []Row {
+	if s.query == "" {
+		return s.rows
+	}
+	rows := make([]Row, 0, len(s.rows))
+	for _, row := range s.rows {
+		if strings.Contains(row.SearchText, s.query) {
+			rows = append(rows, row)
+		}
+	}
+	return rows
+}
+
+func (s *State) resetSelectionForQuery() {
+	if s.query == "" {
+		s.clampSelection()
+		return
+	}
+	rows := s.visibleRows()
+	if len(rows) == 0 {
+		s.selectedIndex = 0
+		return
+	}
+	s.selectedIndex = 0
+}
+
+func searchText(terminalID types.TerminalID, terminal types.TerminalRef) string {
+	parts := []string{strings.ToLower(string(terminalID)), strings.ToLower(terminal.Name)}
+	if len(terminal.Command) > 0 {
+		parts = append(parts, strings.ToLower(strings.Join(terminal.Command, " ")))
+	}
+	for key, value := range terminal.Tags {
+		parts = append(parts, strings.ToLower(key), strings.ToLower(value))
+	}
+	return strings.Join(parts, " ")
 }
 
 func focusedPaneTerminalID(domain types.DomainState, focus types.FocusState) types.TerminalID {

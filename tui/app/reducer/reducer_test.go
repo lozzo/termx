@@ -370,6 +370,76 @@ func TestReducerTerminalManagerConnectInFloatingPaneEmitsPlanningEffect(t *testi
 	}
 }
 
+func TestReducerTerminalManagerSearchMovesSelectionToMatchedTerminal(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	typed := reducer.Reduce(opened.State, intent.TerminalManagerAppendQueryIntent{Text: "ops"})
+
+	manager, ok := typed.State.UI.Overlay.Data.(*terminalmanagerdomain.State)
+	if !ok {
+		t.Fatalf("expected terminal manager overlay data, got %T", typed.State.UI.Overlay.Data)
+	}
+	if manager.Query() != "ops" {
+		t.Fatalf("expected query to update, got %q", manager.Query())
+	}
+	selected, ok := manager.SelectedTerminalID()
+	if !ok || selected != types.TerminalID("term-3") {
+		t.Fatalf("expected search to select matched terminal, got %q ok=%v", selected, ok)
+	}
+}
+
+func TestReducerTerminalManagerEditMetadataClosesOverlayAndEmitsPrompt(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	moved := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: 1})
+	result := reducer.Reduce(moved.State, intent.TerminalManagerEditMetadataIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected manager overlay to close, got %q", result.State.UI.Overlay.Kind)
+	}
+	if len(result.Effects) != 1 {
+		t.Fatalf("expected one prompt effect, got %d", len(result.Effects))
+	}
+	effect, ok := result.Effects[0].(OpenPromptEffect)
+	if !ok {
+		t.Fatalf("expected open prompt effect, got %T", result.Effects[0])
+	}
+	if effect.PromptKind != PromptKindEditTerminalMetadata || effect.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("unexpected edit prompt effect: %+v", effect)
+	}
+}
+
+func TestReducerTerminalManagerStopSelectedTerminalUpdatesStateAndEmitsEffect(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	moved := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: 1})
+	result := reducer.Reduce(moved.State, intent.TerminalManagerStopIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected manager overlay to close after stop, got %q", result.State.UI.Overlay.Kind)
+	}
+	terminal := result.State.Domain.Terminals[types.TerminalID("term-2")]
+	if terminal.State != types.TerminalRunStateStopped {
+		t.Fatalf("expected selected terminal to become stopped, got %+v", terminal)
+	}
+	if len(result.Effects) != 1 {
+		t.Fatalf("expected one stop effect, got %d", len(result.Effects))
+	}
+	effect, ok := result.Effects[0].(StopTerminalEffect)
+	if !ok {
+		t.Fatalf("expected stop effect, got %T", result.Effects[0])
+	}
+	if effect.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("unexpected stop effect payload: %+v", effect)
+	}
+}
+
 func TestE2EReducerScenarioTerminalManagerConnectsSelectedTerminalHere(t *testing.T) {
 	reducer := New()
 	state := newManagerAppState()
@@ -384,6 +454,22 @@ func TestE2EReducerScenarioTerminalManagerConnectsSelectedTerminalHere(t *testin
 	pane := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
 	if pane.TerminalID != types.TerminalID("term-2") || pane.SlotState != types.PaneSlotConnected {
 		t.Fatalf("expected pane to show selected terminal after manager flow, got %+v", pane)
+	}
+}
+
+func TestE2EReducerScenarioTerminalManagerSearchesAndStopsSelectedTerminal(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	typed := reducer.Reduce(opened.State, intent.TerminalManagerAppendQueryIntent{Text: "ops"})
+	result := reducer.Reduce(typed.State, intent.TerminalManagerStopIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected overlay to close after stop, got %q", result.State.UI.Overlay.Kind)
+	}
+	if result.State.Domain.Terminals[types.TerminalID("term-3")].State != types.TerminalRunStateStopped {
+		t.Fatalf("expected searched terminal to stop, got %+v", result.State.Domain.Terminals[types.TerminalID("term-3")])
 	}
 }
 
@@ -549,9 +635,18 @@ func newSharedTerminalAppState() types.AppState {
 func newManagerAppState() types.AppState {
 	state := newConnectedAppState()
 	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
-		ID:    types.TerminalID("term-2"),
-		Name:  "build-log",
-		State: types.TerminalRunStateRunning,
+		ID:      types.TerminalID("term-2"),
+		Name:    "build-log",
+		State:   types.TerminalRunStateRunning,
+		Command: []string{"tail", "-f", "build.log"},
+		Tags:    map[string]string{"group": "build"},
+	}
+	state.Domain.Terminals[types.TerminalID("term-3")] = types.TerminalRef{
+		ID:      types.TerminalID("term-3"),
+		Name:    "ops-watch",
+		State:   types.TerminalRunStateRunning,
+		Command: []string{"journalctl", "-f"},
+		Tags:    map[string]string{"team": "ops"},
 	}
 	return state
 }

@@ -31,6 +31,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 7. 第三轮 TDD 已补上 `overlay / mode / workspace picker navigation` 状态迁移
 8. 第四轮 TDD 已补上 `terminal manager here / new tab / floating` effect 契约和管理状态骨架
 9. 第五轮 TDD 已补上 `workspace picker query / backspace / create row prompt handoff`
+10. 第六轮 TDD 已补上 `terminal manager search / edit / stop`
 
 对应文档：
 
@@ -74,9 +75,13 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - `WorkspacePickerSubmitIntent`
 - `OpenTerminalManagerIntent`
 - `TerminalManagerMoveIntent`
+- `TerminalManagerAppendQueryIntent`
+- `TerminalManagerBackspaceIntent`
 - `TerminalManagerConnectHereIntent`
 - `TerminalManagerConnectInNewTabIntent`
 - `TerminalManagerConnectInFloatingPaneIntent`
+- `TerminalManagerEditMetadataIntent`
+- `TerminalManagerStopIntent`
 - `ActivateModeIntent`
 - `ModeTimedOutIntent`
 
@@ -101,6 +106,11 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - query 命中后会把选择移动到首个匹配节点，便于直接回车 jump
 - 选中 `+ create workspace` 回车时，reducer 已能关闭 picker 并产出 `OpenPromptEffect{create_workspace}`
 - 已补上一条 reducer 场景型 E2E：搜索后直接跳到目标 pane
+- `terminal manager` 已支持 query 追加输入和 backspace
+- `terminal manager` search 已支持匹配 terminal name / id / command / tags
+- `terminal manager` 已支持对选中 terminal 发起 metadata prompt handoff
+- `terminal manager` 已支持 stop 选中 terminal，并同步更新 reducer 内 terminal 状态
+- 已补上一条 reducer 场景型 E2E：搜索后直接 stop 目标 terminal
 
 本轮验证：
 
@@ -115,7 +125,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 当前还没有正式开始的部分：
 
-1. `terminal manager` 的 search / 分组 / details / edit / stop
+1. `terminal manager` 的分组 / details / create-new-terminal 行为
 2. `workspace picker` 的 create workspace prompt / confirm 流程完整状态机
 3. 新版 bubbletea shell
 4. 新版 renderer
@@ -128,8 +138,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 下一阶段最高优先级不是补 UI，而是先把下面几个边界立住：
 
-1. `terminal manager` 的 search / edit / stop
-2. `workspace picker` 的 create workspace prompt / submit / cancel
+1. `workspace picker` 的 create workspace prompt / submit / cancel
+2. `terminal manager` 的 details / create-new-terminal / 分组
 3. 更完整的 `intent -> reducer -> effect` 契约
 4. 新版 bubbletea shell 接口
 5. 真实 TUI E2E 场景壳
@@ -166,8 +176,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 当前最合适的下一步是：
 
-1. 补 `terminal manager` 的 search / details / edit / stop
-2. 补 `workspace picker` 的 create workspace prompt / submit / cancel
+1. 补 `workspace picker` 的 create workspace prompt / submit / cancel
+2. 补 `terminal manager` 的 details / create-new-terminal / 分组
 3. 为 reducer 补更多场景级测试
 4. 再进入 bubbletea shell 最小接线
 
@@ -175,4 +185,4 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 ## 7. 当前一句话状态
 
-termx TUI 现在已经进入“workspace picker 输入链路和 terminal manager 主动作都已落到 reducer，继续按 TDD 扩 prompt 流程与 runtime 契约”的阶段。
+termx TUI 现在已经进入“workspace picker 和 terminal manager 的核心输入动作都已落到 reducer，继续按 TDD 扩 prompt 流程、details 视图和 runtime 契约”的阶段。

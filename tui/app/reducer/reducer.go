@@ -46,12 +46,14 @@ func (ConnectTerminalInFloatingPaneEffect) effectName() string {
 
 type OpenPromptEffect struct {
 	PromptKind string
+	TerminalID types.TerminalID
 }
 
 func (OpenPromptEffect) effectName() string { return "open_prompt" }
 
 const (
-	PromptKindCreateWorkspace = "create_workspace"
+	PromptKindCreateWorkspace      = "create_workspace"
+	PromptKindEditTerminalMetadata = "edit_terminal_metadata"
 )
 
 type Result struct {
@@ -113,12 +115,20 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		result.Effects = append(result.Effects, applyWorkspacePickerSubmit(&result.State)...)
 	case intent.TerminalManagerMoveIntent:
 		applyTerminalManagerMove(&result.State, intentValue)
+	case intent.TerminalManagerAppendQueryIntent:
+		applyTerminalManagerAppendQuery(&result.State, intentValue)
+	case intent.TerminalManagerBackspaceIntent:
+		applyTerminalManagerBackspace(&result.State)
 	case intent.TerminalManagerConnectHereIntent:
 		applyTerminalManagerConnectHere(&result, intentValue)
 	case intent.TerminalManagerConnectInNewTabIntent:
 		applyTerminalManagerConnectInNewTab(&result)
 	case intent.TerminalManagerConnectInFloatingPaneIntent:
 		applyTerminalManagerConnectInFloatingPane(&result)
+	case intent.TerminalManagerEditMetadataIntent:
+		applyTerminalManagerEditMetadata(&result)
+	case intent.TerminalManagerStopIntent:
+		applyTerminalManagerStop(&result)
 	case intent.ActivateModeIntent:
 		applyActivateMode(&result.State, intentValue)
 	case intent.ModeTimedOutIntent:
@@ -395,6 +405,22 @@ func applyTerminalManagerMove(state *types.AppState, in intent.TerminalManagerMo
 	manager.MoveSelection(in.Delta)
 }
 
+func applyTerminalManagerAppendQuery(state *types.AppState, in intent.TerminalManagerAppendQueryIntent) {
+	manager, ok := terminalManager(state)
+	if !ok {
+		return
+	}
+	manager.AppendQuery(in.Text)
+}
+
+func applyTerminalManagerBackspace(state *types.AppState) {
+	manager, ok := terminalManager(state)
+	if !ok {
+		return
+	}
+	manager.BackspaceQuery()
+}
+
 func applyTerminalManagerConnectHere(result *Result, _ intent.TerminalManagerConnectHereIntent) {
 	manager, ok := terminalManager(&result.State)
 	if !ok {
@@ -448,6 +474,36 @@ func applyTerminalManagerConnectInFloatingPane(result *Result) {
 		TabID:       result.State.UI.Overlay.ReturnFocus.TabID,
 		TerminalID:  terminalID,
 	})
+	applyCloseOverlay(&result.State)
+}
+
+func applyTerminalManagerEditMetadata(result *Result) {
+	manager, ok := terminalManager(&result.State)
+	if !ok {
+		return
+	}
+	terminalID, ok := manager.SelectedTerminalID()
+	if !ok {
+		return
+	}
+	applyCloseOverlay(&result.State)
+	result.Effects = append(result.Effects, OpenPromptEffect{
+		PromptKind: PromptKindEditTerminalMetadata,
+		TerminalID: terminalID,
+	})
+}
+
+func applyTerminalManagerStop(result *Result) {
+	manager, ok := terminalManager(&result.State)
+	if !ok {
+		return
+	}
+	terminalID, ok := manager.SelectedTerminalID()
+	if !ok {
+		return
+	}
+	applyStopTerminal(&result.State, intent.StopTerminalIntent{TerminalID: terminalID})
+	result.Effects = append(result.Effects, StopTerminalEffect{TerminalID: terminalID})
 	applyCloseOverlay(&result.State)
 }
 

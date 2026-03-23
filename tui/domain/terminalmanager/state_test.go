@@ -65,6 +65,41 @@ func TestManagerStateVisibleRowsSortedByName(t *testing.T) {
 	}
 }
 
+func TestManagerStateAppendQueryFiltersRowsAndSelectsFirstMatch(t *testing.T) {
+	state := sampleDomainState()
+
+	manager := NewState(state, types.FocusState{})
+	manager.AppendQuery("gam")
+
+	if manager.Query() != "gam" {
+		t.Fatalf("expected query to append, got %q", manager.Query())
+	}
+	rows := manager.VisibleRows()
+	if len(rows) != 1 || rows[0].TerminalID != types.TerminalID("term-3") {
+		t.Fatalf("expected only gamma to remain visible, got %+v", rows)
+	}
+	selected, ok := manager.SelectedTerminalID()
+	if !ok || selected != types.TerminalID("term-3") {
+		t.Fatalf("expected selected terminal to follow first match, got %q ok=%v", selected, ok)
+	}
+}
+
+func TestManagerStateQueryMatchesTagsAndBackspaceShrinksQuery(t *testing.T) {
+	state := sampleDomainState()
+
+	manager := NewState(state, types.FocusState{})
+	manager.AppendQuery("ops")
+	rows := manager.VisibleRows()
+	if len(rows) != 1 || rows[0].TerminalID != types.TerminalID("term-3") {
+		t.Fatalf("expected tags to participate in search, got %+v", rows)
+	}
+
+	manager.BackspaceQuery()
+	if manager.Query() != "op" {
+		t.Fatalf("expected query to shrink after backspace, got %q", manager.Query())
+	}
+}
+
 func sampleDomainState() types.DomainState {
 	return types.DomainState{
 		ActiveWorkspaceID: types.WorkspaceID("ws-1"),
@@ -93,9 +128,9 @@ func sampleDomainState() types.DomainState {
 			},
 		},
 		Terminals: map[types.TerminalID]types.TerminalRef{
-			types.TerminalID("term-1"): {ID: types.TerminalID("term-1"), Name: "alpha"},
-			types.TerminalID("term-2"): {ID: types.TerminalID("term-2"), Name: "beta"},
-			types.TerminalID("term-3"): {ID: types.TerminalID("term-3"), Name: "gamma"},
+			types.TerminalID("term-1"): {ID: types.TerminalID("term-1"), Name: "alpha", Tags: map[string]string{"group": "api"}},
+			types.TerminalID("term-2"): {ID: types.TerminalID("term-2"), Name: "beta", Tags: map[string]string{"group": "build"}},
+			types.TerminalID("term-3"): {ID: types.TerminalID("term-3"), Name: "gamma", Tags: map[string]string{"team": "ops"}},
 		},
 	}
 }
