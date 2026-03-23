@@ -608,7 +608,7 @@ func TestE2ERunScenarioCtrlWOpensWorkspacePickerInView(t *testing.T) {
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "workspace_picker_rows:") || !strings.Contains(view, "[workspace] ops") {
+			if view := current.View(); !strings.Contains(view, "workspace_picker_rows:") || !strings.Contains(view, "workspace_picker_selected: ws-1/tab-1/pane-1") || !strings.Contains(view, "[workspace] ops") {
 				t.Fatalf("expected ctrl-w to open picker in view, got:\n%s", view)
 			}
 			if view := current.View(); !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: workspace_picker") || !strings.Contains(view, "tab_layer: tiled") {
