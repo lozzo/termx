@@ -119,6 +119,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 95. 第九十一轮 TDD 已补上 terminal picker 标签的 renderer 可见性闭环
 96. 第九十二轮 TDD 已补上 terminal picker 连接数量的 renderer 可见性闭环
 97. 第九十三轮 TDD 已补上 terminal manager 标签的 renderer 可见性闭环
+98. 第九十四轮 TDD 已补上 terminal manager owner 的 renderer 可见性闭环
 
 对应文档：
 
@@ -199,6 +200,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- runtime renderer 已显式展示 terminal manager 的 `terminal_manager_selected_owner`
+- terminal manager 打开后当前主视图可直接看到当前选中 terminal 的 owner 槽位
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t` 打开后主视图显示 `terminal_manager_selected_owner: pane:pane-1`
 - runtime renderer 已显式展示 terminal manager 的 `terminal_manager_selected_tags`
 - terminal manager 选择移动后当前主视图可直接看到当前选中 terminal 的标签
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图显示 `terminal_manager_selected_tags: group=build`

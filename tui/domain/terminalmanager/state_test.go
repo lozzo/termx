@@ -183,6 +183,25 @@ func TestManagerStateSelectedRowCarriesTags(t *testing.T) {
 	}
 }
 
+func TestManagerStateSelectedRowCarriesOwnerSlotLabel(t *testing.T) {
+	state := sampleDomainState()
+
+	manager := NewState(state, types.FocusState{
+		Layer:       types.FocusLayerTiled,
+		WorkspaceID: types.WorkspaceID("ws-1"),
+		TabID:       types.TabID("tab-1"),
+		PaneID:      types.PaneID("pane-1"),
+	})
+
+	row, ok := manager.SelectedRow()
+	if !ok {
+		t.Fatal("expected selected row")
+	}
+	if row.OwnerSlotLabel != "pane:pane-1" {
+		t.Fatalf("expected selected row owner slot label, got %q", row.OwnerSlotLabel)
+	}
+}
+
 func sampleDomainState() types.DomainState {
 	return types.DomainState{
 		ActiveWorkspaceID: types.WorkspaceID("ws-1"),

@@ -214,6 +214,9 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "terminal_manager_selected_command: tail -f build.log") {
 		t.Fatalf("expected manager selected terminal command in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "terminal_manager_selected_owner: ") {
+		t.Fatalf("expected manager selected terminal owner field in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "terminal_manager_selected_tags: group=build") {
 		t.Fatalf("expected manager selected terminal tags in rendered view, got:\n%s", view)
 	}
