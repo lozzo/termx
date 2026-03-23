@@ -143,6 +143,12 @@ type TerminalManagerStopIntent struct{}
 
 func (TerminalManagerStopIntent) intentName() string { return "terminal_manager_stop" }
 
+type TerminalManagerCreateTerminalIntent struct{}
+
+func (TerminalManagerCreateTerminalIntent) intentName() string {
+	return "terminal_manager_create_terminal"
+}
+
 type SubmitPromptIntent struct {
 	Value string
 }

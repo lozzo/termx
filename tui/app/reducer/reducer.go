@@ -24,6 +24,14 @@ type ConnectTerminalEffect struct {
 
 func (ConnectTerminalEffect) effectName() string { return "connect_terminal" }
 
+type CreateTerminalEffect struct {
+	PaneID  types.PaneID
+	Command []string
+	Name    string
+}
+
+func (CreateTerminalEffect) effectName() string { return "create_terminal" }
+
 type StopTerminalEffect struct {
 	TerminalID types.TerminalID
 }
@@ -142,6 +150,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyTerminalManagerEditMetadata(&result)
 	case intent.TerminalManagerStopIntent:
 		applyTerminalManagerStop(&result)
+	case intent.TerminalManagerCreateTerminalIntent:
+		applyTerminalManagerCreateTerminal(&result)
 	case intent.SubmitPromptIntent:
 		result.Effects = append(result.Effects, applySubmitPrompt(&result.State, intentValue)...)
 	case intent.CancelPromptIntent:
@@ -542,6 +552,21 @@ func applyTerminalManagerStop(result *Result) {
 	}
 	applyStopTerminal(&result.State, intent.StopTerminalIntent{TerminalID: terminalID})
 	result.Effects = append(result.Effects, StopTerminalEffect{TerminalID: terminalID})
+	applyCloseOverlay(&result.State)
+}
+
+func applyTerminalManagerCreateTerminal(result *Result) {
+	manager, ok := terminalManager(&result.State)
+	if !ok {
+		return
+	}
+	row, ok := manager.SelectedRow()
+	if !ok || row.Kind != terminalmanagerdomain.RowKindCreate {
+		return
+	}
+	result.Effects = append(result.Effects, CreateTerminalEffect{
+		PaneID: result.State.UI.Overlay.ReturnFocus.PaneID,
+	})
 	applyCloseOverlay(&result.State)
 }
 

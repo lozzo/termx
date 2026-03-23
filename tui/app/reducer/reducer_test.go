@@ -486,6 +486,29 @@ func TestReducerTerminalManagerConnectInFloatingPaneEmitsPlanningEffect(t *testi
 	}
 }
 
+func TestReducerTerminalManagerCreateNewTerminalEmitsCreateEffect(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	movedToCreate := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: -100})
+	result := reducer.Reduce(movedToCreate.State, intent.TerminalManagerCreateTerminalIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected manager overlay to close, got %q", result.State.UI.Overlay.Kind)
+	}
+	if len(result.Effects) != 1 {
+		t.Fatalf("expected one create effect, got %d", len(result.Effects))
+	}
+	effect, ok := result.Effects[0].(CreateTerminalEffect)
+	if !ok {
+		t.Fatalf("expected create terminal effect, got %T", result.Effects[0])
+	}
+	if effect.PaneID != types.PaneID("pane-1") {
+		t.Fatalf("unexpected create effect payload: %+v", effect)
+	}
+}
+
 func TestReducerTerminalManagerSearchMovesSelectionToMatchedTerminal(t *testing.T) {
 	reducer := New()
 	state := newManagerAppState()
@@ -503,6 +526,10 @@ func TestReducerTerminalManagerSearchMovesSelectionToMatchedTerminal(t *testing.
 	selected, ok := manager.SelectedTerminalID()
 	if !ok || selected != types.TerminalID("term-3") {
 		t.Fatalf("expected search to select matched terminal, got %q ok=%v", selected, ok)
+	}
+	detail, ok := manager.SelectedDetail()
+	if !ok || detail.TerminalID != types.TerminalID("term-3") {
+		t.Fatalf("expected selected detail to follow searched terminal, got %+v ok=%v", detail, ok)
 	}
 }
 
@@ -586,6 +613,22 @@ func TestE2EReducerScenarioTerminalManagerSearchesAndStopsSelectedTerminal(t *te
 	}
 	if result.State.Domain.Terminals[types.TerminalID("term-3")].State != types.TerminalRunStateStopped {
 		t.Fatalf("expected searched terminal to stop, got %+v", result.State.Domain.Terminals[types.TerminalID("term-3")])
+	}
+}
+
+func TestE2EReducerScenarioTerminalManagerCreatesNewTerminalFromCreateRow(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	createRow := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: -100})
+	result := reducer.Reduce(createRow.State, intent.TerminalManagerCreateTerminalIntent{})
+
+	if result.State.UI.Focus.Layer != types.FocusLayerTiled || result.State.UI.Focus.PaneID != types.PaneID("pane-1") {
+		t.Fatalf("expected focus to return to current pane, got %+v", result.State.UI.Focus)
+	}
+	if len(result.Effects) != 1 {
+		t.Fatalf("expected one create terminal effect, got %d", len(result.Effects))
 	}
 }
 
