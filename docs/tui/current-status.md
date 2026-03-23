@@ -127,6 +127,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 103. 第九十九轮 TDD 已补上 terminal manager detail state 的测试闭环
 104. 第一百轮 TDD 已补上 terminal manager detail command 的测试闭环
 105. 第一百零一轮 TDD 已补上 terminal manager parked detail visibility 的测试闭环
+106. 第一百零二轮 TDD 已补上 terminal manager parked detail 连接数量的测试闭环
 
 对应文档：
 
@@ -207,6 +208,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图显示 `detail_connected_panes: 0`
+- terminal manager 停放 terminal 的 detail 连接数量现在被场景测试锁住
+- parked terminal detail 的连接数不再只靠 renderer 单测兜底
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图显示 `detail_visibility: hidden`
 - terminal manager 停放 terminal 的 detail 可见性标签现在被场景测试锁住
 - parked terminal detail 的 `hidden` 标签不会再只靠 renderer 单测兜底
