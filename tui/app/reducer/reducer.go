@@ -342,6 +342,7 @@ func applyWorkspaceTreeJump(state *types.AppState, in intent.WorkspaceTreeJumpIn
 	state.Domain.Workspaces[in.WorkspaceID] = workspace
 	state.Domain.ActiveWorkspaceID = in.WorkspaceID
 	state.UI.Focus = focus
+	autoAcquireOwnerOnWorkspaceJump(state, in.WorkspaceID, in.TabID, in.PaneID)
 }
 
 func applyClosePane(state *types.AppState, in intent.ClosePaneIntent) {
@@ -1165,6 +1166,28 @@ func paneCanControlTerminal(state types.AppState, paneID types.PaneID, terminalI
 		return false
 	}
 	return conn.OwnerPaneID == paneID
+}
+
+func autoAcquireOwnerOnWorkspaceJump(state *types.AppState, workspaceID types.WorkspaceID, tabID types.TabID, paneID types.PaneID) {
+	workspace, ok := state.Domain.Workspaces[workspaceID]
+	if !ok {
+		return
+	}
+	tab, ok := workspace.Tabs[tabID]
+	if !ok || !tab.AutoAcquireOwner {
+		return
+	}
+	pane, ok := tab.Panes[paneID]
+	if !ok || pane.TerminalID == "" {
+		return
+	}
+	conn := connection.FromSnapshot(state.Domain.Connections[pane.TerminalID])
+	if !conn.Acquire(paneID) {
+		return
+	}
+	snapshot := conn.Snapshot()
+	snapshot.AutoAcquirePolicy = types.AutoAcquireTabEnter
+	state.Domain.Connections[pane.TerminalID] = snapshot
 }
 
 // disconnectPaneFromCurrentTerminal 保证 pane 改连新 terminal 时，旧 terminal 的连接快照会同步清理。

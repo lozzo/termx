@@ -259,6 +259,38 @@ func TestReducerWorkspaceTreeJumpSwitchesWorkspaceTabAndFocus(t *testing.T) {
 	}
 }
 
+func TestReducerWorkspaceTreeJumpAutoAcquireOwnerOnTabEnter(t *testing.T) {
+	reducer := New()
+	state := newWorkspaceJumpAutoAcquireState(true)
+
+	result := reducer.Reduce(state, intent.WorkspaceTreeJumpIntent{
+		WorkspaceID: types.WorkspaceID("ws-2"),
+		TabID:       types.TabID("tab-2"),
+		PaneID:      types.PaneID("pane-2"),
+	})
+
+	conn := result.State.Domain.Connections[types.TerminalID("term-1")]
+	if conn.OwnerPaneID != types.PaneID("pane-2") {
+		t.Fatalf("expected workspace jump auto-acquire to transfer owner, got %+v", conn)
+	}
+}
+
+func TestReducerWorkspaceTreeJumpWithoutAutoAcquireKeepsExistingOwner(t *testing.T) {
+	reducer := New()
+	state := newWorkspaceJumpAutoAcquireState(false)
+
+	result := reducer.Reduce(state, intent.WorkspaceTreeJumpIntent{
+		WorkspaceID: types.WorkspaceID("ws-2"),
+		TabID:       types.TabID("tab-2"),
+		PaneID:      types.PaneID("pane-2"),
+	})
+
+	conn := result.State.Domain.Connections[types.TerminalID("term-1")]
+	if conn.OwnerPaneID != types.PaneID("pane-1") {
+		t.Fatalf("expected workspace jump without auto-acquire to keep owner, got %+v", conn)
+	}
+}
+
 func TestReducerClosePaneKeepsTerminalAliveAndMigratesOwner(t *testing.T) {
 	reducer := New()
 	state := newSharedTerminalAppState()
@@ -1373,6 +1405,39 @@ func newSharedTerminalAppState() types.AppState {
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1"), types.PaneID("pane-2")},
 		OwnerPaneID:      types.PaneID("pane-1"),
 	}
+	return state
+}
+
+func newWorkspaceJumpAutoAcquireState(autoAcquire bool) types.AppState {
+	state := newSharedTerminalAppState()
+	state.Domain.WorkspaceOrder = append(state.Domain.WorkspaceOrder, types.WorkspaceID("ws-2"))
+	state.Domain.Workspaces[types.WorkspaceID("ws-2")] = types.WorkspaceState{
+		ID:          types.WorkspaceID("ws-2"),
+		Name:        "ops",
+		ActiveTabID: types.TabID("tab-2"),
+		TabOrder:    []types.TabID{types.TabID("tab-2")},
+		Tabs: map[types.TabID]types.TabState{
+			types.TabID("tab-2"): {
+				ID:               types.TabID("tab-2"),
+				Name:             "logs",
+				ActivePaneID:     types.PaneID("pane-2"),
+				ActiveLayer:      types.FocusLayerTiled,
+				AutoAcquireOwner: autoAcquire,
+				Panes: map[types.PaneID]types.PaneState{
+					types.PaneID("pane-2"): {
+						ID:         types.PaneID("pane-2"),
+						Kind:       types.PaneKindTiled,
+						SlotState:  types.PaneSlotConnected,
+						TerminalID: types.TerminalID("term-1"),
+					},
+				},
+			},
+		},
+	}
+	conn := state.Domain.Connections[types.TerminalID("term-1")]
+	conn.ConnectedPaneIDs = []types.PaneID{types.PaneID("pane-1"), types.PaneID("pane-2")}
+	conn.OwnerPaneID = types.PaneID("pane-1")
+	state.Domain.Connections[types.TerminalID("term-1")] = conn
 	return state
 }
 
