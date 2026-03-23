@@ -256,6 +256,9 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "detail_tags: group=build") {
 		t.Fatalf("expected manager detail tags in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "detail_owner: ") {
+		t.Fatalf("expected manager detail owner in rendered view, got:\n%s", view)
+	}
 }
 
 func TestRuntimeRendererRendersPromptOverlay(t *testing.T) {

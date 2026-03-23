@@ -122,6 +122,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 98. 第九十四轮 TDD 已补上 terminal manager owner 的 renderer 可见性闭环
 99. 第九十五轮 TDD 已补上 terminal manager visibility 标签的 renderer 可见性闭环
 100. 第九十六轮 TDD 已补上 terminal manager 位置数量的 renderer 可见性闭环
+101. 第九十七轮 TDD 已补上 terminal manager detail owner 的 renderer 可见性闭环
 
 对应文档：
 
@@ -202,6 +203,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- runtime renderer 已显式展示 terminal manager detail 的 `detail_owner`
+- terminal manager detail 区域现在始终保留 owner 槽位字段，即使当前 terminal 没有 owner 也能稳定观察
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t` 打开后主视图显示 `detail_owner: pane:pane-1`
 - runtime renderer 已显式展示 terminal manager 的 `terminal_manager_selected_location_count`
 - terminal manager 打开后当前主视图可直接看到当前选中 terminal 的位置数量
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t` 打开后主视图显示 `terminal_manager_selected_location_count: 1`

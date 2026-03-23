@@ -317,10 +317,8 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 			fmt.Sprintf("detail_connected_panes: %d", detail.ConnectedPaneCount),
 			fmt.Sprintf("detail_location_count: %d", len(detail.Locations)),
 			fmt.Sprintf("detail_command: %s", detail.Command),
+			fmt.Sprintf("detail_owner: %s", detail.OwnerSlotLabel),
 		)
-		if detail.OwnerSlotLabel != "" {
-			lines = append(lines, fmt.Sprintf("detail_owner: %s", detail.OwnerSlotLabel))
-		}
 		if tags := renderDetailTags(detail.Tags); tags != "" {
 			lines = append(lines, fmt.Sprintf("detail_tags: %s", tags))
 		}
