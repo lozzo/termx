@@ -110,6 +110,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 86. 第八十二轮 TDD 已补上 active terminal 可见性的 renderer 可见性闭环
 87. 第八十三轮 TDD 已补上 terminal manager detail 可见性的 renderer 可见性闭环
 88. 第八十四轮 TDD 已补上 terminal manager detail 位置数量的 renderer 可见性闭环
+89. 第八十五轮 TDD 已补上 layout resolve 选项数量的 renderer 可见性闭环
 
 对应文档：
 
@@ -190,6 +191,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- runtime renderer 已显式展示 layout resolve 的 `layout_resolve_row_count`
+- layout resolve 打开后当前主视图可直接看到可选动作数量
+- 已补上一条 runtime 场景型 E2E：waiting pane 的 resolve 选择移动后主视图显示 `layout_resolve_row_count: 3`
 - runtime renderer 已显式展示 terminal manager detail 的 `detail_location_count`
 - terminal manager 打开后当前主视图可直接看到详情 terminal 的位置数量
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t` 打开后主视图显示 `detail_location_count: 1`

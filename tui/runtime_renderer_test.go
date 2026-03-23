@@ -346,6 +346,9 @@ func TestRuntimeRendererRendersLayoutResolveOverlay(t *testing.T) {
 	if !strings.Contains(view, "layout_resolve_selected_label: create new") {
 		t.Fatalf("expected resolve selected label in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "layout_resolve_row_count: 3") {
+		t.Fatalf("expected resolve row count in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "layout_resolve_hint: env=dev service=api") {
 		t.Fatalf("expected resolve hint in rendered view, got:\n%s", view)
 	}

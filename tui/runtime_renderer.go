@@ -419,6 +419,7 @@ func renderLayoutResolveLines(resolve *layoutresolvedomain.State) []string {
 		fmt.Sprintf("layout_resolve_pane: %s", resolve.PaneID),
 		fmt.Sprintf("layout_resolve_role: %s", resolve.Role),
 		fmt.Sprintf("layout_resolve_hint: %s", resolve.Hint),
+		fmt.Sprintf("layout_resolve_row_count: %d", len(resolve.Rows())),
 	}
 	if row, ok := resolve.SelectedRow(); ok {
 		lines = append(lines,
