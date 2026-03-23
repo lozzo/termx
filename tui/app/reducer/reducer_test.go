@@ -6,8 +6,8 @@ import (
 
 	"github.com/lozzow/termx/tui/app/intent"
 	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
-	terminalpickerdomain "github.com/lozzow/termx/tui/domain/terminalpicker"
 	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
+	terminalpickerdomain "github.com/lozzow/termx/tui/domain/terminalpicker"
 	"github.com/lozzow/termx/tui/domain/types"
 	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
 )
@@ -88,6 +88,71 @@ func TestReducerTerminalRemovedClearsPaneAndTerminalState(t *testing.T) {
 	}
 	if _, ok := result.State.Domain.Connections[types.TerminalID("term-1")]; ok {
 		t.Fatalf("expected removed terminal connection to disappear")
+	}
+}
+
+func TestReducerSyncTerminalStateStoppedClearsPaneConnection(t *testing.T) {
+	reducer := New()
+	state := newConnectedAppState()
+
+	result := reducer.Reduce(state, intent.SyncTerminalStateIntent{
+		TerminalID: types.TerminalID("term-1"),
+		State:      types.TerminalRunStateStopped,
+	})
+
+	pane := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
+	if pane.TerminalID != "" || pane.SlotState != types.PaneSlotEmpty {
+		t.Fatalf("expected stopped terminal pane to become empty, got %+v", pane)
+	}
+	terminal := result.State.Domain.Terminals[types.TerminalID("term-1")]
+	if terminal.State != types.TerminalRunStateStopped {
+		t.Fatalf("expected terminal state stopped, got %+v", terminal)
+	}
+	if _, ok := result.State.Domain.Connections[types.TerminalID("term-1")]; ok {
+		t.Fatalf("expected stopped terminal connection to disappear")
+	}
+}
+
+func TestReducerSyncTerminalStateRunningClearsExitCodeOnly(t *testing.T) {
+	reducer := New()
+	state := newConnectedAppState()
+	exitCode := 7
+	terminal := state.Domain.Terminals[types.TerminalID("term-1")]
+	terminal.State = types.TerminalRunStateExited
+	terminal.ExitCode = &exitCode
+	state.Domain.Terminals[types.TerminalID("term-1")] = terminal
+
+	result := reducer.Reduce(state, intent.SyncTerminalStateIntent{
+		TerminalID: types.TerminalID("term-1"),
+		State:      types.TerminalRunStateRunning,
+	})
+
+	pane := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
+	if pane.TerminalID != types.TerminalID("term-1") || pane.SlotState != types.PaneSlotConnected {
+		t.Fatalf("expected running sync to keep pane connected, got %+v", pane)
+	}
+	terminal = result.State.Domain.Terminals[types.TerminalID("term-1")]
+	if terminal.State != types.TerminalRunStateRunning || terminal.ExitCode != nil {
+		t.Fatalf("expected terminal to return running without exit code, got %+v", terminal)
+	}
+}
+
+func TestReducerSyncTerminalStateExitedWithoutExitCodeKeepsExitedPane(t *testing.T) {
+	reducer := New()
+	state := newConnectedAppState()
+
+	result := reducer.Reduce(state, intent.SyncTerminalStateIntent{
+		TerminalID: types.TerminalID("term-1"),
+		State:      types.TerminalRunStateExited,
+	})
+
+	pane := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
+	if pane.SlotState != types.PaneSlotExited || pane.LastExitCode != nil {
+		t.Fatalf("expected exited pane without exit code to keep history but no code, got %+v", pane)
+	}
+	terminal := result.State.Domain.Terminals[types.TerminalID("term-1")]
+	if terminal.State != types.TerminalRunStateExited || terminal.ExitCode != nil {
+		t.Fatalf("expected terminal exited without exit code, got %+v", terminal)
 	}
 }
 

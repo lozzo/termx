@@ -48,6 +48,14 @@ type TerminalRemovedIntent struct {
 
 func (TerminalRemovedIntent) intentName() string { return "terminal_removed" }
 
+type SyncTerminalStateIntent struct {
+	TerminalID types.TerminalID
+	State      types.TerminalRunState
+	ExitCode   *int
+}
+
+func (SyncTerminalStateIntent) intentName() string { return "sync_terminal_state" }
+
 type WorkspaceTreeJumpIntent struct {
 	WorkspaceID types.WorkspaceID
 	TabID       types.TabID

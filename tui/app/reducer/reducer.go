@@ -113,6 +113,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		})
 	case intent.TerminalProgramExitedIntent:
 		applyProgramExited(&result.State, intentValue)
+	case intent.SyncTerminalStateIntent:
+		applySyncTerminalState(&result.State, intentValue)
 	case intent.TerminalRemovedIntent:
 		applyTerminalRemoved(&result.State, intentValue)
 	case intent.WorkspaceTreeJumpIntent:
@@ -240,6 +242,42 @@ func applyProgramExited(state *types.AppState, in intent.TerminalProgramExitedIn
 	terminal.State = types.TerminalRunStateExited
 	terminal.ExitCode = &exitCode
 	state.Domain.Terminals[in.TerminalID] = terminal
+}
+
+func applySyncTerminalState(state *types.AppState, in intent.SyncTerminalStateIntent) {
+	switch in.State {
+	case types.TerminalRunStateRunning:
+		terminal := state.Domain.Terminals[in.TerminalID]
+		terminal.State = types.TerminalRunStateRunning
+		terminal.ExitCode = nil
+		state.Domain.Terminals[in.TerminalID] = terminal
+	case types.TerminalRunStateStopped:
+		forEachPane(state, func(pane *types.PaneState) {
+			if pane.TerminalID != in.TerminalID {
+				return
+			}
+			pane.TerminalID = ""
+			pane.SlotState = types.PaneSlotEmpty
+			pane.LastExitCode = nil
+		})
+		terminal := state.Domain.Terminals[in.TerminalID]
+		terminal.State = types.TerminalRunStateStopped
+		terminal.ExitCode = nil
+		state.Domain.Terminals[in.TerminalID] = terminal
+		delete(state.Domain.Connections, in.TerminalID)
+	case types.TerminalRunStateExited:
+		forEachPane(state, func(pane *types.PaneState) {
+			if pane.TerminalID != in.TerminalID {
+				return
+			}
+			pane.SlotState = types.PaneSlotExited
+			pane.LastExitCode = cloneIntPointer(in.ExitCode)
+		})
+		terminal := state.Domain.Terminals[in.TerminalID]
+		terminal.State = types.TerminalRunStateExited
+		terminal.ExitCode = cloneIntPointer(in.ExitCode)
+		state.Domain.Terminals[in.TerminalID] = terminal
+	}
 }
 
 func applyTerminalRemoved(state *types.AppState, in intent.TerminalRemovedIntent) {
@@ -1270,4 +1308,12 @@ func defaultCreateTerminalName(focus types.FocusState) string {
 		string(focus.TabID),
 		string(focus.PaneID),
 	}, "-")
+}
+
+func cloneIntPointer(in *int) *int {
+	if in == nil {
+		return nil
+	}
+	value := *in
+	return &value
 }

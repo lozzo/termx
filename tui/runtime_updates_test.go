@@ -9,8 +9,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
-	btui "github.com/lozzow/termx/tui/bt"
 	"github.com/lozzow/termx/tui/app/intent"
+	btui "github.com/lozzow/termx/tui/bt"
 	"github.com/lozzow/termx/tui/domain/types"
 )
 
@@ -313,6 +313,123 @@ func TestRuntimeUpdateHandlerStateChangedExitedFeedsProgramExitedIntent(t *testi
 	}
 	if exitIntent.TerminalID != types.TerminalID("term-1") || exitIntent.ExitCode != 13 {
 		t.Fatalf("unexpected exit intent payload: %+v", exitIntent)
+	}
+}
+
+func TestRuntimeUpdateHandlerStateChangedStoppedFeedsSyncStateIntent(t *testing.T) {
+	store := NewRuntimeTerminalStore(RuntimeSessions{})
+	events := make(chan protocol.Event, 1)
+	events <- protocol.Event{
+		Type:       protocol.EventTerminalStateChanged,
+		TerminalID: "term-1",
+		StateChanged: &protocol.TerminalStateChangedData{
+			OldState: "running",
+			NewState: "stopped",
+		},
+	}
+	handler := NewRuntimeUpdateHandler(RuntimeSessions{EventStream: events}, store, nil)
+	defer handler.Stop()
+
+	msg := handler.InitCmd()()
+	handled, cmd := handler.HandleMessage(newAppStateForRuntimeUpdate(), msg)
+	if !handled || cmd == nil {
+		t.Fatalf("expected stopped state change to be handled with feedback cmd, handled=%v cmd=%v", handled, cmd)
+	}
+	msgs := runCmdMessages(cmd)
+	if len(msgs) != 1 {
+		t.Fatalf("expected one feedback msg, got %#v", msgs)
+	}
+	feedback, ok := msgs[0].(btui.FeedbackMsg)
+	if !ok {
+		t.Fatalf("expected feedback msg, got %#v", msgs[0])
+	}
+	if len(feedback.Intents) != 1 {
+		t.Fatalf("expected one sync state intent, got %+v", feedback.Intents)
+	}
+	syncIntent, ok := feedback.Intents[0].(intent.SyncTerminalStateIntent)
+	if !ok {
+		t.Fatalf("expected SyncTerminalStateIntent, got %T", feedback.Intents[0])
+	}
+	if syncIntent.TerminalID != types.TerminalID("term-1") || syncIntent.State != types.TerminalRunStateStopped || syncIntent.ExitCode != nil {
+		t.Fatalf("unexpected sync state payload: %+v", syncIntent)
+	}
+}
+
+func TestRuntimeUpdateHandlerStateChangedRunningFeedsSyncStateIntent(t *testing.T) {
+	store := NewRuntimeTerminalStore(RuntimeSessions{})
+	events := make(chan protocol.Event, 1)
+	events <- protocol.Event{
+		Type:       protocol.EventTerminalStateChanged,
+		TerminalID: "term-1",
+		StateChanged: &protocol.TerminalStateChangedData{
+			OldState: "stopped",
+			NewState: "running",
+		},
+	}
+	handler := NewRuntimeUpdateHandler(RuntimeSessions{EventStream: events}, store, nil)
+	defer handler.Stop()
+
+	msg := handler.InitCmd()()
+	handled, cmd := handler.HandleMessage(newAppStateForRuntimeUpdate(), msg)
+	if !handled || cmd == nil {
+		t.Fatalf("expected running state change to be handled with feedback cmd, handled=%v cmd=%v", handled, cmd)
+	}
+	msgs := runCmdMessages(cmd)
+	if len(msgs) != 1 {
+		t.Fatalf("expected one feedback msg, got %#v", msgs)
+	}
+	feedback, ok := msgs[0].(btui.FeedbackMsg)
+	if !ok {
+		t.Fatalf("expected feedback msg, got %#v", msgs[0])
+	}
+	if len(feedback.Intents) != 1 {
+		t.Fatalf("expected one sync state intent, got %+v", feedback.Intents)
+	}
+	syncIntent, ok := feedback.Intents[0].(intent.SyncTerminalStateIntent)
+	if !ok {
+		t.Fatalf("expected SyncTerminalStateIntent, got %T", feedback.Intents[0])
+	}
+	if syncIntent.TerminalID != types.TerminalID("term-1") || syncIntent.State != types.TerminalRunStateRunning || syncIntent.ExitCode != nil {
+		t.Fatalf("unexpected sync state payload: %+v", syncIntent)
+	}
+}
+
+func TestRuntimeUpdateHandlerStateChangedExitedWithoutCodeFeedsSyncStateIntent(t *testing.T) {
+	store := NewRuntimeTerminalStore(RuntimeSessions{})
+	events := make(chan protocol.Event, 1)
+	events <- protocol.Event{
+		Type:       protocol.EventTerminalStateChanged,
+		TerminalID: "term-1",
+		StateChanged: &protocol.TerminalStateChangedData{
+			OldState: "running",
+			NewState: "exited",
+		},
+	}
+	handler := NewRuntimeUpdateHandler(RuntimeSessions{EventStream: events}, store, nil)
+	defer handler.Stop()
+
+	msg := handler.InitCmd()()
+	handled, cmd := handler.HandleMessage(newAppStateForRuntimeUpdate(), msg)
+	if !handled || cmd == nil {
+		t.Fatalf("expected exited-without-code state change to be handled with feedback cmd, handled=%v cmd=%v", handled, cmd)
+	}
+	msgs := runCmdMessages(cmd)
+	if len(msgs) != 1 {
+		t.Fatalf("expected one feedback msg, got %#v", msgs)
+	}
+	feedback, ok := msgs[0].(btui.FeedbackMsg)
+	if !ok {
+		t.Fatalf("expected feedback msg, got %#v", msgs[0])
+	}
+	if len(feedback.Intents) != 1 {
+		t.Fatalf("expected one sync state intent, got %+v", feedback.Intents)
+	}
+	syncIntent, ok := feedback.Intents[0].(intent.SyncTerminalStateIntent)
+	if !ok {
+		t.Fatalf("expected SyncTerminalStateIntent, got %T", feedback.Intents[0])
+	}
+	if syncIntent.TerminalID != types.TerminalID("term-1") || syncIntent.State != types.TerminalRunStateExited || syncIntent.ExitCode != nil {
+		t.Fatalf("unexpected sync state payload: %+v", syncIntent)
 	}
 }
 

@@ -259,6 +259,23 @@ func runtimeEventIntents(evt protocol.Event) []intent.Intent {
 				ExitCode:   *evt.StateChanged.ExitCode,
 			}}
 		}
+		switch evt.StateChanged.NewState {
+		case string(types.TerminalRunStateRunning):
+			return []intent.Intent{intent.SyncTerminalStateIntent{
+				TerminalID: terminalID,
+				State:      types.TerminalRunStateRunning,
+			}}
+		case string(types.TerminalRunStateStopped):
+			return []intent.Intent{intent.SyncTerminalStateIntent{
+				TerminalID: terminalID,
+				State:      types.TerminalRunStateStopped,
+			}}
+		case string(types.TerminalRunStateExited):
+			return []intent.Intent{intent.SyncTerminalStateIntent{
+				TerminalID: terminalID,
+				State:      types.TerminalRunStateExited,
+			}}
+		}
 	case protocol.EventTerminalRemoved:
 		return []intent.Intent{intent.TerminalRemovedIntent{
 			TerminalID: terminalID,

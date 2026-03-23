@@ -311,6 +311,75 @@ func TestE2ERunScenarioClosedFrameFeedsReducerAndMarksPaneExited(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioStateChangedStoppedFeedsReducerAndClearsPane(t *testing.T) {
+	events := make(chan protocol.Event, 1)
+	client := &stubRunClient{}
+	planner := &stubRunPlanner{plan: StartupPlan{State: connectedRunAppState()}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: connectedRunAppState()}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			EventStream: events,
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Channel:    21,
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 4, Rows: 1},
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{{{Content: "h"}, {Content: "i"}}},
+						},
+						Cursor: protocol.CursorState{Row: 0, Col: 2, Visible: true},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			initCmd := model.Init()
+			if initCmd == nil {
+				t.Fatal("expected runtime init command")
+			}
+			events <- protocol.Event{
+				Type:       protocol.EventTerminalStateChanged,
+				TerminalID: "term-1",
+				StateChanged: &protocol.TerminalStateChangedData{
+					OldState: "running",
+					NewState: "stopped",
+				},
+			}
+			msg := initCmd()
+			if msg == nil {
+				t.Fatal("expected runtime state-changed message")
+			}
+			_, cmd := model.Update(msg)
+			for _, nextMsg := range runCmdMessages(cmd) {
+				_, _ = model.Update(nextMsg)
+			}
+			if view := model.View(); !strings.Contains(view, "slot: empty") {
+				t.Fatalf("expected runtime view to clear stopped pane, got:\n%s", view)
+			}
+			pane := model.State().Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
+			if pane.TerminalID != "" {
+				t.Fatalf("expected reducer to clear pane terminal, got %+v", pane)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 var (
 	errRuntimeRunBoom     = errors.New("run boom")
 	bootstrapperStopCalls int
