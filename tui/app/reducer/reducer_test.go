@@ -1100,6 +1100,32 @@ func TestReducerTerminalManagerStopSelectedTerminalUpdatesStateAndEmitsEffect(t 
 	}
 }
 
+func TestReducerTerminalManagerStopWithoutOwnerKeepsManagerOpenAndEmitsNotice(t *testing.T) {
+	reducer := New()
+	state := newFollowerManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	result := reducer.Reduce(opened.State, intent.TerminalManagerStopIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayTerminalManager {
+		t.Fatalf("expected manager overlay to stay open without owner, got %q", result.State.UI.Overlay.Kind)
+	}
+	if len(result.Effects) != 1 {
+		t.Fatalf("expected one notice effect, got %d", len(result.Effects))
+	}
+	effect, ok := result.Effects[0].(NoticeEffect)
+	if !ok {
+		t.Fatalf("expected notice effect, got %T", result.Effects[0])
+	}
+	if effect.Level != NoticeLevelError || effect.Text != "stop terminal requires owner; acquire owner first" {
+		t.Fatalf("unexpected stop notice effect payload: %+v", effect)
+	}
+	conn := result.State.Domain.Connections[types.TerminalID("term-1")]
+	if conn.OwnerPaneID != types.PaneID("pane-1") {
+		t.Fatalf("expected owner to stay unchanged without permission, got %+v", conn)
+	}
+}
+
 func TestE2EReducerScenarioTerminalManagerConnectsSelectedTerminalHere(t *testing.T) {
 	reducer := New()
 	state := newManagerAppState()

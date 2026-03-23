@@ -2084,6 +2084,106 @@ func TestE2ERunScenarioTerminalManagerStopClosesOverlayAndClearsPane(t *testing.
 	}
 }
 
+func TestE2ERunScenarioFollowerTerminalManagerStopShowsOwnerNotice(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithFollowerActivePane()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			current := model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyRunes, Runes: []rune("k")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: terminal_manager") || !strings.Contains(view, "notices:") || !strings.Contains(view, "stop terminal requires owner; acquire owner first") {
+				t.Fatalf("expected follower stop to stay in manager and show owner notice, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected follower stop gating scenario to succeed, got %v", err)
+	}
+	if len(client.killCalls) != 0 {
+		t.Fatalf("expected no kill call without owner, got %+v", client.killCalls)
+	}
+}
+
+func TestE2ERunScenarioFollowerAcquireOwnerThenStopSharedTerminal(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithFollowerActivePane()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			current := model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyRunes, Runes: []rune("a")},
+				{Type: tea.KeyRunes, Runes: []rune("k")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "slot: empty") || strings.Contains(view, "terminal_manager_rows:") {
+				t.Fatalf("expected acquire owner then stop flow to close overlay and clear active pane, got:\n%s", view)
+			}
+			state := current.State()
+			if _, ok := state.Domain.Connections[types.TerminalID("term-1")]; ok {
+				t.Fatalf("expected shared terminal connection to be removed after stop")
+			}
+			ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+			tab := ws.Tabs[types.TabID("tab-1")]
+			if tab.Panes[types.PaneID("pane-1")].SlotState != types.PaneSlotEmpty || tab.Panes[types.PaneID("pane-2")].SlotState != types.PaneSlotEmpty {
+				t.Fatalf("expected all connected panes to become empty after stop, got pane-1=%+v pane-2=%+v", tab.Panes[types.PaneID("pane-1")], tab.Panes[types.PaneID("pane-2")])
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected acquire owner then stop scenario to succeed, got %v", err)
+	}
+	if len(client.killCalls) != 1 || client.killCalls[0] != "term-1" {
+		t.Fatalf("expected one kill call for shared terminal after owner acquire, got %+v", client.killCalls)
+	}
+}
+
 func TestE2ERunScenarioTerminalManagerStopFailureShowsNoticeInView(t *testing.T) {
 	client := &stubRunClient{killErr: errRuntimeEffectBoom}
 	initial := runtimeStateWithTerminalManagerTargets()

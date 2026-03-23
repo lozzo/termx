@@ -824,6 +824,14 @@ func applyTerminalManagerStop(result *Result) {
 	if !ok {
 		return
 	}
+	requestorPaneID := result.State.UI.Overlay.ReturnFocus.PaneID
+	if !paneCanControlTerminal(result.State, requestorPaneID, terminalID) {
+		result.Effects = append(result.Effects, NoticeEffect{
+			Level: NoticeLevelError,
+			Text:  "stop terminal requires owner; acquire owner first",
+		})
+		return
+	}
 	applyStopTerminal(&result.State, intent.StopTerminalIntent{TerminalID: terminalID})
 	result.Effects = append(result.Effects, StopTerminalEffect{TerminalID: terminalID})
 	applyCloseOverlay(&result.State)
