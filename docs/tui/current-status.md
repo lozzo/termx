@@ -41,6 +41,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 17. 第十三轮 TDD 已补上 `create terminal` 的默认参数策略
 18. 第十四轮 TDD 已补上 `prompt` 的结构化字段模型
 19. 第十五轮 TDD 已补上 `prompt` 的反向字段切换和深拷贝语义
+20. 第十六轮 TDD 已补上最小 bubbletea 输入映射层
 
 对应文档：
 
@@ -61,6 +62,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - `tui/domain/terminalmanager`
 - `tui/app/intent`
 - `tui/app/reducer`
+- `tui/bt`
 - `tui/runtime.go`
 - `tui/client.go`
 
@@ -169,9 +171,17 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - `prompt overlay` clone 已改为深拷贝字段切片，避免 reducer 纯状态克隆时共享底层字段数据
 - 已补上一条 reducer 测试覆盖 metadata prompt 的反向字段切换
 - 已补上一条 prompt 单元测试覆盖结构化字段深拷贝
+- 已新增 `tui/bt` 输入映射层，负责把 `bubbletea.KeyMsg` 翻译成显式 intent
+- 根层已支持最小主入口映射：`Ctrl-w -> workspace picker`，`Ctrl-g` 进入 global 前缀，随后 `t -> terminal manager`
+- `workspace picker` 已接上键盘映射：移动、展开、折叠、提交、关闭、query 输入
+- `terminal manager` 已接上最小键盘映射：移动、query 输入、connect here、关闭
+- `prompt` 已接上键盘映射：输入、回退、提交、取消、`Tab/Shift-Tab` 字段切换
+- 已补上一条跨层场景型 E2E：`KeyMsg -> intent mapper -> reducer -> workspace picker jump`
 
 本轮验证：
 
+- `go test ./tui/bt -count=1`
+- `go test ./tui/bt -run TestE2EIntentMapperScenario -count=1`
 - `go test ./tui/domain/prompt ./tui/app/reducer -count=1`
 - `go test ./tui/app/reducer -run TestE2EReducerScenario -count=1`
 - `go test ./tui/domain/terminalmanager ./tui/app/reducer -count=1`
@@ -185,12 +195,10 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 当前还没有正式开始的部分：
 
-1. bubbletea shell 最小接线
-2. prompt 字段导航补全
-3. 新版 bubbletea shell
-4. 新版 renderer
-5. 新版 terminal picker / restore 流程
-6. 新主线真实 TUI E2E 回迁
+1. 新版 bubbletea shell 容器
+2. 新版 renderer
+3. 新版 terminal picker / restore 流程
+4. 新主线真实 TUI E2E 回迁
 
 ---
 
@@ -198,11 +206,10 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 下一阶段最高优先级不是补 UI，而是先把下面几个边界立住：
 
-1. bubbletea shell 最小接线
-2. prompt 字段导航补全
-3. 更完整的 `intent -> reducer -> effect` 契约
-4. 新版 bubbletea shell 接口
-5. 真实 TUI E2E 场景壳
+1. 更完整的 `intent -> reducer -> effect` 契约
+2. 新版 bubbletea shell 容器
+3. 真实 TUI E2E 场景壳
+4. terminal picker / restore 流程
 
 原因：
 
@@ -236,12 +243,12 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 当前最合适的下一步是：
 
-1. 补 prompt 字段导航补全
-2. 为 reducer 补更多场景级测试
-3. 补 bubbletea shell 最小接线
+1. 补 bubbletea shell 容器
+2. 为输入层补 `terminal manager` 动作键映射与回归测试
+3. 继续扩真实 TUI E2E 场景壳
 
 ---
 
 ## 7. 当前一句话状态
 
-termx TUI 现在已经进入“picker / manager / prompt 三条主状态机已打通核心提交路径，结构化 prompt 字段模型也已成形，继续按 TDD 扩字段导航、shell 接线和 runtime 契约”的阶段。
+termx TUI 现在已经进入“picker / manager / prompt 三条主状态机已打通核心提交路径，最小 bubbletea 输入映射层也已落地，下一步继续按 TDD 补 shell 容器、runtime 契约和真实 TUI E2E 壳”的阶段。
