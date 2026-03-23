@@ -40,6 +40,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 16. 第十二轮 TDD 已补上 `terminal manager details` 的 `visibility / owner / tags` 投影
 17. 第十三轮 TDD 已补上 `create terminal` 的默认参数策略
 18. 第十四轮 TDD 已补上 `prompt` 的结构化字段模型
+19. 第十五轮 TDD 已补上 `prompt` 的反向字段切换和深拷贝语义
 
 对应文档：
 
@@ -98,6 +99,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - `PromptAppendInputIntent`
 - `PromptBackspaceIntent`
 - `PromptNextFieldIntent`
+- `PromptPreviousFieldIntent`
 - `ActivateModeIntent`
 - `ModeTimedOutIntent`
 
@@ -161,12 +163,17 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - `prompt` 已支持结构化字段模型
 - metadata prompt 已拆成 `name / tags` 两个字段
 - `PromptNextFieldIntent` 已能在结构化字段间切换焦点
+- `PromptPreviousFieldIntent` 已能在结构化字段间反向切换焦点
 - prompt 输入现在优先写入当前字段，`SubmitPromptIntent` 可直接从字段模型生成提交值
 - 已补上一条 reducer 测试覆盖 metadata prompt 的字段切换与结构化提交
+- `prompt overlay` clone 已改为深拷贝字段切片，避免 reducer 纯状态克隆时共享底层字段数据
+- 已补上一条 reducer 测试覆盖 metadata prompt 的反向字段切换
+- 已补上一条 prompt 单元测试覆盖结构化字段深拷贝
 
 本轮验证：
 
 - `go test ./tui/domain/prompt ./tui/app/reducer -count=1`
+- `go test ./tui/app/reducer -run TestE2EReducerScenario -count=1`
 - `go test ./tui/domain/terminalmanager ./tui/app/reducer -count=1`
 - `go test ./tui/domain/workspace ./tui/app/reducer -count=1`
 - `go test ./tui/... -count=1`

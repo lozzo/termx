@@ -411,6 +411,28 @@ func TestReducerMetadataPromptStructuredInputSwitchesFieldAndSubmits(t *testing.
 	}
 }
 
+func TestReducerMetadataPromptPreviousFieldReturnsFocusToNameField(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenPromptIntent{
+		PromptKind: PromptKindEditTerminalMetadata,
+		TerminalID: types.TerminalID("term-2"),
+	})
+	switched := reducer.Reduce(opened.State, intent.PromptNextFieldIntent{})
+	returned := reducer.Reduce(switched.State, intent.PromptPreviousFieldIntent{})
+	edited := reducer.Reduce(returned.State, intent.PromptAppendInputIntent{Text: "-v3"})
+	submitted := reducer.Reduce(edited.State, intent.SubmitPromptIntent{})
+
+	terminal := submitted.State.Domain.Terminals[types.TerminalID("term-2")]
+	if terminal.Name != "build-log-v3" {
+		t.Fatalf("expected previous field to return focus to name, got %+v", terminal)
+	}
+	if terminal.Tags["group"] != "build" {
+		t.Fatalf("expected tags to remain unchanged, got %+v", terminal.Tags)
+	}
+}
+
 func TestReducerModeTimedOutClearsActiveMode(t *testing.T) {
 	reducer := New()
 	state := newAppStateWithSinglePane()

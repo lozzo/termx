@@ -23,6 +23,26 @@ func TestPromptStateImplementsOverlayClone(t *testing.T) {
 	}
 }
 
+func TestPromptStateCloneCopiesStructuredFields(t *testing.T) {
+	state := State{
+		Kind: KindEditTerminalMetadata,
+		Fields: []Field{
+			{Key: "name", Value: "build-log"},
+			{Key: "tags", Value: "group=build"},
+		},
+	}
+
+	cloned, ok := state.CloneOverlayData().(*State)
+	if !ok {
+		t.Fatalf("expected cloned prompt state, got %T", state.CloneOverlayData())
+	}
+	cloned.Fields[0].Value = "changed"
+
+	if state.Fields[0].Value != "build-log" {
+		t.Fatalf("expected clone to deep copy fields, got original %+v", state.Fields)
+	}
+}
+
 func TestPromptStateAppendAndBackspaceDraft(t *testing.T) {
 	state := State{Kind: KindCreateWorkspace}
 
@@ -63,6 +83,28 @@ func TestPromptStateStructuredFieldsAppendSwitchAndBackspace(t *testing.T) {
 	state.BackspaceInput()
 	if state.Fields[1].Value != "group=build,env=pro" {
 		t.Fatalf("expected backspace on second field, got %+v", state.Fields)
+	}
+}
+
+func TestPromptStatePreviousFieldWrapsBackToLastField(t *testing.T) {
+	state := State{
+		Kind: KindEditTerminalMetadata,
+		Fields: []Field{
+			{Key: "name", Value: "build-log"},
+			{Key: "tags", Value: "group=build"},
+		},
+	}
+
+	if !state.PreviousField() {
+		t.Fatalf("expected previous field to switch focus")
+	}
+	state.AppendInput(",env=prod")
+
+	if state.Active != 1 {
+		t.Fatalf("expected active field to wrap to last, got %d", state.Active)
+	}
+	if state.Fields[1].Value != "group=build,env=prod" {
+		t.Fatalf("expected append on wrapped field, got %+v", state.Fields)
 	}
 }
 

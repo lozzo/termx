@@ -173,6 +173,10 @@ type PromptNextFieldIntent struct{}
 
 func (PromptNextFieldIntent) intentName() string { return "prompt_next_field" }
 
+type PromptPreviousFieldIntent struct{}
+
+func (PromptPreviousFieldIntent) intentName() string { return "prompt_previous_field" }
+
 type ActivateModeIntent struct {
 	Mode       types.ModeKind
 	Sticky     bool

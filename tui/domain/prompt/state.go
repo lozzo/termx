@@ -39,6 +39,9 @@ func (s *State) CloneOverlayData() types.OverlayData {
 		return nil
 	}
 	clone := *s
+	if len(s.Fields) > 0 {
+		clone.Fields = append([]Field(nil), s.Fields...)
+	}
 	return &clone
 }
 
@@ -78,6 +81,15 @@ func (s *State) NextField() bool {
 		return false
 	}
 	s.Active = (s.activeIndex() + 1) % len(s.Fields)
+	return true
+}
+
+func (s *State) PreviousField() bool {
+	if s == nil || len(s.Fields) < 2 {
+		return false
+	}
+	// 结构化 prompt 需要支持双向切换字段，这样 shell 层只管把按键翻译成 intent。
+	s.Active = (s.activeIndex() - 1 + len(s.Fields)) % len(s.Fields)
 	return true
 }
 
