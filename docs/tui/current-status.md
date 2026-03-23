@@ -129,6 +129,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 105. 第一百零一轮 TDD 已补上 terminal manager parked detail visibility 的测试闭环
 106. 第一百零二轮 TDD 已补上 terminal manager parked detail 连接数量的测试闭环
 107. 第一百零三轮 TDD 已补上 terminal manager parked detail 位置数量的测试闭环
+108. 第一百零四轮 TDD 已补上 terminal manager parked detail 剩余字段的测试闭环
 
 对应文档：
 
@@ -209,6 +210,12 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图同时显示 `detail_terminal: term-2`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图同时显示 `detail_state: running`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图同时显示 `detail_visible: false`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图同时显示 `detail_owner: `
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图同时显示 `detail_command: tail -f build.log`
+- terminal manager 停放 terminal 的 detail 剩余关键字段现在被场景测试统一锁住
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> ↓` 后主视图显示 `detail_location_count: 0`
 - terminal manager 停放 terminal 的 detail 位置数量现在被场景测试锁住
 - parked terminal detail 的位置数量不再只靠 renderer 单测兜底
