@@ -107,6 +107,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 83. 第七十九轮 TDD 已补上 workspace picker 选中节点深度的 renderer 可见性闭环
 84. 第八十轮 TDD 已补上 prompt 活动字段索引的 renderer 可见性闭环
 85. 第八十一轮 TDD 已补上 prompt 字段数量的 renderer 可见性闭环
+86. 第八十二轮 TDD 已补上 active terminal 可见性的 renderer 可见性闭环
 
 对应文档：
 
@@ -187,6 +188,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- runtime renderer 已显式展示 active terminal 的 `terminal_visibility`
+- 当前主视图可直接看到 active terminal 的可见性布尔状态
+- 已补上一条 runtime 场景型 E2E：active terminal metadata 场景主视图显示 `terminal_visibility: true`
 - runtime renderer 已显式展示 prompt overlay 的 `prompt_field_count`
 - prompt 打开后当前主视图可直接看到结构化字段数量
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t -> e` 进入 prompt 后主视图显示 `prompt_field_count: 2`

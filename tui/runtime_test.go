@@ -867,7 +867,7 @@ func TestE2ERunScenarioActiveTerminalMetadataVisibleInView(t *testing.T) {
 	bootstrapper := &stubRunSessionBootstrapper{}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
-			if view := model.View(); !strings.Contains(view, "terminal_command: npm run dev") || !strings.Contains(view, "terminal_tags: env=dev,service=api") {
+			if view := model.View(); !strings.Contains(view, "terminal_command: npm run dev") || !strings.Contains(view, "terminal_tags: env=dev,service=api") || !strings.Contains(view, "terminal_visibility: true") {
 				t.Fatalf("expected runtime view to expose active terminal metadata, got:\n%s", view)
 			}
 			return nil
@@ -1141,6 +1141,7 @@ func runtimeStateWithActiveTerminalMetadata() types.AppState {
 	terminal.Name = "api-dev"
 	terminal.Command = []string{"npm", "run", "dev"}
 	terminal.Tags = map[string]string{"service": "api", "env": "dev"}
+	terminal.Visible = true
 	state.Domain.Terminals[types.TerminalID("term-1")] = terminal
 	return state
 }

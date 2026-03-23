@@ -23,6 +23,7 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 		State:   types.TerminalRunStateRunning,
 		Command: []string{"npm", "run", "dev"},
 		Tags:    map[string]string{"env": "dev", "service": "api"},
+		Visible: true,
 	}
 	renderer := runtimeRenderer{
 		Screens: NewRuntimeTerminalStore(RuntimeSessions{
@@ -72,6 +73,9 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	}
 	if !strings.Contains(view, "terminal_tags: env=dev,service=api") {
 		t.Fatalf("expected terminal tags in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "terminal_visibility: true") {
+		t.Fatalf("expected terminal visibility in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "screen:") {
 		t.Fatalf("expected screen section in rendered view, got:\n%s", view)

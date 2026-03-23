@@ -118,6 +118,7 @@ func renderTerminalStateLines(terminal types.TerminalRef) []string {
 	if tags := renderTerminalTags(terminal.Tags); tags != "" {
 		lines = append(lines, fmt.Sprintf("terminal_tags: %s", tags))
 	}
+	lines = append(lines, fmt.Sprintf("terminal_visibility: %t", terminal.Visible))
 	return lines
 }
 
