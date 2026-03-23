@@ -95,7 +95,10 @@ func renderConnectionLines(conn types.ConnectionState, paneID types.PaneID) []st
 	if conn.OwnerPaneID == paneID {
 		role = "owner"
 	}
-	return []string{fmt.Sprintf("connection_role: %s", role)}
+	return []string{
+		fmt.Sprintf("connection_role: %s", role),
+		fmt.Sprintf("connected_panes: %d", len(conn.ConnectedPaneIDs)),
+	}
 }
 
 func renderTerminalStateLines(terminal types.TerminalRef) []string {

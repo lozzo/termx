@@ -75,6 +75,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 51. 第四十七轮 TDD 已补上 runtime focus 状态的 renderer 可见性闭环
 52. 第四十八轮 TDD 已补上 exited pane 终态信息的 renderer 可见性闭环
 53. 第四十九轮 TDD 已补上 active pane owner/follower 连接角色的 renderer 可见性闭环
+54. 第五十轮 TDD 已补上 active pane 连接计数的 renderer 可见性闭环
 
 对应文档：
 
@@ -155,6 +156,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- runtime renderer 已显式展示 active pane 所连接 terminal 的 `connected_panes`
+- `shared terminal` 下当前 pane 现在可直接看到共享连接数量
+- 已补上一条 runtime 场景型 E2E：follower pane 启动后主视图可同时看到 `connection_role: follower` 和 `connected_panes: 2`
 - runtime renderer 已显式展示 active pane 的 `connection_role`
 - `shared terminal` 下当前 pane 已可区分 `owner / follower`
 - 已补上一条 runtime 场景型 E2E：follower pane 启动后主视图可直接看到 `connection_role: follower`

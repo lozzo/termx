@@ -840,8 +840,8 @@ func TestE2ERunScenarioFollowerConnectionRoleVisibleInView(t *testing.T) {
 	bootstrapper := &stubRunSessionBootstrapper{}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
-			if view := model.View(); !strings.Contains(view, "connection_role: follower") {
-				t.Fatalf("expected runtime view to expose follower connection role, got:\n%s", view)
+			if view := model.View(); !strings.Contains(view, "connection_role: follower") || !strings.Contains(view, "connected_panes: 2") {
+				t.Fatalf("expected runtime view to expose shared connection state, got:\n%s", view)
 			}
 			return nil
 		},

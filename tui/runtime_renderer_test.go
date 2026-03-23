@@ -317,11 +317,17 @@ func TestRuntimeRendererRendersConnectionRoleOwner(t *testing.T) {
 	if !strings.Contains(view, "connection_role: owner") {
 		t.Fatalf("expected owner connection role in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "connected_panes: 1") {
+		t.Fatalf("expected connected pane count in rendered view, got:\n%s", view)
+	}
 }
 
 func TestRuntimeRendererRendersConnectionRoleFollower(t *testing.T) {
 	view := runtimeRenderer{}.Render(runtimeStateWithFollowerPaneConnection(), nil)
 	if !strings.Contains(view, "connection_role: follower") {
 		t.Fatalf("expected follower connection role in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "connected_panes: 2") {
+		t.Fatalf("expected shared connected pane count in rendered view, got:\n%s", view)
 	}
 }
