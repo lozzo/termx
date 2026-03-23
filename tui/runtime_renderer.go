@@ -396,7 +396,10 @@ func renderLayoutResolveLines(resolve *layoutresolvedomain.State) []string {
 		fmt.Sprintf("layout_resolve_hint: %s", resolve.Hint),
 	}
 	if row, ok := resolve.SelectedRow(); ok {
-		lines = append(lines, fmt.Sprintf("layout_resolve_selected: %s", row.Action))
+		lines = append(lines,
+			fmt.Sprintf("layout_resolve_selected: %s", row.Action),
+			fmt.Sprintf("layout_resolve_selected_label: %s", row.Label),
+		)
 	}
 	lines = append(lines, "layout_resolve_rows:")
 	selected, hasSelection := resolve.SelectedRow()
