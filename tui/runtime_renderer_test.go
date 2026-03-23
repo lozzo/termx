@@ -266,6 +266,9 @@ func TestRuntimeRendererRendersTerminalPickerOverlay(t *testing.T) {
 	if !strings.Contains(view, "terminal_picker_selected_label: ops-watch") {
 		t.Fatalf("expected picker selected terminal label in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "terminal_picker_selected_kind: terminal") {
+		t.Fatalf("expected picker selected row kind in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "terminal_picker_selected_state: running") {
 		t.Fatalf("expected picker selected terminal state in rendered view, got:\n%s", view)
 	}
