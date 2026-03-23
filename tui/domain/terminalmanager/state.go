@@ -51,8 +51,11 @@ type Detail struct {
 	Name               string
 	State              types.TerminalRunState
 	Visible            bool
+	VisibilityLabel    string
 	Command            string
 	ConnectedPaneCount int
+	OwnerSlotLabel     string
+	Tags               []Tag
 	Locations          []Location
 }
 
@@ -60,6 +63,11 @@ type Location struct {
 	WorkspaceName string
 	TabName       string
 	SlotLabel     string
+}
+
+type Tag struct {
+	Key   string
+	Value string
 }
 
 func NewState(domain types.DomainState, focus types.FocusState) *State {
@@ -250,8 +258,11 @@ func buildDetails(domain types.DomainState) map[types.TerminalID]Detail {
 			Name:               label,
 			State:              terminal.State,
 			Visible:            terminal.Visible,
+			VisibilityLabel:    visibilityLabel(terminal, len(domain.Connections[terminalID].ConnectedPaneIDs)),
 			Command:            strings.Join(terminal.Command, " "),
 			ConnectedPaneCount: len(domain.Connections[terminalID].ConnectedPaneIDs),
+			OwnerSlotLabel:     ownerSlotLabel(domain, terminalID),
+			Tags:               collectTags(terminal.Tags),
 			Locations:          collectLocations(domain, terminalID),
 		}
 	}
@@ -366,10 +377,67 @@ func cloneDetails(in map[types.TerminalID]Detail) map[types.TerminalID]Detail {
 	out := make(map[types.TerminalID]Detail, len(in))
 	for id, detail := range in {
 		clone := detail
+		clone.Tags = append([]Tag(nil), detail.Tags...)
 		clone.Locations = append([]Location(nil), detail.Locations...)
 		out[id] = clone
 	}
 	return out
+}
+
+func visibilityLabel(terminal types.TerminalRef, connectedPaneCount int) string {
+	if terminal.Visible || connectedPaneCount > 0 {
+		return "visible"
+	}
+	return "hidden"
+}
+
+func ownerSlotLabel(domain types.DomainState, terminalID types.TerminalID) string {
+	ownerPaneID := domain.Connections[terminalID].OwnerPaneID
+	if ownerPaneID == "" {
+		return ""
+	}
+	for _, workspaceID := range domain.WorkspaceOrder {
+		workspace, ok := domain.Workspaces[workspaceID]
+		if !ok {
+			continue
+		}
+		for _, tabID := range workspace.TabOrder {
+			tab, ok := workspace.Tabs[tabID]
+			if !ok {
+				continue
+			}
+			pane, ok := tab.Panes[ownerPaneID]
+			if !ok {
+				continue
+			}
+			return slotLabel(ownerPaneID, pane.Kind)
+		}
+	}
+	return ""
+}
+
+func collectTags(tags map[string]string) []Tag {
+	if len(tags) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(tags))
+	for key := range tags {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	out := make([]Tag, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, Tag{Key: key, Value: tags[key]})
+	}
+	return out
+}
+
+func slotLabel(paneID types.PaneID, kind types.PaneKind) string {
+	prefix := "pane"
+	if kind == types.PaneKindFloating {
+		prefix = "float"
+	}
+	return prefix + ":" + string(paneID)
 }
 
 func searchText(terminalID types.TerminalID, terminal types.TerminalRef) string {

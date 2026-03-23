@@ -597,6 +597,12 @@ func TestReducerTerminalManagerDetailsExposePaneLocations(t *testing.T) {
 	if detail.Locations[1].SlotLabel != "float:float-2" {
 		t.Fatalf("expected floating location second, got %+v", detail.Locations[1])
 	}
+	if detail.VisibilityLabel != "visible" || detail.OwnerSlotLabel != "pane:pane-1" {
+		t.Fatalf("expected detail visibility/owner projection, got %+v", detail)
+	}
+	if len(detail.Tags) != 0 {
+		t.Fatalf("expected connected api-dev terminal to have empty tags in fixture, got %+v", detail.Tags)
+	}
 }
 
 func TestReducerTerminalManagerEditMetadataClosesOverlayAndEmitsPrompt(t *testing.T) {

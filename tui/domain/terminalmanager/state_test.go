@@ -144,6 +144,15 @@ func TestManagerStateSelectedDetailTracksCurrentTerminal(t *testing.T) {
 	if detail.Command != "npm run build" {
 		t.Fatalf("expected command projection, got %+v", detail)
 	}
+	if detail.VisibilityLabel != "visible" {
+		t.Fatalf("expected visibility label, got %+v", detail)
+	}
+	if detail.OwnerSlotLabel != "pane:pane-1" {
+		t.Fatalf("expected owner slot label, got %+v", detail)
+	}
+	if len(detail.Tags) != 1 || detail.Tags[0].Key != "group" || detail.Tags[0].Value != "build" {
+		t.Fatalf("expected tag projection, got %+v", detail.Tags)
+	}
 	if len(detail.Locations) != 2 {
 		t.Fatalf("expected projected locations, got %+v", detail.Locations)
 	}
