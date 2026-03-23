@@ -286,6 +286,7 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 			fmt.Sprintf("terminal_manager_selected_section: %s", row.Section),
 			fmt.Sprintf("terminal_manager_selected_state: %s", row.State),
 			fmt.Sprintf("terminal_manager_selected_visible: %t", row.Visible),
+			fmt.Sprintf("terminal_manager_selected_visibility: %s", row.VisibilityLabel),
 			fmt.Sprintf("terminal_manager_selected_connected_panes: %d", row.ConnectedPaneCount),
 			fmt.Sprintf("terminal_manager_selected_command: %s", row.Command),
 			fmt.Sprintf("terminal_manager_selected_owner: %s", row.OwnerSlotLabel),

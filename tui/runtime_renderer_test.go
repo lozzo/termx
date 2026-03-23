@@ -208,6 +208,9 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "terminal_manager_selected_visible: false") {
 		t.Fatalf("expected manager selected terminal visible flag in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "terminal_manager_selected_visibility: hidden") {
+		t.Fatalf("expected manager selected terminal visibility label in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "terminal_manager_selected_connected_panes: 0") {
 		t.Fatalf("expected manager selected terminal connection count in rendered view, got:\n%s", view)
 	}
