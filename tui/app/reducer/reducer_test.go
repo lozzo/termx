@@ -360,6 +360,12 @@ func TestReducerOpenMetadataPromptSeedsDraftFromCurrentTerminal(t *testing.T) {
 	if prompt.Draft != "build-log\ngroup=build" {
 		t.Fatalf("expected metadata prompt draft to seed from terminal, got %q", prompt.Draft)
 	}
+	if len(prompt.Fields) != 2 || prompt.Fields[0].Key != "name" || prompt.Fields[0].Value != "build-log" {
+		t.Fatalf("expected structured metadata fields, got %+v", prompt.Fields)
+	}
+	if prompt.Fields[1].Key != "tags" || prompt.Fields[1].Value != "group=build" {
+		t.Fatalf("expected tags field to be seeded, got %+v", prompt.Fields)
+	}
 }
 
 func TestReducerPromptInputMutatesDraftAndSubmitUsesDraftWhenValueEmpty(t *testing.T) {
@@ -380,6 +386,28 @@ func TestReducerPromptInputMutatesDraftAndSubmitUsesDraftWhenValueEmpty(t *testi
 	workspace := submitted.State.Domain.Workspaces[submitted.State.Domain.ActiveWorkspaceID]
 	if workspace.Name != "ops-center" {
 		t.Fatalf("expected workspace name from prompt draft, got %+v", workspace)
+	}
+}
+
+func TestReducerMetadataPromptStructuredInputSwitchesFieldAndSubmits(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenPromptIntent{
+		PromptKind: PromptKindEditTerminalMetadata,
+		TerminalID: types.TerminalID("term-2"),
+	})
+	nameEdited := reducer.Reduce(opened.State, intent.PromptAppendInputIntent{Text: "-v2"})
+	switched := reducer.Reduce(nameEdited.State, intent.PromptNextFieldIntent{})
+	tagsEdited := reducer.Reduce(switched.State, intent.PromptAppendInputIntent{Text: ",env=prod"})
+	submitted := reducer.Reduce(tagsEdited.State, intent.SubmitPromptIntent{})
+
+	terminal := submitted.State.Domain.Terminals[types.TerminalID("term-2")]
+	if terminal.Name != "build-log-v2" {
+		t.Fatalf("expected structured name edit, got %+v", terminal)
+	}
+	if terminal.Tags["group"] != "build" || terminal.Tags["env"] != "prod" {
+		t.Fatalf("expected structured tags edit, got %+v", terminal.Tags)
 	}
 }
 

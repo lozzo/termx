@@ -20,6 +20,14 @@ type State struct {
 	Title      string
 	TerminalID types.TerminalID
 	Draft      string
+	Fields     []Field
+	Active     int
+}
+
+type Field struct {
+	Key   string
+	Label string
+	Value string
 }
 
 func (s *State) OverlayKind() types.OverlayKind {
@@ -38,13 +46,57 @@ func (s *State) AppendInput(text string) {
 	if s == nil || text == "" {
 		return
 	}
+	if len(s.Fields) > 0 {
+		s.Fields[s.activeIndex()].Value += text
+		return
+	}
 	s.Draft += text
 }
 
 func (s *State) BackspaceInput() {
-	if s == nil || s.Draft == "" {
+	if s == nil {
+		return
+	}
+	if len(s.Fields) > 0 {
+		index := s.activeIndex()
+		if s.Fields[index].Value == "" {
+			return
+		}
+		_, size := utf8.DecodeLastRuneInString(s.Fields[index].Value)
+		s.Fields[index].Value = s.Fields[index].Value[:len(s.Fields[index].Value)-size]
+		return
+	}
+	if s.Draft == "" {
 		return
 	}
 	_, size := utf8.DecodeLastRuneInString(s.Draft)
 	s.Draft = s.Draft[:len(s.Draft)-size]
+}
+
+func (s *State) NextField() bool {
+	if s == nil || len(s.Fields) < 2 {
+		return false
+	}
+	s.Active = (s.activeIndex() + 1) % len(s.Fields)
+	return true
+}
+
+func (s *State) ActiveValue() string {
+	if s == nil {
+		return ""
+	}
+	if len(s.Fields) > 0 {
+		return s.Fields[s.activeIndex()].Value
+	}
+	return s.Draft
+}
+
+func (s *State) activeIndex() int {
+	if len(s.Fields) == 0 {
+		return 0
+	}
+	if s.Active < 0 || s.Active >= len(s.Fields) {
+		return 0
+	}
+	return s.Active
 }

@@ -169,6 +169,10 @@ type PromptBackspaceIntent struct{}
 
 func (PromptBackspaceIntent) intentName() string { return "prompt_backspace" }
 
+type PromptNextFieldIntent struct{}
+
+func (PromptNextFieldIntent) intentName() string { return "prompt_next_field" }
+
 type ActivateModeIntent struct {
 	Mode       types.ModeKind
 	Sticky     bool

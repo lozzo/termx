@@ -161,6 +161,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyPromptAppendInput(&result.State, intentValue)
 	case intent.PromptBackspaceIntent:
 		applyPromptBackspace(&result.State)
+	case intent.PromptNextFieldIntent:
+		applyPromptNextField(&result.State)
 	case intent.ActivateModeIntent:
 		applyActivateMode(&result.State, intentValue)
 	case intent.ModeTimedOutIntent:
@@ -316,13 +318,8 @@ func applyOpenPrompt(state *types.AppState, in intent.OpenPromptIntent) {
 	returnFocus := state.UI.Focus
 	returnFocus.OverlayTarget = ""
 	state.UI.Overlay = types.OverlayState{
-		Kind: types.OverlayPrompt,
-		Data: &promptdomain.State{
-			Kind:       promptKindFromString(in.PromptKind),
-			Title:      promptTitle(in.PromptKind),
-			TerminalID: in.TerminalID,
-			Draft:      promptDraft(state, in),
-		},
+		Kind:        types.OverlayPrompt,
+		Data:        buildPromptState(state, in),
 		ReturnFocus: returnFocus,
 	}
 	state.UI.Focus = types.FocusState{
@@ -583,10 +580,7 @@ func applySubmitPrompt(state *types.AppState, in intent.SubmitPromptIntent) []Ef
 	if !ok {
 		return nil
 	}
-	value := strings.TrimSpace(in.Value)
-	if value == "" {
-		value = strings.TrimSpace(promptState.Draft)
-	}
+	value := promptValue(promptState, in.Value)
 	if value == "" {
 		return nil
 	}
@@ -622,6 +616,14 @@ func applyPromptBackspace(state *types.AppState) {
 		return
 	}
 	prompt.BackspaceInput()
+}
+
+func applyPromptNextField(state *types.AppState) {
+	prompt, ok := promptState(state)
+	if !ok {
+		return
+	}
+	prompt.NextField()
 }
 
 // applyCreateWorkspace 为新 workspace 建立最小可工作骨架：
@@ -894,6 +896,19 @@ func promptTitle(kind string) string {
 	}
 }
 
+func buildPromptState(state *types.AppState, in intent.OpenPromptIntent) *promptdomain.State {
+	out := &promptdomain.State{
+		Kind:       promptKindFromString(in.PromptKind),
+		Title:      promptTitle(in.PromptKind),
+		TerminalID: in.TerminalID,
+		Draft:      promptDraft(state, in),
+	}
+	if out.Kind == promptdomain.KindEditTerminalMetadata {
+		out.Fields = promptFields(state, in)
+	}
+	return out
+}
+
 func promptDraft(state *types.AppState, in intent.OpenPromptIntent) string {
 	switch in.PromptKind {
 	case PromptKindEditTerminalMetadata:
@@ -904,6 +919,22 @@ func promptDraft(state *types.AppState, in intent.OpenPromptIntent) string {
 		return formatTerminalMetadataDraft(terminal)
 	default:
 		return ""
+	}
+}
+
+func promptFields(state *types.AppState, in intent.OpenPromptIntent) []promptdomain.Field {
+	switch in.PromptKind {
+	case PromptKindEditTerminalMetadata:
+		terminal, ok := state.Domain.Terminals[in.TerminalID]
+		if !ok {
+			return nil
+		}
+		return []promptdomain.Field{
+			{Key: "name", Label: "Name", Value: terminal.Name},
+			{Key: "tags", Label: "Tags", Value: formatTerminalTags(terminal.Tags)},
+		}
+	default:
+		return nil
 	}
 }
 
@@ -1008,6 +1039,36 @@ func formatTerminalMetadataDraft(terminal types.TerminalRef) string {
 		return name
 	}
 	return name + "\n" + strings.Join(pairs, ",")
+}
+
+func formatTerminalTags(tags map[string]string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(tags))
+	for key := range tags {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	pairs := make([]string, 0, len(keys))
+	for _, key := range keys {
+		pairs = append(pairs, key+"="+tags[key])
+	}
+	return strings.Join(pairs, ",")
+}
+
+func promptValue(promptState *promptdomain.State, explicit string) string {
+	value := strings.TrimSpace(explicit)
+	if value != "" {
+		return value
+	}
+	if len(promptState.Fields) > 0 {
+		switch promptState.Kind {
+		case promptdomain.KindEditTerminalMetadata:
+			return strings.TrimSpace(promptState.Fields[0].Value) + "\n" + strings.TrimSpace(promptState.Fields[1].Value)
+		}
+	}
+	return strings.TrimSpace(promptState.Draft)
 }
 
 func defaultCreateTerminalCommand() []string {

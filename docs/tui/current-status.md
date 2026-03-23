@@ -39,6 +39,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 15. 第十一轮 TDD 已补上 `prompt draft` 输入模型
 16. 第十二轮 TDD 已补上 `terminal manager details` 的 `visibility / owner / tags` 投影
 17. 第十三轮 TDD 已补上 `create terminal` 的默认参数策略
+18. 第十四轮 TDD 已补上 `prompt` 的结构化字段模型
 
 对应文档：
 
@@ -96,6 +97,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - `CancelPromptIntent`
 - `PromptAppendInputIntent`
 - `PromptBackspaceIntent`
+- `PromptNextFieldIntent`
 - `ActivateModeIntent`
 - `ModeTimedOutIntent`
 
@@ -156,6 +158,11 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - `terminal manager create row` 产出的 `CreateTerminalEffect` 已带默认 command
 - `CreateTerminalEffect` 已带稳定默认 name：`workspace-tab-pane`
 - 已补上一条 reducer 场景型 E2E：create row -> create effect 时默认参数完整
+- `prompt` 已支持结构化字段模型
+- metadata prompt 已拆成 `name / tags` 两个字段
+- `PromptNextFieldIntent` 已能在结构化字段间切换焦点
+- prompt 输入现在优先写入当前字段，`SubmitPromptIntent` 可直接从字段模型生成提交值
+- 已补上一条 reducer 测试覆盖 metadata prompt 的字段切换与结构化提交
 
 本轮验证：
 
@@ -171,8 +178,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 当前还没有正式开始的部分：
 
-1. prompt 多字段/结构化输入
-2. bubbletea shell 最小接线
+1. bubbletea shell 最小接线
+2. prompt 字段导航补全
 3. 新版 bubbletea shell
 4. 新版 renderer
 5. 新版 terminal picker / restore 流程
@@ -184,8 +191,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 下一阶段最高优先级不是补 UI，而是先把下面几个边界立住：
 
-1. prompt 多字段/结构化输入
-2. bubbletea shell 最小接线
+1. bubbletea shell 最小接线
+2. prompt 字段导航补全
 3. 更完整的 `intent -> reducer -> effect` 契约
 4. 新版 bubbletea shell 接口
 5. 真实 TUI E2E 场景壳
@@ -222,7 +229,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 当前最合适的下一步是：
 
-1. 补 prompt 多字段/结构化输入
+1. 补 prompt 字段导航补全
 2. 为 reducer 补更多场景级测试
 3. 补 bubbletea shell 最小接线
 
@@ -230,4 +237,4 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 ## 7. 当前一句话状态
 
-termx TUI 现在已经进入“picker / manager / prompt 三条主状态机已打通核心提交路径，manager details 和 create terminal 默认策略也已成形，继续按 TDD 扩结构化 prompt、shell 接线和 runtime 契约”的阶段。
+termx TUI 现在已经进入“picker / manager / prompt 三条主状态机已打通核心提交路径，结构化 prompt 字段模型也已成形，继续按 TDD 扩字段导航、shell 接线和 runtime 契约”的阶段。
