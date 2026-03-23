@@ -146,6 +146,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 122. 第一百一十八轮 TDD 已补上 runtime overlay 进入与退出投影的测试闭环
 123. 第一百一十九轮 TDD 已补上 runtime 剩余 prompt 与 resolve 字段投影的测试闭环
 124. 第一百二十轮 TDD 已补上 runtime effect 执行链路的测试闭环
+125. 第一百二十一轮 TDD 已补上 runtime effect 失败路径的测试闭环
 
 对应文档：
 
@@ -226,6 +227,13 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- 已补上一条 runtime 场景型 E2E：metadata prompt submit 失败后主视图显示错误 notice
+- 已补上一条 runtime 场景型 E2E：terminal manager stop 失败后主视图显示错误 notice
+- 已补上一条 runtime 场景型 E2E：terminal manager connect in new tab 失败后主视图显示错误 notice
+- 已补上一条 runtime 场景型 E2E：terminal manager connect in floating pane 失败后主视图显示错误 notice
+- 已补上一条 runtime 场景型 E2E：terminal manager create row submit 失败后主视图显示错误 notice
+- 已补上一条 runtime 场景型 E2E：terminal picker create row submit 失败后主视图显示错误 notice
+- runtime effect 的成功/失败两侧现在都被场景测试锁住，失败时会通过 notice 回灌到 runtime 主视图
 - runtime 现在通过 `runtimeDependencies.RuntimeExecutor` 显式接线 effect executor，不再固定为空执行器
 - 已补上一条 runtime 场景型 E2E：metadata prompt submit 后会真正调用 terminal metadata 更新服务
 - 已补上一条 runtime 场景型 E2E：terminal manager stop 后会真正调用 terminal kill 服务

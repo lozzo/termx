@@ -1655,6 +1655,56 @@ func TestE2ERunScenarioMetadataPromptTabSubmitUpdatesTerminal(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioMetadataPromptSubmitFailureShowsNoticeInView(t *testing.T) {
+	client := &stubRunClient{metadataErr: errRuntimeEffectBoom}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyDown},
+				{Type: tea.KeyRunes, Runes: []rune("e")},
+				{Type: tea.KeyRunes, Runes: []rune("-v2")},
+				{Type: tea.KeyTab},
+				{Type: tea.KeyRunes, Runes: []rune(",env=prod")},
+				{Type: tea.KeyEnter},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
+				t.Fatalf("expected metadata failure to surface notice in runtime view, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+	if len(client.metadataCalls) != 1 {
+		t.Fatalf("expected one metadata call despite failure, got %d", len(client.metadataCalls))
+	}
+}
+
 func TestE2ERunScenarioTerminalManagerStopClosesOverlayAndClearsPane(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithTerminalManagerTargets()
@@ -1705,6 +1755,51 @@ func TestE2ERunScenarioTerminalManagerStopClosesOverlayAndClearsPane(t *testing.
 	}
 	if len(client.killCalls) != 1 || client.killCalls[0] != "term-1" {
 		t.Fatalf("expected one kill call for term-1, got %+v", client.killCalls)
+	}
+}
+
+func TestE2ERunScenarioTerminalManagerStopFailureShowsNoticeInView(t *testing.T) {
+	client := &stubRunClient{killErr: errRuntimeEffectBoom}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyRunes, Runes: []rune("k")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "slot: empty") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
+				t.Fatalf("expected failed stop to keep local reducer result and surface notice, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+	if len(client.killCalls) != 1 || client.killCalls[0] != "term-1" {
+		t.Fatalf("expected one failed kill call for term-1, got %+v", client.killCalls)
 	}
 }
 
@@ -1800,6 +1895,52 @@ func TestE2ERunScenarioTerminalManagerConnectInNewTabClosesOverlay(t *testing.T)
 	}
 }
 
+func TestE2ERunScenarioTerminalManagerConnectInNewTabFailureShowsNoticeInView(t *testing.T) {
+	client := &stubRunClient{newTabErr: errRuntimeEffectBoom}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyDown},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
+				t.Fatalf("expected new-tab failure to surface notice in runtime view, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+	if len(client.newTabCalls) != 1 {
+		t.Fatalf("expected one failed new-tab call, got %d", len(client.newTabCalls))
+	}
+}
+
 func TestE2ERunScenarioTerminalManagerConnectInFloatingPaneClosesOverlay(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithTerminalManagerTargets()
@@ -1846,6 +1987,52 @@ func TestE2ERunScenarioTerminalManagerConnectInFloatingPaneClosesOverlay(t *test
 	}
 	if client.floatingCalls[0].workspaceID != types.WorkspaceID("ws-1") || client.floatingCalls[0].tabID != types.TabID("tab-1") || client.floatingCalls[0].terminalID != types.TerminalID("term-2") {
 		t.Fatalf("unexpected floating-pane call payload: %+v", client.floatingCalls[0])
+	}
+}
+
+func TestE2ERunScenarioTerminalManagerConnectInFloatingPaneFailureShowsNoticeInView(t *testing.T) {
+	client := &stubRunClient{floatingErr: errRuntimeEffectBoom}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyDown},
+				{Type: tea.KeyRunes, Runes: []rune("o")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
+				t.Fatalf("expected floating-pane failure to surface notice in runtime view, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+	if len(client.floatingCalls) != 1 {
+		t.Fatalf("expected one failed floating-pane call, got %d", len(client.floatingCalls))
 	}
 }
 
@@ -1954,6 +2141,52 @@ func TestE2ERunScenarioTerminalManagerCreateRowSubmitClosesOverlay(t *testing.T)
 	}
 	if client.createCalls[0].name == "" || len(client.createCalls[0].command) == 0 {
 		t.Fatalf("expected create call to include default name and command, got %+v", client.createCalls[0])
+	}
+}
+
+func TestE2ERunScenarioTerminalManagerCreateRowFailureShowsNoticeInView(t *testing.T) {
+	client := &stubRunClient{createErr: errRuntimeEffectBoom}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyUp},
+				{Type: tea.KeyEnter},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
+				t.Fatalf("expected manager create failure to surface notice in runtime view, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+	if len(client.createCalls) != 1 {
+		t.Fatalf("expected one failed create call, got %d", len(client.createCalls))
 	}
 }
 
@@ -2126,6 +2359,51 @@ func TestE2ERunScenarioTerminalPickerCreateRowSubmitClosesOverlay(t *testing.T) 
 	}
 	if client.createCalls[0].name == "" || len(client.createCalls[0].command) == 0 {
 		t.Fatalf("expected create call to include default name and command, got %+v", client.createCalls[0])
+	}
+}
+
+func TestE2ERunScenarioTerminalPickerCreateRowFailureShowsNoticeInView(t *testing.T) {
+	client := &stubRunClient{createErr: errRuntimeEffectBoom}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlF},
+				{Type: tea.KeyRunes, Runes: []rune("missing")},
+				{Type: tea.KeyEnter},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
+				t.Fatalf("expected picker create failure to surface notice in runtime view, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+	if len(client.createCalls) != 1 {
+		t.Fatalf("expected one failed create call, got %d", len(client.createCalls))
 	}
 }
 
@@ -2685,6 +2963,7 @@ func TestE2ERunScenarioFloatingPaneKindVisibleInView(t *testing.T) {
 
 var (
 	errRuntimeRunBoom     = errors.New("run boom")
+	errRuntimeEffectBoom  = errors.New("runtime effect boom")
 	bootstrapperStopCalls int
 )
 
@@ -2765,6 +3044,11 @@ type stubRunClient struct {
 	killCalls []string
 	newTabCalls []runtimeNewTabCall
 	floatingCalls []runtimeFloatingCall
+	createErr error
+	metadataErr error
+	killErr error
+	newTabErr error
+	floatingErr error
 }
 
 type runtimeCreateCall struct {
@@ -2798,6 +3082,9 @@ func (c *stubRunClient) Create(_ context.Context, command []string, name string,
 		name:    name,
 		size:    size,
 	})
+	if c.createErr != nil {
+		return nil, c.createErr
+	}
 	return &protocol.CreateResult{}, nil
 }
 
@@ -2813,6 +3100,9 @@ func (c *stubRunClient) SetMetadata(_ context.Context, terminalID string, name s
 		name:       name,
 		tags:       cloned,
 	})
+	if c.metadataErr != nil {
+		return c.metadataErr
+	}
 	return nil
 }
 
@@ -2853,6 +3143,9 @@ func (c *stubRunClient) Stream(uint16) (<-chan protocol.StreamFrame, func()) {
 
 func (c *stubRunClient) Kill(_ context.Context, terminalID string) error {
 	c.killCalls = append(c.killCalls, terminalID)
+	if c.killErr != nil {
+		return c.killErr
+	}
 	return nil
 }
 
@@ -2861,6 +3154,9 @@ func (c *stubRunClient) ConnectTerminalInNewTab(workspaceID types.WorkspaceID, t
 		workspaceID: workspaceID,
 		terminalID:  terminalID,
 	})
+	if c.newTabErr != nil {
+		return c.newTabErr
+	}
 	return nil
 }
 
@@ -2870,6 +3166,9 @@ func (c *stubRunClient) ConnectTerminalInFloatingPane(workspaceID types.Workspac
 		tabID:       tabID,
 		terminalID:  terminalID,
 	})
+	if c.floatingErr != nil {
+		return c.floatingErr
+	}
 	return nil
 }
 
