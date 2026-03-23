@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/protocol"
 	btui "github.com/lozzow/termx/tui/bt"
@@ -240,5 +241,23 @@ func TestRuntimeRendererRendersLayoutResolveOverlay(t *testing.T) {
 	}
 	if !strings.Contains(view, "> [create_new] create new") {
 		t.Fatalf("expected selected resolve row in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersActiveMode(t *testing.T) {
+	state := buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty)
+	deadline := time.Date(2026, 3, 23, 12, 0, 0, 0, time.UTC)
+	state.UI.Mode = types.ModeState{
+		Active:     types.ModeGlobal,
+		Sticky:     false,
+		DeadlineAt: &deadline,
+	}
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "mode: global") {
+		t.Fatalf("expected active mode in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "mode_sticky: false") {
+		t.Fatalf("expected sticky flag in rendered view, got:\n%s", view)
 	}
 }

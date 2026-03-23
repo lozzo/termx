@@ -70,6 +70,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 46. 第四十二轮 TDD 已补上 prompt overlay 的 runtime renderer 可视化闭环
 47. 第四十三轮 TDD 已补上 terminal picker 的 runtime renderer 可视化闭环
 48. 第四十四轮 TDD 已补上 layout resolve 的 runtime renderer 可视化闭环
+49. 第四十五轮 TDD 已补上 runtime mode 状态的 renderer 可见性闭环
 
 对应文档：
 
@@ -345,9 +346,14 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `runtimeRenderer` 现在会渲染 `layout_resolve_role`、`layout_resolve_hint` 和 `layout_resolve_rows`
 - layout resolve 行现在会展示动作类型标签，并标出当前选择
 - 已补上一条 runtime E2E：layout resolve 中的选择移动会直接反映到 view 中
+- `runtimeRenderer` 现在会渲染 `mode` 和 `mode_sticky`
+- `Ctrl-G` 进入 global 前缀模式后，运行态 view 现在能直接看到当前 mode
+- 已补上一条 runtime E2E：`Ctrl-G` 后全局模式会直接反映到 view 中
 
 本轮验证：
 
+- `go test ./tui -run 'TestRuntimeRendererRendersActiveMode|TestE2ERunScenarioCtrlGShowsGlobalModeInView' -count=1`
+- `go test ./tui -count=1`
 - `go test ./tui -run 'TestRuntimeRendererRendersLayoutResolveOverlay|TestE2ERunScenarioLayoutResolveMoveUpdatesView' -count=1`
 - `go test ./tui -count=1`
 - `go test ./tui -run 'TestRuntimeRendererRendersTerminalPickerOverlay|TestE2ERunScenarioCtrlFOpensTerminalPickerInView' -count=1`

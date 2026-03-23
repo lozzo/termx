@@ -41,6 +41,7 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 		fmt.Sprintf("slot: %s", pane.SlotState),
 		fmt.Sprintf("overlay: %s", state.UI.Overlay.Kind),
 	}
+	lines = append(lines, renderModeLines(state.UI.Mode)...)
 	if pane.TerminalID != "" {
 		lines = append(lines, fmt.Sprintf("terminal: %s", pane.TerminalID))
 		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok {
@@ -63,6 +64,16 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	lines = append(lines, renderOverlayLines(state.UI.Overlay)...)
 	lines = append(lines, renderNoticeLines(notices)...)
 	return strings.Join(lines, "\n")
+}
+
+func renderModeLines(mode types.ModeState) []string {
+	if mode.Active == types.ModeNone {
+		return nil
+	}
+	return []string{
+		fmt.Sprintf("mode: %s", mode.Active),
+		fmt.Sprintf("mode_sticky: %t", mode.Sticky),
+	}
 }
 
 func renderRuntimeStatusLines(status RuntimeTerminalStatus) []string {

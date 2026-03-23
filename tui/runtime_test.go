@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
@@ -774,6 +775,44 @@ func TestE2ERunScenarioLayoutResolveMoveUpdatesView(t *testing.T) {
 	}
 
 	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioCtrlGShowsGlobalModeInView(t *testing.T) {
+	client := &stubRunClient{}
+	initial := buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty)
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			if view := model.View(); strings.Contains(view, "mode: global") {
+				t.Fatalf("expected initial view without global mode, got:\n%s", view)
+			}
+			nextModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
+			current := nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "mode: global") {
+				t.Fatalf("expected ctrl-g to show global mode in view, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{PrefixTimeout: 3 * time.Second}, nil, io.Discard, runtimeDependencies{
 		Planner:          planner,
 		TaskExecutor:     executor,
 		SessionBootstrap: bootstrapper,
