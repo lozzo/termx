@@ -963,7 +963,7 @@ func TestE2ERunScenarioCtrlWOpensWorkspacePickerInView(t *testing.T) {
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "workspace_picker_rows:") || !strings.Contains(view, "workspace_picker_selected: ws-1/tab-1/pane-1") || !strings.Contains(view, "workspace_picker_selected_kind: pane") || !strings.Contains(view, "workspace_picker_selected_label: unconnected pane") || !strings.Contains(view, "workspace_picker_selected_expanded: false") || !strings.Contains(view, "workspace_picker_selected_match: false") || !strings.Contains(view, "workspace_picker_selected_depth: 2") || !strings.Contains(view, "workspace_picker_row_count: 5") || !strings.Contains(view, "[workspace] ops") {
+			if view := current.View(); !strings.Contains(view, "overlay: workspace_picker") || !strings.Contains(view, "workspace_picker_rows:") || !strings.Contains(view, "workspace_picker_selected: ws-1/tab-1/pane-1") || !strings.Contains(view, "workspace_picker_selected_kind: pane") || !strings.Contains(view, "workspace_picker_selected_label: unconnected pane") || !strings.Contains(view, "workspace_picker_selected_expanded: false") || !strings.Contains(view, "workspace_picker_selected_match: false") || !strings.Contains(view, "workspace_picker_selected_depth: 2") || !strings.Contains(view, "workspace_picker_row_count: 5") || !strings.Contains(view, "[workspace] ops") {
 				t.Fatalf("expected ctrl-w to open picker in view, got:\n%s", view)
 			}
 			if view := current.View(); !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: workspace_picker") || !strings.Contains(view, "tab_layer: tiled") {
@@ -1179,7 +1179,7 @@ func TestE2ERunScenarioWorkspacePickerCreateRowOpensPrompt(t *testing.T) {
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: prompt") || !strings.Contains(view, "focus_layer: prompt") || !strings.Contains(view, "prompt_title: create workspace") || !strings.Contains(view, "prompt_kind: create_workspace") || !strings.Contains(view, "prompt_active_field: draft") || !strings.Contains(view, "prompt_fields:") || !strings.Contains(view, "> [draft] ") {
+			if view := current.View(); !strings.Contains(view, "overlay: prompt") || !strings.Contains(view, "focus_layer: prompt") || !strings.Contains(view, "focus_overlay_target: prompt") || !strings.Contains(view, "prompt_title: create workspace") || !strings.Contains(view, "prompt_kind: create_workspace") || !strings.Contains(view, "prompt_active_field: draft") || !strings.Contains(view, "prompt_fields:") || !strings.Contains(view, "> [draft] ") {
 				t.Fatalf("expected workspace picker create-row flow to open prompt, got:\n%s", view)
 			}
 			return nil
@@ -1279,7 +1279,7 @@ func TestE2ERunScenarioCreateWorkspacePromptEscCancels(t *testing.T) {
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "workspace: main") || strings.Contains(view, "prompt_title: create workspace") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "workspace: main") || strings.Contains(view, "prompt_title: create workspace") || strings.Contains(view, "focus_overlay_target:") {
 				t.Fatalf("expected create workspace prompt esc flow to cancel and restore pane, got:\n%s", view)
 			}
 			return nil
@@ -1320,7 +1320,7 @@ func TestE2ERunScenarioWorkspacePickerEscClosesOverlay(t *testing.T) {
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "workspace_picker_rows:") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "workspace_picker_rows:") || strings.Contains(view, "focus_overlay_target:") {
 				t.Fatalf("expected workspace picker esc flow to close overlay, got:\n%s", view)
 			}
 			return nil
@@ -1360,7 +1360,7 @@ func TestE2ERunScenarioCtrlGTOpensTerminalManagerInView(t *testing.T) {
 					}
 				}
 			}
-			if view := model.View(); !strings.Contains(view, "terminal_manager_query: ") || !strings.Contains(view, "terminal_manager_selected: term-1") || !strings.Contains(view, "terminal_manager_selected_label: api-dev") || !strings.Contains(view, "terminal_manager_selected_kind: terminal") || !strings.Contains(view, "terminal_manager_selected_section: VISIBLE") || !strings.Contains(view, "terminal_manager_selected_state: running") || !strings.Contains(view, "terminal_manager_selected_visible: true") || !strings.Contains(view, "terminal_manager_selected_visibility: visible") || !strings.Contains(view, "terminal_manager_selected_connected_panes: 1") || !strings.Contains(view, "terminal_manager_selected_location_count: 1") || !strings.Contains(view, "terminal_manager_selected_command: npm run dev") || !strings.Contains(view, "terminal_manager_selected_owner: pane:pane-1") || !strings.Contains(view, "terminal_manager_row_count: 7") || !strings.Contains(view, "terminal_manager_rows:") || !strings.Contains(view, "> [terminal] api-dev") || !strings.Contains(view, "terminal_manager_detail: api-dev") || !strings.Contains(view, "detail_terminal: term-1") || !strings.Contains(view, "detail_state: running") || !strings.Contains(view, "detail_visible: true") || !strings.Contains(view, "detail_visibility: visible") || !strings.Contains(view, "detail_connected_panes: 1") || !strings.Contains(view, "detail_location_count: 1") || !strings.Contains(view, "detail_command: npm run dev") || !strings.Contains(view, "detail_owner: pane:pane-1") || !strings.Contains(view, "- main/shell/pane:pane-1") {
+			if view := model.View(); !strings.Contains(view, "overlay: terminal_manager") || !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: terminal_manager") || !strings.Contains(view, "terminal_manager_query: ") || !strings.Contains(view, "terminal_manager_selected: term-1") || !strings.Contains(view, "terminal_manager_selected_label: api-dev") || !strings.Contains(view, "terminal_manager_selected_kind: terminal") || !strings.Contains(view, "terminal_manager_selected_section: VISIBLE") || !strings.Contains(view, "terminal_manager_selected_state: running") || !strings.Contains(view, "terminal_manager_selected_visible: true") || !strings.Contains(view, "terminal_manager_selected_visibility: visible") || !strings.Contains(view, "terminal_manager_selected_connected_panes: 1") || !strings.Contains(view, "terminal_manager_selected_location_count: 1") || !strings.Contains(view, "terminal_manager_selected_command: npm run dev") || !strings.Contains(view, "terminal_manager_selected_owner: pane:pane-1") || !strings.Contains(view, "terminal_manager_row_count: 7") || !strings.Contains(view, "terminal_manager_rows:") || !strings.Contains(view, "> [terminal] api-dev") || !strings.Contains(view, "terminal_manager_detail: api-dev") || !strings.Contains(view, "detail_terminal: term-1") || !strings.Contains(view, "detail_state: running") || !strings.Contains(view, "detail_visible: true") || !strings.Contains(view, "detail_visibility: visible") || !strings.Contains(view, "detail_connected_panes: 1") || !strings.Contains(view, "detail_location_count: 1") || !strings.Contains(view, "detail_command: npm run dev") || !strings.Contains(view, "detail_owner: pane:pane-1") || !strings.Contains(view, "- main/shell/pane:pane-1") {
 				t.Fatalf("expected ctrl-g t flow to render terminal manager, got:\n%s", view)
 			}
 			return nil
@@ -1526,7 +1526,7 @@ func TestE2ERunScenarioTerminalManagerEditOpensPromptInView(t *testing.T) {
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "prompt_title: edit terminal metadata") || !strings.Contains(view, "prompt_kind: edit_terminal_metadata") || !strings.Contains(view, "prompt_terminal: term-1") || !strings.Contains(view, "prompt_active_field: name") || !strings.Contains(view, "prompt_active_label: Name") || !strings.Contains(view, "prompt_active_value: api-dev") || !strings.Contains(view, "prompt_active_index: 0") || !strings.Contains(view, "prompt_field_count: 2") || !strings.Contains(view, "prompt_fields:") || !strings.Contains(view, "> [name] Name: api-dev") || !strings.Contains(view, "  [tags] Tags: ") {
+			if view := current.View(); !strings.Contains(view, "overlay: prompt") || !strings.Contains(view, "prompt_title: edit terminal metadata") || !strings.Contains(view, "prompt_kind: edit_terminal_metadata") || !strings.Contains(view, "prompt_terminal: term-1") || !strings.Contains(view, "prompt_active_field: name") || !strings.Contains(view, "prompt_active_label: Name") || !strings.Contains(view, "prompt_active_value: api-dev") || !strings.Contains(view, "prompt_active_index: 0") || !strings.Contains(view, "prompt_field_count: 2") || !strings.Contains(view, "prompt_fields:") || !strings.Contains(view, "> [name] Name: api-dev") || !strings.Contains(view, "  [tags] Tags: ") {
 				t.Fatalf("expected terminal manager edit flow to render prompt, got:\n%s", view)
 			}
 			if view := current.View(); !strings.Contains(view, "focus_layer: prompt") || !strings.Contains(view, "focus_overlay_target: prompt") {
@@ -1804,7 +1804,7 @@ func TestE2ERunScenarioTerminalManagerEscClosesOverlay(t *testing.T) {
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "terminal_manager_rows:") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "terminal_manager_rows:") || strings.Contains(view, "focus_overlay_target:") || strings.Contains(view, "mode:") {
 				t.Fatalf("expected terminal manager esc flow to close overlay, got:\n%s", view)
 			}
 			return nil
@@ -1905,7 +1905,7 @@ func TestE2ERunScenarioCtrlFOpensTerminalPickerInView(t *testing.T) {
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "terminal_picker_rows:") || !strings.Contains(view, "terminal_picker_query: ops") || !strings.Contains(view, "terminal_picker_selected: term-3") || !strings.Contains(view, "terminal_picker_selected_label: ops-watch") || !strings.Contains(view, "terminal_picker_selected_kind: terminal") || !strings.Contains(view, "terminal_picker_selected_state: running") || !strings.Contains(view, "terminal_picker_selected_command: journalctl -f") || !strings.Contains(view, "terminal_picker_selected_visible: false") || !strings.Contains(view, "terminal_picker_selected_tags: team=ops") || !strings.Contains(view, "terminal_picker_selected_connected_panes: 0") || !strings.Contains(view, "terminal_picker_row_count: 2") || !strings.Contains(view, "ops-watch") {
+			if view := current.View(); !strings.Contains(view, "overlay: terminal_picker") || !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: terminal_picker") || !strings.Contains(view, "terminal_picker_rows:") || !strings.Contains(view, "terminal_picker_query: ops") || !strings.Contains(view, "terminal_picker_selected: term-3") || !strings.Contains(view, "terminal_picker_selected_label: ops-watch") || !strings.Contains(view, "terminal_picker_selected_kind: terminal") || !strings.Contains(view, "terminal_picker_selected_state: running") || !strings.Contains(view, "terminal_picker_selected_command: journalctl -f") || !strings.Contains(view, "terminal_picker_selected_visible: false") || !strings.Contains(view, "terminal_picker_selected_tags: team=ops") || !strings.Contains(view, "terminal_picker_selected_connected_panes: 0") || !strings.Contains(view, "terminal_picker_row_count: 2") || !strings.Contains(view, "ops-watch") {
 				t.Fatalf("expected ctrl-f flow to render terminal picker, got:\n%s", view)
 			}
 			return nil
@@ -2071,7 +2071,7 @@ func TestE2ERunScenarioTerminalPickerEscClosesOverlay(t *testing.T) {
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "terminal_picker_rows:") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "terminal_picker_rows:") || strings.Contains(view, "focus_overlay_target:") {
 				t.Fatalf("expected terminal picker esc flow to close overlay, got:\n%s", view)
 			}
 			return nil
@@ -2304,7 +2304,7 @@ func TestE2ERunScenarioLayoutResolveEscClosesOverlay(t *testing.T) {
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "slot: waiting") || strings.Contains(view, "layout_resolve_rows:") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "slot: waiting") || strings.Contains(view, "layout_resolve_rows:") || strings.Contains(view, "focus_overlay_target:") || strings.Contains(view, "mode:") {
 				t.Fatalf("expected layout resolve esc flow to close overlay, got:\n%s", view)
 			}
 			return nil

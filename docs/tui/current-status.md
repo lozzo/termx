@@ -143,6 +143,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 119. 第一百一十五轮 TDD 已补上 shell mode/global 路径的测试闭环
 120. 第一百一十六轮 TDD 已补上 runtime 观测字段剩余可见性的测试闭环
 121. 第一百一十七轮 TDD 已补上 runtime status 与初始状态投影的测试闭环
+122. 第一百一十八轮 TDD 已补上 runtime overlay 进入与退出投影的测试闭环
 
 对应文档：
 
@@ -223,6 +224,14 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- 已补上一条 runtime 场景型 E2E：`Ctrl-w` 打开 workspace picker 时主视图显式显示 `overlay: workspace_picker`
+- 已补上一条 runtime 场景型 E2E：workspace picker create row 打开 prompt 时主视图显式显示 `focus_overlay_target: prompt`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t` 打开 terminal manager 时主视图显式显示 `overlay: terminal_manager` 与 `focus_overlay_target: terminal_manager`
+- 已补上一条 runtime 场景型 E2E：terminal manager edit 打开 prompt 时主视图显式显示 `overlay: prompt`
+- 已补上一条 runtime 场景型 E2E：`Ctrl-f` 打开 terminal picker 时主视图显式显示 `overlay: terminal_picker` 与 `focus_overlay_target: terminal_picker`
+- 已补上一条 runtime 场景型 E2E：workspace picker / prompt / terminal manager / terminal picker / layout resolve 关闭后主视图不再残留 `focus_overlay_target`
+- 已补上一条 runtime 场景型 E2E：terminal manager 与 layout resolve 关闭后主视图不再残留临时 `mode`
+- runtime overlay 进入时的 `overlay/focus_overlay_target` 与退出后的清理现在被场景测试锁住
 - 已补上一条 runtime 场景型 E2E：connected pane 在没有 snapshot 时主视图不会渲染 `screen:`
 - 已补上一条 runtime 场景型 E2E：closed frame 后主视图显式显示 `runtime_state/runtime_exit_code`
 - 已补上一条 runtime 场景型 E2E：sync lost 期间主视图显示 `runtime_sync_lost`，snapshot refresh 后自动清除
