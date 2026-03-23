@@ -692,7 +692,7 @@ func TestE2ERunScenarioTerminalManagerMoveShowsSelectedTags(t *testing.T) {
 					}
 				}
 			}
-			if view := model.View(); !strings.Contains(view, "terminal_manager_selected: term-2") || !strings.Contains(view, "terminal_manager_selected_label: build-log") || !strings.Contains(view, "terminal_manager_selected_section: PARKED") || !strings.Contains(view, "terminal_manager_selected_command: tail -f build.log") || !strings.Contains(view, "terminal_manager_selected_tags: group=build") || !strings.Contains(view, "detail_visibility: hidden") || !strings.Contains(view, "detail_connected_panes: 0") || !strings.Contains(view, "detail_tags: group=build") {
+			if view := model.View(); !strings.Contains(view, "terminal_manager_selected: term-2") || !strings.Contains(view, "terminal_manager_selected_label: build-log") || !strings.Contains(view, "terminal_manager_selected_section: PARKED") || !strings.Contains(view, "terminal_manager_selected_command: tail -f build.log") || !strings.Contains(view, "terminal_manager_selected_tags: group=build") || !strings.Contains(view, "detail_visibility: hidden") || !strings.Contains(view, "detail_connected_panes: 0") || !strings.Contains(view, "detail_location_count: 0") || !strings.Contains(view, "detail_tags: group=build") {
 				t.Fatalf("expected terminal manager move flow to render selected tags, got:\n%s", view)
 			}
 			return nil
