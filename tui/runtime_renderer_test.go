@@ -311,3 +311,17 @@ func TestRuntimeRendererRendersExitedPaneState(t *testing.T) {
 		t.Fatalf("expected pane exit code in rendered view, got:\n%s", view)
 	}
 }
+
+func TestRuntimeRendererRendersConnectionRoleOwner(t *testing.T) {
+	view := runtimeRenderer{}.Render(connectedRunAppState(), nil)
+	if !strings.Contains(view, "connection_role: owner") {
+		t.Fatalf("expected owner connection role in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersConnectionRoleFollower(t *testing.T) {
+	view := runtimeRenderer{}.Render(runtimeStateWithFollowerPaneConnection(), nil)
+	if !strings.Contains(view, "connection_role: follower") {
+		t.Fatalf("expected follower connection role in rendered view, got:\n%s", view)
+	}
+}

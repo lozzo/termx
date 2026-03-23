@@ -832,6 +832,33 @@ func TestE2ERunScenarioCtrlGShowsGlobalModeInView(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioFollowerConnectionRoleVisibleInView(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithFollowerPaneConnection()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			if view := model.View(); !strings.Contains(view, "connection_role: follower") {
+				t.Fatalf("expected runtime view to expose follower connection role, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 var (
 	errRuntimeRunBoom     = errors.New("run boom")
 	bootstrapperStopCalls int
@@ -1051,5 +1078,27 @@ func runtimeStateWithLayoutResolveTarget() types.AppState {
 	state.UI.Focus.Layer = types.FocusLayerOverlay
 	state.UI.Focus.OverlayTarget = types.OverlayLayoutResolve
 	state.UI.Mode = types.ModeState{Active: types.ModePicker}
+	return state
+}
+
+func runtimeStateWithFollowerPaneConnection() types.AppState {
+	state := connectedRunAppState()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	tab.Panes[types.PaneID("pane-2")] = types.PaneState{
+		ID:         types.PaneID("pane-2"),
+		Kind:       types.PaneKindTiled,
+		SlotState:  types.PaneSlotConnected,
+		TerminalID: types.TerminalID("term-1"),
+	}
+	tab.ActivePaneID = types.PaneID("pane-2")
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-1"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1"), types.PaneID("pane-2")},
+		OwnerPaneID:      types.PaneID("pane-1"),
+	}
+	state.UI.Focus.PaneID = types.PaneID("pane-2")
 	return state
 }

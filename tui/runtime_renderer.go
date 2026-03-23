@@ -54,6 +54,7 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 			lines = append(lines, fmt.Sprintf("title: %s", label))
 			lines = append(lines, renderTerminalStateLines(terminal)...)
 		}
+		lines = append(lines, renderConnectionLines(state.Domain.Connections[pane.TerminalID], pane.ID)...)
 		if r.Screens != nil {
 			if snapshot, ok := r.Screens.Snapshot(pane.TerminalID); ok && snapshot != nil {
 				lines = append(lines, "screen:")
@@ -86,6 +87,17 @@ func renderFocusLines(focus types.FocusState) []string {
 	return lines
 }
 
+func renderConnectionLines(conn types.ConnectionState, paneID types.PaneID) []string {
+	if conn.TerminalID == "" || !containsPaneID(conn.ConnectedPaneIDs, paneID) {
+		return nil
+	}
+	role := "follower"
+	if conn.OwnerPaneID == paneID {
+		role = "owner"
+	}
+	return []string{fmt.Sprintf("connection_role: %s", role)}
+}
+
 func renderTerminalStateLines(terminal types.TerminalRef) []string {
 	var lines []string
 	if terminal.State != "" {
@@ -95,6 +107,15 @@ func renderTerminalStateLines(terminal types.TerminalRef) []string {
 		lines = append(lines, fmt.Sprintf("terminal_exit_code: %d", *terminal.ExitCode))
 	}
 	return lines
+}
+
+func containsPaneID(ids []types.PaneID, target types.PaneID) bool {
+	for _, id := range ids {
+		if id == target {
+			return true
+		}
+	}
+	return false
 }
 
 func renderModeLines(mode types.ModeState) []string {
