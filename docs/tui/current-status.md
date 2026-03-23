@@ -141,6 +141,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 117. 第一百一十三轮 TDD 已补上 layout resolve 主要动作路径的测试闭环
 118. 第一百一十四轮 TDD 已补上 workspace picker 树展开收起的测试闭环
 119. 第一百一十五轮 TDD 已补上 shell mode/global 路径的测试闭环
+120. 第一百一十六轮 TDD 已补上 runtime 观测字段剩余可见性的测试闭环
 
 对应文档：
 
@@ -221,6 +222,10 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- 已补上一条 runtime 场景型 E2E：active pane 主视图现在显式锁住 `title/tab_layer/pane_kind/terminal_state/screen`
+- 已补上一条 runtime 场景型 E2E：重复 notice 在主视图中聚合为 `(x2)` 显示
+- 已补上一条 runtime 场景型 E2E：owner 连接角色在主视图中显示 `connection_role: owner`
+- runtime 剩余的 owner/active snapshot/notice 聚合可见性现在被场景测试锁住
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> Esc` 后主视图不再显示 `mode: global`
 - 已补上一条 runtime 场景型 E2E：global mode timeout 后主视图不再显示 `mode: global`
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t` 后主视图显示 `mode: picker` 且不再显示 `mode: global`

@@ -195,6 +195,62 @@ func TestE2ERunScenarioRendersSnapshotAndForwardsActivePaneInput(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioActivePaneCoreViewVisible(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithActiveTerminalMetadata()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Channel:    21,
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{
+									{Content: "$"},
+									{Content: " "},
+									{Content: "p"},
+									{Content: "w"},
+									{Content: "d"},
+								},
+								{
+									{Content: "/"},
+									{Content: "t"},
+									{Content: "m"},
+									{Content: "p"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			if view := model.View(); !strings.Contains(view, "title: api-dev") || !strings.Contains(view, "tab_layer: tiled") || !strings.Contains(view, "pane_kind: tiled") || !strings.Contains(view, "terminal_state: running") || !strings.Contains(view, "screen:") || !strings.Contains(view, "$ pwd") || !strings.Contains(view, "/tmp") {
+				t.Fatalf("expected runtime view to expose active pane core fields, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioStreamOutputTriggersViewRefresh(t *testing.T) {
 	stream := make(chan protocol.StreamFrame, 1)
 	client := &stubRunClient{}
@@ -573,6 +629,41 @@ func TestE2ERunScenarioBlockedInputNoticeAppearsInView(t *testing.T) {
 			_, _ = model.Update(feedback)
 			if view := model.View(); !strings.Contains(view, "notices:") || !strings.Contains(view, "observer-only") {
 				t.Fatalf("expected runtime view to show blocked input notice, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioRepeatedNoticeAppearsAggregatedInView(t *testing.T) {
+	client := &stubRunClient{}
+	initial := connectedRunAppState()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			feedback := btui.FeedbackMsg{
+				Notices: []btui.Notice{{
+					Level: btui.NoticeLevelError,
+					Text:  "terminal switched to observer-only mode",
+				}},
+			}
+			_, _ = model.Update(feedback)
+			_, _ = model.Update(feedback)
+			if view := model.View(); !strings.Contains(view, "notices:") || !strings.Contains(view, "[error] terminal switched to observer-only mode (x2)") {
+				t.Fatalf("expected runtime view to aggregate repeated notices, got:\n%s", view)
 			}
 			return nil
 		},
@@ -2151,6 +2242,33 @@ func TestE2ERunScenarioFollowerConnectionRoleVisibleInView(t *testing.T) {
 		run: func(model *btui.Model) error {
 			if view := model.View(); !strings.Contains(view, "connection_role: follower") || !strings.Contains(view, "connected_panes: 2") {
 				t.Fatalf("expected runtime view to expose shared connection state, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioOwnerConnectionRoleVisibleInView(t *testing.T) {
+	client := &stubRunClient{}
+	initial := connectedRunAppState()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			if view := model.View(); !strings.Contains(view, "connection_role: owner") || !strings.Contains(view, "connected_panes: 1") {
+				t.Fatalf("expected runtime view to expose owner connection state, got:\n%s", view)
 			}
 			return nil
 		},
