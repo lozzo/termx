@@ -124,6 +124,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 100. 第九十六轮 TDD 已补上 terminal manager 位置数量的 renderer 可见性闭环
 101. 第九十七轮 TDD 已补上 terminal manager detail owner 的 renderer 可见性闭环
 102. 第九十八轮 TDD 已补上 terminal manager detail visibility 标签的测试闭环
+103. 第九十九轮 TDD 已补上 terminal manager detail state 的测试闭环
 
 对应文档：
 
@@ -204,6 +205,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- 已补上 terminal manager detail 的 `detail_state` renderer 断言
+- 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t` 打开后主视图显示 `detail_state: running`
+- terminal manager detail 的运行状态现在被 renderer 单测和 runtime E2E 同时锁住
 - 已补上 terminal manager detail 的 `detail_visibility` renderer 断言
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t` 打开后主视图显示 `detail_visibility: visible`
 - terminal manager detail 的可见性标签现在被 renderer 单测和 runtime E2E 同时锁住
