@@ -315,6 +315,9 @@ func TestRuntimeRendererRendersTerminalPickerOverlay(t *testing.T) {
 	if !strings.Contains(view, "terminal_picker_selected_state: running") {
 		t.Fatalf("expected picker selected terminal state in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "terminal_picker_row_count: 2") {
+		t.Fatalf("expected picker row count in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "terminal_picker_rows:") {
 		t.Fatalf("expected picker rows section in rendered view, got:\n%s", view)
 	}

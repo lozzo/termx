@@ -391,6 +391,7 @@ func renderPromptLines(prompt *promptdomain.State) []string {
 func renderTerminalPickerLines(picker *terminalpickerdomain.State) []string {
 	lines := []string{
 		fmt.Sprintf("terminal_picker_query: %s", picker.Query()),
+		fmt.Sprintf("terminal_picker_row_count: %d", len(picker.VisibleRows())),
 	}
 	if row, ok := picker.SelectedRow(); ok && row.Kind == terminalpickerdomain.RowKindTerminal {
 		lines = append(lines,
