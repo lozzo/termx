@@ -571,7 +571,9 @@ func applyTerminalManagerCreateTerminal(result *Result) {
 		return
 	}
 	result.Effects = append(result.Effects, CreateTerminalEffect{
-		PaneID: result.State.UI.Overlay.ReturnFocus.PaneID,
+		PaneID:  result.State.UI.Overlay.ReturnFocus.PaneID,
+		Command: defaultCreateTerminalCommand(),
+		Name:    defaultCreateTerminalName(result.State.UI.Overlay.ReturnFocus),
 	})
 	applyCloseOverlay(&result.State)
 }
@@ -1006,4 +1008,16 @@ func formatTerminalMetadataDraft(terminal types.TerminalRef) string {
 		return name
 	}
 	return name + "\n" + strings.Join(pairs, ",")
+}
+
+func defaultCreateTerminalCommand() []string {
+	return []string{"sh", "-l"}
+}
+
+func defaultCreateTerminalName(focus types.FocusState) string {
+	return strings.Join([]string{
+		string(focus.WorkspaceID),
+		string(focus.TabID),
+		string(focus.PaneID),
+	}, "-")
 }

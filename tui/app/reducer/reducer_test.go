@@ -549,6 +549,12 @@ func TestReducerTerminalManagerCreateNewTerminalEmitsCreateEffect(t *testing.T) 
 	if effect.PaneID != types.PaneID("pane-1") {
 		t.Fatalf("unexpected create effect payload: %+v", effect)
 	}
+	if len(effect.Command) == 0 {
+		t.Fatalf("expected default shell command in create effect, got %+v", effect)
+	}
+	if effect.Name != "ws-1-tab-1-pane-1" {
+		t.Fatalf("expected stable default terminal name, got %+v", effect)
+	}
 }
 
 func TestReducerTerminalManagerSearchMovesSelectionToMatchedTerminal(t *testing.T) {
@@ -701,6 +707,13 @@ func TestE2EReducerScenarioTerminalManagerCreatesNewTerminalFromCreateRow(t *tes
 	}
 	if len(result.Effects) != 1 {
 		t.Fatalf("expected one create terminal effect, got %d", len(result.Effects))
+	}
+	effect, ok := result.Effects[0].(CreateTerminalEffect)
+	if !ok {
+		t.Fatalf("expected create terminal effect, got %T", result.Effects[0])
+	}
+	if effect.Name != "ws-1-tab-1-pane-1" || len(effect.Command) == 0 {
+		t.Fatalf("expected create effect defaults to be populated, got %+v", effect)
 	}
 }
 
