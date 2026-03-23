@@ -344,6 +344,7 @@ func renderPromptLines(prompt *promptdomain.State) []string {
 	if len(prompt.Fields) == 0 {
 		lines = append(lines,
 			"prompt_active_field: draft",
+			"prompt_active_label: draft",
 			"prompt_fields:",
 			fmt.Sprintf("> [draft] %s", prompt.Draft),
 		)
@@ -355,6 +356,7 @@ func renderPromptLines(prompt *promptdomain.State) []string {
 	}
 	lines = append(lines,
 		fmt.Sprintf("prompt_active_field: %s", prompt.Fields[active].Key),
+		fmt.Sprintf("prompt_active_label: %s", prompt.Fields[active].Label),
 		"prompt_fields:",
 	)
 	for idx, field := range prompt.Fields {
