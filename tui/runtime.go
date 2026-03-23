@@ -35,6 +35,7 @@ type runtimeDependencies struct {
 	SessionBootstrap RuntimeSessionBootstrapper
 	ProgramRunner    ProgramRunner
 	Renderer         btui.Renderer
+	RuntimeExecutor  btui.RuntimeExecutor
 	TerminalSize     func(input io.Reader, output io.Writer) protocol.Size
 }
 
@@ -66,6 +67,11 @@ func runWithDependencies(client Client, cfg Config, input io.Reader, output io.W
 	}
 	if deps.Renderer == nil {
 		deps.Renderer = runtimeRenderer{}
+	}
+	if deps.RuntimeExecutor == nil {
+		deps.RuntimeExecutor = btui.DefaultRuntimeExecutor{
+			TerminalService: newRuntimeTerminalService(client),
+		}
 	}
 	if deps.TerminalSize == nil {
 		deps.TerminalSize = currentTerminalSize
@@ -114,7 +120,7 @@ func runWithDependencies(client Client, cfg Config, input io.Reader, output io.W
 		InitCmd:            updateHandler.InitCmd(),
 		Mapper:             btui.NewIntentMapper(btui.Config{PrefixTimeout: cfg.PrefixTimeout}),
 		Reducer:            nil,
-		EffectHandler:      btui.RuntimeEffectHandler{Executor: btui.DefaultRuntimeExecutor{}},
+		EffectHandler:      btui.RuntimeEffectHandler{Executor: deps.RuntimeExecutor},
 		Renderer:           renderer,
 		UnmappedKeyHandler: NewRuntimeTerminalInputHandler(client, terminalStore),
 		MessageHandler:     updateHandler,

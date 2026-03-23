@@ -1644,6 +1644,15 @@ func TestE2ERunScenarioMetadataPromptTabSubmitUpdatesTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected run scenario to succeed, got %v", err)
 	}
+	if len(client.metadataCalls) != 1 {
+		t.Fatalf("expected one metadata call, got %d", len(client.metadataCalls))
+	}
+	if client.metadataCalls[0].terminalID != "term-2" || client.metadataCalls[0].name != "build-log-v2" {
+		t.Fatalf("unexpected metadata call payload: %+v", client.metadataCalls[0])
+	}
+	if client.metadataCalls[0].tags["group"] != "build" || client.metadataCalls[0].tags["env"] != "prod" {
+		t.Fatalf("unexpected metadata call tags: %+v", client.metadataCalls[0].tags)
+	}
 }
 
 func TestE2ERunScenarioTerminalManagerStopClosesOverlayAndClearsPane(t *testing.T) {
@@ -1693,6 +1702,9 @@ func TestE2ERunScenarioTerminalManagerStopClosesOverlayAndClearsPane(t *testing.
 	})
 	if err != nil {
 		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+	if len(client.killCalls) != 1 || client.killCalls[0] != "term-1" {
+		t.Fatalf("expected one kill call for term-1, got %+v", client.killCalls)
 	}
 }
 
@@ -1780,6 +1792,12 @@ func TestE2ERunScenarioTerminalManagerConnectInNewTabClosesOverlay(t *testing.T)
 	if err != nil {
 		t.Fatalf("expected run scenario to succeed, got %v", err)
 	}
+	if len(client.newTabCalls) != 1 {
+		t.Fatalf("expected one new-tab call, got %d", len(client.newTabCalls))
+	}
+	if client.newTabCalls[0].workspaceID != types.WorkspaceID("ws-1") || client.newTabCalls[0].terminalID != types.TerminalID("term-2") {
+		t.Fatalf("unexpected new-tab call payload: %+v", client.newTabCalls[0])
+	}
 }
 
 func TestE2ERunScenarioTerminalManagerConnectInFloatingPaneClosesOverlay(t *testing.T) {
@@ -1822,6 +1840,12 @@ func TestE2ERunScenarioTerminalManagerConnectInFloatingPaneClosesOverlay(t *test
 	})
 	if err != nil {
 		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+	if len(client.floatingCalls) != 1 {
+		t.Fatalf("expected one floating-pane call, got %d", len(client.floatingCalls))
+	}
+	if client.floatingCalls[0].workspaceID != types.WorkspaceID("ws-1") || client.floatingCalls[0].tabID != types.TabID("tab-1") || client.floatingCalls[0].terminalID != types.TerminalID("term-2") {
+		t.Fatalf("unexpected floating-pane call payload: %+v", client.floatingCalls[0])
 	}
 }
 
@@ -1924,6 +1948,12 @@ func TestE2ERunScenarioTerminalManagerCreateRowSubmitClosesOverlay(t *testing.T)
 	})
 	if err != nil {
 		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+	if len(client.createCalls) != 1 {
+		t.Fatalf("expected one create call, got %d", len(client.createCalls))
+	}
+	if client.createCalls[0].name == "" || len(client.createCalls[0].command) == 0 {
+		t.Fatalf("expected create call to include default name and command, got %+v", client.createCalls[0])
 	}
 }
 
@@ -2090,6 +2120,12 @@ func TestE2ERunScenarioTerminalPickerCreateRowSubmitClosesOverlay(t *testing.T) 
 	})
 	if err != nil {
 		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+	if len(client.createCalls) != 1 {
+		t.Fatalf("expected one create call, got %d", len(client.createCalls))
+	}
+	if client.createCalls[0].name == "" || len(client.createCalls[0].command) == 0 {
+		t.Fatalf("expected create call to include default name and command, got %+v", client.createCalls[0])
 	}
 }
 
@@ -2724,17 +2760,59 @@ type stubRunClient struct {
 	inputs      []runtimeInputCall
 	snapshots   map[string]*protocol.Snapshot
 	snapshotErr error
+	createCalls []runtimeCreateCall
+	metadataCalls []runtimeMetadataCall
+	killCalls []string
+	newTabCalls []runtimeNewTabCall
+	floatingCalls []runtimeFloatingCall
+}
+
+type runtimeCreateCall struct {
+	command []string
+	name    string
+	size    protocol.Size
+}
+
+type runtimeMetadataCall struct {
+	terminalID string
+	name       string
+	tags       map[string]string
+}
+
+type runtimeNewTabCall struct {
+	workspaceID types.WorkspaceID
+	terminalID  types.TerminalID
+}
+
+type runtimeFloatingCall struct {
+	workspaceID types.WorkspaceID
+	tabID       types.TabID
+	terminalID  types.TerminalID
 }
 
 func (c *stubRunClient) Close() error { return nil }
 
-func (c *stubRunClient) Create(context.Context, []string, string, protocol.Size) (*protocol.CreateResult, error) {
-	return nil, nil
+func (c *stubRunClient) Create(_ context.Context, command []string, name string, size protocol.Size) (*protocol.CreateResult, error) {
+	c.createCalls = append(c.createCalls, runtimeCreateCall{
+		command: append([]string(nil), command...),
+		name:    name,
+		size:    size,
+	})
+	return &protocol.CreateResult{}, nil
 }
 
 func (c *stubRunClient) SetTags(context.Context, string, map[string]string) error { return nil }
 
-func (c *stubRunClient) SetMetadata(context.Context, string, string, map[string]string) error {
+func (c *stubRunClient) SetMetadata(_ context.Context, terminalID string, name string, tags map[string]string) error {
+	cloned := make(map[string]string, len(tags))
+	for key, value := range tags {
+		cloned[key] = value
+	}
+	c.metadataCalls = append(c.metadataCalls, runtimeMetadataCall{
+		terminalID: terminalID,
+		name:       name,
+		tags:       cloned,
+	})
 	return nil
 }
 
@@ -2773,7 +2851,27 @@ func (c *stubRunClient) Stream(uint16) (<-chan protocol.StreamFrame, func()) {
 	return ch, func() {}
 }
 
-func (c *stubRunClient) Kill(context.Context, string) error { return nil }
+func (c *stubRunClient) Kill(_ context.Context, terminalID string) error {
+	c.killCalls = append(c.killCalls, terminalID)
+	return nil
+}
+
+func (c *stubRunClient) ConnectTerminalInNewTab(workspaceID types.WorkspaceID, terminalID types.TerminalID) error {
+	c.newTabCalls = append(c.newTabCalls, runtimeNewTabCall{
+		workspaceID: workspaceID,
+		terminalID:  terminalID,
+	})
+	return nil
+}
+
+func (c *stubRunClient) ConnectTerminalInFloatingPane(workspaceID types.WorkspaceID, tabID types.TabID, terminalID types.TerminalID) error {
+	c.floatingCalls = append(c.floatingCalls, runtimeFloatingCall{
+		workspaceID: workspaceID,
+		tabID:       tabID,
+		terminalID:  terminalID,
+	})
+	return nil
+}
 
 func connectedRunAppState() types.AppState {
 	state := buildSinglePaneAppState("main", "shell", types.PaneSlotConnected)

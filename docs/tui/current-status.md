@@ -145,6 +145,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 121. 第一百一十七轮 TDD 已补上 runtime status 与初始状态投影的测试闭环
 122. 第一百一十八轮 TDD 已补上 runtime overlay 进入与退出投影的测试闭环
 123. 第一百一十九轮 TDD 已补上 runtime 剩余 prompt 与 resolve 字段投影的测试闭环
+124. 第一百二十轮 TDD 已补上 runtime effect 执行链路的测试闭环
 
 对应文档：
 
@@ -225,6 +226,14 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- runtime 现在通过 `runtimeDependencies.RuntimeExecutor` 显式接线 effect executor，不再固定为空执行器
+- 已补上一条 runtime 场景型 E2E：metadata prompt submit 后会真正调用 terminal metadata 更新服务
+- 已补上一条 runtime 场景型 E2E：terminal manager stop 后会真正调用 terminal kill 服务
+- 已补上一条 runtime 场景型 E2E：terminal manager connect in new tab 后会真正调用 new-tab 服务
+- 已补上一条 runtime 场景型 E2E：terminal manager connect in floating pane 后会真正调用 floating-pane 服务
+- 已补上一条 runtime 场景型 E2E：terminal manager create row submit 后会真正调用 terminal create 服务
+- 已补上一条 runtime 场景型 E2E：terminal picker create row submit 后会真正调用 terminal create 服务
+- runtime 的 effect 触发现在不只验证 overlay 关闭，也验证服务调用参数被正确发出
 - 已补上一条 runtime 场景型 E2E：terminal manager 初始详情区现在显式锁住 `detail_locations:`
 - 已补上一条 runtime 场景型 E2E：terminal manager create row 选中态显式锁住 `overlay: terminal_manager` 与 `focus_overlay_target: terminal_manager`
 - 已补上一条 runtime 场景型 E2E：metadata prompt `Tab` 到第二字段后主视图显式锁住 `prompt_terminal/prompt_active_field=tags/prompt_active_label/prompt_active_value/prompt_active_index`
