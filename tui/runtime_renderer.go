@@ -319,6 +319,9 @@ func renderPromptLines(prompt *promptdomain.State) []string {
 		fmt.Sprintf("prompt_title: %s", prompt.Title),
 		fmt.Sprintf("prompt_kind: %s", prompt.Kind),
 	}
+	if prompt.TerminalID != "" {
+		lines = append(lines, fmt.Sprintf("prompt_terminal: %s", prompt.TerminalID))
+	}
 	if len(prompt.Fields) == 0 {
 		lines = append(lines,
 			"prompt_fields:",

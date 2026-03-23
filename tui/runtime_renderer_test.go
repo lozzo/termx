@@ -205,6 +205,9 @@ func TestRuntimeRendererRendersPromptOverlay(t *testing.T) {
 	if !strings.Contains(view, "prompt_title: edit terminal metadata") {
 		t.Fatalf("expected prompt title in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "prompt_terminal: term-2") {
+		t.Fatalf("expected prompt terminal id in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "prompt_fields:") {
 		t.Fatalf("expected prompt fields section in rendered view, got:\n%s", view)
 	}
