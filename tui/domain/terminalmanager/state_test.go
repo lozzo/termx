@@ -164,6 +164,25 @@ func TestManagerStateSelectedDetailTracksCurrentTerminal(t *testing.T) {
 	}
 }
 
+func TestManagerStateSelectedRowCarriesTags(t *testing.T) {
+	state := sampleDomainState()
+
+	manager := NewState(state, types.FocusState{
+		Layer:       types.FocusLayerTiled,
+		WorkspaceID: types.WorkspaceID("ws-1"),
+		TabID:       types.TabID("tab-1"),
+		PaneID:      types.PaneID("pane-1"),
+	})
+
+	row, ok := manager.SelectedRow()
+	if !ok {
+		t.Fatal("expected selected row")
+	}
+	if row.Tags["group"] != "build" {
+		t.Fatalf("expected selected row tags, got %+v", row.Tags)
+	}
+}
+
 func sampleDomainState() types.DomainState {
 	return types.DomainState{
 		ActiveWorkspaceID: types.WorkspaceID("ws-1"),

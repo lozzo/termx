@@ -179,6 +179,7 @@ func TestRuntimeRendererRendersWorkspacePickerOverlay(t *testing.T) {
 func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	state := runtimeStateWithTerminalManagerTargets()
 	manager := terminalmanagerdomain.NewState(state.Domain, state.UI.Focus)
+	manager.MoveSelection(1)
 	state.UI.Overlay = types.OverlayState{
 		Kind: types.OverlayTerminalManager,
 		Data: manager,
@@ -189,29 +190,32 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "terminal_manager_query: ") {
 		t.Fatalf("expected manager query in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "terminal_manager_selected: term-1") {
+	if !strings.Contains(view, "terminal_manager_selected: term-2") {
 		t.Fatalf("expected manager selected terminal id in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "terminal_manager_selected_label: api-dev") {
+	if !strings.Contains(view, "terminal_manager_selected_label: build-log") {
 		t.Fatalf("expected manager selected terminal label in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "terminal_manager_selected_kind: terminal") {
 		t.Fatalf("expected manager selected row kind in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "terminal_manager_selected_section: VISIBLE") {
+	if !strings.Contains(view, "terminal_manager_selected_section: PARKED") {
 		t.Fatalf("expected manager selected terminal section in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "terminal_manager_selected_state: running") {
 		t.Fatalf("expected manager selected terminal state in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "terminal_manager_selected_visible: true") {
+	if !strings.Contains(view, "terminal_manager_selected_visible: false") {
 		t.Fatalf("expected manager selected terminal visible flag in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "terminal_manager_selected_connected_panes: 1") {
+	if !strings.Contains(view, "terminal_manager_selected_connected_panes: 0") {
 		t.Fatalf("expected manager selected terminal connection count in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "terminal_manager_selected_command: npm run dev") {
+	if !strings.Contains(view, "terminal_manager_selected_command: tail -f build.log") {
 		t.Fatalf("expected manager selected terminal command in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "terminal_manager_selected_tags: group=build") {
+		t.Fatalf("expected manager selected terminal tags in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "terminal_manager_row_count: 7") {
 		t.Fatalf("expected manager row count in rendered view, got:\n%s", view)
@@ -219,29 +223,29 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "terminal_manager_rows:") {
 		t.Fatalf("expected manager rows section in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "> [terminal] api-dev") {
+	if !strings.Contains(view, "> [terminal] build-log") {
 		t.Fatalf("expected selected manager row in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "terminal_manager_detail: api-dev") {
+	if !strings.Contains(view, "terminal_manager_detail: build-log") {
 		t.Fatalf("expected manager detail header in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "detail_terminal: term-1") {
+	if !strings.Contains(view, "detail_terminal: term-2") {
 		t.Fatalf("expected manager detail terminal id in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "detail_visible: true") {
+	if !strings.Contains(view, "detail_visible: false") {
 		t.Fatalf("expected manager detail visible flag in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "detail_command: npm run dev") {
+	if !strings.Contains(view, "detail_command: tail -f build.log") {
 		t.Fatalf("expected manager detail command in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "detail_connected_panes: 1") {
+	if !strings.Contains(view, "detail_connected_panes: 0") {
 		t.Fatalf("expected manager detail connection count in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "detail_location_count: 1") {
+	if !strings.Contains(view, "detail_location_count: 0") {
 		t.Fatalf("expected manager detail location count in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "detail_locations:") || !strings.Contains(view, "- main/shell/pane:pane-1") {
-		t.Fatalf("expected manager detail locations in rendered view, got:\n%s", view)
+	if !strings.Contains(view, "detail_tags: group=build") {
+		t.Fatalf("expected manager detail tags in rendered view, got:\n%s", view)
 	}
 }
 

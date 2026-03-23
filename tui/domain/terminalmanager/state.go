@@ -41,6 +41,7 @@ type Row struct {
 	Label              string
 	State              types.TerminalRunState
 	Visible            bool
+	Tags               map[string]string
 	SearchText         string
 	Command            string
 	ConnectedPaneCount int
@@ -219,6 +220,7 @@ func buildRows(domain types.DomainState) []Row {
 			Label:              label,
 			State:              terminal.State,
 			Visible:            terminal.Visible,
+			Tags:               cloneStringMap(terminal.Tags),
 			SearchText:         searchText(terminalID, terminal),
 			Command:            strings.Join(terminal.Command, " "),
 			ConnectedPaneCount: connectedPaneCount,
@@ -380,6 +382,17 @@ func cloneDetails(in map[types.TerminalID]Detail) map[types.TerminalID]Detail {
 		clone.Tags = append([]Tag(nil), detail.Tags...)
 		clone.Locations = append([]Location(nil), detail.Locations...)
 		out[id] = clone
+	}
+	return out
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		out[key] = value
 	}
 	return out
 }

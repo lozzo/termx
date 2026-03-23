@@ -670,6 +670,47 @@ func TestE2ERunScenarioCtrlGTOpensTerminalManagerInView(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioTerminalManagerMoveShowsSelectedTags(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyDown},
+			} {
+				nextModel, cmd := model.Update(key)
+				model = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = model.Update(msg)
+						model = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := model.View(); !strings.Contains(view, "terminal_manager_selected: term-2") || !strings.Contains(view, "terminal_manager_selected_label: build-log") || !strings.Contains(view, "terminal_manager_selected_section: PARKED") || !strings.Contains(view, "terminal_manager_selected_command: tail -f build.log") || !strings.Contains(view, "terminal_manager_selected_tags: group=build") || !strings.Contains(view, "detail_tags: group=build") {
+				t.Fatalf("expected terminal manager move flow to render selected tags, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioTerminalManagerEditOpensPromptInView(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithTerminalManagerTargets()
