@@ -152,6 +152,9 @@ func TestRuntimeRendererRendersWorkspacePickerOverlay(t *testing.T) {
 	if !strings.Contains(view, "workspace_picker_selected_expanded: true") {
 		t.Fatalf("expected picker selected node expanded flag in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "workspace_picker_selected_match: true") {
+		t.Fatalf("expected picker selected node match flag in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "workspace_picker_rows:") {
 		t.Fatalf("expected picker rows section in rendered view, got:\n%s", view)
 	}
