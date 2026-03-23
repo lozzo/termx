@@ -1,3 +1,5 @@
+//go:build legacy_tui_archive
+
 package termx
 
 import (

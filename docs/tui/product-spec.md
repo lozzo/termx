@@ -1,406 +1,284 @@
-# termx TUI 产品规格书
+# termx TUI 产品规格
 
-状态：Draft v2
-日期：2026-03-21
+状态：Draft v1
+日期：2026-03-23
 
 ---
 
 ## 1. 产品定义
 
-termx TUI 是一个本地终端里的工作台，用来观察、组织、复用、恢复 server 托管的 terminal。
+termx TUI 是一个运行在本地终端里的多工作位终端工作台。
 
-它不是纯粹的 tmux/zellij 复刻，也不是一个只会 attach 单个 shell 的瘦客户端。
+它一端连接 termx server 托管的 terminal 池，另一端提供类似 tmux / zellij 的界面组织能力。
 
 一句话定义：
 
-- `像 zellij/tmux 一样组织界面`
-- `像 terminal runtime 控制台一样管理 terminal 池`
+- `像终端工作台一样组织 workspace / tab / pane`
+- `像运行时控制台一样管理、复用、恢复 terminal`
+
+它不是：
+
+- tmux 的兼容实现
+- 只会 connect 单个 shell 的轻客户端
+- 先做复杂 IDE 管理台的系统
 
 ---
 
 ## 2. 设计目标
 
-termx TUI 必须同时满足两件事：
+### 2.1 核心目标
 
-1. 普通用户直接运行 `termx` 就能开始工作
-2. 高级用户能显式利用 terminal 复用、共享、恢复、管理这些能力
+1. 用户执行 `termx` 后，立即进入可工作的界面
+2. 用户先理解 `workspace / tab / pane / terminal` 四个概念即可开始工作
+3. terminal 的复用、共享、恢复是自然能力，不是隐藏能力
+4. 关闭 TUI 不会隐式结束 terminal
+5. 在复杂共享场景下，terminal 的控制权、显示方式和生命周期都清楚可解释
 
-产品目标：
+### 2.2 非目标
 
-- 直接启动即可进入可工作的 workspace
-- 用户优先理解 `workspace / tab / pane / terminal`
-- 复用已有 terminal 是自然路径，不是隐藏能力
-- tiled / floating 共存时焦点和层级清楚
-- 退出 TUI 不会隐式结束 terminal
-- metadata、picker、manager、restore 对开发和运维都可用
-
-非目标：
-
-- 不追求完整兼容 tmux 语义
-- 不追求把底层 server/runtime 模型完全隐藏
-- 不在当前阶段做 IDE 式复杂管理面板
+1. 不追求 tmux 快捷键和 session 语义完全兼容
+2. 不追求把 server/runtime 概念彻底藏起来
+3. 当前阶段不先做批量运维控制台、规则编排器、复杂可视化面板
+4. 不为追求炫技交互而牺牲稳定性和可解释性
 
 ---
 
-## 3. 核心心智模型
+## 3. 用户画像
 
-### 3.1 两层模型
+### 3.1 开发者
 
-termx TUI 的核心不是单层 session，而是两层：
+- 日常开发、构建、测试、日志查看
+- 需要快速开 pane / tab / floating
+- 需要给 terminal 命名和打 tags
 
-- 界面层
-  - workspace
-  - tab
-  - pane
-  - floating pane
-- 运行层
-  - terminal
+### 3.2 SRE / OPS
 
-用户应该能逐步理解这句话：
+- 同时观察多个长期 terminal
+- 希望快速 connect、切环境、快速恢复
+- 对共享 terminal、浮窗观察和 metadata 检索更敏感
 
-- `pane 是工作位`
-- `terminal 是持续运行的实体`
+### 3.3 长会话用户
 
-### 3.2 与 tmux / zellij 的关系
-
-使用感受上：
-
-- 新建 pane / tab / floating
-- 切焦点
-- 关闭 pane
-- 打开 picker
-
-这些都应该尽量顺手，尽量像 tmux/zellij。
-
-但语义上：
-
-- pane 不是 terminal 本体
-- terminal 可以被多个 pane 共享
-- 关闭 pane 不等于结束 terminal
-- detach TUI 不等于结束 terminal
+- 希望退出 TUI 后 terminal 继续运行
+- 希望下次重新进入还能恢复现场
+- 希望 layout / workspace file 可以描述“怎么进入工作状态”
 
 ---
 
-## 4. 用户可见概念
+## 4. 核心概念
 
-### workspace
+### 4.1 workspace
 
 - 最外层工作现场
-- 类似 tmux session / zellij session
-- 用来区分不同任务或环境
+- 对用户而言类似一个项目、任务域或环境域
+- 包含多个 tab
+- 有自己的名称、恢复状态、布局入口
 
-### tab
+### 4.2 tab
 
 - workspace 内的页面单位
-- 类似 tmux window
-- 用来区分 `dev / logs / ops / build` 等任务面
+- 用来分离不同任务面，例如 `dev / logs / ops / build`
+- 一个 tab 内同时包含 tiled pane 和 floating pane
 
-### pane
+### 4.3 pane
 
-- 一个可见区域
+- 界面上的一个可见工作位
 - 可以是 tiled pane，也可以是 floating pane
-- 是 terminal 的展示入口
-- pane 默认不是一个需要单独命名的用户对象
-- 当 pane 绑定 terminal 时，pane 标题默认展示 terminal 的真实名称
-- 只有在没有 terminal 的状态下，才展示 `saved pane` / `waiting pane` 这类状态名
+- 自身不等于 terminal
+- 默认不是独立命名对象
+- 当 pane 连接 terminal 时，标题默认显示 terminal 真实名称
 
-### terminal
+### 4.4 terminal
 
-- server 托管的真实运行实体
-- 有自己的 `name / tags / command / state`
-- 可被多个 pane 同时 attach
+- 由 termx server 托管的运行实体
+- 有自己的 `id / name / tags / command / state`
+- 可以被多个 pane 同时 connect
+- 生命周期独立于单个 pane
 
-### floating pane
+### 4.5 floating pane
 
-- tab 内悬浮显示的 pane
-- 用于临时观察、监控、诊断、快速操作
-- 与 tiled pane 并存
+- tab 内位于浮层的 pane
+- 用于临时观察、辅助操作、调试、巡检
+- 可以与 tiled pane 并存
+- 可移动、可缩放、可调 z-order
 
-### display attributes
+### 4.6 共享 terminal 的控制权关系
 
-以下不是独立主概念，而是 pane 的显示属性：
+termx 对外只强调一组共享关系：
 
-- fit / fixed
-- readonly
-- pin
-- size lock warn
+- `owner`
+- `follower`
 
----
+定义：
 
-## 5. 入口与启动规则
+- `owner` 代表 terminal 的控制权持有者
+- `follower` 代表当前只是在观察或附着该 terminal 的其他 pane / 客户端
 
-### 5.1 默认启动
+`owner` 负责的是 terminal 的控制面权限，而不是“谁在运行程序”：
 
-用户执行 `termx` 时：
+- resize terminal
+- 更新 terminal metadata
+- 执行 terminal 级管理动作
 
-- 直接进入一个临时 workspace
-- 默认创建一个可输入的 shell pane
-- 不应落到只显示帮助文字的空壳页
+例如：
 
-### 5.2 workspace 与 layout 的关系
+- `resize`
+- `set name`
+- `set tags`
+- 其他 terminal control-plane 操作
 
-- `layout` 是模板
-  - 描述 pane 结构、floating 结构、匹配规则、创建策略
-- `workspace` 是实体
-  - 描述某次真实工作现场的运行状态
+强约束：
 
-关系：
-
-- workspace 可以由 layout 派生
-- workspace 运行中的变化不会自动回写 layout
-- 显式保存时才分别保存为 workspace state 或 layout template
-
-### 5.3 恢复原则
-
-恢复失败时必须满足：
-
-- 不闪退
-- 不黑屏
-- 不破坏已有 terminal
-- 允许降级到 picker、saved pane 或临时 workspace
+- 一个 terminal 任一时刻最多一个 owner
+- 任意一个 pane 或客户端都可以主动获取 owner
+- owner 迁移必须显式、稳定、可测试
+- pane 只是观察窗口，不应该和 terminal 主体混淆
 
 ---
 
-## 6. 主界面布局
+## 5. 产品原则
 
-### 6.1 顶栏
+### 5.1 启动即工作
 
-职责：
+- `termx` 启动后直接进入 workspace
+- 默认给一个可输入 shell pane
+- 不先落到“说明页”或“空壳页”
 
-- 展示当前 workspace
-- 展示 tab strip
-- 展示 workspace 级状态摘要
+### 5.2 界面层和运行层分离
 
-建议放置的信息：
+- pane 是界面层
+- terminal 是运行层
+- 界面可以关闭、重排、恢复
+- terminal 可以持续运行、复用、共享
 
-- 当前 workspace 名称
-- tab 列表与 active tab
-- pane / terminal / floating 计数
-- notice / error / auto-acquire 等全局状态
+### 5.3 用户先用，再逐步理解
 
-### 6.2 pane 标题栏
+- 用户不必先理解所有 mode 才能工作
+- 正常工作路径应该在 normal 状态下可达
+- picker / help / manager 是增强能力，不是唯一入口
 
-职责：
+### 5.4 一切复杂行为都要能解释
 
-- 左侧显示 pane/terminal 名称
-- 右侧显示该 pane 与 terminal 的关系状态
+termx 里所有复杂行为，最终都应该能用用户语言解释：
 
-命名规则：
+- 为什么 close pane 之后 terminal 还在
+- 为什么当前不是 owner 时不能直接改 terminal 控制参数
+- 为什么 stop terminal 后 pane 还在，但已经没有连接 terminal
 
-- pane 不强调独立名字
-- pane 绑定 terminal 时，标题左侧优先显示 terminal 名称
-- pane 未绑定 terminal 时，显示 pane 状态名
-- pane 本质上是 terminal 的观察/操作视角，而不是独立命名实体
-
-当前建议状态词：
-
-- `live`
-- `saved`
-- `exit`
-- `fixed / fit`
-- `share:N`
-- `obs`
-- `ro`
-- `pin`
-- `lock`
-
-### 6.3 底栏
-
-职责：
-
-- 左侧：当前 mode 的快捷键提示
-- 右侧：当前焦点对象的极简摘要
-
-原则：
-
-- 左侧只放操作提示
-- 右侧只放当前焦点状态
-- 不把所有信息都堆到底栏
-- 左侧快捷键展示采用接近 zellij 的连续 segment 风格
-- 每个快捷键块用类似 `<g> LOCK`、`<p> PANE` 的形式呈现
-- 各 segment 之间用连续分隔符连接成一整条操作带
-
-### 6.4 overlay
-
-包括：
-
-- terminal picker
-- workspace picker
-- prompt
-- help
-
-要求：
-
-- 居中显示
-- 实色背景遮挡底层
-- 关闭后不留渲染残影
+如果一句话解释不清，设计就是有问题。
 
 ---
 
-## 7. pane 与 terminal 生命周期
+## 6. 生命周期定义
 
-### 7.1 关闭 pane
+### 6.1 close pane
 
-- 只关闭当前展示入口
+- 关闭的是 pane 这个展示入口
 - 默认不结束 terminal
-- 应给出明确提示：`pane closed; terminal keeps running`
+- 其他已连接 pane 不受影响
 
-### 7.2 terminal exited
+### 6.2 stop terminal
 
-- pane 进入 exited 状态
-- 历史内容继续可读
-- 退出后的历史颜色要回到中性前景
-- 任一绑定 pane 可触发 restart
+- stop 的是 terminal 实体
+- 所有已连接 pane 都失去运行实体
+- pane 保留在原位置，但变成“未连接 terminal 的 pane”
+- stop 前必须确认
 
-### 7.3 terminal removed / stopped
+### 6.3 terminal exited
 
-- 所有绑定该 terminal 的 pane 解除绑定
-- pane 保留为 `saved pane`
-- 几何布局保持不变
-- 用户可在原位置 attach / create / close
+- pane 变成“terminal 中程序已经退出的 pane”
+- 历史仍然可读
+- 任一已连接 pane 可触发 restart
 
-### 7.4 多 pane 共享 terminal
+### 6.4 detach / quit TUI
 
-允许：
-
-- 同一个 terminal 同时出现在多个 tab / pane / floating 中
-
-原则：
-
-- pane 共享 terminal
-- pane 不共享各自的几何
-- terminal 真实 PTY size 只有一份
-
-### 7.5 resize 原则
-
-termx 的正确方向是：
-
-- pane 几何变化不自动等于 terminal resize
-- resize 必须通过 acquire 语义主动获取
-- 可配置 tab auto-acquire
-- 可配置 size lock warn
+- 结束当前 TUI 客户端
+- 不结束 server 托管 terminal
+- 重新进入后可以继续 connect / restore
 
 ---
 
-## 8. 核心交互面
+## 7. 共享 terminal 规则
 
-### 8.1 Terminal Picker
+### 7.1 基本规则
 
-定位：
+- 一个 pane 同时最多连接一个 terminal
+- 一个 terminal 可以被多个 pane 连接
+- terminal 的 PTY size 只有一份
+- pane 的几何只决定观察窗口，不定义 terminal 主体
 
-- 快速选择器
-- 服务于“把某个 terminal 带到当前工作位”
+### 7.2 owner / follower
 
-动作：
+- owner 持有 terminal 控制权
+- follower 不持有 terminal 控制权
+- 一个 terminal 任一时刻最多一个 owner
+- owner 可执行 terminal 控制面动作
+  - resize
+  - set metadata
+  - 其他 terminal-level control 操作
+- 任意 pane 或客户端都可以请求获取 owner
+- owner 消失时，系统要稳定迁移 owner
 
-- attach 到当前 pane
-- split 后 attach
-- 创建新 terminal
-- 编辑 metadata
-- stop terminal
+### 7.3 auto-acquire
 
-### 8.2 Terminal Manager
+- tab 可以配置 auto-acquire
+- 进入 tab 时可自动争取 resize 控制权
+- 该行为必须可关闭、可测试、可预测
 
-定位：
+---
 
-- 运行实体管理页
-- 不是普通 picker 的放大版
+## 8. 主界面职责分配
 
-职责：
+### 8.1 顶栏
 
-- 查看 terminal pool
-- 看某个 terminal 当前显示在哪些 pane 中
-- bring here
-- open in new tab
-- open in floating pane
-- edit metadata
-- stop terminal
+- 当前 workspace
+- tab strip
+- workspace 级摘要
+- 全局 notice / error / sync 状态
 
-当前分组：
+### 8.2 pane 标题栏
 
-- `NEW`
-- `VISIBLE`
-- `PARKED`
-- `EXITED`
+- 左侧优先显示 terminal 名称
+- 当 pane 没有连接 terminal 时，显示槽位提示或引导动作
+- 右侧只显示最关键的 terminal 关系信息
+  - `owner / follower`
 
-### 8.3 Metadata Prompt
+### 8.3 底栏
 
-作用：
+- 左侧放当前模式的最少必要快捷键
+- 右侧放当前焦点对象的极简摘要
+- 不把所有状态都堆到底栏
 
-- 编辑 terminal 的 `name / tags`
-- 必须明确表达“你正在编辑 terminal，而不是 pane”
+### 8.4 overlay
+
+- help
+- picker
+- prompt
+- terminal manager
+- workspace picker
 
 要求：
 
-- 两步流：name -> tags
-- 显示 step 信息
-- 显示 terminal id 与 command
-- 保存后所有 attach pane 同步刷新
-- 即使 terminal 当前 parked，也要有成功反馈
+- 居中
+- 有稳定遮罩和边框
+- 关闭后不留残影
 
-### 8.4 Floating pane
+### 8.5 workspace picker
 
-floating pane 是比 tiled pane 更自由的观察层。
-
-要求：
-
-- floating pane 不应被严格限制在 tab 主视口矩形内
-- 用户可以把 floating pane 移动到 tab 主内容区域之外
-- 系统应提供快捷键把当前 floating pane 呼回并重新居中
-- “呼回并居中”应是正式交互，不依赖鼠标修正
+- 以树形结构展示 workspace 内部层级
+- 至少可展开到 `workspace -> tab -> pane`
+- 支持直接跳到某一个 pane
+- 支持搜索 workspace 名称，也支持按路径定位目标 pane
 
 ---
 
-## 9. 快捷键结构
+## 9. 成功标准
 
-当前交互结构以直接 mode 为主：
+termx TUI 第一阶段成功，不看实现细节，只看是否满足下面几点：
 
-- `Ctrl-p` pane
-- `Ctrl-r` resize
-- `Ctrl-t` tab
-- `Ctrl-w` workspace
-- `Ctrl-o` floating
-- `Ctrl-v` display
-- `Ctrl-f` terminal picker
-- `Ctrl-g` global
-
-要求：
-
-- `Esc` 永远是统一退路
-- 错误按键必须无害
-- mode 是辅助，不应成为理解产品前提
-- 用户态不再保留 legacy `Ctrl-a`
-- `Ctrl-a` 直接透传给当前 terminal
-- mode 默认 hold 3 秒，可配置调整
-- 连续操作类 mode 在每次有效动作后续期 3 秒窗口
-
----
-
-## 10. 当前视觉方向
-
-当前实现的方向已经收敛到：
-
-- active pane：高亮绿色边框
-- inactive pane：亮灰色边框
-- pane 顶部 chrome 回归单线边框，不使用厚重阴影感
-- 顶栏与底栏分层
-- picker / prompt 居中显示
-- terminal manager 全屏展示
-- overlay 使用实色背景遮挡
-
-后续视觉优化方向：
-
-- 继续压缩底栏信息密度
-- 把底栏快捷键统一收口为 zellij 风格 segment 样式
-- 继续提升 modal/picker 的完整性和统一性
-- 继续把状态尽量上移到 pane 标题栏与顶栏
-
----
-
-## 11. 当前产品结论
-
-当前 termx TUI 的正确产品描述应该是：
-
-- 对新用户来说，它首先是一个“能直接工作的终端工作台”
-- 对高级用户来说，它进一步是一个“terminal pool 的管理与恢复界面”
-- 它的真正价值不在于复刻 tmux，而在于把 `terminal runtime` 从 `TUI 界面` 中解耦出来，并把这种能力做成可理解、可操作、可恢复的产品
+1. 用户启动后立即可工作
+2. 用户能自然理解 `workspace / tab / pane / terminal`
+3. close pane、stop terminal、detach TUI 三种行为不混淆
+4. shared terminal 下 resize 规则稳定可解释
+5. picker / manager / restore 是顺手入口，而不是补丁入口
+6. 复杂交互发生时，界面不闪烁、不串屏、不留残影

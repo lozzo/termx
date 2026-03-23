@@ -205,6 +205,334 @@ type prefixDispatchResult struct {
 	cmd   tea.Cmd
 	keep  bool
 	rearm bool
+	state prefixStateTransition
+}
+
+type prefixIntent struct {
+	mode   prefixMode
+	direct bool
+	input  prefixInput
+}
+
+type prefixRuntimePlan struct {
+	transition prefixStateTransition
+	clear      bool
+	rearm      bool
+	cmd        tea.Cmd
+}
+
+type globalModeRuntimePlan struct {
+	showHelp     bool
+	beginCommand bool
+	quit         bool
+	keep         bool
+	cmd          tea.Cmd
+}
+
+type workspaceModeRuntimePlan struct {
+	openPicker  bool
+	createName  string
+	beginRename bool
+	cmd         tea.Cmd
+	keep        bool
+}
+
+type tabModeRuntimePlan struct {
+	openNew       bool
+	beginRename   bool
+	openPicker    bool
+	closeTab      bool
+	activateIndex int
+	hasActivate   bool
+	keep          bool
+}
+
+type floatingModeRuntimePlan struct {
+	focusNext       bool
+	openNew         bool
+	closeActive     bool
+	toggleVisibility bool
+	raise           bool
+	lower           bool
+	center          bool
+	moveDirection   Direction
+	resizeDirection Direction
+	resizeAmount    int
+	openPicker      bool
+	keep            bool
+}
+
+type viewportModeRuntimePlan struct {
+	acquire         bool
+	toggleMode      bool
+	toggleReadonly  bool
+	togglePin       bool
+	panDirection    Direction
+	jumpHome        bool
+	jumpRight       bool
+	jumpBottom      bool
+	follow          bool
+	enterOffsetMode bool
+	keep            bool
+}
+
+type resizeModeRuntimePlan struct {
+	resizeDirection Direction
+	resizeAmount    int
+	acquire         bool
+	balance         bool
+	cycleLayout     bool
+	keep            bool
+	rearm           bool
+}
+
+type offsetPanModeRuntimePlan struct {
+	panDirection Direction
+	jumpHome     bool
+	jumpRight    bool
+	jumpBottom   bool
+	keep         bool
+	rearm        bool
+}
+
+type viewportNavigationRuntimePlan struct {
+	panDirection Direction
+	jumpHome     bool
+	jumpRight    bool
+	jumpBottom   bool
+	keep         bool
+	rearm        bool
+}
+
+type prefixStateTransitionKind int
+
+const (
+	prefixStateTransitionNone prefixStateTransitionKind = iota
+	prefixStateTransitionClear
+	prefixStateTransitionEnter
+)
+
+type prefixStateTransition struct {
+	kind     prefixStateTransitionKind
+	mode     prefixMode
+	fallback prefixFallback
+	direct   bool
+}
+
+type keyboardFlowHooks struct {
+	dismissHelp  func()
+	directCmd    func() tea.Cmd
+	activePrefix func() tea.Cmd
+	ctrlACmd     func() (tea.Cmd, bool)
+	preExited    func() (tea.Cmd, bool)
+	exitedCmd    func() tea.Cmd
+	fallbackSend func() tea.Cmd
+}
+
+type directModeShortcutSpec struct {
+	eventMatch          string
+	keyType             tea.KeyType
+	mode                prefixMode
+	opensTerminalPicker bool
+}
+
+var directModeShortcutSpecs = []directModeShortcutSpec{
+	{eventMatch: "ctrl+p", keyType: tea.KeyCtrlP, mode: prefixModePane},
+	{eventMatch: "ctrl+r", keyType: tea.KeyCtrlR, mode: prefixModeResize},
+	{eventMatch: "ctrl+t", keyType: tea.KeyCtrlT, mode: prefixModeTab},
+	{eventMatch: "ctrl+w", keyType: tea.KeyCtrlW, mode: prefixModeWorkspace},
+	{eventMatch: "ctrl+o", keyType: tea.KeyCtrlO, mode: prefixModeFloating},
+	{eventMatch: "ctrl+v", keyType: tea.KeyCtrlV, mode: prefixModeViewport},
+	{eventMatch: "ctrl+g", keyType: tea.KeyCtrlG, mode: prefixModeGlobal},
+	{eventMatch: "ctrl+f", keyType: tea.KeyCtrlF, opensTerminalPicker: true},
+}
+
+type rootPrefixShortcutSpec struct {
+	key      string
+	mode     prefixMode
+	fallback prefixFallback
+}
+
+var rootPrefixShortcutSpecs = []rootPrefixShortcutSpec{
+	{key: "t", mode: prefixModeTab, fallback: prefixFallbackNone},
+	{key: "v", mode: prefixModeViewport, fallback: prefixFallbackNone},
+	{key: "o", mode: prefixModeFloating, fallback: prefixFallbackNone},
+	{key: "w", mode: prefixModeWorkspace, fallback: prefixFallbackFloatingCreate},
+}
+
+type resizeModeActionKind int
+
+const (
+	resizeModeActionNone resizeModeActionKind = iota
+	resizeModeActionExit
+	resizeModeActionResize
+	resizeModeActionAcquire
+	resizeModeActionBalance
+	resizeModeActionCycleLayout
+)
+
+type resizeModeAction struct {
+	kind      resizeModeActionKind
+	direction Direction
+	amount    int
+}
+
+type tabModeActionKind int
+
+const (
+	tabModeActionNone tabModeActionKind = iota
+	tabModeActionExit
+	tabModeActionNew
+	tabModeActionRename
+	tabModeActionNext
+	tabModeActionPrev
+	tabModeActionPicker
+	tabModeActionClose
+	tabModeActionJump
+)
+
+type tabModeAction struct {
+	kind  tabModeActionKind
+	index int
+}
+
+type workspaceModeActionKind int
+
+const (
+	workspaceModeActionNone workspaceModeActionKind = iota
+	workspaceModeActionExit
+	workspaceModeActionPicker
+	workspaceModeActionCreate
+	workspaceModeActionRename
+	workspaceModeActionDelete
+	workspaceModeActionNext
+	workspaceModeActionPrev
+)
+
+type workspaceModeAction struct {
+	kind workspaceModeActionKind
+}
+
+type viewportModeActionKind int
+
+const (
+	viewportModeActionNone viewportModeActionKind = iota
+	viewportModeActionExit
+	viewportModeActionAcquire
+	viewportModeActionToggleMode
+	viewportModeActionToggleReadonly
+	viewportModeActionTogglePin
+	viewportModeActionPan
+	viewportModeActionJumpHome
+	viewportModeActionJumpRight
+	viewportModeActionJumpBottom
+	viewportModeActionFollow
+	viewportModeActionOffsetMode
+)
+
+type viewportModeAction struct {
+	kind      viewportModeActionKind
+	direction Direction
+}
+
+type floatingModeActionKind int
+
+const (
+	floatingModeActionNone floatingModeActionKind = iota
+	floatingModeActionExit
+	floatingModeActionFocusNext
+	floatingModeActionNew
+	floatingModeActionClose
+	floatingModeActionToggleVisibility
+	floatingModeActionRaise
+	floatingModeActionLower
+	floatingModeActionCenter
+	floatingModeActionMove
+	floatingModeActionResize
+	floatingModeActionPicker
+)
+
+type floatingModeAction struct {
+	kind      floatingModeActionKind
+	direction Direction
+	amount    int
+}
+
+type offsetPanModeActionKind int
+
+const (
+	offsetPanModeActionNone offsetPanModeActionKind = iota
+	offsetPanModeActionExit
+	offsetPanModeActionPan
+	offsetPanModeActionJumpHome
+	offsetPanModeActionJumpRight
+	offsetPanModeActionJumpBottom
+)
+
+type offsetPanModeAction struct {
+	kind      offsetPanModeActionKind
+	direction Direction
+}
+
+type globalModeActionKind int
+
+const (
+	globalModeActionNone globalModeActionKind = iota
+	globalModeActionExit
+	globalModeActionHelp
+	globalModeActionManager
+	globalModeActionCommand
+	globalModeActionDetach
+	globalModeActionQuit
+)
+
+type globalModeAction struct {
+	kind globalModeActionKind
+}
+
+type panePrefixActionKind int
+
+const (
+	panePrefixActionNone panePrefixActionKind = iota
+	panePrefixActionSendCtrlA
+	panePrefixActionSplitHorizontal
+	panePrefixActionSplitVertical
+	panePrefixActionFocus
+	panePrefixActionViewportPan
+	panePrefixActionNewTab
+	panePrefixActionNextTab
+	panePrefixActionPrevTab
+	panePrefixActionZoom
+	panePrefixActionSwap
+	panePrefixActionResize
+	panePrefixActionCycleLayout
+	panePrefixActionRenameTab
+	panePrefixActionTerminalPicker
+	panePrefixActionWorkspacePicker
+	panePrefixActionFloatingPicker
+	panePrefixActionToggleFloatingVisibility
+	panePrefixActionCycleFloatingFocus
+	panePrefixActionRaiseFloating
+	panePrefixActionLowerFloating
+	panePrefixActionCommandPrompt
+	panePrefixActionClosePane
+	panePrefixActionKillTerminal
+	panePrefixActionToggleViewportMode
+	panePrefixActionToggleViewportPin
+	panePrefixActionToggleViewportReadonly
+	panePrefixActionKillTab
+	panePrefixActionDetach
+	panePrefixActionHelp
+	panePrefixActionJumpTab
+)
+
+type panePrefixAction struct {
+	kind      panePrefixActionKind
+	direction Direction
+	amount    int
+	offset    int
+	index     int
+	split     SplitDirection
 }
 
 type mouseDragMode int
@@ -1174,66 +1502,96 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.handlePromptKey(msg)
 	}
 
-	if m.inputBlocked {
-		return m, nil
-	}
-
-	if m.showHelp {
-		switch msg.Type {
-		case tea.KeyEsc:
-			m.showHelp = false
-			m.invalidateRender()
-			return m, nil
-		case tea.KeyRunes:
-			if len(msg.Runes) == 1 && (msg.Runes[0] == 'q' || msg.Runes[0] == '?') {
+	return m, m.handleCommonKeyboardFlow(keyboardFlowHooks{
+		dismissHelp: func() {
+			switch msg.Type {
+			case tea.KeyEsc:
 				m.showHelp = false
 				m.invalidateRender()
+			case tea.KeyRunes:
+				if len(msg.Runes) == 1 && (msg.Runes[0] == 'q' || msg.Runes[0] == '?') {
+					m.showHelp = false
+					m.invalidateRender()
+				}
 			}
-			return m, nil
-		default:
-			return m, nil
-		}
-	}
-
-	if m.prefixActive && m.directMode {
-		if cmd := m.directModeCmdForKey(msg); cmd != nil {
-			return m, cmd
-		}
-	}
-
-	if m.prefixActive {
-		return m, m.handleActivePrefixKey(msg)
-	}
-
-	if cmd := m.directModeCmdForKey(msg); cmd != nil {
-		return m, cmd
-	}
-
-	if msg.Type == tea.KeyCtrlA {
-		return m, m.sendToActive([]byte{0x01})
-	}
-
-	if msg.Type == tea.KeyEsc {
-		if m.focusTiledPane() {
-			return m, nil
-		}
-	}
-
-	if cmd := m.handleExitedPaneKey(msg); cmd != nil {
-		return m, cmd
-	}
-
-	if tab := m.currentTab(); tab != nil {
-		pane := tab.Panes[tab.ActivePaneID]
-		if pane != nil {
-			data := encodeKey(msg)
-			if len(data) > 0 {
-				return m, m.sendToActive(data)
+		},
+		directCmd: func() tea.Cmd {
+			return m.directModeCmdForKey(msg)
+		},
+		activePrefix: func() tea.Cmd {
+			return m.handleActivePrefixKey(msg)
+		},
+		ctrlACmd: func() (tea.Cmd, bool) {
+			if msg.Type == tea.KeyCtrlA {
+				return m.sendToActive([]byte{0x01}), true
 			}
+			return nil, false
+		},
+		preExited: func() (tea.Cmd, bool) {
+			if msg.Type == tea.KeyEsc && m.focusTiledPane() {
+				return nil, true
+			}
+			return nil, false
+		},
+		exitedCmd: func() tea.Cmd {
+			return m.handleExitedPaneKey(msg)
+		},
+		fallbackSend: func() tea.Cmd {
+			if tab := m.currentTab(); tab != nil {
+				if pane := tab.Panes[tab.ActivePaneID]; pane != nil {
+					data := encodeKey(msg)
+					if len(data) > 0 {
+						return m.sendToActive(data)
+					}
+				}
+			}
+			return nil
+		},
+	})
+}
+
+func (m *Model) handleCommonKeyboardFlow(hooks keyboardFlowHooks) tea.Cmd {
+	if m.inputBlocked {
+		return nil
+	}
+	if m.showHelp {
+		if hooks.dismissHelp != nil {
+			hooks.dismissHelp()
+		}
+		return nil
+	}
+	if m.prefixActive && m.directMode && hooks.directCmd != nil {
+		if cmd := hooks.directCmd(); cmd != nil {
+			return cmd
 		}
 	}
-
-	return m, nil
+	if m.prefixActive && hooks.activePrefix != nil {
+		return hooks.activePrefix()
+	}
+	if hooks.directCmd != nil {
+		if cmd := hooks.directCmd(); cmd != nil {
+			return cmd
+		}
+	}
+	if hooks.ctrlACmd != nil {
+		if cmd, ok := hooks.ctrlACmd(); ok {
+			return cmd
+		}
+	}
+	if hooks.preExited != nil {
+		if cmd, ok := hooks.preExited(); ok {
+			return cmd
+		}
+	}
+	if hooks.exitedCmd != nil {
+		if cmd := hooks.exitedCmd(); cmd != nil {
+			return cmd
+		}
+	}
+	if hooks.fallbackSend != nil {
+		return hooks.fallbackSend()
+	}
+	return nil
 }
 
 func (m *Model) handleExitedPaneKey(msg tea.KeyMsg) tea.Cmd {
@@ -1241,40 +1599,1018 @@ func (m *Model) handleExitedPaneKey(msg tea.KeyMsg) tea.Cmd {
 	if paneTerminalState(pane) != "exited" {
 		return nil
 	}
-	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'r' {
+	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+		return m.exitedPaneShortcutCmd(string(msg.Runes))
+	}
+	return nil
+}
+
+func (m *Model) exitedPaneShortcutCmd(key string) tea.Cmd {
+	if paneTerminalState(activePane(m.currentTab())) != "exited" {
+		return nil
+	}
+	if key == "r" {
 		return m.restartActivePaneCmd()
 	}
 	return nil
 }
 
 func (m *Model) directModeCmdForKey(msg tea.KeyMsg) tea.Cmd {
-	switch msg.Type {
-	case tea.KeyCtrlP:
-		return m.enterDirectMode(prefixModePane)
-	case tea.KeyCtrlR:
-		return m.enterDirectMode(prefixModeResize)
-	case tea.KeyCtrlT:
-		return m.enterDirectMode(prefixModeTab)
-	case tea.KeyCtrlW:
-		return m.enterDirectMode(prefixModeWorkspace)
-	case tea.KeyCtrlO:
-		return m.enterDirectMode(prefixModeFloating)
-	case tea.KeyCtrlV:
-		return m.enterDirectMode(prefixModeViewport)
-	case tea.KeyCtrlG:
-		return m.enterDirectMode(prefixModeGlobal)
-	case tea.KeyCtrlF:
+	for _, shortcut := range directModeShortcutSpecs {
+		if msg.Type == shortcut.keyType {
+			return m.directModeCmdForShortcut(shortcut)
+		}
+	}
+	return nil
+}
+
+func (m *Model) directModeCmdForShortcut(shortcut directModeShortcutSpec) tea.Cmd {
+	if shortcut.opensTerminalPicker {
 		return m.openTerminalPickerCmd()
+	}
+	return m.enterDirectMode(shortcut.mode)
+}
+
+func (m *Model) rootPrefixShortcutResultForInput(input prefixInput) (prefixDispatchResult, bool) {
+	for _, shortcut := range rootPrefixShortcutSpecs {
+		if input.token == shortcut.key {
+			return prefixDispatchResult{
+				keep: true,
+				state: prefixStateTransition{
+					kind:     prefixStateTransitionEnter,
+					mode:     shortcut.mode,
+					fallback: shortcut.fallback,
+				},
+			}, true
+		}
+	}
+	return prefixDispatchResult{}, false
+}
+
+func (m *Model) rootPrefixShortcutResult(key string) (prefixDispatchResult, bool) {
+	return m.rootPrefixShortcutResultForInput(prefixInput{token: key})
+}
+
+func resizeModeActionForInput(input prefixInput) resizeModeAction {
+	switch input.token {
+	case "esc":
+		return resizeModeAction{kind: resizeModeActionExit}
+	case "left":
+		return resizeModeAction{kind: resizeModeActionResize, direction: DirectionLeft, amount: 2}
+	case "down":
+		return resizeModeAction{kind: resizeModeActionResize, direction: DirectionDown, amount: 2}
+	case "up":
+		return resizeModeAction{kind: resizeModeActionResize, direction: DirectionUp, amount: 2}
+	case "right":
+		return resizeModeAction{kind: resizeModeActionResize, direction: DirectionRight, amount: 2}
+	}
+	switch input.token {
+	case "h":
+		return resizeModeAction{kind: resizeModeActionResize, direction: DirectionLeft, amount: 2}
+	case "j":
+		return resizeModeAction{kind: resizeModeActionResize, direction: DirectionDown, amount: 2}
+	case "k":
+		return resizeModeAction{kind: resizeModeActionResize, direction: DirectionUp, amount: 2}
+	case "l":
+		return resizeModeAction{kind: resizeModeActionResize, direction: DirectionRight, amount: 2}
+	case "H":
+		return resizeModeAction{kind: resizeModeActionResize, direction: DirectionLeft, amount: 4}
+	case "J":
+		return resizeModeAction{kind: resizeModeActionResize, direction: DirectionDown, amount: 4}
+	case "K":
+		return resizeModeAction{kind: resizeModeActionResize, direction: DirectionUp, amount: 4}
+	case "L":
+		return resizeModeAction{kind: resizeModeActionResize, direction: DirectionRight, amount: 4}
+	case "a":
+		return resizeModeAction{kind: resizeModeActionAcquire}
+	case "=":
+		return resizeModeAction{kind: resizeModeActionBalance}
+	case "space":
+		return resizeModeAction{kind: resizeModeActionCycleLayout}
+	default:
+		return resizeModeAction{}
+	}
+}
+
+func resizeModeActionForKey(msg tea.KeyMsg) resizeModeAction {
+	return resizeModeActionForInput(prefixInputFromKey(msg))
+}
+
+func resizeModeRuntimePlanForAction(action resizeModeAction) resizeModeRuntimePlan {
+	switch action.kind {
+	case resizeModeActionExit:
+		return resizeModeRuntimePlan{}
+	case resizeModeActionResize:
+		return resizeModeRuntimePlan{
+			resizeDirection: action.direction,
+			resizeAmount:    action.amount,
+			keep:            true,
+			rearm:           true,
+		}
+	case resizeModeActionAcquire:
+		return resizeModeRuntimePlan{acquire: true, keep: true, rearm: true}
+	case resizeModeActionBalance:
+		return resizeModeRuntimePlan{balance: true, keep: true, rearm: true}
+	case resizeModeActionCycleLayout:
+		return resizeModeRuntimePlan{cycleLayout: true, keep: true, rearm: true}
+	default:
+		return resizeModeRuntimePlan{keep: true, rearm: true}
+	}
+}
+
+func (m *Model) applyResizeModeRuntimePlan(plan resizeModeRuntimePlan) prefixDispatchResult {
+	switch {
+	case plan.resizeDirection != "":
+		m.resizeActivePane(plan.resizeDirection, plan.resizeAmount)
+		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: plan.keep, rearm: plan.rearm}
+	case plan.acquire:
+		return prefixDispatchResult{cmd: m.acquireActivePaneResizeCmd(), keep: plan.keep, rearm: plan.rearm}
+	case plan.balance:
+		if tab := m.currentTab(); tab != nil && tab.Root != nil {
+			resetLayoutRatios(tab.Root)
+		}
+		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: plan.keep, rearm: plan.rearm}
+	case plan.cycleLayout:
+		m.cycleActiveLayout()
+		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: plan.keep, rearm: plan.rearm}
+	case plan.keep || plan.rearm:
+		return prefixDispatchResult{keep: plan.keep, rearm: plan.rearm}
+	default:
+		return prefixDispatchResult{}
+	}
+}
+
+func (m *Model) applyResizeModeAction(action resizeModeAction) prefixDispatchResult {
+	return m.applyResizeModeRuntimePlan(resizeModeRuntimePlanForAction(action))
+}
+
+func tabModeActionForInput(input prefixInput, directMode bool) tabModeAction {
+	if input.token == "esc" {
+		return tabModeAction{kind: tabModeActionExit}
+	}
+	switch input.token {
+	case "c":
+		return tabModeAction{kind: tabModeActionNew}
+	case ",", "r":
+		return tabModeAction{kind: tabModeActionRename}
+	case "n":
+		return tabModeAction{kind: tabModeActionNext}
+	case "p":
+		return tabModeAction{kind: tabModeActionPrev}
+	case "f":
+		return tabModeAction{kind: tabModeActionPicker}
+	case "x":
+		return tabModeAction{kind: tabModeActionClose}
+	}
+	if directMode && len(input.token) == 1 {
+		r := rune(input.token[0])
+		if r >= '1' && r <= '9' {
+			return tabModeAction{kind: tabModeActionJump, index: int(r-'1')}
+		}
+	}
+	return tabModeAction{}
+}
+
+func tabModeActionForKey(msg tea.KeyMsg, directMode bool) tabModeAction {
+	return tabModeActionForInput(prefixInputFromKey(msg), directMode)
+}
+
+func tabModeRuntimePlanForAction(action tabModeAction, tabCount, activeTab int) tabModeRuntimePlan {
+	switch action.kind {
+	case tabModeActionExit:
+		return tabModeRuntimePlan{}
+	case tabModeActionNew:
+		return tabModeRuntimePlan{openNew: true}
+	case tabModeActionRename:
+		return tabModeRuntimePlan{beginRename: true}
+	case tabModeActionNext:
+		if tabCount > 0 {
+			return tabModeRuntimePlan{activateIndex: (activeTab + 1) % tabCount, hasActivate: true}
+		}
+		return tabModeRuntimePlan{}
+	case tabModeActionPrev:
+		if tabCount > 0 {
+			return tabModeRuntimePlan{activateIndex: (activeTab - 1 + tabCount) % tabCount, hasActivate: true}
+		}
+		return tabModeRuntimePlan{}
+	case tabModeActionPicker:
+		return tabModeRuntimePlan{openPicker: true}
+	case tabModeActionClose:
+		return tabModeRuntimePlan{closeTab: true}
+	case tabModeActionJump:
+		if action.index >= 0 && action.index < tabCount {
+			return tabModeRuntimePlan{activateIndex: action.index, hasActivate: true}
+		}
+		return tabModeRuntimePlan{}
+	default:
+		return tabModeRuntimePlan{keep: true}
+	}
+}
+
+func (m *Model) applyTabModeRuntimePlan(plan tabModeRuntimePlan) prefixDispatchResult {
+	switch {
+	case plan.openNew:
+		return m.modeResult(m.openNewTabTerminalPickerCmd(), false)
+	case plan.beginRename:
+		m.beginRenameTab()
+		return prefixDispatchResult{}
+	case plan.hasActivate:
+		return m.modeResult(m.activateTab(plan.activateIndex), false)
+	case plan.openPicker:
+		return m.modeResult(m.openTerminalPickerCmd(), false)
+	case plan.closeTab:
+		return m.modeResult(m.killActiveTabCmd(), false)
+	case plan.keep:
+		return prefixDispatchResult{keep: true}
+	default:
+		return prefixDispatchResult{}
+	}
+}
+
+func (m *Model) applyTabModeAction(action tabModeAction) prefixDispatchResult {
+	plan := tabModeRuntimePlanForAction(action, len(m.workspace.Tabs), m.workspace.ActiveTab)
+	return m.applyTabModeRuntimePlan(plan)
+}
+
+func workspaceModeActionForInput(input prefixInput) workspaceModeAction {
+	if input.token == "esc" {
+		return workspaceModeAction{kind: workspaceModeActionExit}
+	}
+	switch input.token {
+	case "s", "f":
+		return workspaceModeAction{kind: workspaceModeActionPicker}
+	case "c":
+		return workspaceModeAction{kind: workspaceModeActionCreate}
+	case "r":
+		return workspaceModeAction{kind: workspaceModeActionRename}
+	case "x":
+		return workspaceModeAction{kind: workspaceModeActionDelete}
+	case "n":
+		return workspaceModeAction{kind: workspaceModeActionNext}
+	case "p":
+		return workspaceModeAction{kind: workspaceModeActionPrev}
+	default:
+		return workspaceModeAction{}
+	}
+}
+
+func workspaceModeActionForKey(msg tea.KeyMsg) workspaceModeAction {
+	return workspaceModeActionForInput(prefixInputFromKey(msg))
+}
+
+func workspaceModeRuntimePlanForAction(action workspaceModeAction, nextName string) workspaceModeRuntimePlan {
+	switch action.kind {
+	case workspaceModeActionExit:
+		return workspaceModeRuntimePlan{}
+	case workspaceModeActionPicker:
+		return workspaceModeRuntimePlan{openPicker: true}
+	case workspaceModeActionCreate:
+		return workspaceModeRuntimePlan{createName: nextName}
+	case workspaceModeActionRename:
+		return workspaceModeRuntimePlan{beginRename: true}
+	case workspaceModeActionDelete, workspaceModeActionNext, workspaceModeActionPrev:
+		return workspaceModeRuntimePlan{}
+	default:
+		return workspaceModeRuntimePlan{keep: true}
+	}
+}
+
+func (m *Model) applyWorkspaceModeRuntimePlan(plan workspaceModeRuntimePlan, fallbackCmd tea.Cmd) prefixDispatchResult {
+	switch {
+	case plan.openPicker:
+		return m.modeResult(m.openWorkspacePickerCmd(), false)
+	case plan.createName != "":
+		return m.modeResult(m.createWorkspaceCmd(plan.createName), false)
+	case plan.beginRename:
+		m.beginRenameWorkspace()
+		return m.modeResult(nil, false)
+	case fallbackCmd != nil:
+		return m.modeResult(fallbackCmd, false)
+	case plan.keep:
+		return prefixDispatchResult{keep: true}
+	default:
+		return prefixDispatchResult{}
+	}
+}
+
+func (m *Model) applyWorkspaceModeAction(action workspaceModeAction) prefixDispatchResult {
+	plan := workspaceModeRuntimePlanForAction(action, nextWorkspaceName(m.workspaceOrder))
+	var fallbackCmd tea.Cmd
+	switch action.kind {
+	case workspaceModeActionDelete:
+		fallbackCmd = m.deleteCurrentWorkspaceCmd()
+	case workspaceModeActionNext:
+		fallbackCmd = m.activateWorkspaceByOffset(1)
+	case workspaceModeActionPrev:
+		fallbackCmd = m.activateWorkspaceByOffset(-1)
+	}
+	return m.applyWorkspaceModeRuntimePlan(plan, fallbackCmd)
+}
+
+func viewportModeActionForInput(input prefixInput, directMode bool) viewportModeAction {
+	if input.token == "esc" {
+		return viewportModeAction{kind: viewportModeActionExit}
+	}
+	switch input.token {
+	case "left":
+		return viewportModeAction{kind: viewportModeActionPan, direction: DirectionLeft}
+	case "right":
+		return viewportModeAction{kind: viewportModeActionPan, direction: DirectionRight}
+	case "up":
+		return viewportModeAction{kind: viewportModeActionPan, direction: DirectionUp}
+	case "down":
+		return viewportModeAction{kind: viewportModeActionPan, direction: DirectionDown}
+	}
+	switch input.token {
+	case "a":
+		return viewportModeAction{kind: viewportModeActionAcquire}
+	case "m":
+		return viewportModeAction{kind: viewportModeActionToggleMode}
+	case "r":
+		return viewportModeAction{kind: viewportModeActionToggleReadonly}
+	case "p":
+		return viewportModeAction{kind: viewportModeActionTogglePin}
+	case "h":
+		return viewportModeAction{kind: viewportModeActionPan, direction: DirectionLeft}
+	case "j":
+		return viewportModeAction{kind: viewportModeActionPan, direction: DirectionDown}
+	case "k":
+		return viewportModeAction{kind: viewportModeActionPan, direction: DirectionUp}
+	case "l":
+		return viewportModeAction{kind: viewportModeActionPan, direction: DirectionRight}
+	case "0", "g":
+		return viewportModeAction{kind: viewportModeActionJumpHome}
+	case "$":
+		return viewportModeAction{kind: viewportModeActionJumpRight}
+	case "G":
+		return viewportModeAction{kind: viewportModeActionJumpBottom}
+	case "z":
+		return viewportModeAction{kind: viewportModeActionFollow}
+	case "o":
+		return viewportModeAction{kind: viewportModeActionOffsetMode}
+	default:
+		if directMode {
+			return viewportModeAction{kind: viewportModeActionNone}
+		}
+		return viewportModeAction{}
+	}
+}
+
+func viewportModeActionForKey(msg tea.KeyMsg, directMode bool) viewportModeAction {
+	return viewportModeActionForInput(prefixInputFromKey(msg), directMode)
+}
+
+func viewportModeRuntimePlanForAction(action viewportModeAction, directMode bool) viewportModeRuntimePlan {
+	switch action.kind {
+	case viewportModeActionExit:
+		return viewportModeRuntimePlan{}
+	case viewportModeActionAcquire:
+		return viewportModeRuntimePlan{acquire: true}
+	case viewportModeActionToggleMode:
+		return viewportModeRuntimePlan{toggleMode: true}
+	case viewportModeActionToggleReadonly:
+		return viewportModeRuntimePlan{toggleReadonly: true}
+	case viewportModeActionTogglePin:
+		return viewportModeRuntimePlan{togglePin: true}
+	case viewportModeActionPan:
+		return viewportModeRuntimePlan{panDirection: action.direction, keep: true}
+	case viewportModeActionJumpHome:
+		return viewportModeRuntimePlan{jumpHome: true}
+	case viewportModeActionJumpRight:
+		return viewportModeRuntimePlan{jumpRight: true}
+	case viewportModeActionJumpBottom:
+		return viewportModeRuntimePlan{jumpBottom: true}
+	case viewportModeActionFollow:
+		return viewportModeRuntimePlan{follow: true}
+	case viewportModeActionOffsetMode:
+		if directMode {
+			return viewportModeRuntimePlan{keep: true}
+		}
+		return viewportModeRuntimePlan{enterOffsetMode: true, keep: true}
+	default:
+		if directMode {
+			return viewportModeRuntimePlan{keep: true}
+		}
+		return viewportModeRuntimePlan{}
+	}
+}
+
+func (m *Model) applyViewportModeRuntimePlan(plan viewportModeRuntimePlan) prefixDispatchResult {
+	switch {
+	case plan.acquire:
+		return m.modeResult(m.acquireActivePaneResizeCmd(), false)
+	case plan.toggleMode:
+		m.toggleActiveViewportMode()
+		return m.modeResult(m.resizeVisiblePanesCmd(), false)
+	case plan.toggleReadonly:
+		m.toggleActiveViewportReadonly()
+		return m.modeResult(nil, false)
+	case plan.togglePin:
+		m.toggleActiveViewportPin()
+		return m.modeResult(nil, false)
+	case plan.panDirection != "" || plan.jumpHome || plan.jumpRight || plan.jumpBottom:
+		return m.applyViewportNavigationRuntimePlan(viewportNavigationRuntimePlan{
+			panDirection: plan.panDirection,
+			jumpHome:     plan.jumpHome,
+			jumpRight:    plan.jumpRight,
+			jumpBottom:   plan.jumpBottom,
+			keep:         plan.keep,
+			rearm:        false,
+		})
+	case plan.follow:
+		pane := activePane(m.currentTab())
+		if pane != nil {
+			pane.Offset = Point{}
+			pane.Pin = false
+			if pane.Mode != ViewportModeFit {
+				pane.Mode = ViewportModeFit
+			}
+		}
+		return m.modeResult(m.resizeVisiblePanesCmd(), false)
+	case plan.enterOffsetMode:
+		return prefixDispatchResult{
+			keep: true,
+			state: prefixStateTransition{
+				kind: prefixStateTransitionEnter,
+				mode: prefixModeOffsetPan,
+			},
+		}
+	case plan.keep:
+		return prefixDispatchResult{keep: true}
+	default:
+		return prefixDispatchResult{}
+	}
+}
+
+func (m *Model) applyViewportModeAction(action viewportModeAction) prefixDispatchResult {
+	return m.applyViewportModeRuntimePlan(viewportModeRuntimePlanForAction(action, m.directMode))
+}
+
+func floatingModeActionForInput(input prefixInput) floatingModeAction {
+	switch input.token {
+	case "esc":
+		return floatingModeAction{kind: floatingModeActionExit}
+	case "tab":
+		return floatingModeAction{kind: floatingModeActionFocusNext}
+	case "left":
+		return floatingModeAction{kind: floatingModeActionMove, direction: DirectionLeft}
+	case "down":
+		return floatingModeAction{kind: floatingModeActionMove, direction: DirectionDown}
+	case "up":
+		return floatingModeAction{kind: floatingModeActionMove, direction: DirectionUp}
+	case "right":
+		return floatingModeAction{kind: floatingModeActionMove, direction: DirectionRight}
+	}
+	switch input.token {
+	case "n":
+		return floatingModeAction{kind: floatingModeActionNew}
+	case "x":
+		return floatingModeAction{kind: floatingModeActionClose}
+	case "v":
+		return floatingModeAction{kind: floatingModeActionToggleVisibility}
+	case "]":
+		return floatingModeAction{kind: floatingModeActionRaise}
+	case "[":
+		return floatingModeAction{kind: floatingModeActionLower}
+	case "c":
+		return floatingModeAction{kind: floatingModeActionCenter}
+	case "h":
+		return floatingModeAction{kind: floatingModeActionMove, direction: DirectionLeft}
+	case "j":
+		return floatingModeAction{kind: floatingModeActionMove, direction: DirectionDown}
+	case "k":
+		return floatingModeAction{kind: floatingModeActionMove, direction: DirectionUp}
+	case "l":
+		return floatingModeAction{kind: floatingModeActionMove, direction: DirectionRight}
+	case "H":
+		return floatingModeAction{kind: floatingModeActionResize, direction: DirectionLeft, amount: 4}
+	case "J":
+		return floatingModeAction{kind: floatingModeActionResize, direction: DirectionDown, amount: 2}
+	case "K":
+		return floatingModeAction{kind: floatingModeActionResize, direction: DirectionUp, amount: 2}
+	case "L":
+		return floatingModeAction{kind: floatingModeActionResize, direction: DirectionRight, amount: 4}
+	case "f":
+		return floatingModeAction{kind: floatingModeActionPicker}
+	default:
+		return floatingModeAction{}
+	}
+}
+
+func floatingModeActionForKey(msg tea.KeyMsg) floatingModeAction {
+	return floatingModeActionForInput(prefixInputFromKey(msg))
+}
+
+func floatingAltActionForInput(input prefixInput) (floatingModeAction, bool) {
+	if !input.alt {
+		return floatingModeAction{}, false
+	}
+	switch input.token {
+	case "h", "left":
+		return floatingModeAction{kind: floatingModeActionMove, direction: DirectionLeft}, true
+	case "j", "down":
+		return floatingModeAction{kind: floatingModeActionMove, direction: DirectionDown}, true
+	case "k", "up":
+		return floatingModeAction{kind: floatingModeActionMove, direction: DirectionUp}, true
+	case "l", "right":
+		return floatingModeAction{kind: floatingModeActionMove, direction: DirectionRight}, true
+	case "H":
+		return floatingModeAction{kind: floatingModeActionResize, direction: DirectionLeft, amount: 4}, true
+	case "J":
+		return floatingModeAction{kind: floatingModeActionResize, direction: DirectionDown, amount: 2}, true
+	case "K":
+		return floatingModeAction{kind: floatingModeActionResize, direction: DirectionUp, amount: 2}, true
+	case "L":
+		return floatingModeAction{kind: floatingModeActionResize, direction: DirectionRight, amount: 4}, true
+	default:
+		return floatingModeAction{}, false
+	}
+}
+
+func floatingModeRuntimePlanForAction(action floatingModeAction, directMode bool) floatingModeRuntimePlan {
+	switch action.kind {
+	case floatingModeActionExit:
+		return floatingModeRuntimePlan{}
+	case floatingModeActionFocusNext:
+		return floatingModeRuntimePlan{focusNext: true, keep: true}
+	case floatingModeActionNew:
+		return floatingModeRuntimePlan{openNew: true}
+	case floatingModeActionClose:
+		return floatingModeRuntimePlan{closeActive: true, keep: true}
+	case floatingModeActionToggleVisibility:
+		return floatingModeRuntimePlan{toggleVisibility: true, keep: true}
+	case floatingModeActionRaise:
+		return floatingModeRuntimePlan{raise: true, keep: true}
+	case floatingModeActionLower:
+		return floatingModeRuntimePlan{lower: true, keep: true}
+	case floatingModeActionCenter:
+		return floatingModeRuntimePlan{center: true, keep: true}
+	case floatingModeActionMove:
+		return floatingModeRuntimePlan{moveDirection: action.direction, keep: true}
+	case floatingModeActionResize:
+		return floatingModeRuntimePlan{resizeDirection: action.direction, resizeAmount: action.amount, keep: true}
+	case floatingModeActionPicker:
+		return floatingModeRuntimePlan{openPicker: true}
+	default:
+		if directMode {
+			return floatingModeRuntimePlan{keep: true}
+		}
+		return floatingModeRuntimePlan{}
+	}
+}
+
+func (m *Model) applyFloatingModeRuntimePlan(plan floatingModeRuntimePlan) prefixDispatchResult {
+	switch {
+	case plan.focusNext:
+		m.cycleFloatingFocus()
+		return m.modeResult(nil, true)
+	case plan.openNew:
+		return m.modeResult(m.openFloatingTerminalPickerCmd(m.workspace.ActiveTab), false)
+	case plan.closeActive:
+		return m.modeResult(m.closeActivePaneCmd(), true)
+	case plan.toggleVisibility:
+		m.toggleFloatingLayerVisibility()
+		return m.modeResult(nil, true)
+	case plan.raise:
+		m.raiseActiveFloatingPane()
+		return m.modeResult(nil, true)
+	case plan.lower:
+		m.lowerActiveFloatingPane()
+		return m.modeResult(nil, true)
+	case plan.center:
+		m.centerActiveFloatingPane()
+		return m.modeResult(nil, true)
+	case plan.moveDirection != "":
+		switch plan.moveDirection {
+		case DirectionLeft:
+			m.moveActiveFloatingPane(-4, 0)
+		case DirectionRight:
+			m.moveActiveFloatingPane(4, 0)
+		case DirectionUp:
+			m.moveActiveFloatingPane(0, -2)
+		case DirectionDown:
+			m.moveActiveFloatingPane(0, 2)
+		}
+		return m.modeResult(nil, true)
+	case plan.resizeDirection != "":
+		var changed bool
+		switch plan.resizeDirection {
+		case DirectionLeft:
+			changed = m.resizeActiveFloatingPane(-plan.resizeAmount, 0)
+		case DirectionRight:
+			changed = m.resizeActiveFloatingPane(plan.resizeAmount, 0)
+		case DirectionUp:
+			changed = m.resizeActiveFloatingPane(0, -plan.resizeAmount)
+		case DirectionDown:
+			changed = m.resizeActiveFloatingPane(0, plan.resizeAmount)
+		}
+		if changed {
+			return m.modeResult(m.resizeVisiblePanesCmd(), true)
+		}
+		return m.modeResult(nil, true)
+	case plan.openPicker:
+		return m.modeResult(m.openTerminalPickerCmd(), false)
+	case plan.keep:
+		return prefixDispatchResult{keep: true}
+	default:
+		_ = m.focusTiledPane()
+		return prefixDispatchResult{}
+	}
+}
+
+func (m *Model) applyFloatingModeAction(action floatingModeAction) prefixDispatchResult {
+	plan := floatingModeRuntimePlanForAction(action, m.directMode)
+	return m.applyFloatingModeRuntimePlan(plan)
+}
+
+func offsetPanModeActionForInput(input prefixInput) offsetPanModeAction {
+	switch input.token {
+	case "esc":
+		return offsetPanModeAction{kind: offsetPanModeActionExit}
+	case "left":
+		return offsetPanModeAction{kind: offsetPanModeActionPan, direction: DirectionLeft}
+	case "right":
+		return offsetPanModeAction{kind: offsetPanModeActionPan, direction: DirectionRight}
+	case "up":
+		return offsetPanModeAction{kind: offsetPanModeActionPan, direction: DirectionUp}
+	case "down":
+		return offsetPanModeAction{kind: offsetPanModeActionPan, direction: DirectionDown}
+	}
+	switch input.token {
+	case "h":
+		return offsetPanModeAction{kind: offsetPanModeActionPan, direction: DirectionLeft}
+	case "j":
+		return offsetPanModeAction{kind: offsetPanModeActionPan, direction: DirectionDown}
+	case "k":
+		return offsetPanModeAction{kind: offsetPanModeActionPan, direction: DirectionUp}
+	case "l":
+		return offsetPanModeAction{kind: offsetPanModeActionPan, direction: DirectionRight}
+	case "0", "g":
+		return offsetPanModeAction{kind: offsetPanModeActionJumpHome}
+	case "$":
+		return offsetPanModeAction{kind: offsetPanModeActionJumpRight}
+	case "G":
+		return offsetPanModeAction{kind: offsetPanModeActionJumpBottom}
+	default:
+		return offsetPanModeAction{}
+	}
+}
+
+func offsetPanModeActionForKey(msg tea.KeyMsg) offsetPanModeAction {
+	return offsetPanModeActionForInput(prefixInputFromKey(msg))
+}
+
+func offsetPanModeRuntimePlanForAction(action offsetPanModeAction) offsetPanModeRuntimePlan {
+	switch action.kind {
+	case offsetPanModeActionExit:
+		return offsetPanModeRuntimePlan{}
+	case offsetPanModeActionPan:
+		return offsetPanModeRuntimePlan{panDirection: action.direction, keep: true, rearm: true}
+	case offsetPanModeActionJumpHome:
+		return offsetPanModeRuntimePlan{jumpHome: true, keep: true, rearm: true}
+	case offsetPanModeActionJumpRight:
+		return offsetPanModeRuntimePlan{jumpRight: true, keep: true, rearm: true}
+	case offsetPanModeActionJumpBottom:
+		return offsetPanModeRuntimePlan{jumpBottom: true, keep: true, rearm: true}
+	default:
+		return offsetPanModeRuntimePlan{}
+	}
+}
+
+func (m *Model) applyViewportNavigationRuntimePlan(plan viewportNavigationRuntimePlan) prefixDispatchResult {
+	switch {
+	case plan.panDirection != "":
+		switch plan.panDirection {
+		case DirectionLeft:
+			m.panActiveViewport(-4, 0)
+		case DirectionRight:
+			m.panActiveViewport(4, 0)
+		case DirectionUp:
+			m.panActiveViewport(0, -2)
+		case DirectionDown:
+			m.panActiveViewport(0, 2)
+		}
+	case plan.jumpHome:
+		m.setActiveViewportOffset(0, 0)
+	case plan.jumpRight:
+		m.setActiveViewportOffset(int(^uint(0)>>1), 0)
+	case plan.jumpBottom:
+		m.setActiveViewportOffset(0, int(^uint(0)>>1))
+	default:
+		return prefixDispatchResult{}
+	}
+	return prefixDispatchResult{keep: plan.keep, rearm: plan.rearm}
+}
+
+func (m *Model) applyOffsetPanModeRuntimePlan(plan offsetPanModeRuntimePlan) prefixDispatchResult {
+	return m.applyViewportNavigationRuntimePlan(viewportNavigationRuntimePlan{
+		panDirection: plan.panDirection,
+		jumpHome:     plan.jumpHome,
+		jumpRight:    plan.jumpRight,
+		jumpBottom:   plan.jumpBottom,
+		keep:         plan.keep,
+		rearm:        plan.rearm,
+	})
+}
+
+func (m *Model) applyOffsetPanModeAction(action offsetPanModeAction) prefixDispatchResult {
+	return m.applyOffsetPanModeRuntimePlan(offsetPanModeRuntimePlanForAction(action))
+}
+
+func globalModeActionForInput(input prefixInput) globalModeAction {
+	if input.token == "esc" {
+		return globalModeAction{kind: globalModeActionExit}
+	}
+	switch input.token {
+	case "?":
+		return globalModeAction{kind: globalModeActionHelp}
+	case "t":
+		return globalModeAction{kind: globalModeActionManager}
+	case ":":
+		return globalModeAction{kind: globalModeActionCommand}
+	case "d":
+		return globalModeAction{kind: globalModeActionDetach}
+	case "q":
+		return globalModeAction{kind: globalModeActionQuit}
+	default:
+		return globalModeAction{}
+	}
+}
+
+func globalModeActionForKey(msg tea.KeyMsg) globalModeAction {
+	return globalModeActionForInput(prefixInputFromKey(msg))
+}
+
+func globalModeRuntimePlanForAction(action globalModeAction) globalModeRuntimePlan {
+	switch action.kind {
+	case globalModeActionHelp:
+		return globalModeRuntimePlan{showHelp: true}
+	case globalModeActionManager:
+		return globalModeRuntimePlan{cmd: nil}
+	case globalModeActionCommand:
+		return globalModeRuntimePlan{beginCommand: true}
+	case globalModeActionDetach, globalModeActionQuit:
+		return globalModeRuntimePlan{quit: true, cmd: tea.Quit}
+	case globalModeActionExit:
+		return globalModeRuntimePlan{}
+	default:
+		return globalModeRuntimePlan{keep: true}
+	}
+}
+
+func (m *Model) applyGlobalModeRuntimePlan(plan globalModeRuntimePlan, managerCmd tea.Cmd) prefixDispatchResult {
+	switch {
+	case plan.showHelp:
+		m.showHelp = true
+		m.invalidateRender()
+		return prefixDispatchResult{}
+	case managerCmd != nil:
+		return prefixDispatchResult{cmd: managerCmd}
+	case plan.beginCommand:
+		m.beginCommandPrompt()
+		return prefixDispatchResult{}
+	case plan.quit:
+		m.quitting = true
+		m.invalidateRender()
+		return prefixDispatchResult{cmd: plan.cmd}
+	case plan.keep:
+		return prefixDispatchResult{keep: true}
+	default:
+		return prefixDispatchResult{}
+	}
+}
+
+func (m *Model) applyGlobalModeAction(action globalModeAction) prefixDispatchResult {
+	plan := globalModeRuntimePlanForAction(action)
+	var managerCmd tea.Cmd
+	if action.kind == globalModeActionManager {
+		managerCmd = m.openTerminalManagerCmd()
+	}
+	return m.applyGlobalModeRuntimePlan(plan, managerCmd)
+}
+
+func panePrefixActionForInput(input prefixInput) panePrefixAction {
+	switch input.token {
+	case "left":
+		return panePrefixAction{kind: panePrefixActionFocus, direction: DirectionLeft}
+	case "ctrl+left":
+		return panePrefixAction{kind: panePrefixActionViewportPan, offset: -4}
+	case "down":
+		return panePrefixAction{kind: panePrefixActionFocus, direction: DirectionDown}
+	case "ctrl+down":
+		return panePrefixAction{kind: panePrefixActionViewportPan, direction: DirectionDown}
+	case "up":
+		return panePrefixAction{kind: panePrefixActionFocus, direction: DirectionUp}
+	case "ctrl+up":
+		return panePrefixAction{kind: panePrefixActionViewportPan, direction: DirectionUp}
+	case "right":
+		return panePrefixAction{kind: panePrefixActionFocus, direction: DirectionRight}
+	case "ctrl+right":
+		return panePrefixAction{kind: panePrefixActionViewportPan, offset: 4}
+	case "ctrl+h":
+		return panePrefixAction{kind: panePrefixActionViewportPan, offset: -4}
+	case "ctrl+j":
+		return panePrefixAction{kind: panePrefixActionViewportPan, direction: DirectionDown}
+	case "ctrl+k":
+		return panePrefixAction{kind: panePrefixActionViewportPan, direction: DirectionUp}
+	case "ctrl+l":
+		return panePrefixAction{kind: panePrefixActionViewportPan, offset: 4}
+	}
+	switch input.token {
+	case "ctrl+a":
+		return panePrefixAction{kind: panePrefixActionSendCtrlA}
+	case "\"":
+		return panePrefixAction{kind: panePrefixActionSplitHorizontal, split: SplitHorizontal}
+	case "%":
+		return panePrefixAction{kind: panePrefixActionSplitVertical, split: SplitVertical}
+	case "h":
+		return panePrefixAction{kind: panePrefixActionFocus, direction: DirectionLeft}
+	case "j":
+		return panePrefixAction{kind: panePrefixActionFocus, direction: DirectionDown}
+	case "k":
+		return panePrefixAction{kind: panePrefixActionFocus, direction: DirectionUp}
+	case "l":
+		return panePrefixAction{kind: panePrefixActionFocus, direction: DirectionRight}
+	case "c":
+		return panePrefixAction{kind: panePrefixActionNewTab}
+	case "n":
+		return panePrefixAction{kind: panePrefixActionNextTab}
+	case "p":
+		return panePrefixAction{kind: panePrefixActionPrevTab}
+	case "z":
+		return panePrefixAction{kind: panePrefixActionZoom}
+	case "{":
+		return panePrefixAction{kind: panePrefixActionSwap, amount: -1}
+	case "}":
+		return panePrefixAction{kind: panePrefixActionSwap, amount: 1}
+	case "H":
+		return panePrefixAction{kind: panePrefixActionResize, direction: DirectionLeft, amount: 2}
+	case "J":
+		return panePrefixAction{kind: panePrefixActionResize, direction: DirectionDown, amount: 2}
+	case "K":
+		return panePrefixAction{kind: panePrefixActionResize, direction: DirectionUp, amount: 2}
+	case "L":
+		return panePrefixAction{kind: panePrefixActionResize, direction: DirectionRight, amount: 2}
+	case "space":
+		return panePrefixAction{kind: panePrefixActionCycleLayout}
+	case ",":
+		return panePrefixAction{kind: panePrefixActionRenameTab}
+	case "f":
+		return panePrefixAction{kind: panePrefixActionTerminalPicker}
+	case "s":
+		return panePrefixAction{kind: panePrefixActionWorkspacePicker}
+	case "w":
+		return panePrefixAction{kind: panePrefixActionFloatingPicker}
+	case "W":
+		return panePrefixAction{kind: panePrefixActionToggleFloatingVisibility}
+	case "tab":
+		return panePrefixAction{kind: panePrefixActionCycleFloatingFocus}
+	case "]":
+		return panePrefixAction{kind: panePrefixActionRaiseFloating}
+	case "_":
+		return panePrefixAction{kind: panePrefixActionLowerFloating}
+	case ":":
+		return panePrefixAction{kind: panePrefixActionCommandPrompt}
+	case "x":
+		return panePrefixAction{kind: panePrefixActionClosePane}
+	case "X":
+		return panePrefixAction{kind: panePrefixActionKillTerminal}
+	case "M":
+		return panePrefixAction{kind: panePrefixActionToggleViewportMode}
+	case "P":
+		return panePrefixAction{kind: panePrefixActionToggleViewportPin}
+	case "R":
+		return panePrefixAction{kind: panePrefixActionToggleViewportReadonly}
+	case "&":
+		return panePrefixAction{kind: panePrefixActionKillTab}
+	case "d":
+		return panePrefixAction{kind: panePrefixActionDetach}
+	case "?":
+		return panePrefixAction{kind: panePrefixActionHelp}
+	default:
+		if len(input.token) == 1 && input.token[0] >= '1' && input.token[0] <= '9' {
+			return panePrefixAction{kind: panePrefixActionJumpTab, index: int(input.token[0] - '1')}
+		}
+		return panePrefixAction{}
+	}
+}
+
+func panePrefixActionForKey(msg tea.KeyMsg) panePrefixAction {
+	return panePrefixActionForInput(prefixInputFromKey(msg))
+}
+
+func (m *Model) applyPanePrefixAction(action panePrefixAction) tea.Cmd {
+	switch action.kind {
+	case panePrefixActionSendCtrlA:
+		return m.sendToActive([]byte{0x01})
+	case panePrefixActionSplitHorizontal, panePrefixActionSplitVertical:
+		return m.splitActivePane(action.split)
+	case panePrefixActionFocus:
+		m.moveFocus(action.direction)
+		m.invalidateRender()
+		return nil
+	case panePrefixActionViewportPan:
+		switch action.direction {
+		case DirectionDown:
+			m.panActiveViewport(0, 2)
+		case DirectionUp:
+			m.panActiveViewport(0, -2)
+		default:
+			m.panActiveViewport(action.offset, 0)
+		}
+		return nil
+	case panePrefixActionNewTab:
+		return m.openNewTabTerminalPickerCmd()
+	case panePrefixActionNextTab:
+		if len(m.workspace.Tabs) > 0 {
+			next := (m.workspace.ActiveTab + 1) % len(m.workspace.Tabs)
+			return m.activateTab(next)
+		}
+		return nil
+	case panePrefixActionPrevTab:
+		if len(m.workspace.Tabs) > 0 {
+			next := (m.workspace.ActiveTab - 1 + len(m.workspace.Tabs)) % len(m.workspace.Tabs)
+			return m.activateTab(next)
+		}
+		return nil
+	case panePrefixActionZoom:
+		tab := m.currentTab()
+		if tab != nil {
+			if tab.ZoomedPaneID == tab.ActivePaneID {
+				tab.ZoomedPaneID = ""
+			} else {
+				tab.ZoomedPaneID = tab.ActivePaneID
+			}
+		}
+		return m.resizeVisiblePanesCmd()
+	case panePrefixActionSwap:
+		m.swapActivePane(action.amount)
+		return m.resizeVisiblePanesCmd()
+	case panePrefixActionResize:
+		m.resizeActivePane(action.direction, action.amount)
+		return m.resizeVisiblePanesCmd()
+	case panePrefixActionCycleLayout:
+		m.cycleActiveLayout()
+		return m.resizeVisiblePanesCmd()
+	case panePrefixActionRenameTab:
+		m.beginRenameTab()
+		return nil
+	case panePrefixActionTerminalPicker:
+		return m.openTerminalPickerCmd()
+	case panePrefixActionWorkspacePicker:
+		return m.openWorkspacePickerCmd()
+	case panePrefixActionFloatingPicker:
+		return m.openFloatingTerminalPickerCmd(m.workspace.ActiveTab)
+	case panePrefixActionToggleFloatingVisibility:
+		m.toggleFloatingLayerVisibility()
+		return nil
+	case panePrefixActionCycleFloatingFocus:
+		m.cycleFloatingFocus()
+		return nil
+	case panePrefixActionRaiseFloating:
+		m.raiseActiveFloatingPane()
+		return nil
+	case panePrefixActionLowerFloating:
+		m.lowerActiveFloatingPane()
+		return nil
+	case panePrefixActionCommandPrompt:
+		m.beginCommandPrompt()
+		return nil
+	case panePrefixActionClosePane:
+		return m.closeActivePaneCmd()
+	case panePrefixActionKillTerminal:
+		return m.killActiveTerminalCmd()
+	case panePrefixActionToggleViewportMode:
+		m.toggleActiveViewportMode()
+		return m.resizeVisiblePanesCmd()
+	case panePrefixActionToggleViewportPin:
+		m.toggleActiveViewportPin()
+		return nil
+	case panePrefixActionToggleViewportReadonly:
+		m.toggleActiveViewportReadonly()
+		return nil
+	case panePrefixActionKillTab:
+		return m.killActiveTabCmd()
+	case panePrefixActionDetach:
+		m.quitting = true
+		m.invalidateRender()
+		return tea.Quit
+	case panePrefixActionHelp:
+		m.showHelp = true
+		m.invalidateRender()
+		return nil
+	case panePrefixActionJumpTab:
+		if action.index >= 0 && action.index < len(m.workspace.Tabs) {
+			return m.activateTab(action.index)
+		}
+		return nil
 	default:
 		return nil
 	}
 }
 
 func (m *Model) clearPrefixState() {
-	m.prefixActive = false
-	m.directMode = false
-	m.prefixMode = prefixModeRoot
-	m.prefixFallback = prefixFallbackNone
+	_ = m.applyPrefixStateTransition(prefixStateTransition{kind: prefixStateTransitionClear})
 }
 
 func (m *Model) prefixFallbackCmd(fallback prefixFallback) tea.Cmd {
@@ -1287,20 +2623,11 @@ func (m *Model) prefixFallbackCmd(fallback prefixFallback) tea.Cmd {
 }
 
 func (m *Model) enterPrefixMode(mode prefixMode, fallback prefixFallback) tea.Cmd {
-	m.prefixActive = true
-	m.directMode = false
-	m.prefixMode = mode
-	m.prefixFallback = fallback
-	if mode == prefixModeFloating {
-		if tab := m.currentTab(); tab != nil {
-			floating := m.visibleFloatingPanes(tab)
-			if len(floating) > 0 && !isFloatingPane(tab, tab.ActivePaneID) {
-				tab.ActivePaneID = floating[len(floating)-1].PaneID
-			}
-		}
-	}
-	m.invalidateRender()
-	return m.armPrefixTimeout()
+	return m.applyPrefixStateTransition(prefixStateTransition{
+		kind:     prefixStateTransitionEnter,
+		mode:     mode,
+		fallback: fallback,
+	})
 }
 
 func isStickyPrefixMode(mode prefixMode) bool {
@@ -1308,13 +2635,43 @@ func isStickyPrefixMode(mode prefixMode) bool {
 }
 
 func (m *Model) enterDirectMode(mode prefixMode) tea.Cmd {
-	m.prefixActive = true
-	m.directMode = true
-	m.prefixMode = mode
-	m.prefixFallback = prefixFallbackNone
-	m.prefixSeq++
-	m.invalidateRender()
-	return m.armPrefixTimeout()
+	return m.applyPrefixStateTransition(prefixStateTransition{
+		kind:   prefixStateTransitionEnter,
+		mode:   mode,
+		direct: true,
+	})
+}
+
+func (m *Model) applyPrefixStateTransition(transition prefixStateTransition) tea.Cmd {
+	switch transition.kind {
+	case prefixStateTransitionClear:
+		m.prefixActive = false
+		m.directMode = false
+		m.prefixMode = prefixModeRoot
+		m.prefixFallback = prefixFallbackNone
+		m.invalidateRender()
+		return nil
+	case prefixStateTransitionEnter:
+		m.prefixActive = true
+		m.directMode = transition.direct
+		m.prefixMode = transition.mode
+		m.prefixFallback = transition.fallback
+		if transition.direct {
+			m.prefixSeq++
+		}
+		if transition.mode == prefixModeFloating {
+			if tab := m.currentTab(); tab != nil {
+				floating := m.visibleFloatingPanes(tab)
+				if len(floating) > 0 && !isFloatingPane(tab, tab.ActivePaneID) {
+					tab.ActivePaneID = floating[len(floating)-1].PaneID
+				}
+			}
+		}
+		m.invalidateRender()
+		return m.armPrefixTimeout()
+	default:
+		return nil
+	}
 }
 
 func (m *Model) armPrefixTimeout() tea.Cmd {
@@ -1329,614 +2686,223 @@ func (m *Model) armPrefixTimeout() tea.Cmd {
 	})
 }
 
-func (m *Model) handleActivePrefixKey(msg tea.KeyMsg) tea.Cmd {
-	result := m.dispatchPrefixKey(msg)
-	if !result.keep {
-		m.clearPrefixState()
+func prefixRuntimePlanForResult(result prefixDispatchResult) prefixRuntimePlan {
+	plan := prefixRuntimePlan{
+		transition: result.state,
+		cmd:        result.cmd,
+	}
+	switch {
+	case result.state.kind != prefixStateTransitionNone:
+		return plan
+	case !result.keep:
+		plan.clear = true
+	default:
+		plan.rearm = result.rearm
+	}
+	return plan
+}
+
+func (m *Model) applyPrefixRuntimePlan(plan prefixRuntimePlan) tea.Cmd {
+	cmds := make([]tea.Cmd, 0, 3)
+	switch {
+	case plan.transition.kind != prefixStateTransitionNone:
+		cmds = append(cmds, m.applyPrefixStateTransition(plan.transition))
+	case plan.clear:
+		cmds = append(cmds, m.applyPrefixStateTransition(prefixStateTransition{kind: prefixStateTransitionClear}))
+	default:
 		m.invalidateRender()
-		return result.cmd
+		if plan.rearm {
+			cmds = append(cmds, m.armPrefixTimeout())
+		}
 	}
-	m.invalidateRender()
-	if result.rearm {
-		return tea.Batch(result.cmd, m.armPrefixTimeout())
+	cmds = append(cmds, plan.cmd)
+	return batchTeaCmds(cmds...)
+}
+
+func (m *Model) applyActivePrefixResult(result prefixDispatchResult) tea.Cmd {
+	return m.applyPrefixRuntimePlan(prefixRuntimePlanForResult(result))
+}
+
+func (m *Model) handleActivePrefixKey(msg tea.KeyMsg) tea.Cmd {
+	return m.applyActivePrefixResult(m.dispatchPrefixKey(msg))
+}
+
+func (m *Model) prefixIntentForInput(input prefixInput) prefixIntent {
+	return prefixIntent{
+		mode:   m.prefixMode,
+		direct: m.directMode,
+		input:  input,
 	}
-	return result.cmd
+}
+
+func (m *Model) dispatchPrefixIntent(intent prefixIntent) prefixDispatchResult {
+	switch intent.mode {
+	case prefixModePane:
+		return m.dispatchPaneModeInput(intent.input)
+	case prefixModeResize:
+		return m.applyResizeModeAction(resizeModeActionForInput(intent.input))
+	case prefixModeTab:
+		return m.applyTabModeAction(tabModeActionForInput(intent.input, intent.direct))
+	case prefixModeWorkspace:
+		return m.applyWorkspaceModeAction(workspaceModeActionForInput(intent.input))
+	case prefixModeViewport:
+		return m.applyViewportModeAction(viewportModeActionForInput(intent.input, intent.direct))
+	case prefixModeFloating:
+		return m.applyFloatingModeAction(floatingModeActionForInput(intent.input))
+	case prefixModeOffsetPan:
+		return m.applyOffsetPanModeAction(offsetPanModeActionForInput(intent.input))
+	case prefixModeGlobal:
+		return m.applyGlobalModeAction(globalModeActionForInput(intent.input))
+	default:
+		return m.dispatchRootPrefixInput(intent.input)
+	}
+}
+
+func (m *Model) dispatchPrefixInput(input prefixInput) prefixDispatchResult {
+	return m.dispatchPrefixIntent(m.prefixIntentForInput(input))
 }
 
 func (m *Model) dispatchPrefixKey(msg tea.KeyMsg) prefixDispatchResult {
-	switch m.prefixMode {
-	case prefixModePane:
-		return m.dispatchPaneModeKey(msg)
-	case prefixModeResize:
-		return m.dispatchResizeModeKey(msg)
-	case prefixModeTab:
-		return m.dispatchTabSubPrefixKey(msg)
-	case prefixModeWorkspace:
-		return m.dispatchWorkspaceSubPrefixKey(msg)
-	case prefixModeViewport:
-		return m.dispatchViewportSubPrefixKey(msg)
-	case prefixModeFloating:
-		return m.dispatchFloatingModeKey(msg)
-	case prefixModeOffsetPan:
-		return m.dispatchOffsetPanModeKey(msg)
-	case prefixModeGlobal:
-		return m.dispatchGlobalModeKey(msg)
-	default:
-		return m.dispatchRootPrefixKey(msg)
+	return m.dispatchPrefixInput(prefixInputFromKey(msg))
+}
+
+func (m *Model) dispatchRootPrefixInput(input prefixInput) prefixDispatchResult {
+	if result, ok := m.rootPrefixShortcutResultForInput(input); ok {
+		return result
 	}
+	return m.prefixCommandResult(m.handlePrefixInput(input), input, false)
 }
 
 func (m *Model) dispatchRootPrefixKey(msg tea.KeyMsg) prefixDispatchResult {
-	switch msg.String() {
-	case "t":
-		return prefixDispatchResult{cmd: m.enterPrefixMode(prefixModeTab, prefixFallbackNone), keep: true}
-	case "v":
-		return prefixDispatchResult{cmd: m.enterPrefixMode(prefixModeViewport, prefixFallbackNone), keep: true}
-	case "o":
-		return prefixDispatchResult{cmd: m.enterPrefixMode(prefixModeFloating, prefixFallbackNone), keep: true}
-	case "w":
-		return prefixDispatchResult{cmd: m.enterPrefixMode(prefixModeWorkspace, prefixFallbackFloatingCreate), keep: true}
-	}
-	cmd := m.handlePrefixKey(msg)
-	keep := shouldKeepPrefixKey(msg)
-	return prefixDispatchResult{cmd: cmd, keep: keep, rearm: keep}
+	return m.dispatchRootPrefixInput(prefixInputFromKey(msg))
 }
 
-func shouldKeepPrefixKey(msg tea.KeyMsg) bool {
-	switch msg.Type {
-	case tea.KeyLeft, tea.KeyRight, tea.KeyUp, tea.KeyDown,
-		tea.KeyCtrlLeft, tea.KeyCtrlRight, tea.KeyCtrlUp, tea.KeyCtrlDown,
-		tea.KeyCtrlH, tea.KeyCtrlJ, tea.KeyCtrlK, tea.KeyCtrlL:
-		return true
-	case tea.KeyRunes:
-		if len(msg.Runes) != 1 {
-			return false
-		}
-		switch msg.Runes[0] {
-		case 'h', 'j', 'k', 'l', 'H', 'J', 'K', 'L':
+func shouldKeepPrefixInput(input prefixInput) bool {
+	if input.alt {
+		switch input.token {
+		case "h", "j", "k", "l", "H", "J", "K", "L", "left", "right", "up", "down":
 			return true
 		}
 	}
+	switch input.token {
+	case "left", "right", "up", "down",
+		"ctrl+left", "ctrl+right", "ctrl+up", "ctrl+down",
+		"ctrl+h", "ctrl+j", "ctrl+k", "ctrl+l",
+		"h", "j", "k", "l", "H", "J", "K", "L":
+		return true
+	}
 	return false
+}
+
+func shouldKeepPrefixKey(msg tea.KeyMsg) bool {
+	return shouldKeepPrefixInput(prefixInputFromKey(msg))
 }
 
 func (m *Model) modeResult(cmd tea.Cmd, keep bool) prefixDispatchResult {
 	return prefixDispatchResult{cmd: cmd, keep: keep, rearm: keep}
 }
 
-func (m *Model) dispatchPaneModeKey(msg tea.KeyMsg) prefixDispatchResult {
-	if msg.Type == tea.KeyEsc {
+func (m *Model) prefixCommandResult(cmd tea.Cmd, input prefixInput, directKeepOnNoop bool) prefixDispatchResult {
+	keep := shouldKeepPrefixInput(input)
+	if cmd == nil && !keep && directKeepOnNoop {
+		return prefixDispatchResult{keep: true}
+	}
+	return m.modeResult(cmd, keep)
+}
+
+func (m *Model) dispatchPaneModeInput(input prefixInput) prefixDispatchResult {
+	if input.token == "esc" {
 		return prefixDispatchResult{}
 	}
-	cmd := m.handlePrefixKey(msg)
-	if cmd == nil && !shouldKeepPrefixKey(msg) {
-		if m.directMode {
-			return prefixDispatchResult{keep: true}
-		}
-		if msg.Type != tea.KeyRunes && msg.Type != tea.KeyTab {
-			return m.modeResult(nil, false)
-		}
-		return m.modeResult(nil, false)
-	}
-	return m.modeResult(cmd, shouldKeepPrefixKey(msg))
+	return m.prefixCommandResult(m.handlePrefixInput(input), input, m.directMode)
+}
+
+func (m *Model) dispatchPaneModeKey(msg tea.KeyMsg) prefixDispatchResult {
+	return m.dispatchPaneModeInput(prefixInputFromKey(msg))
+}
+
+func (m *Model) dispatchResizeModeInput(input prefixInput) prefixDispatchResult {
+	return m.applyResizeModeAction(resizeModeActionForInput(input))
 }
 
 func (m *Model) dispatchResizeModeKey(msg tea.KeyMsg) prefixDispatchResult {
-	if msg.Type == tea.KeyEsc {
-		return prefixDispatchResult{}
-	}
-	switch msg.Type {
-	case tea.KeyLeft:
-		m.resizeActivePane(DirectionLeft, 2)
-		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true, rearm: true}
-	case tea.KeyDown:
-		m.resizeActivePane(DirectionDown, 2)
-		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true, rearm: true}
-	case tea.KeyUp:
-		m.resizeActivePane(DirectionUp, 2)
-		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true, rearm: true}
-	case tea.KeyRight:
-		m.resizeActivePane(DirectionRight, 2)
-		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true, rearm: true}
-	}
-	switch msg.String() {
-	case "h":
-		m.resizeActivePane(DirectionLeft, 2)
-		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true, rearm: true}
-	case "j":
-		m.resizeActivePane(DirectionDown, 2)
-		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true, rearm: true}
-	case "k":
-		m.resizeActivePane(DirectionUp, 2)
-		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true, rearm: true}
-	case "l":
-		m.resizeActivePane(DirectionRight, 2)
-		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true, rearm: true}
-	case "H":
-		m.resizeActivePane(DirectionLeft, 4)
-		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true, rearm: true}
-	case "J":
-		m.resizeActivePane(DirectionDown, 4)
-		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true, rearm: true}
-	case "K":
-		m.resizeActivePane(DirectionUp, 4)
-		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true, rearm: true}
-	case "L":
-		m.resizeActivePane(DirectionRight, 4)
-		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true, rearm: true}
-	case "a":
-		return m.modeResult(m.acquireActivePaneResizeCmd(), false)
-	case "=":
-		if tab := m.currentTab(); tab != nil && tab.Root != nil {
-			resetLayoutRatios(tab.Root)
-		}
-		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true, rearm: true}
-	case " ":
-		m.cycleActiveLayout()
-		return prefixDispatchResult{cmd: m.resizeVisiblePanesCmd(), keep: true, rearm: true}
-	default:
-		return prefixDispatchResult{keep: true}
-	}
+	return m.dispatchResizeModeInput(prefixInputFromKey(msg))
+}
+
+func (m *Model) dispatchTabSubPrefixInput(input prefixInput) prefixDispatchResult {
+	return m.applyTabModeAction(tabModeActionForInput(input, m.directMode))
 }
 
 func (m *Model) dispatchTabSubPrefixKey(msg tea.KeyMsg) prefixDispatchResult {
-	if m.directMode && msg.Type == tea.KeyEsc {
-		return prefixDispatchResult{}
-	}
-	switch msg.String() {
-	case "c":
-		return m.modeResult(m.openNewTabTerminalPickerCmd(), false)
-	case ",":
-		if m.directMode {
-			m.beginRenameTab()
-			return prefixDispatchResult{}
-		}
-		m.beginRenameTab()
-		return prefixDispatchResult{}
-	case "r":
-		m.beginRenameTab()
-		return m.modeResult(nil, false)
-	case "n":
-		if len(m.workspace.Tabs) > 0 {
-			next := (m.workspace.ActiveTab + 1) % len(m.workspace.Tabs)
-			return m.modeResult(m.activateTab(next), false)
-		}
-		return m.modeResult(nil, false)
-	case "p":
-		if len(m.workspace.Tabs) > 0 {
-			next := (m.workspace.ActiveTab - 1 + len(m.workspace.Tabs)) % len(m.workspace.Tabs)
-			return m.modeResult(m.activateTab(next), false)
-		}
-		return m.modeResult(nil, false)
-	case "f":
-		return m.modeResult(m.openTerminalPickerCmd(), false)
-	case "x":
-		return m.modeResult(m.killActiveTabCmd(), false)
-	default:
-		if m.directMode && msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
-			r := msg.Runes[0]
-			if r >= '1' && r <= '9' {
-				if int(r-'1') < len(m.workspace.Tabs) {
-					return m.modeResult(m.activateTab(int(r-'1')), false)
-				}
-				return m.modeResult(nil, false)
-			}
-		}
-		if m.directMode {
-			return prefixDispatchResult{keep: true}
-		}
-		return prefixDispatchResult{}
-	}
+	return m.dispatchTabSubPrefixInput(prefixInputFromKey(msg))
+}
+
+func (m *Model) dispatchWorkspaceSubPrefixInput(input prefixInput) prefixDispatchResult {
+	return m.applyWorkspaceModeAction(workspaceModeActionForInput(input))
 }
 
 func (m *Model) dispatchWorkspaceSubPrefixKey(msg tea.KeyMsg) prefixDispatchResult {
-	if m.directMode && msg.Type == tea.KeyEsc {
-		return prefixDispatchResult{}
-	}
-	switch msg.String() {
-	case "s":
-		return m.modeResult(m.openWorkspacePickerCmd(), false)
-	case "c":
-		return m.modeResult(m.createWorkspaceCmd(nextWorkspaceName(m.workspaceOrder)), false)
-	case "r":
-		m.beginRenameWorkspace()
-		return m.modeResult(nil, false)
-	case "x":
-		return m.modeResult(m.deleteCurrentWorkspaceCmd(), false)
-	case "n":
-		return m.modeResult(m.activateWorkspaceByOffset(1), false)
-	case "p":
-		return m.modeResult(m.activateWorkspaceByOffset(-1), false)
-	case "f":
-		return m.modeResult(m.openWorkspacePickerCmd(), false)
-	default:
-		if m.directMode {
-			return prefixDispatchResult{keep: true}
-		}
-		return prefixDispatchResult{}
-	}
+	return m.dispatchWorkspaceSubPrefixInput(prefixInputFromKey(msg))
+}
+
+func (m *Model) dispatchViewportSubPrefixInput(input prefixInput) prefixDispatchResult {
+	return m.applyViewportModeAction(viewportModeActionForInput(input, m.directMode))
 }
 
 func (m *Model) dispatchViewportSubPrefixKey(msg tea.KeyMsg) prefixDispatchResult {
-	if m.directMode && msg.Type == tea.KeyEsc {
-		return prefixDispatchResult{}
-	}
-	switch msg.Type {
-	case tea.KeyLeft:
-		m.panActiveViewport(-4, 0)
-		return m.modeResult(nil, true)
-	case tea.KeyRight:
-		m.panActiveViewport(4, 0)
-		return m.modeResult(nil, true)
-	case tea.KeyUp:
-		m.panActiveViewport(0, -2)
-		return m.modeResult(nil, true)
-	case tea.KeyDown:
-		m.panActiveViewport(0, 2)
-		return m.modeResult(nil, true)
-	}
-	switch msg.String() {
-	case "a":
-		return m.modeResult(m.acquireActivePaneResizeCmd(), false)
-	case "m":
-		m.toggleActiveViewportMode()
-		return m.modeResult(m.resizeVisiblePanesCmd(), false)
-	case "r":
-		m.toggleActiveViewportReadonly()
-		return m.modeResult(nil, false)
-	case "p":
-		m.toggleActiveViewportPin()
-		return m.modeResult(nil, false)
-	case "h":
-		m.panActiveViewport(-4, 0)
-		return m.modeResult(nil, true)
-	case "j":
-		m.panActiveViewport(0, 2)
-		return m.modeResult(nil, true)
-	case "k":
-		m.panActiveViewport(0, -2)
-		return m.modeResult(nil, true)
-	case "l":
-		m.panActiveViewport(4, 0)
-		return m.modeResult(nil, true)
-	case "0":
-		m.setActiveViewportOffset(0, 0)
-		return m.modeResult(nil, false)
-	case "$":
-		m.setActiveViewportOffset(int(^uint(0)>>1), 0)
-		return m.modeResult(nil, false)
-	case "g":
-		m.setActiveViewportOffset(0, 0)
-		return m.modeResult(nil, false)
-	case "G":
-		m.setActiveViewportOffset(0, int(^uint(0)>>1))
-		return m.modeResult(nil, false)
-	case "z":
-		pane := activePane(m.currentTab())
-		if pane != nil {
-			pane.Offset = Point{}
-			pane.Pin = false
-			if pane.Mode != ViewportModeFit {
-				pane.Mode = ViewportModeFit
-			}
-		}
-		return m.modeResult(m.resizeVisiblePanesCmd(), false)
-	case "o":
-		if m.directMode {
-			return prefixDispatchResult{keep: true}
-		}
-		return prefixDispatchResult{cmd: m.enterPrefixMode(prefixModeOffsetPan, prefixFallbackNone), keep: true}
-	default:
-		if m.directMode {
-			return prefixDispatchResult{keep: true}
-		}
-		return prefixDispatchResult{}
-	}
+	return m.dispatchViewportSubPrefixInput(prefixInputFromKey(msg))
+}
+
+func (m *Model) dispatchFloatingModeInput(input prefixInput) prefixDispatchResult {
+	return m.applyFloatingModeAction(floatingModeActionForInput(input))
 }
 
 func (m *Model) dispatchFloatingModeKey(msg tea.KeyMsg) prefixDispatchResult {
-	switch msg.Type {
-	case tea.KeyEsc:
-		_ = m.focusTiledPane()
-		return prefixDispatchResult{}
-	case tea.KeyTab:
-		m.cycleFloatingFocus()
-		return m.modeResult(nil, true)
-	}
-	switch msg.String() {
-	case "n":
-		return m.modeResult(m.openFloatingTerminalPickerCmd(m.workspace.ActiveTab), false)
-	case "x":
-		return m.modeResult(m.closeActivePaneCmd(), true)
-	case "v":
-		m.toggleFloatingLayerVisibility()
-		return m.modeResult(nil, true)
-	case "]":
-		m.raiseActiveFloatingPane()
-		return m.modeResult(nil, true)
-	case "[":
-		m.lowerActiveFloatingPane()
-		return m.modeResult(nil, true)
-	case "c":
-		m.centerActiveFloatingPane()
-		return m.modeResult(nil, true)
-	case "h":
-		m.moveActiveFloatingPane(-4, 0)
-		return m.modeResult(nil, true)
-	case "j":
-		m.moveActiveFloatingPane(0, 2)
-		return m.modeResult(nil, true)
-	case "k":
-		m.moveActiveFloatingPane(0, -2)
-		return m.modeResult(nil, true)
-	case "l":
-		m.moveActiveFloatingPane(4, 0)
-		return m.modeResult(nil, true)
-	case "H":
-		if m.resizeActiveFloatingPane(-4, 0) {
-			return m.modeResult(m.resizeVisiblePanesCmd(), true)
-		}
-		return m.modeResult(nil, true)
-	case "J":
-		if m.resizeActiveFloatingPane(0, 2) {
-			return m.modeResult(m.resizeVisiblePanesCmd(), true)
-		}
-		return m.modeResult(nil, true)
-	case "K":
-		if m.resizeActiveFloatingPane(0, -2) {
-			return m.modeResult(m.resizeVisiblePanesCmd(), true)
-		}
-		return m.modeResult(nil, true)
-	case "L":
-		if m.resizeActiveFloatingPane(4, 0) {
-			return m.modeResult(m.resizeVisiblePanesCmd(), true)
-		}
-		return m.modeResult(nil, true)
-	case "f":
-		return m.modeResult(m.openTerminalPickerCmd(), false)
-	default:
-		if m.directMode {
-			return prefixDispatchResult{keep: true}
-		}
-		return prefixDispatchResult{}
-	}
+	return m.dispatchFloatingModeInput(prefixInputFromKey(msg))
+}
+
+func (m *Model) dispatchOffsetPanModeInput(input prefixInput) prefixDispatchResult {
+	return m.applyOffsetPanModeAction(offsetPanModeActionForInput(input))
 }
 
 func (m *Model) dispatchOffsetPanModeKey(msg tea.KeyMsg) prefixDispatchResult {
-	switch msg.Type {
-	case tea.KeyEsc:
-		return prefixDispatchResult{}
-	case tea.KeyLeft:
-		m.panActiveViewport(-4, 0)
-		return prefixDispatchResult{keep: true, rearm: true}
-	case tea.KeyRight:
-		m.panActiveViewport(4, 0)
-		return prefixDispatchResult{keep: true, rearm: true}
-	case tea.KeyUp:
-		m.panActiveViewport(0, -2)
-		return prefixDispatchResult{keep: true, rearm: true}
-	case tea.KeyDown:
-		m.panActiveViewport(0, 2)
-		return prefixDispatchResult{keep: true, rearm: true}
-	}
-	switch msg.String() {
-	case "h":
-		m.panActiveViewport(-4, 0)
-		return prefixDispatchResult{keep: true, rearm: true}
-	case "j":
-		m.panActiveViewport(0, 2)
-		return prefixDispatchResult{keep: true, rearm: true}
-	case "k":
-		m.panActiveViewport(0, -2)
-		return prefixDispatchResult{keep: true, rearm: true}
-	case "l":
-		m.panActiveViewport(4, 0)
-		return prefixDispatchResult{keep: true, rearm: true}
-	case "0":
-		m.setActiveViewportOffset(0, 0)
-		return prefixDispatchResult{keep: true, rearm: true}
-	case "$":
-		m.setActiveViewportOffset(int(^uint(0)>>1), 0)
-		return prefixDispatchResult{keep: true, rearm: true}
-	case "g":
-		m.setActiveViewportOffset(0, 0)
-		return prefixDispatchResult{keep: true, rearm: true}
-	case "G":
-		m.setActiveViewportOffset(0, int(^uint(0)>>1))
-		return prefixDispatchResult{keep: true, rearm: true}
-	default:
-		return prefixDispatchResult{}
-	}
+	return m.dispatchOffsetPanModeInput(prefixInputFromKey(msg))
+}
+
+func (m *Model) dispatchGlobalModeInput(input prefixInput) prefixDispatchResult {
+	return m.applyGlobalModeAction(globalModeActionForInput(input))
 }
 
 func (m *Model) dispatchGlobalModeKey(msg tea.KeyMsg) prefixDispatchResult {
-	if msg.Type == tea.KeyEsc {
-		return prefixDispatchResult{}
-	}
-	switch msg.String() {
-	case "?":
-		m.showHelp = true
-		m.invalidateRender()
-		return prefixDispatchResult{}
-	case "t":
-		return prefixDispatchResult{cmd: m.openTerminalManagerCmd()}
-	case ":":
-		m.beginCommandPrompt()
-		return prefixDispatchResult{}
-	case "d":
-		m.quitting = true
-		m.invalidateRender()
-		return prefixDispatchResult{cmd: tea.Quit}
-	case "q":
-		m.quitting = true
-		m.invalidateRender()
-		return prefixDispatchResult{cmd: tea.Quit}
-	default:
-		return prefixDispatchResult{keep: true}
-	}
+	return m.dispatchGlobalModeInput(prefixInputFromKey(msg))
 }
 
 func (m *Model) handlePrefixKey(msg tea.KeyMsg) tea.Cmd {
-	switch msg.Type {
-	case tea.KeyLeft:
-		m.moveFocus(DirectionLeft)
-		m.invalidateRender()
-		return nil
-	case tea.KeyCtrlLeft:
-		m.panActiveViewport(-4, 0)
-		return nil
-	case tea.KeyDown:
-		m.moveFocus(DirectionDown)
-		m.invalidateRender()
-		return nil
-	case tea.KeyCtrlDown:
-		m.panActiveViewport(0, 2)
-		return nil
-	case tea.KeyUp:
-		m.moveFocus(DirectionUp)
-		m.invalidateRender()
-		return nil
-	case tea.KeyCtrlUp:
-		m.panActiveViewport(0, -2)
-		return nil
-	case tea.KeyRight:
-		m.moveFocus(DirectionRight)
-		m.invalidateRender()
-		return nil
-	case tea.KeyCtrlRight:
-		m.panActiveViewport(4, 0)
-		return nil
-	case tea.KeyCtrlH:
-		m.panActiveViewport(-4, 0)
-		return nil
-	case tea.KeyCtrlJ:
-		m.panActiveViewport(0, 2)
-		return nil
-	case tea.KeyCtrlK:
-		m.panActiveViewport(0, -2)
-		return nil
-	case tea.KeyCtrlL:
-		m.panActiveViewport(4, 0)
-		return nil
-	}
+	return m.handlePrefixInput(prefixInputFromKey(msg))
+}
 
-	key := msg.String()
-	switch key {
-	case "ctrl+a":
-		return m.sendToActive([]byte{0x01})
-	case "\"":
-		return m.splitActivePane(SplitHorizontal)
-	case "%":
-		return m.splitActivePane(SplitVertical)
-	case "h":
-		m.moveFocus(DirectionLeft)
-	case "j":
-		m.moveFocus(DirectionDown)
-	case "k":
-		m.moveFocus(DirectionUp)
-	case "l":
-		m.moveFocus(DirectionRight)
-	case "c":
-		return m.openNewTabTerminalPickerCmd()
-	case "n":
-		if len(m.workspace.Tabs) > 0 {
-			next := (m.workspace.ActiveTab + 1) % len(m.workspace.Tabs)
-			return m.activateTab(next)
-		}
-		return nil
-	case "p":
-		if len(m.workspace.Tabs) > 0 {
-			next := (m.workspace.ActiveTab - 1 + len(m.workspace.Tabs)) % len(m.workspace.Tabs)
-			return m.activateTab(next)
-		}
-		return nil
-	case "z":
-		tab := m.currentTab()
-		if tab != nil {
-			if tab.ZoomedPaneID == tab.ActivePaneID {
-				tab.ZoomedPaneID = ""
-			} else {
-				tab.ZoomedPaneID = tab.ActivePaneID
-			}
-		}
-		return m.resizeVisiblePanesCmd()
-	case "{":
-		m.swapActivePane(-1)
-		return m.resizeVisiblePanesCmd()
-	case "}":
-		m.swapActivePane(1)
-		return m.resizeVisiblePanesCmd()
-	case "H":
-		m.resizeActivePane(DirectionLeft, 2)
-		return m.resizeVisiblePanesCmd()
-	case "J":
-		m.resizeActivePane(DirectionDown, 2)
-		return m.resizeVisiblePanesCmd()
-	case "K":
-		m.resizeActivePane(DirectionUp, 2)
-		return m.resizeVisiblePanesCmd()
-	case "L":
-		m.resizeActivePane(DirectionRight, 2)
-		return m.resizeVisiblePanesCmd()
-	case " ":
-		m.cycleActiveLayout()
-		return m.resizeVisiblePanesCmd()
-	case ",":
-		m.beginRenameTab()
-		return nil
-	case "f":
-		return m.openTerminalPickerCmd()
-	case "s":
-		return m.openWorkspacePickerCmd()
-	case "w":
-		return m.openFloatingTerminalPickerCmd(m.workspace.ActiveTab)
-	case "W":
-		m.toggleFloatingLayerVisibility()
-		return nil
-	case "tab":
-		m.cycleFloatingFocus()
-		return nil
-	case "]":
-		m.raiseActiveFloatingPane()
-		return nil
-	case "_":
-		m.lowerActiveFloatingPane()
-		return nil
-	case ":":
-		m.beginCommandPrompt()
-		return nil
-	case "x":
-		return m.closeActivePaneCmd()
-	case "X":
-		return m.killActiveTerminalCmd()
-	case "M":
-		m.toggleActiveViewportMode()
-		return m.resizeVisiblePanesCmd()
-	case "P":
-		m.toggleActiveViewportPin()
-		return nil
-	case "R":
-		m.toggleActiveViewportReadonly()
-		return nil
-	case "&":
-		return m.killActiveTabCmd()
-	case "d":
-		m.quitting = true
-		m.invalidateRender()
-		return tea.Quit
-	case "?":
-		m.showHelp = true
-		m.invalidateRender()
-	default:
-		if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
-			idx := int(key[0] - '1')
-			if idx < len(m.workspace.Tabs) {
-				return m.activateTab(idx)
-			}
-			return nil
+func (m *Model) handlePrefixInput(input prefixInput) tea.Cmd {
+	if action, ok := floatingAltActionForInput(input); ok {
+		return m.applyFloatingModeAction(action).cmd
+	}
+	return m.applyPanePrefixAction(panePrefixActionForInput(input))
+}
+
+func batchTeaCmds(cmds ...tea.Cmd) tea.Cmd {
+	filtered := make([]tea.Cmd, 0, len(cmds))
+	for _, cmd := range cmds {
+		if cmd != nil {
+			filtered = append(filtered, cmd)
 		}
 	}
-	return nil
+	switch len(filtered) {
+	case 0:
+		return nil
+	case 1:
+		return filtered[0]
+	default:
+		return tea.Batch(filtered...)
+	}
 }
 
 func (m *Model) handleRawInput(data []byte) tea.Cmd {
@@ -2508,7 +3474,7 @@ func (m *Model) replacePane(msg paneReplacedMsg) {
 	pane.Title = msg.pane.Title
 	pane.Viewport = msg.pane.Viewport
 	if previousTerminalID == pane.TerminalID && previousResizeOwner {
-		pane.ResizeAcquired = true
+		preferredOwnerID = pane.ID
 	}
 	if tab := m.tabForPane(pane.ID); tab != nil {
 		tab.renderCache = nil
@@ -4721,8 +5687,7 @@ func (m *Model) forceAcquirePaneResize(pane *Pane) tea.Cmd {
 	if pane == nil || strings.TrimSpace(pane.TerminalID) == "" {
 		return nil
 	}
-	clearTerminalResizeAcquire(m.workspace.Tabs, pane.TerminalID)
-	pane.ResizeAcquired = true
+	ensureTerminalResizeOwner(m.workspace.Tabs, pane.TerminalID, pane.ID)
 	m.notice = fmt.Sprintf("acquired resize control for terminal %q", terminalDisplayNameForNotice(pane))
 	m.err = nil
 	m.invalidateRender()
@@ -4758,66 +5723,19 @@ func clearTerminalResizeAcquire(tabs []*Tab, terminalID string) {
 }
 
 func preferredTerminalResizeOwnerID(tabs []*Tab, terminalID, excludePaneID string) string {
-	if strings.TrimSpace(terminalID) == "" {
+	snapshot, ok := buildTerminalConnectionSnapshot(tabs, terminalID)
+	if !ok {
 		return ""
 	}
-	fallback := ""
-	for _, tab := range tabs {
-		if tab == nil {
-			continue
-		}
-		for _, pane := range tab.Panes {
-			if pane == nil || pane.ID == excludePaneID || pane.TerminalID != terminalID {
-				continue
-			}
-			if pane.ResizeAcquired {
-				return pane.ID
-			}
-			if fallback == "" {
-				fallback = pane.ID
-			}
-		}
-	}
-	return fallback
+	return snapshot.PreferredOwnerID(excludePaneID)
 }
 
 func ensureTerminalResizeOwner(tabs []*Tab, terminalID, preferredPaneID string) {
-	if strings.TrimSpace(terminalID) == "" {
+	snapshot, ok := buildTerminalConnectionSnapshot(tabs, terminalID)
+	if !ok {
 		return
 	}
-	var panes []*Pane
-	var target *Pane
-	for _, tab := range tabs {
-		if tab == nil {
-			continue
-		}
-		for _, pane := range tab.Panes {
-			if pane == nil || pane.TerminalID != terminalID {
-				continue
-			}
-			panes = append(panes, pane)
-			if pane.ID == preferredPaneID && target == nil {
-				target = pane
-			}
-		}
-	}
-	if len(panes) == 0 {
-		return
-	}
-	if target == nil {
-		for _, pane := range panes {
-			if pane.ResizeAcquired {
-				target = pane
-				break
-			}
-		}
-	}
-	if target == nil {
-		target = panes[0]
-	}
-	for _, pane := range panes {
-		pane.ResizeAcquired = pane == target
-	}
+	snapshot.ApplyOwner(preferredPaneID)
 }
 
 func terminalDisplayNameForNotice(pane *Pane) string {
@@ -5038,41 +5956,33 @@ func paneAllowsResize(pane *Pane) bool {
 }
 
 func paneShouldSubmitResize(tabs []*Tab, pane *Pane) bool {
-	if pane == nil {
+	if pane == nil || strings.TrimSpace(pane.TerminalID) == "" {
 		return false
 	}
-	if terminalBindingCount(tabs, pane.TerminalID) <= 1 {
-		return true
+	snapshot, ok := buildTerminalConnectionSnapshot(tabs, pane.TerminalID)
+	if !ok {
+		return false
 	}
-	return pane.ResizeAcquired
+	return snapshot.PaneShouldSubmitResize(pane.ID)
 }
 
 func paneConnectionStatus(tabs []*Tab, pane *Pane) string {
 	if pane == nil || strings.TrimSpace(pane.TerminalID) == "" {
 		return ""
 	}
-	if paneShouldSubmitResize(tabs, pane) {
-		return "owner"
+	snapshot, ok := buildTerminalConnectionSnapshot(tabs, pane.TerminalID)
+	if !ok {
+		return ""
 	}
-	return "follower"
+	return snapshot.StatusForPane(pane.ID)
 }
 
 func terminalBindingCount(tabs []*Tab, terminalID string) int {
-	if strings.TrimSpace(terminalID) == "" {
+	snapshot, ok := buildTerminalConnectionSnapshot(tabs, terminalID)
+	if !ok {
 		return 0
 	}
-	count := 0
-	for _, tab := range tabs {
-		if tab == nil {
-			continue
-		}
-		for _, pane := range tab.Panes {
-			if pane != nil && pane.TerminalID == terminalID {
-				count++
-			}
-		}
-	}
-	return count
+	return snapshot.PaneCount()
 }
 
 func paneTerminalState(pane *Pane) string {

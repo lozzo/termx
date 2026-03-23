@@ -1,224 +1,128 @@
 # termx TUI 当前状态
 
-状态：2026-03-22
-
-这份文档只讲“现在代码做到什么程度了”。
-
----
-
-## 1. 当前已经稳定存在的能力
-
-### 启动与基础工作流
-
-- `termx` 直接进入可工作的 workspace
-- 默认会有一个可输入 shell pane
-- tab / split / floating 基本链路都已经存在
-- tiled 与 floating 可以共存
-
-### terminal 复用与管理
-
-- terminal picker 可 attach 已有 terminal
-- terminal manager 已经存在，而且是全屏页，不是左抽屉
-- terminal manager 支持：
-  - bring here
-  - open in new tab
-  - open in floating pane
-  - edit metadata
-  - stop terminal
-- terminal manager 已按 `NEW / VISIBLE / PARKED / EXITED` 分组
-
-### 当前 UI 信息分配
-
-- pane 标题默认显示 terminal 真名
-- pane 标题栏右侧已承担主要关系状态：
-  - `live / saved / exit`
-  - `fit / fixed`
-  - `share / obs / ro / pin / lock`
-- 底栏左侧已使用连续 segment 风格快捷键带
-- 普通态底栏左侧只展示 `Ctrl+` 模式入口，不再夹带 exited/unbound 的直达动作
-- 底栏右侧已压缩为当前焦点的极简摘要，不再堆叠 display/share/lock 等关系信息
-- floating pane 已支持移出主视口后通过快捷键居中呼回
-- help / prompt / picker 已统一走居中 overlay 路径，而不是整屏说明页
-- help 内容已按 `Most used / Concepts / Shared terminal / Floating / Exit` 分组
-
-### 当前快捷键行为
-
-- 用户态主入口是 `Ctrl-p / Ctrl-r / Ctrl-t / Ctrl-w / Ctrl-o / Ctrl-v / Ctrl-f / Ctrl-g`
-- 用户态 `Ctrl-a` 已移除，按下时直接透传给当前 terminal
-- mode hold 默认 3 秒，可通过 `--prefix-timeout` 调整
-- `resize / floating move / floating resize / pane focus / viewport pan` 等连续操作会在每次有效动作后续期 3 秒
-- exited pane 的 `r / attach / close` 提示已回到 pane 内文案，不再占用普通态底栏
-
-### metadata
-
-- terminal name / tags 可编辑
-- picker 和 terminal manager 都能进入 metadata 编辑
-- 编辑 prompt 已有两步流：name -> tags
-- prompt 会显示 step、terminal id、command
-- metadata 更新会同步到所有 attach pane
-- parked terminal 的 metadata 也可以编辑
-
-### 生命周期语义
-
-- close pane 不会默认 kill terminal
-- stop terminal 会先弹确认
-- terminal 被 stop/remove 后，原 pane 会保留成 `saved pane`
-- remote remove 会给其他客户端提示
-- exited terminal 可以进入 exited 状态并保留历史
-
-### restore / layout
-
-- workspace state restore 已有基础
-- layout restore / create / prompt / skip 已有基础路径
-- 重复 `_hint_id` 的共享 attach / create 已有覆盖
-
-### 可测试性
-
-- 当前已有大量单测
-- 已有屏幕级 e2e harness
-- 最近新增能力基本都按 TDD 落地
-- shared terminal 的 `floating + fit + acquire + alt-screen` 组合场景已有专门回归测试
-- 当前 `go test ./... -count=1` 通过
+状态：Reset Stage
+日期：2026-03-23
 
 ---
 
-## 2. 当前已经基本定下来的产品结论
+## 1. 当前判断
 
-### 结论 A：主概念已经收口
+termx TUI 当前处于“主线重定义已开始、代码重建未开始”的阶段。
 
-现在主概念就是：
+现状可以概括为：
 
-- workspace
-- tab
-- pane
-- terminal
-
-`view / viewport / panel` 不再应作为用户主概念继续扩散。
-
-### 结论 B：pane 和 terminal 明确解绑
-
-现在正确语义已经比较明确：
-
-- pane 是工作位
-- terminal 是运行实体
-- pane 标题默认应展示 terminal 真实名称，而不是把 pane 当独立命名对象
-- 关闭 pane 不结束 terminal
-- stop terminal 不自动删 pane，而是留下 saved pane
-
-### 结论 C：terminal manager 已经成为独立角色
-
-现在 terminal manager 不再只是 picker 的大版本。
-
-它已经在承担：
-
-- terminal pool 浏览
-- terminal 可见性查看
-- metadata 编辑
-- terminal stop
-- 复用入口
-
-### 结论 D：当前 UI 结构大体成立
-
-现在已经有：
-
-- 顶栏：workspace + tabs + 摘要
-- pane 标题栏：名称 + 状态关系
-- 底栏：左快捷键 / 右状态摘要
-- overlay：居中 modal / picker / manager
-
-这说明主框架已经成型，后续主要是继续打磨，而不是重来。
+- 旧版 TUI 已归档到 `deprecated/tui-legacy/`
+- 原 `tui/` 主线路径当前为空
+- 新主线文档已经重新建立
+- 新主线代码还没有开始正式落地
 
 ---
 
-## 3. 当前仍然不够好的地方
+## 2. 已完成
 
-### 快捷键认知负担仍偏大
+当前已经完成的事情：
 
-虽然已经切到 `Ctrl-p / Ctrl-r / Ctrl-t / Ctrl-w / Ctrl-o / Ctrl-v / Ctrl-f / Ctrl-g` 结构，但：
+1. 旧版资产已归档
+2. legacy 设计和代码已做第一轮整理
+3. 新主线产品概念已重新收口
+4. 新主线交互规则、线框、架构、测试策略、交付计划已成文
+5. 第一批 TDD 代码骨架已经落地
+6. 第二轮 TDD 已补上 `close pane` 语义和 workspace picker 树状态机
 
-- mode 仍偏多
-- 部分动作仍需要记忆
-- help 虽然能看，但还不够“上手即懂”
+对应文档：
 
-### UI 视觉还没有完全收口
+- `product-spec.md`
+- `interaction-spec.md`
+- `wireframes.md`
+- `architecture.md`
+- `testing-strategy.md`
+- `implementation-roadmap.md`
 
-已有基础，但还没达到最终状态：
+当前已经落到代码里的支点：
 
-- pane 顶部 chrome 还需要进一步收口成单线表达
-- modal / picker / manager 还可以更统一
-- 顶栏、pane 标题栏、底栏之间的信息分配还能继续优化
+- `tui/domain/types`
+- `tui/domain/layout`
+- `tui/domain/connection`
+- `tui/domain/workspace`
+- `tui/app/intent`
+- `tui/app/reducer`
+- `tui/runtime.go`
+- `tui/client.go`
 
-### resize / shared terminal 的最终心智还需要继续收口
+本轮新增并通过测试的能力：
 
-当前方向已经对了，但还要继续保证：
-
-- shared terminal 的 resize 规则足够稳定
-- acquire / auto-acquire / size-lock 的行为足够好理解
-- 复杂共享场景的 e2e 继续补强
-- floating pane 脱离 tab 主视口后的“呼回并居中”能力要补成正式交互
-
-### terminal 更完整的管理模型还没完全成型
-
-已经有 metadata，但还缺：
-
-- 更完整的 terminal 属性编辑策略
-- 更清楚的 tags / rules 在 workspace/layout 中的使用方式
-- 更完整的 terminal-only 管理视图设计
-
----
-
-## 4. 当前进度判断
-
-如果把 TUI 拆成 4 层，目前大致是：
-
-### 第一层：基础可用性
-
-完成度：高
-
-- 可以启动、分屏、切 tab、开浮窗、复用 terminal、保存基本现场
-
-### 第二层：正确语义
-
-完成度：中高
-
-- pane vs terminal 的关系已经大体收口
-- stop / close / saved pane / remote remove 语义已经成型
-
-### 第三层：高级共享与恢复
-
-完成度：中
-
-- 已有可用基线
-- 还需要继续做复杂场景和边界一致性
-
-### 第四层：最终交互体验与视觉完成度
-
-完成度：中低
-
-- 主框架有了
-- 但还需要继续做 UI、美化、降噪、术语统一、帮助系统优化
+- `layout` 纯逻辑树和矩形投影
+- `connection` 的 connect / owner / migrate 基线
+- `workspace picker` 树构建与 query 命中祖先展开
+- `workspace tree jump` 焦点决议
+- `ConnectTerminalIntent`
+- `StopTerminalIntent`
+- `TerminalProgramExitedIntent`
+- `ClosePaneIntent`
+- `WorkspaceTreeJumpIntent`
 
 ---
 
-## 5. 当前最适合继续推进的方向
+## 3. 尚未开始
 
-按优先级建议：
+当前还没有正式开始的部分：
 
-1. 文档彻底收口，删除旧补丁式设计稿
-2. 继续收口 keymap 与 help，让新用户更容易上手
-3. 继续补 shared terminal / floating / resize 的复杂 e2e
-4. 再做一轮 UI 视觉统一和状态信息重排
-5. 最后再扩 terminal rules / 更完整 manager 能力
+1. 新版 `layout` 领域层
+2. 完整的 `intent -> reducer -> effect` 扩展面
+3. 新版 bubbletea shell
+4. 新版 renderer
+5. 新版 terminal picker / terminal manager / workspace restore
+6. 新版单测、场景回归、E2E 回迁
 
 ---
 
-## 6. 一句话结论
+## 4. 当前最高优先级
 
-当前 termx TUI 已经不是“概念混乱的试验品”了。
+下一阶段最高优先级不是补 UI，而是先把下面几个边界立住：
 
-它已经进入下面这个阶段：
+1. `workspace picker` 完整 reducer
+2. `terminal manager connect here` reducer / effect
+3. `overlay` 和 `mode` 状态迁移
+4. 更完整的 `AppState / UIState`
+5. 新版 bubbletea shell 接口
 
-- 主结构成立
-- 主语义基本成立
-- 主路径可用
-- 现在最需要的是文档收口、交互减负、视觉统一、复杂场景补测
+原因：
+
+- 这些边界决定后续是否还会回到补丁式开发
+- shared terminal 的复杂度必须先被模型化
+- 输入路径必须先统一
+
+---
+
+## 5. 当前主要风险
+
+### 5.1 文档和实现再次分叉
+
+如果没有按新文档起代码骨架，很容易再次回到：
+
+- 先做功能
+- 后补设计
+- 最后结构失控
+
+### 5.2 shared terminal 复杂度再次失控
+
+如果不先把 `ConnectionState` 做成一等模型，owner/follower 会再次散回 UI 和 runtime 逻辑。
+
+### 5.3 渲染问题过早主导实现
+
+如果过早恢复旧版那种复杂 render/cache 路线，会把新主线重新拖回旧结构。
+
+---
+
+## 6. 当前推荐动作
+
+当前最合适的下一步是：
+
+1. 你先确认文档主线
+2. 然后从 `layout / connection / workspace / intent / reducer` 开始写第一批代码
+
+---
+
+## 7. 当前一句话状态
+
+termx TUI 现在已经进入“文档已重置，第一批骨架代码已起，继续按 TDD 扩 reducer 和 UI 状态机”的阶段。

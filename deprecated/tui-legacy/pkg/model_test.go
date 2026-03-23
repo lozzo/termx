@@ -846,6 +846,481 @@ func TestStatusStatePartsUseFriendlyPaneLabelAndMinimalRuntimeSummary(t *testing
 	}
 }
 
+func TestDirectModeShortcutKeyUsesSharedMapping(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+
+	cmd := model.directModeCmdForKey(tea.KeyMsg{Type: tea.KeyCtrlO})
+	if cmd == nil {
+		t.Fatal("expected ctrl+o to enter floating mode")
+	}
+	if got := model.ActiveModeForTest(); got != "floating" {
+		t.Fatalf("expected floating mode from shared key mapping, got %q", got)
+	}
+}
+
+func TestDirectModeShortcutEventUsesSharedMapping(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+
+	cmd := model.directModeCmdForEvent(uv.KeyPressEvent{Code: 'v', Text: "v", Mod: uv.ModCtrl})
+	if cmd == nil {
+		t.Fatal("expected ctrl+v to enter connection mode")
+	}
+	if got := model.ActiveModeForTest(); got != "connection" {
+		t.Fatalf("expected connection mode from shared event mapping, got %q", got)
+	}
+}
+
+func TestRootPrefixShortcutUsesSharedMapping(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+
+	result := model.dispatchRootPrefixKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	if !result.keep || result.cmd != nil || result.state.kind != prefixStateTransitionEnter || result.state.mode != prefixModeWorkspace {
+		t.Fatalf("expected root prefix w to return workspace enter transition, got %#v", result)
+	}
+	if got := model.ActiveModeForTest(); got != "" {
+		t.Fatalf("expected root prefix dispatch to stay pure before apply, got %q", got)
+	}
+	_ = model.applyActivePrefixResult(result)
+	if got := model.ActiveModeForTest(); got != "workspace" {
+		t.Fatalf("expected workspace mode after applying shared root prefix mapping, got %q", got)
+	}
+}
+
+func TestRootPrefixEventUsesSharedMapping(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+
+	result := model.dispatchPrefixEvent(uv.KeyPressEvent{Code: 'o', Text: "o"})
+	if !result.keep || result.cmd != nil || result.state.kind != prefixStateTransitionEnter || result.state.mode != prefixModeFloating {
+		t.Fatalf("expected root event o to return floating enter transition, got %#v", result)
+	}
+	if got := model.ActiveModeForTest(); got != "" {
+		t.Fatalf("expected root event dispatch to stay pure before apply, got %q", got)
+	}
+	_ = model.applyActivePrefixResult(result)
+	if got := model.ActiveModeForTest(); got != "floating" {
+		t.Fatalf("expected floating mode after applying shared root event mapping, got %q", got)
+	}
+}
+
+func TestPrefixInputFromKeyAndEventShareCanonicalTokens(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   tea.KeyMsg
+		event uv.KeyPressEvent
+		want  string
+	}{
+		{
+			name:  "esc",
+			key:   tea.KeyMsg{Type: tea.KeyEsc},
+			event: uv.KeyPressEvent{Code: uv.KeyEsc},
+			want:  "esc",
+		},
+		{
+			name:  "tab",
+			key:   tea.KeyMsg{Type: tea.KeyTab},
+			event: uv.KeyPressEvent{Code: uv.KeyTab},
+			want:  "tab",
+		},
+		{
+			name:  "comma",
+			key:   tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{','}},
+			event: uv.KeyPressEvent{Code: ',', Text: ","},
+			want:  ",",
+		},
+		{
+			name:  "digit",
+			key:   tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}},
+			event: uv.KeyPressEvent{Code: '2', Text: "2"},
+			want:  "2",
+		},
+		{
+			name:  "question",
+			key:   tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}},
+			event: uv.KeyPressEvent{Code: '?', Text: "?"},
+			want:  "?",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := prefixInputFromKey(tt.key).token; got != tt.want {
+				t.Fatalf("expected key token %q, got %q", tt.want, got)
+			}
+			if got := prefixInputFromEvent(tt.event).token; got != tt.want {
+				t.Fatalf("expected event token %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestPrefixInputFromKeyAndEventShareDirectionalTokens(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   tea.KeyMsg
+		event uv.KeyPressEvent
+		want  string
+	}{
+		{
+			name:  "left",
+			key:   tea.KeyMsg{Type: tea.KeyLeft},
+			event: uv.KeyPressEvent{Code: uv.KeyLeft},
+			want:  "left",
+		},
+		{
+			name:  "right",
+			key:   tea.KeyMsg{Type: tea.KeyRight},
+			event: uv.KeyPressEvent{Code: uv.KeyRight},
+			want:  "right",
+		},
+		{
+			name:  "space",
+			key:   tea.KeyMsg{Type: tea.KeySpace},
+			event: uv.KeyPressEvent{Code: ' ', Text: " "},
+			want:  "space",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := prefixInputFromKey(tt.key).token; got != tt.want {
+				t.Fatalf("expected key token %q, got %q", tt.want, got)
+			}
+			if got := prefixInputFromEvent(tt.event).token; got != tt.want {
+				t.Fatalf("expected event token %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestTabWorkspaceGlobalActionsUseCanonicalPrefixInput(t *testing.T) {
+	if got := tabModeActionForInput(prefixInput{token: ","}, false); got.kind != tabModeActionRename {
+		t.Fatalf("expected canonical tab input to map rename, got %#v", got)
+	}
+	if got := tabModeActionForInput(prefixInput{token: "2"}, true); got.kind != tabModeActionJump || got.index != 1 {
+		t.Fatalf("expected canonical direct tab digit to jump to second tab, got %#v", got)
+	}
+	if got := workspaceModeActionForInput(prefixInput{token: "r"}); got.kind != workspaceModeActionRename {
+		t.Fatalf("expected canonical workspace input to map rename, got %#v", got)
+	}
+	if got := globalModeActionForInput(prefixInput{token: "?"}); got.kind != globalModeActionHelp {
+		t.Fatalf("expected canonical global input to map help, got %#v", got)
+	}
+}
+
+func TestResizeAndOffsetActionsUseCanonicalPrefixInput(t *testing.T) {
+	if got := resizeModeActionForInput(prefixInput{token: "left"}); got.kind != resizeModeActionResize || got.direction != DirectionLeft || got.amount != 2 {
+		t.Fatalf("expected canonical resize left input, got %#v", got)
+	}
+	if got := resizeModeActionForInput(prefixInput{token: "L"}); got.kind != resizeModeActionResize || got.direction != DirectionRight || got.amount != 4 {
+		t.Fatalf("expected canonical resize L input, got %#v", got)
+	}
+	if got := resizeModeActionForInput(prefixInput{token: "space"}); got.kind != resizeModeActionCycleLayout {
+		t.Fatalf("expected canonical resize space input, got %#v", got)
+	}
+	if got := offsetPanModeActionForInput(prefixInput{token: "right"}); got.kind != offsetPanModeActionPan || got.direction != DirectionRight {
+		t.Fatalf("expected canonical offset right input, got %#v", got)
+	}
+	if got := offsetPanModeActionForInput(prefixInput{token: "G"}); got.kind != offsetPanModeActionJumpBottom {
+		t.Fatalf("expected canonical offset G input, got %#v", got)
+	}
+}
+
+func TestViewportAndFloatingActionsUseCanonicalPrefixInput(t *testing.T) {
+	if got := viewportModeActionForInput(prefixInput{token: "left"}, false); got.kind != viewportModeActionPan || got.direction != DirectionLeft {
+		t.Fatalf("expected canonical viewport left input, got %#v", got)
+	}
+	if got := viewportModeActionForInput(prefixInput{token: "a"}, false); got.kind != viewportModeActionAcquire {
+		t.Fatalf("expected canonical viewport acquire input, got %#v", got)
+	}
+	if got := viewportModeActionForInput(prefixInput{token: "o"}, false); got.kind != viewportModeActionOffsetMode {
+		t.Fatalf("expected canonical viewport offset-mode input, got %#v", got)
+	}
+	if got := floatingModeActionForInput(prefixInput{token: "tab"}); got.kind != floatingModeActionFocusNext {
+		t.Fatalf("expected canonical floating tab input, got %#v", got)
+	}
+	if got := floatingModeActionForInput(prefixInput{token: "left"}); got.kind != floatingModeActionMove || got.direction != DirectionLeft {
+		t.Fatalf("expected canonical floating left input, got %#v", got)
+	}
+	if got := floatingModeActionForInput(prefixInput{token: "L"}); got.kind != floatingModeActionResize || got.direction != DirectionRight || got.amount != 4 {
+		t.Fatalf("expected canonical floating L input, got %#v", got)
+	}
+}
+
+func TestPrefixInputFromKeyAndEventShareCtrlDirectionalTokens(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   tea.KeyMsg
+		event uv.KeyPressEvent
+		want  string
+	}{
+		{
+			name:  "ctrl-left",
+			key:   tea.KeyMsg{Type: tea.KeyCtrlLeft},
+			event: uv.KeyPressEvent{Code: uv.KeyLeft, Mod: uv.ModCtrl},
+			want:  "ctrl+left",
+		},
+		{
+			name:  "ctrl-h",
+			key:   tea.KeyMsg{Type: tea.KeyCtrlH},
+			event: uv.KeyPressEvent{Code: 'h', Text: "h", Mod: uv.ModCtrl},
+			want:  "ctrl+h",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := prefixInputFromKey(tt.key).token; got != tt.want {
+				t.Fatalf("expected key token %q, got %q", tt.want, got)
+			}
+			if got := prefixInputFromEvent(tt.event).token; got != tt.want {
+				t.Fatalf("expected event token %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestPrefixInputFromEventPreservesAltShiftModifiers(t *testing.T) {
+	input := prefixInputFromEvent(uv.KeyPressEvent{Code: 'H', Text: "H", Mod: uv.ModAlt | uv.ModShift})
+	if input.token != "H" {
+		t.Fatalf("expected token H, got %q", input.token)
+	}
+	if !input.alt || !input.shift {
+		t.Fatalf("expected alt+shift modifiers to be preserved, got %+v", input)
+	}
+}
+
+func TestPaneActionsUseCanonicalPrefixInput(t *testing.T) {
+	if got := panePrefixActionForInput(prefixInput{token: "left"}); got.kind != panePrefixActionFocus || got.direction != DirectionLeft {
+		t.Fatalf("expected canonical pane left input, got %#v", got)
+	}
+	if got := panePrefixActionForInput(prefixInput{token: "ctrl+h"}); got.kind != panePrefixActionViewportPan || got.offset != -4 {
+		t.Fatalf("expected canonical pane ctrl+h input, got %#v", got)
+	}
+	if got := panePrefixActionForInput(prefixInput{token: "space"}); got.kind != panePrefixActionCycleLayout {
+		t.Fatalf("expected canonical pane space input, got %#v", got)
+	}
+	if got := panePrefixActionForInput(prefixInput{token: "tab"}); got.kind != panePrefixActionCycleFloatingFocus {
+		t.Fatalf("expected canonical pane tab input, got %#v", got)
+	}
+	if got := panePrefixActionForInput(prefixInput{token: "4"}); got.kind != panePrefixActionJumpTab || got.index != 3 {
+		t.Fatalf("expected canonical pane tab-jump input, got %#v", got)
+	}
+}
+
+func TestAltFloatingActionsUseCanonicalPrefixInput(t *testing.T) {
+	move, ok := floatingAltActionForInput(prefixInput{token: "left", alt: true})
+	if !ok || move.kind != floatingModeActionMove || move.direction != DirectionLeft {
+		t.Fatalf("expected alt-left to map floating move left, got ok=%v action=%#v", ok, move)
+	}
+
+	resize, ok := floatingAltActionForInput(prefixInput{token: "H", alt: true, shift: true})
+	if !ok || resize.kind != floatingModeActionResize || resize.direction != DirectionLeft || resize.amount != 4 {
+		t.Fatalf("expected alt-shift-H to map floating resize left, got ok=%v action=%#v", ok, resize)
+	}
+
+	if action, ok := floatingAltActionForInput(prefixInput{token: "left"}); ok || action.kind != floatingModeActionNone {
+		t.Fatalf("expected plain left not to map alt floating action, got ok=%v action=%#v", ok, action)
+	}
+}
+
+func TestDispatchPrefixInputHandlesRootShortcutTransition(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+
+	result := model.dispatchPrefixInput(prefixInput{token: "w"})
+	if !result.keep || result.cmd != nil || result.state.kind != prefixStateTransitionEnter || result.state.mode != prefixModeWorkspace {
+		t.Fatalf("expected canonical root input to return workspace enter transition, got %#v", result)
+	}
+}
+
+func TestDispatchPrefixInputHandlesPaneDirectionalKeep(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+	model.prefixActive = true
+	model.prefixMode = prefixModePane
+
+	result := model.dispatchPrefixInput(prefixInput{token: "left"})
+	if !result.keep || !result.rearm {
+		t.Fatalf("expected canonical pane directional input to keep and rearm, got %#v", result)
+	}
+}
+
+func TestDispatchRootPrefixInputUnknownClearsPrefix(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	result := model.dispatchRootPrefixInput(prefixInput{token: "q"})
+	if result.keep || result.rearm || result.cmd != nil {
+		t.Fatalf("expected unknown root prefix input to stay one-shot, got %#v", result)
+	}
+}
+
+func TestPrefixIntentForInputCapturesModeAndDirectState(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	model.prefixMode = prefixModeTab
+	model.directMode = true
+
+	intent := model.prefixIntentForInput(prefixInput{token: "2"})
+	if intent.mode != prefixModeTab || !intent.direct || intent.input.token != "2" {
+		t.Fatalf("expected prefix intent to capture mode/direct/input, got %#v", intent)
+	}
+}
+
+func TestDispatchPrefixIntentUsesCapturedDirectState(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+	model.workspace.Tabs = append(model.workspace.Tabs, newTab("two"))
+
+	result := model.dispatchPrefixIntent(prefixIntent{
+		mode:   prefixModeTab,
+		direct: true,
+		input:  prefixInput{token: "2"},
+	})
+	if model.workspace.ActiveTab != 1 {
+		t.Fatalf("expected direct tab intent to jump to second tab, got %d", model.workspace.ActiveTab)
+	}
+	if result.keep {
+		t.Fatalf("expected direct tab intent jump to be one-shot, got %#v", result)
+	}
+}
+
+func TestPrefixRuntimePlanForResultPrefersExplicitTransition(t *testing.T) {
+	plan := prefixRuntimePlanForResult(prefixDispatchResult{
+		cmd:   tea.Quit,
+		keep:  true,
+		rearm: true,
+		state: prefixStateTransition{kind: prefixStateTransitionEnter, mode: prefixModeWorkspace},
+	})
+	if plan.clear {
+		t.Fatalf("expected explicit transition to win over clear, got %#v", plan)
+	}
+	if plan.rearm {
+		t.Fatalf("expected explicit transition not to request standalone rearm, got %#v", plan)
+	}
+	if plan.transition.kind != prefixStateTransitionEnter || plan.transition.mode != prefixModeWorkspace {
+		t.Fatalf("expected enter transition plan, got %#v", plan)
+	}
+	if plan.cmd == nil {
+		t.Fatal("expected runtime plan to keep original command")
+	}
+}
+
+func TestPrefixRuntimePlanForResultClearsWhenOneShotWithoutTransition(t *testing.T) {
+	plan := prefixRuntimePlanForResult(prefixDispatchResult{keep: false})
+	if !plan.clear {
+		t.Fatalf("expected one-shot result to clear prefix state, got %#v", plan)
+	}
+	if plan.transition.kind != prefixStateTransitionNone {
+		t.Fatalf("expected no explicit transition for one-shot clear, got %#v", plan)
+	}
+}
+
+func TestPrefixRuntimePlanForResultRearmsStickyResult(t *testing.T) {
+	plan := prefixRuntimePlanForResult(prefixDispatchResult{keep: true, rearm: true})
+	if plan.clear {
+		t.Fatalf("expected sticky result not to clear prefix state, got %#v", plan)
+	}
+	if !plan.rearm {
+		t.Fatalf("expected sticky result to request rearm, got %#v", plan)
+	}
+	if plan.transition.kind != prefixStateTransitionNone {
+		t.Fatalf("expected sticky result without explicit transition, got %#v", plan)
+	}
+}
+
+func TestPaneModeKeyAndEventShareKeepBehaviorForDirectionalInput(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		model.prefixActive = true
+		model.prefixMode = prefixModePane
+		return model
+	}
+
+	keyModel := newModel()
+	keyResult := keyModel.dispatchPaneModeKey(tea.KeyMsg{Type: tea.KeyLeft})
+	if !keyResult.keep || !keyResult.rearm {
+		t.Fatalf("expected key pane directional input to keep and rearm, got %#v", keyResult)
+	}
+
+	eventModel := newModel()
+	eventResult := eventModel.dispatchPaneModeEvent(uv.KeyPressEvent{Code: uv.KeyLeft})
+	if !eventResult.keep || !eventResult.rearm {
+		t.Fatalf("expected event pane directional input to keep and rearm, got %#v", eventResult)
+	}
+}
+
+func TestDispatchPaneModeInputUnknownKeepsOnlyInDirectMode(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		model.prefixActive = true
+		model.prefixMode = prefixModePane
+		return model
+	}
+
+	normalModel := newModel()
+	normalResult := normalModel.dispatchPaneModeInput(prefixInput{token: "q"})
+	if normalResult.keep || normalResult.rearm || normalResult.cmd != nil {
+		t.Fatalf("expected unknown normal pane input to clear mode, got %#v", normalResult)
+	}
+
+	directModel := newModel()
+	directModel.directMode = true
+	directResult := directModel.dispatchPaneModeInput(prefixInput{token: "q"})
+	if !directResult.keep || directResult.rearm || directResult.cmd != nil {
+		t.Fatalf("expected unknown direct pane input to keep mode without rearm, got %#v", directResult)
+	}
+}
+
+func TestExitedPaneShortcutKeyUsesSharedHandler(t *testing.T) {
+	exitCode := 0
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	pane := &Pane{
+		ID:    "pane-1",
+		Title: "shell",
+		Viewport: &Viewport{
+			TerminalID:    "term-1",
+			Channel:       1,
+			TerminalState: "exited",
+			ExitCode:      &exitCode,
+		},
+	}
+	model.workspace.Tabs = []*Tab{{Name: "1", Panes: map[string]*Pane{pane.ID: pane}, ActivePaneID: pane.ID}}
+
+	cmd := model.handleExitedPaneKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if cmd == nil {
+		t.Fatal("expected exited key shortcut to restart pane")
+	}
+}
+
+func TestExitedPaneShortcutEventUsesSharedHandler(t *testing.T) {
+	exitCode := 0
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	pane := &Pane{
+		ID:    "pane-1",
+		Title: "shell",
+		Viewport: &Viewport{
+			TerminalID:    "term-1",
+			Channel:       1,
+			TerminalState: "exited",
+			ExitCode:      &exitCode,
+		},
+	}
+	model.workspace.Tabs = []*Tab{{Name: "1", Panes: map[string]*Pane{pane.ID: pane}, ActivePaneID: pane.ID}}
+
+	cmd := model.handleExitedPaneEvent(uv.KeyPressEvent{Code: 'r', Text: "r"})
+	if cmd == nil {
+		t.Fatal("expected exited event shortcut to restart pane")
+	}
+}
+
 func TestTerminalPickerLineBodyPrefersFriendlyNameOverID(t *testing.T) {
 	item := terminalPickerItem{
 		Info: protocol.TerminalInfo{
@@ -2907,6 +3382,64 @@ func TestCtrlADoesNotActivatePrefixMode(t *testing.T) {
 	}
 }
 
+func TestHelpCloseUsesSameControlFlowForKeyAndEvent(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		model.showHelp = true
+		return model
+	}
+
+	keyModel := newModel()
+	_, cmd := keyModel.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd != nil {
+		t.Fatalf("expected key help close to stay local, got %#v", cmd)
+	}
+	if keyModel.showHelp {
+		t.Fatal("expected key path to close help")
+	}
+
+	eventModel := newModel()
+	cmd = eventModel.handleKeyPressEvent(uv.KeyPressEvent{Code: uv.KeyEsc})
+	if cmd != nil {
+		t.Fatalf("expected event help close to stay local, got %#v", cmd)
+	}
+	if eventModel.showHelp {
+		t.Fatal("expected event path to close help")
+	}
+}
+
+func TestCtrlAUsesSameControlFlowForKeyAndEvent(t *testing.T) {
+	newModel := func() (*Model, *fakeClient) {
+		client := &fakeClient{}
+		model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		return model, client
+	}
+
+	keyModel, keyClient := newModel()
+	_, cmd := keyModel.handleKey(tea.KeyMsg{Type: tea.KeyCtrlA})
+	if cmd == nil {
+		t.Fatal("expected key ctrl-a to produce send command")
+	}
+	_ = mustRunCmd(t, cmd)
+	if len(keyClient.inputs) == 0 || string(keyClient.inputs[len(keyClient.inputs)-1]) != "\x01" {
+		t.Fatalf("expected key ctrl-a to forward literal input, got %#v", keyClient.inputs)
+	}
+
+	eventModel, eventClient := newModel()
+	cmd = eventModel.handleKeyPressEvent(uv.KeyPressEvent{Code: 'a', Text: "a", Mod: uv.ModCtrl})
+	if cmd == nil {
+		t.Fatal("expected event ctrl-a to produce send command")
+	}
+	_ = mustRunCmd(t, cmd)
+	if len(eventClient.inputs) == 0 || string(eventClient.inputs[len(eventClient.inputs)-1]) != "\x01" {
+		t.Fatalf("expected event ctrl-a to forward literal input, got %#v", eventClient.inputs)
+	}
+}
+
 func TestRawArrowKeysUseApplicationCursorModeWhenRequested(t *testing.T) {
 	client := &fakeClient{}
 	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
@@ -3109,6 +3642,94 @@ func TestPrefixTimeoutClearsPrefixMode(t *testing.T) {
 	}
 }
 
+func TestApplyPrefixStateTransitionClearResetsModeFlags(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	model.prefixActive = true
+	model.directMode = true
+	model.prefixMode = prefixModeFloating
+	model.prefixFallback = prefixFallbackFloatingCreate
+
+	cmd := model.applyPrefixStateTransition(prefixStateTransition{kind: prefixStateTransitionClear})
+	if cmd != nil {
+		t.Fatalf("expected clear transition to stay synchronous, got %v", cmd != nil)
+	}
+	if model.prefixActive || model.directMode {
+		t.Fatalf("expected clear transition to reset active/direct flags, active=%v direct=%v", model.prefixActive, model.directMode)
+	}
+	if model.prefixMode != prefixModeRoot {
+		t.Fatalf("expected clear transition to reset prefix mode, got %v", model.prefixMode)
+	}
+	if model.prefixFallback != prefixFallbackNone {
+		t.Fatalf("expected clear transition to reset fallback, got %v", model.prefixFallback)
+	}
+}
+
+func TestApplyPrefixStateTransitionEnterFloatingFocusesTopFloatingPane(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	model.workspace = Workspace{
+		Tabs: []*Tab{
+			{
+				Panes: map[string]*Pane{
+					"pane-1": {ID: "pane-1", Viewport: &Viewport{}},
+					"pane-2": {ID: "pane-2", Viewport: &Viewport{}},
+					"pane-3": {ID: "pane-3", Viewport: &Viewport{}},
+				},
+				FloatingVisible: true,
+				Floating: []*FloatingPane{
+					{PaneID: "pane-2", Z: 1},
+					{PaneID: "pane-3", Z: 2},
+				},
+				ActivePaneID: "pane-1",
+			},
+		},
+	}
+
+	cmd := model.applyPrefixStateTransition(prefixStateTransition{
+		kind:     prefixStateTransitionEnter,
+		mode:     prefixModeFloating,
+		fallback: prefixFallbackFloatingCreate,
+	})
+	if cmd == nil {
+		t.Fatal("expected entering floating mode to arm prefix timeout")
+	}
+	if !model.prefixActive || model.directMode {
+		t.Fatalf("expected floating enter to enable prefix mode without direct mode, active=%v direct=%v", model.prefixActive, model.directMode)
+	}
+	if model.prefixMode != prefixModeFloating {
+		t.Fatalf("expected floating mode after transition, got %v", model.prefixMode)
+	}
+	if model.prefixFallback != prefixFallbackFloatingCreate {
+		t.Fatalf("expected floating enter to preserve fallback, got %v", model.prefixFallback)
+	}
+	if got := model.currentTab().ActivePaneID; got != "pane-3" {
+		t.Fatalf("expected floating transition to focus topmost floating pane, got %q", got)
+	}
+}
+
+func TestApplyPrefixStateTransitionEnterDirectModeArmsFreshTimeoutSeq(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	model.prefixTimeout = 5 * time.Millisecond
+	initialSeq := model.prefixSeq
+
+	cmd := model.applyPrefixStateTransition(prefixStateTransition{
+		kind:   prefixStateTransitionEnter,
+		mode:   prefixModeResize,
+		direct: true,
+	})
+	if cmd == nil {
+		t.Fatal("expected direct enter to arm prefix timeout")
+	}
+	if !model.prefixActive || !model.directMode {
+		t.Fatalf("expected direct enter to enable prefix and direct mode, active=%v direct=%v", model.prefixActive, model.directMode)
+	}
+	if model.prefixMode != prefixModeResize {
+		t.Fatalf("expected resize mode after direct enter, got %v", model.prefixMode)
+	}
+	if model.prefixSeq <= initialSeq {
+		t.Fatalf("expected direct enter to bump prefix sequence, before=%d after=%d", initialSeq, model.prefixSeq)
+	}
+}
+
 func TestDirectModeTimeoutClearsMode(t *testing.T) {
 	client := &fakeClient{}
 	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
@@ -3152,6 +3773,788 @@ func TestResizeModeActionRearmsTimeout(t *testing.T) {
 	_, _ = model.Update(prefixTimeoutMsg{seq: rearmedSeq})
 	if model.prefixActive {
 		t.Fatal("expected resize mode to clear after rearmed timeout")
+	}
+}
+
+func TestResizeModeAcquireKeepsModeActiveForKeyAndEvent(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	result := model.dispatchResizeModeKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if !result.keep || !result.rearm || result.cmd == nil {
+		t.Fatalf("expected key acquire to keep and rearm resize mode, got %#v", result)
+	}
+
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	eventResult := model.dispatchResizeModeEvent(uv.KeyPressEvent{Code: 'a', Text: "a"})
+	if !eventResult.keep || !eventResult.rearm || eventResult.cmd == nil {
+		t.Fatalf("expected event acquire to keep and rearm resize mode, got %#v", eventResult)
+	}
+}
+
+func TestResizeModeRuntimePlanForResizeAndAcquire(t *testing.T) {
+	resizePlan := resizeModeRuntimePlanForAction(resizeModeAction{kind: resizeModeActionResize, direction: DirectionRight, amount: 4})
+	if resizePlan.resizeDirection != DirectionRight || resizePlan.resizeAmount != 4 || !resizePlan.keep || !resizePlan.rearm {
+		t.Fatalf("expected resize action plan to capture direction/amount and keep/rearm, got %#v", resizePlan)
+	}
+	acquirePlan := resizeModeRuntimePlanForAction(resizeModeAction{kind: resizeModeActionAcquire})
+	if !acquirePlan.acquire || !acquirePlan.keep || !acquirePlan.rearm {
+		t.Fatalf("expected acquire action plan to keep/rearm and request acquire, got %#v", acquirePlan)
+	}
+}
+
+func TestResizeModeRuntimePlanForBalanceAndCycleLayout(t *testing.T) {
+	balancePlan := resizeModeRuntimePlanForAction(resizeModeAction{kind: resizeModeActionBalance})
+	if !balancePlan.balance || !balancePlan.keep || !balancePlan.rearm {
+		t.Fatalf("expected balance action plan to keep/rearm and request rebalance, got %#v", balancePlan)
+	}
+	cyclePlan := resizeModeRuntimePlanForAction(resizeModeAction{kind: resizeModeActionCycleLayout})
+	if !cyclePlan.cycleLayout || !cyclePlan.keep || !cyclePlan.rearm {
+		t.Fatalf("expected cycle-layout action plan to keep/rearm and request cycle, got %#v", cyclePlan)
+	}
+}
+
+func TestResizeModeRuntimePlanForUnknownKeepsMode(t *testing.T) {
+	plan := resizeModeRuntimePlanForAction(resizeModeAction{})
+	if !plan.keep || !plan.rearm {
+		t.Fatalf("expected unknown resize action to keep and rearm mode, got %#v", plan)
+	}
+}
+
+func TestActivePrefixKeyAndEventClearStateOnOneShotAction(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		model.prefixActive = true
+		model.prefixMode = prefixModeGlobal
+		return model
+	}
+
+	keyModel := newModel()
+	cmd := keyModel.handleActivePrefixKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	if cmd != nil {
+		t.Fatalf("expected key help action to stay local, got %#v", cmd)
+	}
+	if keyModel.prefixActive {
+		t.Fatal("expected key one-shot action to clear prefix state")
+	}
+
+	eventModel := newModel()
+	cmd = eventModel.handleActivePrefixEvent(uv.KeyPressEvent{Code: '?', Text: "?"})
+	if cmd != nil {
+		t.Fatalf("expected event help action to stay local, got %#v", cmd)
+	}
+	if eventModel.prefixActive {
+		t.Fatal("expected event one-shot action to clear prefix state")
+	}
+}
+
+func TestActivePrefixKeyAndEventRearmStickyAction(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		model.prefixActive = true
+		model.prefixMode = prefixModeOffsetPan
+		model.prefixTimeout = 5 * time.Millisecond
+		return model
+	}
+
+	keyModel := newModel()
+	initialSeq := keyModel.prefixSeq
+	cmd := keyModel.handleActivePrefixKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	if !keyModel.prefixActive {
+		t.Fatal("expected key sticky action to keep prefix active")
+	}
+	if keyModel.prefixSeq <= initialSeq {
+		t.Fatalf("expected key sticky action to rearm prefix timeout, seq before=%d after=%d", initialSeq, keyModel.prefixSeq)
+	}
+	if cmd == nil {
+		t.Fatal("expected key sticky action to arm timeout")
+	}
+
+	eventModel := newModel()
+	initialSeq = eventModel.prefixSeq
+	cmd = eventModel.handleActivePrefixEvent(uv.KeyPressEvent{Code: 'l', Text: "l"})
+	if !eventModel.prefixActive {
+		t.Fatal("expected event sticky action to keep prefix active")
+	}
+	if eventModel.prefixSeq <= initialSeq {
+		t.Fatalf("expected event sticky action to rearm prefix timeout, seq before=%d after=%d", initialSeq, eventModel.prefixSeq)
+	}
+	if cmd == nil {
+		t.Fatal("expected event sticky action to arm timeout")
+	}
+}
+
+func TestResizeModeKeyAndEventShareDirectionalBehavior(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	keyResult := model.dispatchResizeModeKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+	if !keyResult.keep || !keyResult.rearm || keyResult.cmd == nil {
+		t.Fatalf("expected key resize action to keep and rearm, got %#v", keyResult)
+	}
+
+	eventResult := model.dispatchResizeModeEvent(uv.KeyPressEvent{Code: 'L', Text: "L", Mod: uv.ModShift})
+	if !eventResult.keep || !eventResult.rearm || eventResult.cmd == nil {
+		t.Fatalf("expected event resize action to keep and rearm, got %#v", eventResult)
+	}
+}
+
+func TestTabModeKeyAndEventShareRenameBehavior(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		return model
+	}
+
+	keyModel := newModel()
+	keyResult := keyModel.dispatchTabSubPrefixKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{','}})
+	if keyResult.keep {
+		t.Fatalf("expected key rename to be one-shot, got %#v", keyResult)
+	}
+	if keyModel.prompt == nil || keyModel.prompt.Title != "rename tab" {
+		t.Fatalf("expected key rename to open tab prompt, got %#v", keyModel.prompt)
+	}
+
+	eventModel := newModel()
+	eventResult := eventModel.dispatchTabSubPrefixEvent(uv.KeyPressEvent{Code: ',', Text: ","})
+	if eventResult.keep {
+		t.Fatalf("expected event rename to be one-shot, got %#v", eventResult)
+	}
+	if eventModel.prompt == nil || eventModel.prompt.Title != "rename tab" {
+		t.Fatalf("expected event rename to open tab prompt, got %#v", eventModel.prompt)
+	}
+}
+
+func TestTabModeKeyAndEventShareDirectDigitJump(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		model.workspace.Tabs = append(model.workspace.Tabs, newTab("two"))
+		model.directMode = true
+		model.prefixActive = true
+		model.prefixMode = prefixModeTab
+		return model
+	}
+
+	keyModel := newModel()
+	keyResult := keyModel.dispatchTabSubPrefixKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	if keyModel.workspace.ActiveTab != 1 {
+		t.Fatalf("expected key direct digit jump to select tab 2, got %d", keyModel.workspace.ActiveTab)
+	}
+	if keyResult.keep {
+		t.Fatalf("expected key direct digit jump to be one-shot, got %#v", keyResult)
+	}
+
+	eventModel := newModel()
+	eventResult := eventModel.dispatchTabSubPrefixEvent(uv.KeyPressEvent{Code: '2', Text: "2"})
+	if eventModel.workspace.ActiveTab != 1 {
+		t.Fatalf("expected event direct digit jump to select tab 2, got %d", eventModel.workspace.ActiveTab)
+	}
+	if eventResult.keep {
+		t.Fatalf("expected event direct digit jump to be one-shot, got %#v", eventResult)
+	}
+}
+
+func TestTabModeRuntimePlanForNew(t *testing.T) {
+	plan := tabModeRuntimePlanForAction(tabModeAction{kind: tabModeActionNew}, 2, 0)
+	if plan.keep {
+		t.Fatalf("expected new action to remain one-shot, got %#v", plan)
+	}
+	if !plan.openNew {
+		t.Fatalf("expected new action to request new-tab picker, got %#v", plan)
+	}
+}
+
+func TestTabModeRuntimePlanForRename(t *testing.T) {
+	plan := tabModeRuntimePlanForAction(tabModeAction{kind: tabModeActionRename}, 2, 0)
+	if plan.keep {
+		t.Fatalf("expected rename action to remain one-shot, got %#v", plan)
+	}
+	if !plan.beginRename {
+		t.Fatalf("expected rename action to request rename prompt, got %#v", plan)
+	}
+}
+
+func TestTabModeRuntimePlanForNextAndJump(t *testing.T) {
+	nextPlan := tabModeRuntimePlanForAction(tabModeAction{kind: tabModeActionNext}, 3, 1)
+	if nextPlan.activateIndex != 2 {
+		t.Fatalf("expected next action to target index 2, got %#v", nextPlan)
+	}
+	jumpPlan := tabModeRuntimePlanForAction(tabModeAction{kind: tabModeActionJump, index: 2}, 3, 0)
+	if jumpPlan.activateIndex != 2 {
+		t.Fatalf("expected jump action to target index 2, got %#v", jumpPlan)
+	}
+}
+
+func TestTabModeRuntimePlanForUnknownKeepsDirectModeOnly(t *testing.T) {
+	plan := tabModeRuntimePlanForAction(tabModeAction{}, 2, 0)
+	if !plan.keep {
+		t.Fatalf("expected unknown tab action plan to request keep handling, got %#v", plan)
+	}
+}
+
+func TestApplyTabModeActionUnknownKeepsModeInBothDirectAndNormal(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		model.prefixActive = true
+		model.prefixMode = prefixModeTab
+		return model
+	}
+
+	normalModel := newModel()
+	normalResult := normalModel.applyTabModeAction(tabModeAction{})
+	if !normalResult.keep || normalResult.rearm {
+		t.Fatalf("expected normal unknown tab action to keep mode without rearm, got %#v", normalResult)
+	}
+
+	directModel := newModel()
+	directModel.directMode = true
+	directResult := directModel.applyTabModeAction(tabModeAction{})
+	if !directResult.keep || directResult.rearm {
+		t.Fatalf("expected direct unknown tab action to keep mode without rearm, got %#v", directResult)
+	}
+}
+
+func TestWorkspaceModeKeyAndEventShareRenameBehavior(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh", Workspace: "main"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		return model
+	}
+
+	keyModel := newModel()
+	keyResult := keyModel.dispatchWorkspaceSubPrefixKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if keyResult.keep {
+		t.Fatalf("expected key workspace rename to be one-shot, got %#v", keyResult)
+	}
+	if keyModel.prompt == nil || keyModel.prompt.Title != "rename workspace" {
+		t.Fatalf("expected key workspace rename prompt, got %#v", keyModel.prompt)
+	}
+
+	eventModel := newModel()
+	eventResult := eventModel.dispatchWorkspaceSubPrefixEvent(uv.KeyPressEvent{Code: 'r', Text: "r"})
+	if eventResult.keep {
+		t.Fatalf("expected event workspace rename to be one-shot, got %#v", eventResult)
+	}
+	if eventModel.prompt == nil || eventModel.prompt.Title != "rename workspace" {
+		t.Fatalf("expected event workspace rename prompt, got %#v", eventModel.prompt)
+	}
+}
+
+func TestWorkspaceModeKeyAndEventShareDirectCreateBehavior(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh", Workspace: "main"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		model.directMode = true
+		model.prefixActive = true
+		model.prefixMode = prefixModeWorkspace
+		return model
+	}
+
+	keyModel := newModel()
+	keyResult := keyModel.dispatchWorkspaceSubPrefixKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	if keyResult.keep || keyResult.cmd == nil {
+		t.Fatalf("expected key workspace create to be one-shot with command, got %#v", keyResult)
+	}
+
+	eventModel := newModel()
+	eventResult := eventModel.dispatchWorkspaceSubPrefixEvent(uv.KeyPressEvent{Code: 'c', Text: "c"})
+	if eventResult.keep || eventResult.cmd == nil {
+		t.Fatalf("expected event workspace create to be one-shot with command, got %#v", eventResult)
+	}
+}
+
+func TestWorkspaceModeRuntimePlanForPicker(t *testing.T) {
+	plan := workspaceModeRuntimePlanForAction(workspaceModeAction{kind: workspaceModeActionPicker}, "workspace-2")
+	if plan.keep {
+		t.Fatalf("expected picker action to remain one-shot, got %#v", plan)
+	}
+	if !plan.openPicker {
+		t.Fatalf("expected picker action to request workspace picker, got %#v", plan)
+	}
+}
+
+func TestWorkspaceModeRuntimePlanForCreateUsesSuggestedName(t *testing.T) {
+	plan := workspaceModeRuntimePlanForAction(workspaceModeAction{kind: workspaceModeActionCreate}, "workspace-9")
+	if plan.keep {
+		t.Fatalf("expected create action to remain one-shot, got %#v", plan)
+	}
+	if plan.createName != "workspace-9" {
+		t.Fatalf("expected create action to capture suggested workspace name, got %#v", plan)
+	}
+}
+
+func TestWorkspaceModeRuntimePlanForRenameIsLocal(t *testing.T) {
+	plan := workspaceModeRuntimePlanForAction(workspaceModeAction{kind: workspaceModeActionRename}, "workspace-2")
+	if plan.keep {
+		t.Fatalf("expected rename action to remain one-shot, got %#v", plan)
+	}
+	if !plan.beginRename {
+		t.Fatalf("expected rename action to request rename prompt, got %#v", plan)
+	}
+}
+
+func TestWorkspaceModeRuntimePlanForUnknownActionKeepsMode(t *testing.T) {
+	plan := workspaceModeRuntimePlanForAction(workspaceModeAction{}, "workspace-2")
+	if !plan.keep {
+		t.Fatalf("expected unknown workspace action to keep mode active, got %#v", plan)
+	}
+	if plan.openPicker || plan.beginRename || plan.createName != "" {
+		t.Fatalf("expected unknown workspace action to stay inert, got %#v", plan)
+	}
+}
+
+func TestApplyWorkspaceModeActionUnknownKeepsModeInBothDirectAndNormal(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh", Workspace: "main"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		model.prefixActive = true
+		model.prefixMode = prefixModeWorkspace
+		return model
+	}
+
+	normalModel := newModel()
+	normalResult := normalModel.applyWorkspaceModeAction(workspaceModeAction{})
+	if !normalResult.keep || normalResult.rearm {
+		t.Fatalf("expected normal unknown workspace action to keep mode without rearm, got %#v", normalResult)
+	}
+
+	directModel := newModel()
+	directModel.directMode = true
+	directResult := directModel.applyWorkspaceModeAction(workspaceModeAction{})
+	if !directResult.keep || directResult.rearm {
+		t.Fatalf("expected direct unknown workspace action to keep mode without rearm, got %#v", directResult)
+	}
+}
+
+func TestViewportModeKeyAndEventShareAcquireBehavior(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		model.directMode = true
+		model.prefixActive = true
+		model.prefixMode = prefixModeViewport
+		return model
+	}
+
+	keyModel := newModel()
+	keyResult := keyModel.dispatchViewportSubPrefixKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if keyResult.keep || keyResult.cmd == nil {
+		t.Fatalf("expected key viewport acquire to be one-shot with command, got %#v", keyResult)
+	}
+
+	eventModel := newModel()
+	eventResult := eventModel.dispatchViewportSubPrefixEvent(uv.KeyPressEvent{Code: 'a', Text: "a"})
+	if eventResult.keep || eventResult.cmd == nil {
+		t.Fatalf("expected event viewport acquire to be one-shot with command, got %#v", eventResult)
+	}
+}
+
+func TestViewportModeRuntimePlanForAcquireAndToggle(t *testing.T) {
+	acquirePlan := viewportModeRuntimePlanForAction(viewportModeAction{kind: viewportModeActionAcquire}, false)
+	if !acquirePlan.acquire || acquirePlan.keep {
+		t.Fatalf("expected acquire action to stay one-shot and request acquire, got %#v", acquirePlan)
+	}
+	togglePlan := viewportModeRuntimePlanForAction(viewportModeAction{kind: viewportModeActionToggleMode}, false)
+	if !togglePlan.toggleMode || togglePlan.keep {
+		t.Fatalf("expected toggle-mode action to stay one-shot and request toggle, got %#v", togglePlan)
+	}
+}
+
+func TestViewportModeRuntimePlanForPanAndFollow(t *testing.T) {
+	panPlan := viewportModeRuntimePlanForAction(viewportModeAction{kind: viewportModeActionPan, direction: DirectionRight}, false)
+	if panPlan.panDirection != DirectionRight || !panPlan.keep {
+		t.Fatalf("expected pan action to keep mode and capture direction, got %#v", panPlan)
+	}
+	followPlan := viewportModeRuntimePlanForAction(viewportModeAction{kind: viewportModeActionFollow}, false)
+	if !followPlan.follow || followPlan.keep {
+		t.Fatalf("expected follow action to be one-shot and request follow reset, got %#v", followPlan)
+	}
+}
+
+func TestViewportModeRuntimePlanForOffsetModeAndUnknown(t *testing.T) {
+	offsetPlan := viewportModeRuntimePlanForAction(viewportModeAction{kind: viewportModeActionOffsetMode}, false)
+	if !offsetPlan.enterOffsetMode || !offsetPlan.keep {
+		t.Fatalf("expected offset-mode action to keep mode and request offset-mode transition, got %#v", offsetPlan)
+	}
+	directUnknown := viewportModeRuntimePlanForAction(viewportModeAction{}, true)
+	if !directUnknown.keep {
+		t.Fatalf("expected unknown direct viewport action to keep mode active, got %#v", directUnknown)
+	}
+}
+
+func TestFloatingModeKeyAndEventShareDirectPickerBehavior(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		model.directMode = true
+		model.prefixActive = true
+		model.prefixMode = prefixModeFloating
+		return model
+	}
+
+	keyModel := newModel()
+	keyResult := keyModel.dispatchFloatingModeKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	if keyResult.keep || keyResult.cmd == nil {
+		t.Fatalf("expected key floating picker to be one-shot with command, got %#v", keyResult)
+	}
+
+	eventModel := newModel()
+	eventResult := eventModel.dispatchFloatingModeEvent(uv.KeyPressEvent{Code: 'f', Text: "f"})
+	if eventResult.keep || eventResult.cmd == nil {
+		t.Fatalf("expected event floating picker to be one-shot with command, got %#v", eventResult)
+	}
+}
+
+func TestFloatingModeRuntimePlanForFocusNext(t *testing.T) {
+	plan := floatingModeRuntimePlanForAction(floatingModeAction{kind: floatingModeActionFocusNext}, false)
+	if !plan.focusNext || !plan.keep {
+		t.Fatalf("expected focus-next to keep mode and request focus cycle, got %#v", plan)
+	}
+}
+
+func TestFloatingModeRuntimePlanForNewAndPicker(t *testing.T) {
+	newPlan := floatingModeRuntimePlanForAction(floatingModeAction{kind: floatingModeActionNew}, false)
+	if !newPlan.openNew || newPlan.keep {
+		t.Fatalf("expected new action to open floating picker one-shot, got %#v", newPlan)
+	}
+	pickerPlan := floatingModeRuntimePlanForAction(floatingModeAction{kind: floatingModeActionPicker}, false)
+	if !pickerPlan.openPicker || pickerPlan.keep {
+		t.Fatalf("expected picker action to open terminal picker one-shot, got %#v", pickerPlan)
+	}
+}
+
+func TestFloatingModeRuntimePlanForMoveAndResize(t *testing.T) {
+	movePlan := floatingModeRuntimePlanForAction(floatingModeAction{kind: floatingModeActionMove, direction: DirectionLeft}, false)
+	if movePlan.moveDirection != DirectionLeft || !movePlan.keep {
+		t.Fatalf("expected move action to keep mode and capture direction, got %#v", movePlan)
+	}
+	resizePlan := floatingModeRuntimePlanForAction(floatingModeAction{kind: floatingModeActionResize, direction: DirectionRight, amount: 4}, false)
+	if resizePlan.resizeDirection != DirectionRight || resizePlan.resizeAmount != 4 || !resizePlan.keep {
+		t.Fatalf("expected resize action to keep mode and capture resize request, got %#v", resizePlan)
+	}
+}
+
+func TestFloatingModeRuntimePlanForUnknownStaysInert(t *testing.T) {
+	plan := floatingModeRuntimePlanForAction(floatingModeAction{}, false)
+	if plan.keep {
+		t.Fatalf("expected unknown floating action plan to stay inert before direct-mode policy, got %#v", plan)
+	}
+}
+
+func TestFloatingModeRuntimePlanForUnknownKeepsModeInDirectMode(t *testing.T) {
+	plan := floatingModeRuntimePlanForAction(floatingModeAction{}, true)
+	if !plan.keep {
+		t.Fatalf("expected unknown direct floating action to keep mode active, got %#v", plan)
+	}
+}
+
+func TestApplyFloatingModeActionUnknownKeepsModeOnlyInDirectMode(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		model.prefixActive = true
+		model.prefixMode = prefixModeFloating
+		return model
+	}
+
+	normalModel := newModel()
+	normalResult := normalModel.applyFloatingModeAction(floatingModeAction{})
+	if normalResult.keep {
+		t.Fatalf("expected normal unknown floating action to exit mode, got %#v", normalResult)
+	}
+
+	directModel := newModel()
+	directModel.directMode = true
+	directResult := directModel.applyFloatingModeAction(floatingModeAction{})
+	if !directResult.keep || directResult.rearm {
+		t.Fatalf("expected direct unknown floating action to keep mode without rearm, got %#v", directResult)
+	}
+}
+
+func TestOffsetPanModeKeyAndEventShareRearmBehavior(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		model.prefixActive = true
+		model.prefixMode = prefixModeOffsetPan
+		return model
+	}
+
+	keyModel := newModel()
+	keyResult := keyModel.dispatchOffsetPanModeKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	if !keyResult.keep || !keyResult.rearm {
+		t.Fatalf("expected key offset-pan move to keep and rearm, got %#v", keyResult)
+	}
+
+	eventModel := newModel()
+	eventResult := eventModel.dispatchOffsetPanModeEvent(uv.KeyPressEvent{Code: 'l', Text: "l"})
+	if !eventResult.keep || !eventResult.rearm {
+		t.Fatalf("expected event offset-pan move to keep and rearm, got %#v", eventResult)
+	}
+}
+
+func TestOffsetPanModeRuntimePlanForPanAndJump(t *testing.T) {
+	panPlan := offsetPanModeRuntimePlanForAction(offsetPanModeAction{kind: offsetPanModeActionPan, direction: DirectionLeft})
+	if panPlan.panDirection != DirectionLeft || !panPlan.keep || !panPlan.rearm {
+		t.Fatalf("expected offset-pan plan to capture pan direction and keep/rearm, got %#v", panPlan)
+	}
+	jumpPlan := offsetPanModeRuntimePlanForAction(offsetPanModeAction{kind: offsetPanModeActionJumpBottom})
+	if !jumpPlan.jumpBottom || !jumpPlan.keep || !jumpPlan.rearm {
+		t.Fatalf("expected offset-pan jump-bottom plan to keep/rearm, got %#v", jumpPlan)
+	}
+}
+
+func TestOffsetPanModeRuntimePlanForUnknownStaysInert(t *testing.T) {
+	plan := offsetPanModeRuntimePlanForAction(offsetPanModeAction{})
+	if plan.keep || plan.rearm {
+		t.Fatalf("expected unknown offset-pan action plan to stay inert, got %#v", plan)
+	}
+}
+
+func TestApplyViewportNavigationRuntimePlanPanUpdatesOffset(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	model.width = 80
+	model.height = 24
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	pane := activePane(model.currentTab())
+	if pane == nil {
+		t.Fatal("expected active pane")
+	}
+	tab := model.currentTab()
+	viewW, viewH, ok := model.paneViewportSizeInTab(tab, pane.ID)
+	if !ok {
+		t.Fatal("expected viewport size")
+	}
+	contentW, _ := paneContentSize(pane)
+	expectedX := min(4, max(0, contentW-viewW))
+
+	result := model.applyViewportNavigationRuntimePlan(viewportNavigationRuntimePlan{
+		panDirection: DirectionRight,
+		keep:         true,
+		rearm:        true,
+	})
+	if pane.Offset != (Point{X: expectedX, Y: 0}) {
+		t.Fatalf("expected pan plan to move offset right, got %+v", pane.Offset)
+	}
+	if !result.keep || !result.rearm {
+		t.Fatalf("expected pan plan result to preserve keep/rearm, got %#v", result)
+	}
+	_ = viewH
+}
+
+func TestApplyViewportNavigationRuntimePlanJumpBottomUsesSharedLogic(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	model.width = 80
+	model.height = 24
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	pane := activePane(model.currentTab())
+	if pane == nil {
+		t.Fatal("expected active pane")
+	}
+	tab := model.currentTab()
+	_, viewH, ok := model.paneViewportSizeInTab(tab, pane.ID)
+	if !ok {
+		t.Fatal("expected viewport size")
+	}
+	_, contentH := paneContentSize(pane)
+	expectedY := max(0, contentH-viewH)
+
+	result := model.applyViewportNavigationRuntimePlan(viewportNavigationRuntimePlan{
+		jumpBottom: true,
+		keep:       true,
+		rearm:      true,
+	})
+	if pane.Offset.Y != expectedY {
+		t.Fatalf("expected jump-bottom plan to use shared max offset, got %+v", pane.Offset)
+	}
+	if !result.keep || !result.rearm {
+		t.Fatalf("expected jump-bottom plan result to preserve keep/rearm, got %#v", result)
+	}
+}
+
+func TestViewportOffsetModeKeyAndEventShareTransitionBehavior(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		model.prefixActive = true
+		model.prefixMode = prefixModeViewport
+		return model
+	}
+
+	keyModel := newModel()
+	keyResult := keyModel.dispatchViewportSubPrefixKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	if !keyResult.keep || keyResult.cmd != nil || keyResult.state.kind != prefixStateTransitionEnter || keyResult.state.mode != prefixModeOffsetPan {
+		t.Fatalf("expected key viewport offset command to return offset-pan transition, got %#v", keyResult)
+	}
+	if got := keyModel.ActiveModeForTest(); got != "connection" {
+		t.Fatalf("expected key dispatch to remain in current mode before apply, got %q", got)
+	}
+	_ = keyModel.applyActivePrefixResult(keyResult)
+	if got := keyModel.ActiveModeForTest(); got != "offset-pan" {
+		t.Fatalf("expected key apply to enter offset-pan mode, got %q", got)
+	}
+
+	eventModel := newModel()
+	eventResult := eventModel.dispatchViewportSubPrefixEvent(uv.KeyPressEvent{Code: 'o', Text: "o"})
+	if !eventResult.keep || eventResult.cmd != nil || eventResult.state.kind != prefixStateTransitionEnter || eventResult.state.mode != prefixModeOffsetPan {
+		t.Fatalf("expected event viewport offset command to return offset-pan transition, got %#v", eventResult)
+	}
+	if got := eventModel.ActiveModeForTest(); got != "connection" {
+		t.Fatalf("expected event dispatch to remain in current mode before apply, got %q", got)
+	}
+	_ = eventModel.applyActivePrefixResult(eventResult)
+	if got := eventModel.ActiveModeForTest(); got != "offset-pan" {
+		t.Fatalf("expected event apply to enter offset-pan mode, got %q", got)
+	}
+}
+
+func TestGlobalModeKeyAndEventShareManagerBehavior(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		model.prefixActive = true
+		model.prefixMode = prefixModeGlobal
+		return model
+	}
+
+	keyModel := newModel()
+	keyResult := keyModel.dispatchGlobalModeKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	if keyResult.keep || keyResult.cmd == nil {
+		t.Fatalf("expected key global manager action to be one-shot with command, got %#v", keyResult)
+	}
+
+	eventModel := newModel()
+	eventResult := eventModel.dispatchGlobalModeEvent(uv.KeyPressEvent{Code: 't', Text: "t"})
+	if eventResult.keep || eventResult.cmd == nil {
+		t.Fatalf("expected event global manager action to be one-shot with command, got %#v", eventResult)
+	}
+}
+
+func TestGlobalModeRuntimePlanForActionHelp(t *testing.T) {
+	plan := globalModeRuntimePlanForAction(globalModeAction{kind: globalModeActionHelp})
+	if !plan.showHelp {
+		t.Fatalf("expected help action to request help, got %#v", plan)
+	}
+	if plan.keep {
+		t.Fatalf("expected help action to remain one-shot, got %#v", plan)
+	}
+	if plan.cmd != nil {
+		t.Fatalf("expected help action to stay local, got %#v", plan)
+	}
+}
+
+func TestGlobalModeRuntimePlanForActionCommand(t *testing.T) {
+	plan := globalModeRuntimePlanForAction(globalModeAction{kind: globalModeActionCommand})
+	if !plan.beginCommand {
+		t.Fatalf("expected command action to request prompt, got %#v", plan)
+	}
+	if plan.keep {
+		t.Fatalf("expected command action to remain one-shot, got %#v", plan)
+	}
+}
+
+func TestGlobalModeRuntimePlanForActionQuit(t *testing.T) {
+	plan := globalModeRuntimePlanForAction(globalModeAction{kind: globalModeActionQuit})
+	if !plan.quit {
+		t.Fatalf("expected quit action to request quitting, got %#v", plan)
+	}
+	if plan.cmd == nil {
+		t.Fatal("expected quit action to carry quit command")
+	}
+	if plan.keep {
+		t.Fatalf("expected quit action to remain one-shot, got %#v", plan)
+	}
+}
+
+func TestGlobalModeRuntimePlanForUnknownActionKeepsMode(t *testing.T) {
+	plan := globalModeRuntimePlanForAction(globalModeAction{})
+	if !plan.keep {
+		t.Fatalf("expected unknown global action to keep mode active, got %#v", plan)
+	}
+	if plan.showHelp || plan.beginCommand || plan.quit || plan.cmd != nil {
+		t.Fatalf("expected unknown global action to stay inert, got %#v", plan)
+	}
+}
+
+func TestPaneModeKeyAndEventShareRenameBehavior(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		model.prefixActive = true
+		model.prefixMode = prefixModePane
+		return model
+	}
+
+	keyModel := newModel()
+	keyResult := keyModel.dispatchPaneModeKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{','}})
+	if keyResult.keep {
+		t.Fatalf("expected key pane rename to be one-shot, got %#v", keyResult)
+	}
+	if keyModel.prompt == nil || keyModel.prompt.Title != "rename tab" {
+		t.Fatalf("expected key pane rename prompt, got %#v", keyModel.prompt)
+	}
+
+	eventModel := newModel()
+	eventResult := eventModel.dispatchPaneModeEvent(uv.KeyPressEvent{Code: ',', Text: ","})
+	if eventResult.keep {
+		t.Fatalf("expected event pane rename to be one-shot, got %#v", eventResult)
+	}
+	if eventModel.prompt == nil || eventModel.prompt.Title != "rename tab" {
+		t.Fatalf("expected event pane rename prompt, got %#v", eventModel.prompt)
+	}
+}
+
+func TestPaneModeKeyAndEventShareCloseBehavior(t *testing.T) {
+	newModel := func() *Model {
+		model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+		msg := mustRunCmd(t, model.Init())
+		_, _ = model.Update(msg)
+		createSplitPaneViaPicker(t, model, SplitVertical)
+		model.prefixActive = true
+		model.prefixMode = prefixModePane
+		return model
+	}
+
+	keyModel := newModel()
+	keyResult := keyModel.dispatchPaneModeKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if keyResult.keep || keyResult.cmd == nil {
+		t.Fatalf("expected key pane close to be one-shot with command, got %#v", keyResult)
+	}
+
+	eventModel := newModel()
+	eventResult := eventModel.dispatchPaneModeEvent(uv.KeyPressEvent{Code: 'x', Text: "x"})
+	if eventResult.keep || eventResult.cmd == nil {
+		t.Fatalf("expected event pane close to be one-shot with command, got %#v", eventResult)
 	}
 }
 
@@ -7028,6 +8431,90 @@ func TestRemovePanePromotesSharedTerminalStreamOwner(t *testing.T) {
 	}
 	if second.stopStream == nil {
 		t.Fatal("expected second pane to own stream after first pane removal")
+	}
+}
+
+func TestRemovePaneTransfersSharedTerminalResizeOwner(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+
+	first := &Pane{
+		ID:    "pane-1",
+		Title: "one",
+		Viewport: &Viewport{
+			TerminalID:     "term-shared",
+			Channel:        1,
+			ResizeAcquired: true,
+		},
+	}
+	second := &Pane{
+		ID:    "pane-2",
+		Title: "two",
+		Viewport: &Viewport{
+			TerminalID: "term-shared",
+			Channel:    2,
+		},
+	}
+	tab := &Tab{
+		Name:         "1",
+		Panes:        map[string]*Pane{first.ID: first, second.ID: second},
+		ActivePaneID: first.ID,
+		Root:         NewLeaf(first.ID),
+	}
+	tab.Root.Split(first.ID, SplitVertical, second.ID)
+	model.workspace.Tabs = []*Tab{tab}
+
+	if removed := model.removePane(first.ID); removed {
+		t.Fatal("expected tab to remain after removing first shared pane")
+	}
+	if got := paneConnectionStatus(model.workspace.Tabs, second); got != "owner" {
+		t.Fatalf("expected remaining pane to become owner, got %q", got)
+	}
+	if !second.ResizeAcquired {
+		t.Fatal("expected remaining pane owner flag set")
+	}
+}
+
+func TestUnbindPaneTerminalTransfersSharedTerminalResizeOwner(t *testing.T) {
+	client := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+
+	first := &Pane{
+		ID:    "pane-1",
+		Title: "one",
+		Viewport: &Viewport{
+			TerminalID:     "term-shared",
+			Channel:        1,
+			ResizeAcquired: true,
+		},
+	}
+	second := &Pane{
+		ID:    "pane-2",
+		Title: "two",
+		Viewport: &Viewport{
+			TerminalID: "term-shared",
+			Channel:    2,
+		},
+	}
+	tab := &Tab{
+		Name:         "1",
+		Panes:        map[string]*Pane{first.ID: first, second.ID: second},
+		ActivePaneID: first.ID,
+		Root:         NewLeaf(first.ID),
+	}
+	tab.Root.Split(first.ID, SplitVertical, second.ID)
+	model.workspace.Tabs = []*Tab{tab}
+
+	model.unbindPaneTerminal(first)
+
+	if first.TerminalID != "" {
+		t.Fatalf("expected first pane unbound, got terminal %q", first.TerminalID)
+	}
+	if got := paneConnectionStatus(model.workspace.Tabs, second); got != "owner" {
+		t.Fatalf("expected second pane to become owner after unbind, got %q", got)
+	}
+	if !second.ResizeAcquired {
+		t.Fatal("expected second pane owner flag set after unbind")
 	}
 }
 

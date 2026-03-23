@@ -1,350 +1,223 @@
-# TUI E2E 测试矩阵
+# termx TUI E2E 计划
 
-本文件定义“先有场景，再有实现”的测试入口。
+状态：Draft v1
+日期：2026-03-23
 
-## 原则
+本文件定义 TUI 端到端测试矩阵。
 
-1. 每个测试只服务一个用户目标
-2. 测试名尽量使用场景语言，而不是内部实现语言
-3. 后续重构 UI / 概念时，优先维护这些场景，而不是维护旧设计稿里的术语
+---
 
-## 第一批必须稳定的场景
+## 1. 原则
 
-### S1. 直接启动即可工作
+1. 先定义用户场景，再写测试
+2. 测试名优先描述用户目标
+3. 一个测试只验证一个主目标
+4. 新主线按场景回迁 legacy E2E，不做整包平移
 
-目标：
+---
 
-- 用户直接运行 `termx`
-- 进入一个可工作的 workspace
-- 默认能立即操作 pane / shell
+## 2. 第一批必须稳定的场景
 
-现有覆盖：
-
-- 已有部分启动 e2e，但仍带旧概念痕迹
+### E1 启动即进入可工作 workspace
 
 建议测试名：
 
 - `TestE2ETUI_ScenarioLaunchIntoWorkingWorkspace`
 
-## S2. 新建 split 并继续输入
+断言：
 
-目标：
+- 默认进入 workspace
+- 默认有可输入 shell pane
+- 启动后可立即继续输入
 
-- 用户 split 后，能选择新 terminal 或复用 terminal
-- 新 pane 成功创建后，继续正常输入
-
-现有覆盖：
-
-- 有，但散落在旧流程测试里
+### E2 split 并继续工作
 
 建议测试名：
 
 - `TestE2ETUI_ScenarioSplitAndContinueWorking`
 
-## S3. 复用 terminal 到新 tab
+断言：
 
-目标：
+- split chooser 正常出现
+- 可以新建 terminal 或 connect existing
+- split 后新 pane 可继续输入
 
-- 同一个 terminal 能在两个 tab 中出现
-- attach 后不崩溃、不闪退
-
-建议测试名：
-
-- `TestE2ETUI_ScenarioReuseTerminalInNewTab`
-
-## S4. 复用 terminal 到 floating pane
-
-目标：
-
-- tiled 与 floating 同时观察同一 terminal
-- 焦点切换、z-order、尺寸更新稳定
-- 标题展示 terminal 真名，而不是把 pane 当独立命名对象
+### E3 复用 terminal 到新 tab
 
 建议测试名：
 
-- `TestE2ETUI_ScenarioReuseTerminalInFloatingPane`
+- `TestE2ETUI_ScenarioConnectTerminalInNewTab`
 
-## S5. 修改 terminal metadata
+断言：
 
-目标：
+- 同一 terminal 在两个 tab 中可见
+- connect 后无崩溃、无串屏
 
-- 从 picker 或全局入口编辑 terminal `name/tags`
-- 所有 attach pane 同步刷新
-- parked terminal 也可从 terminal manager 编辑，且保存后有明确成功反馈
+### E4 复用 terminal 到 floating pane
 
-现有覆盖：
+建议测试名：
+
+- `TestE2ETUI_ScenarioConnectTerminalInFloatingPane`
+
+断言：
+
+- tiled 和 floating 同时观察同一 terminal
+- 焦点切换和 z-order 正常
+
+### E5 修改 terminal metadata
+
+建议测试名：
 
 - `TestE2ETUI_ScenarioEditTerminalMetadata`
-- `TestE2ETUI_TerminalManagerCanEditParkedTerminalMetadata`
 
-## S5.1 Terminal manager 管理 terminal pool
+断言：
 
-目标：
+- 修改 name / tags 成功
+- 所有已连接 pane 标题同步刷新
 
-- 从 `Ctrl-g t` 或 `:terminals` 打开 terminal manager
-- 过滤 terminal 并 attach 到当前 pane
-- manager 内的动作不会留下脏 UI
-
-现有覆盖：
-
-- `TestE2ETUI_TerminalManagerOpensFromGlobalModeAndAttachesSelectedTerminal`
-- `TestE2ETUI_CommandLineOpensTerminalManager`
-
-## S6. terminal 退出后恢复
-
-目标：
-
-- exited pane 上 restart
-- 新 terminal 重新绑定到当前 pane
-
-现有覆盖：
-
-- 现有 e2e 已覆盖 exited 后 restart 并继续输入
+### E5.1 terminal manager 直接 connect 当前 pane
 
 建议测试名：
 
-- `TestE2ETUI_ScenarioRestartExitedTerminal`
+- `TestE2ETUI_ScenarioTerminalManagerConnectsSelectedTerminalHere`
 
-## S7. workspace 选择 / 切换
+断言：
 
-目标：
+- terminal manager 可打开
+- 选中 terminal 后可直接 connect 到当前 pane
+- connect 后当前 pane 正常显示目标 terminal
 
-- 进入 workspace picker
-- 创建 / 切换 workspace
-- 切换后上下文清晰
-
-现有覆盖：
-
-- 已有 workspace picker / workspace switch e2e
+### E6 workspace 切换
 
 建议测试名：
 
 - `TestE2ETUI_ScenarioSwitchWorkspace`
 
-## S8. 从 layout/workspace 文件启动
+断言：
 
-目标：
+- workspace picker 可搜索
+- workspace picker 可展示 `workspace -> tab -> pane` 树形结构
+- create / switch 可用
+- 可直接跳到目标 pane
+- 切换后上下文清晰
 
-- 从指定文件启动 workspace
-- 若有 floating / resolve，也能稳定进入
-
-现有覆盖：
-
-- startup layout / load-layout prompt / skip 已有 e2e
-- 重复 `_hint_id` 在 startup create 与 prompt attach 路径上已有共享绑定覆盖
+### E7 从 layout 文件启动
 
 建议测试名：
 
 - `TestE2ETUI_ScenarioLaunchFromLayoutFile`
 
-## 第二批场景
+断言：
 
-- 多浮窗管理
-- 浮窗移出 tab 主视口后可通过快捷键呼回并居中
-- picker 大量 terminal 搜索
-- attach 后 metadata 同步
-- workspace 恢复失败降级
-- render/backpressure 性能回归
-- floating move/resize 时重叠 pane 不闪烁、不短暂消失
-- floating drag 后，之前被遮挡的 pane body 必须完整恢复
-- 共享 terminal 的 acquire resize / size lock
-- 共享 terminal 的 pane close / terminal kill 联动
+- layout 可进入工作现场
+- resolve 流程可完成
+- 失败时可降级
 
-## 当前代码里的对应基线
-
-当前仓库已经有大量 e2e / real e2e 测试，它们提供了能力基线；下一步不是全部推倒，而是：
-
-- 逐步把旧测试重组为“场景化命名”
-- 对新增重置设计的场景补充更清晰的断言
-
-## 本轮重构后的优先动作
-
-1. 新增 2~4 个“场景名”更清晰的 e2e 测试
-2. 保持全量测试通过
-3. 再开始重构 workspace 入口、概念文案和 UI 结构
-4. 增加底栏 zellij 风格快捷键 segment 渲染断言
-
-## 第三批必须补齐的共享 terminal 场景
-
-### S9. 同一 terminal 在 tiled 和 floating 间抢占尺寸
-
-目标：
-
-- resize 只有在显式 acquire 后才生效
-- 其他 pane 仅观察，不隐式改写 terminal size
+### E8 program-exited terminal restart
 
 建议测试名：
+
+- `TestE2ETUI_ScenarioRestartProgramExitedTerminal`
+
+断言：
+
+- terminal 中程序退出后的 pane 保留历史
+- restart 后重新工作
+
+---
+
+## 3. 第二批共享 terminal 场景
+
+### E9 resize 需要显式 acquire
 
 - `TestE2ETUI_ScenarioSharedTerminalResizeRequiresExplicitAcquire`
 
-### S10. 进入 tab 自动 acquire resize
-
-目标：
-
-- tab 配置开启 auto-acquire
-- 用户切回 tab 时自动获取 resize 控制
-- 未开启的 tab 不自动改写 terminal size
-
-建议测试名：
+### E10 tab auto-acquire
 
 - `TestE2ETUI_ScenarioTabAutoAcquireResizeOnEnter`
 
-### S11. size lock 为 warn 时 resize 需要提示
-
-目标：
-
-- terminal 带 `termx.size_lock=warn`
-- acquire/resize 前弹出提示
-- 用户确认后才提交 resize
-
-建议测试名：
-
-- `TestE2ETUI_ScenarioSharedTerminalResizeWarnsWhenSizeLockEnabled`
-
-### S12. 关闭共享 pane 不销毁 terminal
-
-目标：
-
-- close 当前 pane
-- 其他共享 pane 继续可用
-- terminal 不被误杀
-
-建议测试名：
+### E11 close shared pane 不杀 terminal
 
 - `TestE2ETUI_ScenarioCloseSharedPaneKeepsTerminalAlive`
 
-### S13. 销毁 terminal 后共享 pane 变成 saved pane
+### E12 kill terminal 后保留未连接 pane slots
 
-目标：
+- `TestE2ETUI_ScenarioKillSharedTerminalKeepsUnconnectedPaneSlots`
 
-- kill/remove terminal
-- 所有绑定该 terminal 的 pane 进入 saved pane
-- tab / floating 布局保持
-- 用户仍可继续在原布局里 attach / create / close
+### E13 shared program-exited 状态同步
 
-建议测试名：
+- `TestE2ETUI_ScenarioSharedProgramExitedTerminalPropagatesToAllPanes`
 
-- `TestE2ETUI_ScenarioKillSharedTerminalKeepsSavedSlots`
-
-### S14. 共享 terminal exited retained 后多 pane 一致进入 exited
-
-目标：
-
-- terminal 自然退出
-- 所有共享 pane 一致显示 exited
-- 任一 pane 可触发 restart
-
-建议测试名：
-
-- `TestE2ETUI_ScenarioSharedExitedTerminalPropagatesToAllPanes`
-
-### S15. 多客户端 close pane 保持静默
-
-目标：
-
-- A 客户端关闭自己的 pane
-- B 客户端不收到误导性的 removed notice
-- shared terminal 继续可用
-
-现有覆盖：
+### E14 close pane 不通知其他客户端
 
 - `TestE2ETUI_ScenarioClosePaneDoesNotNotifyOtherClients`
 
-### S16. 多客户端 detach 保持静默
+### E15 detach 不通知其他客户端
 
-目标：
+- `TestE2ETUI_ScenarioDetachDoesNotNotifyOtherClients`
 
-- A 客户端 detach
-- B 客户端继续工作
-- 不出现 remote removed notice
+---
 
-现有覆盖：
+## 4. 第三批浮窗与渲染场景
 
-- `TestE2ETUI_ScenarioDetachDoesNotInterruptOtherClients`
+### E16 floating hide/show
 
-### S17. 多客户端 remote remove 广播 notice
+- `TestE2ETUI_ScenarioFloatingHideShowKeepsScreenClean`
 
-目标：
+### E17 floating z-order
 
-- A 客户端 kill/remove terminal
-- B 客户端收到 notice
-- B 客户端对应 shared pane 进入 saved pane
+- `TestE2ETUI_ScenarioFloatingZOrderMatchesVisibleTopWindow`
 
-现有覆盖：
+### E18 floating center recall
 
-- `TestE2ETUI_ScenarioRemoteKillShowsNoticeAndKeepsSavedSlots`
+- `TestE2ETUI_ScenarioFloatingCenterShortcutRecentersPane`
 
-### S17.1 floating pane 呼回并居中
+### E19 floating drag 恢复被遮挡内容
 
-目标：
+- `TestE2ETUI_ScenarioFloatingDragRestoresOccludedBody`
 
-- 用户把 floating pane 移出 tab 主视口
-- 通过快捷键把当前 floating pane 呼回
-- 呼回后浮窗重新居中到可视区域
+### E20 overlay 关闭无残影
 
-建议测试名：
+- `TestE2ETUI_ScenarioOverlayClosesWithoutArtifacts`
 
-- `TestE2ETUI_ScenarioFloatingPaneRecallAndCenter`
+---
 
-### S17.2 pane 标题默认使用 terminal 真名
+## 5. 第四批 real-program 场景
 
-目标：
+### E21 python3 REPL
 
-- live pane / floating pane 标题展示 terminal 真名
-- 不把 pane 当成独立命名对象向用户暴露
-- saved pane / waiting pane 才显示 pane 状态名
+- `TestE2EReal_PythonREPL`
 
-建议测试名：
+### E22 vi / vim alt-screen
 
-- `TestE2ETUI_ScenarioPaneTitleUsesTerminalNameByDefault`
+- `TestE2EReal_ViFullscreen`
 
-### S18. startup workspace restore 恢复 shared terminal 绑定
+### E23 大输出 scrollback
 
-目标：
+- `TestE2EReal_LargeOutputSeq`
 
-- 启动时读取 workspace state
-- 多个 tab 重新绑定到同一个 terminal
-- active tab 的 auto-acquire resize 立即恢复生效
+---
 
-现有覆盖：
+## 6. 执行节奏
 
-- `TestE2ETUI_ScenarioStartupRestoresWorkspaceStateWithSharedTerminalBinding`
+建议按下面顺序恢复：
 
-### S19. startup layout 通过显式 hint 复用 shared terminal
+1. 第一批主路径
+2. 第二批 shared terminal
+3. 第三批浮窗和渲染
+4. 第四批 real-program
 
-目标：
+---
 
-- layout 中多个 pane 显式写同一个 `_hint_id`
-- startup layout 后多个 pane 绑定同一个 terminal
-- 不误创建重复 terminal
+## 7. 质量门禁
 
-现有覆盖：
+运行测试时统一使用仓库内 Go 工具链：
 
-- `TestE2ETUI_StartupLayoutCanReuseExplicitHintAcrossTiledAndFloatingPanes`
+```bash
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1
+```
 
-### S20. layout skip 降级后仍可继续操作
+每次 TUI 改动至少执行：
 
-目标：
-
-- `load-layout ... skip` 不弹 picker
-- 未匹配 pane 保持 waiting
-- layout 进入后仍可继续后续操作
-
-现有覆盖：
-
-- `TestE2ETUI_CommandLoadLayoutSkipLeavesWaitingPaneAndKeepsLayoutUsable`
-
-### S21. 全屏 terminal 复用后保留 alt-screen 基线
-
-目标：
-
-- 一个处于 full-screen / alternate-screen 的 terminal 被复用到新 tab / split / floating
-- 新 pane 首帧先完整恢复 snapshot，而不是只显示后续增量输出
-- 后续增量输出不会把既有 alt-screen 内容整块抹掉
-
-现有覆盖：
-
-- `TestE2ETUI_NewTabReusePreservesAltScreenSnapshotBeforeIncrementalUpdates`
-- `TestE2ETUI_SplitReusePreservesAltScreenSnapshotBeforeIncrementalUpdates`
-- `TestE2ETUI_FloatingReusePreservesAltScreenSnapshotBeforeIncrementalUpdates`
-- 相关 attach 单测已覆盖 tab / split / floating 三条路径
+1. 被改包的定向 `go test`
+2. 全量 `go test ./... -count=1`

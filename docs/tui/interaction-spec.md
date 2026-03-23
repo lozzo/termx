@@ -1,330 +1,292 @@
-# termx TUI 交互与布局规格
+# termx TUI 交互规格
 
-状态：Draft v2
-日期：2026-03-21
-
-本文件只回答 4 件事：
-
-1. 当前有哪些概念
-2. 当前界面怎么组织
-3. 当前用户怎么操作
-4. 当前 pane / terminal 生命周期怎么收口
+状态：Draft v1
+日期：2026-03-23
 
 ---
 
-## 1. 概念收口
+## 1. 布局模型
 
-### 1.1 当前主概念
-
-termx TUI 只保留 4 个主概念：
-
-- `workspace`
-- `tab`
-- `pane`
-- `terminal`
-
-补充概念：
-
-- `floating pane`
-- `saved pane`
-- `terminal manager`
-
-### 1.2 不再主推的概念
-
-这些概念只保留在实现层，不再作为用户主心智：
-
-- view
-- viewport
-- panel
-
-用户看到的应该是：
-
-- pane 的显示属性
-- terminal 的运行状态
-
----
-
-## 2. 布局模型
-
-### 2.1 workspace
+### 1.1 workspace
 
 - 一个 workspace 包含多个 tab
-- 一个 workspace 有自己的名称、活动 tab、恢复状态
+- workspace 有活动 tab、名称、恢复元数据
 
-### 2.2 tab
+### 1.2 tab
 
-- 一个 tab 包含 tiled pane 和 floating pane
+- 一个 tab 同时拥有：
+  - tiled pane tree
+  - floating pane list
 - tiled pane 由布局树组织
-- floating pane 由独立矩形和 z-order 组织
+- floating pane 由矩形和 z-order 组织
 
-### 2.3 pane
+### 1.3 pane
 
-- pane 是屏幕上的一个可见区域
-- pane 可以绑定一个 terminal，也可以处于 saved / waiting / exited 状态
-- pane 默认不作为独立命名对象存在
-- 当 pane 绑定 terminal 时，标题应展示 terminal 的真实名称
-- pane 更像 terminal 的观察/操作视角
-
-### 2.4 floating pane
-
-- floating pane 与 tiled pane 在同一 tab 内共存
-- active floating pane 高于其他 floating pane
-- 可移动、可 resize、可切 z-order
-- 可以移动到 tab 主内容区域之外
-- 应提供快捷键把当前 floating pane 呼回并重新居中
+- pane 是终端工作位，而不是终端本体
+- pane 可以连接 terminal，也可以暂时处于空槽位或恢复中状态
+- pane 默认展示 terminal 名称，而不是 pane 自定义名字
 
 ---
 
-## 3. 焦点模型
+## 2. 焦点模型
 
-任一时刻，焦点应明确落在以下之一：
-
-- 当前 active tiled pane
-- 当前 active floating pane
-- picker
-- prompt
-- help
-- terminal manager
-
-优先级从高到低：
+任一时刻，焦点只能落在以下之一：
 
 1. prompt
-2. picker / terminal manager / help
+2. overlay
 3. floating layer
 4. tiled layer
 5. terminal input
 
+其中 overlay 包括：
+
+- terminal picker
+- terminal manager
+- workspace picker
+- help
+- prompt
+
 规则：
 
-- 高层打开时，低层不直接接收键盘输入
-- 高层关闭后，焦点回到最近的合法 pane
-- `Esc` 是所有临时层的统一退出键
+- 高层打开时，低层不接收键盘输入
+- `Esc` 是所有临时层统一退出键
+- 关闭高层后，焦点回到最近合法 pane
+- floating 层激活时，底栏和标题状态必须清楚表明当前不在 tiled 层
 
 ---
 
-## 4. pane 状态模型
+## 3. 默认工作流
 
-### live pane
+### 3.1 启动
 
-- 绑定 running terminal
-- 接收正常输入
-- 可继续 split / attach / floating / metadata edit
+- 直接创建或恢复 workspace
+- 默认进入一个已连接 terminal 的 pane
+- 当前 pane 可立即输入 shell
 
-### saved pane
+### 3.2 split
 
-- pane 还在
-- terminal 已被移除或尚未绑定
-- 当前正文应显示可选下一步：
-  - start new terminal
-  - bring running terminal here
-  - open terminal manager
-  - close pane
+split 当前 pane 时，系统提供两个入口：
 
-### exited pane
+1. `+ new terminal`
+2. `connect existing terminal`
 
-- terminal 已退出，但历史仍保留
-- pane 继续存在
-- 可 restart 或 attach 其他 terminal
+split 完成后：
 
-### waiting pane
+- 新 pane 获得焦点
+- 如果是新 terminal，立即连接并可工作
+- 如果是复用 terminal，遵循 owner/follower 默认规则
 
-- 常见于 layout / restore 的未决状态
-- 表示此 pane 预留给后续 attach/create
+### 3.3 tab
 
----
+- 新建 tab 时可直接创建 terminal，也可先落到等待态
+- 切换 tab 时焦点回到该 tab 最近合法 pane
+- tab 支持普通工作页，不应该成为“功能面板页”的泛滥容器
 
-## 5. pane 与 terminal 的关系
+### 3.4 floating
 
-### 5.1 绑定关系
-
-- 一个 pane 同时只绑定一个 terminal
-- 一个 terminal 可以被多个 pane 绑定
-
-### 5.2 关闭 pane
-
-- 只关闭 pane
-- terminal 默认继续运行
-- 不广播给其他客户端
-
-### 5.3 stop terminal
-
-- stop 的是 terminal 实体
-- 所有绑定 pane 都进入 saved pane
-- 其他仍在线的客户端应收到 notice
-- stop 前必须有确认 prompt
-
-### 5.4 detach TUI
-
-- 当前客户端退出 TUI
-- 不结束 terminal
-- 不强提示其他客户端
+- floating pane 在 tab 内与 tiled pane 共存
+- active floating pane 总是最高层
+- 支持移动、缩放、切换 z-order、隐藏/恢复、居中呼回
 
 ---
 
-## 6. resize / display 规则
+## 4. 槽位状态交互
 
-### 6.1 display 属性
+说明：
 
-pane 当前显示层面有这些属性：
+- 这部分不是对外主概念
+- 只是 pane 在没有正常连接 terminal 时的槽位表现
+- 用户真正要理解的主体仍然是 terminal
 
-- fit / fixed
-- readonly
-- pin
-- size lock warn
+### 4.1 空槽位
 
-### 6.2 shared terminal 的 size 语义
+正文区显示稳定的下一步动作：
 
-当多个 pane 共享一个 terminal 时：
+- start new terminal
+- connect existing terminal
+- open terminal manager
+- close pane
 
-- pane 的几何可以不同
-- terminal 的真实 PTY size 只有一份
-- resize 必须通过 acquire 控制语义收口
+说明：
 
-### 6.3 当前产品方向
+- 这个状态本质上就是“未连接 terminal 的 pane”
+- 不再使用 `saved pane` 作为主线称呼
 
-termx 的目标规则是：
+### 4.2 程序已退出 pane
 
-- 几何变化不自动改写 terminal size
-- acquire 后才允许把当前 pane 的尺寸提交给 terminal
-- tab 可以配置 auto-acquire
-- size lock warn 用来提醒交互式 TUI 风险
+正文区显示：
 
----
+- terminal 中程序已退出的信息
+- restart 入口
+- connect another terminal 入口
+- close pane 入口
 
-## 7. 模式与快捷键
+说明：
 
-当前 keymap 结构：
+- 这个状态本质上就是“terminal 中程序已经退出的 pane”
+- 不再使用 `exited pane` 作为主线称呼
 
-- `Ctrl-p` pane mode
-- `Ctrl-r` resize mode
-- `Ctrl-t` tab mode
-- `Ctrl-w` workspace mode
-- `Ctrl-o` floating mode
-- `Ctrl-v` display mode
-- `Ctrl-f` terminal picker
-- `Ctrl-g` global mode
+### 4.3 waiting slot
 
-全局原则：
-
-- mode 是短驻留工具，不是产品本体
-- 用户在 normal 状态下就应能稳定工作
-- 错误按键直接忽略，不应卡死
-- 底栏左侧快捷键提示采用接近 zellij 的连续 segment 样式
-- 每个 segment 形如 `<g> LOCK`、`<p> PANE`
-- 底栏右侧继续只放状态，不与快捷键混排
+- 用于 layout / restore 中的未决槽位
+- 不应表现得像错误状态
+- 应提示这是一个待解析的预留位置
 
 ---
 
-## 8. 各交互面的职责
+## 5. picker / manager / prompt 职责
 
-### 8.1 Terminal Picker
+### 5.1 terminal picker
 
 职责：
 
-- 快速 bring / attach terminal
-- 创建 terminal
-- 从当前工作流里做最短路径选择
+- 以最快路径 connect existing terminal
+- 从当前工作流发起 create terminal
+- 支持 name / tags / command / location 搜索
 
-### 8.2 Terminal Manager
+适合：
+
+- 当前用户正在工作，需要短路径 connect
+
+### 5.2 terminal manager
 
 职责：
 
 - 浏览 terminal pool
-- 看 terminal 当前是否 visible / parked / exited
-- 看某个 terminal 显示在哪些位置
-- bring here / new tab / floating / edit / stop
+- 查看 terminal 的当前可见性和位置
+- 直接将当前 pane connect 到选中的 terminal
+- 执行 here / new tab / floating / edit / stop
 
-### 8.3 Metadata Prompt
+适合：
 
-职责：
+- 用户明确在做资源管理，而不是只做一次 connect
 
-- 编辑 terminal 的 name 与 tags
-- 明确提示当前编辑对象是 terminal
-
-当前 prompt 规则：
-
-- step 1/2 编辑 name
-- step 2/2 编辑 tags
-- prompt 中显示 terminal id
-- prompt 中显示 command
-- 保存成功后刷新所有 attach pane
-
-### 8.4 Help
+### 5.3 workspace picker
 
 职责：
 
-- 解释 keymap
-- 解释当前概念模型
-- 让新用户理解 workspace/tab/pane/terminal 的关系
+- 创建 workspace
+- 搜索和切换 workspace
+- 以树形结构展示 `workspace -> tab -> pane`
+- 支持直接跳到某一个 pane
+
+### 5.4 metadata prompt
+
+职责：
+
+- 编辑 terminal 的 `name / tags`
+- 明确提示当前操作对象是 terminal，不是 pane
 
 ---
 
-## 9. 当前界面分层
+## 6. 快捷键策略
 
-### 顶栏
+### 6.1 原则
 
-放：
+- 快捷键是工具，不是产品本体
+- normal 状态下应足够工作
+- mode 必须短驻留、可退出、可忽略非法键
+- 用户可通过帮助界面快速恢复记忆
 
-- workspace badge
-- tab strip
-- workspace 级摘要和 notice
+### 6.2 推荐主入口
 
-### pane 标题栏
+- `Ctrl-p` pane
+- `Ctrl-r` resize
+- `Ctrl-t` tab
+- `Ctrl-w` workspace
+- `Ctrl-o` floating
+- `Ctrl-v` viewport / display
+- `Ctrl-f` picker
+- `Ctrl-g` global
 
-放：
+### 6.3 模式行为
 
-- pane/terminal 名称
-- `live / saved / exit / fit / fixed / share` 等关系状态
-- pane 顶部 chrome 使用单线边框表达，不使用厚重阴影感标题块
+- 非 sticky 模式执行一次动作后自动退出
+- sticky 模式在有效连续动作后续期
+- 非法输入直接忽略，不进入异常状态
+- `Esc` 统一清空临时模式
 
-### 底栏
+### 6.4 鼠标策略
 
-放：
-
-- 左侧 mode 快捷键提示
-- 右侧当前焦点的极简摘要
-
-补充规则：
-
-- 左侧快捷键展示尽量完全复刻 zellij 的 segment 气质
-- 右侧不参与 segment 带，只保留状态摘要
-
-### 中间 overlay
-
-放：
-
-- picker
-- prompt
-- help
-- terminal manager
+- 鼠标只服务直觉操作
+  - 点击聚焦
+  - 拖动 floating
+  - resize floating
+- 鼠标不是唯一完成路径
+- 所有鼠标交互都应有键盘回退路径
 
 ---
 
-## 10. 当前空状态与默认路径
+## 7. 共享 terminal 行为规格
 
-默认路径：
+### 7.1 connect 规则
 
-- 启动 termx
-- 进入 main workspace
-- 默认已有一个可输入 shell pane
+- connect 到已存在 terminal 时，新 pane 默认 follower
+- 如果该 terminal 当前没有 owner，则系统按规则选出 owner
 
-不再主张：
+### 7.2 resize 规则
 
-- 启动后先显示一大段说明文字
-- 用户先读说明再开始工作
+- pane 几何变化不自动改写 terminal size
+- 只有 owner 的显式 resize 才会提交到 terminal
+- follower 不能隐式改 terminal 控制参数
 
-saved pane 才是“无 terminal 但仍保留工作位”的状态；默认启动不应把 saved pane 当主入口。
+### 7.3 owner 迁移
+
+- owner pane 被关闭、解绑、切走后，系统要重新选 owner
+- 迁移过程不能造成 terminal 消失、串屏或 resize 混乱
+
+### 7.4 owner 获取
+
+- 任意一个 pane 或客户端都可以主动请求 owner
+- owner 获取必须稳定、可见、可预测
+- 获取 owner 后才能执行 terminal 控制面动作
+  - resize
+  - metadata 更新
 
 ---
 
-## 11. 当前已达成的主要交互结论
+## 8. 恢复和降级
 
-当前交互模型已经比较明确：
+### 8.1 restore 原则
 
-- 普通工作：围绕 pane / tab / floating 进行
-- terminal 复用：通过 picker / manager 进入
-- terminal 管理：通过 terminal manager 进入
-- terminal 停止：通过 confirm prompt 明确影响范围
-- metadata：通过两步 prompt 明确编辑的是 terminal
+- 恢复失败不应闪退
+- 恢复失败不应破坏已有 terminal
+- 允许降级成 waiting slot、空槽位或 picker
 
-这套模型已经足够支持后续继续做 UI 美化、快捷键收口和 e2e 扩展。
+### 8.2 layout resolve
+
+当 layout 无法直接匹配 terminal 时，允许：
+
+- connect existing
+- create new
+- skip
+
+### 8.3 远端事件
+
+- remote terminal removed / exited / metadata updated 时，当前 UI 应同步反映
+- close 本地 pane 或 detach 本地 TUI 不应误广播成 terminal removed
+
+---
+
+## 9. 帮助系统
+
+help 必须回答下面 4 件事：
+
+1. 我现在在哪个层级
+2. 当前有哪些主入口
+3. 共享 terminal 时 owner/follower 是什么
+4. close pane、stop terminal、detach 的区别是什么
+
+help 不应该只是线性快捷键列表。
+
+---
+
+## 10. 交互验收标准
+
+交互层验收通过，至少满足：
+
+1. 焦点始终明确
+2. overlay 关闭后无残影
+3. 非法输入不锁死模式
+4. split / connect / floating / workspace switch 主流程不需要用户猜测下一步
+5. 共享 terminal 的 ownership 规则在 UI 上可见、在行为上可预测
