@@ -45,6 +45,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 21. 第十七轮 TDD 已补上最小 bubbletea shell 容器
 22. 第十八轮 TDD 已补上最小 runtime effect executor 回流链路
 23. 第十九轮 TDD 已补上 terminal manager 动作键映射
+24. 第二十轮 TDD 已补上 runtime feedback 错误与 notice 通道
 
 对应文档：
 
@@ -192,6 +193,10 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 - `terminal manager` 已补上动作键映射：`t new tab`、`o floating`、`e edit`、`k stop`
 - `terminal manager` 的 `edit metadata` 现在已能从 shell 容器中走完整 prompt handoff
 - 已补上一条跨层场景型 E2E：`Ctrl-g -> t -> e -> metadata prompt`
+- `tui/bt` 已补上最小 `Notice` 模型，当前由 shell 容器持有和追加
+- runtime effect 执行失败不再静默吞掉，`RuntimeEffectHandler` 现在会把错误转换成 `error notice`
+- `Model.Update` 已支持消费 notice feedback message，并保留当前 notice 列表供后续 renderer 接线
+- 已补上一条跨层场景型 E2E：`terminal manager stop` 失败后记录 error notice
 
 本轮验证：
 
@@ -215,7 +220,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 1. 新版 renderer
 2. 新版 terminal picker / restore 流程
 3. 新主线真实 TUI E2E 回迁
-4. runtime feedback 错误与 notice 通道
+4. notice timeout / 清理策略
 
 ---
 
@@ -224,7 +229,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 下一阶段最高优先级不是补 UI，而是先把下面几个边界立住：
 
 1. 更完整的 `intent -> reducer -> effect -> runtime feedback` 契约
-2. runtime feedback 错误与 notice 通道
+2. terminal picker 接线
 3. 真实 TUI E2E 场景壳
 4. 新版 renderer 最小骨架
 
@@ -260,12 +265,12 @@ termx TUI 当前处于“文档主线已稳定，领域骨架和第一批 UI 状
 
 当前最合适的下一步是：
 
-1. 给 runtime feedback 补错误/notice message 通道
-2. 把 terminal picker 接进当前 shell 主线
+1. 把 terminal picker 接进当前 shell 主线
+2. 给 notice 补 timeout / 清理策略
 3. 继续扩真实 TUI E2E 场景壳
 
 ---
 
 ## 7. 当前一句话状态
 
-termx TUI 现在已经进入“picker / manager / prompt 三条主状态机已打通核心提交路径，manager 动作键也已接入当前 shell 主线，下一步继续按 TDD 补 runtime feedback 错误通道、接 terminal picker 并扩真实 TUI E2E 壳”的阶段。
+termx TUI 现在已经进入“picker / manager / prompt 三条主状态机已打通核心提交路径，runtime feedback 的错误与 notice 通道也已接回，下一步继续按 TDD 接 terminal picker、补 notice 生命周期并扩真实 TUI E2E 壳”的阶段。

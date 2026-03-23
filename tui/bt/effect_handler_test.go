@@ -12,18 +12,22 @@ import (
 type stubRuntimeExecutor struct {
 	effects       []reducer.Effect
 	intentsByName map[string][]intent.Intent
+	err           error
 }
 
-func (e *stubRuntimeExecutor) Execute(effect reducer.Effect) ([]intent.Intent, error) {
+func (e *stubRuntimeExecutor) Execute(effect reducer.Effect) (ExecutionResult, error) {
 	e.effects = append(e.effects, effect)
+	if e.err != nil {
+		return ExecutionResult{}, e.err
+	}
 	if e.intentsByName == nil {
-		return nil, nil
+		return ExecutionResult{}, nil
 	}
 	switch effect.(type) {
 	case reducer.OpenPromptEffect:
-		return e.intentsByName["open_prompt"], nil
+		return ExecutionResult{Intents: e.intentsByName["open_prompt"]}, nil
 	default:
-		return nil, nil
+		return ExecutionResult{}, nil
 	}
 }
 
@@ -132,9 +136,9 @@ func TestRuntimeEffectHandlerReturnsFeedbackIntentMessage(t *testing.T) {
 		t.Fatalf("expected runtime effect handler command")
 	}
 	msg := cmd()
-	result, ok := msg.(effectIntentsMsg)
+	result, ok := msg.(effectResultMsg)
 	if !ok {
-		t.Fatalf("expected effect intents msg, got %T", msg)
+		t.Fatalf("expected effect result msg, got %T", msg)
 	}
 	if len(result.Intents) != 1 {
 		t.Fatalf("expected one feedback intent, got %d", len(result.Intents))
@@ -151,15 +155,15 @@ func TestDefaultRuntimeExecutorCallsTerminalServiceAndTranslatesOverlayEffects(t
 	service := &stubTerminalService{}
 	executor := DefaultRuntimeExecutor{TerminalService: service}
 
-	intents, err := executor.Execute(reducer.ConnectTerminalEffect{
+	result, err := executor.Execute(reducer.ConnectTerminalEffect{
 		PaneID:     types.PaneID("pane-1"),
 		TerminalID: types.TerminalID("term-1"),
 	})
 	if err != nil {
 		t.Fatalf("unexpected connect error: %v", err)
 	}
-	if len(intents) != 0 || len(service.connectCalls) != 1 {
-		t.Fatalf("expected connect service call only, got intents=%d calls=%d", len(intents), len(service.connectCalls))
+	if len(result.Intents) != 0 || len(service.connectCalls) != 1 {
+		t.Fatalf("expected connect service call only, got intents=%d calls=%d", len(result.Intents), len(service.connectCalls))
 	}
 
 	_, _ = executor.Execute(reducer.CreateTerminalEffect{
@@ -183,19 +187,19 @@ func TestDefaultRuntimeExecutorCallsTerminalServiceAndTranslatesOverlayEffects(t
 		TerminalID:  types.TerminalID("term-5"),
 	})
 
-	intents, err = executor.Execute(reducer.OpenPromptEffect{
+	result, err = executor.Execute(reducer.OpenPromptEffect{
 		PromptKind: reducer.PromptKindEditTerminalMetadata,
 		TerminalID: types.TerminalID("term-6"),
 	})
 	if err != nil {
 		t.Fatalf("unexpected open prompt error: %v", err)
 	}
-	if len(intents) != 1 {
-		t.Fatalf("expected one open prompt feedback intent, got %d", len(intents))
+	if len(result.Intents) != 1 {
+		t.Fatalf("expected one open prompt feedback intent, got %d", len(result.Intents))
 	}
-	openPrompt, ok := intents[0].(intent.OpenPromptIntent)
+	openPrompt, ok := result.Intents[0].(intent.OpenPromptIntent)
 	if !ok {
-		t.Fatalf("expected open prompt intent, got %T", intents[0])
+		t.Fatalf("expected open prompt intent, got %T", result.Intents[0])
 	}
 	if openPrompt.PromptKind != reducer.PromptKindEditTerminalMetadata || openPrompt.TerminalID != types.TerminalID("term-6") {
 		t.Fatalf("unexpected prompt feedback payload: %+v", openPrompt)
@@ -217,9 +221,31 @@ func TestRuntimeEffectHandlerReturnsNilWhenExecutorProducesNoWork(t *testing.T) 
 	if cmd := handler.Handle([]reducer.Effect{reducer.StopTerminalEffect{TerminalID: types.TerminalID("term-1")}}); cmd == nil {
 		t.Fatalf("expected async command for runtime effects")
 	} else if msg := cmd(); msg != nil {
-		if _, ok := msg.(effectIntentsMsg); !ok {
-			t.Fatalf("expected nil or effect intents msg, got %T", msg)
+		if _, ok := msg.(effectResultMsg); !ok {
+			t.Fatalf("expected nil or effect result msg, got %T", msg)
 		}
+	}
+}
+
+func TestRuntimeEffectHandlerConvertsExecutorErrorToNotice(t *testing.T) {
+	handler := RuntimeEffectHandler{Executor: &stubRuntimeExecutor{err: errBoom}}
+
+	cmd := handler.Handle([]reducer.Effect{
+		reducer.StopTerminalEffect{TerminalID: types.TerminalID("term-1")},
+	})
+	if cmd == nil {
+		t.Fatalf("expected command for failed effect")
+	}
+	msg := cmd()
+	result, ok := msg.(effectResultMsg)
+	if !ok {
+		t.Fatalf("expected effect result msg, got %T", msg)
+	}
+	if len(result.Notices) != 1 {
+		t.Fatalf("expected one notice, got %d", len(result.Notices))
+	}
+	if result.Notices[0].Level != NoticeLevelError {
+		t.Fatalf("expected error notice, got %+v", result.Notices[0])
 	}
 }
 

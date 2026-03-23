@@ -25,6 +25,7 @@ type ModelConfig struct {
 
 type Model struct {
 	state   types.AppState
+	notices []Notice
 	mapper  IntentMapper
 	reducer reducer.StateReducer
 	effects EffectHandler
@@ -79,7 +80,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msgValue := msg.(type) {
 	case tea.KeyMsg:
 		return m.applyIntents(m.mapper.MapKey(m.state, msgValue))
-	case effectIntentsMsg:
+	case effectResultMsg:
+		m.appendNotices(msgValue.Notices)
 		return m.applyIntents(msgValue.Intents)
 	default:
 		return m, nil
@@ -102,6 +104,17 @@ func (m *Model) View() string {
 
 func (m *Model) State() types.AppState {
 	return m.state
+}
+
+func (m *Model) Notices() []Notice {
+	return append([]Notice(nil), m.notices...)
+}
+
+func (m *Model) appendNotices(notices []Notice) {
+	if len(notices) == 0 {
+		return
+	}
+	m.notices = append(m.notices, notices...)
 }
 
 func batchCmd(current tea.Cmd, next tea.Cmd) tea.Cmd {

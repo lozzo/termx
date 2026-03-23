@@ -1,6 +1,7 @@
 package bt
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -10,6 +11,8 @@ import (
 	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
 	"github.com/lozzow/termx/tui/domain/types"
 )
+
+var errBoom = errors.New("boom")
 
 type stubIntentMapper struct {
 	intents []intent.Intent
@@ -60,6 +63,34 @@ func (r *stubRenderer) Render(state types.AppState) string {
 
 type effectsHandledMsg struct {
 	Count int
+}
+
+type failingTerminalService struct {
+	stopErr error
+}
+
+func (f *failingTerminalService) ConnectTerminal(types.PaneID, types.TerminalID) error {
+	return nil
+}
+
+func (f *failingTerminalService) CreateTerminal(types.PaneID, []string, string) error {
+	return nil
+}
+
+func (f *failingTerminalService) StopTerminal(types.TerminalID) error {
+	return f.stopErr
+}
+
+func (f *failingTerminalService) UpdateTerminalMetadata(types.TerminalID, string, map[string]string) error {
+	return nil
+}
+
+func (f *failingTerminalService) ConnectTerminalInNewTab(types.WorkspaceID, types.TerminalID) error {
+	return nil
+}
+
+func (f *failingTerminalService) ConnectTerminalInFloatingPane(types.WorkspaceID, types.TabID, types.TerminalID) error {
+	return nil
 }
 
 func TestModelInitReturnsNilCommand(t *testing.T) {
@@ -140,6 +171,28 @@ func TestModelUpdateIgnoresNonKeyMessages(t *testing.T) {
 	}
 	if !reflect.DeepEqual(updated.State(), initial) {
 		t.Fatalf("expected state to remain unchanged, got %+v", updated.State())
+	}
+}
+
+func TestModelUpdateStoresNoticesFromEffectFeedback(t *testing.T) {
+	model := NewModel(ModelConfig{
+		InitialState: newAppStateWithSinglePane(),
+		Mapper:       NewIntentMapper(Config{}),
+		Reducer:      reducer.New(),
+	})
+
+	updatedModel, cmd := model.Update(effectResultMsg{
+		Notices: []Notice{{Level: NoticeLevelError, Text: "stop terminal failed"}},
+	})
+	updated := updatedModel.(*Model)
+	if cmd != nil {
+		t.Fatalf("expected nil command for notice-only feedback, got %v", cmd)
+	}
+	if len(updated.Notices()) != 1 {
+		t.Fatalf("expected one notice, got %d", len(updated.Notices()))
+	}
+	if updated.Notices()[0].Text != "stop terminal failed" {
+		t.Fatalf("unexpected notice payload: %+v", updated.Notices()[0])
 	}
 }
 
@@ -233,6 +286,45 @@ func TestE2EModelScenarioTerminalManagerEditOpensMetadataPrompt(t *testing.T) {
 	}
 	if prompt.Kind != promptdomain.KindEditTerminalMetadata || prompt.TerminalID != types.TerminalID("term-1") {
 		t.Fatalf("unexpected prompt payload: %+v", prompt)
+	}
+}
+
+func TestE2EModelScenarioFailedStopRecordsErrorNotice(t *testing.T) {
+	service := &failingTerminalService{stopErr: errBoom}
+	model := NewModel(ModelConfig{
+		InitialState:  newManagerAppState(),
+		Mapper:        NewIntentMapper(Config{Clock: fixedClock{}}),
+		Reducer:       reducer.New(),
+		EffectHandler: RuntimeEffectHandler{Executor: DefaultRuntimeExecutor{TerminalService: service}},
+		Renderer:      StaticRenderer{},
+	})
+
+	sequence := []tea.KeyMsg{
+		{Type: tea.KeyCtrlG},
+		{Type: tea.KeyRunes, Runes: []rune("t")},
+		{Type: tea.KeyRunes, Runes: []rune("k")},
+	}
+
+	current := model
+	var feedback tea.Msg
+	for _, key := range sequence {
+		next, cmd := current.Update(key)
+		current = next.(*Model)
+		if cmd != nil {
+			feedback = cmd()
+		}
+	}
+	if feedback == nil {
+		t.Fatalf("expected feedback message after failed stop")
+	}
+	next, _ := current.Update(feedback)
+	current = next.(*Model)
+
+	if len(current.Notices()) != 1 {
+		t.Fatalf("expected one notice after failed stop, got %d", len(current.Notices()))
+	}
+	if current.Notices()[0].Level != NoticeLevelError {
+		t.Fatalf("expected error notice, got %+v", current.Notices()[0])
 	}
 }
 
