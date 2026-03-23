@@ -159,6 +159,16 @@ type CancelPromptIntent struct{}
 
 func (CancelPromptIntent) intentName() string { return "cancel_prompt" }
 
+type PromptAppendInputIntent struct {
+	Text string
+}
+
+func (PromptAppendInputIntent) intentName() string { return "prompt_append_input" }
+
+type PromptBackspaceIntent struct{}
+
+func (PromptBackspaceIntent) intentName() string { return "prompt_backspace" }
+
 type ActivateModeIntent struct {
 	Mode       types.ModeKind
 	Sticky     bool

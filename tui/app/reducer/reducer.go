@@ -2,6 +2,7 @@ package reducer
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -156,6 +157,10 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		result.Effects = append(result.Effects, applySubmitPrompt(&result.State, intentValue)...)
 	case intent.CancelPromptIntent:
 		applyCancelPrompt(&result.State)
+	case intent.PromptAppendInputIntent:
+		applyPromptAppendInput(&result.State, intentValue)
+	case intent.PromptBackspaceIntent:
+		applyPromptBackspace(&result.State)
 	case intent.ActivateModeIntent:
 		applyActivateMode(&result.State, intentValue)
 	case intent.ModeTimedOutIntent:
@@ -316,6 +321,7 @@ func applyOpenPrompt(state *types.AppState, in intent.OpenPromptIntent) {
 			Kind:       promptKindFromString(in.PromptKind),
 			Title:      promptTitle(in.PromptKind),
 			TerminalID: in.TerminalID,
+			Draft:      promptDraft(state, in),
 		},
 		ReturnFocus: returnFocus,
 	}
@@ -577,6 +583,9 @@ func applySubmitPrompt(state *types.AppState, in intent.SubmitPromptIntent) []Ef
 	}
 	value := strings.TrimSpace(in.Value)
 	if value == "" {
+		value = strings.TrimSpace(promptState.Draft)
+	}
+	if value == "" {
 		return nil
 	}
 	switch promptState.Kind {
@@ -595,6 +604,22 @@ func applyCancelPrompt(state *types.AppState) {
 		return
 	}
 	applyCloseOverlay(state)
+}
+
+func applyPromptAppendInput(state *types.AppState, in intent.PromptAppendInputIntent) {
+	prompt, ok := promptState(state)
+	if !ok {
+		return
+	}
+	prompt.AppendInput(in.Text)
+}
+
+func applyPromptBackspace(state *types.AppState) {
+	prompt, ok := promptState(state)
+	if !ok {
+		return
+	}
+	prompt.BackspaceInput()
 }
 
 // applyCreateWorkspace 为新 workspace 建立最小可工作骨架：
@@ -867,6 +892,19 @@ func promptTitle(kind string) string {
 	}
 }
 
+func promptDraft(state *types.AppState, in intent.OpenPromptIntent) string {
+	switch in.PromptKind {
+	case PromptKindEditTerminalMetadata:
+		terminal, ok := state.Domain.Terminals[in.TerminalID]
+		if !ok {
+			return ""
+		}
+		return formatTerminalMetadataDraft(terminal)
+	default:
+		return ""
+	}
+}
+
 func nextWorkspaceID(state *types.AppState, name string) types.WorkspaceID {
 	base := sanitizeID(name)
 	if base == "" {
@@ -948,4 +986,24 @@ func cloneStringMap(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func formatTerminalMetadataDraft(terminal types.TerminalRef) string {
+	name := terminal.Name
+	if name == "" {
+		name = string(terminal.ID)
+	}
+	tagKeys := make([]string, 0, len(terminal.Tags))
+	for key := range terminal.Tags {
+		tagKeys = append(tagKeys, key)
+	}
+	slices.Sort(tagKeys)
+	pairs := make([]string, 0, len(tagKeys))
+	for _, key := range tagKeys {
+		pairs = append(pairs, key+"="+terminal.Tags[key])
+	}
+	if len(pairs) == 0 {
+		return name
+	}
+	return name + "\n" + strings.Join(pairs, ",")
 }

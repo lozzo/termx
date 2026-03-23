@@ -1,6 +1,10 @@
 package prompt
 
-import "github.com/lozzow/termx/tui/domain/types"
+import (
+	"unicode/utf8"
+
+	"github.com/lozzow/termx/tui/domain/types"
+)
 
 type Kind string
 
@@ -15,6 +19,7 @@ type State struct {
 	Kind       Kind
 	Title      string
 	TerminalID types.TerminalID
+	Draft      string
 }
 
 func (s *State) OverlayKind() types.OverlayKind {
@@ -27,4 +32,19 @@ func (s *State) CloneOverlayData() types.OverlayData {
 	}
 	clone := *s
 	return &clone
+}
+
+func (s *State) AppendInput(text string) {
+	if s == nil || text == "" {
+		return
+	}
+	s.Draft += text
+}
+
+func (s *State) BackspaceInput() {
+	if s == nil || s.Draft == "" {
+		return
+	}
+	_, size := utf8.DecodeLastRuneInString(s.Draft)
+	s.Draft = s.Draft[:len(s.Draft)-size]
 }

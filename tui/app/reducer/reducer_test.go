@@ -247,6 +247,9 @@ func TestReducerOpenPromptMovesFocusToPromptLayer(t *testing.T) {
 	if prompt.Kind != promptdomain.KindCreateWorkspace {
 		t.Fatalf("expected create-workspace prompt state, got %+v", prompt)
 	}
+	if prompt.Draft != "" {
+		t.Fatalf("expected create-workspace prompt to start empty, got %q", prompt.Draft)
+	}
 }
 
 func TestReducerCancelPromptRestoresPreviousPaneFocus(t *testing.T) {
@@ -338,6 +341,45 @@ func TestReducerSubmitMetadataPromptUpdatesTerminalAndEmitsEffect(t *testing.T) 
 	}
 	if effect.Tags["env"] != "prod" || effect.Tags["team"] != "platform" {
 		t.Fatalf("expected metadata effect tags, got %+v", effect.Tags)
+	}
+}
+
+func TestReducerOpenMetadataPromptSeedsDraftFromCurrentTerminal(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	result := reducer.Reduce(state, intent.OpenPromptIntent{
+		PromptKind: PromptKindEditTerminalMetadata,
+		TerminalID: types.TerminalID("term-2"),
+	})
+
+	prompt, ok := result.State.UI.Overlay.Data.(*promptdomain.State)
+	if !ok {
+		t.Fatalf("expected prompt overlay data, got %T", result.State.UI.Overlay.Data)
+	}
+	if prompt.Draft != "build-log\ngroup=build" {
+		t.Fatalf("expected metadata prompt draft to seed from terminal, got %q", prompt.Draft)
+	}
+}
+
+func TestReducerPromptInputMutatesDraftAndSubmitUsesDraftWhenValueEmpty(t *testing.T) {
+	reducer := New()
+	state := newAppStateWithSinglePane()
+
+	opened := reducer.Reduce(state, intent.OpenPromptIntent{
+		PromptKind: PromptKindCreateWorkspace,
+	})
+	typed := reducer.Reduce(opened.State, intent.PromptAppendInputIntent{Text: "ops-center"})
+	backspaced := reducer.Reduce(typed.State, intent.PromptBackspaceIntent{})
+	retyped := reducer.Reduce(backspaced.State, intent.PromptAppendInputIntent{Text: "r"})
+	submitted := reducer.Reduce(retyped.State, intent.SubmitPromptIntent{})
+
+	if submitted.State.Domain.ActiveWorkspaceID == types.WorkspaceID("ws-1") {
+		t.Fatalf("expected prompt draft to be used for workspace creation")
+	}
+	workspace := submitted.State.Domain.Workspaces[submitted.State.Domain.ActiveWorkspaceID]
+	if workspace.Name != "ops-center" {
+		t.Fatalf("expected workspace name from prompt draft, got %+v", workspace)
 	}
 }
 
@@ -688,7 +730,8 @@ func TestE2EReducerScenarioWorkspacePickerCreateWorkspaceFlow(t *testing.T) {
 	promptOpened := reducer.Reduce(handoff.State, intent.OpenPromptIntent{
 		PromptKind: PromptKindCreateWorkspace,
 	})
-	submitted := reducer.Reduce(promptOpened.State, intent.SubmitPromptIntent{Value: "ops-center"})
+	typed := reducer.Reduce(promptOpened.State, intent.PromptAppendInputIntent{Text: "ops-center"})
+	submitted := reducer.Reduce(typed.State, intent.SubmitPromptIntent{})
 
 	if submitted.State.Domain.ActiveWorkspaceID == types.WorkspaceID("ws-1") {
 		t.Fatalf("expected created workspace to become active")
