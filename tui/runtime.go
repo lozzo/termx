@@ -97,6 +97,8 @@ func runWithDependencies(client Client, cfg Config, input io.Reader, output io.W
 	defer stopRuntimeSessions(sessions)
 
 	terminalStore := NewRuntimeTerminalStore(sessions)
+	updateHandler := NewRuntimeUpdateHandler(sessions, terminalStore, client)
+	defer updateHandler.Stop()
 	renderer := deps.Renderer
 	switch rendererValue := renderer.(type) {
 	case runtimeRenderer:
@@ -109,11 +111,13 @@ func runWithDependencies(client Client, cfg Config, input io.Reader, output io.W
 
 	model := btui.NewModel(btui.ModelConfig{
 		InitialState:       bootstrapped.State,
+		InitCmd:            updateHandler.InitCmd(),
 		Mapper:             btui.NewIntentMapper(btui.Config{PrefixTimeout: cfg.PrefixTimeout}),
 		Reducer:            nil,
 		EffectHandler:      btui.RuntimeEffectHandler{Executor: btui.DefaultRuntimeExecutor{}},
 		Renderer:           renderer,
 		UnmappedKeyHandler: NewRuntimeTerminalInputHandler(client, terminalStore),
+		MessageHandler:     updateHandler,
 	})
 	return deps.ProgramRunner.Run(model, input, output)
 }

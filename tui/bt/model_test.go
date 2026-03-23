@@ -72,6 +72,16 @@ func (h *stubUnmappedKeyHandler) HandleKey(_ types.AppState, msg tea.KeyMsg) tea
 	return h.cmd
 }
 
+type stubMessageHandler struct {
+	msgs []tea.Msg
+	cmd  tea.Cmd
+}
+
+func (h *stubMessageHandler) HandleMessage(_ types.AppState, msg tea.Msg) (bool, tea.Cmd) {
+	h.msgs = append(h.msgs, msg)
+	return true, h.cmd
+}
+
 type effectsHandledMsg struct {
 	Count int
 }
@@ -130,6 +140,24 @@ func TestModelInitReturnsNilCommand(t *testing.T) {
 
 	if cmd := model.Init(); cmd != nil {
 		t.Fatalf("expected nil init command, got %v", cmd)
+	}
+}
+
+func TestModelInitReturnsConfiguredInitCommand(t *testing.T) {
+	initMsg := effectsHandledMsg{Count: 7}
+	model := NewModel(ModelConfig{
+		InitialState: newAppStateWithSinglePane(),
+		InitCmd: func() tea.Msg {
+			return initMsg
+		},
+	})
+
+	cmd := model.Init()
+	if cmd == nil {
+		t.Fatal("expected configured init command")
+	}
+	if msg := cmd(); !reflect.DeepEqual(msg, initMsg) {
+		t.Fatalf("unexpected init command msg: %#v", msg)
 	}
 }
 
@@ -263,6 +291,35 @@ func TestModelUpdateIgnoresNonKeyMessages(t *testing.T) {
 	}
 	if !reflect.DeepEqual(updated.State(), initial) {
 		t.Fatalf("expected state to remain unchanged, got %+v", updated.State())
+	}
+}
+
+func TestModelUpdateDelegatesUnhandledMessageToMessageHandler(t *testing.T) {
+	handler := &stubMessageHandler{
+		cmd: func() tea.Msg {
+			return effectsHandledMsg{Count: 2}
+		},
+	}
+	model := NewModel(ModelConfig{
+		InitialState:   newAppStateWithSinglePane(),
+		Mapper:         NewIntentMapper(Config{}),
+		Reducer:        reducer.New(),
+		MessageHandler: handler,
+	})
+
+	updatedModel, cmd := model.Update(effectsHandledMsg{Count: 1})
+	updated := updatedModel.(*Model)
+	if len(handler.msgs) != 1 {
+		t.Fatalf("expected one delegated message, got %+v", handler.msgs)
+	}
+	if cmd == nil {
+		t.Fatal("expected delegated handler command")
+	}
+	if msg := cmd(); !reflect.DeepEqual(msg, effectsHandledMsg{Count: 2}) {
+		t.Fatalf("unexpected delegated handler result: %#v", msg)
+	}
+	if !reflect.DeepEqual(updated.State(), newAppStateWithSinglePane()) {
+		t.Fatalf("expected delegated message to preserve state, got %+v", updated.State())
 	}
 }
 

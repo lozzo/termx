@@ -24,17 +24,23 @@ type UnmappedKeyHandler interface {
 	HandleKey(state types.AppState, msg tea.KeyMsg) tea.Cmd
 }
 
+type MessageHandler interface {
+	HandleMessage(state types.AppState, msg tea.Msg) (bool, tea.Cmd)
+}
+
 type NoticeScheduler interface {
 	ScheduleTimeout(id string, after time.Duration) tea.Cmd
 }
 
 type ModelConfig struct {
 	InitialState       types.AppState
+	InitCmd            tea.Cmd
 	Mapper             IntentMapper
 	Reducer            reducer.StateReducer
 	EffectHandler      EffectHandler
 	Renderer           Renderer
 	UnmappedKeyHandler UnmappedKeyHandler
+	MessageHandler     MessageHandler
 	NoticeScheduler    NoticeScheduler
 	NoticeTimeout      time.Duration
 }
@@ -48,8 +54,10 @@ type Model struct {
 	effects         EffectHandler
 	view            Renderer
 	unmappedKeys    UnmappedKeyHandler
+	messages        MessageHandler
 	noticeScheduler NoticeScheduler
 	noticeTimeout   time.Duration
+	initCmd         tea.Cmd
 }
 
 type NoopEffectHandler struct{}
@@ -106,18 +114,20 @@ func NewModel(cfg ModelConfig) *Model {
 	}
 	return &Model{
 		state:           cfg.InitialState,
+		initCmd:         cfg.InitCmd,
 		mapper:          mapper,
 		reducer:         rd,
 		effects:         effects,
 		view:            view,
 		unmappedKeys:    cfg.UnmappedKeyHandler,
+		messages:        cfg.MessageHandler,
 		noticeScheduler: noticeScheduler,
 		noticeTimeout:   noticeTimeout,
 	}
 }
 
 func (m *Model) Init() tea.Cmd {
-	return nil
+	return m.initCmd
 }
 
 // Update 是最小 bubbletea 壳的统一入口。
@@ -141,6 +151,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.removeNotice(msgValue.ID)
 		return m, nil
 	default:
+		if m.messages != nil {
+			handled, cmd := m.messages.HandleMessage(m.state, msg)
+			if handled {
+				return m, cmd
+			}
+		}
 		return m, nil
 	}
 }

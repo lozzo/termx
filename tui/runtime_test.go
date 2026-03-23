@@ -192,6 +192,64 @@ func TestE2ERunScenarioRendersSnapshotAndForwardsActivePaneInput(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioStreamOutputTriggersViewRefresh(t *testing.T) {
+	stream := make(chan protocol.StreamFrame, 1)
+	client := &stubRunClient{}
+	planner := &stubRunPlanner{plan: StartupPlan{State: connectedRunAppState()}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: connectedRunAppState()}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Channel:    21,
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 4, Rows: 1},
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{{{Content: "h"}, {Content: "i"}}},
+						},
+						Cursor: protocol.CursorState{Row: 0, Col: 2, Visible: true},
+					},
+					Stream: stream,
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			initCmd := model.Init()
+			if initCmd == nil {
+				t.Fatal("expected runtime init command")
+			}
+			stream <- protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("!")}
+			msg := initCmd()
+			if msg == nil {
+				t.Fatal("expected runtime stream message")
+			}
+			_, nextCmd := model.Update(msg)
+			if nextCmd == nil {
+				t.Fatal("expected follow-up listen command")
+			}
+			if view := model.View(); !strings.Contains(view, "hi!") {
+				t.Fatalf("expected runtime view to include streamed content, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 var (
 	errRuntimeRunBoom     = errors.New("run boom")
 	bootstrapperStopCalls int

@@ -44,12 +44,37 @@ func (r runtimeRenderer) Render(state types.AppState) string {
 			}
 			lines = append(lines, fmt.Sprintf("title: %s", label))
 		}
-		if session, ok := activeTerminalSession(state, r.Screens); ok && session.Snapshot != nil {
-			lines = append(lines, "screen:")
-			lines = append(lines, renderSnapshotRows(session.Snapshot)...)
+		if r.Screens != nil {
+			if snapshot, ok := r.Screens.Snapshot(pane.TerminalID); ok && snapshot != nil {
+				lines = append(lines, "screen:")
+				lines = append(lines, renderSnapshotRows(snapshot)...)
+			}
+			if status, ok := r.Screens.Status(pane.TerminalID); ok {
+				lines = append(lines, renderRuntimeStatusLines(status)...)
+			}
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func renderRuntimeStatusLines(status RuntimeTerminalStatus) []string {
+	var lines []string
+	if status.State != "" {
+		lines = append(lines, fmt.Sprintf("runtime_state: %s", status.State))
+	}
+	if status.Closed && status.ExitCode != nil {
+		lines = append(lines, fmt.Sprintf("runtime_exit_code: %d", *status.ExitCode))
+	}
+	if status.SyncLost {
+		lines = append(lines, fmt.Sprintf("runtime_sync_lost: %d", status.SyncLostDroppedBytes))
+	}
+	if status.RemovedReason != "" {
+		lines = append(lines, fmt.Sprintf("runtime_removed: %s", status.RemovedReason))
+	}
+	if status.ReadError != "" {
+		lines = append(lines, fmt.Sprintf("runtime_read_error: %s", status.ReadError))
+	}
+	return lines
 }
 
 func renderSnapshotRows(snapshot *protocol.Snapshot) []string {
