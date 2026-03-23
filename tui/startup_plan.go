@@ -2,8 +2,10 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/lozzow/termx/tui/app/intent"
@@ -18,6 +20,10 @@ type StartupPlanner interface {
 
 type LayoutLoader interface {
 	LoadLayout(ctx context.Context, ref string) ([]byte, error)
+}
+
+type WorkspaceStore interface {
+	LoadWorkspace(ctx context.Context, path string) (types.DomainState, error)
 }
 
 type StartupTask interface {
@@ -47,9 +53,11 @@ type StartupPlan struct {
 
 type startupPlanner struct {
 	layouts LayoutLoader
+	store   WorkspaceStore
 }
 
 type fileLayoutLoader struct{}
+type fileWorkspaceStore struct{}
 
 type startupLayoutDocument struct {
 	Workspace string            `yaml:"workspace"`
@@ -63,10 +71,17 @@ type startupLayoutSlot struct {
 }
 
 func NewStartupPlanner(loader LayoutLoader) StartupPlanner {
+	return NewStartupPlannerWithStores(loader, nil)
+}
+
+func NewStartupPlannerWithStores(loader LayoutLoader, store WorkspaceStore) StartupPlanner {
 	if loader == nil {
 		loader = fileLayoutLoader{}
 	}
-	return startupPlanner{layouts: loader}
+	if store == nil {
+		store = fileWorkspaceStore{}
+	}
+	return startupPlanner{layouts: loader, store: store}
 }
 
 // Plan 先把启动阶段收敛成纯规划，避免 runtime 刚接回时就把加载、降级和 UI 初始化搅在一起。
@@ -76,7 +91,7 @@ func (p startupPlanner) Plan(ctx context.Context, cfg Config) (StartupPlan, erro
 		return attachStartupPlan(cfg), nil
 	}
 	if strings.TrimSpace(cfg.StartupLayout) == "" {
-		return defaultStartupPlan(cfg), nil
+		return p.planFromRestoreOrDefault(ctx, cfg)
 	}
 	plan, err := p.planFromLayout(ctx, cfg)
 	if err == nil {
@@ -88,6 +103,23 @@ func (p startupPlanner) Plan(ctx context.Context, cfg Config) (StartupPlan, erro
 	degraded := defaultStartupPlan(cfg)
 	degraded.Warnings = append(degraded.Warnings, fmt.Sprintf("layout startup degraded: %v", err))
 	return degraded, nil
+}
+
+func (p startupPlanner) planFromRestoreOrDefault(ctx context.Context, cfg Config) (StartupPlan, error) {
+	if strings.TrimSpace(cfg.WorkspaceStatePath) == "" {
+		return defaultStartupPlan(cfg), nil
+	}
+	domain, err := p.store.LoadWorkspace(ctx, cfg.WorkspaceStatePath)
+	switch {
+	case err == nil:
+		return StartupPlan{State: restoredStartupState(domain)}, nil
+	case os.IsNotExist(err):
+		return defaultStartupPlan(cfg), nil
+	default:
+		degraded := defaultStartupPlan(cfg)
+		degraded.Warnings = append(degraded.Warnings, fmt.Sprintf("workspace restore degraded: %v", err))
+		return degraded, nil
+	}
 }
 
 func (p startupPlanner) planFromLayout(ctx context.Context, cfg Config) (StartupPlan, error) {
@@ -128,6 +160,39 @@ func attachStartupPlan(cfg Config) StartupPlan {
 			PaneID:     types.PaneID("pane-1"),
 			TerminalID: types.TerminalID(cfg.AttachID),
 		}},
+	}
+}
+
+func restoredStartupState(domain types.DomainState) types.AppState {
+	state := types.AppState{
+		Domain: domain,
+		UI: types.UIState{
+			Overlay: types.OverlayState{Kind: types.OverlayNone},
+			Mode:    types.ModeState{Active: types.ModeNone},
+		},
+	}
+	state.UI.Focus = restoredFocus(domain)
+	return state
+}
+
+func restoredFocus(domain types.DomainState) types.FocusState {
+	workspace, ok := domain.Workspaces[domain.ActiveWorkspaceID]
+	if !ok {
+		return types.FocusState{}
+	}
+	tab, ok := workspace.Tabs[workspace.ActiveTabID]
+	if !ok {
+		return types.FocusState{WorkspaceID: domain.ActiveWorkspaceID}
+	}
+	layer := tab.ActiveLayer
+	if layer == "" {
+		layer = types.FocusLayerTiled
+	}
+	return types.FocusState{
+		Layer:       layer,
+		WorkspaceID: domain.ActiveWorkspaceID,
+		TabID:       workspace.ActiveTabID,
+		PaneID:      tab.ActivePaneID,
 	}
 }
 
@@ -226,4 +291,16 @@ func layoutCandidates(ref string) []string {
 	}
 	candidates = append(candidates, ref+".yaml", ref+".yml")
 	return candidates
+}
+
+func (fileWorkspaceStore) LoadWorkspace(_ context.Context, path string) (types.DomainState, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return types.DomainState{}, err
+	}
+	var domain types.DomainState
+	if err := json.Unmarshal(content, &domain); err != nil {
+		return types.DomainState{}, fmt.Errorf("decode workspace state %s: %w", filepath.Base(path), err)
+	}
+	return domain, nil
 }

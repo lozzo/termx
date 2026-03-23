@@ -2,7 +2,10 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -140,6 +143,113 @@ func TestStartupPlannerLayoutFailureReturnsErrorWhenAutoLayoutDisabled(t *testin
 	}
 }
 
+func TestStartupPlannerRestoreStoreBuildsStateWithoutStartupTasks(t *testing.T) {
+	store := stubWorkspaceStore{
+		domain: types.DomainState{
+			ActiveWorkspaceID: types.WorkspaceID("ws-restore"),
+			WorkspaceOrder:    []types.WorkspaceID{types.WorkspaceID("ws-restore")},
+			Workspaces: map[types.WorkspaceID]types.WorkspaceState{
+				types.WorkspaceID("ws-restore"): {
+					ID:          types.WorkspaceID("ws-restore"),
+					Name:        "project-api",
+					ActiveTabID: types.TabID("tab-dev"),
+					TabOrder:    []types.TabID{types.TabID("tab-dev")},
+					Tabs: map[types.TabID]types.TabState{
+						types.TabID("tab-dev"): {
+							ID:           types.TabID("tab-dev"),
+							Name:         "dev",
+							ActivePaneID: types.PaneID("pane-api"),
+							ActiveLayer:  types.FocusLayerTiled,
+							Panes: map[types.PaneID]types.PaneState{
+								types.PaneID("pane-api"): {
+									ID:         types.PaneID("pane-api"),
+									Kind:       types.PaneKindTiled,
+									SlotState:  types.PaneSlotConnected,
+									TerminalID: types.TerminalID("term-api"),
+								},
+							},
+							RootSplit: &types.SplitNode{PaneID: types.PaneID("pane-api")},
+						},
+					},
+				},
+			},
+			Terminals: map[types.TerminalID]types.TerminalRef{
+				types.TerminalID("term-api"): {
+					ID:      types.TerminalID("term-api"),
+					Name:    "api-dev",
+					Command: []string{"npm", "run", "dev"},
+					State:   types.TerminalRunStateRunning,
+				},
+			},
+			Connections: map[types.TerminalID]types.ConnectionState{
+				types.TerminalID("term-api"): {
+					TerminalID:       types.TerminalID("term-api"),
+					ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-api")},
+					OwnerPaneID:      types.PaneID("pane-api"),
+				},
+			},
+		},
+	}
+	planner := NewStartupPlannerWithStores(nil, store)
+
+	plan, err := planner.Plan(context.Background(), Config{
+		WorkspaceStatePath: "/tmp/workspace-state.json",
+	})
+	if err != nil {
+		t.Fatalf("expected restore plan to succeed, got %v", err)
+	}
+	if len(plan.Tasks) != 0 {
+		t.Fatalf("expected restored startup to need no bootstrap tasks, got %d", len(plan.Tasks))
+	}
+	if plan.State.Domain.ActiveWorkspaceID != types.WorkspaceID("ws-restore") {
+		t.Fatalf("expected restored workspace to become active, got %q", plan.State.Domain.ActiveWorkspaceID)
+	}
+	if plan.State.UI.Focus.WorkspaceID != types.WorkspaceID("ws-restore") || plan.State.UI.Focus.PaneID != types.PaneID("pane-api") {
+		t.Fatalf("expected focus to be derived from restored active pane, got %+v", plan.State.UI.Focus)
+	}
+}
+
+func TestStartupPlannerRestoreStoreFailureDegradesToDefaultWorkspace(t *testing.T) {
+	planner := NewStartupPlannerWithStores(nil, stubWorkspaceStore{
+		err: errors.New("decode failed"),
+	})
+
+	plan, err := planner.Plan(context.Background(), Config{
+		WorkspaceStatePath: "/tmp/workspace-state.json",
+		DefaultShell:       "/bin/zsh",
+		Workspace:          "main",
+	})
+	if err != nil {
+		t.Fatalf("expected restore failure to degrade, got %v", err)
+	}
+	if len(plan.Tasks) != 1 {
+		t.Fatalf("expected degraded startup to rebuild default create task, got %d", len(plan.Tasks))
+	}
+	if len(plan.Warnings) != 1 {
+		t.Fatalf("expected restore degradation warning, got %+v", plan.Warnings)
+	}
+}
+
+func TestStartupPlannerMissingRestoreStoreFallsBackWithoutWarning(t *testing.T) {
+	planner := NewStartupPlannerWithStores(nil, stubWorkspaceStore{
+		err: os.ErrNotExist,
+	})
+
+	plan, err := planner.Plan(context.Background(), Config{
+		WorkspaceStatePath: "/tmp/workspace-state.json",
+		DefaultShell:       "/bin/zsh",
+	})
+	if err != nil {
+		t.Fatalf("expected missing restore state to fall back, got %v", err)
+	}
+	if len(plan.Tasks) != 1 {
+		t.Fatalf("expected fallback default startup task, got %d", len(plan.Tasks))
+	}
+	if len(plan.Warnings) != 0 {
+		t.Fatalf("expected missing restore state to stay quiet, got %+v", plan.Warnings)
+	}
+}
+
 func TestE2EStartupPlanScenarioLaunchFromLayoutFile(t *testing.T) {
 	planner := NewStartupPlanner(stubLayoutLoader{
 		docs: map[string]string{
@@ -197,6 +307,56 @@ func TestE2EStartupPlanScenarioLaunchFromLayoutFile(t *testing.T) {
 	}
 }
 
+func TestWorkspaceStoreFileRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "workspace-state.json")
+	store := fileWorkspaceStore{}
+	want := types.DomainState{
+		ActiveWorkspaceID: types.WorkspaceID("ws-1"),
+		WorkspaceOrder:    []types.WorkspaceID{types.WorkspaceID("ws-1")},
+		Workspaces: map[types.WorkspaceID]types.WorkspaceState{
+			types.WorkspaceID("ws-1"): {
+				ID:          types.WorkspaceID("ws-1"),
+				Name:        "main",
+				ActiveTabID: types.TabID("tab-1"),
+				TabOrder:    []types.TabID{types.TabID("tab-1")},
+				Tabs: map[types.TabID]types.TabState{
+					types.TabID("tab-1"): {
+						ID:           types.TabID("tab-1"),
+						Name:         "shell",
+						ActivePaneID: types.PaneID("pane-1"),
+						ActiveLayer:  types.FocusLayerTiled,
+						Panes: map[types.PaneID]types.PaneState{
+							types.PaneID("pane-1"): {
+								ID:        types.PaneID("pane-1"),
+								Kind:      types.PaneKindTiled,
+								SlotState: types.PaneSlotEmpty,
+							},
+						},
+						RootSplit: &types.SplitNode{PaneID: types.PaneID("pane-1")},
+					},
+				},
+			},
+		},
+		Terminals:   map[types.TerminalID]types.TerminalRef{},
+		Connections: map[types.TerminalID]types.ConnectionState{},
+	}
+	content, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("marshal restore state: %v", err)
+	}
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatalf("write restore state: %v", err)
+	}
+
+	got, err := store.LoadWorkspace(context.Background(), path)
+	if err != nil {
+		t.Fatalf("expected workspace store to load file, got %v", err)
+	}
+	if got.ActiveWorkspaceID != want.ActiveWorkspaceID || got.Workspaces[types.WorkspaceID("ws-1")].Name != "main" {
+		t.Fatalf("unexpected loaded workspace state: %+v", got)
+	}
+}
+
 type stubLayoutLoader struct {
 	docs map[string]string
 	errs map[string]error
@@ -210,4 +370,16 @@ func (l stubLayoutLoader) LoadLayout(_ context.Context, ref string) ([]byte, err
 		return []byte(doc), nil
 	}
 	return nil, errors.New("layout not found")
+}
+
+type stubWorkspaceStore struct {
+	domain types.DomainState
+	err    error
+}
+
+func (s stubWorkspaceStore) LoadWorkspace(context.Context, string) (types.DomainState, error) {
+	if s.err != nil {
+		return types.DomainState{}, s.err
+	}
+	return s.domain, nil
 }
