@@ -270,6 +270,7 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 	if row, ok := manager.SelectedRow(); ok && row.Kind == terminalmanagerdomain.RowKindTerminal {
 		lines = append(lines,
 			fmt.Sprintf("terminal_manager_selected: %s", row.TerminalID),
+			fmt.Sprintf("terminal_manager_selected_label: %s", row.Label),
 			fmt.Sprintf("terminal_manager_selected_state: %s", row.State),
 		)
 	} else if terminalID, ok := manager.SelectedTerminalID(); ok {
