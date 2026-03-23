@@ -58,6 +58,9 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "title: api-dev") {
 		t.Fatalf("expected terminal title in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "pane_kind: tiled") {
+		t.Fatalf("expected pane kind in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "terminal_state: running") {
 		t.Fatalf("expected terminal state in rendered view, got:\n%s", view)
 	}
@@ -337,5 +340,12 @@ func TestRuntimeRendererRendersConnectionRoleFollower(t *testing.T) {
 	}
 	if !strings.Contains(view, "connected_panes: 2") {
 		t.Fatalf("expected shared connected pane count in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersFloatingPaneKind(t *testing.T) {
+	view := runtimeRenderer{}.Render(runtimeStateWithFloatingActivePane(), nil)
+	if !strings.Contains(view, "pane_kind: floating") {
+		t.Fatalf("expected floating pane kind in rendered view, got:\n%s", view)
 	}
 }

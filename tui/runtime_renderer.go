@@ -72,10 +72,11 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 }
 
 func renderPaneStateLines(pane types.PaneState) []string {
-	if pane.LastExitCode == nil {
-		return nil
+	lines := []string{fmt.Sprintf("pane_kind: %s", pane.Kind)}
+	if pane.LastExitCode != nil {
+		lines = append(lines, fmt.Sprintf("pane_exit_code: %d", *pane.LastExitCode))
 	}
-	return []string{fmt.Sprintf("pane_exit_code: %d", *pane.LastExitCode)}
+	return lines
 }
 
 // renderFocusLines 把当前焦点层和 overlay 目标显式投影到文本视图里，

@@ -77,6 +77,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 53. 第四十九轮 TDD 已补上 active pane owner/follower 连接角色的 renderer 可见性闭环
 54. 第五十轮 TDD 已补上 active pane 连接计数的 renderer 可见性闭环
 55. 第五十一轮 TDD 已补上 active terminal 元数据的 renderer 可见性闭环
+56. 第五十二轮 TDD 已补上 active pane 形态的 renderer 可见性闭环
 
 对应文档：
 
@@ -157,6 +158,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- runtime renderer 已显式展示 active pane 的 `pane_kind`
+- 当前主视图现在可直接区分 `tiled / floating` pane
+- 已补上一条 runtime 场景型 E2E：floating pane 启动后主视图可直接看到 `pane_kind: floating`
 - runtime renderer 已显式展示 active terminal 的 `terminal_command`
 - runtime renderer 已显式展示 active terminal 的 `terminal_tags`
 - 已补上一条 runtime 场景型 E2E：启动后主视图可直接看到 active terminal 的命令和标签

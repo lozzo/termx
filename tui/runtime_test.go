@@ -886,6 +886,33 @@ func TestE2ERunScenarioActiveTerminalMetadataVisibleInView(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioFloatingPaneKindVisibleInView(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithFloatingActivePane()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			if view := model.View(); !strings.Contains(view, "pane_kind: floating") || !strings.Contains(view, "focus_layer: floating") {
+				t.Fatalf("expected runtime view to expose floating pane state, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 var (
 	errRuntimeRunBoom     = errors.New("run boom")
 	bootstrapperStopCalls int
@@ -1115,6 +1142,37 @@ func runtimeStateWithActiveTerminalMetadata() types.AppState {
 	terminal.Command = []string{"npm", "run", "dev"}
 	terminal.Tags = map[string]string{"service": "api", "env": "dev"}
 	state.Domain.Terminals[types.TerminalID("term-1")] = terminal
+	return state
+}
+
+func runtimeStateWithFloatingActivePane() types.AppState {
+	state := buildSinglePaneAppState("main", "shell", types.PaneSlotConnected)
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	delete(tab.Panes, types.PaneID("pane-1"))
+	tab.Panes[types.PaneID("pane-float")] = types.PaneState{
+		ID:         types.PaneID("pane-float"),
+		Kind:       types.PaneKindFloating,
+		SlotState:  types.PaneSlotConnected,
+		TerminalID: types.TerminalID("term-1"),
+	}
+	tab.FloatingOrder = []types.PaneID{types.PaneID("pane-float")}
+	tab.ActivePaneID = types.PaneID("pane-float")
+	tab.ActiveLayer = types.FocusLayerFloating
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.UI.Focus.Layer = types.FocusLayerFloating
+	state.UI.Focus.PaneID = types.PaneID("pane-float")
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:    types.TerminalID("term-1"),
+		Name:  "float-dev",
+		State: types.TerminalRunStateRunning,
+	}
+	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-1"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-float")},
+		OwnerPaneID:      types.PaneID("pane-float"),
+	}
 	return state
 }
 
