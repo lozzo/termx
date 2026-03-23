@@ -252,6 +252,9 @@ func renderWorkspacePickerLines(picker *workspacedomain.PickerState) []string {
 			fmt.Sprintf("workspace_picker_selected_label: %s", node.Label),
 		)
 	}
+	if row, ok := picker.SelectedRow(); ok {
+		lines = append(lines, fmt.Sprintf("workspace_picker_selected_expanded: %t", row.Expanded))
+	}
 	lines = append(lines, "workspace_picker_rows:")
 	selected, hasSelection := picker.SelectedRow()
 	for _, row := range picker.VisibleRows() {

@@ -102,6 +102,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 78. 第七十四轮 TDD 已补上 terminal manager 选中行命令的 renderer 可见性闭环
 79. 第七十五轮 TDD 已补上 prompt 活动字段值的 renderer 可见性闭环
 80. 第七十六轮 TDD 已补上 terminal manager 选中行可见性的 renderer 可见性闭环
+81. 第七十七轮 TDD 已补上 workspace picker 选中节点展开态的 renderer 可见性闭环
 
 对应文档：
 
@@ -182,6 +183,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- runtime renderer 已显式展示 workspace picker 的 `workspace_picker_selected_expanded`
+- workspace picker 打开后当前主视图可直接看到当前选中节点是否处于展开态
+- 已补上一条 runtime 场景型 E2E：`Ctrl-w` 打开 picker 后主视图显示默认选中节点展开态 `workspace_picker_selected_expanded: false`
 - runtime renderer 已显式展示 terminal manager 的 `terminal_manager_selected_visible`
 - terminal manager 打开后当前主视图可直接看到当前选中 terminal 的可见性布尔状态
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t` 打开后主视图显示 `terminal_manager_selected_visible: true`
