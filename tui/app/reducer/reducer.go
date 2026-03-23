@@ -113,6 +113,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		})
 	case intent.TerminalProgramExitedIntent:
 		applyProgramExited(&result.State, intentValue)
+	case intent.TerminalRemovedIntent:
+		applyTerminalRemoved(&result.State, intentValue)
 	case intent.WorkspaceTreeJumpIntent:
 		applyWorkspaceTreeJump(&result.State, intentValue)
 	case intent.ClosePaneIntent:
@@ -238,6 +240,19 @@ func applyProgramExited(state *types.AppState, in intent.TerminalProgramExitedIn
 	terminal.State = types.TerminalRunStateExited
 	terminal.ExitCode = &exitCode
 	state.Domain.Terminals[in.TerminalID] = terminal
+}
+
+func applyTerminalRemoved(state *types.AppState, in intent.TerminalRemovedIntent) {
+	forEachPane(state, func(pane *types.PaneState) {
+		if pane.TerminalID != in.TerminalID {
+			return
+		}
+		pane.TerminalID = ""
+		pane.SlotState = types.PaneSlotEmpty
+		pane.LastExitCode = nil
+	})
+	delete(state.Domain.Terminals, in.TerminalID)
+	delete(state.Domain.Connections, in.TerminalID)
 }
 
 func applyWorkspaceTreeJump(state *types.AppState, in intent.WorkspaceTreeJumpIntent) {

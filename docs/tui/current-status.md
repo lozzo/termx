@@ -7,14 +7,14 @@
 
 ## 1. 当前判断
 
-termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overlay、恢复入口状态机、启动规划层、启动任务执行层、restore store 读写闭环、runtime session bootstrap、最小 Bubble Tea 运行主线，以及 active pane 的 terminal snapshot/input 与 stream/event 增量消费链路已按 TDD 落地”的阶段。
+termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overlay、恢复入口状态机、启动规划层、启动任务执行层、restore store 读写闭环、runtime session bootstrap、最小 Bubble Tea 运行主线，以及 active pane 的 terminal snapshot/input、stream/event 增量消费与关键 runtime 状态回灌链路已按 TDD 落地”的阶段。
 
 现状可以概括为：
 
 - 旧版 TUI 已归档到 `deprecated/tui-legacy/`
 - 新主线文档已经建立并持续作为实现约束
 - 新主线代码已进入 reducer / state machine 落地期
-- 当前已进入 bubbletea shell 的恢复入口、启动规划、启动任务执行、restore store 读写闭环、runtime session bootstrap、最小运行主线，以及 active pane 的 terminal snapshot/input 与 stream/event 增量消费阶段
+- 当前已进入 bubbletea shell 的恢复入口、启动规划、启动任务执行、restore store 读写闭环、runtime session bootstrap、最小运行主线，以及 active pane 的 terminal snapshot/input、stream/event 增量消费与关键 runtime 状态回灌阶段
 
 ---
 
@@ -58,6 +58,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 34. 第三十轮 TDD 已补上最小 Bubble Tea program runner 与 runtime renderer
 35. 第三十一轮 TDD 已补上 active pane 的最小 terminal snapshot 渲染与输入转发
 36. 第三十二轮 TDD 已补上 runtime stream/event 增量更新与 snapshot recovery 主线
+37. 第三十三轮 TDD 已补上关键 runtime 状态向 reducer/domain 的回灌闭环
 
 对应文档：
 
@@ -284,12 +285,19 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `EventTerminalReadError` 现在会回流成 runtime notice
 - `EventTerminalResized / EventTerminalStateChanged / EventTerminalRemoved / TypeClosed` 已有最小 runtime 状态落点，便于后续接到 reducer/domain
 - 已补上一条 runtime E2E：stream 输出进入 attach channel 后可驱动 view 刷新
+- 已新增 `TerminalRemovedIntent`，明确表达“terminal 已被移除，pane 需要退回 empty”
+- `runtimeUpdateHandler` 现在会把 `TypeClosed` 回流成 `TerminalProgramExitedIntent`
+- `runtimeUpdateHandler` 现在会把 `EventTerminalStateChanged(new_state=exited)` 回流成 `TerminalProgramExitedIntent`
+- `runtimeUpdateHandler` 现在会把 `EventTerminalRemoved` 回流成 `TerminalRemovedIntent`
+- reducer 现在已能消费 `TerminalRemovedIntent`，同步清理 pane 连接、terminal ref 和 connection snapshot
+- 已补上一条 runtime E2E：`TypeClosed` 经 runtime feedback 回流 reducer 后，pane 会进入 `exited`
 - `Run()` 成功退出时会主动清理已建立的 runtime session，避免 stream 句柄泄漏
 - 已补上一组 runtime 编排测试覆盖 planner/task/session 的调用顺序和错误传播
 - 已补上一条 runtime 测试覆盖 program runner 调用和 renderer 输出
 
 本轮验证：
 
+- `go test ./tui/... -run 'TestReducerTerminalRemoved|TestRuntimeUpdateHandlerTypeClosedFeedsProgramExitedIntent|TestRuntimeUpdateHandlerRemovedEventFeedsTerminalRemovedIntent|TestRuntimeUpdateHandlerStateChangedExitedFeedsProgramExitedIntent|TestE2ERunScenarioClosedFrameFeedsReducerAndMarksPaneExited' -count=1`
 - `go test ./tui -run 'TestRun|TestRuntimeSession|TestRuntimeRenderer|TestRuntimeTerminalInputHandler|TestRuntimeUpdateHandler|TestE2ERunScenario' -count=1`
 - `go test ./tui/bt -run 'TestModelInitReturnsConfiguredInitCommand|TestModelUpdateDelegatesUnhandledMessageToMessageHandler|TestModel' -count=1`
 - `go test ./tui -run 'TestRun|TestRuntimeSession|TestRuntimeRenderer|TestRuntimeTerminalInputHandler' -count=1`
@@ -320,7 +328,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 1. 新版 renderer 深化
 2. 真实 TUI E2E 壳与 renderer 结合
-3. 把 runtime event / stream 对 domain 的关键状态回灌到 reducer 主线里
+3. 把 runtime event / stream 对 domain 的剩余关键状态继续回灌到 reducer 主线里
 4. notice 聚合/去重策略
 
 ---
@@ -330,7 +338,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 下一阶段最高优先级不是补 UI，而是先把下面几个边界立住：
 
 1. 更完整的 `intent -> reducer -> effect -> runtime feedback` 契约
-2. 把 runtime event / stream 的关键状态回灌到 reducer/domain
+2. 把 runtime event / stream 的剩余关键状态回灌到 reducer/domain
 3. 真实 TUI E2E 场景壳
 4. 新版 renderer 深化
 
@@ -366,7 +374,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 当前最合适的下一步是：
 
-1. 把 terminal `closed / state_changed / removed` 这类 runtime 事件回灌到 reducer/domain
+1. 把 terminal `resized / collaborator_revoked / read_error` 等剩余 runtime 事件进一步规范化回灌
 2. 给 notice 补聚合/去重策略
 3. 继续扩真实 TUI E2E 场景壳
 
@@ -374,4 +382,4 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 ## 7. 当前一句话状态
 
-termx TUI 现在已经进入“picker / manager / prompt / layout resolve 四条 overlay 主线、startup planner、startup task executor、restore store 读写闭环、runtime session bootstrap、最小 Bubble Tea 运行主线，以及 active pane 的 terminal snapshot/input 与 stream/event 增量消费都已落地，runtime feedback 的错误与 notice 生命周期也已接回，下一步继续按 TDD 把关键 runtime 状态回灌到 reducer/domain，并扩真实 TUI E2E 壳”的阶段。
+termx TUI 现在已经进入“picker / manager / prompt / layout resolve 四条 overlay 主线、startup planner、startup task executor、restore store 读写闭环、runtime session bootstrap、最小 Bubble Tea 运行主线，以及 active pane 的 terminal snapshot/input、stream/event 增量消费与关键 runtime 状态回灌都已落地，runtime feedback 的错误与 notice 生命周期也已接回，下一步继续按 TDD 把剩余 runtime 状态事件规范化回灌到 reducer/domain，并扩真实 TUI E2E 壳”的阶段。

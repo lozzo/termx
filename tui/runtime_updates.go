@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/tui/app/intent"
 	btui "github.com/lozzow/termx/tui/bt"
 	"github.com/lozzow/termx/tui/domain/types"
 )
@@ -122,7 +123,12 @@ func (h *runtimeUpdateHandler) handleStreamFrame(msg runtimeStreamFrameMsg) tea.
 			}))
 		}
 		h.store.MarkClosed(msg.TerminalID, exitCode)
-		return nextCmd
+		return tea.Batch(nextCmd, btui.FeedbackCmd(btui.ExecutionResult{
+			Intents: []intent.Intent{intent.TerminalProgramExitedIntent{
+				TerminalID: msg.TerminalID,
+				ExitCode:   exitCode,
+			}},
+		}))
 	default:
 		return nextCmd
 	}
@@ -130,13 +136,16 @@ func (h *runtimeUpdateHandler) handleStreamFrame(msg runtimeStreamFrameMsg) tea.
 
 func (h *runtimeUpdateHandler) handleProtocolEvent(evt protocol.Event) tea.Cmd {
 	notices := h.store.ApplyEvent(evt)
+	intents := runtimeEventIntents(evt)
 	nextCmd := h.nextCmd()
-	if len(notices) == 0 {
+	if len(notices) == 0 && len(intents) == 0 {
 		return nextCmd
 	}
 	feedback := btui.ExecutionResult{
+		Intents: make([]intent.Intent, 0, len(intents)),
 		Notices: make([]btui.Notice, 0, len(notices)),
 	}
+	feedback.Intents = append(feedback.Intents, intents...)
 	for _, text := range notices {
 		if text == "" {
 			continue
@@ -235,4 +244,25 @@ func (h *runtimeUpdateHandler) send(msg tea.Msg) {
 		return
 	case h.updates <- msg:
 	}
+}
+
+func runtimeEventIntents(evt protocol.Event) []intent.Intent {
+	terminalID := types.TerminalID(evt.TerminalID)
+	switch evt.Type {
+	case protocol.EventTerminalStateChanged:
+		if evt.StateChanged == nil {
+			return nil
+		}
+		if evt.StateChanged.NewState == string(types.TerminalRunStateExited) && evt.StateChanged.ExitCode != nil {
+			return []intent.Intent{intent.TerminalProgramExitedIntent{
+				TerminalID: terminalID,
+				ExitCode:   *evt.StateChanged.ExitCode,
+			}}
+		}
+	case protocol.EventTerminalRemoved:
+		return []intent.Intent{intent.TerminalRemovedIntent{
+			TerminalID: terminalID,
+		}}
+	}
+	return nil
 }

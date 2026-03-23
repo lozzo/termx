@@ -42,6 +42,12 @@ type TerminalProgramExitedIntent struct {
 
 func (TerminalProgramExitedIntent) intentName() string { return "terminal_program_exited" }
 
+type TerminalRemovedIntent struct {
+	TerminalID types.TerminalID
+}
+
+func (TerminalRemovedIntent) intentName() string { return "terminal_removed" }
+
 type WorkspaceTreeJumpIntent struct {
 	WorkspaceID types.WorkspaceID
 	TabID       types.TabID

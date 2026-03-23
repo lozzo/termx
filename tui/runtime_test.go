@@ -250,6 +250,67 @@ func TestE2ERunScenarioStreamOutputTriggersViewRefresh(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioClosedFrameFeedsReducerAndMarksPaneExited(t *testing.T) {
+	stream := make(chan protocol.StreamFrame, 1)
+	client := &stubRunClient{}
+	planner := &stubRunPlanner{plan: StartupPlan{State: connectedRunAppState()}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: connectedRunAppState()}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Channel:    21,
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 4, Rows: 1},
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{{{Content: "h"}, {Content: "i"}}},
+						},
+						Cursor: protocol.CursorState{Row: 0, Col: 2, Visible: true},
+					},
+					Stream: stream,
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			initCmd := model.Init()
+			if initCmd == nil {
+				t.Fatal("expected runtime init command")
+			}
+			stream <- protocol.StreamFrame{Type: protocol.TypeClosed, Payload: protocol.EncodeClosedPayload(7)}
+			msg := initCmd()
+			if msg == nil {
+				t.Fatal("expected runtime closed message")
+			}
+			_, cmd := model.Update(msg)
+			for _, nextMsg := range runCmdMessages(cmd) {
+				_, _ = model.Update(nextMsg)
+			}
+			if view := model.View(); !strings.Contains(view, "slot: exited") {
+				t.Fatalf("expected runtime view to mark pane exited, got:\n%s", view)
+			}
+			if terminal := model.State().Domain.Terminals[types.TerminalID("term-1")]; terminal.ExitCode == nil || *terminal.ExitCode != 7 {
+				t.Fatalf("expected reducer to retain exit code, got %+v", terminal)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 var (
 	errRuntimeRunBoom     = errors.New("run boom")
 	bootstrapperStopCalls int

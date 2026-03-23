@@ -71,6 +71,26 @@ func TestReducerTerminalProgramExitedMarksPaneExited(t *testing.T) {
 	}
 }
 
+func TestReducerTerminalRemovedClearsPaneAndTerminalState(t *testing.T) {
+	reducer := New()
+	state := newConnectedAppState()
+
+	result := reducer.Reduce(state, intent.TerminalRemovedIntent{
+		TerminalID: types.TerminalID("term-1"),
+	})
+
+	pane := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
+	if pane.TerminalID != "" || pane.SlotState != types.PaneSlotEmpty {
+		t.Fatalf("expected removed terminal pane to become empty, got %+v", pane)
+	}
+	if _, ok := result.State.Domain.Terminals[types.TerminalID("term-1")]; ok {
+		t.Fatalf("expected removed terminal to disappear from domain, got %+v", result.State.Domain.Terminals[types.TerminalID("term-1")])
+	}
+	if _, ok := result.State.Domain.Connections[types.TerminalID("term-1")]; ok {
+		t.Fatalf("expected removed terminal connection to disappear")
+	}
+}
+
 func TestReducerWorkspaceTreeJumpSwitchesWorkspaceTabAndFocus(t *testing.T) {
 	reducer := New()
 	state := newAppStateWithTwoWorkspaces()

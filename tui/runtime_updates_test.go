@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
 	btui "github.com/lozzow/termx/tui/bt"
+	"github.com/lozzow/termx/tui/app/intent"
 	"github.com/lozzow/termx/tui/domain/types"
 )
 
@@ -192,6 +193,126 @@ func TestRuntimeUpdateHandlerRefreshesSnapshotAfterSyncLost(t *testing.T) {
 	status, _ := store.Status(types.TerminalID("term-1"))
 	if status.SyncLost {
 		t.Fatalf("expected sync lost flag to clear after refresh, got %+v", status)
+	}
+}
+
+func TestRuntimeUpdateHandlerTypeClosedFeedsProgramExitedIntent(t *testing.T) {
+	store := NewRuntimeTerminalStore(RuntimeSessions{
+		Terminals: map[types.TerminalID]TerminalRuntimeSession{
+			types.TerminalID("term-1"): {TerminalID: types.TerminalID("term-1")},
+		},
+	})
+	stream := make(chan protocol.StreamFrame, 1)
+	stream <- protocol.StreamFrame{Type: protocol.TypeClosed, Payload: protocol.EncodeClosedPayload(9)}
+	handler := NewRuntimeUpdateHandler(RuntimeSessions{
+		Terminals: map[types.TerminalID]TerminalRuntimeSession{
+			types.TerminalID("term-1"): {
+				TerminalID: types.TerminalID("term-1"),
+				Stream:     stream,
+			},
+		},
+	}, store, nil)
+	defer handler.Stop()
+
+	msg := handler.InitCmd()()
+	handled, cmd := handler.HandleMessage(newAppStateForRuntimeUpdate(), msg)
+	if !handled || cmd == nil {
+		t.Fatalf("expected closed frame to be handled with feedback cmd, handled=%v cmd=%v", handled, cmd)
+	}
+	msgs := runCmdMessages(cmd)
+	if len(msgs) != 1 {
+		t.Fatalf("expected one feedback msg, got %#v", msgs)
+	}
+	feedback, ok := msgs[0].(btui.FeedbackMsg)
+	if !ok {
+		t.Fatalf("expected feedback msg, got %#v", msgs[0])
+	}
+	if len(feedback.Intents) != 1 {
+		t.Fatalf("expected one exit intent, got %+v", feedback.Intents)
+	}
+	exitIntent, ok := feedback.Intents[0].(intent.TerminalProgramExitedIntent)
+	if !ok {
+		t.Fatalf("expected TerminalProgramExitedIntent, got %T", feedback.Intents[0])
+	}
+	if exitIntent.TerminalID != types.TerminalID("term-1") || exitIntent.ExitCode != 9 {
+		t.Fatalf("unexpected exit intent payload: %+v", exitIntent)
+	}
+}
+
+func TestRuntimeUpdateHandlerRemovedEventFeedsTerminalRemovedIntent(t *testing.T) {
+	store := NewRuntimeTerminalStore(RuntimeSessions{})
+	events := make(chan protocol.Event, 1)
+	events <- protocol.Event{
+		Type:       protocol.EventTerminalRemoved,
+		TerminalID: "term-1",
+		Removed:    &protocol.TerminalRemovedData{Reason: "server_shutdown"},
+	}
+	handler := NewRuntimeUpdateHandler(RuntimeSessions{EventStream: events}, store, nil)
+	defer handler.Stop()
+
+	msg := handler.InitCmd()()
+	handled, cmd := handler.HandleMessage(newAppStateForRuntimeUpdate(), msg)
+	if !handled || cmd == nil {
+		t.Fatalf("expected removed event to be handled with feedback cmd, handled=%v cmd=%v", handled, cmd)
+	}
+	msgs := runCmdMessages(cmd)
+	if len(msgs) != 1 {
+		t.Fatalf("expected one feedback msg, got %#v", msgs)
+	}
+	feedback, ok := msgs[0].(btui.FeedbackMsg)
+	if !ok {
+		t.Fatalf("expected feedback msg, got %#v", msgs[0])
+	}
+	if len(feedback.Intents) != 1 {
+		t.Fatalf("expected one removed intent, got %+v", feedback.Intents)
+	}
+	removedIntent, ok := feedback.Intents[0].(intent.TerminalRemovedIntent)
+	if !ok {
+		t.Fatalf("expected TerminalRemovedIntent, got %T", feedback.Intents[0])
+	}
+	if removedIntent.TerminalID != types.TerminalID("term-1") {
+		t.Fatalf("unexpected removed intent payload: %+v", removedIntent)
+	}
+}
+
+func TestRuntimeUpdateHandlerStateChangedExitedFeedsProgramExitedIntent(t *testing.T) {
+	store := NewRuntimeTerminalStore(RuntimeSessions{})
+	exitCode := 13
+	events := make(chan protocol.Event, 1)
+	events <- protocol.Event{
+		Type:       protocol.EventTerminalStateChanged,
+		TerminalID: "term-1",
+		StateChanged: &protocol.TerminalStateChangedData{
+			OldState: "running",
+			NewState: "exited",
+			ExitCode: &exitCode,
+		},
+	}
+	handler := NewRuntimeUpdateHandler(RuntimeSessions{EventStream: events}, store, nil)
+	defer handler.Stop()
+
+	msg := handler.InitCmd()()
+	handled, cmd := handler.HandleMessage(newAppStateForRuntimeUpdate(), msg)
+	if !handled || cmd == nil {
+		t.Fatalf("expected state changed event to be handled with feedback cmd, handled=%v cmd=%v", handled, cmd)
+	}
+	msgs := runCmdMessages(cmd)
+	if len(msgs) != 1 {
+		t.Fatalf("expected one feedback msg, got %#v", msgs)
+	}
+	feedback, ok := msgs[0].(btui.FeedbackMsg)
+	if !ok {
+		t.Fatalf("expected feedback msg, got %#v", msgs[0])
+	}
+	if len(feedback.Intents) != 1 {
+		t.Fatalf("expected one exit intent, got %+v", feedback.Intents)
+	}
+	exitIntent, ok := feedback.Intents[0].(intent.TerminalProgramExitedIntent)
+	if !ok {
+		t.Fatalf("expected TerminalProgramExitedIntent, got %T", feedback.Intents[0])
+	}
+	if exitIntent.TerminalID != types.TerminalID("term-1") || exitIntent.ExitCode != 13 {
+		t.Fatalf("unexpected exit intent payload: %+v", exitIntent)
 	}
 }
 
