@@ -348,8 +348,11 @@ func renderPromptLines(prompt *promptdomain.State) []string {
 func renderTerminalPickerLines(picker *terminalpickerdomain.State) []string {
 	lines := []string{
 		fmt.Sprintf("terminal_picker_query: %s", picker.Query()),
-		"terminal_picker_rows:",
 	}
+	if terminalID, ok := picker.SelectedTerminalID(); ok {
+		lines = append(lines, fmt.Sprintf("terminal_picker_selected: %s", terminalID))
+	}
+	lines = append(lines, "terminal_picker_rows:")
 	selected, hasSelection := picker.SelectedRow()
 	for _, row := range picker.VisibleRows() {
 		prefix := "  "

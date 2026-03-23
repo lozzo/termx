@@ -82,6 +82,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 58. 第五十四轮 TDD 已补上 prompt handoff 目标 terminal 的 renderer 可见性闭环
 59. 第五十五轮 TDD 已补上 layout resolve 目标 pane 的 renderer 可见性闭环
 60. 第五十六轮 TDD 已补上 terminal manager detail terminal id 的 renderer 可见性闭环
+61. 第五十七轮 TDD 已补上 terminal picker 选中 terminal 的 renderer 可见性闭环
 
 对应文档：
 
@@ -162,6 +163,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- runtime renderer 已显式展示 terminal picker 的 `terminal_picker_selected`
+- terminal picker 打开后当前主视图可直接看到当前选中的 terminal ID
+- 已补上一条 runtime 场景型 E2E：`Ctrl-f` 搜索后主视图显示 `terminal_picker_selected: term-3`
 - runtime renderer 已显式展示 terminal manager detail 的 `detail_terminal`
 - terminal manager 详情区现在可直接看到选中 terminal 的稳定 ID
 - 已补上一条 runtime 场景型 E2E：`Ctrl-g -> t` 打开 terminal manager 时详情区显示 `detail_terminal: term-1`
