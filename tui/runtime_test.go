@@ -584,6 +584,44 @@ func TestE2ERunScenarioBlockedInputNoticeAppearsInView(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioCtrlWOpensWorkspacePickerInView(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithWorkspacePickerTarget()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			if view := model.View(); strings.Contains(view, "workspace_picker_rows:") {
+				t.Fatalf("expected picker to be closed initially, got:\n%s", view)
+			}
+			nextModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlW})
+			current := nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "workspace_picker_rows:") || !strings.Contains(view, "[workspace] ops") {
+				t.Fatalf("expected ctrl-w to open picker in view, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 var (
 	errRuntimeRunBoom     = errors.New("run boom")
 	bootstrapperStopCalls int
@@ -724,6 +762,33 @@ func connectedRunAppState() types.AppState {
 		TerminalID:       types.TerminalID("term-1"),
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1")},
 		OwnerPaneID:      types.PaneID("pane-1"),
+	}
+	return state
+}
+
+func runtimeStateWithWorkspacePickerTarget() types.AppState {
+	state := buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty)
+	state.Domain.WorkspaceOrder = append(state.Domain.WorkspaceOrder, types.WorkspaceID("ws-2"))
+	state.Domain.Workspaces[types.WorkspaceID("ws-2")] = types.WorkspaceState{
+		ID:          types.WorkspaceID("ws-2"),
+		Name:        "ops",
+		ActiveTabID: types.TabID("tab-2"),
+		TabOrder:    []types.TabID{types.TabID("tab-2")},
+		Tabs: map[types.TabID]types.TabState{
+			types.TabID("tab-2"): {
+				ID:           types.TabID("tab-2"),
+				Name:         "logs",
+				ActivePaneID: types.PaneID("pane-2"),
+				ActiveLayer:  types.FocusLayerTiled,
+				Panes: map[types.PaneID]types.PaneState{
+					types.PaneID("pane-2"): {
+						ID:        types.PaneID("pane-2"),
+						Kind:      types.PaneKindTiled,
+						SlotState: types.PaneSlotEmpty,
+					},
+				},
+			},
+		},
 	}
 	return state
 }

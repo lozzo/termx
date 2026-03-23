@@ -65,6 +65,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 41. 第三十七轮 TDD 已补上 `EventTerminalCreated` 到 `register_terminal` 的 runtime 回灌闭环
 42. 第三十八轮 TDD 已补上 notice 聚合/去重与 timeout 刷新闭环
 43. 第三十九轮 TDD 已补上 runtime renderer 的 notice 可见性闭环
+44. 第四十轮 TDD 已补上 workspace picker 的 runtime renderer 可视化闭环
 
 对应文档：
 
@@ -325,9 +326,14 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `bt.Renderer` 现在会收到当前 notice 列表，view 不再只能看到纯 domain state
 - `runtimeRenderer` 现在会渲染 `notices:` 区段，并展示聚合后的重复次数
 - 已补上一条 runtime E2E：observer-only 阻断输入后的 notice 会直接出现在 runtime view 中
+- `runtimeRenderer` 现在会渲染 `workspace_picker_query` 和 `workspace_picker_rows`
+- workspace picker 树行现在会展示选中标记、层级缩进和节点类型标签
+- 已补上一条 runtime E2E：`Ctrl-W` 打开 picker 后，view 会直接出现 workspace tree 内容
 
 本轮验证：
 
+- `go test ./tui -run 'TestRuntimeRendererRendersWorkspacePickerOverlay|TestE2ERunScenarioCtrlWOpensWorkspacePickerInView' -count=1`
+- `go test ./tui ./tui/bt -count=1`
 - `go test ./tui ./tui/bt -run 'TestModelViewPassesCurrentNoticesToRenderer|TestRuntimeRendererRendersNoticeSection|TestE2ERunScenarioBlockedInputNoticeAppearsInView' -count=1`
 - `go test ./tui ./tui/bt -count=1`
 - `go test ./tui/bt -run 'TestModelUpdateDeduplicatesMatchingNoticesAndBumpsCount|TestModelUpdateStaleNoticeTimeoutDoesNotRemoveDeduplicatedNotice|TestE2EModelScenarioRepeatedFailedStopDeduplicatesErrorNotice' -count=1`

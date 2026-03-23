@@ -7,6 +7,7 @@ import (
 	"github.com/lozzow/termx/protocol"
 	btui "github.com/lozzow/termx/tui/bt"
 	"github.com/lozzow/termx/tui/domain/types"
+	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
 )
 
 type runtimeRenderer struct {
@@ -55,6 +56,7 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 			}
 		}
 	}
+	lines = append(lines, renderOverlayLines(state.UI.Overlay)...)
 	lines = append(lines, renderNoticeLines(notices)...)
 	return strings.Join(lines, "\n")
 }
@@ -105,6 +107,35 @@ func renderSnapshotRow(row []protocol.Cell) string {
 		builder.WriteString(cell.Content)
 	}
 	return strings.TrimRight(builder.String(), " ")
+}
+
+func renderOverlayLines(overlay types.OverlayState) []string {
+	switch overlay.Kind {
+	case types.OverlayWorkspacePicker:
+		picker, ok := overlay.Data.(*workspacedomain.PickerState)
+		if !ok || picker == nil {
+			return nil
+		}
+		return renderWorkspacePickerLines(picker)
+	default:
+		return nil
+	}
+}
+
+func renderWorkspacePickerLines(picker *workspacedomain.PickerState) []string {
+	lines := []string{
+		fmt.Sprintf("workspace_picker_query: %s", picker.Query()),
+		"workspace_picker_rows:",
+	}
+	selected, hasSelection := picker.SelectedRow()
+	for _, row := range picker.VisibleRows() {
+		prefix := "  "
+		if hasSelection && row.Node.Key == selected.Node.Key {
+			prefix = "> "
+		}
+		lines = append(lines, fmt.Sprintf("%s%s[%s] %s", prefix, strings.Repeat("  ", row.Depth), row.Node.Kind, row.Node.Label))
+	}
+	return lines
 }
 
 func renderNoticeLines(notices []btui.Notice) []string {
