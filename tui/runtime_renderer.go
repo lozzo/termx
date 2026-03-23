@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/lozzow/termx/protocol"
@@ -109,6 +110,12 @@ func renderTerminalStateLines(terminal types.TerminalRef) []string {
 	if terminal.ExitCode != nil {
 		lines = append(lines, fmt.Sprintf("terminal_exit_code: %d", *terminal.ExitCode))
 	}
+	if len(terminal.Command) > 0 {
+		lines = append(lines, fmt.Sprintf("terminal_command: %s", strings.Join(terminal.Command, " ")))
+	}
+	if tags := renderTerminalTags(terminal.Tags); tags != "" {
+		lines = append(lines, fmt.Sprintf("terminal_tags: %s", tags))
+	}
 	return lines
 }
 
@@ -119,6 +126,22 @@ func containsPaneID(ids []types.PaneID, target types.PaneID) bool {
 		}
 	}
 	return false
+}
+
+func renderTerminalTags(tags map[string]string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(tags))
+	for key := range tags {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%s", key, tags[key]))
+	}
+	return strings.Join(parts, ",")
 }
 
 func renderModeLines(mode types.ModeState) []string {

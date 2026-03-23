@@ -859,6 +859,33 @@ func TestE2ERunScenarioFollowerConnectionRoleVisibleInView(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioActiveTerminalMetadataVisibleInView(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithActiveTerminalMetadata()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			if view := model.View(); !strings.Contains(view, "terminal_command: npm run dev") || !strings.Contains(view, "terminal_tags: env=dev,service=api") {
+				t.Fatalf("expected runtime view to expose active terminal metadata, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 var (
 	errRuntimeRunBoom     = errors.New("run boom")
 	bootstrapperStopCalls int
@@ -1078,6 +1105,16 @@ func runtimeStateWithLayoutResolveTarget() types.AppState {
 	state.UI.Focus.Layer = types.FocusLayerOverlay
 	state.UI.Focus.OverlayTarget = types.OverlayLayoutResolve
 	state.UI.Mode = types.ModeState{Active: types.ModePicker}
+	return state
+}
+
+func runtimeStateWithActiveTerminalMetadata() types.AppState {
+	state := connectedRunAppState()
+	terminal := state.Domain.Terminals[types.TerminalID("term-1")]
+	terminal.Name = "api-dev"
+	terminal.Command = []string{"npm", "run", "dev"}
+	terminal.Tags = map[string]string{"service": "api", "env": "dev"}
+	state.Domain.Terminals[types.TerminalID("term-1")] = terminal
 	return state
 }
 

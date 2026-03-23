@@ -18,9 +18,11 @@ import (
 func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	state := connectedRunAppState()
 	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
-		ID:    types.TerminalID("term-1"),
-		Name:  "api-dev",
-		State: types.TerminalRunStateRunning,
+		ID:      types.TerminalID("term-1"),
+		Name:    "api-dev",
+		State:   types.TerminalRunStateRunning,
+		Command: []string{"npm", "run", "dev"},
+		Tags:    map[string]string{"env": "dev", "service": "api"},
 	}
 	renderer := runtimeRenderer{
 		Screens: NewRuntimeTerminalStore(RuntimeSessions{
@@ -58,6 +60,12 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	}
 	if !strings.Contains(view, "terminal_state: running") {
 		t.Fatalf("expected terminal state in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "terminal_command: npm run dev") {
+		t.Fatalf("expected terminal command in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "terminal_tags: env=dev,service=api") {
+		t.Fatalf("expected terminal tags in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "screen:") {
 		t.Fatalf("expected screen section in rendered view, got:\n%s", view)
