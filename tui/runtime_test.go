@@ -608,6 +608,9 @@ func TestE2ERunScenarioCtrlWOpensWorkspacePickerInView(t *testing.T) {
 			if view := current.View(); !strings.Contains(view, "workspace_picker_rows:") || !strings.Contains(view, "[workspace] ops") {
 				t.Fatalf("expected ctrl-w to open picker in view, got:\n%s", view)
 			}
+			if view := current.View(); !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: workspace_picker") {
+				t.Fatalf("expected ctrl-w to expose overlay focus state in view, got:\n%s", view)
+			}
 			return nil
 		},
 	}
@@ -689,6 +692,9 @@ func TestE2ERunScenarioTerminalManagerEditOpensPromptInView(t *testing.T) {
 			}
 			if view := current.View(); !strings.Contains(view, "prompt_title: edit terminal metadata") || !strings.Contains(view, "prompt_fields:") || !strings.Contains(view, "Name: api-dev") {
 				t.Fatalf("expected terminal manager edit flow to render prompt, got:\n%s", view)
+			}
+			if view := current.View(); !strings.Contains(view, "focus_layer: prompt") || !strings.Contains(view, "focus_overlay_target: prompt") {
+				t.Fatalf("expected prompt flow to expose focus state in view, got:\n%s", view)
 			}
 			return nil
 		},

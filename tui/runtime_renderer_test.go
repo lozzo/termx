@@ -263,3 +263,20 @@ func TestRuntimeRendererRendersActiveMode(t *testing.T) {
 		t.Fatalf("expected sticky flag in rendered view, got:\n%s", view)
 	}
 }
+
+func TestRuntimeRendererRendersFocusLayer(t *testing.T) {
+	view := runtimeRenderer{}.Render(buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty), nil)
+	if !strings.Contains(view, "focus_layer: tiled") {
+		t.Fatalf("expected focus layer in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersFocusOverlayTarget(t *testing.T) {
+	view := runtimeRenderer{}.Render(runtimeStateWithLayoutResolveTarget(), nil)
+	if !strings.Contains(view, "focus_layer: overlay") {
+		t.Fatalf("expected overlay focus layer in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "focus_overlay_target: layout_resolve") {
+		t.Fatalf("expected overlay focus target in rendered view, got:\n%s", view)
+	}
+}

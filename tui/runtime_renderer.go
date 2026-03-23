@@ -41,6 +41,7 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 		fmt.Sprintf("slot: %s", pane.SlotState),
 		fmt.Sprintf("overlay: %s", state.UI.Overlay.Kind),
 	}
+	lines = append(lines, renderFocusLines(state.UI.Focus)...)
 	lines = append(lines, renderModeLines(state.UI.Mode)...)
 	if pane.TerminalID != "" {
 		lines = append(lines, fmt.Sprintf("terminal: %s", pane.TerminalID))
@@ -64,6 +65,16 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	lines = append(lines, renderOverlayLines(state.UI.Overlay)...)
 	lines = append(lines, renderNoticeLines(notices)...)
 	return strings.Join(lines, "\n")
+}
+
+// renderFocusLines 把当前焦点层和 overlay 目标显式投影到文本视图里，
+// 这样 runtime E2E 可以直接验证交互是否切到了预期焦点。
+func renderFocusLines(focus types.FocusState) []string {
+	lines := []string{fmt.Sprintf("focus_layer: %s", focus.Layer)}
+	if focus.OverlayTarget != "" {
+		lines = append(lines, fmt.Sprintf("focus_overlay_target: %s", focus.OverlayTarget))
+	}
+	return lines
 }
 
 func renderModeLines(mode types.ModeState) []string {

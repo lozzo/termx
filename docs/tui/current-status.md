@@ -72,6 +72,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 48. 第四十四轮 TDD 已补上 layout resolve 的 runtime renderer 可视化闭环
 49. 第四十五轮 TDD 已补上 runtime mode 状态的 renderer 可见性闭环
 50. 第四十六轮 TDD 已补上 terminal manager detail 连接信息的 renderer 可视化闭环
+51. 第四十七轮 TDD 已补上 runtime focus 状态的 renderer 可见性闭环
 
 对应文档：
 
@@ -152,6 +153,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 本轮新增并通过测试的能力：
 
+- runtime renderer 已显式展示 `focus_layer`
+- runtime renderer 已显式展示 `focus_overlay_target`
+- 已补上两条 runtime 场景型 E2E：`Ctrl-w -> workspace picker`、`Ctrl-g -> t -> e -> prompt` 时焦点状态在视图中可见
 - `UIState` 已包含 `OverlayState` 和 `ModeState`
 - `FocusState` 已补上 `OverlayTarget`
 - `workspace picker` 已支持默认选中当前 active pane
