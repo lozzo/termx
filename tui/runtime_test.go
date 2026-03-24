@@ -982,6 +982,128 @@ func TestE2ERunScenarioDefaultModernOverlayBackdropShowsStructuredPausedContext(
 	}
 }
 
+func TestE2ERunScenarioDefaultModernFloatingCenterRecallClearsOffscreenBadge(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithFloatingOffscreenPane()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 120, Rows: 40},
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "r"}, {Content: "e"}, {Content: "m"}, {Content: "o"}, {Content: "t"}, {Content: "e"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			current := model
+			nextModel, cmd := current.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			before := stripANSIRuntimeView(current.View())
+			if !strings.Contains(before, "offscre") {
+				t.Fatalf("expected default modern floating shell to expose offscreen recall hint before centering, got:\n%s", current.View())
+			}
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlO},
+				{Type: tea.KeyRunes, Runes: []rune("c")},
+			} {
+				nextModel, cmd = current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			after := stripANSIRuntimeView(current.View())
+			if strings.Contains(after, "offscre") || !strings.Contains(after, "api-dev") || !strings.Contains(after, "remote") || !strings.Contains(after, "term-1 running owner") {
+				t.Fatalf("expected default modern floating center recall to clear offscreen badge, got:\n%s", current.View())
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected default modern floating center recall scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioDefaultModernOverlayCloseLeavesCleanWorkbench(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithActiveTerminalMetadata()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			current := model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyRunes, Runes: []rune("?")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			opened := stripANSIRuntimeView(current.View())
+			if !strings.Contains(opened, "Help") || !strings.Contains(opened, "state overlay help  •  focus overlay") || !strings.Contains(opened, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(opened, "░") {
+				t.Fatalf("expected default modern overlay open state to expose modal/backdrop/shadow, got:\n%s", current.View())
+			}
+			nextModel, cmd := current.Update(tea.KeyMsg{Type: tea.KeyEsc})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			closed := stripANSIRuntimeView(current.View())
+			if strings.Contains(closed, "state overlay help  •  focus overlay") || strings.Contains(closed, "backdrop api-dev  •  owner  •  paused") || strings.Contains(closed, "FOOTER[esc close]") || strings.Contains(closed, "░") || !strings.Contains(closed, "api-dev  ● run  owner  live") || !strings.Contains(closed, "<p> <t> <w> <o> <f> <g> <?>") {
+				t.Fatalf("expected default modern overlay close to leave a clean workbench without artifacts, got:\n%s", current.View())
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected default modern overlay close cleanup scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioDefaultModernWorkspacePickerOverlayRendersStructuredModal(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithWorkspacePickerTarget()
@@ -8160,6 +8282,18 @@ func runtimeStateWithFloatingPositionedPane() types.AppState {
 	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
 	delete(state.Domain.Terminals, types.TerminalID("term-2"))
 	delete(state.Domain.Connections, types.TerminalID("term-2"))
+	return state
+}
+
+func runtimeStateWithFloatingOffscreenPane() types.AppState {
+	state := runtimeStateWithFloatingPositionedPane()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	pane := tab.Panes[types.PaneID("float-1")]
+	pane.Rect = types.Rect{X: 95, Y: 30, W: 30, H: 12}
+	tab.Panes[types.PaneID("float-1")] = pane
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
 	return state
 }
 

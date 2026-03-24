@@ -614,6 +614,36 @@ func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing
 	}
 }
 
+func TestModernScreenShellMarksOffscreenFloatingPaneForRecall(t *testing.T) {
+	state := runtimeStateWithFloatingOffscreenPane()
+	screens := NewRuntimeTerminalStore(RuntimeSessions{
+		Terminals: map[types.TerminalID]TerminalRuntimeSession{
+			types.TerminalID("term-1"): {
+				TerminalID: types.TerminalID("term-1"),
+				Snapshot: &protocol.Snapshot{
+					TerminalID: "term-1",
+					Size:       protocol.Size{Cols: 120, Rows: 40},
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{
+							{{Content: "r"}, {Content: "e"}, {Content: "m"}, {Content: "o"}, {Content: "t"}, {Content: "e"}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	view := renderModernShellForTest(t, state, nil, wireframeMetrics{
+		ViewportWidth:  120,
+		ViewportHeight: 40,
+		OverlayWidth:   72,
+	}, screens)
+
+	if !strings.Contains(view, "api-dev") || !strings.Contains(view, "floating 1") || !strings.Contains(view, "offscreen") || !strings.Contains(view, "remote") {
+		t.Fatalf("expected modern floating shell to expose offscreen recall feedback, got:\n%s", view)
+	}
+}
+
 func TestRuntimeRendererShellOnlyRendersFloatingModeOperationHints(t *testing.T) {
 	debugVisible := false
 	state := runtimeStateWithFloatingOverviewTargets()

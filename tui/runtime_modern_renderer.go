@@ -190,9 +190,9 @@ func (r modernScreenShellRenderer) RenderShell(state types.AppState, workspace t
 	width := max(64, metrics.ViewportWidth)
 	height := max(18, metrics.ViewportHeight)
 
-	header := r.renderTopBar(theme, state, workspace, tab, pane, width)
+	header := r.renderTopBar(theme, state, workspace, tab, pane, metrics, width)
 	tabs := r.renderTabBar(theme, state, workspace, tab, pane, width)
-	context := r.renderContextBar(theme, state, workspace, tab, pane, width)
+	context := r.renderContextBar(theme, state, workspace, tab, pane, metrics, width)
 	footer := r.renderFooter(theme, state, pane, notices, width)
 
 	bodyHeight := height - 4
@@ -209,10 +209,10 @@ func (r modernScreenShellRenderer) RenderShell(state types.AppState, workspace t
 	return theme.app.Render(view)
 }
 
-func (r modernScreenShellRenderer) renderTopBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
+func (r modernScreenShellRenderer) renderTopBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width int) string {
 	contentWidth := max(1, width-2)
 	left := renderModernHeaderBrand(theme, workspace)
-	right := theme.panelMeta.Render(renderModernHeaderRightAdaptive(state, workspace, tab, pane, width))
+	right := theme.panelMeta.Render(renderModernHeaderRightAdaptive(state, workspace, tab, pane, metrics, width))
 	return theme.topBar.Render(fillANSIHorizontal(left, right, contentWidth))
 }
 
@@ -254,10 +254,10 @@ func (r modernScreenShellRenderer) renderWorkspaceSummaryTextAdaptive(workspace 
 	return r.renderWorkspaceSummaryText(workspace)
 }
 
-func (r modernScreenShellRenderer) renderContextBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
+func (r modernScreenShellRenderer) renderContextBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width int) string {
 	contentWidth := max(1, width-2)
 	left := theme.panelMeta.Render(renderModernPanePathAdaptive(state, workspace, tab, pane, width))
-	right := renderModernContextChromeLineAdaptive(theme, state, pane, width)
+	right := renderModernContextChromeLineAdaptive(theme, state, pane, metrics, width)
 	return theme.subBar.Render(fillANSIHorizontal(left, right, contentWidth))
 }
 
@@ -314,7 +314,7 @@ func (r modernScreenShellRenderer) renderModernCanvasPaneLines(state types.AppSt
 	return runtimeRenderer{Screens: r.Screens}.renderScreenShellPaneLines(state, pane, overlayActive, maxRows)
 }
 
-func (r modernScreenShellRenderer) renderModernCanvasPaneMeta(state types.AppState, pane types.PaneState, active bool) string {
+func (r modernScreenShellRenderer) renderModernCanvasPaneMeta(state types.AppState, pane types.PaneState, metrics wireframeMetrics, active bool) string {
 	parts := make([]string, 0, 4)
 	switch pane.SlotState {
 	case types.PaneSlotConnected:
@@ -355,6 +355,12 @@ func (r modernScreenShellRenderer) renderModernCanvasPaneMeta(state types.AppSta
 		} else {
 			parts = append(parts, "◫ float")
 		}
+		if renderModernFloatingPaneOffscreen(pane, metrics) {
+			parts = append(parts, "offscreen")
+			if active {
+				parts = append(parts, "c center")
+			}
+		}
 	}
 	return strings.Join(parts, "  ")
 }
@@ -368,6 +374,29 @@ func renderModernCanvasPaneRoleToken(state types.AppState, pane types.PaneState)
 	default:
 		return ""
 	}
+}
+
+// renderModernFloatingPaneOffscreen 基于当前 viewport 判断浮窗是否越过了当前可视区域。
+// 这能在 modern 主壳里直接给出“为什么看起来被裁掉，以及可以 center 呼回”的反馈。
+func renderModernFloatingPaneOffscreen(pane types.PaneState, metrics wireframeMetrics) bool {
+	if pane.Kind != types.PaneKindFloating {
+		return false
+	}
+	if pane.Rect.W <= 0 || pane.Rect.H <= 0 {
+		return false
+	}
+	viewportWidth := metrics.ViewportWidth
+	viewportHeight := metrics.ViewportHeight
+	if viewportWidth <= 0 {
+		viewportWidth = runtimeWireframeWidth
+	}
+	if viewportHeight <= 0 {
+		viewportHeight = 24
+	}
+	return pane.Rect.X < 0 ||
+		pane.Rect.Y < 0 ||
+		pane.Rect.X+pane.Rect.W > viewportWidth ||
+		pane.Rect.Y+pane.Rect.H > viewportHeight
 }
 
 func (r modernScreenShellRenderer) renderSplitWorkbench(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, tiledPaneIDs []types.PaneID, floatingPaneIDs []types.PaneID, metrics wireframeMetrics, width, height int) string {
@@ -409,7 +438,7 @@ func (r modernScreenShellRenderer) renderWorkbenchCanvasLines(state types.AppSta
 				rect.W,
 				rect.H,
 				r.renderModernCanvasPaneTitle(state, targetPane),
-				r.renderModernCanvasPaneMeta(state, targetPane, paneID == tab.ActivePaneID),
+				r.renderModernCanvasPaneMeta(state, targetPane, metrics, paneID == tab.ActivePaneID),
 				r.renderModernCanvasPaneLines(state, targetPane, overlayActive, bodyRows),
 				paneID == tab.ActivePaneID,
 			)
@@ -427,7 +456,7 @@ func (r modernScreenShellRenderer) renderWorkbenchCanvasLines(state types.AppSta
 			rect.W,
 			rect.H,
 			r.renderModernCanvasPaneTitle(state, targetPane),
-			r.renderModernCanvasPaneMeta(state, targetPane, paneID == tab.ActivePaneID),
+			r.renderModernCanvasPaneMeta(state, targetPane, metrics, paneID == tab.ActivePaneID),
 			r.renderModernCanvasPaneLines(state, targetPane, overlayActive, bodyRows),
 			paneID == tab.ActivePaneID,
 		)
@@ -1983,11 +2012,14 @@ func renderModernHeaderBrand(theme modernShellTheme, workspace types.WorkspaceSt
 	return strings.Join(items, " ")
 }
 
-func renderModernLegacyHeaderRight(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
+func renderModernLegacyHeaderRight(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics) string {
 	parts := []string{
 		renderModernPaneDisplayTitle(state, pane),
 		renderModernContextStateToken(state, pane),
 		fmt.Sprintf("float %d", len(orderedFloatingPaneIDs(tab))),
+	}
+	if renderModernFloatingPaneOffscreen(pane, metrics) {
+		parts = append(parts, "offscreen")
 	}
 	if state.UI.Overlay.Kind != types.OverlayNone {
 		parts = append(parts, "overlay "+string(state.UI.Overlay.Kind))
@@ -1998,18 +2030,21 @@ func renderModernLegacyHeaderRight(state types.AppState, workspace types.Workspa
 	return strings.Join(parts, "  ")
 }
 
-func renderModernHeaderRightAdaptive(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
+func renderModernHeaderRightAdaptive(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width int) string {
 	if shouldRenderCompactChrome(width) {
-		return renderModernHeaderRightCompact(state, workspace, tab, pane)
+		return renderModernHeaderRightCompact(state, workspace, tab, pane, metrics)
 	}
-	return renderModernLegacyHeaderRight(state, workspace, tab, pane)
+	return renderModernLegacyHeaderRight(state, workspace, tab, pane, metrics)
 }
 
-func renderModernHeaderRightCompact(state types.AppState, _ types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
+func renderModernHeaderRightCompact(state types.AppState, _ types.WorkspaceState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics) string {
 	parts := []string{
 		truncateModernLine(renderModernPaneDisplayTitle(state, pane), 18),
 		renderModernContextStateToken(state, pane),
 		fmt.Sprintf("f%d", len(orderedFloatingPaneIDs(tab))),
+	}
+	if renderModernFloatingPaneOffscreen(pane, metrics) {
+		parts = append(parts, "offscreen")
 	}
 	if state.UI.Overlay.Kind != types.OverlayNone {
 		parts = append(parts, string(state.UI.Overlay.Kind))
@@ -2084,7 +2119,7 @@ func renderModernTopStatusCompact(state types.AppState, pane types.PaneState) st
 	return fmt.Sprintf("focus %s  •  %s", label, renderModernContextStateToken(state, pane))
 }
 
-func renderModernContextChromeLine(theme modernShellTheme, state types.AppState, pane types.PaneState) string {
+func renderModernContextChromeLine(theme modernShellTheme, state types.AppState, pane types.PaneState, metrics wireframeMetrics) string {
 	items := []string{
 		theme.activeChip.Render("focus " + renderModernPaneDisplayTitle(state, pane)),
 		theme.chip.Render("role " + renderModernPaneRole(state, pane)),
@@ -2103,10 +2138,13 @@ func renderModernContextChromeLine(theme modernShellTheme, state types.AppState,
 	if state.UI.Overlay.Kind != types.OverlayNone {
 		items = append(items, theme.activeChip.Render("overlay "+string(state.UI.Overlay.Kind)))
 	}
+	if renderModernFloatingPaneOffscreen(pane, metrics) {
+		items = append(items, theme.activeChip.Render("offscreen"), theme.activeChip.Render("c center"))
+	}
 	return strings.Join(items, " ")
 }
 
-func renderModernContextChromeLineAdaptive(theme modernShellTheme, state types.AppState, pane types.PaneState, width int) string {
+func renderModernContextChromeLineAdaptive(theme modernShellTheme, state types.AppState, pane types.PaneState, metrics wireframeMetrics, width int) string {
 	if shouldRenderCompactChrome(width) {
 		items := []string{
 			theme.activeChip.Render(renderModernContextStateToken(state, pane)),
@@ -2121,9 +2159,12 @@ func renderModernContextChromeLineAdaptive(theme modernShellTheme, state types.A
 		if state.UI.Overlay.Kind != types.OverlayNone {
 			items = append(items, theme.activeChip.Render(string(state.UI.Overlay.Kind)))
 		}
+		if renderModernFloatingPaneOffscreen(pane, metrics) {
+			items = append(items, theme.activeChip.Render("offscreen"), theme.activeChip.Render("c center"))
+		}
 		return strings.Join(items, " ")
 	}
-	return renderModernContextChromeLine(theme, state, pane)
+	return renderModernContextChromeLine(theme, state, pane, metrics)
 }
 
 func renderModernLegacyFooterShortcuts(state types.AppState, pane types.PaneState) string {
