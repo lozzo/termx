@@ -41,13 +41,10 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	}
 
 	statusLines := renderStatusSection(workspace, tab, pane, state.UI)
-	summaryLines := []string{
-		fmt.Sprintf("summary: ws=%s tab=%s pane=%s overlay=%s focus=%s", workspace.Name, tab.Name, pane.ID, state.UI.Overlay.Kind, state.UI.Focus.Layer),
-	}
 	overlayActive := state.UI.Overlay.Kind != types.OverlayNone
 
 	lines := []string{"termx"}
-	lines = appendChrome(lines, "header", summaryLines, func(lines []string) []string {
+	lines = appendChrome(lines, "header", []string{renderHeaderBar(workspace, tab, pane, state.UI)}, func(lines []string) []string {
 		return appendSection(lines, "status", statusLines)
 	})
 	lines = appendChrome(lines, "body", nil, func(lines []string) []string {
@@ -55,7 +52,7 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 		lines = appendSection(lines, "screen", r.renderScreenSection(pane, overlayActive))
 		return appendSection(lines, "overlay", renderOverlayLines(state.UI.Overlay))
 	})
-	lines = appendChrome(lines, "footer", nil, func(lines []string) []string {
+	lines = appendChrome(lines, "footer", []string{renderFooterBar(notices, state.UI.Overlay.Kind)}, func(lines []string) []string {
 		return appendSection(lines, "notices", renderNoticeLines(notices))
 	})
 	return strings.Join(lines, "\n")
@@ -76,6 +73,34 @@ func appendChrome(lines []string, name string, body []string, fn func([]string) 
 		return fn(lines)
 	}
 	return lines
+}
+
+// renderHeaderBar 把主工作区、pane、overlay、focus、mode 汇总成顶栏语义，
+// 这样主视图即使正文被压缩，顶栏仍然能稳定表达当前上下文。
+func renderHeaderBar(workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, ui types.UIState) string {
+	parts := []string{
+		fmt.Sprintf("header_bar: ws=%s", workspace.Name),
+		fmt.Sprintf("tab=%s", tab.Name),
+		fmt.Sprintf("pane=%s", pane.ID),
+		fmt.Sprintf("slot=%s", pane.SlotState),
+		fmt.Sprintf("overlay=%s", ui.Overlay.Kind),
+		fmt.Sprintf("focus=%s", ui.Focus.Layer),
+	}
+	if ui.Mode.Active != types.ModeNone {
+		parts = append(parts, fmt.Sprintf("mode=%s", ui.Mode.Active))
+	}
+	return compactLine(parts...)
+}
+
+// renderFooterBar 把 notice 聚合状态和当前 overlay 汇总到底栏，
+// 底栏优先回答“现在有没有问题、当前是不是处在特殊交互里”。
+func renderFooterBar(notices []btui.Notice, overlay types.OverlayKind) string {
+	parts := []string{fmt.Sprintf("footer_bar: notices=%d", countVisibleNotices(notices))}
+	if last, ok := lastVisibleNotice(notices); ok {
+		parts = append(parts, fmt.Sprintf("last=%s", last.Level))
+	}
+	parts = append(parts, fmt.Sprintf("overlay=%s", overlay))
+	return compactLine(parts...)
 }
 
 func renderStatusSection(workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, ui types.UIState) []string {
@@ -714,6 +739,27 @@ func renderNoticeLines(notices []btui.Notice) []string {
 		return nil
 	}
 	return lines
+}
+
+func countVisibleNotices(notices []btui.Notice) int {
+	count := 0
+	for _, notice := range notices {
+		if strings.TrimSpace(notice.Text) == "" {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
+func lastVisibleNotice(notices []btui.Notice) (btui.Notice, bool) {
+	for i := len(notices) - 1; i >= 0; i-- {
+		if strings.TrimSpace(notices[i].Text) == "" {
+			continue
+		}
+		return notices[i], true
+	}
+	return btui.Notice{}, false
 }
 
 func overlayPreviewRowsAround[T any](rows []T, limit int, focusIndex int) ([]T, bool) {

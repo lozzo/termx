@@ -56,8 +56,8 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "termx") || !strings.Contains(view, "summary: ws=main tab=shell pane=pane-1 overlay=none focus=tiled") {
-		t.Fatalf("expected renderer summary header, got:\n%s", view)
+	if !strings.Contains(view, "termx") || !strings.Contains(view, "header_bar: ws=main | tab=shell | pane=pane-1 | slot=connected | overlay=none | focus=tiled") {
+		t.Fatalf("expected renderer header bar, got:\n%s", view)
 	}
 	if !strings.Contains(view, "chrome_header:") || !strings.Contains(view, "chrome_body:") || !strings.Contains(view, "chrome_footer:") {
 		t.Fatalf("expected chrome wrappers in rendered view, got:\n%s", view)
@@ -161,6 +161,9 @@ func TestRuntimeRendererRendersStableSectionSkeletonForEmptyPane(t *testing.T) {
 	if !strings.Contains(view, "chrome_body:") || !strings.Contains(view, "chrome_footer:") {
 		t.Fatalf("expected chrome body/footer wrappers in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "footer_bar: notices=0 | overlay=none") {
+		t.Fatalf("expected footer bar placeholder in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "section_terminal:") || !strings.Contains(view, "terminal: <disconnected>") {
 		t.Fatalf("expected terminal placeholder section in rendered view, got:\n%s", view)
 	}
@@ -187,6 +190,9 @@ func TestRuntimeRendererRendersNoticeSection(t *testing.T) {
 
 	if !strings.Contains(view, "chrome_footer:") {
 		t.Fatalf("expected footer wrapper in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "footer_bar: notices=1 | last=error | overlay=none") {
+		t.Fatalf("expected footer status bar in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "section_notices:") {
 		t.Fatalf("expected notices section wrapper in rendered view, got:\n%s", view)
@@ -215,6 +221,16 @@ func TestRuntimeRendererKeepsOverlayAboveFooter(t *testing.T) {
 	if !(strings.Index(view, "section_overlay:") < strings.Index(view, "chrome_footer:") &&
 		strings.Index(view, "chrome_footer:") < strings.Index(view, "section_notices:")) {
 		t.Fatalf("expected overlay to stay in body and notices to stay in footer, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersHeaderBarWithMode(t *testing.T) {
+	state := buildSinglePaneAppState("main", "shell", types.PaneSlotWaiting)
+	state.UI.Mode = types.ModeState{Active: types.ModeGlobal, Sticky: false}
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "header_bar: ws=main | tab=shell | pane=pane-1 | slot=waiting | overlay=none | focus=tiled | mode=global") {
+		t.Fatalf("expected header bar to include active mode, got:\n%s", view)
 	}
 }
 
