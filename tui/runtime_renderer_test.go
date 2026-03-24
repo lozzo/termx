@@ -297,6 +297,9 @@ func TestRuntimeRendererShellOnlyShowsContextualActionsForConnectedPane(t *testi
 	if !strings.Contains(stripped, "Ctrl-p pane") || !strings.Contains(stripped, "Ctrl-o float") || !strings.Contains(stripped, "? help") {
 		t.Fatalf("expected shell-only connected pane to expose contextual actions, got:\n%s", view)
 	}
+	if !strings.Contains(stripped, "Actions") || !strings.Contains(stripped, "type  •  Ctrl-f picker  •  Ctrl-g global") {
+		t.Fatalf("expected shell-only connected pane card to expose inline pane actions, got:\n%s", view)
+	}
 }
 
 func TestRuntimeRendererShellOnlyShowsStatusAndActionsForDisconnectedStates(t *testing.T) {
@@ -347,6 +350,9 @@ func TestRuntimeRendererShellOnlyShowsStatusAndActionsForDisconnectedStates(t *t
 		t.Run(tc.name, func(t *testing.T) {
 			view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(tc.state, nil)
 			stripped := stripANSIForTest(view)
+			if !strings.Contains(stripped, "Status") || !strings.Contains(stripped, "Details") || !strings.Contains(stripped, "Actions") {
+				t.Fatalf("expected shell-only renderer to expose section labels for %s pane, got:\n%s", tc.name, view)
+			}
 			if !strings.Contains(stripped, tc.statusLine) {
 				t.Fatalf("expected shell-only renderer to expose %q, got:\n%s", tc.statusLine, view)
 			}
@@ -397,6 +403,9 @@ func TestRuntimeRendererShellOnlyRendersSplitWorkbenchAsPaneCanvas(t *testing.T)
 	if !strings.Contains(stripped, "Split view") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") {
 		t.Fatalf("expected shell-only split renderer to expose pane titles, got:\n%s", view)
 	}
+	if !strings.Contains(stripped, "layout vertical 50/50") || !strings.Contains(stripped, "switch Ctrl-p pane") {
+		t.Fatalf("expected shell-only split renderer to expose layout summary and navigation hint, got:\n%s", view)
+	}
 	if !strings.Contains(stripped, "$ npm run dev") || !strings.Contains(stripped, "> tsc -w") {
 		t.Fatalf("expected shell-only split renderer to expose pane previews, got:\n%s", view)
 	}
@@ -443,11 +452,26 @@ func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing
 	if !strings.Contains(stripped, "Floating workbench") || !strings.Contains(stripped, "Window deck") {
 		t.Fatalf("expected shell-only floating renderer to expose window deck chrome, got:\n%s", view)
 	}
+	if !strings.Contains(stripped, "Window deck  •  2 windows") || !strings.Contains(stripped, "focus float-1") {
+		t.Fatalf("expected shell-only floating renderer to expose deck summary, got:\n%s", view)
+	}
 	if !strings.Contains(stripped, "api ready") || !strings.Contains(stripped, "build ok") || !strings.Contains(stripped, "rect 10,8  30x12") {
 		t.Fatalf("expected shell-only floating renderer to expose stacked window previews, got:\n%s", view)
 	}
 	if strings.Contains(stripped, "Window stack") {
 		t.Fatalf("expected shell-only floating renderer to replace legacy stack list, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererShellOnlyRendersFloatingModeOperationHints(t *testing.T) {
+	debugVisible := false
+	state := runtimeStateWithFloatingOverviewTargets()
+	state.UI.Mode = types.ModeState{Active: types.ModeFloating}
+
+	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
+	stripped := stripANSIForTest(view)
+	if !strings.Contains(stripped, "move j/k  •  size H/J/K/L  •  c center") || !strings.Contains(stripped, "Esc exit") {
+		t.Fatalf("expected shell-only floating mode renderer to expose operation hints, got:\n%s", view)
 	}
 }
 
