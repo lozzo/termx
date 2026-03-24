@@ -114,7 +114,7 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "$ pwd") || !strings.Contains(view, "/tmp") {
 		t.Fatalf("expected snapshot rows in rendered view, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 23 {
+	if lines := strings.Count(view, "\n") + 1; lines > 24 {
 		t.Fatalf("expected compact active pane view, got %d lines:\n%s", lines, view)
 	}
 }
@@ -374,6 +374,9 @@ func TestRuntimeRendererRendersStableSectionSkeletonForEmptyPane(t *testing.T) {
 	if !strings.HasSuffix(strings.TrimSpace(view), "notices: 0") {
 		t.Fatalf("expected footer notice placeholder to stay at bottom, got:\n%s", view)
 	}
+	if !strings.Contains(view, "shortcut_bar: n new | a connect | m manager | x close | ? help") {
+		t.Fatalf("expected empty pane shortcut bar in rendered view, got:\n%s", view)
+	}
 }
 
 func TestRuntimeRendererRendersExitedPaneActions(t *testing.T) {
@@ -395,6 +398,9 @@ func TestRuntimeRendererRendersExitedPaneActions(t *testing.T) {
 	view := runtimeRenderer{}.Render(state, nil)
 	if !strings.Contains(view, "pane_slot_detail: terminal program exited") || !strings.Contains(view, "pane_history: retained") || !strings.Contains(view, "[r] restart terminal") || !strings.Contains(view, "[a] connect another terminal") || !strings.Contains(view, "[x] close pane") {
 		t.Fatalf("expected exited pane actions in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "shortcut_bar: r restart | a connect | x close | ? help") {
+		t.Fatalf("expected exited pane shortcut bar in rendered view, got:\n%s", view)
 	}
 }
 
@@ -774,7 +780,7 @@ func TestRuntimeRendererCompressesBodyWhenOverlayIsActive(t *testing.T) {
 	if strings.Contains(view, "terminal_tags:") {
 		t.Fatalf("expected noncritical terminal detail to be suppressed while overlay is active, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 40 {
+	if lines := strings.Count(view, "\n") + 1; lines > 41 {
 		t.Fatalf("expected overlay-active body to stay tightly compressed, got %d lines:\n%s", lines, view)
 	}
 }
@@ -1121,6 +1127,40 @@ func TestRuntimeRendererRendersFloatingPaneKind(t *testing.T) {
 	}
 	if !strings.Contains(view, "floating_stack: pane-float") {
 		t.Fatalf("expected floating stack summary in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "shortcut_bar: Ctrl-p pane | Ctrl-t tab | Ctrl-w ws | Ctrl-o float | Ctrl-f pick | Ctrl-g global | ? help") {
+		t.Fatalf("expected connected pane shortcut bar in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersHelpOverlay(t *testing.T) {
+	state := connectedRunAppState()
+	state.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayHelp,
+		ReturnFocus: state.UI.Focus,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+	state.UI.Focus.OverlayTarget = types.OverlayHelp
+	state.UI.Mode = types.ModeState{Active: types.ModePicker}
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "overlay_bar: kind=help | focus=overlay") {
+		t.Fatalf("expected help overlay bar in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "help_bar: layer=tiled | pane=pane-1") {
+		t.Fatalf("expected help overlay to describe current layer, got:\n%s", view)
+	}
+	if !strings.Contains(view, "help_most_used: Ctrl-p pane | Ctrl-t tab | Ctrl-w workspace | Ctrl-f picker | Ctrl-o floating | Ctrl-g global") {
+		t.Fatalf("expected help overlay to list main entries, got:\n%s", view)
+	}
+	if !strings.Contains(view, "help_shared: owner controls terminal-level operations | follower observes without control") {
+		t.Fatalf("expected help overlay to explain owner/follower, got:\n%s", view)
+	}
+	if !strings.Contains(view, "help_exit: close pane != stop terminal != detach TUI") {
+		t.Fatalf("expected help overlay to explain close/stop/detach, got:\n%s", view)
+	}
+	if !strings.Contains(view, "shortcut_bar: Esc close | ? help") {
+		t.Fatalf("expected help overlay shortcut bar in rendered view, got:\n%s", view)
 	}
 }
 

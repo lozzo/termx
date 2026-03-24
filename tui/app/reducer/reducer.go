@@ -162,6 +162,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyOpenWorkspacePicker(&result.State)
 	case intent.OpenTerminalManagerIntent:
 		applyOpenTerminalManager(&result.State)
+	case intent.OpenHelpIntent:
+		applyOpenHelp(&result.State)
 	case intent.OpenPromptIntent:
 		applyOpenPrompt(&result.State, intentValue)
 	case intent.CloseOverlayIntent:
@@ -520,6 +522,23 @@ func applyOpenTerminalManager(state *types.AppState) {
 	state.UI.Mode = types.ModeState{
 		Active: types.ModePicker,
 	}
+}
+
+func applyOpenHelp(state *types.AppState) {
+	returnFocus := state.UI.Focus
+	returnFocus.OverlayTarget = ""
+	state.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayHelp,
+		ReturnFocus: returnFocus,
+	}
+	state.UI.Focus = types.FocusState{
+		Layer:         types.FocusLayerOverlay,
+		WorkspaceID:   returnFocus.WorkspaceID,
+		TabID:         returnFocus.TabID,
+		PaneID:        returnFocus.PaneID,
+		OverlayTarget: types.OverlayHelp,
+	}
+	state.UI.Mode = types.ModeState{Active: types.ModePicker}
 }
 
 func applyOpenPrompt(state *types.AppState, in intent.OpenPromptIntent) {

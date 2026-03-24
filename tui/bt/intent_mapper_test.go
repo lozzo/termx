@@ -55,6 +55,21 @@ func TestIntentMapperRootCtrlFOpensTerminalPicker(t *testing.T) {
 	}
 }
 
+func TestIntentMapperRootQuestionMarkOpensHelp(t *testing.T) {
+	mapper := NewIntentMapper(Config{
+		Clock:         fixedClock{now: time.Date(2026, 3, 23, 12, 0, 0, 0, time.UTC)},
+		PrefixTimeout: 3 * time.Second,
+	})
+
+	intents := mapper.MapKey(newAppStateWithSinglePane(), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	if _, ok := intents[0].(intent.OpenHelpIntent); !ok {
+		t.Fatalf("expected open help intent, got %T", intents[0])
+	}
+}
+
 func TestIntentMapperRootCtrlGArmsGlobalModeAndTOpensTerminalManager(t *testing.T) {
 	now := time.Date(2026, 3, 23, 12, 0, 0, 0, time.UTC)
 	mapper := NewIntentMapper(Config{

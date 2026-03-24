@@ -481,6 +481,56 @@ func TestE2ERunScenarioConnectedPaneWithoutSnapshotKeepsScreenPlaceholder(t *tes
 	}
 }
 
+func TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithActiveTerminalMetadata()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			current := model
+			nextModel, cmd := current.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay_bar: kind=help") || !strings.Contains(view, "help_most_used: Ctrl-p pane | Ctrl-t tab | Ctrl-w workspace | Ctrl-f picker | Ctrl-o floating | Ctrl-g global") || !strings.Contains(view, "shortcut_bar: Esc close | ? help") {
+				t.Fatalf("expected question mark to open help overlay, got:\n%s", view)
+			}
+			nextModel, cmd = current.Update(tea.KeyMsg{Type: tea.KeyEsc})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay_bar: kind=none") || strings.Contains(view, "help_most_used:") || !strings.Contains(view, "shortcut_bar: Ctrl-p pane | Ctrl-t tab | Ctrl-w ws | Ctrl-o float | Ctrl-f pick | Ctrl-g global | ? help") {
+				t.Fatalf("expected esc to close help overlay and restore default shortcuts, got:\n%s", view)
+			}
+			if current.State().UI.Focus.Layer != types.FocusLayerTiled || current.State().UI.Overlay.Kind != types.OverlayNone {
+				t.Fatalf("expected help close to restore main focus, got focus=%+v overlay=%+v", current.State().UI.Focus, current.State().UI.Overlay)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected help overlay runtime scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioLongSummaryLinesStayCompacted(t *testing.T) {
 	client := &stubRunClient{}
 	initial := connectedRunAppState()

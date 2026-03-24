@@ -134,6 +134,10 @@ type OpenTerminalManagerIntent struct{}
 
 func (OpenTerminalManagerIntent) intentName() string { return "open_terminal_manager" }
 
+type OpenHelpIntent struct{}
+
+func (OpenHelpIntent) intentName() string { return "open_help" }
+
 type OpenPromptIntent struct {
 	PromptKind string
 	TerminalID types.TerminalID

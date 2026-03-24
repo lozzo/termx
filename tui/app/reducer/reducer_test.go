@@ -370,6 +370,26 @@ func TestReducerOpenWorkspacePickerMovesFocusToOverlayAndStoresReturnFocus(t *te
 	}
 }
 
+func TestReducerOpenHelpMovesFocusToOverlayAndStoresReturnFocus(t *testing.T) {
+	reducer := New()
+	state := newAppStateWithSinglePane()
+
+	result := reducer.Reduce(state, intent.OpenHelpIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayHelp {
+		t.Fatalf("expected help overlay, got %q", result.State.UI.Overlay.Kind)
+	}
+	if result.State.UI.Overlay.ReturnFocus != state.UI.Focus {
+		t.Fatalf("expected previous focus to be retained for help, got %+v", result.State.UI.Overlay.ReturnFocus)
+	}
+	if result.State.UI.Focus.Layer != types.FocusLayerOverlay || result.State.UI.Focus.OverlayTarget != types.OverlayHelp {
+		t.Fatalf("expected help to move focus to overlay, got %+v", result.State.UI.Focus)
+	}
+	if result.State.UI.Mode.Active != types.ModePicker {
+		t.Fatalf("expected help to enter picker mode, got %+v", result.State.UI.Mode)
+	}
+}
+
 func TestReducerOpenTerminalPickerMovesFocusToOverlayAndStoresReturnFocus(t *testing.T) {
 	reducer := New()
 	state := newManagerAppState()

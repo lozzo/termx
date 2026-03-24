@@ -55,7 +55,10 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 		lines = appendSection(lines, "screen", r.renderScreenSection(pane, overlayActive))
 		return appendSection(lines, "overlay", renderOverlayLines(state.UI.Overlay, state.UI.Focus))
 	})
-	lines = appendChrome(lines, "footer", []string{renderFooterBar(notices, state.UI.Overlay.Kind)}, func(lines []string) []string {
+	lines = appendChrome(lines, "footer", []string{
+		renderFooterBar(notices, state.UI.Overlay.Kind),
+		renderShortcutBar(state, pane),
+	}, func(lines []string) []string {
 		return appendSection(lines, "notices", renderNoticeLines(notices))
 	})
 	return strings.Join(lines, "\n")
@@ -104,6 +107,35 @@ func renderFooterBar(notices []btui.Notice, overlay types.OverlayKind) string {
 	}
 	parts = append(parts, fmt.Sprintf("overlay=%s", overlay))
 	return compactBarLine(parts...)
+}
+
+func renderShortcutBar(state types.AppState, pane types.PaneState) string {
+	parts := renderShortcutParts(state, pane)
+	return compactSummaryLine(fmt.Sprintf("shortcut_bar: %s", strings.Join(parts, " | ")))
+}
+
+func renderShortcutParts(state types.AppState, pane types.PaneState) []string {
+	switch state.UI.Overlay.Kind {
+	case types.OverlayHelp:
+		return []string{"Esc close", "? help"}
+	case types.OverlayTerminalPicker, types.OverlayWorkspacePicker, types.OverlayLayoutResolve:
+		return []string{"Enter confirm", "Esc close", "? help"}
+	case types.OverlayTerminalManager:
+		return []string{"Enter here", "t new-tab", "o float", "e edit", "k stop", "Esc close", "? help"}
+	case types.OverlayPrompt:
+		return []string{"Enter submit", "Esc close", "? help"}
+	}
+	if state.UI.Mode.Active == types.ModeFloating {
+		return []string{"h/l focus", "j/k move", "H/J/K/L size", "[/] z", "c center", "x close", "Esc exit", "? help"}
+	}
+	switch pane.SlotState {
+	case types.PaneSlotEmpty, types.PaneSlotWaiting:
+		return []string{"n new", "a connect", "m manager", "x close", "? help"}
+	case types.PaneSlotExited:
+		return []string{"r restart", "a connect", "x close", "? help"}
+	default:
+		return []string{"Ctrl-p pane", "Ctrl-t tab", "Ctrl-w ws", "Ctrl-o float", "Ctrl-f pick", "Ctrl-g global", "? help"}
+	}
 }
 
 // renderBodyBar 汇总 body 主体的 terminal/screen/overlay 状态，
@@ -550,6 +582,8 @@ func renderOverlayLines(overlay types.OverlayState, focus types.FocusState) []st
 			return mergeSectionBar(bar, []string{fmt.Sprintf("overlay: %s", overlay.Kind)})
 		}
 		return mergeSectionBar(bar, renderWorkspacePickerLines(picker))
+	case types.OverlayHelp:
+		return mergeSectionBar(bar, renderHelpLines(overlay.ReturnFocus))
 	case types.OverlayTerminalManager:
 		manager, ok := overlay.Data.(*terminalmanagerdomain.State)
 		if !ok || manager == nil {
@@ -576,6 +610,27 @@ func renderOverlayLines(overlay types.OverlayState, focus types.FocusState) []st
 		return mergeSectionBar(bar, renderPromptLines(prompt))
 	default:
 		return mergeSectionBar(bar, []string{fmt.Sprintf("overlay: %s", overlay.Kind)})
+	}
+}
+
+func renderHelpLines(returnFocus types.FocusState) []string {
+	layer := returnFocus.Layer
+	if layer == "" {
+		layer = types.FocusLayerTiled
+	}
+	paneID := returnFocus.PaneID
+	if paneID == "" {
+		paneID = types.PaneID("none")
+	}
+	return []string{
+		compactLine(
+			fmt.Sprintf("help_bar: layer=%s", layer),
+			fmt.Sprintf("pane=%s", paneID),
+		),
+		"help_most_used: Ctrl-p pane | Ctrl-t tab | Ctrl-w workspace | Ctrl-f picker | Ctrl-o floating | Ctrl-g global",
+		"help_concepts: pane = work slot | terminal = running entity",
+		"help_shared: owner controls terminal-level operations | follower observes without control",
+		"help_exit: close pane != stop terminal != detach TUI",
 	}
 }
 

@@ -58,6 +58,8 @@ func (m DefaultIntentMapper) MapKey(state types.AppState, msg tea.KeyMsg) []inte
 		return mapLayoutResolveKey(msg)
 	case types.OverlayTerminalPicker:
 		return mapTerminalPickerKey(msg)
+	case types.OverlayHelp:
+		return mapHelpKey(msg)
 	case types.OverlayWorkspacePicker:
 		return mapWorkspacePickerKey(msg)
 	case types.OverlayTerminalManager:
@@ -120,6 +122,8 @@ func (m DefaultIntentMapper) mapRootKey(state types.AppState, msg tea.KeyMsg) []
 		return []intent.Intent{intent.OpenTerminalPickerIntent{}}
 	case "ctrl+w":
 		return []intent.Intent{intent.OpenWorkspacePickerIntent{}}
+	case "?":
+		return []intent.Intent{intent.OpenHelpIntent{}}
 	case "ctrl+g":
 		deadline := m.clock.Now().Add(m.prefixTimeout)
 		return []intent.Intent{intent.ActivateModeIntent{
@@ -154,6 +158,15 @@ func (m DefaultIntentMapper) mapRootKey(state types.AppState, msg tea.KeyMsg) []
 		}
 	}
 	return nil
+}
+
+func mapHelpKey(msg tea.KeyMsg) []intent.Intent {
+	switch msg.String() {
+	case "esc", "?":
+		return []intent.Intent{intent.CloseOverlayIntent{}}
+	default:
+		return nil
+	}
 }
 
 func mapPaneBodyKey(state types.AppState, msg tea.KeyMsg) []intent.Intent {
