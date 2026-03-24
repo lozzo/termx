@@ -690,10 +690,13 @@ func TestE2ERunScenarioDefaultModernSplitWorkbenchRendersPaneCanvas(t *testing.T
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "Split workbench") || !strings.Contains(stripped, "Layout vertical 50/50") {
+			if !strings.Contains(stripped, "Split workbench") || !strings.Contains(stripped, "Layout vertical 50/50") || !strings.Contains(stripped, "Signals & Keys") {
 				t.Fatalf("expected default modern split view to expose split sidebar summary, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "owner  •  connected") {
+			if !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal api-dev") {
+				t.Fatalf("expected default modern split view to expose unified workbench signal panel, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") {
 				t.Fatalf("expected default modern split view to expose multi-pane canvas, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
@@ -791,8 +794,11 @@ func TestE2ERunScenarioDefaultModernFloatingWorkbenchRendersWindowDeck(t *testin
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "Floating workbench") || !strings.Contains(stripped, "Window deck  •  2 windows") {
+			if !strings.Contains(stripped, "Floating workbench") || !strings.Contains(stripped, "Signals & Keys") || !strings.Contains(stripped, "Window deck  •  2 windows") {
 				t.Fatalf("expected default modern floating view to expose summary and deck sidebar, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal api-dev") {
+				t.Fatalf("expected default modern floating view to expose unified workbench signal panel, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "main / shell / floating / api-dev") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "top build-log") || !strings.Contains(stripped, "Window deck  •  2 windows") {
 				t.Fatalf("expected default modern floating view to expose overlapping floating pane titles, got:\n%s", view)
@@ -844,8 +850,11 @@ func TestE2ERunScenarioDefaultModernMixedWorkbenchShowsDetachedFloatingStrip(t *
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "Detached windows") || !strings.Contains(stripped, "unconnected pane empty") {
+			if !strings.Contains(stripped, "Detached windows") || !strings.Contains(stripped, "Mixed workbench") || !strings.Contains(stripped, "Signals & Keys") || !strings.Contains(stripped, "unconnected pane empty") {
 				t.Fatalf("expected default modern mixed workbench to expose detached floating strip, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal api-dev") {
+				t.Fatalf("expected default modern mixed workbench to expose unified workbench signal panel, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "waiting pane") || !strings.Contains(stripped, "deploy-log") || !strings.Contains(stripped, "no term") || !strings.Contains(stripped, "unconnected p") || !strings.Contains(stripped, "history retained") {
 				t.Fatalf("expected default modern mixed workbench to render tiled and floating panes on one canvas, got:\n%s", view)
@@ -1118,7 +1127,7 @@ func TestE2ERunScenarioDefaultModernFloatingZOrderUpdatesTopSummaryAndKeepsOverl
 				}
 			}
 			after := stripANSIRuntimeView(current.View())
-			if !strings.Contains(after, "top api-dev") || !strings.Contains(after, "api ready") || !strings.Contains(after, "build o") || !strings.Contains(after, "api-dev") || !strings.Contains(after, "build-log") {
+			if !strings.Contains(after, "top api-dev") || !strings.Contains(after, "api ready") || !strings.Contains(after, "api-dev") || !strings.Contains(after, "build-log") || (!strings.Contains(after, "build o") && !strings.Contains(after, "top api-dev  •  build-log")) {
 				t.Fatalf("expected default modern floating z-order flow to update top summary and preserve overlapped window bodies, got:\n%s", current.View())
 			}
 			return nil

@@ -413,7 +413,7 @@ func (r modernScreenShellRenderer) renderSplitWorkbench(theme modernShellTheme, 
 	if width < 72 || height < 12 {
 		return r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, height), width, height, false)
 	}
-	sidebarWidth := min(30, max(22, width/3))
+	sidebarWidth := min(36, max(34, width/3))
 	canvasWidth := max(32, width-sidebarWidth-1)
 	canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, canvasWidth, height), canvasWidth, height, false)
 	sidebar := r.renderSplitWorkbenchSidebar(theme, state, tab, pane, tiledPaneIDs, floatingPaneIDs, sidebarWidth, height)
@@ -424,7 +424,7 @@ func (r modernScreenShellRenderer) renderFloatingWorkbench(theme modernShellThem
 	if width < 72 || height < 12 {
 		return r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, height), width, height, false)
 	}
-	sidebarWidth := min(32, max(24, width/3))
+	sidebarWidth := min(36, max(34, width/3))
 	canvasWidth := max(32, width-sidebarWidth-1)
 	canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, canvasWidth, height), canvasWidth, height, false)
 	sidebar := r.renderFloatingWorkbenchSidebar(theme, state, tab, pane, floatingPaneIDs, sidebarWidth, height)
@@ -441,7 +441,7 @@ func (r modernScreenShellRenderer) renderMixedWorkbench(theme modernShellTheme, 
 		canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, mainHeight), width, mainHeight, false)
 		return lipgloss.JoinVertical(lipgloss.Left, strip, canvas)
 	}
-	sidebarWidth := min(30, max(22, width/3))
+	sidebarWidth := min(36, max(34, width/3))
 	canvasWidth := max(32, width-sidebarWidth-1)
 	canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, canvasWidth, mainHeight), canvasWidth, mainHeight, false)
 	sidebar := r.renderMixedWorkbenchSidebar(theme, state, tab, pane, tiledPaneIDs, floatingPaneIDs, sidebarWidth, mainHeight)
@@ -702,60 +702,109 @@ func renderModernWorkbenchCanvasMetrics(metrics wireframeMetrics, width, height 
 }
 
 func (r modernScreenShellRenderer) renderSplitWorkbenchSidebar(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, tiledPaneIDs []types.PaneID, floatingPaneIDs []types.PaneID, width, height int) string {
-	summaryHeight := min(10, max(7, height/3))
+	summaryHeight := min(10, max(7, height/3+1))
 	summaryLines := []string{
 		theme.panelMeta.Render(renderModernSplitWorkbenchTitleLine(state, pane, len(tiledPaneIDs))),
 		theme.panelMeta.Render(renderModernSplitLayoutSummary(tab, len(tiledPaneIDs))),
 		theme.panelMeta.Render(renderModernWorkbenchLocationLine(state, pane)),
-		theme.panelMeta.Render(renderModernWorkbenchSignalLine(state, pane)),
 	}
 	if len(floatingPaneIDs) > 0 {
 		summaryLines = append(summaryLines, theme.panelMeta.Render(fmt.Sprintf("%d detached windows available", len(floatingPaneIDs))))
 	}
-	summaryLines = append(summaryLines, theme.terminalBody.Render(renderModernSplitActionLine(state)))
 	summary := renderWorkbenchSidebarPanel(theme, "Split workbench", summaryLines, width, summaryHeight)
-	cardHeight := max(4, height-summaryHeight-1)
-	card := r.renderPaneWorkbenchCard(theme, state, pane, width, cardHeight, true)
-	return lipgloss.JoinVertical(lipgloss.Left, summary, card)
+	infoHeight := max(4, height-summaryHeight-1)
+	info := r.renderWorkbenchSignalsSidebar(theme, state, pane, width, infoHeight, true, renderModernSplitActionLine(state))
+	return lipgloss.JoinVertical(lipgloss.Left, summary, info)
 }
 
 func (r modernScreenShellRenderer) renderFloatingWorkbenchSidebar(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, width, height int) string {
-	summaryHeight := min(9, max(6, height/3))
+	summaryHeight := min(9, max(6, height/4+1))
 	summaryLines := []string{
 		theme.panelMeta.Render(renderModernFloatingWorkbenchTitleLine(state, tab, floatingPaneIDs)),
 		theme.panelMeta.Render(renderModernFloatingWorkbenchSummary(state, tab, floatingPaneIDs)),
-		theme.panelMeta.Render(renderModernFloatingWorkbenchStateLine(state, tab, floatingPaneIDs)),
 		theme.panelMeta.Render(renderModernWorkbenchLocationLine(state, pane)),
-		theme.terminalBody.Render(renderModernFloatingWorkbenchControlLine(state)),
-	}
-	if hint := renderModernFloatingModeHint(state); hint != "" {
-		summaryLines = append(summaryLines, theme.terminalBody.Render(hint))
 	}
 	summary := renderWorkbenchSidebarPanel(theme, "Floating workbench", summaryLines, width, summaryHeight)
-	deckHeight := max(4, height-summaryHeight-1)
+	infoHeight := min(10, max(8, height/3))
+	info := r.renderWorkbenchSignalsSidebar(theme, state, pane, width, infoHeight, true, compactWorkbenchSignalLines(
+		renderModernFloatingWorkbenchStateLine(state, tab, floatingPaneIDs),
+		renderModernFloatingWorkbenchControlLine(state),
+		renderModernFloatingModeHint(state),
+	)...)
+	deckHeight := max(4, height-summaryHeight-infoHeight-2)
 	deck := r.renderFloatingDeck(theme, state, tab, floatingPaneIDs, width, deckHeight)
-	return lipgloss.JoinVertical(lipgloss.Left, summary, deck)
+	return lipgloss.JoinVertical(lipgloss.Left, summary, info, deck)
 }
 
 func (r modernScreenShellRenderer) renderMixedWorkbenchSidebar(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, tiledPaneIDs []types.PaneID, floatingPaneIDs []types.PaneID, width, height int) string {
-	summaryHeight := min(10, max(7, height/3))
+	summaryHeight := min(10, max(7, height/4+1))
 	summaryLines := []string{
-		theme.panelMeta.Render(fmt.Sprintf("Active %s  •  tiled %d  •  floating %d", renderModernPaneDisplayTitle(state, pane), len(tiledPaneIDs), len(floatingPaneIDs))),
+		theme.panelMeta.Render(fmt.Sprintf("Mixed workbench  •  active %s", renderModernPaneDisplayTitle(state, pane))),
+		theme.panelMeta.Render(fmt.Sprintf("Tiled %d  •  floating %d", len(tiledPaneIDs), len(floatingPaneIDs))),
 		theme.panelMeta.Render(renderModernSplitLayoutSummary(tab, len(tiledPaneIDs))),
 		theme.panelMeta.Render(renderModernWorkbenchLocationLine(state, pane)),
-		theme.panelMeta.Render(renderModernWorkbenchSignalLine(state, pane)),
-		theme.terminalBody.Render(renderModernFloatingWorkbenchStateLine(state, tab, floatingPaneIDs)),
 	}
 	summary := renderWorkbenchSidebarPanel(theme, "Mixed workbench", summaryLines, width, summaryHeight)
-	deckHeight := max(4, height-summaryHeight-1)
+	infoHeight := min(10, max(8, height/3))
+	info := r.renderWorkbenchSignalsSidebar(theme, state, pane, width, infoHeight, true, compactWorkbenchSignalLines(
+		renderModernFloatingWorkbenchStateLine(state, tab, floatingPaneIDs),
+		renderModernSplitActionLine(state),
+	)...)
+	deckHeight := max(4, height-summaryHeight-infoHeight-2)
 	deck := r.renderFloatingDeck(theme, state, tab, floatingPaneIDs, width, deckHeight)
-	return lipgloss.JoinVertical(lipgloss.Left, summary, deck)
+	return lipgloss.JoinVertical(lipgloss.Left, summary, info, deck)
+}
+
+func compactWorkbenchSignalLines(lines ...string) []string {
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	return filtered
+}
+
+// renderWorkbenchSignalsSidebar 统一收口 modern workbench 的信号/操作提示面板。
+// single/split/floating/mixed 都复用这一层，避免不同布局各自输出一套不同语法。
+func (r modernScreenShellRenderer) renderWorkbenchSignalsSidebar(theme modernShellTheme, state types.AppState, pane types.PaneState, width, height int, active bool, extraLines ...string) string {
+	lines := []string{
+		theme.panelMeta.Render(renderModernSingleWorkbenchFocusLine(state, pane, active)),
+		theme.panelMeta.Render(renderModernSingleWorkbenchRoleSlotLine(state, pane)),
+	}
+	if terminalLine := renderModernSingleWorkbenchTerminalLine(state, pane); terminalLine != "" {
+		lines = append(lines, theme.panelMeta.Render(terminalLine))
+	}
+	if sessionLine := renderModernSingleWorkbenchSessionLine(state, pane); sessionLine != "" {
+		lines = append(lines, theme.panelMeta.Render(sessionLine))
+	}
+	lines = append(lines, theme.panelMeta.Render(renderModernSingleWorkbenchLayerLine(state)))
+	if commandLine := renderModernSingleWorkbenchCommandLine(state, pane); commandLine != "" {
+		lines = append(lines, theme.terminalBody.Render(commandLine))
+	}
+	if preview := r.renderPanePreview(pane.TerminalID); preview != "" {
+		lines = append(lines, theme.terminalBody.Render("Preview  "+preview))
+	}
+	for _, line := range compactWorkbenchSignalLines(extraLines...) {
+		lines = append(lines, theme.panelMeta.Render(line))
+	}
+	lines = append(lines, renderModernWorkbenchKeyLines(theme, width, pane)...)
+	return renderWorkbenchSidebarPanel(theme, "Signals & Keys", lines, width, height)
 }
 
 func (r modernScreenShellRenderer) renderFloatingDeck(theme modernShellTheme, state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID, width, height int) string {
 	header := theme.panelTitle.Render(fmt.Sprintf("Window deck  •  %d windows", len(floatingPaneIDs)))
 	if len(floatingPaneIDs) == 0 {
 		return theme.mutedPanel.Width(width - 2).Height(height - 2).Render(strings.Join([]string{header, theme.panelMeta.Render("No floating windows")}, "\n"))
+	}
+	if height <= 6 {
+		lines := normalizeModernPanelLines([]string{
+			header,
+			theme.panelMeta.Render(renderModernFloatingDeckCompactLine(state, tab, floatingPaneIDs)),
+		}, max(14, width-4), max(2, height-2))
+		return theme.mutedPanel.Width(width - 2).Height(height - 2).Render(strings.Join(lines, "\n"))
 	}
 	cardHeight := 9
 	cards := make([]string, 0, len(floatingPaneIDs))
@@ -775,6 +824,26 @@ func (r modernScreenShellRenderer) renderFloatingDeck(theme modernShellTheme, st
 		cards = append(cards, theme.panelMeta.Render("No floating windows"))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, append([]string{header}, cards...)...)
+}
+
+func renderModernFloatingDeckCompactLine(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) string {
+	parts := make([]string, 0, len(floatingPaneIDs))
+	for index := len(floatingPaneIDs) - 1; index >= 0; index-- {
+		paneID := floatingPaneIDs[index]
+		targetPane, ok := tab.Panes[paneID]
+		if !ok {
+			continue
+		}
+		label := renderModernPaneDisplayTitle(state, targetPane)
+		if index == len(floatingPaneIDs)-1 {
+			label = "top " + label
+		}
+		parts = append(parts, label)
+	}
+	if len(parts) == 0 {
+		return "No floating windows"
+	}
+	return strings.Join(parts, "  •  ")
 }
 
 func (r modernScreenShellRenderer) renderFloatingDeckCard(theme modernShellTheme, state types.AppState, pane types.PaneState, width, height int, active bool, index int, total int) string {
@@ -2071,17 +2140,17 @@ func renderModernSingleWorkbenchSessionLine(state types.AppState, pane types.Pan
 	if pane.TerminalID == "" {
 		switch pane.SlotState {
 		case types.PaneSlotWaiting:
-			return "waiting for connect"
+			return "state waiting  •  waiting for connect"
 		case types.PaneSlotExited:
-			return "process exited  •  history retained"
+			return "state exited  •  history retained"
 		default:
-			return "no terminal connected"
+			return "state empty  •  no terminal connected"
 		}
 	}
 	terminalLabel := renderModernTerminalLabel(state, pane)
 	terminal, ok := state.Domain.Terminals[pane.TerminalID]
 	if !ok {
-		return "connected  •  " + terminalLabel
+		return "state running  •  " + terminalLabel
 	}
 	stateLabel := string(terminal.State)
 	if stateLabel == "" {
@@ -2091,7 +2160,7 @@ func renderModernSingleWorkbenchSessionLine(state types.AppState, pane types.Pan
 	if terminal.Visible {
 		visibility = "visible"
 	}
-	return fmt.Sprintf("%s  •  %s", stateLabel, visibility)
+	return fmt.Sprintf("state %s  •  %s", stateLabel, visibility)
 }
 
 func renderModernSingleWorkbenchCommandLine(state types.AppState, pane types.PaneState) string {
@@ -3008,7 +3077,7 @@ func renderModernWorkbenchKeyLines(theme modernShellTheme, width int, pane types
 	if pane.Kind == types.PaneKindFloating {
 		items = append(items, "Ctrl-o float")
 	}
-	return renderModernOverlayMetaTokenLines(theme, max(18, width/2), items...)
+	return renderModernOverlayMetaTokenLines(theme, max(18, width-4), items...)
 }
 
 func renderModernBackdropPaneLine(state types.AppState, pane types.PaneState) string {

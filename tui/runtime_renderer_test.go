@@ -557,16 +557,19 @@ func TestRuntimeRendererShellOnlyRendersSplitWorkbenchAsPaneCanvas(t *testing.T)
 
 	view := renderer.Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Split workbench") || !strings.Contains(stripped, "Layout vertical 50/50") {
+	if !strings.Contains(stripped, "Split workbench") || !strings.Contains(stripped, "Layout vertical 50/50") || !strings.Contains(stripped, "Signals & Keys") {
 		t.Fatalf("expected shell-only split renderer to expose split summary sidebar, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "owner  •  connected") {
+	if !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal api-dev") {
+		t.Fatalf("expected shell-only split renderer to expose unified workbench signal panel, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") {
 		t.Fatalf("expected shell-only split renderer to expose tiled pane canvas titles, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "$ npm run dev") || !strings.Contains(stripped, "> tsc -w") || !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
 		t.Fatalf("expected shell-only split renderer to keep live terminal content inside pane frames, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "term-1 running owner") || !strings.Contains(stripped, "term-2 running owner") {
+	if !strings.Contains(stripped, "term-1 running own") || !strings.Contains(stripped, "term-2 running owner") {
 		t.Fatalf("expected shell-only split renderer to expose runtime ownership in pane foot lines, got:\n%s", view)
 	}
 	if strings.Contains(stripped, "Pane map") {
@@ -609,8 +612,11 @@ func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing
 
 	view := renderer.Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Floating workbench") || !strings.Contains(stripped, "Window deck  •  2 windows") {
+	if !strings.Contains(stripped, "Floating workbench") || !strings.Contains(stripped, "Signals & Keys") || !strings.Contains(stripped, "Window deck  •  2 windows") {
 		t.Fatalf("expected shell-only floating renderer to expose floating summary deck, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal api-dev") {
+		t.Fatalf("expected shell-only floating renderer to expose unified workbench signal panel, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "main / shell / floating / api-dev") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "top build-log") || !strings.Contains(stripped, "Window deck  •  2 windows") {
 		t.Fatalf("expected shell-only floating renderer to expose overlapping floating pane titles with z-order, got:\n%s", view)
@@ -689,8 +695,11 @@ func TestRuntimeRendererShellOnlyRendersDetachedFloatingStripForMixedWorkbench(t
 
 	view := renderer.Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Detached windows") || !strings.Contains(stripped, "unconnected pane empty") {
+	if !strings.Contains(stripped, "Detached windows") || !strings.Contains(stripped, "Mixed workbench") || !strings.Contains(stripped, "Signals & Keys") || !strings.Contains(stripped, "unconnected pane empty") {
 		t.Fatalf("expected shell-only mixed workbench to expose detached floating strip, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal api-dev") {
+		t.Fatalf("expected shell-only mixed workbench to expose unified workbench signal panel, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "waiting pane") || !strings.Contains(stripped, "deploy-log") || !strings.Contains(stripped, "unconnected p") || !strings.Contains(stripped, "no term") || !strings.Contains(stripped, "history retained") {
 		t.Fatalf("expected shell-only mixed workbench to render tiled and floating panes in one canvas, got:\n%s", view)
