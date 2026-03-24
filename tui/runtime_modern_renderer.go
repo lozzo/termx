@@ -289,7 +289,7 @@ func (r modernScreenShellRenderer) renderSingleWorkbench(theme modernShellTheme,
 		panelStyle = theme.activePanel
 	}
 	bodyWidth := max(20, width-4)
-	lines := r.renderPanePanelLines(theme, state, pane, bodyWidth, max(6, height-4), false)
+	lines := r.renderPanePanelLines(theme, state, pane, bodyWidth, max(6, height-4), true, active, 0, 0)
 	return panelStyle.Width(width - 2).Render(strings.Join(lines, "\n"))
 }
 
@@ -435,7 +435,7 @@ func (r modernScreenShellRenderer) renderFloatingDeck(theme modernShellTheme, st
 		if !ok {
 			continue
 		}
-		cards = append(cards, r.renderFloatingDeckCard(theme, state, targetPane, width, min(cardHeight, remainingHeight), paneID == tab.ActivePaneID, index))
+		cards = append(cards, r.renderFloatingDeckCard(theme, state, targetPane, width, min(cardHeight, remainingHeight), paneID == tab.ActivePaneID, index, len(floatingPaneIDs)))
 		remainingHeight -= cardHeight
 	}
 	if len(cards) == 0 {
@@ -444,7 +444,7 @@ func (r modernScreenShellRenderer) renderFloatingDeck(theme modernShellTheme, st
 	return lipgloss.JoinVertical(lipgloss.Left, append([]string{header}, cards...)...)
 }
 
-func (r modernScreenShellRenderer) renderFloatingDeckCard(theme modernShellTheme, state types.AppState, pane types.PaneState, width, height int, active bool, index int) string {
+func (r modernScreenShellRenderer) renderFloatingDeckCard(theme modernShellTheme, state types.AppState, pane types.PaneState, width, height int, active bool, index int, total int) string {
 	panelStyle := theme.mutedPanel
 	if active {
 		panelStyle = theme.activePanel
@@ -458,7 +458,7 @@ func (r modernScreenShellRenderer) renderFloatingDeckCard(theme modernShellTheme
 		preview = string(pane.SlotState)
 	}
 	lines := normalizeModernPanelLines([]string{
-		theme.panelTitle.Render(fmt.Sprintf("Window %d  %s", index+1, renderPaneTitle(state, pane))),
+		theme.panelTitle.Render(fmt.Sprintf("z %d/%d • %s", index+1, max(1, total), renderPaneTitle(state, pane))),
 		theme.panelMeta.Render(rectText),
 		theme.panelMeta.Render(fmt.Sprintf("slot %s  •  %s", pane.SlotState, renderScreenShellPaneCardRole(state, pane))),
 		theme.terminalBody.Render(preview),
@@ -475,15 +475,11 @@ func (r modernScreenShellRenderer) renderPaneWorkbenchCard(theme modernShellThem
 	}
 	contentWidth := max(12, width-4)
 	contentHeight := max(4, height-2)
-	lines := r.renderPanePanelLines(theme, state, pane, contentWidth, contentHeight, true)
-	if pane.Kind == types.PaneKindFloating && (pane.Rect.W > 0 || pane.Rect.H > 0) {
-		rectLine := theme.panelMeta.Render(fmt.Sprintf("rect %d,%d  %dx%d", pane.Rect.X, pane.Rect.Y, pane.Rect.W, pane.Rect.H))
-		if len(lines) > 1 {
-			lines = append(lines[:2], append([]string{rectLine}, lines[2:]...)...)
-		} else {
-			lines = append(lines, rectLine)
-		}
+	zIndex, zTotal := 0, 0
+	if pane.Kind == types.PaneKindFloating {
+		zIndex, zTotal = renderModernFloatingZ(state, pane)
 	}
+	lines := r.renderPanePanelLines(theme, state, pane, contentWidth, contentHeight, true, active, zIndex, zTotal)
 	lines = normalizeModernPanelLines(lines, contentWidth, contentHeight)
 	return panelStyle.Width(width - 2).Height(height - 2).Render(strings.Join(lines, "\n"))
 }
@@ -513,14 +509,18 @@ func normalizeModernPanelLines(lines []string, width, height int) []string {
 
 // renderPanePanelLines 统一负责产品态 pane 卡片的正文。
 // 这里把 connected / empty / waiting / exited 四态折叠成同一种视觉骨架，避免再回到旧版分叉渲染。
-func (r modernScreenShellRenderer) renderPanePanelLines(theme modernShellTheme, state types.AppState, pane types.PaneState, width, maxRows int, includeTitle bool) []string {
+func (r modernScreenShellRenderer) renderPanePanelLines(theme modernShellTheme, state types.AppState, pane types.PaneState, width, maxRows int, includeTitle bool, active bool, zIndex int, zTotal int) []string {
 	lines := make([]string, 0, maxRows)
 	if includeTitle {
-		lines = append(lines, theme.panelTitle.Render(renderPaneTitle(state, pane)))
+		lines = append(lines, theme.panelTitle.Render(renderModernPaneTitleBar(state, pane, active, zIndex, zTotal)))
 	}
 	lines = append(lines, theme.panelTitle.Render("Status"))
 	lines = append(lines, theme.panelMeta.Render(renderModernPaneStatusLine(state, pane)))
 	lines = append(lines, theme.panelMeta.Render(renderModernPaneIdentityLine(pane)))
+	if pane.Kind == types.PaneKindFloating && (pane.Rect.W > 0 || pane.Rect.H > 0) {
+		lines = append(lines, theme.panelTitle.Render("Geometry"))
+		lines = append(lines, theme.panelMeta.Render(fmt.Sprintf("rect %d,%d  %dx%d", pane.Rect.X, pane.Rect.Y, pane.Rect.W, pane.Rect.H)))
+	}
 
 	switch pane.SlotState {
 	case types.PaneSlotEmpty:
@@ -559,6 +559,41 @@ func (r modernScreenShellRenderer) renderPanePanelLines(theme modernShellTheme, 
 	}
 
 	return lines
+}
+
+func renderModernPaneTitleBar(state types.AppState, pane types.PaneState, active bool, zIndex int, zTotal int) string {
+	parts := []string{renderPaneTitle(state, pane)}
+	role := renderScreenShellPaneCardRole(state, pane)
+	if role != "" {
+		parts = append(parts, role)
+	}
+	if pane.Kind != "" {
+		parts = append(parts, string(pane.Kind))
+	}
+	if active {
+		parts = append(parts, "active")
+	}
+	if zIndex > 0 && zTotal > 0 {
+		parts = append(parts, fmt.Sprintf("z %d/%d", zIndex, zTotal))
+	}
+	return strings.Join(parts, " • ")
+}
+
+func renderModernFloatingZ(state types.AppState, pane types.PaneState) (int, int) {
+	workspace, ok := state.Domain.Workspaces[state.Domain.ActiveWorkspaceID]
+	if !ok {
+		return 0, 0
+	}
+	tab, ok := workspace.Tabs[workspace.ActiveTabID]
+	if !ok || len(tab.FloatingOrder) == 0 {
+		return 0, 0
+	}
+	for idx, paneID := range tab.FloatingOrder {
+		if paneID == pane.ID {
+			return idx + 1, len(tab.FloatingOrder)
+		}
+	}
+	return 0, len(tab.FloatingOrder)
 }
 
 func renderModernPaneStatusLine(state types.AppState, pane types.PaneState) string {

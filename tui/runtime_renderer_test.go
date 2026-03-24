@@ -297,6 +297,9 @@ func TestRuntimeRendererShellOnlyShowsContextualActionsForConnectedPane(t *testi
 	if !strings.Contains(stripped, "Ctrl-p pane") || !strings.Contains(stripped, "Ctrl-o float") || !strings.Contains(stripped, "? help") {
 		t.Fatalf("expected shell-only connected pane to expose contextual actions, got:\n%s", view)
 	}
+	if !strings.Contains(stripped, "api-dev • owner • tiled • active") {
+		t.Fatalf("expected shell-only connected pane to expose title bar summary, got:\n%s", view)
+	}
 	if !strings.Contains(stripped, "Actions") || !strings.Contains(stripped, "type  •  Ctrl-f picker  •  Ctrl-g global") {
 		t.Fatalf("expected shell-only connected pane card to expose inline pane actions, got:\n%s", view)
 	}
@@ -403,6 +406,9 @@ func TestRuntimeRendererShellOnlyRendersSplitWorkbenchAsPaneCanvas(t *testing.T)
 	if !strings.Contains(stripped, "Split view") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") {
 		t.Fatalf("expected shell-only split renderer to expose pane titles, got:\n%s", view)
 	}
+	if !strings.Contains(stripped, "api-dev • owner • tiled • active") || !strings.Contains(stripped, "build-log • owner • tiled") {
+		t.Fatalf("expected shell-only split renderer to expose pane title bars, got:\n%s", view)
+	}
 	if !strings.Contains(stripped, "layout vertical 50/50") || !strings.Contains(stripped, "switch Ctrl-p pane") {
 		t.Fatalf("expected shell-only split renderer to expose layout summary and navigation hint, got:\n%s", view)
 	}
@@ -451,6 +457,9 @@ func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing
 	stripped := stripANSIForTest(view)
 	if !strings.Contains(stripped, "Floating workbench") || !strings.Contains(stripped, "Window deck") {
 		t.Fatalf("expected shell-only floating renderer to expose window deck chrome, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "api-dev • owner • floating • active") || !strings.Contains(stripped, "Geometry") || !strings.Contains(stripped, "z 1/2") || !strings.Contains(stripped, "z 2/2") {
+		t.Fatalf("expected shell-only floating renderer to expose title bar and z-order geometry, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "Window deck  •  2 windows") || !strings.Contains(stripped, "focus float-1") {
 		t.Fatalf("expected shell-only floating renderer to expose deck summary, got:\n%s", view)

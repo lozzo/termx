@@ -742,6 +742,9 @@ func TestE2ERunScenarioDefaultModernFloatingWorkbenchRendersWindowDeck(t *testin
 			if !strings.Contains(stripped, "Floating workbench") || !strings.Contains(stripped, "Window deck") {
 				t.Fatalf("expected default modern floating view to expose window deck, got:\n%s", view)
 			}
+			if !strings.Contains(stripped, "api-dev • owner • floating • active") || !strings.Contains(stripped, "Geometry") || !strings.Contains(stripped, "z 1/2") || !strings.Contains(stripped, "z 2/2") {
+				t.Fatalf("expected default modern floating view to expose title bars and geometry depth, got:\n%s", view)
+			}
 			if !strings.Contains(stripped, "api ready") || !strings.Contains(stripped, "build ok") || !strings.Contains(stripped, "rect 10,8  30x12") {
 				t.Fatalf("expected default modern floating view to expose preview and geometry, got:\n%s", view)
 			}
