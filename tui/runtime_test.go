@@ -784,7 +784,7 @@ func TestE2ERunScenarioDefaultModernTerminalManagerOverlayRendersStructuredModal
 			if !strings.Contains(stripped, "Terminal Manager") || !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Visible terminals") || !strings.Contains(stripped, "Actions") {
 				t.Fatalf("expected default modern terminal manager modal structure, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "+ new terminal") {
+			if !strings.Contains(stripped, "[terminal] api-dev") || !strings.Contains(stripped, "[create] + new terminal") || !strings.Contains(stripped, "running  •  visible") {
 				t.Fatalf("expected default modern terminal manager rows, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "Detail") || !strings.Contains(stripped, "cmd npm run dev") || !strings.Contains(stripped, "owner pane:pane-1") {
@@ -831,7 +831,7 @@ func TestE2ERunScenarioDefaultModernWorkspacePickerOverlayRendersStructuredModal
 			if !strings.Contains(stripped, "Workspace Picker") || !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Tree") || !strings.Contains(stripped, "Actions") {
 				t.Fatalf("expected default modern workspace picker modal structure, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "Target") || !strings.Contains(stripped, "workspace ops  (ws-2)") || !strings.Contains(stripped, "main") || !strings.Contains(stripped, "unconnected pane") {
+			if !strings.Contains(stripped, "Target") || !strings.Contains(stripped, "workspace ops  (ws-2)") || !strings.Contains(stripped, "[-] [workspace] ops") || !strings.Contains(stripped, "[tab] logs") || !strings.Contains(stripped, "[pane] unconnected pane") {
 				t.Fatalf("expected default modern workspace picker tree rows, got:\n%s", view)
 			}
 			return nil
@@ -949,7 +949,7 @@ func TestE2ERunScenarioDefaultModernTerminalPickerOverlayRendersStructuredModal(
 			if !strings.Contains(stripped, "Terminal Picker") || !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Detail") || !strings.Contains(stripped, "Results") || !strings.Contains(stripped, "Actions") {
 				t.Fatalf("expected default modern terminal picker modal structure, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "cmd tail -f build.log") || !strings.Contains(stripped, "tags group=build") {
+			if !strings.Contains(stripped, "[terminal] build-log") || !strings.Contains(stripped, "running  •  hidden") || !strings.Contains(stripped, "cmd tail -f build.log") || !strings.Contains(stripped, "tags group=build") {
 				t.Fatalf("expected default modern terminal picker detail, got:\n%s", view)
 			}
 			return nil

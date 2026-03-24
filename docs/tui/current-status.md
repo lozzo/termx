@@ -33,6 +33,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把现代主壳的“信息层级”往前推进：pane card 已补上 role / slot / runtime state / terminal identity chrome；terminal manager / terminal picker 已补 detail 区；workspace picker / layout resolve / prompt 已补 target / selection / context / footer shortcut，默认现代路径的 renderer 与 runtime E2E 也已一并覆盖
 - 本轮继续把现代主壳的“交互 chrome”往前收口：top bar 现在会显式显示 `overlay` / `mode` 状态，context bar 会补齐 `owner/follower`、terminal 与 focus 反馈；connected pane card 会显式分出 `Terminal / Preview` 两段；默认运行路径和 shell-only renderer 断言也已同步锁住
 - 本轮继续把现代工作台的 pane/workbench 可操作性往前收：pane card 现在统一显式分出 `Status / Details / Actions / Terminal / Preview` 这类 section；split workbench 会显示 layout 摘要与 pane 切换提示；floating workbench 会显示 deck 摘要与 floating mode 操作提示
+- 本轮继续把现代 overlay 的信息密度往前收：terminal manager / terminal picker 的 row 现在会直接显示 `type + state + visibility/owner/panes`，workspace picker tree 现在会显式显示 `[workspace]/[tab]/[pane]` 结构与展开态，并由 shell-only 与 default-run 现代 E2E 一起锁住
 
 ---
 
@@ -237,6 +238,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 195. 第一百九十一轮 TDD 已补上默认现代 `lipgloss` renderer、主工作台与 modal 第一包产品态视觉，以及 default-run / shell-only / E2E 回归闭环
 196. 第一百九十二轮 TDD 已补上现代主壳 top/context 状态 badge、connected pane 的 `Terminal / Preview` 分层，以及 default-run / shell-only 回归闭环
 197. 第一百九十三轮 TDD 已补上现代 pane card section、split/floating workbench 摘要与 floating mode 操作提示，并完成 shell-only / 全量回归闭环
+198. 第一百九十四轮 TDD 已补上现代 overlay row/tree 元信息密度、workspace picker 展开预览预算，以及 shell-only / default-run 现代 modal 回归闭环
 
 对应文档：
 

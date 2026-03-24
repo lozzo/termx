@@ -760,11 +760,19 @@ func modernTerminalManagerRowPreview(theme modernShellTheme, rows []terminalmana
 	}
 	slice, _ := overlayPreviewRowsAround(rows, 4, selectedIndex)
 	for _, row := range slice {
-		label := row.Label
-		if row.TerminalID != "" {
-			label = fmt.Sprintf("%s  (%s)", label, row.TerminalID)
+		text := truncateModernLine(renderModernTerminalManagerRowText(row), width)
+		switch row.Kind {
+		case terminalmanagerdomain.RowKindHeader:
+			preview = append(preview, theme.modalMeta.Render(text))
+			continue
+		case terminalmanagerdomain.RowKindCreate:
+			if hasSelected && selected.Kind == row.Kind && selected.Label == row.Label {
+				preview = append(preview, theme.selectedListItem.Render("> "+text))
+				continue
+			}
+			preview = append(preview, theme.listItem.Render("  "+text))
+			continue
 		}
-		text := truncateModernLine(label, width)
 		if hasSelected && row.Kind == selected.Kind && row.Label == selected.Label && row.TerminalID == selected.TerminalID {
 			preview = append(preview, theme.selectedListItem.Render("> "+text))
 			continue
@@ -772,6 +780,29 @@ func modernTerminalManagerRowPreview(theme modernShellTheme, rows []terminalmana
 		preview = append(preview, theme.listItem.Render("  "+text))
 	}
 	return preview
+}
+
+func renderModernTerminalManagerRowText(row terminalmanagerdomain.Row) string {
+	switch row.Kind {
+	case terminalmanagerdomain.RowKindHeader:
+		return "[" + string(row.Section) + "]"
+	case terminalmanagerdomain.RowKindCreate:
+		return "[create] + new terminal  •  current workbench"
+	default:
+		parts := []string{"[terminal] " + row.Label}
+		if row.State != "" {
+			parts = append(parts, string(row.State))
+		}
+		if row.VisibilityLabel != "" {
+			parts = append(parts, row.VisibilityLabel)
+		}
+		if row.OwnerSlotLabel != "" {
+			parts = append(parts, "owner "+row.OwnerSlotLabel)
+		} else {
+			parts = append(parts, fmt.Sprintf("%d panes", row.ConnectedPaneCount))
+		}
+		return strings.Join(parts, "  •  ")
+	}
 }
 
 func renderModernTerminalManagerDetail(theme modernShellTheme, manager *terminalmanagerdomain.State, width int) []string {
@@ -834,9 +865,9 @@ func renderModernWorkspacePickerOverlay(theme modernShellTheme, picker *workspac
 		}
 	}
 	lines = append(lines, "", theme.modalMeta.Render("Tree"))
-	slice, _ := overlayPreviewRowsAround(rows, 5, selectedIndex)
+	slice, _ := overlayPreviewRowsAround(rows, 6, selectedIndex)
 	for _, row := range slice {
-		label := strings.Repeat("  ", row.Depth) + row.Node.Label
+		label := renderModernWorkspaceTreeRowText(row)
 		label = truncateModernLine(label, width)
 		if hasSelected && row.Node.Key == selectedRow.Node.Key {
 			lines = append(lines, theme.selectedListItem.Render("> "+label))
@@ -847,6 +878,25 @@ func renderModernWorkspacePickerOverlay(theme modernShellTheme, picker *workspac
 	lines = append(lines, "", theme.modalMeta.Render("Actions"))
 	lines = append(lines, theme.modalBody.Render(truncateModernLine("Enter jump  •  / filter  •  Esc close", width)))
 	return lines
+}
+
+func renderModernWorkspaceTreeRowText(row workspacedomain.TreeRow) string {
+	indent := strings.Repeat("  ", row.Depth)
+	prefix := ""
+	switch {
+	case row.Node.Kind == workspacedomain.TreeNodeKindCreate:
+		prefix = "[create]"
+	case row.Node.Kind == workspacedomain.TreeNodeKindPane:
+		prefix = "[pane]"
+	case row.Expanded:
+		prefix = "[-] [" + string(row.Node.Kind) + "]"
+	default:
+		prefix = "[+] [" + string(row.Node.Kind) + "]"
+	}
+	if row.Node.Kind == workspacedomain.TreeNodeKindPane || row.Node.Kind == workspacedomain.TreeNodeKindCreate {
+		return indent + prefix + " " + row.Node.Label
+	}
+	return indent + prefix + " " + row.Node.Label
 }
 
 func renderModernWorkspacePickerDetail(theme modernShellTheme, picker *workspacedomain.PickerState, width int) []string {
@@ -893,11 +943,7 @@ func renderModernTerminalPickerOverlay(theme modernShellTheme, picker *terminalp
 	lines = append(lines, "", theme.modalMeta.Render("Results"))
 	slice, _ := overlayPreviewRowsAround(rows, 4, selectedIndex)
 	for _, row := range slice {
-		text := row.Label
-		if row.TerminalID != "" {
-			text += "  (" + string(row.TerminalID) + ")"
-		}
-		text = truncateModernLine(text, width)
+		text := truncateModernLine(renderModernTerminalPickerRowText(row), width)
 		if hasSelected && row.Kind == selectedRow.Kind && row.Label == selectedRow.Label && row.TerminalID == selectedRow.TerminalID {
 			lines = append(lines, theme.selectedListItem.Render("> "+text))
 			continue
@@ -907,6 +953,23 @@ func renderModernTerminalPickerOverlay(theme modernShellTheme, picker *terminalp
 	lines = append(lines, "", theme.modalMeta.Render("Actions"))
 	lines = append(lines, theme.modalBody.Render(truncateModernLine("Enter connect  •  n create new  •  Esc close", width)))
 	return lines
+}
+
+func renderModernTerminalPickerRowText(row terminalpickerdomain.Row) string {
+	if row.Kind == terminalpickerdomain.RowKindCreate {
+		return "[create] + new terminal"
+	}
+	parts := []string{"[terminal] " + row.Label}
+	if row.State != "" {
+		parts = append(parts, string(row.State))
+	}
+	if row.Visible {
+		parts = append(parts, "visible")
+	} else {
+		parts = append(parts, "hidden")
+	}
+	parts = append(parts, fmt.Sprintf("%d panes", row.ConnectedPaneCount))
+	return strings.Join(parts, "  •  ")
 }
 
 func renderModernTerminalPickerDetail(theme modernShellTheme, picker *terminalpickerdomain.State, width int) []string {
