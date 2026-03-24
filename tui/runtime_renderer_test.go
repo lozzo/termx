@@ -152,6 +152,26 @@ func TestRuntimeRendererRendersNoticeSection(t *testing.T) {
 	}
 }
 
+func TestRuntimeRendererTruncatesNoticeSectionToLatestEntries(t *testing.T) {
+	view := runtimeRenderer{}.Render(connectedRunAppState(), []btui.Notice{
+		{Level: btui.NoticeLevelError, Text: "n1"},
+		{Level: btui.NoticeLevelError, Text: "n2"},
+		{Level: btui.NoticeLevelError, Text: "n3"},
+		{Level: btui.NoticeLevelError, Text: "n4"},
+		{Level: btui.NoticeLevelError, Text: "n5"},
+	})
+
+	if !strings.Contains(view, "notices_rendered: 4") || !strings.Contains(view, "notices_truncated: true") {
+		t.Fatalf("expected truncated notice metadata, got:\n%s", view)
+	}
+	if strings.Contains(view, "[error] n1") {
+		t.Fatalf("expected oldest notice to be truncated, got:\n%s", view)
+	}
+	if !strings.Contains(view, "[error] n5") {
+		t.Fatalf("expected latest notice to remain visible, got:\n%s", view)
+	}
+}
+
 func TestRuntimeRendererRendersWorkspacePickerOverlay(t *testing.T) {
 	state := connectedRunAppState()
 	state.Domain.WorkspaceOrder = append(state.Domain.WorkspaceOrder, types.WorkspaceID("ws-2"))
@@ -218,6 +238,51 @@ func TestRuntimeRendererRendersWorkspacePickerOverlay(t *testing.T) {
 	}
 	if !strings.Contains(view, "  [tab] logs") {
 		t.Fatalf("expected nested tab row in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererTruncatesWorkspacePickerRowsAroundSelection(t *testing.T) {
+	state := buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty)
+	for i := 2; i <= 12; i++ {
+		workspaceID := types.WorkspaceID("ws-" + twoDigitLabel(i))
+		tabID := types.TabID("tab-1")
+		paneID := types.PaneID("pane-1")
+		state.Domain.WorkspaceOrder = append(state.Domain.WorkspaceOrder, workspaceID)
+		state.Domain.Workspaces[workspaceID] = types.WorkspaceState{
+			ID:          workspaceID,
+			Name:        "ws-" + twoDigitLabel(i),
+			ActiveTabID: tabID,
+			TabOrder:    []types.TabID{tabID},
+			Tabs: map[types.TabID]types.TabState{
+				tabID: {
+					ID:           tabID,
+					Name:         "tab-1",
+					ActivePaneID: paneID,
+					ActiveLayer:  types.FocusLayerTiled,
+					Panes: map[types.PaneID]types.PaneState{
+						paneID: {ID: paneID, Kind: types.PaneKindTiled, SlotState: types.PaneSlotEmpty},
+					},
+				},
+			},
+		}
+	}
+	picker := workspacedomain.NewPickerState(state.Domain)
+	picker.MoveSelection(100)
+	state.UI.Overlay = types.OverlayState{Kind: types.OverlayWorkspacePicker, Data: picker}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "workspace_picker_row_count: 15") {
+		t.Fatalf("expected full workspace picker row count, got:\n%s", view)
+	}
+	if !strings.Contains(view, "workspace_picker_rows_rendered: 8") || !strings.Contains(view, "workspace_picker_rows_truncated: true") {
+		t.Fatalf("expected truncated workspace picker metadata, got:\n%s", view)
+	}
+	if !strings.Contains(view, "> [workspace] ws-12") {
+		t.Fatalf("expected bottom selection to stay visible in preview, got:\n%s", view)
+	}
+	if strings.Contains(view, "[workspace] ws-01") || strings.Contains(view, "[workspace] ws-02") {
+		t.Fatalf("expected leading workspace rows to be truncated, got:\n%s", view)
 	}
 }
 
@@ -359,6 +424,39 @@ func TestRuntimeRendererRendersPromptOverlay(t *testing.T) {
 	}
 	if !strings.Contains(view, "> [tags] Tags: group=build") {
 		t.Fatalf("expected active tags field in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererTruncatesPromptFieldsAroundActiveField(t *testing.T) {
+	state := runtimeStateWithTerminalManagerTargets()
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayPrompt,
+		Data: &promptdomain.State{
+			Kind:       promptdomain.KindEditTerminalMetadata,
+			Title:      "edit terminal metadata",
+			TerminalID: types.TerminalID("term-2"),
+			Fields: []promptdomain.Field{
+				{Key: "f1", Label: "F1", Value: "v1"},
+				{Key: "f2", Label: "F2", Value: "v2"},
+				{Key: "f3", Label: "F3", Value: "v3"},
+				{Key: "f4", Label: "F4", Value: "v4"},
+				{Key: "f5", Label: "F5", Value: "v5"},
+				{Key: "f6", Label: "F6", Value: "v6"},
+			},
+			Active: 5,
+		},
+	}
+	state.UI.Focus.Layer = types.FocusLayerPrompt
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "prompt_field_count: 6") || !strings.Contains(view, "prompt_fields_rendered: 4") || !strings.Contains(view, "prompt_fields_truncated: true") {
+		t.Fatalf("expected truncated prompt metadata, got:\n%s", view)
+	}
+	if !strings.Contains(view, "> [f6] F6: v6") {
+		t.Fatalf("expected active field to stay visible, got:\n%s", view)
+	}
+	if strings.Contains(view, "[f1] F1: v1") || strings.Contains(view, "[f2] F2: v2") {
+		t.Fatalf("expected leading prompt fields to be truncated, got:\n%s", view)
 	}
 }
 
@@ -539,4 +637,8 @@ func TestRuntimeRendererRendersFloatingPaneKind(t *testing.T) {
 	if !strings.Contains(view, "pane_kind: floating") {
 		t.Fatalf("expected floating pane kind in rendered view, got:\n%s", view)
 	}
+}
+
+func twoDigitLabel(v int) string {
+	return string(rune('0'+v/10)) + string(rune('0'+v%10))
 }

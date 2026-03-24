@@ -158,6 +158,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 134. 第一百三十轮 TDD 已补上 stop / metadata 控制面的成功回灌语义
 135. 第一百三十一轮 TDD 已补上 create / new-tab / floating 控制面的成功回灌语义
 136. 第一百三十二轮 TDD 已补上 runtime 主视图的固定状态头与 screen 预览裁剪
+137. 第一百三十三轮 TDD 已补上 overlay 列表与 notice 的预览裁剪
 
 对应文档：
 
@@ -294,6 +295,10 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - runtime 主视图现在会把 active pane 的 `screen` 限制为尾部预览，而不是整屏全量展开，避免 shell 内容把顶部 `workspace/tab/pane/overlay` 状态直接顶出可视区
 - renderer 现在额外输出 `screen_rows` 与 `screen_truncated`，显式说明当前看到的是 screen 预览而不是完整快照
 - 已补上 renderer 测试：长 snapshot 只保留最后 8 行，同时保持头部状态字段稳定可见
+- workspace picker、terminal manager、terminal picker、layout resolve、prompt、notices 现在都会输出受限预览，不再把长列表整段展开到主视图
+- overlay 预览会尽量围绕当前选中项或活动字段截取，保证焦点仍然处在可视窗口内
+- notices 现在默认只保留最近几条在主视图里显示，避免高频错误把上半屏全部刷掉
+- 已补上 renderer 测试：workspace picker 预览会保留底部选中项，prompt 预览会保留活动字段，notice 预览会保留最新几条
 - 已补上一条 runtime 场景型 E2E：`Ctrl-f` 打开 terminal picker 时主视图显式显示 `overlay: terminal_picker` 与 `focus_overlay_target: terminal_picker`
 - 已补上一条 runtime 场景型 E2E：workspace picker / prompt / terminal manager / terminal picker / layout resolve 关闭后主视图不再残留 `focus_overlay_target`
 - 已补上一条 runtime 场景型 E2E：terminal manager 与 layout resolve 关闭后主视图不再残留临时 `mode`

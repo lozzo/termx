@@ -20,6 +20,8 @@ type runtimeRenderer struct {
 }
 
 const runtimeScreenPreviewRows = 8
+const runtimeOverlayPreviewRows = 8
+const runtimeOverlayDetailPreviewRows = 4
 
 // Render 先提供一个稳定、可测试的文本视图，优先把生命周期打通。
 // 这里不追求视觉完成度，只把当前 workspace / tab / pane / overlay 这些主语义明确展示出来。
@@ -254,9 +256,10 @@ func renderOverlayLines(overlay types.OverlayState) []string {
 }
 
 func renderWorkspacePickerLines(picker *workspacedomain.PickerState) []string {
+	rows := picker.VisibleRows()
 	lines := []string{
 		fmt.Sprintf("workspace_picker_query: %s", picker.Query()),
-		fmt.Sprintf("workspace_picker_row_count: %d", len(picker.VisibleRows())),
+		fmt.Sprintf("workspace_picker_row_count: %d", len(rows)),
 	}
 	if node, ok := picker.SelectedNode(); ok {
 		lines = append(lines,
@@ -274,7 +277,21 @@ func renderWorkspacePickerLines(picker *workspacedomain.PickerState) []string {
 	}
 	lines = append(lines, "workspace_picker_rows:")
 	selected, hasSelection := picker.SelectedRow()
-	for _, row := range picker.VisibleRows() {
+	selectedIndex := 0
+	if hasSelection {
+		for idx, row := range rows {
+			if row.Node.Key == selected.Node.Key {
+				selectedIndex = idx
+				break
+			}
+		}
+	}
+	previewRows, truncated := overlayPreviewRowsAround(rows, runtimeOverlayPreviewRows, selectedIndex)
+	lines = append(lines, fmt.Sprintf("workspace_picker_rows_rendered: %d", len(previewRows)))
+	if truncated {
+		lines = append(lines, "workspace_picker_rows_truncated: true")
+	}
+	for _, row := range previewRows {
 		prefix := "  "
 		if hasSelection && row.Node.Key == selected.Node.Key {
 			prefix = "> "
@@ -285,9 +302,10 @@ func renderWorkspacePickerLines(picker *workspacedomain.PickerState) []string {
 }
 
 func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
+	rows := manager.VisibleRows()
 	lines := []string{
 		fmt.Sprintf("terminal_manager_query: %s", manager.Query()),
-		fmt.Sprintf("terminal_manager_row_count: %d", len(manager.VisibleRows())),
+		fmt.Sprintf("terminal_manager_row_count: %d", len(rows)),
 	}
 	if row, ok := manager.SelectedRow(); ok && row.Kind == terminalmanagerdomain.RowKindTerminal {
 		lines = append(lines,
@@ -311,7 +329,21 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 	}
 	lines = append(lines, "terminal_manager_rows:")
 	selected, hasSelection := manager.SelectedRow()
-	for _, row := range manager.VisibleRows() {
+	selectedIndex := 0
+	if hasSelection {
+		for idx, row := range rows {
+			if row.Kind == selected.Kind && row.TerminalID == selected.TerminalID && row.Label == selected.Label {
+				selectedIndex = idx
+				break
+			}
+		}
+	}
+	previewRows, truncated := overlayPreviewRowsAround(rows, runtimeOverlayPreviewRows, selectedIndex)
+	lines = append(lines, fmt.Sprintf("terminal_manager_rows_rendered: %d", len(previewRows)))
+	if truncated {
+		lines = append(lines, "terminal_manager_rows_truncated: true")
+	}
+	for _, row := range previewRows {
 		prefix := "  "
 		if hasSelection && row.Kind != terminalmanagerdomain.RowKindHeader && row.Kind == selected.Kind && row.TerminalID == selected.TerminalID && row.Label == selected.Label {
 			prefix = "> "
@@ -335,7 +367,12 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 		}
 		if locations := renderDetailLocations(detail.Locations); len(locations) > 0 {
 			lines = append(lines, "detail_locations:")
-			lines = append(lines, locations...)
+			previewLocations, truncated := overlayPreviewStrings(locations, runtimeOverlayDetailPreviewRows)
+			lines = append(lines, fmt.Sprintf("detail_locations_rendered: %d", len(previewLocations)))
+			if truncated {
+				lines = append(lines, "detail_locations_truncated: true")
+			}
+			lines = append(lines, previewLocations...)
 		}
 	}
 	return lines
@@ -395,9 +432,14 @@ func renderPromptLines(prompt *promptdomain.State) []string {
 		fmt.Sprintf("prompt_field_count: %d", len(prompt.Fields)),
 		"prompt_fields:",
 	)
-	for idx, field := range prompt.Fields {
+	previewFields, truncated := overlayPreviewRowsAround(prompt.Fields, runtimeOverlayDetailPreviewRows, active)
+	lines = append(lines, fmt.Sprintf("prompt_fields_rendered: %d", len(previewFields)))
+	if truncated {
+		lines = append(lines, "prompt_fields_truncated: true")
+	}
+	for _, field := range previewFields {
 		prefix := "  "
-		if idx == active {
+		if field.Key == prompt.Fields[active].Key && field.Label == prompt.Fields[active].Label {
 			prefix = "> "
 		}
 		lines = append(lines, fmt.Sprintf("%s[%s] %s: %s", prefix, field.Key, field.Label, field.Value))
@@ -406,9 +448,10 @@ func renderPromptLines(prompt *promptdomain.State) []string {
 }
 
 func renderTerminalPickerLines(picker *terminalpickerdomain.State) []string {
+	rows := picker.VisibleRows()
 	lines := []string{
 		fmt.Sprintf("terminal_picker_query: %s", picker.Query()),
-		fmt.Sprintf("terminal_picker_row_count: %d", len(picker.VisibleRows())),
+		fmt.Sprintf("terminal_picker_row_count: %d", len(rows)),
 	}
 	if row, ok := picker.SelectedRow(); ok && row.Kind == terminalpickerdomain.RowKindTerminal {
 		lines = append(lines,
@@ -428,7 +471,21 @@ func renderTerminalPickerLines(picker *terminalpickerdomain.State) []string {
 	}
 	lines = append(lines, "terminal_picker_rows:")
 	selected, hasSelection := picker.SelectedRow()
-	for _, row := range picker.VisibleRows() {
+	selectedIndex := 0
+	if hasSelection {
+		for idx, row := range rows {
+			if row.Kind == selected.Kind && row.TerminalID == selected.TerminalID && row.Label == selected.Label {
+				selectedIndex = idx
+				break
+			}
+		}
+	}
+	previewRows, truncated := overlayPreviewRowsAround(rows, runtimeOverlayPreviewRows, selectedIndex)
+	lines = append(lines, fmt.Sprintf("terminal_picker_rows_rendered: %d", len(previewRows)))
+	if truncated {
+		lines = append(lines, "terminal_picker_rows_truncated: true")
+	}
+	for _, row := range previewRows {
 		prefix := "  "
 		if hasSelection && row.Kind == selected.Kind && row.TerminalID == selected.TerminalID && row.Label == selected.Label {
 			prefix = "> "
@@ -439,11 +496,12 @@ func renderTerminalPickerLines(picker *terminalpickerdomain.State) []string {
 }
 
 func renderLayoutResolveLines(resolve *layoutresolvedomain.State) []string {
+	rows := resolve.Rows()
 	lines := []string{
 		fmt.Sprintf("layout_resolve_pane: %s", resolve.PaneID),
 		fmt.Sprintf("layout_resolve_role: %s", resolve.Role),
 		fmt.Sprintf("layout_resolve_hint: %s", resolve.Hint),
-		fmt.Sprintf("layout_resolve_row_count: %d", len(resolve.Rows())),
+		fmt.Sprintf("layout_resolve_row_count: %d", len(rows)),
 	}
 	if row, ok := resolve.SelectedRow(); ok {
 		lines = append(lines,
@@ -453,7 +511,21 @@ func renderLayoutResolveLines(resolve *layoutresolvedomain.State) []string {
 	}
 	lines = append(lines, "layout_resolve_rows:")
 	selected, hasSelection := resolve.SelectedRow()
-	for _, row := range resolve.Rows() {
+	selectedIndex := 0
+	if hasSelection {
+		for idx, row := range rows {
+			if row.Action == selected.Action && row.Label == selected.Label {
+				selectedIndex = idx
+				break
+			}
+		}
+	}
+	previewRows, truncated := overlayPreviewRowsAround(rows, runtimeOverlayPreviewRows, selectedIndex)
+	lines = append(lines, fmt.Sprintf("layout_resolve_rows_rendered: %d", len(previewRows)))
+	if truncated {
+		lines = append(lines, "layout_resolve_rows_truncated: true")
+	}
+	for _, row := range previewRows {
 		prefix := "  "
 		if hasSelection && row.Action == selected.Action && row.Label == selected.Label {
 			prefix = "> "
@@ -468,7 +540,17 @@ func renderNoticeLines(notices []btui.Notice) []string {
 		return nil
 	}
 	lines := []string{"notices:"}
-	for _, notice := range notices {
+	start := 0
+	if len(notices) > runtimeOverlayDetailPreviewRows {
+		start = len(notices) - runtimeOverlayDetailPreviewRows
+	}
+	previewNotices := notices[start:]
+	truncated := start > 0
+	lines = append(lines, fmt.Sprintf("notices_rendered: %d", len(previewNotices)))
+	if truncated {
+		lines = append(lines, "notices_truncated: true")
+	}
+	for _, notice := range previewNotices {
 		if notice.Text == "" {
 			continue
 		}
@@ -482,4 +564,33 @@ func renderNoticeLines(notices []btui.Notice) []string {
 		return nil
 	}
 	return lines
+}
+
+func overlayPreviewRowsAround[T any](rows []T, limit int, focusIndex int) ([]T, bool) {
+	if limit <= 0 || len(rows) <= limit {
+		return rows, false
+	}
+	if focusIndex < 0 {
+		focusIndex = 0
+	}
+	if focusIndex >= len(rows) {
+		focusIndex = len(rows) - 1
+	}
+	start := focusIndex - limit + 1
+	if start < 0 {
+		start = 0
+	}
+	end := start + limit
+	if end > len(rows) {
+		end = len(rows)
+		start = end - limit
+	}
+	return rows[start:end], true
+}
+
+func overlayPreviewStrings(rows []string, limit int) ([]string, bool) {
+	if limit <= 0 || len(rows) <= limit {
+		return rows, false
+	}
+	return rows[:limit], true
 }
