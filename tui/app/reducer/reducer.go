@@ -250,6 +250,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyMoveFloatingPane(&result.State, intentValue)
 	case intent.CenterFloatingPaneIntent:
 		applyCenterFloatingPane(&result.State)
+	case intent.ResizeFloatingPaneIntent:
+		applyResizeFloatingPane(&result.State, intentValue)
 	case intent.ActivateModeIntent:
 		applyActivateMode(&result.State, intentValue)
 	case intent.ModeTimedOutIntent:
@@ -1299,6 +1301,24 @@ func applyCenterFloatingPane(state *types.AppState) {
 	rect := normalizeFloatingRect(pane.Rect)
 	rect.X = (floatingPaneCanvasW - rect.W) / 2
 	rect.Y = (floatingPaneCanvasH - rect.H) / 2
+	setPaneState(state, pane.ID, func(target *types.PaneState) {
+		target.Rect = rect
+	})
+}
+
+// applyResizeFloatingPane 给当前浮窗补最小尺寸调整路径，
+// 只改 pane.Rect，不触碰 terminal runtime size。
+func applyResizeFloatingPane(state *types.AppState, in intent.ResizeFloatingPaneIntent) {
+	defer func() {
+		state.UI.Mode = types.ModeState{Active: types.ModeNone}
+	}()
+	pane, ok := findPane(state, state.UI.Focus.PaneID)
+	if !ok || pane.Kind != types.PaneKindFloating {
+		return
+	}
+	rect := normalizeFloatingRect(pane.Rect)
+	rect.W = clampFloatingAxis(rect.W+in.DeltaW, 12, floatingPaneCanvasW-rect.X)
+	rect.H = clampFloatingAxis(rect.H+in.DeltaH, 6, floatingPaneCanvasH-rect.Y)
 	setPaneState(state, pane.ID, func(target *types.PaneState) {
 		target.Rect = rect
 	})

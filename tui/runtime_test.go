@@ -2135,6 +2135,49 @@ func TestE2ERunScenarioFloatingModeCenterRecentersPaneInView(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioFloatingModeResizeUpdatesRectInView(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithFloatingPositionedPane()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlO},
+				{Type: tea.KeyRunes, Runes: []rune("L")},
+				{Type: tea.KeyCtrlO},
+				{Type: tea.KeyRunes, Runes: []rune("J")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "pane: float-1") || !strings.Contains(view, "pane_rect: x=10 | y=8 | w=32 | h=14") || strings.Contains(view, "mode:") {
+				t.Fatalf("expected floating resize flow to update rect in view, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected floating resize runtime scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioWorkspacePickerCollapseHidesChildren(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithWorkspacePickerTarget()

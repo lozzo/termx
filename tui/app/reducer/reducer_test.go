@@ -1125,6 +1125,23 @@ func TestReducerCenterFloatingPaneRecentersRectAndClearsMode(t *testing.T) {
 	}
 }
 
+func TestReducerResizeFloatingPaneUpdatesRectAndClearsMode(t *testing.T) {
+	reducer := New()
+	state := newFloatingActiveRectAppState()
+	state.UI.Mode = types.ModeState{Active: types.ModeFloating}
+
+	result := reducer.Reduce(state, intent.ResizeFloatingPaneIntent{DeltaW: 2, DeltaH: 2})
+
+	tab := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
+	pane := tab.Panes[types.PaneID("float-1")]
+	if pane.Rect.X != 10 || pane.Rect.Y != 8 || pane.Rect.W != 32 || pane.Rect.H != 14 {
+		t.Fatalf("expected floating resize to update rect, got %+v", pane.Rect)
+	}
+	if result.State.UI.Mode.Active != types.ModeNone {
+		t.Fatalf("expected floating resize to clear mode, got %+v", result.State.UI.Mode)
+	}
+}
+
 func TestReducerConnectTerminalReplacesOldConnectionSnapshot(t *testing.T) {
 	reducer := New()
 	state := newConnectedAppState()
