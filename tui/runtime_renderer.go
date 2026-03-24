@@ -326,7 +326,22 @@ func (r runtimeRenderer) renderScreenShellWorkbench(state types.AppState, tab ty
 	case len(floatingPaneIDs) > 0:
 		return r.renderScreenShellFloating(state, tab, pane, floatingPaneIDs, metrics, overlayActive)
 	default:
-		return renderScreenShellPaneBox(metrics.ViewportWidth, renderScreenShellPaneTitle(state, pane, true), r.renderScreenShellPaneLines(state, pane, overlayActive, 4), true)
+		bodyRows := renderScreenShellSinglePaneBodyRows(metrics, overlayActive)
+		return renderScreenShellPaneBox(metrics.ViewportWidth, renderScreenShellPaneTitle(state, pane, true), r.renderScreenShellPaneLines(state, pane, overlayActive, bodyRows), true)
+	}
+}
+
+func renderScreenShellSinglePaneBodyRows(metrics wireframeMetrics, overlayActive bool) int {
+	if overlayActive {
+		return 2
+	}
+	switch {
+	case metrics.ViewportHeight >= 60:
+		return 8
+	case metrics.ViewportHeight >= 36:
+		return 6
+	default:
+		return 4
 	}
 }
 
@@ -3070,15 +3085,44 @@ func renderSnapshotRows(snapshot *protocol.Snapshot) ([]string, int, bool) {
 	if snapshot == nil || len(snapshot.Screen.Cells) == 0 {
 		return []string{"<empty>"}, 0, false
 	}
-	start := 0
-	if len(snapshot.Screen.Cells) > runtimeScreenPreviewRows {
-		start = len(snapshot.Screen.Cells) - runtimeScreenPreviewRows
-	}
-	lines := make([]string, 0, len(snapshot.Screen.Cells)-start)
-	for _, row := range snapshot.Screen.Cells[start:] {
+	lines := make([]string, 0, len(snapshot.Screen.Cells))
+	for _, row := range snapshot.Screen.Cells {
 		lines = append(lines, renderSnapshotRow(row))
 	}
-	return lines, len(snapshot.Screen.Cells), start > 0
+	return snapshotPreviewWindow(lines, runtimeScreenPreviewRows)
+}
+
+// snapshotPreviewWindow 优先展示最后一段真正有内容的终端输出，
+// 避免 terminal 尾部残留大量空行时，screen shell 和 screen section 只看到一大片空白。
+func snapshotPreviewWindow(lines []string, limit int) ([]string, int, bool) {
+	totalRows := len(lines)
+	if totalRows == 0 {
+		return []string{"<empty>"}, 0, false
+	}
+	if limit <= 0 {
+		limit = runtimeScreenPreviewRows
+	}
+	lastMeaningful := -1
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+		lastMeaningful = i
+		break
+	}
+	if lastMeaningful < 0 {
+		if totalRows > limit {
+			lines = lines[:limit]
+		}
+		return lines, totalRows, totalRows > len(lines)
+	}
+	start := 0
+	if lastMeaningful+1 > limit {
+		start = lastMeaningful + 1 - limit
+	}
+	window := append([]string(nil), lines[start:lastMeaningful+1]...)
+	truncated := start > 0 || lastMeaningful+1 < totalRows
+	return window, totalRows, truncated
 }
 
 func renderSnapshotRow(row []protocol.Cell) string {

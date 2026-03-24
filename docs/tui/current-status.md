@@ -1625,3 +1625,46 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
   - 把 pane/workbench 的正文渲染从“空框+摘要”继续推进到更稳定的终端内容视图
   - 继续压缩 `wireframe_view` 和 `chrome_*` 的调试存在感
   - 开始做更接近最终产品的主工作台 chrome、tab/workspace 层级和正文布局
+
+---
+
+## 18. 第 204 轮 TDD
+
+这一轮继续沿着“先把真正能看到的主工作台正文做实”的方向推进，没有切去做新的 overlay 种类，而是把当前最影响 `cmd/termx` 可读性的两个问题一起收口：
+
+1. snapshot 预览改成“最后一段有效内容窗口”
+   - 原来 `screen_shell` / `screen section` / `pane preview` 都是机械地截最后几行
+   - 当 terminal 底部残留大量空白行时，主工作台会出现“大框里什么都没有”的假象
+   - 现在统一改成优先定位最后一段非空输出，再围绕它取 preview window
+2. single pane 主框正文高度按 viewport 提升
+   - 不再始终只给固定 4 行正文
+   - 中高终端高度下会给更大的正文预算，尽量把真正的终端内容直接露出来
+3. renderer 与 E2E 一起锁住尾部空白场景
+   - 新增“snapshot 尾部很多空行，但前面仍有有效输出”的 renderer / runtime 场景
+   - 防止后面再回退成“主框只有空白 + footer”
+
+这一轮收口的验证重点：
+
+- renderer：
+  - `TestRuntimeRendererRendersActivePaneSnapshot`
+  - `TestRuntimeRendererPrefersLastMeaningfulSnapshotRows`
+  - `TestRuntimeRendererTruncatesLargeSnapshotPreview`
+- runtime E2E：
+  - `TestE2ERunScenarioActivePaneCoreViewVisible`
+  - `TestE2ERunScenarioConnectedPaneWithoutSnapshotKeepsScreenPlaceholder`
+  - `TestE2ERunScenarioTrailingBlankSnapshotKeepsMeaningfulPreviewVisible`
+
+本轮验证命令：
+
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1`
+
+当前状态更新为：
+
+- `cmd/termx` 在 terminal snapshot 尾部存在大量空白时，不会再优先把空白行渲染到主工作台中央
+- single pane 的正文开始更接近“真正的终端内容窗口”，而不是只有一个很矮的摘要框
+- `wireframe_view` / `chrome_*` 仍然还在，说明主线还没有完全进入最终 UI 壳阶段；但主壳正文已经开始从“框架壳”进入“内容可读壳”
+- 下一阶段应该继续沿这条线推进：
+  - 进一步压缩默认可见的调试层
+  - 把 screen shell 的正文信息继续前移，减少用户必须往下读调试段落的情况
+  - 再往后才是更完整的主工作台 chrome / tab / workspace 真实排版收口

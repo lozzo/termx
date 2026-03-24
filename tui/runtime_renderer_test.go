@@ -165,6 +165,48 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	}
 }
 
+func TestRuntimeRendererPrefersLastMeaningfulSnapshotRows(t *testing.T) {
+	state := connectedRunAppState()
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:      types.TerminalID("term-1"),
+		Name:    "api-dev",
+		State:   types.TerminalRunStateRunning,
+		Command: []string{"/bin/zsh"},
+		Visible: true,
+	}
+	rows := make([][]protocol.Cell, 0, 12)
+	rows = append(rows,
+		[]protocol.Cell{{Content: "$"}, {Content: " "}, {Content: "p"}, {Content: "w"}, {Content: "d"}},
+		[]protocol.Cell{{Content: "/"}, {Content: "t"}, {Content: "m"}, {Content: "p"}},
+		[]protocol.Cell{{Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+	)
+	for i := 0; i < 9; i++ {
+		rows = append(rows, []protocol.Cell{})
+	}
+	renderer := runtimeRenderer{
+		Screens: NewRuntimeTerminalStore(RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 120, Rows: 40},
+						Screen:     protocol.ScreenData{Cells: rows},
+					},
+				},
+			},
+		}),
+	}
+
+	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "$ pwd") || !strings.Contains(view, "/tmp") || !strings.Contains(view, "ready") {
+		t.Fatalf("expected renderer to keep last meaningful snapshot rows visible, got:\n%s", view)
+	}
+	if !strings.Contains(view, "screen_bar: state=preview | rows=3/12") || !strings.Contains(view, "screen_rows: 3/12") || !strings.Contains(view, "screen_truncated: true") {
+		t.Fatalf("expected screen section to reflect meaningful preview window, got:\n%s", view)
+	}
+}
+
 func TestRuntimeRendererRendersTiledOutlineForSplitTab(t *testing.T) {
 	state := runtimeStateWithSplitPaneTargets()
 	renderer := runtimeRenderer{

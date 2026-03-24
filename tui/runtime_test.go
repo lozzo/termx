@@ -482,6 +482,59 @@ func TestE2ERunScenarioConnectedPaneWithoutSnapshotKeepsScreenPlaceholder(t *tes
 	}
 }
 
+func TestE2ERunScenarioTrailingBlankSnapshotKeepsMeaningfulPreviewVisible(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithActiveTerminalMetadata()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	rows := make([][]protocol.Cell, 0, 12)
+	rows = append(rows,
+		[]protocol.Cell{{Content: "$"}, {Content: " "}, {Content: "p"}, {Content: "w"}, {Content: "d"}},
+		[]protocol.Cell{{Content: "/"}, {Content: "t"}, {Content: "m"}, {Content: "p"}},
+		[]protocol.Cell{{Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+	)
+	for i := 0; i < 9; i++ {
+		rows = append(rows, []protocol.Cell{})
+	}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 120, Rows: 40},
+						Screen:     protocol.ScreenData{Cells: rows},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			if !strings.Contains(view, "$ pwd") || !strings.Contains(view, "/tmp") || !strings.Contains(view, "ready") {
+				t.Fatalf("expected trailing blank snapshot to keep meaningful rows visible, got:\n%s", view)
+			}
+			if !strings.Contains(view, "body_bar: terminal=term-1:running | screen=preview:3/12 | overlay=none") || !strings.Contains(view, "screen_bar: state=preview | rows=3/12") {
+				t.Fatalf("expected runtime view to expose meaningful preview row counts, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected trailing blank snapshot scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithActiveTerminalMetadata()
