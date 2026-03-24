@@ -451,7 +451,7 @@ func TestE2ERunScenarioActivePaneCoreViewVisible(t *testing.T) {
 	}
 }
 
-func TestE2ERunScenarioConnectedPaneWithoutSnapshotSkipsScreenSection(t *testing.T) {
+func TestE2ERunScenarioConnectedPaneWithoutSnapshotKeepsScreenPlaceholder(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithActiveTerminalMetadata()
 	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
@@ -459,8 +459,8 @@ func TestE2ERunScenarioConnectedPaneWithoutSnapshotSkipsScreenSection(t *testing
 	bootstrapper := &stubRunSessionBootstrapper{}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
-			if view := model.View(); strings.Contains(view, "screen:") || !strings.Contains(view, "terminal: term-1") {
-				t.Fatalf("expected runtime view without snapshot to skip screen section but keep active terminal metadata, got:\n%s", view)
+			if view := model.View(); !strings.Contains(view, "screen: <unavailable>") || !strings.Contains(view, "terminal: term-1") {
+				t.Fatalf("expected runtime view without snapshot to keep stable screen placeholder and active terminal metadata, got:\n%s", view)
 			}
 			return nil
 		},

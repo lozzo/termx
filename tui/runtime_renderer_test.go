@@ -92,6 +92,9 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "$ pwd") || !strings.Contains(view, "/tmp") {
 		t.Fatalf("expected snapshot rows in rendered view, got:\n%s", view)
 	}
+	if lines := strings.Count(view, "\n") + 1; lines > 18 {
+		t.Fatalf("expected compact active pane view, got %d lines:\n%s", lines, view)
+	}
 }
 
 func TestRuntimeRendererTruncatesLargeSnapshotPreview(t *testing.T) {
@@ -136,10 +139,26 @@ func TestRuntimeRendererTruncatesLargeSnapshotPreview(t *testing.T) {
 	}
 }
 
-func TestRuntimeRendererSkipsScreenSectionWhenNoSnapshot(t *testing.T) {
+func TestRuntimeRendererRendersScreenPlaceholderWhenNoSnapshot(t *testing.T) {
 	view := runtimeRenderer{}.Render(connectedRunAppState(), nil)
-	if strings.Contains(view, "screen:") {
-		t.Fatalf("expected renderer without runtime screen store to skip screen section, got:\n%s", view)
+	if !strings.Contains(view, "section_screen:") || !strings.Contains(view, "screen: <unavailable>") {
+		t.Fatalf("expected renderer without runtime screen store to keep screen placeholder, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersStableSectionSkeletonForEmptyPane(t *testing.T) {
+	view := runtimeRenderer{}.Render(buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty), nil)
+	if !strings.Contains(view, "section_terminal:") || !strings.Contains(view, "terminal: <disconnected>") {
+		t.Fatalf("expected terminal placeholder section in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "section_screen:") || !strings.Contains(view, "screen: <unavailable>") {
+		t.Fatalf("expected screen placeholder section in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "section_overlay:") || !strings.Contains(view, "overlay: none") {
+		t.Fatalf("expected overlay placeholder section in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "section_notices:") || !strings.Contains(view, "notices: 0") {
+		t.Fatalf("expected notice placeholder section in rendered view, got:\n%s", view)
 	}
 }
 
@@ -386,6 +405,9 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	}
 	if !strings.Contains(view, "detail_owner: ") {
 		t.Fatalf("expected manager detail owner in rendered view, got:\n%s", view)
+	}
+	if lines := strings.Count(view, "\n") + 1; lines > 30 {
+		t.Fatalf("expected overlay view to remain within compact budget, got %d lines:\n%s", lines, view)
 	}
 }
 

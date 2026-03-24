@@ -160,6 +160,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 136. 第一百三十二轮 TDD 已补上 runtime 主视图的固定状态头与 screen 预览裁剪
 137. 第一百三十三轮 TDD 已补上 overlay 列表与 notice 的预览裁剪
 138. 第一百三十四轮 TDD 已补上 runtime 主视图的 section 分区
+139. 第一百三十五轮 TDD 已补上 runtime 主视图的紧凑骨架与空区块占位
 
 对应文档：
 
@@ -302,11 +303,14 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 已补上 renderer 测试：workspace picker 预览会保留底部选中项，prompt 预览会保留活动字段，notice 预览会保留最新几条
 - runtime 主视图现在会显式输出 `summary` 和 `section_status/section_terminal/section_screen/section_overlay/section_notices`，把状态、正文、overlay、notice 分成稳定区块
 - 已补上 renderer 测试：active pane、workspace picker、prompt、notice 在 section 分区下仍然保持原有关键字段可见
+- runtime 主视图现在会把 `status/terminal` 元数据压成紧凑多字段行，并为 `terminal/screen/overlay/notices` 始终保留固定区块，占位态下也不会整段消失
+- connected pane 在没有 snapshot 时，主视图现在改为显示 `screen: <unavailable>`，而不是直接缺失 screen 区块
+- 已补上 renderer / runtime 场景测试：active pane 主视图行数被收紧，terminal manager 重 overlay 视图也被压到稳定预算内
 - 已补上一条 runtime 场景型 E2E：`Ctrl-f` 打开 terminal picker 时主视图显式显示 `overlay: terminal_picker` 与 `focus_overlay_target: terminal_picker`
 - 已补上一条 runtime 场景型 E2E：workspace picker / prompt / terminal manager / terminal picker / layout resolve 关闭后主视图不再残留 `focus_overlay_target`
 - 已补上一条 runtime 场景型 E2E：terminal manager 与 layout resolve 关闭后主视图不再残留临时 `mode`
 - runtime overlay 进入时的 `overlay/focus_overlay_target` 与退出后的清理现在被场景测试锁住
-- 已补上一条 runtime 场景型 E2E：connected pane 在没有 snapshot 时主视图不会渲染 `screen:`
+- 已补上一条 runtime 场景型 E2E：connected pane 在没有 snapshot 时主视图会保留 `section_screen` 并显示 `screen: <unavailable>`
 - 已补上一条 runtime 场景型 E2E：closed frame 后主视图显式显示 `runtime_state/runtime_exit_code`
 - 已补上一条 runtime 场景型 E2E：sync lost 期间主视图显示 `runtime_sync_lost`，snapshot refresh 后自动清除
 - 已补上一条 runtime 场景型 E2E：resized event 后主视图显示 `runtime_size: 120x40`
