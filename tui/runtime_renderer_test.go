@@ -205,7 +205,7 @@ func TestRuntimeRendererCanHideDebugSections(t *testing.T) {
 	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "workspace main") {
 		t.Fatalf("expected shell-only renderer to keep visible screen shell, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "owner  •  connected  •  running") || !strings.Contains(stripped, "tiled pane-1  •  terminal term-1") || !strings.Contains(stripped, "cmd npm run dev") || !strings.Contains(stripped, "$ pwd") {
+	if !strings.Contains(stripped, "owner  •  connected  •  running") || !strings.Contains(stripped, "tiled pane-1  •  terminal term-1") || !strings.Contains(stripped, "Terminal") || !strings.Contains(stripped, "Preview") || !strings.Contains(stripped, "cmd npm run dev") || !strings.Contains(stripped, "$ pwd") {
 		t.Fatalf("expected shell-only renderer to keep terminal meta inside screen shell, got:\n%s", view)
 	}
 	if strings.Contains(view, "wireframe_view:") || strings.Contains(view, "chrome_header:") || strings.Contains(view, "chrome_body:") || strings.Contains(view, "chrome_footer:") {
@@ -257,6 +257,9 @@ func TestRuntimeRendererShellOnlyOverlayKeepsPaneContext(t *testing.T) {
 	}
 	if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "return to tiled:ws-1/tab-1/pane-1") {
 		t.Fatalf("expected shell-only overlay renderer to keep help dialog visible, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "overlay help") || !strings.Contains(stripped, "mode picker") || !strings.Contains(stripped, "Esc close") {
+		t.Fatalf("expected shell-only overlay renderer to expose overlay chrome and footer actions, got:\n%s", view)
 	}
 }
 
@@ -521,7 +524,7 @@ func TestRuntimeRendererShellOnlyRendersStructuredTerminalPickerOverlay(t *testi
 	if !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Detail") || !strings.Contains(stripped, "Results") || !strings.Contains(stripped, "Actions") {
 		t.Fatalf("expected shell-only terminal picker overlay to render structured sections, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "cmd tail -f build.log") || !strings.Contains(stripped, "tags group=build") {
+	if !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "cmd tail -f build.log") || !strings.Contains(stripped, "tags group=build") || !strings.Contains(stripped, "Enter connect") {
 		t.Fatalf("expected shell-only terminal picker overlay to render selected detail, got:\n%s", view)
 	}
 }

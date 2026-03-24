@@ -160,7 +160,7 @@ func (r modernScreenShellRenderer) RenderShell(state types.AppState, workspace t
 	width := max(64, metrics.ViewportWidth)
 	height := max(18, metrics.ViewportHeight)
 
-	header := r.renderTopBar(theme, workspace, tab, pane, width)
+	header := r.renderTopBar(theme, state, workspace, tab, pane, width)
 	tabs := r.renderTabBar(theme, workspace, tab, width)
 	context := r.renderContextBar(theme, state, pane, width)
 	footer := r.renderFooter(theme, state, pane, notices, width)
@@ -179,13 +179,21 @@ func (r modernScreenShellRenderer) RenderShell(state types.AppState, workspace t
 	return theme.app.Render(view)
 }
 
-func (r modernScreenShellRenderer) renderTopBar(theme modernShellTheme, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
-	left := lipgloss.JoinHorizontal(lipgloss.Left,
+func (r modernScreenShellRenderer) renderTopBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
+	items := []string{
 		theme.activeChip.Render("termx"),
-		theme.chip.Render("workspace "+safeWorkspaceLabel(workspace)),
-		theme.chip.Render("tab "+safeTabLabel(tab)),
-	)
-	right := theme.panelMeta.Render("pane " + string(pane.ID))
+		theme.chip.Render("workspace " + safeWorkspaceLabel(workspace)),
+		theme.chip.Render("tab " + safeTabLabel(tab)),
+	}
+	if state.UI.Overlay.Kind != types.OverlayNone {
+		items = append(items, theme.activeChip.Render("overlay "+string(state.UI.Overlay.Kind)))
+	}
+	left := lipgloss.JoinHorizontal(lipgloss.Left, items...)
+	rightParts := []string{"pane " + string(pane.ID)}
+	if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
+		rightParts = append(rightParts, "mode "+string(state.UI.Mode.Active))
+	}
+	right := theme.panelMeta.Render(strings.Join(rightParts, "  •  "))
 	return theme.topBar.Render(fillANSIHorizontal(left, right, width))
 }
 
@@ -240,12 +248,25 @@ func (r modernScreenShellRenderer) renderContextBar(theme modernShellTheme, stat
 	if mode == "" {
 		mode = types.ModeNone
 	}
-	left := lipgloss.JoinHorizontal(lipgloss.Left,
+	role := renderScreenShellPaneCardRole(state, pane)
+	if role == "" {
+		role = "unassigned"
+	}
+	leftItems := []string{
 		theme.chip.Render(renderPaneTitle(state, pane)),
+		theme.activeChip.Render(role),
 		theme.chip.Render(string(pane.SlotState)),
-		theme.chip.Render("focus "+string(layer)),
-	)
-	right := theme.panelMeta.Render("mode " + string(mode))
+	}
+	if pane.TerminalID != "" {
+		leftItems = append(leftItems, theme.chip.Render("terminal "+string(pane.TerminalID)))
+	}
+	leftItems = append(leftItems, theme.chip.Render("focus "+string(layer)))
+	left := lipgloss.JoinHorizontal(lipgloss.Left, leftItems...)
+	rightParts := []string{"mode " + string(mode)}
+	if state.UI.Overlay.Kind != types.OverlayNone {
+		rightParts = append(rightParts, "overlay "+string(state.UI.Overlay.Kind))
+	}
+	right := theme.panelMeta.Render(strings.Join(rightParts, "  •  "))
 	return theme.subBar.Render(fillANSIHorizontal(left, right, width))
 }
 
@@ -515,7 +536,9 @@ func (r modernScreenShellRenderer) renderPanePanelLines(theme modernShellTheme, 
 			theme.panelMeta.Render("Press r to restart, or a to connect another terminal."),
 		)
 	default:
+		lines = append(lines, theme.panelTitle.Render("Terminal"))
 		lines = append(lines, r.renderTerminalMetaLines(theme, state, pane, width)...)
+		lines = append(lines, theme.panelTitle.Render("Preview"))
 		lines = append(lines, r.renderTerminalPreviewLines(theme, pane, width, maxRows-len(lines)-1)...)
 	}
 
