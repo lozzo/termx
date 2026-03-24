@@ -37,6 +37,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把现代 modal 的布局骨架往前收：`terminal manager / terminal picker / workspace picker` 现在不再只是单列长文，而是明确拆成 `列表/树面板 + detail/target 面板 + action bar`，并同步上调 modern modal 宽度预算，避免默认 78 列下关键控制信息被截断
 - 本轮继续把现代 workbench 的窗格感往前收：single / split / floating pane card 现在统一显式带 `title bar`，floating pane 额外补上 `Geometry` 区与 `z-order`，window deck 也会优先显示层级信息，默认现代路径和 shell-only renderer 已一并锁住
 - 本轮继续把现代 workbench / overlay 的层次感往前收：pane card 现在补上 `header/footer` 视觉条与 active/standby 操作提示，floating summary 会显式带 `top window`，overlay 打开时也会保留 `Backdrop workbench` 预览，避免 modal 直接切断当前工作台上下文
+- 本轮继续把 modern pane 的 terminal 区往真实 screen 组件推进：connected pane 不再只渲染裸 preview 文本，而是统一改成 `Screen` 区块，显式带 `rows x/y` 摘要、frame body 与 unavailable 占位；single / split / floating 和默认现代路径已同步锁住
 
 ---
 
@@ -245,6 +246,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 199. 第一百九十五轮 TDD 已补上现代 modal 分区面板骨架、detail 信息拆行与宽度预算调整，并完成 shell-only / default-run / 全量回归闭环
 200. 第一百九十六轮 TDD 已补上现代 workbench pane title bar、floating geometry / z-order 信息，并完成 shell-only / default-run / 全量回归闭环
 201. 第一百九十七轮 TDD 已补上现代 pane header/footer 条、floating top-window 摘要、overlay backdrop workbench 预览，并完成 shell-only / default-run / 全量回归闭环
+202. 第一百九十八轮 TDD 已补上 modern pane `Screen` 组件、rows 摘要、frame body 与 unavailable 占位，并完成 shell-only / default-run / 全量回归闭环
 
 对应文档：
 

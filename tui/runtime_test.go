@@ -122,8 +122,11 @@ func TestRunUsesShellOnlyRendererByDefault(t *testing.T) {
 	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "workspace main") {
 		t.Fatalf("expected default run renderer to keep screen shell, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal") || !strings.Contains(stripped, "Preview") || !strings.Contains(stripped, "$ pwd") {
+	if !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal") || !strings.Contains(stripped, "Screen") || !strings.Contains(stripped, "$ pwd") {
 		t.Fatalf("expected default run renderer to keep terminal context in screen shell, got:\n%s", runner.view)
+	}
+	if !strings.Contains(stripped, "Screen") || !strings.Contains(stripped, "rows 1/1  •  live") || !strings.Contains(stripped, "│ $ pwd") {
+		t.Fatalf("expected default run renderer to keep a framed screen block, got:\n%s", runner.view)
 	}
 	if strings.Contains(runner.view, "wireframe_view:") || strings.Contains(runner.view, "chrome_header:") {
 		t.Fatalf("expected default run renderer to hide debug sections, got:\n%s", runner.view)
@@ -684,6 +687,9 @@ func TestE2ERunScenarioDefaultModernSplitWorkbenchRendersPaneCanvas(t *testing.T
 			if !strings.Contains(stripped, "live input  •  Ctrl-p  •  pick") || !strings.Contains(stripped, "standby pane  •  Ctrl-p pane") {
 				t.Fatalf("expected default modern split view to expose pane footer hints, got:\n%s", view)
 			}
+			if !strings.Contains(stripped, "rows 2/2  •  live") || !strings.Contains(stripped, "rows 2/2  •  standby") || !strings.Contains(stripped, "│ $ npm run dev") || !strings.Contains(stripped, "│ > tsc -w") {
+				t.Fatalf("expected default modern split view to expose framed screen blocks, got:\n%s", view)
+			}
 			if !strings.Contains(stripped, "$ npm run dev") || !strings.Contains(stripped, "> tsc -w") {
 				t.Fatalf("expected default modern split view to expose both pane previews, got:\n%s", view)
 			}
@@ -750,6 +756,9 @@ func TestE2ERunScenarioDefaultModernFloatingWorkbenchRendersWindowDeck(t *testin
 			}
 			if !strings.Contains(stripped, "top float-2") || !strings.Contains(stripped, "live window  •  deck  •  Ctrl-o") || !strings.Contains(stripped, "standby window  •  deck") {
 				t.Fatalf("expected default modern floating view to expose depth summary and footer hints, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "rows 1/1  •  live") || !strings.Contains(stripped, "│ api ready") {
+				t.Fatalf("expected default modern floating view to expose framed active screen block, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "api ready") || !strings.Contains(stripped, "build ok") || !strings.Contains(stripped, "rect 10,8  30x12") {
 				t.Fatalf("expected default modern floating view to expose preview and geometry, got:\n%s", view)

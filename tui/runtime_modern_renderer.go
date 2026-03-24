@@ -589,8 +589,8 @@ func (r modernScreenShellRenderer) renderPanePanelLines(theme modernShellTheme, 
 	lines = append(lines, theme.panelTitle.Render("Footer"))
 	lines = append(lines, renderModernPaneFooter(theme, renderModernPaneFooterLine(state, pane, active), width, active))
 	if pane.SlotState == types.PaneSlotConnected {
-		lines = append(lines, theme.panelTitle.Render("Preview"))
-		lines = append(lines, r.renderTerminalPreviewLines(theme, pane, width, maxRows-len(lines)-1)...)
+		lines = append(lines, theme.panelTitle.Render("Screen"))
+		lines = append(lines, r.renderTerminalScreenLines(theme, pane, width, maxRows-len(lines)-1, active)...)
 	}
 
 	return lines
@@ -741,26 +741,64 @@ func (r modernScreenShellRenderer) renderTerminalMetaLines(theme modernShellThem
 	return []string{theme.panelMeta.Render(truncateModernLine(strings.Join(meta, "  •  "), width))}
 }
 
-func (r modernScreenShellRenderer) renderTerminalPreviewLines(theme modernShellTheme, pane types.PaneState, width, maxRows int) []string {
+func (r modernScreenShellRenderer) renderTerminalScreenLines(theme modernShellTheme, pane types.PaneState, width, maxRows int, active bool) []string {
 	if maxRows <= 0 {
 		maxRows = 1
 	}
-	if pane.TerminalID == "" || r.Screens == nil {
-		return []string{theme.terminalBody.Render("<screen unavailable>")}
+	rows := []string{"<screen unavailable>"}
+	totalRows := 0
+	stateLabel := "unavailable"
+	truncated := false
+	if pane.TerminalID != "" && r.Screens != nil {
+		if snapshot, ok := r.Screens.Snapshot(pane.TerminalID); ok && snapshot != nil {
+			rows, totalRows, truncated = renderSnapshotRows(snapshot)
+			if totalRows <= 0 && len(rows) > 0 && strings.TrimSpace(rows[0]) != "<empty>" {
+				totalRows = len(rows)
+			}
+			if active {
+				stateLabel = "live"
+			} else {
+				stateLabel = "standby"
+			}
+		}
 	}
-	snapshot, ok := r.Screens.Snapshot(pane.TerminalID)
-	if !ok || snapshot == nil {
-		return []string{theme.terminalBody.Render("<screen unavailable>")}
+	if maxRows < 4 {
+		maxRows = 4
 	}
-	rows, _, _ := renderSnapshotRows(snapshot)
-	if len(rows) > maxRows {
-		rows = rows[:maxRows]
+	frameInnerWidth := max(8, width-2)
+	bodyBudget := max(1, maxRows-3)
+	if len(rows) > bodyBudget {
+		rows = rows[len(rows)-bodyBudget:]
+		truncated = true
 	}
-	lines := make([]string, 0, len(rows))
+	if totalRows == 0 && stateLabel != "unavailable" {
+		totalRows = len(rows)
+	}
+	displayRows := len(rows)
+	if stateLabel == "unavailable" {
+		displayRows = 0
+	}
+	meta := fmt.Sprintf("rows %d/%d  •  %s", displayRows, totalRows, stateLabel)
+	if truncated {
+		meta += "  •  trimmed"
+	}
+	lines := []string{theme.panelMeta.Render(truncateModernLine(meta, width))}
+	lines = append(lines, theme.panelMeta.Render("╭"+strings.Repeat("─", frameInnerWidth)+"╮"))
 	for _, row := range rows {
-		lines = append(lines, theme.terminalBody.Render(truncateModernLine(row, width)))
+		lines = append(lines, theme.terminalBody.Render(renderModernScreenFrameLine(row, frameInnerWidth)))
 	}
+	lines = append(lines, theme.panelMeta.Render("╰"+strings.Repeat("─", frameInnerWidth)+"╯"))
 	return lines
+}
+
+func renderModernScreenFrameLine(text string, innerWidth int) string {
+	contentWidth := max(1, innerWidth-1)
+	content := xansi.Truncate(text, contentWidth, "…")
+	padding := contentWidth - xansi.StringWidth(content)
+	if padding < 0 {
+		padding = 0
+	}
+	return "│ " + content + strings.Repeat(" ", padding) + "│"
 }
 
 func (r modernScreenShellRenderer) renderOverlayViewport(theme modernShellTheme, state types.AppState, pane types.PaneState, width, height int) string {
