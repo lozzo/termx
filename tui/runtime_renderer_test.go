@@ -1618,6 +1618,125 @@ func TestRuntimeRendererRendersWireframeOverlayDialog(t *testing.T) {
 	if !strings.Contains(view, "> [terminal] build-log") {
 		t.Fatalf("expected wireframe overlay selected row in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "DETAIL[build-log] STATE[running] VIS[hidden]") {
+		t.Fatalf("expected wireframe overlay detail summary in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "ACTIONS[jump connect_here new_tab floating]") {
+		t.Fatalf("expected wireframe overlay action summary in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersWireframeWorkspacePickerTree(t *testing.T) {
+	state := runtimeStateWithWorkspacePickerTarget()
+	picker := workspacedomain.NewPickerState(state.Domain)
+	picker.AppendQuery("ops")
+	picker.ExpandSelected()
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayWorkspacePicker,
+		Data: picker,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+	state.UI.Focus.OverlayTarget = types.OverlayWorkspacePicker
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "OVERLAY[workspace_picker] FOCUS[overlay]") {
+		t.Fatalf("expected workspace picker wireframe overlay heading in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "ROWS[6] QUERY[ops] SELECTED[ws-2]") {
+		t.Fatalf("expected workspace picker wireframe summary in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "TARGET[workspace] LABEL[ops] DEPTH[0]") {
+		t.Fatalf("expected workspace picker target summary in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "  [tab] logs") || !strings.Contains(view, "    [pane] unconnected pane") {
+		t.Fatalf("expected workspace picker tree rows in wireframe overlay, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersWireframeLayoutResolveDialog(t *testing.T) {
+	state := runtimeStateWithLayoutResolveTarget()
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "OVERLAY[layout_resolve] FOCUS[overlay]") {
+		t.Fatalf("expected layout resolve wireframe heading in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "ROWS[3] PANE[pane-1] ROLE[backend-dev]") {
+		t.Fatalf("expected layout resolve summary in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "HINT[env=dev service=api]") {
+		t.Fatalf("expected layout resolve hint in wireframe dialog, got:\n%s", view)
+	}
+	if !strings.Contains(view, "> [connect_existing] connect existing") {
+		t.Fatalf("expected selected layout resolve row in wireframe dialog, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersWireframePromptDialog(t *testing.T) {
+	state := runtimeStateWithTerminalManagerTargets()
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayPrompt,
+		Data: &promptdomain.State{
+			Kind:       promptdomain.KindEditTerminalMetadata,
+			Title:      "edit terminal metadata",
+			TerminalID: types.TerminalID("term-2"),
+			Fields: []promptdomain.Field{
+				{Key: "name", Label: "Name", Value: "build-log"},
+				{Key: "tags", Label: "Tags", Value: "group=build"},
+			},
+			Active: 1,
+		},
+	}
+	state.UI.Focus.Layer = types.FocusLayerPrompt
+	state.UI.Focus.OverlayTarget = types.OverlayPrompt
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "OVERLAY[prompt] FOCUS[prompt]") {
+		t.Fatalf("expected prompt wireframe heading in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "PROMPT[edit_terminal_metadata]") || !strings.Contains(view, "TITLE[edit terminal metadata]") {
+		t.Fatalf("expected prompt summary in wireframe dialog, got:\n%s", view)
+	}
+	if !strings.Contains(view, "ACTIVE[tags] VALUE[group=build]") {
+		t.Fatalf("expected prompt active field summary in wireframe dialog, got:\n%s", view)
+	}
+	if !strings.Contains(view, "ACTIONS[submit cancel]") {
+		t.Fatalf("expected prompt action summary in wireframe dialog, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersWireframeMixedSlotWorkbench(t *testing.T) {
+	state := runtimeStateWithMixedPaneSlots()
+	renderer := runtimeRenderer{
+		Screens: NewRuntimeTerminalStore(RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "u"}, {Content: "p"}},
+							},
+						},
+					},
+				},
+			},
+		}),
+	}
+
+	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "WORKBENCH split") {
+		t.Fatalf("expected mixed slot workbench to use split wireframe, got:\n%s", view)
+	}
+	if !strings.Contains(view, "PANE[waiting pane] SLOT[waiting]") {
+		t.Fatalf("expected waiting pane summary in wireframe workbench, got:\n%s", view)
+	}
+	if !strings.Contains(view, "PANE[deploy-log] ROLE[owner] STATE[exited]") {
+		t.Fatalf("expected exited pane summary in wireframe workbench, got:\n%s", view)
+	}
+	if !strings.Contains(view, "FLOAT[float-empty] unconnected pane empty 60,2 20x8") {
+		t.Fatalf("expected empty floating pane summary in wireframe workbench, got:\n%s", view)
+	}
 }
 
 func TestRuntimeRendererRendersHelpOverlay(t *testing.T) {

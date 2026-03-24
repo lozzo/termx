@@ -18,6 +18,7 @@ import (
 	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
 	terminalpickerdomain "github.com/lozzow/termx/tui/domain/terminalpicker"
 	"github.com/lozzow/termx/tui/domain/types"
+	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
 )
 
 func TestRunOrchestratesStartupPlanBootstrapAndSessionLifecycle(t *testing.T) {
@@ -918,6 +919,116 @@ func TestE2ERunScenarioOverlayShowsWireframeDialog(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("expected overlay wireframe runtime scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioWorkspacePickerShowsWireframeTree(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithWorkspacePickerTarget()
+	picker := workspacedomain.NewPickerState(initial.Domain)
+	picker.AppendQuery("ops")
+	picker.ExpandSelected()
+	initial.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayWorkspacePicker,
+		Data: picker,
+	}
+	initial.UI.Focus.Layer = types.FocusLayerOverlay
+	initial.UI.Focus.OverlayTarget = types.OverlayWorkspacePicker
+
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			if !strings.Contains(view, "OVERLAY[workspace_picker] FOCUS[overlay]") || !strings.Contains(view, "ROWS[6] QUERY[ops] SELECTED[ws-2]") || !strings.Contains(view, "TARGET[workspace] LABEL[ops] DEPTH[0]") || !strings.Contains(view, "  [tab] logs") || !strings.Contains(view, "    [pane] unconnected pane") {
+				t.Fatalf("expected runtime view to expose workspace picker wireframe tree, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected workspace picker wireframe scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioLayoutResolveShowsWireframeDialog(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithLayoutResolveTarget()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			if !strings.Contains(view, "OVERLAY[layout_resolve] FOCUS[overlay]") || !strings.Contains(view, "ROWS[3] PANE[pane-1] ROLE[backend-dev]") || !strings.Contains(view, "HINT[env=dev service=api]") || !strings.Contains(view, "> [connect_existing] connect existing") {
+				t.Fatalf("expected runtime view to expose layout resolve wireframe dialog, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected layout resolve wireframe scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioMixedSlotShowsWireframeWorkbench(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithMixedPaneSlots()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "u"}, {Content: "p"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			if !strings.Contains(view, "WORKBENCH split") || !strings.Contains(view, "PANE[waiting pane] SLOT[waiting]") || !strings.Contains(view, "PANE[deploy-log] ROLE[owner] STATE[exited]") || !strings.Contains(view, "FLOAT[float-empty] unconnected pane empty 60,2 20x8") {
+				t.Fatalf("expected runtime view to expose mixed slot wireframe workbench, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected mixed slot wireframe scenario to succeed, got %v", err)
 	}
 }
 

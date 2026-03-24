@@ -315,6 +315,13 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - prompt wireframe 预览现在也会围绕活动字段截取，不再从第一字段机械展开，和语义 overlay 预览窗口保持一致
 - 已补上 4 条 renderer 场景测试：single pane wireframe、split wireframe、floating stack wireframe、overlay dialog wireframe
 - 已补上 3 条 runtime 场景型 E2E：真实工作台 wireframe、split workbench wireframe、overlay wireframe dialog
+- workspace picker 的 wireframe overlay 现在已经从“只有列表感知”推进到“树形直达 pane”的层级：会显式展示 `SELECTED/TARGET/DEPTH`，并在盒式对话框内保留 `workspace -> tab -> pane` 路径
+- terminal manager 的 wireframe overlay 现在不再只显示选中行，还会额外展示 detail 摘要和动作摘要，开始具备真正“管理面板”的最小信息层级
+- layout resolve 的 wireframe overlay 现在会显式展示 `ROLE/HINT`，不再只是 action 列表，和产品规格里“先理解 connect 角色再决策”的要求对齐
+- prompt 的 wireframe overlay 现在拆成 `PROMPT/TITLE/ACTIVE/ACTIONS` 多行摘要，避免标题被单行截断后失真
+- split mixed-slot 工作台现在不再用 `MORE PANES` 粗占位，而会继续把第三个及后续 tiled pane 作为 `EXTRA PANES` 明确投影出来；waiting/exited/empty 三类槽位都已进入真实 workbench
+- 已补上 5 条 renderer 场景测试：workspace picker tree wireframe、terminal manager detail/actions wireframe、layout resolve wireframe、prompt wireframe、mixed-slot wireframe
+- 已补上 3 条 runtime 场景型 E2E：workspace picker tree wireframe、layout resolve wireframe、mixed-slot workbench wireframe
 - 这意味着当前主线已经正式从“把字段渲染出来”切进“把真实 UI 盒模型渲染出来”，下一阶段可以继续收口 overlay 盒模型细节、真实布局比例和交互稳定性
 
 - 已补上一条 runtime 场景型 E2E：metadata prompt submit 失败后主视图显示错误 notice

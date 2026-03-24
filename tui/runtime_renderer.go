@@ -177,7 +177,15 @@ func (r runtimeRenderer) renderWireframeSplitWorkbench(state types.AppState, tab
 	}
 	lines = append(lines, joinASCIIBoxes(columnBoxes, 2)...)
 	if len(tiledPaneIDs) > 2 {
-		lines = append(lines, renderASCIIBox(runtimeWireframeWidth, []string{fmt.Sprintf("MORE PANES[%d]", len(tiledPaneIDs)-2)})...)
+		extraLines := []string{"EXTRA PANES"}
+		for _, paneID := range tiledPaneIDs[2:] {
+			pane, ok := tab.Panes[paneID]
+			if !ok {
+				continue
+			}
+			extraLines = append(extraLines, renderWireframePaneStateSummary(state, pane, paneID == tab.ActivePaneID))
+		}
+		lines = append(lines, renderASCIIBox(runtimeWireframeWidth, extraLines)...)
 	}
 	if len(floatingPaneIDs) > 0 {
 		lines = append(lines, renderASCIIBox(runtimeWireframeWidth, r.renderWireframeFloatingStackBody(state, tab, floatingPaneIDs))...)
@@ -396,6 +404,13 @@ func renderWireframeOverlayBody(overlay types.OverlayState) []string {
 			}
 			lines = append(lines, fmt.Sprintf("%s[%s] %s", prefix, row.Kind, row.Label))
 		}
+		if detail, ok := manager.SelectedDetail(); ok {
+			lines = append(lines,
+				fmt.Sprintf("DETAIL[%s] STATE[%s] VIS[%s]", detail.Name, detail.State, detail.VisibilityLabel),
+				fmt.Sprintf("LOCATIONS[%d] OWNER[%s]", len(detail.Locations), detail.OwnerSlotLabel),
+			)
+		}
+		lines = append(lines, "ACTIONS[jump connect_here new_tab floating]")
 		return lines
 	case types.OverlayWorkspacePicker:
 		picker, ok := overlay.Data.(*workspacedomain.PickerState)
@@ -403,16 +418,28 @@ func renderWireframeOverlayBody(overlay types.OverlayState) []string {
 			return []string{"ROWS[0]"}
 		}
 		rows := picker.VisibleRows()
-		lines := []string{fmt.Sprintf("ROWS[%d] QUERY[%s]", len(rows), picker.Query())}
-		for _, row := range rows {
+		selectedIndex := 0
+		selectedKey := "none"
+		if selected, ok := picker.SelectedRow(); ok {
+			selectedKey = selected.Node.Key
+			for idx, row := range rows {
+				if row.Node.Key == selected.Node.Key {
+					selectedIndex = idx
+					break
+				}
+			}
+		}
+		lines := []string{fmt.Sprintf("ROWS[%d] QUERY[%s] SELECTED[%s]", len(rows), picker.Query(), selectedKey)}
+		if selected, ok := picker.SelectedRow(); ok {
+			lines = append(lines, fmt.Sprintf("TARGET[%s] LABEL[%s] DEPTH[%d]", selected.Node.Kind, selected.Node.Label, selected.Depth))
+		}
+		previewRows, _ := overlayPreviewRowsAround(rows, 6, selectedIndex)
+		for _, row := range previewRows {
 			prefix := "  "
 			if selected, ok := picker.SelectedRow(); ok && selected.Node.Key == row.Node.Key {
 				prefix = "> "
 			}
-			lines = append(lines, fmt.Sprintf("%s[%s] %s", prefix, row.Node.Kind, row.Node.Label))
-			if len(lines) >= runtimeOverlayDetailPreviewRows+1 {
-				break
-			}
+			lines = append(lines, fmt.Sprintf("%s%s[%s] %s", prefix, strings.Repeat("  ", row.Depth), row.Node.Kind, row.Node.Label))
 		}
 		return lines
 	case types.OverlayTerminalPicker:
@@ -439,7 +466,10 @@ func renderWireframeOverlayBody(overlay types.OverlayState) []string {
 			return []string{"ROWS[0]"}
 		}
 		rows := resolve.Rows()
-		lines := []string{fmt.Sprintf("ROWS[%d] PANE[%s]", len(rows), resolve.PaneID)}
+		lines := []string{
+			fmt.Sprintf("ROWS[%d] PANE[%s] ROLE[%s]", len(rows), resolve.PaneID, resolve.Role),
+			fmt.Sprintf("HINT[%s]", resolve.Hint),
+		}
 		for _, row := range rows {
 			prefix := "  "
 			if selected, ok := resolve.SelectedRow(); ok && selected.Action == row.Action && selected.Label == row.Label {
@@ -456,15 +486,20 @@ func renderWireframeOverlayBody(overlay types.OverlayState) []string {
 		if !ok || prompt == nil {
 			return []string{"PROMPT[draft]"}
 		}
-		lines := []string{fmt.Sprintf("PROMPT[%s] TITLE[%s]", prompt.Kind, prompt.Title)}
+		lines := []string{
+			fmt.Sprintf("PROMPT[%s]", prompt.Kind),
+			fmt.Sprintf("TITLE[%s]", prompt.Title),
+		}
 		if len(prompt.Fields) == 0 {
 			lines = append(lines, fmt.Sprintf("> [draft] %s", prompt.Draft))
+			lines = append(lines, "ACTIONS[submit cancel]")
 			return lines
 		}
 		active := prompt.Active
 		if active < 0 || active >= len(prompt.Fields) {
 			active = 0
 		}
+		lines = append(lines, fmt.Sprintf("ACTIVE[%s] VALUE[%s]", prompt.Fields[active].Key, prompt.Fields[active].Value))
 		previewFields, _ := overlayPreviewRowsAround(prompt.Fields, runtimeOverlayDetailPreviewRows, active)
 		for _, field := range previewFields {
 			prefix := "  "
@@ -473,6 +508,7 @@ func renderWireframeOverlayBody(overlay types.OverlayState) []string {
 			}
 			lines = append(lines, fmt.Sprintf("%s[%s] %s: %s", prefix, field.Key, field.Label, field.Value))
 		}
+		lines = append(lines, "ACTIONS[submit cancel]")
 		return lines
 	case types.OverlayHelp:
 		return []string{
