@@ -317,7 +317,7 @@ func (r modernScreenShellRenderer) renderModernCanvasPaneLines(state types.AppSt
 	return runtimeRenderer{Screens: r.Screens}.renderScreenShellPaneLines(state, pane, overlayActive, maxRows)
 }
 
-func (r modernScreenShellRenderer) renderModernCanvasPaneMeta(state types.AppState, pane types.PaneState) string {
+func (r modernScreenShellRenderer) renderModernCanvasPaneMeta(state types.AppState, pane types.PaneState, active bool) string {
 	parts := make([]string, 0, 4)
 	switch pane.SlotState {
 	case types.PaneSlotConnected:
@@ -339,12 +339,17 @@ func (r modernScreenShellRenderer) renderModernCanvasPaneMeta(state types.AppSta
 		if role != "" {
 			parts = append(parts, role)
 		}
+		if active {
+			parts = append(parts, "live")
+		} else {
+			parts = append(parts, "idle")
+		}
 	case types.PaneSlotWaiting:
-		parts = append(parts, "◌ wait")
+		parts = append(parts, "◌ wait", "reserved")
 	case types.PaneSlotExited:
-		parts = append(parts, "○ exit")
+		parts = append(parts, "○ exit", "history")
 	default:
-		parts = append(parts, "○ empty")
+		parts = append(parts, "○ empty", "open")
 	}
 	if pane.Kind == types.PaneKindFloating {
 		zIndex, zTotal := renderModernFloatingZ(state, pane)
@@ -407,7 +412,7 @@ func (r modernScreenShellRenderer) renderWorkbenchCanvasLines(state types.AppSta
 				rect.W,
 				rect.H,
 				r.renderModernCanvasPaneTitle(state, targetPane),
-				r.renderModernCanvasPaneMeta(state, targetPane),
+				r.renderModernCanvasPaneMeta(state, targetPane, paneID == tab.ActivePaneID),
 				r.renderModernCanvasPaneLines(state, targetPane, overlayActive, bodyRows),
 				paneID == tab.ActivePaneID,
 			)
@@ -425,7 +430,7 @@ func (r modernScreenShellRenderer) renderWorkbenchCanvasLines(state types.AppSta
 			rect.W,
 			rect.H,
 			r.renderModernCanvasPaneTitle(state, targetPane),
-			r.renderModernCanvasPaneMeta(state, targetPane),
+			r.renderModernCanvasPaneMeta(state, targetPane, paneID == tab.ActivePaneID),
 			r.renderModernCanvasPaneLines(state, targetPane, overlayActive, bodyRows),
 			paneID == tab.ActivePaneID,
 		)
@@ -1004,6 +1009,9 @@ func (r modernScreenShellRenderer) renderModernOverlayDialogLines(state types.Ap
 		body = append(body, "return "+returnFocus)
 	}
 	body = append(body, renderModernOverlayStateLine(state))
+	if backdrop := renderModernOverlayBackdropLine(state); backdrop != "" {
+		body = append(body, backdrop)
+	}
 	body = append(body, "")
 	body = append(body, r.renderModernOverlayDialogBody(state)...)
 	if footer, actions := renderScreenShellDialogFooter(state.UI.Overlay.Kind); footer != "" || actions != "" {
@@ -1030,6 +1038,7 @@ func (r modernScreenShellRenderer) renderModernOverlayDialogBody(state types.App
 			fmt.Sprintf("CONTEXT  layer=%s  mode=%s", renderModernPrimaryLayer(state), mode),
 			"SHARED TERMINAL  owner controls metadata / resize / stop",
 			"follower observes the terminal without control",
+			"BACKDROP  active pane stays visible under the modal",
 			"ESC closes help and returns to the workbench.",
 		}
 	default:
@@ -1930,6 +1939,9 @@ func renderModernFooterContext(theme modernShellTheme, state types.AppState, pan
 	if !shouldRenderCompactChrome(width) {
 		items = append(items, theme.chip.Render(renderModernFooterSlotBadge(pane)))
 	}
+	if pane.SlotState == types.PaneSlotConnected {
+		items = append(items, theme.chip.Render(renderModernFooterActivityBadge(state, pane)))
+	}
 	items = append(items, theme.chip.Render(renderModernFooterLayerBadge(state)))
 	if notice != "" && !strings.Contains(xansi.Strip(notice), "ready") {
 		items = append([]string{notice}, items...)
@@ -2283,6 +2295,21 @@ func renderModernFooterSlotBadge(pane types.PaneState) string {
 	}
 }
 
+func renderModernFooterActivityBadge(state types.AppState, pane types.PaneState) string {
+	workspace, ok := state.Domain.Workspaces[state.Domain.ActiveWorkspaceID]
+	if !ok {
+		return "idle"
+	}
+	tab, ok := workspace.Tabs[workspace.ActiveTabID]
+	if !ok {
+		return "idle"
+	}
+	if tab.ActivePaneID == pane.ID {
+		return "live"
+	}
+	return "standby"
+}
+
 func renderModernNotice(theme modernShellTheme, notices []btui.Notice) string {
 	total := countVisibleNotices(notices)
 	if total == 0 {
@@ -2295,9 +2322,9 @@ func renderModernNotice(theme modernShellTheme, notices []btui.Notice) string {
 	if total > 1 {
 		switch last.Level {
 		case btui.NoticeLevelError:
-			return theme.noticeError.Render(fmt.Sprintf("! %d notices", total))
+			return theme.noticeError.Render(fmt.Sprintf("! error %d notices", total))
 		default:
-			return theme.noticeInfo.Render(fmt.Sprintf("● %d notices", total))
+			return theme.noticeInfo.Render(fmt.Sprintf("● info %d notices", total))
 		}
 	}
 	label := last.Text
@@ -2306,10 +2333,27 @@ func renderModernNotice(theme modernShellTheme, notices []btui.Notice) string {
 	}
 	switch last.Level {
 	case btui.NoticeLevelError:
-		return theme.noticeError.Render("! " + label)
+		return theme.noticeError.Render("! error " + label)
 	default:
-		return theme.noticeInfo.Render("● " + label)
+		return theme.noticeInfo.Render("● info " + label)
 	}
+}
+
+func renderModernOverlayBackdropLine(state types.AppState) string {
+	workspace, ok := state.Domain.Workspaces[state.Domain.ActiveWorkspaceID]
+	if !ok {
+		return ""
+	}
+	tab, ok := workspace.Tabs[workspace.ActiveTabID]
+	if !ok {
+		return ""
+	}
+	pane, ok := tab.Panes[tab.ActivePaneID]
+	if !ok {
+		return ""
+	}
+	role := renderModernPaneRole(state, pane)
+	return fmt.Sprintf("backdrop %s  •  %s  •  paused", renderPaneTitle(state, pane), role)
 }
 
 func renderModernOverlayShadow(width int, height int) []string {
