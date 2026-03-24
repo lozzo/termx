@@ -564,12 +564,94 @@ func TestE2ERunScenarioSplitTabShowsTiledOutline(t *testing.T) {
 	initial := runtimeStateWithSplitPaneTargets()
 	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
 	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
-	bootstrapper := &stubRunSessionBootstrapper{}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{
+									{Content: "$"},
+									{Content: " "},
+									{Content: "n"},
+									{Content: "p"},
+									{Content: "m"},
+									{Content: " "},
+									{Content: "r"},
+									{Content: "u"},
+									{Content: "n"},
+									{Content: " "},
+									{Content: "d"},
+									{Content: "e"},
+									{Content: "v"},
+								},
+								{
+									{Content: "r"},
+									{Content: "e"},
+									{Content: "a"},
+									{Content: "d"},
+									{Content: "y"},
+									{Content: " "},
+									{Content: "o"},
+									{Content: "n"},
+									{Content: " "},
+									{Content: ":"},
+									{Content: "3"},
+									{Content: "0"},
+									{Content: "0"},
+									{Content: "0"},
+								},
+							},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: types.TerminalID("term-2"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{
+									{Content: ">"},
+									{Content: " "},
+									{Content: "t"},
+									{Content: "s"},
+									{Content: "c"},
+									{Content: " "},
+									{Content: "-"},
+									{Content: "w"},
+								},
+								{
+									{Content: "F"},
+									{Content: "o"},
+									{Content: "u"},
+									{Content: "n"},
+									{Content: "d"},
+									{Content: " "},
+									{Content: "0"},
+									{Content: " "},
+									{Content: "e"},
+									{Content: "r"},
+									{Content: "r"},
+									{Content: "o"},
+									{Content: "r"},
+									{Content: "s"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "tiled_outline_bar: active=pane-1 | total=2") || !strings.Contains(view, "tiled_outline:") || !strings.Contains(view, "> [tiled] api-dev | role=owner") || !strings.Contains(view, "  [tiled] build-log | role=owner") {
-				t.Fatalf("expected runtime view to expose tiled outline for split tab, got:\n%s", view)
+			if !strings.Contains(view, "tiled_outline_bar: active=pane-1 | total=2") || !strings.Contains(view, "tiled_layout: root=vertical | depth=2 | leaves=2 | ratio=0.50") || !strings.Contains(view, "tiled_outline:") || !strings.Contains(view, "> [tiled] api-dev | role=owner | state=running | preview=ready on :3000") || !strings.Contains(view, "  [tiled] build-log | role=owner | state=running | preview=Found 0 errors") {
+				t.Fatalf("expected runtime view to expose tiled layout and pane previews for split tab, got:\n%s", view)
 			}
 			return nil
 		},

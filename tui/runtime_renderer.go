@@ -26,6 +26,7 @@ const runtimeTerminalManagerPreviewRows = 4
 const runtimeBarMaxWidth = 96
 const runtimeSummaryMaxWidth = 240
 const runtimeDetailMaxWidth = 240
+const runtimeOutlinePreviewMaxWidth = 48
 
 // Render 先提供一个稳定、可测试的文本视图，优先把生命周期打通。
 // 这里不追求视觉完成度，只把当前 workspace / tab / pane / overlay 这些主语义明确展示出来。
@@ -58,7 +59,8 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	lines = appendChrome(lines, "body", []string{r.renderBodyBar(state, pane, overlayActive)}, func(lines []string) []string {
 		lines = append(lines, renderPaneBar(state, pane))
 		lines = append(lines, renderTiledOutlineBar(tab)...)
-		lines = append(lines, renderTiledOutline(state, tab)...)
+		lines = append(lines, renderTiledLayout(tab)...)
+		lines = append(lines, r.renderTiledOutline(state, tab)...)
 		lines = appendSection(lines, "terminal", r.renderTerminalSection(state, pane, overlayActive))
 		lines = appendSection(lines, "screen", r.renderScreenSection(pane, overlayActive))
 		return appendSection(lines, "overlay", renderOverlayLines(state.UI.Overlay, state.UI.Focus))
@@ -372,9 +374,34 @@ func renderTiledOutlineBar(tab types.TabState) []string {
 	)}
 }
 
+func renderTiledLayout(tab types.TabState) []string {
+	paneIDs := orderedTiledPaneIDs(tab)
+	if len(paneIDs) <= 1 {
+		return nil
+	}
+	summary := summarizeTiledLayout(tab.RootSplit, len(paneIDs))
+	parts := []string{
+		fmt.Sprintf("tiled_layout: root=%s", summary.Root),
+		fmt.Sprintf("depth=%d", summary.Depth),
+		fmt.Sprintf("leaves=%d", summary.Leaves),
+	}
+	if summary.HasRatio {
+		parts = append(parts, fmt.Sprintf("ratio=%.2f", summary.Ratio))
+	}
+	return []string{compactSummaryLine(parts...)}
+}
+
+type tiledLayoutSummary struct {
+	Root     string
+	Depth    int
+	Leaves   int
+	Ratio    float64
+	HasRatio bool
+}
+
 // renderTiledOutline 把当前 tab 下的 tiled pane 顺序稳定地投影成概览，
-// 这样即使还没做真正盒子布局，主界面也能直接看见“当前 tab 里还有哪些 pane”。
-func renderTiledOutline(state types.AppState, tab types.TabState) []string {
+// 并补上每个 pane 的最小运行摘要，让 split 工作台在文本视图里也能读出结构和状态。
+func (r runtimeRenderer) renderTiledOutline(state types.AppState, tab types.TabState) []string {
 	paneIDs := orderedTiledPaneIDs(tab)
 	if len(paneIDs) <= 1 {
 		return nil
@@ -395,9 +422,62 @@ func renderTiledOutline(state types.AppState, tab types.TabState) []string {
 		} else {
 			parts = append(parts, fmt.Sprintf("slot=%s", pane.SlotState))
 		}
+		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.State != "" {
+			parts = append(parts, fmt.Sprintf("state=%s", terminal.State))
+		}
+		if preview := r.renderTiledPanePreview(pane.TerminalID); preview != "" {
+			parts = append(parts, fmt.Sprintf("preview=%s", preview))
+		}
 		lines = append(lines, compactSummaryLine(parts...))
 	}
 	return lines
+}
+
+func summarizeTiledLayout(root *types.SplitNode, fallbackLeaves int) tiledLayoutSummary {
+	if root == nil {
+		return tiledLayoutSummary{
+			Root:   "<implicit>",
+			Depth:  1,
+			Leaves: fallbackLeaves,
+		}
+	}
+	depth, leaves := splitTreeMetrics(root)
+	summary := tiledLayoutSummary{
+		Root:   string(root.Direction),
+		Depth:  depth,
+		Leaves: leaves,
+	}
+	if summary.Root == "" {
+		summary.Root = "<implicit>"
+	}
+	if root.First != nil || root.Second != nil {
+		summary.Ratio = root.Ratio
+		summary.HasRatio = true
+	}
+	if summary.Leaves < fallbackLeaves {
+		summary.Root = "<implicit>"
+		summary.Depth = 1
+		summary.Leaves = fallbackLeaves
+		summary.Ratio = 0
+		summary.HasRatio = false
+	}
+	return summary
+}
+
+func splitTreeMetrics(node *types.SplitNode) (depth int, leaves int) {
+	if node == nil {
+		return 0, 0
+	}
+	if node.First == nil && node.Second == nil {
+		return 1, 1
+	}
+	firstDepth, firstLeaves := splitTreeMetrics(node.First)
+	secondDepth, secondLeaves := splitTreeMetrics(node.Second)
+	maxDepth := firstDepth
+	if secondDepth > maxDepth {
+		maxDepth = secondDepth
+	}
+	return maxDepth + 1, firstLeaves + secondLeaves
 }
 
 func orderedTiledPaneIDs(tab types.TabState) []types.PaneID {
@@ -442,6 +522,28 @@ func collectSplitPaneIDs(node *types.SplitNode, tab types.TabState, seen map[typ
 	}
 	collectSplitPaneIDs(node.First, tab, seen, ordered)
 	collectSplitPaneIDs(node.Second, tab, seen, ordered)
+}
+
+func (r runtimeRenderer) renderTiledPanePreview(terminalID types.TerminalID) string {
+	if terminalID == "" || r.Screens == nil {
+		return ""
+	}
+	snapshot, ok := r.Screens.Snapshot(terminalID)
+	if !ok || snapshot == nil {
+		return ""
+	}
+	rows, _, _ := renderSnapshotRows(snapshot)
+	for i := len(rows) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(rows[i])
+		if line == "" || line == "<empty>" {
+			continue
+		}
+		return truncateLine(line, runtimeOutlinePreviewMaxWidth)
+	}
+	if len(rows) == 0 {
+		return ""
+	}
+	return truncateLine(rows[len(rows)-1], runtimeOutlinePreviewMaxWidth)
 }
 
 func (r runtimeRenderer) renderTerminalSection(state types.AppState, pane types.PaneState, compact bool) []string {

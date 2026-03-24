@@ -136,21 +136,108 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 
 func TestRuntimeRendererRendersTiledOutlineForSplitTab(t *testing.T) {
 	state := runtimeStateWithSplitPaneTargets()
+	renderer := runtimeRenderer{
+		Screens: NewRuntimeTerminalStore(RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{
+									{Content: "$"},
+									{Content: " "},
+									{Content: "n"},
+									{Content: "p"},
+									{Content: "m"},
+									{Content: " "},
+									{Content: "r"},
+									{Content: "u"},
+									{Content: "n"},
+									{Content: " "},
+									{Content: "d"},
+									{Content: "e"},
+									{Content: "v"},
+								},
+								{
+									{Content: "r"},
+									{Content: "e"},
+									{Content: "a"},
+									{Content: "d"},
+									{Content: "y"},
+									{Content: " "},
+									{Content: "o"},
+									{Content: "n"},
+									{Content: " "},
+									{Content: ":"},
+									{Content: "3"},
+									{Content: "0"},
+									{Content: "0"},
+									{Content: "0"},
+								},
+							},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: types.TerminalID("term-2"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{
+									{Content: ">"},
+									{Content: " "},
+									{Content: "t"},
+									{Content: "s"},
+									{Content: "c"},
+									{Content: " "},
+									{Content: "-"},
+									{Content: "w"},
+								},
+								{
+									{Content: "F"},
+									{Content: "o"},
+									{Content: "u"},
+									{Content: "n"},
+									{Content: "d"},
+									{Content: " "},
+									{Content: "0"},
+									{Content: " "},
+									{Content: "e"},
+									{Content: "r"},
+									{Content: "r"},
+									{Content: "o"},
+									{Content: "r"},
+									{Content: "s"},
+								},
+							},
+						},
+					},
+				},
+			},
+		}),
+	}
 
-	view := runtimeRenderer{}.Render(state, nil)
+	view := renderer.Render(state, nil)
 	if !strings.Contains(view, "tiled_outline_bar: active=pane-1 | total=2") {
 		t.Fatalf("expected tiled outline bar in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "tiled_layout: root=vertical | depth=2 | leaves=2 | ratio=0.50") {
+		t.Fatalf("expected tiled layout summary in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "tiled_outline:") {
 		t.Fatalf("expected tiled outline section in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "> [tiled] api-dev | role=owner") {
+	if !strings.Contains(view, "> [tiled] api-dev | role=owner | state=running | preview=ready on :3000") {
 		t.Fatalf("expected active tiled pane row in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "  [tiled] build-log | role=owner") {
+	if !strings.Contains(view, "  [tiled] build-log | role=owner | state=running | preview=Found 0 errors") {
 		t.Fatalf("expected sibling tiled pane row in rendered view, got:\n%s", view)
 	}
 	if !(strings.Index(view, "pane_bar:") < strings.Index(view, "tiled_outline_bar:") &&
+		strings.Index(view, "tiled_layout:") < strings.Index(view, "tiled_outline:") &&
 		strings.Index(view, "tiled_outline:") < strings.Index(view, "section_terminal:")) {
 		t.Fatalf("expected tiled outline to stay between pane bar and terminal section, got:\n%s", view)
 	}
@@ -166,6 +253,9 @@ func TestRuntimeRendererRendersFollowerRoleInsideTiledOutline(t *testing.T) {
 	view := runtimeRenderer{}.Render(state, nil)
 	if !strings.Contains(view, "tiled_outline_bar: active=pane-2 | total=2") {
 		t.Fatalf("expected follower tiled outline bar in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "tiled_layout: root=<implicit> | depth=1 | leaves=2") {
+		t.Fatalf("expected fallback tiled layout summary in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "  [tiled] api-dev | role=owner") {
 		t.Fatalf("expected owner row to remain visible in tiled outline, got:\n%s", view)
