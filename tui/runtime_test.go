@@ -681,6 +681,9 @@ func TestE2ERunScenarioDefaultModernSplitWorkbenchRendersPaneCanvas(t *testing.T
 			if !strings.Contains(stripped, "Split view") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") {
 				t.Fatalf("expected default modern split view to expose multi-pane canvas, got:\n%s", view)
 			}
+			if !strings.Contains(stripped, "live input  •  Ctrl-p  •  pick") || !strings.Contains(stripped, "standby pane  •  Ctrl-p pane") {
+				t.Fatalf("expected default modern split view to expose pane footer hints, got:\n%s", view)
+			}
 			if !strings.Contains(stripped, "$ npm run dev") || !strings.Contains(stripped, "> tsc -w") {
 				t.Fatalf("expected default modern split view to expose both pane previews, got:\n%s", view)
 			}
@@ -745,6 +748,9 @@ func TestE2ERunScenarioDefaultModernFloatingWorkbenchRendersWindowDeck(t *testin
 			if !strings.Contains(stripped, "api-dev • owner • floating • active") || !strings.Contains(stripped, "Geometry") || !strings.Contains(stripped, "z 1/2") || !strings.Contains(stripped, "z 2/2") {
 				t.Fatalf("expected default modern floating view to expose title bars and geometry depth, got:\n%s", view)
 			}
+			if !strings.Contains(stripped, "top float-2") || !strings.Contains(stripped, "live window  •  deck  •  Ctrl-o") || !strings.Contains(stripped, "standby window  •  deck") {
+				t.Fatalf("expected default modern floating view to expose depth summary and footer hints, got:\n%s", view)
+			}
 			if !strings.Contains(stripped, "api ready") || !strings.Contains(stripped, "build ok") || !strings.Contains(stripped, "rect 10,8  30x12") {
 				t.Fatalf("expected default modern floating view to expose preview and geometry, got:\n%s", view)
 			}
@@ -786,6 +792,9 @@ func TestE2ERunScenarioDefaultModernTerminalManagerOverlayRendersStructuredModal
 			stripped := stripANSIRuntimeView(view)
 			if !strings.Contains(stripped, "Terminal Manager") || !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Visible terminals") || !strings.Contains(stripped, "Detail panel") || !strings.Contains(stripped, "Action bar") {
 				t.Fatalf("expected default modern terminal manager modal structure, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "Backdrop workbench") || !strings.Contains(stripped, "background api-dev • owner • tiled") || !strings.Contains(stripped, "overlay active • terminal_manager") {
+				t.Fatalf("expected default modern terminal manager modal to retain backdrop context, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "[terminal] api-dev") || !strings.Contains(stripped, "[create] + new terminal") || !strings.Contains(stripped, "running  •  visible") {
 				t.Fatalf("expected default modern terminal manager rows, got:\n%s", view)

@@ -26,30 +26,35 @@ type modernScreenShellRenderer struct {
 }
 
 type modernShellTheme struct {
-	app              lipgloss.Style
-	topBar           lipgloss.Style
-	subBar           lipgloss.Style
-	tab              lipgloss.Style
-	activeTab        lipgloss.Style
-	chip             lipgloss.Style
-	activeChip       lipgloss.Style
-	panel            lipgloss.Style
-	activePanel      lipgloss.Style
-	mutedPanel       lipgloss.Style
-	panelTitle       lipgloss.Style
-	panelMeta        lipgloss.Style
-	terminalBody     lipgloss.Style
-	noticeInfo       lipgloss.Style
-	noticeWarn       lipgloss.Style
-	noticeError      lipgloss.Style
-	footer           lipgloss.Style
-	modalBackdrop    lipgloss.Style
-	modalPanel       lipgloss.Style
-	modalTitle       lipgloss.Style
-	modalMeta        lipgloss.Style
-	modalBody        lipgloss.Style
-	selectedListItem lipgloss.Style
-	listItem         lipgloss.Style
+	app               lipgloss.Style
+	topBar            lipgloss.Style
+	subBar            lipgloss.Style
+	tab               lipgloss.Style
+	activeTab         lipgloss.Style
+	chip              lipgloss.Style
+	activeChip        lipgloss.Style
+	panel             lipgloss.Style
+	activePanel       lipgloss.Style
+	mutedPanel        lipgloss.Style
+	panelTitle        lipgloss.Style
+	panelMeta         lipgloss.Style
+	terminalBody      lipgloss.Style
+	panelHeader       lipgloss.Style
+	activePanelHeader lipgloss.Style
+	panelFooter       lipgloss.Style
+	activePanelFooter lipgloss.Style
+	backdropPanel     lipgloss.Style
+	noticeInfo        lipgloss.Style
+	noticeWarn        lipgloss.Style
+	noticeError       lipgloss.Style
+	footer            lipgloss.Style
+	modalBackdrop     lipgloss.Style
+	modalPanel        lipgloss.Style
+	modalTitle        lipgloss.Style
+	modalMeta         lipgloss.Style
+	modalBody         lipgloss.Style
+	selectedListItem  lipgloss.Style
+	listItem          lipgloss.Style
 }
 
 func defaultModernShellTheme() modernShellTheme {
@@ -109,6 +114,31 @@ func defaultModernShellTheme() modernShellTheme {
 			Foreground(lipgloss.Color("#94a3b8")),
 		terminalBody: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#e2e8f0")),
+		panelHeader: lipgloss.NewStyle().
+			Background(lipgloss.Color("#172033")).
+			Foreground(lipgloss.Color("#dbe7f3")).
+			Bold(true).
+			Padding(0, 1),
+		activePanelHeader: lipgloss.NewStyle().
+			Background(lipgloss.Color("#1d4ed8")).
+			Foreground(lipgloss.Color("#eff6ff")).
+			Bold(true).
+			Padding(0, 1),
+		panelFooter: lipgloss.NewStyle().
+			Background(lipgloss.Color("#111a2b")).
+			Foreground(lipgloss.Color("#a5b4c8")).
+			Padding(0, 1),
+		activePanelFooter: lipgloss.NewStyle().
+			Background(lipgloss.Color("#0f766e")).
+			Foreground(lipgloss.Color("#ecfeff")).
+			Bold(true).
+			Padding(0, 1),
+		backdropPanel: lipgloss.NewStyle().
+			Background(lipgloss.Color("#09101d")).
+			Foreground(lipgloss.Color("#cbd5e1")).
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#223047")).
+			Padding(0, 1),
 		noticeInfo: lipgloss.NewStyle().
 			Background(lipgloss.Color("#0f3d69")).
 			Foreground(lipgloss.Color("#e0f2fe")).
@@ -172,7 +202,7 @@ func (r modernScreenShellRenderer) RenderShell(state types.AppState, workspace t
 
 	body := r.renderWorkbench(theme, state, tab, pane, width, bodyHeight)
 	if state.UI.Overlay.Kind != types.OverlayNone {
-		body = r.renderOverlayViewport(theme, state, width, bodyHeight)
+		body = r.renderOverlayViewport(theme, state, pane, width, bodyHeight)
 	}
 
 	view := lipgloss.JoinVertical(lipgloss.Left, header, tabs, context, body, footer)
@@ -462,6 +492,7 @@ func (r modernScreenShellRenderer) renderFloatingDeckCard(theme modernShellTheme
 		theme.panelMeta.Render(rectText),
 		theme.panelMeta.Render(fmt.Sprintf("slot %s  •  %s", pane.SlotState, renderScreenShellPaneCardRole(state, pane))),
 		theme.terminalBody.Render(preview),
+		theme.panelMeta.Render(truncateModernLine(renderModernPaneFooterLine(state, pane, active), max(10, width-4))),
 	}, max(14, width-4), max(4, height-2))
 	return panelStyle.Width(width - 2).Height(height - 2).Render(strings.Join(lines, "\n"))
 }
@@ -512,7 +543,7 @@ func normalizeModernPanelLines(lines []string, width, height int) []string {
 func (r modernScreenShellRenderer) renderPanePanelLines(theme modernShellTheme, state types.AppState, pane types.PaneState, width, maxRows int, includeTitle bool, active bool, zIndex int, zTotal int) []string {
 	lines := make([]string, 0, maxRows)
 	if includeTitle {
-		lines = append(lines, theme.panelTitle.Render(renderModernPaneTitleBar(state, pane, active, zIndex, zTotal)))
+		lines = append(lines, renderModernPaneHeader(theme, renderModernPaneTitleBar(state, pane, active, zIndex, zTotal), width, active))
 	}
 	lines = append(lines, theme.panelTitle.Render("Status"))
 	lines = append(lines, theme.panelMeta.Render(renderModernPaneStatusLine(state, pane)))
@@ -554,6 +585,10 @@ func (r modernScreenShellRenderer) renderPanePanelLines(theme modernShellTheme, 
 		lines = append(lines, r.renderTerminalMetaLines(theme, state, pane, width)...)
 		lines = append(lines, theme.panelTitle.Render("Actions"))
 		lines = append(lines, theme.panelMeta.Render(truncateModernLine(renderModernPaneActionLine(state, pane), width)))
+	}
+	lines = append(lines, theme.panelTitle.Render("Footer"))
+	lines = append(lines, renderModernPaneFooter(theme, renderModernPaneFooterLine(state, pane, active), width, active))
+	if pane.SlotState == types.PaneSlotConnected {
 		lines = append(lines, theme.panelTitle.Render("Preview"))
 		lines = append(lines, r.renderTerminalPreviewLines(theme, pane, width, maxRows-len(lines)-1)...)
 	}
@@ -577,6 +612,54 @@ func renderModernPaneTitleBar(state types.AppState, pane types.PaneState, active
 		parts = append(parts, fmt.Sprintf("z %d/%d", zIndex, zTotal))
 	}
 	return strings.Join(parts, " • ")
+}
+
+func renderModernPaneHeader(theme modernShellTheme, text string, width int, active bool) string {
+	style := theme.panelHeader
+	if active {
+		style = theme.activePanelHeader
+	}
+	return style.Render(truncateModernLine(text, max(8, width-2)))
+}
+
+func renderModernPaneFooter(theme modernShellTheme, text string, width int, active bool) string {
+	style := theme.panelFooter
+	if active {
+		style = theme.activePanelFooter
+	}
+	return style.Render(truncateModernLine(text, max(8, width-2)))
+}
+
+func renderModernPaneFooterLine(state types.AppState, pane types.PaneState, active bool) string {
+	switch pane.Kind {
+	case types.PaneKindFloating:
+		if active && state.UI.Mode.Active == types.ModeFloating {
+			return "live window  •  move/size"
+		}
+		if active {
+			return "live window  •  deck  •  Ctrl-o"
+		}
+		return "standby window  •  deck"
+	}
+	switch pane.SlotState {
+	case types.PaneSlotEmpty:
+		if active {
+			return "empty slot  •  n create  •  a connect"
+		}
+		return "empty pane  •  Ctrl-p pane"
+	case types.PaneSlotWaiting:
+		return "waiting slot  •  layout/restore reserved"
+	case types.PaneSlotExited:
+		if active {
+			return "restart ready  •  r restart  •  a connect"
+		}
+		return "exited pane  •  Ctrl-p pane"
+	default:
+		if active {
+			return "live input  •  Ctrl-p  •  pick"
+		}
+		return "standby pane  •  Ctrl-p pane"
+	}
 }
 
 func renderModernFloatingZ(state types.AppState, pane types.PaneState) (int, int) {
@@ -680,21 +763,40 @@ func (r modernScreenShellRenderer) renderTerminalPreviewLines(theme modernShellT
 	return lines
 }
 
-func (r modernScreenShellRenderer) renderOverlayViewport(theme modernShellTheme, state types.AppState, width, height int) string {
+func (r modernScreenShellRenderer) renderOverlayViewport(theme modernShellTheme, state types.AppState, pane types.PaneState, width, height int) string {
+	backdropHeight := min(7, max(5, height/4))
 	panelWidth := min(width-4, max(56, width*3/4))
 	if panelWidth <= 0 {
 		panelWidth = width
 	}
 	panel := r.renderOverlayPanel(theme, state, panelWidth)
-	return lipgloss.Place(
+	modalHeight := max(8, height-backdropHeight-1)
+	backdrop := r.renderOverlayBackdrop(theme, state, pane, width, backdropHeight)
+	modal := lipgloss.Place(
 		width,
-		height,
+		modalHeight,
 		lipgloss.Center,
 		lipgloss.Center,
 		panel,
 		lipgloss.WithWhitespaceChars(" "),
 		lipgloss.WithWhitespaceBackground(lipgloss.Color("#08111d")),
 	)
+	return lipgloss.JoinVertical(lipgloss.Left, backdrop, modal)
+}
+
+func (r modernScreenShellRenderer) renderOverlayBackdrop(theme modernShellTheme, state types.AppState, pane types.PaneState, width, height int) string {
+	preview := r.renderPanePreview(pane.TerminalID)
+	if preview == "" {
+		preview = string(pane.SlotState)
+	}
+	lines := normalizeModernPanelLines([]string{
+		theme.panelTitle.Render("Backdrop workbench"),
+		theme.panelMeta.Render(fmt.Sprintf("overlay active • %s", state.UI.Overlay.Kind)),
+		theme.panelMeta.Render("background " + renderModernPaneTitleBar(state, pane, false, 0, 0)),
+		theme.panelMeta.Render(renderModernPaneStatusLine(state, pane)),
+		theme.terminalBody.Render(preview),
+	}, max(16, width-4), max(3, height-2))
+	return theme.backdropPanel.Width(width - 2).Height(height - 1).Render(strings.Join(lines, "\n"))
 }
 
 func (r modernScreenShellRenderer) renderOverlayPanel(theme modernShellTheme, state types.AppState, width int) string {
@@ -1230,11 +1332,15 @@ func renderModernFloatingWorkbenchSummary(state types.AppState, tab types.TabSta
 	if activePane == "" && len(floatingPaneIDs) > 0 {
 		activePane = string(floatingPaneIDs[0])
 	}
+	topPane := "<none>"
+	if len(floatingPaneIDs) > 0 {
+		topPane = string(floatingPaneIDs[len(floatingPaneIDs)-1])
+	}
 	layer := state.UI.Focus.Layer
 	if layer == "" {
 		layer = types.FocusLayerFloating
 	}
-	return fmt.Sprintf("focus %s  •  layer %s  •  deck %d", activePane, layer, len(floatingPaneIDs))
+	return fmt.Sprintf("focus %s  •  top %s  •  layer %s  •  deck %d", activePane, topPane, layer, len(floatingPaneIDs))
 }
 
 func renderModernFloatingModeHint(state types.AppState) string {
