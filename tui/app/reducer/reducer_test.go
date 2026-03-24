@@ -968,7 +968,7 @@ func TestReducerTerminalManagerConnectInNewTabEmitsPlanningEffect(t *testing.T) 
 	}
 }
 
-func TestReducerTerminalManagerConnectInNewTabSucceededClosesOverlay(t *testing.T) {
+func TestReducerTerminalManagerConnectInNewTabSucceededCreatesTabAndClosesOverlay(t *testing.T) {
 	reducer := New()
 	state := newManagerAppState()
 
@@ -981,6 +981,40 @@ func TestReducerTerminalManagerConnectInNewTabSucceededClosesOverlay(t *testing.
 
 	if result.State.UI.Overlay.Kind != types.OverlayNone {
 		t.Fatalf("expected manager overlay to close after new-tab success, got %q", result.State.UI.Overlay.Kind)
+	}
+	workspace := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	if workspace.ActiveTabID != types.TabID("tab-2") {
+		t.Fatalf("expected active tab to switch to new tab, got %q", workspace.ActiveTabID)
+	}
+	if len(workspace.TabOrder) != 2 || workspace.TabOrder[1] != types.TabID("tab-2") {
+		t.Fatalf("expected tab order to append new tab, got %+v", workspace.TabOrder)
+	}
+	tab := workspace.Tabs[types.TabID("tab-2")]
+	if tab.ID != types.TabID("tab-2") || tab.Name != "tab-2" {
+		t.Fatalf("expected new tab identity to be populated, got %+v", tab)
+	}
+	if tab.ActiveLayer != types.FocusLayerTiled {
+		t.Fatalf("expected new tab to start on tiled layer, got %q", tab.ActiveLayer)
+	}
+	if tab.ActivePaneID != types.PaneID("ws-1-tab-2-pane-1") {
+		t.Fatalf("expected new connected pane to become active, got %q", tab.ActivePaneID)
+	}
+	pane := tab.Panes[types.PaneID("ws-1-tab-2-pane-1")]
+	if pane.ID != types.PaneID("ws-1-tab-2-pane-1") || pane.Kind != types.PaneKindTiled || pane.SlotState != types.PaneSlotConnected || pane.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected connected pane in new tab, got %+v", pane)
+	}
+	if tab.RootSplit == nil || tab.RootSplit.PaneID != types.PaneID("ws-1-tab-2-pane-1") {
+		t.Fatalf("expected new tab root split to point at created pane, got %+v", tab.RootSplit)
+	}
+	if result.State.UI.Focus.Layer != types.FocusLayerTiled || result.State.UI.Focus.TabID != types.TabID("tab-2") || result.State.UI.Focus.PaneID != types.PaneID("ws-1-tab-2-pane-1") {
+		t.Fatalf("expected focus to move into new tab pane, got %+v", result.State.UI.Focus)
+	}
+	conn := result.State.Domain.Connections[types.TerminalID("term-2")]
+	if len(conn.ConnectedPaneIDs) != 1 || conn.ConnectedPaneIDs[0] != types.PaneID("ws-1-tab-2-pane-1") {
+		t.Fatalf("expected new-tab success to register new connection pane, got %+v", conn)
+	}
+	if conn.OwnerPaneID != types.PaneID("ws-1-tab-2-pane-1") {
+		t.Fatalf("expected first pane in new tab to own terminal, got %+v", conn)
 	}
 }
 

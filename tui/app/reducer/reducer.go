@@ -131,7 +131,7 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 	case intent.CreateTerminalSucceededIntent:
 		applyCreateTerminalSucceeded(&result.State, intentValue)
 	case intent.ConnectTerminalInNewTabSucceededIntent:
-		applyCloseTerminalManagerForTerminal(&result.State, intentValue.TerminalID)
+		applyConnectTerminalInNewTabSucceeded(&result.State, intentValue)
 	case intent.ConnectTerminalInFloatingPaneSucceededIntent:
 		applyConnectTerminalInFloatingPaneSucceeded(&result.State, intentValue)
 	case intent.TerminalProgramExitedIntent:
@@ -1020,6 +1020,62 @@ func applyCreateTerminalSucceeded(state *types.AppState, in intent.CreateTermina
 	applyCloseCreateOverlay(state, in.PaneID)
 }
 
+// applyConnectTerminalInNewTabSucceeded 先把“新 tab 可见且可聚焦”的最小闭环打通。
+// 当前阶段不追求复杂 tab 命名策略，只保证 topology 成功后本地状态真实落地。
+func applyConnectTerminalInNewTabSucceeded(state *types.AppState, in intent.ConnectTerminalInNewTabSucceededIntent) {
+	workspace, ok := state.Domain.Workspaces[in.WorkspaceID]
+	if !ok {
+		applyCloseTerminalManagerForTerminal(state, in.TerminalID)
+		return
+	}
+
+	tabID := nextTabID(workspace)
+	paneID := types.PaneID(fmt.Sprintf("%s-%s-pane-1", in.WorkspaceID, tabID))
+	workspace.Tabs[tabID] = types.TabState{
+		ID:           tabID,
+		Name:         string(tabID),
+		ActivePaneID: paneID,
+		ActiveLayer:  types.FocusLayerTiled,
+		Panes: map[types.PaneID]types.PaneState{
+			paneID: {
+				ID:         paneID,
+				Kind:       types.PaneKindTiled,
+				TerminalID: in.TerminalID,
+				SlotState:  types.PaneSlotConnected,
+			},
+		},
+		RootSplit: &types.SplitNode{PaneID: paneID},
+	}
+	workspace.TabOrder = append(workspace.TabOrder, tabID)
+	workspace.ActiveTabID = tabID
+	state.Domain.Workspaces[in.WorkspaceID] = workspace
+	state.Domain.ActiveWorkspaceID = in.WorkspaceID
+
+	terminal := state.Domain.Terminals[in.TerminalID]
+	if terminal.ID == "" {
+		terminal.ID = in.TerminalID
+	}
+	state.Domain.Terminals[in.TerminalID] = terminal
+
+	connSnapshot, ok := state.Domain.Connections[in.TerminalID]
+	var conn *connection.State
+	if ok {
+		conn = connection.FromSnapshot(connSnapshot)
+	} else {
+		conn = connection.NewState(in.TerminalID)
+	}
+	conn.Connect(paneID)
+	state.Domain.Connections[in.TerminalID] = conn.Snapshot()
+
+	applyCloseOverlay(state)
+	state.UI.Focus = types.FocusState{
+		Layer:       types.FocusLayerTiled,
+		WorkspaceID: in.WorkspaceID,
+		TabID:       tabID,
+		PaneID:      paneID,
+	}
+}
+
 // applyConnectTerminalInFloatingPaneSucceeded 在本地状态里补齐 floating pane，
 // 让 runtime 不再停留在“远端已经成功，但本地视图仍在旧 pane”的半完成状态。
 func applyConnectTerminalInFloatingPaneSucceeded(state *types.AppState, in intent.ConnectTerminalInFloatingPaneSucceededIntent) {
@@ -1251,6 +1307,15 @@ func nextFloatingPaneID(tab types.TabState) types.PaneID {
 	for index := 1; ; index++ {
 		candidate := types.PaneID(fmt.Sprintf("float-%d", index))
 		if _, ok := tab.Panes[candidate]; !ok {
+			return candidate
+		}
+	}
+}
+
+func nextTabID(workspace types.WorkspaceState) types.TabID {
+	for index := 1; ; index++ {
+		candidate := types.TabID(fmt.Sprintf("tab-%d", index))
+		if _, ok := workspace.Tabs[candidate]; !ok {
 			return candidate
 		}
 	}

@@ -3006,7 +3006,7 @@ func TestE2ERunScenarioTerminalManagerMouseClickOnSelectedRowConnectsHere(t *tes
 	}
 }
 
-func TestE2ERunScenarioTerminalManagerConnectInNewTabClosesOverlay(t *testing.T) {
+func TestE2ERunScenarioTerminalManagerConnectInNewTabCreatesTab(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithTerminalManagerTargets()
 	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
@@ -3030,8 +3030,20 @@ func TestE2ERunScenarioTerminalManagerConnectInNewTabClosesOverlay(t *testing.T)
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "terminal: term-1") || strings.Contains(view, "terminal_manager_rows:") {
-				t.Fatalf("expected terminal manager new-tab flow to close overlay, got:\n%s", view)
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "tab: tab-2") || !strings.Contains(view, "terminal: term-2") || !strings.Contains(view, "title: build-log") || strings.Contains(view, "terminal_manager_rows:") {
+				t.Fatalf("expected terminal manager new-tab flow to create and focus new tab, got:\n%s", view)
+			}
+			workspace := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")]
+			if workspace.ActiveTabID != types.TabID("tab-2") {
+				t.Fatalf("expected runtime flow to switch active tab, got %+v", workspace.ActiveTabID)
+			}
+			tab := workspace.Tabs[types.TabID("tab-2")]
+			if tab.ActivePaneID != types.PaneID("ws-1-tab-2-pane-1") || tab.ActiveLayer != types.FocusLayerTiled {
+				t.Fatalf("expected runtime flow to create active pane in new tab, got %+v", tab)
+			}
+			pane := tab.Panes[types.PaneID("ws-1-tab-2-pane-1")]
+			if pane.Kind != types.PaneKindTiled || pane.TerminalID != types.TerminalID("term-2") || pane.SlotState != types.PaneSlotConnected {
+				t.Fatalf("expected runtime flow to connect term-2 in new tab pane, got %+v", pane)
 			}
 			return nil
 		},
@@ -3510,7 +3522,7 @@ func TestE2ERunScenarioTerminalManagerMouseClickOnCreateRowFailureShowsNoticeInV
 	}
 }
 
-func TestE2ERunScenarioTerminalManagerMouseClickOnNewTabActionClosesOverlay(t *testing.T) {
+func TestE2ERunScenarioTerminalManagerMouseClickOnNewTabActionCreatesTab(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithTerminalManagerTargets()
 	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
@@ -3549,8 +3561,12 @@ func TestE2ERunScenarioTerminalManagerMouseClickOnNewTabActionClosesOverlay(t *t
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "terminal_manager_actions:") {
-				t.Fatalf("expected terminal manager new-tab mouse action to close overlay, got:\n%s", view)
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "tab: tab-2") || !strings.Contains(view, "terminal: term-2") || strings.Contains(view, "terminal_manager_actions:") {
+				t.Fatalf("expected terminal manager new-tab mouse action to create focused tab, got:\n%s", view)
+			}
+			workspace := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")]
+			if workspace.ActiveTabID != types.TabID("tab-2") {
+				t.Fatalf("expected mouse new-tab action to switch active tab, got %+v", workspace.ActiveTabID)
 			}
 			return nil
 		},
