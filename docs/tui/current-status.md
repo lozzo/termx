@@ -173,6 +173,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 149. 第一百四十五轮 TDD 已补上 runtime detail 行宽度预算
 150. 第一百四十六轮 TDD 已补上 runtime program alt-screen 外壳
 151. 第一百四十七轮 TDD 已补上 runtime program 鼠标事件外壳
+152. 第一百四十八轮 TDD 已补上 overlay 最小鼠标滚轮导航
 
 对应文档：
 
@@ -233,6 +234,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 这让 `header/body/footer` chrome 壳层在真实运行时也有机会稳定留在可视区，而不只是停留在 `model.View()` 测试里
 - runtime 的真实 Bubble Tea program 现在也会打开 mouse cell-motion，后续 pane/overlay 鼠标命中交互不需要再返工 program runner
 - 运行壳层目前已经开始从“最小能跑”转向“真实交互容器”，重点收口 alt-screen、鼠标事件和可视稳定性
+- `bt` 模型现在已经能接住 `tea.MouseMsg`，overlay 列表的滚轮上下会直接翻译成 move intent
+- `workspace picker / terminal manager / terminal picker / layout resolve` 已经具备最小鼠标滚轮导航，不再只靠键盘上下键
 - `OpenTerminalManagerIntent`
 - `OpenPromptIntent`
 - `TerminalManagerMoveIntent`

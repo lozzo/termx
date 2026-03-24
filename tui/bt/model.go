@@ -131,7 +131,7 @@ func (m *Model) Init() tea.Cmd {
 }
 
 // Update 是最小 bubbletea 壳的统一入口。
-// 当前只把键盘事件归一化为 intent，再交给 reducer 和 effect handler，避免输入层直接改状态。
+// 当前把键盘和最小鼠标事件都归一化为 intent，再交给 reducer 和 effect handler，避免输入层直接改状态。
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msgValue := msg.(type) {
 	case tea.KeyMsg:
@@ -141,6 +141,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.unmappedKeys != nil {
 			return m, m.unmappedKeys.HandleKey(m.state, msgValue)
+		}
+		return m, nil
+	case tea.MouseMsg:
+		intents := m.mapper.MapMouse(m.state, msgValue)
+		if len(intents) > 0 {
+			return m.applyIntents(intents)
 		}
 		return m, nil
 	case FeedbackMsg:

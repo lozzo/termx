@@ -18,10 +18,16 @@ var errBoom = errors.New("boom")
 type stubIntentMapper struct {
 	intents []intent.Intent
 	keys    []tea.KeyMsg
+	mice    []tea.MouseMsg
 }
 
 func (m *stubIntentMapper) MapKey(_ types.AppState, msg tea.KeyMsg) []intent.Intent {
 	m.keys = append(m.keys, msg)
+	return m.intents
+}
+
+func (m *stubIntentMapper) MapMouse(_ types.AppState, msg tea.MouseMsg) []intent.Intent {
+	m.mice = append(m.mice, msg)
 	return m.intents
 }
 
@@ -247,6 +253,55 @@ func TestModelUpdateFallsBackToUnmappedKeyHandler(t *testing.T) {
 	msg := cmd()
 	if handled, ok := msg.(effectsHandledMsg); !ok || handled.Count != 1 {
 		t.Fatalf("expected handler command result, got %#v", msg)
+	}
+}
+
+func TestModelUpdateRunsMapperReducerAndEffectHandlerForMouse(t *testing.T) {
+	initial := newAppStateWithSinglePane()
+	initial.UI.Overlay = types.OverlayState{Kind: types.OverlayWorkspacePicker}
+	next := initial
+
+	mapper := &stubIntentMapper{
+		intents: []intent.Intent{intent.WorkspacePickerMoveIntent{Delta: 1}},
+	}
+	rd := &stubReducer{
+		result: reducer.Result{
+			State:   next,
+			Effects: []reducer.Effect{reducer.OpenPromptEffect{PromptKind: reducer.PromptKindCreateWorkspace}},
+		},
+	}
+	effects := &stubEffectHandler{}
+
+	model := NewModel(ModelConfig{
+		InitialState:  initial,
+		Mapper:        mapper,
+		Reducer:       rd,
+		EffectHandler: effects,
+		Renderer:      &stubRenderer{view: "state"},
+	})
+
+	mouse := tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress}
+	updatedModel, cmd := model.Update(mouse)
+	updated, ok := updatedModel.(*Model)
+	if !ok {
+		t.Fatalf("expected updated model type, got %T", updatedModel)
+	}
+	if len(mapper.mice) != 1 || mapper.mice[0].Button != tea.MouseButtonWheelDown {
+		t.Fatalf("expected mapper to receive wheel-down mouse event, got %+v", mapper.mice)
+	}
+	if len(rd.intents) != 1 {
+		t.Fatalf("expected reducer to receive one intent, got %d", len(rd.intents))
+	}
+	if _, ok := rd.intents[0].(intent.WorkspacePickerMoveIntent); !ok {
+		t.Fatalf("expected workspace picker move intent, got %T", rd.intents[0])
+	}
+	if updated.State().UI.Overlay.Kind != types.OverlayWorkspacePicker {
+		t.Fatalf("expected overlay state to remain workspace picker, got %+v", updated.State().UI.Overlay)
+	}
+	msg := cmd()
+	handled, ok := msg.(effectsHandledMsg)
+	if !ok || handled.Count != 1 {
+		t.Fatalf("expected effect cmd to yield handled msg, got %#v", msg)
 	}
 }
 

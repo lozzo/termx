@@ -132,6 +132,54 @@ func TestIntentMapperWorkspacePickerMapsNavigationAndQuery(t *testing.T) {
 	}
 }
 
+func TestIntentMapperOverlayMouseWheelMapsSelectionMoves(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+
+	cases := []struct {
+		name  string
+		state types.AppState
+		mouse tea.MouseMsg
+		want  any
+	}{
+		{
+			name:  "workspace picker wheel down",
+			state: func() types.AppState { s := newAppStateWithSinglePane(); s.UI.Overlay = types.OverlayState{Kind: types.OverlayWorkspacePicker}; return s }(),
+			mouse: tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress},
+			want:  intent.WorkspacePickerMoveIntent{Delta: 1},
+		},
+		{
+			name:  "terminal picker wheel up",
+			state: func() types.AppState { s := newAppStateWithSinglePane(); s.UI.Overlay = types.OverlayState{Kind: types.OverlayTerminalPicker}; return s }(),
+			mouse: tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress},
+			want:  intent.TerminalPickerMoveIntent{Delta: -1},
+		},
+		{
+			name:  "terminal manager wheel down",
+			state: func() types.AppState { s := newAppStateWithSinglePane(); s.UI.Overlay = types.OverlayState{Kind: types.OverlayTerminalManager}; return s }(),
+			mouse: tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress},
+			want:  intent.TerminalManagerMoveIntent{Delta: 1},
+		},
+		{
+			name:  "layout resolve wheel up",
+			state: func() types.AppState { s := newAppStateWithSinglePane(); s.UI.Overlay = types.OverlayState{Kind: types.OverlayLayoutResolve}; return s }(),
+			mouse: tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress},
+			want:  intent.LayoutResolveMoveIntent{Delta: -1},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			intents := mapper.MapMouse(tc.state, tc.mouse)
+			if len(intents) != 1 {
+				t.Fatalf("expected one intent, got %d", len(intents))
+			}
+			if intents[0] != tc.want {
+				t.Fatalf("expected %+v, got %+v", tc.want, intents[0])
+			}
+		})
+	}
+}
+
 func TestIntentMapperTerminalPickerMapsNavigationAndQuery(t *testing.T) {
 	mapper := NewIntentMapper(Config{})
 	state := newAppStateWithSinglePane()

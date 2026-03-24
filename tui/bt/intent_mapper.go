@@ -16,6 +16,7 @@ type Clock interface {
 
 type IntentMapper interface {
 	MapKey(state types.AppState, msg tea.KeyMsg) []intent.Intent
+	MapMouse(state types.AppState, msg tea.MouseMsg) []intent.Intent
 }
 
 type Config struct {
@@ -68,6 +69,23 @@ func (m DefaultIntentMapper) MapKey(state types.AppState, msg tea.KeyMsg) []inte
 		return intents
 	}
 	return m.mapRootKey(state, msg)
+}
+
+// MapMouse 先只接住最小滚轮导航，避免一开始就把点击命中、坐标映射和布局耦合进输入层。
+// 这样可以先让 overlay 列表获得基础鼠标可用性，后续再继续往 pane 命中扩展。
+func (m DefaultIntentMapper) MapMouse(state types.AppState, msg tea.MouseMsg) []intent.Intent {
+	switch state.UI.Overlay.Kind {
+	case types.OverlayLayoutResolve:
+		return mapLayoutResolveMouse(msg)
+	case types.OverlayTerminalPicker:
+		return mapTerminalPickerMouse(msg)
+	case types.OverlayWorkspacePicker:
+		return mapWorkspacePickerMouse(msg)
+	case types.OverlayTerminalManager:
+		return mapTerminalManagerMouse(msg)
+	default:
+		return nil
+	}
 }
 
 func (m DefaultIntentMapper) mapRootKey(state types.AppState, msg tea.KeyMsg) []intent.Intent {
@@ -125,6 +143,17 @@ func mapTerminalPickerKey(msg tea.KeyMsg) []intent.Intent {
 	}
 }
 
+func mapTerminalPickerMouse(msg tea.MouseMsg) []intent.Intent {
+	switch tea.MouseEvent(msg).Button {
+	case tea.MouseButtonWheelUp:
+		return []intent.Intent{intent.TerminalPickerMoveIntent{Delta: -1}}
+	case tea.MouseButtonWheelDown:
+		return []intent.Intent{intent.TerminalPickerMoveIntent{Delta: 1}}
+	default:
+		return nil
+	}
+}
+
 func mapLayoutResolveKey(msg tea.KeyMsg) []intent.Intent {
 	switch msg.String() {
 	case "up", "k":
@@ -135,6 +164,17 @@ func mapLayoutResolveKey(msg tea.KeyMsg) []intent.Intent {
 		return []intent.Intent{intent.LayoutResolveSubmitIntent{}}
 	case "esc":
 		return []intent.Intent{intent.CloseOverlayIntent{}}
+	default:
+		return nil
+	}
+}
+
+func mapLayoutResolveMouse(msg tea.MouseMsg) []intent.Intent {
+	switch tea.MouseEvent(msg).Button {
+	case tea.MouseButtonWheelUp:
+		return []intent.Intent{intent.LayoutResolveMoveIntent{Delta: -1}}
+	case tea.MouseButtonWheelDown:
+		return []intent.Intent{intent.LayoutResolveMoveIntent{Delta: 1}}
 	default:
 		return nil
 	}
@@ -160,6 +200,17 @@ func mapWorkspacePickerKey(msg tea.KeyMsg) []intent.Intent {
 		if text := inputText(msg); text != "" {
 			return []intent.Intent{intent.WorkspacePickerAppendQueryIntent{Text: text}}
 		}
+		return nil
+	}
+}
+
+func mapWorkspacePickerMouse(msg tea.MouseMsg) []intent.Intent {
+	switch tea.MouseEvent(msg).Button {
+	case tea.MouseButtonWheelUp:
+		return []intent.Intent{intent.WorkspacePickerMoveIntent{Delta: -1}}
+	case tea.MouseButtonWheelDown:
+		return []intent.Intent{intent.WorkspacePickerMoveIntent{Delta: 1}}
+	default:
 		return nil
 	}
 }
@@ -190,6 +241,17 @@ func mapTerminalManagerKey(msg tea.KeyMsg) []intent.Intent {
 		if text := inputText(msg); text != "" {
 			return []intent.Intent{intent.TerminalManagerAppendQueryIntent{Text: text}}
 		}
+		return nil
+	}
+}
+
+func mapTerminalManagerMouse(msg tea.MouseMsg) []intent.Intent {
+	switch tea.MouseEvent(msg).Button {
+	case tea.MouseButtonWheelUp:
+		return []intent.Intent{intent.TerminalManagerMoveIntent{Delta: -1}}
+	case tea.MouseButtonWheelDown:
+		return []intent.Intent{intent.TerminalManagerMoveIntent{Delta: 1}}
+	default:
 		return nil
 	}
 }
