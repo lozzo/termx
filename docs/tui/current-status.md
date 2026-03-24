@@ -30,6 +30,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把默认第一屏从“工程 token 页”收口成“产品化主壳”：`HEADER / STATE / TARGET / PATH / FT` 这类表达已改成 `Workspace / Tab / Workbench / Active pane / Location / Notice / Keys` 等人类可读 chrome，并同步压缩到 78 列默认宽度内可稳定阅读
 - 本轮正式切出默认现代化 renderer：`DebugUI=false` 时已切到 `lipgloss` 主壳，默认启动不再展示 ASCII 调试盒模型；单 pane、empty/waiting/exited、floating stack 与 help / picker / manager / prompt / layout resolve modal 已有第一包产品态视觉，`--debug-ui` 仍保留旧 `screen_shell + wireframe + chrome_*` 调试视图
 - 本轮继续把默认现代化 renderer 往真实产品态推进：split 已改成递归 pane canvas，floating 已改成 active pane + `window deck`，help / terminal manager / workspace picker / layout resolve / prompt modal 已开始按 `Selection / Tree / Choices / Fields / Actions` 这类结构区块渲染，并补上默认路径 runtime E2E 覆盖
+- 本轮继续把现代主壳的“信息层级”往前推进：pane card 已补上 role / slot / runtime state / terminal identity chrome；terminal manager / terminal picker 已补 detail 区；workspace picker / layout resolve / prompt 已补 target / selection / context / footer shortcut，默认现代路径的 renderer 与 runtime E2E 也已一并覆盖
 
 ---
 

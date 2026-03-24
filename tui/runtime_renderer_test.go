@@ -205,7 +205,7 @@ func TestRuntimeRendererCanHideDebugSections(t *testing.T) {
 	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "workspace main") {
 		t.Fatalf("expected shell-only renderer to keep visible screen shell, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "cmd npm run dev") || !strings.Contains(stripped, "$ pwd") {
+	if !strings.Contains(stripped, "owner  •  connected  •  running") || !strings.Contains(stripped, "tiled pane-1  •  terminal term-1") || !strings.Contains(stripped, "cmd npm run dev") || !strings.Contains(stripped, "$ pwd") {
 		t.Fatalf("expected shell-only renderer to keep terminal meta inside screen shell, got:\n%s", view)
 	}
 	if strings.Contains(view, "wireframe_view:") || strings.Contains(view, "chrome_header:") || strings.Contains(view, "chrome_body:") || strings.Contains(view, "chrome_footer:") {
@@ -468,6 +468,9 @@ func TestRuntimeRendererShellOnlyRendersStructuredTerminalManagerOverlay(t *test
 	if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "+ new terminal") {
 		t.Fatalf("expected shell-only terminal manager overlay to render terminal rows, got:\n%s", view)
 	}
+	if !strings.Contains(stripped, "Detail") || !strings.Contains(stripped, "cmd npm run dev") || !strings.Contains(stripped, "owner pane:pane-1") {
+		t.Fatalf("expected shell-only terminal manager overlay to render terminal detail, got:\n%s", view)
+	}
 }
 
 func TestRuntimeRendererShellOnlyRendersStructuredPromptOverlay(t *testing.T) {
@@ -495,8 +498,52 @@ func TestRuntimeRendererShellOnlyRendersStructuredPromptOverlay(t *testing.T) {
 	if !strings.Contains(stripped, "Fields") || !strings.Contains(stripped, "Actions") || !strings.Contains(stripped, "Name: api-dev") {
 		t.Fatalf("expected shell-only prompt overlay to render field sections, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "Tags: env=dev") {
+	if !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "terminal term-1") || !strings.Contains(stripped, "Tags: env=dev") {
 		t.Fatalf("expected shell-only prompt overlay to keep secondary field visible, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererShellOnlyRendersStructuredTerminalPickerOverlay(t *testing.T) {
+	debugVisible := false
+	state := runtimeStateWithTerminalManagerTargets()
+	picker := terminalpickerdomain.NewState(state.Domain, state.UI.Focus)
+	picker.AppendQuery("build")
+	state.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayTerminalPicker,
+		Data:        picker,
+		ReturnFocus: state.UI.Focus,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+	state.UI.Focus.OverlayTarget = types.OverlayTerminalPicker
+
+	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
+	stripped := stripANSIForTest(view)
+	if !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Detail") || !strings.Contains(stripped, "Results") || !strings.Contains(stripped, "Actions") {
+		t.Fatalf("expected shell-only terminal picker overlay to render structured sections, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "cmd tail -f build.log") || !strings.Contains(stripped, "tags group=build") {
+		t.Fatalf("expected shell-only terminal picker overlay to render selected detail, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererShellOnlyRendersStructuredWorkspacePickerTarget(t *testing.T) {
+	debugVisible := false
+	state := runtimeStateWithWorkspacePickerTarget()
+	picker := workspacedomain.NewPickerState(state.Domain)
+	picker.AppendQuery("ops")
+	picker.ExpandSelected()
+	state.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayWorkspacePicker,
+		Data:        picker,
+		ReturnFocus: state.UI.Focus,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+	state.UI.Focus.OverlayTarget = types.OverlayWorkspacePicker
+
+	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
+	stripped := stripANSIForTest(view)
+	if !strings.Contains(stripped, "Target") || !strings.Contains(stripped, "workspace ops  (ws-2)") {
+		t.Fatalf("expected shell-only workspace picker overlay to render selected target detail, got:\n%s", view)
 	}
 }
 

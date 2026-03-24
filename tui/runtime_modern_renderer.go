@@ -487,19 +487,11 @@ func normalizeModernPanelLines(lines []string, width, height int) []string {
 // 这里把 connected / empty / waiting / exited 四态折叠成同一种视觉骨架，避免再回到旧版分叉渲染。
 func (r modernScreenShellRenderer) renderPanePanelLines(theme modernShellTheme, state types.AppState, pane types.PaneState, width, maxRows int, includeTitle bool) []string {
 	lines := make([]string, 0, maxRows)
-	role := renderScreenShellPaneCardRole(state, pane)
-	if role == "" {
-		role = string(pane.SlotState)
-	}
 	if includeTitle {
 		lines = append(lines, theme.panelTitle.Render(renderPaneTitle(state, pane)))
 	}
-	statusParts := []string{strings.ToUpper(string(pane.Kind))}
-	if pane.TerminalID != "" {
-		statusParts = append(statusParts, string(pane.TerminalID))
-	}
-	statusParts = append(statusParts, role)
-	lines = append(lines, theme.panelMeta.Render(strings.Join(statusParts, "  ")))
+	lines = append(lines, theme.panelMeta.Render(renderModernPaneStatusLine(state, pane)))
+	lines = append(lines, theme.panelMeta.Render(renderModernPaneIdentityLine(pane)))
 
 	switch pane.SlotState {
 	case types.PaneSlotEmpty:
@@ -528,6 +520,32 @@ func (r modernScreenShellRenderer) renderPanePanelLines(theme modernShellTheme, 
 	}
 
 	return lines
+}
+
+func renderModernPaneStatusLine(state types.AppState, pane types.PaneState) string {
+	role := renderScreenShellPaneCardRole(state, pane)
+	if role == "" {
+		role = string(pane.SlotState)
+	}
+	parts := []string{role, string(pane.SlotState)}
+	if pane.TerminalID != "" {
+		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok {
+			stateLabel := string(terminal.State)
+			if stateLabel == "" {
+				stateLabel = "running"
+			}
+			parts = append(parts, stateLabel)
+		}
+	}
+	return strings.Join(parts, "  •  ")
+}
+
+func renderModernPaneIdentityLine(pane types.PaneState) string {
+	parts := []string{string(pane.Kind) + " " + string(pane.ID)}
+	if pane.TerminalID != "" {
+		parts = append(parts, "terminal "+string(pane.TerminalID))
+	}
+	return strings.Join(parts, "  •  ")
 }
 
 func (r modernScreenShellRenderer) renderTerminalMetaLines(theme modernShellTheme, state types.AppState, pane types.PaneState, width int) []string {
@@ -598,6 +616,9 @@ func (r modernScreenShellRenderer) renderOverlayPanel(theme modernShellTheme, st
 		lines = append(lines, theme.modalMeta.Render("return to "+returnFocus))
 	}
 	lines = append(lines, r.renderOverlayPanelBody(theme, state.UI.Overlay, width-6)...)
+	if footer := renderModernOverlayFooter(theme, state.UI.Overlay.Kind, width-6); footer != "" {
+		lines = append(lines, "", footer)
+	}
 	return theme.modalPanel.Width(width - 2).Render(strings.Join(lines, "\n"))
 }
 
@@ -662,6 +683,7 @@ func renderModernTerminalManagerOverlay(theme modernShellTheme, manager *termina
 	if ok {
 		lines = append(lines, theme.modalBody.Render(truncateModernLine("selected "+activeRowLabel(selected, true), width)))
 	}
+	lines = append(lines, renderModernTerminalManagerDetail(theme, manager, width)...)
 	lines = append(lines, "", theme.modalMeta.Render("Visible terminals"))
 	lines = append(lines, theme.modalMeta.Render(fmt.Sprintf("%d rows", len(rows))))
 	for _, line := range modernTerminalManagerRowPreview(theme, rows, selected, ok, width) {
@@ -699,6 +721,44 @@ func modernTerminalManagerRowPreview(theme modernShellTheme, rows []terminalmana
 	return preview
 }
 
+func renderModernTerminalManagerDetail(theme modernShellTheme, manager *terminalmanagerdomain.State, width int) []string {
+	row, ok := manager.SelectedRow()
+	if !ok {
+		return nil
+	}
+	lines := []string{"", theme.modalMeta.Render("Detail")}
+	if row.Kind == terminalmanagerdomain.RowKindCreate {
+		lines = append(lines, theme.modalBody.Render(truncateModernLine("Create a new terminal in the current workbench.", width)))
+		return lines
+	}
+	detail, ok := manager.SelectedDetail()
+	if !ok {
+		lines = append(lines, theme.modalBody.Render("No terminal detail loaded yet."))
+		return lines
+	}
+	summaryParts := []string{string(detail.State), detail.VisibilityLabel}
+	if detail.OwnerSlotLabel != "" {
+		summaryParts = append(summaryParts, "owner "+detail.OwnerSlotLabel)
+	}
+	if detail.ConnectedPaneCount > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("%d panes", detail.ConnectedPaneCount))
+	}
+	lines = append(lines, theme.modalBody.Render(truncateModernLine(strings.Join(summaryParts, "  •  "), width)))
+	if detail.Command != "" {
+		lines = append(lines, theme.modalBody.Render(truncateModernLine("cmd "+detail.Command, width)))
+	}
+	if len(detail.Tags) > 0 {
+		lines = append(lines, theme.modalMeta.Render(truncateModernLine("tags "+renderModernTags(detail.Tags), width)))
+	}
+	if len(detail.Locations) > 0 {
+		lines = append(lines, theme.modalMeta.Render(truncateModernLine("path "+renderModernLocation(detail.Locations[0]), width)))
+		if len(detail.Locations) > 1 {
+			lines = append(lines, theme.modalMeta.Render(fmt.Sprintf("%d locations", len(detail.Locations))))
+		}
+	}
+	return lines
+}
+
 func renderModernWorkspacePickerOverlay(theme modernShellTheme, picker *workspacedomain.PickerState, width int) []string {
 	if picker == nil {
 		return []string{theme.modalBody.Render("No workspace tree loaded yet.")}
@@ -710,6 +770,7 @@ func renderModernWorkspacePickerOverlay(theme modernShellTheme, picker *workspac
 		lines = append(lines, "", theme.modalMeta.Render("Selection"))
 		lines = append(lines, theme.modalBody.Render(fmt.Sprintf("selected %s  •  %s", selectedRow.Node.Label, selectedRow.Node.Kind)))
 	}
+	lines = append(lines, renderModernWorkspacePickerDetail(theme, picker, width)...)
 	selectedIndex := 0
 	if hasSelected {
 		for idx, row := range rows {
@@ -735,6 +796,26 @@ func renderModernWorkspacePickerOverlay(theme modernShellTheme, picker *workspac
 	return lines
 }
 
+func renderModernWorkspacePickerDetail(theme modernShellTheme, picker *workspacedomain.PickerState, width int) []string {
+	row, ok := picker.SelectedRow()
+	if !ok {
+		return nil
+	}
+	lines := []string{"", theme.modalMeta.Render("Target")}
+	switch row.Node.Kind {
+	case workspacedomain.TreeNodeKindCreate:
+		lines = append(lines, theme.modalBody.Render(truncateModernLine("Create a new workspace and switch focus into it.", width)))
+	case workspacedomain.TreeNodeKindWorkspace:
+		lines = append(lines, theme.modalBody.Render(truncateModernLine(fmt.Sprintf("workspace %s  (%s)", row.Node.Label, row.Node.WorkspaceID), width)))
+	case workspacedomain.TreeNodeKindTab:
+		lines = append(lines, theme.modalBody.Render(truncateModernLine(fmt.Sprintf("workspace %s  •  tab %s", row.Node.WorkspaceID, row.Node.Label), width)))
+	case workspacedomain.TreeNodeKindPane:
+		lines = append(lines, theme.modalBody.Render(truncateModernLine(fmt.Sprintf("workspace %s  •  tab %s  •  pane %s", row.Node.WorkspaceID, row.Node.TabID, row.Node.PaneID), width)))
+		lines = append(lines, theme.modalMeta.Render(truncateModernLine("direct jump target inside the workbench tree", width)))
+	}
+	return lines
+}
+
 func renderModernTerminalPickerOverlay(theme modernShellTheme, picker *terminalpickerdomain.State, width int) []string {
 	if picker == nil {
 		return []string{theme.modalBody.Render("No terminal options loaded yet.")}
@@ -746,6 +827,7 @@ func renderModernTerminalPickerOverlay(theme modernShellTheme, picker *terminalp
 		lines = append(lines, "", theme.modalMeta.Render("Selection"))
 		lines = append(lines, theme.modalBody.Render("selected "+truncateModernLine(selectedRow.Label, width)))
 	}
+	lines = append(lines, renderModernTerminalPickerDetail(theme, picker, width)...)
 	selectedIndex := 0
 	if hasSelected {
 		for idx, row := range rows {
@@ -774,6 +856,35 @@ func renderModernTerminalPickerOverlay(theme modernShellTheme, picker *terminalp
 	return lines
 }
 
+func renderModernTerminalPickerDetail(theme modernShellTheme, picker *terminalpickerdomain.State, width int) []string {
+	row, ok := picker.SelectedRow()
+	if !ok {
+		return nil
+	}
+	lines := []string{"", theme.modalMeta.Render("Detail")}
+	if row.Kind == terminalpickerdomain.RowKindCreate {
+		lines = append(lines, theme.modalBody.Render(truncateModernLine("Create a new terminal using current shell defaults.", width)))
+		return lines
+	}
+	summaryParts := []string{string(row.State)}
+	if row.Visible {
+		summaryParts = append(summaryParts, "visible")
+	} else {
+		summaryParts = append(summaryParts, "hidden")
+	}
+	if row.ConnectedPaneCount > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("%d panes", row.ConnectedPaneCount))
+	}
+	lines = append(lines, theme.modalBody.Render(truncateModernLine(strings.Join(summaryParts, "  •  "), width)))
+	if row.Command != "" {
+		lines = append(lines, theme.modalBody.Render(truncateModernLine("cmd "+row.Command, width)))
+	}
+	if len(row.Tags) > 0 {
+		lines = append(lines, theme.modalMeta.Render(truncateModernLine("tags "+renderModernStringTags(row.Tags), width)))
+	}
+	return lines
+}
+
 func renderModernLayoutResolveOverlay(theme modernShellTheme, resolve *layoutresolvedomain.State, width int) []string {
 	if resolve == nil {
 		return []string{theme.modalBody.Render("No layout action required.")}
@@ -787,6 +898,7 @@ func renderModernLayoutResolveOverlay(theme modernShellTheme, resolve *layoutres
 	}
 	rows := resolve.Rows()
 	selectedRow, hasSelected := resolve.SelectedRow()
+	lines = append(lines, renderModernLayoutResolveDetail(theme, selectedRow, hasSelected, width)...)
 	selectedIndex := 0
 	if hasSelected {
 		for idx, row := range rows {
@@ -811,6 +923,17 @@ func renderModernLayoutResolveOverlay(theme modernShellTheme, resolve *layoutres
 	return lines
 }
 
+func renderModernLayoutResolveDetail(theme modernShellTheme, row layoutresolvedomain.Row, hasSelected bool, width int) []string {
+	if !hasSelected {
+		return nil
+	}
+	return []string{
+		"",
+		theme.modalMeta.Render("Selection"),
+		theme.modalBody.Render(truncateModernLine(fmt.Sprintf("%s  •  %s", row.Action, row.Label), width)),
+	}
+}
+
 func renderModernPromptOverlay(theme modernShellTheme, prompt *promptdomain.State, width int) []string {
 	if prompt == nil {
 		return []string{theme.modalBody.Render("Prompt not ready.")}
@@ -818,6 +941,9 @@ func renderModernPromptOverlay(theme modernShellTheme, prompt *promptdomain.Stat
 	if len(prompt.Fields) == 0 {
 		return []string{
 			theme.modalMeta.Render("draft mode"),
+			"",
+			theme.modalMeta.Render("Context"),
+			theme.modalBody.Render(truncateModernLine(renderModernPromptContext(prompt), width)),
 			theme.modalMeta.Render("Fields"),
 			theme.modalBody.Render(truncateModernLine(prompt.Draft, width)),
 			"",
@@ -832,6 +958,9 @@ func renderModernPromptOverlay(theme modernShellTheme, prompt *promptdomain.Stat
 	lines := []string{
 		theme.modalMeta.Render(fmt.Sprintf("%d fields  •  active %s", len(prompt.Fields), prompt.Fields[active].Key)),
 		"",
+		theme.modalMeta.Render("Context"),
+		theme.modalBody.Render(truncateModernLine(renderModernPromptContext(prompt), width)),
+		"",
 		theme.modalMeta.Render("Fields"),
 	}
 	for idx, field := range prompt.Fields {
@@ -845,6 +974,69 @@ func renderModernPromptOverlay(theme modernShellTheme, prompt *promptdomain.Stat
 	lines = append(lines, "", theme.modalMeta.Render("Actions"))
 	lines = append(lines, theme.modalBody.Render(truncateModernLine("Enter submit  •  Tab next field  •  Esc cancel", width)))
 	return lines
+}
+
+func renderModernPromptContext(prompt *promptdomain.State) string {
+	parts := []string{string(prompt.Kind)}
+	if prompt.TerminalID != "" {
+		parts = append(parts, "terminal "+string(prompt.TerminalID))
+	}
+	if prompt.Title != "" {
+		parts = append(parts, prompt.Title)
+	}
+	return strings.Join(parts, "  •  ")
+}
+
+func renderModernOverlayFooter(theme modernShellTheme, kind types.OverlayKind, width int) string {
+	var text string
+	switch kind {
+	case types.OverlayHelp:
+		text = "Esc close"
+	case types.OverlayTerminalManager:
+		text = "Enter connect  •  t new tab  •  o floating  •  Esc close"
+	case types.OverlayWorkspacePicker:
+		text = "Enter jump  •  / filter  •  Esc close"
+	case types.OverlayTerminalPicker:
+		text = "Enter connect  •  n create  •  Esc close"
+	case types.OverlayLayoutResolve:
+		text = "Enter confirm  •  Esc close"
+	case types.OverlayPrompt:
+		text = "Enter submit  •  Tab next  •  Esc cancel"
+	default:
+		return ""
+	}
+	return theme.modalMeta.Render(truncateModernLine(text, width))
+}
+
+func renderModernTags(tags []terminalmanagerdomain.Tag) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		parts = append(parts, tag.Key+"="+tag.Value)
+	}
+	return strings.Join(parts, ",")
+}
+
+func renderModernStringTags(tags map[string]string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(tags))
+	for key := range tags {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+tags[key])
+	}
+	return strings.Join(parts, ",")
+}
+
+func renderModernLocation(location terminalmanagerdomain.Location) string {
+	return fmt.Sprintf("%s / %s / %s", location.WorkspaceName, location.TabName, location.SlotLabel)
 }
 
 func (r modernScreenShellRenderer) renderFooter(theme modernShellTheme, state types.AppState, pane types.PaneState, notices []btui.Notice, width int) string {

@@ -787,6 +787,9 @@ func TestE2ERunScenarioDefaultModernTerminalManagerOverlayRendersStructuredModal
 			if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "+ new terminal") {
 				t.Fatalf("expected default modern terminal manager rows, got:\n%s", view)
 			}
+			if !strings.Contains(stripped, "Detail") || !strings.Contains(stripped, "cmd npm run dev") || !strings.Contains(stripped, "owner pane:pane-1") {
+				t.Fatalf("expected default modern terminal manager detail, got:\n%s", view)
+			}
 			if strings.Contains(view, "wireframe_view:") {
 				t.Fatalf("expected default modern terminal manager without debug sections, got:\n%s", view)
 			}
@@ -828,7 +831,7 @@ func TestE2ERunScenarioDefaultModernWorkspacePickerOverlayRendersStructuredModal
 			if !strings.Contains(stripped, "Workspace Picker") || !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Tree") || !strings.Contains(stripped, "Actions") {
 				t.Fatalf("expected default modern workspace picker modal structure, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "ops") || !strings.Contains(stripped, "main") || !strings.Contains(stripped, "unconnected pane") {
+			if !strings.Contains(stripped, "Target") || !strings.Contains(stripped, "workspace ops  (ws-2)") || !strings.Contains(stripped, "main") || !strings.Contains(stripped, "unconnected pane") {
 				t.Fatalf("expected default modern workspace picker tree rows, got:\n%s", view)
 			}
 			return nil
@@ -859,7 +862,7 @@ func TestE2ERunScenarioDefaultModernLayoutResolveOverlayRendersStructuredModal(t
 			if !strings.Contains(stripped, "Layout Resolve") || !strings.Contains(stripped, "Target") || !strings.Contains(stripped, "Choices") || !strings.Contains(stripped, "Actions") {
 				t.Fatalf("expected default modern layout resolve modal structure, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "connect existing") || !strings.Contains(stripped, "create new") {
+			if !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "connect existing") || !strings.Contains(stripped, "create new") {
 				t.Fatalf("expected default modern layout resolve actions, got:\n%s", view)
 			}
 			return nil
@@ -906,7 +909,7 @@ func TestE2ERunScenarioDefaultModernPromptOverlayRendersStructuredModal(t *testi
 			if !strings.Contains(stripped, "Prompt") || !strings.Contains(stripped, "Fields") || !strings.Contains(stripped, "Actions") {
 				t.Fatalf("expected default modern prompt modal structure, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "Name: api-dev") || !strings.Contains(stripped, "Tags: env=dev") {
+			if !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "terminal term-1") || !strings.Contains(stripped, "Name: api-dev") || !strings.Contains(stripped, "Tags: env=dev") {
 				t.Fatalf("expected default modern prompt fields, got:\n%s", view)
 			}
 			return nil
@@ -921,6 +924,46 @@ func TestE2ERunScenarioDefaultModernPromptOverlayRendersStructuredModal(t *testi
 	})
 	if err != nil {
 		t.Fatalf("expected default modern prompt scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioDefaultModernTerminalPickerOverlayRendersStructuredModal(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	picker := terminalpickerdomain.NewState(initial.Domain, initial.UI.Focus)
+	picker.AppendQuery("build")
+	initial.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayTerminalPicker,
+		Data:        picker,
+		ReturnFocus: initial.UI.Focus,
+	}
+	initial.UI.Focus.Layer = types.FocusLayerOverlay
+	initial.UI.Focus.OverlayTarget = types.OverlayTerminalPicker
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			stripped := stripANSIRuntimeView(view)
+			if !strings.Contains(stripped, "Terminal Picker") || !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Detail") || !strings.Contains(stripped, "Results") || !strings.Contains(stripped, "Actions") {
+				t.Fatalf("expected default modern terminal picker modal structure, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "cmd tail -f build.log") || !strings.Contains(stripped, "tags group=build") {
+				t.Fatalf("expected default modern terminal picker detail, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected default modern terminal picker scenario to succeed, got %v", err)
 	}
 }
 
