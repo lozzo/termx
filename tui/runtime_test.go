@@ -806,13 +806,19 @@ func TestE2ERunScenarioDefaultModernFloatingWorkbenchRendersWindowDeck(t *testin
 			if !strings.Contains(stripped, "Floating workbench  •  active api-dev  •  pane float-1") || !strings.Contains(stripped, "Top build-log  •  pane float-2  •  stack 2") || !strings.Contains(stripped, "Layer floating  •  mode none  •  Ctrl-o float") {
 				t.Fatalf("expected default modern floating view to expose floating chrome summary, got:\n%s", view)
 			}
+			if !strings.Contains(stripped, "Deck active float-1  •  top float-2  •  windows 2") {
+				t.Fatalf("expected default modern floating view to expose compact deck routing summary, got:\n%s", view)
+			}
 			if !strings.Contains(stripped, "Runtime") || !strings.Contains(stripped, "Connection") || !strings.Contains(stripped, "Command  cmd npm run dev") || !strings.Contains(stripped, "Tags  tags env=dev,service=api") || !strings.Contains(stripped, "running  •  visible") || !strings.Contains(stripped, "terminal term-1") {
 				t.Fatalf("expected default modern floating view to expose structured active terminal metadata, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "api-dev • owner • floating • active") || !strings.Contains(stripped, "Geometry") || !strings.Contains(stripped, "z 1/2") || !strings.Contains(stripped, "z 2/2") {
 				t.Fatalf("expected default modern floating view to expose title bars and geometry depth, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "live window  •  deck  •  Ctrl-o") || !strings.Contains(stripped, "standby window  •  deck") {
+			if !strings.Contains(stripped, "cmd npm run dev") || !strings.Contains(stripped, "cmd tail -f build.log") || !strings.Contains(stripped, "runtime running  •  visible") {
+				t.Fatalf("expected default modern floating deck cards to expose runtime and command summaries, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "live window  •  deck  •  Ctrl-o") {
 				t.Fatalf("expected default modern floating view to expose depth summary and footer hints, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "active window") || !strings.Contains(stripped, "top window") || !strings.Contains(stripped, "rows 1/1  •  live  •  primary") || !strings.Contains(stripped, "│ api ready") {
@@ -836,6 +842,53 @@ func TestE2ERunScenarioDefaultModernFloatingWorkbenchRendersWindowDeck(t *testin
 	})
 	if err != nil {
 		t.Fatalf("expected default modern floating scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioDefaultModernMixedWorkbenchShowsDetachedFloatingStrip(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithMixedPaneSlots()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: "term-1",
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "u"}, {Content: "p"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			stripped := stripANSIRuntimeView(view)
+			if !strings.Contains(stripped, "Split workbench  •  active api-dev  •  3 tiled panes") || !strings.Contains(stripped, "Detached windows") || !strings.Contains(stripped, "float-empty unconnected pane empty") || !strings.Contains(stripped, "1 floating") {
+				t.Fatalf("expected default modern mixed workbench to expose detached floating strip summary, got:\n%s", view)
+			}
+			if strings.Contains(view, "wireframe_view:") {
+				t.Fatalf("expected default modern mixed workbench without debug sections, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected default modern mixed workbench scenario to succeed, got %v", err)
 	}
 }
 

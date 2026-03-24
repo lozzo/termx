@@ -364,6 +364,7 @@ func (r modernScreenShellRenderer) renderSplitWorkbench(theme modernShellTheme, 
 func (r modernScreenShellRenderer) renderFloatingWorkbench(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, width, height int) string {
 	lines := []string{
 		theme.panelTitle.Render(renderModernFloatingWorkbenchTitleLine(state, tab, floatingPaneIDs)),
+		theme.panelMeta.Render(renderModernFloatingWorkbenchFocusLine(state, tab, floatingPaneIDs)),
 		theme.panelMeta.Render(renderModernFloatingWorkbenchStateLine(state, tab, floatingPaneIDs)),
 		theme.panelMeta.Render(renderModernFloatingWorkbenchSummary(state, tab, floatingPaneIDs)),
 		theme.panelMeta.Render(renderModernFloatingWorkbenchControlLine(state)),
@@ -371,7 +372,7 @@ func (r modernScreenShellRenderer) renderFloatingWorkbench(theme modernShellThem
 	if hint := renderModernFloatingModeHint(state); hint != "" {
 		lines = append(lines, theme.panelMeta.Render(hint))
 	}
-	deckWidth := min(34, max(28, width/3))
+	deckWidth := min(40, max(34, width/2-2))
 	mainWidth := max(30, width-deckWidth-1)
 	bodyHeight := max(8, height-len(lines))
 	main := r.renderPaneWorkbenchCard(theme, state, pane, mainWidth, bodyHeight, true)
@@ -441,12 +442,12 @@ func (r modernScreenShellRenderer) renderDetachedFloatingStrip(theme modernShell
 		if !ok {
 			continue
 		}
-		label := fmt.Sprintf("%s  %s", paneID, renderPaneTitle(state, targetPane))
+		label := renderModernDetachedFloatingLabel(state, targetPane)
 		if paneID == tab.ActivePaneID && tab.ActiveLayer == types.FocusLayerFloating {
-			items = append(items, theme.activeChip.Render(truncateModernLine(label, 20)))
+			items = append(items, theme.activeChip.Render(truncateModernLine(label, 44)))
 			continue
 		}
-		items = append(items, theme.chip.Render(truncateModernLine(label, 20)))
+		items = append(items, theme.chip.Render(truncateModernLine(label, 44)))
 	}
 	return theme.subBar.Render(fillANSIHorizontal(strings.Join(items, " "), theme.panelMeta.Render(fmt.Sprintf("%d floating", len(floatingPaneIDs))), width))
 }
@@ -490,14 +491,17 @@ func (r modernScreenShellRenderer) renderFloatingDeckCard(theme modernShellTheme
 	if preview == "" {
 		preview = string(pane.SlotState)
 	}
-	lines := normalizeModernPanelLines([]string{
+	runtimeLine, commandLine := renderModernFloatingDeckTerminalSummary(state, pane)
+	lines := []string{
 		theme.panelTitle.Render(fmt.Sprintf("z %d/%d • %s", index+1, max(1, total), renderPaneTitle(state, pane))),
-		theme.panelMeta.Render(renderModernFloatingDeckState(active, top)),
-		theme.panelMeta.Render(rectText),
-		theme.panelMeta.Render(fmt.Sprintf("slot %s  •  %s", pane.SlotState, renderScreenShellPaneCardRole(state, pane))),
-		theme.terminalBody.Render(preview),
-		theme.panelMeta.Render(truncateModernLine(renderModernPaneFooterLine(state, pane, active), max(10, width-4))),
-	}, max(14, width-4), max(4, height-2))
+		theme.panelMeta.Render(renderModernFloatingDeckState(active, top) + "  •  " + rectText),
+		theme.panelMeta.Render(runtimeLine),
+	}
+	if commandLine != "" {
+		lines = append(lines, theme.terminalBody.Render(truncateModernLine(commandLine, max(10, width-4))))
+	}
+	lines = append(lines, theme.terminalBody.Render(preview))
+	lines = normalizeModernPanelLines(lines, max(14, width-4), max(4, height-2))
 	return panelStyle.Width(width - 2).Height(height - 2).Render(strings.Join(lines, "\n"))
 }
 
@@ -513,6 +517,9 @@ func (r modernScreenShellRenderer) renderPaneWorkbenchCard(theme modernShellThem
 	zIndex, zTotal := 0, 0
 	if pane.Kind == types.PaneKindFloating {
 		zIndex, zTotal = renderModernFloatingZ(state, pane)
+		if active && contentWidth < 38 {
+			zIndex, zTotal = 0, 0
+		}
 	}
 	lines := r.renderPanePanelLines(theme, state, pane, contentWidth, contentHeight, true, active, zIndex, zTotal)
 	lines = normalizeModernPanelLines(lines, contentWidth, contentHeight)
@@ -1643,6 +1650,14 @@ func renderModernFloatingWorkbenchTitleLine(state types.AppState, tab types.TabS
 	return fmt.Sprintf("Floating workbench  •  active %s  •  pane %s", activeTitle, activePane)
 }
 
+func renderModernFloatingWorkbenchFocusLine(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) string {
+	activePane, _, _, _ := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
+	if pane, ok := tab.Panes[types.PaneID(activePane)]; ok {
+		return renderModernPaneTitleBar(state, pane, true, 0, 0)
+	}
+	return ""
+}
+
 func renderModernFloatingModeHint(state types.AppState) string {
 	if state.UI.Mode.Active != types.ModeFloating {
 		return ""
@@ -1898,4 +1913,55 @@ func renderModernContextRuntimeLine(state types.AppState, pane types.PaneState) 
 		}
 	}
 	return fmt.Sprintf("state %s  •  layer %s", stateLabel, renderModernPrimaryLayer(state))
+}
+
+func renderModernDetachedFloatingLabel(state types.AppState, pane types.PaneState) string {
+	label := fmt.Sprintf("%s %s %s", pane.ID, renderPaneTitle(state, pane), pane.SlotState)
+	if pane.SlotState == types.PaneSlotConnected {
+		if preview := renderPanePreviewWithoutStoreFallback(state, pane); preview != "" {
+			return label + " " + preview
+		}
+	}
+	return label
+}
+
+func renderModernFloatingDeckTerminalSummary(state types.AppState, pane types.PaneState) (runtimeLine, commandLine string) {
+	runtimeLine = "runtime " + string(pane.SlotState)
+	role := renderModernPaneRole(state, pane)
+	if pane.TerminalID == "" {
+		if role != "" {
+			runtimeLine += "  •  " + role
+		}
+		return runtimeLine, ""
+	}
+	if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok {
+		stateLabel := string(terminal.State)
+		if stateLabel == "" {
+			stateLabel = "running"
+		}
+		runtimeLine = "runtime " + stateLabel
+		if terminal.Visible {
+			runtimeLine += "  •  visible"
+		} else {
+			runtimeLine += "  •  hidden"
+		}
+		if len(terminal.Command) > 0 {
+			commandLine = "cmd " + strings.Join(terminal.Command, " ")
+		} else if tags := renderModernStringTags(terminal.Tags); tags != "" {
+			commandLine = "tags " + tags
+		}
+	}
+	return runtimeLine, commandLine
+}
+
+func renderPanePreviewWithoutStoreFallback(state types.AppState, pane types.PaneState) string {
+	if pane.TerminalID == "" {
+		return ""
+	}
+	if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok {
+		if len(terminal.Command) > 0 {
+			return truncateModernLine(strings.Join(terminal.Command, " "), 12)
+		}
+	}
+	return ""
 }

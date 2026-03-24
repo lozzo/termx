@@ -507,13 +507,19 @@ func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing
 	if !strings.Contains(stripped, "Window deck  •  2 windows") || !strings.Contains(stripped, "Floating workbench  •  active api-dev  •  pane float-1") || !strings.Contains(stripped, "Top build-log  •  pane float-2  •  stack 2") || !strings.Contains(stripped, "Layer floating  •  mode none  •  Ctrl-o float") {
 		t.Fatalf("expected shell-only floating renderer to expose deck summary, got:\n%s", view)
 	}
+	if !strings.Contains(stripped, "Deck active float-1  •  top float-2  •  windows 2") {
+		t.Fatalf("expected shell-only floating renderer to expose compact deck routing summary, got:\n%s", view)
+	}
 	if !strings.Contains(stripped, "Runtime") || !strings.Contains(stripped, "Connection") || !strings.Contains(stripped, "Command  cmd npm run dev") || !strings.Contains(stripped, "Tags  tags env=dev,service=api") || !strings.Contains(stripped, "running  •  visible") || !strings.Contains(stripped, "terminal term-1") {
 		t.Fatalf("expected shell-only floating renderer to expose structured active terminal metadata, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "active window") || !strings.Contains(stripped, "top window") {
 		t.Fatalf("expected shell-only floating renderer to expose active/top window linkage, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "live window  •  deck  •  Ctrl-o") || !strings.Contains(stripped, "standby window  •  deck") {
+	if !strings.Contains(stripped, "cmd npm run dev") || !strings.Contains(stripped, "cmd tail -f build.log") || !strings.Contains(stripped, "runtime running  •  visible") {
+		t.Fatalf("expected shell-only floating deck cards to expose runtime and command summaries, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "live window  •  deck  •  Ctrl-o") {
 		t.Fatalf("expected shell-only floating renderer to expose floating footer hints, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "rows 1/1  •  live  •  primary") || !strings.Contains(stripped, "│ api ready") {
@@ -536,6 +542,35 @@ func TestRuntimeRendererShellOnlyRendersFloatingModeOperationHints(t *testing.T)
 	stripped := stripANSIForTest(view)
 	if !strings.Contains(stripped, "move j/k  •  size H/J/K/L  •  c center") || !strings.Contains(stripped, "Esc exit") || !strings.Contains(stripped, "live window  •  move/size") {
 		t.Fatalf("expected shell-only floating mode renderer to expose operation hints, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererShellOnlyRendersDetachedFloatingStripForMixedWorkbench(t *testing.T) {
+	debugVisible := false
+	state := runtimeStateWithMixedPaneSlots()
+	renderer := runtimeRenderer{
+		DebugVisible: &debugVisible,
+		Screens: NewRuntimeTerminalStore(RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "u"}, {Content: "p"}},
+							},
+						},
+					},
+				},
+			},
+		}),
+	}
+
+	view := renderer.Render(state, nil)
+	stripped := stripANSIForTest(view)
+	if !strings.Contains(stripped, "Detached windows") || !strings.Contains(stripped, "float-empty unconnected pane empty") || !strings.Contains(stripped, "1 floating") {
+		t.Fatalf("expected shell-only mixed workbench to expose detached floating strip summaries, got:\n%s", view)
 	}
 }
 
