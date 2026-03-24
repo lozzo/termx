@@ -274,21 +274,15 @@ func (r runtimeRenderer) renderScreenShellExtraPaneCards(state types.AppState, t
 }
 
 func (r runtimeRenderer) renderScreenShellWindowCards(state types.AppState, tab types.TabState, paneIDs []types.PaneID, width int, overlayActive bool) []string {
-	boxes := make([][]string, 0, len(paneIDs))
+	lines := []string{fmt.Sprintf("WINDOW LIST[%d]", len(paneIDs))}
 	for _, paneID := range paneIDs {
 		pane, ok := tab.Panes[paneID]
 		if !ok {
 			continue
 		}
-		body := []string{
-			fmt.Sprintf("GEOMETRY[%d,%d %dx%d]", pane.Rect.X, pane.Rect.Y, pane.Rect.W, pane.Rect.H),
-			fmt.Sprintf("FOCUS[%s]", renderScreenShellCardFocusLabel(tab.ActivePaneID == paneID)),
-			fmt.Sprintf("SLOT[%s]", pane.SlotState),
-		}
-		body = append(body, r.renderScreenShellPaneLines(state, pane, overlayActive, 3)...)
-		boxes = append(boxes, renderScreenShellPaneBox(width, fmt.Sprintf("WINDOW CARD[%s] %s", pane.ID, renderPaneTitle(state, pane)), body))
+		lines = append(lines, r.renderScreenShellWindowSummaryLine(state, tab, paneID, pane, overlayActive))
 	}
-	return renderShellBoxGrid(boxes, 2, 2)
+	return lines
 }
 
 func (r runtimeRenderer) renderScreenShellDialog(state types.AppState, metrics wireframeMetrics) []string {
@@ -371,26 +365,30 @@ func renderScreenShellTerminalManagerDialogBody(overlay types.OverlayState) []st
 			}
 		}
 	}
+	selectedSection := "none"
+	if hasSelected {
+		selectedSection = string(selectedRow.Section)
+	}
 	listBody := []string{
-		fmt.Sprintf("BODY[list] rows=%d", len(rows)),
-		fmt.Sprintf("selected=%s query=%s", selectedID, manager.Query()),
+		fmt.Sprintf("F:%s %s", selectedSection, activeRowLabel(selectedRow, hasSelected)),
+		fmt.Sprintf("rows=%d sel=%s q=%s", len(rows), selectedID, manager.Query()),
 	}
 	previewRows, _ := overlayPreviewRowsAround(rows, 1, selectedIndex)
 	for _, row := range previewRows {
 		prefix := "  "
 		if hasSelected && selectedRow.Kind == row.Kind && selectedRow.TerminalID == row.TerminalID && selectedRow.Label == row.Label {
-			prefix = "> "
+			prefix = ">> "
 		}
 		listBody = append(listBody, fmt.Sprintf("%s[%s] %s", prefix, row.Kind, row.Label))
 	}
-	detailBody := []string{"DETAIL[none]"}
+	detailBody := []string{"D:none"}
 	if detail, ok := manager.SelectedDetail(); ok {
 		owner := detail.OwnerSlotLabel
 		if owner == "" {
 			owner = "-"
 		}
 		detailBody = []string{
-			fmt.Sprintf("DETAIL[%s]", detail.Name),
+			fmt.Sprintf("D:%s %s", detail.Name, detail.TerminalID),
 			fmt.Sprintf("state=%s vis=%s", detail.State, detail.VisibilityLabel),
 			fmt.Sprintf("owner=%s", owner),
 			fmt.Sprintf("conn=%d loc=%d", detail.ConnectedPaneCount, len(detail.Locations)),
@@ -424,14 +422,13 @@ func renderScreenShellWorkspacePickerDialogBody(overlay types.OverlayState) []st
 		}
 	}
 	treeBody := []string{
-		fmt.Sprintf("BODY[tree] rows=%d", len(rows)),
-		fmt.Sprintf("selected=%s", selectedKey),
-		fmt.Sprintf("query=%s", picker.Query()),
+		fmt.Sprintf("F:q=%s sel=%s", picker.Query(), selectedKey),
+		fmt.Sprintf("rows=%d", len(rows)),
 	}
-	targetBody := []string{"DETAIL[target] none"}
+	targetBody := []string{"D:none", "kind=none depth=0", "label=none"}
 	if hasSelected {
 		targetBody = []string{
-			"DETAIL[target]",
+			fmt.Sprintf("D:%s", selectedRow.Node.Key),
 			fmt.Sprintf("kind=%s depth=%d", selectedRow.Node.Kind, selectedRow.Depth),
 			fmt.Sprintf("label=%s", selectedRow.Node.Label),
 		}
@@ -440,7 +437,7 @@ func renderScreenShellWorkspacePickerDialogBody(overlay types.OverlayState) []st
 	for _, row := range previewRows {
 		prefix := "  "
 		if hasSelected && row.Node.Key == selectedRow.Node.Key {
-			prefix = "> "
+			prefix = ">> "
 		}
 		treeBody = append(treeBody, fmt.Sprintf("%s%s[%s] %s", prefix, strings.Repeat("  ", row.Depth), row.Node.Kind, row.Node.Label))
 	}
@@ -454,19 +451,18 @@ func renderScreenShellPromptDialogBody(overlay types.OverlayState) []string {
 	prompt, ok := overlay.Data.(*promptdomain.State)
 	if !ok || prompt == nil {
 		return joinASCIIBoxes([][]string{
-			renderShellBox(30, "FIELDS[prompt]", []string{"BODY[fields] count=0", "active=draft"}),
-			renderShellBox(24, "ACTIVE[field]", []string{"BODY[actions]", "submit | cancel"}),
+			renderShellBox(30, "FIELDS[prompt]", []string{"count=0 f=draft"}),
+			renderShellBox(24, "ACTIVE[field]", []string{"D:draft", "BODY[actions]", "submit | cancel"}),
 		}, 2)
 	}
 	if len(prompt.Fields) == 0 {
 		return joinASCIIBoxes([][]string{
 			renderShellBox(30, "FIELDS[prompt]", []string{
-				"BODY[fields] count=0",
-				"active=draft",
-				fmt.Sprintf("> [draft] %s", prompt.Draft),
+				"count=0 f=draft",
+				fmt.Sprintf(">> [draft] %s", prompt.Draft),
 			}),
 			renderShellBox(24, "ACTIVE[field]", []string{
-				"DETAIL[active]",
+				"D:draft",
 				"label=draft",
 				fmt.Sprintf("terminal=%s", prompt.TerminalID),
 				"BODY[actions]",
@@ -479,19 +475,19 @@ func renderScreenShellPromptDialogBody(overlay types.OverlayState) []string {
 		active = 0
 	}
 	fieldsBody := []string{
-		fmt.Sprintf("BODY[fields] count=%d", len(prompt.Fields)),
+		fmt.Sprintf("count=%d f=%s", len(prompt.Fields), prompt.Fields[active].Key),
 		fmt.Sprintf("active=%s", prompt.Fields[active].Key),
 	}
 	previewFields, _ := overlayPreviewRowsAround(prompt.Fields, 4, active)
 	for _, field := range previewFields {
 		prefix := "  "
 		if field.Key == prompt.Fields[active].Key && field.Label == prompt.Fields[active].Label {
-			prefix = "> "
+			prefix = ">> "
 		}
 		fieldsBody = append(fieldsBody, fmt.Sprintf("%s[%s] %s: %s", prefix, field.Key, field.Label, field.Value))
 	}
 	activeBody := []string{
-		"DETAIL[active]",
+		fmt.Sprintf("D:%s", prompt.Fields[active].Key),
 		fmt.Sprintf("label=%s", prompt.Fields[active].Label),
 		fmt.Sprintf("terminal=%s", prompt.TerminalID),
 		"BODY[actions]",
@@ -501,6 +497,69 @@ func renderScreenShellPromptDialogBody(overlay types.OverlayState) []string {
 		renderShellBox(30, "FIELDS[prompt]", fieldsBody),
 		renderShellBox(24, "ACTIVE[field]", activeBody),
 	}, 2)
+}
+
+func (r runtimeRenderer) renderScreenShellWindowSummaryLine(state types.AppState, tab types.TabState, paneID types.PaneID, pane types.PaneState, overlayActive bool) string {
+	prefix := "  "
+	if paneID == tab.ActivePaneID {
+		prefix = "> "
+	}
+	parts := []string{fmt.Sprintf("%s[%s] %s", prefix, paneID, renderPaneTitle(state, pane))}
+	if pane.TerminalID != "" && pane.SlotState == types.PaneSlotConnected {
+		parts = append(parts, renderScreenShellPaneCardRole(state, pane))
+	} else {
+		parts = append(parts, string(pane.SlotState))
+	}
+	if pane.Rect.W > 0 || pane.Rect.H > 0 {
+		parts = append(parts, fmt.Sprintf("%d,%d %dx%d", pane.Rect.X, pane.Rect.Y, pane.Rect.W, pane.Rect.H))
+	}
+	if pane.TerminalID != "" && pane.SlotState == types.PaneSlotConnected {
+		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.State != "" {
+			parts = append(parts, string(terminal.State))
+		}
+	}
+	if preview := r.renderScreenShellWindowPreview(state, pane, overlayActive); preview != "" {
+		parts = append(parts, preview)
+	}
+	return compactSummaryLine(parts...)
+}
+
+func (r runtimeRenderer) renderScreenShellWindowPreview(state types.AppState, pane types.PaneState, overlayActive bool) string {
+	if overlayActive {
+		return fmt.Sprintf("overlay active: %s", state.UI.Overlay.Kind)
+	}
+	if pane.TerminalID != "" && pane.SlotState == types.PaneSlotConnected {
+		if preview := r.renderPanePreview(pane.TerminalID); preview != "" {
+			return preview
+		}
+		return "<screen unavailable>"
+	}
+	switch pane.SlotState {
+	case types.PaneSlotWaiting:
+		return "waiting for connect"
+	case types.PaneSlotExited:
+		return "process exited"
+	case types.PaneSlotEmpty:
+		return "no terminal connected"
+	default:
+		return ""
+	}
+}
+
+func activeRowLabel(row terminalmanagerdomain.Row, ok bool) string {
+	if !ok {
+		return "none"
+	}
+	switch row.Kind {
+	case terminalmanagerdomain.RowKindTerminal:
+		return row.Label
+	case terminalmanagerdomain.RowKindCreate:
+		return "create"
+	case terminalmanagerdomain.RowKindHeader:
+		return string(row.Section)
+	default:
+		return row.Label
+	}
 }
 
 func renderScreenShellDialogFooter(kind types.OverlayKind) (string, string) {

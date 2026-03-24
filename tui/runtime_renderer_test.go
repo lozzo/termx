@@ -1617,8 +1617,11 @@ func TestRuntimeRendererRendersWireframeFloatingStack(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "FLOAT CANVAS[78x12 windows=2]") || !strings.Contains(view, "STACK[windows] total=2") || !strings.Contains(view, "FOCUS[float-1] api-dev") || !strings.Contains(view, "WINDOWS[2]") || !strings.Contains(view, "WINDOW CARD[float-1] api-dev") || !strings.Contains(view, "GEOMETRY[10,8 30x12]") || !strings.Contains(view, "WINDOW CARD[float-2] build-log") || !strings.Contains(view, "api-dev [owner] [floating]") {
+	if !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "FLOAT CANVAS[78x12 windows=2]") || !strings.Contains(view, "STACK[windows] total=2") || !strings.Contains(view, "FOCUS[float-1] api-dev") || !strings.Contains(view, "WINDOW LIST[2]") || !strings.Contains(view, "> [float-1] api-dev | owner | 10,8 30x12 | running | api ready") || !strings.Contains(view, "  [float-2] build-log | owner | 45,14 28x10 | running | build ok") || !strings.Contains(view, "api-dev [owner] [floating]") {
 		t.Fatalf("expected floating shell window summary in rendered view, got:\n%s", view)
+	}
+	if strings.Contains(view, "WINDOW CARD[float-1]") || strings.Contains(view, "WINDOW CARD[float-2]") {
+		t.Fatalf("expected floating shell to collapse verbose window cards into compact list, got:\n%s", view)
 	}
 	if strings.Index(view, "FLOAT CANVAS[78x12 windows=2]") > strings.Index(view, "STACK[windows] total=2") {
 		t.Fatalf("expected floating canvas to appear before stack summary, got:\n%s", view)
@@ -1655,7 +1658,7 @@ func TestRuntimeRendererRendersWireframeOverlayDialog(t *testing.T) {
 	if !strings.Contains(view, "DIALOG[terminal_manager]") || !strings.Contains(view, "TITLE[terminal_manager]") || !strings.Contains(view, "FOOTER[enter here esc close]") || !strings.Contains(view, "ACTIONS[enter here esc close]") {
 		t.Fatalf("expected shell overlay dialog layering in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "LIST[terminals]") || !strings.Contains(view, "DETAIL[terminal]") || !strings.Contains(view, "BODY[list] rows=7") || !strings.Contains(view, "selected=term-2 query=") || !strings.Contains(view, "DETAIL[build-log]") || !strings.Contains(view, "state=running vis=hidden") || !strings.Contains(view, "owner=-") || !strings.Contains(view, "conn=0 loc=0") || !strings.Contains(view, "BODY[command]") || !strings.Contains(view, "tail -f build.log") {
+	if !strings.Contains(view, "LIST[terminals]") || !strings.Contains(view, "DETAIL[terminal]") || !strings.Contains(view, "F:PARKED build-log") || !strings.Contains(view, "rows=7 sel=term-2 q=") || !strings.Contains(view, ">> [terminal] build-log") || !strings.Contains(view, "D:build-log term-2") || !strings.Contains(view, "state=running vis=hidden") || !strings.Contains(view, "owner=-") || !strings.Contains(view, "conn=0 loc=0") || !strings.Contains(view, "BODY[command]") || !strings.Contains(view, "tail -f build.log") {
 		t.Fatalf("expected structured terminal manager shell dialog body, got:\n%s", view)
 	}
 	if !strings.Contains(view, "OVERLAY[terminal_manager] FOCUS[overlay]") {
@@ -1688,7 +1691,7 @@ func TestRuntimeRendererRendersWireframeWorkspacePickerTree(t *testing.T) {
 	state.UI.Focus.OverlayTarget = types.OverlayWorkspacePicker
 
 	view := runtimeRenderer{}.Render(state, nil)
-	if !strings.Contains(view, "DIALOG[workspace_picker]") || !strings.Contains(view, "TREE[workspace]") || !strings.Contains(view, "TARGET[node]") || !strings.Contains(view, "BODY[tree] rows=6") || !strings.Contains(view, "selected=ws-2") || !strings.Contains(view, "query=ops") || !strings.Contains(view, "DETAIL[target]") || !strings.Contains(view, "kind=workspace depth=0") || !strings.Contains(view, "label=ops") {
+	if !strings.Contains(view, "DIALOG[workspace_picker]") || !strings.Contains(view, "TREE[workspace]") || !strings.Contains(view, "TARGET[node]") || !strings.Contains(view, "F:q=ops sel=ws-2") || !strings.Contains(view, "rows=6") || !strings.Contains(view, "D:ws-2") || !strings.Contains(view, "kind=workspace depth=0") || !strings.Contains(view, "label=ops") {
 		t.Fatalf("expected structured workspace picker shell dialog body, got:\n%s", view)
 	}
 	if !strings.Contains(view, "OVERLAY[workspace_picker] FOCUS[overlay]") {
@@ -1700,7 +1703,7 @@ func TestRuntimeRendererRendersWireframeWorkspacePickerTree(t *testing.T) {
 	if !strings.Contains(view, "TARGET[workspace] LABEL[ops] DEPTH[0]") {
 		t.Fatalf("expected workspace picker target summary in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "  [tab] logs") || !strings.Contains(view, "    [pane] unconnected pane") {
+	if !strings.Contains(view, "  [tab] logs") || !strings.Contains(view, "    [pane] unconnected pane") || !strings.Contains(view, ">> [workspace] ops") {
 		t.Fatalf("expected workspace picker tree rows in wireframe overlay, got:\n%s", view)
 	}
 }
@@ -1742,7 +1745,7 @@ func TestRuntimeRendererRendersWireframePromptDialog(t *testing.T) {
 	state.UI.Focus.OverlayTarget = types.OverlayPrompt
 
 	view := runtimeRenderer{}.Render(state, nil)
-	if !strings.Contains(view, "DIALOG[prompt]") || !strings.Contains(view, "FIELDS[prompt]") || !strings.Contains(view, "ACTIVE[field]") || !strings.Contains(view, "BODY[fields] count=2") || !strings.Contains(view, "active=tags") || !strings.Contains(view, "DETAIL[active]") || !strings.Contains(view, "label=Tags") || !strings.Contains(view, "terminal=term-2") || !strings.Contains(view, "BODY[actions]") || !strings.Contains(view, "submit | cancel") {
+	if !strings.Contains(view, "DIALOG[prompt]") || !strings.Contains(view, "FIELDS[prompt]") || !strings.Contains(view, "ACTIVE[field]") || !strings.Contains(view, "count=2 f=tags") || !strings.Contains(view, "active=tags") || !strings.Contains(view, ">> [tags] Tags: group=build") || !strings.Contains(view, "D:tags") || !strings.Contains(view, "label=Tags") || !strings.Contains(view, "terminal=term-2") || !strings.Contains(view, "BODY[actions]") || !strings.Contains(view, "submit | cancel") {
 		t.Fatalf("expected structured prompt shell dialog body, got:\n%s", view)
 	}
 	if !strings.Contains(view, "OVERLAY[prompt] FOCUS[prompt]") {
@@ -1780,10 +1783,10 @@ func TestRuntimeRendererRendersWireframeMixedSlotWorkbench(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "TILED CANVAS[78x12 panes=3]") || !strings.Contains(view, "waiting pane [waiting] [tiled]") || !strings.Contains(view, "api-dev [owner] [tiled]") || !strings.Contains(view, "deploy-log [exited] [tiled]") || !strings.Contains(view, "waiting for connect") || !strings.Contains(view, "n new | a connect") || !strings.Contains(view, "process exited") || !strings.Contains(view, "history retained") || !strings.Contains(view, "FLOATING WINDOWS[1]") || !strings.Contains(view, "WINDOW CARD[float-empty] unconnected pane") || !strings.Contains(view, "GEOMETRY[60,2 20x8]") || !strings.Contains(view, "no terminal connected") {
+	if !strings.Contains(view, "TILED CANVAS[78x12 panes=3]") || !strings.Contains(view, "waiting pane [waiting] [tiled]") || !strings.Contains(view, "api-dev [owner] [tiled]") || !strings.Contains(view, "deploy-log [exited] [tiled]") || !strings.Contains(view, "waiting for connect") || !strings.Contains(view, "n new | a connect") || !strings.Contains(view, "process exited") || !strings.Contains(view, "history retained") || !strings.Contains(view, "FLOATING WINDOWS[1]") || !strings.Contains(view, "WINDOW LIST[1]") || !strings.Contains(view, "  [float-empty] unconnected pane | empty | 60,2 20x8 | no terminal connected") {
 		t.Fatalf("expected mixed-slot shell summaries in rendered view, got:\n%s", view)
 	}
-	if strings.Contains(view, "CARD[pane-3] deploy-log [owner]") {
+	if strings.Contains(view, "CARD[pane-3] deploy-log [owner]") || strings.Contains(view, "WINDOW CARD[float-empty]") {
 		t.Fatalf("expected exited tiled pane to move into tiled canvas instead of extra card, got:\n%s", view)
 	}
 	if !strings.Contains(view, "WORKBENCH split") {

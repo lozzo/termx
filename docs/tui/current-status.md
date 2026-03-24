@@ -25,6 +25,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把 overlay dialog 正文推进成真正的“子盒模型”：`terminal manager` 现在有 `LIST[terminals] + DETAIL[terminal]`，`workspace picker` 有 `TREE[workspace] + TARGET[node]`，`prompt` 有 `FIELDS[prompt] + ACTIVE[field]`；同时重新校准了 overlay 压缩态的行数预算，保证真实 UI 壳增强后仍然可控
 - 本轮继续把主工作台 pane shell 的正文四态统一成组件化结构：`connected` 会显式渲染 `STATUS/TERM/CONTENT`，`empty / waiting / exited` 会显式渲染 `STATUS/DETAIL/ACTIONS`，并同步覆盖单 pane 与 overlay 关闭后的工作台恢复场景
 - 本轮继续把多 pane 工作台的 shell 语言往前推：`split workbench` 现在补上 `LAYOUT[split]` 摘要并让每个 pane 复用统一的 `STATUS/TERM/CONTENT` 组件；`floating workbench` 的 sidebar 现在补上 `STACK[windows]` 与 `FOCUS[...]`，mixed-slot 场景也能直接看到 waiting/exited pane 的结构化摘要
+- 本轮继续把第一视觉里最重复、最容易撑爆宽度的摘要压缩掉：floating shell 下方的 `WINDOW CARD[...]` 已收成紧凑 `WINDOW LIST[...]`，overlay dialog 的焦点/选中态也改成短 token，保证窄框下仍然稳定可见
 
 ---
 
@@ -224,7 +225,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 190. 第一百八十六轮 TDD 已补上 overlay dialog 子盒模型、三类 overlay 盒式正文与对应 runtime E2E 主线
 191. 第一百八十七轮 TDD 已补上 pane shell 四态正文组件、主工作台状态区/内容区/动作区与对应 runtime E2E 主线
 192. 第一百八十八轮 TDD 已补上 split/floating workbench 子层级、layout/stack 组件与对应 runtime E2E 主线
-190. 第一百八十六轮 TDD 已补上 overlay dialog 正文结构化分层、三类 shell body 渲染与对应 runtime E2E 主线
+193. 第一百八十九轮 TDD 已补上 floating `WINDOW LIST` 压缩、overlay dialog 短焦点 token 与对应 runtime E2E 主线
 
 对应文档：
 
@@ -1341,3 +1342,59 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
   - 把 floating canvas 下方的摘要卡片继续缩减，逐步让 canvas 成为主渲染结果
   - 给 overlay dialog 引入更明确的焦点高亮、选中态和区块布局
   - 把 `wireframe_view` 从主辅助视图逐步降级成调试视图
+
+---
+
+## 13. 第 199 轮 TDD
+
+这一轮没有再围绕同一个 renderer 细点反复补字符串，而是把 `screen_shell` 和 overlay dialog 中最影响第一视觉的两块一起收口：
+
+1. floating 摘要降噪
+   - floating canvas 下方不再继续堆 `WINDOW CARD[...]`
+   - 改成紧凑的 `WINDOW LIST[...]`
+   - 每个 floating pane 只保留 pane 标识、owner/slot、几何、terminal 状态和一句 preview，减少重复盒子
+2. overlay dialog 焦点态压缩
+   - `terminal manager / workspace picker / prompt` 的 body 不再输出冗长 `BODY[...]` / `DETAIL[...]` 组合
+   - 改成短 token：
+     - `F:...`
+     - `rows=...`
+     - `D:...`
+   - 这样在 24-30 列的对话框子盒模型里，焦点、选中项和详情标识不会被大量截断
+3. E2E 断言稳定性修正
+   - runtime E2E 不再把窄框里可能被裁剪的 shell 行当成唯一判断依据
+   - 改成同时校验 shell dialog 与 `workspace_picker_rows` / `terminal_manager_rows` 这类稳定语义输出
+   - 避免后续继续因为窄宽度截断而出现“功能正常、断言误报”的假失败
+
+这一轮补上的验证仍然是功能和验证一起收口：
+
+- renderer：
+  - `TestRuntimeRendererRendersWireframeFloatingStack`
+  - `TestRuntimeRendererRendersWireframeOverlayDialog`
+  - `TestRuntimeRendererRendersWireframeWorkspacePickerTree`
+  - `TestRuntimeRendererRendersWireframePromptDialog`
+  - `TestRuntimeRendererRendersWireframeMixedSlotWorkbench`
+  - `TestRuntimeRendererRendersTerminalManagerOverlay`
+  - `TestRuntimeRendererCompressesBodyWhenOverlayIsActive`
+- runtime E2E：
+  - `TestE2ERunScenarioFloatingLayerShowsOutline`
+  - `TestE2ERunScenarioMixedSlotShowsWireframeWorkbench`
+  - `TestE2ERunScenarioWorkspacePickerShowsInView`
+  - `TestE2ERunScenarioCtrlWOpensWorkspacePickerInView`
+  - `TestE2ERunScenarioCtrlGTOpensTerminalManagerInView`
+  - `TestE2ERunScenarioTerminalManagerEditFlowShowsPrompt`
+
+本轮验证命令：
+
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -run 'TestRuntimeRendererRendersWireframeFloatingStack|TestRuntimeRendererRendersWireframeOverlayDialog|TestRuntimeRendererRendersWireframeWorkspacePickerTree|TestRuntimeRendererRendersWireframePromptDialog|TestRuntimeRendererRendersWireframeMixedSlotWorkbench|TestRuntimeRendererRendersTerminalManagerOverlay|TestRuntimeRendererCompressesBodyWhenOverlayIsActive|TestE2ERunScenarioFloatingLayerShowsOutline|TestE2ERunScenarioMixedSlotShowsWireframeWorkbench|TestE2ERunScenarioWorkspacePickerShowsInView|TestE2ERunScenarioCtrlGTOpensTerminalManagerInView|TestE2ERunScenarioTerminalManagerEditFlowShowsPrompt' -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1`
+
+当前状态更新为：
+
+- `screen_shell` 的 floating 区已经从“重复 window card”收成更稳定的紧凑摘要
+- overlay dialog 在窄宽度下已经能稳定保留焦点/选中态，不再一打开就被长字段挤碎
+- runtime E2E 已开始显式区分“真实交互语义”和“可能被视觉裁剪的局部行”
+- 下一阶段应直接切到更大的收口块，而不是继续围绕这些 token 微调：
+  - 进一步减少 `screen_shell` 下方与 `wireframe_view` 的重复信息
+  - 把 overlay dialog 往更像真实弹层的边框、焦点高亮和布局推进
+  - 逐步把 `wireframe_view` 从第一视觉降成调试视图
