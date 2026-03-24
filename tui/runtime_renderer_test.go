@@ -452,7 +452,7 @@ func TestRuntimeRendererShellOnlyRendersSplitWorkbenchAsPaneCanvas(t *testing.T)
 	if !strings.Contains(stripped, "live input  •  Ctrl-p  •  pick") || !strings.Contains(stripped, "standby pane  •  Ctrl-p pane") {
 		t.Fatalf("expected shell-only split renderer to expose active and standby footer hints, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "rows 1/2  •  live  •  primary") || !strings.Contains(stripped, "rows 1/2  •  standby  •  secondary") || !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
+	if !strings.Contains(stripped, "rows 2/2  •  live  •  primary") || !strings.Contains(stripped, "rows 2/2  •  standby  •  secondary") || !strings.Contains(stripped, "│ $ npm run dev") || !strings.Contains(stripped, "│ > tsc -w") || !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
 		t.Fatalf("expected shell-only split renderer to expose framed screen blocks for both panes, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
@@ -507,13 +507,13 @@ func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing
 	if !strings.Contains(stripped, "Window deck  •  2 windows") || !strings.Contains(stripped, "Floating workbench  •  active api-dev  •  pane float-1") || !strings.Contains(stripped, "Top build-log  •  pane float-2  •  stack 2") || !strings.Contains(stripped, "Layer floating  •  mode none  •  Ctrl-o float") {
 		t.Fatalf("expected shell-only floating renderer to expose deck summary, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "Runtime") || !strings.Contains(stripped, "Connection") || !strings.Contains(stripped, "running  •  visible") || !strings.Contains(stripped, "terminal term-1") {
+	if !strings.Contains(stripped, "Runtime") || !strings.Contains(stripped, "Connection") || !strings.Contains(stripped, "Command  cmd npm run dev") || !strings.Contains(stripped, "Tags  tags env=dev,service=api") || !strings.Contains(stripped, "running  •  visible") || !strings.Contains(stripped, "terminal term-1") {
 		t.Fatalf("expected shell-only floating renderer to expose structured active terminal metadata, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "active window") || !strings.Contains(stripped, "top window") {
 		t.Fatalf("expected shell-only floating renderer to expose active/top window linkage, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "live window  •  deck  •  Ctrl-o") || !strings.Contains(stripped, "standby window  •  deck") {
+	if !strings.Contains(stripped, "live window  •  deck  •  Ctrl-o") || !strings.Contains(stripped, "standby window  •  deck") {
 		t.Fatalf("expected shell-only floating renderer to expose floating footer hints, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "rows 1/1  •  live  •  primary") || !strings.Contains(stripped, "│ api ready") {

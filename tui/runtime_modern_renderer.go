@@ -546,10 +546,13 @@ func normalizeModernPanelLines(lines []string, width, height int) []string {
 // 这里把 connected / empty / waiting / exited 四态折叠成同一种视觉骨架，避免再回到旧版分叉渲染。
 func (r modernScreenShellRenderer) renderPanePanelLines(theme modernShellTheme, state types.AppState, pane types.PaneState, width, maxRows int, includeTitle bool, active bool, zIndex int, zTotal int) []string {
 	lines := make([]string, 0, maxRows)
+	compact := shouldRenderCompactPaneLayout(width, maxRows, pane)
 	if includeTitle {
 		lines = append(lines, renderModernPaneHeader(theme, renderModernPaneTitleBar(state, pane, active, zIndex, zTotal), width, active))
 	}
-	lines = append(lines, theme.panelTitle.Render("Status"))
+	if !compact {
+		lines = append(lines, theme.panelTitle.Render("Status"))
+	}
 	lines = append(lines, theme.panelMeta.Render(renderModernPaneStatusLine(state, pane)))
 	lines = append(lines, theme.panelMeta.Render(renderModernPaneIdentityLine(pane)))
 	if pane.Kind == types.PaneKindFloating && (pane.Rect.W > 0 || pane.Rect.H > 0) {
@@ -558,44 +561,77 @@ func (r modernScreenShellRenderer) renderPanePanelLines(theme modernShellTheme, 
 
 	switch pane.SlotState {
 	case types.PaneSlotEmpty:
-		lines = append(lines, theme.panelTitle.Render("Details"))
+		if !compact {
+			lines = append(lines, theme.panelTitle.Render("Details"))
+		}
 		lines = append(lines,
 			theme.terminalBody.Render("No terminal connected yet."),
 		)
-		lines = append(lines, theme.panelTitle.Render("Actions"))
+		if !compact {
+			lines = append(lines, theme.panelTitle.Render("Actions"))
+		}
 		lines = append(lines, theme.panelMeta.Render("Press n to start one, or a to connect an existing terminal."))
 	case types.PaneSlotWaiting:
-		lines = append(lines, theme.panelTitle.Render("Details"))
+		if !compact {
+			lines = append(lines, theme.panelTitle.Render("Details"))
+		}
 		lines = append(lines,
 			theme.terminalBody.Render("Waiting for a terminal connection."),
 		)
-		lines = append(lines, theme.panelTitle.Render("Actions"))
+		if !compact {
+			lines = append(lines, theme.panelTitle.Render("Actions"))
+		}
 		lines = append(lines, theme.panelMeta.Render("This pane is reserved by layout or restore flow."))
 	case types.PaneSlotExited:
 		exitText := "history retained"
 		if pane.LastExitCode != nil {
 			exitText = fmt.Sprintf("history retained  exit %d", *pane.LastExitCode)
 		}
-		lines = append(lines, theme.panelTitle.Render("Details"))
+		if !compact {
+			lines = append(lines, theme.panelTitle.Render("Details"))
+		}
 		lines = append(lines,
 			theme.terminalBody.Render("Terminal program exited."),
 			theme.panelMeta.Render(exitText),
 		)
-		lines = append(lines, theme.panelTitle.Render("Actions"))
+		if !compact {
+			lines = append(lines, theme.panelTitle.Render("Actions"))
+		}
 		lines = append(lines, theme.panelMeta.Render("Press r to restart, or a to connect another terminal."))
 	default:
 		lines = append(lines, r.renderTerminalMetaLines(theme, state, pane, width)...)
-		lines = append(lines, theme.panelTitle.Render("Actions"))
+		if !compact {
+			lines = append(lines, theme.panelTitle.Render("Actions"))
+		}
 		lines = append(lines, theme.panelMeta.Render(truncateModernLine(renderModernPaneActionLine(state, pane), width)))
 	}
-	lines = append(lines, theme.panelTitle.Render("Footer"))
+	if !compact {
+		lines = append(lines, theme.panelTitle.Render("Footer"))
+	}
 	lines = append(lines, renderModernPaneFooter(theme, renderModernPaneFooterLine(state, pane, active), width, active))
 	if pane.SlotState == types.PaneSlotConnected {
-		lines = append(lines, theme.panelTitle.Render("Screen"))
-		lines = append(lines, r.renderTerminalScreenLines(theme, pane, width, maxRows-len(lines)-1, active)...)
+		if !compact {
+			lines = append(lines, theme.panelTitle.Render("Screen"))
+			lines = append(lines, r.renderTerminalScreenLines(theme, pane, width, maxRows-len(lines)-1, active)...)
+		} else {
+			lines = append(lines, r.renderTerminalScreenLines(theme, pane, width, maxRows-len(lines), active)...)
+		}
 	}
 
 	return lines
+}
+
+func shouldRenderCompactPaneLayout(width, maxRows int, pane types.PaneState) bool {
+	if width <= 40 || maxRows <= 16 {
+		return true
+	}
+	if pane.Kind == types.PaneKindFloating && maxRows <= 18 {
+		return true
+	}
+	if pane.SlotState == types.PaneSlotConnected && width <= 48 {
+		return true
+	}
+	return false
 }
 
 func renderModernPaneTitleBar(state types.AppState, pane types.PaneState, active bool, zIndex int, zTotal int) string {
@@ -1564,8 +1600,8 @@ func renderModernSplitActionLine(state types.AppState) string {
 }
 
 func renderModernFloatingWorkbenchSummary(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) string {
-	_, _, topPane, topTitle := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
-	return fmt.Sprintf("Top %s  •  pane %s  •  stack %d", topTitle, topPane, len(floatingPaneIDs))
+	activePane, _, topPane, _ := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
+	return fmt.Sprintf("Deck active %s  •  top %s  •  windows %d", activePane, topPane, len(floatingPaneIDs))
 }
 
 func renderModernFloatingWorkbenchStateLine(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) string {

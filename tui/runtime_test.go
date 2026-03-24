@@ -702,7 +702,7 @@ func TestE2ERunScenarioDefaultModernSplitWorkbenchRendersPaneCanvas(t *testing.T
 			if !strings.Contains(stripped, "live input  •  Ctrl-p  •  pick") || !strings.Contains(stripped, "standby pane  •  Ctrl-p pane") {
 				t.Fatalf("expected default modern split view to expose pane footer hints, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "rows 1/2  •  live  •  primary") || !strings.Contains(stripped, "rows 1/2  •  standby  •  secondary") || !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
+			if !strings.Contains(stripped, "rows 2/2  •  live  •  primary") || !strings.Contains(stripped, "rows 2/2  •  standby  •  secondary") || !strings.Contains(stripped, "│ $ npm run dev") || !strings.Contains(stripped, "│ > tsc -w") || !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
 				t.Fatalf("expected default modern split view to expose framed screen blocks, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
@@ -806,7 +806,7 @@ func TestE2ERunScenarioDefaultModernFloatingWorkbenchRendersWindowDeck(t *testin
 			if !strings.Contains(stripped, "Floating workbench  •  active api-dev  •  pane float-1") || !strings.Contains(stripped, "Top build-log  •  pane float-2  •  stack 2") || !strings.Contains(stripped, "Layer floating  •  mode none  •  Ctrl-o float") {
 				t.Fatalf("expected default modern floating view to expose floating chrome summary, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "Runtime") || !strings.Contains(stripped, "Connection") || !strings.Contains(stripped, "running  •  visible") || !strings.Contains(stripped, "terminal term-1") {
+			if !strings.Contains(stripped, "Runtime") || !strings.Contains(stripped, "Connection") || !strings.Contains(stripped, "Command  cmd npm run dev") || !strings.Contains(stripped, "Tags  tags env=dev,service=api") || !strings.Contains(stripped, "running  •  visible") || !strings.Contains(stripped, "terminal term-1") {
 				t.Fatalf("expected default modern floating view to expose structured active terminal metadata, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "api-dev • owner • floating • active") || !strings.Contains(stripped, "Geometry") || !strings.Contains(stripped, "z 1/2") || !strings.Contains(stripped, "z 2/2") {
@@ -7971,12 +7971,16 @@ func runtimeStateWithTwoFloatingTargets() types.AppState {
 		ID:      types.TerminalID("term-1"),
 		Name:    "api-dev",
 		State:   types.TerminalRunStateRunning,
+		Command: []string{"npm", "run", "dev"},
+		Tags:    map[string]string{"service": "api", "env": "dev"},
 		Visible: true,
 	}
 	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
 		ID:      types.TerminalID("term-2"),
 		Name:    "build-log",
 		State:   types.TerminalRunStateRunning,
+		Command: []string{"tail", "-f", "build.log"},
+		Tags:    map[string]string{"group": "build"},
 		Visible: true,
 	}
 	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
