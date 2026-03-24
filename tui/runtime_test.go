@@ -883,14 +883,14 @@ func TestE2ERunScenarioDefaultModernTerminalManagerOverlayRendersStructuredModal
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "Terminal Manager") || !strings.Contains(stripped, "state overlay terminal_manager  •  focus overlay") || !strings.Contains(stripped, "LIST[terminals]") || !strings.Contains(stripped, "DETAIL[terminal]") || !strings.Contains(stripped, "FOOTER[enter here esc close]") {
+			if !strings.Contains(stripped, "Terminal Manager") || !strings.Contains(stripped, "CONTEXT[overlay]") || !strings.Contains(stripped, "BACKDROP[workbench]") || !strings.Contains(stripped, "state overlay terminal_manager  •  focus overlay") || !strings.Contains(stripped, "LIST[terminals]") || !strings.Contains(stripped, "DETAIL[terminal]") || !strings.Contains(stripped, "FOOTER[overlay]") || !strings.Contains(stripped, "FOOTER[enter here esc close]") {
 				t.Fatalf("expected default modern terminal manager modal structure, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, ">> [terminal] api-dev") {
 				t.Fatalf("expected default modern terminal manager modal context chrome, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "api-dev  ● run  owner  live") {
-				t.Fatalf("expected default modern terminal manager modal to stay over the workbench canvas, got:\n%s", view)
+			if !strings.Contains(stripped, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(stripped, "pane api-dev  •  owner  •  connected") {
+				t.Fatalf("expected default modern terminal manager modal to keep backdrop context visible, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "D:api-dev term-1") || !strings.Contains(stripped, "state=running vis=visible") || !strings.Contains(stripped, "owner=pane:pane-1") || !strings.Contains(stripped, "BODY[command]") || !strings.Contains(stripped, "npm run dev") {
 				t.Fatalf("expected default modern terminal manager detail, got:\n%s", view)
@@ -930,16 +930,16 @@ func TestE2ERunScenarioDefaultModernHelpOverlayRendersStructuredModal(t *testing
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "state overlay help  •  focus overlay") || !strings.Contains(stripped, "MOST USED") || !strings.Contains(stripped, "SHARED TERMINAL") || !strings.Contains(stripped, "FOOTER[esc close]") {
+			if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "CONTEXT[overlay]") || !strings.Contains(stripped, "BACKDROP[workbench]") || !strings.Contains(stripped, "BODY[help]") || !strings.Contains(stripped, "state overlay help  •  focus overlay") || !strings.Contains(stripped, "MOST USED") || !strings.Contains(stripped, "SHARED TERMINAL") || !strings.Contains(stripped, "FOOTER[overlay]") || !strings.Contains(stripped, "FOOTER[esc close]") {
 				t.Fatalf("expected default modern help modal structure, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "CONTEXT  layer=tiled  mode=picker") || !strings.Contains(stripped, "Ctrl-p pane") || !strings.Contains(stripped, "Ctrl-o float") {
+			if !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "CONTEXT  layer=tiled  mode=picker") || !strings.Contains(stripped, "MOST USED  Ctrl-p pane | Ctrl-t tab") {
 				t.Fatalf("expected default modern help modal key groups, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "owner controls metadata / resize / stop") || !strings.Contains(stripped, "follower observes the terminal without control") || !strings.Contains(stripped, "BACKDROP  active pane stays visible under the modal") || !strings.Contains(stripped, "ESC closes help and returns to the workbench.") {
+			if !strings.Contains(stripped, "owner controls metadata / resize / stop") || !strings.Contains(stripped, "ESC closes help and returns to the workbench.") {
 				t.Fatalf("expected default modern help modal concepts and actions, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "api-dev  ● run  owner  live") || !strings.Contains(stripped, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(stripped, "FOOTER[esc close]") || !strings.Contains(stripped, "░") {
+			if !strings.Contains(stripped, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(stripped, "pane api-dev  •  owner  •  connected") || !strings.Contains(stripped, "FOOTER[overlay]") || !strings.Contains(stripped, "FOOTER[esc close]") || !strings.Contains(stripped, "░") {
 				t.Fatalf("expected default modern help modal to retain backdrop workbench canvas, got:\n%s", view)
 			}
 			return nil
@@ -973,7 +973,7 @@ func TestE2ERunScenarioDefaultModernOverlayBackdropShowsStructuredPausedContext(
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "api-dev  ● run  owner  live") || !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "state overlay help  •  focus overlay") || !strings.Contains(stripped, "FOOTER[esc close]") || !strings.Contains(stripped, "backdrop api-dev  •  owner  •  paused") {
+			if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "CONTEXT[overlay]") || !strings.Contains(stripped, "BACKDROP[workbench]") || !strings.Contains(stripped, "state overlay help  •  focus overlay") || !strings.Contains(stripped, "FOOTER[overlay]") || !strings.Contains(stripped, "FOOTER[esc close]") || !strings.Contains(stripped, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(stripped, "pane api-dev  •  owner  •  connected") {
 				t.Fatalf("expected default modern overlay backdrop to render modal on top of workbench canvas, got:\n%s", view)
 			}
 			return nil
@@ -1155,7 +1155,7 @@ func TestE2ERunScenarioDefaultModernOverlayCloseLeavesCleanWorkbench(t *testing.
 				}
 			}
 			opened := stripANSIRuntimeView(current.View())
-			if !strings.Contains(opened, "Help") || !strings.Contains(opened, "state overlay help  •  focus overlay") || !strings.Contains(opened, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(opened, "░") {
+			if !strings.Contains(opened, "Help") || !strings.Contains(opened, "CONTEXT[overlay]") || !strings.Contains(opened, "BACKDROP[workbench]") || !strings.Contains(opened, "FOOTER[overlay]") || !strings.Contains(opened, "state overlay help  •  focus overlay") || !strings.Contains(opened, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(opened, "pane api-dev  •  owner  •  connected") || !strings.Contains(opened, "░") {
 				t.Fatalf("expected default modern overlay open state to expose modal/backdrop/shadow, got:\n%s", current.View())
 			}
 			nextModel, cmd := current.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -1167,7 +1167,7 @@ func TestE2ERunScenarioDefaultModernOverlayCloseLeavesCleanWorkbench(t *testing.
 				}
 			}
 			closed := stripANSIRuntimeView(current.View())
-			if strings.Contains(closed, "state overlay help  •  focus overlay") || strings.Contains(closed, "backdrop api-dev  •  owner  •  paused") || strings.Contains(closed, "FOOTER[esc close]") || strings.Contains(closed, "░") || !strings.Contains(closed, "api-dev  ● run  owner  live") || !strings.Contains(closed, "<p> <t> <w> <o> <f> <g> <?>") {
+			if strings.Contains(closed, "state overlay help  •  focus overlay") || strings.Contains(closed, "CONTEXT[overlay]") || strings.Contains(closed, "BACKDROP[workbench]") || strings.Contains(closed, "FOOTER[overlay]") || strings.Contains(closed, "backdrop api-dev  •  owner  •  paused") || strings.Contains(closed, "FOOTER[esc close]") || strings.Contains(closed, "░") || !strings.Contains(closed, "api-dev  ● run  owner  live") || !strings.Contains(closed, "<p> <t> <w> <o> <f> <g> <?>") {
 				t.Fatalf("expected default modern overlay close to leave a clean workbench without artifacts, got:\n%s", current.View())
 			}
 			return nil

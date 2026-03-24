@@ -1137,8 +1137,8 @@ func renderModernScreenFrameLine(text string, innerWidth int) string {
 func (r modernScreenShellRenderer) renderOverlayViewport(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width, height int) string {
 	backdropLines := r.renderWorkbenchCanvasLines(state, tab, pane, metrics, width, height, false)
 	dialogWidth := renderModernOverlayDialogWidth(metrics, width)
-	dialogLines := r.renderModernOverlayDialogLines(state, dialogWidth)
-	canvas := newScreenShellCanvas(width, max(height, len(backdropLines)))
+	dialogLines := r.renderModernOverlayDialogLines(state, dialogWidth, height)
+	canvas := newScreenShellCanvas(width, max(height, max(len(backdropLines), len(dialogLines))))
 	canvas.stampLines(0, 0, backdropLines)
 	dialogX := max(0, (width-dialogWidth)/2)
 	dialogY := max(0, (canvas.height-len(dialogLines))/2)
@@ -1150,36 +1150,39 @@ func (r modernScreenShellRenderer) renderOverlayViewport(theme modernShellTheme,
 	return theme.terminalBody.Render(strings.Join(canvas.lines(), "\n"))
 }
 
-func (r modernScreenShellRenderer) renderModernOverlayDialogLines(state types.AppState, width int) []string {
+func (r modernScreenShellRenderer) renderModernOverlayDialogLines(state types.AppState, width int, height int) []string {
+	if width < 24 {
+		width = 24
+	}
+	compact := shouldRenderCompactOverlayDialog(width, height)
+	contentWidth := max(20, width-2)
 	body := []string{}
-	if returnFocus := renderWireframeReturnFocus(state.UI.Overlay.ReturnFocus); returnFocus != "" {
-		body = append(body, "return "+returnFocus)
+	body = append(body, renderModernOverlaySectionBoxLines(contentWidth, "CONTEXT[overlay]", renderModernOverlayContextSectionLines(state, contentWidth-2, compact))...)
+	if !compact {
+		body = append(body, "")
 	}
-	body = append(body, renderModernOverlayStateLine(state))
-	if backdrop := renderModernOverlayBackdropLine(state); backdrop != "" {
-		body = append(body, backdrop)
+	body = append(body, renderModernOverlaySectionBoxLines(contentWidth, "BACKDROP[workbench]", renderModernOverlayBackdropSectionLines(state, contentWidth-2, compact))...)
+	if !compact {
+		body = append(body, "")
 	}
-	body = append(body, "")
-	body = append(body, r.renderModernOverlayDialogBody(state)...)
-	if footer, actions := renderScreenShellDialogFooter(state.UI.Overlay.Kind); footer != "" || actions != "" {
-		if footer != "" {
-			body = append(body, "", footer)
+	body = append(body, r.renderModernOverlayDialogBody(state, contentWidth, compact)...)
+	if footerLines := renderModernOverlayFooterSectionLines(state, contentWidth-2); len(footerLines) > 0 {
+		if !compact {
+			body = append(body, "")
 		}
-		if actions != "" {
-			body = append(body, actions)
-		}
+		body = append(body, renderModernOverlaySectionBoxLines(contentWidth, "FOOTER[overlay]", footerLines)...)
 	}
 	return renderModernOverlayDialogBox(width, overlayTitle(state.UI.Overlay.Kind), body)
 }
 
-func (r modernScreenShellRenderer) renderModernOverlayDialogBody(state types.AppState) []string {
+func (r modernScreenShellRenderer) renderModernOverlayDialogBody(state types.AppState, width int, compact bool) []string {
 	switch state.UI.Overlay.Kind {
 	case types.OverlayHelp:
 		mode := state.UI.Mode.Active
 		if mode == "" {
 			mode = types.ModeNone
 		}
-		return []string{
+		lines := []string{
 			"MOST USED  Ctrl-p pane | Ctrl-t tab",
 			"Ctrl-w ws | Ctrl-f picker | Ctrl-o float | Ctrl-g global",
 			fmt.Sprintf("CONTEXT  layer=%s  mode=%s", renderModernPrimaryLayer(state), mode),
@@ -1188,9 +1191,101 @@ func (r modernScreenShellRenderer) renderModernOverlayDialogBody(state types.App
 			"BACKDROP  active pane stays visible under the modal",
 			"ESC closes help and returns to the workbench.",
 		}
+		if compact {
+			lines = []string{
+				lines[0],
+				lines[2],
+				lines[3],
+				lines[len(lines)-1],
+			}
+		}
+		return renderModernOverlaySectionBoxLines(width, "BODY[help]", lines)
 	default:
 		return renderScreenShellDialogSections(state.UI.Overlay)
 	}
+}
+
+func renderModernOverlaySectionBoxLines(width int, title string, body []string) []string {
+	if width < 20 {
+		width = 20
+	}
+	innerWidth := width - 2
+	lines := []string{renderModernOverlayDialogBorder("┌", "┐", "─", title, innerWidth)}
+	for _, line := range body {
+		lines = append(lines, "│"+padModernCanvasLine(line, innerWidth)+"│")
+	}
+	lines = append(lines, "└"+strings.Repeat("─", innerWidth)+"┘")
+	return lines
+}
+
+func renderModernOverlayContextSectionLines(state types.AppState, width int, compact bool) []string {
+	lines := []string{renderModernOverlayStateLine(state)}
+	if returnFocus := renderWireframeReturnFocus(state.UI.Overlay.ReturnFocus); returnFocus != "" {
+		lines = append(lines, "return "+returnFocus)
+	}
+	if !compact {
+		if workspaceLine := renderModernBackdropContextLine(state); workspaceLine != "" {
+			lines = append(lines, workspaceLine)
+		}
+		if selected := renderModernOverlaySelection(state.UI.Overlay); selected != "" {
+			lines = append(lines, selected)
+		}
+	}
+	return renderModernOverlayPlainLines(lines, width)
+}
+
+func renderModernOverlayBackdropSectionLines(state types.AppState, width int, compact bool) []string {
+	workspace, ok := state.Domain.Workspaces[state.Domain.ActiveWorkspaceID]
+	if !ok {
+		return renderModernOverlayPlainLines([]string{"backdrop unavailable"}, width)
+	}
+	tab, ok := workspace.Tabs[workspace.ActiveTabID]
+	if !ok {
+		return renderModernOverlayPlainLines([]string{"backdrop unavailable"}, width)
+	}
+	pane, ok := tab.Panes[tab.ActivePaneID]
+	if !ok {
+		return renderModernOverlayPlainLines([]string{"backdrop unavailable"}, width)
+	}
+	lines := []string{}
+	if backdrop := renderModernOverlayBackdropLine(state); backdrop != "" {
+		lines = append(lines, backdrop)
+	}
+	lines = append(lines, renderModernBackdropPaneLine(state, pane))
+	if !compact {
+		lines = append(lines, renderModernBackdropLocationLine(state, pane))
+		lines = append(lines, renderModernBackdropPausedLine(state))
+	}
+	return renderModernOverlayPlainLines(lines, width)
+}
+
+func renderModernOverlayFooterSectionLines(state types.AppState, width int) []string {
+	lines := []string{}
+	if footer, actions := renderScreenShellDialogFooter(state.UI.Overlay.Kind); footer != "" || actions != "" {
+		if footer != "" {
+			lines = append(lines, footer)
+		}
+		if actions != "" {
+			lines = append(lines, actions)
+		}
+	}
+	lines = append(lines, renderModernOverlayStateLine(state))
+	return renderModernOverlayPlainLines(lines, width)
+}
+
+func renderModernOverlayPlainLines(lines []string, width int) []string {
+	if width <= 0 {
+		return append([]string(nil), lines...)
+	}
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		out = append(out, truncateModernLine(line, width))
+	}
+	return out
+}
+
+func shouldRenderCompactOverlayDialog(width int, height int) bool {
+	return width <= 64 || height <= 20
 }
 
 func renderModernOverlayDialogBox(width int, title string, body []string) []string {

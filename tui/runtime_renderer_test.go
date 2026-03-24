@@ -346,10 +346,10 @@ func TestModernScreenShellUsesWiderCompactOverlayWithoutShadowAtNarrowWidth(t *t
 	}, screens)
 
 	assertMaxRenderedLineWidth(t, view, 64)
-	if !strings.Contains(view, "Help") || !strings.Contains(view, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(view, "ESC closes help and returns to the workbench.") {
+	if !strings.Contains(view, "Help") || !strings.Contains(view, "CONTEXT[overlay]") || !strings.Contains(view, "BACKDROP[workbench]") || !strings.Contains(view, "BODY[help]") || !strings.Contains(view, "FOOTER[overlay]") || !strings.Contains(view, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(view, "ESC closes help and returns to the workbench.") {
 		t.Fatalf("expected narrow overlay to keep structured help dialog, got:\n%s", view)
 	}
-	if !strings.Contains(view, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(view, "BACKDROP  active pane stays visible under the modal") {
+	if !strings.Contains(view, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(view, "pane api-dev  •  owner  •  connected") {
 		t.Fatalf("expected narrow overlay to keep paused backdrop context and modal hint, got:\n%s", view)
 	}
 	if strings.Contains(view, "░") {
@@ -399,13 +399,13 @@ func TestRuntimeRendererShellOnlyOverlayKeepsPaneContext(t *testing.T) {
 	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "mode picker") {
 		t.Fatalf("expected shell-only overlay renderer to keep current pane context, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") {
+	if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "CONTEXT[overlay]") || !strings.Contains(stripped, "BACKDROP[workbench]") || !strings.Contains(stripped, "FOOTER[overlay]") || !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") {
 		t.Fatalf("expected shell-only overlay renderer to keep help dialog visible, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "overlay help") || !strings.Contains(stripped, "mode picker") || !strings.Contains(stripped, "<esc> CLOSE") || !strings.Contains(stripped, "░") {
 		t.Fatalf("expected shell-only overlay renderer to expose overlay chrome and footer actions, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "api-dev  ● run  owner  live") || !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "term-1 running owner") || !strings.Contains(stripped, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(stripped, "BACKDROP  active pane stays visible under the modal") {
+	if !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(stripped, "pane api-dev  •  owner  •  connected") {
 		t.Fatalf("expected shell-only overlay renderer to retain a dimmed workbench canvas backdrop, got:\n%s", view)
 	}
 }
@@ -708,7 +708,7 @@ func TestRuntimeRendererShellOnlyRendersStructuredTerminalManagerOverlay(t *test
 
 	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Terminal Manager") || !strings.Contains(stripped, "state overlay terminal_manager  •  focus overlay") || !strings.Contains(stripped, "LIST[terminals]") || !strings.Contains(stripped, "DETAIL[terminal]") || !strings.Contains(stripped, "FOOTER[enter here esc close]") || !strings.Contains(stripped, "ACTIONS[enter here esc close]") {
+	if !strings.Contains(stripped, "Terminal Manager") || !strings.Contains(stripped, "CONTEXT[overlay]") || !strings.Contains(stripped, "BACKDROP[workbench]") || !strings.Contains(stripped, "state overlay terminal_manager  •  focus overlay") || !strings.Contains(stripped, "LIST[terminals]") || !strings.Contains(stripped, "DETAIL[terminal]") || !strings.Contains(stripped, "FOOTER[overlay]") || !strings.Contains(stripped, "FOOTER[enter here esc close]") || !strings.Contains(stripped, "ACTIONS[enter here esc close]") {
 		t.Fatalf("expected shell-only terminal manager overlay to render ascii manager dialog, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, ">> [terminal] api-dev") {
@@ -732,13 +732,13 @@ func TestRuntimeRendererShellOnlyRendersStructuredHelpOverlay(t *testing.T) {
 
 	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "state overlay help  •  focus overlay") || !strings.Contains(stripped, "MOST USED") || !strings.Contains(stripped, "SHARED TERMINAL") || !strings.Contains(stripped, "FOOTER[esc close]") || !strings.Contains(stripped, "ACTIONS[esc close]") {
+	if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "CONTEXT[overlay]") || !strings.Contains(stripped, "BACKDROP[workbench]") || !strings.Contains(stripped, "BODY[help]") || !strings.Contains(stripped, "state overlay help  •  focus overlay") || !strings.Contains(stripped, "MOST USED") || !strings.Contains(stripped, "SHARED TERMINAL") || !strings.Contains(stripped, "FOOTER[overlay]") || !strings.Contains(stripped, "FOOTER[esc close]") || !strings.Contains(stripped, "ACTIONS[esc close]") {
 		t.Fatalf("expected shell-only help overlay to render ascii help dialog, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "CONTEXT  layer=tiled  mode=picker") || !strings.Contains(stripped, "Ctrl-p pane") || !strings.Contains(stripped, "Ctrl-o float") {
+	if !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "CONTEXT  layer=tiled  mode=picker") || !strings.Contains(stripped, "MOST USED  Ctrl-p pane | Ctrl-t tab") {
 		t.Fatalf("expected shell-only help overlay to render key groups and context, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "owner controls metadata / resize / stop") || !strings.Contains(stripped, "follower observes the terminal without control") || !strings.Contains(stripped, "BACKDROP  active pane stays visible under the modal") || !strings.Contains(stripped, "ESC closes help and returns to the workbench.") {
+	if !strings.Contains(stripped, "owner controls metadata / resize / stop") || !strings.Contains(stripped, "ESC closes help and returns to the workbench.") {
 		t.Fatalf("expected shell-only help overlay to render shared-terminal help text, got:\n%s", view)
 	}
 }
@@ -755,7 +755,7 @@ func TestRuntimeRendererShellOnlyRendersStructuredOverlayBackdropContext(t *test
 
 	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "api-dev  ● run  owner  live") || !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "state overlay help  •  focus overlay") || !strings.Contains(stripped, "FOOTER[esc close]") || !strings.Contains(stripped, "backdrop api-dev  •  owner  •  paused") {
+	if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "state overlay help  •  focus overlay") || !strings.Contains(stripped, "FOOTER[overlay]") || !strings.Contains(stripped, "FOOTER[esc close]") || !strings.Contains(stripped, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(stripped, "pane api-dev  •  owner  •  connected") {
 		t.Fatalf("expected shell-only overlay backdrop to render modal on top of the workbench canvas, got:\n%s", view)
 	}
 }
