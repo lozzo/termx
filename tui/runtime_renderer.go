@@ -139,7 +139,11 @@ func (r runtimeRenderer) renderScreenShell(state types.AppState, workspace types
 }
 
 func renderScreenShellMask(state types.AppState, metrics wireframeMetrics) string {
-	return fmt.Sprintf("MASK[dimmed viewport=%dx%d overlay=%s]", metrics.ViewportWidth, metrics.ViewportHeight, state.UI.Overlay.Kind)
+	returnFocus := renderWireframeReturnFocus(state.UI.Overlay.ReturnFocus)
+	if returnFocus == "" {
+		returnFocus = "none"
+	}
+	return fmt.Sprintf("MASK[dimmed %dx%d %s] OVERLAY[%s return=%s]", metrics.ViewportWidth, metrics.ViewportHeight, state.UI.Overlay.Kind, state.UI.Overlay.Kind, returnFocus)
 }
 
 func renderScreenShellHeader(workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
@@ -149,7 +153,7 @@ func renderScreenShellHeader(workspace types.WorkspaceState, tab types.TabState,
 	if pane.TerminalID != "" && pane.SlotState == types.PaneSlotConnected {
 		terminalID = string(pane.TerminalID)
 	}
-	return fmt.Sprintf("[%s] [%s] pane:%s term:%s float:%d", workspaceLabel, tabLabel, pane.ID, terminalID, len(orderedFloatingPaneIDs(tab)))
+	return fmt.Sprintf("HEADER[%s] [%s] pane:%s term:%s float:%d", workspaceLabel, tabLabel, pane.ID, terminalID, len(orderedFloatingPaneIDs(tab)))
 }
 
 func renderScreenShellFrameTitle(state types.AppState, metrics wireframeMetrics) string {
@@ -169,7 +173,7 @@ func renderScreenShellStateLine(state types.AppState, tab types.TabState, pane t
 	if mode == "" {
 		mode = types.ModeNone
 	}
-	return fmt.Sprintf("STATE[layer=%s focus=%s mode=%s overlay=%s]", layer, focus, mode, state.UI.Overlay.Kind)
+	return fmt.Sprintf("STATE[%s focus=%s mode=%s overlay=%s] BODY[%s t=%d f=%d]", layer, focus, mode, state.UI.Overlay.Kind, layer, len(orderedTiledPaneIDs(tab)), len(orderedFloatingPaneIDs(tab)))
 }
 
 func renderScreenShellTargetLine(workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
@@ -185,7 +189,7 @@ func renderScreenShellFooter(state types.AppState, pane types.PaneState) string 
 	if state.UI.Overlay.Kind != types.OverlayNone {
 		layer = types.PaneKind(state.UI.Overlay.Kind)
 	}
-	return fmt.Sprintf("<p> PANE  <t> TAB  <w> WS  <o> FLOAT  <f> PICK  <g> GLOBAL  %s  %s", renderPaneTitle(state, pane), layer)
+	return fmt.Sprintf("FT[%s %s %s] <p> PANE <t> TAB <w> WS <o> FLOAT <f> PICK <g> GLOBAL", renderPaneTitle(state, pane), layer, state.UI.Overlay.Kind)
 }
 
 func (r runtimeRenderer) renderScreenShellWorkbench(state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, overlayActive bool) []string {

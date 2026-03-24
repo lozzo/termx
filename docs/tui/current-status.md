@@ -1130,3 +1130,51 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
 - `screen_shell` 外层整屏 frame 已经落地
 - overlay 已开始并入统一外壳，而不是额外附着的裸摘要
 - 下一个大块应继续推进“真实 TUI 壳层交互收口”，例如 active chrome、overlay 开闭观感、以及进一步减少调试层与第一视觉之间的割裂
+
+---
+
+## 11. 第 195 轮 TDD
+
+这一轮继续沿着“第一视觉 shell chrome 收口”推进，但目标不是再加新字段，而是把当前外层 shell 里最容易把视图拉长、拉乱的几条语义线压缩成更稳定的 chrome 标记，让 `cmd/termx` 第一眼更像一个工作台壳，而不是长句堆叠：
+
+1. shell header / state / footer 压缩
+   - `HEADER[...]` 继续保留 workspace / tab / pane / term / float 信息
+   - `STATE[...]` 改成更短的主状态表达
+   - `BODY[...]` 收缩成 `BODY[layer t=n f=n]`
+   - `FOOTER[...]` 压成 `FT[...]`，避免底栏信息本身把整行挤爆
+2. overlay layer 压缩
+   - `MASK[...]` 从长句改成更短的 `MASK[dimmed ...]`
+   - overlay 附带信息改成更短的 `OVERLAY[...]`
+   - 保留 return focus 等关键信息，但不再把整句写得过长
+3. 对应 renderer / runtime E2E 一次性收口
+   - active pane
+   - floating layer
+   - help overlay
+   - layout resolve / terminal manager overlay shell dialog
+
+这轮并没有偏回“只补测试用例”，而是功能和验证一起做：
+
+- renderer：
+  - `TestRuntimeRendererRendersActivePaneSnapshot`
+  - `TestRuntimeRendererRendersHelpOverlay`
+- runtime E2E：
+  - `TestE2ERunScenarioRendersSnapshotAndForwardsActivePaneInput`
+  - `TestE2ERunScenarioActivePaneCoreViewVisible`
+  - `TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay`
+  - `TestE2ERunScenarioFloatingLayerShowsOutline`
+  - `TestE2ERunScenarioLayoutResolveEscClearsShellDialogAndMask`
+  - `TestE2ERunScenarioTerminalManagerEscClearsShellDialogAndMask`
+
+本轮验证命令：
+
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -run 'TestRuntimeRendererRendersActivePaneSnapshot|TestRuntimeRendererRendersHelpOverlay|TestE2ERunScenarioRendersSnapshotAndForwardsActivePaneInput|TestE2ERunScenarioActivePaneCoreViewVisible|TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay|TestE2ERunScenarioFloatingLayerShowsOutline' -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1`
+
+当前状态更新为：
+
+- `screen_shell` 已经不是裸语义块，而是有外层 frame 的壳
+- shell chrome 的 header / state / overlay / footer 已开始收缩成更像真实 UI 的短标记
+- 现在离“真正像 TUI 的第一视觉”还差最后一层：
+  - 把当前这些结构化文本继续推进成更强的 canvas / pane border / title bar 画法
+  - 也就是下一阶段要开始更直接处理“真实边框和几何排版”，而不再主要是语义标签压缩
