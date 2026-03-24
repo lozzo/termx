@@ -887,6 +887,55 @@ func TestReducerPaneFocusMoveSwitchesToAdjacentPaneAndClearsMode(t *testing.T) {
 	}
 }
 
+func TestReducerSplitActivePaneCreatesWaitingPaneAndOpensLayoutResolve(t *testing.T) {
+	reducer := New()
+	state := newConnectedAppState()
+	state.UI.Mode = types.ModeState{Active: types.ModeGlobal}
+
+	result := reducer.Reduce(state, intent.SplitActivePaneIntent{})
+
+	workspace := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := workspace.Tabs[types.TabID("tab-1")]
+	pane := tab.Panes[types.PaneID("pane-2")]
+	if pane.ID != types.PaneID("pane-2") || pane.Kind != types.PaneKindTiled || pane.SlotState != types.PaneSlotWaiting || pane.TerminalID != "" {
+		t.Fatalf("expected split to create waiting tiled pane-2, got %+v", pane)
+	}
+	if tab.ActivePaneID != types.PaneID("pane-2") || tab.ActiveLayer != types.FocusLayerTiled {
+		t.Fatalf("expected split to focus new pane-2, got %+v", tab)
+	}
+	if tab.RootSplit == nil || tab.RootSplit.Direction != types.SplitDirectionVertical || tab.RootSplit.First == nil || tab.RootSplit.First.PaneID != types.PaneID("pane-1") || tab.RootSplit.Second == nil || tab.RootSplit.Second.PaneID != types.PaneID("pane-2") {
+		t.Fatalf("expected split root to wrap pane-1 with new pane-2, got %+v", tab.RootSplit)
+	}
+	if result.State.UI.Overlay.Kind != types.OverlayLayoutResolve {
+		t.Fatalf("expected split to open layout resolve, got %q", result.State.UI.Overlay.Kind)
+	}
+	if result.State.UI.Focus.Layer != types.FocusLayerOverlay || result.State.UI.Focus.PaneID != types.PaneID("pane-2") {
+		t.Fatalf("expected focus to move into layout resolve for pane-2, got %+v", result.State.UI.Focus)
+	}
+	if result.State.UI.Mode.Active != types.ModePicker {
+		t.Fatalf("expected split handoff to picker mode, got %+v", result.State.UI.Mode)
+	}
+}
+
+func TestReducerTabFocusMoveSwitchesToAdjacentTabAndClearsMode(t *testing.T) {
+	reducer := New()
+	state := newTwoTabAppState()
+	state.UI.Mode = types.ModeState{Active: types.ModeTab}
+
+	result := reducer.Reduce(state, intent.TabFocusMoveIntent{Delta: 1})
+
+	workspace := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	if workspace.ActiveTabID != types.TabID("tab-2") {
+		t.Fatalf("expected active tab to move to tab-2, got %q", workspace.ActiveTabID)
+	}
+	if result.State.UI.Focus.TabID != types.TabID("tab-2") || result.State.UI.Focus.PaneID != types.PaneID("pane-2") || result.State.UI.Focus.Layer != types.FocusLayerTiled {
+		t.Fatalf("expected focus to land on tab-2 active pane, got %+v", result.State.UI.Focus)
+	}
+	if result.State.UI.Mode.Active != types.ModeNone {
+		t.Fatalf("expected tab mode to clear after one move, got %+v", result.State.UI.Mode)
+	}
+}
+
 func TestReducerConnectTerminalReplacesOldConnectionSnapshot(t *testing.T) {
 	reducer := New()
 	state := newConnectedAppState()
@@ -1800,6 +1849,73 @@ func newSplitPaneAppState() types.AppState {
 		TerminalID:       types.TerminalID("term-2"),
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-2")},
 		OwnerPaneID:      types.PaneID("pane-2"),
+	}
+	return state
+}
+
+func newTwoTabAppState() types.AppState {
+	state := newAppStateWithSinglePane()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	ws.TabOrder = []types.TabID{types.TabID("tab-1"), types.TabID("tab-2")}
+	ws.ActiveTabID = types.TabID("tab-1")
+	ws.Tabs[types.TabID("tab-1")] = types.TabState{
+		ID:           types.TabID("tab-1"),
+		Name:         "shell",
+		ActivePaneID: types.PaneID("pane-1"),
+		ActiveLayer:  types.FocusLayerTiled,
+		Panes: map[types.PaneID]types.PaneState{
+			types.PaneID("pane-1"): {
+				ID:         types.PaneID("pane-1"),
+				Kind:       types.PaneKindTiled,
+				SlotState:  types.PaneSlotConnected,
+				TerminalID: types.TerminalID("term-1"),
+			},
+		},
+		RootSplit: &types.SplitNode{PaneID: types.PaneID("pane-1")},
+	}
+	ws.Tabs[types.TabID("tab-2")] = types.TabState{
+		ID:           types.TabID("tab-2"),
+		Name:         "logs",
+		ActivePaneID: types.PaneID("pane-2"),
+		ActiveLayer:  types.FocusLayerTiled,
+		Panes: map[types.PaneID]types.PaneState{
+			types.PaneID("pane-2"): {
+				ID:         types.PaneID("pane-2"),
+				Kind:       types.PaneKindTiled,
+				SlotState:  types.PaneSlotConnected,
+				TerminalID: types.TerminalID("term-2"),
+			},
+		},
+		RootSplit: &types.SplitNode{PaneID: types.PaneID("pane-2")},
+	}
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:      types.TerminalID("term-1"),
+		Name:    "api-dev",
+		State:   types.TerminalRunStateRunning,
+		Visible: true,
+	}
+	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
+		ID:      types.TerminalID("term-2"),
+		Name:    "build-log",
+		State:   types.TerminalRunStateRunning,
+		Visible: true,
+	}
+	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-1"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1")},
+		OwnerPaneID:      types.PaneID("pane-1"),
+	}
+	state.Domain.Connections[types.TerminalID("term-2")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-2"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-2")},
+		OwnerPaneID:      types.PaneID("pane-2"),
+	}
+	state.UI.Focus = types.FocusState{
+		Layer:       types.FocusLayerTiled,
+		WorkspaceID: types.WorkspaceID("ws-1"),
+		TabID:       types.TabID("tab-1"),
+		PaneID:      types.PaneID("pane-1"),
 	}
 	return state
 }

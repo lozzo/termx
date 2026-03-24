@@ -1623,6 +1623,96 @@ func TestE2ERunScenarioPaneModeMovesFocusToAdjacentPane(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioTabModeMovesFocusToAdjacentTab(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTwoTabTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlT},
+				{Type: tea.KeyRunes, Runes: []rune("l")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "tab: logs") || !strings.Contains(view, "pane: pane-2") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "terminal: term-2") || !strings.Contains(view, "title: build-log") || strings.Contains(view, "mode:") {
+				t.Fatalf("expected tab mode to move focus to adjacent tab-2, got:\n%s", view)
+			}
+			workspace := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")]
+			if workspace.ActiveTabID != types.TabID("tab-2") {
+				t.Fatalf("expected active tab to switch to tab-2, got %+v", workspace.ActiveTabID)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected tab mode runtime scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioGlobalSplitOpensLayoutResolveOnNewPane(t *testing.T) {
+	client := &stubRunClient{}
+	initial := connectedRunAppState()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("s")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "pane: pane-2") || !strings.Contains(view, "slot: waiting") || !strings.Contains(view, "overlay: layout_resolve") || !strings.Contains(view, "focus_overlay_target: layout_resolve") || !strings.Contains(view, "mode: picker") || !strings.Contains(view, "layout_resolve_bar: pane=pane-2") {
+				t.Fatalf("expected global split flow to open layout resolve on new pane, got:\n%s", view)
+			}
+			tab := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
+			if tab.ActivePaneID != types.PaneID("pane-2") {
+				t.Fatalf("expected split flow to activate pane-2, got %+v", tab)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected global split runtime scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioWorkspacePickerCollapseHidesChildren(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithWorkspacePickerTarget()
@@ -5275,6 +5365,67 @@ func runtimeStateWithSplitPaneTargets() types.AppState {
 	}
 	tab.ActivePaneID = types.PaneID("pane-1")
 	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:      types.TerminalID("term-1"),
+		Name:    "api-dev",
+		State:   types.TerminalRunStateRunning,
+		Visible: true,
+	}
+	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
+		ID:      types.TerminalID("term-2"),
+		Name:    "build-log",
+		State:   types.TerminalRunStateRunning,
+		Visible: true,
+	}
+	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-1"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1")},
+		OwnerPaneID:      types.PaneID("pane-1"),
+	}
+	state.Domain.Connections[types.TerminalID("term-2")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-2"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-2")},
+		OwnerPaneID:      types.PaneID("pane-2"),
+	}
+	return state
+}
+
+func runtimeStateWithTwoTabTargets() types.AppState {
+	state := buildSinglePaneAppState("main", "shell", types.PaneSlotConnected)
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	ws.TabOrder = []types.TabID{types.TabID("tab-1"), types.TabID("tab-2")}
+	ws.ActiveTabID = types.TabID("tab-1")
+	ws.Tabs[types.TabID("tab-1")] = types.TabState{
+		ID:           types.TabID("tab-1"),
+		Name:         "shell",
+		ActivePaneID: types.PaneID("pane-1"),
+		ActiveLayer:  types.FocusLayerTiled,
+		Panes: map[types.PaneID]types.PaneState{
+			types.PaneID("pane-1"): {
+				ID:         types.PaneID("pane-1"),
+				Kind:       types.PaneKindTiled,
+				SlotState:  types.PaneSlotConnected,
+				TerminalID: types.TerminalID("term-1"),
+			},
+		},
+		RootSplit: &types.SplitNode{PaneID: types.PaneID("pane-1")},
+	}
+	ws.Tabs[types.TabID("tab-2")] = types.TabState{
+		ID:           types.TabID("tab-2"),
+		Name:         "logs",
+		ActivePaneID: types.PaneID("pane-2"),
+		ActiveLayer:  types.FocusLayerTiled,
+		Panes: map[types.PaneID]types.PaneState{
+			types.PaneID("pane-2"): {
+				ID:         types.PaneID("pane-2"),
+				Kind:       types.PaneKindTiled,
+				SlotState:  types.PaneSlotConnected,
+				TerminalID: types.TerminalID("term-2"),
+			},
+		},
+		RootSplit: &types.SplitNode{PaneID: types.PaneID("pane-2")},
+	}
 	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
 	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
 		ID:      types.TerminalID("term-1"),

@@ -68,6 +68,9 @@ func (m DefaultIntentMapper) MapKey(state types.AppState, msg tea.KeyMsg) []inte
 	if intents := m.mapPaneModeKey(state, msg); len(intents) > 0 {
 		return intents
 	}
+	if intents := m.mapTabModeKey(state, msg); len(intents) > 0 {
+		return intents
+	}
 	if intents := m.mapGlobalModeKey(state, msg); len(intents) > 0 {
 		return intents
 	}
@@ -125,6 +128,13 @@ func (m DefaultIntentMapper) mapRootKey(state types.AppState, msg tea.KeyMsg) []
 			Sticky:     false,
 			DeadlineAt: &deadline,
 		}}
+	case "ctrl+t":
+		deadline := m.clock.Now().Add(m.prefixTimeout)
+		return []intent.Intent{intent.ActivateModeIntent{
+			Mode:       types.ModeTab,
+			Sticky:     false,
+			DeadlineAt: &deadline,
+		}}
 	case "esc":
 		if state.UI.Mode.Active != types.ModeNone {
 			return []intent.Intent{intent.ActivateModeIntent{Mode: types.ModeNone}}
@@ -140,6 +150,8 @@ func (m DefaultIntentMapper) mapGlobalModeKey(state types.AppState, msg tea.KeyM
 	switch msg.String() {
 	case "t":
 		return []intent.Intent{intent.OpenTerminalManagerIntent{}}
+	case "s":
+		return []intent.Intent{intent.SplitActivePaneIntent{}}
 	case "esc":
 		return []intent.Intent{intent.ActivateModeIntent{Mode: types.ModeNone}}
 	default:
@@ -160,6 +172,22 @@ func (m DefaultIntentMapper) mapPaneModeKey(state types.AppState, msg tea.KeyMsg
 		return []intent.Intent{intent.PaneFocusMoveIntent{Direction: types.DirectionUp}}
 	case "l", "right":
 		return []intent.Intent{intent.PaneFocusMoveIntent{Direction: types.DirectionRight}}
+	case "esc":
+		return []intent.Intent{intent.ActivateModeIntent{Mode: types.ModeNone}}
+	default:
+		return nil
+	}
+}
+
+func (m DefaultIntentMapper) mapTabModeKey(state types.AppState, msg tea.KeyMsg) []intent.Intent {
+	if state.UI.Mode.Active != types.ModeTab {
+		return nil
+	}
+	switch msg.String() {
+	case "h", "left":
+		return []intent.Intent{intent.TabFocusMoveIntent{Delta: -1}}
+	case "l", "right":
+		return []intent.Intent{intent.TabFocusMoveIntent{Delta: 1}}
 	case "esc":
 		return []intent.Intent{intent.ActivateModeIntent{Mode: types.ModeNone}}
 	default:

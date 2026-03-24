@@ -88,6 +88,36 @@ func TestIntentMapperRootCtrlGArmsGlobalModeAndTOpensTerminalManager(t *testing.
 	}
 }
 
+func TestIntentMapperRootCtrlGArmsGlobalModeAndSMapsSplitActivePane(t *testing.T) {
+	now := time.Date(2026, 3, 23, 12, 0, 0, 0, time.UTC)
+	mapper := NewIntentMapper(Config{
+		Clock:         fixedClock{now: now},
+		PrefixTimeout: 3 * time.Second,
+	})
+
+	intents := mapper.MapKey(newAppStateWithSinglePane(), tea.KeyMsg{Type: tea.KeyCtrlG})
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	activate, ok := intents[0].(intent.ActivateModeIntent)
+	if !ok {
+		t.Fatalf("expected activate mode intent, got %T", intents[0])
+	}
+
+	state := newAppStateWithSinglePane()
+	state.UI.Mode = types.ModeState{
+		Active:     types.ModeGlobal,
+		DeadlineAt: activate.DeadlineAt,
+	}
+	intents = mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	if _, ok := intents[0].(intent.SplitActivePaneIntent); !ok {
+		t.Fatalf("expected split active pane intent, got %T", intents[0])
+	}
+}
+
 func TestIntentMapperRootCtrlPArmsPaneModeAndLMapsPaneMove(t *testing.T) {
 	now := time.Date(2026, 3, 23, 12, 0, 0, 0, time.UTC)
 	mapper := NewIntentMapper(Config{
@@ -118,6 +148,39 @@ func TestIntentMapperRootCtrlPArmsPaneModeAndLMapsPaneMove(t *testing.T) {
 	}
 	if intents[0] != (intent.PaneFocusMoveIntent{Direction: types.DirectionRight}) {
 		t.Fatalf("expected pane focus move right intent, got %+v", intents[0])
+	}
+}
+
+func TestIntentMapperRootCtrlTArmsTabModeAndLMapsTabMove(t *testing.T) {
+	now := time.Date(2026, 3, 23, 12, 0, 0, 0, time.UTC)
+	mapper := NewIntentMapper(Config{
+		Clock:         fixedClock{now: now},
+		PrefixTimeout: 3 * time.Second,
+	})
+
+	intents := mapper.MapKey(newAppStateWithSinglePane(), tea.KeyMsg{Type: tea.KeyCtrlT})
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	activate, ok := intents[0].(intent.ActivateModeIntent)
+	if !ok {
+		t.Fatalf("expected activate mode intent, got %T", intents[0])
+	}
+	if activate.Mode != types.ModeTab || activate.DeadlineAt == nil || !activate.DeadlineAt.Equal(now.Add(3*time.Second)) {
+		t.Fatalf("unexpected tab mode payload: %+v", activate)
+	}
+
+	state := newAppStateWithSinglePane()
+	state.UI.Mode = types.ModeState{
+		Active:     types.ModeTab,
+		DeadlineAt: activate.DeadlineAt,
+	}
+	intents = mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	if intents[0] != (intent.TabFocusMoveIntent{Delta: 1}) {
+		t.Fatalf("expected tab focus move intent, got %+v", intents[0])
 	}
 }
 

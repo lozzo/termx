@@ -253,6 +253,10 @@ func (TerminalManagerCreateTerminalIntent) intentName() string {
 	return "terminal_manager_create_terminal"
 }
 
+type SplitActivePaneIntent struct{}
+
+func (SplitActivePaneIntent) intentName() string { return "split_active_pane" }
+
 type SubmitPromptIntent struct {
 	Value string
 }
@@ -302,6 +306,12 @@ type PaneFocusMoveIntent struct {
 }
 
 func (PaneFocusMoveIntent) intentName() string { return "pane_focus_move" }
+
+type TabFocusMoveIntent struct {
+	Delta int
+}
+
+func (TabFocusMoveIntent) intentName() string { return "tab_focus_move" }
 
 type ActivateModeIntent struct {
 	Mode       types.ModeKind

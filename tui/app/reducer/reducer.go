@@ -203,6 +203,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyTerminalManagerStop(&result)
 	case intent.TerminalManagerCreateTerminalIntent:
 		applyTerminalManagerCreateTerminal(&result)
+	case intent.SplitActivePaneIntent:
+		applySplitActivePane(&result.State)
 	case intent.SubmitPromptIntent:
 		result.Effects = append(result.Effects, applySubmitPrompt(&result.State, intentValue)...)
 	case intent.UpdateTerminalMetadataSucceededIntent:
@@ -221,6 +223,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyPromptSelectField(&result.State, intentValue)
 	case intent.PaneFocusMoveIntent:
 		applyPaneFocusMove(&result.State, intentValue)
+	case intent.TabFocusMoveIntent:
+		applyTabFocusMove(&result.State, intentValue)
 	case intent.ActivateModeIntent:
 		applyActivateMode(&result.State, intentValue)
 	case intent.ModeTimedOutIntent:
@@ -977,6 +981,106 @@ func applyPaneFocusMove(state *types.AppState, in intent.PaneFocusMoveIntent) {
 	}
 }
 
+// applyTabFocusMove 先只收口当前 workspace 内 TabOrder 的相邻切换。
+// pane 只是 terminal 的观察窗口，所以这里只切换连接目标 tab 和其活动 pane。
+func applyTabFocusMove(state *types.AppState, in intent.TabFocusMoveIntent) {
+	defer func() {
+		state.UI.Mode = types.ModeState{Active: types.ModeNone}
+	}()
+	if state.UI.Focus.Layer != types.FocusLayerTiled && state.UI.Focus.Layer != types.FocusLayerFloating {
+		return
+	}
+	workspaceID := state.UI.Focus.WorkspaceID
+	if workspaceID == "" {
+		workspaceID = state.Domain.ActiveWorkspaceID
+	}
+	workspace, ok := state.Domain.Workspaces[workspaceID]
+	if !ok || len(workspace.TabOrder) == 0 {
+		return
+	}
+	currentTabID := workspace.ActiveTabID
+	if currentTabID == "" {
+		currentTabID = state.UI.Focus.TabID
+	}
+	currentIndex := slices.Index(workspace.TabOrder, currentTabID)
+	if currentIndex < 0 {
+		return
+	}
+	nextIndex := currentIndex + in.Delta
+	if nextIndex < 0 || nextIndex >= len(workspace.TabOrder) {
+		return
+	}
+	nextTabID := workspace.TabOrder[nextIndex]
+	tab, ok := workspace.Tabs[nextTabID]
+	if !ok {
+		return
+	}
+	workspace.ActiveTabID = nextTabID
+	workspace.Tabs[nextTabID] = tab
+	state.Domain.ActiveWorkspaceID = workspace.ID
+	state.Domain.Workspaces[workspace.ID] = workspace
+	state.UI.Focus = types.FocusState{
+		Layer:       tab.ActiveLayer,
+		WorkspaceID: workspace.ID,
+		TabID:       nextTabID,
+		PaneID:      tab.ActivePaneID,
+	}
+}
+
+// applySplitActivePane 先收口最小 split 闭环：
+// 把当前 tiled pane 固定按垂直方向拆出一个 waiting pane，再直接进入 layout resolve。
+func applySplitActivePane(state *types.AppState) {
+	state.UI.Mode = types.ModeState{Active: types.ModeNone}
+	if state.UI.Focus.Layer != types.FocusLayerTiled {
+		return
+	}
+	workspace, ok := state.Domain.Workspaces[state.UI.Focus.WorkspaceID]
+	if !ok {
+		return
+	}
+	tab, ok := workspace.Tabs[state.UI.Focus.TabID]
+	if !ok {
+		return
+	}
+	currentPane, ok := tab.Panes[state.UI.Focus.PaneID]
+	if !ok || currentPane.Kind != types.PaneKindTiled {
+		return
+	}
+	newPaneID := nextTiledPaneID(tab)
+	tab.Panes[newPaneID] = types.PaneState{
+		ID:        newPaneID,
+		Kind:      types.PaneKindTiled,
+		SlotState: types.PaneSlotWaiting,
+	}
+	if tab.RootSplit == nil {
+		tab.RootSplit = &types.SplitNode{
+			Direction: types.SplitDirectionVertical,
+			Ratio:     0.5,
+			First:     &types.SplitNode{PaneID: currentPane.ID},
+			Second:    &types.SplitNode{PaneID: newPaneID},
+		}
+	} else {
+		tab.RootSplit = splitPaneNode(tab.RootSplit, currentPane.ID, newPaneID)
+	}
+	if tab.RootSplit == nil {
+		delete(tab.Panes, newPaneID)
+		return
+	}
+	tab.ActivePaneID = newPaneID
+	tab.ActiveLayer = types.FocusLayerTiled
+	workspace.ActiveTabID = tab.ID
+	workspace.Tabs[tab.ID] = tab
+	state.Domain.ActiveWorkspaceID = workspace.ID
+	state.Domain.Workspaces[workspace.ID] = workspace
+	state.UI.Focus = types.FocusState{
+		Layer:       types.FocusLayerTiled,
+		WorkspaceID: workspace.ID,
+		TabID:       tab.ID,
+		PaneID:      newPaneID,
+	}
+	applyOpenLayoutResolve(state, intent.OpenLayoutResolveIntent{PaneID: newPaneID})
+}
+
 // applyCreateWorkspace 为新 workspace 建立最小可工作骨架：
 // 一个默认 tab，一个未连接 terminal 的 pane，并把焦点直接落过去。
 func applyCreateWorkspace(state *types.AppState, name string) {
@@ -1363,6 +1467,15 @@ func nextFloatingPaneID(tab types.TabState) types.PaneID {
 	}
 }
 
+func nextTiledPaneID(tab types.TabState) types.PaneID {
+	for index := 1; ; index++ {
+		candidate := types.PaneID(fmt.Sprintf("pane-%d", index))
+		if _, ok := tab.Panes[candidate]; !ok {
+			return candidate
+		}
+	}
+}
+
 func nextTabID(workspace types.WorkspaceState) types.TabID {
 	for index := 1; ; index++ {
 		candidate := types.TabID(fmt.Sprintf("tab-%d", index))
@@ -1395,8 +1508,12 @@ func removePaneFromSplit(node *types.SplitNode, paneID types.PaneID) *types.Spli
 		}
 		return node
 	}
-	node.First = removePaneFromSplit(node.First, paneID)
-	node.Second = removePaneFromSplit(node.Second, paneID)
+	if node.First != nil {
+		node.First = removePaneFromSplit(node.First, paneID)
+	}
+	if node.Second != nil {
+		node.Second = removePaneFromSplit(node.Second, paneID)
+	}
 	switch {
 	case node.First == nil:
 		return node.Second
@@ -1405,6 +1522,27 @@ func removePaneFromSplit(node *types.SplitNode, paneID types.PaneID) *types.Spli
 	default:
 		return node
 	}
+}
+
+func splitPaneNode(node *types.SplitNode, targetPaneID, newPaneID types.PaneID) *types.SplitNode {
+	if node == nil {
+		return nil
+	}
+	if node.PaneID == targetPaneID && node.First == nil && node.Second == nil {
+		return &types.SplitNode{
+			Direction: types.SplitDirectionVertical,
+			Ratio:     0.5,
+			First:     &types.SplitNode{PaneID: targetPaneID},
+			Second:    &types.SplitNode{PaneID: newPaneID},
+		}
+	}
+	if node.First != nil {
+		node.First = splitPaneNode(node.First, targetPaneID, newPaneID)
+	}
+	if node.Second != nil {
+		node.Second = splitPaneNode(node.Second, targetPaneID, newPaneID)
+	}
+	return node
 }
 
 func workspacePicker(state *types.AppState) (*workspacedomain.PickerState, bool) {
