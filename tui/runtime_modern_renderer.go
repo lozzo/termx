@@ -822,7 +822,7 @@ func renderModernScreenFrameLine(text string, innerWidth int) string {
 
 func (r modernScreenShellRenderer) renderOverlayViewport(theme modernShellTheme, state types.AppState, pane types.PaneState, width, height int) string {
 	backdropHeight := min(7, max(5, height/4))
-	panelWidth := min(width-4, max(56, width*3/4))
+	panelWidth := min(width-2, max(64, width*5/6))
 	if panelWidth <= 0 {
 		panelWidth = width
 	}
@@ -1003,10 +1003,7 @@ func (r modernScreenShellRenderer) renderOverlayPanelBody(theme modernShellTheme
 // renderModernHelpOverlay 把 help 也纳入统一 modal panel 结构，
 // 让快捷键、概念模型、关闭动作保持和 manager/picker 一致的信息层级。
 func renderModernHelpOverlay(theme modernShellTheme, state types.AppState, width int) []string {
-	contentWidth := max(18, width-4)
-	if width >= 56 {
-		contentWidth = max(18, width/2-4)
-	}
+	contentWidth := modernOverlayContentWidth(width)
 	leftLines := []string{
 		theme.modalMeta.Render(truncateModernLine(renderModernHelpContextLine(state), contentWidth)),
 		"",
@@ -1053,7 +1050,7 @@ func renderModernTerminalManagerOverlay(theme modernShellTheme, manager *termina
 	}
 	rows := manager.VisibleRows()
 	selected, ok := manager.SelectedRow()
-	contentWidth := max(18, width/2-4)
+	contentWidth := modernOverlayContentWidth(width)
 	leftLines := []string{
 		theme.modalMeta.Render(fmt.Sprintf("search %q", manager.Query())),
 		theme.modalMeta.Render(fmt.Sprintf("%d rows", len(rows))),
@@ -1068,9 +1065,7 @@ func renderModernTerminalManagerOverlay(theme modernShellTheme, manager *termina
 		leftLines = append(leftLines, line)
 	}
 	rightLines := trimModernOverlayLines(renderModernTerminalManagerDetail(theme, manager, contentWidth))
-	actionLines := []string{
-		theme.modalBody.Render(truncateModernLine("Enter connect here  •  t new tab  •  o floating  •  e edit  •  s stop", width)),
-	}
+	actionLines := renderModernOverlayBodyTokenLines(theme, width, "Enter connect here", "t new tab", "o floating", "e edit", "s stop")
 	return renderModernOverlayPanels(theme, width, "Visible terminals", leftLines, "Detail panel", rightLines, "Action bar", actionLines)
 }
 
@@ -1176,7 +1171,7 @@ func renderModernWorkspacePickerOverlay(theme modernShellTheme, picker *workspac
 	}
 	rows := picker.VisibleRows()
 	selectedRow, hasSelected := picker.SelectedRow()
-	contentWidth := max(18, width/2-4)
+	contentWidth := modernOverlayContentWidth(width)
 	leftLines := []string{
 		theme.modalMeta.Render(fmt.Sprintf("query %q  •  %d rows", picker.Query(), len(rows))),
 	}
@@ -1205,9 +1200,7 @@ func renderModernWorkspacePickerOverlay(theme modernShellTheme, picker *workspac
 		leftLines = append(leftLines, theme.listItem.Render("  "+label))
 	}
 	rightLines := trimModernOverlayLines(renderModernWorkspacePickerDetail(theme, picker, contentWidth))
-	actionLines := []string{
-		theme.modalBody.Render(truncateModernLine("Enter jump  •  / filter  •  Esc close", width)),
-	}
+	actionLines := renderModernOverlayBodyTokenLines(theme, width, "Enter jump", "/ filter", "Esc close")
 	return renderModernOverlayPanels(theme, width, "Tree panel", leftLines, "Target panel", rightLines, "Action bar", actionLines)
 }
 
@@ -1256,7 +1249,7 @@ func renderModernTerminalPickerOverlay(theme modernShellTheme, picker *terminalp
 	}
 	rows := picker.VisibleRows()
 	selectedRow, hasSelected := picker.SelectedRow()
-	contentWidth := max(18, width/2-4)
+	contentWidth := modernOverlayContentWidth(width)
 	leftLines := []string{
 		theme.modalMeta.Render(fmt.Sprintf("query %q  •  %d rows", picker.Query(), len(rows))),
 	}
@@ -1284,9 +1277,7 @@ func renderModernTerminalPickerOverlay(theme modernShellTheme, picker *terminalp
 		leftLines = append(leftLines, theme.listItem.Render("  "+text))
 	}
 	rightLines := trimModernOverlayLines(renderModernTerminalPickerDetail(theme, picker, contentWidth))
-	actionLines := []string{
-		theme.modalBody.Render(truncateModernLine("Enter connect  •  n create new  •  Esc close", width)),
-	}
+	actionLines := renderModernOverlayBodyTokenLines(theme, width, "Enter connect", "n create new", "Esc close")
 	return renderModernOverlayPanels(theme, width, "Results panel", leftLines, "Detail panel", rightLines, "Action bar", actionLines)
 }
 
@@ -1342,7 +1333,7 @@ func renderModernLayoutResolveOverlay(theme modernShellTheme, resolve *layoutres
 	}
 	rows := resolve.Rows()
 	selectedRow, hasSelected := resolve.SelectedRow()
-	contentWidth := max(18, width/2-4)
+	contentWidth := modernOverlayContentWidth(width)
 	leftLines := []string{
 		theme.modalMeta.Render(fmt.Sprintf("pane %s  •  role %s", resolve.PaneID, resolve.Role)),
 	}
@@ -1377,9 +1368,7 @@ func renderModernLayoutResolveOverlay(theme modernShellTheme, resolve *layoutres
 		rightLines = append(rightLines, "", theme.modalMeta.Render("Target"))
 		rightLines = append(rightLines, theme.modalBody.Render(truncateModernLine(resolve.Hint, contentWidth)))
 	}
-	actionLines := []string{
-		theme.modalBody.Render(truncateModernLine("Enter confirm  •  Esc close", width)),
-	}
+	actionLines := renderModernOverlayBodyTokenLines(theme, width, "Enter confirm", "Esc close")
 	return renderModernOverlayPanels(theme, width, "Choices panel", leftLines, "Target panel", rightLines, "Action bar", actionLines)
 }
 
@@ -1395,7 +1384,7 @@ func renderModernPromptOverlay(theme modernShellTheme, prompt *promptdomain.Stat
 	if prompt == nil {
 		return []string{theme.modalBody.Render("Prompt not ready.")}
 	}
-	contentWidth := max(18, width/2-4)
+	contentWidth := modernOverlayContentWidth(width)
 	if len(prompt.Fields) == 0 {
 		leftLines := []string{
 			theme.modalMeta.Render("draft mode"),
@@ -1407,9 +1396,7 @@ func renderModernPromptOverlay(theme modernShellTheme, prompt *promptdomain.Stat
 			theme.modalMeta.Render("Context"),
 			theme.modalBody.Render(truncateModernLine(renderModernPromptContext(prompt), contentWidth)),
 		}
-		actionLines := []string{
-			theme.modalBody.Render(truncateModernLine("Enter submit  •  Esc cancel", width)),
-		}
+		actionLines := renderModernOverlayBodyTokenLines(theme, width, "Enter submit", "Esc cancel")
 		return renderModernOverlayPanels(theme, width, "Fields panel", leftLines, "Context panel", rightLines, "Action bar", actionLines)
 	}
 	active := prompt.Active
@@ -1436,9 +1423,7 @@ func renderModernPromptOverlay(theme modernShellTheme, prompt *promptdomain.Stat
 		theme.modalMeta.Render("Active value"),
 		theme.modalBody.Render(truncateModernLine("value "+prompt.Fields[active].Value, contentWidth)),
 	}
-	actionLines := []string{
-		theme.modalBody.Render(truncateModernLine("Enter submit  •  Tab next field  •  Esc cancel", width)),
-	}
+	actionLines := renderModernOverlayBodyTokenLines(theme, width, "Enter submit", "Tab next field", "Esc cancel")
 	return renderModernOverlayPanels(theme, width, "Fields panel", leftLines, "Context panel", rightLines, "Action bar", actionLines)
 }
 
@@ -1463,7 +1448,7 @@ func renderModernOverlayPanels(theme modernShellTheme, width int, leftTitle stri
 	if len(actionLines) == 0 {
 		actionLines = []string{theme.modalBody.Render("No actions available.")}
 	}
-	if width < 56 {
+	if width < 64 {
 		return []string{
 			renderModernOverlaySectionPanel(theme, leftTitle, leftLines, width),
 			"",
@@ -1504,14 +1489,12 @@ func renderModernOverlaySectionPanel(theme modernShellTheme, title string, lines
 }
 
 func renderModernOverlayFooterPanel(theme modernShellTheme, state types.AppState, width int) string {
-	footer := renderModernOverlayFooter(theme, state.UI.Overlay.Kind, max(12, width-4))
-	if footer == "" {
+	footerLines := renderModernOverlayFooterLines(theme, state.UI.Overlay.Kind, max(12, width-4))
+	if len(footerLines) == 0 {
 		return ""
 	}
-	lines := []string{
-		footer,
-		theme.modalMeta.Render(truncateModernLine(renderModernOverlayStateLine(state), max(12, width-4))),
-	}
+	lines := append([]string{}, footerLines...)
+	lines = append(lines, theme.modalMeta.Render(truncateModernLine(renderModernOverlayStateLine(state), max(12, width-4))))
 	return renderModernOverlaySectionPanel(theme, "Footer", lines, width)
 }
 
@@ -1571,25 +1554,72 @@ func renderModernFloatingModeHint(state types.AppState) string {
 	return "move j/k  •  size H/J/K/L  •  c center  •  x close  •  Esc exit"
 }
 
-func renderModernOverlayFooter(theme modernShellTheme, kind types.OverlayKind, width int) string {
-	var text string
+func renderModernOverlayFooterLines(theme modernShellTheme, kind types.OverlayKind, width int) []string {
+	var items []string
 	switch kind {
 	case types.OverlayHelp:
-		text = "Esc close"
+		items = []string{"Esc close"}
 	case types.OverlayTerminalManager:
-		text = "Enter connect  •  t new tab  •  o floating  •  Esc close"
+		items = []string{"Enter connect", "t new tab", "o floating", "Esc close"}
 	case types.OverlayWorkspacePicker:
-		text = "Enter jump  •  / filter  •  Esc close"
+		items = []string{"Enter jump", "/ filter", "Esc close"}
 	case types.OverlayTerminalPicker:
-		text = "Enter connect  •  n create  •  Esc close"
+		items = []string{"Enter connect", "n create", "Esc close"}
 	case types.OverlayLayoutResolve:
-		text = "Enter confirm  •  Esc close"
+		items = []string{"Enter confirm", "Esc close"}
 	case types.OverlayPrompt:
-		text = "Enter submit  •  Tab next  •  Esc cancel"
+		items = []string{"Enter submit", "Tab next", "Esc cancel"}
 	default:
-		return ""
+		return nil
 	}
-	return theme.modalMeta.Render(truncateModernLine(text, width))
+	return renderModernOverlayMetaTokenLines(theme, width, items...)
+}
+
+func modernOverlayContentWidth(width int) int {
+	if width < 64 {
+		return max(18, width-4)
+	}
+	return max(18, width/2-4)
+}
+
+func renderModernOverlayBodyTokenLines(theme modernShellTheme, width int, items ...string) []string {
+	return renderModernOverlayTokenLines(width, items, func(line string) string {
+		return theme.modalBody.Render(line)
+	})
+}
+
+func renderModernOverlayMetaTokenLines(theme modernShellTheme, width int, items ...string) []string {
+	return renderModernOverlayTokenLines(width, items, func(line string) string {
+		return theme.modalMeta.Render(line)
+	})
+}
+
+func renderModernOverlayTokenLines(width int, items []string, render func(string) string) []string {
+	width = max(12, width-4)
+	filtered := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	rows := make([]string, 0, len(filtered))
+	current := filtered[0]
+	for _, item := range filtered[1:] {
+		candidate := current + "  •  " + item
+		if xansi.StringWidth(candidate) <= width {
+			current = candidate
+			continue
+		}
+		rows = append(rows, render(truncateModernLine(current, width)))
+		current = item
+	}
+	rows = append(rows, render(truncateModernLine(current, width)))
+	return rows
 }
 
 func renderModernTags(tags []terminalmanagerdomain.Tag) string {

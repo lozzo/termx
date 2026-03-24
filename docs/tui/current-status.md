@@ -42,6 +42,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把 modern overlay/modal 壳层往产品态推进：统一补上 `Context / State / Footer` chrome，`manager / workspace picker / terminal picker / layout resolve / prompt` 都会显式显示 return/selection/active 状态与统一 footer action panel，modal 外壳结构开始稳定
 - 本轮继续把 modern modal 正文结构统一化：`prompt` 与 `layout resolve` 不再走散文式正文，而是和 manager/picker 一样统一落到 `left/right/action` 分区面板模型，显式显示 `Fields panel / Context panel / Choices panel / Target panel / Action bar`
 - 本轮继续把 modern `help` modal 纳入统一产品态：不再只显示扁平 shortcut 文本，而是统一拆成 `Most used panel / Concepts panel / Action bar`，并显式带 `layer / mode` 上下文、owner/follower 概念与关闭语义
+- 本轮继续收口 modern modal 的默认尺寸可读性：overlay 总宽度预算、分栏切换阈值、`Action bar / Footer` 的 token 分行策略已统一调整，`terminal manager / workspace picker / terminal picker / layout resolve / prompt` 在默认 78 列下不再把关键操作提示截成省略号
 
 ---
 
@@ -255,6 +256,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 204. 第二百轮 TDD 已补上 modern overlay/modal 的统一 `Context / State / Footer` chrome，并完成 shell-only / default-run / 全量回归闭环
 205. 第二百零一轮 TDD 已补上 modern prompt / layout resolve 的分区面板正文，并完成 shell-only / default-run / 全量回归闭环
 206. 第二百零二轮 TDD 已补上 modern help modal 的分区面板正文、context/concepts/action 信息层，并完成 shell-only / default-run / 全量回归闭环
+207. 第二百零三轮 TDD 已补上 modern modal 的默认宽度预算、单列切换与 action/footer token 分行策略，并完成 shell-only / default-run / 全量回归闭环
 
 对应文档：
 
