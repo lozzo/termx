@@ -1826,6 +1826,66 @@ func TestE2ERunScenarioTerminalManagerMouseWheelMovesSelection(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioTerminalManagerMouseClickSelectsVisibleTerminal(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyDown},
+			} {
+				nextModel, cmd := model.Update(key)
+				model = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = model.Update(msg)
+						model = nextModel.(*btui.Model)
+					}
+				}
+			}
+
+			clickY := findLineIndexWithPrefix(model.View(), "  [terminal] api-dev")
+			if clickY < 0 {
+				t.Fatalf("expected terminal manager preview to expose api-dev row, got:\n%s", model.View())
+			}
+
+			nextModel, cmd := model.Update(tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      clickY,
+			})
+			model = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = model.Update(msg)
+					model = nextModel.(*btui.Model)
+				}
+			}
+
+			if view := model.View(); !strings.Contains(view, "terminal_manager_selected: term-1") || !strings.Contains(view, "terminal_manager_selected_label: api-dev") || !strings.Contains(view, "> [terminal] api-dev") {
+				t.Fatalf("expected terminal manager mouse click flow to select visible terminal, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioTerminalManagerSearchUpdatesView(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithTerminalManagerTargets()

@@ -1,6 +1,7 @@
 package bt
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/lozzow/termx/tui/app/intent"
 	"github.com/lozzow/termx/tui/app/reducer"
 	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
+	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
 	"github.com/lozzow/termx/tui/domain/types"
 )
 
@@ -142,26 +144,42 @@ func TestIntentMapperOverlayMouseWheelMapsSelectionMoves(t *testing.T) {
 		want  any
 	}{
 		{
-			name:  "workspace picker wheel down",
-			state: func() types.AppState { s := newAppStateWithSinglePane(); s.UI.Overlay = types.OverlayState{Kind: types.OverlayWorkspacePicker}; return s }(),
+			name: "workspace picker wheel down",
+			state: func() types.AppState {
+				s := newAppStateWithSinglePane()
+				s.UI.Overlay = types.OverlayState{Kind: types.OverlayWorkspacePicker}
+				return s
+			}(),
 			mouse: tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress},
 			want:  intent.WorkspacePickerMoveIntent{Delta: 1},
 		},
 		{
-			name:  "terminal picker wheel up",
-			state: func() types.AppState { s := newAppStateWithSinglePane(); s.UI.Overlay = types.OverlayState{Kind: types.OverlayTerminalPicker}; return s }(),
+			name: "terminal picker wheel up",
+			state: func() types.AppState {
+				s := newAppStateWithSinglePane()
+				s.UI.Overlay = types.OverlayState{Kind: types.OverlayTerminalPicker}
+				return s
+			}(),
 			mouse: tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress},
 			want:  intent.TerminalPickerMoveIntent{Delta: -1},
 		},
 		{
-			name:  "terminal manager wheel down",
-			state: func() types.AppState { s := newAppStateWithSinglePane(); s.UI.Overlay = types.OverlayState{Kind: types.OverlayTerminalManager}; return s }(),
+			name: "terminal manager wheel down",
+			state: func() types.AppState {
+				s := newAppStateWithSinglePane()
+				s.UI.Overlay = types.OverlayState{Kind: types.OverlayTerminalManager}
+				return s
+			}(),
 			mouse: tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress},
 			want:  intent.TerminalManagerMoveIntent{Delta: 1},
 		},
 		{
-			name:  "layout resolve wheel up",
-			state: func() types.AppState { s := newAppStateWithSinglePane(); s.UI.Overlay = types.OverlayState{Kind: types.OverlayLayoutResolve}; return s }(),
+			name: "layout resolve wheel up",
+			state: func() types.AppState {
+				s := newAppStateWithSinglePane()
+				s.UI.Overlay = types.OverlayState{Kind: types.OverlayLayoutResolve}
+				return s
+			}(),
 			mouse: tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress},
 			want:  intent.LayoutResolveMoveIntent{Delta: -1},
 		},
@@ -169,7 +187,7 @@ func TestIntentMapperOverlayMouseWheelMapsSelectionMoves(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			intents := mapper.MapMouse(tc.state, tc.mouse)
+			intents := mapper.MapMouse(tc.state, tc.mouse, "")
 			if len(intents) != 1 {
 				t.Fatalf("expected one intent, got %d", len(intents))
 			}
@@ -177,6 +195,37 @@ func TestIntentMapperOverlayMouseWheelMapsSelectionMoves(t *testing.T) {
 				t.Fatalf("expected %+v, got %+v", tc.want, intents[0])
 			}
 		})
+	}
+}
+
+func TestIntentMapperTerminalManagerMouseClickSelectsVisibleTerminalRow(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+	state := newAppStateWithTerminalManagerTargets()
+	manager := state.UI.Overlay.Data.(*terminalmanagerdomain.State)
+	manager.MoveSelection(1)
+	view := strings.Join([]string{
+		"termx",
+		"terminal_manager_rows: | terminal_manager_rows_rendered: 4 | terminal_manager_rows_truncated: true",
+		"  [header] VISIBLE",
+		"  [terminal] api-dev",
+		"  [header] PARKED",
+		"> [terminal] build-log",
+	}, "\n")
+
+	intents := mapper.MapMouse(state, tea.MouseMsg{
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		Y:      3,
+	}, view)
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	move, ok := intents[0].(intent.TerminalManagerMoveIntent)
+	if !ok {
+		t.Fatalf("expected terminal manager move intent, got %T", intents[0])
+	}
+	if move.Delta != -1 {
+		t.Fatalf("expected click on visible api-dev row to move selection back once, got %+v", move)
 	}
 }
 
@@ -463,6 +512,49 @@ func newAppStateWithTwoWorkspaces() types.AppState {
 		TerminalID:       types.TerminalID("term-float"),
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-float")},
 		OwnerPaneID:      types.PaneID("pane-float"),
+	}
+	return state
+}
+
+func newAppStateWithTerminalManagerTargets() types.AppState {
+	state := newAppStateWithSinglePane()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	pane := tab.Panes[types.PaneID("pane-1")]
+	pane.SlotState = types.PaneSlotConnected
+	pane.TerminalID = types.TerminalID("term-1")
+	tab.Panes[types.PaneID("pane-1")] = pane
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:      types.TerminalID("term-1"),
+		Name:    "api-dev",
+		State:   types.TerminalRunStateRunning,
+		Command: []string{"npm", "run", "dev"},
+		Visible: true,
+	}
+	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
+		ID:      types.TerminalID("term-2"),
+		Name:    "build-log",
+		State:   types.TerminalRunStateRunning,
+		Command: []string{"tail", "-f", "build.log"},
+		Tags:    map[string]string{"group": "build"},
+	}
+	state.Domain.Terminals[types.TerminalID("term-3")] = types.TerminalRef{
+		ID:      types.TerminalID("term-3"),
+		Name:    "ops-watch",
+		State:   types.TerminalRunStateRunning,
+		Command: []string{"journalctl", "-f"},
+		Tags:    map[string]string{"team": "ops"},
+	}
+	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-1"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1")},
+		OwnerPaneID:      types.PaneID("pane-1"),
+	}
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayTerminalManager,
+		Data: terminalmanagerdomain.NewState(state.Domain, state.UI.Focus),
 	}
 	return state
 }

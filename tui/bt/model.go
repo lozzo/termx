@@ -144,7 +144,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.MouseMsg:
-		intents := m.mapper.MapMouse(m.state, msgValue)
+		intents := m.mapper.MapMouse(m.state, msgValue, m.View())
 		if len(intents) > 0 {
 			return m.applyIntents(intents)
 		}

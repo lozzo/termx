@@ -16,7 +16,7 @@ type Clock interface {
 
 type IntentMapper interface {
 	MapKey(state types.AppState, msg tea.KeyMsg) []intent.Intent
-	MapMouse(state types.AppState, msg tea.MouseMsg) []intent.Intent
+	MapMouse(state types.AppState, msg tea.MouseMsg, view string) []intent.Intent
 }
 
 type Config struct {
@@ -71,18 +71,30 @@ func (m DefaultIntentMapper) MapKey(state types.AppState, msg tea.KeyMsg) []inte
 	return m.mapRootKey(state, msg)
 }
 
-// MapMouse 先只接住最小滚轮导航，避免一开始就把点击命中、坐标映射和布局耦合进输入层。
-// 这样可以先让 overlay 列表获得基础鼠标可用性，后续再继续往 pane 命中扩展。
-func (m DefaultIntentMapper) MapMouse(state types.AppState, msg tea.MouseMsg) []intent.Intent {
+// MapMouse 统一处理 overlay 的滚轮和最小点击命中。
+// 这里仍然只产出 intent，不直接改状态，让鼠标、键盘继续共享同一套 reducer 路径。
+func (m DefaultIntentMapper) MapMouse(state types.AppState, msg tea.MouseMsg, view string) []intent.Intent {
 	switch state.UI.Overlay.Kind {
 	case types.OverlayLayoutResolve:
-		return mapLayoutResolveMouse(msg)
+		if intents := mapLayoutResolveMouse(msg); len(intents) > 0 {
+			return intents
+		}
+		return mapLayoutResolveMouseClick(state, msg, view)
 	case types.OverlayTerminalPicker:
-		return mapTerminalPickerMouse(msg)
+		if intents := mapTerminalPickerMouse(msg); len(intents) > 0 {
+			return intents
+		}
+		return mapTerminalPickerMouseClick(state, msg, view)
 	case types.OverlayWorkspacePicker:
-		return mapWorkspacePickerMouse(msg)
+		if intents := mapWorkspacePickerMouse(msg); len(intents) > 0 {
+			return intents
+		}
+		return mapWorkspacePickerMouseClick(state, msg, view)
 	case types.OverlayTerminalManager:
-		return mapTerminalManagerMouse(msg)
+		if intents := mapTerminalManagerMouse(msg); len(intents) > 0 {
+			return intents
+		}
+		return mapTerminalManagerMouseClick(state, msg, view)
 	default:
 		return nil
 	}

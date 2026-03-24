@@ -19,6 +19,7 @@ type stubIntentMapper struct {
 	intents []intent.Intent
 	keys    []tea.KeyMsg
 	mice    []tea.MouseMsg
+	views   []string
 }
 
 func (m *stubIntentMapper) MapKey(_ types.AppState, msg tea.KeyMsg) []intent.Intent {
@@ -26,8 +27,9 @@ func (m *stubIntentMapper) MapKey(_ types.AppState, msg tea.KeyMsg) []intent.Int
 	return m.intents
 }
 
-func (m *stubIntentMapper) MapMouse(_ types.AppState, msg tea.MouseMsg) []intent.Intent {
+func (m *stubIntentMapper) MapMouse(_ types.AppState, msg tea.MouseMsg, view string) []intent.Intent {
 	m.mice = append(m.mice, msg)
+	m.views = append(m.views, view)
 	return m.intents
 }
 
@@ -288,6 +290,9 @@ func TestModelUpdateRunsMapperReducerAndEffectHandlerForMouse(t *testing.T) {
 	}
 	if len(mapper.mice) != 1 || mapper.mice[0].Button != tea.MouseButtonWheelDown {
 		t.Fatalf("expected mapper to receive wheel-down mouse event, got %+v", mapper.mice)
+	}
+	if len(mapper.views) != 1 || mapper.views[0] != "state" {
+		t.Fatalf("expected mapper to receive current rendered view, got %+v", mapper.views)
 	}
 	if len(rd.intents) != 1 {
 		t.Fatalf("expected reducer to receive one intent, got %d", len(rd.intents))

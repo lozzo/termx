@@ -1078,3 +1078,12 @@ func findLineWithPrefix(view string, prefix string) string {
 	}
 	return ""
 }
+
+func findLineIndexWithPrefix(view string, prefix string) int {
+	for index, line := range strings.Split(view, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return index
+		}
+	}
+	return -1
+}
