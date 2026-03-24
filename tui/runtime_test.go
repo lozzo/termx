@@ -806,6 +806,9 @@ func TestE2ERunScenarioDefaultModernFloatingWorkbenchRendersWindowDeck(t *testin
 			if !strings.Contains(stripped, "Floating workbench  •  active api-dev  •  pane float-1") || !strings.Contains(stripped, "Top build-log  •  pane float-2  •  stack 2") || !strings.Contains(stripped, "Layer floating  •  mode none  •  Ctrl-o float") {
 				t.Fatalf("expected default modern floating view to expose floating chrome summary, got:\n%s", view)
 			}
+			if !strings.Contains(stripped, "Workbench shell") || !strings.Contains(stripped, "Signals & Keys") || !strings.Contains(stripped, "path main / shell / floating / float-1") || !strings.Contains(stripped, "role owner  •  slot connected  •  state running  •  layer floating") || !strings.Contains(stripped, "terminal term-1") || !strings.Contains(stripped, "Ctrl-o float") {
+				t.Fatalf("expected default modern floating view to expose structured workbench hero panels, got:\n%s", view)
+			}
 			if !strings.Contains(stripped, "Deck active float-1  •  top float-2  •  windows 2") {
 				t.Fatalf("expected default modern floating view to expose compact deck routing summary, got:\n%s", view)
 			}
@@ -984,6 +987,40 @@ func TestE2ERunScenarioDefaultModernHelpOverlayRendersStructuredModal(t *testing
 	})
 	if err != nil {
 		t.Fatalf("expected default modern help scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioDefaultModernOverlayBackdropShowsStructuredPausedContext(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithActiveTerminalMetadata()
+	initial.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayHelp,
+		ReturnFocus: initial.UI.Focus,
+	}
+	initial.UI.Focus.Layer = types.FocusLayerOverlay
+	initial.UI.Focus.OverlayTarget = types.OverlayHelp
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			stripped := stripANSIRuntimeView(view)
+			if !strings.Contains(stripped, "Backdrop workbench") || !strings.Contains(stripped, "Active pane") || !strings.Contains(stripped, "pane api-dev  •  owner  •  connected  •  terminal term-1") || !strings.Contains(stripped, "Location") || !strings.Contains(stripped, "main / shell / tiled / pane-1") || !strings.Contains(stripped, "Paused shell") || !strings.Contains(stripped, "overlay help  •  focus overlay  •  return tiled:ws-1/tab-1/pane-1") {
+				t.Fatalf("expected default modern overlay backdrop to expose structured paused context, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected default modern backdrop scenario to succeed, got %v", err)
 	}
 }
 

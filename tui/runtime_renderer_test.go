@@ -446,6 +446,9 @@ func TestRuntimeRendererShellOnlyRendersSplitWorkbenchAsPaneCanvas(t *testing.T)
 	if !strings.Contains(stripped, "Split workbench  •  active api-dev  •  2 tiled panes") || !strings.Contains(stripped, "Layout vertical 50/50  •  depth 1  •  leaves 2") || !strings.Contains(stripped, "Focus tiled  •  Ctrl-p pane  •  Ctrl-f picker  •  Ctrl-g global") {
 		t.Fatalf("expected shell-only split renderer to expose layout summary and navigation hint, got:\n%s", view)
 	}
+	if !strings.Contains(stripped, "Workbench shell") || !strings.Contains(stripped, "Signals & Keys") || !strings.Contains(stripped, "path main / shell / tiled / pane-1") || !strings.Contains(stripped, "role owner  •  slot connected  •  state running  •  layer tiled") || !strings.Contains(stripped, "terminal term-1") || !strings.Contains(stripped, "Ctrl-w workspace") || !strings.Contains(stripped, "? help") {
+		t.Fatalf("expected shell-only split renderer to expose structured workbench hero panels, got:\n%s", view)
+	}
 	if !strings.Contains(stripped, "Terminal  Runtime") || !strings.Contains(stripped, "Connection  terminal term-1") || !strings.Contains(stripped, "Connection  terminal term-2") || !strings.Contains(stripped, "Command  cmd npm run dev") || !strings.Contains(stripped, "Command  cmd tail -f build.log") || !strings.Contains(stripped, "Tags  tags env=dev,service=api") || !strings.Contains(stripped, "Tags  tags group=build") {
 		t.Fatalf("expected shell-only split renderer to expose structured terminal metadata in pane cards, got:\n%s", view)
 	}
@@ -506,6 +509,9 @@ func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing
 	}
 	if !strings.Contains(stripped, "Window deck  •  2 windows") || !strings.Contains(stripped, "Floating workbench  •  active api-dev  •  pane float-1") || !strings.Contains(stripped, "Top build-log  •  pane float-2  •  stack 2") || !strings.Contains(stripped, "Layer floating  •  mode none  •  Ctrl-o float") {
 		t.Fatalf("expected shell-only floating renderer to expose deck summary, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "Workbench shell") || !strings.Contains(stripped, "Signals & Keys") || !strings.Contains(stripped, "path main / shell / floating / float-1") || !strings.Contains(stripped, "role owner  •  slot connected  •  state running  •  layer floating") || !strings.Contains(stripped, "terminal term-1") || !strings.Contains(stripped, "Ctrl-o float") {
+		t.Fatalf("expected shell-only floating renderer to expose structured workbench hero panels, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "Deck active float-1  •  top float-2  •  windows 2") {
 		t.Fatalf("expected shell-only floating renderer to expose compact deck routing summary, got:\n%s", view)
@@ -623,6 +629,23 @@ func TestRuntimeRendererShellOnlyRendersStructuredHelpOverlay(t *testing.T) {
 	}
 	if !strings.Contains(stripped, "pane is the view slot") || !strings.Contains(stripped, "owner can connect") || !strings.Contains(stripped, "close pane != stop terminal != detach TUI") || !strings.Contains(stripped, "Esc close  •  ? toggle help") {
 		t.Fatalf("expected shell-only help overlay to render product concepts and actions, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererShellOnlyRendersStructuredOverlayBackdropContext(t *testing.T) {
+	debugVisible := false
+	state := runtimeStateWithActiveTerminalMetadata()
+	state.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayHelp,
+		ReturnFocus: state.UI.Focus,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+	state.UI.Focus.OverlayTarget = types.OverlayHelp
+
+	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
+	stripped := stripANSIForTest(view)
+	if !strings.Contains(stripped, "Backdrop workbench") || !strings.Contains(stripped, "Active pane") || !strings.Contains(stripped, "pane api-dev  •  owner  •  connected  •  terminal term-1") || !strings.Contains(stripped, "Location") || !strings.Contains(stripped, "main / shell / tiled / pane-1") || !strings.Contains(stripped, "Paused shell") || !strings.Contains(stripped, "overlay help  •  focus overlay  •  return tiled:ws-1/tab-1/pane-1") {
+		t.Fatalf("expected shell-only overlay backdrop to expose structured paused context, got:\n%s", view)
 	}
 }
 

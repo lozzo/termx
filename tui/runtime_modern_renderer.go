@@ -315,8 +315,15 @@ func (r modernScreenShellRenderer) renderSingleWorkbench(theme modernShellTheme,
 		panelStyle = theme.activePanel
 	}
 	bodyWidth := max(20, width-4)
+	summaryLines := []string{
+		theme.panelTitle.Render(fmt.Sprintf("Single workbench  •  active %s", renderPaneTitle(state, pane))),
+		theme.panelMeta.Render(renderModernPaneTitleBar(state, pane, active, 0, 0)),
+		theme.panelMeta.Render(renderModernContextRuntimeLine(state, pane)),
+	}
+	hero := r.renderWorkbenchHero(theme, state, pane, width, "Workbench shell", summaryLines)
 	lines := r.renderPanePanelLines(theme, state, pane, bodyWidth, max(6, height-4), true, active, 0, 0)
-	return panelStyle.Width(width - 2).Render(strings.Join(lines, "\n"))
+	card := panelStyle.Width(width - 2).Render(strings.Join(lines, "\n"))
+	return lipgloss.JoinVertical(lipgloss.Left, hero, card)
 }
 
 func (r modernScreenShellRenderer) renderPanePreview(terminalID types.TerminalID) string {
@@ -339,10 +346,13 @@ func (r modernScreenShellRenderer) renderPanePreview(terminalID types.TerminalID
 }
 
 func (r modernScreenShellRenderer) renderSplitWorkbench(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, tiledPaneIDs []types.PaneID, floatingPaneIDs []types.PaneID, width, height int) string {
-	lines := []string{
+	summaryLines := []string{
 		theme.panelTitle.Render(renderModernSplitWorkbenchTitleLine(state, pane, len(tiledPaneIDs))),
 		theme.panelMeta.Render(renderModernSplitLayoutSummary(tab, len(tiledPaneIDs))),
 		theme.panelMeta.Render(renderModernSplitActionLine(state)),
+	}
+	lines := []string{
+		r.renderWorkbenchHero(theme, state, pane, width, "Workbench shell", summaryLines),
 	}
 	canvasHeight := max(8, height-3)
 	if len(floatingPaneIDs) > 0 {
@@ -362,7 +372,7 @@ func (r modernScreenShellRenderer) renderSplitWorkbench(theme modernShellTheme, 
 }
 
 func (r modernScreenShellRenderer) renderFloatingWorkbench(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, width, height int) string {
-	lines := []string{
+	summaryLines := []string{
 		theme.panelTitle.Render(renderModernFloatingWorkbenchTitleLine(state, tab, floatingPaneIDs)),
 		theme.panelMeta.Render(renderModernFloatingWorkbenchFocusLine(state, tab, floatingPaneIDs)),
 		theme.panelMeta.Render(renderModernFloatingWorkbenchStateLine(state, tab, floatingPaneIDs)),
@@ -370,15 +380,62 @@ func (r modernScreenShellRenderer) renderFloatingWorkbench(theme modernShellThem
 		theme.panelMeta.Render(renderModernFloatingWorkbenchControlLine(state)),
 	}
 	if hint := renderModernFloatingModeHint(state); hint != "" {
-		lines = append(lines, theme.panelMeta.Render(hint))
+		summaryLines = append(summaryLines, theme.panelMeta.Render(hint))
+	}
+	lines := []string{
+		r.renderWorkbenchHero(theme, state, pane, width, "Workbench shell", summaryLines),
 	}
 	deckWidth := min(40, max(34, width/2-2))
 	mainWidth := max(30, width-deckWidth-1)
-	bodyHeight := max(8, height-len(lines))
+	bodyHeight := max(8, height-3)
 	main := r.renderPaneWorkbenchCard(theme, state, pane, mainWidth, bodyHeight, true)
 	deck := r.renderFloatingDeck(theme, state, tab, floatingPaneIDs, deckWidth, bodyHeight)
 	lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Top, main, " ", deck))
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+func (r modernScreenShellRenderer) renderWorkbenchHero(theme modernShellTheme, state types.AppState, pane types.PaneState, width int, title string, summaryLines []string) string {
+	leftLines := trimModernOverlayLines(summaryLines)
+	if len(leftLines) == 0 {
+		leftLines = []string{theme.panelMeta.Render("Workbench summary unavailable.")}
+	}
+	rightLines := []string{
+		theme.panelMeta.Render(renderModernWorkbenchLocationLine(state, pane)),
+		theme.panelMeta.Render(renderModernWorkbenchSignalLine(state, pane)),
+	}
+	if pane.TerminalID != "" {
+		rightLines = append(rightLines, theme.panelMeta.Render("terminal "+string(pane.TerminalID)))
+	}
+	rightLines = append(rightLines,
+		"",
+		theme.panelMeta.Render("Quick actions"),
+	)
+	for _, line := range renderModernWorkbenchKeyLines(theme, width, pane) {
+		rightLines = append(rightLines, line)
+	}
+	return renderModernWorkbenchPanels(theme, width, title, leftLines, "Signals & Keys", rightLines)
+}
+
+func renderModernWorkbenchPanels(theme modernShellTheme, width int, leftTitle string, leftLines []string, rightTitle string, rightLines []string) string {
+	if width < 18 {
+		width = 18
+	}
+	if width < 110 {
+		return lipgloss.JoinVertical(
+			lipgloss.Left,
+			renderModernOverlaySectionPanel(theme, leftTitle, leftLines, width),
+			"",
+			renderModernOverlaySectionPanel(theme, rightTitle, rightLines, width),
+		)
+	}
+	leftWidth := max(36, width*2/3)
+	rightWidth := max(24, width-leftWidth-1)
+	return lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		renderModernOverlaySectionPanel(theme, leftTitle, leftLines, leftWidth),
+		" ",
+		renderModernOverlaySectionPanel(theme, rightTitle, rightLines, rightWidth),
+	)
 }
 
 // renderSplitCanvasNode 递归落地 split 树，让默认产品态直接显示多 pane 盒模型。
@@ -457,7 +514,7 @@ func (r modernScreenShellRenderer) renderFloatingDeck(theme modernShellTheme, st
 	if len(floatingPaneIDs) == 0 {
 		return theme.mutedPanel.Width(width - 2).Height(height - 2).Render(strings.Join([]string{header, theme.panelMeta.Render("No floating windows")}, "\n"))
 	}
-	cardHeight := 8
+	cardHeight := 9
 	cards := make([]string, 0, len(floatingPaneIDs))
 	remainingHeight := max(0, height-1)
 	for index, paneID := range floatingPaneIDs {
@@ -877,7 +934,7 @@ func renderModernScreenFrameLine(text string, innerWidth int) string {
 }
 
 func (r modernScreenShellRenderer) renderOverlayViewport(theme modernShellTheme, state types.AppState, pane types.PaneState, width, height int) string {
-	backdropHeight := min(8, max(6, height/4+1))
+	backdropHeight := min(14, max(12, height/3+2))
 	panelWidth := min(width-2, max(64, width*5/6))
 	if panelWidth <= 0 {
 		panelWidth = width
@@ -906,8 +963,15 @@ func (r modernScreenShellRenderer) renderOverlayBackdrop(theme modernShellTheme,
 	if context := renderModernBackdropContextLine(state); context != "" {
 		lines = append(lines, theme.panelMeta.Render(context))
 	}
-	lines = normalizeModernPanelLines(lines, max(16, width-4), max(4, height-2))
-	return theme.backdropPanel.Width(width - 2).Height(height - 1).Render(strings.Join(lines, "\n"))
+	lines = append(lines,
+		theme.panelMeta.Render("Active pane"),
+		theme.terminalBody.Render(truncateModernLine(renderModernBackdropPaneLine(state, pane), max(16, width-4))),
+		theme.panelMeta.Render("Location"),
+		theme.terminalBody.Render(truncateModernLine(renderModernBackdropLocationLine(state, pane), max(16, width-4))),
+		theme.panelMeta.Render("Paused shell"),
+		theme.terminalBody.Render(truncateModernLine(renderModernBackdropPausedLine(state), max(16, width-4))),
+	)
+	return theme.backdropPanel.Width(width - 2).Render(strings.Join(lines, "\n"))
 }
 
 func (r modernScreenShellRenderer) renderOverlayPanel(theme modernShellTheme, state types.AppState, width int) string {
@@ -1913,6 +1977,69 @@ func renderModernContextRuntimeLine(state types.AppState, pane types.PaneState) 
 		}
 	}
 	return fmt.Sprintf("state %s  •  layer %s", stateLabel, renderModernPrimaryLayer(state))
+}
+
+func renderModernWorkbenchLocationLine(state types.AppState, pane types.PaneState) string {
+	workspaceID := state.Domain.ActiveWorkspaceID
+	workspace, ok := state.Domain.Workspaces[workspaceID]
+	if !ok {
+		return "path unavailable"
+	}
+	tabID := workspace.ActiveTabID
+	tab, ok := workspace.Tabs[tabID]
+	if !ok {
+		return "path unavailable"
+	}
+	return renderModernPanePath(workspace, tab, pane)
+}
+
+func renderModernWorkbenchSignalLine(state types.AppState, pane types.PaneState) string {
+	role := renderModernPaneRole(state, pane)
+	parts := []string{
+		"role " + role,
+		"slot " + string(pane.SlotState),
+		renderModernContextRuntimeLine(state, pane),
+	}
+	return strings.Join(parts, "  •  ")
+}
+
+func renderModernWorkbenchKeyLines(theme modernShellTheme, width int, pane types.PaneState) []string {
+	items := []string{
+		"Ctrl-p pane",
+		"Ctrl-w workspace",
+		"Ctrl-f picker",
+		"Ctrl-g global",
+		"? help",
+	}
+	if pane.Kind == types.PaneKindFloating {
+		items = append(items, "Ctrl-o float")
+	}
+	return renderModernOverlayMetaTokenLines(theme, max(18, width/2), items...)
+}
+
+func renderModernBackdropPaneLine(state types.AppState, pane types.PaneState) string {
+	parts := []string{
+		"pane " + renderPaneTitle(state, pane),
+		renderModernPaneRole(state, pane),
+		string(pane.SlotState),
+	}
+	if pane.TerminalID != "" {
+		parts = append(parts, "terminal "+string(pane.TerminalID))
+	}
+	return strings.Join(parts, "  •  ")
+}
+
+func renderModernBackdropLocationLine(state types.AppState, pane types.PaneState) string {
+	line := renderModernWorkbenchLocationLine(state, pane)
+	return strings.TrimPrefix(line, "path ")
+}
+
+func renderModernBackdropPausedLine(state types.AppState) string {
+	line := fmt.Sprintf("overlay %s  •  focus %s", state.UI.Overlay.Kind, state.UI.Focus.Layer)
+	if returnFocus := renderWireframeReturnFocus(state.UI.Overlay.ReturnFocus); returnFocus != "" {
+		line += "  •  return " + returnFocus
+	}
+	return line
 }
 
 func renderModernDetachedFloatingLabel(state types.AppState, pane types.PaneState) string {
