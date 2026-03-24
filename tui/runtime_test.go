@@ -1720,6 +1720,76 @@ func TestE2ERunScenarioCreateWorkspacePromptSubmitCreatesWorkspace(t *testing.T)
 	}
 }
 
+func TestE2ERunScenarioCreateWorkspacePromptMouseClickOnSubmitCreatesWorkspace(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithWorkspacePickerTarget()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlW},
+				{Type: tea.KeyUp},
+				{Type: tea.KeyUp},
+				{Type: tea.KeyUp},
+				{Type: tea.KeyEnter},
+				{Type: tea.KeyRunes, Runes: []rune("ops-cente")},
+				{Type: tea.KeyBackspace},
+				{Type: tea.KeyRunes, Runes: []rune("er")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			clickY := findLineIndexWithPrefix(current.View(), "  [submit] submit")
+			if clickY < 0 {
+				t.Fatalf("expected create workspace prompt to expose submit action, got:\n%s", current.View())
+			}
+			nextModel, cmd := current.Update(tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      clickY,
+			})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "workspace: ops-center") || !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "prompt_title: create workspace") {
+				t.Fatalf("expected create workspace prompt mouse submit flow to create workspace and close prompt, got:\n%s", view)
+			}
+			if current.State().Domain.ActiveWorkspaceID == types.WorkspaceID("ws-1") {
+				t.Fatalf("expected active workspace to switch after prompt mouse submit, got %+v", current.State().Domain.ActiveWorkspaceID)
+			}
+			workspace := current.State().Domain.Workspaces[current.State().Domain.ActiveWorkspaceID]
+			if workspace.Name != "ops-center" {
+				t.Fatalf("expected workspace created from prompt draft, got %+v", workspace)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioCreateWorkspacePromptEscCancels(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithWorkspacePickerTarget()
@@ -1748,6 +1818,66 @@ func TestE2ERunScenarioCreateWorkspacePromptEscCancels(t *testing.T) {
 			}
 			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "workspace: main") || strings.Contains(view, "prompt_title: create workspace") || strings.Contains(view, "focus_overlay_target:") {
 				t.Fatalf("expected create workspace prompt esc flow to cancel and restore pane, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioCreateWorkspacePromptMouseClickOnCancelCancels(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithWorkspacePickerTarget()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlW},
+				{Type: tea.KeyUp},
+				{Type: tea.KeyUp},
+				{Type: tea.KeyUp},
+				{Type: tea.KeyEnter},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			clickY := findLineIndexWithPrefix(current.View(), "  [cancel] cancel")
+			if clickY < 0 {
+				t.Fatalf("expected create workspace prompt to expose cancel action, got:\n%s", current.View())
+			}
+			nextModel, cmd := current.Update(tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      clickY,
+			})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "workspace: main") || strings.Contains(view, "prompt_title: create workspace") || strings.Contains(view, "focus_overlay_target:") {
+				t.Fatalf("expected create workspace prompt mouse cancel flow to restore pane, got:\n%s", view)
 			}
 			return nil
 		},
@@ -2376,6 +2506,146 @@ func TestE2ERunScenarioMetadataPromptTabSubmitUpdatesTerminal(t *testing.T) {
 	}
 	if client.metadataCalls[0].tags["group"] != "build" || client.metadataCalls[0].tags["env"] != "prod" {
 		t.Fatalf("unexpected metadata call tags: %+v", client.metadataCalls[0].tags)
+	}
+}
+
+func TestE2ERunScenarioMetadataPromptMouseClickOnSubmitUpdatesTerminal(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyDown},
+				{Type: tea.KeyRunes, Runes: []rune("e")},
+				{Type: tea.KeyRunes, Runes: []rune("-v2")},
+				{Type: tea.KeyTab},
+				{Type: tea.KeyRunes, Runes: []rune(",env=prod")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			clickY := findLineIndexWithPrefix(current.View(), "  [submit] submit")
+			if clickY < 0 {
+				t.Fatalf("expected metadata prompt to expose submit action, got:\n%s", current.View())
+			}
+			nextModel, cmd := current.Update(tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      clickY,
+			})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "prompt_title: edit terminal metadata") {
+				t.Fatalf("expected metadata prompt mouse submit flow to close prompt, got:\n%s", view)
+			}
+			terminal := current.State().Domain.Terminals[types.TerminalID("term-2")]
+			if terminal.Name != "build-log-v2" {
+				t.Fatalf("expected metadata prompt to update terminal name, got %+v", terminal)
+			}
+			if terminal.Tags["group"] != "build" || terminal.Tags["env"] != "prod" {
+				t.Fatalf("expected metadata prompt to update terminal tags, got %+v", terminal.Tags)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+	if len(client.metadataCalls) != 1 {
+		t.Fatalf("expected one metadata call, got %d", len(client.metadataCalls))
+	}
+	if client.metadataCalls[0].terminalID != "term-2" || client.metadataCalls[0].name != "build-log-v2" {
+		t.Fatalf("unexpected metadata call payload: %+v", client.metadataCalls[0])
+	}
+	if client.metadataCalls[0].tags["group"] != "build" || client.metadataCalls[0].tags["env"] != "prod" {
+		t.Fatalf("unexpected metadata call tags: %+v", client.metadataCalls[0].tags)
+	}
+}
+
+func TestE2ERunScenarioMetadataPromptMouseClickOnCancelClosesPrompt(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyDown},
+				{Type: tea.KeyRunes, Runes: []rune("e")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			clickY := findLineIndexWithPrefix(current.View(), "  [cancel] cancel")
+			if clickY < 0 {
+				t.Fatalf("expected metadata prompt to expose cancel action, got:\n%s", current.View())
+			}
+			nextModel, cmd := current.Update(tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      clickY,
+			})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "prompt_title: edit terminal metadata") || strings.Contains(view, "focus_overlay_target:") {
+				t.Fatalf("expected metadata prompt mouse cancel flow to close prompt, got:\n%s", view)
+			}
+			if len(client.metadataCalls) != 0 {
+				t.Fatalf("expected mouse cancel to avoid metadata call, got %d", len(client.metadataCalls))
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
 	}
 }
 

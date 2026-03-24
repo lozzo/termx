@@ -843,11 +843,17 @@ func TestRuntimeRendererRendersPromptOverlay(t *testing.T) {
 	if !strings.Contains(view, "prompt_fields:") {
 		t.Fatalf("expected prompt fields section in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "prompt_actions:") || !strings.Contains(view, "prompt_actions_rendered: 2") {
+		t.Fatalf("expected prompt actions metadata in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "  [name] Name: build-log") {
 		t.Fatalf("expected name field in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "> [tags] Tags: group=build") {
 		t.Fatalf("expected active tags field in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "  [submit] submit") || !strings.Contains(view, "  [cancel] cancel") {
+		t.Fatalf("expected prompt action rows in rendered view, got:\n%s", view)
 	}
 }
 
@@ -881,6 +887,27 @@ func TestRuntimeRendererTruncatesPromptFieldsAroundActiveField(t *testing.T) {
 	}
 	if strings.Contains(view, "[f1] F1: v1") || strings.Contains(view, "[f2] F2: v2") {
 		t.Fatalf("expected leading prompt fields to be truncated, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersPromptActionsForDraftPrompt(t *testing.T) {
+	state := runtimeStateWithWorkspacePickerTarget()
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayPrompt,
+		Data: &promptdomain.State{
+			Kind:  promptdomain.KindCreateWorkspace,
+			Title: "create workspace",
+			Draft: "ops-center",
+		},
+	}
+	state.UI.Focus.Layer = types.FocusLayerPrompt
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "prompt_actions:") || !strings.Contains(view, "prompt_actions_rendered: 2") {
+		t.Fatalf("expected draft prompt action metadata in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "  [submit] submit") || !strings.Contains(view, "  [cancel] cancel") {
+		t.Fatalf("expected draft prompt action rows in rendered view, got:\n%s", view)
 	}
 }
 

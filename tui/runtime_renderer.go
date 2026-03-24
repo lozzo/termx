@@ -755,7 +755,7 @@ func renderPromptLines(prompt *promptdomain.State) []string {
 			"prompt_fields: | prompt_fields_rendered: 1",
 			fmt.Sprintf("> [draft] %s", prompt.Draft),
 		)
-		return lines
+		return append(lines, renderPromptActionLines()...)
 	}
 	active := prompt.Active
 	if active < 0 || active >= len(prompt.Fields) {
@@ -784,6 +784,18 @@ func renderPromptLines(prompt *promptdomain.State) []string {
 			prefix = "> "
 		}
 		lines = append(lines, fmt.Sprintf("%s[%s] %s: %s", prefix, field.Key, field.Label, field.Value))
+	}
+	return append(lines, renderPromptActionLines()...)
+}
+
+func renderPromptActionLines() []string {
+	actionRows := promptdomain.ActionRows()
+	lines := []string{compactLine(
+		"prompt_actions:",
+		fmt.Sprintf("prompt_actions_rendered: %d", len(actionRows)),
+	)}
+	for _, action := range actionRows {
+		lines = append(lines, fmt.Sprintf("  [%s] %s", action.ID, action.Label))
 	}
 	return lines
 }

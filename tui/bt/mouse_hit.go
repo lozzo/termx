@@ -204,7 +204,13 @@ func mapPromptMouseClick(state types.AppState, msg tea.MouseMsg, view string) []
 		return nil
 	}
 	prompt, ok := state.UI.Overlay.Data.(*promptdomain.State)
-	if !ok || prompt == nil || len(prompt.Fields) == 0 {
+	if !ok || prompt == nil {
+		return nil
+	}
+	if intents := mapPromptActionClick(msg, view); len(intents) > 0 {
+		return intents
+	}
+	if len(prompt.Fields) == 0 {
 		return nil
 	}
 	active := prompt.Active
@@ -216,6 +222,22 @@ func mapPromptMouseClick(state types.AppState, msg tea.MouseMsg, view string) []
 		return nil
 	}
 	return []intent.Intent{intent.PromptSelectFieldIntent{Index: targetIndex}}
+}
+
+func mapPromptActionClick(msg tea.MouseMsg, view string) []intent.Intent {
+	actionRows := promptdomain.ActionRows()
+	targetIndex, ok := overlayClickedRowIndex(view, "prompt_actions:", msg.Y, len(actionRows), len(actionRows), 0)
+	if !ok {
+		return nil
+	}
+	switch actionRows[targetIndex].ID {
+	case promptdomain.ActionSubmit:
+		return []intent.Intent{intent.SubmitPromptIntent{}}
+	case promptdomain.ActionCancel:
+		return []intent.Intent{intent.CancelPromptIntent{}}
+	default:
+		return nil
+	}
 }
 
 // overlayClickedRowIndex 根据当前渲染文本里的 rows 区域起点，反推出点击命中的真实 row 索引。

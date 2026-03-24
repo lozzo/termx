@@ -726,6 +726,60 @@ func TestIntentMapperPromptMouseClickSelectsStructuredField(t *testing.T) {
 	}
 }
 
+func TestIntentMapperPromptMouseClickOnActionRowsMapsPromptActions(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+	state := newAppStateWithSinglePane()
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayPrompt,
+		Data: &promptdomain.State{
+			Kind:  promptdomain.KindCreateWorkspace,
+			Title: "create workspace",
+			Draft: "ops-center",
+		},
+	}
+	view := strings.Join([]string{
+		"termx",
+		"prompt_fields: | prompt_fields_rendered: 1",
+		"> [draft] ops-center",
+		"prompt_actions: | prompt_actions_rendered: 2",
+		"  [submit] submit",
+		"  [cancel] cancel",
+	}, "\n")
+
+	cases := []struct {
+		name string
+		y    int
+		want any
+	}{
+		{
+			name: "submit",
+			y:    findLineIndexWithPrefix(view, "  [submit] submit"),
+			want: intent.SubmitPromptIntent{},
+		},
+		{
+			name: "cancel",
+			y:    findLineIndexWithPrefix(view, "  [cancel] cancel"),
+			want: intent.CancelPromptIntent{},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			intents := mapper.MapMouse(state, tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      tc.y,
+			}, view)
+			if len(intents) != 1 {
+				t.Fatalf("expected one intent, got %d", len(intents))
+			}
+			if intents[0] != tc.want {
+				t.Fatalf("expected %+v, got %+v", tc.want, intents[0])
+			}
+		})
+	}
+}
+
 func TestIntentMapperTerminalManagerMapsSelectionAndQuery(t *testing.T) {
 	mapper := NewIntentMapper(Config{})
 	state := newAppStateWithSinglePane()
