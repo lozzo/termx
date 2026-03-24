@@ -237,7 +237,7 @@ func TestRuntimeRendererCanHideDebugSections(t *testing.T) {
 	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "api-dev  •  owner") || !strings.Contains(stripped, "1 tab") || !strings.Contains(stripped, "1 pane") || !strings.Contains(stripped, "1 term") {
 		t.Fatalf("expected shell-only renderer tab chrome to expose tab and workspace summary, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "api-dev  ● run  owner  live") || !strings.Contains(stripped, "┏") || !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "/tmp") || !strings.Contains(stripped, "term-1 running owner") {
+	if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "● run  owner") || !strings.Contains(stripped, "┏") || !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "/tmp") || !strings.Contains(stripped, "term-1 running owner") {
 		t.Fatalf("expected shell-only renderer to keep pane canvas content inside screen shell, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "desk") || !strings.Contains(stripped, "api-dev") {
@@ -349,7 +349,7 @@ func TestModernScreenShellUsesWiderCompactOverlayWithoutShadowAtNarrowWidth(t *t
 	if !strings.Contains(view, "Help") || !strings.Contains(view, "CONTEXT[overlay]") || !strings.Contains(view, "BACKDROP[workbench]") || !strings.Contains(view, "BODY[help]") || !strings.Contains(view, "FOOTER[overlay]") || !strings.Contains(view, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(view, "ESC closes help and returns to the workbench.") {
 		t.Fatalf("expected narrow overlay to keep structured help dialog, got:\n%s", view)
 	}
-	if !strings.Contains(view, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(view, "pane api-dev  •  owner  •  connected") {
+	if !strings.Contains(view, "workbench paused  •  api-dev  •  owner") || !strings.Contains(view, "active pane api-dev  •  owner  •  connected") {
 		t.Fatalf("expected narrow overlay to keep paused backdrop context and modal hint, got:\n%s", view)
 	}
 	if strings.Contains(view, "░") {
@@ -405,7 +405,7 @@ func TestRuntimeRendererShellOnlyOverlayKeepsPaneContext(t *testing.T) {
 	if !strings.Contains(stripped, "dialog help") || !strings.Contains(stripped, "mode picker") || !strings.Contains(stripped, "<esc> Close") || !strings.Contains(stripped, "░") {
 		t.Fatalf("expected shell-only overlay renderer to expose overlay chrome and footer actions, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(stripped, "pane api-dev  •  owner  •  connected") {
+	if !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "workbench paused  •  api-dev  •  owner") || !strings.Contains(stripped, "active pane api-dev  •  owner  •  connected") {
 		t.Fatalf("expected shell-only overlay renderer to retain a dimmed workbench canvas backdrop, got:\n%s", view)
 	}
 }
@@ -419,7 +419,7 @@ func TestRuntimeRendererShellOnlyFooterHighlightsErrorNotice(t *testing.T) {
 	}})
 	stripped := stripANSIForTest(view)
 
-	if !strings.Contains(stripped, "! error runtime effect") || !strings.Contains(stripped, "term-1  ● run  owner  live") || !strings.Contains(stripped, "<p> <t> <w> <o> <f> <g> <?>") {
+	if !strings.Contains(stripped, "! error runtime effect") || !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "● run  owner") || !strings.Contains(stripped, "<p> <t> <w> <o> <f> <g> <?>") {
 		t.Fatalf("expected shell-only footer to highlight error notice and pane badges, got:\n%s", view)
 	}
 }
@@ -451,10 +451,10 @@ func TestRuntimeRendererShellOnlyShowsContextualActionsForConnectedPane(t *testi
 	if !strings.Contains(stripped, "<p> <t> <w> <o> <f> <g> <?>") {
 		t.Fatalf("expected shell-only connected pane to expose contextual actions, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "api-dev  ● run  owner  live") {
+	if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "● run  owner") {
 		t.Fatalf("expected shell-only connected pane to expose pane title in canvas chrome, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "Single workbench") || !strings.Contains(stripped, "Signals & Keys") || !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal api-dev") {
+	if !strings.Contains(stripped, "Workbench") || !strings.Contains(stripped, "Context & Keys") || !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "owner  •  connected") || !strings.Contains(stripped, "runtime running") || !strings.Contains(stripped, "terminal api-dev") {
 		t.Fatalf("expected shell-only connected pane to expose single workbench shell panels, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "term-1 running owner") {
@@ -557,14 +557,14 @@ func TestRuntimeRendererShellOnlyRendersSplitWorkbenchAsPaneCanvas(t *testing.T)
 
 	view := renderer.Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Split workbench") || !strings.Contains(stripped, "Layout vertical 50/50") || !strings.Contains(stripped, "Signals & Keys") {
+	if !strings.Contains(stripped, "Split workbench") || !strings.Contains(stripped, "Layout vertical 50/50") || !strings.Contains(stripped, "Context & Keys") {
 		t.Fatalf("expected shell-only split renderer to expose split summary sidebar, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal api-dev") {
+	if !strings.Contains(stripped, "live focus  •  api-dev") || !strings.Contains(stripped, "owner  •  connected") || !strings.Contains(stripped, "terminal api-dev") || !strings.Contains(stripped, "visible  •  1 pane") {
 		t.Fatalf("expected shell-only split renderer to expose unified workbench signal panel, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") {
-		t.Fatalf("expected shell-only split renderer to expose tiled pane canvas titles, got:\n%s", view)
+	if !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "term-2 running owner") {
+		t.Fatalf("expected shell-only split renderer to expose a two-pane canvas with separate terminal frames, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "$ npm run dev") || !strings.Contains(stripped, "> tsc -w") || !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
 		t.Fatalf("expected shell-only split renderer to keep live terminal content inside pane frames, got:\n%s", view)
@@ -612,10 +612,10 @@ func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing
 
 	view := renderer.Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Floating workbench") || !strings.Contains(stripped, "Signals & Keys") || !strings.Contains(stripped, "Window deck  •  2 windows") {
+	if !strings.Contains(stripped, "Floating") || !strings.Contains(stripped, "Context & Keys") || !strings.Contains(stripped, "Window deck  •  2 windows") {
 		t.Fatalf("expected shell-only floating renderer to expose floating summary deck, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal api-dev") {
+	if !strings.Contains(stripped, "live focus  •  api-dev") || !strings.Contains(stripped, "owner  •  connected") || !strings.Contains(stripped, "terminal api-dev") || !strings.Contains(stripped, "visible  •  1 pane") {
 		t.Fatalf("expected shell-only floating renderer to expose unified workbench signal panel, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "main / shell / floating / api-dev") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "top build-log") || !strings.Contains(stripped, "Window deck  •  2 windows") {
@@ -700,13 +700,13 @@ func TestRuntimeRendererShellOnlyRendersDetachedFloatingStripForMixedWorkbench(t
 
 	view := renderer.Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Detached windows") || !strings.Contains(stripped, "Mixed workbench") || !strings.Contains(stripped, "Signals & Keys") || !strings.Contains(stripped, "unconnected pane empty") {
+	if !strings.Contains(stripped, "Detached windows") || !strings.Contains(stripped, "Mixed workbench") || !strings.Contains(stripped, "Context & Keys") || !strings.Contains(stripped, "unconnected pane empty") {
 		t.Fatalf("expected shell-only mixed workbench to expose detached floating strip, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal api-dev") {
+	if !strings.Contains(stripped, "live focus  •  api-dev") || !strings.Contains(stripped, "owner  •  connected") || !strings.Contains(stripped, "terminal api-dev") || !strings.Contains(stripped, "visible  •  1 pane") {
 		t.Fatalf("expected shell-only mixed workbench to expose unified workbench signal panel, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "waiting pane") || !strings.Contains(stripped, "deploy-log") || !strings.Contains(stripped, "unconnected p") || !strings.Contains(stripped, "no term") || !strings.Contains(stripped, "history retained") {
+	if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "waiting for connect") || !strings.Contains(stripped, "process exited") || !strings.Contains(stripped, "no term") || !strings.Contains(stripped, "history retained") {
 		t.Fatalf("expected shell-only mixed workbench to render tiled and floating panes in one canvas, got:\n%s", view)
 	}
 }
@@ -772,7 +772,7 @@ func TestRuntimeRendererShellOnlyRendersStructuredOverlayBackdropContext(t *test
 
 	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "state overlay help  •  focus overlay") || !strings.Contains(stripped, "FOOTER[overlay]") || !strings.Contains(stripped, "FOOTER[esc close]") || !strings.Contains(stripped, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(stripped, "pane api-dev  •  owner  •  connected") {
+	if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "state overlay help  •  focus overlay") || !strings.Contains(stripped, "FOOTER[overlay]") || !strings.Contains(stripped, "FOOTER[esc close]") || !strings.Contains(stripped, "workbench paused  •  api-dev  •  owner") || !strings.Contains(stripped, "active pane api-dev  •  owner  •  connected") {
 		t.Fatalf("expected shell-only overlay backdrop to render modal on top of the workbench canvas, got:\n%s", view)
 	}
 }
@@ -790,7 +790,7 @@ func TestRuntimeRendererShellOnlyShowsUnavailableScreenBlockWhenSnapshotMissing(
 
 	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "api-dev  ● run  owner  live") || !strings.Contains(stripped, "<screen unavailable>") || !strings.Contains(stripped, "term-1 running owner") {
+	if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "● run  owner") || !strings.Contains(stripped, "<screen unavailable>") || !strings.Contains(stripped, "term-1 running owner") {
 		t.Fatalf("expected shell-only renderer to keep an unavailable screen block when snapshot is missing, got:\n%s", view)
 	}
 }

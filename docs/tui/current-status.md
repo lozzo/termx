@@ -72,6 +72,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把默认 modern 的 overlay 壳层从“单个对话框正文”推进到“统一盒模型”：help / terminal manager 等 modal 现在统一显式带 `CONTEXT[overlay] / BACKDROP[workbench] / FOOTER[overlay]` 小节，help 正文也切到 `BODY[help]`；同时补上按高度/宽度自动切换的 compact overlay 压缩策略，确保 64~78 列、约 20 行正文高度下仍然能完整显示 modal 结构而不再被底部截断
 - 本轮继续把默认 78 列首屏的导航信息收口到可读层级：top header 右侧已改成 pane/role/window 的 chip 组，tab bar 会在窄宽度下优先保留 `active tab + active pane`，workspace summary 则改成 `1 tab / 1 pane / 1 term` 这类可直接阅读的计数表达，不再退回工程化 token 串
 - 本轮同步把 floating offscreen 场景并入新的现代 chrome 语义：越界窗口现在会在 header/context/footer 中稳定暴露 `offscreen / windows / float deck` 反馈，shell-only 与默认 modern 路径的 renderer/E2E 可以继续以这组产品词汇做护栏
+- 本轮继续把 modern workbench 往 legacy 的 pane-first 布局收口：pane 顶边框现在改成“左标题、右状态 badge”的单线 chrome，active/inactive/floating 的状态词被压进边框本身，不再占用正文高度；同时把 split / floating / mixed 的侧栏宽度压窄，给真实 pane canvas 让出更多空间
+- 本轮同步把侧栏语义从“说明面板”压成“上下文面板”：`Single/Floating/Mixed workbench` 这类标题被收成更短的 `Workbench / Layout / Floating / Context & Keys`，内容也改成 `live focus / owner / terminal / visible / panes` 这类首屏能直接读懂的上下文摘要
+- 本轮也把 overlay backdrop 的文案切到新的产品语义：modal 打开时背景区不再复述 `backdrop / pane` 调试词，而是改成 `workbench paused / active pane ...` 这种更接近真实界面的层级表达，并同步迁移 shell-only 与默认 modern E2E 护栏
 
 ---
 

@@ -125,10 +125,10 @@ func TestRunUsesShellOnlyRendererByDefault(t *testing.T) {
 	if !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "owner") || !strings.Contains(stripped, "w0") {
 		t.Fatalf("expected default run renderer top chrome to expose active pane summary, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "term-1  ● run  owner") || !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "term-1 running owner") {
+	if !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "● run  owner") || !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "term-1 running owner") {
 		t.Fatalf("expected default run renderer to keep terminal canvas context in screen shell, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "Single workbench") || !strings.Contains(stripped, "Signals & Keys") || !strings.Contains(stripped, "main / shell / tiled / term-1") || !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal term-1") {
+	if !strings.Contains(stripped, "Workbench") || !strings.Contains(stripped, "Context & Keys") || !strings.Contains(stripped, "main / shell / tiled / term-1") || !strings.Contains(stripped, "owner  •  connected") || !strings.Contains(stripped, "runtime running") || !strings.Contains(stripped, "terminal term-1") {
 		t.Fatalf("expected default run renderer to expose single workbench shell panels, got:\n%s", runner.view)
 	}
 	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "term-1  •  owner") || !strings.Contains(stripped, "1 tab") || !strings.Contains(stripped, "1 pane") || !strings.Contains(stripped, "1 term") || !strings.Contains(stripped, "main / shell / tiled / term-1") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "desk") || !strings.Contains(stripped, "term-1") {
@@ -690,14 +690,14 @@ func TestE2ERunScenarioDefaultModernSplitWorkbenchRendersPaneCanvas(t *testing.T
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "Split workbench") || !strings.Contains(stripped, "Layout vertical 50/50") || !strings.Contains(stripped, "Signals & Keys") {
+			if !strings.Contains(stripped, "Split workbench") || !strings.Contains(stripped, "Layout vertical 50/50") || !strings.Contains(stripped, "Context & Keys") {
 				t.Fatalf("expected default modern split view to expose split sidebar summary, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal api-dev") {
+			if !strings.Contains(stripped, "live focus  •  api-dev") || !strings.Contains(stripped, "owner  •  connected") || !strings.Contains(stripped, "terminal api-dev") || !strings.Contains(stripped, "visible  •  1 pane") {
 				t.Fatalf("expected default modern split view to expose unified workbench signal panel, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") {
-				t.Fatalf("expected default modern split view to expose multi-pane canvas, got:\n%s", view)
+			if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "term-2 running owner") {
+				t.Fatalf("expected default modern split view to expose a two-pane canvas with separate terminal frames, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
 				t.Fatalf("expected default modern split view to expose both pane previews, got:\n%s", view)
@@ -794,10 +794,10 @@ func TestE2ERunScenarioDefaultModernFloatingWorkbenchRendersWindowDeck(t *testin
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "Floating workbench") || !strings.Contains(stripped, "Signals & Keys") || !strings.Contains(stripped, "Window deck  •  2 windows") {
+			if !strings.Contains(stripped, "Floating") || !strings.Contains(stripped, "Context & Keys") || !strings.Contains(stripped, "Window deck  •  2 windows") {
 				t.Fatalf("expected default modern floating view to expose summary and deck sidebar, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal api-dev") {
+			if !strings.Contains(stripped, "live focus  •  api-dev") || !strings.Contains(stripped, "owner  •  connected") || !strings.Contains(stripped, "terminal api-dev") || !strings.Contains(stripped, "visible  •  1 pane") {
 				t.Fatalf("expected default modern floating view to expose unified workbench signal panel, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "main / shell / floating / api-dev") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "top build-log") || !strings.Contains(stripped, "Window deck  •  2 windows") {
@@ -850,13 +850,13 @@ func TestE2ERunScenarioDefaultModernMixedWorkbenchShowsDetachedFloatingStrip(t *
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "Detached windows") || !strings.Contains(stripped, "Mixed workbench") || !strings.Contains(stripped, "Signals & Keys") || !strings.Contains(stripped, "unconnected pane empty") {
+			if !strings.Contains(stripped, "Detached windows") || !strings.Contains(stripped, "Mixed workbench") || !strings.Contains(stripped, "Context & Keys") || !strings.Contains(stripped, "unconnected pane empty") {
 				t.Fatalf("expected default modern mixed workbench to expose detached floating strip, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal api-dev") {
+			if !strings.Contains(stripped, "live focus  •  api-dev") || !strings.Contains(stripped, "owner  •  connected") || !strings.Contains(stripped, "terminal api-dev") || !strings.Contains(stripped, "visible  •  1 pane") {
 				t.Fatalf("expected default modern mixed workbench to expose unified workbench signal panel, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "waiting pane") || !strings.Contains(stripped, "deploy-log") || !strings.Contains(stripped, "no term") || !strings.Contains(stripped, "unconnected p") || !strings.Contains(stripped, "history retained") {
+			if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "waiting for connect") || !strings.Contains(stripped, "process exited") || !strings.Contains(stripped, "no term") || !strings.Contains(stripped, "history retained") {
 				t.Fatalf("expected default modern mixed workbench to render tiled and floating panes on one canvas, got:\n%s", view)
 			}
 			if strings.Contains(view, "wireframe_view:") {
@@ -901,7 +901,7 @@ func TestE2ERunScenarioDefaultModernTerminalManagerOverlayRendersStructuredModal
 			if !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, ">> [terminal] api-dev") {
 				t.Fatalf("expected default modern terminal manager modal context chrome, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(stripped, "pane api-dev  •  owner  •  connected") {
+			if !strings.Contains(stripped, "workbench paused  •  api-dev  •  owner") || !strings.Contains(stripped, "active pane api-dev  •  owner  •  connected") {
 				t.Fatalf("expected default modern terminal manager modal to keep backdrop context visible, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "D:api-dev term-1") || !strings.Contains(stripped, "state=running vis=visible") || !strings.Contains(stripped, "owner=pane:pane-1") || !strings.Contains(stripped, "BODY[command]") || !strings.Contains(stripped, "npm run dev") {
@@ -951,7 +951,7 @@ func TestE2ERunScenarioDefaultModernHelpOverlayRendersStructuredModal(t *testing
 			if !strings.Contains(stripped, "owner controls metadata / resize / stop") || !strings.Contains(stripped, "ESC closes help and returns to the workbench.") {
 				t.Fatalf("expected default modern help modal concepts and actions, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(stripped, "pane api-dev  •  owner  •  connected") || !strings.Contains(stripped, "FOOTER[overlay]") || !strings.Contains(stripped, "FOOTER[esc close]") || !strings.Contains(stripped, "░") {
+			if !strings.Contains(stripped, "workbench paused  •  api-dev  •  owner") || !strings.Contains(stripped, "active pane api-dev  •  owner  •  connected") || !strings.Contains(stripped, "FOOTER[overlay]") || !strings.Contains(stripped, "FOOTER[esc close]") || !strings.Contains(stripped, "░") {
 				t.Fatalf("expected default modern help modal to retain backdrop workbench canvas, got:\n%s", view)
 			}
 			return nil
@@ -985,7 +985,7 @@ func TestE2ERunScenarioDefaultModernOverlayBackdropShowsStructuredPausedContext(
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "CONTEXT[overlay]") || !strings.Contains(stripped, "BACKDROP[workbench]") || !strings.Contains(stripped, "state overlay help  •  focus overlay") || !strings.Contains(stripped, "FOOTER[overlay]") || !strings.Contains(stripped, "FOOTER[esc close]") || !strings.Contains(stripped, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(stripped, "pane api-dev  •  owner  •  connected") {
+			if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "CONTEXT[overlay]") || !strings.Contains(stripped, "BACKDROP[workbench]") || !strings.Contains(stripped, "state overlay help  •  focus overlay") || !strings.Contains(stripped, "FOOTER[overlay]") || !strings.Contains(stripped, "FOOTER[esc close]") || !strings.Contains(stripped, "workbench paused  •  api-dev  •  owner") || !strings.Contains(stripped, "active pane api-dev  •  owner  •  connected") {
 				t.Fatalf("expected default modern overlay backdrop to render modal on top of workbench canvas, got:\n%s", view)
 			}
 			return nil
@@ -1167,7 +1167,7 @@ func TestE2ERunScenarioDefaultModernOverlayCloseLeavesCleanWorkbench(t *testing.
 				}
 			}
 			opened := stripANSIRuntimeView(current.View())
-			if !strings.Contains(opened, "Help") || !strings.Contains(opened, "CONTEXT[overlay]") || !strings.Contains(opened, "BACKDROP[workbench]") || !strings.Contains(opened, "FOOTER[overlay]") || !strings.Contains(opened, "state overlay help  •  focus overlay") || !strings.Contains(opened, "backdrop api-dev  •  owner  •  paused") || !strings.Contains(opened, "pane api-dev  •  owner  •  connected") || !strings.Contains(opened, "░") {
+			if !strings.Contains(opened, "Help") || !strings.Contains(opened, "CONTEXT[overlay]") || !strings.Contains(opened, "BACKDROP[workbench]") || !strings.Contains(opened, "FOOTER[overlay]") || !strings.Contains(opened, "state overlay help  •  focus overlay") || !strings.Contains(opened, "workbench paused  •  api-dev  •  owner") || !strings.Contains(opened, "active pane api-dev  •  owner  •  connected") || !strings.Contains(opened, "░") {
 				t.Fatalf("expected default modern overlay open state to expose modal/backdrop/shadow, got:\n%s", current.View())
 			}
 			nextModel, cmd := current.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -1179,7 +1179,7 @@ func TestE2ERunScenarioDefaultModernOverlayCloseLeavesCleanWorkbench(t *testing.
 				}
 			}
 			closed := stripANSIRuntimeView(current.View())
-			if strings.Contains(closed, "state overlay help  •  focus overlay") || strings.Contains(closed, "CONTEXT[overlay]") || strings.Contains(closed, "BACKDROP[workbench]") || strings.Contains(closed, "FOOTER[overlay]") || strings.Contains(closed, "backdrop api-dev  •  owner  •  paused") || strings.Contains(closed, "FOOTER[esc close]") || strings.Contains(closed, "░") || !strings.Contains(closed, "api-dev  ● run  owner  live") || !strings.Contains(closed, "<p> <t> <w> <o> <f> <g> <?>") {
+			if strings.Contains(closed, "state overlay help  •  focus overlay") || strings.Contains(closed, "CONTEXT[overlay]") || strings.Contains(closed, "BACKDROP[workbench]") || strings.Contains(closed, "FOOTER[overlay]") || strings.Contains(closed, "workbench paused  •  api-dev  •  owner") || strings.Contains(closed, "FOOTER[esc close]") || strings.Contains(closed, "░") || !strings.Contains(closed, "api-dev") || !strings.Contains(closed, "● run  owner") || !strings.Contains(closed, "<p> <t> <w> <o> <f> <g> <?>") {
 				t.Fatalf("expected default modern overlay close to leave a clean workbench without artifacts, got:\n%s", current.View())
 			}
 			return nil
