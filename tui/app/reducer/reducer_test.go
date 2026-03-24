@@ -1007,7 +1007,7 @@ func TestReducerTerminalManagerConnectInFloatingPaneEmitsPlanningEffect(t *testi
 	}
 }
 
-func TestReducerTerminalManagerConnectInFloatingPaneSucceededClosesOverlay(t *testing.T) {
+func TestReducerTerminalManagerConnectInFloatingPaneSucceededCreatesFloatingPaneAndClosesOverlay(t *testing.T) {
 	reducer := New()
 	state := newManagerAppState()
 
@@ -1021,6 +1021,33 @@ func TestReducerTerminalManagerConnectInFloatingPaneSucceededClosesOverlay(t *te
 
 	if result.State.UI.Overlay.Kind != types.OverlayNone {
 		t.Fatalf("expected manager overlay to close after floating success, got %q", result.State.UI.Overlay.Kind)
+	}
+	if result.State.Domain.ActiveWorkspaceID != types.WorkspaceID("ws-1") {
+		t.Fatalf("expected floating success to keep workspace on ws-1, got %q", result.State.Domain.ActiveWorkspaceID)
+	}
+	tab := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
+	if tab.ActiveLayer != types.FocusLayerFloating {
+		t.Fatalf("expected tab to switch to floating layer, got %q", tab.ActiveLayer)
+	}
+	if tab.ActivePaneID != types.PaneID("float-1") {
+		t.Fatalf("expected new floating pane to become active, got %q", tab.ActivePaneID)
+	}
+	if len(tab.FloatingOrder) != 1 || tab.FloatingOrder[0] != types.PaneID("float-1") {
+		t.Fatalf("expected floating order to contain new pane, got %+v", tab.FloatingOrder)
+	}
+	pane := tab.Panes[types.PaneID("float-1")]
+	if pane.ID != types.PaneID("float-1") || pane.Kind != types.PaneKindFloating || pane.SlotState != types.PaneSlotConnected || pane.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected connected floating pane for term-2, got %+v", pane)
+	}
+	if result.State.UI.Focus.Layer != types.FocusLayerFloating || result.State.UI.Focus.PaneID != types.PaneID("float-1") {
+		t.Fatalf("expected focus to move to new floating pane, got %+v", result.State.UI.Focus)
+	}
+	conn := result.State.Domain.Connections[types.TerminalID("term-2")]
+	if len(conn.ConnectedPaneIDs) != 1 || conn.ConnectedPaneIDs[0] != types.PaneID("float-1") {
+		t.Fatalf("expected floating success to register new connection pane, got %+v", conn)
+	}
+	if conn.OwnerPaneID != types.PaneID("float-1") {
+		t.Fatalf("expected first floating connection to own terminal, got %+v", conn)
 	}
 }
 

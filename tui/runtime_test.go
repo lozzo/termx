@@ -3101,7 +3101,7 @@ func TestE2ERunScenarioTerminalManagerConnectInNewTabFailureShowsNoticeInView(t 
 	}
 }
 
-func TestE2ERunScenarioTerminalManagerConnectInFloatingPaneClosesOverlay(t *testing.T) {
+func TestE2ERunScenarioTerminalManagerConnectInFloatingPaneCreatesFloatingPane(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithTerminalManagerTargets()
 	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
@@ -3125,8 +3125,20 @@ func TestE2ERunScenarioTerminalManagerConnectInFloatingPaneClosesOverlay(t *test
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "terminal: term-1") || strings.Contains(view, "terminal_manager_rows:") {
-				t.Fatalf("expected terminal manager floating flow to close overlay, got:\n%s", view)
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: floating") || !strings.Contains(view, "tab_layer: floating") || !strings.Contains(view, "pane_kind: floating") || !strings.Contains(view, "terminal: term-2") || !strings.Contains(view, "title: build-log") || strings.Contains(view, "terminal_manager_rows:") {
+				t.Fatalf("expected terminal manager floating flow to create focused floating pane, got:\n%s", view)
+			}
+			tab := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
+			if tab.ActivePaneID != types.PaneID("float-1") || tab.ActiveLayer != types.FocusLayerFloating {
+				t.Fatalf("expected active tab to switch to new floating pane, got %+v", tab)
+			}
+			pane := tab.Panes[types.PaneID("float-1")]
+			if pane.Kind != types.PaneKindFloating || pane.TerminalID != types.TerminalID("term-2") || pane.SlotState != types.PaneSlotConnected {
+				t.Fatalf("expected new connected floating pane, got %+v", pane)
+			}
+			conn := current.State().Domain.Connections[types.TerminalID("term-2")]
+			if len(conn.ConnectedPaneIDs) != 1 || conn.ConnectedPaneIDs[0] != types.PaneID("float-1") || conn.OwnerPaneID != types.PaneID("float-1") {
+				t.Fatalf("expected term-2 connection to target floating pane, got %+v", conn)
 			}
 			return nil
 		},
@@ -3193,6 +3205,74 @@ func TestE2ERunScenarioTerminalManagerConnectInFloatingPaneFailureShowsNoticeInV
 	}
 	if len(client.floatingCalls) != 1 {
 		t.Fatalf("expected one failed floating-pane call, got %d", len(client.floatingCalls))
+	}
+}
+
+func TestE2ERunScenarioTerminalManagerMouseClickOnFloatingActionCreatesFloatingPane(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyDown},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			clickY := findLineIndexWithPrefix(current.View(), "  [floating] open in floating pane")
+			if clickY < 0 {
+				t.Fatalf("expected terminal manager to expose floating action row, got:\n%s", current.View())
+			}
+			nextModel, cmd := current.Update(tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      clickY,
+			})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: floating") || !strings.Contains(view, "pane_kind: floating") || !strings.Contains(view, "terminal: term-2") || strings.Contains(view, "terminal_manager_rows:") {
+				t.Fatalf("expected floating mouse action to create focused floating pane, got:\n%s", view)
+			}
+			tab := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
+			if tab.ActivePaneID != types.PaneID("float-1") || tab.ActiveLayer != types.FocusLayerFloating {
+				t.Fatalf("expected mouse floating action to switch to new floating pane, got %+v", tab)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+	if len(client.floatingCalls) != 1 {
+		t.Fatalf("expected one floating-pane call, got %d", len(client.floatingCalls))
+	}
+	if client.floatingCalls[0].workspaceID != types.WorkspaceID("ws-1") || client.floatingCalls[0].tabID != types.TabID("tab-1") || client.floatingCalls[0].terminalID != types.TerminalID("term-2") {
+		t.Fatalf("unexpected floating-pane call payload: %+v", client.floatingCalls[0])
 	}
 }
 

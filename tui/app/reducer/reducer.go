@@ -133,7 +133,7 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 	case intent.ConnectTerminalInNewTabSucceededIntent:
 		applyCloseTerminalManagerForTerminal(&result.State, intentValue.TerminalID)
 	case intent.ConnectTerminalInFloatingPaneSucceededIntent:
-		applyCloseTerminalManagerForTerminal(&result.State, intentValue.TerminalID)
+		applyConnectTerminalInFloatingPaneSucceeded(&result.State, intentValue)
 	case intent.TerminalProgramExitedIntent:
 		applyProgramExited(&result.State, intentValue)
 	case intent.SyncTerminalStateIntent:
@@ -1020,6 +1020,60 @@ func applyCreateTerminalSucceeded(state *types.AppState, in intent.CreateTermina
 	applyCloseCreateOverlay(state, in.PaneID)
 }
 
+// applyConnectTerminalInFloatingPaneSucceeded 在本地状态里补齐 floating pane，
+// 让 runtime 不再停留在“远端已经成功，但本地视图仍在旧 pane”的半完成状态。
+func applyConnectTerminalInFloatingPaneSucceeded(state *types.AppState, in intent.ConnectTerminalInFloatingPaneSucceededIntent) {
+	workspace, ok := state.Domain.Workspaces[in.WorkspaceID]
+	if !ok {
+		applyCloseTerminalManagerForTerminal(state, in.TerminalID)
+		return
+	}
+	tab, ok := workspace.Tabs[in.TabID]
+	if !ok {
+		applyCloseTerminalManagerForTerminal(state, in.TerminalID)
+		return
+	}
+
+	paneID := nextFloatingPaneID(tab)
+	tab.Panes[paneID] = types.PaneState{
+		ID:         paneID,
+		Kind:       types.PaneKindFloating,
+		TerminalID: in.TerminalID,
+		SlotState:  types.PaneSlotConnected,
+	}
+	tab.FloatingOrder = append(tab.FloatingOrder, paneID)
+	tab.ActivePaneID = paneID
+	tab.ActiveLayer = types.FocusLayerFloating
+	workspace.ActiveTabID = in.TabID
+	workspace.Tabs[in.TabID] = tab
+	state.Domain.Workspaces[in.WorkspaceID] = workspace
+	state.Domain.ActiveWorkspaceID = in.WorkspaceID
+
+	terminal := state.Domain.Terminals[in.TerminalID]
+	if terminal.ID == "" {
+		terminal.ID = in.TerminalID
+	}
+	state.Domain.Terminals[in.TerminalID] = terminal
+
+	connSnapshot, ok := state.Domain.Connections[in.TerminalID]
+	var conn *connection.State
+	if ok {
+		conn = connection.FromSnapshot(connSnapshot)
+	} else {
+		conn = connection.NewState(in.TerminalID)
+	}
+	conn.Connect(paneID)
+	state.Domain.Connections[in.TerminalID] = conn.Snapshot()
+
+	applyCloseOverlay(state)
+	state.UI.Focus = types.FocusState{
+		Layer:       types.FocusLayerFloating,
+		WorkspaceID: in.WorkspaceID,
+		TabID:       in.TabID,
+		PaneID:      paneID,
+	}
+}
+
 func applyClosePromptForTerminal(state *types.AppState, terminalID types.TerminalID) {
 	prompt, ok := promptState(state)
 	if !ok {
@@ -1191,6 +1245,15 @@ func firstRemainingPaneID(panes map[types.PaneID]types.PaneState) types.PaneID {
 		return paneID
 	}
 	return ""
+}
+
+func nextFloatingPaneID(tab types.TabState) types.PaneID {
+	for index := 1; ; index++ {
+		candidate := types.PaneID(fmt.Sprintf("float-%d", index))
+		if _, ok := tab.Panes[candidate]; !ok {
+			return candidate
+		}
+	}
 }
 
 func removePaneFromSplit(node *types.SplitNode, paneID types.PaneID) *types.SplitNode {
