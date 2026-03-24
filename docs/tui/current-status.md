@@ -1047,3 +1047,43 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 ## 8. 当前一句话状态
 
 termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / manager / prompt / layout resolve / help、tiled / tab / floating 导航创建、owner/follower、restore/startup、以及语义级 renderer 都已落地，但真实工作台 renderer、overlay 真实盒模型、真实 TUI E2E 壳和渲染稳定性收尾还没有收口；后续必须按大块工作周期推进，而不能继续按一个小点一个小点推进”的阶段。
+
+---
+
+## 9. 第 193 轮 TDD
+
+这一轮没有再停留在“补几个字段断言”，而是把 screen shell 主工作台里最后一批摘要行继续组件化，直接收口成真实的 card 语言：
+
+1. split shell
+   - 去掉了旧的 `EXTRA SHELL PANES` 摘要堆叠
+   - 改成 `EXTRA[panes]` + `CARD[pane-id]` 子卡片
+   - 修正了 split 主区和 extra 区重复展示第二个 pane 的问题
+2. floating shell
+   - 去掉了旧的 `WINDOW[...]` 逐行摘要
+   - 改成 `WINDOWS[n]` + `WINDOW CARD[pane-id]` 几何卡片
+   - sidebar 标题也统一到 `STACK[windows]`
+3. mixed-slot shell
+   - split/tiled/floating 三类区域开始复用统一组件语言
+   - 空 floating pane 现在也会落成 window card，而不是单行摘要
+
+这一轮补上的验证不是零散小测，而是和功能成组收口：
+
+- renderer：
+  - `TestRuntimeRendererRendersWireframeFloatingStack`
+  - `TestRuntimeRendererRendersWireframeMixedSlotWorkbench`
+- runtime E2E：
+  - `TestE2ERunScenarioFloatingLayerShowsOutline`
+  - `TestE2ERunScenarioMixedSlotShowsWireframeWorkbench`
+
+本轮验证命令：
+
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -run 'TestRuntimeRendererRendersWireframeFloatingStack|TestRuntimeRendererRendersWireframeMixedSlotWorkbench|TestE2ERunScenarioFloatingLayerShowsOutline|TestE2ERunScenarioMixedSlotShowsWireframeWorkbench' -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1`
+
+当前主线状态更新为：
+
+- overlay dialog 盒模型已成型
+- pane 四态正文组件已成型
+- split / floating / mixed-slot 主工作台开始统一为 box + card 语言
+- 下一个大块应切到“真实 TUI 壳层渲染与交互收口”，而不是继续围绕同一批摘要字段做小修补

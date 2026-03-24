@@ -194,19 +194,17 @@ func (r runtimeRenderer) renderScreenShellSplit(state types.AppState, tab types.
 	if len(boxes) > 0 {
 		lines = append(lines, joinASCIIBoxes(boxes, 2)...)
 	}
-	if len(tiledPaneIDs) > 1 {
-		extraLines := []string{"EXTRA SHELL PANES"}
-		for _, paneID := range tiledPaneIDs[1:] {
-			pane, ok := tab.Panes[paneID]
-			if !ok {
-				continue
-			}
-			extraLines = append(extraLines, renderScreenShellExtraPaneSummary(state, pane)...)
-		}
-		lines = append(lines, extraLines...)
+	if len(tiledPaneIDs) > 2 {
+		lines = append(lines, fmt.Sprintf("EXTRA[panes] total=%d", len(tiledPaneIDs)-2))
+		lines = append(lines, r.renderScreenShellExtraPaneCards(state, tab, tiledPaneIDs[2:], metrics.SplitColumnWidth, overlayActive)...)
 	}
 	if len(floatingPaneIDs) > 0 {
-		lines = append(lines, fmt.Sprintf("floating: %s", strings.Join(r.renderScreenShellFloatingSummary(state, tab, floatingPaneIDs), " | ")))
+		lines = append(lines, fmt.Sprintf("FLOATING WINDOWS[%d]", len(floatingPaneIDs)))
+		cardWidth := metrics.SplitColumnWidth
+		if len(floatingPaneIDs) == 1 {
+			cardWidth = metrics.ViewportWidth
+		}
+		lines = append(lines, r.renderScreenShellWindowCards(state, tab, floatingPaneIDs, cardWidth, overlayActive)...)
 	}
 	return lines
 }
@@ -214,41 +212,19 @@ func (r runtimeRenderer) renderScreenShellSplit(state types.AppState, tab types.
 func (r runtimeRenderer) renderScreenShellFloating(state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, metrics wireframeMetrics, overlayActive bool) []string {
 	lines := []string{fmt.Sprintf("FLOAT SHELL[%d]", len(floatingPaneIDs))}
 	mainBox := renderShellBox(metrics.MainPaneWidth, renderScreenShellPaneTitle(state, pane, true), r.renderScreenShellPaneLines(state, pane, overlayActive, 4))
-	sidebarBox := renderShellBox(metrics.SidebarWidth, "floating stack", r.renderScreenShellFloatingSidebar(state, tab, floatingPaneIDs))
+	sidebarBox := renderShellBox(metrics.SidebarWidth, "STACK[windows]", r.renderScreenShellFloatingSidebar(state, tab, floatingPaneIDs))
 	lines = append(lines, joinASCIIBoxes([][]string{mainBox, sidebarBox}, 2)...)
-	for _, paneID := range floatingPaneIDs {
-		floatingPane, ok := tab.Panes[paneID]
-		if !ok {
-			continue
-		}
-		label := fmt.Sprintf("WINDOW[%s] %s %d,%d %dx%d", paneID, renderPaneTitle(state, floatingPane), floatingPane.Rect.X, floatingPane.Rect.Y, floatingPane.Rect.W, floatingPane.Rect.H)
-		if paneID == tab.ActivePaneID {
-			label = fmt.Sprintf("WINDOW[%s] %s active %d,%d %dx%d", paneID, renderPaneTitle(state, floatingPane), floatingPane.Rect.X, floatingPane.Rect.Y, floatingPane.Rect.W, floatingPane.Rect.H)
-		}
-		lines = append(lines, label)
-	}
-	return lines
-}
-
-func (r runtimeRenderer) renderScreenShellFloatingSummary(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) []string {
-	lines := make([]string, 0, len(floatingPaneIDs))
-	for _, paneID := range floatingPaneIDs {
-		pane, ok := tab.Panes[paneID]
-		if !ok {
-			continue
-		}
-		lines = append(lines, fmt.Sprintf("%s @%d,%d %dx%d", renderPaneTitle(state, pane), pane.Rect.X, pane.Rect.Y, pane.Rect.W, pane.Rect.H))
-	}
-	if len(lines) == 0 {
-		return []string{"<none>"}
-	}
+	lines = append(lines, fmt.Sprintf("WINDOWS[%d]", len(floatingPaneIDs)))
+	lines = append(lines, r.renderScreenShellWindowCards(state, tab, floatingPaneIDs, metrics.SplitColumnWidth, overlayActive)...)
 	return lines
 }
 
 func (r runtimeRenderer) renderScreenShellFloatingSidebar(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) []string {
 	lines := []string{fmt.Sprintf("STACK[windows] total=%d", len(floatingPaneIDs))}
 	if len(floatingPaneIDs) > 0 {
-		lines = append(lines, fmt.Sprintf("FOCUS[%s] %s", tab.ActivePaneID, renderPaneTitle(state, tab.Panes[tab.ActivePaneID])))
+		if activePane, ok := tab.Panes[tab.ActivePaneID]; ok {
+			lines = append(lines, fmt.Sprintf("FOCUS[%s] %s", tab.ActivePaneID, renderPaneTitle(state, activePane)))
+		}
 	}
 	for _, paneID := range floatingPaneIDs {
 		pane, ok := tab.Panes[paneID]
@@ -264,29 +240,36 @@ func (r runtimeRenderer) renderScreenShellFloatingSidebar(state types.AppState, 
 	return lines
 }
 
-func renderScreenShellExtraPaneSummary(state types.AppState, pane types.PaneState) []string {
-	switch pane.SlotState {
-	case types.PaneSlotWaiting:
-		return []string{
-			fmt.Sprintf("%s %s %s", pane.ID, renderPaneTitle(state, pane), pane.SlotState),
-			"STATUS[waiting]",
-			"DETAIL[waiting for connect]",
+func (r runtimeRenderer) renderScreenShellExtraPaneCards(state types.AppState, tab types.TabState, paneIDs []types.PaneID, width int, overlayActive bool) []string {
+	boxes := make([][]string, 0, len(paneIDs))
+	for _, paneID := range paneIDs {
+		pane, ok := tab.Panes[paneID]
+		if !ok {
+			continue
 		}
-	case types.PaneSlotExited:
-		return []string{
-			fmt.Sprintf("%s %s %s", pane.ID, renderPaneTitle(state, pane), pane.SlotState),
-			"STATUS[exited]",
-			"DETAIL[terminal program exited]",
-		}
-	case types.PaneSlotEmpty:
-		return []string{
-			fmt.Sprintf("%s %s %s", pane.ID, renderPaneTitle(state, pane), pane.SlotState),
-			"STATUS[empty]",
-			"DETAIL[terminal removed or not connected]",
-		}
-	default:
-		return []string{fmt.Sprintf("%s %s %s", pane.ID, renderPaneTitle(state, pane), pane.SlotState)}
+		body := []string{fmt.Sprintf("SLOT[%s]", pane.SlotState)}
+		body = append(body, r.renderScreenShellPaneLines(state, pane, overlayActive, 4)...)
+		boxes = append(boxes, renderShellBox(width, fmt.Sprintf("CARD[%s] %s [%s]", pane.ID, renderPaneTitle(state, pane), renderScreenShellPaneCardRole(state, pane)), body))
 	}
+	return renderShellBoxGrid(boxes, 2, 2)
+}
+
+func (r runtimeRenderer) renderScreenShellWindowCards(state types.AppState, tab types.TabState, paneIDs []types.PaneID, width int, overlayActive bool) []string {
+	boxes := make([][]string, 0, len(paneIDs))
+	for _, paneID := range paneIDs {
+		pane, ok := tab.Panes[paneID]
+		if !ok {
+			continue
+		}
+		body := []string{
+			fmt.Sprintf("GEOMETRY[%d,%d %dx%d]", pane.Rect.X, pane.Rect.Y, pane.Rect.W, pane.Rect.H),
+			fmt.Sprintf("FOCUS[%s]", renderScreenShellCardFocusLabel(tab.ActivePaneID == paneID)),
+			fmt.Sprintf("SLOT[%s]", pane.SlotState),
+		}
+		body = append(body, r.renderScreenShellPaneLines(state, pane, overlayActive, 3)...)
+		boxes = append(boxes, renderShellBox(width, fmt.Sprintf("WINDOW CARD[%s] %s", pane.ID, renderPaneTitle(state, pane)), body))
+	}
+	return renderShellBoxGrid(boxes, 2, 2)
 }
 
 func (r runtimeRenderer) renderScreenShellDialog(state types.AppState, metrics wireframeMetrics) []string {
@@ -1322,6 +1305,24 @@ func joinASCIIBoxes(boxes [][]string, gap int) []string {
 	return lines
 }
 
+func renderShellBoxGrid(boxes [][]string, perRow int, gap int) []string {
+	if len(boxes) == 0 {
+		return nil
+	}
+	if perRow <= 0 {
+		perRow = 1
+	}
+	lines := make([]string, 0, len(boxes)*4)
+	for start := 0; start < len(boxes); start += perRow {
+		end := start + perRow
+		if end > len(boxes) {
+			end = len(boxes)
+		}
+		lines = append(lines, joinASCIIBoxes(boxes[start:end], gap)...)
+	}
+	return lines
+}
+
 func indentLines(lines []string, padding int) []string {
 	if padding <= 0 {
 		return lines
@@ -1339,6 +1340,22 @@ func padRight(line string, width int) string {
 		return line
 	}
 	return line + strings.Repeat(" ", width-len(line))
+}
+
+func renderScreenShellCardFocusLabel(active bool) string {
+	if active {
+		return "active"
+	}
+	return "background"
+}
+
+func renderScreenShellPaneCardRole(state types.AppState, pane types.PaneState) string {
+	if pane.TerminalID != "" {
+		if role := renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID); role != "" {
+			return role
+		}
+	}
+	return string(pane.SlotState)
 }
 
 func safeWorkspaceLabel(workspace types.WorkspaceState) string {

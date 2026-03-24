@@ -1614,7 +1614,7 @@ func TestRuntimeRendererRendersWireframeFloatingStack(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "STACK[windows] total=2") || !strings.Contains(view, "FOCUS[float-1] api-dev") || !strings.Contains(view, "WINDOW[float-1] api-dev active 10,8 30x12") || !strings.Contains(view, "WINDOW[float-2] build-log 45,14 28x10") {
+	if !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "STACK[windows] total=2") || !strings.Contains(view, "FOCUS[float-1] api-dev") || !strings.Contains(view, "WINDOWS[2]") || !strings.Contains(view, "WINDOW CARD[float-1] api-dev") || !strings.Contains(view, "GEOMETRY[10,8 30x12]") || !strings.Contains(view, "WINDOW CARD[float-2] build-log") || !strings.Contains(view, "GEOMETRY[45,14 28x10]") {
 		t.Fatalf("expected floating shell window summary in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "STATUS[connected]") || !strings.Contains(view, "TERM[term-1] STATE[running]") || !strings.Contains(view, "CONTENT[screen] api ready") {
@@ -1774,7 +1774,7 @@ func TestRuntimeRendererRendersWireframeMixedSlotWorkbench(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "EXTRA SHELL PANES") || !strings.Contains(view, "STATUS[waiting]") || !strings.Contains(view, "DETAIL[waiting for connect]") || !strings.Contains(view, "STATUS[exited]") || !strings.Contains(view, "DETAIL[terminal program exited]") || !strings.Contains(view, "floating: unconnected pane @60,2 20x8") {
+	if !strings.Contains(view, "EXTRA[panes] total=1") || !strings.Contains(view, "CARD[pane-3] deploy-log [owner]") || !strings.Contains(view, "STATUS[waiting]") || !strings.Contains(view, "DETAIL[waiting for connect]") || !strings.Contains(view, "STATUS[exited]") || !strings.Contains(view, "DETAIL[terminal program exited]") || !strings.Contains(view, "FLOATING WINDOWS[1]") || !strings.Contains(view, "WINDOW CARD[float-empty] unconnected pane") || !strings.Contains(view, "GEOMETRY[60,2 20x8]") {
 		t.Fatalf("expected mixed-slot shell summaries in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "WORKBENCH split") {
