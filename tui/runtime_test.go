@@ -669,6 +669,66 @@ func TestE2ERunScenarioSplitTabShowsTiledOutline(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioNestedSplitShowsTiledTree(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithNestedSplitPaneTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{{{Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}}},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: types.TerminalID("term-2"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{{{Content: "b"}, {Content: "u"}, {Content: "i"}, {Content: "l"}, {Content: "d"}}},
+						},
+					},
+				},
+				types.TerminalID("term-3"): {
+					TerminalID: types.TerminalID("term-3"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-3",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{{{Content: "w"}, {Content: "a"}, {Content: "t"}, {Content: "c"}, {Content: "h"}}},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			if !strings.Contains(view, "tiled_tree:") || !strings.Contains(view, "split horizontal ratio=0.60") || !strings.Contains(view, "|- > [tiled] api-dev | role=owner | state=running | preview=ready") || !strings.Contains(view, "\\- split vertical ratio=0.50") || !strings.Contains(view, "   |- [tiled] watcher | role=owner | state=running | preview=watch") || !strings.Contains(view, "   \\- [tiled] build-log | role=owner | state=running | preview=build") {
+				t.Fatalf("expected runtime view to expose nested tiled tree, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected nested split runtime scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioLongSummaryLinesStayCompacted(t *testing.T) {
 	client := &stubRunClient{}
 	initial := connectedRunAppState()
@@ -6357,6 +6417,44 @@ func runtimeStateWithSplitPaneTargets() types.AppState {
 		TerminalID:       types.TerminalID("term-2"),
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-2")},
 		OwnerPaneID:      types.PaneID("pane-2"),
+	}
+	return state
+}
+
+func runtimeStateWithNestedSplitPaneTargets() types.AppState {
+	state := runtimeStateWithSplitPaneTargets()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	tab.Panes[types.PaneID("pane-3")] = types.PaneState{
+		ID:         types.PaneID("pane-3"),
+		Kind:       types.PaneKindTiled,
+		SlotState:  types.PaneSlotConnected,
+		TerminalID: types.TerminalID("term-3"),
+	}
+	tab.RootSplit = &types.SplitNode{
+		Direction: types.SplitDirectionHorizontal,
+		Ratio:     0.6,
+		First:     &types.SplitNode{PaneID: types.PaneID("pane-1")},
+		Second: &types.SplitNode{
+			Direction: types.SplitDirectionVertical,
+			Ratio:     0.5,
+			First:     &types.SplitNode{PaneID: types.PaneID("pane-3")},
+			Second:    &types.SplitNode{PaneID: types.PaneID("pane-2")},
+		},
+	}
+	tab.ActivePaneID = types.PaneID("pane-1")
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.Domain.Terminals[types.TerminalID("term-3")] = types.TerminalRef{
+		ID:      types.TerminalID("term-3"),
+		Name:    "watcher",
+		State:   types.TerminalRunStateRunning,
+		Visible: true,
+	}
+	state.Domain.Connections[types.TerminalID("term-3")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-3"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-3")},
+		OwnerPaneID:      types.PaneID("pane-3"),
 	}
 	return state
 }

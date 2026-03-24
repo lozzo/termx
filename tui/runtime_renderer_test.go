@@ -265,6 +265,69 @@ func TestRuntimeRendererRendersFollowerRoleInsideTiledOutline(t *testing.T) {
 	}
 }
 
+func TestRuntimeRendererRendersNestedTiledTree(t *testing.T) {
+	state := runtimeStateWithNestedSplitPaneTargets()
+	renderer := runtimeRenderer{
+		Screens: NewRuntimeTerminalStore(RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+							},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: types.TerminalID("term-2"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "b"}, {Content: "u"}, {Content: "i"}, {Content: "l"}, {Content: "d"}},
+							},
+						},
+					},
+				},
+				types.TerminalID("term-3"): {
+					TerminalID: types.TerminalID("term-3"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-3",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "w"}, {Content: "a"}, {Content: "t"}, {Content: "c"}, {Content: "h"}},
+							},
+						},
+					},
+				},
+			},
+		}),
+	}
+
+	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "tiled_tree:") {
+		t.Fatalf("expected tiled tree section in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "split horizontal ratio=0.60") {
+		t.Fatalf("expected root split row in tiled tree, got:\n%s", view)
+	}
+	if !strings.Contains(view, "|- > [tiled] api-dev | role=owner | state=running | preview=ready") {
+		t.Fatalf("expected active pane row in tiled tree, got:\n%s", view)
+	}
+	if !strings.Contains(view, "\\- split vertical ratio=0.50") {
+		t.Fatalf("expected nested split row in tiled tree, got:\n%s", view)
+	}
+	if !strings.Contains(view, "   |- [tiled] watcher | role=owner | state=running | preview=watch") {
+		t.Fatalf("expected nested first child row in tiled tree, got:\n%s", view)
+	}
+	if !strings.Contains(view, "   \\- [tiled] build-log | role=owner | state=running | preview=build") {
+		t.Fatalf("expected nested second child row in tiled tree, got:\n%s", view)
+	}
+}
+
 func TestRuntimeRendererTruncatesLongBarLines(t *testing.T) {
 	state := buildSinglePaneAppState(
 		"workspace-with-a-very-long-name-that-should-be-truncated-in-the-header-bar-output",

@@ -60,6 +60,7 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 		lines = append(lines, renderPaneBar(state, pane))
 		lines = append(lines, renderTiledOutlineBar(tab)...)
 		lines = append(lines, renderTiledLayout(tab)...)
+		lines = append(lines, r.renderTiledTree(state, tab)...)
 		lines = append(lines, r.renderTiledOutline(state, tab)...)
 		lines = appendSection(lines, "terminal", r.renderTerminalSection(state, pane, overlayActive))
 		lines = appendSection(lines, "screen", r.renderScreenSection(pane, overlayActive))
@@ -399,6 +400,25 @@ type tiledLayoutSummary struct {
 	HasRatio bool
 }
 
+func (r runtimeRenderer) renderTiledTree(state types.AppState, tab types.TabState) []string {
+	paneIDs := orderedTiledPaneIDs(tab)
+	if len(paneIDs) <= 1 {
+		return nil
+	}
+	lines := []string{"tiled_tree:"}
+	if tab.RootSplit == nil {
+		for i, paneID := range paneIDs {
+			prefix := "|- "
+			if i == len(paneIDs)-1 {
+				prefix = "\\- "
+			}
+			lines = append(lines, prefix+r.renderTiledTreePaneLine(state, tab, paneID))
+		}
+		return lines
+	}
+	return append(lines, r.renderTiledTreeNode(state, tab, tab.RootSplit, "", true)...)
+}
+
 // renderTiledOutline 把当前 tab 下的 tiled pane 顺序稳定地投影成概览，
 // 并补上每个 pane 的最小运行摘要，让 split 工作台在文本视图里也能读出结构和状态。
 func (r runtimeRenderer) renderTiledOutline(state types.AppState, tab types.TabState) []string {
@@ -431,6 +451,63 @@ func (r runtimeRenderer) renderTiledOutline(state types.AppState, tab types.TabS
 		lines = append(lines, compactSummaryLine(parts...))
 	}
 	return lines
+}
+
+// renderTiledTreeNode 递归投影 split 树，优先把结构关系表达清楚，
+// 这样文本视图也能读出“哪个 pane 在哪一支、当前 active 在哪里”。
+func (r runtimeRenderer) renderTiledTreeNode(state types.AppState, tab types.TabState, node *types.SplitNode, prefix string, isLast bool) []string {
+	if node == nil {
+		return nil
+	}
+	branch := "|- "
+	nextPrefix := prefix + "|  "
+	if isLast {
+		branch = "\\- "
+		nextPrefix = prefix + "   "
+	}
+	if node.First == nil && node.Second == nil {
+		return []string{prefix + branch + r.renderTiledTreePaneLine(state, tab, node.PaneID)}
+	}
+
+	line := fmt.Sprintf("split %s", node.Direction)
+	if node.Ratio > 0 {
+		line = fmt.Sprintf("%s ratio=%.2f", line, node.Ratio)
+	}
+	lines := []string{prefix + branch + line}
+	children := []*types.SplitNode{node.First, node.Second}
+	filtered := make([]*types.SplitNode, 0, len(children))
+	for _, child := range children {
+		if child != nil {
+			filtered = append(filtered, child)
+		}
+	}
+	for i, child := range filtered {
+		lines = append(lines, r.renderTiledTreeNode(state, tab, child, nextPrefix, i == len(filtered)-1)...)
+	}
+	return lines
+}
+
+func (r runtimeRenderer) renderTiledTreePaneLine(state types.AppState, tab types.TabState, paneID types.PaneID) string {
+	pane, ok := tab.Panes[paneID]
+	if !ok {
+		return fmt.Sprintf("[missing] %s", paneID)
+	}
+	parts := []string{fmt.Sprintf("[tiled] %s", renderPaneTitle(state, pane))}
+	if paneID == tab.ActivePaneID {
+		parts[0] = "> " + parts[0]
+	}
+	if role := renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID); role != "" {
+		parts = append(parts, fmt.Sprintf("role=%s", role))
+	} else {
+		parts = append(parts, fmt.Sprintf("slot=%s", pane.SlotState))
+	}
+	if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.State != "" {
+		parts = append(parts, fmt.Sprintf("state=%s", terminal.State))
+	}
+	if preview := r.renderTiledPanePreview(pane.TerminalID); preview != "" {
+		parts = append(parts, fmt.Sprintf("preview=%s", preview))
+	}
+	return compactSummaryLine(parts...)
 }
 
 func summarizeTiledLayout(root *types.SplitNode, fallbackLeaves int) tiledLayoutSummary {
