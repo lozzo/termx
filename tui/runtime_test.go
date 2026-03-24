@@ -729,6 +729,61 @@ func TestE2ERunScenarioNestedSplitShowsTiledTree(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioFloatingLayerShowsOutline(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithFloatingOverviewTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+							},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: types.TerminalID("term-2"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "b"}, {Content: "u"}, {Content: "i"}, {Content: "l"}, {Content: "d"}, {Content: " "}, {Content: "o"}, {Content: "k"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			if !strings.Contains(view, "floating_outline_bar: active=float-1 | total=2 | top=float-2") || !strings.Contains(view, "floating_outline:") || !strings.Contains(view, "> [floating] api-dev | role=owner | rect=10,8 30x12 | state=running | preview=api ready") || !strings.Contains(view, "  [floating] build-log | role=owner | rect=45,14 28x10 | state=running | preview=build ok") {
+				t.Fatalf("expected runtime view to expose floating outline, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected floating outline runtime scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioLongSummaryLinesStayCompacted(t *testing.T) {
 	client := &stubRunClient{}
 	initial := connectedRunAppState()
@@ -6788,6 +6843,29 @@ func runtimeStateWithTwoFloatingTargets() types.AppState {
 		TerminalID:       types.TerminalID("term-2"),
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("float-2")},
 		OwnerPaneID:      types.PaneID("float-2"),
+	}
+	return state
+}
+
+func runtimeStateWithFloatingOverviewTargets() types.AppState {
+	state := runtimeStateWithTwoFloatingTargets()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	pane1 := tab.Panes[types.PaneID("float-1")]
+	pane1.Rect = types.Rect{X: 10, Y: 8, W: 30, H: 12}
+	tab.Panes[types.PaneID("float-1")] = pane1
+	pane2 := tab.Panes[types.PaneID("float-2")]
+	pane2.Rect = types.Rect{X: 45, Y: 14, W: 28, H: 10}
+	tab.Panes[types.PaneID("float-2")] = pane2
+	tab.ActivePaneID = types.PaneID("float-1")
+	tab.ActiveLayer = types.FocusLayerFloating
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.UI.Focus = types.FocusState{
+		Layer:       types.FocusLayerFloating,
+		WorkspaceID: types.WorkspaceID("ws-1"),
+		TabID:       types.TabID("tab-1"),
+		PaneID:      types.PaneID("float-1"),
 	}
 	return state
 }

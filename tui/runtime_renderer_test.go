@@ -1354,6 +1354,56 @@ func TestRuntimeRendererRendersFloatingPaneKind(t *testing.T) {
 	}
 }
 
+func TestRuntimeRendererRendersFloatingOutline(t *testing.T) {
+	state := runtimeStateWithFloatingOverviewTargets()
+	renderer := runtimeRenderer{
+		Screens: NewRuntimeTerminalStore(RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+							},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: types.TerminalID("term-2"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "b"}, {Content: "u"}, {Content: "i"}, {Content: "l"}, {Content: "d"}, {Content: " "}, {Content: "o"}, {Content: "k"}},
+							},
+						},
+					},
+				},
+			},
+		}),
+	}
+
+	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "floating_outline_bar: active=float-1 | total=2 | top=float-2") {
+		t.Fatalf("expected floating outline bar in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "floating_outline:") {
+		t.Fatalf("expected floating outline section in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "> [floating] api-dev | role=owner | rect=10,8 30x12 | state=running | preview=api ready") {
+		t.Fatalf("expected active floating row in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "  [floating] build-log | role=owner | rect=45,14 28x10 | state=running | preview=build ok") {
+		t.Fatalf("expected top floating row in rendered view, got:\n%s", view)
+	}
+	if !(strings.Index(view, "tiled_outline:") < strings.Index(view, "floating_outline_bar:") &&
+		strings.Index(view, "floating_outline:") < strings.Index(view, "section_terminal:")) {
+		t.Fatalf("expected floating outline to stay in body before terminal section, got:\n%s", view)
+	}
+}
+
 func TestRuntimeRendererRendersTabStripForMultipleTabs(t *testing.T) {
 	view := runtimeRenderer{}.Render(runtimeStateWithTwoTabTargets(), nil)
 	if !strings.Contains(view, "workspace_bar: [main]") {

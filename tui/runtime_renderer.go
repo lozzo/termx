@@ -62,6 +62,8 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 		lines = append(lines, renderTiledLayout(tab)...)
 		lines = append(lines, r.renderTiledTree(state, tab)...)
 		lines = append(lines, r.renderTiledOutline(state, tab)...)
+		lines = append(lines, renderFloatingOutlineBar(tab)...)
+		lines = append(lines, r.renderFloatingOutline(state, tab)...)
 		lines = appendSection(lines, "terminal", r.renderTerminalSection(state, pane, overlayActive))
 		lines = appendSection(lines, "screen", r.renderScreenSection(pane, overlayActive))
 		return appendSection(lines, "overlay", renderOverlayLines(state.UI.Overlay, state.UI.Focus))
@@ -392,6 +394,18 @@ func renderTiledLayout(tab types.TabState) []string {
 	return []string{compactSummaryLine(parts...)}
 }
 
+func renderFloatingOutlineBar(tab types.TabState) []string {
+	paneIDs := orderedFloatingPaneIDs(tab)
+	if len(paneIDs) == 0 {
+		return nil
+	}
+	return []string{compactSummaryLine(
+		fmt.Sprintf("floating_outline_bar: active=%s", tab.ActivePaneID),
+		fmt.Sprintf("total=%d", len(paneIDs)),
+		fmt.Sprintf("top=%s", paneIDs[len(paneIDs)-1]),
+	)}
+}
+
 type tiledLayoutSummary struct {
 	Root     string
 	Depth    int
@@ -445,7 +459,42 @@ func (r runtimeRenderer) renderTiledOutline(state types.AppState, tab types.TabS
 		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.State != "" {
 			parts = append(parts, fmt.Sprintf("state=%s", terminal.State))
 		}
-		if preview := r.renderTiledPanePreview(pane.TerminalID); preview != "" {
+		if preview := r.renderPanePreview(pane.TerminalID); preview != "" {
+			parts = append(parts, fmt.Sprintf("preview=%s", preview))
+		}
+		lines = append(lines, compactSummaryLine(parts...))
+	}
+	return lines
+}
+
+func (r runtimeRenderer) renderFloatingOutline(state types.AppState, tab types.TabState) []string {
+	paneIDs := orderedFloatingPaneIDs(tab)
+	if len(paneIDs) == 0 {
+		return nil
+	}
+	lines := []string{"floating_outline:"}
+	for _, paneID := range paneIDs {
+		pane, ok := tab.Panes[paneID]
+		if !ok || pane.Kind != types.PaneKindFloating {
+			continue
+		}
+		prefix := "  "
+		if paneID == tab.ActivePaneID {
+			prefix = "> "
+		}
+		parts := []string{fmt.Sprintf("%s[floating] %s", prefix, renderPaneTitle(state, pane))}
+		if role := renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID); role != "" {
+			parts = append(parts, fmt.Sprintf("role=%s", role))
+		} else {
+			parts = append(parts, fmt.Sprintf("slot=%s", pane.SlotState))
+		}
+		if pane.Rect.W > 0 || pane.Rect.H > 0 {
+			parts = append(parts, fmt.Sprintf("rect=%d,%d %dx%d", pane.Rect.X, pane.Rect.Y, pane.Rect.W, pane.Rect.H))
+		}
+		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.State != "" {
+			parts = append(parts, fmt.Sprintf("state=%s", terminal.State))
+		}
+		if preview := r.renderPanePreview(pane.TerminalID); preview != "" {
 			parts = append(parts, fmt.Sprintf("preview=%s", preview))
 		}
 		lines = append(lines, compactSummaryLine(parts...))
@@ -504,7 +553,7 @@ func (r runtimeRenderer) renderTiledTreePaneLine(state types.AppState, tab types
 	if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.State != "" {
 		parts = append(parts, fmt.Sprintf("state=%s", terminal.State))
 	}
-	if preview := r.renderTiledPanePreview(pane.TerminalID); preview != "" {
+	if preview := r.renderPanePreview(pane.TerminalID); preview != "" {
 		parts = append(parts, fmt.Sprintf("preview=%s", preview))
 	}
 	return compactSummaryLine(parts...)
@@ -581,6 +630,36 @@ func orderedTiledPaneIDs(tab types.TabState) []types.PaneID {
 	return append(ordered, remaining...)
 }
 
+func orderedFloatingPaneIDs(tab types.TabState) []types.PaneID {
+	ordered := make([]types.PaneID, 0, len(tab.FloatingOrder))
+	seen := map[types.PaneID]struct{}{}
+	for _, paneID := range tab.FloatingOrder {
+		pane, ok := tab.Panes[paneID]
+		if !ok || pane.Kind != types.PaneKindFloating {
+			continue
+		}
+		if _, ok := seen[paneID]; ok {
+			continue
+		}
+		seen[paneID] = struct{}{}
+		ordered = append(ordered, paneID)
+	}
+	remaining := make([]types.PaneID, 0, len(tab.Panes))
+	for paneID, pane := range tab.Panes {
+		if pane.Kind != types.PaneKindFloating {
+			continue
+		}
+		if _, ok := seen[paneID]; ok {
+			continue
+		}
+		remaining = append(remaining, paneID)
+	}
+	sort.Slice(remaining, func(i, j int) bool {
+		return remaining[i] < remaining[j]
+	})
+	return append(ordered, remaining...)
+}
+
 func collectSplitPaneIDs(node *types.SplitNode, tab types.TabState, seen map[types.PaneID]struct{}, ordered *[]types.PaneID) {
 	if node == nil {
 		return
@@ -601,7 +680,7 @@ func collectSplitPaneIDs(node *types.SplitNode, tab types.TabState, seen map[typ
 	collectSplitPaneIDs(node.Second, tab, seen, ordered)
 }
 
-func (r runtimeRenderer) renderTiledPanePreview(terminalID types.TerminalID) string {
+func (r runtimeRenderer) renderPanePreview(terminalID types.TerminalID) string {
 	if terminalID == "" || r.Screens == nil {
 		return ""
 	}
