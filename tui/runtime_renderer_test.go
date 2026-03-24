@@ -489,7 +489,7 @@ func TestRuntimeRendererShellOnlyRendersStructuredTerminalManagerOverlay(t *test
 
 	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Visible terminals") || !strings.Contains(stripped, "Actions") {
+	if !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Visible terminals") || !strings.Contains(stripped, "Detail panel") || !strings.Contains(stripped, "Action bar") {
 		t.Fatalf("expected shell-only terminal manager overlay to render structured sections, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "[terminal] api-dev") || !strings.Contains(stripped, "[create] + new terminal") || !strings.Contains(stripped, "running  •  visible") {
@@ -545,7 +545,7 @@ func TestRuntimeRendererShellOnlyRendersStructuredTerminalPickerOverlay(t *testi
 
 	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Detail") || !strings.Contains(stripped, "Results") || !strings.Contains(stripped, "Actions") {
+	if !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Detail panel") || !strings.Contains(stripped, "Results panel") || !strings.Contains(stripped, "Action bar") {
 		t.Fatalf("expected shell-only terminal picker overlay to render structured sections, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "[terminal] build-log") || !strings.Contains(stripped, "running  •  hidden") || !strings.Contains(stripped, "cmd tail -f build.log") || !strings.Contains(stripped, "tags group=build") || !strings.Contains(stripped, "Enter connect") {
@@ -569,7 +569,7 @@ func TestRuntimeRendererShellOnlyRendersStructuredWorkspacePickerTarget(t *testi
 
 	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Target") || !strings.Contains(stripped, "workspace ops  (ws-2)") || !strings.Contains(stripped, "[-] [workspace] ops") || !strings.Contains(stripped, "[tab] logs") {
+	if !strings.Contains(stripped, "Target panel") || !strings.Contains(stripped, "Tree panel") || !strings.Contains(stripped, "Action bar") || !strings.Contains(stripped, "workspace ops  (ws-2)") || !strings.Contains(stripped, "[-] [workspace] ops") || !strings.Contains(stripped, "[tab] logs") {
 		t.Fatalf("expected shell-only workspace picker overlay to render selected target detail, got:\n%s", view)
 	}
 }
