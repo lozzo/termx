@@ -540,7 +540,7 @@ func TestE2ERunScenarioHeaderAndFooterExposeWorkspaceTabsAndFocus(t *testing.T) 
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "workspace_bar: [main]") || !strings.Contains(view, "tab_strip: [shell] | logs") || !strings.Contains(view, "focus_bar: target=api-dev | layer=tiled | role=owner") {
+			if !strings.Contains(view, "workspace_bar: [main]") || !strings.Contains(view, "workspace_summary: tabs=2 | panes=2 | terminals=2 | floating=0") || !strings.Contains(view, "tab_strip: [shell] | logs") || !strings.Contains(view, "pane_bar: title=api-dev | role=owner | kind=tiled") || !strings.Contains(view, "focus_bar: target=api-dev | layer=tiled | role=owner") {
 				t.Fatalf("expected runtime view to expose workspace/tabs/focus chrome, got:\n%s", view)
 			}
 			return nil

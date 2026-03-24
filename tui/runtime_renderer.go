@@ -50,11 +50,13 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	lines = appendChrome(lines, "header", []string{
 		renderHeaderBar(workspace, tab, pane, state.UI),
 		renderWorkspaceBar(workspace),
+		renderWorkspaceSummary(workspace),
 		renderTabStrip(workspace),
 	}, func(lines []string) []string {
 		return appendSection(lines, "status", statusLines)
 	})
 	lines = appendChrome(lines, "body", []string{r.renderBodyBar(state, pane, overlayActive)}, func(lines []string) []string {
+		lines = append(lines, renderPaneBar(state, pane))
 		lines = appendSection(lines, "terminal", r.renderTerminalSection(state, pane, overlayActive))
 		lines = appendSection(lines, "screen", r.renderScreenSection(pane, overlayActive))
 		return appendSection(lines, "overlay", renderOverlayLines(state.UI.Overlay, state.UI.Focus))
@@ -122,6 +124,34 @@ func renderWorkspaceBar(workspace types.WorkspaceState) string {
 	return compactSummaryLine(fmt.Sprintf("workspace_bar: [%s]", label))
 }
 
+func renderWorkspaceSummary(workspace types.WorkspaceState) string {
+	tabs := len(workspace.TabOrder)
+	panes := 0
+	terminals := map[types.TerminalID]struct{}{}
+	floating := 0
+	for _, tabID := range workspace.TabOrder {
+		tab, ok := workspace.Tabs[tabID]
+		if !ok {
+			continue
+		}
+		for _, pane := range tab.Panes {
+			panes++
+			if pane.Kind == types.PaneKindFloating {
+				floating++
+			}
+			if pane.TerminalID != "" {
+				terminals[pane.TerminalID] = struct{}{}
+			}
+		}
+	}
+	return compactSummaryLine(
+		fmt.Sprintf("workspace_summary: tabs=%d", tabs),
+		fmt.Sprintf("panes=%d", panes),
+		fmt.Sprintf("terminals=%d", len(terminals)),
+		fmt.Sprintf("floating=%d", floating),
+	)
+}
+
 func renderTabStrip(workspace types.WorkspaceState) string {
 	parts := make([]string, 0, len(workspace.TabOrder))
 	for _, tabID := range workspace.TabOrder {
@@ -143,6 +173,36 @@ func renderTabStrip(workspace types.WorkspaceState) string {
 		return "tab_strip: <none>"
 	}
 	return compactSummaryLine(fmt.Sprintf("tab_strip: %s", strings.Join(parts, " | ")))
+}
+
+func renderPaneBar(state types.AppState, pane types.PaneState) string {
+	parts := []string{fmt.Sprintf("pane_bar: title=%s", renderPaneTitle(state, pane))}
+	if role := renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID); role != "" {
+		parts = append(parts, fmt.Sprintf("role=%s", role))
+	} else if pane.TerminalID == "" {
+		parts = append(parts, fmt.Sprintf("slot=%s", pane.SlotState))
+	}
+	parts = append(parts, fmt.Sprintf("kind=%s", pane.Kind))
+	return compactSummaryLine(parts...)
+}
+
+func renderPaneTitle(state types.AppState, pane types.PaneState) string {
+	if pane.TerminalID != "" {
+		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok {
+			if terminal.Name != "" {
+				return terminal.Name
+			}
+		}
+		return string(pane.TerminalID)
+	}
+	switch pane.SlotState {
+	case types.PaneSlotExited:
+		return "exited pane"
+	case types.PaneSlotWaiting:
+		return "waiting pane"
+	default:
+		return "unconnected pane"
+	}
 }
 
 func renderShortcutBar(state types.AppState, pane types.PaneState) string {
