@@ -1898,9 +1898,10 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
 - 默认 modern 的第一眼结构已经从“调试字段页”进一步收成“导航条 / 工作台 / 快捷栏”三层骨架
 - 默认 modern 的 single-pane 启动首屏也已经从“单块 terminal canvas”收口成“主画布 + `Single workbench / Signals & Keys` 信息栏”，默认 `cmd/termx` 首屏开始具备 active pane、location、role/slot/state、terminal/command/preview 与快捷键说明
 - 默认 modern 的 `split / floating / mixed` 侧栏语言也已经和 single-pane 对齐到同一套 workbench 语法：现在都会显式带统一的 `Signals & Keys` 面板，稳定暴露 focus、role/slot、state、terminal、command/preview 与快捷键；floating / mixed 继续在其下保留 `Window deck`
+- 默认 modern 的 top/context/footer chrome 也继续往产品导航语言收口：顶部 active summary 现在更偏 `control / windows`，context bar 更偏 `session / view / terminal`，footer 的 layer badge 和快捷键文案也从全大写技术标签压成了更接近产品导航的 `desk / dialog / Pane / Tab / Actions`
 - modern overlay dialog 也已经开始脱离调试式 ASCII `#` 对话框，切到统一的 Unicode 盒模型
 - 下一阶段可以继续沿着这一层推进：
-  - 把更多 footer/header 中仍然过于技术化的表达改成更产品化的 chrome
+  - 继续把 header/context/footer 里剩余仍然偏技术字段的 token 再压成更短、更像最终产品的导航语义
   - 继续把 split / mixed / floating / single 之间的信息栏语言统一成同一套视觉语法
   - 继续减少 pane body 才能读懂状态的地方
   - 再往后进入更像最终产品的 tab/workspace/header/footer 排版收口

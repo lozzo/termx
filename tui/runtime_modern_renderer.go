@@ -2425,14 +2425,14 @@ func renderModernHeaderBrand(theme modernShellTheme, workspace types.WorkspaceSt
 func renderModernLegacyHeaderRight(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics) string {
 	parts := []string{
 		renderModernPaneDisplayTitle(state, pane),
-		renderModernContextStateToken(state, pane),
-		fmt.Sprintf("float %d", len(orderedFloatingPaneIDs(tab))),
+		"control " + renderModernPaneRole(state, pane),
+		fmt.Sprintf("windows %d", len(orderedFloatingPaneIDs(tab))),
 	}
 	if renderModernFloatingPaneOffscreen(pane, metrics) {
 		parts = append(parts, "offscreen")
 	}
 	if state.UI.Overlay.Kind != types.OverlayNone {
-		parts = append(parts, "overlay "+string(state.UI.Overlay.Kind))
+		parts = append(parts, "dialog "+string(state.UI.Overlay.Kind))
 	}
 	if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
 		parts = append(parts, "mode "+string(state.UI.Mode.Active))
@@ -2450,8 +2450,8 @@ func renderModernHeaderRightAdaptive(state types.AppState, workspace types.Works
 func renderModernHeaderRightCompact(state types.AppState, _ types.WorkspaceState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics) string {
 	parts := []string{
 		truncateModernLine(renderModernPaneDisplayTitle(state, pane), 18),
-		renderModernContextStateToken(state, pane),
-		fmt.Sprintf("f%d", len(orderedFloatingPaneIDs(tab))),
+		renderModernPaneRole(state, pane),
+		fmt.Sprintf("w%d", len(orderedFloatingPaneIDs(tab))),
 	}
 	if renderModernFloatingPaneOffscreen(pane, metrics) {
 		parts = append(parts, "offscreen")
@@ -2526,7 +2526,7 @@ func renderModernTopStatusCompact(state types.AppState, pane types.PaneState) st
 	if pane.TerminalID != "" {
 		label = truncateModernLine(label, 14)
 	}
-	return fmt.Sprintf("focus %s  •  %s", label, renderModernContextStateToken(state, pane))
+	return fmt.Sprintf("active %s  •  control %s", label, renderModernPaneRole(state, pane))
 }
 
 func renderModernContextChromeLine(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics) string {
@@ -2534,14 +2534,10 @@ func renderModernContextChromeLine(theme modernShellTheme, state types.AppState,
 		return renderModernFloatingContextWide(theme, state, tab, pane, metrics)
 	}
 	items := []string{
-		theme.activeChip.Render("focus " + renderModernPaneDisplayTitle(state, pane)),
-		theme.chip.Render("role " + renderModernPaneRole(state, pane)),
-		theme.chip.Render("slot " + string(pane.SlotState)),
+		theme.activeChip.Render("session " + renderModernRuntimeLabel(state, pane)),
+		theme.chip.Render("control " + renderModernPaneRole(state, pane)),
+		theme.chip.Render("view " + renderModernLayerLabel(renderModernPrimaryLayer(state))),
 	}
-	if runtime := renderModernContextRuntimeLine(state, pane); runtime != "" {
-		items = append(items, theme.chip.Render(runtime))
-	}
-	items = append(items, theme.chip.Render("layer "+string(renderModernPrimaryLayer(state))))
 	if terminalLabel := renderModernTerminalLabel(state, pane); terminalLabel != "" {
 		items = append(items, theme.chip.Render("terminal "+terminalLabel))
 	}
@@ -2566,8 +2562,8 @@ func renderModernContextChromeLineAdaptive(theme modernShellTheme, state types.A
 	}
 	if shouldRenderCompactChrome(width) {
 		items := []string{
-			theme.activeChip.Render(renderModernContextStateToken(state, pane)),
-			theme.chip.Render(string(renderModernPrimaryLayer(state))),
+			theme.activeChip.Render(renderModernRuntimeLabel(state, pane)),
+			theme.chip.Render(renderModernLayerLabel(renderModernPrimaryLayer(state))),
 		}
 		if terminalLabel := renderModernTerminalLabel(state, pane); terminalLabel != "" {
 			items = append(items, theme.chip.Render(truncateModernLine(terminalLabel, 14)))
@@ -2590,9 +2586,9 @@ func renderModernFloatingContextWide(theme modernShellTheme, state types.AppStat
 	floatingPaneIDs := orderedFloatingPaneIDs(tab)
 	_, _, _, topTitle := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
 	items := []string{
-		theme.activeChip.Render(renderModernContextStateToken(state, pane)),
+		theme.activeChip.Render("session " + renderModernRuntimeLabel(state, pane)),
 		theme.chip.Render("top " + topTitle),
-		theme.chip.Render(fmt.Sprintf("stack %d", len(floatingPaneIDs))),
+		theme.chip.Render(fmt.Sprintf("windows %d", len(floatingPaneIDs))),
 	}
 	if renderModernFloatingPaneOffscreen(pane, metrics) {
 		items = append(items, theme.activeChip.Render("offscreen"), theme.activeChip.Render("c center"))
@@ -2604,9 +2600,9 @@ func renderModernFloatingContextCompact(theme modernShellTheme, state types.AppS
 	floatingPaneIDs := orderedFloatingPaneIDs(tab)
 	_, _, _, topTitle := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
 	items := []string{
-		theme.activeChip.Render(renderModernContextStateToken(state, pane)),
+		theme.activeChip.Render(renderModernRuntimeLabel(state, pane)),
 		theme.chip.Render(truncateModernLine("top "+topTitle, 16)),
-		theme.chip.Render(fmt.Sprintf("%df", len(floatingPaneIDs))),
+		theme.chip.Render(fmt.Sprintf("w%d", len(floatingPaneIDs))),
 	}
 	if renderModernFloatingPaneOffscreen(pane, metrics) {
 		items = append(items, theme.activeChip.Render("offscreen"))
@@ -2694,55 +2690,55 @@ func renderModernFooterShortcutsCompact(state types.AppState, pane types.PaneSta
 func renderModernLegacyShortcut(part string) string {
 	switch part {
 	case "Ctrl-g global":
-		return "<g> GLOBAL"
+		return "<g> Actions"
 	case "Ctrl-p pane":
-		return "<p> PANE"
+		return "<p> Pane"
 	case "Ctrl-t tab":
-		return "<t> TAB"
+		return "<t> Tab"
 	case "Ctrl-w ws":
-		return "<w> WS"
+		return "<w> Space"
 	case "Ctrl-o float":
-		return "<o> FLOAT"
+		return "<o> Float"
 	case "Ctrl-f pick":
-		return "<f> PICK"
+		return "<f> Pick"
 	case "Esc close":
-		return "<esc> CLOSE"
+		return "<esc> Close"
 	case "Enter confirm":
-		return "<enter> CONFIRM"
+		return "<enter> Confirm"
 	case "Enter here":
-		return "<enter> HERE"
+		return "<enter> Here"
 	case "Enter submit":
-		return "<enter> SUBMIT"
+		return "<enter> Submit"
 	case "h/l focus":
-		return "<h/l> FOCUS"
+		return "<h/l> Focus"
 	case "j/k move":
-		return "<j/k> MOVE"
+		return "<j/k> Move"
 	case "H/J/K/L size":
-		return "<H/J/K/L> SIZE"
+		return "<H/J/K/L> Size"
 	case "[/] z":
 		return "<[/]> Z"
 	case "c center":
-		return "<c> CENTER"
+		return "<c> Center"
 	case "x close":
-		return "<x> CLOSE"
+		return "<x> Close"
 	case "r restart":
-		return "<r> RESTART"
+		return "<r> Restart"
 	case "a connect":
-		return "<a> CONNECT"
+		return "<a> Connect"
 	case "m manager":
-		return "<m> MANAGER"
+		return "<m> Manager"
 	case "n new":
-		return "<n> NEW"
+		return "<n> New"
 	case "t new-tab":
-		return "<t> NEW TAB"
+		return "<t> New tab"
 	case "o float":
-		return "<o> FLOAT"
+		return "<o> Float"
 	case "e edit":
-		return "<e> EDIT"
+		return "<e> Edit"
 	case "k stop":
-		return "<k> STOP"
+		return "<k> Stop"
 	case "? help":
-		return "<?> HELP"
+		return "<?> Help"
 	default:
 		return strings.ToUpper(part)
 	}
@@ -2751,11 +2747,11 @@ func renderModernLegacyShortcut(part string) string {
 func renderModernFooterLayerBadge(state types.AppState) string {
 	switch renderModernPrimaryLayer(state) {
 	case types.FocusLayerFloating:
-		return "◫ float"
+		return "◫ float deck"
 	case types.FocusLayerOverlay:
-		return "◌ overlay"
+		return "◌ dialog"
 	default:
-		return "▣ workbench"
+		return "▣ desk"
 	}
 }
 
@@ -2985,6 +2981,28 @@ func renderModernContextRuntimeLine(state types.AppState, pane types.PaneState) 
 		}
 	}
 	return fmt.Sprintf("state %s", stateLabel)
+}
+
+func renderModernRuntimeLabel(state types.AppState, pane types.PaneState) string {
+	stateLabel := string(pane.SlotState)
+	if pane.TerminalID != "" {
+		stateLabel = "running"
+		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.State != "" {
+			stateLabel = string(terminal.State)
+		}
+	}
+	return stateLabel
+}
+
+func renderModernLayerLabel(layer types.FocusLayer) string {
+	switch layer {
+	case types.FocusLayerFloating:
+		return "float"
+	case types.FocusLayerOverlay:
+		return "dialog"
+	default:
+		return "desk"
+	}
 }
 
 func renderModernContextStateToken(state types.AppState, pane types.PaneState) string {
