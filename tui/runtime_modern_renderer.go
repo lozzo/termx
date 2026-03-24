@@ -210,15 +210,17 @@ func (r modernScreenShellRenderer) RenderShell(state types.AppState, workspace t
 }
 
 func (r modernScreenShellRenderer) renderTopBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
+	contentWidth := max(1, width-2)
 	left := renderModernHeaderBrand(theme, workspace)
-	right := theme.panelMeta.Render(renderModernLegacyHeaderRight(state, workspace, tab, pane))
-	return theme.topBar.Render(fillANSIHorizontal(left, right, width))
+	right := theme.panelMeta.Render(renderModernHeaderRightAdaptive(state, workspace, tab, pane, width))
+	return theme.topBar.Render(fillANSIHorizontal(left, right, contentWidth))
 }
 
 func (r modernScreenShellRenderer) renderTabBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
-	left := renderModernTabStrip(theme, workspace)
-	right := theme.panelMeta.Render(r.renderWorkspaceSummaryText(workspace))
-	return theme.subBar.Render(fillANSIHorizontal(left, right, width))
+	contentWidth := max(1, width-2)
+	left := renderModernTabStripAdaptive(theme, state, workspace, tab, pane, width)
+	right := theme.panelMeta.Render(r.renderWorkspaceSummaryTextAdaptive(workspace, width))
+	return theme.subBar.Render(fillANSIHorizontal(left, right, contentWidth))
 }
 
 func (r modernScreenShellRenderer) renderWorkspaceSummaryText(workspace types.WorkspaceState) string {
@@ -244,10 +246,19 @@ func (r modernScreenShellRenderer) renderWorkspaceSummaryText(workspace types.Wo
 	return fmt.Sprintf("tabs %d  •  panes %d  •  terminals %d  •  floating %d", tabs, panes, len(terminals), floating)
 }
 
+func (r modernScreenShellRenderer) renderWorkspaceSummaryTextAdaptive(workspace types.WorkspaceState, width int) string {
+	if shouldRenderCompactChrome(width) {
+		tabs, panes, terminals, floating := renderModernWorkspaceCounts(workspace)
+		return fmt.Sprintf("%dt  •  %dp  •  %dx  •  %df", tabs, panes, terminals, floating)
+	}
+	return r.renderWorkspaceSummaryText(workspace)
+}
+
 func (r modernScreenShellRenderer) renderContextBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
-	left := theme.panelMeta.Render(renderModernPanePath(workspace, tab, pane))
-	right := renderModernContextChromeLine(theme, state, pane)
-	return theme.subBar.Render(fillANSIHorizontal(left, right, width))
+	contentWidth := max(1, width-2)
+	left := theme.panelMeta.Render(renderModernPanePathAdaptive(workspace, tab, pane, width))
+	right := renderModernContextChromeLineAdaptive(theme, state, pane, width)
+	return theme.subBar.Render(fillANSIHorizontal(left, right, contentWidth))
 }
 
 func (r modernScreenShellRenderer) renderWorkbench(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width, height int) string {
@@ -544,7 +555,7 @@ func (r modernScreenShellRenderer) renderDetachedFloatingStrip(theme modernShell
 		}
 		items = append(items, theme.chip.Render(truncateModernLine(label, 44)))
 	}
-	return theme.subBar.Render(fillANSIHorizontal(strings.Join(items, " "), theme.panelMeta.Render(fmt.Sprintf("%d floating", len(floatingPaneIDs))), width))
+	return theme.subBar.Render(fillANSIHorizontal(strings.Join(items, " "), theme.panelMeta.Render(fmt.Sprintf("%d floating", len(floatingPaneIDs))), max(1, width-2)))
 }
 
 func (r modernScreenShellRenderer) renderFloatingDeck(theme modernShellTheme, state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID, width, height int) string {
@@ -973,13 +984,15 @@ func renderModernScreenFrameLine(text string, innerWidth int) string {
 
 func (r modernScreenShellRenderer) renderOverlayViewport(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width, height int) string {
 	backdropLines := r.renderWorkbenchCanvasLines(state, tab, pane, metrics, width, height, false)
-	dialogWidth := min(width-4, max(56, width*4/5))
+	dialogWidth := renderModernOverlayDialogWidth(metrics, width)
 	dialogLines := r.renderModernOverlayDialogLines(state, dialogWidth)
 	canvas := newScreenShellCanvas(width, max(height, len(backdropLines)))
 	canvas.stampLines(0, 0, backdropLines)
 	dialogX := max(0, (width-dialogWidth)/2)
 	dialogY := max(0, (canvas.height-len(dialogLines))/2)
-	canvas.stampLines(dialogX+2, dialogY+1, renderModernOverlayShadow(dialogWidth, len(dialogLines)))
+	if width >= 68 {
+		canvas.stampLines(dialogX+2, dialogY+1, renderModernOverlayShadow(dialogWidth, len(dialogLines)))
+	}
 	canvas.clearRect(dialogX, dialogY, dialogWidth, len(dialogLines))
 	canvas.stampLines(dialogX, dialogY, dialogLines)
 	return theme.terminalBody.Render(strings.Join(canvas.lines(), "\n"))
@@ -1905,15 +1918,18 @@ func renderModernLocation(location terminalmanagerdomain.Location) string {
 }
 
 func (r modernScreenShellRenderer) renderFooter(theme modernShellTheme, state types.AppState, pane types.PaneState, notices []btui.Notice, width int) string {
+	contentWidth := max(1, width-2)
 	notice := renderModernNotice(theme, notices)
-	left := theme.panelMeta.Render(renderModernLegacyFooterShortcuts(state, pane))
-	right := renderModernFooterContext(theme, state, pane, notice)
-	return theme.footer.Render(fillANSIHorizontal(left, right, width))
+	left := theme.panelMeta.Render(renderModernFooterShortcutsAdaptive(state, pane, width))
+	right := renderModernFooterContext(theme, state, pane, notice, width)
+	return theme.footer.Render(fillANSIHorizontal(left, right, contentWidth))
 }
 
-func renderModernFooterContext(theme modernShellTheme, state types.AppState, pane types.PaneState, notice string) string {
+func renderModernFooterContext(theme modernShellTheme, state types.AppState, pane types.PaneState, notice string, width int) string {
 	items := []string{theme.activeChip.Render(renderPaneTitle(state, pane))}
-	items = append(items, theme.chip.Render(renderModernFooterSlotBadge(pane)))
+	if !shouldRenderCompactChrome(width) {
+		items = append(items, theme.chip.Render(renderModernFooterSlotBadge(pane)))
+	}
 	items = append(items, theme.chip.Render(renderModernFooterLayerBadge(state)))
 	if notice != "" && !strings.Contains(xansi.Strip(notice), "ready") {
 		items = append([]string{notice}, items...)
@@ -1977,6 +1993,32 @@ func renderModernLegacyHeaderRight(state types.AppState, workspace types.Workspa
 	return strings.Join(parts, "  ")
 }
 
+func renderModernHeaderRightAdaptive(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
+	if shouldRenderCompactChrome(width) {
+		return renderModernHeaderRightCompact(state, workspace, tab, pane)
+	}
+	return renderModernLegacyHeaderRight(state, workspace, tab, pane)
+}
+
+func renderModernHeaderRightCompact(state types.AppState, _ types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
+	termID := "-"
+	if pane.TerminalID != "" {
+		termID = string(pane.TerminalID)
+	}
+	parts := []string{
+		string(pane.ID),
+		termID,
+		fmt.Sprintf("f%d", len(orderedFloatingPaneIDs(tab))),
+	}
+	if state.UI.Overlay.Kind != types.OverlayNone {
+		parts = append(parts, string(state.UI.Overlay.Kind))
+	}
+	if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
+		parts = append(parts, string(state.UI.Mode.Active))
+	}
+	return strings.Join(parts, "  •  ")
+}
+
 func renderModernTopStatusLine(state types.AppState, _ types.TabState, pane types.PaneState) string {
 	parts := []string{
 		"focus " + renderPaneTitle(state, pane),
@@ -2009,6 +2051,38 @@ func renderModernTabStrip(theme modernShellTheme, workspace types.WorkspaceState
 	return strings.Join(items, " ")
 }
 
+func renderModernTabStripAdaptive(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
+	if shouldRenderCompactChrome(width) {
+		items := []string{
+			theme.activeTab.Render(renderModernActiveTabCompact(tab)),
+			theme.chip.Render(renderModernTopStatusCompact(state, pane)),
+		}
+		return strings.Join(items, " ")
+	}
+	return renderModernTabStrip(theme, workspace)
+}
+
+func renderModernActiveTabCompact(tab types.TabState) string {
+	label := safeTabLabel(tab)
+	paneCount := len(tab.Panes)
+	switch paneCount {
+	case 0:
+		return fmt.Sprintf("%s • empty", label)
+	case 1:
+		return fmt.Sprintf("%s • 1 pane", label)
+	default:
+		return fmt.Sprintf("%s • %d panes", label, paneCount)
+	}
+}
+
+func renderModernTopStatusCompact(state types.AppState, pane types.PaneState) string {
+	label := renderPaneTitle(state, pane)
+	if pane.TerminalID != "" {
+		label = truncateModernLine(label, 14)
+	}
+	return fmt.Sprintf("focus %s  •  %s", label, renderModernContextStateToken(state, pane))
+}
+
 func renderModernContextChromeLine(theme modernShellTheme, state types.AppState, pane types.PaneState) string {
 	items := []string{
 		theme.activeChip.Render("focus " + renderPaneTitle(state, pane)),
@@ -2031,6 +2105,26 @@ func renderModernContextChromeLine(theme modernShellTheme, state types.AppState,
 	return strings.Join(items, " ")
 }
 
+func renderModernContextChromeLineAdaptive(theme modernShellTheme, state types.AppState, pane types.PaneState, width int) string {
+	if shouldRenderCompactChrome(width) {
+		items := []string{
+			theme.activeChip.Render(renderModernContextStateToken(state, pane)),
+			theme.chip.Render(string(renderModernPrimaryLayer(state))),
+		}
+		if pane.TerminalID != "" {
+			items = append(items, theme.chip.Render(string(pane.TerminalID)))
+		}
+		if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
+			items = append(items, theme.chip.Render(string(state.UI.Mode.Active)))
+		}
+		if state.UI.Overlay.Kind != types.OverlayNone {
+			items = append(items, theme.activeChip.Render(string(state.UI.Overlay.Kind)))
+		}
+		return strings.Join(items, " ")
+	}
+	return renderModernContextChromeLine(theme, state, pane)
+}
+
 func renderModernLegacyFooterShortcuts(state types.AppState, pane types.PaneState) string {
 	parts := renderShortcutParts(state, pane)
 	segments := make([]string, 0, len(parts))
@@ -2038,6 +2132,74 @@ func renderModernLegacyFooterShortcuts(state types.AppState, pane types.PaneStat
 		segments = append(segments, renderModernLegacyShortcut(part))
 	}
 	return strings.Join(segments, "  ")
+}
+
+func renderModernFooterShortcutsAdaptive(state types.AppState, pane types.PaneState, width int) string {
+	if shouldRenderCompactChrome(width) {
+		return renderModernFooterShortcutsCompact(state, pane)
+	}
+	return renderModernLegacyFooterShortcuts(state, pane)
+}
+
+func renderModernFooterShortcutsCompact(state types.AppState, pane types.PaneState) string {
+	parts := renderShortcutParts(state, pane)
+	segments := make([]string, 0, len(parts))
+	for _, part := range parts {
+		switch part {
+		case "Ctrl-p pane":
+			segments = append(segments, "<p>")
+		case "Ctrl-t tab":
+			segments = append(segments, "<t>")
+		case "Ctrl-w ws":
+			segments = append(segments, "<w>")
+		case "Ctrl-o float":
+			segments = append(segments, "<o>")
+		case "Ctrl-f pick":
+			segments = append(segments, "<f>")
+		case "Ctrl-g global":
+			segments = append(segments, "<g>")
+		case "Esc close":
+			segments = append(segments, "<esc>")
+		case "? help":
+			segments = append(segments, "<?>")
+		case "Enter confirm":
+			segments = append(segments, "<enter>")
+		case "Enter here":
+			segments = append(segments, "<enter>")
+		case "Enter submit":
+			segments = append(segments, "<enter>")
+		case "h/l focus":
+			segments = append(segments, "<h/l>")
+		case "j/k move":
+			segments = append(segments, "<j/k>")
+		case "H/J/K/L size":
+			segments = append(segments, "<HJKL>")
+		case "[/] z":
+			segments = append(segments, "<[/]>")
+		case "c center":
+			segments = append(segments, "<c>")
+		case "x close":
+			segments = append(segments, "<x>")
+		case "r restart":
+			segments = append(segments, "<r>")
+		case "a connect":
+			segments = append(segments, "<a>")
+		case "m manager":
+			segments = append(segments, "<m>")
+		case "n new":
+			segments = append(segments, "<n>")
+		case "t new-tab":
+			segments = append(segments, "<t+>")
+		case "e edit":
+			segments = append(segments, "<e>")
+		case "k stop":
+			segments = append(segments, "<k>")
+		}
+	}
+	if len(segments) == 0 {
+		return renderModernLegacyFooterShortcuts(state, pane)
+	}
+	return strings.Join(segments, " ")
 }
 
 func renderModernLegacyShortcut(part string) string {
@@ -2172,8 +2334,23 @@ func fillANSIHorizontal(left, right string, width int) string {
 	if width <= 0 {
 		return left + right
 	}
+	left = truncateModernLine(left, width)
+	right = truncateModernLine(right, width)
 	leftW := xansi.StringWidth(left)
 	rightW := xansi.StringWidth(right)
+	if leftW+1+rightW > width {
+		available := max(2, width-1)
+		rightBudget := min(rightW, max(12, available/3))
+		leftBudget := available - rightBudget
+		if leftBudget < 8 {
+			leftBudget = min(available-1, max(1, available/2))
+			rightBudget = max(1, available-leftBudget)
+		}
+		left = truncateModernLine(left, leftBudget)
+		right = truncateModernLine(right, rightBudget)
+		leftW = xansi.StringWidth(left)
+		rightW = xansi.StringWidth(right)
+	}
 	gap := width - leftW - rightW
 	if gap < 1 {
 		gap = 1
@@ -2271,6 +2448,13 @@ func renderModernPanePath(workspace types.WorkspaceState, tab types.TabState, pa
 	return fmt.Sprintf("%s / %s / %s / %s", safeWorkspaceLabel(workspace), safeTabLabel(tab), safePaneKind(pane.Kind), pane.ID)
 }
 
+func renderModernPanePathAdaptive(workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
+	if width < 72 {
+		return fmt.Sprintf("%s / %s / %s", safeWorkspaceLabel(workspace), safeTabLabel(tab), pane.ID)
+	}
+	return renderModernPanePath(workspace, tab, pane)
+}
+
 func renderModernContextRuntimeLine(state types.AppState, pane types.PaneState) string {
 	stateLabel := string(pane.SlotState)
 	if pane.TerminalID != "" {
@@ -2280,6 +2464,61 @@ func renderModernContextRuntimeLine(state types.AppState, pane types.PaneState) 
 		}
 	}
 	return fmt.Sprintf("state %s", stateLabel)
+}
+
+func renderModernContextStateToken(state types.AppState, pane types.PaneState) string {
+	role := renderModernPaneRole(state, pane)
+	stateLabel := string(pane.SlotState)
+	if pane.TerminalID != "" {
+		stateLabel = "running"
+		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.State != "" {
+			stateLabel = string(terminal.State)
+		}
+	}
+	if role == "" || role == "unassigned" {
+		return stateLabel
+	}
+	return role + " " + stateLabel
+}
+
+func renderModernWorkspaceCounts(workspace types.WorkspaceState) (tabs, panes, terminals, floating int) {
+	tabs = len(workspace.TabOrder)
+	terminalSet := map[types.TerminalID]struct{}{}
+	for _, tabID := range workspace.TabOrder {
+		tab, ok := workspace.Tabs[tabID]
+		if !ok {
+			continue
+		}
+		for _, pane := range tab.Panes {
+			panes++
+			if pane.Kind == types.PaneKindFloating {
+				floating++
+			}
+			if pane.TerminalID != "" {
+				terminalSet[pane.TerminalID] = struct{}{}
+			}
+		}
+	}
+	terminals = len(terminalSet)
+	return tabs, panes, terminals, floating
+}
+
+func renderModernOverlayDialogWidth(metrics wireframeMetrics, width int) int {
+	dialogWidth := min(metrics.OverlayWidth, width-4)
+	if shouldRenderCompactChrome(width) {
+		dialogWidth = width - 2
+	}
+	if dialogWidth < 40 {
+		dialogWidth = min(width, 40)
+	}
+	if dialogWidth > width {
+		dialogWidth = width
+	}
+	return dialogWidth
+}
+
+func shouldRenderCompactChrome(width int) bool {
+	return width <= 80
 }
 
 func renderModernWorkbenchLocationLine(state types.AppState, pane types.PaneState) string {

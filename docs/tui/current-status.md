@@ -62,6 +62,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮同步把 shell-only / default-run 的 modern renderer 断言迁到新文案基线，确保后面继续压缩 chrome 技术味时还有稳定回归护栏
 - 本轮继续把 modern 主壳里已经预留但没接线的视觉层次真正用起来：顶部 brand 现在开始使用 active/inactive tab strip 样式，第二行开始直接渲染 `1:shell • 1 pane` 这种真实 tab 条，而不是继续把 tab 信息塞在说明文字里
 - 本轮同步把 overlay dialog 补上阴影层，footer notice 改成 `! error / ● info` 这种更显眼的提示 token，help overlay 与默认 modern 首屏的 shell-only / E2E 基线也一起迁到新的视觉输出
+- 本轮继续把 modern 主壳往“64~80 列还能读”的方向收口：顶部/二级状态条/上下文条/footer 现在统一走 compact 阈值，bar 的真实宽度预算也按 lipgloss padding 重新对齐，不再出现视觉上是 64/78 列、实际却悄悄多出 2 列导致溢出的情况
+- 本轮同步补上 64 列 renderer 基线，锁住 narrow shell / narrow help overlay 两条路径；default runtime 仍保留 78 列最小工作台宽度，但默认 78 列首屏和 floating mode 的 footer/context 断言已经全部迁到 compact 新基线
 
 ---
 
@@ -285,6 +287,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 214. 第二百一十轮 TDD 已补上 modern workbench hero 双面板与 overlay backdrop 的结构化 paused context，并完成 shell-only / default-run / 全量回归闭环
 215. 第二百一十一轮 TDD 已补上 modern 主壳导航文案去技术化、footer slot badge 与 shell-only/default-run 文案回归闭环
 216. 第二百一十二轮 TDD 已补上 modern tab strip 样式接线、overlay dialog 阴影层、footer notice 显著性提升，并完成 shell-only/default-run/E2E/全量回归闭环
+217. 第二百一十三轮 TDD 已补上 modern 主壳 compact 阈值、bar 实际宽度预算对齐、64 列 renderer 基线与默认 78 列 compact 回归闭环
 
 对应文档：
 

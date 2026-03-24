@@ -20,6 +20,32 @@ func stripANSIForTest(view string) string {
 	return xansi.Strip(view)
 }
 
+func renderModernShellForTest(t *testing.T, state types.AppState, notices []btui.Notice, metrics wireframeMetrics, screens RuntimeTerminalStore) string {
+	t.Helper()
+	workspace, ok := state.Domain.Workspaces[state.Domain.ActiveWorkspaceID]
+	if !ok {
+		t.Fatalf("missing active workspace")
+	}
+	tab, ok := workspace.Tabs[workspace.ActiveTabID]
+	if !ok {
+		t.Fatalf("missing active tab")
+	}
+	pane, ok := tab.Panes[tab.ActivePaneID]
+	if !ok {
+		t.Fatalf("missing active pane")
+	}
+	return stripANSIForTest(modernScreenShellRenderer{Screens: screens}.RenderShell(state, workspace, tab, pane, notices, metrics))
+}
+
+func assertMaxRenderedLineWidth(t *testing.T, view string, width int) {
+	t.Helper()
+	for _, line := range strings.Split(view, "\n") {
+		if xansi.StringWidth(line) > width {
+			t.Fatalf("expected rendered line width <= %d, got %d:\n%s", width, xansi.StringWidth(line), view)
+		}
+	}
+}
+
 func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	state := connectedRunAppState()
 	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
@@ -205,19 +231,19 @@ func TestRuntimeRendererCanHideDebugSections(t *testing.T) {
 	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") {
 		t.Fatalf("expected shell-only renderer to keep visible screen shell, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "pane pane-1  terminal term-1  float 0") {
+	if !strings.Contains(stripped, "pane-1  •  term-1  •  f0") {
 		t.Fatalf("expected shell-only renderer top chrome to expose active pane summary, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "1:shell • 1 pane") || !strings.Contains(stripped, "tabs 1  •  panes 1  •  terminals 1  •  floating 0") {
+	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "focus api-dev  •  owner running") || !strings.Contains(stripped, "1t  •  1p  •  1x  •  0f") {
 		t.Fatalf("expected shell-only renderer tab chrome to expose tab and workspace summary, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "api-dev  ● run  owner") || !strings.Contains(stripped, "┏") || !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "/tmp") || !strings.Contains(stripped, "term-1 running owner") {
 		t.Fatalf("expected shell-only renderer to keep pane canvas content inside screen shell, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "main / shell / tiled / pane-1") || !strings.Contains(stripped, "focus api-dev") || !strings.Contains(stripped, "role owner") || !strings.Contains(stripped, "slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "layer tiled") || !strings.Contains(stripped, "terminal term-1") {
+	if !strings.Contains(stripped, "main / shell / tiled / pane-1") || !strings.Contains(stripped, "owner running") || !strings.Contains(stripped, "tiled") || !strings.Contains(stripped, "term-1") {
 		t.Fatalf("expected shell-only renderer context bar to expose path and runtime context, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "<p> PANE") || !strings.Contains(stripped, "<g> GLOBAL") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "● connected") || !strings.Contains(stripped, "▣ workbench") {
+	if !strings.Contains(stripped, "<p> <t> <w> <o> <f> <g> <?>") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "▣ workbench") {
 		t.Fatalf("expected shell-only renderer footer to expose focus/layer/slot context, got:\n%s", view)
 	}
 	if strings.Contains(view, "wireframe_view:") || strings.Contains(view, "chrome_header:") || strings.Contains(view, "chrome_body:") || strings.Contains(view, "chrome_footer:") {
@@ -234,11 +260,97 @@ func TestRuntimeRendererShellOnlyTopChromeSummarizesWorkspaceTabsAndContext(t *t
 	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") || !strings.Contains(stripped, "2:logs") {
 		t.Fatalf("expected shell-only renderer top bar to expose active pane and role summary, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "1:shell • 1 pane") || !strings.Contains(stripped, "2:logs • 1 pane") || !strings.Contains(stripped, "tabs 2  •  panes 2  •  terminals 2  •  floating 0") {
+	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "focus api-dev  •  owner running") || !strings.Contains(stripped, "2t  •  2p  •  2x  •  0f") {
 		t.Fatalf("expected shell-only renderer tab bar to expose per-tab and workspace counts, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "main / shell / tiled / pane-1") || !strings.Contains(stripped, "focus api-dev") || !strings.Contains(stripped, "role owner") || !strings.Contains(stripped, "slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "layer tiled") || !strings.Contains(stripped, "terminal term-1") {
+	if !strings.Contains(stripped, "main / shell / tiled / pane-1") || !strings.Contains(stripped, "owner running") || !strings.Contains(stripped, "tiled") || !strings.Contains(stripped, "term-1") {
 		t.Fatalf("expected shell-only renderer context bar to expose current path and runtime state, got:\n%s", view)
+	}
+}
+
+func TestModernScreenShellCompactsChromeAtNarrowWidth(t *testing.T) {
+	state := runtimeStateWithTwoTabTargets()
+	workspace := state.Domain.Workspaces[state.Domain.ActiveWorkspaceID]
+	workspace.Name = "production-observability-main"
+	tab := workspace.Tabs[workspace.ActiveTabID]
+	tab.Name = "shell-with-a-very-long-name"
+	workspace.Tabs[tab.ID] = tab
+	state.Domain.Workspaces[workspace.ID] = workspace
+
+	screens := NewRuntimeTerminalStore(RuntimeSessions{
+		Terminals: map[types.TerminalID]TerminalRuntimeSession{
+			types.TerminalID("term-1"): {
+				TerminalID: types.TerminalID("term-1"),
+				Snapshot: &protocol.Snapshot{
+					TerminalID: "term-1",
+					Size:       protocol.Size{Cols: 64, Rows: 24},
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{
+							{{Content: "$"}, {Content: " "}, {Content: "p"}, {Content: "w"}, {Content: "d"}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	view := renderModernShellForTest(t, state, nil, wireframeMetrics{
+		ViewportWidth:  64,
+		ViewportHeight: 24,
+		OverlayWidth:   60,
+	}, screens)
+
+	assertMaxRenderedLineWidth(t, view, 64)
+	if !strings.Contains(view, "termx") || !strings.Contains(view, "shell-with-a-very-long-name") || !strings.Contains(view, "api-dev") {
+		t.Fatalf("expected narrow modern shell to keep visible brand and active tab context, got:\n%s", view)
+	}
+	if !strings.Contains(view, "owner running") || !strings.Contains(view, "pane-1") {
+		t.Fatalf("expected narrow modern shell to compact but retain path/runtime context, got:\n%s", view)
+	}
+	if !strings.Contains(view, "<p> <t> <w> <o> <f> <g> <?>") {
+		t.Fatalf("expected narrow modern shell footer to switch to compact shortcuts, got:\n%s", view)
+	}
+}
+
+func TestModernScreenShellUsesWiderCompactOverlayWithoutShadowAtNarrowWidth(t *testing.T) {
+	state := runtimeStateWithActiveTerminalMetadata()
+	state.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayHelp,
+		ReturnFocus: state.UI.Focus,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+	state.UI.Focus.OverlayTarget = types.OverlayHelp
+	state.UI.Mode = types.ModeState{Active: types.ModePicker}
+
+	screens := NewRuntimeTerminalStore(RuntimeSessions{
+		Terminals: map[types.TerminalID]TerminalRuntimeSession{
+			types.TerminalID("term-1"): {
+				TerminalID: types.TerminalID("term-1"),
+				Snapshot: &protocol.Snapshot{
+					TerminalID: "term-1",
+					Size:       protocol.Size{Cols: 64, Rows: 24},
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{
+							{{Content: "$"}, {Content: " "}, {Content: "p"}, {Content: "w"}, {Content: "d"}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	view := renderModernShellForTest(t, state, nil, wireframeMetrics{
+		ViewportWidth:  64,
+		ViewportHeight: 24,
+		OverlayWidth:   60,
+	}, screens)
+
+	assertMaxRenderedLineWidth(t, view, 64)
+	if !strings.Contains(view, "Help") || !strings.Contains(view, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(view, "ESC closes help and returns to the workbench.") {
+		t.Fatalf("expected narrow overlay to keep structured help dialog, got:\n%s", view)
+	}
+	if strings.Contains(view, "░") {
+		t.Fatalf("expected narrow overlay to disable shadow and give dialog more width, got:\n%s", view)
 	}
 }
 
@@ -304,7 +416,7 @@ func TestRuntimeRendererShellOnlyFooterHighlightsErrorNotice(t *testing.T) {
 	}})
 	stripped := stripANSIForTest(view)
 
-	if !strings.Contains(stripped, "! runtime effect boom") || !strings.Contains(stripped, "● connected") || !strings.Contains(stripped, "▣ workbench") {
+	if !strings.Contains(stripped, "! runtime effect boom") || !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "▣ workbench") {
 		t.Fatalf("expected shell-only footer to highlight error notice and pane badges, got:\n%s", view)
 	}
 }
@@ -333,7 +445,7 @@ func TestRuntimeRendererShellOnlyShowsContextualActionsForConnectedPane(t *testi
 
 	view := renderer.Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "<p> PANE") || !strings.Contains(stripped, "<o> FLOAT") || !strings.Contains(stripped, "<?> HELP") {
+	if !strings.Contains(stripped, "<p> <t> <w> <o> <f> <g> <?>") {
 		t.Fatalf("expected shell-only connected pane to expose contextual actions, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "api-dev  ● run  owner") {
@@ -506,7 +618,7 @@ func TestRuntimeRendererShellOnlyRendersFloatingModeOperationHints(t *testing.T)
 
 	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "<h/l> FOCUS") || !strings.Contains(stripped, "<j/k> MOVE") || !strings.Contains(stripped, "<H/J/K/L> SIZE") || !strings.Contains(stripped, "ESC EXIT") {
+	if !strings.Contains(stripped, "<h/l>") || !strings.Contains(stripped, "<j/k>") || !strings.Contains(stripped, "<HJKL>") || !strings.Contains(stripped, "<?>") {
 		t.Fatalf("expected shell-only floating mode renderer to expose operation hints, got:\n%s", view)
 	}
 }
