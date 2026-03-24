@@ -248,6 +248,7 @@ func applyConnectTerminal(state *types.AppState, in intent.ConnectTerminalIntent
 	conn := connection.FromSnapshot(snapshot)
 	conn.Connect(in.PaneID)
 	state.Domain.Connections[in.TerminalID] = conn.Snapshot()
+	syncTerminalVisibleFromConnections(state, in.TerminalID)
 }
 
 func applyStopTerminal(state *types.AppState, in intent.StopTerminalIntent) {
@@ -262,6 +263,7 @@ func applyStopTerminal(state *types.AppState, in intent.StopTerminalIntent) {
 	terminal.State = types.TerminalRunStateStopped
 	state.Domain.Terminals[in.TerminalID] = terminal
 	delete(state.Domain.Connections, in.TerminalID)
+	syncTerminalVisibleFromConnections(state, in.TerminalID)
 }
 
 func applyProgramExited(state *types.AppState, in intent.TerminalProgramExitedIntent) {
@@ -300,6 +302,7 @@ func applySyncTerminalState(state *types.AppState, in intent.SyncTerminalStateIn
 		terminal.ExitCode = nil
 		state.Domain.Terminals[in.TerminalID] = terminal
 		delete(state.Domain.Connections, in.TerminalID)
+		syncTerminalVisibleFromConnections(state, in.TerminalID)
 	case types.TerminalRunStateExited:
 		forEachPane(state, func(pane *types.PaneState) {
 			if pane.TerminalID != in.TerminalID {
@@ -379,6 +382,7 @@ func applyClosePane(state *types.AppState, in intent.ClosePaneIntent) {
 				} else {
 					state.Domain.Connections[pane.TerminalID] = next
 				}
+				syncTerminalVisibleFromConnections(state, pane.TerminalID)
 			}
 			if tab.ActivePaneID == in.PaneID {
 				tab.ActivePaneID = firstRemainingPaneID(tab.Panes)
@@ -1066,6 +1070,7 @@ func applyConnectTerminalInNewTabSucceeded(state *types.AppState, in intent.Conn
 	}
 	conn.Connect(paneID)
 	state.Domain.Connections[in.TerminalID] = conn.Snapshot()
+	syncTerminalVisibleFromConnections(state, in.TerminalID)
 
 	applyCloseOverlay(state)
 	state.UI.Focus = types.FocusState{
@@ -1120,6 +1125,7 @@ func applyConnectTerminalInFloatingPaneSucceeded(state *types.AppState, in inten
 	}
 	conn.Connect(paneID)
 	state.Domain.Connections[in.TerminalID] = conn.Snapshot()
+	syncTerminalVisibleFromConnections(state, in.TerminalID)
 
 	applyCloseOverlay(state)
 	state.UI.Focus = types.FocusState{
@@ -1443,9 +1449,23 @@ func disconnectPaneFromCurrentTerminal(state *types.AppState, paneID types.PaneI
 	next := conn.Snapshot()
 	if len(next.ConnectedPaneIDs) == 0 {
 		delete(state.Domain.Connections, currentTerminalID)
+		syncTerminalVisibleFromConnections(state, currentTerminalID)
 		return
 	}
 	state.Domain.Connections[currentTerminalID] = next
+	syncTerminalVisibleFromConnections(state, currentTerminalID)
+}
+
+// syncTerminalVisibleFromConnections 把 terminal 可见性收口成“当前是否至少还有一个连接 pane”。
+// 这样 manager/detail/runtime 看到的 visible 不会再和 connected_panes 漂移。
+func syncTerminalVisibleFromConnections(state *types.AppState, terminalID types.TerminalID) {
+	terminal, ok := state.Domain.Terminals[terminalID]
+	if !ok {
+		return
+	}
+	conn, ok := state.Domain.Connections[terminalID]
+	terminal.Visible = ok && len(conn.ConnectedPaneIDs) > 0
+	state.Domain.Terminals[terminalID] = terminal
 }
 
 func findPaneTerminalID(state *types.AppState, paneID types.PaneID) types.TerminalID {

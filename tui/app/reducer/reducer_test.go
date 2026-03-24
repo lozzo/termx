@@ -933,6 +933,9 @@ func TestReducerTerminalManagerConnectHereUsesSelectedTerminalAndClosesOverlay(t
 	if pane.TerminalID != types.TerminalID("term-2") {
 		t.Fatalf("expected current pane to connect selected terminal, got %+v", pane)
 	}
+	if !result.State.Domain.Terminals[types.TerminalID("term-2")].Visible {
+		t.Fatalf("expected connected terminal to become visible, got %+v", result.State.Domain.Terminals[types.TerminalID("term-2")])
+	}
 	if len(result.Effects) != 1 {
 		t.Fatalf("expected one connect effect, got %d", len(result.Effects))
 	}
@@ -942,6 +945,34 @@ func TestReducerTerminalManagerConnectHereUsesSelectedTerminalAndClosesOverlay(t
 	}
 	if effect.PaneID != types.PaneID("pane-1") || effect.TerminalID != types.TerminalID("term-2") {
 		t.Fatalf("unexpected effect payload: %+v", effect)
+	}
+}
+
+func TestReducerConnectTerminalSwitchingLastPaneHidesOldTerminalAndShowsNewTerminal(t *testing.T) {
+	reducer := New()
+	state := newConnectedAppState()
+	terminal := state.Domain.Terminals[types.TerminalID("term-1")]
+	terminal.Visible = true
+	state.Domain.Terminals[types.TerminalID("term-1")] = terminal
+	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
+		ID:    types.TerminalID("term-2"),
+		Name:  "build-log",
+		State: types.TerminalRunStateRunning,
+	}
+
+	result := reducer.Reduce(state, intent.ConnectTerminalIntent{
+		PaneID:     types.PaneID("pane-1"),
+		TerminalID: types.TerminalID("term-2"),
+	})
+
+	if result.State.Domain.Terminals[types.TerminalID("term-1")].Visible {
+		t.Fatalf("expected old terminal to become hidden after losing last pane, got %+v", result.State.Domain.Terminals[types.TerminalID("term-1")])
+	}
+	if !result.State.Domain.Terminals[types.TerminalID("term-2")].Visible {
+		t.Fatalf("expected new terminal to become visible after connect, got %+v", result.State.Domain.Terminals[types.TerminalID("term-2")])
+	}
+	if _, ok := result.State.Domain.Connections[types.TerminalID("term-1")]; ok {
+		t.Fatalf("expected old terminal connection snapshot to be removed after losing last pane")
 	}
 }
 
@@ -1016,6 +1047,9 @@ func TestReducerTerminalManagerConnectInNewTabSucceededCreatesTabAndClosesOverla
 	if conn.OwnerPaneID != types.PaneID("ws-1-tab-2-pane-1") {
 		t.Fatalf("expected first pane in new tab to own terminal, got %+v", conn)
 	}
+	if !result.State.Domain.Terminals[types.TerminalID("term-2")].Visible {
+		t.Fatalf("expected new-tab success to mark terminal visible, got %+v", result.State.Domain.Terminals[types.TerminalID("term-2")])
+	}
 }
 
 func TestReducerTerminalManagerConnectInFloatingPaneEmitsPlanningEffect(t *testing.T) {
@@ -1082,6 +1116,9 @@ func TestReducerTerminalManagerConnectInFloatingPaneSucceededCreatesFloatingPane
 	}
 	if conn.OwnerPaneID != types.PaneID("float-1") {
 		t.Fatalf("expected first floating connection to own terminal, got %+v", conn)
+	}
+	if !result.State.Domain.Terminals[types.TerminalID("term-2")].Visible {
+		t.Fatalf("expected floating success to mark terminal visible, got %+v", result.State.Domain.Terminals[types.TerminalID("term-2")])
 	}
 }
 

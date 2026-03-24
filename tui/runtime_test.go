@@ -2929,7 +2929,7 @@ func TestE2ERunScenarioTerminalManagerConnectHereClosesOverlayAndSwitchesPane(t 
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "terminal: term-2") || !strings.Contains(view, "title: build-log") || !strings.Contains(view, "terminal_command: tail -f build.log") || strings.Contains(view, "terminal_manager_rows:") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "terminal: term-2") || !strings.Contains(view, "title: build-log") || !strings.Contains(view, "terminal_command: tail -f build.log") || !strings.Contains(view, "terminal_visibility: true") || strings.Contains(view, "terminal_manager_rows:") {
 				t.Fatalf("expected terminal manager connect-here flow to close overlay and switch pane terminal, got:\n%s", view)
 			}
 			return nil
@@ -3030,7 +3030,7 @@ func TestE2ERunScenarioTerminalManagerConnectInNewTabCreatesTab(t *testing.T) {
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "tab: tab-2") || !strings.Contains(view, "terminal: term-2") || !strings.Contains(view, "title: build-log") || strings.Contains(view, "terminal_manager_rows:") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "tab: tab-2") || !strings.Contains(view, "terminal: term-2") || !strings.Contains(view, "title: build-log") || !strings.Contains(view, "terminal_visibility: true") || strings.Contains(view, "terminal_manager_rows:") {
 				t.Fatalf("expected terminal manager new-tab flow to create and focus new tab, got:\n%s", view)
 			}
 			workspace := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")]
@@ -3137,7 +3137,7 @@ func TestE2ERunScenarioTerminalManagerConnectInFloatingPaneCreatesFloatingPane(t
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: floating") || !strings.Contains(view, "tab_layer: floating") || !strings.Contains(view, "pane_kind: floating") || !strings.Contains(view, "terminal: term-2") || !strings.Contains(view, "title: build-log") || strings.Contains(view, "terminal_manager_rows:") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: floating") || !strings.Contains(view, "tab_layer: floating") || !strings.Contains(view, "pane_kind: floating") || !strings.Contains(view, "terminal: term-2") || !strings.Contains(view, "title: build-log") || !strings.Contains(view, "terminal_visibility: true") || strings.Contains(view, "terminal_manager_rows:") {
 				t.Fatalf("expected terminal manager floating flow to create focused floating pane, got:\n%s", view)
 			}
 			tab := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
@@ -3259,7 +3259,7 @@ func TestE2ERunScenarioTerminalManagerMouseClickOnFloatingActionCreatesFloatingP
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: floating") || !strings.Contains(view, "pane_kind: floating") || !strings.Contains(view, "terminal: term-2") || strings.Contains(view, "terminal_manager_rows:") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: floating") || !strings.Contains(view, "pane_kind: floating") || !strings.Contains(view, "terminal: term-2") || !strings.Contains(view, "terminal_visibility: true") || strings.Contains(view, "terminal_manager_rows:") {
 				t.Fatalf("expected floating mouse action to create focused floating pane, got:\n%s", view)
 			}
 			tab := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
@@ -3561,7 +3561,7 @@ func TestE2ERunScenarioTerminalManagerMouseClickOnNewTabActionCreatesTab(t *test
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "tab: tab-2") || !strings.Contains(view, "terminal: term-2") || strings.Contains(view, "terminal_manager_actions:") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "tab: tab-2") || !strings.Contains(view, "terminal: term-2") || !strings.Contains(view, "terminal_visibility: true") || strings.Contains(view, "terminal_manager_actions:") {
 				t.Fatalf("expected terminal manager new-tab mouse action to create focused tab, got:\n%s", view)
 			}
 			workspace := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")]
