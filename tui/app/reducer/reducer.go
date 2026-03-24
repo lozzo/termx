@@ -8,6 +8,7 @@ import (
 
 	"github.com/lozzow/termx/tui/app/intent"
 	"github.com/lozzow/termx/tui/domain/connection"
+	layoutdomain "github.com/lozzow/termx/tui/domain/layout"
 	layoutresolvedomain "github.com/lozzow/termx/tui/domain/layoutresolve"
 	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
 	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
@@ -218,6 +219,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyPromptPreviousField(&result.State)
 	case intent.PromptSelectFieldIntent:
 		applyPromptSelectField(&result.State, intentValue)
+	case intent.PaneFocusMoveIntent:
+		applyPaneFocusMove(&result.State, intentValue)
 	case intent.ActivateModeIntent:
 		applyActivateMode(&result.State, intentValue)
 	case intent.ModeTimedOutIntent:
@@ -932,6 +935,48 @@ func applyPromptSelectField(state *types.AppState, in intent.PromptSelectFieldIn
 	prompt.SetActiveField(in.Index)
 }
 
+// applyPaneFocusMove 先只收口 tiled layout 的方向切换。
+// 这里复用 layout 纯逻辑树做邻接判定，避免把导航规则散落在 UI 层。
+func applyPaneFocusMove(state *types.AppState, in intent.PaneFocusMoveIntent) {
+	defer func() {
+		state.UI.Mode = types.ModeState{Active: types.ModeNone}
+	}()
+	if state.UI.Focus.Layer != types.FocusLayerTiled {
+		return
+	}
+	workspace, ok := state.Domain.Workspaces[state.UI.Focus.WorkspaceID]
+	if !ok {
+		return
+	}
+	tab, ok := workspace.Tabs[state.UI.Focus.TabID]
+	if !ok || tab.RootSplit == nil {
+		return
+	}
+	layoutRoot := splitNodeToLayoutNode(tab.RootSplit)
+	if layoutRoot == nil {
+		return
+	}
+	adjacent := layoutRoot.Adjacent(state.UI.Focus.PaneID, in.Direction, layoutRoot.Rects(types.Rect{W: 1000, H: 1000}))
+	if adjacent == "" {
+		return
+	}
+	if _, ok := tab.Panes[adjacent]; !ok {
+		return
+	}
+	tab.ActivePaneID = adjacent
+	tab.ActiveLayer = types.FocusLayerTiled
+	workspace.ActiveTabID = tab.ID
+	workspace.Tabs[tab.ID] = tab
+	state.Domain.ActiveWorkspaceID = workspace.ID
+	state.Domain.Workspaces[workspace.ID] = workspace
+	state.UI.Focus = types.FocusState{
+		Layer:       types.FocusLayerTiled,
+		WorkspaceID: workspace.ID,
+		TabID:       tab.ID,
+		PaneID:      adjacent,
+	}
+}
+
 // applyCreateWorkspace 为新 workspace 建立最小可工作骨架：
 // 一个默认 tab，一个未连接 terminal 的 pane，并把焦点直接落过去。
 func applyCreateWorkspace(state *types.AppState, name string) {
@@ -1324,6 +1369,19 @@ func nextTabID(workspace types.WorkspaceState) types.TabID {
 		if _, ok := workspace.Tabs[candidate]; !ok {
 			return candidate
 		}
+	}
+}
+
+func splitNodeToLayoutNode(node *types.SplitNode) *layoutdomain.Node {
+	if node == nil {
+		return nil
+	}
+	return &layoutdomain.Node{
+		PaneID:    node.PaneID,
+		Direction: node.Direction,
+		Ratio:     node.Ratio,
+		First:     splitNodeToLayoutNode(node.First),
+		Second:    splitNodeToLayoutNode(node.Second),
 	}
 }
 

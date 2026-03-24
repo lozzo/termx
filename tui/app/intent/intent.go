@@ -297,6 +297,12 @@ type PromptSelectFieldIntent struct {
 
 func (PromptSelectFieldIntent) intentName() string { return "prompt_select_field" }
 
+type PaneFocusMoveIntent struct {
+	Direction types.Direction
+}
+
+func (PaneFocusMoveIntent) intentName() string { return "pane_focus_move" }
+
 type ActivateModeIntent struct {
 	Mode       types.ModeKind
 	Sticky     bool

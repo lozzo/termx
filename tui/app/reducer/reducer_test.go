@@ -868,6 +868,25 @@ func TestReducerModeTimedOutClearsActiveMode(t *testing.T) {
 	}
 }
 
+func TestReducerPaneFocusMoveSwitchesToAdjacentPaneAndClearsMode(t *testing.T) {
+	reducer := New()
+	state := newSplitPaneAppState()
+	state.UI.Mode = types.ModeState{Active: types.ModePane}
+
+	result := reducer.Reduce(state, intent.PaneFocusMoveIntent{Direction: types.DirectionRight})
+
+	if result.State.UI.Focus.PaneID != types.PaneID("pane-2") || result.State.UI.Focus.Layer != types.FocusLayerTiled {
+		t.Fatalf("expected focus to move to adjacent pane-2, got %+v", result.State.UI.Focus)
+	}
+	tab := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
+	if tab.ActivePaneID != types.PaneID("pane-2") || tab.ActiveLayer != types.FocusLayerTiled {
+		t.Fatalf("expected active pane to switch to pane-2, got %+v", tab)
+	}
+	if result.State.UI.Mode.Active != types.ModeNone {
+		t.Fatalf("expected pane mode to clear after one move, got %+v", result.State.UI.Mode)
+	}
+}
+
 func TestReducerConnectTerminalReplacesOldConnectionSnapshot(t *testing.T) {
 	reducer := New()
 	state := newConnectedAppState()
@@ -1730,6 +1749,57 @@ func newSharedTerminalAppState() types.AppState {
 		TerminalID:       types.TerminalID("term-1"),
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1"), types.PaneID("pane-2")},
 		OwnerPaneID:      types.PaneID("pane-1"),
+	}
+	return state
+}
+
+func newSplitPaneAppState() types.AppState {
+	state := newAppStateWithSinglePane()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	tab.Panes[types.PaneID("pane-1")] = types.PaneState{
+		ID:         types.PaneID("pane-1"),
+		Kind:       types.PaneKindTiled,
+		SlotState:  types.PaneSlotConnected,
+		TerminalID: types.TerminalID("term-1"),
+	}
+	tab.Panes[types.PaneID("pane-2")] = types.PaneState{
+		ID:         types.PaneID("pane-2"),
+		Kind:       types.PaneKindTiled,
+		SlotState:  types.PaneSlotConnected,
+		TerminalID: types.TerminalID("term-2"),
+	}
+	tab.RootSplit = &types.SplitNode{
+		Direction: types.SplitDirectionVertical,
+		Ratio:     0.5,
+		First:     &types.SplitNode{PaneID: types.PaneID("pane-1")},
+		Second:    &types.SplitNode{PaneID: types.PaneID("pane-2")},
+	}
+	tab.ActivePaneID = types.PaneID("pane-1")
+	tab.ActiveLayer = types.FocusLayerTiled
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:      types.TerminalID("term-1"),
+		Name:    "api-dev",
+		State:   types.TerminalRunStateRunning,
+		Visible: true,
+	}
+	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
+		ID:      types.TerminalID("term-2"),
+		Name:    "build-log",
+		State:   types.TerminalRunStateRunning,
+		Visible: true,
+	}
+	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-1"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1")},
+		OwnerPaneID:      types.PaneID("pane-1"),
+	}
+	state.Domain.Connections[types.TerminalID("term-2")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-2"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-2")},
+		OwnerPaneID:      types.PaneID("pane-2"),
 	}
 	return state
 }

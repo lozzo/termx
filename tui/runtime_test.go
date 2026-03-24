@@ -1578,6 +1578,51 @@ func TestE2ERunScenarioWorkspacePickerExpandShowsChildren(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioPaneModeMovesFocusToAdjacentPane(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithSplitPaneTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlP},
+				{Type: tea.KeyRunes, Runes: []rune("l")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "tab: shell") || !strings.Contains(view, "pane: pane-2") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "terminal: term-2") || !strings.Contains(view, "title: build-log") || strings.Contains(view, "mode:") {
+				t.Fatalf("expected pane mode to move focus to adjacent pane-2, got:\n%s", view)
+			}
+			tab := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
+			if tab.ActivePaneID != types.PaneID("pane-2") {
+				t.Fatalf("expected active pane to switch to pane-2, got %+v", tab)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected pane mode runtime scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioWorkspacePickerCollapseHidesChildren(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithWorkspacePickerTarget()
@@ -5202,6 +5247,56 @@ func runtimeStateWithWorkspacePickerTarget() types.AppState {
 				},
 			},
 		},
+	}
+	return state
+}
+
+func runtimeStateWithSplitPaneTargets() types.AppState {
+	state := buildSinglePaneAppState("main", "shell", types.PaneSlotConnected)
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	tab.Panes[types.PaneID("pane-1")] = types.PaneState{
+		ID:         types.PaneID("pane-1"),
+		Kind:       types.PaneKindTiled,
+		SlotState:  types.PaneSlotConnected,
+		TerminalID: types.TerminalID("term-1"),
+	}
+	tab.Panes[types.PaneID("pane-2")] = types.PaneState{
+		ID:         types.PaneID("pane-2"),
+		Kind:       types.PaneKindTiled,
+		SlotState:  types.PaneSlotConnected,
+		TerminalID: types.TerminalID("term-2"),
+	}
+	tab.RootSplit = &types.SplitNode{
+		Direction: types.SplitDirectionVertical,
+		Ratio:     0.5,
+		First:     &types.SplitNode{PaneID: types.PaneID("pane-1")},
+		Second:    &types.SplitNode{PaneID: types.PaneID("pane-2")},
+	}
+	tab.ActivePaneID = types.PaneID("pane-1")
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:      types.TerminalID("term-1"),
+		Name:    "api-dev",
+		State:   types.TerminalRunStateRunning,
+		Visible: true,
+	}
+	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
+		ID:      types.TerminalID("term-2"),
+		Name:    "build-log",
+		State:   types.TerminalRunStateRunning,
+		Visible: true,
+	}
+	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-1"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1")},
+		OwnerPaneID:      types.PaneID("pane-1"),
+	}
+	state.Domain.Connections[types.TerminalID("term-2")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-2"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-2")},
+		OwnerPaneID:      types.PaneID("pane-2"),
 	}
 	return state
 }

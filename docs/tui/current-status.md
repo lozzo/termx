@@ -184,6 +184,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 160. 第一百五十六轮 TDD 已补上 floating connect 成功后的本地 pane 落地与鼠标入口闭环
 161. 第一百五十七轮 TDD 已补上 new-tab connect 成功后的本地 tab 落地与鼠标入口闭环
 162. 第一百五十八轮 TDD 已补上 terminal visible 与连接状态的一致性同步
+163. 第一百五十九轮 TDD 已补上最小 tiled pane 方向导航
 
 对应文档：
 

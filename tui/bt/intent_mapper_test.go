@@ -88,6 +88,39 @@ func TestIntentMapperRootCtrlGArmsGlobalModeAndTOpensTerminalManager(t *testing.
 	}
 }
 
+func TestIntentMapperRootCtrlPArmsPaneModeAndLMapsPaneMove(t *testing.T) {
+	now := time.Date(2026, 3, 23, 12, 0, 0, 0, time.UTC)
+	mapper := NewIntentMapper(Config{
+		Clock:         fixedClock{now: now},
+		PrefixTimeout: 3 * time.Second,
+	})
+
+	intents := mapper.MapKey(newAppStateWithSinglePane(), tea.KeyMsg{Type: tea.KeyCtrlP})
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	activate, ok := intents[0].(intent.ActivateModeIntent)
+	if !ok {
+		t.Fatalf("expected activate mode intent, got %T", intents[0])
+	}
+	if activate.Mode != types.ModePane || activate.DeadlineAt == nil || !activate.DeadlineAt.Equal(now.Add(3*time.Second)) {
+		t.Fatalf("unexpected pane mode payload: %+v", activate)
+	}
+
+	state := newAppStateWithSinglePane()
+	state.UI.Mode = types.ModeState{
+		Active:     types.ModePane,
+		DeadlineAt: activate.DeadlineAt,
+	}
+	intents = mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	if intents[0] != (intent.PaneFocusMoveIntent{Direction: types.DirectionRight}) {
+		t.Fatalf("expected pane focus move right intent, got %+v", intents[0])
+	}
+}
+
 func TestIntentMapperWorkspacePickerMapsNavigationAndQuery(t *testing.T) {
 	mapper := NewIntentMapper(Config{})
 	state := newAppStateWithSinglePane()
