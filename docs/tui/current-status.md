@@ -171,6 +171,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 147. 第一百四十三轮 TDD 已补上 runtime 栏位长文本裁剪
 148. 第一百四十四轮 TDD 已补上 runtime 摘要行宽度预算
 149. 第一百四十五轮 TDD 已补上 runtime detail 行宽度预算
+150. 第一百四十六轮 TDD 已补上 runtime program alt-screen 外壳
 
 对应文档：
 
@@ -227,6 +228,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - runtime 摘要行现在统一保留头尾关键语义，避免 workspace/tab/title/query 过长时把整行横向撑爆
 - runtime `command/tags/value/hint/locations` 这类 detail 元数据行现在也有独立宽度预算，长自由文本不会再把 overlay/detail 区横向撑爆
 - detail 宽度预算只作用在高风险自由文本字段，不影响 terminal manager 等正常短状态行的完整可见性
+- runtime 的真实 Bubble Tea program 现在会进入并退出 alt-screen，避免启动后退化成普通 shell 滚屏
+- 这让 `header/body/footer` chrome 壳层在真实运行时也有机会稳定留在可视区，而不只是停留在 `model.View()` 测试里
 - `OpenTerminalManagerIntent`
 - `OpenPromptIntent`
 - `TerminalManagerMoveIntent`

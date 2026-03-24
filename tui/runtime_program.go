@@ -14,7 +14,14 @@ type ProgramRunner interface {
 type bubbleteaProgramRunner struct{}
 
 func (bubbleteaProgramRunner) Run(model *btui.Model, input io.Reader, output io.Writer) error {
-	program := tea.NewProgram(model, tea.WithInput(input), tea.WithOutput(output))
+	// 真实运行时需要进入 alt-screen，避免 runtime terminal 输出把 TUI chrome 冲掉，
+	// 也让 header/body/footer 这些稳定壳层始终留在当前可视区里。
+	program := tea.NewProgram(
+		model,
+		tea.WithInput(input),
+		tea.WithOutput(output),
+		tea.WithAltScreen(),
+	)
 	_, err := program.Run()
 	return err
 }
