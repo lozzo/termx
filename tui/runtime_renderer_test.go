@@ -576,11 +576,24 @@ func TestRuntimeRendererShellOnlyRendersStructuredPromptOverlay(t *testing.T) {
 
 	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "state overlay prompt  •  focus prompt") || !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "Fields") || !strings.Contains(stripped, "Actions") || !strings.Contains(stripped, "Name: api-dev") {
+	if !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "state overlay prompt  •  focus prompt") || !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "Fields panel") || !strings.Contains(stripped, "Context panel") || !strings.Contains(stripped, "Action bar") || !strings.Contains(stripped, "Name: api-dev") {
 		t.Fatalf("expected shell-only prompt overlay to render field sections, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "active name") || !strings.Contains(stripped, "terminal term-1") || !strings.Contains(stripped, "Tags: env=dev") {
+	if !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "active name") || !strings.Contains(stripped, "2 fields  •  editing Name") || !strings.Contains(stripped, "terminal term-1") || !strings.Contains(stripped, "value api-dev") || !strings.Contains(stripped, "Tags: env=dev") {
 		t.Fatalf("expected shell-only prompt overlay to keep secondary field visible, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererShellOnlyRendersStructuredLayoutResolveOverlay(t *testing.T) {
+	debugVisible := false
+	state := runtimeStateWithLayoutResolveTarget()
+	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
+	stripped := stripANSIForTest(view)
+	if !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "state overlay layout_resolve  •  focus overlay") || !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "Choices panel") || !strings.Contains(stripped, "Target panel") || !strings.Contains(stripped, "Action bar") {
+		t.Fatalf("expected shell-only layout resolve overlay to render structured panels, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "selected connect_existing") || !strings.Contains(stripped, "backend-dev") || !strings.Contains(stripped, "env=dev service=api") || !strings.Contains(stripped, "connect existing") || !strings.Contains(stripped, "create new") {
+		t.Fatalf("expected shell-only layout resolve overlay to render selected action and target hint, got:\n%s", view)
 	}
 }
 

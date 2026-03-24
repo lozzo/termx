@@ -883,10 +883,10 @@ func TestE2ERunScenarioDefaultModernLayoutResolveOverlayRendersStructuredModal(t
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "Layout Resolve") || !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "state overlay layout_resolve  •  focus overlay") || !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "Target") || !strings.Contains(stripped, "Choices") || !strings.Contains(stripped, "Actions") {
+			if !strings.Contains(stripped, "Layout Resolve") || !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "state overlay layout_resolve  •  focus overlay") || !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "Choices panel") || !strings.Contains(stripped, "Target panel") || !strings.Contains(stripped, "Action bar") {
 				t.Fatalf("expected default modern layout resolve modal structure, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "selected connect_existing") || !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "connect existing") || !strings.Contains(stripped, "create new") {
+			if !strings.Contains(stripped, "selected connect_existing") || !strings.Contains(stripped, "backend-dev") || !strings.Contains(stripped, "env=dev service=api") || !strings.Contains(stripped, "connect existing") || !strings.Contains(stripped, "create new") {
 				t.Fatalf("expected default modern layout resolve actions, got:\n%s", view)
 			}
 			return nil
@@ -930,10 +930,10 @@ func TestE2ERunScenarioDefaultModernPromptOverlayRendersStructuredModal(t *testi
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "Prompt") || !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "state overlay prompt  •  focus prompt") || !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "Fields") || !strings.Contains(stripped, "Actions") {
+			if !strings.Contains(stripped, "Prompt") || !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "state overlay prompt  •  focus prompt") || !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "Fields panel") || !strings.Contains(stripped, "Context panel") || !strings.Contains(stripped, "Action bar") {
 				t.Fatalf("expected default modern prompt modal structure, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "active name") || !strings.Contains(stripped, "terminal term-1") || !strings.Contains(stripped, "Name: api-dev") || !strings.Contains(stripped, "Tags: env=dev") {
+			if !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "active name") || !strings.Contains(stripped, "2 fields  •  editing Name") || !strings.Contains(stripped, "terminal term-1") || !strings.Contains(stripped, "value api-dev") || !strings.Contains(stripped, "Name: api-dev") || !strings.Contains(stripped, "Tags: env=dev") {
 				t.Fatalf("expected default modern prompt fields, got:\n%s", view)
 			}
 			return nil

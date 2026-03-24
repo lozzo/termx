@@ -1299,16 +1299,16 @@ func renderModernLayoutResolveOverlay(theme modernShellTheme, resolve *layoutres
 	if resolve == nil {
 		return []string{theme.modalBody.Render("No layout action required.")}
 	}
-	lines := []string{
-		theme.modalMeta.Render(fmt.Sprintf("pane %s  •  role %s", resolve.PaneID, resolve.Role)),
-	}
-	if resolve.Hint != "" {
-		lines = append(lines, "", theme.modalMeta.Render("Target"))
-		lines = append(lines, theme.modalBody.Render(truncateModernLine(resolve.Hint, width)))
-	}
 	rows := resolve.Rows()
 	selectedRow, hasSelected := resolve.SelectedRow()
-	lines = append(lines, renderModernLayoutResolveDetail(theme, selectedRow, hasSelected, width)...)
+	contentWidth := max(18, width/2-4)
+	leftLines := []string{
+		theme.modalMeta.Render(fmt.Sprintf("pane %s  •  role %s", resolve.PaneID, resolve.Role)),
+	}
+	if hasSelected {
+		leftLines = append(leftLines, "", theme.modalMeta.Render("Selection"))
+		leftLines = append(leftLines, theme.modalBody.Render(truncateModernLine(renderModernLayoutResolveSelectionText(selectedRow), contentWidth)))
+	}
 	selectedIndex := 0
 	if hasSelected {
 		for idx, row := range rows {
@@ -1318,72 +1318,87 @@ func renderModernLayoutResolveOverlay(theme modernShellTheme, resolve *layoutres
 			}
 		}
 	}
-	lines = append(lines, "", theme.modalMeta.Render("Choices"))
+	leftLines = append(leftLines, "", theme.modalMeta.Render("Choices"))
 	slice, _ := overlayPreviewRowsAround(rows, 4, selectedIndex)
 	for _, row := range slice {
-		text := truncateModernLine(string(row.Action)+"  "+row.Label, width)
+		text := truncateModernLine(renderModernLayoutResolveChoiceText(row), contentWidth)
 		if hasSelected && row.Action == selectedRow.Action && row.Label == selectedRow.Label {
-			lines = append(lines, theme.selectedListItem.Render("> "+text))
+			leftLines = append(leftLines, theme.selectedListItem.Render("> "+text))
 			continue
 		}
-		lines = append(lines, theme.listItem.Render("  "+text))
+		leftLines = append(leftLines, theme.listItem.Render("  "+text))
 	}
-	lines = append(lines, "", theme.modalMeta.Render("Actions"))
-	lines = append(lines, theme.modalBody.Render(truncateModernLine("Enter confirm  •  Esc close", width)))
-	return lines
+	rightLines := []string{
+		theme.modalMeta.Render(fmt.Sprintf("pane %s", resolve.PaneID)),
+		theme.modalMeta.Render("role " + resolve.Role),
+	}
+	if resolve.Hint != "" {
+		rightLines = append(rightLines, "", theme.modalMeta.Render("Target"))
+		rightLines = append(rightLines, theme.modalBody.Render(truncateModernLine(resolve.Hint, contentWidth)))
+	}
+	actionLines := []string{
+		theme.modalBody.Render(truncateModernLine("Enter confirm  •  Esc close", width)),
+	}
+	return renderModernOverlayPanels(theme, width, "Choices panel", leftLines, "Target panel", rightLines, "Action bar", actionLines)
 }
 
-func renderModernLayoutResolveDetail(theme modernShellTheme, row layoutresolvedomain.Row, hasSelected bool, width int) []string {
-	if !hasSelected {
-		return nil
-	}
-	return []string{
-		"",
-		theme.modalMeta.Render("Selection"),
-		theme.modalBody.Render(truncateModernLine(fmt.Sprintf("%s  •  %s", row.Action, row.Label), width)),
-	}
+func renderModernLayoutResolveSelectionText(row layoutresolvedomain.Row) string {
+	return fmt.Sprintf("%s  •  %s", row.Label, strings.ReplaceAll(string(row.Action), "_", " "))
+}
+
+func renderModernLayoutResolveChoiceText(row layoutresolvedomain.Row) string {
+	return fmt.Sprintf("[%s] %s", strings.ReplaceAll(string(row.Action), "_", " "), row.Label)
 }
 
 func renderModernPromptOverlay(theme modernShellTheme, prompt *promptdomain.State, width int) []string {
 	if prompt == nil {
 		return []string{theme.modalBody.Render("Prompt not ready.")}
 	}
+	contentWidth := max(18, width/2-4)
 	if len(prompt.Fields) == 0 {
-		return []string{
+		leftLines := []string{
 			theme.modalMeta.Render("draft mode"),
 			"",
-			theme.modalMeta.Render("Context"),
-			theme.modalBody.Render(truncateModernLine(renderModernPromptContext(prompt), width)),
 			theme.modalMeta.Render("Fields"),
-			theme.modalBody.Render(truncateModernLine(prompt.Draft, width)),
-			"",
-			theme.modalMeta.Render("Actions"),
+			theme.modalBody.Render(truncateModernLine(prompt.Draft, contentWidth)),
+		}
+		rightLines := []string{
+			theme.modalMeta.Render("Context"),
+			theme.modalBody.Render(truncateModernLine(renderModernPromptContext(prompt), contentWidth)),
+		}
+		actionLines := []string{
 			theme.modalBody.Render(truncateModernLine("Enter submit  •  Esc cancel", width)),
 		}
+		return renderModernOverlayPanels(theme, width, "Fields panel", leftLines, "Context panel", rightLines, "Action bar", actionLines)
 	}
 	active := prompt.Active
 	if active < 0 || active >= len(prompt.Fields) {
 		active = 0
 	}
-	lines := []string{
-		theme.modalMeta.Render(fmt.Sprintf("%d fields  •  active %s", len(prompt.Fields), prompt.Fields[active].Key)),
-		"",
-		theme.modalMeta.Render("Context"),
-		theme.modalBody.Render(truncateModernLine(renderModernPromptContext(prompt), width)),
+	leftLines := []string{
+		theme.modalMeta.Render(fmt.Sprintf("%d fields  •  editing %s", len(prompt.Fields), prompt.Fields[active].Label)),
 		"",
 		theme.modalMeta.Render("Fields"),
 	}
 	for idx, field := range prompt.Fields {
-		text := truncateModernLine(fmt.Sprintf("%s: %s", field.Label, field.Value), width)
+		text := truncateModernLine(fmt.Sprintf("%s: %s", field.Label, field.Value), contentWidth)
 		if idx == active {
-			lines = append(lines, theme.selectedListItem.Render("> "+text))
+			leftLines = append(leftLines, theme.selectedListItem.Render("> "+text))
 			continue
 		}
-		lines = append(lines, theme.listItem.Render("  "+text))
+		leftLines = append(leftLines, theme.listItem.Render("  "+text))
 	}
-	lines = append(lines, "", theme.modalMeta.Render("Actions"))
-	lines = append(lines, theme.modalBody.Render(truncateModernLine("Enter submit  •  Tab next field  •  Esc cancel", width)))
-	return lines
+	rightLines := []string{
+		theme.modalMeta.Render("Context"),
+		theme.modalBody.Render(truncateModernLine(renderModernPromptContext(prompt), contentWidth)),
+		"",
+		theme.modalMeta.Render("Active value"),
+		theme.modalBody.Render(truncateModernLine("value "+prompt.Fields[active].Value, contentWidth)),
+	}
+	actionLines := []string{
+		theme.modalBody.Render(truncateModernLine("Enter submit  •  Tab next field  •  Esc cancel", width)),
+	}
+	return renderModernOverlayPanels(theme, width, "Fields panel", leftLines, "Context panel", rightLines, "Action bar", actionLines)
 }
 
 func renderModernPromptContext(prompt *promptdomain.State) string {
