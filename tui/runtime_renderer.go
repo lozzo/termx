@@ -184,8 +184,19 @@ func (r runtimeRenderer) renderScreenShellSplit(state types.AppState, tab types.
 	if len(boxes) > 0 {
 		lines = append(lines, joinASCIIBoxes(boxes, 2)...)
 	}
+	if len(tiledPaneIDs) > 1 {
+		extraLines := []string{"EXTRA SHELL PANES"}
+		for _, paneID := range tiledPaneIDs[1:] {
+			pane, ok := tab.Panes[paneID]
+			if !ok {
+				continue
+			}
+			extraLines = append(extraLines, fmt.Sprintf("%s %s %s", pane.ID, renderPaneTitle(state, pane), pane.SlotState))
+		}
+		lines = append(lines, extraLines...)
+	}
 	if len(floatingPaneIDs) > 0 {
-		lines = append(lines, compactSummaryLine("floating:", strings.Join(r.renderScreenShellFloatingSummary(state, tab, floatingPaneIDs), " | ")))
+		lines = append(lines, fmt.Sprintf("floating: %s", strings.Join(r.renderScreenShellFloatingSummary(state, tab, floatingPaneIDs), " | ")))
 	}
 	return lines
 }
@@ -195,6 +206,17 @@ func (r runtimeRenderer) renderScreenShellFloating(state types.AppState, tab typ
 	mainBox := renderShellBox(metrics.MainPaneWidth, renderScreenShellPaneTitle(state, pane, true), r.renderScreenShellPaneLines(state, pane, overlayActive, 4))
 	sidebarBox := renderShellBox(metrics.SidebarWidth, "floating stack", r.renderScreenShellFloatingSummary(state, tab, floatingPaneIDs))
 	lines = append(lines, joinASCIIBoxes([][]string{mainBox, sidebarBox}, 2)...)
+	for _, paneID := range floatingPaneIDs {
+		floatingPane, ok := tab.Panes[paneID]
+		if !ok {
+			continue
+		}
+		label := fmt.Sprintf("WINDOW[%s] %s %d,%d %dx%d", paneID, renderPaneTitle(state, floatingPane), floatingPane.Rect.X, floatingPane.Rect.Y, floatingPane.Rect.W, floatingPane.Rect.H)
+		if paneID == tab.ActivePaneID {
+			label = fmt.Sprintf("WINDOW[%s] %s active %d,%d %dx%d", paneID, renderPaneTitle(state, floatingPane), floatingPane.Rect.X, floatingPane.Rect.Y, floatingPane.Rect.W, floatingPane.Rect.H)
+		}
+		lines = append(lines, label)
+	}
 	return lines
 }
 
@@ -218,9 +240,9 @@ func (r runtimeRenderer) renderScreenShellDialog(state types.AppState, metrics w
 		return nil
 	}
 	body := []string{fmt.Sprintf("overlay active: %s", state.UI.Overlay.Kind)}
-	body = append(body, renderWireframeOverlayBody(state.UI.Overlay)...)
+	body = append(body, r.renderScreenShellDialogBody(state)...)
 	if len(body) > 5 {
-		body = body[:5]
+		body = append(body[:4], body[len(body)-1])
 	}
 	box := renderShellBox(metrics.OverlayWidth, fmt.Sprintf("DIALOG[%s]", state.UI.Overlay.Kind), body)
 	padding := (metrics.ViewportWidth - metrics.OverlayWidth) / 2
@@ -228,6 +250,33 @@ func (r runtimeRenderer) renderScreenShellDialog(state types.AppState, metrics w
 		padding = 0
 	}
 	return indentLines(box, padding)
+}
+
+func (r runtimeRenderer) renderScreenShellDialogBody(state types.AppState) []string {
+	lines := make([]string, 0, 5)
+	if returnFocus := renderWireframeReturnFocus(state.UI.Overlay.ReturnFocus); returnFocus != "" {
+		lines = append(lines, fmt.Sprintf("RETURN TO[%s]", returnFocus))
+	}
+	lines = append(lines, renderWireframeOverlayBody(state.UI.Overlay)...)
+	if actions := renderScreenShellDialogActions(state.UI.Overlay.Kind); actions != "" {
+		lines = append(lines, actions)
+	}
+	return lines
+}
+
+func renderScreenShellDialogActions(kind types.OverlayKind) string {
+	switch kind {
+	case types.OverlayTerminalManager:
+		return "ACTIONS[enter here esc close]"
+	case types.OverlayWorkspacePicker, types.OverlayTerminalPicker, types.OverlayLayoutResolve:
+		return "ACTIONS[enter confirm esc close]"
+	case types.OverlayPrompt:
+		return "ACTIONS[enter submit esc close]"
+	case types.OverlayHelp:
+		return "ACTIONS[esc close]"
+	default:
+		return ""
+	}
 }
 
 func renderScreenShellPaneTitle(state types.AppState, pane types.PaneState, includeKind bool) string {

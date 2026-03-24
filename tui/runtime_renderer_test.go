@@ -1602,6 +1602,9 @@ func TestRuntimeRendererRendersWireframeFloatingStack(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "WINDOW[float-1] api-dev active 10,8 30x12") || !strings.Contains(view, "WINDOW[float-2] build-log 45,14 28x10") {
+		t.Fatalf("expected floating shell window summary in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "FLOATING STACK") {
 		t.Fatalf("expected wireframe floating stack heading in rendered view, got:\n%s", view)
 	}
@@ -1628,6 +1631,9 @@ func TestRuntimeRendererRendersWireframeOverlayDialog(t *testing.T) {
 	state.UI.Focus.OverlayTarget = types.OverlayTerminalManager
 
 	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "ACTIONS[enter here esc close]") {
+		t.Fatalf("expected shell overlay action summary in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "OVERLAY[terminal_manager] FOCUS[overlay]") {
 		t.Fatalf("expected wireframe overlay heading in rendered view, got:\n%s", view)
 	}
@@ -1744,6 +1750,9 @@ func TestRuntimeRendererRendersWireframeMixedSlotWorkbench(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "EXTRA SHELL PANES") || !strings.Contains(view, "pane-2 waiting pane waiting") || !strings.Contains(view, "pane-3 deploy-log exited") || !strings.Contains(view, "floating: unconnected pane @60,2 20x8") {
+		t.Fatalf("expected mixed-slot shell summaries in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "WORKBENCH split") {
 		t.Fatalf("expected mixed slot workbench to use split wireframe, got:\n%s", view)
 	}

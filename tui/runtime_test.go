@@ -870,7 +870,7 @@ func TestE2ERunScenarioFloatingLayerShowsOutline(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "tab_path_bar: path=main/shell/floating:float-1 | target=api-dev") || !strings.Contains(view, "tab_layer_bar: tiled_root=<none> | floating_top=float-2 | floating_total=2") || !strings.Contains(view, "floating_outline_bar: active=float-1 | total=2 | top=float-2") || !strings.Contains(view, "floating_outline:") || !strings.Contains(view, "> [floating] api-dev | role=owner | rect=10,8 30x12 | state=running | preview=api ready") || !strings.Contains(view, "  [floating] build-log | role=owner | rect=45,14 28x10 | state=running | preview=build ok") {
+			if !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "WINDOW[float-1] api-dev active 10,8 30x12") || !strings.Contains(view, "WINDOW[float-2] build-log 45,14 28x10") || !strings.Contains(view, "tab_path_bar: path=main/shell/floating:float-1 | target=api-dev") || !strings.Contains(view, "tab_layer_bar: tiled_root=<none> | floating_top=float-2 | floating_total=2") || !strings.Contains(view, "floating_outline_bar: active=float-1 | total=2 | top=float-2") || !strings.Contains(view, "floating_outline:") || !strings.Contains(view, "> [floating] api-dev | role=owner | rect=10,8 30x12 | state=running | preview=api ready") || !strings.Contains(view, "  [floating] build-log | role=owner | rect=45,14 28x10 | state=running | preview=build ok") {
 				t.Fatalf("expected runtime view to expose floating outline, got:\n%s", view)
 			}
 			return nil
@@ -971,7 +971,7 @@ func TestE2ERunScenarioLayoutResolveShowsWireframeDialog(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "DIALOG[layout_resolve]") || !strings.Contains(view, "overlay active: layout_resolve") || !strings.Contains(view, "OVERLAY[layout_resolve] FOCUS[overlay]") || !strings.Contains(view, "CENTER[offset=10 width=58]") || !strings.Contains(view, "ROWS[3] PANE[pane-1] ROLE[backend-dev]") || !strings.Contains(view, "HINT[env=dev service=api]") || !strings.Contains(view, "> [connect_existing] connect existing") {
+			if !strings.Contains(view, "DIALOG[layout_resolve]") || !strings.Contains(view, "overlay active: layout_resolve") || !strings.Contains(view, "RETURN TO[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "ACTIONS[enter confirm esc close]") || !strings.Contains(view, "OVERLAY[layout_resolve] FOCUS[overlay]") || !strings.Contains(view, "CENTER[offset=10 width=58]") || !strings.Contains(view, "ROWS[3] PANE[pane-1] ROLE[backend-dev]") || !strings.Contains(view, "HINT[env=dev service=api]") || !strings.Contains(view, "> [connect_existing] connect existing") {
 				t.Fatalf("expected runtime view to expose layout resolve wireframe dialog, got:\n%s", view)
 			}
 			return nil
@@ -1103,7 +1103,7 @@ func TestE2ERunScenarioMixedSlotShowsWireframeWorkbench(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "WORKBENCH split") || !strings.Contains(view, "PANE[waiting pane] SLOT[waiting]") || !strings.Contains(view, "PANE[deploy-log] ROLE[owner] STATE[exited]") || !strings.Contains(view, "FLOATING MAP") || !strings.Contains(view, "FLOAT[float-empty] unconnected pane empty 60,2 20x8") {
+			if !strings.Contains(view, "EXTRA SHELL PANES") || !strings.Contains(view, "pane-2 waiting pane waiting") || !strings.Contains(view, "pane-3 deploy-log exited") || !strings.Contains(view, "floating: unconnected pane @60,2 20x8") || !strings.Contains(view, "WORKBENCH split") || !strings.Contains(view, "PANE[waiting pane] SLOT[waiting]") || !strings.Contains(view, "PANE[deploy-log] ROLE[owner] STATE[exited]") || !strings.Contains(view, "FLOATING MAP") || !strings.Contains(view, "FLOAT[float-empty] unconnected pane empty 60,2 20x8") {
 				t.Fatalf("expected runtime view to expose mixed slot wireframe workbench, got:\n%s", view)
 			}
 			return nil

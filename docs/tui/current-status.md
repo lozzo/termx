@@ -18,6 +18,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 当前已经从“纯语义文本 renderer”推进到“语义 renderer + ASCII 真实工作台 wireframe”并行阶段，`cmd/termx` 已能直接看到工作台盒模型而不再只是语义字段列表
 - 本轮已补上 viewport 自适应、split ratio bar、floating geometry map、overlay center/backdrop 几何摘要，runtime 主视图开始具备跟随真实 terminal 尺寸变化的工作台摘要能力
 - 本轮继续把“用户第一眼看到的 UI 壳层”补上：主视图顶部现在新增 `screen_shell`，会先渲染 workspace/tab 头、pane frame、overlay dialog shell 和 footer 快捷提示，再保留语义视图与 wireframe 作为兼容层
+- 本轮继续把 `screen_shell` 的正文层级补实：floating shell 会显式列出 `WINDOW[...]` 几何摘要，mixed-slot split shell 会显式汇总 `EXTRA SHELL PANES` 与 floating 摘要，overlay dialog shell 会显式补上 `RETURN TO` / `ACTIONS`
 
 ---
 
@@ -211,6 +212,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 184. 第一百八十轮 TDD 已补上主界面 tab path 与 layer 摘要主线
 185. 第一百八十一轮 TDD 已补上 wireframe viewport 自适应、split ratio bar、floating map 与 overlay center 几何摘要主线
 186. 第一百八十二轮 TDD 已补上 screen shell 外壳、split shell、overlay dialog shell 与对应 runtime E2E 主线
+187. 第一百八十三轮 TDD 已补上 floating shell window 摘要、mixed-slot shell 正文汇总、overlay shell return/actions 与对应 runtime E2E 主线
 
 对应文档：
 
