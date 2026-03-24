@@ -18,6 +18,7 @@ type Config struct {
 	Workspace          string
 	AttachID           string
 	IconSet            string
+	DebugUI            bool
 	StartupLayout      string
 	WorkspaceStatePath string
 	StartupAutoLayout  bool
@@ -47,7 +48,6 @@ func Run(client Client, cfg Config, input io.Reader, output io.Writer) error {
 		TaskExecutor:     NewStartupTaskExecutor(),
 		SessionBootstrap: NewRuntimeSessionBootstrapper(),
 		ProgramRunner:    bubbleteaProgramRunner{},
-		Renderer:         runtimeRenderer{},
 		TerminalSize:     currentTerminalSize,
 	})
 }
@@ -66,7 +66,9 @@ func runWithDependencies(client Client, cfg Config, input io.Reader, output io.W
 		deps.ProgramRunner = bubbleteaProgramRunner{}
 	}
 	if deps.Renderer == nil {
-		deps.Renderer = runtimeRenderer{}
+		deps.Renderer = runtimeRenderer{
+			DebugVisible: boolPointer(cfg.DebugUI),
+		}
 	}
 	if deps.RuntimeExecutor == nil {
 		deps.RuntimeExecutor = btui.DefaultRuntimeExecutor{
@@ -158,6 +160,10 @@ func stopRuntimeSessions(sessions RuntimeSessions) {
 			session.Stop()
 		}
 	}
+}
+
+func boolPointer(v bool) *bool {
+	return &v
 }
 
 func WaitForSocket(path string, timeout time.Duration, probe func() error) error {

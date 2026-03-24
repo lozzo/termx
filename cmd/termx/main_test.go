@@ -165,6 +165,76 @@ func TestAttachCmdPassesPrefixTimeoutToTUI(t *testing.T) {
 	}
 }
 
+func TestRootCmdDisablesDebugUIByDefault(t *testing.T) {
+	oldInteractive := isInteractiveTerminal
+	oldDial := dialOrStartTUIClient
+	oldRun := runTUI
+	t.Cleanup(func() {
+		isInteractiveTerminal = oldInteractive
+		dialOrStartTUIClient = oldDial
+		runTUI = oldRun
+	})
+
+	isInteractiveTerminal = func() bool { return true }
+	dialOrStartTUIClient = func(path string, logFile string, logger *slog.Logger) (tui.Client, error) {
+		return &stubTUIClient{}, nil
+	}
+
+	var got tui.Config
+	runTUI = func(client tui.Client, cfg tui.Config, input io.Reader, output io.Writer) error {
+		got = cfg
+		return nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--log-file", filepath.Join(t.TempDir(), "termx.log")})
+	cmd.SetIn(bytes.NewBuffer(nil))
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if got.DebugUI {
+		t.Fatalf("expected root command to disable debug ui by default")
+	}
+}
+
+func TestRootCmdCanEnableDebugUI(t *testing.T) {
+	oldInteractive := isInteractiveTerminal
+	oldDial := dialOrStartTUIClient
+	oldRun := runTUI
+	t.Cleanup(func() {
+		isInteractiveTerminal = oldInteractive
+		dialOrStartTUIClient = oldDial
+		runTUI = oldRun
+	})
+
+	isInteractiveTerminal = func() bool { return true }
+	dialOrStartTUIClient = func(path string, logFile string, logger *slog.Logger) (tui.Client, error) {
+		return &stubTUIClient{}, nil
+	}
+
+	var got tui.Config
+	runTUI = func(client tui.Client, cfg tui.Config, input io.Reader, output io.Writer) error {
+		got = cfg
+		return nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--debug-ui", "--log-file", filepath.Join(t.TempDir(), "termx.log")})
+	cmd.SetIn(bytes.NewBuffer(nil))
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !got.DebugUI {
+		t.Fatalf("expected root command to enable debug ui when flag is set")
+	}
+}
+
 type stubTUIClient struct{}
 
 func (c *stubTUIClient) Close() error { return nil }

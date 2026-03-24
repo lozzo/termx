@@ -1668,3 +1668,48 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
   - 进一步压缩默认可见的调试层
   - 把 screen shell 的正文信息继续前移，减少用户必须往下读调试段落的情况
   - 再往后才是更完整的主工作台 chrome / tab / workspace 真实排版收口
+
+---
+
+## 19. 第 205 轮 TDD
+
+这一轮直接切到“默认视图收口”，没有继续围绕 pane 内容做小修，而是把真实运行时的第一屏做了一次结构性减负：
+
+1. `cmd/termx` 默认切到 shell-only 视图
+   - `screen_shell` 继续作为第一视觉主壳
+   - `wireframe_view`、`chrome_header/body/footer`、`section_*` 这些调试层不再默认跟在主壳后面一起输出
+   - 用户第一次打开 `cmd/termx` 时，看到的是更接近真正产品界面的主壳，而不是“主壳 + 一大段调试摘要”
+2. 保留显式调试开关
+   - 新增 `--debug-ui`
+   - 同时支持环境变量 `TERMX_TUI_DEBUG=1`
+   - 这样开发和排查时仍然可以回到旧的 renderer 调试视图，不会因为默认收口而丢掉观察能力
+3. runtime 默认 renderer 与 CLI 配置联动
+   - `Run()` / `runWithDependencies()` 在未显式注入 renderer 时，会根据 `Config.DebugUI` 决定是否显示调试层
+   - 避免只有 CLI 改了，运行时默认 wiring 却仍然吐出老的调试层
+
+这一轮收口的验证重点：
+
+- renderer：
+  - `TestRuntimeRendererCanHideDebugSections`
+- runtime：
+  - `TestRunUsesShellOnlyRendererByDefault`
+  - `TestRunCanEnableDebugRendererSections`
+- CLI：
+  - `TestRootCmdDisablesDebugUIByDefault`
+  - `TestRootCmdCanEnableDebugUI`
+  - `TestAttachCmdPassesPrefixTimeoutToTUI`
+
+本轮验证命令：
+
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1`
+
+当前状态更新为：
+
+- 真实运行 `cmd/termx` 时，默认第一屏已经不再被 `wireframe_view` 和 `chrome_*` 调试层淹没
+- 调试能力没有被删掉，而是退成显式开关，更符合“产品默认态”和“开发排查态”分离的方向
+- 这一步让当前 ASCII 主壳至少先像一个“默认可给人看”的界面，而不是开发期长日志页面
+- 下一阶段应该继续往真正产品界面收口：
+  - 把 `screen_shell` 自己的 header/body/footer 继续做强
+  - 逐步把原来依赖 `chrome_*` 才能看懂的信息上收进主壳
+  - 在默认视图已经干净的前提下，再推进更现代的 tab/workspace/pane chrome

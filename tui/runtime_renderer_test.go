@@ -165,6 +165,45 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	}
 }
 
+func TestRuntimeRendererCanHideDebugSections(t *testing.T) {
+	debugVisible := false
+	state := connectedRunAppState()
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:      types.TerminalID("term-1"),
+		Name:    "api-dev",
+		State:   types.TerminalRunStateRunning,
+		Command: []string{"npm", "run", "dev"},
+		Visible: true,
+	}
+	renderer := runtimeRenderer{
+		DebugVisible: &debugVisible,
+		Screens: NewRuntimeTerminalStore(RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "$"}, {Content: " "}, {Content: "p"}, {Content: "w"}, {Content: "d"}},
+								{{Content: "/"}, {Content: "t"}, {Content: "m"}, {Content: "p"}},
+							},
+						},
+					},
+				},
+			},
+		}),
+	}
+
+	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "SHELL[78x24 overlay=none]") {
+		t.Fatalf("expected shell-only renderer to keep visible screen shell, got:\n%s", view)
+	}
+	if strings.Contains(view, "wireframe_view:") || strings.Contains(view, "chrome_header:") || strings.Contains(view, "chrome_body:") || strings.Contains(view, "chrome_footer:") {
+		t.Fatalf("expected shell-only renderer to hide debug sections, got:\n%s", view)
+	}
+}
+
 func TestRuntimeRendererPrefersLastMeaningfulSnapshotRows(t *testing.T) {
 	state := connectedRunAppState()
 	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{

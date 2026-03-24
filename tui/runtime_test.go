@@ -81,6 +81,81 @@ func TestRunOrchestratesStartupPlanBootstrapAndSessionLifecycle(t *testing.T) {
 	}
 }
 
+func TestRunUsesShellOnlyRendererByDefault(t *testing.T) {
+	planner := &stubRunPlanner{plan: StartupPlan{State: connectedRunAppState()}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: connectedRunAppState()}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "$"}, {Content: " "}, {Content: "p"}, {Content: "w"}, {Content: "d"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{}
+
+	err := runWithDependencies(&stubStartupClient{}, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected runtime orchestration to succeed, got %v", err)
+	}
+	if !strings.Contains(runner.view, "screen_shell:") {
+		t.Fatalf("expected default run renderer to keep screen shell, got:\n%s", runner.view)
+	}
+	if strings.Contains(runner.view, "wireframe_view:") || strings.Contains(runner.view, "chrome_header:") {
+		t.Fatalf("expected default run renderer to hide debug sections, got:\n%s", runner.view)
+	}
+}
+
+func TestRunCanEnableDebugRendererSections(t *testing.T) {
+	planner := &stubRunPlanner{plan: StartupPlan{State: connectedRunAppState()}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: connectedRunAppState()}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "$"}, {Content: " "}, {Content: "p"}, {Content: "w"}, {Content: "d"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{}
+
+	err := runWithDependencies(&stubStartupClient{}, Config{DebugUI: true}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected runtime orchestration with debug renderer to succeed, got %v", err)
+	}
+	if !strings.Contains(runner.view, "wireframe_view:") || !strings.Contains(runner.view, "chrome_header:") {
+		t.Fatalf("expected debug renderer to expose debug sections, got:\n%s", runner.view)
+	}
+}
+
 func TestRunReturnsPlannerErrorBeforeBootstrap(t *testing.T) {
 	planner := &stubRunPlanner{err: errRuntimeRunBoom}
 

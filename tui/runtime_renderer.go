@@ -17,7 +17,8 @@ import (
 )
 
 type runtimeRenderer struct {
-	Screens RuntimeTerminalStore
+	Screens      RuntimeTerminalStore
+	DebugVisible *bool
 }
 
 type wireframeMetrics struct {
@@ -84,6 +85,9 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 
 	lines := []string{"termx"}
 	lines = append(lines, r.renderScreenShell(state, workspace, tab, pane, notices)...)
+	if !r.debugVisible() {
+		return strings.Join(lines, "\n")
+	}
 	lines = append(lines, r.renderWireframeView(state, workspace, tab, pane)...)
 	lines = appendChrome(lines, "header", []string{
 		renderHeaderBar(workspace, tab, pane, state.UI),
@@ -116,6 +120,13 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 		return appendSection(lines, "notices", renderNoticeLines(notices))
 	})
 	return strings.Join(lines, "\n")
+}
+
+func (r runtimeRenderer) debugVisible() bool {
+	if r.DebugVisible == nil {
+		return true
+	}
+	return *r.DebugVisible
 }
 
 func appendSection(lines []string, name string, body []string) []string {
