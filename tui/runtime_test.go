@@ -16,6 +16,7 @@ import (
 	"github.com/lozzow/termx/tui/app/intent"
 	btui "github.com/lozzow/termx/tui/bt"
 	layoutresolvedomain "github.com/lozzow/termx/tui/domain/layoutresolve"
+	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
 	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
 	terminalpickerdomain "github.com/lozzow/termx/tui/domain/terminalpicker"
 	"github.com/lozzow/termx/tui/domain/types"
@@ -635,6 +636,291 @@ func TestE2ERunScenarioDefaultShellOnlyExitedPaneShowsStatusAndActions(t *testin
 	})
 	if err != nil {
 		t.Fatalf("expected exited pane shell-only scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioDefaultModernSplitWorkbenchRendersPaneCanvas(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithSplitPaneTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "$"}, {Content: " "}, {Content: "n"}, {Content: "p"}, {Content: "m"}, {Content: " "}, {Content: "r"}, {Content: "u"}, {Content: "n"}, {Content: " "}, {Content: "d"}, {Content: "e"}, {Content: "v"}},
+								{{Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+							},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: types.TerminalID("term-2"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: ">"}, {Content: " "}, {Content: "t"}, {Content: "s"}, {Content: "c"}, {Content: " "}, {Content: "-"}, {Content: "w"}},
+								{{Content: "o"}, {Content: "k"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			stripped := stripANSIRuntimeView(view)
+			if !strings.Contains(stripped, "Split view") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") {
+				t.Fatalf("expected default modern split view to expose multi-pane canvas, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "$ npm run dev") || !strings.Contains(stripped, "> tsc -w") {
+				t.Fatalf("expected default modern split view to expose both pane previews, got:\n%s", view)
+			}
+			if strings.Contains(stripped, "Pane map") || strings.Contains(view, "wireframe_view:") {
+				t.Fatalf("expected default modern split view without legacy summary/debug sections, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected default modern split scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioDefaultModernFloatingWorkbenchRendersWindowDeck(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithFloatingOverviewTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+							},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: types.TerminalID("term-2"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "b"}, {Content: "u"}, {Content: "i"}, {Content: "l"}, {Content: "d"}, {Content: " "}, {Content: "o"}, {Content: "k"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			stripped := stripANSIRuntimeView(view)
+			if !strings.Contains(stripped, "Floating workbench") || !strings.Contains(stripped, "Window deck") {
+				t.Fatalf("expected default modern floating view to expose window deck, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "api ready") || !strings.Contains(stripped, "build ok") || !strings.Contains(stripped, "rect 10,8  30x12") {
+				t.Fatalf("expected default modern floating view to expose preview and geometry, got:\n%s", view)
+			}
+			if strings.Contains(stripped, "Window stack") || strings.Contains(view, "wireframe_view:") {
+				t.Fatalf("expected default modern floating view without legacy stack/debug sections, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected default modern floating scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioDefaultModernTerminalManagerOverlayRendersStructuredModal(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	manager := terminalmanagerdomain.NewState(initial.Domain, initial.UI.Focus)
+	initial.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayTerminalManager,
+		Data:        manager,
+		ReturnFocus: initial.UI.Focus,
+	}
+	initial.UI.Focus.Layer = types.FocusLayerOverlay
+	initial.UI.Focus.OverlayTarget = types.OverlayTerminalManager
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			stripped := stripANSIRuntimeView(view)
+			if !strings.Contains(stripped, "Terminal Manager") || !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Visible terminals") || !strings.Contains(stripped, "Actions") {
+				t.Fatalf("expected default modern terminal manager modal structure, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "+ new terminal") {
+				t.Fatalf("expected default modern terminal manager rows, got:\n%s", view)
+			}
+			if strings.Contains(view, "wireframe_view:") {
+				t.Fatalf("expected default modern terminal manager without debug sections, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected default modern terminal manager scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioDefaultModernWorkspacePickerOverlayRendersStructuredModal(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithWorkspacePickerTarget()
+	picker := workspacedomain.NewPickerState(initial.Domain)
+	picker.AppendQuery("ops")
+	picker.ExpandSelected()
+	initial.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayWorkspacePicker,
+		Data:        picker,
+		ReturnFocus: initial.UI.Focus,
+	}
+	initial.UI.Focus.Layer = types.FocusLayerOverlay
+	initial.UI.Focus.OverlayTarget = types.OverlayWorkspacePicker
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			stripped := stripANSIRuntimeView(view)
+			if !strings.Contains(stripped, "Workspace Picker") || !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Tree") || !strings.Contains(stripped, "Actions") {
+				t.Fatalf("expected default modern workspace picker modal structure, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "ops") || !strings.Contains(stripped, "main") || !strings.Contains(stripped, "unconnected pane") {
+				t.Fatalf("expected default modern workspace picker tree rows, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected default modern workspace picker scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioDefaultModernLayoutResolveOverlayRendersStructuredModal(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithLayoutResolveTarget()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			stripped := stripANSIRuntimeView(view)
+			if !strings.Contains(stripped, "Layout Resolve") || !strings.Contains(stripped, "Target") || !strings.Contains(stripped, "Choices") || !strings.Contains(stripped, "Actions") {
+				t.Fatalf("expected default modern layout resolve modal structure, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "connect existing") || !strings.Contains(stripped, "create new") {
+				t.Fatalf("expected default modern layout resolve actions, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected default modern layout resolve scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioDefaultModernPromptOverlayRendersStructuredModal(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	initial.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayPrompt,
+		Data: &promptdomain.State{
+			Kind:       promptdomain.KindEditTerminalMetadata,
+			Title:      "edit terminal metadata",
+			TerminalID: types.TerminalID("term-1"),
+			Fields: []promptdomain.Field{
+				{Key: "name", Label: "Name", Value: "api-dev"},
+				{Key: "tags", Label: "Tags", Value: "env=dev"},
+			},
+			Active: 0,
+		},
+		ReturnFocus: initial.UI.Focus,
+	}
+	initial.UI.Focus.Layer = types.FocusLayerPrompt
+	initial.UI.Focus.OverlayTarget = types.OverlayPrompt
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			stripped := stripANSIRuntimeView(view)
+			if !strings.Contains(stripped, "Prompt") || !strings.Contains(stripped, "Fields") || !strings.Contains(stripped, "Actions") {
+				t.Fatalf("expected default modern prompt modal structure, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "Name: api-dev") || !strings.Contains(stripped, "Tags: env=dev") {
+				t.Fatalf("expected default modern prompt fields, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected default modern prompt scenario to succeed, got %v", err)
 	}
 }
 

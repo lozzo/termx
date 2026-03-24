@@ -29,6 +29,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把 shell chrome 往第一视觉收口：`screen_shell` 内现在开始直接带 `WS / TABS / PATH / NOTICE` 这类工作台信息，overlay 场景下也会走更紧凑的合并策略，不再完全依赖下面的 `chrome_* / wireframe_view` 才能读懂上下文
 - 本轮继续把默认第一屏从“工程 token 页”收口成“产品化主壳”：`HEADER / STATE / TARGET / PATH / FT` 这类表达已改成 `Workspace / Tab / Workbench / Active pane / Location / Notice / Keys` 等人类可读 chrome，并同步压缩到 78 列默认宽度内可稳定阅读
 - 本轮正式切出默认现代化 renderer：`DebugUI=false` 时已切到 `lipgloss` 主壳，默认启动不再展示 ASCII 调试盒模型；单 pane、empty/waiting/exited、floating stack 与 help / picker / manager / prompt / layout resolve modal 已有第一包产品态视觉，`--debug-ui` 仍保留旧 `screen_shell + wireframe + chrome_*` 调试视图
+- 本轮继续把默认现代化 renderer 往真实产品态推进：split 已改成递归 pane canvas，floating 已改成 active pane + `window deck`，help / terminal manager / workspace picker / layout resolve / prompt modal 已开始按 `Selection / Tree / Choices / Fields / Actions` 这类结构区块渲染，并补上默认路径 runtime E2E 覆盖
 
 ---
 
@@ -959,8 +960,16 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 1. 真实工作台 renderer
 2. overlay 真实盒模型、遮罩、边框与关闭无残影
 3. 真实 TUI E2E 壳与 renderer 结合
-4. render cache / dirty region / backpressure / 残影串屏治理
-5. `runtime size / access / read error` 这类观测状态是否进入 domain 的最终定稿
+4. `runtime size / access / read error` 这类观测状态是否进入 domain 的最终定稿
+5. 性能 / 颜色处理 / 重叠渲染优化
+   - render cache / dirty region / backpressure
+   - host default color / palette color 继承
+   - floating overlap redraw / overlay 关闭无残影 / 串屏治理
+   - 这块明确放到全局 TODO 最后处理，前面先把产品态主线收口
+   - 参考资产：
+     - `deprecated/tui-legacy/pkg/render.go`
+     - `deprecated/tui-legacy/pkg/model.go`
+     - `deprecated/tui-legacy/root-tests/tui_e2e_test.go`
 
 ---
 
@@ -1029,9 +1038,14 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
    - overlay 开关
    - 关键工作流回归
 4. 大块 D：稳定性与收尾
-   - render cache / dirty region
-   - 残影 / 串屏 / backpressure
    - 观测状态最终建模
+5. 大块 E：性能 / 颜色 / 重叠渲染优化
+   - render cache / dirty region
+   - host default / palette color 继承
+   - floating overlap redraw
+   - overlay 关闭无残影
+   - 残影 / 串屏 / backpressure
+   - 明确放在功能主线之后再做，避免过早回到旧版复杂缓存结构
 
 ---
 

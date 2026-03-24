@@ -292,70 +292,195 @@ func (r modernScreenShellRenderer) renderPanePreview(terminalID types.TerminalID
 }
 
 func (r modernScreenShellRenderer) renderSplitWorkbench(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, tiledPaneIDs []types.PaneID, floatingPaneIDs []types.PaneID, width, height int) string {
-	sidebarWidth := min(32, max(26, width/3))
-	mainWidth := max(30, width-sidebarWidth-1)
-	main := r.renderSingleWorkbench(theme, state, pane, mainWidth, height, true)
-
-	sidebarLines := []string{theme.panelTitle.Render("Pane map")}
-	for _, paneID := range tiledPaneIDs {
-		targetPane, ok := tab.Panes[paneID]
-		if !ok {
-			continue
-		}
-		item := fmt.Sprintf("%s  %s  %s", paneID, renderPaneTitle(state, targetPane), targetPane.SlotState)
-		if paneID == tab.ActivePaneID {
-			sidebarLines = append(sidebarLines, theme.selectedListItem.Render("> "+truncateModernLine(item, sidebarWidth-8)))
-			continue
-		}
-		sidebarLines = append(sidebarLines, theme.listItem.Render("  "+truncateModernLine(item, sidebarWidth-8)))
-	}
+	header := theme.panelMeta.Render(fmt.Sprintf("Split view  •  %d panes  •  active %s", len(tiledPaneIDs), renderPaneTitle(state, pane)))
+	canvasHeight := max(8, height-1)
 	if len(floatingPaneIDs) > 0 {
-		sidebarLines = append(sidebarLines, "", theme.panelTitle.Render("Floating"))
-		for _, paneID := range floatingPaneIDs {
-			targetPane, ok := tab.Panes[paneID]
-			if !ok {
-				continue
-			}
-			sidebarLines = append(sidebarLines, theme.listItem.Render("  "+truncateModernLine(renderPaneTitle(state, targetPane), sidebarWidth-8)))
-		}
+		canvasHeight = max(8, height-4)
 	}
-	sidebar := theme.mutedPanel.Width(sidebarWidth - 2).Height(height - 2).Render(strings.Join(sidebarLines, "\n"))
-	return lipgloss.JoinHorizontal(lipgloss.Top, main, " ", sidebar)
+	var canvas string
+	if tab.RootSplit != nil {
+		canvas = r.renderSplitCanvasNode(theme, state, tab, tab.RootSplit, width, canvasHeight)
+	} else {
+		canvas = r.renderImplicitSplitCanvas(theme, state, tab, tiledPaneIDs, width, canvasHeight)
+	}
+	lines := []string{header, canvas}
+	if len(floatingPaneIDs) > 0 {
+		lines = append(lines, r.renderDetachedFloatingStrip(theme, state, tab, floatingPaneIDs, width))
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
 func (r modernScreenShellRenderer) renderFloatingWorkbench(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, width, height int) string {
-	sidebarWidth := min(30, max(24, width/3))
-	mainWidth := max(30, width-sidebarWidth-1)
-	main := r.renderSingleWorkbench(theme, state, pane, mainWidth, height, true)
+	header := theme.panelMeta.Render(fmt.Sprintf("Floating workbench  •  %d windows  •  focus %s", len(floatingPaneIDs), renderPaneTitle(state, pane)))
+	deckWidth := min(34, max(28, width/3))
+	mainWidth := max(30, width-deckWidth-1)
+	bodyHeight := max(8, height-1)
+	main := r.renderPaneWorkbenchCard(theme, state, pane, mainWidth, bodyHeight, true)
+	deck := r.renderFloatingDeck(theme, state, tab, floatingPaneIDs, deckWidth, bodyHeight)
+	return lipgloss.JoinVertical(lipgloss.Left, header, lipgloss.JoinHorizontal(lipgloss.Top, main, " ", deck))
+}
 
-	lines := []string{theme.panelTitle.Render("Window stack")}
+// renderSplitCanvasNode 递归落地 split 树，让默认产品态直接显示多 pane 盒模型。
+func (r modernScreenShellRenderer) renderSplitCanvasNode(theme modernShellTheme, state types.AppState, tab types.TabState, node *types.SplitNode, width, height int) string {
+	if node == nil {
+		return r.renderPaneWorkbenchCard(theme, state, types.PaneState{SlotState: types.PaneSlotEmpty}, width, height, false)
+	}
+	if node.PaneID != "" {
+		targetPane, ok := tab.Panes[node.PaneID]
+		if !ok {
+			return r.renderMissingPaneCard(theme, width, height, string(node.PaneID))
+		}
+		return r.renderPaneWorkbenchCard(theme, state, targetPane, width, height, node.PaneID == tab.ActivePaneID)
+	}
+	switch node.Direction {
+	case types.SplitDirectionHorizontal:
+		firstHeight := int(float64(max(1, height-1)) * node.Ratio)
+		firstHeight = max(6, min(height-7, firstHeight))
+		secondHeight := max(6, height-firstHeight-1)
+		top := r.renderSplitCanvasNode(theme, state, tab, node.First, width, firstHeight)
+		bottom := r.renderSplitCanvasNode(theme, state, tab, node.Second, width, secondHeight)
+		return lipgloss.JoinVertical(lipgloss.Left, top, bottom)
+	default:
+		firstWidth := int(float64(max(1, width-1)) * node.Ratio)
+		firstWidth = max(18, min(width-19, firstWidth))
+		secondWidth := max(18, width-firstWidth-1)
+		left := r.renderSplitCanvasNode(theme, state, tab, node.First, firstWidth, height)
+		right := r.renderSplitCanvasNode(theme, state, tab, node.Second, secondWidth, height)
+		return lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
+	}
+}
+
+func (r modernScreenShellRenderer) renderImplicitSplitCanvas(theme modernShellTheme, state types.AppState, tab types.TabState, tiledPaneIDs []types.PaneID, width, height int) string {
+	if len(tiledPaneIDs) == 0 {
+		return r.renderPaneWorkbenchCard(theme, state, types.PaneState{SlotState: types.PaneSlotEmpty}, width, height, false)
+	}
+	if len(tiledPaneIDs) == 1 {
+		targetPane, ok := tab.Panes[tiledPaneIDs[0]]
+		if !ok {
+			return r.renderMissingPaneCard(theme, width, height, string(tiledPaneIDs[0]))
+		}
+		return r.renderPaneWorkbenchCard(theme, state, targetPane, width, height, true)
+	}
+	firstWidth := max(18, width/2)
+	secondWidth := max(18, width-firstWidth-1)
+	left := r.renderMissingPaneCard(theme, firstWidth, height, string(tiledPaneIDs[0]))
+	right := r.renderMissingPaneCard(theme, secondWidth, height, string(tiledPaneIDs[1]))
+	if targetPane, ok := tab.Panes[tiledPaneIDs[0]]; ok {
+		left = r.renderPaneWorkbenchCard(theme, state, targetPane, firstWidth, height, tiledPaneIDs[0] == tab.ActivePaneID)
+	}
+	if targetPane, ok := tab.Panes[tiledPaneIDs[1]]; ok {
+		right = r.renderPaneWorkbenchCard(theme, state, targetPane, secondWidth, height, tiledPaneIDs[1] == tab.ActivePaneID)
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
+}
+
+func (r modernScreenShellRenderer) renderDetachedFloatingStrip(theme modernShellTheme, state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID, width int) string {
+	items := []string{theme.panelMeta.Render("Detached windows")}
 	for _, paneID := range floatingPaneIDs {
 		targetPane, ok := tab.Panes[paneID]
 		if !ok {
 			continue
 		}
-		preview := r.renderPanePreview(targetPane.TerminalID)
-		if preview == "" {
-			switch targetPane.SlotState {
-			case types.PaneSlotWaiting:
-				preview = "waiting"
-			case types.PaneSlotExited:
-				preview = "exited"
-			case types.PaneSlotEmpty:
-				preview = "empty"
-			default:
-				preview = "live"
-			}
-		}
-		label := fmt.Sprintf("%s  %s  %s", paneID, renderPaneTitle(state, targetPane), preview)
-		if paneID == tab.ActivePaneID {
-			lines = append(lines, theme.selectedListItem.Render("> "+truncateModernLine(label, sidebarWidth-8)))
+		label := fmt.Sprintf("%s  %s", paneID, renderPaneTitle(state, targetPane))
+		if paneID == tab.ActivePaneID && tab.ActiveLayer == types.FocusLayerFloating {
+			items = append(items, theme.activeChip.Render(truncateModernLine(label, 20)))
 			continue
 		}
-		lines = append(lines, theme.listItem.Render("  "+truncateModernLine(label, sidebarWidth-8)))
+		items = append(items, theme.chip.Render(truncateModernLine(label, 20)))
 	}
-	sidebar := theme.mutedPanel.Width(sidebarWidth - 2).Height(height - 2).Render(strings.Join(lines, "\n"))
-	return lipgloss.JoinHorizontal(lipgloss.Top, main, " ", sidebar)
+	return theme.subBar.Render(fillANSIHorizontal(strings.Join(items, " "), theme.panelMeta.Render(fmt.Sprintf("%d floating", len(floatingPaneIDs))), width))
+}
+
+func (r modernScreenShellRenderer) renderFloatingDeck(theme modernShellTheme, state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID, width, height int) string {
+	header := theme.panelTitle.Render("Window deck")
+	if len(floatingPaneIDs) == 0 {
+		return theme.mutedPanel.Width(width - 2).Height(height - 2).Render(strings.Join([]string{header, theme.panelMeta.Render("No floating windows")}, "\n"))
+	}
+	cardHeight := 7
+	cards := make([]string, 0, len(floatingPaneIDs))
+	remainingHeight := max(0, height-1)
+	for index, paneID := range floatingPaneIDs {
+		if remainingHeight < 4 {
+			break
+		}
+		targetPane, ok := tab.Panes[paneID]
+		if !ok {
+			continue
+		}
+		cards = append(cards, r.renderFloatingDeckCard(theme, state, targetPane, width, min(cardHeight, remainingHeight), paneID == tab.ActivePaneID, index))
+		remainingHeight -= cardHeight
+	}
+	if len(cards) == 0 {
+		cards = append(cards, theme.panelMeta.Render("No floating windows"))
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, append([]string{header}, cards...)...)
+}
+
+func (r modernScreenShellRenderer) renderFloatingDeckCard(theme modernShellTheme, state types.AppState, pane types.PaneState, width, height int, active bool, index int) string {
+	panelStyle := theme.mutedPanel
+	if active {
+		panelStyle = theme.activePanel
+	}
+	rectText := "rect auto"
+	if pane.Rect.W > 0 || pane.Rect.H > 0 {
+		rectText = fmt.Sprintf("rect %d,%d  %dx%d", pane.Rect.X, pane.Rect.Y, pane.Rect.W, pane.Rect.H)
+	}
+	preview := r.renderPanePreview(pane.TerminalID)
+	if preview == "" {
+		preview = string(pane.SlotState)
+	}
+	lines := normalizeModernPanelLines([]string{
+		theme.panelTitle.Render(fmt.Sprintf("Window %d  %s", index+1, renderPaneTitle(state, pane))),
+		theme.panelMeta.Render(rectText),
+		theme.panelMeta.Render(fmt.Sprintf("slot %s  •  %s", pane.SlotState, renderScreenShellPaneCardRole(state, pane))),
+		theme.terminalBody.Render(preview),
+	}, max(14, width-4), max(4, height-2))
+	return panelStyle.Width(width - 2).Height(height - 2).Render(strings.Join(lines, "\n"))
+}
+
+func (r modernScreenShellRenderer) renderPaneWorkbenchCard(theme modernShellTheme, state types.AppState, pane types.PaneState, width, height int, active bool) string {
+	panelStyle := theme.panel
+	if active {
+		panelStyle = theme.activePanel
+	} else if pane.Kind == types.PaneKindFloating {
+		panelStyle = theme.mutedPanel
+	}
+	contentWidth := max(12, width-4)
+	contentHeight := max(4, height-2)
+	lines := r.renderPanePanelLines(theme, state, pane, contentWidth, contentHeight, true)
+	if pane.Kind == types.PaneKindFloating && (pane.Rect.W > 0 || pane.Rect.H > 0) {
+		rectLine := theme.panelMeta.Render(fmt.Sprintf("rect %d,%d  %dx%d", pane.Rect.X, pane.Rect.Y, pane.Rect.W, pane.Rect.H))
+		if len(lines) > 1 {
+			lines = append(lines[:2], append([]string{rectLine}, lines[2:]...)...)
+		} else {
+			lines = append(lines, rectLine)
+		}
+	}
+	lines = normalizeModernPanelLines(lines, contentWidth, contentHeight)
+	return panelStyle.Width(width - 2).Height(height - 2).Render(strings.Join(lines, "\n"))
+}
+
+func (r modernScreenShellRenderer) renderMissingPaneCard(theme modernShellTheme, width, height int, paneID string) string {
+	lines := normalizeModernPanelLines([]string{
+		theme.panelTitle.Render("Missing pane"),
+		theme.panelMeta.Render("pane " + paneID),
+		theme.terminalBody.Render("Layout references a pane that is not loaded."),
+	}, max(12, width-4), max(4, height-2))
+	return theme.mutedPanel.Width(width - 2).Height(height - 2).Render(strings.Join(lines, "\n"))
+}
+
+func normalizeModernPanelLines(lines []string, width, height int) []string {
+	out := make([]string, 0, height)
+	for _, line := range lines {
+		if len(out) >= height {
+			break
+		}
+		out = append(out, truncateModernLine(line, width))
+	}
+	for len(out) < height {
+		out = append(out, "")
+	}
+	return out
 }
 
 // renderPanePanelLines 统一负责产品态 pane 卡片的正文。
@@ -499,9 +624,12 @@ func (r modernScreenShellRenderer) renderOverlayPanelBody(theme modernShellTheme
 	switch overlay.Kind {
 	case types.OverlayHelp:
 		return []string{
+			theme.modalMeta.Render("Keysets"),
 			theme.modalBody.Render(truncateModernLine("Ctrl-p pane  •  Ctrl-t tab  •  Ctrl-w workspace  •  Ctrl-f picker", width)),
 			theme.modalBody.Render(truncateModernLine("Ctrl-o floating  •  Ctrl-g global  •  Esc close", width)),
-			theme.modalMeta.Render("pane is the view slot, terminal is the running entity"),
+			"",
+			theme.modalMeta.Render("Model"),
+			theme.modalBody.Render(truncateModernLine("pane is the view slot, terminal is the running entity", width)),
 		}
 	case types.OverlayTerminalManager:
 		manager, _ := overlay.Data.(*terminalmanagerdomain.State)
@@ -527,18 +655,20 @@ func renderModernTerminalManagerOverlay(theme modernShellTheme, manager *termina
 	if manager == nil {
 		return []string{theme.modalBody.Render("No terminal data loaded yet.")}
 	}
-	lines := []string{
-		theme.modalMeta.Render(fmt.Sprintf("search %q", manager.Query())),
-	}
+	lines := []string{theme.modalMeta.Render(fmt.Sprintf("search %q", manager.Query()))}
 	rows := manager.VisibleRows()
 	selected, ok := manager.SelectedRow()
+	lines = append(lines, "", theme.modalMeta.Render("Selection"))
 	if ok {
 		lines = append(lines, theme.modalBody.Render(truncateModernLine("selected "+activeRowLabel(selected, true), width)))
 	}
-	lines = append(lines, theme.modalMeta.Render(fmt.Sprintf("%d rows  •  Enter here  •  t new tab  •  o floating", len(rows))))
+	lines = append(lines, "", theme.modalMeta.Render("Visible terminals"))
+	lines = append(lines, theme.modalMeta.Render(fmt.Sprintf("%d rows", len(rows))))
 	for _, line := range modernTerminalManagerRowPreview(theme, rows, selected, ok, width) {
 		lines = append(lines, line)
 	}
+	lines = append(lines, "", theme.modalMeta.Render("Actions"))
+	lines = append(lines, theme.modalBody.Render(truncateModernLine("Enter connect here  •  t new tab  •  o floating  •  e edit  •  s stop", width)))
 	return lines
 }
 
@@ -577,6 +707,7 @@ func renderModernWorkspacePickerOverlay(theme modernShellTheme, picker *workspac
 	selectedRow, hasSelected := picker.SelectedRow()
 	lines := []string{theme.modalMeta.Render(fmt.Sprintf("query %q  •  %d rows", picker.Query(), len(rows)))}
 	if hasSelected {
+		lines = append(lines, "", theme.modalMeta.Render("Selection"))
 		lines = append(lines, theme.modalBody.Render(fmt.Sprintf("selected %s  •  %s", selectedRow.Node.Label, selectedRow.Node.Kind)))
 	}
 	selectedIndex := 0
@@ -588,6 +719,7 @@ func renderModernWorkspacePickerOverlay(theme modernShellTheme, picker *workspac
 			}
 		}
 	}
+	lines = append(lines, "", theme.modalMeta.Render("Tree"))
 	slice, _ := overlayPreviewRowsAround(rows, 5, selectedIndex)
 	for _, row := range slice {
 		label := strings.Repeat("  ", row.Depth) + row.Node.Label
@@ -598,6 +730,8 @@ func renderModernWorkspacePickerOverlay(theme modernShellTheme, picker *workspac
 		}
 		lines = append(lines, theme.listItem.Render("  "+label))
 	}
+	lines = append(lines, "", theme.modalMeta.Render("Actions"))
+	lines = append(lines, theme.modalBody.Render(truncateModernLine("Enter jump  •  / filter  •  Esc close", width)))
 	return lines
 }
 
@@ -609,7 +743,8 @@ func renderModernTerminalPickerOverlay(theme modernShellTheme, picker *terminalp
 	selectedRow, hasSelected := picker.SelectedRow()
 	lines := []string{theme.modalMeta.Render(fmt.Sprintf("query %q  •  %d rows", picker.Query(), len(rows)))}
 	if hasSelected {
-		lines = append(lines, theme.modalBody.Render("selected " + truncateModernLine(selectedRow.Label, width)))
+		lines = append(lines, "", theme.modalMeta.Render("Selection"))
+		lines = append(lines, theme.modalBody.Render("selected "+truncateModernLine(selectedRow.Label, width)))
 	}
 	selectedIndex := 0
 	if hasSelected {
@@ -620,6 +755,7 @@ func renderModernTerminalPickerOverlay(theme modernShellTheme, picker *terminalp
 			}
 		}
 	}
+	lines = append(lines, "", theme.modalMeta.Render("Results"))
 	slice, _ := overlayPreviewRowsAround(rows, 4, selectedIndex)
 	for _, row := range slice {
 		text := row.Label
@@ -633,6 +769,8 @@ func renderModernTerminalPickerOverlay(theme modernShellTheme, picker *terminalp
 		}
 		lines = append(lines, theme.listItem.Render("  "+text))
 	}
+	lines = append(lines, "", theme.modalMeta.Render("Actions"))
+	lines = append(lines, theme.modalBody.Render(truncateModernLine("Enter connect  •  n create new  •  Esc close", width)))
 	return lines
 }
 
@@ -644,6 +782,7 @@ func renderModernLayoutResolveOverlay(theme modernShellTheme, resolve *layoutres
 		theme.modalMeta.Render(fmt.Sprintf("pane %s  •  role %s", resolve.PaneID, resolve.Role)),
 	}
 	if resolve.Hint != "" {
+		lines = append(lines, "", theme.modalMeta.Render("Target"))
 		lines = append(lines, theme.modalBody.Render(truncateModernLine(resolve.Hint, width)))
 	}
 	rows := resolve.Rows()
@@ -657,6 +796,7 @@ func renderModernLayoutResolveOverlay(theme modernShellTheme, resolve *layoutres
 			}
 		}
 	}
+	lines = append(lines, "", theme.modalMeta.Render("Choices"))
 	slice, _ := overlayPreviewRowsAround(rows, 4, selectedIndex)
 	for _, row := range slice {
 		text := truncateModernLine(string(row.Action)+"  "+row.Label, width)
@@ -666,6 +806,8 @@ func renderModernLayoutResolveOverlay(theme modernShellTheme, resolve *layoutres
 		}
 		lines = append(lines, theme.listItem.Render("  "+text))
 	}
+	lines = append(lines, "", theme.modalMeta.Render("Actions"))
+	lines = append(lines, theme.modalBody.Render(truncateModernLine("Enter confirm  •  Esc close", width)))
 	return lines
 }
 
@@ -676,7 +818,11 @@ func renderModernPromptOverlay(theme modernShellTheme, prompt *promptdomain.Stat
 	if len(prompt.Fields) == 0 {
 		return []string{
 			theme.modalMeta.Render("draft mode"),
+			theme.modalMeta.Render("Fields"),
 			theme.modalBody.Render(truncateModernLine(prompt.Draft, width)),
+			"",
+			theme.modalMeta.Render("Actions"),
+			theme.modalBody.Render(truncateModernLine("Enter submit  •  Esc cancel", width)),
 		}
 	}
 	active := prompt.Active
@@ -685,6 +831,8 @@ func renderModernPromptOverlay(theme modernShellTheme, prompt *promptdomain.Stat
 	}
 	lines := []string{
 		theme.modalMeta.Render(fmt.Sprintf("%d fields  •  active %s", len(prompt.Fields), prompt.Fields[active].Key)),
+		"",
+		theme.modalMeta.Render("Fields"),
 	}
 	for idx, field := range prompt.Fields {
 		text := truncateModernLine(fmt.Sprintf("%s: %s", field.Label, field.Value), width)
@@ -694,6 +842,8 @@ func renderModernPromptOverlay(theme modernShellTheme, prompt *promptdomain.Stat
 		}
 		lines = append(lines, theme.listItem.Render("  "+text))
 	}
+	lines = append(lines, "", theme.modalMeta.Render("Actions"))
+	lines = append(lines, theme.modalBody.Render(truncateModernLine("Enter submit  •  Tab next field  •  Esc cancel", width)))
 	return lines
 }
 

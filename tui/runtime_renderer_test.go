@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/protocol"
 	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/lozzow/termx/protocol"
 	btui "github.com/lozzow/termx/tui/bt"
 	layoutresolvedomain "github.com/lozzow/termx/tui/domain/layoutresolve"
 	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
@@ -299,10 +299,10 @@ func TestRuntimeRendererShellOnlyShowsContextualActionsForConnectedPane(t *testi
 func TestRuntimeRendererShellOnlyShowsStatusAndActionsForDisconnectedStates(t *testing.T) {
 	debugVisible := false
 	cases := []struct {
-		name        string
-		state       types.AppState
-		statusLine  string
-		actionLine  string
+		name       string
+		state      types.AppState
+		statusLine string
+		actionLine string
 	}{
 		{
 			name:       "empty",
@@ -351,6 +351,152 @@ func TestRuntimeRendererShellOnlyShowsStatusAndActionsForDisconnectedStates(t *t
 				t.Fatalf("expected shell-only renderer to expose %q, got:\n%s", tc.actionLine, view)
 			}
 		})
+	}
+}
+
+func TestRuntimeRendererShellOnlyRendersSplitWorkbenchAsPaneCanvas(t *testing.T) {
+	debugVisible := false
+	state := runtimeStateWithSplitPaneTargets()
+	renderer := runtimeRenderer{
+		DebugVisible: &debugVisible,
+		Screens: NewRuntimeTerminalStore(RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "$"}, {Content: " "}, {Content: "n"}, {Content: "p"}, {Content: "m"}, {Content: " "}, {Content: "r"}, {Content: "u"}, {Content: "n"}, {Content: " "}, {Content: "d"}, {Content: "e"}, {Content: "v"}},
+								{{Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+							},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: types.TerminalID("term-2"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: ">"}, {Content: " "}, {Content: "t"}, {Content: "s"}, {Content: "c"}, {Content: " "}, {Content: "-"}, {Content: "w"}},
+								{{Content: "o"}, {Content: "k"}},
+							},
+						},
+					},
+				},
+			},
+		}),
+	}
+
+	view := renderer.Render(state, nil)
+	stripped := stripANSIForTest(view)
+	if !strings.Contains(stripped, "Split view") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") {
+		t.Fatalf("expected shell-only split renderer to expose pane titles, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "$ npm run dev") || !strings.Contains(stripped, "> tsc -w") {
+		t.Fatalf("expected shell-only split renderer to expose pane previews, got:\n%s", view)
+	}
+	if strings.Contains(stripped, "Pane map") {
+		t.Fatalf("expected shell-only split renderer to replace legacy sidebar summary, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing.T) {
+	debugVisible := false
+	state := runtimeStateWithFloatingOverviewTargets()
+	renderer := runtimeRenderer{
+		DebugVisible: &debugVisible,
+		Screens: NewRuntimeTerminalStore(RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+							},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: types.TerminalID("term-2"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "b"}, {Content: "u"}, {Content: "i"}, {Content: "l"}, {Content: "d"}, {Content: " "}, {Content: "o"}, {Content: "k"}},
+							},
+						},
+					},
+				},
+			},
+		}),
+	}
+
+	view := renderer.Render(state, nil)
+	stripped := stripANSIForTest(view)
+	if !strings.Contains(stripped, "Floating workbench") || !strings.Contains(stripped, "Window deck") {
+		t.Fatalf("expected shell-only floating renderer to expose window deck chrome, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "api ready") || !strings.Contains(stripped, "build ok") || !strings.Contains(stripped, "rect 10,8  30x12") {
+		t.Fatalf("expected shell-only floating renderer to expose stacked window previews, got:\n%s", view)
+	}
+	if strings.Contains(stripped, "Window stack") {
+		t.Fatalf("expected shell-only floating renderer to replace legacy stack list, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererShellOnlyRendersStructuredTerminalManagerOverlay(t *testing.T) {
+	debugVisible := false
+	state := runtimeStateWithTerminalManagerTargets()
+	manager := terminalmanagerdomain.NewState(state.Domain, state.UI.Focus)
+	state.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayTerminalManager,
+		Data:        manager,
+		ReturnFocus: state.UI.Focus,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+	state.UI.Focus.OverlayTarget = types.OverlayTerminalManager
+
+	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
+	stripped := stripANSIForTest(view)
+	if !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Visible terminals") || !strings.Contains(stripped, "Actions") {
+		t.Fatalf("expected shell-only terminal manager overlay to render structured sections, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "+ new terminal") {
+		t.Fatalf("expected shell-only terminal manager overlay to render terminal rows, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererShellOnlyRendersStructuredPromptOverlay(t *testing.T) {
+	debugVisible := false
+	state := runtimeStateWithTerminalManagerTargets()
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayPrompt,
+		Data: &promptdomain.State{
+			Kind:       promptdomain.KindEditTerminalMetadata,
+			Title:      "edit terminal metadata",
+			TerminalID: types.TerminalID("term-1"),
+			Fields: []promptdomain.Field{
+				{Key: "name", Label: "Name", Value: "api-dev"},
+				{Key: "tags", Label: "Tags", Value: "env=dev"},
+			},
+			Active: 0,
+		},
+		ReturnFocus: state.UI.Focus,
+	}
+	state.UI.Focus.Layer = types.FocusLayerPrompt
+	state.UI.Focus.OverlayTarget = types.OverlayPrompt
+
+	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
+	stripped := stripANSIForTest(view)
+	if !strings.Contains(stripped, "Fields") || !strings.Contains(stripped, "Actions") || !strings.Contains(stripped, "Name: api-dev") {
+		t.Fatalf("expected shell-only prompt overlay to render field sections, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "Tags: env=dev") {
+		t.Fatalf("expected shell-only prompt overlay to keep secondary field visible, got:\n%s", view)
 	}
 }
 
