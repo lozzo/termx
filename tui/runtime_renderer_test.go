@@ -199,8 +199,57 @@ func TestRuntimeRendererCanHideDebugSections(t *testing.T) {
 	if !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "SHELL[78x24 overlay=none]") {
 		t.Fatalf("expected shell-only renderer to keep visible screen shell, got:\n%s", view)
 	}
+	if !strings.Contains(view, "TERMINFO[term-1 running owner]") || !strings.Contains(view, "CMD[npm run dev]") || !strings.Contains(view, "ROWS[2/2]") {
+		t.Fatalf("expected shell-only renderer to keep terminal meta inside screen shell, got:\n%s", view)
+	}
 	if strings.Contains(view, "wireframe_view:") || strings.Contains(view, "chrome_header:") || strings.Contains(view, "chrome_body:") || strings.Contains(view, "chrome_footer:") {
 		t.Fatalf("expected shell-only renderer to hide debug sections, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererShellOnlyOverlayKeepsPaneContext(t *testing.T) {
+	debugVisible := false
+	state := connectedRunAppState()
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:      types.TerminalID("term-1"),
+		Name:    "api-dev",
+		State:   types.TerminalRunStateRunning,
+		Command: []string{"npm", "run", "dev"},
+		Visible: true,
+	}
+	state.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayHelp,
+		ReturnFocus: state.UI.Focus,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+	state.UI.Focus.OverlayTarget = types.OverlayHelp
+	state.UI.Mode = types.ModeState{Active: types.ModePicker}
+	renderer := runtimeRenderer{
+		DebugVisible: &debugVisible,
+		Screens: NewRuntimeTerminalStore(RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 120, Rows: 40},
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "$"}, {Content: " "}, {Content: "p"}, {Content: "w"}, {Content: "d"}},
+							},
+						},
+					},
+				},
+			},
+		}),
+	}
+
+	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "TARGET[main/shell/pane-1] TERM[term-1] FLOAT[0]") || !strings.Contains(view, "PATH[main/shell/tiled:pane-1]") || !strings.Contains(view, "TARGET[api-dev]") || !strings.Contains(view, "SLOT[connected]") {
+		t.Fatalf("expected shell-only overlay renderer to keep current pane context, got:\n%s", view)
+	}
+	if !strings.Contains(view, "# DIALOG[help]") {
+		t.Fatalf("expected shell-only overlay renderer to keep help dialog visible, got:\n%s", view)
 	}
 }
 

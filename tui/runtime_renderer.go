@@ -162,11 +162,12 @@ func (r runtimeRenderer) renderScreenShell(state types.AppState, workspace types
 		)
 	}
 	body = append(body, renderScreenShellStateLine(state, tab, pane))
-	if !overlayActive {
-		body = append(body,
-			renderScreenShellTargetLine(workspace, tab, pane),
-			renderScreenShellPathLine(state, workspace, tab, pane),
-		)
+	body = append(body,
+		renderScreenShellTargetLine(workspace, tab, pane),
+		renderScreenShellPathLine(state, workspace, tab, pane),
+	)
+	if metaLine := r.renderScreenShellTerminalMetaLine(state, pane); metaLine != "" {
+		body = append(body, metaLine)
 	}
 	body = append(body, r.renderScreenShellWorkbench(state, tab, pane, metrics, overlayActive)...)
 	if overlayActive {
@@ -302,6 +303,42 @@ func renderScreenShellFooter(state types.AppState, pane types.PaneState) string 
 		layer = types.PaneKind(state.UI.Overlay.Kind)
 	}
 	return fmt.Sprintf("FT[%s %s %s] <p> PANE <t> TAB <w> WS <o> FLOAT <f> PICK <g> GLOBAL", renderPaneTitle(state, pane), layer, state.UI.Overlay.Kind)
+}
+
+// renderScreenShellTerminalMetaLine 把默认运行态下最关键的 terminal 元信息上收进主壳，
+// 避免关闭 debug 区后，用户还得靠调试 renderer 才能知道 command / size / rows。
+func (r runtimeRenderer) renderScreenShellTerminalMetaLine(state types.AppState, pane types.PaneState) string {
+	if pane.TerminalID == "" || pane.SlotState != types.PaneSlotConnected {
+		return ""
+	}
+	terminalState := types.TerminalRunStateRunning
+	command := ""
+	if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok {
+		if terminal.State != "" {
+			terminalState = terminal.State
+		}
+		if len(terminal.Command) > 0 {
+			command = strings.Join(terminal.Command, " ")
+		}
+	}
+	role := renderScreenShellPaneCardRole(state, pane)
+	parts := []string{fmt.Sprintf("TERMINFO[%s %s %s]", pane.TerminalID, terminalState, role)}
+	if conn := state.Domain.Connections[pane.TerminalID]; conn.TerminalID != "" && len(conn.ConnectedPaneIDs) > 0 {
+		parts = append(parts, fmt.Sprintf("PEERS[%d]", len(conn.ConnectedPaneIDs)))
+	}
+	if r.Screens != nil {
+		if status, ok := r.Screens.Status(pane.TerminalID); ok && (status.Size.Cols != 0 || status.Size.Rows != 0) {
+			parts = append(parts, fmt.Sprintf("SIZE[%dx%d]", status.Size.Cols, status.Size.Rows))
+		}
+		if snapshot, ok := r.Screens.Snapshot(pane.TerminalID); ok && snapshot != nil {
+			rows, totalRows, _ := renderSnapshotRows(snapshot)
+			parts = append(parts, fmt.Sprintf("ROWS[%d/%d]", len(rows), totalRows))
+		}
+	}
+	if command != "" {
+		parts = append(parts, fmt.Sprintf("CMD[%s]", command))
+	}
+	return compactSummaryLine(parts...)
 }
 
 // renderScreenShellNoticeLine 把 notice 汇总搬进第一视觉 shell，

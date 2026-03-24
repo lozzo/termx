@@ -115,6 +115,9 @@ func TestRunUsesShellOnlyRendererByDefault(t *testing.T) {
 	if !strings.Contains(runner.view, "screen_shell:") {
 		t.Fatalf("expected default run renderer to keep screen shell, got:\n%s", runner.view)
 	}
+	if !strings.Contains(runner.view, "TERMINFO[term-1 running owner]") || !strings.Contains(runner.view, "ROWS[1/1]") {
+		t.Fatalf("expected default run renderer to keep terminal context in screen shell, got:\n%s", runner.view)
+	}
 	if strings.Contains(runner.view, "wireframe_view:") || strings.Contains(runner.view, "chrome_header:") {
 		t.Fatalf("expected default run renderer to hide debug sections, got:\n%s", runner.view)
 	}

@@ -1713,3 +1713,53 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
   - 把 `screen_shell` 自己的 header/body/footer 继续做强
   - 逐步把原来依赖 `chrome_*` 才能看懂的信息上收进主壳
   - 在默认视图已经干净的前提下，再推进更现代的 tab/workspace/pane chrome
+
+---
+
+## 20. 第 206 轮 TDD
+
+这一轮继续沿着“默认主壳本身就要能读懂”的方向推进，没有重新放回调试层，而是把原来只有 debug 区里才能看到的关键信息上收进 `screen_shell`：
+
+1. connected pane 的 terminal 元信息进入主壳
+   - 新增 `TERMINFO[...]`
+   - 默认主壳里现在能直接看到：
+     - terminal id
+     - run state
+     - owner/follower
+     - 连接 pane 数
+     - runtime size
+     - 当前 preview rows
+     - command
+   - 这样在默认 shell-only 视图下，不需要再打开 debug-ui 才知道当前 terminal 的关键状态
+2. overlay 打开时仍保留当前 pane 上下文
+   - 之前 overlay 打开后，`screen_shell` 会隐藏 `TARGET[...]` / `PATH[...]`
+   - 现在即使 help / picker / resolve 打开，默认主壳里也仍保留当前 workspace/tab/pane/terminal 上下文
+   - 避免默认视图进入 overlay 后变成“只看得到 dialog，不知道当前在操作哪个 pane”
+3. shell-only 与 debug renderer 两条路径继续保持兼容
+   - 新增 shell-only renderer 测试与默认 run 测试
+   - 同时保留显式 debug renderer 的已有路径不被破坏
+
+这一轮收口的验证重点：
+
+- renderer：
+  - `TestRuntimeRendererCanHideDebugSections`
+  - `TestRuntimeRendererShellOnlyOverlayKeepsPaneContext`
+  - `TestRuntimeRendererRendersActivePaneSnapshot`
+- runtime：
+  - `TestRunUsesShellOnlyRendererByDefault`
+  - `TestE2ERunScenarioActivePaneCoreViewVisible`
+
+本轮验证命令：
+
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1`
+
+当前状态更新为：
+
+- 默认 `cmd/termx` 第一屏现在不只是“更干净”，而且已经开始具备真正独立可读的 terminal 上下文
+- shell-only 视图在 overlay 打开时也不会丢掉当前 pane 的目标和路径信息
+- 当前主线已经从“调试 renderer 主导”明显转向“主壳自己承担产品语义”
+- 下一阶段可以继续往前收：
+  - 把更多仍然只存在于 debug 区的状态收回到 `screen_shell`
+  - 开始重新设计更像最终产品的 shell header/footer 样式与 pane chrome
+  - 在主壳可独立读懂的基础上，再推进真正现代化的布局和层级表达
