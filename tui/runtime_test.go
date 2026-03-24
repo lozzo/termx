@@ -122,7 +122,7 @@ func TestRunUsesShellOnlyRendererByDefault(t *testing.T) {
 	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "workspace main") {
 		t.Fatalf("expected default run renderer to keep screen shell, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal") || !strings.Contains(stripped, "Screen") || !strings.Contains(stripped, "$ pwd") {
+	if !strings.Contains(stripped, "Terminal  Runtime  running  •  hidden") || !strings.Contains(stripped, "Connection  terminal term-1  •  owner") || !strings.Contains(stripped, "Screen") || !strings.Contains(stripped, "$ pwd") {
 		t.Fatalf("expected default run renderer to keep terminal context in screen shell, got:\n%s", runner.view)
 	}
 	if !strings.Contains(stripped, "Screen") || !strings.Contains(stripped, "rows 1/1  •  live  •  primary") || !strings.Contains(stripped, "│ $ pwd") {
@@ -684,13 +684,16 @@ func TestE2ERunScenarioDefaultModernSplitWorkbenchRendersPaneCanvas(t *testing.T
 			if !strings.Contains(stripped, "Split view") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") {
 				t.Fatalf("expected default modern split view to expose multi-pane canvas, got:\n%s", view)
 			}
+			if !strings.Contains(stripped, "Terminal  Runtime") || !strings.Contains(stripped, "Connection  terminal term-1") || !strings.Contains(stripped, "Connection  terminal term-2") || !strings.Contains(stripped, "Command  cmd npm run dev") || !strings.Contains(stripped, "Command  cmd tail -f build.log") || !strings.Contains(stripped, "Tags  tags env=dev,service=api") || !strings.Contains(stripped, "Tags  tags group=build") {
+				t.Fatalf("expected default modern split view to expose structured terminal metadata, got:\n%s", view)
+			}
 			if !strings.Contains(stripped, "live input  •  Ctrl-p  •  pick") || !strings.Contains(stripped, "standby pane  •  Ctrl-p pane") {
 				t.Fatalf("expected default modern split view to expose pane footer hints, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "rows 2/2  •  live  •  primary") || !strings.Contains(stripped, "rows 2/2  •  standby  •  secondary") || !strings.Contains(stripped, "│ $ npm run dev") || !strings.Contains(stripped, "│ > tsc -w") {
+			if !strings.Contains(stripped, "rows 1/2  •  live  •  primary") || !strings.Contains(stripped, "rows 1/2  •  standby  •  secondary") || !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
 				t.Fatalf("expected default modern split view to expose framed screen blocks, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "$ npm run dev") || !strings.Contains(stripped, "> tsc -w") {
+			if !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
 				t.Fatalf("expected default modern split view to expose both pane previews, got:\n%s", view)
 			}
 			if strings.Contains(stripped, "Pane map") || strings.Contains(view, "wireframe_view:") {
@@ -750,6 +753,9 @@ func TestE2ERunScenarioDefaultModernFloatingWorkbenchRendersWindowDeck(t *testin
 			stripped := stripANSIRuntimeView(view)
 			if !strings.Contains(stripped, "Floating workbench") || !strings.Contains(stripped, "Window deck") {
 				t.Fatalf("expected default modern floating view to expose window deck, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "Runtime") || !strings.Contains(stripped, "Connection") || !strings.Contains(stripped, "running  •  visible") || !strings.Contains(stripped, "terminal term-1") {
+				t.Fatalf("expected default modern floating view to expose structured active terminal metadata, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "api-dev • owner • floating • active") || !strings.Contains(stripped, "Geometry") || !strings.Contains(stripped, "z 1/2") || !strings.Contains(stripped, "z 2/2") {
 				t.Fatalf("expected default modern floating view to expose title bars and geometry depth, got:\n%s", view)
@@ -7534,12 +7540,16 @@ func runtimeStateWithSplitPaneTargets() types.AppState {
 		ID:      types.TerminalID("term-1"),
 		Name:    "api-dev",
 		State:   types.TerminalRunStateRunning,
+		Command: []string{"npm", "run", "dev"},
+		Tags:    map[string]string{"service": "api", "env": "dev"},
 		Visible: true,
 	}
 	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
 		ID:      types.TerminalID("term-2"),
 		Name:    "build-log",
 		State:   types.TerminalRunStateRunning,
+		Command: []string{"tail", "-f", "build.log"},
+		Tags:    map[string]string{"group": "build"},
 		Visible: true,
 	}
 	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
@@ -7633,12 +7643,16 @@ func runtimeStateWithTwoTabTargets() types.AppState {
 		ID:      types.TerminalID("term-1"),
 		Name:    "api-dev",
 		State:   types.TerminalRunStateRunning,
+		Command: []string{"npm", "run", "dev"},
+		Tags:    map[string]string{"service": "api", "env": "dev"},
 		Visible: true,
 	}
 	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
 		ID:      types.TerminalID("term-2"),
 		Name:    "build-log",
 		State:   types.TerminalRunStateRunning,
+		Command: []string{"tail", "-f", "build.log"},
+		Tags:    map[string]string{"group": "build"},
 		Visible: true,
 	}
 	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{

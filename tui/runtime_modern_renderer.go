@@ -551,8 +551,7 @@ func (r modernScreenShellRenderer) renderPanePanelLines(theme modernShellTheme, 
 	lines = append(lines, theme.panelMeta.Render(renderModernPaneStatusLine(state, pane)))
 	lines = append(lines, theme.panelMeta.Render(renderModernPaneIdentityLine(pane)))
 	if pane.Kind == types.PaneKindFloating && (pane.Rect.W > 0 || pane.Rect.H > 0) {
-		lines = append(lines, theme.panelTitle.Render("Geometry"))
-		lines = append(lines, theme.panelMeta.Render(fmt.Sprintf("rect %d,%d  %dx%d", pane.Rect.X, pane.Rect.Y, pane.Rect.W, pane.Rect.H)))
+		lines = append(lines, theme.panelMeta.Render(fmt.Sprintf("Geometry  rect %d,%d  %dx%d", pane.Rect.X, pane.Rect.Y, pane.Rect.W, pane.Rect.H)))
 	}
 
 	switch pane.SlotState {
@@ -583,7 +582,6 @@ func (r modernScreenShellRenderer) renderPanePanelLines(theme modernShellTheme, 
 		lines = append(lines, theme.panelTitle.Render("Actions"))
 		lines = append(lines, theme.panelMeta.Render("Press r to restart, or a to connect another terminal."))
 	default:
-		lines = append(lines, theme.panelTitle.Render("Terminal"))
 		lines = append(lines, r.renderTerminalMetaLines(theme, state, pane, width)...)
 		lines = append(lines, theme.panelTitle.Render("Actions"))
 		lines = append(lines, theme.panelMeta.Render(truncateModernLine(renderModernPaneActionLine(state, pane), width)))
@@ -746,14 +744,27 @@ func (r modernScreenShellRenderer) renderTerminalMetaLines(theme modernShellThem
 	if stateLabel == "" {
 		stateLabel = "running"
 	}
-	meta := []string{fmt.Sprintf("state %s", stateLabel)}
+	runtimeParts := []string{stateLabel}
+	if terminal.Visible {
+		runtimeParts = append(runtimeParts, "visible")
+	} else {
+		runtimeParts = append(runtimeParts, "hidden")
+	}
+	role := renderScreenShellPaneCardRole(state, pane)
+	if role == "" {
+		role = "attached"
+	}
+	lines := []string{
+		theme.panelMeta.Render(truncateModernLine("Terminal  Runtime  "+strings.Join(runtimeParts, "  •  "), width)),
+		theme.panelMeta.Render(truncateModernLine(fmt.Sprintf("Connection  terminal %s  •  %s", pane.TerminalID, role), width)),
+	}
 	if len(terminal.Command) > 0 {
-		meta = append(meta, "cmd "+strings.Join(terminal.Command, " "))
+		lines = append(lines, theme.terminalBody.Render(truncateModernLine("Command  cmd "+strings.Join(terminal.Command, " "), width)))
 	}
 	if tags := renderTerminalTags(terminal.Tags); tags != "" {
-		meta = append(meta, "tags "+tags)
+		lines = append(lines, theme.panelMeta.Render(truncateModernLine("Tags  tags "+tags, width)))
 	}
-	return []string{theme.panelMeta.Render(truncateModernLine(strings.Join(meta, "  •  "), width))}
+	return lines
 }
 
 func (r modernScreenShellRenderer) renderTerminalScreenLines(theme modernShellTheme, pane types.PaneState, width, maxRows int, active bool) []string {
