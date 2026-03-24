@@ -1631,8 +1631,11 @@ func TestRuntimeRendererRendersWireframeOverlayDialog(t *testing.T) {
 	state.UI.Focus.OverlayTarget = types.OverlayTerminalManager
 
 	view := runtimeRenderer{}.Render(state, nil)
-	if !strings.Contains(view, "TITLE[terminal_manager]") || !strings.Contains(view, "FOOTER[enter here esc close]") || !strings.Contains(view, "ACTIONS[enter here esc close]") {
+	if !strings.Contains(view, "DIALOG[terminal_manager]") || !strings.Contains(view, "TITLE[terminal_manager]") || !strings.Contains(view, "FOOTER[enter here esc close]") || !strings.Contains(view, "ACTIONS[enter here esc close]") {
 		t.Fatalf("expected shell overlay dialog layering in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "BODY[list] rows=7 selected=term-2 query=") || !strings.Contains(view, "DETAIL[build-log] state=running vis=hidden") || !strings.Contains(view, "BODY[meta] owner=- conn=0 loc=0") || !strings.Contains(view, "BODY[command] tail -f build.log") {
+		t.Fatalf("expected structured terminal manager shell dialog body, got:\n%s", view)
 	}
 	if !strings.Contains(view, "OVERLAY[terminal_manager] FOCUS[overlay]") {
 		t.Fatalf("expected wireframe overlay heading in rendered view, got:\n%s", view)
@@ -1664,6 +1667,9 @@ func TestRuntimeRendererRendersWireframeWorkspacePickerTree(t *testing.T) {
 	state.UI.Focus.OverlayTarget = types.OverlayWorkspacePicker
 
 	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "DIALOG[workspace_picker]") || !strings.Contains(view, "BODY[tree] rows=6 selected=ws-2 query=ops") || !strings.Contains(view, "DETAIL[target] workspace ops depth=0") {
+		t.Fatalf("expected structured workspace picker shell dialog body, got:\n%s", view)
+	}
 	if !strings.Contains(view, "OVERLAY[workspace_picker] FOCUS[overlay]") {
 		t.Fatalf("expected workspace picker wireframe overlay heading in rendered view, got:\n%s", view)
 	}
@@ -1715,6 +1721,9 @@ func TestRuntimeRendererRendersWireframePromptDialog(t *testing.T) {
 	state.UI.Focus.OverlayTarget = types.OverlayPrompt
 
 	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "DIALOG[prompt]") || !strings.Contains(view, "BODY[fields] count=2 active=tags") || !strings.Contains(view, "DETAIL[active] label=Tags terminal=term-2") || !strings.Contains(view, "BODY[actions] submit | cancel") {
+		t.Fatalf("expected structured prompt shell dialog body, got:\n%s", view)
+	}
 	if !strings.Contains(view, "OVERLAY[prompt] FOCUS[prompt]") {
 		t.Fatalf("expected prompt wireframe heading in rendered view, got:\n%s", view)
 	}

@@ -246,14 +246,11 @@ func (r runtimeRenderer) renderScreenShellDialog(state types.AppState, metrics w
 	if state.UI.Overlay.Kind == types.OverlayNone {
 		return nil
 	}
-	body := []string{
-		fmt.Sprintf("overlay active: %s", state.UI.Overlay.Kind),
-		fmt.Sprintf("TITLE[%s]", state.UI.Overlay.Kind),
+	body := []string{fmt.Sprintf("TITLE[%s]", state.UI.Overlay.Kind)}
+	if !usesStructuredScreenShellDialog(state.UI.Overlay.Kind) {
+		body = append([]string{fmt.Sprintf("overlay active: %s", state.UI.Overlay.Kind)}, body...)
 	}
 	body = append(body, r.renderScreenShellDialogBody(state)...)
-	if len(body) > 6 {
-		body = append(body[:4], body[len(body)-2:]...)
-	}
 	box := renderShellBox(metrics.OverlayWidth, fmt.Sprintf("DIALOG[%s]", state.UI.Overlay.Kind), body)
 	padding := (metrics.ViewportWidth - metrics.OverlayWidth) / 2
 	if padding < 0 {
@@ -267,7 +264,7 @@ func (r runtimeRenderer) renderScreenShellDialogBody(state types.AppState) []str
 	if returnFocus := renderWireframeReturnFocus(state.UI.Overlay.ReturnFocus); returnFocus != "" {
 		lines = append(lines, fmt.Sprintf("RETURN TO[%s]", returnFocus))
 	}
-	lines = append(lines, renderWireframeOverlayBody(state.UI.Overlay)...)
+	lines = append(lines, renderScreenShellDialogSections(state.UI.Overlay)...)
 	if footer, actions := renderScreenShellDialogFooter(state.UI.Overlay.Kind); footer != "" || actions != "" {
 		if footer != "" {
 			lines = append(lines, footer)
@@ -276,6 +273,143 @@ func (r runtimeRenderer) renderScreenShellDialogBody(state types.AppState) []str
 			lines = append(lines, actions)
 		}
 	}
+	return lines
+}
+
+// renderScreenShellDialogSections 把 overlay 壳层正文投影成稳定的 list/detail/fields 分区。
+// 这样 screen_shell 可以先给用户一个“像真实对话框”的最小 UI，而不是只复读 wireframe 摘要。
+func renderScreenShellDialogSections(overlay types.OverlayState) []string {
+	switch overlay.Kind {
+	case types.OverlayTerminalManager:
+		return renderScreenShellTerminalManagerDialogBody(overlay)
+	case types.OverlayWorkspacePicker:
+		return renderScreenShellWorkspacePickerDialogBody(overlay)
+	case types.OverlayPrompt:
+		return renderScreenShellPromptDialogBody(overlay)
+	default:
+		return renderWireframeOverlayBody(overlay)
+	}
+}
+
+func usesStructuredScreenShellDialog(kind types.OverlayKind) bool {
+	switch kind {
+	case types.OverlayTerminalManager, types.OverlayWorkspacePicker, types.OverlayPrompt:
+		return true
+	default:
+		return false
+	}
+}
+
+func renderScreenShellTerminalManagerDialogBody(overlay types.OverlayState) []string {
+	manager, ok := overlay.Data.(*terminalmanagerdomain.State)
+	if !ok || manager == nil {
+		return []string{"BODY[list] rows=0 selected=none"}
+	}
+	rows := manager.VisibleRows()
+	selectedRow, hasSelected := manager.SelectedRow()
+	selectedID := "none"
+	selectedIndex := 0
+	if hasSelected {
+		if selectedRow.TerminalID != "" {
+			selectedID = string(selectedRow.TerminalID)
+		} else {
+			selectedID = selectedRow.Label
+		}
+		for idx, candidate := range rows {
+			if candidate.Kind == selectedRow.Kind && candidate.TerminalID == selectedRow.TerminalID && candidate.Label == selectedRow.Label {
+				selectedIndex = idx
+				break
+			}
+		}
+	}
+	lines := []string{fmt.Sprintf("BODY[list] rows=%d selected=%s query=%s", len(rows), selectedID, manager.Query())}
+	previewRows, _ := overlayPreviewRowsAround(rows, 1, selectedIndex)
+	for _, row := range previewRows {
+		prefix := "  "
+		if hasSelected && selectedRow.Kind == row.Kind && selectedRow.TerminalID == row.TerminalID && selectedRow.Label == row.Label {
+			prefix = "> "
+		}
+		lines = append(lines, fmt.Sprintf("%s[%s] %s", prefix, row.Kind, row.Label))
+	}
+	if detail, ok := manager.SelectedDetail(); ok {
+		owner := detail.OwnerSlotLabel
+		if owner == "" {
+			owner = "-"
+		}
+		lines = append(lines,
+			fmt.Sprintf("DETAIL[%s] state=%s vis=%s", detail.Name, detail.State, detail.VisibilityLabel),
+			fmt.Sprintf("BODY[meta] owner=%s conn=%d loc=%d", owner, detail.ConnectedPaneCount, len(detail.Locations)),
+		)
+		if detail.Command != "" {
+			lines = append(lines, fmt.Sprintf("BODY[command] %s", detail.Command))
+		}
+	}
+	return lines
+}
+
+func renderScreenShellWorkspacePickerDialogBody(overlay types.OverlayState) []string {
+	picker, ok := overlay.Data.(*workspacedomain.PickerState)
+	if !ok || picker == nil {
+		return []string{"BODY[tree] rows=0 selected=none"}
+	}
+	rows := picker.VisibleRows()
+	selectedRow, hasSelected := picker.SelectedRow()
+	selectedKey := "none"
+	selectedIndex := 0
+	if hasSelected {
+		selectedKey = selectedRow.Node.Key
+		for idx, row := range rows {
+			if row.Node.Key == selectedRow.Node.Key {
+				selectedIndex = idx
+				break
+			}
+		}
+	}
+	lines := []string{fmt.Sprintf("BODY[tree] rows=%d selected=%s query=%s", len(rows), selectedKey, picker.Query())}
+	if hasSelected {
+		lines = append(lines, fmt.Sprintf("DETAIL[target] %s %s depth=%d", selectedRow.Node.Kind, selectedRow.Node.Label, selectedRow.Depth))
+	}
+	previewRows, _ := overlayPreviewRowsAround(rows, 5, selectedIndex)
+	for _, row := range previewRows {
+		prefix := "  "
+		if hasSelected && row.Node.Key == selectedRow.Node.Key {
+			prefix = "> "
+		}
+		lines = append(lines, fmt.Sprintf("%s%s[%s] %s", prefix, strings.Repeat("  ", row.Depth), row.Node.Kind, row.Node.Label))
+	}
+	return lines
+}
+
+func renderScreenShellPromptDialogBody(overlay types.OverlayState) []string {
+	prompt, ok := overlay.Data.(*promptdomain.State)
+	if !ok || prompt == nil {
+		return []string{"BODY[fields] count=0 active=draft", "BODY[actions] submit | cancel"}
+	}
+	if len(prompt.Fields) == 0 {
+		return []string{
+			"BODY[fields] count=0 active=draft",
+			fmt.Sprintf("DETAIL[active] label=draft terminal=%s", prompt.TerminalID),
+			fmt.Sprintf("> [draft] %s", prompt.Draft),
+			"BODY[actions] submit | cancel",
+		}
+	}
+	active := prompt.Active
+	if active < 0 || active >= len(prompt.Fields) {
+		active = 0
+	}
+	lines := []string{
+		fmt.Sprintf("BODY[fields] count=%d active=%s", len(prompt.Fields), prompt.Fields[active].Key),
+		fmt.Sprintf("DETAIL[active] label=%s terminal=%s", prompt.Fields[active].Label, prompt.TerminalID),
+	}
+	previewFields, _ := overlayPreviewRowsAround(prompt.Fields, 4, active)
+	for _, field := range previewFields {
+		prefix := "  "
+		if field.Key == prompt.Fields[active].Key && field.Label == prompt.Fields[active].Label {
+			prefix = "> "
+		}
+		lines = append(lines, fmt.Sprintf("%s[%s] %s: %s", prefix, field.Key, field.Label, field.Value))
+	}
+	lines = append(lines, "BODY[actions] submit | cancel")
 	return lines
 }
 
