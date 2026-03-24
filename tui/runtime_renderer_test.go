@@ -198,6 +198,95 @@ func TestRuntimeRendererTruncatesLongSummaryLines(t *testing.T) {
 	}
 }
 
+func TestRuntimeRendererTruncatesLongDetailLines(t *testing.T) {
+	state := runtimeStateWithTerminalManagerTargets()
+	terminal := state.Domain.Terminals[types.TerminalID("term-2")]
+	terminal.Command = []string{
+		"tail",
+		"-f",
+		"build-log-with-a-very-long-name-that-should-not-let-terminal-manager-detail-lines-grow-without-bound",
+		"--profile=build-pipeline-with-a-very-long-profile-name-that-keeps-the-detail-line-growing",
+		"--region=us-east-1-development-cluster",
+	}
+	state.Domain.Terminals[types.TerminalID("term-2")] = terminal
+	manager := terminalmanagerdomain.NewState(state.Domain, state.UI.Focus)
+	manager.MoveSelection(1)
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayTerminalManager,
+		Data: manager,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+
+	view := runtimeRenderer{}.Render(state, nil)
+
+	selectedCommand := findLineWithPrefix(view, "terminal_manager_selected_command:")
+	if selectedCommand == "" || len(selectedCommand) > runtimeDetailMaxWidth || !strings.Contains(selectedCommand, "...") {
+		t.Fatalf("expected truncated terminal manager selected command line, got:\n%s", view)
+	}
+	if !strings.Contains(selectedCommand, "terminal_manager_selected_owner:") {
+		t.Fatalf("expected selected command line to preserve trailing owner metadata, got:\n%s", view)
+	}
+
+	detailCommand := findLineWithPrefix(view, "detail_connected_panes:")
+	if detailCommand == "" || len(detailCommand) > runtimeDetailMaxWidth || !strings.Contains(detailCommand, "...") {
+		t.Fatalf("expected truncated terminal manager detail command line, got:\n%s", view)
+	}
+	if !strings.Contains(detailCommand, "detail_command: tail -f") {
+		t.Fatalf("expected detail command line to preserve command head, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererTruncatesLongPromptAndResolveDetailLines(t *testing.T) {
+	state := runtimeStateWithTerminalManagerTargets()
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayPrompt,
+		Data: &promptdomain.State{
+			Kind:       promptdomain.KindEditTerminalMetadata,
+			Title:      "edit terminal metadata",
+			TerminalID: types.TerminalID("term-2"),
+			Fields: []promptdomain.Field{
+				{
+					Key:   "tags",
+					Label: "Tags",
+					Value: "group=build,service=very-long-service-name-that-should-not-let-prompt-detail-lines-grow-without-bound,owner=platform-team,region=us-east-1,environment=development-cluster",
+				},
+			},
+			Active: 0,
+		},
+	}
+	state.UI.Focus.Layer = types.FocusLayerPrompt
+
+	promptView := runtimeRenderer{}.Render(state, nil)
+	promptActive := findLineWithPrefix(promptView, "prompt_active_field:")
+	if promptActive == "" || len(promptActive) > runtimeDetailMaxWidth || !strings.Contains(promptActive, "...") {
+		t.Fatalf("expected truncated prompt active line, got:\n%s", promptView)
+	}
+	if !strings.Contains(promptActive, "prompt_active_label: Tags") {
+		t.Fatalf("expected prompt active line to preserve trailing label metadata, got:\n%s", promptView)
+	}
+
+	resolveState := buildSinglePaneAppState("main", "shell", types.PaneSlotWaiting)
+	resolve := layoutresolvedomain.NewState(
+		types.PaneID("pane-1"),
+		"backend-dev",
+		"env=dev service=api hint-with-a-very-long-description-that-should-not-let-layout-resolve-detail-lines-grow-without-bound owner=platform-team region=us-east-1-development-cluster branch=feature/super-long-layout-resolve-context",
+	)
+	resolveState.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayLayoutResolve,
+		Data: resolve,
+	}
+	resolveState.UI.Focus.Layer = types.FocusLayerOverlay
+
+	resolveView := runtimeRenderer{}.Render(resolveState, nil)
+	resolveHint := findLineWithPrefix(resolveView, "layout_resolve_hint:")
+	if resolveHint == "" || len(resolveHint) > runtimeDetailMaxWidth || !strings.Contains(resolveHint, "...") {
+		t.Fatalf("expected truncated layout resolve hint line, got:\n%s", resolveView)
+	}
+	if !strings.Contains(resolveHint, "layout_resolve_row_count: 3") {
+		t.Fatalf("expected resolve hint line to preserve trailing row count, got:\n%s", resolveView)
+	}
+}
+
 func TestRuntimeRendererTruncatesLargeSnapshotPreview(t *testing.T) {
 	state := connectedRunAppState()
 	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{

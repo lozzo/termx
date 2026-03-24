@@ -14,6 +14,7 @@ import (
 	"github.com/lozzow/termx/tui/app/intent"
 	btui "github.com/lozzow/termx/tui/bt"
 	layoutresolvedomain "github.com/lozzow/termx/tui/domain/layoutresolve"
+	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
 	terminalpickerdomain "github.com/lozzow/termx/tui/domain/terminalpicker"
 	"github.com/lozzow/termx/tui/domain/types"
 )
@@ -521,6 +522,56 @@ func TestE2ERunScenarioLongSummaryLinesStayCompacted(t *testing.T) {
 			overlaySummary := findLineWithPrefix(view, "overlay_bar:")
 			if overlaySummary == "" || len(overlaySummary) > runtimeSummaryMaxWidth || !strings.Contains(overlaySummary, "terminal_picker_row_count: 1") {
 				t.Fatalf("expected compacted runtime overlay summary, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioLongDetailLinesStayCompacted(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	terminal := initial.Domain.Terminals[types.TerminalID("term-2")]
+	terminal.Command = []string{
+		"tail",
+		"-f",
+		"build-log-with-a-very-long-name-that-should-not-let-runtime-detail-lines-grow-without-bound",
+		"--profile=build-pipeline-with-a-very-long-profile-name-that-keeps-the-runtime-detail-line-growing",
+		"--region=us-east-1-development-cluster",
+	}
+	initial.Domain.Terminals[types.TerminalID("term-2")] = terminal
+	manager := terminalmanagerdomain.NewState(initial.Domain, initial.UI.Focus)
+	manager.MoveSelection(1)
+	initial.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayTerminalManager,
+		Data: manager,
+	}
+	initial.UI.Focus.Layer = types.FocusLayerOverlay
+
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			selectedCommand := findLineWithPrefix(view, "terminal_manager_selected_command:")
+			if selectedCommand == "" || len(selectedCommand) > runtimeDetailMaxWidth || !strings.Contains(selectedCommand, "terminal_manager_selected_owner:") {
+				t.Fatalf("expected compacted runtime selected command line, got:\n%s", view)
+			}
+			detailCommand := findLineWithPrefix(view, "detail_connected_panes:")
+			if detailCommand == "" || len(detailCommand) > runtimeDetailMaxWidth || !strings.Contains(detailCommand, "detail_command: tail -f") {
+				t.Fatalf("expected compacted runtime detail command line, got:\n%s", view)
 			}
 			return nil
 		},

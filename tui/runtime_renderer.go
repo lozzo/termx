@@ -25,6 +25,7 @@ const runtimeOverlayDetailPreviewRows = 4
 const runtimeTerminalManagerPreviewRows = 4
 const runtimeBarMaxWidth = 96
 const runtimeSummaryMaxWidth = 240
+const runtimeDetailMaxWidth = 240
 
 // Render 先提供一个稳定、可测试的文本视图，优先把生命周期打通。
 // 这里不追求视觉完成度，只把当前 workspace / tab / pane / overlay 这些主语义明确展示出来。
@@ -305,6 +306,12 @@ func compactBarLine(parts ...string) string {
 // 这里给比 bar 更宽的预算，既避免长字段把视图横向撑爆，也尽量保留更多正文语义。
 func compactSummaryLine(parts ...string) string {
 	return truncateLine(compactLine(parts...), runtimeSummaryMaxWidth)
+}
+
+// compactDetailLine 用于 overlay/detail 元数据行。
+// 这些行需要比 bar 更宽的预算，但也不能让超长 command/tag/hint 把主视图横向撑爆。
+func compactDetailLine(parts ...string) string {
+	return truncateLine(compactLine(parts...), runtimeDetailMaxWidth)
 }
 
 func truncateLine(line string, maxWidth int) string {
@@ -618,7 +625,7 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 				fmt.Sprintf("terminal_manager_selected_connected_panes: %d", row.ConnectedPaneCount),
 				fmt.Sprintf("terminal_manager_selected_location_count: %d", row.LocationCount),
 			),
-			compactLine(
+			compactDetailLine(
 				fmt.Sprintf("terminal_manager_selected_command: %s", row.Command),
 				fmt.Sprintf("terminal_manager_selected_owner: %s", row.OwnerSlotLabel),
 				selectedTags,
@@ -663,12 +670,12 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 				fmt.Sprintf("detail_visible: %t", detail.Visible),
 				fmt.Sprintf("detail_visibility: %s", detail.VisibilityLabel),
 			),
-			compactLine(
+			compactDetailLine(
 				fmt.Sprintf("detail_connected_panes: %d", detail.ConnectedPaneCount),
 				fmt.Sprintf("detail_location_count: %d", len(detail.Locations)),
 				fmt.Sprintf("detail_command: %s", detail.Command),
 			),
-			compactLine(fmt.Sprintf("detail_owner: %s", detail.OwnerSlotLabel), detailTags),
+			compactDetailLine(fmt.Sprintf("detail_owner: %s", detail.OwnerSlotLabel), detailTags),
 		)
 		if locations := renderDetailLocations(detail.Locations); len(locations) > 0 {
 			previewLocations, truncated := overlayPreviewStrings(locations, runtimeOverlayDetailPreviewRows)
@@ -676,7 +683,7 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 			if truncated {
 				meta = append(meta, "detail_locations_truncated: true")
 			}
-			lines = append(lines, compactLine(meta...))
+			lines = append(lines, compactDetailLine(meta...))
 		}
 	}
 	return lines
@@ -735,7 +742,7 @@ func renderPromptLines(prompt *promptdomain.State) []string {
 	}
 	if len(prompt.Fields) == 0 {
 		lines = append(lines,
-			compactLine("prompt_active_field: draft", "prompt_active_label: draft", fmt.Sprintf("prompt_active_value: %s", prompt.Draft)),
+			compactDetailLine("prompt_active_field: draft", "prompt_active_label: draft", fmt.Sprintf("prompt_active_value: %s", prompt.Draft)),
 			compactLine("prompt_active_index: 0", "prompt_field_count: 0"),
 			"prompt_fields: | prompt_fields_rendered: 1",
 			fmt.Sprintf("> [draft] %s", prompt.Draft),
@@ -747,7 +754,7 @@ func renderPromptLines(prompt *promptdomain.State) []string {
 		active = 0
 	}
 	lines = append(lines,
-		compactLine(
+		compactDetailLine(
 			fmt.Sprintf("prompt_active_field: %s", prompt.Fields[active].Key),
 			fmt.Sprintf("prompt_active_label: %s", prompt.Fields[active].Label),
 			fmt.Sprintf("prompt_active_value: %s", prompt.Fields[active].Value),
@@ -806,7 +813,7 @@ func renderTerminalPickerLines(picker *terminalpickerdomain.State) []string {
 				fmt.Sprintf("terminal_picker_selected_label: %s", row.Label),
 				fmt.Sprintf("terminal_picker_selected_kind: %s", row.Kind),
 			),
-			compactLine(
+			compactDetailLine(
 				fmt.Sprintf("terminal_picker_selected_state: %s", row.State),
 				fmt.Sprintf("terminal_picker_selected_command: %s", row.Command),
 			),
@@ -870,7 +877,7 @@ func renderLayoutResolveLines(resolve *layoutresolvedomain.State) []string {
 			fmt.Sprintf("layout_resolve_pane: %s", resolve.PaneID),
 			fmt.Sprintf("layout_resolve_role: %s", resolve.Role),
 		),
-		compactLine(
+		compactDetailLine(
 			fmt.Sprintf("layout_resolve_hint: %s", resolve.Hint),
 			fmt.Sprintf("layout_resolve_row_count: %d", len(rows)),
 		),
