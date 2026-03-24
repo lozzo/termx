@@ -50,6 +50,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把 modern pane card 做成响应式布局：split/floating 这类窄卡片现在会自动切到 compact 形态，去掉重复的 `Status / Actions / Footer / Screen` 标题占位，把高度让给真实 terminal metadata 和 screen body；因此 split 卡片重新保住完整 prompt 预览，floating active pane 也能同时保住 `Command / Tags + Screen`
 - 本轮继续把 floating 侧边信息层次往产品态推进：window deck card 现在统一收成 `title / state+rect / runtime / cmd / preview` 五行摘要，detached floating strip 也会直接显示 `pane title + slot/preview`，这样 mixed split 场景下 detached window 不再只是 ID token
 - 本轮继续把 modern 主工作台 / overlay 的盒模型往真实产品壳推进：single / split / floating 工作台顶部现在统一补上 `Workbench shell + Signals & Keys` 双面板，直接显式显示 active pane 路径、role/slot/runtime、terminal 与快捷键；overlay backdrop 也从三行摘要补成 `Active pane / Location / Paused shell` 结构化背景卡，默认 modern 路径和 shell-only renderer 已一并锁住
+- 本轮正式把默认 modern 主屏从 `dashboard/card` 方向切回 `workbench-first`：主区域现在直接渲染 pane canvas，floating pane 真实叠放在同一工作台上，overlay 也改成直接盖在 workbench 上，而不是再切到独立信息卡页
+- 本轮同时把 floating 标题与 `workspace picker / layout resolve` 的对话框短文案压缩成窄宽度可读版本，并把 shell-only/default modern 的 renderer 断言与 E2E 场景一起迁移到新的 workbench-first 输出
 
 ---
 
@@ -1868,6 +1870,8 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
 - 默认主壳已经不再只是“摘要壳 + pane box”，而是开始具备真正的状态条和动作条
 - shell-only 视图对 connected / empty / waiting / exited 四态的可读性明显提高
 - 现在默认界面已经开始接近“最低可用产品界面”，而不再只是开发期结构框架
+- 默认 modern 主界面已经回到“真实工作台优先”的布局主线，不再继续走 window deck / dashboard 式首屏
+- overlay、floating、workspace picker、layout resolve 这一组核心工作台场景，当前 renderer 与 E2E 已经一起锁到新的 workbench-first 语义上
 - 下一阶段可以继续沿着这一层推进：
   - 把更多 footer/header 中仍然过于技术化的表达改成更产品化的 chrome
   - 继续减少 pane body 才能读懂状态的地方

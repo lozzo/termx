@@ -731,12 +731,28 @@ func renderScreenShellWorkspacePickerDialogBody(overlay types.OverlayState) []st
 		if hasSelected && row.Node.Key == selectedRow.Node.Key {
 			prefix = ">> "
 		}
-		treeBody = append(treeBody, fmt.Sprintf("%s%s[%s] %s", prefix, strings.Repeat("  ", row.Depth), row.Node.Kind, row.Node.Label))
+		treeBody = append(treeBody, fmt.Sprintf("%s%s%s", prefix, strings.Repeat("  ", row.Depth), renderWorkspacePickerRowLabel(row)))
 	}
 	return joinASCIIBoxes([][]string{
 		renderShellBox(30, "TREE[workspace]", treeBody),
 		renderShellBox(24, "TARGET[node]", targetBody),
 	}, 2)
+}
+
+func renderWorkspacePickerRowLabel(row workspacedomain.TreeRow) string {
+	if row.Node.Kind == workspacedomain.TreeNodeKindCreate {
+		return "+ workspace"
+	}
+	switch row.Node.Kind {
+	case workspacedomain.TreeNodeKindWorkspace:
+		return "ws " + row.Node.Label
+	case workspacedomain.TreeNodeKindTab:
+		return "tab " + row.Node.Label
+	case workspacedomain.TreeNodeKindPane:
+		return "pane " + row.Node.Label
+	default:
+		return fmt.Sprintf("[%s] %s", row.Node.Kind, row.Node.Label)
+	}
 }
 
 func renderScreenShellTerminalPickerDialogBody(overlay types.OverlayState) []string {
@@ -843,7 +859,7 @@ func renderScreenShellLayoutResolveDialogBody(overlay types.OverlayState) []stri
 		if hasSelected && row.Action == selectedRow.Action && row.Label == selectedRow.Label {
 			prefix = ">> "
 		}
-		listBody = append(listBody, fmt.Sprintf("%s[%s] %s", prefix, row.Action, row.Label))
+		listBody = append(listBody, fmt.Sprintf("%s%s", prefix, renderLayoutResolveRowLabel(row)))
 	}
 	actionSummary := "none"
 	if hasSelected {
@@ -867,6 +883,19 @@ func renderScreenShellLayoutResolveDialogBody(overlay types.OverlayState) []stri
 		renderShellBox(27, "LIST[resolve]", listBody),
 		renderShellBox(27, "DETAIL[target]", detailBody),
 	}, 2)
+}
+
+func renderLayoutResolveRowLabel(row layoutresolvedomain.Row) string {
+	switch row.Action {
+	case layoutresolvedomain.ActionConnectExisting:
+		return "connect existing"
+	case layoutresolvedomain.ActionCreateNew:
+		return "create terminal"
+	case layoutresolvedomain.ActionSkip:
+		return "keep waiting"
+	default:
+		return fmt.Sprintf("[%s] %s", row.Action, row.Label)
+	}
 }
 
 func renderScreenShellPromptDialogBody(overlay types.OverlayState) []string {
@@ -1185,6 +1214,25 @@ func (c *screenShellCanvas) stampLines(x int, y int, lines []string) {
 				continue
 			}
 			c.rows[targetY][targetX] = line[columnIndex]
+		}
+	}
+}
+
+func (c *screenShellCanvas) clearRect(x int, y int, width int, height int) {
+	if c == nil {
+		return
+	}
+	for row := 0; row < height; row++ {
+		targetY := y + row
+		if targetY < 0 || targetY >= c.height {
+			continue
+		}
+		for col := 0; col < width; col++ {
+			targetX := x + col
+			if targetX < 0 || targetX >= c.width {
+				continue
+			}
+			c.rows[targetY][targetX] = ' '
 		}
 	}
 }
