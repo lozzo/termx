@@ -15,6 +15,7 @@ import (
 	terminalpickerdomain "github.com/lozzow/termx/tui/domain/terminalpicker"
 	"github.com/lozzow/termx/tui/domain/types"
 	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
+	"github.com/muesli/termenv"
 )
 
 type screenShellViewRenderer interface {
@@ -55,9 +56,25 @@ type modernShellTheme struct {
 	modalBody         lipgloss.Style
 	selectedListItem  lipgloss.Style
 	listItem          lipgloss.Style
+	activeTiledBorder lipgloss.Style
+	idleTiledBorder   lipgloss.Style
+	activeFloatBorder lipgloss.Style
+	idleFloatBorder   lipgloss.Style
+	runToken          lipgloss.Style
+	stopToken         lipgloss.Style
+	exitToken         lipgloss.Style
+	waitToken         lipgloss.Style
+	emptyToken        lipgloss.Style
+	ownerToken        lipgloss.Style
+	followerToken     lipgloss.Style
+	floatToken        lipgloss.Style
+	offscreenToken    lipgloss.Style
 }
 
 func defaultModernShellTheme() modernShellTheme {
+	// 现代主壳依赖明确的语义色层级；这里固定到 TrueColor，
+	// 避免测试环境或非 TTY 检测把 renderer 静默降成“只有字符、没有颜色”的假阳性。
+	lipgloss.SetColorProfile(termenv.TrueColor)
 	return modernShellTheme{
 		app: lipgloss.NewStyle().
 			Background(lipgloss.Color("#08111d")).
@@ -180,6 +197,32 @@ func defaultModernShellTheme() modernShellTheme {
 			Bold(true),
 		listItem: lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#cbd5e1")),
+		activeTiledBorder: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#38bdf8")),
+		idleTiledBorder: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#475569")),
+		activeFloatBorder: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#f59e0b")),
+		idleFloatBorder: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#b45309")),
+		runToken: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#10b981")),
+		stopToken: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#f59e0b")),
+		exitToken: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#fb7185")),
+		waitToken: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#fbbf24")),
+		emptyToken: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#94a3b8")),
+		ownerToken: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#60a5fa")),
+		followerToken: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#93c5fd")),
+		floatToken: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#f59e0b")),
+		offscreenToken: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#fb923c")),
 	}
 }
 
@@ -333,7 +376,7 @@ func (r modernScreenShellRenderer) renderModernCanvasPaneLines(state types.AppSt
 	return runtimeRenderer{Screens: r.Screens}.renderScreenShellPaneLines(state, pane, overlayActive, maxRows)
 }
 
-func (r modernScreenShellRenderer) renderModernCanvasPaneMeta(state types.AppState, pane types.PaneState, metrics wireframeMetrics, active bool, paneWidth int) string {
+func (r modernScreenShellRenderer) renderModernCanvasPaneMeta(theme modernShellTheme, state types.AppState, pane types.PaneState, metrics wireframeMetrics, active bool, paneWidth int) string {
 	if paneWidth <= 22 {
 		return ""
 	}
@@ -342,15 +385,19 @@ func (r modernScreenShellRenderer) renderModernCanvasPaneMeta(state types.AppSta
 	switch pane.SlotState {
 	case types.PaneSlotConnected:
 		stateToken := "● run"
+		stateStyle := theme.runToken
 		if pane.TerminalID != "" {
 			if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok {
 				switch terminal.State {
 				case types.TerminalRunStateExited:
 					stateToken = "○ exit"
+					stateStyle = theme.exitToken
 				case types.TerminalRunStateStopped:
 					stateToken = "○ stop"
+					stateStyle = theme.stopToken
 				default:
 					stateToken = "● run"
+					stateStyle = theme.runToken
 				}
 			}
 		}
@@ -364,7 +411,7 @@ func (r modernScreenShellRenderer) renderModernCanvasPaneMeta(state types.AppSta
 				stateToken = "●"
 			}
 		}
-		parts = append(parts, stateToken)
+		parts = append(parts, renderModernCanvasToken(stateStyle, stateToken))
 		role := renderModernCanvasPaneRoleToken(state, pane)
 		if compact {
 			switch role {
@@ -375,33 +422,33 @@ func (r modernScreenShellRenderer) renderModernCanvasPaneMeta(state types.AppSta
 			}
 		}
 		if role != "" {
-			parts = append(parts, role)
+			parts = append(parts, renderModernCanvasRoleToken(theme, role))
 		}
 	case types.PaneSlotWaiting:
 		if compact {
-			parts = append(parts, "◌")
+			parts = append(parts, renderModernCanvasToken(theme.waitToken, "◌"))
 		} else {
-			parts = append(parts, "◌ waiting")
+			parts = append(parts, renderModernCanvasToken(theme.waitToken, "◌ waiting"))
 		}
 	case types.PaneSlotExited:
 		if compact {
-			parts = append(parts, "○")
+			parts = append(parts, renderModernCanvasToken(theme.exitToken, "○"))
 		} else {
-			parts = append(parts, "○ exited")
+			parts = append(parts, renderModernCanvasToken(theme.exitToken, "○ exited"))
 		}
 	default:
 		if compact {
-			parts = append(parts, "○")
+			parts = append(parts, renderModernCanvasToken(theme.emptyToken, "○"))
 		} else {
-			parts = append(parts, "○ empty")
+			parts = append(parts, renderModernCanvasToken(theme.emptyToken, "○ empty"))
 		}
 	}
 	if pane.Kind == types.PaneKindFloating {
 		zIndex, zTotal := renderModernFloatingZ(state, pane)
 		if compact {
-			parts = append(parts, "◫")
+			parts = append(parts, theme.floatToken.Render("◫"))
 		} else {
-			parts = append(parts, "◫ float")
+			parts = append(parts, theme.floatToken.Render("◫ float"))
 		}
 		if zIndex > 0 && zTotal > 1 {
 			if compact {
@@ -412,12 +459,12 @@ func (r modernScreenShellRenderer) renderModernCanvasPaneMeta(state types.AppSta
 		}
 		if renderModernFloatingPaneOffscreen(pane, metrics) {
 			if compact {
-				parts = append(parts, "off")
+				parts = append(parts, theme.offscreenToken.Render("off"))
 			} else {
-				parts = append(parts, "offscreen")
+				parts = append(parts, theme.offscreenToken.Render("offscreen"))
 			}
 			if active {
-				parts = append(parts, "c center")
+				parts = append(parts, theme.offscreenToken.Render("c center"))
 			}
 		}
 	}
@@ -432,6 +479,21 @@ func renderModernCanvasPaneRoleToken(state types.AppState, pane types.PaneState)
 		return "follow"
 	default:
 		return ""
+	}
+}
+
+func renderModernCanvasToken(style lipgloss.Style, token string) string {
+	return style.Render(token)
+}
+
+func renderModernCanvasRoleToken(theme modernShellTheme, token string) string {
+	switch token {
+	case "owner", "own":
+		return theme.ownerToken.Render(token)
+	case "follow", "fol":
+		return theme.followerToken.Render(token)
+	default:
+		return theme.panelMeta.Render(token)
 	}
 }
 
@@ -502,10 +564,10 @@ func (r modernScreenShellRenderer) renderMixedWorkbench(theme modernShellTheme, 
 }
 
 func (r modernScreenShellRenderer) renderWorkbenchCanvas(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width, height int, overlayActive bool) string {
-	return theme.terminalBody.Render(strings.Join(r.renderWorkbenchCanvasLines(state, tab, pane, metrics, width, height, overlayActive), "\n"))
+	return theme.terminalBody.Render(strings.Join(r.renderWorkbenchCanvasLines(theme, state, tab, pane, metrics, width, height, overlayActive), "\n"))
 }
 
-func (r modernScreenShellRenderer) renderWorkbenchCanvasLines(state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width, height int, overlayActive bool) []string {
+func (r modernScreenShellRenderer) renderWorkbenchCanvasLines(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width, height int, overlayActive bool) []string {
 	canvasHeight := max(8, height)
 	canvas := newScreenShellCanvas(width, canvasHeight)
 	tiledPaneIDs := orderedTiledPaneIDs(tab)
@@ -529,10 +591,11 @@ func (r modernScreenShellRenderer) renderWorkbenchCanvasLines(state types.AppSta
 			}
 			bodyRows := renderScreenShellPaneCanvasBodyRows(rect.H)
 			box := renderModernCanvasPaneBox(
+				theme,
 				rect.W,
 				rect.H,
 				r.renderModernCanvasPaneTitle(state, targetPane),
-				r.renderModernCanvasPaneMeta(state, targetPane, metrics, paneID == tab.ActivePaneID, rect.W),
+				r.renderModernCanvasPaneMeta(theme, state, targetPane, metrics, paneID == tab.ActivePaneID, rect.W),
 				r.renderModernCanvasPaneLines(state, targetPane, overlayActive, bodyRows),
 				paneID == tab.ActivePaneID,
 				targetPane.Kind == types.PaneKindFloating,
@@ -548,10 +611,11 @@ func (r modernScreenShellRenderer) renderWorkbenchCanvasLines(state types.AppSta
 		rect := normalizeFloatingCanvasRect(targetPane.Rect, metrics.ViewportWidth, metrics.ViewportHeight, canvasHeight)
 		bodyRows := renderScreenShellPaneCanvasBodyRows(rect.H)
 		box := renderModernCanvasPaneBox(
+			theme,
 			rect.W,
 			rect.H,
 			r.renderModernCanvasPaneTitle(state, targetPane),
-			r.renderModernCanvasPaneMeta(state, targetPane, metrics, paneID == tab.ActivePaneID, rect.W),
+			r.renderModernCanvasPaneMeta(theme, state, targetPane, metrics, paneID == tab.ActivePaneID, rect.W),
 			r.renderModernCanvasPaneLines(state, targetPane, overlayActive, bodyRows),
 			paneID == tab.ActivePaneID,
 			targetPane.Kind == types.PaneKindFloating,
@@ -561,7 +625,7 @@ func (r modernScreenShellRenderer) renderWorkbenchCanvasLines(state types.AppSta
 	return canvas.lines()
 }
 
-func renderModernCanvasPaneBox(width int, height int, title string, meta string, body []string, active bool, floating bool) []string {
+func renderModernCanvasPaneBox(theme modernShellTheme, width int, height int, title string, meta string, body []string, active bool, floating bool) []string {
 	if width < 12 {
 		width = 12
 	}
@@ -571,11 +635,12 @@ func renderModernCanvasPaneBox(width int, height int, title string, meta string,
 	topLeft, topRight, bottomLeft, bottomRight, vertical, horizontal := renderModernCanvasPaneBorderGlyphs(active, floating)
 	innerWidth := width - 2
 	bodyRows := max(1, height-2)
-	lines := []string{renderModernCanvasBorderLine(topLeft, topRight, horizontal, title, meta, innerWidth)}
+	borderStyle := renderModernCanvasPaneBorderStyle(theme, active, floating)
+	lines := []string{renderModernCanvasBorderLine(theme, borderStyle, topLeft, topRight, horizontal, title, meta, innerWidth)}
 	for _, line := range clampPaddedLines(body, bodyRows) {
-		lines = append(lines, vertical+padModernCanvasLine(line, innerWidth)+vertical)
+		lines = append(lines, borderStyle.Render(vertical)+padModernCanvasLine(line, innerWidth)+borderStyle.Render(vertical))
 	}
-	lines = append(lines, bottomLeft+strings.Repeat(horizontal, innerWidth)+bottomRight)
+	lines = append(lines, borderStyle.Render(bottomLeft)+borderStyle.Render(strings.Repeat(horizontal, innerWidth))+borderStyle.Render(bottomRight))
 	return lines
 }
 
@@ -592,19 +657,38 @@ func renderModernCanvasPaneBorderGlyphs(active bool, floating bool) (topLeft, to
 	}
 }
 
-func renderModernCanvasBorderLine(left, right, horizontal, title, meta string, innerWidth int) string {
+func renderModernCanvasPaneBorderStyle(theme modernShellTheme, active bool, floating bool) lipgloss.Style {
+	switch {
+	case floating && active:
+		return theme.activeFloatBorder
+	case floating:
+		return theme.idleFloatBorder
+	case active:
+		return theme.activeTiledBorder
+	default:
+		return theme.idleTiledBorder
+	}
+}
+
+func renderModernCanvasBorderLine(theme modernShellTheme, borderStyle lipgloss.Style, left, right, horizontal, title, meta string, innerWidth int) string {
 	if innerWidth < 1 {
-		return left + right
+		return borderStyle.Render(left) + borderStyle.Render(right)
 	}
 	title = strings.TrimSpace(title)
 	meta = strings.TrimSpace(meta)
+	title = theme.panelTitle.Render(title)
 	if meta == "" {
-		label := xansi.Truncate(horizontal+" "+title+" ", innerWidth, "…")
-		fill := innerWidth - xansi.StringWidth(label)
+		titleBudget := innerWidth - 2
+		if titleBudget < 1 {
+			titleBudget = 1
+		}
+		title = xansi.Truncate(title, titleBudget, "…")
+		leftPart := borderStyle.Render(horizontal) + " " + title + " "
+		fill := innerWidth - xansi.StringWidth(horizontal+" ") - xansi.StringWidth(title) - 1
 		if fill < 0 {
 			fill = 0
 		}
-		return left + label + strings.Repeat(horizontal, fill) + right
+		return borderStyle.Render(left) + leftPart + borderStyle.Render(strings.Repeat(horizontal, fill)) + borderStyle.Render(right)
 	}
 	leftPrefix := horizontal + " "
 	leftSuffix := " "
@@ -622,13 +706,13 @@ func renderModernCanvasBorderLine(left, right, horizontal, title, meta string, i
 		titleBudget = 1
 	}
 	title = xansi.Truncate(title, titleBudget, "…")
-	leftPart := leftPrefix + title + leftSuffix
-	rightPart := rightPrefix + meta + rightSuffix
+	leftPart := borderStyle.Render(horizontal) + " " + title + leftSuffix
+	rightPart := rightPrefix + meta + " " + borderStyle.Render(horizontal)
 	fill := innerWidth - xansi.StringWidth(leftPart) - xansi.StringWidth(rightPart)
 	if fill < 1 {
 		fill = 1
 	}
-	return left + leftPart + strings.Repeat(horizontal, fill) + rightPart + right
+	return borderStyle.Render(left) + leftPart + borderStyle.Render(strings.Repeat(horizontal, fill)) + rightPart + borderStyle.Render(right)
 }
 
 func padModernCanvasLine(line string, width int) string {
@@ -1326,7 +1410,7 @@ func renderModernScreenFrameLine(text string, innerWidth int) string {
 }
 
 func (r modernScreenShellRenderer) renderOverlayViewport(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width, height int) string {
-	backdropLines := r.renderWorkbenchCanvasLines(state, tab, pane, metrics, width, height, false)
+	backdropLines := r.renderWorkbenchCanvasLines(theme, state, tab, pane, metrics, width, height, false)
 	backdropLines = renderModernOverlayBackdropWash(backdropLines)
 	dialogWidth := renderModernOverlayDialogWidth(metrics, width)
 	dialogLines := r.renderModernOverlayDialogLines(state, dialogWidth, height)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -702,6 +703,10 @@ func TestE2ERunScenarioDefaultModernSplitWorkbenchRendersPaneCanvas(t *testing.T
 			if !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
 				t.Fatalf("expected default modern split view to expose both pane previews, got:\n%s", view)
 			}
+			if !regexp.MustCompile(`\x1b\[[0-9;]*m┏`).MatchString(view) ||
+				!regexp.MustCompile(`\x1b\[[0-9;]*m●`).MatchString(view) {
+				t.Fatalf("expected default modern split view to apply semantic ANSI to active tiled pane chrome, got:\n%s", view)
+			}
 			if strings.Contains(stripped, "Pane map") || strings.Contains(view, "wireframe_view:") {
 				t.Fatalf("expected default modern split view without legacy summary/debug sections, got:\n%s", view)
 			}
@@ -808,6 +813,11 @@ func TestE2ERunScenarioDefaultModernFloatingWorkbenchRendersWindowDeck(t *testin
 			}
 			if !strings.Contains(stripped, "╔") || !strings.Contains(stripped, "╭") {
 				t.Fatalf("expected default modern floating view to use distinct floating window border glyphs, got:\n%s", view)
+			}
+			if !regexp.MustCompile(`\x1b\[[0-9;]*m╔`).MatchString(view) ||
+				!regexp.MustCompile(`\x1b\[[0-9;]*m╭`).MatchString(view) ||
+				!regexp.MustCompile(`\x1b\[[0-9;]*m●`).MatchString(view) {
+				t.Fatalf("expected default modern floating view to apply semantic ANSI to floating window chrome, got:\n%s", view)
 			}
 			if strings.Contains(stripped, "Workbench shell") || strings.Contains(view, "wireframe_view:") {
 				t.Fatalf("expected default modern floating view to use pane canvas layout without debug sections, got:\n%s", view)

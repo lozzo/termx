@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
 	btui "github.com/lozzow/termx/tui/bt"
 	layoutdomain "github.com/lozzow/termx/tui/domain/layout"
@@ -1178,7 +1179,7 @@ func renderScreenShellPaneBox(width int, title string, body []string, active boo
 type screenShellCanvas struct {
 	width  int
 	height int
-	rows   [][]rune
+	rows   [][]string
 }
 
 func newScreenShellCanvas(width int, height int) *screenShellCanvas {
@@ -1188,9 +1189,12 @@ func newScreenShellCanvas(width int, height int) *screenShellCanvas {
 	if height < 1 {
 		height = 1
 	}
-	rows := make([][]rune, height)
+	rows := make([][]string, height)
 	for y := range rows {
-		rows[y] = []rune(strings.Repeat(" ", width))
+		rows[y] = make([]string, width)
+		for x := range rows[y] {
+			rows[y][x] = " "
+		}
 	}
 	return &screenShellCanvas{
 		width:  width,
@@ -1199,6 +1203,8 @@ func newScreenShellCanvas(width int, height int) *screenShellCanvas {
 	}
 }
 
+// stampLines 按“终端显示单元”而不是按 rune 贴图，这样 workbench canvas
+// 可以安全承载带 ANSI 颜色的 pane 边框/标题，而不会把转义序列拆坏布局。
 func (c *screenShellCanvas) stampLines(x int, y int, lines []string) {
 	if c == nil {
 		return
@@ -1208,13 +1214,38 @@ func (c *screenShellCanvas) stampLines(x int, y int, lines []string) {
 		if targetY < 0 || targetY >= c.height {
 			continue
 		}
-		runes := []rune(line)
-		for columnIndex := 0; columnIndex < len(runes); columnIndex++ {
-			targetX := x + columnIndex
-			if targetX < 0 || targetX >= c.width {
+		columnIndex := x
+		lastWrittenX := -1
+		pending := ""
+		var state byte
+		for len(line) > 0 {
+			seq, width, n, nextState := xansi.DecodeSequence(line, state, nil)
+			if n <= 0 {
+				break
+			}
+			line = line[n:]
+			state = nextState
+			if width == 0 {
+				pending += seq
 				continue
 			}
-			c.rows[targetY][targetX] = runes[columnIndex]
+			cell := pending + seq
+			pending = ""
+			if columnIndex >= 0 && columnIndex < c.width {
+				c.rows[targetY][columnIndex] = cell
+				lastWrittenX = columnIndex
+			}
+			for span := 1; span < width; span++ {
+				targetX := columnIndex + span
+				if targetX < 0 || targetX >= c.width {
+					continue
+				}
+				c.rows[targetY][targetX] = ""
+			}
+			columnIndex += width
+		}
+		if pending != "" && lastWrittenX >= 0 {
+			c.rows[targetY][lastWrittenX] += pending
 		}
 	}
 }
@@ -1233,7 +1264,7 @@ func (c *screenShellCanvas) clearRect(x int, y int, width int, height int) {
 			if targetX < 0 || targetX >= c.width {
 				continue
 			}
-			c.rows[targetY][targetX] = ' '
+			c.rows[targetY][targetX] = " "
 		}
 	}
 }
@@ -1244,7 +1275,7 @@ func (c *screenShellCanvas) lines() []string {
 	}
 	lines := make([]string, 0, c.height)
 	for _, row := range c.rows {
-		lines = append(lines, string(row))
+		lines = append(lines, strings.Join(row, ""))
 	}
 	return lines
 }

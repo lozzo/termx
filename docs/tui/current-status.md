@@ -79,6 +79,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮同步把 shell-only 与默认 modern 的 split/mixed renderer 和 E2E 护栏更新到“标题优先可读”基线，确保后面继续做颜色、阴影和重叠层次时，不会再因为边框右侧 token 膨胀把 pane 标题重新挤坏
 - 本轮继续把 floating 与 tiled 的视觉层次直接落到 canvas：floating pane 现在改用独立边框字形，active floating 走 `╔═╗`，inactive floating 走 `╭─╮`，而 tiled pane 继续使用 `┏━┓ / ┌─┐`，这样即使在无颜色环境里也能一眼分清浮窗和主工作台
 - 本轮也把 overlay 的背景压暗做成真正的 backdrop wash：modal 打开时，工作台空白区会统一铺一层棋盘状 `▒` wash，再叠加 dialog shadow，帮助 modal 从 workbench 上真正“浮起来”；相应 shell-only renderer 护栏与默认 modern 的 overlay 开关 E2E 已同步锁住
+- 本轮继续把现代 workbench 从“只有字形层次”推进到“字形 + 语义色层次”：底层 canvas 已升级成 ANSI 安全贴图，pane/workbench 叠放时不再会把转义序列拆坏；active tiled、active/inactive floating、run/wait/exit/empty、owner/follower 等状态现在都能直接带颜色落在真实 pane 边框与标题栏上，并由 shell-only renderer 与 default modern E2E 一起锁住
 
 ---
 

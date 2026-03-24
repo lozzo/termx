@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -572,6 +573,10 @@ func TestRuntimeRendererShellOnlyRendersSplitWorkbenchAsPaneCanvas(t *testing.T)
 	if !strings.Contains(stripped, "term-1 running own") || !strings.Contains(stripped, "term-2 running owner") {
 		t.Fatalf("expected shell-only split renderer to expose runtime ownership in pane foot lines, got:\n%s", view)
 	}
+	if !regexp.MustCompile(`\x1b\[[0-9;]*m┏`).MatchString(view) ||
+		!regexp.MustCompile(`\x1b\[[0-9;]*m●`).MatchString(view) {
+		t.Fatalf("expected shell-only split renderer to apply semantic ANSI to active tiled pane chrome, got:\n%s", view)
+	}
 	if strings.Contains(stripped, "Pane map") {
 		t.Fatalf("expected shell-only split renderer to replace legacy sidebar summary, got:\n%s", view)
 	}
@@ -626,6 +631,11 @@ func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing
 	}
 	if !strings.Contains(stripped, "╔") || !strings.Contains(stripped, "╭") {
 		t.Fatalf("expected shell-only floating renderer to use distinct floating window border glyphs, got:\n%s", view)
+	}
+	if !regexp.MustCompile(`\x1b\[[0-9;]*m╔`).MatchString(view) ||
+		!regexp.MustCompile(`\x1b\[[0-9;]*m╭`).MatchString(view) ||
+		!regexp.MustCompile(`\x1b\[[0-9;]*m●`).MatchString(view) {
+		t.Fatalf("expected shell-only floating renderer to apply semantic ANSI to floating window chrome, got:\n%s", view)
 	}
 	if strings.Contains(stripped, "Workbench shell") {
 		t.Fatalf("expected shell-only floating renderer to stay on the modern workbench shell, got:\n%s", view)
