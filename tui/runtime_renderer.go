@@ -63,6 +63,7 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	overlayActive := state.UI.Overlay.Kind != types.OverlayNone
 
 	lines := []string{"termx"}
+	lines = append(lines, r.renderScreenShell(state, workspace, tab, pane)...)
 	lines = append(lines, r.renderWireframeView(state, workspace, tab, pane)...)
 	lines = appendChrome(lines, "header", []string{
 		renderHeaderBar(workspace, tab, pane, state.UI),
@@ -111,6 +112,193 @@ func appendChrome(lines []string, name string, body []string, fn func([]string) 
 	if fn != nil {
 		return fn(lines)
 	}
+	return lines
+}
+
+// renderScreenShell 提供一个真正优先展示给用户的稳定外壳，
+// 让启动后的第一屏先有 workspace/tab/pane/frame/footer，而不是只看到调试型语义字段。
+func (r runtimeRenderer) renderScreenShell(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) []string {
+	metrics := r.wireframeMetrics(pane)
+	lines := []string{
+		"screen_shell:",
+		renderScreenShellHeader(workspace, tab, pane),
+	}
+	overlayActive := state.UI.Overlay.Kind != types.OverlayNone
+	lines = append(lines, r.renderScreenShellWorkbench(state, tab, pane, metrics, overlayActive)...)
+	if overlayActive {
+		lines = append(lines, r.renderScreenShellDialog(state, metrics)...)
+	}
+	lines = append(lines, renderScreenShellFooter(state, pane))
+	return lines
+}
+
+func renderScreenShellHeader(workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
+	workspaceLabel := safeWorkspaceLabel(workspace)
+	tabLabel := safeTabLabel(tab)
+	terminalID := "<none>"
+	if pane.TerminalID != "" {
+		terminalID = string(pane.TerminalID)
+	}
+	return fmt.Sprintf("[%s] [%s] pane:%s term:%s float:%d", workspaceLabel, tabLabel, pane.ID, terminalID, len(orderedFloatingPaneIDs(tab)))
+}
+
+func renderScreenShellFooter(state types.AppState, pane types.PaneState) string {
+	layer := safePaneKind(pane.Kind)
+	if state.UI.Overlay.Kind != types.OverlayNone {
+		layer = types.PaneKind(state.UI.Overlay.Kind)
+	}
+	return fmt.Sprintf("<p> PANE  <t> TAB  <w> WS  <o> FLOAT  <f> PICK  <g> GLOBAL  %s  %s", renderPaneTitle(state, pane), layer)
+}
+
+func (r runtimeRenderer) renderScreenShellWorkbench(state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, overlayActive bool) []string {
+	tiledPaneIDs := orderedTiledPaneIDs(tab)
+	floatingPaneIDs := orderedFloatingPaneIDs(tab)
+	switch {
+	case len(tiledPaneIDs) > 1:
+		return r.renderScreenShellSplit(state, tab, tiledPaneIDs, floatingPaneIDs, metrics, overlayActive)
+	case len(floatingPaneIDs) > 0:
+		return r.renderScreenShellFloating(state, tab, pane, floatingPaneIDs, metrics, overlayActive)
+	default:
+		return renderShellBox(metrics.ViewportWidth, renderScreenShellPaneTitle(state, pane, true), r.renderScreenShellPaneLines(state, pane, overlayActive, 4))
+	}
+}
+
+func (r runtimeRenderer) renderScreenShellSplit(state types.AppState, tab types.TabState, tiledPaneIDs []types.PaneID, floatingPaneIDs []types.PaneID, metrics wireframeMetrics, overlayActive bool) []string {
+	summary := summarizeTiledLayout(tab.RootSplit, len(tiledPaneIDs))
+	ratio := "n/a"
+	if summary.HasRatio {
+		ratio = fmt.Sprintf("%02.0f/%02.0f", summary.Ratio*100, (1-summary.Ratio)*100)
+	}
+	lines := []string{fmt.Sprintf("SPLIT SHELL[%s %s]", summary.Root, ratio)}
+	boxes := make([][]string, 0, 2)
+	for i, paneID := range tiledPaneIDs {
+		if i == 2 {
+			break
+		}
+		pane, ok := tab.Panes[paneID]
+		if !ok {
+			continue
+		}
+		boxes = append(boxes, renderShellBox(metrics.SplitColumnWidth, renderScreenShellPaneTitle(state, pane, false), r.renderScreenShellPaneLines(state, pane, overlayActive, 3)))
+	}
+	if len(boxes) > 0 {
+		lines = append(lines, joinASCIIBoxes(boxes, 2)...)
+	}
+	if len(floatingPaneIDs) > 0 {
+		lines = append(lines, compactSummaryLine("floating:", strings.Join(r.renderScreenShellFloatingSummary(state, tab, floatingPaneIDs), " | ")))
+	}
+	return lines
+}
+
+func (r runtimeRenderer) renderScreenShellFloating(state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, metrics wireframeMetrics, overlayActive bool) []string {
+	lines := []string{fmt.Sprintf("FLOAT SHELL[%d]", len(floatingPaneIDs))}
+	mainBox := renderShellBox(metrics.MainPaneWidth, renderScreenShellPaneTitle(state, pane, true), r.renderScreenShellPaneLines(state, pane, overlayActive, 4))
+	sidebarBox := renderShellBox(metrics.SidebarWidth, "floating stack", r.renderScreenShellFloatingSummary(state, tab, floatingPaneIDs))
+	lines = append(lines, joinASCIIBoxes([][]string{mainBox, sidebarBox}, 2)...)
+	return lines
+}
+
+func (r runtimeRenderer) renderScreenShellFloatingSummary(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) []string {
+	lines := make([]string, 0, len(floatingPaneIDs))
+	for _, paneID := range floatingPaneIDs {
+		pane, ok := tab.Panes[paneID]
+		if !ok {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("%s @%d,%d %dx%d", renderPaneTitle(state, pane), pane.Rect.X, pane.Rect.Y, pane.Rect.W, pane.Rect.H))
+	}
+	if len(lines) == 0 {
+		return []string{"<none>"}
+	}
+	return lines
+}
+
+func (r runtimeRenderer) renderScreenShellDialog(state types.AppState, metrics wireframeMetrics) []string {
+	if state.UI.Overlay.Kind == types.OverlayNone {
+		return nil
+	}
+	body := []string{fmt.Sprintf("overlay active: %s", state.UI.Overlay.Kind)}
+	body = append(body, renderWireframeOverlayBody(state.UI.Overlay)...)
+	if len(body) > 5 {
+		body = body[:5]
+	}
+	box := renderShellBox(metrics.OverlayWidth, fmt.Sprintf("DIALOG[%s]", state.UI.Overlay.Kind), body)
+	padding := (metrics.ViewportWidth - metrics.OverlayWidth) / 2
+	if padding < 0 {
+		padding = 0
+	}
+	return indentLines(box, padding)
+}
+
+func renderScreenShellPaneTitle(state types.AppState, pane types.PaneState, includeKind bool) string {
+	title := renderPaneTitle(state, pane)
+	paneRole := string(pane.SlotState)
+	if pane.TerminalID != "" {
+		paneRole = renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID)
+		if paneRole == "" {
+			paneRole = "connected"
+		}
+	}
+	if includeKind {
+		return fmt.Sprintf("%s [%s] [%s]", title, paneRole, safePaneKind(pane.Kind))
+	}
+	return fmt.Sprintf("%s [%s]", title, paneRole)
+}
+
+func (r runtimeRenderer) renderScreenShellPaneLines(state types.AppState, pane types.PaneState, overlayActive bool, maxRows int) []string {
+	if overlayActive {
+		return []string{fmt.Sprintf("overlay active: %s", state.UI.Overlay.Kind)}
+	}
+	if maxRows <= 0 {
+		maxRows = 1
+	}
+	if pane.TerminalID != "" && r.Screens != nil {
+		if snapshot, ok := r.Screens.Snapshot(pane.TerminalID); ok && snapshot != nil {
+			rows, _, _ := renderSnapshotRows(snapshot)
+			trimmed := make([]string, 0, maxRows)
+			for _, row := range rows {
+				row = strings.TrimSpace(row)
+				if row == "" {
+					continue
+				}
+				trimmed = append(trimmed, row)
+			}
+			if len(trimmed) > maxRows {
+				trimmed = trimmed[len(trimmed)-maxRows:]
+			}
+			if len(trimmed) > 0 {
+				return trimmed
+			}
+		}
+	}
+	switch pane.SlotState {
+	case types.PaneSlotWaiting:
+		return []string{"waiting for connect", "[n] new  [a] connect"}
+	case types.PaneSlotExited:
+		return []string{"terminal program exited", "[r] restart  [a] connect"}
+	case types.PaneSlotEmpty:
+		return []string{"terminal removed or not connected", "[n] new  [a] connect  [m] manager"}
+	default:
+		return []string{"<empty>"}
+	}
+}
+
+func renderShellBox(width int, title string, body []string) []string {
+	if width < 8 {
+		width = 8
+	}
+	innerWidth := width - 2
+	title = truncateLine(title, innerWidth)
+	top := "+ " + title
+	if len(top) < width-1 {
+		top += strings.Repeat("-", width-1-len(top))
+	}
+	top = truncateLine(top, width-1)
+	lines := []string{top + "+"}
+	for _, line := range body {
+		lines = append(lines, "|"+padRight(truncateLine(line, innerWidth), innerWidth)+"|")
+	}
+	lines = append(lines, "+"+strings.Repeat("-", innerWidth)+"+")
 	return lines
 }
 

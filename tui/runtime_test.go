@@ -168,7 +168,7 @@ func TestE2ERunScenarioRendersSnapshotAndForwardsActivePaneInput(t *testing.T) {
 	}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
-			if view := model.View(); !strings.Contains(view, "hi") {
+			if view := model.View(); !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "[main] [shell] pane:pane-1 term:term-1 float:0") || !strings.Contains(view, "[owner] [tiled]") || !strings.Contains(view, "hi") {
 				t.Fatalf("expected runtime view to include snapshot content, got:\n%s", view)
 			}
 			_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
@@ -755,7 +755,7 @@ func TestE2ERunScenarioSplitTabShowsWireframeWorkbench(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "wireframe_view:") || !strings.Contains(view, "VIEWPORT[96x40]") || !strings.Contains(view, "SPLIT[vertical] RATIO[0.50] LEAVES[2]") || !strings.Contains(view, "BAR[===============|===============]") || !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] STATE[running]") || !strings.Contains(view, "PANE[build-log] ROLE[owner] STATE[running]") {
+			if !strings.Contains(view, "wireframe_view:") || !strings.Contains(view, "SPLIT SHELL[vertical 50/50]") || !strings.Contains(view, "+ api-dev [owner]") || !strings.Contains(view, "+ build-log [owner]") || !strings.Contains(view, "VIEWPORT[96x40]") || !strings.Contains(view, "SPLIT[vertical] RATIO[0.50] LEAVES[2]") || !strings.Contains(view, "BAR[===============|===============]") || !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] STATE[running]") || !strings.Contains(view, "PANE[build-log] ROLE[owner] STATE[running]") {
 				t.Fatalf("expected runtime view to expose split wireframe workbench, got:\n%s", view)
 			}
 			return nil
@@ -971,7 +971,7 @@ func TestE2ERunScenarioLayoutResolveShowsWireframeDialog(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "OVERLAY[layout_resolve] FOCUS[overlay]") || !strings.Contains(view, "CENTER[offset=10 width=58]") || !strings.Contains(view, "ROWS[3] PANE[pane-1] ROLE[backend-dev]") || !strings.Contains(view, "HINT[env=dev service=api]") || !strings.Contains(view, "> [connect_existing] connect existing") {
+			if !strings.Contains(view, "DIALOG[layout_resolve]") || !strings.Contains(view, "overlay active: layout_resolve") || !strings.Contains(view, "OVERLAY[layout_resolve] FOCUS[overlay]") || !strings.Contains(view, "CENTER[offset=10 width=58]") || !strings.Contains(view, "ROWS[3] PANE[pane-1] ROLE[backend-dev]") || !strings.Contains(view, "HINT[env=dev service=api]") || !strings.Contains(view, "> [connect_existing] connect existing") {
 				t.Fatalf("expected runtime view to expose layout resolve wireframe dialog, got:\n%s", view)
 			}
 			return nil

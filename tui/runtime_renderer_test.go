@@ -60,6 +60,12 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "VIEWPORT[96x40]") {
 		t.Fatalf("expected wireframe viewport to adapt to runtime size, got:\n%s", view)
 	}
+	if !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "[main] [shell] pane:pane-1 term:term-1 float:0") {
+		t.Fatalf("expected renderer to expose visible shell frame header, got:\n%s", view)
+	}
+	if !strings.Contains(view, "+ api-dev [owner] [tiled]") || !strings.Contains(view, "<p> PANE  <t> TAB  <w> WS  <o> FLOAT  <f> PICK  <g> GLOBAL") {
+		t.Fatalf("expected renderer to expose visible shell frame body/footer, got:\n%s", view)
+	}
 	if !strings.Contains(view, "termx") || !strings.Contains(view, "header_bar: ws=main | tab=shell | pane=pane-1 | slot=connected | overlay=none | focus=tiled") {
 		t.Fatalf("expected renderer header bar, got:\n%s", view)
 	}
@@ -139,7 +145,7 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "focus_bar: target=api-dev | layer=tiled | role=owner") {
 		t.Fatalf("expected focus bar in rendered view, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 50 {
+	if lines := strings.Count(view, "\n") + 1; lines > 58 {
 		t.Fatalf("expected compact active pane view, got %d lines:\n%s", lines, view)
 	}
 }
@@ -947,7 +953,7 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "terminal_manager_actions:") || !strings.Contains(view, "[jump] jump to connected pane") || !strings.Contains(view, "[connect_here] connect here") || !strings.Contains(view, "[new_tab] open in new tab") || !strings.Contains(view, "[floating] open in floating pane") || !strings.Contains(view, "[edit] edit metadata") || !strings.Contains(view, "[acquire_owner] acquire owner") || !strings.Contains(view, "[stop] stop terminal") {
 		t.Fatalf("expected manager actions in rendered view, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 74 {
+	if lines := strings.Count(view, "\n") + 1; lines > 90 {
 		t.Fatalf("expected overlay view to remain within compact budget, got %d lines:\n%s", lines, view)
 	}
 }
@@ -1005,7 +1011,7 @@ func TestRuntimeRendererCompressesBodyWhenOverlayIsActive(t *testing.T) {
 	if strings.Contains(view, "terminal_tags:") {
 		t.Fatalf("expected noncritical terminal detail to be suppressed while overlay is active, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 76 {
+	if lines := strings.Count(view, "\n") + 1; lines > 92 {
 		t.Fatalf("expected overlay-active body to stay tightly compressed, got %d lines:\n%s", lines, view)
 	}
 }
@@ -1547,6 +1553,9 @@ func TestRuntimeRendererRendersWireframeSplitWorkbench(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "SPLIT SHELL[vertical 50/50]") || !strings.Contains(view, "+ api-dev [owner]") || !strings.Contains(view, "+ build-log [owner]") {
+		t.Fatalf("expected split shell frame in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "SPLIT[vertical] RATIO[0.50] LEAVES[2]") {
 		t.Fatalf("expected wireframe split summary in rendered view, got:\n%s", view)
 	}
@@ -1804,6 +1813,9 @@ func TestRuntimeRendererRendersWireframeOverlayBackdropAndReturnFocus(t *testing
 	state := runtimeStateWithLayoutResolveTarget()
 
 	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "DIALOG[layout_resolve]") || !strings.Contains(view, "overlay active: layout_resolve") {
+		t.Fatalf("expected shell overlay dialog summary, got:\n%s", view)
+	}
 	if !strings.Contains(view, "BACKDROP[active]") {
 		t.Fatalf("expected wireframe overlay backdrop summary, got:\n%s", view)
 	}

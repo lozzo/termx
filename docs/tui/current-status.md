@@ -17,6 +17,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 当前已进入 bubbletea shell 的恢复入口、启动规划、启动任务执行、restore store 读写闭环、runtime session bootstrap、最小运行主线，以及 active pane 的 terminal snapshot/input、stream/event 增量消费与关键 runtime 观测/控制状态阶段
 - 当前已经从“纯语义文本 renderer”推进到“语义 renderer + ASCII 真实工作台 wireframe”并行阶段，`cmd/termx` 已能直接看到工作台盒模型而不再只是语义字段列表
 - 本轮已补上 viewport 自适应、split ratio bar、floating geometry map、overlay center/backdrop 几何摘要，runtime 主视图开始具备跟随真实 terminal 尺寸变化的工作台摘要能力
+- 本轮继续把“用户第一眼看到的 UI 壳层”补上：主视图顶部现在新增 `screen_shell`，会先渲染 workspace/tab 头、pane frame、overlay dialog shell 和 footer 快捷提示，再保留语义视图与 wireframe 作为兼容层
 
 ---
 
@@ -209,6 +210,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 183. 第一百七十九轮 TDD 已补上主界面 tab summary 与 mixed slot 概览主线
 184. 第一百八十轮 TDD 已补上主界面 tab path 与 layer 摘要主线
 185. 第一百八十一轮 TDD 已补上 wireframe viewport 自适应、split ratio bar、floating map 与 overlay center 几何摘要主线
+186. 第一百八十二轮 TDD 已补上 screen shell 外壳、split shell、overlay dialog shell 与对应 runtime E2E 主线
 
 对应文档：
 
