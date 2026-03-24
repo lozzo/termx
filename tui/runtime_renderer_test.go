@@ -449,6 +449,49 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	}
 }
 
+func TestRuntimeRendererCompressesBodyWhenOverlayIsActive(t *testing.T) {
+	state := runtimeStateWithTerminalManagerTargets()
+	manager := terminalmanagerdomain.NewState(state.Domain, state.UI.Focus)
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayTerminalManager,
+		Data: manager,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+
+	renderer := runtimeRenderer{
+		Screens: NewRuntimeTerminalStore(RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "$"}, {Content: " "}, {Content: "p"}, {Content: "w"}, {Content: "d"}},
+								{{Content: "/"}, {Content: "t"}, {Content: "m"}, {Content: "p"}},
+							},
+						},
+					},
+				},
+			},
+		}),
+	}
+
+	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "screen: <suppressed by overlay>") {
+		t.Fatalf("expected screen preview to yield to overlay, got:\n%s", view)
+	}
+	if strings.Contains(view, "$ pwd") || strings.Contains(view, "/tmp") {
+		t.Fatalf("expected screen rows to be suppressed while overlay is active, got:\n%s", view)
+	}
+	if strings.Contains(view, "terminal_tags:") {
+		t.Fatalf("expected noncritical terminal detail to be suppressed while overlay is active, got:\n%s", view)
+	}
+	if lines := strings.Count(view, "\n") + 1; lines > 30 {
+		t.Fatalf("expected overlay-active body to stay tightly compressed, got %d lines:\n%s", lines, view)
+	}
+}
+
 func TestRuntimeRendererRendersPromptOverlay(t *testing.T) {
 	state := runtimeStateWithTerminalManagerTargets()
 	state.UI.Overlay = types.OverlayState{

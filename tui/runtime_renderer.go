@@ -22,6 +22,7 @@ type runtimeRenderer struct {
 const runtimeScreenPreviewRows = 8
 const runtimeOverlayPreviewRows = 8
 const runtimeOverlayDetailPreviewRows = 4
+const runtimeTerminalManagerPreviewRows = 4
 
 // Render 先提供一个稳定、可测试的文本视图，优先把生命周期打通。
 // 这里不追求视觉完成度，只把当前 workspace / tab / pane / overlay 这些主语义明确展示出来。
@@ -43,14 +44,15 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	summaryLines := []string{
 		fmt.Sprintf("summary: ws=%s tab=%s pane=%s overlay=%s focus=%s", workspace.Name, tab.Name, pane.ID, state.UI.Overlay.Kind, state.UI.Focus.Layer),
 	}
+	overlayActive := state.UI.Overlay.Kind != types.OverlayNone
 
 	lines := []string{"termx"}
 	lines = appendChrome(lines, "header", summaryLines, func(lines []string) []string {
 		return appendSection(lines, "status", statusLines)
 	})
 	lines = appendChrome(lines, "body", nil, func(lines []string) []string {
-		lines = appendSection(lines, "terminal", r.renderTerminalSection(state, pane))
-		lines = appendSection(lines, "screen", r.renderScreenSection(pane))
+		lines = appendSection(lines, "terminal", r.renderTerminalSection(state, pane, overlayActive))
+		lines = appendSection(lines, "screen", r.renderScreenSection(pane, overlayActive))
 		return appendSection(lines, "overlay", renderOverlayLines(state.UI.Overlay))
 	})
 	lines = appendChrome(lines, "footer", nil, func(lines []string) []string {
@@ -106,7 +108,7 @@ func renderStatusSection(workspace types.WorkspaceState, tab types.TabState, pan
 	return lines
 }
 
-func (r runtimeRenderer) renderTerminalSection(state types.AppState, pane types.PaneState) []string {
+func (r runtimeRenderer) renderTerminalSection(state types.AppState, pane types.PaneState, compact bool) []string {
 	if pane.TerminalID == "" {
 		return []string{"terminal: <disconnected>"}
 	}
@@ -131,9 +133,18 @@ func (r runtimeRenderer) renderTerminalSection(state types.AppState, pane types.
 		if len(terminal.Command) > 0 {
 			stateParts = append(stateParts, fmt.Sprintf("terminal_command: %s", strings.Join(terminal.Command, " ")))
 		}
-		lines = appendCompactParts(lines, 4, stateParts)
-		if tags := renderTerminalTags(terminal.Tags); tags != "" {
-			lines = append(lines, fmt.Sprintf("terminal_tags: %s", tags))
+		perLine := 4
+		if compact {
+			perLine = len(stateParts)
+			if perLine == 0 {
+				perLine = 1
+			}
+		}
+		lines = appendCompactParts(lines, perLine, stateParts)
+		if !compact {
+			if tags := renderTerminalTags(terminal.Tags); tags != "" {
+				lines = append(lines, fmt.Sprintf("terminal_tags: %s", tags))
+			}
 		}
 	} else {
 		connectionParts := renderConnectionLines(state.Domain.Connections[pane.TerminalID], pane.ID)
@@ -150,7 +161,7 @@ func (r runtimeRenderer) renderTerminalSection(state types.AppState, pane types.
 	return lines
 }
 
-func (r runtimeRenderer) renderScreenSection(pane types.PaneState) []string {
+func (r runtimeRenderer) renderScreenSection(pane types.PaneState, compact bool) []string {
 	if pane.TerminalID == "" || r.Screens == nil {
 		return []string{"screen: <unavailable>"}
 	}
@@ -162,6 +173,9 @@ func (r runtimeRenderer) renderScreenSection(pane types.PaneState) []string {
 	meta := []string{fmt.Sprintf("screen_rows: %d/%d", len(rows), totalRows)}
 	if truncated {
 		meta = append(meta, "screen_truncated: true")
+	}
+	if compact {
+		return []string{compactLine(append([]string{"screen: <suppressed by overlay>"}, meta...)...)}
 	}
 	lines := []string{compactLine(append([]string{"screen:"}, meta...)...)}
 	return append(lines, rows...)
@@ -457,7 +471,7 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 			}
 		}
 	}
-	previewRows, truncated := overlayPreviewRowsAround(rows, runtimeOverlayPreviewRows, selectedIndex)
+	previewRows, truncated := overlayPreviewRowsAround(rows, runtimeTerminalManagerPreviewRows, selectedIndex)
 	rowMeta := []string{"terminal_manager_rows:", fmt.Sprintf("terminal_manager_rows_rendered: %d", len(previewRows))}
 	if truncated {
 		rowMeta = append(rowMeta, "terminal_manager_rows_truncated: true")
@@ -491,13 +505,12 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 			compactLine(fmt.Sprintf("detail_owner: %s", detail.OwnerSlotLabel), detailTags),
 		)
 		if locations := renderDetailLocations(detail.Locations); len(locations) > 0 {
-			lines = append(lines, "detail_locations:")
 			previewLocations, truncated := overlayPreviewStrings(locations, runtimeOverlayDetailPreviewRows)
-			lines = append(lines, fmt.Sprintf("detail_locations_rendered: %d", len(previewLocations)))
+			meta := []string{"detail_locations:", strings.Join(previewLocations, " ; ")}
 			if truncated {
-				lines = append(lines, "detail_locations_truncated: true")
+				meta = append(meta, "detail_locations_truncated: true")
 			}
-			lines = append(lines, previewLocations...)
+			lines = append(lines, compactLine(meta...))
 		}
 	}
 	return lines
