@@ -59,6 +59,12 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "termx") || !strings.Contains(view, "header_bar: ws=main | tab=shell | pane=pane-1 | slot=connected | overlay=none | focus=tiled") {
 		t.Fatalf("expected renderer header bar, got:\n%s", view)
 	}
+	if !strings.Contains(view, "workspace_bar: [main]") {
+		t.Fatalf("expected workspace bar in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "tab_strip: [shell]") {
+		t.Fatalf("expected tab strip in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "chrome_header:") || !strings.Contains(view, "chrome_body:") || !strings.Contains(view, "chrome_footer:") {
 		t.Fatalf("expected chrome wrappers in rendered view, got:\n%s", view)
 	}
@@ -114,7 +120,10 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "$ pwd") || !strings.Contains(view, "/tmp") {
 		t.Fatalf("expected snapshot rows in rendered view, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 24 {
+	if !strings.Contains(view, "focus_bar: target=api-dev | layer=tiled | role=owner") {
+		t.Fatalf("expected focus bar in rendered view, got:\n%s", view)
+	}
+	if lines := strings.Count(view, "\n") + 1; lines > 29 {
 		t.Fatalf("expected compact active pane view, got %d lines:\n%s", lines, view)
 	}
 }
@@ -722,7 +731,7 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "terminal_manager_actions:") || !strings.Contains(view, "[jump] jump to connected pane") || !strings.Contains(view, "[connect_here] connect here") || !strings.Contains(view, "[new_tab] open in new tab") || !strings.Contains(view, "[floating] open in floating pane") || !strings.Contains(view, "[edit] edit metadata") || !strings.Contains(view, "[acquire_owner] acquire owner") || !strings.Contains(view, "[stop] stop terminal") {
 		t.Fatalf("expected manager actions in rendered view, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 40 {
+	if lines := strings.Count(view, "\n") + 1; lines > 42 {
 		t.Fatalf("expected overlay view to remain within compact budget, got %d lines:\n%s", lines, view)
 	}
 }
@@ -780,7 +789,7 @@ func TestRuntimeRendererCompressesBodyWhenOverlayIsActive(t *testing.T) {
 	if strings.Contains(view, "terminal_tags:") {
 		t.Fatalf("expected noncritical terminal detail to be suppressed while overlay is active, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 41 {
+	if lines := strings.Count(view, "\n") + 1; lines > 44 {
 		t.Fatalf("expected overlay-active body to stay tightly compressed, got %d lines:\n%s", lines, view)
 	}
 }
@@ -1130,6 +1139,22 @@ func TestRuntimeRendererRendersFloatingPaneKind(t *testing.T) {
 	}
 	if !strings.Contains(view, "shortcut_bar: Ctrl-p pane | Ctrl-t tab | Ctrl-w ws | Ctrl-o float | Ctrl-f pick | Ctrl-g global | ? help") {
 		t.Fatalf("expected connected pane shortcut bar in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "focus_bar: target=float-dev | layer=floating | role=owner") {
+		t.Fatalf("expected floating focus bar in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersTabStripForMultipleTabs(t *testing.T) {
+	view := runtimeRenderer{}.Render(runtimeStateWithTwoTabTargets(), nil)
+	if !strings.Contains(view, "workspace_bar: [main]") {
+		t.Fatalf("expected workspace bar for multi-tab state, got:\n%s", view)
+	}
+	if !strings.Contains(view, "tab_strip: [shell] | logs") {
+		t.Fatalf("expected tab strip to expose active and inactive tabs, got:\n%s", view)
+	}
+	if !strings.Contains(view, "focus_bar: target=api-dev | layer=tiled | role=owner") {
+		t.Fatalf("expected focus bar for multi-tab state, got:\n%s", view)
 	}
 }
 

@@ -531,6 +531,34 @@ func TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioHeaderAndFooterExposeWorkspaceTabsAndFocus(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTwoTabTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			if !strings.Contains(view, "workspace_bar: [main]") || !strings.Contains(view, "tab_strip: [shell] | logs") || !strings.Contains(view, "focus_bar: target=api-dev | layer=tiled | role=owner") {
+				t.Fatalf("expected runtime view to expose workspace/tabs/focus chrome, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected workspace/tab chrome runtime scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioLongSummaryLinesStayCompacted(t *testing.T) {
 	client := &stubRunClient{}
 	initial := connectedRunAppState()

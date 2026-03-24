@@ -47,7 +47,11 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	overlayActive := state.UI.Overlay.Kind != types.OverlayNone
 
 	lines := []string{"termx"}
-	lines = appendChrome(lines, "header", []string{renderHeaderBar(workspace, tab, pane, state.UI)}, func(lines []string) []string {
+	lines = appendChrome(lines, "header", []string{
+		renderHeaderBar(workspace, tab, pane, state.UI),
+		renderWorkspaceBar(workspace),
+		renderTabStrip(workspace),
+	}, func(lines []string) []string {
 		return appendSection(lines, "status", statusLines)
 	})
 	lines = appendChrome(lines, "body", []string{r.renderBodyBar(state, pane, overlayActive)}, func(lines []string) []string {
@@ -57,6 +61,7 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	})
 	lines = appendChrome(lines, "footer", []string{
 		renderFooterBar(notices, state.UI.Overlay.Kind),
+		renderFocusBar(state, pane),
 		renderShortcutBar(state, pane),
 	}, func(lines []string) []string {
 		return appendSection(lines, "notices", renderNoticeLines(notices))
@@ -109,9 +114,77 @@ func renderFooterBar(notices []btui.Notice, overlay types.OverlayKind) string {
 	return compactBarLine(parts...)
 }
 
+func renderWorkspaceBar(workspace types.WorkspaceState) string {
+	label := workspace.Name
+	if label == "" {
+		label = string(workspace.ID)
+	}
+	return compactSummaryLine(fmt.Sprintf("workspace_bar: [%s]", label))
+}
+
+func renderTabStrip(workspace types.WorkspaceState) string {
+	parts := make([]string, 0, len(workspace.TabOrder))
+	for _, tabID := range workspace.TabOrder {
+		tab, ok := workspace.Tabs[tabID]
+		if !ok {
+			continue
+		}
+		label := tab.Name
+		if label == "" {
+			label = string(tab.ID)
+		}
+		if tabID == workspace.ActiveTabID {
+			parts = append(parts, fmt.Sprintf("[%s]", label))
+			continue
+		}
+		parts = append(parts, label)
+	}
+	if len(parts) == 0 {
+		return "tab_strip: <none>"
+	}
+	return compactSummaryLine(fmt.Sprintf("tab_strip: %s", strings.Join(parts, " | ")))
+}
+
 func renderShortcutBar(state types.AppState, pane types.PaneState) string {
 	parts := renderShortcutParts(state, pane)
 	return compactSummaryLine(fmt.Sprintf("shortcut_bar: %s", strings.Join(parts, " | ")))
+}
+
+func renderFocusBar(state types.AppState, pane types.PaneState) string {
+	target := renderFocusTarget(state, pane)
+	layer := state.UI.Focus.Layer
+	if layer == "" {
+		layer = types.FocusLayerTiled
+	}
+	parts := []string{
+		fmt.Sprintf("focus_bar: target=%s", target),
+		fmt.Sprintf("layer=%s", layer),
+	}
+	if role := renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID); role != "" {
+		parts = append(parts, fmt.Sprintf("role=%s", role))
+	}
+	return compactSummaryLine(parts...)
+}
+
+func renderFocusTarget(state types.AppState, pane types.PaneState) string {
+	if pane.TerminalID != "" {
+		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok {
+			if terminal.Name != "" {
+				return terminal.Name
+			}
+		}
+		return string(pane.TerminalID)
+	}
+	switch pane.SlotState {
+	case types.PaneSlotExited:
+		return "exited-pane"
+	case types.PaneSlotWaiting:
+		return "waiting-pane"
+	case types.PaneSlotEmpty:
+		return "empty-pane"
+	default:
+		return string(pane.ID)
+	}
 }
 
 func renderShortcutParts(state types.AppState, pane types.PaneState) []string {
