@@ -119,6 +119,34 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	}
 }
 
+func TestRuntimeRendererTruncatesLongBarLines(t *testing.T) {
+	state := buildSinglePaneAppState(
+		"workspace-with-a-very-long-name-that-should-be-truncated-in-the-header-bar-output",
+		"tab-with-a-very-long-name-that-should-be-truncated-too",
+		types.PaneSlotEmpty,
+	)
+	state.UI.Mode = types.ModeState{Active: types.ModeGlobal, Sticky: false}
+	view := runtimeRenderer{}.Render(state, []btui.Notice{{
+		Level: btui.NoticeLevelError,
+		Text:  "notice-with-a-very-long-text-that-should-not-break-the-footer-bar-layout-when-summary-is-rendered",
+	}})
+
+	headerBar := findLineWithPrefix(view, "header_bar:")
+	if headerBar == "" || len(headerBar) > runtimeBarMaxWidth || !strings.Contains(headerBar, "...") {
+		t.Fatalf("expected truncated header bar within max width, got:\n%s", view)
+	}
+
+	footerBar := findLineWithPrefix(view, "footer_bar:")
+	if footerBar == "" || len(footerBar) > runtimeBarMaxWidth {
+		t.Fatalf("expected footer bar within max width, got:\n%s", view)
+	}
+
+	noticeBar := findLineWithPrefix(view, "notice_bar:")
+	if noticeBar == "" || len(noticeBar) > runtimeBarMaxWidth {
+		t.Fatalf("expected notice bar within max width, got:\n%s", view)
+	}
+}
+
 func TestRuntimeRendererTruncatesLargeSnapshotPreview(t *testing.T) {
 	state := connectedRunAppState()
 	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
@@ -259,7 +287,14 @@ func TestRuntimeRendererRendersHeaderBarWithMode(t *testing.T) {
 	state.UI.Mode = types.ModeState{Active: types.ModeGlobal, Sticky: false}
 
 	view := runtimeRenderer{}.Render(state, nil)
-	if !strings.Contains(view, "header_bar: ws=main | tab=shell | pane=pane-1 | slot=waiting | overlay=none | focus=tiled | mode=global") {
+	headerBar := findLineWithPrefix(view, "header_bar:")
+	if headerBar == "" {
+		t.Fatalf("expected header bar in rendered view, got:\n%s", view)
+	}
+	if len(headerBar) > runtimeBarMaxWidth {
+		t.Fatalf("expected header bar within max width, got:\n%s", view)
+	}
+	if !strings.Contains(headerBar, "ws=main") || !strings.Contains(headerBar, "mode=global") {
 		t.Fatalf("expected header bar to include active mode, got:\n%s", view)
 	}
 }
@@ -576,6 +611,45 @@ func TestRuntimeRendererCompressesBodyWhenOverlayIsActive(t *testing.T) {
 	}
 }
 
+func TestRuntimeRendererTruncatesLongSectionAndOverlayBars(t *testing.T) {
+	state := connectedRunAppState()
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:      types.TerminalID("term-1"),
+		Name:    "terminal-with-a-very-long-title-that-should-be-truncated-inside-terminal-bar",
+		State:   types.TerminalRunStateRunning,
+		Visible: true,
+	}
+	picker := terminalpickerdomain.NewState(state.Domain, state.UI.Focus)
+	picker.AppendQuery("query-with-a-very-long-value-that-should-be-truncated-inside-picker-bar-output")
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayTerminalPicker,
+		Data: picker,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+
+	view := runtimeRenderer{}.Render(state, nil)
+
+	workspace := state.Domain.Workspaces[state.Domain.ActiveWorkspaceID]
+	tab := workspace.Tabs[workspace.ActiveTabID]
+	pane := tab.Panes[tab.ActivePaneID]
+
+	terminalBar := renderTerminalBar(state, pane)
+	if len(terminalBar) > runtimeBarMaxWidth || !strings.Contains(terminalBar, "...") {
+		t.Fatalf("expected truncated terminal bar within max width, got: %q", terminalBar)
+	}
+	if !strings.Contains(view, terminalBar) {
+		t.Fatalf("expected rendered view to include truncated terminal bar, got:\n%s", view)
+	}
+
+	overlayBar := renderTerminalPickerBar(picker)
+	if len(overlayBar) > runtimeBarMaxWidth || !strings.Contains(overlayBar, "...") {
+		t.Fatalf("expected truncated terminal picker bar within max width, got: %q", overlayBar)
+	}
+	if !strings.Contains(view, overlayBar) {
+		t.Fatalf("expected rendered view to include truncated terminal picker bar, got:\n%s", view)
+	}
+}
+
 func TestRuntimeRendererRendersPromptOverlay(t *testing.T) {
 	state := runtimeStateWithTerminalManagerTargets()
 	state.UI.Overlay = types.OverlayState{
@@ -852,4 +926,13 @@ func TestRuntimeRendererRendersFloatingPaneKind(t *testing.T) {
 
 func twoDigitLabel(v int) string {
 	return string(rune('0'+v/10)) + string(rune('0'+v%10))
+}
+
+func findLineWithPrefix(view string, prefix string) string {
+	for _, line := range strings.Split(view, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return line
+		}
+	}
+	return ""
 }

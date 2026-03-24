@@ -23,6 +23,7 @@ const runtimeScreenPreviewRows = 8
 const runtimeOverlayPreviewRows = 8
 const runtimeOverlayDetailPreviewRows = 4
 const runtimeTerminalManagerPreviewRows = 4
+const runtimeBarMaxWidth = 96
 
 // Render 先提供一个稳定、可测试的文本视图，优先把生命周期打通。
 // 这里不追求视觉完成度，只把当前 workspace / tab / pane / overlay 这些主语义明确展示出来。
@@ -89,7 +90,7 @@ func renderHeaderBar(workspace types.WorkspaceState, tab types.TabState, pane ty
 	if ui.Mode.Active != types.ModeNone {
 		parts = append(parts, fmt.Sprintf("mode=%s", ui.Mode.Active))
 	}
-	return compactLine(parts...)
+	return compactBarLine(parts...)
 }
 
 // renderFooterBar 把 notice 聚合状态和当前 overlay 汇总到底栏，
@@ -100,13 +101,13 @@ func renderFooterBar(notices []btui.Notice, overlay types.OverlayKind) string {
 		parts = append(parts, fmt.Sprintf("last=%s", last.Level))
 	}
 	parts = append(parts, fmt.Sprintf("overlay=%s", overlay))
-	return compactLine(parts...)
+	return compactBarLine(parts...)
 }
 
 // renderBodyBar 汇总 body 主体的 terminal/screen/overlay 状态，
 // 让用户先看到“主体现在展示的是什么”，再往下看具体 section 细节。
 func (r runtimeRenderer) renderBodyBar(state types.AppState, pane types.PaneState, overlayActive bool) string {
-	return compactLine(
+	return compactBarLine(
 		fmt.Sprintf("body_bar: terminal=%s", r.renderBodyTerminalSummary(state, pane)),
 		fmt.Sprintf("screen=%s", r.renderBodyScreenSummary(pane, overlayActive)),
 		fmt.Sprintf("overlay=%s", state.UI.Overlay.Kind),
@@ -173,6 +174,8 @@ func (r runtimeRenderer) renderTerminalSection(state types.AppState, pane types.
 		return []string{compactLine("terminal_bar: disconnected", "terminal: <disconnected>")}
 	}
 
+	// section 首行需要同时保留 bar 和正文主语义，这里只做普通拼接，
+	// 避免 bar 的裁剪策略误伤正文字段可见性。
 	lines := []string{compactLine(renderTerminalBar(state, pane), fmt.Sprintf("terminal: %s", pane.TerminalID))}
 	terminal, ok := state.Domain.Terminals[pane.TerminalID]
 	if ok {
@@ -269,7 +272,7 @@ func renderTerminalBar(state types.AppState, pane types.PaneState) string {
 	if role := renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID); role != "" {
 		parts = append(parts, fmt.Sprintf("role=%s", role))
 	}
-	return compactLine(parts...)
+	return compactBarLine(parts...)
 }
 
 func renderTerminalRole(conn types.ConnectionState, paneID types.PaneID) string {
@@ -291,6 +294,24 @@ func compactLine(parts ...string) string {
 		filtered = append(filtered, part)
 	}
 	return strings.Join(filtered, " | ")
+}
+
+func compactBarLine(parts ...string) string {
+	return truncateLine(compactLine(parts...), runtimeBarMaxWidth)
+}
+
+func truncateLine(line string, maxWidth int) string {
+	if maxWidth <= 0 || len(line) <= maxWidth {
+		return line
+	}
+	if maxWidth <= 3 {
+		return line[:maxWidth]
+	}
+	// 语义栏位通常前后都带关键上下文，中间裁剪能同时保留头部主语与尾部状态。
+	visible := maxWidth - 3
+	head := visible / 2
+	tail := visible - head
+	return line[:head] + "..." + line[len(line)-tail:]
 }
 
 func appendCompactParts(lines []string, perLine int, parts []string) []string {
@@ -484,7 +505,7 @@ func renderOverlayLines(overlay types.OverlayState, focus types.FocusState) []st
 }
 
 func renderOverlayBar(kind types.OverlayKind, focusLayer types.FocusLayer) string {
-	return compactLine(
+	return compactBarLine(
 		fmt.Sprintf("overlay_bar: kind=%s", kind),
 		fmt.Sprintf("focus=%s", focusLayer),
 	)
@@ -557,7 +578,7 @@ func renderWorkspacePickerBar(picker *workspacedomain.PickerState) string {
 		if row, ok := picker.SelectedRow(); ok {
 			parts = append(parts, fmt.Sprintf("depth=%d", row.Depth))
 		}
-		return compactLine(parts...)
+		return compactBarLine(parts...)
 	}
 	return "workspace_picker_bar: none"
 }
@@ -665,9 +686,9 @@ func renderTerminalManagerBar(manager *terminalmanagerdomain.State) string {
 			parts = append(parts, fmt.Sprintf("section=%s", row.Section))
 		}
 		parts = append(parts, fmt.Sprintf("kind=%s", row.Kind))
-		return compactLine(parts...)
+		return compactBarLine(parts...)
 	} else if terminalID, ok := manager.SelectedTerminalID(); ok {
-		return fmt.Sprintf("terminal_manager_bar: selected=%s", terminalID)
+		return compactBarLine(fmt.Sprintf("terminal_manager_bar: selected=%s", terminalID))
 	}
 	return "terminal_manager_bar: none"
 }
@@ -759,7 +780,7 @@ func renderPromptBar(prompt *promptdomain.State) string {
 		parts = append(parts, fmt.Sprintf("terminal=%s", prompt.TerminalID))
 	}
 	parts = append(parts, fmt.Sprintf("active=%s", activeField))
-	return compactLine(parts...)
+	return compactBarLine(parts...)
 }
 
 func renderTerminalPickerLines(picker *terminalpickerdomain.State) []string {
@@ -831,7 +852,7 @@ func renderTerminalPickerBar(picker *terminalpickerdomain.State) string {
 	} else if terminalID, ok := picker.SelectedTerminalID(); ok {
 		parts = append(parts, fmt.Sprintf("selected=%s", terminalID))
 	}
-	return compactLine(parts...)
+	return compactBarLine(parts...)
 }
 
 func renderLayoutResolveLines(resolve *layoutresolvedomain.State) []string {
@@ -887,7 +908,7 @@ func renderLayoutResolveBar(resolve *layoutresolvedomain.State) string {
 	if row, ok := resolve.SelectedRow(); ok {
 		parts = append(parts, fmt.Sprintf("selected=%s", row.Action))
 	}
-	return compactLine(parts...)
+	return compactBarLine(parts...)
 }
 
 func renderNoticeLines(notices []btui.Notice) []string {
@@ -953,7 +974,7 @@ func renderNoticeBar(visible []btui.Notice, preview []btui.Notice) string {
 		parts = append(parts, fmt.Sprintf("last=%s", visible[len(visible)-1].Level))
 	}
 	parts = append(parts, "notices:")
-	return compactLine(parts...)
+	return compactBarLine(parts...)
 }
 
 func renderNoticeGroupBar(visible []btui.Notice) string {
@@ -978,7 +999,7 @@ func renderNoticeGroupBar(visible []btui.Notice) string {
 		return ""
 	}
 	parts[0] = fmt.Sprintf("notice_group_bar: %s", parts[0])
-	return compactLine(parts...)
+	return compactBarLine(parts...)
 }
 
 func overlayPreviewRowsAround[T any](rows []T, limit int, focusIndex int) ([]T, bool) {

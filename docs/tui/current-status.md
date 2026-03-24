@@ -1,7 +1,7 @@
 # termx TUI 当前状态
 
 状态：TDD State Machine Stage
-日期：2026-03-23
+日期：2026-03-24
 
 ---
 
@@ -168,6 +168,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 144. 第一百四十轮 TDD 已补上 terminal/screen/overlay section bar
 145. 第一百四十一轮 TDD 已补上 overlay 内部 summary bar
 146. 第一百四十二轮 TDD 已补上 notices 分层摘要栏
+147. 第一百四十三轮 TDD 已补上 runtime 栏位长文本裁剪
 
 对应文档：
 
@@ -218,6 +219,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `WorkspacePickerExpandIntent`
 - `WorkspacePickerCollapseIntent`
 - `WorkspacePickerSubmitIntent`
+- runtime `header/footer/body` 与各类 overlay / terminal / notice bar 的长文本中间裁剪
+- section 首行与正文摘要保持完整拼接，不再被 bar 裁剪策略误伤
 - `OpenTerminalManagerIntent`
 - `OpenPromptIntent`
 - `TerminalManagerMoveIntent`
