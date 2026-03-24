@@ -206,6 +206,56 @@ func TestIntentMapperTabModeNMapsCreateTab(t *testing.T) {
 	}
 }
 
+func TestIntentMapperEmptyPaneBodyKeysMapActions(t *testing.T) {
+	state := newAppStateWithSinglePane()
+	mapper := NewIntentMapper(Config{})
+
+	cases := []struct {
+		name string
+		key  tea.KeyMsg
+		want any
+	}{
+		{name: "start", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}}, want: intent.CreateTerminalInActivePaneIntent{}},
+		{name: "attach", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}, want: intent.OpenTerminalPickerIntent{}},
+		{name: "manager", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}, want: intent.OpenTerminalManagerIntent{}},
+		{name: "close", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}}, want: intent.ClosePaneIntent{PaneID: types.PaneID("pane-1")}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			intents := mapper.MapKey(state, tc.key)
+			if len(intents) != 1 {
+				t.Fatalf("expected one intent, got %d", len(intents))
+			}
+			if intents[0] != tc.want {
+				t.Fatalf("expected %+v, got %+v", tc.want, intents[0])
+			}
+		})
+	}
+}
+
+func TestIntentMapperExitedPaneBodyKeysMapActions(t *testing.T) {
+	state := newAppStateWithSinglePane()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	pane := tab.Panes[types.PaneID("pane-1")]
+	pane.SlotState = types.PaneSlotExited
+	pane.TerminalID = types.TerminalID("term-1")
+	tab.Panes[types.PaneID("pane-1")] = pane
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	mapper := NewIntentMapper(Config{})
+
+	intents := mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if len(intents) != 1 || intents[0] != (intent.OpenTerminalPickerIntent{}) {
+		t.Fatalf("expected exited pane a to open picker, got %+v", intents)
+	}
+	intents = mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if len(intents) != 1 || intents[0] != (intent.ClosePaneIntent{PaneID: types.PaneID("pane-1")}) {
+		t.Fatalf("expected exited pane x to close pane, got %+v", intents)
+	}
+}
+
 func TestIntentMapperWorkspacePickerMapsNavigationAndQuery(t *testing.T) {
 	mapper := NewIntentMapper(Config{})
 	state := newAppStateWithSinglePane()

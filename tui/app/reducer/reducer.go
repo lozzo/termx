@@ -205,6 +205,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyTerminalManagerCreateTerminal(&result)
 	case intent.SplitActivePaneIntent:
 		applySplitActivePane(&result.State)
+	case intent.CreateTerminalInActivePaneIntent:
+		applyCreateTerminalInActivePane(&result)
 	case intent.SubmitPromptIntent:
 		result.Effects = append(result.Effects, applySubmitPrompt(&result.State, intentValue)...)
 	case intent.UpdateTerminalMetadataSucceededIntent:
@@ -1070,6 +1072,24 @@ func applyCreateTab(state *types.AppState) {
 	applyOpenLayoutResolve(state, intent.OpenLayoutResolveIntent{PaneID: paneID})
 }
 
+// applyCreateTerminalInActivePane 给 empty/waiting 这类正文动作一个最短创建路径。
+// 这里不直接改 pane，仍然等 create success 回灌后再真实 connect。
+func applyCreateTerminalInActivePane(result *Result) {
+	focus := result.State.UI.Focus
+	pane, ok := findPane(&result.State, focus.PaneID)
+	if !ok {
+		return
+	}
+	switch pane.SlotState {
+	case types.PaneSlotEmpty, types.PaneSlotWaiting:
+		result.Effects = append(result.Effects, CreateTerminalEffect{
+			PaneID:  focus.PaneID,
+			Command: defaultCreateTerminalCommand(),
+			Name:    defaultCreateTerminalName(focus),
+		})
+	}
+}
+
 // applySplitActivePane 先收口最小 split 闭环：
 // 把当前 tiled pane 固定按垂直方向拆出一个 waiting pane，再直接进入 layout resolve。
 func applySplitActivePane(state *types.AppState) {
@@ -1722,6 +1742,17 @@ func findPaneTerminalID(state *types.AppState, paneID types.PaneID) types.Termin
 		}
 	}
 	return ""
+}
+
+func findPane(state *types.AppState, paneID types.PaneID) (types.PaneState, bool) {
+	for _, workspace := range state.Domain.Workspaces {
+		for _, tab := range workspace.Tabs {
+			if pane, ok := tab.Panes[paneID]; ok {
+				return pane, true
+			}
+		}
+	}
+	return types.PaneState{}, false
 }
 
 func promptState(state *types.AppState) (*promptdomain.State, bool) {

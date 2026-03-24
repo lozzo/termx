@@ -1808,6 +1808,79 @@ func TestE2ERunScenarioTabCreateThenCreateTerminalConnectsNewTabPane(t *testing.
 	}
 }
 
+func TestE2ERunScenarioEmptyPaneNStartsAndConnectsTerminal(t *testing.T) {
+	client := &stubRunClient{}
+	initial := buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty)
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			nextModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+			current := nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "slot: connected") || !strings.Contains(view, "terminal: term-created-1") || !strings.Contains(view, "title: ws-1-tab-1-pane-1") {
+				t.Fatalf("expected empty pane n to create and connect terminal, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected empty pane start-new scenario to succeed, got %v", err)
+	}
+	if len(client.createCalls) != 1 {
+		t.Fatalf("expected one create call from empty pane n, got %d", len(client.createCalls))
+	}
+}
+
+func TestE2ERunScenarioEmptyPaneAOpensTerminalPicker(t *testing.T) {
+	client := &stubRunClient{}
+	initial := buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty)
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			nextModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+			current := nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: terminal_picker") || !strings.Contains(view, "focus_overlay_target: terminal_picker") || !strings.Contains(view, "mode: picker") {
+				t.Fatalf("expected empty pane a to open terminal picker, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected empty pane open-picker scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioWorkspacePickerCollapseHidesChildren(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithWorkspacePickerTarget()

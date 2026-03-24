@@ -109,6 +109,9 @@ func (m DefaultIntentMapper) MapMouse(state types.AppState, msg tea.MouseMsg, vi
 }
 
 func (m DefaultIntentMapper) mapRootKey(state types.AppState, msg tea.KeyMsg) []intent.Intent {
+	if intents := mapPaneBodyKey(state, msg); len(intents) > 0 {
+		return intents
+	}
 	switch msg.String() {
 	case "ctrl+f":
 		return []intent.Intent{intent.OpenTerminalPickerIntent{}}
@@ -138,6 +141,34 @@ func (m DefaultIntentMapper) mapRootKey(state types.AppState, msg tea.KeyMsg) []
 	case "esc":
 		if state.UI.Mode.Active != types.ModeNone {
 			return []intent.Intent{intent.ActivateModeIntent{Mode: types.ModeNone}}
+		}
+	}
+	return nil
+}
+
+func mapPaneBodyKey(state types.AppState, msg tea.KeyMsg) []intent.Intent {
+	pane, ok := focusedPane(state)
+	if !ok {
+		return nil
+	}
+	switch pane.SlotState {
+	case types.PaneSlotEmpty, types.PaneSlotWaiting:
+		switch msg.String() {
+		case "n":
+			return []intent.Intent{intent.CreateTerminalInActivePaneIntent{}}
+		case "a":
+			return []intent.Intent{intent.OpenTerminalPickerIntent{}}
+		case "m":
+			return []intent.Intent{intent.OpenTerminalManagerIntent{}}
+		case "x":
+			return []intent.Intent{intent.ClosePaneIntent{PaneID: state.UI.Focus.PaneID}}
+		}
+	case types.PaneSlotExited:
+		switch msg.String() {
+		case "a":
+			return []intent.Intent{intent.OpenTerminalPickerIntent{}}
+		case "x":
+			return []intent.Intent{intent.ClosePaneIntent{PaneID: state.UI.Focus.PaneID}}
 		}
 	}
 	return nil
@@ -252,6 +283,22 @@ func mapLayoutResolveMouse(msg tea.MouseMsg) []intent.Intent {
 	default:
 		return nil
 	}
+}
+
+func focusedPane(state types.AppState) (types.PaneState, bool) {
+	workspace, ok := state.Domain.Workspaces[state.UI.Focus.WorkspaceID]
+	if !ok {
+		return types.PaneState{}, false
+	}
+	tab, ok := workspace.Tabs[state.UI.Focus.TabID]
+	if !ok {
+		return types.PaneState{}, false
+	}
+	pane, ok := tab.Panes[state.UI.Focus.PaneID]
+	if !ok {
+		return types.PaneState{}, false
+	}
+	return pane, true
 }
 
 func mapWorkspacePickerKey(msg tea.KeyMsg) []intent.Intent {

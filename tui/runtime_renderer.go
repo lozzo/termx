@@ -173,7 +173,9 @@ func renderStatusSection(workspace types.WorkspaceState, tab types.TabState, pan
 
 func (r runtimeRenderer) renderTerminalSection(state types.AppState, pane types.PaneState, compact bool) []string {
 	if pane.TerminalID == "" {
-		return []string{compactSummaryLine("terminal_bar: disconnected", "terminal: <disconnected>")}
+		lines := []string{compactSummaryLine("terminal_bar: disconnected", "terminal: <disconnected>")}
+		lines = append(lines, renderPaneSlotLines(pane)...)
+		return lines
 	}
 
 	// section 首行需要同时保留 bar 和正文主语义，这里只做普通拼接，
@@ -223,7 +225,42 @@ func (r runtimeRenderer) renderTerminalSection(state types.AppState, pane types.
 			lines = appendRuntimeStatusLines(lines, status)
 		}
 	}
+	lines = append(lines, renderPaneSlotLines(pane)...)
 	return lines
+}
+
+func renderPaneSlotLines(pane types.PaneState) []string {
+	switch pane.SlotState {
+	case types.PaneSlotEmpty:
+		return []string{
+			"pane_slot_detail: terminal removed or not connected",
+			"pane_actions:",
+			"  [n] start new terminal",
+			"  [a] connect existing terminal",
+			"  [m] open terminal manager",
+			"  [x] close pane",
+		}
+	case types.PaneSlotWaiting:
+		return []string{
+			"pane_slot_detail: waiting for layout or restore resolution",
+			"pane_actions:",
+			"  [n] start new terminal",
+			"  [a] connect existing terminal",
+			"  [m] open terminal manager",
+			"  [x] close pane",
+		}
+	case types.PaneSlotExited:
+		lines := []string{
+			"pane_slot_detail: terminal program exited",
+			"pane_history: retained",
+			"pane_actions:",
+			"  [a] connect another terminal",
+			"  [x] close pane",
+		}
+		return lines
+	default:
+		return nil
+	}
 }
 
 func (r runtimeRenderer) renderScreenSection(pane types.PaneState, compact bool) []string {

@@ -257,6 +257,10 @@ type SplitActivePaneIntent struct{}
 
 func (SplitActivePaneIntent) intentName() string { return "split_active_pane" }
 
+type CreateTerminalInActivePaneIntent struct{}
+
+func (CreateTerminalInActivePaneIntent) intentName() string { return "create_terminal_in_active_pane" }
+
 type SubmitPromptIntent struct {
 	Value string
 }

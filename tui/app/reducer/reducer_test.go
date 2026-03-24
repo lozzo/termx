@@ -977,6 +977,35 @@ func TestReducerCreateTabCreatesWaitingTabAndOpensLayoutResolve(t *testing.T) {
 	}
 }
 
+func TestReducerCreateTerminalInActivePaneEmitsCreateEffectForEmptyPane(t *testing.T) {
+	reducer := New()
+	state := newAppStateWithSinglePane()
+
+	result := reducer.Reduce(state, intent.CreateTerminalInActivePaneIntent{})
+
+	if len(result.Effects) != 1 {
+		t.Fatalf("expected one create effect, got %d", len(result.Effects))
+	}
+	effect, ok := result.Effects[0].(CreateTerminalEffect)
+	if !ok {
+		t.Fatalf("expected create terminal effect, got %T", result.Effects[0])
+	}
+	if effect.PaneID != types.PaneID("pane-1") || effect.Name != "ws-1-tab-1-pane-1" || len(effect.Command) == 0 {
+		t.Fatalf("unexpected active-pane create effect: %+v", effect)
+	}
+}
+
+func TestReducerCreateTerminalInActivePaneNoopsForConnectedPane(t *testing.T) {
+	reducer := New()
+	state := newConnectedAppState()
+
+	result := reducer.Reduce(state, intent.CreateTerminalInActivePaneIntent{})
+
+	if len(result.Effects) != 0 {
+		t.Fatalf("expected connected pane create action to noop, got %+v", result.Effects)
+	}
+}
+
 func TestReducerConnectTerminalReplacesOldConnectionSnapshot(t *testing.T) {
 	reducer := New()
 	state := newConnectedAppState()

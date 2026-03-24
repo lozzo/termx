@@ -359,6 +359,9 @@ func TestRuntimeRendererRendersStableSectionSkeletonForEmptyPane(t *testing.T) {
 	if !strings.Contains(view, "section_terminal:") || !strings.Contains(view, "terminal: <disconnected>") {
 		t.Fatalf("expected terminal placeholder section in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "pane_slot_detail: terminal removed or not connected") || !strings.Contains(view, "pane_actions:") || !strings.Contains(view, "[n] start new terminal") || !strings.Contains(view, "[a] connect existing terminal") || !strings.Contains(view, "[m] open terminal manager") || !strings.Contains(view, "[x] close pane") {
+		t.Fatalf("expected empty pane actions in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "section_screen:") || !strings.Contains(view, "screen: <unavailable>") {
 		t.Fatalf("expected screen placeholder section in rendered view, got:\n%s", view)
 	}
@@ -370,6 +373,28 @@ func TestRuntimeRendererRendersStableSectionSkeletonForEmptyPane(t *testing.T) {
 	}
 	if !strings.HasSuffix(strings.TrimSpace(view), "notices: 0") {
 		t.Fatalf("expected footer notice placeholder to stay at bottom, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersExitedPaneActions(t *testing.T) {
+	state := connectedRunAppState()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	pane := tab.Panes[types.PaneID("pane-1")]
+	exitCode := 7
+	pane.SlotState = types.PaneSlotExited
+	pane.LastExitCode = &exitCode
+	tab.Panes[types.PaneID("pane-1")] = pane
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	terminal := state.Domain.Terminals[types.TerminalID("term-1")]
+	terminal.State = types.TerminalRunStateExited
+	terminal.ExitCode = &exitCode
+	state.Domain.Terminals[types.TerminalID("term-1")] = terminal
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "pane_slot_detail: terminal program exited") || !strings.Contains(view, "pane_history: retained") || !strings.Contains(view, "[a] connect another terminal") || !strings.Contains(view, "[x] close pane") {
+		t.Fatalf("expected exited pane actions in rendered view, got:\n%s", view)
 	}
 }
 
