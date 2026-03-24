@@ -119,19 +119,22 @@ func appendChrome(lines []string, name string, body []string, fn func([]string) 
 // 让启动后的第一屏先有 workspace/tab/pane/frame/footer，而不是只看到调试型语义字段。
 func (r runtimeRenderer) renderScreenShell(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) []string {
 	metrics := r.wireframeMetrics(pane)
-	lines := []string{
-		"screen_shell:",
-		renderScreenShellHeader(workspace, tab, pane),
-	}
+	lines := []string{"screen_shell:"}
 	overlayActive := state.UI.Overlay.Kind != types.OverlayNone
-	if overlayActive {
-		lines = append(lines, renderScreenShellMask(state, metrics))
+	body := []string{
+		renderScreenShellHeader(workspace, tab, pane),
+		renderScreenShellStateLine(state, tab, pane),
 	}
-	lines = append(lines, r.renderScreenShellWorkbench(state, tab, pane, metrics, overlayActive)...)
-	if overlayActive {
-		lines = append(lines, r.renderScreenShellDialog(state, metrics)...)
+	if !overlayActive {
+		body = append(body, renderScreenShellTargetLine(workspace, tab, pane))
 	}
-	lines = append(lines, renderScreenShellFooter(state, pane))
+	body = append(body, r.renderScreenShellWorkbench(state, tab, pane, metrics, overlayActive)...)
+	if overlayActive {
+		body = append(body, renderScreenShellMask(state, metrics))
+		body = append(body, r.renderScreenShellDialog(state, metrics)...)
+	}
+	body = append(body, renderScreenShellFooter(state, pane))
+	lines = append(lines, renderShellBox(metrics.ViewportWidth+2, renderScreenShellFrameTitle(state, metrics), body)...)
 	return lines
 }
 
@@ -147,6 +150,34 @@ func renderScreenShellHeader(workspace types.WorkspaceState, tab types.TabState,
 		terminalID = string(pane.TerminalID)
 	}
 	return fmt.Sprintf("[%s] [%s] pane:%s term:%s float:%d", workspaceLabel, tabLabel, pane.ID, terminalID, len(orderedFloatingPaneIDs(tab)))
+}
+
+func renderScreenShellFrameTitle(state types.AppState, metrics wireframeMetrics) string {
+	return fmt.Sprintf("SHELL[%dx%d overlay=%s]", metrics.ViewportWidth, metrics.ViewportHeight, state.UI.Overlay.Kind)
+}
+
+func renderScreenShellStateLine(state types.AppState, tab types.TabState, pane types.PaneState) string {
+	layer := tab.ActiveLayer
+	if layer == "" {
+		layer = types.FocusLayerTiled
+	}
+	focus := state.UI.Focus.Layer
+	if focus == "" {
+		focus = types.FocusLayerTiled
+	}
+	mode := state.UI.Mode.Active
+	if mode == "" {
+		mode = types.ModeNone
+	}
+	return fmt.Sprintf("STATE[layer=%s focus=%s mode=%s overlay=%s]", layer, focus, mode, state.UI.Overlay.Kind)
+}
+
+func renderScreenShellTargetLine(workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
+	terminalID := "<none>"
+	if pane.TerminalID != "" {
+		terminalID = string(pane.TerminalID)
+	}
+	return fmt.Sprintf("TARGET[%s/%s/%s] TERM[%s] FLOAT[%d]", safeWorkspaceLabel(workspace), safeTabLabel(tab), pane.ID, terminalID, len(orderedFloatingPaneIDs(tab)))
 }
 
 func renderScreenShellFooter(state types.AppState, pane types.PaneState) string {

@@ -1087,3 +1087,46 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
 - pane 四态正文组件已成型
 - split / floating / mixed-slot 主工作台开始统一为 box + card 语言
 - 下一个大块应切到“真实 TUI 壳层渲染与交互收口”，而不是继续围绕同一批摘要字段做小修补
+
+---
+
+## 10. 第 194 轮 TDD
+
+这一轮正式进入“真实 TUI 壳层渲染与交互收口”的第一段，不再只是补 workbench 里的局部组件，而是把 `screen_shell` 自己收口成真正的整屏外壳：
+
+1. 整屏 shell frame
+   - `screen_shell` 不再是裸的 header / body / footer 几行文本
+   - 现在统一包进 `SHELL[<viewport> overlay=<kind>]` 外框
+   - single / split / floating / overlay 都走同一套外层 frame
+2. shell 自身状态条
+   - 在外层 frame 中补上稳定的 `STATE[...]`
+   - 非 overlay 场景补上 `TARGET[...] TERM[...] FLOAT[...]`
+   - 这样第一眼就能看出当前 layer / focus / mode / overlay / active target
+3. overlay 壳层并入统一 frame
+   - help / terminal manager 等 overlay 打开时，不再像“额外插进去的几行”
+   - mask / dialog 现在挂在同一层 screen shell frame 内
+   - 同时保留 overlay 场景下的压缩策略，避免总视图再次失控
+
+这一轮对应补强和验证的重点不是碎片小测，而是整个 shell 壳层可见性：
+
+- renderer：
+  - `TestRuntimeRendererRendersActivePaneSnapshot`
+  - `TestRuntimeRendererRendersHelpOverlay`
+- runtime E2E：
+  - `TestE2ERunScenarioRendersSnapshotAndForwardsActivePaneInput`
+  - `TestE2ERunScenarioActivePaneCoreViewVisible`
+  - `TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay`
+  - `TestE2ERunScenarioFloatingLayerShowsOutline`
+
+本轮验证命令：
+
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -run 'TestRuntimeRendererRendersActivePaneSnapshot|TestRuntimeRendererRendersHelpOverlay|TestE2ERunScenarioRendersSnapshotAndForwardsActivePaneInput|TestE2ERunScenarioActivePaneCoreViewVisible|TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay|TestE2ERunScenarioFloatingLayerShowsOutline' -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1`
+
+当前状态更新为：
+
+- 主工作台内部组件语言已经统一到 box / card
+- `screen_shell` 外层整屏 frame 已经落地
+- overlay 已开始并入统一外壳，而不是额外附着的裸摘要
+- 下一个大块应继续推进“真实 TUI 壳层交互收口”，例如 active chrome、overlay 开闭观感、以及进一步减少调试层与第一视觉之间的割裂

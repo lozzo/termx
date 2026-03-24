@@ -60,8 +60,11 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "VIEWPORT[96x40]") {
 		t.Fatalf("expected wireframe viewport to adapt to runtime size, got:\n%s", view)
 	}
-	if !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "[main] [shell] pane:pane-1 term:term-1 float:0") {
+	if !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "SHELL[96x40 overlay=none]") || !strings.Contains(view, "[main] [shell] pane:pane-1 term:term-1 float:0") {
 		t.Fatalf("expected renderer to expose visible shell frame header, got:\n%s", view)
+	}
+	if !strings.Contains(view, "STATE[layer=tiled focus=tiled mode=none overlay=none]") || !strings.Contains(view, "TARGET[main/shell/pane-1] TERM[term-1] FLOAT[0]") {
+		t.Fatalf("expected renderer to expose shell frame state lines, got:\n%s", view)
 	}
 	if !strings.Contains(view, "+ api-dev [owner] [tiled]") || !strings.Contains(view, "<p> PANE  <t> TAB  <w> WS  <o> FLOAT  <f> PICK  <g> GLOBAL") {
 		t.Fatalf("expected renderer to expose visible shell frame body/footer, got:\n%s", view)
@@ -148,7 +151,7 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "focus_bar: target=api-dev | layer=tiled | role=owner") {
 		t.Fatalf("expected focus bar in rendered view, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 58 {
+	if lines := strings.Count(view, "\n") + 1; lines > 64 {
 		t.Fatalf("expected compact active pane view, got %d lines:\n%s", lines, view)
 	}
 }
@@ -1871,7 +1874,7 @@ func TestRuntimeRendererRendersHelpOverlay(t *testing.T) {
 	state.UI.Mode = types.ModeState{Active: types.ModePicker}
 
 	view := runtimeRenderer{}.Render(state, nil)
-	if !strings.Contains(view, "MASK[dimmed viewport=78x24 overlay=help]") || !strings.Contains(view, "DIALOG[help]") || !strings.Contains(view, "TITLE[help]") || !strings.Contains(view, "RETURN TO[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "FOOTER[esc close]") || !strings.Contains(view, "ACTIONS[esc close]") {
+	if !strings.Contains(view, "SHELL[78x24 overlay=help]") || !strings.Contains(view, "STATE[layer=tiled focus=overlay mode=picker overlay=help]") || !strings.Contains(view, "MASK[dimmed viewport=78x24 overlay=help]") || !strings.Contains(view, "DIALOG[help]") || !strings.Contains(view, "TITLE[help]") || !strings.Contains(view, "RETURN TO[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "FOOTER[esc close]") || !strings.Contains(view, "ACTIONS[esc close]") {
 		t.Fatalf("expected help overlay shell mask/dialog in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "overlay_bar: kind=help | focus=overlay") {
