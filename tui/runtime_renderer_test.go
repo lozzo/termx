@@ -62,6 +62,9 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "chrome_header:") || !strings.Contains(view, "chrome_body:") || !strings.Contains(view, "chrome_footer:") {
 		t.Fatalf("expected chrome wrappers in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "body_bar: terminal=term-1:running | screen=preview:2/2 | overlay=none") {
+		t.Fatalf("expected body bar in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "section_status:") || !strings.Contains(view, "section_terminal:") || !strings.Contains(view, "section_screen:") {
 		t.Fatalf("expected renderer sections for status/terminal/screen, got:\n%s", view)
 	}
@@ -102,7 +105,7 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "$ pwd") || !strings.Contains(view, "/tmp") {
 		t.Fatalf("expected snapshot rows in rendered view, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 22 {
+	if lines := strings.Count(view, "\n") + 1; lines > 23 {
 		t.Fatalf("expected compact active pane view, got %d lines:\n%s", lines, view)
 	}
 }
@@ -160,6 +163,9 @@ func TestRuntimeRendererRendersStableSectionSkeletonForEmptyPane(t *testing.T) {
 	view := runtimeRenderer{}.Render(buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty), nil)
 	if !strings.Contains(view, "chrome_body:") || !strings.Contains(view, "chrome_footer:") {
 		t.Fatalf("expected chrome body/footer wrappers in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "body_bar: terminal=disconnected | screen=unavailable | overlay=none") {
+		t.Fatalf("expected empty-pane body bar in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "footer_bar: notices=0 | overlay=none") {
 		t.Fatalf("expected footer bar placeholder in rendered view, got:\n%s", view)
@@ -494,6 +500,9 @@ func TestRuntimeRendererCompressesBodyWhenOverlayIsActive(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "body_bar: terminal=term-1:running | screen=suppressed | overlay=terminal_manager") {
+		t.Fatalf("expected overlay body bar to reflect compressed mode, got:\n%s", view)
+	}
 	if !strings.Contains(view, "screen: <suppressed by overlay>") {
 		t.Fatalf("expected screen preview to yield to overlay, got:\n%s", view)
 	}
@@ -503,7 +512,7 @@ func TestRuntimeRendererCompressesBodyWhenOverlayIsActive(t *testing.T) {
 	if strings.Contains(view, "terminal_tags:") {
 		t.Fatalf("expected noncritical terminal detail to be suppressed while overlay is active, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 30 {
+	if lines := strings.Count(view, "\n") + 1; lines > 31 {
 		t.Fatalf("expected overlay-active body to stay tightly compressed, got %d lines:\n%s", lines, view)
 	}
 }

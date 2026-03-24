@@ -47,7 +47,7 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	lines = appendChrome(lines, "header", []string{renderHeaderBar(workspace, tab, pane, state.UI)}, func(lines []string) []string {
 		return appendSection(lines, "status", statusLines)
 	})
-	lines = appendChrome(lines, "body", nil, func(lines []string) []string {
+	lines = appendChrome(lines, "body", []string{r.renderBodyBar(state, pane, overlayActive)}, func(lines []string) []string {
 		lines = appendSection(lines, "terminal", r.renderTerminalSection(state, pane, overlayActive))
 		lines = appendSection(lines, "screen", r.renderScreenSection(pane, overlayActive))
 		return appendSection(lines, "overlay", renderOverlayLines(state.UI.Overlay))
@@ -101,6 +101,41 @@ func renderFooterBar(notices []btui.Notice, overlay types.OverlayKind) string {
 	}
 	parts = append(parts, fmt.Sprintf("overlay=%s", overlay))
 	return compactLine(parts...)
+}
+
+// renderBodyBar 汇总 body 主体的 terminal/screen/overlay 状态，
+// 让用户先看到“主体现在展示的是什么”，再往下看具体 section 细节。
+func (r runtimeRenderer) renderBodyBar(state types.AppState, pane types.PaneState, overlayActive bool) string {
+	return compactLine(
+		fmt.Sprintf("body_bar: terminal=%s", r.renderBodyTerminalSummary(state, pane)),
+		fmt.Sprintf("screen=%s", r.renderBodyScreenSummary(pane, overlayActive)),
+		fmt.Sprintf("overlay=%s", state.UI.Overlay.Kind),
+	)
+}
+
+func (r runtimeRenderer) renderBodyTerminalSummary(state types.AppState, pane types.PaneState) string {
+	if pane.TerminalID == "" {
+		return "disconnected"
+	}
+	if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.State != "" {
+		return fmt.Sprintf("%s:%s", pane.TerminalID, terminal.State)
+	}
+	return string(pane.TerminalID)
+}
+
+func (r runtimeRenderer) renderBodyScreenSummary(pane types.PaneState, overlayActive bool) string {
+	if pane.TerminalID == "" || r.Screens == nil {
+		return "unavailable"
+	}
+	snapshot, ok := r.Screens.Snapshot(pane.TerminalID)
+	if !ok || snapshot == nil {
+		return "unavailable"
+	}
+	rows, totalRows, _ := renderSnapshotRows(snapshot)
+	if overlayActive {
+		return "suppressed"
+	}
+	return fmt.Sprintf("preview:%d/%d", len(rows), totalRows)
 }
 
 func renderStatusSection(workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, ui types.UIState) []string {

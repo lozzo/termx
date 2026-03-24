@@ -432,7 +432,7 @@ func TestE2ERunScenarioActivePaneCoreViewVisible(t *testing.T) {
 	}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
-			if view := model.View(); !strings.Contains(view, "chrome_header:") || !strings.Contains(view, "header_bar: ws=main | tab=shell | pane=pane-1 | slot=connected | overlay=none | focus=tiled") || !strings.Contains(view, "chrome_body:") || !strings.Contains(view, "chrome_footer:") || !strings.Contains(view, "footer_bar: notices=0 | overlay=none") || !strings.Contains(view, "title: api-dev") || !strings.Contains(view, "tab_layer: tiled") || !strings.Contains(view, "pane_kind: tiled") || !strings.Contains(view, "terminal_state: running") || !strings.Contains(view, "screen:") || !strings.Contains(view, "$ pwd") || !strings.Contains(view, "/tmp") {
+			if view := model.View(); !strings.Contains(view, "chrome_header:") || !strings.Contains(view, "header_bar: ws=main | tab=shell | pane=pane-1 | slot=connected | overlay=none | focus=tiled") || !strings.Contains(view, "chrome_body:") || !strings.Contains(view, "body_bar: terminal=term-1:running | screen=preview:2/2 | overlay=none") || !strings.Contains(view, "chrome_footer:") || !strings.Contains(view, "footer_bar: notices=0 | overlay=none") || !strings.Contains(view, "title: api-dev") || !strings.Contains(view, "tab_layer: tiled") || !strings.Contains(view, "pane_kind: tiled") || !strings.Contains(view, "terminal_state: running") || !strings.Contains(view, "screen:") || !strings.Contains(view, "$ pwd") || !strings.Contains(view, "/tmp") {
 				t.Fatalf("expected runtime view to expose active pane core fields, got:\n%s", view)
 			}
 			return nil
@@ -459,7 +459,7 @@ func TestE2ERunScenarioConnectedPaneWithoutSnapshotKeepsScreenPlaceholder(t *tes
 	bootstrapper := &stubRunSessionBootstrapper{}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
-			if view := model.View(); !strings.Contains(view, "chrome_footer:") || !strings.Contains(view, "footer_bar: notices=0 | overlay=none") || !strings.Contains(view, "screen: <unavailable>") || !strings.Contains(view, "terminal: term-1") {
+			if view := model.View(); !strings.Contains(view, "chrome_footer:") || !strings.Contains(view, "body_bar: terminal=term-1:running | screen=unavailable | overlay=none") || !strings.Contains(view, "footer_bar: notices=0 | overlay=none") || !strings.Contains(view, "screen: <unavailable>") || !strings.Contains(view, "terminal: term-1") {
 				t.Fatalf("expected runtime view without snapshot to keep stable screen placeholder and active terminal metadata, got:\n%s", view)
 			}
 			return nil
