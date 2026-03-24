@@ -39,7 +39,7 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 		return fmt.Sprintf("termx\nworkspace: %s\ntab: %s\nno pane", workspace.Name, tab.Name)
 	}
 
-	lines := []string{
+	statusLines := []string{
 		fmt.Sprintf("workspace: %s", workspace.Name),
 		fmt.Sprintf("tab: %s", tab.Name),
 		fmt.Sprintf("tab_layer: %s", tab.ActiveLayer),
@@ -47,38 +47,57 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 		fmt.Sprintf("slot: %s", pane.SlotState),
 		fmt.Sprintf("overlay: %s", state.UI.Overlay.Kind),
 	}
-	lines = append(lines, renderFocusLines(state.UI.Focus)...)
-	lines = append(lines, renderModeLines(state.UI.Mode)...)
-	lines = append(lines, renderPaneStateLines(pane)...)
+	statusLines = append(statusLines, renderFocusLines(state.UI.Focus)...)
+	statusLines = append(statusLines, renderModeLines(state.UI.Mode)...)
+	statusLines = append(statusLines, renderPaneStateLines(pane)...)
+
+	lines := []string{
+		"termx",
+		fmt.Sprintf("summary: ws=%s tab=%s pane=%s overlay=%s focus=%s", workspace.Name, tab.Name, pane.ID, state.UI.Overlay.Kind, state.UI.Focus.Layer),
+	}
+	lines = appendSection(lines, "status", statusLines)
+
+	var terminalLines []string
+	var screenLines []string
 	if pane.TerminalID != "" {
-		lines = append(lines, fmt.Sprintf("terminal: %s", pane.TerminalID))
+		terminalLines = append(terminalLines, fmt.Sprintf("terminal: %s", pane.TerminalID))
 		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok {
 			label := terminal.Name
 			if label == "" {
 				label = string(terminal.ID)
 			}
-			lines = append(lines, fmt.Sprintf("title: %s", label))
-			lines = append(lines, renderTerminalStateLines(terminal)...)
+			terminalLines = append(terminalLines, fmt.Sprintf("title: %s", label))
+			terminalLines = append(terminalLines, renderTerminalStateLines(terminal)...)
 		}
-		lines = append(lines, renderConnectionLines(state.Domain.Connections[pane.TerminalID], pane.ID)...)
+		terminalLines = append(terminalLines, renderConnectionLines(state.Domain.Connections[pane.TerminalID], pane.ID)...)
 		if r.Screens != nil {
 			if snapshot, ok := r.Screens.Snapshot(pane.TerminalID); ok && snapshot != nil {
 				rows, totalRows, truncated := renderSnapshotRows(snapshot)
-				lines = append(lines, "screen:")
-				lines = append(lines, fmt.Sprintf("screen_rows: %d/%d", len(rows), totalRows))
+				screenLines = append(screenLines, "screen:")
+				screenLines = append(screenLines, fmt.Sprintf("screen_rows: %d/%d", len(rows), totalRows))
 				if truncated {
-					lines = append(lines, "screen_truncated: true")
+					screenLines = append(screenLines, "screen_truncated: true")
 				}
-				lines = append(lines, rows...)
+				screenLines = append(screenLines, rows...)
 			}
 			if status, ok := r.Screens.Status(pane.TerminalID); ok {
-				lines = append(lines, renderRuntimeStatusLines(status)...)
+				terminalLines = append(terminalLines, renderRuntimeStatusLines(status)...)
 			}
 		}
 	}
-	lines = append(lines, renderOverlayLines(state.UI.Overlay)...)
-	lines = append(lines, renderNoticeLines(notices)...)
+	lines = appendSection(lines, "terminal", terminalLines)
+	lines = appendSection(lines, "screen", screenLines)
+	lines = appendSection(lines, "overlay", renderOverlayLines(state.UI.Overlay))
+	lines = appendSection(lines, "notices", renderNoticeLines(notices))
 	return strings.Join(lines, "\n")
+}
+
+func appendSection(lines []string, name string, body []string) []string {
+	if len(body) == 0 {
+		return lines
+	}
+	lines = append(lines, fmt.Sprintf("section_%s:", name))
+	return append(lines, body...)
 }
 
 func renderPaneStateLines(pane types.PaneState) []string {

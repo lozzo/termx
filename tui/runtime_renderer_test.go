@@ -56,6 +56,12 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "termx") || !strings.Contains(view, "summary: ws=main tab=shell pane=pane-1 overlay=none focus=tiled") {
+		t.Fatalf("expected renderer summary header, got:\n%s", view)
+	}
+	if !strings.Contains(view, "section_status:") || !strings.Contains(view, "section_terminal:") || !strings.Contains(view, "section_screen:") {
+		t.Fatalf("expected renderer sections for status/terminal/screen, got:\n%s", view)
+	}
 	if !strings.Contains(view, "title: api-dev") {
 		t.Fatalf("expected terminal title in rendered view, got:\n%s", view)
 	}
@@ -144,6 +150,9 @@ func TestRuntimeRendererRendersNoticeSection(t *testing.T) {
 		Count: 2,
 	}})
 
+	if !strings.Contains(view, "section_notices:") {
+		t.Fatalf("expected notices section wrapper in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "notices:") {
 		t.Fatalf("expected notice section in rendered view, got:\n%s", view)
 	}
@@ -206,6 +215,9 @@ func TestRuntimeRendererRendersWorkspacePickerOverlay(t *testing.T) {
 	state.UI.Focus.Layer = types.FocusLayerOverlay
 
 	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "section_overlay:") {
+		t.Fatalf("expected overlay section wrapper in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "workspace_picker_query: ops") {
 		t.Fatalf("expected picker query in rendered view, got:\n%s", view)
 	}
@@ -395,6 +407,9 @@ func TestRuntimeRendererRendersPromptOverlay(t *testing.T) {
 	state.UI.Focus.Layer = types.FocusLayerPrompt
 
 	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "section_overlay:") {
+		t.Fatalf("expected prompt overlay section wrapper in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "prompt_title: edit terminal metadata") {
 		t.Fatalf("expected prompt title in rendered view, got:\n%s", view)
 	}
