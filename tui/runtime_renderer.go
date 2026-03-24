@@ -165,6 +165,9 @@ func renderStatusSection(workspace types.WorkspaceState, tab types.TabState, pan
 			fmt.Sprintf("mode_sticky: %t", ui.Mode.Sticky),
 		))
 	}
+	if stack := renderFloatingStack(tab); stack != "" {
+		lines = append(lines, fmt.Sprintf("floating_stack: %s", stack))
+	}
 	if pane.LastExitCode != nil {
 		lines = append(lines, fmt.Sprintf("pane_exit_code: %d", *pane.LastExitCode))
 	}
@@ -177,6 +180,18 @@ func renderStatusSection(workspace types.WorkspaceState, tab types.TabState, pan
 		))
 	}
 	return lines
+}
+
+func renderFloatingStack(tab types.TabState) string {
+	parts := make([]string, 0, len(tab.FloatingOrder))
+	for _, paneID := range tab.FloatingOrder {
+		pane, ok := tab.Panes[paneID]
+		if !ok || pane.Kind != types.PaneKindFloating {
+			continue
+		}
+		parts = append(parts, string(paneID))
+	}
+	return strings.Join(parts, " > ")
 }
 
 func (r runtimeRenderer) renderTerminalSection(state types.AppState, pane types.PaneState, compact bool) []string {

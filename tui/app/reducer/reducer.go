@@ -252,6 +252,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyCenterFloatingPane(&result.State)
 	case intent.ResizeFloatingPaneIntent:
 		applyResizeFloatingPane(&result.State, intentValue)
+	case intent.AdjustFloatingPaneZIntent:
+		applyAdjustFloatingPaneZ(&result.State, intentValue)
 	case intent.ActivateModeIntent:
 		applyActivateMode(&result.State, intentValue)
 	case intent.ModeTimedOutIntent:
@@ -418,10 +420,15 @@ func applyClosePane(state *types.AppState, in intent.ClosePaneIntent) {
 				}
 				syncTerminalVisibleFromConnections(state, pane.TerminalID)
 			}
-			if tab.ActivePaneID == in.PaneID {
-				tab.ActivePaneID = firstRemainingPaneID(tab.Panes)
-			}
+			tab.FloatingOrder = removePaneFromOrder(tab.FloatingOrder, in.PaneID)
 			tab.RootSplit = removePaneFromSplit(tab.RootSplit, in.PaneID)
+			if tab.ActivePaneID == in.PaneID {
+				tab.ActivePaneID, tab.ActiveLayer = nextActivePaneAfterClose(tab, pane)
+			}
+			if state.UI.Focus.WorkspaceID == workspaceID && state.UI.Focus.TabID == tabID && state.UI.Focus.PaneID == in.PaneID {
+				state.UI.Focus.PaneID = tab.ActivePaneID
+				state.UI.Focus.Layer = tab.ActiveLayer
+			}
 			workspace.Tabs[tabID] = tab
 			changedWorkspace = true
 		}
@@ -1324,6 +1331,51 @@ func applyResizeFloatingPane(state *types.AppState, in intent.ResizeFloatingPane
 	})
 }
 
+// applyAdjustFloatingPaneZ 给 floating stack 补上最小 z-order 调整，
+// 当前先按离散一步交换处理，保证顺序稳定且便于后续真实 renderer 复用。
+func applyAdjustFloatingPaneZ(state *types.AppState, in intent.AdjustFloatingPaneZIntent) {
+	defer func() {
+		state.UI.Mode = types.ModeState{Active: types.ModeNone}
+	}()
+	workspaceID := state.UI.Focus.WorkspaceID
+	if workspaceID == "" {
+		workspaceID = state.Domain.ActiveWorkspaceID
+	}
+	workspace, ok := state.Domain.Workspaces[workspaceID]
+	if !ok {
+		return
+	}
+	tabID := workspace.ActiveTabID
+	if tabID == "" {
+		tabID = state.UI.Focus.TabID
+	}
+	tab, ok := workspace.Tabs[tabID]
+	if !ok || len(tab.FloatingOrder) == 0 {
+		return
+	}
+	currentIndex := slices.Index(tab.FloatingOrder, state.UI.Focus.PaneID)
+	if currentIndex < 0 {
+		return
+	}
+	nextIndex := currentIndex + in.Delta
+	if nextIndex < 0 || nextIndex >= len(tab.FloatingOrder) || nextIndex == currentIndex {
+		return
+	}
+	tab.FloatingOrder[currentIndex], tab.FloatingOrder[nextIndex] = tab.FloatingOrder[nextIndex], tab.FloatingOrder[currentIndex]
+	tab.ActivePaneID = state.UI.Focus.PaneID
+	tab.ActiveLayer = types.FocusLayerFloating
+	workspace.ActiveTabID = tab.ID
+	workspace.Tabs[tab.ID] = tab
+	state.Domain.ActiveWorkspaceID = workspace.ID
+	state.Domain.Workspaces[workspace.ID] = workspace
+	state.UI.Focus = types.FocusState{
+		Layer:       types.FocusLayerFloating,
+		WorkspaceID: workspace.ID,
+		TabID:       tab.ID,
+		PaneID:      state.UI.Focus.PaneID,
+	}
+}
+
 // applyCreateTerminalInActivePane 给 empty/waiting 这类正文动作一个最短创建路径。
 // 这里不直接改 pane，仍然等 create success 回灌后再真实 connect。
 func applyCreateTerminalInActivePane(result *Result) {
@@ -1809,6 +1861,49 @@ func firstRemainingPaneID(panes map[types.PaneID]types.PaneState) types.PaneID {
 	return ""
 }
 
+func removePaneFromOrder(order []types.PaneID, paneID types.PaneID) []types.PaneID {
+	filtered := order[:0]
+	for _, current := range order {
+		if current == paneID {
+			continue
+		}
+		filtered = append(filtered, current)
+	}
+	return filtered
+}
+
+func nextActivePaneAfterClose(tab types.TabState, closedPane types.PaneState) (types.PaneID, types.FocusLayer) {
+	if closedPane.Kind == types.PaneKindFloating || tab.ActiveLayer == types.FocusLayerFloating {
+		if paneID := lastExistingFloatingPaneID(tab); paneID != "" {
+			return paneID, types.FocusLayerFloating
+		}
+	}
+	if paneID := firstSplitPaneID(tab.RootSplit); paneID != "" {
+		return paneID, types.FocusLayerTiled
+	}
+	if paneID := lastExistingFloatingPaneID(tab); paneID != "" {
+		return paneID, types.FocusLayerFloating
+	}
+	if paneID := firstRemainingPaneID(tab.Panes); paneID != "" {
+		if pane, ok := tab.Panes[paneID]; ok && pane.Kind == types.PaneKindFloating {
+			return paneID, types.FocusLayerFloating
+		}
+		return paneID, types.FocusLayerTiled
+	}
+	return "", types.FocusLayerTiled
+}
+
+func lastExistingFloatingPaneID(tab types.TabState) types.PaneID {
+	for index := len(tab.FloatingOrder) - 1; index >= 0; index-- {
+		paneID := tab.FloatingOrder[index]
+		pane, ok := tab.Panes[paneID]
+		if ok && pane.Kind == types.PaneKindFloating {
+			return paneID
+		}
+	}
+	return ""
+}
+
 func nextFloatingPaneID(tab types.TabState) types.PaneID {
 	for index := 1; ; index++ {
 		candidate := types.PaneID(fmt.Sprintf("float-%d", index))
@@ -1871,6 +1966,19 @@ func splitNodeToLayoutNode(node *types.SplitNode) *layoutdomain.Node {
 		First:     splitNodeToLayoutNode(node.First),
 		Second:    splitNodeToLayoutNode(node.Second),
 	}
+}
+
+func firstSplitPaneID(node *types.SplitNode) types.PaneID {
+	if node == nil {
+		return ""
+	}
+	if node.First == nil && node.Second == nil {
+		return node.PaneID
+	}
+	if paneID := firstSplitPaneID(node.First); paneID != "" {
+		return paneID
+	}
+	return firstSplitPaneID(node.Second)
 }
 
 func removePaneFromSplit(node *types.SplitNode, paneID types.PaneID) *types.SplitNode {

@@ -259,8 +259,17 @@ func (m DefaultIntentMapper) mapFloatingModeKey(state types.AppState, msg tea.Ke
 		return []intent.Intent{intent.ResizeFloatingPaneIntent{DeltaH: -2}}
 	case "L":
 		return []intent.Intent{intent.ResizeFloatingPaneIntent{DeltaW: 2}}
+	case "[":
+		return []intent.Intent{intent.AdjustFloatingPaneZIntent{Delta: -1}}
+	case "]":
+		return []intent.Intent{intent.AdjustFloatingPaneZIntent{Delta: 1}}
 	case "c":
 		return []intent.Intent{intent.CenterFloatingPaneIntent{}}
+	case "x":
+		return []intent.Intent{
+			intent.ClosePaneIntent{PaneID: state.UI.Focus.PaneID},
+			intent.ActivateModeIntent{Mode: types.ModeNone},
+		}
 	case "h", "left":
 		return []intent.Intent{intent.FloatingFocusMoveIntent{Delta: -1}}
 	case "l", "right":

@@ -1119,6 +1119,9 @@ func TestRuntimeRendererRendersFloatingPaneKind(t *testing.T) {
 	if !strings.Contains(view, "pane_kind: floating") {
 		t.Fatalf("expected floating pane kind in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "floating_stack: pane-float") {
+		t.Fatalf("expected floating stack summary in rendered view, got:\n%s", view)
+	}
 }
 
 func twoDigitLabel(v int) string {

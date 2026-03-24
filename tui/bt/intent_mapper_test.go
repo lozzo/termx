@@ -246,12 +246,30 @@ func TestIntentMapperRootCtrlOArmsFloatingModeAndMapsActions(t *testing.T) {
 	if len(intents) != 1 || intents[0] != (intent.ResizeFloatingPaneIntent{DeltaH: 2}) {
 		t.Fatalf("expected floating resize-height intent, got %+v", intents)
 	}
+	intents = mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}})
+	if len(intents) != 1 || intents[0] != (intent.AdjustFloatingPaneZIntent{Delta: -1}) {
+		t.Fatalf("expected floating z-backward intent, got %+v", intents)
+	}
+	intents = mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	if len(intents) != 1 || intents[0] != (intent.AdjustFloatingPaneZIntent{Delta: 1}) {
+		t.Fatalf("expected floating z-forward intent, got %+v", intents)
+	}
 	intents = mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
 	if len(intents) != 1 {
 		t.Fatalf("expected one intent, got %d", len(intents))
 	}
 	if _, ok := intents[0].(intent.CenterFloatingPaneIntent); !ok {
 		t.Fatalf("expected center floating pane intent, got %T", intents[0])
+	}
+	intents = mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if len(intents) != 2 {
+		t.Fatalf("expected two intents for floating close, got %+v", intents)
+	}
+	if intents[0] != (intent.ClosePaneIntent{PaneID: types.PaneID("pane-1")}) {
+		t.Fatalf("expected floating close to close focused pane, got %+v", intents[0])
+	}
+	if intents[1] != (intent.ActivateModeIntent{Mode: types.ModeNone}) {
+		t.Fatalf("expected floating close to clear mode, got %+v", intents[1])
 	}
 	intents = mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	if len(intents) != 1 {

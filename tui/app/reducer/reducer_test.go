@@ -1,6 +1,7 @@
 package reducer
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -1139,6 +1140,91 @@ func TestReducerResizeFloatingPaneUpdatesRectAndClearsMode(t *testing.T) {
 	}
 	if result.State.UI.Mode.Active != types.ModeNone {
 		t.Fatalf("expected floating resize to clear mode, got %+v", result.State.UI.Mode)
+	}
+}
+
+func TestReducerAdjustFloatingPaneZReordersStackAndClearsMode(t *testing.T) {
+	reducer := New()
+	state := newFloatingPaneStackAppState()
+	state.UI.Mode = types.ModeState{Active: types.ModeFloating}
+
+	result := reducer.Reduce(state, intent.AdjustFloatingPaneZIntent{Delta: 1})
+
+	tab := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
+	if !slices.Equal(tab.FloatingOrder, []types.PaneID{types.PaneID("float-2"), types.PaneID("float-1")}) {
+		t.Fatalf("expected floating z reorder to move float-1 forward, got %+v", tab.FloatingOrder)
+	}
+	if tab.ActivePaneID != types.PaneID("float-1") || tab.ActiveLayer != types.FocusLayerFloating {
+		t.Fatalf("expected floating z reorder to keep active floating pane, got %+v", tab)
+	}
+	if result.State.UI.Mode.Active != types.ModeNone {
+		t.Fatalf("expected floating z reorder to clear mode, got %+v", result.State.UI.Mode)
+	}
+}
+
+func TestReducerClosePaneRemovesFloatingOrderAndFallsBackToRemainingFloatingPane(t *testing.T) {
+	reducer := New()
+	state := newFloatingPaneStackAppState()
+
+	result := reducer.Reduce(state, intent.ClosePaneIntent{PaneID: types.PaneID("float-1")})
+
+	tab := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
+	if _, ok := tab.Panes[types.PaneID("float-1")]; ok {
+		t.Fatalf("expected closed floating pane to be removed")
+	}
+	if !slices.Equal(tab.FloatingOrder, []types.PaneID{types.PaneID("float-2")}) {
+		t.Fatalf("expected floating order to drop float-1, got %+v", tab.FloatingOrder)
+	}
+	if tab.ActivePaneID != types.PaneID("float-2") || tab.ActiveLayer != types.FocusLayerFloating {
+		t.Fatalf("expected close to fall back to remaining floating pane, got %+v", tab)
+	}
+	if result.State.UI.Focus.PaneID != types.PaneID("float-2") || result.State.UI.Focus.Layer != types.FocusLayerFloating {
+		t.Fatalf("expected focus to move to remaining floating pane, got %+v", result.State.UI.Focus)
+	}
+}
+
+func TestReducerClosePaneLastFloatingFallsBackToTiledPane(t *testing.T) {
+	reducer := New()
+	state := newConnectedAppState()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	tab.Panes[types.PaneID("float-1")] = types.PaneState{
+		ID:         types.PaneID("float-1"),
+		Kind:       types.PaneKindFloating,
+		SlotState:  types.PaneSlotConnected,
+		TerminalID: types.TerminalID("term-2"),
+	}
+	tab.FloatingOrder = []types.PaneID{types.PaneID("float-1")}
+	tab.ActivePaneID = types.PaneID("float-1")
+	tab.ActiveLayer = types.FocusLayerFloating
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.UI.Focus = types.FocusState{
+		Layer:       types.FocusLayerFloating,
+		WorkspaceID: types.WorkspaceID("ws-1"),
+		TabID:       types.TabID("tab-1"),
+		PaneID:      types.PaneID("float-1"),
+	}
+	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
+		ID:      types.TerminalID("term-2"),
+		Name:    "build-log",
+		State:   types.TerminalRunStateRunning,
+		Visible: true,
+	}
+	state.Domain.Connections[types.TerminalID("term-2")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-2"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("float-1")},
+		OwnerPaneID:      types.PaneID("float-1"),
+	}
+
+	result := reducer.Reduce(state, intent.ClosePaneIntent{PaneID: types.PaneID("float-1")})
+
+	tab = result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
+	if tab.ActivePaneID != types.PaneID("pane-1") || tab.ActiveLayer != types.FocusLayerTiled {
+		t.Fatalf("expected close last floating pane to fall back to tiled pane, got %+v", tab)
+	}
+	if result.State.UI.Focus.PaneID != types.PaneID("pane-1") || result.State.UI.Focus.Layer != types.FocusLayerTiled {
+		t.Fatalf("expected focus to fall back to tiled pane, got %+v", result.State.UI.Focus)
 	}
 }
 

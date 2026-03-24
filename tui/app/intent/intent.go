@@ -373,6 +373,12 @@ type ResizeFloatingPaneIntent struct {
 
 func (ResizeFloatingPaneIntent) intentName() string { return "resize_floating_pane" }
 
+type AdjustFloatingPaneZIntent struct {
+	Delta int
+}
+
+func (AdjustFloatingPaneZIntent) intentName() string { return "adjust_floating_pane_z" }
+
 type ActivateModeIntent struct {
 	Mode       types.ModeKind
 	Sticky     bool
