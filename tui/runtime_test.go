@@ -122,13 +122,13 @@ func TestRunUsesShellOnlyRendererByDefault(t *testing.T) {
 	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") {
 		t.Fatalf("expected default run renderer to keep screen shell, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "pane-1  •  term-1  •  f0") {
+	if !strings.Contains(stripped, "term-1  •  owner running  •  f0") {
 		t.Fatalf("expected default run renderer top chrome to expose active pane summary, got:\n%s", runner.view)
 	}
 	if !strings.Contains(stripped, "term-1  ● run  owner") || !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "term-1 running owner") {
 		t.Fatalf("expected default run renderer to keep terminal canvas context in screen shell, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "focus term-1  •  owner running") || !strings.Contains(stripped, "1t  •  1p  •  1x  •  0f") || !strings.Contains(stripped, "main / shell / tiled / pane-1") || !strings.Contains(stripped, "owner running") || !strings.Contains(stripped, "tiled") || !strings.Contains(stripped, "term-1") {
+	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "focus term-1  •  owner running") || !strings.Contains(stripped, "1t  •  1p  •  1x  •  0f") || !strings.Contains(stripped, "main / shell / tiled / term-1") || !strings.Contains(stripped, "owner running") || !strings.Contains(stripped, "tiled") || !strings.Contains(stripped, "term-1") {
 		t.Fatalf("expected default run renderer context bar to expose path and runtime state, got:\n%s", runner.view)
 	}
 	if !strings.Contains(stripped, "<p> <t> <w> <o> <f> <g> <?>") || !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "▣ workbench") {
@@ -727,7 +727,7 @@ func TestE2ERunScenarioDefaultModernTopChromeSummarizesWorkspaceTabsAndContext(t
 			if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "focus api-dev  •  owner running") || !strings.Contains(stripped, "2t  •  2p  •  2x  •  0f") {
 				t.Fatalf("expected default modern tab bar to expose tab and workspace counts, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "main / shell / tiled / pane-1") || !strings.Contains(stripped, "owner running") || !strings.Contains(stripped, "tiled") || !strings.Contains(stripped, "term-1") {
+			if !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "owner running") || !strings.Contains(stripped, "tiled") || !strings.Contains(stripped, "api-dev") {
 				t.Fatalf("expected default modern context bar to expose path and runtime state, got:\n%s", view)
 			}
 			if strings.Contains(view, "wireframe_view:") {
@@ -785,7 +785,7 @@ func TestE2ERunScenarioDefaultModernFloatingWorkbenchRendersWindowDeck(t *testin
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "main / shell / floating / float-1") || !strings.Contains(stripped, "api-dev  ● run  owner") || !strings.Contains(stripped, "build-log  ● run  owner") || !strings.Contains(stripped, "live") {
+			if !strings.Contains(stripped, "main / shell / floating / api-dev") || !strings.Contains(stripped, "api-dev  ● run  owner") || !strings.Contains(stripped, "build-log  ● run  owner") || !strings.Contains(stripped, "live") {
 				t.Fatalf("expected default modern floating view to expose overlapping floating pane titles, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "api ready") || !strings.Contains(stripped, "build ok") || !strings.Contains(stripped, "term-1 running owner") || !strings.Contains(stripped, "term-2 running owner") {
@@ -835,7 +835,7 @@ func TestE2ERunScenarioDefaultModernMixedWorkbenchShowsDetachedFloatingStrip(t *
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "api-dev  ● run  owner  live") || !strings.Contains(stripped, "waiting pane  ◌ wait  reserved") || !strings.Contains(stripped, "deploy-log  ○ exit  history") || !strings.Contains(stripped, "no ter") || !strings.Contains(stripped, "empty  ○ empty") {
+			if !strings.Contains(stripped, "api-dev  ● run  owner  live") || !strings.Contains(stripped, "waiting pane  ◌ wait  reserved") || !strings.Contains(stripped, "deploy-log  ○ exit  history") || !strings.Contains(stripped, "no ter") || !strings.Contains(stripped, "unconnected pa") {
 				t.Fatalf("expected default modern mixed workbench to render tiled and floating panes on one canvas, got:\n%s", view)
 			}
 			if strings.Contains(view, "wireframe_view:") {

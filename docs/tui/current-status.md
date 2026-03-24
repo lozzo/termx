@@ -65,6 +65,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把 modern 主壳往“64~80 列还能读”的方向收口：顶部/二级状态条/上下文条/footer 现在统一走 compact 阈值，bar 的真实宽度预算也按 lipgloss padding 重新对齐，不再出现视觉上是 64/78 列、实际却悄悄多出 2 列导致溢出的情况
 - 本轮同步补上 64 列 renderer 基线，锁住 narrow shell / narrow help overlay 两条路径；default runtime 仍保留 78 列最小工作台宽度，但默认 78 列首屏和 floating mode 的 footer/context 断言已经全部迁到 compact 新基线
 - 本轮继续把 modern 主壳的“无颜色也能读懂层级”补齐：pane title/meta 现在显式区分 `live / idle / reserved / history / open`，overlay dialog 会补出 `backdrop ... paused` 与 `BACKDROP` 说明，footer notice 也统一改成 `! error / ● info` 语义文案；相关 shell-only 与默认 modern E2E 基线已同步迁移
+- 本轮继续把 modern 主壳往“首屏去技术 ID”收口：header/context/footer/floating/pane title 现在统一优先显示 terminal 真名与人类状态名，默认不再把 `pane-1 / term-1` 当作首屏主信息；未连接 pane 也开始以 `unconnected / waiting` 这类状态词出现在主工作台与路径栏里
 
 ---
 

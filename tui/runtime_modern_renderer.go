@@ -256,7 +256,7 @@ func (r modernScreenShellRenderer) renderWorkspaceSummaryTextAdaptive(workspace 
 
 func (r modernScreenShellRenderer) renderContextBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
 	contentWidth := max(1, width-2)
-	left := theme.panelMeta.Render(renderModernPanePathAdaptive(workspace, tab, pane, width))
+	left := theme.panelMeta.Render(renderModernPanePathAdaptive(state, workspace, tab, pane, width))
 	right := renderModernContextChromeLineAdaptive(theme, state, pane, width)
 	return theme.subBar.Render(fillANSIHorizontal(left, right, contentWidth))
 }
@@ -301,13 +301,10 @@ func (r modernScreenShellRenderer) renderPanePreview(terminalID types.TerminalID
 }
 
 func (r modernScreenShellRenderer) renderModernCanvasPaneTitle(state types.AppState, pane types.PaneState) string {
-	title := renderPaneTitle(state, pane)
+	title := renderModernPaneDisplayTitle(state, pane)
 	if pane.Kind == types.PaneKindFloating {
 		if pane.SlotState != types.PaneSlotConnected {
-			title = string(pane.SlotState)
-			if title == "" && pane.ID != "" {
-				title = string(pane.ID)
-			}
+			title = renderModernPaneDisplayTitle(state, pane)
 		}
 	}
 	return title
@@ -604,7 +601,7 @@ func (r modernScreenShellRenderer) renderFloatingDeckCard(theme modernShellTheme
 	}
 	runtimeLine, commandLine := renderModernFloatingDeckTerminalSummary(state, pane)
 	lines := []string{
-		theme.panelTitle.Render(fmt.Sprintf("z %d/%d • %s", index+1, max(1, total), renderPaneTitle(state, pane))),
+		theme.panelTitle.Render(fmt.Sprintf("z %d/%d • %s", index+1, max(1, total), renderModernPaneDisplayTitle(state, pane))),
 		theme.panelMeta.Render(renderModernFloatingDeckState(active, top) + "  •  " + rectText),
 		theme.panelMeta.Render(runtimeLine),
 	}
@@ -753,7 +750,7 @@ func shouldRenderCompactPaneLayout(width, maxRows int, pane types.PaneState) boo
 }
 
 func renderModernPaneTitleBar(state types.AppState, pane types.PaneState, active bool, zIndex int, zTotal int) string {
-	parts := []string{renderPaneTitle(state, pane)}
+	parts := []string{renderModernPaneDisplayTitle(state, pane)}
 	role := renderScreenShellPaneCardRole(state, pane)
 	if role != "" {
 		parts = append(parts, role)
@@ -1761,7 +1758,7 @@ func renderModernSplitLayoutSummary(tab types.TabState, tiledPanes int) string {
 // renderModernSplitWorkbenchTitleLine 把 split 工作台标题和 active 信息合在一行，
 // 这样顶部 chrome 更紧凑，给 pane screen 预览腾出更多高度。
 func renderModernSplitWorkbenchTitleLine(state types.AppState, pane types.PaneState, tiledPanes int) string {
-	return fmt.Sprintf("Split workbench  •  active %s  •  %d tiled panes", renderPaneTitle(state, pane), tiledPanes)
+	return fmt.Sprintf("Split workbench  •  active %s  •  %d tiled panes", renderModernPaneDisplayTitle(state, pane), tiledPanes)
 }
 
 func renderModernSplitActionLine(state types.AppState) string {
@@ -1799,10 +1796,10 @@ func renderModernFloatingWorkbenchTargets(state types.AppState, tab types.TabSta
 		topTitle = topPane
 	}
 	if pane, ok := tab.Panes[types.PaneID(activePane)]; ok {
-		activeTitle = renderPaneTitle(state, pane)
+		activeTitle = renderModernPaneDisplayTitle(state, pane)
 	}
 	if pane, ok := tab.Panes[types.PaneID(topPane)]; ok {
-		topTitle = renderPaneTitle(state, pane)
+		topTitle = renderModernPaneDisplayTitle(state, pane)
 	}
 	return activePane, activeTitle, topPane, topTitle
 }
@@ -1935,7 +1932,7 @@ func (r modernScreenShellRenderer) renderFooter(theme modernShellTheme, state ty
 }
 
 func renderModernFooterContext(theme modernShellTheme, state types.AppState, pane types.PaneState, notice string, width int) string {
-	items := []string{theme.activeChip.Render(renderPaneTitle(state, pane))}
+	items := []string{theme.activeChip.Render(renderModernPaneDisplayTitle(state, pane))}
 	if !shouldRenderCompactChrome(width) {
 		items = append(items, theme.chip.Render(renderModernFooterSlotBadge(pane)))
 	}
@@ -1987,13 +1984,9 @@ func renderModernHeaderBrand(theme modernShellTheme, workspace types.WorkspaceSt
 }
 
 func renderModernLegacyHeaderRight(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
-	termID := "<none>"
-	if pane.TerminalID != "" {
-		termID = string(pane.TerminalID)
-	}
 	parts := []string{
-		"pane " + string(pane.ID),
-		"terminal " + termID,
+		renderModernPaneDisplayTitle(state, pane),
+		renderModernContextStateToken(state, pane),
 		fmt.Sprintf("float %d", len(orderedFloatingPaneIDs(tab))),
 	}
 	if state.UI.Overlay.Kind != types.OverlayNone {
@@ -2013,13 +2006,9 @@ func renderModernHeaderRightAdaptive(state types.AppState, workspace types.Works
 }
 
 func renderModernHeaderRightCompact(state types.AppState, _ types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
-	termID := "-"
-	if pane.TerminalID != "" {
-		termID = string(pane.TerminalID)
-	}
 	parts := []string{
-		string(pane.ID),
-		termID,
+		truncateModernLine(renderModernPaneDisplayTitle(state, pane), 18),
+		renderModernContextStateToken(state, pane),
 		fmt.Sprintf("f%d", len(orderedFloatingPaneIDs(tab))),
 	}
 	if state.UI.Overlay.Kind != types.OverlayNone {
@@ -2033,7 +2022,7 @@ func renderModernHeaderRightCompact(state types.AppState, _ types.WorkspaceState
 
 func renderModernTopStatusLine(state types.AppState, _ types.TabState, pane types.PaneState) string {
 	parts := []string{
-		"focus " + renderPaneTitle(state, pane),
+		"focus " + renderModernPaneDisplayTitle(state, pane),
 		"role " + renderModernPaneRole(state, pane),
 		"slot " + string(pane.SlotState),
 	}
@@ -2088,7 +2077,7 @@ func renderModernActiveTabCompact(tab types.TabState) string {
 }
 
 func renderModernTopStatusCompact(state types.AppState, pane types.PaneState) string {
-	label := renderPaneTitle(state, pane)
+	label := renderModernPaneDisplayTitle(state, pane)
 	if pane.TerminalID != "" {
 		label = truncateModernLine(label, 14)
 	}
@@ -2097,7 +2086,7 @@ func renderModernTopStatusCompact(state types.AppState, pane types.PaneState) st
 
 func renderModernContextChromeLine(theme modernShellTheme, state types.AppState, pane types.PaneState) string {
 	items := []string{
-		theme.activeChip.Render("focus " + renderPaneTitle(state, pane)),
+		theme.activeChip.Render("focus " + renderModernPaneDisplayTitle(state, pane)),
 		theme.chip.Render("role " + renderModernPaneRole(state, pane)),
 		theme.chip.Render("slot " + string(pane.SlotState)),
 	}
@@ -2105,8 +2094,8 @@ func renderModernContextChromeLine(theme modernShellTheme, state types.AppState,
 		items = append(items, theme.chip.Render(runtime))
 	}
 	items = append(items, theme.chip.Render("layer "+string(renderModernPrimaryLayer(state))))
-	if pane.TerminalID != "" {
-		items = append(items, theme.chip.Render("terminal "+string(pane.TerminalID)))
+	if terminalLabel := renderModernTerminalLabel(state, pane); terminalLabel != "" {
+		items = append(items, theme.chip.Render("terminal "+terminalLabel))
 	}
 	if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
 		items = append(items, theme.chip.Render("mode "+string(state.UI.Mode.Active)))
@@ -2123,8 +2112,8 @@ func renderModernContextChromeLineAdaptive(theme modernShellTheme, state types.A
 			theme.activeChip.Render(renderModernContextStateToken(state, pane)),
 			theme.chip.Render(string(renderModernPrimaryLayer(state))),
 		}
-		if pane.TerminalID != "" {
-			items = append(items, theme.chip.Render(string(pane.TerminalID)))
+		if terminalLabel := renderModernTerminalLabel(state, pane); terminalLabel != "" {
+			items = append(items, theme.chip.Render(truncateModernLine(terminalLabel, 14)))
 		}
 		if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
 			items = append(items, theme.chip.Render(string(state.UI.Mode.Active)))
@@ -2488,15 +2477,15 @@ func renderModernTabLabel(tab types.TabState) string {
 	}
 }
 
-func renderModernPanePath(workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
-	return fmt.Sprintf("%s / %s / %s / %s", safeWorkspaceLabel(workspace), safeTabLabel(tab), safePaneKind(pane.Kind), pane.ID)
+func renderModernPanePath(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
+	return fmt.Sprintf("%s / %s / %s / %s", safeWorkspaceLabel(workspace), safeTabLabel(tab), safePaneKind(pane.Kind), renderModernPanePathLabel(state, pane))
 }
 
-func renderModernPanePathAdaptive(workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
+func renderModernPanePathAdaptive(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
 	if width < 72 {
-		return fmt.Sprintf("%s / %s / %s", safeWorkspaceLabel(workspace), safeTabLabel(tab), pane.ID)
+		return fmt.Sprintf("%s / %s / %s", safeWorkspaceLabel(workspace), safeTabLabel(tab), renderModernPanePathLabel(state, pane))
 	}
-	return renderModernPanePath(workspace, tab, pane)
+	return renderModernPanePath(state, workspace, tab, pane)
 }
 
 func renderModernContextRuntimeLine(state types.AppState, pane types.PaneState) string {
@@ -2576,7 +2565,7 @@ func renderModernWorkbenchLocationLine(state types.AppState, pane types.PaneStat
 	if !ok {
 		return "path unavailable"
 	}
-	return renderModernPanePath(workspace, tab, pane)
+	return renderModernPanePath(state, workspace, tab, pane)
 }
 
 func renderModernWorkbenchSignalLine(state types.AppState, pane types.PaneState) string {
@@ -2605,12 +2594,12 @@ func renderModernWorkbenchKeyLines(theme modernShellTheme, width int, pane types
 
 func renderModernBackdropPaneLine(state types.AppState, pane types.PaneState) string {
 	parts := []string{
-		"pane " + renderPaneTitle(state, pane),
+		"pane " + renderModernPaneDisplayTitle(state, pane),
 		renderModernPaneRole(state, pane),
 		string(pane.SlotState),
 	}
-	if pane.TerminalID != "" {
-		parts = append(parts, "terminal "+string(pane.TerminalID))
+	if terminalLabel := renderModernTerminalLabel(state, pane); terminalLabel != "" {
+		parts = append(parts, "terminal "+terminalLabel)
 	}
 	return strings.Join(parts, "  •  ")
 }
@@ -2629,13 +2618,84 @@ func renderModernBackdropPausedLine(state types.AppState) string {
 }
 
 func renderModernDetachedFloatingLabel(state types.AppState, pane types.PaneState) string {
-	label := fmt.Sprintf("%s %s %s", pane.ID, renderPaneTitle(state, pane), pane.SlotState)
+	label := fmt.Sprintf("%s %s", renderModernPaneDisplayTitle(state, pane), pane.SlotState)
 	if pane.SlotState == types.PaneSlotConnected {
 		if preview := renderPanePreviewWithoutStoreFallback(state, pane); preview != "" {
 			return label + " " + preview
 		}
 	}
 	return label
+}
+
+// renderModernPaneDisplayTitle 统一 modern 主壳里 pane 的用户可见名称：
+// 已连接时优先显示 terminal 真名；未连接/等待时显示人类状态名，避免首屏暴露技术 ID。
+func renderModernPaneDisplayTitle(state types.AppState, pane types.PaneState) string {
+	switch pane.SlotState {
+	case types.PaneSlotWaiting:
+		return "waiting pane"
+	case types.PaneSlotEmpty:
+		return "unconnected pane"
+	}
+	title := renderPaneTitle(state, pane)
+	switch title {
+	case "", string(pane.ID):
+		if pane.SlotState == types.PaneSlotExited && pane.TerminalID == "" {
+			return "exited pane"
+		}
+		if pane.SlotState == types.PaneSlotEmpty {
+			return "unconnected pane"
+		}
+		if pane.SlotState == types.PaneSlotWaiting {
+			return "waiting pane"
+		}
+	}
+	switch title {
+	case "waiting-pane":
+		return "waiting pane"
+	case "empty-pane":
+		return "unconnected pane"
+	case "exited-pane":
+		return "exited pane"
+	default:
+		if title != "" {
+			return title
+		}
+	}
+	if pane.ID != "" {
+		return string(pane.ID)
+	}
+	return "pane"
+}
+
+func renderModernTerminalLabel(state types.AppState, pane types.PaneState) string {
+	if pane.TerminalID == "" {
+		return ""
+	}
+	if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.Name != "" {
+		return terminal.Name
+	}
+	return string(pane.TerminalID)
+}
+
+func renderModernPanePathLabel(state types.AppState, pane types.PaneState) string {
+	if pane.SlotState == types.PaneSlotConnected || pane.SlotState == types.PaneSlotExited {
+		if label := renderModernPaneDisplayTitle(state, pane); label != "" {
+			return label
+		}
+	}
+	switch pane.SlotState {
+	case types.PaneSlotWaiting:
+		return "waiting"
+	case types.PaneSlotEmpty:
+		return "unconnected"
+	case types.PaneSlotExited:
+		return "exited"
+	default:
+		if pane.ID != "" {
+			return string(pane.ID)
+		}
+		return "pane"
+	}
 }
 
 func renderModernFloatingDeckTerminalSummary(state types.AppState, pane types.PaneState) (runtimeLine, commandLine string) {
