@@ -208,6 +208,9 @@ func TestRuntimeRendererCanHideDebugSections(t *testing.T) {
 	if !strings.Contains(stripped, "owner  •  connected  •  running") || !strings.Contains(stripped, "tiled pane-1  •  terminal term-1") || !strings.Contains(stripped, "Terminal  Runtime  running  •  visible") || !strings.Contains(stripped, "Connection  terminal term-1  •  owner") || !strings.Contains(stripped, "Command  cmd npm run dev") || !strings.Contains(stripped, "Screen") || !strings.Contains(stripped, "/tmp") {
 		t.Fatalf("expected shell-only renderer to keep terminal meta inside screen shell, got:\n%s", view)
 	}
+	if !strings.Contains(stripped, "focus api-dev") || !strings.Contains(stripped, "layer tiled") {
+		t.Fatalf("expected shell-only renderer footer to expose focus/layer context, got:\n%s", view)
+	}
 	if strings.Contains(view, "wireframe_view:") || strings.Contains(view, "chrome_header:") || strings.Contains(view, "chrome_body:") || strings.Contains(view, "chrome_footer:") {
 		t.Fatalf("expected shell-only renderer to hide debug sections, got:\n%s", view)
 	}
@@ -261,7 +264,7 @@ func TestRuntimeRendererShellOnlyOverlayKeepsPaneContext(t *testing.T) {
 	if !strings.Contains(stripped, "overlay help") || !strings.Contains(stripped, "mode picker") || !strings.Contains(stripped, "Esc close") {
 		t.Fatalf("expected shell-only overlay renderer to expose overlay chrome and footer actions, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "Backdrop workbench") || !strings.Contains(stripped, "background api-dev • owner • tiled") || !strings.Contains(stripped, "focus paused  •  overlay active • help") {
+	if !strings.Contains(stripped, "Backdrop workbench") || !strings.Contains(stripped, "background api-dev • owner • tiled") || !strings.Contains(stripped, "workspace main  •  tab shell  •  layer tiled") || !strings.Contains(stripped, "focus paused  •  overlay active • help") {
 		t.Fatalf("expected shell-only overlay renderer to retain a dimmed workbench backdrop summary, got:\n%s", view)
 	}
 }
@@ -408,13 +411,13 @@ func TestRuntimeRendererShellOnlyRendersSplitWorkbenchAsPaneCanvas(t *testing.T)
 
 	view := renderer.Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Split view") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") {
+	if !strings.Contains(stripped, "Split workbench") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") {
 		t.Fatalf("expected shell-only split renderer to expose pane titles, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "api-dev • owner • tiled • active") || !strings.Contains(stripped, "build-log • owner • tiled") {
 		t.Fatalf("expected shell-only split renderer to expose pane title bars, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "layout vertical 50/50") || !strings.Contains(stripped, "switch Ctrl-p pane") {
+	if !strings.Contains(stripped, "Split workbench  •  active api-dev  •  2 tiled panes") || !strings.Contains(stripped, "Layout vertical 50/50  •  depth 1  •  leaves 2") || !strings.Contains(stripped, "Focus tiled  •  Ctrl-p pane  •  Ctrl-f picker  •  Ctrl-g global") {
 		t.Fatalf("expected shell-only split renderer to expose layout summary and navigation hint, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "Terminal  Runtime") || !strings.Contains(stripped, "Connection  terminal term-1") || !strings.Contains(stripped, "Connection  terminal term-2") || !strings.Contains(stripped, "Command  cmd npm run dev") || !strings.Contains(stripped, "Command  cmd tail -f build.log") || !strings.Contains(stripped, "Tags  tags env=dev,service=api") || !strings.Contains(stripped, "Tags  tags group=build") {
@@ -475,7 +478,7 @@ func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing
 	if !strings.Contains(stripped, "api-dev • owner • floating • active") || !strings.Contains(stripped, "Geometry") || !strings.Contains(stripped, "z 1/2") || !strings.Contains(stripped, "z 2/2") {
 		t.Fatalf("expected shell-only floating renderer to expose title bar and z-order geometry, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "Window deck  •  2 windows") || !strings.Contains(stripped, "focus float-1") || !strings.Contains(stripped, "top float-2") || !strings.Contains(stripped, "active api-dev") || !strings.Contains(stripped, "top build-log") {
+	if !strings.Contains(stripped, "Window deck  •  2 windows") || !strings.Contains(stripped, "Floating workbench  •  active api-dev  •  pane float-1") || !strings.Contains(stripped, "Top build-log  •  pane float-2  •  stack 2") || !strings.Contains(stripped, "Layer floating  •  mode none  •  Ctrl-o float") {
 		t.Fatalf("expected shell-only floating renderer to expose deck summary, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "Runtime") || !strings.Contains(stripped, "Connection") || !strings.Contains(stripped, "running  •  visible") || !strings.Contains(stripped, "terminal term-1") {

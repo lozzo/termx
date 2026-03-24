@@ -343,9 +343,12 @@ func (r modernScreenShellRenderer) renderPanePreview(terminalID types.TerminalID
 }
 
 func (r modernScreenShellRenderer) renderSplitWorkbench(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, tiledPaneIDs []types.PaneID, floatingPaneIDs []types.PaneID, width, height int) string {
-	header := theme.panelMeta.Render(fmt.Sprintf("Split view  •  %d panes  •  active %s", len(tiledPaneIDs), renderPaneTitle(state, pane)))
-	layoutSummary := theme.panelMeta.Render(renderModernSplitLayoutSummary(tab, len(tiledPaneIDs)))
-	canvasHeight := max(8, height-1)
+	lines := []string{
+		theme.panelTitle.Render(renderModernSplitWorkbenchTitleLine(state, pane, len(tiledPaneIDs))),
+		theme.panelMeta.Render(renderModernSplitLayoutSummary(tab, len(tiledPaneIDs))),
+		theme.panelMeta.Render(renderModernSplitActionLine(state)),
+	}
+	canvasHeight := max(8, height-3)
 	if len(floatingPaneIDs) > 0 {
 		canvasHeight = max(8, height-5)
 	}
@@ -355,7 +358,7 @@ func (r modernScreenShellRenderer) renderSplitWorkbench(theme modernShellTheme, 
 	} else {
 		canvas = r.renderImplicitSplitCanvas(theme, state, tab, tiledPaneIDs, width, canvasHeight)
 	}
-	lines := []string{header, layoutSummary, canvas}
+	lines = append(lines, canvas)
 	if len(floatingPaneIDs) > 0 {
 		lines = append(lines, r.renderDetachedFloatingStrip(theme, state, tab, floatingPaneIDs, width))
 	}
@@ -363,15 +366,18 @@ func (r modernScreenShellRenderer) renderSplitWorkbench(theme modernShellTheme, 
 }
 
 func (r modernScreenShellRenderer) renderFloatingWorkbench(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, width, height int) string {
-	header := theme.panelMeta.Render(fmt.Sprintf("Floating workbench  •  %d windows  •  focus %s", len(floatingPaneIDs), renderPaneTitle(state, pane)))
-	summary := theme.panelMeta.Render(renderModernFloatingWorkbenchSummary(state, tab, floatingPaneIDs))
-	lines := []string{header, summary}
+	lines := []string{
+		theme.panelTitle.Render(renderModernFloatingWorkbenchTitleLine(state, tab, floatingPaneIDs)),
+		theme.panelMeta.Render(renderModernFloatingWorkbenchStateLine(state, tab, floatingPaneIDs)),
+		theme.panelMeta.Render(renderModernFloatingWorkbenchSummary(state, tab, floatingPaneIDs)),
+		theme.panelMeta.Render(renderModernFloatingWorkbenchControlLine(state)),
+	}
 	if hint := renderModernFloatingModeHint(state); hint != "" {
 		lines = append(lines, theme.panelMeta.Render(hint))
 	}
 	deckWidth := min(34, max(28, width/3))
 	mainWidth := max(30, width-deckWidth-1)
-	bodyHeight := max(8, height-1)
+	bodyHeight := max(8, height-len(lines))
 	main := r.renderPaneWorkbenchCard(theme, state, pane, mainWidth, bodyHeight, true)
 	deck := r.renderFloatingDeck(theme, state, tab, floatingPaneIDs, deckWidth, bodyHeight)
 	lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Top, main, " ", deck))
@@ -832,7 +838,7 @@ func renderModernScreenFrameLine(text string, innerWidth int) string {
 }
 
 func (r modernScreenShellRenderer) renderOverlayViewport(theme modernShellTheme, state types.AppState, pane types.PaneState, width, height int) string {
-	backdropHeight := min(7, max(5, height/4))
+	backdropHeight := min(8, max(6, height/4+1))
 	panelWidth := min(width-2, max(64, width*5/6))
 	if panelWidth <= 0 {
 		panelWidth = width
@@ -853,17 +859,15 @@ func (r modernScreenShellRenderer) renderOverlayViewport(theme modernShellTheme,
 }
 
 func (r modernScreenShellRenderer) renderOverlayBackdrop(theme modernShellTheme, state types.AppState, pane types.PaneState, width, height int) string {
-	preview := r.renderPanePreview(pane.TerminalID)
-	if preview == "" {
-		preview = string(pane.SlotState)
-	}
-	lines := normalizeModernPanelLines([]string{
+	lines := []string{
 		theme.panelTitle.Render("Backdrop workbench"),
 		theme.panelMeta.Render(fmt.Sprintf("focus paused  •  overlay active • %s", state.UI.Overlay.Kind)),
 		theme.panelMeta.Render("background " + renderModernPaneTitleBar(state, pane, false, 0, 0)),
-		theme.panelMeta.Render(renderModernPaneStatusLine(state, pane)),
-		theme.terminalBody.Render(preview),
-	}, max(16, width-4), max(3, height-2))
+	}
+	if context := renderModernBackdropContextLine(state); context != "" {
+		lines = append(lines, theme.panelMeta.Render(context))
+	}
+	lines = normalizeModernPanelLines(lines, max(16, width-4), max(4, height-2))
 	return theme.backdropPanel.Width(width - 2).Height(height - 1).Render(strings.Join(lines, "\n"))
 }
 
@@ -1549,17 +1553,46 @@ func renderModernSplitLayoutSummary(tab types.TabState, tiledPanes int) string {
 	if summary.HasRatio {
 		ratio = fmt.Sprintf("%02.0f/%02.0f", summary.Ratio*100, (1-summary.Ratio)*100)
 	}
-	return fmt.Sprintf("layout %s %s  •  depth %d  •  switch Ctrl-p pane", summary.Root, ratio, summary.Depth)
+	depth := max(1, summary.Depth-1)
+	return fmt.Sprintf("Layout %s %s  •  depth %d  •  leaves %d", summary.Root, ratio, depth, tiledPanes)
+}
+
+// renderModernSplitWorkbenchTitleLine 把 split 工作台标题和 active 信息合在一行，
+// 这样顶部 chrome 更紧凑，给 pane screen 预览腾出更多高度。
+func renderModernSplitWorkbenchTitleLine(state types.AppState, pane types.PaneState, tiledPanes int) string {
+	return fmt.Sprintf("Split workbench  •  active %s  •  %d tiled panes", renderPaneTitle(state, pane), tiledPanes)
+}
+
+func renderModernSplitActionLine(state types.AppState) string {
+	return fmt.Sprintf("Focus %s  •  Ctrl-p pane  •  Ctrl-f picker  •  Ctrl-g global", renderModernPrimaryLayer(state))
 }
 
 func renderModernFloatingWorkbenchSummary(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) string {
-	activePane := string(tab.ActivePaneID)
+	_, _, topPane, topTitle := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
+	return fmt.Sprintf("Top %s  •  pane %s  •  stack %d", topTitle, topPane, len(floatingPaneIDs))
+}
+
+func renderModernFloatingWorkbenchStateLine(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) string {
+	_, _, topPane, topTitle := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
+	return fmt.Sprintf("Top %s  •  pane %s  •  stack %d", topTitle, topPane, len(floatingPaneIDs))
+}
+
+func renderModernFloatingWorkbenchControlLine(state types.AppState) string {
+	mode := state.UI.Mode.Active
+	if mode == "" {
+		mode = types.ModeNone
+	}
+	return fmt.Sprintf("Layer %s  •  mode %s  •  Ctrl-o float", renderModernPrimaryLayer(state), mode)
+}
+
+func renderModernFloatingWorkbenchTargets(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) (activePane, activeTitle, topPane, topTitle string) {
+	activePane = string(tab.ActivePaneID)
 	if activePane == "" && len(floatingPaneIDs) > 0 {
 		activePane = string(floatingPaneIDs[0])
 	}
-	topPane := "<none>"
-	activeTitle := activePane
-	topTitle := topPane
+	topPane = "<none>"
+	activeTitle = activePane
+	topTitle = topPane
 	if len(floatingPaneIDs) > 0 {
 		topPane = string(floatingPaneIDs[len(floatingPaneIDs)-1])
 		topTitle = topPane
@@ -1570,11 +1603,12 @@ func renderModernFloatingWorkbenchSummary(state types.AppState, tab types.TabSta
 	if pane, ok := tab.Panes[types.PaneID(topPane)]; ok {
 		topTitle = renderPaneTitle(state, pane)
 	}
-	layer := state.UI.Focus.Layer
-	if layer == "" {
-		layer = types.FocusLayerFloating
-	}
-	return fmt.Sprintf("focus %s  •  top %s  •  active %s  •  top %s  •  layer %s  •  deck %d", activePane, topPane, activeTitle, topTitle, layer, len(floatingPaneIDs))
+	return activePane, activeTitle, topPane, topTitle
+}
+
+func renderModernFloatingWorkbenchTitleLine(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) string {
+	activePane, activeTitle, _, _ := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
+	return fmt.Sprintf("Floating workbench  •  active %s  •  pane %s", activeTitle, activePane)
 }
 
 func renderModernFloatingModeHint(state types.AppState) string {
@@ -1686,9 +1720,16 @@ func renderModernLocation(location terminalmanagerdomain.Location) string {
 func (r modernScreenShellRenderer) renderFooter(theme modernShellTheme, state types.AppState, pane types.PaneState, notices []btui.Notice, width int) string {
 	notice := renderModernNotice(theme, notices)
 	parts := renderScreenShellFooterParts(state)
-	left := notice
+	left := renderModernFooterContext(theme, state, pane, notice)
 	right := theme.panelMeta.Render(strings.Join(parts, "  •  "))
 	return theme.footer.Render(fillANSIHorizontal(left, right, width))
+}
+
+func renderModernFooterContext(theme modernShellTheme, state types.AppState, pane types.PaneState, notice string) string {
+	items := []string{notice}
+	items = append(items, theme.chip.Render("focus "+renderPaneTitle(state, pane)))
+	items = append(items, theme.chip.Render("layer "+string(renderModernPrimaryLayer(state))))
+	return strings.Join(items, " ")
 }
 
 func renderModernNotice(theme modernShellTheme, notices []btui.Notice) string {
@@ -1753,4 +1794,39 @@ func modernSnapshotSize(snapshot *protocol.Snapshot) string {
 		return ""
 	}
 	return fmt.Sprintf("%dx%d", snapshot.Size.Cols, snapshot.Size.Rows)
+}
+
+func renderModernPrimaryLayer(state types.AppState) types.FocusLayer {
+	if state.UI.Overlay.Kind != types.OverlayNone && state.UI.Overlay.ReturnFocus.Layer != "" {
+		return state.UI.Overlay.ReturnFocus.Layer
+	}
+	if state.UI.Focus.Layer != "" {
+		return state.UI.Focus.Layer
+	}
+	return types.FocusLayerTiled
+}
+
+func renderModernBackdropContextLine(state types.AppState) string {
+	workspaceID := state.Domain.ActiveWorkspaceID
+	tabID := types.TabID("")
+	if state.UI.Overlay.Kind != types.OverlayNone {
+		if state.UI.Overlay.ReturnFocus.WorkspaceID != "" {
+			workspaceID = state.UI.Overlay.ReturnFocus.WorkspaceID
+		}
+		if state.UI.Overlay.ReturnFocus.TabID != "" {
+			tabID = state.UI.Overlay.ReturnFocus.TabID
+		}
+	}
+	workspace, ok := state.Domain.Workspaces[workspaceID]
+	if !ok {
+		return ""
+	}
+	if tabID == "" {
+		tabID = workspace.ActiveTabID
+	}
+	tab, ok := workspace.Tabs[tabID]
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("workspace %s  •  tab %s  •  layer %s", safeWorkspaceLabel(workspace), safeTabLabel(tab), renderModernPrimaryLayer(state))
 }
