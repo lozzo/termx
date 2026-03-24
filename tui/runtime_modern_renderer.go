@@ -191,11 +191,11 @@ func (r modernScreenShellRenderer) RenderShell(state types.AppState, workspace t
 	height := max(18, metrics.ViewportHeight)
 
 	header := r.renderTopBar(theme, state, workspace, tab, pane, width)
-	tabs := r.renderTabBar(theme, workspace, tab, width)
+	tabs := r.renderTabBar(theme, state, workspace, tab, pane, width)
 	context := r.renderContextBar(theme, state, workspace, tab, pane, width)
 	footer := r.renderFooter(theme, state, pane, notices, width)
 
-	bodyHeight := height - 3
+	bodyHeight := height - 4
 	if bodyHeight < 8 {
 		bodyHeight = 8
 	}
@@ -210,44 +210,15 @@ func (r modernScreenShellRenderer) RenderShell(state types.AppState, workspace t
 }
 
 func (r modernScreenShellRenderer) renderTopBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
-	items := []string{
-		theme.activeChip.Render("termx"),
-		theme.chip.Render("workspace " + safeWorkspaceLabel(workspace)),
-		theme.chip.Render("tab " + safeTabLabel(tab)),
-		theme.chip.Render("active " + renderPaneTitle(state, pane)),
-	}
-	if state.UI.Overlay.Kind != types.OverlayNone {
-		items = append(items, theme.activeChip.Render("overlay "+string(state.UI.Overlay.Kind)))
-	}
-	left := lipgloss.JoinHorizontal(lipgloss.Left, items...)
-	rightParts := []string{
-		"role " + renderModernPaneRole(state, pane),
-		"slot " + string(pane.SlotState),
-	}
-	if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
-		rightParts = append(rightParts, "mode "+string(state.UI.Mode.Active))
-	}
-	right := theme.panelMeta.Render(strings.Join(rightParts, "  •  "))
+	left := theme.panelTitle.Render(renderModernLegacyHeaderLeft(workspace))
+	right := theme.panelMeta.Render(renderModernLegacyHeaderRight(state, workspace, tab, pane))
 	return theme.topBar.Render(fillANSIHorizontal(left, right, width))
 }
 
-func (r modernScreenShellRenderer) renderTabBar(theme modernShellTheme, workspace types.WorkspaceState, tab types.TabState, width int) string {
-	items := make([]string, 0, len(workspace.TabOrder)+1)
-	items = append(items, theme.panelMeta.Render("tabs"))
-	for _, tabID := range workspace.TabOrder {
-		tabState, ok := workspace.Tabs[tabID]
-		if !ok {
-			continue
-		}
-		label := renderModernTabLabel(tabState)
-		if tabID == workspace.ActiveTabID {
-			items = append(items, theme.activeTab.Render(label))
-			continue
-		}
-		items = append(items, theme.tab.Render(label))
-	}
+func (r modernScreenShellRenderer) renderTabBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
+	left := theme.panelMeta.Render(renderModernTopStatusLine(state, tab, pane))
 	right := theme.panelMeta.Render(r.renderWorkspaceSummaryText(workspace))
-	return theme.subBar.Render(fillANSIHorizontal(strings.Join(items, " "), right, width))
+	return theme.subBar.Render(fillANSIHorizontal(left, right, width))
 }
 
 func (r modernScreenShellRenderer) renderWorkspaceSummaryText(workspace types.WorkspaceState) string {
@@ -274,25 +245,8 @@ func (r modernScreenShellRenderer) renderWorkspaceSummaryText(workspace types.Wo
 }
 
 func (r modernScreenShellRenderer) renderContextBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
-	mode := state.UI.Mode.Active
-	if mode == "" {
-		mode = types.ModeNone
-	}
-	leftItems := []string{
-		theme.chip.Render(renderModernPanePath(workspace, tab, pane)),
-	}
-	if pane.TerminalID != "" {
-		leftItems = append(leftItems, theme.chip.Render("terminal "+string(pane.TerminalID)))
-	}
-	left := lipgloss.JoinHorizontal(lipgloss.Left, leftItems...)
-	rightParts := []string{renderModernContextRuntimeLine(state, pane)}
-	if mode != types.ModeNone {
-		rightParts = append(rightParts, "mode "+string(mode))
-	}
-	if state.UI.Overlay.Kind != types.OverlayNone {
-		rightParts = append(rightParts, "overlay "+string(state.UI.Overlay.Kind))
-	}
-	right := theme.panelMeta.Render(strings.Join(rightParts, "  •  "))
+	left := theme.panelMeta.Render(renderModernPanePath(workspace, tab, pane))
+	right := theme.panelMeta.Render(renderModernContextChromeLine(state, pane))
 	return theme.subBar.Render(fillANSIHorizontal(left, right, width))
 }
 
@@ -1057,16 +1011,11 @@ func (r modernScreenShellRenderer) renderModernOverlayDialogBody(state types.App
 			mode = types.ModeNone
 		}
 		return []string{
-			"MOST USED",
-			"  Ctrl-p pane   | Ctrl-t tab",
-			"  Ctrl-w ws     | Ctrl-f picker",
-			"  Ctrl-o float  | Ctrl-g global",
-			"",
-			fmt.Sprintf("CONTEXT layer=%s mode=%s", renderModernPrimaryLayer(state), mode),
-			"SHARED TERMINAL",
-			"  owner controls metadata / resize / stop",
-			"  follower observes the terminal without control",
-			"",
+			"MOST USED  Ctrl-p pane | Ctrl-t tab",
+			"Ctrl-w ws | Ctrl-f picker | Ctrl-o float | Ctrl-g global",
+			fmt.Sprintf("CONTEXT  layer=%s  mode=%s", renderModernPrimaryLayer(state), mode),
+			"SHARED TERMINAL  owner controls metadata / resize / stop",
+			"follower observes the terminal without control",
 			"ESC closes help and returns to the workbench.",
 		}
 	default:
@@ -1930,18 +1879,157 @@ func renderModernLocation(location terminalmanagerdomain.Location) string {
 
 func (r modernScreenShellRenderer) renderFooter(theme modernShellTheme, state types.AppState, pane types.PaneState, notices []btui.Notice, width int) string {
 	notice := renderModernNotice(theme, notices)
-	parts := renderScreenShellFooterParts(state)
-	left := renderModernFooterContext(theme, state, pane, notice)
-	right := theme.panelMeta.Render(strings.Join(parts, "  •  "))
+	left := theme.panelMeta.Render(renderModernLegacyFooterShortcuts(state, pane))
+	right := renderModernFooterContext(theme, state, pane, notice)
 	return theme.footer.Render(fillANSIHorizontal(left, right, width))
 }
 
 func renderModernFooterContext(theme modernShellTheme, state types.AppState, pane types.PaneState, notice string) string {
-	items := []string{notice}
-	items = append(items, theme.chip.Render("focus "+renderPaneTitle(state, pane)))
-	items = append(items, theme.chip.Render("layer "+string(renderModernPrimaryLayer(state))))
-	items = append(items, theme.chip.Render("slot "+string(pane.SlotState)))
+	items := []string{theme.activeChip.Render(renderPaneTitle(state, pane))}
+	items = append(items, theme.chip.Render(renderModernFooterLayerBadge(state)))
+	if notice != "" && !strings.Contains(xansi.Strip(notice), "ready") {
+		items = append([]string{notice}, items...)
+	}
 	return strings.Join(items, " ")
+}
+
+func renderModernLegacyHeaderLeft(workspace types.WorkspaceState) string {
+	parts := []string{"termx", fmt.Sprintf("[%s]", safeWorkspaceLabel(workspace))}
+	for index, tabID := range workspace.TabOrder {
+		tab, ok := workspace.Tabs[tabID]
+		if !ok {
+			continue
+		}
+		label := fmt.Sprintf("%d:%s", index+1, safeTabLabel(tab))
+		if tabID == workspace.ActiveTabID {
+			parts = append(parts, "["+label+"]")
+			continue
+		}
+		parts = append(parts, label)
+	}
+	return strings.Join(parts, "  ")
+}
+
+func renderModernLegacyHeaderRight(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
+	termID := "<none>"
+	if pane.TerminalID != "" {
+		termID = string(pane.TerminalID)
+	}
+	parts := []string{
+		"pane:" + string(pane.ID),
+		"term:" + termID,
+		fmt.Sprintf("float:%d", len(orderedFloatingPaneIDs(tab))),
+	}
+	if state.UI.Overlay.Kind != types.OverlayNone {
+		parts = append(parts, "overlay:"+string(state.UI.Overlay.Kind))
+	}
+	if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
+		parts = append(parts, "mode:"+string(state.UI.Mode.Active))
+	}
+	return strings.Join(parts, "  ")
+}
+
+func renderModernTopStatusLine(state types.AppState, tab types.TabState, pane types.PaneState) string {
+	parts := []string{
+		"active:" + renderPaneTitle(state, pane),
+		"role:" + renderModernPaneRole(state, pane),
+		"slot:" + string(pane.SlotState),
+	}
+	if runtime := renderModernContextRuntimeLine(state, pane); runtime != "" {
+		parts = append(parts, strings.ReplaceAll(runtime, "  •  ", "  "))
+	}
+	return strings.Join(parts, "  ")
+}
+
+func renderModernContextChromeLine(state types.AppState, pane types.PaneState) string {
+	parts := []string{"layer:" + string(renderModernPrimaryLayer(state))}
+	if pane.TerminalID != "" {
+		parts = append(parts, "term:"+string(pane.TerminalID))
+	}
+	if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
+		parts = append(parts, "mode:"+string(state.UI.Mode.Active))
+	}
+	if state.UI.Overlay.Kind != types.OverlayNone {
+		parts = append(parts, "overlay:"+string(state.UI.Overlay.Kind))
+	}
+	return strings.Join(parts, "  ")
+}
+
+func renderModernLegacyFooterShortcuts(state types.AppState, pane types.PaneState) string {
+	parts := renderShortcutParts(state, pane)
+	segments := make([]string, 0, len(parts))
+	for _, part := range parts {
+		segments = append(segments, renderModernLegacyShortcut(part))
+	}
+	return strings.Join(segments, "  ")
+}
+
+func renderModernLegacyShortcut(part string) string {
+	switch part {
+	case "Ctrl-g global":
+		return "<g> GLOBAL"
+	case "Ctrl-p pane":
+		return "<p> PANE"
+	case "Ctrl-t tab":
+		return "<t> TAB"
+	case "Ctrl-w ws":
+		return "<w> WS"
+	case "Ctrl-o float":
+		return "<o> FLOAT"
+	case "Ctrl-f pick":
+		return "<f> PICK"
+	case "Esc close":
+		return "<esc> CLOSE"
+	case "Enter confirm":
+		return "<enter> CONFIRM"
+	case "Enter here":
+		return "<enter> HERE"
+	case "Enter submit":
+		return "<enter> SUBMIT"
+	case "h/l focus":
+		return "<h/l> FOCUS"
+	case "j/k move":
+		return "<j/k> MOVE"
+	case "H/J/K/L size":
+		return "<H/J/K/L> SIZE"
+	case "[/] z":
+		return "<[/]> Z"
+	case "c center":
+		return "<c> CENTER"
+	case "x close":
+		return "<x> CLOSE"
+	case "r restart":
+		return "<r> RESTART"
+	case "a connect":
+		return "<a> CONNECT"
+	case "m manager":
+		return "<m> MANAGER"
+	case "n new":
+		return "<n> NEW"
+	case "t new-tab":
+		return "<t> NEW TAB"
+	case "o float":
+		return "<o> FLOAT"
+	case "e edit":
+		return "<e> EDIT"
+	case "k stop":
+		return "<k> STOP"
+	case "? help":
+		return "<?> HELP"
+	default:
+		return strings.ToUpper(part)
+	}
+}
+
+func renderModernFooterLayerBadge(state types.AppState) string {
+	switch renderModernPrimaryLayer(state) {
+	case types.FocusLayerFloating:
+		return "◫ floating"
+	case types.FocusLayerOverlay:
+		return "◌ overlay"
+	default:
+		return "▣ tiled"
+	}
 }
 
 func renderModernNotice(theme modernShellTheme, notices []btui.Notice) string {

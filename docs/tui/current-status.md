@@ -54,6 +54,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮同时把 floating 标题与 `workspace picker / layout resolve` 的对话框短文案压缩成窄宽度可读版本，并把 shell-only/default modern 的 renderer 断言与 E2E 场景一起迁移到新的 workbench-first 输出
 - 本轮继续把默认 modern 工作台往旧版 pane-based 布局收口：canvas compositor 已升级成 rune-aware，modern pane/window 现在开始使用 Unicode 盒模型和更接近旧版的标题栏语义，例如 `api-dev  ● run  owner`、`◌ wait`、`○ exit`、`◫1`
 - 本轮同步把 split / floating / mixed / help overlay 这组默认 modern 场景的 renderer 与 E2E 基线更新到新的 pane title-bar 输出，确保后续继续做颜色、状态灯和 overlay chrome 时不会再被旧 ASCII 标题格式拖住
+- 本轮继续把默认 modern 的顶部/底部 chrome 往旧版线稿靠拢：header 已切成 `termx  [workspace]  [1:tab] ... pane: term: float:` 这种主导航形态，footer 也切成 `<p> PANE  <t> TAB ...` 这一类快捷键组 + 当前 layer badge 的布局
+- 本轮同时压缩了 modern help overlay 的正文高度，避免 modal 再把 backdrop pane title 完整盖住；这样继续做 overlay 视觉和颜色时，背景工作台还能保住基本上下文
 
 ---
 
@@ -1875,6 +1877,7 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
 - 默认 modern 主界面已经回到“真实工作台优先”的布局主线，不再继续走 window deck / dashboard 式首屏
 - overlay、floating、workspace picker、layout resolve 这一组核心工作台场景，当前 renderer 与 E2E 已经一起锁到新的 workbench-first 语义上
 - 默认 modern 的 pane/window 现在已经有真正接近旧版的窗口框和标题栏语义，而不是只有纯 ASCII 调试框
+- 默认 modern 的 header / footer 已经从“信息条堆叠”切到更接近旧版工作台的导航条形态
 - 下一阶段可以继续沿着这一层推进：
   - 把更多 footer/header 中仍然过于技术化的表达改成更产品化的 chrome
   - 继续减少 pane body 才能读懂状态的地方

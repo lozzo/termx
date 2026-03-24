@@ -119,19 +119,19 @@ func TestRunUsesShellOnlyRendererByDefault(t *testing.T) {
 		t.Fatalf("expected runtime orchestration to succeed, got %v", err)
 	}
 	stripped := stripANSIRuntimeView(runner.view)
-	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "workspace main") {
+	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") {
 		t.Fatalf("expected default run renderer to keep screen shell, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "active term-1") || !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "shell • 1 pane") {
+	if !strings.Contains(stripped, "pane:pane-1  term:term-1  float:0") || !strings.Contains(stripped, "active:term-1") || !strings.Contains(stripped, "role:owner") || !strings.Contains(stripped, "slot:connected") {
 		t.Fatalf("expected default run renderer top chrome to expose active pane summary, got:\n%s", runner.view)
 	}
 	if !strings.Contains(stripped, "term-1  ● run  owner") || !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "term-1 running owner") {
 		t.Fatalf("expected default run renderer to keep terminal canvas context in screen shell, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "path main / shell / tiled / pane-1") || !strings.Contains(stripped, "terminal term-1") || !strings.Contains(stripped, "state running  •  layer tiled") {
+	if !strings.Contains(stripped, "path main / shell / tiled / pane-1") || !strings.Contains(stripped, "layer:tiled") || !strings.Contains(stripped, "term:term-1") {
 		t.Fatalf("expected default run renderer context bar to expose path and runtime state, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "focus term-1") || !strings.Contains(stripped, "layer tiled") || !strings.Contains(stripped, "slot connected") {
+	if !strings.Contains(stripped, "<p> PANE") || !strings.Contains(stripped, "<g> GLOBAL") || !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "▣ tiled") {
 		t.Fatalf("expected default run renderer footer to expose focus/layer/slot context, got:\n%s", runner.view)
 	}
 	if strings.Contains(runner.view, "wireframe_view:") || strings.Contains(runner.view, "chrome_header:") {
@@ -721,13 +721,13 @@ func TestE2ERunScenarioDefaultModernTopChromeSummarizesWorkspaceTabsAndContext(t
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "workspace main") || !strings.Contains(stripped, "active api-dev") || !strings.Contains(stripped, "role owner  •  slot connected") {
+			if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") || !strings.Contains(stripped, "2:logs") || !strings.Contains(stripped, "active:api-dev") || !strings.Contains(stripped, "role:owner") || !strings.Contains(stripped, "slot:connected") {
 				t.Fatalf("expected default modern top bar to expose active pane summary, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "logs • 1 pane") || !strings.Contains(stripped, "tabs 2  •  panes 2  •  terminals 2  •  floating 0") {
+			if !strings.Contains(stripped, "tabs 2  •  panes 2  •  terminals 2  •  floating 0") {
 				t.Fatalf("expected default modern tab bar to expose tab and workspace counts, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "path main / shell / tiled / pane-1") || !strings.Contains(stripped, "terminal term-1") || !strings.Contains(stripped, "state running  •  layer tiled") {
+			if !strings.Contains(stripped, "path main / shell / tiled / pane-1") || !strings.Contains(stripped, "layer:tiled") || !strings.Contains(stripped, "term:term-1") {
 				t.Fatalf("expected default modern context bar to expose path and runtime state, got:\n%s", view)
 			}
 			if strings.Contains(view, "wireframe_view:") {
@@ -924,7 +924,7 @@ func TestE2ERunScenarioDefaultModernHelpOverlayRendersStructuredModal(t *testing
 			if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "state overlay help  •  focus overlay") || !strings.Contains(stripped, "MOST USED") || !strings.Contains(stripped, "SHARED TERMINAL") || !strings.Contains(stripped, "FOOTER[esc close]") {
 				t.Fatalf("expected default modern help modal structure, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "CONTEXT layer=tiled mode=picker") || !strings.Contains(stripped, "Ctrl-p pane") || !strings.Contains(stripped, "Ctrl-o float") {
+			if !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "CONTEXT  layer=tiled  mode=picker") || !strings.Contains(stripped, "Ctrl-p pane") || !strings.Contains(stripped, "Ctrl-o float") {
 				t.Fatalf("expected default modern help modal key groups, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "owner controls metadata / resize / stop") || !strings.Contains(stripped, "follower observes the terminal without control") || !strings.Contains(stripped, "ESC closes help and returns to the workbench.") {
