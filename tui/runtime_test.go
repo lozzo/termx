@@ -11,6 +11,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tui/app/intent"
 	btui "github.com/lozzow/termx/tui/bt"
@@ -20,6 +21,10 @@ import (
 	"github.com/lozzow/termx/tui/domain/types"
 	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
 )
+
+func stripANSIRuntimeView(view string) string {
+	return xansi.Strip(view)
+}
 
 func TestRunOrchestratesStartupPlanBootstrapAndSessionLifecycle(t *testing.T) {
 	bootstrapperStopCalls = 0
@@ -112,10 +117,11 @@ func TestRunUsesShellOnlyRendererByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected runtime orchestration to succeed, got %v", err)
 	}
-	if !strings.Contains(runner.view, "screen_shell:") {
+	stripped := stripANSIRuntimeView(runner.view)
+	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "workspace main") {
 		t.Fatalf("expected default run renderer to keep screen shell, got:\n%s", runner.view)
 	}
-	if !strings.Contains(runner.view, "Terminal term-1 | running | owner") || !strings.Contains(runner.view, "preview 1/1") {
+	if !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "$ pwd") {
 		t.Fatalf("expected default run renderer to keep terminal context in screen shell, got:\n%s", runner.view)
 	}
 	if strings.Contains(runner.view, "wireframe_view:") || strings.Contains(runner.view, "chrome_header:") {
@@ -569,7 +575,8 @@ func TestE2ERunScenarioDefaultShellOnlyEmptyPaneShowsStatusAndActions(t *testing
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "Status empty pane | no terminal connected") || !strings.Contains(view, "Actions n new | a connect | m manager | x close | ? help") {
+			stripped := stripANSIRuntimeView(view)
+			if !strings.Contains(stripped, "No terminal connected yet.") || !strings.Contains(stripped, "Press n to start one, or a to connect an existing terminal.") {
 				t.Fatalf("expected shell-only empty pane to expose status and actions, got:\n%s", view)
 			}
 			if strings.Contains(view, "wireframe_view:") || strings.Contains(view, "chrome_header:") {
@@ -612,7 +619,8 @@ func TestE2ERunScenarioDefaultShellOnlyExitedPaneShowsStatusAndActions(t *testin
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "Status exited pane | history retained | exit 7") || !strings.Contains(view, "Actions r restart | a connect | x close | ? help") {
+			stripped := stripANSIRuntimeView(view)
+			if !strings.Contains(stripped, "Terminal program exited.") || !strings.Contains(stripped, "history retained  exit 7") || !strings.Contains(stripped, "Press r to restart, or a to connect another terminal.") {
 				t.Fatalf("expected shell-only exited pane to expose status and actions, got:\n%s", view)
 			}
 			return nil
@@ -2214,7 +2222,7 @@ func TestE2ERunScenarioRepeatedNoticeAppearsAggregatedInView(t *testing.T) {
 			}
 			_, _ = model.Update(feedback)
 			_, _ = model.Update(feedback)
-			if view := model.View(); !strings.Contains(view, "Notice 1 error") || !strings.Contains(view, "terminal switched to observer-only mode (x2)") || !strings.Contains(view, "notice_bar: total=1 | showing=1 | last=error | notices:") || !strings.Contains(view, "notice_group_bar: error=1") || !strings.Contains(view, "notices:") || !strings.Contains(view, "[error] terminal switched to observer-only mode (x2)") {
+			if view := model.View(); !strings.Contains(stripANSIRuntimeView(view), "terminal switched to observer-only mode (x2)") || !strings.Contains(view, "notice_bar: total=1 | showing=1 | last=error | notices:") || !strings.Contains(view, "notice_group_bar: error=1") || !strings.Contains(view, "notices:") || !strings.Contains(view, "[error] terminal switched to observer-only mode (x2)") {
 				t.Fatalf("expected runtime view to aggregate repeated notices, got:\n%s", view)
 			}
 			return nil

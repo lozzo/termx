@@ -79,15 +79,15 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	if !ok {
 		return fmt.Sprintf("termx\nworkspace: %s\ntab: %s\nno pane", workspace.Name, tab.Name)
 	}
+	if !r.debugVisible() {
+		return modernScreenShellRenderer{Screens: r.Screens}.RenderShell(state, workspace, tab, pane, notices, r.wireframeMetrics(pane))
+	}
 
 	statusLines := renderStatusSection(workspace, tab, pane, state.UI)
 	overlayActive := state.UI.Overlay.Kind != types.OverlayNone
 
 	lines := []string{"termx"}
 	lines = append(lines, r.renderScreenShell(state, workspace, tab, pane, notices)...)
-	if !r.debugVisible() {
-		return strings.Join(lines, "\n")
-	}
 	lines = append(lines, r.renderWireframeView(state, workspace, tab, pane)...)
 	lines = appendChrome(lines, "header", []string{
 		renderHeaderBar(workspace, tab, pane, state.UI),

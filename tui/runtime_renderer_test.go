@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/protocol"
+	xansi "github.com/charmbracelet/x/ansi"
 	btui "github.com/lozzow/termx/tui/bt"
 	layoutresolvedomain "github.com/lozzow/termx/tui/domain/layoutresolve"
 	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
@@ -14,6 +15,10 @@ import (
 	"github.com/lozzow/termx/tui/domain/types"
 	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
 )
+
+func stripANSIForTest(view string) string {
+	return xansi.Strip(view)
+}
 
 func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	state := connectedRunAppState()
@@ -196,10 +201,11 @@ func TestRuntimeRendererCanHideDebugSections(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "termx workbench | 78x24 | overlay none") {
+	stripped := stripANSIForTest(view)
+	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "workspace main") {
 		t.Fatalf("expected shell-only renderer to keep visible screen shell, got:\n%s", view)
 	}
-	if !strings.Contains(view, "Terminal term-1 | running | owner") || !strings.Contains(view, "preview 2/2") || !strings.Contains(view, "cmd npm run dev") {
+	if !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "cmd npm run dev") || !strings.Contains(stripped, "$ pwd") {
 		t.Fatalf("expected shell-only renderer to keep terminal meta inside screen shell, got:\n%s", view)
 	}
 	if strings.Contains(view, "wireframe_view:") || strings.Contains(view, "chrome_header:") || strings.Contains(view, "chrome_body:") || strings.Contains(view, "chrome_footer:") {
@@ -245,10 +251,11 @@ func TestRuntimeRendererShellOnlyOverlayKeepsPaneContext(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "Active pane api-dev | pane pane-1 | terminal term-1 | slot connected") || !strings.Contains(view, "Location main / shell / tiled / pane-1 | focus overlay | active api-dev") {
+	stripped := stripANSIForTest(view)
+	if !strings.Contains(stripped, "workspace main") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "mode picker") {
 		t.Fatalf("expected shell-only overlay renderer to keep current pane context, got:\n%s", view)
 	}
-	if !strings.Contains(view, "# DIALOG[help]") {
+	if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "return to tiled:ws-1/tab-1/pane-1") {
 		t.Fatalf("expected shell-only overlay renderer to keep help dialog visible, got:\n%s", view)
 	}
 }
@@ -283,7 +290,8 @@ func TestRuntimeRendererShellOnlyShowsContextualActionsForConnectedPane(t *testi
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "Actions type in terminal | Ctrl-g global | Ctrl-f picker | ? help") {
+	stripped := stripANSIForTest(view)
+	if !strings.Contains(stripped, "Ctrl-p pane") || !strings.Contains(stripped, "Ctrl-o float") || !strings.Contains(stripped, "? help") {
 		t.Fatalf("expected shell-only connected pane to expose contextual actions, got:\n%s", view)
 	}
 }
@@ -299,14 +307,14 @@ func TestRuntimeRendererShellOnlyShowsStatusAndActionsForDisconnectedStates(t *t
 		{
 			name:       "empty",
 			state:      buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty),
-			statusLine: "Status empty pane | no terminal connected",
-			actionLine: "Actions n new | a connect | m manager | x close | ? help",
+			statusLine: "No terminal connected yet.",
+			actionLine: "Press n to start one, or a to connect an existing terminal.",
 		},
 		{
 			name:       "waiting",
 			state:      buildSinglePaneAppState("main", "shell", types.PaneSlotWaiting),
-			statusLine: "Status waiting pane | connect pending",
-			actionLine: "Actions n new | a connect | m manager | x close | ? help",
+			statusLine: "Waiting for a terminal connection.",
+			actionLine: "This pane is reserved by layout or restore flow.",
 		},
 		{
 			name: "exited",
@@ -327,18 +335,19 @@ func TestRuntimeRendererShellOnlyShowsStatusAndActionsForDisconnectedStates(t *t
 				state.Domain.Terminals[types.TerminalID("term-1")] = terminal
 				return state
 			}(),
-			statusLine: "Status exited pane | history retained | exit 7",
-			actionLine: "Actions r restart | a connect | x close | ? help",
+			statusLine: "Terminal program exited.",
+			actionLine: "Press r to restart, or a to connect another terminal.",
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(tc.state, nil)
-			if !strings.Contains(view, tc.statusLine) {
+			stripped := stripANSIForTest(view)
+			if !strings.Contains(stripped, tc.statusLine) {
 				t.Fatalf("expected shell-only renderer to expose %q, got:\n%s", tc.statusLine, view)
 			}
-			if !strings.Contains(view, tc.actionLine) {
+			if !strings.Contains(stripped, tc.actionLine) {
 				t.Fatalf("expected shell-only renderer to expose %q, got:\n%s", tc.actionLine, view)
 			}
 		})
@@ -906,7 +915,7 @@ func TestRuntimeRendererRendersNoticeSection(t *testing.T) {
 	if !strings.Contains(view, "[error] terminal switched to observer-only mode (x2)") {
 		t.Fatalf("expected aggregated notice line in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "Notice 1 error") || !strings.Contains(view, "terminal switched to observer-only mode (x2)") {
+	if !strings.Contains(stripANSIForTest(view), "terminal switched to observer-only mode (x2)") {
 		t.Fatalf("expected shell notice summary line in rendered view, got:\n%s", view)
 	}
 }
