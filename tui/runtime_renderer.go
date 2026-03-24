@@ -502,8 +502,11 @@ func mergeSectionBar(bar string, body []string) []string {
 func renderWorkspacePickerLines(picker *workspacedomain.PickerState) []string {
 	rows := picker.VisibleRows()
 	lines := []string{compactLine(
-		fmt.Sprintf("workspace_picker_query: %s", picker.Query()),
-		fmt.Sprintf("workspace_picker_row_count: %d", len(rows)),
+		renderWorkspacePickerBar(picker),
+		compactLine(
+			fmt.Sprintf("workspace_picker_query: %s", picker.Query()),
+			fmt.Sprintf("workspace_picker_row_count: %d", len(rows)),
+		),
 	)}
 	if node, ok := picker.SelectedNode(); ok {
 		lines = append(lines, compactLine(
@@ -545,11 +548,28 @@ func renderWorkspacePickerLines(picker *workspacedomain.PickerState) []string {
 	return lines
 }
 
+func renderWorkspacePickerBar(picker *workspacedomain.PickerState) string {
+	if node, ok := picker.SelectedNode(); ok {
+		parts := []string{
+			fmt.Sprintf("workspace_picker_bar: selected=%s", node.Key),
+			fmt.Sprintf("kind=%s", node.Kind),
+		}
+		if row, ok := picker.SelectedRow(); ok {
+			parts = append(parts, fmt.Sprintf("depth=%d", row.Depth))
+		}
+		return compactLine(parts...)
+	}
+	return "workspace_picker_bar: none"
+}
+
 func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 	rows := manager.VisibleRows()
 	lines := []string{compactLine(
-		fmt.Sprintf("terminal_manager_query: %s", manager.Query()),
-		fmt.Sprintf("terminal_manager_row_count: %d", len(rows)),
+		renderTerminalManagerBar(manager),
+		compactLine(
+			fmt.Sprintf("terminal_manager_query: %s", manager.Query()),
+			fmt.Sprintf("terminal_manager_row_count: %d", len(rows)),
+		),
 	)}
 	if row, ok := manager.SelectedRow(); ok && row.Kind == terminalmanagerdomain.RowKindTerminal {
 		selectedTags := ""
@@ -634,6 +654,24 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 	return lines
 }
 
+func renderTerminalManagerBar(manager *terminalmanagerdomain.State) string {
+	if row, ok := manager.SelectedRow(); ok {
+		selected := row.Label
+		if row.TerminalID != "" {
+			selected = string(row.TerminalID)
+		}
+		parts := []string{fmt.Sprintf("terminal_manager_bar: selected=%s", selected)}
+		if row.Section != "" {
+			parts = append(parts, fmt.Sprintf("section=%s", row.Section))
+		}
+		parts = append(parts, fmt.Sprintf("kind=%s", row.Kind))
+		return compactLine(parts...)
+	} else if terminalID, ok := manager.SelectedTerminalID(); ok {
+		return fmt.Sprintf("terminal_manager_bar: selected=%s", terminalID)
+	}
+	return "terminal_manager_bar: none"
+}
+
 func renderDetailTags(tags []terminalmanagerdomain.Tag) string {
 	if len(tags) == 0 {
 		return ""
@@ -658,8 +696,11 @@ func renderDetailLocations(locations []terminalmanagerdomain.Location) []string 
 
 func renderPromptLines(prompt *promptdomain.State) []string {
 	lines := []string{compactLine(
-		fmt.Sprintf("prompt_title: %s", prompt.Title),
-		fmt.Sprintf("prompt_kind: %s", prompt.Kind),
+		renderPromptBar(prompt),
+		compactLine(
+			fmt.Sprintf("prompt_title: %s", prompt.Title),
+			fmt.Sprintf("prompt_kind: %s", prompt.Kind),
+		),
 	)}
 	if prompt.TerminalID != "" {
 		lines = append(lines, fmt.Sprintf("prompt_terminal: %s", prompt.TerminalID))
@@ -704,11 +745,31 @@ func renderPromptLines(prompt *promptdomain.State) []string {
 	return lines
 }
 
+func renderPromptBar(prompt *promptdomain.State) string {
+	activeField := "draft"
+	if len(prompt.Fields) > 0 {
+		active := prompt.Active
+		if active < 0 || active >= len(prompt.Fields) {
+			active = 0
+		}
+		activeField = prompt.Fields[active].Key
+	}
+	parts := []string{fmt.Sprintf("prompt_bar: kind=%s", prompt.Kind)}
+	if prompt.TerminalID != "" {
+		parts = append(parts, fmt.Sprintf("terminal=%s", prompt.TerminalID))
+	}
+	parts = append(parts, fmt.Sprintf("active=%s", activeField))
+	return compactLine(parts...)
+}
+
 func renderTerminalPickerLines(picker *terminalpickerdomain.State) []string {
 	rows := picker.VisibleRows()
 	lines := []string{compactLine(
-		fmt.Sprintf("terminal_picker_query: %s", picker.Query()),
-		fmt.Sprintf("terminal_picker_row_count: %d", len(rows)),
+		renderTerminalPickerBar(picker),
+		compactLine(
+			fmt.Sprintf("terminal_picker_query: %s", picker.Query()),
+			fmt.Sprintf("terminal_picker_row_count: %d", len(rows)),
+		),
 	)}
 	if row, ok := picker.SelectedRow(); ok && row.Kind == terminalpickerdomain.RowKindTerminal {
 		lines = append(lines,
@@ -758,10 +819,26 @@ func renderTerminalPickerLines(picker *terminalpickerdomain.State) []string {
 	return lines
 }
 
+func renderTerminalPickerBar(picker *terminalpickerdomain.State) string {
+	parts := []string{fmt.Sprintf("terminal_picker_bar: query=%s", picker.Query())}
+	if row, ok := picker.SelectedRow(); ok {
+		if row.TerminalID != "" {
+			parts = append(parts, fmt.Sprintf("selected=%s", row.TerminalID))
+		} else {
+			parts = append(parts, fmt.Sprintf("selected=%s", row.Label))
+		}
+		parts = append(parts, fmt.Sprintf("kind=%s", row.Kind))
+	} else if terminalID, ok := picker.SelectedTerminalID(); ok {
+		parts = append(parts, fmt.Sprintf("selected=%s", terminalID))
+	}
+	return compactLine(parts...)
+}
+
 func renderLayoutResolveLines(resolve *layoutresolvedomain.State) []string {
 	rows := resolve.Rows()
 	lines := []string{
 		compactLine(
+			renderLayoutResolveBar(resolve),
 			fmt.Sprintf("layout_resolve_pane: %s", resolve.PaneID),
 			fmt.Sprintf("layout_resolve_role: %s", resolve.Role),
 		),
@@ -800,6 +877,17 @@ func renderLayoutResolveLines(resolve *layoutresolvedomain.State) []string {
 		lines = append(lines, fmt.Sprintf("%s[%s] %s", prefix, row.Action, row.Label))
 	}
 	return lines
+}
+
+func renderLayoutResolveBar(resolve *layoutresolvedomain.State) string {
+	parts := []string{
+		fmt.Sprintf("layout_resolve_bar: pane=%s", resolve.PaneID),
+		fmt.Sprintf("role=%s", resolve.Role),
+	}
+	if row, ok := resolve.SelectedRow(); ok {
+		parts = append(parts, fmt.Sprintf("selected=%s", row.Action))
+	}
+	return compactLine(parts...)
 }
 
 func renderNoticeLines(notices []btui.Notice) []string {

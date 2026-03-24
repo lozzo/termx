@@ -315,6 +315,9 @@ func TestRuntimeRendererRendersWorkspacePickerOverlay(t *testing.T) {
 	if !strings.Contains(view, "section_overlay:") {
 		t.Fatalf("expected overlay section wrapper in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "workspace_picker_bar: selected=ws-2 | kind=workspace | depth=0") {
+		t.Fatalf("expected workspace picker bar in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "workspace_picker_query: ops") {
 		t.Fatalf("expected picker query in rendered view, got:\n%s", view)
 	}
@@ -406,6 +409,9 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	state.UI.Focus.Layer = types.FocusLayerOverlay
 
 	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "terminal_manager_bar: selected=term-2 | section=PARKED | kind=terminal") {
+		t.Fatalf("expected terminal manager bar in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "terminal_manager_query: ") {
 		t.Fatalf("expected manager query in rendered view, got:\n%s", view)
 	}
@@ -521,6 +527,9 @@ func TestRuntimeRendererCompressesBodyWhenOverlayIsActive(t *testing.T) {
 	if !strings.Contains(view, "body_bar: terminal=term-1:running | screen=suppressed | overlay=terminal_manager") {
 		t.Fatalf("expected overlay body bar to reflect compressed mode, got:\n%s", view)
 	}
+	if !strings.Contains(view, "terminal_manager_bar: selected=term-1 | section=VISIBLE | kind=terminal") {
+		t.Fatalf("expected terminal manager bar in compressed overlay view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "terminal_bar: id=term-1 | title=api-dev | state=running | role=owner") {
 		t.Fatalf("expected terminal bar to remain visible during overlay compression, got:\n%s", view)
 	}
@@ -564,6 +573,9 @@ func TestRuntimeRendererRendersPromptOverlay(t *testing.T) {
 	view := runtimeRenderer{}.Render(state, nil)
 	if !strings.Contains(view, "section_overlay:") {
 		t.Fatalf("expected prompt overlay section wrapper in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "prompt_bar: kind=edit_terminal_metadata | terminal=term-2 | active=tags") {
+		t.Fatalf("expected prompt bar in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "prompt_title: edit terminal metadata") {
 		t.Fatalf("expected prompt title in rendered view, got:\n%s", view)
@@ -641,6 +653,9 @@ func TestRuntimeRendererRendersTerminalPickerOverlay(t *testing.T) {
 	state.UI.Focus.Layer = types.FocusLayerOverlay
 
 	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "terminal_picker_bar: query=ops | selected=term-3 | kind=terminal") {
+		t.Fatalf("expected terminal picker bar in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "terminal_picker_query: ops") {
 		t.Fatalf("expected picker query in rendered view, got:\n%s", view)
 	}
@@ -690,6 +705,9 @@ func TestRuntimeRendererRendersLayoutResolveOverlay(t *testing.T) {
 	state.UI.Focus.Layer = types.FocusLayerOverlay
 
 	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "layout_resolve_bar: pane=pane-1 | role=backend-dev | selected=create_new") {
+		t.Fatalf("expected layout resolve bar in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "layout_resolve_role: backend-dev") {
 		t.Fatalf("expected resolve role in rendered view, got:\n%s", view)
 	}

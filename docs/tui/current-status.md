@@ -166,6 +166,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 142. 第一百三十八轮 TDD 已补上 header/footer 语义状态栏
 143. 第一百三十九轮 TDD 已补上 body 主体状态栏语义
 144. 第一百四十轮 TDD 已补上 terminal/screen/overlay section bar
+145. 第一百四十一轮 TDD 已补上 overlay 内部 summary bar
 
 对应文档：
 
@@ -325,6 +326,10 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `section_terminal/section_screen/section_overlay` 现在各自也有 `terminal_bar/screen_bar/overlay_bar`，把 section 的第一层摘要稳定下来，再往后才是细节
 - `terminal_bar` 会汇总 `id/title/state/role`，`screen_bar` 会汇总 `preview/unavailable/suppressed + rows`，`overlay_bar` 会汇总 `kind/focus`
 - 已补上 renderer / runtime 场景测试：active pane、empty pane、overlay 压缩态都会显式锁住这三类 section bar，防止主体 section 再次退化成只有明细字段
+- `workspace picker / terminal manager / terminal picker / prompt / layout resolve` 现在各自也有顶层 `*_bar`，把 overlay 内部的“当前选中了什么、当前是哪种交互”先汇总出来
+- `workspace_picker_bar` 会汇总 `selected/kind/depth`，`terminal_manager_bar` 会汇总 `selected/section/kind`，`terminal_picker_bar` 会汇总 `query/selected/kind`
+- `prompt_bar` 会汇总 `kind/terminal/active`，`layout_resolve_bar` 会汇总 `pane/role/selected`
+- 已补上 renderer / runtime 场景测试：workspace picker、terminal manager、terminal picker、prompt、layout resolve 都锁住各自的 overlay summary bar，避免 overlay 内部重新退化成只有长字段
 - 已补上一条 runtime 场景型 E2E：`Ctrl-f` 打开 terminal picker 时主视图显式显示 `overlay: terminal_picker` 与 `focus_overlay_target: terminal_picker`
 - 已补上一条 runtime 场景型 E2E：workspace picker / prompt / terminal manager / terminal picker / layout resolve 关闭后主视图不再残留 `focus_overlay_target`
 - 已补上一条 runtime 场景型 E2E：terminal manager 与 layout resolve 关闭后主视图不再残留临时 `mode`
