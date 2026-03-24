@@ -200,6 +200,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 176. 第一百七十二轮 TDD 已补上 help overlay 与主界面 shortcut bar 主线
 177. 第一百七十三轮 TDD 已补上主界面 workspace bar / tab strip / focus bar 主线
 178. 第一百七十四轮 TDD 已补上主界面 workspace summary / pane bar 主线
+179. 第一百七十五轮 TDD 已补上主界面 tiled outline 工作台概览主线
 
 对应文档：
 
@@ -954,4 +955,4 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 ## 7. 当前一句话状态
 
-termx TUI 现在已经进入“picker / manager / prompt / layout resolve / help 五条 overlay 主线、startup planner、startup task executor、restore store 读写闭环、runtime session bootstrap、最小 Bubble Tea 运行主线、关键 runtime 事件回灌、tiled/tab/floating 三类最小工作台导航创建主线，以及 terminal manager 的粗粒度 jump / 位置列表精确 pane 跳转、floating pane 的最小 move / center / resize / z-order / close、floating stack 投影、主界面 workspace bar / workspace summary / tab strip / pane bar / focus bar / shortcut bar、notice 聚合/去重都已落地，下一步继续按 TDD 扩真实 TUI E2E 壳并深化 renderer”的阶段。
+termx TUI 现在已经进入“picker / manager / prompt / layout resolve / help 五条 overlay 主线、startup planner、startup task executor、restore store 读写闭环、runtime session bootstrap、最小 Bubble Tea 运行主线、关键 runtime 事件回灌、tiled/tab/floating 三类最小工作台导航创建主线，以及 terminal manager 的粗粒度 jump / 位置列表精确 pane 跳转、floating pane 的最小 move / center / resize / z-order / close、floating stack 投影、主界面 workspace bar / workspace summary / tab strip / pane bar / tiled outline / focus bar / shortcut bar、notice 聚合/去重都已落地，下一步继续按 TDD 扩真实 TUI E2E 壳并深化 renderer”的阶段。

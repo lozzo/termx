@@ -559,6 +559,34 @@ func TestE2ERunScenarioHeaderAndFooterExposeWorkspaceTabsAndFocus(t *testing.T) 
 	}
 }
 
+func TestE2ERunScenarioSplitTabShowsTiledOutline(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithSplitPaneTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			if !strings.Contains(view, "tiled_outline_bar: active=pane-1 | total=2") || !strings.Contains(view, "tiled_outline:") || !strings.Contains(view, "> [tiled] api-dev | role=owner") || !strings.Contains(view, "  [tiled] build-log | role=owner") {
+				t.Fatalf("expected runtime view to expose tiled outline for split tab, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected split tab runtime scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioLongSummaryLinesStayCompacted(t *testing.T) {
 	client := &stubRunClient{}
 	initial := connectedRunAppState()

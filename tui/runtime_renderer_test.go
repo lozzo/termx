@@ -134,6 +134,47 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	}
 }
 
+func TestRuntimeRendererRendersTiledOutlineForSplitTab(t *testing.T) {
+	state := runtimeStateWithSplitPaneTargets()
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "tiled_outline_bar: active=pane-1 | total=2") {
+		t.Fatalf("expected tiled outline bar in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "tiled_outline:") {
+		t.Fatalf("expected tiled outline section in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "> [tiled] api-dev | role=owner") {
+		t.Fatalf("expected active tiled pane row in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "  [tiled] build-log | role=owner") {
+		t.Fatalf("expected sibling tiled pane row in rendered view, got:\n%s", view)
+	}
+	if !(strings.Index(view, "pane_bar:") < strings.Index(view, "tiled_outline_bar:") &&
+		strings.Index(view, "tiled_outline:") < strings.Index(view, "section_terminal:")) {
+		t.Fatalf("expected tiled outline to stay between pane bar and terminal section, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersFollowerRoleInsideTiledOutline(t *testing.T) {
+	state := runtimeStateWithFollowerActivePane()
+	terminal := state.Domain.Terminals[types.TerminalID("term-1")]
+	terminal.Name = "api-dev"
+	terminal.Visible = true
+	state.Domain.Terminals[types.TerminalID("term-1")] = terminal
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "tiled_outline_bar: active=pane-2 | total=2") {
+		t.Fatalf("expected follower tiled outline bar in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "  [tiled] api-dev | role=owner") {
+		t.Fatalf("expected owner row to remain visible in tiled outline, got:\n%s", view)
+	}
+	if !strings.Contains(view, "> [tiled] api-dev | role=follower") {
+		t.Fatalf("expected follower row to be marked in tiled outline, got:\n%s", view)
+	}
+}
+
 func TestRuntimeRendererTruncatesLongBarLines(t *testing.T) {
 	state := buildSinglePaneAppState(
 		"workspace-with-a-very-long-name-that-should-be-truncated-in-the-header-bar-output",

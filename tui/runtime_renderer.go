@@ -57,6 +57,8 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	})
 	lines = appendChrome(lines, "body", []string{r.renderBodyBar(state, pane, overlayActive)}, func(lines []string) []string {
 		lines = append(lines, renderPaneBar(state, pane))
+		lines = append(lines, renderTiledOutlineBar(tab)...)
+		lines = append(lines, renderTiledOutline(state, tab)...)
 		lines = appendSection(lines, "terminal", r.renderTerminalSection(state, pane, overlayActive))
 		lines = appendSection(lines, "screen", r.renderScreenSection(pane, overlayActive))
 		return appendSection(lines, "overlay", renderOverlayLines(state.UI.Overlay, state.UI.Focus))
@@ -357,6 +359,89 @@ func renderFloatingStack(tab types.TabState) string {
 		parts = append(parts, string(paneID))
 	}
 	return strings.Join(parts, " > ")
+}
+
+func renderTiledOutlineBar(tab types.TabState) []string {
+	paneIDs := orderedTiledPaneIDs(tab)
+	if len(paneIDs) <= 1 {
+		return nil
+	}
+	return []string{compactSummaryLine(
+		fmt.Sprintf("tiled_outline_bar: active=%s", tab.ActivePaneID),
+		fmt.Sprintf("total=%d", len(paneIDs)),
+	)}
+}
+
+// renderTiledOutline 把当前 tab 下的 tiled pane 顺序稳定地投影成概览，
+// 这样即使还没做真正盒子布局，主界面也能直接看见“当前 tab 里还有哪些 pane”。
+func renderTiledOutline(state types.AppState, tab types.TabState) []string {
+	paneIDs := orderedTiledPaneIDs(tab)
+	if len(paneIDs) <= 1 {
+		return nil
+	}
+	lines := []string{"tiled_outline:"}
+	for _, paneID := range paneIDs {
+		pane, ok := tab.Panes[paneID]
+		if !ok || pane.Kind != types.PaneKindTiled {
+			continue
+		}
+		prefix := "  "
+		if paneID == tab.ActivePaneID {
+			prefix = "> "
+		}
+		parts := []string{fmt.Sprintf("%s[tiled] %s", prefix, renderPaneTitle(state, pane))}
+		if role := renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID); role != "" {
+			parts = append(parts, fmt.Sprintf("role=%s", role))
+		} else {
+			parts = append(parts, fmt.Sprintf("slot=%s", pane.SlotState))
+		}
+		lines = append(lines, compactSummaryLine(parts...))
+	}
+	return lines
+}
+
+func orderedTiledPaneIDs(tab types.TabState) []types.PaneID {
+	if len(tab.Panes) == 0 {
+		return nil
+	}
+	ordered := make([]types.PaneID, 0, len(tab.Panes))
+	seen := map[types.PaneID]struct{}{}
+	collectSplitPaneIDs(tab.RootSplit, tab, seen, &ordered)
+
+	remaining := make([]types.PaneID, 0, len(tab.Panes))
+	for paneID, pane := range tab.Panes {
+		if pane.Kind != types.PaneKindTiled {
+			continue
+		}
+		if _, ok := seen[paneID]; ok {
+			continue
+		}
+		remaining = append(remaining, paneID)
+	}
+	sort.Slice(remaining, func(i, j int) bool {
+		return remaining[i] < remaining[j]
+	})
+	return append(ordered, remaining...)
+}
+
+func collectSplitPaneIDs(node *types.SplitNode, tab types.TabState, seen map[types.PaneID]struct{}, ordered *[]types.PaneID) {
+	if node == nil {
+		return
+	}
+	if node.First == nil && node.Second == nil {
+		pane, ok := tab.Panes[node.PaneID]
+		if !ok || pane.Kind != types.PaneKindTiled {
+			return
+		}
+		if _, ok := seen[node.PaneID]; ok {
+			return
+		}
+		seen[node.PaneID] = struct{}{}
+		*ordered = append(*ordered, node.PaneID)
+		return
+	}
+	collectSplitPaneIDs(node.First, tab, seen, ordered)
+	collectSplitPaneIDs(node.Second, tab, seen, ordered)
 }
 
 func (r runtimeRenderer) renderTerminalSection(state types.AppState, pane types.PaneState, compact bool) []string {
