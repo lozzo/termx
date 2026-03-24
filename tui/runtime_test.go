@@ -168,7 +168,7 @@ func TestE2ERunScenarioRendersSnapshotAndForwardsActivePaneInput(t *testing.T) {
 	}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
-			if view := model.View(); !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "[main] [shell] pane:pane-1 term:term-1 float:0") || !strings.Contains(view, "[owner] [tiled]") || !strings.Contains(view, "hi") {
+			if view := model.View(); !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "[main] [shell] pane:pane-1 term:term-1 float:0") || !strings.Contains(view, "[owner] [tiled]") || !strings.Contains(view, "STATUS[connected]") || !strings.Contains(view, "TERM[term-1] STATE[running]") || !strings.Contains(view, "CONTENT[screen]") || !strings.Contains(view, "hi") {
 				t.Fatalf("expected runtime view to include snapshot content, got:\n%s", view)
 			}
 			_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
@@ -552,7 +552,7 @@ func TestE2ERunScenarioLayoutResolveEscClearsShellDialogAndMask(t *testing.T) {
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay_bar: kind=none") || strings.Contains(view, "MASK[") || strings.Contains(view, "DIALOG[layout_resolve]") || !strings.Contains(view, "+ waiting pane [waiting] [tiled]") || !strings.Contains(view, "waiting for connect") {
+			if view := current.View(); !strings.Contains(view, "overlay_bar: kind=none") || strings.Contains(view, "MASK[") || strings.Contains(view, "DIALOG[layout_resolve]") || !strings.Contains(view, "+ waiting pane [waiting] [tiled]") || !strings.Contains(view, "STATUS[waiting]") || !strings.Contains(view, "DETAIL[waiting for connect]") || !strings.Contains(view, "ACTIONS[n new | a connect]") {
 				t.Fatalf("expected esc to clear layout resolve shell dialog and restore pane shell, got:\n%s", view)
 			}
 			return nil
@@ -604,7 +604,7 @@ func TestE2ERunScenarioTerminalManagerEscClearsShellDialogAndMask(t *testing.T) 
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || strings.Contains(view, "MASK[") || strings.Contains(view, "DIALOG[terminal_manager]") || !strings.Contains(view, "+ api-dev [owner] [tiled]") || !strings.Contains(view, "|<empty>") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || strings.Contains(view, "MASK[") || strings.Contains(view, "DIALOG[terminal_manager]") || !strings.Contains(view, "+ api-dev [owner] [tiled]") || !strings.Contains(view, "STATUS[connected]") || !strings.Contains(view, "TERM[term-1] STATE[running]") || !strings.Contains(view, "CONTENT[screen unavailable]") {
 				t.Fatalf("expected esc to clear terminal manager shell dialog and restore main pane shell, got:\n%s", view)
 			}
 			return nil

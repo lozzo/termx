@@ -66,6 +66,9 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "+ api-dev [owner] [tiled]") || !strings.Contains(view, "<p> PANE  <t> TAB  <w> WS  <o> FLOAT  <f> PICK  <g> GLOBAL") {
 		t.Fatalf("expected renderer to expose visible shell frame body/footer, got:\n%s", view)
 	}
+	if !strings.Contains(view, "STATUS[connected]") || !strings.Contains(view, "TERM[term-1] STATE[running]") || !strings.Contains(view, "CONTENT[screen]") {
+		t.Fatalf("expected screen shell connected pane sections, got:\n%s", view)
+	}
 	if !strings.Contains(view, "termx") || !strings.Contains(view, "header_bar: ws=main | tab=shell | pane=pane-1 | slot=connected | overlay=none | focus=tiled") {
 		t.Fatalf("expected renderer header bar, got:\n%s", view)
 	}
@@ -563,6 +566,9 @@ func TestRuntimeRendererRendersScreenPlaceholderWhenNoSnapshot(t *testing.T) {
 
 func TestRuntimeRendererRendersStableSectionSkeletonForEmptyPane(t *testing.T) {
 	view := runtimeRenderer{}.Render(buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty), nil)
+	if !strings.Contains(view, "STATUS[empty]") || !strings.Contains(view, "DETAIL[terminal removed or not connected]") || !strings.Contains(view, "ACTIONS[n new | a connect | m manager]") {
+		t.Fatalf("expected screen shell empty pane sections, got:\n%s", view)
+	}
 	if !strings.Contains(view, "chrome_body:") || !strings.Contains(view, "chrome_footer:") {
 		t.Fatalf("expected chrome body/footer wrappers in rendered view, got:\n%s", view)
 	}
@@ -627,6 +633,9 @@ func TestRuntimeRendererRendersExitedPaneActions(t *testing.T) {
 	state.Domain.Terminals[types.TerminalID("term-1")] = terminal
 
 	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "STATUS[exited]") || !strings.Contains(view, "DETAIL[terminal program exited]") || !strings.Contains(view, "HISTORY[retained]") || !strings.Contains(view, "ACTIONS[r restart | a connect]") {
+		t.Fatalf("expected screen shell exited pane sections, got:\n%s", view)
+	}
 	if !strings.Contains(view, "pane_slot_detail: terminal program exited") || !strings.Contains(view, "pane_history: retained") || !strings.Contains(view, "[r] restart terminal") || !strings.Contains(view, "[a] connect another terminal") || !strings.Contains(view, "[x] close pane") {
 		t.Fatalf("expected exited pane actions in rendered view, got:\n%s", view)
 	}

@@ -143,7 +143,7 @@ func renderScreenShellHeader(workspace types.WorkspaceState, tab types.TabState,
 	workspaceLabel := safeWorkspaceLabel(workspace)
 	tabLabel := safeTabLabel(tab)
 	terminalID := "<none>"
-	if pane.TerminalID != "" {
+	if pane.TerminalID != "" && pane.SlotState == types.PaneSlotConnected {
 		terminalID = string(pane.TerminalID)
 	}
 	return fmt.Sprintf("[%s] [%s] pane:%s term:%s float:%d", workspaceLabel, tabLabel, pane.ID, terminalID, len(orderedFloatingPaneIDs(tab)))
@@ -472,7 +472,7 @@ func renderScreenShellDialogFooter(kind types.OverlayKind) (string, string) {
 func renderScreenShellPaneTitle(state types.AppState, pane types.PaneState, includeKind bool) string {
 	title := renderPaneTitle(state, pane)
 	paneRole := string(pane.SlotState)
-	if pane.TerminalID != "" {
+	if pane.TerminalID != "" && pane.SlotState == types.PaneSlotConnected {
 		paneRole = renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID)
 		if paneRole == "" {
 			paneRole = "connected"
@@ -491,32 +491,70 @@ func (r runtimeRenderer) renderScreenShellPaneLines(state types.AppState, pane t
 	if maxRows <= 0 {
 		maxRows = 1
 	}
-	if pane.TerminalID != "" && r.Screens != nil {
-		if snapshot, ok := r.Screens.Snapshot(pane.TerminalID); ok && snapshot != nil {
-			rows, _, _ := renderSnapshotRows(snapshot)
-			trimmed := make([]string, 0, maxRows)
-			for _, row := range rows {
-				row = strings.TrimSpace(row)
-				if row == "" {
-					continue
+	if pane.TerminalID != "" && pane.SlotState == types.PaneSlotConnected {
+		lines := []string{"STATUS[connected]"}
+		terminalState := types.TerminalRunStateRunning
+		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.State != "" {
+			terminalState = terminal.State
+		}
+		lines = append(lines, fmt.Sprintf("TERM[%s] STATE[%s]", pane.TerminalID, terminalState))
+		if r.Screens != nil {
+			if snapshot, ok := r.Screens.Snapshot(pane.TerminalID); ok && snapshot != nil {
+				rows, _, _ := renderSnapshotRows(snapshot)
+				trimmed := make([]string, 0, maxRows)
+				for _, row := range rows {
+					row = strings.TrimSpace(row)
+					if row == "" {
+						continue
+					}
+					trimmed = append(trimmed, row)
 				}
-				trimmed = append(trimmed, row)
-			}
-			if len(trimmed) > maxRows {
-				trimmed = trimmed[len(trimmed)-maxRows:]
-			}
-			if len(trimmed) > 0 {
-				return trimmed
+				if len(trimmed) > 0 {
+					contentBudget := maxRows - len(lines)
+					if contentBudget <= 0 {
+						return lines[:maxRows]
+					}
+					if len(trimmed) > contentBudget {
+						trimmed = trimmed[len(trimmed)-contentBudget:]
+					}
+					lines = append(lines, fmt.Sprintf("CONTENT[screen] %s", trimmed[0]))
+					if len(trimmed) > 1 {
+						lines = append(lines, trimmed[1:]...)
+					}
+					return lines
+				}
 			}
 		}
+		lines = append(lines, "CONTENT[screen unavailable]")
+		if len(lines) > maxRows {
+			return lines[:maxRows]
+		}
+		return lines
 	}
 	switch pane.SlotState {
 	case types.PaneSlotWaiting:
-		return []string{"waiting for connect", "[n] new  [a] connect"}
+		return []string{
+			"STATUS[waiting]",
+			"DETAIL[waiting for connect]",
+			"ACTIONS[n new | a connect]",
+		}
 	case types.PaneSlotExited:
-		return []string{"terminal program exited", "[r] restart  [a] connect"}
+		lines := []string{
+			"STATUS[exited]",
+			"DETAIL[terminal program exited]",
+			"HISTORY[retained]",
+			"ACTIONS[r restart | a connect]",
+		}
+		if len(lines) > maxRows {
+			return lines[:maxRows]
+		}
+		return lines
 	case types.PaneSlotEmpty:
-		return []string{"terminal removed or not connected", "[n] new  [a] connect  [m] manager"}
+		return []string{
+			"STATUS[empty]",
+			"DETAIL[terminal removed or not connected]",
+			"ACTIONS[n new | a connect | m manager]",
+		}
 	default:
 		return []string{"<empty>"}
 	}
