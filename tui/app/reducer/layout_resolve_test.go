@@ -52,7 +52,7 @@ func TestReducerLayoutResolveConnectExistingOpensTerminalPicker(t *testing.T) {
 	}
 }
 
-func TestReducerLayoutResolveCreateNewClosesOverlayAndEmitsCreateEffect(t *testing.T) {
+func TestReducerLayoutResolveCreateNewKeepsOverlayOpenUntilSuccessAndEmitsCreateEffect(t *testing.T) {
 	reducer := New()
 	state := newWaitingPaneAppState()
 
@@ -64,8 +64,8 @@ func TestReducerLayoutResolveCreateNewClosesOverlayAndEmitsCreateEffect(t *testi
 	moved := reducer.Reduce(opened.State, intent.LayoutResolveMoveIntent{Delta: 1})
 	result := reducer.Reduce(moved.State, intent.LayoutResolveSubmitIntent{})
 
-	if result.State.UI.Overlay.Kind != types.OverlayNone {
-		t.Fatalf("expected create new to close overlay, got %q", result.State.UI.Overlay.Kind)
+	if result.State.UI.Overlay.Kind != types.OverlayLayoutResolve {
+		t.Fatalf("expected create new to keep overlay open until success, got %q", result.State.UI.Overlay.Kind)
 	}
 	if len(result.Effects) != 1 {
 		t.Fatalf("expected one create effect, got %d", len(result.Effects))
@@ -76,6 +76,33 @@ func TestReducerLayoutResolveCreateNewClosesOverlayAndEmitsCreateEffect(t *testi
 	}
 	if effect.PaneID != types.PaneID("pane-1") || effect.Name != "ws-1-tab-1-pane-1" {
 		t.Fatalf("unexpected create effect payload: %+v", effect)
+	}
+}
+
+func TestReducerLayoutResolveCreateTerminalSucceededClosesOverlayAndRegistersTerminal(t *testing.T) {
+	reducer := New()
+	state := newWaitingPaneAppState()
+
+	opened := reducer.Reduce(state, intent.OpenLayoutResolveIntent{
+		PaneID: types.PaneID("pane-1"),
+		Role:   "backend-dev",
+		Hint:   "env=dev service=api",
+	})
+	moved := reducer.Reduce(opened.State, intent.LayoutResolveMoveIntent{Delta: 1})
+	result := reducer.Reduce(moved.State, intent.CreateTerminalSucceededIntent{
+		PaneID:     types.PaneID("pane-1"),
+		TerminalID: types.TerminalID("term-created"),
+		Name:       "ws-1-tab-1-pane-1",
+		Command:    []string{"sh", "-l"},
+		State:      types.TerminalRunStateRunning,
+	})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected create success to close layout resolve overlay, got %q", result.State.UI.Overlay.Kind)
+	}
+	terminal := result.State.Domain.Terminals[types.TerminalID("term-created")]
+	if terminal.ID != types.TerminalID("term-created") || terminal.Name != "ws-1-tab-1-pane-1" {
+		t.Fatalf("unexpected terminal after layout resolve create success: %+v", terminal)
 	}
 }
 

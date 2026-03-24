@@ -73,13 +73,16 @@ func (s *stubTerminalService) ConnectTerminal(paneID types.PaneID, terminalID ty
 	return nil
 }
 
-func (s *stubTerminalService) CreateTerminal(paneID types.PaneID, command []string, name string) error {
+func (s *stubTerminalService) CreateTerminal(paneID types.PaneID, command []string, name string) (CreateTerminalResult, error) {
 	s.createCalls = append(s.createCalls, createCall{
 		paneID:  paneID,
 		command: append([]string(nil), command...),
 		name:    name,
 	})
-	return nil
+	return CreateTerminalResult{
+		TerminalID: types.TerminalID("term-created"),
+		State:      types.TerminalRunStateRunning,
+	}, nil
 }
 
 func (s *stubTerminalService) StopTerminal(terminalID types.TerminalID) error {
@@ -166,11 +169,14 @@ func TestDefaultRuntimeExecutorCallsTerminalServiceAndTranslatesOverlayEffects(t
 		t.Fatalf("expected connect service call only, got intents=%d calls=%d", len(result.Intents), len(service.connectCalls))
 	}
 
-	_, _ = executor.Execute(reducer.CreateTerminalEffect{
+	createResult, err := executor.Execute(reducer.CreateTerminalEffect{
 		PaneID:  types.PaneID("pane-1"),
 		Command: []string{"sh", "-l"},
 		Name:    "ws-tab-pane",
 	})
+	if err != nil {
+		t.Fatalf("unexpected create error: %v", err)
+	}
 	stopResult, err := executor.Execute(reducer.StopTerminalEffect{TerminalID: types.TerminalID("term-2")})
 	if err != nil {
 		t.Fatalf("unexpected stop error: %v", err)
@@ -183,15 +189,21 @@ func TestDefaultRuntimeExecutorCallsTerminalServiceAndTranslatesOverlayEffects(t
 	if err != nil {
 		t.Fatalf("unexpected metadata error: %v", err)
 	}
-	_, _ = executor.Execute(reducer.ConnectTerminalInNewTabEffect{
+	newTabResult, err := executor.Execute(reducer.ConnectTerminalInNewTabEffect{
 		WorkspaceID: types.WorkspaceID("ws-1"),
 		TerminalID:  types.TerminalID("term-4"),
 	})
-	_, _ = executor.Execute(reducer.ConnectTerminalInFloatingPaneEffect{
+	if err != nil {
+		t.Fatalf("unexpected new-tab error: %v", err)
+	}
+	floatingResult, err := executor.Execute(reducer.ConnectTerminalInFloatingPaneEffect{
 		WorkspaceID: types.WorkspaceID("ws-1"),
 		TabID:       types.TabID("tab-1"),
 		TerminalID:  types.TerminalID("term-5"),
 	})
+	if err != nil {
+		t.Fatalf("unexpected floating error: %v", err)
+	}
 
 	result, err = executor.Execute(reducer.OpenPromptEffect{
 		PromptKind: reducer.PromptKindEditTerminalMetadata,
@@ -213,6 +225,16 @@ func TestDefaultRuntimeExecutorCallsTerminalServiceAndTranslatesOverlayEffects(t
 	if len(service.createCalls) != 1 || len(service.stopCalls) != 1 || len(service.metadataCalls) != 1 {
 		t.Fatalf("expected create/stop/metadata service calls, got create=%d stop=%d metadata=%d", len(service.createCalls), len(service.stopCalls), len(service.metadataCalls))
 	}
+	if len(createResult.Intents) != 1 {
+		t.Fatalf("expected create success feedback intent, got %+v", createResult.Intents)
+	}
+	createIntent, ok := createResult.Intents[0].(intent.CreateTerminalSucceededIntent)
+	if !ok || createIntent.PaneID != types.PaneID("pane-1") || createIntent.TerminalID != types.TerminalID("term-created") || createIntent.Name != "ws-tab-pane" {
+		t.Fatalf("unexpected create success feedback payload: %+v", createResult.Intents[0])
+	}
+	if len(createIntent.Command) != 2 || createIntent.Command[0] != "sh" || createIntent.State != types.TerminalRunStateRunning {
+		t.Fatalf("unexpected create success command/state: %+v", createIntent)
+	}
 	if len(stopResult.Intents) != 1 {
 		t.Fatalf("expected stop success feedback intent, got %+v", stopResult.Intents)
 	}
@@ -229,6 +251,20 @@ func TestDefaultRuntimeExecutorCallsTerminalServiceAndTranslatesOverlayEffects(t
 	}
 	if metadataIntent.Tags["group"] != "build" {
 		t.Fatalf("unexpected metadata success tags: %+v", metadataIntent.Tags)
+	}
+	if len(newTabResult.Intents) != 1 {
+		t.Fatalf("expected new-tab success feedback intent, got %+v", newTabResult.Intents)
+	}
+	newTabIntent, ok := newTabResult.Intents[0].(intent.ConnectTerminalInNewTabSucceededIntent)
+	if !ok || newTabIntent.WorkspaceID != types.WorkspaceID("ws-1") || newTabIntent.TerminalID != types.TerminalID("term-4") {
+		t.Fatalf("unexpected new-tab success payload: %+v", newTabResult.Intents[0])
+	}
+	if len(floatingResult.Intents) != 1 {
+		t.Fatalf("expected floating success feedback intent, got %+v", floatingResult.Intents)
+	}
+	floatingIntent, ok := floatingResult.Intents[0].(intent.ConnectTerminalInFloatingPaneSucceededIntent)
+	if !ok || floatingIntent.WorkspaceID != types.WorkspaceID("ws-1") || floatingIntent.TabID != types.TabID("tab-1") || floatingIntent.TerminalID != types.TerminalID("term-5") {
+		t.Fatalf("unexpected floating success payload: %+v", floatingResult.Intents[0])
 	}
 	if len(service.newTabCalls) != 1 || len(service.floatingCalls) != 1 {
 		t.Fatalf("expected new-tab/floating service calls, got newTab=%d floating=%d", len(service.newTabCalls), len(service.floatingCalls))

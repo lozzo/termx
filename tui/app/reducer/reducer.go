@@ -128,6 +128,12 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 			TerminalID: intentValue.TerminalID,
 		})
 		applyCloseTerminalManagerForTerminal(&result.State, intentValue.TerminalID)
+	case intent.CreateTerminalSucceededIntent:
+		applyCreateTerminalSucceeded(&result.State, intentValue)
+	case intent.ConnectTerminalInNewTabSucceededIntent:
+		applyCloseTerminalManagerForTerminal(&result.State, intentValue.TerminalID)
+	case intent.ConnectTerminalInFloatingPaneSucceededIntent:
+		applyCloseTerminalManagerForTerminal(&result.State, intentValue.TerminalID)
 	case intent.TerminalProgramExitedIntent:
 		applyProgramExited(&result.State, intentValue)
 	case intent.SyncTerminalStateIntent:
@@ -662,7 +668,6 @@ func applyTerminalManagerConnectHere(result *Result, _ intent.TerminalManagerCon
 			Command: defaultCreateTerminalCommand(),
 			Name:    defaultCreateTerminalName(result.State.UI.Overlay.ReturnFocus),
 		})
-		applyCloseOverlay(&result.State)
 		return
 	}
 	terminalID, ok := manager.SelectedTerminalID()
@@ -698,7 +703,6 @@ func applyTerminalPickerSubmit(result *Result) {
 			Command: defaultCreateTerminalCommand(),
 			Name:    defaultCreateTerminalName(result.State.UI.Overlay.ReturnFocus),
 		})
-		applyCloseOverlay(&result.State)
 	case terminalpickerdomain.RowKindTerminal:
 		paneID := result.State.UI.Overlay.ReturnFocus.PaneID
 		applyConnectTerminal(&result.State, intent.ConnectTerminalIntent{
@@ -740,7 +744,6 @@ func applyLayoutResolveSubmit(result *Result) {
 			Command: defaultCreateTerminalCommand(),
 			Name:    defaultCreateTerminalName(result.State.UI.Overlay.ReturnFocus),
 		})
-		applyCloseOverlay(&result.State)
 	case layoutresolvedomain.ActionSkip:
 		applyCloseOverlay(&result.State)
 	}
@@ -760,7 +763,6 @@ func applyTerminalManagerConnectInNewTab(result *Result) {
 		WorkspaceID: workspaceID,
 		TerminalID:  terminalID,
 	})
-	applyCloseOverlay(&result.State)
 }
 
 func applyTerminalManagerConnectInFloatingPane(result *Result) {
@@ -777,7 +779,6 @@ func applyTerminalManagerConnectInFloatingPane(result *Result) {
 		TabID:       result.State.UI.Overlay.ReturnFocus.TabID,
 		TerminalID:  terminalID,
 	})
-	applyCloseOverlay(&result.State)
 }
 
 func applyTerminalManagerEditMetadata(result *Result) {
@@ -856,7 +857,6 @@ func applyTerminalManagerCreateTerminal(result *Result) {
 		Command: defaultCreateTerminalCommand(),
 		Name:    defaultCreateTerminalName(result.State.UI.Overlay.ReturnFocus),
 	})
-	applyCloseOverlay(&result.State)
 }
 
 func applySubmitPrompt(state *types.AppState, in intent.SubmitPromptIntent) []Effect {
@@ -991,6 +991,25 @@ func applyUpdateTerminalMetadataSucceeded(state *types.AppState, in intent.Updat
 	applyClosePromptForTerminal(state, in.TerminalID)
 }
 
+// applyCreateTerminalSucceeded 只在 create 成功后把新 terminal 注册进 domain，并关闭触发该请求的 overlay。
+// 这样 create 失败时，manager/picker/resolve 都会保留在原处等待用户重试。
+func applyCreateTerminalSucceeded(state *types.AppState, in intent.CreateTerminalSucceededIntent) {
+	if in.TerminalID != "" {
+		terminalState := in.State
+		if terminalState == "" {
+			terminalState = types.TerminalRunStateRunning
+		}
+		state.Domain.Terminals[in.TerminalID] = types.TerminalRef{
+			ID:      in.TerminalID,
+			Name:    in.Name,
+			Command: append([]string(nil), in.Command...),
+			State:   terminalState,
+			Visible: false,
+		}
+	}
+	applyCloseCreateOverlay(state, in.PaneID)
+}
+
 func applyClosePromptForTerminal(state *types.AppState, terminalID types.TerminalID) {
 	prompt, ok := promptState(state)
 	if !ok {
@@ -1000,6 +1019,44 @@ func applyClosePromptForTerminal(state *types.AppState, terminalID types.Termina
 		return
 	}
 	applyCloseOverlay(state)
+}
+
+func applyCloseCreateOverlay(state *types.AppState, paneID types.PaneID) {
+	if state.UI.Overlay.ReturnFocus.PaneID != paneID {
+		return
+	}
+	switch state.UI.Overlay.Kind {
+	case types.OverlayTerminalManager:
+		manager, ok := terminalManager(state)
+		if !ok {
+			return
+		}
+		row, ok := manager.SelectedRow()
+		if !ok || row.Kind != terminalmanagerdomain.RowKindCreate {
+			return
+		}
+		applyCloseOverlay(state)
+	case types.OverlayTerminalPicker:
+		picker, ok := terminalPicker(state)
+		if !ok {
+			return
+		}
+		row, ok := picker.SelectedRow()
+		if !ok || row.Kind != terminalpickerdomain.RowKindCreate {
+			return
+		}
+		applyCloseOverlay(state)
+	case types.OverlayLayoutResolve:
+		resolveState, ok := layoutResolveState(state)
+		if !ok {
+			return
+		}
+		row, ok := resolveState.SelectedRow()
+		if !ok || row.Action != layoutresolvedomain.ActionCreateNew {
+			return
+		}
+		applyCloseOverlay(state)
+	}
 }
 
 func applyCloseTerminalManagerForTerminal(state *types.AppState, terminalID types.TerminalID) {

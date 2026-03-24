@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -2353,7 +2354,7 @@ func TestE2ERunScenarioTerminalManagerConnectInNewTabFailureShowsNoticeInView(t 
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
+			if view := current.View(); !strings.Contains(view, "overlay: terminal_manager") || !strings.Contains(view, "terminal_manager_rows:") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
 				t.Fatalf("expected new-tab failure to surface notice in runtime view, got:\n%s", view)
 			}
 			return nil
@@ -2448,7 +2449,7 @@ func TestE2ERunScenarioTerminalManagerConnectInFloatingPaneFailureShowsNoticeInV
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
+			if view := current.View(); !strings.Contains(view, "overlay: terminal_manager") || !strings.Contains(view, "terminal_manager_rows:") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
 				t.Fatalf("expected floating-pane failure to surface notice in runtime view, got:\n%s", view)
 			}
 			return nil
@@ -2556,6 +2557,9 @@ func TestE2ERunScenarioTerminalManagerCreateRowSubmitClosesOverlay(t *testing.T)
 			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "terminal_manager_rows:") {
 				t.Fatalf("expected create row submit to close overlay, got:\n%s", view)
 			}
+			if created, ok := current.State().Domain.Terminals[types.TerminalID("term-created-1")]; !ok || created.Name == "" || created.State != types.TerminalRunStateRunning || created.Visible {
+				t.Fatalf("expected create row success to register hidden terminal, got %+v ok=%v", created, ok)
+			}
 			return nil
 		},
 	}
@@ -2602,7 +2606,7 @@ func TestE2ERunScenarioTerminalManagerCreateRowFailureShowsNoticeInView(t *testi
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
+			if view := current.View(); !strings.Contains(view, "overlay: terminal_manager") || !strings.Contains(view, "terminal_manager_rows:") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
 				t.Fatalf("expected manager create failure to surface notice in runtime view, got:\n%s", view)
 			}
 			return nil
@@ -2840,6 +2844,9 @@ func TestE2ERunScenarioTerminalPickerCreateRowSubmitClosesOverlay(t *testing.T) 
 			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "terminal_picker_rows:") {
 				t.Fatalf("expected terminal picker create-row submit to close overlay, got:\n%s", view)
 			}
+			if created, ok := current.State().Domain.Terminals[types.TerminalID("term-created-1")]; !ok || created.Name == "" || created.State != types.TerminalRunStateRunning || created.Visible {
+				t.Fatalf("expected picker create success to register hidden terminal, got %+v ok=%v", created, ok)
+			}
 			return nil
 		},
 	}
@@ -2885,7 +2892,7 @@ func TestE2ERunScenarioTerminalPickerCreateRowFailureShowsNoticeInView(t *testin
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
+			if view := current.View(); !strings.Contains(view, "overlay: terminal_picker") || !strings.Contains(view, "terminal_picker_rows:") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
 				t.Fatalf("expected picker create failure to surface notice in runtime view, got:\n%s", view)
 			}
 			return nil
@@ -3088,6 +3095,9 @@ func TestE2ERunScenarioLayoutResolveCreateNewClosesOverlay(t *testing.T) {
 			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "slot: waiting") || strings.Contains(view, "layout_resolve_rows:") || strings.Contains(view, "focus_overlay_target:") || strings.Contains(view, "mode:") {
 				t.Fatalf("expected layout resolve create-new flow to close overlay, got:\n%s", view)
 			}
+			if created, ok := current.State().Domain.Terminals[types.TerminalID("term-created-1")]; !ok || created.Name == "" || created.State != types.TerminalRunStateRunning {
+				t.Fatalf("expected layout resolve create success to register terminal, got %+v ok=%v", created, ok)
+			}
 			return nil
 		},
 	}
@@ -3101,6 +3111,50 @@ func TestE2ERunScenarioLayoutResolveCreateNewClosesOverlay(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioLayoutResolveCreateNewFailureShowsNoticeInView(t *testing.T) {
+	client := &stubRunClient{createErr: errRuntimeEffectBoom}
+	initial := runtimeStateWithLayoutResolveTarget()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyDown},
+				{Type: tea.KeyEnter},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: layout_resolve") || !strings.Contains(view, "layout_resolve_rows:") || !strings.Contains(view, "notices:") || !strings.Contains(view, "runtime effect boom") {
+				t.Fatalf("expected layout resolve create failure to keep overlay and surface notice, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+	if len(client.createCalls) != 1 {
+		t.Fatalf("expected one failed create call from layout resolve, got %d", len(client.createCalls))
 	}
 }
 
@@ -3593,7 +3647,10 @@ func (c *stubRunClient) Create(_ context.Context, command []string, name string,
 	if c.createErr != nil {
 		return nil, c.createErr
 	}
-	return &protocol.CreateResult{}, nil
+	return &protocol.CreateResult{
+		TerminalID: fmt.Sprintf("term-created-%d", len(c.createCalls)),
+		State:      string(types.TerminalRunStateRunning),
+	}, nil
 }
 
 func (c *stubRunClient) SetTags(context.Context, string, map[string]string) error { return nil }

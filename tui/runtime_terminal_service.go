@@ -33,9 +33,22 @@ func (s runtimeTerminalService) ConnectTerminal(types.PaneID, types.TerminalID) 
 	return nil
 }
 
-func (s runtimeTerminalService) CreateTerminal(_ types.PaneID, command []string, name string) error {
-	_, err := s.client.Create(context.Background(), command, name, protocol.Size{})
-	return err
+func (s runtimeTerminalService) CreateTerminal(_ types.PaneID, command []string, name string) (btui.CreateTerminalResult, error) {
+	created, err := s.client.Create(context.Background(), command, name, protocol.Size{})
+	if err != nil {
+		return btui.CreateTerminalResult{}, err
+	}
+	state := types.TerminalRunStateRunning
+	if created != nil && created.State != "" {
+		state = types.TerminalRunState(created.State)
+	}
+	if created == nil {
+		return btui.CreateTerminalResult{State: state}, nil
+	}
+	return btui.CreateTerminalResult{
+		TerminalID: types.TerminalID(created.TerminalID),
+		State:      state,
+	}, nil
 }
 
 func (s runtimeTerminalService) StopTerminal(terminalID types.TerminalID) error {

@@ -437,8 +437,8 @@ func TestReducerTerminalPickerSubmitCreateRowEmitsCreateEffect(t *testing.T) {
 	moved := reducer.Reduce(opened.State, intent.TerminalPickerMoveIntent{Delta: -100})
 	result := reducer.Reduce(moved.State, intent.TerminalPickerSubmitIntent{})
 
-	if result.State.UI.Overlay.Kind != types.OverlayNone {
-		t.Fatalf("expected picker overlay to close, got %q", result.State.UI.Overlay.Kind)
+	if result.State.UI.Overlay.Kind != types.OverlayTerminalPicker {
+		t.Fatalf("expected picker overlay to stay open until create success, got %q", result.State.UI.Overlay.Kind)
 	}
 	if len(result.Effects) != 1 {
 		t.Fatalf("expected one create effect, got %d", len(result.Effects))
@@ -446,6 +446,29 @@ func TestReducerTerminalPickerSubmitCreateRowEmitsCreateEffect(t *testing.T) {
 	effect, ok := result.Effects[0].(CreateTerminalEffect)
 	if !ok || effect.Name != "ws-1-tab-1-pane-1" {
 		t.Fatalf("unexpected picker create effect: %+v %T", result.Effects[0], result.Effects[0])
+	}
+}
+
+func TestReducerCreateTerminalSucceededClosesPickerAndRegistersTerminal(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalPickerIntent{})
+	moved := reducer.Reduce(opened.State, intent.TerminalPickerMoveIntent{Delta: -100})
+	result := reducer.Reduce(moved.State, intent.CreateTerminalSucceededIntent{
+		PaneID:     types.PaneID("pane-1"),
+		TerminalID: types.TerminalID("term-created"),
+		Name:       "ws-1-tab-1-pane-1",
+		Command:    []string{"sh", "-l"},
+		State:      types.TerminalRunStateRunning,
+	})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected picker overlay to close after create success, got %q", result.State.UI.Overlay.Kind)
+	}
+	terminal := result.State.Domain.Terminals[types.TerminalID("term-created")]
+	if terminal.ID != types.TerminalID("term-created") || terminal.Name != "ws-1-tab-1-pane-1" || terminal.State != types.TerminalRunStateRunning || terminal.Visible {
+		t.Fatalf("unexpected registered terminal after create success: %+v", terminal)
 	}
 }
 
@@ -901,8 +924,8 @@ func TestReducerTerminalManagerConnectInNewTabEmitsPlanningEffect(t *testing.T) 
 	moved := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: 1})
 	result := reducer.Reduce(moved.State, intent.TerminalManagerConnectInNewTabIntent{})
 
-	if result.State.UI.Overlay.Kind != types.OverlayNone {
-		t.Fatalf("expected manager overlay to close, got %q", result.State.UI.Overlay.Kind)
+	if result.State.UI.Overlay.Kind != types.OverlayTerminalManager {
+		t.Fatalf("expected manager overlay to stay open until new-tab success, got %q", result.State.UI.Overlay.Kind)
 	}
 	if len(result.Effects) != 1 {
 		t.Fatalf("expected one new-tab effect, got %d", len(result.Effects))
@@ -916,6 +939,22 @@ func TestReducerTerminalManagerConnectInNewTabEmitsPlanningEffect(t *testing.T) 
 	}
 }
 
+func TestReducerTerminalManagerConnectInNewTabSucceededClosesOverlay(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	moved := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: 1})
+	result := reducer.Reduce(moved.State, intent.ConnectTerminalInNewTabSucceededIntent{
+		WorkspaceID: types.WorkspaceID("ws-1"),
+		TerminalID:  types.TerminalID("term-2"),
+	})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected manager overlay to close after new-tab success, got %q", result.State.UI.Overlay.Kind)
+	}
+}
+
 func TestReducerTerminalManagerConnectInFloatingPaneEmitsPlanningEffect(t *testing.T) {
 	reducer := New()
 	state := newManagerAppState()
@@ -924,8 +963,8 @@ func TestReducerTerminalManagerConnectInFloatingPaneEmitsPlanningEffect(t *testi
 	moved := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: 1})
 	result := reducer.Reduce(moved.State, intent.TerminalManagerConnectInFloatingPaneIntent{})
 
-	if result.State.UI.Overlay.Kind != types.OverlayNone {
-		t.Fatalf("expected manager overlay to close, got %q", result.State.UI.Overlay.Kind)
+	if result.State.UI.Overlay.Kind != types.OverlayTerminalManager {
+		t.Fatalf("expected manager overlay to stay open until floating success, got %q", result.State.UI.Overlay.Kind)
 	}
 	if len(result.Effects) != 1 {
 		t.Fatalf("expected one floating effect, got %d", len(result.Effects))
@@ -936,6 +975,23 @@ func TestReducerTerminalManagerConnectInFloatingPaneEmitsPlanningEffect(t *testi
 	}
 	if effect.WorkspaceID != types.WorkspaceID("ws-1") || effect.TabID != types.TabID("tab-1") || effect.TerminalID != types.TerminalID("term-2") {
 		t.Fatalf("unexpected effect payload: %+v", effect)
+	}
+}
+
+func TestReducerTerminalManagerConnectInFloatingPaneSucceededClosesOverlay(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	moved := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: 1})
+	result := reducer.Reduce(moved.State, intent.ConnectTerminalInFloatingPaneSucceededIntent{
+		WorkspaceID: types.WorkspaceID("ws-1"),
+		TabID:       types.TabID("tab-1"),
+		TerminalID:  types.TerminalID("term-2"),
+	})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected manager overlay to close after floating success, got %q", result.State.UI.Overlay.Kind)
 	}
 }
 
@@ -997,8 +1053,8 @@ func TestReducerTerminalManagerCreateNewTerminalEmitsCreateEffect(t *testing.T) 
 	movedToCreate := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: -100})
 	result := reducer.Reduce(movedToCreate.State, intent.TerminalManagerCreateTerminalIntent{})
 
-	if result.State.UI.Overlay.Kind != types.OverlayNone {
-		t.Fatalf("expected manager overlay to close, got %q", result.State.UI.Overlay.Kind)
+	if result.State.UI.Overlay.Kind != types.OverlayTerminalManager {
+		t.Fatalf("expected manager overlay to stay open until create success, got %q", result.State.UI.Overlay.Kind)
 	}
 	if len(result.Effects) != 1 {
 		t.Fatalf("expected one create effect, got %d", len(result.Effects))
@@ -1015,6 +1071,29 @@ func TestReducerTerminalManagerCreateNewTerminalEmitsCreateEffect(t *testing.T) 
 	}
 	if effect.Name != "ws-1-tab-1-pane-1" {
 		t.Fatalf("expected stable default terminal name, got %+v", effect)
+	}
+}
+
+func TestReducerTerminalManagerCreateTerminalSucceededClosesOverlayAndRegistersTerminal(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	movedToCreate := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: -100})
+	result := reducer.Reduce(movedToCreate.State, intent.CreateTerminalSucceededIntent{
+		PaneID:     types.PaneID("pane-1"),
+		TerminalID: types.TerminalID("term-created"),
+		Name:       "ws-1-tab-1-pane-1",
+		Command:    []string{"sh", "-l"},
+		State:      types.TerminalRunStateRunning,
+	})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected manager overlay to close after create success, got %q", result.State.UI.Overlay.Kind)
+	}
+	terminal := result.State.Domain.Terminals[types.TerminalID("term-created")]
+	if terminal.ID != types.TerminalID("term-created") || terminal.Name != "ws-1-tab-1-pane-1" || len(terminal.Command) != 2 {
+		t.Fatalf("unexpected registered terminal after manager create success: %+v", terminal)
 	}
 }
 
@@ -1248,20 +1327,30 @@ func TestE2EReducerScenarioTerminalManagerCreatesNewTerminalFromCreateRow(t *tes
 
 	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
 	createRow := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: -100})
-	result := reducer.Reduce(createRow.State, intent.TerminalManagerCreateTerminalIntent{})
+	triggered := reducer.Reduce(createRow.State, intent.TerminalManagerCreateTerminalIntent{})
+	result := reducer.Reduce(triggered.State, intent.CreateTerminalSucceededIntent{
+		PaneID:     types.PaneID("pane-1"),
+		TerminalID: types.TerminalID("term-created"),
+		Name:       "ws-1-tab-1-pane-1",
+		Command:    []string{"sh", "-l"},
+		State:      types.TerminalRunStateRunning,
+	})
 
 	if result.State.UI.Focus.Layer != types.FocusLayerTiled || result.State.UI.Focus.PaneID != types.PaneID("pane-1") {
 		t.Fatalf("expected focus to return to current pane, got %+v", result.State.UI.Focus)
 	}
-	if len(result.Effects) != 1 {
-		t.Fatalf("expected one create terminal effect, got %d", len(result.Effects))
+	if len(triggered.Effects) != 1 {
+		t.Fatalf("expected one create terminal effect, got %d", len(triggered.Effects))
 	}
-	effect, ok := result.Effects[0].(CreateTerminalEffect)
+	effect, ok := triggered.Effects[0].(CreateTerminalEffect)
 	if !ok {
-		t.Fatalf("expected create terminal effect, got %T", result.Effects[0])
+		t.Fatalf("expected create terminal effect, got %T", triggered.Effects[0])
 	}
 	if effect.Name != "ws-1-tab-1-pane-1" || len(effect.Command) == 0 {
 		t.Fatalf("expected create effect defaults to be populated, got %+v", effect)
+	}
+	if result.State.Domain.Terminals[types.TerminalID("term-created")].Name != "ws-1-tab-1-pane-1" {
+		t.Fatalf("expected create success to register terminal, got %+v", result.State.Domain.Terminals[types.TerminalID("term-created")])
 	}
 }
 
@@ -1271,7 +1360,14 @@ func TestE2EReducerScenarioTerminalManagerEnterOnCreateRowCreatesNewTerminal(t *
 
 	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
 	createRow := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: -100})
-	result := reducer.Reduce(createRow.State, intent.TerminalManagerConnectHereIntent{})
+	triggered := reducer.Reduce(createRow.State, intent.TerminalManagerConnectHereIntent{})
+	result := reducer.Reduce(triggered.State, intent.CreateTerminalSucceededIntent{
+		PaneID:     types.PaneID("pane-1"),
+		TerminalID: types.TerminalID("term-created"),
+		Name:       "ws-1-tab-1-pane-1",
+		Command:    []string{"sh", "-l"},
+		State:      types.TerminalRunStateRunning,
+	})
 
 	if result.State.UI.Overlay.Kind != types.OverlayNone {
 		t.Fatalf("expected overlay to close after create row submit, got %q", result.State.UI.Overlay.Kind)
@@ -1279,15 +1375,18 @@ func TestE2EReducerScenarioTerminalManagerEnterOnCreateRowCreatesNewTerminal(t *
 	if result.State.UI.Focus.Layer != types.FocusLayerTiled || result.State.UI.Focus.PaneID != types.PaneID("pane-1") {
 		t.Fatalf("expected focus to return to current pane, got %+v", result.State.UI.Focus)
 	}
-	if len(result.Effects) != 1 {
-		t.Fatalf("expected one create terminal effect, got %d", len(result.Effects))
+	if len(triggered.Effects) != 1 {
+		t.Fatalf("expected one create terminal effect, got %d", len(triggered.Effects))
 	}
-	effect, ok := result.Effects[0].(CreateTerminalEffect)
+	effect, ok := triggered.Effects[0].(CreateTerminalEffect)
 	if !ok {
-		t.Fatalf("expected create terminal effect, got %T", result.Effects[0])
+		t.Fatalf("expected create terminal effect, got %T", triggered.Effects[0])
 	}
 	if effect.Name != "ws-1-tab-1-pane-1" || len(effect.Command) == 0 {
 		t.Fatalf("expected create effect defaults to be populated, got %+v", effect)
+	}
+	if result.State.Domain.Terminals[types.TerminalID("term-created")].Name != "ws-1-tab-1-pane-1" {
+		t.Fatalf("expected create success to register terminal, got %+v", result.State.Domain.Terminals[types.TerminalID("term-created")])
 	}
 }
 

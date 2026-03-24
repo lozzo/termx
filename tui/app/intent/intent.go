@@ -41,6 +41,35 @@ type StopTerminalSucceededIntent struct {
 
 func (StopTerminalSucceededIntent) intentName() string { return "stop_terminal_succeeded" }
 
+type CreateTerminalSucceededIntent struct {
+	PaneID     types.PaneID
+	TerminalID types.TerminalID
+	Name       string
+	Command    []string
+	State      types.TerminalRunState
+}
+
+func (CreateTerminalSucceededIntent) intentName() string { return "create_terminal_succeeded" }
+
+type ConnectTerminalInNewTabSucceededIntent struct {
+	WorkspaceID types.WorkspaceID
+	TerminalID  types.TerminalID
+}
+
+func (ConnectTerminalInNewTabSucceededIntent) intentName() string {
+	return "connect_terminal_in_new_tab_succeeded"
+}
+
+type ConnectTerminalInFloatingPaneSucceededIntent struct {
+	WorkspaceID types.WorkspaceID
+	TabID       types.TabID
+	TerminalID  types.TerminalID
+}
+
+func (ConnectTerminalInFloatingPaneSucceededIntent) intentName() string {
+	return "connect_terminal_in_floating_pane_succeeded"
+}
+
 type TerminalProgramExitedIntent struct {
 	TerminalID types.TerminalID
 	ExitCode   int

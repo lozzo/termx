@@ -11,9 +11,14 @@ type RuntimeExecutor interface {
 	Execute(effect reducer.Effect) (ExecutionResult, error)
 }
 
+type CreateTerminalResult struct {
+	TerminalID types.TerminalID
+	State      types.TerminalRunState
+}
+
 type TerminalService interface {
 	ConnectTerminal(paneID types.PaneID, terminalID types.TerminalID) error
-	CreateTerminal(paneID types.PaneID, command []string, name string) error
+	CreateTerminal(paneID types.PaneID, command []string, name string) (CreateTerminalResult, error)
 	StopTerminal(terminalID types.TerminalID) error
 	UpdateTerminalMetadata(terminalID types.TerminalID, name string, tags map[string]string) error
 	ConnectTerminalInNewTab(workspaceID types.WorkspaceID, terminalID types.TerminalID) error
@@ -83,10 +88,26 @@ func (e DefaultRuntimeExecutor) Execute(effect reducer.Effect) (ExecutionResult,
 		}
 		return ExecutionResult{}, nil
 	case reducer.CreateTerminalEffect:
+		created := CreateTerminalResult{State: types.TerminalRunStateRunning}
 		if e.TerminalService != nil {
-			return ExecutionResult{}, e.TerminalService.CreateTerminal(effectValue.PaneID, effectValue.Command, effectValue.Name)
+			var err error
+			created, err = e.TerminalService.CreateTerminal(effectValue.PaneID, effectValue.Command, effectValue.Name)
+			if err != nil {
+				return ExecutionResult{}, err
+			}
+			if created.State == "" {
+				created.State = types.TerminalRunStateRunning
+			}
 		}
-		return ExecutionResult{}, nil
+		return ExecutionResult{
+			Intents: []intent.Intent{intent.CreateTerminalSucceededIntent{
+				PaneID:     effectValue.PaneID,
+				TerminalID: created.TerminalID,
+				Name:       effectValue.Name,
+				Command:    append([]string(nil), effectValue.Command...),
+				State:      created.State,
+			}},
+		}, nil
 	case reducer.StopTerminalEffect:
 		if e.TerminalService != nil {
 			if err := e.TerminalService.StopTerminal(effectValue.TerminalID); err != nil {
@@ -113,14 +134,29 @@ func (e DefaultRuntimeExecutor) Execute(effect reducer.Effect) (ExecutionResult,
 		}, nil
 	case reducer.ConnectTerminalInNewTabEffect:
 		if e.TerminalService != nil {
-			return ExecutionResult{}, e.TerminalService.ConnectTerminalInNewTab(effectValue.WorkspaceID, effectValue.TerminalID)
+			if err := e.TerminalService.ConnectTerminalInNewTab(effectValue.WorkspaceID, effectValue.TerminalID); err != nil {
+				return ExecutionResult{}, err
+			}
 		}
-		return ExecutionResult{}, nil
+		return ExecutionResult{
+			Intents: []intent.Intent{intent.ConnectTerminalInNewTabSucceededIntent{
+				WorkspaceID: effectValue.WorkspaceID,
+				TerminalID:  effectValue.TerminalID,
+			}},
+		}, nil
 	case reducer.ConnectTerminalInFloatingPaneEffect:
 		if e.TerminalService != nil {
-			return ExecutionResult{}, e.TerminalService.ConnectTerminalInFloatingPane(effectValue.WorkspaceID, effectValue.TabID, effectValue.TerminalID)
+			if err := e.TerminalService.ConnectTerminalInFloatingPane(effectValue.WorkspaceID, effectValue.TabID, effectValue.TerminalID); err != nil {
+				return ExecutionResult{}, err
+			}
 		}
-		return ExecutionResult{}, nil
+		return ExecutionResult{
+			Intents: []intent.Intent{intent.ConnectTerminalInFloatingPaneSucceededIntent{
+				WorkspaceID: effectValue.WorkspaceID,
+				TabID:       effectValue.TabID,
+				TerminalID:  effectValue.TerminalID,
+			}},
+		}, nil
 	case reducer.OpenPromptEffect:
 		return ExecutionResult{
 			Intents: []intent.Intent{intent.OpenPromptIntent{

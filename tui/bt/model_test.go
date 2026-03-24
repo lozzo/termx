@@ -106,15 +106,16 @@ func (s *stubNoticeScheduler) ScheduleTimeout(id string, after time.Duration) te
 }
 
 type failingTerminalService struct {
-	stopErr error
+	createErr error
+	stopErr   error
 }
 
 func (f *failingTerminalService) ConnectTerminal(types.PaneID, types.TerminalID) error {
 	return nil
 }
 
-func (f *failingTerminalService) CreateTerminal(types.PaneID, []string, string) error {
-	return nil
+func (f *failingTerminalService) CreateTerminal(types.PaneID, []string, string) (CreateTerminalResult, error) {
+	return CreateTerminalResult{}, f.createErr
 }
 
 func (f *failingTerminalService) StopTerminal(types.TerminalID) error {
@@ -617,8 +618,12 @@ func TestE2EModelScenarioTerminalManagerEnterOnCreateRowClosesOverlay(t *testing
 
 	current := model
 	for _, key := range sequence {
-		next, _ := current.Update(key)
+		next, cmd := current.Update(key)
 		current = next.(*Model)
+		if cmd != nil {
+			next, _ = current.Update(cmd())
+			current = next.(*Model)
+		}
 	}
 
 	state := current.State()
@@ -627,6 +632,39 @@ func TestE2EModelScenarioTerminalManagerEnterOnCreateRowClosesOverlay(t *testing
 	}
 	if state.UI.Focus.Layer != types.FocusLayerTiled || state.UI.Focus.PaneID != types.PaneID("pane-1") {
 		t.Fatalf("expected focus to return to current pane, got %+v", state.UI.Focus)
+	}
+}
+
+func TestE2EModelScenarioFailedCreateKeepsTerminalManagerOpen(t *testing.T) {
+	service := &failingTerminalService{createErr: errBoom}
+	model := NewModel(ModelConfig{
+		InitialState:  newManagerAppState(),
+		Mapper:        NewIntentMapper(Config{Clock: fixedClock{}}),
+		Reducer:       reducer.New(),
+		EffectHandler: RuntimeEffectHandler{Executor: DefaultRuntimeExecutor{TerminalService: service}},
+		Renderer:      StaticRenderer{},
+	})
+
+	current := model
+	for _, key := range []tea.KeyMsg{
+		{Type: tea.KeyCtrlG},
+		{Type: tea.KeyRunes, Runes: []rune("t")},
+		{Type: tea.KeyUp},
+		{Type: tea.KeyEnter},
+	} {
+		next, cmd := current.Update(key)
+		current = next.(*Model)
+		if cmd != nil {
+			next, _ = current.Update(cmd())
+			current = next.(*Model)
+		}
+	}
+
+	if current.State().UI.Overlay.Kind != types.OverlayTerminalManager {
+		t.Fatalf("expected failed create to keep manager open, got %q", current.State().UI.Overlay.Kind)
+	}
+	if len(current.Notices()) != 1 || current.Notices()[0].Text != "boom" {
+		t.Fatalf("expected failed create to record error notice, got %+v", current.Notices())
 	}
 }
 

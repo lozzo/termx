@@ -23,7 +23,7 @@ func (c *stubRuntimeTerminalServiceClient) Create(_ context.Context, command []s
 		name:    name,
 		size:    size,
 	})
-	return &protocol.CreateResult{}, nil
+	return &protocol.CreateResult{TerminalID: "term-created", State: "running"}, nil
 }
 
 func (c *stubRuntimeTerminalServiceClient) SetTags(context.Context, string, map[string]string) error {
@@ -82,7 +82,8 @@ func TestRuntimeTerminalServiceDelegatesBasicTerminalActions(t *testing.T) {
 	client := &stubRuntimeTerminalServiceClient{}
 	service := newRuntimeTerminalService(client).(runtimeTerminalService)
 
-	if err := service.CreateTerminal(types.PaneID("pane-1"), []string{"sh", "-l"}, "main-shell"); err != nil {
+	created, err := service.CreateTerminal(types.PaneID("pane-1"), []string{"sh", "-l"}, "main-shell")
+	if err != nil {
 		t.Fatalf("expected create terminal delegation to succeed, got %v", err)
 	}
 	if err := service.UpdateTerminalMetadata(types.TerminalID("term-1"), "api-dev", map[string]string{"env": "dev"}); err != nil {
@@ -94,6 +95,9 @@ func TestRuntimeTerminalServiceDelegatesBasicTerminalActions(t *testing.T) {
 
 	if len(client.createCalls) != 1 || client.createCalls[0].name != "main-shell" {
 		t.Fatalf("unexpected create delegation payload: %+v", client.createCalls)
+	}
+	if created.TerminalID != types.TerminalID("term-created") || created.State != types.TerminalRunStateRunning {
+		t.Fatalf("unexpected create terminal result: %+v", created)
 	}
 	if len(client.metadataCalls) != 1 || client.metadataCalls[0].terminalID != "term-1" || client.metadataCalls[0].name != "api-dev" {
 		t.Fatalf("unexpected metadata delegation payload: %+v", client.metadataCalls)

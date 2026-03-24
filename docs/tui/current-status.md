@@ -156,6 +156,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 132. 第一百二十八轮 TDD 已补上 workspace tree jump 的 tab auto-acquire owner
 133. 第一百二十九轮 TDD 已补上 stop terminal 控制面的 owner 权限约束
 134. 第一百三十轮 TDD 已补上 stop / metadata 控制面的成功回灌语义
+135. 第一百三十一轮 TDD 已补上 create / new-tab / floating 控制面的成功回灌语义
 
 对应文档：
 
@@ -286,6 +287,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `stop terminal` 与 metadata submit 现在都改成 runtime service 成功后再回灌 success intent，不再由 reducer 先做乐观本地提交
 - metadata 更新失败时，prompt 会保留并显示错误 notice，避免出现“标题已变但服务失败”的假成功
 - stop terminal 失败时，terminal manager 会保留并显示错误 notice，避免出现“pane 已清空但 kill 失败”的假成功
+- `create terminal`、`connect in new tab`、`connect in floating pane` 现在也改成 runtime service 成功后再回灌 success intent，失败时 overlay 保持原位等待重试
+- create terminal 成功后，reducer 会立即把新 terminal 注册进 domain，避免在 event 到达前 manager/picker 视图完全无感
+- 已补上 reducer / bt / runtime 场景测试：manager、picker、layout resolve 的 create 成功后关闭 overlay 并注册 terminal，失败时保留原 overlay 并显示 notice
 - 已补上一条 runtime 场景型 E2E：`Ctrl-f` 打开 terminal picker 时主视图显式显示 `overlay: terminal_picker` 与 `focus_overlay_target: terminal_picker`
 - 已补上一条 runtime 场景型 E2E：workspace picker / prompt / terminal manager / terminal picker / layout resolve 关闭后主视图不再残留 `focus_overlay_target`
 - 已补上一条 runtime 场景型 E2E：terminal manager 与 layout resolve 关闭后主视图不再残留临时 `mode`
