@@ -1106,7 +1106,8 @@ func splitNodeToLayoutNode(node *types.SplitNode) *layoutdomain.Node {
 }
 
 // renderWireframeView 在语义 renderer 之上补一层稳定的 ASCII 工作台，
-// 让 `cmd/termx` 即使还没接入完整几何布局，也先具备“看起来像真正 TUI”的主视图。
+// 现在它降级成调试摘要层，只保留 topology / overlay / preview 的关键语义，
+// 不再重复把整个 workbench 再画成一整片 box。
 func (r runtimeRenderer) renderWireframeView(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) []string {
 	lines := []string{"wireframe_view:"}
 	layer := tab.ActiveLayer
@@ -1118,11 +1119,13 @@ func (r runtimeRenderer) renderWireframeView(state types.AppState, workspace typ
 		focus = types.FocusLayerTiled
 	}
 	metrics := r.wireframeMetrics(pane)
-	lines = append(lines, renderASCIIBox(metrics.ViewportWidth, []string{
-		fmt.Sprintf("WORKSPACE[%s] TAB[%s] LAYER[%s] FOCUS[%s] OVERLAY[%s]", safeWorkspaceLabel(workspace), safeTabLabel(tab), layer, focus, state.UI.Overlay.Kind),
-		fmt.Sprintf("PATH[%s/%s/%s:%s]", safeWorkspaceLabel(workspace), safeTabLabel(tab), safePaneKind(pane.Kind), pane.ID),
-		fmt.Sprintf("VIEWPORT[%dx%d]", metrics.ViewportWidth, metrics.ViewportHeight),
-	})...)
+	lines = append(lines, compactSummaryLine(
+		fmt.Sprintf("DEBUG[%s/%s]", safeWorkspaceLabel(workspace), safeTabLabel(tab)),
+		fmt.Sprintf("viewport=%dx%d", metrics.ViewportWidth, metrics.ViewportHeight),
+		fmt.Sprintf("layer=%s", layer),
+		fmt.Sprintf("focus=%s", focus),
+		fmt.Sprintf("overlay=%s", state.UI.Overlay.Kind),
+	))
 	lines = append(lines, r.renderWireframeWorkbench(state, tab, pane, metrics)...)
 	if overlayLines := r.renderWireframeOverlayDialog(state, metrics); len(overlayLines) > 0 {
 		lines = append(lines, overlayLines...)
@@ -1139,63 +1142,51 @@ func (r runtimeRenderer) renderWireframeWorkbench(state types.AppState, tab type
 	case len(floatingPaneIDs) > 0:
 		return r.renderWireframeFloatingWorkbench(state, tab, pane, floatingPaneIDs, metrics)
 	default:
-		return renderASCIIBox(metrics.ViewportWidth, append([]string{"WORKBENCH single"}, r.renderWireframePaneCard(state, pane, true)...))
+		return r.renderWireframeSingleWorkbench(state, pane)
 	}
+}
+
+func (r runtimeRenderer) renderWireframeSingleWorkbench(state types.AppState, pane types.PaneState) []string {
+	lines := []string{
+		compactSummaryLine("WORKBENCH[single]", renderWireframePaneStateSummary(state, pane, true)),
+	}
+	if pane.TerminalID != "" {
+		terminalState := "unknown"
+		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.State != "" {
+			terminalState = string(terminal.State)
+		}
+		lines = append(lines, fmt.Sprintf("TERM[%s] STATE[%s]", pane.TerminalID, terminalState))
+	}
+	if preview := r.renderWireframeDebugPreview(state, pane); preview != "" {
+		lines = append(lines, preview)
+	}
+	return lines
 }
 
 func (r runtimeRenderer) renderWireframeSplitWorkbench(state types.AppState, tab types.TabState, tiledPaneIDs []types.PaneID, floatingPaneIDs []types.PaneID, metrics wireframeMetrics) []string {
 	summary := summarizeTiledLayout(tab.RootSplit, len(tiledPaneIDs))
-	lines := renderASCIIBox(metrics.ViewportWidth, []string{
-		"WORKBENCH split",
-		renderWireframeSplitSummary(summary),
-		renderWireframeSplitRatioBar(summary),
-	})
-	if treeLines := r.renderWireframeLayoutTree(state, tab, metrics); len(treeLines) > 0 {
-		lines = append(lines, renderASCIIBox(metrics.ViewportWidth, treeLines)...)
+	lines := []string{
+		compactSummaryLine("WORKBENCH[split]", renderWireframeSplitSummary(summary)),
 	}
-	overviewLines := make([]string, 0, 2)
-	for i, paneID := range tiledPaneIDs {
-		if i == 2 {
-			break
-		}
+	for _, paneID := range tiledPaneIDs {
 		pane, ok := tab.Panes[paneID]
 		if !ok {
 			continue
 		}
-		overviewLines = append(overviewLines, renderWireframePaneStateSummary(state, pane, paneID == tab.ActivePaneID))
-	}
-	if len(overviewLines) > 0 {
-		lines = append(lines, renderASCIIBox(metrics.ViewportWidth, overviewLines)...)
-	}
-	columnBoxes := make([][]string, 0, 2)
-	for i, paneID := range tiledPaneIDs {
-		if i == 2 {
-			break
+		cardKind := "PANE"
+		if paneID == tab.ActivePaneID {
+			cardKind = "ACTIVE"
 		}
-		pane, ok := tab.Panes[paneID]
-		if !ok {
-			continue
-		}
-		columnBoxes = append(columnBoxes, renderASCIIBox(metrics.SplitColumnWidth, r.renderWireframePaneCard(state, pane, paneID == tab.ActivePaneID)))
-	}
-	if len(columnBoxes) == 1 {
-		columnBoxes = append(columnBoxes, renderASCIIBox(metrics.SplitColumnWidth, []string{"PANE[missing]", "slot[missing]"}))
-	}
-	lines = append(lines, joinASCIIBoxes(columnBoxes, 2)...)
-	if len(tiledPaneIDs) > 2 {
-		extraLines := []string{"EXTRA PANES"}
-		for _, paneID := range tiledPaneIDs[2:] {
-			pane, ok := tab.Panes[paneID]
-			if !ok {
-				continue
-			}
-			extraLines = append(extraLines, renderWireframePaneStateSummary(state, pane, paneID == tab.ActivePaneID))
-		}
-		lines = append(lines, renderASCIIBox(metrics.ViewportWidth, extraLines)...)
+		lines = append(lines, renderWireframePaneStateSummary(state, pane, cardKind == "ACTIVE"))
 	}
 	if len(floatingPaneIDs) > 0 {
-		lines = append(lines, renderASCIIBox(metrics.ViewportWidth, r.renderWireframeFloatingStackBody(state, tab, floatingPaneIDs))...)
-		lines = append(lines, renderASCIIBox(metrics.ViewportWidth, r.renderWireframeFloatingGeometryMap(state, tab, floatingPaneIDs))...)
+		lines = append(lines, compactSummaryLine(fmt.Sprintf("FLOATING[%d]", len(floatingPaneIDs))))
+		for _, line := range r.renderWireframeFloatingStackSummary(state, tab, floatingPaneIDs) {
+			if line == "FLOATING STACK" {
+				continue
+			}
+			lines = append(lines, line)
+		}
 	}
 	return lines
 }
@@ -1312,15 +1303,27 @@ func renderWireframeSplitRatioBar(summary tiledLayoutSummary) string {
 }
 
 func (r runtimeRenderer) renderWireframeFloatingWorkbench(state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, metrics wireframeMetrics) []string {
-	mainBox := renderASCIIBox(metrics.MainPaneWidth, append([]string{"WORKBENCH floating"}, r.renderWireframePaneCard(state, pane, true)...))
-	sidebarBox := renderASCIIBox(metrics.SidebarWidth, r.renderWireframeFloatingStackBody(state, tab, floatingPaneIDs))
-	lines := joinASCIIBoxes([][]string{mainBox, sidebarBox}, 2)
-	lines = append(lines, renderASCIIBox(metrics.ViewportWidth, r.renderWireframeFloatingGeometryMap(state, tab, floatingPaneIDs))...)
-	summaryLines := r.renderWireframeFloatingStackSummary(state, tab, floatingPaneIDs)
-	if len(summaryLines) > 0 {
-		lines = append(lines, renderASCIIBox(metrics.ViewportWidth, summaryLines)...)
+	lines := []string{
+		compactSummaryLine("WORKBENCH[floating]", fmt.Sprintf("FLOATING[%d]", len(floatingPaneIDs)), fmt.Sprintf("FOCUS[%s]", tab.ActivePaneID)),
+		renderWireframePaneStateSummary(state, pane, true),
+	}
+	for _, line := range r.renderWireframeFloatingStackSummary(state, tab, floatingPaneIDs) {
+		if line == "FLOATING STACK" {
+			continue
+		}
+		lines = append(lines, line)
 	}
 	return lines
+}
+
+func (r runtimeRenderer) renderWireframeDebugPreview(state types.AppState, pane types.PaneState) string {
+	previewLines := r.renderWireframePanePreviewLines(state, pane)
+	if len(previewLines) == 0 {
+		return ""
+	}
+	preview := previewLines[0]
+	preview = strings.TrimPrefix(preview, "PREVIEW ")
+	return fmt.Sprintf("PREVIEW[%s]", preview)
 }
 
 // renderWireframePaneCard 用统一卡片表达 pane 的控制关系、terminal 状态和最近屏幕内容，
@@ -1490,20 +1493,17 @@ func (r runtimeRenderer) renderWireframeOverlayDialog(state types.AppState, metr
 		return nil
 	}
 	body := []string{
-		fmt.Sprintf("OVERLAY[%s] FOCUS[%s]", state.UI.Overlay.Kind, state.UI.Focus.Layer),
-		"BACKDROP[active]",
-		fmt.Sprintf("CENTER[offset=%d width=%d]", (metrics.ViewportWidth-metrics.OverlayWidth)/2, metrics.OverlayWidth),
+		compactSummaryLine(
+			fmt.Sprintf("DEBUG_OVERLAY[%s]", state.UI.Overlay.Kind),
+			fmt.Sprintf("focus=%s", state.UI.Focus.Layer),
+			fmt.Sprintf("center=%d/%d", (metrics.ViewportWidth-metrics.OverlayWidth)/2, metrics.OverlayWidth),
+		),
 	}
 	if returnFocus := renderWireframeReturnFocus(state.UI.Overlay.ReturnFocus); returnFocus != "" {
 		body = append(body, fmt.Sprintf("RETURN[%s]", returnFocus))
 	}
 	body = append(body, renderWireframeOverlayBody(state.UI.Overlay)...)
-	box := renderASCIIBox(metrics.OverlayWidth, body)
-	padding := (metrics.ViewportWidth - metrics.OverlayWidth) / 2
-	if padding < 0 {
-		padding = 0
-	}
-	return indentLines(box, padding)
+	return body
 }
 
 func (r runtimeRenderer) wireframeMetrics(pane types.PaneState) wireframeMetrics {

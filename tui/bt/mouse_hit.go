@@ -36,7 +36,7 @@ func mapWorkspacePickerMouseClick(state types.AppState, msg tea.MouseMsg, view s
 			}
 		}
 	}
-	targetIndex, ok := overlayClickedRowIndex(view, "workspace_picker_rows:", msg.Y, len(rows), overlayPreviewRowLimit, selectedIndex)
+	targetIndex, ok := overlayClickedWorkspacePickerRowIndex(view, msg.Y, rows, selectedIndex)
 	if !ok {
 		return nil
 	}
@@ -71,7 +71,7 @@ func mapTerminalPickerMouseClick(state types.AppState, msg tea.MouseMsg, view st
 			}
 		}
 	}
-	targetIndex, ok := overlayClickedRowIndex(view, "terminal_picker_rows:", msg.Y, len(rows), overlayPreviewRowLimit, selectedIndex)
+	targetIndex, ok := overlayClickedTerminalPickerRowIndex(view, msg.Y, rows, selectedIndex)
 	if !ok {
 		return nil
 	}
@@ -106,7 +106,7 @@ func mapLayoutResolveMouseClick(state types.AppState, msg tea.MouseMsg, view str
 			}
 		}
 	}
-	targetIndex, ok := overlayClickedRowIndex(view, "layout_resolve_rows:", msg.Y, len(rows), overlayPreviewRowLimit, selectedIndex)
+	targetIndex, ok := overlayClickedLayoutResolveRowIndex(view, msg.Y, rows, selectedIndex)
 	if !ok {
 		return nil
 	}
@@ -145,7 +145,7 @@ func mapTerminalManagerMouseClick(state types.AppState, msg tea.MouseMsg, view s
 	if selectedVisibleIndex < 0 {
 		return nil
 	}
-	targetVisibleIndex, ok := overlayClickedRowIndex(view, "terminal_manager_rows:", msg.Y, len(rows), terminalManagerPreviewRowLimit, selectedVisibleIndex)
+	targetVisibleIndex, ok := overlayClickedTerminalManagerRowIndex(view, msg.Y, rows, selectedVisibleIndex)
 	if !ok {
 		return nil
 	}
@@ -183,7 +183,10 @@ func mapTerminalManagerLocationClick(manager *terminalmanagerdomain.State, msg t
 	if !ok || len(detail.Locations) == 0 {
 		return nil
 	}
-	targetIndex, ok := overlayClickedRowIndex(view, "detail_locations:", msg.Y, len(detail.Locations), overlayDetailPreviewRowLimit, 0)
+	targetIndex, ok := overlayClickedStringRowIndex(view, "detail_locations:", msg.Y, len(detail.Locations), overlayDetailPreviewRowLimit, 0, func(index int) string {
+		location := detail.Locations[index]
+		return "[location] " + location.WorkspaceName + "/" + location.TabName + "/" + location.SlotLabel
+	})
 	if !ok {
 		return nil
 	}
@@ -197,7 +200,10 @@ func mapTerminalManagerLocationClick(manager *terminalmanagerdomain.State, msg t
 
 func mapTerminalManagerActionClick(msg tea.MouseMsg, view string) []intent.Intent {
 	actionRows := terminalmanagerdomain.ActionRows()
-	targetIndex, ok := overlayClickedRowIndex(view, "terminal_manager_actions:", msg.Y, len(actionRows), len(actionRows), 0)
+	targetIndex, ok := overlayClickedStringRowIndex(view, "terminal_manager_actions:", msg.Y, len(actionRows), len(actionRows), 0, func(index int) string {
+		action := actionRows[index]
+		return "[" + string(action.ID) + "] " + action.Label
+	})
 	if !ok {
 		return nil
 	}
@@ -239,7 +245,7 @@ func mapPromptMouseClick(state types.AppState, msg tea.MouseMsg, view string) []
 	if active < 0 || active >= len(prompt.Fields) {
 		active = 0
 	}
-	targetIndex, ok := overlayClickedRowIndex(view, "prompt_fields:", msg.Y, len(prompt.Fields), overlayDetailPreviewRowLimit, active)
+	targetIndex, ok := overlayClickedPromptFieldIndex(view, msg.Y, prompt.Fields, active)
 	if !ok || targetIndex == active {
 		return nil
 	}
@@ -248,7 +254,10 @@ func mapPromptMouseClick(state types.AppState, msg tea.MouseMsg, view string) []
 
 func mapPromptActionClick(msg tea.MouseMsg, view string) []intent.Intent {
 	actionRows := promptdomain.ActionRows()
-	targetIndex, ok := overlayClickedRowIndex(view, "prompt_actions:", msg.Y, len(actionRows), len(actionRows), 0)
+	targetIndex, ok := overlayClickedStringRowIndex(view, "prompt_actions:", msg.Y, len(actionRows), len(actionRows), 0, func(index int) string {
+		action := actionRows[index]
+		return "[" + string(action.ID) + "] " + action.Label
+	})
 	if !ok {
 		return nil
 	}
@@ -278,6 +287,59 @@ func overlayClickedRowIndex(view string, prefix string, y int, rowCount int, pre
 		return 0, false
 	}
 	return start + clickedPreviewIndex, true
+}
+
+// overlayClickedStringRowIndex 先尝试直接命中 screen shell 里真正可见的行文本，
+// 再回退到 chrome metadata 区的相对行号映射，保证真实对话框和调试层都能点。
+func overlayClickedStringRowIndex(view string, prefix string, y int, rowCount int, previewLimit int, selectedIndex int, rowText func(index int) string) (int, bool) {
+	if y < 0 || rowCount == 0 || rowText == nil {
+		return 0, false
+	}
+	if line, ok := lineAtIndex(view, y); ok {
+		start, end := overlayPreviewWindow(rowCount, previewLimit, selectedIndex)
+		for index := start; index < end; index++ {
+			text := rowText(index)
+			if text != "" && strings.Contains(line, text) {
+				return index, true
+			}
+		}
+	}
+	return overlayClickedRowIndex(view, prefix, y, rowCount, previewLimit, selectedIndex)
+}
+
+func overlayClickedWorkspacePickerRowIndex(view string, y int, rows []workspacedomain.TreeRow, selectedIndex int) (int, bool) {
+	return overlayClickedStringRowIndex(view, "workspace_picker_rows:", y, len(rows), overlayPreviewRowLimit, selectedIndex, func(index int) string {
+		row := rows[index]
+		return strings.Repeat("  ", row.Depth) + "[" + string(row.Node.Kind) + "] " + row.Node.Label
+	})
+}
+
+func overlayClickedTerminalPickerRowIndex(view string, y int, rows []terminalpickerdomain.Row, selectedIndex int) (int, bool) {
+	return overlayClickedStringRowIndex(view, "terminal_picker_rows:", y, len(rows), overlayPreviewRowLimit, selectedIndex, func(index int) string {
+		row := rows[index]
+		return "[" + string(row.Kind) + "] " + row.Label
+	})
+}
+
+func overlayClickedLayoutResolveRowIndex(view string, y int, rows []layoutresolvedomain.Row, selectedIndex int) (int, bool) {
+	return overlayClickedStringRowIndex(view, "layout_resolve_rows:", y, len(rows), overlayPreviewRowLimit, selectedIndex, func(index int) string {
+		row := rows[index]
+		return "[" + string(row.Action) + "] " + row.Label
+	})
+}
+
+func overlayClickedTerminalManagerRowIndex(view string, y int, rows []terminalmanagerdomain.Row, selectedIndex int) (int, bool) {
+	return overlayClickedStringRowIndex(view, "terminal_manager_rows:", y, len(rows), terminalManagerPreviewRowLimit, selectedIndex, func(index int) string {
+		row := rows[index]
+		return "[" + string(row.Kind) + "] " + row.Label
+	})
+}
+
+func overlayClickedPromptFieldIndex(view string, y int, fields []promptdomain.Field, active int) (int, bool) {
+	return overlayClickedStringRowIndex(view, "prompt_fields:", y, len(fields), overlayDetailPreviewRowLimit, active, func(index int) string {
+		field := fields[index]
+		return "[" + field.Key + "] " + field.Label + ": " + field.Value
+	})
 }
 
 func isLeftMousePress(msg tea.MouseMsg) bool {
@@ -343,4 +405,15 @@ func findLineIndexWithPrefix(view string, prefix string) int {
 		}
 	}
 	return -1
+}
+
+func lineAtIndex(view string, index int) (string, bool) {
+	if index < 0 {
+		return "", false
+	}
+	lines := strings.Split(view, "\n")
+	if index >= len(lines) {
+		return "", false
+	}
+	return lines[index], true
 }

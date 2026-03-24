@@ -57,7 +57,7 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "VIEWPORT[96x40]") {
+	if !strings.Contains(view, "viewport=96x40") {
 		t.Fatalf("expected wireframe viewport to adapt to runtime size, got:\n%s", view)
 	}
 	if !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "SHELL[96x40 overlay=none]") || !strings.Contains(view, "HEADER[main] [shell] pane:pane-1 term:term-1 float:0") {
@@ -1532,13 +1532,13 @@ func TestRuntimeRendererRendersWireframeWorkbenchForActivePane(t *testing.T) {
 	if !strings.Contains(view, "wireframe_view:") {
 		t.Fatalf("expected wireframe section in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "WORKSPACE[main] TAB[shell] LAYER[tiled] FOCUS[tiled] OVERLAY[none]") {
+	if !strings.Contains(view, "DEBUG[main/shell]") || !strings.Contains(view, "viewport=78x24") || !strings.Contains(view, "layer=tiled") || !strings.Contains(view, "focus=tiled") || !strings.Contains(view, "overlay=none") {
 		t.Fatalf("expected wireframe header summary in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] KIND[tiled] SLOT[connected]") {
+	if !strings.Contains(view, "WORKBENCH[single]") || !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] STATE[running]") {
 		t.Fatalf("expected wireframe active pane summary in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "TERM[term-1] STATE[running]") {
+	if !strings.Contains(view, "TERM[term-1] STATE[running]") || !strings.Contains(view, "PREVIEW[$ pwd]") {
 		t.Fatalf("expected wireframe terminal summary in rendered view, got:\n%s", view)
 	}
 }
@@ -1583,11 +1583,8 @@ func TestRuntimeRendererRendersWireframeSplitWorkbench(t *testing.T) {
 	if !strings.Contains(view, "$ npm") || !strings.Contains(view, "ready") || !strings.Contains(view, "term-1 running owner") || !strings.Contains(view, "> tsc") || !strings.Contains(view, "ok") || !strings.Contains(view, "term-2 running owner") {
 		t.Fatalf("expected split pane shell canvas rows in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "SPLIT[vertical] RATIO[0.50] LEAVES[2]") {
+	if !strings.Contains(view, "WORKBENCH[split]") || !strings.Contains(view, "SPLIT[vertical]") || !strings.Contains(view, "RATIO[0.50]") || !strings.Contains(view, "LEAVES[2]") {
 		t.Fatalf("expected wireframe split summary in rendered view, got:\n%s", view)
-	}
-	if !strings.Contains(view, "BAR[===============|===============]") {
-		t.Fatalf("expected split ratio bar in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] STATE[running]") {
 		t.Fatalf("expected active split pane box in rendered view, got:\n%s", view)
@@ -1641,11 +1638,8 @@ func TestRuntimeRendererRendersWireframeFloatingStack(t *testing.T) {
 	if !strings.Contains(view, "api ready") || !strings.Contains(view, "term-1 running owner") || !strings.Contains(view, "build ok") || !strings.Contains(view, "term-2 running owner") {
 		t.Fatalf("expected floating shell canvas rows in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "FLOATING STACK") {
-		t.Fatalf("expected wireframe floating stack heading in rendered view, got:\n%s", view)
-	}
-	if !strings.Contains(view, "FLOATING MAP") || !strings.Contains(view, "MAP[y08]") || !strings.Contains(view, "MAP[y14]") {
-		t.Fatalf("expected floating geometry map in rendered view, got:\n%s", view)
+	if !strings.Contains(view, "WORKBENCH[floating]") || !strings.Contains(view, "FLOATING[2]") || !strings.Contains(view, "FOCUS[float-1]") {
+		t.Fatalf("expected wireframe floating workbench summary in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "FLOAT[float-1] api-dev owner 10,8 30x12") {
 		t.Fatalf("expected first floating pane card in rendered view, got:\n%s", view)
@@ -1673,7 +1667,7 @@ func TestRuntimeRendererRendersWireframeOverlayDialog(t *testing.T) {
 	if !strings.Contains(view, "LIST[terminals]") || !strings.Contains(view, "DETAIL[terminal]") || !strings.Contains(view, "F:PARKED build-log") || !strings.Contains(view, "rows=7 sel=term-2 q=") || !strings.Contains(view, ">> [terminal] build-log") || !strings.Contains(view, "D:build-log term-2") || !strings.Contains(view, "state=running vis=hidden") || !strings.Contains(view, "owner=-") || !strings.Contains(view, "conn=0 loc=0") || !strings.Contains(view, "BODY[command]") || !strings.Contains(view, "tail -f build.log") {
 		t.Fatalf("expected structured terminal manager shell dialog body, got:\n%s", view)
 	}
-	if !strings.Contains(view, "OVERLAY[terminal_manager] FOCUS[overlay]") {
+	if !strings.Contains(view, "DEBUG_OVERLAY[terminal_manager]") || !strings.Contains(view, "focus=overlay") {
 		t.Fatalf("expected wireframe overlay heading in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "ROWS[7] SELECTED[term-2]") {
@@ -1706,7 +1700,7 @@ func TestRuntimeRendererRendersWireframeWorkspacePickerTree(t *testing.T) {
 	if !strings.Contains(view, "DIALOG[workspace_picker]") || !strings.Contains(view, "TREE[workspace]") || !strings.Contains(view, "TARGET[node]") || !strings.Contains(view, "F:q=ops sel=ws-2") || !strings.Contains(view, "rows=6") || !strings.Contains(view, "D:ws-2") || !strings.Contains(view, "kind=workspace depth=0") || !strings.Contains(view, "label=ops") {
 		t.Fatalf("expected structured workspace picker shell dialog body, got:\n%s", view)
 	}
-	if !strings.Contains(view, "OVERLAY[workspace_picker] FOCUS[overlay]") {
+	if !strings.Contains(view, "DEBUG_OVERLAY[workspace_picker]") || !strings.Contains(view, "focus=overlay") {
 		t.Fatalf("expected workspace picker wireframe overlay heading in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "ROWS[6] QUERY[ops] SELECTED[ws-2]") {
@@ -1724,7 +1718,7 @@ func TestRuntimeRendererRendersWireframeLayoutResolveDialog(t *testing.T) {
 	state := runtimeStateWithLayoutResolveTarget()
 
 	view := runtimeRenderer{}.Render(state, nil)
-	if !strings.Contains(view, "OVERLAY[layout_resolve] FOCUS[overlay]") {
+	if !strings.Contains(view, "DEBUG_OVERLAY[layout_resolve]") || !strings.Contains(view, "focus=overlay") {
 		t.Fatalf("expected layout resolve wireframe heading in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "ROWS[3] PANE[pane-1] ROLE[backend-dev]") {
@@ -1760,7 +1754,7 @@ func TestRuntimeRendererRendersWireframePromptDialog(t *testing.T) {
 	if !strings.Contains(view, "DIALOG[prompt]") || !strings.Contains(view, "FIELDS[prompt]") || !strings.Contains(view, "ACTIVE[field]") || !strings.Contains(view, "count=2 f=tags") || !strings.Contains(view, "active=tags") || !strings.Contains(view, ">> [tags] Tags: group=build") || !strings.Contains(view, "D:tags") || !strings.Contains(view, "label=Tags") || !strings.Contains(view, "terminal=term-2") || !strings.Contains(view, "BODY[actions]") || !strings.Contains(view, "submit | cancel") {
 		t.Fatalf("expected structured prompt shell dialog body, got:\n%s", view)
 	}
-	if !strings.Contains(view, "OVERLAY[prompt] FOCUS[prompt]") {
+	if !strings.Contains(view, "DEBUG_OVERLAY[prompt]") || !strings.Contains(view, "focus=prompt") {
 		t.Fatalf("expected prompt wireframe heading in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "PROMPT[edit_terminal_metadata]") || !strings.Contains(view, "TITLE[edit terminal metadata]") {
@@ -1801,7 +1795,7 @@ func TestRuntimeRendererRendersWireframeMixedSlotWorkbench(t *testing.T) {
 	if strings.Contains(view, "CARD[pane-3] deploy-log [owner]") || strings.Contains(view, "WINDOW CARD[float-empty]") {
 		t.Fatalf("expected exited tiled pane to move into tiled canvas instead of extra card, got:\n%s", view)
 	}
-	if !strings.Contains(view, "WORKBENCH split") {
+	if !strings.Contains(view, "WORKBENCH[split]") {
 		t.Fatalf("expected mixed slot workbench to use split wireframe, got:\n%s", view)
 	}
 	if !strings.Contains(view, "PANE[waiting pane] SLOT[waiting]") {
@@ -1855,17 +1849,11 @@ func TestRuntimeRendererRendersWireframeNestedSplitWorkbench(t *testing.T) {
 	if !strings.Contains(view, "TILED CANVAS[78x12 panes=3]") {
 		t.Fatalf("expected nested split shell canvas heading, got:\n%s", view)
 	}
-	if !strings.Contains(view, "LAYOUT TREE") {
-		t.Fatalf("expected nested split wireframe tree heading, got:\n%s", view)
+	if !strings.Contains(view, "WORKBENCH[split]") || !strings.Contains(view, "SPLIT[horizontal]") || !strings.Contains(view, "RATIO[0.60]") || !strings.Contains(view, "LEAVES[3]") {
+		t.Fatalf("expected nested split wireframe summary, got:\n%s", view)
 	}
-	if !strings.Contains(view, "split[horizontal] ratio[0.60] width[46]") {
-		t.Fatalf("expected root split ratio/width in wireframe tree, got:\n%s", view)
-	}
-	if !strings.Contains(view, "split[vertical] ratio[0.50] width[30]") {
-		t.Fatalf("expected nested split ratio/width in wireframe tree, got:\n%s", view)
-	}
-	if !strings.Contains(view, "> pane[api-dev] role[owner] state[running]") || !strings.Contains(view, "  pane[watcher] role[owner] state[running]") || !strings.Contains(view, "  pane[build-log] role[owner] state[running]") {
-		t.Fatalf("expected nested pane states in wireframe tree, got:\n%s", view)
+	if !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] STATE[running]") || !strings.Contains(view, "PANE[watcher] ROLE[owner] STATE[running]") || !strings.Contains(view, "PANE[build-log] ROLE[owner] STATE[running]") {
+		t.Fatalf("expected nested pane states in compact wireframe summary, got:\n%s", view)
 	}
 }
 
@@ -1876,10 +1864,7 @@ func TestRuntimeRendererRendersWireframeOverlayBackdropAndReturnFocus(t *testing
 	if !strings.Contains(view, "DIALOG[layout_resolve]") || !strings.Contains(view, "overlay active: layout_resolve") {
 		t.Fatalf("expected shell overlay dialog summary, got:\n%s", view)
 	}
-	if !strings.Contains(view, "BACKDROP[active]") {
-		t.Fatalf("expected wireframe overlay backdrop summary, got:\n%s", view)
-	}
-	if !strings.Contains(view, "CENTER[offset=10 width=58]") {
+	if !strings.Contains(view, "DEBUG_OVERLAY[layout_resolve]") || !strings.Contains(view, "center=10/58") {
 		t.Fatalf("expected wireframe overlay center summary, got:\n%s", view)
 	}
 	if !strings.Contains(view, "RETURN[tiled:ws-1/tab-1/pane-1]") {

@@ -1453,3 +1453,59 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
   - 进一步削减 `wireframe_view` 与 `chrome_*` 的重复信息
   - 把 shell 内部的 pane title / tab / notice 再往更像真实 active chrome 的画法推进
   - 再处理 overlay 弹层的更强焦点高亮和布局边框
+
+---
+
+## 15. 第 201 轮 TDD
+
+这一轮把上一轮还没提交的主视图收口和真实鼠标命中一起收掉，目标很明确：`screen_shell` 继续做第一视觉，`wireframe_view` 退成调试摘要层，同时 overlay 里用户真正看见的那些 dialog 行也必须能点。
+
+1. `wireframe_view` 降级成调试摘要层
+   - 不再重复把整个 workbench 重新画成一整片 ASCII box
+   - 现在只保留：
+     - `DEBUG[...]`
+     - `WORKBENCH[...]`
+     - `DEBUG_OVERLAY[...]`
+     - `RETURN[...] / ROWS[...] / TARGET[...] / HINT[...]`
+   - 这样 `screen_shell` 成为真正的主壳，下面的 `wireframe_view` 只承担调试和断言支撑
+2. overlay 鼠标命中切到真实可见行
+   - `workspace_picker`
+   - `terminal_picker`
+   - `layout_resolve`
+   - `prompt`
+   - `terminal_manager` 的 rows / actions / locations
+   - 命中逻辑现在会优先按点击所在行的真实文本识别，再回退到 metadata 区的相对行号推导
+   - 这保证了 screen shell dialog 里的真实列表行可以直接点击，不再只能依赖下面那层 metadata
+3. 测试断言同步到新主视图
+   - renderer / E2E 断言统一切到新的 `DEBUG[...]` 和紧凑 `WORKBENCH[...]` 摘要
+   - 修正了 `viewport` 断言，按当前真实默认渲染尺寸收口为 `78x24`
+   - 鼠标 E2E 同步到真实 dialog 行或当前仍然可见的 metadata 行，避免继续点已经不在第一视觉里的旧输出
+
+这一轮收口的验证重点：
+
+- renderer：
+  - `TestRuntimeRendererRendersWireframeWorkbenchForActivePane`
+  - `TestRuntimeRendererRendersWireframeWorkspacePickerTree`
+  - `TestRuntimeRendererRendersWireframeLayoutResolveDialog`
+- runtime E2E：
+  - `TestE2ERunScenarioWorkspacePickerMouseClickOnSelectedRowSubmits`
+  - `TestE2ERunScenarioWorkspacePickerMouseClickOnCreateRowOpensPrompt`
+  - `TestE2ERunScenarioTerminalPickerMouseClickOnCreateRowClosesOverlay`
+  - `TestE2ERunScenarioTerminalPickerMouseClickOnSelectedRowSubmits`
+  - `TestE2ERunScenarioLayoutResolveMouseClickOnSelectedRowSubmits`
+  - `TestE2ERunScenarioLayoutResolveMouseClickOnCreateNewClosesOverlay`
+  - `TestE2ERunScenarioMetadataPromptMouseClickShowsTagsFieldInView`
+
+本轮验证命令：
+
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1`
+
+当前状态更新为：
+
+- `cmd/termx` 下方那层 `wireframe_view` 已经明显从“第二套主界面”退成了调试摘要层
+- overlay 的真实 screen shell dialog 行已经具备点击能力，鼠标交互不再只能靠 metadata 区兜底
+- 主线可以继续往下一个更大的收口块推进：
+  - 继续强化真正的 pane/workbench 几何渲染
+  - 继续减少 `chrome_*` 与调试摘要的重复
+  - 把 overlay 边框、焦点高亮和层次感再往真实 TUI 形态推进

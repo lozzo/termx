@@ -649,7 +649,7 @@ func TestE2ERunScenarioRendersWireframeWorkbench(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "wireframe_view:") || !strings.Contains(view, "WORKSPACE[main] TAB[shell] LAYER[tiled] FOCUS[tiled] OVERLAY[none]") || !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] KIND[tiled] SLOT[connected]") || !strings.Contains(view, "TERM[term-1] STATE[running]") {
+			if !strings.Contains(view, "wireframe_view:") || !strings.Contains(view, "DEBUG[main/shell]") || !strings.Contains(view, "viewport=78x24") || !strings.Contains(view, "overlay=none") || !strings.Contains(view, "WORKBENCH[single]") || !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] STATE[running]") || !strings.Contains(view, "TERM[term-1] STATE[running]") {
 				t.Fatalf("expected runtime view to expose wireframe workbench, got:\n%s", view)
 			}
 			return nil
@@ -846,7 +846,7 @@ func TestE2ERunScenarioSplitTabShowsWireframeWorkbench(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "wireframe_view:") || !strings.Contains(view, "SPLIT SHELL[vertical 50/50]") || !strings.Contains(view, "LAYOUT[split] root=vertical ratio=50/50 leaves=2") || !strings.Contains(view, "TILED CANVAS[96x12 panes=2]") || !strings.Contains(view, "+----------------------------------------------++----------------------------------------------+") || !strings.Contains(view, "api-dev [owner]") || !strings.Contains(view, "build-log [owner]") || !strings.Contains(view, "$ npm") || !strings.Contains(view, "ready") || !strings.Contains(view, "term-1 running owner") || !strings.Contains(view, "> tsc") || !strings.Contains(view, "ok") || !strings.Contains(view, "term-2 running owner") || !strings.Contains(view, "VIEWPORT[96x40]") || !strings.Contains(view, "SPLIT[vertical] RATIO[0.50] LEAVES[2]") || !strings.Contains(view, "BAR[===============|===============]") || !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] STATE[running]") || !strings.Contains(view, "PANE[build-log] ROLE[owner] STATE[running]") {
+			if !strings.Contains(view, "wireframe_view:") || !strings.Contains(view, "SPLIT SHELL[vertical 50/50]") || !strings.Contains(view, "LAYOUT[split] root=vertical ratio=50/50 leaves=2") || !strings.Contains(view, "TILED CANVAS[96x12 panes=2]") || !strings.Contains(view, "api-dev [owner]") || !strings.Contains(view, "build-log [owner]") || !strings.Contains(view, "$ npm") || !strings.Contains(view, "ready") || !strings.Contains(view, "term-1 running owner") || !strings.Contains(view, "> tsc") || !strings.Contains(view, "ok") || !strings.Contains(view, "term-2 running owner") || !strings.Contains(view, "DEBUG[main/shell]") || !strings.Contains(view, "viewport=96x40") || !strings.Contains(view, "WORKBENCH[split]") || !strings.Contains(view, "SPLIT[vertical]") || !strings.Contains(view, "RATIO[0.50]") || !strings.Contains(view, "LEAVES[2]") || !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] STATE[running]") || !strings.Contains(view, "PANE[build-log] ROLE[owner] STATE[running]") {
 				t.Fatalf("expected runtime view to expose split wireframe workbench, got:\n%s", view)
 			}
 			return nil
@@ -996,7 +996,7 @@ func TestE2ERunScenarioOverlayShowsWireframeDialog(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "OVERLAY[terminal_manager] FOCUS[overlay]") || !strings.Contains(view, "ROWS[7] SELECTED[term-1]") || !strings.Contains(view, "> [terminal] api-dev") {
+			if !strings.Contains(view, "DEBUG_OVERLAY[terminal_manager]") || !strings.Contains(view, "focus=overlay") || !strings.Contains(view, "ROWS[7] SELECTED[term-1]") || !strings.Contains(view, "> [terminal] api-dev") {
 				t.Fatalf("expected runtime view to expose terminal manager wireframe dialog, got:\n%s", view)
 			}
 			return nil
@@ -1034,7 +1034,7 @@ func TestE2ERunScenarioWorkspacePickerShowsWireframeTree(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "OVERLAY[workspace_picker] FOCUS[overlay]") || !strings.Contains(view, "ROWS[6] QUERY[ops] SELECTED[ws-2]") || !strings.Contains(view, "TARGET[workspace] LABEL[ops] DEPTH[0]") || !strings.Contains(view, "  [tab] logs") || !strings.Contains(view, "    [pane] unconnected pane") {
+			if !strings.Contains(view, "DEBUG_OVERLAY[workspace_picker]") || !strings.Contains(view, "focus=overlay") || !strings.Contains(view, "ROWS[6] QUERY[ops] SELECTED[ws-2]") || !strings.Contains(view, "TARGET[workspace] LABEL[ops] DEPTH[0]") || !strings.Contains(view, "  [tab] logs") || !strings.Contains(view, "    [pane] unconnected pane") {
 				t.Fatalf("expected runtime view to expose workspace picker wireframe tree, got:\n%s", view)
 			}
 			return nil
@@ -1062,7 +1062,7 @@ func TestE2ERunScenarioLayoutResolveShowsWireframeDialog(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "DIALOG[layout_resolve]") || !strings.Contains(view, "overlay active: layout_resolve") || !strings.Contains(view, "RETURN TO[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "ACTIONS[enter confirm esc close]") || !strings.Contains(view, "OVERLAY[layout_resolve] FOCUS[overlay]") || !strings.Contains(view, "CENTER[offset=10 width=58]") || !strings.Contains(view, "ROWS[3] PANE[pane-1] ROLE[backend-dev]") || !strings.Contains(view, "HINT[env=dev service=api]") || !strings.Contains(view, "> [connect_existing] connect existing") {
+			if !strings.Contains(view, "DIALOG[layout_resolve]") || !strings.Contains(view, "overlay active: layout_resolve") || !strings.Contains(view, "RETURN TO[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "ACTIONS[enter confirm esc close]") || !strings.Contains(view, "DEBUG_OVERLAY[layout_resolve]") || !strings.Contains(view, "focus=overlay") || !strings.Contains(view, "ROWS[3] PANE[pane-1] ROLE[backend-dev]") || !strings.Contains(view, "HINT[env=dev service=api]") || !strings.Contains(view, "> [connect_existing] connect existing") {
 				t.Fatalf("expected runtime view to expose layout resolve wireframe dialog, got:\n%s", view)
 			}
 			return nil
@@ -1122,7 +1122,7 @@ func TestE2ERunScenarioNestedSplitShowsWireframeLayoutTree(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "LAYOUT TREE") || !strings.Contains(view, "split[horizontal] ratio[0.60] width[46]") || !strings.Contains(view, "split[vertical] ratio[0.50] width[30]") || !strings.Contains(view, "> pane[api-dev] role[owner] state[running]") || !strings.Contains(view, "  pane[watcher] role[owner] state[running]") || !strings.Contains(view, "  pane[build-log] role[owner] state[running]") {
+			if !strings.Contains(view, "DEBUG[main/shell]") || !strings.Contains(view, "WORKBENCH[split]") || !strings.Contains(view, "SPLIT[horizontal]") || !strings.Contains(view, "RATIO[0.60]") || !strings.Contains(view, "LEAVES[3]") || !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] STATE[running]") || !strings.Contains(view, "PANE[watcher] ROLE[owner] STATE[running]") || !strings.Contains(view, "PANE[build-log] ROLE[owner] STATE[running]") {
 				t.Fatalf("expected runtime view to expose nested split wireframe tree, got:\n%s", view)
 			}
 			return nil
@@ -1150,7 +1150,7 @@ func TestE2ERunScenarioLayoutResolveShowsWireframeBackdropAndReturnFocus(t *test
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "BACKDROP[active]") || !strings.Contains(view, "RETURN[tiled:ws-1/tab-1/pane-1]") {
+			if !strings.Contains(view, "DEBUG_OVERLAY[layout_resolve]") || !strings.Contains(view, "center=10/58") || !strings.Contains(view, "RETURN[tiled:ws-1/tab-1/pane-1]") {
 				t.Fatalf("expected runtime view to expose overlay backdrop/return-focus summary, got:\n%s", view)
 			}
 			return nil
@@ -1194,7 +1194,7 @@ func TestE2ERunScenarioMixedSlotShowsWireframeWorkbench(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "TILED CANVAS[78x12 panes=3]") || !strings.Contains(view, "waiting pane [waiting] [tiled]") || !strings.Contains(view, "api-dev [owner] [tiled]") || !strings.Contains(view, "deploy-log [exited] [tiled]") || !strings.Contains(view, "waiting for connect") || !strings.Contains(view, "n new | a connect") || !strings.Contains(view, "process exited") || !strings.Contains(view, "history retained") || !strings.Contains(view, "FLOATING WINDOWS[1]") || !strings.Contains(view, "WINDOW LIST[1]") || !strings.Contains(view, "  [float-empty] unconnected pane | empty | 60,2 20x8 | no terminal connected") || !strings.Contains(view, "WORKBENCH split") || !strings.Contains(view, "PANE[waiting pane] SLOT[waiting]") || !strings.Contains(view, "PANE[deploy-log] ROLE[owner] STATE[exited]") || !strings.Contains(view, "FLOATING MAP") || !strings.Contains(view, "FLOAT[float-empty] unconnected pane empty 60,2 20x8") || strings.Contains(view, "CARD[pane-3] deploy-log [owner]") || strings.Contains(view, "WINDOW CARD[float-empty]") {
+			if !strings.Contains(view, "TILED CANVAS[78x12 panes=3]") || !strings.Contains(view, "waiting pane [waiting] [tiled]") || !strings.Contains(view, "api-dev [owner] [tiled]") || !strings.Contains(view, "deploy-log [exited] [tiled]") || !strings.Contains(view, "waiting for connect") || !strings.Contains(view, "n new | a connect") || !strings.Contains(view, "process exited") || !strings.Contains(view, "history retained") || !strings.Contains(view, "FLOATING WINDOWS[1]") || !strings.Contains(view, "WINDOW LIST[1]") || !strings.Contains(view, "  [float-empty] unconnected pane | empty | 60,2 20x8 | no terminal connected") || !strings.Contains(view, "WORKBENCH[split]") || !strings.Contains(view, "PANE[waiting pane] SLOT[waiting]") || !strings.Contains(view, "PANE[deploy-log] ROLE[owner] STATE[exited]") || !strings.Contains(view, "FLOATING[1]") || !strings.Contains(view, "FLOAT[float-empty] unconnected pane empty 60,2 20x8") || strings.Contains(view, "CARD[pane-3] deploy-log [owner]") || strings.Contains(view, "WINDOW CARD[float-empty]") {
 				t.Fatalf("expected runtime view to expose mixed slot wireframe workbench, got:\n%s", view)
 			}
 			return nil
@@ -2179,7 +2179,7 @@ func TestE2ERunScenarioWorkspacePickerMouseClickOnSelectedRowSubmits(t *testing.
 					}
 				}
 			}
-			clickY := findLineIndexWithPrefix(current.View(), "> [workspace] ops")
+			clickY := findLineIndexWithPrefix(current.View(), "|          ||>> [workspace] ops")
 			if clickY < 0 {
 				t.Fatalf("expected workspace picker preview to expose selected ops row, got:\n%s", current.View())
 			}
@@ -5802,7 +5802,7 @@ func TestE2ERunScenarioTerminalPickerMouseClickOnSelectedRowSubmits(t *testing.T
 					}
 				}
 			}
-			clickY := findLineIndexWithPrefix(current.View(), "> [terminal] ops-watch")
+			clickY := findLineIndexWithPrefix(current.View(), "|          |> [terminal] ops-watch")
 			if clickY < 0 {
 				t.Fatalf("expected terminal picker preview to expose selected ops-watch row, got:\n%s", current.View())
 			}
@@ -6046,7 +6046,7 @@ func TestE2ERunScenarioLayoutResolveMouseClickOnSelectedRowSubmits(t *testing.T)
 	bootstrapper := &stubRunSessionBootstrapper{}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
-			clickY := findLineIndexWithPrefix(model.View(), "> [connect_existing] connect existing")
+			clickY := findLineIndexWithPrefix(model.View(), "|          |> [connect_existing] connect existing")
 			if clickY < 0 {
 				t.Fatalf("expected layout resolve preview to expose selected row, got:\n%s", model.View())
 			}
@@ -6089,7 +6089,7 @@ func TestE2ERunScenarioLayoutResolveMouseClickOnCreateNewClosesOverlay(t *testin
 	bootstrapper := &stubRunSessionBootstrapper{}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
-			clickY := findLineIndexWithPrefix(model.View(), "  [create_new] create new")
+			clickY := findLineIndexWithPrefix(model.View(), "|          |  [create_new] create new")
 			if clickY < 0 {
 				t.Fatalf("expected layout resolve preview to expose create-new row, got:\n%s", model.View())
 			}
