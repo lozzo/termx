@@ -69,8 +69,8 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "+ api-dev [owner] [tiled]") || !strings.Contains(view, "FT[api-dev tiled none]") || !strings.Contains(view, "<p> PANE <t> TAB <w> WS <o> FLOAT <f> PICK <g> GLOBAL") {
 		t.Fatalf("expected renderer to expose visible shell frame body/footer, got:\n%s", view)
 	}
-	if !strings.Contains(view, "STATUS[connected]") || !strings.Contains(view, "TERM[term-1] STATE[running]") || !strings.Contains(view, "CONTENT[screen]") {
-		t.Fatalf("expected screen shell connected pane sections, got:\n%s", view)
+	if !strings.Contains(view, "$ pwd") || !strings.Contains(view, "/tmp") || !strings.Contains(view, "term-1 running owner") {
+		t.Fatalf("expected screen shell to render pane canvas preview, got:\n%s", view)
 	}
 	if !strings.Contains(view, "termx") || !strings.Contains(view, "header_bar: ws=main | tab=shell | pane=pane-1 | slot=connected | overlay=none | focus=tiled") {
 		t.Fatalf("expected renderer header bar, got:\n%s", view)
@@ -569,7 +569,7 @@ func TestRuntimeRendererRendersScreenPlaceholderWhenNoSnapshot(t *testing.T) {
 
 func TestRuntimeRendererRendersStableSectionSkeletonForEmptyPane(t *testing.T) {
 	view := runtimeRenderer{}.Render(buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty), nil)
-	if !strings.Contains(view, "STATUS[empty]") || !strings.Contains(view, "DETAIL[terminal removed or not connected]") || !strings.Contains(view, "ACTIONS[n new | a connect | m manager]") {
+	if !strings.Contains(view, "no terminal connected") || !strings.Contains(view, "n new | a connect | m manager") {
 		t.Fatalf("expected screen shell empty pane sections, got:\n%s", view)
 	}
 	if !strings.Contains(view, "chrome_body:") || !strings.Contains(view, "chrome_footer:") {
@@ -636,7 +636,7 @@ func TestRuntimeRendererRendersExitedPaneActions(t *testing.T) {
 	state.Domain.Terminals[types.TerminalID("term-1")] = terminal
 
 	view := runtimeRenderer{}.Render(state, nil)
-	if !strings.Contains(view, "STATUS[exited]") || !strings.Contains(view, "DETAIL[terminal program exited]") || !strings.Contains(view, "HISTORY[retained]") || !strings.Contains(view, "ACTIONS[r restart | a connect]") {
+	if !strings.Contains(view, "process exited") || !strings.Contains(view, "history retained") || !strings.Contains(view, "r restart | a connect") {
 		t.Fatalf("expected screen shell exited pane sections, got:\n%s", view)
 	}
 	if !strings.Contains(view, "pane_slot_detail: terminal program exited") || !strings.Contains(view, "pane_history: retained") || !strings.Contains(view, "[r] restart terminal") || !strings.Contains(view, "[a] connect another terminal") || !strings.Contains(view, "[x] close pane") {
@@ -1568,8 +1568,8 @@ func TestRuntimeRendererRendersWireframeSplitWorkbench(t *testing.T) {
 	if !strings.Contains(view, "SPLIT SHELL[vertical 50/50]") || !strings.Contains(view, "LAYOUT[split] root=vertical ratio=50/50 leaves=2") || !strings.Contains(view, "+ api-dev [owner]") || !strings.Contains(view, "+ build-log [owner]") {
 		t.Fatalf("expected split shell frame in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "STATUS[connected]") || !strings.Contains(view, "TERM[term-1] STATE[running]") || !strings.Contains(view, "CONTENT[screen] ready") || !strings.Contains(view, "TERM[term-2] STATE[running]") || !strings.Contains(view, "CONTENT[screen] ok") {
-		t.Fatalf("expected split pane shell sections in rendered view, got:\n%s", view)
+	if !strings.Contains(view, "$ npm") || !strings.Contains(view, "ready") || !strings.Contains(view, "term-1 running owner") || !strings.Contains(view, "> tsc") || !strings.Contains(view, "ok") || !strings.Contains(view, "term-2 running owner") {
+		t.Fatalf("expected split pane shell canvas rows in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "SPLIT[vertical] RATIO[0.50] LEAVES[2]") {
 		t.Fatalf("expected wireframe split summary in rendered view, got:\n%s", view)
@@ -1620,8 +1620,8 @@ func TestRuntimeRendererRendersWireframeFloatingStack(t *testing.T) {
 	if !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "STACK[windows] total=2") || !strings.Contains(view, "FOCUS[float-1] api-dev") || !strings.Contains(view, "WINDOWS[2]") || !strings.Contains(view, "WINDOW CARD[float-1] api-dev") || !strings.Contains(view, "GEOMETRY[10,8 30x12]") || !strings.Contains(view, "WINDOW CARD[float-2] build-log") || !strings.Contains(view, "GEOMETRY[45,14 28x10]") {
 		t.Fatalf("expected floating shell window summary in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "STATUS[connected]") || !strings.Contains(view, "TERM[term-1] STATE[running]") || !strings.Contains(view, "CONTENT[screen] api ready") {
-		t.Fatalf("expected floating active pane shell sections in rendered view, got:\n%s", view)
+	if !strings.Contains(view, "api ready") || !strings.Contains(view, "term-1 running owner") || !strings.Contains(view, "build ok") || !strings.Contains(view, "term-2 running owner") {
+		t.Fatalf("expected floating shell canvas rows in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "FLOATING STACK") {
 		t.Fatalf("expected wireframe floating stack heading in rendered view, got:\n%s", view)
@@ -1777,7 +1777,7 @@ func TestRuntimeRendererRendersWireframeMixedSlotWorkbench(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "EXTRA[panes] total=1") || !strings.Contains(view, "CARD[pane-3] deploy-log [owner]") || !strings.Contains(view, "STATUS[waiting]") || !strings.Contains(view, "DETAIL[waiting for connect]") || !strings.Contains(view, "STATUS[exited]") || !strings.Contains(view, "DETAIL[terminal program exited]") || !strings.Contains(view, "FLOATING WINDOWS[1]") || !strings.Contains(view, "WINDOW CARD[float-empty] unconnected pane") || !strings.Contains(view, "GEOMETRY[60,2 20x8]") {
+	if !strings.Contains(view, "waiting for connect") || !strings.Contains(view, "n new | a connect") || !strings.Contains(view, "CARD[pane-3] deploy-log [owner]") || !strings.Contains(view, "process exited") || !strings.Contains(view, "history retained") || !strings.Contains(view, "FLOATING WINDOWS[1]") || !strings.Contains(view, "WINDOW CARD[float-empty] unconnected pane") || !strings.Contains(view, "GEOMETRY[60,2 20x8]") || !strings.Contains(view, "no terminal connected") {
 		t.Fatalf("expected mixed-slot shell summaries in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "WORKBENCH split") {

@@ -557,69 +557,76 @@ func (r runtimeRenderer) renderScreenShellPaneLines(state types.AppState, pane t
 		maxRows = 1
 	}
 	if pane.TerminalID != "" && pane.SlotState == types.PaneSlotConnected {
-		lines := []string{"STATUS[connected]"}
 		terminalState := types.TerminalRunStateRunning
 		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.State != "" {
 			terminalState = terminal.State
 		}
-		lines = append(lines, fmt.Sprintf("TERM[%s] STATE[%s]", pane.TerminalID, terminalState))
+		footer := fmt.Sprintf("%s %s %s", pane.TerminalID, terminalState, renderScreenShellPaneCardRole(state, pane))
+		contentBudget := maxRows - 1
+		if contentBudget <= 0 {
+			return []string{footer}
+		}
+		lines := make([]string, 0, maxRows)
 		if r.Screens != nil {
 			if snapshot, ok := r.Screens.Snapshot(pane.TerminalID); ok && snapshot != nil {
 				rows, _, _ := renderSnapshotRows(snapshot)
-				trimmed := make([]string, 0, maxRows)
+				trimmed := make([]string, 0, contentBudget)
 				for _, row := range rows {
-					row = strings.TrimSpace(row)
-					if row == "" {
-						continue
-					}
+					row = strings.TrimRight(row, " ")
 					trimmed = append(trimmed, row)
 				}
 				if len(trimmed) > 0 {
-					contentBudget := maxRows - len(lines)
-					if contentBudget <= 0 {
-						return lines[:maxRows]
-					}
 					if len(trimmed) > contentBudget {
 						trimmed = trimmed[len(trimmed)-contentBudget:]
 					}
-					lines = append(lines, fmt.Sprintf("CONTENT[screen] %s", trimmed[0]))
-					if len(trimmed) > 1 {
-						lines = append(lines, trimmed[1:]...)
+					lines = append(lines, trimmed...)
+					for len(lines) < contentBudget {
+						lines = append(lines, "")
 					}
+					lines = append(lines, footer)
 					return lines
 				}
 			}
 		}
-		lines = append(lines, "CONTENT[screen unavailable]")
-		if len(lines) > maxRows {
-			return lines[:maxRows]
+		lines = append(lines, "<screen unavailable>")
+		for len(lines) < contentBudget {
+			lines = append(lines, "")
 		}
+		lines = append(lines, footer)
 		return lines
+	}
+	contentBudget := maxRows - 1
+	if contentBudget <= 0 {
+		contentBudget = 1
 	}
 	switch pane.SlotState {
 	case types.PaneSlotWaiting:
-		return []string{
-			"STATUS[waiting]",
-			"DETAIL[waiting for connect]",
-			"ACTIONS[n new | a connect]",
+		lines := []string{"waiting for connect"}
+		for len(lines) < contentBudget {
+			lines = append(lines, "")
 		}
+		lines = append(lines, "n new | a connect")
+		return lines
 	case types.PaneSlotExited:
 		lines := []string{
-			"STATUS[exited]",
-			"DETAIL[terminal program exited]",
-			"HISTORY[retained]",
-			"ACTIONS[r restart | a connect]",
+			"process exited",
+			"history retained",
 		}
-		if len(lines) > maxRows {
-			return lines[:maxRows]
+		if len(lines) > contentBudget {
+			lines = lines[:contentBudget]
 		}
+		for len(lines) < contentBudget {
+			lines = append(lines, "")
+		}
+		lines = append(lines, "r restart | a connect")
 		return lines
 	case types.PaneSlotEmpty:
-		return []string{
-			"STATUS[empty]",
-			"DETAIL[terminal removed or not connected]",
-			"ACTIONS[n new | a connect | m manager]",
+		lines := []string{"no terminal connected"}
+		for len(lines) < contentBudget {
+			lines = append(lines, "")
 		}
+		lines = append(lines, "n new | a connect | m manager")
+		return lines
 	default:
 		return []string{"<empty>"}
 	}

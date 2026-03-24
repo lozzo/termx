@@ -1178,3 +1178,65 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
 - 现在离“真正像 TUI 的第一视觉”还差最后一层：
   - 把当前这些结构化文本继续推进成更强的 canvas / pane border / title bar 画法
   - 也就是下一阶段要开始更直接处理“真实边框和几何排版”，而不再主要是语义标签压缩
+
+---
+
+## 12. 第 196 轮 TDD
+
+这一轮正式开始把 `screen_shell` 里的 pane 正文从“语义字段列表”推进成更接近真实终端窗格的 canvas 预览，不再主要显示：
+
+- `STATUS[...]`
+- `TERM[...]`
+- `CONTENT[...]`
+
+而是改成：
+
+1. connected pane
+   - 直接显示 snapshot 预览行
+   - 底部补一条更短的运行状态脚注，如 `term-1 running owner`
+2. waiting / empty / exited pane
+   - 改成更接近窗格正文的占位文案
+   - 在正文底部显示动作提示，而不是一串状态标签
+   - 例如：
+     - `waiting for connect`
+     - `no terminal connected`
+     - `process exited`
+3. split / floating / mixed-slot 一起切换
+   - 主 pane
+   - split 的左右 pane
+   - floating window card
+   - extra panes / empty floating panes
+   - 这轮不是只改单 pane，而是整组工作台一起收口
+
+这一轮补上的验证同样是成组推进，不是只补一两个小断言：
+
+- renderer：
+  - `TestRuntimeRendererRendersActivePaneSnapshot`
+  - `TestRuntimeRendererRendersWireframeSplitWorkbench`
+  - `TestRuntimeRendererRendersWireframeFloatingStack`
+  - `TestRuntimeRendererRendersWireframeMixedSlotWorkbench`
+  - `TestRuntimeRendererRendersStableSectionSkeletonForEmptyPane`
+  - `TestRuntimeRendererRendersExitedPaneActions`
+- runtime E2E：
+  - `TestE2ERunScenarioRendersSnapshotAndForwardsActivePaneInput`
+  - `TestE2ERunScenarioSplitTabShowsTiledOutline`
+  - `TestE2ERunScenarioFloatingLayerShowsOutline`
+  - `TestE2ERunScenarioMixedSlotShowsWireframeWorkbench`
+  - `TestE2ERunScenarioLayoutResolveEscClearsShellDialogAndMask`
+  - `TestE2ERunScenarioTerminalManagerEscClearsShellDialogAndMask`
+
+本轮验证命令：
+
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -run 'TestRuntimeRendererRendersActivePaneSnapshot|TestRuntimeRendererRendersWireframeSplitWorkbench|TestRuntimeRendererRendersWireframeFloatingStack|TestRuntimeRendererRendersWireframeMixedSlotWorkbench|TestE2ERunScenarioRendersSnapshotAndForwardsActivePaneInput|TestE2ERunScenarioSplitTabShowsTiledOutline|TestE2ERunScenarioFloatingLayerShowsOutline|TestE2ERunScenarioMixedSlotShowsWireframeWorkbench' -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1`
+
+当前状态更新为：
+
+- `screen_shell` 外层 frame 已经立住
+- shell chrome 已压缩成更稳定的短标记
+- pane 正文已经开始从“字段列表”转成“预览画布 + 底部脚注”
+- 下一阶段就该继续推进真正更像 TUI 的部分：
+  - pane title bar / footer bar 的更强视觉分层
+  - split / floating 的更接近几何布局的 canvas 拼接
+  - 最终再逐步淡出下面的调试型 wireframe 视图
