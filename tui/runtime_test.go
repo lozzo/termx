@@ -832,6 +832,50 @@ func TestE2ERunScenarioDefaultModernTerminalManagerOverlayRendersStructuredModal
 	}
 }
 
+func TestE2ERunScenarioDefaultModernHelpOverlayRendersStructuredModal(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithActiveTerminalMetadata()
+	initial.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayHelp,
+		ReturnFocus: initial.UI.Focus,
+	}
+	initial.UI.Focus.Layer = types.FocusLayerOverlay
+	initial.UI.Focus.OverlayTarget = types.OverlayHelp
+	initial.UI.Mode = types.ModeState{Active: types.ModePicker}
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			stripped := stripANSIRuntimeView(view)
+			if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "state overlay help  •  focus overlay") || !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "Most used panel") || !strings.Contains(stripped, "Concepts panel") || !strings.Contains(stripped, "Action bar") {
+				t.Fatalf("expected default modern help modal structure, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "layer tiled  •  mode picker") || !strings.Contains(stripped, "Ctrl-p pane  •  Ctrl-t tab") || !strings.Contains(stripped, "Ctrl-o floating  •  Ctrl-g global") {
+				t.Fatalf("expected default modern help modal key groups, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "pane is the view slot") || !strings.Contains(stripped, "owner can connect") || !strings.Contains(stripped, "close pane != stop terminal != detach TUI") || !strings.Contains(stripped, "Esc close  •  ? toggle help") {
+				t.Fatalf("expected default modern help modal concepts and actions, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "Backdrop workbench") || !strings.Contains(stripped, "background api-dev • owner • tiled") || !strings.Contains(stripped, "focus paused  •  overlay active • help") {
+				t.Fatalf("expected default modern help modal to retain backdrop context, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected default modern help scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioDefaultModernWorkspacePickerOverlayRendersStructuredModal(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithWorkspacePickerTarget()

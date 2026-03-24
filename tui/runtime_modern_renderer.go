@@ -862,7 +862,7 @@ func (r modernScreenShellRenderer) renderOverlayPanel(theme modernShellTheme, st
 	if chrome := renderModernOverlayChrome(theme, state, width-6); len(chrome) > 0 {
 		lines = append(lines, chrome...)
 	}
-	if body := r.renderOverlayPanelBody(theme, state.UI.Overlay, width-6); len(body) > 0 {
+	if body := r.renderOverlayPanelBody(theme, state, width-6); len(body) > 0 {
 		lines = append(lines, "")
 		lines = append(lines, body...)
 	}
@@ -975,17 +975,11 @@ func overlayTitle(kind types.OverlayKind) string {
 	}
 }
 
-func (r modernScreenShellRenderer) renderOverlayPanelBody(theme modernShellTheme, overlay types.OverlayState, width int) []string {
+func (r modernScreenShellRenderer) renderOverlayPanelBody(theme modernShellTheme, state types.AppState, width int) []string {
+	overlay := state.UI.Overlay
 	switch overlay.Kind {
 	case types.OverlayHelp:
-		return []string{
-			theme.modalMeta.Render("Keysets"),
-			theme.modalBody.Render(truncateModernLine("Ctrl-p pane  •  Ctrl-t tab  •  Ctrl-w workspace  •  Ctrl-f picker", width)),
-			theme.modalBody.Render(truncateModernLine("Ctrl-o floating  •  Ctrl-g global  •  Esc close", width)),
-			"",
-			theme.modalMeta.Render("Model"),
-			theme.modalBody.Render(truncateModernLine("pane is the view slot, terminal is the running entity", width)),
-		}
+		return renderModernHelpOverlay(theme, state, width)
 	case types.OverlayTerminalManager:
 		manager, _ := overlay.Data.(*terminalmanagerdomain.State)
 		return renderModernTerminalManagerOverlay(theme, manager, width)
@@ -1004,6 +998,53 @@ func (r modernScreenShellRenderer) renderOverlayPanelBody(theme modernShellTheme
 	default:
 		return []string{theme.modalBody.Render("Overlay active")}
 	}
+}
+
+// renderModernHelpOverlay 把 help 也纳入统一 modal panel 结构，
+// 让快捷键、概念模型、关闭动作保持和 manager/picker 一致的信息层级。
+func renderModernHelpOverlay(theme modernShellTheme, state types.AppState, width int) []string {
+	contentWidth := max(18, width-4)
+	if width >= 56 {
+		contentWidth = max(18, width/2-4)
+	}
+	leftLines := []string{
+		theme.modalMeta.Render(truncateModernLine(renderModernHelpContextLine(state), contentWidth)),
+		"",
+		theme.modalMeta.Render("Keysets"),
+		theme.modalBody.Render(truncateModernLine("Ctrl-p pane  •  Ctrl-t tab", contentWidth)),
+		theme.modalBody.Render(truncateModernLine("Ctrl-w workspace  •  Ctrl-f picker", contentWidth)),
+		theme.modalBody.Render(truncateModernLine("Ctrl-o floating  •  Ctrl-g global", contentWidth)),
+	}
+	rightLines := []string{
+		theme.modalMeta.Render("Model"),
+		theme.modalBody.Render(truncateModernLine("pane is the view slot, terminal is the running entity", contentWidth)),
+		"",
+		theme.modalMeta.Render("Roles"),
+		theme.modalBody.Render(truncateModernLine("owner can connect, resize, and edit terminal metadata", contentWidth)),
+		theme.modalBody.Render(truncateModernLine("follower stays attached for viewing without control", contentWidth)),
+		"",
+		theme.modalMeta.Render("Exit semantics"),
+		theme.modalBody.Render(truncateModernLine("close pane != stop terminal != detach TUI", contentWidth)),
+	}
+	actionLines := []string{
+		theme.modalBody.Render(truncateModernLine("Esc close  •  ? toggle help", width)),
+	}
+	return renderModernOverlayPanels(theme, width, "Most used panel", leftLines, "Concepts panel", rightLines, "Action bar", actionLines)
+}
+
+func renderModernHelpContextLine(state types.AppState) string {
+	layer := state.UI.Overlay.ReturnFocus.Layer
+	if layer == "" {
+		layer = state.UI.Focus.Layer
+	}
+	if layer == "" {
+		layer = types.FocusLayerTiled
+	}
+	mode := state.UI.Mode.Active
+	if mode == "" {
+		mode = types.ModeNone
+	}
+	return fmt.Sprintf("layer %s  •  mode %s", layer, mode)
 }
 
 func renderModernTerminalManagerOverlay(theme modernShellTheme, manager *terminalmanagerdomain.State, width int) []string {

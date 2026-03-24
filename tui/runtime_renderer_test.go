@@ -536,6 +536,30 @@ func TestRuntimeRendererShellOnlyRendersStructuredTerminalManagerOverlay(t *test
 	}
 }
 
+func TestRuntimeRendererShellOnlyRendersStructuredHelpOverlay(t *testing.T) {
+	debugVisible := false
+	state := runtimeStateWithActiveTerminalMetadata()
+	state.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayHelp,
+		ReturnFocus: state.UI.Focus,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+	state.UI.Focus.OverlayTarget = types.OverlayHelp
+	state.UI.Mode = types.ModeState{Active: types.ModePicker}
+
+	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
+	stripped := stripANSIForTest(view)
+	if !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "state overlay help  •  focus overlay") || !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "Most used panel") || !strings.Contains(stripped, "Concepts panel") || !strings.Contains(stripped, "Action bar") {
+		t.Fatalf("expected shell-only help overlay to render structured panels, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "layer tiled  •  mode picker") || !strings.Contains(stripped, "Ctrl-p pane  •  Ctrl-t tab") || !strings.Contains(stripped, "Ctrl-o floating  •  Ctrl-g global") {
+		t.Fatalf("expected shell-only help overlay to render key groups and context, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "pane is the view slot") || !strings.Contains(stripped, "owner can connect") || !strings.Contains(stripped, "close pane != stop terminal != detach TUI") || !strings.Contains(stripped, "Esc close  •  ? toggle help") {
+		t.Fatalf("expected shell-only help overlay to render product concepts and actions, got:\n%s", view)
+	}
+}
+
 func TestRuntimeRendererShellOnlyShowsUnavailableScreenBlockWhenSnapshotMissing(t *testing.T) {
 	debugVisible := false
 	state := connectedRunAppState()
