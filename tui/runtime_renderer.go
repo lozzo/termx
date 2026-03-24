@@ -24,6 +24,7 @@ const runtimeOverlayPreviewRows = 8
 const runtimeOverlayDetailPreviewRows = 4
 const runtimeTerminalManagerPreviewRows = 4
 const runtimeBarMaxWidth = 96
+const runtimeSummaryMaxWidth = 240
 
 // Render 先提供一个稳定、可测试的文本视图，优先把生命周期打通。
 // 这里不追求视觉完成度，只把当前 workspace / tab / pane / overlay 这些主语义明确展示出来。
@@ -141,13 +142,13 @@ func (r runtimeRenderer) renderBodyScreenSummary(pane types.PaneState, overlayAc
 
 func renderStatusSection(workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, ui types.UIState) []string {
 	lines := []string{
-		compactLine(
+		compactSummaryLine(
 			fmt.Sprintf("workspace: %s", workspace.Name),
 			fmt.Sprintf("tab: %s", tab.Name),
 			fmt.Sprintf("pane: %s", pane.ID),
 			fmt.Sprintf("slot: %s", pane.SlotState),
 		),
-		compactLine(
+		compactSummaryLine(
 			fmt.Sprintf("tab_layer: %s", tab.ActiveLayer),
 			fmt.Sprintf("overlay: %s", ui.Overlay.Kind),
 			fmt.Sprintf("focus_layer: %s", ui.Focus.Layer),
@@ -171,19 +172,19 @@ func renderStatusSection(workspace types.WorkspaceState, tab types.TabState, pan
 
 func (r runtimeRenderer) renderTerminalSection(state types.AppState, pane types.PaneState, compact bool) []string {
 	if pane.TerminalID == "" {
-		return []string{compactLine("terminal_bar: disconnected", "terminal: <disconnected>")}
+		return []string{compactSummaryLine("terminal_bar: disconnected", "terminal: <disconnected>")}
 	}
 
 	// section 首行需要同时保留 bar 和正文主语义，这里只做普通拼接，
 	// 避免 bar 的裁剪策略误伤正文字段可见性。
-	lines := []string{compactLine(renderTerminalBar(state, pane), fmt.Sprintf("terminal: %s", pane.TerminalID))}
+	lines := []string{compactSummaryLine(renderTerminalBar(state, pane), fmt.Sprintf("terminal: %s", pane.TerminalID))}
 	terminal, ok := state.Domain.Terminals[pane.TerminalID]
 	if ok {
 		label := terminal.Name
 		if label == "" {
 			label = string(terminal.ID)
 		}
-		lines[0] = compactLine(lines[0], fmt.Sprintf("title: %s", label))
+		lines[0] = compactSummaryLine(lines[0], fmt.Sprintf("title: %s", label))
 		stateParts := make([]string, 0, 6)
 		if terminal.State != "" {
 			stateParts = append(stateParts, fmt.Sprintf("terminal_state: %s", terminal.State))
@@ -226,11 +227,11 @@ func (r runtimeRenderer) renderTerminalSection(state types.AppState, pane types.
 
 func (r runtimeRenderer) renderScreenSection(pane types.PaneState, compact bool) []string {
 	if pane.TerminalID == "" || r.Screens == nil {
-		return []string{compactLine("screen_bar: state=unavailable", "screen: <unavailable>")}
+		return []string{compactSummaryLine("screen_bar: state=unavailable", "screen: <unavailable>")}
 	}
 	snapshot, ok := r.Screens.Snapshot(pane.TerminalID)
 	if !ok || snapshot == nil {
-		return []string{compactLine("screen_bar: state=unavailable", "screen: <unavailable>")}
+		return []string{compactSummaryLine("screen_bar: state=unavailable", "screen: <unavailable>")}
 	}
 	rows, totalRows, truncated := renderSnapshotRows(snapshot)
 	meta := []string{fmt.Sprintf("screen_rows: %d/%d", len(rows), totalRows)}
@@ -239,14 +240,14 @@ func (r runtimeRenderer) renderScreenSection(pane types.PaneState, compact bool)
 	}
 	if compact {
 		return []string{
-			compactLine(
+			compactSummaryLine(
 				fmt.Sprintf("screen_bar: state=suppressed | rows=%d/%d", len(rows), totalRows),
 				compactLine(append([]string{"screen: <suppressed by overlay>"}, meta...)...),
 			),
 		}
 	}
 	lines := []string{
-		compactLine(
+		compactSummaryLine(
 			fmt.Sprintf("screen_bar: state=preview | rows=%d/%d", len(rows), totalRows),
 			compactLine(append([]string{"screen:"}, meta...)...),
 		),
@@ -298,6 +299,12 @@ func compactLine(parts ...string) string {
 
 func compactBarLine(parts ...string) string {
 	return truncateLine(compactLine(parts...), runtimeBarMaxWidth)
+}
+
+// compactSummaryLine 用于 section/status 这类“摘要 + 正文首行”。
+// 这里给比 bar 更宽的预算，既避免长字段把视图横向撑爆，也尽量保留更多正文语义。
+func compactSummaryLine(parts ...string) string {
+	return truncateLine(compactLine(parts...), runtimeSummaryMaxWidth)
 }
 
 func truncateLine(line string, maxWidth int) string {
@@ -516,7 +523,7 @@ func mergeSectionBar(bar string, body []string) []string {
 		return []string{bar}
 	}
 	lines := append([]string{}, body...)
-	lines[0] = compactLine(bar, lines[0])
+	lines[0] = compactSummaryLine(bar, lines[0])
 	return lines
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/lozzow/termx/tui/app/intent"
 	btui "github.com/lozzow/termx/tui/bt"
 	layoutresolvedomain "github.com/lozzow/termx/tui/domain/layoutresolve"
+	terminalpickerdomain "github.com/lozzow/termx/tui/domain/terminalpicker"
 	"github.com/lozzow/termx/tui/domain/types"
 )
 
@@ -461,6 +462,65 @@ func TestE2ERunScenarioConnectedPaneWithoutSnapshotKeepsScreenPlaceholder(t *tes
 		run: func(model *btui.Model) error {
 			if view := model.View(); !strings.Contains(view, "chrome_footer:") || !strings.Contains(view, "body_bar: terminal=term-1:running | screen=unavailable | overlay=none") || !strings.Contains(view, "terminal_bar: id=term-1 | title=api-dev | state=running | role=owner") || !strings.Contains(view, "screen_bar: state=unavailable") || !strings.Contains(view, "overlay_bar: kind=none") || !strings.Contains(view, "footer_bar: notices=0 | overlay=none") || !strings.Contains(view, "screen: <unavailable>") || !strings.Contains(view, "terminal: term-1") {
 				t.Fatalf("expected runtime view without snapshot to keep stable screen placeholder and active terminal metadata, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioLongSummaryLinesStayCompacted(t *testing.T) {
+	client := &stubRunClient{}
+	initial := connectedRunAppState()
+	workspace := initial.Domain.Workspaces[initial.Domain.ActiveWorkspaceID]
+	tab := workspace.Tabs[workspace.ActiveTabID]
+	pane := tab.Panes[tab.ActivePaneID]
+	workspace.Name = "workspace-with-an-extremely-long-name-that-should-not-let-runtime-status-lines-grow-without-bound"
+	tab.Name = "tab-with-an-extremely-long-name-that-should-not-let-runtime-status-lines-grow-without-bound"
+	tab.Panes[pane.ID] = pane
+	workspace.Tabs[tab.ID] = tab
+	initial.Domain.Workspaces[workspace.ID] = workspace
+	initial.Domain.Terminals[pane.TerminalID] = types.TerminalRef{
+		ID:      pane.TerminalID,
+		Name:    "terminal-with-a-very-long-title-that-should-not-let-runtime-terminal-summary-lines-grow-without-bound",
+		State:   types.TerminalRunStateRunning,
+		Visible: true,
+	}
+	picker := terminalpickerdomain.NewState(initial.Domain, initial.UI.Focus)
+	picker.AppendQuery("query-with-a-very-long-value-that-should-not-let-runtime-overlay-summary-lines-grow-without-bound")
+	initial.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayTerminalPicker,
+		Data: picker,
+	}
+	initial.UI.Focus.Layer = types.FocusLayerOverlay
+
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			statusSummary := findLineWithPrefix(view, "workspace:")
+			if statusSummary == "" || len(statusSummary) > runtimeSummaryMaxWidth || !strings.Contains(statusSummary, "slot: connected") {
+				t.Fatalf("expected compacted runtime status summary, got:\n%s", view)
+			}
+			terminalSummary := findLineWithPrefix(view, "terminal_bar:")
+			if terminalSummary == "" || len(terminalSummary) > runtimeSummaryMaxWidth || !strings.Contains(terminalSummary, "terminal_bar: id=term-1") || !strings.Contains(terminalSummary, "grow-without-bound") {
+				t.Fatalf("expected compacted runtime terminal summary, got:\n%s", view)
+			}
+			overlaySummary := findLineWithPrefix(view, "overlay_bar:")
+			if overlaySummary == "" || len(overlaySummary) > runtimeSummaryMaxWidth || !strings.Contains(overlaySummary, "terminal_picker_row_count: 1") {
+				t.Fatalf("expected compacted runtime overlay summary, got:\n%s", view)
 			}
 			return nil
 		},

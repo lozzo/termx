@@ -147,6 +147,57 @@ func TestRuntimeRendererTruncatesLongBarLines(t *testing.T) {
 	}
 }
 
+func TestRuntimeRendererTruncatesLongSummaryLines(t *testing.T) {
+	state := connectedRunAppState()
+	workspace := state.Domain.Workspaces[state.Domain.ActiveWorkspaceID]
+	tab := workspace.Tabs[workspace.ActiveTabID]
+	pane := tab.Panes[tab.ActivePaneID]
+	workspace.Name = "workspace-with-an-extremely-long-name-that-should-not-let-the-status-summary-line-grow-without-bound"
+	tab.Name = "tab-with-an-extremely-long-name-that-should-also-be-compacted-inside-the-status-summary-line"
+	tab.Panes[pane.ID] = pane
+	workspace.Tabs[tab.ID] = tab
+	state.Domain.Workspaces[workspace.ID] = workspace
+	state.Domain.Terminals[pane.TerminalID] = types.TerminalRef{
+		ID:      pane.TerminalID,
+		Name:    "terminal-with-a-very-long-title-that-should-not-let-terminal-summary-lines-grow-without-bound",
+		State:   types.TerminalRunStateRunning,
+		Visible: true,
+	}
+	picker := terminalpickerdomain.NewState(state.Domain, state.UI.Focus)
+	picker.AppendQuery("query-with-a-very-long-value-that-should-not-let-overlay-summary-lines-grow-without-bound")
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayTerminalPicker,
+		Data: picker,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+
+	view := runtimeRenderer{}.Render(state, nil)
+
+	statusSummary := findLineWithPrefix(view, "workspace:")
+	if statusSummary == "" || len(statusSummary) > runtimeSummaryMaxWidth || !strings.Contains(statusSummary, "...") {
+		t.Fatalf("expected truncated status summary within max width, got:\n%s", view)
+	}
+	if !strings.Contains(statusSummary, "slot: connected") {
+		t.Fatalf("expected status summary to preserve trailing state fields, got:\n%s", view)
+	}
+
+	terminalSummary := findLineWithPrefix(view, "terminal_bar:")
+	if terminalSummary == "" || len(terminalSummary) > runtimeSummaryMaxWidth || !strings.Contains(terminalSummary, "...") {
+		t.Fatalf("expected truncated terminal summary within max width, got:\n%s", view)
+	}
+	if !strings.Contains(terminalSummary, "terminal_bar: id=term-1") || !strings.Contains(terminalSummary, "grow-without-bound") {
+		t.Fatalf("expected terminal summary to preserve head/tail terminal semantics, got:\n%s", view)
+	}
+
+	overlaySummary := findLineWithPrefix(view, "overlay_bar:")
+	if overlaySummary == "" || len(overlaySummary) > runtimeSummaryMaxWidth || !strings.Contains(overlaySummary, "...") {
+		t.Fatalf("expected truncated overlay summary within max width, got:\n%s", view)
+	}
+	if !strings.Contains(overlaySummary, "terminal_picker_row_count: 1") {
+		t.Fatalf("expected overlay summary to preserve trailing row metadata, got:\n%s", view)
+	}
+}
+
 func TestRuntimeRendererTruncatesLargeSnapshotPreview(t *testing.T) {
 	state := connectedRunAppState()
 	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
@@ -637,16 +688,18 @@ func TestRuntimeRendererTruncatesLongSectionAndOverlayBars(t *testing.T) {
 	if len(terminalBar) > runtimeBarMaxWidth || !strings.Contains(terminalBar, "...") {
 		t.Fatalf("expected truncated terminal bar within max width, got: %q", terminalBar)
 	}
-	if !strings.Contains(view, terminalBar) {
-		t.Fatalf("expected rendered view to include truncated terminal bar, got:\n%s", view)
+	terminalSummary := findLineWithPrefix(view, "terminal_bar:")
+	if terminalSummary == "" || len(terminalSummary) > runtimeSummaryMaxWidth || !strings.Contains(terminalSummary, "terminal_bar: id=term-1") || !strings.Contains(terminalSummary, "inside-terminal-bar") {
+		t.Fatalf("expected rendered view to include compact terminal summary, got:\n%s", view)
 	}
 
 	overlayBar := renderTerminalPickerBar(picker)
 	if len(overlayBar) > runtimeBarMaxWidth || !strings.Contains(overlayBar, "...") {
 		t.Fatalf("expected truncated terminal picker bar within max width, got: %q", overlayBar)
 	}
-	if !strings.Contains(view, overlayBar) {
-		t.Fatalf("expected rendered view to include truncated terminal picker bar, got:\n%s", view)
+	overlaySummary := findLineWithPrefix(view, "overlay_bar:")
+	if overlaySummary == "" || len(overlaySummary) > runtimeSummaryMaxWidth || !strings.Contains(overlaySummary, "overlay_bar: kind=terminal_picker") || !strings.Contains(overlaySummary, "terminal_picker_row_count: 1") {
+		t.Fatalf("expected rendered view to include compact overlay summary, got:\n%s", view)
 	}
 }
 

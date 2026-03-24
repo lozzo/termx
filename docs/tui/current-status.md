@@ -169,6 +169,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 145. 第一百四十一轮 TDD 已补上 overlay 内部 summary bar
 146. 第一百四十二轮 TDD 已补上 notices 分层摘要栏
 147. 第一百四十三轮 TDD 已补上 runtime 栏位长文本裁剪
+148. 第一百四十四轮 TDD 已补上 runtime 摘要行宽度预算
 
 对应文档：
 
@@ -221,6 +222,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `WorkspacePickerSubmitIntent`
 - runtime `header/footer/body` 与各类 overlay / terminal / notice bar 的长文本中间裁剪
 - section 首行与正文摘要保持完整拼接，不再被 bar 裁剪策略误伤
+- runtime `status/section 首行/overlay 合并首行` 现在也有更宽的摘要宽度预算，只拦极端长文本，不截正常主线路径
+- runtime 摘要行现在统一保留头尾关键语义，避免 workspace/tab/title/query 过长时把整行横向撑爆
 - `OpenTerminalManagerIntent`
 - `OpenPromptIntent`
 - `TerminalManagerMoveIntent`
