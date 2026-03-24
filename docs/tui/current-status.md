@@ -1763,3 +1763,55 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
   - 把更多仍然只存在于 debug 区的状态收回到 `screen_shell`
   - 开始重新设计更像最终产品的 shell header/footer 样式与 pane chrome
   - 在主壳可独立读懂的基础上，再推进真正现代化的布局和层级表达
+
+---
+
+## 21. 第 207 轮 TDD
+
+这一轮继续沿着“主壳自己承担产品语义”推进，没有切去做新 overlay，也没有回去改调试层，而是把默认主壳里最缺的两类信息补齐：
+
+1. pane 生命周期状态摘要进入主壳
+   - 对 `empty / waiting / exited` 三种非 connected 状态新增统一 `STATUS[...]`
+   - 默认 shell-only 视图里现在能直接看到：
+     - `STATUS[empty terminal missing]`
+     - `STATUS[waiting connect pending]`
+     - `STATUS[exited history retained exit=...]`
+   - 不需要再先读 pane box 正文，第一眼就能知道当前 pane 处于什么生命周期状态
+2. contextual actions 进入主壳
+   - 对 connected / empty / waiting / exited / overlay / floating mode 分别新增 `ACTIONS[...]`
+   - connected 态直接给出：
+     - `input terminal`
+     - `ctrl-g global`
+     - `ctrl-f picker`
+     - `? help`
+   - disconnected / exited 态则给出更贴近当前恢复动作的 summary
+   - 这样默认主壳终于不只是“告诉你现在是什么”，也开始“告诉你接下来能做什么”
+3. shell-only e2e 覆盖空 pane / exited pane
+   - 新增 default shell-only 的 empty / exited 运行场景
+   - 防止后面 renderer 再回退成“状态靠正文、动作靠猜测”
+
+这一轮收口的验证重点：
+
+- renderer：
+  - `TestRuntimeRendererShellOnlyShowsContextualActionsForConnectedPane`
+  - `TestRuntimeRendererShellOnlyShowsStatusAndActionsForDisconnectedStates`
+  - `TestRuntimeRendererShellOnlyOverlayKeepsPaneContext`
+- runtime：
+  - `TestE2ERunScenarioDefaultShellOnlyEmptyPaneShowsStatusAndActions`
+  - `TestE2ERunScenarioDefaultShellOnlyExitedPaneShowsStatusAndActions`
+  - `TestE2ERunScenarioActivePaneCoreViewVisible`
+
+本轮验证命令：
+
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1`
+
+当前状态更新为：
+
+- 默认主壳已经不再只是“摘要壳 + pane box”，而是开始具备真正的状态条和动作条
+- shell-only 视图对 connected / empty / waiting / exited 四态的可读性明显提高
+- 现在默认界面已经开始接近“最低可用产品界面”，而不再只是开发期结构框架
+- 下一阶段可以继续沿着这一层推进：
+  - 把更多 footer/header 中仍然过于技术化的表达改成更产品化的 chrome
+  - 继续减少 pane body 才能读懂状态的地方
+  - 再往后进入更像最终产品的 tab/workspace/header/footer 排版收口

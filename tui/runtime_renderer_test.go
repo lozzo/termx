@@ -253,6 +253,98 @@ func TestRuntimeRendererShellOnlyOverlayKeepsPaneContext(t *testing.T) {
 	}
 }
 
+func TestRuntimeRendererShellOnlyShowsContextualActionsForConnectedPane(t *testing.T) {
+	debugVisible := false
+	state := connectedRunAppState()
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:      types.TerminalID("term-1"),
+		Name:    "api-dev",
+		State:   types.TerminalRunStateRunning,
+		Command: []string{"npm", "run", "dev"},
+		Visible: true,
+	}
+	renderer := runtimeRenderer{
+		DebugVisible: &debugVisible,
+		Screens: NewRuntimeTerminalStore(RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "$"}, {Content: " "}, {Content: "p"}, {Content: "w"}, {Content: "d"}},
+							},
+						},
+					},
+				},
+			},
+		}),
+	}
+
+	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "ACTIONS[input terminal | ctrl-g global | ctrl-f picker | ? help]") {
+		t.Fatalf("expected shell-only connected pane to expose contextual actions, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererShellOnlyShowsStatusAndActionsForDisconnectedStates(t *testing.T) {
+	debugVisible := false
+	cases := []struct {
+		name        string
+		state       types.AppState
+		statusLine  string
+		actionLine  string
+	}{
+		{
+			name:       "empty",
+			state:      buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty),
+			statusLine: "STATUS[empty terminal missing]",
+			actionLine: "ACTIONS[n new | a connect | m manager | x close | ? help]",
+		},
+		{
+			name:       "waiting",
+			state:      buildSinglePaneAppState("main", "shell", types.PaneSlotWaiting),
+			statusLine: "STATUS[waiting connect pending]",
+			actionLine: "ACTIONS[n new | a connect | m manager | x close | ? help]",
+		},
+		{
+			name: "exited",
+			state: func() types.AppState {
+				state := connectedRunAppState()
+				ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+				tab := ws.Tabs[types.TabID("tab-1")]
+				pane := tab.Panes[types.PaneID("pane-1")]
+				exitCode := 7
+				pane.SlotState = types.PaneSlotExited
+				pane.LastExitCode = &exitCode
+				tab.Panes[types.PaneID("pane-1")] = pane
+				ws.Tabs[types.TabID("tab-1")] = tab
+				state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+				terminal := state.Domain.Terminals[types.TerminalID("term-1")]
+				terminal.State = types.TerminalRunStateExited
+				terminal.ExitCode = &exitCode
+				state.Domain.Terminals[types.TerminalID("term-1")] = terminal
+				return state
+			}(),
+			statusLine: "STATUS[exited history retained exit=7]",
+			actionLine: "ACTIONS[r restart | a connect | x close | ? help]",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(tc.state, nil)
+			if !strings.Contains(view, tc.statusLine) {
+				t.Fatalf("expected shell-only renderer to expose %q, got:\n%s", tc.statusLine, view)
+			}
+			if !strings.Contains(view, tc.actionLine) {
+				t.Fatalf("expected shell-only renderer to expose %q, got:\n%s", tc.actionLine, view)
+			}
+		})
+	}
+}
+
 func TestRuntimeRendererPrefersLastMeaningfulSnapshotRows(t *testing.T) {
 	state := connectedRunAppState()
 	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{

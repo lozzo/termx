@@ -560,6 +560,76 @@ func TestE2ERunScenarioConnectedPaneWithoutSnapshotKeepsScreenPlaceholder(t *tes
 	}
 }
 
+func TestE2ERunScenarioDefaultShellOnlyEmptyPaneShowsStatusAndActions(t *testing.T) {
+	client := &stubRunClient{}
+	initial := buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty)
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			if !strings.Contains(view, "STATUS[empty terminal missing]") || !strings.Contains(view, "ACTIONS[n new | a connect | m manager | x close | ? help]") {
+				t.Fatalf("expected shell-only empty pane to expose status and actions, got:\n%s", view)
+			}
+			if strings.Contains(view, "wireframe_view:") || strings.Contains(view, "chrome_header:") {
+				t.Fatalf("expected shell-only empty pane runtime view to keep debug sections hidden, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected empty pane shell-only scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioDefaultShellOnlyExitedPaneShowsStatusAndActions(t *testing.T) {
+	client := &stubRunClient{}
+	initial := connectedRunAppState()
+	ws := initial.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	pane := tab.Panes[types.PaneID("pane-1")]
+	exitCode := 7
+	pane.SlotState = types.PaneSlotExited
+	pane.LastExitCode = &exitCode
+	tab.Panes[types.PaneID("pane-1")] = pane
+	ws.Tabs[types.TabID("tab-1")] = tab
+	initial.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	terminal := initial.Domain.Terminals[types.TerminalID("term-1")]
+	terminal.State = types.TerminalRunStateExited
+	terminal.ExitCode = &exitCode
+	initial.Domain.Terminals[types.TerminalID("term-1")] = terminal
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			if !strings.Contains(view, "STATUS[exited history retained exit=7]") || !strings.Contains(view, "ACTIONS[r restart | a connect | x close | ? help]") {
+				t.Fatalf("expected shell-only exited pane to expose status and actions, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected exited pane shell-only scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioTrailingBlankSnapshotKeepsMeaningfulPreviewVisible(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithActiveTerminalMetadata()

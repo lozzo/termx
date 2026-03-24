@@ -169,6 +169,12 @@ func (r runtimeRenderer) renderScreenShell(state types.AppState, workspace types
 	if metaLine := r.renderScreenShellTerminalMetaLine(state, pane); metaLine != "" {
 		body = append(body, metaLine)
 	}
+	if statusLine := renderScreenShellPaneStatusLine(state, pane); statusLine != "" {
+		body = append(body, statusLine)
+	}
+	if actionLine := renderScreenShellActionLine(state, pane); actionLine != "" {
+		body = append(body, actionLine)
+	}
 	body = append(body, r.renderScreenShellWorkbench(state, tab, pane, metrics, overlayActive)...)
 	if overlayActive {
 		body = append(body, renderScreenShellMask(state, metrics))
@@ -339,6 +345,51 @@ func (r runtimeRenderer) renderScreenShellTerminalMetaLine(state types.AppState,
 		parts = append(parts, fmt.Sprintf("CMD[%s]", command))
 	}
 	return compactSummaryLine(parts...)
+}
+
+func renderScreenShellPaneStatusLine(state types.AppState, pane types.PaneState) string {
+	switch pane.SlotState {
+	case types.PaneSlotEmpty:
+		return "STATUS[empty terminal missing]"
+	case types.PaneSlotWaiting:
+		return "STATUS[waiting connect pending]"
+	case types.PaneSlotExited:
+		if pane.LastExitCode != nil {
+			return fmt.Sprintf("STATUS[exited history retained exit=%d]", *pane.LastExitCode)
+		}
+		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.ExitCode != nil {
+			return fmt.Sprintf("STATUS[exited history retained exit=%d]", *terminal.ExitCode)
+		}
+		return "STATUS[exited history retained]"
+	default:
+		return ""
+	}
+}
+
+func renderScreenShellActionLine(state types.AppState, pane types.PaneState) string {
+	switch state.UI.Overlay.Kind {
+	case types.OverlayHelp:
+		return "ACTIONS[esc close | ? help]"
+	case types.OverlayTerminalPicker, types.OverlayWorkspacePicker, types.OverlayLayoutResolve:
+		return "ACTIONS[enter confirm | esc close | ? help]"
+	case types.OverlayTerminalManager:
+		return "ACTIONS[enter here | t new-tab | o float | e edit | k stop | esc close | ? help]"
+	case types.OverlayPrompt:
+		return "ACTIONS[enter submit | esc close | ? help]"
+	}
+	if state.UI.Mode.Active == types.ModeFloating {
+		return "ACTIONS[h/l focus | j/k move | H/J/K/L size | [/] z | c center | x close | esc exit | ? help]"
+	}
+	switch pane.SlotState {
+	case types.PaneSlotConnected:
+		return "ACTIONS[input terminal | ctrl-g global | ctrl-f picker | ? help]"
+	case types.PaneSlotEmpty, types.PaneSlotWaiting:
+		return "ACTIONS[n new | a connect | m manager | x close | ? help]"
+	case types.PaneSlotExited:
+		return "ACTIONS[r restart | a connect | x close | ? help]"
+	default:
+		return ""
+	}
 }
 
 // renderScreenShellNoticeLine 把 notice 汇总搬进第一视觉 shell，
