@@ -811,7 +811,7 @@ func TestE2ERunScenarioDefaultModernTerminalManagerOverlayRendersStructuredModal
 			if !strings.Contains(stripped, "[terminal] api-dev") || !strings.Contains(stripped, "[create] + new terminal") || !strings.Contains(stripped, "running  •  visible") || !strings.Contains(stripped, "Enter connect here") || !strings.Contains(stripped, "t new tab") || !strings.Contains(stripped, "o floating") || !strings.Contains(stripped, "e edit") || !strings.Contains(stripped, "s stop") {
 				t.Fatalf("expected default modern terminal manager rows, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "Detail") || !strings.Contains(stripped, "cmd npm run dev") || !strings.Contains(stripped, "owner pane:pane-1") {
+			if !strings.Contains(stripped, "Detail") || !strings.Contains(stripped, "Runtime") || !strings.Contains(stripped, "Command") || !strings.Contains(stripped, "Connections") || !strings.Contains(stripped, "cmd npm run dev") || !strings.Contains(stripped, "owner pane:pane-1") || !strings.Contains(stripped, "Locations") {
 				t.Fatalf("expected default modern terminal manager detail, got:\n%s", view)
 			}
 			if strings.Contains(view, "wireframe_view:") {
@@ -899,7 +899,7 @@ func TestE2ERunScenarioDefaultModernWorkspacePickerOverlayRendersStructuredModal
 			if !strings.Contains(stripped, "Workspace Picker") || !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "state overlay workspace_picker  •  focus overlay") || !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Tree panel") || !strings.Contains(stripped, "Target panel") || !strings.Contains(stripped, "Action bar") {
 				t.Fatalf("expected default modern workspace picker modal structure, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "selected ops  •  workspace") || !strings.Contains(stripped, "Target") || !strings.Contains(stripped, "workspace ops  (ws-2)") || !strings.Contains(stripped, "[-] [workspace] ops") || !strings.Contains(stripped, "[tab] logs") || !strings.Contains(stripped, "[pane] unconnected pane") || !strings.Contains(stripped, "Enter jump") || !strings.Contains(stripped, "/ filter") || !strings.Contains(stripped, "Esc close") {
+			if !strings.Contains(stripped, "selected ops  •  workspace") || !strings.Contains(stripped, "Target") || !strings.Contains(stripped, "Route") || !strings.Contains(stripped, "workspace ops  (ws-2)") || !strings.Contains(stripped, "[-] [workspace] ops") || !strings.Contains(stripped, "[tab] logs") || !strings.Contains(stripped, "[pane] unconnected pane") || !strings.Contains(stripped, "Enter jump") || !strings.Contains(stripped, "/ filter") || !strings.Contains(stripped, "Esc close") {
 				t.Fatalf("expected default modern workspace picker tree rows, got:\n%s", view)
 			}
 			return nil
@@ -930,7 +930,7 @@ func TestE2ERunScenarioDefaultModernLayoutResolveOverlayRendersStructuredModal(t
 			if !strings.Contains(stripped, "Layout Resolve") || !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "state overlay layout_resolve  •  focus overlay") || !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "Choices panel") || !strings.Contains(stripped, "Target panel") || !strings.Contains(stripped, "Action bar") {
 				t.Fatalf("expected default modern layout resolve modal structure, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "selected connect_existing") || !strings.Contains(stripped, "backend-dev") || !strings.Contains(stripped, "env=dev service=api") || !strings.Contains(stripped, "connect existing") || !strings.Contains(stripped, "create new") || !strings.Contains(stripped, "Enter confirm") || !strings.Contains(stripped, "Esc close") {
+			if !strings.Contains(stripped, "selected connect_existing") || !strings.Contains(stripped, "backend-dev") || !strings.Contains(stripped, "Connect target") || !strings.Contains(stripped, "Hint") || !strings.Contains(stripped, "env=dev service=api") || !strings.Contains(stripped, "connect existing") || !strings.Contains(stripped, "create new") || !strings.Contains(stripped, "Enter confirm") || !strings.Contains(stripped, "Esc close") {
 				t.Fatalf("expected default modern layout resolve actions, got:\n%s", view)
 			}
 			return nil
@@ -1017,7 +1017,7 @@ func TestE2ERunScenarioDefaultModernTerminalPickerOverlayRendersStructuredModal(
 			if !strings.Contains(stripped, "Terminal Picker") || !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "state overlay terminal_picker  •  focus overlay") || !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Detail panel") || !strings.Contains(stripped, "Results panel") || !strings.Contains(stripped, "Action bar") {
 				t.Fatalf("expected default modern terminal picker modal structure, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "selected build-log") || !strings.Contains(stripped, "[terminal] build-log") || !strings.Contains(stripped, "running  •  hidden") || !strings.Contains(stripped, "cmd tail -f build.log") || !strings.Contains(stripped, "tags group=build") || !strings.Contains(stripped, "Enter connect") || !strings.Contains(stripped, "n create new") || !strings.Contains(stripped, "Esc close") {
+			if !strings.Contains(stripped, "selected build-log") || !strings.Contains(stripped, "[terminal] build-log") || !strings.Contains(stripped, "Runtime") || !strings.Contains(stripped, "Command") || !strings.Contains(stripped, "Tags") || !strings.Contains(stripped, "running  •  hidden") || !strings.Contains(stripped, "cmd tail -f build.log") || !strings.Contains(stripped, "tags group=build") || !strings.Contains(stripped, "Enter connect") || !strings.Contains(stripped, "n create new") || !strings.Contains(stripped, "Esc close") {
 				t.Fatalf("expected default modern terminal picker detail, got:\n%s", view)
 			}
 			return nil
