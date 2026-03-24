@@ -257,7 +257,7 @@ func (r modernScreenShellRenderer) renderWorkspaceSummaryTextAdaptive(workspace 
 func (r modernScreenShellRenderer) renderContextBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width int) string {
 	contentWidth := max(1, width-2)
 	left := theme.panelMeta.Render(renderModernPanePathAdaptive(state, workspace, tab, pane, width))
-	right := renderModernContextChromeLineAdaptive(theme, state, pane, metrics, width)
+	right := renderModernContextChromeLineAdaptive(theme, state, tab, pane, metrics, width)
 	return theme.subBar.Render(fillANSIHorizontal(left, right, contentWidth))
 }
 
@@ -2119,7 +2119,10 @@ func renderModernTopStatusCompact(state types.AppState, pane types.PaneState) st
 	return fmt.Sprintf("focus %s  •  %s", label, renderModernContextStateToken(state, pane))
 }
 
-func renderModernContextChromeLine(theme modernShellTheme, state types.AppState, pane types.PaneState, metrics wireframeMetrics) string {
+func renderModernContextChromeLine(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics) string {
+	if tab.ActiveLayer == types.FocusLayerFloating && len(tab.FloatingOrder) > 0 {
+		return renderModernFloatingContextWide(theme, state, tab, pane, metrics)
+	}
 	items := []string{
 		theme.activeChip.Render("focus " + renderModernPaneDisplayTitle(state, pane)),
 		theme.chip.Render("role " + renderModernPaneRole(state, pane)),
@@ -2144,7 +2147,13 @@ func renderModernContextChromeLine(theme modernShellTheme, state types.AppState,
 	return strings.Join(items, " ")
 }
 
-func renderModernContextChromeLineAdaptive(theme modernShellTheme, state types.AppState, pane types.PaneState, metrics wireframeMetrics, width int) string {
+func renderModernContextChromeLineAdaptive(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width int) string {
+	if tab.ActiveLayer == types.FocusLayerFloating && len(tab.FloatingOrder) > 0 {
+		if shouldRenderCompactChrome(width) {
+			return renderModernFloatingContextCompact(theme, state, tab, pane, metrics)
+		}
+		return renderModernFloatingContextWide(theme, state, tab, pane, metrics)
+	}
 	if shouldRenderCompactChrome(width) {
 		items := []string{
 			theme.activeChip.Render(renderModernContextStateToken(state, pane)),
@@ -2164,7 +2173,35 @@ func renderModernContextChromeLineAdaptive(theme modernShellTheme, state types.A
 		}
 		return strings.Join(items, " ")
 	}
-	return renderModernContextChromeLine(theme, state, pane, metrics)
+	return renderModernContextChromeLine(theme, state, tab, pane, metrics)
+}
+
+func renderModernFloatingContextWide(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics) string {
+	floatingPaneIDs := orderedFloatingPaneIDs(tab)
+	_, _, _, topTitle := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
+	items := []string{
+		theme.activeChip.Render(renderModernContextStateToken(state, pane)),
+		theme.chip.Render("top " + topTitle),
+		theme.chip.Render(fmt.Sprintf("stack %d", len(floatingPaneIDs))),
+	}
+	if renderModernFloatingPaneOffscreen(pane, metrics) {
+		items = append(items, theme.activeChip.Render("offscreen"), theme.activeChip.Render("c center"))
+	}
+	return strings.Join(items, " ")
+}
+
+func renderModernFloatingContextCompact(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics) string {
+	floatingPaneIDs := orderedFloatingPaneIDs(tab)
+	_, _, _, topTitle := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
+	items := []string{
+		theme.activeChip.Render(renderModernContextStateToken(state, pane)),
+		theme.chip.Render(truncateModernLine("top "+topTitle, 16)),
+		theme.chip.Render(fmt.Sprintf("%df", len(floatingPaneIDs))),
+	}
+	if renderModernFloatingPaneOffscreen(pane, metrics) {
+		items = append(items, theme.activeChip.Render("offscreen"))
+	}
+	return strings.Join(items, " ")
 }
 
 func renderModernLegacyFooterShortcuts(state types.AppState, pane types.PaneState) string {

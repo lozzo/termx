@@ -603,7 +603,7 @@ func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing
 
 	view := renderer.Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "main / shell / floating / api-dev") || !strings.Contains(stripped, "api-dev  ● run  owner") || !strings.Contains(stripped, "build-log  ● run  owner") || !strings.Contains(stripped, "live") {
+	if !strings.Contains(stripped, "main / shell / floating / api-dev") || !strings.Contains(stripped, "api-dev  ● run  owner") || !strings.Contains(stripped, "build-log  ● run  owner") || !strings.Contains(stripped, "top build-log") || !strings.Contains(stripped, "live") {
 		t.Fatalf("expected shell-only floating renderer to expose overlapping floating pane titles with z-order, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "api ready") || !strings.Contains(stripped, "build ok") || !strings.Contains(stripped, "term-1 running owner") || !strings.Contains(stripped, "term-2 running owner") {

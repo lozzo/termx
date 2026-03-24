@@ -785,7 +785,7 @@ func TestE2ERunScenarioDefaultModernFloatingWorkbenchRendersWindowDeck(t *testin
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "main / shell / floating / api-dev") || !strings.Contains(stripped, "api-dev  ● run  owner") || !strings.Contains(stripped, "build-log  ● run  owner") || !strings.Contains(stripped, "live") {
+			if !strings.Contains(stripped, "main / shell / floating / api-dev") || !strings.Contains(stripped, "api-dev  ● run  owner") || !strings.Contains(stripped, "build-log  ● run  owner") || !strings.Contains(stripped, "top build-log") || !strings.Contains(stripped, "live") {
 				t.Fatalf("expected default modern floating view to expose overlapping floating pane titles, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "api ready") || !strings.Contains(stripped, "build ok") || !strings.Contains(stripped, "term-1 running owner") || !strings.Contains(stripped, "term-2 running owner") {
@@ -1049,6 +1049,78 @@ func TestE2ERunScenarioDefaultModernFloatingCenterRecallClearsOffscreenBadge(t *
 	})
 	if err != nil {
 		t.Fatalf("expected default modern floating center recall scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioDefaultModernFloatingZOrderUpdatesTopSummaryAndKeepsOverlappedBodies(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithFloatingOverviewTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+							},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: types.TerminalID("term-2"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "b"}, {Content: "u"}, {Content: "i"}, {Content: "l"}, {Content: "d"}, {Content: " "}, {Content: "o"}, {Content: "k"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			current := model
+			before := stripANSIRuntimeView(current.View())
+			if !strings.Contains(before, "top build-log") || !strings.Contains(before, "api ready") || !strings.Contains(before, "build ok") {
+				t.Fatalf("expected default modern floating shell to expose initial top-window summary and both window bodies, got:\n%s", current.View())
+			}
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlO},
+				{Type: tea.KeyRunes, Runes: []rune("]")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			after := stripANSIRuntimeView(current.View())
+			if !strings.Contains(after, "top api-dev") || !strings.Contains(after, "api ready") || !strings.Contains(after, "build ok") || !strings.Contains(after, "api-dev  ● run  owner") || !strings.Contains(after, "build-log  ● run  owner") {
+				t.Fatalf("expected default modern floating z-order flow to update top summary and preserve overlapped window bodies, got:\n%s", current.View())
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected default modern floating z-order scenario to succeed, got %v", err)
 	}
 }
 
