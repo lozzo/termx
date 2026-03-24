@@ -806,6 +806,9 @@ func TestE2ERunScenarioDefaultModernFloatingWorkbenchRendersWindowDeck(t *testin
 			if !strings.Contains(stripped, "api ready") || !strings.Contains(stripped, "build o") || !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "term-2") {
 				t.Fatalf("expected default modern floating view to keep body previews and runtime footer lines, got:\n%s", view)
 			}
+			if !strings.Contains(stripped, "╔") || !strings.Contains(stripped, "╭") {
+				t.Fatalf("expected default modern floating view to use distinct floating window border glyphs, got:\n%s", view)
+			}
 			if strings.Contains(stripped, "Workbench shell") || strings.Contains(view, "wireframe_view:") {
 				t.Fatalf("expected default modern floating view to use pane canvas layout without debug sections, got:\n%s", view)
 			}

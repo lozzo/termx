@@ -535,6 +535,7 @@ func (r modernScreenShellRenderer) renderWorkbenchCanvasLines(state types.AppSta
 				r.renderModernCanvasPaneMeta(state, targetPane, metrics, paneID == tab.ActivePaneID, rect.W),
 				r.renderModernCanvasPaneLines(state, targetPane, overlayActive, bodyRows),
 				paneID == tab.ActivePaneID,
+				targetPane.Kind == types.PaneKindFloating,
 			)
 			canvas.stampLines(rect.X, rect.Y, box)
 		}
@@ -553,25 +554,21 @@ func (r modernScreenShellRenderer) renderWorkbenchCanvasLines(state types.AppSta
 			r.renderModernCanvasPaneMeta(state, targetPane, metrics, paneID == tab.ActivePaneID, rect.W),
 			r.renderModernCanvasPaneLines(state, targetPane, overlayActive, bodyRows),
 			paneID == tab.ActivePaneID,
+			targetPane.Kind == types.PaneKindFloating,
 		)
 		canvas.stampLines(rect.X, rect.Y, box)
 	}
 	return canvas.lines()
 }
 
-func renderModernCanvasPaneBox(width int, height int, title string, meta string, body []string, active bool) []string {
+func renderModernCanvasPaneBox(width int, height int, title string, meta string, body []string, active bool, floating bool) []string {
 	if width < 12 {
 		width = 12
 	}
 	if height < 4 {
 		height = 4
 	}
-	topLeft, topRight, bottomLeft, bottomRight := "┌", "┐", "└", "┘"
-	vertical, horizontal := "│", "─"
-	if active {
-		topLeft, topRight, bottomLeft, bottomRight = "┏", "┓", "┗", "┛"
-		vertical, horizontal = "┃", "━"
-	}
+	topLeft, topRight, bottomLeft, bottomRight, vertical, horizontal := renderModernCanvasPaneBorderGlyphs(active, floating)
 	innerWidth := width - 2
 	bodyRows := max(1, height-2)
 	lines := []string{renderModernCanvasBorderLine(topLeft, topRight, horizontal, title, meta, innerWidth)}
@@ -580,6 +577,19 @@ func renderModernCanvasPaneBox(width int, height int, title string, meta string,
 	}
 	lines = append(lines, bottomLeft+strings.Repeat(horizontal, innerWidth)+bottomRight)
 	return lines
+}
+
+func renderModernCanvasPaneBorderGlyphs(active bool, floating bool) (topLeft, topRight, bottomLeft, bottomRight, vertical, horizontal string) {
+	switch {
+	case floating && active:
+		return "╔", "╗", "╚", "╝", "║", "═"
+	case floating:
+		return "╭", "╮", "╰", "╯", "│", "─"
+	case active:
+		return "┏", "┓", "┗", "┛", "┃", "━"
+	default:
+		return "┌", "┐", "└", "┘", "│", "─"
+	}
 }
 
 func renderModernCanvasBorderLine(left, right, horizontal, title, meta string, innerWidth int) string {
@@ -1317,6 +1327,7 @@ func renderModernScreenFrameLine(text string, innerWidth int) string {
 
 func (r modernScreenShellRenderer) renderOverlayViewport(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width, height int) string {
 	backdropLines := r.renderWorkbenchCanvasLines(state, tab, pane, metrics, width, height, false)
+	backdropLines = renderModernOverlayBackdropWash(backdropLines)
 	dialogWidth := renderModernOverlayDialogWidth(metrics, width)
 	dialogLines := r.renderModernOverlayDialogLines(state, dialogWidth, height)
 	canvas := newScreenShellCanvas(width, max(height, max(len(backdropLines), len(dialogLines))))
@@ -2934,6 +2945,20 @@ func renderModernOverlayShadow(width int, height int) []string {
 		}
 	}
 	return lines
+}
+
+func renderModernOverlayBackdropWash(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	for y, line := range lines {
+		runes := []rune(line)
+		for x, r := range runes {
+			if r == ' ' && (x+y)%2 == 0 {
+				runes[x] = '▒'
+			}
+		}
+		out = append(out, string(runes))
+	}
+	return out
 }
 
 func fillANSIHorizontal(left, right string, width int) string {

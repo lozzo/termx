@@ -405,7 +405,7 @@ func TestRuntimeRendererShellOnlyOverlayKeepsPaneContext(t *testing.T) {
 	if !strings.Contains(stripped, "dialog help") || !strings.Contains(stripped, "mode picker") || !strings.Contains(stripped, "<esc> Close") || !strings.Contains(stripped, "░") {
 		t.Fatalf("expected shell-only overlay renderer to expose overlay chrome and footer actions, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "workbench paused  •  api-dev  •  owner") || !strings.Contains(stripped, "active pane api-dev  •  owner  •  connected") {
+	if !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "workbench paused  •  api-dev  •  owner") || !strings.Contains(stripped, "active pane api-dev  •  owner  •  connected") || !strings.Contains(stripped, "▒") {
 		t.Fatalf("expected shell-only overlay renderer to retain a dimmed workbench canvas backdrop, got:\n%s", view)
 	}
 }
@@ -623,6 +623,9 @@ func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing
 	}
 	if !strings.Contains(stripped, "api ready") || !strings.Contains(stripped, "build o") || !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "term-2") {
 		t.Fatalf("expected shell-only floating renderer to keep window previews and runtime footer lines inside the floating canvas, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "╔") || !strings.Contains(stripped, "╭") {
+		t.Fatalf("expected shell-only floating renderer to use distinct floating window border glyphs, got:\n%s", view)
 	}
 	if strings.Contains(stripped, "Workbench shell") {
 		t.Fatalf("expected shell-only floating renderer to stay on the modern workbench shell, got:\n%s", view)
