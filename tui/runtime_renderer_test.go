@@ -66,7 +66,7 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "STATE[tiled focus=tiled mode=none overlay=none]") || !strings.Contains(view, "BODY[tiled t=1 f=0]") || !strings.Contains(view, "TARGET[main/shell/pane-1] TERM[term-1] FLOAT[0]") {
 		t.Fatalf("expected renderer to expose shell frame state lines, got:\n%s", view)
 	}
-	if !strings.Contains(view, "+ api-dev [owner] [tiled]") || !strings.Contains(view, "FT[api-dev tiled none]") || !strings.Contains(view, "<p> PANE <t> TAB <w> WS <o> FLOAT <f> PICK <g> GLOBAL") {
+	if !strings.Contains(view, "|| api-dev [owner] [tiled]") || !strings.Contains(view, "||term-1 running owner") || !strings.Contains(view, "FT[api-dev tiled none]") || !strings.Contains(view, "<p> PANE <t> TAB <w> WS <o> FLOAT <f> PICK <g> GLOBAL") {
 		t.Fatalf("expected renderer to expose visible shell frame body/footer, got:\n%s", view)
 	}
 	if !strings.Contains(view, "$ pwd") || !strings.Contains(view, "/tmp") || !strings.Contains(view, "term-1 running owner") {
@@ -965,7 +965,7 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "terminal_manager_actions:") || !strings.Contains(view, "[jump] jump to connected pane") || !strings.Contains(view, "[connect_here] connect here") || !strings.Contains(view, "[new_tab] open in new tab") || !strings.Contains(view, "[floating] open in floating pane") || !strings.Contains(view, "[edit] edit metadata") || !strings.Contains(view, "[acquire_owner] acquire owner") || !strings.Contains(view, "[stop] stop terminal") {
 		t.Fatalf("expected manager actions in rendered view, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 96 {
+	if lines := strings.Count(view, "\n") + 1; lines > 97 {
 		t.Fatalf("expected overlay view to remain within compact budget, got %d lines:\n%s", lines, view)
 	}
 }
@@ -1023,7 +1023,7 @@ func TestRuntimeRendererCompressesBodyWhenOverlayIsActive(t *testing.T) {
 	if strings.Contains(view, "terminal_tags:") {
 		t.Fatalf("expected noncritical terminal detail to be suppressed while overlay is active, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 98 {
+	if lines := strings.Count(view, "\n") + 1; lines > 99 {
 		t.Fatalf("expected overlay-active body to stay tightly compressed, got %d lines:\n%s", lines, view)
 	}
 }
@@ -1565,7 +1565,7 @@ func TestRuntimeRendererRendersWireframeSplitWorkbench(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "SPLIT SHELL[vertical 50/50]") || !strings.Contains(view, "LAYOUT[split] root=vertical ratio=50/50 leaves=2") || !strings.Contains(view, "+ api-dev [owner]") || !strings.Contains(view, "+ build-log [owner]") {
+	if !strings.Contains(view, "SPLIT SHELL[vertical 50/50]") || !strings.Contains(view, "LAYOUT[split] root=vertical ratio=50/50 leaves=2") || !strings.Contains(view, "api-dev [owner]") || !strings.Contains(view, "build-log [owner]") {
 		t.Fatalf("expected split shell frame in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "$ npm") || !strings.Contains(view, "ready") || !strings.Contains(view, "term-1 running owner") || !strings.Contains(view, "> tsc") || !strings.Contains(view, "ok") || !strings.Contains(view, "term-2 running owner") {
@@ -1617,7 +1617,7 @@ func TestRuntimeRendererRendersWireframeFloatingStack(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "STACK[windows] total=2") || !strings.Contains(view, "FOCUS[float-1] api-dev") || !strings.Contains(view, "WINDOWS[2]") || !strings.Contains(view, "WINDOW CARD[float-1] api-dev") || !strings.Contains(view, "GEOMETRY[10,8 30x12]") || !strings.Contains(view, "WINDOW CARD[float-2] build-log") || !strings.Contains(view, "GEOMETRY[45,14 28x10]") {
+	if !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "STACK[windows] total=2") || !strings.Contains(view, "FOCUS[float-1] api-dev") || !strings.Contains(view, "WINDOWS[2]") || !strings.Contains(view, "WINDOW CARD[float-1] api-dev") || !strings.Contains(view, "GEOMETRY[10,8 30x12]") || !strings.Contains(view, "WINDOW CARD[float-2] build-log") || !strings.Contains(view, "api-dev [owner] [floating]") {
 		t.Fatalf("expected floating shell window summary in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "api ready") || !strings.Contains(view, "term-1 running owner") || !strings.Contains(view, "build ok") || !strings.Contains(view, "term-2 running owner") {

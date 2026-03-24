@@ -201,7 +201,7 @@ func (r runtimeRenderer) renderScreenShellWorkbench(state types.AppState, tab ty
 	case len(floatingPaneIDs) > 0:
 		return r.renderScreenShellFloating(state, tab, pane, floatingPaneIDs, metrics, overlayActive)
 	default:
-		return renderShellBox(metrics.ViewportWidth, renderScreenShellPaneTitle(state, pane, true), r.renderScreenShellPaneLines(state, pane, overlayActive, 4))
+		return renderScreenShellPaneBox(metrics.ViewportWidth, renderScreenShellPaneTitle(state, pane, true), r.renderScreenShellPaneLines(state, pane, overlayActive, 4))
 	}
 }
 
@@ -224,7 +224,7 @@ func (r runtimeRenderer) renderScreenShellSplit(state types.AppState, tab types.
 		if !ok {
 			continue
 		}
-		boxes = append(boxes, renderShellBox(metrics.SplitColumnWidth, renderScreenShellPaneTitle(state, pane, false), r.renderScreenShellPaneLines(state, pane, overlayActive, 3)))
+		boxes = append(boxes, renderScreenShellPaneBox(metrics.SplitColumnWidth, renderScreenShellPaneTitle(state, pane, false), r.renderScreenShellPaneLines(state, pane, overlayActive, 3)))
 	}
 	if len(boxes) > 0 {
 		lines = append(lines, joinASCIIBoxes(boxes, 2)...)
@@ -246,7 +246,7 @@ func (r runtimeRenderer) renderScreenShellSplit(state types.AppState, tab types.
 
 func (r runtimeRenderer) renderScreenShellFloating(state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, metrics wireframeMetrics, overlayActive bool) []string {
 	lines := []string{fmt.Sprintf("FLOAT SHELL[%d]", len(floatingPaneIDs))}
-	mainBox := renderShellBox(metrics.MainPaneWidth, renderScreenShellPaneTitle(state, pane, true), r.renderScreenShellPaneLines(state, pane, overlayActive, 4))
+	mainBox := renderScreenShellPaneBox(metrics.MainPaneWidth, renderScreenShellPaneTitle(state, pane, true), r.renderScreenShellPaneLines(state, pane, overlayActive, 4))
 	sidebarBox := renderShellBox(metrics.SidebarWidth, "STACK[windows]", r.renderScreenShellFloatingSidebar(state, tab, floatingPaneIDs))
 	lines = append(lines, joinASCIIBoxes([][]string{mainBox, sidebarBox}, 2)...)
 	lines = append(lines, fmt.Sprintf("WINDOWS[%d]", len(floatingPaneIDs)))
@@ -284,7 +284,7 @@ func (r runtimeRenderer) renderScreenShellExtraPaneCards(state types.AppState, t
 		}
 		body := []string{fmt.Sprintf("SLOT[%s]", pane.SlotState)}
 		body = append(body, r.renderScreenShellPaneLines(state, pane, overlayActive, 4)...)
-		boxes = append(boxes, renderShellBox(width, fmt.Sprintf("CARD[%s] %s [%s]", pane.ID, renderPaneTitle(state, pane), renderScreenShellPaneCardRole(state, pane)), body))
+		boxes = append(boxes, renderScreenShellPaneBox(width, fmt.Sprintf("CARD[%s] %s [%s]", pane.ID, renderPaneTitle(state, pane), renderScreenShellPaneCardRole(state, pane)), body))
 	}
 	return renderShellBoxGrid(boxes, 2, 2)
 }
@@ -302,7 +302,7 @@ func (r runtimeRenderer) renderScreenShellWindowCards(state types.AppState, tab 
 			fmt.Sprintf("SLOT[%s]", pane.SlotState),
 		}
 		body = append(body, r.renderScreenShellPaneLines(state, pane, overlayActive, 3)...)
-		boxes = append(boxes, renderShellBox(width, fmt.Sprintf("WINDOW CARD[%s] %s", pane.ID, renderPaneTitle(state, pane)), body))
+		boxes = append(boxes, renderScreenShellPaneBox(width, fmt.Sprintf("WINDOW CARD[%s] %s", pane.ID, renderPaneTitle(state, pane)), body))
 	}
 	return renderShellBoxGrid(boxes, 2, 2)
 }
@@ -644,6 +644,24 @@ func renderShellBox(width int, title string, body []string) []string {
 	}
 	top = truncateLine(top, width-1)
 	lines := []string{top + "+"}
+	for _, line := range body {
+		lines = append(lines, "|"+padRight(truncateLine(line, innerWidth), innerWidth)+"|")
+	}
+	lines = append(lines, "+"+strings.Repeat("-", innerWidth)+"+")
+	return lines
+}
+
+func renderScreenShellPaneBox(width int, title string, body []string) []string {
+	if width < 8 {
+		width = 8
+	}
+	innerWidth := width - 2
+	lines := []string{"+" + strings.Repeat("-", innerWidth) + "+"}
+	lines = append(lines, "|"+padRight(truncateLine(" "+title, innerWidth), innerWidth)+"|")
+	// overlay 或极短正文时不再额外插入分隔线，避免 screen shell 在对话框场景里继续膨胀高度。
+	if len(body) > 1 {
+		lines = append(lines, "|"+strings.Repeat("-", innerWidth)+"|")
+	}
 	for _, line := range body {
 		lines = append(lines, "|"+padRight(truncateLine(line, innerWidth), innerWidth)+"|")
 	}

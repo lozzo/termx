@@ -1240,3 +1240,53 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
   - pane title bar / footer bar 的更强视觉分层
   - split / floating 的更接近几何布局的 canvas 拼接
   - 最终再逐步淡出下面的调试型 wireframe 视图
+
+---
+
+## 12. 第 197 轮 TDD
+
+这一轮把第 196 轮的“pane 预览正文”继续往真实窗格外观推进，不再只是正文里放几行 preview，而是把 pane 本身收成带 title bar 的 box：
+
+1. single pane
+   - 主 pane 改成独立 box
+   - title 进入 pane 内部 title bar
+   - snapshot / waiting / exited / empty 状态继续留在 box 正文
+2. split / floating / card
+   - split 左右 pane 一起切到 pane box
+   - floating main pane、extra pane card、window card 一起切到 pane box
+   - 这轮不是只改单一主 pane，而是整组 workbench 一次性切换
+3. overlay 紧凑模式
+   - overlay 激活时仍保留 pane title bar
+   - 但短正文 box 不再插入额外分隔线，避免 dialog 场景高度继续膨胀
+   - 对应的紧凑预算按新 title bar 视觉层级上调 1 行
+
+这一轮补上的验证继续覆盖 renderer + runtime E2E，而不是只停留在局部字符串断言：
+
+- renderer：
+  - `TestRuntimeRendererRendersActivePaneSnapshot`
+  - `TestRuntimeRendererRendersWireframeSplitWorkbench`
+  - `TestRuntimeRendererRendersWireframeFloatingStack`
+  - `TestRuntimeRendererRendersTerminalManagerOverlay`
+  - `TestRuntimeRendererCompressesBodyWhenOverlayIsActive`
+- runtime E2E：
+  - `TestE2ERunScenarioRendersSnapshotAndForwardsActivePaneInput`
+  - `TestE2ERunScenarioSplitTabShowsWireframeWorkbench`
+  - `TestE2ERunScenarioFloatingLayerShowsOutline`
+  - `TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay`
+  - `TestE2ERunScenarioLayoutResolveEscClearsShellDialogAndMask`
+  - `TestE2ERunScenarioTerminalManagerEscClearsShellDialogAndMask`
+
+本轮验证命令：
+
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1`
+
+当前状态更新为：
+
+- `screen_shell` 里的 pane 已经不是“正文预览块”，而是带 title bar 的 pane box
+- single / split / floating / extra card / window card 已统一进入同一套 pane box 画法
+- overlay 场景下也会保留 pane box，但会切到更紧凑的短正文模式
+- 下一阶段应直接进入更大的收口块，而不是继续在同一层级零敲碎补：
+  - 把 `screen_shell` 从“盒子列表”推进到更接近真实几何拼接的 compositor
+  - 把 overlay dialog 从摘要框推进到更像真实弹层的布局与焦点高亮
+  - 把 `cmd/termx` 第一视觉继续从 ASCII 语义壳推进到真正可用的工作台 UI
