@@ -454,6 +454,9 @@ func TestRuntimeRendererShellOnlyShowsContextualActionsForConnectedPane(t *testi
 	if !strings.Contains(stripped, "api-dev  ● run  owner  live") {
 		t.Fatalf("expected shell-only connected pane to expose pane title in canvas chrome, got:\n%s", view)
 	}
+	if !strings.Contains(stripped, "Single workbench") || !strings.Contains(stripped, "Signals & Keys") || !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal api-dev") {
+		t.Fatalf("expected shell-only connected pane to expose single workbench shell panels, got:\n%s", view)
+	}
 	if !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "term-1 running owner") {
 		t.Fatalf("expected shell-only connected pane canvas to expose live preview and runtime footer, got:\n%s", view)
 	}

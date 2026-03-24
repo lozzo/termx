@@ -128,6 +128,9 @@ func TestRunUsesShellOnlyRendererByDefault(t *testing.T) {
 	if !strings.Contains(stripped, "term-1  ● run  owner") || !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "term-1 running owner") {
 		t.Fatalf("expected default run renderer to keep terminal canvas context in screen shell, got:\n%s", runner.view)
 	}
+	if !strings.Contains(stripped, "Single workbench") || !strings.Contains(stripped, "Signals & Keys") || !strings.Contains(stripped, "main / shell / tiled / term-1") || !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal term-1") {
+		t.Fatalf("expected default run renderer to expose single workbench shell panels, got:\n%s", runner.view)
+	}
 	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "focus term-1  •  owner running") || !strings.Contains(stripped, "1t  •  1p  •  1x  •  0f") || !strings.Contains(stripped, "main / shell / tiled / term-1") || !strings.Contains(stripped, "owner running") || !strings.Contains(stripped, "tiled") || !strings.Contains(stripped, "term-1") {
 		t.Fatalf("expected default run renderer context bar to expose path and runtime state, got:\n%s", runner.view)
 	}

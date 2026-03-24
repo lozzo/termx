@@ -277,10 +277,18 @@ func (r modernScreenShellRenderer) renderWorkbench(theme modernShellTheme, state
 }
 
 func (r modernScreenShellRenderer) renderSingleWorkbench(theme modernShellTheme, state types.AppState, pane types.PaneState, metrics wireframeMetrics, width, height int, active bool) string {
-	return r.renderWorkbenchCanvas(theme, state, types.TabState{
+	tab := types.TabState{
 		ActivePaneID: pane.ID,
 		Panes:        map[types.PaneID]types.PaneState{pane.ID: pane},
-	}, pane, metrics, width, height, false)
+	}
+	if width < 72 || height < 12 {
+		return r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, height), width, height, false)
+	}
+	sidebarWidth := min(36, max(34, width/3))
+	canvasWidth := max(32, width-sidebarWidth-1)
+	canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, canvasWidth, height), canvasWidth, height, false)
+	sidebar := r.renderSingleWorkbenchSidebar(theme, state, pane, sidebarWidth, height, active)
+	return lipgloss.JoinHorizontal(lipgloss.Top, canvas, " ", sidebar)
 }
 
 func (r modernScreenShellRenderer) renderPanePreview(terminalID types.TerminalID) string {
@@ -647,6 +655,40 @@ func renderWorkbenchSidebarPanel(theme modernShellTheme, title string, lines []s
 	}
 	body = normalizeModernPanelLines(body, contentWidth, contentHeight)
 	return theme.backdropPanel.Width(width - 2).Height(height - 2).Render(strings.Join(body, "\n"))
+}
+
+// renderSingleWorkbenchSidebar 收口默认首屏的单 pane 工作台信息栏。
+// 目标不是重复渲染 pane 卡片，而是把“我在哪、当前连接了什么、接下来能做什么”稳定放到首屏右侧。
+func (r modernScreenShellRenderer) renderSingleWorkbenchSidebar(theme modernShellTheme, state types.AppState, pane types.PaneState, width, height int, active bool) string {
+	summaryHeight := min(10, max(7, height/3+1))
+	summaryLines := []string{
+		theme.panelMeta.Render(renderModernSingleWorkbenchSummaryLine(state, pane)),
+		theme.panelMeta.Render(renderModernWorkbenchLocationLine(state, pane)),
+		theme.panelMeta.Render(renderModernSingleWorkbenchRoleSlotLine(state, pane)),
+		theme.panelMeta.Render(renderModernSingleWorkbenchStateLine(state, pane)),
+	}
+	summary := renderWorkbenchSidebarPanel(theme, "Single workbench", summaryLines, width, summaryHeight)
+
+	infoHeight := max(4, height-summaryHeight-1)
+	infoLines := []string{
+		theme.panelMeta.Render(renderModernSingleWorkbenchFocusLine(state, pane, active)),
+		theme.panelMeta.Render(renderModernSingleWorkbenchLayerLine(state)),
+	}
+	if terminalLine := renderModernSingleWorkbenchTerminalLine(state, pane); terminalLine != "" {
+		infoLines = append(infoLines, theme.panelMeta.Render(terminalLine))
+	}
+	if sessionLine := renderModernSingleWorkbenchSessionLine(state, pane); sessionLine != "" {
+		infoLines = append(infoLines, theme.panelMeta.Render(sessionLine))
+	}
+	if commandLine := renderModernSingleWorkbenchCommandLine(state, pane); commandLine != "" {
+		infoLines = append(infoLines, theme.terminalBody.Render(commandLine))
+	}
+	if preview := r.renderPanePreview(pane.TerminalID); preview != "" {
+		infoLines = append(infoLines, theme.terminalBody.Render("Preview  "+preview))
+	}
+	infoLines = append(infoLines, renderModernWorkbenchKeyLines(theme, width, pane)...)
+	info := renderWorkbenchSidebarPanel(theme, "Signals & Keys", infoLines, width, infoHeight)
+	return lipgloss.JoinVertical(lipgloss.Left, summary, info)
 }
 
 func renderModernWorkbenchCanvasMetrics(metrics wireframeMetrics, width, height int) wireframeMetrics {
@@ -2004,6 +2046,89 @@ func renderModernSplitLayoutSummary(tab types.TabState, tiledPanes int) string {
 // 这样顶部 chrome 更紧凑，给 pane screen 预览腾出更多高度。
 func renderModernSplitWorkbenchTitleLine(state types.AppState, pane types.PaneState, tiledPanes int) string {
 	return fmt.Sprintf("Split workbench  •  active %s  •  %d tiled panes", renderModernPaneDisplayTitle(state, pane), tiledPanes)
+}
+
+func renderModernSingleWorkbenchSummaryLine(state types.AppState, pane types.PaneState) string {
+	return fmt.Sprintf("Active %s  •  pane %s", renderModernPaneDisplayTitle(state, pane), string(pane.ID))
+}
+
+func renderModernSingleWorkbenchRoleSlotLine(state types.AppState, pane types.PaneState) string {
+	return fmt.Sprintf("role %s  •  slot %s", renderModernPaneRole(state, pane), pane.SlotState)
+}
+
+func renderModernSingleWorkbenchStateLine(state types.AppState, pane types.PaneState) string {
+	return renderModernContextRuntimeLine(state, pane)
+}
+
+func renderModernSingleWorkbenchTerminalLine(state types.AppState, pane types.PaneState) string {
+	if pane.TerminalID == "" {
+		return ""
+	}
+	return "Terminal " + renderModernTerminalLabel(state, pane)
+}
+
+func renderModernSingleWorkbenchSessionLine(state types.AppState, pane types.PaneState) string {
+	if pane.TerminalID == "" {
+		switch pane.SlotState {
+		case types.PaneSlotWaiting:
+			return "waiting for connect"
+		case types.PaneSlotExited:
+			return "process exited  •  history retained"
+		default:
+			return "no terminal connected"
+		}
+	}
+	terminalLabel := renderModernTerminalLabel(state, pane)
+	terminal, ok := state.Domain.Terminals[pane.TerminalID]
+	if !ok {
+		return "connected  •  " + terminalLabel
+	}
+	stateLabel := string(terminal.State)
+	if stateLabel == "" {
+		stateLabel = "running"
+	}
+	visibility := "hidden"
+	if terminal.Visible {
+		visibility = "visible"
+	}
+	return fmt.Sprintf("%s  •  %s", stateLabel, visibility)
+}
+
+func renderModernSingleWorkbenchCommandLine(state types.AppState, pane types.PaneState) string {
+	if pane.TerminalID == "" {
+		return ""
+	}
+	terminal, ok := state.Domain.Terminals[pane.TerminalID]
+	if !ok {
+		return ""
+	}
+	if len(terminal.Command) > 0 {
+		return "Command  " + strings.Join(terminal.Command, " ")
+	}
+	if tags := renderModernStringTags(terminal.Tags); tags != "" {
+		return "Tags  " + tags
+	}
+	return ""
+}
+
+func renderModernSingleWorkbenchFocusLine(state types.AppState, pane types.PaneState, active bool) string {
+	focus := "standby"
+	if active {
+		focus = "live"
+	}
+	return fmt.Sprintf("Focus %s  •  %s", renderModernPaneDisplayTitle(state, pane), focus)
+}
+
+func renderModernSingleWorkbenchLayerLine(state types.AppState) string {
+	mode := state.UI.Mode.Active
+	if mode == "" {
+		mode = types.ModeNone
+	}
+	overlay := string(state.UI.Overlay.Kind)
+	if overlay == "" {
+		overlay = string(types.OverlayNone)
+	}
+	return fmt.Sprintf("Layer %s  •  mode %s  •  overlay %s", renderModernPrimaryLayer(state), mode, overlay)
 }
 
 func renderModernSplitActionLine(state types.AppState) string {
