@@ -246,7 +246,11 @@ func TestIntentMapperExitedPaneBodyKeysMapActions(t *testing.T) {
 	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
 	mapper := NewIntentMapper(Config{})
 
-	intents := mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	intents := mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if len(intents) != 1 || intents[0] != (intent.RestartProgramExitedTerminalIntent{PaneID: types.PaneID("pane-1")}) {
+		t.Fatalf("expected exited pane r to restart terminal, got %+v", intents)
+	}
+	intents = mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	if len(intents) != 1 || intents[0] != (intent.OpenTerminalPickerIntent{}) {
 		t.Fatalf("expected exited pane a to open picker, got %+v", intents)
 	}

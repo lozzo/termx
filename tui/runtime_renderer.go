@@ -254,6 +254,7 @@ func renderPaneSlotLines(pane types.PaneState) []string {
 			"pane_slot_detail: terminal program exited",
 			"pane_history: retained",
 			"pane_actions:",
+			"  [r] restart terminal",
 			"  [a] connect another terminal",
 			"  [x] close pane",
 		}

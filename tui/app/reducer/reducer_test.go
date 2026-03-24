@@ -71,6 +71,43 @@ func TestReducerTerminalProgramExitedMarksPaneExited(t *testing.T) {
 	}
 }
 
+func TestReducerRestartProgramExitedTerminalEmitsCreateEffectWithOriginalCommand(t *testing.T) {
+	reducer := New()
+	state := newConnectedAppState()
+	exitCode := 7
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	pane := tab.Panes[types.PaneID("pane-1")]
+	pane.SlotState = types.PaneSlotExited
+	pane.LastExitCode = &exitCode
+	tab.Panes[types.PaneID("pane-1")] = pane
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:      types.TerminalID("term-1"),
+		Name:    "deploy-log",
+		Command: []string{"npm", "run", "deploy"},
+		State:   types.TerminalRunStateExited,
+		Visible: true,
+	}
+
+	result := reducer.Reduce(state, intent.RestartProgramExitedTerminalIntent{PaneID: types.PaneID("pane-1")})
+
+	if len(result.Effects) != 1 {
+		t.Fatalf("expected one restart create effect, got %d", len(result.Effects))
+	}
+	effect, ok := result.Effects[0].(CreateTerminalEffect)
+	if !ok {
+		t.Fatalf("expected create effect for restart, got %T", result.Effects[0])
+	}
+	if effect.PaneID != types.PaneID("pane-1") || effect.Name != "deploy-log" {
+		t.Fatalf("unexpected restart effect identity: %+v", effect)
+	}
+	if len(effect.Command) != 3 || effect.Command[0] != "npm" || effect.Command[2] != "deploy" {
+		t.Fatalf("expected restart to reuse terminal command, got %+v", effect.Command)
+	}
+}
+
 func TestReducerTerminalRemovedClearsPaneAndTerminalState(t *testing.T) {
 	reducer := New()
 	state := newConnectedAppState()

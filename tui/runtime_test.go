@@ -1881,6 +1881,50 @@ func TestE2ERunScenarioEmptyPaneAOpensTerminalPicker(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioRestartProgramExitedTerminal(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithExitedPaneTarget()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			nextModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+			current := nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "slot: connected") || !strings.Contains(view, "terminal: term-created-1") || !strings.Contains(view, "title: deploy-log") || strings.Contains(view, "pane_slot_detail: terminal program exited") {
+				t.Fatalf("expected restart to reconnect exited pane with new terminal, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected exited-pane restart scenario to succeed, got %v", err)
+	}
+	if len(client.createCalls) != 1 {
+		t.Fatalf("expected one create call from exited-pane restart, got %d", len(client.createCalls))
+	}
+	if client.createCalls[0].name != "deploy-log" {
+		t.Fatalf("expected restart to reuse terminal name, got %+v", client.createCalls[0])
+	}
+	if len(client.createCalls[0].command) != 3 || client.createCalls[0].command[0] != "npm" || client.createCalls[0].command[2] != "deploy" {
+		t.Fatalf("expected restart to reuse terminal command, got %+v", client.createCalls[0])
+	}
+}
+
 func TestE2ERunScenarioWorkspacePickerCollapseHidesChildren(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithWorkspacePickerTarget()
@@ -5505,6 +5549,28 @@ func runtimeStateWithWorkspacePickerTarget() types.AppState {
 				},
 			},
 		},
+	}
+	return state
+}
+
+func runtimeStateWithExitedPaneTarget() types.AppState {
+	state := connectedRunAppState()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	pane := tab.Panes[types.PaneID("pane-1")]
+	exitCode := 7
+	pane.SlotState = types.PaneSlotExited
+	pane.LastExitCode = &exitCode
+	tab.Panes[types.PaneID("pane-1")] = pane
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:       types.TerminalID("term-1"),
+		Name:     "deploy-log",
+		Command:  []string{"npm", "run", "deploy"},
+		State:    types.TerminalRunStateExited,
+		ExitCode: &exitCode,
+		Visible:  true,
 	}
 	return state
 }

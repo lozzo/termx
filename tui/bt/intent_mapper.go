@@ -165,6 +165,8 @@ func mapPaneBodyKey(state types.AppState, msg tea.KeyMsg) []intent.Intent {
 		}
 	case types.PaneSlotExited:
 		switch msg.String() {
+		case "r":
+			return []intent.Intent{intent.RestartProgramExitedTerminalIntent{PaneID: state.UI.Focus.PaneID}}
 		case "a":
 			return []intent.Intent{intent.OpenTerminalPickerIntent{}}
 		case "x":

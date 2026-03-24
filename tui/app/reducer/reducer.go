@@ -207,6 +207,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applySplitActivePane(&result.State)
 	case intent.CreateTerminalInActivePaneIntent:
 		applyCreateTerminalInActivePane(&result)
+	case intent.RestartProgramExitedTerminalIntent:
+		applyRestartProgramExitedTerminal(&result, intentValue)
 	case intent.SubmitPromptIntent:
 		result.Effects = append(result.Effects, applySubmitPrompt(&result.State, intentValue)...)
 	case intent.UpdateTerminalMetadataSucceededIntent:
@@ -1088,6 +1090,36 @@ func applyCreateTerminalInActivePane(result *Result) {
 			Name:    defaultCreateTerminalName(focus),
 		})
 	}
+}
+
+// applyRestartProgramExitedTerminal 用退出 terminal 的原命令重建一个新 terminal，
+// 这样 exited pane 可以在当前工作流里直接恢复运行，而不必先走 manager/picker。
+func applyRestartProgramExitedTerminal(result *Result, in intent.RestartProgramExitedTerminalIntent) {
+	pane, ok := findPane(&result.State, in.PaneID)
+	if !ok || pane.SlotState != types.PaneSlotExited || pane.TerminalID == "" {
+		return
+	}
+	terminal, ok := result.State.Domain.Terminals[pane.TerminalID]
+	if !ok {
+		return
+	}
+	command := append([]string(nil), terminal.Command...)
+	if len(command) == 0 {
+		command = defaultCreateTerminalCommand()
+	}
+	name := terminal.Name
+	if name == "" {
+		name = defaultCreateTerminalName(types.FocusState{
+			WorkspaceID: result.State.UI.Focus.WorkspaceID,
+			TabID:       result.State.UI.Focus.TabID,
+			PaneID:      in.PaneID,
+		})
+	}
+	result.Effects = append(result.Effects, CreateTerminalEffect{
+		PaneID:  in.PaneID,
+		Command: command,
+		Name:    name,
+	})
 }
 
 // applySplitActivePane 先收口最小 split 闭环：

@@ -261,6 +261,14 @@ type CreateTerminalInActivePaneIntent struct{}
 
 func (CreateTerminalInActivePaneIntent) intentName() string { return "create_terminal_in_active_pane" }
 
+type RestartProgramExitedTerminalIntent struct {
+	PaneID types.PaneID
+}
+
+func (RestartProgramExitedTerminalIntent) intentName() string {
+	return "restart_program_exited_terminal"
+}
+
 type SubmitPromptIntent struct {
 	Value string
 }

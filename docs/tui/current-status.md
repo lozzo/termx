@@ -190,6 +190,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 166. 第一百六十二轮 TDD 已补上 create terminal 成功后的自动 connect 闭环
 167. 第一百六十三轮 TDD 已补上最小 tab create 到 layout resolve 的工作台闭环
 168. 第一百六十四轮 TDD 已补上 empty/waiting/exited pane 的正文动作入口
+169. 第一百六十五轮 TDD 已补上 exited pane 的 restart terminal 主线
 
 对应文档：
 

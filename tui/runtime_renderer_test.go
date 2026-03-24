@@ -393,7 +393,7 @@ func TestRuntimeRendererRendersExitedPaneActions(t *testing.T) {
 	state.Domain.Terminals[types.TerminalID("term-1")] = terminal
 
 	view := runtimeRenderer{}.Render(state, nil)
-	if !strings.Contains(view, "pane_slot_detail: terminal program exited") || !strings.Contains(view, "pane_history: retained") || !strings.Contains(view, "[a] connect another terminal") || !strings.Contains(view, "[x] close pane") {
+	if !strings.Contains(view, "pane_slot_detail: terminal program exited") || !strings.Contains(view, "pane_history: retained") || !strings.Contains(view, "[r] restart terminal") || !strings.Contains(view, "[a] connect another terminal") || !strings.Contains(view, "[x] close pane") {
 		t.Fatalf("expected exited pane actions in rendered view, got:\n%s", view)
 	}
 }
