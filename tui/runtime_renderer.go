@@ -156,7 +156,7 @@ func renderScreenShellMask(state types.AppState, metrics wireframeMetrics) strin
 	if returnFocus == "" {
 		returnFocus = "none"
 	}
-	return fmt.Sprintf("MASK[dimmed %dx%d %s] OVERLAY[%s return=%s]", metrics.ViewportWidth, metrics.ViewportHeight, state.UI.Overlay.Kind, state.UI.Overlay.Kind, returnFocus)
+	return fmt.Sprintf("MASK[dimmed %dx%d] OVERLAY[%s] RETURN[%s]", metrics.ViewportWidth, metrics.ViewportHeight, state.UI.Overlay.Kind, returnFocus)
 }
 
 func renderScreenShellHeader(workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
@@ -307,7 +307,7 @@ func (r runtimeRenderer) renderScreenShellWorkbench(state types.AppState, tab ty
 	case len(floatingPaneIDs) > 0:
 		return r.renderScreenShellFloating(state, tab, pane, floatingPaneIDs, metrics, overlayActive)
 	default:
-		return renderScreenShellPaneBox(metrics.ViewportWidth, renderScreenShellPaneTitle(state, pane, true), r.renderScreenShellPaneLines(state, pane, overlayActive, 4))
+		return renderScreenShellPaneBox(metrics.ViewportWidth, renderScreenShellPaneTitle(state, pane, true), r.renderScreenShellPaneLines(state, pane, overlayActive, 4), true)
 	}
 }
 
@@ -373,7 +373,7 @@ func (r runtimeRenderer) renderScreenShellExtraPaneCards(state types.AppState, t
 		}
 		body := []string{fmt.Sprintf("SLOT[%s]", pane.SlotState)}
 		body = append(body, r.renderScreenShellPaneLines(state, pane, overlayActive, 4)...)
-		boxes = append(boxes, renderScreenShellPaneBox(width, fmt.Sprintf("CARD[%s] %s [%s]", pane.ID, renderPaneTitle(state, pane), renderScreenShellPaneCardRole(state, pane)), body))
+		boxes = append(boxes, renderScreenShellPaneBox(width, fmt.Sprintf("CARD[%s] %s [%s]", pane.ID, renderPaneTitle(state, pane), renderScreenShellPaneCardRole(state, pane)), body, pane.ID == tab.ActivePaneID))
 	}
 	return renderShellBoxGrid(boxes, 2, 2)
 }
@@ -432,6 +432,10 @@ func renderScreenShellDialogSections(overlay types.OverlayState) []string {
 		return renderScreenShellTerminalManagerDialogBody(overlay)
 	case types.OverlayWorkspacePicker:
 		return renderScreenShellWorkspacePickerDialogBody(overlay)
+	case types.OverlayTerminalPicker:
+		return renderScreenShellTerminalPickerDialogBody(overlay)
+	case types.OverlayLayoutResolve:
+		return renderScreenShellLayoutResolveDialogBody(overlay)
 	case types.OverlayPrompt:
 		return renderScreenShellPromptDialogBody(overlay)
 	default:
@@ -441,7 +445,7 @@ func renderScreenShellDialogSections(overlay types.OverlayState) []string {
 
 func usesStructuredScreenShellDialog(kind types.OverlayKind) bool {
 	switch kind {
-	case types.OverlayTerminalManager, types.OverlayWorkspacePicker, types.OverlayPrompt:
+	case types.OverlayTerminalManager, types.OverlayWorkspacePicker, types.OverlayTerminalPicker, types.OverlayLayoutResolve, types.OverlayPrompt:
 		return true
 	default:
 		return false
@@ -549,6 +553,136 @@ func renderScreenShellWorkspacePickerDialogBody(overlay types.OverlayState) []st
 	return joinASCIIBoxes([][]string{
 		renderShellBox(30, "TREE[workspace]", treeBody),
 		renderShellBox(24, "TARGET[node]", targetBody),
+	}, 2)
+}
+
+func renderScreenShellTerminalPickerDialogBody(overlay types.OverlayState) []string {
+	picker, ok := overlay.Data.(*terminalpickerdomain.State)
+	if !ok || picker == nil {
+		return joinASCIIBoxes([][]string{
+			renderShellBox(30, "LIST[picker]", []string{"F:q= sel=none", "rows=0"}),
+			renderShellBox(24, "DETAIL[target]", []string{"D:none"}),
+		}, 2)
+	}
+	rows := picker.VisibleRows()
+	selectedRow, hasSelected := picker.SelectedRow()
+	selectedID := "none"
+	selectedIndex := 0
+	if hasSelected {
+		if selectedRow.TerminalID != "" {
+			selectedID = string(selectedRow.TerminalID)
+		} else {
+			selectedID = "create"
+		}
+		for idx, row := range rows {
+			if row.Kind == selectedRow.Kind && row.TerminalID == selectedRow.TerminalID && row.Label == selectedRow.Label {
+				selectedIndex = idx
+				break
+			}
+		}
+	}
+	listBody := []string{
+		fmt.Sprintf("F:q=%s %s", picker.Query(), selectedID),
+		fmt.Sprintf("rows=%d", len(rows)),
+	}
+	previewRows, _ := overlayPreviewRowsAround(rows, 5, selectedIndex)
+	for _, row := range previewRows {
+		prefix := "  "
+		if hasSelected && row.Kind == selectedRow.Kind && row.TerminalID == selectedRow.TerminalID && row.Label == selectedRow.Label {
+			prefix = ">> "
+		}
+		listBody = append(listBody, fmt.Sprintf("%s[%s] %s", prefix, row.Kind, row.Label))
+	}
+	detailBody := []string{"D:none"}
+	if hasSelected {
+		switch selectedRow.Kind {
+		case terminalpickerdomain.RowKindCreate:
+			detailBody = []string{
+				"D:create",
+				"kind=create",
+				"BODY[action]",
+				"create and connect",
+			}
+		case terminalpickerdomain.RowKindTerminal:
+			tags := renderTerminalTags(selectedRow.Tags)
+			if tags == "" {
+				tags = "-"
+			}
+			visibility := "hidden"
+			if selectedRow.Visible {
+				visibility = "visible"
+			}
+			detailBody = []string{
+				fmt.Sprintf("D:%s %s", selectedRow.Label, selectedRow.TerminalID),
+				fmt.Sprintf("state=%s vis=%s", selectedRow.State, visibility),
+				fmt.Sprintf("conn=%d", selectedRow.ConnectedPaneCount),
+				fmt.Sprintf("tags=%s", tags),
+			}
+			if selectedRow.Command != "" {
+				detailBody = append(detailBody, "BODY[command]", selectedRow.Command)
+			}
+		}
+	}
+	return joinASCIIBoxes([][]string{
+		renderShellBox(27, "LIST[picker]", listBody),
+		renderShellBox(27, "DETAIL[target]", detailBody),
+	}, 2)
+}
+
+func renderScreenShellLayoutResolveDialogBody(overlay types.OverlayState) []string {
+	resolve, ok := overlay.Data.(*layoutresolvedomain.State)
+	if !ok || resolve == nil {
+		return joinASCIIBoxes([][]string{
+			renderShellBox(30, "LIST[resolve]", []string{"F:pane=none sel=none", "rows=0"}),
+			renderShellBox(24, "DETAIL[target]", []string{"D:none"}),
+		}, 2)
+	}
+	rows := resolve.Rows()
+	selectedRow, hasSelected := resolve.SelectedRow()
+	selectedAction := "none"
+	selectedIndex := 0
+	if hasSelected {
+		selectedAction = string(selectedRow.Action)
+		for idx, row := range rows {
+			if row.Action == selectedRow.Action && row.Label == selectedRow.Label {
+				selectedIndex = idx
+				break
+			}
+		}
+	}
+	listBody := []string{
+		fmt.Sprintf("F:%s %s", resolve.PaneID, selectedAction),
+		fmt.Sprintf("rows=%d", len(rows)),
+	}
+	previewRows, _ := overlayPreviewRowsAround(rows, 5, selectedIndex)
+	for _, row := range previewRows {
+		prefix := "  "
+		if hasSelected && row.Action == selectedRow.Action && row.Label == selectedRow.Label {
+			prefix = ">> "
+		}
+		listBody = append(listBody, fmt.Sprintf("%s[%s] %s", prefix, row.Action, row.Label))
+	}
+	actionSummary := "none"
+	if hasSelected {
+		switch selectedRow.Action {
+		case layoutresolvedomain.ActionConnectExisting:
+			actionSummary = "connect selected terminal"
+		case layoutresolvedomain.ActionCreateNew:
+			actionSummary = "create and connect"
+		case layoutresolvedomain.ActionSkip:
+			actionSummary = "keep pane waiting"
+		}
+	}
+	detailBody := []string{
+		fmt.Sprintf("D:%s", resolve.PaneID),
+		fmt.Sprintf("role=%s", resolve.Role),
+		fmt.Sprintf("hint=%s", resolve.Hint),
+		"BODY[action]",
+		actionSummary,
+	}
+	return joinASCIIBoxes([][]string{
+		renderShellBox(27, "LIST[resolve]", listBody),
+		renderShellBox(27, "DETAIL[target]", detailBody),
 	}, 2)
 }
 
@@ -799,13 +933,13 @@ func renderShellBox(width int, title string, body []string) []string {
 	return lines
 }
 
-func renderScreenShellPaneBox(width int, title string, body []string) []string {
+func renderScreenShellPaneBox(width int, title string, body []string, active bool) []string {
 	if width < 8 {
 		width = 8
 	}
 	innerWidth := width - 2
 	lines := []string{"+" + strings.Repeat("-", innerWidth) + "+"}
-	lines = append(lines, "|"+padRight(truncateLine(" "+title, innerWidth), innerWidth)+"|")
+	lines = append(lines, "|"+padRight(truncateLine(renderScreenShellPaneTitleLine(title, active), innerWidth), innerWidth)+"|")
 	// overlay 或极短正文时不再额外插入分隔线，避免 screen shell 在对话框场景里继续膨胀高度。
 	if len(body) > 1 {
 		lines = append(lines, "|"+strings.Repeat("-", innerWidth)+"|")
@@ -880,7 +1014,7 @@ func renderScreenShellWorkbenchCanvasHeight(metrics wireframeMetrics, overlayAct
 	return 12
 }
 
-func renderScreenShellPaneCanvasBox(width int, height int, title string, body []string) []string {
+func renderScreenShellPaneCanvasBox(width int, height int, title string, body []string, active bool) []string {
 	if width < 8 {
 		width = 8
 	}
@@ -897,7 +1031,7 @@ func renderScreenShellPaneCanvasBox(width int, height int, title string, body []
 		bodyRows = 1
 	}
 	lines := []string{"+" + strings.Repeat("-", innerWidth) + "+"}
-	lines = append(lines, "|"+padRight(truncateLine(" "+title, innerWidth), innerWidth)+"|")
+	lines = append(lines, "|"+padRight(truncateLine(renderScreenShellPaneTitleLine(title, active), innerWidth), innerWidth)+"|")
 	if useDivider {
 		lines = append(lines, "|"+strings.Repeat("-", innerWidth)+"|")
 	}
@@ -942,6 +1076,7 @@ func (r runtimeRenderer) renderScreenShellTiledCanvas(state types.AppState, tab 
 			rect.H,
 			renderScreenShellPaneTitle(state, pane, true),
 			r.renderScreenShellPaneLines(state, pane, overlayActive, renderScreenShellPaneCanvasBodyRows(rect.H)),
+			paneID == tab.ActivePaneID,
 		)
 		canvas.stampLines(rect.X, rect.Y, box)
 	}
@@ -1000,6 +1135,7 @@ func (r runtimeRenderer) renderScreenShellFloatingCanvas(state types.AppState, t
 			baseRect.H,
 			renderScreenShellPaneTitle(state, pane, true),
 			r.renderScreenShellPaneLines(state, pane, overlayActive, renderScreenShellPaneCanvasBodyRows(baseRect.H)),
+			pane.ID == tab.ActivePaneID,
 		)
 		canvas.stampLines(0, 0, baseBox)
 	}
@@ -1014,6 +1150,7 @@ func (r runtimeRenderer) renderScreenShellFloatingCanvas(state types.AppState, t
 			rect.H,
 			renderScreenShellPaneTitle(state, floatingPane, true),
 			r.renderScreenShellPaneLines(state, floatingPane, overlayActive, renderScreenShellPaneCanvasBodyRows(rect.H)),
+			paneID == tab.ActivePaneID,
 		)
 		canvas.stampLines(rect.X, rect.Y, box)
 	}
@@ -1836,6 +1973,13 @@ func padRight(line string, width int) string {
 		return line
 	}
 	return line + strings.Repeat(" ", width-len(line))
+}
+
+func renderScreenShellPaneTitleLine(title string, active bool) string {
+	if active {
+		return "> " + title
+	}
+	return "  " + title
 }
 
 func renderScreenShellCardFocusLabel(active bool) string {

@@ -1509,3 +1509,67 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
   - 继续强化真正的 pane/workbench 几何渲染
   - 继续减少 `chrome_*` 与调试摘要的重复
   - 把 overlay 边框、焦点高亮和层次感再往真实 TUI 形态推进
+
+---
+
+## 16. 第 202 轮 TDD
+
+这一轮正式进入“更像真实 TUI”的下一大块，但没有一下子铺太散，而是把三个强相关工作点一起收口：
+
+1. `terminal_picker` 进入结构化 dialog
+   - 不再只靠 `wireframe` 摘要和 metadata 行表达
+   - `screen_shell` 里现在有真正的：
+     - `LIST[picker]`
+     - `DETAIL[target]`
+   - 可以直接看到 query、选中 terminal、状态、连接数、tags 和 command
+2. `layout_resolve` 进入结构化 dialog
+   - 不再是简单几行动作列表
+   - `screen_shell` 里现在有：
+     - `LIST[resolve]`
+     - `DETAIL[target]`
+   - 直接展示 waiting pane 的目标 pane、role、hint，以及当前动作的语义摘要
+3. active pane 标题高亮进入主工作台
+   - `screen_shell` 的 pane box / pane canvas 标题现在会显式标出 active pane
+   - 单 pane、split canvas、floating canvas 统一使用 active 标题前缀
+   - 这样第一视觉里当前焦点 pane 更明确，不需要再先读下面的调试段落
+
+同时，这一轮顺手把 overlay 盒模型做了一次压缩修正：
+
+- mask 行改成更短的稳定格式：
+  - `MASK[dimmed ...]`
+  - `OVERLAY[...]`
+  - `RETURN[...]`
+- 避免 return focus 一长就把 overlay kind 自己截断掉
+- terminal picker / layout resolve dialog 的 list/detail 宽度也重新压过一轮，保证关键信息尽量落在真正可见的正文里
+
+这一轮收口的验证重点：
+
+- renderer：
+  - `TestRuntimeRendererRendersActivePaneSnapshot`
+  - `TestRuntimeRendererRendersTerminalPickerOverlay`
+  - `TestRuntimeRendererRendersLayoutResolveOverlay`
+  - `TestRuntimeRendererRendersHelpOverlay`
+- runtime E2E：
+  - `TestE2ERunScenarioCtrlFOpensTerminalPickerInView`
+  - `TestE2ERunScenarioLayoutResolveEscClearsShellDialogAndMask`
+  - `TestE2ERunScenarioLayoutResolveShowsWireframeDialog`
+  - `TestE2ERunScenarioLayoutResolveMoveUpdatesView`
+  - `TestE2ERunScenarioTerminalManagerEscClearsShellDialogAndMask`
+  - `TestE2ERunScenarioTerminalPickerMouseClickOnSelectedRowSubmits`
+  - `TestE2ERunScenarioLayoutResolveMouseClickOnSelectedRowSubmits`
+  - `TestE2ERunScenarioLayoutResolveMouseClickOnCreateNewClosesOverlay`
+
+本轮验证命令：
+
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1`
+
+当前状态更新为：
+
+- `terminal_picker` 和 `layout_resolve` 已经从“主壳里只有标题，正文靠摘要层补语义”推进到真正的 screen shell 结构化 dialog
+- active pane 在主工作台里的视觉识别更强，`cmd/termx` 第一眼更接近真正的可操作界面
+- overlay mask / return 信息已经开始收成稳定短格式，不再因为一行过长而把关键 kind 截掉
+- 下一阶段可以继续沿这一块往下压：
+  - 继续把 split / floating canvas 往更强的几何层次和遮挡关系推进
+  - 继续减少 `chrome_*` 和 `wireframe_view` 的重复
+  - 把更多 overlay 从“结构化文本 dialog”推进到更强的焦点边框与层次表达

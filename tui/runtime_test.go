@@ -168,7 +168,7 @@ func TestE2ERunScenarioRendersSnapshotAndForwardsActivePaneInput(t *testing.T) {
 	}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
-			if view := model.View(); !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "SHELL[78x24 overlay=none]") || !strings.Contains(view, "HEADER[main] [shell] pane:pane-1 term:term-1 float:0") || !strings.Contains(view, "STATE[tiled focus=tiled mode=none overlay=none]") || !strings.Contains(view, "BODY[tiled t=1 f=0]") || !strings.Contains(view, "TARGET[main/shell/pane-1] TERM[term-1] FLOAT[0]") || !strings.Contains(view, "|| term-1 [owner] [tiled]") || !strings.Contains(view, "hi") || !strings.Contains(view, "||term-1 running owner") {
+			if view := model.View(); !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "SHELL[78x24 overlay=none]") || !strings.Contains(view, "HEADER[main] [shell] pane:pane-1 term:term-1 float:0") || !strings.Contains(view, "STATE[tiled focus=tiled mode=none overlay=none]") || !strings.Contains(view, "BODY[tiled t=1 f=0]") || !strings.Contains(view, "TARGET[main/shell/pane-1] TERM[term-1] FLOAT[0]") || !strings.Contains(view, "||> term-1 [owner] [tiled]") || !strings.Contains(view, "hi") || !strings.Contains(view, "||term-1 running owner") {
 				t.Fatalf("expected runtime view to include snapshot content, got:\n%s", view)
 			}
 			_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
@@ -499,7 +499,7 @@ func TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay(t *testing.T) {
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "SHELL[78x24 overlay=help]") || !strings.Contains(view, "WS[main]") || !strings.Contains(view, "tabs=1") || !strings.Contains(view, "panes=1") || !strings.Contains(view, "terms=1") || !strings.Contains(view, "float=0") || !strings.Contains(view, "TABS[*shell]") || !strings.Contains(view, "STATE[tiled focus=overlay mode=picker overlay=help]") || !strings.Contains(view, "BODY[tiled t=1 f=0]") || !strings.Contains(view, "MASK[dimmed 78x24 help]") || !strings.Contains(view, "OVERLAY[help return=tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "DIALOG[help]") || !strings.Contains(view, "TITLE[help]") || !strings.Contains(view, "FOOTER[esc close]") || !strings.Contains(view, "ACTIONS[esc close]") || !strings.Contains(view, "overlay_bar: kind=help") || !strings.Contains(view, "help_most_used: Ctrl-p pane | Ctrl-t tab | Ctrl-w workspace | Ctrl-f picker | Ctrl-o floating | Ctrl-g global") || !strings.Contains(view, "shortcut_bar: Esc close | ? help") {
+			if view := current.View(); !strings.Contains(view, "SHELL[78x24 overlay=help]") || !strings.Contains(view, "WS[main]") || !strings.Contains(view, "tabs=1") || !strings.Contains(view, "panes=1") || !strings.Contains(view, "terms=1") || !strings.Contains(view, "float=0") || !strings.Contains(view, "TABS[*shell]") || !strings.Contains(view, "STATE[tiled focus=overlay mode=picker overlay=help]") || !strings.Contains(view, "BODY[tiled t=1 f=0]") || !strings.Contains(view, "MASK[dimmed 78x24]") || !strings.Contains(view, "OVERLAY[help]") || !strings.Contains(view, "RETURN[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "DIALOG[help]") || !strings.Contains(view, "TITLE[help]") || !strings.Contains(view, "FOOTER[esc close]") || !strings.Contains(view, "ACTIONS[esc close]") || !strings.Contains(view, "overlay_bar: kind=help") || !strings.Contains(view, "help_most_used: Ctrl-p pane | Ctrl-t tab | Ctrl-w workspace | Ctrl-f picker | Ctrl-o floating | Ctrl-g global") || !strings.Contains(view, "shortcut_bar: Esc close | ? help") {
 				t.Fatalf("expected question mark to open help overlay, got:\n%s", view)
 			}
 			nextModel, cmd = current.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -541,7 +541,7 @@ func TestE2ERunScenarioLayoutResolveEscClearsShellDialogAndMask(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			current := model
-			if view := current.View(); !strings.Contains(view, "MASK[dimmed 78x24 layout_resolve]") || !strings.Contains(view, "OVERLAY[layout_resolve") || !strings.Contains(view, "DIALOG[layout_resolve]") || !strings.Contains(view, "TITLE[layout_resolve]") || !strings.Contains(view, "FOOTER[enter confirm esc close]") {
+			if view := current.View(); !strings.Contains(view, "MASK[dimmed 78x24]") || !strings.Contains(view, "OVERLAY[layout_resolve]") || !strings.Contains(view, "RETURN[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "DIALOG[layout_resolve]") || !strings.Contains(view, "TITLE[layout_resolve]") || !strings.Contains(view, "LIST[resolve]") || !strings.Contains(view, "DETAIL[target]") || !strings.Contains(view, "F:pane-1 connect_existing") || !strings.Contains(view, "D:pane-1") || !strings.Contains(view, "FOOTER[enter confirm esc close]") {
 				t.Fatalf("expected initial layout resolve shell dialog, got:\n%s", view)
 			}
 			nextModel, cmd := current.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -593,7 +593,7 @@ func TestE2ERunScenarioTerminalManagerEscClearsShellDialogAndMask(t *testing.T) 
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "MASK[dimmed 78x24 terminal_manager]") || !strings.Contains(view, "OVERLAY[terminal_manager") || !strings.Contains(view, "DIALOG[terminal_manager]") || !strings.Contains(view, "TITLE[terminal_manager]") || !strings.Contains(view, "FOOTER[enter here esc close]") {
+			if view := current.View(); !strings.Contains(view, "MASK[dimmed 78x24]") || !strings.Contains(view, "OVERLAY[terminal_manager]") || !strings.Contains(view, "DIALOG[terminal_manager]") || !strings.Contains(view, "TITLE[terminal_manager]") || !strings.Contains(view, "FOOTER[enter here esc close]") {
 				t.Fatalf("expected initial terminal manager shell dialog, got:\n%s", view)
 			}
 			nextModel, cmd := current.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -1062,7 +1062,7 @@ func TestE2ERunScenarioLayoutResolveShowsWireframeDialog(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "DIALOG[layout_resolve]") || !strings.Contains(view, "overlay active: layout_resolve") || !strings.Contains(view, "RETURN TO[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "ACTIONS[enter confirm esc close]") || !strings.Contains(view, "DEBUG_OVERLAY[layout_resolve]") || !strings.Contains(view, "focus=overlay") || !strings.Contains(view, "ROWS[3] PANE[pane-1] ROLE[backend-dev]") || !strings.Contains(view, "HINT[env=dev service=api]") || !strings.Contains(view, "> [connect_existing] connect existing") {
+			if !strings.Contains(view, "DIALOG[layout_resolve]") || !strings.Contains(view, "LIST[resolve]") || !strings.Contains(view, "DETAIL[target]") || !strings.Contains(view, "RETURN TO[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "ACTIONS[enter confirm esc close]") || !strings.Contains(view, "DEBUG_OVERLAY[layout_resolve]") || !strings.Contains(view, "focus=overlay") || !strings.Contains(view, "ROWS[3] PANE[pane-1] ROLE[backend-dev]") || !strings.Contains(view, "HINT[env=dev service=api]") || !strings.Contains(view, "> [connect_existing] connect existing") {
 				t.Fatalf("expected runtime view to expose layout resolve wireframe dialog, got:\n%s", view)
 			}
 			return nil
@@ -5564,7 +5564,7 @@ func TestE2ERunScenarioCtrlFOpensTerminalPickerInView(t *testing.T) {
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "terminal_picker_bar: query=ops | selected=term-3 | kind=terminal") || !strings.Contains(view, "overlay: terminal_picker") || !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: terminal_picker") || !strings.Contains(view, "terminal_picker_rows:") || !strings.Contains(view, "terminal_picker_query: ops") || !strings.Contains(view, "terminal_picker_selected: term-3") || !strings.Contains(view, "terminal_picker_selected_label: ops-watch") || !strings.Contains(view, "terminal_picker_selected_kind: terminal") || !strings.Contains(view, "terminal_picker_selected_state: running") || !strings.Contains(view, "terminal_picker_selected_command: journalctl -f") || !strings.Contains(view, "terminal_picker_selected_visible: false") || !strings.Contains(view, "terminal_picker_selected_tags: team=ops") || !strings.Contains(view, "terminal_picker_selected_connected_panes: 0") || !strings.Contains(view, "terminal_picker_row_count: 2") || !strings.Contains(view, "ops-watch") {
+			if view := current.View(); !strings.Contains(view, "terminal_picker_bar: query=ops | selected=term-3 | kind=terminal") || !strings.Contains(view, "overlay: terminal_picker") || !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: terminal_picker") || !strings.Contains(view, "terminal_picker_rows:") || !strings.Contains(view, "terminal_picker_query: ops") || !strings.Contains(view, "terminal_picker_selected: term-3") || !strings.Contains(view, "terminal_picker_selected_label: ops-watch") || !strings.Contains(view, "terminal_picker_selected_kind: terminal") || !strings.Contains(view, "terminal_picker_selected_state: running") || !strings.Contains(view, "terminal_picker_selected_command: journalctl -f") || !strings.Contains(view, "terminal_picker_selected_visible: false") || !strings.Contains(view, "terminal_picker_selected_tags: team=ops") || !strings.Contains(view, "terminal_picker_selected_connected_panes: 0") || !strings.Contains(view, "terminal_picker_row_count: 2") || !strings.Contains(view, "DIALOG[terminal_picker]") || !strings.Contains(view, "LIST[picker]") || !strings.Contains(view, "DETAIL[target]") || !strings.Contains(view, "F:q=ops term-3") || !strings.Contains(view, "D:ops-watch term-3") || !strings.Contains(view, "ops-watch") {
 				t.Fatalf("expected ctrl-f flow to render terminal picker, got:\n%s", view)
 			}
 			return nil
@@ -5802,7 +5802,7 @@ func TestE2ERunScenarioTerminalPickerMouseClickOnSelectedRowSubmits(t *testing.T
 					}
 				}
 			}
-			clickY := findLineIndexWithPrefix(current.View(), "|          |> [terminal] ops-watch")
+			clickY := findLineIndexWithPrefix(current.View(), "> [terminal] ops-watch")
 			if clickY < 0 {
 				t.Fatalf("expected terminal picker preview to expose selected ops-watch row, got:\n%s", current.View())
 			}
@@ -5973,7 +5973,7 @@ func TestE2ERunScenarioLayoutResolveMoveUpdatesView(t *testing.T) {
 	bootstrapper := &stubRunSessionBootstrapper{}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
-			if view := model.View(); !strings.Contains(view, "layout_resolve_bar: pane=pane-1 | role=backend-dev | selected=connect_existing") || !strings.Contains(view, "> [connect_existing] connect existing") || !strings.Contains(view, "layout_resolve_role: backend-dev") || !strings.Contains(view, "layout_resolve_hint: env=dev service=api") || !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: layout_resolve") || !strings.Contains(view, "mode: picker") {
+			if view := model.View(); !strings.Contains(view, "layout_resolve_bar: pane=pane-1 | role=backend-dev | selected=connect_existing") || !strings.Contains(view, "> [connect_existing] connect existing") || !strings.Contains(view, "layout_resolve_role: backend-dev") || !strings.Contains(view, "layout_resolve_hint: env=dev service=api") || !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: layout_resolve") || !strings.Contains(view, "mode: picker") || !strings.Contains(view, "LIST[resolve]") || !strings.Contains(view, "DETAIL[target]") || !strings.Contains(view, "F:pane-1 connect_existing") || !strings.Contains(view, "BODY[action]") {
 				t.Fatalf("expected initial resolve selection in view, got:\n%s", view)
 			}
 			nextModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyDown})
@@ -6046,7 +6046,7 @@ func TestE2ERunScenarioLayoutResolveMouseClickOnSelectedRowSubmits(t *testing.T)
 	bootstrapper := &stubRunSessionBootstrapper{}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
-			clickY := findLineIndexWithPrefix(model.View(), "|          |> [connect_existing] connect existing")
+			clickY := findLineIndexWithPrefix(model.View(), "> [connect_existing] connect existing")
 			if clickY < 0 {
 				t.Fatalf("expected layout resolve preview to expose selected row, got:\n%s", model.View())
 			}
@@ -6089,7 +6089,7 @@ func TestE2ERunScenarioLayoutResolveMouseClickOnCreateNewClosesOverlay(t *testin
 	bootstrapper := &stubRunSessionBootstrapper{}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
-			clickY := findLineIndexWithPrefix(model.View(), "|          |  [create_new] create new")
+			clickY := findLineIndexWithPrefix(model.View(), "  [create_new] create new")
 			if clickY < 0 {
 				t.Fatalf("expected layout resolve preview to expose create-new row, got:\n%s", model.View())
 			}
