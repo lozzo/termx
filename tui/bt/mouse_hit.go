@@ -182,6 +182,8 @@ func mapTerminalManagerActionClick(msg tea.MouseMsg, view string) []intent.Inten
 		return nil
 	}
 	switch actionRows[targetIndex].ID {
+	case terminalmanagerdomain.ActionJumpToConnectedPane:
+		return []intent.Intent{intent.TerminalManagerJumpToConnectedPaneIntent{}}
 	case terminalmanagerdomain.ActionConnectHere:
 		return []intent.Intent{intent.TerminalManagerConnectHereIntent{}}
 	case terminalmanagerdomain.ActionNewTab:

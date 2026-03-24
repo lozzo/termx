@@ -191,6 +191,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyTerminalManagerBackspace(&result.State)
 	case intent.TerminalManagerConnectHereIntent:
 		applyTerminalManagerConnectHere(&result, intentValue)
+	case intent.TerminalManagerJumpToConnectedPaneIntent:
+		applyTerminalManagerJumpToConnectedPane(&result)
 	case intent.TerminalManagerConnectInNewTabIntent:
 		applyTerminalManagerConnectInNewTab(&result)
 	case intent.TerminalManagerConnectInFloatingPaneIntent:
@@ -788,6 +790,33 @@ func applyTerminalManagerConnectInNewTab(result *Result) {
 	})
 }
 
+// applyTerminalManagerJumpToConnectedPane 给 manager 增加“直达正在使用中的 terminal”入口：
+// 优先跳 owner pane，没有 owner 时退回到任一已连接 pane。
+func applyTerminalManagerJumpToConnectedPane(result *Result) {
+	manager, ok := terminalManager(&result.State)
+	if !ok {
+		return
+	}
+	terminalID, ok := manager.SelectedTerminalID()
+	if !ok {
+		return
+	}
+	workspaceID, tabID, paneID, ok := resolveTerminalJumpTarget(result.State.Domain, terminalID)
+	if !ok {
+		result.Effects = append(result.Effects, NoticeEffect{
+			Level: NoticeLevelError,
+			Text:  "selected terminal has no connected pane",
+		})
+		return
+	}
+	applyCloseOverlay(&result.State)
+	applyWorkspaceTreeJump(&result.State, intent.WorkspaceTreeJumpIntent{
+		WorkspaceID: workspaceID,
+		TabID:       tabID,
+		PaneID:      paneID,
+	})
+}
+
 func applyTerminalManagerConnectInFloatingPane(result *Result) {
 	manager, ok := terminalManager(&result.State)
 	if !ok {
@@ -880,6 +909,45 @@ func applyTerminalManagerCreateTerminal(result *Result) {
 		Command: defaultCreateTerminalCommand(),
 		Name:    defaultCreateTerminalName(result.State.UI.Overlay.ReturnFocus),
 	})
+}
+
+func resolveTerminalJumpTarget(domain types.DomainState, terminalID types.TerminalID) (types.WorkspaceID, types.TabID, types.PaneID, bool) {
+	conn, ok := domain.Connections[terminalID]
+	if !ok || len(conn.ConnectedPaneIDs) == 0 {
+		return "", "", "", false
+	}
+	if conn.OwnerPaneID != "" {
+		if workspaceID, tabID, paneID, ok := findTerminalPaneLocation(domain, terminalID, conn.OwnerPaneID); ok {
+			return workspaceID, tabID, paneID, true
+		}
+	}
+	for _, paneID := range conn.ConnectedPaneIDs {
+		if workspaceID, tabID, resolvedPaneID, ok := findTerminalPaneLocation(domain, terminalID, paneID); ok {
+			return workspaceID, tabID, resolvedPaneID, true
+		}
+	}
+	return "", "", "", false
+}
+
+func findTerminalPaneLocation(domain types.DomainState, terminalID types.TerminalID, paneID types.PaneID) (types.WorkspaceID, types.TabID, types.PaneID, bool) {
+	for _, workspaceID := range domain.WorkspaceOrder {
+		workspace, ok := domain.Workspaces[workspaceID]
+		if !ok {
+			continue
+		}
+		for _, tabID := range workspace.TabOrder {
+			tab, ok := workspace.Tabs[tabID]
+			if !ok {
+				continue
+			}
+			pane, ok := tab.Panes[paneID]
+			if !ok || pane.TerminalID != terminalID {
+				continue
+			}
+			return workspaceID, tabID, paneID, true
+		}
+	}
+	return "", "", "", false
 }
 
 func applySubmitPrompt(state *types.AppState, in intent.SubmitPromptIntent) []Effect {

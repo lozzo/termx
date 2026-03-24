@@ -223,6 +223,12 @@ type TerminalManagerConnectHereIntent struct{}
 
 func (TerminalManagerConnectHereIntent) intentName() string { return "terminal_manager_connect_here" }
 
+type TerminalManagerJumpToConnectedPaneIntent struct{}
+
+func (TerminalManagerJumpToConnectedPaneIntent) intentName() string {
+	return "terminal_manager_jump_to_connected_pane"
+}
+
 type TerminalManagerConnectInNewTabIntent struct{}
 
 func (TerminalManagerConnectInNewTabIntent) intentName() string {

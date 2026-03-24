@@ -1345,6 +1345,56 @@ func TestReducerTerminalManagerConnectInFloatingPaneSucceededCreatesFloatingPane
 	}
 }
 
+func TestReducerTerminalManagerJumpToConnectedPaneClosesOverlayAndMovesFocusToOwnerPane(t *testing.T) {
+	reducer := New()
+	state := newManagerJumpAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	moved := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: 1})
+	result := reducer.Reduce(moved.State, intent.TerminalManagerJumpToConnectedPaneIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected manager overlay to close after jump, got %q", result.State.UI.Overlay.Kind)
+	}
+	if result.State.Domain.ActiveWorkspaceID != types.WorkspaceID("ws-2") {
+		t.Fatalf("expected jump to switch workspace, got %q", result.State.Domain.ActiveWorkspaceID)
+	}
+	workspace := result.State.Domain.Workspaces[types.WorkspaceID("ws-2")]
+	if workspace.ActiveTabID != types.TabID("tab-2") {
+		t.Fatalf("expected jump to switch active tab, got %q", workspace.ActiveTabID)
+	}
+	tab := workspace.Tabs[types.TabID("tab-2")]
+	if tab.ActivePaneID != types.PaneID("pane-remote") || tab.ActiveLayer != types.FocusLayerTiled {
+		t.Fatalf("expected jump to focus owner pane-remote, got %+v", tab)
+	}
+	if result.State.UI.Focus.WorkspaceID != types.WorkspaceID("ws-2") || result.State.UI.Focus.TabID != types.TabID("tab-2") || result.State.UI.Focus.PaneID != types.PaneID("pane-remote") || result.State.UI.Focus.Layer != types.FocusLayerTiled {
+		t.Fatalf("expected focus to move to connected pane target, got %+v", result.State.UI.Focus)
+	}
+}
+
+func TestReducerTerminalManagerJumpToConnectedPaneWithoutLocationKeepsOverlayOpenAndEmitsNotice(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	moved := reducer.Reduce(opened.State, intent.TerminalManagerMoveIntent{Delta: 1})
+	result := reducer.Reduce(moved.State, intent.TerminalManagerJumpToConnectedPaneIntent{})
+
+	if result.State.UI.Overlay.Kind != types.OverlayTerminalManager {
+		t.Fatalf("expected manager overlay to stay open without connected pane, got %q", result.State.UI.Overlay.Kind)
+	}
+	if len(result.Effects) != 1 {
+		t.Fatalf("expected one notice effect, got %d", len(result.Effects))
+	}
+	effect, ok := result.Effects[0].(NoticeEffect)
+	if !ok {
+		t.Fatalf("expected notice effect, got %T", result.Effects[0])
+	}
+	if effect.Level != NoticeLevelError || effect.Text != "selected terminal has no connected pane" {
+		t.Fatalf("unexpected jump failure notice: %+v", effect)
+	}
+}
+
 func TestReducerTerminalManagerAcquireOwnerTransfersOwnershipToReturnFocusPane(t *testing.T) {
 	reducer := New()
 	state := newFollowerManagerAppState()
@@ -1886,6 +1936,48 @@ func newConnectedAppState() types.AppState {
 		TerminalID:       types.TerminalID("term-1"),
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1")},
 		OwnerPaneID:      types.PaneID("pane-1"),
+	}
+	return state
+}
+
+func newManagerJumpAppState() types.AppState {
+	state := newConnectedAppState()
+	state.Domain.WorkspaceOrder = append(state.Domain.WorkspaceOrder, types.WorkspaceID("ws-2"))
+	state.Domain.Workspaces[types.WorkspaceID("ws-2")] = types.WorkspaceState{
+		ID:          types.WorkspaceID("ws-2"),
+		Name:        "ops",
+		ActiveTabID: types.TabID("tab-2"),
+		TabOrder:    []types.TabID{types.TabID("tab-2")},
+		Tabs: map[types.TabID]types.TabState{
+			types.TabID("tab-2"): {
+				ID:           types.TabID("tab-2"),
+				Name:         "logs",
+				ActivePaneID: types.PaneID("pane-remote"),
+				ActiveLayer:  types.FocusLayerTiled,
+				Panes: map[types.PaneID]types.PaneState{
+					types.PaneID("pane-remote"): {
+						ID:         types.PaneID("pane-remote"),
+						Kind:       types.PaneKindTiled,
+						SlotState:  types.PaneSlotConnected,
+						TerminalID: types.TerminalID("term-2"),
+					},
+				},
+				RootSplit: &types.SplitNode{PaneID: types.PaneID("pane-remote")},
+			},
+		},
+	}
+	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
+		ID:      types.TerminalID("term-2"),
+		Name:    "build-log",
+		State:   types.TerminalRunStateRunning,
+		Command: []string{"tail", "-f", "build.log"},
+		Tags:    map[string]string{"group": "build"},
+		Visible: true,
+	}
+	state.Domain.Connections[types.TerminalID("term-2")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-2"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-remote")},
+		OwnerPaneID:      types.PaneID("pane-remote"),
 	}
 	return state
 }

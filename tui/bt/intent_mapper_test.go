@@ -760,7 +760,8 @@ func TestIntentMapperTerminalManagerMouseClickOnActionRowsMapsManagerActions(t *
 	state := newAppStateWithTerminalManagerTargets()
 	view := strings.Join([]string{
 		"termx",
-		"terminal_manager_actions: | terminal_manager_actions_rendered: 6",
+		"terminal_manager_actions: | terminal_manager_actions_rendered: 7",
+		"  [jump] jump to connected pane",
 		"  [connect_here] connect here",
 		"  [new_tab] open in new tab",
 		"  [floating] open in floating pane",
@@ -773,6 +774,7 @@ func TestIntentMapperTerminalManagerMouseClickOnActionRowsMapsManagerActions(t *
 		prefix string
 		want   any
 	}{
+		{prefix: "  [jump]", want: intent.TerminalManagerJumpToConnectedPaneIntent{}},
 		{prefix: "  [connect_here]", want: intent.TerminalManagerConnectHereIntent{}},
 		{prefix: "  [new_tab]", want: intent.TerminalManagerConnectInNewTabIntent{}},
 		{prefix: "  [floating]", want: intent.TerminalManagerConnectInFloatingPaneIntent{}},
@@ -1013,6 +1015,11 @@ func TestIntentMapperTerminalManagerMapsSelectionAndQuery(t *testing.T) {
 			name: "submit",
 			key:  tea.KeyMsg{Type: tea.KeyEnter},
 			want: intent.TerminalManagerConnectHereIntent{},
+		},
+		{
+			name: "jump",
+			key:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")},
+			want: intent.TerminalManagerJumpToConnectedPaneIntent{},
 		},
 		{
 			name: "new tab",

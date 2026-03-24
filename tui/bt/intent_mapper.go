@@ -374,6 +374,8 @@ func mapTerminalManagerKey(msg tea.KeyMsg) []intent.Intent {
 		return []intent.Intent{intent.TerminalManagerMoveIntent{Delta: 1}}
 	case "enter":
 		return []intent.Intent{intent.TerminalManagerConnectHereIntent{}}
+	case "j":
+		return []intent.Intent{intent.TerminalManagerJumpToConnectedPaneIntent{}}
 	case "t":
 		return []intent.Intent{intent.TerminalManagerConnectInNewTabIntent{}}
 	case "o":
