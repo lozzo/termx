@@ -1631,8 +1631,8 @@ func TestRuntimeRendererRendersWireframeOverlayDialog(t *testing.T) {
 	state.UI.Focus.OverlayTarget = types.OverlayTerminalManager
 
 	view := runtimeRenderer{}.Render(state, nil)
-	if !strings.Contains(view, "ACTIONS[enter here esc close]") {
-		t.Fatalf("expected shell overlay action summary in rendered view, got:\n%s", view)
+	if !strings.Contains(view, "TITLE[terminal_manager]") || !strings.Contains(view, "FOOTER[enter here esc close]") || !strings.Contains(view, "ACTIONS[enter here esc close]") {
+		t.Fatalf("expected shell overlay dialog layering in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "OVERLAY[terminal_manager] FOCUS[overlay]") {
 		t.Fatalf("expected wireframe overlay heading in rendered view, got:\n%s", view)
@@ -1847,7 +1847,7 @@ func TestRuntimeRendererRendersHelpOverlay(t *testing.T) {
 	state.UI.Mode = types.ModeState{Active: types.ModePicker}
 
 	view := runtimeRenderer{}.Render(state, nil)
-	if !strings.Contains(view, "MASK[dimmed viewport=78x24 overlay=help]") || !strings.Contains(view, "DIALOG[help]") || !strings.Contains(view, "RETURN TO[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "ACTIONS[esc close]") {
+	if !strings.Contains(view, "MASK[dimmed viewport=78x24 overlay=help]") || !strings.Contains(view, "DIALOG[help]") || !strings.Contains(view, "TITLE[help]") || !strings.Contains(view, "RETURN TO[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "FOOTER[esc close]") || !strings.Contains(view, "ACTIONS[esc close]") {
 		t.Fatalf("expected help overlay shell mask/dialog in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "overlay_bar: kind=help | focus=overlay") {

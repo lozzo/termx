@@ -499,7 +499,7 @@ func TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay(t *testing.T) {
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "MASK[dimmed viewport=78x24 overlay=help]") || !strings.Contains(view, "DIALOG[help]") || !strings.Contains(view, "ACTIONS[esc close]") || !strings.Contains(view, "overlay_bar: kind=help") || !strings.Contains(view, "help_most_used: Ctrl-p pane | Ctrl-t tab | Ctrl-w workspace | Ctrl-f picker | Ctrl-o floating | Ctrl-g global") || !strings.Contains(view, "shortcut_bar: Esc close | ? help") {
+			if view := current.View(); !strings.Contains(view, "MASK[dimmed viewport=78x24 overlay=help]") || !strings.Contains(view, "DIALOG[help]") || !strings.Contains(view, "TITLE[help]") || !strings.Contains(view, "FOOTER[esc close]") || !strings.Contains(view, "ACTIONS[esc close]") || !strings.Contains(view, "overlay_bar: kind=help") || !strings.Contains(view, "help_most_used: Ctrl-p pane | Ctrl-t tab | Ctrl-w workspace | Ctrl-f picker | Ctrl-o floating | Ctrl-g global") || !strings.Contains(view, "shortcut_bar: Esc close | ? help") {
 				t.Fatalf("expected question mark to open help overlay, got:\n%s", view)
 			}
 			nextModel, cmd = current.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -541,7 +541,7 @@ func TestE2ERunScenarioLayoutResolveEscClearsShellDialogAndMask(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			current := model
-			if view := current.View(); !strings.Contains(view, "MASK[dimmed viewport=78x24 overlay=layout_resolve]") || !strings.Contains(view, "DIALOG[layout_resolve]") {
+			if view := current.View(); !strings.Contains(view, "MASK[dimmed viewport=78x24 overlay=layout_resolve]") || !strings.Contains(view, "DIALOG[layout_resolve]") || !strings.Contains(view, "TITLE[layout_resolve]") || !strings.Contains(view, "FOOTER[enter confirm esc close]") {
 				t.Fatalf("expected initial layout resolve shell dialog, got:\n%s", view)
 			}
 			nextModel, cmd := current.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -568,6 +568,58 @@ func TestE2ERunScenarioLayoutResolveEscClearsShellDialogAndMask(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("expected layout resolve shell-close runtime scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioTerminalManagerEscClearsShellDialogAndMask(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			current := model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "MASK[dimmed viewport=78x24 overlay=terminal_manager]") || !strings.Contains(view, "DIALOG[terminal_manager]") || !strings.Contains(view, "TITLE[terminal_manager]") || !strings.Contains(view, "FOOTER[enter here esc close]") {
+				t.Fatalf("expected initial terminal manager shell dialog, got:\n%s", view)
+			}
+			nextModel, cmd := current.Update(tea.KeyMsg{Type: tea.KeyEsc})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || strings.Contains(view, "MASK[") || strings.Contains(view, "DIALOG[terminal_manager]") || !strings.Contains(view, "+ api-dev [owner] [tiled]") || !strings.Contains(view, "|<empty>") {
+				t.Fatalf("expected esc to clear terminal manager shell dialog and restore main pane shell, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected terminal manager shell-close runtime scenario to succeed, got %v", err)
 	}
 }
 

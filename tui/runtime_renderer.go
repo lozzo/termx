@@ -246,10 +246,13 @@ func (r runtimeRenderer) renderScreenShellDialog(state types.AppState, metrics w
 	if state.UI.Overlay.Kind == types.OverlayNone {
 		return nil
 	}
-	body := []string{fmt.Sprintf("overlay active: %s", state.UI.Overlay.Kind)}
+	body := []string{
+		fmt.Sprintf("overlay active: %s", state.UI.Overlay.Kind),
+		fmt.Sprintf("TITLE[%s]", state.UI.Overlay.Kind),
+	}
 	body = append(body, r.renderScreenShellDialogBody(state)...)
-	if len(body) > 5 {
-		body = append(body[:4], body[len(body)-1])
+	if len(body) > 6 {
+		body = append(body[:4], body[len(body)-2:]...)
 	}
 	box := renderShellBox(metrics.OverlayWidth, fmt.Sprintf("DIALOG[%s]", state.UI.Overlay.Kind), body)
 	padding := (metrics.ViewportWidth - metrics.OverlayWidth) / 2
@@ -265,24 +268,29 @@ func (r runtimeRenderer) renderScreenShellDialogBody(state types.AppState) []str
 		lines = append(lines, fmt.Sprintf("RETURN TO[%s]", returnFocus))
 	}
 	lines = append(lines, renderWireframeOverlayBody(state.UI.Overlay)...)
-	if actions := renderScreenShellDialogActions(state.UI.Overlay.Kind); actions != "" {
-		lines = append(lines, actions)
+	if footer, actions := renderScreenShellDialogFooter(state.UI.Overlay.Kind); footer != "" || actions != "" {
+		if footer != "" {
+			lines = append(lines, footer)
+		}
+		if actions != "" {
+			lines = append(lines, actions)
+		}
 	}
 	return lines
 }
 
-func renderScreenShellDialogActions(kind types.OverlayKind) string {
+func renderScreenShellDialogFooter(kind types.OverlayKind) (string, string) {
 	switch kind {
 	case types.OverlayTerminalManager:
-		return "ACTIONS[enter here esc close]"
+		return "FOOTER[enter here esc close]", "ACTIONS[enter here esc close]"
 	case types.OverlayWorkspacePicker, types.OverlayTerminalPicker, types.OverlayLayoutResolve:
-		return "ACTIONS[enter confirm esc close]"
+		return "FOOTER[enter confirm esc close]", "ACTIONS[enter confirm esc close]"
 	case types.OverlayPrompt:
-		return "ACTIONS[enter submit esc close]"
+		return "FOOTER[enter submit esc close]", "ACTIONS[enter submit esc close]"
 	case types.OverlayHelp:
-		return "ACTIONS[esc close]"
+		return "FOOTER[esc close]", "ACTIONS[esc close]"
 	default:
-		return ""
+		return "", ""
 	}
 }
 
