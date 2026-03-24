@@ -40,6 +40,9 @@ func TestBubbleteaProgramRunnerEntersAltScreenAndRendersView(t *testing.T) {
 	if !strings.Contains(rendered, "\x1b[?1049l") {
 		t.Fatalf("expected program runner to leave alt screen, got %q", rendered)
 	}
+	if !strings.Contains(rendered, "\x1b[?1002h") || !strings.Contains(rendered, "\x1b[?1006h") {
+		t.Fatalf("expected program runner to enable mouse cell motion, got %q", rendered)
+	}
 	if !strings.Contains(rendered, "header_bar: ws=main") {
 		t.Fatalf("expected program runner to render model view, got %q", rendered)
 	}

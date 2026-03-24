@@ -21,6 +21,7 @@ func (bubbleteaProgramRunner) Run(model *btui.Model, input io.Reader, output io.
 		tea.WithInput(input),
 		tea.WithOutput(output),
 		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
 	)
 	_, err := program.Run()
 	return err
