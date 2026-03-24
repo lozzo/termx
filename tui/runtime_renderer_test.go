@@ -32,6 +32,7 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 					TerminalID: types.TerminalID("term-1"),
 					Snapshot: &protocol.Snapshot{
 						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 120, Rows: 40},
 						Screen: protocol.ScreenData{
 							Cells: [][]protocol.Cell{
 								{
@@ -56,6 +57,9 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "VIEWPORT[96x40]") {
+		t.Fatalf("expected wireframe viewport to adapt to runtime size, got:\n%s", view)
+	}
 	if !strings.Contains(view, "termx") || !strings.Contains(view, "header_bar: ws=main | tab=shell | pane=pane-1 | slot=connected | overlay=none | focus=tiled") {
 		t.Fatalf("expected renderer header bar, got:\n%s", view)
 	}
@@ -1546,6 +1550,9 @@ func TestRuntimeRendererRendersWireframeSplitWorkbench(t *testing.T) {
 	if !strings.Contains(view, "SPLIT[vertical] RATIO[0.50] LEAVES[2]") {
 		t.Fatalf("expected wireframe split summary in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "BAR[===============|===============]") {
+		t.Fatalf("expected split ratio bar in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] STATE[running]") {
 		t.Fatalf("expected active split pane box in rendered view, got:\n%s", view)
 	}
@@ -1588,6 +1595,9 @@ func TestRuntimeRendererRendersWireframeFloatingStack(t *testing.T) {
 	view := renderer.Render(state, nil)
 	if !strings.Contains(view, "FLOATING STACK") {
 		t.Fatalf("expected wireframe floating stack heading in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "FLOATING MAP") || !strings.Contains(view, "MAP[y08]") || !strings.Contains(view, "MAP[y14]") {
+		t.Fatalf("expected floating geometry map in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "FLOAT[float-1] api-dev owner 10,8 30x12") {
 		t.Fatalf("expected first floating pane card in rendered view, got:\n%s", view)
@@ -1796,6 +1806,9 @@ func TestRuntimeRendererRendersWireframeOverlayBackdropAndReturnFocus(t *testing
 	view := runtimeRenderer{}.Render(state, nil)
 	if !strings.Contains(view, "BACKDROP[active]") {
 		t.Fatalf("expected wireframe overlay backdrop summary, got:\n%s", view)
+	}
+	if !strings.Contains(view, "CENTER[offset=10 width=58]") {
+		t.Fatalf("expected wireframe overlay center summary, got:\n%s", view)
 	}
 	if !strings.Contains(view, "RETURN[tiled:ws-1/tab-1/pane-1]") {
 		t.Fatalf("expected wireframe overlay return focus summary, got:\n%s", view)

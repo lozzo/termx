@@ -727,6 +727,7 @@ func TestE2ERunScenarioSplitTabShowsWireframeWorkbench(t *testing.T) {
 					TerminalID: types.TerminalID("term-1"),
 					Snapshot: &protocol.Snapshot{
 						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 120, Rows: 40},
 						Screen: protocol.ScreenData{
 							Cells: [][]protocol.Cell{
 								{{Content: "$"}, {Content: " "}, {Content: "n"}, {Content: "p"}, {Content: "m"}},
@@ -739,6 +740,7 @@ func TestE2ERunScenarioSplitTabShowsWireframeWorkbench(t *testing.T) {
 					TerminalID: types.TerminalID("term-2"),
 					Snapshot: &protocol.Snapshot{
 						TerminalID: "term-2",
+						Size:       protocol.Size{Cols: 120, Rows: 40},
 						Screen: protocol.ScreenData{
 							Cells: [][]protocol.Cell{
 								{{Content: ">"}, {Content: " "}, {Content: "t"}, {Content: "s"}, {Content: "c"}},
@@ -753,7 +755,7 @@ func TestE2ERunScenarioSplitTabShowsWireframeWorkbench(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "wireframe_view:") || !strings.Contains(view, "SPLIT[vertical] RATIO[0.50] LEAVES[2]") || !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] STATE[running]") || !strings.Contains(view, "PANE[build-log] ROLE[owner] STATE[running]") {
+			if !strings.Contains(view, "wireframe_view:") || !strings.Contains(view, "VIEWPORT[96x40]") || !strings.Contains(view, "SPLIT[vertical] RATIO[0.50] LEAVES[2]") || !strings.Contains(view, "BAR[===============|===============]") || !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] STATE[running]") || !strings.Contains(view, "PANE[build-log] ROLE[owner] STATE[running]") {
 				t.Fatalf("expected runtime view to expose split wireframe workbench, got:\n%s", view)
 			}
 			return nil
@@ -969,7 +971,7 @@ func TestE2ERunScenarioLayoutResolveShowsWireframeDialog(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "OVERLAY[layout_resolve] FOCUS[overlay]") || !strings.Contains(view, "ROWS[3] PANE[pane-1] ROLE[backend-dev]") || !strings.Contains(view, "HINT[env=dev service=api]") || !strings.Contains(view, "> [connect_existing] connect existing") {
+			if !strings.Contains(view, "OVERLAY[layout_resolve] FOCUS[overlay]") || !strings.Contains(view, "CENTER[offset=10 width=58]") || !strings.Contains(view, "ROWS[3] PANE[pane-1] ROLE[backend-dev]") || !strings.Contains(view, "HINT[env=dev service=api]") || !strings.Contains(view, "> [connect_existing] connect existing") {
 				t.Fatalf("expected runtime view to expose layout resolve wireframe dialog, got:\n%s", view)
 			}
 			return nil
@@ -1101,7 +1103,7 @@ func TestE2ERunScenarioMixedSlotShowsWireframeWorkbench(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "WORKBENCH split") || !strings.Contains(view, "PANE[waiting pane] SLOT[waiting]") || !strings.Contains(view, "PANE[deploy-log] ROLE[owner] STATE[exited]") || !strings.Contains(view, "FLOAT[float-empty] unconnected pane empty 60,2 20x8") {
+			if !strings.Contains(view, "WORKBENCH split") || !strings.Contains(view, "PANE[waiting pane] SLOT[waiting]") || !strings.Contains(view, "PANE[deploy-log] ROLE[owner] STATE[exited]") || !strings.Contains(view, "FLOATING MAP") || !strings.Contains(view, "FLOAT[float-empty] unconnected pane empty 60,2 20x8") {
 				t.Fatalf("expected runtime view to expose mixed slot wireframe workbench, got:\n%s", view)
 			}
 			return nil

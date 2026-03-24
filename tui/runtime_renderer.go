@@ -19,6 +19,15 @@ type runtimeRenderer struct {
 	Screens RuntimeTerminalStore
 }
 
+type wireframeMetrics struct {
+	ViewportWidth    int
+	ViewportHeight   int
+	OverlayWidth     int
+	SplitColumnWidth int
+	MainPaneWidth    int
+	SidebarWidth     int
+}
+
 const runtimeScreenPreviewRows = 8
 const runtimeOverlayPreviewRows = 8
 const runtimeOverlayDetailPreviewRows = 4
@@ -117,38 +126,41 @@ func (r runtimeRenderer) renderWireframeView(state types.AppState, workspace typ
 	if focus == "" {
 		focus = types.FocusLayerTiled
 	}
-	lines = append(lines, renderASCIIBox(runtimeWireframeWidth, []string{
+	metrics := r.wireframeMetrics(pane)
+	lines = append(lines, renderASCIIBox(metrics.ViewportWidth, []string{
 		fmt.Sprintf("WORKSPACE[%s] TAB[%s] LAYER[%s] FOCUS[%s] OVERLAY[%s]", safeWorkspaceLabel(workspace), safeTabLabel(tab), layer, focus, state.UI.Overlay.Kind),
 		fmt.Sprintf("PATH[%s/%s/%s:%s]", safeWorkspaceLabel(workspace), safeTabLabel(tab), safePaneKind(pane.Kind), pane.ID),
+		fmt.Sprintf("VIEWPORT[%dx%d]", metrics.ViewportWidth, metrics.ViewportHeight),
 	})...)
-	lines = append(lines, r.renderWireframeWorkbench(state, tab, pane)...)
-	if overlayLines := r.renderWireframeOverlayDialog(state); len(overlayLines) > 0 {
+	lines = append(lines, r.renderWireframeWorkbench(state, tab, pane, metrics)...)
+	if overlayLines := r.renderWireframeOverlayDialog(state, metrics); len(overlayLines) > 0 {
 		lines = append(lines, overlayLines...)
 	}
 	return lines
 }
 
-func (r runtimeRenderer) renderWireframeWorkbench(state types.AppState, tab types.TabState, pane types.PaneState) []string {
+func (r runtimeRenderer) renderWireframeWorkbench(state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics) []string {
 	tiledPaneIDs := orderedTiledPaneIDs(tab)
 	floatingPaneIDs := orderedFloatingPaneIDs(tab)
 	switch {
 	case len(tiledPaneIDs) > 1:
-		return r.renderWireframeSplitWorkbench(state, tab, tiledPaneIDs, floatingPaneIDs)
+		return r.renderWireframeSplitWorkbench(state, tab, tiledPaneIDs, floatingPaneIDs, metrics)
 	case len(floatingPaneIDs) > 0:
-		return r.renderWireframeFloatingWorkbench(state, tab, pane, floatingPaneIDs)
+		return r.renderWireframeFloatingWorkbench(state, tab, pane, floatingPaneIDs, metrics)
 	default:
-		return renderASCIIBox(runtimeWireframeWidth, append([]string{"WORKBENCH single"}, r.renderWireframePaneCard(state, pane, true)...))
+		return renderASCIIBox(metrics.ViewportWidth, append([]string{"WORKBENCH single"}, r.renderWireframePaneCard(state, pane, true)...))
 	}
 }
 
-func (r runtimeRenderer) renderWireframeSplitWorkbench(state types.AppState, tab types.TabState, tiledPaneIDs []types.PaneID, floatingPaneIDs []types.PaneID) []string {
+func (r runtimeRenderer) renderWireframeSplitWorkbench(state types.AppState, tab types.TabState, tiledPaneIDs []types.PaneID, floatingPaneIDs []types.PaneID, metrics wireframeMetrics) []string {
 	summary := summarizeTiledLayout(tab.RootSplit, len(tiledPaneIDs))
-	lines := renderASCIIBox(runtimeWireframeWidth, []string{
+	lines := renderASCIIBox(metrics.ViewportWidth, []string{
 		"WORKBENCH split",
 		renderWireframeSplitSummary(summary),
+		renderWireframeSplitRatioBar(summary),
 	})
-	if treeLines := r.renderWireframeLayoutTree(state, tab); len(treeLines) > 0 {
-		lines = append(lines, renderASCIIBox(runtimeWireframeWidth, treeLines)...)
+	if treeLines := r.renderWireframeLayoutTree(state, tab, metrics); len(treeLines) > 0 {
+		lines = append(lines, renderASCIIBox(metrics.ViewportWidth, treeLines)...)
 	}
 	overviewLines := make([]string, 0, 2)
 	for i, paneID := range tiledPaneIDs {
@@ -162,7 +174,7 @@ func (r runtimeRenderer) renderWireframeSplitWorkbench(state types.AppState, tab
 		overviewLines = append(overviewLines, renderWireframePaneStateSummary(state, pane, paneID == tab.ActivePaneID))
 	}
 	if len(overviewLines) > 0 {
-		lines = append(lines, renderASCIIBox(runtimeWireframeWidth, overviewLines)...)
+		lines = append(lines, renderASCIIBox(metrics.ViewportWidth, overviewLines)...)
 	}
 	columnBoxes := make([][]string, 0, 2)
 	for i, paneID := range tiledPaneIDs {
@@ -173,10 +185,10 @@ func (r runtimeRenderer) renderWireframeSplitWorkbench(state types.AppState, tab
 		if !ok {
 			continue
 		}
-		columnBoxes = append(columnBoxes, renderASCIIBox(runtimeWireframeSplitColumnWidth, r.renderWireframePaneCard(state, pane, paneID == tab.ActivePaneID)))
+		columnBoxes = append(columnBoxes, renderASCIIBox(metrics.SplitColumnWidth, r.renderWireframePaneCard(state, pane, paneID == tab.ActivePaneID)))
 	}
 	if len(columnBoxes) == 1 {
-		columnBoxes = append(columnBoxes, renderASCIIBox(runtimeWireframeSplitColumnWidth, []string{"PANE[missing]", "slot[missing]"}))
+		columnBoxes = append(columnBoxes, renderASCIIBox(metrics.SplitColumnWidth, []string{"PANE[missing]", "slot[missing]"}))
 	}
 	lines = append(lines, joinASCIIBoxes(columnBoxes, 2)...)
 	if len(tiledPaneIDs) > 2 {
@@ -188,20 +200,21 @@ func (r runtimeRenderer) renderWireframeSplitWorkbench(state types.AppState, tab
 			}
 			extraLines = append(extraLines, renderWireframePaneStateSummary(state, pane, paneID == tab.ActivePaneID))
 		}
-		lines = append(lines, renderASCIIBox(runtimeWireframeWidth, extraLines)...)
+		lines = append(lines, renderASCIIBox(metrics.ViewportWidth, extraLines)...)
 	}
 	if len(floatingPaneIDs) > 0 {
-		lines = append(lines, renderASCIIBox(runtimeWireframeWidth, r.renderWireframeFloatingStackBody(state, tab, floatingPaneIDs))...)
+		lines = append(lines, renderASCIIBox(metrics.ViewportWidth, r.renderWireframeFloatingStackBody(state, tab, floatingPaneIDs))...)
+		lines = append(lines, renderASCIIBox(metrics.ViewportWidth, r.renderWireframeFloatingGeometryMap(state, tab, floatingPaneIDs))...)
 	}
 	return lines
 }
 
-func (r runtimeRenderer) renderWireframeLayoutTree(state types.AppState, tab types.TabState) []string {
+func (r runtimeRenderer) renderWireframeLayoutTree(state types.AppState, tab types.TabState, metrics wireframeMetrics) []string {
 	if tab.RootSplit == nil {
 		return nil
 	}
 	lines := []string{"LAYOUT TREE"}
-	lines = append(lines, r.renderWireframeLayoutTreeNode(state, tab, tab.RootSplit, runtimeWireframeWidth-2, 0)...)
+	lines = append(lines, r.renderWireframeLayoutTreeNode(state, tab, tab.RootSplit, metrics.ViewportWidth-2, 0)...)
 	return lines
 }
 
@@ -287,13 +300,34 @@ func renderWireframeSplitSummary(summary tiledLayoutSummary) string {
 	return strings.Join(parts, " ")
 }
 
-func (r runtimeRenderer) renderWireframeFloatingWorkbench(state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID) []string {
-	mainBox := renderASCIIBox(runtimeWireframeMainPaneWidth, append([]string{"WORKBENCH floating"}, r.renderWireframePaneCard(state, pane, true)...))
-	sidebarBox := renderASCIIBox(runtimeWireframeSidebarWidth, r.renderWireframeFloatingStackBody(state, tab, floatingPaneIDs))
+func renderWireframeSplitRatioBar(summary tiledLayoutSummary) string {
+	totalSegments := 30
+	if !summary.HasRatio {
+		return "BAR[n/a]"
+	}
+	ratio := summary.Ratio
+	if ratio <= 0 || ratio >= 1 {
+		ratio = 0.5
+	}
+	left := int(float64(totalSegments)*ratio + 0.5)
+	if left <= 0 {
+		left = 1
+	}
+	if left >= totalSegments {
+		left = totalSegments - 1
+	}
+	right := totalSegments - left
+	return fmt.Sprintf("BAR[%s|%s]", strings.Repeat("=", left), strings.Repeat("=", right))
+}
+
+func (r runtimeRenderer) renderWireframeFloatingWorkbench(state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, metrics wireframeMetrics) []string {
+	mainBox := renderASCIIBox(metrics.MainPaneWidth, append([]string{"WORKBENCH floating"}, r.renderWireframePaneCard(state, pane, true)...))
+	sidebarBox := renderASCIIBox(metrics.SidebarWidth, r.renderWireframeFloatingStackBody(state, tab, floatingPaneIDs))
 	lines := joinASCIIBoxes([][]string{mainBox, sidebarBox}, 2)
+	lines = append(lines, renderASCIIBox(metrics.ViewportWidth, r.renderWireframeFloatingGeometryMap(state, tab, floatingPaneIDs))...)
 	summaryLines := r.renderWireframeFloatingStackSummary(state, tab, floatingPaneIDs)
 	if len(summaryLines) > 0 {
-		lines = append(lines, renderASCIIBox(runtimeWireframeWidth, summaryLines)...)
+		lines = append(lines, renderASCIIBox(metrics.ViewportWidth, summaryLines)...)
 	}
 	return lines
 }
@@ -435,24 +469,124 @@ func (r runtimeRenderer) renderWireframeFloatingStackSummary(state types.AppStat
 	return lines
 }
 
-func (r runtimeRenderer) renderWireframeOverlayDialog(state types.AppState) []string {
+func (r runtimeRenderer) renderWireframeFloatingGeometryMap(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) []string {
+	lines := []string{"FLOATING MAP"}
+	if len(floatingPaneIDs) == 0 {
+		return append(lines, "MAP[empty]")
+	}
+	rows := map[int][]string{}
+	ys := make([]int, 0, len(floatingPaneIDs))
+	for _, paneID := range floatingPaneIDs {
+		pane, ok := tab.Panes[paneID]
+		if !ok {
+			continue
+		}
+		if _, ok := rows[pane.Rect.Y]; !ok {
+			ys = append(ys, pane.Rect.Y)
+		}
+		rows[pane.Rect.Y] = append(rows[pane.Rect.Y], fmt.Sprintf("x%02d w%02d %s(%s)", pane.Rect.X, pane.Rect.W, renderPaneTitle(state, pane), paneID))
+	}
+	sort.Ints(ys)
+	for _, y := range ys {
+		sort.Strings(rows[y])
+		lines = append(lines, fmt.Sprintf("MAP[y%02d] %s", y, strings.Join(rows[y], " | ")))
+	}
+	return lines
+}
+
+func (r runtimeRenderer) renderWireframeOverlayDialog(state types.AppState, metrics wireframeMetrics) []string {
 	if state.UI.Overlay.Kind == types.OverlayNone {
 		return nil
 	}
 	body := []string{
 		fmt.Sprintf("OVERLAY[%s] FOCUS[%s]", state.UI.Overlay.Kind, state.UI.Focus.Layer),
 		"BACKDROP[active]",
+		fmt.Sprintf("CENTER[offset=%d width=%d]", (metrics.ViewportWidth-metrics.OverlayWidth)/2, metrics.OverlayWidth),
 	}
 	if returnFocus := renderWireframeReturnFocus(state.UI.Overlay.ReturnFocus); returnFocus != "" {
 		body = append(body, fmt.Sprintf("RETURN[%s]", returnFocus))
 	}
 	body = append(body, renderWireframeOverlayBody(state.UI.Overlay)...)
-	box := renderASCIIBox(runtimeWireframeOverlayWidth, body)
-	padding := (runtimeWireframeWidth - runtimeWireframeOverlayWidth) / 2
+	box := renderASCIIBox(metrics.OverlayWidth, body)
+	padding := (metrics.ViewportWidth - metrics.OverlayWidth) / 2
 	if padding < 0 {
 		padding = 0
 	}
 	return indentLines(box, padding)
+}
+
+func (r runtimeRenderer) wireframeMetrics(pane types.PaneState) wireframeMetrics {
+	width, height := r.wireframeViewport(pane)
+	sidebarWidth := width / 4
+	if sidebarWidth < runtimeWireframeSidebarWidth {
+		sidebarWidth = runtimeWireframeSidebarWidth
+	}
+	if sidebarWidth > 28 {
+		sidebarWidth = 28
+	}
+	mainWidth := width - sidebarWidth - 2
+	if mainWidth < runtimeWireframeMainPaneWidth {
+		mainWidth = runtimeWireframeMainPaneWidth
+		sidebarWidth = width - mainWidth - 2
+		if sidebarWidth < runtimeWireframeSidebarWidth {
+			sidebarWidth = runtimeWireframeSidebarWidth
+		}
+	}
+	splitColumnWidth := (width - 2) / 2
+	if splitColumnWidth < runtimeWireframeSplitColumnWidth {
+		splitColumnWidth = runtimeWireframeSplitColumnWidth
+	}
+	overlayWidth := width - 20
+	if overlayWidth < runtimeWireframeOverlayWidth {
+		overlayWidth = runtimeWireframeOverlayWidth
+	}
+	if overlayWidth > width {
+		overlayWidth = width
+	}
+	return wireframeMetrics{
+		ViewportWidth:    width,
+		ViewportHeight:   height,
+		OverlayWidth:     overlayWidth,
+		SplitColumnWidth: splitColumnWidth,
+		MainPaneWidth:    mainWidth,
+		SidebarWidth:     sidebarWidth,
+	}
+}
+
+// wireframeViewport 优先使用运行时 terminal status 的尺寸，保证工作台摘要跟随真实会话；
+// 如果当前 terminal 还没有 status，再回退到 snapshot，最后才退回稳定默认值。
+func (r runtimeRenderer) wireframeViewport(pane types.PaneState) (int, int) {
+	width := runtimeWireframeWidth
+	height := 24
+	if pane.TerminalID == "" || r.Screens == nil {
+		return width, height
+	}
+	if status, ok := r.Screens.Status(pane.TerminalID); ok {
+		if status.Size.Cols > 0 {
+			width = int(status.Size.Cols)
+		}
+		if status.Size.Rows > 0 {
+			height = int(status.Size.Rows)
+		}
+	}
+	if snapshot, ok := r.Screens.Snapshot(pane.TerminalID); ok && snapshot != nil {
+		if width == runtimeWireframeWidth && snapshot.Size.Cols > 0 {
+			width = int(snapshot.Size.Cols)
+		}
+		if height == 24 && snapshot.Size.Rows > 0 {
+			height = int(snapshot.Size.Rows)
+		}
+	}
+	if width < runtimeWireframeWidth {
+		width = runtimeWireframeWidth
+	}
+	if width > runtimeBarMaxWidth {
+		width = runtimeBarMaxWidth
+	}
+	if height <= 0 {
+		height = 24
+	}
+	return width, height
 }
 
 func renderWireframeReturnFocus(focus types.FocusState) string {
