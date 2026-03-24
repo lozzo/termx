@@ -7,6 +7,7 @@ import (
 
 	"github.com/lozzow/termx/protocol"
 	btui "github.com/lozzow/termx/tui/bt"
+	layoutdomain "github.com/lozzow/termx/tui/domain/layout"
 	layoutresolvedomain "github.com/lozzow/termx/tui/domain/layoutresolve"
 	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
 	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
@@ -215,24 +216,7 @@ func (r runtimeRenderer) renderScreenShellSplit(state types.AppState, tab types.
 		fmt.Sprintf("SPLIT SHELL[%s %s]", summary.Root, ratio),
 		fmt.Sprintf("LAYOUT[split] root=%s ratio=%s leaves=%d", summary.Root, ratio, len(tiledPaneIDs)),
 	}
-	boxes := make([][]string, 0, 2)
-	for i, paneID := range tiledPaneIDs {
-		if i == 2 {
-			break
-		}
-		pane, ok := tab.Panes[paneID]
-		if !ok {
-			continue
-		}
-		boxes = append(boxes, renderScreenShellPaneBox(metrics.SplitColumnWidth, renderScreenShellPaneTitle(state, pane, false), r.renderScreenShellPaneLines(state, pane, overlayActive, 3)))
-	}
-	if len(boxes) > 0 {
-		lines = append(lines, joinASCIIBoxes(boxes, 2)...)
-	}
-	if len(tiledPaneIDs) > 2 {
-		lines = append(lines, fmt.Sprintf("EXTRA[panes] total=%d", len(tiledPaneIDs)-2))
-		lines = append(lines, r.renderScreenShellExtraPaneCards(state, tab, tiledPaneIDs[2:], metrics.SplitColumnWidth, overlayActive)...)
-	}
+	lines = append(lines, r.renderScreenShellTiledCanvas(state, tab, tiledPaneIDs, metrics, overlayActive)...)
 	if len(floatingPaneIDs) > 0 {
 		lines = append(lines, fmt.Sprintf("FLOATING WINDOWS[%d]", len(floatingPaneIDs)))
 		cardWidth := metrics.SplitColumnWidth
@@ -246,9 +230,9 @@ func (r runtimeRenderer) renderScreenShellSplit(state types.AppState, tab types.
 
 func (r runtimeRenderer) renderScreenShellFloating(state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, metrics wireframeMetrics, overlayActive bool) []string {
 	lines := []string{fmt.Sprintf("FLOAT SHELL[%d]", len(floatingPaneIDs))}
-	mainBox := renderScreenShellPaneBox(metrics.MainPaneWidth, renderScreenShellPaneTitle(state, pane, true), r.renderScreenShellPaneLines(state, pane, overlayActive, 4))
-	sidebarBox := renderShellBox(metrics.SidebarWidth, "STACK[windows]", r.renderScreenShellFloatingSidebar(state, tab, floatingPaneIDs))
-	lines = append(lines, joinASCIIBoxes([][]string{mainBox, sidebarBox}, 2)...)
+	lines = append(lines, r.renderScreenShellFloatingCanvas(state, tab, pane, floatingPaneIDs, metrics, overlayActive)...)
+	sidebarBox := renderShellBox(metrics.ViewportWidth, "STACK[windows]", r.renderScreenShellFloatingSidebar(state, tab, floatingPaneIDs))
+	lines = append(lines, sidebarBox...)
 	lines = append(lines, fmt.Sprintf("WINDOWS[%d]", len(floatingPaneIDs)))
 	lines = append(lines, r.renderScreenShellWindowCards(state, tab, floatingPaneIDs, metrics.SplitColumnWidth, overlayActive)...)
 	return lines
@@ -667,6 +651,294 @@ func renderScreenShellPaneBox(width int, title string, body []string) []string {
 	}
 	lines = append(lines, "+"+strings.Repeat("-", innerWidth)+"+")
 	return lines
+}
+
+// screen shell 现在开始从“顺排 box 列表”进入真正的文本 canvas，
+// 所以这里提供一个最小 compositor，把 pane box 按矩形位置拼进同一块工作台区域。
+type screenShellCanvas struct {
+	width  int
+	height int
+	rows   [][]byte
+}
+
+func newScreenShellCanvas(width int, height int) *screenShellCanvas {
+	if width < 1 {
+		width = 1
+	}
+	if height < 1 {
+		height = 1
+	}
+	rows := make([][]byte, height)
+	for y := range rows {
+		rows[y] = []byte(strings.Repeat(" ", width))
+	}
+	return &screenShellCanvas{
+		width:  width,
+		height: height,
+		rows:   rows,
+	}
+}
+
+func (c *screenShellCanvas) stampLines(x int, y int, lines []string) {
+	if c == nil {
+		return
+	}
+	for rowIndex, line := range lines {
+		targetY := y + rowIndex
+		if targetY < 0 || targetY >= c.height {
+			continue
+		}
+		for columnIndex := 0; columnIndex < len(line); columnIndex++ {
+			targetX := x + columnIndex
+			if targetX < 0 || targetX >= c.width {
+				continue
+			}
+			c.rows[targetY][targetX] = line[columnIndex]
+		}
+	}
+}
+
+func (c *screenShellCanvas) lines() []string {
+	if c == nil {
+		return nil
+	}
+	lines := make([]string, 0, c.height)
+	for _, row := range c.rows {
+		lines = append(lines, string(row))
+	}
+	return lines
+}
+
+func renderScreenShellWorkbenchCanvasHeight(metrics wireframeMetrics, overlayActive bool) int {
+	if overlayActive {
+		return 8
+	}
+	return 12
+}
+
+func renderScreenShellPaneCanvasBox(width int, height int, title string, body []string) []string {
+	if width < 8 {
+		width = 8
+	}
+	if height < 4 {
+		height = 4
+	}
+	innerWidth := width - 2
+	useDivider := height >= 7
+	bodyRows := height - 3
+	if useDivider {
+		bodyRows = height - 4
+	}
+	if bodyRows < 1 {
+		bodyRows = 1
+	}
+	lines := []string{"+" + strings.Repeat("-", innerWidth) + "+"}
+	lines = append(lines, "|"+padRight(truncateLine(" "+title, innerWidth), innerWidth)+"|")
+	if useDivider {
+		lines = append(lines, "|"+strings.Repeat("-", innerWidth)+"|")
+	}
+	for _, line := range clampPaddedLines(body, bodyRows) {
+		lines = append(lines, "|"+padRight(truncateLine(line, innerWidth), innerWidth)+"|")
+	}
+	lines = append(lines, "+"+strings.Repeat("-", innerWidth)+"+")
+	return lines
+}
+
+func clampPaddedLines(lines []string, target int) []string {
+	if target <= 0 {
+		return nil
+	}
+	if len(lines) > target {
+		lines = lines[:target]
+	}
+	out := make([]string, 0, target)
+	out = append(out, lines...)
+	for len(out) < target {
+		out = append(out, "")
+	}
+	return out
+}
+
+func (r runtimeRenderer) renderScreenShellTiledCanvas(state types.AppState, tab types.TabState, paneIDs []types.PaneID, metrics wireframeMetrics, overlayActive bool) []string {
+	canvasHeight := renderScreenShellWorkbenchCanvasHeight(metrics, overlayActive)
+	lines := []string{fmt.Sprintf("TILED CANVAS[%dx%d panes=%d]", metrics.ViewportWidth, canvasHeight, len(paneIDs))}
+	canvas := newScreenShellCanvas(metrics.ViewportWidth, canvasHeight)
+	rects := renderScreenShellTiledRects(tab, metrics.ViewportWidth, canvasHeight, paneIDs)
+	for _, paneID := range paneIDs {
+		pane, ok := tab.Panes[paneID]
+		if !ok {
+			continue
+		}
+		rect, ok := rects[paneID]
+		if !ok {
+			continue
+		}
+		box := renderScreenShellPaneCanvasBox(
+			rect.W,
+			rect.H,
+			renderScreenShellPaneTitle(state, pane, true),
+			r.renderScreenShellPaneLines(state, pane, overlayActive, renderScreenShellPaneCanvasBodyRows(rect.H)),
+		)
+		canvas.stampLines(rect.X, rect.Y, box)
+	}
+	return append(lines, canvas.lines()...)
+}
+
+func renderScreenShellPaneCanvasBodyRows(height int) int {
+	if height <= 4 {
+		return 1
+	}
+	if height >= 7 {
+		return height - 4
+	}
+	return height - 3
+}
+
+func renderScreenShellTiledRects(tab types.TabState, width int, height int, paneIDs []types.PaneID) map[types.PaneID]types.Rect {
+	rects := map[types.PaneID]types.Rect{}
+	root := splitNodeToLayoutNode(tab.RootSplit)
+	if root != nil {
+		rects = root.Rects(types.Rect{W: width, H: height})
+	}
+	if len(rects) >= len(paneIDs) {
+		return rects
+	}
+	// fallback：即使 split tree 暂时不完整，也保证 screen shell 至少能给出稳定几何块。
+	switch len(paneIDs) {
+	case 0:
+		return rects
+	case 1:
+		rects[paneIDs[0]] = types.Rect{W: width, H: height}
+	default:
+		columnWidth := width / 2
+		if columnWidth < 8 {
+			columnWidth = 8
+		}
+		leftWidth := columnWidth
+		rightWidth := width - leftWidth
+		rects[paneIDs[0]] = types.Rect{X: 0, Y: 0, W: leftWidth, H: height}
+		rects[paneIDs[1]] = types.Rect{X: leftWidth, Y: 0, W: rightWidth, H: height}
+		for index, paneID := range paneIDs[2:] {
+			rects[paneID] = types.Rect{X: 0, Y: index, W: width, H: minInt(height-index, 4)}
+		}
+	}
+	return rects
+}
+
+func (r runtimeRenderer) renderScreenShellFloatingCanvas(state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, metrics wireframeMetrics, overlayActive bool) []string {
+	canvasHeight := renderScreenShellWorkbenchCanvasHeight(metrics, overlayActive)
+	lines := []string{fmt.Sprintf("FLOAT CANVAS[%dx%d windows=%d]", metrics.ViewportWidth, canvasHeight, len(floatingPaneIDs))}
+	canvas := newScreenShellCanvas(metrics.ViewportWidth, canvasHeight)
+	if pane.Kind == types.PaneKindTiled {
+		baseRect := types.Rect{W: metrics.ViewportWidth, H: canvasHeight}
+		baseBox := renderScreenShellPaneCanvasBox(
+			baseRect.W,
+			baseRect.H,
+			renderScreenShellPaneTitle(state, pane, true),
+			r.renderScreenShellPaneLines(state, pane, overlayActive, renderScreenShellPaneCanvasBodyRows(baseRect.H)),
+		)
+		canvas.stampLines(0, 0, baseBox)
+	}
+	for _, paneID := range floatingPaneIDs {
+		floatingPane, ok := tab.Panes[paneID]
+		if !ok {
+			continue
+		}
+		rect := normalizeFloatingCanvasRect(floatingPane.Rect, metrics.ViewportWidth, metrics.ViewportHeight, canvasHeight)
+		box := renderScreenShellPaneCanvasBox(
+			rect.W,
+			rect.H,
+			renderScreenShellPaneTitle(state, floatingPane, true),
+			r.renderScreenShellPaneLines(state, floatingPane, overlayActive, renderScreenShellPaneCanvasBodyRows(rect.H)),
+		)
+		canvas.stampLines(rect.X, rect.Y, box)
+	}
+	return append(lines, canvas.lines()...)
+}
+
+func normalizeFloatingCanvasRect(rect types.Rect, viewportWidth int, viewportHeight int, canvasHeight int) types.Rect {
+	if viewportWidth <= 0 {
+		viewportWidth = runtimeWireframeWidth
+	}
+	if viewportHeight <= 0 {
+		viewportHeight = 24
+	}
+	x := clampInt(scaleCoord(rect.X, viewportWidth, viewportWidth), 0, maxInt(viewportWidth-8, 0))
+	w := scaleSize(rect.W, viewportWidth, viewportWidth)
+	if w < 8 {
+		w = 8
+	}
+	if x+w > viewportWidth {
+		w = viewportWidth - x
+	}
+	if w < 8 {
+		w = minInt(viewportWidth, 8)
+		x = maxInt(0, viewportWidth-w)
+	}
+	y := clampInt(scaleCoord(rect.Y, viewportHeight, canvasHeight), 0, maxInt(canvasHeight-4, 0))
+	h := scaleSize(rect.H, viewportHeight, canvasHeight)
+	if h < 4 {
+		h = 4
+	}
+	if y+h > canvasHeight {
+		h = canvasHeight - y
+	}
+	if h < 4 {
+		h = minInt(canvasHeight, 4)
+		y = maxInt(0, canvasHeight-h)
+	}
+	return types.Rect{X: x, Y: y, W: w, H: h}
+}
+
+func scaleCoord(value int, source int, target int) int {
+	if source <= 0 || target <= 0 || value <= 0 {
+		return 0
+	}
+	return (value * target) / source
+}
+
+func scaleSize(value int, source int, target int) int {
+	if source <= 0 || target <= 0 || value <= 0 {
+		return 0
+	}
+	return (value*target + source - 1) / source
+}
+
+func clampInt(value int, low int, high int) int {
+	if value < low {
+		return low
+	}
+	if value > high {
+		return high
+	}
+	return value
+}
+
+func minInt(a int, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxInt(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func splitNodeToLayoutNode(node *types.SplitNode) *layoutdomain.Node {
+	if node == nil {
+		return nil
+	}
+	return &layoutdomain.Node{
+		PaneID:    node.PaneID,
+		Direction: node.Direction,
+		Ratio:     node.Ratio,
+		First:     splitNodeToLayoutNode(node.First),
+		Second:    splitNodeToLayoutNode(node.Second),
+	}
 }
 
 // renderWireframeView 在语义 renderer 之上补一层稳定的 ASCII 工作台，

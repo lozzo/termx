@@ -1565,7 +1565,7 @@ func TestRuntimeRendererRendersWireframeSplitWorkbench(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "SPLIT SHELL[vertical 50/50]") || !strings.Contains(view, "LAYOUT[split] root=vertical ratio=50/50 leaves=2") || !strings.Contains(view, "api-dev [owner]") || !strings.Contains(view, "build-log [owner]") {
+	if !strings.Contains(view, "SPLIT SHELL[vertical 50/50]") || !strings.Contains(view, "LAYOUT[split] root=vertical ratio=50/50 leaves=2") || !strings.Contains(view, "TILED CANVAS[78x12 panes=2]") || !strings.Contains(view, "+-------------------------------------++-------------------------------------+") || !strings.Contains(view, "api-dev [owner]") || !strings.Contains(view, "build-log [owner]") {
 		t.Fatalf("expected split shell frame in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "$ npm") || !strings.Contains(view, "ready") || !strings.Contains(view, "term-1 running owner") || !strings.Contains(view, "> tsc") || !strings.Contains(view, "ok") || !strings.Contains(view, "term-2 running owner") {
@@ -1617,8 +1617,11 @@ func TestRuntimeRendererRendersWireframeFloatingStack(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "STACK[windows] total=2") || !strings.Contains(view, "FOCUS[float-1] api-dev") || !strings.Contains(view, "WINDOWS[2]") || !strings.Contains(view, "WINDOW CARD[float-1] api-dev") || !strings.Contains(view, "GEOMETRY[10,8 30x12]") || !strings.Contains(view, "WINDOW CARD[float-2] build-log") || !strings.Contains(view, "api-dev [owner] [floating]") {
+	if !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "FLOAT CANVAS[78x12 windows=2]") || !strings.Contains(view, "STACK[windows] total=2") || !strings.Contains(view, "FOCUS[float-1] api-dev") || !strings.Contains(view, "WINDOWS[2]") || !strings.Contains(view, "WINDOW CARD[float-1] api-dev") || !strings.Contains(view, "GEOMETRY[10,8 30x12]") || !strings.Contains(view, "WINDOW CARD[float-2] build-log") || !strings.Contains(view, "api-dev [owner] [floating]") {
 		t.Fatalf("expected floating shell window summary in rendered view, got:\n%s", view)
+	}
+	if strings.Index(view, "FLOAT CANVAS[78x12 windows=2]") > strings.Index(view, "STACK[windows] total=2") {
+		t.Fatalf("expected floating canvas to appear before stack summary, got:\n%s", view)
 	}
 	if !strings.Contains(view, "api ready") || !strings.Contains(view, "term-1 running owner") || !strings.Contains(view, "build ok") || !strings.Contains(view, "term-2 running owner") {
 		t.Fatalf("expected floating shell canvas rows in rendered view, got:\n%s", view)
@@ -1777,8 +1780,11 @@ func TestRuntimeRendererRendersWireframeMixedSlotWorkbench(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "waiting for connect") || !strings.Contains(view, "n new | a connect") || !strings.Contains(view, "CARD[pane-3] deploy-log [owner]") || !strings.Contains(view, "process exited") || !strings.Contains(view, "history retained") || !strings.Contains(view, "FLOATING WINDOWS[1]") || !strings.Contains(view, "WINDOW CARD[float-empty] unconnected pane") || !strings.Contains(view, "GEOMETRY[60,2 20x8]") || !strings.Contains(view, "no terminal connected") {
+	if !strings.Contains(view, "TILED CANVAS[78x12 panes=3]") || !strings.Contains(view, "waiting pane [waiting] [tiled]") || !strings.Contains(view, "api-dev [owner] [tiled]") || !strings.Contains(view, "deploy-log [exited] [tiled]") || !strings.Contains(view, "waiting for connect") || !strings.Contains(view, "n new | a connect") || !strings.Contains(view, "process exited") || !strings.Contains(view, "history retained") || !strings.Contains(view, "FLOATING WINDOWS[1]") || !strings.Contains(view, "WINDOW CARD[float-empty] unconnected pane") || !strings.Contains(view, "GEOMETRY[60,2 20x8]") || !strings.Contains(view, "no terminal connected") {
 		t.Fatalf("expected mixed-slot shell summaries in rendered view, got:\n%s", view)
+	}
+	if strings.Contains(view, "CARD[pane-3] deploy-log [owner]") {
+		t.Fatalf("expected exited tiled pane to move into tiled canvas instead of extra card, got:\n%s", view)
 	}
 	if !strings.Contains(view, "WORKBENCH split") {
 		t.Fatalf("expected mixed slot workbench to use split wireframe, got:\n%s", view)
@@ -1831,6 +1837,9 @@ func TestRuntimeRendererRendersWireframeNestedSplitWorkbench(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "TILED CANVAS[78x12 panes=3]") {
+		t.Fatalf("expected nested split shell canvas heading, got:\n%s", view)
+	}
 	if !strings.Contains(view, "LAYOUT TREE") {
 		t.Fatalf("expected nested split wireframe tree heading, got:\n%s", view)
 	}

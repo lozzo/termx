@@ -1290,3 +1290,54 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
   - 把 `screen_shell` 从“盒子列表”推进到更接近真实几何拼接的 compositor
   - 把 overlay dialog 从摘要框推进到更像真实弹层的布局与焦点高亮
   - 把 `cmd/termx` 第一视觉继续从 ASCII 语义壳推进到真正可用的工作台 UI
+
+---
+
+## 12. 第 198 轮 TDD
+
+这一轮开始把上一轮提到的 “`screen_shell` compositor” 真正落到代码里，不再让 split / floating 只是把多个 box 顺排出来，而是进入同一块文本 canvas 做几何拼接：
+
+1. tiled compositor
+   - 新增 `screen_shell` 文本 canvas
+   - split 工作台不再只靠 `joinASCIIBoxes(...)` 顺排
+   - 改为根据 split tree 的 rect 把 tiled pane 直接拼进同一块 canvas
+2. floating compositor
+   - floating layer 不再只是“主 pane + sidebar”
+   - 改为把 floating pane 按 `pane.Rect` 映射到 canvas 后叠进同一块窗口层
+   - stack/window card 继续保留在 canvas 下方，作为当前阶段的补充摘要
+3. mixed-slot / nested split 收口
+   - mixed-slot 下的 waiting / exited pane 也进入 tiled canvas
+   - exited pane 不再退回 extra card，而是在 canvas 中直接显示退出语义
+   - nested split 继续保留 wireframe tree，但 `screen_shell` 第一视觉已经切到几何 canvas
+4. 小 pane 行预算修正
+   - 小高度 pane 在无 title divider 时，正文行预算要跟着放宽
+   - 这样 waiting / exited pane 才能在小格子里同时保留状态文案和动作提示
+
+这一轮补上的验证仍然是成组推进，不是只补一两个字符串：
+
+- renderer：
+  - `TestRuntimeRendererRendersWireframeSplitWorkbench`
+  - `TestRuntimeRendererRendersWireframeFloatingStack`
+  - `TestRuntimeRendererRendersWireframeMixedSlotWorkbench`
+  - `TestRuntimeRendererRendersWireframeNestedSplitWorkbench`
+- runtime E2E：
+  - `TestE2ERunScenarioSplitTabShowsWireframeWorkbench`
+  - `TestE2ERunScenarioFloatingLayerShowsOutline`
+  - `TestE2ERunScenarioMixedSlotShowsWireframeWorkbench`
+
+本轮验证命令：
+
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -run 'TestRuntimeRendererRendersWireframeSplitWorkbench|TestRuntimeRendererRendersWireframeFloatingStack|TestRuntimeRendererRendersWireframeMixedSlotWorkbench|TestRuntimeRendererRendersWireframeNestedSplitWorkbench|TestE2ERunScenarioSplitTabShowsWireframeWorkbench|TestE2ERunScenarioFloatingLayerShowsOutline|TestE2ERunScenarioMixedSlotShowsWireframeWorkbench' -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1`
+
+当前状态更新为：
+
+- `screen_shell` 已经不只是 pane box 列表，而是有了第一层真正的文本 compositor
+- split 工作台现在会按 split tree rect 把多个 pane 拼进同一块 tiled canvas
+- floating 工作台现在会按 `pane.Rect` 投影到 floating canvas，第一视觉开始出现窗口层叠感
+- mixed-slot / nested split 的 waiting / exited pane 也已进入 canvas 主视图，不再完全退回额外卡片
+- 下一阶段应继续沿“真实 UI 壳层”收口，而不是回到字段级微调：
+  - 把 floating canvas 下方的摘要卡片继续缩减，逐步让 canvas 成为主渲染结果
+  - 给 overlay dialog 引入更明确的焦点高亮、选中态和区块布局
+  - 把 `wireframe_view` 从主辅助视图逐步降级成调试视图
