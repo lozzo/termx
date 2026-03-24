@@ -11,8 +11,8 @@ import (
 	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
 	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
 	terminalpickerdomain "github.com/lozzow/termx/tui/domain/terminalpicker"
-	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
 	"github.com/lozzow/termx/tui/domain/types"
+	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
 )
 
 func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
@@ -80,8 +80,53 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "screen:") {
 		t.Fatalf("expected screen section in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "screen_rows: 2/2") {
+		t.Fatalf("expected screen row metadata in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "$ pwd") || !strings.Contains(view, "/tmp") {
 		t.Fatalf("expected snapshot rows in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererTruncatesLargeSnapshotPreview(t *testing.T) {
+	state := connectedRunAppState()
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:      types.TerminalID("term-1"),
+		Name:    "api-dev",
+		State:   types.TerminalRunStateRunning,
+		Command: []string{"npm", "run", "dev"},
+		Visible: true,
+	}
+	rows := make([][]protocol.Cell, 0, 12)
+	for i := 0; i < 12; i++ {
+		rows = append(rows, []protocol.Cell{{Content: "r"}, {Content: "o"}, {Content: "w"}, {Content: ":"}, {Content: string(rune('0' + i/10))}, {Content: string(rune('0' + i%10))}})
+	}
+	renderer := runtimeRenderer{
+		Screens: NewRuntimeTerminalStore(RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen:     protocol.ScreenData{Cells: rows},
+					},
+				},
+			},
+		}),
+	}
+
+	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "workspace: main") || !strings.Contains(view, "pane: pane-1") {
+		t.Fatalf("expected header lines to stay visible with long snapshot, got:\n%s", view)
+	}
+	if !strings.Contains(view, "screen_rows: 8/12") || !strings.Contains(view, "screen_truncated: true") {
+		t.Fatalf("expected truncated screen metadata, got:\n%s", view)
+	}
+	if strings.Contains(view, "row:00") || strings.Contains(view, "row:03") {
+		t.Fatalf("expected old snapshot rows to be truncated, got:\n%s", view)
+	}
+	if !strings.Contains(view, "row:04") || !strings.Contains(view, "row:11") {
+		t.Fatalf("expected latest snapshot rows to remain visible, got:\n%s", view)
 	}
 }
 

@@ -19,6 +19,8 @@ type runtimeRenderer struct {
 	Screens RuntimeTerminalStore
 }
 
+const runtimeScreenPreviewRows = 8
+
 // Render 先提供一个稳定、可测试的文本视图，优先把生命周期打通。
 // 这里不追求视觉完成度，只把当前 workspace / tab / pane / overlay 这些主语义明确展示出来。
 func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) string {
@@ -59,8 +61,13 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 		lines = append(lines, renderConnectionLines(state.Domain.Connections[pane.TerminalID], pane.ID)...)
 		if r.Screens != nil {
 			if snapshot, ok := r.Screens.Snapshot(pane.TerminalID); ok && snapshot != nil {
+				rows, totalRows, truncated := renderSnapshotRows(snapshot)
 				lines = append(lines, "screen:")
-				lines = append(lines, renderSnapshotRows(snapshot)...)
+				lines = append(lines, fmt.Sprintf("screen_rows: %d/%d", len(rows), totalRows))
+				if truncated {
+					lines = append(lines, "screen_truncated: true")
+				}
+				lines = append(lines, rows...)
 			}
 			if status, ok := r.Screens.Status(pane.TerminalID); ok {
 				lines = append(lines, renderRuntimeStatusLines(status)...)
@@ -183,15 +190,19 @@ func renderRuntimeStatusLines(status RuntimeTerminalStatus) []string {
 	return lines
 }
 
-func renderSnapshotRows(snapshot *protocol.Snapshot) []string {
+func renderSnapshotRows(snapshot *protocol.Snapshot) ([]string, int, bool) {
 	if snapshot == nil || len(snapshot.Screen.Cells) == 0 {
-		return []string{"<empty>"}
+		return []string{"<empty>"}, 0, false
 	}
-	lines := make([]string, 0, len(snapshot.Screen.Cells))
-	for _, row := range snapshot.Screen.Cells {
+	start := 0
+	if len(snapshot.Screen.Cells) > runtimeScreenPreviewRows {
+		start = len(snapshot.Screen.Cells) - runtimeScreenPreviewRows
+	}
+	lines := make([]string, 0, len(snapshot.Screen.Cells)-start)
+	for _, row := range snapshot.Screen.Cells[start:] {
 		lines = append(lines, renderSnapshotRow(row))
 	}
-	return lines
+	return lines, len(snapshot.Screen.Cells), start > 0
 }
 
 func renderSnapshotRow(row []protocol.Cell) string {

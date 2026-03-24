@@ -157,6 +157,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 133. 第一百二十九轮 TDD 已补上 stop terminal 控制面的 owner 权限约束
 134. 第一百三十轮 TDD 已补上 stop / metadata 控制面的成功回灌语义
 135. 第一百三十一轮 TDD 已补上 create / new-tab / floating 控制面的成功回灌语义
+136. 第一百三十二轮 TDD 已补上 runtime 主视图的固定状态头与 screen 预览裁剪
 
 对应文档：
 
@@ -290,6 +291,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `create terminal`、`connect in new tab`、`connect in floating pane` 现在也改成 runtime service 成功后再回灌 success intent，失败时 overlay 保持原位等待重试
 - create terminal 成功后，reducer 会立即把新 terminal 注册进 domain，避免在 event 到达前 manager/picker 视图完全无感
 - 已补上 reducer / bt / runtime 场景测试：manager、picker、layout resolve 的 create 成功后关闭 overlay 并注册 terminal，失败时保留原 overlay 并显示 notice
+- runtime 主视图现在会把 active pane 的 `screen` 限制为尾部预览，而不是整屏全量展开，避免 shell 内容把顶部 `workspace/tab/pane/overlay` 状态直接顶出可视区
+- renderer 现在额外输出 `screen_rows` 与 `screen_truncated`，显式说明当前看到的是 screen 预览而不是完整快照
+- 已补上 renderer 测试：长 snapshot 只保留最后 8 行，同时保持头部状态字段稳定可见
 - 已补上一条 runtime 场景型 E2E：`Ctrl-f` 打开 terminal picker 时主视图显式显示 `overlay: terminal_picker` 与 `focus_overlay_target: terminal_picker`
 - 已补上一条 runtime 场景型 E2E：workspace picker / prompt / terminal manager / terminal picker / layout resolve 关闭后主视图不再残留 `focus_overlay_target`
 - 已补上一条 runtime 场景型 E2E：terminal manager 与 layout resolve 关闭后主视图不再残留临时 `mode`
