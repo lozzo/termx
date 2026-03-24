@@ -846,7 +846,7 @@ func TestE2ERunScenarioSplitTabShowsWireframeWorkbench(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "wireframe_view:") || !strings.Contains(view, "SPLIT SHELL[vertical 50/50]") || !strings.Contains(view, "+ api-dev [owner]") || !strings.Contains(view, "+ build-log [owner]") || !strings.Contains(view, "VIEWPORT[96x40]") || !strings.Contains(view, "SPLIT[vertical] RATIO[0.50] LEAVES[2]") || !strings.Contains(view, "BAR[===============|===============]") || !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] STATE[running]") || !strings.Contains(view, "PANE[build-log] ROLE[owner] STATE[running]") {
+			if !strings.Contains(view, "wireframe_view:") || !strings.Contains(view, "SPLIT SHELL[vertical 50/50]") || !strings.Contains(view, "LAYOUT[split] root=vertical ratio=50/50 leaves=2") || !strings.Contains(view, "+ api-dev [owner]") || !strings.Contains(view, "+ build-log [owner]") || !strings.Contains(view, "STATUS[connected]") || !strings.Contains(view, "TERM[term-1] STATE[running]") || !strings.Contains(view, "CONTENT[screen] ready") || !strings.Contains(view, "TERM[term-2] STATE[running]") || !strings.Contains(view, "CONTENT[screen] ok") || !strings.Contains(view, "VIEWPORT[96x40]") || !strings.Contains(view, "SPLIT[vertical] RATIO[0.50] LEAVES[2]") || !strings.Contains(view, "BAR[===============|===============]") || !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] STATE[running]") || !strings.Contains(view, "PANE[build-log] ROLE[owner] STATE[running]") {
 				t.Fatalf("expected runtime view to expose split wireframe workbench, got:\n%s", view)
 			}
 			return nil
@@ -961,7 +961,7 @@ func TestE2ERunScenarioFloatingLayerShowsOutline(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "WINDOW[float-1] api-dev active 10,8 30x12") || !strings.Contains(view, "WINDOW[float-2] build-log 45,14 28x10") || !strings.Contains(view, "tab_path_bar: path=main/shell/floating:float-1 | target=api-dev") || !strings.Contains(view, "tab_layer_bar: tiled_root=<none> | floating_top=float-2 | floating_total=2") || !strings.Contains(view, "floating_outline_bar: active=float-1 | total=2 | top=float-2") || !strings.Contains(view, "floating_outline:") || !strings.Contains(view, "> [floating] api-dev | role=owner | rect=10,8 30x12 | state=running | preview=api ready") || !strings.Contains(view, "  [floating] build-log | role=owner | rect=45,14 28x10 | state=running | preview=build ok") {
+			if !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "STACK[windows] total=2") || !strings.Contains(view, "FOCUS[float-1] api-dev") || !strings.Contains(view, "WINDOW[float-1] api-dev active 10,8 30x12") || !strings.Contains(view, "WINDOW[float-2] build-log 45,14 28x10") || !strings.Contains(view, "STATUS[connected]") || !strings.Contains(view, "TERM[term-1] STATE[running]") || !strings.Contains(view, "CONTENT[screen] api ready") || !strings.Contains(view, "tab_path_bar: path=main/shell/floating:float-1 | target=api-dev") || !strings.Contains(view, "tab_layer_bar: tiled_root=<none> | floating_top=float-2 | floating_total=2") || !strings.Contains(view, "floating_outline_bar: active=float-1 | total=2 | top=float-2") || !strings.Contains(view, "floating_outline:") || !strings.Contains(view, "> [floating] api-dev | role=owner | rect=10,8 30x12 | state=running | preview=api ready") || !strings.Contains(view, "  [floating] build-log | role=owner | rect=45,14 28x10 | state=running | preview=build ok") {
 				t.Fatalf("expected runtime view to expose floating outline, got:\n%s", view)
 			}
 			return nil
@@ -1194,7 +1194,7 @@ func TestE2ERunScenarioMixedSlotShowsWireframeWorkbench(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "EXTRA SHELL PANES") || !strings.Contains(view, "pane-2 waiting pane waiting") || !strings.Contains(view, "pane-3 deploy-log exited") || !strings.Contains(view, "floating: unconnected pane @60,2 20x8") || !strings.Contains(view, "WORKBENCH split") || !strings.Contains(view, "PANE[waiting pane] SLOT[waiting]") || !strings.Contains(view, "PANE[deploy-log] ROLE[owner] STATE[exited]") || !strings.Contains(view, "FLOATING MAP") || !strings.Contains(view, "FLOAT[float-empty] unconnected pane empty 60,2 20x8") {
+			if !strings.Contains(view, "EXTRA SHELL PANES") || !strings.Contains(view, "STATUS[waiting]") || !strings.Contains(view, "DETAIL[waiting for connect]") || !strings.Contains(view, "STATUS[exited]") || !strings.Contains(view, "DETAIL[terminal program exited]") || !strings.Contains(view, "floating: unconnected pane @60,2 20x8") || !strings.Contains(view, "WORKBENCH split") || !strings.Contains(view, "PANE[waiting pane] SLOT[waiting]") || !strings.Contains(view, "PANE[deploy-log] ROLE[owner] STATE[exited]") || !strings.Contains(view, "FLOATING MAP") || !strings.Contains(view, "FLOAT[float-empty] unconnected pane empty 60,2 20x8") {
 				t.Fatalf("expected runtime view to expose mixed slot wireframe workbench, got:\n%s", view)
 			}
 			return nil

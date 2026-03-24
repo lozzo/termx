@@ -176,7 +176,10 @@ func (r runtimeRenderer) renderScreenShellSplit(state types.AppState, tab types.
 	if summary.HasRatio {
 		ratio = fmt.Sprintf("%02.0f/%02.0f", summary.Ratio*100, (1-summary.Ratio)*100)
 	}
-	lines := []string{fmt.Sprintf("SPLIT SHELL[%s %s]", summary.Root, ratio)}
+	lines := []string{
+		fmt.Sprintf("SPLIT SHELL[%s %s]", summary.Root, ratio),
+		fmt.Sprintf("LAYOUT[split] root=%s ratio=%s leaves=%d", summary.Root, ratio, len(tiledPaneIDs)),
+	}
 	boxes := make([][]string, 0, 2)
 	for i, paneID := range tiledPaneIDs {
 		if i == 2 {
@@ -198,7 +201,7 @@ func (r runtimeRenderer) renderScreenShellSplit(state types.AppState, tab types.
 			if !ok {
 				continue
 			}
-			extraLines = append(extraLines, fmt.Sprintf("%s %s %s", pane.ID, renderPaneTitle(state, pane), pane.SlotState))
+			extraLines = append(extraLines, renderScreenShellExtraPaneSummary(state, pane)...)
 		}
 		lines = append(lines, extraLines...)
 	}
@@ -211,7 +214,7 @@ func (r runtimeRenderer) renderScreenShellSplit(state types.AppState, tab types.
 func (r runtimeRenderer) renderScreenShellFloating(state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, metrics wireframeMetrics, overlayActive bool) []string {
 	lines := []string{fmt.Sprintf("FLOAT SHELL[%d]", len(floatingPaneIDs))}
 	mainBox := renderShellBox(metrics.MainPaneWidth, renderScreenShellPaneTitle(state, pane, true), r.renderScreenShellPaneLines(state, pane, overlayActive, 4))
-	sidebarBox := renderShellBox(metrics.SidebarWidth, "floating stack", r.renderScreenShellFloatingSummary(state, tab, floatingPaneIDs))
+	sidebarBox := renderShellBox(metrics.SidebarWidth, "floating stack", r.renderScreenShellFloatingSidebar(state, tab, floatingPaneIDs))
 	lines = append(lines, joinASCIIBoxes([][]string{mainBox, sidebarBox}, 2)...)
 	for _, paneID := range floatingPaneIDs {
 		floatingPane, ok := tab.Panes[paneID]
@@ -240,6 +243,50 @@ func (r runtimeRenderer) renderScreenShellFloatingSummary(state types.AppState, 
 		return []string{"<none>"}
 	}
 	return lines
+}
+
+func (r runtimeRenderer) renderScreenShellFloatingSidebar(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) []string {
+	lines := []string{fmt.Sprintf("STACK[windows] total=%d", len(floatingPaneIDs))}
+	if len(floatingPaneIDs) > 0 {
+		lines = append(lines, fmt.Sprintf("FOCUS[%s] %s", tab.ActivePaneID, renderPaneTitle(state, tab.Panes[tab.ActivePaneID])))
+	}
+	for _, paneID := range floatingPaneIDs {
+		pane, ok := tab.Panes[paneID]
+		if !ok {
+			continue
+		}
+		prefix := "  "
+		if paneID == tab.ActivePaneID {
+			prefix = "> "
+		}
+		lines = append(lines, fmt.Sprintf("%s[%s] %s", prefix, paneID, renderPaneTitle(state, pane)))
+	}
+	return lines
+}
+
+func renderScreenShellExtraPaneSummary(state types.AppState, pane types.PaneState) []string {
+	switch pane.SlotState {
+	case types.PaneSlotWaiting:
+		return []string{
+			fmt.Sprintf("%s %s %s", pane.ID, renderPaneTitle(state, pane), pane.SlotState),
+			"STATUS[waiting]",
+			"DETAIL[waiting for connect]",
+		}
+	case types.PaneSlotExited:
+		return []string{
+			fmt.Sprintf("%s %s %s", pane.ID, renderPaneTitle(state, pane), pane.SlotState),
+			"STATUS[exited]",
+			"DETAIL[terminal program exited]",
+		}
+	case types.PaneSlotEmpty:
+		return []string{
+			fmt.Sprintf("%s %s %s", pane.ID, renderPaneTitle(state, pane), pane.SlotState),
+			"STATUS[empty]",
+			"DETAIL[terminal removed or not connected]",
+		}
+	default:
+		return []string{fmt.Sprintf("%s %s %s", pane.ID, renderPaneTitle(state, pane), pane.SlotState)}
+	}
 }
 
 func (r runtimeRenderer) renderScreenShellDialog(state types.AppState, metrics wireframeMetrics) []string {

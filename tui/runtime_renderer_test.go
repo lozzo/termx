@@ -1562,8 +1562,11 @@ func TestRuntimeRendererRendersWireframeSplitWorkbench(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "SPLIT SHELL[vertical 50/50]") || !strings.Contains(view, "+ api-dev [owner]") || !strings.Contains(view, "+ build-log [owner]") {
+	if !strings.Contains(view, "SPLIT SHELL[vertical 50/50]") || !strings.Contains(view, "LAYOUT[split] root=vertical ratio=50/50 leaves=2") || !strings.Contains(view, "+ api-dev [owner]") || !strings.Contains(view, "+ build-log [owner]") {
 		t.Fatalf("expected split shell frame in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "STATUS[connected]") || !strings.Contains(view, "TERM[term-1] STATE[running]") || !strings.Contains(view, "CONTENT[screen] ready") || !strings.Contains(view, "TERM[term-2] STATE[running]") || !strings.Contains(view, "CONTENT[screen] ok") {
+		t.Fatalf("expected split pane shell sections in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "SPLIT[vertical] RATIO[0.50] LEAVES[2]") {
 		t.Fatalf("expected wireframe split summary in rendered view, got:\n%s", view)
@@ -1611,8 +1614,11 @@ func TestRuntimeRendererRendersWireframeFloatingStack(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "WINDOW[float-1] api-dev active 10,8 30x12") || !strings.Contains(view, "WINDOW[float-2] build-log 45,14 28x10") {
+	if !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "STACK[windows] total=2") || !strings.Contains(view, "FOCUS[float-1] api-dev") || !strings.Contains(view, "WINDOW[float-1] api-dev active 10,8 30x12") || !strings.Contains(view, "WINDOW[float-2] build-log 45,14 28x10") {
 		t.Fatalf("expected floating shell window summary in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "STATUS[connected]") || !strings.Contains(view, "TERM[term-1] STATE[running]") || !strings.Contains(view, "CONTENT[screen] api ready") {
+		t.Fatalf("expected floating active pane shell sections in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "FLOATING STACK") {
 		t.Fatalf("expected wireframe floating stack heading in rendered view, got:\n%s", view)
@@ -1768,7 +1774,7 @@ func TestRuntimeRendererRendersWireframeMixedSlotWorkbench(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "EXTRA SHELL PANES") || !strings.Contains(view, "pane-2 waiting pane waiting") || !strings.Contains(view, "pane-3 deploy-log exited") || !strings.Contains(view, "floating: unconnected pane @60,2 20x8") {
+	if !strings.Contains(view, "EXTRA SHELL PANES") || !strings.Contains(view, "STATUS[waiting]") || !strings.Contains(view, "DETAIL[waiting for connect]") || !strings.Contains(view, "STATUS[exited]") || !strings.Contains(view, "DETAIL[terminal program exited]") || !strings.Contains(view, "floating: unconnected pane @60,2 20x8") {
 		t.Fatalf("expected mixed-slot shell summaries in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "WORKBENCH split") {

@@ -24,6 +24,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把 overlay dialog 正文从“wireframe 摘要复读”推进到“结构化 shell body”：`terminal manager / workspace picker / prompt` 现在都会在 `screen_shell` 内显式渲染 `BODY[list|tree|fields]`、`DETAIL[...]` 等层次，并由 renderer + runtime E2E 一起锁住
 - 本轮继续把 overlay dialog 正文推进成真正的“子盒模型”：`terminal manager` 现在有 `LIST[terminals] + DETAIL[terminal]`，`workspace picker` 有 `TREE[workspace] + TARGET[node]`，`prompt` 有 `FIELDS[prompt] + ACTIVE[field]`；同时重新校准了 overlay 压缩态的行数预算，保证真实 UI 壳增强后仍然可控
 - 本轮继续把主工作台 pane shell 的正文四态统一成组件化结构：`connected` 会显式渲染 `STATUS/TERM/CONTENT`，`empty / waiting / exited` 会显式渲染 `STATUS/DETAIL/ACTIONS`，并同步覆盖单 pane 与 overlay 关闭后的工作台恢复场景
+- 本轮继续把多 pane 工作台的 shell 语言往前推：`split workbench` 现在补上 `LAYOUT[split]` 摘要并让每个 pane 复用统一的 `STATUS/TERM/CONTENT` 组件；`floating workbench` 的 sidebar 现在补上 `STACK[windows]` 与 `FOCUS[...]`，mixed-slot 场景也能直接看到 waiting/exited pane 的结构化摘要
 
 ---
 
@@ -222,6 +223,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 189. 第一百八十五轮 TDD 已补上 overlay shell title/footer 分层、terminal-manager shell close 清理与对应 runtime E2E 主线
 190. 第一百八十六轮 TDD 已补上 overlay dialog 子盒模型、三类 overlay 盒式正文与对应 runtime E2E 主线
 191. 第一百八十七轮 TDD 已补上 pane shell 四态正文组件、主工作台状态区/内容区/动作区与对应 runtime E2E 主线
+192. 第一百八十八轮 TDD 已补上 split/floating workbench 子层级、layout/stack 组件与对应 runtime E2E 主线
 190. 第一百八十六轮 TDD 已补上 overlay dialog 正文结构化分层、三类 shell body 渲染与对应 runtime E2E 主线
 
 对应文档：
