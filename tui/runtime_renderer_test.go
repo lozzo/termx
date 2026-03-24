@@ -563,8 +563,8 @@ func TestRuntimeRendererShellOnlyRendersSplitWorkbenchAsPaneCanvas(t *testing.T)
 	if !strings.Contains(stripped, "live focus  •  api-dev") || !strings.Contains(stripped, "owner  •  connected") || !strings.Contains(stripped, "terminal api-dev") || !strings.Contains(stripped, "visible  •  1 pane") {
 		t.Fatalf("expected shell-only split renderer to expose unified workbench signal panel, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "term-2 running owner") {
-		t.Fatalf("expected shell-only split renderer to expose a two-pane canvas with separate terminal frames, got:\n%s", view)
+	if !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "term-2 running owner") {
+		t.Fatalf("expected shell-only split renderer to keep pane titles readable inside the two-pane canvas, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "$ npm run dev") || !strings.Contains(stripped, "> tsc -w") || !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
 		t.Fatalf("expected shell-only split renderer to keep live terminal content inside pane frames, got:\n%s", view)
@@ -706,8 +706,8 @@ func TestRuntimeRendererShellOnlyRendersDetachedFloatingStripForMixedWorkbench(t
 	if !strings.Contains(stripped, "live focus  •  api-dev") || !strings.Contains(stripped, "owner  •  connected") || !strings.Contains(stripped, "terminal api-dev") || !strings.Contains(stripped, "visible  •  1 pane") {
 		t.Fatalf("expected shell-only mixed workbench to expose unified workbench signal panel, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "waiting for connect") || !strings.Contains(stripped, "process exited") || !strings.Contains(stripped, "no term") || !strings.Contains(stripped, "history retained") {
-		t.Fatalf("expected shell-only mixed workbench to render tiled and floating panes in one canvas, got:\n%s", view)
+	if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "waiting pane") || !strings.Contains(stripped, "deploy-log") || !strings.Contains(stripped, "waiting for connect") || !strings.Contains(stripped, "process exited") || !strings.Contains(stripped, "no term") || !strings.Contains(stripped, "history retained") {
+		t.Fatalf("expected shell-only mixed workbench to keep pane titles readable across tiled and floating canvases, got:\n%s", view)
 	}
 }
 

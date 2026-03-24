@@ -333,7 +333,11 @@ func (r modernScreenShellRenderer) renderModernCanvasPaneLines(state types.AppSt
 	return runtimeRenderer{Screens: r.Screens}.renderScreenShellPaneLines(state, pane, overlayActive, maxRows)
 }
 
-func (r modernScreenShellRenderer) renderModernCanvasPaneMeta(state types.AppState, pane types.PaneState, metrics wireframeMetrics, active bool) string {
+func (r modernScreenShellRenderer) renderModernCanvasPaneMeta(state types.AppState, pane types.PaneState, metrics wireframeMetrics, active bool, paneWidth int) string {
+	if paneWidth <= 22 {
+		return ""
+	}
+	compact := paneWidth <= 28
 	parts := make([]string, 0, 4)
 	switch pane.SlotState {
 	case types.PaneSlotConnected:
@@ -350,26 +354,68 @@ func (r modernScreenShellRenderer) renderModernCanvasPaneMeta(state types.AppSta
 				}
 			}
 		}
+		if compact {
+			switch stateToken {
+			case "○ exit":
+				stateToken = "○"
+			case "○ stop":
+				stateToken = "◌"
+			default:
+				stateToken = "●"
+			}
+		}
 		parts = append(parts, stateToken)
 		role := renderModernCanvasPaneRoleToken(state, pane)
+		if compact {
+			switch role {
+			case "owner":
+				role = "own"
+			case "follow":
+				role = "fol"
+			}
+		}
 		if role != "" {
 			parts = append(parts, role)
 		}
 	case types.PaneSlotWaiting:
-		parts = append(parts, "◌ waiting")
+		if compact {
+			parts = append(parts, "◌")
+		} else {
+			parts = append(parts, "◌ waiting")
+		}
 	case types.PaneSlotExited:
-		parts = append(parts, "○ exited")
+		if compact {
+			parts = append(parts, "○")
+		} else {
+			parts = append(parts, "○ exited")
+		}
 	default:
-		parts = append(parts, "○ empty")
+		if compact {
+			parts = append(parts, "○")
+		} else {
+			parts = append(parts, "○ empty")
+		}
 	}
 	if pane.Kind == types.PaneKindFloating {
 		zIndex, zTotal := renderModernFloatingZ(state, pane)
-		parts = append(parts, "◫ float")
+		if compact {
+			parts = append(parts, "◫")
+		} else {
+			parts = append(parts, "◫ float")
+		}
 		if zIndex > 0 && zTotal > 1 {
-			parts = append(parts, fmt.Sprintf("z %d/%d", zIndex, zTotal))
+			if compact {
+				parts = append(parts, fmt.Sprintf("z%d", zIndex))
+			} else {
+				parts = append(parts, fmt.Sprintf("z %d/%d", zIndex, zTotal))
+			}
 		}
 		if renderModernFloatingPaneOffscreen(pane, metrics) {
-			parts = append(parts, "offscreen")
+			if compact {
+				parts = append(parts, "off")
+			} else {
+				parts = append(parts, "offscreen")
+			}
 			if active {
 				parts = append(parts, "c center")
 			}
@@ -486,7 +532,7 @@ func (r modernScreenShellRenderer) renderWorkbenchCanvasLines(state types.AppSta
 				rect.W,
 				rect.H,
 				r.renderModernCanvasPaneTitle(state, targetPane),
-				r.renderModernCanvasPaneMeta(state, targetPane, metrics, paneID == tab.ActivePaneID),
+				r.renderModernCanvasPaneMeta(state, targetPane, metrics, paneID == tab.ActivePaneID, rect.W),
 				r.renderModernCanvasPaneLines(state, targetPane, overlayActive, bodyRows),
 				paneID == tab.ActivePaneID,
 			)
@@ -504,7 +550,7 @@ func (r modernScreenShellRenderer) renderWorkbenchCanvasLines(state types.AppSta
 			rect.W,
 			rect.H,
 			r.renderModernCanvasPaneTitle(state, targetPane),
-			r.renderModernCanvasPaneMeta(state, targetPane, metrics, paneID == tab.ActivePaneID),
+			r.renderModernCanvasPaneMeta(state, targetPane, metrics, paneID == tab.ActivePaneID, rect.W),
 			r.renderModernCanvasPaneLines(state, targetPane, overlayActive, bodyRows),
 			paneID == tab.ActivePaneID,
 		)
