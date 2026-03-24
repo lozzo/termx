@@ -1573,3 +1573,55 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
   - 继续把 split / floating canvas 往更强的几何层次和遮挡关系推进
   - 继续减少 `chrome_*` 和 `wireframe_view` 的重复
   - 把更多 overlay 从“结构化文本 dialog”推进到更强的焦点边框与层次表达
+
+---
+
+## 17. 第 203 轮 TDD
+
+这一轮继续沿着“第一眼更像真实 TUI”的大块收口，没有再回到零碎字段补丁，而是把一组直接影响观感和交互层次的改动一起打包完成：
+
+1. active pane / active floating window 升级为整块边框高亮
+   - 不再只有标题前缀 `> `
+   - `screen_shell` 的 active pane box / canvas box 统一改成强调边框
+   - split workbench、floating workbench、single pane 三种主工作台形态都走同一套边框规则
+2. overlay dialog 升级为 modal 边框
+   - help / terminal picker / layout resolve / workspace picker 这类 dialog 现在在 `screen_shell` 里使用更强的 modal 边框
+   - 让遮罩层与正文层的视觉分层更明确
+3. 鼠标命中与 E2E 断言同步校准
+   - 因为 dialog 边框字符变化，workspace picker 鼠标点击选中行的命中测试一起更新
+   - 避免 renderer 改了但点击路径还锁在旧字符布局上
+
+这一轮收口的验证重点：
+
+- renderer：
+  - `TestRuntimeRendererRendersActivePaneSnapshot`
+  - `TestRuntimeRendererRendersWireframeSplitWorkbench`
+  - `TestRuntimeRendererRendersWireframeFloatingStack`
+  - `TestRuntimeRendererRendersTerminalPickerOverlay`
+  - `TestRuntimeRendererRendersLayoutResolveOverlay`
+  - `TestRuntimeRendererRendersHelpOverlay`
+  - `TestRuntimeRendererRendersWireframeOverlayBackdropAndReturnFocus`
+- runtime E2E：
+  - `TestE2ERunScenarioRendersSnapshotAndForwardsActivePaneInput`
+  - `TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay`
+  - `TestE2ERunScenarioLayoutResolveEscClearsShellDialogAndMask`
+  - `TestE2ERunScenarioSplitTabShowsWireframeWorkbench`
+  - `TestE2ERunScenarioFloatingLayerShowsOutline`
+  - `TestE2ERunScenarioCtrlFOpensTerminalPickerInView`
+  - `TestE2ERunScenarioLayoutResolveShowsWireframeDialog`
+  - `TestE2ERunScenarioWorkspacePickerMouseClickOnSelectedRowSubmits`
+
+本轮验证命令：
+
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1`
+
+当前状态更新为：
+
+- `screen_shell` 里的 active pane 已经不是“弱提示文本块”，而是有了统一的高亮边框层
+- overlay dialog 已经从普通 box 升成更明确的 modal box，第一视觉的层次比前一轮更清楚
+- 当前 `cmd/termx` 仍然主要是 ASCII 盒模型，不是最终现代化 TUI 形态；但主壳的焦点和弹窗层级已经开始真正成形
+- 下一阶段不应该再围绕边框字符做小修小补，而应该继续往更大的真实 UI 收口：
+  - 把 pane/workbench 的正文渲染从“空框+摘要”继续推进到更稳定的终端内容视图
+  - 继续压缩 `wireframe_view` 和 `chrome_*` 的调试存在感
+  - 开始做更接近最终产品的主工作台 chrome、tab/workspace 层级和正文布局

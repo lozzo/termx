@@ -29,6 +29,12 @@ type wireframeMetrics struct {
 	SidebarWidth     int
 }
 
+type shellBorderStyle struct {
+	Corner     byte
+	Horizontal byte
+	Vertical   byte
+}
+
 const runtimeScreenPreviewRows = 8
 const runtimeOverlayPreviewRows = 8
 const runtimeOverlayDetailPreviewRows = 4
@@ -43,6 +49,19 @@ const runtimeWireframeSplitColumnWidth = 38
 const runtimeWireframeMainPaneWidth = 52
 const runtimeWireframeSidebarWidth = 24
 const runtimeWireframePreviewRows = 4
+
+var (
+	defaultShellBorderStyle = shellBorderStyle{
+		Corner:     '+',
+		Horizontal: '-',
+		Vertical:   '|',
+	}
+	emphasisShellBorderStyle = shellBorderStyle{
+		Corner:     '#',
+		Horizontal: '#',
+		Vertical:   '#',
+	}
+)
 
 // Render 先提供一个稳定、可测试的文本视图，优先把生命周期打通。
 // 这里不追求视觉完成度，只把当前 workspace / tab / pane / overlay 这些主语义明确展示出来。
@@ -399,7 +418,7 @@ func (r runtimeRenderer) renderScreenShellDialog(state types.AppState, metrics w
 		body = append([]string{fmt.Sprintf("overlay active: %s", state.UI.Overlay.Kind)}, body...)
 	}
 	body = append(body, r.renderScreenShellDialogBody(state)...)
-	box := renderShellBox(metrics.OverlayWidth, fmt.Sprintf("DIALOG[%s]", state.UI.Overlay.Kind), body)
+	box := renderShellBoxWithStyle(metrics.OverlayWidth, fmt.Sprintf("DIALOG[%s]", state.UI.Overlay.Kind), body, emphasisShellBorderStyle)
 	padding := (metrics.ViewportWidth - metrics.OverlayWidth) / 2
 	if padding < 0 {
 		padding = 0
@@ -915,21 +934,27 @@ func (r runtimeRenderer) renderScreenShellPaneLines(state types.AppState, pane t
 }
 
 func renderShellBox(width int, title string, body []string) []string {
+	return renderShellBoxWithStyle(width, title, body, defaultShellBorderStyle)
+}
+
+// renderShellBoxWithStyle 统一收敛 screen shell 下的盒模型边框风格，
+// 让 active pane / modal dialog 可以共享同一套稳定的字符边框规则。
+func renderShellBoxWithStyle(width int, title string, body []string, style shellBorderStyle) []string {
 	if width < 8 {
 		width = 8
 	}
 	innerWidth := width - 2
 	title = truncateLine(title, innerWidth)
-	top := "+ " + title
+	top := string(style.Corner) + " " + title
 	if len(top) < width-1 {
-		top += strings.Repeat("-", width-1-len(top))
+		top += strings.Repeat(string(style.Horizontal), width-1-len(top))
 	}
 	top = truncateLine(top, width-1)
-	lines := []string{top + "+"}
+	lines := []string{top + string(style.Corner)}
 	for _, line := range body {
-		lines = append(lines, "|"+padRight(truncateLine(line, innerWidth), innerWidth)+"|")
+		lines = append(lines, string(style.Vertical)+padRight(truncateLine(line, innerWidth), innerWidth)+string(style.Vertical))
 	}
-	lines = append(lines, "+"+strings.Repeat("-", innerWidth)+"+")
+	lines = append(lines, string(style.Corner)+strings.Repeat(string(style.Horizontal), innerWidth)+string(style.Corner))
 	return lines
 }
 
@@ -938,16 +963,20 @@ func renderScreenShellPaneBox(width int, title string, body []string, active boo
 		width = 8
 	}
 	innerWidth := width - 2
-	lines := []string{"+" + strings.Repeat("-", innerWidth) + "+"}
-	lines = append(lines, "|"+padRight(truncateLine(renderScreenShellPaneTitleLine(title, active), innerWidth), innerWidth)+"|")
+	style := defaultShellBorderStyle
+	if active {
+		style = emphasisShellBorderStyle
+	}
+	lines := []string{string(style.Corner) + strings.Repeat(string(style.Horizontal), innerWidth) + string(style.Corner)}
+	lines = append(lines, string(style.Vertical)+padRight(truncateLine(renderScreenShellPaneTitleLine(title, active), innerWidth), innerWidth)+string(style.Vertical))
 	// overlay 或极短正文时不再额外插入分隔线，避免 screen shell 在对话框场景里继续膨胀高度。
 	if len(body) > 1 {
-		lines = append(lines, "|"+strings.Repeat("-", innerWidth)+"|")
+		lines = append(lines, string(style.Vertical)+strings.Repeat(string(style.Horizontal), innerWidth)+string(style.Vertical))
 	}
 	for _, line := range body {
-		lines = append(lines, "|"+padRight(truncateLine(line, innerWidth), innerWidth)+"|")
+		lines = append(lines, string(style.Vertical)+padRight(truncateLine(line, innerWidth), innerWidth)+string(style.Vertical))
 	}
-	lines = append(lines, "+"+strings.Repeat("-", innerWidth)+"+")
+	lines = append(lines, string(style.Corner)+strings.Repeat(string(style.Horizontal), innerWidth)+string(style.Corner))
 	return lines
 }
 
@@ -1030,15 +1059,19 @@ func renderScreenShellPaneCanvasBox(width int, height int, title string, body []
 	if bodyRows < 1 {
 		bodyRows = 1
 	}
-	lines := []string{"+" + strings.Repeat("-", innerWidth) + "+"}
-	lines = append(lines, "|"+padRight(truncateLine(renderScreenShellPaneTitleLine(title, active), innerWidth), innerWidth)+"|")
+	style := defaultShellBorderStyle
+	if active {
+		style = emphasisShellBorderStyle
+	}
+	lines := []string{string(style.Corner) + strings.Repeat(string(style.Horizontal), innerWidth) + string(style.Corner)}
+	lines = append(lines, string(style.Vertical)+padRight(truncateLine(renderScreenShellPaneTitleLine(title, active), innerWidth), innerWidth)+string(style.Vertical))
 	if useDivider {
-		lines = append(lines, "|"+strings.Repeat("-", innerWidth)+"|")
+		lines = append(lines, string(style.Vertical)+strings.Repeat(string(style.Horizontal), innerWidth)+string(style.Vertical))
 	}
 	for _, line := range clampPaddedLines(body, bodyRows) {
-		lines = append(lines, "|"+padRight(truncateLine(line, innerWidth), innerWidth)+"|")
+		lines = append(lines, string(style.Vertical)+padRight(truncateLine(line, innerWidth), innerWidth)+string(style.Vertical))
 	}
-	lines = append(lines, "+"+strings.Repeat("-", innerWidth)+"+")
+	lines = append(lines, string(style.Corner)+strings.Repeat(string(style.Horizontal), innerWidth)+string(style.Corner))
 	return lines
 }
 

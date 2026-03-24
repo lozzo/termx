@@ -72,7 +72,7 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "PATH[main/shell/tiled:pane-1]") || !strings.Contains(view, "TARGET[api-dev]") || !strings.Contains(view, "FOCUS[tiled]") || !strings.Contains(view, "SLOT[connected]") {
 		t.Fatalf("expected renderer to expose shell path/focus chrome, got:\n%s", view)
 	}
-	if !strings.Contains(view, "||> api-dev [owner] [tiled]") || !strings.Contains(view, "||term-1 running owner") || !strings.Contains(view, "FT[api-dev tiled none]") || !strings.Contains(view, "<p> PANE <t> TAB <w> WS <o> FLOAT <f> PICK <g> GLOBAL") {
+	if !strings.Contains(view, "#> api-dev [owner] [tiled]") || !strings.Contains(view, "#term-1 running owner") || !strings.Contains(view, "FT[api-dev tiled none]") || !strings.Contains(view, "<p> PANE <t> TAB <w> WS <o> FLOAT <f> PICK <g> GLOBAL") {
 		t.Fatalf("expected renderer to expose visible shell frame body/footer, got:\n%s", view)
 	}
 	if !strings.Contains(view, "NOTICE[0]") {
@@ -1247,7 +1247,7 @@ func TestRuntimeRendererRendersTerminalPickerOverlay(t *testing.T) {
 	if !strings.Contains(view, "> [terminal] ops-watch") {
 		t.Fatalf("expected selected picker row in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "DIALOG[terminal_picker]") || !strings.Contains(view, "LIST[picker]") || !strings.Contains(view, "DETAIL[target]") {
+	if !strings.Contains(view, "# DIALOG[terminal_picker]") || !strings.Contains(view, "LIST[picker]") || !strings.Contains(view, "DETAIL[target]") {
 		t.Fatalf("expected structured terminal picker shell dialog in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "F:q=ops term-3") || !strings.Contains(view, "D:ops-watch term-3") {
@@ -1296,7 +1296,7 @@ func TestRuntimeRendererRendersLayoutResolveOverlay(t *testing.T) {
 	if !strings.Contains(view, "> [create_new] create new") {
 		t.Fatalf("expected selected resolve row in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "DIALOG[layout_resolve]") || !strings.Contains(view, "LIST[resolve]") || !strings.Contains(view, "DETAIL[target]") {
+	if !strings.Contains(view, "# DIALOG[layout_resolve]") || !strings.Contains(view, "LIST[resolve]") || !strings.Contains(view, "DETAIL[target]") {
 		t.Fatalf("expected structured layout resolve shell dialog in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "F:pane-1 create_new") || !strings.Contains(view, "D:pane-1") {
@@ -1595,10 +1595,10 @@ func TestRuntimeRendererRendersWireframeSplitWorkbench(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "SPLIT SHELL[vertical 50/50]") || !strings.Contains(view, "LAYOUT[split] root=vertical ratio=50/50 leaves=2") || !strings.Contains(view, "TILED CANVAS[78x12 panes=2]") || !strings.Contains(view, "+-------------------------------------++-------------------------------------+") || !strings.Contains(view, "api-dev [owner]") || !strings.Contains(view, "build-log [owner]") {
+	if !strings.Contains(view, "SPLIT SHELL[vertical 50/50]") || !strings.Contains(view, "LAYOUT[split] root=vertical ratio=50/50 leaves=2") || !strings.Contains(view, "TILED CANVAS[78x12 panes=2]") || !strings.Contains(view, "#> api-dev [owner] [tiled]") || !strings.Contains(view, "|  build-log [owner] [tiled]") {
 		t.Fatalf("expected split shell frame in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "$ npm") || !strings.Contains(view, "ready") || !strings.Contains(view, "term-1 running owner") || !strings.Contains(view, "> tsc") || !strings.Contains(view, "ok") || !strings.Contains(view, "term-2 running owner") {
+	if !strings.Contains(view, "$ npm") || !strings.Contains(view, "ready") || !strings.Contains(view, "#term-1 running owner") || !strings.Contains(view, "> tsc") || !strings.Contains(view, "ok") || !strings.Contains(view, "|term-2 running owner") {
 		t.Fatalf("expected split pane shell canvas rows in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "WORKBENCH[split]") || !strings.Contains(view, "SPLIT[vertical]") || !strings.Contains(view, "RATIO[0.50]") || !strings.Contains(view, "LEAVES[2]") {
@@ -1644,7 +1644,7 @@ func TestRuntimeRendererRendersWireframeFloatingStack(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "FLOAT CANVAS[78x12 windows=2]") || !strings.Contains(view, "STACK[windows] total=2") || !strings.Contains(view, "FOCUS[float-1] api-dev") || !strings.Contains(view, "WINDOW LIST[2]") || !strings.Contains(view, "> [float-1] api-dev | owner | 10,8 30x12 | running | api ready") || !strings.Contains(view, "  [float-2] build-log | owner | 45,14 28x10 | running | build ok") || !strings.Contains(view, "api-dev [owner] [floating]") {
+	if !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "FLOAT CANVAS[78x12 windows=2]") || !strings.Contains(view, "STACK[windows] total=2") || !strings.Contains(view, "FOCUS[float-1] api-dev") || !strings.Contains(view, "WINDOW LIST[2]") || !strings.Contains(view, "> [float-1] api-dev | owner | 10,8 30x12 | running | api ready") || !strings.Contains(view, "  [float-2] build-log | owner | 45,14 28x10 | running | build ok") || !strings.Contains(view, "#> api-dev [owner] [floating]") || !strings.Contains(view, "|term-2 running owner") {
 		t.Fatalf("expected floating shell window summary in rendered view, got:\n%s", view)
 	}
 	if strings.Contains(view, "WINDOW CARD[float-1]") || strings.Contains(view, "WINDOW CARD[float-2]") {
@@ -1879,7 +1879,7 @@ func TestRuntimeRendererRendersWireframeOverlayBackdropAndReturnFocus(t *testing
 	state := runtimeStateWithLayoutResolveTarget()
 
 	view := runtimeRenderer{}.Render(state, nil)
-	if !strings.Contains(view, "DIALOG[layout_resolve]") || !strings.Contains(view, "LIST[resolve]") || !strings.Contains(view, "DETAIL[target]") {
+	if !strings.Contains(view, "# DIALOG[layout_resolve]") || !strings.Contains(view, "LIST[resolve]") || !strings.Contains(view, "DETAIL[target]") {
 		t.Fatalf("expected shell overlay dialog summary, got:\n%s", view)
 	}
 	if !strings.Contains(view, "DEBUG_OVERLAY[layout_resolve]") || !strings.Contains(view, "center=10/58") {
@@ -1901,7 +1901,7 @@ func TestRuntimeRendererRendersHelpOverlay(t *testing.T) {
 	state.UI.Mode = types.ModeState{Active: types.ModePicker}
 
 	view := runtimeRenderer{}.Render(state, nil)
-	if !strings.Contains(view, "SHELL[78x24 overlay=help]") || !strings.Contains(view, "STATE[tiled focus=overlay mode=picker overlay=help]") || !strings.Contains(view, "BODY[tiled t=1 f=0]") || !strings.Contains(view, "MASK[dimmed 78x24]") || !strings.Contains(view, "OVERLAY[help]") || !strings.Contains(view, "RETURN[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "DIALOG[help]") || !strings.Contains(view, "TITLE[help]") || !strings.Contains(view, "RETURN TO[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "FOOTER[esc close]") || !strings.Contains(view, "ACTIONS[esc close]") {
+	if !strings.Contains(view, "SHELL[78x24 overlay=help]") || !strings.Contains(view, "STATE[tiled focus=overlay mode=picker overlay=help]") || !strings.Contains(view, "BODY[tiled t=1 f=0]") || !strings.Contains(view, "MASK[dimmed 78x24]") || !strings.Contains(view, "OVERLAY[help]") || !strings.Contains(view, "RETURN[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "# DIALOG[help]") || !strings.Contains(view, "TITLE[help]") || !strings.Contains(view, "RETURN TO[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "FOOTER[esc close]") || !strings.Contains(view, "ACTIONS[esc close]") {
 		t.Fatalf("expected help overlay shell mask/dialog in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "WS[main]") || !strings.Contains(view, "tabs=1") || !strings.Contains(view, "panes=1") || !strings.Contains(view, "terms=1") || !strings.Contains(view, "float=0") || !strings.Contains(view, "TABS[*shell]") {
