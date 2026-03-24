@@ -1178,7 +1178,7 @@ func renderScreenShellPaneBox(width int, title string, body []string, active boo
 type screenShellCanvas struct {
 	width  int
 	height int
-	rows   [][]byte
+	rows   [][]rune
 }
 
 func newScreenShellCanvas(width int, height int) *screenShellCanvas {
@@ -1188,9 +1188,9 @@ func newScreenShellCanvas(width int, height int) *screenShellCanvas {
 	if height < 1 {
 		height = 1
 	}
-	rows := make([][]byte, height)
+	rows := make([][]rune, height)
 	for y := range rows {
-		rows[y] = []byte(strings.Repeat(" ", width))
+		rows[y] = []rune(strings.Repeat(" ", width))
 	}
 	return &screenShellCanvas{
 		width:  width,
@@ -1208,12 +1208,13 @@ func (c *screenShellCanvas) stampLines(x int, y int, lines []string) {
 		if targetY < 0 || targetY >= c.height {
 			continue
 		}
-		for columnIndex := 0; columnIndex < len(line); columnIndex++ {
+		runes := []rune(line)
+		for columnIndex := 0; columnIndex < len(runes); columnIndex++ {
 			targetX := x + columnIndex
 			if targetX < 0 || targetX >= c.width {
 				continue
 			}
-			c.rows[targetY][targetX] = line[columnIndex]
+			c.rows[targetY][targetX] = runes[columnIndex]
 		}
 	}
 }

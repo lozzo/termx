@@ -335,11 +335,7 @@ func (r modernScreenShellRenderer) renderPanePreview(terminalID types.TerminalID
 	return ""
 }
 
-func (r modernScreenShellRenderer) renderModernCanvasPaneTitle(state types.AppState, tab types.TabState, pane types.PaneState) string {
-	role := renderScreenShellPaneCardRole(state, pane)
-	if role == "" {
-		role = string(pane.SlotState)
-	}
+func (r modernScreenShellRenderer) renderModernCanvasPaneTitle(state types.AppState, pane types.PaneState) string {
 	title := renderPaneTitle(state, pane)
 	if pane.Kind == types.PaneKindFloating {
 		if pane.SlotState != types.PaneSlotConnected {
@@ -348,21 +344,63 @@ func (r modernScreenShellRenderer) renderModernCanvasPaneTitle(state types.AppSt
 				title = string(pane.ID)
 			}
 		}
-		zIndex, zTotal := renderModernFloatingZ(state, pane)
-		if zIndex > 0 && zTotal > 0 {
-			return fmt.Sprintf("%s [z%d]", title, zIndex)
-		}
-		return fmt.Sprintf("%s [float]", title)
 	}
-	kind := safePaneKind(pane.Kind)
-	if pane.ID == tab.ActivePaneID {
-		return fmt.Sprintf("%s [%s] [%s]", title, role, kind)
-	}
-	return fmt.Sprintf("%s [%s] [%s]", title, role, kind)
+	return title
 }
 
 func (r modernScreenShellRenderer) renderModernCanvasPaneLines(state types.AppState, pane types.PaneState, overlayActive bool, maxRows int) []string {
 	return runtimeRenderer{Screens: r.Screens}.renderScreenShellPaneLines(state, pane, overlayActive, maxRows)
+}
+
+func (r modernScreenShellRenderer) renderModernCanvasPaneMeta(state types.AppState, pane types.PaneState) string {
+	parts := make([]string, 0, 4)
+	switch pane.SlotState {
+	case types.PaneSlotConnected:
+		stateToken := "● run"
+		if pane.TerminalID != "" {
+			if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok {
+				switch terminal.State {
+				case types.TerminalRunStateExited:
+					stateToken = "○ exit"
+				case types.TerminalRunStateStopped:
+					stateToken = "○ stop"
+				default:
+					stateToken = "● run"
+				}
+			}
+		}
+		parts = append(parts, stateToken)
+		role := renderModernCanvasPaneRoleToken(state, pane)
+		if role != "" {
+			parts = append(parts, role)
+		}
+	case types.PaneSlotWaiting:
+		parts = append(parts, "◌ wait")
+	case types.PaneSlotExited:
+		parts = append(parts, "○ exit")
+	default:
+		parts = append(parts, "○ empty")
+	}
+	if pane.Kind == types.PaneKindFloating {
+		zIndex, zTotal := renderModernFloatingZ(state, pane)
+		if zIndex > 0 && zTotal > 0 {
+			parts = append(parts, fmt.Sprintf("◫%d", zIndex))
+		} else {
+			parts = append(parts, "◫ float")
+		}
+	}
+	return strings.Join(parts, "  ")
+}
+
+func renderModernCanvasPaneRoleToken(state types.AppState, pane types.PaneState) string {
+	switch renderScreenShellPaneCardRole(state, pane) {
+	case "owner":
+		return "owner"
+	case "follower":
+		return "follow"
+	default:
+		return ""
+	}
 }
 
 func (r modernScreenShellRenderer) renderSplitWorkbench(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, tiledPaneIDs []types.PaneID, floatingPaneIDs []types.PaneID, metrics wireframeMetrics, width, height int) string {
@@ -400,10 +438,11 @@ func (r modernScreenShellRenderer) renderWorkbenchCanvasLines(state types.AppSta
 				continue
 			}
 			bodyRows := renderScreenShellPaneCanvasBodyRows(rect.H)
-			box := renderScreenShellPaneCanvasBox(
+			box := renderModernCanvasPaneBox(
 				rect.W,
 				rect.H,
-				r.renderModernCanvasPaneTitle(state, tab, targetPane),
+				r.renderModernCanvasPaneTitle(state, targetPane),
+				r.renderModernCanvasPaneMeta(state, targetPane),
 				r.renderModernCanvasPaneLines(state, targetPane, overlayActive, bodyRows),
 				paneID == tab.ActivePaneID,
 			)
@@ -417,16 +456,70 @@ func (r modernScreenShellRenderer) renderWorkbenchCanvasLines(state types.AppSta
 		}
 		rect := normalizeFloatingCanvasRect(targetPane.Rect, metrics.ViewportWidth, metrics.ViewportHeight, canvasHeight)
 		bodyRows := renderScreenShellPaneCanvasBodyRows(rect.H)
-		box := renderScreenShellPaneCanvasBox(
+		box := renderModernCanvasPaneBox(
 			rect.W,
 			rect.H,
-			r.renderModernCanvasPaneTitle(state, tab, targetPane),
+			r.renderModernCanvasPaneTitle(state, targetPane),
+			r.renderModernCanvasPaneMeta(state, targetPane),
 			r.renderModernCanvasPaneLines(state, targetPane, overlayActive, bodyRows),
 			paneID == tab.ActivePaneID,
 		)
 		canvas.stampLines(rect.X, rect.Y, box)
 	}
 	return canvas.lines()
+}
+
+func renderModernCanvasPaneBox(width int, height int, title string, meta string, body []string, active bool) []string {
+	if width < 12 {
+		width = 12
+	}
+	if height < 4 {
+		height = 4
+	}
+	topLeft, topRight, bottomLeft, bottomRight := "┌", "┐", "└", "┘"
+	vertical, horizontal := "│", "─"
+	if active {
+		topLeft, topRight, bottomLeft, bottomRight = "┏", "┓", "┗", "┛"
+		vertical, horizontal = "┃", "━"
+	}
+	innerWidth := width - 2
+	bodyRows := max(1, height-2)
+	lines := []string{renderModernCanvasBorderLine(topLeft, topRight, horizontal, title, meta, innerWidth)}
+	for _, line := range clampPaddedLines(body, bodyRows) {
+		lines = append(lines, vertical+padModernCanvasLine(line, innerWidth)+vertical)
+	}
+	lines = append(lines, bottomLeft+strings.Repeat(horizontal, innerWidth)+bottomRight)
+	return lines
+}
+
+func renderModernCanvasBorderLine(left, right, horizontal, title, meta string, innerWidth int) string {
+	if innerWidth < 1 {
+		return left + right
+	}
+	label := " " + strings.TrimSpace(title)
+	if meta != "" {
+		label += "  " + strings.TrimSpace(meta) + " "
+	} else {
+		label += " "
+	}
+	label = xansi.Truncate(label, innerWidth, "…")
+	fill := innerWidth - xansi.StringWidth(label)
+	if fill < 0 {
+		fill = 0
+	}
+	return left + label + strings.Repeat(horizontal, fill) + right
+}
+
+func padModernCanvasLine(line string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	line = xansi.Truncate(line, width, "…")
+	padding := width - xansi.StringWidth(line)
+	if padding < 0 {
+		padding = 0
+	}
+	return line + strings.Repeat(" ", padding)
 }
 
 // renderSplitCanvasNode 递归落地 split 树，让默认产品态直接显示多 pane 盒模型。
