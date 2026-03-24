@@ -1925,6 +1925,134 @@ func TestE2ERunScenarioRestartProgramExitedTerminal(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioFloatingModeMovesFocusToAdjacentFloatingPane(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTwoFloatingTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlO},
+				{Type: tea.KeyRunes, Runes: []rune("l")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "pane: float-2") || !strings.Contains(view, "focus_layer: floating") || !strings.Contains(view, "tab_layer: floating") || !strings.Contains(view, "terminal: term-2") || !strings.Contains(view, "title: build-log") || strings.Contains(view, "mode:") {
+				t.Fatalf("expected floating mode to move focus to adjacent float-2, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected floating mode runtime scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioFloatingModeCreateOpensLayoutResolve(t *testing.T) {
+	client := &stubRunClient{}
+	initial := connectedRunAppState()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlO},
+				{Type: tea.KeyRunes, Runes: []rune("n")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "pane: float-1") || !strings.Contains(view, "pane_kind: floating") || !strings.Contains(view, "slot: waiting") || !strings.Contains(view, "overlay: layout_resolve") || !strings.Contains(view, "layout_resolve_bar: pane=float-1") {
+				t.Fatalf("expected floating create flow to open layout resolve on float-1, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected floating create runtime scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioFloatingModeCreateThenCreateTerminalConnectsFloatingPane(t *testing.T) {
+	client := &stubRunClient{}
+	initial := connectedRunAppState()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlO},
+				{Type: tea.KeyRunes, Runes: []rune("n")},
+				{Type: tea.KeyDown},
+				{Type: tea.KeyEnter},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "pane: float-1") || !strings.Contains(view, "focus_layer: floating") || !strings.Contains(view, "tab_layer: floating") || !strings.Contains(view, "slot: connected") || !strings.Contains(view, "terminal: term-created-1") || strings.Contains(view, "layout_resolve_rows:") {
+				t.Fatalf("expected floating create-new flow to connect created terminal into float-1, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected floating create-new runtime scenario to succeed, got %v", err)
+	}
+	if len(client.createCalls) != 1 {
+		t.Fatalf("expected one create call from floating create-new flow, got %d", len(client.createCalls))
+	}
+}
+
 func TestE2ERunScenarioWorkspacePickerCollapseHidesChildren(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithWorkspacePickerTarget()
@@ -5825,6 +5953,59 @@ func runtimeStateWithFloatingActivePane() types.AppState {
 		TerminalID:       types.TerminalID("term-1"),
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-float")},
 		OwnerPaneID:      types.PaneID("pane-float"),
+	}
+	return state
+}
+
+func runtimeStateWithTwoFloatingTargets() types.AppState {
+	state := connectedRunAppState()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	delete(tab.Panes, types.PaneID("pane-1"))
+	tab.Panes[types.PaneID("float-1")] = types.PaneState{
+		ID:         types.PaneID("float-1"),
+		Kind:       types.PaneKindFloating,
+		SlotState:  types.PaneSlotConnected,
+		TerminalID: types.TerminalID("term-1"),
+	}
+	tab.Panes[types.PaneID("float-2")] = types.PaneState{
+		ID:         types.PaneID("float-2"),
+		Kind:       types.PaneKindFloating,
+		SlotState:  types.PaneSlotConnected,
+		TerminalID: types.TerminalID("term-2"),
+	}
+	tab.FloatingOrder = []types.PaneID{types.PaneID("float-1"), types.PaneID("float-2")}
+	tab.ActivePaneID = types.PaneID("float-1")
+	tab.ActiveLayer = types.FocusLayerFloating
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.UI.Focus = types.FocusState{
+		Layer:       types.FocusLayerFloating,
+		WorkspaceID: types.WorkspaceID("ws-1"),
+		TabID:       types.TabID("tab-1"),
+		PaneID:      types.PaneID("float-1"),
+	}
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:      types.TerminalID("term-1"),
+		Name:    "api-dev",
+		State:   types.TerminalRunStateRunning,
+		Visible: true,
+	}
+	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
+		ID:      types.TerminalID("term-2"),
+		Name:    "build-log",
+		State:   types.TerminalRunStateRunning,
+		Visible: true,
+	}
+	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-1"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("float-1")},
+		OwnerPaneID:      types.PaneID("float-1"),
+	}
+	state.Domain.Connections[types.TerminalID("term-2")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-2"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("float-2")},
+		OwnerPaneID:      types.PaneID("float-2"),
 	}
 	return state
 }

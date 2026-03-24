@@ -231,6 +231,10 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyTabFocusMove(&result.State, intentValue)
 	case intent.CreateTabIntent:
 		applyCreateTab(&result.State)
+	case intent.FloatingFocusMoveIntent:
+		applyFloatingFocusMove(&result.State, intentValue)
+	case intent.CreateFloatingPaneIntent:
+		applyCreateFloatingPane(&result.State)
 	case intent.ActivateModeIntent:
 		applyActivateMode(&result.State, intentValue)
 	case intent.ModeTimedOutIntent:
@@ -1069,6 +1073,106 @@ func applyCreateTab(state *types.AppState) {
 		Layer:       types.FocusLayerTiled,
 		WorkspaceID: workspace.ID,
 		TabID:       tabID,
+		PaneID:      paneID,
+	}
+	applyOpenLayoutResolve(state, intent.OpenLayoutResolveIntent{PaneID: paneID})
+}
+
+// applyFloatingFocusMove 先收口 floating layer 的最小导航：
+// 只在当前 tab 的 FloatingOrder 上移动焦点，不引入拖拽、层级和 z-index 语义。
+func applyFloatingFocusMove(state *types.AppState, in intent.FloatingFocusMoveIntent) {
+	defer func() {
+		state.UI.Mode = types.ModeState{Active: types.ModeNone}
+	}()
+	workspaceID := state.UI.Focus.WorkspaceID
+	if workspaceID == "" {
+		workspaceID = state.Domain.ActiveWorkspaceID
+	}
+	workspace, ok := state.Domain.Workspaces[workspaceID]
+	if !ok {
+		return
+	}
+	tabID := workspace.ActiveTabID
+	if tabID == "" {
+		tabID = state.UI.Focus.TabID
+	}
+	tab, ok := workspace.Tabs[tabID]
+	if !ok || len(tab.FloatingOrder) == 0 {
+		return
+	}
+	currentIndex := -1
+	if tab.ActiveLayer == types.FocusLayerFloating {
+		currentIndex = slices.Index(tab.FloatingOrder, tab.ActivePaneID)
+	}
+	if currentIndex < 0 {
+		if in.Delta > 0 {
+			currentIndex = 0
+		} else if in.Delta < 0 {
+			currentIndex = len(tab.FloatingOrder) - 1
+		} else {
+			return
+		}
+	} else {
+		currentIndex += in.Delta
+		if currentIndex < 0 || currentIndex >= len(tab.FloatingOrder) {
+			return
+		}
+	}
+	nextPaneID := tab.FloatingOrder[currentIndex]
+	if _, ok := tab.Panes[nextPaneID]; !ok {
+		return
+	}
+	tab.ActivePaneID = nextPaneID
+	tab.ActiveLayer = types.FocusLayerFloating
+	workspace.ActiveTabID = tab.ID
+	workspace.Tabs[tab.ID] = tab
+	state.Domain.ActiveWorkspaceID = workspace.ID
+	state.Domain.Workspaces[workspace.ID] = workspace
+	state.UI.Focus = types.FocusState{
+		Layer:       types.FocusLayerFloating,
+		WorkspaceID: workspace.ID,
+		TabID:       tab.ID,
+		PaneID:      nextPaneID,
+	}
+}
+
+// applyCreateFloatingPane 为 floating mode 提供最小可用创建路径：
+// 先落一个 waiting floating pane，再直接切进 layout resolve 继续选择连接方式。
+func applyCreateFloatingPane(state *types.AppState) {
+	state.UI.Mode = types.ModeState{Active: types.ModeNone}
+	workspaceID := state.UI.Focus.WorkspaceID
+	if workspaceID == "" {
+		workspaceID = state.Domain.ActiveWorkspaceID
+	}
+	workspace, ok := state.Domain.Workspaces[workspaceID]
+	if !ok {
+		return
+	}
+	tabID := workspace.ActiveTabID
+	if tabID == "" {
+		tabID = state.UI.Focus.TabID
+	}
+	tab, ok := workspace.Tabs[tabID]
+	if !ok {
+		return
+	}
+	paneID := nextFloatingPaneID(tab)
+	tab.Panes[paneID] = types.PaneState{
+		ID:        paneID,
+		Kind:      types.PaneKindFloating,
+		SlotState: types.PaneSlotWaiting,
+	}
+	tab.FloatingOrder = append(tab.FloatingOrder, paneID)
+	tab.ActivePaneID = paneID
+	tab.ActiveLayer = types.FocusLayerFloating
+	workspace.ActiveTabID = tab.ID
+	workspace.Tabs[tab.ID] = tab
+	state.Domain.ActiveWorkspaceID = workspace.ID
+	state.Domain.Workspaces[workspace.ID] = workspace
+	state.UI.Focus = types.FocusState{
+		Layer:       types.FocusLayerFloating,
+		WorkspaceID: workspace.ID,
+		TabID:       tab.ID,
 		PaneID:      paneID,
 	}
 	applyOpenLayoutResolve(state, intent.OpenLayoutResolveIntent{PaneID: paneID})

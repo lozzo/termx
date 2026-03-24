@@ -1043,6 +1043,54 @@ func TestReducerCreateTerminalInActivePaneNoopsForConnectedPane(t *testing.T) {
 	}
 }
 
+func TestReducerFloatingFocusMoveSwitchesToAdjacentFloatingPaneAndClearsMode(t *testing.T) {
+	reducer := New()
+	state := newFloatingPaneStackAppState()
+	state.UI.Mode = types.ModeState{Active: types.ModeFloating}
+
+	result := reducer.Reduce(state, intent.FloatingFocusMoveIntent{Delta: 1})
+
+	tab := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
+	if tab.ActivePaneID != types.PaneID("float-2") || tab.ActiveLayer != types.FocusLayerFloating {
+		t.Fatalf("expected floating move to switch to float-2, got %+v", tab)
+	}
+	if result.State.UI.Focus.Layer != types.FocusLayerFloating || result.State.UI.Focus.PaneID != types.PaneID("float-2") {
+		t.Fatalf("expected focus to land on float-2, got %+v", result.State.UI.Focus)
+	}
+	if result.State.UI.Mode.Active != types.ModeNone {
+		t.Fatalf("expected floating mode to clear after one move, got %+v", result.State.UI.Mode)
+	}
+}
+
+func TestReducerCreateFloatingPaneCreatesWaitingFloatingPaneAndOpensLayoutResolve(t *testing.T) {
+	reducer := New()
+	state := newConnectedAppState()
+	state.UI.Mode = types.ModeState{Active: types.ModeFloating}
+
+	result := reducer.Reduce(state, intent.CreateFloatingPaneIntent{})
+
+	tab := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
+	if tab.ActivePaneID != types.PaneID("float-1") || tab.ActiveLayer != types.FocusLayerFloating {
+		t.Fatalf("expected new floating pane to become active, got %+v", tab)
+	}
+	if len(tab.FloatingOrder) != 1 || tab.FloatingOrder[0] != types.PaneID("float-1") {
+		t.Fatalf("expected floating order to append float-1, got %+v", tab.FloatingOrder)
+	}
+	pane := tab.Panes[types.PaneID("float-1")]
+	if pane.ID != types.PaneID("float-1") || pane.Kind != types.PaneKindFloating || pane.SlotState != types.PaneSlotWaiting || pane.TerminalID != "" {
+		t.Fatalf("expected create floating to produce waiting floating pane, got %+v", pane)
+	}
+	if result.State.UI.Overlay.Kind != types.OverlayLayoutResolve {
+		t.Fatalf("expected create floating to open layout resolve, got %q", result.State.UI.Overlay.Kind)
+	}
+	if result.State.UI.Focus.Layer != types.FocusLayerOverlay || result.State.UI.Focus.PaneID != types.PaneID("float-1") {
+		t.Fatalf("expected focus to move into floating layout resolve, got %+v", result.State.UI.Focus)
+	}
+	if result.State.UI.Mode.Active != types.ModePicker {
+		t.Fatalf("expected create floating to hand off into picker mode, got %+v", result.State.UI.Mode)
+	}
+}
+
 func TestReducerConnectTerminalReplacesOldConnectionSnapshot(t *testing.T) {
 	reducer := New()
 	state := newConnectedAppState()
@@ -1838,6 +1886,56 @@ func newConnectedAppState() types.AppState {
 		TerminalID:       types.TerminalID("term-1"),
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1")},
 		OwnerPaneID:      types.PaneID("pane-1"),
+	}
+	return state
+}
+
+func newFloatingPaneStackAppState() types.AppState {
+	state := newConnectedAppState()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	delete(tab.Panes, types.PaneID("pane-1"))
+	tab.Panes[types.PaneID("float-1")] = types.PaneState{
+		ID:         types.PaneID("float-1"),
+		Kind:       types.PaneKindFloating,
+		SlotState:  types.PaneSlotConnected,
+		TerminalID: types.TerminalID("term-1"),
+	}
+	tab.Panes[types.PaneID("float-2")] = types.PaneState{
+		ID:         types.PaneID("float-2"),
+		Kind:       types.PaneKindFloating,
+		SlotState:  types.PaneSlotConnected,
+		TerminalID: types.TerminalID("term-2"),
+	}
+	tab.FloatingOrder = []types.PaneID{types.PaneID("float-1"), types.PaneID("float-2")}
+	tab.ActivePaneID = types.PaneID("float-1")
+	tab.ActiveLayer = types.FocusLayerFloating
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.UI.Focus = types.FocusState{
+		Layer:       types.FocusLayerFloating,
+		WorkspaceID: types.WorkspaceID("ws-1"),
+		TabID:       types.TabID("tab-1"),
+		PaneID:      types.PaneID("float-1"),
+	}
+	term1 := state.Domain.Terminals[types.TerminalID("term-1")]
+	term1.Visible = true
+	state.Domain.Terminals[types.TerminalID("term-1")] = term1
+	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
+		ID:      types.TerminalID("term-2"),
+		Name:    "build-log",
+		State:   types.TerminalRunStateRunning,
+		Visible: true,
+	}
+	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-1"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("float-1")},
+		OwnerPaneID:      types.PaneID("float-1"),
+	}
+	state.Domain.Connections[types.TerminalID("term-2")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-2"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("float-2")},
+		OwnerPaneID:      types.PaneID("float-2"),
 	}
 	return state
 }

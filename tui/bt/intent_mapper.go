@@ -71,6 +71,9 @@ func (m DefaultIntentMapper) MapKey(state types.AppState, msg tea.KeyMsg) []inte
 	if intents := m.mapTabModeKey(state, msg); len(intents) > 0 {
 		return intents
 	}
+	if intents := m.mapFloatingModeKey(state, msg); len(intents) > 0 {
+		return intents
+	}
 	if intents := m.mapGlobalModeKey(state, msg); len(intents) > 0 {
 		return intents
 	}
@@ -135,6 +138,13 @@ func (m DefaultIntentMapper) mapRootKey(state types.AppState, msg tea.KeyMsg) []
 		deadline := m.clock.Now().Add(m.prefixTimeout)
 		return []intent.Intent{intent.ActivateModeIntent{
 			Mode:       types.ModeTab,
+			Sticky:     false,
+			DeadlineAt: &deadline,
+		}}
+	case "ctrl+o":
+		deadline := m.clock.Now().Add(m.prefixTimeout)
+		return []intent.Intent{intent.ActivateModeIntent{
+			Mode:       types.ModeFloating,
 			Sticky:     false,
 			DeadlineAt: &deadline,
 		}}
@@ -223,6 +233,24 @@ func (m DefaultIntentMapper) mapTabModeKey(state types.AppState, msg tea.KeyMsg)
 		return []intent.Intent{intent.TabFocusMoveIntent{Delta: -1}}
 	case "l", "right":
 		return []intent.Intent{intent.TabFocusMoveIntent{Delta: 1}}
+	case "esc":
+		return []intent.Intent{intent.ActivateModeIntent{Mode: types.ModeNone}}
+	default:
+		return nil
+	}
+}
+
+func (m DefaultIntentMapper) mapFloatingModeKey(state types.AppState, msg tea.KeyMsg) []intent.Intent {
+	if state.UI.Mode.Active != types.ModeFloating {
+		return nil
+	}
+	switch msg.String() {
+	case "n":
+		return []intent.Intent{intent.CreateFloatingPaneIntent{}}
+	case "h", "left":
+		return []intent.Intent{intent.FloatingFocusMoveIntent{Delta: -1}}
+	case "l", "right":
+		return []intent.Intent{intent.FloatingFocusMoveIntent{Delta: 1}}
 	case "esc":
 		return []intent.Intent{intent.ActivateModeIntent{Mode: types.ModeNone}}
 	default:

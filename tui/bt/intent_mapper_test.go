@@ -206,6 +206,43 @@ func TestIntentMapperTabModeNMapsCreateTab(t *testing.T) {
 	}
 }
 
+func TestIntentMapperRootCtrlOArmsFloatingModeAndMapsActions(t *testing.T) {
+	now := time.Date(2026, 3, 23, 12, 0, 0, 0, time.UTC)
+	mapper := NewIntentMapper(Config{
+		Clock:         fixedClock{now: now},
+		PrefixTimeout: 3 * time.Second,
+	})
+
+	intents := mapper.MapKey(newAppStateWithSinglePane(), tea.KeyMsg{Type: tea.KeyCtrlO})
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	activate, ok := intents[0].(intent.ActivateModeIntent)
+	if !ok {
+		t.Fatalf("expected activate mode intent, got %T", intents[0])
+	}
+	if activate.Mode != types.ModeFloating || activate.DeadlineAt == nil || !activate.DeadlineAt.Equal(now.Add(3*time.Second)) {
+		t.Fatalf("unexpected floating mode payload: %+v", activate)
+	}
+
+	state := newAppStateWithSinglePane()
+	state.UI.Mode = types.ModeState{
+		Active:     types.ModeFloating,
+		DeadlineAt: activate.DeadlineAt,
+	}
+	intents = mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	if len(intents) != 1 || intents[0] != (intent.FloatingFocusMoveIntent{Delta: 1}) {
+		t.Fatalf("expected floating focus move intent, got %+v", intents)
+	}
+	intents = mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	if _, ok := intents[0].(intent.CreateFloatingPaneIntent); !ok {
+		t.Fatalf("expected create floating pane intent, got %T", intents[0])
+	}
+}
+
 func TestIntentMapperEmptyPaneBodyKeysMapActions(t *testing.T) {
 	state := newAppStateWithSinglePane()
 	mapper := NewIntentMapper(Config{})

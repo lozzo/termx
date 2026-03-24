@@ -329,6 +329,16 @@ type CreateTabIntent struct{}
 
 func (CreateTabIntent) intentName() string { return "create_tab" }
 
+type FloatingFocusMoveIntent struct {
+	Delta int
+}
+
+func (FloatingFocusMoveIntent) intentName() string { return "floating_focus_move" }
+
+type CreateFloatingPaneIntent struct{}
+
+func (CreateFloatingPaneIntent) intentName() string { return "create_floating_pane" }
+
 type ActivateModeIntent struct {
 	Mode       types.ModeKind
 	Sticky     bool
