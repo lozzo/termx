@@ -688,7 +688,10 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "detail_owner: ") {
 		t.Fatalf("expected manager detail owner in rendered view, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 34 {
+	if !strings.Contains(view, "terminal_manager_actions:") || !strings.Contains(view, "[connect_here] connect here") || !strings.Contains(view, "[new_tab] open in new tab") || !strings.Contains(view, "[floating] open in floating pane") || !strings.Contains(view, "[edit] edit metadata") || !strings.Contains(view, "[acquire_owner] acquire owner") || !strings.Contains(view, "[stop] stop terminal") {
+		t.Fatalf("expected manager actions in rendered view, got:\n%s", view)
+	}
+	if lines := strings.Count(view, "\n") + 1; lines > 40 {
 		t.Fatalf("expected overlay view to remain within compact budget, got %d lines:\n%s", lines, view)
 	}
 }
@@ -746,7 +749,7 @@ func TestRuntimeRendererCompressesBodyWhenOverlayIsActive(t *testing.T) {
 	if strings.Contains(view, "terminal_tags:") {
 		t.Fatalf("expected noncritical terminal detail to be suppressed while overlay is active, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 31 {
+	if lines := strings.Count(view, "\n") + 1; lines > 40 {
 		t.Fatalf("expected overlay-active body to stay tightly compressed, got %d lines:\n%s", lines, view)
 	}
 }

@@ -179,6 +179,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 155. 第一百五十一轮 TDD 已补上 prompt 结构化字段的最小鼠标点击切换
 156. 第一百五十二轮 TDD 已补上 picker / resolve 非当前行的单击直达默认动作
 157. 第一百五十三轮 TDD 已补上 terminal manager create row 的单击直达创建
+158. 第一百五十四轮 TDD 已补上 terminal manager 详情动作的可点击操作行
 
 对应文档：
 
@@ -228,6 +229,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - prompt 结构化字段的鼠标点击切换
 - picker / resolve 非当前行的单击直达默认动作
 - terminal manager create row 的单击直达创建
+- terminal manager 详情动作的可点击操作行
 - `WorkspacePickerMoveIntent`
 - `WorkspacePickerAppendQueryIntent`
 - `WorkspacePickerBackspaceIntent`

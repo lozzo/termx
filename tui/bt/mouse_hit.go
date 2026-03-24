@@ -130,6 +130,9 @@ func mapTerminalManagerMouseClick(state types.AppState, msg tea.MouseMsg, view s
 	if !ok || manager == nil {
 		return nil
 	}
+	if intents := mapTerminalManagerActionClick(msg, view); len(intents) > 0 {
+		return intents
+	}
 	rows := manager.VisibleRows()
 	selected, hasSelection := manager.SelectedRow()
 	if !hasSelection {
@@ -170,6 +173,30 @@ func mapTerminalManagerMouseClick(state types.AppState, msg tea.MouseMsg, view s
 		return []intent.Intent{intent.TerminalManagerConnectHereIntent{}}
 	}
 	return []intent.Intent{intent.TerminalManagerMoveIntent{Delta: delta}}
+}
+
+func mapTerminalManagerActionClick(msg tea.MouseMsg, view string) []intent.Intent {
+	actionRows := terminalmanagerdomain.ActionRows()
+	targetIndex, ok := overlayClickedRowIndex(view, "terminal_manager_actions:", msg.Y, len(actionRows), len(actionRows), 0)
+	if !ok {
+		return nil
+	}
+	switch actionRows[targetIndex].ID {
+	case terminalmanagerdomain.ActionConnectHere:
+		return []intent.Intent{intent.TerminalManagerConnectHereIntent{}}
+	case terminalmanagerdomain.ActionNewTab:
+		return []intent.Intent{intent.TerminalManagerConnectInNewTabIntent{}}
+	case terminalmanagerdomain.ActionFloatingPane:
+		return []intent.Intent{intent.TerminalManagerConnectInFloatingPaneIntent{}}
+	case terminalmanagerdomain.ActionEditMetadata:
+		return []intent.Intent{intent.TerminalManagerEditMetadataIntent{}}
+	case terminalmanagerdomain.ActionAcquireOwner:
+		return []intent.Intent{intent.TerminalManagerAcquireOwnerIntent{}}
+	case terminalmanagerdomain.ActionStop:
+		return []intent.Intent{intent.TerminalManagerStopIntent{}}
+	default:
+		return nil
+	}
 }
 
 func mapPromptMouseClick(state types.AppState, msg tea.MouseMsg, view string) []intent.Intent {

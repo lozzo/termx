@@ -685,6 +685,14 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 			}
 			lines = append(lines, compactDetailLine(meta...))
 		}
+		actionRows := terminalmanagerdomain.ActionRows()
+		lines = append(lines, compactLine(
+			"terminal_manager_actions:",
+			fmt.Sprintf("terminal_manager_actions_rendered: %d", len(actionRows)),
+		))
+		for _, action := range actionRows {
+			lines = append(lines, fmt.Sprintf("  [%s] %s", action.ID, action.Label))
+		}
 	}
 	return lines
 }

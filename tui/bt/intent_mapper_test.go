@@ -546,6 +546,49 @@ func TestIntentMapperTerminalManagerMouseClickOnCreateRowMovesAndSubmits(t *test
 	}
 }
 
+func TestIntentMapperTerminalManagerMouseClickOnActionRowsMapsManagerActions(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+	state := newAppStateWithTerminalManagerTargets()
+	view := strings.Join([]string{
+		"termx",
+		"terminal_manager_actions: | terminal_manager_actions_rendered: 6",
+		"  [connect_here] connect here",
+		"  [new_tab] open in new tab",
+		"  [floating] open in floating pane",
+		"  [edit] edit metadata",
+		"  [acquire_owner] acquire owner",
+		"  [stop] stop terminal",
+	}, "\n")
+
+	cases := []struct {
+		prefix string
+		want   any
+	}{
+		{prefix: "  [connect_here]", want: intent.TerminalManagerConnectHereIntent{}},
+		{prefix: "  [new_tab]", want: intent.TerminalManagerConnectInNewTabIntent{}},
+		{prefix: "  [floating]", want: intent.TerminalManagerConnectInFloatingPaneIntent{}},
+		{prefix: "  [edit]", want: intent.TerminalManagerEditMetadataIntent{}},
+		{prefix: "  [acquire_owner]", want: intent.TerminalManagerAcquireOwnerIntent{}},
+		{prefix: "  [stop]", want: intent.TerminalManagerStopIntent{}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.prefix, func(t *testing.T) {
+			intents := mapper.MapMouse(state, tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      findLineIndexWithPrefix(view, tc.prefix),
+			}, view)
+			if len(intents) != 1 {
+				t.Fatalf("expected one intent, got %d", len(intents))
+			}
+			if intents[0] != tc.want {
+				t.Fatalf("expected %+v, got %+v", tc.want, intents[0])
+			}
+		})
+	}
+}
+
 func TestIntentMapperTerminalPickerMapsNavigationAndQuery(t *testing.T) {
 	mapper := NewIntentMapper(Config{})
 	state := newAppStateWithSinglePane()
