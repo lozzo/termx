@@ -39,6 +39,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把现代 workbench / overlay 的层次感往前收：pane card 现在补上 `header/footer` 视觉条与 active/standby 操作提示，floating summary 会显式带 `top window`，overlay 打开时也会保留 `Backdrop workbench` 预览，避免 modal 直接切断当前工作台上下文
 - 本轮继续把 modern pane 的 terminal 区往真实 screen 组件推进：connected pane 不再只渲染裸 preview 文本，而是统一改成 `Screen` 区块，显式带 `rows x/y` 摘要、frame body 与 unavailable 占位；single / split / floating 和默认现代路径已同步锁住
 - 本轮继续把 focus 反馈往产品态推进：modern screen meta 现在显式显示 `primary/secondary` 焦点层级，floating workbench summary 会同时带 `active pane / top window` 标识，window deck card 也会显式区分 `active window / top window`，overlay backdrop 额外补上 `focus paused` 提示
+- 本轮继续把 modern overlay/modal 壳层往产品态推进：统一补上 `Context / State / Footer` chrome，`manager / workspace picker / terminal picker / layout resolve / prompt` 都会显式显示 return/selection/active 状态与统一 footer action panel，modal 外壳结构开始稳定
 
 ---
 
@@ -249,6 +250,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 201. 第一百九十七轮 TDD 已补上现代 pane header/footer 条、floating top-window 摘要、overlay backdrop workbench 预览，并完成 shell-only / default-run / 全量回归闭环
 202. 第一百九十八轮 TDD 已补上 modern pane `Screen` 组件、rows 摘要、frame body 与 unavailable 占位，并完成 shell-only / default-run / 全量回归闭环
 203. 第一百九十九轮 TDD 已补上 modern focus feedback、floating deck active/top 联动与 overlay backdrop paused 提示，并完成 shell-only / default-run / 全量回归闭环
+204. 第二百轮 TDD 已补上 modern overlay/modal 的统一 `Context / State / Footer` chrome，并完成 shell-only / default-run / 全量回归闭环
 
 对应文档：
 

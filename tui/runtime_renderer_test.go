@@ -255,7 +255,7 @@ func TestRuntimeRendererShellOnlyOverlayKeepsPaneContext(t *testing.T) {
 	if !strings.Contains(stripped, "workspace main") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "mode picker") {
 		t.Fatalf("expected shell-only overlay renderer to keep current pane context, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "return to tiled:ws-1/tab-1/pane-1") {
+	if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") {
 		t.Fatalf("expected shell-only overlay renderer to keep help dialog visible, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "overlay help") || !strings.Contains(stripped, "mode picker") || !strings.Contains(stripped, "Esc close") {
@@ -522,8 +522,11 @@ func TestRuntimeRendererShellOnlyRendersStructuredTerminalManagerOverlay(t *test
 
 	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Visible terminals") || !strings.Contains(stripped, "Detail panel") || !strings.Contains(stripped, "Action bar") {
+	if !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "state overlay terminal_manager  •  focus overlay") || !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Visible terminals") || !strings.Contains(stripped, "Detail panel") || !strings.Contains(stripped, "Action bar") {
 		t.Fatalf("expected shell-only terminal manager overlay to render structured sections, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "selected api-dev") {
+		t.Fatalf("expected shell-only terminal manager overlay to render overlay context chrome, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "[terminal] api-dev") || !strings.Contains(stripped, "[create] + new terminal") || !strings.Contains(stripped, "running  •  visible") {
 		t.Fatalf("expected shell-only terminal manager overlay to render terminal rows, got:\n%s", view)
@@ -573,10 +576,10 @@ func TestRuntimeRendererShellOnlyRendersStructuredPromptOverlay(t *testing.T) {
 
 	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Fields") || !strings.Contains(stripped, "Actions") || !strings.Contains(stripped, "Name: api-dev") {
+	if !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "state overlay prompt  •  focus prompt") || !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "Fields") || !strings.Contains(stripped, "Actions") || !strings.Contains(stripped, "Name: api-dev") {
 		t.Fatalf("expected shell-only prompt overlay to render field sections, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "terminal term-1") || !strings.Contains(stripped, "Tags: env=dev") {
+	if !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "active name") || !strings.Contains(stripped, "terminal term-1") || !strings.Contains(stripped, "Tags: env=dev") {
 		t.Fatalf("expected shell-only prompt overlay to keep secondary field visible, got:\n%s", view)
 	}
 }
@@ -596,10 +599,10 @@ func TestRuntimeRendererShellOnlyRendersStructuredTerminalPickerOverlay(t *testi
 
 	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Detail panel") || !strings.Contains(stripped, "Results panel") || !strings.Contains(stripped, "Action bar") {
+	if !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "state overlay terminal_picker  •  focus overlay") || !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "Selection") || !strings.Contains(stripped, "Detail panel") || !strings.Contains(stripped, "Results panel") || !strings.Contains(stripped, "Action bar") {
 		t.Fatalf("expected shell-only terminal picker overlay to render structured sections, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "[terminal] build-log") || !strings.Contains(stripped, "running  •  hidden") || !strings.Contains(stripped, "cmd tail -f build.log") || !strings.Contains(stripped, "tags group=build") || !strings.Contains(stripped, "Enter connect") {
+	if !strings.Contains(stripped, "selected build-log") || !strings.Contains(stripped, "[terminal] build-log") || !strings.Contains(stripped, "running  •  hidden") || !strings.Contains(stripped, "cmd tail -f build.log") || !strings.Contains(stripped, "tags group=build") || !strings.Contains(stripped, "Enter connect") {
 		t.Fatalf("expected shell-only terminal picker overlay to render selected detail, got:\n%s", view)
 	}
 }
@@ -620,8 +623,11 @@ func TestRuntimeRendererShellOnlyRendersStructuredWorkspacePickerTarget(t *testi
 
 	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Target panel") || !strings.Contains(stripped, "Tree panel") || !strings.Contains(stripped, "Action bar") || !strings.Contains(stripped, "workspace ops  (ws-2)") || !strings.Contains(stripped, "[-] [workspace] ops") || !strings.Contains(stripped, "[tab] logs") {
+	if !strings.Contains(stripped, "Context") || !strings.Contains(stripped, "state overlay workspace_picker  •  focus overlay") || !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "Target panel") || !strings.Contains(stripped, "Tree panel") || !strings.Contains(stripped, "Action bar") || !strings.Contains(stripped, "workspace ops  (ws-2)") || !strings.Contains(stripped, "[-] [workspace] ops") || !strings.Contains(stripped, "[tab] logs") {
 		t.Fatalf("expected shell-only workspace picker overlay to render selected target detail, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "selected ops  •  workspace") {
+		t.Fatalf("expected shell-only workspace picker overlay to render overlay context selection, got:\n%s", view)
 	}
 }
 

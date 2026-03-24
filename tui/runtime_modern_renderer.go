@@ -859,14 +859,101 @@ func (r modernScreenShellRenderer) renderOverlayBackdrop(theme modernShellTheme,
 func (r modernScreenShellRenderer) renderOverlayPanel(theme modernShellTheme, state types.AppState, width int) string {
 	title := overlayTitle(state.UI.Overlay.Kind)
 	lines := []string{theme.modalTitle.Render(title)}
-	if returnFocus := renderWireframeReturnFocus(state.UI.Overlay.ReturnFocus); returnFocus != "" {
-		lines = append(lines, theme.modalMeta.Render("return to "+returnFocus))
+	if chrome := renderModernOverlayChrome(theme, state, width-6); len(chrome) > 0 {
+		lines = append(lines, chrome...)
 	}
-	lines = append(lines, r.renderOverlayPanelBody(theme, state.UI.Overlay, width-6)...)
-	if footer := renderModernOverlayFooter(theme, state.UI.Overlay.Kind, width-6); footer != "" {
+	if body := r.renderOverlayPanelBody(theme, state.UI.Overlay, width-6); len(body) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, body...)
+	}
+	if footer := renderModernOverlayFooterPanel(theme, state, width-6); footer != "" {
 		lines = append(lines, "", footer)
 	}
 	return theme.modalPanel.Width(width - 2).Render(strings.Join(lines, "\n"))
+}
+
+func renderModernOverlayChrome(theme modernShellTheme, state types.AppState, width int) []string {
+	lines := []string{theme.modalMeta.Render("Context")}
+	if returnFocus := renderWireframeReturnFocus(state.UI.Overlay.ReturnFocus); returnFocus != "" {
+		lines = append(lines, theme.modalBody.Render(truncateModernLine("return "+returnFocus, width)))
+	}
+	if selected := renderModernOverlaySelection(state.UI.Overlay); selected != "" {
+		lines = append(lines, theme.modalBody.Render(truncateModernLine(selected, width)))
+	}
+	lines = append(lines,
+		"",
+		theme.modalMeta.Render("State"),
+		theme.modalBody.Render(truncateModernLine(renderModernOverlayStateLine(state), width)),
+	)
+	return lines
+}
+
+func renderModernOverlaySelection(overlay types.OverlayState) string {
+	switch overlay.Kind {
+	case types.OverlayTerminalManager:
+		manager, _ := overlay.Data.(*terminalmanagerdomain.State)
+		if manager == nil {
+			return ""
+		}
+		row, ok := manager.SelectedRow()
+		if !ok {
+			return ""
+		}
+		return "selected " + activeRowLabel(row, true)
+	case types.OverlayWorkspacePicker:
+		picker, _ := overlay.Data.(*workspacedomain.PickerState)
+		if picker == nil {
+			return ""
+		}
+		row, ok := picker.SelectedRow()
+		if !ok {
+			return ""
+		}
+		return fmt.Sprintf("selected %s  •  %s", row.Node.Label, row.Node.Kind)
+	case types.OverlayTerminalPicker:
+		picker, _ := overlay.Data.(*terminalpickerdomain.State)
+		if picker == nil {
+			return ""
+		}
+		row, ok := picker.SelectedRow()
+		if !ok {
+			return ""
+		}
+		return "selected " + row.Label
+	case types.OverlayLayoutResolve:
+		resolve, _ := overlay.Data.(*layoutresolvedomain.State)
+		if resolve == nil {
+			return ""
+		}
+		row, ok := resolve.SelectedRow()
+		if !ok {
+			return ""
+		}
+		return fmt.Sprintf("selected %s", row.Action)
+	case types.OverlayPrompt:
+		prompt, _ := overlay.Data.(*promptdomain.State)
+		if prompt == nil {
+			return ""
+		}
+		if len(prompt.Fields) == 0 {
+			return "draft prompt"
+		}
+		active := prompt.Active
+		if active < 0 || active >= len(prompt.Fields) {
+			active = 0
+		}
+		return "active " + prompt.Fields[active].Key
+	default:
+		return ""
+	}
+}
+
+func renderModernOverlayStateLine(state types.AppState) string {
+	focus := state.UI.Focus.Layer
+	if focus == "" {
+		focus = types.FocusLayerOverlay
+	}
+	return fmt.Sprintf("state overlay %s  •  focus %s", state.UI.Overlay.Kind, focus)
 }
 
 func overlayTitle(kind types.OverlayKind) string {
@@ -1358,6 +1445,18 @@ func renderModernOverlaySectionPanel(theme modernShellTheme, title string, lines
 		out = append(out, truncateModernLine(line, contentWidth))
 	}
 	return theme.mutedPanel.Width(width - 2).Render(strings.Join(out, "\n"))
+}
+
+func renderModernOverlayFooterPanel(theme modernShellTheme, state types.AppState, width int) string {
+	footer := renderModernOverlayFooter(theme, state.UI.Overlay.Kind, max(12, width-4))
+	if footer == "" {
+		return ""
+	}
+	lines := []string{
+		footer,
+		theme.modalMeta.Render(truncateModernLine(renderModernOverlayStateLine(state), max(12, width-4))),
+	}
+	return renderModernOverlaySectionPanel(theme, "Footer", lines, width)
 }
 
 func trimModernOverlayLines(lines []string) []string {
