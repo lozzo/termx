@@ -50,7 +50,7 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	lines = appendChrome(lines, "body", []string{r.renderBodyBar(state, pane, overlayActive)}, func(lines []string) []string {
 		lines = appendSection(lines, "terminal", r.renderTerminalSection(state, pane, overlayActive))
 		lines = appendSection(lines, "screen", r.renderScreenSection(pane, overlayActive))
-		return appendSection(lines, "overlay", renderOverlayLines(state.UI.Overlay))
+		return appendSection(lines, "overlay", renderOverlayLines(state.UI.Overlay, state.UI.Focus))
 	})
 	lines = appendChrome(lines, "footer", []string{renderFooterBar(notices, state.UI.Overlay.Kind)}, func(lines []string) []string {
 		return appendSection(lines, "notices", renderNoticeLines(notices))
@@ -170,10 +170,10 @@ func renderStatusSection(workspace types.WorkspaceState, tab types.TabState, pan
 
 func (r runtimeRenderer) renderTerminalSection(state types.AppState, pane types.PaneState, compact bool) []string {
 	if pane.TerminalID == "" {
-		return []string{"terminal: <disconnected>"}
+		return []string{compactLine("terminal_bar: disconnected", "terminal: <disconnected>")}
 	}
 
-	lines := []string{fmt.Sprintf("terminal: %s", pane.TerminalID)}
+	lines := []string{compactLine(renderTerminalBar(state, pane), fmt.Sprintf("terminal: %s", pane.TerminalID))}
 	terminal, ok := state.Domain.Terminals[pane.TerminalID]
 	if ok {
 		label := terminal.Name
@@ -223,11 +223,11 @@ func (r runtimeRenderer) renderTerminalSection(state types.AppState, pane types.
 
 func (r runtimeRenderer) renderScreenSection(pane types.PaneState, compact bool) []string {
 	if pane.TerminalID == "" || r.Screens == nil {
-		return []string{"screen: <unavailable>"}
+		return []string{compactLine("screen_bar: state=unavailable", "screen: <unavailable>")}
 	}
 	snapshot, ok := r.Screens.Snapshot(pane.TerminalID)
 	if !ok || snapshot == nil {
-		return []string{"screen: <unavailable>"}
+		return []string{compactLine("screen_bar: state=unavailable", "screen: <unavailable>")}
 	}
 	rows, totalRows, truncated := renderSnapshotRows(snapshot)
 	meta := []string{fmt.Sprintf("screen_rows: %d/%d", len(rows), totalRows)}
@@ -235,10 +235,51 @@ func (r runtimeRenderer) renderScreenSection(pane types.PaneState, compact bool)
 		meta = append(meta, "screen_truncated: true")
 	}
 	if compact {
-		return []string{compactLine(append([]string{"screen: <suppressed by overlay>"}, meta...)...)}
+		return []string{
+			compactLine(
+				fmt.Sprintf("screen_bar: state=suppressed | rows=%d/%d", len(rows), totalRows),
+				compactLine(append([]string{"screen: <suppressed by overlay>"}, meta...)...),
+			),
+		}
 	}
-	lines := []string{compactLine(append([]string{"screen:"}, meta...)...)}
+	lines := []string{
+		compactLine(
+			fmt.Sprintf("screen_bar: state=preview | rows=%d/%d", len(rows), totalRows),
+			compactLine(append([]string{"screen:"}, meta...)...),
+		),
+	}
 	return append(lines, rows...)
+}
+
+func renderTerminalBar(state types.AppState, pane types.PaneState) string {
+	if pane.TerminalID == "" {
+		return "terminal_bar: disconnected"
+	}
+	parts := []string{fmt.Sprintf("terminal_bar: id=%s", pane.TerminalID)}
+	if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok {
+		label := terminal.Name
+		if label == "" {
+			label = string(terminal.ID)
+		}
+		parts = append(parts, fmt.Sprintf("title=%s", label))
+		if terminal.State != "" {
+			parts = append(parts, fmt.Sprintf("state=%s", terminal.State))
+		}
+	}
+	if role := renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID); role != "" {
+		parts = append(parts, fmt.Sprintf("role=%s", role))
+	}
+	return compactLine(parts...)
+}
+
+func renderTerminalRole(conn types.ConnectionState, paneID types.PaneID) string {
+	if conn.TerminalID == "" || !containsPaneID(conn.ConnectedPaneIDs, paneID) {
+		return ""
+	}
+	if conn.OwnerPaneID == paneID {
+		return "owner"
+	}
+	return "follower"
 }
 
 func compactLine(parts ...string) string {
@@ -404,41 +445,58 @@ func renderSnapshotRow(row []protocol.Cell) string {
 	return strings.TrimRight(builder.String(), " ")
 }
 
-func renderOverlayLines(overlay types.OverlayState) []string {
+func renderOverlayLines(overlay types.OverlayState, focus types.FocusState) []string {
+	bar := renderOverlayBar(overlay.Kind, focus.Layer)
 	switch overlay.Kind {
 	case types.OverlayWorkspacePicker:
 		picker, ok := overlay.Data.(*workspacedomain.PickerState)
 		if !ok || picker == nil {
-			return []string{fmt.Sprintf("overlay: %s", overlay.Kind)}
+			return mergeSectionBar(bar, []string{fmt.Sprintf("overlay: %s", overlay.Kind)})
 		}
-		return renderWorkspacePickerLines(picker)
+		return mergeSectionBar(bar, renderWorkspacePickerLines(picker))
 	case types.OverlayTerminalManager:
 		manager, ok := overlay.Data.(*terminalmanagerdomain.State)
 		if !ok || manager == nil {
-			return []string{fmt.Sprintf("overlay: %s", overlay.Kind)}
+			return mergeSectionBar(bar, []string{fmt.Sprintf("overlay: %s", overlay.Kind)})
 		}
-		return renderTerminalManagerLines(manager)
+		return mergeSectionBar(bar, renderTerminalManagerLines(manager))
 	case types.OverlayTerminalPicker:
 		picker, ok := overlay.Data.(*terminalpickerdomain.State)
 		if !ok || picker == nil {
-			return []string{fmt.Sprintf("overlay: %s", overlay.Kind)}
+			return mergeSectionBar(bar, []string{fmt.Sprintf("overlay: %s", overlay.Kind)})
 		}
-		return renderTerminalPickerLines(picker)
+		return mergeSectionBar(bar, renderTerminalPickerLines(picker))
 	case types.OverlayLayoutResolve:
 		resolve, ok := overlay.Data.(*layoutresolvedomain.State)
 		if !ok || resolve == nil {
-			return []string{fmt.Sprintf("overlay: %s", overlay.Kind)}
+			return mergeSectionBar(bar, []string{fmt.Sprintf("overlay: %s", overlay.Kind)})
 		}
-		return renderLayoutResolveLines(resolve)
+		return mergeSectionBar(bar, renderLayoutResolveLines(resolve))
 	case types.OverlayPrompt:
 		prompt, ok := overlay.Data.(*promptdomain.State)
 		if !ok || prompt == nil {
-			return []string{fmt.Sprintf("overlay: %s", overlay.Kind)}
+			return mergeSectionBar(bar, []string{fmt.Sprintf("overlay: %s", overlay.Kind)})
 		}
-		return renderPromptLines(prompt)
+		return mergeSectionBar(bar, renderPromptLines(prompt))
 	default:
-		return []string{fmt.Sprintf("overlay: %s", overlay.Kind)}
+		return mergeSectionBar(bar, []string{fmt.Sprintf("overlay: %s", overlay.Kind)})
 	}
+}
+
+func renderOverlayBar(kind types.OverlayKind, focusLayer types.FocusLayer) string {
+	return compactLine(
+		fmt.Sprintf("overlay_bar: kind=%s", kind),
+		fmt.Sprintf("focus=%s", focusLayer),
+	)
+}
+
+func mergeSectionBar(bar string, body []string) []string {
+	if len(body) == 0 {
+		return []string{bar}
+	}
+	lines := append([]string{}, body...)
+	lines[0] = compactLine(bar, lines[0])
+	return lines
 }
 
 func renderWorkspacePickerLines(picker *workspacedomain.PickerState) []string {

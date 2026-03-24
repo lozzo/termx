@@ -165,6 +165,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 141. 第一百三十七轮 TDD 已补上 overlay 优先的 body 让路压缩
 142. 第一百三十八轮 TDD 已补上 header/footer 语义状态栏
 143. 第一百三十九轮 TDD 已补上 body 主体状态栏语义
+144. 第一百四十轮 TDD 已补上 terminal/screen/overlay section bar
 
 对应文档：
 
@@ -321,6 +322,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - runtime `chrome_body` 现在也显式输出 `body_bar`，把 `terminal/screen/overlay` 的主体状态统一汇总成一行，先回答“正文现在在看什么”
 - `body_bar` 会区分 `preview/unavailable/suppressed` 三种 screen 状态，也会在 active terminal 上显式汇总 `terminalID:runState`
 - 已补上 renderer / runtime 场景测试：active pane、empty pane、overlay 压缩态都锁住 `body_bar`，避免 body 重新退化成只剩 section 名称
+- `section_terminal/section_screen/section_overlay` 现在各自也有 `terminal_bar/screen_bar/overlay_bar`，把 section 的第一层摘要稳定下来，再往后才是细节
+- `terminal_bar` 会汇总 `id/title/state/role`，`screen_bar` 会汇总 `preview/unavailable/suppressed + rows`，`overlay_bar` 会汇总 `kind/focus`
+- 已补上 renderer / runtime 场景测试：active pane、empty pane、overlay 压缩态都会显式锁住这三类 section bar，防止主体 section 再次退化成只有明细字段
 - 已补上一条 runtime 场景型 E2E：`Ctrl-f` 打开 terminal picker 时主视图显式显示 `overlay: terminal_picker` 与 `focus_overlay_target: terminal_picker`
 - 已补上一条 runtime 场景型 E2E：workspace picker / prompt / terminal manager / terminal picker / layout resolve 关闭后主视图不再残留 `focus_overlay_target`
 - 已补上一条 runtime 场景型 E2E：terminal manager 与 layout resolve 关闭后主视图不再残留临时 `mode`

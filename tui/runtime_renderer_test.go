@@ -65,6 +65,15 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "body_bar: terminal=term-1:running | screen=preview:2/2 | overlay=none") {
 		t.Fatalf("expected body bar in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "terminal_bar: id=term-1 | title=api-dev | state=running | role=owner") {
+		t.Fatalf("expected terminal bar in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "screen_bar: state=preview | rows=2/2") {
+		t.Fatalf("expected screen bar in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "overlay_bar: kind=none") {
+		t.Fatalf("expected overlay bar in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "section_status:") || !strings.Contains(view, "section_terminal:") || !strings.Contains(view, "section_screen:") {
 		t.Fatalf("expected renderer sections for status/terminal/screen, got:\n%s", view)
 	}
@@ -166,6 +175,15 @@ func TestRuntimeRendererRendersStableSectionSkeletonForEmptyPane(t *testing.T) {
 	}
 	if !strings.Contains(view, "body_bar: terminal=disconnected | screen=unavailable | overlay=none") {
 		t.Fatalf("expected empty-pane body bar in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "terminal_bar: disconnected") {
+		t.Fatalf("expected disconnected terminal bar in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "screen_bar: state=unavailable") {
+		t.Fatalf("expected unavailable screen bar in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "overlay_bar: kind=none") {
+		t.Fatalf("expected overlay none bar in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "footer_bar: notices=0 | overlay=none") {
 		t.Fatalf("expected footer bar placeholder in rendered view, got:\n%s", view)
@@ -502,6 +520,15 @@ func TestRuntimeRendererCompressesBodyWhenOverlayIsActive(t *testing.T) {
 	view := renderer.Render(state, nil)
 	if !strings.Contains(view, "body_bar: terminal=term-1:running | screen=suppressed | overlay=terminal_manager") {
 		t.Fatalf("expected overlay body bar to reflect compressed mode, got:\n%s", view)
+	}
+	if !strings.Contains(view, "terminal_bar: id=term-1 | title=api-dev | state=running | role=owner") {
+		t.Fatalf("expected terminal bar to remain visible during overlay compression, got:\n%s", view)
+	}
+	if !strings.Contains(view, "screen_bar: state=suppressed | rows=2/2") {
+		t.Fatalf("expected suppressed screen bar during overlay compression, got:\n%s", view)
+	}
+	if !strings.Contains(view, "overlay_bar: kind=terminal_manager | focus=overlay") {
+		t.Fatalf("expected overlay bar to expose active overlay kind, got:\n%s", view)
 	}
 	if !strings.Contains(view, "screen: <suppressed by overlay>") {
 		t.Fatalf("expected screen preview to yield to overlay, got:\n%s", view)
