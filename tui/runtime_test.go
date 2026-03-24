@@ -2053,6 +2053,88 @@ func TestE2ERunScenarioFloatingModeCreateThenCreateTerminalConnectsFloatingPane(
 	}
 }
 
+func TestE2ERunScenarioFloatingModeMoveUpdatesRectInView(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithFloatingPositionedPane()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlO},
+				{Type: tea.KeyRunes, Runes: []rune("j")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "pane: float-1") || !strings.Contains(view, "focus_layer: floating") || !strings.Contains(view, "pane_rect: x=10 | y=10 | w=30 | h=12") || strings.Contains(view, "mode:") {
+				t.Fatalf("expected floating move flow to update rect in view, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected floating move runtime scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioFloatingModeCenterRecentersPaneInView(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithFloatingPositionedPane()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlO},
+				{Type: tea.KeyRunes, Runes: []rune("c")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "pane: float-1") || !strings.Contains(view, "pane_rect: x=45 | y=14 | w=30 | h=12") || strings.Contains(view, "mode:") {
+				t.Fatalf("expected floating center flow to recenter pane in view, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected floating center runtime scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioWorkspacePickerCollapseHidesChildren(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithWorkspacePickerTarget()
@@ -6284,6 +6366,24 @@ func runtimeStateWithTwoFloatingTargets() types.AppState {
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("float-2")},
 		OwnerPaneID:      types.PaneID("float-2"),
 	}
+	return state
+}
+
+func runtimeStateWithFloatingPositionedPane() types.AppState {
+	state := runtimeStateWithTwoFloatingTargets()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	tab.FloatingOrder = []types.PaneID{types.PaneID("float-1")}
+	delete(tab.Panes, types.PaneID("float-2"))
+	pane := tab.Panes[types.PaneID("float-1")]
+	pane.Rect = types.Rect{X: 10, Y: 8, W: 30, H: 12}
+	tab.Panes[types.PaneID("float-1")] = pane
+	tab.ActivePaneID = types.PaneID("float-1")
+	tab.ActiveLayer = types.FocusLayerFloating
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	delete(state.Domain.Terminals, types.TerminalID("term-2"))
+	delete(state.Domain.Connections, types.TerminalID("term-2"))
 	return state
 }
 

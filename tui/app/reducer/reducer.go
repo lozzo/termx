@@ -91,6 +91,13 @@ const (
 	NoticeLevelError = "error"
 )
 
+const (
+	floatingPaneCanvasW  = 120
+	floatingPaneCanvasH  = 40
+	floatingPaneDefaultW = 40
+	floatingPaneDefaultH = 12
+)
+
 type Result struct {
 	State   types.AppState
 	Effects []Effect
@@ -239,6 +246,10 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyFloatingFocusMove(&result.State, intentValue)
 	case intent.CreateFloatingPaneIntent:
 		applyCreateFloatingPane(&result.State)
+	case intent.MoveFloatingPaneIntent:
+		applyMoveFloatingPane(&result.State, intentValue)
+	case intent.CenterFloatingPaneIntent:
+		applyCenterFloatingPane(&result.State)
 	case intent.ActivateModeIntent:
 		applyActivateMode(&result.State, intentValue)
 	case intent.ModeTimedOutIntent:
@@ -1257,6 +1268,42 @@ func applyCreateFloatingPane(state *types.AppState) {
 	applyOpenLayoutResolve(state, intent.OpenLayoutResolveIntent{PaneID: paneID})
 }
 
+// applyMoveFloatingPane 先给 floating pane 补最小可用的几何移动，
+// 这里不引入拖拽状态机，只做键盘驱动的离散 rect 调整。
+func applyMoveFloatingPane(state *types.AppState, in intent.MoveFloatingPaneIntent) {
+	defer func() {
+		state.UI.Mode = types.ModeState{Active: types.ModeNone}
+	}()
+	pane, ok := findPane(state, state.UI.Focus.PaneID)
+	if !ok || pane.Kind != types.PaneKindFloating {
+		return
+	}
+	rect := normalizeFloatingRect(pane.Rect)
+	rect.X = clampFloatingAxis(rect.X+in.DeltaX, 0, floatingPaneCanvasW-rect.W)
+	rect.Y = clampFloatingAxis(rect.Y+in.DeltaY, 0, floatingPaneCanvasH-rect.H)
+	setPaneState(state, pane.ID, func(target *types.PaneState) {
+		target.Rect = rect
+	})
+}
+
+// applyCenterFloatingPane 提供“呼回中央”的稳定语义，
+// 让当前浮窗快速回到默认工作区中心。
+func applyCenterFloatingPane(state *types.AppState) {
+	defer func() {
+		state.UI.Mode = types.ModeState{Active: types.ModeNone}
+	}()
+	pane, ok := findPane(state, state.UI.Focus.PaneID)
+	if !ok || pane.Kind != types.PaneKindFloating {
+		return
+	}
+	rect := normalizeFloatingRect(pane.Rect)
+	rect.X = (floatingPaneCanvasW - rect.W) / 2
+	rect.Y = (floatingPaneCanvasH - rect.H) / 2
+	setPaneState(state, pane.ID, func(target *types.PaneState) {
+		target.Rect = rect
+	})
+}
+
 // applyCreateTerminalInActivePane 给 empty/waiting 这类正文动作一个最短创建路径。
 // 这里不直接改 pane，仍然等 create success 回灌后再真实 connect。
 func applyCreateTerminalInActivePane(result *Result) {
@@ -1749,6 +1796,30 @@ func nextFloatingPaneID(tab types.TabState) types.PaneID {
 			return candidate
 		}
 	}
+}
+
+func normalizeFloatingRect(rect types.Rect) types.Rect {
+	if rect.W <= 0 {
+		rect.W = floatingPaneDefaultW
+	}
+	if rect.H <= 0 {
+		rect.H = floatingPaneDefaultH
+	}
+	rect.W = clampFloatingAxis(rect.W, 1, floatingPaneCanvasW)
+	rect.H = clampFloatingAxis(rect.H, 1, floatingPaneCanvasH)
+	rect.X = clampFloatingAxis(rect.X, 0, floatingPaneCanvasW-rect.W)
+	rect.Y = clampFloatingAxis(rect.Y, 0, floatingPaneCanvasH-rect.H)
+	return rect
+}
+
+func clampFloatingAxis(value int, min int, max int) int {
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
 }
 
 func nextTiledPaneID(tab types.TabState) types.PaneID {

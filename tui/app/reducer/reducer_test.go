@@ -1091,6 +1091,40 @@ func TestReducerCreateFloatingPaneCreatesWaitingFloatingPaneAndOpensLayoutResolv
 	}
 }
 
+func TestReducerMoveFloatingPaneUpdatesRectAndClearsMode(t *testing.T) {
+	reducer := New()
+	state := newFloatingActiveRectAppState()
+	state.UI.Mode = types.ModeState{Active: types.ModeFloating}
+
+	result := reducer.Reduce(state, intent.MoveFloatingPaneIntent{DeltaY: 2})
+
+	tab := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
+	pane := tab.Panes[types.PaneID("float-1")]
+	if pane.Rect.X != 10 || pane.Rect.Y != 10 || pane.Rect.W != 30 || pane.Rect.H != 12 {
+		t.Fatalf("expected floating move to update rect, got %+v", pane.Rect)
+	}
+	if result.State.UI.Mode.Active != types.ModeNone {
+		t.Fatalf("expected floating move to clear mode, got %+v", result.State.UI.Mode)
+	}
+}
+
+func TestReducerCenterFloatingPaneRecentersRectAndClearsMode(t *testing.T) {
+	reducer := New()
+	state := newFloatingActiveRectAppState()
+	state.UI.Mode = types.ModeState{Active: types.ModeFloating}
+
+	result := reducer.Reduce(state, intent.CenterFloatingPaneIntent{})
+
+	tab := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
+	pane := tab.Panes[types.PaneID("float-1")]
+	if pane.Rect.X != 45 || pane.Rect.Y != 14 || pane.Rect.W != 30 || pane.Rect.H != 12 {
+		t.Fatalf("expected floating center to recenter rect, got %+v", pane.Rect)
+	}
+	if result.State.UI.Mode.Active != types.ModeNone {
+		t.Fatalf("expected floating center to clear mode, got %+v", result.State.UI.Mode)
+	}
+}
+
 func TestReducerConnectTerminalReplacesOldConnectionSnapshot(t *testing.T) {
 	reducer := New()
 	state := newConnectedAppState()
@@ -2092,6 +2126,18 @@ func newFloatingPaneStackAppState() types.AppState {
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("float-2")},
 		OwnerPaneID:      types.PaneID("float-2"),
 	}
+	return state
+}
+
+func newFloatingActiveRectAppState() types.AppState {
+	state := newFloatingPaneStackAppState()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	pane := tab.Panes[types.PaneID("float-1")]
+	pane.Rect = types.Rect{X: 10, Y: 8, W: 30, H: 12}
+	tab.Panes[types.PaneID("float-1")] = pane
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
 	return state
 }
 

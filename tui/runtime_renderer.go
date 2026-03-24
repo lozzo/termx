@@ -168,6 +168,14 @@ func renderStatusSection(workspace types.WorkspaceState, tab types.TabState, pan
 	if pane.LastExitCode != nil {
 		lines = append(lines, fmt.Sprintf("pane_exit_code: %d", *pane.LastExitCode))
 	}
+	if pane.Kind == types.PaneKindFloating {
+		lines = append(lines, compactLine(
+			fmt.Sprintf("pane_rect: x=%d", pane.Rect.X),
+			fmt.Sprintf("y=%d", pane.Rect.Y),
+			fmt.Sprintf("w=%d", pane.Rect.W),
+			fmt.Sprintf("h=%d", pane.Rect.H),
+		))
+	}
 	return lines
 }
 

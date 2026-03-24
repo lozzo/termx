@@ -355,6 +355,17 @@ type CreateFloatingPaneIntent struct{}
 
 func (CreateFloatingPaneIntent) intentName() string { return "create_floating_pane" }
 
+type MoveFloatingPaneIntent struct {
+	DeltaX int
+	DeltaY int
+}
+
+func (MoveFloatingPaneIntent) intentName() string { return "move_floating_pane" }
+
+type CenterFloatingPaneIntent struct{}
+
+func (CenterFloatingPaneIntent) intentName() string { return "center_floating_pane" }
+
 type ActivateModeIntent struct {
 	Mode       types.ModeKind
 	Sticky     bool

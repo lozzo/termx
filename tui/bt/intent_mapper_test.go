@@ -234,6 +234,17 @@ func TestIntentMapperRootCtrlOArmsFloatingModeAndMapsActions(t *testing.T) {
 	if len(intents) != 1 || intents[0] != (intent.FloatingFocusMoveIntent{Delta: 1}) {
 		t.Fatalf("expected floating focus move intent, got %+v", intents)
 	}
+	intents = mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if len(intents) != 1 || intents[0] != (intent.MoveFloatingPaneIntent{DeltaY: 2}) {
+		t.Fatalf("expected floating move-down intent, got %+v", intents)
+	}
+	intents = mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	if _, ok := intents[0].(intent.CenterFloatingPaneIntent); !ok {
+		t.Fatalf("expected center floating pane intent, got %T", intents[0])
+	}
 	intents = mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	if len(intents) != 1 {
 		t.Fatalf("expected one intent, got %d", len(intents))
