@@ -64,7 +64,7 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	overlayActive := state.UI.Overlay.Kind != types.OverlayNone
 
 	lines := []string{"termx"}
-	lines = append(lines, r.renderScreenShell(state, workspace, tab, pane)...)
+	lines = append(lines, r.renderScreenShell(state, workspace, tab, pane, notices)...)
 	lines = append(lines, r.renderWireframeView(state, workspace, tab, pane)...)
 	lines = appendChrome(lines, "header", []string{
 		renderHeaderBar(workspace, tab, pane, state.UI),
@@ -118,21 +118,33 @@ func appendChrome(lines []string, name string, body []string, fn func([]string) 
 
 // renderScreenShell 提供一个真正优先展示给用户的稳定外壳，
 // 让启动后的第一屏先有 workspace/tab/pane/frame/footer，而不是只看到调试型语义字段。
-func (r runtimeRenderer) renderScreenShell(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) []string {
+func (r runtimeRenderer) renderScreenShell(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, notices []btui.Notice) []string {
 	metrics := r.wireframeMetrics(pane)
 	lines := []string{"screen_shell:"}
 	overlayActive := state.UI.Overlay.Kind != types.OverlayNone
-	body := []string{
-		renderScreenShellHeader(workspace, tab, pane),
-		renderScreenShellStateLine(state, tab, pane),
+	body := []string{renderScreenShellHeader(workspace, tab, pane)}
+	if overlayActive {
+		body = append(body, renderScreenShellWorkspaceTabsLine(workspace))
+	} else {
+		body = append(body,
+			renderScreenShellWorkspaceSummaryLine(workspace),
+			renderScreenShellTabStripLine(workspace),
+		)
 	}
+	body = append(body, renderScreenShellStateLine(state, tab, pane))
 	if !overlayActive {
-		body = append(body, renderScreenShellTargetLine(workspace, tab, pane))
+		body = append(body,
+			renderScreenShellTargetLine(workspace, tab, pane),
+			renderScreenShellPathLine(state, workspace, tab, pane),
+		)
 	}
 	body = append(body, r.renderScreenShellWorkbench(state, tab, pane, metrics, overlayActive)...)
 	if overlayActive {
 		body = append(body, renderScreenShellMask(state, metrics))
 		body = append(body, r.renderScreenShellDialog(state, metrics)...)
+	}
+	if noticeLine := renderScreenShellNoticeLine(notices, overlayActive); noticeLine != "" {
+		body = append(body, noticeLine)
 	}
 	body = append(body, renderScreenShellFooter(state, pane))
 	lines = append(lines, renderShellBox(metrics.ViewportWidth+2, renderScreenShellFrameTitle(state, metrics), body)...)
@@ -155,6 +167,62 @@ func renderScreenShellHeader(workspace types.WorkspaceState, tab types.TabState,
 		terminalID = string(pane.TerminalID)
 	}
 	return fmt.Sprintf("HEADER[%s] [%s] pane:%s term:%s float:%d", workspaceLabel, tabLabel, pane.ID, terminalID, len(orderedFloatingPaneIDs(tab)))
+}
+
+func renderScreenShellWorkspaceSummaryLine(workspace types.WorkspaceState) string {
+	tabs := len(workspace.TabOrder)
+	panes := 0
+	terminals := map[types.TerminalID]struct{}{}
+	floating := 0
+	for _, tabID := range workspace.TabOrder {
+		tab, ok := workspace.Tabs[tabID]
+		if !ok {
+			continue
+		}
+		for _, pane := range tab.Panes {
+			panes++
+			if pane.Kind == types.PaneKindFloating {
+				floating++
+			}
+			if pane.TerminalID != "" {
+				terminals[pane.TerminalID] = struct{}{}
+			}
+		}
+	}
+	return compactSummaryLine(
+		fmt.Sprintf("WS[%s]", safeWorkspaceLabel(workspace)),
+		fmt.Sprintf("tabs=%d", tabs),
+		fmt.Sprintf("panes=%d", panes),
+		fmt.Sprintf("terms=%d", len(terminals)),
+		fmt.Sprintf("float=%d", floating),
+	)
+}
+
+func renderScreenShellTabStripLine(workspace types.WorkspaceState) string {
+	if len(workspace.TabOrder) == 0 {
+		return "TABS[none]"
+	}
+	parts := make([]string, 0, len(workspace.TabOrder))
+	for _, tabID := range workspace.TabOrder {
+		tab, ok := workspace.Tabs[tabID]
+		if !ok {
+			continue
+		}
+		label := safeTabLabel(tab)
+		if tabID == workspace.ActiveTabID {
+			parts = append(parts, fmt.Sprintf("*%s", label))
+			continue
+		}
+		parts = append(parts, label)
+	}
+	return compactSummaryLine(fmt.Sprintf("TABS[%s]", strings.Join(parts, " ")))
+}
+
+func renderScreenShellWorkspaceTabsLine(workspace types.WorkspaceState) string {
+	return compactSummaryLine(
+		renderScreenShellWorkspaceSummaryLine(workspace),
+		renderScreenShellTabStripLine(workspace),
+	)
 }
 
 func renderScreenShellFrameTitle(state types.AppState, metrics wireframeMetrics) string {
@@ -185,12 +253,49 @@ func renderScreenShellTargetLine(workspace types.WorkspaceState, tab types.TabSt
 	return fmt.Sprintf("TARGET[%s/%s/%s] TERM[%s] FLOAT[%d]", safeWorkspaceLabel(workspace), safeTabLabel(tab), pane.ID, terminalID, len(orderedFloatingPaneIDs(tab)))
 }
 
+func renderScreenShellPathLine(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
+	focus := state.UI.Focus.Layer
+	if focus == "" {
+		focus = types.FocusLayerTiled
+	}
+	return compactSummaryLine(
+		fmt.Sprintf("PATH[%s/%s/%s:%s]", safeWorkspaceLabel(workspace), safeTabLabel(tab), safePaneKind(pane.Kind), pane.ID),
+		fmt.Sprintf("TARGET[%s]", renderPaneTitle(state, pane)),
+		fmt.Sprintf("FOCUS[%s]", focus),
+		fmt.Sprintf("SLOT[%s]", pane.SlotState),
+	)
+}
+
 func renderScreenShellFooter(state types.AppState, pane types.PaneState) string {
 	layer := safePaneKind(pane.Kind)
 	if state.UI.Overlay.Kind != types.OverlayNone {
 		layer = types.PaneKind(state.UI.Overlay.Kind)
 	}
 	return fmt.Sprintf("FT[%s %s %s] <p> PANE <t> TAB <w> WS <o> FLOAT <f> PICK <g> GLOBAL", renderPaneTitle(state, pane), layer, state.UI.Overlay.Kind)
+}
+
+// renderScreenShellNoticeLine 把 notice 汇总搬进第一视觉 shell，
+// 让用户不需要滚到调试 footer 才知道当前是否有错误或提示。
+func renderScreenShellNoticeLine(notices []btui.Notice, overlayActive bool) string {
+	total := countVisibleNotices(notices)
+	if total == 0 {
+		if overlayActive {
+			return ""
+		}
+		return "NOTICE[0]"
+	}
+	last, ok := lastVisibleNotice(notices)
+	if !ok {
+		return fmt.Sprintf("NOTICE[%d]", total)
+	}
+	text := last.Text
+	if last.Count > 1 {
+		text = fmt.Sprintf("%s (x%d)", text, last.Count)
+	}
+	return compactSummaryLine(
+		fmt.Sprintf("NOTICE[%d %s]", total, last.Level),
+		text,
+	)
 }
 
 func (r runtimeRenderer) renderScreenShellWorkbench(state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, overlayActive bool) []string {

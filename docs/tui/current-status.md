@@ -26,6 +26,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把主工作台 pane shell 的正文四态统一成组件化结构：`connected` 会显式渲染 `STATUS/TERM/CONTENT`，`empty / waiting / exited` 会显式渲染 `STATUS/DETAIL/ACTIONS`，并同步覆盖单 pane 与 overlay 关闭后的工作台恢复场景
 - 本轮继续把多 pane 工作台的 shell 语言往前推：`split workbench` 现在补上 `LAYOUT[split]` 摘要并让每个 pane 复用统一的 `STATUS/TERM/CONTENT` 组件；`floating workbench` 的 sidebar 现在补上 `STACK[windows]` 与 `FOCUS[...]`，mixed-slot 场景也能直接看到 waiting/exited pane 的结构化摘要
 - 本轮继续把第一视觉里最重复、最容易撑爆宽度的摘要压缩掉：floating shell 下方的 `WINDOW CARD[...]` 已收成紧凑 `WINDOW LIST[...]`，overlay dialog 的焦点/选中态也改成短 token，保证窄框下仍然稳定可见
+- 本轮继续把 shell chrome 往第一视觉收口：`screen_shell` 内现在开始直接带 `WS / TABS / PATH / NOTICE` 这类工作台信息，overlay 场景下也会走更紧凑的合并策略，不再完全依赖下面的 `chrome_* / wireframe_view` 才能读懂上下文
 
 ---
 
@@ -1398,3 +1399,57 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
   - 进一步减少 `screen_shell` 下方与 `wireframe_view` 的重复信息
   - 把 overlay dialog 往更像真实弹层的边框、焦点高亮和布局推进
   - 逐步把 `wireframe_view` 从第一视觉降成调试视图
+
+---
+
+## 14. 第 200 轮 TDD
+
+这一轮继续沿“让 `cmd/termx` 第一眼更像真正工作台”推进，但不再只是补 overlay token，而是把 `screen_shell` 自己补成更完整的主视图 chrome：
+
+1. shell chrome 进入第一视觉
+   - `screen_shell` 里新增工作台级摘要：
+     - `WS[...]`
+     - `TABS[...]`
+     - `PATH[...]`
+     - `NOTICE[...]`
+   - 这样用户一进来，在最上层壳里就能直接看到 workspace 统计、tab 位置、当前 pane 路径和 notice 状态
+2. overlay 场景紧凑化
+   - overlay 打开时不再简单把新增 chrome 全量堆进去
+   - 改成：
+     - `WS + TABS` 合并成一行
+     - 无 notice 时不再额外占一行
+     - `PATH` 只在主工作台视图保留，overlay 里由 dialog/return focus 承担上下文
+   - 保证 shell chrome 进入第一视觉之后，terminal manager / help 等 overlay 仍能保持紧凑
+3. 断言策略同步到真实窄宽度
+   - renderer / E2E 不再要求窄框里完整保留整句 path/target 文本
+   - 改成校验稳定语义片段和 shell chrome 是否存在
+   - 同时把 overlay 紧凑预算按新增一层主视图 chrome 上调 1 行，避免再次出现“功能正常但预算常量过期”的假失败
+
+这一轮补上的验证仍然是功能和验证成组收口：
+
+- renderer：
+  - `TestRuntimeRendererRendersActivePaneSnapshot`
+  - `TestRuntimeRendererRendersNoticeSection`
+  - `TestRuntimeRendererRendersHelpOverlay`
+  - `TestRuntimeRendererRendersTerminalManagerOverlay`
+  - `TestRuntimeRendererCompressesBodyWhenOverlayIsActive`
+- runtime E2E：
+  - `TestE2ERunScenarioActivePaneCoreViewVisible`
+  - `TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay`
+  - `TestE2ERunScenarioRepeatedNoticeAppearsAggregatedInView`
+
+本轮验证命令：
+
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -run 'TestRuntimeRendererRendersActivePaneSnapshot|TestRuntimeRendererRendersNoticeSection|TestRuntimeRendererRendersHelpOverlay|TestRuntimeRendererRendersTerminalManagerOverlay|TestRuntimeRendererCompressesBodyWhenOverlayIsActive|TestE2ERunScenarioActivePaneCoreViewVisible|TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay|TestE2ERunScenarioRepeatedNoticeAppearsAggregatedInView' -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1`
+
+当前状态更新为：
+
+- `screen_shell` 已经不只是 pane box + overlay frame，而是开始承担真正的 workspace/tab/path/notice 主视图 chrome
+- overlay 紧凑态已经针对新 chrome 做过一次实质性压缩，不再简单牺牲所有上下文信息
+- `cmd/termx` 的第一视觉又往“真实 TUI 壳”推进了一步，用户不必先读下面的调试段落才能理解当前位置
+- 下一阶段应继续沿这条主线推进，而不是回到零散 token 微调：
+  - 进一步削减 `wireframe_view` 与 `chrome_*` 的重复信息
+  - 把 shell 内部的 pane title / tab / notice 再往更像真实 active chrome 的画法推进
+  - 再处理 overlay 弹层的更强焦点高亮和布局边框

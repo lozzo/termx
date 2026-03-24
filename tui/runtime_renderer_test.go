@@ -63,11 +63,20 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "SHELL[96x40 overlay=none]") || !strings.Contains(view, "HEADER[main] [shell] pane:pane-1 term:term-1 float:0") {
 		t.Fatalf("expected renderer to expose visible shell frame header, got:\n%s", view)
 	}
+	if !strings.Contains(view, "WS[main]") || !strings.Contains(view, "tabs=1") || !strings.Contains(view, "panes=1") || !strings.Contains(view, "terms=1") || !strings.Contains(view, "float=0") || !strings.Contains(view, "TABS[*shell]") {
+		t.Fatalf("expected renderer to expose shell workspace/tab chrome, got:\n%s", view)
+	}
 	if !strings.Contains(view, "STATE[tiled focus=tiled mode=none overlay=none]") || !strings.Contains(view, "BODY[tiled t=1 f=0]") || !strings.Contains(view, "TARGET[main/shell/pane-1] TERM[term-1] FLOAT[0]") {
 		t.Fatalf("expected renderer to expose shell frame state lines, got:\n%s", view)
 	}
+	if !strings.Contains(view, "PATH[main/shell/tiled:pane-1]") || !strings.Contains(view, "TARGET[api-dev]") || !strings.Contains(view, "FOCUS[tiled]") || !strings.Contains(view, "SLOT[connected]") {
+		t.Fatalf("expected renderer to expose shell path/focus chrome, got:\n%s", view)
+	}
 	if !strings.Contains(view, "|| api-dev [owner] [tiled]") || !strings.Contains(view, "||term-1 running owner") || !strings.Contains(view, "FT[api-dev tiled none]") || !strings.Contains(view, "<p> PANE <t> TAB <w> WS <o> FLOAT <f> PICK <g> GLOBAL") {
 		t.Fatalf("expected renderer to expose visible shell frame body/footer, got:\n%s", view)
+	}
+	if !strings.Contains(view, "NOTICE[0]") {
+		t.Fatalf("expected renderer to expose shell notice summary, got:\n%s", view)
 	}
 	if !strings.Contains(view, "$ pwd") || !strings.Contains(view, "/tmp") || !strings.Contains(view, "term-1 running owner") {
 		t.Fatalf("expected screen shell to render pane canvas preview, got:\n%s", view)
@@ -151,7 +160,7 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "focus_bar: target=api-dev | layer=tiled | role=owner") {
 		t.Fatalf("expected focus bar in rendered view, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 64 {
+	if lines := strings.Count(view, "\n") + 1; lines > 68 {
 		t.Fatalf("expected compact active pane view, got %d lines:\n%s", lines, view)
 	}
 }
@@ -675,6 +684,9 @@ func TestRuntimeRendererRendersNoticeSection(t *testing.T) {
 	if !strings.Contains(view, "[error] terminal switched to observer-only mode (x2)") {
 		t.Fatalf("expected aggregated notice line in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "NOTICE[1 error]") || !strings.Contains(view, "terminal switched to observer-only mode (x2)") {
+		t.Fatalf("expected shell notice summary line in rendered view, got:\n%s", view)
+	}
 }
 
 func TestRuntimeRendererKeepsOverlayAboveFooter(t *testing.T) {
@@ -965,7 +977,7 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "terminal_manager_actions:") || !strings.Contains(view, "[jump] jump to connected pane") || !strings.Contains(view, "[connect_here] connect here") || !strings.Contains(view, "[new_tab] open in new tab") || !strings.Contains(view, "[floating] open in floating pane") || !strings.Contains(view, "[edit] edit metadata") || !strings.Contains(view, "[acquire_owner] acquire owner") || !strings.Contains(view, "[stop] stop terminal") {
 		t.Fatalf("expected manager actions in rendered view, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 97 {
+	if lines := strings.Count(view, "\n") + 1; lines > 98 {
 		t.Fatalf("expected overlay view to remain within compact budget, got %d lines:\n%s", lines, view)
 	}
 }
@@ -1023,7 +1035,7 @@ func TestRuntimeRendererCompressesBodyWhenOverlayIsActive(t *testing.T) {
 	if strings.Contains(view, "terminal_tags:") {
 		t.Fatalf("expected noncritical terminal detail to be suppressed while overlay is active, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 99 {
+	if lines := strings.Count(view, "\n") + 1; lines > 100 {
 		t.Fatalf("expected overlay-active body to stay tightly compressed, got %d lines:\n%s", lines, view)
 	}
 }
@@ -1888,6 +1900,9 @@ func TestRuntimeRendererRendersHelpOverlay(t *testing.T) {
 	view := runtimeRenderer{}.Render(state, nil)
 	if !strings.Contains(view, "SHELL[78x24 overlay=help]") || !strings.Contains(view, "STATE[tiled focus=overlay mode=picker overlay=help]") || !strings.Contains(view, "BODY[tiled t=1 f=0]") || !strings.Contains(view, "MASK[dimmed 78x24 help]") || !strings.Contains(view, "OVERLAY[help return=tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "DIALOG[help]") || !strings.Contains(view, "TITLE[help]") || !strings.Contains(view, "RETURN TO[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "FOOTER[esc close]") || !strings.Contains(view, "ACTIONS[esc close]") {
 		t.Fatalf("expected help overlay shell mask/dialog in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "WS[main]") || !strings.Contains(view, "tabs=1") || !strings.Contains(view, "panes=1") || !strings.Contains(view, "terms=1") || !strings.Contains(view, "float=0") || !strings.Contains(view, "TABS[*shell]") {
+		t.Fatalf("expected help overlay to keep shell chrome visible, got:\n%s", view)
 	}
 	if !strings.Contains(view, "overlay_bar: kind=help | focus=overlay") {
 		t.Fatalf("expected help overlay bar in rendered view, got:\n%s", view)
