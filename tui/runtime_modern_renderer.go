@@ -1000,7 +1000,7 @@ func (r modernScreenShellRenderer) renderModernOverlayDialogLines(state types.Ap
 			body = append(body, actions)
 		}
 	}
-	return renderShellBoxWithStyle(width, overlayTitle(state.UI.Overlay.Kind), body, emphasisShellBorderStyle)
+	return renderModernOverlayDialogBox(width, overlayTitle(state.UI.Overlay.Kind), body)
 }
 
 func (r modernScreenShellRenderer) renderModernOverlayDialogBody(state types.AppState) []string {
@@ -1021,6 +1021,32 @@ func (r modernScreenShellRenderer) renderModernOverlayDialogBody(state types.App
 	default:
 		return renderScreenShellDialogSections(state.UI.Overlay)
 	}
+}
+
+func renderModernOverlayDialogBox(width int, title string, body []string) []string {
+	if width < 24 {
+		width = 24
+	}
+	innerWidth := width - 2
+	lines := []string{renderModernOverlayDialogBorder("╔", "╗", "═", title, innerWidth)}
+	for _, line := range body {
+		lines = append(lines, "║"+padModernCanvasLine(line, innerWidth)+"║")
+	}
+	lines = append(lines, "╚"+strings.Repeat("═", innerWidth)+"╝")
+	return lines
+}
+
+func renderModernOverlayDialogBorder(left, right, horizontal, title string, innerWidth int) string {
+	if innerWidth < 1 {
+		return left + right
+	}
+	label := " " + strings.TrimSpace(title) + " "
+	label = xansi.Truncate(label, innerWidth, "…")
+	fill := innerWidth - xansi.StringWidth(label)
+	if fill < 0 {
+		fill = 0
+	}
+	return left + label + strings.Repeat(horizontal, fill) + right
 }
 
 func (r modernScreenShellRenderer) renderOverlayPanel(theme modernShellTheme, state types.AppState, width int) string {
