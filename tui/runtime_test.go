@@ -531,6 +531,51 @@ func TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioRendersWireframeWorkbench(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithActiveTerminalMetadata()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "$"}, {Content: " "}, {Content: "p"}, {Content: "w"}, {Content: "d"}},
+								{{Content: "/"}, {Content: "t"}, {Content: "m"}, {Content: "p"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			if !strings.Contains(view, "wireframe_view:") || !strings.Contains(view, "WORKSPACE[main] TAB[shell] LAYER[tiled] FOCUS[tiled] OVERLAY[none]") || !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] KIND[tiled] SLOT[connected]") || !strings.Contains(view, "TERM[term-1] STATE[running]") {
+				t.Fatalf("expected runtime view to expose wireframe workbench, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected wireframe runtime scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioHeaderAndFooterExposeWorkspaceTabsAndFocus(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithTwoTabTargets()
@@ -669,6 +714,63 @@ func TestE2ERunScenarioSplitTabShowsTiledOutline(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioSplitTabShowsWireframeWorkbench(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithSplitPaneTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "$"}, {Content: " "}, {Content: "n"}, {Content: "p"}, {Content: "m"}},
+								{{Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+							},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: types.TerminalID("term-2"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: ">"}, {Content: " "}, {Content: "t"}, {Content: "s"}, {Content: "c"}},
+								{{Content: "o"}, {Content: "k"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			if !strings.Contains(view, "wireframe_view:") || !strings.Contains(view, "SPLIT[vertical] RATIO[0.50] LEAVES[2]") || !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] STATE[running]") || !strings.Contains(view, "PANE[build-log] ROLE[owner] STATE[running]") {
+				t.Fatalf("expected runtime view to expose split wireframe workbench, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected split wireframe runtime scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioNestedSplitShowsTiledTree(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithNestedSplitPaneTargets()
@@ -781,6 +883,41 @@ func TestE2ERunScenarioFloatingLayerShowsOutline(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("expected floating outline runtime scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioOverlayShowsWireframeDialog(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	manager := terminalmanagerdomain.NewState(initial.Domain, initial.UI.Focus)
+	initial.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayTerminalManager,
+		Data: manager,
+	}
+	initial.UI.Focus.Layer = types.FocusLayerOverlay
+	initial.UI.Focus.OverlayTarget = types.OverlayTerminalManager
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			if !strings.Contains(view, "OVERLAY[terminal_manager] FOCUS[overlay]") || !strings.Contains(view, "ROWS[7] SELECTED[term-1]") || !strings.Contains(view, "> [terminal] api-dev") {
+				t.Fatalf("expected runtime view to expose terminal manager wireframe dialog, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected overlay wireframe runtime scenario to succeed, got %v", err)
 	}
 }
 

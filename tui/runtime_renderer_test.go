@@ -135,7 +135,7 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "focus_bar: target=api-dev | layer=tiled | role=owner") {
 		t.Fatalf("expected focus bar in rendered view, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 33 {
+	if lines := strings.Count(view, "\n") + 1; lines > 50 {
 		t.Fatalf("expected compact active pane view, got %d lines:\n%s", lines, view)
 	}
 }
@@ -943,7 +943,7 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "terminal_manager_actions:") || !strings.Contains(view, "[jump] jump to connected pane") || !strings.Contains(view, "[connect_here] connect here") || !strings.Contains(view, "[new_tab] open in new tab") || !strings.Contains(view, "[floating] open in floating pane") || !strings.Contains(view, "[edit] edit metadata") || !strings.Contains(view, "[acquire_owner] acquire owner") || !strings.Contains(view, "[stop] stop terminal") {
 		t.Fatalf("expected manager actions in rendered view, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 47 {
+	if lines := strings.Count(view, "\n") + 1; lines > 70 {
 		t.Fatalf("expected overlay view to remain within compact budget, got %d lines:\n%s", lines, view)
 	}
 }
@@ -1001,7 +1001,7 @@ func TestRuntimeRendererCompressesBodyWhenOverlayIsActive(t *testing.T) {
 	if strings.Contains(view, "terminal_tags:") {
 		t.Fatalf("expected noncritical terminal detail to be suppressed while overlay is active, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 49 {
+	if lines := strings.Count(view, "\n") + 1; lines > 72 {
 		t.Fatalf("expected overlay-active body to stay tightly compressed, got %d lines:\n%s", lines, view)
 	}
 }
@@ -1470,6 +1470,153 @@ func TestRuntimeRendererRendersTabStripForMultipleTabs(t *testing.T) {
 	}
 	if !strings.Contains(view, "focus_bar: target=api-dev | layer=tiled | role=owner") {
 		t.Fatalf("expected focus bar for multi-tab state, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersWireframeWorkbenchForActivePane(t *testing.T) {
+	state := runtimeStateWithActiveTerminalMetadata()
+	renderer := runtimeRenderer{
+		Screens: NewRuntimeTerminalStore(RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "$"}, {Content: " "}, {Content: "p"}, {Content: "w"}, {Content: "d"}},
+								{{Content: "/"}, {Content: "t"}, {Content: "m"}, {Content: "p"}},
+							},
+						},
+					},
+				},
+			},
+		}),
+	}
+
+	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "wireframe_view:") {
+		t.Fatalf("expected wireframe section in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "WORKSPACE[main] TAB[shell] LAYER[tiled] FOCUS[tiled] OVERLAY[none]") {
+		t.Fatalf("expected wireframe header summary in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] KIND[tiled] SLOT[connected]") {
+		t.Fatalf("expected wireframe active pane summary in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "TERM[term-1] STATE[running]") {
+		t.Fatalf("expected wireframe terminal summary in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersWireframeSplitWorkbench(t *testing.T) {
+	state := runtimeStateWithSplitPaneTargets()
+	renderer := runtimeRenderer{
+		Screens: NewRuntimeTerminalStore(RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "$"}, {Content: " "}, {Content: "n"}, {Content: "p"}, {Content: "m"}},
+								{{Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+							},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: types.TerminalID("term-2"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: ">"}, {Content: " "}, {Content: "t"}, {Content: "s"}, {Content: "c"}},
+								{{Content: "o"}, {Content: "k"}},
+							},
+						},
+					},
+				},
+			},
+		}),
+	}
+
+	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "SPLIT[vertical] RATIO[0.50] LEAVES[2]") {
+		t.Fatalf("expected wireframe split summary in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "ACTIVE[api-dev] ROLE[owner] STATE[running]") {
+		t.Fatalf("expected active split pane box in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "PANE[build-log] ROLE[owner] STATE[running]") {
+		t.Fatalf("expected sibling split pane box in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersWireframeFloatingStack(t *testing.T) {
+	state := runtimeStateWithFloatingOverviewTargets()
+	renderer := runtimeRenderer{
+		Screens: NewRuntimeTerminalStore(RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+							},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: types.TerminalID("term-2"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "b"}, {Content: "u"}, {Content: "i"}, {Content: "l"}, {Content: "d"}, {Content: " "}, {Content: "o"}, {Content: "k"}},
+							},
+						},
+					},
+				},
+			},
+		}),
+	}
+
+	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "FLOATING STACK") {
+		t.Fatalf("expected wireframe floating stack heading in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "FLOAT[float-1] api-dev owner 10,8 30x12") {
+		t.Fatalf("expected first floating pane card in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "FLOAT[float-2] build-log owner 45,14 28x10") {
+		t.Fatalf("expected second floating pane card in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersWireframeOverlayDialog(t *testing.T) {
+	state := runtimeStateWithTerminalManagerTargets()
+	manager := terminalmanagerdomain.NewState(state.Domain, state.UI.Focus)
+	manager.MoveSelection(1)
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayTerminalManager,
+		Data: manager,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+	state.UI.Focus.OverlayTarget = types.OverlayTerminalManager
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "OVERLAY[terminal_manager] FOCUS[overlay]") {
+		t.Fatalf("expected wireframe overlay heading in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "ROWS[7] SELECTED[term-2]") {
+		t.Fatalf("expected wireframe overlay selection summary in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "> [terminal] build-log") {
+		t.Fatalf("expected wireframe overlay selected row in rendered view, got:\n%s", view)
 	}
 }
 

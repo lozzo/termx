@@ -27,6 +27,12 @@ const runtimeBarMaxWidth = 96
 const runtimeSummaryMaxWidth = 240
 const runtimeDetailMaxWidth = 240
 const runtimeOutlinePreviewMaxWidth = 48
+const runtimeWireframeWidth = 78
+const runtimeWireframeOverlayWidth = 58
+const runtimeWireframeSplitColumnWidth = 38
+const runtimeWireframeMainPaneWidth = 52
+const runtimeWireframeSidebarWidth = 24
+const runtimeWireframePreviewRows = 4
 
 // Render 先提供一个稳定、可测试的文本视图，优先把生命周期打通。
 // 这里不追求视觉完成度，只把当前 workspace / tab / pane / overlay 这些主语义明确展示出来。
@@ -48,6 +54,7 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	overlayActive := state.UI.Overlay.Kind != types.OverlayNone
 
 	lines := []string{"termx"}
+	lines = append(lines, r.renderWireframeView(state, workspace, tab, pane)...)
 	lines = appendChrome(lines, "header", []string{
 		renderHeaderBar(workspace, tab, pane, state.UI),
 		renderWorkspaceBar(workspace),
@@ -96,6 +103,475 @@ func appendChrome(lines []string, name string, body []string, fn func([]string) 
 		return fn(lines)
 	}
 	return lines
+}
+
+// renderWireframeView 在语义 renderer 之上补一层稳定的 ASCII 工作台，
+// 让 `cmd/termx` 即使还没接入完整几何布局，也先具备“看起来像真正 TUI”的主视图。
+func (r runtimeRenderer) renderWireframeView(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) []string {
+	lines := []string{"wireframe_view:"}
+	layer := tab.ActiveLayer
+	if layer == "" {
+		layer = types.FocusLayerTiled
+	}
+	focus := state.UI.Focus.Layer
+	if focus == "" {
+		focus = types.FocusLayerTiled
+	}
+	lines = append(lines, renderASCIIBox(runtimeWireframeWidth, []string{
+		fmt.Sprintf("WORKSPACE[%s] TAB[%s] LAYER[%s] FOCUS[%s] OVERLAY[%s]", safeWorkspaceLabel(workspace), safeTabLabel(tab), layer, focus, state.UI.Overlay.Kind),
+		fmt.Sprintf("PATH[%s/%s/%s:%s]", safeWorkspaceLabel(workspace), safeTabLabel(tab), safePaneKind(pane.Kind), pane.ID),
+	})...)
+	lines = append(lines, r.renderWireframeWorkbench(state, tab, pane)...)
+	if overlayLines := r.renderWireframeOverlayDialog(state); len(overlayLines) > 0 {
+		lines = append(lines, overlayLines...)
+	}
+	return lines
+}
+
+func (r runtimeRenderer) renderWireframeWorkbench(state types.AppState, tab types.TabState, pane types.PaneState) []string {
+	tiledPaneIDs := orderedTiledPaneIDs(tab)
+	floatingPaneIDs := orderedFloatingPaneIDs(tab)
+	switch {
+	case len(tiledPaneIDs) > 1:
+		return r.renderWireframeSplitWorkbench(state, tab, tiledPaneIDs, floatingPaneIDs)
+	case len(floatingPaneIDs) > 0:
+		return r.renderWireframeFloatingWorkbench(state, tab, pane, floatingPaneIDs)
+	default:
+		return renderASCIIBox(runtimeWireframeWidth, append([]string{"WORKBENCH single"}, r.renderWireframePaneCard(state, pane, true)...))
+	}
+}
+
+func (r runtimeRenderer) renderWireframeSplitWorkbench(state types.AppState, tab types.TabState, tiledPaneIDs []types.PaneID, floatingPaneIDs []types.PaneID) []string {
+	summary := summarizeTiledLayout(tab.RootSplit, len(tiledPaneIDs))
+	lines := renderASCIIBox(runtimeWireframeWidth, []string{
+		"WORKBENCH split",
+		renderWireframeSplitSummary(summary),
+	})
+	overviewLines := make([]string, 0, 2)
+	for i, paneID := range tiledPaneIDs {
+		if i == 2 {
+			break
+		}
+		pane, ok := tab.Panes[paneID]
+		if !ok {
+			continue
+		}
+		overviewLines = append(overviewLines, renderWireframePaneStateSummary(state, pane, paneID == tab.ActivePaneID))
+	}
+	if len(overviewLines) > 0 {
+		lines = append(lines, renderASCIIBox(runtimeWireframeWidth, overviewLines)...)
+	}
+	columnBoxes := make([][]string, 0, 2)
+	for i, paneID := range tiledPaneIDs {
+		if i == 2 {
+			break
+		}
+		pane, ok := tab.Panes[paneID]
+		if !ok {
+			continue
+		}
+		columnBoxes = append(columnBoxes, renderASCIIBox(runtimeWireframeSplitColumnWidth, r.renderWireframePaneCard(state, pane, paneID == tab.ActivePaneID)))
+	}
+	if len(columnBoxes) == 1 {
+		columnBoxes = append(columnBoxes, renderASCIIBox(runtimeWireframeSplitColumnWidth, []string{"PANE[missing]", "slot[missing]"}))
+	}
+	lines = append(lines, joinASCIIBoxes(columnBoxes, 2)...)
+	if len(tiledPaneIDs) > 2 {
+		lines = append(lines, renderASCIIBox(runtimeWireframeWidth, []string{fmt.Sprintf("MORE PANES[%d]", len(tiledPaneIDs)-2)})...)
+	}
+	if len(floatingPaneIDs) > 0 {
+		lines = append(lines, renderASCIIBox(runtimeWireframeWidth, r.renderWireframeFloatingStackBody(state, tab, floatingPaneIDs))...)
+	}
+	return lines
+}
+
+func renderWireframeSplitSummary(summary tiledLayoutSummary) string {
+	parts := []string{
+		fmt.Sprintf("SPLIT[%s]", summary.Root),
+		fmt.Sprintf("LEAVES[%d]", summary.Leaves),
+	}
+	if summary.Root == "" {
+		parts[0] = "SPLIT[implicit]"
+	}
+	if summary.HasRatio {
+		parts = append([]string{fmt.Sprintf("SPLIT[%s]", summary.Root), fmt.Sprintf("RATIO[%.2f]", summary.Ratio)}, parts[1:]...)
+	}
+	if !summary.HasRatio {
+		parts = append([]string{fmt.Sprintf("SPLIT[%s]", summary.Root), "RATIO[n/a]"}, parts[1:]...)
+	}
+	return strings.Join(parts, " ")
+}
+
+func (r runtimeRenderer) renderWireframeFloatingWorkbench(state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID) []string {
+	mainBox := renderASCIIBox(runtimeWireframeMainPaneWidth, append([]string{"WORKBENCH floating"}, r.renderWireframePaneCard(state, pane, true)...))
+	sidebarBox := renderASCIIBox(runtimeWireframeSidebarWidth, r.renderWireframeFloatingStackBody(state, tab, floatingPaneIDs))
+	lines := joinASCIIBoxes([][]string{mainBox, sidebarBox}, 2)
+	summaryLines := r.renderWireframeFloatingStackSummary(state, tab, floatingPaneIDs)
+	if len(summaryLines) > 0 {
+		lines = append(lines, renderASCIIBox(runtimeWireframeWidth, summaryLines)...)
+	}
+	return lines
+}
+
+// renderWireframePaneCard 用统一卡片表达 pane 的控制关系、terminal 状态和最近屏幕内容，
+// 这样 single/split/floating 三种工作台都能复用同一套最小可读块。
+func (r runtimeRenderer) renderWireframePaneCard(state types.AppState, pane types.PaneState, active bool) []string {
+	cardKind := "PANE"
+	if active {
+		cardKind = "ACTIVE"
+	}
+	role := renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID)
+	if role == "" {
+		role = string(pane.SlotState)
+	}
+	lines := []string{
+		fmt.Sprintf("%s[%s] ROLE[%s] KIND[%s] SLOT[%s]", cardKind, renderPaneTitle(state, pane), role, safePaneKind(pane.Kind), pane.SlotState),
+	}
+	if pane.TerminalID != "" {
+		terminalState := "unknown"
+		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.State != "" {
+			terminalState = string(terminal.State)
+		}
+		lines = append(lines,
+			fmt.Sprintf("%s[%s] ROLE[%s] STATE[%s]", cardKind, renderPaneTitle(state, pane), role, terminalState),
+			fmt.Sprintf("TERM[%s] STATE[%s]", pane.TerminalID, terminalState),
+		)
+	} else {
+		lines = append(lines, fmt.Sprintf("%s[%s] SLOT[%s]", cardKind, renderPaneTitle(state, pane), pane.SlotState))
+	}
+	if pane.Kind == types.PaneKindFloating && (pane.Rect.W > 0 || pane.Rect.H > 0) {
+		lines = append(lines, fmt.Sprintf("RECT[%d,%d %dx%d]", pane.Rect.X, pane.Rect.Y, pane.Rect.W, pane.Rect.H))
+	}
+	lines = append(lines, r.renderWireframePanePreviewLines(state, pane)...)
+	return lines
+}
+
+func (r runtimeRenderer) renderWireframePanePreviewLines(state types.AppState, pane types.PaneState) []string {
+	if state.UI.Overlay.Kind != types.OverlayNone {
+		return []string{"PREVIEW suppressed by overlay"}
+	}
+	if pane.TerminalID == "" || r.Screens == nil {
+		return renderWireframePaneSlotPreview(state, pane)
+	}
+	snapshot, ok := r.Screens.Snapshot(pane.TerminalID)
+	if !ok || snapshot == nil {
+		return renderWireframePaneSlotPreview(state, pane)
+	}
+	rows, _, _ := renderSnapshotRows(snapshot)
+	if len(rows) > runtimeWireframePreviewRows {
+		rows = rows[len(rows)-runtimeWireframePreviewRows:]
+	}
+	if len(rows) == 0 {
+		return []string{"PREVIEW[empty]"}
+	}
+	lines := make([]string, 0, len(rows))
+	for _, row := range rows {
+		lines = append(lines, fmt.Sprintf("PREVIEW %s", row))
+	}
+	return lines
+}
+
+func renderWireframePaneStateSummary(state types.AppState, pane types.PaneState, active bool) string {
+	cardKind := "PANE"
+	if active {
+		cardKind = "ACTIVE"
+	}
+	role := renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID)
+	if role == "" {
+		role = string(pane.SlotState)
+	}
+	if pane.TerminalID != "" {
+		terminalState := "unknown"
+		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.State != "" {
+			terminalState = string(terminal.State)
+		}
+		return fmt.Sprintf("%s[%s] ROLE[%s] STATE[%s]", cardKind, renderPaneTitle(state, pane), role, terminalState)
+	}
+	return fmt.Sprintf("%s[%s] SLOT[%s]", cardKind, renderPaneTitle(state, pane), pane.SlotState)
+}
+
+func renderWireframePaneSlotPreview(state types.AppState, pane types.PaneState) []string {
+	switch pane.SlotState {
+	case types.PaneSlotWaiting:
+		return []string{"PREVIEW waiting for connect", "ACTION[n] new | ACTION[a] connect"}
+	case types.PaneSlotExited:
+		exitCode := ""
+		if pane.LastExitCode != nil {
+			exitCode = fmt.Sprintf(" EXIT[%d]", *pane.LastExitCode)
+		} else if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.ExitCode != nil {
+			exitCode = fmt.Sprintf(" EXIT[%d]", *terminal.ExitCode)
+		}
+		return []string{fmt.Sprintf("PREVIEW exited history retained%s", exitCode), "ACTION[r] restart | ACTION[a] connect"}
+	case types.PaneSlotEmpty:
+		return []string{"PREVIEW unconnected pane", "ACTION[n] new | ACTION[m] manager"}
+	default:
+		return []string{"PREVIEW unavailable"}
+	}
+}
+
+func (r runtimeRenderer) renderWireframeFloatingStackBody(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) []string {
+	lines := []string{"FLOATING STACK"}
+	for _, paneID := range floatingPaneIDs {
+		pane, ok := tab.Panes[paneID]
+		if !ok {
+			continue
+		}
+		role := renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID)
+		if role == "" {
+			role = string(pane.SlotState)
+		}
+		lines = append(lines, fmt.Sprintf("FLOAT[%s] %s %s %d,%d %dx%d", paneID, renderPaneTitle(state, pane), role, pane.Rect.X, pane.Rect.Y, pane.Rect.W, pane.Rect.H))
+		if preview := r.renderPanePreview(pane.TerminalID); preview != "" {
+			lines = append(lines, fmt.Sprintf("PREVIEW %s", preview))
+		}
+	}
+	if len(lines) == 1 {
+		lines = append(lines, "FLOAT[none]")
+	}
+	return lines
+}
+
+func (r runtimeRenderer) renderWireframeFloatingStackSummary(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) []string {
+	if len(floatingPaneIDs) == 0 {
+		return nil
+	}
+	lines := []string{"FLOATING STACK"}
+	for _, paneID := range floatingPaneIDs {
+		pane, ok := tab.Panes[paneID]
+		if !ok {
+			continue
+		}
+		role := renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID)
+		if role == "" {
+			role = string(pane.SlotState)
+		}
+		lines = append(lines, fmt.Sprintf("FLOAT[%s] %s %s %d,%d %dx%d", paneID, renderPaneTitle(state, pane), role, pane.Rect.X, pane.Rect.Y, pane.Rect.W, pane.Rect.H))
+	}
+	return lines
+}
+
+func (r runtimeRenderer) renderWireframeOverlayDialog(state types.AppState) []string {
+	if state.UI.Overlay.Kind == types.OverlayNone {
+		return nil
+	}
+	body := []string{fmt.Sprintf("OVERLAY[%s] FOCUS[%s]", state.UI.Overlay.Kind, state.UI.Focus.Layer)}
+	body = append(body, renderWireframeOverlayBody(state.UI.Overlay)...)
+	box := renderASCIIBox(runtimeWireframeOverlayWidth, body)
+	padding := (runtimeWireframeWidth - runtimeWireframeOverlayWidth) / 2
+	if padding < 0 {
+		padding = 0
+	}
+	return indentLines(box, padding)
+}
+
+func renderWireframeOverlayBody(overlay types.OverlayState) []string {
+	switch overlay.Kind {
+	case types.OverlayTerminalManager:
+		manager, ok := overlay.Data.(*terminalmanagerdomain.State)
+		if !ok || manager == nil {
+			return []string{"ROWS[0]"}
+		}
+		rows := manager.VisibleRows()
+		selectedID := "none"
+		selectedIndex := 0
+		if row, ok := manager.SelectedRow(); ok {
+			if row.TerminalID != "" {
+				selectedID = string(row.TerminalID)
+			} else {
+				selectedID = row.Label
+			}
+			for idx, candidate := range rows {
+				if candidate.Kind == row.Kind && candidate.TerminalID == row.TerminalID && candidate.Label == row.Label {
+					selectedIndex = idx
+					break
+				}
+			}
+		}
+		lines := []string{fmt.Sprintf("ROWS[%d] SELECTED[%s]", len(rows), selectedID)}
+		previewRows, _ := overlayPreviewRowsAround(rows, runtimeOverlayDetailPreviewRows, selectedIndex)
+		for _, row := range previewRows {
+			prefix := "  "
+			if selected, ok := manager.SelectedRow(); ok && selected.Kind == row.Kind && selected.TerminalID == row.TerminalID && selected.Label == row.Label {
+				prefix = "> "
+			}
+			lines = append(lines, fmt.Sprintf("%s[%s] %s", prefix, row.Kind, row.Label))
+		}
+		return lines
+	case types.OverlayWorkspacePicker:
+		picker, ok := overlay.Data.(*workspacedomain.PickerState)
+		if !ok || picker == nil {
+			return []string{"ROWS[0]"}
+		}
+		rows := picker.VisibleRows()
+		lines := []string{fmt.Sprintf("ROWS[%d] QUERY[%s]", len(rows), picker.Query())}
+		for _, row := range rows {
+			prefix := "  "
+			if selected, ok := picker.SelectedRow(); ok && selected.Node.Key == row.Node.Key {
+				prefix = "> "
+			}
+			lines = append(lines, fmt.Sprintf("%s[%s] %s", prefix, row.Node.Kind, row.Node.Label))
+			if len(lines) >= runtimeOverlayDetailPreviewRows+1 {
+				break
+			}
+		}
+		return lines
+	case types.OverlayTerminalPicker:
+		picker, ok := overlay.Data.(*terminalpickerdomain.State)
+		if !ok || picker == nil {
+			return []string{"ROWS[0]"}
+		}
+		rows := picker.VisibleRows()
+		lines := []string{fmt.Sprintf("ROWS[%d] QUERY[%s]", len(rows), picker.Query())}
+		for _, row := range rows {
+			prefix := "  "
+			if selected, ok := picker.SelectedRow(); ok && selected.Kind == row.Kind && selected.TerminalID == row.TerminalID && selected.Label == row.Label {
+				prefix = "> "
+			}
+			lines = append(lines, fmt.Sprintf("%s[%s] %s", prefix, row.Kind, row.Label))
+			if len(lines) >= runtimeOverlayDetailPreviewRows+1 {
+				break
+			}
+		}
+		return lines
+	case types.OverlayLayoutResolve:
+		resolve, ok := overlay.Data.(*layoutresolvedomain.State)
+		if !ok || resolve == nil {
+			return []string{"ROWS[0]"}
+		}
+		rows := resolve.Rows()
+		lines := []string{fmt.Sprintf("ROWS[%d] PANE[%s]", len(rows), resolve.PaneID)}
+		for _, row := range rows {
+			prefix := "  "
+			if selected, ok := resolve.SelectedRow(); ok && selected.Action == row.Action && selected.Label == row.Label {
+				prefix = "> "
+			}
+			lines = append(lines, fmt.Sprintf("%s[%s] %s", prefix, row.Action, row.Label))
+			if len(lines) >= runtimeOverlayDetailPreviewRows+1 {
+				break
+			}
+		}
+		return lines
+	case types.OverlayPrompt:
+		prompt, ok := overlay.Data.(*promptdomain.State)
+		if !ok || prompt == nil {
+			return []string{"PROMPT[draft]"}
+		}
+		lines := []string{fmt.Sprintf("PROMPT[%s] TITLE[%s]", prompt.Kind, prompt.Title)}
+		if len(prompt.Fields) == 0 {
+			lines = append(lines, fmt.Sprintf("> [draft] %s", prompt.Draft))
+			return lines
+		}
+		active := prompt.Active
+		if active < 0 || active >= len(prompt.Fields) {
+			active = 0
+		}
+		previewFields, _ := overlayPreviewRowsAround(prompt.Fields, runtimeOverlayDetailPreviewRows, active)
+		for _, field := range previewFields {
+			prefix := "  "
+			if field.Key == prompt.Fields[active].Key && field.Label == prompt.Fields[active].Label {
+				prefix = "> "
+			}
+			lines = append(lines, fmt.Sprintf("%s[%s] %s: %s", prefix, field.Key, field.Label, field.Value))
+		}
+		return lines
+	case types.OverlayHelp:
+		return []string{
+			"HELP[shortcuts]",
+			"  Ctrl-p pane | Ctrl-t tab",
+			"  Ctrl-w workspace | Ctrl-f picker",
+		}
+	default:
+		return []string{fmt.Sprintf("OVERLAY[%s]", overlay.Kind)}
+	}
+}
+
+func renderASCIIBox(width int, body []string) []string {
+	if width < 4 {
+		width = 4
+	}
+	innerWidth := width - 2
+	lines := []string{"+" + strings.Repeat("-", innerWidth) + "+"}
+	for _, line := range body {
+		lines = append(lines, "|"+padRight(truncateLine(line, innerWidth), innerWidth)+"|")
+	}
+	lines = append(lines, "+"+strings.Repeat("-", innerWidth)+"+")
+	return lines
+}
+
+func joinASCIIBoxes(boxes [][]string, gap int) []string {
+	if len(boxes) == 0 {
+		return nil
+	}
+	if len(boxes) == 1 {
+		return boxes[0]
+	}
+	height := 0
+	widths := make([]int, len(boxes))
+	for index, box := range boxes {
+		if len(box) > height {
+			height = len(box)
+		}
+		if len(box) > 0 {
+			widths[index] = len(box[0])
+		}
+	}
+	spacer := strings.Repeat(" ", gap)
+	lines := make([]string, 0, height)
+	for row := 0; row < height; row++ {
+		var builder strings.Builder
+		for index, box := range boxes {
+			if index > 0 {
+				builder.WriteString(spacer)
+			}
+			if row < len(box) {
+				builder.WriteString(box[row])
+				continue
+			}
+			builder.WriteString(strings.Repeat(" ", widths[index]))
+		}
+		lines = append(lines, builder.String())
+	}
+	return lines
+}
+
+func indentLines(lines []string, padding int) []string {
+	if padding <= 0 {
+		return lines
+	}
+	prefix := strings.Repeat(" ", padding)
+	indented := make([]string, 0, len(lines))
+	for _, line := range lines {
+		indented = append(indented, prefix+line)
+	}
+	return indented
+}
+
+func padRight(line string, width int) string {
+	if len(line) >= width {
+		return line
+	}
+	return line + strings.Repeat(" ", width-len(line))
+}
+
+func safeWorkspaceLabel(workspace types.WorkspaceState) string {
+	if workspace.Name != "" {
+		return workspace.Name
+	}
+	return string(workspace.ID)
+}
+
+func safeTabLabel(tab types.TabState) string {
+	if tab.Name != "" {
+		return tab.Name
+	}
+	return string(tab.ID)
+}
+
+func safePaneKind(kind types.PaneKind) types.PaneKind {
+	if kind != "" {
+		return kind
+	}
+	return types.PaneKindTiled
 }
 
 // renderHeaderBar 把主工作区、pane、overlay、focus、mode 汇总成顶栏语义，

@@ -7,7 +7,7 @@
 
 ## 1. 当前判断
 
-termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overlay、恢复入口状态机、启动规划层、启动任务执行层、restore store 读写闭环、runtime session bootstrap、最小 Bubble Tea 运行主线，以及 active pane 的 terminal snapshot/input、stream/event 增量消费与关键 runtime 观测/控制状态链路已按 TDD 落地”的阶段。
+termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overlay、恢复入口状态机、启动规划层、启动任务执行层、restore store 读写闭环、runtime session bootstrap、最小 Bubble Tea 运行主线，以及 active pane 的 terminal snapshot/input、stream/event 增量消费、关键 runtime 观测/控制状态链路与真实工作台 renderer 第一包已按 TDD 落地”的阶段。
 
 现状可以概括为：
 
@@ -15,6 +15,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 新主线文档已经建立并持续作为实现约束
 - 新主线代码已进入 reducer / state machine 落地期
 - 当前已进入 bubbletea shell 的恢复入口、启动规划、启动任务执行、restore store 读写闭环、runtime session bootstrap、最小运行主线，以及 active pane 的 terminal snapshot/input、stream/event 增量消费与关键 runtime 观测/控制状态阶段
+- 当前已经从“纯语义文本 renderer”推进到“语义 renderer + ASCII 真实工作台 wireframe”并行阶段，`cmd/termx` 已能直接看到工作台盒模型而不再只是语义字段列表
 
 ---
 
@@ -303,6 +304,18 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `ModeTimedOutIntent`
 
 本轮新增并通过测试的能力：
+
+- runtime 主视图顶部现在新增 `wireframe_view`，会先渲染一层稳定的 ASCII 工作台，再保留原有语义 chrome/section 作为兼容层
+- 已补上真实工作台 renderer 第一包：single pane 工作台盒、split 双列工作台盒、floating 工作台 + stack 侧栏、overlay 居中对话框
+- wireframe workbench 现在会显式展示 `WORKSPACE/TAB/LAYER/FOCUS/OVERLAY` 头、active pane 的 `owner/follower/slot/kind/state`，以及最近 screen 预览
+- split 工作台现在除了语义 `tiled_outline/tree/layout` 外，还会直接渲染双列 pane box，并补上不截断的 active/sibling pane 状态摘要
+- floating 工作台现在除了语义 `floating_outline` 外，还会直接渲染 active floating pane 卡片和 floating stack 摘要，开始具备真正“浮层工作台”的视觉结构
+- overlay 打开时，主视图现在会额外显示居中的 wireframe dialog；`terminal manager / prompt / picker / layout resolve / help` 都有最小盒式对话框投影
+- overlay 打开时，wireframe 与语义 renderer 现在都会同步压掉 screen 实际内容，避免 overlay 模式下仍把 terminal 正文泄露到主视图
+- prompt wireframe 预览现在也会围绕活动字段截取，不再从第一字段机械展开，和语义 overlay 预览窗口保持一致
+- 已补上 4 条 renderer 场景测试：single pane wireframe、split wireframe、floating stack wireframe、overlay dialog wireframe
+- 已补上 3 条 runtime 场景型 E2E：真实工作台 wireframe、split workbench wireframe、overlay wireframe dialog
+- 这意味着当前主线已经正式从“把字段渲染出来”切进“把真实 UI 盒模型渲染出来”，下一阶段可以继续收口 overlay 盒模型细节、真实布局比例和交互稳定性
 
 - 已补上一条 runtime 场景型 E2E：metadata prompt submit 失败后主视图显示错误 notice
 - 已补上一条 runtime 场景型 E2E：terminal manager stop 失败后主视图显示错误 notice
