@@ -161,6 +161,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 137. 第一百三十三轮 TDD 已补上 overlay 列表与 notice 的预览裁剪
 138. 第一百三十四轮 TDD 已补上 runtime 主视图的 section 分区
 139. 第一百三十五轮 TDD 已补上 runtime 主视图的紧凑骨架与空区块占位
+140. 第一百三十六轮 TDD 已补上 runtime 主视图的 chrome header/body/footer 外壳
 
 对应文档：
 
@@ -306,6 +307,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - runtime 主视图现在会把 `status/terminal` 元数据压成紧凑多字段行，并为 `terminal/screen/overlay/notices` 始终保留固定区块，占位态下也不会整段消失
 - connected pane 在没有 snapshot 时，主视图现在改为显示 `screen: <unavailable>`，而不是直接缺失 screen 区块
 - 已补上 renderer / runtime 场景测试：active pane 主视图行数被收紧，terminal manager 重 overlay 视图也被压到稳定预算内
+- runtime 主视图现在进一步分成 `chrome_header / chrome_body / chrome_footer` 三层外壳，`summary + status` 固定在 header，`terminal/screen/overlay` 固定在 body，`notices` 固定在 footer
+- 已补上 renderer / runtime 场景测试：header/body/footer 顺序稳定，overlay 不会掉进 footer，footer 的 notices 占位会始终留在底部
 - 已补上一条 runtime 场景型 E2E：`Ctrl-f` 打开 terminal picker 时主视图显式显示 `overlay: terminal_picker` 与 `focus_overlay_target: terminal_picker`
 - 已补上一条 runtime 场景型 E2E：workspace picker / prompt / terminal manager / terminal picker / layout resolve 关闭后主视图不再残留 `focus_overlay_target`
 - 已补上一条 runtime 场景型 E2E：terminal manager 与 layout resolve 关闭后主视图不再残留临时 `mode`

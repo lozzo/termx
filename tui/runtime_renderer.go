@@ -40,17 +40,22 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 	}
 
 	statusLines := renderStatusSection(workspace, tab, pane, state.UI)
-
-	lines := []string{
-		"termx",
+	summaryLines := []string{
 		fmt.Sprintf("summary: ws=%s tab=%s pane=%s overlay=%s focus=%s", workspace.Name, tab.Name, pane.ID, state.UI.Overlay.Kind, state.UI.Focus.Layer),
 	}
-	lines = appendSection(lines, "status", statusLines)
 
-	lines = appendSection(lines, "terminal", r.renderTerminalSection(state, pane))
-	lines = appendSection(lines, "screen", r.renderScreenSection(pane))
-	lines = appendSection(lines, "overlay", renderOverlayLines(state.UI.Overlay))
-	lines = appendSection(lines, "notices", renderNoticeLines(notices))
+	lines := []string{"termx"}
+	lines = appendChrome(lines, "header", summaryLines, func(lines []string) []string {
+		return appendSection(lines, "status", statusLines)
+	})
+	lines = appendChrome(lines, "body", nil, func(lines []string) []string {
+		lines = appendSection(lines, "terminal", r.renderTerminalSection(state, pane))
+		lines = appendSection(lines, "screen", r.renderScreenSection(pane))
+		return appendSection(lines, "overlay", renderOverlayLines(state.UI.Overlay))
+	})
+	lines = appendChrome(lines, "footer", nil, func(lines []string) []string {
+		return appendSection(lines, "notices", renderNoticeLines(notices))
+	})
 	return strings.Join(lines, "\n")
 }
 
@@ -60,6 +65,15 @@ func appendSection(lines []string, name string, body []string) []string {
 	}
 	lines = append(lines, fmt.Sprintf("section_%s:", name))
 	return append(lines, body...)
+}
+
+func appendChrome(lines []string, name string, body []string, fn func([]string) []string) []string {
+	lines = append(lines, fmt.Sprintf("chrome_%s:", name))
+	lines = append(lines, body...)
+	if fn != nil {
+		return fn(lines)
+	}
+	return lines
 }
 
 func renderStatusSection(workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, ui types.UIState) []string {

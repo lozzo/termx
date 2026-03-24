@@ -59,8 +59,18 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "termx") || !strings.Contains(view, "summary: ws=main tab=shell pane=pane-1 overlay=none focus=tiled") {
 		t.Fatalf("expected renderer summary header, got:\n%s", view)
 	}
+	if !strings.Contains(view, "chrome_header:") || !strings.Contains(view, "chrome_body:") || !strings.Contains(view, "chrome_footer:") {
+		t.Fatalf("expected chrome wrappers in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "section_status:") || !strings.Contains(view, "section_terminal:") || !strings.Contains(view, "section_screen:") {
 		t.Fatalf("expected renderer sections for status/terminal/screen, got:\n%s", view)
+	}
+	if !(strings.Index(view, "chrome_header:") < strings.Index(view, "section_status:") &&
+		strings.Index(view, "section_status:") < strings.Index(view, "chrome_body:") &&
+		strings.Index(view, "chrome_body:") < strings.Index(view, "section_terminal:") &&
+		strings.Index(view, "section_overlay:") < strings.Index(view, "chrome_footer:") &&
+		strings.Index(view, "chrome_footer:") < strings.Index(view, "section_notices:")) {
+		t.Fatalf("expected header/body/footer ordering in rendered view, got:\n%s", view)
 	}
 	if !strings.Contains(view, "title: api-dev") {
 		t.Fatalf("expected terminal title in rendered view, got:\n%s", view)
@@ -92,7 +102,7 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "$ pwd") || !strings.Contains(view, "/tmp") {
 		t.Fatalf("expected snapshot rows in rendered view, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 18 {
+	if lines := strings.Count(view, "\n") + 1; lines > 22 {
 		t.Fatalf("expected compact active pane view, got %d lines:\n%s", lines, view)
 	}
 }
@@ -148,6 +158,9 @@ func TestRuntimeRendererRendersScreenPlaceholderWhenNoSnapshot(t *testing.T) {
 
 func TestRuntimeRendererRendersStableSectionSkeletonForEmptyPane(t *testing.T) {
 	view := runtimeRenderer{}.Render(buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty), nil)
+	if !strings.Contains(view, "chrome_body:") || !strings.Contains(view, "chrome_footer:") {
+		t.Fatalf("expected chrome body/footer wrappers in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "section_terminal:") || !strings.Contains(view, "terminal: <disconnected>") {
 		t.Fatalf("expected terminal placeholder section in rendered view, got:\n%s", view)
 	}
@@ -160,6 +173,9 @@ func TestRuntimeRendererRendersStableSectionSkeletonForEmptyPane(t *testing.T) {
 	if !strings.Contains(view, "section_notices:") || !strings.Contains(view, "notices: 0") {
 		t.Fatalf("expected notice placeholder section in rendered view, got:\n%s", view)
 	}
+	if !strings.HasSuffix(strings.TrimSpace(view), "notices: 0") {
+		t.Fatalf("expected footer notice placeholder to stay at bottom, got:\n%s", view)
+	}
 }
 
 func TestRuntimeRendererRendersNoticeSection(t *testing.T) {
@@ -169,6 +185,9 @@ func TestRuntimeRendererRendersNoticeSection(t *testing.T) {
 		Count: 2,
 	}})
 
+	if !strings.Contains(view, "chrome_footer:") {
+		t.Fatalf("expected footer wrapper in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "section_notices:") {
 		t.Fatalf("expected notices section wrapper in rendered view, got:\n%s", view)
 	}
@@ -177,6 +196,25 @@ func TestRuntimeRendererRendersNoticeSection(t *testing.T) {
 	}
 	if !strings.Contains(view, "[error] terminal switched to observer-only mode (x2)") {
 		t.Fatalf("expected aggregated notice line in rendered view, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererKeepsOverlayAboveFooter(t *testing.T) {
+	state := runtimeStateWithTerminalManagerTargets()
+	manager := terminalmanagerdomain.NewState(state.Domain, state.UI.Focus)
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayTerminalManager,
+		Data: manager,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+
+	view := runtimeRenderer{}.Render(state, []btui.Notice{{
+		Level: btui.NoticeLevelError,
+		Text:  "boom",
+	}})
+	if !(strings.Index(view, "section_overlay:") < strings.Index(view, "chrome_footer:") &&
+		strings.Index(view, "chrome_footer:") < strings.Index(view, "section_notices:")) {
+		t.Fatalf("expected overlay to stay in body and notices to stay in footer, got:\n%s", view)
 	}
 }
 
@@ -406,7 +444,7 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "detail_owner: ") {
 		t.Fatalf("expected manager detail owner in rendered view, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 30 {
+	if lines := strings.Count(view, "\n") + 1; lines > 34 {
 		t.Fatalf("expected overlay view to remain within compact budget, got %d lines:\n%s", lines, view)
 	}
 }
