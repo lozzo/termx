@@ -54,6 +54,8 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 		renderWorkspaceSummary(workspace),
 		renderTabStrip(workspace),
 		renderTabSummary(tab),
+		renderTabPathBar(state, workspace, tab, pane),
+		renderTabLayerBar(tab),
 	}, func(lines []string) []string {
 		return appendSection(lines, "status", statusLines)
 	})
@@ -216,6 +218,41 @@ func renderTabSummary(tab types.TabState) string {
 		fmt.Sprintf("exited=%d", exited),
 		fmt.Sprintf("empty=%d", empty),
 		fmt.Sprintf("active_layer=%s", tab.ActiveLayer),
+	)
+}
+
+func renderTabPathBar(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
+	workspaceLabel := workspace.Name
+	if workspaceLabel == "" {
+		workspaceLabel = string(workspace.ID)
+	}
+	tabLabel := tab.Name
+	if tabLabel == "" {
+		tabLabel = string(tab.ID)
+	}
+	layer := pane.Kind
+	if layer == "" {
+		layer = types.PaneKindTiled
+	}
+	return compactSummaryLine(
+		fmt.Sprintf("tab_path_bar: path=%s/%s/%s:%s", workspaceLabel, tabLabel, layer, pane.ID),
+		fmt.Sprintf("target=%s", renderPaneTitle(state, pane)),
+	)
+}
+
+func renderTabLayerBar(tab types.TabState) string {
+	tiledRoot := "<none>"
+	if paneIDs := orderedTiledPaneIDs(tab); len(paneIDs) > 0 {
+		tiledRoot = string(paneIDs[0])
+	}
+	floatingTop := "<none>"
+	if paneIDs := orderedFloatingPaneIDs(tab); len(paneIDs) > 0 {
+		floatingTop = string(paneIDs[len(paneIDs)-1])
+	}
+	return compactSummaryLine(
+		fmt.Sprintf("tab_layer_bar: tiled_root=%s", tiledRoot),
+		fmt.Sprintf("floating_top=%s", floatingTop),
+		fmt.Sprintf("floating_total=%d", len(orderedFloatingPaneIDs(tab))),
 	)
 }
 
