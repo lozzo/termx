@@ -27,6 +27,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把多 pane 工作台的 shell 语言往前推：`split workbench` 现在补上 `LAYOUT[split]` 摘要并让每个 pane 复用统一的 `STATUS/TERM/CONTENT` 组件；`floating workbench` 的 sidebar 现在补上 `STACK[windows]` 与 `FOCUS[...]`，mixed-slot 场景也能直接看到 waiting/exited pane 的结构化摘要
 - 本轮继续把第一视觉里最重复、最容易撑爆宽度的摘要压缩掉：floating shell 下方的 `WINDOW CARD[...]` 已收成紧凑 `WINDOW LIST[...]`，overlay dialog 的焦点/选中态也改成短 token，保证窄框下仍然稳定可见
 - 本轮继续把 shell chrome 往第一视觉收口：`screen_shell` 内现在开始直接带 `WS / TABS / PATH / NOTICE` 这类工作台信息，overlay 场景下也会走更紧凑的合并策略，不再完全依赖下面的 `chrome_* / wireframe_view` 才能读懂上下文
+- 本轮继续把默认第一屏从“工程 token 页”收口成“产品化主壳”：`HEADER / STATE / TARGET / PATH / FT` 这类表达已改成 `Workspace / Tab / Workbench / Active pane / Location / Notice / Keys` 等人类可读 chrome，并同步压缩到 78 列默认宽度内可稳定阅读
 
 ---
 
@@ -227,6 +228,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 191. 第一百八十七轮 TDD 已补上 pane shell 四态正文组件、主工作台状态区/内容区/动作区与对应 runtime E2E 主线
 192. 第一百八十八轮 TDD 已补上 split/floating workbench 子层级、layout/stack 组件与对应 runtime E2E 主线
 193. 第一百八十九轮 TDD 已补上 floating `WINDOW LIST` 压缩、overlay dialog 短焦点 token 与对应 runtime E2E 主线
+194. 第一百九十轮 TDD 已补上默认 `screen_shell` 主壳 chrome 产品化收口、人类可读状态/位置/快捷提示，以及对应 renderer/runtime E2E 主线
 
 对应文档：
 

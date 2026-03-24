@@ -60,22 +60,22 @@ func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	if !strings.Contains(view, "viewport=96x40") {
 		t.Fatalf("expected wireframe viewport to adapt to runtime size, got:\n%s", view)
 	}
-	if !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "SHELL[96x40 overlay=none]") || !strings.Contains(view, "HEADER[main] [shell] pane:pane-1 term:term-1 float:0") {
+	if !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "termx workbench | 96x40 | overlay none") || !strings.Contains(view, "Workspace main | Tab shell") {
 		t.Fatalf("expected renderer to expose visible shell frame header, got:\n%s", view)
 	}
-	if !strings.Contains(view, "WS[main]") || !strings.Contains(view, "tabs=1") || !strings.Contains(view, "panes=1") || !strings.Contains(view, "terms=1") || !strings.Contains(view, "float=0") || !strings.Contains(view, "TABS[*shell]") {
+	if !strings.Contains(view, "Overview tabs 1 | panes 1 | terminals 1 | floating 0") || !strings.Contains(view, "Tabs [shell]") {
 		t.Fatalf("expected renderer to expose shell workspace/tab chrome, got:\n%s", view)
 	}
-	if !strings.Contains(view, "STATE[tiled focus=tiled mode=none overlay=none]") || !strings.Contains(view, "BODY[tiled t=1 f=0]") || !strings.Contains(view, "TARGET[main/shell/pane-1] TERM[term-1] FLOAT[0]") {
+	if !strings.Contains(view, "Workbench tiled | focus tiled | mode none | overlay none") || !strings.Contains(view, "Active pane api-dev | pane pane-1 | terminal term-1 | slot connected") {
 		t.Fatalf("expected renderer to expose shell frame state lines, got:\n%s", view)
 	}
-	if !strings.Contains(view, "PATH[main/shell/tiled:pane-1]") || !strings.Contains(view, "TARGET[api-dev]") || !strings.Contains(view, "FOCUS[tiled]") || !strings.Contains(view, "SLOT[connected]") {
+	if !strings.Contains(view, "Location main / shell / tiled / pane-1 | focus tiled | active api-dev") {
 		t.Fatalf("expected renderer to expose shell path/focus chrome, got:\n%s", view)
 	}
-	if !strings.Contains(view, "#> api-dev [owner] [tiled]") || !strings.Contains(view, "#term-1 running owner") || !strings.Contains(view, "FT[api-dev tiled none]") || !strings.Contains(view, "<p> PANE <t> TAB <w> WS <o> FLOAT <f> PICK <g> GLOBAL") {
+	if !strings.Contains(view, "#> api-dev [owner] [tiled]") || !strings.Contains(view, "#term-1 running owner") || !strings.Contains(view, "Keys Ctrl-p pane | Ctrl-t tab | Ctrl-w ws | Ctrl-o float | ? help") {
 		t.Fatalf("expected renderer to expose visible shell frame body/footer, got:\n%s", view)
 	}
-	if !strings.Contains(view, "NOTICE[0]") {
+	if !strings.Contains(view, "Notice none") {
 		t.Fatalf("expected renderer to expose shell notice summary, got:\n%s", view)
 	}
 	if !strings.Contains(view, "$ pwd") || !strings.Contains(view, "/tmp") || !strings.Contains(view, "term-1 running owner") {
@@ -196,10 +196,10 @@ func TestRuntimeRendererCanHideDebugSections(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "SHELL[78x24 overlay=none]") {
+	if !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "termx workbench | 78x24 | overlay none") {
 		t.Fatalf("expected shell-only renderer to keep visible screen shell, got:\n%s", view)
 	}
-	if !strings.Contains(view, "TERMINFO[term-1 running owner]") || !strings.Contains(view, "CMD[npm run dev]") || !strings.Contains(view, "ROWS[2/2]") {
+	if !strings.Contains(view, "Terminal term-1 | running | owner") || !strings.Contains(view, "preview 2/2") || !strings.Contains(view, "cmd npm run dev") {
 		t.Fatalf("expected shell-only renderer to keep terminal meta inside screen shell, got:\n%s", view)
 	}
 	if strings.Contains(view, "wireframe_view:") || strings.Contains(view, "chrome_header:") || strings.Contains(view, "chrome_body:") || strings.Contains(view, "chrome_footer:") {
@@ -245,7 +245,7 @@ func TestRuntimeRendererShellOnlyOverlayKeepsPaneContext(t *testing.T) {
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "TARGET[main/shell/pane-1] TERM[term-1] FLOAT[0]") || !strings.Contains(view, "PATH[main/shell/tiled:pane-1]") || !strings.Contains(view, "TARGET[api-dev]") || !strings.Contains(view, "SLOT[connected]") {
+	if !strings.Contains(view, "Active pane api-dev | pane pane-1 | terminal term-1 | slot connected") || !strings.Contains(view, "Location main / shell / tiled / pane-1 | focus overlay | active api-dev") {
 		t.Fatalf("expected shell-only overlay renderer to keep current pane context, got:\n%s", view)
 	}
 	if !strings.Contains(view, "# DIALOG[help]") {
@@ -283,7 +283,7 @@ func TestRuntimeRendererShellOnlyShowsContextualActionsForConnectedPane(t *testi
 	}
 
 	view := renderer.Render(state, nil)
-	if !strings.Contains(view, "ACTIONS[input terminal | ctrl-g global | ctrl-f picker | ? help]") {
+	if !strings.Contains(view, "Actions type in terminal | Ctrl-g global | Ctrl-f picker | ? help") {
 		t.Fatalf("expected shell-only connected pane to expose contextual actions, got:\n%s", view)
 	}
 }
@@ -299,14 +299,14 @@ func TestRuntimeRendererShellOnlyShowsStatusAndActionsForDisconnectedStates(t *t
 		{
 			name:       "empty",
 			state:      buildSinglePaneAppState("main", "shell", types.PaneSlotEmpty),
-			statusLine: "STATUS[empty terminal missing]",
-			actionLine: "ACTIONS[n new | a connect | m manager | x close | ? help]",
+			statusLine: "Status empty pane | no terminal connected",
+			actionLine: "Actions n new | a connect | m manager | x close | ? help",
 		},
 		{
 			name:       "waiting",
 			state:      buildSinglePaneAppState("main", "shell", types.PaneSlotWaiting),
-			statusLine: "STATUS[waiting connect pending]",
-			actionLine: "ACTIONS[n new | a connect | m manager | x close | ? help]",
+			statusLine: "Status waiting pane | connect pending",
+			actionLine: "Actions n new | a connect | m manager | x close | ? help",
 		},
 		{
 			name: "exited",
@@ -327,8 +327,8 @@ func TestRuntimeRendererShellOnlyShowsStatusAndActionsForDisconnectedStates(t *t
 				state.Domain.Terminals[types.TerminalID("term-1")] = terminal
 				return state
 			}(),
-			statusLine: "STATUS[exited history retained exit=7]",
-			actionLine: "ACTIONS[r restart | a connect | x close | ? help]",
+			statusLine: "Status exited pane | history retained | exit 7",
+			actionLine: "Actions r restart | a connect | x close | ? help",
 		},
 	}
 
@@ -906,7 +906,7 @@ func TestRuntimeRendererRendersNoticeSection(t *testing.T) {
 	if !strings.Contains(view, "[error] terminal switched to observer-only mode (x2)") {
 		t.Fatalf("expected aggregated notice line in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "NOTICE[1 error]") || !strings.Contains(view, "terminal switched to observer-only mode (x2)") {
+	if !strings.Contains(view, "Notice 1 error") || !strings.Contains(view, "terminal switched to observer-only mode (x2)") {
 		t.Fatalf("expected shell notice summary line in rendered view, got:\n%s", view)
 	}
 }
@@ -2123,10 +2123,10 @@ func TestRuntimeRendererRendersHelpOverlay(t *testing.T) {
 	state.UI.Mode = types.ModeState{Active: types.ModePicker}
 
 	view := runtimeRenderer{}.Render(state, nil)
-	if !strings.Contains(view, "SHELL[78x24 overlay=help]") || !strings.Contains(view, "STATE[tiled focus=overlay mode=picker overlay=help]") || !strings.Contains(view, "BODY[tiled t=1 f=0]") || !strings.Contains(view, "MASK[dimmed 78x24]") || !strings.Contains(view, "OVERLAY[help]") || !strings.Contains(view, "RETURN[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "# DIALOG[help]") || !strings.Contains(view, "TITLE[help]") || !strings.Contains(view, "RETURN TO[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "FOOTER[esc close]") || !strings.Contains(view, "ACTIONS[esc close]") {
+	if !strings.Contains(view, "termx workbench | 78x24 | overlay help") || !strings.Contains(view, "Workbench tiled | focus overlay | mode picker | overlay help") || !strings.Contains(view, "MASK[dimmed 78x24]") || !strings.Contains(view, "OVERLAY[help]") || !strings.Contains(view, "RETURN[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "# DIALOG[help]") || !strings.Contains(view, "TITLE[help]") || !strings.Contains(view, "RETURN TO[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "FOOTER[esc close]") || !strings.Contains(view, "ACTIONS[esc close]") {
 		t.Fatalf("expected help overlay shell mask/dialog in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "WS[main]") || !strings.Contains(view, "tabs=1") || !strings.Contains(view, "panes=1") || !strings.Contains(view, "terms=1") || !strings.Contains(view, "float=0") || !strings.Contains(view, "TABS[*shell]") {
+	if !strings.Contains(view, "Workspace main | tabs 1 | panes 1 | terminals 1 | floating 0 | Tabs [shell]") {
 		t.Fatalf("expected help overlay to keep shell chrome visible, got:\n%s", view)
 	}
 	if !strings.Contains(view, "overlay_bar: kind=help | focus=overlay") {

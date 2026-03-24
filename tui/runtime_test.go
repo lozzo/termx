@@ -115,7 +115,7 @@ func TestRunUsesShellOnlyRendererByDefault(t *testing.T) {
 	if !strings.Contains(runner.view, "screen_shell:") {
 		t.Fatalf("expected default run renderer to keep screen shell, got:\n%s", runner.view)
 	}
-	if !strings.Contains(runner.view, "TERMINFO[term-1 running owner]") || !strings.Contains(runner.view, "ROWS[1/1]") {
+	if !strings.Contains(runner.view, "Terminal term-1 | running | owner") || !strings.Contains(runner.view, "preview 1/1") {
 		t.Fatalf("expected default run renderer to keep terminal context in screen shell, got:\n%s", runner.view)
 	}
 	if strings.Contains(runner.view, "wireframe_view:") || strings.Contains(runner.view, "chrome_header:") {
@@ -246,7 +246,7 @@ func TestE2ERunScenarioRendersSnapshotAndForwardsActivePaneInput(t *testing.T) {
 	}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
-			if view := model.View(); !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "SHELL[78x24 overlay=none]") || !strings.Contains(view, "HEADER[main] [shell] pane:pane-1 term:term-1 float:0") || !strings.Contains(view, "STATE[tiled focus=tiled mode=none overlay=none]") || !strings.Contains(view, "BODY[tiled t=1 f=0]") || !strings.Contains(view, "TARGET[main/shell/pane-1] TERM[term-1] FLOAT[0]") || !strings.Contains(view, "#> term-1 [owner] [tiled]") || !strings.Contains(view, "hi") || !strings.Contains(view, "#term-1 running owner") {
+			if view := model.View(); !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "termx workbench | 78x24 | overlay none") || !strings.Contains(view, "Workspace main | Tab shell") || !strings.Contains(view, "Workbench tiled | focus tiled | mode none | overlay none") || !strings.Contains(view, "Active pane term-1 | pane pane-1 | terminal term-1 | slot connected") || !strings.Contains(view, "#> term-1 [owner] [tiled]") || !strings.Contains(view, "hi") || !strings.Contains(view, "#term-1 running owner") {
 				t.Fatalf("expected runtime view to include snapshot content, got:\n%s", view)
 			}
 			_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
@@ -514,7 +514,7 @@ func TestE2ERunScenarioActivePaneCoreViewVisible(t *testing.T) {
 	}
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
-			if view := model.View(); !strings.Contains(view, "SHELL[78x24 overlay=none]") || !strings.Contains(view, "WS[main]") || !strings.Contains(view, "tabs=1") || !strings.Contains(view, "panes=1") || !strings.Contains(view, "terms=1") || !strings.Contains(view, "float=0") || !strings.Contains(view, "TABS[*shell]") || !strings.Contains(view, "STATE[tiled focus=tiled mode=none overlay=none]") || !strings.Contains(view, "BODY[tiled t=1 f=0]") || !strings.Contains(view, "TARGET[main/shell/pane-1] TERM[term-1] FLOAT[0]") || !strings.Contains(view, "PATH[main/shell/tiled:pane-1]") || !strings.Contains(view, "FOCUS[tiled]") || !strings.Contains(view, "SLOT[connected]") || !strings.Contains(view, "NOTICE[0]") || !strings.Contains(view, "FT[api-dev tiled none]") || !strings.Contains(view, "<p> PANE <t> TAB <w> WS <o> FLOAT <f> PICK <g> GLOBAL") || !strings.Contains(view, "chrome_header:") || !strings.Contains(view, "header_bar: ws=main | tab=shell | pane=pane-1 | slot=connected | overlay=none | focus=tiled") || !strings.Contains(view, "tab_path_bar: path=main/shell/tiled:pane-1 | target=api-dev") || !strings.Contains(view, "tab_layer_bar: tiled_root=pane-1 | floating_top=<none> | floating_total=0") || !strings.Contains(view, "chrome_body:") || !strings.Contains(view, "body_bar: terminal=term-1:running | screen=preview:2/2 | overlay=none") || !strings.Contains(view, "terminal_bar: id=term-1 | title=api-dev | state=running | role=owner") || !strings.Contains(view, "screen_bar: state=preview | rows=2/2") || !strings.Contains(view, "overlay_bar: kind=none") || !strings.Contains(view, "chrome_footer:") || !strings.Contains(view, "footer_bar: notices=0 | overlay=none") || !strings.Contains(view, "title: api-dev") || !strings.Contains(view, "tab_layer: tiled") || !strings.Contains(view, "pane_kind: tiled") || !strings.Contains(view, "terminal_state: running") || !strings.Contains(view, "screen:") || !strings.Contains(view, "$ pwd") || !strings.Contains(view, "/tmp") {
+			if view := model.View(); !strings.Contains(view, "termx workbench | 78x24 | overlay none") || !strings.Contains(view, "Workspace main | Tab shell") || !strings.Contains(view, "Overview tabs 1 | panes 1 | terminals 1 | floating 0") || !strings.Contains(view, "Tabs [shell]") || !strings.Contains(view, "Workbench tiled | focus tiled | mode none | overlay none") || !strings.Contains(view, "Active pane api-dev | pane pane-1 | terminal term-1 | slot connected") || !strings.Contains(view, "Location main / shell / tiled / pane-1 | focus tiled | active api-dev") || !strings.Contains(view, "Notice none") || !strings.Contains(view, "Keys Ctrl-p pane | Ctrl-t tab | Ctrl-w ws | Ctrl-o float | ? help") || !strings.Contains(view, "chrome_header:") || !strings.Contains(view, "header_bar: ws=main | tab=shell | pane=pane-1 | slot=connected | overlay=none | focus=tiled") || !strings.Contains(view, "tab_path_bar: path=main/shell/tiled:pane-1 | target=api-dev") || !strings.Contains(view, "tab_layer_bar: tiled_root=pane-1 | floating_top=<none> | floating_total=0") || !strings.Contains(view, "chrome_body:") || !strings.Contains(view, "body_bar: terminal=term-1:running | screen=preview:2/2 | overlay=none") || !strings.Contains(view, "terminal_bar: id=term-1 | title=api-dev | state=running | role=owner") || !strings.Contains(view, "screen_bar: state=preview | rows=2/2") || !strings.Contains(view, "overlay_bar: kind=none") || !strings.Contains(view, "chrome_footer:") || !strings.Contains(view, "footer_bar: notices=0 | overlay=none") || !strings.Contains(view, "title: api-dev") || !strings.Contains(view, "tab_layer: tiled") || !strings.Contains(view, "pane_kind: tiled") || !strings.Contains(view, "terminal_state: running") || !strings.Contains(view, "screen:") || !strings.Contains(view, "$ pwd") || !strings.Contains(view, "/tmp") {
 				t.Fatalf("expected runtime view to expose active pane core fields, got:\n%s", view)
 			}
 			return nil
@@ -569,7 +569,7 @@ func TestE2ERunScenarioDefaultShellOnlyEmptyPaneShowsStatusAndActions(t *testing
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "STATUS[empty terminal missing]") || !strings.Contains(view, "ACTIONS[n new | a connect | m manager | x close | ? help]") {
+			if !strings.Contains(view, "Status empty pane | no terminal connected") || !strings.Contains(view, "Actions n new | a connect | m manager | x close | ? help") {
 				t.Fatalf("expected shell-only empty pane to expose status and actions, got:\n%s", view)
 			}
 			if strings.Contains(view, "wireframe_view:") || strings.Contains(view, "chrome_header:") {
@@ -612,7 +612,7 @@ func TestE2ERunScenarioDefaultShellOnlyExitedPaneShowsStatusAndActions(t *testin
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "STATUS[exited history retained exit=7]") || !strings.Contains(view, "ACTIONS[r restart | a connect | x close | ? help]") {
+			if !strings.Contains(view, "Status exited pane | history retained | exit 7") || !strings.Contains(view, "Actions r restart | a connect | x close | ? help") {
 				t.Fatalf("expected shell-only exited pane to expose status and actions, got:\n%s", view)
 			}
 			return nil
@@ -700,7 +700,7 @@ func TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay(t *testing.T) {
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "SHELL[78x24 overlay=help]") || !strings.Contains(view, "WS[main]") || !strings.Contains(view, "tabs=1") || !strings.Contains(view, "panes=1") || !strings.Contains(view, "terms=1") || !strings.Contains(view, "float=0") || !strings.Contains(view, "TABS[*shell]") || !strings.Contains(view, "STATE[tiled focus=overlay mode=picker overlay=help]") || !strings.Contains(view, "BODY[tiled t=1 f=0]") || !strings.Contains(view, "MASK[dimmed 78x24]") || !strings.Contains(view, "OVERLAY[help]") || !strings.Contains(view, "RETURN[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "# DIALOG[help]") || !strings.Contains(view, "TITLE[help]") || !strings.Contains(view, "FOOTER[esc close]") || !strings.Contains(view, "ACTIONS[esc close]") || !strings.Contains(view, "overlay_bar: kind=help") || !strings.Contains(view, "help_most_used: Ctrl-p pane | Ctrl-t tab | Ctrl-w workspace | Ctrl-f picker | Ctrl-o floating | Ctrl-g global") || !strings.Contains(view, "shortcut_bar: Esc close | ? help") {
+			if view := current.View(); !strings.Contains(view, "termx workbench | 78x24 | overlay help") || !strings.Contains(view, "Workspace main | tabs 1 | panes 1 | terminals 1 | floating 0 | Tabs [shell]") || !strings.Contains(view, "Workbench tiled | focus overlay | mode picker | overlay help") || !strings.Contains(view, "MASK[dimmed 78x24]") || !strings.Contains(view, "OVERLAY[help]") || !strings.Contains(view, "RETURN[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "# DIALOG[help]") || !strings.Contains(view, "TITLE[help]") || !strings.Contains(view, "FOOTER[esc close]") || !strings.Contains(view, "ACTIONS[esc close]") || !strings.Contains(view, "overlay_bar: kind=help") || !strings.Contains(view, "help_most_used: Ctrl-p pane | Ctrl-t tab | Ctrl-w workspace | Ctrl-f picker | Ctrl-o floating | Ctrl-g global") || !strings.Contains(view, "shortcut_bar: Esc close | ? help") {
 				t.Fatalf("expected question mark to open help overlay, got:\n%s", view)
 			}
 			nextModel, cmd = current.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -711,7 +711,7 @@ func TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay(t *testing.T) {
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "SHELL[78x24 overlay=none]") || !strings.Contains(view, "STATE[tiled focus=tiled mode=none overlay=none]") || !strings.Contains(view, "BODY[tiled t=1 f=0]") || !strings.Contains(view, "overlay_bar: kind=none") || strings.Contains(view, "help_most_used:") || strings.Contains(view, "MASK[") || strings.Contains(view, "DIALOG[help]") || !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "#> api-dev [owner] [tiled]") || !strings.Contains(view, "shortcut_bar: Ctrl-p pane | Ctrl-t tab | Ctrl-w ws | Ctrl-o float | Ctrl-f pick | Ctrl-g global | ? help") {
+			if view := current.View(); !strings.Contains(view, "termx workbench | 78x24 | overlay none") || !strings.Contains(view, "Workbench tiled | focus tiled | mode none | overlay none") || !strings.Contains(view, "overlay_bar: kind=none") || strings.Contains(view, "help_most_used:") || strings.Contains(view, "MASK[") || strings.Contains(view, "DIALOG[help]") || !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "#> api-dev [owner] [tiled]") || !strings.Contains(view, "Keys Ctrl-p pane | Ctrl-t tab | Ctrl-w ws | Ctrl-o float | ? help") || !strings.Contains(view, "shortcut_bar: Ctrl-p pane | Ctrl-t tab | Ctrl-w ws | Ctrl-o float | Ctrl-f pick | Ctrl-g global | ? help") {
 				t.Fatalf("expected esc to close help overlay and restore default shortcuts, got:\n%s", view)
 			}
 			if current.State().UI.Focus.Layer != types.FocusLayerTiled || current.State().UI.Overlay.Kind != types.OverlayNone {
@@ -1162,7 +1162,7 @@ func TestE2ERunScenarioFloatingLayerShowsOutline(t *testing.T) {
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			view := model.View()
-			if !strings.Contains(view, "STATE[floating focus=floating mode=none overlay=none]") || !strings.Contains(view, "BODY[floating t=0 f=2]") || !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "FLOAT CANVAS[78x12 windows=2]") || !strings.Contains(view, "STACK[windows] total=2") || !strings.Contains(view, "FOCUS[float-1] api-dev") || !strings.Contains(view, "WINDOW LIST[2]") || !strings.Contains(view, "> [float-1] api-dev | owner | 10,8 30x12 | running | api ready") || !strings.Contains(view, "  [float-2] build-log | owner | 45,14 28x10 | running | build ok") || strings.Contains(view, "WINDOW CARD[float-1]") || strings.Contains(view, "WINDOW CARD[float-2]") || !strings.Contains(view, "#> api-dev [owner] [floating]") || !strings.Contains(view, "|term-2 running owner") || !strings.Contains(view, "api ready") || !strings.Contains(view, "build ok") || !strings.Contains(view, "#term-1 running owner") || !strings.Contains(view, "tab_path_bar: path=main/shell/floating:float-1 | target=api-dev") || !strings.Contains(view, "tab_layer_bar: tiled_root=<none> | floating_top=float-2 | floating_total=2") || !strings.Contains(view, "floating_outline_bar: active=float-1 | total=2 | top=float-2") || !strings.Contains(view, "floating_outline:") || !strings.Contains(view, "> [floating] api-dev | role=owner | rect=10,8 30x12 | state=running | preview=api ready") || !strings.Contains(view, "  [floating] build-log | role=owner | rect=45,14 28x10 | state=running | preview=build ok") {
+			if !strings.Contains(view, "Workbench floating | focus floating | mode none | overlay none") || !strings.Contains(view, "FLOAT SHELL[2]") || !strings.Contains(view, "FLOAT CANVAS[78x12 windows=2]") || !strings.Contains(view, "STACK[windows] total=2") || !strings.Contains(view, "FOCUS[float-1] api-dev") || !strings.Contains(view, "WINDOW LIST[2]") || !strings.Contains(view, "> [float-1] api-dev | owner | 10,8 30x12 | running | api ready") || !strings.Contains(view, "  [float-2] build-log | owner | 45,14 28x10 | running | build ok") || strings.Contains(view, "WINDOW CARD[float-1]") || strings.Contains(view, "WINDOW CARD[float-2]") || !strings.Contains(view, "#> api-dev [owner] [floating]") || !strings.Contains(view, "|term-2 running owner") || !strings.Contains(view, "api ready") || !strings.Contains(view, "build ok") || !strings.Contains(view, "#term-1 running owner") || !strings.Contains(view, "tab_path_bar: path=main/shell/floating:float-1 | target=api-dev") || !strings.Contains(view, "tab_layer_bar: tiled_root=<none> | floating_top=float-2 | floating_total=2") || !strings.Contains(view, "floating_outline_bar: active=float-1 | total=2 | top=float-2") || !strings.Contains(view, "floating_outline:") || !strings.Contains(view, "> [floating] api-dev | role=owner | rect=10,8 30x12 | state=running | preview=api ready") || !strings.Contains(view, "  [floating] build-log | role=owner | rect=45,14 28x10 | state=running | preview=build ok") {
 				t.Fatalf("expected runtime view to expose floating outline, got:\n%s", view)
 			}
 			return nil
@@ -2214,7 +2214,7 @@ func TestE2ERunScenarioRepeatedNoticeAppearsAggregatedInView(t *testing.T) {
 			}
 			_, _ = model.Update(feedback)
 			_, _ = model.Update(feedback)
-			if view := model.View(); !strings.Contains(view, "NOTICE[1 error]") || !strings.Contains(view, "terminal switched to observer-only mode (x2)") || !strings.Contains(view, "notice_bar: total=1 | showing=1 | last=error | notices:") || !strings.Contains(view, "notice_group_bar: error=1") || !strings.Contains(view, "notices:") || !strings.Contains(view, "[error] terminal switched to observer-only mode (x2)") {
+			if view := model.View(); !strings.Contains(view, "Notice 1 error") || !strings.Contains(view, "terminal switched to observer-only mode (x2)") || !strings.Contains(view, "notice_bar: total=1 | showing=1 | last=error | notices:") || !strings.Contains(view, "notice_group_bar: error=1") || !strings.Contains(view, "notices:") || !strings.Contains(view, "[error] terminal switched to observer-only mode (x2)") {
 				t.Fatalf("expected runtime view to aggregate repeated notices, got:\n%s", view)
 			}
 			return nil

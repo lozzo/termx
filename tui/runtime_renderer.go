@@ -163,7 +163,7 @@ func (r runtimeRenderer) renderScreenShell(state types.AppState, workspace types
 	}
 	body = append(body, renderScreenShellStateLine(state, tab, pane))
 	body = append(body,
-		renderScreenShellTargetLine(workspace, tab, pane),
+		renderScreenShellTargetLine(state, workspace, tab, pane),
 		renderScreenShellPathLine(state, workspace, tab, pane),
 	)
 	if metaLine := r.renderScreenShellTerminalMetaLine(state, pane); metaLine != "" {
@@ -197,13 +197,10 @@ func renderScreenShellMask(state types.AppState, metrics wireframeMetrics) strin
 }
 
 func renderScreenShellHeader(workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
-	workspaceLabel := safeWorkspaceLabel(workspace)
-	tabLabel := safeTabLabel(tab)
-	terminalID := "<none>"
-	if pane.TerminalID != "" && pane.SlotState == types.PaneSlotConnected {
-		terminalID = string(pane.TerminalID)
-	}
-	return fmt.Sprintf("HEADER[%s] [%s] pane:%s term:%s float:%d", workspaceLabel, tabLabel, pane.ID, terminalID, len(orderedFloatingPaneIDs(tab)))
+	return compactSummaryLine(
+		fmt.Sprintf("Workspace %s", safeWorkspaceLabel(workspace)),
+		fmt.Sprintf("Tab %s", safeTabLabel(tab)),
+	)
 }
 
 func renderScreenShellWorkspaceSummaryLine(workspace types.WorkspaceState) string {
@@ -227,18 +224,21 @@ func renderScreenShellWorkspaceSummaryLine(workspace types.WorkspaceState) strin
 		}
 	}
 	return compactSummaryLine(
-		fmt.Sprintf("WS[%s]", safeWorkspaceLabel(workspace)),
-		fmt.Sprintf("tabs=%d", tabs),
-		fmt.Sprintf("panes=%d", panes),
-		fmt.Sprintf("terms=%d", len(terminals)),
-		fmt.Sprintf("float=%d", floating),
+		fmt.Sprintf("Overview tabs %d", tabs),
+		fmt.Sprintf("panes %d", panes),
+		fmt.Sprintf("terminals %d", len(terminals)),
+		fmt.Sprintf("floating %d", floating),
 	)
 }
 
 func renderScreenShellTabStripLine(workspace types.WorkspaceState) string {
 	if len(workspace.TabOrder) == 0 {
-		return "TABS[none]"
+		return "Tabs none"
 	}
+	return compactSummaryLine(fmt.Sprintf("Tabs %s", renderScreenShellTabStripValue(workspace)))
+}
+
+func renderScreenShellTabStripValue(workspace types.WorkspaceState) string {
 	parts := make([]string, 0, len(workspace.TabOrder))
 	for _, tabID := range workspace.TabOrder {
 		tab, ok := workspace.Tabs[tabID]
@@ -247,23 +247,53 @@ func renderScreenShellTabStripLine(workspace types.WorkspaceState) string {
 		}
 		label := safeTabLabel(tab)
 		if tabID == workspace.ActiveTabID {
-			parts = append(parts, fmt.Sprintf("*%s", label))
+			parts = append(parts, fmt.Sprintf("[%s]", label))
 			continue
 		}
 		parts = append(parts, label)
 	}
-	return compactSummaryLine(fmt.Sprintf("TABS[%s]", strings.Join(parts, " ")))
+	if len(parts) == 0 {
+		return "none"
+	}
+	return strings.Join(parts, " ")
 }
 
 func renderScreenShellWorkspaceTabsLine(workspace types.WorkspaceState) string {
+	tabs := len(workspace.TabOrder)
+	panes := 0
+	terminals := map[types.TerminalID]struct{}{}
+	floating := 0
+	for _, tabID := range workspace.TabOrder {
+		tab, ok := workspace.Tabs[tabID]
+		if !ok {
+			continue
+		}
+		for _, pane := range tab.Panes {
+			panes++
+			if pane.Kind == types.PaneKindFloating {
+				floating++
+			}
+			if pane.TerminalID != "" {
+				terminals[pane.TerminalID] = struct{}{}
+			}
+		}
+	}
 	return compactSummaryLine(
-		renderScreenShellWorkspaceSummaryLine(workspace),
-		renderScreenShellTabStripLine(workspace),
+		fmt.Sprintf("Workspace %s", safeWorkspaceLabel(workspace)),
+		fmt.Sprintf("tabs %d", tabs),
+		fmt.Sprintf("panes %d", panes),
+		fmt.Sprintf("terminals %d", len(terminals)),
+		fmt.Sprintf("floating %d", floating),
+		fmt.Sprintf("Tabs %s", renderScreenShellTabStripValue(workspace)),
 	)
 }
 
 func renderScreenShellFrameTitle(state types.AppState, metrics wireframeMetrics) string {
-	return fmt.Sprintf("SHELL[%dx%d overlay=%s]", metrics.ViewportWidth, metrics.ViewportHeight, state.UI.Overlay.Kind)
+	return compactSummaryLine(
+		"termx workbench",
+		fmt.Sprintf("%dx%d", metrics.ViewportWidth, metrics.ViewportHeight),
+		fmt.Sprintf("overlay %s", state.UI.Overlay.Kind),
+	)
 }
 
 func renderScreenShellStateLine(state types.AppState, tab types.TabState, pane types.PaneState) string {
@@ -279,15 +309,25 @@ func renderScreenShellStateLine(state types.AppState, tab types.TabState, pane t
 	if mode == "" {
 		mode = types.ModeNone
 	}
-	return fmt.Sprintf("STATE[%s focus=%s mode=%s overlay=%s] BODY[%s t=%d f=%d]", layer, focus, mode, state.UI.Overlay.Kind, layer, len(orderedTiledPaneIDs(tab)), len(orderedFloatingPaneIDs(tab)))
+	return compactSummaryLine(
+		fmt.Sprintf("Workbench %s", layer),
+		fmt.Sprintf("focus %s", focus),
+		fmt.Sprintf("mode %s", mode),
+		fmt.Sprintf("overlay %s", state.UI.Overlay.Kind),
+	)
 }
 
-func renderScreenShellTargetLine(workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
+func renderScreenShellTargetLine(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
 	terminalID := "<none>"
 	if pane.TerminalID != "" {
 		terminalID = string(pane.TerminalID)
 	}
-	return fmt.Sprintf("TARGET[%s/%s/%s] TERM[%s] FLOAT[%d]", safeWorkspaceLabel(workspace), safeTabLabel(tab), pane.ID, terminalID, len(orderedFloatingPaneIDs(tab)))
+	return compactSummaryLine(
+		fmt.Sprintf("Active pane %s", renderPaneTitle(state, pane)),
+		fmt.Sprintf("pane %s", pane.ID),
+		fmt.Sprintf("terminal %s", terminalID),
+		fmt.Sprintf("slot %s", pane.SlotState),
+	)
 }
 
 func renderScreenShellPathLine(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
@@ -296,19 +336,25 @@ func renderScreenShellPathLine(state types.AppState, workspace types.WorkspaceSt
 		focus = types.FocusLayerTiled
 	}
 	return compactSummaryLine(
-		fmt.Sprintf("PATH[%s/%s/%s:%s]", safeWorkspaceLabel(workspace), safeTabLabel(tab), safePaneKind(pane.Kind), pane.ID),
-		fmt.Sprintf("TARGET[%s]", renderPaneTitle(state, pane)),
-		fmt.Sprintf("FOCUS[%s]", focus),
-		fmt.Sprintf("SLOT[%s]", pane.SlotState),
+		fmt.Sprintf("Location %s / %s / %s / %s", safeWorkspaceLabel(workspace), safeTabLabel(tab), safePaneKind(pane.Kind), pane.ID),
+		fmt.Sprintf("focus %s", focus),
+		fmt.Sprintf("active %s", renderPaneTitle(state, pane)),
 	)
 }
 
 func renderScreenShellFooter(state types.AppState, pane types.PaneState) string {
-	layer := safePaneKind(pane.Kind)
+	parts := renderScreenShellFooterParts(state)
+	return compactSummaryLine(fmt.Sprintf("Keys %s", strings.Join(parts, " | ")))
+}
+
+func renderScreenShellFooterParts(state types.AppState) []string {
 	if state.UI.Overlay.Kind != types.OverlayNone {
-		layer = types.PaneKind(state.UI.Overlay.Kind)
+		return []string{"Esc close", "? help"}
 	}
-	return fmt.Sprintf("FT[%s %s %s] <p> PANE <t> TAB <w> WS <o> FLOAT <f> PICK <g> GLOBAL", renderPaneTitle(state, pane), layer, state.UI.Overlay.Kind)
+	if state.UI.Mode.Active == types.ModeFloating {
+		return []string{"h/l focus", "j/k move", "H/J/K/L size", "Esc exit", "? help"}
+	}
+	return []string{"Ctrl-p pane", "Ctrl-t tab", "Ctrl-w ws", "Ctrl-o float", "? help"}
 }
 
 // renderScreenShellTerminalMetaLine 把默认运行态下最关键的 terminal 元信息上收进主壳，
@@ -328,21 +374,25 @@ func (r runtimeRenderer) renderScreenShellTerminalMetaLine(state types.AppState,
 		}
 	}
 	role := renderScreenShellPaneCardRole(state, pane)
-	parts := []string{fmt.Sprintf("TERMINFO[%s %s %s]", pane.TerminalID, terminalState, role)}
+	parts := []string{
+		fmt.Sprintf("Terminal %s", pane.TerminalID),
+		string(terminalState),
+		role,
+	}
 	if conn := state.Domain.Connections[pane.TerminalID]; conn.TerminalID != "" && len(conn.ConnectedPaneIDs) > 0 {
-		parts = append(parts, fmt.Sprintf("PEERS[%d]", len(conn.ConnectedPaneIDs)))
+		parts = append(parts, fmt.Sprintf("peers %d", len(conn.ConnectedPaneIDs)))
 	}
 	if r.Screens != nil {
 		if status, ok := r.Screens.Status(pane.TerminalID); ok && (status.Size.Cols != 0 || status.Size.Rows != 0) {
-			parts = append(parts, fmt.Sprintf("SIZE[%dx%d]", status.Size.Cols, status.Size.Rows))
+			parts = append(parts, fmt.Sprintf("size %dx%d", status.Size.Cols, status.Size.Rows))
 		}
 		if snapshot, ok := r.Screens.Snapshot(pane.TerminalID); ok && snapshot != nil {
 			rows, totalRows, _ := renderSnapshotRows(snapshot)
-			parts = append(parts, fmt.Sprintf("ROWS[%d/%d]", len(rows), totalRows))
+			parts = append(parts, fmt.Sprintf("preview %d/%d", len(rows), totalRows))
 		}
 	}
 	if command != "" {
-		parts = append(parts, fmt.Sprintf("CMD[%s]", command))
+		parts = append(parts, fmt.Sprintf("cmd %s", command))
 	}
 	return compactSummaryLine(parts...)
 }
@@ -350,17 +400,17 @@ func (r runtimeRenderer) renderScreenShellTerminalMetaLine(state types.AppState,
 func renderScreenShellPaneStatusLine(state types.AppState, pane types.PaneState) string {
 	switch pane.SlotState {
 	case types.PaneSlotEmpty:
-		return "STATUS[empty terminal missing]"
+		return "Status empty pane | no terminal connected"
 	case types.PaneSlotWaiting:
-		return "STATUS[waiting connect pending]"
+		return "Status waiting pane | connect pending"
 	case types.PaneSlotExited:
 		if pane.LastExitCode != nil {
-			return fmt.Sprintf("STATUS[exited history retained exit=%d]", *pane.LastExitCode)
+			return fmt.Sprintf("Status exited pane | history retained | exit %d", *pane.LastExitCode)
 		}
 		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.ExitCode != nil {
-			return fmt.Sprintf("STATUS[exited history retained exit=%d]", *terminal.ExitCode)
+			return fmt.Sprintf("Status exited pane | history retained | exit %d", *terminal.ExitCode)
 		}
-		return "STATUS[exited history retained]"
+		return "Status exited pane | history retained"
 	default:
 		return ""
 	}
@@ -369,24 +419,24 @@ func renderScreenShellPaneStatusLine(state types.AppState, pane types.PaneState)
 func renderScreenShellActionLine(state types.AppState, pane types.PaneState) string {
 	switch state.UI.Overlay.Kind {
 	case types.OverlayHelp:
-		return "ACTIONS[esc close | ? help]"
+		return "Actions Esc close | ? help"
 	case types.OverlayTerminalPicker, types.OverlayWorkspacePicker, types.OverlayLayoutResolve:
-		return "ACTIONS[enter confirm | esc close | ? help]"
+		return "Actions Enter confirm | Esc close | ? help"
 	case types.OverlayTerminalManager:
-		return "ACTIONS[enter here | t new-tab | o float | e edit | k stop | esc close | ? help]"
+		return "Actions Enter here | t new tab | o float | e edit | k stop | Esc close | ? help"
 	case types.OverlayPrompt:
-		return "ACTIONS[enter submit | esc close | ? help]"
+		return "Actions Enter submit | Esc close | ? help"
 	}
 	if state.UI.Mode.Active == types.ModeFloating {
-		return "ACTIONS[h/l focus | j/k move | H/J/K/L size | [/] z | c center | x close | esc exit | ? help]"
+		return "Actions h/l focus | j/k move | H/J/K/L size | [/] z | c center | x close | Esc exit | ? help"
 	}
 	switch pane.SlotState {
 	case types.PaneSlotConnected:
-		return "ACTIONS[input terminal | ctrl-g global | ctrl-f picker | ? help]"
+		return "Actions type in terminal | Ctrl-g global | Ctrl-f picker | ? help"
 	case types.PaneSlotEmpty, types.PaneSlotWaiting:
-		return "ACTIONS[n new | a connect | m manager | x close | ? help]"
+		return "Actions n new | a connect | m manager | x close | ? help"
 	case types.PaneSlotExited:
-		return "ACTIONS[r restart | a connect | x close | ? help]"
+		return "Actions r restart | a connect | x close | ? help"
 	default:
 		return ""
 	}
@@ -400,18 +450,18 @@ func renderScreenShellNoticeLine(notices []btui.Notice, overlayActive bool) stri
 		if overlayActive {
 			return ""
 		}
-		return "NOTICE[0]"
+		return "Notice none"
 	}
 	last, ok := lastVisibleNotice(notices)
 	if !ok {
-		return fmt.Sprintf("NOTICE[%d]", total)
+		return fmt.Sprintf("Notice %d", total)
 	}
 	text := last.Text
 	if last.Count > 1 {
 		text = fmt.Sprintf("%s (x%d)", text, last.Count)
 	}
 	return compactSummaryLine(
-		fmt.Sprintf("NOTICE[%d %s]", total, last.Level),
+		fmt.Sprintf("Notice %d %s", total, last.Level),
 		text,
 	)
 }
