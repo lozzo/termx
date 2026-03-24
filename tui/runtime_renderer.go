@@ -147,6 +147,9 @@ func (r runtimeRenderer) renderWireframeSplitWorkbench(state types.AppState, tab
 		"WORKBENCH split",
 		renderWireframeSplitSummary(summary),
 	})
+	if treeLines := r.renderWireframeLayoutTree(state, tab); len(treeLines) > 0 {
+		lines = append(lines, renderASCIIBox(runtimeWireframeWidth, treeLines)...)
+	}
 	overviewLines := make([]string, 0, 2)
 	for i, paneID := range tiledPaneIDs {
 		if i == 2 {
@@ -191,6 +194,80 @@ func (r runtimeRenderer) renderWireframeSplitWorkbench(state types.AppState, tab
 		lines = append(lines, renderASCIIBox(runtimeWireframeWidth, r.renderWireframeFloatingStackBody(state, tab, floatingPaneIDs))...)
 	}
 	return lines
+}
+
+func (r runtimeRenderer) renderWireframeLayoutTree(state types.AppState, tab types.TabState) []string {
+	if tab.RootSplit == nil {
+		return nil
+	}
+	lines := []string{"LAYOUT TREE"}
+	lines = append(lines, r.renderWireframeLayoutTreeNode(state, tab, tab.RootSplit, runtimeWireframeWidth-2, 0)...)
+	return lines
+}
+
+func (r runtimeRenderer) renderWireframeLayoutTreeNode(state types.AppState, tab types.TabState, node *types.SplitNode, width int, depth int) []string {
+	if node == nil {
+		return nil
+	}
+	if node.First == nil && node.Second == nil {
+		pane, ok := tab.Panes[node.PaneID]
+		if !ok {
+			return []string{strings.Repeat("  ", depth) + "pane[missing]"}
+		}
+		return []string{renderWireframeLayoutTreePaneLine(state, tab, pane, depth)}
+	}
+
+	lines := []string{renderWireframeLayoutTreeSplitLine(node, width, depth)}
+	firstWidth, secondWidth := splitNodeWireframeWidths(node, width)
+	childDepth := depth
+	if node.Direction == types.SplitDirectionVertical {
+		childDepth = depth + 1
+	}
+	lines = append(lines, r.renderWireframeLayoutTreeNode(state, tab, node.First, firstWidth, childDepth)...)
+	lines = append(lines, r.renderWireframeLayoutTreeNode(state, tab, node.Second, secondWidth, childDepth)...)
+	return lines
+}
+
+func renderWireframeLayoutTreeSplitLine(node *types.SplitNode, width int, depth int) string {
+	displayWidth := width
+	if node.Direction == types.SplitDirectionHorizontal {
+		displayWidth, _ = splitNodeWireframeWidths(node, width)
+	}
+	return fmt.Sprintf("%ssplit[%s] ratio[%.2f] width[%d]", strings.Repeat("  ", depth), node.Direction, node.Ratio, displayWidth)
+}
+
+func renderWireframeLayoutTreePaneLine(state types.AppState, tab types.TabState, pane types.PaneState, depth int) string {
+	role := renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID)
+	if role == "" {
+		role = string(pane.SlotState)
+	}
+	terminalState := string(types.TerminalRunStateRunning)
+	if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.State != "" {
+		terminalState = string(terminal.State)
+	}
+	prefix := strings.Repeat("  ", depth)
+	if pane.ID == tab.ActivePaneID {
+		return fmt.Sprintf("%s> pane[%s] role[%s] state[%s]", prefix, renderPaneTitle(state, pane), role, terminalState)
+	}
+	return fmt.Sprintf("%spane[%s] role[%s] state[%s]", prefix, renderPaneTitle(state, pane), role, terminalState)
+}
+
+func splitNodeWireframeWidths(node *types.SplitNode, width int) (int, int) {
+	if width <= 1 {
+		return width, 0
+	}
+	ratio := node.Ratio
+	if ratio <= 0 || ratio >= 1 {
+		ratio = 0.5
+	}
+	first := int(float64(width)*ratio + 0.5)
+	if first <= 0 {
+		first = 1
+	}
+	if first >= width {
+		first = width - 1
+	}
+	return first, width - first
 }
 
 func renderWireframeSplitSummary(summary tiledLayoutSummary) string {
@@ -362,7 +439,13 @@ func (r runtimeRenderer) renderWireframeOverlayDialog(state types.AppState) []st
 	if state.UI.Overlay.Kind == types.OverlayNone {
 		return nil
 	}
-	body := []string{fmt.Sprintf("OVERLAY[%s] FOCUS[%s]", state.UI.Overlay.Kind, state.UI.Focus.Layer)}
+	body := []string{
+		fmt.Sprintf("OVERLAY[%s] FOCUS[%s]", state.UI.Overlay.Kind, state.UI.Focus.Layer),
+		"BACKDROP[active]",
+	}
+	if returnFocus := renderWireframeReturnFocus(state.UI.Overlay.ReturnFocus); returnFocus != "" {
+		body = append(body, fmt.Sprintf("RETURN[%s]", returnFocus))
+	}
 	body = append(body, renderWireframeOverlayBody(state.UI.Overlay)...)
 	box := renderASCIIBox(runtimeWireframeOverlayWidth, body)
 	padding := (runtimeWireframeWidth - runtimeWireframeOverlayWidth) / 2
@@ -370,6 +453,29 @@ func (r runtimeRenderer) renderWireframeOverlayDialog(state types.AppState) []st
 		padding = 0
 	}
 	return indentLines(box, padding)
+}
+
+func renderWireframeReturnFocus(focus types.FocusState) string {
+	layer := focus.Layer
+	if layer == "" && focus.WorkspaceID == "" && focus.TabID == "" && focus.PaneID == "" {
+		return ""
+	}
+	if layer == "" {
+		layer = types.FocusLayerTiled
+	}
+	workspaceID := focus.WorkspaceID
+	if workspaceID == "" {
+		workspaceID = types.WorkspaceID("none")
+	}
+	tabID := focus.TabID
+	if tabID == "" {
+		tabID = types.TabID("none")
+	}
+	paneID := focus.PaneID
+	if paneID == "" {
+		paneID = types.PaneID("none")
+	}
+	return fmt.Sprintf("%s:%s/%s/%s", layer, workspaceID, tabID, paneID)
 }
 
 func renderWireframeOverlayBody(overlay types.OverlayState) []string {

@@ -988,6 +988,94 @@ func TestE2ERunScenarioLayoutResolveShowsWireframeDialog(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioNestedSplitShowsWireframeLayoutTree(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithNestedSplitPaneTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{{{Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}}},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: types.TerminalID("term-2"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{{{Content: "b"}, {Content: "u"}, {Content: "i"}, {Content: "l"}, {Content: "d"}}},
+						},
+					},
+				},
+				types.TerminalID("term-3"): {
+					TerminalID: types.TerminalID("term-3"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-3",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{{{Content: "w"}, {Content: "a"}, {Content: "t"}, {Content: "c"}, {Content: "h"}}},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			if !strings.Contains(view, "LAYOUT TREE") || !strings.Contains(view, "split[horizontal] ratio[0.60] width[46]") || !strings.Contains(view, "split[vertical] ratio[0.50] width[30]") || !strings.Contains(view, "> pane[api-dev] role[owner] state[running]") || !strings.Contains(view, "  pane[watcher] role[owner] state[running]") || !strings.Contains(view, "  pane[build-log] role[owner] state[running]") {
+				t.Fatalf("expected runtime view to expose nested split wireframe tree, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected nested split wireframe scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioLayoutResolveShowsWireframeBackdropAndReturnFocus(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithLayoutResolveTarget()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			if !strings.Contains(view, "BACKDROP[active]") || !strings.Contains(view, "RETURN[tiled:ws-1/tab-1/pane-1]") {
+				t.Fatalf("expected runtime view to expose overlay backdrop/return-focus summary, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected overlay backdrop runtime scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioMixedSlotShowsWireframeWorkbench(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithMixedPaneSlots()

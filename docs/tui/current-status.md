@@ -322,6 +322,13 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - split mixed-slot 工作台现在不再用 `MORE PANES` 粗占位，而会继续把第三个及后续 tiled pane 作为 `EXTRA PANES` 明确投影出来；waiting/exited/empty 三类槽位都已进入真实 workbench
 - 已补上 5 条 renderer 场景测试：workspace picker tree wireframe、terminal manager detail/actions wireframe、layout resolve wireframe、prompt wireframe、mixed-slot wireframe
 - 已补上 3 条 runtime 场景型 E2E：workspace picker tree wireframe、layout resolve wireframe、mixed-slot workbench wireframe
+- split wireframe 现在开始显式渲染 `LAYOUT TREE`，会递归展示 split 树，而不再只停留在“两个并排 box + 剩余 pane 占位”的阶段
+- `LAYOUT TREE` 里现在会把根 split 与子 split 的 `ratio/width` 直接渲染出来，真实工作台终于开始表达“布局比例”而不是只有 pane 名称
+- nested split 工作台现在已经能把 `api-dev / watcher / build-log` 这种树状结构在 wireframe 里递归投影出来，并显式标记 active pane
+- overlay wireframe 现在会额外展示 `BACKDROP[active]` 和 `RETURN[layer:workspace/tab/pane]`，把遮罩存在与关闭后的返回焦点一起固定下来
+- 这意味着 overlay 盒模型已经不再只是“中心弹窗列表”，而开始具备遮罩和焦点回落语义
+- 已补上 2 条 renderer 场景测试：nested split 递归 layout tree、overlay backdrop/return-focus
+- 已补上 2 条 runtime 场景型 E2E：nested split layout tree、layout resolve backdrop/return-focus
 - 这意味着当前主线已经正式从“把字段渲染出来”切进“把真实 UI 盒模型渲染出来”，下一阶段可以继续收口 overlay 盒模型细节、真实布局比例和交互稳定性
 
 - 已补上一条 runtime 场景型 E2E：metadata prompt submit 失败后主视图显示错误 notice

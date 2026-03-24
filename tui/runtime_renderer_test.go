@@ -943,7 +943,7 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "terminal_manager_actions:") || !strings.Contains(view, "[jump] jump to connected pane") || !strings.Contains(view, "[connect_here] connect here") || !strings.Contains(view, "[new_tab] open in new tab") || !strings.Contains(view, "[floating] open in floating pane") || !strings.Contains(view, "[edit] edit metadata") || !strings.Contains(view, "[acquire_owner] acquire owner") || !strings.Contains(view, "[stop] stop terminal") {
 		t.Fatalf("expected manager actions in rendered view, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 70 {
+	if lines := strings.Count(view, "\n") + 1; lines > 74 {
 		t.Fatalf("expected overlay view to remain within compact budget, got %d lines:\n%s", lines, view)
 	}
 }
@@ -1001,7 +1001,7 @@ func TestRuntimeRendererCompressesBodyWhenOverlayIsActive(t *testing.T) {
 	if strings.Contains(view, "terminal_tags:") {
 		t.Fatalf("expected noncritical terminal detail to be suppressed while overlay is active, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 72 {
+	if lines := strings.Count(view, "\n") + 1; lines > 76 {
 		t.Fatalf("expected overlay-active body to stay tightly compressed, got %d lines:\n%s", lines, view)
 	}
 }
@@ -1736,6 +1736,69 @@ func TestRuntimeRendererRendersWireframeMixedSlotWorkbench(t *testing.T) {
 	}
 	if !strings.Contains(view, "FLOAT[float-empty] unconnected pane empty 60,2 20x8") {
 		t.Fatalf("expected empty floating pane summary in wireframe workbench, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersWireframeNestedSplitWorkbench(t *testing.T) {
+	state := runtimeStateWithNestedSplitPaneTargets()
+	renderer := runtimeRenderer{
+		Screens: NewRuntimeTerminalStore(RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{{{Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}}},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: types.TerminalID("term-2"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{{{Content: "b"}, {Content: "u"}, {Content: "i"}, {Content: "l"}, {Content: "d"}}},
+						},
+					},
+				},
+				types.TerminalID("term-3"): {
+					TerminalID: types.TerminalID("term-3"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-3",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{{{Content: "w"}, {Content: "a"}, {Content: "t"}, {Content: "c"}, {Content: "h"}}},
+						},
+					},
+				},
+			},
+		}),
+	}
+
+	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "LAYOUT TREE") {
+		t.Fatalf("expected nested split wireframe tree heading, got:\n%s", view)
+	}
+	if !strings.Contains(view, "split[horizontal] ratio[0.60] width[46]") {
+		t.Fatalf("expected root split ratio/width in wireframe tree, got:\n%s", view)
+	}
+	if !strings.Contains(view, "split[vertical] ratio[0.50] width[30]") {
+		t.Fatalf("expected nested split ratio/width in wireframe tree, got:\n%s", view)
+	}
+	if !strings.Contains(view, "> pane[api-dev] role[owner] state[running]") || !strings.Contains(view, "  pane[watcher] role[owner] state[running]") || !strings.Contains(view, "  pane[build-log] role[owner] state[running]") {
+		t.Fatalf("expected nested pane states in wireframe tree, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersWireframeOverlayBackdropAndReturnFocus(t *testing.T) {
+	state := runtimeStateWithLayoutResolveTarget()
+
+	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "BACKDROP[active]") {
+		t.Fatalf("expected wireframe overlay backdrop summary, got:\n%s", view)
+	}
+	if !strings.Contains(view, "RETURN[tiled:ws-1/tab-1/pane-1]") {
+		t.Fatalf("expected wireframe overlay return focus summary, got:\n%s", view)
 	}
 }
 
