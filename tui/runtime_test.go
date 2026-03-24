@@ -1437,6 +1437,63 @@ func TestE2ERunScenarioWorkspacePickerMouseClickOnSelectedRowSubmits(t *testing.
 	}
 }
 
+func TestE2ERunScenarioWorkspacePickerMouseClickOnCreateRowOpensPrompt(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithWorkspacePickerTarget()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlW},
+				{Type: tea.KeyRunes, Runes: []rune("ops")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			clickY := findLineIndexWithPrefix(current.View(), "  [create] + create workspace")
+			if clickY < 0 {
+				t.Fatalf("expected workspace picker preview to expose create row, got:\n%s", current.View())
+			}
+			nextModel, cmd := current.Update(tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      clickY,
+			})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: prompt") || !strings.Contains(view, "prompt_title: create workspace") || !strings.Contains(view, "focus_layer: prompt") || !strings.Contains(view, "focus_overlay_target: prompt") {
+				t.Fatalf("expected workspace picker mouse click create row to open prompt, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected workspace picker mouse click create-row scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioWorkspacePickerSubmitAutoAcquiresOwnerOnEnter(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithWorkspacePickerAutoAcquireTarget()
@@ -3267,6 +3324,69 @@ func TestE2ERunScenarioTerminalPickerCreateRowSubmitClosesOverlay(t *testing.T) 
 	}
 }
 
+func TestE2ERunScenarioTerminalPickerMouseClickOnCreateRowClosesOverlay(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlF},
+				{Type: tea.KeyRunes, Runes: []rune("ops")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			clickY := findLineIndexWithPrefix(current.View(), "  [create] + new terminal")
+			if clickY < 0 {
+				t.Fatalf("expected terminal picker preview to expose create row, got:\n%s", current.View())
+			}
+			nextModel, cmd := current.Update(tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      clickY,
+			})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "terminal_picker_rows:") {
+				t.Fatalf("expected terminal picker mouse click create row to close overlay, got:\n%s", view)
+			}
+			if created, ok := current.State().Domain.Terminals[types.TerminalID("term-created-1")]; !ok || created.Name == "" || created.State != types.TerminalRunStateRunning || created.Visible {
+				t.Fatalf("expected picker mouse click create success to register hidden terminal, got %+v ok=%v", created, ok)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected terminal picker mouse click create-row scenario to succeed, got %v", err)
+	}
+	if len(client.createCalls) != 1 {
+		t.Fatalf("expected one create call, got %d", len(client.createCalls))
+	}
+}
+
 func TestE2ERunScenarioTerminalPickerMouseClickOnSelectedRowSubmits(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithTerminalManagerTargets()
@@ -3565,6 +3685,52 @@ func TestE2ERunScenarioLayoutResolveMouseClickOnSelectedRowSubmits(t *testing.T)
 	})
 	if err != nil {
 		t.Fatalf("expected layout resolve mouse click submit scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioLayoutResolveMouseClickOnCreateNewClosesOverlay(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithLayoutResolveTarget()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			clickY := findLineIndexWithPrefix(model.View(), "  [create_new] create new")
+			if clickY < 0 {
+				t.Fatalf("expected layout resolve preview to expose create-new row, got:\n%s", model.View())
+			}
+			nextModel, cmd := model.Update(tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      clickY,
+			})
+			current := nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "slot: waiting") || strings.Contains(view, "layout_resolve_rows:") {
+				t.Fatalf("expected layout resolve mouse click create-new to close overlay, got:\n%s", view)
+			}
+			if created, ok := current.State().Domain.Terminals[types.TerminalID("term-created-1")]; !ok || created.Name == "" || created.State != types.TerminalRunStateRunning {
+				t.Fatalf("expected layout resolve mouse click create success to register terminal, got %+v ok=%v", created, ok)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected layout resolve mouse click create-new scenario to succeed, got %v", err)
 	}
 }
 

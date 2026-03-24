@@ -45,7 +45,11 @@ func mapWorkspacePickerMouseClick(state types.AppState, msg tea.MouseMsg, view s
 		// 已选中行再次点击，等价于键盘 enter，先收口默认提交语义。
 		return []intent.Intent{intent.WorkspacePickerSubmitIntent{}}
 	}
-	return []intent.Intent{intent.WorkspacePickerMoveIntent{Delta: delta}}
+	// workspace picker 更像导航选择器，点击目标行时直接完成“切到该行并提交”。
+	return []intent.Intent{
+		intent.WorkspacePickerMoveIntent{Delta: delta},
+		intent.WorkspacePickerSubmitIntent{},
+	}
 }
 
 func mapTerminalPickerMouseClick(state types.AppState, msg tea.MouseMsg, view string) []intent.Intent {
@@ -76,7 +80,11 @@ func mapTerminalPickerMouseClick(state types.AppState, msg tea.MouseMsg, view st
 		// picker 行已经处于选中态时，鼠标再次点击直接触发默认连接/创建动作。
 		return []intent.Intent{intent.TerminalPickerSubmitIntent{}}
 	}
-	return []intent.Intent{intent.TerminalPickerMoveIntent{Delta: delta}}
+	// terminal picker 没有独立详情区，点击某一行就直接执行 connect/create 默认动作。
+	return []intent.Intent{
+		intent.TerminalPickerMoveIntent{Delta: delta},
+		intent.TerminalPickerSubmitIntent{},
+	}
 }
 
 func mapLayoutResolveMouseClick(state types.AppState, msg tea.MouseMsg, view string) []intent.Intent {
@@ -107,7 +115,11 @@ func mapLayoutResolveMouseClick(state types.AppState, msg tea.MouseMsg, view str
 		// resolve overlay 先保持最小模型：再次点击已选中行就提交当前动作。
 		return []intent.Intent{intent.LayoutResolveSubmitIntent{}}
 	}
-	return []intent.Intent{intent.LayoutResolveMoveIntent{Delta: delta}}
+	// layout resolve 本身就是动作列表，点击非当前项时直接切换并立即提交。
+	return []intent.Intent{
+		intent.LayoutResolveMoveIntent{Delta: delta},
+		intent.LayoutResolveSubmitIntent{},
+	}
 }
 
 func mapTerminalManagerMouseClick(state types.AppState, msg tea.MouseMsg, view string) []intent.Intent {

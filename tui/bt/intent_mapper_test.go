@@ -277,6 +277,54 @@ func TestIntentMapperWorkspacePickerMouseClickOnSelectedRowSubmits(t *testing.T)
 	}
 }
 
+func TestIntentMapperWorkspacePickerMouseClickOnCreateRowMovesAndSubmits(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+	state := newAppStateWithTwoWorkspaces()
+	rd := reducer.New()
+	for _, in := range mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyCtrlW}) {
+		state = rd.Reduce(state, in).State
+	}
+	for _, in := range mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ops")}) {
+		state = rd.Reduce(state, in).State
+	}
+	picker := state.UI.Overlay.Data.(*workspacedomain.PickerState)
+	rows := picker.VisibleRows()
+	selected, _ := picker.SelectedRow()
+	selectedIndex := 0
+	for idx, row := range rows {
+		if row.Node.Key == selected.Node.Key {
+			selectedIndex = idx
+			break
+		}
+	}
+	start, end := overlayPreviewWindow(len(rows), overlayPreviewRowLimit, selectedIndex)
+	viewLines := []string{"termx", fmt.Sprintf("workspace_picker_rows: | workspace_picker_rows_rendered: %d", end-start)}
+	for _, row := range rows[start:end] {
+		prefix := "  "
+		if row.Node.Key == selected.Node.Key {
+			prefix = "> "
+		}
+		viewLines = append(viewLines, fmt.Sprintf("%s%s[%s] %s", prefix, strings.Repeat("  ", row.Depth), row.Node.Kind, row.Node.Label))
+	}
+	view := strings.Join(viewLines, "\n")
+
+	intents := mapper.MapMouse(state, tea.MouseMsg{
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		Y:      2,
+	}, view)
+	if len(intents) != 2 {
+		t.Fatalf("expected two intents, got %d", len(intents))
+	}
+	expectedDelta := start - selectedIndex
+	if intents[0] != (intent.WorkspacePickerMoveIntent{Delta: expectedDelta}) {
+		t.Fatalf("expected workspace picker move intent, got %+v", intents[0])
+	}
+	if _, ok := intents[1].(intent.WorkspacePickerSubmitIntent); !ok {
+		t.Fatalf("expected workspace picker submit intent, got %T", intents[1])
+	}
+}
+
 func TestIntentMapperTerminalPickerMouseClickOnSelectedRowSubmits(t *testing.T) {
 	mapper := NewIntentMapper(Config{})
 	state := newAppStateWithTerminalManagerTargets()
@@ -322,6 +370,55 @@ func TestIntentMapperTerminalPickerMouseClickOnSelectedRowSubmits(t *testing.T) 
 	}
 }
 
+func TestIntentMapperTerminalPickerMouseClickOnCreateRowMovesAndSubmits(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+	state := newAppStateWithTerminalManagerTargets()
+	state.UI.Overlay = types.OverlayState{}
+	rd := reducer.New()
+	for _, in := range mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyCtrlF}) {
+		state = rd.Reduce(state, in).State
+	}
+	for _, in := range mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ops")}) {
+		state = rd.Reduce(state, in).State
+	}
+	picker := state.UI.Overlay.Data.(*terminalpickerdomain.State)
+	rows := picker.VisibleRows()
+	selected, _ := picker.SelectedRow()
+	selectedIndex := 0
+	for idx, row := range rows {
+		if row.Kind == selected.Kind && row.TerminalID == selected.TerminalID && row.Label == selected.Label {
+			selectedIndex = idx
+			break
+		}
+	}
+	start, end := overlayPreviewWindow(len(rows), overlayPreviewRowLimit, selectedIndex)
+	viewLines := []string{"termx", fmt.Sprintf("terminal_picker_rows: | terminal_picker_rows_rendered: %d", end-start)}
+	for _, row := range rows[start:end] {
+		prefix := "  "
+		if row.Kind == selected.Kind && row.TerminalID == selected.TerminalID && row.Label == selected.Label {
+			prefix = "> "
+		}
+		viewLines = append(viewLines, fmt.Sprintf("%s[%s] %s", prefix, row.Kind, row.Label))
+	}
+	view := strings.Join(viewLines, "\n")
+
+	intents := mapper.MapMouse(state, tea.MouseMsg{
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		Y:      2,
+	}, view)
+	if len(intents) != 2 {
+		t.Fatalf("expected two intents, got %d", len(intents))
+	}
+	expectedDelta := start - selectedIndex
+	if intents[0] != (intent.TerminalPickerMoveIntent{Delta: expectedDelta}) {
+		t.Fatalf("expected terminal picker move intent, got %+v", intents[0])
+	}
+	if _, ok := intents[1].(intent.TerminalPickerSubmitIntent); !ok {
+		t.Fatalf("expected terminal picker submit intent, got %T", intents[1])
+	}
+}
+
 func TestIntentMapperLayoutResolveMouseClickOnSelectedRowSubmits(t *testing.T) {
 	mapper := NewIntentMapper(Config{})
 	state := newAppStateWithSinglePane()
@@ -345,6 +442,37 @@ func TestIntentMapperLayoutResolveMouseClickOnSelectedRowSubmits(t *testing.T) {
 	}
 	if _, ok := intents[0].(intent.LayoutResolveSubmitIntent); !ok {
 		t.Fatalf("expected layout resolve submit intent, got %T", intents[0])
+	}
+}
+
+func TestIntentMapperLayoutResolveMouseClickOnCreateNewMovesAndSubmits(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+	state := newAppStateWithSinglePane()
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayLayoutResolve,
+		Data: layoutresolvedomain.NewState(types.PaneID("pane-1"), "backend-dev", "env=dev"),
+	}
+	view := strings.Join([]string{
+		"termx",
+		"layout_resolve_rows: | layout_resolve_rows_rendered: 3",
+		"> [connect_existing] connect existing",
+		"  [create_new] create new",
+		"  [skip] skip",
+	}, "\n")
+
+	intents := mapper.MapMouse(state, tea.MouseMsg{
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		Y:      3,
+	}, view)
+	if len(intents) != 2 {
+		t.Fatalf("expected two intents, got %d", len(intents))
+	}
+	if intents[0] != (intent.LayoutResolveMoveIntent{Delta: 1}) {
+		t.Fatalf("expected layout resolve move intent, got %+v", intents[0])
+	}
+	if _, ok := intents[1].(intent.LayoutResolveSubmitIntent); !ok {
+		t.Fatalf("expected layout resolve submit intent, got %T", intents[1])
 	}
 }
 
