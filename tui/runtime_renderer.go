@@ -124,12 +124,19 @@ func (r runtimeRenderer) renderScreenShell(state types.AppState, workspace types
 		renderScreenShellHeader(workspace, tab, pane),
 	}
 	overlayActive := state.UI.Overlay.Kind != types.OverlayNone
+	if overlayActive {
+		lines = append(lines, renderScreenShellMask(state, metrics))
+	}
 	lines = append(lines, r.renderScreenShellWorkbench(state, tab, pane, metrics, overlayActive)...)
 	if overlayActive {
 		lines = append(lines, r.renderScreenShellDialog(state, metrics)...)
 	}
 	lines = append(lines, renderScreenShellFooter(state, pane))
 	return lines
+}
+
+func renderScreenShellMask(state types.AppState, metrics wireframeMetrics) string {
+	return fmt.Sprintf("MASK[dimmed viewport=%dx%d overlay=%s]", metrics.ViewportWidth, metrics.ViewportHeight, state.UI.Overlay.Kind)
 }
 
 func renderScreenShellHeader(workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {

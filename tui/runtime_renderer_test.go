@@ -1847,6 +1847,9 @@ func TestRuntimeRendererRendersHelpOverlay(t *testing.T) {
 	state.UI.Mode = types.ModeState{Active: types.ModePicker}
 
 	view := runtimeRenderer{}.Render(state, nil)
+	if !strings.Contains(view, "MASK[dimmed viewport=78x24 overlay=help]") || !strings.Contains(view, "DIALOG[help]") || !strings.Contains(view, "RETURN TO[tiled:ws-1/tab-1/pane-1]") || !strings.Contains(view, "ACTIONS[esc close]") {
+		t.Fatalf("expected help overlay shell mask/dialog in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "overlay_bar: kind=help | focus=overlay") {
 		t.Fatalf("expected help overlay bar in rendered view, got:\n%s", view)
 	}

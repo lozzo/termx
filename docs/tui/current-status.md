@@ -19,6 +19,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮已补上 viewport 自适应、split ratio bar、floating geometry map、overlay center/backdrop 几何摘要，runtime 主视图开始具备跟随真实 terminal 尺寸变化的工作台摘要能力
 - 本轮继续把“用户第一眼看到的 UI 壳层”补上：主视图顶部现在新增 `screen_shell`，会先渲染 workspace/tab 头、pane frame、overlay dialog shell 和 footer 快捷提示，再保留语义视图与 wireframe 作为兼容层
 - 本轮继续把 `screen_shell` 的正文层级补实：floating shell 会显式列出 `WINDOW[...]` 几何摘要，mixed-slot split shell 会显式汇总 `EXTRA SHELL PANES` 与 floating 摘要，overlay dialog shell 会显式补上 `RETURN TO` / `ACTIONS`
+- 本轮继续把 overlay 盒模型往前推了一步：`screen_shell` 打开 overlay 时会显式渲染统一的 `MASK[dimmed viewport=...]`，并且 help / layout resolve 关闭后会验证 mask/dialog 不残留、正文壳层恢复
 
 ---
 
@@ -213,6 +214,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 185. 第一百八十一轮 TDD 已补上 wireframe viewport 自适应、split ratio bar、floating map 与 overlay center 几何摘要主线
 186. 第一百八十二轮 TDD 已补上 screen shell 外壳、split shell、overlay dialog shell 与对应 runtime E2E 主线
 187. 第一百八十三轮 TDD 已补上 floating shell window 摘要、mixed-slot shell 正文汇总、overlay shell return/actions 与对应 runtime E2E 主线
+188. 第一百八十四轮 TDD 已补上 overlay shell mask、help/layout-resolve 关闭清理与对应 runtime E2E 主线
 
 对应文档：
 

@@ -499,7 +499,7 @@ func TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay(t *testing.T) {
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay_bar: kind=help") || !strings.Contains(view, "help_most_used: Ctrl-p pane | Ctrl-t tab | Ctrl-w workspace | Ctrl-f picker | Ctrl-o floating | Ctrl-g global") || !strings.Contains(view, "shortcut_bar: Esc close | ? help") {
+			if view := current.View(); !strings.Contains(view, "MASK[dimmed viewport=78x24 overlay=help]") || !strings.Contains(view, "DIALOG[help]") || !strings.Contains(view, "ACTIONS[esc close]") || !strings.Contains(view, "overlay_bar: kind=help") || !strings.Contains(view, "help_most_used: Ctrl-p pane | Ctrl-t tab | Ctrl-w workspace | Ctrl-f picker | Ctrl-o floating | Ctrl-g global") || !strings.Contains(view, "shortcut_bar: Esc close | ? help") {
 				t.Fatalf("expected question mark to open help overlay, got:\n%s", view)
 			}
 			nextModel, cmd = current.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -510,7 +510,7 @@ func TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay(t *testing.T) {
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay_bar: kind=none") || strings.Contains(view, "help_most_used:") || !strings.Contains(view, "shortcut_bar: Ctrl-p pane | Ctrl-t tab | Ctrl-w ws | Ctrl-o float | Ctrl-f pick | Ctrl-g global | ? help") {
+			if view := current.View(); !strings.Contains(view, "overlay_bar: kind=none") || strings.Contains(view, "help_most_used:") || strings.Contains(view, "MASK[") || strings.Contains(view, "DIALOG[help]") || !strings.Contains(view, "screen_shell:") || !strings.Contains(view, "+ api-dev [owner] [tiled]") || !strings.Contains(view, "shortcut_bar: Ctrl-p pane | Ctrl-t tab | Ctrl-w ws | Ctrl-o float | Ctrl-f pick | Ctrl-g global | ? help") {
 				t.Fatalf("expected esc to close help overlay and restore default shortcuts, got:\n%s", view)
 			}
 			if current.State().UI.Focus.Layer != types.FocusLayerTiled || current.State().UI.Overlay.Kind != types.OverlayNone {
@@ -529,6 +529,45 @@ func TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("expected help overlay runtime scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioLayoutResolveEscClearsShellDialogAndMask(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithLayoutResolveTarget()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			current := model
+			if view := current.View(); !strings.Contains(view, "MASK[dimmed viewport=78x24 overlay=layout_resolve]") || !strings.Contains(view, "DIALOG[layout_resolve]") {
+				t.Fatalf("expected initial layout resolve shell dialog, got:\n%s", view)
+			}
+			nextModel, cmd := current.Update(tea.KeyMsg{Type: tea.KeyEsc})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay_bar: kind=none") || strings.Contains(view, "MASK[") || strings.Contains(view, "DIALOG[layout_resolve]") || !strings.Contains(view, "+ waiting pane [waiting] [tiled]") || !strings.Contains(view, "waiting for connect") {
+				t.Fatalf("expected esc to clear layout resolve shell dialog and restore pane shell, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected layout resolve shell-close runtime scenario to succeed, got %v", err)
 	}
 }
 
