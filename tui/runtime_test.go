@@ -946,7 +946,7 @@ func TestE2ERunScenarioReadErrorVisibleInView(t *testing.T) {
 			for _, nextMsg := range runCmdMessages(cmd) {
 				_, _ = model.Update(nextMsg)
 			}
-			if view := model.View(); !strings.Contains(view, "runtime_read_error: pty read failed") || !strings.Contains(view, "notices:") {
+			if view := model.View(); !strings.Contains(view, "runtime_read_error: pty read failed") || !strings.Contains(view, "notice_bar: total=1 | showing=1 | last=error | notices:") || !strings.Contains(view, "notice_group_bar: error=1") || !strings.Contains(view, "notices:") {
 				t.Fatalf("expected runtime view to expose read error status and notice, got:\n%s", view)
 			}
 			return nil
@@ -1125,7 +1125,7 @@ func TestE2ERunScenarioRepeatedNoticeAppearsAggregatedInView(t *testing.T) {
 			}
 			_, _ = model.Update(feedback)
 			_, _ = model.Update(feedback)
-			if view := model.View(); !strings.Contains(view, "notices:") || !strings.Contains(view, "[error] terminal switched to observer-only mode (x2)") {
+			if view := model.View(); !strings.Contains(view, "notice_bar: total=1 | showing=1 | last=error | notices:") || !strings.Contains(view, "notice_group_bar: error=1") || !strings.Contains(view, "notices:") || !strings.Contains(view, "[error] terminal switched to observer-only mode (x2)") {
 				t.Fatalf("expected runtime view to aggregate repeated notices, got:\n%s", view)
 			}
 			return nil

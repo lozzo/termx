@@ -167,6 +167,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 143. 第一百三十九轮 TDD 已补上 body 主体状态栏语义
 144. 第一百四十轮 TDD 已补上 terminal/screen/overlay section bar
 145. 第一百四十一轮 TDD 已补上 overlay 内部 summary bar
+146. 第一百四十二轮 TDD 已补上 notices 分层摘要栏
 
 对应文档：
 
@@ -330,6 +331,9 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `workspace_picker_bar` 会汇总 `selected/kind/depth`，`terminal_manager_bar` 会汇总 `selected/section/kind`，`terminal_picker_bar` 会汇总 `query/selected/kind`
 - `prompt_bar` 会汇总 `kind/terminal/active`，`layout_resolve_bar` 会汇总 `pane/role/selected`
 - 已补上 renderer / runtime 场景测试：workspace picker、terminal manager、terminal picker、prompt、layout resolve 都锁住各自的 overlay summary bar，避免 overlay 内部重新退化成只有长字段
+- `section_notices` 现在也分成 `notice_bar` 与 `notice_group_bar` 两层摘要，前者汇总 `total/showing/last`，后者汇总按级别的 notice 数量
+- 空 notice 时会直接落成 `notice_bar: total=0 | showing=0 | notices: 0`，有 notice 时会保留截断元数据和逐条明细
+- 已补上 renderer / runtime 场景测试：空态 notice、截断 notice、重复错误聚合、read error notice 都锁住 `notice_bar/notice_group_bar`
 - 已补上一条 runtime 场景型 E2E：`Ctrl-f` 打开 terminal picker 时主视图显式显示 `overlay: terminal_picker` 与 `focus_overlay_target: terminal_picker`
 - 已补上一条 runtime 场景型 E2E：workspace picker / prompt / terminal manager / terminal picker / layout resolve 关闭后主视图不再残留 `focus_overlay_target`
 - 已补上一条 runtime 场景型 E2E：terminal manager 与 layout resolve 关闭后主视图不再残留临时 `mode`

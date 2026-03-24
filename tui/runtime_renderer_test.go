@@ -218,6 +218,12 @@ func TestRuntimeRendererRendersNoticeSection(t *testing.T) {
 	if !strings.Contains(view, "footer_bar: notices=1 | last=error | overlay=none") {
 		t.Fatalf("expected footer status bar in rendered view, got:\n%s", view)
 	}
+	if !strings.Contains(view, "notice_bar: total=1 | showing=1 | last=error | notices:") {
+		t.Fatalf("expected notice bar in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "notice_group_bar: error=1") {
+		t.Fatalf("expected notice group bar in rendered view, got:\n%s", view)
+	}
 	if !strings.Contains(view, "section_notices:") {
 		t.Fatalf("expected notices section wrapper in rendered view, got:\n%s", view)
 	}
@@ -261,20 +267,37 @@ func TestRuntimeRendererRendersHeaderBarWithMode(t *testing.T) {
 func TestRuntimeRendererTruncatesNoticeSectionToLatestEntries(t *testing.T) {
 	view := runtimeRenderer{}.Render(connectedRunAppState(), []btui.Notice{
 		{Level: btui.NoticeLevelError, Text: "n1"},
+		{Level: btui.NoticeLevelInfo, Text: "i1"},
 		{Level: btui.NoticeLevelError, Text: "n2"},
 		{Level: btui.NoticeLevelError, Text: "n3"},
 		{Level: btui.NoticeLevelError, Text: "n4"},
 		{Level: btui.NoticeLevelError, Text: "n5"},
 	})
 
+	if !strings.Contains(view, "notice_bar: total=6 | showing=4 | last=error | notices:") {
+		t.Fatalf("expected notice summary bar, got:\n%s", view)
+	}
+	if !strings.Contains(view, "notice_group_bar: error=5 | info=1") {
+		t.Fatalf("expected grouped notice counts, got:\n%s", view)
+	}
 	if !strings.Contains(view, "notices_rendered: 4") || !strings.Contains(view, "notices_truncated: true") {
 		t.Fatalf("expected truncated notice metadata, got:\n%s", view)
 	}
-	if strings.Contains(view, "[error] n1") {
+	if strings.Contains(view, "[error] n1") || strings.Contains(view, "[info] i1") {
 		t.Fatalf("expected oldest notice to be truncated, got:\n%s", view)
 	}
 	if !strings.Contains(view, "[error] n5") {
 		t.Fatalf("expected latest notice to remain visible, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersNoticeBarForEmptyNotices(t *testing.T) {
+	view := runtimeRenderer{}.Render(connectedRunAppState(), nil)
+	if !strings.Contains(view, "notice_bar: total=0 | showing=0 | notices: 0") {
+		t.Fatalf("expected empty notice bar in rendered view, got:\n%s", view)
+	}
+	if strings.Contains(view, "notice_group_bar:") {
+		t.Fatalf("expected no grouped notice bar when empty, got:\n%s", view)
 	}
 }
 

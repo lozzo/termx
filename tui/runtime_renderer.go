@@ -891,56 +891,94 @@ func renderLayoutResolveBar(resolve *layoutresolvedomain.State) string {
 }
 
 func renderNoticeLines(notices []btui.Notice) []string {
-	if len(notices) == 0 {
-		return []string{"notices: 0"}
+	total := countVisibleNotices(notices)
+	if total == 0 {
+		return []string{"notice_bar: total=0 | showing=0 | notices: 0"}
 	}
-	lines := []string{"notices:"}
+	visible := visibleNotices(notices)
 	start := 0
-	if len(notices) > runtimeOverlayDetailPreviewRows {
-		start = len(notices) - runtimeOverlayDetailPreviewRows
+	if len(visible) > runtimeOverlayDetailPreviewRows {
+		start = len(visible) - runtimeOverlayDetailPreviewRows
 	}
-	previewNotices := notices[start:]
+	previewNotices := visible[start:]
 	truncated := start > 0
+	lines := []string{renderNoticeBar(visible, previewNotices)}
+	if groupBar := renderNoticeGroupBar(visible); groupBar != "" {
+		lines = append(lines, groupBar)
+	}
 	meta := []string{fmt.Sprintf("notices_rendered: %d", len(previewNotices))}
 	if truncated {
 		meta = append(meta, "notices_truncated: true")
 	}
 	lines = append(lines, compactLine(meta...))
 	for _, notice := range previewNotices {
-		if notice.Text == "" {
-			continue
-		}
 		line := fmt.Sprintf("[%s] %s", notice.Level, notice.Text)
 		if notice.Count > 1 {
 			line = fmt.Sprintf("%s (x%d)", line, notice.Count)
 		}
 		lines = append(lines, line)
 	}
-	if len(lines) == 1 {
-		return nil
-	}
 	return lines
 }
 
 func countVisibleNotices(notices []btui.Notice) int {
-	count := 0
+	return len(visibleNotices(notices))
+}
+
+func lastVisibleNotice(notices []btui.Notice) (btui.Notice, bool) {
+	visible := visibleNotices(notices)
+	if len(visible) == 0 {
+		return btui.Notice{}, false
+	}
+	return visible[len(visible)-1], true
+}
+
+func visibleNotices(notices []btui.Notice) []btui.Notice {
+	visible := make([]btui.Notice, 0, len(notices))
 	for _, notice := range notices {
 		if strings.TrimSpace(notice.Text) == "" {
 			continue
 		}
-		count++
+		visible = append(visible, notice)
 	}
-	return count
+	return visible
 }
 
-func lastVisibleNotice(notices []btui.Notice) (btui.Notice, bool) {
-	for i := len(notices) - 1; i >= 0; i-- {
-		if strings.TrimSpace(notices[i].Text) == "" {
-			continue
-		}
-		return notices[i], true
+func renderNoticeBar(visible []btui.Notice, preview []btui.Notice) string {
+	parts := []string{
+		fmt.Sprintf("notice_bar: total=%d", len(visible)),
+		fmt.Sprintf("showing=%d", len(preview)),
 	}
-	return btui.Notice{}, false
+	if len(visible) > 0 {
+		parts = append(parts, fmt.Sprintf("last=%s", visible[len(visible)-1].Level))
+	}
+	parts = append(parts, "notices:")
+	return compactLine(parts...)
+}
+
+func renderNoticeGroupBar(visible []btui.Notice) string {
+	errorCount := 0
+	infoCount := 0
+	for _, notice := range visible {
+		switch notice.Level {
+		case btui.NoticeLevelError:
+			errorCount++
+		case btui.NoticeLevelInfo:
+			infoCount++
+		}
+	}
+	parts := make([]string, 0, 2)
+	if errorCount > 0 {
+		parts = append(parts, fmt.Sprintf("error=%d", errorCount))
+	}
+	if infoCount > 0 {
+		parts = append(parts, fmt.Sprintf("info=%d", infoCount))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	parts[0] = fmt.Sprintf("notice_group_bar: %s", parts[0])
+	return compactLine(parts...)
 }
 
 func overlayPreviewRowsAround[T any](rows []T, limit int, focusIndex int) ([]T, bool) {
