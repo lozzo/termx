@@ -193,6 +193,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyTerminalManagerConnectHere(&result, intentValue)
 	case intent.TerminalManagerJumpToConnectedPaneIntent:
 		applyTerminalManagerJumpToConnectedPane(&result)
+	case intent.TerminalManagerJumpToLocationIntent:
+		applyTerminalManagerJumpToLocation(&result.State, intentValue)
 	case intent.TerminalManagerConnectInNewTabIntent:
 		applyTerminalManagerConnectInNewTab(&result)
 	case intent.TerminalManagerConnectInFloatingPaneIntent:
@@ -814,6 +816,15 @@ func applyTerminalManagerJumpToConnectedPane(result *Result) {
 		WorkspaceID: workspaceID,
 		TabID:       tabID,
 		PaneID:      paneID,
+	})
+}
+
+func applyTerminalManagerJumpToLocation(state *types.AppState, in intent.TerminalManagerJumpToLocationIntent) {
+	applyCloseOverlay(state)
+	applyWorkspaceTreeJump(state, intent.WorkspaceTreeJumpIntent{
+		WorkspaceID: in.WorkspaceID,
+		TabID:       in.TabID,
+		PaneID:      in.PaneID,
 	})
 }
 

@@ -130,6 +130,9 @@ func mapTerminalManagerMouseClick(state types.AppState, msg tea.MouseMsg, view s
 	if !ok || manager == nil {
 		return nil
 	}
+	if intents := mapTerminalManagerLocationClick(manager, msg, view); len(intents) > 0 {
+		return intents
+	}
 	if intents := mapTerminalManagerActionClick(msg, view); len(intents) > 0 {
 		return intents
 	}
@@ -173,6 +176,23 @@ func mapTerminalManagerMouseClick(state types.AppState, msg tea.MouseMsg, view s
 		return []intent.Intent{intent.TerminalManagerConnectHereIntent{}}
 	}
 	return []intent.Intent{intent.TerminalManagerMoveIntent{Delta: delta}}
+}
+
+func mapTerminalManagerLocationClick(manager *terminalmanagerdomain.State, msg tea.MouseMsg, view string) []intent.Intent {
+	detail, ok := manager.SelectedDetail()
+	if !ok || len(detail.Locations) == 0 {
+		return nil
+	}
+	targetIndex, ok := overlayClickedRowIndex(view, "detail_locations:", msg.Y, len(detail.Locations), overlayDetailPreviewRowLimit, 0)
+	if !ok {
+		return nil
+	}
+	location := detail.Locations[targetIndex]
+	return []intent.Intent{intent.TerminalManagerJumpToLocationIntent{
+		WorkspaceID: location.WorkspaceID,
+		TabID:       location.TabID,
+		PaneID:      location.PaneID,
+	}}
 }
 
 func mapTerminalManagerActionClick(msg tea.MouseMsg, view string) []intent.Intent {

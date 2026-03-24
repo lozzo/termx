@@ -64,6 +64,9 @@ type Detail struct {
 }
 
 type Location struct {
+	WorkspaceID   types.WorkspaceID
+	TabID         types.TabID
+	PaneID        types.PaneID
 	WorkspaceName string
 	TabName       string
 	SlotLabel     string
@@ -403,6 +406,9 @@ func collectLocations(domain types.DomainState, terminalID types.TerminalID) []L
 					slotPrefix = "float"
 				}
 				out = append(out, Location{
+					WorkspaceID:   workspaceID,
+					TabID:         tabID,
+					PaneID:        paneID,
 					WorkspaceName: workspace.Name,
 					TabName:       tab.Name,
 					SlotLabel:     slotPrefix + ":" + string(paneID),

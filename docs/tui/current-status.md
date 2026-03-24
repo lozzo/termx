@@ -193,6 +193,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 169. 第一百六十五轮 TDD 已补上 exited pane 的 restart terminal 主线
 170. 第一百六十六轮 TDD 已补上最小 floating mode 导航与 create 到 layout resolve 的工作台闭环
 171. 第一百六十七轮 TDD 已补上 terminal manager 直达已连接 terminal pane 的 jump 主线
+172. 第一百六十八轮 TDD 已补上 terminal manager 位置列表的精确 pane 跳转主线
 
 对应文档：
 
@@ -947,4 +948,4 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 ## 7. 当前一句话状态
 
-termx TUI 现在已经进入“picker / manager / prompt / layout resolve 四条 overlay 主线、startup planner、startup task executor、restore store 读写闭环、runtime session bootstrap、最小 Bubble Tea 运行主线、关键 runtime 事件回灌、tiled/tab/floating 三类最小工作台导航创建主线，以及 terminal manager 直达已连接 terminal pane 与 notice 聚合/去重都已落地，下一步继续按 TDD 扩真实 TUI E2E 壳并深化 renderer”的阶段。
+termx TUI 现在已经进入“picker / manager / prompt / layout resolve 四条 overlay 主线、startup planner、startup task executor、restore store 读写闭环、runtime session bootstrap、最小 Bubble Tea 运行主线、关键 runtime 事件回灌、tiled/tab/floating 三类最小工作台导航创建主线，以及 terminal manager 的粗粒度 jump 与位置列表精确 pane 跳转、notice 聚合/去重都已落地，下一步继续按 TDD 扩真实 TUI E2E 壳并深化 renderer”的阶段。

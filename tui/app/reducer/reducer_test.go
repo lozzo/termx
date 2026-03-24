@@ -1395,6 +1395,33 @@ func TestReducerTerminalManagerJumpToConnectedPaneWithoutLocationKeepsOverlayOpe
 	}
 }
 
+func TestReducerTerminalManagerJumpToLocationClosesOverlayAndMovesFocusToExactFloatingPane(t *testing.T) {
+	reducer := New()
+	state := newManagerLocationJumpAppState()
+
+	opened := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	result := reducer.Reduce(opened.State, intent.TerminalManagerJumpToLocationIntent{
+		WorkspaceID: types.WorkspaceID("ws-2"),
+		TabID:       types.TabID("tab-2"),
+		PaneID:      types.PaneID("float-ops"),
+	})
+
+	if result.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected manager overlay to close after exact location jump, got %q", result.State.UI.Overlay.Kind)
+	}
+	if result.State.Domain.ActiveWorkspaceID != types.WorkspaceID("ws-2") {
+		t.Fatalf("expected exact jump to switch workspace, got %q", result.State.Domain.ActiveWorkspaceID)
+	}
+	workspace := result.State.Domain.Workspaces[types.WorkspaceID("ws-2")]
+	tab := workspace.Tabs[types.TabID("tab-2")]
+	if tab.ActivePaneID != types.PaneID("float-ops") || tab.ActiveLayer != types.FocusLayerFloating {
+		t.Fatalf("expected exact jump to focus float-ops, got %+v", tab)
+	}
+	if result.State.UI.Focus.WorkspaceID != types.WorkspaceID("ws-2") || result.State.UI.Focus.TabID != types.TabID("tab-2") || result.State.UI.Focus.PaneID != types.PaneID("float-ops") || result.State.UI.Focus.Layer != types.FocusLayerFloating {
+		t.Fatalf("expected exact jump focus to land on floating pane, got %+v", result.State.UI.Focus)
+	}
+}
+
 func TestReducerTerminalManagerAcquireOwnerTransfersOwnershipToReturnFocusPane(t *testing.T) {
 	reducer := New()
 	state := newFollowerManagerAppState()
@@ -1978,6 +2005,42 @@ func newManagerJumpAppState() types.AppState {
 		TerminalID:       types.TerminalID("term-2"),
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-remote")},
 		OwnerPaneID:      types.PaneID("pane-remote"),
+	}
+	return state
+}
+
+func newManagerLocationJumpAppState() types.AppState {
+	state := newManagerAppState()
+	state.Domain.WorkspaceOrder = append(state.Domain.WorkspaceOrder, types.WorkspaceID("ws-2"))
+	state.Domain.Workspaces[types.WorkspaceID("ws-2")] = types.WorkspaceState{
+		ID:          types.WorkspaceID("ws-2"),
+		Name:        "ops",
+		ActiveTabID: types.TabID("tab-2"),
+		TabOrder:    []types.TabID{types.TabID("tab-2")},
+		Tabs: map[types.TabID]types.TabState{
+			types.TabID("tab-2"): {
+				ID:           types.TabID("tab-2"),
+				Name:         "logs",
+				ActivePaneID: types.PaneID("float-ops"),
+				ActiveLayer:  types.FocusLayerFloating,
+				FloatingOrder: []types.PaneID{
+					types.PaneID("float-ops"),
+				},
+				Panes: map[types.PaneID]types.PaneState{
+					types.PaneID("float-ops"): {
+						ID:         types.PaneID("float-ops"),
+						Kind:       types.PaneKindFloating,
+						SlotState:  types.PaneSlotConnected,
+						TerminalID: types.TerminalID("term-1"),
+					},
+				},
+			},
+		},
+	}
+	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-1"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1"), types.PaneID("float-2"), types.PaneID("float-ops")},
+		OwnerPaneID:      types.PaneID("pane-1"),
 	}
 	return state
 }

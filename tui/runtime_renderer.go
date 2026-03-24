@@ -717,11 +717,12 @@ func renderTerminalManagerLines(manager *terminalmanagerdomain.State) []string {
 		)
 		if locations := renderDetailLocations(detail.Locations); len(locations) > 0 {
 			previewLocations, truncated := overlayPreviewStrings(locations, runtimeOverlayDetailPreviewRows)
-			meta := []string{"detail_locations:", strings.Join(previewLocations, " ; ")}
+			meta := []string{"detail_locations:", fmt.Sprintf("detail_locations_rendered: %d", len(previewLocations))}
 			if truncated {
 				meta = append(meta, "detail_locations_truncated: true")
 			}
 			lines = append(lines, compactDetailLine(meta...))
+			lines = append(lines, previewLocations...)
 		}
 		actionRows := terminalmanagerdomain.ActionRows()
 		lines = append(lines, compactLine(
@@ -770,7 +771,7 @@ func renderDetailLocations(locations []terminalmanagerdomain.Location) []string 
 	}
 	lines := make([]string, 0, len(locations))
 	for _, location := range locations {
-		lines = append(lines, fmt.Sprintf("- %s/%s/%s", location.WorkspaceName, location.TabName, location.SlotLabel))
+		lines = append(lines, fmt.Sprintf("  [location] %s/%s/%s", location.WorkspaceName, location.TabName, location.SlotLabel))
 	}
 	return lines
 }

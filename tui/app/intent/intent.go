@@ -229,6 +229,16 @@ func (TerminalManagerJumpToConnectedPaneIntent) intentName() string {
 	return "terminal_manager_jump_to_connected_pane"
 }
 
+type TerminalManagerJumpToLocationIntent struct {
+	WorkspaceID types.WorkspaceID
+	TabID       types.TabID
+	PaneID      types.PaneID
+}
+
+func (TerminalManagerJumpToLocationIntent) intentName() string {
+	return "terminal_manager_jump_to_location"
+}
+
 type TerminalManagerConnectInNewTabIntent struct{}
 
 func (TerminalManagerConnectInNewTabIntent) intentName() string {

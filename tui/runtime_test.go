@@ -2432,7 +2432,7 @@ func TestE2ERunScenarioCtrlGTOpensTerminalManagerInView(t *testing.T) {
 					}
 				}
 			}
-			if view := model.View(); !strings.Contains(view, "terminal_manager_bar: selected=term-1 | section=VISIBLE | kind=terminal") || !strings.Contains(view, "overlay: terminal_manager") || !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: terminal_manager") || !strings.Contains(view, "terminal_manager_query: ") || !strings.Contains(view, "terminal_manager_selected: term-1") || !strings.Contains(view, "terminal_manager_selected_label: api-dev") || !strings.Contains(view, "terminal_manager_selected_kind: terminal") || !strings.Contains(view, "terminal_manager_selected_section: VISIBLE") || !strings.Contains(view, "terminal_manager_selected_state: running") || !strings.Contains(view, "terminal_manager_selected_visible: true") || !strings.Contains(view, "terminal_manager_selected_visibility: visible") || !strings.Contains(view, "terminal_manager_selected_connected_panes: 1") || !strings.Contains(view, "terminal_manager_selected_location_count: 1") || !strings.Contains(view, "terminal_manager_selected_command: npm run dev") || !strings.Contains(view, "terminal_manager_selected_owner: pane:pane-1") || !strings.Contains(view, "terminal_manager_row_count: 7") || !strings.Contains(view, "terminal_manager_rows:") || !strings.Contains(view, "> [terminal] api-dev") || !strings.Contains(view, "terminal_manager_detail: api-dev") || !strings.Contains(view, "detail_terminal: term-1") || !strings.Contains(view, "detail_state: running") || !strings.Contains(view, "detail_visible: true") || !strings.Contains(view, "detail_visibility: visible") || !strings.Contains(view, "detail_connected_panes: 1") || !strings.Contains(view, "detail_location_count: 1") || !strings.Contains(view, "detail_command: npm run dev") || !strings.Contains(view, "detail_owner: pane:pane-1") || !strings.Contains(view, "detail_locations:") || !strings.Contains(view, "- main/shell/pane:pane-1") {
+			if view := model.View(); !strings.Contains(view, "terminal_manager_bar: selected=term-1 | section=VISIBLE | kind=terminal") || !strings.Contains(view, "overlay: terminal_manager") || !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: terminal_manager") || !strings.Contains(view, "terminal_manager_query: ") || !strings.Contains(view, "terminal_manager_selected: term-1") || !strings.Contains(view, "terminal_manager_selected_label: api-dev") || !strings.Contains(view, "terminal_manager_selected_kind: terminal") || !strings.Contains(view, "terminal_manager_selected_section: VISIBLE") || !strings.Contains(view, "terminal_manager_selected_state: running") || !strings.Contains(view, "terminal_manager_selected_visible: true") || !strings.Contains(view, "terminal_manager_selected_visibility: visible") || !strings.Contains(view, "terminal_manager_selected_connected_panes: 1") || !strings.Contains(view, "terminal_manager_selected_location_count: 1") || !strings.Contains(view, "terminal_manager_selected_command: npm run dev") || !strings.Contains(view, "terminal_manager_selected_owner: pane:pane-1") || !strings.Contains(view, "terminal_manager_row_count: 7") || !strings.Contains(view, "terminal_manager_rows:") || !strings.Contains(view, "> [terminal] api-dev") || !strings.Contains(view, "terminal_manager_detail: api-dev") || !strings.Contains(view, "detail_terminal: term-1") || !strings.Contains(view, "detail_state: running") || !strings.Contains(view, "detail_visible: true") || !strings.Contains(view, "detail_visibility: visible") || !strings.Contains(view, "detail_connected_panes: 1") || !strings.Contains(view, "detail_location_count: 1") || !strings.Contains(view, "detail_command: npm run dev") || !strings.Contains(view, "detail_owner: pane:pane-1") || !strings.Contains(view, "detail_locations:") || !strings.Contains(view, "detail_locations_rendered: 1") || !strings.Contains(view, "  [location] main/shell/pane:pane-1") {
 				t.Fatalf("expected ctrl-g t flow to render terminal manager, got:\n%s", view)
 			}
 			return nil
@@ -3890,6 +3890,63 @@ func TestE2ERunScenarioTerminalManagerMouseClickOnJumpActionSwitchesToConnectedP
 			}
 			if view := current.View(); !strings.Contains(view, "workspace: ops") || !strings.Contains(view, "tab: logs") || !strings.Contains(view, "pane: pane-remote") || !strings.Contains(view, "overlay: none") || !strings.Contains(view, "terminal: term-2") || strings.Contains(view, "terminal_manager_actions:") {
 				t.Fatalf("expected terminal manager jump mouse action to switch focus, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioTerminalManagerMouseClickOnDetailLocationJumpsToExactPane(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerLocationTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			current := model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			clickY := findLineIndexWithPrefix(current.View(), "  [location] ops/logs/float:float-ops")
+			if clickY < 0 {
+				t.Fatalf("expected terminal manager detail to expose exact location row, got:\n%s", current.View())
+			}
+			nextModel, cmd := current.Update(tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      clickY,
+			})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "workspace: ops") || !strings.Contains(view, "tab: logs") || !strings.Contains(view, "pane: float-ops") || !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: floating") || !strings.Contains(view, "tab_layer: floating") || !strings.Contains(view, "terminal: term-1") || strings.Contains(view, "terminal_manager_rows:") {
+				t.Fatalf("expected detail location click to jump to exact floating pane, got:\n%s", view)
 			}
 			return nil
 		},
@@ -6079,6 +6136,45 @@ func runtimeStateWithTerminalManagerJumpTargets() types.AppState {
 		TerminalID:       types.TerminalID("term-2"),
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-remote")},
 		OwnerPaneID:      types.PaneID("pane-remote"),
+	}
+	return state
+}
+
+func runtimeStateWithTerminalManagerLocationTargets() types.AppState {
+	state := runtimeStateWithTerminalManagerTargets()
+	state.Domain.WorkspaceOrder = append(state.Domain.WorkspaceOrder, types.WorkspaceID("ws-2"))
+	state.Domain.Workspaces[types.WorkspaceID("ws-2")] = types.WorkspaceState{
+		ID:          types.WorkspaceID("ws-2"),
+		Name:        "ops",
+		ActiveTabID: types.TabID("tab-2"),
+		TabOrder:    []types.TabID{types.TabID("tab-2")},
+		Tabs: map[types.TabID]types.TabState{
+			types.TabID("tab-2"): {
+				ID:           types.TabID("tab-2"),
+				Name:         "logs",
+				ActivePaneID: types.PaneID("float-ops"),
+				ActiveLayer:  types.FocusLayerFloating,
+				FloatingOrder: []types.PaneID{
+					types.PaneID("float-ops"),
+				},
+				Panes: map[types.PaneID]types.PaneState{
+					types.PaneID("float-ops"): {
+						ID:         types.PaneID("float-ops"),
+						Kind:       types.PaneKindFloating,
+						SlotState:  types.PaneSlotConnected,
+						TerminalID: types.TerminalID("term-1"),
+					},
+				},
+			},
+		},
+	}
+	terminal := state.Domain.Terminals[types.TerminalID("term-1")]
+	terminal.Visible = true
+	state.Domain.Terminals[types.TerminalID("term-1")] = terminal
+	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-1"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1"), types.PaneID("float-ops")},
+		OwnerPaneID:      types.PaneID("pane-1"),
 	}
 	return state
 }

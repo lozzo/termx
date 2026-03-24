@@ -800,6 +800,34 @@ func TestIntentMapperTerminalManagerMouseClickOnActionRowsMapsManagerActions(t *
 	}
 }
 
+func TestIntentMapperTerminalManagerMouseClickOnDetailLocationJumpsToExactPane(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+	state := newAppStateWithTerminalManagerLocationTargets()
+	view := strings.Join([]string{
+		"termx",
+		"detail_locations: | detail_locations_rendered: 2",
+		"  [location] main/shell/pane:pane-1",
+		"  [location] ops/logs/float:float-ops",
+		"terminal_manager_actions: | terminal_manager_actions_rendered: 7",
+	}, "\n")
+
+	intents := mapper.MapMouse(state, tea.MouseMsg{
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		Y:      findLineIndexWithPrefix(view, "  [location] ops/logs/float:float-ops"),
+	}, view)
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	if intents[0] != (intent.TerminalManagerJumpToLocationIntent{
+		WorkspaceID: types.WorkspaceID("ws-2"),
+		TabID:       types.TabID("tab-2"),
+		PaneID:      types.PaneID("float-ops"),
+	}) {
+		t.Fatalf("unexpected location jump intent: %+v", intents[0])
+	}
+}
+
 func TestIntentMapperTerminalPickerMapsNavigationAndQuery(t *testing.T) {
 	mapper := NewIntentMapper(Config{})
 	state := newAppStateWithSinglePane()
@@ -1213,6 +1241,46 @@ func newAppStateWithTerminalManagerTargets() types.AppState {
 	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
 		TerminalID:       types.TerminalID("term-1"),
 		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1")},
+		OwnerPaneID:      types.PaneID("pane-1"),
+	}
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayTerminalManager,
+		Data: terminalmanagerdomain.NewState(state.Domain, state.UI.Focus),
+	}
+	return state
+}
+
+func newAppStateWithTerminalManagerLocationTargets() types.AppState {
+	state := newAppStateWithTerminalManagerTargets()
+	state.Domain.WorkspaceOrder = append(state.Domain.WorkspaceOrder, types.WorkspaceID("ws-2"))
+	state.Domain.Workspaces[types.WorkspaceID("ws-2")] = types.WorkspaceState{
+		ID:          types.WorkspaceID("ws-2"),
+		Name:        "ops",
+		ActiveTabID: types.TabID("tab-2"),
+		TabOrder:    []types.TabID{types.TabID("tab-2")},
+		Tabs: map[types.TabID]types.TabState{
+			types.TabID("tab-2"): {
+				ID:           types.TabID("tab-2"),
+				Name:         "logs",
+				ActivePaneID: types.PaneID("float-ops"),
+				ActiveLayer:  types.FocusLayerFloating,
+				FloatingOrder: []types.PaneID{
+					types.PaneID("float-ops"),
+				},
+				Panes: map[types.PaneID]types.PaneState{
+					types.PaneID("float-ops"): {
+						ID:         types.PaneID("float-ops"),
+						Kind:       types.PaneKindFloating,
+						SlotState:  types.PaneSlotConnected,
+						TerminalID: types.TerminalID("term-1"),
+					},
+				},
+			},
+		},
+	}
+	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-1"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1"), types.PaneID("float-ops")},
 		OwnerPaneID:      types.PaneID("pane-1"),
 	}
 	state.UI.Overlay = types.OverlayState{
