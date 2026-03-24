@@ -210,13 +210,13 @@ func (r modernScreenShellRenderer) RenderShell(state types.AppState, workspace t
 }
 
 func (r modernScreenShellRenderer) renderTopBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
-	left := theme.panelTitle.Render(renderModernLegacyHeaderLeft(workspace))
+	left := renderModernHeaderBrand(theme, workspace)
 	right := theme.panelMeta.Render(renderModernLegacyHeaderRight(state, workspace, tab, pane))
 	return theme.topBar.Render(fillANSIHorizontal(left, right, width))
 }
 
 func (r modernScreenShellRenderer) renderTabBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
-	left := theme.panelMeta.Render(renderModernTopStatusLine(state, tab, pane))
+	left := renderModernTabStrip(theme, workspace)
 	right := theme.panelMeta.Render(r.renderWorkspaceSummaryText(workspace))
 	return theme.subBar.Render(fillANSIHorizontal(left, right, width))
 }
@@ -246,7 +246,7 @@ func (r modernScreenShellRenderer) renderWorkspaceSummaryText(workspace types.Wo
 
 func (r modernScreenShellRenderer) renderContextBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
 	left := theme.panelMeta.Render(renderModernPanePath(workspace, tab, pane))
-	right := theme.panelMeta.Render(renderModernContextChromeLine(state, pane))
+	right := renderModernContextChromeLine(theme, state, pane)
 	return theme.subBar.Render(fillANSIHorizontal(left, right, width))
 }
 
@@ -979,6 +979,7 @@ func (r modernScreenShellRenderer) renderOverlayViewport(theme modernShellTheme,
 	canvas.stampLines(0, 0, backdropLines)
 	dialogX := max(0, (width-dialogWidth)/2)
 	dialogY := max(0, (canvas.height-len(dialogLines))/2)
+	canvas.stampLines(dialogX+2, dialogY+1, renderModernOverlayShadow(dialogWidth, len(dialogLines)))
 	canvas.clearRect(dialogX, dialogY, dialogWidth, len(dialogLines))
 	canvas.stampLines(dialogX, dialogY, dialogLines)
 	return theme.terminalBody.Render(strings.Join(canvas.lines(), "\n"))
@@ -1937,6 +1938,26 @@ func renderModernLegacyHeaderLeft(workspace types.WorkspaceState) string {
 	return strings.Join(parts, "  ")
 }
 
+func renderModernHeaderBrand(theme modernShellTheme, workspace types.WorkspaceState) string {
+	items := []string{
+		theme.panelTitle.Render("termx"),
+		theme.activeChip.Render(fmt.Sprintf("[%s]", safeWorkspaceLabel(workspace))),
+	}
+	for index, tabID := range workspace.TabOrder {
+		tab, ok := workspace.Tabs[tabID]
+		if !ok {
+			continue
+		}
+		label := fmt.Sprintf("%d:%s", index+1, safeTabLabel(tab))
+		if tabID == workspace.ActiveTabID {
+			items = append(items, theme.activeTab.Render("["+label+"]"))
+			continue
+		}
+		items = append(items, theme.tab.Render(label))
+	}
+	return strings.Join(items, " ")
+}
+
 func renderModernLegacyHeaderRight(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
 	termID := "<none>"
 	if pane.TerminalID != "" {
@@ -1968,18 +1989,46 @@ func renderModernTopStatusLine(state types.AppState, _ types.TabState, pane type
 	return strings.Join(parts, "  ")
 }
 
-func renderModernContextChromeLine(state types.AppState, pane types.PaneState) string {
-	parts := []string{"layer " + string(renderModernPrimaryLayer(state))}
+func renderModernTabStrip(theme modernShellTheme, workspace types.WorkspaceState) string {
+	items := make([]string, 0, len(workspace.TabOrder))
+	for index, tabID := range workspace.TabOrder {
+		tab, ok := workspace.Tabs[tabID]
+		if !ok {
+			continue
+		}
+		label := fmt.Sprintf("%d:%s", index+1, renderModernTabLabel(tab))
+		if tabID == workspace.ActiveTabID {
+			items = append(items, theme.activeTab.Render(label))
+			continue
+		}
+		items = append(items, theme.tab.Render(label))
+	}
+	if len(items) == 0 {
+		return theme.tab.Render("no tabs")
+	}
+	return strings.Join(items, " ")
+}
+
+func renderModernContextChromeLine(theme modernShellTheme, state types.AppState, pane types.PaneState) string {
+	items := []string{
+		theme.activeChip.Render("focus " + renderPaneTitle(state, pane)),
+		theme.chip.Render("role " + renderModernPaneRole(state, pane)),
+		theme.chip.Render("slot " + string(pane.SlotState)),
+	}
+	if runtime := renderModernContextRuntimeLine(state, pane); runtime != "" {
+		items = append(items, theme.chip.Render(runtime))
+	}
+	items = append(items, theme.chip.Render("layer "+string(renderModernPrimaryLayer(state))))
 	if pane.TerminalID != "" {
-		parts = append(parts, "terminal "+string(pane.TerminalID))
+		items = append(items, theme.chip.Render("terminal "+string(pane.TerminalID)))
 	}
 	if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
-		parts = append(parts, "mode "+string(state.UI.Mode.Active))
+		items = append(items, theme.chip.Render("mode "+string(state.UI.Mode.Active)))
 	}
 	if state.UI.Overlay.Kind != types.OverlayNone {
-		parts = append(parts, "overlay "+string(state.UI.Overlay.Kind))
+		items = append(items, theme.activeChip.Render("overlay "+string(state.UI.Overlay.Kind)))
 	}
-	return strings.Join(parts, "  ")
+	return strings.Join(items, " ")
 }
 
 func renderModernLegacyFooterShortcuts(state types.AppState, pane types.PaneState) string {
@@ -2075,11 +2124,19 @@ func renderModernFooterSlotBadge(pane types.PaneState) string {
 func renderModernNotice(theme modernShellTheme, notices []btui.Notice) string {
 	total := countVisibleNotices(notices)
 	if total == 0 {
-		return theme.noticeInfo.Render("ready")
+		return theme.noticeInfo.Render("● ready")
 	}
 	last, ok := lastVisibleNotice(notices)
 	if !ok {
-		return theme.noticeInfo.Render(fmt.Sprintf("%d notices", total))
+		return theme.noticeInfo.Render(fmt.Sprintf("● %d notices", total))
+	}
+	if total > 1 {
+		switch last.Level {
+		case btui.NoticeLevelError:
+			return theme.noticeError.Render(fmt.Sprintf("! %d notices", total))
+		default:
+			return theme.noticeInfo.Render(fmt.Sprintf("● %d notices", total))
+		}
 	}
 	label := last.Text
 	if last.Count > 1 {
@@ -2087,10 +2144,28 @@ func renderModernNotice(theme modernShellTheme, notices []btui.Notice) string {
 	}
 	switch last.Level {
 	case btui.NoticeLevelError:
-		return theme.noticeError.Render(label)
+		return theme.noticeError.Render("! " + label)
 	default:
-		return theme.noticeInfo.Render(label)
+		return theme.noticeInfo.Render("● " + label)
 	}
+}
+
+func renderModernOverlayShadow(width int, height int) []string {
+	if width <= 0 || height <= 0 {
+		return nil
+	}
+	lines := make([]string, 0, height)
+	for row := 0; row < height; row++ {
+		switch {
+		case row == 0:
+			lines = append(lines, " "+strings.Repeat("░", max(0, width-1)))
+		case row == height-1:
+			lines = append(lines, strings.Repeat("░", width))
+		default:
+			lines = append(lines, strings.Repeat(" ", max(0, width-2))+strings.Repeat("░", min(2, width)))
+		}
+	}
+	return lines
 }
 
 func fillANSIHorizontal(left, right string, width int) string {
