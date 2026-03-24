@@ -184,6 +184,8 @@ func (m DefaultIntentMapper) mapTabModeKey(state types.AppState, msg tea.KeyMsg)
 		return nil
 	}
 	switch msg.String() {
+	case "n":
+		return []intent.Intent{intent.CreateTabIntent{}}
 	case "h", "left":
 		return []intent.Intent{intent.TabFocusMoveIntent{Delta: -1}}
 	case "l", "right":

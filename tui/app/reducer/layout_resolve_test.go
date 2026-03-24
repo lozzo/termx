@@ -100,8 +100,12 @@ func TestReducerLayoutResolveCreateTerminalSucceededClosesOverlayAndRegistersTer
 	if result.State.UI.Overlay.Kind != types.OverlayNone {
 		t.Fatalf("expected create success to close layout resolve overlay, got %q", result.State.UI.Overlay.Kind)
 	}
+	pane := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
+	if pane.TerminalID != types.TerminalID("term-created") || pane.SlotState != types.PaneSlotConnected {
+		t.Fatalf("expected layout resolve create success to connect waiting pane, got %+v", pane)
+	}
 	terminal := result.State.Domain.Terminals[types.TerminalID("term-created")]
-	if terminal.ID != types.TerminalID("term-created") || terminal.Name != "ws-1-tab-1-pane-1" {
+	if terminal.ID != types.TerminalID("term-created") || terminal.Name != "ws-1-tab-1-pane-1" || !terminal.Visible {
 		t.Fatalf("unexpected terminal after layout resolve create success: %+v", terminal)
 	}
 }

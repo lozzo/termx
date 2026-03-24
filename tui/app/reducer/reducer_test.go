@@ -449,7 +449,7 @@ func TestReducerTerminalPickerSubmitCreateRowEmitsCreateEffect(t *testing.T) {
 	}
 }
 
-func TestReducerCreateTerminalSucceededClosesPickerAndRegistersTerminal(t *testing.T) {
+func TestReducerCreateTerminalSucceededClosesPickerRegistersTerminalAndConnectsPane(t *testing.T) {
 	reducer := New()
 	state := newManagerAppState()
 
@@ -466,9 +466,17 @@ func TestReducerCreateTerminalSucceededClosesPickerAndRegistersTerminal(t *testi
 	if result.State.UI.Overlay.Kind != types.OverlayNone {
 		t.Fatalf("expected picker overlay to close after create success, got %q", result.State.UI.Overlay.Kind)
 	}
+	pane := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
+	if pane.TerminalID != types.TerminalID("term-created") || pane.SlotState != types.PaneSlotConnected {
+		t.Fatalf("expected picker create success to connect pane-1, got %+v", pane)
+	}
 	terminal := result.State.Domain.Terminals[types.TerminalID("term-created")]
-	if terminal.ID != types.TerminalID("term-created") || terminal.Name != "ws-1-tab-1-pane-1" || terminal.State != types.TerminalRunStateRunning || terminal.Visible {
+	if terminal.ID != types.TerminalID("term-created") || terminal.Name != "ws-1-tab-1-pane-1" || terminal.State != types.TerminalRunStateRunning || !terminal.Visible {
 		t.Fatalf("unexpected registered terminal after create success: %+v", terminal)
+	}
+	oldConn := result.State.Domain.Connections[types.TerminalID("term-1")]
+	if len(oldConn.ConnectedPaneIDs) != 1 || oldConn.ConnectedPaneIDs[0] != types.PaneID("float-2") || oldConn.OwnerPaneID != types.PaneID("float-2") {
+		t.Fatalf("expected old shared terminal to keep only float-2 after picker create connect, got %+v", oldConn)
 	}
 }
 
@@ -936,6 +944,39 @@ func TestReducerTabFocusMoveSwitchesToAdjacentTabAndClearsMode(t *testing.T) {
 	}
 }
 
+func TestReducerCreateTabCreatesWaitingTabAndOpensLayoutResolve(t *testing.T) {
+	reducer := New()
+	state := newConnectedAppState()
+	state.UI.Mode = types.ModeState{Active: types.ModeTab}
+
+	result := reducer.Reduce(state, intent.CreateTabIntent{})
+
+	workspace := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	if workspace.ActiveTabID != types.TabID("tab-2") {
+		t.Fatalf("expected active tab to switch to new tab-2, got %q", workspace.ActiveTabID)
+	}
+	if len(workspace.TabOrder) != 2 || workspace.TabOrder[1] != types.TabID("tab-2") {
+		t.Fatalf("expected tab order to append tab-2, got %+v", workspace.TabOrder)
+	}
+	tab := workspace.Tabs[types.TabID("tab-2")]
+	if tab.ID != types.TabID("tab-2") || tab.Name != "tab-2" {
+		t.Fatalf("expected new tab identity to be populated, got %+v", tab)
+	}
+	pane := tab.Panes[types.PaneID("ws-1-tab-2-pane-1")]
+	if pane.ID != types.PaneID("ws-1-tab-2-pane-1") || pane.Kind != types.PaneKindTiled || pane.SlotState != types.PaneSlotWaiting || pane.TerminalID != "" {
+		t.Fatalf("expected new tab to start with waiting pane, got %+v", pane)
+	}
+	if result.State.UI.Overlay.Kind != types.OverlayLayoutResolve {
+		t.Fatalf("expected create tab to open layout resolve, got %q", result.State.UI.Overlay.Kind)
+	}
+	if result.State.UI.Focus.Layer != types.FocusLayerOverlay || result.State.UI.Focus.TabID != types.TabID("tab-2") || result.State.UI.Focus.PaneID != types.PaneID("ws-1-tab-2-pane-1") {
+		t.Fatalf("expected focus to move into new tab layout resolve, got %+v", result.State.UI.Focus)
+	}
+	if result.State.UI.Mode.Active != types.ModePicker {
+		t.Fatalf("expected create tab to hand off into picker mode, got %+v", result.State.UI.Mode)
+	}
+}
+
 func TestReducerConnectTerminalReplacesOldConnectionSnapshot(t *testing.T) {
 	reducer := New()
 	state := newConnectedAppState()
@@ -1269,7 +1310,7 @@ func TestReducerTerminalManagerCreateNewTerminalEmitsCreateEffect(t *testing.T) 
 	}
 }
 
-func TestReducerTerminalManagerCreateTerminalSucceededClosesOverlayAndRegistersTerminal(t *testing.T) {
+func TestReducerTerminalManagerCreateTerminalSucceededClosesOverlayRegistersTerminalAndConnectsPane(t *testing.T) {
 	reducer := New()
 	state := newManagerAppState()
 
@@ -1286,9 +1327,17 @@ func TestReducerTerminalManagerCreateTerminalSucceededClosesOverlayAndRegistersT
 	if result.State.UI.Overlay.Kind != types.OverlayNone {
 		t.Fatalf("expected manager overlay to close after create success, got %q", result.State.UI.Overlay.Kind)
 	}
+	pane := result.State.Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")].Panes[types.PaneID("pane-1")]
+	if pane.TerminalID != types.TerminalID("term-created") || pane.SlotState != types.PaneSlotConnected {
+		t.Fatalf("expected manager create success to connect pane-1, got %+v", pane)
+	}
 	terminal := result.State.Domain.Terminals[types.TerminalID("term-created")]
-	if terminal.ID != types.TerminalID("term-created") || terminal.Name != "ws-1-tab-1-pane-1" || len(terminal.Command) != 2 {
+	if terminal.ID != types.TerminalID("term-created") || terminal.Name != "ws-1-tab-1-pane-1" || len(terminal.Command) != 2 || !terminal.Visible {
 		t.Fatalf("unexpected registered terminal after manager create success: %+v", terminal)
+	}
+	oldConn := result.State.Domain.Connections[types.TerminalID("term-1")]
+	if len(oldConn.ConnectedPaneIDs) != 1 || oldConn.ConnectedPaneIDs[0] != types.PaneID("float-2") || oldConn.OwnerPaneID != types.PaneID("float-2") {
+		t.Fatalf("expected old shared terminal to keep only float-2 after manager create connect, got %+v", oldConn)
 	}
 }
 

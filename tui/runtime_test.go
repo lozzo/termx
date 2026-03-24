@@ -1713,6 +1713,101 @@ func TestE2ERunScenarioGlobalSplitOpensLayoutResolveOnNewPane(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioTabCreateOpensLayoutResolveOnNewTab(t *testing.T) {
+	client := &stubRunClient{}
+	initial := connectedRunAppState()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlT},
+				{Type: tea.KeyRunes, Runes: []rune("n")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "tab: tab-2") || !strings.Contains(view, "pane: ws-1-tab-2-pane-1") || !strings.Contains(view, "slot: waiting") || !strings.Contains(view, "overlay: layout_resolve") || !strings.Contains(view, "focus_overlay_target: layout_resolve") || !strings.Contains(view, "layout_resolve_bar: pane=ws-1-tab-2-pane-1") {
+				t.Fatalf("expected tab create flow to open layout resolve on new tab, got:\n%s", view)
+			}
+			workspace := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")]
+			if workspace.ActiveTabID != types.TabID("tab-2") {
+				t.Fatalf("expected tab create flow to activate tab-2, got %+v", workspace.ActiveTabID)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected tab create runtime scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioTabCreateThenCreateTerminalConnectsNewTabPane(t *testing.T) {
+	client := &stubRunClient{}
+	initial := connectedRunAppState()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlT},
+				{Type: tea.KeyRunes, Runes: []rune("n")},
+				{Type: tea.KeyDown},
+				{Type: tea.KeyEnter},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "tab: tab-2") || !strings.Contains(view, "pane: ws-1-tab-2-pane-1") || !strings.Contains(view, "slot: connected") || !strings.Contains(view, "terminal: term-created-1") || strings.Contains(view, "layout_resolve_rows:") {
+				t.Fatalf("expected tab create-new flow to connect created terminal into new tab pane, got:\n%s", view)
+			}
+			tab := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-2")]
+			if tab.ActivePaneID != types.PaneID("ws-1-tab-2-pane-1") {
+				t.Fatalf("expected new tab pane to stay active after create connect, got %+v", tab)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected tab create-new runtime scenario to succeed, got %v", err)
+	}
+	if len(client.createCalls) != 1 {
+		t.Fatalf("expected one create call from tab create-new flow, got %d", len(client.createCalls))
+	}
+}
+
 func TestE2ERunScenarioWorkspacePickerCollapseHidesChildren(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithWorkspacePickerTarget()
@@ -3506,11 +3601,11 @@ func TestE2ERunScenarioTerminalManagerCreateRowSubmitClosesOverlay(t *testing.T)
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "terminal_manager_rows:") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "slot: connected") || !strings.Contains(view, "terminal: term-created-1") || strings.Contains(view, "terminal_manager_rows:") {
 				t.Fatalf("expected create row submit to close overlay, got:\n%s", view)
 			}
-			if created, ok := current.State().Domain.Terminals[types.TerminalID("term-created-1")]; !ok || created.Name == "" || created.State != types.TerminalRunStateRunning || created.Visible {
-				t.Fatalf("expected create row success to register hidden terminal, got %+v ok=%v", created, ok)
+			if created, ok := current.State().Domain.Terminals[types.TerminalID("term-created-1")]; !ok || created.Name == "" || created.State != types.TerminalRunStateRunning || !created.Visible {
+				t.Fatalf("expected create row success to connect visible terminal, got %+v ok=%v", created, ok)
 			}
 			return nil
 		},
@@ -3572,11 +3667,11 @@ func TestE2ERunScenarioTerminalManagerMouseClickOnCreateRowClosesOverlay(t *test
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "terminal_manager_rows:") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "slot: connected") || !strings.Contains(view, "terminal: term-created-1") || strings.Contains(view, "terminal_manager_rows:") {
 				t.Fatalf("expected terminal manager mouse click create row to close overlay, got:\n%s", view)
 			}
-			if created, ok := current.State().Domain.Terminals[types.TerminalID("term-created-1")]; !ok || created.Name == "" || created.State != types.TerminalRunStateRunning || created.Visible {
-				t.Fatalf("expected manager mouse click create success to register hidden terminal, got %+v ok=%v", created, ok)
+			if created, ok := current.State().Domain.Terminals[types.TerminalID("term-created-1")]; !ok || created.Name == "" || created.State != types.TerminalRunStateRunning || !created.Visible {
+				t.Fatalf("expected manager mouse click create success to connect visible terminal, got %+v ok=%v", created, ok)
 			}
 			return nil
 		},
@@ -4153,11 +4248,11 @@ func TestE2ERunScenarioTerminalPickerCreateRowSubmitClosesOverlay(t *testing.T) 
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "terminal_picker_rows:") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "slot: connected") || !strings.Contains(view, "terminal: term-created-1") || strings.Contains(view, "terminal_picker_rows:") {
 				t.Fatalf("expected terminal picker create-row submit to close overlay, got:\n%s", view)
 			}
-			if created, ok := current.State().Domain.Terminals[types.TerminalID("term-created-1")]; !ok || created.Name == "" || created.State != types.TerminalRunStateRunning || created.Visible {
-				t.Fatalf("expected picker create success to register hidden terminal, got %+v ok=%v", created, ok)
+			if created, ok := current.State().Domain.Terminals[types.TerminalID("term-created-1")]; !ok || created.Name == "" || created.State != types.TerminalRunStateRunning || !created.Visible {
+				t.Fatalf("expected picker create success to connect visible terminal, got %+v ok=%v", created, ok)
 			}
 			return nil
 		},
@@ -4219,11 +4314,11 @@ func TestE2ERunScenarioTerminalPickerMouseClickOnCreateRowClosesOverlay(t *testi
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || strings.Contains(view, "terminal_picker_rows:") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "slot: connected") || !strings.Contains(view, "terminal: term-created-1") || strings.Contains(view, "terminal_picker_rows:") {
 				t.Fatalf("expected terminal picker mouse click create row to close overlay, got:\n%s", view)
 			}
-			if created, ok := current.State().Domain.Terminals[types.TerminalID("term-created-1")]; !ok || created.Name == "" || created.State != types.TerminalRunStateRunning || created.Visible {
-				t.Fatalf("expected picker mouse click create success to register hidden terminal, got %+v ok=%v", created, ok)
+			if created, ok := current.State().Domain.Terminals[types.TerminalID("term-created-1")]; !ok || created.Name == "" || created.State != types.TerminalRunStateRunning || !created.Visible {
+				t.Fatalf("expected picker mouse click create success to connect visible terminal, got %+v ok=%v", created, ok)
 			}
 			return nil
 		},
@@ -4569,11 +4664,11 @@ func TestE2ERunScenarioLayoutResolveMouseClickOnCreateNewClosesOverlay(t *testin
 					current = nextModel.(*btui.Model)
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "slot: waiting") || strings.Contains(view, "layout_resolve_rows:") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "slot: connected") || !strings.Contains(view, "terminal: term-created-1") || strings.Contains(view, "layout_resolve_rows:") {
 				t.Fatalf("expected layout resolve mouse click create-new to close overlay, got:\n%s", view)
 			}
-			if created, ok := current.State().Domain.Terminals[types.TerminalID("term-created-1")]; !ok || created.Name == "" || created.State != types.TerminalRunStateRunning {
-				t.Fatalf("expected layout resolve mouse click create success to register terminal, got %+v ok=%v", created, ok)
+			if created, ok := current.State().Domain.Terminals[types.TerminalID("term-created-1")]; !ok || created.Name == "" || created.State != types.TerminalRunStateRunning || !created.Visible {
+				t.Fatalf("expected layout resolve mouse click create success to connect visible terminal, got %+v ok=%v", created, ok)
 			}
 			return nil
 		},
@@ -4613,11 +4708,11 @@ func TestE2ERunScenarioLayoutResolveCreateNewClosesOverlay(t *testing.T) {
 					}
 				}
 			}
-			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "slot: waiting") || strings.Contains(view, "layout_resolve_rows:") || strings.Contains(view, "focus_overlay_target:") || strings.Contains(view, "mode:") {
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "slot: connected") || !strings.Contains(view, "terminal: term-created-1") || strings.Contains(view, "layout_resolve_rows:") || strings.Contains(view, "focus_overlay_target:") || strings.Contains(view, "mode:") {
 				t.Fatalf("expected layout resolve create-new flow to close overlay, got:\n%s", view)
 			}
-			if created, ok := current.State().Domain.Terminals[types.TerminalID("term-created-1")]; !ok || created.Name == "" || created.State != types.TerminalRunStateRunning {
-				t.Fatalf("expected layout resolve create success to register terminal, got %+v ok=%v", created, ok)
+			if created, ok := current.State().Domain.Terminals[types.TerminalID("term-created-1")]; !ok || created.Name == "" || created.State != types.TerminalRunStateRunning || !created.Visible {
+				t.Fatalf("expected layout resolve create success to connect visible terminal, got %+v ok=%v", created, ok)
 			}
 			return nil
 		},

@@ -184,6 +184,28 @@ func TestIntentMapperRootCtrlTArmsTabModeAndLMapsTabMove(t *testing.T) {
 	}
 }
 
+func TestIntentMapperTabModeNMapsCreateTab(t *testing.T) {
+	now := time.Date(2026, 3, 23, 12, 0, 0, 0, time.UTC)
+	mapper := NewIntentMapper(Config{
+		Clock:         fixedClock{now: now},
+		PrefixTimeout: 3 * time.Second,
+	})
+	deadline := now.Add(3 * time.Second)
+
+	state := newAppStateWithSinglePane()
+	state.UI.Mode = types.ModeState{
+		Active:     types.ModeTab,
+		DeadlineAt: &deadline,
+	}
+	intents := mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	if _, ok := intents[0].(intent.CreateTabIntent); !ok {
+		t.Fatalf("expected create tab intent, got %T", intents[0])
+	}
+}
+
 func TestIntentMapperWorkspacePickerMapsNavigationAndQuery(t *testing.T) {
 	mapper := NewIntentMapper(Config{})
 	state := newAppStateWithSinglePane()

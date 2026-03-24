@@ -225,6 +225,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyPaneFocusMove(&result.State, intentValue)
 	case intent.TabFocusMoveIntent:
 		applyTabFocusMove(&result.State, intentValue)
+	case intent.CreateTabIntent:
+		applyCreateTab(&result.State)
 	case intent.ActivateModeIntent:
 		applyActivateMode(&result.State, intentValue)
 	case intent.ModeTimedOutIntent:
@@ -1027,6 +1029,47 @@ func applyTabFocusMove(state *types.AppState, in intent.TabFocusMoveIntent) {
 	}
 }
 
+// applyCreateTab 先收口最小 tab create：
+// 新建一个带 waiting pane 的 tab，并立刻进入 layout resolve，让用户继续当前工作流。
+func applyCreateTab(state *types.AppState) {
+	state.UI.Mode = types.ModeState{Active: types.ModeNone}
+	workspaceID := state.UI.Focus.WorkspaceID
+	if workspaceID == "" {
+		workspaceID = state.Domain.ActiveWorkspaceID
+	}
+	workspace, ok := state.Domain.Workspaces[workspaceID]
+	if !ok {
+		return
+	}
+	tabID := nextTabID(workspace)
+	paneID := types.PaneID(fmt.Sprintf("%s-%s-pane-1", workspace.ID, tabID))
+	workspace.Tabs[tabID] = types.TabState{
+		ID:           tabID,
+		Name:         string(tabID),
+		ActivePaneID: paneID,
+		ActiveLayer:  types.FocusLayerTiled,
+		Panes: map[types.PaneID]types.PaneState{
+			paneID: {
+				ID:        paneID,
+				Kind:      types.PaneKindTiled,
+				SlotState: types.PaneSlotWaiting,
+			},
+		},
+		RootSplit: &types.SplitNode{PaneID: paneID},
+	}
+	workspace.TabOrder = append(workspace.TabOrder, tabID)
+	workspace.ActiveTabID = tabID
+	state.Domain.Workspaces[workspace.ID] = workspace
+	state.Domain.ActiveWorkspaceID = workspace.ID
+	state.UI.Focus = types.FocusState{
+		Layer:       types.FocusLayerTiled,
+		WorkspaceID: workspace.ID,
+		TabID:       tabID,
+		PaneID:      paneID,
+	}
+	applyOpenLayoutResolve(state, intent.OpenLayoutResolveIntent{PaneID: paneID})
+}
+
 // applySplitActivePane 先收口最小 split 闭环：
 // 把当前 tiled pane 固定按垂直方向拆出一个 waiting pane，再直接进入 layout resolve。
 func applySplitActivePane(state *types.AppState) {
@@ -1154,8 +1197,8 @@ func applyUpdateTerminalMetadataSucceeded(state *types.AppState, in intent.Updat
 	applyClosePromptForTerminal(state, in.TerminalID)
 }
 
-// applyCreateTerminalSucceeded 只在 create 成功后把新 terminal 注册进 domain，并关闭触发该请求的 overlay。
-// 这样 create 失败时，manager/picker/resolve 都会保留在原处等待用户重试。
+// applyCreateTerminalSucceeded 在 create 成功后，除了注册 terminal，
+// 还要把目标 pane 立即 connect 到新 terminal，避免出现“创建成功但当前工作流仍未切过去”的假成功。
 func applyCreateTerminalSucceeded(state *types.AppState, in intent.CreateTerminalSucceededIntent) {
 	if in.TerminalID != "" {
 		terminalState := in.State
@@ -1169,6 +1212,12 @@ func applyCreateTerminalSucceeded(state *types.AppState, in intent.CreateTermina
 			State:   terminalState,
 			Visible: false,
 		}
+	}
+	if in.PaneID != "" && in.TerminalID != "" {
+		applyConnectTerminal(state, intent.ConnectTerminalIntent{
+			PaneID:     in.PaneID,
+			TerminalID: in.TerminalID,
+		})
 	}
 	applyCloseCreateOverlay(state, in.PaneID)
 }

@@ -313,6 +313,10 @@ type TabFocusMoveIntent struct {
 
 func (TabFocusMoveIntent) intentName() string { return "tab_focus_move" }
 
+type CreateTabIntent struct{}
+
+func (CreateTabIntent) intentName() string { return "create_tab" }
+
 type ActivateModeIntent struct {
 	Mode       types.ModeKind
 	Sticky     bool

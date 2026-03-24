@@ -187,6 +187,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 163. 第一百五十九轮 TDD 已补上最小 tiled pane 方向导航
 164. 第一百六十轮 TDD 已补上最小 tab 方向导航
 165. 第一百六十一轮 TDD 已补上最小 global split 到 layout resolve 的工作台闭环
+166. 第一百六十二轮 TDD 已补上 create terminal 成功后的自动 connect 闭环
+167. 第一百六十三轮 TDD 已补上最小 tab create 到 layout resolve 的工作台闭环
 
 对应文档：
 
