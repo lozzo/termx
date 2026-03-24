@@ -784,6 +784,50 @@ func TestE2ERunScenarioFloatingLayerShowsOutline(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioTabSummaryShowsMixedPaneSlots(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithMixedPaneSlots()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "u"}, {Content: "p"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			if !strings.Contains(view, "tab_summary: tiled=3 | floating=1 | connected=1 | waiting=1 | exited=1 | empty=1 | active_layer=tiled") || !strings.Contains(view, "|- [tiled] waiting pane | slot=waiting | detail=layout pending") || !strings.Contains(view, "\\- [tiled] deploy-log | slot=exited | exit=7 | detail=history retained | state=exited") || !strings.Contains(view, "  [floating] unconnected pane | slot=empty | detail=terminal missing | rect=60,2 20x8") {
+				t.Fatalf("expected runtime view to expose tab summary and mixed pane slots, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected mixed pane slot runtime scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioLongSummaryLinesStayCompacted(t *testing.T) {
 	client := &stubRunClient{}
 	initial := connectedRunAppState()
@@ -6866,6 +6910,84 @@ func runtimeStateWithFloatingOverviewTargets() types.AppState {
 		WorkspaceID: types.WorkspaceID("ws-1"),
 		TabID:       types.TabID("tab-1"),
 		PaneID:      types.PaneID("float-1"),
+	}
+	return state
+}
+
+func runtimeStateWithMixedPaneSlots() types.AppState {
+	state := buildSinglePaneAppState("main", "shell", types.PaneSlotConnected)
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	exitCode := 7
+
+	tab.Panes[types.PaneID("pane-1")] = types.PaneState{
+		ID:         types.PaneID("pane-1"),
+		Kind:       types.PaneKindTiled,
+		SlotState:  types.PaneSlotConnected,
+		TerminalID: types.TerminalID("term-1"),
+	}
+	tab.Panes[types.PaneID("pane-2")] = types.PaneState{
+		ID:        types.PaneID("pane-2"),
+		Kind:      types.PaneKindTiled,
+		SlotState: types.PaneSlotWaiting,
+	}
+	tab.Panes[types.PaneID("pane-3")] = types.PaneState{
+		ID:           types.PaneID("pane-3"),
+		Kind:         types.PaneKindTiled,
+		SlotState:    types.PaneSlotExited,
+		TerminalID:   types.TerminalID("term-3"),
+		LastExitCode: &exitCode,
+	}
+	tab.Panes[types.PaneID("float-empty")] = types.PaneState{
+		ID:        types.PaneID("float-empty"),
+		Kind:      types.PaneKindFloating,
+		SlotState: types.PaneSlotEmpty,
+		Rect:      types.Rect{X: 60, Y: 2, W: 20, H: 8},
+	}
+	tab.RootSplit = &types.SplitNode{
+		Direction: types.SplitDirectionHorizontal,
+		Ratio:     0.5,
+		First:     &types.SplitNode{PaneID: types.PaneID("pane-1")},
+		Second: &types.SplitNode{
+			Direction: types.SplitDirectionVertical,
+			Ratio:     0.5,
+			First:     &types.SplitNode{PaneID: types.PaneID("pane-2")},
+			Second:    &types.SplitNode{PaneID: types.PaneID("pane-3")},
+		},
+	}
+	tab.FloatingOrder = []types.PaneID{types.PaneID("float-empty")}
+	tab.ActivePaneID = types.PaneID("pane-1")
+	tab.ActiveLayer = types.FocusLayerTiled
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.UI.Focus = types.FocusState{
+		Layer:       types.FocusLayerTiled,
+		WorkspaceID: types.WorkspaceID("ws-1"),
+		TabID:       types.TabID("tab-1"),
+		PaneID:      types.PaneID("pane-1"),
+	}
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:      types.TerminalID("term-1"),
+		Name:    "api-dev",
+		State:   types.TerminalRunStateRunning,
+		Visible: true,
+	}
+	state.Domain.Terminals[types.TerminalID("term-3")] = types.TerminalRef{
+		ID:       types.TerminalID("term-3"),
+		Name:     "deploy-log",
+		State:    types.TerminalRunStateExited,
+		ExitCode: &exitCode,
+		Visible:  true,
+	}
+	state.Domain.Connections[types.TerminalID("term-1")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-1"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-1")},
+		OwnerPaneID:      types.PaneID("pane-1"),
+	}
+	state.Domain.Connections[types.TerminalID("term-3")] = types.ConnectionState{
+		TerminalID:       types.TerminalID("term-3"),
+		ConnectedPaneIDs: []types.PaneID{types.PaneID("pane-3")},
+		OwnerPaneID:      types.PaneID("pane-3"),
 	}
 	return state
 }

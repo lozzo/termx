@@ -937,7 +937,7 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "terminal_manager_actions:") || !strings.Contains(view, "[jump] jump to connected pane") || !strings.Contains(view, "[connect_here] connect here") || !strings.Contains(view, "[new_tab] open in new tab") || !strings.Contains(view, "[floating] open in floating pane") || !strings.Contains(view, "[edit] edit metadata") || !strings.Contains(view, "[acquire_owner] acquire owner") || !strings.Contains(view, "[stop] stop terminal") {
 		t.Fatalf("expected manager actions in rendered view, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 44 {
+	if lines := strings.Count(view, "\n") + 1; lines > 45 {
 		t.Fatalf("expected overlay view to remain within compact budget, got %d lines:\n%s", lines, view)
 	}
 }
@@ -995,7 +995,7 @@ func TestRuntimeRendererCompressesBodyWhenOverlayIsActive(t *testing.T) {
 	if strings.Contains(view, "terminal_tags:") {
 		t.Fatalf("expected noncritical terminal detail to be suppressed while overlay is active, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 46 {
+	if lines := strings.Count(view, "\n") + 1; lines > 47 {
 		t.Fatalf("expected overlay-active body to stay tightly compressed, got %d lines:\n%s", lines, view)
 	}
 }
@@ -1401,6 +1401,47 @@ func TestRuntimeRendererRendersFloatingOutline(t *testing.T) {
 	if !(strings.Index(view, "tiled_outline:") < strings.Index(view, "floating_outline_bar:") &&
 		strings.Index(view, "floating_outline:") < strings.Index(view, "section_terminal:")) {
 		t.Fatalf("expected floating outline to stay in body before terminal section, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererRendersTabSummaryAndMixedPaneSlots(t *testing.T) {
+	state := runtimeStateWithMixedPaneSlots()
+	renderer := runtimeRenderer{
+		Screens: NewRuntimeTerminalStore(RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "u"}, {Content: "p"}},
+							},
+						},
+					},
+				},
+			},
+		}),
+	}
+
+	view := renderer.Render(state, nil)
+	if !strings.Contains(view, "tab_summary: tiled=3 | floating=1 | connected=1 | waiting=1 | exited=1 | empty=1 | active_layer=tiled") {
+		t.Fatalf("expected tab summary in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "tiled_layout: root=horizontal | depth=3 | leaves=3 | ratio=0.50") {
+		t.Fatalf("expected mixed layout summary in rendered view, got:\n%s", view)
+	}
+	if !strings.Contains(view, "|- [tiled] waiting pane | slot=waiting | detail=layout pending") {
+		t.Fatalf("expected waiting pane in tiled tree, got:\n%s", view)
+	}
+	if !strings.Contains(view, "\\- [tiled] deploy-log | slot=exited | exit=7 | detail=history retained | state=exited") {
+		t.Fatalf("expected exited pane in tiled tree, got:\n%s", view)
+	}
+	if !strings.Contains(view, "floating_outline_bar: active=pane-1 | total=1 | top=float-empty") {
+		t.Fatalf("expected floating bar for mixed slot state, got:\n%s", view)
+	}
+	if !strings.Contains(view, "  [floating] unconnected pane | slot=empty | detail=terminal missing | rect=60,2 20x8") {
+		t.Fatalf("expected empty floating pane in outline, got:\n%s", view)
 	}
 }
 

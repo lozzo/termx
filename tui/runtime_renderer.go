@@ -53,6 +53,7 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 		renderWorkspaceBar(workspace),
 		renderWorkspaceSummary(workspace),
 		renderTabStrip(workspace),
+		renderTabSummary(tab),
 	}, func(lines []string) []string {
 		return appendSection(lines, "status", statusLines)
 	})
@@ -180,6 +181,42 @@ func renderTabStrip(workspace types.WorkspaceState) string {
 		return "tab_strip: <none>"
 	}
 	return compactSummaryLine(fmt.Sprintf("tab_strip: %s", strings.Join(parts, " | ")))
+}
+
+func renderTabSummary(tab types.TabState) string {
+	tiled := 0
+	floating := 0
+	connected := 0
+	waiting := 0
+	exited := 0
+	empty := 0
+	for _, pane := range tab.Panes {
+		switch pane.Kind {
+		case types.PaneKindFloating:
+			floating++
+		default:
+			tiled++
+		}
+		switch pane.SlotState {
+		case types.PaneSlotConnected:
+			connected++
+		case types.PaneSlotWaiting:
+			waiting++
+		case types.PaneSlotExited:
+			exited++
+		case types.PaneSlotEmpty:
+			empty++
+		}
+	}
+	return compactSummaryLine(
+		fmt.Sprintf("tab_summary: tiled=%d", tiled),
+		fmt.Sprintf("floating=%d", floating),
+		fmt.Sprintf("connected=%d", connected),
+		fmt.Sprintf("waiting=%d", waiting),
+		fmt.Sprintf("exited=%d", exited),
+		fmt.Sprintf("empty=%d", empty),
+		fmt.Sprintf("active_layer=%s", tab.ActiveLayer),
+	)
 }
 
 func renderPaneBar(state types.AppState, pane types.PaneState) string {
@@ -451,11 +488,7 @@ func (r runtimeRenderer) renderTiledOutline(state types.AppState, tab types.TabS
 			prefix = "> "
 		}
 		parts := []string{fmt.Sprintf("%s[tiled] %s", prefix, renderPaneTitle(state, pane))}
-		if role := renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID); role != "" {
-			parts = append(parts, fmt.Sprintf("role=%s", role))
-		} else {
-			parts = append(parts, fmt.Sprintf("slot=%s", pane.SlotState))
-		}
+		parts = append(parts, renderPaneOverviewStateParts(state, pane)...)
 		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.State != "" {
 			parts = append(parts, fmt.Sprintf("state=%s", terminal.State))
 		}
@@ -483,11 +516,7 @@ func (r runtimeRenderer) renderFloatingOutline(state types.AppState, tab types.T
 			prefix = "> "
 		}
 		parts := []string{fmt.Sprintf("%s[floating] %s", prefix, renderPaneTitle(state, pane))}
-		if role := renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID); role != "" {
-			parts = append(parts, fmt.Sprintf("role=%s", role))
-		} else {
-			parts = append(parts, fmt.Sprintf("slot=%s", pane.SlotState))
-		}
+		parts = append(parts, renderPaneOverviewStateParts(state, pane)...)
 		if pane.Rect.W > 0 || pane.Rect.H > 0 {
 			parts = append(parts, fmt.Sprintf("rect=%d,%d %dx%d", pane.Rect.X, pane.Rect.Y, pane.Rect.W, pane.Rect.H))
 		}
@@ -545,11 +574,7 @@ func (r runtimeRenderer) renderTiledTreePaneLine(state types.AppState, tab types
 	if paneID == tab.ActivePaneID {
 		parts[0] = "> " + parts[0]
 	}
-	if role := renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID); role != "" {
-		parts = append(parts, fmt.Sprintf("role=%s", role))
-	} else {
-		parts = append(parts, fmt.Sprintf("slot=%s", pane.SlotState))
-	}
+	parts = append(parts, renderPaneOverviewStateParts(state, pane)...)
 	if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.State != "" {
 		parts = append(parts, fmt.Sprintf("state=%s", terminal.State))
 	}
@@ -557,6 +582,33 @@ func (r runtimeRenderer) renderTiledTreePaneLine(state types.AppState, tab types
 		parts = append(parts, fmt.Sprintf("preview=%s", preview))
 	}
 	return compactSummaryLine(parts...)
+}
+
+// renderPaneOverviewStateParts 把 pane 在概览中的最小生命周期语义统一起来，
+// 让 tiled/floating/tree 三种投影都能稳定表达 waiting/exited/empty 差异。
+func renderPaneOverviewStateParts(state types.AppState, pane types.PaneState) []string {
+	if pane.SlotState != "" && pane.SlotState != types.PaneSlotConnected {
+		parts := []string{fmt.Sprintf("slot=%s", pane.SlotState)}
+		switch pane.SlotState {
+		case types.PaneSlotWaiting:
+			parts = append(parts, "detail=layout pending")
+		case types.PaneSlotEmpty:
+			parts = append(parts, "detail=terminal missing")
+		case types.PaneSlotExited:
+			if pane.LastExitCode != nil {
+				parts = append(parts, fmt.Sprintf("exit=%d", *pane.LastExitCode))
+			} else if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.ExitCode != nil {
+				parts = append(parts, fmt.Sprintf("exit=%d", *terminal.ExitCode))
+			}
+			parts = append(parts, "detail=history retained")
+		}
+		return parts
+	}
+	if role := renderTerminalRole(state.Domain.Connections[pane.TerminalID], pane.ID); role != "" {
+		return []string{fmt.Sprintf("role=%s", role)}
+	}
+	parts := []string{fmt.Sprintf("slot=%s", pane.SlotState)}
+	return parts
 }
 
 func summarizeTiledLayout(root *types.SplitNode, fallbackLeaves int) tiledLayoutSummary {
