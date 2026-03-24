@@ -1912,6 +1912,7 @@ func (r modernScreenShellRenderer) renderFooter(theme modernShellTheme, state ty
 
 func renderModernFooterContext(theme modernShellTheme, state types.AppState, pane types.PaneState, notice string) string {
 	items := []string{theme.activeChip.Render(renderPaneTitle(state, pane))}
+	items = append(items, theme.chip.Render(renderModernFooterSlotBadge(pane)))
 	items = append(items, theme.chip.Render(renderModernFooterLayerBadge(state)))
 	if notice != "" && !strings.Contains(xansi.Strip(notice), "ready") {
 		items = append([]string{notice}, items...)
@@ -1942,41 +1943,41 @@ func renderModernLegacyHeaderRight(state types.AppState, workspace types.Workspa
 		termID = string(pane.TerminalID)
 	}
 	parts := []string{
-		"pane:" + string(pane.ID),
-		"term:" + termID,
-		fmt.Sprintf("float:%d", len(orderedFloatingPaneIDs(tab))),
+		"pane " + string(pane.ID),
+		"terminal " + termID,
+		fmt.Sprintf("float %d", len(orderedFloatingPaneIDs(tab))),
 	}
 	if state.UI.Overlay.Kind != types.OverlayNone {
-		parts = append(parts, "overlay:"+string(state.UI.Overlay.Kind))
+		parts = append(parts, "overlay "+string(state.UI.Overlay.Kind))
 	}
 	if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
-		parts = append(parts, "mode:"+string(state.UI.Mode.Active))
+		parts = append(parts, "mode "+string(state.UI.Mode.Active))
 	}
 	return strings.Join(parts, "  ")
 }
 
-func renderModernTopStatusLine(state types.AppState, tab types.TabState, pane types.PaneState) string {
+func renderModernTopStatusLine(state types.AppState, _ types.TabState, pane types.PaneState) string {
 	parts := []string{
-		"active:" + renderPaneTitle(state, pane),
-		"role:" + renderModernPaneRole(state, pane),
-		"slot:" + string(pane.SlotState),
+		"focus " + renderPaneTitle(state, pane),
+		"role " + renderModernPaneRole(state, pane),
+		"slot " + string(pane.SlotState),
 	}
 	if runtime := renderModernContextRuntimeLine(state, pane); runtime != "" {
-		parts = append(parts, strings.ReplaceAll(runtime, "  •  ", "  "))
+		parts = append(parts, runtime)
 	}
 	return strings.Join(parts, "  ")
 }
 
 func renderModernContextChromeLine(state types.AppState, pane types.PaneState) string {
-	parts := []string{"layer:" + string(renderModernPrimaryLayer(state))}
+	parts := []string{"layer " + string(renderModernPrimaryLayer(state))}
 	if pane.TerminalID != "" {
-		parts = append(parts, "term:"+string(pane.TerminalID))
+		parts = append(parts, "terminal "+string(pane.TerminalID))
 	}
 	if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
-		parts = append(parts, "mode:"+string(state.UI.Mode.Active))
+		parts = append(parts, "mode "+string(state.UI.Mode.Active))
 	}
 	if state.UI.Overlay.Kind != types.OverlayNone {
-		parts = append(parts, "overlay:"+string(state.UI.Overlay.Kind))
+		parts = append(parts, "overlay "+string(state.UI.Overlay.Kind))
 	}
 	return strings.Join(parts, "  ")
 }
@@ -2050,11 +2051,24 @@ func renderModernLegacyShortcut(part string) string {
 func renderModernFooterLayerBadge(state types.AppState) string {
 	switch renderModernPrimaryLayer(state) {
 	case types.FocusLayerFloating:
-		return "◫ floating"
+		return "◫ float"
 	case types.FocusLayerOverlay:
 		return "◌ overlay"
 	default:
-		return "▣ tiled"
+		return "▣ workbench"
+	}
+}
+
+func renderModernFooterSlotBadge(pane types.PaneState) string {
+	switch pane.SlotState {
+	case types.PaneSlotConnected:
+		return "● connected"
+	case types.PaneSlotWaiting:
+		return "◌ waiting"
+	case types.PaneSlotExited:
+		return "○ exited"
+	default:
+		return "○ empty"
 	}
 }
 
@@ -2179,7 +2193,7 @@ func renderModernTabLabel(tab types.TabState) string {
 }
 
 func renderModernPanePath(workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
-	return fmt.Sprintf("path %s / %s / %s / %s", safeWorkspaceLabel(workspace), safeTabLabel(tab), safePaneKind(pane.Kind), pane.ID)
+	return fmt.Sprintf("%s / %s / %s / %s", safeWorkspaceLabel(workspace), safeTabLabel(tab), safePaneKind(pane.Kind), pane.ID)
 }
 
 func renderModernContextRuntimeLine(state types.AppState, pane types.PaneState) string {
@@ -2190,7 +2204,7 @@ func renderModernContextRuntimeLine(state types.AppState, pane types.PaneState) 
 			stateLabel = string(terminal.State)
 		}
 	}
-	return fmt.Sprintf("state %s  •  layer %s", stateLabel, renderModernPrimaryLayer(state))
+	return fmt.Sprintf("state %s", stateLabel)
 }
 
 func renderModernWorkbenchLocationLine(state types.AppState, pane types.PaneState) string {

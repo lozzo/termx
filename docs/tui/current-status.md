@@ -58,6 +58,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮同时压缩了 modern help overlay 的正文高度，避免 modal 再把 backdrop pane title 完整盖住；这样继续做 overlay 视觉和颜色时，背景工作台还能保住基本上下文
 - 本轮继续把顶部状态条里的技术字段压缩成更接近导航语义的表达：`active:/role:/slot:` 与 `layer:/term:/mode:` 已替代之前更重的说明式文案，主界面首屏现在更像“导航条 + 工作台”而不是“说明条 + 工作台”
 - 本轮也把 floating mode、help overlay 等默认 modern 路径的快捷键和上下文断言一起迁到新的头尾 chrome 基线，后续可以直接在这个壳上继续做 modal 边框、颜色和排版细化
+- 本轮继续把默认 modern 主壳从“工程字段条”往“产品导航条”收口：顶部右侧改成 `pane / terminal / float / overlay / mode` 这种导航词，二级状态栏改成 `focus / role / slot / state`，路径栏去掉 `path:` 前缀，footer 也补上 `connected/waiting/exited` slot badge，让第一屏更接近旧版工作台而不是调试摘要
+- 本轮同步把 shell-only / default-run 的 modern renderer 断言迁到新文案基线，确保后面继续压缩 chrome 技术味时还有稳定回归护栏
 
 ---
 
@@ -279,6 +281,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 212. 第二百零八轮 TDD 已补上 modern pane card 的 compact 响应式布局，并完成 shell-only / default-run / 全量回归闭环
 213. 第二百零九轮 TDD 已补上 floating deck card 的 compact 信息层次与 mixed workbench 的 detached floating strip 摘要，并完成 shell-only / default-run / 全量回归闭环
 214. 第二百一十轮 TDD 已补上 modern workbench hero 双面板与 overlay backdrop 的结构化 paused context，并完成 shell-only / default-run / 全量回归闭环
+215. 第二百一十一轮 TDD 已补上 modern 主壳导航文案去技术化、footer slot badge 与 shell-only/default-run 文案回归闭环
 
 对应文档：
 
