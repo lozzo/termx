@@ -231,10 +231,10 @@ func TestRuntimeRendererCanHideDebugSections(t *testing.T) {
 	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") {
 		t.Fatalf("expected shell-only renderer to keep visible screen shell, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "api-dev  •  owner  •  w0") {
+	if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "owner") || !strings.Contains(stripped, "w0") {
 		t.Fatalf("expected shell-only renderer top chrome to expose active pane summary, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "active api-dev  •  control owner") || !strings.Contains(stripped, "1t  •  1p  •  1x  •  0f") {
+	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "api-dev  •  owner") || !strings.Contains(stripped, "1 tab") || !strings.Contains(stripped, "1 pane") || !strings.Contains(stripped, "1 term") {
 		t.Fatalf("expected shell-only renderer tab chrome to expose tab and workspace summary, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "api-dev  ● run  owner  live") || !strings.Contains(stripped, "┏") || !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "/tmp") || !strings.Contains(stripped, "term-1 running owner") {
@@ -260,7 +260,7 @@ func TestRuntimeRendererShellOnlyTopChromeSummarizesWorkspaceTabsAndContext(t *t
 	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") || !strings.Contains(stripped, "2:logs") {
 		t.Fatalf("expected shell-only renderer top bar to expose active pane and role summary, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "active api-dev  •  control owner") || !strings.Contains(stripped, "2t  •  2p  •  2x  •  0f") {
+	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "api-dev  •  owner") || !strings.Contains(stripped, "2 tabs") || !strings.Contains(stripped, "2 panes") || !strings.Contains(stripped, "2 terms") {
 		t.Fatalf("expected shell-only renderer tab bar to expose per-tab and workspace counts, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "desk") || !strings.Contains(stripped, "api-dev") {
@@ -654,7 +654,12 @@ func TestModernScreenShellMarksOffscreenFloatingPaneForRecall(t *testing.T) {
 		OverlayWidth:   72,
 	}, screens)
 
-	if !strings.Contains(view, "api-dev") || !strings.Contains(view, "floating 1") || !strings.Contains(view, "offscreen") || !strings.Contains(view, "remote") {
+	if !strings.Contains(view, "api-dev") ||
+		!strings.Contains(view, "control owner") ||
+		!strings.Contains(view, "windows 1") ||
+		!strings.Contains(view, "offscreen") ||
+		!strings.Contains(view, "remote") ||
+		!strings.Contains(view, "◫ float deck") {
 		t.Fatalf("expected modern floating shell to expose offscreen recall feedback, got:\n%s", view)
 	}
 }

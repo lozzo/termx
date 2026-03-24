@@ -212,14 +212,14 @@ func (r modernScreenShellRenderer) RenderShell(state types.AppState, workspace t
 func (r modernScreenShellRenderer) renderTopBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width int) string {
 	contentWidth := max(1, width-2)
 	left := renderModernHeaderBrand(theme, workspace)
-	right := theme.panelMeta.Render(renderModernHeaderRightAdaptive(state, workspace, tab, pane, metrics, width))
+	right := renderModernHeaderRightAdaptive(theme, state, workspace, tab, pane, metrics, width)
 	return theme.topBar.Render(fillANSIHorizontal(left, right, contentWidth))
 }
 
 func (r modernScreenShellRenderer) renderTabBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
 	contentWidth := max(1, width-2)
 	left := renderModernTabStripAdaptive(theme, state, workspace, tab, pane, width)
-	right := theme.panelMeta.Render(r.renderWorkspaceSummaryTextAdaptive(workspace, width))
+	right := r.renderWorkspaceSummaryTextAdaptive(theme, workspace, width)
 	return theme.subBar.Render(fillANSIHorizontal(left, right, contentWidth))
 }
 
@@ -246,12 +246,21 @@ func (r modernScreenShellRenderer) renderWorkspaceSummaryText(workspace types.Wo
 	return fmt.Sprintf("tabs %d  •  panes %d  •  terminals %d  •  floating %d", tabs, panes, len(terminals), floating)
 }
 
-func (r modernScreenShellRenderer) renderWorkspaceSummaryTextAdaptive(workspace types.WorkspaceState, width int) string {
-	if shouldRenderCompactChrome(width) {
+func (r modernScreenShellRenderer) renderWorkspaceSummaryTextAdaptive(theme modernShellTheme, workspace types.WorkspaceState, width int) string {
+	if shouldRenderUltraCompactChrome(width) {
 		tabs, panes, terminals, floating := renderModernWorkspaceCounts(workspace)
-		return fmt.Sprintf("%dt  •  %dp  •  %dx  •  %df", tabs, panes, terminals, floating)
+		return theme.panelMeta.Render(fmt.Sprintf("%dt  •  %dp  •  %dx  •  %df", tabs, panes, terminals, floating))
 	}
-	return r.renderWorkspaceSummaryText(workspace)
+	tabs, panes, terminals, floating := renderModernWorkspaceCounts(workspace)
+	items := []string{
+		theme.chip.Render(renderModernCountLabel(tabs, "tab")),
+		theme.chip.Render(renderModernCountLabel(panes, "pane")),
+		theme.chip.Render(renderModernCountLabel(terminals, "term")),
+	}
+	if floating > 0 {
+		items = append(items, theme.chip.Render(fmt.Sprintf("%d float", floating)))
+	}
+	return strings.Join(items, " ")
 }
 
 func (r modernScreenShellRenderer) renderContextBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width int) string {
@@ -2385,6 +2394,13 @@ func renderModernFooterContext(theme modernShellTheme, state types.AppState, pan
 	return strings.Join(items, " ")
 }
 
+func renderModernCountLabel(count int, noun string) string {
+	if count == 1 {
+		return fmt.Sprintf("%d %s", count, noun)
+	}
+	return fmt.Sprintf("%d %ss", count, noun)
+}
+
 func renderModernLegacyHeaderLeft(workspace types.WorkspaceState) string {
 	parts := []string{"termx", fmt.Sprintf("[%s]", safeWorkspaceLabel(workspace))}
 	for index, tabID := range workspace.TabOrder {
@@ -2422,47 +2438,47 @@ func renderModernHeaderBrand(theme modernShellTheme, workspace types.WorkspaceSt
 	return strings.Join(items, " ")
 }
 
-func renderModernLegacyHeaderRight(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics) string {
+func renderModernLegacyHeaderRight(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics) string {
 	parts := []string{
-		renderModernPaneDisplayTitle(state, pane),
-		"control " + renderModernPaneRole(state, pane),
-		fmt.Sprintf("windows %d", len(orderedFloatingPaneIDs(tab))),
+		theme.activeChip.Render(renderModernPaneDisplayTitle(state, pane)),
+		theme.chip.Render("control " + renderModernPaneRole(state, pane)),
+		theme.chip.Render(fmt.Sprintf("windows %d", len(orderedFloatingPaneIDs(tab)))),
 	}
 	if renderModernFloatingPaneOffscreen(pane, metrics) {
-		parts = append(parts, "offscreen")
+		parts = append(parts, theme.activeChip.Render("offscreen"))
 	}
 	if state.UI.Overlay.Kind != types.OverlayNone {
-		parts = append(parts, "dialog "+string(state.UI.Overlay.Kind))
+		parts = append(parts, theme.activeChip.Render("dialog "+string(state.UI.Overlay.Kind)))
 	}
 	if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
-		parts = append(parts, "mode "+string(state.UI.Mode.Active))
+		parts = append(parts, theme.chip.Render("mode "+string(state.UI.Mode.Active)))
 	}
-	return strings.Join(parts, "  ")
+	return strings.Join(parts, " ")
 }
 
-func renderModernHeaderRightAdaptive(state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width int) string {
+func renderModernHeaderRightAdaptive(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width int) string {
 	if shouldRenderCompactChrome(width) {
-		return renderModernHeaderRightCompact(state, workspace, tab, pane, metrics)
+		return renderModernHeaderRightCompact(theme, state, workspace, tab, pane, metrics)
 	}
-	return renderModernLegacyHeaderRight(state, workspace, tab, pane, metrics)
+	return renderModernLegacyHeaderRight(theme, state, workspace, tab, pane, metrics)
 }
 
-func renderModernHeaderRightCompact(state types.AppState, _ types.WorkspaceState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics) string {
+func renderModernHeaderRightCompact(theme modernShellTheme, state types.AppState, _ types.WorkspaceState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics) string {
 	parts := []string{
-		truncateModernLine(renderModernPaneDisplayTitle(state, pane), 18),
-		renderModernPaneRole(state, pane),
-		fmt.Sprintf("w%d", len(orderedFloatingPaneIDs(tab))),
+		theme.activeChip.Render(truncateModernLine(renderModernPaneDisplayTitle(state, pane), 18)),
+		theme.chip.Render(renderModernPaneRole(state, pane)),
+		theme.chip.Render(fmt.Sprintf("w%d", len(orderedFloatingPaneIDs(tab)))),
 	}
 	if renderModernFloatingPaneOffscreen(pane, metrics) {
-		parts = append(parts, "offscreen")
+		parts = append(parts, theme.activeChip.Render("offscreen"))
 	}
 	if state.UI.Overlay.Kind != types.OverlayNone {
-		parts = append(parts, string(state.UI.Overlay.Kind))
+		parts = append(parts, theme.activeChip.Render(string(state.UI.Overlay.Kind)))
 	}
 	if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
-		parts = append(parts, string(state.UI.Mode.Active))
+		parts = append(parts, theme.chip.Render(string(state.UI.Mode.Active)))
 	}
-	return strings.Join(parts, "  •  ")
+	return strings.Join(parts, " ")
 }
 
 func renderModernTopStatusLine(state types.AppState, _ types.TabState, pane types.PaneState) string {
@@ -2498,14 +2514,23 @@ func renderModernTabStrip(theme modernShellTheme, workspace types.WorkspaceState
 }
 
 func renderModernTabStripAdaptive(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
-	if shouldRenderCompactChrome(width) {
+	if shouldRenderUltraCompactChrome(width) {
 		items := []string{
 			theme.activeTab.Render(renderModernActiveTabCompact(tab)),
 			theme.chip.Render(renderModernTopStatusCompact(state, pane)),
 		}
 		return strings.Join(items, " ")
 	}
-	return renderModernTabStrip(theme, workspace)
+	if shouldRenderCompactChrome(width) {
+		return strings.Join([]string{
+			theme.activeTab.Render(renderModernActiveTabCompact(tab)),
+			theme.activeChip.Render(renderModernTopStatusCompact(state, pane)),
+		}, " ")
+	}
+	return strings.Join([]string{
+		renderModernTabStrip(theme, workspace),
+		theme.activeChip.Render(renderModernTopStatusCompact(state, pane)),
+	}, " ")
 }
 
 func renderModernActiveTabCompact(tab types.TabState) string {
@@ -2526,7 +2551,7 @@ func renderModernTopStatusCompact(state types.AppState, pane types.PaneState) st
 	if pane.TerminalID != "" {
 		label = truncateModernLine(label, 14)
 	}
-	return fmt.Sprintf("active %s  •  control %s", label, renderModernPaneRole(state, pane))
+	return fmt.Sprintf("%s  •  %s", label, renderModernPaneRole(state, pane))
 }
 
 func renderModernContextChromeLine(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics) string {
@@ -3058,6 +3083,10 @@ func renderModernOverlayDialogWidth(metrics wireframeMetrics, width int) int {
 
 func shouldRenderCompactChrome(width int) bool {
 	return width <= 80
+}
+
+func shouldRenderUltraCompactChrome(width int) bool {
+	return width <= 68
 }
 
 func renderModernWorkbenchLocationLine(state types.AppState, pane types.PaneState) string {

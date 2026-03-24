@@ -122,7 +122,7 @@ func TestRunUsesShellOnlyRendererByDefault(t *testing.T) {
 	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") {
 		t.Fatalf("expected default run renderer to keep screen shell, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "term-1  •  owner  •  w0") {
+	if !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "owner") || !strings.Contains(stripped, "w0") {
 		t.Fatalf("expected default run renderer top chrome to expose active pane summary, got:\n%s", runner.view)
 	}
 	if !strings.Contains(stripped, "term-1  ● run  owner") || !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "term-1 running owner") {
@@ -131,7 +131,7 @@ func TestRunUsesShellOnlyRendererByDefault(t *testing.T) {
 	if !strings.Contains(stripped, "Single workbench") || !strings.Contains(stripped, "Signals & Keys") || !strings.Contains(stripped, "main / shell / tiled / term-1") || !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "state running") || !strings.Contains(stripped, "Terminal term-1") {
 		t.Fatalf("expected default run renderer to expose single workbench shell panels, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "active term-1  •  control owner") || !strings.Contains(stripped, "1t  •  1p  •  1x  •  0f") || !strings.Contains(stripped, "main / shell / tiled / term-1") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "desk") || !strings.Contains(stripped, "term-1") {
+	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "term-1  •  owner") || !strings.Contains(stripped, "1 tab") || !strings.Contains(stripped, "1 pane") || !strings.Contains(stripped, "1 term") || !strings.Contains(stripped, "main / shell / tiled / term-1") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "desk") || !strings.Contains(stripped, "term-1") {
 		t.Fatalf("expected default run renderer context bar to expose path and runtime state, got:\n%s", runner.view)
 	}
 	if !strings.Contains(stripped, "<p> <t> <w> <o> <f> <g> <?>") || !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "▣ desk") {
@@ -733,7 +733,7 @@ func TestE2ERunScenarioDefaultModernTopChromeSummarizesWorkspaceTabsAndContext(t
 			if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") || !strings.Contains(stripped, "2:logs") {
 				t.Fatalf("expected default modern top bar to expose active pane summary, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "active api-dev  •  control owner") || !strings.Contains(stripped, "2t  •  2p  •  2x  •  0f") {
+			if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "api-dev  •  owner") || !strings.Contains(stripped, "2 tabs") || !strings.Contains(stripped, "2 panes") || !strings.Contains(stripped, "2 terms") {
 				t.Fatalf("expected default modern tab bar to expose tab and workspace counts, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "desk") || !strings.Contains(stripped, "api-dev") {

@@ -70,6 +70,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把 modern 默认路径的 floating 层级反馈接到主壳：floating layer 激活时，context chrome 现在会优先显示 `top window / stack` 摘要，不再被通用 token 挤掉；同时补上默认 modern 的 z-order/重叠恢复 E2E，锁住“top summary 更新后，底下被遮挡窗口正文仍完整恢复”的路径
 - 本轮继续把默认 modern 的 workbench-first 结构往真实产品界面收口：split / floating / mixed 三种主工作台现在不再只剩一整块 canvas，而是统一补上 `主区 + 辅助侧栏` 结构；其中 split 会显示 layout/active pane 摘要，floating 会显示 `Floating workbench + Window deck`，mixed 会显示 `Detached windows` 条与 floating deck，默认 78 列路径和对应 renderer/E2E 断言也已经一起迁到新的窄宽度基线
 - 本轮继续把默认 modern 的 overlay 壳层从“单个对话框正文”推进到“统一盒模型”：help / terminal manager 等 modal 现在统一显式带 `CONTEXT[overlay] / BACKDROP[workbench] / FOOTER[overlay]` 小节，help 正文也切到 `BODY[help]`；同时补上按高度/宽度自动切换的 compact overlay 压缩策略，确保 64~78 列、约 20 行正文高度下仍然能完整显示 modal 结构而不再被底部截断
+- 本轮继续把默认 78 列首屏的导航信息收口到可读层级：top header 右侧已改成 pane/role/window 的 chip 组，tab bar 会在窄宽度下优先保留 `active tab + active pane`，workspace summary 则改成 `1 tab / 1 pane / 1 term` 这类可直接阅读的计数表达，不再退回工程化 token 串
+- 本轮同步把 floating offscreen 场景并入新的现代 chrome 语义：越界窗口现在会在 header/context/footer 中稳定暴露 `offscreen / windows / float deck` 反馈，shell-only 与默认 modern 路径的 renderer/E2E 可以继续以这组产品词汇做护栏
 
 ---
 
