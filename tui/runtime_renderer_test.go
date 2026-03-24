@@ -261,7 +261,7 @@ func TestRuntimeRendererShellOnlyOverlayKeepsPaneContext(t *testing.T) {
 	if !strings.Contains(stripped, "overlay help") || !strings.Contains(stripped, "mode picker") || !strings.Contains(stripped, "Esc close") {
 		t.Fatalf("expected shell-only overlay renderer to expose overlay chrome and footer actions, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "Backdrop workbench") || !strings.Contains(stripped, "background api-dev • owner • tiled") || !strings.Contains(stripped, "overlay active • help") {
+	if !strings.Contains(stripped, "Backdrop workbench") || !strings.Contains(stripped, "background api-dev • owner • tiled") || !strings.Contains(stripped, "focus paused  •  overlay active • help") {
 		t.Fatalf("expected shell-only overlay renderer to retain a dimmed workbench backdrop summary, got:\n%s", view)
 	}
 }
@@ -309,7 +309,7 @@ func TestRuntimeRendererShellOnlyShowsContextualActionsForConnectedPane(t *testi
 	if !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "live input  •  Ctrl-p  •  pick") {
 		t.Fatalf("expected shell-only connected pane to expose footer focus hints, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "Screen") || !strings.Contains(stripped, "rows 1/1  •  live") || !strings.Contains(stripped, "│ $ pwd") {
+	if !strings.Contains(stripped, "Screen") || !strings.Contains(stripped, "rows 1/1  •  live  •  primary") || !strings.Contains(stripped, "│ $ pwd") {
 		t.Fatalf("expected shell-only connected pane to expose a framed screen block, got:\n%s", view)
 	}
 }
@@ -424,7 +424,7 @@ func TestRuntimeRendererShellOnlyRendersSplitWorkbenchAsPaneCanvas(t *testing.T)
 	if !strings.Contains(stripped, "live input  •  Ctrl-p  •  pick") || !strings.Contains(stripped, "standby pane  •  Ctrl-p pane") {
 		t.Fatalf("expected shell-only split renderer to expose active and standby footer hints, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "rows 2/2  •  live") || !strings.Contains(stripped, "rows 2/2  •  standby") || !strings.Contains(stripped, "│ $ npm run dev") || !strings.Contains(stripped, "│ > tsc -w") {
+	if !strings.Contains(stripped, "rows 2/2  •  live  •  primary") || !strings.Contains(stripped, "rows 2/2  •  standby  •  secondary") || !strings.Contains(stripped, "│ $ npm run dev") || !strings.Contains(stripped, "│ > tsc -w") {
 		t.Fatalf("expected shell-only split renderer to expose framed screen blocks for both panes, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "$ npm run dev") || !strings.Contains(stripped, "> tsc -w") {
@@ -476,13 +476,16 @@ func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing
 	if !strings.Contains(stripped, "api-dev • owner • floating • active") || !strings.Contains(stripped, "Geometry") || !strings.Contains(stripped, "z 1/2") || !strings.Contains(stripped, "z 2/2") {
 		t.Fatalf("expected shell-only floating renderer to expose title bar and z-order geometry, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "Window deck  •  2 windows") || !strings.Contains(stripped, "focus float-1") || !strings.Contains(stripped, "top float-2") {
+	if !strings.Contains(stripped, "Window deck  •  2 windows") || !strings.Contains(stripped, "focus float-1") || !strings.Contains(stripped, "top float-2") || !strings.Contains(stripped, "active api-dev") || !strings.Contains(stripped, "top build-log") {
 		t.Fatalf("expected shell-only floating renderer to expose deck summary, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "active window") || !strings.Contains(stripped, "top window") {
+		t.Fatalf("expected shell-only floating renderer to expose active/top window linkage, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "Footer") || !strings.Contains(stripped, "live window  •  deck  •  Ctrl-o") || !strings.Contains(stripped, "standby window  •  deck") {
 		t.Fatalf("expected shell-only floating renderer to expose floating footer hints, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "rows 1/1  •  live") || !strings.Contains(stripped, "│ api ready") {
+	if !strings.Contains(stripped, "rows 1/1  •  live  •  primary") || !strings.Contains(stripped, "│ api ready") {
 		t.Fatalf("expected shell-only floating renderer to expose framed active window screen block, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "api ready") || !strings.Contains(stripped, "build ok") || !strings.Contains(stripped, "rect 10,8  30x12") {
@@ -543,7 +546,7 @@ func TestRuntimeRendererShellOnlyShowsUnavailableScreenBlockWhenSnapshotMissing(
 
 	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "Screen") || !strings.Contains(stripped, "rows 0/0  •  unavailable") || !strings.Contains(stripped, "│ <screen unavailable>") {
+	if !strings.Contains(stripped, "Screen") || !strings.Contains(stripped, "rows 0/0  •  unavailable  •  primary") || !strings.Contains(stripped, "│ <screen unavailable>") {
 		t.Fatalf("expected shell-only renderer to keep an unavailable screen block when snapshot is missing, got:\n%s", view)
 	}
 }

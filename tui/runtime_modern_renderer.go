@@ -454,7 +454,7 @@ func (r modernScreenShellRenderer) renderFloatingDeck(theme modernShellTheme, st
 	if len(floatingPaneIDs) == 0 {
 		return theme.mutedPanel.Width(width - 2).Height(height - 2).Render(strings.Join([]string{header, theme.panelMeta.Render("No floating windows")}, "\n"))
 	}
-	cardHeight := 7
+	cardHeight := 8
 	cards := make([]string, 0, len(floatingPaneIDs))
 	remainingHeight := max(0, height-1)
 	for index, paneID := range floatingPaneIDs {
@@ -479,6 +479,7 @@ func (r modernScreenShellRenderer) renderFloatingDeckCard(theme modernShellTheme
 	if active {
 		panelStyle = theme.activePanel
 	}
+	top := index == total-1
 	rectText := "rect auto"
 	if pane.Rect.W > 0 || pane.Rect.H > 0 {
 		rectText = fmt.Sprintf("rect %d,%d  %dx%d", pane.Rect.X, pane.Rect.Y, pane.Rect.W, pane.Rect.H)
@@ -489,6 +490,7 @@ func (r modernScreenShellRenderer) renderFloatingDeckCard(theme modernShellTheme
 	}
 	lines := normalizeModernPanelLines([]string{
 		theme.panelTitle.Render(fmt.Sprintf("z %d/%d • %s", index+1, max(1, total), renderPaneTitle(state, pane))),
+		theme.panelMeta.Render(renderModernFloatingDeckState(active, top)),
 		theme.panelMeta.Render(rectText),
 		theme.panelMeta.Render(fmt.Sprintf("slot %s  •  %s", pane.SlotState, renderScreenShellPaneCardRole(state, pane))),
 		theme.terminalBody.Render(preview),
@@ -679,6 +681,19 @@ func renderModernFloatingZ(state types.AppState, pane types.PaneState) (int, int
 	return 0, len(tab.FloatingOrder)
 }
 
+func renderModernFloatingDeckState(active bool, top bool) string {
+	switch {
+	case active && top:
+		return "active window  •  top window"
+	case active:
+		return "active window"
+	case top:
+		return "top window"
+	default:
+		return "stack window"
+	}
+}
+
 func renderModernPaneStatusLine(state types.AppState, pane types.PaneState) string {
 	role := renderScreenShellPaneCardRole(state, pane)
 	if role == "" {
@@ -778,7 +793,11 @@ func (r modernScreenShellRenderer) renderTerminalScreenLines(theme modernShellTh
 	if stateLabel == "unavailable" {
 		displayRows = 0
 	}
-	meta := fmt.Sprintf("rows %d/%d  •  %s", displayRows, totalRows, stateLabel)
+	focusLabel := "secondary"
+	if active {
+		focusLabel = "primary"
+	}
+	meta := fmt.Sprintf("rows %d/%d  •  %s  •  %s", displayRows, totalRows, stateLabel, focusLabel)
 	if truncated {
 		meta += "  •  trimmed"
 	}
@@ -829,7 +848,7 @@ func (r modernScreenShellRenderer) renderOverlayBackdrop(theme modernShellTheme,
 	}
 	lines := normalizeModernPanelLines([]string{
 		theme.panelTitle.Render("Backdrop workbench"),
-		theme.panelMeta.Render(fmt.Sprintf("overlay active • %s", state.UI.Overlay.Kind)),
+		theme.panelMeta.Render(fmt.Sprintf("focus paused  •  overlay active • %s", state.UI.Overlay.Kind)),
 		theme.panelMeta.Render("background " + renderModernPaneTitleBar(state, pane, false, 0, 0)),
 		theme.panelMeta.Render(renderModernPaneStatusLine(state, pane)),
 		theme.terminalBody.Render(preview),
@@ -1371,14 +1390,23 @@ func renderModernFloatingWorkbenchSummary(state types.AppState, tab types.TabSta
 		activePane = string(floatingPaneIDs[0])
 	}
 	topPane := "<none>"
+	activeTitle := activePane
+	topTitle := topPane
 	if len(floatingPaneIDs) > 0 {
 		topPane = string(floatingPaneIDs[len(floatingPaneIDs)-1])
+		topTitle = topPane
+	}
+	if pane, ok := tab.Panes[types.PaneID(activePane)]; ok {
+		activeTitle = renderPaneTitle(state, pane)
+	}
+	if pane, ok := tab.Panes[types.PaneID(topPane)]; ok {
+		topTitle = renderPaneTitle(state, pane)
 	}
 	layer := state.UI.Focus.Layer
 	if layer == "" {
 		layer = types.FocusLayerFloating
 	}
-	return fmt.Sprintf("focus %s  •  top %s  •  layer %s  •  deck %d", activePane, topPane, layer, len(floatingPaneIDs))
+	return fmt.Sprintf("focus %s  •  top %s  •  active %s  •  top %s  •  layer %s  •  deck %d", activePane, topPane, activeTitle, topTitle, layer, len(floatingPaneIDs))
 }
 
 func renderModernFloatingModeHint(state types.AppState) string {
