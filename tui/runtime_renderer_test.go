@@ -554,7 +554,10 @@ func TestRuntimeRendererShellOnlyRendersSplitWorkbenchAsPaneCanvas(t *testing.T)
 
 	view := renderer.Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "api-dev  ● run  owner  live") || !strings.Contains(stripped, "build-log  ● run  owner  idle") {
+	if !strings.Contains(stripped, "Split workbench") || !strings.Contains(stripped, "Layout vertical 50/50") {
+		t.Fatalf("expected shell-only split renderer to expose split summary sidebar, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "owner  •  connected") {
 		t.Fatalf("expected shell-only split renderer to expose tiled pane canvas titles, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "$ npm run dev") || !strings.Contains(stripped, "> tsc -w") || !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
@@ -603,14 +606,17 @@ func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing
 
 	view := renderer.Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "main / shell / floating / api-dev") || !strings.Contains(stripped, "api-dev  ● run  owner") || !strings.Contains(stripped, "build-log  ● run  owner") || !strings.Contains(stripped, "top build-log") || !strings.Contains(stripped, "live") {
+	if !strings.Contains(stripped, "Floating workbench") || !strings.Contains(stripped, "Window deck  •  2 windows") {
+		t.Fatalf("expected shell-only floating renderer to expose floating summary deck, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "main / shell / floating / api-dev") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "top build-log") || !strings.Contains(stripped, "Window deck  •  2 windows") {
 		t.Fatalf("expected shell-only floating renderer to expose overlapping floating pane titles with z-order, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "api ready") || !strings.Contains(stripped, "build ok") || !strings.Contains(stripped, "term-1 running owner") || !strings.Contains(stripped, "term-2 running owner") {
+	if !strings.Contains(stripped, "api ready") || !strings.Contains(stripped, "build o") || !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "term-2") {
 		t.Fatalf("expected shell-only floating renderer to keep window previews and runtime footer lines inside the floating canvas, got:\n%s", view)
 	}
-	if strings.Contains(stripped, "Window deck") || strings.Contains(stripped, "Workbench shell") {
-		t.Fatalf("expected shell-only floating renderer to stop using dashboard-style deck chrome, got:\n%s", view)
+	if strings.Contains(stripped, "Workbench shell") {
+		t.Fatalf("expected shell-only floating renderer to stay on the modern workbench shell, got:\n%s", view)
 	}
 }
 
@@ -680,7 +686,10 @@ func TestRuntimeRendererShellOnlyRendersDetachedFloatingStripForMixedWorkbench(t
 
 	view := renderer.Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "api-dev  ● run  owner  live") || !strings.Contains(stripped, "waiting pane  ◌ wait  reserved") || !strings.Contains(stripped, "deploy-log  ○ exit  history") || !strings.Contains(stripped, "unconnected pa") || !strings.Contains(stripped, "no ter") {
+	if !strings.Contains(stripped, "Detached windows") || !strings.Contains(stripped, "unconnected pane empty") {
+		t.Fatalf("expected shell-only mixed workbench to expose detached floating strip, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "waiting pane") || !strings.Contains(stripped, "deploy-log") || !strings.Contains(stripped, "unconnected p") || !strings.Contains(stripped, "no term") || !strings.Contains(stripped, "history retained") {
 		t.Fatalf("expected shell-only mixed workbench to render tiled and floating panes in one canvas, got:\n%s", view)
 	}
 }

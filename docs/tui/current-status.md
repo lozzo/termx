@@ -68,6 +68,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把 modern 主壳往“首屏去技术 ID”收口：header/context/footer/floating/pane title 现在统一优先显示 terminal 真名与人类状态名，默认不再把 `pane-1 / term-1` 当作首屏主信息；未连接 pane 也开始以 `unconnected / waiting` 这类状态词出现在主工作台与路径栏里
 - 本轮继续把第三批浮窗/渲染场景往 modern 默认路径收口：floating pane 现在会在主壳 chrome 里显式暴露 `offscreen` 越界状态，center recall 后该标记会清除；同时补上默认 modern 的 `floating center recall` 与 `overlay close without artifacts` 两条 E2E 护栏，防止后续继续做边框/遮罩时把主工作台恢复路径做脏
 - 本轮继续把 modern 默认路径的 floating 层级反馈接到主壳：floating layer 激活时，context chrome 现在会优先显示 `top window / stack` 摘要，不再被通用 token 挤掉；同时补上默认 modern 的 z-order/重叠恢复 E2E，锁住“top summary 更新后，底下被遮挡窗口正文仍完整恢复”的路径
+- 本轮继续把默认 modern 的 workbench-first 结构往真实产品界面收口：split / floating / mixed 三种主工作台现在不再只剩一整块 canvas，而是统一补上 `主区 + 辅助侧栏` 结构；其中 split 会显示 layout/active pane 摘要，floating 会显示 `Floating workbench + Window deck`，mixed 会显示 `Detached windows` 条与 floating deck，默认 78 列路径和对应 renderer/E2E 断言也已经一起迁到新的窄宽度基线
 
 ---
 
