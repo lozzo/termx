@@ -479,6 +479,39 @@ func TestIntentMapperPromptMapsStructuredFieldKeys(t *testing.T) {
 	}
 }
 
+func TestIntentMapperPromptMouseClickSelectsStructuredField(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+	state := newAppStateWithSinglePane()
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayPrompt,
+		Data: &promptdomain.State{
+			Kind: promptdomain.KindEditTerminalMetadata,
+			Fields: []promptdomain.Field{
+				{Key: "name", Label: "Name", Value: "build-log"},
+				{Key: "tags", Label: "Tags", Value: "group=build"},
+			},
+		},
+	}
+	view := strings.Join([]string{
+		"termx",
+		"prompt_fields: | prompt_fields_rendered: 2",
+		"> [name] Name: build-log",
+		"  [tags] Tags: group=build",
+	}, "\n")
+
+	intents := mapper.MapMouse(state, tea.MouseMsg{
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		Y:      3,
+	}, view)
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	if intents[0] != (intent.PromptSelectFieldIntent{Index: 1}) {
+		t.Fatalf("expected prompt select field intent, got %+v", intents[0])
+	}
+}
+
 func TestIntentMapperTerminalManagerMapsSelectionAndQuery(t *testing.T) {
 	mapper := NewIntentMapper(Config{})
 	state := newAppStateWithSinglePane()

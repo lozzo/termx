@@ -216,6 +216,8 @@ func (DefaultReducer) Reduce(state types.AppState, in intent.Intent) Result {
 		applyPromptNextField(&result.State)
 	case intent.PromptPreviousFieldIntent:
 		applyPromptPreviousField(&result.State)
+	case intent.PromptSelectFieldIntent:
+		applyPromptSelectField(&result.State, intentValue)
 	case intent.ActivateModeIntent:
 		applyActivateMode(&result.State, intentValue)
 	case intent.ModeTimedOutIntent:
@@ -916,6 +918,14 @@ func applyPromptPreviousField(state *types.AppState) {
 		return
 	}
 	prompt.PreviousField()
+}
+
+func applyPromptSelectField(state *types.AppState, in intent.PromptSelectFieldIntent) {
+	prompt, ok := promptState(state)
+	if !ok {
+		return
+	}
+	prompt.SetActiveField(in.Index)
 }
 
 // applyCreateWorkspace 为新 workspace 建立最小可工作骨架：

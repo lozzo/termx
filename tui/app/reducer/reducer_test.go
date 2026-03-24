@@ -817,6 +817,35 @@ func TestReducerMetadataPromptPreviousFieldReturnsFocusToNameField(t *testing.T)
 	}
 }
 
+func TestReducerMetadataPromptSelectFieldRoutesInputToClickedField(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	opened := reducer.Reduce(state, intent.OpenPromptIntent{
+		PromptKind: PromptKindEditTerminalMetadata,
+		TerminalID: types.TerminalID("term-2"),
+	})
+	selected := reducer.Reduce(opened.State, intent.PromptSelectFieldIntent{Index: 1})
+	edited := reducer.Reduce(selected.State, intent.PromptAppendInputIntent{Text: ",env=prod"})
+	submitted := reducer.Reduce(edited.State, intent.SubmitPromptIntent{})
+	completed := reducer.Reduce(submitted.State, intent.UpdateTerminalMetadataSucceededIntent{
+		TerminalID: types.TerminalID("term-2"),
+		Name:       "build-log",
+		Tags: map[string]string{
+			"group": "build",
+			"env":   "prod",
+		},
+	})
+
+	terminal := completed.State.Domain.Terminals[types.TerminalID("term-2")]
+	if terminal.Name != "build-log" {
+		t.Fatalf("expected name to stay on original field, got %+v", terminal)
+	}
+	if terminal.Tags["group"] != "build" || terminal.Tags["env"] != "prod" {
+		t.Fatalf("expected clicked tags field to receive appended input, got %+v", terminal.Tags)
+	}
+}
+
 func TestReducerModeTimedOutClearsActiveMode(t *testing.T) {
 	reducer := New()
 	state := newAppStateWithSinglePane()

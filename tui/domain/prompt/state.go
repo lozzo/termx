@@ -93,6 +93,17 @@ func (s *State) PreviousField() bool {
 	return true
 }
 
+func (s *State) SetActiveField(index int) bool {
+	if s == nil || len(s.Fields) == 0 {
+		return false
+	}
+	if index < 0 || index >= len(s.Fields) {
+		return false
+	}
+	s.Active = index
+	return true
+}
+
 func (s *State) ActiveValue() string {
 	if s == nil {
 		return ""

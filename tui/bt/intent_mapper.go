@@ -95,6 +95,8 @@ func (m DefaultIntentMapper) MapMouse(state types.AppState, msg tea.MouseMsg, vi
 			return intents
 		}
 		return mapTerminalManagerMouseClick(state, msg, view)
+	case types.OverlayPrompt:
+		return mapPromptMouseClick(state, msg, view)
 	default:
 		return nil
 	}

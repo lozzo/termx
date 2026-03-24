@@ -115,3 +115,25 @@ func TestPromptStateActiveValueFallsBackToDraftWhenNoFields(t *testing.T) {
 		t.Fatalf("expected active value to use draft, got %q", state.ActiveValue())
 	}
 }
+
+func TestPromptStateSetActiveFieldSwitchesStructuredField(t *testing.T) {
+	state := State{
+		Kind: KindEditTerminalMetadata,
+		Fields: []Field{
+			{Key: "name", Value: "build-log"},
+			{Key: "tags", Value: "group=build"},
+		},
+	}
+
+	if !state.SetActiveField(1) {
+		t.Fatalf("expected set active field to succeed")
+	}
+	state.AppendInput(",env=prod")
+
+	if state.Active != 1 {
+		t.Fatalf("expected active field index 1, got %d", state.Active)
+	}
+	if state.Fields[1].Value != "group=build,env=prod" {
+		t.Fatalf("expected append to target clicked field, got %+v", state.Fields)
+	}
+}

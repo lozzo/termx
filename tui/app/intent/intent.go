@@ -291,6 +291,12 @@ type PromptPreviousFieldIntent struct{}
 
 func (PromptPreviousFieldIntent) intentName() string { return "prompt_previous_field" }
 
+type PromptSelectFieldIntent struct {
+	Index int
+}
+
+func (PromptSelectFieldIntent) intentName() string { return "prompt_select_field" }
+
 type ActivateModeIntent struct {
 	Mode       types.ModeKind
 	Sticky     bool

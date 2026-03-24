@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tui/app/intent"
 	layoutresolvedomain "github.com/lozzow/termx/tui/domain/layoutresolve"
+	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
 	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
 	terminalpickerdomain "github.com/lozzow/termx/tui/domain/terminalpicker"
 	"github.com/lozzow/termx/tui/domain/types"
@@ -14,6 +15,7 @@ import (
 
 const overlayPreviewRowLimit = 8
 const terminalManagerPreviewRowLimit = 4
+const overlayDetailPreviewRowLimit = 4
 
 func mapWorkspacePickerMouseClick(state types.AppState, msg tea.MouseMsg, view string) []intent.Intent {
 	if !isLeftMousePress(msg) {
@@ -146,6 +148,25 @@ func mapTerminalManagerMouseClick(state types.AppState, msg tea.MouseMsg, view s
 		return []intent.Intent{intent.TerminalManagerConnectHereIntent{}}
 	}
 	return []intent.Intent{intent.TerminalManagerMoveIntent{Delta: delta}}
+}
+
+func mapPromptMouseClick(state types.AppState, msg tea.MouseMsg, view string) []intent.Intent {
+	if !isLeftMousePress(msg) {
+		return nil
+	}
+	prompt, ok := state.UI.Overlay.Data.(*promptdomain.State)
+	if !ok || prompt == nil || len(prompt.Fields) == 0 {
+		return nil
+	}
+	active := prompt.Active
+	if active < 0 || active >= len(prompt.Fields) {
+		active = 0
+	}
+	targetIndex, ok := overlayClickedRowIndex(view, "prompt_fields:", msg.Y, len(prompt.Fields), overlayDetailPreviewRowLimit, active)
+	if !ok || targetIndex == active {
+		return nil
+	}
+	return []intent.Intent{intent.PromptSelectFieldIntent{Index: targetIndex}}
 }
 
 // overlayClickedRowIndex 根据当前渲染文本里的 rows 区域起点，反推出点击命中的真实 row 索引。
