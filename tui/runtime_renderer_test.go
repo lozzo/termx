@@ -953,7 +953,7 @@ func TestRuntimeRendererRendersTerminalManagerOverlay(t *testing.T) {
 	if !strings.Contains(view, "terminal_manager_actions:") || !strings.Contains(view, "[jump] jump to connected pane") || !strings.Contains(view, "[connect_here] connect here") || !strings.Contains(view, "[new_tab] open in new tab") || !strings.Contains(view, "[floating] open in floating pane") || !strings.Contains(view, "[edit] edit metadata") || !strings.Contains(view, "[acquire_owner] acquire owner") || !strings.Contains(view, "[stop] stop terminal") {
 		t.Fatalf("expected manager actions in rendered view, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 90 {
+	if lines := strings.Count(view, "\n") + 1; lines > 96 {
 		t.Fatalf("expected overlay view to remain within compact budget, got %d lines:\n%s", lines, view)
 	}
 }
@@ -1011,7 +1011,7 @@ func TestRuntimeRendererCompressesBodyWhenOverlayIsActive(t *testing.T) {
 	if strings.Contains(view, "terminal_tags:") {
 		t.Fatalf("expected noncritical terminal detail to be suppressed while overlay is active, got:\n%s", view)
 	}
-	if lines := strings.Count(view, "\n") + 1; lines > 92 {
+	if lines := strings.Count(view, "\n") + 1; lines > 98 {
 		t.Fatalf("expected overlay-active body to stay tightly compressed, got %d lines:\n%s", lines, view)
 	}
 }
@@ -1634,7 +1634,7 @@ func TestRuntimeRendererRendersWireframeOverlayDialog(t *testing.T) {
 	if !strings.Contains(view, "DIALOG[terminal_manager]") || !strings.Contains(view, "TITLE[terminal_manager]") || !strings.Contains(view, "FOOTER[enter here esc close]") || !strings.Contains(view, "ACTIONS[enter here esc close]") {
 		t.Fatalf("expected shell overlay dialog layering in rendered view, got:\n%s", view)
 	}
-	if !strings.Contains(view, "BODY[list] rows=7 selected=term-2 query=") || !strings.Contains(view, "DETAIL[build-log] state=running vis=hidden") || !strings.Contains(view, "BODY[meta] owner=- conn=0 loc=0") || !strings.Contains(view, "BODY[command] tail -f build.log") {
+	if !strings.Contains(view, "LIST[terminals]") || !strings.Contains(view, "DETAIL[terminal]") || !strings.Contains(view, "BODY[list] rows=7") || !strings.Contains(view, "selected=term-2 query=") || !strings.Contains(view, "DETAIL[build-log]") || !strings.Contains(view, "state=running vis=hidden") || !strings.Contains(view, "owner=-") || !strings.Contains(view, "conn=0 loc=0") || !strings.Contains(view, "BODY[command]") || !strings.Contains(view, "tail -f build.log") {
 		t.Fatalf("expected structured terminal manager shell dialog body, got:\n%s", view)
 	}
 	if !strings.Contains(view, "OVERLAY[terminal_manager] FOCUS[overlay]") {
@@ -1667,7 +1667,7 @@ func TestRuntimeRendererRendersWireframeWorkspacePickerTree(t *testing.T) {
 	state.UI.Focus.OverlayTarget = types.OverlayWorkspacePicker
 
 	view := runtimeRenderer{}.Render(state, nil)
-	if !strings.Contains(view, "DIALOG[workspace_picker]") || !strings.Contains(view, "BODY[tree] rows=6 selected=ws-2 query=ops") || !strings.Contains(view, "DETAIL[target] workspace ops depth=0") {
+	if !strings.Contains(view, "DIALOG[workspace_picker]") || !strings.Contains(view, "TREE[workspace]") || !strings.Contains(view, "TARGET[node]") || !strings.Contains(view, "BODY[tree] rows=6") || !strings.Contains(view, "selected=ws-2") || !strings.Contains(view, "query=ops") || !strings.Contains(view, "DETAIL[target]") || !strings.Contains(view, "kind=workspace depth=0") || !strings.Contains(view, "label=ops") {
 		t.Fatalf("expected structured workspace picker shell dialog body, got:\n%s", view)
 	}
 	if !strings.Contains(view, "OVERLAY[workspace_picker] FOCUS[overlay]") {
@@ -1721,7 +1721,7 @@ func TestRuntimeRendererRendersWireframePromptDialog(t *testing.T) {
 	state.UI.Focus.OverlayTarget = types.OverlayPrompt
 
 	view := runtimeRenderer{}.Render(state, nil)
-	if !strings.Contains(view, "DIALOG[prompt]") || !strings.Contains(view, "BODY[fields] count=2 active=tags") || !strings.Contains(view, "DETAIL[active] label=Tags terminal=term-2") || !strings.Contains(view, "BODY[actions] submit | cancel") {
+	if !strings.Contains(view, "DIALOG[prompt]") || !strings.Contains(view, "FIELDS[prompt]") || !strings.Contains(view, "ACTIVE[field]") || !strings.Contains(view, "BODY[fields] count=2") || !strings.Contains(view, "active=tags") || !strings.Contains(view, "DETAIL[active]") || !strings.Contains(view, "label=Tags") || !strings.Contains(view, "terminal=term-2") || !strings.Contains(view, "BODY[actions]") || !strings.Contains(view, "submit | cancel") {
 		t.Fatalf("expected structured prompt shell dialog body, got:\n%s", view)
 	}
 	if !strings.Contains(view, "OVERLAY[prompt] FOCUS[prompt]") {

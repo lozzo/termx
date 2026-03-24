@@ -303,7 +303,7 @@ func usesStructuredScreenShellDialog(kind types.OverlayKind) bool {
 func renderScreenShellTerminalManagerDialogBody(overlay types.OverlayState) []string {
 	manager, ok := overlay.Data.(*terminalmanagerdomain.State)
 	if !ok || manager == nil {
-		return []string{"BODY[list] rows=0 selected=none"}
+		return renderShellBox(runtimeWireframeOverlayWidth-2, "LIST[terminals]", []string{"BODY[list] rows=0 selected=none"})
 	}
 	rows := manager.VisibleRows()
 	selectedRow, hasSelected := manager.SelectedRow()
@@ -322,35 +322,44 @@ func renderScreenShellTerminalManagerDialogBody(overlay types.OverlayState) []st
 			}
 		}
 	}
-	lines := []string{fmt.Sprintf("BODY[list] rows=%d selected=%s query=%s", len(rows), selectedID, manager.Query())}
+	listBody := []string{
+		fmt.Sprintf("BODY[list] rows=%d", len(rows)),
+		fmt.Sprintf("selected=%s query=%s", selectedID, manager.Query()),
+	}
 	previewRows, _ := overlayPreviewRowsAround(rows, 1, selectedIndex)
 	for _, row := range previewRows {
 		prefix := "  "
 		if hasSelected && selectedRow.Kind == row.Kind && selectedRow.TerminalID == row.TerminalID && selectedRow.Label == row.Label {
 			prefix = "> "
 		}
-		lines = append(lines, fmt.Sprintf("%s[%s] %s", prefix, row.Kind, row.Label))
+		listBody = append(listBody, fmt.Sprintf("%s[%s] %s", prefix, row.Kind, row.Label))
 	}
+	detailBody := []string{"DETAIL[none]"}
 	if detail, ok := manager.SelectedDetail(); ok {
 		owner := detail.OwnerSlotLabel
 		if owner == "" {
 			owner = "-"
 		}
-		lines = append(lines,
-			fmt.Sprintf("DETAIL[%s] state=%s vis=%s", detail.Name, detail.State, detail.VisibilityLabel),
-			fmt.Sprintf("BODY[meta] owner=%s conn=%d loc=%d", owner, detail.ConnectedPaneCount, len(detail.Locations)),
-		)
+		detailBody = []string{
+			fmt.Sprintf("DETAIL[%s]", detail.Name),
+			fmt.Sprintf("state=%s vis=%s", detail.State, detail.VisibilityLabel),
+			fmt.Sprintf("owner=%s", owner),
+			fmt.Sprintf("conn=%d loc=%d", detail.ConnectedPaneCount, len(detail.Locations)),
+		}
 		if detail.Command != "" {
-			lines = append(lines, fmt.Sprintf("BODY[command] %s", detail.Command))
+			detailBody = append(detailBody, "BODY[command]", detail.Command)
 		}
 	}
-	return lines
+	return joinASCIIBoxes([][]string{
+		renderShellBox(27, "LIST[terminals]", listBody),
+		renderShellBox(27, "DETAIL[terminal]", detailBody),
+	}, 2)
 }
 
 func renderScreenShellWorkspacePickerDialogBody(overlay types.OverlayState) []string {
 	picker, ok := overlay.Data.(*workspacedomain.PickerState)
 	if !ok || picker == nil {
-		return []string{"BODY[tree] rows=0 selected=none"}
+		return renderShellBox(runtimeWireframeOverlayWidth-2, "TREE[workspace]", []string{"BODY[tree] rows=0 selected=none"})
 	}
 	rows := picker.VisibleRows()
 	selectedRow, hasSelected := picker.SelectedRow()
@@ -365,9 +374,18 @@ func renderScreenShellWorkspacePickerDialogBody(overlay types.OverlayState) []st
 			}
 		}
 	}
-	lines := []string{fmt.Sprintf("BODY[tree] rows=%d selected=%s query=%s", len(rows), selectedKey, picker.Query())}
+	treeBody := []string{
+		fmt.Sprintf("BODY[tree] rows=%d", len(rows)),
+		fmt.Sprintf("selected=%s", selectedKey),
+		fmt.Sprintf("query=%s", picker.Query()),
+	}
+	targetBody := []string{"DETAIL[target] none"}
 	if hasSelected {
-		lines = append(lines, fmt.Sprintf("DETAIL[target] %s %s depth=%d", selectedRow.Node.Kind, selectedRow.Node.Label, selectedRow.Depth))
+		targetBody = []string{
+			"DETAIL[target]",
+			fmt.Sprintf("kind=%s depth=%d", selectedRow.Node.Kind, selectedRow.Depth),
+			fmt.Sprintf("label=%s", selectedRow.Node.Label),
+		}
 	}
 	previewRows, _ := overlayPreviewRowsAround(rows, 5, selectedIndex)
 	for _, row := range previewRows {
@@ -375,31 +393,45 @@ func renderScreenShellWorkspacePickerDialogBody(overlay types.OverlayState) []st
 		if hasSelected && row.Node.Key == selectedRow.Node.Key {
 			prefix = "> "
 		}
-		lines = append(lines, fmt.Sprintf("%s%s[%s] %s", prefix, strings.Repeat("  ", row.Depth), row.Node.Kind, row.Node.Label))
+		treeBody = append(treeBody, fmt.Sprintf("%s%s[%s] %s", prefix, strings.Repeat("  ", row.Depth), row.Node.Kind, row.Node.Label))
 	}
-	return lines
+	return joinASCIIBoxes([][]string{
+		renderShellBox(30, "TREE[workspace]", treeBody),
+		renderShellBox(24, "TARGET[node]", targetBody),
+	}, 2)
 }
 
 func renderScreenShellPromptDialogBody(overlay types.OverlayState) []string {
 	prompt, ok := overlay.Data.(*promptdomain.State)
 	if !ok || prompt == nil {
-		return []string{"BODY[fields] count=0 active=draft", "BODY[actions] submit | cancel"}
+		return joinASCIIBoxes([][]string{
+			renderShellBox(30, "FIELDS[prompt]", []string{"BODY[fields] count=0", "active=draft"}),
+			renderShellBox(24, "ACTIVE[field]", []string{"BODY[actions]", "submit | cancel"}),
+		}, 2)
 	}
 	if len(prompt.Fields) == 0 {
-		return []string{
-			"BODY[fields] count=0 active=draft",
-			fmt.Sprintf("DETAIL[active] label=draft terminal=%s", prompt.TerminalID),
-			fmt.Sprintf("> [draft] %s", prompt.Draft),
-			"BODY[actions] submit | cancel",
-		}
+		return joinASCIIBoxes([][]string{
+			renderShellBox(30, "FIELDS[prompt]", []string{
+				"BODY[fields] count=0",
+				"active=draft",
+				fmt.Sprintf("> [draft] %s", prompt.Draft),
+			}),
+			renderShellBox(24, "ACTIVE[field]", []string{
+				"DETAIL[active]",
+				"label=draft",
+				fmt.Sprintf("terminal=%s", prompt.TerminalID),
+				"BODY[actions]",
+				"submit | cancel",
+			}),
+		}, 2)
 	}
 	active := prompt.Active
 	if active < 0 || active >= len(prompt.Fields) {
 		active = 0
 	}
-	lines := []string{
-		fmt.Sprintf("BODY[fields] count=%d active=%s", len(prompt.Fields), prompt.Fields[active].Key),
-		fmt.Sprintf("DETAIL[active] label=%s terminal=%s", prompt.Fields[active].Label, prompt.TerminalID),
+	fieldsBody := []string{
+		fmt.Sprintf("BODY[fields] count=%d", len(prompt.Fields)),
+		fmt.Sprintf("active=%s", prompt.Fields[active].Key),
 	}
 	previewFields, _ := overlayPreviewRowsAround(prompt.Fields, 4, active)
 	for _, field := range previewFields {
@@ -407,10 +439,19 @@ func renderScreenShellPromptDialogBody(overlay types.OverlayState) []string {
 		if field.Key == prompt.Fields[active].Key && field.Label == prompt.Fields[active].Label {
 			prefix = "> "
 		}
-		lines = append(lines, fmt.Sprintf("%s[%s] %s: %s", prefix, field.Key, field.Label, field.Value))
+		fieldsBody = append(fieldsBody, fmt.Sprintf("%s[%s] %s: %s", prefix, field.Key, field.Label, field.Value))
 	}
-	lines = append(lines, "BODY[actions] submit | cancel")
-	return lines
+	activeBody := []string{
+		"DETAIL[active]",
+		fmt.Sprintf("label=%s", prompt.Fields[active].Label),
+		fmt.Sprintf("terminal=%s", prompt.TerminalID),
+		"BODY[actions]",
+		"submit | cancel",
+	}
+	return joinASCIIBoxes([][]string{
+		renderShellBox(30, "FIELDS[prompt]", fieldsBody),
+		renderShellBox(24, "ACTIVE[field]", activeBody),
+	}, 2)
 }
 
 func renderScreenShellDialogFooter(kind types.OverlayKind) (string, string) {

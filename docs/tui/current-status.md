@@ -22,6 +22,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把 overlay 盒模型往前推了一步：`screen_shell` 打开 overlay 时会显式渲染统一的 `MASK[dimmed viewport=...]`，并且 help / layout resolve 关闭后会验证 mask/dialog 不残留、正文壳层恢复
 - 本轮继续把 overlay dialog 的信息层次补出来：shell dialog 内部开始显式分成 `TITLE[...]` 和 `FOOTER[...]`，并补上 `terminal_manager -> Esc` 的 mask/dialog 清理与正文恢复场景
 - 本轮继续把 overlay dialog 正文从“wireframe 摘要复读”推进到“结构化 shell body”：`terminal manager / workspace picker / prompt` 现在都会在 `screen_shell` 内显式渲染 `BODY[list|tree|fields]`、`DETAIL[...]` 等层次，并由 renderer + runtime E2E 一起锁住
+- 本轮继续把 overlay dialog 正文推进成真正的“子盒模型”：`terminal manager` 现在有 `LIST[terminals] + DETAIL[terminal]`，`workspace picker` 有 `TREE[workspace] + TARGET[node]`，`prompt` 有 `FIELDS[prompt] + ACTIVE[field]`；同时重新校准了 overlay 压缩态的行数预算，保证真实 UI 壳增强后仍然可控
 
 ---
 
@@ -218,6 +219,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 187. 第一百八十三轮 TDD 已补上 floating shell window 摘要、mixed-slot shell 正文汇总、overlay shell return/actions 与对应 runtime E2E 主线
 188. 第一百八十四轮 TDD 已补上 overlay shell mask、help/layout-resolve 关闭清理与对应 runtime E2E 主线
 189. 第一百八十五轮 TDD 已补上 overlay shell title/footer 分层、terminal-manager shell close 清理与对应 runtime E2E 主线
+190. 第一百八十六轮 TDD 已补上 overlay dialog 子盒模型、三类 overlay 盒式正文与对应 runtime E2E 主线
 190. 第一百八十六轮 TDD 已补上 overlay dialog 正文结构化分层、三类 shell body 渲染与对应 runtime E2E 主线
 
 对应文档：
