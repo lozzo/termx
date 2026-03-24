@@ -1380,6 +1380,63 @@ func TestE2ERunScenarioWorkspacePickerSubmitJumpsToWorkspace(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioWorkspacePickerMouseClickOnSelectedRowSubmits(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithWorkspacePickerTarget()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlW},
+				{Type: tea.KeyRunes, Runes: []rune("ops")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			clickY := findLineIndexWithPrefix(current.View(), "> [workspace] ops")
+			if clickY < 0 {
+				t.Fatalf("expected workspace picker preview to expose selected ops row, got:\n%s", current.View())
+			}
+			nextModel, cmd := current.Update(tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      clickY,
+			})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "workspace: ops") || !strings.Contains(view, "tab: logs") || !strings.Contains(view, "pane: pane-2") || !strings.Contains(view, "overlay: none") || strings.Contains(view, "workspace_picker_rows:") {
+				t.Fatalf("expected workspace picker mouse click submit to jump and close overlay, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected workspace picker mouse click submit scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioWorkspacePickerSubmitAutoAcquiresOwnerOnEnter(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithWorkspacePickerAutoAcquireTarget()
@@ -2505,6 +2562,64 @@ func TestE2ERunScenarioTerminalManagerConnectHereClosesOverlayAndSwitchesPane(t 
 	}
 }
 
+func TestE2ERunScenarioTerminalManagerMouseClickOnSelectedRowConnectsHere(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlG},
+				{Type: tea.KeyRunes, Runes: []rune("t")},
+				{Type: tea.KeyDown},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			clickY := findLineIndexWithPrefix(current.View(), "> [terminal] build-log")
+			if clickY < 0 {
+				t.Fatalf("expected terminal manager preview to expose selected build-log row, got:\n%s", current.View())
+			}
+			nextModel, cmd := current.Update(tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      clickY,
+			})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "terminal: term-2") || !strings.Contains(view, "title: build-log") || strings.Contains(view, "terminal_manager_rows:") {
+				t.Fatalf("expected terminal manager mouse click submit to connect here, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected terminal manager mouse click submit scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioTerminalManagerConnectInNewTabClosesOverlay(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithTerminalManagerTargets()
@@ -3093,6 +3208,63 @@ func TestE2ERunScenarioTerminalPickerCreateRowSubmitClosesOverlay(t *testing.T) 
 	}
 }
 
+func TestE2ERunScenarioTerminalPickerMouseClickOnSelectedRowSubmits(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyCtrlF},
+				{Type: tea.KeyRunes, Runes: []rune("ops")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+			clickY := findLineIndexWithPrefix(current.View(), "> [terminal] ops-watch")
+			if clickY < 0 {
+				t.Fatalf("expected terminal picker preview to expose selected ops-watch row, got:\n%s", current.View())
+			}
+			nextModel, cmd := current.Update(tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      clickY,
+			})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: none") || !strings.Contains(view, "focus_layer: tiled") || !strings.Contains(view, "terminal: term-3") || !strings.Contains(view, "title: ops-watch") || strings.Contains(view, "terminal_picker_rows:") {
+				t.Fatalf("expected terminal picker mouse click submit to connect selected terminal, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected terminal picker mouse click submit scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioTerminalPickerCreateRowFailureShowsNoticeInView(t *testing.T) {
 	client := &stubRunClient{createErr: errRuntimeEffectBoom}
 	initial := runtimeStateWithTerminalManagerTargets()
@@ -3291,6 +3463,49 @@ func TestE2ERunScenarioLayoutResolveSubmitConnectExistingOpensTerminalPicker(t *
 	})
 	if err != nil {
 		t.Fatalf("expected run scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioLayoutResolveMouseClickOnSelectedRowSubmits(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithLayoutResolveTarget()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			clickY := findLineIndexWithPrefix(model.View(), "> [connect_existing] connect existing")
+			if clickY < 0 {
+				t.Fatalf("expected layout resolve preview to expose selected row, got:\n%s", model.View())
+			}
+			nextModel, cmd := model.Update(tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      clickY,
+			})
+			current := nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			if view := current.View(); !strings.Contains(view, "overlay: terminal_picker") || !strings.Contains(view, "focus_layer: overlay") || !strings.Contains(view, "focus_overlay_target: terminal_picker") || !strings.Contains(view, "terminal_picker_rows:") {
+				t.Fatalf("expected layout resolve mouse click submit to open terminal picker, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+		Renderer:         runtimeRenderer{},
+	})
+	if err != nil {
+		t.Fatalf("expected layout resolve mouse click submit scenario to succeed, got %v", err)
 	}
 }
 

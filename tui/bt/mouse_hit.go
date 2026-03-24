@@ -40,7 +40,8 @@ func mapWorkspacePickerMouseClick(state types.AppState, msg tea.MouseMsg, view s
 	}
 	delta := targetIndex - selectedIndex
 	if delta == 0 {
-		return nil
+		// 已选中行再次点击，等价于键盘 enter，先收口默认提交语义。
+		return []intent.Intent{intent.WorkspacePickerSubmitIntent{}}
 	}
 	return []intent.Intent{intent.WorkspacePickerMoveIntent{Delta: delta}}
 }
@@ -70,7 +71,8 @@ func mapTerminalPickerMouseClick(state types.AppState, msg tea.MouseMsg, view st
 	}
 	delta := targetIndex - selectedIndex
 	if delta == 0 {
-		return nil
+		// picker 行已经处于选中态时，鼠标再次点击直接触发默认连接/创建动作。
+		return []intent.Intent{intent.TerminalPickerSubmitIntent{}}
 	}
 	return []intent.Intent{intent.TerminalPickerMoveIntent{Delta: delta}}
 }
@@ -100,7 +102,8 @@ func mapLayoutResolveMouseClick(state types.AppState, msg tea.MouseMsg, view str
 	}
 	delta := targetIndex - selectedIndex
 	if delta == 0 {
-		return nil
+		// resolve overlay 先保持最小模型：再次点击已选中行就提交当前动作。
+		return []intent.Intent{intent.LayoutResolveSubmitIntent{}}
 	}
 	return []intent.Intent{intent.LayoutResolveMoveIntent{Delta: delta}}
 }
@@ -139,7 +142,8 @@ func mapTerminalManagerMouseClick(state types.AppState, msg tea.MouseMsg, view s
 	}
 	delta := targetSelectableIndex - selectedSelectableIndex
 	if delta == 0 {
-		return nil
+		// terminal manager 的默认鼠标提交先对齐 enter，也就是 connect-here/create。
+		return []intent.Intent{intent.TerminalManagerConnectHereIntent{}}
 	}
 	return []intent.Intent{intent.TerminalManagerMoveIntent{Delta: delta}}
 }

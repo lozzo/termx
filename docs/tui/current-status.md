@@ -175,6 +175,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 151. 第一百四十七轮 TDD 已补上 runtime program 鼠标事件外壳
 152. 第一百四十八轮 TDD 已补上 overlay 最小鼠标滚轮导航
 153. 第一百四十九轮 TDD 已补上 overlay 可见行的最小鼠标点击选中
+154. 第一百五十轮 TDD 已补上 overlay 已选中行的最小鼠标点击提交
 
 对应文档：
 
@@ -220,6 +221,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - `OpenWorkspacePickerIntent`
 - `CloseOverlayIntent`
 - overlay 可见行的鼠标点击选中
+- overlay 已选中行的鼠标点击提交默认动作
 - `WorkspacePickerMoveIntent`
 - `WorkspacePickerAppendQueryIntent`
 - `WorkspacePickerBackspaceIntent`

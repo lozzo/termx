@@ -1,6 +1,7 @@
 package bt
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -8,9 +9,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tui/app/intent"
 	"github.com/lozzow/termx/tui/app/reducer"
+	layoutresolvedomain "github.com/lozzow/termx/tui/domain/layoutresolve"
 	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
 	terminalmanagerdomain "github.com/lozzow/termx/tui/domain/terminalmanager"
+	terminalpickerdomain "github.com/lozzow/termx/tui/domain/terminalpicker"
 	"github.com/lozzow/termx/tui/domain/types"
+	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
 )
 
 type fixedClock struct {
@@ -226,6 +230,148 @@ func TestIntentMapperTerminalManagerMouseClickSelectsVisibleTerminalRow(t *testi
 	}
 	if move.Delta != -1 {
 		t.Fatalf("expected click on visible api-dev row to move selection back once, got %+v", move)
+	}
+}
+
+func TestIntentMapperWorkspacePickerMouseClickOnSelectedRowSubmits(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+	state := newAppStateWithTwoWorkspaces()
+	rd := reducer.New()
+	for _, in := range mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyCtrlW}) {
+		state = rd.Reduce(state, in).State
+	}
+	for _, in := range mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ops")}) {
+		state = rd.Reduce(state, in).State
+	}
+	picker := state.UI.Overlay.Data.(*workspacedomain.PickerState)
+	rows := picker.VisibleRows()
+	selected, _ := picker.SelectedRow()
+	selectedIndex := 0
+	for idx, row := range rows {
+		if row.Node.Key == selected.Node.Key {
+			selectedIndex = idx
+			break
+		}
+	}
+	start, end := overlayPreviewWindow(len(rows), overlayPreviewRowLimit, selectedIndex)
+	viewLines := []string{"termx", fmt.Sprintf("workspace_picker_rows: | workspace_picker_rows_rendered: %d", end-start)}
+	for _, row := range rows[start:end] {
+		prefix := "  "
+		if row.Node.Key == selected.Node.Key {
+			prefix = "> "
+		}
+		viewLines = append(viewLines, fmt.Sprintf("%s%s[%s] %s", prefix, strings.Repeat("  ", row.Depth), row.Node.Kind, row.Node.Label))
+	}
+	view := strings.Join(viewLines, "\n")
+
+	intents := mapper.MapMouse(state, tea.MouseMsg{
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		Y:      2 + (selectedIndex - start),
+	}, view)
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	if _, ok := intents[0].(intent.WorkspacePickerSubmitIntent); !ok {
+		t.Fatalf("expected workspace picker submit intent, got %T", intents[0])
+	}
+}
+
+func TestIntentMapperTerminalPickerMouseClickOnSelectedRowSubmits(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+	state := newAppStateWithTerminalManagerTargets()
+	state.UI.Overlay = types.OverlayState{}
+	rd := reducer.New()
+	for _, in := range mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyCtrlF}) {
+		state = rd.Reduce(state, in).State
+	}
+	for _, in := range mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ops")}) {
+		state = rd.Reduce(state, in).State
+	}
+	picker := state.UI.Overlay.Data.(*terminalpickerdomain.State)
+	rows := picker.VisibleRows()
+	selected, _ := picker.SelectedRow()
+	selectedIndex := 0
+	for idx, row := range rows {
+		if row.Kind == selected.Kind && row.TerminalID == selected.TerminalID && row.Label == selected.Label {
+			selectedIndex = idx
+			break
+		}
+	}
+	start, end := overlayPreviewWindow(len(rows), overlayPreviewRowLimit, selectedIndex)
+	viewLines := []string{"termx", fmt.Sprintf("terminal_picker_rows: | terminal_picker_rows_rendered: %d", end-start)}
+	for _, row := range rows[start:end] {
+		prefix := "  "
+		if row.Kind == selected.Kind && row.TerminalID == selected.TerminalID && row.Label == selected.Label {
+			prefix = "> "
+		}
+		viewLines = append(viewLines, fmt.Sprintf("%s[%s] %s", prefix, row.Kind, row.Label))
+	}
+	view := strings.Join(viewLines, "\n")
+
+	intents := mapper.MapMouse(state, tea.MouseMsg{
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		Y:      2 + (selectedIndex - start),
+	}, view)
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	if _, ok := intents[0].(intent.TerminalPickerSubmitIntent); !ok {
+		t.Fatalf("expected terminal picker submit intent, got %T", intents[0])
+	}
+}
+
+func TestIntentMapperLayoutResolveMouseClickOnSelectedRowSubmits(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+	state := newAppStateWithSinglePane()
+	state.UI.Overlay = types.OverlayState{
+		Kind: types.OverlayLayoutResolve,
+		Data: layoutresolvedomain.NewState(types.PaneID("pane-1"), "backend-dev", "env=dev"),
+	}
+	view := strings.Join([]string{
+		"termx",
+		"layout_resolve_rows: | layout_resolve_rows_rendered: 3",
+		"> [connect_existing] connect existing",
+	}, "\n")
+
+	intents := mapper.MapMouse(state, tea.MouseMsg{
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		Y:      2,
+	}, view)
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	if _, ok := intents[0].(intent.LayoutResolveSubmitIntent); !ok {
+		t.Fatalf("expected layout resolve submit intent, got %T", intents[0])
+	}
+}
+
+func TestIntentMapperTerminalManagerMouseClickOnSelectedRowSubmits(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+	state := newAppStateWithTerminalManagerTargets()
+	manager := state.UI.Overlay.Data.(*terminalmanagerdomain.State)
+	manager.MoveSelection(1)
+	view := strings.Join([]string{
+		"termx",
+		"terminal_manager_rows: | terminal_manager_rows_rendered: 4 | terminal_manager_rows_truncated: true",
+		"  [header] VISIBLE",
+		"  [terminal] api-dev",
+		"  [header] PARKED",
+		"> [terminal] build-log",
+	}, "\n")
+
+	intents := mapper.MapMouse(state, tea.MouseMsg{
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		Y:      5,
+	}, view)
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	if _, ok := intents[0].(intent.TerminalManagerConnectHereIntent); !ok {
+		t.Fatalf("expected terminal manager connect-here intent, got %T", intents[0])
 	}
 }
 
