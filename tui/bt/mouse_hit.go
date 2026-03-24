@@ -155,8 +155,18 @@ func mapTerminalManagerMouseClick(state types.AppState, msg tea.MouseMsg, view s
 		return nil
 	}
 	delta := targetSelectableIndex - selectedSelectableIndex
+	if targetRow.Kind == terminalmanagerdomain.RowKindCreate {
+		if delta == 0 {
+			// create row 没有详情态，单击直接对齐 enter 触发创建更符合直觉。
+			return []intent.Intent{intent.TerminalManagerConnectHereIntent{}}
+		}
+		return []intent.Intent{
+			intent.TerminalManagerMoveIntent{Delta: delta},
+			intent.TerminalManagerConnectHereIntent{},
+		}
+	}
 	if delta == 0 {
-		// terminal manager 的默认鼠标提交先对齐 enter，也就是 connect-here/create。
+		// terminal 行维持 inspect-first：再次点击当前选中项才执行 connect-here。
 		return []intent.Intent{intent.TerminalManagerConnectHereIntent{}}
 	}
 	return []intent.Intent{intent.TerminalManagerMoveIntent{Delta: delta}}

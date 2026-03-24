@@ -219,7 +219,7 @@ func TestIntentMapperTerminalManagerMouseClickSelectsVisibleTerminalRow(t *testi
 	intents := mapper.MapMouse(state, tea.MouseMsg{
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
-		Y:      3,
+		Y:      findLineIndexWithPrefix(view, "  [terminal] api-dev"),
 	}, view)
 	if len(intents) != 1 {
 		t.Fatalf("expected one intent, got %d", len(intents))
@@ -307,16 +307,18 @@ func TestIntentMapperWorkspacePickerMouseClickOnCreateRowMovesAndSubmits(t *test
 		viewLines = append(viewLines, fmt.Sprintf("%s%s[%s] %s", prefix, strings.Repeat("  ", row.Depth), row.Node.Kind, row.Node.Label))
 	}
 	view := strings.Join(viewLines, "\n")
+	clickY := findLineIndexWithPrefix(view, "  [create] + create workspace")
+	targetIndex := start + (clickY - 2)
 
 	intents := mapper.MapMouse(state, tea.MouseMsg{
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
-		Y:      2,
+		Y:      clickY,
 	}, view)
 	if len(intents) != 2 {
 		t.Fatalf("expected two intents, got %d", len(intents))
 	}
-	expectedDelta := start - selectedIndex
+	expectedDelta := targetIndex - selectedIndex
 	if intents[0] != (intent.WorkspacePickerMoveIntent{Delta: expectedDelta}) {
 		t.Fatalf("expected workspace picker move intent, got %+v", intents[0])
 	}
@@ -401,16 +403,18 @@ func TestIntentMapperTerminalPickerMouseClickOnCreateRowMovesAndSubmits(t *testi
 		viewLines = append(viewLines, fmt.Sprintf("%s[%s] %s", prefix, row.Kind, row.Label))
 	}
 	view := strings.Join(viewLines, "\n")
+	clickY := findLineIndexWithPrefix(view, "  [create] + new terminal")
+	targetIndex := start + (clickY - 2)
 
 	intents := mapper.MapMouse(state, tea.MouseMsg{
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
-		Y:      2,
+		Y:      clickY,
 	}, view)
 	if len(intents) != 2 {
 		t.Fatalf("expected two intents, got %d", len(intents))
 	}
-	expectedDelta := start - selectedIndex
+	expectedDelta := targetIndex - selectedIndex
 	if intents[0] != (intent.TerminalPickerMoveIntent{Delta: expectedDelta}) {
 		t.Fatalf("expected terminal picker move intent, got %+v", intents[0])
 	}
@@ -435,7 +439,7 @@ func TestIntentMapperLayoutResolveMouseClickOnSelectedRowSubmits(t *testing.T) {
 	intents := mapper.MapMouse(state, tea.MouseMsg{
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
-		Y:      2,
+		Y:      findLineIndexWithPrefix(view, "> [connect_existing] connect existing"),
 	}, view)
 	if len(intents) != 1 {
 		t.Fatalf("expected one intent, got %d", len(intents))
@@ -463,7 +467,7 @@ func TestIntentMapperLayoutResolveMouseClickOnCreateNewMovesAndSubmits(t *testin
 	intents := mapper.MapMouse(state, tea.MouseMsg{
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
-		Y:      3,
+		Y:      findLineIndexWithPrefix(view, "  [create_new] create new"),
 	}, view)
 	if len(intents) != 2 {
 		t.Fatalf("expected two intents, got %d", len(intents))
@@ -500,6 +504,45 @@ func TestIntentMapperTerminalManagerMouseClickOnSelectedRowSubmits(t *testing.T)
 	}
 	if _, ok := intents[0].(intent.TerminalManagerConnectHereIntent); !ok {
 		t.Fatalf("expected terminal manager connect-here intent, got %T", intents[0])
+	}
+}
+
+func TestIntentMapperTerminalManagerMouseClickOnCreateRowMovesAndSubmits(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+	state := newAppStateWithTerminalManagerTargets()
+	manager := state.UI.Overlay.Data.(*terminalmanagerdomain.State)
+	rows := manager.VisibleRows()
+	selected, _ := manager.SelectedRow()
+	selectedVisibleIndex := terminalManagerVisibleIndex(rows, selected)
+	start, end := overlayPreviewWindow(len(rows), terminalManagerPreviewRowLimit, selectedVisibleIndex)
+	viewLines := []string{"termx", fmt.Sprintf("terminal_manager_rows: | terminal_manager_rows_rendered: %d", end-start)}
+	for _, row := range rows[start:end] {
+		prefix := "  "
+		if row.Kind != terminalmanagerdomain.RowKindHeader && row.Kind == selected.Kind && row.TerminalID == selected.TerminalID && row.Label == selected.Label {
+			prefix = "> "
+		}
+		viewLines = append(viewLines, fmt.Sprintf("%s[%s] %s", prefix, row.Kind, row.Label))
+	}
+	view := strings.Join(viewLines, "\n")
+	clickY := findLineIndexWithPrefix(view, "  [create] + new terminal")
+
+	intents := mapper.MapMouse(state, tea.MouseMsg{
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		Y:      clickY,
+	}, view)
+	if len(intents) != 2 {
+		t.Fatalf("expected two intents, got %d", len(intents))
+	}
+	selectableRows := terminalManagerSelectableRows(rows)
+	selectedSelectableIndex := terminalManagerSelectableIndex(selectableRows, selected)
+	targetSelectableIndex := terminalManagerSelectableIndex(selectableRows, terminalmanagerdomain.Row{Kind: terminalmanagerdomain.RowKindCreate, Section: terminalmanagerdomain.SectionNew, Label: "+ new terminal"})
+	expectedDelta := targetSelectableIndex - selectedSelectableIndex
+	if intents[0] != (intent.TerminalManagerMoveIntent{Delta: expectedDelta}) {
+		t.Fatalf("expected terminal manager move intent, got %+v", intents[0])
+	}
+	if _, ok := intents[1].(intent.TerminalManagerConnectHereIntent); !ok {
+		t.Fatalf("expected terminal manager connect-here intent, got %T", intents[1])
 	}
 }
 
@@ -630,7 +673,7 @@ func TestIntentMapperPromptMouseClickSelectsStructuredField(t *testing.T) {
 	intents := mapper.MapMouse(state, tea.MouseMsg{
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
-		Y:      3,
+		Y:      findLineIndexWithPrefix(view, "  [tags] Tags: group=build"),
 	}, view)
 	if len(intents) != 1 {
 		t.Fatalf("expected one intent, got %d", len(intents))
