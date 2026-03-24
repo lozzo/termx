@@ -122,11 +122,17 @@ func TestRunUsesShellOnlyRendererByDefault(t *testing.T) {
 	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "workspace main") {
 		t.Fatalf("expected default run renderer to keep screen shell, got:\n%s", runner.view)
 	}
+	if !strings.Contains(stripped, "active term-1") || !strings.Contains(stripped, "role owner  •  slot connected") || !strings.Contains(stripped, "shell • 1 pane") {
+		t.Fatalf("expected default run renderer top chrome to expose active pane summary, got:\n%s", runner.view)
+	}
 	if !strings.Contains(stripped, "Terminal  Runtime  running  •  hidden") || !strings.Contains(stripped, "Connection  terminal term-1  •  owner") || !strings.Contains(stripped, "Screen") || !strings.Contains(stripped, "$ pwd") {
 		t.Fatalf("expected default run renderer to keep terminal context in screen shell, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "focus term-1") || !strings.Contains(stripped, "layer tiled") {
-		t.Fatalf("expected default run renderer footer to expose focus/layer context, got:\n%s", runner.view)
+	if !strings.Contains(stripped, "path main / shell / tiled / pane-1") || !strings.Contains(stripped, "terminal term-1") || !strings.Contains(stripped, "state running  •  layer tiled") {
+		t.Fatalf("expected default run renderer context bar to expose path and runtime state, got:\n%s", runner.view)
+	}
+	if !strings.Contains(stripped, "focus term-1") || !strings.Contains(stripped, "layer tiled") || !strings.Contains(stripped, "slot connected") {
+		t.Fatalf("expected default run renderer footer to expose focus/layer/slot context, got:\n%s", runner.view)
 	}
 	if !strings.Contains(stripped, "Screen") || !strings.Contains(stripped, "rows 1/1  •  live  •  primary") || !strings.Contains(stripped, "│ $ pwd") {
 		t.Fatalf("expected default run renderer to keep a framed screen block, got:\n%s", runner.view)
@@ -717,6 +723,43 @@ func TestE2ERunScenarioDefaultModernSplitWorkbenchRendersPaneCanvas(t *testing.T
 	})
 	if err != nil {
 		t.Fatalf("expected default modern split scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioDefaultModernTopChromeSummarizesWorkspaceTabsAndContext(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTwoTabTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			stripped := stripANSIRuntimeView(view)
+			if !strings.Contains(stripped, "workspace main") || !strings.Contains(stripped, "active api-dev") || !strings.Contains(stripped, "role owner  •  slot connected") {
+				t.Fatalf("expected default modern top bar to expose active pane summary, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "logs • 1 pane") || !strings.Contains(stripped, "tabs 2  •  panes 2  •  terminals 2  •  floating 0") {
+				t.Fatalf("expected default modern tab bar to expose tab and workspace counts, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "path main / shell / tiled / pane-1") || !strings.Contains(stripped, "terminal term-1") || !strings.Contains(stripped, "state running  •  layer tiled") {
+				t.Fatalf("expected default modern context bar to expose path and runtime state, got:\n%s", view)
+			}
+			if strings.Contains(view, "wireframe_view:") {
+				t.Fatalf("expected default modern top chrome scenario without debug sections, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected default modern top chrome scenario to succeed, got %v", err)
 	}
 }
 

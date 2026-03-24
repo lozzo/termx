@@ -192,7 +192,7 @@ func (r modernScreenShellRenderer) RenderShell(state types.AppState, workspace t
 
 	header := r.renderTopBar(theme, state, workspace, tab, pane, width)
 	tabs := r.renderTabBar(theme, workspace, tab, width)
-	context := r.renderContextBar(theme, state, pane, width)
+	context := r.renderContextBar(theme, state, workspace, tab, pane, width)
 	footer := r.renderFooter(theme, state, pane, notices, width)
 
 	bodyHeight := height - 3
@@ -214,12 +214,16 @@ func (r modernScreenShellRenderer) renderTopBar(theme modernShellTheme, state ty
 		theme.activeChip.Render("termx"),
 		theme.chip.Render("workspace " + safeWorkspaceLabel(workspace)),
 		theme.chip.Render("tab " + safeTabLabel(tab)),
+		theme.chip.Render("active " + renderPaneTitle(state, pane)),
 	}
 	if state.UI.Overlay.Kind != types.OverlayNone {
 		items = append(items, theme.activeChip.Render("overlay "+string(state.UI.Overlay.Kind)))
 	}
 	left := lipgloss.JoinHorizontal(lipgloss.Left, items...)
-	rightParts := []string{"pane " + string(pane.ID)}
+	rightParts := []string{
+		"role " + renderModernPaneRole(state, pane),
+		"slot " + string(pane.SlotState),
+	}
 	if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
 		rightParts = append(rightParts, "mode "+string(state.UI.Mode.Active))
 	}
@@ -235,7 +239,7 @@ func (r modernScreenShellRenderer) renderTabBar(theme modernShellTheme, workspac
 		if !ok {
 			continue
 		}
-		label := safeTabLabel(tabState)
+		label := renderModernTabLabel(tabState)
 		if tabID == workspace.ActiveTabID {
 			items = append(items, theme.activeTab.Render(label))
 			continue
@@ -266,33 +270,25 @@ func (r modernScreenShellRenderer) renderWorkspaceSummaryText(workspace types.Wo
 			}
 		}
 	}
-	return fmt.Sprintf("%d tabs  %d panes  %d terminals  %d floating", tabs, panes, len(terminals), floating)
+	return fmt.Sprintf("tabs %d  •  panes %d  •  terminals %d  •  floating %d", tabs, panes, len(terminals), floating)
 }
 
-func (r modernScreenShellRenderer) renderContextBar(theme modernShellTheme, state types.AppState, pane types.PaneState, width int) string {
-	layer := state.UI.Focus.Layer
-	if layer == "" {
-		layer = types.FocusLayerTiled
-	}
+func (r modernScreenShellRenderer) renderContextBar(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, width int) string {
 	mode := state.UI.Mode.Active
 	if mode == "" {
 		mode = types.ModeNone
 	}
-	role := renderScreenShellPaneCardRole(state, pane)
-	if role == "" {
-		role = "unassigned"
-	}
 	leftItems := []string{
-		theme.chip.Render(renderPaneTitle(state, pane)),
-		theme.activeChip.Render(role),
-		theme.chip.Render(string(pane.SlotState)),
+		theme.chip.Render(renderModernPanePath(workspace, tab, pane)),
 	}
 	if pane.TerminalID != "" {
 		leftItems = append(leftItems, theme.chip.Render("terminal "+string(pane.TerminalID)))
 	}
-	leftItems = append(leftItems, theme.chip.Render("focus "+string(layer)))
 	left := lipgloss.JoinHorizontal(lipgloss.Left, leftItems...)
-	rightParts := []string{"mode " + string(mode)}
+	rightParts := []string{renderModernContextRuntimeLine(state, pane)}
+	if mode != types.ModeNone {
+		rightParts = append(rightParts, "mode "+string(mode))
+	}
 	if state.UI.Overlay.Kind != types.OverlayNone {
 		rightParts = append(rightParts, "overlay "+string(state.UI.Overlay.Kind))
 	}
@@ -1729,6 +1725,7 @@ func renderModernFooterContext(theme modernShellTheme, state types.AppState, pan
 	items := []string{notice}
 	items = append(items, theme.chip.Render("focus "+renderPaneTitle(state, pane)))
 	items = append(items, theme.chip.Render("layer "+string(renderModernPrimaryLayer(state))))
+	items = append(items, theme.chip.Render("slot "+string(pane.SlotState)))
 	return strings.Join(items, " ")
 }
 
@@ -1829,4 +1826,40 @@ func renderModernBackdropContextLine(state types.AppState) string {
 		return ""
 	}
 	return fmt.Sprintf("workspace %s  •  tab %s  •  layer %s", safeWorkspaceLabel(workspace), safeTabLabel(tab), renderModernPrimaryLayer(state))
+}
+
+func renderModernPaneRole(state types.AppState, pane types.PaneState) string {
+	role := renderScreenShellPaneCardRole(state, pane)
+	if role == "" {
+		return "unassigned"
+	}
+	return role
+}
+
+func renderModernTabLabel(tab types.TabState) string {
+	label := safeTabLabel(tab)
+	paneCount := len(tab.Panes)
+	switch paneCount {
+	case 0:
+		return label + " • empty"
+	case 1:
+		return label + " • 1 pane"
+	default:
+		return fmt.Sprintf("%s • %d panes", label, paneCount)
+	}
+}
+
+func renderModernPanePath(workspace types.WorkspaceState, tab types.TabState, pane types.PaneState) string {
+	return fmt.Sprintf("path %s / %s / %s / %s", safeWorkspaceLabel(workspace), safeTabLabel(tab), safePaneKind(pane.Kind), pane.ID)
+}
+
+func renderModernContextRuntimeLine(state types.AppState, pane types.PaneState) string {
+	stateLabel := string(pane.SlotState)
+	if pane.TerminalID != "" {
+		stateLabel = "running"
+		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && terminal.State != "" {
+			stateLabel = string(terminal.State)
+		}
+	}
+	return fmt.Sprintf("state %s  •  layer %s", stateLabel, renderModernPrimaryLayer(state))
 }

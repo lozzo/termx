@@ -46,6 +46,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把 modern modal 的 detail/target 信息层次产品化：`terminal manager / terminal picker / workspace picker / layout resolve` 的右侧正文已统一拆成 `Runtime / Command / Connections / Tags / Locations / Route / Hint` 这类小节，不再只是散列字段
 - 本轮继续把 modern 主工作台的 connected pane 信息层次产品化：single / split / floating 的 active pane 现在统一把 terminal 元信息收成 `Runtime / Connection / Command / Tags` 标签行，并重新平衡 pane card 与 screen 预览的空间预算
 - 本轮继续把 modern 主工作台 chrome 往产品态收口：split 头部现在压成 `active / layout / focus+actions` 三行摘要，floating 头部现在压成 `active / top+stack / layer+mode` 三行摘要，底部 footer 现在会显式带 `focus / layer` 上下文，overlay backdrop 也会保留 `workspace / tab / layer` 背景定位
+- 本轮继续把 modern 顶层主壳往“第一眼可读”推进：top bar 现在直接显示 `active pane + role/slot`，tab bar 会显示每个 tab 的 pane 数和 workspace 总览，context bar 会显式显示 `path + terminal + runtime layer`，footer 也补上 `slot`，默认第一屏不再主要依赖 pane 正文解释当前上下文
 
 ---
 
@@ -263,6 +264,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 208. 第二百零四轮 TDD 已补上 modern modal detail/target panel 的小节化正文，并完成 shell-only / default-run / 全量回归闭环
 209. 第二百零五轮 TDD 已补上 modern 主工作台 connected pane 的结构化 terminal metadata 行，并完成 shell-only / default-run / 全量回归闭环
 210. 第二百零六轮 TDD 已补上 modern split/floating 工作台 chrome、footer focus/layer 上下文与 overlay backdrop 定位摘要，并完成 shell-only / default-run / 全量回归闭环
+211. 第二百零七轮 TDD 已补上 modern top/tab/context/footer 主壳摘要，并完成 shell-only / default-run / 全量回归闭环
 
 对应文档：
 

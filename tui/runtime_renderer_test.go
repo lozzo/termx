@@ -205,14 +205,40 @@ func TestRuntimeRendererCanHideDebugSections(t *testing.T) {
 	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "workspace main") {
 		t.Fatalf("expected shell-only renderer to keep visible screen shell, got:\n%s", view)
 	}
+	if !strings.Contains(stripped, "active api-dev") || !strings.Contains(stripped, "role owner  •  slot connected") {
+		t.Fatalf("expected shell-only renderer top chrome to expose active pane summary, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "tabs 1  •  panes 1  •  terminals 1  •  floating 0") {
+		t.Fatalf("expected shell-only renderer tab chrome to expose tab and workspace summary, got:\n%s", view)
+	}
 	if !strings.Contains(stripped, "owner  •  connected  •  running") || !strings.Contains(stripped, "tiled pane-1  •  terminal term-1") || !strings.Contains(stripped, "Terminal  Runtime  running  •  visible") || !strings.Contains(stripped, "Connection  terminal term-1  •  owner") || !strings.Contains(stripped, "Command  cmd npm run dev") || !strings.Contains(stripped, "Screen") || !strings.Contains(stripped, "/tmp") {
 		t.Fatalf("expected shell-only renderer to keep terminal meta inside screen shell, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "focus api-dev") || !strings.Contains(stripped, "layer tiled") {
-		t.Fatalf("expected shell-only renderer footer to expose focus/layer context, got:\n%s", view)
+	if !strings.Contains(stripped, "path main / shell / tiled / pane-1") || !strings.Contains(stripped, "terminal term-1") || !strings.Contains(stripped, "state running  •  layer tiled") {
+		t.Fatalf("expected shell-only renderer context bar to expose path and runtime context, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "focus api-dev") || !strings.Contains(stripped, "layer tiled") || !strings.Contains(stripped, "slot connected") {
+		t.Fatalf("expected shell-only renderer footer to expose focus/layer/slot context, got:\n%s", view)
 	}
 	if strings.Contains(view, "wireframe_view:") || strings.Contains(view, "chrome_header:") || strings.Contains(view, "chrome_body:") || strings.Contains(view, "chrome_footer:") {
 		t.Fatalf("expected shell-only renderer to hide debug sections, got:\n%s", view)
+	}
+}
+
+func TestRuntimeRendererShellOnlyTopChromeSummarizesWorkspaceTabsAndContext(t *testing.T) {
+	debugVisible := false
+	state := runtimeStateWithTwoTabTargets()
+	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
+	stripped := stripANSIForTest(view)
+
+	if !strings.Contains(stripped, "workspace main") || !strings.Contains(stripped, "active api-dev") || !strings.Contains(stripped, "role owner  •  slot connected") {
+		t.Fatalf("expected shell-only renderer top bar to expose active pane and role summary, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "logs • 1 pane") || !strings.Contains(stripped, "tabs 2  •  panes 2  •  terminals 2  •  floating 0") {
+		t.Fatalf("expected shell-only renderer tab bar to expose per-tab and workspace counts, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "path main / shell / tiled / pane-1") || !strings.Contains(stripped, "terminal term-1") || !strings.Contains(stripped, "state running  •  layer tiled") {
+		t.Fatalf("expected shell-only renderer context bar to expose current path and runtime state, got:\n%s", view)
 	}
 }
 
