@@ -901,30 +901,32 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 ---
 
-## 3. 尚未开始
+## 3. 尚未开始 / 未收口大块
 
-当前还没有正式开始的部分：
+当前真正还没有正式开始或没有收口的大块，不是零散字段，而是下面这些：
 
-1. 新版 renderer 深化
-2. 真实 TUI E2E 壳与 renderer 结合
-3. 把 runtime size / access / read error 这类观测状态是否进入 domain 继续收口
+1. 真实工作台 renderer
+2. overlay 真实盒模型、遮罩、边框与关闭无残影
+3. 真实 TUI E2E 壳与 renderer 结合
+4. render cache / dirty region / backpressure / 残影串屏治理
+5. `runtime size / access / read error` 这类观测状态是否进入 domain 的最终定稿
 
 ---
 
 ## 4. 当前最高优先级
 
-下一阶段最高优先级不是补 UI，而是先把下面几个边界立住：
+下一阶段最高优先级已经不该再是继续补小语义字段，而是直接推进下面几个大块：
 
-1. 更完整的 `intent -> reducer -> effect -> runtime feedback` 契约
-2. 真实 TUI E2E 场景壳
-3. 新版 renderer 深化
-4. 把 runtime size / access / read error 这类观测状态是否需要 domain 建模继续收口
+1. 真实工作台 renderer
+2. overlay 真实盒模型
+3. 真实 TUI E2E 场景壳
+4. 渲染稳定性收尾
 
 原因：
 
-- 这些边界决定后续是否还会回到补丁式开发
-- shared terminal 的复杂度必须先被模型化
-- 输入路径必须先统一
+- 当前最大的产品缺口已经不是状态机骨架，而是“用户看见的是否真的是工作台”
+- 如果继续按一个小点一个小点推进，工期会继续失控
+- 真实 renderer 和真实 E2E 不立住，计划书里的最终产品不会自然出现
 
 ---
 
@@ -952,12 +954,51 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 
 当前最合适的下一步是：
 
-1. 继续扩真实 TUI E2E 场景壳
-2. 推进新版 renderer 深化
-3. 判断 `runtime_size / observer_only / read_error` 是否要进入 domain 统一建模
+1. 先停掉碎片化 renderer 小步补点
+2. 把剩余工作改成 3-4 个大块连续推进
+3. 每个工作周期至少一起收口一整组功能 + E2E + 文档 + 提交
+4. 在做真实 renderer / overlay / 交互壳时，主动参考 `deprecated/tui-legacy/` 中已经被验证过的可复用做法，但不回退到旧结构
+
+建议接下来的实际编码顺序：
+
+1. 大块 A：真实工作台 renderer
+   - tiled pane box
+   - floating pane box
+   - pane title bar
+   - active 高亮
+   - screen 内容嵌入 pane 区域
+2. 大块 B：overlay 真实渲染
+   - 居中
+   - 边框
+   - 遮罩
+   - 关闭不留残影
+3. 大块 C：真实 TUI E2E 壳
+   - resize
+   - mouse 命中
+   - overlay 开关
+   - 关键工作流回归
+4. 大块 D：稳定性与收尾
+   - render cache / dirty region
+   - 残影 / 串屏 / backpressure
+   - 观测状态最终建模
 
 ---
 
-## 7. 当前一句话状态
+## 7. 剩余工期判断
 
-termx TUI 现在已经进入“picker / manager / prompt / layout resolve / help 五条 overlay 主线、startup planner、startup task executor、restore store 读写闭环、runtime session bootstrap、最小 Bubble Tea 运行主线、关键 runtime 事件回灌、tiled/tab/floating 三类最小工作台导航创建主线，以及 terminal manager 的粗粒度 jump / 位置列表精确 pane 跳转、floating pane 的最小 move / center / resize / z-order / close、floating stack 投影、主界面 workspace bar / workspace summary / tab strip / tab summary / tab path / tab layer 摘要 / pane bar / tiled outline / tiled layout 摘要 / tiled tree 分层视图 / floating outline / mixed slot 概览 / pane 运行预览 / focus bar / shortcut bar、notice 聚合/去重都已落地，下一步继续按 TDD 扩真实 TUI E2E 壳并深化 renderer”的阶段。
+如果继续按之前那种“一个小点一个提交”的方式推进，工期不可接受。
+
+按现在改成“大块推进”的方式，当前更接近真实情况的判断是：
+
+1. 到“看起来像真正可用的 TUI 界面，而不是语义文本 renderer”：
+   - 还需要 2-4 天
+2. 到“按当前计划书的一阶段产品收口”：
+   - 还需要 5-8 天
+3. 如果真实 renderer 和残影/串屏问题比预期难：
+   - 上限按 10 天左右看更稳妥
+
+---
+
+## 8. 当前一句话状态
+
+termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / manager / prompt / layout resolve / help、tiled / tab / floating 导航创建、owner/follower、restore/startup、以及语义级 renderer 都已落地，但真实工作台 renderer、overlay 真实盒模型、真实 TUI E2E 壳和渲染稳定性收尾还没有收口；后续必须按大块工作周期推进，而不能继续按一个小点一个小点推进”的阶段。
