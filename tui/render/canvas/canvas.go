@@ -20,10 +20,9 @@ type DrawStyle struct {
 }
 
 type Cell struct {
-	Content      string
-	Width        int
-	Style        DrawStyle
-	continuation bool
+	Content string
+	Width   int
+	Style   DrawStyle
 }
 
 type Canvas struct {
@@ -91,7 +90,7 @@ func (c *Canvas) Set(x, y int, cell Cell) {
 
 	c.cells[y][x] = cell
 	for i := 1; i < cell.Width && x+i < c.width; i++ {
-		c.cells[y][x+i] = Cell{continuation: true}
+		c.cells[y][x+i] = continuationCell()
 	}
 }
 
@@ -148,7 +147,7 @@ func (c *Canvas) Lines() []string {
 		var row strings.Builder
 		for x := 0; x < c.width; x++ {
 			cell := c.cells[y][x]
-			if cell.continuation {
+			if isContinuationCell(cell) {
 				continue
 			}
 			content := cell.Content
@@ -191,9 +190,9 @@ func (c *Canvas) clipRect(rect types.Rect) (types.Rect, bool) {
 
 func (c *Canvas) clearFootprint(y, x int) {
 	cell := c.cells[y][x]
-	if cell.continuation {
+	if isContinuationCell(cell) {
 		start := x
-		for start > 0 && c.cells[y][start].continuation {
+		for start > 0 && isContinuationCell(c.cells[y][start]) {
 			start--
 		}
 		c.blankSpan(y, start, c.cells[y][start].Width)
@@ -222,8 +221,15 @@ func normalizeCell(cell Cell) Cell {
 	if cell.Width <= 0 {
 		cell.Width = 1
 	}
-	cell.continuation = false
 	return cell
+}
+
+func continuationCell() Cell {
+	return Cell{}
+}
+
+func isContinuationCell(cell Cell) bool {
+	return cell.Content == "" && cell.Width == 0
 }
 
 func min(a, b int) int {

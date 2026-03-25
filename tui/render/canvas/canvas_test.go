@@ -1,10 +1,25 @@
 package canvas
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/lozzow/termx/tui/domain/types"
 )
+
+func TestCellKeepsMinimalTask3Shape(t *testing.T) {
+	cellType := reflect.TypeOf(Cell{})
+	if got := cellType.NumField(); got != 3 {
+		t.Fatalf("unexpected field count: %d", got)
+	}
+
+	want := []string{"Content", "Width", "Style"}
+	for i, name := range want {
+		if got := cellType.Field(i).Name; got != name {
+			t.Fatalf("unexpected field %d: %q", i, got)
+		}
+	}
+}
 
 func TestCanvasDrawRespectsClipping(t *testing.T) {
 	canvas := New(8, 4)
