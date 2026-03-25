@@ -127,8 +127,31 @@ func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) str
 func (r runtimeRenderer) WithTerminalStore(screens projection.RuntimeTerminalStore) btui.Renderer {
 	if runtimeScreens, ok := screens.(RuntimeTerminalStore); ok {
 		r.Screens = runtimeScreens
+		return r
 	}
+	r.Screens = snapshotProjectionStoreAdapter{screens: screens}
 	return r
+}
+
+// snapshotProjectionStoreAdapter 把 render 层最小 snapshot store 适配成运行时兼容 renderer 需要的接口。
+// 当前兼容路径只强依赖 Snapshot；Session/Status 读不到时返回零值即可，避免误导成“有更多运行时信息”。
+type snapshotProjectionStoreAdapter struct {
+	screens projection.RuntimeTerminalStore
+}
+
+func (a snapshotProjectionStoreAdapter) Session(types.TerminalID) (TerminalRuntimeSession, bool) {
+	return TerminalRuntimeSession{}, false
+}
+
+func (a snapshotProjectionStoreAdapter) Snapshot(terminalID types.TerminalID) (*protocol.Snapshot, bool) {
+	if a.screens == nil {
+		return nil, false
+	}
+	return a.screens.Snapshot(terminalID)
+}
+
+func (a snapshotProjectionStoreAdapter) Status(types.TerminalID) (RuntimeTerminalStatus, bool) {
+	return RuntimeTerminalStatus{}, false
 }
 
 func (r runtimeRenderer) debugVisible() bool {
