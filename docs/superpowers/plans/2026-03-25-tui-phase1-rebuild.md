@@ -136,6 +136,18 @@ func TestRunStartsProgramWithWorkbenchScreen(t *testing.T) {
         t.Fatalf("expected workbench screen, got %v", runner.initialScreen)
     }
 }
+
+func TestRootModelCanSwitchBetweenWorkbenchAndTerminalPoolScreens(t *testing.T) {
+    model := app.NewModel(sampleRootState())
+    model = model.Apply(app.IntentOpenTerminalPool)
+    if model.Screen != app.ScreenTerminalPool {
+        t.Fatalf("expected terminal pool screen, got %v", model.Screen)
+    }
+    model = model.Apply(app.IntentCloseScreen)
+    if model.Screen != app.ScreenWorkbench {
+        t.Fatalf("expected workbench screen after close, got %v", model.Screen)
+    }
+}
 ```
 
 - [ ] **Step 2: Run the focused tests to verify they fail against the reset stub**
@@ -143,7 +155,7 @@ func TestRunStartsProgramWithWorkbenchScreen(t *testing.T) {
 Run:
 
 ```bash
-PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -run 'TestRunStartsProgramWithWorkbenchScreen|TestRunReturnsResetError' -count=1
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -run 'TestRunStartsProgramWithWorkbenchScreen|TestRootModelCanSwitchBetweenWorkbenchAndTerminalPoolScreens|TestRunReturnsResetError' -count=1
 ```
 
 Expected: FAIL because `Run` still returns the reset error and no root model exists.
@@ -378,6 +390,13 @@ func TestUnconnectedPaneShowsActionableEmptyState(t *testing.T) {
         t.Fatal("expected manager action text")
     }
 }
+
+func TestWorkbenchViewRendersLivePaneBodyFromSessionSnapshot(t *testing.T) {
+    view := workbench.Render(sampleLivePaneWorkbenchState(), 120, 40)
+    if !strings.Contains(view, "hello from shell") {
+        t.Fatal("expected live pane body content")
+    }
+}
 ```
 
 - [ ] **Step 2: Run renderer tests to verify the render path is still missing**
@@ -385,7 +404,7 @@ func TestUnconnectedPaneShowsActionableEmptyState(t *testing.T) {
 Run:
 
 ```bash
-PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/render/... -run 'TestWorkbenchViewShowsTopbarPaneTitleAndActionBar|TestUnconnectedPaneShowsActionableEmptyState' -count=1
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/render/... -run 'TestWorkbenchViewShowsTopbarPaneTitleAndActionBar|TestUnconnectedPaneShowsActionableEmptyState|TestWorkbenchViewRendersLivePaneBodyFromSessionSnapshot' -count=1
 ```
 
 Expected: FAIL because no render packages exist yet.
@@ -401,6 +420,7 @@ Implement:
   - connect existing terminal
   - create new terminal
   - open terminal pool
+- active live pane body rendering from the session/snapshot pipeline, not just frame chrome
 
 Reference:
 
@@ -469,6 +489,29 @@ func TestConnectExistingPickerUsesGlobalScopeAndRecentUserInteractionSort(t *tes
     }
 }
 
+func TestNewTabAndNewFloatOpenTheSameConnectDialog(t *testing.T) {
+    base := newWorkbenchModelForTest()
+    nextTab := base.Apply(IntentNewTab)
+    if nextTab.Overlay.Kind != OverlayConnectDialog {
+        t.Fatalf("expected connect dialog for new tab, got %v", nextTab.Overlay.Kind)
+    }
+    nextFloat := base.Apply(IntentNewFloat)
+    if nextFloat.Overlay.Kind != OverlayConnectDialog {
+        t.Fatalf("expected connect dialog for new float, got %v", nextFloat.Overlay.Kind)
+    }
+}
+
+func TestCreateNewTerminalBranchCreatesAndBindsTerminal(t *testing.T) {
+    model := modelWithPendingConnectDialog()
+    next := model.Apply(IntentConfirmCreateTerminal{
+        Command: []string{"/bin/sh"},
+        Name:    "shell-2",
+    })
+    if next.Workspace.ActiveTab().ActivePane().TerminalID == "" {
+        t.Fatal("expected pane to bind the newly created terminal")
+    }
+}
+
 func TestClosePaneDoesNotKillTerminalByDefault(t *testing.T) {
     model := modelWithSharedTerminal()
     next := model.Apply(IntentClosePane)
@@ -510,7 +553,7 @@ func TestClosePaneAndKillTerminalStopsTerminal(t *testing.T) {
 Run:
 
 ```bash
-PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/app ./tui/render/overlay ./tui/domain/pool -run 'TestSplitCreatesPaneSlotAndOpensConnectDialog|TestCancelConnectLeavesUnconnectedPane|TestConnectExistingPickerUsesGlobalScopeAndRecentUserInteractionSort|TestClosePaneDoesNotKillTerminalByDefault|TestDisconnectPaneKeepsPaneAndClearsBinding|TestReconnectPaneRebindsToSelectedTerminal|TestClosePaneAndKillTerminalStopsTerminal' -count=1
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/app ./tui/render/overlay ./tui/domain/pool -run 'TestSplitCreatesPaneSlotAndOpensConnectDialog|TestCancelConnectLeavesUnconnectedPane|TestConnectExistingPickerUsesGlobalScopeAndRecentUserInteractionSort|TestNewTabAndNewFloatOpenTheSameConnectDialog|TestCreateNewTerminalBranchCreatesAndBindsTerminal|TestClosePaneDoesNotKillTerminalByDefault|TestDisconnectPaneKeepsPaneAndClearsBinding|TestReconnectPaneRebindsToSelectedTerminal|TestClosePaneAndKillTerminalStopsTerminal' -count=1
 ```
 
 Expected: FAIL because create/connect flow is not implemented.
@@ -528,6 +571,7 @@ Implement:
   - default ordering by recent user interaction
   - pure output treated as auxiliary state, not sort priority
   - create-new and connect-existing paths tested separately
+- `split / new tab / new float` must all share the same connect dialog contract
 - lifecycle reducer tests must lock the four distinct actions:
   - close pane
   - disconnect pane
@@ -565,6 +609,8 @@ git commit -m "打通TUI弹层与面板连接语义"
 - Modify: `tui/app/intent_test.go`
 - Modify: `tui/app/model.go`
 - Modify: `tui/app/model_test.go`
+- Modify: `tui/runtime/terminal_service.go`
+- Modify: `tui/runtime/terminal_service_test.go`
 - Modify: `tui/runtime/session_store.go`
 
 - [ ] **Step 1: Write failing tests for terminal pool grouping and page rendering**
@@ -604,6 +650,20 @@ func TestTerminalPoolSelectionSwitchesReadonlyLivePreviewSubscription(t *testing
         t.Fatal("expected preview subscription refresh")
     }
 }
+
+func TestTerminalPoolActionsReachRuntimeService(t *testing.T) {
+    svc := &stubTerminalService{}
+    err := ExecuteTerminalPoolAction(context.Background(), svc, TerminalPoolAction{
+        Kind:       TerminalPoolActionKill,
+        TerminalID: "term-2",
+    })
+    if err != nil {
+        t.Fatalf("ExecuteTerminalPoolAction returned error: %v", err)
+    }
+    if svc.lastKilledTerminalID != "term-2" {
+        t.Fatal("expected runtime service to receive kill action")
+    }
+}
 ```
 
 - [ ] **Step 2: Run focused pool tests to verify the page does not exist yet**
@@ -611,7 +671,7 @@ func TestTerminalPoolSelectionSwitchesReadonlyLivePreviewSubscription(t *testing
 Run:
 
 ```bash
-PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/domain/pool ./tui/render/pool ./tui/app -run 'TestGroupTerminalsIntoVisibleParkedExited|TestTerminalPoolViewShowsThreeColumns|TestTerminalPoolActionsRenameKillAndOpenTargetPane|TestTerminalPoolSelectionSwitchesReadonlyLivePreviewSubscription' -count=1
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/domain/pool ./tui/render/pool ./tui/app ./tui/runtime -run 'TestGroupTerminalsIntoVisibleParkedExited|TestTerminalPoolViewShowsThreeColumns|TestTerminalPoolActionsRenameKillAndOpenTargetPane|TestTerminalPoolSelectionSwitchesReadonlyLivePreviewSubscription|TestTerminalPoolActionsReachRuntimeService' -count=1
 ```
 
 Expected: FAIL because grouping/page rendering is missing.
@@ -628,13 +688,15 @@ Implement:
 - page-level actions biased toward terminal management
 - explicit app intents for rename, kill, open-here, open-new-tab, open-floating
 - explicit takeover action if the user wants to leave readonly preview and bind/open the selected terminal into the workbench
+- runtime action executor must actually call `TerminalService`, not stop at queued UI intents
+- app shell must provide reachable navigation into and out of the standalone Terminal Pool page
 
 - [ ] **Step 4: Run pool-related tests**
 
 Run:
 
 ```bash
-PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/domain/pool ./tui/render/pool ./tui/app -count=1
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/domain/pool ./tui/render/pool ./tui/app ./tui/runtime -count=1
 ```
 
 Expected: PASS.
@@ -642,7 +704,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tui/render/pool tui/app/intent.go tui/app/intent_test.go tui/app/model.go tui/app/model_test.go tui/runtime/session_store.go
+git add tui/render/pool tui/app/intent.go tui/app/intent_test.go tui/app/model.go tui/app/model_test.go tui/runtime/terminal_service.go tui/runtime/terminal_service_test.go tui/runtime/session_store.go
 git commit -m "补齐TUI终端池独立页面"
 ```
 
