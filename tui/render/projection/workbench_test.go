@@ -1,6 +1,7 @@
 package projection
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/lozzow/termx/tui/domain/types"
@@ -18,6 +19,23 @@ func TestProjectWorkbenchReturnsActivePaneAndOrderedFloating(t *testing.T) {
 	}
 	if view.Floating[1].PaneID != types.PaneID("float-2") {
 		t.Fatalf("expected top floating pane float-2, got %q", view.Floating[1].PaneID)
+	}
+}
+
+func TestProjectWorkbenchReturnsDeterministicTiledOrder(t *testing.T) {
+	state := newProjectionAppStateWithSplit()
+	expected := []types.PaneID{
+		types.PaneID("pane-2"),
+		types.PaneID("pane-1"),
+		types.PaneID("pane-3"),
+	}
+
+	for i := 0; i < 32; i++ {
+		view := ProjectWorkbench(state, nil, 120, 40)
+		got := projectedPaneIDs(view.Tiled)
+		if !slices.Equal(got, expected) {
+			t.Fatalf("expected deterministic tiled order %v, got %v", expected, got)
+		}
 	}
 }
 
@@ -73,4 +91,46 @@ func newProjectionAppState() types.AppState {
 			Overlay: types.OverlayState{Kind: types.OverlayNone},
 		},
 	}
+}
+
+func newProjectionAppStateWithSplit() types.AppState {
+	state := newProjectionAppState()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	tab.RootSplit = &types.SplitNode{
+		Direction: types.SplitDirectionHorizontal,
+		First: &types.SplitNode{
+			PaneID: types.PaneID("pane-2"),
+		},
+		Second: &types.SplitNode{
+			Direction: types.SplitDirectionVertical,
+			First: &types.SplitNode{
+				PaneID: types.PaneID("pane-1"),
+			},
+			Second: &types.SplitNode{
+				PaneID: types.PaneID("pane-3"),
+			},
+		},
+	}
+	tab.Panes[types.PaneID("pane-2")] = types.PaneState{
+		ID:   types.PaneID("pane-2"),
+		Kind: types.PaneKindTiled,
+		Rect: types.Rect{X: 80, Y: 0, W: 40, H: 20},
+	}
+	tab.Panes[types.PaneID("pane-3")] = types.PaneState{
+		ID:   types.PaneID("pane-3"),
+		Kind: types.PaneKindTiled,
+		Rect: types.Rect{X: 80, Y: 20, W: 40, H: 20},
+	}
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	return state
+}
+
+func projectedPaneIDs(panes []PaneProjection) []types.PaneID {
+	ids := make([]types.PaneID, 0, len(panes))
+	for _, pane := range panes {
+		ids = append(ids, pane.PaneID)
+	}
+	return ids
 }

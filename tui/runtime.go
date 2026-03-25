@@ -69,6 +69,9 @@ func runWithDependencies(client Client, cfg Config, input io.Reader, output io.W
 	if deps.Renderer == nil {
 		deps.Renderer = render.NewRenderer(render.Config{
 			DebugVisible: boolPointer(cfg.DebugUI),
+			Compat: runtimeRenderer{
+				DebugVisible: boolPointer(cfg.DebugUI),
+			},
 		})
 	}
 	if deps.RuntimeExecutor == nil {
@@ -109,6 +112,9 @@ func runWithDependencies(client Client, cfg Config, input io.Reader, output io.W
 	updateHandler := NewRuntimeUpdateHandler(sessions, terminalStore, client)
 	defer updateHandler.Stop()
 	renderer := deps.Renderer
+	if binder, ok := renderer.(render.TerminalStoreBinder); ok {
+		renderer = binder.WithTerminalStore(terminalStore)
+	}
 	switch rendererValue := renderer.(type) {
 	case runtimeRenderer:
 		rendererValue.Screens = terminalStore
