@@ -61,6 +61,20 @@ func TestWorkbenchViewShowsOverlayAndRemoteRemoveNotice(t *testing.T) {
 	}
 }
 
+func TestFollowerPaneShowsBecomeOwnerHint(t *testing.T) {
+	model := sampleLivePaneWorkbenchState()
+	tab := model.Workspace.ActiveTab()
+	tab.ActivePaneID = types.PaneID("pane-1")
+	meta := model.Terminals[types.TerminalID("term-1")]
+	meta.OwnerPaneID = types.PaneID("pane-other")
+	model.Terminals[types.TerminalID("term-1")] = meta
+
+	view := Render(model, 120, 20)
+	if !strings.Contains(view, "become owner") {
+		t.Fatal("expected follower pane to show become-owner hint")
+	}
+}
+
 func sampleWorkbenchState() app.Model {
 	model := sampleLivePaneWorkbenchState()
 	model.Terminals[types.TerminalID("term-1")] = stateterminal.Metadata{

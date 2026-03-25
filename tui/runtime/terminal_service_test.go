@@ -8,6 +8,10 @@ import (
 
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/transport/memory"
+	"github.com/lozzow/termx/tui/app"
+	stateterminal "github.com/lozzow/termx/tui/state/terminal"
+	"github.com/lozzow/termx/tui/state/types"
+	"github.com/lozzow/termx/tui/state/workspace"
 )
 
 func TestTerminalServiceDelegatesCreateAndAttach(t *testing.T) {
@@ -110,6 +114,78 @@ func TestExecuteWorkbenchActionDelegatesCreateAndKill(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("kill action returned error: %v", err)
 	}
+}
+
+func TestApplyIntentExecutesCreateEffectFromAppReducerAndBindsTerminal(t *testing.T) {
+	service := NewTerminalService(&stubClient{
+		createResult: &protocol.CreateResult{TerminalID: "term-created", State: "running"},
+		attachResult: &protocol.AttachResult{Channel: 11, Mode: "rw"},
+		snapshot:     &protocol.Snapshot{TerminalID: "term-created", Size: protocol.Size{Cols: 80, Rows: 24}},
+	})
+	model := splitUnconnectedPaneModelForRuntimeTest()
+
+	next, err := ApplyIntent(context.Background(), model, service, app.ConfirmCreateTerminalIntent{
+		Command: []string{"/bin/sh"},
+		Name:    "shell-2",
+	})
+	if err != nil {
+		t.Fatalf("ApplyIntent returned error: %v", err)
+	}
+	pane, _ := next.Workspace.ActiveTab().ActivePane()
+	if pane.TerminalID != types.TerminalID("term-created") || pane.SlotState != types.PaneSlotLive {
+		t.Fatalf("expected runtime create to bind live terminal, got %+v", pane)
+	}
+	if next.Sessions[types.TerminalID("term-created")].Channel != 11 {
+		t.Fatalf("expected attached session after runtime create, got %#v", next.Sessions[types.TerminalID("term-created")])
+	}
+}
+
+func TestApplyIntentExecutesKillEffectFromAppReducerAndMarksExited(t *testing.T) {
+	service := NewTerminalService(&stubClient{})
+	model := livePaneModelForRuntimeTest()
+
+	next, err := ApplyIntent(context.Background(), model, service, app.IntentClosePaneAndKillTerminal)
+	if err != nil {
+		t.Fatalf("ApplyIntent returned error: %v", err)
+	}
+	if next.Terminals[types.TerminalID("term-1")].State != stateterminal.StateExited {
+		t.Fatalf("expected runtime kill to mark exited, got %#v", next.Terminals[types.TerminalID("term-1")])
+	}
+	pane, _ := next.Workspace.ActiveTab().ActivePane()
+	if pane.SlotState != types.PaneSlotExited {
+		t.Fatalf("expected exited pane after runtime kill, got %+v", pane)
+	}
+}
+
+func splitUnconnectedPaneModelForRuntimeTest() app.Model {
+	model := livePaneModelForRuntimeTest()
+	model = model.Apply(app.IntentSplitVertical)
+	return model
+}
+
+func livePaneModelForRuntimeTest() app.Model {
+	model := app.NewModel()
+	ws := workspace.NewTemporary("main")
+	tab := ws.ActiveTab()
+	pane, _ := tab.ActivePane()
+	pane.SlotState = types.PaneSlotLive
+	pane.TerminalID = types.TerminalID("term-1")
+	tab.TrackPane(pane)
+	model.Workspace = ws
+	model.Terminals[types.TerminalID("term-1")] = stateterminal.Metadata{
+		ID:              types.TerminalID("term-1"),
+		Name:            "api-dev",
+		Command:         []string{"/bin/sh"},
+		State:           stateterminal.StateRunning,
+		OwnerPaneID:     pane.ID,
+		AttachedPaneIDs: []types.PaneID{pane.ID},
+	}
+	model.Sessions[types.TerminalID("term-1")] = app.TerminalSession{
+		TerminalID: types.TerminalID("term-1"),
+		Channel:    7,
+		Attached:   true,
+	}
+	return model
 }
 
 type protocolRuntimeClient struct {

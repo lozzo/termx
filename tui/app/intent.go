@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tui/state/layout"
 	"github.com/lozzow/termx/tui/state/pool"
 	stateterminal "github.com/lozzow/termx/tui/state/terminal"
@@ -36,6 +37,9 @@ type OpenReconnectIntent struct{}
 type ConfirmReconnectIntent struct {
 	TerminalID types.TerminalID
 }
+type ConfirmConnectExistingIntent struct {
+	TerminalID types.TerminalID
+}
 type ConfirmCreateTerminalIntent struct {
 	Command []string
 	Name    string
@@ -49,6 +53,9 @@ type RemoveTerminalIntent struct {
 	Name       string
 }
 type RestartTerminalIntent struct {
+	TerminalID types.TerminalID
+}
+type BecomeOwnerIntent struct {
 	TerminalID types.TerminalID
 }
 type OpenHelpIntent struct{}
@@ -66,6 +73,7 @@ type CenterFloatingPaneIntent struct {
 func (m Model) Apply(intent Intent) Model {
 	next := m.clone()
 	next.ensureWorkspace()
+	next.PendingEffects = nil
 
 	switch in := intent.(type) {
 	case SplitPaneIntent:
@@ -79,6 +87,8 @@ func (m Model) Apply(intent Intent) Model {
 		return next
 	case ConfirmCreateTerminalIntent:
 		return next.applyCreateTerminal(in)
+	case ConfirmConnectExistingIntent:
+		return next.applyConnectExisting(in.TerminalID)
 	case ClosePaneIntent:
 		return next.applyClosePane()
 	case DisconnectPaneIntent:
@@ -93,6 +103,12 @@ func (m Model) Apply(intent Intent) Model {
 		return next.applyRemoveTerminal(in)
 	case RestartTerminalIntent:
 		return next.applyRestartTerminal(in.TerminalID)
+	case BecomeOwnerIntent:
+		return next.applyBecomeOwner(in.TerminalID)
+	case CreateTerminalSucceededIntent:
+		return next.applyCreateTerminalSucceeded(in)
+	case KillTerminalSucceededIntent:
+		return next.applyKillTerminalSucceeded(in.TerminalID)
 	case OpenHelpIntent:
 		next.Overlay = next.Overlay.Replace(OverlayState{
 			Kind: OverlayHelp,
@@ -177,26 +193,24 @@ func (m Model) applyCreateTerminal(in ConfirmCreateTerminalIntent) Model {
 	if !ok {
 		return m
 	}
-	terminalID := nextTerminalID(m.Terminals)
 	if len(in.Command) == 0 {
 		in.Command = []string{"/bin/sh"}
 	}
 	if strings.TrimSpace(in.Name) == "" {
 		in.Name = "shell"
 	}
-	meta := stateterminal.Metadata{
-		ID:              terminalID,
-		Name:            in.Name,
-		Command:         append([]string(nil), in.Command...),
-		State:           stateterminal.StateRunning,
-		OwnerPaneID:     pane.ID,
-		AttachedPaneIDs: []types.PaneID{pane.ID},
-		LastInteraction: time.Now().UTC(),
-	}
-	m.Terminals[terminalID] = meta
-	pane.TerminalID = terminalID
-	pane.SlotState = types.PaneSlotLive
-	tab.TrackPane(pane)
+	m.Overlay = m.Overlay.Clear()
+	m.PendingEffects = append(m.PendingEffects, CreateTerminalEffect{
+		PaneID:  pane.ID,
+		Command: append([]string(nil), in.Command...),
+		Name:    in.Name,
+		Size:    protocol.Size{Cols: 80, Rows: 24},
+	})
+	return m
+}
+
+func (m Model) applyConnectExisting(terminalID types.TerminalID) Model {
+	m.bindActivePaneToTerminal(terminalID)
 	m.Overlay = m.Overlay.Clear()
 	return m
 }
@@ -245,15 +259,7 @@ func (m Model) applyDisconnectPane() Model {
 }
 
 func (m Model) applyReconnect(terminalID types.TerminalID) Model {
-	tab := m.Workspace.ActiveTab()
-	if tab == nil {
-		return m
-	}
-	pane, ok := tab.ActivePane()
-	if !ok {
-		return m
-	}
-	m.bindPane(pane.ID, terminalID)
+	m.bindActivePaneToTerminal(terminalID)
 	m.Overlay = m.Overlay.Clear()
 	return m
 }
@@ -267,15 +273,8 @@ func (m Model) applyKillActiveTerminal() Model {
 	if !ok || pane.TerminalID == "" {
 		return m
 	}
-	meta, ok := m.Terminals[pane.TerminalID]
-	if !ok {
-		return m
-	}
-	meta.State = stateterminal.StateExited
-	m.Terminals[pane.TerminalID] = meta
-	m.updateAllPanesForTerminal(pane.TerminalID, func(next workspace.PaneState) workspace.PaneState {
-		next.SlotState = types.PaneSlotExited
-		return next
+	m.PendingEffects = append(m.PendingEffects, KillTerminalEffect{
+		TerminalID: pane.TerminalID,
 	})
 	return m
 }
@@ -302,6 +301,8 @@ func (m Model) applyRemoveTerminal(in RemoveTerminalIntent) Model {
 }
 
 func (m Model) applyRestartTerminal(terminalID types.TerminalID) Model {
+	// 当前 daemon 协议还没有独立 restart 接口，这里先明确维持 state-only 语义，
+	// 避免伪造 runtime 已执行的假象。
 	meta, ok := m.Terminals[terminalID]
 	if !ok {
 		return m
@@ -311,6 +312,84 @@ func (m Model) applyRestartTerminal(terminalID types.TerminalID) Model {
 	m.Terminals[terminalID] = meta
 	m.updateAllPanesForTerminal(terminalID, func(next workspace.PaneState) workspace.PaneState {
 		next.SlotState = types.PaneSlotLive
+		return next
+	})
+	return m
+}
+
+func (m Model) applyBecomeOwner(terminalID types.TerminalID) Model {
+	tab := m.Workspace.ActiveTab()
+	if tab == nil {
+		return m
+	}
+	pane, ok := tab.ActivePane()
+	if !ok || pane.TerminalID != terminalID {
+		return m
+	}
+	meta, ok := m.Terminals[terminalID]
+	if !ok {
+		return m
+	}
+	meta.OwnerPaneID = pane.ID
+	meta.LastInteraction = time.Now().UTC()
+	m.Terminals[terminalID] = meta
+	return m
+}
+
+type CreateTerminalSucceededIntent struct {
+	PaneID     types.PaneID
+	TerminalID types.TerminalID
+	Command    []string
+	Name       string
+	Channel    uint16
+	Snapshot   *protocol.Snapshot
+}
+
+type KillTerminalSucceededIntent struct {
+	TerminalID types.TerminalID
+}
+
+func (m Model) applyCreateTerminalSucceeded(in CreateTerminalSucceededIntent) Model {
+	meta := stateterminal.Metadata{
+		ID:              in.TerminalID,
+		Name:            in.Name,
+		Command:         append([]string(nil), in.Command...),
+		State:           stateterminal.StateRunning,
+		OwnerPaneID:     in.PaneID,
+		AttachedPaneIDs: []types.PaneID{in.PaneID},
+		LastInteraction: time.Now().UTC(),
+	}
+	m.Terminals[in.TerminalID] = meta
+	m.Sessions[in.TerminalID] = TerminalSession{
+		TerminalID: in.TerminalID,
+		Channel:    in.Channel,
+		Attached:   true,
+		Snapshot:   in.Snapshot,
+	}
+	tab := m.Workspace.ActiveTab()
+	if tab == nil {
+		return m
+	}
+	pane, ok := tab.Pane(in.PaneID)
+	if !ok {
+		return m
+	}
+	pane.TerminalID = in.TerminalID
+	pane.SlotState = types.PaneSlotLive
+	tab.TrackPane(pane)
+	tab.ActivePaneID = in.PaneID
+	return m
+}
+
+func (m Model) applyKillTerminalSucceeded(terminalID types.TerminalID) Model {
+	meta, ok := m.Terminals[terminalID]
+	if !ok {
+		return m
+	}
+	meta.State = stateterminal.StateExited
+	m.Terminals[terminalID] = meta
+	m.updateAllPanesForTerminal(terminalID, func(next workspace.PaneState) workspace.PaneState {
+		next.SlotState = types.PaneSlotExited
 		return next
 	})
 	return m
@@ -393,6 +472,18 @@ func (m Model) bindPane(paneID types.PaneID, terminalID types.TerminalID) {
 	tab.TrackPane(pane)
 }
 
+func (m Model) bindActivePaneToTerminal(terminalID types.TerminalID) {
+	tab := m.Workspace.ActiveTab()
+	if tab == nil {
+		return
+	}
+	pane, ok := tab.ActivePane()
+	if !ok {
+		return
+	}
+	m.bindPane(pane.ID, terminalID)
+}
+
 func (m Model) unbindPane(pane workspace.PaneState) {
 	if pane.TerminalID == "" {
 		return
@@ -424,11 +515,12 @@ func (m Model) visibleTerminal(terminalID types.TerminalID) (workspace.PaneState
 	if tab == nil {
 		return workspace.PaneState{}, false
 	}
-	pane, ok := tab.ActivePane()
-	if !ok || pane.TerminalID != terminalID {
-		return workspace.PaneState{}, false
+	for _, pane := range tab.Panes {
+		if pane.TerminalID == terminalID {
+			return pane, true
+		}
 	}
-	return pane, true
+	return workspace.PaneState{}, false
 }
 
 func prependCreateItem(items []pool.ConnectItem) []pool.ConnectItem {

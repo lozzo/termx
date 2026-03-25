@@ -63,15 +63,37 @@ func TestCreateNewTerminalBranchCreatesAndBindsTerminal(t *testing.T) {
 		Name:    "shell-2",
 	})
 	pane, _ := next.Workspace.ActiveTab().ActivePane()
-	if pane.TerminalID == "" {
-		t.Fatal("expected pane to bind the newly created terminal")
+	if pane.TerminalID != "" {
+		t.Fatalf("expected pane to stay unconnected before runtime success, got %q", pane.TerminalID)
+	}
+	if pane.SlotState != types.PaneSlotUnconnected {
+		t.Fatalf("expected pane to stay unconnected, got %q", pane.SlotState)
+	}
+	if len(next.PendingEffects) != 1 {
+		t.Fatalf("expected one runtime effect, got %d", len(next.PendingEffects))
+	}
+	effect, ok := next.PendingEffects[0].(CreateTerminalEffect)
+	if !ok {
+		t.Fatalf("expected create effect, got %T", next.PendingEffects[0])
+	}
+	if effect.Name != "shell-2" {
+		t.Fatalf("expected create effect to keep name, got %#v", effect)
+	}
+}
+
+func TestConfirmConnectExistingTerminalBindsSelectedTerminalFromSharedDialog(t *testing.T) {
+	model := newWorkbenchModelForIntentTest().Apply(IntentSplitVertical)
+
+	next := model.Apply(ConfirmConnectExistingIntent{TerminalID: types.TerminalID("term-2")})
+	pane, _ := next.Workspace.ActiveTab().ActivePane()
+	if pane.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected pane to bind term-2, got %q", pane.TerminalID)
 	}
 	if pane.SlotState != types.PaneSlotLive {
-		t.Fatalf("expected live pane, got %q", pane.SlotState)
+		t.Fatalf("expected connected pane to be live, got %q", pane.SlotState)
 	}
-	meta := next.Terminals[pane.TerminalID]
-	if meta.Name != "shell-2" || meta.State != stateterminal.StateRunning {
-		t.Fatalf("expected created terminal metadata, got %#v", meta)
+	if next.Terminals[types.TerminalID("term-2")].OwnerPaneID != pane.ID {
+		t.Fatalf("expected unowned terminal to grant owner, got %#v", next.Terminals[types.TerminalID("term-2")])
 	}
 }
 
@@ -101,12 +123,18 @@ func TestClosePaneDisconnectReconnectKillRemoveAndRestartLifecycle(t *testing.T)
 	}
 
 	killed := newLivePaneModelForIntentTest().Apply(IntentClosePaneAndKillTerminal)
-	if killed.Terminals[types.TerminalID("term-1")].State != stateterminal.StateExited {
-		t.Fatal("expected terminal to become exited after kill")
+	if killed.Terminals[types.TerminalID("term-1")].State != stateterminal.StateRunning {
+		t.Fatal("expected terminal to stay running before runtime kill success")
 	}
 	killedPane, _ := killed.Workspace.ActiveTab().ActivePane()
-	if killedPane.SlotState != types.PaneSlotExited {
-		t.Fatalf("expected exited pane after kill, got %q", killedPane.SlotState)
+	if killedPane.SlotState != types.PaneSlotLive {
+		t.Fatalf("expected pane to stay live before runtime kill success, got %q", killedPane.SlotState)
+	}
+	if len(killed.PendingEffects) != 1 {
+		t.Fatalf("expected one kill effect, got %d", len(killed.PendingEffects))
+	}
+	if _, ok := killed.PendingEffects[0].(KillTerminalEffect); !ok {
+		t.Fatalf("expected kill effect, got %T", killed.PendingEffects[0])
 	}
 
 	removed := newLivePaneModelForIntentTest().Apply(RemoveTerminalIntent{
@@ -124,11 +152,36 @@ func TestClosePaneDisconnectReconnectKillRemoveAndRestartLifecycle(t *testing.T)
 
 	restarted := killed.Apply(RestartTerminalIntent{TerminalID: types.TerminalID("term-1")})
 	if restarted.Terminals[types.TerminalID("term-1")].State != stateterminal.StateRunning {
-		t.Fatal("expected terminal to return to running after restart")
+		t.Fatal("expected state-only restart to keep terminal id and mark running")
 	}
 	restartedPane, _ := restarted.Workspace.ActiveTab().ActivePane()
 	if restartedPane.TerminalID != types.TerminalID("term-1") {
 		t.Fatalf("expected restart to preserve terminal id, got %q", restartedPane.TerminalID)
+	}
+}
+
+func TestRemoteRemoveNoticeUsesAnyVisiblePaneInActiveTab(t *testing.T) {
+	model := newSharedTerminalModelForIntentTest()
+	tab := model.Workspace.ActiveTab()
+	tab.ActivePaneID = types.PaneID("pane-2")
+
+	removed := model.Apply(RemoveTerminalIntent{
+		TerminalID: types.TerminalID("term-1"),
+		Name:       "api-dev",
+	})
+	if removed.Notice == nil {
+		t.Fatal("expected visible notice when another visible pane in active tab is affected")
+	}
+}
+
+func TestBecomeOwnerExplicitlyMovesOwnership(t *testing.T) {
+	model := newSharedTerminalModelForIntentTest()
+	tab := model.Workspace.ActiveTab()
+	tab.ActivePaneID = types.PaneID("pane-2")
+
+	next := model.Apply(BecomeOwnerIntent{TerminalID: types.TerminalID("term-1")})
+	if next.Terminals[types.TerminalID("term-1")].OwnerPaneID != types.PaneID("pane-2") {
+		t.Fatalf("expected owner to move to pane-2, got %#v", next.Terminals[types.TerminalID("term-1")])
 	}
 }
 
@@ -186,6 +239,7 @@ func newWorkbenchModelForIntentTest() Model {
 		Name:            "worker-tail",
 		Command:         []string{"/bin/sh"},
 		State:           stateterminal.StateRunning,
+		OwnerPaneID:     "",
 		LastInteraction: time.Unix(9, 0),
 	}
 	return model

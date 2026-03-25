@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/tui/app"
+	"github.com/lozzow/termx/tui/state/types"
 )
 
 type TerminalService struct {
@@ -91,5 +93,67 @@ func ExecuteWorkbenchAction(ctx context.Context, service workbenchActionService,
 		return WorkbenchActionResult{}, nil
 	default:
 		return WorkbenchActionResult{}, nil
+	}
+}
+
+type intentRuntimeService interface {
+	workbenchActionService
+	Attach(context.Context, string, string) (*protocol.AttachResult, error)
+	Snapshot(context.Context, string, int, int) (*protocol.Snapshot, error)
+}
+
+// ApplyIntent 负责串起“app reducer 产出 effect -> runtime 真执行 -> app 回填成功状态”。
+// 当前只为 create/kill 打通真实闭环；remove/restart 仍停留在 reducer 的 state-only 边界。
+func ApplyIntent(ctx context.Context, model app.Model, service intentRuntimeService, intent app.Intent) (app.Model, error) {
+	next := model.Apply(intent)
+	for _, effect := range next.PendingEffects {
+		var err error
+		next, err = applyEffect(ctx, next, service, effect)
+		if err != nil {
+			return next, err
+		}
+	}
+	next.PendingEffects = nil
+	return next, nil
+}
+
+func applyEffect(ctx context.Context, model app.Model, service intentRuntimeService, effect app.Effect) (app.Model, error) {
+	switch typed := effect.(type) {
+	case app.CreateTerminalEffect:
+		result, err := ExecuteWorkbenchAction(ctx, service, PendingWorkbenchAction{
+			Kind:    PendingWorkbenchActionCreateTerminal,
+			Command: typed.Command,
+			Name:    typed.Name,
+			Size:    typed.Size,
+		})
+		if err != nil {
+			return model, err
+		}
+		attach, err := service.Attach(ctx, result.TerminalID, "rw")
+		if err != nil {
+			return model, err
+		}
+		snapshot, err := service.Snapshot(ctx, result.TerminalID, 0, 0)
+		if err != nil {
+			return model, err
+		}
+		return model.Apply(app.CreateTerminalSucceededIntent{
+			PaneID:     typed.PaneID,
+			TerminalID: types.TerminalID(result.TerminalID),
+			Command:    typed.Command,
+			Name:       typed.Name,
+			Channel:    attach.Channel,
+			Snapshot:   snapshot,
+		}), nil
+	case app.KillTerminalEffect:
+		if _, err := ExecuteWorkbenchAction(ctx, service, PendingWorkbenchAction{
+			Kind:       PendingWorkbenchActionKillTerminal,
+			TerminalID: string(typed.TerminalID),
+		}); err != nil {
+			return model, err
+		}
+		return model.Apply(app.KillTerminalSucceededIntent{TerminalID: typed.TerminalID}), nil
+	default:
+		return model, nil
 	}
 }

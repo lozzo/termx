@@ -59,7 +59,7 @@ func renderPrimaryPane(model app.Model, width int) string {
 		return chrome.Frame("unconnected", "unconnected", width, lines)
 	case types.PaneSlotLive:
 		title := terminalName(model, pane.TerminalID)
-		return chrome.Frame(title, liveMeta(model, pane), width, snapshotLines(model, pane.TerminalID))
+		return chrome.Frame(title, liveMeta(model, pane), width, livePaneLines(model, pane))
 	case types.PaneSlotExited:
 		title := terminalName(model, pane.TerminalID)
 		return chrome.Frame(title, "exited", width, []string{"terminal exited", "press R to restart"})
@@ -132,4 +132,16 @@ func liveMeta(model app.Model, pane workspace.PaneState) string {
 		return "running  follower"
 	}
 	return "running  owner"
+}
+
+func livePaneLines(model app.Model, pane workspace.PaneState) []string {
+	lines := snapshotLines(model, pane.TerminalID)
+	meta, ok := model.Terminals[pane.TerminalID]
+	if !ok {
+		return lines
+	}
+	if meta.OwnerPaneID != "" && meta.OwnerPaneID != pane.ID {
+		return append([]string{"become owner"}, lines...)
+	}
+	return lines
 }
