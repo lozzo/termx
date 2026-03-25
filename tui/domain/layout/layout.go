@@ -1,6 +1,10 @@
 package layout
 
-import "github.com/lozzow/termx/tui/domain/types"
+import (
+	"math"
+
+	"github.com/lozzow/termx/tui/domain/types"
+)
 
 type Node struct {
 	PaneID    types.PaneID
@@ -58,6 +62,64 @@ func (n *Node) Remove(target types.PaneID) *Node {
 	}
 }
 
+func (n *Node) ContainsPane(paneID types.PaneID) bool {
+	if n == nil {
+		return false
+	}
+	if n.IsLeaf() {
+		return n.PaneID == paneID
+	}
+	return n.First.ContainsPane(paneID) || n.Second.ContainsPane(paneID)
+}
+
+func (n *Node) LeafIDs() []types.PaneID {
+	if n == nil {
+		return nil
+	}
+	if n.IsLeaf() {
+		return []types.PaneID{n.PaneID}
+	}
+	out := n.First.LeafIDs()
+	out = append(out, n.Second.LeafIDs()...)
+	return out
+}
+
+func (n *Node) SwapWithNeighbor(paneID types.PaneID, delta int) bool {
+	if n == nil || delta == 0 {
+		return false
+	}
+	leaves := n.leafNodes()
+	if len(leaves) < 2 {
+		return false
+	}
+	idx := -1
+	for i, leaf := range leaves {
+		if leaf != nil && leaf.PaneID == paneID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return false
+	}
+	target := idx + delta
+	if target < 0 || target >= len(leaves) {
+		return false
+	}
+	leaves[idx].PaneID, leaves[target].PaneID = leaves[target].PaneID, leaves[idx].PaneID
+	return true
+}
+
+func (n *Node) AdjustPaneBoundary(paneID types.PaneID, dir types.Direction, step, minSpan int, root types.Rect) bool {
+	if n == nil || step <= 0 || root.W <= 0 || root.H <= 0 {
+		return false
+	}
+	if minSpan <= 0 {
+		minSpan = 1
+	}
+	return n.adjustPaneBoundary(paneID, dir, step, minSpan, root)
+}
+
 func (n *Node) Rects(root types.Rect) map[types.PaneID]types.Rect {
 	out := make(map[types.PaneID]types.Rect)
 	fillRects(n, root, out)
@@ -74,29 +136,14 @@ func fillRects(n *Node, root types.Rect, out map[types.PaneID]types.Rect) {
 		out[n.PaneID] = root
 		return
 	}
-	ratio := n.Ratio
-	if ratio <= 0 || ratio >= 1 {
-		ratio = 0.5
-	}
+	ratio := normalizedRatio(n.Ratio)
 	if n.Direction == types.SplitDirectionHorizontal {
-		firstH := int(float64(root.H) * ratio)
-		if firstH < 1 {
-			firstH = 1
-		}
-		if firstH >= root.H {
-			firstH = root.H - 1
-		}
+		firstH := splitSpan(root.H, ratio)
 		fillRects(n.First, types.Rect{X: root.X, Y: root.Y, W: root.W, H: firstH}, out)
 		fillRects(n.Second, types.Rect{X: root.X, Y: root.Y + firstH, W: root.W, H: root.H - firstH}, out)
 		return
 	}
-	firstW := int(float64(root.W) * ratio)
-	if firstW < 1 {
-		firstW = 1
-	}
-	if firstW >= root.W {
-		firstW = root.W - 1
-	}
+	firstW := splitSpan(root.W, ratio)
 	fillRects(n.First, types.Rect{X: root.X, Y: root.Y, W: firstW, H: root.H}, out)
 	fillRects(n.Second, types.Rect{X: root.X + firstW, Y: root.Y, W: root.W - firstW, H: root.H}, out)
 }
@@ -153,4 +200,112 @@ func edgeDistance(base, other types.Rect, dir types.Direction) int {
 	default:
 		return 0
 	}
+}
+
+func (n *Node) adjustPaneBoundary(paneID types.PaneID, dir types.Direction, step, minSpan int, root types.Rect) bool {
+	if n == nil || n.IsLeaf() {
+		return false
+	}
+	firstRect, secondRect := n.splitRects(root)
+	inFirst := n.First.ContainsPane(paneID)
+	inSecond := n.Second.ContainsPane(paneID)
+
+	if inFirst && n.First.adjustPaneBoundary(paneID, dir, step, minSpan, firstRect) {
+		return true
+	}
+	if inSecond && n.Second.adjustPaneBoundary(paneID, dir, step, minSpan, secondRect) {
+		return true
+	}
+
+	switch n.Direction {
+	case types.SplitDirectionVertical:
+		switch {
+		case dir == types.DirectionRight && inFirst:
+			return n.adjustRatio(step, root.W, minSpan)
+		case dir == types.DirectionLeft && inSecond:
+			return n.adjustRatio(-step, root.W, minSpan)
+		}
+	case types.SplitDirectionHorizontal:
+		switch {
+		case dir == types.DirectionDown && inFirst:
+			return n.adjustRatio(step, root.H, minSpan)
+		case dir == types.DirectionUp && inSecond:
+			return n.adjustRatio(-step, root.H, minSpan)
+		}
+	}
+	return false
+}
+
+func (n *Node) leafNodes() []*Node {
+	if n == nil {
+		return nil
+	}
+	if n.IsLeaf() {
+		return []*Node{n}
+	}
+	out := n.First.leafNodes()
+	out = append(out, n.Second.leafNodes()...)
+	return out
+}
+
+func (n *Node) splitRects(root types.Rect) (types.Rect, types.Rect) {
+	if n == nil {
+		return types.Rect{}, types.Rect{}
+	}
+	ratio := normalizedRatio(n.Ratio)
+	if n.Direction == types.SplitDirectionHorizontal {
+		firstH := splitSpan(root.H, ratio)
+		return types.Rect{X: root.X, Y: root.Y, W: root.W, H: firstH},
+			types.Rect{X: root.X, Y: root.Y + firstH, W: root.W, H: root.H - firstH}
+	}
+	firstW := splitSpan(root.W, ratio)
+	return types.Rect{X: root.X, Y: root.Y, W: firstW, H: root.H},
+		types.Rect{X: root.X + firstW, Y: root.Y, W: root.W - firstW, H: root.H}
+}
+
+// adjustRatio 只做比例夹紧，不接触渲染状态。
+// minSpan 会被换算成最小比例，确保分割线两侧都至少保留最小可用跨度。
+func (n *Node) adjustRatio(delta, span, minSpan int) bool {
+	if n == nil || span <= 1 {
+		return false
+	}
+	ratio := normalizedRatio(n.Ratio)
+	minRatio := float64(minSpan) / float64(span)
+	if minRatio < 0 {
+		minRatio = 0
+	}
+	// 比例上限不能逼近 0/1 太多，否则极小 root 下会让另一侧无法留下有效空间。
+	if minRatio > 0.45 {
+		minRatio = 0.45
+	}
+	next := ratio + float64(delta)/float64(span)
+	if next < minRatio {
+		next = minRatio
+	}
+	if next > 1-minRatio {
+		next = 1 - minRatio
+	}
+	if math.Abs(next-ratio) < 0.0001 {
+		return false
+	}
+	n.Ratio = next
+	return true
+}
+
+func normalizedRatio(ratio float64) float64 {
+	if ratio <= 0 || ratio >= 1 {
+		return 0.5
+	}
+	return ratio
+}
+
+func splitSpan(span int, ratio float64) int {
+	first := int(math.Round(float64(span) * ratio))
+	if first < 1 {
+		first = 1
+	}
+	if first >= span {
+		first = span - 1
+	}
+	return first
 }

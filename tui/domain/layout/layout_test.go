@@ -44,3 +44,39 @@ func TestNodeAdjacentFindsNeighborByDirection(t *testing.T) {
 		t.Fatalf("expected right neighbor, got %q", got)
 	}
 }
+
+func TestNodeAdjustPaneBoundaryMovesSplitRatioWithinBounds(t *testing.T) {
+	root := NewLeaf(types.PaneID("pane-1"))
+	root.Split(types.PaneID("pane-1"), types.SplitDirectionVertical, types.PaneID("pane-2"))
+
+	ok := root.AdjustPaneBoundary(
+		types.PaneID("pane-1"),
+		types.DirectionRight,
+		5,
+		10,
+		types.Rect{W: 80, H: 24},
+	)
+	if !ok {
+		t.Fatal("expected boundary adjust to succeed")
+	}
+	if root.Ratio <= 0.5 {
+		t.Fatalf("expected ratio to move right, got %v", root.Ratio)
+	}
+}
+
+func TestNodeSwapWithNeighborSwapsLeafOrder(t *testing.T) {
+	root := NewLeaf(types.PaneID("pane-1"))
+	root.Split(types.PaneID("pane-1"), types.SplitDirectionVertical, types.PaneID("pane-2"))
+
+	if !root.SwapWithNeighbor(types.PaneID("pane-1"), 1) {
+		t.Fatal("expected swap to succeed")
+	}
+
+	ids := root.LeafIDs()
+	if len(ids) != 2 {
+		t.Fatalf("expected two leaves, got %v", ids)
+	}
+	if ids[0] != types.PaneID("pane-2") || ids[1] != types.PaneID("pane-1") {
+		t.Fatalf("expected swapped order, got %v", ids)
+	}
+}
