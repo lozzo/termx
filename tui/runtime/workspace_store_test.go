@@ -31,6 +31,55 @@ func TestWorkspaceStoreRoundTripsWorkbenchState(t *testing.T) {
 	}
 }
 
+func TestRebindRestoredModelKeepsTerminalPoolPreviewAsLiveStream(t *testing.T) {
+	client := &stubClient{
+		attachResult: &protocol.AttachResult{Channel: 21, Mode: "observer"},
+		snapshotByID: map[string][]*protocol.Snapshot{
+			"term-2": {sampleSnapshotForRuntimeTest("term-2", "restored preview")},
+		},
+	}
+	model := sampleWorkbenchStateForRuntimeTest()
+	model.Screen = app.ScreenTerminalPool
+	model.FocusTarget = app.FocusTerminalPool
+	model.Pool.PreviewTerminalID = types.TerminalID("term-2")
+	model.Pool.SelectedTerminalID = types.TerminalID("term-2")
+	model.Pool.PreviewReadonly = true
+	model.Pool.PreviewSubscriptionRevision = 7
+
+	restored := RebindRestoredModel(context.Background(), client, model)
+	if restored.PreviewStreamNext == nil {
+		t.Fatal("expected restore to wire preview stream command")
+	}
+	if !client.hasAttachCall("term-2", "observer") {
+		t.Fatalf("expected preview restore to attach term-2 as observer, got ids=%v modes=%v", client.attachIDs, client.attachModes)
+	}
+
+	stream, ok := client.streams[21]
+	if !ok {
+		t.Fatalf("expected preview stream to bind channel 21, got streams=%v", client.streams)
+	}
+	go func() {
+		stream <- protocol.StreamFrame{Payload: []byte("tick")}
+	}()
+
+	nextCmd := restored.PreviewStreamNext
+	if nextCmd == nil {
+		t.Fatal("expected preview stream cmd to be set")
+	}
+	cmd := nextCmd()
+	if cmd == nil {
+		t.Fatal("expected preview stream tea cmd to be set")
+	}
+	msg := cmd()
+	previewMsg, ok := msg.(app.PreviewStreamMessage)
+	if !ok {
+		t.Fatalf("expected preview stream message, got %T", msg)
+	}
+	if previewMsg.TerminalID != types.TerminalID("term-2") || previewMsg.Revision != 7 {
+		t.Fatalf("expected restored preview binding revision 7 for term-2, got %#v", previewMsg)
+	}
+}
+
 func sampleWorkbenchStateForRuntimeTest() app.Model {
 	model := app.NewModel()
 	model.Screen = app.ScreenTerminalPool

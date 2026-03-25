@@ -41,15 +41,27 @@ func (s *SessionStore) Bind(terminalID types.TerminalID, channel uint16, snapsho
 // BindPreview 专门记录 pool preview 的只读订阅。
 // revision 递增用来明确“切换选中项后已经触发了一次新的 preview 订阅”。
 func (s *SessionStore) BindPreview(terminalID types.TerminalID, channel uint16, snapshot *protocol.Snapshot, stream <-chan protocol.StreamFrame, cancel func()) PreviewBinding {
+	return s.bindPreview(terminalID, channel, snapshot, stream, cancel, 0, false)
+}
+
+// BindPreviewAtRevision 给恢复路径使用，确保磁盘里的 preview revision 与 live stream binding 对齐。
+func (s *SessionStore) BindPreviewAtRevision(terminalID types.TerminalID, channel uint16, snapshot *protocol.Snapshot, stream <-chan protocol.StreamFrame, cancel func(), revision int) PreviewBinding {
+	return s.bindPreview(terminalID, channel, snapshot, stream, cancel, revision, true)
+}
+
+func (s *SessionStore) bindPreview(terminalID types.TerminalID, channel uint16, snapshot *protocol.Snapshot, stream <-chan protocol.StreamFrame, cancel func(), revision int, fixedRevision bool) PreviewBinding {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.preview.cancel != nil {
 		s.preview.cancel()
 	}
+	if !fixedRevision {
+		revision = s.preview.Revision + 1
+	}
 	s.preview = PreviewBinding{
 		TerminalID: terminalID,
 		Channel:    channel,
-		Revision:   s.preview.Revision + 1,
+		Revision:   revision,
 		stream:     stream,
 		cancel:     cancel,
 	}

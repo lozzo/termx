@@ -197,7 +197,8 @@ func (s *fileWorkspaceStore) Load(_ context.Context) (app.Model, error) {
 // 这里尽量重连现存 terminal；单个 terminal 恢复失败时只降级该 session，不让整次启动炸掉。
 func RebindRestoredModel(ctx context.Context, client Client, model app.Model) app.Model {
 	service := NewTerminalService(client)
-	model.IntentExecutor = NewModelIntentExecutor(service)
+	store := NewSessionStore()
+	model.IntentExecutor = modelIntentExecutor{service: service, store: store}
 	if model.Terminals == nil {
 		model.Terminals = make(map[types.TerminalID]stateterminal.Metadata)
 	}
@@ -233,6 +234,30 @@ func RebindRestoredModel(ctx context.Context, client Client, model app.Model) ap
 			model.Sessions[terminalID] = session
 			continue
 		}
+
+		// 恢复后的 Terminal Pool preview 不能退回静态 snapshot。
+		// 这里需要像正常 preview 订阅一样重建 stream binding，并把 Next cmd 接回模型。
+		if session.Preview && model.Pool.PreviewTerminalID == terminalID {
+			stream, cancel := service.Stream(attach.Channel)
+			binding := store.BindPreviewAtRevision(
+				terminalID,
+				attach.Channel,
+				snapshot,
+				stream,
+				cancel,
+				model.Pool.PreviewSubscriptionRevision,
+			)
+			session.Channel = binding.Channel
+			session.Attached = true
+			session.ReadOnly = true
+			session.Preview = true
+			session.Snapshot = snapshot
+			model.Sessions[terminalID] = session
+			model.PreviewStreamNext = store.NextPreviewMessageCmd
+			continue
+		}
+
+		store.Bind(terminalID, attach.Channel, snapshot)
 		session.Channel = attach.Channel
 		session.Attached = true
 		session.Snapshot = snapshot

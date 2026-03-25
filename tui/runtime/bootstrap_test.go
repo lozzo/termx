@@ -19,6 +19,8 @@ type stubClient struct {
 	lastCreateName    string
 	lastAttachID      string
 	lastAttachMode    string
+	attachIDs         []string
+	attachModes       []string
 	lastKilledID      string
 	lastRemovedID     string
 	lastMetadataID    string
@@ -68,6 +70,8 @@ func (c *stubClient) Events(context.Context, protocol.EventsParams) (<-chan prot
 func (c *stubClient) Attach(_ context.Context, terminalID string, mode string) (*protocol.AttachResult, error) {
 	c.lastAttachID = terminalID
 	c.lastAttachMode = mode
+	c.attachIDs = append(c.attachIDs, terminalID)
+	c.attachModes = append(c.attachModes, mode)
 	if err, ok := c.attachErrByID[terminalID]; ok {
 		return nil, err
 	}
@@ -78,6 +82,15 @@ func (c *stubClient) Attach(_ context.Context, terminalID string, mode string) (
 		return c.attachResult, nil
 	}
 	return &protocol.AttachResult{Channel: 7, Mode: mode}, nil
+}
+
+func (c *stubClient) hasAttachCall(terminalID string, mode string) bool {
+	for i := range c.attachIDs {
+		if c.attachIDs[i] == terminalID && c.attachModes[i] == mode {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *stubClient) Snapshot(_ context.Context, terminalID string, _ int, _ int) (*protocol.Snapshot, error) {
