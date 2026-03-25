@@ -1,7 +1,7 @@
 # termx TUI 当前状态
 
 状态：TDD State Machine Stage
-日期：2026-03-24
+日期：2026-03-25
 
 ---
 
@@ -81,6 +81,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮也把 overlay 的背景压暗做成真正的 backdrop wash：modal 打开时，工作台空白区会统一铺一层棋盘状 `▒` wash，再叠加 dialog shadow，帮助 modal 从 workbench 上真正“浮起来”；相应 shell-only renderer 护栏与默认 modern 的 overlay 开关 E2E 已同步锁住
 - 本轮继续把现代 workbench 从“只有字形层次”推进到“字形 + 语义色层次”：底层 canvas 已升级成 ANSI 安全贴图，pane/workbench 叠放时不再会把转义序列拆坏；active tiled、active/inactive floating、run/wait/exit/empty、owner/follower 等状态现在都能直接带颜色落在真实 pane 边框与标题栏上，并由 shell-only renderer 与 default modern E2E 一起锁住
 - 本轮继续把 modern workbench 的右侧辅助栏从散文说明收成“标签状态栏”：single / split / floating / mixed 的侧栏现在统一使用 `ACTIVE / SPLIT / STACK / PATH / FOCUS / LINK / TERM / VIEW / ACTION` 这类 label-value rail；整体布局继续保持 pane-first，把更多宽度让回真实 pane canvas，并向 `deprecated/tui-legacy/` 的工作台骨架靠拢
+- 本轮继续把默认 78~96 列的主工作台从“右侧状态栏吃掉正文宽度”收回到 legacy 风格：single / split / floating / mixed 在常见宽度下会自动把右侧 rail 折叠成工作台顶部的 compact rail，保留 `WORKBENCH / LAYOUT / FLOATING / MIXED / CONTEXT / WINDOW DECK` 结构化状态，同时把主空间优先让给 pane canvas；对应 shell-only 与 default modern 的 renderer / E2E 基线已同步迁移
 
 ---
 

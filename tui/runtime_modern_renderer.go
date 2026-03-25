@@ -340,6 +340,9 @@ func (r modernScreenShellRenderer) renderSingleWorkbench(theme modernShellTheme,
 	if width < 72 || height < 12 {
 		return r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, height), width, height, false)
 	}
+	if shouldRenderCompactWorkbenchRail(width, height) {
+		return r.renderSingleWorkbenchCompact(theme, state, pane, metrics, width, height, active)
+	}
 	sidebarWidth := renderModernWorkbenchSidebarWidth(width)
 	canvasWidth := max(32, width-sidebarWidth-1)
 	canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, canvasWidth, height), canvasWidth, height, false)
@@ -528,6 +531,9 @@ func (r modernScreenShellRenderer) renderSplitWorkbench(theme modernShellTheme, 
 	if width < 72 || height < 12 {
 		return r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, height), width, height, false)
 	}
+	if shouldRenderCompactWorkbenchRail(width, height) {
+		return r.renderSplitWorkbenchCompact(theme, state, tab, pane, tiledPaneIDs, floatingPaneIDs, metrics, width, height)
+	}
 	sidebarWidth := renderModernWorkbenchSidebarWidth(width)
 	canvasWidth := max(32, width-sidebarWidth-1)
 	canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, canvasWidth, height), canvasWidth, height, false)
@@ -538,6 +544,9 @@ func (r modernScreenShellRenderer) renderSplitWorkbench(theme modernShellTheme, 
 func (r modernScreenShellRenderer) renderFloatingWorkbench(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, metrics wireframeMetrics, width, height int) string {
 	if width < 72 || height < 12 {
 		return r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, height), width, height, false)
+	}
+	if shouldRenderCompactWorkbenchRail(width, height) {
+		return r.renderFloatingWorkbenchCompact(theme, state, tab, pane, floatingPaneIDs, metrics, width, height)
 	}
 	sidebarWidth := renderModernWorkbenchSidebarWidth(width)
 	canvasWidth := max(32, width-sidebarWidth-1)
@@ -555,6 +564,10 @@ func (r modernScreenShellRenderer) renderMixedWorkbench(theme modernShellTheme, 
 	if width < 72 || mainHeight < 11 {
 		canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, mainHeight), width, mainHeight, false)
 		return lipgloss.JoinVertical(lipgloss.Left, strip, canvas)
+	}
+	if shouldRenderCompactWorkbenchRail(width, mainHeight) {
+		compact := r.renderMixedWorkbenchCompact(theme, state, tab, pane, tiledPaneIDs, floatingPaneIDs, metrics, width, mainHeight)
+		return lipgloss.JoinVertical(lipgloss.Left, strip, compact)
 	}
 	sidebarWidth := renderModernWorkbenchSidebarWidth(width)
 	canvasWidth := max(32, width-sidebarWidth-1)
@@ -806,10 +819,125 @@ func renderModernWorkbenchSidebarWidth(width int) int {
 	return min(32, max(30, width/3))
 }
 
+func shouldRenderCompactWorkbenchRail(width, height int) bool {
+	return width < 108 || height < 18
+}
+
 type modernSidebarEntry struct {
 	Label string
 	Value string
 	Tone  string
+}
+
+func renderModernWorkbenchRail(theme modernShellTheme, title string, entries []modernSidebarEntry, width int) string {
+	items := []string{theme.activeChip.Render(strings.ToUpper(strings.TrimSpace(title)))}
+	for _, entry := range entries {
+		value := strings.TrimSpace(entry.Value)
+		if value == "" {
+			continue
+		}
+		style := theme.panelMeta
+		if entry.Tone == "body" {
+			style = theme.terminalBody
+		}
+		label := theme.panelLabel.Render(strings.ToUpper(strings.TrimSpace(entry.Label)))
+		items = append(items, label+" "+style.Render(value))
+	}
+	lines := renderModernOverlayTokenLines(width, items, func(line string) string {
+		return theme.subBar.Render(padANSIHorizontal(line, max(1, width-2)))
+	})
+	return strings.Join(lines, "\n")
+}
+
+func renderModernWorkbenchCompactSectionHeight(section string) int {
+	if strings.TrimSpace(section) == "" {
+		return 0
+	}
+	return strings.Count(section, "\n") + 1
+}
+
+func (r modernScreenShellRenderer) renderSingleWorkbenchCompact(theme modernShellTheme, state types.AppState, pane types.PaneState, metrics wireframeMetrics, width, height int, active bool) string {
+	tab := types.TabState{
+		ActivePaneID: pane.ID,
+		Panes:        map[types.PaneID]types.PaneState{pane.ID: pane},
+	}
+	summary := renderModernWorkbenchRail(theme, "Workbench", []modernSidebarEntry{
+		{Label: "Active", Value: renderModernSingleWorkbenchCompactActiveLine(state, pane)},
+		{Label: "Link", Value: renderModernSingleWorkbenchRoleSlotLine(state, pane)},
+		{Label: "State", Value: renderModernRuntimeLabel(state, pane)},
+	}, width)
+	context := renderModernWorkbenchRail(theme, "Context", compactWorkbenchSignalEntries(
+		modernSidebarEntry{Label: "Path", Value: renderModernWorkbenchLocationLine(state, pane)},
+		modernSidebarEntry{Label: "Focus", Value: renderModernSingleWorkbenchCompactFocusLine(state, pane, active)},
+		modernSidebarEntry{Label: "View", Value: renderModernSingleWorkbenchSessionLine(state, pane)},
+		modernSidebarEntry{Label: "Layer", Value: renderModernSingleWorkbenchCompactLayerLine(state)},
+		modernSidebarEntry{Label: "Action", Value: renderModernSingleWorkbenchCompactActionLine(state, pane)},
+	), width)
+	canvasHeight := max(8, height-renderModernWorkbenchCompactSectionHeight(summary)-renderModernWorkbenchCompactSectionHeight(context))
+	canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, canvasHeight), width, canvasHeight, false)
+	return lipgloss.JoinVertical(lipgloss.Left, summary, context, canvas)
+}
+
+func (r modernScreenShellRenderer) renderSplitWorkbenchCompact(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, tiledPaneIDs []types.PaneID, floatingPaneIDs []types.PaneID, metrics wireframeMetrics, width, height int) string {
+	summaryEntries := []modernSidebarEntry{
+		{Label: "Active", Value: renderModernSplitWorkbenchCompactActiveLine(state, pane, len(tiledPaneIDs))},
+		{Label: "Split", Value: renderModernSplitLayoutCompactSummary(tab, len(tiledPaneIDs))},
+		{Label: "Path", Value: renderModernWorkbenchLocationLine(state, pane)},
+	}
+	if len(floatingPaneIDs) > 0 {
+		summaryEntries = append(summaryEntries, modernSidebarEntry{Label: "Float", Value: fmt.Sprintf("%d detached", len(floatingPaneIDs))})
+	}
+	summary := renderModernWorkbenchRail(theme, "Layout", summaryEntries, width)
+	context := renderModernWorkbenchRail(theme, "Context", compactWorkbenchSignalEntries(
+		modernSidebarEntry{Label: "Focus", Value: renderModernSingleWorkbenchCompactFocusLine(state, pane, true)},
+		modernSidebarEntry{Label: "Link", Value: renderModernSingleWorkbenchRoleSlotLine(state, pane)},
+		modernSidebarEntry{Label: "View", Value: renderModernSingleWorkbenchSessionLine(state, pane)},
+		modernSidebarEntry{Label: "Action", Value: renderModernSplitCompactActionLine(state)},
+	), width)
+	canvasHeight := max(8, height-renderModernWorkbenchCompactSectionHeight(summary)-renderModernWorkbenchCompactSectionHeight(context))
+	canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, canvasHeight), width, canvasHeight, false)
+	return lipgloss.JoinVertical(lipgloss.Left, summary, context, canvas)
+}
+
+func (r modernScreenShellRenderer) renderFloatingWorkbenchCompact(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, metrics wireframeMetrics, width, height int) string {
+	summary := renderModernWorkbenchRail(theme, "Floating", []modernSidebarEntry{
+		{Label: "Active", Value: renderModernFloatingWorkbenchCompactActiveLine(state, tab, floatingPaneIDs)},
+		{Label: "Stack", Value: renderModernFloatingWorkbenchCompactStackLine(state, tab, floatingPaneIDs)},
+		{Label: "Path", Value: renderModernWorkbenchLocationLine(state, pane)},
+	}, width)
+	context := renderModernWorkbenchRail(theme, "Context", compactWorkbenchSignalEntries(
+		modernSidebarEntry{Label: "Focus", Value: renderModernFloatingWorkbenchCompactFocusLine(state, tab, floatingPaneIDs)},
+		modernSidebarEntry{Label: "Link", Value: renderModernSingleWorkbenchRoleSlotLine(state, pane)},
+		modernSidebarEntry{Label: "Layer", Value: renderModernFloatingWorkbenchCompactLayerLine(state)},
+		modernSidebarEntry{Label: "Action", Value: renderModernFloatingWorkbenchCompactActionLine(state, tab, floatingPaneIDs)},
+	), width)
+	deck := renderModernWorkbenchRail(theme, "Window deck", compactWorkbenchSignalEntries(
+		modernSidebarEntry{Label: "Stack", Value: renderModernFloatingDeckCompactLine(state, tab, floatingPaneIDs)},
+	), width)
+	canvasHeight := max(8, height-renderModernWorkbenchCompactSectionHeight(summary)-renderModernWorkbenchCompactSectionHeight(context)-renderModernWorkbenchCompactSectionHeight(deck))
+	canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, canvasHeight), width, canvasHeight, false)
+	return lipgloss.JoinVertical(lipgloss.Left, summary, context, canvas, deck)
+}
+
+func (r modernScreenShellRenderer) renderMixedWorkbenchCompact(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, tiledPaneIDs []types.PaneID, floatingPaneIDs []types.PaneID, metrics wireframeMetrics, width, height int) string {
+	summary := renderModernWorkbenchRail(theme, "Mixed", []modernSidebarEntry{
+		{Label: "Active", Value: renderModernMixedWorkbenchCompactActiveLine(state, pane)},
+		{Label: "Stack", Value: fmt.Sprintf("Tiled %d  •  floating %d", len(tiledPaneIDs), len(floatingPaneIDs))},
+		{Label: "Split", Value: renderModernSplitLayoutCompactSummary(tab, len(tiledPaneIDs))},
+		{Label: "Path", Value: renderModernWorkbenchLocationLine(state, pane)},
+	}, width)
+	context := renderModernWorkbenchRail(theme, "Context", compactWorkbenchSignalEntries(
+		modernSidebarEntry{Label: "Focus", Value: renderModernSingleWorkbenchCompactFocusLine(state, pane, true)},
+		modernSidebarEntry{Label: "Link", Value: renderModernSingleWorkbenchRoleSlotLine(state, pane)},
+		modernSidebarEntry{Label: "View", Value: renderModernSingleWorkbenchSessionLine(state, pane)},
+		modernSidebarEntry{Label: "Action", Value: renderModernSplitCompactActionLine(state)},
+	), width)
+	deck := renderModernWorkbenchRail(theme, "Window deck", compactWorkbenchSignalEntries(
+		modernSidebarEntry{Label: "Stack", Value: renderModernFloatingDeckCompactLine(state, tab, floatingPaneIDs)},
+	), width)
+	canvasHeight := max(8, height-renderModernWorkbenchCompactSectionHeight(summary)-renderModernWorkbenchCompactSectionHeight(context)-renderModernWorkbenchCompactSectionHeight(deck))
+	canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, canvasHeight), width, canvasHeight, false)
+	return lipgloss.JoinVertical(lipgloss.Left, summary, context, canvas, deck)
 }
 
 // renderWorkbenchSidebarPanel 把 modern workbench 的辅助信息统一收成一个窄侧栏盒子。
@@ -983,6 +1111,17 @@ func compactWorkbenchSignalLines(lines ...string) []string {
 			continue
 		}
 		filtered = append(filtered, line)
+	}
+	return filtered
+}
+
+func compactWorkbenchSignalEntries(entries ...modernSidebarEntry) []modernSidebarEntry {
+	filtered := make([]modernSidebarEntry, 0, len(entries))
+	for _, entry := range entries {
+		if strings.TrimSpace(entry.Value) == "" {
+			continue
+		}
+		filtered = append(filtered, entry)
 	}
 	return filtered
 }
@@ -2333,14 +2472,31 @@ func renderModernSplitLayoutSummary(tab types.TabState, tiledPanes int) string {
 	return fmt.Sprintf("Layout %s %s  •  depth %d  •  leaves %d", summary.Root, ratio, depth, tiledPanes)
 }
 
+func renderModernSplitLayoutCompactSummary(tab types.TabState, tiledPanes int) string {
+	summary := summarizeTiledLayout(tab.RootSplit, tiledPanes)
+	ratio := "auto"
+	if summary.HasRatio {
+		ratio = fmt.Sprintf("%02.0f/%02.0f", summary.Ratio*100, (1-summary.Ratio)*100)
+	}
+	return fmt.Sprintf("%s %s", summary.Root, ratio)
+}
+
 // renderModernSplitWorkbenchTitleLine 把 split 工作台标题和 active 信息合在一行，
 // 这样顶部 chrome 更紧凑，给 pane screen 预览腾出更多高度。
 func renderModernSplitWorkbenchTitleLine(state types.AppState, pane types.PaneState, tiledPanes int) string {
 	return fmt.Sprintf("Split workbench  •  active %s  •  %d tiled panes", renderModernPaneDisplayTitle(state, pane), tiledPanes)
 }
 
+func renderModernSplitWorkbenchCompactActiveLine(state types.AppState, pane types.PaneState, tiledPanes int) string {
+	return fmt.Sprintf("%s  •  %d tiled", renderModernPaneDisplayTitle(state, pane), tiledPanes)
+}
+
 func renderModernSingleWorkbenchSummaryLine(state types.AppState, pane types.PaneState) string {
 	return fmt.Sprintf("Pane %s  •  %s", renderModernPaneDisplayTitle(state, pane), string(pane.ID))
+}
+
+func renderModernSingleWorkbenchCompactActiveLine(state types.AppState, pane types.PaneState) string {
+	return renderModernPaneDisplayTitle(state, pane)
 }
 
 func renderModernSingleWorkbenchRoleSlotLine(state types.AppState, pane types.PaneState) string {
@@ -2413,6 +2569,14 @@ func renderModernSingleWorkbenchFocusLine(state types.AppState, pane types.PaneS
 	return fmt.Sprintf("%s focus  •  %s", focus, renderModernPaneDisplayTitle(state, pane))
 }
 
+func renderModernSingleWorkbenchCompactFocusLine(state types.AppState, pane types.PaneState, active bool) string {
+	focus := "idle"
+	if active {
+		focus = "live"
+	}
+	return fmt.Sprintf("%s  •  %s", focus, renderModernPaneDisplayTitle(state, pane))
+}
+
 func renderModernSingleWorkbenchLayerLine(state types.AppState) string {
 	mode := state.UI.Mode.Active
 	if mode == "" {
@@ -2425,13 +2589,44 @@ func renderModernSingleWorkbenchLayerLine(state types.AppState) string {
 	return fmt.Sprintf("%s  •  mode %s  •  overlay %s", renderModernLayerLabel(renderModernPrimaryLayer(state)), mode, overlay)
 }
 
+func renderModernSingleWorkbenchCompactLayerLine(state types.AppState) string {
+	mode := state.UI.Mode.Active
+	if mode == "" {
+		mode = types.ModeNone
+	}
+	return fmt.Sprintf("%s  •  %s", renderModernLayerLabel(renderModernPrimaryLayer(state)), mode)
+}
+
+func renderModernSingleWorkbenchActionLine(_ types.AppState, pane types.PaneState) string {
+	if pane.Kind == types.PaneKindFloating {
+		return "Ctrl-p pane  •  Ctrl-o float  •  Ctrl-f picker"
+	}
+	return "Ctrl-p pane  •  Ctrl-f picker  •  Ctrl-g global"
+}
+
+func renderModernSingleWorkbenchCompactActionLine(_ types.AppState, pane types.PaneState) string {
+	if pane.Kind == types.PaneKindFloating {
+		return "Ctrl-o float  •  Ctrl-f"
+	}
+	return "Ctrl-p pane  •  Ctrl-f"
+}
+
 func renderModernSplitActionLine(state types.AppState) string {
 	return fmt.Sprintf("Focus %s  •  Ctrl-p pane  •  Ctrl-f picker  •  Ctrl-g global", renderModernPrimaryLayer(state))
+}
+
+func renderModernSplitCompactActionLine(state types.AppState) string {
+	return fmt.Sprintf("%s  •  Ctrl-p  •  Ctrl-f", renderModernPrimaryLayer(state))
 }
 
 func renderModernFloatingWorkbenchSummary(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) string {
 	activePane, _, topPane, _ := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
 	return fmt.Sprintf("Deck active %s  •  top %s  •  windows %d", activePane, topPane, len(floatingPaneIDs))
+}
+
+func renderModernFloatingWorkbenchCompactStackLine(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) string {
+	_, _, _, topTitle := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
+	return fmt.Sprintf("top %s  •  %d windows", topTitle, len(floatingPaneIDs))
 }
 
 func renderModernFloatingWorkbenchStateLine(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) string {
@@ -2445,6 +2640,14 @@ func renderModernFloatingWorkbenchControlLine(state types.AppState) string {
 		mode = types.ModeNone
 	}
 	return fmt.Sprintf("Layer %s  •  mode %s  •  Ctrl-o float", renderModernPrimaryLayer(state), mode)
+}
+
+func renderModernFloatingWorkbenchCompactLayerLine(state types.AppState) string {
+	mode := state.UI.Mode.Active
+	if mode == "" {
+		mode = types.ModeNone
+	}
+	return fmt.Sprintf("%s  •  %s", renderModernPrimaryLayer(state), mode)
 }
 
 func renderModernFloatingWorkbenchTargets(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) (activePane, activeTitle, topPane, topTitle string) {
@@ -2473,12 +2676,31 @@ func renderModernFloatingWorkbenchTitleLine(state types.AppState, tab types.TabS
 	return fmt.Sprintf("Pane %s  •  floating  •  %s", activeTitle, activePane)
 }
 
+func renderModernFloatingWorkbenchCompactActiveLine(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) string {
+	activePane, activeTitle, _, _ := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
+	return fmt.Sprintf("%s  •  %s", activeTitle, activePane)
+}
+
 func renderModernFloatingWorkbenchFocusLine(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) string {
 	activePane, _, _, _ := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
 	if pane, ok := tab.Panes[types.PaneID(activePane)]; ok {
 		return renderModernPaneTitleBar(state, pane, true, 0, 0)
 	}
 	return ""
+}
+
+func renderModernFloatingWorkbenchCompactFocusLine(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) string {
+	_, activeTitle, _, _ := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
+	return fmt.Sprintf("live  •  %s", activeTitle)
+}
+
+func renderModernFloatingWorkbenchCompactActionLine(state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID) string {
+	_, _, _, topTitle := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
+	return fmt.Sprintf("top %s  •  %d", topTitle, len(floatingPaneIDs))
+}
+
+func renderModernMixedWorkbenchCompactActiveLine(state types.AppState, pane types.PaneState) string {
+	return fmt.Sprintf("%s  •  mixed", renderModernPaneDisplayTitle(state, pane))
 }
 
 func renderModernFloatingModeHint(state types.AppState) string {
