@@ -16,6 +16,50 @@
 3. 旧版 `deprecated/tui-legacy/` 的 renderer/compositor 思路应该回收
 4. 当前过渡 ASCII renderer 应该被替换，而不是继续扩展
 
+### 1.1 总体架构图
+
+```text
+                                  termx TUI
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  Input / Runtime Messages                                                   │
+│  keyboard  mouse  resize  stream frame  terminal event  timer              │
+└───────────────────────────────┬──────────────────────────────────────────────┘
+                                │
+                                v
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  bt shell                                                                   │
+│  tui/bt/model.go  +  tui/bt/intent_mapper.go                                │
+│  负责把输入归一化并驱动 reducer / effect handler / renderer                 │
+└───────────────────────────────┬──────────────────────────────────────────────┘
+                                │
+                    ┌───────────┴───────────┐
+                    │                       │
+                    v                       v
+┌──────────────────────────────┐  ┌───────────────────────────────────────────┐
+│  app/reducer                 │  │  runtime                                 │
+│  纯状态迁移 + effect planning│  │  session / update / store / input / svc  │
+└───────────────┬──────────────┘  └──────────────────────┬────────────────────┘
+                │                                        │
+                v                                        v
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  domain state + runtime terminal store                                      │
+│  AppState(workspace/tab/pane/connection/overlay/...) + RuntimeTerminalStore │
+└───────────────────────────────┬──────────────────────────────────────────────┘
+                                │
+                                v
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  new render layer                                                           │
+│  projection -> pane surface -> canvas compositor -> overlay -> HUD          │
+└───────────────────────────────┬──────────────────────────────────────────────┘
+                                │
+                                v
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ANSI frame                                                                 │
+│  最终输出到 Bubble Tea / terminal                                           │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
 ---
 
 ## 2. 当前仓库中已经成型的层
@@ -122,6 +166,39 @@
 
 - 保留 `domain + reducer + runtime + bt shell`
 - 重写 `projection + pane surface + canvas compositor + overlay + HUD`
+
+### 3.1 保留与替换边界图
+
+```text
+保留：
+
+  domain
+  reducer
+  effect handler
+  runtime session / update / terminal store / input
+  bt shell
+
+替换：
+
+  runtime_renderer.go
+  runtime_modern_renderer.go
+  旧 screen_shell / chrome_* / section_* 输出结构
+  旧 renderer 文本快照测试基线
+
+边界：
+
+  AppState + RuntimeTerminalStore
+              │
+              ├── 上游保留
+              ▼
+        New Renderer Boundary
+              │
+              ├── projection
+              ├── pane surface
+              ├── tiled/floating compositor
+              ├── overlay compositor
+              └── HUD
+```
 
 ---
 
@@ -293,6 +370,51 @@ keyboard/mouse/runtime-msg
 - renderer 不回写业务状态
 - runtime update 不直接拼 UI
 - dirty/cache 只留在 render/compositor 层
+
+### 6.1 运行时数据流图
+
+```text
+keyboard / mouse
+        │
+        v
+IntentMapper
+        │
+        v
+Reducer ------------------------------┐
+        │                             │
+        ├── next AppState             │
+        └── Effects                   │
+                                       │
+                                       v
+                              RuntimeEffectHandler
+                                       │
+                                       v
+                              TerminalService / Client
+                                       │
+                       ┌───────────────┴───────────────┐
+                       │                               │
+                       v                               v
+               stream / snapshot                terminal events
+                       │                               │
+                       └───────────────┬───────────────┘
+                                       v
+                              RuntimeUpdateHandler
+                                       │
+                                       v
+                              RuntimeTerminalStore
+                                       │
+                        ┌──────────────┴──────────────┐
+                        │                             │
+                        v                             v
+                     AppState                  RuntimeTerminalStore
+                        │                             │
+                        └──────────────┬──────────────┘
+                                       v
+                                    Renderer
+                                       │
+                                       v
+                                   ANSI Frame
+```
 
 ---
 
@@ -511,6 +633,48 @@ View()
 
 它只决定“怎么呈现”，不应该承载业务状态。
 
+### 9.5 Render Layer 内部结构图
+
+```text
+AppState + RuntimeTerminalStore
+              │
+              v
+┌────────────────────────────────────────────────────────────────────┐
+│ Projection                                                        │
+│  tiled rects / floating rects / z-order / active focus / overlay │
+└──────────────────────────────┬─────────────────────────────────────┘
+                               │
+                               v
+┌────────────────────────────────────────────────────────────────────┐
+│ Pane Surface                                                      │
+│  live vterm / snapshot / cursor / waiting / unconnected / exited │
+└──────────────────────────────┬─────────────────────────────────────┘
+                               │
+                               v
+┌────────────────────────────────────────────────────────────────────┐
+│ Canvas / Compositor                                               │
+│  tiled first -> floating second -> overlap/clipping -> damage     │
+└──────────────────────────────┬─────────────────────────────────────┘
+                               │
+                               v
+┌────────────────────────────────────────────────────────────────────┐
+│ Overlay Compositor                                                │
+│  backdrop / modal / focus return / no residue                     │
+└──────────────────────────────┬─────────────────────────────────────┘
+                               │
+                               v
+┌────────────────────────────────────────────────────────────────────┐
+│ HUD / Presenter                                                   │
+│  header / footer / notices / shortcuts                            │
+└──────────────────────────────┬─────────────────────────────────────┘
+                               │
+                               v
+                           ANSI Encoder
+                               │
+                               v
+                            Final Frame
+```
+
 ---
 
 ## 10. 接口建议
@@ -609,3 +773,25 @@ View()
 6. 最后做颜色、性能、残影、backpressure
 
 这就是当前 termx TUI 的正确技术主线。
+
+### 14.1 legacy renderer 回收映射图
+
+```text
+legacy 可回收骨架                         新主线对应层
+────────────────────────────────────────────────────────────────
+renderTabComposite()                 -> Canvas / Compositor
+paneRenderEntries()                  -> Projection
+LayoutNode.Rects()                   -> Projection
+drawPaneBody()/drawCursor()          -> Pane Surface
+composedCanvas                       -> Canvas
+damage redraw / dirty rows / cols    -> DamageTracker / incremental redraw
+convertVTermViewport()               -> live surface projection
+convertProtocolViewport()            -> snapshot surface projection
+tab bar / status 的产品语言          -> HUD / Presenter
+
+legacy 不回收：
+
+  大一统 Model
+  状态/输入/渲染缓存混在一起
+  所有 overlay 都从单一 View() 硬分支
+```
