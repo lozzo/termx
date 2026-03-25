@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
@@ -14,16 +15,17 @@ import (
 // Screen 表示页面级互斥路由，Overlay 表示可跨页面复用的临时浮层栈，
 // 两者拆开建模，后续页面切换就不需要把“弹层是否打开”硬塞进 screen 枚举里。
 type Model struct {
-	Screen         Screen
-	Overlay        OverlayStack
-	FocusTarget    FocusTarget
-	Pool           TerminalPoolState
-	Workspace      *workspace.WorkspaceState
-	Terminals      map[types.TerminalID]terminal.Metadata
-	Sessions       map[types.TerminalID]TerminalSession
-	Notice         *NoticeState
-	PendingEffects []Effect
-	IntentExecutor IntentExecutor
+	Screen            Screen
+	Overlay           OverlayStack
+	FocusTarget       FocusTarget
+	Pool              TerminalPoolState
+	Workspace         *workspace.WorkspaceState
+	Terminals         map[types.TerminalID]terminal.Metadata
+	Sessions          map[types.TerminalID]TerminalSession
+	Notice            *NoticeState
+	PendingEffects    []Effect
+	PreviewStreamNext func() tea.Cmd
+	IntentExecutor    IntentExecutor
 }
 
 type TerminalSession struct {
@@ -45,12 +47,23 @@ type TerminalPoolState struct {
 	PreviewSubscriptionRevision int
 }
 
+type PreviewStreamMessage struct {
+	TerminalID types.TerminalID
+	Revision   int
+	Frame      protocol.StreamFrame
+}
+
+type PreviewStreamClosedMessage struct {
+	TerminalID types.TerminalID
+	Revision   int
+}
+
 type IntentMessage struct {
 	Intent Intent
 }
 
 type IntentExecutor interface {
-	ExecuteIntent(context.Context, Model, Intent) (Model, error)
+	ExecuteIntent(context.Context, Model, Intent) (Model, tea.Cmd, error)
 }
 
 var viewRenderer func(Model, int, int) string
@@ -85,10 +98,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch typed := msg.(type) {
 	case IntentMessage:
 		if m.IntentExecutor != nil {
-			next, _ := m.IntentExecutor.ExecuteIntent(context.Background(), m, typed.Intent)
-			return next, nil
+			next, cmd, _ := m.IntentExecutor.ExecuteIntent(context.Background(), m, typed.Intent)
+			return next, cmd
 		}
 		return m.Apply(typed.Intent), nil
+	case tea.KeyMsg:
+		if intent, handled := m.keyIntent(typed); handled {
+			if m.IntentExecutor != nil {
+				next, cmd, _ := m.IntentExecutor.ExecuteIntent(context.Background(), m, intent)
+				return next, cmd
+			}
+			return m.Apply(intent), nil
+		}
+		return m, nil
+	case PreviewStreamMessage:
+		next := m.applyPreviewStreamMessage(typed)
+		if next.PreviewStreamNext != nil {
+			return next, next.PreviewStreamNext()
+		}
+		return next, nil
+	case PreviewStreamClosedMessage:
+		next := m.clone()
+		if next.Pool.PreviewTerminalID == typed.TerminalID && next.Pool.PreviewSubscriptionRevision == typed.Revision {
+			next.PreviewStreamNext = nil
+		}
+		return next, nil
 	default:
 		return m, nil
 	}
@@ -112,6 +146,7 @@ func (m Model) clone() Model {
 	next.Terminals = cloneTerminalMap(m.Terminals)
 	next.Sessions = cloneSessionMap(m.Sessions)
 	next.PendingEffects = append([]Effect(nil), m.PendingEffects...)
+	next.PreviewStreamNext = m.PreviewStreamNext
 	if m.Notice != nil {
 		notice := *m.Notice
 		next.Notice = &notice
@@ -151,6 +186,52 @@ func cloneSessionMap(input map[types.TerminalID]TerminalSession) map[types.Termi
 		out[key] = session
 	}
 	return out
+}
+
+func (m Model) keyIntent(msg tea.KeyMsg) (Intent, bool) {
+	switch {
+	case msg.Type == tea.KeyEsc && m.Screen == ScreenTerminalPool:
+		return CloseTerminalPoolIntent{}, true
+	case msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'p' && m.Screen == ScreenWorkbench && !m.Overlay.HasActive():
+		return OpenTerminalPoolIntent{}, true
+	default:
+		return nil, false
+	}
+}
+
+func (m Model) applyPreviewStreamMessage(msg PreviewStreamMessage) Model {
+	next := m.clone()
+	if next.Pool.PreviewTerminalID != msg.TerminalID || next.Pool.PreviewSubscriptionRevision != msg.Revision {
+		return next
+	}
+	session, ok := next.Sessions[msg.TerminalID]
+	if !ok {
+		return next
+	}
+	session.Snapshot = appendStreamFrame(session.Snapshot, msg.Frame)
+	next.Sessions[msg.TerminalID] = session
+	return next
+}
+
+func appendStreamFrame(snapshot *protocol.Snapshot, frame protocol.StreamFrame) *protocol.Snapshot {
+	if snapshot == nil {
+		snapshot = &protocol.Snapshot{}
+	}
+	if frame.Type != protocol.TypeOutput || len(frame.Payload) == 0 {
+		return snapshot
+	}
+	lines := strings.Split(strings.ReplaceAll(string(frame.Payload), "\r\n", "\n"), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		row := make([]protocol.Cell, 0, len(line))
+		for _, r := range line {
+			row = append(row, protocol.Cell{Content: string(r), Width: 1})
+		}
+		snapshot.Screen.Cells = append(snapshot.Screen.Cells, row)
+	}
+	return snapshot
 }
 
 type Effect interface {
@@ -196,3 +277,12 @@ type RemoveTerminalEffect struct {
 }
 
 func (RemoveTerminalEffect) effectName() string { return "remove_terminal" }
+
+type AttachTerminalEffect struct {
+	PaneID     types.PaneID
+	TerminalID types.TerminalID
+	ReadOnly   bool
+	ForPreview bool
+}
+
+func (AttachTerminalEffect) effectName() string { return "attach_terminal" }

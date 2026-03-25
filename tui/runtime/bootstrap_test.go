@@ -24,6 +24,7 @@ type stubClient struct {
 	lastMetadataID    string
 	lastMetadataName  string
 	lastMetadataTags  map[string]string
+	streams           map[uint16]chan protocol.StreamFrame
 	attachErr         error
 	snapshotErr       error
 	attachErrByID     map[string]error
@@ -91,8 +92,15 @@ func (c *stubClient) Snapshot(_ context.Context, terminalID string, _ int, _ int
 
 func (c *stubClient) Input(context.Context, uint16, []byte) error          { return nil }
 func (c *stubClient) Resize(context.Context, uint16, uint16, uint16) error { return nil }
-func (c *stubClient) Stream(uint16) (<-chan protocol.StreamFrame, func()) {
-	ch := make(chan protocol.StreamFrame)
+func (c *stubClient) Stream(channel uint16) (<-chan protocol.StreamFrame, func()) {
+	if c.streams == nil {
+		c.streams = make(map[uint16]chan protocol.StreamFrame)
+	}
+	ch, ok := c.streams[channel]
+	if ok {
+		return ch, func() {}
+	}
+	ch = make(chan protocol.StreamFrame)
 	return ch, func() { close(ch) }
 }
 func (c *stubClient) Kill(_ context.Context, terminalID string) error {

@@ -80,7 +80,7 @@ func renderActionBar(model app.Model) string {
 			title = terminalName(model, pane.TerminalID)
 		}
 	}
-	return " <c-p> pane  <c-t> tab  <c-w> workspace  <c-o> float  <c-f> connect  <?> help          " + title + "  ▣ tiled"
+	return " <c-p> pane  <c-t> tab  <c-w> workspace  <c-o> float  <c-f> connect  <p> pool  <?> help          " + title + "  ▣ tiled"
 }
 
 func activeTab(model app.Model) *workspace.TabState {

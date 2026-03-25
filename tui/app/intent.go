@@ -162,6 +162,8 @@ func (m Model) Apply(intent Intent) Model {
 			Visible:    in.Visible,
 			Name:       in.Name,
 		})
+	case AttachTerminalSucceededIntent:
+		return next.applyAttachTerminalSucceeded(in)
 	case OpenHelpIntent:
 		next.Overlay = next.Overlay.Replace(OverlayState{
 			Kind: OverlayHelp,
@@ -184,6 +186,7 @@ func (m Model) openTerminalPool() Model {
 	m.Pool.PreviewTerminalID = selected
 	m.Pool.PreviewReadonly = true
 	if selected != "" {
+		m.Pool.PreviewSubscriptionRevision++
 		m.PendingEffects = append(m.PendingEffects, RefreshPreviewEffect{TerminalID: selected})
 	}
 	return m
@@ -194,9 +197,10 @@ func (m Model) applySearchTerminalPool(query string) Model {
 	selected := m.firstTerminalPoolSelection(m.Pool.Query)
 	if selected != "" {
 		m.Pool.SelectedTerminalID = selected
-		if m.Pool.PreviewTerminalID == "" {
-			m.Pool.PreviewTerminalID = selected
-		}
+		m.Pool.PreviewTerminalID = selected
+		m.Pool.PreviewReadonly = true
+		m.Pool.PreviewSubscriptionRevision++
+		m.PendingEffects = append(m.PendingEffects, RefreshPreviewEffect{TerminalID: selected})
 	}
 	return m
 }
@@ -269,6 +273,17 @@ func (m Model) applyOpenSelectedTerminalHere() Model {
 		return m
 	}
 	m.bindActivePaneToTerminal(terminalID)
+	tab := m.Workspace.ActiveTab()
+	if tab == nil {
+		return m
+	}
+	pane, ok := tab.ActivePane()
+	if ok {
+		m.PendingEffects = append(m.PendingEffects, AttachTerminalEffect{
+			PaneID:     pane.ID,
+			TerminalID: terminalID,
+		})
+	}
 	return m.SwitchScreen(ScreenWorkbench)
 }
 
@@ -280,6 +295,14 @@ func (m Model) applyOpenSelectedTerminalInNewTab() Model {
 	m = m.applyNewTab()
 	m.Overlay = m.Overlay.Clear()
 	m.bindActivePaneToTerminal(terminalID)
+	if tab := m.Workspace.ActiveTab(); tab != nil {
+		if pane, ok := tab.ActivePane(); ok {
+			m.PendingEffects = append(m.PendingEffects, AttachTerminalEffect{
+				PaneID:     pane.ID,
+				TerminalID: terminalID,
+			})
+		}
+	}
 	return m.SwitchScreen(ScreenWorkbench)
 }
 
@@ -291,6 +314,14 @@ func (m Model) applyOpenSelectedTerminalInFloating() Model {
 	m = m.applyNewFloat()
 	m.Overlay = m.Overlay.Clear()
 	m.bindActivePaneToTerminal(terminalID)
+	if tab := m.Workspace.ActiveTab(); tab != nil {
+		if pane, ok := tab.ActivePane(); ok {
+			m.PendingEffects = append(m.PendingEffects, AttachTerminalEffect{
+				PaneID:     pane.ID,
+				TerminalID: terminalID,
+			})
+		}
+	}
 	return m.SwitchScreen(ScreenWorkbench)
 }
 
@@ -561,6 +592,15 @@ type RemoveTerminalSucceededIntent struct {
 	Name       string
 }
 
+type AttachTerminalSucceededIntent struct {
+	PaneID     types.PaneID
+	TerminalID types.TerminalID
+	Channel    uint16
+	Snapshot   *protocol.Snapshot
+	ReadOnly   bool
+	ForPreview bool
+}
+
 func (m Model) applyCreateTerminalSucceeded(in CreateTerminalSucceededIntent) Model {
 	meta := stateterminal.Metadata{
 		ID:              in.TerminalID,
@@ -621,6 +661,33 @@ func (m Model) applyPreviewTerminalSucceeded(in PreviewTerminalSucceededIntent) 
 		Preview:    true,
 		Snapshot:   in.Snapshot,
 	}
+	return m
+}
+
+func (m Model) applyAttachTerminalSucceeded(in AttachTerminalSucceededIntent) Model {
+	if in.ForPreview {
+		return m
+	}
+	m.Sessions[in.TerminalID] = TerminalSession{
+		TerminalID: in.TerminalID,
+		Channel:    in.Channel,
+		Attached:   true,
+		ReadOnly:   in.ReadOnly,
+		Preview:    false,
+		Snapshot:   in.Snapshot,
+	}
+	tab := m.Workspace.ActiveTab()
+	if tab == nil {
+		return m
+	}
+	pane, ok := tab.Pane(in.PaneID)
+	if !ok {
+		return m
+	}
+	pane.TerminalID = in.TerminalID
+	pane.SlotState = types.PaneSlotLive
+	tab.TrackPane(pane)
+	tab.ActivePaneID = in.PaneID
 	return m
 }
 

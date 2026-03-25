@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tui/app"
 	"github.com/lozzow/termx/tui/state/types"
@@ -123,6 +124,7 @@ type intentRuntimeService interface {
 	workbenchActionService
 	Attach(context.Context, string, string) (*protocol.AttachResult, error)
 	Snapshot(context.Context, string, int, int) (*protocol.Snapshot, error)
+	Stream(uint16) (<-chan protocol.StreamFrame, func())
 }
 
 type modelIntentExecutor struct {
@@ -134,31 +136,36 @@ func NewModelIntentExecutor(service intentRuntimeService) app.IntentExecutor {
 	return modelIntentExecutor{service: service, store: NewSessionStore()}
 }
 
-func (e modelIntentExecutor) ExecuteIntent(ctx context.Context, model app.Model, intent app.Intent) (app.Model, error) {
+func (e modelIntentExecutor) ExecuteIntent(ctx context.Context, model app.Model, intent app.Intent) (app.Model, tea.Cmd, error) {
 	return applyIntentWithStore(ctx, model, e.service, e.store, intent)
 }
 
 // ApplyIntent 负责串起“app reducer 产出 effect -> runtime 真执行 -> app 回填成功状态”。
 // 当前只为 create/kill 打通真实闭环；remove/restart 仍停留在 reducer 的 state-only 边界。
 func ApplyIntent(ctx context.Context, model app.Model, service intentRuntimeService, intent app.Intent) (app.Model, error) {
-	return applyIntentWithStore(ctx, model, service, NewSessionStore(), intent)
+	next, _, err := applyIntentWithStore(ctx, model, service, NewSessionStore(), intent)
+	return next, err
 }
 
-func applyIntentWithStore(ctx context.Context, model app.Model, service intentRuntimeService, store *SessionStore, intent app.Intent) (app.Model, error) {
+func applyIntentWithStore(ctx context.Context, model app.Model, service intentRuntimeService, store *SessionStore, intent app.Intent) (app.Model, tea.Cmd, error) {
 	next := model.Apply(intent)
+	var cmd tea.Cmd
 	for _, effect := range next.PendingEffects {
 		var err error
-		next, err = applyEffect(ctx, next, service, store, effect)
+		next, cmd, err = applyEffect(ctx, next, service, store, effect)
 		if err != nil {
 			next.Notice = &app.NoticeState{Message: err.Error()}
-			return next, err
+			return next, nil, err
 		}
 	}
 	next.PendingEffects = nil
-	return next, nil
+	if store != nil {
+		next.PreviewStreamNext = store.NextPreviewMessageCmd
+	}
+	return next, cmd, nil
 }
 
-func applyEffect(ctx context.Context, model app.Model, service intentRuntimeService, store *SessionStore, effect app.Effect) (app.Model, error) {
+func applyEffect(ctx context.Context, model app.Model, service intentRuntimeService, store *SessionStore, effect app.Effect) (app.Model, tea.Cmd, error) {
 	switch typed := effect.(type) {
 	case app.CreateTerminalEffect:
 		result, err := ExecuteWorkbenchAction(ctx, service, PendingWorkbenchAction{
@@ -168,17 +175,17 @@ func applyEffect(ctx context.Context, model app.Model, service intentRuntimeServ
 			Size:    typed.Size,
 		})
 		if err != nil {
-			return model, err
+			return model, nil, err
 		}
 		attach, err := service.Attach(ctx, result.TerminalID, "rw")
 		if err != nil {
 			_ = service.Kill(ctx, result.TerminalID)
-			return model, err
+			return model, nil, err
 		}
 		snapshot, err := service.Snapshot(ctx, result.TerminalID, 0, 0)
 		if err != nil {
 			_ = service.Kill(ctx, result.TerminalID)
-			return model, err
+			return model, nil, err
 		}
 		return model.Apply(app.CreateTerminalSucceededIntent{
 			PaneID:     typed.PaneID,
@@ -187,34 +194,60 @@ func applyEffect(ctx context.Context, model app.Model, service intentRuntimeServ
 			Name:       typed.Name,
 			Channel:    attach.Channel,
 			Snapshot:   snapshot,
-		}), nil
+		}), nil, nil
 	case app.KillTerminalEffect:
 		if _, err := ExecuteWorkbenchAction(ctx, service, PendingWorkbenchAction{
 			Kind:       PendingWorkbenchActionKillTerminal,
 			TerminalID: string(typed.TerminalID),
 		}); err != nil {
-			return model, err
+			return model, nil, err
 		}
-		return model.Apply(app.KillTerminalSucceededIntent{TerminalID: typed.TerminalID}), nil
+		return model.Apply(app.KillTerminalSucceededIntent{TerminalID: typed.TerminalID}), nil, nil
 	case app.RefreshPreviewEffect:
 		attach, err := service.Attach(ctx, string(typed.TerminalID), "observer")
 		if err != nil {
-			return model, err
+			return model, nil, err
 		}
 		snapshot, err := service.Snapshot(ctx, string(typed.TerminalID), 0, 0)
 		if err != nil {
-			return model, err
+			return model, nil, err
 		}
+		stream, cancel := service.Stream(attach.Channel)
 		binding := PreviewBinding{Revision: model.Pool.PreviewSubscriptionRevision}
 		if store != nil {
-			binding = store.BindPreview(typed.TerminalID, attach.Channel, snapshot)
+			binding = store.BindPreview(typed.TerminalID, attach.Channel, snapshot, stream, cancel)
 		}
-		return model.Apply(app.PreviewTerminalSucceededIntent{
+		next := model.Apply(app.PreviewTerminalSucceededIntent{
 			TerminalID:           typed.TerminalID,
 			Channel:              attach.Channel,
 			Snapshot:             snapshot,
 			SubscriptionRevision: binding.Revision,
-		}), nil
+		})
+		if store != nil {
+			return next, store.NextPreviewMessageCmd(), nil
+		}
+		return next, nil, nil
+	case app.AttachTerminalEffect:
+		mode := "collaborator"
+		if typed.ReadOnly {
+			mode = "observer"
+		}
+		attach, err := service.Attach(ctx, string(typed.TerminalID), mode)
+		if err != nil {
+			return model, nil, err
+		}
+		snapshot, err := service.Snapshot(ctx, string(typed.TerminalID), 0, 0)
+		if err != nil {
+			return model, nil, err
+		}
+		return model.Apply(app.AttachTerminalSucceededIntent{
+			PaneID:     typed.PaneID,
+			TerminalID: typed.TerminalID,
+			Channel:    attach.Channel,
+			Snapshot:   snapshot,
+			ReadOnly:   typed.ReadOnly,
+			ForPreview: typed.ForPreview,
+		}), nil, nil
 	case app.UpdateTerminalMetadataEffect:
 		if _, err := ExecuteWorkbenchAction(ctx, service, PendingWorkbenchAction{
 			Kind:       PendingWorkbenchActionSetMetadata,
@@ -222,26 +255,26 @@ func applyEffect(ctx context.Context, model app.Model, service intentRuntimeServ
 			Name:       typed.Name,
 			Tags:       typed.Tags,
 		}); err != nil {
-			return model, err
+			return model, nil, err
 		}
 		return model.Apply(app.UpdateTerminalMetadataSucceededIntent{
 			TerminalID: typed.TerminalID,
 			Name:       typed.Name,
 			Tags:       typed.Tags,
-		}), nil
+		}), nil, nil
 	case app.RemoveTerminalEffect:
 		if _, err := ExecuteWorkbenchAction(ctx, service, PendingWorkbenchAction{
 			Kind:       PendingWorkbenchActionRemoveTerminal,
 			TerminalID: string(typed.TerminalID),
 		}); err != nil {
-			return model, err
+			return model, nil, err
 		}
 		return model.Apply(app.RemoveTerminalSucceededIntent{
 			TerminalID: typed.TerminalID,
 			Visible:    typed.Visible,
 			Name:       typed.Name,
-		}), nil
+		}), nil, nil
 	default:
-		return model, nil
+		return model, nil, nil
 	}
 }

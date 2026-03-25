@@ -1,6 +1,10 @@
 package app
 
-import "testing"
+import (
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 func TestRootModelCanSwitchBetweenWorkbenchAndTerminalPoolScreens(t *testing.T) {
 	model := NewModel()
@@ -59,5 +63,21 @@ func TestAppShellCanNavigateBetweenWorkbenchAndTerminalPool(t *testing.T) {
 	}
 	if workbench.FocusTarget != FocusWorkbench {
 		t.Fatalf("expected workbench focus, got %q", workbench.FocusTarget)
+	}
+}
+
+func TestAppShellHotkeyCanNavigateBetweenWorkbenchAndTerminalPool(t *testing.T) {
+	model := NewModel()
+
+	teaModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
+	pool := teaModel.(Model)
+	if pool.Screen != ScreenTerminalPool {
+		t.Fatalf("expected hotkey to open pool, got %q", pool.Screen)
+	}
+
+	teaModel, _ = pool.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	workbench := teaModel.(Model)
+	if workbench.Screen != ScreenWorkbench {
+		t.Fatalf("expected esc to return workbench, got %q", workbench.Screen)
 	}
 }

@@ -121,7 +121,7 @@ func DefaultHelpOverlay() *HelpOverlayState {
 	return &HelpOverlayState{
 		Sections: []HelpSection{
 			{Title: "Most Used", Items: []string{"c-f connect pane", "c-o new float", "c-t tab actions"}},
-			{Title: "Pane / Tab / Workspace", Items: []string{"split pane", "close pane", "switch tab", "switch workspace"}},
+			{Title: "Pane / Tab / Workspace", Items: []string{"split pane", "close pane", "switch tab", "switch workspace", "p terminal pool"}},
 			{Title: "Shared Terminal", Items: []string{"connect existing", "become owner", "kill vs remove", "restart exited"}},
 			{Title: "Floating", Items: []string{"move", "resize", "recall center", "close float"}},
 			{Title: "Exit / Close", Items: []string{"close pane keeps terminal", "Esc closes overlay"}},

@@ -236,7 +236,7 @@ func TestTerminalPoolSelectionSwitchesReadonlyLivePreviewSubscription(t *testing
 	if !selected.Pool.PreviewReadonly {
 		t.Fatal("expected preview to remain readonly")
 	}
-	if selected.Pool.PreviewSubscriptionRevision != 1 {
+	if selected.Pool.PreviewSubscriptionRevision != 2 {
 		t.Fatalf("expected preview subscription refresh, got %d", selected.Pool.PreviewSubscriptionRevision)
 	}
 	if len(selected.PendingEffects) != 1 {
@@ -331,6 +331,27 @@ func TestTerminalPoolSupportsMetadataTagsSearchAndEdit(t *testing.T) {
 	}
 	if effect.TerminalID != types.TerminalID("term-2") || effect.Name != "ops-primary" {
 		t.Fatalf("expected terminal metadata target to be term-2, got %#v", effect)
+	}
+}
+
+func TestTerminalPoolSearchSwitchesPreviewAndRefreshesSubscription(t *testing.T) {
+	model := newTerminalPoolModelForIntentTest().Apply(OpenTerminalPoolIntent{})
+
+	searched := model.Apply(SearchTerminalPoolIntent{Query: "backend"})
+	if searched.Pool.SelectedTerminalID != types.TerminalID("term-1") {
+		t.Fatalf("expected search to select term-1, got %q", searched.Pool.SelectedTerminalID)
+	}
+	if searched.Pool.PreviewTerminalID != types.TerminalID("term-1") {
+		t.Fatalf("expected search to switch preview terminal, got %q", searched.Pool.PreviewTerminalID)
+	}
+	if searched.Pool.PreviewSubscriptionRevision != 2 {
+		t.Fatalf("expected search to refresh preview subscription, got %d", searched.Pool.PreviewSubscriptionRevision)
+	}
+	if len(searched.PendingEffects) != 1 {
+		t.Fatalf("expected one preview refresh effect, got %d", len(searched.PendingEffects))
+	}
+	if _, ok := searched.PendingEffects[0].(RefreshPreviewEffect); !ok {
+		t.Fatalf("expected preview refresh effect, got %T", searched.PendingEffects[0])
 	}
 }
 

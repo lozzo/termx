@@ -34,7 +34,7 @@ func TestSessionStoreTracksReadonlyPreviewSubscription(t *testing.T) {
 		Size:       protocol.Size{Cols: 100, Rows: 30},
 	}
 
-	store.BindPreview(types.TerminalID("term-2"), 11, snapshot)
+	store.BindPreview(types.TerminalID("term-2"), 11, snapshot, nil, nil)
 	session, ok := store.Session(types.TerminalID("term-2"))
 	if !ok {
 		t.Fatal("expected preview session to exist")
