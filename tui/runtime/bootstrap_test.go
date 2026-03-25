@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/lozzow/termx/protocol"
@@ -19,6 +20,11 @@ type stubClient struct {
 	lastAttachID      string
 	lastAttachMode    string
 	lastKilledID      string
+	attachErr         error
+	snapshotErr       error
+	attachErrByID     map[string]error
+	snapshotErrByID   map[string]error
+	listResult        *protocol.ListResult
 }
 
 func (c *stubClient) Close() error { return nil }
@@ -37,6 +43,9 @@ func (c *stubClient) SetMetadata(context.Context, string, string, map[string]str
 	return nil
 }
 func (c *stubClient) List(context.Context) (*protocol.ListResult, error) {
+	if c.listResult != nil {
+		return c.listResult, nil
+	}
 	return &protocol.ListResult{}, nil
 }
 func (c *stubClient) Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error) {
@@ -48,13 +57,25 @@ func (c *stubClient) Events(context.Context, protocol.EventsParams) (<-chan prot
 func (c *stubClient) Attach(_ context.Context, terminalID string, mode string) (*protocol.AttachResult, error) {
 	c.lastAttachID = terminalID
 	c.lastAttachMode = mode
+	if err, ok := c.attachErrByID[terminalID]; ok {
+		return nil, err
+	}
+	if c.attachErr != nil {
+		return nil, c.attachErr
+	}
 	if c.attachResult != nil {
 		return c.attachResult, nil
 	}
 	return &protocol.AttachResult{Channel: 7, Mode: mode}, nil
 }
 
-func (c *stubClient) Snapshot(context.Context, string, int, int) (*protocol.Snapshot, error) {
+func (c *stubClient) Snapshot(_ context.Context, terminalID string, _ int, _ int) (*protocol.Snapshot, error) {
+	if err, ok := c.snapshotErrByID[terminalID]; ok {
+		return nil, err
+	}
+	if c.snapshotErr != nil {
+		return nil, c.snapshotErr
+	}
 	if c.snapshot != nil {
 		return c.snapshot, nil
 	}
@@ -95,6 +116,79 @@ func TestBootstrapCreatesTemporaryWorkspaceWithLiveShellPane(t *testing.T) {
 	}
 	if session, ok := model.Sessions[pane.TerminalID]; !ok || session.Channel != 7 {
 		t.Fatalf("expected live session for %q, got %#v", pane.TerminalID, session)
+	}
+}
+
+func TestBootstrapAttachIDHydratesMetadataFromDaemonTruth(t *testing.T) {
+	client := &stubClient{
+		listResult: &protocol.ListResult{
+			Terminals: []protocol.TerminalInfo{{
+				ID:      "term-9",
+				Name:    "api-dev",
+				Command: []string{"bash", "-lc", "npm run dev"},
+				Tags:    map[string]string{"env": "dev"},
+				State:   "exited",
+				Size:    protocol.Size{Cols: 100, Rows: 30},
+			}},
+		},
+		attachResult: &protocol.AttachResult{Channel: 8, Mode: "rw"},
+		snapshot:     &protocol.Snapshot{TerminalID: "term-9", Size: protocol.Size{Cols: 100, Rows: 30}},
+	}
+
+	model, err := Bootstrap(context.Background(), client, BootstrapConfig{
+		Workspace: "main",
+		AttachID:  "term-9",
+	})
+	if err != nil {
+		t.Fatalf("Bootstrap returned error: %v", err)
+	}
+
+	meta := model.Terminals[types.TerminalID("term-9")]
+	if meta.Name != "api-dev" {
+		t.Fatalf("expected daemon name, got %#v", meta)
+	}
+	if len(meta.Command) != 3 || meta.Command[2] != "npm run dev" {
+		t.Fatalf("expected daemon command, got %#v", meta.Command)
+	}
+	if meta.State != "exited" || meta.Tags["env"] != "dev" {
+		t.Fatalf("expected daemon metadata, got %#v", meta)
+	}
+}
+
+func TestBootstrappedModelUpdateCreateFailureCleansRemoteTerminalAndKeepsPaneUnbound(t *testing.T) {
+	client := &stubClient{
+		createResult: &protocol.CreateResult{TerminalID: "term-created", State: "running"},
+		attachErrByID: map[string]error{
+			"term-created": errors.New("attach failed"),
+		},
+		listResult:   &protocol.ListResult{Terminals: []protocol.TerminalInfo{{ID: "term-1", Name: "shell", Command: []string{"/bin/sh"}, State: "running"}}},
+		attachResult: &protocol.AttachResult{Channel: 7, Mode: "rw"},
+		snapshot:     &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}},
+	}
+	model, err := Bootstrap(context.Background(), client, BootstrapConfig{
+		Workspace: "main",
+		AttachID:  "term-1",
+	})
+	if err != nil {
+		t.Fatalf("Bootstrap returned error: %v", err)
+	}
+
+	teaModel, _ := model.Update(app.IntentMessage{Intent: app.IntentSplitVertical})
+	split := teaModel.(app.Model)
+	teaModel, _ = split.Update(app.IntentMessage{Intent: app.ConfirmCreateTerminalIntent{
+		Command: []string{"/bin/sh"},
+		Name:    "shell-2",
+	}})
+	updated := teaModel.(app.Model)
+	pane, _ := updated.Workspace.ActiveTab().ActivePane()
+	if pane.TerminalID != "" || pane.SlotState != types.PaneSlotUnconnected {
+		t.Fatalf("expected pane to stay unbound after create cleanup, got %+v", pane)
+	}
+	if client.lastKilledID != "term-created" {
+		t.Fatalf("expected created terminal cleanup kill, got %q", client.lastKilledID)
+	}
+	if updated.Notice == nil || updated.Notice.Message == "" {
+		t.Fatal("expected user notice for create failure")
 	}
 }
 

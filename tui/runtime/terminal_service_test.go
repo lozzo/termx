@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -154,6 +155,29 @@ func TestApplyIntentExecutesKillEffectFromAppReducerAndMarksExited(t *testing.T)
 	pane, _ := next.Workspace.ActiveTab().ActivePane()
 	if pane.SlotState != types.PaneSlotExited {
 		t.Fatalf("expected exited pane after runtime kill, got %+v", pane)
+	}
+}
+
+func TestApplyIntentKillsCreatedTerminalWhenAttachFails(t *testing.T) {
+	service := NewTerminalService(&stubClient{
+		createResult: &protocol.CreateResult{TerminalID: "term-created", State: "running"},
+		attachErr:    errors.New("attach failed"),
+	})
+	model := splitUnconnectedPaneModelForRuntimeTest()
+
+	next, err := ApplyIntent(context.Background(), model, service, app.ConfirmCreateTerminalIntent{
+		Command: []string{"/bin/sh"},
+		Name:    "shell-2",
+	})
+	if err == nil {
+		t.Fatal("expected attach failure to surface")
+	}
+	if service.client.(*stubClient).lastKilledID != "term-created" {
+		t.Fatalf("expected cleanup kill for created terminal, got %q", service.client.(*stubClient).lastKilledID)
+	}
+	pane, _ := next.Workspace.ActiveTab().ActivePane()
+	if pane.TerminalID != "" || pane.SlotState != types.PaneSlotUnconnected {
+		t.Fatalf("expected pane to remain unbound, got %+v", pane)
 	}
 }
 

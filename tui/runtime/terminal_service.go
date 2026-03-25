@@ -122,6 +122,7 @@ func ApplyIntent(ctx context.Context, model app.Model, service intentRuntimeServ
 		var err error
 		next, err = applyEffect(ctx, next, service, effect)
 		if err != nil {
+			next.Notice = &app.NoticeState{Message: err.Error()}
 			return next, err
 		}
 	}
@@ -143,10 +144,12 @@ func applyEffect(ctx context.Context, model app.Model, service intentRuntimeServ
 		}
 		attach, err := service.Attach(ctx, result.TerminalID, "rw")
 		if err != nil {
+			_ = service.Kill(ctx, result.TerminalID)
 			return model, err
 		}
 		snapshot, err := service.Snapshot(ctx, result.TerminalID, 0, 0)
 		if err != nil {
+			_ = service.Kill(ctx, result.TerminalID)
 			return model, err
 		}
 		return model.Apply(app.CreateTerminalSucceededIntent{

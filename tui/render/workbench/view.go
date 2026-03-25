@@ -62,7 +62,7 @@ func renderPrimaryPane(model app.Model, width int) string {
 		return chrome.Frame(title, liveMeta(model, pane), width, livePaneLines(model, pane))
 	case types.PaneSlotExited:
 		title := terminalName(model, pane.TerminalID)
-		return chrome.Frame(title, "exited", width, []string{"terminal exited", "press R to restart"})
+		return chrome.Frame(title, "exited", width, []string{"terminal exited", "restart not wired yet"})
 	default:
 		return chrome.Frame("unconnected", "unconnected", width, []string{"No terminal connected"})
 	}

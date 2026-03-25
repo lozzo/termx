@@ -121,6 +121,12 @@ func TestClosePaneDisconnectReconnectKillRemoveAndRestartLifecycle(t *testing.T)
 	if reconnectedPane.TerminalID != types.TerminalID("term-2") {
 		t.Fatalf("expected reconnect to term-2, got %q", reconnectedPane.TerminalID)
 	}
+	if slicesContainsPane(reconnected.Terminals[types.TerminalID("term-1")].AttachedPaneIDs, reconnectedPane.ID) {
+		t.Fatalf("expected old terminal to drop pane binding, got %#v", reconnected.Terminals[types.TerminalID("term-1")])
+	}
+	if reconnected.Terminals[types.TerminalID("term-1")].OwnerPaneID == reconnectedPane.ID {
+		t.Fatalf("expected old terminal owner to clear, got %#v", reconnected.Terminals[types.TerminalID("term-1")])
+	}
 
 	killed := newLivePaneModelForIntentTest().Apply(IntentClosePaneAndKillTerminal)
 	if killed.Terminals[types.TerminalID("term-1")].State != stateterminal.StateRunning {
@@ -150,13 +156,17 @@ func TestClosePaneDisconnectReconnectKillRemoveAndRestartLifecycle(t *testing.T)
 		t.Fatalf("expected visible remove notice, got %#v", removed.Notice)
 	}
 
-	restarted := killed.Apply(RestartTerminalIntent{TerminalID: types.TerminalID("term-1")})
-	if restarted.Terminals[types.TerminalID("term-1")].State != stateterminal.StateRunning {
-		t.Fatal("expected state-only restart to keep terminal id and mark running")
+	restartBase := newExitedPaneModelForIntentTest()
+	restarted := restartBase.Apply(RestartTerminalIntent{TerminalID: types.TerminalID("term-1")})
+	if restarted.Terminals[types.TerminalID("term-1")].State != stateterminal.StateExited {
+		t.Fatal("expected restart to remain exited until real runtime path exists")
 	}
 	restartedPane, _ := restarted.Workspace.ActiveTab().ActivePane()
 	if restartedPane.TerminalID != types.TerminalID("term-1") {
 		t.Fatalf("expected restart to preserve terminal id, got %q", restartedPane.TerminalID)
+	}
+	if restarted.Notice == nil || !strings.Contains(restarted.Notice.Message, "not wired") {
+		t.Fatalf("expected conservative restart notice, got %#v", restarted.Notice)
 	}
 }
 
@@ -277,4 +287,25 @@ func newFloatingModelForIntentTest() Model {
 	})
 	tab.ActivePaneID = types.PaneID("float-1")
 	return model
+}
+
+func newExitedPaneModelForIntentTest() Model {
+	model := newWorkbenchModelForIntentTest()
+	tab := model.Workspace.ActiveTab()
+	pane, _ := tab.ActivePane()
+	pane.SlotState = types.PaneSlotExited
+	tab.TrackPane(pane)
+	meta := model.Terminals[types.TerminalID("term-1")]
+	meta.State = stateterminal.StateExited
+	model.Terminals[types.TerminalID("term-1")] = meta
+	return model
+}
+
+func slicesContainsPane(items []types.PaneID, target types.PaneID) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
 }

@@ -75,6 +75,22 @@ func TestFollowerPaneShowsBecomeOwnerHint(t *testing.T) {
 	}
 }
 
+func TestExitedPaneDoesNotPromiseUnwiredRestart(t *testing.T) {
+	model := sampleLivePaneWorkbenchState()
+	tab := model.Workspace.ActiveTab()
+	pane, _ := tab.ActivePane()
+	pane.SlotState = types.PaneSlotExited
+	tab.TrackPane(pane)
+	meta := model.Terminals[types.TerminalID("term-1")]
+	meta.State = stateterminal.StateExited
+	model.Terminals[types.TerminalID("term-1")] = meta
+
+	view := Render(model, 120, 20)
+	if strings.Contains(view, "press R to restart") {
+		t.Fatal("expected exited pane copy to avoid unwired restart promise")
+	}
+}
+
 func sampleWorkbenchState() app.Model {
 	model := sampleLivePaneWorkbenchState()
 	model.Terminals[types.TerminalID("term-1")] = stateterminal.Metadata{

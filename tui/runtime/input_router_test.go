@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
@@ -91,6 +92,39 @@ func TestInputRouterBlocksOverlayInputAndSkipsFollowerResize(t *testing.T) {
 	}
 	if service.lastResizeChannel != 0 {
 		t.Fatalf("expected follower resize to be ignored, got channel=%d", service.lastResizeChannel)
+	}
+}
+
+func TestInputRouterMapsCoreControlKeysToPTYInput(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  tea.KeyMsg
+		want []byte
+	}{
+		{name: "enter", msg: tea.KeyMsg{Type: tea.KeyEnter}, want: []byte{'\r'}},
+		{name: "backspace", msg: tea.KeyMsg{Type: tea.KeyBackspace}, want: []byte{0x7f}},
+		{name: "tab", msg: tea.KeyMsg{Type: tea.KeyTab}, want: []byte{'\t'}},
+		{name: "escape", msg: tea.KeyMsg{Type: tea.KeyEsc}, want: []byte{0x1b}},
+		{name: "up", msg: tea.KeyMsg{Type: tea.KeyUp}, want: []byte("\x1b[A")},
+		{name: "down", msg: tea.KeyMsg{Type: tea.KeyDown}, want: []byte("\x1b[B")},
+		{name: "left", msg: tea.KeyMsg{Type: tea.KeyLeft}, want: []byte("\x1b[D")},
+		{name: "right", msg: tea.KeyMsg{Type: tea.KeyRight}, want: []byte("\x1b[C")},
+		{name: "ctrl+c", msg: tea.KeyMsg{Type: tea.KeyCtrlC}, want: []byte{0x03}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &stubTerminalService{}
+			router := NewInputRouter(service)
+			state := sampleFocusedLivePaneState()
+
+			if err := router.HandleKey(context.Background(), state, tt.msg); err != nil {
+				t.Fatalf("HandleKey returned error: %v", err)
+			}
+			if !bytes.Equal(service.lastInputData, tt.want) {
+				t.Fatalf("expected %v, got %v", tt.want, service.lastInputData)
+			}
+		})
 	}
 }
 

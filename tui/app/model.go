@@ -72,12 +72,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch typed := msg.(type) {
 	case IntentMessage:
 		if m.IntentExecutor != nil {
-			next, err := m.IntentExecutor.ExecuteIntent(context.Background(), m, typed.Intent)
-			if err == nil {
-				return next, nil
-			}
-			m.Notice = &NoticeState{Message: err.Error()}
-			return m, nil
+			next, _ := m.IntentExecutor.ExecuteIntent(context.Background(), m, typed.Intent)
+			return next, nil
 		}
 		return m.Apply(typed.Intent), nil
 	default:

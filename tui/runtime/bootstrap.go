@@ -46,6 +46,7 @@ func Bootstrap(ctx context.Context, client Client, cfg BootstrapConfig) (app.Mod
 	var attach *protocol.AttachResult
 	var snapshot *protocol.Snapshot
 	var err error
+	var hydrated *protocol.TerminalInfo
 	if terminalID == "" {
 		command := []string{cfg.DefaultShell}
 		if len(command) == 1 && command[0] == "" {
@@ -56,6 +57,12 @@ func Bootstrap(ctx context.Context, client Client, cfg BootstrapConfig) (app.Mod
 			return model, createErr
 		}
 		terminalID = created.TerminalID
+	} else {
+		list, listErr := client.List(ctx)
+		if listErr != nil {
+			return model, listErr
+		}
+		hydrated = findTerminalInfo(list, terminalID)
 	}
 
 	attach, err = service.Attach(ctx, terminalID, "rw")
@@ -75,14 +82,7 @@ func Bootstrap(ctx context.Context, client Client, cfg BootstrapConfig) (app.Mod
 	tab.ActivePaneID = pane.ID
 
 	model.Workspace = ws
-	model.Terminals[pane.TerminalID] = stateterminal.Metadata{
-		ID:              pane.TerminalID,
-		Name:            "shell",
-		Command:         []string{cfg.DefaultShell},
-		State:           stateterminal.StateRunning,
-		OwnerPaneID:     pane.ID,
-		AttachedPaneIDs: []types.PaneID{pane.ID},
-	}
+	model.Terminals[pane.TerminalID] = metadataFromBootstrap(cfg.DefaultShell, pane, hydrated)
 	model.Sessions[pane.TerminalID] = app.TerminalSession{
 		TerminalID: pane.TerminalID,
 		Channel:    attach.Channel,
@@ -90,4 +90,52 @@ func Bootstrap(ctx context.Context, client Client, cfg BootstrapConfig) (app.Mod
 		Snapshot:   snapshot,
 	}
 	return model, nil
+}
+
+func metadataFromBootstrap(defaultShell string, pane workspace.PaneState, info *protocol.TerminalInfo) stateterminal.Metadata {
+	meta := stateterminal.Metadata{
+		ID:              pane.TerminalID,
+		Name:            "shell",
+		Command:         []string{defaultShell},
+		State:           stateterminal.StateRunning,
+		OwnerPaneID:     pane.ID,
+		AttachedPaneIDs: []types.PaneID{pane.ID},
+	}
+	if info == nil {
+		return meta
+	}
+	meta.Name = info.Name
+	meta.Command = append([]string(nil), info.Command...)
+	meta.Tags = cloneProtocolTags(info.Tags)
+	switch info.State {
+	case "exited":
+		meta.State = stateterminal.StateExited
+	default:
+		meta.State = stateterminal.StateRunning
+	}
+	return meta
+}
+
+func findTerminalInfo(list *protocol.ListResult, terminalID string) *protocol.TerminalInfo {
+	if list == nil {
+		return nil
+	}
+	for _, info := range list.Terminals {
+		if info.ID == terminalID {
+			copyInfo := info
+			return &copyInfo
+		}
+	}
+	return nil
+}
+
+func cloneProtocolTags(tags map[string]string) map[string]string {
+	if len(tags) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(tags))
+	for key, value := range tags {
+		out[key] = value
+	}
+	return out
 }

@@ -303,17 +303,10 @@ func (m Model) applyRemoveTerminal(in RemoveTerminalIntent) Model {
 func (m Model) applyRestartTerminal(terminalID types.TerminalID) Model {
 	// 当前 daemon 协议还没有独立 restart 接口，这里先明确维持 state-only 语义，
 	// 避免伪造 runtime 已执行的假象。
-	meta, ok := m.Terminals[terminalID]
-	if !ok {
+	if _, ok := m.Terminals[terminalID]; !ok {
 		return m
 	}
-	meta.State = stateterminal.StateRunning
-	meta.LastInteraction = time.Now().UTC()
-	m.Terminals[terminalID] = meta
-	m.updateAllPanesForTerminal(terminalID, func(next workspace.PaneState) workspace.PaneState {
-		next.SlotState = types.PaneSlotLive
-		return next
-	})
+	m.Notice = &NoticeState{Message: fmt.Sprintf("restart for %q is not wired to runtime yet", terminalID)}
 	return m
 }
 
@@ -452,6 +445,10 @@ func (m Model) bindPane(paneID types.PaneID, terminalID types.TerminalID) {
 	pane, ok := tab.Pane(paneID)
 	if !ok {
 		return
+	}
+	if pane.TerminalID != "" && pane.TerminalID != terminalID {
+		m.unbindPane(pane)
+		pane.TerminalID = ""
 	}
 	meta, ok := m.Terminals[terminalID]
 	if !ok {
