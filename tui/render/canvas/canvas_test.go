@@ -76,3 +76,17 @@ func TestCanvasSetKeepsRenderedWidthInsideCanvas(t *testing.T) {
 		t.Fatalf("unexpected row: %q", got)
 	}
 }
+
+func TestCanvasSetUsesActualContentWidthForBounds(t *testing.T) {
+	canvas := New(2, 1)
+	canvas.Fill(types.Rect{X: 0, Y: 0, W: 2, H: 1}, BlankCell())
+	canvas.Set(1, 0, Cell{Content: "界", Width: 1})
+
+	got := canvas.Lines()[0]
+	if width := xansi.StringWidth(got); width != 2 {
+		t.Fatalf("unexpected display width: %d for %q", width, got)
+	}
+	if got != "  " {
+		t.Fatalf("unexpected row: %q", got)
+	}
+}

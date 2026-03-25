@@ -218,8 +218,9 @@ func normalizeCell(cell Cell) Cell {
 		cell.Content = " "
 		cell.Width = 1
 	}
-	if cell.Width <= 0 {
-		cell.Width = xansi.StringWidth(cell.Content)
+	actualWidth := xansi.StringWidth(cell.Content)
+	if actualWidth > cell.Width {
+		cell.Width = actualWidth
 	}
 	if cell.Width <= 0 {
 		cell.Width = 1
