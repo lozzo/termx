@@ -453,6 +453,8 @@ git commit -m "恢复TUI工作台渲染主干"
 - Create: `tui/app/intent_test.go`
 - Modify: `tui/app/model.go`
 - Modify: `tui/app/model_test.go`
+- Modify: `tui/runtime/terminal_service.go`
+- Modify: `tui/runtime/terminal_service_test.go`
 - Create: `tui/render/overlay/view.go`
 - Create: `tui/render/overlay/view_test.go`
 - Modify: `tui/render/workbench/view.go`
@@ -546,6 +548,26 @@ func TestClosePaneAndKillTerminalStopsTerminal(t *testing.T) {
         t.Fatal("expected terminal to be marked exited")
     }
 }
+
+func TestRuntimeExecutesCreateAndKillTerminalActions(t *testing.T) {
+    svc := &stubTerminalService{}
+    if err := ExecuteWorkbenchAction(context.Background(), svc, PendingWorkbenchAction{
+        Kind:    PendingWorkbenchActionCreateTerminal,
+        Command: []string{"/bin/sh"},
+        Name:    "shell-2",
+    }); err != nil {
+        t.Fatalf("create action returned error: %v", err)
+    }
+    if err := ExecuteWorkbenchAction(context.Background(), svc, PendingWorkbenchAction{
+        Kind:       PendingWorkbenchActionKillTerminal,
+        TerminalID: "term-2",
+    }); err != nil {
+        t.Fatalf("kill action returned error: %v", err)
+    }
+    if svc.lastCreatedName != "shell-2" || svc.lastKilledTerminalID != "term-2" {
+        t.Fatal("expected runtime service to receive create/kill actions")
+    }
+}
 ```
 
 - [ ] **Step 2: Run app/overlay tests to verify the interaction reducer does not exist yet**
@@ -553,7 +575,7 @@ func TestClosePaneAndKillTerminalStopsTerminal(t *testing.T) {
 Run:
 
 ```bash
-PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/app ./tui/render/overlay ./tui/domain/pool -run 'TestSplitCreatesPaneSlotAndOpensConnectDialog|TestCancelConnectLeavesUnconnectedPane|TestConnectExistingPickerUsesGlobalScopeAndRecentUserInteractionSort|TestNewTabAndNewFloatOpenTheSameConnectDialog|TestCreateNewTerminalBranchCreatesAndBindsTerminal|TestClosePaneDoesNotKillTerminalByDefault|TestDisconnectPaneKeepsPaneAndClearsBinding|TestReconnectPaneRebindsToSelectedTerminal|TestClosePaneAndKillTerminalStopsTerminal' -count=1
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/app ./tui/render/overlay ./tui/domain/pool ./tui/runtime -run 'TestSplitCreatesPaneSlotAndOpensConnectDialog|TestCancelConnectLeavesUnconnectedPane|TestConnectExistingPickerUsesGlobalScopeAndRecentUserInteractionSort|TestNewTabAndNewFloatOpenTheSameConnectDialog|TestCreateNewTerminalBranchCreatesAndBindsTerminal|TestClosePaneDoesNotKillTerminalByDefault|TestDisconnectPaneKeepsPaneAndClearsBinding|TestReconnectPaneRebindsToSelectedTerminal|TestClosePaneAndKillTerminalStopsTerminal|TestRuntimeExecutesCreateAndKillTerminalActions' -count=1
 ```
 
 Expected: FAIL because create/connect flow is not implemented.
@@ -577,6 +599,7 @@ Implement:
   - disconnect pane
   - reconnect pane
   - close pane and kill terminal
+- runtime executor must lower `create new terminal` and `kill terminal` into concrete `TerminalService` calls; reducer success alone is not enough
 
 Reference:
 
@@ -596,7 +619,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tui/domain/pool/query.go tui/domain/pool/query_test.go tui/app/intent.go tui/app/intent_test.go tui/app/model.go tui/app/model_test.go tui/render/overlay/view.go tui/render/overlay/view_test.go tui/render/workbench/view.go
+git add tui/domain/pool/query.go tui/domain/pool/query_test.go tui/app/intent.go tui/app/intent_test.go tui/app/model.go tui/app/model_test.go tui/runtime/terminal_service.go tui/runtime/terminal_service_test.go tui/render/overlay/view.go tui/render/overlay/view_test.go tui/render/workbench/view.go
 git commit -m "打通TUI弹层与面板连接语义"
 ```
 
@@ -715,6 +738,10 @@ git commit -m "补齐TUI终端池独立页面"
 - Create: `tui/runtime/workspace_store_test.go`
 - Modify: `tui/runtime.go`
 - Modify: `tui/runtime_test.go`
+- Modify: `tui/runtime/program.go`
+- Modify: `tui/runtime/program_test.go`
+- Modify: `tui/runtime/update_loop.go`
+- Modify: `tui/runtime/update_loop_test.go`
 - Modify: `cmd/termx/main_test.go`
 - Modify: `docs/superpowers/specs/2026-03-25-tui-product-definition-design.md`
 
@@ -755,6 +782,8 @@ Implement:
 - startup restore path from `Config.WorkspaceStatePath`
 - debounced save after workspace-affecting state mutations
 - save-on-exit hook so the next launch can restore the last workbench state
+- `update_loop` is responsible for identifying workspace-affecting mutations and scheduling debounced save requests
+- `program.go` is responsible for exit-time flush and final save before Bubble Tea shutdown returns
 - graceful fallback to temp workspace when restore fails
 - update `cmd/termx` tests if any config expectations changed
 - spec note updates only if implementation forced a product-level clarification
@@ -774,7 +803,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tui/runtime/workspace_store.go tui/runtime/workspace_store_test.go tui/runtime.go tui/runtime_test.go cmd/termx/main_test.go docs/superpowers/specs/2026-03-25-tui-product-definition-design.md
+git add tui/runtime/workspace_store.go tui/runtime/workspace_store_test.go tui/runtime.go tui/runtime_test.go tui/runtime/program.go tui/runtime/program_test.go tui/runtime/update_loop.go tui/runtime/update_loop_test.go cmd/termx/main_test.go docs/superpowers/specs/2026-03-25-tui-product-definition-design.md
 git commit -m "完成TUI第一阶段持久化闭环"
 ```
 
