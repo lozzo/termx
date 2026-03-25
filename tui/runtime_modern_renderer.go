@@ -1769,10 +1769,12 @@ func (r modernScreenShellRenderer) renderOverlayViewport(theme modernShellTheme,
 	canvas.stampLines(0, 0, backdropLines)
 	dialogX := max(0, (width-dialogRenderWidth)/2)
 	dialogY := max(0, (canvas.height-len(dialogLines))/2)
+	// 中央 modal 占据的行先整体清空，避免左右 gutter 直接露出底层 pane 标题，
+	// 否则在中等窗口里会出现“overlay 标题和 backdrop 文字撞在同一行”的视觉噪音。
+	canvas.clearRect(0, dialogY, width, len(dialogLines))
 	if width >= 68 {
 		canvas.stampLines(dialogX+2, dialogY+1, renderModernOverlayShadow(dialogRenderWidth, len(dialogLines)))
 	}
-	canvas.clearRect(dialogX, dialogY, dialogRenderWidth, len(dialogLines))
 	canvas.stampLines(dialogX, dialogY, dialogLines)
 	return theme.terminalBody.Render(strings.Join(canvas.lines(), "\n"))
 }
@@ -1984,6 +1986,7 @@ func expandModernOverlayBlocks(blocks []string) []string {
 
 func renderModernOverlayChrome(theme modernShellTheme, state types.AppState, width int) []string {
 	returnWidth := max(18, width)
+	compact := state.UI.Overlay.Kind == types.OverlayHelp
 	returnLines := []string{}
 	if state.UI.Overlay.Resume != nil {
 		returnLines = append(returnLines, theme.modalBody.Render(truncateModernLine("return to "+overlayTitle(state.UI.Overlay.Resume.Kind), returnWidth)))
@@ -1999,10 +2002,17 @@ func renderModernOverlayChrome(theme modernShellTheme, state types.AppState, wid
 	}
 
 	workbenchLines := []string{}
-	for _, line := range renderModernOverlayBackdropSectionLines(state, returnWidth, false) {
+	for _, line := range renderModernOverlayBackdropSectionLines(state, returnWidth, compact) {
 		workbenchLines = append(workbenchLines, theme.modalBody.Render(truncateModernLine(line, returnWidth)))
 	}
-	workbenchLines = append(workbenchLines, "", theme.modalMeta.Render(truncateModernLine(renderModernOverlayStateLine(state), returnWidth)))
+	// help overlay 走 compact chrome 时，仍然保留一条 overlay state。
+	// 否则 modal 虽然更紧凑，但会丢掉“当前正处于 overlay 焦点层”的关键信号，
+	// 也会让 floating/mixed backdrop 场景失去可验证的叠层语义。
+	if compact {
+		workbenchLines = append(workbenchLines, theme.modalMeta.Render(truncateModernLine(renderModernOverlayStateLine(state), returnWidth)))
+	} else {
+		workbenchLines = append(workbenchLines, "", theme.modalMeta.Render(truncateModernLine(renderModernOverlayStateLine(state), returnWidth)))
+	}
 
 	lines := []string{}
 	lines = append(lines, strings.Split(renderModernOverlaySectionPanel(theme, "Return To", returnLines, returnWidth), "\n")...)
@@ -2128,23 +2138,15 @@ func (r modernScreenShellRenderer) renderOverlayPanelBody(theme modernShellTheme
 func renderModernHelpOverlay(theme modernShellTheme, state types.AppState, width int) []string {
 	contentWidth := modernOverlayContentWidth(width)
 	leftLines := []string{
-		theme.modalMeta.Render("Current context"),
 		theme.modalBody.Render(truncateModernLine(renderModernHelpContextLine(state), contentWidth)),
-		"",
-		theme.modalMeta.Render("Most used"),
 		theme.modalBody.Render(truncateModernLine("Ctrl-p pane  •  Ctrl-t tab", contentWidth)),
-		theme.modalBody.Render(truncateModernLine("Ctrl-w workspace  •  Ctrl-f picker", contentWidth)),
-		theme.modalBody.Render(truncateModernLine("Ctrl-o floating  •  Ctrl-g global", contentWidth)),
+		theme.modalBody.Render(truncateModernLine("Ctrl-w ws  •  Ctrl-f pick", contentWidth)),
+		theme.modalBody.Render(truncateModernLine("Ctrl-o float  •  Ctrl-g global", contentWidth)),
 	}
 	rightLines := []string{
-		theme.modalMeta.Render("Terminal model"),
-		theme.modalBody.Render(truncateModernLine("pane is the view slot, terminal is the running entity", contentWidth)),
-		"",
-		theme.modalMeta.Render("Roles"),
+		theme.modalBody.Render(truncateModernLine("pane=view slot  •  terminal=running entity", contentWidth)),
 		theme.modalBody.Render(truncateModernLine("owner can connect, resize, edit metadata", contentWidth)),
-		theme.modalBody.Render(truncateModernLine("follower can observe without control", contentWidth)),
-		"",
-		theme.modalMeta.Render("Exit semantics"),
+		theme.modalBody.Render(truncateModernLine("follower observes without control", contentWidth)),
 		theme.modalBody.Render(truncateModernLine("close pane != stop terminal != detach TUI", contentWidth)),
 	}
 	actionLines := []string{
@@ -2627,7 +2629,7 @@ func renderModernOverlayPanels(theme modernShellTheme, width int, leftTitle stri
 	if len(actionLines) == 0 {
 		actionLines = []string{theme.modalBody.Render("No actions available.")}
 	}
-	if width < 88 {
+	if width < 60 {
 		return []string{
 			renderModernOverlaySectionPanel(theme, leftTitle, leftLines, width),
 			"",
@@ -2670,6 +2672,9 @@ func renderModernOverlaySectionPanel(theme modernShellTheme, title string, lines
 }
 
 func renderModernOverlayFooterPanel(theme modernShellTheme, state types.AppState, width int) string {
+	if state.UI.Overlay.Kind == types.OverlayHelp {
+		return ""
+	}
 	footerLines := renderModernOverlayFooterLines(theme, state.UI.Overlay.Kind, max(12, width))
 	if len(footerLines) == 0 {
 		return ""
@@ -3861,9 +3866,19 @@ func renderModernWorkspaceCounts(workspace types.WorkspaceState) (tabs, panes, t
 }
 
 func renderModernOverlayDialogWidth(metrics wireframeMetrics, width int) int {
-	dialogWidth := min(metrics.OverlayWidth, width-4)
-	if shouldRenderCompactChrome(width) {
+	dialogWidth := metrics.OverlayWidth
+	if dialogWidth <= 0 {
+		dialogWidth = width - 20
+	}
+	dialogWidth = min(dialogWidth, width-6)
+	switch {
+	case width <= 68:
 		dialogWidth = width - 2
+	case width <= 84:
+		// 中等窗口优先保留左右 backdrop，让中央 modal 更接近 legacy 的“悬浮对话框”感。
+		dialogWidth = min(width-10, max(dialogWidth, 66))
+	case width <= 120:
+		dialogWidth = min(width-12, max(dialogWidth, 72))
 	}
 	if dialogWidth < 40 {
 		dialogWidth = min(width, 40)

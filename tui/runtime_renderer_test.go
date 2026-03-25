@@ -402,6 +402,37 @@ func TestModernScreenShellHelpOverlayShowsResumeTarget(t *testing.T) {
 	}
 }
 
+func TestModernScreenShellUsesCenteredTwoColumnHelpOverlayAtMediumWidth(t *testing.T) {
+	state := runtimeStateWithActiveTerminalMetadata()
+	state.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayHelp,
+		ReturnFocus: state.UI.Focus,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+	state.UI.Focus.OverlayTarget = types.OverlayHelp
+	state.UI.Mode = types.ModeState{Active: types.ModePicker}
+
+	view := renderModernShellForTest(t, state, nil, wireframeMetrics{
+		ViewportWidth:  78,
+		ViewportHeight: 24,
+		OverlayWidth:   58,
+	}, NewRuntimeTerminalStore(RuntimeSessions{}))
+
+	assertMaxRenderedLineWidth(t, view, 78)
+	if !containsRenderedLineWithAll(view, "QUICK KEYS", "SHARED MODEL") {
+		t.Fatalf("expected medium viewport help overlay to use a denser two-column body, got:\n%s", view)
+	}
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "┌─ Help") {
+			if strings.Index(line, "┌─ Help") <= 2 {
+				t.Fatalf("expected medium viewport help overlay to stay centered and leave backdrop gutters, got:\n%s", view)
+			}
+			return
+		}
+	}
+	t.Fatalf("expected medium viewport help overlay header, got:\n%s", view)
+}
+
 func TestRuntimeRendererShellOnlyOverlayKeepsPaneContext(t *testing.T) {
 	debugVisible := false
 	state := connectedRunAppState()

@@ -493,3 +493,51 @@ termx TUI 当前不能继续沿最近一段时间的“modern shell / modal / ca
 - 继续把 overlay 的排版比例、标题节奏、backdrop 呈现往 `deprecated/tui-legacy` 的视觉语言靠拢
 - 让 split / floating / mixed 的真实边框、命中区和 modal 叠层之间更统一
 - 性能、颜色、重叠渲染优化继续放在全局 TODO 的后段处理
+
+---
+
+## 16. 第 217 轮 TDD
+
+这一轮收口整个 TUI 窗口大小自适应中的 overlay 子块，重点不是继续扩散测试点，而是把中等窗口尺寸下的 help modal 重新拉回可工作的产品态：
+
+1. help overlay 补回 compact 模式下的 overlay state 信号
+   - `tui/runtime_modern_renderer.go`
+   - `renderModernOverlayChrome` 在 help 走 compact chrome 时，仍然保留：
+     - `overlay help  •  focus overlay`
+   - 这样中宽度 modal 不会因为压缩布局而丢掉叠层语义
+   - floating / tiled backdrop 的 E2E 与 renderer 护栏重新能验证“当前是 overlay 层，不是普通 workbench”
+2. 中等宽度 help modal 自适应继续保持中央双栏结构
+   - `tui/runtime_modern_renderer.go`
+   - 当前策略已稳定到：
+     - 窄窗口尽量保住主体宽度
+     - 中等窗口保留左右 gutter 与居中 modal
+     - 标准窗口允许 `QUICK KEYS / SHARED MODEL` 双栏并排
+   - 目标是让 `78x24` 一类真实终端尺寸下，不再退化成过宽、过散或信息撞行的盒子
+3. 本轮护栏继续围绕“功能 + 相关验证”一起收口
+   - `tui/runtime_renderer_test.go`
+   - `tui/runtime_test.go`
+   - 重点锁定：
+     - 中等宽度下 help modal 双栏仍成立
+     - backdrop 中的 floating strip / detached strip 不丢失
+     - overlay state 在 compact modal 下仍可见
+4. 本轮结论
+   - overlay 这条线现在已经从“纯调试文本容器”进一步收口到可工作的中央弹层
+   - 整个 TUI 的窗口尺寸变化已经开始体现在 modal 宽度、section 密度和 backdrop 保留策略上
+   - 下一阶段应继续把真实工作台主界面往 `deprecated/tui-legacy` 的布局语言靠拢，而不是回到 ASCII 调试态
+
+本轮验证命令：
+
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./tui -count=1`
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./... -count=1`
+
+当前阶段推进结果：
+
+- help overlay 在紧凑布局下重新具备完整的层级语义
+- 中等窗口下的中央 modal 与双栏信息密度已经基本成型
+- overlay/backdrop 的可验证性比上一轮更稳定，后续可以继续往真实产品 UI 过渡
+
+下一块应继续推进：
+
+- 真实工作台主界面的布局语言向 `deprecated/tui-legacy` 继续回归
+- 继续补齐 resize 下 split / floating / mixed 的主画布自适应
+- 性能、颜色、重叠渲染优化继续放在全局 TODO 的后段处理

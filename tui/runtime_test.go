@@ -1148,6 +1148,9 @@ func TestE2ERunScenarioDefaultModernHelpOverlayRendersStructuredModal(t *testing
 			if !strings.Contains(stripped, "return to tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "layer tiled  •  mode picker") || !strings.Contains(stripped, "Ctrl-p pane  •  Ctrl-t tab") {
 				t.Fatalf("expected default modern help modal key groups, got:\n%s", view)
 			}
+			if !containsRuntimeLineWithAll(stripped, "QUICK KEYS", "SHARED MODEL") {
+				t.Fatalf("expected default modern help modal to use denser two-column sections at standard viewport width, got:\n%s", view)
+			}
 			if !strings.Contains(stripped, "owner can connect, resize") || !strings.Contains(stripped, "Esc close") {
 				t.Fatalf("expected default modern help modal concepts and actions, got:\n%s", view)
 			}
