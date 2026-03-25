@@ -405,11 +405,11 @@ func TestTerminalPoolMetadataSaveReachesRuntimeService(t *testing.T) {
 		t.Fatalf("ApplyIntent returned error: %v", err)
 	}
 	client := service.client.(*stubClient)
-	if client.lastMetadataID != "term-2" || client.lastMetadataName != "api-renamed" {
+	if client.lastMetadataID != "term-1" || client.lastMetadataName != "api-renamed" {
 		t.Fatalf("expected metadata call to reach runtime, got id=%q name=%q", client.lastMetadataID, client.lastMetadataName)
 	}
-	if next.Terminals[types.TerminalID("term-2")].Name != "api-renamed" {
-		t.Fatalf("expected model metadata update after runtime success, got %#v", next.Terminals[types.TerminalID("term-2")])
+	if next.Terminals[types.TerminalID("term-1")].Name != "api-renamed" {
+		t.Fatalf("expected model metadata update after runtime success, got %#v", next.Terminals[types.TerminalID("term-1")])
 	}
 }
 

@@ -222,15 +222,15 @@ func TestOpenHelpOverlayAndFloatingAnchorLimitWithCenterRecall(t *testing.T) {
 
 func TestTerminalPoolSelectionSwitchesReadonlyLivePreviewSubscription(t *testing.T) {
 	model := newTerminalPoolModelForIntentTest().Apply(OpenTerminalPoolIntent{})
-	if model.Pool.SelectedTerminalID != types.TerminalID("term-2") {
-		t.Fatalf("expected initial pool selection to use recent interaction, got %q", model.Pool.SelectedTerminalID)
+	if model.Pool.SelectedTerminalID != types.TerminalID("term-1") {
+		t.Fatalf("expected initial pool selection to follow rendered order, got %q", model.Pool.SelectedTerminalID)
 	}
 
-	selected := model.Apply(SelectTerminalPoolIntent{TerminalID: types.TerminalID("term-1")})
-	if selected.Pool.SelectedTerminalID != types.TerminalID("term-1") {
+	selected := model.Apply(SelectTerminalPoolIntent{TerminalID: types.TerminalID("term-2")})
+	if selected.Pool.SelectedTerminalID != types.TerminalID("term-2") {
 		t.Fatalf("expected selected terminal to switch, got %q", selected.Pool.SelectedTerminalID)
 	}
-	if selected.Pool.PreviewTerminalID != types.TerminalID("term-1") {
+	if selected.Pool.PreviewTerminalID != types.TerminalID("term-2") {
 		t.Fatalf("expected preview terminal to switch immediately, got %q", selected.Pool.PreviewTerminalID)
 	}
 	if !selected.Pool.PreviewReadonly {
@@ -249,6 +249,7 @@ func TestTerminalPoolSelectionSwitchesReadonlyLivePreviewSubscription(t *testing
 
 func TestTerminalPoolActionsRenameKillRemoveAndOpenTargetPane(t *testing.T) {
 	model := newTerminalPoolModelForIntentTest().Apply(OpenTerminalPoolIntent{})
+	model = model.Apply(SelectTerminalPoolIntent{TerminalID: types.TerminalID("term-2")})
 
 	editor := model.Apply(OpenTerminalMetadataEditorIntent{})
 	if editor.Overlay.Active().Kind != OverlayTerminalMetadataEditor {
@@ -355,6 +356,27 @@ func TestTerminalPoolSearchSwitchesPreviewAndRefreshesSubscription(t *testing.T)
 	}
 }
 
+func TestTerminalPoolSelectionFollowsRenderedVisibleParkedExitedOrder(t *testing.T) {
+	model := newTerminalPoolModelForIntentTest().Apply(OpenTerminalPoolIntent{})
+	model.Pool.SelectedTerminalID = types.TerminalID("term-1")
+	model.Pool.PreviewTerminalID = types.TerminalID("term-1")
+
+	next := model.Apply(MoveTerminalPoolSelectionIntent{Delta: 1})
+	if next.Pool.SelectedTerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected down to move from visible to parked term-2, got %q", next.Pool.SelectedTerminalID)
+	}
+
+	next = next.Apply(MoveTerminalPoolSelectionIntent{Delta: 1})
+	if next.Pool.SelectedTerminalID != types.TerminalID("term-3") {
+		t.Fatalf("expected down to move from parked to exited term-3, got %q", next.Pool.SelectedTerminalID)
+	}
+
+	next = next.Apply(MoveTerminalPoolSelectionIntent{Delta: -1})
+	if next.Pool.SelectedTerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected up to move back to parked term-2, got %q", next.Pool.SelectedTerminalID)
+	}
+}
+
 func newWorkbenchModelForIntentTest() Model {
 	model := NewModel()
 	ws := workspace.NewTemporary("main")
@@ -445,6 +467,14 @@ func newTerminalPoolModelForIntentTest() Model {
 		Tags:            map[string]string{"team": "ops"},
 		State:           stateterminal.StateRunning,
 		LastInteraction: time.Unix(20, 0),
+	}
+	model.Terminals[types.TerminalID("term-3")] = stateterminal.Metadata{
+		ID:              types.TerminalID("term-3"),
+		Name:            "old-api",
+		Command:         []string{"bash", "-lc", "npm run dev"},
+		Tags:            map[string]string{"team": "legacy"},
+		State:           stateterminal.StateExited,
+		LastInteraction: time.Unix(5, 0),
 	}
 	meta := model.Terminals[types.TerminalID("term-1")]
 	meta.Tags = map[string]string{"team": "backend"}

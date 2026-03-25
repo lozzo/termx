@@ -87,11 +87,11 @@ func TestTerminalPoolKeysDriveSelectionAndSearchThroughUpdate(t *testing.T) {
 
 	teaModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
 	down := teaModel.(Model)
-	if down.Pool.SelectedTerminalID != "term-1" {
-		t.Fatalf("expected down key to move selection to term-1, got %q", down.Pool.SelectedTerminalID)
+	if down.Pool.SelectedTerminalID != "term-2" {
+		t.Fatalf("expected down key to move selection to term-2, got %q", down.Pool.SelectedTerminalID)
 	}
-	if down.Pool.PreviewTerminalID != "term-1" {
-		t.Fatalf("expected down key to switch preview to term-1, got %q", down.Pool.PreviewTerminalID)
+	if down.Pool.PreviewTerminalID != "term-2" {
+		t.Fatalf("expected down key to switch preview to term-2, got %q", down.Pool.PreviewTerminalID)
 	}
 
 	teaModel, _ = down.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})

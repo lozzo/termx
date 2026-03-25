@@ -895,13 +895,36 @@ func (m Model) firstTerminalPoolSelection(query string) types.TerminalID {
 
 func (m Model) orderedTerminalPoolIDs(query string) []types.TerminalID {
 	items := pool.BuildConnectItems(filterTerminalPoolMetas(m.Terminals, query))
-	ids := make([]types.TerminalID, 0, len(items))
+	visible := make([]types.TerminalID, 0, len(items))
+	parked := make([]types.TerminalID, 0, len(items))
+	exited := make([]types.TerminalID, 0, len(items))
 	for _, item := range items {
-		if item.TerminalID != "" {
-			ids = append(ids, item.TerminalID)
+		if item.TerminalID == "" {
+			continue
+		}
+		meta, ok := m.Terminals[item.TerminalID]
+		if !ok {
+			continue
+		}
+		switch {
+		case meta.State == stateterminal.StateExited:
+			exited = append(exited, item.TerminalID)
+		case m.isTerminalVisibleInPool(item.TerminalID):
+			visible = append(visible, item.TerminalID)
+		default:
+			parked = append(parked, item.TerminalID)
 		}
 	}
+	ids := make([]types.TerminalID, 0, len(visible)+len(parked)+len(exited))
+	ids = append(ids, visible...)
+	ids = append(ids, parked...)
+	ids = append(ids, exited...)
 	return ids
+}
+
+func (m Model) isTerminalVisibleInPool(terminalID types.TerminalID) bool {
+	_, ok := m.visibleTerminal(terminalID)
+	return ok
 }
 
 func filterTerminalPoolMetas(terminals map[types.TerminalID]stateterminal.Metadata, query string) map[types.TerminalID]stateterminal.Metadata {
