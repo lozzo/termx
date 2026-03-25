@@ -6,8 +6,6 @@ import (
 	"github.com/lozzow/termx/protocol"
 )
 
-// Client 定义 TUI 与 daemon 交互所需的最小接口。
-// 先保住边界，后续重做时再按新的产品模型补实现。
 type Client interface {
 	Close() error
 	Create(ctx context.Context, command []string, name string, size protocol.Size) (*protocol.CreateResult, error)

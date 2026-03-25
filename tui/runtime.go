@@ -7,11 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"time"
-
-	"github.com/lozzow/termx/protocol"
-	btui "github.com/lozzow/termx/tui/bt"
-	"github.com/lozzow/termx/tui/render"
-	"golang.org/x/term"
 )
 
 type Config struct {
@@ -31,148 +26,16 @@ type Config struct {
 
 const DefaultPrefixTimeout = 3 * time.Second
 
-type runtimeDependencies struct {
-	Planner          StartupPlanner
-	TaskExecutor     StartupTaskExecutor
-	SessionBootstrap RuntimeSessionBootstrapper
-	ProgramRunner    ProgramRunner
-	Renderer         btui.Renderer
-	RuntimeExecutor  btui.RuntimeExecutor
-	TerminalSize     func(input io.Reader, output io.Writer) protocol.Size
+// Run 明确表示当前主线 TUI 已经重置。
+// 这里故意只保留 CLI 依赖的稳定接口，避免旧实现继续挂在主线上“半死不活”地迭代。
+func Run(_ Client, cfg Config, _ io.Reader, _ io.Writer) error {
+	if cfg.Logger != nil {
+		cfg.Logger.Warn("tui mainline has been reset", "archive", "deprecated/tui-reset-2026-03-25", "legacy", "deprecated/tui-legacy")
+	}
+	return fmt.Errorf("termx TUI 已重置：当前主线暂无可运行界面，请基于新的产品定义重新实现；参考目录：deprecated/tui-legacy/ 与 deprecated/tui-reset-2026-03-25/")
 }
 
-// Run 当前会先完成 startup 规划、bootstrap task 和 runtime session 接线，
-// 再启动一个最小 Bubble Tea 程序，后续继续在这条主线上补 renderer 和真实交互循环。
-func Run(client Client, cfg Config, input io.Reader, output io.Writer) error {
-	return runWithDependencies(client, cfg, input, output, runtimeDependencies{
-		Planner:          NewStartupPlanner(nil),
-		TaskExecutor:     NewStartupTaskExecutor(),
-		SessionBootstrap: NewRuntimeSessionBootstrapper(),
-		ProgramRunner:    bubbleteaProgramRunner{},
-		TerminalSize:     currentTerminalSize,
-	})
-}
-
-func runWithDependencies(client Client, cfg Config, input io.Reader, output io.Writer, deps runtimeDependencies) error {
-	if deps.Planner == nil {
-		deps.Planner = NewStartupPlanner(nil)
-	}
-	if deps.TaskExecutor == nil {
-		deps.TaskExecutor = NewStartupTaskExecutor()
-	}
-	if deps.SessionBootstrap == nil {
-		deps.SessionBootstrap = NewRuntimeSessionBootstrapper()
-	}
-	if deps.ProgramRunner == nil {
-		deps.ProgramRunner = bubbleteaProgramRunner{}
-	}
-	if deps.Renderer == nil {
-		deps.Renderer = render.NewRenderer(render.Config{
-			DebugVisible: boolPointer(cfg.DebugUI),
-			Compat: runtimeRenderer{
-				DebugVisible: boolPointer(cfg.DebugUI),
-			},
-		})
-	}
-	if deps.RuntimeExecutor == nil {
-		deps.RuntimeExecutor = btui.DefaultRuntimeExecutor{
-			TerminalService: newRuntimeTerminalService(client),
-		}
-	}
-	if deps.TerminalSize == nil {
-		deps.TerminalSize = currentTerminalSize
-	}
-
-	ctx := context.Background()
-	if cfg.RequestTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, cfg.RequestTimeout)
-		defer cancel()
-	}
-
-	plan, err := deps.Planner.Plan(ctx, cfg)
-	if err != nil {
-		return err
-	}
-	logStartupWarnings(cfg.Logger, plan.Warnings)
-
-	bootstrapped, err := deps.TaskExecutor.Execute(ctx, client, deps.TerminalSize(input, output), plan)
-	if err != nil {
-		return err
-	}
-	logStartupWarnings(cfg.Logger, bootstrapped.Warnings)
-
-	sessions, err := deps.SessionBootstrap.Bootstrap(ctx, client, bootstrapped.State)
-	if err != nil {
-		return err
-	}
-	defer stopRuntimeSessions(sessions)
-
-	terminalStore := NewRuntimeTerminalStore(sessions)
-	updateHandler := NewRuntimeUpdateHandler(sessions, terminalStore, client)
-	defer updateHandler.Stop()
-	renderer := deps.Renderer
-	if binder, ok := renderer.(render.TerminalStoreBinder); ok {
-		renderer = binder.WithTerminalStore(terminalStore)
-	}
-	switch rendererValue := renderer.(type) {
-	case runtimeRenderer:
-		rendererValue.Screens = terminalStore
-		renderer = rendererValue
-	case *runtimeRenderer:
-		rendererValue.Screens = terminalStore
-		renderer = rendererValue
-	}
-
-	model := btui.NewModel(btui.ModelConfig{
-		InitialState:       bootstrapped.State,
-		InitCmd:            updateHandler.InitCmd(),
-		Mapper:             btui.NewIntentMapper(btui.Config{PrefixTimeout: cfg.PrefixTimeout}),
-		Reducer:            nil,
-		EffectHandler:      btui.RuntimeEffectHandler{Executor: deps.RuntimeExecutor},
-		Renderer:           renderer,
-		UnmappedKeyHandler: NewRuntimeTerminalInputHandler(client, terminalStore),
-		MessageHandler:     updateHandler,
-	})
-	return deps.ProgramRunner.Run(model, input, output)
-}
-
-func currentTerminalSize(_ io.Reader, output io.Writer) protocol.Size {
-	file, ok := output.(*os.File)
-	if !ok || file == nil {
-		return protocol.Size{}
-	}
-	cols, rows, err := term.GetSize(int(file.Fd()))
-	if err != nil {
-		return protocol.Size{}
-	}
-	return protocol.Size{Cols: uint16(cols), Rows: uint16(rows)}
-}
-
-func logStartupWarnings(logger *slog.Logger, warnings []string) {
-	if logger == nil {
-		return
-	}
-	for _, warning := range warnings {
-		if warning == "" {
-			continue
-		}
-		logger.Warn("tui startup warning", "warning", warning)
-	}
-}
-
-func stopRuntimeSessions(sessions RuntimeSessions) {
-	for _, session := range sessions.Terminals {
-		if session.Stop != nil {
-			session.Stop()
-		}
-	}
-}
-
-func boolPointer(v bool) *bool {
-	return &v
-}
-
+// WaitForSocket 仍保留给 CLI 自动拉起 daemon 使用，这部分和 TUI 重写重置无关。
 func WaitForSocket(path string, timeout time.Duration, probe func() error) error {
 	if probe == nil {
 		return fmt.Errorf("probe is nil")
