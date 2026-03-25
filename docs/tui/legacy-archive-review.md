@@ -292,6 +292,10 @@
   - layout schema 和解析流程可复用
 - `deprecated/tui-legacy/pkg/workspace_state.go`
   - workspace state schema 和导入导出值得保留
+- `deprecated/tui-legacy/pkg/render.go`
+  - workbench composited canvas、pane frame、floating overlap、damage 思路值得重点参考
+- `deprecated/tui-legacy/root-tests/tui_e2e_test.go`
+  - floating、遮挡、z-order、layout attach 相关 E2E 场景值得重点回收为新主线输入
 
 ### 7.2 可继承语义，但实现建议重写
 
@@ -313,13 +317,24 @@
 这些文件应该视为“历史样本”，不是迁移对象：
 
 - `deprecated/tui-legacy/pkg/model.go`
-- `deprecated/tui-legacy/pkg/render.go`
 - `deprecated/tui-legacy/pkg/input.go`
 
 理由很简单：
 
 - 结构负债已经集中在这里
 - 迁回来只会把旧问题带回主线
+
+### 7.4 当前统一继承原则
+
+当前统一原则是：
+
+- `继承旧版工作台体验`
+- `不继承旧版耦合结构`
+
+也就是：
+
+- 工作台层尽量向旧版成熟体验靠拢
+- 架构层继续沿新主线的 `intent / reducer / runtime / render` 分层推进
 
 ---
 

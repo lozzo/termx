@@ -236,6 +236,34 @@
 - overlay 和 pane 重绘路径局部化
 - cache 策略可 benchmark、可回归
 
+#### 4.6.1 渲染主轴
+
+后续 renderer 必须严格按下面顺序组织：
+
+1. `LayoutProjection`
+   - 从 workspace/tab/pane 状态投影出 tiled pane rect、floating pane rect、z-order
+2. `WorkbenchSurface`
+   - 把 terminal surface 贴到 pane rect 里
+   - 这是主界面第一主体
+3. `FloatingComposite`
+   - 在 tiled workbench 之上叠放 floating pane
+   - 负责 clipping、overlap、raise/lower、active window
+4. `OverlayComposite`
+   - 在 workbench 之上盖 overlay / modal / mask
+   - 不能替代底层 workbench 主体
+5. `HUDChrome`
+   - 最后叠最小 header/footer/notice
+   - chrome 只做导航，不得主导空间分配
+
+#### 4.6.2 明确禁止
+
+渲染层明确禁止走下面这些方向：
+
+- 先画 dashboard/card/rail，再把 pane 作为附属内容塞进去
+- 让 overlay 成为主界面主体
+- 让 summary/context 面板长期侵占 pane surface 的主要宽度
+- 把工作台的主要可读性建立在说明字段，而不是 pane 布局本身
+
 ### 4.7 Infrastructure Layer
 
 职责：

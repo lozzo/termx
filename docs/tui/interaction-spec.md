@@ -25,6 +25,7 @@
 - pane 是终端工作位，而不是终端本体
 - pane 可以连接 terminal，也可以暂时处于空槽位或恢复中状态
 - pane 默认展示 terminal 名称，而不是 pane 自定义名字
+- pane 必须优先表现为真实 terminal surface，而不是信息卡片
 
 ---
 
@@ -87,6 +88,7 @@ split 完成后：
 - floating pane 在 tab 内与 tiled pane 共存
 - active floating pane 总是最高层
 - 支持移动、缩放、切换 z-order、隐藏/恢复、居中呼回
+- floating 必须真实叠放在工作台上，而不是在工作台旁边做摘要表达
 
 ---
 
