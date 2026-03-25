@@ -9,6 +9,13 @@
 - 哪些是共享 terminal、floating、overlay 等复杂场景
 - 场景之间如何流转
 
+## 恢复入口
+
+如果会话上下文被压缩，先读：
+
+- [README.md](/home/lozzow/workdir/termx/docs/tui-wireframes/README.md)
+- [99-session-handoff.md](/home/lozzow/workdir/termx/docs/tui-wireframes/99-session-handoff.md)
+
 ## 阅读顺序
 
 建议先读：

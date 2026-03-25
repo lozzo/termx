@@ -37,3 +37,6 @@
 
 - 目录骨架已建立
 - 线框图内容待逐个场景补全
+- 如需在上下文压缩后快速恢复，请优先阅读：
+  - [00-index.md](/home/lozzow/workdir/termx/docs/tui-wireframes/00-index.md)
+  - [99-session-handoff.md](/home/lozzow/workdir/termx/docs/tui-wireframes/99-session-handoff.md)
