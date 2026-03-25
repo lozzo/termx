@@ -123,7 +123,7 @@ func TestRunUsesShellOnlyRendererByDefault(t *testing.T) {
 	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") {
 		t.Fatalf("expected default run renderer to keep screen shell, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "owner") || !strings.Contains(stripped, "w0") {
+	if !strings.Contains(stripped, "pane term-1") || !strings.Contains(stripped, "owner") || !strings.Contains(stripped, "f0") {
 		t.Fatalf("expected default run renderer top chrome to expose active pane summary, got:\n%s", runner.view)
 	}
 	if !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "● run  owner") || !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "term-1 running owner") {
@@ -135,7 +135,7 @@ func TestRunUsesShellOnlyRendererByDefault(t *testing.T) {
 	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "term-1  •  owner") || !strings.Contains(stripped, "1 tab") || !strings.Contains(stripped, "1 pane") || !strings.Contains(stripped, "1 term") || !strings.Contains(stripped, "main / shell / tiled / term-1") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "desk") || !strings.Contains(stripped, "term-1") {
 		t.Fatalf("expected default run renderer context bar to expose path and runtime state, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "<p> <t> <w> <o> <f> <g> <?>") || !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "▣ desk") {
+	if !strings.Contains(stripped, "<p> PANE") || !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "owner") {
 		t.Fatalf("expected default run renderer footer to expose focus/layer/slot context, got:\n%s", runner.view)
 	}
 	if strings.Contains(runner.view, "wireframe_view:") || strings.Contains(runner.view, "chrome_header:") {
@@ -1198,7 +1198,7 @@ func TestE2ERunScenarioDefaultModernOverlayCloseLeavesCleanWorkbench(t *testing.
 				}
 			}
 			closed := stripANSIRuntimeView(current.View())
-			if strings.Contains(closed, "state overlay help  •  focus overlay") || strings.Contains(closed, "CONTEXT[overlay]") || strings.Contains(closed, "BACKDROP[workbench]") || strings.Contains(closed, "FOOTER[overlay]") || strings.Contains(closed, "workbench paused  •  api-dev  •  owner") || strings.Contains(closed, "FOOTER[esc close]") || strings.Contains(closed, "░") || !strings.Contains(closed, "api-dev") || !strings.Contains(closed, "● run  owner") || !strings.Contains(closed, "<p> <t> <w> <o> <f> <g> <?>") {
+			if strings.Contains(closed, "state overlay help  •  focus overlay") || strings.Contains(closed, "CONTEXT[overlay]") || strings.Contains(closed, "BACKDROP[workbench]") || strings.Contains(closed, "FOOTER[overlay]") || strings.Contains(closed, "workbench paused  •  api-dev  •  owner") || strings.Contains(closed, "FOOTER[esc close]") || strings.Contains(closed, "░") || !strings.Contains(closed, "api-dev") || !strings.Contains(closed, "● run  owner") || !strings.Contains(closed, "<p> PANE") {
 				t.Fatalf("expected default modern overlay close to leave a clean workbench without artifacts, got:\n%s", current.View())
 			}
 			return nil

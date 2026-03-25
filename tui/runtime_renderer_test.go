@@ -232,7 +232,7 @@ func TestRuntimeRendererCanHideDebugSections(t *testing.T) {
 	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") {
 		t.Fatalf("expected shell-only renderer to keep visible screen shell, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "owner") || !strings.Contains(stripped, "w0") {
+	if !strings.Contains(stripped, "pane api-dev") || !strings.Contains(stripped, "owner") || !strings.Contains(stripped, "f0") {
 		t.Fatalf("expected shell-only renderer top chrome to expose active pane summary, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "api-dev  •  owner") || !strings.Contains(stripped, "1 tab") || !strings.Contains(stripped, "1 pane") || !strings.Contains(stripped, "1 term") {
@@ -244,7 +244,7 @@ func TestRuntimeRendererCanHideDebugSections(t *testing.T) {
 	if !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "desk") || !strings.Contains(stripped, "api-dev") {
 		t.Fatalf("expected shell-only renderer context bar to expose path and runtime context, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "<p> <t> <w> <o> <f> <g> <?>") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "▣ desk") {
+	if !strings.Contains(stripped, "<p> PANE") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "owner") {
 		t.Fatalf("expected shell-only renderer footer to expose focus/layer/slot context, got:\n%s", view)
 	}
 	if strings.Contains(view, "wireframe_view:") || strings.Contains(view, "chrome_header:") || strings.Contains(view, "chrome_body:") || strings.Contains(view, "chrome_footer:") {
@@ -300,15 +300,16 @@ func TestModernScreenShellCompactsChromeAtNarrowWidth(t *testing.T) {
 		ViewportHeight: 24,
 		OverlayWidth:   60,
 	}, screens)
+	stripped := stripANSIForTest(view)
 
 	assertMaxRenderedLineWidth(t, view, 64)
-	if !strings.Contains(view, "termx") || !strings.Contains(view, "shell-with-a-very-long-name") || !strings.Contains(view, "api-dev") {
+	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "shell-with-a-very-long-name") || !strings.Contains(stripped, "api-dev") {
 		t.Fatalf("expected narrow modern shell to keep visible brand and active tab context, got:\n%s", view)
 	}
-	if !strings.Contains(view, "running") || !strings.Contains(view, "api-dev") || strings.Contains(view, "pane-1  •  term-1") {
+	if !strings.Contains(stripped, "running") || !strings.Contains(stripped, "api-dev") || strings.Contains(stripped, "pane-1  •  term-1") {
 		t.Fatalf("expected narrow modern shell to compact but retain path/runtime context, got:\n%s", view)
 	}
-	if !strings.Contains(view, "<p> <t> <w> <o> <f> <g> <?>") {
+	if !strings.Contains(stripped, "<p> PANE") || !strings.Contains(stripped, "<o> FLT") {
 		t.Fatalf("expected narrow modern shell footer to switch to compact shortcuts, got:\n%s", view)
 	}
 }
@@ -397,13 +398,13 @@ func TestRuntimeRendererShellOnlyOverlayKeepsPaneContext(t *testing.T) {
 
 	view := renderer.Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "mode picker") {
+	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "pane api-dev") || !strings.Contains(stripped, "mode picker") {
 		t.Fatalf("expected shell-only overlay renderer to keep current pane context, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "CONTEXT[overlay]") || !strings.Contains(stripped, "BACKDROP[workbench]") || !strings.Contains(stripped, "FOOTER[overlay]") || !strings.Contains(stripped, "return tiled:ws-1/tab-1/pane-1") {
 		t.Fatalf("expected shell-only overlay renderer to keep help dialog visible, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "dialog help") || !strings.Contains(stripped, "mode picker") || !strings.Contains(stripped, "<esc> Close") || !strings.Contains(stripped, "░") {
+	if !strings.Contains(stripped, "overlay help") || !strings.Contains(stripped, "mode picker") || !strings.Contains(stripped, "<esc> CLOSE") || !strings.Contains(stripped, "░") {
 		t.Fatalf("expected shell-only overlay renderer to expose overlay chrome and footer actions, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "workbench paused  •  api-dev  •  owner") || !strings.Contains(stripped, "active pane api-dev  •  owner  •  connected") || !strings.Contains(stripped, "▒") {
@@ -420,7 +421,7 @@ func TestRuntimeRendererShellOnlyFooterHighlightsErrorNotice(t *testing.T) {
 	}})
 	stripped := stripANSIForTest(view)
 
-	if !strings.Contains(stripped, "! error runtime effect") || !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "● run  owner") || !strings.Contains(stripped, "<p> <t> <w> <o> <f> <g> <?>") {
+	if !strings.Contains(stripped, "! error runtime effect") || !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "● run  owner") || !strings.Contains(stripped, "<p> PANE") {
 		t.Fatalf("expected shell-only footer to highlight error notice and pane badges, got:\n%s", view)
 	}
 }
@@ -449,7 +450,7 @@ func TestRuntimeRendererShellOnlyShowsContextualActionsForConnectedPane(t *testi
 
 	view := renderer.Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "<p> <t> <w> <o> <f> <g> <?>") {
+	if !strings.Contains(stripped, "<p> PANE") || !strings.Contains(stripped, "<g> GLOB") {
 		t.Fatalf("expected shell-only connected pane to expose contextual actions, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "● run  owner") {
@@ -673,12 +674,14 @@ func TestModernScreenShellMarksOffscreenFloatingPaneForRecall(t *testing.T) {
 		OverlayWidth:   72,
 	}, screens)
 
-	if !strings.Contains(view, "api-dev") ||
-		!strings.Contains(view, "control owner") ||
-		!strings.Contains(view, "windows 1") ||
-		!strings.Contains(view, "offscreen") ||
-		!strings.Contains(view, "remote") ||
-		!strings.Contains(view, "◫ float deck") {
+	stripped := stripANSIForTest(view)
+	if !strings.Contains(stripped, "api-dev") ||
+		!strings.Contains(stripped, "role owner") ||
+		!strings.Contains(stripped, "float 1") ||
+		!strings.Contains(stripped, "recall offscreen") ||
+		!strings.Contains(stripped, "c center") ||
+		!strings.Contains(stripped, "remote") ||
+		!strings.Contains(stripped, "Window deck") {
 		t.Fatalf("expected modern floating shell to expose offscreen recall feedback, got:\n%s", view)
 	}
 }
@@ -690,7 +693,7 @@ func TestRuntimeRendererShellOnlyRendersFloatingModeOperationHints(t *testing.T)
 
 	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "<h/l>") || !strings.Contains(stripped, "<j/k>") || !strings.Contains(stripped, "<HJKL>") || !strings.Contains(stripped, "<?>") {
+	if !strings.Contains(stripped, "<h/l>") || !strings.Contains(stripped, "<j/k>") || !strings.Contains(stripped, "<HJKL>") || !strings.Contains(stripped, "<c>") {
 		t.Fatalf("expected shell-only floating mode renderer to expose operation hints, got:\n%s", view)
 	}
 }

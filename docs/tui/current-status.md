@@ -82,6 +82,8 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把现代 workbench 从“只有字形层次”推进到“字形 + 语义色层次”：底层 canvas 已升级成 ANSI 安全贴图，pane/workbench 叠放时不再会把转义序列拆坏；active tiled、active/inactive floating、run/wait/exit/empty、owner/follower 等状态现在都能直接带颜色落在真实 pane 边框与标题栏上，并由 shell-only renderer 与 default modern E2E 一起锁住
 - 本轮继续把 modern workbench 的右侧辅助栏从散文说明收成“标签状态栏”：single / split / floating / mixed 的侧栏现在统一使用 `ACTIVE / SPLIT / STACK / PATH / FOCUS / LINK / TERM / VIEW / ACTION` 这类 label-value rail；整体布局继续保持 pane-first，把更多宽度让回真实 pane canvas，并向 `deprecated/tui-legacy/` 的工作台骨架靠拢
 - 本轮继续把默认 78~96 列的主工作台从“右侧状态栏吃掉正文宽度”收回到 legacy 风格：single / split / floating / mixed 在常见宽度下会自动把右侧 rail 折叠成工作台顶部的 compact rail，保留 `WORKBENCH / LAYOUT / FLOATING / MIXED / CONTEXT / WINDOW DECK` 结构化状态，同时把主空间优先让给 pane canvas；对应 shell-only 与 default modern 的 renderer / E2E 基线已同步迁移
+- 本轮继续把 modern 顶部/底部主壳从“无标签 chip 堆叠”往 legacy 导航条收口：顶部右侧现在会显式显示 `pane / role / float / overlay / mode / recall` 这类语义段，底部快捷区也改成带动作名的 compact 快捷段，不再只剩一串裸按键 token
+- 本轮同时重新平衡了 64~80 列下 footer 的空间预算：compact 模式优先保证快捷键整条可读，右下角只保留 pane / role / layer 的最小摘要；floating recall 与 floating mode 的快捷提示也已补到新的头尾条基线
 
 ---
 

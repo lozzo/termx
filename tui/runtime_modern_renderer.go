@@ -2812,13 +2812,28 @@ func renderModernLocation(location terminalmanagerdomain.Location) string {
 func (r modernScreenShellRenderer) renderFooter(theme modernShellTheme, state types.AppState, pane types.PaneState, notices []btui.Notice, width int) string {
 	contentWidth := max(1, width-2)
 	notice := renderModernNotice(theme, notices)
-	left := theme.panelMeta.Render(renderModernFooterShortcutsAdaptive(state, pane, width))
+	left := renderModernFooterShortcutsAdaptive(theme, state, pane, width)
 	right := renderModernFooterContext(theme, state, pane, notice, width)
 	return theme.footer.Render(fillANSIHorizontal(left, right, contentWidth))
 }
 
 func renderModernFooterContext(theme modernShellTheme, state types.AppState, pane types.PaneState, notice string, width int) string {
-	items := []string{theme.activeChip.Render(renderModernPaneDisplayTitle(state, pane))}
+	items := []string{}
+	if shouldRenderCompactChrome(width) {
+		items = append(items,
+			theme.activeChip.Render(renderModernPaneDisplayTitle(state, pane)),
+			theme.chip.Render(renderModernPaneRole(state, pane)),
+			theme.chip.Render(renderModernFooterLayerBadge(state)),
+		)
+	} else {
+		items = append(items,
+			renderModernLabeledChip(theme, "pane", renderModernPaneDisplayTitle(state, pane), true),
+			renderModernLabeledChip(theme, "role", renderModernPaneRole(state, pane), false),
+		)
+		if pane.TerminalID != "" {
+			items = append(items, renderModernLabeledChip(theme, "term", string(pane.TerminalID), false))
+		}
+	}
 	if !shouldRenderCompactChrome(width) {
 		items = append(items, theme.chip.Render(renderModernFooterSlotBadge(pane)))
 	}
@@ -2877,19 +2892,20 @@ func renderModernHeaderBrand(theme modernShellTheme, workspace types.WorkspaceSt
 }
 
 func renderModernLegacyHeaderRight(theme modernShellTheme, state types.AppState, workspace types.WorkspaceState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics) string {
-	parts := []string{
-		theme.activeChip.Render(renderModernPaneDisplayTitle(state, pane)),
-		theme.chip.Render("control " + renderModernPaneRole(state, pane)),
-		theme.chip.Render(fmt.Sprintf("windows %d", len(orderedFloatingPaneIDs(tab)))),
-	}
+	_ = workspace
+	parts := []string{renderModernLabeledChip(theme, "pane", renderModernPaneDisplayTitle(state, pane), true)}
+	parts = append(parts,
+		renderModernLabeledChip(theme, "role", renderModernPaneRole(state, pane), false),
+		renderModernLabeledChip(theme, "float", fmt.Sprintf("%d", len(orderedFloatingPaneIDs(tab))), false),
+	)
 	if renderModernFloatingPaneOffscreen(pane, metrics) {
-		parts = append(parts, theme.activeChip.Render("offscreen"))
+		parts = append(parts, renderModernLabeledChip(theme, "recall", "offscreen", true))
 	}
 	if state.UI.Overlay.Kind != types.OverlayNone {
-		parts = append(parts, theme.activeChip.Render("dialog "+string(state.UI.Overlay.Kind)))
+		parts = append(parts, renderModernLabeledChip(theme, "overlay", string(state.UI.Overlay.Kind), true))
 	}
 	if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
-		parts = append(parts, theme.chip.Render("mode "+string(state.UI.Mode.Active)))
+		parts = append(parts, renderModernLabeledChip(theme, "mode", string(state.UI.Mode.Active), false))
 	}
 	return strings.Join(parts, " ")
 }
@@ -2902,19 +2918,19 @@ func renderModernHeaderRightAdaptive(theme modernShellTheme, state types.AppStat
 }
 
 func renderModernHeaderRightCompact(theme modernShellTheme, state types.AppState, _ types.WorkspaceState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics) string {
-	parts := []string{
-		theme.activeChip.Render(truncateModernLine(renderModernPaneDisplayTitle(state, pane), 18)),
+	parts := []string{renderModernLabeledChip(theme, "pane", truncateModernLine(renderModernPaneDisplayTitle(state, pane), 16), true)}
+	parts = append(parts,
 		theme.chip.Render(renderModernPaneRole(state, pane)),
-		theme.chip.Render(fmt.Sprintf("w%d", len(orderedFloatingPaneIDs(tab)))),
-	}
+		theme.chip.Render(fmt.Sprintf("f%d", len(orderedFloatingPaneIDs(tab)))),
+	)
 	if renderModernFloatingPaneOffscreen(pane, metrics) {
 		parts = append(parts, theme.activeChip.Render("offscreen"))
 	}
 	if state.UI.Overlay.Kind != types.OverlayNone {
-		parts = append(parts, theme.activeChip.Render(string(state.UI.Overlay.Kind)))
+		parts = append(parts, renderModernLabeledChip(theme, "overlay", string(state.UI.Overlay.Kind), true))
 	}
 	if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
-		parts = append(parts, theme.chip.Render(string(state.UI.Mode.Active)))
+		parts = append(parts, renderModernLabeledChip(theme, "mode", string(state.UI.Mode.Active), false))
 	}
 	return strings.Join(parts, " ")
 }
@@ -2997,21 +3013,21 @@ func renderModernContextChromeLine(theme modernShellTheme, state types.AppState,
 		return renderModernFloatingContextWide(theme, state, tab, pane, metrics)
 	}
 	items := []string{
-		theme.activeChip.Render("session " + renderModernRuntimeLabel(state, pane)),
-		theme.chip.Render("control " + renderModernPaneRole(state, pane)),
-		theme.chip.Render("view " + renderModernLayerLabel(renderModernPrimaryLayer(state))),
+		renderModernLabeledChip(theme, "state", renderModernRuntimeLabel(state, pane), true),
+		renderModernLabeledChip(theme, "role", renderModernPaneRole(state, pane), false),
+		renderModernLabeledChip(theme, "view", renderModernLayerLabel(renderModernPrimaryLayer(state)), false),
 	}
-	if terminalLabel := renderModernTerminalLabel(state, pane); terminalLabel != "" {
-		items = append(items, theme.chip.Render("terminal "+terminalLabel))
+	if pane.TerminalID != "" {
+		items = append(items, renderModernLabeledChip(theme, "term", string(pane.TerminalID), false))
 	}
 	if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
-		items = append(items, theme.chip.Render("mode "+string(state.UI.Mode.Active)))
+		items = append(items, renderModernLabeledChip(theme, "mode", string(state.UI.Mode.Active), false))
 	}
 	if state.UI.Overlay.Kind != types.OverlayNone {
-		items = append(items, theme.activeChip.Render("overlay "+string(state.UI.Overlay.Kind)))
+		items = append(items, renderModernLabeledChip(theme, "overlay", string(state.UI.Overlay.Kind), true))
 	}
 	if renderModernFloatingPaneOffscreen(pane, metrics) {
-		items = append(items, theme.activeChip.Render("offscreen"), theme.activeChip.Render("c center"))
+		items = append(items, renderModernLabeledChip(theme, "recall", "offscreen", true), renderModernLabeledChip(theme, "c", "center", true))
 	}
 	return strings.Join(items, " ")
 }
@@ -3026,16 +3042,17 @@ func renderModernContextChromeLineAdaptive(theme modernShellTheme, state types.A
 	if shouldRenderCompactChrome(width) {
 		items := []string{
 			theme.activeChip.Render(renderModernRuntimeLabel(state, pane)),
+			theme.chip.Render(renderModernPaneRole(state, pane)),
 			theme.chip.Render(renderModernLayerLabel(renderModernPrimaryLayer(state))),
 		}
-		if terminalLabel := renderModernTerminalLabel(state, pane); terminalLabel != "" {
-			items = append(items, theme.chip.Render(truncateModernLine(terminalLabel, 14)))
+		if pane.TerminalID != "" {
+			items = append(items, theme.chip.Render(string(pane.TerminalID)))
 		}
 		if state.UI.Mode.Active != "" && state.UI.Mode.Active != types.ModeNone {
-			items = append(items, theme.chip.Render(string(state.UI.Mode.Active)))
+			items = append(items, theme.chip.Render("mode "+string(state.UI.Mode.Active)))
 		}
 		if state.UI.Overlay.Kind != types.OverlayNone {
-			items = append(items, theme.activeChip.Render(string(state.UI.Overlay.Kind)))
+			items = append(items, theme.activeChip.Render("overlay "+string(state.UI.Overlay.Kind)))
 		}
 		if renderModernFloatingPaneOffscreen(pane, metrics) {
 			items = append(items, theme.activeChip.Render("offscreen"), theme.activeChip.Render("c center"))
@@ -3049,12 +3066,12 @@ func renderModernFloatingContextWide(theme modernShellTheme, state types.AppStat
 	floatingPaneIDs := orderedFloatingPaneIDs(tab)
 	_, _, _, topTitle := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
 	items := []string{
-		theme.activeChip.Render("session " + renderModernRuntimeLabel(state, pane)),
-		theme.chip.Render("top " + topTitle),
-		theme.chip.Render(fmt.Sprintf("windows %d", len(floatingPaneIDs))),
+		renderModernLabeledChip(theme, "state", renderModernRuntimeLabel(state, pane), true),
+		renderModernLabeledChip(theme, "top", topTitle, false),
+		renderModernLabeledChip(theme, "float", fmt.Sprintf("%d", len(floatingPaneIDs)), false),
 	}
 	if renderModernFloatingPaneOffscreen(pane, metrics) {
-		items = append(items, theme.activeChip.Render("offscreen"), theme.activeChip.Render("c center"))
+		items = append(items, renderModernLabeledChip(theme, "recall", "offscreen", true), renderModernLabeledChip(theme, "c", "center", true))
 	}
 	return strings.Join(items, " ")
 }
@@ -3063,89 +3080,40 @@ func renderModernFloatingContextCompact(theme modernShellTheme, state types.AppS
 	floatingPaneIDs := orderedFloatingPaneIDs(tab)
 	_, _, _, topTitle := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
 	items := []string{
-		theme.activeChip.Render(renderModernRuntimeLabel(state, pane)),
-		theme.chip.Render(truncateModernLine("top "+topTitle, 16)),
-		theme.chip.Render(fmt.Sprintf("w%d", len(floatingPaneIDs))),
+		renderModernLabeledChip(theme, "state", renderModernRuntimeLabel(state, pane), true),
+		renderModernLabeledChip(theme, "top", truncateModernLine(topTitle, 14), false),
+		renderModernLabeledChip(theme, "float", fmt.Sprintf("%d", len(floatingPaneIDs)), false),
 	}
 	if renderModernFloatingPaneOffscreen(pane, metrics) {
-		items = append(items, theme.activeChip.Render("offscreen"))
+		items = append(items, renderModernLabeledChip(theme, "recall", "offscreen", true))
 	}
 	return strings.Join(items, " ")
 }
 
-func renderModernLegacyFooterShortcuts(state types.AppState, pane types.PaneState) string {
+func renderModernLegacyFooterShortcuts(theme modernShellTheme, state types.AppState, pane types.PaneState) string {
 	parts := renderShortcutParts(state, pane)
 	segments := make([]string, 0, len(parts))
 	for _, part := range parts {
-		segments = append(segments, renderModernLegacyShortcut(part))
+		segments = append(segments, renderModernShortcutChip(theme, part, false))
 	}
 	return strings.Join(segments, "  ")
 }
 
-func renderModernFooterShortcutsAdaptive(state types.AppState, pane types.PaneState, width int) string {
+func renderModernFooterShortcutsAdaptive(theme modernShellTheme, state types.AppState, pane types.PaneState, width int) string {
 	if shouldRenderCompactChrome(width) {
-		return renderModernFooterShortcutsCompact(state, pane)
+		return renderModernFooterShortcutsCompact(theme, state, pane)
 	}
-	return renderModernLegacyFooterShortcuts(state, pane)
+	return renderModernLegacyFooterShortcuts(theme, state, pane)
 }
 
-func renderModernFooterShortcutsCompact(state types.AppState, pane types.PaneState) string {
+func renderModernFooterShortcutsCompact(theme modernShellTheme, state types.AppState, pane types.PaneState) string {
 	parts := renderShortcutParts(state, pane)
 	segments := make([]string, 0, len(parts))
 	for _, part := range parts {
-		switch part {
-		case "Ctrl-p pane":
-			segments = append(segments, "<p>")
-		case "Ctrl-t tab":
-			segments = append(segments, "<t>")
-		case "Ctrl-w ws":
-			segments = append(segments, "<w>")
-		case "Ctrl-o float":
-			segments = append(segments, "<o>")
-		case "Ctrl-f pick":
-			segments = append(segments, "<f>")
-		case "Ctrl-g global":
-			segments = append(segments, "<g>")
-		case "Esc close":
-			segments = append(segments, "<esc>")
-		case "? help":
-			segments = append(segments, "<?>")
-		case "Enter confirm":
-			segments = append(segments, "<enter>")
-		case "Enter here":
-			segments = append(segments, "<enter>")
-		case "Enter submit":
-			segments = append(segments, "<enter>")
-		case "h/l focus":
-			segments = append(segments, "<h/l>")
-		case "j/k move":
-			segments = append(segments, "<j/k>")
-		case "H/J/K/L size":
-			segments = append(segments, "<HJKL>")
-		case "[/] z":
-			segments = append(segments, "<[/]>")
-		case "c center":
-			segments = append(segments, "<c>")
-		case "x close":
-			segments = append(segments, "<x>")
-		case "r restart":
-			segments = append(segments, "<r>")
-		case "a connect":
-			segments = append(segments, "<a>")
-		case "m manager":
-			segments = append(segments, "<m>")
-		case "n new":
-			segments = append(segments, "<n>")
-		case "t new-tab":
-			segments = append(segments, "<t+>")
-		case "e edit":
-			segments = append(segments, "<e>")
-		case "k stop":
-			segments = append(segments, "<k>")
-		}
+		segments = append(segments, renderModernShortcutChip(theme, part, true))
 	}
 	if len(segments) == 0 {
-		return renderModernLegacyFooterShortcuts(state, pane)
+		return renderModernLegacyFooterShortcuts(theme, state, pane)
 	}
 	return strings.Join(segments, " ")
 }
@@ -3153,58 +3121,138 @@ func renderModernFooterShortcutsCompact(state types.AppState, pane types.PaneSta
 func renderModernLegacyShortcut(part string) string {
 	switch part {
 	case "Ctrl-g global":
-		return "<g> Actions"
+		return "<g> GLOBAL"
 	case "Ctrl-p pane":
-		return "<p> Pane"
+		return "<p> PANE"
 	case "Ctrl-t tab":
-		return "<t> Tab"
+		return "<t> TAB"
 	case "Ctrl-w ws":
-		return "<w> Space"
+		return "<w> WS"
 	case "Ctrl-o float":
-		return "<o> Float"
+		return "<o> FLOAT"
 	case "Ctrl-f pick":
-		return "<f> Pick"
+		return "<f> PICK"
 	case "Esc close":
-		return "<esc> Close"
+		return "<esc> CLOSE"
+	case "Esc exit":
+		return "<esc> EXIT"
 	case "Enter confirm":
-		return "<enter> Confirm"
+		return "<enter> CONFIRM"
 	case "Enter here":
-		return "<enter> Here"
+		return "<enter> HERE"
 	case "Enter submit":
-		return "<enter> Submit"
+		return "<enter> SUBMIT"
 	case "h/l focus":
-		return "<h/l> Focus"
+		return "<h/l> FOCUS"
 	case "j/k move":
-		return "<j/k> Move"
+		return "<j/k> MOVE"
 	case "H/J/K/L size":
-		return "<H/J/K/L> Size"
+		return "<H/J/K/L> SIZE"
 	case "[/] z":
 		return "<[/]> Z"
 	case "c center":
-		return "<c> Center"
+		return "<c> CENTER"
 	case "x close":
-		return "<x> Close"
+		return "<x> CLOSE"
 	case "r restart":
-		return "<r> Restart"
+		return "<r> RESTART"
 	case "a connect":
-		return "<a> Connect"
+		return "<a> CONNECT"
 	case "m manager":
-		return "<m> Manager"
+		return "<m> MANAGER"
 	case "n new":
-		return "<n> New"
+		return "<n> NEW"
 	case "t new-tab":
-		return "<t> New tab"
+		return "<t+> TAB"
 	case "o float":
-		return "<o> Float"
+		return "<o> FLOAT"
 	case "e edit":
-		return "<e> Edit"
+		return "<e> EDIT"
 	case "k stop":
-		return "<k> Stop"
+		return "<k> STOP"
 	case "? help":
-		return "<?> Help"
+		return "<?> HELP"
 	default:
 		return strings.ToUpper(part)
 	}
+}
+
+func renderModernShortcutChip(theme modernShellTheme, part string, compact bool) string {
+	label := renderModernLegacyShortcut(part)
+	if compact {
+		return theme.panelMeta.Render(renderModernCompactShortcut(part))
+	}
+	return theme.panelMeta.Render(label)
+}
+
+func renderModernCompactShortcut(part string) string {
+	switch part {
+	case "Ctrl-g global":
+		return "<g> GLOB"
+	case "Ctrl-p pane":
+		return "<p> PANE"
+	case "Ctrl-t tab":
+		return "<t> TAB"
+	case "Ctrl-w ws":
+		return "<w> WS"
+	case "Ctrl-o float":
+		return "<o> FLT"
+	case "Ctrl-f pick":
+		return "<f> PICK"
+	case "Esc close":
+		return "<esc> CLOSE"
+	case "Esc exit":
+		return "<esc> EXIT"
+	case "Enter confirm":
+		return "<enter> OK"
+	case "Enter here":
+		return "<enter> HERE"
+	case "Enter submit":
+		return "<enter> SAVE"
+	case "h/l focus":
+		return "<h/l> FOCUS"
+	case "j/k move":
+		return "<j/k> MOVE"
+	case "H/J/K/L size":
+		return "<HJKL> SIZE"
+	case "[/] z":
+		return "<[/]> Z"
+	case "c center":
+		return "<c> CTR"
+	case "x close":
+		return "<x> CLOSE"
+	case "r restart":
+		return "<r> RESTART"
+	case "a connect":
+		return "<a> CONNECT"
+	case "m manager":
+		return "<m> MGR"
+	case "n new":
+		return "<n> NEW"
+	case "t new-tab":
+		return "<t+> TAB"
+	case "o float":
+		return "<o> FLT"
+	case "e edit":
+		return "<e> EDIT"
+	case "k stop":
+		return "<k> STOP"
+	case "? help":
+		return "<?> HELP"
+	default:
+		return renderModernLegacyShortcut(part)
+	}
+}
+
+func renderModernLabeledChip(theme modernShellTheme, label, value string, active bool) string {
+	content := strings.TrimSpace(label)
+	if value != "" {
+		content += " " + strings.TrimSpace(value)
+	}
+	if active {
+		return theme.activeChip.Render(content)
+	}
+	return theme.chip.Render(content)
 }
 
 func renderModernFooterLayerBadge(state types.AppState) string {
