@@ -30,3 +30,14 @@ func TestRootModelCanSwitchBetweenWorkbenchAndTerminalPoolScreens(t *testing.T) 
 		t.Fatalf("expected switched back focus %q, got %q", FocusWorkbench, model.FocusTarget)
 	}
 }
+
+func TestOpeningOverlayKeepsWorkbenchFocusTarget(t *testing.T) {
+	model := NewModel()
+	model = model.Apply(IntentOpenHelp)
+	if model.FocusTarget != FocusWorkbench {
+		t.Fatalf("expected overlay to keep workbench focus target, got %q", model.FocusTarget)
+	}
+	if !model.Overlay.HasActive() {
+		t.Fatal("expected help overlay to be active")
+	}
+}

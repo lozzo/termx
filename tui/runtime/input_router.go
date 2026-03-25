@@ -31,7 +31,7 @@ func (r InputRouter) HandleKey(ctx context.Context, model app.Model, msg tea.Key
 }
 
 func (r InputRouter) HandleResize(ctx context.Context, model app.Model, cols, rows int) error {
-	channel, ok := activeChannel(model)
+	channel, ok := activeResizeChannel(model)
 	if !ok {
 		return nil
 	}
@@ -55,4 +55,27 @@ func activeChannel(model app.Model) (uint16, bool) {
 		return 0, false
 	}
 	return session.Channel, true
+}
+
+func activeResizeChannel(model app.Model) (uint16, bool) {
+	channel, ok := activeChannel(model)
+	if !ok || model.Workspace == nil {
+		return 0, false
+	}
+	tab := model.Workspace.ActiveTab()
+	if tab == nil {
+		return 0, false
+	}
+	pane, ok := tab.ActivePane()
+	if !ok {
+		return 0, false
+	}
+	meta, ok := model.Terminals[pane.TerminalID]
+	if !ok {
+		return 0, false
+	}
+	if meta.OwnerPaneID != "" && meta.OwnerPaneID != pane.ID {
+		return 0, false
+	}
+	return channel, true
 }

@@ -45,3 +45,51 @@ func (s TerminalService) Stream(channel uint16) (<-chan protocol.StreamFrame, fu
 func (s TerminalService) Kill(ctx context.Context, terminalID string) error {
 	return s.client.Kill(ctx, terminalID)
 }
+
+type PendingWorkbenchActionKind string
+
+const (
+	PendingWorkbenchActionCreateTerminal PendingWorkbenchActionKind = "create-terminal"
+	PendingWorkbenchActionKillTerminal   PendingWorkbenchActionKind = "kill-terminal"
+)
+
+type PendingWorkbenchAction struct {
+	Kind       PendingWorkbenchActionKind
+	TerminalID string
+	Command    []string
+	Name       string
+	Size       protocol.Size
+}
+
+type WorkbenchActionResult struct {
+	TerminalID string
+}
+
+type workbenchActionService interface {
+	Create(context.Context, []string, string, protocol.Size) (*protocol.CreateResult, error)
+	Kill(context.Context, string) error
+}
+
+// ExecuteWorkbenchAction 把 reducer 产出的副作用描述下放到 runtime 服务。
+// 这里先锁住 create/kill 两条真实契约链路，避免 UI 逻辑直接触 client。
+func ExecuteWorkbenchAction(ctx context.Context, service workbenchActionService, action PendingWorkbenchAction) (WorkbenchActionResult, error) {
+	switch action.Kind {
+	case PendingWorkbenchActionCreateTerminal:
+		size := action.Size
+		if size.Cols == 0 || size.Rows == 0 {
+			size = protocol.Size{Cols: 80, Rows: 24}
+		}
+		created, err := service.Create(ctx, action.Command, action.Name, size)
+		if err != nil {
+			return WorkbenchActionResult{}, err
+		}
+		return WorkbenchActionResult{TerminalID: created.TerminalID}, nil
+	case PendingWorkbenchActionKillTerminal:
+		if err := service.Kill(ctx, action.TerminalID); err != nil {
+			return WorkbenchActionResult{}, err
+		}
+		return WorkbenchActionResult{}, nil
+	default:
+		return WorkbenchActionResult{}, nil
+	}
+}

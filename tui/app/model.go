@@ -18,6 +18,7 @@ type Model struct {
 	Workspace   *workspace.WorkspaceState
 	Terminals   map[types.TerminalID]terminal.Metadata
 	Sessions    map[types.TerminalID]TerminalSession
+	Notice      *NoticeState
 }
 
 type TerminalSession struct {
@@ -64,4 +65,55 @@ func (m Model) View() string {
 		return viewRenderer(m, 120, 20)
 	}
 	return ""
+}
+
+type NoticeState struct {
+	Message string
+}
+
+func (m Model) clone() Model {
+	next := m
+	next.Overlay = m.Overlay.Clone()
+	next.Workspace = m.Workspace.Clone()
+	next.Terminals = cloneTerminalMap(m.Terminals)
+	next.Sessions = cloneSessionMap(m.Sessions)
+	if m.Notice != nil {
+		notice := *m.Notice
+		next.Notice = &notice
+	}
+	return next
+}
+
+func (m *Model) ensureWorkspace() {
+	if m.Workspace == nil {
+		m.Workspace = workspace.NewTemporary("main")
+	}
+	if m.Terminals == nil {
+		m.Terminals = make(map[types.TerminalID]terminal.Metadata)
+	}
+	if m.Sessions == nil {
+		m.Sessions = make(map[types.TerminalID]TerminalSession)
+	}
+}
+
+func cloneTerminalMap(input map[types.TerminalID]terminal.Metadata) map[types.TerminalID]terminal.Metadata {
+	if len(input) == 0 {
+		return make(map[types.TerminalID]terminal.Metadata)
+	}
+	out := make(map[types.TerminalID]terminal.Metadata, len(input))
+	for key, meta := range input {
+		out[key] = meta.Clone()
+	}
+	return out
+}
+
+func cloneSessionMap(input map[types.TerminalID]TerminalSession) map[types.TerminalID]TerminalSession {
+	if len(input) == 0 {
+		return make(map[types.TerminalID]TerminalSession)
+	}
+	out := make(map[types.TerminalID]TerminalSession, len(input))
+	for key, session := range input {
+		out[key] = session
+	}
+	return out
 }

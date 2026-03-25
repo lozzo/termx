@@ -75,10 +75,12 @@ func Bootstrap(ctx context.Context, client Client, cfg BootstrapConfig) (app.Mod
 
 	model.Workspace = ws
 	model.Terminals[pane.TerminalID] = stateterminal.Metadata{
-		ID:      pane.TerminalID,
-		Name:    "shell",
-		Command: []string{cfg.DefaultShell},
-		State:   stateterminal.StateRunning,
+		ID:              pane.TerminalID,
+		Name:            "shell",
+		Command:         []string{cfg.DefaultShell},
+		State:           stateterminal.StateRunning,
+		OwnerPaneID:     pane.ID,
+		AttachedPaneIDs: []types.PaneID{pane.ID},
 	}
 	model.Sessions[pane.TerminalID] = app.TerminalSession{
 		TerminalID: pane.TerminalID,

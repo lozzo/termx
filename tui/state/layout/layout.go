@@ -18,6 +18,19 @@ func (n *Node) IsLeaf() bool {
 	return n != nil && n.First == nil && n.Second == nil
 }
 
+func (n *Node) Clone() *Node {
+	if n == nil {
+		return nil
+	}
+	return &Node{
+		PaneID:    n.PaneID,
+		Direction: n.Direction,
+		Ratio:     n.Ratio,
+		First:     n.First.Clone(),
+		Second:    n.Second.Clone(),
+	}
+}
+
 func (n *Node) Split(target types.PaneID, dir types.SplitDirection, newPaneID types.PaneID) bool {
 	if n == nil {
 		return false

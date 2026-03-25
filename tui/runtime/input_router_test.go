@@ -69,6 +69,31 @@ func TestInputRouterSendsKeysToFocusedWorkbenchPaneAndResizesOwnedTerminal(t *te
 	}
 }
 
+func TestInputRouterBlocksOverlayInputAndSkipsFollowerResize(t *testing.T) {
+	service := &stubTerminalService{}
+	router := NewInputRouter(service)
+	state := sampleFocusedLivePaneState()
+	state = state.Apply(app.IntentOpenHelp)
+
+	if err := router.HandleKey(context.Background(), state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")}); err != nil {
+		t.Fatalf("HandleKey returned error: %v", err)
+	}
+	if len(service.lastInputData) != 0 {
+		t.Fatalf("expected overlay to block input, got %q", string(service.lastInputData))
+	}
+
+	follower := sampleFocusedLivePaneState()
+	meta := follower.Terminals[types.TerminalID("term-1")]
+	meta.OwnerPaneID = types.PaneID("pane-other")
+	follower.Terminals[types.TerminalID("term-1")] = meta
+	if err := router.HandleResize(context.Background(), follower, 120, 40); err != nil {
+		t.Fatalf("HandleResize returned error: %v", err)
+	}
+	if service.lastResizeChannel != 0 {
+		t.Fatalf("expected follower resize to be ignored, got channel=%d", service.lastResizeChannel)
+	}
+}
+
 func sampleFocusedLivePaneState() app.Model {
 	ws := workspace.NewTemporary("main")
 	tab := ws.ActiveTab()

@@ -1,6 +1,10 @@
 package terminal
 
-import "github.com/lozzow/termx/tui/state/types"
+import (
+	"time"
+
+	"github.com/lozzow/termx/tui/state/types"
+)
 
 type State string
 
@@ -10,11 +14,15 @@ const (
 )
 
 type Metadata struct {
-	ID      types.TerminalID
-	Name    string
-	Command []string
-	Tags    map[string]string
-	State   State
+	ID              types.TerminalID
+	Name            string
+	Command         []string
+	Tags            map[string]string
+	State           State
+	OwnerPaneID     types.PaneID
+	AttachedPaneIDs []types.PaneID
+	LastInteraction time.Time
+	LastOutputAt    time.Time
 }
 
 type BindingSnapshot struct {
@@ -42,4 +50,18 @@ func cloneTags(tags map[string]string) map[string]string {
 		out[key] = value
 	}
 	return out
+}
+
+func (m Metadata) Clone() Metadata {
+	return Metadata{
+		ID:              m.ID,
+		Name:            m.Name,
+		Command:         append([]string(nil), m.Command...),
+		Tags:            cloneTags(m.Tags),
+		State:           m.State,
+		OwnerPaneID:     m.OwnerPaneID,
+		AttachedPaneIDs: append([]types.PaneID(nil), m.AttachedPaneIDs...),
+		LastInteraction: m.LastInteraction,
+		LastOutputAt:    m.LastOutputAt,
+	}
 }

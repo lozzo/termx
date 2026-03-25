@@ -6,6 +6,7 @@ import (
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tui/app"
 	"github.com/lozzow/termx/tui/render/chrome"
+	overlayview "github.com/lozzow/termx/tui/render/overlay"
 	"github.com/lozzow/termx/tui/state/types"
 	"github.com/lozzow/termx/tui/state/workspace"
 )
@@ -19,6 +20,9 @@ func Render(model app.Model, width, height int) string {
 	lines = append(lines, renderTopbar(model))
 	lines = append(lines, renderPrimaryPane(model, width))
 	lines = append(lines, renderActionBar(model))
+	if model.Overlay.HasActive() {
+		lines = append(lines, overlayview.Render(model, width, height))
+	}
 	return strings.Join(lines, "\n")
 }
 
@@ -42,15 +46,20 @@ func renderPrimaryPane(model app.Model, width int) string {
 
 	switch pane.SlotState {
 	case types.PaneSlotUnconnected:
-		return chrome.Frame("unconnected", "unconnected", width, []string{
+		lines := []string{}
+		if model.Notice != nil {
+			lines = append(lines, "notice: "+model.Notice.Message, "")
+		}
+		lines = append(lines,
 			"",
 			"connect existing terminal",
 			"create new terminal",
 			"open terminal pool",
-		})
+		)
+		return chrome.Frame("unconnected", "unconnected", width, lines)
 	case types.PaneSlotLive:
 		title := terminalName(model, pane.TerminalID)
-		return chrome.Frame(title, "running  owner", width, snapshotLines(model, pane.TerminalID))
+		return chrome.Frame(title, liveMeta(model, pane), width, snapshotLines(model, pane.TerminalID))
 	case types.PaneSlotExited:
 		title := terminalName(model, pane.TerminalID)
 		return chrome.Frame(title, "exited", width, []string{"terminal exited", "press R to restart"})
@@ -112,4 +121,15 @@ func flattenScreen(snapshot *protocol.Snapshot) []string {
 		return []string{"$"}
 	}
 	return lines
+}
+
+func liveMeta(model app.Model, pane workspace.PaneState) string {
+	meta, ok := model.Terminals[pane.TerminalID]
+	if !ok {
+		return "running  owner"
+	}
+	if meta.OwnerPaneID != "" && meta.OwnerPaneID != pane.ID {
+		return "running  follower"
+	}
+	return "running  owner"
 }

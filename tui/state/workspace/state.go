@@ -91,6 +91,113 @@ func (t *TabState) TrackPane(pane PaneState) {
 	}
 }
 
+func (ws *WorkspaceState) Clone() *WorkspaceState {
+	if ws == nil {
+		return nil
+	}
+	out := &WorkspaceState{
+		ID:          ws.ID,
+		ActiveTabID: ws.ActiveTabID,
+		Tabs:        make(map[types.TabID]*TabState, len(ws.Tabs)),
+	}
+	for id, tab := range ws.Tabs {
+		out.Tabs[id] = tab.Clone()
+	}
+	return out
+}
+
+func (ws *WorkspaceState) HasPane(id types.PaneID) bool {
+	if ws == nil {
+		return false
+	}
+	for _, tab := range ws.Tabs {
+		if _, ok := tab.Pane(id); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *TabState) Clone() *TabState {
+	if t == nil {
+		return nil
+	}
+	out := &TabState{
+		ID:            t.ID,
+		Title:         t.Title,
+		Layout:        t.Layout.Clone(),
+		ActivePaneID:  t.ActivePaneID,
+		Panes:         make(map[types.PaneID]PaneState, len(t.Panes)),
+		FloatingOrder: append([]types.PaneID(nil), t.FloatingOrder...),
+	}
+	for id, pane := range t.Panes {
+		out.Panes[id] = pane
+	}
+	return out
+}
+
+func (t *TabState) PaneCount() int {
+	if t == nil {
+		return 0
+	}
+	return len(t.Panes)
+}
+
+func (t *TabState) FirstPaneID() types.PaneID {
+	if t == nil {
+		return ""
+	}
+	for _, floatingID := range t.FloatingOrder {
+		if _, ok := t.Panes[floatingID]; ok {
+			return floatingID
+		}
+	}
+	for paneID := range t.Panes {
+		return paneID
+	}
+	return ""
+}
+
+func (t *TabState) RaiseFloatingPane(paneID types.PaneID) {
+	if t == nil {
+		return
+	}
+	next := make([]types.PaneID, 0, len(t.FloatingOrder))
+	for _, existing := range t.FloatingOrder {
+		if existing != paneID {
+			next = append(next, existing)
+		}
+	}
+	t.FloatingOrder = append(next, paneID)
+}
+
+func (t *TabState) RemoveFloatingPane(paneID types.PaneID) {
+	if t == nil {
+		return
+	}
+	next := make([]types.PaneID, 0, len(t.FloatingOrder))
+	for _, existing := range t.FloatingOrder {
+		if existing != paneID {
+			next = append(next, existing)
+		}
+	}
+	t.FloatingOrder = next
+}
+
+func (p PaneState) IsUnconnected() bool {
+	return p.SlotState == types.PaneSlotUnconnected
+}
+
+func (p PaneState) AnchorVisible(bounds types.Rect) bool {
+	return p.Rect.X >= bounds.X && p.Rect.Y >= bounds.Y &&
+		p.Rect.X < bounds.X+bounds.W && p.Rect.Y < bounds.Y+bounds.H
+}
+
+func (p PaneState) IsCentered(bounds types.Rect) bool {
+	return p.Rect.X == bounds.X+(bounds.W-p.Rect.W)/2 &&
+		p.Rect.Y == bounds.Y+(bounds.H-p.Rect.H)/2
+}
+
 func containsPane(ids []types.PaneID, target types.PaneID) bool {
 	for _, id := range ids {
 		if id == target {

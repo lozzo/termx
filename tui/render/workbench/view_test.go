@@ -47,6 +47,20 @@ func TestWorkbenchViewRendersLivePaneBodyFromSessionSnapshot(t *testing.T) {
 	}
 }
 
+func TestWorkbenchViewShowsOverlayAndRemoteRemoveNotice(t *testing.T) {
+	model := sampleUnconnectedWorkbenchState()
+	model.Notice = &app.NoticeState{Message: `terminal "api-dev" was removed from the pool`}
+	model = model.Apply(app.IntentOpenHelp)
+
+	view := Render(model, 120, 20)
+	if !strings.Contains(view, `notice: terminal "api-dev" was removed from the pool`) {
+		t.Fatal("expected remote remove notice")
+	}
+	if !strings.Contains(view, "Help") {
+		t.Fatal("expected help overlay to render on top of workbench")
+	}
+}
+
 func sampleWorkbenchState() app.Model {
 	model := sampleLivePaneWorkbenchState()
 	model.Terminals[types.TerminalID("term-1")] = stateterminal.Metadata{
