@@ -1805,7 +1805,10 @@ func renderModernScreenFrameLine(text string, innerWidth int) string {
 }
 
 func (r modernScreenShellRenderer) renderOverlayViewport(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width, height int) string {
-	backdropLines := r.renderWorkbenchCanvasLines(theme, state, tab, pane, metrics, width, height, false)
+	// overlay 现在要覆盖“当前整个工作台 body”，而不是只覆盖 pane canvas。
+	// 这样 floating status strip / mixed detached strip 等产品层信号也会一起进入 backdrop。
+	backdropBody := r.renderWorkbench(theme, state, tab, pane, metrics, width, height)
+	backdropLines := strings.Split(backdropBody, "\n")
 	backdropLines = renderModernOverlayBackdropWash(backdropLines)
 	dialogWidth := renderModernOverlayDialogWidth(metrics, width)
 	dialogLines := r.renderModernOverlayDialogLines(theme, state, dialogWidth, height)
@@ -3558,20 +3561,24 @@ func renderModernNotice(theme modernShellTheme, notices []btui.Notice) string {
 }
 
 func renderModernOverlayBackdropLine(state types.AppState) string {
-	workspace, ok := state.Domain.Workspaces[state.Domain.ActiveWorkspaceID]
-	if !ok {
-		return ""
-	}
-	tab, ok := workspace.Tabs[workspace.ActiveTabID]
-	if !ok {
-		return ""
-	}
-	pane, ok := tab.Panes[tab.ActivePaneID]
+	_, tab, pane, ok := renderModernOverlayBackdropTarget(state)
 	if !ok {
 		return ""
 	}
 	role := renderModernPaneRole(state, pane)
-	return fmt.Sprintf("workbench paused  •  %s  •  %s", renderPaneTitle(state, pane), role)
+	parts := []string{"workbench paused", renderPaneTitle(state, pane), role}
+	floatingPaneIDs := orderedFloatingPaneIDs(tab)
+	switch {
+	case tab.ActiveLayer == types.FocusLayerFloating && len(floatingPaneIDs) > 0:
+		_, _, _, topTitle := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
+		parts = append(parts, fmt.Sprintf("floating %d", len(floatingPaneIDs)))
+		if strings.TrimSpace(topTitle) != "" {
+			parts = append(parts, "top "+topTitle)
+		}
+	case len(floatingPaneIDs) > 0:
+		parts = append(parts, fmt.Sprintf("detached %d", len(floatingPaneIDs)))
+	}
+	return strings.Join(parts, "  •  ")
 }
 
 func renderModernOverlayShadow(width int, height int) []string {
@@ -3675,28 +3682,23 @@ func renderModernPrimaryLayer(state types.AppState) types.FocusLayer {
 }
 
 func renderModernBackdropContextLine(state types.AppState) string {
-	workspaceID := state.Domain.ActiveWorkspaceID
-	tabID := types.TabID("")
-	if state.UI.Overlay.Kind != types.OverlayNone {
-		if state.UI.Overlay.ReturnFocus.WorkspaceID != "" {
-			workspaceID = state.UI.Overlay.ReturnFocus.WorkspaceID
-		}
-		if state.UI.Overlay.ReturnFocus.TabID != "" {
-			tabID = state.UI.Overlay.ReturnFocus.TabID
-		}
-	}
-	workspace, ok := state.Domain.Workspaces[workspaceID]
+	workspace, tab, _, ok := renderModernOverlayBackdropTarget(state)
 	if !ok {
 		return ""
 	}
-	if tabID == "" {
-		tabID = workspace.ActiveTabID
+	parts := []string{
+		"workspace " + safeWorkspaceLabel(workspace),
+		"tab " + safeTabLabel(tab),
+		"layer " + string(renderModernPrimaryLayer(state)),
 	}
-	tab, ok := workspace.Tabs[tabID]
-	if !ok {
-		return ""
+	if floatingCount := len(orderedFloatingPaneIDs(tab)); floatingCount > 0 {
+		if tab.ActiveLayer == types.FocusLayerFloating {
+			parts = append(parts, fmt.Sprintf("floating %d", floatingCount))
+		} else {
+			parts = append(parts, fmt.Sprintf("detached %d", floatingCount))
+		}
 	}
-	return fmt.Sprintf("workspace %s  •  tab %s  •  layer %s", safeWorkspaceLabel(workspace), safeTabLabel(tab), renderModernPrimaryLayer(state))
+	return strings.Join(parts, "  •  ")
 }
 
 func renderModernPaneRole(state types.AppState, pane types.PaneState) string {
@@ -3884,6 +3886,44 @@ func renderModernBackdropPausedLine(state types.AppState) string {
 		line += "  •  return " + returnFocus
 	}
 	return line
+}
+
+// renderModernOverlayBackdropTarget 统一计算 overlay backdrop 应该描述的目标工作台位置。
+// overlay 打开时优先使用 return focus，这样 backdrop chrome 和真实返回目标保持一致。
+func renderModernOverlayBackdropTarget(state types.AppState) (types.WorkspaceState, types.TabState, types.PaneState, bool) {
+	workspaceID := state.Domain.ActiveWorkspaceID
+	tabID := types.TabID("")
+	paneID := types.PaneID("")
+	if state.UI.Overlay.Kind != types.OverlayNone {
+		if state.UI.Overlay.ReturnFocus.WorkspaceID != "" {
+			workspaceID = state.UI.Overlay.ReturnFocus.WorkspaceID
+		}
+		if state.UI.Overlay.ReturnFocus.TabID != "" {
+			tabID = state.UI.Overlay.ReturnFocus.TabID
+		}
+		if state.UI.Overlay.ReturnFocus.PaneID != "" {
+			paneID = state.UI.Overlay.ReturnFocus.PaneID
+		}
+	}
+	workspace, ok := state.Domain.Workspaces[workspaceID]
+	if !ok {
+		return types.WorkspaceState{}, types.TabState{}, types.PaneState{}, false
+	}
+	if tabID == "" {
+		tabID = workspace.ActiveTabID
+	}
+	tab, ok := workspace.Tabs[tabID]
+	if !ok {
+		return types.WorkspaceState{}, types.TabState{}, types.PaneState{}, false
+	}
+	if paneID == "" {
+		paneID = tab.ActivePaneID
+	}
+	pane, ok := tab.Panes[paneID]
+	if !ok {
+		return types.WorkspaceState{}, types.TabState{}, types.PaneState{}, false
+	}
+	return workspace, tab, pane, true
 }
 
 func renderModernDetachedFloatingLabel(state types.AppState, pane types.PaneState) string {

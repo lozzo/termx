@@ -435,7 +435,10 @@ func TestRuntimeRendererShellOnlyOverlayKeepsPaneContext(t *testing.T) {
 	if !strings.Contains(stripped, "overlay help") || !strings.Contains(stripped, "mode picker") || !strings.Contains(stripped, "<esc> CLOSE") || !strings.Contains(stripped, "░") {
 		t.Fatalf("expected shell-only overlay renderer to expose overlay chrome and footer actions, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "workbench paused  •  api-dev  •  owner") || !strings.Contains(stripped, "active pane api-dev  •  owner  •  connected") || !strings.Contains(stripped, "▒") {
+	if !containsNormalizedRuntimeLineWithAll(view, "$ pwd") ||
+		!containsNormalizedRuntimeLineWithAll(view, "workbench paused", "api-dev", "owner") ||
+		!containsNormalizedRuntimeLineWithAll(view, "active pane api-dev", "owner", "connected") ||
+		!strings.Contains(stripped, "▒") {
 		t.Fatalf("expected shell-only overlay renderer to retain a dimmed workbench canvas backdrop, got:\n%s", view)
 	}
 }
@@ -904,6 +907,99 @@ func TestRuntimeRendererShellOnlyRendersStructuredOverlayBackdropContext(t *test
 	stripped := stripANSIForTest(view)
 	if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "return to tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "overlay help") || !strings.Contains(stripped, "WORKBENCH") || !strings.Contains(stripped, "workbench paused  •  api-dev  •  owner") || !strings.Contains(stripped, "active pane api-dev  •  owner  •  connected") {
 		t.Fatalf("expected shell-only overlay backdrop to render modal on top of the workbench canvas, got:\n%s", view)
+	}
+}
+
+func TestModernScreenShellFloatingOverlayBackdropKeepsFloatingStatusStrip(t *testing.T) {
+	state := runtimeStateWithFloatingOverviewTargets()
+	state.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayHelp,
+		ReturnFocus: state.UI.Focus,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+	state.UI.Focus.OverlayTarget = types.OverlayHelp
+	screens := NewRuntimeTerminalStore(RuntimeSessions{
+		Terminals: map[types.TerminalID]TerminalRuntimeSession{
+			types.TerminalID("term-1"): {
+				TerminalID: types.TerminalID("term-1"),
+				Snapshot: &protocol.Snapshot{
+					TerminalID: "term-1",
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{
+							{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+						},
+					},
+				},
+			},
+			types.TerminalID("term-2"): {
+				TerminalID: types.TerminalID("term-2"),
+				Snapshot: &protocol.Snapshot{
+					TerminalID: "term-2",
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{
+							{{Content: "b"}, {Content: "u"}, {Content: "i"}, {Content: "l"}, {Content: "d"}, {Content: " "}, {Content: "o"}, {Content: "k"}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	view := renderModernShellForTest(t, state, nil, wireframeMetrics{
+		ViewportWidth:  96,
+		ViewportHeight: 28,
+		OverlayWidth:   60,
+	}, screens)
+	stripped := stripANSIForTest(view)
+
+	if !strings.Contains(stripped, "Help") || !strings.Contains(stripped, "overlay help") || !strings.Contains(stripped, "░") {
+		t.Fatalf("expected floating overlay shell to render modal and shadow, got:\n%s", view)
+	}
+	if !containsRenderedLineWithAll(stripped, "main / shell / floating / api-dev", "top build-log", "float 2") {
+		t.Fatalf("expected floating overlay backdrop to keep floating route summary in top chrome, got:\n%s", view)
+	}
+	if !containsNormalizedRuntimeLineWithAll(view, "floating 2") {
+		t.Fatalf("expected floating overlay backdrop to keep floating status strip signal, got:\n%s", view)
+	}
+	if !containsNormalizedRuntimeLineWithAll(view, "WORKBENCH") || !containsNormalizedRuntimeLineWithAll(view, "workbench paused", "api-dev", "owner") {
+		t.Fatalf("expected floating overlay modal to keep paused workbench context, got:\n%s", view)
+	}
+}
+
+func TestModernScreenShellMixedOverlayBackdropKeepsDetachedFloatingStrip(t *testing.T) {
+	state := runtimeStateWithMixedPaneSlots()
+	state.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayHelp,
+		ReturnFocus: state.UI.Focus,
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+	state.UI.Focus.OverlayTarget = types.OverlayHelp
+	screens := NewRuntimeTerminalStore(RuntimeSessions{
+		Terminals: map[types.TerminalID]TerminalRuntimeSession{
+			types.TerminalID("term-1"): {
+				TerminalID: types.TerminalID("term-1"),
+				Snapshot: &protocol.Snapshot{
+					TerminalID: "term-1",
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{
+							{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "u"}, {Content: "p"}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	view := renderModernShellForTest(t, state, nil, wireframeMetrics{
+		ViewportWidth:  96,
+		ViewportHeight: 28,
+		OverlayWidth:   60,
+	}, screens)
+	if !containsNormalizedRuntimeLineWithAll(view, "Detached windows", "1 floating") {
+		t.Fatalf("expected mixed overlay backdrop to retain detached floating strip, got:\n%s", view)
+	}
+	if !containsNormalizedRuntimeLineWithAll(view, "WORKBENCH") || !containsNormalizedRuntimeLineWithAll(view, "workbench paused", "api-dev", "owner", "detach") {
+		t.Fatalf("expected mixed overlay modal to describe detached floating workbench state, got:\n%s", view)
 	}
 }
 

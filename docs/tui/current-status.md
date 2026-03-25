@@ -297,3 +297,42 @@ termx TUI 当前不能继续沿最近一段时间的“modern shell / modal / ca
   - overlap / clipping 的产品态细化
   - overlay 真正覆盖在 composited workbench 之上
   - 渲染稳定性与残影清理
+
+---
+
+## 12. 第 213 轮 TDD
+
+这一轮把 `overlay on top of workbench` 往前推进了一大步，重点不是继续雕 modal 文案，而是让 overlay 真正覆盖“当前整个工作台 body”：
+
+1. overlay backdrop 从 pane canvas 升级为整块 workbench body
+   - `tui/runtime_modern_renderer.go`
+   - 之前 overlay 只基于 `renderWorkbenchCanvasLines(...)` 洗出 backdrop
+   - 这会导致 floating status strip、mixed detached strip 在 overlay 打开时直接消失
+   - 现在 overlay backdrop 直接基于 `renderWorkbench(...)` 的完整 body 结果
+   - 因此 single / split / floating / mixed 当前工作台 body 的真实结构都会被一起盖住
+2. overlay backdrop chrome 开始描述 floating / mixed 的真实工作台状态
+   - `workbench paused` 行现在能区分：
+     - floating layer：`floating N  •  top ...`
+     - mixed/tiled with detached floating：`detached N`
+   - workspace/tab/layer 行也会同步带上 floating/detached 语义
+3. 增加 floating / mixed 的 overlay 产品级验证
+   - `tui/runtime_renderer_test.go`
+   - `tui/runtime_test.go`
+   - 新护栏覆盖：
+     - floating help overlay 打开时保留 floating status strip 语义
+     - mixed help overlay 打开时保留 detached strip 语义
+     - overlay 关闭后工作台恢复干净，没有残留 shadow/backdrop 文本
+
+本轮验证命令：
+
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./tui -count=1`
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./... -count=1`
+
+当前阶段推进结果：
+
+- overlay 不再只像“盖在某个 pane 上”，而是开始真正盖在当前整个 composited workbench body 上
+- floating / mixed 的 overlay backdrop 已经能保留当前工作台结构语义
+- 下一块应继续推进：
+  - overlap / clipping 的产品态细化
+  - overlay close / resize / viewport 变化下的残影治理
+  - manager / picker / prompt 在 floating/mixed backdrop 下的更多真实回归

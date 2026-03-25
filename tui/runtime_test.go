@@ -29,6 +29,57 @@ func stripANSIRuntimeView(view string) string {
 	return xansi.Strip(view)
 }
 
+var runtimeViewNoiseReplacer = strings.NewReplacer(
+	"▒", " ",
+	"░", " ",
+	"╔", " ",
+	"╗", " ",
+	"╚", " ",
+	"╝", " ",
+	"║", " ",
+	"═", " ",
+	"╭", " ",
+	"╮", " ",
+	"╯", " ",
+	"╰", " ",
+	"│", " ",
+	"┌", " ",
+	"┐", " ",
+	"└", " ",
+	"┘", " ",
+	"─", " ",
+	"━", " ",
+	"┏", " ",
+	"┓", " ",
+	"┗", " ",
+	"┛", " ",
+	"┃", " ",
+)
+
+func normalizeRuntimeView(view string) string {
+	lines := strings.Split(runtimeViewNoiseReplacer.Replace(stripANSIRuntimeView(view)), "\n")
+	for index, line := range lines {
+		lines[index] = strings.Join(strings.Fields(line), " ")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func containsNormalizedRuntimeLineWithAll(view string, parts ...string) bool {
+	for _, line := range strings.Split(normalizeRuntimeView(view), "\n") {
+		matched := true
+		for _, part := range parts {
+			if !strings.Contains(line, part) {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
+}
+
 func containsRuntimeLineWithAll(view string, parts ...string) bool {
 	for _, line := range strings.Split(view, "\n") {
 		matched := true
@@ -1338,6 +1389,145 @@ func TestE2ERunScenarioDefaultModernOverlayCloseLeavesCleanWorkbench(t *testing.
 	})
 	if err != nil {
 		t.Fatalf("expected default modern overlay close cleanup scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioDefaultModernFloatingHelpOverlayPreservesBackdropAndClosesCleanly(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithFloatingOverviewTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: "term-1",
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+							},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: "term-2",
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "b"}, {Content: "u"}, {Content: "i"}, {Content: "l"}, {Content: "d"}, {Content: " "}, {Content: "o"}, {Content: "k"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			current := model
+			nextModel, cmd := current.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			opened := stripANSIRuntimeView(current.View())
+			if !strings.Contains(opened, "Help") || !strings.Contains(opened, "overlay help") || !containsRuntimeLineWithAll(opened, "main / shell / floating / api-dev", "top build-log", "float 2") || !containsNormalizedRuntimeLineWithAll(current.View(), "floating 2") || !containsNormalizedRuntimeLineWithAll(current.View(), "WORKBENCH") || !containsNormalizedRuntimeLineWithAll(current.View(), "workbench paused", "api-dev", "owner") || !strings.Contains(opened, "░") {
+				t.Fatalf("expected floating help overlay to keep floating backdrop semantics and modal layering, got:\n%s", current.View())
+			}
+			nextModel, cmd = current.Update(tea.KeyMsg{Type: tea.KeyEsc})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			closed := stripANSIRuntimeView(current.View())
+			if strings.Contains(closed, "overlay help") || strings.Contains(closed, "workbench paused") || strings.Contains(closed, "░") || !containsRuntimeLineWithAll(closed, "main / shell / floating / api-dev", "top build-log", "float 2") || !strings.Contains(closed, "api ready") || !strings.Contains(closed, "build ok") {
+				t.Fatalf("expected floating help overlay close to restore clean floating workbench body, got:\n%s", current.View())
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected floating help overlay open/close scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioDefaultModernMixedHelpOverlayPreservesDetachedStripAndClosesCleanly(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithMixedPaneSlots()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: "term-1",
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "u"}, {Content: "p"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			current := model
+			nextModel, cmd := current.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			opened := stripANSIRuntimeView(current.View())
+			if !strings.Contains(opened, "Help") || !strings.Contains(opened, "overlay help") || !containsNormalizedRuntimeLineWithAll(current.View(), "WORKBENCH") || !containsNormalizedRuntimeLineWithAll(current.View(), "workbench paused", "api-dev", "owner", "detached 1") || !containsNormalizedRuntimeLineWithAll(current.View(), "workspace main", "tab shell", "layer tiled", "detached 1") || !strings.Contains(opened, "░") {
+				t.Fatalf("expected mixed help overlay to keep detached strip and mixed backdrop semantics, got:\n%s", current.View())
+			}
+			nextModel, cmd = current.Update(tea.KeyMsg{Type: tea.KeyEsc})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			closed := stripANSIRuntimeView(current.View())
+			if strings.Contains(closed, "overlay help") || strings.Contains(closed, "░") || !strings.Contains(closed, "Detached windows") || !strings.Contains(closed, "waiting pane") || !strings.Contains(closed, "deploy-log") || !strings.Contains(closed, "unconnected pane") {
+				t.Fatalf("expected mixed help overlay close to restore clean mixed workbench body, got:\n%s", current.View())
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected mixed help overlay open/close scenario to succeed, got %v", err)
 	}
 }
 
