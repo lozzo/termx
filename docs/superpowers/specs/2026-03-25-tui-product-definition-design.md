@@ -95,6 +95,21 @@ termx 对外的产品定义是：
 - 默认保存完整工作现场，而不仅是布局骨架
 - workspace 不是 session，不拥有 terminal 本体
 
+### 4.6 pane 状态
+
+第一阶段只保留三种用户可理解状态：
+
+- `live pane`
+- `exited pane`
+- `unconnected pane`
+
+其中：
+
+- `exited pane` 表示 terminal 对象仍存在，但状态已退出
+- `unconnected pane` 表示当前没有 terminal 对象与该 pane 绑定
+
+不再把 `saved pane` 作为主产品术语。
+
 ## 5. 一级信息架构
 
 第一阶段只保留三个层级：
@@ -151,10 +166,9 @@ termx 对外的产品定义是：
 右侧状态可包括：
 
 - owner / follower
-- readonly
-- fit / fixed
+- exited / unconnected
 - share 数量
-- pin 等局部标记
+- 其他必要的局部连接状态
 
 ### 6.3 底栏
 
@@ -173,11 +187,30 @@ termx 对外的产品定义是：
 - 创建新 terminal
 - 打开 terminal pool
 
-### 6.5 floating pane
+### 6.5 unconnected pane 的来源
+
+`unconnected pane` 至少有两种来源：
+
+- 新建 pane 后暂未绑定 terminal
+- 原 pane 绑定的 terminal 被 remove，pane 保留但绑定被解除
+
+### 6.6 exited pane
+
+当 terminal 自然退出或被 kill 时：
+
+- pane 保留原位
+- 历史内容继续保留
+- 若同一个 terminal 同时绑定多个 pane，这些 pane 一起进入 `exited pane`
+- 用户可通过 `R` 对原 terminal 对象执行 restart
+
+### 6.7 floating pane
 
 - 与 tiled pane 属于同级展示形态
 - 能力上是完整 pane
 - 仅在布局能力上受限，不支持内部继续 split
+- 允许拖出主视口，但必须始终保留左上角拖动锚点在大窗口内
+- 最近被聚焦或操作的 floating pane 自动置顶
+- 必须提供“呼回并居中”的正式交互
 
 ## 7. Terminal Pool 页面定义
 
@@ -215,6 +248,8 @@ termx 对外的产品定义是：
 
 如果用户需要接管输入，应通过显式动作切换，而不是在管理页里隐式抢占输入焦点。
 
+只要 pane 或页面仍在当前界面模型里，对应 terminal 的 live session 与流订阅就应继续保持，不因为失焦或切页自动降级成 snapshot-only。
+
 ### 7.4 右栏
 
 信息展示优先级：
@@ -230,10 +265,12 @@ Terminal Pool 页的主操作重心偏向 terminal 本体管理，例如：
 
 - 重命名
 - 标签/元数据编辑
-- stop / kill
+- kill / remove
 - 查看连接关系
 
 从这里“打开到当前 pane / 新 tab / floating”仍然需要提供，但不是主叙事。
+
+第一阶段的 `metadata / tags` 先作为 terminal 原生信息存在，主要用于显示、编辑和搜索，不在本阶段扩展成复杂规则系统。
 
 ## 8. 统一创建与连接流程
 
@@ -278,7 +315,22 @@ Terminal Pool 页的主操作重心偏向 terminal 本体管理，例如：
 
 终端是否持续输出可以作为辅助状态展示，但不主导排序。
 
-## 10. pane 关闭与 terminal 生命周期
+## 10. owner / follower 规则
+
+- 一个 terminal 同时最多一个 owner
+- 新 pane 连接已有 terminal 时：
+  - 如果当前没有 owner，就自动成为 owner
+  - 否则默认成为 follower
+- owner 关闭或解绑后，不自动迁移到其他 pane
+- 其他 pane 若要接管，执行显式动作 `Become Owner`
+- `Become Owner` 是强动作：
+  - 会直接抢占 owner
+  - 原 owner 自动降为 follower
+- follower 的几何变化不应改写 terminal 的 PTY size
+
+第一阶段不引入 `fit / fixed / pin / size lock warn` 这套显示模型。
+
+## 11. pane 与 terminal 生命周期
 
 产品必须显式区分 pane 操作和 terminal 操作。
 
@@ -289,13 +341,35 @@ Terminal Pool 页的主操作重心偏向 terminal 本体管理，例如：
 - 将 pane 重新连接到其他 terminal
 - 关闭 pane 并 kill terminal
 
+并区分 `kill terminal` 与 `remove terminal`：
+
+- `kill terminal`
+  - terminal 对象仍保留
+  - 状态进入 `exited`
+  - 绑定 pane 进入 `exited pane`
+- `remove terminal`
+  - terminal 对象从 pool 中移除
+  - 绑定 pane 进入 `unconnected pane`
+
 默认行为定义为：
 
 - `close pane` 默认只关闭 pane，不 kill terminal
 
 这是 termx 与传统复用器最重要的差异点之一，必须在界面与交互中持续体现。
 
-## 11. workspace 与项目启动
+`remove terminal` 的确认规则：
+
+- 若 terminal 仅在当前单一 pane 中使用，可直接 remove
+- 若 terminal 处于 shared 状态，则必须确认
+
+多客户端 remove 的提示规则：
+
+- 只对当前可见范围内受影响的 terminal 显示通用 notice
+- notice 需明确 terminal 名称
+- 不显示操作者身份
+- 不在当前可见范围内的受影响 terminal，不即时打扰；等用户切过去时直接看到对应 `unconnected pane`
+
+## 12. workspace 与项目启动
 
 - workspace 本身是全局对象
 - 不和项目目录天然绑定
@@ -307,7 +381,41 @@ Terminal Pool 页的主操作重心偏向 terminal 本体管理，例如：
 
 它可以保留为后续能力入口，但不应阻塞 workbench、terminal pool 和核心连接复用闭环。
 
-## 12. 第一阶段不做的东西
+## 13. 一期关键显示与恢复规则
+
+- 全屏程序（如 `htop / vim / less / alt-screen`）是第一阶段硬要求
+- 平时以 `stream` 为主维护画面
+- 失步或恢复时，以 `snapshot` 做纠偏，再继续接流
+- 恢复期间继续收流，但不重复发起恢复
+- 宿主终端主题变化时：
+  - terminal 正文的默认色与 palette 色要同步重解释
+  - 旧 snapshot 里的默认色与 palette 色也要按新主题重算
+- pane 小于 terminal 时，默认从左上角裁切
+- 支持通过短暂的 viewport move 模式与鼠标拖拽移动内部观察位置
+- 裁切侧显示 `+`
+- pane 大于 terminal 时，空白区显示小圆点
+- pane 的内部观察偏移属于 workspace 可恢复状态
+- 宽字符、emoji、powerline 符号在边界裁切时，宁可留空，也不显示半个字符
+
+## 14. Help 与 Overlay
+
+- `help` 第一阶段就做
+- 不是纯快捷键表，而是分组式帮助层
+- 至少覆盖：
+  - Most used
+  - Pane / Tab / Workspace
+  - Shared terminal
+  - Floating
+  - Exit / Close
+
+Overlay 焦点优先级应保持明确：
+
+- overlay
+- floating
+- tiled
+- pane 正文
+
+## 15. 第一阶段不做的东西
 
 为了避免重新落回“什么都想做，结果主形态迟迟不稳定”的问题，以下内容明确不在第一阶段主产品定义里：
 
@@ -315,10 +423,11 @@ Terminal Pool 页的主操作重心偏向 terminal 本体管理，例如：
 - 高度可配置的顶栏/底栏 UI 编排
 - 复杂 IDE 式管理后台
 - 把 tab/workspace 一开始就做成强策略对象
+- `fit / fixed / pin / size lock warn / auto-acquire` 这一整套复杂显示/权限模型
 
 这些能力后续可以通过配置文件或产品迭代逐步补上。
 
-## 13. 产品定义结论
+## 16. 产品定义结论
 
 第一阶段的 termx TUI 应被定义为：
 

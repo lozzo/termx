@@ -1,20 +1,20 @@
-# TUI Phase 1 Rebuild Implementation Plan
+# TUI 第一阶段重建实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **给执行型 agent：** 必须使用 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans` 按任务逐步实现。本计划使用 checkbox（`- [ ]`）跟踪步骤。
 
-**Goal:** Rebuild a first runnable `termx` TUI mainline that matches the 2026-03-25 product definition: default workbench, pane/terminal decoupling, overlay-driven connect flow, and a standalone terminal pool page.
+**目标：** 重建一个首个可运行的 `termx` TUI 主线，实现 2026-03-25 产品定义：默认进入 workbench、pane/terminal 解耦、overlay 驱动的连接流程，以及独立的 terminal pool 页面。
 
-**Architecture:** Keep the public `tui.Run` / `tui.Client` API stable, but rebuild the internal TUI as four layers: pure domain state, root app shell, runtime adapters, and cell-based renderers. Reuse validated ideas from `deprecated/tui-legacy/` and `deprecated/tui-reset-2026-03-25/` as references only; transplant focused functions behind new interfaces instead of restoring either archive wholesale.
+**架构：** 保持公开 `tui.Run` / `tui.Client` API 稳定，但把内部 TUI 重建为四层：纯状态层、根应用壳层、runtime 适配层、cell-based 渲染层。`deprecated/tui-legacy/` 与 `deprecated/tui-reset-2026-03-25/` 只作为参考源，只抽取被验证过的局部思路和函数，不整包恢复任何旧实现。
 
-**Tech Stack:** Go, Bubble Tea, existing `protocol.Client` wrapper, local vterm/snapshot pipeline, cell canvas renderer, repository Go test suite.
+**技术栈：** Go、Bubble Tea、现有 `protocol.Client` 封装、本地 vterm/snapshot 管线、cell canvas 渲染器、仓库内 Go 测试体系。
 
 ---
 
-## Scope and Non-Goals
+## 范围与非目标
 
-This plan covers one coherent subsystem: the first usable TUI mainline.
+本计划只覆盖一个完整子系统：首个可用的 TUI 主线。
 
-Included in this phase:
+本阶段包含：
 
 - runnable workbench
 - default startup into a live shell pane
@@ -24,22 +24,51 @@ Included in this phase:
 - standalone terminal pool page
 - workspace state persistence foundation
 
-Explicitly not in this phase:
+本阶段明确不做：
 
 - project-directory quick-start as a standalone subsystem
 - settings page
 - fully user-configurable top/bottom bars
 - GUI / mobile clients
 
-## Proposed File Structure
+## 已确认规则同步
 
-Public entrypoints:
+下面这些规则已经在口头设计中确认，执行时必须视为前置约束：
+
+- 一期不做 `fit / fixed / pin / size lock warn / auto-acquire`
+- 一个 terminal 同时最多一个 owner
+- 新 pane 连接已有 terminal 时：无 owner 则自动成为 owner，否则默认 follower
+- owner 关闭/解绑后不自动迁移；其他 pane 需显式执行 `Become Owner`
+- `kill terminal` 与 `remove terminal` 分开：
+  - `kill` 后进入 `exited pane`
+  - `remove` 后进入 `unconnected pane`
+- `R` 是对原 terminal 对象做 restart，不是新建替换
+- pane 小于 terminal 时默认左上裁切
+- 支持 viewport move 模式与鼠标拖拽移动内部观察位置
+- 裁切侧显示 `+`
+- pane 大于 terminal 的空白区显示小圆点
+- pane 内部观察偏移属于 workspace 可恢复状态
+- terminal 内容以 `stream` 为主维护，本地长期状态模型负责承载正文；`snapshot` 仅用于纠偏与恢复
+- terminal 保持一份主状态；pane 不复制正文，只保存显示/观察状态
+- shared 连接关系归在 terminal 侧
+- reducer 只产出 effect 描述，runtime 统一执行副作用
+- 渲染链路固定为：
+  `state -> screen snapshot -> canvas composition -> output`
+- 鼠标命中优先级固定为：
+  `overlay > floating > tiled > pane 正文`
+- Terminal Pool 第一阶段要支持 terminal metadata/tags 的显示、编辑与搜索
+- help 第一阶段就做成分组式帮助层
+- floating pane 允许拖出主视口，但必须始终保留左上角拖动锚点在大窗口内，并支持“呼回并居中”
+
+## 文件结构规划
+
+公开入口：
 
 - Modify: `tui/runtime.go`
 - Modify: `tui/runtime_test.go`
 - Modify: `tui/client.go`
 
-Root app shell:
+根应用壳层：
 
 - Create: `tui/app/model.go`
 - Create: `tui/app/model_test.go`
@@ -48,7 +77,7 @@ Root app shell:
 - Create: `tui/app/screen.go`
 - Create: `tui/app/overlay.go`
 
-Pure domain state:
+纯状态层：
 
 - Create: `tui/domain/types/types.go`
 - Create: `tui/domain/types/types_test.go`
@@ -61,7 +90,7 @@ Pure domain state:
 - Create: `tui/domain/pool/query.go`
 - Create: `tui/domain/pool/query_test.go`
 
-Runtime adapters:
+Runtime 适配层：
 
 - Create: `tui/runtime/bootstrap.go`
 - Create: `tui/runtime/bootstrap_test.go`
@@ -78,7 +107,7 @@ Runtime adapters:
 - Create: `tui/runtime/update_loop.go`
 - Create: `tui/runtime/update_loop_test.go`
 
-Renderer:
+渲染层：
 
 - Create: `tui/render/canvas/canvas.go`
 - Create: `tui/render/canvas/canvas_test.go`
@@ -91,7 +120,7 @@ Renderer:
 - Create: `tui/render/pool/view.go`
 - Create: `tui/render/pool/view_test.go`
 
-Reference-only files to consult while implementing:
+只读参考文件：
 
 - `deprecated/tui-legacy/pkg/render.go`
 - `deprecated/tui-legacy/pkg/model.go`
@@ -101,7 +130,7 @@ Reference-only files to consult while implementing:
 - `deprecated/tui-reset-2026-03-25/tui/render/canvas/canvas.go.disabled`
 - `deprecated/tui-reset-2026-03-25/tui/render/projection/workbench.go.disabled`
 
-## Cross-Cutting Rules
+## 通用规则
 
 - 所有重点函数、边界复杂处补中文注释，尤其是 pane/terminal 生命周期、overlay 焦点模型、layout 投影
 - 优先写接口，再写实现，尤其是 runtime 适配层与 renderer 之间
@@ -109,7 +138,7 @@ Reference-only files to consult while implementing:
 - 每个任务结束都提交中文 commit
 - 每轮验证至少跑被修改包测试；阶段结束跑 `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1`
 
-### Task 1: Root App Shell and Screen Router
+### Task 1：根应用壳层与页面路由
 
 **Files:**
 - Modify: `tui/runtime.go`
@@ -121,7 +150,7 @@ Reference-only files to consult while implementing:
 - Create: `tui/runtime/program.go`
 - Create: `tui/runtime/program_test.go`
 
-- [ ] **Step 1: Write the failing tests for app bootstrap**
+- [ ] **Step 1：先写启动与页面切换的失败测试**
 
 ```go
 func TestRunStartsProgramWithWorkbenchScreen(t *testing.T) {
@@ -150,7 +179,7 @@ func TestRootModelCanSwitchBetweenWorkbenchAndTerminalPoolScreens(t *testing.T) 
 }
 ```
 
-- [ ] **Step 2: Run the focused tests to verify they fail against the reset stub**
+- [ ] **Step 2：运行聚焦测试，确认它们会在 reset stub 上失败**
 
 Run:
 
@@ -160,7 +189,7 @@ PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -run 'Te
 
 Expected: FAIL because `Run` still returns the reset error and no root model exists.
 
-- [ ] **Step 3: Implement the minimal root shell**
+- [ ] **Step 3：实现最小根壳层**
 
 Implement:
 
@@ -169,7 +198,7 @@ Implement:
 - `runtime.go` wiring that builds the app shell instead of returning the reset error
 - 中文注释解释为什么顶层 screen router 和 overlay stack 要单独建模
 
-- [ ] **Step 4: Run package tests to verify the shell passes**
+- [ ] **Step 4：运行包测试，确认根壳层通过**
 
 Run:
 
@@ -179,14 +208,14 @@ PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/... -run
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5：提交**
 
 ```bash
 git add tui/runtime.go tui/runtime_test.go tui/app/model.go tui/app/model_test.go tui/app/screen.go tui/app/overlay.go tui/runtime/program.go tui/runtime/program_test.go
 git commit -m "建立TUI根应用壳层"
 ```
 
-### Task 2: Pure Workspace, Pane, and Layout Domain
+### Task 2：补齐 workspace / pane / layout 纯状态模型
 
 **Files:**
 - Create: `tui/domain/types/types.go`
@@ -200,7 +229,7 @@ git commit -m "建立TUI根应用壳层"
 - Modify: `tui/app/model.go`
 - Test: `tui/app/model_test.go`
 
-- [ ] **Step 1: Write failing pure-domain tests**
+- [ ] **Step 1：先写纯状态层失败测试**
 
 ```go
 func TestLayoutSplitRemoveAndRects(t *testing.T) {
@@ -222,7 +251,7 @@ func TestWorkspaceTracksUnconnectedPaneAndFloatingPane(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the focused domain tests to confirm the state model is missing**
+- [ ] **Step 2：运行聚焦测试，确认纯状态模型尚不存在**
 
 Run:
 
@@ -232,7 +261,7 @@ PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/domain/.
 
 Expected: FAIL because the domain packages do not exist yet.
 
-- [ ] **Step 3: Implement pure state packages**
+- [ ] **Step 3：实现纯状态层包**
 
 Implement:
 
@@ -246,7 +275,7 @@ Reference:
 - `deprecated/tui-reset-2026-03-25/tui/domain/layout/layout.go.disabled`
 - `deprecated/tui-legacy/docs/interaction-spec.md`
 
-- [ ] **Step 4: Run the pure-domain test packages**
+- [ ] **Step 4：运行纯状态层测试**
 
 Run:
 
@@ -256,14 +285,14 @@ PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/domain/.
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5：提交**
 
 ```bash
 git add tui/domain/types tui/domain/layout tui/domain/workspace tui/domain/terminal tui/app/model.go tui/app/model_test.go
 git commit -m "补齐TUI工作区与布局领域模型"
 ```
 
-### Task 3: Runtime Bootstrap and Terminal Session Plumbing
+### Task 3：接通启动流程与 terminal session runtime
 
 **Files:**
 - Create: `tui/runtime/bootstrap.go`
@@ -279,7 +308,7 @@ git commit -m "补齐TUI工作区与布局领域模型"
 - Modify: `tui/runtime.go`
 - Modify: `tui/runtime_test.go`
 
-- [ ] **Step 1: Write failing runtime tests for default startup**
+- [ ] **Step 1：先写默认启动与输入路由的失败测试**
 
 ```go
 func TestBootstrapCreatesTemporaryWorkspaceWithLiveShellPane(t *testing.T) {
@@ -308,7 +337,7 @@ func TestInputRouterSendsKeysToFocusedWorkbenchPaneAndResizesOwnedTerminal(t *te
 }
 ```
 
-- [ ] **Step 2: Run runtime-focused tests to verify startup and streaming are not wired**
+- [ ] **Step 2：运行 runtime 聚焦测试，确认启动与 streaming 尚未接线**
 
 Run:
 
@@ -318,7 +347,7 @@ PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/... -run
 
 Expected: FAIL because bootstrap/session runtime is still absent.
 
-- [ ] **Step 3: Implement bootstrap and live terminal adapters**
+- [ ] **Step 3：实现 bootstrap 与 live terminal 适配层**
 
 Implement:
 
@@ -336,7 +365,7 @@ Reference:
 - `deprecated/tui-legacy/pkg/client.go`
 - `deprecated/tui-reset-2026-03-25/tui/runtime.go.disabled`
 
-- [ ] **Step 4: Run runtime package tests**
+- [ ] **Step 4：运行 runtime 测试**
 
 Run:
 
@@ -346,14 +375,14 @@ PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/... -run
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5：提交**
 
 ```bash
 git add tui/runtime.go tui/runtime_test.go tui/runtime/bootstrap.go tui/runtime/bootstrap_test.go tui/runtime/input_router.go tui/runtime/input_router_test.go tui/runtime/terminal_service.go tui/runtime/terminal_service_test.go tui/runtime/session_store.go tui/runtime/session_store_test.go tui/runtime/update_loop.go tui/runtime/update_loop_test.go
 git commit -m "接通TUI启动与终端会话运行时"
 ```
 
-### Task 4: Cell Canvas and Workbench Renderer
+### Task 4：实现 cell canvas 与 workbench 渲染主干
 
 **Files:**
 - Create: `tui/render/canvas/canvas.go`
@@ -365,7 +394,7 @@ git commit -m "接通TUI启动与终端会话运行时"
 - Modify: `tui/app/model.go`
 - Modify: `tui/runtime/program.go`
 
-- [ ] **Step 1: Write failing renderer tests for workbench chrome**
+- [ ] **Step 1：先写 workbench 渲染失败测试**
 
 ```go
 func TestWorkbenchViewShowsTopbarPaneTitleAndActionBar(t *testing.T) {
@@ -399,7 +428,7 @@ func TestWorkbenchViewRendersLivePaneBodyFromSessionSnapshot(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run renderer tests to verify the render path is still missing**
+- [ ] **Step 2：运行渲染测试，确认渲染路径尚不存在**
 
 Run:
 
@@ -409,7 +438,7 @@ PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/render/.
 
 Expected: FAIL because no render packages exist yet.
 
-- [ ] **Step 3: Implement canvas primitives and workbench renderer**
+- [ ] **Step 3：实现 canvas 基元与 workbench 渲染器**
 
 Implement:
 
@@ -427,7 +456,7 @@ Reference:
 - `deprecated/tui-legacy/pkg/render.go`
 - `deprecated/tui-reset-2026-03-25/tui/render/canvas/canvas.go.disabled`
 
-- [ ] **Step 4: Run render package tests**
+- [ ] **Step 4：运行渲染层测试**
 
 Run:
 
@@ -437,14 +466,14 @@ PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/render/.
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5：提交**
 
 ```bash
 git add tui/render/canvas tui/render/chrome tui/render/workbench tui/app/model.go tui/runtime/program.go
 git commit -m "恢复TUI工作台渲染主干"
 ```
 
-### Task 5: Overlay Flow and Pane/Terminal Lifecycle Actions
+### Task 5：打通 overlay 流程与 pane/terminal 生命周期动作
 
 **Files:**
 - Create: `tui/domain/pool/query.go`
@@ -459,7 +488,7 @@ git commit -m "恢复TUI工作台渲染主干"
 - Create: `tui/render/overlay/view_test.go`
 - Modify: `tui/render/workbench/view.go`
 
-- [ ] **Step 1: Write failing interaction tests for create/connect semantics**
+- [ ] **Step 1：先写创建/连接/生命周期语义的失败测试**
 
 ```go
 func TestSplitCreatesPaneSlotAndOpensConnectDialog(t *testing.T) {
@@ -570,7 +599,7 @@ func TestRuntimeExecutesCreateAndKillTerminalActions(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run app/overlay tests to verify the interaction reducer does not exist yet**
+- [ ] **Step 2：运行 app/overlay 测试，确认交互 reducer 尚未实现**
 
 Run:
 
@@ -580,7 +609,7 @@ PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/app ./tu
 
 Expected: FAIL because create/connect flow is not implemented.
 
-- [ ] **Step 3: Implement unified overlay and pane lifecycle actions**
+- [ ] **Step 3：实现统一 overlay 与 pane 生命周期动作**
 
 Implement:
 
@@ -606,7 +635,7 @@ Reference:
 - `deprecated/tui-legacy/docs/interaction-spec.md`
 - `deprecated/tui-legacy/pkg/model.go`
 
-- [ ] **Step 4: Run the focused interaction tests**
+- [ ] **Step 4：运行聚焦交互测试**
 
 Run:
 
@@ -616,14 +645,14 @@ PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/app ./tu
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5：提交**
 
 ```bash
 git add tui/domain/pool/query.go tui/domain/pool/query_test.go tui/app/intent.go tui/app/intent_test.go tui/app/model.go tui/app/model_test.go tui/runtime/terminal_service.go tui/runtime/terminal_service_test.go tui/render/overlay/view.go tui/render/overlay/view_test.go tui/render/workbench/view.go
 git commit -m "打通TUI弹层与面板连接语义"
 ```
 
-### Task 6: Terminal Pool Page
+### Task 6：实现 Terminal Pool 独立页面
 
 **Files:**
 - Create: `tui/render/pool/view.go`
@@ -636,7 +665,7 @@ git commit -m "打通TUI弹层与面板连接语义"
 - Modify: `tui/runtime/terminal_service_test.go`
 - Modify: `tui/runtime/session_store.go`
 
-- [ ] **Step 1: Write failing tests for terminal pool grouping and page rendering**
+- [ ] **Step 1：先写 terminal pool 分组、渲染与动作失败测试**
 
 ```go
 func TestGroupTerminalsIntoVisibleParkedExited(t *testing.T) {
@@ -689,7 +718,7 @@ func TestTerminalPoolActionsReachRuntimeService(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run focused pool tests to verify the page does not exist yet**
+- [ ] **Step 2：运行聚焦测试，确认 terminal pool 页面尚未实现**
 
 Run:
 
@@ -699,7 +728,7 @@ PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/domain/p
 
 Expected: FAIL because grouping/page rendering is missing.
 
-- [ ] **Step 3: Implement the standalone terminal pool page**
+- [ ] **Step 3：实现独立 terminal pool 页面**
 
 Implement:
 
@@ -714,7 +743,7 @@ Implement:
 - runtime action executor must actually call `TerminalService`, not stop at queued UI intents
 - app shell must provide reachable navigation into and out of the standalone Terminal Pool page
 
-- [ ] **Step 4: Run pool-related tests**
+- [ ] **Step 4：运行 terminal pool 相关测试**
 
 Run:
 
@@ -724,14 +753,14 @@ PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/domain/p
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5：提交**
 
 ```bash
 git add tui/render/pool tui/app/intent.go tui/app/intent_test.go tui/app/model.go tui/app/model_test.go tui/runtime/terminal_service.go tui/runtime/terminal_service_test.go tui/runtime/session_store.go
 git commit -m "补齐TUI终端池独立页面"
 ```
 
-### Task 7: Workspace Persistence, CLI Integration, and End-to-End Verification
+### Task 7：补齐 workspace 持久化、CLI 集成与最终验证
 
 **Files:**
 - Create: `tui/runtime/workspace_store.go`
@@ -745,7 +774,7 @@ git commit -m "补齐TUI终端池独立页面"
 - Modify: `cmd/termx/main_test.go`
 - Modify: `docs/superpowers/specs/2026-03-25-tui-product-definition-design.md`
 
-- [ ] **Step 1: Write failing tests for workspace save/restore**
+- [ ] **Step 1：先写 workspace 保存/恢复失败测试**
 
 ```go
 func TestWorkspaceStoreRoundTripsWorkbenchState(t *testing.T) {
@@ -764,7 +793,7 @@ func TestWorkspaceStoreRoundTripsWorkbenchState(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run persistence-focused tests to verify restore support is incomplete**
+- [ ] **Step 2：运行持久化聚焦测试，确认恢复支持尚不完整**
 
 Run:
 
@@ -774,7 +803,7 @@ PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/... -run
 
 Expected: FAIL because workspace persistence is not implemented.
 
-- [ ] **Step 3: Implement workspace persistence and finish CLI wiring**
+- [ ] **Step 3：实现 workspace 持久化并收尾 CLI 接线**
 
 Implement:
 
@@ -788,7 +817,7 @@ Implement:
 - update `cmd/termx` tests if any config expectations changed
 - spec note updates only if implementation forced a product-level clarification
 
-- [ ] **Step 4: Run full verification**
+- [ ] **Step 4：运行完整验证**
 
 Run:
 
@@ -800,21 +829,25 @@ PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5：提交**
 
 ```bash
 git add tui/runtime/workspace_store.go tui/runtime/workspace_store_test.go tui/runtime.go tui/runtime_test.go tui/runtime/program.go tui/runtime/program_test.go tui/runtime/update_loop.go tui/runtime/update_loop_test.go cmd/termx/main_test.go docs/superpowers/specs/2026-03-25-tui-product-definition-design.md
 git commit -m "完成TUI第一阶段持久化闭环"
 ```
 
-## Implementation Notes
+## 额外实现说明
 
 - `Terminal Pool` 中栏第一阶段默认只读观察，不抢日常输入焦点
 - `close pane` 默认语义必须持续保持“不 kill terminal”
 - `disconnect pane` 与 `reconnect pane` 必须作为两个独立动作建模，不要重新折叠成单个模糊命令
 - 顶栏/底栏配置化、项目目录快速启动、settings 页面都留到后续计划，不要偷渡进本计划
+- `metadata / tags` 第一阶段先作为 terminal 原生信息处理，重点是显示、编辑、搜索，不扩展成规则系统
+- `help` 第一阶段需要进入 overlay 体系，至少覆盖 most used、shared terminal、floating、exit/close
+- floating pane 需要实现“允许拖出主视口但左上锚点仍留在窗口内”和“呼回并居中”
+- `kill terminal` / `remove terminal` / `restart terminal` / 远端 remove notice 的差异语义必须在实现中分开，不要重新合并
 
-## Done Criteria
+## 完成标准
 
 完成本计划后，应满足：
 
