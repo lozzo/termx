@@ -176,3 +176,80 @@ termx TUI 当前不能继续沿最近一段时间的“modern shell / modal / ca
 - `terminal-first renderer 重启期`
 
 接下来所有文档、编码、测试和状态汇报，都必须围绕这条新主线展开。
+
+---
+
+## 9. 第 210 轮 TDD
+
+这一轮开始把新文档主线真正落回代码，不再继续扩展 single/split 的 summary rail，而是直接把默认 modern 的主工作台压回 `terminal-first tiled compositor`：
+
+1. single workbench 默认主路径去掉右侧说明栏
+   - `tui/runtime_modern_renderer.go`
+   - 现在 single pane 在默认 modern 路径下直接使用全宽 pane canvas
+   - header / context bar / footer 继续负责最小导航信息
+   - 不再把右侧 `Workbench / Context` rail 当成主界面一部分
+2. split workbench 默认主路径去掉 layout / panes / context 侧栏
+   - 默认 modern split 现在直接把宽度让给两个 pane surface
+   - 不再为 `Layout / Panes / Context / Action` 这些说明栏切走正文宽度
+   - split 仍然保留现有 pane frame、ANSI 边框和 terminal body
+3. 对应 E2E 护栏迁移到“pane surface 优先”
+   - `tui/runtime_test.go`
+   - 单 pane 与 split 的默认 modern E2E 不再要求 `WORKBENCH / CONTEXT / ACTIVE / ROUTE / LAYOUT / PANES` 这类 rail 文本
+   - 改为锁：
+     - 顶栏/上下文栏导航仍在
+     - pane title / terminal body / ANSI 边框仍在
+     - 主体不再出现 single/split 侧栏
+
+本轮验证命令：
+
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./tui -run 'Test(E2ERunScenarioDefaultModern(SplitWorkbenchUsesFullWidthPaneCanvas|SingleWorkbenchKeepsTerminalSurfacePrimary|TopChromeSummarizesWorkspaceTabsAndContext)|RunOrchestratesStartupPlanBootstrapAndSessionLifecycle)' -count=1`
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./tui -count=1`
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./... -count=1`
+
+当前阶段推进结果：
+
+- 默认 modern 的 single/split 主体已经不再被说明栏持续切开
+- pane surface 开始重新成为默认首屏的主要面积
+- 下一块应继续推进：
+  - floating compositor
+  - z-order / clipping / overlap
+  - overlay 作为真正覆盖在工作台上的辅助层
+
+---
+
+## 10. 第 211 轮 TDD
+
+这一轮把上一轮留下的“实现已改、测试口径还停在旧侧栏时代”的尾巴一次性收口，并顺手修复真正的 split/floating 鼠标命中缺陷：
+
+1. 工作台 pane 标题点击从“按行唯一标题”升级为“标题文本 + X 坐标”
+   - `tui/bt/mouse_hit.go`
+   - 之前 split pane 标题出现在同一行时，`clickedWorkbenchPaneID` 会因为一行里有两个标题而返回失败
+   - 现在优先按鼠标 `X` 命中标题区间，再回退到旧的单标题行语义
+   - 这让 split / floating / mixed 的 pane title click 都能稳定命中具体 pane
+2. 工作台鼠标相关测试切到真实布局
+   - `tui/bt/intent_mapper_test.go`
+   - `tui/runtime_test.go`
+   - split pane 点击测试不再假设标题分成两行，而是直接在同一条 title bar 上按 `X/Y` 点击目标 pane
+   - floating / mixed floating 的标题点击 E2E 也统一补上 `X` 坐标
+3. renderer 测试口径同步到 terminal-first 主线
+   - `tui/runtime_renderer_test.go`
+   - 不再要求 single/split 默认 modern 路径出现 `WORKBENCH / CONTEXT / ACTIVE / ROUTE / LAYOUT / PANES` 等 side rail
+   - 改为锁定：
+     - 顶部最小 chrome 仍在
+     - path/context bar 仍在
+     - pane frame / ANSI / terminal body 仍在
+     - single/split 主体保持全宽 pane canvas
+
+本轮验证命令：
+
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./tui -count=1`
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./... -count=1`
+
+当前阶段推进结果：
+
+- 默认工作台的测试和实现主线重新一致，不再一边做全宽 pane、一边让测试继续卡在旧 rail 语义
+- split/floating pane title 的鼠标切焦点具备了继续扩展真实 UI 交互的基础
+- 下一阶段可以继续进入：
+  - floating compositor 的产品化收口
+  - z-order / clipping / overlap
+  - overlay 盖板与工作台的真实叠放关系

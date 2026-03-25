@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
@@ -77,6 +78,20 @@ func findLineIndexContainingOnly(view string, include string, excludes ...string
 		}
 	}
 	return -1
+}
+
+func findLineAndColumnContaining(view string, needle string) (int, int) {
+	if strings.TrimSpace(needle) == "" {
+		return -1, -1
+	}
+	for index, line := range strings.Split(view, "\n") {
+		stripped := xansi.Strip(line)
+		byteIndex := strings.Index(stripped, needle)
+		if byteIndex >= 0 {
+			return index, utf8.RuneCountInString(stripped[:byteIndex])
+		}
+	}
+	return -1, -1
 }
 
 func TestRunOrchestratesStartupPlanBootstrapAndSessionLifecycle(t *testing.T) {
@@ -180,11 +195,11 @@ func TestRunUsesShellOnlyRendererByDefault(t *testing.T) {
 	if !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "● run  owner") || !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "term-1 running owner") {
 		t.Fatalf("expected default run renderer to keep terminal canvas context in screen shell, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "WORKBENCH") || !strings.Contains(stripped, "CONTEXT") || !strings.Contains(stripped, "ACTIVE") || !strings.Contains(stripped, "ROUTE") || !strings.Contains(stripped, "running") {
-		t.Fatalf("expected default run renderer to expose single workbench shell panels, got:\n%s", runner.view)
-	}
 	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "term-1  •  owner") || !strings.Contains(stripped, "1 tab") || !strings.Contains(stripped, "1 pane") || !strings.Contains(stripped, "1 term") || !strings.Contains(stripped, "main / shell / tiled / term-1") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "term-1") {
 		t.Fatalf("expected default run renderer context bar to expose path and runtime state, got:\n%s", runner.view)
+	}
+	if strings.Contains(stripped, "WORKBENCH") || strings.Contains(stripped, "CONTEXT") || strings.Contains(stripped, "ACTIVE") || strings.Contains(stripped, "ROUTE") {
+		t.Fatalf("expected default run renderer single-pane path to stay terminal-first without side rails, got:\n%s", runner.view)
 	}
 	if !strings.Contains(stripped, "<p> PANE") || !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "owner") {
 		t.Fatalf("expected default run renderer footer to expose focus/layer/slot context, got:\n%s", runner.view)
@@ -703,7 +718,7 @@ func TestE2ERunScenarioDefaultShellOnlyExitedPaneShowsStatusAndActions(t *testin
 	}
 }
 
-func TestE2ERunScenarioDefaultModernSplitWorkbenchRendersPaneCanvas(t *testing.T) {
+func TestE2ERunScenarioDefaultModernSplitWorkbenchUsesFullWidthPaneCanvas(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithSplitPaneTargets()
 	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
@@ -742,23 +757,14 @@ func TestE2ERunScenarioDefaultModernSplitWorkbenchRendersPaneCanvas(t *testing.T
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "LAYOUT") || !strings.Contains(stripped, "PANES") || !strings.Contains(stripped, "CONTEXT") || !strings.Contains(stripped, "ACTIVE") || !strings.Contains(stripped, "SPLIT") {
-				t.Fatalf("expected default modern split view to expose split sidebar summary, got:\n%s", view)
-			}
-			if !strings.Contains(stripped, "ACTION") || !strings.Contains(stripped, "LINK") || !strings.Contains(stripped, "VIEW") {
-				t.Fatalf("expected default modern split view to use labeled status rail rows, got:\n%s", view)
-			}
-			if !strings.Contains(stripped, "FOCUS") || !strings.Contains(stripped, "live") || !strings.Contains(stripped, "LINK") || !strings.Contains(stripped, "VIEW") {
-				t.Fatalf("expected default modern split view to expose unified workbench signal panel, got:\n%s", view)
-			}
 			if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "term-2 running owner") {
 				t.Fatalf("expected default modern split view to keep pane titles readable inside the two-pane canvas, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "> api-dev") || !strings.Contains(stripped, "build-log") {
-				t.Fatalf("expected default modern split view to expose pane roster in sidebar, got:\n%s", view)
-			}
 			if !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
 				t.Fatalf("expected default modern split view to expose both pane previews, got:\n%s", view)
+			}
+			if strings.Contains(stripped, "LAYOUT") || strings.Contains(stripped, "PANES") || strings.Contains(stripped, "CONTEXT") || strings.Contains(stripped, "ACTIVE") || strings.Contains(stripped, "SPLIT") || strings.Contains(stripped, "ACTION") || strings.Contains(stripped, "LINK") || strings.Contains(stripped, "VIEW") || strings.Contains(stripped, "FOCUS") {
+				t.Fatalf("expected default modern split view to use full-width pane canvas without summary rails, got:\n%s", view)
 			}
 			if !regexp.MustCompile(`\x1b\[[0-9;]*m┏`).MatchString(view) ||
 				!regexp.MustCompile(`\x1b\[[0-9;]*m●`).MatchString(view) {
@@ -819,7 +825,7 @@ func TestE2ERunScenarioDefaultModernTopChromeSummarizesWorkspaceTabsAndContext(t
 	}
 }
 
-func TestE2ERunScenarioDefaultModernSingleWorkbenchUsesBadgeHeaderAndContextRail(t *testing.T) {
+func TestE2ERunScenarioDefaultModernSingleWorkbenchKeepsTerminalSurfacePrimary(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithActiveTerminalMetadata()
 	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
@@ -846,14 +852,14 @@ func TestE2ERunScenarioDefaultModernSingleWorkbenchUsesBadgeHeaderAndContextRail
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "CONTEXT") || strings.Contains(stripped, "Context & Keys") {
-				t.Fatalf("expected default modern single workbench to use compact context rail title, got:\n%s", view)
-			}
-			if !strings.Contains(stripped, "● run") || !strings.Contains(stripped, "ROUTE") || !strings.Contains(stripped, "running") {
+			if !strings.Contains(stripped, "● run") || !strings.Contains(stripped, "running") {
 				t.Fatalf("expected default modern single workbench to expose badge header and pane actions, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "term-1 running owner") {
 				t.Fatalf("expected default modern single workbench to retain live terminal preview, got:\n%s", view)
+			}
+			if strings.Contains(stripped, "WORKBENCH") || strings.Contains(stripped, "CONTEXT") || strings.Contains(stripped, "ACTIVE") || strings.Contains(stripped, "ROUTE") || strings.Contains(stripped, "LINK") || strings.Contains(stripped, "VIEW") {
+				t.Fatalf("expected default modern single workbench to remove sidebar rails from main surface, got:\n%s", view)
 			}
 			if !regexp.MustCompile(`\x1b\[[0-9;]*m┏`).MatchString(view) ||
 				!regexp.MustCompile(`\x1b\[[0-9;]*m●`).MatchString(view) {
@@ -3477,13 +3483,14 @@ func TestE2ERunScenarioMouseClickOnSplitPaneTitleMovesFocusToExactPane(t *testin
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			var current *btui.Model = model
-			clickY := findLineIndexContainingOnly(current.View(), "build-log", "api-dev")
-			if clickY < 0 {
+			clickY, clickX := findLineAndColumnContaining(current.View(), "build-log")
+			if clickY < 0 || clickX < 0 {
 				t.Fatalf("expected split workbench to expose build-log title, got:\n%s", current.View())
 			}
 			nextModel, cmd := current.Update(tea.MouseMsg{
 				Button: tea.MouseButtonLeft,
 				Action: tea.MouseActionPress,
+				X:      clickX,
 				Y:      clickY,
 			})
 			current = nextModel.(*btui.Model)
@@ -3926,13 +3933,14 @@ func TestE2ERunScenarioMouseClickOnFloatingPaneTitleMovesFocusToExactPane(t *tes
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			var current *btui.Model = model
-			clickY := findLineIndexContainingOnly(current.View(), "build-log", "api-dev")
-			if clickY < 0 {
+			clickY, clickX := findLineAndColumnContaining(current.View(), "build-log")
+			if clickY < 0 || clickX < 0 {
 				t.Fatalf("expected floating workbench to expose build-log title, got:\n%s", current.View())
 			}
 			nextModel, cmd := current.Update(tea.MouseMsg{
 				Button: tea.MouseButtonLeft,
 				Action: tea.MouseActionPress,
+				X:      clickX,
 				Y:      clickY,
 			})
 			current = nextModel.(*btui.Model)
@@ -3990,13 +3998,14 @@ func TestE2ERunScenarioMouseClickOnMixedFloatingPaneTitleMovesFocusToFloatingLay
 	runner := &stubProgramRunner{
 		run: func(model *btui.Model) error {
 			var current *btui.Model = model
-			clickY := findLineIndexContainingOnly(current.View(), "unconnected pane", "waiting pane", "deploy-log", "api-dev")
-			if clickY < 0 {
+			clickY, clickX := findLineAndColumnContaining(current.View(), "unconnected pane")
+			if clickY < 0 || clickX < 0 {
 				t.Fatalf("expected mixed workbench to expose floating empty pane title, got:\n%s", current.View())
 			}
 			nextModel, cmd := current.Update(tea.MouseMsg{
 				Button: tea.MouseButtonLeft,
 				Action: tea.MouseActionPress,
+				X:      clickX,
 				Y:      clickY,
 			})
 			current = nextModel.(*btui.Model)

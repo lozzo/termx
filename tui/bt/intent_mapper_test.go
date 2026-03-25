@@ -544,14 +544,19 @@ func TestIntentMapperWorkbenchMouseClickOnSplitPaneTitleJumpsToExactPane(t *test
 	view := strings.Join([]string{
 		"termx",
 		"WORKBENCH",
-		"> api-dev  run  owner",
-		"  build-log  run  owner",
+		"api-dev  run  owner    build-log  run  owner",
 	}, "\n")
+	clickY := findLineIndexWithPrefix(view, "api-dev  run  owner")
+	clickX := strings.Index(strings.Split(view, "\n")[clickY], "build-log")
+	if clickY < 0 || clickX < 0 {
+		t.Fatalf("expected split workbench view to expose build-log title")
+	}
 
 	intents := mapper.MapMouse(state, tea.MouseMsg{
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
-		Y:      findLineIndexWithPrefix(view, "  build-log"),
+		X:      clickX,
+		Y:      clickY,
 	}, view)
 	if len(intents) != 1 {
 		t.Fatalf("expected one intent, got %d", len(intents))

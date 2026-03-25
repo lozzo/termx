@@ -333,21 +333,14 @@ func (r modernScreenShellRenderer) renderWorkbench(theme modernShellTheme, state
 }
 
 func (r modernScreenShellRenderer) renderSingleWorkbench(theme modernShellTheme, state types.AppState, pane types.PaneState, metrics wireframeMetrics, width, height int, active bool) string {
+	_ = active
 	tab := types.TabState{
 		ActivePaneID: pane.ID,
 		Panes:        map[types.PaneID]types.PaneState{pane.ID: pane},
 	}
-	if width < 72 || height < 12 {
-		return r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, height), width, height, false)
-	}
-	if shouldRenderCompactWorkbenchRail(width, height) {
-		return r.renderSingleWorkbenchCompact(theme, state, pane, metrics, width, height, active)
-	}
-	sidebarWidth := renderModernWorkbenchSidebarWidth(width)
-	canvasWidth := max(32, width-sidebarWidth-1)
-	canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, canvasWidth, height), canvasWidth, height, false)
-	sidebar := r.renderSingleWorkbenchSidebar(theme, state, pane, sidebarWidth, height, active)
-	return lipgloss.JoinHorizontal(lipgloss.Top, canvas, " ", sidebar)
+	// 单 pane 主路径回到 terminal-first：header/context/footer 负责导航，
+	// 中间工作台不再被说明侧栏切开，优先把空间让给真实 pane surface。
+	return r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, height), width, height, false)
 }
 
 func (r modernScreenShellRenderer) renderPanePreview(terminalID types.TerminalID) string {
@@ -528,17 +521,11 @@ func renderModernFloatingPaneOffscreen(pane types.PaneState, metrics wireframeMe
 }
 
 func (r modernScreenShellRenderer) renderSplitWorkbench(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, tiledPaneIDs []types.PaneID, floatingPaneIDs []types.PaneID, metrics wireframeMetrics, width, height int) string {
-	if width < 72 || height < 12 {
-		return r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, height), width, height, false)
-	}
-	if shouldRenderCompactWorkbenchRail(width, height) {
-		return r.renderSplitWorkbenchCompact(theme, state, tab, pane, tiledPaneIDs, floatingPaneIDs, metrics, width, height)
-	}
-	sidebarWidth := renderModernWorkbenchSidebarWidth(width)
-	canvasWidth := max(32, width-sidebarWidth-1)
-	canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, canvasWidth, height), canvasWidth, height, false)
-	sidebar := r.renderSplitWorkbenchSidebar(theme, state, tab, pane, tiledPaneIDs, floatingPaneIDs, sidebarWidth, height)
-	return lipgloss.JoinHorizontal(lipgloss.Top, canvas, " ", sidebar)
+	_ = tiledPaneIDs
+	_ = floatingPaneIDs
+	// split 主路径和单 pane 一样，优先保证两个 pane 都拿到真实 terminal surface，
+	// 不再把默认宽度切出右侧 summary/roster rail。
+	return r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, height), width, height, false)
 }
 
 func (r modernScreenShellRenderer) renderFloatingWorkbench(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, metrics wireframeMetrics, width, height int) string {

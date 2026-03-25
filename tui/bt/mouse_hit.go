@@ -42,7 +42,7 @@ func mapWorkbenchMouseClick(state types.AppState, msg tea.MouseMsg, view string)
 			PaneID:      targetPaneID,
 		}}
 	}
-	paneID, ok := clickedWorkbenchPaneID(state, tab, line)
+	paneID, ok := clickedWorkbenchPaneID(state, tab, line, msg.X)
 	if !ok {
 		return nil
 	}
@@ -482,12 +482,17 @@ func currentWorkbench(state types.AppState) (types.WorkspaceState, types.TabStat
 	return workspace, tab, true
 }
 
-func clickedWorkbenchPaneID(state types.AppState, tab types.TabState, line string) (types.PaneID, bool) {
-	line = strings.TrimSpace(line)
-	if line == "" {
+func clickedWorkbenchPaneID(state types.AppState, tab types.TabState, line string, mouseX int) (types.PaneID, bool) {
+	if strings.TrimSpace(line) == "" {
 		return "", false
 	}
-	candidates := make([]types.PaneID, 0, len(tab.Panes))
+	type paneHit struct {
+		paneID types.PaneID
+		start  int
+		end    int
+	}
+	hits := make([]paneHit, 0, len(tab.Panes))
+	searchOffset := 0
 	for _, paneID := range orderedWorkbenchPaneIDs(tab) {
 		pane, ok := tab.Panes[paneID]
 		if !ok {
@@ -497,14 +502,36 @@ func clickedWorkbenchPaneID(state types.AppState, tab types.TabState, line strin
 		if title == "" {
 			continue
 		}
-		if strings.Contains(line, title) {
-			candidates = append(candidates, paneID)
+		start, end, ok := clickedWorkbenchPaneTitleRange(line, searchOffset, title)
+		if !ok {
+			continue
+		}
+		searchOffset = end
+		hits = append(hits, paneHit{paneID: paneID, start: start, end: end})
+	}
+
+	// split/floating 标题现在可能出现在同一行，仅靠“这一行只出现一个标题”已经不够。
+	// 这里优先结合鼠标 X 坐标命中具体标题区间，保证多 pane 同行时仍然能精确切焦点。
+	if mouseX >= 0 {
+		for _, hit := range hits {
+			startRune := utf8.RuneCountInString(line[:hit.start])
+			endRune := utf8.RuneCountInString(line[:hit.end])
+			startRune, endRune = expandWorkbenchPaneClickRange(line, startRune, endRune)
+			if mouseX >= startRune && mouseX < endRune {
+				return hit.paneID, true
+			}
 		}
 	}
-	if len(candidates) != 1 {
-		return "", false
+
+	// 回退到旧语义：当一行里只有一个 pane 标题时，即使没有精确 X 也允许点击成功。
+	candidates := make([]types.PaneID, 0, len(hits))
+	for _, hit := range hits {
+		candidates = append(candidates, hit.paneID)
 	}
-	return candidates[0], true
+	if len(candidates) == 1 {
+		return candidates[0], true
+	}
+	return "", false
 }
 
 // clickedWorkbenchTabJumpTarget 优先处理顶部 tab strip 的点击。
@@ -564,6 +591,15 @@ func clickedWorkbenchTabRange(line string, searchOffset int, index int, tab type
 	return 0, 0, false
 }
 
+func clickedWorkbenchPaneTitleRange(line string, searchOffset int, title string) (int, int, bool) {
+	byteStart := strings.Index(line[searchOffset:], title)
+	if byteStart < 0 {
+		return 0, 0, false
+	}
+	byteStart += searchOffset
+	return byteStart, byteStart + len(title), true
+}
+
 func workbenchTabLabel(tab types.TabState) string {
 	label := workbenchTabIdentityLabel(tab)
 	switch paneCount := len(tab.Panes); paneCount {
@@ -589,6 +625,17 @@ func expandWorkbenchTabClickRange(line string, start int, end int) (int, int) {
 		start--
 	}
 	if end < len(runes) && runes[end] == ']' {
+		end++
+	}
+	return start, end
+}
+
+func expandWorkbenchPaneClickRange(line string, start int, end int) (int, int) {
+	runes := []rune(line)
+	if start > 0 && runes[start-1] == ' ' {
+		start--
+	}
+	if end < len(runes) && runes[end] == ' ' {
 		end++
 	}
 	return start, end
