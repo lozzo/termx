@@ -514,19 +514,19 @@ func (r modernScreenShellRenderer) renderFloatingWorkbenchStatusStrip(theme mode
 	}
 	_, activeTitle, _, topTitle := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
 	items := []string{
-		theme.activeChip.Render(fmt.Sprintf("floating %d", len(floatingPaneIDs))),
-		theme.chip.Render("active " + truncateModernLine(activeTitle, 22)),
+		theme.floatToken.Render(fmt.Sprintf("◫ float %d", len(floatingPaneIDs))),
+		theme.activeChip.Render("active " + truncateModernLine(activeTitle, 22)),
 	}
 	if strings.TrimSpace(topTitle) != "" {
-		items = append(items, theme.floatToken.Render("top "+truncateModernLine(topTitle, 18)))
+		items = append(items, theme.chip.Render("[top] "+truncateModernLine(topTitle, 18)))
 	}
 	if pane.Kind == types.PaneKindFloating {
 		if zIndex, zTotal := renderModernFloatingZ(state, pane); zIndex > 0 && zTotal > 1 {
-			items = append(items, theme.chip.Render(fmt.Sprintf("z %d/%d", zIndex, zTotal)))
+			items = append(items, theme.chip.Render(fmt.Sprintf("z:%d/%d", zIndex, zTotal)))
 		}
 	}
 	if renderModernFloatingPaneOffscreen(pane, metrics) {
-		items = append(items, theme.offscreenToken.Render("recall offscreen"))
+		items = append(items, theme.offscreenToken.Render("recall:offscreen"))
 		items = append(items, theme.offscreenToken.Render("c center"))
 	}
 	right := theme.panelMeta.Render(renderModernFloatingWorkbenchControlLine(state))
@@ -615,16 +615,12 @@ func renderModernCanvasPaneBox(theme modernShellTheme, width int, height int, ti
 }
 
 func renderModernCanvasPaneBorderGlyphs(active bool, floating bool) (topLeft, topRight, bottomLeft, bottomRight, vertical, horizontal string) {
-	switch {
-	case floating && active:
-		return "╔", "╗", "╚", "╝", "║", "═"
-	case floating:
-		return "╭", "╮", "╰", "╯", "│", "─"
-	case active:
-		return "┏", "┓", "┗", "┛", "┃", "━"
-	default:
-		return "┌", "┐", "└", "┘", "│", "─"
-	}
+	// 主工作台边框回到更接近 legacy 的单线盒模型。
+	// active/inactive 与 tiled/floating 的差异主要靠颜色语义和标题 token 表达，
+	// 避免同一工作台里混入过重的字符集。
+	_ = active
+	_ = floating
+	return "┌", "┐", "└", "┘", "│", "─"
 }
 
 func renderModernCanvasPaneBorderStyle(theme modernShellTheme, active bool, floating bool) lipgloss.Style {
@@ -752,7 +748,7 @@ func (r modernScreenShellRenderer) renderImplicitSplitCanvas(theme modernShellTh
 }
 
 func (r modernScreenShellRenderer) renderDetachedFloatingStrip(theme modernShellTheme, state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID, width int) string {
-	items := []string{theme.panelMeta.Render("Detached windows")}
+	items := []string{theme.floatToken.Render("◫ detached")}
 	for _, paneID := range floatingPaneIDs {
 		targetPane, ok := tab.Panes[paneID]
 		if !ok {
@@ -760,12 +756,16 @@ func (r modernScreenShellRenderer) renderDetachedFloatingStrip(theme modernShell
 		}
 		label := renderModernDetachedFloatingLabel(state, targetPane)
 		if paneID == tab.ActivePaneID && tab.ActiveLayer == types.FocusLayerFloating {
-			items = append(items, theme.activeChip.Render(truncateModernLine(label, 44)))
+			items = append(items, theme.activeChip.Render("[active] "+truncateModernLine(label, 34)))
 			continue
 		}
-		items = append(items, theme.chip.Render(truncateModernLine(label, 44)))
+		top := ""
+		if len(floatingPaneIDs) > 0 && paneID == floatingPaneIDs[len(floatingPaneIDs)-1] {
+			top = "[top] "
+		}
+		items = append(items, theme.chip.Render(top+truncateModernLine(label, 34)))
 	}
-	return theme.subBar.Render(fillANSIHorizontal(strings.Join(items, " "), theme.panelMeta.Render(fmt.Sprintf("%d floating", len(floatingPaneIDs))), max(1, width-2)))
+	return theme.subBar.Render(fillANSIHorizontal(strings.Join(items, " "), theme.panelMeta.Render(fmt.Sprintf("float %d", len(floatingPaneIDs))), max(1, width-2)))
 }
 
 func renderModernWorkbenchSidebarWidth(width int) int {
@@ -1348,23 +1348,23 @@ func (r modernScreenShellRenderer) renderPanePanelLines(theme modernShellTheme, 
 			lines = append(lines, theme.panelTitle.Render("Details"))
 		}
 		lines = append(lines,
-			theme.terminalBody.Render("No terminal connected yet."),
+			theme.terminalBody.Render("no terminal connected"),
 		)
 		if !compact {
 			lines = append(lines, theme.panelTitle.Render("Actions"))
 		}
-		lines = append(lines, theme.panelMeta.Render("Press n to start one, or a to connect an existing terminal."))
+		lines = append(lines, theme.panelMeta.Render("n new  •  a connect  •  m manager"))
 	case types.PaneSlotWaiting:
 		if !compact {
 			lines = append(lines, theme.panelTitle.Render("Details"))
 		}
 		lines = append(lines,
-			theme.terminalBody.Render("Waiting for a terminal connection."),
+			theme.terminalBody.Render("waiting for connect"),
 		)
 		if !compact {
 			lines = append(lines, theme.panelTitle.Render("Actions"))
 		}
-		lines = append(lines, theme.panelMeta.Render("This pane is reserved by layout or restore flow."))
+		lines = append(lines, theme.panelMeta.Render("layout pending  •  n new  •  a connect"))
 	case types.PaneSlotExited:
 		exitText := "history retained"
 		if pane.LastExitCode != nil {
@@ -1374,13 +1374,13 @@ func (r modernScreenShellRenderer) renderPanePanelLines(theme modernShellTheme, 
 			lines = append(lines, theme.panelTitle.Render("Details"))
 		}
 		lines = append(lines,
-			theme.terminalBody.Render("Terminal program exited."),
+			theme.terminalBody.Render("process exited"),
 			theme.panelMeta.Render(exitText),
 		)
 		if !compact {
 			lines = append(lines, theme.panelTitle.Render("Actions"))
 		}
-		lines = append(lines, theme.panelMeta.Render("Press r to restart, or a to connect another terminal."))
+		lines = append(lines, theme.panelMeta.Render("r restart  •  a connect"))
 	default:
 		lines = append(lines, r.renderTerminalMetaLines(theme, state, pane, width)...)
 		if !compact {
@@ -1651,7 +1651,7 @@ func renderModernPaneActionLine(state types.AppState, pane types.PaneState) stri
 	case types.PaneSlotExited:
 		return "r restart  •  a connect"
 	case types.PaneSlotWaiting, types.PaneSlotEmpty:
-		return "n create  •  a connect  •  m manager"
+		return "n new  •  a connect  •  m manager"
 	default:
 		return "type  •  Ctrl-f picker  •  Ctrl-g global"
 	}

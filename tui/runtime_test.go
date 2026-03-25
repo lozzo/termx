@@ -808,7 +808,7 @@ func TestE2ERunScenarioDefaultModernSplitWorkbenchUsesFullWidthPaneCanvas(t *tes
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "term-2 running owner") {
+			if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "term-2 running owner") || !strings.Contains(stripped, "┌─ api-dev") || !strings.Contains(stripped, "┌─ build-log") {
 				t.Fatalf("expected default modern split view to keep pane titles readable inside the two-pane canvas, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
@@ -817,7 +817,7 @@ func TestE2ERunScenarioDefaultModernSplitWorkbenchUsesFullWidthPaneCanvas(t *tes
 			if strings.Contains(stripped, "LAYOUT") || strings.Contains(stripped, "PANES") || strings.Contains(stripped, "CONTEXT") || strings.Contains(stripped, "ACTIVE") || strings.Contains(stripped, "SPLIT") || strings.Contains(stripped, "ACTION") || strings.Contains(stripped, "LINK") || strings.Contains(stripped, "VIEW") || strings.Contains(stripped, "FOCUS") {
 				t.Fatalf("expected default modern split view to use full-width pane canvas without summary rails, got:\n%s", view)
 			}
-			if !regexp.MustCompile(`\x1b\[[0-9;]*m┏`).MatchString(view) ||
+			if !regexp.MustCompile(`\x1b\[[0-9;]*m┌`).MatchString(view) ||
 				!regexp.MustCompile(`\x1b\[[0-9;]*m●`).MatchString(view) {
 				t.Fatalf("expected default modern split view to apply semantic ANSI to active tiled pane chrome, got:\n%s", view)
 			}
@@ -900,7 +900,7 @@ func TestE2ERunScenarioDefaultModernSingleWorkbenchKeepsTerminalSurfacePrimary(t
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "● run") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "▣ tiled") {
+			if !strings.Contains(stripped, "● run") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "▣ tiled") || !strings.Contains(stripped, "┌─ api-dev") {
 				t.Fatalf("expected default modern single workbench to expose runtime chrome and pane state, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "term-1 running owner") {
@@ -909,7 +909,7 @@ func TestE2ERunScenarioDefaultModernSingleWorkbenchKeepsTerminalSurfacePrimary(t
 			if strings.Contains(stripped, "WORKBENCH") || strings.Contains(stripped, "CONTEXT") || strings.Contains(stripped, "ACTIVE") || strings.Contains(stripped, "ROUTE") || strings.Contains(stripped, "LINK") || strings.Contains(stripped, "VIEW") {
 				t.Fatalf("expected default modern single workbench to remove sidebar rails from main surface, got:\n%s", view)
 			}
-			if !regexp.MustCompile(`\x1b\[[0-9;]*m┏`).MatchString(view) ||
+			if !regexp.MustCompile(`\x1b\[[0-9;]*m┌`).MatchString(view) ||
 				!regexp.MustCompile(`\x1b\[[0-9;]*m●`).MatchString(view) {
 				t.Fatalf("expected default modern single workbench to apply semantic ANSI to pane header badges, got:\n%s", view)
 			}
@@ -977,17 +977,16 @@ func TestE2ERunScenarioDefaultModernFloatingWorkbenchUsesFullWidthCompositedCanv
 			if !strings.Contains(stripped, "pane:float-1") || !strings.Contains(stripped, "float:2") {
 				t.Fatalf("expected default modern floating header to expose pane/float counters, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "floating 2") || !strings.Contains(stripped, "active api-dev") || !strings.Contains(stripped, "top build-log") || !strings.Contains(stripped, "◫ float") {
+			if !strings.Contains(stripped, "◫ float 2") || !strings.Contains(stripped, "active api-dev") || !strings.Contains(stripped, "[top] build-log") {
 				t.Fatalf("expected default modern floating view to expose minimal floating status strip, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "api ready") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "term-2") {
 				t.Fatalf("expected default modern floating view to keep body previews and runtime footer lines, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "╔") || !strings.Contains(stripped, "╭") {
-				t.Fatalf("expected default modern floating view to use distinct floating window border glyphs, got:\n%s", view)
+			if !strings.Contains(stripped, "┌─ api-dev") || !strings.Contains(stripped, "┌─ build-log") {
+				t.Fatalf("expected default modern floating view to use legacy-like single-line window frames, got:\n%s", view)
 			}
-			if !regexp.MustCompile(`\x1b\[[0-9;]*m╔`).MatchString(view) ||
-				!regexp.MustCompile(`\x1b\[[0-9;]*m╭`).MatchString(view) ||
+			if !regexp.MustCompile(`\x1b\[[0-9;]*m┌`).MatchString(view) ||
 				!regexp.MustCompile(`\x1b\[[0-9;]*m●`).MatchString(view) {
 				t.Fatalf("expected default modern floating view to apply semantic ANSI to floating window chrome, got:\n%s", view)
 			}
@@ -1038,10 +1037,10 @@ func TestE2ERunScenarioDefaultModernMixedWorkbenchKeepsDetachedStripAboveFullCan
 			if strings.Contains(stripped, "MIXED") || strings.Contains(stripped, "PANES") || strings.Contains(stripped, "CONTEXT") || strings.Contains(stripped, "WINDOW DECK") {
 				t.Fatalf("expected default modern mixed workbench to drop mixed side rails from the main path, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "Detached windows") || !strings.Contains(stripped, "1 floating") || !strings.Contains(stripped, "unconnected pane") {
+			if !strings.Contains(stripped, "◫ detached") || !strings.Contains(stripped, "float 1") || !strings.Contains(stripped, "unconnected pane") {
 				t.Fatalf("expected default modern mixed workbench to keep detached floating strip above the full workbench canvas, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "waiting pane") || !strings.Contains(stripped, "deploy-log") || !strings.Contains(stripped, "waiting for connect") || !strings.Contains(stripped, "process exited") || !strings.Contains(stripped, "no term") || !strings.Contains(stripped, "history retained") {
+			if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "waiting pane") || !strings.Contains(stripped, "deploy-log") || !strings.Contains(stripped, "waiting for connect") || !strings.Contains(stripped, "process exited") || !strings.Contains(stripped, "no terminal con") || !strings.Contains(stripped, "history retained") || !strings.Contains(stripped, "[top] unconnected pane") {
 				t.Fatalf("expected default modern mixed workbench to keep pane titles readable across tiled and floating canvases, got:\n%s", view)
 			}
 			if strings.Contains(view, "wireframe_view:") {
@@ -1250,7 +1249,7 @@ func TestE2ERunScenarioDefaultModernFloatingCenterRecallClearsOffscreenBadge(t *
 				}
 			}
 			after := stripANSIRuntimeView(current.View())
-			if strings.Contains(after, "offscr") || !strings.Contains(after, "api-dev") || !strings.Contains(after, "remote") || !strings.Contains(after, "floating 1") {
+			if strings.Contains(after, "offscr") || !strings.Contains(after, "api-dev") || !strings.Contains(after, "remote") || !strings.Contains(after, "float 1") {
 				t.Fatalf("expected default modern floating center recall to clear offscreen badge, got:\n%s", current.View())
 			}
 			return nil
@@ -1305,7 +1304,7 @@ func TestE2ERunScenarioDefaultModernFloatingZOrderUpdatesTopSummaryAndKeepsOverl
 		run: func(model *btui.Model) error {
 			current := model
 			before := stripANSIRuntimeView(current.View())
-			if !strings.Contains(before, "top build-log") || !strings.Contains(before, "api ready") || !strings.Contains(before, "build-log") || !strings.Contains(before, "floating 2") {
+			if !strings.Contains(before, "top build-log") || !strings.Contains(before, "api ready") || !strings.Contains(before, "build-log") || !strings.Contains(before, "◫ float 2") {
 				t.Fatalf("expected default modern floating shell to expose initial top-window summary and both window bodies on full canvas path, got:\n%s", current.View())
 			}
 			for _, key := range []tea.KeyMsg{
@@ -1322,7 +1321,7 @@ func TestE2ERunScenarioDefaultModernFloatingZOrderUpdatesTopSummaryAndKeepsOverl
 				}
 			}
 			after := stripANSIRuntimeView(current.View())
-			if !strings.Contains(after, "top api-dev") || !strings.Contains(after, "api ready") || !strings.Contains(after, "api-dev") || !strings.Contains(after, "build") || !strings.Contains(after, "floating 2") {
+			if !strings.Contains(after, "top api-dev") || !strings.Contains(after, "api ready") || !strings.Contains(after, "api-dev") || !strings.Contains(after, "build") || !strings.Contains(after, "◫ float 2") {
 				t.Fatalf("expected default modern floating z-order flow to update top summary and preserve overlapped window bodies on full canvas path, got:\n%s", current.View())
 			}
 			return nil
@@ -1513,7 +1512,7 @@ func TestE2ERunScenarioDefaultModernMixedHelpOverlayPreservesDetachedStripAndClo
 				}
 			}
 			closed := stripANSIRuntimeView(current.View())
-			if strings.Contains(closed, "overlay help") || strings.Contains(closed, "░") || !strings.Contains(closed, "Detached windows") || !strings.Contains(closed, "waiting pane") || !strings.Contains(closed, "deploy-log") || !strings.Contains(closed, "unconnected pane") {
+			if strings.Contains(closed, "overlay help") || strings.Contains(closed, "░") || !strings.Contains(closed, "◫ detached") || !strings.Contains(closed, "waiting pane") || !strings.Contains(closed, "deploy-log") || !strings.Contains(closed, "unconnected pane") {
 				t.Fatalf("expected mixed help overlay close to restore clean mixed workbench body, got:\n%s", current.View())
 			}
 			return nil

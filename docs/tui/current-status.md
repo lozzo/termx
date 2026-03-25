@@ -389,3 +389,59 @@ termx TUI 当前不能继续沿最近一段时间的“modern shell / modal / ca
 - 继续把 pane title chrome、split 结构、floating frame 的视觉语言往 legacy 收拢
 - 让 workspace/tab/pane 鼠标命中区域和真实边框表达更统一
 - 最后再处理颜色、性能、重叠渲染和残影优化
+
+---
+
+## 14. 第 215 轮 TDD
+
+这一轮继续推进“真实工作台 renderer 收口”，重点不再放在 overlay 文案，而是直接把 single/split/floating/mixed 的 pane/frame 语言拉回更接近 `deprecated/tui-legacy` 的可工作骨架：
+
+1. pane/frame 边框回拉到 legacy 风格的单线盒模型
+   - `tui/runtime_modern_renderer.go`
+   - tiled 与 floating 不再靠两套重字符集区分主工作台层次
+   - active/inactive、tiled/floating 的差异主要改由颜色语义、状态 badge、strip 提示承担
+   - 这样 split 与 floating 同屏时，视觉语言更统一，也更接近旧版可用工作台的布局感
+2. floating 与 mixed 的顶部条带改成更短、更像工作台信号
+   - floating strip 改为：
+     - `◫ float N`
+     - `active xxx`
+     - `[top] xxx`
+   - mixed detached strip 改为：
+     - `◫ detached`
+     - `[active] / [top]` 浮窗标签
+     - 右侧只保留 `float N`
+   - 不再继续使用偏说明性的 `Detached windows / floating N / top xxx` 旧文案组合
+3. empty / waiting / exited pane 的正文改成更接近产品态的短句
+   - `no terminal connected`
+   - `waiting for connect`
+   - `process exited`
+   - action line 统一改成短操作提示：
+     - `n new`
+     - `a connect`
+     - `r restart`
+     - `m manager`
+4. 对应 renderer / E2E 护栏同步到新的工作台骨架
+   - `tui/runtime_renderer_test.go`
+   - `tui/runtime_test.go`
+   - 新护栏重点锁定：
+     - pane 标题栏仍可读，并开始呈现 `┌─ title` 的 legacy 风格
+     - split / floating / mixed 继续保持 full canvas，不回到 rail/deck 主导
+     - floating / detached strip 使用新的短状态语义
+     - empty / waiting / exited pane 的产品文案与动作提示同步更新
+
+本轮验证命令：
+
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./tui -count=1`
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./... -count=1`
+
+当前阶段推进结果：
+
+- 主工作台的 pane/frame 语言进一步从“工程态拼装”回到“可工作的终端工作台”
+- split / floating / mixed 的视觉骨架开始统一，不再让不同布局像三套不同产品
+- mixed 的 waiting / exited / empty pane 文案更接近用户在真实工作流中能直接理解的表达
+
+下一块应继续推进：
+
+- pane title bar 的命中区域、active 高亮和真实边框交互进一步统一
+- overlay 盒模型和 backdrop 继续往旧版的可辨认叠层体验靠拢
+- 性能、颜色、重叠渲染优化继续放在全局 TODO 的后段处理
