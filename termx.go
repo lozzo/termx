@@ -735,6 +735,7 @@ func (s *Server) handleRequest(
 		for _, attachment := range toCleanup {
 			attachment.cleanup()
 		}
+		term.MarkRemoved()
 		if err := term.Close(); err != nil {
 			return nil, 500, err
 		}

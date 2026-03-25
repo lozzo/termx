@@ -856,6 +856,95 @@ func TestServerRemoveCleansAttachmentsAndClosesTerminal(t *testing.T) {
 	}
 }
 
+func TestServerRemovePublishesSingleRemovedEventWithoutExitedPollution(t *testing.T) {
+	ctx := context.Background()
+	srv := NewServer(WithDefaultScrollback(128), WithDefaultKeepAfterExit(0))
+
+	info, err := srv.Create(ctx, CreateOptions{
+		ID:      "remove-seq-01",
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create failed: %v", err)
+	}
+	term, err := srv.getTerminal(info.ID)
+	if err != nil {
+		t.Fatalf("get terminal failed: %v", err)
+	}
+
+	eventsCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	events := srv.Events(eventsCtx, WithTerminalFilter(info.ID))
+
+	allocator := protocol.NewChannelAllocator()
+	attachments := make(map[uint16]*sessionAttachment)
+	var attachmentsMu sync.RWMutex
+	sendFrame := func(uint16, uint8, []byte) error { return nil }
+	mustAttachChannel(t, srv, ctx, "memory", allocator, attachments, &attachmentsMu, info.ID, string(ModeCollaborator), sendFrame)
+
+	_, code, err := srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+		ID:     1,
+		Method: "remove",
+		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
+	}, sendFrame)
+	if err != nil {
+		t.Fatalf("expected remove to succeed, got %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("expected success code 0, got %d", code)
+	}
+
+	select {
+	case <-term.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("expected remove to close terminal")
+	}
+
+	collected := make([]Event, 0, 4)
+	timer := time.NewTimer(300 * time.Millisecond)
+	defer timer.Stop()
+	for {
+		select {
+		case evt := <-events:
+			collected = append(collected, evt)
+		case <-timer.C:
+			goto VERIFY
+		}
+	}
+
+VERIFY:
+	removedCount := 0
+	expiredRemovedCount := 0
+	exitedCount := 0
+	for _, evt := range collected {
+		switch evt.Type {
+		case EventTerminalRemoved:
+			removedCount++
+			if evt.Removed != nil && evt.Removed.Reason == "expired" {
+				expiredRemovedCount++
+			}
+		case EventTerminalStateChanged:
+			exitedCount++
+		}
+	}
+	if removedCount != 1 {
+		t.Fatalf("expected exactly one removed event, got %#v", collected)
+	}
+	if expiredRemovedCount != 0 {
+		t.Fatalf("expected remove to avoid expired duplicate event, got %#v", collected)
+	}
+	if exitedCount != 0 {
+		t.Fatalf("expected remove to avoid exited state pollution, got %#v", collected)
+	}
+	if collected[0].Type != EventTerminalRemoved || collected[0].Removed == nil || collected[0].Removed.Reason != "removed" {
+		t.Fatalf("expected first event to be removed(reason=removed), got %#v", collected)
+	}
+}
+
 func TestServerOptionsAndHelpers(t *testing.T) {
 	logger := discardWriter{}
 	slogLogger := slog.New(slog.NewTextHandler(logger, nil))

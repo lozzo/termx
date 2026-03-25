@@ -260,6 +260,54 @@ func TestClientStreamCancelDropsLateFramesAndKeepsReadLoopAlive(t *testing.T) {
 	}
 }
 
+func TestClientStreamCancelKeepsEarlyFramesWhenSameChannelIsReattached(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+	defer serverTransport.Close()
+
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- runReusedChannelAttachServer(serverTransport)
+	}()
+
+	client := NewClient(clientTransport)
+	defer client.Close()
+
+	if err := client.Hello(ctx, Hello{Version: Version, Client: "test"}); err != nil {
+		t.Fatalf("hello failed: %v", err)
+	}
+
+	first, err := client.Attach(ctx, "term-1", "observer")
+	if err != nil {
+		t.Fatalf("first attach failed: %v", err)
+	}
+	_, stop := client.Stream(first.Channel)
+	stop()
+
+	second, err := client.Attach(ctx, "term-1", "observer")
+	if err != nil {
+		t.Fatalf("second attach failed: %v", err)
+	}
+	stream, stop2 := client.Stream(second.Channel)
+	defer stop2()
+
+	select {
+	case frame := <-stream:
+		if frame.Type != TypeOutput || string(frame.Payload) != "replayed-after-reattach" {
+			t.Fatalf("unexpected replayed frame: %#v", frame)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for replayed early frame on reused channel")
+	}
+
+	if err := <-serverDone; err != nil {
+		t.Fatalf("fake server failed: %v", err)
+	}
+}
+
 func TestClientCloseWaitsForReadLoopAndUnblocksPendingRequest(t *testing.T) {
 	clientTransport, serverTransport := memory.NewPair()
 	defer serverTransport.Close()
@@ -519,6 +567,34 @@ func runLateFrameAfterCancelServer(tr *memory.Transport) error {
 		return err
 	}
 	return nil
+}
+
+func runReusedChannelAttachServer(tr *memory.Transport) error {
+	if err := expectHello(tr); err != nil {
+		return err
+	}
+	if err := respondHello(tr); err != nil {
+		return err
+	}
+
+	req, err := expectRequest(tr, "attach")
+	if err != nil {
+		return err
+	}
+	firstResult, _ := json.Marshal(AttachResult{Mode: "observer", Channel: 7})
+	if err := sendResponse(tr, req.ID, firstResult); err != nil {
+		return err
+	}
+
+	req, err = expectRequest(tr, "attach")
+	if err != nil {
+		return err
+	}
+	if err := sendFrame(tr, 7, TypeOutput, []byte("replayed-after-reattach")); err != nil {
+		return err
+	}
+	secondResult, _ := json.Marshal(AttachResult{Mode: "observer", Channel: 7})
+	return sendResponse(tr, req.ID, secondResult)
 }
 
 func expectHello(tr *memory.Transport) error {

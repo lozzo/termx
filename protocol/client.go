@@ -19,6 +19,7 @@ type Client struct {
 	waiters map[uint64]chan result
 	streams map[uint16]*clientStream
 	pending map[uint16][]StreamFrame
+	reused  map[uint16][]StreamFrame
 	dropped map[uint16]struct{}
 	events  chan Event
 
@@ -77,6 +78,7 @@ func NewClient(t transport.Transport) *Client {
 		waiters:   make(map[uint64]chan result),
 		streams:   make(map[uint16]*clientStream),
 		pending:   make(map[uint16][]StreamFrame),
+		reused:    make(map[uint16][]StreamFrame),
 		dropped:   make(map[uint16]struct{}),
 		helloCh:   make(chan result, 1),
 		done:      make(chan struct{}),
@@ -164,8 +166,13 @@ func (c *Client) Attach(ctx context.Context, terminalID string, mode string) (*A
 	delete(c.dropped, out.Channel)
 	pending := c.pending[out.Channel]
 	delete(c.pending, out.Channel)
+	reused := c.reused[out.Channel]
+	delete(c.reused, out.Channel)
 	c.mu.Unlock()
 	for _, frame := range pending {
+		stream.send(frame)
+	}
+	for _, frame := range reused {
 		stream.send(frame)
 	}
 	return &out, nil
@@ -355,6 +362,10 @@ func (c *Client) readLoop() {
 		stream := c.streams[channel]
 		if stream == nil {
 			if _, dropped := c.dropped[channel]; dropped {
+				queue := c.reused[channel]
+				if len(queue) < 256 {
+					c.reused[channel] = append(queue, StreamFrame{Type: typ, Payload: append([]byte(nil), payload...)})
+				}
 				c.mu.Unlock()
 				continue
 			}
@@ -390,6 +401,9 @@ func (c *Client) failAll(err error) {
 	}
 	for id := range c.pending {
 		delete(c.pending, id)
+	}
+	for id := range c.reused {
+		delete(c.reused, id)
 	}
 	for id := range c.dropped {
 		delete(c.dropped, id)

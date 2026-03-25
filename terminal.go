@@ -224,6 +224,12 @@ func (t *Terminal) Close() error {
 	return t.pty.Close()
 }
 
+func (t *Terminal) MarkRemoved() {
+	t.mu.Lock()
+	t.removed = true
+	t.mu.Unlock()
+}
+
 func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	if limit <= 0 {
 		limit = 500
@@ -345,7 +351,13 @@ func (t *Terminal) readLoop() {
 			_, _ = t.vterm.Write(chunk)
 		}
 		if err != nil {
+			t.mu.RLock()
+			removed := t.removed
+			t.mu.RUnlock()
 			if err != io.EOF {
+				if removed {
+					return
+				}
 				t.events.Publish(Event{
 					Type:       EventTerminalReadError,
 					TerminalID: t.id,
@@ -371,27 +383,33 @@ func (t *Terminal) waitLoop() {
 	oldState := t.state
 	t.state = StateExited
 	t.exitCode = &code
+	removed := t.removed
 	t.invalidateProtocolInfoCacheLocked()
 	t.mu.Unlock()
 
 	// Terminal exit happens asynchronously, so we explicitly invalidate any
 	// cached list payloads that include state or exit-code fields.
-	if t.updateFunc != nil {
+	if !removed && t.updateFunc != nil {
 		t.updateFunc()
 	}
 
 	t.stream.Close(&code)
-	t.events.Publish(Event{
-		Type:       EventTerminalStateChanged,
-		TerminalID: t.id,
-		Timestamp:  time.Now().UTC(),
-		StateChanged: &TerminalStateChangedData{
-			OldState: oldState,
-			NewState: StateExited,
-			ExitCode: &code,
-		},
-	})
+	if !removed {
+		t.events.Publish(Event{
+			Type:       EventTerminalStateChanged,
+			TerminalID: t.id,
+			Timestamp:  time.Now().UTC(),
+			StateChanged: &TerminalStateChangedData{
+				OldState: oldState,
+				NewState: StateExited,
+				ExitCode: &code,
+			},
+		})
+	}
 	close(t.done)
+	if removed {
+		return
+	}
 
 	if t.keepAfterExit <= 0 {
 		t.remove("expired")
