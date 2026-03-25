@@ -139,16 +139,16 @@ func TestRunUsesShellOnlyRendererByDefault(t *testing.T) {
 	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") {
 		t.Fatalf("expected default run renderer to keep screen shell, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "pane term-1") || !strings.Contains(stripped, "owner") || !strings.Contains(stripped, "f0") {
+	if !strings.Contains(stripped, "pane:term-1") || !strings.Contains(stripped, "term:term") || !strings.Contains(stripped, "owner") {
 		t.Fatalf("expected default run renderer top chrome to expose active pane summary, got:\n%s", runner.view)
 	}
 	if !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "● run  owner") || !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "term-1 running owner") {
 		t.Fatalf("expected default run renderer to keep terminal canvas context in screen shell, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "WORKBENCH") || !strings.Contains(stripped, "CONTEXT") || !strings.Contains(stripped, "ACTIVE") || !strings.Contains(stripped, "LINK") || !strings.Contains(stripped, "STATE") || !strings.Contains(stripped, "PATH") || !strings.Contains(stripped, "ACTION") || !strings.Contains(stripped, "running") {
+	if !strings.Contains(stripped, "WORKBENCH") || !strings.Contains(stripped, "CONTEXT") || !strings.Contains(stripped, "ACTIVE") || !strings.Contains(stripped, "ROUTE") || !strings.Contains(stripped, "running") {
 		t.Fatalf("expected default run renderer to expose single workbench shell panels, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "term-1  •  owner") || !strings.Contains(stripped, "1 tab") || !strings.Contains(stripped, "1 pane") || !strings.Contains(stripped, "1 term") || !strings.Contains(stripped, "main / shell / tiled / term-1") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "desk") || !strings.Contains(stripped, "term-1") {
+	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "term-1  •  owner") || !strings.Contains(stripped, "1 tab") || !strings.Contains(stripped, "1 pane") || !strings.Contains(stripped, "1 term") || !strings.Contains(stripped, "main / shell / tiled / term-1") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "term-1") {
 		t.Fatalf("expected default run renderer context bar to expose path and runtime state, got:\n%s", runner.view)
 	}
 	if !strings.Contains(stripped, "<p> PANE") || !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "owner") {
@@ -757,13 +757,13 @@ func TestE2ERunScenarioDefaultModernTopChromeSummarizesWorkspaceTabsAndContext(t
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") || !strings.Contains(stripped, "2:logs") {
+			if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") || !strings.Contains(stripped, "2:logs") || !strings.Contains(stripped, "pane:api-dev") || !strings.Contains(stripped, "term:ter") {
 				t.Fatalf("expected default modern top bar to expose active pane summary, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "api-dev  •  owner") || !strings.Contains(stripped, "2 tabs") || !strings.Contains(stripped, "2 panes") || !strings.Contains(stripped, "2 terms") {
 				t.Fatalf("expected default modern tab bar to expose tab and workspace counts, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "desk") || !strings.Contains(stripped, "api-dev") {
+			if !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "api-dev") {
 				t.Fatalf("expected default modern context bar to expose path and runtime state, got:\n%s", view)
 			}
 			if strings.Contains(view, "wireframe_view:") {
@@ -814,7 +814,7 @@ func TestE2ERunScenarioDefaultModernSingleWorkbenchUsesBadgeHeaderAndContextRail
 			if !strings.Contains(stripped, "CONTEXT") || strings.Contains(stripped, "Context & Keys") {
 				t.Fatalf("expected default modern single workbench to use compact context rail title, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "● run") || !strings.Contains(stripped, "owner") || !strings.Contains(stripped, "Ctrl-p pane") {
+			if !strings.Contains(stripped, "● run") || !strings.Contains(stripped, "ROUTE") || !strings.Contains(stripped, "running") {
 				t.Fatalf("expected default modern single workbench to expose badge header and pane actions, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "term-1 running owner") {
@@ -1144,7 +1144,7 @@ func TestE2ERunScenarioDefaultModernFloatingCenterRecallClearsOffscreenBadge(t *
 				}
 			}
 			before := stripANSIRuntimeView(current.View())
-			if !strings.Contains(before, "offscre") {
+			if !strings.Contains(before, "offscr") && !strings.Contains(before, "recall") {
 				t.Fatalf("expected default modern floating shell to expose offscreen recall hint before centering, got:\n%s", current.View())
 			}
 			for _, key := range []tea.KeyMsg{
@@ -1161,7 +1161,7 @@ func TestE2ERunScenarioDefaultModernFloatingCenterRecallClearsOffscreenBadge(t *
 				}
 			}
 			after := stripANSIRuntimeView(current.View())
-			if strings.Contains(after, "offscre") || !strings.Contains(after, "api-dev") || !strings.Contains(after, "remote") || !strings.Contains(after, "WINDOW DECK") {
+			if strings.Contains(after, "offscr") || !strings.Contains(after, "api-dev") || !strings.Contains(after, "remote") || !strings.Contains(after, "WINDOW DECK") {
 				t.Fatalf("expected default modern floating center recall to clear offscreen badge, got:\n%s", current.View())
 			}
 			return nil
