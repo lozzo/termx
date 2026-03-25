@@ -1,412 +1,611 @@
 # termx TUI 架构设计
 
-状态：Draft v1
-日期：2026-03-23
+状态：Draft v2
+日期：2026-03-25
 
 ---
 
-## 1. 架构目标
+## 1. 目标
 
-新 TUI 架构必须解决旧版最核心的 4 个问题：
+这份文档的目标不是再抽象讨论“理想架构”，而是把当前仓库已经做对的部分和后续必须重写的部分分开。
 
-1. 输入路径重复
-2. 领域状态、运行时状态、渲染状态混合
-3. shared terminal 规则没有成为一等模型
-4. render cache 和业务逻辑耦合
+当前统一结论：
 
-因此，新架构要求：
-
-- 先定义模型，再实现功能
-- 先定义接口，再连接基础设施
-- 先把状态边界切清，再做复杂 UI
+1. 数据驱动层继续保留
+2. runtime 接线层继续保留
+3. 旧版 `deprecated/tui-legacy/` 的 renderer/compositor 思路应该回收
+4. 当前过渡 ASCII renderer 应该被替换，而不是继续扩展
 
 ---
 
-## 2. 产品架构
+## 2. 当前仓库中已经成型的层
 
-产品层按 4 个面组织：
+### 2.1 Domain / State
 
-### 2.1 工作台面
+主要落点：
 
-包含：
-
-- workspace
-- tab
-- tiled pane
-- floating pane
-
-职责：
-
-- 组织工作位
-- 提供焦点切换
-- 承载主要操作上下文
-
-### 2.2 terminal 资源面
-
-包含：
-
-- terminal picker
-- terminal manager
-- metadata prompt
+- `tui/domain/types`
+- `tui/domain/layout`
+- `tui/domain/connection`
+- `tui/domain/workspace`
+- `tui/domain/terminalpicker`
+- `tui/domain/terminalmanager`
+- `tui/domain/layoutresolve`
+- `tui/domain/prompt`
 
 职责：
 
-- 发现 terminal
-- 复用 terminal
-- 管理 terminal 元数据和生命周期
+- 定义 `workspace / tab / pane / terminal / connection / overlay` 等纯状态
+- 承载 layout、共享 terminal、picker/manager/prompt 的纯规则
 
-### 2.3 恢复与声明式入口面
+这一层是当前新主线的核心资产，不应该跟着 renderer 一起删除。
 
-包含：
+### 2.2 Intent / Bubble Tea Shell
 
-- workspace restore
-- layout resolve
-- waiting slot
+主要落点：
 
-职责：
-
-- 进入既有工作现场
-- 将静态声明映射成运行现场
-
-### 2.4 系统反馈面
-
-包含：
-
-- help
-- notice
-- confirm prompt
-- error prompt
+- `tui/bt/intent_mapper.go`
+- `tui/bt/model.go`
 
 职责：
 
-- 降低学习成本
-- 明确解释复杂行为
-- 承接危险操作确认
+- 把键盘、鼠标、runtime message 映射到 intent
+- 作为最薄的一层 UI 壳，连接 mapper / reducer / effect handler / renderer
+
+当前判断：
+
+- 这层整体方向正确
+- 后续只需要让鼠标命中语义跟新 renderer 的真实盒模型保持一致
+
+### 2.3 Reducer / Effect Planning
+
+主要落点：
+
+- `tui/app/reducer/reducer.go`
+
+职责：
+
+- 纯状态迁移
+- effect 产出
+- overlay / focus / mode 流程协调
+- terminal picker / manager / layout resolve / floating / prompt 等业务动作收敛
+
+当前判断：
+
+- 这一层是正确的
+- 后续继续坚持“reducer 不直接调 runtime service，不直接管 render dirty/cache”
+
+### 2.4 Runtime / Session / Update
+
+主要落点：
+
+- `tui/runtime.go`
+- `tui/runtime_updates.go`
+- `tui/runtime_session.go`
+- `tui/runtime_terminal_store.go`
+- `tui/runtime_terminal_service.go`
+- `tui/runtime_terminal_input.go`
+- `tui/bt/effect_handler.go`
+
+职责：
+
+1. startup planner
+2. startup task executor
+3. runtime session bootstrap
+4. terminal store
+5. stream / event / snapshot update
+6. terminal input passthrough
+7. effect 执行
+
+当前判断：
+
+- 这一层已经是新主线真正的底盘
+- 后续 renderer 重写必须建立在这层之上，而不是重新发明一套 runtime
 
 ---
 
-## 3. 领域模型
+## 3. 当前需要被替换的层
 
-### 3.1 核心聚合
+当前明确应该被替换的是：
 
-推荐按下面聚合定义：
+- `tui/runtime_renderer.go`
+- `tui/runtime_modern_renderer.go`
+- 与它们强绑定的旧文本结构和旧渲染测试基线
 
-- `WorkspaceState`
-- `TabState`
-- `PaneState`
-- `TerminalRef`
-- `ConnectionState`
-- `OverlayState`
+原因不是这些代码完全没价值，而是：
 
-### 3.2 PaneState
+- 它们更像调试 shell，不像真正工作台
+- 没有回到 `terminal-first / pane-first`
+- 没有充分利用 legacy renderer 已验证过的 compositor 能力
 
-只保留 pane 作为观察窗口所需的最小领域状态：
+所以这次重写的边界应当定义为：
 
-- pane id
-- pane kind
-  - tiled / floating
-- pane geometry
-- terminal connection
-- slot state
-  - connected / empty / exited / waiting
-
-不放：
-
-- vterm 实例
-- stream handler
-- render dirty
-- cache
-- 鼠标拖拽草稿
-
-### 3.3 ConnectionState
-
-这是共享 terminal 的一等模型。
-
-至少表达：
-
-- terminal id
-- connected pane ids
-- owner pane id
-- owner acquisition policy
-- owner 迁移规则
-- tab auto-acquire 配置
-
-任何 terminal 控制面权限判断都必须先经过它。
-
-### 3.4 OverlayState
-
-统一表达当前叠层：
-
-- none
-- picker
-- manager
-- workspace picker
-- help
-- prompt
-- confirm
+- 保留 `domain + reducer + runtime + bt shell`
+- 重写 `projection + pane surface + canvas compositor + overlay + HUD`
 
 ---
 
-## 4. 技术架构
+## 4. 最终目标分层
 
-### 4.1 总体分层
+termx TUI 继续采用 6 层，但要明确哪些已存在、哪些待重写。
 
-推荐采用 6 层：
-
-1. `intent layer`
-2. `application layer`
-3. `domain layer`
-4. `runtime layer`
-5. `render layer`
-6. `infrastructure layer`
-
-### 4.2 Intent Layer
+### 4.1 Intent Layer
 
 职责：
 
-- 把键盘、鼠标、定时器、server 事件统一翻译成显式 intent
-- 不直接修改状态
+- 输入事件 -> intent
 
-示例 intent：
+当前状态：
 
-- `SplitPane`
-- `ConnectTerminal`
-- `CreateTerminal`
-- `MoveFloatingPane`
-- `ResizeFloatingPane`
-- `AcquireTerminalResize`
-- `OpenTerminalManager`
-- `CommitPrompt`
+- 已存在，保留
 
-### 4.3 Application Layer
+### 4.2 Application Layer
 
 职责：
 
-- 协调 reducer、policy、effect 生成
-- 决定一个 intent 对应的业务流程
-- 产出 effect plan
+- reducer
+- effect planning
+
+当前状态：
+
+- 已存在，保留
+
+### 4.3 Domain Layer
+
+职责：
+
+- 纯状态
+- 纯规则
+- 纯布局规则
+
+当前状态：
+
+- 已存在，保留
+
+### 4.4 Runtime Layer
+
+职责：
+
+- attach / snapshot / stream / resize / input
+- effect 执行
+- runtime update 回流
+
+当前状态：
+
+- 已存在，保留
+
+### 4.5 Render Layer
+
+职责：
+
+- 把 `AppState + RuntimeTerminalStore` 变成真实可工作的 TUI 画面
+
+当前状态：
+
+- 待重写
+
+### 4.6 Infrastructure Layer
+
+职责：
+
+- protocol client
+- persistence
+- benchmark
+- e2e harness
+
+当前状态：
+
+- 保留并逐步增强
+
+---
+
+## 5. 新 Render Layer 的职责
+
+新 renderer 不再只是“打印状态说明”，而应该完成下面 5 步。
+
+### 5.1 Layout Projection
+
+输入：
+
+- `DomainState`
+- 当前 active workspace / tab / pane
 
 输出：
 
-- next state
-- effects
-- notices
+- tiled pane rect
+- floating pane rect
+- floating z-order
+- active pane / active layer
 
-### 4.4 Domain Layer
+这一层只负责几何投影，不直接处理 terminal 内容。
 
-职责：
+### 5.2 Terminal Surface Projection
 
-- 定义纯状态模型和纯规则
-- 不依赖 bubbletea、protocol client、timer、logger
+输入：
 
-建议包含：
+- `RuntimeTerminalStore`
+- pane rect
+- pane 的 connect/owner/follower/slot 状态
 
-- workspace rules
-- pane slot rules
-- connection rules
-- layout rules
-- restore rules
+输出：
 
-### 4.5 Runtime Layer
+- 某个 pane 内可显示的 terminal surface
+- cursor
+- waiting / unconnected / exited 的占位内容
 
-职责：
+这一层必须明确支持两条数据路径：
 
-- 执行 effects
-- 与 server、pty、timer、event stream、storage 交互
+- live VTerm 路径
+- snapshot 路径
 
-接口示例：
-
-- `TerminalService`
-- `WorkspaceStore`
-- `LayoutStore`
-- `Clock`
-- `Scheduler`
-- `Logger`
-
-### 4.6 Render Layer
+### 5.3 Workbench Compositor
 
 职责：
 
-- 只根据 screen model 和 runtime snapshot 绘制
-- 自己管理 dirty 和 cache
+- 先画 tiled panes
+- 再叠 floating panes
+- 正确处理 overlap / clipping / z-order
 
-要求：
+这是真正的工作台主体。
 
-- 业务层不手写 render invalidation
-- overlay 和 pane 重绘路径局部化
-- cache 策略可 benchmark、可回归
-
-#### 4.6.1 渲染主轴
-
-后续 renderer 必须严格按下面顺序组织：
-
-1. `LayoutProjection`
-   - 从 workspace/tab/pane 状态投影出 tiled pane rect、floating pane rect、z-order
-2. `WorkbenchSurface`
-   - 把 terminal surface 贴到 pane rect 里
-   - 这是主界面第一主体
-3. `FloatingComposite`
-   - 在 tiled workbench 之上叠放 floating pane
-   - 负责 clipping、overlap、raise/lower、active window
-4. `OverlayComposite`
-   - 在 workbench 之上盖 overlay / modal / mask
-   - 不能替代底层 workbench 主体
-5. `HUDChrome`
-   - 最后叠最小 header/footer/notice
-   - chrome 只做导航，不得主导空间分配
-
-#### 4.6.2 明确禁止
-
-渲染层明确禁止走下面这些方向：
-
-- 先画 dashboard/card/rail，再把 pane 作为附属内容塞进去
-- 让 overlay 成为主界面主体
-- 让 summary/context 面板长期侵占 pane surface 的主要宽度
-- 把工作台的主要可读性建立在说明字段，而不是 pane 布局本身
-
-### 4.7 Infrastructure Layer
+### 5.4 Overlay Compositor
 
 职责：
 
-- protocol client 适配
-- filesystem persistence
-- bubbletea integration
-- 日志、benchmark、test harness
+- mask / backdrop
+- 居中 modal
+- overlay focus target
+- 关闭后无残影
+
+overlay 只能盖在工作台上面，不能取代工作台。
+
+### 5.5 HUD Chrome
+
+职责：
+
+- 最小 header
+- 最小 footer
+- status / notice / shortcut hint
+
+chrome 只能承担导航和上下文表达，不能持续侵占 pane 主体面积。
 
 ---
 
-## 5. 技术分层细化
+## 6. 当前正确的数据流
 
-### 5.1 推荐目录边界
+后续必须沿这条链路推进：
 
-后续代码建议按下面边界组织：
-
-- `tui/domain`
-  - 纯状态模型、规则、policy
-- `tui/app`
-  - intent、reducer、effect planning
-- `tui/runtime`
-  - effect executor、service adapter
-- `tui/render`
-  - screen model、layout projection、canvas、cache
-- `tui/bt`
-  - bubbletea 适配壳
-- `tui/testkit`
-  - harness、fixture、golden helper
-
-### 5.2 接口先行
-
-按照仓库约束，优先先写接口再写实现。
-
-建议最先定义的接口：
-
-- `TerminalClient`
-- `EventSource`
-- `WorkspaceRepository`
-- `LayoutRepository`
-- `Clock`
-- `Renderer`
-- `OverlayPresenter`
-
-### 5.3 状态拆分
-
-推荐最少拆成 4 类状态：
-
-- `DomainState`
-  - workspace / tab / pane / connection
-- `UIState`
-  - overlay、focus、mode、prompt draft
-- `RuntimeState`
-  - stream connection、pending request、timer state
-- `RenderState`
-  - cache、dirty region、measured rect
-
----
-
-## 6. 数据流
-
-推荐统一数据流：
-
-1. 输入或事件进入
-2. 转成 `Intent`
-3. `Reducer` 处理 intent，得到新状态和 `Effects`
-4. `Runtime` 执行 effects
-5. `Runtime event` 再回流为新的 intent
-6. `Render` 基于当前 screen model 输出视图
+```text
+keyboard/mouse/runtime-msg
+  -> IntentMapper
+  -> Reducer
+  -> Effects
+  -> Runtime Executor / Runtime Update Handler
+  -> AppState + RuntimeTerminalStore
+  -> Projection Builder
+  -> Workbench / Overlay / HUD Compositor
+  -> ANSI Frame
+```
 
 强约束：
 
-- 不允许在 render 中改业务状态
-- 不允许在 reducer 中直接调 protocol client
-- 不允许在 input handler 里绕过 intent 直接改 model
+- reducer 不直接调 client
+- renderer 不回写业务状态
+- runtime update 不直接拼 UI
+- dirty/cache 只留在 render/compositor 层
 
 ---
 
-## 7. 复杂点的专项设计
+## 7. 旧版 renderer 的可复用骨架
 
-### 7.1 shared terminal
+旧版真正可回收的不是大一统 `Model`，而是渲染骨架：
 
-必须由专门 policy 负责：
+```text
+View()
+  -> renderTabBar()
+  -> renderContentBody()
+       -> renderTabComposite()
+            -> paneRenderEntries()
+                 -> LayoutNode.Rects()
+                 -> visibleFloatingPanes()
+            -> composedCanvas
+                 -> drawPaneFrameWithTitle()
+                 -> drawPaneBody()
+                 -> drawCursor()
+  -> renderStatus()
+```
 
-- connect 默认 follower
-- owner 选举
-- owner 获取
-- owner 迁移
-- auto-acquire
-- terminal control-plane 权限判断
+核心参考文件：
 
-### 7.2 floating
+- `deprecated/tui-legacy/pkg/model.go`
+- `deprecated/tui-legacy/pkg/render.go`
+- `deprecated/tui-legacy/pkg/layout.go`
 
-必须把下面几件事拆开：
+### 7.1 值得直接回收的函数职责
 
-- 几何状态
-- z-order
-- 激活态
-- 拖动草稿
-- resize 草稿
+#### `renderTabComposite`
 
-不要再把 floating 的过程态塞回 pane 领域对象。
+旧版真正的 compositor 入口。
 
-### 7.3 render cache
+它负责：
 
-缓存至少按下面层级管理：
+1. 收敛 tiled/floating 的统一渲染输入
+2. 把 frame/body/cursor 合成到同一个 canvas
+3. 尝试局部重绘
 
-- pane frame cache
-- pane body cache
-- overlay cache
-- tab composite cache
+这条主链值得直接迁回新主线。
 
-并且每类 cache 都要有明确失效源。
+#### `paneRenderEntries`
+
+旧版最有价值的抽象之一。
+
+它把：
+
+- layout projection
+- floating order
+- pane title/meta
+
+统一变成渲染层输入。
+
+新主线建议明确恢复类似结构，例如：
+
+- `WorkbenchProjection`
+- `ProjectedPane`
+- `ProjectedOverlay`
+
+#### `composedCanvas`
+
+旧版基于二维 `drawCell` 做合成。
+
+这带来几个直接收益：
+
+- 支持局部覆盖
+- 支持宽字符 continuation cell
+- 支持行缓存和 ANSI 输出缓存
+- 支持 overlap/damage redraw
+
+这比当前过渡 renderer 直接输出说明文本更接近产品级 TUI。
+
+#### `drawPaneBodyDirtyRows`
+
+旧版已经支持 pane 级 dirty row / dirty col 增量重绘。
+
+这个优化值得保留，但必须放在 render layer，而不是塞回领域模型。
+
+#### `convertVTermViewport` / `convertProtocolViewport`
+
+旧版 fixed viewport 有一个很好的优化：
+
+- 直接从 live source / snapshot source 生成当前 viewport
+- 避免先物化整张 full grid 再裁切
+
+这对 floating、小窗口、共享 terminal 特别重要。
+
+### 7.2 明确不回收的旧版部分
+
+下面这些不要搬回新主线：
+
+- 大一统 `Model`
+- 业务状态、输入状态、渲染缓存混在一个对象里
+- overlay / picker / manager / help 全部从一个 `View()` 分支硬拼
+- 渲染缓存直接反向污染业务对象边界
 
 ---
 
-## 8. 迁移原则
+## 8. 旧版做过的关键优化
 
-从 legacy 迁到新架构时：
+旧版 renderer 不是单纯“能画出来”，它还做了不少值得复用的优化。
 
-1. 继承产品规则
-2. 继承可用模型
-3. 不继承大一统 `Model`
-4. 不继承旧版 cache 耦合方式
-5. 不继承 key/event 双状态机
+### 8.1 整页与行级缓存
 
-最优先可迁移资产：
+旧版有：
 
-- `layout`
-- `layout_decl`
-- `workspace_state`
-- `client interface`
-- 共享 terminal 的规则语义
+- `renderCache`
+- `tab.renderCache`
+- `rowCache`
+- `fullCache`
+
+目的：
+
+- overlay/picker/help 打开时优先复用已稳定画面
+- row dirty 时避免整页重新编码 ANSI
+
+### 8.2 Damage Redraw
+
+旧版通过：
+
+- rect 对比
+- damage rect
+- overlap 重画
+
+来避免每次 floating 移动都全量重绘整个工作台。
+
+### 8.3 Dirty Rows / Dirty Cols
+
+旧版能追踪：
+
+- `dirtyRowStart / dirtyRowEnd`
+- `dirtyColStart / dirtyColEnd`
+
+只刷 pane 内容真正变化的那部分区域。
+
+### 8.4 Fixed Viewport Direct Render
+
+旧版 fixed 模式不是先生成 full grid，而是直接生成目标 viewport。
+
+这是新主线很值得回收的一个点。
+
+### 8.5 ANSI / Title / Blank Row Cache
+
+旧版还做了：
+
+- style ANSI cache
+- border title cell cache
+- blank fill row cache
+
+这些都属于后续性能优化时可直接借鉴的技术点。
+
+### 8.6 宽字符与 continuation cell
+
+旧版通过：
+
+- `uniseg`
+- continuation cell
+- crop 逻辑
+
+专门处理宽字符、组合字符和裁切边界。
+
+这一点必须在新 renderer 一开始就保留，不然后面会反复踩坑。
 
 ---
 
-## 9. 架构完成标准
+## 9. 推荐的 render 子分层
 
-架构达到可继续长期演进，至少需要满足：
+这次 renderer 重写，建议内部至少拆成下面 4 层。
 
-1. 输入统一进入 intent
-2. reducer 可单测
-3. runtime effect 可替身测试
-4. render cache 由 render layer 自治
-5. shared terminal 的 owner/follower 成为一等模型
-6. floating、restore、manager 这些复杂功能不再依赖 ad-hoc 补丁
+### 9.1 Projection
+
+职责：
+
+- `AppState -> WorkbenchProjection`
+
+包含：
+
+- tiled rect projection
+- floating rect projection
+- active/focus projection
+- overlay projection
+
+### 9.2 Surface
+
+职责：
+
+- `pane + runtime source -> PaneSurface`
+
+包含：
+
+- viewport crop
+- cursor projection
+- waiting/unconnected/exited body
+- owner/follower/readonly/pin 元信息
+
+### 9.3 Canvas / Compositor
+
+职责：
+
+- 把 projected panes / overlay / HUD 画进统一 canvas
+
+建议包含：
+
+- `drawCell`
+- `Canvas`
+- `DamageTracker`
+- `ANSIEncoder`
+
+### 9.4 Presenter
+
+职责：
+
+- 负责最终产品布局语言
+- 负责 header/footer/modal 框架
+
+它只决定“怎么呈现”，不应该承载业务状态。
+
+---
+
+## 10. 接口建议
+
+为了不再次把 renderer、runtime、业务状态缠在一起，建议先固定接口。
+
+### 10.1 Runtime 相关
+
+- `TerminalSnapshotSource`
+- `TerminalSessionSource`
+- `TerminalControlService`
+
+### 10.2 Render 相关
+
+- `WorkbenchProjector`
+- `PaneSurfaceProjector`
+- `OverlayProjector`
+- `CanvasComposer`
+- `FrameRenderer`
+
+### 10.3 当前仓库已存在的壳接口
+
+- `bt.Renderer`
+- `bt.MessageHandler`
+- `bt.UnmappedKeyHandler`
+- `reducer.StateReducer`
+
+这些不需要推翻，继续沿用即可。
+
+---
+
+## 11. 目录建议
+
+当前不强制立刻搬目录，但新的 renderer 至少应遵守下面职责边界：
+
+- `tui/domain`
+  - 纯领域状态和规则
+- `tui/app`
+  - reducer / intent / effect planning
+- `tui/bt`
+  - Bubble Tea 壳
+- `tui/runtime_*`
+  - runtime session / store / input / update / service
+- `tui/render/*`
+  - projection / surface / canvas / overlay / hud / ansi encoder
+
+如果本轮不立即创建 `tui/render/`，也至少要按这些职责拆文件，不能再把新 renderer 全堆进 `runtime_renderer.go`。
+
+---
+
+## 12. 性能与稳定性顺序
+
+性能重要，但必须后置在正确结构之后。
+
+顺序固定为：
+
+1. 先建立正确的工作台渲染结构
+2. 再补 damage / row cache / style cache
+3. 最后补 benchmark、backpressure、残影治理
+
+可直接参考旧版、但应后置的优化包括：
+
+- 行缓存
+- full frame cache
+- dirty rows / dirty cols
+- fixed viewport direct render
+- ANSI style cache
+- blank row cache
+- overlap damage redraw
+
+这些优化都应该进入新的 render layer，不要渗漏回 reducer/domain。
+
+---
+
+## 13. 明确禁止
+
+后续实现明确禁止：
+
+- 再把 summary/card/rail 做成主工作台
+- 用大量状态字段说明替代真实 pane 布局
+- 让 overlay 长期主导首屏空间
+- 为了守住旧测试而继续维护当前过渡 ASCII renderer
+- 把旧版大一统 `Model` 直接搬回当前仓库
+
+---
+
+## 14. 当前正确的重写顺序
+
+基于当前仓库状态，下一阶段顺序应固定为：
+
+1. 文档继续收口到“保数据层、换 renderer”
+2. 删除/替换当前过渡 renderer 实现
+3. 建立 `projection -> composed canvas -> tiled/floating compositor`
+4. 恢复 overlay 叠层
+5. 按新 renderer 重建 E2E
+6. 最后做颜色、性能、残影、backpressure
+
+这就是当前 termx TUI 的正确技术主线。
