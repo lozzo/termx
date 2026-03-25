@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/tui/app/intent"
 	layoutresolvedomain "github.com/lozzow/termx/tui/domain/layoutresolve"
 	promptdomain "github.com/lozzow/termx/tui/domain/prompt"
@@ -16,6 +17,32 @@ import (
 const overlayPreviewRowLimit = 8
 const terminalManagerPreviewRowLimit = 4
 const overlayDetailPreviewRowLimit = 4
+
+// mapWorkbenchMouseClick 为默认 modern 工作台补最小鼠标命中：
+// 先不做复杂几何系统，而是复用用户第一眼能点击到的 pane 标题文本。
+// 这样 split 侧栏、floating deck、pane 卡片标题都能共用一套“点击即切焦点”的路径。
+func mapWorkbenchMouseClick(state types.AppState, msg tea.MouseMsg, view string) []intent.Intent {
+	if !isLeftMousePress(msg) {
+		return nil
+	}
+	workspace, tab, ok := currentWorkbench(state)
+	if !ok {
+		return nil
+	}
+	line, ok := lineAtIndexStripped(view, msg.Y)
+	if !ok {
+		return nil
+	}
+	paneID, ok := clickedWorkbenchPaneID(state, tab, line)
+	if !ok {
+		return nil
+	}
+	return []intent.Intent{intent.WorkspaceTreeJumpIntent{
+		WorkspaceID: workspace.ID,
+		TabID:       tab.ID,
+		PaneID:      paneID,
+	}}
+}
 
 func mapWorkspacePickerMouseClick(state types.AppState, msg tea.MouseMsg, view string) []intent.Intent {
 	if !isLeftMousePress(msg) {
@@ -416,4 +443,128 @@ func lineAtIndex(view string, index int) (string, bool) {
 		return "", false
 	}
 	return lines[index], true
+}
+
+func lineAtIndexStripped(view string, index int) (string, bool) {
+	line, ok := lineAtIndex(view, index)
+	if !ok {
+		return "", false
+	}
+	return xansi.Strip(line), true
+}
+
+func currentWorkbench(state types.AppState) (types.WorkspaceState, types.TabState, bool) {
+	workspaceID := state.UI.Focus.WorkspaceID
+	if workspaceID == "" {
+		workspaceID = state.Domain.ActiveWorkspaceID
+	}
+	workspace, ok := state.Domain.Workspaces[workspaceID]
+	if !ok {
+		return types.WorkspaceState{}, types.TabState{}, false
+	}
+	tabID := state.UI.Focus.TabID
+	if tabID == "" {
+		tabID = workspace.ActiveTabID
+	}
+	tab, ok := workspace.Tabs[tabID]
+	if !ok {
+		return types.WorkspaceState{}, types.TabState{}, false
+	}
+	return workspace, tab, true
+}
+
+func clickedWorkbenchPaneID(state types.AppState, tab types.TabState, line string) (types.PaneID, bool) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return "", false
+	}
+	candidates := make([]types.PaneID, 0, len(tab.Panes))
+	for _, paneID := range orderedWorkbenchPaneIDs(tab) {
+		pane, ok := tab.Panes[paneID]
+		if !ok {
+			continue
+		}
+		title := workbenchPaneDisplayTitle(state, pane)
+		if title == "" {
+			continue
+		}
+		if strings.Contains(line, title) {
+			candidates = append(candidates, paneID)
+		}
+	}
+	if len(candidates) != 1 {
+		return "", false
+	}
+	return candidates[0], true
+}
+
+func orderedWorkbenchPaneIDs(tab types.TabState) []types.PaneID {
+	seen := map[types.PaneID]struct{}{}
+	ordered := make([]types.PaneID, 0, len(tab.Panes))
+	if tab.ActivePaneID != "" {
+		if _, ok := tab.Panes[tab.ActivePaneID]; ok {
+			ordered = append(ordered, tab.ActivePaneID)
+			seen[tab.ActivePaneID] = struct{}{}
+		}
+	}
+	if tab.RootSplit != nil {
+		appendWorkbenchPaneIDsFromSplit(tab.RootSplit, seen, &ordered)
+	}
+	for _, paneID := range tab.FloatingOrder {
+		if _, ok := seen[paneID]; ok {
+			continue
+		}
+		if _, ok := tab.Panes[paneID]; !ok {
+			continue
+		}
+		ordered = append(ordered, paneID)
+		seen[paneID] = struct{}{}
+	}
+	for paneID := range tab.Panes {
+		if _, ok := seen[paneID]; ok {
+			continue
+		}
+		ordered = append(ordered, paneID)
+	}
+	return ordered
+}
+
+func appendWorkbenchPaneIDsFromSplit(node *types.SplitNode, seen map[types.PaneID]struct{}, ordered *[]types.PaneID) {
+	if node == nil {
+		return
+	}
+	if node.First == nil && node.Second == nil {
+		if node.PaneID == "" {
+			return
+		}
+		if _, ok := seen[node.PaneID]; ok {
+			return
+		}
+		*ordered = append(*ordered, node.PaneID)
+		seen[node.PaneID] = struct{}{}
+		return
+	}
+	appendWorkbenchPaneIDsFromSplit(node.First, seen, ordered)
+	appendWorkbenchPaneIDsFromSplit(node.Second, seen, ordered)
+}
+
+func workbenchPaneDisplayTitle(state types.AppState, pane types.PaneState) string {
+	switch pane.SlotState {
+	case types.PaneSlotWaiting:
+		return "waiting pane"
+	case types.PaneSlotEmpty:
+		return "unconnected pane"
+	}
+	if pane.TerminalID != "" {
+		if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok && strings.TrimSpace(terminal.Name) != "" {
+			return terminal.Name
+		}
+	}
+	if pane.SlotState == types.PaneSlotExited {
+		return "exited pane"
+	}
+	if pane.ID != "" {
+		return string(pane.ID)
+	}
+	return "pane"
 }

@@ -79,6 +79,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮同步把侧栏语义从“说明面板”压成“上下文面板”：`Single/Floating/Mixed workbench` 这类标题被收成更短的 `Workbench / Layout / Floating / Context & Keys`，内容也改成 `live focus / owner / terminal / visible / panes` 这类首屏能直接读懂的上下文摘要
 - 本轮也把 overlay backdrop 的文案切到新的产品语义：modal 打开时背景区不再复述 `backdrop / pane` 调试词，而是改成 `workbench paused / active pane ...` 这种更接近真实界面的层级表达，并同步迁移 shell-only 与默认 modern E2E 护栏
 - 本轮继续把默认 modern 首屏往可交付主壳收口：顶部 chip 已切成 `pane:... / term:... / role:... / float:... / recall:offscreen`，单 pane 与 floating workbench 的上下文栏/侧栏也统一改成 `ROUTE / LINK / RUNTIME` 这类产品语义，并完成 shell-only + 默认 modern 的回归/E2E 断言迁移
+- 本轮开始把默认 modern 主工作台补进最小鼠标可用性：overlay 之外的 split / floating 工作台现在也能通过点击 pane 标题直接切换焦点，优先复用现有 `WorkspaceTreeJump` 路径而不引入新的几何状态机；对应的 intent mapper 与 runtime E2E 已覆盖 split/floating 两条主路径
 - 本轮继续收口窄宽度 pane 的标题可读性：canvas pane header 现在会按 pane 宽度自动压缩或隐藏右侧状态元信息，超窄 pane 直接把状态让位给标题，较窄 pane 则降级到 `● own / ◌ / ○ / ◫ / off` 这类短 token，避免 `build-log / waiting pane / deploy-log` 在 78 列 split/mixed 布局下被大面积截成省略号
 - 本轮同步把 shell-only 与默认 modern 的 split/mixed renderer 和 E2E 护栏更新到“标题优先可读”基线，确保后面继续做颜色、阴影和重叠层次时，不会再因为边框右侧 token 膨胀把 pane 标题重新挤坏
 - 本轮继续把 floating 与 tiled 的视觉层次直接落到 canvas：floating pane 现在改用独立边框字形，active floating 走 `╔═╗`，inactive floating 走 `╭─╮`，而 tiled pane 继续使用 `┏━┓ / ┌─┐`，这样即使在无颜色环境里也能一眼分清浮窗和主工作台

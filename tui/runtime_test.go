@@ -44,6 +44,41 @@ func containsRuntimeLineWithAll(view string, parts ...string) bool {
 	return false
 }
 
+func findLineIndexContaining(view string, needle string) int {
+	if strings.TrimSpace(needle) == "" {
+		return -1
+	}
+	for index, line := range strings.Split(view, "\n") {
+		if strings.Contains(xansi.Strip(line), needle) {
+			return index
+		}
+	}
+	return -1
+}
+
+func findLineIndexContainingOnly(view string, include string, excludes ...string) int {
+	if strings.TrimSpace(include) == "" {
+		return -1
+	}
+	for index, line := range strings.Split(view, "\n") {
+		stripped := xansi.Strip(line)
+		if !strings.Contains(stripped, include) {
+			continue
+		}
+		skip := false
+		for _, exclude := range excludes {
+			if exclude != "" && strings.Contains(stripped, exclude) {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			return index
+		}
+	}
+	return -1
+}
+
 func TestRunOrchestratesStartupPlanBootstrapAndSessionLifecycle(t *testing.T) {
 	bootstrapperStopCalls = 0
 	planner := &stubRunPlanner{
@@ -3433,6 +3468,54 @@ func TestE2ERunScenarioPaneModeMovesFocusToAdjacentPane(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioMouseClickOnSplitPaneTitleMovesFocusToExactPane(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithSplitPaneTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			clickY := findLineIndexContainingOnly(current.View(), "build-log", "api-dev")
+			if clickY < 0 {
+				t.Fatalf("expected split workbench to expose build-log title, got:\n%s", current.View())
+			}
+			nextModel, cmd := current.Update(tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      clickY,
+			})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			view := stripANSIRuntimeView(current.View())
+			if !strings.Contains(view, "pane:build-log") || !strings.Contains(view, "main / shell / tiled / build-log") || !strings.Contains(view, "build-log  •  owner") {
+				t.Fatalf("expected split pane title click to focus build-log pane, got:\n%s", current.View())
+			}
+			tab := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
+			if tab.ActivePaneID != types.PaneID("pane-2") || tab.ActiveLayer != types.FocusLayerTiled {
+				t.Fatalf("expected split pane title click to activate pane-2, got %+v", tab)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected split pane title mouse-click scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioTabModeMovesFocusToAdjacentTab(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithTwoTabTargets()
@@ -3773,6 +3856,54 @@ func TestE2ERunScenarioFloatingModeMovesFocusToAdjacentFloatingPane(t *testing.T
 	})
 	if err != nil {
 		t.Fatalf("expected floating mode runtime scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioMouseClickOnFloatingPaneTitleMovesFocusToExactPane(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithFloatingOverviewTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			clickY := findLineIndexContainingOnly(current.View(), "build-log", "api-dev")
+			if clickY < 0 {
+				t.Fatalf("expected floating workbench to expose build-log title, got:\n%s", current.View())
+			}
+			nextModel, cmd := current.Update(tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      clickY,
+			})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			view := stripANSIRuntimeView(current.View())
+			if !strings.Contains(view, "pane:build-log") || !strings.Contains(view, "main / shell / floating / build-log") || !strings.Contains(view, "build-log  •  owner") {
+				t.Fatalf("expected floating pane title click to focus build-log pane, got:\n%s", current.View())
+			}
+			tab := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
+			if tab.ActivePaneID != types.PaneID("float-2") || tab.ActiveLayer != types.FocusLayerFloating {
+				t.Fatalf("expected floating pane title click to activate float-2, got %+v", tab)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected floating pane title mouse-click scenario to succeed, got %v", err)
 	}
 }
 

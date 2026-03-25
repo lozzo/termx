@@ -538,6 +538,60 @@ func TestIntentMapperWorkspacePickerMouseClickOnSelectedRowSubmits(t *testing.T)
 	}
 }
 
+func TestIntentMapperWorkbenchMouseClickOnSplitPaneTitleJumpsToExactPane(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+	state := newAppStateWithSplitWorkbenchTargets()
+	view := strings.Join([]string{
+		"termx",
+		"WORKBENCH",
+		"> api-dev  run  owner",
+		"  build-log  run  owner",
+	}, "\n")
+
+	intents := mapper.MapMouse(state, tea.MouseMsg{
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		Y:      findLineIndexWithPrefix(view, "  build-log"),
+	}, view)
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	if intents[0] != (intent.WorkspaceTreeJumpIntent{
+		WorkspaceID: types.WorkspaceID("ws-1"),
+		TabID:       types.TabID("tab-1"),
+		PaneID:      types.PaneID("pane-2"),
+	}) {
+		t.Fatalf("expected split workbench click to jump to pane-2, got %+v", intents[0])
+	}
+}
+
+func TestIntentMapperWorkbenchMouseClickOnFloatingPaneTitleJumpsToExactPane(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+	state := newAppStateWithFloatingWorkbenchTargets()
+	view := strings.Join([]string{
+		"termx",
+		"FLOATING",
+		"api-dev  running  owner",
+		"build-log  running  owner",
+	}, "\n")
+
+	intents := mapper.MapMouse(state, tea.MouseMsg{
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		Y:      findLineIndexWithPrefix(view, "build-log"),
+	}, view)
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	if intents[0] != (intent.WorkspaceTreeJumpIntent{
+		WorkspaceID: types.WorkspaceID("ws-1"),
+		TabID:       types.TabID("tab-1"),
+		PaneID:      types.PaneID("float-2"),
+	}) {
+		t.Fatalf("expected floating workbench click to jump to float-2, got %+v", intents[0])
+	}
+}
+
 func TestIntentMapperWorkspacePickerMouseClickOnCreateRowMovesAndSubmits(t *testing.T) {
 	mapper := NewIntentMapper(Config{})
 	state := newAppStateWithTwoWorkspaces()
@@ -1216,6 +1270,86 @@ func newAppStateWithSinglePane() types.AppState {
 			},
 		},
 	}
+}
+
+func newAppStateWithSplitWorkbenchTargets() types.AppState {
+	state := newAppStateWithSinglePane()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	tab.Panes[types.PaneID("pane-1")] = types.PaneState{
+		ID:         types.PaneID("pane-1"),
+		Kind:       types.PaneKindTiled,
+		SlotState:  types.PaneSlotConnected,
+		TerminalID: types.TerminalID("term-1"),
+	}
+	tab.Panes[types.PaneID("pane-2")] = types.PaneState{
+		ID:         types.PaneID("pane-2"),
+		Kind:       types.PaneKindTiled,
+		SlotState:  types.PaneSlotConnected,
+		TerminalID: types.TerminalID("term-2"),
+	}
+	tab.RootSplit = &types.SplitNode{
+		Direction: types.SplitDirectionVertical,
+		Ratio:     0.5,
+		First:     &types.SplitNode{PaneID: types.PaneID("pane-1")},
+		Second:    &types.SplitNode{PaneID: types.PaneID("pane-2")},
+	}
+	tab.ActivePaneID = types.PaneID("pane-1")
+	tab.ActiveLayer = types.FocusLayerTiled
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:    types.TerminalID("term-1"),
+		Name:  "api-dev",
+		State: types.TerminalRunStateRunning,
+	}
+	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
+		ID:    types.TerminalID("term-2"),
+		Name:  "build-log",
+		State: types.TerminalRunStateRunning,
+	}
+	return state
+}
+
+func newAppStateWithFloatingWorkbenchTargets() types.AppState {
+	state := newAppStateWithSinglePane()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	delete(tab.Panes, types.PaneID("pane-1"))
+	tab.Panes[types.PaneID("float-1")] = types.PaneState{
+		ID:         types.PaneID("float-1"),
+		Kind:       types.PaneKindFloating,
+		SlotState:  types.PaneSlotConnected,
+		TerminalID: types.TerminalID("term-1"),
+	}
+	tab.Panes[types.PaneID("float-2")] = types.PaneState{
+		ID:         types.PaneID("float-2"),
+		Kind:       types.PaneKindFloating,
+		SlotState:  types.PaneSlotConnected,
+		TerminalID: types.TerminalID("term-2"),
+	}
+	tab.FloatingOrder = []types.PaneID{types.PaneID("float-1"), types.PaneID("float-2")}
+	tab.ActivePaneID = types.PaneID("float-1")
+	tab.ActiveLayer = types.FocusLayerFloating
+	ws.Tabs[types.TabID("tab-1")] = tab
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:    types.TerminalID("term-1"),
+		Name:  "api-dev",
+		State: types.TerminalRunStateRunning,
+	}
+	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
+		ID:    types.TerminalID("term-2"),
+		Name:  "build-log",
+		State: types.TerminalRunStateRunning,
+	}
+	state.UI.Focus = types.FocusState{
+		Layer:       types.FocusLayerFloating,
+		WorkspaceID: types.WorkspaceID("ws-1"),
+		TabID:       types.TabID("tab-1"),
+		PaneID:      types.PaneID("float-1"),
+	}
+	return state
 }
 
 func newAppStateWithTwoWorkspaces() types.AppState {

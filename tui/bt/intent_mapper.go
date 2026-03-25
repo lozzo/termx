@@ -109,7 +109,7 @@ func (m DefaultIntentMapper) MapMouse(state types.AppState, msg tea.MouseMsg, vi
 	case types.OverlayPrompt:
 		return mapPromptMouseClick(state, msg, view)
 	default:
-		return nil
+		return mapWorkbenchMouseClick(state, msg, view)
 	}
 }
 
