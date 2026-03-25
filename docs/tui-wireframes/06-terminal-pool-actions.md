@@ -11,8 +11,7 @@
 ## 线框图
 
 ```text
-termx  [main]  [Pool]                                            screen:terminal-pool  selected:t-022
- Terminal Pool  •  actions for api-dev
+termx  [main]  [Pool]
 ┌─ TERMINALS ───────────────────────────────┬─ LIVE PREVIEW ───────────────────────────────────┬─ ACTIONS ──────┐
 │ VISIBLE                                   │ api-dev                                          │ > Open Here    │
 │ > ● api-dev         #backend  shown:2     │ $ npm run dev                                     │   Open New Tab │

@@ -14,8 +14,7 @@
 ## 线框图
 
 ```text
-termx  [main]  [Pool]                                            screen:terminal-pool  selected:t-022
- Terminal Pool  •  global terminal registry                                        search:"api"
+termx  [main]  [Pool]
 ┌─ TERMINALS ───────────────────────────────┬─ LIVE PREVIEW ───────────────────────────────────┬─ DETAILS ──────┐
 │ query: api                                │ api-dev                                          │ name: api-dev  │
 │                                           │                                                   │ state: running │

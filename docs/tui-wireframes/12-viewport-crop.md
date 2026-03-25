@@ -14,9 +14,8 @@
 ```text
 Case A: pane 小于 terminal，发生裁切与偏移
 
-termx  [main]  [1:ops]                                            pane:ws-1-tab-2-pane-1  term:t-050
- main / ops / tiled / viewport offset x:18 y:6                                         move mode
-┌+top-cpu──────────────────────────────────────────────────────────────────────────────+┐
+termx  [main]  1:dev  [2:ops]
+┌+top-cpu────────────────────────────────────────────────────────offset x:18 y:6  move+┐
 │ Tasks: 312 total, 2 running, 310 sleeping                                            │
 │ Load average: 0.58 0.41 0.33                                                         +│
 │ Mem[|||||||||||||     ]  3.1G/8.0G                                                   │

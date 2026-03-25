@@ -14,7 +14,7 @@
 ```text
 Step 1/2: rename terminal
 
-termx  [main]  [Pool]                                            overlay:metadata_prompt
+termx  [main]  [Pool]
 ┌─ Terminal Pool [dim]──────────────────────────────────────────────────────────────────────────────────────────┐
 │                                                                                                              │
 │                     ┌─ Edit Terminal 1/2 ───────────────────────────────────────┐                            │

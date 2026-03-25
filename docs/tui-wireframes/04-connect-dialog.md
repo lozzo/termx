@@ -13,8 +13,7 @@
 ## 线框图
 
 ```text
-termx  [main]  [1:shell]                                          pane:ws-1-tab-1-pane-2  term:-  float:0
- main / shell / tiled / ws-1-tab-1-pane-2                                           overlay:connect_dialog
+termx  [main]  [1:shell]  2:logs
 ┌─ shell-dev [dim]─────────────────────────────────────────────────────────────────────────────────────────────┐
 │$ npm run dev                                                                                                 │
 │ready on :3000                                                                                                │

@@ -12,7 +12,7 @@
 ## 线框图
 
 ```text
-termx  [main]  [1:dev]                                          overlay:help
+termx  [main]  [1:dev]  2:logs
 ┌─ shell-dev [dim]─────────────────────────────────────────────────────────────────────────────────────────────┐
 │$ npm run dev                                                                                                 │
 │                                                                                                              │
