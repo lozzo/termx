@@ -1922,3 +1922,85 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
   - 继续把 split / mixed / floating / single 之间的信息栏语言统一成同一套视觉语法
   - 继续减少 pane body 才能读懂状态的地方
   - 再往后进入更像最终产品的 tab/workspace/header/footer 排版收口
+
+---
+
+## 22. 第 208 轮 TDD
+
+这一轮没有回去继续修 workbench 主体，而是把 overlay/modal 这一整块按一个大工作周期直接收口，目标是把默认 modern path 从“带颜色的调试对话框”推进成“真正能当产品界面看的 modal”：
+
+1. modern overlay 主路径切到统一 modal panel renderer
+   - 默认 modern path 不再走旧的 `CONTEXT[overlay] / BACKDROP[workbench] / BODY[...] / FOOTER[...]` ASCII 盒子
+   - overlay viewport 现在直接渲染统一的 lipgloss modal panel，并继续保留 backdrop wash、居中和 shadow
+   - help / terminal manager / workspace picker / terminal picker / layout resolve / prompt 全部进入同一套 modal 骨架
+2. overlay chrome 统一成产品语义
+   - 新增统一的 `RETURN TO` 面板
+   - 新增统一的 `WORKBENCH` 面板
+   - overlay state 不再埋在旧 token 盒子里，而是统一进入 modal state panel
+   - `return to ...`、当前选中项、paused workbench、focus/overlay 状态现在都走同一套表达
+3. 各类 overlay body 改成更接近最终产品的标题与结构
+   - help:
+     - `QUICK KEYS`
+     - `SHARED MODEL`
+     - `ACTION BAR`
+   - terminal manager:
+     - `TERMINAL LIST`
+     - `TERMINAL DETAIL`
+     - `ACTION BAR`
+   - workspace picker:
+     - `WORKSPACE TREE`
+     - `JUMP TARGET`
+     - `ACTION BAR`
+   - terminal picker:
+     - `TERMINAL LIST`
+     - `CONNECT TARGET`
+     - `ACTION BAR`
+   - layout resolve:
+     - `CONNECT CHOICES`
+     - `PANE TARGET`
+     - `ACTION BAR`
+   - prompt:
+     - `EDIT FIELDS`
+     - `EDIT CONTEXT`
+     - `ACTION BAR`
+4. overlay 行文和细节信息也做了去 token 化
+   - terminal/selector 行从 `[terminal] ...` 收口到 `● label  •  state  •  visibility ...`
+   - workspace tree 改成 `▾/▸ workspace|tab` 与 `• pane` 这种树表达
+   - terminal detail 的 route 改成真正的 `main/shell/pane:...`
+   - prompt context 不再挤成一行被截断，而是拆成 title / kind / terminal 三段
+   - help 文案缩短，避免默认宽度下被截断成难读短句
+5. renderer + 默认 modern E2E 成组更新
+   - 这一轮不是只补断言，而是先成组调整目标断言，再完成整块渲染实现
+   - shell-only / default modern 两条路径都已经一起锁住新的 modal 结构
+
+这一轮收口的验证重点：
+
+- renderer：
+  - `TestModernScreenShellUsesWiderCompactOverlayWithoutShadowAtNarrowWidth`
+  - `TestRuntimeRendererShellOnlyOverlayKeepsPaneContext`
+  - `TestRuntimeRendererShellOnlyRendersStructuredHelpOverlay`
+  - `TestRuntimeRendererShellOnlyRendersStructuredTerminalManagerOverlay`
+  - `TestRuntimeRendererShellOnlyRendersStructuredWorkspacePickerTarget`
+  - `TestRuntimeRendererShellOnlyRendersStructuredPromptOverlay`
+- runtime：
+  - `TestE2ERunScenarioDefaultModernHelpOverlayRendersStructuredModal`
+  - `TestE2ERunScenarioDefaultModernTerminalManagerOverlayRendersStructuredModal`
+  - `TestE2ERunScenarioDefaultModernWorkspacePickerOverlayRendersStructuredModal`
+  - `TestE2ERunScenarioDefaultModernPromptOverlayRendersStructuredModal`
+  - `TestE2ERunScenarioDefaultModernTerminalPickerOverlayRendersStructuredModal`
+  - `TestE2ERunScenarioDefaultModernLayoutResolveOverlayRendersStructuredModal`
+  - `TestE2ERunScenarioDefaultModernOverlayCloseLeavesCleanWorkbench`
+
+本轮验证命令：
+
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui -count=1`
+- `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1`
+
+当前状态更新为：
+
+- 默认 modern overlay 已经从“彩色调试对话框”切到统一 modal 产品骨架
+- overlay 内部的 list/tree/detail/action 结构已经和 workbench 主壳使用同一套产品语言
+- 默认 `cmd/termx` 打开 help / picker / manager / prompt 时，第一眼已经不再是 `BODY[...]` 这类开发期 token
+- 当前主线可以继续往前推进：
+  - 收口 workspace/tab/header/footer 的最终产品排版
+  - 再往后进入颜色、重叠渲染、性能和残影治理
