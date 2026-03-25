@@ -1782,7 +1782,12 @@ func (r modernScreenShellRenderer) renderModernOverlayDialogLines(theme modernSh
 		width = 24
 	}
 	_ = height
-	return strings.Split(r.renderOverlayPanel(theme, state, width), "\n")
+	raw := strings.Split(r.renderOverlayPanel(theme, state, width), "\n")
+	lines := make([]string, 0, len(raw))
+	for _, line := range raw {
+		lines = append(lines, " "+line+" ")
+	}
+	return lines
 }
 
 func (r modernScreenShellRenderer) renderModernOverlayDialogBody(state types.AppState, width int, compact bool) []string {
@@ -1903,11 +1908,11 @@ func renderModernOverlayDialogBox(width int, title string, body []string) []stri
 		width = 24
 	}
 	innerWidth := width - 2
-	lines := []string{renderModernOverlayDialogBorder("╔", "╗", "═", title, innerWidth)}
+	lines := []string{renderModernOverlayDialogBorder("┌", "┐", "─", title, innerWidth)}
 	for _, line := range body {
-		lines = append(lines, "║"+padModernCanvasLine(line, innerWidth)+"║")
+		lines = append(lines, "│"+padModernCanvasLine(line, innerWidth)+"│")
 	}
-	lines = append(lines, "╚"+strings.Repeat("═", innerWidth)+"╝")
+	lines = append(lines, "└"+strings.Repeat("─", innerWidth)+"┘")
 	return lines
 }
 
@@ -1915,7 +1920,11 @@ func renderModernOverlayDialogBorder(left, right, horizontal, title string, inne
 	if innerWidth < 1 {
 		return left + right
 	}
-	label := " " + strings.TrimSpace(title) + " "
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return left + strings.Repeat(horizontal, innerWidth) + right
+	}
+	label := horizontal + " " + title + " "
 	label = xansi.Truncate(label, innerWidth, "…")
 	fill := innerWidth - xansi.StringWidth(label)
 	if fill < 0 {
@@ -1924,41 +1933,76 @@ func renderModernOverlayDialogBorder(left, right, horizontal, title string, inne
 	return left + label + strings.Repeat(horizontal, fill) + right
 }
 
+// renderModernOverlaySectionHeader 只保留单条标题线，不再给 section 套一层完整 box。
+// 这样 overlay 仍然有清晰的分区标题，但把宽度尽量让给正文内容，避免 detail/action 被过度截断。
+func renderModernOverlaySectionHeader(title string, width int) string {
+	if width < 8 {
+		width = 8
+	}
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return strings.Repeat("─", width)
+	}
+	label := "┌─ " + title + " "
+	label = xansi.Truncate(label, width, "…")
+	fill := width - xansi.StringWidth(label)
+	if fill < 0 {
+		fill = 0
+	}
+	return label + strings.Repeat("─", fill)
+}
+
 func (r modernScreenShellRenderer) renderOverlayPanel(theme modernShellTheme, state types.AppState, width int) string {
 	title := overlayTitle(state.UI.Overlay.Kind)
-	lines := []string{theme.modalTitle.Render(title)}
-	if chrome := renderModernOverlayChrome(theme, state, width-6); len(chrome) > 0 {
-		lines = append(lines, "")
+	contentWidth := max(18, width-4)
+	lines := []string{}
+	if chrome := renderModernOverlayChrome(theme, state, contentWidth); len(chrome) > 0 {
 		lines = append(lines, chrome...)
 	}
-	if body := r.renderOverlayPanelBody(theme, state, width-6); len(body) > 0 {
-		lines = append(lines, "")
-		lines = append(lines, body...)
+	if body := r.renderOverlayPanelBody(theme, state, contentWidth); len(body) > 0 {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, expandModernOverlayBlocks(body)...)
 	}
-	if footer := renderModernOverlayFooterPanel(theme, state, width-6); footer != "" {
-		lines = append(lines, "", footer)
+	if footer := renderModernOverlayFooterPanel(theme, state, contentWidth); footer != "" {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, strings.Split(footer, "\n")...)
 	}
-	return theme.modalPanel.Width(width - 2).Render(strings.Join(lines, "\n"))
+	return strings.Join(renderModernOverlayDialogBox(width, title, lines), "\n")
+}
+
+func expandModernOverlayBlocks(blocks []string) []string {
+	out := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		out = append(out, strings.Split(block, "\n")...)
+	}
+	return out
 }
 
 func renderModernOverlayChrome(theme modernShellTheme, state types.AppState, width int) []string {
 	returnWidth := max(18, width)
 	returnLines := []string{}
+	if state.UI.Overlay.Resume != nil {
+		returnLines = append(returnLines, theme.modalBody.Render(truncateModernLine("return to "+overlayTitle(state.UI.Overlay.Resume.Kind), returnWidth)))
+	}
 	if returnFocus := renderWireframeReturnFocus(state.UI.Overlay.ReturnFocus); returnFocus != "" {
-		returnLines = append(returnLines, theme.modalBody.Render(truncateModernLine("return to "+returnFocus, returnWidth-4)))
+		returnLines = append(returnLines, theme.modalBody.Render(truncateModernLine("return to "+returnFocus, returnWidth)))
 	}
 	if selected := renderModernOverlaySelection(state.UI.Overlay); selected != "" {
-		returnLines = append(returnLines, theme.modalBody.Render(truncateModernLine(selected, returnWidth-4)))
+		returnLines = append(returnLines, theme.modalBody.Render(truncateModernLine(selected, returnWidth)))
 	}
 	if workspaceLine := renderModernBackdropContextLine(state); workspaceLine != "" {
-		returnLines = append(returnLines, theme.modalMeta.Render(truncateModernLine(workspaceLine, returnWidth-4)))
+		returnLines = append(returnLines, theme.modalMeta.Render(truncateModernLine(workspaceLine, returnWidth)))
 	}
 
 	workbenchLines := []string{}
-	for _, line := range renderModernOverlayBackdropSectionLines(state, returnWidth-4, false) {
-		workbenchLines = append(workbenchLines, theme.modalBody.Render(truncateModernLine(line, returnWidth-4)))
+	for _, line := range renderModernOverlayBackdropSectionLines(state, returnWidth, false) {
+		workbenchLines = append(workbenchLines, theme.modalBody.Render(truncateModernLine(line, returnWidth)))
 	}
-	workbenchLines = append(workbenchLines, "", theme.modalMeta.Render(truncateModernLine(renderModernOverlayStateLine(state), returnWidth-4)))
+	workbenchLines = append(workbenchLines, "", theme.modalMeta.Render(truncateModernLine(renderModernOverlayStateLine(state), returnWidth)))
 
 	lines := []string{}
 	lines = append(lines, strings.Split(renderModernOverlaySectionPanel(theme, "Return To", returnLines, returnWidth), "\n")...)
@@ -2583,7 +2627,7 @@ func renderModernOverlayPanels(theme modernShellTheme, width int, leftTitle stri
 	if len(actionLines) == 0 {
 		actionLines = []string{theme.modalBody.Render("No actions available.")}
 	}
-	if width < 64 {
+	if width < 88 {
 		return []string{
 			renderModernOverlaySectionPanel(theme, leftTitle, leftLines, width),
 			"",
@@ -2592,12 +2636,12 @@ func renderModernOverlayPanels(theme modernShellTheme, width int, leftTitle stri
 			renderModernOverlaySectionPanel(theme, actionTitle, actionLines, width),
 		}
 	}
-	leftWidth := max(24, (width-1)/2)
-	rightWidth := max(24, width-leftWidth-1)
+	leftWidth := max(24, (width-2)/2)
+	rightWidth := max(24, width-leftWidth-2)
 	top := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		renderModernOverlaySectionPanel(theme, leftTitle, leftLines, leftWidth),
-		" ",
+		"  ",
 		renderModernOverlaySectionPanel(theme, rightTitle, rightLines, rightWidth),
 	)
 	return []string{
@@ -2611,25 +2655,27 @@ func renderModernOverlaySectionPanel(theme modernShellTheme, title string, lines
 	if width < 18 {
 		width = 18
 	}
-	contentWidth := max(12, width-4)
-	out := []string{theme.panelTitle.Render(strings.ToUpper(strings.TrimSpace(title)))}
+	contentWidth := max(12, width)
+	header := theme.modalTitle.Render(renderModernOverlaySectionHeader(strings.ToUpper(strings.TrimSpace(title)), contentWidth))
+	out := []string{header}
 	for _, line := range trimModernOverlayLines(lines) {
 		if line == "" {
 			out = append(out, "")
 			continue
 		}
-		out = append(out, truncateModernLine(line, contentWidth))
+		plain := xansi.Strip(line)
+		out = append(out, "  "+truncateModernLine(plain, contentWidth-2))
 	}
-	return theme.mutedPanel.Width(width - 2).Render(strings.Join(out, "\n"))
+	return strings.Join(out, "\n")
 }
 
 func renderModernOverlayFooterPanel(theme modernShellTheme, state types.AppState, width int) string {
-	footerLines := renderModernOverlayFooterLines(theme, state.UI.Overlay.Kind, max(12, width-4))
+	footerLines := renderModernOverlayFooterLines(theme, state.UI.Overlay.Kind, max(12, width))
 	if len(footerLines) == 0 {
 		return ""
 	}
 	lines := append([]string{}, footerLines...)
-	lines = append(lines, theme.modalMeta.Render(truncateModernLine(renderModernOverlayStateLine(state), max(12, width-4))))
+	lines = append(lines, theme.modalMeta.Render(truncateModernLine(renderModernOverlayStateLine(state), max(12, width))))
 	return renderModernOverlaySectionPanel(theme, "Overlay State", lines, width)
 }
 

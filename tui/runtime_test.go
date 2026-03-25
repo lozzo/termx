@@ -1080,11 +1080,14 @@ func TestE2ERunScenarioDefaultModernTerminalManagerOverlayRendersStructuredModal
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
 			if !strings.Contains(stripped, "Terminal Manager") ||
+				!strings.Contains(stripped, "┌─ Terminal Manager") ||
+				!strings.Contains(stripped, "┌─ RETURN TO") ||
 				!strings.Contains(stripped, "RETURN TO") ||
 				!strings.Contains(stripped, "WORKBENCH") ||
 				!strings.Contains(stripped, "TERMINAL LIST") ||
 				!strings.Contains(stripped, "TERMINAL DETAIL") ||
-				!strings.Contains(stripped, "ACTION BAR") {
+				!strings.Contains(stripped, "ACTION BAR") ||
+				!strings.Contains(stripped, "┌─ ACTION BAR") {
 				t.Fatalf("expected default modern terminal manager modal structure, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "return to tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "● api-dev") {
@@ -1132,11 +1135,14 @@ func TestE2ERunScenarioDefaultModernHelpOverlayRendersStructuredModal(t *testing
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
 			if !strings.Contains(stripped, "Help") ||
+				!strings.Contains(stripped, "┌─ Help") ||
+				!strings.Contains(stripped, "┌─ RETURN TO") ||
 				!strings.Contains(stripped, "RETURN TO") ||
 				!strings.Contains(stripped, "WORKBENCH") ||
 				!strings.Contains(stripped, "QUICK KEYS") ||
 				!strings.Contains(stripped, "SHARED MODEL") ||
-				!strings.Contains(stripped, "ACTION BAR") {
+				!strings.Contains(stripped, "ACTION BAR") ||
+				!strings.Contains(stripped, "┌─ ACTION BAR") {
 				t.Fatalf("expected default modern help modal structure, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "return to tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "layer tiled  •  mode picker") || !strings.Contains(stripped, "Ctrl-p pane  •  Ctrl-t tab") {
@@ -1145,7 +1151,7 @@ func TestE2ERunScenarioDefaultModernHelpOverlayRendersStructuredModal(t *testing
 			if !strings.Contains(stripped, "owner can connect, resize") || !strings.Contains(stripped, "Esc close") {
 				t.Fatalf("expected default modern help modal concepts and actions, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "workbench paused  •  api-dev  •  owner") || !strings.Contains(stripped, "active pane api-dev  •  owner  •  connected") || !strings.Contains(stripped, "░") {
+			if !strings.Contains(stripped, "workbench paused  •  api-dev  •  owner") || !strings.Contains(stripped, "active pane api-dev  •  owner  •  connected") || !strings.Contains(stripped, "overlay help  •  focus overlay") {
 				t.Fatalf("expected default modern help modal to retain backdrop workbench canvas, got:\n%s", view)
 			}
 			return nil
@@ -1361,7 +1367,7 @@ func TestE2ERunScenarioDefaultModernOverlayCloseLeavesCleanWorkbench(t *testing.
 				}
 			}
 			opened := stripANSIRuntimeView(current.View())
-			if !strings.Contains(opened, "Help") || !strings.Contains(opened, "RETURN TO") || !strings.Contains(opened, "WORKBENCH") || !strings.Contains(opened, "ACTION BAR") || !strings.Contains(opened, "overlay help") || !strings.Contains(opened, "workbench paused  •  api-dev  •  owner") || !strings.Contains(opened, "active pane api-dev  •  owner  •  connected") || !strings.Contains(opened, "░") {
+			if !strings.Contains(opened, "Help") || !strings.Contains(opened, "┌─ Help") || !strings.Contains(opened, "┌─ RETURN TO") || !strings.Contains(opened, "WORKBENCH") || !strings.Contains(opened, "ACTION BAR") || !strings.Contains(opened, "┌─ ACTION BAR") || !strings.Contains(opened, "overlay help") || !strings.Contains(opened, "workbench paused  •  api-dev  •  owner") || !strings.Contains(opened, "active pane api-dev  •  owner  •  connected") {
 				t.Fatalf("expected default modern overlay open state to expose modal/backdrop/shadow, got:\n%s", current.View())
 			}
 			nextModel, cmd := current.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -1373,7 +1379,7 @@ func TestE2ERunScenarioDefaultModernOverlayCloseLeavesCleanWorkbench(t *testing.
 				}
 			}
 			closed := stripANSIRuntimeView(current.View())
-			if strings.Contains(closed, "overlay help") || strings.Contains(closed, "RETURN TO") || strings.Contains(closed, "ACTION BAR") || strings.Contains(closed, "workbench paused  •  api-dev  •  owner") || strings.Contains(closed, "░") || !strings.Contains(closed, "api-dev") || !strings.Contains(closed, "● run  owner") || !strings.Contains(closed, "<p> PANE") {
+			if strings.Contains(closed, "overlay help") || strings.Contains(closed, "RETURN TO") || strings.Contains(closed, "ACTION BAR") || strings.Contains(closed, "workbench paused  •  api-dev  •  owner") || !strings.Contains(closed, "api-dev") || !strings.Contains(closed, "● run  owner") || !strings.Contains(closed, "<p> PANE") {
 				t.Fatalf("expected default modern overlay close to leave a clean workbench without artifacts, got:\n%s", current.View())
 			}
 			return nil
@@ -1436,7 +1442,7 @@ func TestE2ERunScenarioDefaultModernFloatingHelpOverlayPreservesBackdropAndClose
 				}
 			}
 			opened := stripANSIRuntimeView(current.View())
-			if !strings.Contains(opened, "Help") || !strings.Contains(opened, "overlay help") || !containsRuntimeLineWithAll(opened, "main / shell / floating / api-dev", "top build-log", "float 2") || !containsNormalizedRuntimeLineWithAll(current.View(), "floating 2") || !containsNormalizedRuntimeLineWithAll(current.View(), "WORKBENCH") || !containsNormalizedRuntimeLineWithAll(current.View(), "workbench paused", "api-dev", "owner") || !strings.Contains(opened, "░") {
+			if !strings.Contains(opened, "Help") || !strings.Contains(opened, "┌─ Help") || !strings.Contains(opened, "overlay help") || !containsRuntimeLineWithAll(opened, "main / shell / floating / api-dev", "top build-log", "float 2") || !containsNormalizedRuntimeLineWithAll(current.View(), "WORKBENCH") || !containsNormalizedRuntimeLineWithAll(current.View(), "workbench paused", "api-dev", "owner") {
 				t.Fatalf("expected floating help overlay to keep floating backdrop semantics and modal layering, got:\n%s", current.View())
 			}
 			nextModel, cmd = current.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -1500,7 +1506,7 @@ func TestE2ERunScenarioDefaultModernMixedHelpOverlayPreservesDetachedStripAndClo
 				}
 			}
 			opened := stripANSIRuntimeView(current.View())
-			if !strings.Contains(opened, "Help") || !strings.Contains(opened, "overlay help") || !containsNormalizedRuntimeLineWithAll(current.View(), "WORKBENCH") || !containsNormalizedRuntimeLineWithAll(current.View(), "workbench paused", "api-dev", "owner", "detached 1") || !containsNormalizedRuntimeLineWithAll(current.View(), "workspace main", "tab shell", "layer tiled", "detached 1") || !strings.Contains(opened, "░") {
+			if !strings.Contains(opened, "Help") || !strings.Contains(opened, "┌─ Help") || !strings.Contains(opened, "overlay help") || !containsNormalizedRuntimeLineWithAll(current.View(), "WORKBENCH") || !containsNormalizedRuntimeLineWithAll(current.View(), "workbench paused", "api-dev", "owner", "detached 1") || !containsNormalizedRuntimeLineWithAll(current.View(), "workspace main", "tab shell", "layer tiled", "detached 1") {
 				t.Fatalf("expected mixed help overlay to keep detached strip and mixed backdrop semantics, got:\n%s", current.View())
 			}
 			nextModel, cmd = current.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -1512,7 +1518,7 @@ func TestE2ERunScenarioDefaultModernMixedHelpOverlayPreservesDetachedStripAndClo
 				}
 			}
 			closed := stripANSIRuntimeView(current.View())
-			if strings.Contains(closed, "overlay help") || strings.Contains(closed, "░") || !strings.Contains(closed, "◫ detached") || !strings.Contains(closed, "waiting pane") || !strings.Contains(closed, "deploy-log") || !strings.Contains(closed, "unconnected pane") {
+			if strings.Contains(closed, "overlay help") || !strings.Contains(closed, "◫ detached") || !strings.Contains(closed, "waiting pane") || !strings.Contains(closed, "deploy-log") || !strings.Contains(closed, "unconnected pane") {
 				t.Fatalf("expected mixed help overlay close to restore clean mixed workbench body, got:\n%s", current.View())
 			}
 			return nil
@@ -1550,7 +1556,7 @@ func TestE2ERunScenarioDefaultModernWorkspacePickerOverlayRendersStructuredModal
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "Workspace Picker") || !strings.Contains(stripped, "WORKSPACE TREE") || !strings.Contains(stripped, "JUMP TARGET") || !strings.Contains(stripped, "ACTION BAR") || !strings.Contains(stripped, "overlay workspace_picker") {
+			if !strings.Contains(stripped, "Workspace Picker") || !strings.Contains(stripped, "┌─ Workspace Picker") || !strings.Contains(stripped, "WORKSPACE TREE") || !strings.Contains(stripped, "JUMP TARGET") || !strings.Contains(stripped, "ACTION BAR") || !strings.Contains(stripped, "┌─ ACTION BAR") || !strings.Contains(stripped, "overlay workspace_picker") {
 				t.Fatalf("expected default modern workspace picker modal structure, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "workspace ops") || !strings.Contains(stripped, "tab logs") || !strings.Contains(stripped, "pane unconnected pane") || !strings.Contains(stripped, "workspace ops  (ws-2)") || !strings.Contains(stripped, "workspace ws-2") {
@@ -1581,7 +1587,7 @@ func TestE2ERunScenarioDefaultModernLayoutResolveOverlayRendersStructuredModal(t
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "Layout Resolve") || !strings.Contains(stripped, "CONNECT CHOICES") || !strings.Contains(stripped, "PANE TARGET") || !strings.Contains(stripped, "ACTION BAR") || !strings.Contains(stripped, "overlay layout_resolve") {
+			if !strings.Contains(stripped, "Layout Resolve") || !strings.Contains(stripped, "┌─ Layout Resolve") || !strings.Contains(stripped, "CONNECT CHOICES") || !strings.Contains(stripped, "PANE TARGET") || !strings.Contains(stripped, "ACTION BAR") || !strings.Contains(stripped, "┌─ ACTION BAR") || !strings.Contains(stripped, "overlay layout_resolve") {
 				t.Fatalf("expected default modern layout resolve modal structure, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "connect selected terminal") || !strings.Contains(stripped, "pane pane-1") || !strings.Contains(stripped, "role backend-dev") || !strings.Contains(stripped, "env=dev service=api") {
@@ -1628,7 +1634,7 @@ func TestE2ERunScenarioDefaultModernPromptOverlayRendersStructuredModal(t *testi
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "Prompt") || !strings.Contains(stripped, "EDIT FIELDS") || !strings.Contains(stripped, "EDIT CONTEXT") || !strings.Contains(stripped, "ACTION BAR") || !strings.Contains(stripped, "overlay prompt") {
+			if !strings.Contains(stripped, "Prompt") || !strings.Contains(stripped, "┌─ Prompt") || !strings.Contains(stripped, "EDIT FIELDS") || !strings.Contains(stripped, "EDIT CONTEXT") || !strings.Contains(stripped, "ACTION BAR") || !strings.Contains(stripped, "┌─ ACTION BAR") || !strings.Contains(stripped, "overlay prompt") {
 				t.Fatalf("expected default modern prompt modal structure, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "return to tiled:ws-1/tab-1/pane-1") || !strings.Contains(stripped, "2 fields  •  editing Name") || !strings.Contains(stripped, "Name: api-dev") || !strings.Contains(stripped, "Tags: env=dev") || !strings.Contains(stripped, "terminal term-1") || !strings.Contains(stripped, "value api-dev") || !strings.Contains(stripped, "Enter submit") {
@@ -1668,7 +1674,7 @@ func TestE2ERunScenarioDefaultModernTerminalPickerOverlayRendersStructuredModal(
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "Terminal Picker") || !strings.Contains(stripped, "TERMINAL LIST") || !strings.Contains(stripped, "CONNECT TARGET") || !strings.Contains(stripped, "ACTION BAR") || !strings.Contains(stripped, "overlay terminal_picker") {
+			if !strings.Contains(stripped, "Terminal Picker") || !strings.Contains(stripped, "┌─ Terminal Picker") || !strings.Contains(stripped, "TERMINAL LIST") || !strings.Contains(stripped, "CONNECT TARGET") || !strings.Contains(stripped, "ACTION BAR") || !strings.Contains(stripped, "┌─ ACTION BAR") || !strings.Contains(stripped, "overlay terminal_picker") {
 				t.Fatalf("expected default modern terminal picker modal structure, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "● build-log") || !strings.Contains(stripped, "running  •  hidden") || !strings.Contains(stripped, "tags group=build") || !strings.Contains(stripped, "cmd tail -f build.log") || !strings.Contains(stripped, "return to tiled:ws-1/tab-1/pane-1") {

@@ -445,3 +445,51 @@ termx TUI 当前不能继续沿最近一段时间的“modern shell / modal / ca
 - pane title bar 的命中区域、active 高亮和真实边框交互进一步统一
 - overlay 盒模型和 backdrop 继续往旧版的可辨认叠层体验靠拢
 - 性能、颜色、重叠渲染优化继续放在全局 TODO 的后段处理
+
+---
+
+## 15. 第 216 轮 TDD
+
+这一轮把 overlay 从“盒中盒导致信息截断”的中间态收口到新的可读骨架，目标是先恢复产品可读性与 legacy modal 的中心弹层感，而不是继续堆 section 外框：
+
+1. overlay 外层 dialog 保留，内层 section 改成单标题线分区
+   - `tui/runtime_modern_renderer.go`
+   - 外层继续使用 `┌─ Title ─┐` 的 modal 盒模型
+   - `RETURN TO / WORKBENCH / QUICK KEYS / ACTION BAR` 等内层区域改为单标题线分区
+   - 不再给每个 section 再套一整层 box，避免正文宽度被吃掉
+2. 修正 overlay block 组装 bug，恢复正文与 detail 的真实可见性
+   - `tui/runtime_modern_renderer.go`
+   - 之前 `renderModernOverlayPanels` 返回的是带换行的 block string，外层 dialog 把整块当成单行截断，导致正文退化成 `…`
+   - 现在统一先展开 block 的真实行，再交给外层 dialog 盒子排版
+   - terminal manager / terminal picker / prompt / layout resolve 的 detail、action、selected row 重新可见
+3. help overlay 恢复 resume target 语义
+   - `tui/runtime_modern_renderer.go`
+   - 当 help 临时盖住 manager / workspace picker 等 overlay 时，`RETURN TO` 区域明确显示：
+     - `return to Terminal Manager`
+     - `return to Workspace Picker`
+   - 同时继续保留底层 workbench 的 return focus 信息
+4. E2E 护栏同步到新的 overlay 主线
+   - `tui/runtime_renderer_test.go`
+   - `tui/runtime_test.go`
+   - 护栏重点从“必须出现某种 shadow 字符”回到：
+     - modal 结构是否完整
+     - return/workbench/detail/action 是否可见
+     - backdrop 语义是否仍然保留
+     - close / resume 后工作台是否干净恢复
+
+本轮验证命令：
+
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./tui -count=1`
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./... -count=1`
+
+当前阶段推进结果：
+
+- overlay 已从不可读的嵌套盒模型回到可工作的 central modal
+- help / manager / picker / prompt / resolve 共用同一套可读结构
+- resume overlay、detail 信息、action 提示重新回到首屏可见
+
+下一块应继续推进：
+
+- 继续把 overlay 的排版比例、标题节奏、backdrop 呈现往 `deprecated/tui-legacy` 的视觉语言靠拢
+- 让 split / floating / mixed 的真实边框、命中区和 modal 叠层之间更统一
+- 性能、颜色、重叠渲染优化继续放在全局 TODO 的后段处理
