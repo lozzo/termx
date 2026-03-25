@@ -168,6 +168,11 @@ func (s *SessionStore) forwardPreview(binding PreviewBinding) {
 			Frame:      frame,
 		}
 	}
+	s.mu.Lock()
+	if s.preview.TerminalID == binding.TerminalID && s.preview.Channel == binding.Channel && s.preview.Revision == binding.Revision {
+		s.preview = PreviewBinding{}
+	}
+	s.mu.Unlock()
 	s.messages <- app.PreviewStreamClosedMessage{
 		TerminalID: binding.TerminalID,
 		Revision:   binding.Revision,
@@ -181,6 +186,11 @@ func (s *SessionStore) forwardLive(binding LiveBinding) {
 			Frame:      frame,
 		}
 	}
+	s.mu.Lock()
+	if current, ok := s.live[binding.TerminalID]; ok && current.Channel == binding.Channel {
+		delete(s.live, binding.TerminalID)
+	}
+	s.mu.Unlock()
 	s.messages <- app.LiveStreamClosedMessage{
 		TerminalID: binding.TerminalID,
 	}

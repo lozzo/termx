@@ -13,6 +13,12 @@ import (
 	"github.com/lozzow/termx/tui/state/types"
 )
 
+type intentExecutorFunc func(context.Context, app.Model, app.Intent) (app.Model, tea.Cmd, error)
+
+func (f intentExecutorFunc) ExecuteIntent(ctx context.Context, model app.Model, intent app.Intent) (app.Model, tea.Cmd, error) {
+	return f(ctx, model, intent)
+}
+
 type quitModel struct{}
 
 func (quitModel) Init() tea.Cmd {
@@ -136,6 +142,74 @@ func TestRuntimeWrapperInitStartsRestoredPreviewStreamImmediately(t *testing.T) 
 	msg := cmd()
 	if _, ok := msg.(app.PreviewStreamMessage); !ok {
 		t.Fatalf("expected preview stream message on init, got %T", msg)
+	}
+}
+
+func TestRuntimeWrapperKeepsOtherStreamsAliveAfterOneStreamCloses(t *testing.T) {
+	model := sampleWorkbenchStateForRuntimeTest()
+	model.Terminals[types.TerminalID("term-1")] = terminal.Metadata{
+		ID:          types.TerminalID("term-1"),
+		Name:        "shell",
+		Command:     []string{"/bin/sh"},
+		State:       terminal.StateRunning,
+		OwnerPaneID: types.PaneID("pane-1"),
+	}
+	model.Sessions[types.TerminalID("term-1")] = app.TerminalSession{
+		TerminalID: types.TerminalID("term-1"),
+		Channel:    7,
+		Attached:   true,
+		Snapshot:   sampleSnapshotForRuntimeTest("term-1", "old-live"),
+	}
+
+	store := NewSessionStore()
+	liveStream := make(chan protocol.StreamFrame, 2)
+	previewStream := make(chan protocol.StreamFrame, 1)
+	store.BindLive(types.TerminalID("term-1"), 7, sampleSnapshotForRuntimeTest("term-1", "old-live"), liveStream, func() {})
+	store.BindPreview(types.TerminalID("term-2"), 21, sampleSnapshotForRuntimeTest("term-2", "old-preview"), previewStream, func() {})
+	model.PreviewStreamNext = store.NextStreamMessageCmd
+
+	executor := intentExecutorFunc(func(_ context.Context, current app.Model, intent app.Intent) (app.Model, tea.Cmd, error) {
+		next := current.Apply(intent)
+		if tick, ok := intent.(app.SessionStreamTickIntent); ok {
+			next = next.Apply(app.SessionSnapshotRefreshedIntent{
+				TerminalID: tick.TerminalID,
+				Snapshot:   sampleSnapshotForRuntimeTest(string(tick.TerminalID), "new-live"),
+			})
+		}
+		if store.HasActiveStreams() {
+			next.PreviewStreamNext = store.NextStreamMessageCmd
+		} else {
+			next.PreviewStreamNext = nil
+		}
+		return next, next.PreviewStreamNext(), nil
+	})
+	model.IntentExecutor = executor
+	wrapped := WrapModelWithWorkspacePersistence(model, NewUpdateLoop(nil))
+
+	close(previewStream)
+	firstCmd := wrapped.Init()
+	if firstCmd == nil {
+		t.Fatal("expected init cmd")
+	}
+	firstMsg := firstCmd()
+	if _, ok := firstMsg.(app.PreviewStreamClosedMessage); !ok {
+		t.Fatalf("expected preview closed message first, got %T", firstMsg)
+	}
+
+	nextModel, nextCmd := wrapped.Update(firstMsg)
+	if nextCmd == nil {
+		t.Fatal("expected remaining live stream to re-arm after preview close")
+	}
+	liveStream <- protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("tick")}
+	secondMsg := nextCmd()
+	if _, ok := secondMsg.(app.LiveStreamMessage); !ok {
+		t.Fatalf("expected live stream message after preview close, got %T", secondMsg)
+	}
+
+	finalModel, _ := nextModel.Update(secondMsg)
+	updated := finalModel.(interface{ AppModel() app.Model }).AppModel()
+	if got := flattenRuntimeSnapshotText(updated.Sessions[types.TerminalID("term-1")].Snapshot); !strings.Contains(got, "new-live") || strings.Contains(got, "old-live") {
+		t.Fatalf("expected live stream to keep refreshing after preview close, got %q", got)
 	}
 }
 

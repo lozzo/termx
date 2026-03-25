@@ -143,12 +143,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case PreviewStreamClosedMessage:
 		next := m.clone()
-		if next.Pool.PreviewTerminalID == typed.TerminalID && next.Pool.PreviewSubscriptionRevision == typed.Revision {
-			next.PreviewStreamNext = nil
-		}
-		return next, nil
+		return next, next.nextStreamCmd()
 	case LiveStreamClosedMessage:
-		return m, nil
+		return m, m.nextStreamCmd()
 	case DaemonEventMessage:
 		if intent, ok := daemonEventIntent(m, typed.Event); ok {
 			if m.IntentExecutor != nil {
@@ -187,6 +184,13 @@ func (m Model) clone() Model {
 		next.Notice = &notice
 	}
 	return next
+}
+
+func (m Model) nextStreamCmd() tea.Cmd {
+	if m.PreviewStreamNext == nil {
+		return nil
+	}
+	return m.PreviewStreamNext()
 }
 
 func (m *Model) ensureWorkspace() {
