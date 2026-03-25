@@ -765,6 +765,64 @@ func TestE2ERunScenarioDefaultModernTopChromeSummarizesWorkspaceTabsAndContext(t
 	}
 }
 
+func TestE2ERunScenarioDefaultModernSingleWorkbenchUsesBadgeHeaderAndContextRail(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithActiveTerminalMetadata()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: types.TerminalID("term-1"),
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 120, Rows: 32},
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "$"}, {Content: " "}, {Content: "p"}, {Content: "w"}, {Content: "d"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			view := model.View()
+			stripped := stripANSIRuntimeView(view)
+			if !strings.Contains(stripped, "CONTEXT") || strings.Contains(stripped, "Context & Keys") {
+				t.Fatalf("expected default modern single workbench to use compact context rail title, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "● run") || !strings.Contains(stripped, "owner") || !strings.Contains(stripped, "Ctrl-p pane") {
+				t.Fatalf("expected default modern single workbench to expose badge header and pane actions, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "term-1 running owner") {
+				t.Fatalf("expected default modern single workbench to retain live terminal preview, got:\n%s", view)
+			}
+			if !regexp.MustCompile(`\x1b\[[0-9;]*m┏`).MatchString(view) ||
+				!regexp.MustCompile(`\x1b\[[0-9;]*m●`).MatchString(view) {
+				t.Fatalf("expected default modern single workbench to apply semantic ANSI to pane header badges, got:\n%s", view)
+			}
+			if strings.Contains(view, "wireframe_view:") {
+				t.Fatalf("expected default modern single workbench without debug sections, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected default modern single workbench scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioDefaultModernFloatingWorkbenchRendersWindowDeck(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithFloatingOverviewTargets()

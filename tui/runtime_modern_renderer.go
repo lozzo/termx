@@ -1034,7 +1034,7 @@ func (r modernScreenShellRenderer) renderSingleWorkbenchSidebar(theme modernShel
 	}
 	infoLines := renderWorkbenchSidebarEntries(theme, infoEntries, max(12, width-4))
 	infoLines = append(infoLines, renderModernWorkbenchKeyLines(theme, width, pane)...)
-	info := renderWorkbenchSidebarPanel(theme, "Context & Keys", infoLines, width, infoHeight)
+	info := renderWorkbenchSidebarPanel(theme, "Context", infoLines, width, infoHeight)
 	return lipgloss.JoinVertical(lipgloss.Left, summary, info)
 }
 
@@ -1151,7 +1151,7 @@ func (r modernScreenShellRenderer) renderWorkbenchSignalsSidebar(theme modernShe
 		lines = append(lines, renderWorkbenchSidebarEntries(theme, []modernSidebarEntry{{Label: "Action", Value: line}}, max(12, width-4))...)
 	}
 	lines = append(lines, renderModernWorkbenchKeyLines(theme, width, pane)...)
-	return renderWorkbenchSidebarPanel(theme, "Context & Keys", lines, width, height)
+	return renderWorkbenchSidebarPanel(theme, "Context", lines, width, height)
 }
 
 func (r modernScreenShellRenderer) renderFloatingDeck(theme modernShellTheme, state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID, width, height int) string {
@@ -1221,16 +1221,18 @@ func (r modernScreenShellRenderer) renderFloatingDeckCard(theme modernShellTheme
 		preview = string(pane.SlotState)
 	}
 	runtimeLine, commandLine := renderModernFloatingDeckTerminalSummary(state, pane)
+	contentWidth := max(14, width-4)
+	contentHeight := max(4, height-2)
 	lines := []string{
-		theme.panelTitle.Render(fmt.Sprintf("z %d/%d • %s", index+1, max(1, total), renderModernPaneDisplayTitle(state, pane))),
+		renderModernDeckCardHeader(theme, state, pane, contentWidth, active, top, index+1, max(1, total)),
 		theme.panelMeta.Render(renderModernFloatingDeckState(active, top) + "  •  " + rectText),
 		theme.panelMeta.Render(runtimeLine),
 	}
 	if commandLine != "" {
-		lines = append(lines, theme.terminalBody.Render(truncateModernLine(commandLine, max(10, width-4))))
+		lines = append(lines, theme.terminalBody.Render(truncateModernLine(commandLine, contentWidth)))
 	}
 	lines = append(lines, theme.terminalBody.Render(preview))
-	lines = normalizeModernPanelLines(lines, max(14, width-4), max(4, height-2))
+	lines = normalizeModernPanelLines(lines, contentWidth, contentHeight)
 	return panelStyle.Width(width - 2).Height(height - 2).Render(strings.Join(lines, "\n"))
 }
 
@@ -1284,7 +1286,7 @@ func (r modernScreenShellRenderer) renderPanePanelLines(theme modernShellTheme, 
 	lines := make([]string, 0, maxRows)
 	compact := shouldRenderCompactPaneLayout(width, maxRows, pane)
 	if includeTitle {
-		lines = append(lines, renderModernPaneHeader(theme, renderModernPaneTitleBar(state, pane, active, zIndex, zTotal), width, active))
+		lines = append(lines, renderModernPaneHeaderBar(theme, state, pane, width, active, zIndex, zTotal))
 	}
 	if !compact {
 		lines = append(lines, theme.panelTitle.Render("Status"))
@@ -1368,6 +1370,110 @@ func shouldRenderCompactPaneLayout(width, maxRows int, pane types.PaneState) boo
 		return true
 	}
 	return false
+}
+
+// renderModernPaneHeaderBar 把 pane 顶部收成“左标题 + 右状态 badge”，
+// 让 split/floating/mixed 在首屏上更接近旧版单线标题栏，而不是整句说明文。
+func renderModernPaneHeaderBar(theme modernShellTheme, state types.AppState, pane types.PaneState, width int, active bool, zIndex int, zTotal int) string {
+	compact := width <= 32
+	left := theme.panelTitle.Render(truncateModernLine(renderModernPaneDisplayTitle(state, pane), max(6, width/2)))
+	rightParts := []string{
+		renderModernPaneStateBadge(theme, state, pane, compact),
+		renderModernPaneRoleBadge(theme, state, pane, compact),
+	}
+	if pane.Kind == types.PaneKindFloating {
+		rightParts = append(rightParts, renderModernPaneFloatBadge(theme, zIndex, zTotal, compact))
+	}
+	return renderModernPaneHeader(theme, fillANSIHorizontal(left, joinModernHeaderBadges(rightParts), max(8, width-2)), width, active)
+}
+
+func renderModernDeckCardHeader(theme modernShellTheme, state types.AppState, pane types.PaneState, width int, active bool, top bool, zIndex int, zTotal int) string {
+	left := theme.panelTitle.Render(truncateModernLine(renderModernPaneDisplayTitle(state, pane), max(6, width/2)))
+	rightParts := []string{
+		renderModernPaneStateBadge(theme, state, pane, width <= 30),
+		renderModernPaneRoleBadge(theme, state, pane, width <= 30),
+	}
+	if top {
+		rightParts = append(rightParts, theme.floatToken.Render("top"))
+	}
+	if zTotal > 0 {
+		rightParts = append(rightParts, theme.panelMeta.Render(fmt.Sprintf("%d/%d", zIndex, zTotal)))
+	}
+	return renderModernPaneHeader(theme, fillANSIHorizontal(left, joinModernHeaderBadges(rightParts), max(8, width)), width+2, active)
+}
+
+func joinModernHeaderBadges(parts []string) string {
+	filtered := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if strings.TrimSpace(xansi.Strip(part)) == "" {
+			continue
+		}
+		filtered = append(filtered, part)
+	}
+	return strings.Join(filtered, "  ")
+}
+
+func renderModernPaneStateBadge(theme modernShellTheme, state types.AppState, pane types.PaneState, compact bool) string {
+	token := "○ empty"
+	style := theme.emptyToken
+	switch pane.SlotState {
+	case types.PaneSlotConnected:
+		token = "● run"
+		style = theme.runToken
+		if pane.TerminalID != "" {
+			if terminal, ok := state.Domain.Terminals[pane.TerminalID]; ok {
+				switch terminal.State {
+				case types.TerminalRunStateExited:
+					token = "○ exit"
+					style = theme.exitToken
+				case types.TerminalRunStateStopped:
+					token = "◌ stop"
+					style = theme.stopToken
+				}
+			}
+		}
+	case types.PaneSlotWaiting:
+		token = "◌ wait"
+		style = theme.waitToken
+	case types.PaneSlotExited:
+		token = "○ exit"
+		style = theme.exitToken
+	}
+	if compact {
+		parts := strings.Fields(token)
+		if len(parts) > 0 {
+			token = parts[0]
+		}
+	}
+	return style.Render(token)
+}
+
+func renderModernPaneRoleBadge(theme modernShellTheme, state types.AppState, pane types.PaneState, compact bool) string {
+	role := renderScreenShellPaneCardRole(state, pane)
+	switch role {
+	case "owner":
+		if compact {
+			return theme.ownerToken.Render("own")
+		}
+		return theme.ownerToken.Render("owner")
+	case "follower":
+		if compact {
+			return theme.followerToken.Render("fol")
+		}
+		return theme.followerToken.Render("follower")
+	default:
+		return ""
+	}
+}
+
+func renderModernPaneFloatBadge(theme modernShellTheme, zIndex int, zTotal int, compact bool) string {
+	if zTotal <= 0 {
+		return theme.floatToken.Render("◫")
+	}
+	if compact {
+		return theme.floatToken.Render(fmt.Sprintf("◫%d", zIndex))
+	}
+	return theme.floatToken.Render(fmt.Sprintf("◫ %d/%d", zIndex, zTotal))
 }
 
 func renderModernPaneTitleBar(state types.AppState, pane types.PaneState, active bool, zIndex int, zTotal int) string {

@@ -684,6 +684,46 @@ func TestModernScreenShellMarksOffscreenFloatingPaneForRecall(t *testing.T) {
 		!strings.Contains(stripped, "Window deck") {
 		t.Fatalf("expected modern floating shell to expose offscreen recall feedback, got:\n%s", view)
 	}
+	if !strings.Contains(stripped, "Context") || strings.Contains(stripped, "Context & Keys") {
+		t.Fatalf("expected modern floating shell to use compact context panel title, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "top") || !strings.Contains(stripped, "●") || !strings.Contains(stripped, "own") {
+		t.Fatalf("expected modern floating shell to expose pane/deck header badges, got:\n%s", view)
+	}
+}
+
+func TestModernScreenShellWidePaneCardUsesBadgeHeader(t *testing.T) {
+	state := runtimeStateWithActiveTerminalMetadata()
+	screens := NewRuntimeTerminalStore(RuntimeSessions{
+		Terminals: map[types.TerminalID]TerminalRuntimeSession{
+			types.TerminalID("term-1"): {
+				TerminalID: types.TerminalID("term-1"),
+				Snapshot: &protocol.Snapshot{
+					TerminalID: "term-1",
+					Size:       protocol.Size{Cols: 120, Rows: 32},
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{
+							{{Content: "$"}, {Content: " "}, {Content: "p"}, {Content: "w"}, {Content: "d"}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	view := renderModernShellForTest(t, state, nil, wireframeMetrics{
+		ViewportWidth:  120,
+		ViewportHeight: 32,
+		OverlayWidth:   72,
+	}, screens)
+	stripped := stripANSIForTest(view)
+
+	if !strings.Contains(stripped, "Context") || strings.Contains(stripped, "Context & Keys") {
+		t.Fatalf("expected modern single workbench to use context panel title, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "● run") || !strings.Contains(stripped, "owner") || !strings.Contains(stripped, "Ctrl-p pane") {
+		t.Fatalf("expected modern single pane card to expose badge header and footer hints, got:\n%s", view)
+	}
 }
 
 func TestRuntimeRendererShellOnlyRendersFloatingModeOperationHints(t *testing.T) {
