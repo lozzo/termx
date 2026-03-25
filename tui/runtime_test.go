@@ -11,6 +11,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tui/app"
 	tuiruntime "github.com/lozzow/termx/tui/runtime"
+	stateterminal "github.com/lozzow/termx/tui/state/terminal"
+	"github.com/lozzow/termx/tui/state/types"
+	"github.com/lozzow/termx/tui/state/workspace"
 )
 
 type captureProgramRunner struct {
@@ -67,11 +70,91 @@ func TestRunReturnsProgramError(t *testing.T) {
 	}
 }
 
+func TestRunRestoresWorkspaceState(t *testing.T) {
+	runner := &captureProgramRunner{}
+	restore := swapProgramRunnerForTest(runner)
+	t.Cleanup(restore)
+
+	statePath := filepath.Join(t.TempDir(), "workspace-state.json")
+	store := tuiruntime.NewWorkspaceStore(statePath)
+	model := app.NewModel()
+	model.Screen = app.ScreenTerminalPool
+	model.FocusTarget = app.FocusTerminalPool
+	model.Pool.Query = "restored-query"
+	model.Workspace = restoredWorkspaceForRunTest()
+	model.Terminals[types.TerminalID("term-restore")] = stateterminal.Metadata{
+		ID:      types.TerminalID("term-restore"),
+		Name:    "restored-shell",
+		Command: []string{"/bin/sh"},
+		State:   stateterminal.StateRunning,
+	}
+	if err := store.Save(context.Background(), model); err != nil {
+		t.Fatalf("save workspace state: %v", err)
+	}
+
+	if err := Run(nil, Config{WorkspaceStatePath: statePath, Workspace: "fallback"}, nil, io.Discard); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	root := capturedAppModelForRunTest(t, runner.model)
+	if root.Workspace == nil || root.Workspace.ID != "restored-workspace" {
+		t.Fatalf("expected restored workspace, got %#v", root.Workspace)
+	}
+	if root.Screen != app.ScreenTerminalPool || root.Pool.Query != "restored-query" {
+		t.Fatalf("expected restored pool state, got %#v", root)
+	}
+}
+
+func TestRunFallsBackToTemporaryWorkspaceWhenRestoreFails(t *testing.T) {
+	runner := &captureProgramRunner{}
+	restore := swapProgramRunnerForTest(runner)
+	t.Cleanup(restore)
+
+	statePath := filepath.Join(t.TempDir(), "workspace-state.json")
+	if err := osWriteFile(statePath, []byte("{invalid-json")); err != nil {
+		t.Fatalf("write invalid workspace state: %v", err)
+	}
+
+	if err := Run(nil, Config{WorkspaceStatePath: statePath, Workspace: "fallback"}, nil, io.Discard); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	root := capturedAppModelForRunTest(t, runner.model)
+	if root.Workspace == nil || root.Workspace.ID != "fallback" {
+		t.Fatalf("expected fallback temporary workspace, got %#v", root.Workspace)
+	}
+}
+
 func swapProgramRunnerForTest(runner tuiruntime.ProgramRunner) func() {
 	previous := programRunner
 	programRunner = runner
 	return func() {
 		programRunner = previous
+	}
+}
+
+func restoredWorkspaceForRunTest() *workspace.WorkspaceState {
+	ws := workspace.NewTemporary("restored-workspace")
+	tab := ws.ActiveTab()
+	pane, _ := tab.ActivePane()
+	pane.TerminalID = types.TerminalID("term-restore")
+	pane.SlotState = types.PaneSlotLive
+	tab.TrackPane(pane)
+	return ws
+}
+
+func capturedAppModelForRunTest(t *testing.T, model tea.Model) app.Model {
+	t.Helper()
+	switch typed := model.(type) {
+	case app.Model:
+		return typed
+	case interface{ UnderlyingModel() tea.Model }:
+		return capturedAppModelForRunTest(t, typed.UnderlyingModel())
+	case interface{ AppModel() app.Model }:
+		return typed.AppModel()
+	default:
+		t.Fatalf("expected app model, got %T", model)
+		return app.Model{}
 	}
 }
 

@@ -2,14 +2,17 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tui/app"
 	tuiruntime "github.com/lozzow/termx/tui/runtime"
+	"github.com/lozzow/termx/tui/state/workspace"
+	"os"
 )
 
 type Config struct {
@@ -37,9 +40,24 @@ func Run(client Client, cfg Config, input io.Reader, output io.Writer) error {
 	if cfg.Logger != nil {
 		cfg.Logger.Info("starting tui root shell", "screen", app.ScreenWorkbench)
 	}
-	model := app.NewModel()
-	if client != nil {
-		bootstrapped, err := tuiruntime.Bootstrap(context.Background(), client, tuiruntime.BootstrapConfig{
+
+	ctx := context.Background()
+	model := newTemporaryRootModel(cfg.Workspace)
+	workspaceStore := newWorkspaceStoreForConfig(cfg)
+	restored := false
+
+	if workspaceStore != nil && cfg.AttachID == "" {
+		loaded, err := workspaceStore.Load(ctx)
+		if err == nil {
+			model = loaded
+			restored = true
+		} else if cfg.Logger != nil && !errors.Is(err, os.ErrNotExist) {
+			cfg.Logger.Warn("restore workspace state failed, falling back to temporary workspace", "path", cfg.WorkspaceStatePath, "error", err)
+		}
+	}
+
+	if !restored && client != nil {
+		bootstrapped, err := tuiruntime.Bootstrap(ctx, client, tuiruntime.BootstrapConfig{
 			DefaultShell: cfg.DefaultShell,
 			Workspace:    cfg.Workspace,
 			AttachID:     cfg.AttachID,
@@ -48,8 +66,15 @@ func Run(client Client, cfg Config, input io.Reader, output io.Writer) error {
 			return err
 		}
 		model = bootstrapped
+	} else if restored && client != nil {
+		model = tuiruntime.RebindRestoredModel(ctx, client, model)
 	}
-	return programRunner.Run(model, input, output)
+
+	runnerModel := tea.Model(model)
+	if workspaceStore != nil {
+		runnerModel = tuiruntime.WrapModelWithWorkspacePersistence(model, tuiruntime.NewUpdateLoop(nil, tuiruntime.NewDebouncedWorkspaceSaver(workspaceStore, tuiruntime.DefaultWorkspaceSaveDebounce)))
+	}
+	return programRunner.Run(runnerModel, input, output)
 }
 
 // WaitForSocket 仍保留给 CLI 自动拉起 daemon 使用，这部分和 TUI 重写重置无关。
@@ -70,4 +95,20 @@ func WaitForSocket(path string, timeout time.Duration, probe func() error) error
 		time.Sleep(50 * time.Millisecond)
 	}
 	return context.DeadlineExceeded
+}
+
+func newTemporaryRootModel(name string) app.Model {
+	model := app.NewModel()
+	if name == "" {
+		name = "main"
+	}
+	model.Workspace = workspace.NewTemporary(name)
+	return model
+}
+
+func newWorkspaceStoreForConfig(cfg Config) tuiruntime.WorkspaceStore {
+	if cfg.WorkspaceStatePath == "" {
+		return nil
+	}
+	return tuiruntime.NewWorkspaceStore(cfg.WorkspaceStatePath)
 }
