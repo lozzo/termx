@@ -3,19 +3,75 @@ package tui
 import (
 	"context"
 	"errors"
+	"io"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/tui/app"
+	tuiruntime "github.com/lozzow/termx/tui/runtime"
 )
 
-func TestRunReturnsResetError(t *testing.T) {
-	err := Run(nil, Config{}, nil, nil)
-	if err == nil {
-		t.Fatal("expected reset error, got nil")
+type captureProgramRunner struct {
+	runCalls int
+	model    tea.Model
+	input    io.Reader
+	output   io.Writer
+	err      error
+}
+
+func (r *captureProgramRunner) Run(model tea.Model, input io.Reader, output io.Writer) error {
+	r.runCalls++
+	r.model = model
+	r.input = input
+	r.output = output
+	return r.err
+}
+
+func TestRunStartsProgramWithWorkbenchScreen(t *testing.T) {
+	runner := &captureProgramRunner{}
+	restore := swapProgramRunnerForTest(runner)
+	t.Cleanup(restore)
+
+	if err := Run(nil, Config{}, nil, io.Discard); err != nil {
+		t.Fatalf("run: %v", err)
 	}
-	if !strings.Contains(err.Error(), "已重置") {
-		t.Fatalf("expected reset message, got %v", err)
+	if runner.runCalls != 1 {
+		t.Fatalf("expected one run call, got %d", runner.runCalls)
+	}
+
+	root, ok := runner.model.(app.Model)
+	if !ok {
+		t.Fatalf("expected app.Model, got %T", runner.model)
+	}
+	if root.Screen != app.ScreenWorkbench {
+		t.Fatalf("expected workbench screen, got %q", root.Screen)
+	}
+	if root.FocusTarget != app.FocusWorkbench {
+		t.Fatalf("expected workbench focus, got %q", root.FocusTarget)
+	}
+	if root.Overlay.HasActive() {
+		t.Fatalf("expected empty overlay stack, got %#v", root.Overlay)
+	}
+}
+
+func TestRunReturnsProgramError(t *testing.T) {
+	runner := &captureProgramRunner{err: errors.New("program failed")}
+	restore := swapProgramRunnerForTest(runner)
+	t.Cleanup(restore)
+
+	err := Run(nil, Config{}, nil, io.Discard)
+	if err == nil || err.Error() != "program failed" {
+		t.Fatalf("expected propagated runner error, got %v", err)
+	}
+}
+
+func swapProgramRunnerForTest(runner tuiruntime.ProgramRunner) func() {
+	previous := programRunner
+	programRunner = runner
+	return func() {
+		programRunner = previous
 	}
 }
 

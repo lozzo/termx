@@ -7,6 +7,9 @@ import (
 	"log/slog"
 	"os"
 	"time"
+
+	"github.com/lozzow/termx/tui/app"
+	tuiruntime "github.com/lozzow/termx/tui/runtime"
 )
 
 type Config struct {
@@ -26,13 +29,15 @@ type Config struct {
 
 const DefaultPrefixTimeout = 3 * time.Second
 
-// Run 明确表示当前主线 TUI 已经重置。
-// 这里故意只保留 CLI 依赖的稳定接口，避免旧实现继续挂在主线上“半死不活”地迭代。
-func Run(_ Client, cfg Config, _ io.Reader, _ io.Writer) error {
+var programRunner tuiruntime.ProgramRunner = tuiruntime.NewProgramRunner()
+
+// Run 保持外部 CLI 入口稳定，但内部已经切到新的根应用壳层。
+// 顶层 screen router 与 overlay stack 需要在这里统一建模，避免运行入口继续依赖旧的 reset stub。
+func Run(_ Client, cfg Config, input io.Reader, output io.Writer) error {
 	if cfg.Logger != nil {
-		cfg.Logger.Warn("tui mainline has been reset", "archive", "deprecated/tui-reset-2026-03-25", "legacy", "deprecated/tui-legacy")
+		cfg.Logger.Info("starting tui root shell", "screen", app.ScreenWorkbench)
 	}
-	return fmt.Errorf("termx TUI 已重置：当前主线暂无可运行界面，请基于新的产品定义重新实现；参考目录：deprecated/tui-legacy/ 与 deprecated/tui-reset-2026-03-25/")
+	return programRunner.Run(app.NewModel(), input, output)
 }
 
 // WaitForSocket 仍保留给 CLI 自动拉起 daemon 使用，这部分和 TUI 重写重置无关。
