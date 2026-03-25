@@ -10,6 +10,7 @@ import (
 
 	"github.com/lozzow/termx/protocol"
 	btui "github.com/lozzow/termx/tui/bt"
+	"github.com/lozzow/termx/tui/render"
 	"golang.org/x/term"
 )
 
@@ -66,9 +67,9 @@ func runWithDependencies(client Client, cfg Config, input io.Reader, output io.W
 		deps.ProgramRunner = bubbleteaProgramRunner{}
 	}
 	if deps.Renderer == nil {
-		deps.Renderer = runtimeRenderer{
+		deps.Renderer = render.NewRenderer(render.Config{
 			DebugVisible: boolPointer(cfg.DebugUI),
-		}
+		})
 	}
 	if deps.RuntimeExecutor == nil {
 		deps.RuntimeExecutor = btui.DefaultRuntimeExecutor{

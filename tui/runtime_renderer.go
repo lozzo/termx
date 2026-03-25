@@ -15,6 +15,7 @@ import (
 	terminalpickerdomain "github.com/lozzow/termx/tui/domain/terminalpicker"
 	"github.com/lozzow/termx/tui/domain/types"
 	workspacedomain "github.com/lozzow/termx/tui/domain/workspace"
+	"github.com/lozzow/termx/tui/render"
 )
 
 type runtimeRenderer struct {
@@ -68,59 +69,9 @@ var (
 // Render 先提供一个稳定、可测试的文本视图，优先把生命周期打通。
 // 这里不追求视觉完成度，只把当前 workspace / tab / pane / overlay 这些主语义明确展示出来。
 func (r runtimeRenderer) Render(state types.AppState, notices []btui.Notice) string {
-	workspace, ok := state.Domain.Workspaces[state.Domain.ActiveWorkspaceID]
-	if !ok {
-		return "termx\nno workspace"
-	}
-	tab, ok := workspace.Tabs[workspace.ActiveTabID]
-	if !ok {
-		return fmt.Sprintf("termx\nworkspace: %s\nno tab", workspace.Name)
-	}
-	pane, ok := tab.Panes[tab.ActivePaneID]
-	if !ok {
-		return fmt.Sprintf("termx\nworkspace: %s\ntab: %s\nno pane", workspace.Name, tab.Name)
-	}
-	if !r.debugVisible() {
-		return modernScreenShellRenderer{Screens: r.Screens}.RenderShell(state, workspace, tab, pane, notices, r.wireframeMetrics(pane))
-	}
-
-	statusLines := renderStatusSection(workspace, tab, pane, state.UI)
-	overlayActive := state.UI.Overlay.Kind != types.OverlayNone
-
-	lines := []string{"termx"}
-	lines = append(lines, r.renderScreenShell(state, workspace, tab, pane, notices)...)
-	lines = append(lines, r.renderWireframeView(state, workspace, tab, pane)...)
-	lines = appendChrome(lines, "header", []string{
-		renderHeaderBar(workspace, tab, pane, state.UI),
-		renderWorkspaceBar(workspace),
-		renderWorkspaceSummary(workspace),
-		renderTabStrip(workspace),
-		renderTabSummary(tab),
-		renderTabPathBar(state, workspace, tab, pane),
-		renderTabLayerBar(tab),
-	}, func(lines []string) []string {
-		return appendSection(lines, "status", statusLines)
-	})
-	lines = appendChrome(lines, "body", []string{r.renderBodyBar(state, pane, overlayActive)}, func(lines []string) []string {
-		lines = append(lines, renderPaneBar(state, pane))
-		lines = append(lines, renderTiledOutlineBar(tab)...)
-		lines = append(lines, renderTiledLayout(tab)...)
-		lines = append(lines, r.renderTiledTree(state, tab)...)
-		lines = append(lines, r.renderTiledOutline(state, tab)...)
-		lines = append(lines, renderFloatingOutlineBar(tab)...)
-		lines = append(lines, r.renderFloatingOutline(state, tab)...)
-		lines = appendSection(lines, "terminal", r.renderTerminalSection(state, pane, overlayActive))
-		lines = appendSection(lines, "screen", r.renderScreenSection(pane, overlayActive))
-		return appendSection(lines, "overlay", renderOverlayLines(state.UI.Overlay, state.UI.Focus))
-	})
-	lines = appendChrome(lines, "footer", []string{
-		renderFooterBar(notices, state.UI.Overlay.Kind),
-		renderFocusBar(state, pane),
-		renderShortcutBar(state, pane),
-	}, func(lines []string) []string {
-		return appendSection(lines, "notices", renderNoticeLines(notices))
-	})
-	return strings.Join(lines, "\n")
+	return render.NewRenderer(render.Config{
+		DebugVisible: r.DebugVisible,
+	}).Render(state, notices)
 }
 
 func (r runtimeRenderer) debugVisible() bool {
