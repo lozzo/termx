@@ -707,7 +707,7 @@ func TestE2ERunScenarioDefaultModernSplitWorkbenchRendersPaneCanvas(t *testing.T
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "LAYOUT") || !strings.Contains(stripped, "CONTEXT") || !strings.Contains(stripped, "ACTIVE") || !strings.Contains(stripped, "SPLIT") {
+			if !strings.Contains(stripped, "LAYOUT") || !strings.Contains(stripped, "PANES") || !strings.Contains(stripped, "CONTEXT") || !strings.Contains(stripped, "ACTIVE") || !strings.Contains(stripped, "SPLIT") {
 				t.Fatalf("expected default modern split view to expose split sidebar summary, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "ACTION") || !strings.Contains(stripped, "LINK") || !strings.Contains(stripped, "VIEW") {
@@ -718,6 +718,9 @@ func TestE2ERunScenarioDefaultModernSplitWorkbenchRendersPaneCanvas(t *testing.T
 			}
 			if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "term-2 running owner") {
 				t.Fatalf("expected default modern split view to keep pane titles readable inside the two-pane canvas, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "> api-dev") || !strings.Contains(stripped, "build-log") {
+				t.Fatalf("expected default modern split view to expose pane roster in sidebar, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
 				t.Fatalf("expected default modern split view to expose both pane previews, got:\n%s", view)
@@ -943,7 +946,7 @@ func TestE2ERunScenarioDefaultModernMixedWorkbenchShowsDetachedFloatingStrip(t *
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "MIXED") || !strings.Contains(stripped, "CONTEXT") || !strings.Contains(stripped, "ACTIVE") || !strings.Contains(stripped, "STACK") || !strings.Contains(stripped, "unconnected pane") {
+			if !strings.Contains(stripped, "MIXED") || !strings.Contains(stripped, "PANES") || !strings.Contains(stripped, "CONTEXT") || !strings.Contains(stripped, "ACTIVE") || !strings.Contains(stripped, "STACK") || !strings.Contains(stripped, "unconnected pane") {
 				t.Fatalf("expected default modern mixed workbench to expose detached floating strip, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "FOCUS") || !strings.Contains(stripped, "LINK") || !strings.Contains(stripped, "VIEW") || !strings.Contains(stripped, "WINDOW DECK") {

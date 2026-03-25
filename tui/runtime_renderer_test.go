@@ -575,7 +575,7 @@ func TestRuntimeRendererShellOnlyRendersSplitWorkbenchAsPaneCanvas(t *testing.T)
 
 	view := renderer.Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "LAYOUT") || !strings.Contains(stripped, "CONTEXT") || !strings.Contains(stripped, "ACTIVE") || !strings.Contains(stripped, "SPLIT") {
+	if !strings.Contains(stripped, "LAYOUT") || !strings.Contains(stripped, "PANES") || !strings.Contains(stripped, "CONTEXT") || !strings.Contains(stripped, "ACTIVE") || !strings.Contains(stripped, "SPLIT") {
 		t.Fatalf("expected shell-only split renderer to expose split summary sidebar, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "ACTION") || !strings.Contains(stripped, "LINK") || !strings.Contains(stripped, "VIEW") {
@@ -586,6 +586,9 @@ func TestRuntimeRendererShellOnlyRendersSplitWorkbenchAsPaneCanvas(t *testing.T)
 	}
 	if !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "term-2 running owner") {
 		t.Fatalf("expected shell-only split renderer to keep pane titles readable inside the two-pane canvas, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "> api-dev") || !strings.Contains(stripped, "build-log") {
+		t.Fatalf("expected shell-only split renderer to expose pane roster in sidebar, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "$ npm run dev") || !strings.Contains(stripped, "> tsc -w") || !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "ok") {
 		t.Fatalf("expected shell-only split renderer to keep live terminal content inside pane frames, got:\n%s", view)
@@ -812,7 +815,7 @@ func TestRuntimeRendererShellOnlyRendersDetachedFloatingStripForMixedWorkbench(t
 
 	view := renderer.Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "MIXED") || !strings.Contains(stripped, "CONTEXT") || !strings.Contains(stripped, "ACTIVE") || !strings.Contains(stripped, "STACK") || !strings.Contains(stripped, "unconnected pane") {
+	if !strings.Contains(stripped, "MIXED") || !strings.Contains(stripped, "PANES") || !strings.Contains(stripped, "CONTEXT") || !strings.Contains(stripped, "ACTIVE") || !strings.Contains(stripped, "STACK") || !strings.Contains(stripped, "unconnected pane") {
 		t.Fatalf("expected shell-only mixed workbench to expose detached floating strip, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "FOCUS") || !strings.Contains(stripped, "LINK") || !strings.Contains(stripped, "VIEW") || !strings.Contains(stripped, "WINDOW DECK") {

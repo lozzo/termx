@@ -1002,6 +1002,28 @@ func renderWorkbenchSidebarEntries(theme modernShellTheme, entries []modernSideb
 	return lines
 }
 
+// renderWorkbenchSidebarListPanel 用更接近旧版控制面板的“项目列表”样式渲染侧栏子面板。
+// 这里不用 label/value，是为了让 split/mixed 的 pane roster 在窄侧栏下仍然先保住标题与焦点顺序。
+func renderWorkbenchSidebarListPanel(theme modernShellTheme, title string, items []string, width, height int) string {
+	if width < 18 {
+		width = 18
+	}
+	if height < 4 {
+		height = 4
+	}
+	contentWidth := max(12, width-4)
+	contentHeight := max(2, height-2)
+	body := []string{theme.panelTitle.Render(strings.ToUpper(strings.TrimSpace(title)))}
+	for _, item := range items {
+		if strings.TrimSpace(item) == "" {
+			continue
+		}
+		body = append(body, theme.terminalBody.Render(truncateModernLine(item, contentWidth)))
+	}
+	body = normalizeModernPanelLines(body, contentWidth, contentHeight)
+	return theme.backdropPanel.Width(width - 2).Height(height - 2).Render(strings.Join(body, "\n"))
+}
+
 func padANSIHorizontal(text string, width int) string {
 	if width <= 0 {
 		return ""
@@ -1063,7 +1085,7 @@ func renderModernWorkbenchCanvasMetrics(metrics wireframeMetrics, width, height 
 }
 
 func (r modernScreenShellRenderer) renderSplitWorkbenchSidebar(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, tiledPaneIDs []types.PaneID, floatingPaneIDs []types.PaneID, width, height int) string {
-	summaryHeight := min(10, max(7, height/3+1))
+	summaryHeight := min(7, max(5, height/4))
 	summaryEntries := []modernSidebarEntry{
 		{Label: "Active", Value: renderModernSplitWorkbenchTitleLine(state, pane, len(tiledPaneIDs))},
 		{Label: "Split", Value: renderModernSplitLayoutSummary(tab, len(tiledPaneIDs))},
@@ -1074,9 +1096,11 @@ func (r modernScreenShellRenderer) renderSplitWorkbenchSidebar(theme modernShell
 	}
 	summaryLines := renderWorkbenchSidebarEntries(theme, summaryEntries, max(12, width-4))
 	summary := renderWorkbenchSidebarPanel(theme, "Layout", summaryLines, width, summaryHeight)
-	infoHeight := max(4, height-summaryHeight-1)
+	rosterHeight := min(8, max(5, len(tiledPaneIDs)+2))
+	roster := renderWorkbenchSidebarListPanel(theme, "Panes", renderModernSidebarPaneRoster(state, tab, tiledPaneIDs, false), width, rosterHeight)
+	infoHeight := max(4, height-summaryHeight-rosterHeight-2)
 	info := r.renderWorkbenchSignalsSidebar(theme, state, pane, width, infoHeight, true, renderModernSplitActionLine(state))
-	return lipgloss.JoinVertical(lipgloss.Left, summary, info)
+	return lipgloss.JoinVertical(lipgloss.Left, summary, roster, info)
 }
 
 func (r modernScreenShellRenderer) renderFloatingWorkbenchSidebar(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, width, height int) string {
@@ -1099,7 +1123,7 @@ func (r modernScreenShellRenderer) renderFloatingWorkbenchSidebar(theme modernSh
 }
 
 func (r modernScreenShellRenderer) renderMixedWorkbenchSidebar(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, tiledPaneIDs []types.PaneID, floatingPaneIDs []types.PaneID, width, height int) string {
-	summaryHeight := min(10, max(7, height/4+1))
+	summaryHeight := min(7, max(5, height/4))
 	summaryLines := renderWorkbenchSidebarEntries(theme, []modernSidebarEntry{
 		{Label: "Active", Value: fmt.Sprintf("Mixed workbench  •  active %s", renderModernPaneDisplayTitle(state, pane))},
 		{Label: "Stack", Value: fmt.Sprintf("Tiled %d  •  floating %d", len(tiledPaneIDs), len(floatingPaneIDs))},
@@ -1107,14 +1131,70 @@ func (r modernScreenShellRenderer) renderMixedWorkbenchSidebar(theme modernShell
 		{Label: "Path", Value: renderModernWorkbenchLocationLine(state, pane)},
 	}, max(12, width-4))
 	summary := renderWorkbenchSidebarPanel(theme, "Mixed", summaryLines, width, summaryHeight)
-	infoHeight := min(10, max(8, height/3))
+	rosterHeight := min(9, max(6, len(tiledPaneIDs)+len(floatingPaneIDs)+2))
+	roster := renderWorkbenchSidebarListPanel(theme, "Panes", renderModernSidebarPaneRoster(state, tab, append(append([]types.PaneID{}, tiledPaneIDs...), floatingPaneIDs...), true), width, rosterHeight)
+	infoHeight := min(10, max(6, height-summaryHeight-rosterHeight-5))
 	info := r.renderWorkbenchSignalsSidebar(theme, state, pane, width, infoHeight, true, compactWorkbenchSignalLines(
 		renderModernFloatingWorkbenchStateLine(state, tab, floatingPaneIDs),
 		renderModernSplitActionLine(state),
 	)...)
-	deckHeight := max(4, height-summaryHeight-infoHeight-2)
+	deckHeight := max(4, height-summaryHeight-rosterHeight-infoHeight-3)
 	deck := r.renderFloatingDeck(theme, state, tab, floatingPaneIDs, width, deckHeight)
-	return lipgloss.JoinVertical(lipgloss.Left, summary, info, deck)
+	return lipgloss.JoinVertical(lipgloss.Left, summary, roster, info, deck)
+}
+
+func renderModernSidebarPaneRoster(state types.AppState, tab types.TabState, paneIDs []types.PaneID, mixed bool) []string {
+	lines := make([]string, 0, len(paneIDs))
+	for _, paneID := range paneIDs {
+		targetPane, ok := tab.Panes[paneID]
+		if !ok {
+			continue
+		}
+		lines = append(lines, renderModernSidebarPaneRosterLine(state, tab, targetPane, mixed))
+	}
+	return lines
+}
+
+func renderModernSidebarPaneRosterLine(state types.AppState, tab types.TabState, pane types.PaneState, mixed bool) string {
+	prefix := "  "
+	if pane.ID == tab.ActivePaneID {
+		prefix = "> "
+	}
+	kind := ""
+	if mixed {
+		switch pane.Kind {
+		case types.PaneKindFloating:
+			kind = "F "
+		default:
+			kind = "T "
+		}
+	}
+	stateToken := "○"
+	switch pane.SlotState {
+	case types.PaneSlotConnected:
+		stateToken = "●"
+	case types.PaneSlotWaiting:
+		stateToken = "◌"
+	case types.PaneSlotExited:
+		stateToken = "○"
+	}
+	role := renderScreenShellPaneCardRole(state, pane)
+	label := renderModernPaneDisplayTitle(state, pane)
+	if role == "owner" {
+		role = "own"
+	} else if role == "follower" {
+		role = "fol"
+	}
+	parts := []string{prefix + kind + label, stateToken}
+	if role != "" {
+		parts = append(parts, role)
+	}
+	if pane.Kind == types.PaneKindFloating {
+		if zIndex, zTotal := renderModernFloatingZ(state, pane); zIndex > 0 && zTotal > 1 {
+			parts = append(parts, fmt.Sprintf("%d/%d", zIndex, zTotal))
+		}
+	}
+	return strings.Join(parts, "  ")
 }
 
 func compactWorkbenchSignalLines(lines ...string) []string {
