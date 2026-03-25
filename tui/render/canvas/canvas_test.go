@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/tui/domain/types"
 )
 
@@ -38,6 +39,40 @@ func TestCanvasDrawOrderLetsFloatingOverwriteTiled(t *testing.T) {
 	canvas.DrawText(types.Rect{X: 2, Y: 1, W: 3, H: 1}, 2, 1, "TOP", DrawStyle{})
 
 	if got := canvas.Lines()[1]; got != "tiTOP-" {
+		t.Fatalf("unexpected row: %q", got)
+	}
+}
+
+func TestCanvasDrawTextDropsWideGlyphWhenLeftClipped(t *testing.T) {
+	canvas := New(2, 1)
+	canvas.Fill(types.Rect{X: 0, Y: 0, W: 2, H: 1}, BlankCell())
+	canvas.DrawText(types.Rect{X: 1, Y: 0, W: 2, H: 1}, 0, 0, "界a", DrawStyle{})
+
+	if got := canvas.Lines()[0]; got != "  " {
+		t.Fatalf("unexpected row: %q", got)
+	}
+}
+
+func TestCanvasDrawTextDropsWideGlyphWhenClipIsNarrowerThanCell(t *testing.T) {
+	canvas := New(2, 1)
+	canvas.Fill(types.Rect{X: 0, Y: 0, W: 2, H: 1}, BlankCell())
+	canvas.DrawText(types.Rect{X: 0, Y: 0, W: 1, H: 1}, 0, 0, "界a", DrawStyle{})
+
+	if got := canvas.Lines()[0]; got != "  " {
+		t.Fatalf("unexpected row: %q", got)
+	}
+}
+
+func TestCanvasSetKeepsRenderedWidthInsideCanvas(t *testing.T) {
+	canvas := New(2, 1)
+	canvas.Fill(types.Rect{X: 0, Y: 0, W: 2, H: 1}, BlankCell())
+	canvas.Set(1, 0, Cell{Content: "界", Width: 2})
+
+	got := canvas.Lines()[0]
+	if width := xansi.StringWidth(got); width != 2 {
+		t.Fatalf("unexpected display width: %d for %q", width, got)
+	}
+	if got != "  " {
 		t.Fatalf("unexpected row: %q", got)
 	}
 }

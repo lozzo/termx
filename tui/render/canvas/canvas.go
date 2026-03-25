@@ -80,10 +80,13 @@ func (c *Canvas) Set(x, y int, cell Cell) {
 	}
 
 	cell = normalizeCell(cell)
+	if x+cell.Width > c.width {
+		return
+	}
 
 	// 先清掉当前位置上可能残留的宽字符占位，避免新内容被旧 continuation 污染。
 	c.clearFootprint(y, x)
-	maxX := min(c.width, x+cell.Width)
+	maxX := x + cell.Width
 	for i := x + 1; i < maxX; i++ {
 		c.clearFootprint(y, i)
 	}
@@ -125,7 +128,7 @@ func (c *Canvas) DrawText(rect types.Rect, x, y int, text string, style DrawStyl
 			if cursorX >= rect.X+rect.W {
 				break
 			}
-			if cursorX+width > rect.X && cursorX < rect.X+rect.W {
+			if cursorX >= rect.X && cursorX+width <= rect.X+rect.W {
 				c.Set(cursorX, targetY, Cell{
 					Content: cluster,
 					Width:   width,
