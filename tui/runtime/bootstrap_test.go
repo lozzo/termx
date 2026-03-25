@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/tui/app"
 	"github.com/lozzow/termx/tui/state/types"
 )
 
@@ -17,6 +18,7 @@ type stubClient struct {
 	lastCreateName    string
 	lastAttachID      string
 	lastAttachMode    string
+	lastKilledID      string
 }
 
 func (c *stubClient) Close() error { return nil }
@@ -34,7 +36,9 @@ func (c *stubClient) SetTags(context.Context, string, map[string]string) error {
 func (c *stubClient) SetMetadata(context.Context, string, string, map[string]string) error {
 	return nil
 }
-func (c *stubClient) List(context.Context) (*protocol.ListResult, error) { return &protocol.ListResult{}, nil }
+func (c *stubClient) List(context.Context) (*protocol.ListResult, error) {
+	return &protocol.ListResult{}, nil
+}
 func (c *stubClient) Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error) {
 	ch := make(chan protocol.Event)
 	close(ch)
@@ -57,13 +61,16 @@ func (c *stubClient) Snapshot(context.Context, string, int, int) (*protocol.Snap
 	return &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}}, nil
 }
 
-func (c *stubClient) Input(context.Context, uint16, []byte) error { return nil }
+func (c *stubClient) Input(context.Context, uint16, []byte) error          { return nil }
 func (c *stubClient) Resize(context.Context, uint16, uint16, uint16) error { return nil }
 func (c *stubClient) Stream(uint16) (<-chan protocol.StreamFrame, func()) {
 	ch := make(chan protocol.StreamFrame)
 	return ch, func() { close(ch) }
 }
-func (c *stubClient) Kill(context.Context, string) error { return nil }
+func (c *stubClient) Kill(_ context.Context, terminalID string) error {
+	c.lastKilledID = terminalID
+	return nil
+}
 
 func TestBootstrapCreatesTemporaryWorkspaceWithLiveShellPane(t *testing.T) {
 	client := &stubClient{}
@@ -88,5 +95,69 @@ func TestBootstrapCreatesTemporaryWorkspaceWithLiveShellPane(t *testing.T) {
 	}
 	if session, ok := model.Sessions[pane.TerminalID]; !ok || session.Channel != 7 {
 		t.Fatalf("expected live session for %q, got %#v", pane.TerminalID, session)
+	}
+}
+
+func TestBootstrappedModelUpdateExecutesCreateIntentThroughRuntime(t *testing.T) {
+	client := &stubClient{
+		createResult: &protocol.CreateResult{TerminalID: "term-created", State: "running"},
+		attachResult: &protocol.AttachResult{Channel: 12, Mode: "rw"},
+		snapshot:     &protocol.Snapshot{TerminalID: "term-created", Size: protocol.Size{Cols: 80, Rows: 24}},
+	}
+	model, err := Bootstrap(context.Background(), client, BootstrapConfig{
+		DefaultShell: "/bin/sh",
+		Workspace:    "main",
+		AttachID:     "term-1",
+	})
+	if err != nil {
+		t.Fatalf("Bootstrap returned error: %v", err)
+	}
+
+	teaModel, _ := model.Update(app.IntentMessage{Intent: app.IntentSplitVertical})
+	split, ok := teaModel.(app.Model)
+	if !ok {
+		t.Fatalf("expected app.Model after split, got %T", teaModel)
+	}
+	teaModel, _ = split.Update(app.IntentMessage{Intent: app.ConfirmCreateTerminalIntent{
+		Command: []string{"/bin/sh"},
+		Name:    "shell-2",
+	}})
+	updated, ok := teaModel.(app.Model)
+	if !ok {
+		t.Fatalf("expected app.Model after create, got %T", teaModel)
+	}
+	pane, _ := updated.Workspace.ActiveTab().ActivePane()
+	if pane.TerminalID != types.TerminalID("term-created") || pane.SlotState != types.PaneSlotLive {
+		t.Fatalf("expected runtime create to bind live pane, got %+v", pane)
+	}
+	if client.lastCreateName != "shell-2" || client.lastAttachID != "term-created" {
+		t.Fatalf("expected runtime create path to reach client, got create=%q attach=%q", client.lastCreateName, client.lastAttachID)
+	}
+}
+
+func TestBootstrappedModelUpdateExecutesKillIntentThroughRuntime(t *testing.T) {
+	client := &stubClient{
+		attachResult: &protocol.AttachResult{Channel: 7, Mode: "rw"},
+		snapshot:     &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}},
+	}
+	model, err := Bootstrap(context.Background(), client, BootstrapConfig{
+		DefaultShell: "/bin/sh",
+		Workspace:    "main",
+		AttachID:     "term-1",
+	})
+	if err != nil {
+		t.Fatalf("Bootstrap returned error: %v", err)
+	}
+
+	teaModel, _ := model.Update(app.IntentMessage{Intent: app.IntentClosePaneAndKillTerminal})
+	updated, ok := teaModel.(app.Model)
+	if !ok {
+		t.Fatalf("expected app.Model after kill, got %T", teaModel)
+	}
+	if client.lastKilledID != "term-1" {
+		t.Fatalf("expected runtime kill path to reach client, got %q", client.lastKilledID)
+	}
+	if updated.Terminals[types.TerminalID("term-1")].State != "exited" {
+		t.Fatalf("expected terminal exited after runtime kill, got %#v", updated.Terminals[types.TerminalID("term-1")])
 	}
 }

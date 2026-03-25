@@ -102,6 +102,18 @@ type intentRuntimeService interface {
 	Snapshot(context.Context, string, int, int) (*protocol.Snapshot, error)
 }
 
+type modelIntentExecutor struct {
+	service intentRuntimeService
+}
+
+func NewModelIntentExecutor(service intentRuntimeService) app.IntentExecutor {
+	return modelIntentExecutor{service: service}
+}
+
+func (e modelIntentExecutor) ExecuteIntent(ctx context.Context, model app.Model, intent app.Intent) (app.Model, error) {
+	return ApplyIntent(ctx, model, e.service, intent)
+}
+
 // ApplyIntent 负责串起“app reducer 产出 effect -> runtime 真执行 -> app 回填成功状态”。
 // 当前只为 create/kill 打通真实闭环；remove/restart 仍停留在 reducer 的 state-only 边界。
 func ApplyIntent(ctx context.Context, model app.Model, service intentRuntimeService, intent app.Intent) (app.Model, error) {

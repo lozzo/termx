@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tui/state/terminal"
@@ -20,6 +22,7 @@ type Model struct {
 	Sessions       map[types.TerminalID]TerminalSession
 	Notice         *NoticeState
 	PendingEffects []Effect
+	IntentExecutor IntentExecutor
 }
 
 type TerminalSession struct {
@@ -27,6 +30,14 @@ type TerminalSession struct {
 	Channel    uint16
 	Attached   bool
 	Snapshot   *protocol.Snapshot
+}
+
+type IntentMessage struct {
+	Intent Intent
+}
+
+type IntentExecutor interface {
+	ExecuteIntent(context.Context, Model, Intent) (Model, error)
 }
 
 var viewRenderer func(Model, int, int) string
@@ -57,8 +68,21 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-func (m Model) Update(tea.Msg) (tea.Model, tea.Cmd) {
-	return m, nil
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch typed := msg.(type) {
+	case IntentMessage:
+		if m.IntentExecutor != nil {
+			next, err := m.IntentExecutor.ExecuteIntent(context.Background(), m, typed.Intent)
+			if err == nil {
+				return next, nil
+			}
+			m.Notice = &NoticeState{Message: err.Error()}
+			return m, nil
+		}
+		return m.Apply(typed.Intent), nil
+	default:
+		return m, nil
+	}
 }
 
 func (m Model) View() string {

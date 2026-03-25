@@ -41,6 +41,7 @@ func Bootstrap(ctx context.Context, client Client, cfg BootstrapConfig) (app.Mod
 	ws := workspace.NewTemporary(wsName)
 
 	service := NewTerminalService(client)
+	model.IntentExecutor = NewModelIntentExecutor(service)
 	terminalID := cfg.AttachID
 	var attach *protocol.AttachResult
 	var snapshot *protocol.Snapshot
