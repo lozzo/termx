@@ -711,6 +711,19 @@ func (s *Server) handleRequest(
 			return nil, protocolErrorCode(err), err
 		}
 		return json.RawMessage(`{}`), 0, nil
+	case "remove":
+		var params protocol.GetParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return nil, 400, err
+		}
+		if err := requireControlPermission(attachments, attachmentsMu, params.TerminalID); err != nil {
+			return nil, protocolErrorCode(err), err
+		}
+		if _, err := s.getTerminal(params.TerminalID); err != nil {
+			return nil, protocolErrorCode(err), err
+		}
+		s.removeTerminal(params.TerminalID, "removed")
+		return json.RawMessage(`{}`), 0, nil
 	case "resize":
 		var params protocol.ResizeParams
 		if err := json.Unmarshal(req.Params, &params); err != nil {

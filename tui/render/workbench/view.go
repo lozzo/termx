@@ -7,6 +7,7 @@ import (
 	"github.com/lozzow/termx/tui/app"
 	"github.com/lozzow/termx/tui/render/chrome"
 	overlayview "github.com/lozzow/termx/tui/render/overlay"
+	poolview "github.com/lozzow/termx/tui/render/pool"
 	"github.com/lozzow/termx/tui/state/types"
 	"github.com/lozzow/termx/tui/state/workspace"
 )
@@ -16,6 +17,9 @@ func init() {
 }
 
 func Render(model app.Model, width, height int) string {
+	if model.Screen == app.ScreenTerminalPool {
+		return poolview.Render(model, width, height)
+	}
 	lines := make([]string, 0, height)
 	lines = append(lines, renderTopbar(model))
 	lines = append(lines, renderPrimaryPane(model, width))

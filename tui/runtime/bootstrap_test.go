@@ -20,6 +20,10 @@ type stubClient struct {
 	lastAttachID      string
 	lastAttachMode    string
 	lastKilledID      string
+	lastRemovedID     string
+	lastMetadataID    string
+	lastMetadataName  string
+	lastMetadataTags  map[string]string
 	attachErr         error
 	snapshotErr       error
 	attachErrByID     map[string]error
@@ -39,7 +43,10 @@ func (c *stubClient) Create(_ context.Context, command []string, name string, si
 }
 
 func (c *stubClient) SetTags(context.Context, string, map[string]string) error { return nil }
-func (c *stubClient) SetMetadata(context.Context, string, string, map[string]string) error {
+func (c *stubClient) SetMetadata(_ context.Context, terminalID string, name string, tags map[string]string) error {
+	c.lastMetadataID = terminalID
+	c.lastMetadataName = name
+	c.lastMetadataTags = cloneStubTags(tags)
 	return nil
 }
 func (c *stubClient) List(context.Context) (*protocol.ListResult, error) {
@@ -91,6 +98,22 @@ func (c *stubClient) Stream(uint16) (<-chan protocol.StreamFrame, func()) {
 func (c *stubClient) Kill(_ context.Context, terminalID string) error {
 	c.lastKilledID = terminalID
 	return nil
+}
+
+func (c *stubClient) Remove(_ context.Context, terminalID string) error {
+	c.lastRemovedID = terminalID
+	return nil
+}
+
+func cloneStubTags(tags map[string]string) map[string]string {
+	if len(tags) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(tags))
+	for key, value := range tags {
+		out[key] = value
+	}
+	return out
 }
 
 func TestBootstrapCreatesTemporaryWorkspaceWithLiveShellPane(t *testing.T) {

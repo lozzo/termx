@@ -30,6 +30,7 @@ type Client interface {
 	Resize(ctx context.Context, channel uint16, cols, rows uint16) error
 	Stream(channel uint16) (<-chan protocol.StreamFrame, func())
 	Kill(ctx context.Context, terminalID string) error
+	Remove(ctx context.Context, terminalID string) error
 }
 
 func Bootstrap(ctx context.Context, client Client, cfg BootstrapConfig) (app.Model, error) {

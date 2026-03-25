@@ -286,3 +286,7 @@ func (c *stubTUIClient) Stream(channel uint16) (<-chan protocol.StreamFrame, fun
 func (c *stubTUIClient) Kill(ctx context.Context, terminalID string) error {
 	return nil
 }
+
+func (c *stubTUIClient) Remove(ctx context.Context, terminalID string) error {
+	return nil
+}

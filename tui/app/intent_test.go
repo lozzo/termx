@@ -220,6 +220,120 @@ func TestOpenHelpOverlayAndFloatingAnchorLimitWithCenterRecall(t *testing.T) {
 	}
 }
 
+func TestTerminalPoolSelectionSwitchesReadonlyLivePreviewSubscription(t *testing.T) {
+	model := newTerminalPoolModelForIntentTest().Apply(OpenTerminalPoolIntent{})
+	if model.Pool.SelectedTerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected initial pool selection to use recent interaction, got %q", model.Pool.SelectedTerminalID)
+	}
+
+	selected := model.Apply(SelectTerminalPoolIntent{TerminalID: types.TerminalID("term-1")})
+	if selected.Pool.SelectedTerminalID != types.TerminalID("term-1") {
+		t.Fatalf("expected selected terminal to switch, got %q", selected.Pool.SelectedTerminalID)
+	}
+	if selected.Pool.PreviewTerminalID != types.TerminalID("term-1") {
+		t.Fatalf("expected preview terminal to switch immediately, got %q", selected.Pool.PreviewTerminalID)
+	}
+	if !selected.Pool.PreviewReadonly {
+		t.Fatal("expected preview to remain readonly")
+	}
+	if selected.Pool.PreviewSubscriptionRevision != 1 {
+		t.Fatalf("expected preview subscription refresh, got %d", selected.Pool.PreviewSubscriptionRevision)
+	}
+	if len(selected.PendingEffects) != 1 {
+		t.Fatalf("expected one preview effect, got %d", len(selected.PendingEffects))
+	}
+	if _, ok := selected.PendingEffects[0].(RefreshPreviewEffect); !ok {
+		t.Fatalf("expected preview effect, got %T", selected.PendingEffects[0])
+	}
+}
+
+func TestTerminalPoolActionsRenameKillRemoveAndOpenTargetPane(t *testing.T) {
+	model := newTerminalPoolModelForIntentTest().Apply(OpenTerminalPoolIntent{})
+
+	editor := model.Apply(OpenTerminalMetadataEditorIntent{})
+	if editor.Overlay.Active().Kind != OverlayTerminalMetadataEditor {
+		t.Fatalf("expected metadata editor overlay, got %q", editor.Overlay.Active().Kind)
+	}
+	edited := editor.Apply(UpdateTerminalMetadataDraftIntent{
+		Name:     "worker-renamed",
+		TagsText: "ops,prod",
+	})
+	saved := edited.Apply(SaveTerminalMetadataIntent{})
+	if len(saved.PendingEffects) != 1 {
+		t.Fatalf("expected metadata save effect, got %d", len(saved.PendingEffects))
+	}
+	metadataEffect, ok := saved.PendingEffects[0].(UpdateTerminalMetadataEffect)
+	if !ok {
+		t.Fatalf("expected metadata effect, got %T", saved.PendingEffects[0])
+	}
+	if metadataEffect.Name != "worker-renamed" || metadataEffect.Tags["tag:0"] != "ops" || metadataEffect.Tags["tag:1"] != "prod" {
+		t.Fatalf("expected metadata effect to keep edits, got %#v", metadataEffect)
+	}
+
+	killed := model.Apply(KillSelectedTerminalIntent{})
+	if len(killed.PendingEffects) != 1 {
+		t.Fatalf("expected kill effect, got %d", len(killed.PendingEffects))
+	}
+	if _, ok := killed.PendingEffects[0].(KillTerminalEffect); !ok {
+		t.Fatalf("expected kill effect, got %T", killed.PendingEffects[0])
+	}
+
+	removed := model.Apply(RemoveSelectedTerminalIntent{})
+	if len(removed.PendingEffects) != 1 {
+		t.Fatalf("expected remove effect, got %d", len(removed.PendingEffects))
+	}
+	if _, ok := removed.PendingEffects[0].(RemoveTerminalEffect); !ok {
+		t.Fatalf("expected remove effect, got %T", removed.PendingEffects[0])
+	}
+
+	openHere := model.Apply(OpenSelectedTerminalHereIntent{})
+	pane, _ := openHere.Workspace.ActiveTab().ActivePane()
+	if openHere.Screen != ScreenWorkbench || pane.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected open-here to bind selected terminal in workbench, got screen=%q pane=%+v", openHere.Screen, pane)
+	}
+
+	openTab := model.Apply(OpenSelectedTerminalInNewTabIntent{})
+	if openTab.Screen != ScreenWorkbench {
+		t.Fatalf("expected new-tab open to return to workbench, got %q", openTab.Screen)
+	}
+	tabPane, _ := openTab.Workspace.ActiveTab().ActivePane()
+	if tabPane.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected new tab to bind selected terminal, got %+v", tabPane)
+	}
+
+	openFloat := model.Apply(OpenSelectedTerminalInFloatingIntent{})
+	floatPane, _ := openFloat.Workspace.ActiveTab().ActivePane()
+	if openFloat.Screen != ScreenWorkbench || floatPane.Kind != types.PaneKindFloating || floatPane.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected floating open target, got screen=%q pane=%+v", openFloat.Screen, floatPane)
+	}
+}
+
+func TestTerminalPoolSupportsMetadataTagsSearchAndEdit(t *testing.T) {
+	model := newTerminalPoolModelForIntentTest().Apply(OpenTerminalPoolIntent{})
+
+	searched := model.Apply(SearchTerminalPoolIntent{Query: "ops"})
+	if searched.Pool.Query != "ops" {
+		t.Fatalf("expected pool query to persist, got %q", searched.Pool.Query)
+	}
+	if searched.Pool.SelectedTerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected search to select matching terminal, got %q", searched.Pool.SelectedTerminalID)
+	}
+
+	editor := searched.Apply(OpenTerminalMetadataEditorIntent{})
+	edited := editor.Apply(UpdateTerminalMetadataDraftIntent{
+		Name:     "ops-primary",
+		TagsText: "ops,priority",
+	})
+	saved := edited.Apply(SaveTerminalMetadataIntent{})
+	effect, ok := saved.PendingEffects[0].(UpdateTerminalMetadataEffect)
+	if !ok {
+		t.Fatalf("expected metadata save effect, got %T", saved.PendingEffects[0])
+	}
+	if effect.TerminalID != types.TerminalID("term-2") || effect.Name != "ops-primary" {
+		t.Fatalf("expected terminal metadata target to be term-2, got %#v", effect)
+	}
+}
+
 func newWorkbenchModelForIntentTest() Model {
 	model := NewModel()
 	ws := workspace.NewTemporary("main")
@@ -297,6 +411,23 @@ func newExitedPaneModelForIntentTest() Model {
 	tab.TrackPane(pane)
 	meta := model.Terminals[types.TerminalID("term-1")]
 	meta.State = stateterminal.StateExited
+	model.Terminals[types.TerminalID("term-1")] = meta
+	return model
+}
+
+func newTerminalPoolModelForIntentTest() Model {
+	model := newWorkbenchModelForIntentTest()
+	model.Terminals[types.TerminalID("term-2")] = stateterminal.Metadata{
+		ID:              types.TerminalID("term-2"),
+		Name:            "worker-tail",
+		Command:         []string{"bash", "-lc", "tail -f worker.log"},
+		Tags:            map[string]string{"team": "ops"},
+		State:           stateterminal.StateRunning,
+		LastInteraction: time.Unix(20, 0),
+	}
+	meta := model.Terminals[types.TerminalID("term-1")]
+	meta.Tags = map[string]string{"team": "backend"}
+	meta.LastInteraction = time.Unix(10, 0)
 	model.Terminals[types.TerminalID("term-1")] = meta
 	return model
 }

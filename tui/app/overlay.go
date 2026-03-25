@@ -2,14 +2,16 @@ package app
 
 import (
 	"github.com/lozzow/termx/tui/state/pool"
+	"github.com/lozzow/termx/tui/state/types"
 )
 
 type OverlayKind string
 type ConnectTarget string
 
 const (
-	OverlayConnectDialog OverlayKind = "connect-dialog"
-	OverlayHelp          OverlayKind = "help"
+	OverlayConnectDialog          OverlayKind = "connect-dialog"
+	OverlayHelp                   OverlayKind = "help"
+	OverlayTerminalMetadataEditor OverlayKind = "terminal-metadata-editor"
 
 	ConnectTargetSplitRight ConnectTarget = "split-right"
 	ConnectTargetNewTab     ConnectTarget = "new-tab"
@@ -28,15 +30,22 @@ type HelpOverlayState struct {
 	Sections []HelpSection
 }
 
+type TerminalMetadataEditorState struct {
+	TerminalID types.TerminalID
+	Name       string
+	TagsText   string
+}
+
 type HelpSection struct {
 	Title string
 	Items []string
 }
 
 type OverlayState struct {
-	Kind    OverlayKind
-	Connect *ConnectDialogState
-	Help    *HelpOverlayState
+	Kind           OverlayKind
+	Connect        *ConnectDialogState
+	Help           *HelpOverlayState
+	MetadataEditor *TerminalMetadataEditorState
 }
 
 type OverlayStack struct {
@@ -77,8 +86,35 @@ func (s OverlayStack) Clone() OverlayStack {
 		return OverlayStack{}
 	}
 	out := make([]OverlayState, len(s.stack))
-	copy(out, s.stack)
+	for i, state := range s.stack {
+		out[i] = cloneOverlayState(state)
+	}
 	return OverlayStack{stack: out}
+}
+
+func cloneOverlayState(state OverlayState) OverlayState {
+	next := state
+	if state.Connect != nil {
+		items := append([]pool.ConnectItem(nil), state.Connect.Items...)
+		connect := *state.Connect
+		connect.Items = items
+		next.Connect = &connect
+	}
+	if state.Help != nil {
+		sections := make([]HelpSection, len(state.Help.Sections))
+		for i, section := range state.Help.Sections {
+			sections[i] = HelpSection{
+				Title: section.Title,
+				Items: append([]string(nil), section.Items...),
+			}
+		}
+		next.Help = &HelpOverlayState{Sections: sections}
+	}
+	if state.MetadataEditor != nil {
+		editor := *state.MetadataEditor
+		next.MetadataEditor = &editor
+	}
+	return next
 }
 
 func DefaultHelpOverlay() *HelpOverlayState {

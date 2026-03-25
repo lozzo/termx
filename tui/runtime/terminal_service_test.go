@@ -181,6 +181,69 @@ func TestApplyIntentKillsCreatedTerminalWhenAttachFails(t *testing.T) {
 	}
 }
 
+func TestTerminalPoolActionsReachRuntimeService(t *testing.T) {
+	service := NewTerminalService(&stubClient{
+		attachResult: &protocol.AttachResult{Channel: 19, Mode: "observer"},
+		snapshot:     &protocol.Snapshot{TerminalID: "term-2", Size: protocol.Size{Cols: 80, Rows: 24}},
+	})
+	model := terminalPoolModelForRuntimeTest()
+
+	next, err := ApplyIntent(context.Background(), model, service, app.SelectTerminalPoolIntent{TerminalID: types.TerminalID("term-2")})
+	if err != nil {
+		t.Fatalf("ApplyIntent returned error: %v", err)
+	}
+	client := service.client.(*stubClient)
+	if client.lastAttachID != "term-2" || client.lastAttachMode != "observer" {
+		t.Fatalf("expected readonly preview attach, got id=%q mode=%q", client.lastAttachID, client.lastAttachMode)
+	}
+	if next.Pool.PreviewTerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected preview terminal to switch, got %q", next.Pool.PreviewTerminalID)
+	}
+	session := next.Sessions[types.TerminalID("term-2")]
+	if !session.ReadOnly || !session.Preview {
+		t.Fatalf("expected readonly preview session, got %#v", session)
+	}
+}
+
+func TestTerminalPoolRemoveActionReachesRuntimeService(t *testing.T) {
+	service := NewTerminalService(&stubClient{})
+	model := terminalPoolModelForRuntimeTest()
+
+	next, err := ApplyIntent(context.Background(), model, service, app.RemoveSelectedTerminalIntent{})
+	if err != nil {
+		t.Fatalf("ApplyIntent returned error: %v", err)
+	}
+	client := service.client.(*stubClient)
+	if client.lastRemovedID != "term-1" {
+		t.Fatalf("expected remove to reach runtime service, got %q", client.lastRemovedID)
+	}
+	if _, ok := next.Terminals[types.TerminalID("term-1")]; ok {
+		t.Fatalf("expected removed terminal to leave model, got %#v", next.Terminals[types.TerminalID("term-1")])
+	}
+}
+
+func TestTerminalPoolMetadataSaveReachesRuntimeService(t *testing.T) {
+	service := NewTerminalService(&stubClient{})
+	model := terminalPoolModelForRuntimeTest()
+
+	opened := model.Apply(app.OpenTerminalPoolIntent{})
+	edited := opened.Apply(app.OpenTerminalMetadataEditorIntent{}).Apply(app.UpdateTerminalMetadataDraftIntent{
+		Name:     "api-renamed",
+		TagsText: "backend,prod",
+	})
+	next, err := ApplyIntent(context.Background(), edited, service, app.SaveTerminalMetadataIntent{})
+	if err != nil {
+		t.Fatalf("ApplyIntent returned error: %v", err)
+	}
+	client := service.client.(*stubClient)
+	if client.lastMetadataID != "term-2" || client.lastMetadataName != "api-renamed" {
+		t.Fatalf("expected metadata call to reach runtime, got id=%q name=%q", client.lastMetadataID, client.lastMetadataName)
+	}
+	if next.Terminals[types.TerminalID("term-2")].Name != "api-renamed" {
+		t.Fatalf("expected model metadata update after runtime success, got %#v", next.Terminals[types.TerminalID("term-2")])
+	}
+}
+
 func splitUnconnectedPaneModelForRuntimeTest() app.Model {
 	model := livePaneModelForRuntimeTest()
 	model = model.Apply(app.IntentSplitVertical)
@@ -208,6 +271,29 @@ func livePaneModelForRuntimeTest() app.Model {
 		TerminalID: types.TerminalID("term-1"),
 		Channel:    7,
 		Attached:   true,
+	}
+	return model
+}
+
+func terminalPoolModelForRuntimeTest() app.Model {
+	model := livePaneModelForRuntimeTest()
+	model.Terminals[types.TerminalID("term-2")] = stateterminal.Metadata{
+		ID:              types.TerminalID("term-2"),
+		Name:            "worker-tail",
+		Command:         []string{"bash", "-lc", "tail -f worker.log"},
+		Tags:            map[string]string{"team": "ops"},
+		State:           stateterminal.StateRunning,
+		LastInteraction: time.Unix(20, 0),
+	}
+	meta := model.Terminals[types.TerminalID("term-1")]
+	meta.Tags = map[string]string{"team": "backend"}
+	model.Terminals[types.TerminalID("term-1")] = meta
+	model.Screen = app.ScreenTerminalPool
+	model.FocusTarget = app.FocusTerminalPool
+	model.Pool = app.TerminalPoolState{
+		SelectedTerminalID: types.TerminalID("term-1"),
+		PreviewTerminalID:  types.TerminalID("term-1"),
+		PreviewReadonly:    true,
 	}
 	return model
 }
@@ -264,6 +350,10 @@ func (c protocolRuntimeClient) Stream(channel uint16) (<-chan protocol.StreamFra
 
 func (c protocolRuntimeClient) Kill(ctx context.Context, terminalID string) error {
 	return c.inner.Kill(ctx, terminalID)
+}
+
+func (c protocolRuntimeClient) Remove(ctx context.Context, terminalID string) error {
+	return c.inner.Remove(ctx, terminalID)
 }
 
 func runCreateContractServer(tr *memory.Transport) error {

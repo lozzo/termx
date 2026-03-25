@@ -17,6 +17,8 @@ func Render(model app.Model, width, height int) string {
 		return renderConnectDialog(active)
 	case app.OverlayHelp:
 		return renderHelpOverlay(active)
+	case app.OverlayTerminalMetadataEditor:
+		return renderTerminalMetadataEditor(active)
 	default:
 		return ""
 	}
@@ -56,5 +58,19 @@ func renderHelpOverlay(active app.OverlayState) string {
 		lines = append(lines, "  "+strings.Join(section.Items, "   "))
 	}
 	lines = append(lines, "Esc close")
+	return strings.Join(lines, "\n")
+}
+
+func renderTerminalMetadataEditor(active app.OverlayState) string {
+	if active.MetadataEditor == nil {
+		return ""
+	}
+	lines := []string{
+		"Edit Terminal",
+		fmt.Sprintf("terminal id: %s", active.MetadataEditor.TerminalID),
+		fmt.Sprintf("name: %s", active.MetadataEditor.Name),
+		fmt.Sprintf("tags: %s", active.MetadataEditor.TagsText),
+		"Enter save  •  Esc cancel",
+	}
 	return strings.Join(lines, "\n")
 }

@@ -41,3 +41,23 @@ func TestOpeningOverlayKeepsWorkbenchFocusTarget(t *testing.T) {
 		t.Fatal("expected help overlay to be active")
 	}
 }
+
+func TestAppShellCanNavigateBetweenWorkbenchAndTerminalPool(t *testing.T) {
+	model := NewModel()
+
+	pool := model.Apply(OpenTerminalPoolIntent{})
+	if pool.Screen != ScreenTerminalPool {
+		t.Fatalf("expected pool screen, got %q", pool.Screen)
+	}
+	if pool.FocusTarget != FocusTerminalPool {
+		t.Fatalf("expected pool focus, got %q", pool.FocusTarget)
+	}
+
+	workbench := pool.Apply(CloseTerminalPoolIntent{})
+	if workbench.Screen != ScreenWorkbench {
+		t.Fatalf("expected workbench screen, got %q", workbench.Screen)
+	}
+	if workbench.FocusTarget != FocusWorkbench {
+		t.Fatalf("expected workbench focus, got %q", workbench.FocusTarget)
+	}
+}

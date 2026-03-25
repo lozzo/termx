@@ -48,11 +48,21 @@ func (s TerminalService) Kill(ctx context.Context, terminalID string) error {
 	return s.client.Kill(ctx, terminalID)
 }
 
+func (s TerminalService) Remove(ctx context.Context, terminalID string) error {
+	return s.client.Remove(ctx, terminalID)
+}
+
+func (s TerminalService) SetMetadata(ctx context.Context, terminalID string, name string, tags map[string]string) error {
+	return s.client.SetMetadata(ctx, terminalID, name, tags)
+}
+
 type PendingWorkbenchActionKind string
 
 const (
 	PendingWorkbenchActionCreateTerminal PendingWorkbenchActionKind = "create-terminal"
 	PendingWorkbenchActionKillTerminal   PendingWorkbenchActionKind = "kill-terminal"
+	PendingWorkbenchActionRemoveTerminal PendingWorkbenchActionKind = "remove-terminal"
+	PendingWorkbenchActionSetMetadata    PendingWorkbenchActionKind = "set-metadata"
 )
 
 type PendingWorkbenchAction struct {
@@ -60,6 +70,7 @@ type PendingWorkbenchAction struct {
 	TerminalID string
 	Command    []string
 	Name       string
+	Tags       map[string]string
 	Size       protocol.Size
 }
 
@@ -70,6 +81,8 @@ type WorkbenchActionResult struct {
 type workbenchActionService interface {
 	Create(context.Context, []string, string, protocol.Size) (*protocol.CreateResult, error)
 	Kill(context.Context, string) error
+	Remove(context.Context, string) error
+	SetMetadata(context.Context, string, string, map[string]string) error
 }
 
 // ExecuteWorkbenchAction 把 reducer 产出的副作用描述下放到 runtime 服务。
@@ -91,6 +104,16 @@ func ExecuteWorkbenchAction(ctx context.Context, service workbenchActionService,
 			return WorkbenchActionResult{}, err
 		}
 		return WorkbenchActionResult{}, nil
+	case PendingWorkbenchActionRemoveTerminal:
+		if err := service.Remove(ctx, action.TerminalID); err != nil {
+			return WorkbenchActionResult{}, err
+		}
+		return WorkbenchActionResult{}, nil
+	case PendingWorkbenchActionSetMetadata:
+		if err := service.SetMetadata(ctx, action.TerminalID, action.Name, action.Tags); err != nil {
+			return WorkbenchActionResult{}, err
+		}
+		return WorkbenchActionResult{}, nil
 	default:
 		return WorkbenchActionResult{}, nil
 	}
@@ -104,23 +127,28 @@ type intentRuntimeService interface {
 
 type modelIntentExecutor struct {
 	service intentRuntimeService
+	store   *SessionStore
 }
 
 func NewModelIntentExecutor(service intentRuntimeService) app.IntentExecutor {
-	return modelIntentExecutor{service: service}
+	return modelIntentExecutor{service: service, store: NewSessionStore()}
 }
 
 func (e modelIntentExecutor) ExecuteIntent(ctx context.Context, model app.Model, intent app.Intent) (app.Model, error) {
-	return ApplyIntent(ctx, model, e.service, intent)
+	return applyIntentWithStore(ctx, model, e.service, e.store, intent)
 }
 
 // ApplyIntent 负责串起“app reducer 产出 effect -> runtime 真执行 -> app 回填成功状态”。
 // 当前只为 create/kill 打通真实闭环；remove/restart 仍停留在 reducer 的 state-only 边界。
 func ApplyIntent(ctx context.Context, model app.Model, service intentRuntimeService, intent app.Intent) (app.Model, error) {
+	return applyIntentWithStore(ctx, model, service, NewSessionStore(), intent)
+}
+
+func applyIntentWithStore(ctx context.Context, model app.Model, service intentRuntimeService, store *SessionStore, intent app.Intent) (app.Model, error) {
 	next := model.Apply(intent)
 	for _, effect := range next.PendingEffects {
 		var err error
-		next, err = applyEffect(ctx, next, service, effect)
+		next, err = applyEffect(ctx, next, service, store, effect)
 		if err != nil {
 			next.Notice = &app.NoticeState{Message: err.Error()}
 			return next, err
@@ -130,7 +158,7 @@ func ApplyIntent(ctx context.Context, model app.Model, service intentRuntimeServ
 	return next, nil
 }
 
-func applyEffect(ctx context.Context, model app.Model, service intentRuntimeService, effect app.Effect) (app.Model, error) {
+func applyEffect(ctx context.Context, model app.Model, service intentRuntimeService, store *SessionStore, effect app.Effect) (app.Model, error) {
 	switch typed := effect.(type) {
 	case app.CreateTerminalEffect:
 		result, err := ExecuteWorkbenchAction(ctx, service, PendingWorkbenchAction{
@@ -168,6 +196,51 @@ func applyEffect(ctx context.Context, model app.Model, service intentRuntimeServ
 			return model, err
 		}
 		return model.Apply(app.KillTerminalSucceededIntent{TerminalID: typed.TerminalID}), nil
+	case app.RefreshPreviewEffect:
+		attach, err := service.Attach(ctx, string(typed.TerminalID), "observer")
+		if err != nil {
+			return model, err
+		}
+		snapshot, err := service.Snapshot(ctx, string(typed.TerminalID), 0, 0)
+		if err != nil {
+			return model, err
+		}
+		binding := PreviewBinding{Revision: model.Pool.PreviewSubscriptionRevision}
+		if store != nil {
+			binding = store.BindPreview(typed.TerminalID, attach.Channel, snapshot)
+		}
+		return model.Apply(app.PreviewTerminalSucceededIntent{
+			TerminalID:           typed.TerminalID,
+			Channel:              attach.Channel,
+			Snapshot:             snapshot,
+			SubscriptionRevision: binding.Revision,
+		}), nil
+	case app.UpdateTerminalMetadataEffect:
+		if _, err := ExecuteWorkbenchAction(ctx, service, PendingWorkbenchAction{
+			Kind:       PendingWorkbenchActionSetMetadata,
+			TerminalID: string(typed.TerminalID),
+			Name:       typed.Name,
+			Tags:       typed.Tags,
+		}); err != nil {
+			return model, err
+		}
+		return model.Apply(app.UpdateTerminalMetadataSucceededIntent{
+			TerminalID: typed.TerminalID,
+			Name:       typed.Name,
+			Tags:       typed.Tags,
+		}), nil
+	case app.RemoveTerminalEffect:
+		if _, err := ExecuteWorkbenchAction(ctx, service, PendingWorkbenchAction{
+			Kind:       PendingWorkbenchActionRemoveTerminal,
+			TerminalID: string(typed.TerminalID),
+		}); err != nil {
+			return model, err
+		}
+		return model.Apply(app.RemoveTerminalSucceededIntent{
+			TerminalID: typed.TerminalID,
+			Visible:    typed.Visible,
+			Name:       typed.Name,
+		}), nil
 	default:
 		return model, nil
 	}

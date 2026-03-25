@@ -33,6 +33,25 @@ type SplitPaneIntent struct {
 type NewTabIntent struct{}
 type NewFloatIntent struct{}
 type CancelOverlayIntent struct{}
+type OpenTerminalPoolIntent struct{}
+type CloseTerminalPoolIntent struct{}
+type SearchTerminalPoolIntent struct {
+	Query string
+}
+type SelectTerminalPoolIntent struct {
+	TerminalID types.TerminalID
+}
+type OpenTerminalMetadataEditorIntent struct{}
+type UpdateTerminalMetadataDraftIntent struct {
+	Name     string
+	TagsText string
+}
+type SaveTerminalMetadataIntent struct{}
+type OpenSelectedTerminalHereIntent struct{}
+type OpenSelectedTerminalInNewTabIntent struct{}
+type OpenSelectedTerminalInFloatingIntent struct{}
+type KillSelectedTerminalIntent struct{}
+type RemoveSelectedTerminalIntent struct{}
 type OpenReconnectIntent struct{}
 type ConfirmReconnectIntent struct {
 	TerminalID types.TerminalID
@@ -82,6 +101,30 @@ func (m Model) Apply(intent Intent) Model {
 		return next.applyNewTab()
 	case NewFloatIntent:
 		return next.applyNewFloat()
+	case OpenTerminalPoolIntent:
+		return next.openTerminalPool()
+	case CloseTerminalPoolIntent:
+		return next.SwitchScreen(ScreenWorkbench)
+	case SearchTerminalPoolIntent:
+		return next.applySearchTerminalPool(in.Query)
+	case SelectTerminalPoolIntent:
+		return next.applySelectTerminalPool(in.TerminalID)
+	case OpenTerminalMetadataEditorIntent:
+		return next.applyOpenTerminalMetadataEditor()
+	case UpdateTerminalMetadataDraftIntent:
+		return next.applyUpdateTerminalMetadataDraft(in)
+	case SaveTerminalMetadataIntent:
+		return next.applySaveTerminalMetadata()
+	case OpenSelectedTerminalHereIntent:
+		return next.applyOpenSelectedTerminalHere()
+	case OpenSelectedTerminalInNewTabIntent:
+		return next.applyOpenSelectedTerminalInNewTab()
+	case OpenSelectedTerminalInFloatingIntent:
+		return next.applyOpenSelectedTerminalInFloating()
+	case KillSelectedTerminalIntent:
+		return next.applyKillSelectedTerminal()
+	case RemoveSelectedTerminalIntent:
+		return next.applyRemoveSelectedTerminal()
 	case CancelOverlayIntent:
 		next.Overlay = next.Overlay.Clear()
 		return next
@@ -109,6 +152,16 @@ func (m Model) Apply(intent Intent) Model {
 		return next.applyCreateTerminalSucceeded(in)
 	case KillTerminalSucceededIntent:
 		return next.applyKillTerminalSucceeded(in.TerminalID)
+	case PreviewTerminalSucceededIntent:
+		return next.applyPreviewTerminalSucceeded(in)
+	case UpdateTerminalMetadataSucceededIntent:
+		return next.applyUpdateTerminalMetadataSucceeded(in)
+	case RemoveTerminalSucceededIntent:
+		return next.applyRemoveTerminal(RemoveTerminalIntent{
+			TerminalID: in.TerminalID,
+			Visible:    in.Visible,
+			Name:       in.Name,
+		})
 	case OpenHelpIntent:
 		next.Overlay = next.Overlay.Replace(OverlayState{
 			Kind: OverlayHelp,
@@ -122,6 +175,147 @@ func (m Model) Apply(intent Intent) Model {
 	default:
 		return next
 	}
+}
+
+func (m Model) openTerminalPool() Model {
+	m = m.SwitchScreen(ScreenTerminalPool)
+	selected := m.firstTerminalPoolSelection(m.Pool.Query)
+	m.Pool.SelectedTerminalID = selected
+	m.Pool.PreviewTerminalID = selected
+	m.Pool.PreviewReadonly = true
+	if selected != "" {
+		m.PendingEffects = append(m.PendingEffects, RefreshPreviewEffect{TerminalID: selected})
+	}
+	return m
+}
+
+func (m Model) applySearchTerminalPool(query string) Model {
+	m.Pool.Query = strings.TrimSpace(query)
+	selected := m.firstTerminalPoolSelection(m.Pool.Query)
+	if selected != "" {
+		m.Pool.SelectedTerminalID = selected
+		if m.Pool.PreviewTerminalID == "" {
+			m.Pool.PreviewTerminalID = selected
+		}
+	}
+	return m
+}
+
+func (m Model) applySelectTerminalPool(terminalID types.TerminalID) Model {
+	if terminalID == "" {
+		return m
+	}
+	if _, ok := m.Terminals[terminalID]; !ok {
+		return m
+	}
+	m.Pool.SelectedTerminalID = terminalID
+	m.Pool.PreviewTerminalID = terminalID
+	m.Pool.PreviewReadonly = true
+	m.Pool.PreviewSubscriptionRevision++
+	m.PendingEffects = append(m.PendingEffects, RefreshPreviewEffect{TerminalID: terminalID})
+	return m
+}
+
+func (m Model) applyOpenTerminalMetadataEditor() Model {
+	terminalID := m.selectedTerminalID()
+	meta, ok := m.Terminals[terminalID]
+	if !ok {
+		return m
+	}
+	m.Overlay = m.Overlay.Replace(OverlayState{
+		Kind: OverlayTerminalMetadataEditor,
+		MetadataEditor: &TerminalMetadataEditorState{
+			TerminalID: terminalID,
+			Name:       meta.Name,
+			TagsText:   formatTagsText(meta.Tags),
+		},
+	})
+	return m
+}
+
+func (m Model) applyUpdateTerminalMetadataDraft(in UpdateTerminalMetadataDraftIntent) Model {
+	active := m.Overlay.Active()
+	if active.Kind != OverlayTerminalMetadataEditor || active.MetadataEditor == nil {
+		return m
+	}
+	editor := *active.MetadataEditor
+	editor.Name = in.Name
+	editor.TagsText = in.TagsText
+	m.Overlay = m.Overlay.Replace(OverlayState{
+		Kind:           OverlayTerminalMetadataEditor,
+		MetadataEditor: &editor,
+	})
+	return m
+}
+
+func (m Model) applySaveTerminalMetadata() Model {
+	active := m.Overlay.Active()
+	if active.Kind != OverlayTerminalMetadataEditor || active.MetadataEditor == nil {
+		return m
+	}
+	editor := active.MetadataEditor
+	m.Overlay = m.Overlay.Clear()
+	m.PendingEffects = append(m.PendingEffects, UpdateTerminalMetadataEffect{
+		TerminalID: editor.TerminalID,
+		Name:       strings.TrimSpace(editor.Name),
+		Tags:       parseTagsText(editor.TagsText),
+	})
+	return m
+}
+
+func (m Model) applyOpenSelectedTerminalHere() Model {
+	terminalID := m.selectedTerminalID()
+	if terminalID == "" {
+		return m
+	}
+	m.bindActivePaneToTerminal(terminalID)
+	return m.SwitchScreen(ScreenWorkbench)
+}
+
+func (m Model) applyOpenSelectedTerminalInNewTab() Model {
+	terminalID := m.selectedTerminalID()
+	if terminalID == "" {
+		return m
+	}
+	m = m.applyNewTab()
+	m.Overlay = m.Overlay.Clear()
+	m.bindActivePaneToTerminal(terminalID)
+	return m.SwitchScreen(ScreenWorkbench)
+}
+
+func (m Model) applyOpenSelectedTerminalInFloating() Model {
+	terminalID := m.selectedTerminalID()
+	if terminalID == "" {
+		return m
+	}
+	m = m.applyNewFloat()
+	m.Overlay = m.Overlay.Clear()
+	m.bindActivePaneToTerminal(terminalID)
+	return m.SwitchScreen(ScreenWorkbench)
+}
+
+func (m Model) applyKillSelectedTerminal() Model {
+	terminalID := m.selectedTerminalID()
+	if terminalID == "" {
+		return m
+	}
+	m.PendingEffects = append(m.PendingEffects, KillTerminalEffect{TerminalID: terminalID})
+	return m
+}
+
+func (m Model) applyRemoveSelectedTerminal() Model {
+	terminalID := m.selectedTerminalID()
+	if terminalID == "" {
+		return m
+	}
+	meta := m.Terminals[terminalID]
+	_, visibleAffected := m.visibleTerminal(terminalID)
+	m.PendingEffects = append(m.PendingEffects, RemoveTerminalEffect{
+		TerminalID: terminalID,
+		Visible:    visibleAffected,
+		Name:       meta.Name,
+	})
+	return m
 }
 
 func (m Model) applySplitPane(direction types.SplitDirection) Model {
@@ -297,6 +491,12 @@ func (m Model) applyRemoveTerminal(in RemoveTerminalIntent) Model {
 			Message: fmt.Sprintf("terminal %q was removed from the pool", name),
 		}
 	}
+	if m.Pool.SelectedTerminalID == in.TerminalID {
+		m.Pool.SelectedTerminalID = m.firstTerminalPoolSelection(m.Pool.Query)
+	}
+	if m.Pool.PreviewTerminalID == in.TerminalID {
+		m.Pool.PreviewTerminalID = m.Pool.SelectedTerminalID
+	}
 	return m
 }
 
@@ -342,6 +542,25 @@ type KillTerminalSucceededIntent struct {
 	TerminalID types.TerminalID
 }
 
+type PreviewTerminalSucceededIntent struct {
+	TerminalID           types.TerminalID
+	Channel              uint16
+	Snapshot             *protocol.Snapshot
+	SubscriptionRevision int
+}
+
+type UpdateTerminalMetadataSucceededIntent struct {
+	TerminalID types.TerminalID
+	Name       string
+	Tags       map[string]string
+}
+
+type RemoveTerminalSucceededIntent struct {
+	TerminalID types.TerminalID
+	Visible    bool
+	Name       string
+}
+
 func (m Model) applyCreateTerminalSucceeded(in CreateTerminalSucceededIntent) Model {
 	meta := stateterminal.Metadata{
 		ID:              in.TerminalID,
@@ -385,6 +604,36 @@ func (m Model) applyKillTerminalSucceeded(terminalID types.TerminalID) Model {
 		next.SlotState = types.PaneSlotExited
 		return next
 	})
+	return m
+}
+
+func (m Model) applyPreviewTerminalSucceeded(in PreviewTerminalSucceededIntent) Model {
+	m.Pool.PreviewTerminalID = in.TerminalID
+	m.Pool.PreviewReadonly = true
+	if in.SubscriptionRevision > m.Pool.PreviewSubscriptionRevision {
+		m.Pool.PreviewSubscriptionRevision = in.SubscriptionRevision
+	}
+	m.Sessions[in.TerminalID] = TerminalSession{
+		TerminalID: in.TerminalID,
+		Channel:    in.Channel,
+		Attached:   true,
+		ReadOnly:   true,
+		Preview:    true,
+		Snapshot:   in.Snapshot,
+	}
+	return m
+}
+
+func (m Model) applyUpdateTerminalMetadataSucceeded(in UpdateTerminalMetadataSucceededIntent) Model {
+	meta, ok := m.Terminals[in.TerminalID]
+	if !ok {
+		return m
+	}
+	if strings.TrimSpace(in.Name) != "" {
+		meta.Name = strings.TrimSpace(in.Name)
+	}
+	meta.Tags = cloneStringMap(in.Tags)
+	m.Terminals[in.TerminalID] = meta
 	return m
 }
 
@@ -524,6 +773,91 @@ func prependCreateItem(items []pool.ConnectItem) []pool.ConnectItem {
 	return append([]pool.ConnectItem{{
 		Name: "+ new terminal",
 	}}, items...)
+}
+
+func (m Model) selectedTerminalID() types.TerminalID {
+	if m.Pool.SelectedTerminalID != "" {
+		return m.Pool.SelectedTerminalID
+	}
+	return m.firstTerminalPoolSelection(m.Pool.Query)
+}
+
+func (m Model) firstTerminalPoolSelection(query string) types.TerminalID {
+	items := pool.BuildConnectItems(filterTerminalPoolMetas(m.Terminals, query))
+	for _, item := range items {
+		if item.TerminalID != "" {
+			return item.TerminalID
+		}
+	}
+	return ""
+}
+
+func filterTerminalPoolMetas(terminals map[types.TerminalID]stateterminal.Metadata, query string) map[types.TerminalID]stateterminal.Metadata {
+	filtered := make(map[types.TerminalID]stateterminal.Metadata)
+	needle := strings.ToLower(strings.TrimSpace(query))
+	for id, meta := range terminals {
+		if needle == "" || terminalPoolMatches(meta, needle) {
+			filtered[id] = meta
+		}
+	}
+	return filtered
+}
+
+func terminalPoolMatches(meta stateterminal.Metadata, needle string) bool {
+	if strings.Contains(strings.ToLower(meta.Name), needle) {
+		return true
+	}
+	if strings.Contains(strings.ToLower(strings.Join(meta.Command, " ")), needle) {
+		return true
+	}
+	for key, value := range meta.Tags {
+		if strings.Contains(strings.ToLower(key), needle) || strings.Contains(strings.ToLower(value), needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func formatTagsText(tags map[string]string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(tags))
+	for _, value := range tags {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			parts = append(parts, trimmed)
+		}
+	}
+	return strings.Join(parts, ",")
+}
+
+func parseTagsText(text string) map[string]string {
+	parts := strings.Split(text, ",")
+	tags := make(map[string]string)
+	index := 0
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		tags[fmt.Sprintf("tag:%d", index)] = trimmed
+		index++
+	}
+	if len(tags) == 0 {
+		return nil
+	}
+	return tags
+}
+
+func cloneStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
 }
 
 func nextPaneID(ws *workspace.WorkspaceState) types.PaneID {

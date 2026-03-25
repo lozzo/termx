@@ -17,6 +17,7 @@ type Model struct {
 	Screen         Screen
 	Overlay        OverlayStack
 	FocusTarget    FocusTarget
+	Pool           TerminalPoolState
 	Workspace      *workspace.WorkspaceState
 	Terminals      map[types.TerminalID]terminal.Metadata
 	Sessions       map[types.TerminalID]TerminalSession
@@ -29,7 +30,19 @@ type TerminalSession struct {
 	TerminalID types.TerminalID
 	Channel    uint16
 	Attached   bool
+	ReadOnly   bool
+	Preview    bool
 	Snapshot   *protocol.Snapshot
+}
+
+// TerminalPoolState 保存独立 Terminal Pool 页面的一期状态。
+// 这里不把 preview 当成 workbench 焦点的一部分，避免只读观察抢走日常输入焦点。
+type TerminalPoolState struct {
+	Query                       string
+	SelectedTerminalID          types.TerminalID
+	PreviewTerminalID           types.TerminalID
+	PreviewReadonly             bool
+	PreviewSubscriptionRevision int
 }
 
 type IntentMessage struct {
@@ -160,3 +173,26 @@ type KillTerminalEffect struct {
 }
 
 func (KillTerminalEffect) effectName() string { return "kill_terminal" }
+
+// RefreshPreviewEffect 请求 runtime 以只读模式重新订阅 preview terminal。
+type RefreshPreviewEffect struct {
+	TerminalID types.TerminalID
+}
+
+func (RefreshPreviewEffect) effectName() string { return "refresh_preview" }
+
+type UpdateTerminalMetadataEffect struct {
+	TerminalID types.TerminalID
+	Name       string
+	Tags       map[string]string
+}
+
+func (UpdateTerminalMetadataEffect) effectName() string { return "update_terminal_metadata" }
+
+type RemoveTerminalEffect struct {
+	TerminalID types.TerminalID
+	Visible    bool
+	Name       string
+}
+
+func (RemoveTerminalEffect) effectName() string { return "remove_terminal" }

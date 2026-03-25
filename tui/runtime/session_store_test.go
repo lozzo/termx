@@ -26,3 +26,24 @@ func TestSessionStoreTracksSnapshotAndStreamBinding(t *testing.T) {
 		t.Fatalf("expected snapshot for term-1, got %#v", session.Snapshot)
 	}
 }
+
+func TestSessionStoreTracksReadonlyPreviewSubscription(t *testing.T) {
+	store := NewSessionStore()
+	snapshot := &protocol.Snapshot{
+		TerminalID: "term-2",
+		Size:       protocol.Size{Cols: 100, Rows: 30},
+	}
+
+	store.BindPreview(types.TerminalID("term-2"), 11, snapshot)
+	session, ok := store.Session(types.TerminalID("term-2"))
+	if !ok {
+		t.Fatal("expected preview session to exist")
+	}
+	if !session.ReadOnly || !session.Preview {
+		t.Fatalf("expected readonly preview session, got %#v", session)
+	}
+	preview := store.ActivePreview()
+	if preview.TerminalID != types.TerminalID("term-2") || preview.Revision != 1 {
+		t.Fatalf("expected active preview binding, got %#v", preview)
+	}
+}

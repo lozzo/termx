@@ -21,6 +21,7 @@ type Client interface {
 	Resize(ctx context.Context, channel uint16, cols, rows uint16) error
 	Stream(channel uint16) (<-chan protocol.StreamFrame, func())
 	Kill(ctx context.Context, terminalID string) error
+	Remove(ctx context.Context, terminalID string) error
 }
 
 type ProtocolClient struct {
@@ -79,4 +80,8 @@ func (c *ProtocolClient) Stream(channel uint16) (<-chan protocol.StreamFrame, fu
 
 func (c *ProtocolClient) Kill(ctx context.Context, terminalID string) error {
 	return c.inner.Kill(ctx, terminalID)
+}
+
+func (c *ProtocolClient) Remove(ctx context.Context, terminalID string) error {
+	return c.inner.Remove(ctx, terminalID)
 }
