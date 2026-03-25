@@ -27,6 +27,12 @@ type TerminalSession struct {
 	Snapshot   *protocol.Snapshot
 }
 
+var viewRenderer func(Model, int, int) string
+
+func SetViewRenderer(renderer func(Model, int, int) string) {
+	viewRenderer = renderer
+}
+
 func NewModel() Model {
 	return Model{
 		Screen:      ScreenWorkbench,
@@ -54,5 +60,8 @@ func (m Model) Update(tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
+	if viewRenderer != nil {
+		return viewRenderer(m, 120, 20)
+	}
 	return ""
 }
