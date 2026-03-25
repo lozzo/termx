@@ -541,3 +541,54 @@ termx TUI 当前不能继续沿最近一段时间的“modern shell / modal / ca
 - 真实工作台主界面的布局语言向 `deprecated/tui-legacy` 继续回归
 - 继续补齐 resize 下 split / floating / mixed 的主画布自适应
 - 性能、颜色、重叠渲染优化继续放在全局 TODO 的后段处理
+
+---
+
+## 17. 第 218 轮 TDD
+
+这一轮继续沿“整个 TUI 的窗口大小自适应”主线推进，但不再停留在 overlay，而是把真实工作台主路径一起收口：
+
+1. 默认运行态真正接受小窗口尺寸
+   - `tui/runtime_renderer.go`
+   - 之前 modern 默认路径虽然 renderer 支持更小 viewport，但运行态仍被旧的 `78x24` 下限卡住
+   - 现在规则改为：
+     - debug / wireframe 路径继续保留 `78x24` 稳定下限
+     - modern 默认产品态允许下探到 `64x18`
+   - 这样 `WindowSizeMsg` 才会真实影响默认工作台，而不是只在局部函数里“看起来支持”
+2. split 主工作台在窄窗口下改为 stacked canvas
+   - `tui/runtime_modern_renderer.go`
+   - 先尊重现有 split tree
+   - 如果检测到窄窗口下某些 tiled pane 的宽度已经不可读，但高度仍足以堆叠，则自动退回单列 stacked rect
+   - 目标不是改写布局语义，而是保证 `64` 列级别窗口下仍能看清 pane 标题和终端预览
+3. floating / mixed 的顶部 strip 支持窄窗口换行
+   - `tui/runtime_modern_renderer.go`
+   - `floating status strip` 与 `detached strip` 不再强行塞进一行
+   - 在窄窗口里会自动拆成多行，保住：
+     - stack 摘要
+     - active / top 信号
+     - control / float count
+   - 这样 resize 后不会只剩一截被截断的 token
+4. 本轮验证围绕“renderer + 运行态 resize”一起收口
+   - `tui/runtime_renderer_test.go`
+   - `tui/runtime_test.go`
+   - 新护栏重点锁定：
+     - `split` 窄窗口后 pane 会垂直堆叠
+     - `floating` / `mixed` 的 strip 会换行而不是截断
+     - 默认 modern 运行态收到 `WindowSizeMsg{64,20}` 后，渲染宽度真实变窄
+
+本轮验证命令：
+
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./tui -count=1`
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./... -count=1`
+
+当前阶段推进结果：
+
+- 窗口自适应已经从 overlay 扩展到真实 workbench 主路径
+- 默认运行态终于开始真实响应小窗口尺寸，而不是被旧下限钉死
+- split / floating / mixed 三条主工作台路径在 `64` 列级别窗口下都开始具备基本可读性
+
+下一块应继续推进：
+
+- 继续把 split / floating / mixed 的主画布几何和视觉语言向 `deprecated/tui-legacy` 靠拢
+- 继续收口 pane title 命中区、active 边框和 overlay 叠层之间的一致性
+- 性能、颜色、重叠渲染优化继续放在全局 TODO 的后段处理

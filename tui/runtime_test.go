@@ -96,6 +96,15 @@ func containsRuntimeLineWithAll(view string, parts ...string) bool {
 	return false
 }
 
+func assertMaxRuntimeLineWidth(t *testing.T, view string, width int) {
+	t.Helper()
+	for _, line := range strings.Split(view, "\n") {
+		if xansi.StringWidth(line) > width {
+			t.Fatalf("expected runtime line width <= %d, got %d:\n%s", width, xansi.StringWidth(line), view)
+		}
+	}
+}
+
 func findLineIndexContaining(view string, needle string) int {
 	if strings.TrimSpace(needle) == "" {
 		return -1
@@ -839,6 +848,80 @@ func TestE2ERunScenarioDefaultModernSplitWorkbenchUsesFullWidthPaneCanvas(t *tes
 	}
 }
 
+func TestE2ERunScenarioDefaultModernSplitWorkbenchStacksAfterNarrowResize(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithSplitPaneTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: "term-1",
+					Channel:    21,
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 96, Rows: 24},
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "$"}, {Content: " "}, {Content: "n"}, {Content: "p"}, {Content: "m"}},
+								{{Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+							},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: "term-2",
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: ">"}, {Content: " "}, {Content: "t"}, {Content: "s"}, {Content: "c"}},
+								{{Content: "o"}, {Content: "k"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			current := model
+			nextModel, cmd := current.Update(tea.WindowSizeMsg{Width: 64, Height: 20})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			view := current.View()
+			stripped := stripANSIRuntimeView(view)
+			assertMaxRuntimeLineWidth(t, view, 64)
+			apiLine := findLineIndexContaining(view, "┌─ api-dev")
+			buildLine := findLineIndexContaining(view, "┌─ build-log")
+			if apiLine < 0 || buildLine < 0 || buildLine <= apiLine {
+				t.Fatalf("expected narrow runtime split workbench to stack pane frames vertically, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "$ npm") || !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "> tsc") || !strings.Contains(stripped, "ok") {
+				t.Fatalf("expected narrow runtime split workbench to keep both pane previews readable, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected narrow split resize scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioDefaultModernTopChromeSummarizesWorkspaceTabsAndContext(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithTwoTabTargets()
@@ -1008,6 +1091,76 @@ func TestE2ERunScenarioDefaultModernFloatingWorkbenchUsesFullWidthCompositedCanv
 	}
 }
 
+func TestE2ERunScenarioDefaultModernFloatingWorkbenchWrapsStripAfterNarrowResize(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithFloatingOverviewTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: "term-1",
+					Channel:    21,
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 96, Rows: 24},
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+							},
+						},
+					},
+				},
+				types.TerminalID("term-2"): {
+					TerminalID: "term-2",
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "b"}, {Content: "u"}, {Content: "i"}, {Content: "l"}, {Content: "d"}, {Content: " "}, {Content: "o"}, {Content: "k"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			current := model
+			nextModel, cmd := current.Update(tea.WindowSizeMsg{Width: 64, Height: 20})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			view := current.View()
+			stripped := stripANSIRuntimeView(view)
+			assertMaxRuntimeLineWidth(t, view, 64)
+			if !strings.Contains(stripped, "◫ float 2") || !strings.Contains(stripped, "active api-dev") || !strings.Contains(stripped, "[top] build-log") || !strings.Contains(stripped, "Layer floating") {
+				t.Fatalf("expected narrow runtime floating workbench to keep strip summary and control hints visible, got:\n%s", view)
+			}
+			if findLineIndexContaining(view, "◫ float 2") == findLineIndexContaining(view, "Layer floating") {
+				t.Fatalf("expected narrow runtime floating strip to wrap into multiple lines, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected narrow floating resize scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioDefaultModernMixedWorkbenchKeepsDetachedStripAboveFullCanvas(t *testing.T) {
 	client := &stubRunClient{}
 	initial := runtimeStateWithMixedPaneSlots()
@@ -1058,6 +1211,65 @@ func TestE2ERunScenarioDefaultModernMixedWorkbenchKeepsDetachedStripAboveFullCan
 	})
 	if err != nil {
 		t.Fatalf("expected default modern mixed workbench scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioDefaultModernMixedWorkbenchWrapsDetachedStripAfterNarrowResize(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithMixedPaneSlots()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: "term-1",
+					Channel:    21,
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Size:       protocol.Size{Cols: 96, Rows: 24},
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "u"}, {Content: "p"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			current := model
+			nextModel, cmd := current.Update(tea.WindowSizeMsg{Width: 64, Height: 20})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			view := current.View()
+			stripped := stripANSIRuntimeView(view)
+			assertMaxRuntimeLineWidth(t, view, 64)
+			if !strings.Contains(stripped, "◫ detached") || !strings.Contains(stripped, "float 1") || !strings.Contains(stripped, "unconnected pane") || !strings.Contains(stripped, "waiting pane") {
+				t.Fatalf("expected narrow runtime mixed workbench to keep detached strip and pane labels visible, got:\n%s", view)
+			}
+			if findLineIndexContaining(view, "◫ detached") == findLineIndexContaining(view, "float 1") {
+				t.Fatalf("expected narrow runtime mixed detached strip to wrap into multiple lines, got:\n%s", view)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected narrow mixed resize scenario to succeed, got %v", err)
 	}
 }
 

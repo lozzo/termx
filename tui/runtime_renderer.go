@@ -1963,33 +1963,46 @@ func (r runtimeRenderer) wireframeMetrics(pane types.PaneState) wireframeMetrics
 func (r runtimeRenderer) wireframeViewport(pane types.PaneState) (int, int) {
 	width := runtimeWireframeWidth
 	height := 24
+	sawRuntimeSize := false
 	if pane.TerminalID == "" || r.Screens == nil {
 		return width, height
 	}
 	if status, ok := r.Screens.Status(pane.TerminalID); ok {
 		if status.Size.Cols > 0 {
 			width = int(status.Size.Cols)
+			sawRuntimeSize = true
 		}
 		if status.Size.Rows > 0 {
 			height = int(status.Size.Rows)
+			sawRuntimeSize = true
 		}
 	}
 	if snapshot, ok := r.Screens.Snapshot(pane.TerminalID); ok && snapshot != nil {
 		if width == runtimeWireframeWidth && snapshot.Size.Cols > 0 {
 			width = int(snapshot.Size.Cols)
+			sawRuntimeSize = true
 		}
 		if height == 24 && snapshot.Size.Rows > 0 {
 			height = int(snapshot.Size.Rows)
+			sawRuntimeSize = true
 		}
 	}
-	if width < runtimeWireframeWidth {
-		width = runtimeWireframeWidth
+	// modern 默认产品态只在“已经拿到真实 runtime 尺寸”后，才允许下探到更小 viewport；
+	// 否则仍保留 78x24 的启动基线，避免无尺寸信息的首屏把 header/tab/footer 过早压扁。
+	minWidth := runtimeWireframeWidth
+	minHeight := 24
+	if !r.debugVisible() && sawRuntimeSize {
+		minWidth = 64
+		minHeight = 18
+	}
+	if width < minWidth {
+		width = minWidth
 	}
 	if width > runtimeBarMaxWidth {
 		width = runtimeBarMaxWidth
 	}
-	if height <= 0 {
-		height = 24
+	if height < minHeight {
+		height = minHeight
 	}
 	return width, height
 }

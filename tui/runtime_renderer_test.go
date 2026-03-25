@@ -63,6 +63,18 @@ func containsRenderedLineWithAll(view string, parts ...string) bool {
 	return false
 }
 
+func findRenderedLineIndexContaining(view string, needle string) int {
+	if strings.TrimSpace(needle) == "" {
+		return -1
+	}
+	for index, line := range strings.Split(view, "\n") {
+		if strings.Contains(xansi.Strip(line), needle) {
+			return index
+		}
+	}
+	return -1
+}
+
 func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	state := connectedRunAppState()
 	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
@@ -665,6 +677,55 @@ func TestRuntimeRendererShellOnlyRendersSplitWorkbenchAsPaneCanvas(t *testing.T)
 	}
 }
 
+func TestModernScreenShellNarrowSplitWorkbenchStacksPanesForReadability(t *testing.T) {
+	state := runtimeStateWithSplitPaneTargets()
+	screens := NewRuntimeTerminalStore(RuntimeSessions{
+		Terminals: map[types.TerminalID]TerminalRuntimeSession{
+			types.TerminalID("term-1"): {
+				TerminalID: types.TerminalID("term-1"),
+				Snapshot: &protocol.Snapshot{
+					TerminalID: "term-1",
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{
+							{{Content: "$"}, {Content: " "}, {Content: "n"}, {Content: "p"}, {Content: "m"}},
+							{{Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+						},
+					},
+				},
+			},
+			types.TerminalID("term-2"): {
+				TerminalID: types.TerminalID("term-2"),
+				Snapshot: &protocol.Snapshot{
+					TerminalID: "term-2",
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{
+							{{Content: ">"}, {Content: " "}, {Content: "t"}, {Content: "s"}, {Content: "c"}},
+							{{Content: "o"}, {Content: "k"}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	view := renderModernShellForTest(t, state, nil, wireframeMetrics{
+		ViewportWidth:  64,
+		ViewportHeight: 20,
+		OverlayWidth:   44,
+	}, screens)
+	stripped := stripANSIForTest(view)
+
+	assertMaxRenderedLineWidth(t, view, 64)
+	apiLine := findRenderedLineIndexContaining(view, "┌─ api-dev")
+	buildLine := findRenderedLineIndexContaining(view, "┌─ build-log")
+	if apiLine < 0 || buildLine < 0 || buildLine <= apiLine {
+		t.Fatalf("expected narrow split workbench to stack pane frames vertically for readability, got:\n%s", view)
+	}
+	if !strings.Contains(stripped, "$ npm") || !strings.Contains(stripped, "ready") || !strings.Contains(stripped, "> tsc") || !strings.Contains(stripped, "ok") {
+		t.Fatalf("expected narrow split workbench to keep both pane previews readable after stacking, got:\n%s", view)
+	}
+}
+
 func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing.T) {
 	debugVisible := false
 	state := runtimeStateWithFloatingOverviewTargets()
@@ -721,6 +782,51 @@ func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing
 	}
 	if strings.Contains(stripped, "Workbench shell") {
 		t.Fatalf("expected shell-only floating renderer to stay on the modern workbench shell, got:\n%s", view)
+	}
+}
+
+func TestModernScreenShellNarrowFloatingWorkbenchWrapsStatusStrip(t *testing.T) {
+	state := runtimeStateWithFloatingOverviewTargets()
+	screens := NewRuntimeTerminalStore(RuntimeSessions{
+		Terminals: map[types.TerminalID]TerminalRuntimeSession{
+			types.TerminalID("term-1"): {
+				TerminalID: types.TerminalID("term-1"),
+				Snapshot: &protocol.Snapshot{
+					TerminalID: "term-1",
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{
+							{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "r"}, {Content: "e"}, {Content: "a"}, {Content: "d"}, {Content: "y"}},
+						},
+					},
+				},
+			},
+			types.TerminalID("term-2"): {
+				TerminalID: types.TerminalID("term-2"),
+				Snapshot: &protocol.Snapshot{
+					TerminalID: "term-2",
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{
+							{{Content: "b"}, {Content: "u"}, {Content: "i"}, {Content: "l"}, {Content: "d"}, {Content: " "}, {Content: "o"}, {Content: "k"}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	view := renderModernShellForTest(t, state, nil, wireframeMetrics{
+		ViewportWidth:  64,
+		ViewportHeight: 20,
+		OverlayWidth:   44,
+	}, screens)
+	stripped := stripANSIForTest(view)
+
+	assertMaxRenderedLineWidth(t, view, 64)
+	if !strings.Contains(stripped, "◫ float 2") || !strings.Contains(stripped, "active api-dev") || !strings.Contains(stripped, "[top] build-log") || !strings.Contains(stripped, "Layer floating") {
+		t.Fatalf("expected narrow floating workbench to keep stack summary and controls visible, got:\n%s", view)
+	}
+	if findRenderedLineIndexContaining(view, "◫ float 2") == findRenderedLineIndexContaining(view, "Layer floating") {
+		t.Fatalf("expected narrow floating status strip to wrap into multiple lines instead of truncating into one row, got:\n%s", view)
 	}
 }
 
@@ -879,6 +985,40 @@ func TestRuntimeRendererShellOnlyRendersDetachedFloatingStripForMixedWorkbench(t
 	}
 	if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "waiting pane") || !strings.Contains(stripped, "deploy-log") || !strings.Contains(stripped, "run") || !strings.Contains(stripped, "waiting") || !strings.Contains(stripped, "exited") || !strings.Contains(stripped, "waiting for connect") || !strings.Contains(stripped, "process exited") || !strings.Contains(stripped, "no terminal con") || !strings.Contains(stripped, "history retained") || !strings.Contains(stripped, "[top] unconnected pane") {
 		t.Fatalf("expected shell-only mixed workbench to keep pane titles readable across tiled and floating canvases, got:\n%s", view)
+	}
+}
+
+func TestModernScreenShellNarrowMixedWorkbenchWrapsDetachedStrip(t *testing.T) {
+	state := runtimeStateWithMixedPaneSlots()
+	screens := NewRuntimeTerminalStore(RuntimeSessions{
+		Terminals: map[types.TerminalID]TerminalRuntimeSession{
+			types.TerminalID("term-1"): {
+				TerminalID: types.TerminalID("term-1"),
+				Snapshot: &protocol.Snapshot{
+					TerminalID: "term-1",
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{
+							{{Content: "a"}, {Content: "p"}, {Content: "i"}, {Content: " "}, {Content: "u"}, {Content: "p"}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	view := renderModernShellForTest(t, state, nil, wireframeMetrics{
+		ViewportWidth:  64,
+		ViewportHeight: 20,
+		OverlayWidth:   44,
+	}, screens)
+	stripped := stripANSIForTest(view)
+
+	assertMaxRenderedLineWidth(t, view, 64)
+	if !strings.Contains(stripped, "◫ detached") || !strings.Contains(stripped, "float 1") || !strings.Contains(stripped, "unconnected pane") {
+		t.Fatalf("expected narrow mixed workbench to keep detached strip and floating label visible, got:\n%s", view)
+	}
+	if findRenderedLineIndexContaining(view, "◫ detached") == findRenderedLineIndexContaining(view, "float 1") {
+		t.Fatalf("expected narrow mixed detached strip to wrap instead of collapsing into a truncated single row, got:\n%s", view)
 	}
 }
 

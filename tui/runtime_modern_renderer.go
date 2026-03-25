@@ -530,6 +530,11 @@ func (r modernScreenShellRenderer) renderFloatingWorkbenchStatusStrip(theme mode
 		items = append(items, theme.offscreenToken.Render("c center"))
 	}
 	right := theme.panelMeta.Render(renderModernFloatingWorkbenchControlLine(state))
+	// 窄窗口下不要再把所有 token 和 control hint 生硬塞进一行，
+	// 否则浮窗状态条会被截得只剩半句，失去“当前 stack / top / 操作提示”的价值。
+	if width <= 68 {
+		return strings.Join(renderModernStatusStripLines(theme, width, items, []string{right}), "\n")
+	}
 	return theme.subBar.Render(fillANSIHorizontal(strings.Join(items, " "), right, max(1, width-2)))
 }
 
@@ -545,7 +550,7 @@ func (r modernScreenShellRenderer) renderWorkbenchCanvasLines(theme modernShellT
 		tiledPaneIDs = []types.PaneID{pane.ID}
 	}
 	if len(tiledPaneIDs) > 0 {
-		rects := renderScreenShellTiledRects(tab, width, canvasHeight, tiledPaneIDs)
+		rects := renderModernWorkbenchTiledRects(tab, width, canvasHeight, tiledPaneIDs)
 		for _, paneID := range tiledPaneIDs {
 			targetPane, ok := tab.Panes[paneID]
 			if !ok {
@@ -593,6 +598,75 @@ func (r modernScreenShellRenderer) renderWorkbenchCanvasLines(theme modernShellT
 		canvas.stampLines(rect.X, rect.Y, box)
 	}
 	return canvas.lines()
+}
+
+// renderModernWorkbenchTiledRects 为 modern 主工作台补上真正的窄窗口自适应。
+// 默认先尊重现有 split tree；只有当窄窗口下出现“每个 pane 宽度已经不可读，
+// 但高度仍足够改为上下堆叠”时，才退回单列 stacked canvas。
+func renderModernWorkbenchTiledRects(tab types.TabState, width int, height int, paneIDs []types.PaneID) map[types.PaneID]types.Rect {
+	rects := renderScreenShellTiledRects(tab, width, height, paneIDs)
+	if !shouldStackModernWorkbenchTiledRects(rects, width, height, paneIDs) {
+		return rects
+	}
+	return renderModernStackedTiledRects(width, height, paneIDs)
+}
+
+func shouldStackModernWorkbenchTiledRects(rects map[types.PaneID]types.Rect, width int, height int, paneIDs []types.PaneID) bool {
+	if len(paneIDs) < 2 {
+		return false
+	}
+	// 没有足够高度时，强行堆叠只会把每个 pane 再压成短条。
+	if height < len(paneIDs)*6 {
+		return false
+	}
+	minPaneWidth := width
+	for _, paneID := range paneIDs {
+		rect, ok := rects[paneID]
+		if !ok {
+			continue
+		}
+		if rect.W > 0 && rect.W < minPaneWidth {
+			minPaneWidth = rect.W
+		}
+	}
+	if minPaneWidth <= 0 {
+		return false
+	}
+	threshold := 34
+	if len(paneIDs) >= 3 {
+		threshold = 30
+	}
+	return minPaneWidth < threshold
+}
+
+func renderModernStackedTiledRects(width int, height int, paneIDs []types.PaneID) map[types.PaneID]types.Rect {
+	rects := make(map[types.PaneID]types.Rect, len(paneIDs))
+	if len(paneIDs) == 0 {
+		return rects
+	}
+	y := 0
+	remainingHeight := height
+	remainingPanes := len(paneIDs)
+	for _, paneID := range paneIDs {
+		paneHeight := remainingHeight / remainingPanes
+		if paneHeight < 6 {
+			paneHeight = 6
+		}
+		if paneHeight > remainingHeight {
+			paneHeight = remainingHeight
+		}
+		rects[paneID] = types.Rect{X: 0, Y: y, W: width, H: paneHeight}
+		y += paneHeight
+		remainingHeight -= paneHeight
+		remainingPanes--
+	}
+	if len(paneIDs) > 0 {
+		last := paneIDs[len(paneIDs)-1]
+		rect := rects[last]
+		rect.H += max(0, height-(rect.Y+rect.H))
+		rects[last] = rect
+	}
+	return rects
 }
 
 func renderModernCanvasPaneBox(theme modernShellTheme, width int, height int, title string, meta string, body []string, active bool, floating bool) []string {
@@ -764,6 +838,10 @@ func (r modernScreenShellRenderer) renderDetachedFloatingStrip(theme modernShell
 			top = "[top] "
 		}
 		items = append(items, theme.chip.Render(top+truncateModernLine(label, 34)))
+	}
+	if width <= 68 {
+		right := theme.panelMeta.Render(fmt.Sprintf("float %d", len(floatingPaneIDs)))
+		return strings.Join(renderModernStatusStripLines(theme, width, items, []string{right}), "\n")
 	}
 	return theme.subBar.Render(fillANSIHorizontal(strings.Join(items, " "), theme.panelMeta.Render(fmt.Sprintf("float %d", len(floatingPaneIDs))), max(1, width-2)))
 }
@@ -3030,6 +3108,21 @@ func renderModernOverlayTokenLines(width int, items []string, render func(string
 	}
 	rows = append(rows, render(truncateModernLine(current, width)))
 	return rows
+}
+
+func renderModernStatusStripLines(theme modernShellTheme, width int, primary []string, secondary []string) []string {
+	lines := make([]string, 0, 4)
+	for _, line := range renderModernOverlayTokenLines(width, primary, func(line string) string {
+		return theme.subBar.Render(padANSIHorizontal(line, max(1, width-2)))
+	}) {
+		lines = append(lines, line)
+	}
+	for _, line := range renderModernOverlayTokenLines(width, secondary, func(line string) string {
+		return theme.subBar.Render(padANSIHorizontal(line, max(1, width-2)))
+	}) {
+		lines = append(lines, line)
+	}
+	return lines
 }
 
 func renderModernTags(tags []terminalmanagerdomain.Tag) string {
