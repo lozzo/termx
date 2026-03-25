@@ -1,8 +1,6 @@
 package projection
 
 import (
-	"sort"
-
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tui/domain/types"
 )
@@ -80,42 +78,5 @@ func paneHasSnapshot(pane types.PaneState, screens RuntimeTerminalStore) bool {
 }
 
 func orderedTiledPaneIDs(tab types.TabState) []types.PaneID {
-	ordered := make([]types.PaneID, 0, len(tab.Panes))
-	seen := make(map[types.PaneID]struct{}, len(tab.Panes))
-	collectSplitPaneIDs(tab.RootSplit, tab, seen, &ordered)
-
-	var remaining []types.PaneID
-	for paneID, pane := range tab.Panes {
-		if pane.Kind != types.PaneKindTiled {
-			continue
-		}
-		if _, ok := seen[paneID]; ok {
-			continue
-		}
-		remaining = append(remaining, paneID)
-	}
-	sort.Slice(remaining, func(i, j int) bool {
-		return remaining[i] < remaining[j]
-	})
-	return append(ordered, remaining...)
-}
-
-func collectSplitPaneIDs(node *types.SplitNode, tab types.TabState, seen map[types.PaneID]struct{}, ordered *[]types.PaneID) {
-	if node == nil {
-		return
-	}
-	if node.First == nil && node.Second == nil {
-		pane, ok := tab.Panes[node.PaneID]
-		if !ok || pane.Kind != types.PaneKindTiled {
-			return
-		}
-		if _, ok := seen[node.PaneID]; ok {
-			return
-		}
-		seen[node.PaneID] = struct{}{}
-		*ordered = append(*ordered, node.PaneID)
-		return
-	}
-	collectSplitPaneIDs(node.First, tab, seen, ordered)
-	collectSplitPaneIDs(node.Second, tab, seen, ordered)
+	return OrderedTiledPaneIDs(tab)
 }

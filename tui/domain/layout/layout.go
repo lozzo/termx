@@ -300,7 +300,7 @@ func normalizedRatio(ratio float64) float64 {
 }
 
 func splitSpan(span int, ratio float64) int {
-	first := int(math.Round(float64(span) * ratio))
+	first := int(float64(span) * ratio)
 	if first < 1 {
 		first = 1
 	}

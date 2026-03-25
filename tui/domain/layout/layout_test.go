@@ -24,6 +24,24 @@ func TestNodeSplitAndRects(t *testing.T) {
 	}
 }
 
+func TestNodeRectsKeepsOddSpanSplitCompatibility(t *testing.T) {
+	root := NewLeaf(types.PaneID("left"))
+	if ok := root.Split(types.PaneID("left"), types.SplitDirectionVertical, types.PaneID("right")); !ok {
+		t.Fatalf("expected split to succeed")
+	}
+
+	rects := root.Rects(types.Rect{X: 0, Y: 0, W: 5, H: 3})
+	left := rects[types.PaneID("left")]
+	right := rects[types.PaneID("right")]
+
+	if left.W != 2 || right.W != 3 {
+		t.Fatalf("expected odd span to keep floor split 2/3, got left=%+v right=%+v", left, right)
+	}
+	if right.X != 2 {
+		t.Fatalf("expected right pane x=2, got %+v", right)
+	}
+}
+
 func TestNodeRemoveCollapsesParent(t *testing.T) {
 	root := NewLeaf(types.PaneID("root"))
 	root.Split(types.PaneID("root"), types.SplitDirectionVertical, types.PaneID("new"))

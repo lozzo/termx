@@ -39,6 +39,48 @@ func TestProjectWorkbenchReturnsDeterministicTiledOrder(t *testing.T) {
 	}
 }
 
+func TestOrderedTiledPaneIDsUsesSplitOrderAndSortedFallback(t *testing.T) {
+	state := newProjectionAppStateWithSplit()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	tab.Panes[types.PaneID("pane-0")] = types.PaneState{
+		ID:   types.PaneID("pane-0"),
+		Kind: types.PaneKindTiled,
+	}
+	tab.Panes[types.PaneID("pane-9")] = types.PaneState{
+		ID:   types.PaneID("pane-9"),
+		Kind: types.PaneKindTiled,
+	}
+
+	got := orderedTiledPaneIDs(tab)
+	want := []types.PaneID{
+		types.PaneID("pane-2"),
+		types.PaneID("pane-1"),
+		types.PaneID("pane-3"),
+		types.PaneID("pane-0"),
+		types.PaneID("pane-9"),
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("expected split order with sorted fallback %v, got %v", want, got)
+	}
+}
+
+func TestOrderedTiledPaneIDsHelperMatchesProjectionContract(t *testing.T) {
+	state := newProjectionAppStateWithSplit()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	tab := ws.Tabs[types.TabID("tab-1")]
+	tab.Panes[types.PaneID("pane-0")] = types.PaneState{
+		ID:   types.PaneID("pane-0"),
+		Kind: types.PaneKindTiled,
+	}
+
+	got := OrderedTiledPaneIDs(tab)
+	want := orderedTiledPaneIDs(tab)
+	if !slices.Equal(got, want) {
+		t.Fatalf("expected helper order %v to match projection contract, got %v", want, got)
+	}
+}
+
 func newProjectionAppState() types.AppState {
 	return types.AppState{
 		Domain: types.DomainState{
