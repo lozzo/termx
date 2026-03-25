@@ -66,6 +66,15 @@ func TestDebouncedWorkspaceSaverFlushKeepsNewestStateWhenOlderSaveFinishesLater(
 func TestRebindRestoredModelKeepsTerminalPoolPreviewAsLiveStream(t *testing.T) {
 	client := &stubClient{
 		attachResult: &protocol.AttachResult{Channel: 21, Mode: "observer"},
+		attachValidator: func(terminalID string, mode string) error {
+			if terminalID == "term-1" && mode != "collaborator" {
+				return context.DeadlineExceeded
+			}
+			if terminalID == "term-2" && mode != "observer" {
+				return context.DeadlineExceeded
+			}
+			return nil
+		},
 		snapshotByID: map[string][]*protocol.Snapshot{
 			"term-2": {sampleSnapshotForRuntimeTest("term-2", "restored preview")},
 		},
@@ -84,6 +93,9 @@ func TestRebindRestoredModelKeepsTerminalPoolPreviewAsLiveStream(t *testing.T) {
 	}
 	if !client.hasAttachCall("term-2", "observer") {
 		t.Fatalf("expected preview restore to attach term-2 as observer, got ids=%v modes=%v", client.attachIDs, client.attachModes)
+	}
+	if !client.hasAttachCall("term-1", "collaborator") {
+		t.Fatalf("expected writable restore to attach term-1 as collaborator, got ids=%v modes=%v", client.attachIDs, client.attachModes)
 	}
 
 	stream, ok := client.streams[21]

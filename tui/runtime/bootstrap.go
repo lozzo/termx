@@ -66,7 +66,7 @@ func Bootstrap(ctx context.Context, client Client, cfg BootstrapConfig) (app.Mod
 		hydrated = findTerminalInfo(list, terminalID)
 	}
 
-	attach, err = service.Attach(ctx, terminalID, "rw")
+	attach, err = service.Attach(ctx, terminalID, "collaborator")
 	if err != nil {
 		return model, err
 	}

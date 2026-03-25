@@ -29,7 +29,7 @@ func TestTerminalServiceDelegatesCreateAndAttach(t *testing.T) {
 		t.Fatalf("expected term-1, got %#v", created)
 	}
 
-	attached, err := service.Attach(context.Background(), "term-1", "rw")
+	attached, err := service.Attach(context.Background(), "term-1", "collaborator")
 	if err != nil {
 		t.Fatalf("Attach returned error: %v", err)
 	}
@@ -120,11 +120,18 @@ func TestExecuteWorkbenchActionDelegatesCreateAndKill(t *testing.T) {
 }
 
 func TestApplyIntentExecutesCreateEffectFromAppReducerAndBindsTerminal(t *testing.T) {
-	service := NewTerminalService(&stubClient{
+	client := &stubClient{
 		createResult: &protocol.CreateResult{TerminalID: "term-created", State: "running"},
-		attachResult: &protocol.AttachResult{Channel: 11, Mode: "rw"},
-		snapshot:     &protocol.Snapshot{TerminalID: "term-created", Size: protocol.Size{Cols: 80, Rows: 24}},
-	})
+		attachResult: &protocol.AttachResult{Channel: 11, Mode: "collaborator"},
+		attachValidator: func(_ string, mode string) error {
+			if mode != "collaborator" {
+				return errors.New("writable attach must use collaborator")
+			}
+			return nil
+		},
+		snapshot: &protocol.Snapshot{TerminalID: "term-created", Size: protocol.Size{Cols: 80, Rows: 24}},
+	}
+	service := NewTerminalService(client)
 	model := splitUnconnectedPaneModelForRuntimeTest()
 
 	next, err := ApplyIntent(context.Background(), model, service, app.ConfirmCreateTerminalIntent{
@@ -140,6 +147,23 @@ func TestApplyIntentExecutesCreateEffectFromAppReducerAndBindsTerminal(t *testin
 	}
 	if next.Sessions[types.TerminalID("term-created")].Channel != 11 {
 		t.Fatalf("expected attached session after runtime create, got %#v", next.Sessions[types.TerminalID("term-created")])
+	}
+	if client.lastAttachMode != "collaborator" {
+		t.Fatalf("expected create flow to attach as collaborator, got %q", client.lastAttachMode)
+	}
+
+	router := NewInputRouter(service)
+	if err := router.HandleKey(context.Background(), next, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")}); err != nil {
+		t.Fatalf("HandleKey returned error: %v", err)
+	}
+	if err := router.HandleResize(context.Background(), next, 120, 40); err != nil {
+		t.Fatalf("HandleResize returned error: %v", err)
+	}
+	if client.lastInputChannel != 11 || string(client.lastInputData) != "x" {
+		t.Fatalf("expected created collaborator session to accept input, got channel=%d data=%q", client.lastInputChannel, string(client.lastInputData))
+	}
+	if client.lastResizeChannel != 11 || client.lastResizeCols != 120 || client.lastResizeRows != 40 {
+		t.Fatalf("expected created collaborator session to accept resize, got channel=%d size=%dx%d", client.lastResizeChannel, client.lastResizeCols, client.lastResizeRows)
 	}
 }
 
@@ -521,13 +545,13 @@ func TestTerminalPoolPreviewStreamTriggersSnapshotRefreshInsteadOfRawAppend(t *t
 		attachResult: &protocol.AttachResult{Channel: 19, Mode: "observer"},
 		snapshot: &protocol.Snapshot{
 			TerminalID: "term-2",
-			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "l", Width: 1}, {Content: "d", Width: 1}}}},
+			Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "l", Width: 1}, {Content: "d", Width: 1}}}},
 		},
 		snapshotByID: map[string][]*protocol.Snapshot{
 			"term-2": {
 				{
 					TerminalID: "term-2",
-					Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "f", Width: 1}, {Content: "r", Width: 1}, {Content: "e", Width: 1}, {Content: "s", Width: 1}, {Content: "h", Width: 1}}}},
+					Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "f", Width: 1}, {Content: "r", Width: 1}, {Content: "e", Width: 1}, {Content: "s", Width: 1}, {Content: "h", Width: 1}}}},
 				},
 			},
 		},

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tui/app"
 	"github.com/lozzow/termx/tui/state/types"
@@ -21,6 +22,11 @@ type stubClient struct {
 	lastAttachMode    string
 	attachIDs         []string
 	attachModes       []string
+	lastInputChannel  uint16
+	lastInputData     []byte
+	lastResizeChannel uint16
+	lastResizeCols    uint16
+	lastResizeRows    uint16
 	lastKilledID      string
 	lastRemovedID     string
 	lastMetadataID    string
@@ -31,6 +37,7 @@ type stubClient struct {
 	attachErr         error
 	snapshotErr       error
 	attachErrByID     map[string]error
+	attachValidator   func(terminalID string, mode string) error
 	snapshotErrByID   map[string]error
 	snapshotByID      map[string][]*protocol.Snapshot
 	snapshotCalls     map[string]int
@@ -72,6 +79,11 @@ func (c *stubClient) Attach(_ context.Context, terminalID string, mode string) (
 	c.lastAttachMode = mode
 	c.attachIDs = append(c.attachIDs, terminalID)
 	c.attachModes = append(c.attachModes, mode)
+	if c.attachValidator != nil {
+		if err := c.attachValidator(terminalID, mode); err != nil {
+			return nil, err
+		}
+	}
 	if err, ok := c.attachErrByID[terminalID]; ok {
 		return nil, err
 	}
@@ -120,8 +132,17 @@ func (c *stubClient) Snapshot(_ context.Context, terminalID string, _ int, _ int
 	return &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}}, nil
 }
 
-func (c *stubClient) Input(context.Context, uint16, []byte) error          { return nil }
-func (c *stubClient) Resize(context.Context, uint16, uint16, uint16) error { return nil }
+func (c *stubClient) Input(_ context.Context, channel uint16, data []byte) error {
+	c.lastInputChannel = channel
+	c.lastInputData = append([]byte(nil), data...)
+	return nil
+}
+func (c *stubClient) Resize(_ context.Context, channel uint16, cols, rows uint16) error {
+	c.lastResizeChannel = channel
+	c.lastResizeCols = cols
+	c.lastResizeRows = rows
+	return nil
+}
 func (c *stubClient) Stream(channel uint16) (<-chan protocol.StreamFrame, func()) {
 	if c.streams == nil {
 		c.streams = make(map[uint16]chan protocol.StreamFrame)
@@ -189,6 +210,42 @@ func TestBootstrapCreatesTemporaryWorkspaceWithLiveShellPane(t *testing.T) {
 	}
 }
 
+func TestBootstrapUsesCollaboratorAttachModeForWritableShellAndEnablesInputResize(t *testing.T) {
+	client := &stubClient{
+		attachValidator: func(_ string, mode string) error {
+			if mode != "collaborator" {
+				return errors.New("writable attach must use collaborator")
+			}
+			return nil
+		},
+	}
+
+	model, err := Bootstrap(context.Background(), client, BootstrapConfig{
+		DefaultShell: "/bin/sh",
+		Workspace:    "main",
+	})
+	if err != nil {
+		t.Fatalf("Bootstrap returned error: %v", err)
+	}
+	if client.lastAttachMode != "collaborator" {
+		t.Fatalf("expected bootstrap attach mode collaborator, got %q", client.lastAttachMode)
+	}
+
+	router := NewInputRouter(NewTerminalService(client))
+	if err := router.HandleKey(context.Background(), model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")}); err != nil {
+		t.Fatalf("HandleKey returned error: %v", err)
+	}
+	if err := router.HandleResize(context.Background(), model, 100, 30); err != nil {
+		t.Fatalf("HandleResize returned error: %v", err)
+	}
+	if client.lastInputChannel != 7 || string(client.lastInputData) != "i" {
+		t.Fatalf("expected writable bootstrap session to accept input on channel 7, got channel=%d data=%q", client.lastInputChannel, string(client.lastInputData))
+	}
+	if client.lastResizeChannel != 7 || client.lastResizeCols != 100 || client.lastResizeRows != 30 {
+		t.Fatalf("expected writable bootstrap session to accept resize on channel 7, got channel=%d size=%dx%d", client.lastResizeChannel, client.lastResizeCols, client.lastResizeRows)
+	}
+}
+
 func TestBootstrapAttachIDHydratesMetadataFromDaemonTruth(t *testing.T) {
 	client := &stubClient{
 		listResult: &protocol.ListResult{
@@ -201,7 +258,7 @@ func TestBootstrapAttachIDHydratesMetadataFromDaemonTruth(t *testing.T) {
 				Size:    protocol.Size{Cols: 100, Rows: 30},
 			}},
 		},
-		attachResult: &protocol.AttachResult{Channel: 8, Mode: "rw"},
+		attachResult: &protocol.AttachResult{Channel: 8, Mode: "collaborator"},
 		snapshot:     &protocol.Snapshot{TerminalID: "term-9", Size: protocol.Size{Cols: 100, Rows: 30}},
 	}
 
@@ -235,7 +292,7 @@ func TestBootstrapAttachIDExitedTerminalKeepsPaneAndSessionStateConsistent(t *te
 				State:   "exited",
 			}},
 		},
-		attachResult: &protocol.AttachResult{Channel: 8, Mode: "rw"},
+		attachResult: &protocol.AttachResult{Channel: 8, Mode: "collaborator"},
 		snapshot:     &protocol.Snapshot{TerminalID: "term-9", Size: protocol.Size{Cols: 100, Rows: 30}},
 	}
 
@@ -267,7 +324,7 @@ func TestBootstrappedModelUpdateCreateFailureCleansRemoteTerminalAndKeepsPaneUnb
 			"term-created": errors.New("attach failed"),
 		},
 		listResult:   &protocol.ListResult{Terminals: []protocol.TerminalInfo{{ID: "term-1", Name: "shell", Command: []string{"/bin/sh"}, State: "running"}}},
-		attachResult: &protocol.AttachResult{Channel: 7, Mode: "rw"},
+		attachResult: &protocol.AttachResult{Channel: 7, Mode: "collaborator"},
 		snapshot:     &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}},
 	}
 	model, err := Bootstrap(context.Background(), client, BootstrapConfig{
@@ -300,7 +357,7 @@ func TestBootstrappedModelUpdateCreateFailureCleansRemoteTerminalAndKeepsPaneUnb
 func TestBootstrappedModelUpdateExecutesCreateIntentThroughRuntime(t *testing.T) {
 	client := &stubClient{
 		createResult: &protocol.CreateResult{TerminalID: "term-created", State: "running"},
-		attachResult: &protocol.AttachResult{Channel: 12, Mode: "rw"},
+		attachResult: &protocol.AttachResult{Channel: 12, Mode: "collaborator"},
 		snapshot:     &protocol.Snapshot{TerminalID: "term-created", Size: protocol.Size{Cols: 80, Rows: 24}},
 	}
 	model, err := Bootstrap(context.Background(), client, BootstrapConfig{
@@ -336,7 +393,7 @@ func TestBootstrappedModelUpdateExecutesCreateIntentThroughRuntime(t *testing.T)
 
 func TestBootstrappedModelUpdateExecutesKillIntentThroughRuntime(t *testing.T) {
 	client := &stubClient{
-		attachResult: &protocol.AttachResult{Channel: 7, Mode: "rw"},
+		attachResult: &protocol.AttachResult{Channel: 7, Mode: "collaborator"},
 		snapshot:     &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}},
 	}
 	model, err := Bootstrap(context.Background(), client, BootstrapConfig{

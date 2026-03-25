@@ -216,7 +216,7 @@ func RebindRestoredModel(ctx context.Context, client Client, model app.Model) ap
 			continue
 		}
 
-		mode := "rw"
+		mode := "collaborator"
 		if session.ReadOnly || session.Preview {
 			mode = "observer"
 		}

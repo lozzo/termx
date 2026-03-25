@@ -193,7 +193,7 @@ func applyEffect(ctx context.Context, model app.Model, service intentRuntimeServ
 		if err != nil {
 			return model, nil, err
 		}
-		attach, err := service.Attach(ctx, result.TerminalID, "rw")
+		attach, err := service.Attach(ctx, result.TerminalID, "collaborator")
 		if err != nil {
 			_ = service.Kill(ctx, result.TerminalID)
 			return model, nil, err
