@@ -104,6 +104,16 @@ func keyInputBytes(msg tea.KeyMsg) []byte {
 		return []byte("\x1b[C")
 	case tea.KeyCtrlC:
 		return []byte{0x03}
+	case tea.KeyCtrlD:
+		return []byte{0x04}
+	case tea.KeyCtrlZ:
+		return []byte{0x1a}
+	case tea.KeyDelete:
+		return []byte("\x1b[3~")
+	case tea.KeyHome:
+		return []byte("\x1b[H")
+	case tea.KeyEnd:
+		return []byte("\x1b[F")
 	case tea.KeyRunes:
 		return []byte(string(msg.Runes))
 	default:

@@ -155,6 +155,41 @@ func TestBootstrapAttachIDHydratesMetadataFromDaemonTruth(t *testing.T) {
 	}
 }
 
+func TestBootstrapAttachIDExitedTerminalKeepsPaneAndSessionStateConsistent(t *testing.T) {
+	client := &stubClient{
+		listResult: &protocol.ListResult{
+			Terminals: []protocol.TerminalInfo{{
+				ID:      "term-9",
+				Name:    "api-dev",
+				Command: []string{"bash", "-lc", "npm run dev"},
+				State:   "exited",
+			}},
+		},
+		attachResult: &protocol.AttachResult{Channel: 8, Mode: "rw"},
+		snapshot:     &protocol.Snapshot{TerminalID: "term-9", Size: protocol.Size{Cols: 100, Rows: 30}},
+	}
+
+	model, err := Bootstrap(context.Background(), client, BootstrapConfig{
+		Workspace: "main",
+		AttachID:  "term-9",
+	})
+	if err != nil {
+		t.Fatalf("Bootstrap returned error: %v", err)
+	}
+
+	pane, _ := model.Workspace.ActiveTab().ActivePane()
+	if pane.SlotState != types.PaneSlotExited {
+		t.Fatalf("expected exited pane slot, got %+v", pane)
+	}
+	session := model.Sessions[types.TerminalID("term-9")]
+	if session.Attached {
+		t.Fatalf("expected exited bootstrap session to stay detached, got %#v", session)
+	}
+	if model.Terminals[types.TerminalID("term-9")].State != "exited" {
+		t.Fatalf("expected metadata exited state, got %#v", model.Terminals[types.TerminalID("term-9")])
+	}
+}
+
 func TestBootstrappedModelUpdateCreateFailureCleansRemoteTerminalAndKeepsPaneUnbound(t *testing.T) {
 	client := &stubClient{
 		createResult: &protocol.CreateResult{TerminalID: "term-created", State: "running"},

@@ -77,7 +77,7 @@ func Bootstrap(ctx context.Context, client Client, cfg BootstrapConfig) (app.Mod
 	tab := ws.ActiveTab()
 	pane, _ := tab.ActivePane()
 	pane.TerminalID = types.TerminalID(terminalID)
-	pane.SlotState = types.PaneSlotLive
+	pane.SlotState = paneSlotStateFromMetadata(hydrated)
 	tab.TrackPane(pane)
 	tab.ActivePaneID = pane.ID
 
@@ -86,7 +86,7 @@ func Bootstrap(ctx context.Context, client Client, cfg BootstrapConfig) (app.Mod
 	model.Sessions[pane.TerminalID] = app.TerminalSession{
 		TerminalID: pane.TerminalID,
 		Channel:    attach.Channel,
-		Attached:   true,
+		Attached:   pane.SlotState == types.PaneSlotLive,
 		Snapshot:   snapshot,
 	}
 	return model, nil
@@ -138,4 +138,11 @@ func cloneProtocolTags(tags map[string]string) map[string]string {
 		out[key] = value
 	}
 	return out
+}
+
+func paneSlotStateFromMetadata(info *protocol.TerminalInfo) types.PaneSlotState {
+	if info != nil && info.State == "exited" {
+		return types.PaneSlotExited
+	}
+	return types.PaneSlotLive
 }

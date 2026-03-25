@@ -110,6 +110,11 @@ func TestInputRouterMapsCoreControlKeysToPTYInput(t *testing.T) {
 		{name: "left", msg: tea.KeyMsg{Type: tea.KeyLeft}, want: []byte("\x1b[D")},
 		{name: "right", msg: tea.KeyMsg{Type: tea.KeyRight}, want: []byte("\x1b[C")},
 		{name: "ctrl+c", msg: tea.KeyMsg{Type: tea.KeyCtrlC}, want: []byte{0x03}},
+		{name: "ctrl+d", msg: tea.KeyMsg{Type: tea.KeyCtrlD}, want: []byte{0x04}},
+		{name: "ctrl+z", msg: tea.KeyMsg{Type: tea.KeyCtrlZ}, want: []byte{0x1a}},
+		{name: "delete", msg: tea.KeyMsg{Type: tea.KeyDelete}, want: []byte("\x1b[3~")},
+		{name: "home", msg: tea.KeyMsg{Type: tea.KeyHome}, want: []byte("\x1b[H")},
+		{name: "end", msg: tea.KeyMsg{Type: tea.KeyEnd}, want: []byte("\x1b[F")},
 	}
 
 	for _, tt := range tests {
