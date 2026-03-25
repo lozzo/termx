@@ -265,13 +265,12 @@ func attachCommand(socket *string, logFile *string, iconSet *string, prefixTimeo
 			}
 			defer client.Close()
 			return runTUI(client, tui.Config{
-				DefaultShell:       os.Getenv("SHELL"),
-				Workspace:          "main",
-				AttachID:           args[0],
-				IconSet:            *iconSet,
-				PrefixTimeout:      *prefixTimeout,
-				WorkspaceStatePath: resolveWorkspaceStatePath(),
-				Logger:             logger,
+				DefaultShell:  os.Getenv("SHELL"),
+				Workspace:     "main",
+				AttachID:      args[0],
+				IconSet:       *iconSet,
+				PrefixTimeout: *prefixTimeout,
+				Logger:        logger,
 			}, os.Stdin, os.Stdout)
 		},
 	}

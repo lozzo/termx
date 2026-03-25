@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,6 +29,37 @@ func TestWorkspaceStoreRoundTripsWorkbenchState(t *testing.T) {
 
 	if !reflect.DeepEqual(persistedModelSnapshot(original), persistedModelSnapshot(loaded)) {
 		t.Fatalf("workspace mismatch after round trip:\nwant: %#v\ngot: %#v", persistedModelSnapshot(original), persistedModelSnapshot(loaded))
+	}
+}
+
+func TestDebouncedWorkspaceSaverFlushKeepsNewestStateWhenOlderSaveFinishesLater(t *testing.T) {
+	store := &blockingWorkspaceStore{
+		firstSaveStarted: make(chan struct{}),
+		releaseFirstSave: make(chan struct{}),
+	}
+	saver := NewDebouncedWorkspaceSaver(store, time.Millisecond)
+	oldModel := sampleWorkbenchStateForRuntimeTest()
+	newModel := sampleWorkbenchStateForRuntimeTest()
+	newModel.Workspace.ID = "newest"
+
+	saver.Schedule(oldModel)
+	waitForSignalRuntimeTest(t, store.firstSaveStarted, "first save start")
+
+	flushDone := make(chan error, 1)
+	go func() {
+		flushDone <- saver.Flush(context.Background(), newModel)
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	close(store.releaseFirstSave)
+
+	if err := <-flushDone; err != nil {
+		t.Fatalf("flush returned error: %v", err)
+	}
+	store.wait()
+
+	if store.lastSaved.Workspace == nil || store.lastSaved.Workspace.ID != "newest" {
+		t.Fatalf("expected newest workspace state to win final save, got %#v", store.lastSaved.Workspace)
 	}
 }
 
@@ -77,6 +109,50 @@ func TestRebindRestoredModelKeepsTerminalPoolPreviewAsLiveStream(t *testing.T) {
 	}
 	if previewMsg.TerminalID != types.TerminalID("term-2") || previewMsg.Revision != 7 {
 		t.Fatalf("expected restored preview binding revision 7 for term-2, got %#v", previewMsg)
+	}
+}
+
+func TestRebindRestoredModelDowngradesFailedTerminalRecoveryToConsistentState(t *testing.T) {
+	client := &stubClient{
+		attachErrByID: map[string]error{
+			"term-1": context.DeadlineExceeded,
+			"term-2": context.DeadlineExceeded,
+		},
+	}
+	model := sampleWorkbenchStateForRuntimeTest()
+	model.Pool.SelectedTerminalID = types.TerminalID("term-2")
+	model.Pool.PreviewTerminalID = types.TerminalID("term-2")
+
+	restored := RebindRestoredModel(context.Background(), client, model)
+
+	activePane, ok := restored.Workspace.ActiveTab().ActivePane()
+	if !ok {
+		t.Fatal("expected active pane after restore fallback")
+	}
+	if activePane.SlotState != types.PaneSlotUnconnected || activePane.TerminalID != "" {
+		t.Fatalf("expected failed live pane restore to downgrade to unconnected, got %+v", activePane)
+	}
+	floatPane, ok := restored.Workspace.ActiveTab().Pane(types.PaneID("float-1"))
+	if !ok {
+		t.Fatal("expected float pane after restore fallback")
+	}
+	if floatPane.SlotState != types.PaneSlotUnconnected || floatPane.TerminalID != "" {
+		t.Fatalf("expected failed preview pane restore to downgrade to unconnected, got %+v", floatPane)
+	}
+	if _, ok := restored.Terminals[types.TerminalID("term-1")]; ok {
+		t.Fatalf("expected failed terminal metadata to be dropped for term-1, got %#v", restored.Terminals[types.TerminalID("term-1")])
+	}
+	if _, ok := restored.Terminals[types.TerminalID("term-2")]; ok {
+		t.Fatalf("expected failed terminal metadata to be dropped for term-2, got %#v", restored.Terminals[types.TerminalID("term-2")])
+	}
+	if _, ok := restored.Sessions[types.TerminalID("term-2")]; ok {
+		t.Fatalf("expected failed preview session to be dropped, got %#v", restored.Sessions[types.TerminalID("term-2")])
+	}
+	if restored.Pool.PreviewTerminalID != "" || restored.Pool.SelectedTerminalID != "" {
+		t.Fatalf("expected failed preview selection to clear, got selected=%q preview=%q", restored.Pool.SelectedTerminalID, restored.Pool.PreviewTerminalID)
+	}
+	if restored.PreviewStreamNext != nil {
+		t.Fatal("expected failed preview restore to clear stream command")
 	}
 }
 
@@ -177,5 +253,53 @@ func persistedModelSnapshot(model app.Model) any {
 		Workspace: model.Workspace,
 		Terminals: model.Terminals,
 		Sessions:  model.Sessions,
+	}
+}
+
+type blockingWorkspaceStore struct {
+	mu sync.Mutex
+	wg sync.WaitGroup
+
+	firstSaveStarted chan struct{}
+	releaseFirstSave chan struct{}
+	saveCount        int
+	lastSaved        app.Model
+}
+
+func (s *blockingWorkspaceStore) Save(_ context.Context, model app.Model) error {
+	s.wg.Add(1)
+	defer s.wg.Done()
+
+	s.mu.Lock()
+	s.saveCount++
+	call := s.saveCount
+	s.mu.Unlock()
+
+	switch call {
+	case 1:
+		close(s.firstSaveStarted)
+		<-s.releaseFirstSave
+	}
+
+	s.mu.Lock()
+	s.lastSaved = cloneModelForPersistence(model)
+	s.mu.Unlock()
+	return nil
+}
+
+func (*blockingWorkspaceStore) Load(context.Context) (app.Model, error) {
+	return app.Model{}, context.Canceled
+}
+
+func (s *blockingWorkspaceStore) wait() {
+	s.wg.Wait()
+}
+
+func waitForSignalRuntimeTest(t *testing.T, ch <-chan struct{}, label string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(time.Second):
+		t.Fatalf("timed out waiting for %s", label)
 	}
 }

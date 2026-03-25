@@ -163,6 +163,9 @@ func TestAttachCmdPassesPrefixTimeoutToTUI(t *testing.T) {
 	if got.PrefixTimeout != 5*time.Second {
 		t.Fatalf("expected prefix timeout 5s, got %s", got.PrefixTimeout)
 	}
+	if got.WorkspaceStatePath != "" {
+		t.Fatalf("expected attach command to avoid workspace persistence path, got %q", got.WorkspaceStatePath)
+	}
 }
 
 func TestRootCmdDisablesDebugUIByDefault(t *testing.T) {

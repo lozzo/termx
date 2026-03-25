@@ -44,6 +44,9 @@ func Run(client Client, cfg Config, input io.Reader, output io.Writer) error {
 	ctx := context.Background()
 	model := newTemporaryRootModel(cfg.Workspace)
 	workspaceStore := newWorkspaceStoreForConfig(cfg)
+	if cfg.AttachID != "" {
+		workspaceStore = nil
+	}
 	restored := false
 
 	if workspaceStore != nil && cfg.AttachID == "" {

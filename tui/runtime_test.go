@@ -125,6 +125,24 @@ func TestRunFallsBackToTemporaryWorkspaceWhenRestoreFails(t *testing.T) {
 	}
 }
 
+func TestRunAttachModeSkipsWorkspacePersistenceWrapper(t *testing.T) {
+	runner := &captureProgramRunner{}
+	restore := swapProgramRunnerForTest(runner)
+	t.Cleanup(restore)
+
+	if err := Run(nil, Config{
+		AttachID:           "term-001",
+		WorkspaceStatePath: filepath.Join(t.TempDir(), "workspace-state.json"),
+		Workspace:          "main",
+	}, nil, io.Discard); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	if _, ok := runner.model.(interface{ UnderlyingModel() tea.Model }); ok {
+		t.Fatalf("expected attach mode to skip persistence wrapper, got %T", runner.model)
+	}
+}
+
 func swapProgramRunnerForTest(runner tuiruntime.ProgramRunner) func() {
 	previous := programRunner
 	programRunner = runner

@@ -135,9 +135,9 @@ func (s *DebouncedWorkspaceSaver) flushRevision(ctx context.Context, revision in
 	if clearTimer {
 		s.timer = nil
 	}
+	err := s.store.Save(ctx, model)
 	s.mu.Unlock()
-
-	return s.store.Save(ctx, model)
+	return err
 }
 
 func (s *fileWorkspaceStore) Save(_ context.Context, model app.Model) error {
@@ -222,16 +222,12 @@ func RebindRestoredModel(ctx context.Context, client Client, model app.Model) ap
 		}
 		attach, err := service.Attach(ctx, string(terminalID), mode)
 		if err != nil {
-			session.Attached = false
-			session.Channel = 0
-			model.Sessions[terminalID] = session
+			downgradeFailedRestoreTerminal(&model, terminalID)
 			continue
 		}
 		snapshot, err := service.Snapshot(ctx, string(terminalID), 0, 0)
 		if err != nil {
-			session.Attached = false
-			session.Channel = 0
-			model.Sessions[terminalID] = session
+			downgradeFailedRestoreTerminal(&model, terminalID)
 			continue
 		}
 
@@ -265,6 +261,35 @@ func RebindRestoredModel(ctx context.Context, client Client, model app.Model) ap
 	}
 
 	return model
+}
+
+// downgradeFailedRestoreTerminal 把单 terminal 恢复失败后的所有相关视图状态一起降级。
+// 这样 workbench/pool 渲染不会继续把失联对象误判成 live pane 或 live preview。
+func downgradeFailedRestoreTerminal(model *app.Model, terminalID types.TerminalID) {
+	if model == nil {
+		return
+	}
+	if model.Workspace != nil {
+		for _, tab := range model.Workspace.Tabs {
+			for paneID, pane := range tab.Panes {
+				if pane.TerminalID != terminalID {
+					continue
+				}
+				pane.TerminalID = ""
+				pane.SlotState = types.PaneSlotUnconnected
+				tab.Panes[paneID] = pane
+			}
+		}
+	}
+	delete(model.Sessions, terminalID)
+	delete(model.Terminals, terminalID)
+	if model.Pool.SelectedTerminalID == terminalID {
+		model.Pool.SelectedTerminalID = ""
+	}
+	if model.Pool.PreviewTerminalID == terminalID {
+		model.Pool.PreviewTerminalID = ""
+		model.PreviewStreamNext = nil
+	}
 }
 
 func persistedWorkbenchStateFromModel(model app.Model) persistedWorkbenchState {
