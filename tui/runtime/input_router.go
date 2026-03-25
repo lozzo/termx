@@ -55,7 +55,7 @@ func activeChannel(model app.Model) (uint16, bool) {
 		return 0, false
 	}
 	session, ok := model.Sessions[pane.TerminalID]
-	if !ok || !session.Attached {
+	if !ok || !session.Attached || session.ReadOnly {
 		return 0, false
 	}
 	return session.Channel, true

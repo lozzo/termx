@@ -43,6 +43,19 @@ func (l *UpdateLoop) Next() (UpdateMessage, bool) {
 	}
 }
 
+func (l *UpdateLoop) NextCmd() tea.Cmd {
+	if l == nil || l.events == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		event, ok := <-l.events
+		if !ok {
+			return nil
+		}
+		return UpdateMessage{Event: event}
+	}
+}
+
 // ObserveModelTransition 通过“可持久化投影是否变化”判断这次更新是否影响 workspace。
 // 这样不用在 reducer/runtime 两边维护一份脆弱的 mutation 白名单。
 func (l *UpdateLoop) ObserveModelTransition(previous, next tea.Model) tea.Cmd {

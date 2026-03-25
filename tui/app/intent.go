@@ -60,6 +60,9 @@ type PreviewStreamTickIntent struct {
 	TerminalID types.TerminalID
 	Revision   int
 }
+type SessionStreamTickIntent struct {
+	TerminalID types.TerminalID
+}
 type KillSelectedTerminalIntent struct{}
 type RemoveSelectedTerminalIntent struct{}
 type OpenReconnectIntent struct{}
@@ -138,6 +141,8 @@ func (m Model) Apply(intent Intent) Model {
 		return next.applyOpenSelectedTerminalInFloating()
 	case PreviewStreamTickIntent:
 		return next.applyPreviewStreamTick(in)
+	case SessionStreamTickIntent:
+		return next.applySessionStreamTick(in)
 	case KillSelectedTerminalIntent:
 		return next.applyKillSelectedTerminal()
 	case RemoveSelectedTerminalIntent:
@@ -173,6 +178,8 @@ func (m Model) Apply(intent Intent) Model {
 		return next.applyPreviewTerminalSucceeded(in)
 	case PreviewSnapshotRefreshedIntent:
 		return next.applyPreviewSnapshotRefreshed(in)
+	case SessionSnapshotRefreshedIntent:
+		return next.applySessionSnapshotRefreshed(in)
 	case UpdateTerminalMetadataSucceededIntent:
 		return next.applyUpdateTerminalMetadataSucceeded(in)
 	case RemoveTerminalSucceededIntent:
@@ -183,6 +190,12 @@ func (m Model) Apply(intent Intent) Model {
 		})
 	case AttachTerminalSucceededIntent:
 		return next.applyAttachTerminalSucceeded(in)
+	case RemoteTerminalStateChangedIntent:
+		return next.applyRemoteTerminalStateChanged(in)
+	case RemoteCollaboratorsRevokedIntent:
+		return next.applyRemoteCollaboratorsRevoked(in)
+	case RemoteTerminalReadErrorIntent:
+		return next.applyRemoteTerminalReadError(in)
 	case OpenHelpIntent:
 		next.Overlay = next.Overlay.Replace(OverlayState{
 			Kind: OverlayHelp,
@@ -388,6 +401,15 @@ func (m Model) applyPreviewStreamTick(in PreviewStreamTickIntent) Model {
 	return m
 }
 
+func (m Model) applySessionStreamTick(in SessionStreamTickIntent) Model {
+	session, ok := m.Sessions[in.TerminalID]
+	if !ok || session.Preview || !session.Attached {
+		return m
+	}
+	m.PendingEffects = append(m.PendingEffects, RefreshSessionSnapshotEffect{TerminalID: in.TerminalID})
+	return m
+}
+
 func (m Model) applyRemoveSelectedTerminal() Model {
 	terminalID := m.selectedTerminalID()
 	if terminalID == "" {
@@ -581,6 +603,11 @@ func (m Model) applyRemoveTerminal(in RemoveTerminalIntent) Model {
 	}
 	if m.Pool.PreviewTerminalID == in.TerminalID {
 		m.Pool.PreviewTerminalID = m.Pool.SelectedTerminalID
+		m.Pool.PreviewReadonly = true
+		if m.Pool.PreviewTerminalID != "" {
+			m.Pool.PreviewSubscriptionRevision++
+			m.PendingEffects = append(m.PendingEffects, RefreshPreviewEffect{TerminalID: m.Pool.PreviewTerminalID})
+		}
 	}
 	return m
 }
@@ -640,6 +667,11 @@ type PreviewSnapshotRefreshedIntent struct {
 	Revision   int
 }
 
+type SessionSnapshotRefreshedIntent struct {
+	TerminalID types.TerminalID
+	Snapshot   *protocol.Snapshot
+}
+
 type UpdateTerminalMetadataSucceededIntent struct {
 	TerminalID types.TerminalID
 	Name       string
@@ -659,6 +691,20 @@ type AttachTerminalSucceededIntent struct {
 	Snapshot   *protocol.Snapshot
 	ReadOnly   bool
 	ForPreview bool
+}
+
+type RemoteTerminalStateChangedIntent struct {
+	TerminalID types.TerminalID
+	State      stateterminal.State
+}
+
+type RemoteCollaboratorsRevokedIntent struct {
+	TerminalID types.TerminalID
+}
+
+type RemoteTerminalReadErrorIntent struct {
+	TerminalID types.TerminalID
+	Message    string
 }
 
 func (m Model) applyCreateTerminalSucceeded(in CreateTerminalSucceededIntent) Model {
@@ -737,6 +783,16 @@ func (m Model) applyPreviewSnapshotRefreshed(in PreviewSnapshotRefreshedIntent) 
 	return m
 }
 
+func (m Model) applySessionSnapshotRefreshed(in SessionSnapshotRefreshedIntent) Model {
+	session, ok := m.Sessions[in.TerminalID]
+	if !ok {
+		return m
+	}
+	session.Snapshot = in.Snapshot
+	m.Sessions[in.TerminalID] = session
+	return m
+}
+
 func (m Model) applyAttachTerminalSucceeded(in AttachTerminalSucceededIntent) Model {
 	if in.ForPreview {
 		return m
@@ -759,6 +815,88 @@ func (m Model) applyAttachTerminalSucceeded(in AttachTerminalSucceededIntent) Mo
 	m.bindPane(in.PaneID, in.TerminalID)
 	tab.ActivePaneID = in.PaneID
 	return m
+}
+
+func (m Model) applyRemoteTerminalStateChanged(in RemoteTerminalStateChangedIntent) Model {
+	meta, ok := m.Terminals[in.TerminalID]
+	if !ok {
+		return m
+	}
+	meta.State = in.State
+	m.Terminals[in.TerminalID] = meta
+	m.updateAllPanesForTerminal(in.TerminalID, func(next workspace.PaneState) workspace.PaneState {
+		if in.State == stateterminal.StateExited {
+			next.SlotState = types.PaneSlotExited
+			return next
+		}
+		next.SlotState = types.PaneSlotLive
+		return next
+	})
+	return m
+}
+
+func (m Model) applyRemoteCollaboratorsRevoked(in RemoteCollaboratorsRevokedIntent) Model {
+	session, ok := m.Sessions[in.TerminalID]
+	if !ok {
+		return m
+	}
+	session.ReadOnly = true
+	m.Sessions[in.TerminalID] = session
+	m.Notice = &NoticeState{Message: fmt.Sprintf("terminal %q became read-only", in.TerminalID)}
+	return m
+}
+
+func (m Model) applyRemoteTerminalReadError(in RemoteTerminalReadErrorIntent) Model {
+	session, ok := m.Sessions[in.TerminalID]
+	if !ok {
+		return m
+	}
+	session.Attached = false
+	session.Channel = 0
+	m.Sessions[in.TerminalID] = session
+	if strings.TrimSpace(in.Message) != "" {
+		m.Notice = &NoticeState{Message: in.Message}
+	}
+	return m
+}
+
+func daemonEventIntent(model Model, event protocol.Event) (Intent, bool) {
+	switch event.Type {
+	case protocol.EventTerminalRemoved:
+		name := event.TerminalID
+		if meta, ok := model.Terminals[types.TerminalID(event.TerminalID)]; ok && strings.TrimSpace(meta.Name) != "" {
+			name = meta.Name
+		}
+		return RemoveTerminalIntent{
+			TerminalID: types.TerminalID(event.TerminalID),
+			Name:       name,
+		}, true
+	case protocol.EventTerminalStateChanged:
+		if event.StateChanged == nil {
+			return nil, false
+		}
+		state := stateterminal.State(event.StateChanged.NewState)
+		if state == "" {
+			state = stateterminal.StateRunning
+		}
+		return RemoteTerminalStateChangedIntent{
+			TerminalID: types.TerminalID(event.TerminalID),
+			State:      state,
+		}, true
+	case protocol.EventCollaboratorsRevoked:
+		return RemoteCollaboratorsRevokedIntent{TerminalID: types.TerminalID(event.TerminalID)}, true
+	case protocol.EventTerminalReadError:
+		message := ""
+		if event.ReadError != nil {
+			message = event.ReadError.Error
+		}
+		return RemoteTerminalReadErrorIntent{
+			TerminalID: types.TerminalID(event.TerminalID),
+			Message:    message,
+		}, true
+	default:
+		return nil, false
+	}
 }
 
 func (m Model) applyUpdateTerminalMetadataSucceeded(in UpdateTerminalMetadataSucceededIntent) Model {

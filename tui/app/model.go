@@ -53,9 +53,22 @@ type PreviewStreamMessage struct {
 	Frame      protocol.StreamFrame
 }
 
+type LiveStreamMessage struct {
+	TerminalID types.TerminalID
+	Frame      protocol.StreamFrame
+}
+
 type PreviewStreamClosedMessage struct {
 	TerminalID types.TerminalID
 	Revision   int
+}
+
+type LiveStreamClosedMessage struct {
+	TerminalID types.TerminalID
+}
+
+type DaemonEventMessage struct {
+	Event protocol.Event
 }
 
 type IntentMessage struct {
@@ -120,12 +133,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return next, cmd
 		}
 		return m, nil
+	case LiveStreamMessage:
+		if m.IntentExecutor != nil {
+			next, cmd, _ := m.IntentExecutor.ExecuteIntent(context.Background(), m, SessionStreamTickIntent{
+				TerminalID: typed.TerminalID,
+			})
+			return next, cmd
+		}
+		return m, nil
 	case PreviewStreamClosedMessage:
 		next := m.clone()
 		if next.Pool.PreviewTerminalID == typed.TerminalID && next.Pool.PreviewSubscriptionRevision == typed.Revision {
 			next.PreviewStreamNext = nil
 		}
 		return next, nil
+	case LiveStreamClosedMessage:
+		return m, nil
+	case DaemonEventMessage:
+		if intent, ok := daemonEventIntent(m, typed.Event); ok {
+			if m.IntentExecutor != nil {
+				next, cmd, _ := m.IntentExecutor.ExecuteIntent(context.Background(), m, intent)
+				return next, cmd
+			}
+			return m.Apply(intent), nil
+		}
+		return m, nil
 	default:
 		return m, nil
 	}
@@ -326,3 +358,9 @@ type AttachTerminalEffect struct {
 }
 
 func (AttachTerminalEffect) effectName() string { return "attach_terminal" }
+
+type RefreshSessionSnapshotEffect struct {
+	TerminalID types.TerminalID
+}
+
+func (RefreshSessionSnapshotEffect) effectName() string { return "refresh_session_snapshot" }

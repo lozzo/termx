@@ -60,7 +60,21 @@ func (m *persistentWorkspaceModel) Init() tea.Cmd {
 	if m.model == nil {
 		return nil
 	}
-	return m.model.Init()
+	var cmds []tea.Cmd
+	if cmd := m.model.Init(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	if appModel, ok := extractAppModel(m.model); ok && appModel.PreviewStreamNext != nil {
+		if cmd := appModel.PreviewStreamNext(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	if m.loop != nil {
+		if cmd := m.loop.NextCmd(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m *persistentWorkspaceModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -68,13 +82,20 @@ func (m *persistentWorkspaceModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	nextEventCmd := tea.Cmd(nil)
+	if updateMsg, ok := msg.(UpdateMessage); ok {
+		msg = app.DaemonEventMessage{Event: updateMsg.Event}
+		if m.loop != nil {
+			nextEventCmd = m.loop.NextCmd()
+		}
+	}
 	previous := m.model
 	next, cmd := m.model.Update(msg)
 	if next != nil {
 		m.model = next
 	}
 	saveCmd := m.loop.ObserveModelTransition(previous, m.model)
-	return m, tea.Batch(cmd, saveCmd)
+	return m, tea.Batch(cmd, saveCmd, nextEventCmd)
 }
 
 func (m *persistentWorkspaceModel) View() string {

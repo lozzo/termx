@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -244,6 +245,62 @@ func TestBootstrapUsesCollaboratorAttachModeForWritableShellAndEnablesInputResiz
 	if client.lastResizeChannel != 7 || client.lastResizeCols != 100 || client.lastResizeRows != 30 {
 		t.Fatalf("expected writable bootstrap session to accept resize on channel 7, got channel=%d size=%dx%d", client.lastResizeChannel, client.lastResizeCols, client.lastResizeRows)
 	}
+}
+
+func TestBootstrapLivePaneConsumesStreamFramesAndRefreshesSnapshot(t *testing.T) {
+	client := &stubClient{
+		snapshot: &protocol.Snapshot{
+			TerminalID: "term-1",
+			Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "l", Width: 1}, {Content: "d", Width: 1}}}},
+		},
+		snapshotByID: map[string][]*protocol.Snapshot{
+			"term-1": {{
+				TerminalID: "term-1",
+				Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "n", Width: 1}, {Content: "e", Width: 1}, {Content: "w", Width: 1}}}},
+			}},
+		},
+		streams: map[uint16]chan protocol.StreamFrame{
+			7: make(chan protocol.StreamFrame, 2),
+		},
+	}
+	model, err := Bootstrap(context.Background(), client, BootstrapConfig{
+		DefaultShell: "/bin/sh",
+		Workspace:    "main",
+	})
+	if err != nil {
+		t.Fatalf("Bootstrap returned error: %v", err)
+	}
+	if model.PreviewStreamNext == nil {
+		t.Fatal("expected bootstrap live pane to install stream cmd")
+	}
+
+	client.streams[7] <- protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("tick")}
+	cmd := model.PreviewStreamNext()
+	if cmd == nil {
+		t.Fatal("expected bootstrap stream tea cmd")
+	}
+	msg := cmd()
+	teaModel, nextCmd := model.Update(msg)
+	updated := teaModel.(app.Model)
+	if got := flattenRuntimeSnapshotText(updated.Sessions[types.TerminalID("term-1")].Snapshot); got != "new" {
+		t.Fatalf("expected live pane snapshot refresh, got %q", got)
+	}
+	if nextCmd == nil {
+		t.Fatal("expected continuous live stream cmd")
+	}
+}
+
+func flattenRuntimeSnapshotText(snapshot *protocol.Snapshot) string {
+	if snapshot == nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, row := range snapshot.Screen.Cells {
+		for _, cell := range row {
+			b.WriteString(cell.Content)
+		}
+	}
+	return b.String()
 }
 
 func TestBootstrapAttachIDHydratesMetadataFromDaemonTruth(t *testing.T) {

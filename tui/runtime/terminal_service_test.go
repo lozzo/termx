@@ -431,6 +431,34 @@ func TestTerminalPoolRemoveActionReachesRuntimeService(t *testing.T) {
 	}
 }
 
+func TestTerminalPoolRemoveActionRebindsReplacementPreview(t *testing.T) {
+	client := &stubClient{
+		attachResult: &protocol.AttachResult{Channel: 29, Mode: "observer"},
+		snapshot:     &protocol.Snapshot{TerminalID: "term-2", Size: protocol.Size{Cols: 80, Rows: 24}},
+	}
+	service := NewTerminalService(client)
+	model := terminalPoolModelForRuntimeTest()
+	model.Pool.SelectedTerminalID = types.TerminalID("term-1")
+	model.Pool.PreviewTerminalID = types.TerminalID("term-1")
+
+	next, err := ApplyIntent(context.Background(), model, service, app.RemoveSelectedTerminalIntent{})
+	if err != nil {
+		t.Fatalf("ApplyIntent returned error: %v", err)
+	}
+	if client.lastRemovedID != "term-1" {
+		t.Fatalf("expected remove to reach runtime service, got %q", client.lastRemovedID)
+	}
+	if client.lastAttachID != "term-2" || client.lastAttachMode != "observer" {
+		t.Fatalf("expected replacement preview rebind, got id=%q mode=%q", client.lastAttachID, client.lastAttachMode)
+	}
+	if next.Pool.SelectedTerminalID != types.TerminalID("term-2") || next.Pool.PreviewTerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected preview replacement to select term-2, got selected=%q preview=%q", next.Pool.SelectedTerminalID, next.Pool.PreviewTerminalID)
+	}
+	if session := next.Sessions[types.TerminalID("term-2")]; !session.Preview || !session.ReadOnly {
+		t.Fatalf("expected replacement preview session, got %#v", session)
+	}
+}
+
 func TestTerminalPoolMetadataSaveReachesRuntimeService(t *testing.T) {
 	service := NewTerminalService(&stubClient{})
 	model := terminalPoolModelForRuntimeTest()

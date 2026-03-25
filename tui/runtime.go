@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tui/app"
 	tuiruntime "github.com/lozzow/termx/tui/runtime"
 	"github.com/lozzow/termx/tui/state/workspace"
@@ -47,6 +48,14 @@ func Run(client Client, cfg Config, input io.Reader, output io.Writer) error {
 	if cfg.AttachID != "" {
 		workspaceStore = nil
 	}
+	var events <-chan protocol.Event
+	if client != nil {
+		subscribedEvents, err := client.Events(ctx, protocol.EventsParams{})
+		if err != nil {
+			return err
+		}
+		events = subscribedEvents
+	}
 	restored := false
 
 	if workspaceStore != nil && cfg.AttachID == "" {
@@ -73,9 +82,14 @@ func Run(client Client, cfg Config, input io.Reader, output io.Writer) error {
 		model = tuiruntime.RebindRestoredModel(ctx, client, model)
 	}
 
-	runnerModel := tea.Model(model)
+	updateLoop := tuiruntime.NewUpdateLoop(events)
 	if workspaceStore != nil {
-		runnerModel = tuiruntime.WrapModelWithWorkspacePersistence(model, tuiruntime.NewUpdateLoop(nil, tuiruntime.NewDebouncedWorkspaceSaver(workspaceStore, tuiruntime.DefaultWorkspaceSaveDebounce)))
+		updateLoop = tuiruntime.NewUpdateLoop(events, tuiruntime.NewDebouncedWorkspaceSaver(workspaceStore, tuiruntime.DefaultWorkspaceSaveDebounce))
+	}
+
+	runnerModel := tea.Model(model)
+	if client != nil || workspaceStore != nil || model.PreviewStreamNext != nil {
+		runnerModel = tuiruntime.WrapModelWithWorkspacePersistence(model, updateLoop)
 	}
 	return programRunner.Run(runnerModel, input, output)
 }

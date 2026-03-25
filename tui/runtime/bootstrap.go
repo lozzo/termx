@@ -42,7 +42,8 @@ func Bootstrap(ctx context.Context, client Client, cfg BootstrapConfig) (app.Mod
 	ws := workspace.NewTemporary(wsName)
 
 	service := NewTerminalService(client)
-	model.IntentExecutor = NewModelIntentExecutor(service)
+	store := NewSessionStore()
+	model.IntentExecutor = modelIntentExecutor{service: service, store: store}
 	terminalID := cfg.AttachID
 	var attach *protocol.AttachResult
 	var snapshot *protocol.Snapshot
@@ -89,6 +90,11 @@ func Bootstrap(ctx context.Context, client Client, cfg BootstrapConfig) (app.Mod
 		Channel:    attach.Channel,
 		Attached:   pane.SlotState == types.PaneSlotLive,
 		Snapshot:   snapshot,
+	}
+	if pane.SlotState == types.PaneSlotLive {
+		stream, cancel := service.Stream(attach.Channel)
+		store.BindLive(pane.TerminalID, attach.Channel, snapshot, stream, cancel)
+		model.PreviewStreamNext = store.NextStreamMessageCmd
 	}
 	return model, nil
 }

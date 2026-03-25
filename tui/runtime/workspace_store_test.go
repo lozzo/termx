@@ -86,6 +86,9 @@ func TestRebindRestoredModelKeepsTerminalPoolPreviewAsLiveStream(t *testing.T) {
 	model.Pool.SelectedTerminalID = types.TerminalID("term-2")
 	model.Pool.PreviewReadonly = true
 	model.Pool.PreviewSubscriptionRevision = 7
+	meta := model.Terminals[types.TerminalID("term-1")]
+	meta.State = stateterminal.StateExited
+	model.Terminals[types.TerminalID("term-1")] = meta
 
 	restored := RebindRestoredModel(context.Background(), client, model)
 	if restored.PreviewStreamNext == nil {
@@ -93,9 +96,6 @@ func TestRebindRestoredModelKeepsTerminalPoolPreviewAsLiveStream(t *testing.T) {
 	}
 	if !client.hasAttachCall("term-2", "observer") {
 		t.Fatalf("expected preview restore to attach term-2 as observer, got ids=%v modes=%v", client.attachIDs, client.attachModes)
-	}
-	if !client.hasAttachCall("term-1", "collaborator") {
-		t.Fatalf("expected writable restore to attach term-1 as collaborator, got ids=%v modes=%v", client.attachIDs, client.attachModes)
 	}
 
 	stream, ok := client.streams[21]

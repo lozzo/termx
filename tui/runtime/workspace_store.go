@@ -249,15 +249,19 @@ func RebindRestoredModel(ctx context.Context, client Client, model app.Model) ap
 			session.Preview = true
 			session.Snapshot = snapshot
 			model.Sessions[terminalID] = session
-			model.PreviewStreamNext = store.NextPreviewMessageCmd
 			continue
 		}
 
-		store.Bind(terminalID, attach.Channel, snapshot)
+		stream, cancel := service.Stream(attach.Channel)
+		store.BindLive(terminalID, attach.Channel, snapshot, stream, cancel)
 		session.Channel = attach.Channel
 		session.Attached = true
 		session.Snapshot = snapshot
 		model.Sessions[terminalID] = session
+	}
+
+	if store.HasActiveStreams() {
+		model.PreviewStreamNext = store.NextStreamMessageCmd
 	}
 
 	return model

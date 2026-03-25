@@ -154,7 +154,9 @@ func applyIntentWithStore(ctx context.Context, model app.Model, service intentRu
 		next.PreviewStreamNext = nil
 	}
 	var cmd tea.Cmd
-	for _, effect := range next.PendingEffects {
+	for len(next.PendingEffects) > 0 {
+		effect := next.PendingEffects[0]
+		next.PendingEffects = next.PendingEffects[1:]
 		var err error
 		next, cmd, err = applyEffect(ctx, next, service, store, effect)
 		if err != nil {
@@ -164,8 +166,8 @@ func applyIntentWithStore(ctx context.Context, model app.Model, service intentRu
 	}
 	next.PendingEffects = nil
 	if store != nil {
-		if store.ActivePreview().Channel != 0 {
-			next.PreviewStreamNext = store.NextPreviewMessageCmd
+		if store.HasActiveStreams() {
+			next.PreviewStreamNext = store.NextStreamMessageCmd
 		} else {
 			next.PreviewStreamNext = nil
 		}
@@ -203,6 +205,10 @@ func applyEffect(ctx context.Context, model app.Model, service intentRuntimeServ
 			_ = service.Kill(ctx, result.TerminalID)
 			return model, nil, err
 		}
+		if store != nil {
+			stream, cancel := service.Stream(attach.Channel)
+			store.BindLive(types.TerminalID(result.TerminalID), attach.Channel, snapshot, stream, cancel)
+		}
 		return model.Apply(app.CreateTerminalSucceededIntent{
 			PaneID:     typed.PaneID,
 			TerminalID: types.TerminalID(result.TerminalID),
@@ -210,7 +216,7 @@ func applyEffect(ctx context.Context, model app.Model, service intentRuntimeServ
 			Name:       typed.Name,
 			Channel:    attach.Channel,
 			Snapshot:   snapshot,
-		}), nil, nil
+		}), nextStreamCmd(store), nil
 	case app.KillTerminalEffect:
 		if _, err := ExecuteWorkbenchAction(ctx, service, PendingWorkbenchAction{
 			Kind:       PendingWorkbenchActionKillTerminal,
@@ -239,10 +245,7 @@ func applyEffect(ctx context.Context, model app.Model, service intentRuntimeServ
 			Snapshot:             snapshot,
 			SubscriptionRevision: binding.Revision,
 		})
-		if store != nil {
-			return next, store.NextPreviewMessageCmd(), nil
-		}
-		return next, nil, nil
+		return next, nextStreamCmd(store), nil
 	case app.RefreshPreviewSnapshotEffect:
 		snapshot, err := service.Snapshot(ctx, string(typed.TerminalID), 0, 0)
 		if err != nil {
@@ -253,10 +256,17 @@ func applyEffect(ctx context.Context, model app.Model, service intentRuntimeServ
 			Snapshot:   snapshot,
 			Revision:   typed.Revision,
 		})
-		if store != nil {
-			return next, store.NextPreviewMessageCmd(), nil
+		return next, nextStreamCmd(store), nil
+	case app.RefreshSessionSnapshotEffect:
+		snapshot, err := service.Snapshot(ctx, string(typed.TerminalID), 0, 0)
+		if err != nil {
+			return model, nil, err
 		}
-		return next, nil, nil
+		next := model.Apply(app.SessionSnapshotRefreshedIntent{
+			TerminalID: typed.TerminalID,
+			Snapshot:   snapshot,
+		})
+		return next, nextStreamCmd(store), nil
 	case app.AttachTerminalEffect:
 		mode := "collaborator"
 		if typed.ReadOnly {
@@ -270,6 +280,10 @@ func applyEffect(ctx context.Context, model app.Model, service intentRuntimeServ
 		if err != nil {
 			return model, nil, err
 		}
+		if store != nil && !typed.ReadOnly && !typed.ForPreview {
+			stream, cancel := service.Stream(attach.Channel)
+			store.BindLive(typed.TerminalID, attach.Channel, snapshot, stream, cancel)
+		}
 		return model.Apply(app.AttachTerminalSucceededIntent{
 			PaneID:     typed.PaneID,
 			TerminalID: typed.TerminalID,
@@ -277,7 +291,7 @@ func applyEffect(ctx context.Context, model app.Model, service intentRuntimeServ
 			Snapshot:   snapshot,
 			ReadOnly:   typed.ReadOnly,
 			ForPreview: typed.ForPreview,
-		}), nil, nil
+		}), nextStreamCmd(store), nil
 	case app.UpdateTerminalMetadataEffect:
 		if _, err := ExecuteWorkbenchAction(ctx, service, PendingWorkbenchAction{
 			Kind:       PendingWorkbenchActionSetMetadata,
@@ -307,4 +321,11 @@ func applyEffect(ctx context.Context, model app.Model, service intentRuntimeServ
 	default:
 		return model, nil, nil
 	}
+}
+
+func nextStreamCmd(store *SessionStore) tea.Cmd {
+	if store == nil || !store.HasActiveStreams() {
+		return nil
+	}
+	return store.NextStreamMessageCmd()
 }
