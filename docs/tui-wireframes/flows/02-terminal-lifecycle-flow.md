@@ -11,7 +11,26 @@
 ## 流程
 
 ```text
-TODO
+live terminal
+  -> pane renders live pane
+
+kill terminal
+  -> terminal object kept
+  -> terminal state = exited
+  -> all bound panes = exited pane
+  -> user may press R
+  -> restart same terminal object
+  -> panes return to live pane
+
+remove terminal
+  -> terminal object removed from pool
+  -> all bound panes = unconnected pane
+
+close pane
+  -> only pane disappears
+  -> terminal keeps running
+  -> if it was last pane in tab
+     -> tab keeps one unconnected pane slot
 ```
 
 ## 关键状态变化
@@ -19,3 +38,4 @@ TODO
 - live -> exited pane
 - live -> unconnected pane
 - restart exited terminal
+- close pane != kill terminal

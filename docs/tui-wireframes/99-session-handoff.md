@@ -245,19 +245,34 @@
 - `flows/04-floating-flow.md`
 - `flows/05-overlay-flow.md`
 
-当前这些文件都只有骨架，线框图正文还没填。
+当前状态不是骨架了，而是已经补入首版正文，覆盖了：
+
+- 默认 workbench 主画面
+- unconnected / exited pane
+- connect dialog
+- Terminal Pool 三栏页面与动作页
+- shared terminal 的 owner / follower
+- shared remove 确认
+- 单浮窗与多浮窗叠放
+- help overlay
+- viewport 裁切与偏移
+- 主题同步
+- remote remove notice
+- tab 最后一个 pane 关闭
+- metadata / tags 编辑
+- 5 个主 flow
 
 ## 7. 下一步优先顺序
 
 如果继续当前方向，建议按这个顺序推进：
 
-1. 先填线框图主路径
-   - `01-workbench-default.md`
-   - `04-connect-dialog.md`
-   - `05-terminal-pool-overview.md`
-2. 再填状态场景
-   - `02-pane-unconnected.md`
-   - `03-pane-exited.md`
+1. 继续把线框图做深
+   - 增加同一场景的更多前后对照图
+   - 把极端边界案例单独拆文件
+2. 拿线框图反推更细的实现任务
+   - 先从 workbench / connect / terminal pool 三块拆分
+3. 保持文档与产品口径同步
+   - 一旦术语或交互变更，先改线框图再改实现计划
    - `08-remove-terminal-shared.md`
 3. 再补共享 terminal / floating / viewport / help
 4. 线框图稳定后，再回头微调 spec / plan

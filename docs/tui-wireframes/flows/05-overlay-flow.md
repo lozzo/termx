@@ -11,7 +11,26 @@
 ## 流程
 
 ```text
-TODO
+Workbench focus on pane
+  -> open overlay
+
+overlay types
+  -> connect dialog
+  -> prompt
+  -> help
+
+focus priority
+  prompt
+    > help / picker / manager
+    > floating
+    > tiled
+
+overlay open
+  -> lower layers stop receiving keyboard input
+
+Esc
+  -> closes current temporary top layer only
+  -> returns focus to previous valid pane or page focus
 ```
 
 ## 关键状态变化

@@ -11,7 +11,25 @@
 ## 流程
 
 ```text
-TODO
+first pane binds terminal
+  -> terminal has no owner
+  -> first pane becomes owner
+
+second pane binds same terminal
+  -> owner already exists
+  -> second pane becomes follower
+
+follower chooses Become Owner
+  -> owner role moves immediately
+  -> new pane = owner
+  -> old owner = follower
+
+owner closes or unbinds
+  -> no automatic owner migration
+  -> terminal may temporarily have no owner
+
+shared terminal removed
+  -> every bound pane becomes unconnected pane
 ```
 
 ## 关键状态变化
@@ -20,3 +38,4 @@ TODO
 - later bind -> follower
 - Become Owner -> owner handoff
 - remove shared terminal -> unconnected panes
+- owner close/unbind -> no owner

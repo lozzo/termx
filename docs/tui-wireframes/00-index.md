@@ -82,11 +82,11 @@
 - [flows/04-floating-flow.md](/home/lozzow/workdir/termx/docs/tui-wireframes/flows/04-floating-flow.md)
 - [flows/05-overlay-flow.md](/home/lozzow/workdir/termx/docs/tui-wireframes/flows/05-overlay-flow.md)
 
-## 当前待补重点
+## 下一轮细化重点
 
-- 默认 workbench 主画面
-- unconnected / exited 两种 pane 状态的正文差异
-- Terminal Pool 三栏页面的信息密度
-- shared terminal 的 owner/follower 表达
-- floating pane 的锚点、自动置顶、呼回并居中
-- viewport 裁切、偏移与 `+` 标记
+- workbench 的多 pane 版本与 tab 切换版本
+- connect dialog 的更多来源场景，例如 `new tab / new float`
+- Terminal Pool 的更多动作前后对照图，例如 `kill` 后与 `remove` 后
+- exited pane / unconnected pane 的远端事件版本
+- floating pane 拖出主视口后的极限锚点场景
+- viewport 裁切下宽字符、emoji、powerline 边界场景

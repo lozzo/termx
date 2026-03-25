@@ -11,7 +11,25 @@
 ## 线框图
 
 ```text
-TODO
+Before: tab 内只剩最后一个 live pane
+
+termx  [main]  [1:logs]                                          tab:logs  panes:1
+┌─ deploy-log───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│tail -f deploy.log                                                                                             │
+│[12:01:03] build ok                                                                                            │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+After: user closes this pane
+
+termx  [main]  [1:logs]                                          tab:logs  panes:1
+┌─ unconnected──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ No terminal connected                                                                                         │
+│ [Enter] Connect existing terminal                                                                             │
+│ [n] Create new terminal                                                                                       │
+│ [p] Open Terminal Pool                                                                                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+Only explicit close-tab removes the tab itself.
 ```
 
 ## 关键规则
@@ -19,6 +37,8 @@ TODO
 - 不自动关闭 tab
 - 立即补成一个 `unconnected pane`
 - 只有显式关闭 tab，这个 tab 才真正退出
+- 这样可以保持 tab 结构稳定，也更接近 tmux/zellij 的使用感
+- tab 标题保持原位，直到用户显式关闭或重命名
 
 ## 流转
 

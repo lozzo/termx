@@ -36,7 +36,8 @@
 当前状态：
 
 - 目录骨架已建立
-- 线框图内容待逐个场景补全
+- 主场景、状态场景、共享 terminal、floating、overlay、flow 已补入首版 ASCII 线框图
+- 当前进入“细化与收口”阶段，重点是继续补更多前后状态对照图与边界案例
 - 如需在上下文压缩后快速恢复，请优先阅读：
   - [00-index.md](/home/lozzow/workdir/termx/docs/tui-wireframes/00-index.md)
   - [99-session-handoff.md](/home/lozzow/workdir/termx/docs/tui-wireframes/99-session-handoff.md)

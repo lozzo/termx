@@ -12,7 +12,22 @@
 ## 线框图
 
 ```text
-TODO
+termx  [main]  [1:dev]                                          pane:float-1  term:t-031  float:1
+ main / dev / mixed / ws-1-tab-1                                                   floating active
+┌─ shell-dev [dim]─────────────────────────────────────────────────────────────────────────────────────────────┐
+│$ npm run dev                                                                                                 │
+│ready on :3000                                                                                                │
+│                                                                                                              │
+│         ┌─ htop──────────────────────────────────────────────────────────────────┐                           │
+│         │  1  node        12.0  321m                                             │                           │
+│         │  2  bash         0.1   22m                                             │                           │
+│         │  3  go test      8.2  188m                                             │                           │
+│         │                                                                         │                           │
+│         │ owner  •  float  •  drag from title                                    │                           │
+│         └─────────────────────────────────────────────────────────────────────────┘                           │
+│                                                                                                              │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ <tab> NEXT FLOAT  <h/j/k/l> MOVE  <H/J/K/L> RESIZE  <c> CENTER  <x> CLOSE          htop  ◫ float
 ```
 
 ## 关键规则
@@ -20,9 +35,12 @@ TODO
 - floating pane 是完整 pane
 - 允许拖出主视口
 - 但必须保留左上角锚点在大窗口内
+- floating pane 内部第一阶段不再继续 split
+- active floating pane 视觉上必须明显高于 tiled 层
 
 ## 流转
 
 - move
 - resize
 - recall and center
+- close float -> 仅关闭该 pane，不默认 kill terminal
