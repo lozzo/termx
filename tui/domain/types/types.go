@@ -174,6 +174,9 @@ type OverlayState struct {
 	Kind        OverlayKind
 	Data        OverlayData
 	ReturnFocus FocusState
+	// Resume 只给“临时盖住别的 overlay”的场景使用。
+	// 当前主要是 help 临时压住 manager / picker / prompt，关闭 help 后再恢复原 overlay。
+	Resume *OverlayState
 }
 
 type ModeKind string

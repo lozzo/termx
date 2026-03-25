@@ -526,10 +526,16 @@ func applyOpenTerminalManager(state *types.AppState) {
 
 func applyOpenHelp(state *types.AppState) {
 	returnFocus := state.UI.Focus
+	var resume *types.OverlayState
+	if isOverlayActive(state.UI.Overlay.Kind) && state.UI.Overlay.Kind != types.OverlayHelp {
+		returnFocus = state.UI.Overlay.ReturnFocus
+		resume = cloneOverlayStatePtr(&state.UI.Overlay)
+	}
 	returnFocus.OverlayTarget = ""
 	state.UI.Overlay = types.OverlayState{
 		Kind:        types.OverlayHelp,
 		ReturnFocus: returnFocus,
+		Resume:      resume,
 	}
 	state.UI.Focus = types.FocusState{
 		Layer:         types.FocusLayerOverlay,
@@ -559,7 +565,14 @@ func applyOpenPrompt(state *types.AppState, in intent.OpenPromptIntent) {
 }
 
 func applyCloseOverlay(state *types.AppState) {
-	if state.UI.Overlay.Kind == types.OverlayNone {
+	if !isOverlayActive(state.UI.Overlay.Kind) {
+		return
+	}
+	if state.UI.Overlay.Kind == types.OverlayHelp && state.UI.Overlay.Resume != nil {
+		resume := cloneOverlayState(*state.UI.Overlay.Resume)
+		state.UI.Overlay = resume
+		state.UI.Focus = focusForOverlayState(resume)
+		state.UI.Mode = modeForOverlayKind(resume.Kind)
 		return
 	}
 	state.UI.Focus = state.UI.Overlay.ReturnFocus
@@ -1870,7 +1883,62 @@ func cloneAppState(state types.AppState) types.AppState {
 	if state.UI.Overlay.Data != nil {
 		next.UI.Overlay.Data = state.UI.Overlay.Data.CloneOverlayData()
 	}
+	if state.UI.Overlay.Resume != nil {
+		next.UI.Overlay.Resume = cloneOverlayStatePtr(state.UI.Overlay.Resume)
+	}
 	return next
+}
+
+func cloneOverlayStatePtr(state *types.OverlayState) *types.OverlayState {
+	if state == nil {
+		return nil
+	}
+	clone := cloneOverlayState(*state)
+	return &clone
+}
+
+// cloneOverlayState 统一深拷贝 overlay，自身 data 和 resume 链都要复制，
+// 否则 reducer 的状态克隆会把 help 恢复链共享到下一次变更里。
+func cloneOverlayState(state types.OverlayState) types.OverlayState {
+	clone := types.OverlayState{
+		Kind:        state.Kind,
+		ReturnFocus: state.ReturnFocus,
+	}
+	if state.Data != nil {
+		clone.Data = state.Data.CloneOverlayData()
+	}
+	if state.Resume != nil {
+		clone.Resume = cloneOverlayStatePtr(state.Resume)
+	}
+	return clone
+}
+
+func focusForOverlayState(overlay types.OverlayState) types.FocusState {
+	layer := types.FocusLayerOverlay
+	if overlay.Kind == types.OverlayPrompt {
+		layer = types.FocusLayerPrompt
+	}
+	return types.FocusState{
+		Layer:         layer,
+		WorkspaceID:   overlay.ReturnFocus.WorkspaceID,
+		TabID:         overlay.ReturnFocus.TabID,
+		PaneID:        overlay.ReturnFocus.PaneID,
+		OverlayTarget: overlay.Kind,
+	}
+}
+
+func modeForOverlayKind(kind types.OverlayKind) types.ModeState {
+	if kind == types.OverlayPrompt {
+		return types.ModeState{Active: types.ModeNone}
+	}
+	if kind == types.OverlayNone {
+		return types.ModeState{Active: types.ModeNone}
+	}
+	return types.ModeState{Active: types.ModePicker}
+}
+
+func isOverlayActive(kind types.OverlayKind) bool {
+	return kind != "" && kind != types.OverlayNone
 }
 
 func firstRemainingPaneID(panes map[types.PaneID]types.PaneState) types.PaneID {

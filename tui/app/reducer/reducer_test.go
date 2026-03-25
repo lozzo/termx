@@ -390,6 +390,86 @@ func TestReducerOpenHelpMovesFocusToOverlayAndStoresReturnFocus(t *testing.T) {
 	}
 }
 
+func TestReducerOpenHelpSuspendsTerminalManagerOverlay(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	manager := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	help := reducer.Reduce(manager.State, intent.OpenHelpIntent{})
+
+	if help.State.UI.Overlay.Kind != types.OverlayHelp {
+		t.Fatalf("expected help overlay, got %q", help.State.UI.Overlay.Kind)
+	}
+	if help.State.UI.Overlay.Resume == nil || help.State.UI.Overlay.Resume.Kind != types.OverlayTerminalManager {
+		t.Fatalf("expected help to suspend terminal manager, got %+v", help.State.UI.Overlay.Resume)
+	}
+	if help.State.UI.Overlay.ReturnFocus != state.UI.Focus {
+		t.Fatalf("expected help to keep workbench return focus, got %+v", help.State.UI.Overlay.ReturnFocus)
+	}
+}
+
+func TestReducerCloseOverlayRestoresSuspendedTerminalManager(t *testing.T) {
+	reducer := New()
+	state := newManagerAppState()
+
+	manager := reducer.Reduce(state, intent.OpenTerminalManagerIntent{})
+	moved := reducer.Reduce(manager.State, intent.TerminalManagerMoveIntent{Delta: 1})
+	help := reducer.Reduce(moved.State, intent.OpenHelpIntent{})
+	restored := reducer.Reduce(help.State, intent.CloseOverlayIntent{})
+
+	if restored.State.UI.Overlay.Kind != types.OverlayTerminalManager {
+		t.Fatalf("expected terminal manager to resume, got %q", restored.State.UI.Overlay.Kind)
+	}
+	if restored.State.UI.Focus.Layer != types.FocusLayerOverlay || restored.State.UI.Focus.OverlayTarget != types.OverlayTerminalManager {
+		t.Fatalf("expected focus to return to terminal manager overlay, got %+v", restored.State.UI.Focus)
+	}
+	if restored.State.UI.Mode.Active != types.ModePicker {
+		t.Fatalf("expected resumed terminal manager to restore picker mode, got %+v", restored.State.UI.Mode)
+	}
+	managerData, ok := restored.State.UI.Overlay.Data.(*terminalmanagerdomain.State)
+	if !ok {
+		t.Fatalf("expected resumed terminal manager data, got %T", restored.State.UI.Overlay.Data)
+	}
+	row, ok := managerData.SelectedRow()
+	if !ok || row.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected resumed terminal manager selection to persist, got %+v ok=%v", row, ok)
+	}
+
+	closed := reducer.Reduce(restored.State, intent.CloseOverlayIntent{})
+	if closed.State.UI.Overlay.Kind != types.OverlayNone {
+		t.Fatalf("expected second close to leave overlay layer, got %q", closed.State.UI.Overlay.Kind)
+	}
+	if closed.State.UI.Focus.Layer != types.FocusLayerTiled || closed.State.UI.Focus.PaneID != types.PaneID("pane-1") {
+		t.Fatalf("expected focus to return to workbench, got %+v", closed.State.UI.Focus)
+	}
+}
+
+func TestReducerCloseOverlayRestoresSuspendedPrompt(t *testing.T) {
+	reducer := New()
+	state := newAppStateWithSinglePane()
+
+	promptOpened := reducer.Reduce(state, intent.OpenPromptIntent{
+		PromptKind: PromptKindCreateWorkspace,
+	})
+	typed := reducer.Reduce(promptOpened.State, intent.PromptAppendInputIntent{Text: "ops"})
+	help := reducer.Reduce(typed.State, intent.OpenHelpIntent{})
+	restored := reducer.Reduce(help.State, intent.CloseOverlayIntent{})
+
+	if restored.State.UI.Overlay.Kind != types.OverlayPrompt {
+		t.Fatalf("expected prompt to resume, got %q", restored.State.UI.Overlay.Kind)
+	}
+	if restored.State.UI.Focus.Layer != types.FocusLayerPrompt || restored.State.UI.Focus.OverlayTarget != types.OverlayPrompt {
+		t.Fatalf("expected prompt focus to resume, got %+v", restored.State.UI.Focus)
+	}
+	if restored.State.UI.Mode.Active != types.ModeNone {
+		t.Fatalf("expected prompt resume to keep mode none, got %+v", restored.State.UI.Mode)
+	}
+	promptData, ok := restored.State.UI.Overlay.Data.(*promptdomain.State)
+	if !ok || promptData.Draft != "ops" {
+		t.Fatalf("expected prompt draft to persist after help, got %+v type=%T", promptData, restored.State.UI.Overlay.Data)
+	}
+}
+
 func TestReducerOpenTerminalPickerMovesFocusToOverlayAndStoresReturnFocus(t *testing.T) {
 	reducer := New()
 	state := newManagerAppState()

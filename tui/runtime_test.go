@@ -240,13 +240,13 @@ func TestRunUsesShellOnlyRendererByDefault(t *testing.T) {
 	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") {
 		t.Fatalf("expected default run renderer to keep screen shell, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "pane:term-1") || !strings.Contains(stripped, "term:term") || !strings.Contains(stripped, "owner") {
+	if !strings.Contains(stripped, "pane:pane-1") || !strings.Contains(stripped, "term:term-1") {
 		t.Fatalf("expected default run renderer top chrome to expose active pane summary, got:\n%s", runner.view)
 	}
 	if !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "● run  owner") || !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "term-1 running owner") {
 		t.Fatalf("expected default run renderer to keep terminal canvas context in screen shell, got:\n%s", runner.view)
 	}
-	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "term-1  •  owner") || !strings.Contains(stripped, "1 tab") || !strings.Contains(stripped, "1 pane") || !strings.Contains(stripped, "1 term") || !strings.Contains(stripped, "main / shell / tiled / term-1") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "term-1") {
+	if !strings.Contains(stripped, "main / shell / tiled / term-1") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "owner") {
 		t.Fatalf("expected default run renderer context bar to expose path and runtime state, got:\n%s", runner.view)
 	}
 	if strings.Contains(stripped, "WORKBENCH") || strings.Contains(stripped, "CONTEXT") || strings.Contains(stripped, "ACTIVE") || strings.Contains(stripped, "ROUTE") {
@@ -849,14 +849,11 @@ func TestE2ERunScenarioDefaultModernTopChromeSummarizesWorkspaceTabsAndContext(t
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") || !strings.Contains(stripped, "2:logs") || !strings.Contains(stripped, "pane:api-dev") || !strings.Contains(stripped, "term:ter") {
-				t.Fatalf("expected default modern top bar to expose active pane summary, got:\n%s", view)
+			if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") || !strings.Contains(stripped, "2:logs") || !strings.Contains(stripped, "pane:pane-1") || !strings.Contains(stripped, "term:term-1") {
+				t.Fatalf("expected default modern header to expose legacy-like workspace/tab and active pane summary, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "api-dev  •  owner") || !strings.Contains(stripped, "2 tabs") || !strings.Contains(stripped, "2 panes") || !strings.Contains(stripped, "2 terms") {
-				t.Fatalf("expected default modern tab bar to expose tab and workspace counts, got:\n%s", view)
-			}
-			if !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "api-dev") {
-				t.Fatalf("expected default modern context bar to expose path and runtime state, got:\n%s", view)
+			if !containsRuntimeLineWithAll(stripped, "main / shell / tiled / api-dev", "running", "owner") {
+				t.Fatalf("expected default modern status line to expose current path and runtime state, got:\n%s", view)
 			}
 			if strings.Contains(view, "wireframe_view:") {
 				t.Fatalf("expected default modern top chrome scenario without debug sections, got:\n%s", view)
@@ -903,8 +900,8 @@ func TestE2ERunScenarioDefaultModernSingleWorkbenchKeepsTerminalSurfacePrimary(t
 		run: func(model *btui.Model) error {
 			view := model.View()
 			stripped := stripANSIRuntimeView(view)
-			if !strings.Contains(stripped, "● run") || !strings.Contains(stripped, "running") {
-				t.Fatalf("expected default modern single workbench to expose badge header and pane actions, got:\n%s", view)
+			if !strings.Contains(stripped, "● run") || !strings.Contains(stripped, "running") || !strings.Contains(stripped, "▣ tiled") {
+				t.Fatalf("expected default modern single workbench to expose runtime chrome and pane state, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "term-1 running owner") {
 				t.Fatalf("expected default modern single workbench to retain live terminal preview, got:\n%s", view)
@@ -975,9 +972,12 @@ func TestE2ERunScenarioDefaultModernFloatingWorkbenchUsesFullWidthCompositedCanv
 				t.Fatalf("expected default modern floating view to drop sidebar/deck from the main workbench path, got:\n%s", view)
 			}
 			if !containsRuntimeLineWithAll(stripped, "main / shell / floating / api-dev", "top build-log", "float 2") {
-				t.Fatalf("expected default modern floating view to expose active route and top-window summary in top chrome, got:\n%s", view)
+				t.Fatalf("expected default modern floating view to expose floating route and top-window summary in status line, got:\n%s", view)
 			}
-			if !strings.Contains(stripped, "floating 2") || !strings.Contains(stripped, "active api-dev") || !strings.Contains(stripped, "top build-log") {
+			if !strings.Contains(stripped, "pane:float-1") || !strings.Contains(stripped, "float:2") {
+				t.Fatalf("expected default modern floating header to expose pane/float counters, got:\n%s", view)
+			}
+			if !strings.Contains(stripped, "floating 2") || !strings.Contains(stripped, "active api-dev") || !strings.Contains(stripped, "top build-log") || !strings.Contains(stripped, "◫ float") {
 				t.Fatalf("expected default modern floating view to expose minimal floating status strip, got:\n%s", view)
 			}
 			if !strings.Contains(stripped, "api ready") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "term-2") {
@@ -1790,6 +1790,155 @@ func TestE2ERunScenarioQuestionMarkOpensAndClosesHelpOverlay(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("expected help overlay runtime scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioHelpTemporarilySuspendsTerminalManagerAndResumesIt(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTerminalManagerTargets()
+	initial.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayTerminalManager,
+		Data:        terminalmanagerdomain.NewState(initial.Domain, initial.UI.Focus),
+		ReturnFocus: initial.UI.Focus,
+	}
+	initial.UI.Focus.Layer = types.FocusLayerOverlay
+	initial.UI.Focus.OverlayTarget = types.OverlayTerminalManager
+	initial.UI.Mode = types.ModeState{Active: types.ModePicker}
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			current := model
+			sequence := []tea.KeyMsg{
+				{Type: tea.KeyDown},
+				{Type: tea.KeyRunes, Runes: []rune("?")},
+			}
+			for _, key := range sequence {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+
+			opened := stripANSIRuntimeView(current.View())
+			if !strings.Contains(opened, "Help") || !strings.Contains(opened, "return to Terminal Manager") || !strings.Contains(opened, "overlay help") {
+				t.Fatalf("expected help overlay to suspend manager and expose resume target, got:\n%s", current.View())
+			}
+
+			nextModel, cmd := current.Update(tea.KeyMsg{Type: tea.KeyEsc})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			resumed := stripANSIRuntimeView(current.View())
+			if !strings.Contains(resumed, "Terminal Manager") || strings.Contains(resumed, "overlay help") {
+				t.Fatalf("expected esc to resume terminal manager, got:\n%s", current.View())
+			}
+			if current.State().UI.Overlay.Kind != types.OverlayTerminalManager || current.State().UI.Focus.OverlayTarget != types.OverlayTerminalManager {
+				t.Fatalf("expected terminal manager to resume, got focus=%+v overlay=%+v", current.State().UI.Focus, current.State().UI.Overlay)
+			}
+
+			nextModel, cmd = current.Update(tea.KeyMsg{Type: tea.KeyEsc})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			closed := stripANSIRuntimeView(current.View())
+			if strings.Contains(closed, "Terminal Manager") || !strings.Contains(closed, "api-dev") {
+				t.Fatalf("expected second esc to return to clean workbench, got:\n%s", current.View())
+			}
+			if current.State().UI.Overlay.Kind != types.OverlayNone || current.State().UI.Focus.Layer != types.FocusLayerTiled {
+				t.Fatalf("expected workbench focus after second esc, got focus=%+v overlay=%+v", current.State().UI.Focus, current.State().UI.Overlay)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected help resume terminal manager scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioHelpTemporarilySuspendsWorkspacePickerAndResumesIt(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithWorkspacePickerAutoAcquireTarget()
+	initial.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayWorkspacePicker,
+		Data:        workspacedomain.NewPickerState(initial.Domain),
+		ReturnFocus: initial.UI.Focus,
+	}
+	initial.UI.Focus.Layer = types.FocusLayerOverlay
+	initial.UI.Focus.OverlayTarget = types.OverlayWorkspacePicker
+	initial.UI.Mode = types.ModeState{Active: types.ModePicker}
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			current := model
+			for _, key := range []tea.KeyMsg{
+				{Type: tea.KeyDown},
+				{Type: tea.KeyRunes, Runes: []rune("?")},
+			} {
+				nextModel, cmd := current.Update(key)
+				current = nextModel.(*btui.Model)
+				if cmd != nil {
+					if msg := cmd(); msg != nil {
+						nextModel, _ = current.Update(msg)
+						current = nextModel.(*btui.Model)
+					}
+				}
+			}
+
+			opened := stripANSIRuntimeView(current.View())
+			if !strings.Contains(opened, "Help") || !strings.Contains(opened, "return to Workspace Picker") {
+				t.Fatalf("expected help overlay to expose workspace picker resume target, got:\n%s", current.View())
+			}
+
+			nextModel, cmd := current.Update(tea.KeyMsg{Type: tea.KeyEsc})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			resumed := stripANSIRuntimeView(current.View())
+			if !strings.Contains(resumed, "Workspace Picker") || strings.Contains(resumed, "overlay help") {
+				t.Fatalf("expected esc to resume workspace picker, got:\n%s", current.View())
+			}
+			if current.State().UI.Overlay.Kind != types.OverlayWorkspacePicker {
+				t.Fatalf("expected workspace picker to resume, got %+v", current.State().UI.Overlay)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected help resume workspace picker scenario to succeed, got %v", err)
 	}
 }
 
@@ -3688,7 +3837,7 @@ func TestE2ERunScenarioMouseClickOnSplitPaneTitleMovesFocusToExactPane(t *testin
 				}
 			}
 			view := stripANSIRuntimeView(current.View())
-			if !strings.Contains(view, "pane:build-log") || !strings.Contains(view, "main / shell / tiled / build-log") || !strings.Contains(view, "build-log  •  owner") {
+			if !strings.Contains(view, "pane:pane-2") || !strings.Contains(view, "main / shell / tiled / build-log") || !strings.Contains(view, "build-log") {
 				t.Fatalf("expected split pane title click to focus build-log pane, got:\n%s", current.View())
 			}
 			tab := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
@@ -3787,7 +3936,7 @@ func TestE2ERunScenarioMouseClickOnTabStripMovesFocusToExactTab(t *testing.T) {
 				}
 			}
 			view := stripANSIRuntimeView(current.View())
-			if !strings.Contains(view, "pane:build-log") || !strings.Contains(view, "main / logs / tiled / build-log") || !strings.Contains(view, "[2:logs]") {
+			if !strings.Contains(view, "pane:pane-2") || !strings.Contains(view, "main / logs / tiled / build-log") || !strings.Contains(view, "[2:logs]") {
 				t.Fatalf("expected tab strip click to focus logs/build-log, got:\n%s", current.View())
 			}
 			workspace := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")]
@@ -4138,7 +4287,7 @@ func TestE2ERunScenarioMouseClickOnFloatingPaneTitleMovesFocusToExactPane(t *tes
 				}
 			}
 			view := stripANSIRuntimeView(current.View())
-			if !strings.Contains(view, "pane:build-log") || !strings.Contains(view, "main / shell / floating / build-log") || !strings.Contains(view, "build-log  •  owner") {
+			if !strings.Contains(view, "pane:float-2") || !strings.Contains(view, "main / shell / floating / build-log") || !strings.Contains(view, "build-log") {
 				t.Fatalf("expected floating pane title click to focus build-log pane, got:\n%s", current.View())
 			}
 			tab := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
@@ -4203,7 +4352,7 @@ func TestE2ERunScenarioMouseClickOnMixedFloatingPaneTitleMovesFocusToFloatingLay
 				}
 			}
 			view := stripANSIRuntimeView(current.View())
-			if !strings.Contains(view, "pane:unconnected pane") || !strings.Contains(view, "main / shell / floating / unconnected") || !strings.Contains(view, "unconnected pane  •  empty") {
+			if !strings.Contains(view, "pane:float-empty") || !strings.Contains(view, "main / shell / floating / unconnected") || !strings.Contains(view, "unconnected pane") {
 				t.Fatalf("expected mixed workbench click to focus floating empty pane, got:\n%s", current.View())
 			}
 			tab := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]

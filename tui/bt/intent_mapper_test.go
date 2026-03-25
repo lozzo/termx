@@ -1218,6 +1218,11 @@ func TestIntentMapperTerminalManagerMapsSelectionAndQuery(t *testing.T) {
 			want: intent.TerminalManagerStopIntent{},
 		},
 		{
+			name: "help",
+			key:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")},
+			want: intent.OpenHelpIntent{},
+		},
+		{
 			name: "cancel",
 			key:  tea.KeyMsg{Type: tea.KeyEsc},
 			want: intent.CloseOverlayIntent{},
@@ -1232,6 +1237,33 @@ func TestIntentMapperTerminalManagerMapsSelectionAndQuery(t *testing.T) {
 			}
 			if intents[0] != tc.want {
 				t.Fatalf("expected %+v, got %+v", tc.want, intents[0])
+			}
+		})
+	}
+}
+
+func TestIntentMapperOverlayQuestionMarkOpensHelp(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+	cases := []struct {
+		name    string
+		overlay types.OverlayKind
+	}{
+		{name: "workspace picker", overlay: types.OverlayWorkspacePicker},
+		{name: "terminal picker", overlay: types.OverlayTerminalPicker},
+		{name: "layout resolve", overlay: types.OverlayLayoutResolve},
+		{name: "prompt", overlay: types.OverlayPrompt},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			state := newAppStateWithSinglePane()
+			state.UI.Overlay = types.OverlayState{Kind: tc.overlay}
+			intents := mapper.MapKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+			if len(intents) != 1 {
+				t.Fatalf("expected one intent, got %d", len(intents))
+			}
+			if _, ok := intents[0].(intent.OpenHelpIntent); !ok {
+				t.Fatalf("expected open help intent, got %T", intents[0])
 			}
 		})
 	}

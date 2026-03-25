@@ -302,6 +302,8 @@ func mapTerminalPickerKey(msg tea.KeyMsg) []intent.Intent {
 		return []intent.Intent{intent.TerminalPickerMoveIntent{Delta: 1}}
 	case "enter":
 		return []intent.Intent{intent.TerminalPickerSubmitIntent{}}
+	case "?":
+		return []intent.Intent{intent.OpenHelpIntent{}}
 	case "esc":
 		return []intent.Intent{intent.CloseOverlayIntent{}}
 	case "backspace", "delete":
@@ -333,6 +335,8 @@ func mapLayoutResolveKey(msg tea.KeyMsg) []intent.Intent {
 		return []intent.Intent{intent.LayoutResolveMoveIntent{Delta: 1}}
 	case "enter":
 		return []intent.Intent{intent.LayoutResolveSubmitIntent{}}
+	case "?":
+		return []intent.Intent{intent.OpenHelpIntent{}}
 	case "esc":
 		return []intent.Intent{intent.CloseOverlayIntent{}}
 	default:
@@ -379,6 +383,8 @@ func mapWorkspacePickerKey(msg tea.KeyMsg) []intent.Intent {
 		return []intent.Intent{intent.WorkspacePickerExpandIntent{}}
 	case "enter":
 		return []intent.Intent{intent.WorkspacePickerSubmitIntent{}}
+	case "?":
+		return []intent.Intent{intent.OpenHelpIntent{}}
 	case "esc":
 		return []intent.Intent{intent.CloseOverlayIntent{}}
 	case "backspace", "delete":
@@ -422,6 +428,8 @@ func mapTerminalManagerKey(msg tea.KeyMsg) []intent.Intent {
 		return []intent.Intent{intent.TerminalManagerAcquireOwnerIntent{}}
 	case "k":
 		return []intent.Intent{intent.TerminalManagerStopIntent{}}
+	case "?":
+		return []intent.Intent{intent.OpenHelpIntent{}}
 	case "esc":
 		return []intent.Intent{intent.CloseOverlayIntent{}}
 	case "backspace", "delete":
@@ -453,6 +461,8 @@ func mapPromptKey(msg tea.KeyMsg) []intent.Intent {
 		return []intent.Intent{intent.PromptPreviousFieldIntent{}}
 	case "enter":
 		return []intent.Intent{intent.SubmitPromptIntent{}}
+	case "?":
+		return []intent.Intent{intent.OpenHelpIntent{}}
 	case "esc":
 		return []intent.Intent{intent.CancelPromptIntent{}}
 	case "backspace", "delete":

@@ -248,11 +248,8 @@ func TestRuntimeRendererCanHideDebugSections(t *testing.T) {
 	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") {
 		t.Fatalf("expected shell-only renderer to keep visible screen shell, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "pane:api-dev") || !strings.Contains(stripped, "term:") {
+	if !strings.Contains(stripped, "pane:pane-1") || !strings.Contains(stripped, "term:term-1") {
 		t.Fatalf("expected shell-only renderer top chrome to expose active pane summary, got:\n%s", view)
-	}
-	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "api-dev  •  owner") || !strings.Contains(stripped, "1 tab") || !strings.Contains(stripped, "1 pane") || !strings.Contains(stripped, "1 term") {
-		t.Fatalf("expected shell-only renderer tab chrome to expose tab and workspace summary, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "● run  owner") || !strings.Contains(stripped, "┏") || !strings.Contains(stripped, "$ pwd") || !strings.Contains(stripped, "/tmp") || !strings.Contains(stripped, "term-1 running owner") {
 		t.Fatalf("expected shell-only renderer to keep pane canvas content inside screen shell, got:\n%s", view)
@@ -274,14 +271,11 @@ func TestRuntimeRendererShellOnlyTopChromeSummarizesWorkspaceTabsAndContext(t *t
 	view := (runtimeRenderer{DebugVisible: &debugVisible}).Render(state, nil)
 	stripped := stripANSIForTest(view)
 
-	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") || !strings.Contains(stripped, "2:logs") {
-		t.Fatalf("expected shell-only renderer top bar to expose active pane and role summary, got:\n%s", view)
-	}
-	if !strings.Contains(stripped, "shell • 1 pane") || !strings.Contains(stripped, "api-dev  •  owner") || !strings.Contains(stripped, "2 tabs") || !strings.Contains(stripped, "2 panes") || !strings.Contains(stripped, "2 terms") {
-		t.Fatalf("expected shell-only renderer tab bar to expose per-tab and workspace counts, got:\n%s", view)
+	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "[main]") || !strings.Contains(stripped, "[1:shell]") || !strings.Contains(stripped, "2:logs") || !strings.Contains(stripped, "pane:pane-1") || !strings.Contains(stripped, "term:term-1") {
+		t.Fatalf("expected shell-only renderer header to expose legacy workspace/tab and pane summary, got:\n%s", view)
 	}
 	if !containsRenderedLineWithAll(stripped, "main / shell / tiled / api-dev", "running") || !strings.Contains(stripped, "api-dev") {
-		t.Fatalf("expected shell-only renderer context bar to expose current path and runtime state, got:\n%s", view)
+		t.Fatalf("expected shell-only renderer status line to expose current path and runtime state, got:\n%s", view)
 	}
 }
 
@@ -319,7 +313,7 @@ func TestModernScreenShellCompactsChromeAtNarrowWidth(t *testing.T) {
 	stripped := stripANSIForTest(view)
 
 	assertMaxRenderedLineWidth(t, view, 64)
-	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "shell-with-a-very-long-name") || !strings.Contains(stripped, "api-dev") {
+	if !strings.Contains(stripped, "termx") || !strings.Contains(stripped, "shell-with-a-very-l") || !strings.Contains(stripped, "api-dev") {
 		t.Fatalf("expected narrow modern shell to keep visible brand and active tab context, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "running") || !strings.Contains(stripped, "api-dev") || strings.Contains(stripped, "pane-1  •  term-1") {
@@ -379,6 +373,32 @@ func TestModernScreenShellUsesWiderCompactOverlayWithoutShadowAtNarrowWidth(t *t
 	}
 	if strings.Contains(view, "░") {
 		t.Fatalf("expected narrow overlay to disable shadow and give dialog more width, got:\n%s", view)
+	}
+}
+
+func TestModernScreenShellHelpOverlayShowsResumeTarget(t *testing.T) {
+	state := runtimeStateWithActiveTerminalMetadata()
+	state.UI.Overlay = types.OverlayState{
+		Kind:        types.OverlayHelp,
+		ReturnFocus: state.UI.Focus,
+		Resume: &types.OverlayState{
+			Kind:        types.OverlayTerminalManager,
+			ReturnFocus: state.UI.Focus,
+		},
+	}
+	state.UI.Focus.Layer = types.FocusLayerOverlay
+	state.UI.Focus.OverlayTarget = types.OverlayHelp
+	state.UI.Mode = types.ModeState{Active: types.ModePicker}
+
+	view := renderModernShellForTest(t, state, nil, wireframeMetrics{
+		ViewportWidth:  78,
+		ViewportHeight: 24,
+		OverlayWidth:   60,
+	}, NewRuntimeTerminalStore(RuntimeSessions{}))
+	stripped := stripANSIForTest(view)
+
+	if !strings.Contains(stripped, "return to Terminal Manager") {
+		t.Fatalf("expected help overlay to expose suspended overlay return target, got:\n%s", view)
 	}
 }
 
@@ -701,7 +721,7 @@ func TestModernScreenShellMarksOffscreenFloatingPaneForRecall(t *testing.T) {
 
 	stripped := stripANSIForTest(view)
 	if !strings.Contains(stripped, "api-dev") ||
-		!strings.Contains(stripped, "role:owner") ||
+		!strings.Contains(stripped, "pane:float-1") ||
 		!strings.Contains(stripped, "float:1") ||
 		!strings.Contains(stripped, "recall:offscreen") ||
 		!strings.Contains(stripped, "center") ||
@@ -746,8 +766,8 @@ func TestModernScreenShellWidePaneCardUsesBadgeHeader(t *testing.T) {
 	if strings.Contains(stripped, "CONTEXT") || strings.Contains(stripped, "ROUTE") || strings.Contains(stripped, "Context & Keys") {
 		t.Fatalf("expected modern single workbench wide path to stay on full-width pane canvas, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "● run") || !strings.Contains(stripped, "owner") || !strings.Contains(stripped, "<p> PANE") || !containsRenderedLineWithAll(stripped, "main / shell / tiled / api-dev", "running") {
-		t.Fatalf("expected modern single pane card to expose badge header, minimal context and footer hints, got:\n%s", view)
+	if !strings.Contains(stripped, "● run") || !strings.Contains(stripped, "owner") || !strings.Contains(stripped, "<p> PANE") || !containsRenderedLineWithAll(stripped, "main / shell / tiled / api-dev", "running") || !strings.Contains(stripped, "pane:pane-1") || !strings.Contains(stripped, "▣ tiled") {
+		t.Fatalf("expected modern single pane card to expose legacy-like header, minimal status line and footer hints, got:\n%s", view)
 	}
 }
 

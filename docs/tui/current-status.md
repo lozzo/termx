@@ -336,3 +336,56 @@ termx TUI 当前不能继续沿最近一段时间的“modern shell / modal / ca
   - overlap / clipping 的产品态细化
   - overlay close / resize / viewport 变化下的残影治理
   - manager / picker / prompt 在 floating/mixed backdrop 下的更多真实回归
+
+---
+
+## 13. 第 214 轮 TDD
+
+这一轮把主线重新拉回“可工作的 TUI 产品骨架”，不再继续让 modern chrome 维持 panel / chip 主导的观感，同时把 overlay 内帮助恢复链补齐：
+
+1. help overlay 支持临时盖住其他 overlay，并在关闭后恢复
+   - `tui/domain/types/types.go`
+   - `tui/app/reducer/reducer.go`
+   - `tui/bt/intent_mapper.go`
+   - help 现在可以从 `terminal manager / workspace picker / terminal picker / layout resolve / prompt` 内直接通过 `?` 打开
+   - 如果 help 是从其他 overlay 内打开，关闭 help 会先恢复原 overlay，而不是直接回到工作台
+   - prompt / picker / manager 的 overlay data 也会随着恢复链一起深拷贝，避免 reducer clone 污染
+2. 默认 modern 主 chrome 改回更接近 legacy 的顶栏/状态栏/底栏骨架
+   - `tui/runtime_modern_renderer.go`
+   - 顶栏不再以 chip 组合为主，而是回到：
+     - 左侧 `workspace + tab strip`
+     - 右侧 `pane / term / float` 摘要
+   - 第二行改为工作台状态行：
+     - 左侧 pane path
+     - 右侧 runtime / role / floating summary
+   - 底栏右侧改成短摘要：
+     - `pane title`
+     - `▣ tiled / ◫ float`
+     - `● run / ○ exit / ◌ wait`
+     - `owner/follower`
+   - compact 宽度下优先保留 active tab 可见性，不再把 tab strip 本身压没
+3. 补齐对应的 renderer / E2E 回归
+   - `tui/runtime_renderer_test.go`
+   - `tui/runtime_test.go`
+   - 新护栏覆盖：
+     - overlay 内 `?` 打开 help
+     - help 关闭后恢复 manager / workspace picker / prompt
+     - 默认 modern 的顶栏/状态栏/底栏开始向 legacy 体验靠拢
+     - split / floating / mixed 的鼠标聚焦、tab 点击、offscreen recall 仍保持可用
+
+本轮验证命令：
+
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./tui -count=1`
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./... -count=1`
+
+当前阶段推进结果：
+
+- overlay 不再只是“能打开帮助”，而是具备了对其他 overlay 的临时覆盖与恢复能力
+- 默认 modern 首屏已经从信息面板式壳子，开始回到更接近 legacy 的 `top chrome + workbench + footer` 产品骨架
+- pane canvas、floating compositor、overlay 背板这些已完成的主工作台能力继续保留
+
+下一块应继续推进：
+
+- 继续把 pane title chrome、split 结构、floating frame 的视觉语言往 legacy 收拢
+- 让 workspace/tab/pane 鼠标命中区域和真实边框表达更统一
+- 最后再处理颜色、性能、重叠渲染和残影优化
