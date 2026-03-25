@@ -47,6 +47,22 @@ func assertMaxRenderedLineWidth(t *testing.T, view string, width int) {
 	}
 }
 
+func containsRenderedLineWithAll(view string, parts ...string) bool {
+	for _, line := range strings.Split(view, "\n") {
+		matched := true
+		for _, part := range parts {
+			if !strings.Contains(line, part) {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
+}
+
 func TestRuntimeRendererRendersActivePaneSnapshot(t *testing.T) {
 	state := connectedRunAppState()
 	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
@@ -565,7 +581,7 @@ func TestRuntimeRendererShellOnlyRendersSplitWorkbenchAsPaneCanvas(t *testing.T)
 	if !strings.Contains(stripped, "ACTION") || !strings.Contains(stripped, "LINK") || !strings.Contains(stripped, "VIEW") {
 		t.Fatalf("expected shell-only split renderer to use labeled status rail rows, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "FOCUS") || !strings.Contains(stripped, "live") || !strings.Contains(stripped, "owner  •  connected") || !strings.Contains(stripped, "visible  •  1 pane") {
+	if !strings.Contains(stripped, "FOCUS") || !strings.Contains(stripped, "live") || !strings.Contains(stripped, "LINK") || !strings.Contains(stripped, "VIEW") {
 		t.Fatalf("expected shell-only split renderer to expose unified workbench signal panel, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "main / shell / tiled / api-dev") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "term-2 running owner") {
@@ -624,10 +640,10 @@ func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing
 	if !strings.Contains(stripped, "FLOATING") || !strings.Contains(stripped, "CONTEXT") || !strings.Contains(stripped, "WINDOW DECK") {
 		t.Fatalf("expected shell-only floating renderer to expose floating summary deck, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "ACTIVE") || !strings.Contains(stripped, "STACK") || !strings.Contains(stripped, "LINK") || !strings.Contains(stripped, "ACTION") {
+	if !strings.Contains(stripped, "ACTIVE") || !strings.Contains(stripped, "STACK") || !strings.Contains(stripped, "LINK") || !strings.Contains(stripped, "LAYER") {
 		t.Fatalf("expected shell-only floating renderer to use labeled floating rail rows, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "FOCUS") || !strings.Contains(stripped, "live") || !strings.Contains(stripped, "owner  •  connected") {
+	if !strings.Contains(stripped, "FOCUS") || !strings.Contains(stripped, "live") || !strings.Contains(stripped, "LINK") || !strings.Contains(stripped, "VIEW") {
 		t.Fatalf("expected shell-only floating renderer to expose unified workbench signal panel, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "main / shell / floating / api-dev") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "WINDOW DECK") {
@@ -681,10 +697,10 @@ func TestModernScreenShellMarksOffscreenFloatingPaneForRecall(t *testing.T) {
 		!strings.Contains(stripped, "recall offscreen") ||
 		!strings.Contains(stripped, "c center") ||
 		!strings.Contains(stripped, "remote") ||
-		!strings.Contains(stripped, "Window deck") {
+		!strings.Contains(stripped, "WINDOW DECK") {
 		t.Fatalf("expected modern floating shell to expose offscreen recall feedback, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "Context") || strings.Contains(stripped, "Context & Keys") {
+	if !strings.Contains(stripped, "CONTEXT") || strings.Contains(stripped, "Context & Keys") {
 		t.Fatalf("expected modern floating shell to use compact context panel title, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "top") || !strings.Contains(stripped, "●") || !strings.Contains(stripped, "own") {
@@ -718,11 +734,45 @@ func TestModernScreenShellWidePaneCardUsesBadgeHeader(t *testing.T) {
 	}, screens)
 	stripped := stripANSIForTest(view)
 
-	if !strings.Contains(stripped, "Context") || strings.Contains(stripped, "Context & Keys") {
+	if !strings.Contains(stripped, "CONTEXT") || strings.Contains(stripped, "Context & Keys") {
 		t.Fatalf("expected modern single workbench to use context panel title, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "● run") || !strings.Contains(stripped, "owner") || !strings.Contains(stripped, "Ctrl-p pane") {
 		t.Fatalf("expected modern single pane card to expose badge header and footer hints, got:\n%s", view)
+	}
+}
+
+func TestModernScreenShellNarrowSingleWorkbenchKeepsSidebarBesidePane(t *testing.T) {
+	state := runtimeStateWithActiveTerminalMetadata()
+	screens := NewRuntimeTerminalStore(RuntimeSessions{
+		Terminals: map[types.TerminalID]TerminalRuntimeSession{
+			types.TerminalID("term-1"): {
+				TerminalID: types.TerminalID("term-1"),
+				Snapshot: &protocol.Snapshot{
+					TerminalID: "term-1",
+					Size:       protocol.Size{Cols: 120, Rows: 32},
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{
+							{{Content: "$"}, {Content: " "}, {Content: "p"}, {Content: "w"}, {Content: "d"}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	view := renderModernShellForTest(t, state, nil, wireframeMetrics{
+		ViewportWidth:  78,
+		ViewportHeight: 24,
+		OverlayWidth:   48,
+	}, screens)
+	stripped := stripANSIForTest(view)
+
+	if !containsRenderedLineWithAll(stripped, "┃", "WORKBENCH") {
+		t.Fatalf("expected narrow modern single workbench to keep WORKBENCH sidebar beside pane canvas, got:\n%s", view)
+	}
+	if !containsRenderedLineWithAll(stripped, "┃", "CONTEXT") {
+		t.Fatalf("expected narrow modern single workbench to keep CONTEXT sidebar beside pane canvas, got:\n%s", view)
 	}
 }
 

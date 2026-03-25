@@ -816,11 +816,22 @@ func (r modernScreenShellRenderer) renderDetachedFloatingStrip(theme modernShell
 }
 
 func renderModernWorkbenchSidebarWidth(width int) int {
-	return min(32, max(30, width/3))
+	switch {
+	case width < 84:
+		return 24
+	case width < 96:
+		return 26
+	case width < 120:
+		return 28
+	default:
+		return min(32, max(28, width/3))
+	}
 }
 
 func shouldRenderCompactWorkbenchRail(width, height int) bool {
-	return width < 108 || height < 18
+	// 78x24 是默认首屏的主战场，这里优先保住“左画布 + 右侧栏”的 pane-first 结构。
+	// 只有高度明显不够时，才退回上下堆叠的 compact rail。
+	return height < 16
 }
 
 type modernSidebarEntry struct {
@@ -951,7 +962,7 @@ func renderWorkbenchSidebarPanel(theme modernShellTheme, title string, lines []s
 	}
 	contentWidth := max(12, width-4)
 	contentHeight := max(2, height-2)
-	body := []string{theme.panelTitle.Render(title)}
+	body := []string{theme.panelTitle.Render(strings.ToUpper(strings.TrimSpace(title)))}
 	for _, line := range lines {
 		if strings.TrimSpace(xansi.Strip(line)) == "" {
 			body = append(body, "")
@@ -1026,6 +1037,9 @@ func (r modernScreenShellRenderer) renderSingleWorkbenchSidebar(theme modernShel
 	if sessionLine := renderModernSingleWorkbenchSessionLine(state, pane); sessionLine != "" {
 		infoEntries = append(infoEntries, modernSidebarEntry{Label: "View", Value: sessionLine})
 	}
+	if actionLine := renderModernSingleWorkbenchCompactActionLine(state, pane); actionLine != "" {
+		infoEntries = append(infoEntries, modernSidebarEntry{Label: "Action", Value: actionLine})
+	}
 	if commandLine := renderModernSingleWorkbenchCommandLine(state, pane); commandLine != "" {
 		infoEntries = append(infoEntries, modernSidebarEntry{Label: "Cmd", Value: commandLine, Tone: "body"})
 	}
@@ -1092,7 +1106,7 @@ func (r modernScreenShellRenderer) renderMixedWorkbenchSidebar(theme modernShell
 		{Label: "Split", Value: renderModernSplitLayoutSummary(tab, len(tiledPaneIDs))},
 		{Label: "Path", Value: renderModernWorkbenchLocationLine(state, pane)},
 	}, max(12, width-4))
-	summary := renderWorkbenchSidebarPanel(theme, "Workbench", summaryLines, width, summaryHeight)
+	summary := renderWorkbenchSidebarPanel(theme, "Mixed", summaryLines, width, summaryHeight)
 	infoHeight := min(10, max(8, height/3))
 	info := r.renderWorkbenchSignalsSidebar(theme, state, pane, width, infoHeight, true, compactWorkbenchSignalLines(
 		renderModernFloatingWorkbenchStateLine(state, tab, floatingPaneIDs),
@@ -1132,30 +1146,28 @@ func (r modernScreenShellRenderer) renderWorkbenchSignalsSidebar(theme modernShe
 	entries := []modernSidebarEntry{
 		{Label: "Focus", Value: renderModernSingleWorkbenchFocusLine(state, pane, active)},
 		{Label: "Link", Value: renderModernSingleWorkbenchRoleSlotLine(state, pane)},
-	}
-	if terminalLine := renderModernSingleWorkbenchTerminalLine(state, pane); terminalLine != "" {
-		entries = append(entries, modernSidebarEntry{Label: "Term", Value: terminalLine})
-	}
-	if sessionLine := renderModernSingleWorkbenchSessionLine(state, pane); sessionLine != "" {
-		entries = append(entries, modernSidebarEntry{Label: "View", Value: sessionLine})
-	}
-	entries = append(entries, modernSidebarEntry{Label: "Layer", Value: renderModernSingleWorkbenchLayerLine(state)})
-	if commandLine := renderModernSingleWorkbenchCommandLine(state, pane); commandLine != "" {
-		entries = append(entries, modernSidebarEntry{Label: "Cmd", Value: commandLine, Tone: "body"})
-	}
-	if preview := r.renderPanePreview(pane.TerminalID); preview != "" {
-		entries = append(entries, modernSidebarEntry{Label: "Peek", Value: preview, Tone: "body"})
+		{Label: "View", Value: renderModernSingleWorkbenchSessionLine(state, pane)},
+		{Label: "Layer", Value: renderModernSingleWorkbenchLayerLine(state)},
 	}
 	lines := renderWorkbenchSidebarEntries(theme, entries, max(12, width-4))
 	for _, line := range compactWorkbenchSignalLines(extraLines...) {
 		lines = append(lines, renderWorkbenchSidebarEntries(theme, []modernSidebarEntry{{Label: "Action", Value: line}}, max(12, width-4))...)
+	}
+	if terminalLine := renderModernSingleWorkbenchTerminalLine(state, pane); terminalLine != "" {
+		lines = append(lines, renderWorkbenchSidebarEntries(theme, []modernSidebarEntry{{Label: "Term", Value: terminalLine}}, max(12, width-4))...)
+	}
+	if commandLine := renderModernSingleWorkbenchCommandLine(state, pane); commandLine != "" {
+		lines = append(lines, renderWorkbenchSidebarEntries(theme, []modernSidebarEntry{{Label: "Cmd", Value: commandLine, Tone: "body"}}, max(12, width-4))...)
+	}
+	if preview := r.renderPanePreview(pane.TerminalID); preview != "" {
+		lines = append(lines, renderWorkbenchSidebarEntries(theme, []modernSidebarEntry{{Label: "Peek", Value: preview, Tone: "body"}}, max(12, width-4))...)
 	}
 	lines = append(lines, renderModernWorkbenchKeyLines(theme, width, pane)...)
 	return renderWorkbenchSidebarPanel(theme, "Context", lines, width, height)
 }
 
 func (r modernScreenShellRenderer) renderFloatingDeck(theme modernShellTheme, state types.AppState, tab types.TabState, floatingPaneIDs []types.PaneID, width, height int) string {
-	header := theme.panelTitle.Render(fmt.Sprintf("Window deck  •  %d windows", len(floatingPaneIDs)))
+	header := theme.panelTitle.Render(fmt.Sprintf("WINDOW DECK  •  %d windows", len(floatingPaneIDs)))
 	if len(floatingPaneIDs) == 0 {
 		return theme.mutedPanel.Width(width - 2).Height(height - 2).Render(strings.Join([]string{header, theme.panelMeta.Render("No floating windows")}, "\n"))
 	}
