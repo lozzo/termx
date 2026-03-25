@@ -4,7 +4,7 @@
 
 **目标：** 重建一个首个可运行的 `termx` TUI 主线，实现 2026-03-25 产品定义：默认进入 workbench、pane/terminal 解耦、overlay 驱动的连接流程，以及独立的 terminal pool 页面。
 
-**架构：** 保持公开 `tui.Run` / `tui.Client` API 稳定，但把内部 TUI 重建为四层：纯状态层、根应用壳层、runtime 适配层、cell-based 渲染层。`deprecated/tui-legacy/` 与 `deprecated/tui-reset-2026-03-25/` 只作为参考源，只抽取被验证过的局部思路和函数，不整包恢复任何旧实现。
+**架构：** 保持公开 `tui.Run` / `tui.Client` API 稳定，但把内部 TUI 重建为四层：状态模型层、根应用壳层、runtime 适配层、cell-based 渲染层。这里不做领域驱动开发，不引入额外业务术语；目录拆分只服务于状态归属清晰、测试好写、渲染链路稳定。`deprecated/tui-legacy/` 与 `deprecated/tui-reset-2026-03-25/` 只作为参考源，只抽取被验证过的局部思路和函数，不整包恢复任何旧实现。
 
 **技术栈：** Go、Bubble Tea、现有 `protocol.Client` 封装、本地 vterm/snapshot 管线、cell canvas 渲染器、仓库内 Go 测试体系。
 
@@ -62,6 +62,15 @@
 
 ## 文件结构规划
 
+这里的目录拆分是工程分工，不是 DDD：
+
+- `app/` 负责顶层页面、意图、overlay 与焦点
+- `state/` 负责 workspace / layout / terminal / pool 的纯数据与纯函数
+- `runtime/` 负责 client 调用、订阅、输入路由、持久化
+- `render/` 负责把 screen snapshot 画成最终 TUI 文本
+
+如果执行中发现某个文件继续膨胀，可以继续拆小，但不要引入额外抽象层来“显得高级”。
+
 公开入口：
 
 - Modify: `tui/runtime.go`
@@ -77,18 +86,18 @@
 - Create: `tui/app/screen.go`
 - Create: `tui/app/overlay.go`
 
-纯状态层：
+状态模型层：
 
-- Create: `tui/domain/types/types.go`
-- Create: `tui/domain/types/types_test.go`
-- Create: `tui/domain/layout/layout.go`
-- Create: `tui/domain/layout/layout_test.go`
-- Create: `tui/domain/workspace/state.go`
-- Create: `tui/domain/workspace/state_test.go`
-- Create: `tui/domain/terminal/state.go`
-- Create: `tui/domain/terminal/state_test.go`
-- Create: `tui/domain/pool/query.go`
-- Create: `tui/domain/pool/query_test.go`
+- Create: `tui/state/types/types.go`
+- Create: `tui/state/types/types_test.go`
+- Create: `tui/state/layout/layout.go`
+- Create: `tui/state/layout/layout_test.go`
+- Create: `tui/state/workspace/state.go`
+- Create: `tui/state/workspace/state_test.go`
+- Create: `tui/state/terminal/state.go`
+- Create: `tui/state/terminal/state_test.go`
+- Create: `tui/state/pool/query.go`
+- Create: `tui/state/pool/query_test.go`
 
 Runtime 适配层：
 
@@ -137,6 +146,84 @@ Runtime 适配层：
 - 每个任务都先补失败测试，再写最小实现
 - 每个任务结束都提交中文 commit
 - 每轮验证至少跑被修改包测试；阶段结束跑 `PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./... -count=1`
+
+## 实施批次与验收闭环
+
+不要按“把所有底层都搭完再看界面”的顺序推进，按下面的闭环批次做：
+
+### 批次 A：最小可启动闭环
+
+目标：
+
+- `termx` 能进入 workbench
+- 默认有一个 live shell pane
+- 顶栏 / pane 标题栏 / 底栏能画出来
+- 单 pane 正文能显示 session 内容
+
+对应任务：
+
+- Task 1
+- Task 2 的最小必需部分
+- Task 3 的 bootstrap / session 基础
+- Task 4 的单 pane 渲染主干
+
+验收：
+
+- 启动不再返回 reset stub
+- 默认进入 workbench
+- 至少能看到一个 live pane 的真实正文
+
+### 批次 B：工作流闭环
+
+目标：
+
+- split / new tab / new float 走统一 connect dialog
+- `unconnected pane` / `exited pane` 行为正确
+- close / disconnect / reconnect / kill 的语义分开
+
+对应任务：
+
+- Task 5
+- Task 4 中与空态、状态态相关的剩余部分
+
+验收：
+
+- 连接流程完整
+- 生命周期动作不混淆
+- 线框图中的主路径与状态路径能跑通
+
+### 批次 C：管理页闭环
+
+目标：
+
+- Terminal Pool 可进入、可观察、可执行核心动作
+- `kill` 与 `remove` 在页面和 workbench 上反馈不同结果
+
+对应任务：
+
+- Task 6
+
+验收：
+
+- Pool 三栏页可用
+- open here / new tab / floating / kill / remove 可工作
+
+### 批次 D：恢复与收尾
+
+目标：
+
+- workspace 状态可保存和恢复
+- CLI 接线收口
+- 全量测试通过
+
+对应任务：
+
+- Task 7
+
+验收：
+
+- `go test ./... -count=1` 通过
+- 重启后可恢复基础工作现场
 
 ### Task 1：根应用壳层与页面路由
 
@@ -215,21 +302,21 @@ git add tui/runtime.go tui/runtime_test.go tui/app/model.go tui/app/model_test.g
 git commit -m "建立TUI根应用壳层"
 ```
 
-### Task 2：补齐 workspace / pane / layout 纯状态模型
+### Task 2：补齐 workspace / pane / layout 状态模型
 
 **Files:**
-- Create: `tui/domain/types/types.go`
-- Create: `tui/domain/types/types_test.go`
-- Create: `tui/domain/layout/layout.go`
-- Create: `tui/domain/layout/layout_test.go`
-- Create: `tui/domain/workspace/state.go`
-- Create: `tui/domain/workspace/state_test.go`
-- Create: `tui/domain/terminal/state.go`
-- Create: `tui/domain/terminal/state_test.go`
+- Create: `tui/state/types/types.go`
+- Create: `tui/state/types/types_test.go`
+- Create: `tui/state/layout/layout.go`
+- Create: `tui/state/layout/layout_test.go`
+- Create: `tui/state/workspace/state.go`
+- Create: `tui/state/workspace/state_test.go`
+- Create: `tui/state/terminal/state.go`
+- Create: `tui/state/terminal/state_test.go`
 - Modify: `tui/app/model.go`
 - Test: `tui/app/model_test.go`
 
-- [ ] **Step 1：先写纯状态层失败测试**
+- [ ] **Step 1：先写状态模型层失败测试**
 
 ```go
 func TestLayoutSplitRemoveAndRects(t *testing.T) {
@@ -256,12 +343,12 @@ func TestWorkspaceTracksUnconnectedPaneAndFloatingPane(t *testing.T) {
 Run:
 
 ```bash
-PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/domain/... -run 'TestLayoutSplitRemoveAndRects|TestWorkspaceTracksUnconnectedPaneAndFloatingPane' -count=1
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/state/... -run 'TestLayoutSplitRemoveAndRects|TestWorkspaceTracksUnconnectedPaneAndFloatingPane' -count=1
 ```
 
-Expected: FAIL because the domain packages do not exist yet.
+Expected: FAIL because the state packages do not exist yet.
 
-- [ ] **Step 3：实现纯状态层包**
+- [ ] **Step 3：实现状态模型层包**
 
 Implement:
 
@@ -275,12 +362,12 @@ Reference:
 - `deprecated/tui-reset-2026-03-25/tui/domain/layout/layout.go.disabled`
 - `deprecated/tui-legacy/docs/interaction-spec.md`
 
-- [ ] **Step 4：运行纯状态层测试**
+- [ ] **Step 4：运行状态模型层测试**
 
 Run:
 
 ```bash
-PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/domain/... -count=1
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/state/... -count=1
 ```
 
 Expected: PASS.
@@ -288,8 +375,8 @@ Expected: PASS.
 - [ ] **Step 5：提交**
 
 ```bash
-git add tui/domain/types tui/domain/layout tui/domain/workspace tui/domain/terminal tui/app/model.go tui/app/model_test.go
-git commit -m "补齐TUI工作区与布局领域模型"
+git add tui/state/types tui/state/layout tui/state/workspace tui/state/terminal tui/app/model.go tui/app/model_test.go
+git commit -m "补齐TUI工作区与布局状态模型"
 ```
 
 ### Task 3：接通启动流程与 terminal session runtime
@@ -450,6 +537,7 @@ Implement:
   - create new terminal
   - open terminal pool
 - active live pane body rendering from the session/snapshot pipeline, not just frame chrome
+- Task 4 交付不算完成，除非 `unconnected pane` 的三个入口文案和布局都能在渲染测试里被锁住
 
 Reference:
 
@@ -476,8 +564,8 @@ git commit -m "恢复TUI工作台渲染主干"
 ### Task 5：打通 overlay 流程与 pane/terminal 生命周期动作
 
 **Files:**
-- Create: `tui/domain/pool/query.go`
-- Create: `tui/domain/pool/query_test.go`
+- Create: `tui/state/pool/query.go`
+- Create: `tui/state/pool/query_test.go`
 - Create: `tui/app/intent.go`
 - Create: `tui/app/intent_test.go`
 - Modify: `tui/app/model.go`
@@ -597,6 +685,50 @@ func TestRuntimeExecutesCreateAndKillTerminalActions(t *testing.T) {
         t.Fatal("expected runtime service to receive create/kill actions")
     }
 }
+
+func TestRemoveTerminalTurnsAttachedPaneIntoUnconnectedPane(t *testing.T) {
+    model := modelWithLivePane()
+    next := model.Apply(IntentRemoveTerminal("term-1"))
+    if !next.Workspace.ActiveTab().ActivePane().IsUnconnected() {
+        t.Fatal("expected attached pane to become unconnected")
+    }
+}
+
+func TestRestartExitedTerminalKeepsOriginalTerminalIdentity(t *testing.T) {
+    model := modelWithExitedPane()
+    next := model.Apply(IntentRestartTerminal("term-1"))
+    if next.Workspace.ActiveTab().ActivePane().TerminalID != "term-1" {
+        t.Fatal("expected restart to keep original terminal id")
+    }
+}
+
+func TestRemoteRemoveNoticeOnlyAppearsForVisibleAffectedPane(t *testing.T) {
+    model := modelWithVisibleTerminal("term-1")
+    next := model.Apply(IntentRemoteTerminalRemoved("term-1", "api-dev"))
+    if next.Notice == nil {
+        t.Fatal("expected visible remove notice")
+    }
+}
+
+func TestHelpOverlayOpensAsGroupedHelpScreen(t *testing.T) {
+    model := newWorkbenchModelForTest()
+    next := model.Apply(IntentOpenHelp)
+    if next.Overlay.Kind != OverlayHelp {
+        t.Fatalf("expected help overlay, got %v", next.Overlay.Kind)
+    }
+}
+
+func TestFloatingPaneMoveRespectsAnchorLimitAndCenterRecall(t *testing.T) {
+    model := modelWithFloatingPane()
+    moved := model.Apply(IntentMoveFloatingPane("float-1", -999, -999))
+    if !moved.Workspace.ActiveTab().FloatingPane("float-1").AnchorVisible() {
+        t.Fatal("expected floating anchor to remain visible")
+    }
+    centered := moved.Apply(IntentCenterFloatingPane("float-1"))
+    if !centered.Workspace.ActiveTab().FloatingPane("float-1").IsCentered() {
+        t.Fatal("expected floating pane to return to centered position")
+    }
+}
 ```
 
 - [ ] **Step 2：运行 app/overlay 测试，确认交互 reducer 尚未实现**
@@ -604,7 +736,7 @@ func TestRuntimeExecutesCreateAndKillTerminalActions(t *testing.T) {
 Run:
 
 ```bash
-PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/app ./tui/render/overlay ./tui/domain/pool ./tui/runtime -run 'TestSplitCreatesPaneSlotAndOpensConnectDialog|TestCancelConnectLeavesUnconnectedPane|TestConnectExistingPickerUsesGlobalScopeAndRecentUserInteractionSort|TestNewTabAndNewFloatOpenTheSameConnectDialog|TestCreateNewTerminalBranchCreatesAndBindsTerminal|TestClosePaneDoesNotKillTerminalByDefault|TestDisconnectPaneKeepsPaneAndClearsBinding|TestReconnectPaneRebindsToSelectedTerminal|TestClosePaneAndKillTerminalStopsTerminal|TestRuntimeExecutesCreateAndKillTerminalActions' -count=1
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/app ./tui/render/overlay ./tui/state/pool ./tui/runtime -run 'TestSplitCreatesPaneSlotAndOpensConnectDialog|TestCancelConnectLeavesUnconnectedPane|TestConnectExistingPickerUsesGlobalScopeAndRecentUserInteractionSort|TestNewTabAndNewFloatOpenTheSameConnectDialog|TestCreateNewTerminalBranchCreatesAndBindsTerminal|TestClosePaneDoesNotKillTerminalByDefault|TestDisconnectPaneKeepsPaneAndClearsBinding|TestReconnectPaneRebindsToSelectedTerminal|TestClosePaneAndKillTerminalStopsTerminal|TestRuntimeExecutesCreateAndKillTerminalActions|TestRemoveTerminalTurnsAttachedPaneIntoUnconnectedPane|TestRestartExitedTerminalKeepsOriginalTerminalIdentity|TestRemoteRemoveNoticeOnlyAppearsForVisibleAffectedPane|TestHelpOverlayOpensAsGroupedHelpScreen|TestFloatingPaneMoveRespectsAnchorLimitAndCenterRecall' -count=1
 ```
 
 Expected: FAIL because create/connect flow is not implemented.
@@ -616,7 +748,9 @@ Implement:
 - split/new tab/new float all go through “create pane slot -> open connect dialog”
 - cancel leaves `unconnected pane`
 - explicit actions for close pane, disconnect pane, reconnect pane, kill terminal
+- explicit actions for remove terminal, restart terminal, remote remove notice
 - overlay focus priority and `Esc` handling
+- grouped help overlay under the same overlay system, not a standalone page
 - lightweight “connect existing terminal” picker with:
   - global terminal scope
   - default ordering by recent user interaction
@@ -629,6 +763,11 @@ Implement:
   - reconnect pane
   - close pane and kill terminal
 - runtime executor must lower `create new terminal` and `kill terminal` into concrete `TerminalService` calls; reducer success alone is not enough
+- runtime executor must also lower `remove terminal` and `restart terminal` into concrete `TerminalService` calls
+- floating pane interactions must cover:
+  - drag outside viewport while keeping left-top anchor visible
+  - recall and center
+  - active floating auto-raise remains model-driven, not ad hoc in renderer
 
 Reference:
 
@@ -640,7 +779,7 @@ Reference:
 Run:
 
 ```bash
-PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/app ./tui/render/overlay ./tui/domain/pool -count=1
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/app ./tui/render/overlay ./tui/state/pool -count=1
 ```
 
 Expected: PASS.
@@ -648,7 +787,7 @@ Expected: PASS.
 - [ ] **Step 5：提交**
 
 ```bash
-git add tui/domain/pool/query.go tui/domain/pool/query_test.go tui/app/intent.go tui/app/intent_test.go tui/app/model.go tui/app/model_test.go tui/runtime/terminal_service.go tui/runtime/terminal_service_test.go tui/render/overlay/view.go tui/render/overlay/view_test.go tui/render/workbench/view.go
+git add tui/state/pool/query.go tui/state/pool/query_test.go tui/app/intent.go tui/app/intent_test.go tui/app/model.go tui/app/model_test.go tui/runtime/terminal_service.go tui/runtime/terminal_service_test.go tui/render/overlay/view.go tui/render/overlay/view_test.go tui/render/workbench/view.go
 git commit -m "打通TUI弹层与面板连接语义"
 ```
 
@@ -716,6 +855,30 @@ func TestTerminalPoolActionsReachRuntimeService(t *testing.T) {
         t.Fatal("expected runtime service to receive kill action")
     }
 }
+
+func TestTerminalPoolSupportsMetadataTagsSearchAndEdit(t *testing.T) {
+    groups := pool.Group(sampleTerminals())
+    filtered := pool.Filter(groups.Visible, "backend")
+    if len(filtered) == 0 {
+        t.Fatal("expected tag search result")
+    }
+    model := modelWithTerminalPoolSelection()
+    next := model.Apply(IntentTerminalPoolEditMetadata("term-2"))
+    if next.Overlay.Kind != OverlayMetadataPrompt {
+        t.Fatalf("expected metadata prompt, got %v", next.Overlay.Kind)
+    }
+}
+
+func TestTerminalPoolPreviewIsReadonlyLiveAttach(t *testing.T) {
+    model := modelWithTerminalPoolSelection()
+    next := model.Apply(IntentTerminalPoolSelect("term-2"))
+    if !next.TerminalPool.PreviewReadonly {
+        t.Fatal("expected readonly preview")
+    }
+    if !next.HasPendingPreviewSubscription("term-2") {
+        t.Fatal("expected live preview subscription")
+    }
+}
 ```
 
 - [ ] **Step 2：运行聚焦测试，确认 terminal pool 页面尚未实现**
@@ -723,7 +886,7 @@ func TestTerminalPoolActionsReachRuntimeService(t *testing.T) {
 Run:
 
 ```bash
-PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/domain/pool ./tui/render/pool ./tui/app ./tui/runtime -run 'TestGroupTerminalsIntoVisibleParkedExited|TestTerminalPoolViewShowsThreeColumns|TestTerminalPoolActionsRenameKillAndOpenTargetPane|TestTerminalPoolSelectionSwitchesReadonlyLivePreviewSubscription|TestTerminalPoolActionsReachRuntimeService' -count=1
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/state/pool ./tui/render/pool ./tui/app ./tui/runtime -run 'TestGroupTerminalsIntoVisibleParkedExited|TestTerminalPoolViewShowsThreeColumns|TestTerminalPoolActionsRenameKillAndOpenTargetPane|TestTerminalPoolSelectionSwitchesReadonlyLivePreviewSubscription|TestTerminalPoolActionsReachRuntimeService|TestTerminalPoolSupportsMetadataTagsSearchAndEdit|TestTerminalPoolPreviewIsReadonlyLiveAttach' -count=1
 ```
 
 Expected: FAIL because grouping/page rendering is missing.
@@ -736,19 +899,27 @@ Implement:
 - default sort by recent user interaction, not pure output
 - middle column readonly live preview
 - selection change must rebind the middle column to the selected terminal's live preview stream
+- terminal pool tests必须锁住：
+  - 首次进入时如何确定 preview terminal
+  - 切换 selection 时如何切换 preview subscription
+  - preview 保持只读，不抢 workbench 输入焦点
 - right column metadata first, connections second
 - page-level actions biased toward terminal management
-- explicit app intents for rename, kill, open-here, open-new-tab, open-floating
+- explicit app intents for rename, metadata/tags edit, kill, remove, open-here, open-new-tab, open-floating
 - explicit takeover action if the user wants to leave readonly preview and bind/open the selected terminal into the workbench
 - runtime action executor must actually call `TerminalService`, not stop at queued UI intents
 - app shell must provide reachable navigation into and out of the standalone Terminal Pool page
+- metadata/tags 第一阶段必须覆盖三件事：
+  - 列表与详情展示
+  - 搜索匹配
+  - prompt/overlay 编辑并回写到 terminal 本体
 
 - [ ] **Step 4：运行 terminal pool 相关测试**
 
 Run:
 
 ```bash
-PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/domain/pool ./tui/render/pool ./tui/app ./tui/runtime -count=1
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/state/pool ./tui/render/pool ./tui/app ./tui/runtime -count=1
 ```
 
 Expected: PASS.
