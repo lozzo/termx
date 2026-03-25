@@ -253,3 +253,47 @@ termx TUI 当前不能继续沿最近一段时间的“modern shell / modal / ca
   - floating compositor 的产品化收口
   - z-order / clipping / overlap
   - overlay 盖板与工作台的真实叠放关系
+
+---
+
+## 11. 第 212 轮 TDD
+
+这一轮把 `floating compositor` 的默认 modern 主路径真正往产品态推进，不再让右侧 `deck / rail` 继续替代主工作台：
+
+1. pure floating 默认主路径改为全宽 composited canvas
+   - `tui/runtime_modern_renderer.go`
+   - 纯 floating 工作台不再切出右侧 `Floating / Context / Window Deck`
+   - 主体直接使用现有 `renderWorkbenchCanvas(...)` 的叠放结果
+   - 额外保留一条最小 `floating status strip`，只提示：
+     - floating 数量
+     - active pane
+     - top pane
+     - z-order
+     - offscreen recall / center
+2. mixed workbench 默认主路径改为 detached strip + full canvas
+   - mixed 不再右侧展开 `Mixed / Panes / Context / Window Deck`
+   - 保留一条 detached floating strip 作为“当前存在浮窗”的轻提示
+   - 下方主体直接回到 tiled + floating 的真实合成画布
+3. floating 相关 E2E 与 renderer 口径同步到新主线
+   - `tui/runtime_test.go`
+   - `tui/runtime_renderer_test.go`
+   - 不再要求 `WINDOW DECK / FLOATING / CONTEXT / MIXED / PANES` 这类旁侧说明栏
+   - 改为锁：
+     - top chrome/context 仍能说明当前 active/top/float count
+     - floating status strip / detached strip 可见
+     - overlapping bodies 仍保留
+     - offscreen recall / z-order 信息仍可见
+
+本轮验证命令：
+
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./tui -count=1`
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./... -count=1`
+
+当前阶段推进结果：
+
+- 默认 modern 的 single / split / floating / mixed 四条主工作台路径已经都不再把右侧说明栏当主体
+- floating compositor 现在真正开始以“画布叠放结果”而不是“旁侧 deck 摘要”表达自身
+- 下一块应继续推进：
+  - overlap / clipping 的产品态细化
+  - overlay 真正覆盖在 composited workbench 之上
+  - 渲染稳定性与残影清理

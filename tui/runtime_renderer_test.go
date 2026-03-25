@@ -646,17 +646,14 @@ func TestRuntimeRendererShellOnlyRendersFloatingWorkbenchAsWindowDeck(t *testing
 
 	view := renderer.Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "FLOATING") || !strings.Contains(stripped, "CONTEXT") || !strings.Contains(stripped, "WINDOW DECK") {
-		t.Fatalf("expected shell-only floating renderer to expose floating summary deck, got:\n%s", view)
+	if strings.Contains(stripped, "FLOATING") || strings.Contains(stripped, "CONTEXT") || strings.Contains(stripped, "WINDOW DECK") {
+		t.Fatalf("expected shell-only floating renderer to remove floating side rails from default path, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "ACTIVE") || !strings.Contains(stripped, "STACK") || !strings.Contains(stripped, "LINK") || !strings.Contains(stripped, "LAYER") {
-		t.Fatalf("expected shell-only floating renderer to use labeled floating rail rows, got:\n%s", view)
+	if !containsRenderedLineWithAll(stripped, "main / shell / floating / api-dev", "top build-log", "float 2") {
+		t.Fatalf("expected shell-only floating renderer context bar to expose active route and top window summary, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "FOCUS") || !strings.Contains(stripped, "live") || !strings.Contains(stripped, "LINK") || !strings.Contains(stripped, "VIEW") {
-		t.Fatalf("expected shell-only floating renderer to expose unified workbench signal panel, got:\n%s", view)
-	}
-	if !strings.Contains(stripped, "main / shell / floating / api-dev") || !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "WINDOW DECK") {
-		t.Fatalf("expected shell-only floating renderer to expose overlapping floating pane titles with z-order, got:\n%s", view)
+	if !strings.Contains(stripped, "floating 2") || !strings.Contains(stripped, "active api-dev") || !strings.Contains(stripped, "top build-log") {
+		t.Fatalf("expected shell-only floating renderer to expose minimal floating status strip, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "api ready") || !strings.Contains(stripped, "build-log") || !strings.Contains(stripped, "term-1") || !strings.Contains(stripped, "term-2") {
 		t.Fatalf("expected shell-only floating renderer to keep window previews and runtime footer lines inside the floating canvas, got:\n%s", view)
@@ -706,14 +703,14 @@ func TestModernScreenShellMarksOffscreenFloatingPaneForRecall(t *testing.T) {
 		!strings.Contains(stripped, "recall:offscreen") ||
 		!strings.Contains(stripped, "center") ||
 		!strings.Contains(stripped, "remote") ||
-		!strings.Contains(stripped, "WINDOW DECK") {
+		!strings.Contains(stripped, "floating 1") {
 		t.Fatalf("expected modern floating shell to expose offscreen recall feedback, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "CONTEXT") || strings.Contains(stripped, "Context & Keys") {
-		t.Fatalf("expected modern floating shell to use compact context panel title, got:\n%s", view)
+	if strings.Contains(stripped, "CONTEXT") || strings.Contains(stripped, "WINDOW DECK") || strings.Contains(stripped, "Context & Keys") {
+		t.Fatalf("expected modern floating shell to keep feedback inside top chrome and floating strip, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "top") || !strings.Contains(stripped, "●") || !strings.Contains(stripped, "own") {
-		t.Fatalf("expected modern floating shell to expose pane/deck header badges, got:\n%s", view)
+	if !strings.Contains(stripped, "top") || !strings.Contains(stripped, "●") || !strings.Contains(stripped, "own") || !strings.Contains(stripped, "c center") {
+		t.Fatalf("expected modern floating shell to expose pane header badges and floating strip hints, got:\n%s", view)
 	}
 }
 
@@ -821,11 +818,11 @@ func TestRuntimeRendererShellOnlyRendersDetachedFloatingStripForMixedWorkbench(t
 
 	view := renderer.Render(state, nil)
 	stripped := stripANSIForTest(view)
-	if !strings.Contains(stripped, "MIXED") || !strings.Contains(stripped, "PANES") || !strings.Contains(stripped, "CONTEXT") || !strings.Contains(stripped, "ACTIVE") || !strings.Contains(stripped, "STACK") || !strings.Contains(stripped, "unconnected pane") {
-		t.Fatalf("expected shell-only mixed workbench to expose detached floating strip, got:\n%s", view)
+	if strings.Contains(stripped, "MIXED") || strings.Contains(stripped, "PANES") || strings.Contains(stripped, "CONTEXT") || strings.Contains(stripped, "WINDOW DECK") {
+		t.Fatalf("expected shell-only mixed workbench to remove mixed side rails from default path, got:\n%s", view)
 	}
-	if !strings.Contains(stripped, "FOCUS") || !strings.Contains(stripped, "LINK") || !strings.Contains(stripped, "VIEW") || !strings.Contains(stripped, "WINDOW DECK") {
-		t.Fatalf("expected shell-only mixed workbench to expose unified workbench signal panel, got:\n%s", view)
+	if !strings.Contains(stripped, "Detached windows") || !strings.Contains(stripped, "1 floating") || !strings.Contains(stripped, "unconnected pane") {
+		t.Fatalf("expected shell-only mixed workbench to keep detached floating strip above the workbench canvas, got:\n%s", view)
 	}
 	if !strings.Contains(stripped, "api-dev") || !strings.Contains(stripped, "waiting pane") || !strings.Contains(stripped, "deploy-log") || !strings.Contains(stripped, "run") || !strings.Contains(stripped, "waiting") || !strings.Contains(stripped, "exited") || !strings.Contains(stripped, "waiting for connect") || !strings.Contains(stripped, "process exited") || !strings.Contains(stripped, "no term") || !strings.Contains(stripped, "history retained") {
 		t.Fatalf("expected shell-only mixed workbench to keep pane titles readable across tiled and floating canvases, got:\n%s", view)

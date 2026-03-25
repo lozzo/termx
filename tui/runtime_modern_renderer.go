@@ -529,17 +529,18 @@ func (r modernScreenShellRenderer) renderSplitWorkbench(theme modernShellTheme, 
 }
 
 func (r modernScreenShellRenderer) renderFloatingWorkbench(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, metrics wireframeMetrics, width, height int) string {
-	if width < 72 || height < 12 {
-		return r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, height), width, height, false)
+	// floating 主路径也回到 terminal-first：真正的浮窗叠放应直接发生在工作台主画布里，
+	// 不再让右侧 summary/deck 抢走主体宽度。
+	statusStrip := r.renderFloatingWorkbenchStatusStrip(theme, state, tab, pane, floatingPaneIDs, metrics, width)
+	canvasHeight := height
+	if strings.TrimSpace(xansi.Strip(statusStrip)) != "" {
+		canvasHeight = max(8, height-1)
 	}
-	if shouldRenderCompactWorkbenchRail(width, height) {
-		return r.renderFloatingWorkbenchCompact(theme, state, tab, pane, floatingPaneIDs, metrics, width, height)
+	canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, canvasHeight), width, canvasHeight, false)
+	if strings.TrimSpace(xansi.Strip(statusStrip)) == "" {
+		return canvas
 	}
-	sidebarWidth := renderModernWorkbenchSidebarWidth(width)
-	canvasWidth := max(32, width-sidebarWidth-1)
-	canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, canvasWidth, height), canvasWidth, height, false)
-	sidebar := r.renderFloatingWorkbenchSidebar(theme, state, tab, pane, floatingPaneIDs, sidebarWidth, height)
-	return lipgloss.JoinHorizontal(lipgloss.Top, canvas, " ", sidebar)
+	return lipgloss.JoinVertical(lipgloss.Left, statusStrip, canvas)
 }
 
 func (r modernScreenShellRenderer) renderMixedWorkbench(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, tiledPaneIDs []types.PaneID, floatingPaneIDs []types.PaneID, metrics wireframeMetrics, width, height int) string {
@@ -547,24 +548,37 @@ func (r modernScreenShellRenderer) renderMixedWorkbench(theme modernShellTheme, 
 		return r.renderSplitWorkbench(theme, state, tab, pane, tiledPaneIDs, floatingPaneIDs, metrics, width, height)
 	}
 	strip := r.renderDetachedFloatingStrip(theme, state, tab, floatingPaneIDs, width)
+	// mixed 主路径保留一行 detached strip 作为提示，但主体仍然必须是完整工作台画布。
 	mainHeight := max(8, height-1)
-	if width < 72 || mainHeight < 11 {
-		canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, mainHeight), width, mainHeight, false)
-		return lipgloss.JoinVertical(lipgloss.Left, strip, canvas)
+	canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, width, mainHeight), width, mainHeight, false)
+	return lipgloss.JoinVertical(lipgloss.Left, strip, canvas)
+}
+
+// renderFloatingWorkbenchStatusStrip 给纯 floating 工作台保留一条最小状态条：
+// 它只负责提示 active/top/stack/offscreen/floating mode，不再展开成旁边的 deck/rail。
+func (r modernScreenShellRenderer) renderFloatingWorkbenchStatusStrip(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, floatingPaneIDs []types.PaneID, metrics wireframeMetrics, width int) string {
+	if len(floatingPaneIDs) == 0 || width < 36 {
+		return ""
 	}
-	if shouldRenderCompactWorkbenchRail(width, mainHeight) {
-		compact := r.renderMixedWorkbenchCompact(theme, state, tab, pane, tiledPaneIDs, floatingPaneIDs, metrics, width, mainHeight)
-		return lipgloss.JoinVertical(lipgloss.Left, strip, compact)
+	_, activeTitle, _, topTitle := renderModernFloatingWorkbenchTargets(state, tab, floatingPaneIDs)
+	items := []string{
+		theme.activeChip.Render(fmt.Sprintf("floating %d", len(floatingPaneIDs))),
+		theme.chip.Render("active " + truncateModernLine(activeTitle, 22)),
 	}
-	sidebarWidth := renderModernWorkbenchSidebarWidth(width)
-	canvasWidth := max(32, width-sidebarWidth-1)
-	canvas := r.renderWorkbenchCanvas(theme, state, tab, pane, renderModernWorkbenchCanvasMetrics(metrics, canvasWidth, mainHeight), canvasWidth, mainHeight, false)
-	sidebar := r.renderMixedWorkbenchSidebar(theme, state, tab, pane, tiledPaneIDs, floatingPaneIDs, sidebarWidth, mainHeight)
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		strip,
-		lipgloss.JoinHorizontal(lipgloss.Top, canvas, " ", sidebar),
-	)
+	if strings.TrimSpace(topTitle) != "" {
+		items = append(items, theme.floatToken.Render("top "+truncateModernLine(topTitle, 18)))
+	}
+	if pane.Kind == types.PaneKindFloating {
+		if zIndex, zTotal := renderModernFloatingZ(state, pane); zIndex > 0 && zTotal > 1 {
+			items = append(items, theme.chip.Render(fmt.Sprintf("z %d/%d", zIndex, zTotal)))
+		}
+	}
+	if renderModernFloatingPaneOffscreen(pane, metrics) {
+		items = append(items, theme.offscreenToken.Render("recall offscreen"))
+		items = append(items, theme.offscreenToken.Render("c center"))
+	}
+	right := theme.panelMeta.Render(renderModernFloatingWorkbenchControlLine(state))
+	return theme.subBar.Render(fillANSIHorizontal(strings.Join(items, " "), right, max(1, width-2)))
 }
 
 func (r modernScreenShellRenderer) renderWorkbenchCanvas(theme modernShellTheme, state types.AppState, tab types.TabState, pane types.PaneState, metrics wireframeMetrics, width, height int, overlayActive bool) string {
