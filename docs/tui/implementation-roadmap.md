@@ -47,6 +47,25 @@
 
 - 后续编码不会再被文档带回 `modal / deck / rail` 主线
 
+### M0.5 旧 renderer 清理
+
+目标：
+
+- 把当前这套过渡 renderer 及其旧文本断言测试从主线上剥离
+
+范围：
+
+- 删除旧 renderer 快照测试
+- 删除旧 UI 文本 E2E
+- 保留运行时编排 smoke、数据层和 effect/reducer 主干
+- 为下一轮真实 renderer 重写腾出空间
+
+验收：
+
+- 仓库内不再把旧 ASCII/wireframe 文本结构当成产品验收基线
+- `go test ./... -count=1` 仍通过
+- 后续工作可直接对准 `deprecated/tui-legacy/` 的工作台体验重建 renderer
+
 ### M1 tiled workbench 主体
 
 目标：
@@ -179,7 +198,7 @@
 3. 建立 split compositor
 4. 建立 active/inactive pane frame
 5. 建立最小 header/footer
-6. 移除或绕开当前 summary-first 工作台表现
+6. 删除或绕开当前过渡 ASCII renderer
 
 ### 3.2 M2 floating compositor
 

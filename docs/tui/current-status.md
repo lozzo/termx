@@ -592,3 +592,42 @@ termx TUI 当前不能继续沿最近一段时间的“modern shell / modal / ca
 - 继续把 split / floating / mixed 的主画布几何和视觉语言向 `deprecated/tui-legacy` 靠拢
 - 继续收口 pane title 命中区、active 边框和 overlay 叠层之间的一致性
 - 性能、颜色、重叠渲染优化继续放在全局 TODO 的后段处理
+
+---
+
+## 18. 第 219 轮 TDD
+
+这一轮不再继续给当前 renderer 补局部断言，而是正式执行“旧渲染测试退场”：
+
+1. 删除当前 renderer 主线携带的大体量文本断言测试
+   - `tui/runtime_renderer_test.go`
+   - 这个文件绑定的是旧的 `screen_shell / chrome_header / WORKBENCH / section_*` 文本结构
+   - 它已经不再代表要交付的产品 UI，因此本轮直接删除，不再继续维护
+2. 把 `tui/runtime_test.go` 从“旧 UI E2E 集合”缩回运行时 smoke
+   - 保留 startup planner / task executor / runtime bootstrap / bubbletea runner 这条运行编排最小护栏
+   - 删除所有与旧 renderer 文本、旧 overlay 文本、旧鼠标命中布局强绑定的大量场景
+   - 这一步的目标不是降低质量，而是把测试基线从“守旧渲染快照”切回“守运行时主干”
+3. 提取跨测试文件还在复用的最小 helper
+   - `tui/runtime_test_helpers_test.go`
+   - 保留 `connectedRunAppState`、`runtimeStateWithFollowerActivePane`、运行时 stub 和公共测试结构
+   - 让 `runtime_input_test.go`、`runtime_updates_test.go`、`runtime_terminal_service_test.go` 不被这轮清理误伤
+4. 当前阶段的明确口径
+   - 现在终端里看到的纯文本/ASCII 工作台，只是待替换的过渡壳，不是最终产品 UI
+   - 后续真正的主线是：
+     - 直接参考 `deprecated/tui-legacy/` 的布局语言
+     - 重写 tiled / floating / overlay 的真实渲染层
+     - 新 renderer 稳住后，再重建对应 E2E 池
+
+本轮验证命令：
+
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./tui -count=1`
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./... -count=1`
+
+当前阶段推进结果：
+
+- 旧 renderer 的大体量文本快照测试已经退出主线
+- 运行时主干测试仍保留最小 smoke，避免把数据层和启动编排一起清空
+- 下一块应直接进入：
+  - 删除/替换当前过渡 renderer 实现
+  - 按 `deprecated/tui-legacy/` 的工作台布局重建真实渲染层
+  - 等新 renderer 成形后，再回补新的 E2E
