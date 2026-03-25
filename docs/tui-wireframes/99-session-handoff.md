@@ -236,6 +236,13 @@
 - `14-remote-remove-notice.md`
 - `15-tab-last-pane-closes.md`
 - `16-metadata-tags-edit.md`
+- `17-workbench-multipane.md`
+- `18-workbench-tab-switch.md`
+- `19-connect-dialog-entry-variants.md`
+- `20-terminal-pool-kill-result.md`
+- `21-terminal-pool-remove-result.md`
+- `22-floating-anchor-limit.md`
+- `23-viewport-wide-char-edge.md`
 
 已建 flow 文件：
 
@@ -244,6 +251,7 @@
 - `flows/03-shared-terminal-flow.md`
 - `flows/04-floating-flow.md`
 - `flows/05-overlay-flow.md`
+- `flows/06-terminal-pool-action-flow.md`
 
 当前状态不是骨架了，而是已经补入首版正文，覆盖了：
 
@@ -261,20 +269,27 @@
 - tab 最后一个 pane 关闭
 - metadata / tags 编辑
 - 5 个主 flow
+- workbench 多 pane 常态
+- tab 切换
+- connect dialog 多来源入口
+- Terminal Pool `kill` 结果态
+- Terminal Pool `remove` 结果态
+- floating 锚点极限位置
+- 宽字符 / emoji / powerline 裁切边界
+- 6 个主 flow
 
 ## 7. 下一步优先顺序
 
 如果继续当前方向，建议按这个顺序推进：
 
-1. 继续把线框图做深
-   - 增加同一场景的更多前后对照图
-   - 把极端边界案例单独拆文件
+1. 继续扩线框图覆盖面
+   - workspace 切换与恢复
+   - overlay 叠层优先级
+   - alt-screen / htop / vim 等对照场景
 2. 拿线框图反推更细的实现任务
-   - 先从 workbench / connect / terminal pool 三块拆分
+   - 先拆 workbench / connect / terminal pool / render crop
 3. 保持文档与产品口径同步
    - 一旦术语或交互变更，先改线框图再改实现计划
-   - `08-remove-terminal-shared.md`
-3. 再补共享 terminal / floating / viewport / help
 4. 线框图稳定后，再回头微调 spec / plan
 5. 最后再进入按 plan 执行 Task 1
 
@@ -285,6 +300,7 @@
 - `b474d56` `明确TUI计划运行时职责边界`
 - `4800a5a` `同步TUI最新产品与技术定义`
 - `6cd188a` `建立TUI线框图场景骨架`
+- `9db7053` `补全TUI线框图首版场景`
 
 ## 9. 当前工作树注意事项
 

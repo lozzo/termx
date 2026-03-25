@@ -37,7 +37,8 @@
 
 - 目录骨架已建立
 - 主场景、状态场景、共享 terminal、floating、overlay、flow 已补入首版 ASCII 线框图
-- 当前进入“细化与收口”阶段，重点是继续补更多前后状态对照图与边界案例
+- 第二轮细化场景已补入，包括多 pane、tab 切换、connect 多来源、Terminal Pool `kill/remove` 结果态、floating 锚点极限、宽字符裁切边界
+- 当前进入“继续扩面”阶段，重点是补 workspace 切换、overlay 叠层和 alt-screen 对照图
 - 如需在上下文压缩后快速恢复，请优先阅读：
   - [00-index.md](/home/lozzow/workdir/termx/docs/tui-wireframes/00-index.md)
   - [99-session-handoff.md](/home/lozzow/workdir/termx/docs/tui-wireframes/99-session-handoff.md)
