@@ -371,6 +371,12 @@ func TestUnconnectedPaneShowsActionableEmptyState(t *testing.T) {
     if !strings.Contains(view, "connect existing terminal") {
         t.Fatal("expected empty-state action text")
     }
+    if !strings.Contains(view, "create new terminal") {
+        t.Fatal("expected create action text")
+    }
+    if !strings.Contains(view, "open terminal pool") {
+        t.Fatal("expected manager action text")
+    }
 }
 ```
 
@@ -391,7 +397,10 @@ Implement:
 - cell canvas, width-normalized clipping, border drawing
 - top bar, pane chrome, bottom action bar
 - tiled and floating pane composition
-- unconnected pane empty state
+- unconnected pane empty state with all three entry points:
+  - connect existing terminal
+  - create new terminal
+  - open terminal pool
 
 Reference:
 
@@ -459,6 +468,41 @@ func TestConnectExistingPickerUsesGlobalScopeAndRecentUserInteractionSort(t *tes
         t.Fatalf("expected all terminals in picker scope, got %d", len(items))
     }
 }
+
+func TestClosePaneDoesNotKillTerminalByDefault(t *testing.T) {
+    model := modelWithSharedTerminal()
+    next := model.Apply(IntentClosePane)
+    if next.Workspace.ActiveTab().PaneCount() != 1 {
+        t.Fatal("expected pane to close")
+    }
+    if next.Terminals["term-1"].State != terminal.StateRunning {
+        t.Fatal("expected terminal to keep running")
+    }
+}
+
+func TestDisconnectPaneKeepsPaneAndClearsBinding(t *testing.T) {
+    model := modelWithLivePane()
+    next := model.Apply(IntentDisconnectPane)
+    if !next.Workspace.ActiveTab().ActivePane().IsUnconnected() {
+        t.Fatal("expected pane to become unconnected")
+    }
+}
+
+func TestReconnectPaneRebindsToSelectedTerminal(t *testing.T) {
+    model := modelWithReconnectOverlay()
+    next := model.Apply(IntentConfirmReconnect("term-2"))
+    if next.Workspace.ActiveTab().ActivePane().TerminalID != "term-2" {
+        t.Fatal("expected pane to reconnect to chosen terminal")
+    }
+}
+
+func TestClosePaneAndKillTerminalStopsTerminal(t *testing.T) {
+    model := modelWithLivePane()
+    next := model.Apply(IntentClosePaneAndKillTerminal)
+    if next.Terminals["term-1"].State != terminal.StateExited {
+        t.Fatal("expected terminal to be marked exited")
+    }
+}
 ```
 
 - [ ] **Step 2: Run app/overlay tests to verify the interaction reducer does not exist yet**
@@ -466,7 +510,7 @@ func TestConnectExistingPickerUsesGlobalScopeAndRecentUserInteractionSort(t *tes
 Run:
 
 ```bash
-PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/app ./tui/render/overlay ./tui/domain/pool -run 'TestSplitCreatesPaneSlotAndOpensConnectDialog|TestCancelConnectLeavesUnconnectedPane|TestConnectExistingPickerUsesGlobalScopeAndRecentUserInteractionSort' -count=1
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/app ./tui/render/overlay ./tui/domain/pool -run 'TestSplitCreatesPaneSlotAndOpensConnectDialog|TestCancelConnectLeavesUnconnectedPane|TestConnectExistingPickerUsesGlobalScopeAndRecentUserInteractionSort|TestClosePaneDoesNotKillTerminalByDefault|TestDisconnectPaneKeepsPaneAndClearsBinding|TestReconnectPaneRebindsToSelectedTerminal|TestClosePaneAndKillTerminalStopsTerminal' -count=1
 ```
 
 Expected: FAIL because create/connect flow is not implemented.
@@ -484,6 +528,11 @@ Implement:
   - default ordering by recent user interaction
   - pure output treated as auxiliary state, not sort priority
   - create-new and connect-existing paths tested separately
+- lifecycle reducer tests must lock the four distinct actions:
+  - close pane
+  - disconnect pane
+  - reconnect pane
+  - close pane and kill terminal
 
 Reference:
 
@@ -544,6 +593,17 @@ func TestTerminalPoolActionsRenameKillAndOpenTargetPane(t *testing.T) {
         t.Fatal("expected terminal pool actions to enqueue runtime work")
     }
 }
+
+func TestTerminalPoolSelectionSwitchesReadonlyLivePreviewSubscription(t *testing.T) {
+    model := modelWithTerminalPoolSelection()
+    next := model.Apply(IntentTerminalPoolSelect("term-2"))
+    if next.TerminalPool.PreviewTerminalID != "term-2" {
+        t.Fatal("expected preview terminal to switch")
+    }
+    if !next.HasPendingPreviewSubscription("term-2") {
+        t.Fatal("expected preview subscription refresh")
+    }
+}
 ```
 
 - [ ] **Step 2: Run focused pool tests to verify the page does not exist yet**
@@ -551,7 +611,7 @@ func TestTerminalPoolActionsRenameKillAndOpenTargetPane(t *testing.T) {
 Run:
 
 ```bash
-PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/domain/pool ./tui/render/pool ./tui/app -run 'TestGroupTerminalsIntoVisibleParkedExited|TestTerminalPoolViewShowsThreeColumns|TestTerminalPoolActionsRenameKillAndOpenTargetPane' -count=1
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/domain/pool ./tui/render/pool ./tui/app -run 'TestGroupTerminalsIntoVisibleParkedExited|TestTerminalPoolViewShowsThreeColumns|TestTerminalPoolActionsRenameKillAndOpenTargetPane|TestTerminalPoolSelectionSwitchesReadonlyLivePreviewSubscription' -count=1
 ```
 
 Expected: FAIL because grouping/page rendering is missing.
@@ -563,6 +623,7 @@ Implement:
 - `visible / parked / exited` grouping
 - default sort by recent user interaction, not pure output
 - middle column readonly live preview
+- selection change must rebind the middle column to the selected terminal's live preview stream
 - right column metadata first, connections second
 - page-level actions biased toward terminal management
 - explicit app intents for rename, kill, open-here, open-new-tab, open-floating
