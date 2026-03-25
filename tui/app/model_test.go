@@ -81,3 +81,37 @@ func TestAppShellHotkeyCanNavigateBetweenWorkbenchAndTerminalPool(t *testing.T) 
 		t.Fatalf("expected esc to return workbench, got %q", workbench.Screen)
 	}
 }
+
+func TestTerminalPoolKeysDriveSelectionAndSearchThroughUpdate(t *testing.T) {
+	model := newTerminalPoolModelForIntentTest().Apply(OpenTerminalPoolIntent{})
+
+	teaModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	down := teaModel.(Model)
+	if down.Pool.SelectedTerminalID != "term-1" {
+		t.Fatalf("expected down key to move selection to term-1, got %q", down.Pool.SelectedTerminalID)
+	}
+	if down.Pool.PreviewTerminalID != "term-1" {
+		t.Fatalf("expected down key to switch preview to term-1, got %q", down.Pool.PreviewTerminalID)
+	}
+
+	teaModel, _ = down.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	searching := teaModel.(Model)
+	if !searching.Pool.SearchInputActive {
+		t.Fatal("expected slash to enter search input mode")
+	}
+
+	filtered := searching
+	for _, r := range []rune("backend") {
+		teaModel, _ = filtered.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		filtered = teaModel.(Model)
+	}
+	if filtered.Pool.Query != "backend" {
+		t.Fatalf("expected search query to update, got %q", filtered.Pool.Query)
+	}
+	if filtered.Pool.SelectedTerminalID != "term-1" {
+		t.Fatalf("expected search to select term-1, got %q", filtered.Pool.SelectedTerminalID)
+	}
+	if filtered.Pool.PreviewTerminalID != "term-1" {
+		t.Fatalf("expected search to switch preview term-1, got %q", filtered.Pool.PreviewTerminalID)
+	}
+}

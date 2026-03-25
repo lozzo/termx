@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/transport/memory"
 	"github.com/lozzow/termx/tui/app"
@@ -307,6 +308,68 @@ func TestTerminalPoolOpenActionsAttachRuntimeSession(t *testing.T) {
 				t.Fatalf("expected writable workbench session, got %#v", session)
 			}
 			tt.check(t, next)
+		})
+	}
+}
+
+func TestTerminalPoolKeyBindingsReachRuntimeActions(t *testing.T) {
+	tests := []struct {
+		name   string
+		key    tea.KeyMsg
+		assert func(t *testing.T, client *stubClient, model app.Model)
+	}{
+		{
+			name: "enter opens here",
+			key:  tea.KeyMsg{Type: tea.KeyEnter},
+			assert: func(t *testing.T, client *stubClient, model app.Model) {
+				if client.lastAttachID != "term-1" || client.lastAttachMode != "collaborator" {
+					t.Fatalf("expected enter to attach selected terminal, got id=%q mode=%q", client.lastAttachID, client.lastAttachMode)
+				}
+				pane, _ := model.Workspace.ActiveTab().ActivePane()
+				if pane.TerminalID != "term-1" {
+					t.Fatalf("expected enter to keep active pane bound, got %+v", pane)
+				}
+			},
+		},
+		{
+			name: "t opens new tab",
+			key:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}},
+			assert: func(t *testing.T, client *stubClient, model app.Model) {
+				if client.lastAttachID != "term-1" || client.lastAttachMode != "collaborator" {
+					t.Fatalf("expected t to attach selected terminal, got id=%q mode=%q", client.lastAttachID, client.lastAttachMode)
+				}
+				pane, _ := model.Workspace.ActiveTab().ActivePane()
+				if pane.TerminalID != "term-1" {
+					t.Fatalf("expected t to bind new tab pane, got %+v", pane)
+				}
+			},
+		},
+		{
+			name: "k kills selected terminal",
+			key:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}},
+			assert: func(t *testing.T, client *stubClient, model app.Model) {
+				if client.lastKilledID != "term-1" {
+					t.Fatalf("expected k to kill selected terminal, got %q", client.lastKilledID)
+				}
+				if model.Terminals[types.TerminalID("term-1")].State != stateterminal.StateExited {
+					t.Fatalf("expected k to mark terminal exited, got %#v", model.Terminals[types.TerminalID("term-1")])
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &stubClient{
+				attachResult: &protocol.AttachResult{Channel: 41, Mode: "collaborator"},
+				snapshot:     &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}},
+			}
+			model := terminalPoolModelForRuntimeTest()
+			model.IntentExecutor = NewModelIntentExecutor(NewTerminalService(client))
+
+			teaModel, _ := model.Update(tt.key)
+			updated := teaModel.(app.Model)
+			tt.assert(t, client, updated)
 		})
 	}
 }

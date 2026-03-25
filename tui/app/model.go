@@ -45,6 +45,7 @@ type TerminalPoolState struct {
 	PreviewTerminalID           types.TerminalID
 	PreviewReadonly             bool
 	PreviewSubscriptionRevision int
+	SearchInputActive           bool
 }
 
 type PreviewStreamMessage struct {
@@ -190,10 +191,62 @@ func cloneSessionMap(input map[types.TerminalID]TerminalSession) map[types.Termi
 
 func (m Model) keyIntent(msg tea.KeyMsg) (Intent, bool) {
 	switch {
-	case msg.Type == tea.KeyEsc && m.Screen == ScreenTerminalPool:
-		return CloseTerminalPoolIntent{}, true
+	case msg.Type == tea.KeyEsc && m.Overlay.HasActive():
+		return CancelOverlayIntent{}, true
+	case m.Screen == ScreenTerminalPool:
+		return m.poolKeyIntent(msg)
 	case msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'p' && m.Screen == ScreenWorkbench && !m.Overlay.HasActive():
 		return OpenTerminalPoolIntent{}, true
+	default:
+		return nil, false
+	}
+}
+
+// poolKeyIntent 把 Terminal Pool 页内真实键盘路径统一翻译成 intent。
+// 这里保持“按键 -> intent -> reducer/runtime”单一路径，避免页面动作出现测试能调、生产键盘调不到的分叉。
+func (m Model) poolKeyIntent(msg tea.KeyMsg) (Intent, bool) {
+	if m.Pool.SearchInputActive {
+		switch msg.Type {
+		case tea.KeyEsc, tea.KeyEnter:
+			return SetTerminalPoolSearchInputIntent{Active: false}, true
+		case tea.KeyBackspace:
+			return SearchTerminalPoolIntent{Query: truncateLastRune(m.Pool.Query)}, true
+		case tea.KeyRunes:
+			return SearchTerminalPoolIntent{Query: m.Pool.Query + string(msg.Runes)}, true
+		default:
+			return nil, false
+		}
+	}
+
+	switch msg.Type {
+	case tea.KeyEsc:
+		return CloseTerminalPoolIntent{}, true
+	case tea.KeyUp:
+		return MoveTerminalPoolSelectionIntent{Delta: -1}, true
+	case tea.KeyDown:
+		return MoveTerminalPoolSelectionIntent{Delta: 1}, true
+	case tea.KeyEnter:
+		return OpenSelectedTerminalHereIntent{}, true
+	case tea.KeyRunes:
+		if len(msg.Runes) != 1 {
+			return nil, false
+		}
+		switch msg.Runes[0] {
+		case '/':
+			return SetTerminalPoolSearchInputIntent{Active: true}, true
+		case 't':
+			return OpenSelectedTerminalInNewTabIntent{}, true
+		case 'o':
+			return OpenSelectedTerminalInFloatingIntent{}, true
+		case 'e':
+			return OpenTerminalMetadataEditorIntent{}, true
+		case 'k':
+			return KillSelectedTerminalIntent{}, true
+		case 'd':
+			return RemoveSelectedTerminalIntent{}, true
+		default:
+			return nil, false
+		}
 	default:
 		return nil, false
 	}
@@ -232,6 +285,14 @@ func appendStreamFrame(snapshot *protocol.Snapshot, frame protocol.StreamFrame) 
 		snapshot.Screen.Cells = append(snapshot.Screen.Cells, row)
 	}
 	return snapshot
+}
+
+func truncateLastRune(input string) string {
+	if input == "" {
+		return ""
+	}
+	runes := []rune(input)
+	return string(runes[:len(runes)-1])
 }
 
 type Effect interface {

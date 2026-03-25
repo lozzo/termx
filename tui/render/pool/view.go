@@ -31,7 +31,7 @@ func Render(model app.Model, width, height int) string {
 	lines := []string{
 		renderHeader(model),
 		renderColumns(model, grouped),
-		" <enter> OPEN HERE  <t> NEW TAB  <o> FLOAT  <e> EDIT  <k> KILL  <d> REMOVE  <esc> BACK",
+		" <up/down> SELECT  </> SEARCH  <enter> OPEN HERE  <t> NEW TAB  <o> FLOAT  <e> EDIT  <k> KILL  <d> REMOVE  <esc> BACK",
 	}
 	if model.Overlay.HasActive() {
 		lines = append(lines, overlayview.Render(model, width, height))

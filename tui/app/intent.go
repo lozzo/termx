@@ -38,6 +38,12 @@ type CloseTerminalPoolIntent struct{}
 type SearchTerminalPoolIntent struct {
 	Query string
 }
+type SetTerminalPoolSearchInputIntent struct {
+	Active bool
+}
+type MoveTerminalPoolSelectionIntent struct {
+	Delta int
+}
 type SelectTerminalPoolIntent struct {
 	TerminalID types.TerminalID
 }
@@ -107,6 +113,11 @@ func (m Model) Apply(intent Intent) Model {
 		return next.SwitchScreen(ScreenWorkbench)
 	case SearchTerminalPoolIntent:
 		return next.applySearchTerminalPool(in.Query)
+	case SetTerminalPoolSearchInputIntent:
+		next.Pool.SearchInputActive = in.Active
+		return next
+	case MoveTerminalPoolSelectionIntent:
+		return next.applyMoveTerminalPoolSelection(in.Delta)
 	case SelectTerminalPoolIntent:
 		return next.applySelectTerminalPool(in.TerminalID)
 	case OpenTerminalMetadataEditorIntent:
@@ -181,6 +192,7 @@ func (m Model) Apply(intent Intent) Model {
 
 func (m Model) openTerminalPool() Model {
 	m = m.SwitchScreen(ScreenTerminalPool)
+	m.Pool.SearchInputActive = false
 	selected := m.firstTerminalPoolSelection(m.Pool.Query)
 	m.Pool.SelectedTerminalID = selected
 	m.Pool.PreviewTerminalID = selected
@@ -203,6 +215,28 @@ func (m Model) applySearchTerminalPool(query string) Model {
 		m.PendingEffects = append(m.PendingEffects, RefreshPreviewEffect{TerminalID: selected})
 	}
 	return m
+}
+
+func (m Model) applyMoveTerminalPoolSelection(delta int) Model {
+	items := m.orderedTerminalPoolIDs(m.Pool.Query)
+	if len(items) == 0 || delta == 0 {
+		return m
+	}
+	index := 0
+	for i, item := range items {
+		if item == m.selectedTerminalID() {
+			index = i
+			break
+		}
+	}
+	index += delta
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(items) {
+		index = len(items) - 1
+	}
+	return m.applySelectTerminalPool(items[index])
 }
 
 func (m Model) applySelectTerminalPool(terminalID types.TerminalID) Model {
@@ -850,13 +884,24 @@ func (m Model) selectedTerminalID() types.TerminalID {
 }
 
 func (m Model) firstTerminalPoolSelection(query string) types.TerminalID {
-	items := pool.BuildConnectItems(filterTerminalPoolMetas(m.Terminals, query))
+	items := m.orderedTerminalPoolIDs(query)
 	for _, item := range items {
-		if item.TerminalID != "" {
-			return item.TerminalID
+		if item != "" {
+			return item
 		}
 	}
 	return ""
+}
+
+func (m Model) orderedTerminalPoolIDs(query string) []types.TerminalID {
+	items := pool.BuildConnectItems(filterTerminalPoolMetas(m.Terminals, query))
+	ids := make([]types.TerminalID, 0, len(items))
+	for _, item := range items {
+		if item.TerminalID != "" {
+			ids = append(ids, item.TerminalID)
+		}
+	}
+	return ids
 }
 
 func filterTerminalPoolMetas(terminals map[types.TerminalID]stateterminal.Metadata, query string) map[types.TerminalID]stateterminal.Metadata {
