@@ -1,6 +1,12 @@
 package app
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/tui/state/terminal"
+	"github.com/lozzow/termx/tui/state/types"
+	"github.com/lozzow/termx/tui/state/workspace"
+)
 
 // Model 只承载根应用壳层状态。
 // Screen 表示页面级互斥路由，Overlay 表示可跨页面复用的临时浮层栈，
@@ -9,6 +15,16 @@ type Model struct {
 	Screen      Screen
 	Overlay     OverlayStack
 	FocusTarget FocusTarget
+	Workspace   *workspace.WorkspaceState
+	Terminals   map[types.TerminalID]terminal.Metadata
+	Sessions    map[types.TerminalID]TerminalSession
+}
+
+type TerminalSession struct {
+	TerminalID types.TerminalID
+	Channel    uint16
+	Attached   bool
+	Snapshot   *protocol.Snapshot
 }
 
 func NewModel() Model {
@@ -16,6 +32,8 @@ func NewModel() Model {
 		Screen:      ScreenWorkbench,
 		Overlay:     EmptyOverlayStack(),
 		FocusTarget: FocusWorkbench,
+		Terminals:   make(map[types.TerminalID]terminal.Metadata),
+		Sessions:    make(map[types.TerminalID]TerminalSession),
 	}
 }
 
