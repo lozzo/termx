@@ -3561,6 +3561,64 @@ func TestE2ERunScenarioTabModeMovesFocusToAdjacentTab(t *testing.T) {
 	}
 }
 
+func TestE2ERunScenarioMouseClickOnTabStripMovesFocusToExactTab(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithTwoTabTargets()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			clickY := findLineIndexContaining(current.View(), "2:logs")
+			if clickY < 0 {
+				t.Fatalf("expected top chrome to expose 2:logs tab label, got:\n%s", current.View())
+			}
+			clickLine := stripANSIRuntimeView(strings.Split(current.View(), "\n")[clickY])
+			clickX := strings.Index(clickLine, "2:logs")
+			if clickX < 0 {
+				t.Fatalf("expected stripped tab strip to expose 2:logs, got:\n%s", clickLine)
+			}
+			nextModel, cmd := current.Update(tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				X:      clickX,
+				Y:      clickY,
+			})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			view := stripANSIRuntimeView(current.View())
+			if !strings.Contains(view, "pane:build-log") || !strings.Contains(view, "main / logs / tiled / build-log") || !strings.Contains(view, "[2:logs]") {
+				t.Fatalf("expected tab strip click to focus logs/build-log, got:\n%s", current.View())
+			}
+			workspace := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")]
+			if workspace.ActiveTabID != types.TabID("tab-2") {
+				t.Fatalf("expected tab strip click to activate tab-2, got %+v", workspace.ActiveTabID)
+			}
+			tab := workspace.Tabs[types.TabID("tab-2")]
+			if tab.ActivePaneID != types.PaneID("pane-2") || tab.ActiveLayer != types.FocusLayerTiled {
+				t.Fatalf("expected tab strip click to activate pane-2 on tiled layer, got %+v", tab)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected tab strip mouse-click scenario to succeed, got %v", err)
+	}
+}
+
 func TestE2ERunScenarioGlobalSplitOpensLayoutResolveOnNewPane(t *testing.T) {
 	client := &stubRunClient{}
 	initial := connectedRunAppState()
@@ -3904,6 +3962,70 @@ func TestE2ERunScenarioMouseClickOnFloatingPaneTitleMovesFocusToExactPane(t *tes
 	})
 	if err != nil {
 		t.Fatalf("expected floating pane title mouse-click scenario to succeed, got %v", err)
+	}
+}
+
+func TestE2ERunScenarioMouseClickOnMixedFloatingPaneTitleMovesFocusToFloatingLayer(t *testing.T) {
+	client := &stubRunClient{}
+	initial := runtimeStateWithMixedPaneSlots()
+	planner := &stubRunPlanner{plan: StartupPlan{State: initial}}
+	executor := &stubRunTaskExecutor{plan: StartupPlan{State: initial}}
+	bootstrapper := &stubRunSessionBootstrapper{
+		sessions: RuntimeSessions{
+			Terminals: map[types.TerminalID]TerminalRuntimeSession{
+				types.TerminalID("term-1"): {
+					TerminalID: "term-1",
+					Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1",
+						Screen: protocol.ScreenData{
+							Cells: [][]protocol.Cell{
+								{{Content: "a"}, {Content: "p"}, {Content: "i"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	runner := &stubProgramRunner{
+		run: func(model *btui.Model) error {
+			var current *btui.Model = model
+			clickY := findLineIndexContainingOnly(current.View(), "unconnected pane", "waiting pane", "deploy-log", "api-dev")
+			if clickY < 0 {
+				t.Fatalf("expected mixed workbench to expose floating empty pane title, got:\n%s", current.View())
+			}
+			nextModel, cmd := current.Update(tea.MouseMsg{
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+				Y:      clickY,
+			})
+			current = nextModel.(*btui.Model)
+			if cmd != nil {
+				if msg := cmd(); msg != nil {
+					nextModel, _ = current.Update(msg)
+					current = nextModel.(*btui.Model)
+				}
+			}
+			view := stripANSIRuntimeView(current.View())
+			if !strings.Contains(view, "pane:unconnected pane") || !strings.Contains(view, "main / shell / floating / unconnected") || !strings.Contains(view, "unconnected pane  •  empty") {
+				t.Fatalf("expected mixed workbench click to focus floating empty pane, got:\n%s", current.View())
+			}
+			tab := current.State().Domain.Workspaces[types.WorkspaceID("ws-1")].Tabs[types.TabID("tab-1")]
+			if tab.ActivePaneID != types.PaneID("float-empty") || tab.ActiveLayer != types.FocusLayerFloating {
+				t.Fatalf("expected mixed workbench click to activate float-empty on floating layer, got %+v", tab)
+			}
+			return nil
+		},
+	}
+
+	err := runWithDependencies(client, Config{}, nil, io.Discard, runtimeDependencies{
+		Planner:          planner,
+		TaskExecutor:     executor,
+		SessionBootstrap: bootstrapper,
+		ProgramRunner:    runner,
+	})
+	if err != nil {
+		t.Fatalf("expected mixed floating pane title mouse-click scenario to succeed, got %v", err)
 	}
 }
 

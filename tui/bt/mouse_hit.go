@@ -1,7 +1,9 @@
 package bt
 
 import (
+	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
@@ -32,6 +34,13 @@ func mapWorkbenchMouseClick(state types.AppState, msg tea.MouseMsg, view string)
 	line, ok := lineAtIndexStripped(view, msg.Y)
 	if !ok {
 		return nil
+	}
+	if targetTabID, targetPaneID, ok := clickedWorkbenchTabJumpTarget(workspace, line, msg.X); ok {
+		return []intent.Intent{intent.WorkspaceTreeJumpIntent{
+			WorkspaceID: workspace.ID,
+			TabID:       targetTabID,
+			PaneID:      targetPaneID,
+		}}
 	}
 	paneID, ok := clickedWorkbenchPaneID(state, tab, line)
 	if !ok {
@@ -496,6 +505,106 @@ func clickedWorkbenchPaneID(state types.AppState, tab types.TabState, line strin
 		return "", false
 	}
 	return candidates[0], true
+}
+
+// clickedWorkbenchTabJumpTarget 优先处理顶部 tab strip 的点击。
+// 这里不引入完整盒模型，而是直接复用 renderer 已经稳定输出的 tab label 文本，
+// 再结合鼠标 X 坐标把点击归属到具体 tab，避免整行点击时总是落到第一个匹配项。
+func clickedWorkbenchTabJumpTarget(workspace types.WorkspaceState, line string, mouseX int) (types.TabID, types.PaneID, bool) {
+	if strings.TrimSpace(line) == "" || len(workspace.TabOrder) == 0 {
+		return "", "", false
+	}
+	searchOffset := 0
+	for index, tabID := range workspace.TabOrder {
+		tab, ok := workspace.Tabs[tabID]
+		if !ok {
+			continue
+		}
+		start, end, ok := clickedWorkbenchTabRange(line, searchOffset, index, tab)
+		if !ok {
+			continue
+		}
+		searchOffset = end
+		startRune := utf8.RuneCountInString(line[:start])
+		endRune := utf8.RuneCountInString(line[:end])
+		startRune, endRune = expandWorkbenchTabClickRange(line, startRune, endRune)
+		if mouseX < startRune || mouseX >= endRune {
+			continue
+		}
+		paneID, ok := activeWorkbenchTabPaneID(tab)
+		if !ok {
+			return "", "", false
+		}
+		return tabID, paneID, true
+	}
+	return "", "", false
+}
+
+func workbenchTabDisplayLabel(index int, tab types.TabState) string {
+	return fmt.Sprintf("%d:%s", index+1, workbenchTabLabel(tab))
+}
+
+func workbenchTabShortLabel(index int, tab types.TabState) string {
+	return fmt.Sprintf("%d:%s", index+1, workbenchTabIdentityLabel(tab))
+}
+
+func clickedWorkbenchTabRange(line string, searchOffset int, index int, tab types.TabState) (int, int, bool) {
+	labels := []string{
+		workbenchTabShortLabel(index, tab),
+		workbenchTabDisplayLabel(index, tab),
+	}
+	for _, label := range labels {
+		byteStart := strings.Index(line[searchOffset:], label)
+		if byteStart < 0 {
+			continue
+		}
+		byteStart += searchOffset
+		return byteStart, byteStart + len(label), true
+	}
+	return 0, 0, false
+}
+
+func workbenchTabLabel(tab types.TabState) string {
+	label := workbenchTabIdentityLabel(tab)
+	switch paneCount := len(tab.Panes); paneCount {
+	case 0:
+		return label + " • empty"
+	case 1:
+		return label + " • 1 pane"
+	default:
+		return fmt.Sprintf("%s • %d panes", label, paneCount)
+	}
+}
+
+func workbenchTabIdentityLabel(tab types.TabState) string {
+	if strings.TrimSpace(tab.Name) != "" {
+		return tab.Name
+	}
+	return string(tab.ID)
+}
+
+func expandWorkbenchTabClickRange(line string, start int, end int) (int, int) {
+	runes := []rune(line)
+	if start > 0 && runes[start-1] == '[' {
+		start--
+	}
+	if end < len(runes) && runes[end] == ']' {
+		end++
+	}
+	return start, end
+}
+
+func activeWorkbenchTabPaneID(tab types.TabState) (types.PaneID, bool) {
+	if tab.ActivePaneID != "" {
+		if _, ok := tab.Panes[tab.ActivePaneID]; ok {
+			return tab.ActivePaneID, true
+		}
+	}
+	ordered := orderedWorkbenchPaneIDs(tab)
+	if len(ordered) == 0 {
+		return "", false
+	}
+	return ordered[0], true
 }
 
 func orderedWorkbenchPaneIDs(tab types.TabState) []types.PaneID {

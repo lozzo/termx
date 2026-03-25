@@ -38,6 +38,7 @@ termx TUI 当前处于“文档主线已稳定，领域骨架、主入口 overla
 - 本轮继续把现代 workbench 的窗格感往前收：single / split / floating pane card 现在统一显式带 `title bar`，floating pane 额外补上 `Geometry` 区与 `z-order`，window deck 也会优先显示层级信息，默认现代路径和 shell-only renderer 已一并锁住
 - 本轮继续把现代 workbench / overlay 的层次感往前收：pane card 现在补上 `header/footer` 视觉条与 active/standby 操作提示，floating summary 会显式带 `top window`，overlay 打开时也会保留 `Backdrop workbench` 预览，避免 modal 直接切断当前工作台上下文
 - 本轮继续把 modern pane 的 terminal 区往真实 screen 组件推进：connected pane 不再只渲染裸 preview 文本，而是统一改成 `Screen` 区块，显式带 `rows x/y` 摘要、frame body 与 unavailable 占位；single / split / floating 和默认现代路径已同步锁住
+- 本轮继续把 modern workbench 的鼠标导航往前收口：默认主壳现在支持直接点击 tab strip 切换 tab，也支持在 mixed workbench 里点击 floating pane 标题直达对应 pane/layer，默认现代路径与 mapper/runtime E2E 已一起锁住
 - 本轮继续把 focus 反馈往产品态推进：modern screen meta 现在显式显示 `primary/secondary` 焦点层级，floating workbench summary 会同时带 `active pane / top window` 标识，window deck card 也会显式区分 `active window / top window`，overlay backdrop 额外补上 `focus paused` 提示
 - 本轮继续把 modern overlay/modal 壳层往产品态推进：统一补上 `Context / State / Footer` chrome，`manager / workspace picker / terminal picker / layout resolve / prompt` 都会显式显示 return/selection/active 状态与统一 footer action panel，modal 外壳结构开始稳定
 - 本轮继续把 modern modal 正文结构统一化：`prompt` 与 `layout resolve` 不再走散文式正文，而是和 manager/picker 一样统一落到 `left/right/action` 分区面板模型，显式显示 `Fields panel / Context panel / Choices panel / Target panel / Action bar`
@@ -2006,3 +2007,40 @@ termx TUI 现在已经进入“状态机骨架、runtime 主链路、picker / ma
 - 当前主线可以继续往前推进：
   - 收口 workspace/tab/header/footer 的最终产品排版
   - 再往后进入颜色、重叠渲染、性能和残影治理
+
+## 23. 第 209 轮 TDD
+
+这一轮按“功能代码 + 相关测试 + 状态记录”一起收口，没有再停留在只补零散测试的节奏里，主目标是把默认 modern workbench 的鼠标导航从“只能点 pane 标题”继续推进到“可直接点 tab / mixed pane”：
+
+1. 补上 workbench tab strip 鼠标跳转
+   - `tui/bt/mouse_hit.go` 新增顶部 tab strip 命中解析
+   - 现在会优先识别 modern 顶栏真实输出的短 tab label，如 `1:shell`、`2:logs`
+   - 兼容更详细的 tab label 形态，点击后统一走已有 `WorkspaceTreeJumpIntent`
+2. 保持 pane 点击链路与 tab 点击链路共存
+   - workbench 鼠标处理顺序调整为“先 tab strip，后 pane 标题”
+   - 避免同一行里同时出现 tab/pane 文本时，被 pane 标题命中抢走
+3. mixed workbench 的 floating pane 点击也补上端到端闭环
+   - 在 mixed-slot 视图下，点击 `unconnected pane` 这类 floating pane 标题
+   - 现在会切到对应 floating pane，并把 focus/layer 一起切到 `floating`
+4. mapper/runtime 验证成组补齐
+   - `tui/bt/intent_mapper_test.go` 新增 tab strip 鼠标跳转测试
+   - `tui/runtime_test.go` 新增：
+     - `TestE2ERunScenarioMouseClickOnTabStripMovesFocusToExactTab`
+     - `TestE2ERunScenarioMouseClickOnMixedFloatingPaneTitleMovesFocusToFloatingLayer`
+   - 既覆盖 split/floating 已有标题点击链路，也把 tab 和 mixed workbench 主路径一起锁住
+
+本轮验证命令：
+
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./tui/bt -run 'TestIntentMapperWorkbenchMouseClickOn(TabStrip|SplitPaneTitle|FloatingPaneTitle)' -count=1`
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./tui -run 'TestE2ERunScenarioMouseClickOn(TabStrip|SplitPaneTitle|FloatingPaneTitle|MixedFloatingPaneTitle)' -count=1`
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./tui -count=1`
+- `export PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH"; go test ./... -count=1`
+
+当前状态更新为：
+
+- 默认 modern 主壳已经具备 pane 标题点击 + tab strip 点击 + mixed floating pane 点击三条鼠标主导航路径
+- 鼠标跳转仍然复用统一 reducer/tree jump 主线，没有引入新的焦点分叉状态机
+- 下一块应继续推进真实可用主线：
+  - workspace/tab/header/footer 的最终产品排版
+  - 更接近最终形态的 workbench box model 与 pane chrome
+  - 最后再进入颜色、重叠渲染、性能和残影治理

@@ -592,6 +592,38 @@ func TestIntentMapperWorkbenchMouseClickOnFloatingPaneTitleJumpsToExactPane(t *t
 	}
 }
 
+func TestIntentMapperWorkbenchMouseClickOnTabStripJumpsToTargetTab(t *testing.T) {
+	mapper := NewIntentMapper(Config{})
+	state := newAppStateWithTwoTabWorkbenchTargets()
+	view := strings.Join([]string{
+		"termx",
+		"[1:shell • 1 pane] 2:logs • 1 pane pane:api-dev",
+		"api-dev  running  owner",
+	}, "\n")
+	clickY := findLineIndexWithPrefix(view, "[1:shell")
+	clickX := strings.Index(strings.Split(view, "\n")[clickY], "2:logs")
+	if clickX < 0 {
+		t.Fatalf("expected tab strip to contain 2:logs")
+	}
+
+	intents := mapper.MapMouse(state, tea.MouseMsg{
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		X:      clickX,
+		Y:      clickY,
+	}, view)
+	if len(intents) != 1 {
+		t.Fatalf("expected one intent, got %d", len(intents))
+	}
+	if intents[0] != (intent.WorkspaceTreeJumpIntent{
+		WorkspaceID: types.WorkspaceID("ws-1"),
+		TabID:       types.TabID("tab-2"),
+		PaneID:      types.PaneID("pane-2"),
+	}) {
+		t.Fatalf("expected tab strip click to jump to tab-2/pane-2, got %+v", intents[0])
+	}
+}
+
 func TestIntentMapperWorkspacePickerMouseClickOnCreateRowMovesAndSubmits(t *testing.T) {
 	mapper := NewIntentMapper(Config{})
 	state := newAppStateWithTwoWorkspaces()
@@ -1348,6 +1380,55 @@ func newAppStateWithFloatingWorkbenchTargets() types.AppState {
 		WorkspaceID: types.WorkspaceID("ws-1"),
 		TabID:       types.TabID("tab-1"),
 		PaneID:      types.PaneID("float-1"),
+	}
+	return state
+}
+
+func newAppStateWithTwoTabWorkbenchTargets() types.AppState {
+	state := newAppStateWithSinglePane()
+	ws := state.Domain.Workspaces[types.WorkspaceID("ws-1")]
+	ws.TabOrder = []types.TabID{types.TabID("tab-1"), types.TabID("tab-2")}
+	ws.ActiveTabID = types.TabID("tab-1")
+	ws.Tabs[types.TabID("tab-1")] = types.TabState{
+		ID:           types.TabID("tab-1"),
+		Name:         "shell",
+		ActivePaneID: types.PaneID("pane-1"),
+		ActiveLayer:  types.FocusLayerTiled,
+		Panes: map[types.PaneID]types.PaneState{
+			types.PaneID("pane-1"): {
+				ID:         types.PaneID("pane-1"),
+				Kind:       types.PaneKindTiled,
+				SlotState:  types.PaneSlotConnected,
+				TerminalID: types.TerminalID("term-1"),
+			},
+		},
+		RootSplit: &types.SplitNode{PaneID: types.PaneID("pane-1")},
+	}
+	ws.Tabs[types.TabID("tab-2")] = types.TabState{
+		ID:           types.TabID("tab-2"),
+		Name:         "logs",
+		ActivePaneID: types.PaneID("pane-2"),
+		ActiveLayer:  types.FocusLayerTiled,
+		Panes: map[types.PaneID]types.PaneState{
+			types.PaneID("pane-2"): {
+				ID:         types.PaneID("pane-2"),
+				Kind:       types.PaneKindTiled,
+				SlotState:  types.PaneSlotConnected,
+				TerminalID: types.TerminalID("term-2"),
+			},
+		},
+		RootSplit: &types.SplitNode{PaneID: types.PaneID("pane-2")},
+	}
+	state.Domain.Workspaces[types.WorkspaceID("ws-1")] = ws
+	state.Domain.Terminals[types.TerminalID("term-1")] = types.TerminalRef{
+		ID:    types.TerminalID("term-1"),
+		Name:  "api-dev",
+		State: types.TerminalRunStateRunning,
+	}
+	state.Domain.Terminals[types.TerminalID("term-2")] = types.TerminalRef{
+		ID:    types.TerminalID("term-2"),
+		Name:  "build-log",
+		State: types.TerminalRunStateRunning,
 	}
 	return state
 }
