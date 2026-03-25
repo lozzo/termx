@@ -799,6 +799,63 @@ func TestServerKillExitedRemovesImmediately(t *testing.T) {
 	}
 }
 
+func TestServerRemoveCleansAttachmentsAndClosesTerminal(t *testing.T) {
+	ctx := context.Background()
+	srv := NewServer(WithDefaultScrollback(128))
+
+	info, err := srv.Create(ctx, CreateOptions{
+		ID:      "remove01",
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create failed: %v", err)
+	}
+	term, err := srv.getTerminal(info.ID)
+	if err != nil {
+		t.Fatalf("get terminal failed: %v", err)
+	}
+
+	allocator := protocol.NewChannelAllocator()
+	attachments := make(map[uint16]*sessionAttachment)
+	var attachmentsMu sync.RWMutex
+	sendFrame := func(uint16, uint8, []byte) error { return nil }
+
+	channel := mustAttachChannel(t, srv, ctx, "memory", allocator, attachments, &attachmentsMu, info.ID, string(ModeCollaborator), sendFrame)
+	if channel == 0 {
+		t.Fatal("expected attachment channel")
+	}
+
+	_, code, err := srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+		ID:     1,
+		Method: "remove",
+		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
+	}, sendFrame)
+	if err != nil {
+		t.Fatalf("expected remove to succeed, got %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("expected success code 0, got %d", code)
+	}
+	if _, err := srv.Get(ctx, info.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected removed terminal to leave registry, got %v", err)
+	}
+	attachmentsMu.RLock()
+	_, ok := attachments[channel]
+	attachmentsMu.RUnlock()
+	if ok {
+		t.Fatal("expected remove to cleanup transport attachment")
+	}
+	select {
+	case <-term.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("expected remove to close terminal")
+	}
+}
+
 func TestServerOptionsAndHelpers(t *testing.T) {
 	logger := discardWriter{}
 	slogLogger := slog.New(slog.NewTextHandler(logger, nil))

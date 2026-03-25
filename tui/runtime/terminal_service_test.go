@@ -216,6 +216,22 @@ func TestTerminalPoolPreviewConsumesStreamFramesContinuously(t *testing.T) {
 				Cells: [][]protocol.Cell{{{Content: "s", Width: 1}}},
 			},
 		},
+		snapshotByID: map[string][]*protocol.Snapshot{
+			"term-2": {
+				{
+					TerminalID: "term-2",
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "n", Width: 1}, {Content: "e", Width: 1}}},
+					},
+				},
+				{
+					TerminalID: "term-2",
+					Screen: protocol.ScreenData{
+						Cells: [][]protocol.Cell{{{Content: "t", Width: 1}, {Content: "w", Width: 1}, {Content: "o", Width: 1}}},
+					},
+				},
+			},
+		},
 		streams: map[uint16]chan protocol.StreamFrame{
 			19: make(chan protocol.StreamFrame, 4),
 		},
@@ -233,7 +249,7 @@ func TestTerminalPoolPreviewConsumesStreamFramesContinuously(t *testing.T) {
 
 	teaModel, nextCmd := teaModel.Update(msg)
 	updated := teaModel.(app.Model)
-	if got := flattenedPreviewText(updated, types.TerminalID("term-2")); !strings.Contains(got, "one") {
+	if got := flattenedPreviewText(updated, types.TerminalID("term-2")); got != "one" {
 		t.Fatalf("expected first stream frame to update preview, got %q", got)
 	}
 	if nextCmd == nil {
@@ -244,7 +260,7 @@ func TestTerminalPoolPreviewConsumesStreamFramesContinuously(t *testing.T) {
 	msg = nextCmd()
 	teaModel, _ = teaModel.Update(msg)
 	updated = teaModel.(app.Model)
-	if got := flattenedPreviewText(updated, types.TerminalID("term-2")); !strings.Contains(got, "two") {
+	if got := flattenedPreviewText(updated, types.TerminalID("term-2")); got != "two" {
 		t.Fatalf("expected continuous preview refresh, got %q", got)
 	}
 }
@@ -413,6 +429,132 @@ func TestTerminalPoolMetadataSaveReachesRuntimeService(t *testing.T) {
 	}
 }
 
+func TestTerminalPoolOpenActionsRollbackDirtyStateWhenAttachFails(t *testing.T) {
+	tests := []struct {
+		name   string
+		intent app.Intent
+		check  func(t *testing.T, next app.Model)
+	}{
+		{
+			name:   "open here",
+			intent: app.OpenSelectedTerminalHereIntent{},
+			check: func(t *testing.T, next app.Model) {
+				pane, _ := next.Workspace.ActiveTab().ActivePane()
+				if pane.TerminalID != types.TerminalID("term-1") {
+					t.Fatalf("expected active pane to keep original binding, got %+v", pane)
+				}
+			},
+		},
+		{
+			name:   "open new tab",
+			intent: app.OpenSelectedTerminalInNewTabIntent{},
+			check: func(t *testing.T, next app.Model) {
+				pane, _ := next.Workspace.ActiveTab().ActivePane()
+				if pane.TerminalID != "" || pane.SlotState != types.PaneSlotUnconnected {
+					t.Fatalf("expected new tab pane to stay unconnected on attach failure, got %+v", pane)
+				}
+			},
+		},
+		{
+			name:   "open floating",
+			intent: app.OpenSelectedTerminalInFloatingIntent{},
+			check: func(t *testing.T, next app.Model) {
+				pane, _ := next.Workspace.ActiveTab().ActivePane()
+				if pane.TerminalID != "" || pane.SlotState != types.PaneSlotUnconnected {
+					t.Fatalf("expected floating pane to stay unconnected on attach failure, got %+v", pane)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := terminalPoolModelForRuntimeTest()
+			model.Pool.SelectedTerminalID = types.TerminalID("term-2")
+			model.Pool.PreviewTerminalID = types.TerminalID("term-2")
+			service := NewTerminalService(&stubClient{
+				attachErrByID: map[string]error{"term-2": errors.New("attach failed")},
+			})
+
+			next, err := ApplyIntent(context.Background(), model, service, tt.intent)
+			if err == nil {
+				t.Fatal("expected attach failure")
+			}
+			tt.check(t, next)
+			if slicesContainsRuntimePane(next.Terminals[types.TerminalID("term-2")].AttachedPaneIDs, types.PaneID("pane-1")) {
+				t.Fatalf("expected selected terminal to avoid dirty pane binding, got %#v", next.Terminals[types.TerminalID("term-2")])
+			}
+			if next.Terminals[types.TerminalID("term-2")].OwnerPaneID != "" {
+				t.Fatalf("expected selected terminal owner to stay empty, got %#v", next.Terminals[types.TerminalID("term-2")])
+			}
+		})
+	}
+}
+
+func TestTerminalPoolLeavingPoolCancelsPreviewSubscription(t *testing.T) {
+	client := &stubClient{
+		attachResult: &protocol.AttachResult{Channel: 19, Mode: "observer"},
+		snapshot:     &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}},
+		streams:      map[uint16]chan protocol.StreamFrame{19: make(chan protocol.StreamFrame)},
+	}
+	model := terminalPoolModelForRuntimeTest()
+	model.IntentExecutor = NewModelIntentExecutor(NewTerminalService(client))
+
+	teaModel, cmd := model.Update(app.IntentMessage{Intent: app.OpenTerminalPoolIntent{}})
+	if cmd == nil {
+		t.Fatal("expected preview cmd after opening pool")
+	}
+	opened := teaModel.(app.Model)
+
+	teaModel, _ = opened.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	closed := teaModel.(app.Model)
+	if closed.PreviewStreamNext != nil {
+		t.Fatal("expected leaving pool to clear preview cmd")
+	}
+	if client.cancelledChannels[19] == 0 {
+		t.Fatalf("expected preview cancel callback, got %#v", client.cancelledChannels)
+	}
+}
+
+func TestTerminalPoolPreviewStreamTriggersSnapshotRefreshInsteadOfRawAppend(t *testing.T) {
+	client := &stubClient{
+		attachResult: &protocol.AttachResult{Channel: 19, Mode: "observer"},
+		snapshot: &protocol.Snapshot{
+			TerminalID: "term-2",
+			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "l", Width: 1}, {Content: "d", Width: 1}}}},
+		},
+		snapshotByID: map[string][]*protocol.Snapshot{
+			"term-2": {
+				{
+					TerminalID: "term-2",
+					Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "f", Width: 1}, {Content: "r", Width: 1}, {Content: "e", Width: 1}, {Content: "s", Width: 1}, {Content: "h", Width: 1}}}},
+				},
+			},
+		},
+		streams: map[uint16]chan protocol.StreamFrame{
+			19: make(chan protocol.StreamFrame, 2),
+		},
+	}
+	model := terminalPoolModelForRuntimeTest()
+	model.IntentExecutor = NewModelIntentExecutor(NewTerminalService(client))
+
+	teaModel, cmd := model.Update(app.IntentMessage{Intent: app.SelectTerminalPoolIntent{TerminalID: types.TerminalID("term-2")}})
+	if cmd == nil {
+		t.Fatal("expected preview cmd")
+	}
+	client.streams[19] <- protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("raw-drift")}
+	msg := cmd()
+	teaModel, _ = teaModel.Update(msg)
+	updated := teaModel.(app.Model)
+	got := flattenedPreviewText(updated, types.TerminalID("term-2"))
+	if !strings.Contains(got, "fresh") {
+		t.Fatalf("expected snapshot refresh content, got %q", got)
+	}
+	if strings.Contains(got, "raw-drift") {
+		t.Fatalf("expected preview to avoid raw append drift, got %q", got)
+	}
+}
+
 func splitUnconnectedPaneModelForRuntimeTest() app.Model {
 	model := livePaneModelForRuntimeTest()
 	model = model.Apply(app.IntentSplitVertical)
@@ -481,6 +623,15 @@ func flattenedPreviewText(model app.Model, terminalID types.TerminalID) string {
 		lines = append(lines, b.String())
 	}
 	return strings.Join(lines, "\n")
+}
+
+func slicesContainsRuntimePane(items []types.PaneID, target types.PaneID) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
 }
 
 type protocolRuntimeClient struct {

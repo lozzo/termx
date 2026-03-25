@@ -215,6 +215,51 @@ func TestClientAttachBuffersFramesThatArriveBeforeStreamRegistration(t *testing.
 	}
 }
 
+func TestClientStreamCancelDropsLateFramesAndKeepsReadLoopAlive(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+	defer serverTransport.Close()
+
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- runLateFrameAfterCancelServer(serverTransport)
+	}()
+
+	client := NewClient(clientTransport)
+	defer client.Close()
+
+	if err := client.Hello(ctx, Hello{Version: Version, Client: "test"}); err != nil {
+		t.Fatalf("hello failed: %v", err)
+	}
+
+	attach, err := client.Attach(ctx, "term-1", "observer")
+	if err != nil {
+		t.Fatalf("attach failed: %v", err)
+	}
+	_, stop := client.Stream(attach.Channel)
+	stop()
+
+	stream, stop2 := client.Stream(attach.Channel)
+	defer stop2()
+
+	select {
+	case frame := <-stream:
+		t.Fatalf("expected late frame to be dropped after cancel, got %#v", frame)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	if _, err := client.List(ctx); err != nil {
+		t.Fatalf("expected client to stay usable after late frame, got %v", err)
+	}
+
+	if err := <-serverDone; err != nil {
+		t.Fatalf("fake server failed: %v", err)
+	}
+}
+
 func TestClientCloseWaitsForReadLoopAndUnblocksPendingRequest(t *testing.T) {
 	clientTransport, serverTransport := memory.NewPair()
 	defer serverTransport.Close()
@@ -440,6 +485,40 @@ func runBufferedAttachServer(tr *memory.Transport) error {
 	}
 	attachResult, _ := json.Marshal(AttachResult{Mode: "collaborator", Channel: 7})
 	return sendResponse(tr, req.ID, attachResult)
+}
+
+func runLateFrameAfterCancelServer(tr *memory.Transport) error {
+	if err := expectHello(tr); err != nil {
+		return err
+	}
+	if err := respondHello(tr); err != nil {
+		return err
+	}
+
+	req, err := expectRequest(tr, "attach")
+	if err != nil {
+		return err
+	}
+	attachResult, _ := json.Marshal(AttachResult{Mode: "observer", Channel: 7})
+	if err := sendResponse(tr, req.ID, attachResult); err != nil {
+		return err
+	}
+	time.Sleep(50 * time.Millisecond)
+	if err := sendFrame(tr, 7, TypeOutput, []byte("late-output")); err != nil {
+		return err
+	}
+
+	req, err = expectRequest(tr, "list")
+	if err != nil {
+		return err
+	}
+	listResult, _ := json.Marshal(ListResult{
+		Terminals: []TerminalInfo{{ID: "term-1", Name: "demo", State: "running"}},
+	})
+	if err := sendResponse(tr, req.ID, listResult); err != nil {
+		return err
+	}
+	return nil
 }
 
 func expectHello(tr *memory.Transport) error {

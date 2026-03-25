@@ -149,6 +149,10 @@ func ApplyIntent(ctx context.Context, model app.Model, service intentRuntimeServ
 
 func applyIntentWithStore(ctx context.Context, model app.Model, service intentRuntimeService, store *SessionStore, intent app.Intent) (app.Model, tea.Cmd, error) {
 	next := model.Apply(intent)
+	if store != nil && shouldCancelPreview(model, next, intent) {
+		store.CancelPreview()
+		next.PreviewStreamNext = nil
+	}
 	var cmd tea.Cmd
 	for _, effect := range next.PendingEffects {
 		var err error
@@ -160,9 +164,21 @@ func applyIntentWithStore(ctx context.Context, model app.Model, service intentRu
 	}
 	next.PendingEffects = nil
 	if store != nil {
-		next.PreviewStreamNext = store.NextPreviewMessageCmd
+		if store.ActivePreview().Channel != 0 {
+			next.PreviewStreamNext = store.NextPreviewMessageCmd
+		} else {
+			next.PreviewStreamNext = nil
+		}
 	}
 	return next, cmd, nil
+}
+
+func shouldCancelPreview(previous app.Model, next app.Model, intent app.Intent) bool {
+	switch intent.(type) {
+	case app.CloseTerminalPoolIntent, app.OpenSelectedTerminalHereIntent, app.OpenSelectedTerminalInNewTabIntent, app.OpenSelectedTerminalInFloatingIntent:
+		return previous.Pool.PreviewTerminalID != ""
+	}
+	return previous.Pool.PreviewTerminalID != "" && next.Pool.PreviewTerminalID == ""
 }
 
 func applyEffect(ctx context.Context, model app.Model, service intentRuntimeService, store *SessionStore, effect app.Effect) (app.Model, tea.Cmd, error) {
@@ -222,6 +238,20 @@ func applyEffect(ctx context.Context, model app.Model, service intentRuntimeServ
 			Channel:              attach.Channel,
 			Snapshot:             snapshot,
 			SubscriptionRevision: binding.Revision,
+		})
+		if store != nil {
+			return next, store.NextPreviewMessageCmd(), nil
+		}
+		return next, nil, nil
+	case app.RefreshPreviewSnapshotEffect:
+		snapshot, err := service.Snapshot(ctx, string(typed.TerminalID), 0, 0)
+		if err != nil {
+			return model, nil, err
+		}
+		next := model.Apply(app.PreviewSnapshotRefreshedIntent{
+			TerminalID: typed.TerminalID,
+			Snapshot:   snapshot,
+			Revision:   typed.Revision,
 		})
 		if store != nil {
 			return next, store.NextPreviewMessageCmd(), nil

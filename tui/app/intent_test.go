@@ -289,8 +289,11 @@ func TestTerminalPoolActionsRenameKillRemoveAndOpenTargetPane(t *testing.T) {
 
 	openHere := model.Apply(OpenSelectedTerminalHereIntent{})
 	pane, _ := openHere.Workspace.ActiveTab().ActivePane()
-	if openHere.Screen != ScreenWorkbench || pane.TerminalID != types.TerminalID("term-2") {
-		t.Fatalf("expected open-here to bind selected terminal in workbench, got screen=%q pane=%+v", openHere.Screen, pane)
+	if openHere.Screen != ScreenWorkbench || pane.TerminalID != types.TerminalID("term-1") {
+		t.Fatalf("expected open-here to keep pane clean until attach succeeds, got screen=%q pane=%+v", openHere.Screen, pane)
+	}
+	if effect, ok := openHere.PendingEffects[0].(AttachTerminalEffect); !ok || effect.TerminalID != types.TerminalID("term-2") || effect.PaneID != pane.ID {
+		t.Fatalf("expected open-here attach effect, got %#v", openHere.PendingEffects)
 	}
 
 	openTab := model.Apply(OpenSelectedTerminalInNewTabIntent{})
@@ -298,13 +301,13 @@ func TestTerminalPoolActionsRenameKillRemoveAndOpenTargetPane(t *testing.T) {
 		t.Fatalf("expected new-tab open to return to workbench, got %q", openTab.Screen)
 	}
 	tabPane, _ := openTab.Workspace.ActiveTab().ActivePane()
-	if tabPane.TerminalID != types.TerminalID("term-2") {
-		t.Fatalf("expected new tab to bind selected terminal, got %+v", tabPane)
+	if tabPane.TerminalID != "" || tabPane.SlotState != types.PaneSlotUnconnected {
+		t.Fatalf("expected new tab pane to stay unconnected until attach succeeds, got %+v", tabPane)
 	}
 
 	openFloat := model.Apply(OpenSelectedTerminalInFloatingIntent{})
 	floatPane, _ := openFloat.Workspace.ActiveTab().ActivePane()
-	if openFloat.Screen != ScreenWorkbench || floatPane.Kind != types.PaneKindFloating || floatPane.TerminalID != types.TerminalID("term-2") {
+	if openFloat.Screen != ScreenWorkbench || floatPane.Kind != types.PaneKindFloating || floatPane.TerminalID != "" {
 		t.Fatalf("expected floating open target, got screen=%q pane=%+v", openFloat.Screen, floatPane)
 	}
 }
@@ -374,6 +377,27 @@ func TestTerminalPoolSelectionFollowsRenderedVisibleParkedExitedOrder(t *testing
 	next = next.Apply(MoveTerminalPoolSelectionIntent{Delta: -1})
 	if next.Pool.SelectedTerminalID != types.TerminalID("term-2") {
 		t.Fatalf("expected up to move back to parked term-2, got %q", next.Pool.SelectedTerminalID)
+	}
+}
+
+func TestTerminalPoolSearchNoResultsClearsSelectionAndPreview(t *testing.T) {
+	model := newTerminalPoolModelForIntentTest().Apply(OpenTerminalPoolIntent{})
+
+	next := model.Apply(SearchTerminalPoolIntent{Query: "no-match"})
+	if next.Pool.SelectedTerminalID != "" {
+		t.Fatalf("expected zero-result search to clear selection, got %q", next.Pool.SelectedTerminalID)
+	}
+	if next.Pool.PreviewTerminalID != "" {
+		t.Fatalf("expected zero-result search to clear preview, got %q", next.Pool.PreviewTerminalID)
+	}
+	if len(next.PendingEffects) != 0 {
+		t.Fatalf("expected zero-result search to skip preview refresh, got %d", len(next.PendingEffects))
+	}
+
+	opened := next.Apply(OpenSelectedTerminalHereIntent{})
+	pane, _ := opened.Workspace.ActiveTab().ActivePane()
+	if pane.TerminalID != types.TerminalID("term-1") {
+		t.Fatalf("expected zero-result actions to no-op, got %+v", pane)
 	}
 }
 

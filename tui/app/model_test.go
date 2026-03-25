@@ -115,3 +115,24 @@ func TestTerminalPoolKeysDriveSelectionAndSearchThroughUpdate(t *testing.T) {
 		t.Fatalf("expected search to switch preview term-1, got %q", filtered.Pool.PreviewTerminalID)
 	}
 }
+
+func TestTerminalPoolOverlayBlocksPageHotkeysExceptEsc(t *testing.T) {
+	model := newTerminalPoolModelForIntentTest().Apply(OpenTerminalPoolIntent{})
+	model = model.Apply(OpenTerminalMetadataEditorIntent{})
+	before := model
+
+	teaModel, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	after := teaModel.(Model)
+	if after.Overlay.Active().Kind != OverlayTerminalMetadataEditor {
+		t.Fatalf("expected metadata editor to stay open, got %q", after.Overlay.Active().Kind)
+	}
+	if after.Pool.SelectedTerminalID != before.Pool.SelectedTerminalID {
+		t.Fatalf("expected overlay hotkey to avoid pool action, got %q", after.Pool.SelectedTerminalID)
+	}
+
+	teaModel, _ = after.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	cancelled := teaModel.(Model)
+	if cancelled.Overlay.HasActive() {
+		t.Fatal("expected esc to close overlay")
+	}
+}

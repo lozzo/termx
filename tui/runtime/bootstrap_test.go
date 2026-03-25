@@ -25,10 +25,13 @@ type stubClient struct {
 	lastMetadataName  string
 	lastMetadataTags  map[string]string
 	streams           map[uint16]chan protocol.StreamFrame
+	cancelledChannels map[uint16]int
 	attachErr         error
 	snapshotErr       error
 	attachErrByID     map[string]error
 	snapshotErrByID   map[string]error
+	snapshotByID      map[string][]*protocol.Snapshot
+	snapshotCalls     map[string]int
 	listResult        *protocol.ListResult
 }
 
@@ -84,6 +87,20 @@ func (c *stubClient) Snapshot(_ context.Context, terminalID string, _ int, _ int
 	if c.snapshotErr != nil {
 		return nil, c.snapshotErr
 	}
+	if c.snapshotCalls == nil {
+		c.snapshotCalls = make(map[string]int)
+	}
+	if c.snapshot != nil && c.snapshotCalls[terminalID] == 0 {
+		if c.snapshot.TerminalID == "" || c.snapshot.TerminalID == terminalID {
+			c.snapshotCalls[terminalID]++
+			return c.snapshot, nil
+		}
+	}
+	if queue := c.snapshotByID[terminalID]; len(queue) > 0 {
+		snapshot := queue[0]
+		c.snapshotByID[terminalID] = queue[1:]
+		return snapshot, nil
+	}
 	if c.snapshot != nil {
 		return c.snapshot, nil
 	}
@@ -96,12 +113,21 @@ func (c *stubClient) Stream(channel uint16) (<-chan protocol.StreamFrame, func()
 	if c.streams == nil {
 		c.streams = make(map[uint16]chan protocol.StreamFrame)
 	}
-	ch, ok := c.streams[channel]
-	if ok {
-		return ch, func() {}
+	if c.cancelledChannels == nil {
+		c.cancelledChannels = make(map[uint16]int)
 	}
-	ch = make(chan protocol.StreamFrame)
-	return ch, func() { close(ch) }
+	ch, ok := c.streams[channel]
+	if !ok {
+		ch = make(chan protocol.StreamFrame)
+		c.streams[channel] = ch
+	}
+	return ch, func() {
+		c.cancelledChannels[channel]++
+		if current, ok := c.streams[channel]; ok {
+			close(current)
+			delete(c.streams, channel)
+		}
+	}
 }
 func (c *stubClient) Kill(_ context.Context, terminalID string) error {
 	c.lastKilledID = terminalID

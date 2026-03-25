@@ -17,8 +17,9 @@ type Client struct {
 
 	mu      sync.Mutex
 	waiters map[uint64]chan result
-	streams map[uint16]chan StreamFrame
+	streams map[uint16]*clientStream
 	pending map[uint16][]StreamFrame
+	dropped map[uint16]struct{}
 	events  chan Event
 
 	helloCh chan result
@@ -35,12 +36,48 @@ type StreamFrame struct {
 	Payload []byte
 }
 
+type clientStream struct {
+	mu sync.Mutex
+	ch chan StreamFrame
+}
+
+func newClientStream() *clientStream {
+	return &clientStream{ch: make(chan StreamFrame, 256)}
+}
+
+func (s *clientStream) channel() chan StreamFrame {
+	return s.ch
+}
+
+func (s *clientStream) send(frame StreamFrame) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ch == nil {
+		return
+	}
+	select {
+	case s.ch <- frame:
+	default:
+	}
+}
+
+func (s *clientStream) close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ch == nil {
+		return
+	}
+	close(s.ch)
+	s.ch = nil
+}
+
 func NewClient(t transport.Transport) *Client {
 	c := &Client{
 		transport: t,
 		waiters:   make(map[uint64]chan result),
-		streams:   make(map[uint16]chan StreamFrame),
+		streams:   make(map[uint16]*clientStream),
 		pending:   make(map[uint16][]StreamFrame),
+		dropped:   make(map[uint16]struct{}),
 		helloCh:   make(chan result, 1),
 		done:      make(chan struct{}),
 	}
@@ -119,18 +156,17 @@ func (c *Client) Attach(ctx context.Context, terminalID string, mode string) (*A
 		return nil, err
 	}
 	c.mu.Lock()
-	if _, ok := c.streams[out.Channel]; !ok {
-		c.streams[out.Channel] = make(chan StreamFrame, 256)
+	stream := c.streams[out.Channel]
+	if stream == nil {
+		stream = newClientStream()
+		c.streams[out.Channel] = stream
 	}
+	delete(c.dropped, out.Channel)
 	pending := c.pending[out.Channel]
 	delete(c.pending, out.Channel)
-	stream := c.streams[out.Channel]
 	c.mu.Unlock()
 	for _, frame := range pending {
-		select {
-		case stream <- frame:
-		default:
-		}
+		stream.send(frame)
 	}
 	return &out, nil
 }
@@ -179,26 +215,29 @@ func (c *Client) Resize(ctx context.Context, channel uint16, cols, rows uint16) 
 
 func (c *Client) Stream(channel uint16) (<-chan StreamFrame, func()) {
 	c.mu.Lock()
-	ch, ok := c.streams[channel]
-	if !ok {
-		ch = make(chan StreamFrame, 256)
-		c.streams[channel] = ch
+	stream := c.streams[channel]
+	if stream == nil {
+		if _, dropped := c.dropped[channel]; dropped {
+			c.mu.Unlock()
+			idle := make(chan StreamFrame)
+			return idle, func() {}
+		}
+		stream = newClientStream()
+		c.streams[channel] = stream
 	}
 	pending := c.pending[channel]
 	delete(c.pending, channel)
 	c.mu.Unlock()
 	for _, frame := range pending {
-		select {
-		case ch <- frame:
-		default:
-		}
+		stream.send(frame)
 	}
 
-	return ch, func() {
+	return stream.channel(), func() {
 		c.mu.Lock()
 		if current, ok := c.streams[channel]; ok {
 			delete(c.streams, channel)
-			close(current)
+			c.dropped[channel] = struct{}{}
+			current.close()
 		}
 		delete(c.pending, channel)
 		c.mu.Unlock()
@@ -313,8 +352,12 @@ func (c *Client) readLoop() {
 		}
 
 		c.mu.Lock()
-		ch := c.streams[channel]
-		if ch == nil {
+		stream := c.streams[channel]
+		if stream == nil {
+			if _, dropped := c.dropped[channel]; dropped {
+				c.mu.Unlock()
+				continue
+			}
 			queue := c.pending[channel]
 			if len(queue) < 256 {
 				c.pending[channel] = append(queue, StreamFrame{Type: typ, Payload: append([]byte(nil), payload...)})
@@ -323,10 +366,7 @@ func (c *Client) readLoop() {
 			continue
 		}
 		c.mu.Unlock()
-		select {
-		case ch <- StreamFrame{Type: typ, Payload: payload}:
-		default:
-		}
+		stream.send(StreamFrame{Type: typ, Payload: append([]byte(nil), payload...)})
 	}
 }
 
@@ -344,12 +384,15 @@ func (c *Client) failAll(err error) {
 	case c.helloCh <- result{err: err}:
 	default:
 	}
-	for id, ch := range c.streams {
-		close(ch)
+	for id, stream := range c.streams {
+		stream.close()
 		delete(c.streams, id)
 	}
 	for id := range c.pending {
 		delete(c.pending, id)
+	}
+	for id := range c.dropped {
+		delete(c.dropped, id)
 	}
 	if c.events != nil {
 		close(c.events)

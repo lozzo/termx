@@ -77,6 +77,15 @@ func (s *SessionStore) ActivePreview() PreviewBinding {
 	return s.preview
 }
 
+func (s *SessionStore) CancelPreview() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.preview.cancel != nil {
+		s.preview.cancel()
+	}
+	s.preview = PreviewBinding{}
+}
+
 func (s *SessionStore) NextPreviewMessageCmd() tea.Cmd {
 	s.mu.RLock()
 	binding := s.preview

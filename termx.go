@@ -719,8 +719,24 @@ func (s *Server) handleRequest(
 		if err := requireControlPermission(attachments, attachmentsMu, params.TerminalID); err != nil {
 			return nil, protocolErrorCode(err), err
 		}
-		if _, err := s.getTerminal(params.TerminalID); err != nil {
+		term, err := s.getTerminal(params.TerminalID)
+		if err != nil {
 			return nil, protocolErrorCode(err), err
+		}
+		attachmentsMu.RLock()
+		toCleanup := make([]*sessionAttachment, 0, len(attachments))
+		for _, attachment := range attachments {
+			if attachment == nil || attachment.terminalID != params.TerminalID {
+				continue
+			}
+			toCleanup = append(toCleanup, attachment)
+		}
+		attachmentsMu.RUnlock()
+		for _, attachment := range toCleanup {
+			attachment.cleanup()
+		}
+		if err := term.Close(); err != nil {
+			return nil, 500, err
 		}
 		s.removeTerminal(params.TerminalID, "removed")
 		return json.RawMessage(`{}`), 0, nil

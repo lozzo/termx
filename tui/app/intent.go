@@ -56,6 +56,10 @@ type SaveTerminalMetadataIntent struct{}
 type OpenSelectedTerminalHereIntent struct{}
 type OpenSelectedTerminalInNewTabIntent struct{}
 type OpenSelectedTerminalInFloatingIntent struct{}
+type PreviewStreamTickIntent struct {
+	TerminalID types.TerminalID
+	Revision   int
+}
 type KillSelectedTerminalIntent struct{}
 type RemoveSelectedTerminalIntent struct{}
 type OpenReconnectIntent struct{}
@@ -132,6 +136,8 @@ func (m Model) Apply(intent Intent) Model {
 		return next.applyOpenSelectedTerminalInNewTab()
 	case OpenSelectedTerminalInFloatingIntent:
 		return next.applyOpenSelectedTerminalInFloating()
+	case PreviewStreamTickIntent:
+		return next.applyPreviewStreamTick(in)
 	case KillSelectedTerminalIntent:
 		return next.applyKillSelectedTerminal()
 	case RemoveSelectedTerminalIntent:
@@ -165,6 +171,8 @@ func (m Model) Apply(intent Intent) Model {
 		return next.applyKillTerminalSucceeded(in.TerminalID)
 	case PreviewTerminalSucceededIntent:
 		return next.applyPreviewTerminalSucceeded(in)
+	case PreviewSnapshotRefreshedIntent:
+		return next.applyPreviewSnapshotRefreshed(in)
 	case UpdateTerminalMetadataSucceededIntent:
 		return next.applyUpdateTerminalMetadataSucceeded(in)
 	case RemoveTerminalSucceededIntent:
@@ -207,13 +215,17 @@ func (m Model) openTerminalPool() Model {
 func (m Model) applySearchTerminalPool(query string) Model {
 	m.Pool.Query = strings.TrimSpace(query)
 	selected := m.firstTerminalPoolSelection(m.Pool.Query)
-	if selected != "" {
-		m.Pool.SelectedTerminalID = selected
-		m.Pool.PreviewTerminalID = selected
+	if selected == "" {
+		m.Pool.SelectedTerminalID = ""
+		m.Pool.PreviewTerminalID = ""
 		m.Pool.PreviewReadonly = true
-		m.Pool.PreviewSubscriptionRevision++
-		m.PendingEffects = append(m.PendingEffects, RefreshPreviewEffect{TerminalID: selected})
+		return m
 	}
+	m.Pool.SelectedTerminalID = selected
+	m.Pool.PreviewTerminalID = selected
+	m.Pool.PreviewReadonly = true
+	m.Pool.PreviewSubscriptionRevision++
+	m.PendingEffects = append(m.PendingEffects, RefreshPreviewEffect{TerminalID: selected})
 	return m
 }
 
@@ -306,7 +318,6 @@ func (m Model) applyOpenSelectedTerminalHere() Model {
 	if terminalID == "" {
 		return m
 	}
-	m.bindActivePaneToTerminal(terminalID)
 	tab := m.Workspace.ActiveTab()
 	if tab == nil {
 		return m
@@ -328,7 +339,6 @@ func (m Model) applyOpenSelectedTerminalInNewTab() Model {
 	}
 	m = m.applyNewTab()
 	m.Overlay = m.Overlay.Clear()
-	m.bindActivePaneToTerminal(terminalID)
 	if tab := m.Workspace.ActiveTab(); tab != nil {
 		if pane, ok := tab.ActivePane(); ok {
 			m.PendingEffects = append(m.PendingEffects, AttachTerminalEffect{
@@ -347,7 +357,6 @@ func (m Model) applyOpenSelectedTerminalInFloating() Model {
 	}
 	m = m.applyNewFloat()
 	m.Overlay = m.Overlay.Clear()
-	m.bindActivePaneToTerminal(terminalID)
 	if tab := m.Workspace.ActiveTab(); tab != nil {
 		if pane, ok := tab.ActivePane(); ok {
 			m.PendingEffects = append(m.PendingEffects, AttachTerminalEffect{
@@ -365,6 +374,17 @@ func (m Model) applyKillSelectedTerminal() Model {
 		return m
 	}
 	m.PendingEffects = append(m.PendingEffects, KillTerminalEffect{TerminalID: terminalID})
+	return m
+}
+
+func (m Model) applyPreviewStreamTick(in PreviewStreamTickIntent) Model {
+	if m.Pool.PreviewTerminalID != in.TerminalID || m.Pool.PreviewSubscriptionRevision != in.Revision {
+		return m
+	}
+	m.PendingEffects = append(m.PendingEffects, RefreshPreviewSnapshotEffect{
+		TerminalID: in.TerminalID,
+		Revision:   in.Revision,
+	})
 	return m
 }
 
@@ -614,6 +634,12 @@ type PreviewTerminalSucceededIntent struct {
 	SubscriptionRevision int
 }
 
+type PreviewSnapshotRefreshedIntent struct {
+	TerminalID types.TerminalID
+	Snapshot   *protocol.Snapshot
+	Revision   int
+}
+
 type UpdateTerminalMetadataSucceededIntent struct {
 	TerminalID types.TerminalID
 	Name       string
@@ -698,6 +724,19 @@ func (m Model) applyPreviewTerminalSucceeded(in PreviewTerminalSucceededIntent) 
 	return m
 }
 
+func (m Model) applyPreviewSnapshotRefreshed(in PreviewSnapshotRefreshedIntent) Model {
+	if m.Pool.PreviewTerminalID != in.TerminalID || m.Pool.PreviewSubscriptionRevision != in.Revision {
+		return m
+	}
+	session, ok := m.Sessions[in.TerminalID]
+	if !ok {
+		return m
+	}
+	session.Snapshot = in.Snapshot
+	m.Sessions[in.TerminalID] = session
+	return m
+}
+
 func (m Model) applyAttachTerminalSucceeded(in AttachTerminalSucceededIntent) Model {
 	if in.ForPreview {
 		return m
@@ -714,13 +753,10 @@ func (m Model) applyAttachTerminalSucceeded(in AttachTerminalSucceededIntent) Mo
 	if tab == nil {
 		return m
 	}
-	pane, ok := tab.Pane(in.PaneID)
-	if !ok {
+	if _, ok := tab.Pane(in.PaneID); !ok {
 		return m
 	}
-	pane.TerminalID = in.TerminalID
-	pane.SlotState = types.PaneSlotLive
-	tab.TrackPane(pane)
+	m.bindPane(in.PaneID, in.TerminalID)
 	tab.ActivePaneID = in.PaneID
 	return m
 }

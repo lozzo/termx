@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
@@ -113,11 +112,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case PreviewStreamMessage:
-		next := m.applyPreviewStreamMessage(typed)
-		if next.PreviewStreamNext != nil {
-			return next, next.PreviewStreamNext()
+		if m.IntentExecutor != nil {
+			next, cmd, _ := m.IntentExecutor.ExecuteIntent(context.Background(), m, PreviewStreamTickIntent{
+				TerminalID: typed.TerminalID,
+				Revision:   typed.Revision,
+			})
+			return next, cmd
 		}
-		return next, nil
+		return m, nil
 	case PreviewStreamClosedMessage:
 		next := m.clone()
 		if next.Pool.PreviewTerminalID == typed.TerminalID && next.Pool.PreviewSubscriptionRevision == typed.Revision {
@@ -191,8 +193,11 @@ func cloneSessionMap(input map[types.TerminalID]TerminalSession) map[types.Termi
 
 func (m Model) keyIntent(msg tea.KeyMsg) (Intent, bool) {
 	switch {
-	case msg.Type == tea.KeyEsc && m.Overlay.HasActive():
-		return CancelOverlayIntent{}, true
+	case m.Overlay.HasActive():
+		if msg.Type == tea.KeyEsc {
+			return CancelOverlayIntent{}, true
+		}
+		return nil, false
 	case m.Screen == ScreenTerminalPool:
 		return m.poolKeyIntent(msg)
 	case msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'p' && m.Screen == ScreenWorkbench && !m.Overlay.HasActive():
@@ -252,41 +257,6 @@ func (m Model) poolKeyIntent(msg tea.KeyMsg) (Intent, bool) {
 	}
 }
 
-func (m Model) applyPreviewStreamMessage(msg PreviewStreamMessage) Model {
-	next := m.clone()
-	if next.Pool.PreviewTerminalID != msg.TerminalID || next.Pool.PreviewSubscriptionRevision != msg.Revision {
-		return next
-	}
-	session, ok := next.Sessions[msg.TerminalID]
-	if !ok {
-		return next
-	}
-	session.Snapshot = appendStreamFrame(session.Snapshot, msg.Frame)
-	next.Sessions[msg.TerminalID] = session
-	return next
-}
-
-func appendStreamFrame(snapshot *protocol.Snapshot, frame protocol.StreamFrame) *protocol.Snapshot {
-	if snapshot == nil {
-		snapshot = &protocol.Snapshot{}
-	}
-	if frame.Type != protocol.TypeOutput || len(frame.Payload) == 0 {
-		return snapshot
-	}
-	lines := strings.Split(strings.ReplaceAll(string(frame.Payload), "\r\n", "\n"), "\n")
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-		row := make([]protocol.Cell, 0, len(line))
-		for _, r := range line {
-			row = append(row, protocol.Cell{Content: string(r), Width: 1})
-		}
-		snapshot.Screen.Cells = append(snapshot.Screen.Cells, row)
-	}
-	return snapshot
-}
-
 func truncateLastRune(input string) string {
 	if input == "" {
 		return ""
@@ -322,6 +292,15 @@ type RefreshPreviewEffect struct {
 }
 
 func (RefreshPreviewEffect) effectName() string { return "refresh_preview" }
+
+// RefreshPreviewSnapshotEffect 用 stream 帧作为“有更新”信号，再回 runtime 拉真 snapshot。
+// 这样 preview 不会因为 raw append 偏离真实终端状态。
+type RefreshPreviewSnapshotEffect struct {
+	TerminalID types.TerminalID
+	Revision   int
+}
+
+func (RefreshPreviewSnapshotEffect) effectName() string { return "refresh_preview_snapshot" }
 
 type UpdateTerminalMetadataEffect struct {
 	TerminalID types.TerminalID
