@@ -67,6 +67,8 @@ Runtime adapters:
 - Create: `tui/runtime/bootstrap_test.go`
 - Create: `tui/runtime/program.go`
 - Create: `tui/runtime/program_test.go`
+- Create: `tui/runtime/input_router.go`
+- Create: `tui/runtime/input_router_test.go`
 - Create: `tui/runtime/terminal_service.go`
 - Create: `tui/runtime/terminal_service_test.go`
 - Create: `tui/runtime/session_store.go`
@@ -254,6 +256,8 @@ git commit -m "补齐TUI工作区与布局领域模型"
 **Files:**
 - Create: `tui/runtime/bootstrap.go`
 - Create: `tui/runtime/bootstrap_test.go`
+- Create: `tui/runtime/input_router.go`
+- Create: `tui/runtime/input_router_test.go`
 - Create: `tui/runtime/terminal_service.go`
 - Create: `tui/runtime/terminal_service_test.go`
 - Create: `tui/runtime/session_store.go`
@@ -279,6 +283,17 @@ func TestBootstrapCreatesTemporaryWorkspaceWithLiveShellPane(t *testing.T) {
         t.Fatal("expected default pane to attach a terminal")
     }
 }
+
+func TestInputRouterSendsKeysToFocusedWorkbenchPaneAndResizesOwnedTerminal(t *testing.T) {
+    router := NewInputRouter(stubTerminalService{})
+    state := sampleFocusedLivePaneState()
+    if err := router.HandleKey(state, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")}); err != nil {
+        t.Fatalf("HandleKey returned error: %v", err)
+    }
+    if err := router.HandleResize(state, 120, 40); err != nil {
+        t.Fatalf("HandleResize returned error: %v", err)
+    }
+}
 ```
 
 - [ ] **Step 2: Run runtime-focused tests to verify startup and streaming are not wired**
@@ -300,6 +315,9 @@ Implement:
 - `TerminalService` interface over `tui.Client`
 - session store for snapshot + stream frames + metadata refresh
 - update loop that converts daemon events into app messages
+- input router that sends keyboard input only to the focused live workbench pane
+- resize propagation rules that only submit PTY resize from the pane that currently owns resize authority
+- focus guard so overlay and terminal-pool preview never implicitly steal workbench input ownership
 
 Reference:
 
@@ -311,7 +329,7 @@ Reference:
 Run:
 
 ```bash
-PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/... -run 'TestBootstrap|TestSessionStore|TestUpdateLoop' -count=1
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/... -run 'TestBootstrap|TestInputRouter|TestSessionStore|TestUpdateLoop' -count=1
 ```
 
 Expected: PASS.
@@ -319,7 +337,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tui/runtime.go tui/runtime_test.go tui/runtime/bootstrap.go tui/runtime/bootstrap_test.go tui/runtime/terminal_service.go tui/runtime/terminal_service_test.go tui/runtime/session_store.go tui/runtime/session_store_test.go tui/runtime/update_loop.go tui/runtime/update_loop_test.go
+git add tui/runtime.go tui/runtime_test.go tui/runtime/bootstrap.go tui/runtime/bootstrap_test.go tui/runtime/input_router.go tui/runtime/input_router_test.go tui/runtime/terminal_service.go tui/runtime/terminal_service_test.go tui/runtime/session_store.go tui/runtime/session_store_test.go tui/runtime/update_loop.go tui/runtime/update_loop_test.go
 git commit -m "接通TUI启动与终端会话运行时"
 ```
 
@@ -400,6 +418,8 @@ git commit -m "恢复TUI工作台渲染主干"
 ### Task 5: Overlay Flow and Pane/Terminal Lifecycle Actions
 
 **Files:**
+- Create: `tui/domain/pool/query.go`
+- Create: `tui/domain/pool/query_test.go`
 - Create: `tui/app/intent.go`
 - Create: `tui/app/intent_test.go`
 - Modify: `tui/app/model.go`
@@ -429,6 +449,16 @@ func TestCancelConnectLeavesUnconnectedPane(t *testing.T) {
         t.Fatal("expected pane to remain unconnected after cancel")
     }
 }
+
+func TestConnectExistingPickerUsesGlobalScopeAndRecentUserInteractionSort(t *testing.T) {
+    items := pool.BuildConnectItems(samplePoolTerminals())
+    if items[0].TerminalID != "recent-input-terminal" {
+        t.Fatalf("expected recent user interaction first, got %q", items[0].TerminalID)
+    }
+    if len(items) != 3 {
+        t.Fatalf("expected all terminals in picker scope, got %d", len(items))
+    }
+}
 ```
 
 - [ ] **Step 2: Run app/overlay tests to verify the interaction reducer does not exist yet**
@@ -436,7 +466,7 @@ func TestCancelConnectLeavesUnconnectedPane(t *testing.T) {
 Run:
 
 ```bash
-PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/app ./tui/render/overlay -run 'TestSplitCreatesPaneSlotAndOpensConnectDialog|TestCancelConnectLeavesUnconnectedPane' -count=1
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/app ./tui/render/overlay ./tui/domain/pool -run 'TestSplitCreatesPaneSlotAndOpensConnectDialog|TestCancelConnectLeavesUnconnectedPane|TestConnectExistingPickerUsesGlobalScopeAndRecentUserInteractionSort' -count=1
 ```
 
 Expected: FAIL because create/connect flow is not implemented.
@@ -449,6 +479,11 @@ Implement:
 - cancel leaves `unconnected pane`
 - explicit actions for close pane, disconnect pane, reconnect pane, kill terminal
 - overlay focus priority and `Esc` handling
+- lightweight “connect existing terminal” picker with:
+  - global terminal scope
+  - default ordering by recent user interaction
+  - pure output treated as auxiliary state, not sort priority
+  - create-new and connect-existing paths tested separately
 
 Reference:
 
@@ -460,7 +495,7 @@ Reference:
 Run:
 
 ```bash
-PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/app ./tui/render/overlay -count=1
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/app ./tui/render/overlay ./tui/domain/pool -count=1
 ```
 
 Expected: PASS.
@@ -468,17 +503,17 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tui/app/intent.go tui/app/intent_test.go tui/app/model.go tui/app/model_test.go tui/render/overlay/view.go tui/render/overlay/view_test.go tui/render/workbench/view.go
+git add tui/domain/pool/query.go tui/domain/pool/query_test.go tui/app/intent.go tui/app/intent_test.go tui/app/model.go tui/app/model_test.go tui/render/overlay/view.go tui/render/overlay/view_test.go tui/render/workbench/view.go
 git commit -m "打通TUI弹层与面板连接语义"
 ```
 
 ### Task 6: Terminal Pool Page
 
 **Files:**
-- Create: `tui/domain/pool/query.go`
-- Create: `tui/domain/pool/query_test.go`
 - Create: `tui/render/pool/view.go`
 - Create: `tui/render/pool/view_test.go`
+- Modify: `tui/app/intent.go`
+- Modify: `tui/app/intent_test.go`
 - Modify: `tui/app/model.go`
 - Modify: `tui/app/model_test.go`
 - Modify: `tui/runtime/session_store.go`
@@ -499,6 +534,16 @@ func TestTerminalPoolViewShowsThreeColumns(t *testing.T) {
         t.Fatal("expected group headers")
     }
 }
+
+func TestTerminalPoolActionsRenameKillAndOpenTargetPane(t *testing.T) {
+    model := modelWithTerminalPoolSelection()
+    model = model.Apply(IntentTerminalPoolRename)
+    model = model.Apply(IntentTerminalPoolKill)
+    model = model.Apply(IntentTerminalPoolOpenHere)
+    if !model.HasPendingRuntimeAction() {
+        t.Fatal("expected terminal pool actions to enqueue runtime work")
+    }
+}
 ```
 
 - [ ] **Step 2: Run focused pool tests to verify the page does not exist yet**
@@ -506,7 +551,7 @@ func TestTerminalPoolViewShowsThreeColumns(t *testing.T) {
 Run:
 
 ```bash
-PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/domain/pool ./tui/render/pool -run 'TestGroupTerminalsIntoVisibleParkedExited|TestTerminalPoolViewShowsThreeColumns' -count=1
+PATH="/home/lozzow/workdir/termx/.toolchain/go/bin:$PATH" go test ./tui/domain/pool ./tui/render/pool ./tui/app -run 'TestGroupTerminalsIntoVisibleParkedExited|TestTerminalPoolViewShowsThreeColumns|TestTerminalPoolActionsRenameKillAndOpenTargetPane' -count=1
 ```
 
 Expected: FAIL because grouping/page rendering is missing.
@@ -520,6 +565,8 @@ Implement:
 - middle column readonly live preview
 - right column metadata first, connections second
 - page-level actions biased toward terminal management
+- explicit app intents for rename, kill, open-here, open-new-tab, open-floating
+- explicit takeover action if the user wants to leave readonly preview and bind/open the selected terminal into the workbench
 
 - [ ] **Step 4: Run pool-related tests**
 
@@ -534,7 +581,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tui/domain/pool tui/render/pool tui/app/model.go tui/app/model_test.go tui/runtime/session_store.go
+git add tui/render/pool tui/app/intent.go tui/app/intent_test.go tui/app/model.go tui/app/model_test.go tui/runtime/session_store.go
 git commit -m "补齐TUI终端池独立页面"
 ```
 
@@ -583,6 +630,8 @@ Implement:
 
 - local workspace save/load store
 - startup restore path from `Config.WorkspaceStatePath`
+- debounced save after workspace-affecting state mutations
+- save-on-exit hook so the next launch can restore the last workbench state
 - graceful fallback to temp workspace when restore fails
 - update `cmd/termx` tests if any config expectations changed
 - spec note updates only if implementation forced a product-level clarification
