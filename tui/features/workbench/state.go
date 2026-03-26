@@ -36,6 +36,10 @@ func (s State) ActivePane() coreworkspace.PaneState {
 	return tab.ActivePane()
 }
 
+func (s State) ActiveTerminalID() types.TerminalID {
+	return s.ActivePane().TerminalID
+}
+
 // BindActivePane 把当前活跃 pane 绑定到 terminal，并同步 owner/attached 摘要。
 func (s *State) BindActivePane(meta coreterminal.Metadata) bool {
 	if s == nil || s.Workspace == nil {
@@ -121,11 +125,24 @@ func (s *State) MarkTerminalRemoved(terminalID types.TerminalID) int {
 		return 0
 	}
 	delete(s.Terminals, terminalID)
+	delete(s.Sessions, terminalID)
 	return s.updatePanesForTerminal(terminalID, func(pane coreworkspace.PaneState) coreworkspace.PaneState {
 		pane.TerminalID = ""
 		pane.SlotState = types.PaneSlotUnconnected
 		return pane
 	})
+}
+
+func (s *State) SetSessionSnapshot(terminalID types.TerminalID, snapshot *protocol.Snapshot) {
+	if s == nil {
+		return
+	}
+	if s.Sessions == nil {
+		s.Sessions = make(map[types.TerminalID]SessionState)
+	}
+	session := s.Sessions[terminalID]
+	session.Snapshot = snapshot
+	s.Sessions[terminalID] = session
 }
 
 func (s *State) updatePanesForTerminal(terminalID types.TerminalID, update func(coreworkspace.PaneState) coreworkspace.PaneState) int {

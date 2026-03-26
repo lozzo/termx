@@ -23,6 +23,20 @@ func (r EffectRunner) Run(ctx context.Context, effect app.Effect) app.Message {
 		return nil
 	}
 	switch typed := effect.(type) {
+	case app.EffectConnectTerminal:
+		meta, snapshot, err := loadTerminalRuntime(ctx, r.client, typed.TerminalID)
+		if err != nil {
+			return nil
+		}
+		return app.MessageTerminalConnected{Terminal: meta, Snapshot: snapshot}
+	case app.EffectDisconnectPane:
+		return app.MessageTerminalDisconnected{PaneID: typed.PaneID}
+	case app.EffectReconnectTerminal:
+		meta, snapshot, err := loadTerminalRuntime(ctx, r.client, typed.TerminalID)
+		if err != nil {
+			return nil
+		}
+		return app.MessageTerminalConnected{Terminal: meta, Snapshot: snapshot}
 	case app.EffectRemoveTerminal:
 		if err := r.client.Remove(ctx, string(typed.TerminalID)); err != nil {
 			return nil
@@ -42,6 +56,38 @@ func (r EffectRunner) Run(ctx context.Context, effect app.Effect) app.Message {
 	default:
 		return nil
 	}
+}
+
+func loadTerminalRuntime(ctx context.Context, client terminalClient, terminalID types.TerminalID) (coreterminal.Metadata, *protocol.Snapshot, error) {
+	result, err := client.List(ctx)
+	if err != nil {
+		return coreterminal.Metadata{}, nil, err
+	}
+	for _, terminal := range result.Terminals {
+		if terminal.ID != string(terminalID) {
+			continue
+		}
+		snapshot, err := client.Snapshot(ctx, terminal.ID, 0, 0)
+		if err != nil {
+			return coreterminal.Metadata{}, nil, err
+		}
+		return coreterminal.Metadata{
+			ID:      types.TerminalID(terminal.ID),
+			Name:    terminal.Name,
+			Command: append([]string(nil), terminal.Command...),
+			State:   protocolStateToCoreState(terminal.State),
+			Tags:    terminal.Tags,
+		}, snapshot, nil
+	}
+	snapshot, err := client.Snapshot(ctx, string(terminalID), 0, 0)
+	if err != nil {
+		return coreterminal.Metadata{}, nil, err
+	}
+	return coreterminal.Metadata{
+		ID:    terminalID,
+		Name:  string(terminalID),
+		State: coreterminal.StateRunning,
+		}, snapshot, nil
 }
 
 func protocolListToMetadata(result interface { /* compile fence */

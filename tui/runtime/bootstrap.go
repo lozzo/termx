@@ -5,7 +5,6 @@ import (
 
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tui/app"
-	coreterminal "github.com/lozzow/termx/tui/core/terminal"
 	"github.com/lozzow/termx/tui/core/types"
 )
 
@@ -36,12 +35,12 @@ func Bootstrap(ctx context.Context, client terminalClient, cfg BootstrapConfig) 
 	}
 
 	if cfg.AttachID != "" {
-		meta := coreterminal.Metadata{
-			ID:    types.TerminalID(cfg.AttachID),
-			Name:  cfg.AttachID,
-			State: coreterminal.StateRunning,
+		meta, snapshot, err := loadTerminalRuntime(ctx, client, types.TerminalID(cfg.AttachID))
+		if err != nil {
+			return app.Model{}, err
 		}
 		model.Workbench.BindActivePane(meta)
+		model.Workbench.SetSessionSnapshot(meta.ID, snapshot)
 		return model, nil
 	}
 
@@ -53,15 +52,17 @@ func Bootstrap(ctx context.Context, client terminalClient, cfg BootstrapConfig) 
 	if err != nil {
 		return app.Model{}, err
 	}
-	meta := coreterminal.Metadata{
-		ID:      types.TerminalID(created.TerminalID),
-		Name:    "shell",
-		Command: append([]string(nil), command...),
-		State:   coreterminal.StateRunning,
+	meta, snapshot, err := loadTerminalRuntime(ctx, client, types.TerminalID(created.TerminalID))
+	if err != nil {
+		return app.Model{}, err
 	}
-	if created.State == string(coreterminal.StateExited) {
-		meta.State = coreterminal.StateExited
+	if len(meta.Command) == 0 {
+		meta.Command = append([]string(nil), command...)
+	}
+	if meta.Name == "" {
+		meta.Name = "shell"
 	}
 	model.Workbench.BindActivePane(meta)
+	model.Workbench.SetSessionSnapshot(meta.ID, snapshot)
 	return model, nil
 }

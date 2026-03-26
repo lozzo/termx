@@ -13,6 +13,15 @@ func TestInputRouterMapsWorkbenchAndPoolKeysToIntents(t *testing.T) {
 	if got := router.Translate(Context{Screen: app.ScreenWorkbench}, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")}); got != app.IntentOpenTerminalPool {
 		t.Fatalf("expected open pool intent, got %#v", got)
 	}
+	if got := router.Translate(Context{Screen: app.ScreenWorkbench}, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")}); got != app.IntentOpenConnectOverlay {
+		t.Fatalf("expected connect overlay intent, got %#v", got)
+	}
+	if got := router.Translate(Context{Screen: app.ScreenWorkbench}, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")}); got != app.IntentDisconnectActivePane {
+		t.Fatalf("expected disconnect intent, got %#v", got)
+	}
+	if got := router.Translate(Context{Screen: app.ScreenWorkbench}, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")}); got != app.IntentReconnectActivePane {
+		t.Fatalf("expected reconnect intent, got %#v", got)
+	}
 
 	if got := router.Translate(Context{Screen: app.ScreenTerminalPool}, tea.KeyMsg{Type: tea.KeyEsc}); got != app.IntentCloseScreen {
 		t.Fatalf("expected esc to close pool, got %#v", got)

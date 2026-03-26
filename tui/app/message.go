@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/lozzow/termx/protocol"
 	coreterminal "github.com/lozzow/termx/tui/core/terminal"
 	"github.com/lozzow/termx/tui/core/types"
 )
@@ -9,6 +10,11 @@ type Message interface{}
 
 type MessageTerminalDisconnected struct {
 	PaneID types.PaneID
+}
+
+type MessageTerminalConnected struct {
+	Terminal coreterminal.Metadata
+	Snapshot *protocol.Snapshot
 }
 
 type MessageTerminalExited struct {

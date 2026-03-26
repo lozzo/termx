@@ -13,6 +13,15 @@ type stubClient struct {
 
 	listResult *protocol.ListResult
 	listErr    error
+	listCalls  int
+
+	attachResult *protocol.AttachResult
+	attachErr    error
+	attachCalls  []string
+
+	snapshotByID  map[string]*protocol.Snapshot
+	snapshotErr   error
+	snapshotCalls []string
 
 	removeCalls []string
 	removeErr   error
@@ -33,14 +42,31 @@ func (c *stubClient) Create(ctx context.Context, command []string, name string, 
 }
 
 func (c *stubClient) Attach(ctx context.Context, terminalID string, mode string) (*protocol.AttachResult, error) {
+	c.attachCalls = append(c.attachCalls, terminalID)
+	if c.attachErr != nil {
+		return nil, c.attachErr
+	}
+	if c.attachResult != nil {
+		return c.attachResult, nil
+	}
 	return &protocol.AttachResult{Mode: mode, Channel: 7}, nil
 }
 
 func (c *stubClient) Snapshot(ctx context.Context, terminalID string, offset, limit int) (*protocol.Snapshot, error) {
+	c.snapshotCalls = append(c.snapshotCalls, terminalID)
+	if c.snapshotErr != nil {
+		return nil, c.snapshotErr
+	}
+	if c.snapshotByID != nil {
+		if snapshot, ok := c.snapshotByID[terminalID]; ok {
+			return snapshot, nil
+		}
+	}
 	return &protocol.Snapshot{TerminalID: terminalID}, nil
 }
 
 func (c *stubClient) List(ctx context.Context) (*protocol.ListResult, error) {
+	c.listCalls++
 	if c.listErr != nil {
 		return nil, c.listErr
 	}

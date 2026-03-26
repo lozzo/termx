@@ -84,11 +84,17 @@ func TestReducerDistinguishesDisconnectKillAndRemove(t *testing.T) {
 	if got := model.Workbench.Workspace.ActiveTab().Panes[types.PaneID("pane-1")].SlotState; got != types.PaneSlotUnconnected {
 		t.Fatalf("expected unconnected after disconnect, got %q", got)
 	}
+	if len(model.Pool.Visible) != 1 || model.Pool.Visible[0].ID != types.TerminalID("term-1") {
+		t.Fatalf("expected shared terminal to stay visible after one pane disconnect, got %#v", model.Pool.Visible)
+	}
 
 	model = sampleLiveWorkbenchModel()
 	model, _ = Reduce(model, MessageTerminalExited{TerminalID: types.TerminalID("term-1")})
 	if got := model.Workbench.Workspace.ActiveTab().Panes[types.PaneID("pane-1")].SlotState; got != types.PaneSlotExited {
 		t.Fatalf("expected exited after kill, got %q", got)
+	}
+	if len(model.Pool.Exited) != 1 || model.Pool.Exited[0].ID != types.TerminalID("term-1") {
+		t.Fatalf("expected terminal in exited group after kill, got %#v", model.Pool.Exited)
 	}
 
 	model = sampleLiveWorkbenchModel()
@@ -98,6 +104,9 @@ func TestReducerDistinguishesDisconnectKillAndRemove(t *testing.T) {
 	}
 	if got := model.Workbench.Workspace.ActiveTab().Panes[types.PaneID("pane-1")].TerminalID; got != "" {
 		t.Fatalf("expected pane terminal cleared after remove, got %q", got)
+	}
+	if len(model.Pool.Visible)+len(model.Pool.Parked)+len(model.Pool.Exited) != 0 {
+		t.Fatalf("expected removed terminal to disappear from pool, got %#v %#v %#v", model.Pool.Visible, model.Pool.Parked, model.Pool.Exited)
 	}
 }
 
@@ -109,6 +118,40 @@ func TestReducerOpensConnectOverlayForUnconnectedPane(t *testing.T) {
 	}
 	if model.Overlay.Active.Kind != featureoverlay.KindConnectPicker {
 		t.Fatalf("expected connect overlay, got %q", model.Overlay.Active.Kind)
+	}
+}
+
+func TestReducerConnectIntentReturnsConnectAndReloadEffects(t *testing.T) {
+	model := NewModel("main")
+	_, effects := Reduce(model, IntentConnectTerminal{TerminalID: types.TerminalID("term-2")})
+	if len(effects) != 2 {
+		t.Fatalf("expected connect and reload effects, got %d", len(effects))
+	}
+	if got, ok := effects[0].(EffectConnectTerminal); !ok || got.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected first effect to connect term-2, got %#v", effects[0])
+	}
+	if _, ok := effects[1].(EffectLoadTerminalPool); !ok {
+		t.Fatalf("expected second effect to reload pool, got %#v", effects[1])
+	}
+}
+
+func TestReducerMessageTerminalConnectedBindsPaneAndClearsOverlay(t *testing.T) {
+	model := NewModel("main")
+	model.Overlay = model.Overlay.OpenConnectPicker()
+	connected := coreterminal.Metadata{ID: types.TerminalID("term-9"), Name: "restored-shell", State: coreterminal.StateRunning}
+
+	model, effects := Reduce(model, MessageTerminalConnected{Terminal: connected})
+	if len(effects) != 0 {
+		t.Fatalf("expected no follow-up effects, got %d", len(effects))
+	}
+	if got := model.Workbench.ActivePane().TerminalID; got != types.TerminalID("term-9") {
+		t.Fatalf("expected active pane bound to term-9, got %q", got)
+	}
+	if model.Overlay.Active.Kind != "" {
+		t.Fatalf("expected overlay cleared after connect, got %q", model.Overlay.Active.Kind)
+	}
+	if len(model.Pool.Visible) != 1 || model.Pool.Visible[0].ID != types.TerminalID("term-9") {
+		t.Fatalf("expected connected terminal visible in pool, got %#v", model.Pool.Visible)
 	}
 }
 
@@ -130,7 +173,7 @@ func sampleLiveWorkbenchModel() Model {
 	tab.ActivePaneID = types.PaneID("pane-1")
 	tab.Layout = nil
 
-	return Model{
+	model := Model{
 		WorkspaceName: "main",
 		Screen:        ScreenWorkbench,
 		Workbench: featureworkbench.State{
@@ -144,6 +187,9 @@ func sampleLiveWorkbenchModel() Model {
 					AttachedPaneIDs: []types.PaneID{types.PaneID("pane-1"), types.PaneID("pane-2")},
 				},
 			},
+			Sessions: map[types.TerminalID]featureworkbench.SessionState{},
 		},
 	}
+	model.Pool.ApplyGroups(corepool.BuildGroups(indexTerminalMetadataFromWorkbench(model.Workbench.Terminals), model.Workbench.VisibleTerminalIDs(), model.Pool.Query))
+	return model
 }
