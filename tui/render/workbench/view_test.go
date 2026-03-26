@@ -25,6 +25,15 @@ func TestWorkbenchViewShowsPaneBodyLines(t *testing.T) {
 	}
 }
 
+func TestWorkbenchViewShowsHeaderAndKeyHints(t *testing.T) {
+	view := Render(sampleProjectionWithThreePaneStates(), 120, 40)
+	for _, want := range []string{"workbench panes=3", "keys: c connect", "> shell-live [live]"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected view detail %q, got %q", want, view)
+		}
+	}
+}
+
 func TestUnconnectedPaneShowsActions(t *testing.T) {
 	view := Render(sampleUnconnectedProjection(), 80, 24)
 	for _, want := range []string{"connect existing", "create terminal", "open pool"} {

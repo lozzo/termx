@@ -91,6 +91,37 @@ func TestRunWrapsClientTUIWithRuntimeRenderModel(t *testing.T) {
 	}
 }
 
+func TestRunFallsBackToBootstrapWhenRestoredWorkspaceHasNoVisibleContent(t *testing.T) {
+	runner := &captureProgramRunner{}
+	restore := swapProgramRunnerForTest(runner)
+	t.Cleanup(restore)
+
+	statePath := filepath.Join(t.TempDir(), "workspace.json")
+	store := tuiruntime.NewWorkspaceStore(statePath)
+	model := app.NewModel("main")
+	if err := store.Save(context.Background(), model); err != nil {
+		t.Fatalf("save workspace state: %v", err)
+	}
+
+	client := &stubClientForRunTest{
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{ID: "created", Name: "shell", State: "running"}}},
+		snapshotByID: map[string]*protocol.Snapshot{
+			"created": {TerminalID: "created", Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "fresh body"}}}}},
+		},
+	}
+	if err := Run(client, Config{Workspace: "main", DefaultShell: "/bin/sh", WorkspaceStatePath: statePath}, nil, io.Discard); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	root := capturedAppModelForRunTest(t, runner.model)
+	if got := root.Workbench.ActivePane().TerminalID; got != types.TerminalID("created") {
+		t.Fatalf("expected fallback bootstrap terminal, got %q", got)
+	}
+	if session := root.Workbench.Sessions[types.TerminalID("created")]; session.Snapshot == nil {
+		t.Fatalf("expected fallback bootstrap snapshot, got %#v", root.Workbench.Sessions)
+	}
+}
+
 func TestRunRestoresWorkspaceStateAndRebindsSessions(t *testing.T) {
 	runner := &captureProgramRunner{}
 	restore := swapProgramRunnerForTest(runner)

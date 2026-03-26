@@ -60,7 +60,18 @@ func loadInitialModel(ctx context.Context, client Client, cfg Config) (app.Model
 				return model, nil
 			}
 			// 恢复文件只保留持久态，运行时 snapshot 必须在启动时重新向 daemon 取回。
-			return tuiruntime.RebindWorkspaceSessions(ctx, client, model)
+			model, err = tuiruntime.RebindWorkspaceSessions(ctx, client, model)
+			if err != nil {
+				return app.Model{}, err
+			}
+			if hasVisibleWorkbenchContent(model) {
+				return model, nil
+			}
+			return tuiruntime.Bootstrap(ctx, client, tuiruntime.BootstrapConfig{
+				Workspace:    cfg.Workspace,
+				DefaultShell: cfg.DefaultShell,
+				AttachID:     cfg.AttachID,
+			})
 		case errors.Is(err, os.ErrNotExist):
 		default:
 			return app.Model{}, err
@@ -77,6 +88,25 @@ func loadInitialModel(ctx context.Context, client Client, cfg Config) (app.Model
 		DefaultShell: cfg.DefaultShell,
 		AttachID:     cfg.AttachID,
 	})
+}
+
+func hasVisibleWorkbenchContent(model app.Model) bool {
+	if model.Workbench.Workspace == nil {
+		return false
+	}
+	tab := model.Workbench.Workspace.ActiveTab()
+	if tab == nil {
+		return false
+	}
+	for _, pane := range tab.Panes {
+		if pane.TerminalID == "" {
+			continue
+		}
+		if session, ok := model.Workbench.Sessions[pane.TerminalID]; ok && session.Snapshot != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // WaitForSocket 保持给 CLI 的等待逻辑稳定，不与 TUI 重构耦合。
