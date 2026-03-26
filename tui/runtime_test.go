@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,6 +57,28 @@ func TestRunStartsProgramWithWorkbenchScreen(t *testing.T) {
 	}
 	if root.Overlay.HasActive() {
 		t.Fatalf("expected empty overlay stack, got %#v", root.Overlay)
+	}
+}
+
+func TestRunRegistersWorkbenchRenderer(t *testing.T) {
+	runner := &captureProgramRunner{}
+	restore := swapProgramRunnerForTest(runner)
+	t.Cleanup(restore)
+
+	if err := Run(nil, Config{}, nil, io.Discard); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	root, ok := runner.model.(app.Model)
+	if !ok {
+		t.Fatalf("expected app.Model, got %T", runner.model)
+	}
+	view := root.View()
+	if view == "" {
+		t.Fatal("expected non-empty rendered view")
+	}
+	if !strings.Contains(view, "termx") {
+		t.Fatalf("expected rendered top bar, got %q", view)
 	}
 }
 
