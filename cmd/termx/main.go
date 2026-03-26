@@ -57,7 +57,6 @@ func newRootCmd() *cobra.Command {
 	var logFile string
 	var layout string
 	var iconSet string
-	var debugUI bool
 	var prefixTimeout time.Duration
 	cmd := &cobra.Command{
 		Use: "termx",
@@ -85,7 +84,6 @@ func newRootCmd() *cobra.Command {
 				DefaultShell:       os.Getenv("SHELL"),
 				Workspace:          "main",
 				IconSet:            iconSet,
-				DebugUI:            debugUI,
 				PrefixTimeout:      prefixTimeout,
 				StartupLayout:      layout,
 				WorkspaceStatePath: resolveWorkspaceStatePath(),
@@ -98,7 +96,6 @@ func newRootCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&socket, "socket", "", "socket path")
 	cmd.PersistentFlags().StringVar(&logFile, "log-file", "", "log file path (default: $TERMX_LOG_FILE or XDG state dir)")
 	cmd.PersistentFlags().StringVar(&iconSet, "icon-set", os.Getenv("TERMX_ICON_SET"), "icon set: ascii, unicode, nerd")
-	cmd.PersistentFlags().BoolVar(&debugUI, "debug-ui", envBoolEnabled("TERMX_TUI_DEBUG"), "show renderer debug sections under the main shell")
 	cmd.PersistentFlags().DurationVar(&prefixTimeout, "prefix-timeout", tui.DefaultPrefixTimeout, "mode hold timeout after Ctrl+ shortcuts")
 	cmd.Flags().StringVar(&layout, "layout", "", "startup layout name or YAML path")
 	cmd.AddCommand(daemonCommand(&socket))

@@ -6,7 +6,6 @@ import (
 	"github.com/lozzow/termx/protocol"
 )
 
-// Client 保持对外契约稳定，内部再由 runtime 细化为更小的接口。
 type Client interface {
 	Close() error
 	Create(ctx context.Context, command []string, name string, size protocol.Size) (*protocol.CreateResult, error)
@@ -20,7 +19,6 @@ type Client interface {
 	Resize(ctx context.Context, channel uint16, cols, rows uint16) error
 	Stream(channel uint16) (<-chan protocol.StreamFrame, func())
 	Kill(ctx context.Context, terminalID string) error
-	Remove(ctx context.Context, terminalID string) error
 }
 
 type ProtocolClient struct {
@@ -79,8 +77,4 @@ func (c *ProtocolClient) Stream(channel uint16) (<-chan protocol.StreamFrame, fu
 
 func (c *ProtocolClient) Kill(ctx context.Context, terminalID string) error {
 	return c.inner.Kill(ctx, terminalID)
-}
-
-func (c *ProtocolClient) Remove(ctx context.Context, terminalID string) error {
-	return c.inner.Remove(ctx, terminalID)
 }

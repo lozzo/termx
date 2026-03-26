@@ -168,7 +168,7 @@ func TestAttachCmdPassesPrefixTimeoutToTUI(t *testing.T) {
 	}
 }
 
-func TestRootCmdDisablesDebugUIByDefault(t *testing.T) {
+func TestRootCmdEnablesStartupPickerByDefault(t *testing.T) {
 	oldInteractive := isInteractiveTerminal
 	oldDial := dialOrStartTUIClient
 	oldRun := runTUI
@@ -198,12 +198,12 @@ func TestRootCmdDisablesDebugUIByDefault(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
-	if got.DebugUI {
-		t.Fatalf("expected root command to disable debug ui by default")
+	if !got.StartupPicker {
+		t.Fatalf("expected root command to enable startup picker by default")
 	}
 }
 
-func TestRootCmdCanEnableDebugUI(t *testing.T) {
+func TestRootCmdPassesPrefixTimeoutFlag(t *testing.T) {
 	oldInteractive := isInteractiveTerminal
 	oldDial := dialOrStartTUIClient
 	oldRun := runTUI
@@ -225,7 +225,7 @@ func TestRootCmdCanEnableDebugUI(t *testing.T) {
 	}
 
 	cmd := newRootCmd()
-	cmd.SetArgs([]string{"--debug-ui", "--log-file", filepath.Join(t.TempDir(), "termx.log")})
+	cmd.SetArgs([]string{"--prefix-timeout", "5s", "--log-file", filepath.Join(t.TempDir(), "termx.log")})
 	cmd.SetIn(bytes.NewBuffer(nil))
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
@@ -233,8 +233,8 @@ func TestRootCmdCanEnableDebugUI(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
-	if !got.DebugUI {
-		t.Fatalf("expected root command to enable debug ui when flag is set")
+	if got.PrefixTimeout != 5*time.Second {
+		t.Fatalf("expected root command to pass prefix timeout, got %v", got.PrefixTimeout)
 	}
 }
 
