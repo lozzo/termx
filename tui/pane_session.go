@@ -35,3 +35,64 @@ type PaneSession struct {
 	dirtyColStart   int
 	dirtyColEnd     int
 }
+
+func (s *PaneSession) IsRenderDirty() bool {
+	return s != nil && s.renderDirty
+}
+
+func (s *PaneSession) MarkRenderDirty() {
+	if s == nil {
+		return
+	}
+	s.renderDirty = true
+}
+
+func (s *PaneSession) ClearRenderDirty() {
+	if s == nil {
+		return
+	}
+	s.renderDirty = false
+}
+
+func (s *PaneSession) IsSyncLost() bool {
+	return s != nil && s.syncLost
+}
+
+func (s *PaneSession) SetSyncLost(value bool) {
+	if s == nil {
+		return
+	}
+	s.syncLost = value
+}
+
+func (s *PaneSession) DroppedBytes() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.droppedBytes
+}
+
+func (s *PaneSession) AddDroppedBytes(value uint64) {
+	if s == nil {
+		return
+	}
+	s.droppedBytes += value
+}
+
+func (s *PaneSession) SetDroppedBytes(value uint64) {
+	if s == nil {
+		return
+	}
+	s.droppedBytes = value
+}
+
+func (s *PaneSession) IsRecovering() bool {
+	return s != nil && s.recovering
+}
+
+func (s *PaneSession) SetRecovering(value bool) {
+	if s == nil {
+		return
+	}
+	s.recovering = value
+}
