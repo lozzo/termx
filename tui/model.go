@@ -3782,46 +3782,18 @@ func (m *Model) visiblePaneRects(tab *Tab) map[string]Rect {
 }
 
 func (m *Model) visibleFloatingPanes(tab *Tab) []*FloatingPane {
-	if tab == nil || !tab.FloatingVisible || len(tab.Floating) == 0 {
+	if tab == nil {
 		return nil
 	}
-	rootRect := Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}
-	out := make([]*FloatingPane, 0, len(tab.Floating))
-	for _, floating := range tab.Floating {
-		if floating == nil {
-			continue
-		}
-		entry := *floating
-		entry.Rect = clampFloatingRect(entry.Rect, rootRect)
-		out = append(out, &entry)
-	}
-	slices.SortStableFunc(out, func(a, b *FloatingPane) int {
-		if a.Z != b.Z {
-			return a.Z - b.Z
-		}
-		return strings.Compare(a.PaneID, b.PaneID)
-	})
-	return out
+	return tab.VisibleFloatingPanes(Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)})
 }
 
 func (m *Model) clampFloatingPanes() {
 	tab := m.currentTab()
-	if tab == nil || len(tab.Floating) == 0 {
+	if tab == nil {
 		return
 	}
-	bounds := Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}
-	changed := false
-	for _, floating := range tab.Floating {
-		if floating == nil {
-			continue
-		}
-		next := clampFloatingRect(floating.Rect, bounds)
-		if next != floating.Rect {
-			floating.Rect = next
-			changed = true
-		}
-	}
-	if changed {
+	if tab.ClampFloatingPanes(Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}) {
 		tab.renderCache = nil
 	}
 }
@@ -4670,59 +4642,30 @@ func (m *Model) killActiveTabCmd() tea.Cmd {
 }
 
 func (m *Model) removePane(paneID string) bool {
-	for i, tab := range m.workspace.Tabs {
-		if tab == nil {
-			continue
-		}
-		pane, ok := tab.Panes[paneID]
-		if !ok {
-			continue
-		}
-		terminalID := ""
-		ownedStream := false
-		if pane != nil {
-			terminalID = pane.TerminalID
-			ownedStream = pane.stopStream != nil
+	terminalID := ""
+	if pane := m.paneByID(paneID); pane != nil {
+		terminalID = pane.TerminalID
+		if pane.stopStream != nil {
 			m.stopPaneStream(pane)
 		}
-		delete(tab.Panes, paneID)
-		tab.Floating = removeFloatingPane(tab.Floating, paneID)
-		if tab.Root != nil {
-			tab.Root = tab.Root.Remove(paneID)
-		}
-		tab.LayoutPreset = layoutPresetCustom
-		if tab.ZoomedPaneID == paneID {
-			tab.ZoomedPaneID = ""
-		}
-		if len(tab.Panes) == 0 {
-			m.workspace.Tabs = append(m.workspace.Tabs[:i], m.workspace.Tabs[i+1:]...)
-			switch {
-			case len(m.workspace.Tabs) == 0:
-				m.workspace.ActiveTab = 0
-				return true
-			case m.workspace.ActiveTab > i:
-				m.workspace.ActiveTab--
-			case m.workspace.ActiveTab >= len(m.workspace.Tabs):
-				m.workspace.ActiveTab = len(m.workspace.Tabs) - 1
-			}
-			if current := m.currentTab(); current != nil && current.ActivePaneID == "" {
-				current.ActivePaneID = firstPaneID(current.Panes)
-			}
-			if ownedStream {
-				m.promoteTerminalStream(terminalID)
-			}
-			return false
-		}
-		if tab.ActivePaneID == paneID || tab.ActivePaneID == "" {
-			tab.ActivePaneID = firstPaneID(tab.Panes)
-		}
-		if ownedStream {
-			m.promoteTerminalStream(terminalID)
-		}
-		ensureTerminalResizeOwner(m.workspace.Tabs, terminalID, "")
-		m.invalidateRender()
-		return false
 	}
+	tabRemoved, workspaceEmpty, removedTerminalID := m.workspace.RemovePane(paneID)
+	if removedTerminalID != "" {
+		terminalID = removedTerminalID
+	}
+	if workspaceEmpty {
+		return true
+	}
+	if terminalID != "" {
+		m.promoteTerminalStream(terminalID)
+		ensureTerminalResizeOwner(m.workspace.Tabs, terminalID, "")
+	}
+	if tabRemoved {
+		if current := m.currentTab(); current != nil {
+			current.EnsureActivePane()
+		}
+	}
+	m.invalidateRender()
 	return false
 }
 

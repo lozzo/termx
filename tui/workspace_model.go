@@ -50,6 +50,40 @@ func (w *Workspace) CurrentTab() *Tab {
 	return w.Tabs[w.ActiveTab]
 }
 
+func (w *Workspace) RemovePane(paneID string) (tabRemoved bool, workspaceEmpty bool, removedTerminalID string) {
+	if w == nil || paneID == "" {
+		return false, false, ""
+	}
+	for tabIndex, tab := range w.Tabs {
+		if tab == nil || !tab.HasPane(paneID) {
+			continue
+		}
+		removedTerminalID = ""
+		if pane := tab.Panes[paneID]; pane != nil {
+			removedTerminalID = pane.TerminalID
+		}
+		tab.RemovePaneRef(paneID)
+		if len(tab.Panes) == 0 {
+			w.Tabs = append(w.Tabs[:tabIndex], w.Tabs[tabIndex+1:]...)
+			switch {
+			case len(w.Tabs) == 0:
+				w.ActiveTab = 0
+				return true, true, removedTerminalID
+			case w.ActiveTab > tabIndex:
+				w.ActiveTab--
+			case w.ActiveTab >= len(w.Tabs):
+				w.ActiveTab = len(w.Tabs) - 1
+			}
+			if current := w.CurrentTab(); current != nil {
+				current.EnsureActivePane()
+			}
+			return true, false, removedTerminalID
+		}
+		return false, false, removedTerminalID
+	}
+	return false, false, ""
+}
+
 func (t *Tab) HasPane(paneID string) bool {
 	if t == nil || paneID == "" {
 		return false
@@ -84,6 +118,27 @@ func (t *Tab) EnsureActivePane() bool {
 	t.ActivePaneID = next
 	t.renderCache = nil
 	return true
+}
+
+func (t *Tab) ClampFloatingPanes(bounds Rect) bool {
+	if t == nil || len(t.Floating) == 0 {
+		return false
+	}
+	changed := false
+	for _, floating := range t.Floating {
+		if floating == nil {
+			continue
+		}
+		next := clampFloatingRect(floating.Rect, bounds)
+		if next != floating.Rect {
+			floating.Rect = next
+			changed = true
+		}
+	}
+	if changed {
+		t.renderCache = nil
+	}
+	return changed
 }
 
 func (t *Tab) RemovePaneRef(paneID string) bool {
