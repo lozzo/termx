@@ -1,10 +1,16 @@
 package app
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+	featureoverlay "github.com/lozzow/termx/tui/features/overlay"
+	featureworkbench "github.com/lozzow/termx/tui/features/workbench"
+)
 
 type Model struct {
 	WorkspaceName string
 	Screen        Screen
+	Workbench     featureworkbench.State
+	Overlay       featureoverlay.State
 }
 
 func NewModel(workspace string) Model {
@@ -14,6 +20,7 @@ func NewModel(workspace string) Model {
 	return Model{
 		WorkspaceName: workspace,
 		Screen:        ScreenWorkbench,
+		Workbench:     featureworkbench.New(workspace),
 	}
 }
 
@@ -22,11 +29,7 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	intent, ok := msg.(Intent)
-	if !ok {
-		return m, nil
-	}
-	next, _ := Reduce(m, intent)
+	next, _ := Reduce(m, msg)
 	return next, nil
 }
 
