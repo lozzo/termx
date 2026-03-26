@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tui/app"
 	tuiruntime "github.com/lozzow/termx/tui/runtime"
 )
@@ -42,7 +43,11 @@ func Run(client Client, cfg Config, input io.Reader, output io.Writer) error {
 	if cfg.Logger != nil {
 		cfg.Logger.Info("starting tui", "screen", model.Screen)
 	}
-	return programRunner.Run(model, input, output)
+	var teaModel tea.Model = model
+	if client != nil {
+		teaModel = tuiruntime.NewRenderModelWithRunner(model, tuiruntime.NewEffectRunner(client))
+	}
+	return programRunner.Run(teaModel, input, output)
 }
 
 func loadInitialModel(ctx context.Context, client Client, cfg Config) (app.Model, error) {

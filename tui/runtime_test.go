@@ -77,6 +77,20 @@ func TestRunBootstrapsSessionSnapshotForRootTUI(t *testing.T) {
 	}
 }
 
+func TestRunWrapsClientTUIWithRuntimeRenderModel(t *testing.T) {
+	runner := &captureProgramRunner{}
+	restore := swapProgramRunnerForTest(runner)
+	t.Cleanup(restore)
+
+	client := &stubClientForRunTest{listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{ID: "created", Name: "shell", State: "running"}}}}
+	if err := Run(client, Config{Workspace: "main", DefaultShell: "/bin/sh"}, nil, io.Discard); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if _, ok := tuiruntime.ExtractAppModel(runner.model); !ok {
+		t.Fatalf("expected runner model to contain extractable app model, got %T", runner.model)
+	}
+}
+
 func TestRunRestoresWorkspaceStateAndRebindsSessions(t *testing.T) {
 	runner := &captureProgramRunner{}
 	restore := swapProgramRunnerForTest(runner)
@@ -132,9 +146,9 @@ func swapProgramRunnerForTest(runner tuiruntime.ProgramRunner) func() {
 
 func capturedAppModelForRunTest(t *testing.T, model tea.Model) app.Model {
 	t.Helper()
-	root, ok := model.(app.Model)
+	root, ok := tuiruntime.ExtractAppModel(model)
 	if !ok {
-		t.Fatalf("expected app.Model, got %T", model)
+		t.Fatalf("expected extractable app model, got %T", model)
 	}
 	return root
 }

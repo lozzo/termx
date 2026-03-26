@@ -22,12 +22,12 @@ type BubbleTeaProgramRunner struct{}
 type renderModel struct {
 	model   app.Model
 	router  input.Router
-	runner  effectRunner
+	runner  EffectExecutor
 	width   int
 	height  int
 }
 
-type effectRunner interface {
+type EffectExecutor interface {
 	Run(ctx context.Context, effect app.Effect) app.Message
 }
 
@@ -43,8 +43,19 @@ func NewRenderModel(model app.Model) tea.Model {
 	return &renderModel{model: model, router: input.NewRouter(), width: 80, height: 24}
 }
 
-func NewRenderModelWithRunner(model app.Model, runner effectRunner) tea.Model {
+func NewRenderModelWithRunner(model app.Model, runner EffectExecutor) tea.Model {
 	return &renderModel{model: model, router: input.NewRouter(), runner: runner, width: 80, height: 24}
+}
+
+func ExtractAppModel(model tea.Model) (app.Model, bool) {
+	switch typed := model.(type) {
+	case app.Model:
+		return typed, true
+	case *renderModel:
+		return typed.model, true
+	default:
+		return app.Model{}, false
+	}
 }
 
 func (BubbleTeaProgramRunner) Run(model tea.Model, input io.Reader, output io.Writer) error {
@@ -78,7 +89,7 @@ func (m *renderModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, batchEffectCmds(m.runner, effects)
 }
 
-func batchEffectCmds(runner effectRunner, effects []app.Effect) tea.Cmd {
+func batchEffectCmds(runner EffectExecutor, effects []app.Effect) tea.Cmd {
 	if runner == nil || len(effects) == 0 {
 		return nil
 	}
