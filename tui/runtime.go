@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -33,22 +34,44 @@ var programRunner tuiruntime.ProgramRunner = tuiruntime.NewProgramRunner()
 
 // Run 只负责组装根模型与程序运行器，业务状态机留在 app/runtime 内部演进。
 func Run(client Client, cfg Config, input io.Reader, output io.Writer) error {
-	model := app.NewModel(cfg.Workspace)
-	if client != nil {
-		bootstrapped, err := tuiruntime.Bootstrap(context.Background(), client, tuiruntime.BootstrapConfig{
-			Workspace:    cfg.Workspace,
-			DefaultShell: cfg.DefaultShell,
-			AttachID:     cfg.AttachID,
-		})
-		if err != nil {
-			return err
-		}
-		model = bootstrapped
+	ctx := context.Background()
+	model, err := loadInitialModel(ctx, client, cfg)
+	if err != nil {
+		return err
 	}
 	if cfg.Logger != nil {
 		cfg.Logger.Info("starting tui", "screen", model.Screen)
 	}
 	return programRunner.Run(model, input, output)
+}
+
+func loadInitialModel(ctx context.Context, client Client, cfg Config) (app.Model, error) {
+	if cfg.AttachID == "" && cfg.WorkspaceStatePath != "" {
+		store := tuiruntime.NewWorkspaceStore(cfg.WorkspaceStatePath)
+		model, err := store.Load(ctx)
+		switch {
+		case err == nil:
+			if client == nil {
+				return model, nil
+			}
+			// 恢复文件只保留持久态，运行时 snapshot 必须在启动时重新向 daemon 取回。
+			return tuiruntime.RebindWorkspaceSessions(ctx, client, model)
+		case errors.Is(err, os.ErrNotExist):
+		default:
+			return app.Model{}, err
+		}
+	}
+
+	model := app.NewModel(cfg.Workspace)
+	if client == nil {
+		return model, nil
+	}
+
+	return tuiruntime.Bootstrap(ctx, client, tuiruntime.BootstrapConfig{
+		Workspace:    cfg.Workspace,
+		DefaultShell: cfg.DefaultShell,
+		AttachID:     cfg.AttachID,
+	})
 }
 
 // WaitForSocket 保持给 CLI 的等待逻辑稳定，不与 TUI 重构耦合。
