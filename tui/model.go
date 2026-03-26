@@ -3358,17 +3358,8 @@ func (m *Model) advanceLayoutPromptCmd() tea.Cmd {
 }
 
 func (m *Model) focusPaneByID(paneID string) {
-	if paneID == "" {
-		return
-	}
-	for tabIndex, tab := range m.workspace.Tabs {
-		if tab == nil || tab.Panes[paneID] == nil {
-			continue
-		}
-		m.workspace.ActiveTab = tabIndex
-		tab.ActivePaneID = paneID
-		tab.renderCache = nil
-		return
+	if m.workspace.FocusPane(paneID) {
+		m.invalidateRender()
 	}
 }
 
@@ -3737,38 +3728,30 @@ func (m *Model) handlePaneResize(msg paneResizeMsg) {
 
 func (m *Model) moveFocus(dir Direction) {
 	tab := m.currentTab()
-	if tab == nil || tab.Root == nil {
+	if tab == nil {
 		return
 	}
-	rects := tab.Root.Rects(Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)})
-	if next := tab.Root.Adjacent(tab.ActivePaneID, dir, rects); next != "" {
-		tab.ActivePaneID = next
+	if tab.MoveFocus(dir, Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}) {
 		m.invalidateRender()
 	}
 }
 
 func (m *Model) swapActivePane(delta int) {
 	tab := m.currentTab()
-	if tab == nil || tab.Root == nil || tab.ActivePaneID == "" {
+	if tab == nil {
 		return
 	}
-	if tab.Root.SwapWithNeighbor(tab.ActivePaneID, delta) {
-		tab.LayoutPreset = layoutPresetCustom
+	if tab.SwapActivePane(delta) {
 		m.invalidateRender()
 	}
 }
 
 func (m *Model) resizeActivePane(dir Direction, step int) {
 	tab := m.currentTab()
-	if tab == nil || tab.Root == nil || tab.ActivePaneID == "" || step <= 0 {
+	if tab == nil {
 		return
 	}
-	if tab.ZoomedPaneID != "" {
-		return
-	}
-	rootRect := Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}
-	if tab.Root.AdjustPaneBoundary(tab.ActivePaneID, dir, step, 4, rootRect) {
-		tab.LayoutPreset = layoutPresetCustom
+	if tab.ResizeActivePane(dir, step, Rect{X: 0, Y: 0, W: max(1, m.width), H: max(1, m.height-2)}) {
 		m.invalidateRender()
 	}
 }
@@ -4553,20 +4536,10 @@ func abs(v int) int {
 
 func (m *Model) cycleActiveLayout() {
 	tab := m.currentTab()
-	if tab == nil || tab.Root == nil {
+	if tab == nil {
 		return
 	}
-	ids := tab.Root.LeafIDs()
-	if len(ids) < 2 {
-		return
-	}
-	next := tab.LayoutPreset + 1
-	if next < layoutPresetEvenHorizontal || next >= layoutPresetCount {
-		next = layoutPresetEvenHorizontal
-	}
-	if root := buildPresetLayout(ids, next); root != nil {
-		tab.Root = root
-		tab.LayoutPreset = next
+	if tab.CycleLayoutPreset() {
 		m.invalidateRender()
 	}
 }
@@ -5111,34 +5084,11 @@ func (m *Model) replaceWorkspace(workspace Workspace) {
 }
 
 func (m *Model) removeTab(index int) bool {
-	if index < 0 || index >= len(m.workspace.Tabs) {
+	if !m.workspace.RemoveTab(index) {
 		return false
 	}
-	tab := m.workspace.Tabs[index]
-	if tab != nil {
-		for _, pane := range tab.Panes {
-			if pane != nil && pane.stopStream != nil {
-				pane.stopStream()
-			}
-		}
-	}
-
-	m.workspace.Tabs = append(m.workspace.Tabs[:index], m.workspace.Tabs[index+1:]...)
-	switch {
-	case len(m.workspace.Tabs) == 0:
-		m.workspace.ActiveTab = 0
-		return true
-	case m.workspace.ActiveTab > index:
-		m.workspace.ActiveTab--
-	case m.workspace.ActiveTab >= len(m.workspace.Tabs):
-		m.workspace.ActiveTab = len(m.workspace.Tabs) - 1
-	}
-
-	if current := m.currentTab(); current != nil && current.ActivePaneID == "" {
-		current.ActivePaneID = firstPaneID(current.Panes)
-	}
 	m.invalidateRender()
-	return false
+	return len(m.workspace.Tabs) == 0
 }
 
 func (m *Model) sendToActive(data []byte) tea.Cmd {
@@ -5247,10 +5197,9 @@ func (m *Model) paneByID(paneID string) *Pane {
 }
 
 func (m *Model) activateTab(index int) tea.Cmd {
-	if index < 0 || index >= len(m.workspace.Tabs) {
+	if !m.workspace.ActivateTab(index) {
 		return nil
 	}
-	m.workspace.ActiveTab = index
 	m.invalidateRender()
 	return tea.Batch(m.resizeVisiblePanesCmd(), m.autoAcquireCurrentTabResizeCmd())
 }
