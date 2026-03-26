@@ -111,13 +111,16 @@ func TestReducerDistinguishesDisconnectKillAndRemove(t *testing.T) {
 }
 
 func TestReducerOpensConnectOverlayForUnconnectedPane(t *testing.T) {
-	model := NewModel("main")
+	model := sampleLiveWorkbenchModel()
 	model, effects := Reduce(model, IntentOpenConnectOverlay)
 	if len(effects) != 0 {
 		t.Fatalf("expected no effects for overlay open, got %d", len(effects))
 	}
 	if model.Overlay.Active.Kind != featureoverlay.KindConnectPicker {
 		t.Fatalf("expected connect overlay, got %q", model.Overlay.Active.Kind)
+	}
+	if model.Overlay.Active.Selected != types.TerminalID("term-1") || len(model.Overlay.Active.Items) != 1 {
+		t.Fatalf("expected connect picker items from pool, got %#v", model.Overlay.Active)
 	}
 }
 
@@ -143,6 +146,31 @@ func TestReducerConnectIntentReturnsConnectAndReloadEffects(t *testing.T) {
 	}
 	if _, ok := effects[1].(EffectLoadTerminalPool); !ok {
 		t.Fatalf("expected second effect to reload pool, got %#v", effects[1])
+	}
+}
+
+func TestReducerConnectOverlaySelectionAndConfirm(t *testing.T) {
+	model := sampleLiveWorkbenchModel()
+	model.Pool.ApplyGroups(corepool.Groups{
+		Visible: []coreterminal.Metadata{{ID: types.TerminalID("term-1"), Name: "shell", State: coreterminal.StateRunning}},
+		Parked:  []coreterminal.Metadata{{ID: types.TerminalID("term-2"), Name: "logs", State: coreterminal.StateRunning}},
+	})
+
+	model, _ = Reduce(model, IntentOpenConnectOverlay)
+	model, effects := Reduce(model, IntentOverlaySelectNext)
+	if len(effects) != 0 {
+		t.Fatalf("expected no effects for overlay selection, got %d", len(effects))
+	}
+	if model.Overlay.Active.Selected != types.TerminalID("term-2") {
+		t.Fatalf("expected connect overlay moved to term-2, got %q", model.Overlay.Active.Selected)
+	}
+
+	_, effects = Reduce(model, IntentOverlayConfirmConnect)
+	if len(effects) != 2 {
+		t.Fatalf("expected connect confirm effects, got %d", len(effects))
+	}
+	if got, ok := effects[0].(EffectConnectTerminal); !ok || got.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected connect selected term-2, got %#v", effects[0])
 	}
 }
 
@@ -179,8 +207,8 @@ func TestReducerPoolSelectionAndSelectedTerminalActions(t *testing.T) {
 }
 
 func TestReducerMessageTerminalConnectedBindsPaneAndClearsOverlay(t *testing.T) {
-	model := NewModel("main")
-	model.Overlay = model.Overlay.OpenConnectPicker()
+	model := sampleLiveWorkbenchModel()
+	model.Overlay = model.Overlay.OpenConnectPicker(model.Pool.Visible, types.TerminalID("term-1"))
 	connected := coreterminal.Metadata{ID: types.TerminalID("term-9"), Name: "restored-shell", State: coreterminal.StateRunning}
 
 	model, effects := Reduce(model, MessageTerminalConnected{Terminal: connected})
@@ -193,8 +221,18 @@ func TestReducerMessageTerminalConnectedBindsPaneAndClearsOverlay(t *testing.T) 
 	if model.Overlay.Active.Kind != "" {
 		t.Fatalf("expected overlay cleared after connect, got %q", model.Overlay.Active.Kind)
 	}
-	if len(model.Pool.Visible) != 1 || model.Pool.Visible[0].ID != types.TerminalID("term-9") {
+	if len(model.Pool.Visible) != 2 {
 		t.Fatalf("expected connected terminal visible in pool, got %#v", model.Pool.Visible)
+	}
+	found := false
+	for _, item := range model.Pool.Visible {
+		if item.ID == types.TerminalID("term-9") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected connected terminal term-9 in pool, got %#v", model.Pool.Visible)
 	}
 }
 

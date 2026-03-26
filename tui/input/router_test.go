@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tui/app"
+	featureoverlay "github.com/lozzow/termx/tui/features/overlay"
 )
 
 func TestInputRouterMapsWorkbenchAndPoolKeysToIntents(t *testing.T) {
@@ -43,5 +44,22 @@ func TestInputRouterMapsWorkbenchAndPoolKeysToIntents(t *testing.T) {
 	}
 	if got := router.Translate(Context{Screen: app.ScreenTerminalPool}, tea.KeyMsg{Type: tea.KeyEsc}); got != app.IntentCloseScreen {
 		t.Fatalf("expected esc to close pool, got %#v", got)
+	}
+}
+
+func TestInputRouterMapsConnectOverlayKeys(t *testing.T) {
+	router := NewRouter()
+	ctx := Context{Screen: app.ScreenWorkbench, OverlayKind: featureoverlay.KindConnectPicker}
+	if got := router.Translate(ctx, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}); got != app.IntentOverlaySelectNext {
+		t.Fatalf("expected overlay next intent, got %#v", got)
+	}
+	if got := router.Translate(ctx, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")}); got != app.IntentOverlaySelectPrev {
+		t.Fatalf("expected overlay prev intent, got %#v", got)
+	}
+	if got := router.Translate(ctx, tea.KeyMsg{Type: tea.KeyEnter}); got != app.IntentOverlayConfirmConnect {
+		t.Fatalf("expected overlay confirm intent, got %#v", got)
+	}
+	if got := router.Translate(ctx, tea.KeyMsg{Type: tea.KeyEsc}); got != app.IntentCloseScreen {
+		t.Fatalf("expected overlay close intent, got %#v", got)
 	}
 }

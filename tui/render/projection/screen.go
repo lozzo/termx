@@ -15,9 +15,16 @@ import (
 type Screen struct {
 	Screen        app.Screen
 	WorkspaceName string
-	OverlayKind   featureoverlay.Kind
+	Overlay       Overlay
 	Panes         []Pane
 	Pool          TerminalPool
+}
+
+type Overlay struct {
+	Kind     featureoverlay.Kind
+	Title    string
+	Selected types.TerminalID
+	Items    []PoolItem
 }
 
 type Pane struct {
@@ -44,7 +51,12 @@ func Project(model app.Model, width, height int) Screen {
 	screen := Screen{
 		Screen:        model.Screen,
 		WorkspaceName: model.WorkspaceName,
-		OverlayKind:   model.Overlay.Active.Kind,
+		Overlay: Overlay{
+			Kind:     model.Overlay.Active.Kind,
+			Title:    model.Overlay.Active.Title,
+			Selected: model.Overlay.Active.Selected,
+			Items:    projectPoolItems(model.Overlay.Active.Items),
+		},
 	}
 	if model.Screen == app.ScreenTerminalPool {
 		screen.Pool = projectTerminalPool(model)

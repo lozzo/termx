@@ -10,6 +10,7 @@ import (
 	"github.com/lozzow/termx/tui/core/types"
 	coreworkspace "github.com/lozzow/termx/tui/core/workspace"
 	featureoverlay "github.com/lozzow/termx/tui/features/overlay"
+	featureterminalpool "github.com/lozzow/termx/tui/features/terminalpool"
 	featureworkbench "github.com/lozzow/termx/tui/features/workbench"
 )
 
@@ -34,13 +35,21 @@ func TestProjectWorkbenchIncludesPaneStateAndSnapshotBody(t *testing.T) {
 	}
 }
 
-func TestProjectCarriesOverlayKind(t *testing.T) {
+func TestProjectCarriesOverlayState(t *testing.T) {
 	model := sampleProjectionModel()
-	model.Overlay = featureoverlay.State{Active: featureoverlay.ActiveState{Kind: featureoverlay.KindConnectPicker}}
+	model.Overlay = featureoverlay.State{Active: featureoverlay.ActiveState{
+		Kind:     featureoverlay.KindConnectPicker,
+		Title:    "connect",
+		Selected: types.TerminalID("term-live"),
+		Items: []featureterminalpool.Item{{ID: types.TerminalID("term-live"), Name: "shell-live", State: coreterminal.StateRunning}},
+	}}
 
 	screen := Project(model, 120, 40)
-	if screen.OverlayKind != featureoverlay.KindConnectPicker {
-		t.Fatalf("expected connect picker overlay, got %q", screen.OverlayKind)
+	if screen.Overlay.Kind != featureoverlay.KindConnectPicker {
+		t.Fatalf("expected connect picker overlay, got %q", screen.Overlay.Kind)
+	}
+	if screen.Overlay.Selected != types.TerminalID("term-live") || len(screen.Overlay.Items) != 1 {
+		t.Fatalf("expected overlay selection projected, got %#v", screen.Overlay)
 	}
 }
 
@@ -92,22 +101,14 @@ func sampleProjectionModel() app.Model {
 					Snapshot: &protocol.Snapshot{
 						TerminalID: "term-live",
 						Timestamp:  time.Unix(10, 0),
-						Screen: protocol.ScreenData{
-							Cells: [][]protocol.Cell{
-								{{Content: "hello from shell"}},
-							},
-						},
+						Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "hello from shell"}}}},
 					},
 				},
 				types.TerminalID("term-exited"): {
 					Snapshot: &protocol.Snapshot{
 						TerminalID: "term-exited",
 						Timestamp:  time.Unix(20, 0),
-						Screen: protocol.ScreenData{
-							Cells: [][]protocol.Cell{
-								{{Content: "process done"}},
-							},
-						},
+						Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "process done"}}}},
 					},
 				},
 			},

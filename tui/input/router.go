@@ -3,10 +3,12 @@ package input
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tui/app"
+	featureoverlay "github.com/lozzow/termx/tui/features/overlay"
 )
 
 type Context struct {
-	Screen app.Screen
+	Screen      app.Screen
+	OverlayKind featureoverlay.Kind
 }
 
 type Router struct{}
@@ -16,6 +18,22 @@ func NewRouter() Router {
 }
 
 func (Router) Translate(ctx Context, msg tea.KeyMsg) any {
+	if ctx.OverlayKind == featureoverlay.KindConnectPicker {
+		if msg.Type == tea.KeyEsc {
+			return app.IntentCloseScreen
+		}
+		if msg.Type == tea.KeyEnter {
+			return app.IntentOverlayConfirmConnect
+		}
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+			switch msg.Runes[0] {
+			case 'j':
+				return app.IntentOverlaySelectNext
+			case 'k':
+				return app.IntentOverlaySelectPrev
+			}
+		}
+	}
 	switch ctx.Screen {
 	case app.ScreenWorkbench:
 		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {

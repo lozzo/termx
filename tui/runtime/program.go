@@ -52,7 +52,7 @@ func (m *renderModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = size.Height
 	}
 	if key, ok := msg.(tea.KeyMsg); ok {
-		if intent := m.router.Translate(input.Context{Screen: m.model.Screen}, key); intent != nil {
+		if intent := m.router.Translate(input.Context{Screen: m.model.Screen, OverlayKind: m.model.Overlay.Active.Kind}, key); intent != nil {
 			msg = intent
 		}
 	}
@@ -69,8 +69,8 @@ func (m *renderModel) View() string {
 	if screen.Screen == app.ScreenTerminalPool {
 		view = renderterminalpool.Render(screen, m.width, m.height)
 	}
-	if screen.OverlayKind != "" {
-		overlayView := renderoverlay.Render(screen.OverlayKind)
+	if screen.Overlay.Kind != "" {
+		overlayView := renderoverlay.Render(screen)
 		if overlayView != "" {
 			view += "\n" + overlayView
 		}

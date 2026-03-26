@@ -5,6 +5,7 @@ import (
 
 	corepool "github.com/lozzow/termx/tui/core/pool"
 	coreterminal "github.com/lozzow/termx/tui/core/terminal"
+	featureterminalpool "github.com/lozzow/termx/tui/features/terminalpool"
 	"github.com/lozzow/termx/tui/core/types"
 )
 
@@ -20,7 +21,7 @@ func Reduce(model Model, input any) (Model, []Effect) {
 			model.Screen = ScreenWorkbench
 			model.Overlay = model.Overlay.Clear()
 		case IntentOpenConnectOverlay:
-			model.Overlay = model.Overlay.OpenConnectPicker()
+			model.Overlay = model.Overlay.OpenConnectPicker(connectOverlayItems(model), connectOverlaySelected(model))
 		case IntentOpenHelpOverlay:
 			model.Overlay = model.Overlay.OpenHelp()
 		case IntentDisconnectActivePane:
@@ -37,6 +38,14 @@ func Reduce(model Model, input any) (Model, []Effect) {
 			model.Pool.SelectNext()
 		case IntentPoolSelectPrev:
 			model.Pool.SelectPrev()
+		case IntentOverlaySelectNext:
+			model.Overlay = model.Overlay.SelectNext()
+		case IntentOverlaySelectPrev:
+			model.Overlay = model.Overlay.SelectPrev()
+		case IntentOverlayConfirmConnect:
+			if model.Overlay.Active.Kind == "connect-picker" && model.Overlay.Active.Selected != "" {
+				return model, []Effect{EffectConnectTerminal{TerminalID: model.Overlay.Active.Selected}, EffectLoadTerminalPool{}}
+			}
 		}
 	case IntentConnectTerminal:
 		return model, []Effect{EffectConnectTerminal{TerminalID: typed.TerminalID}, EffectLoadTerminalPool{}}
@@ -79,6 +88,9 @@ func Reduce(model Model, input any) (Model, []Effect) {
 	case MessageTerminalPoolLoaded:
 		merged := mergeTerminalMetadata(indexTerminalMetadata(typed.Terminals), model.Workbench.Terminals)
 		model.Pool.ApplyGroups(corepool.BuildGroups(merged, model.Workbench.VisibleTerminalIDs(), model.Pool.Query))
+		if model.Overlay.Active.Kind == "connect-picker" {
+			model.Overlay = model.Overlay.OpenConnectPicker(connectOverlayItems(model), connectOverlaySelected(model))
+		}
 	}
 	return model, nil
 }
@@ -100,4 +112,22 @@ func indexTerminalMetadataFromWorkbench(items map[types.TerminalID]coreterminal.
 func mergeTerminalMetadata(base map[types.TerminalID]coreterminal.Metadata, overlay map[types.TerminalID]coreterminal.Metadata) map[types.TerminalID]coreterminal.Metadata {
 	maps.Copy(base, overlay)
 	return base
+}
+
+func connectOverlayItems(model Model) []featureterminalpool.Item {
+	return append(append(append([]featureterminalpool.Item{}, model.Pool.Visible...), model.Pool.Parked...), model.Pool.Exited...)
+}
+
+func connectOverlaySelected(model Model) types.TerminalID {
+	if model.Overlay.Active.Selected != "" {
+		return model.Overlay.Active.Selected
+	}
+	if model.Pool.SelectedTerminalID != "" {
+		return model.Pool.SelectedTerminalID
+	}
+	items := connectOverlayItems(model)
+	if len(items) > 0 {
+		return items[0].ID
+	}
+	return ""
 }
