@@ -241,6 +241,17 @@ func (p *Pane) SetRecovering(value bool) {
 	p.recovering = value
 }
 
+func (p *Pane) IsResizeAcquired() bool {
+	return p != nil && p.Session().IsResizeAcquired()
+}
+
+func (p *Pane) SetResizeAcquired(value bool) {
+	if p == nil {
+		return
+	}
+	p.ResizeAcquired = value
+}
+
 type textPrompt struct {
 	Kind     string
 	Title    string
@@ -2860,7 +2871,7 @@ func (m *Model) replacePane(msg paneReplacedMsg) {
 		return
 	}
 	previousTerminalID := pane.TerminalID
-	previousResizeOwner := pane.ResizeAcquired
+	previousResizeOwner := pane.IsResizeAcquired()
 	preferredOwnerID := preferredTerminalResizeOwnerID(m.workspace.Tabs, msg.pane.TerminalID, msg.paneID)
 	ownedStream := pane.stopStream != nil
 	m.stopPaneStream(pane)
@@ -4807,7 +4818,7 @@ func (m *Model) unbindPaneTerminal(pane *Pane) {
 	pane.TerminalState = "unbound"
 	pane.ExitCode = nil
 	pane.live = false
-	pane.ResizeAcquired = false
+	pane.SetResizeAcquired(false)
 	pane.SetSyncLost(false)
 	pane.SetRecovering(false)
 	pane.catchingUp = false
@@ -4970,7 +4981,7 @@ func clearTerminalResizeAcquire(tabs []*Tab, terminalID string) {
 		}
 		for _, pane := range tab.Panes {
 			if pane != nil && pane.TerminalID == terminalID {
-				pane.ResizeAcquired = false
+				pane.SetResizeAcquired(false)
 			}
 		}
 	}
@@ -5903,7 +5914,7 @@ func viewportConnectionStatus(pane *Pane) string {
 	if pane == nil || strings.TrimSpace(pane.TerminalID) == "" {
 		return ""
 	}
-	if pane.ResizeAcquired {
+	if pane.IsResizeAcquired() {
 		return "owner"
 	}
 	return "follower"

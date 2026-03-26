@@ -37,7 +37,7 @@ func buildTerminalConnectionSnapshot(tabs []*Tab, terminalID string) (terminalCo
 			pane := tab.Panes[id]
 			snapshot.paneIDs = append(snapshot.paneIDs, id)
 			snapshot.panes[id] = pane
-			if snapshot.ownerPaneID == "" && pane.ResizeAcquired {
+			if snapshot.ownerPaneID == "" && pane.IsResizeAcquired() {
 				snapshot.ownerPaneID = id
 			}
 		}
@@ -104,6 +104,6 @@ func (s terminalConnectionSnapshot) ApplyOwner(preferredPaneID string) {
 		return
 	}
 	for _, paneID := range s.paneIDs {
-		s.panes[paneID].ResizeAcquired = paneID == targetID
+		s.panes[paneID].SetResizeAcquired(paneID == targetID)
 	}
 }

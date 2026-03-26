@@ -96,3 +96,50 @@ func (s *PaneSession) SetRecovering(value bool) {
 	}
 	s.recovering = value
 }
+
+func (s *PaneSession) IsResizeAcquired() bool {
+	return s != nil && s.ResizeAcquired
+}
+
+func (s *PaneSession) SetResizeAcquired(value bool) {
+	if s == nil {
+		return
+	}
+	s.ResizeAcquired = value
+}
+
+func (s *PaneSession) HasStopStream() bool {
+	return s != nil && s.stopStream != nil
+}
+
+func (s *PaneSession) DirtyRows() (start int, end int, known bool) {
+	if s == nil {
+		return 0, 0, false
+	}
+	return s.dirtyRowStart, s.dirtyRowEnd, s.dirtyRowsKnown
+}
+
+func (s *PaneSession) SetDirtyRows(start int, end int, known bool) {
+	if s == nil {
+		return
+	}
+	s.dirtyRowStart = start
+	s.dirtyRowEnd = end
+	s.dirtyRowsKnown = known
+}
+
+func (s *PaneSession) DirtyCols() (start int, end int, known bool) {
+	if s == nil {
+		return 0, 0, false
+	}
+	return s.dirtyColStart, s.dirtyColEnd, s.dirtyColsKnown
+}
+
+func (s *PaneSession) SetDirtyCols(start int, end int, known bool) {
+	if s == nil {
+		return
+	}
+	s.dirtyColStart = start
+	s.dirtyColEnd = end
+	s.dirtyColsKnown = known
+}
