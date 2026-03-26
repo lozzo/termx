@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"github.com/lozzow/termx/protocol"
 	coreterminal "github.com/lozzow/termx/tui/core/terminal"
 	"github.com/lozzow/termx/tui/core/types"
 	coreworkspace "github.com/lozzow/termx/tui/core/workspace"
@@ -9,12 +10,18 @@ import (
 type State struct {
 	Workspace *coreworkspace.Workspace
 	Terminals map[types.TerminalID]coreterminal.Metadata
+	Sessions  map[types.TerminalID]SessionState
+}
+
+type SessionState struct {
+	Snapshot *protocol.Snapshot
 }
 
 func New(workspaceName string) State {
 	return State{
 		Workspace: coreworkspace.New(workspaceName),
 		Terminals: make(map[types.TerminalID]coreterminal.Metadata),
+		Sessions:  make(map[types.TerminalID]SessionState),
 	}
 }
 

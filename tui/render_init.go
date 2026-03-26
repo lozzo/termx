@@ -1,6 +1,3 @@
 package tui
 
-import (
-	// 当前阶段先保留入口文件，后续在这里接入 renderer 注册与装配。
-	_ "github.com/lozzow/termx/tui/app"
-)
+// 渲染主路径现在通过 runtime/program.go 在运行时装配，这里保留文件占位即可。
