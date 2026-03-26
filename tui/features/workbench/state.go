@@ -18,6 +18,47 @@ func New(workspaceName string) State {
 	}
 }
 
+func (s State) ActivePane() coreworkspace.PaneState {
+	if s.Workspace == nil {
+		return coreworkspace.PaneState{}
+	}
+	tab := s.Workspace.ActiveTab()
+	if tab == nil {
+		return coreworkspace.PaneState{}
+	}
+	return tab.ActivePane()
+}
+
+// BindActivePane 把当前活跃 pane 绑定到 terminal，并同步 owner/attached 摘要。
+func (s *State) BindActivePane(meta coreterminal.Metadata) bool {
+	if s == nil || s.Workspace == nil {
+		return false
+	}
+	tab := s.Workspace.ActiveTab()
+	if tab == nil {
+		return false
+	}
+	pane := tab.ActivePane()
+	if pane.ID == "" {
+		return false
+	}
+	pane.TerminalID = meta.ID
+	if meta.State == coreterminal.StateExited {
+		pane.SlotState = types.PaneSlotExited
+	} else {
+		pane.SlotState = types.PaneSlotLive
+	}
+	tab.TrackPane(pane)
+	if meta.OwnerPaneID == "" {
+		meta.OwnerPaneID = pane.ID
+	}
+	if !meta.HasPane(pane.ID) {
+		meta.AttachedPaneIDs = append(meta.AttachedPaneIDs, pane.ID)
+	}
+	s.Terminals[meta.ID] = meta
+	return true
+}
+
 // MarkPaneDisconnected 只解除单个 pane 和 terminal 的绑定，不影响其他共享 pane。
 func (s *State) MarkPaneDisconnected(paneID types.PaneID) bool {
 	if s == nil || s.Workspace == nil {

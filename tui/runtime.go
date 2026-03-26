@@ -33,8 +33,18 @@ var programRunner tuiruntime.ProgramRunner = tuiruntime.NewProgramRunner()
 
 // Run 只负责组装根模型与程序运行器，业务状态机留在 app/runtime 内部演进。
 func Run(client Client, cfg Config, input io.Reader, output io.Writer) error {
-	_ = client
 	model := app.NewModel(cfg.Workspace)
+	if client != nil {
+		bootstrapped, err := tuiruntime.Bootstrap(context.Background(), client, tuiruntime.BootstrapConfig{
+			Workspace:    cfg.Workspace,
+			DefaultShell: cfg.DefaultShell,
+			AttachID:     cfg.AttachID,
+		})
+		if err != nil {
+			return err
+		}
+		model = bootstrapped
+	}
 	if cfg.Logger != nil {
 		cfg.Logger.Info("starting tui", "screen", model.Screen)
 	}
