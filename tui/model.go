@@ -142,6 +142,44 @@ type Pane struct {
 	*Viewport
 }
 
+func (p *Pane) Session() *PaneSession {
+	if p == nil || p.Viewport == nil {
+		return nil
+	}
+	return &PaneSession{
+		TerminalID:     p.TerminalID,
+		Channel:        p.Channel,
+		AttachMode:     p.AttachMode,
+		VTerm:          p.VTerm,
+		DefaultFG:      p.DefaultFG,
+		DefaultBG:      p.DefaultBG,
+		ResizeAcquired: p.ResizeAcquired,
+		stopStream:     p.stopStream,
+		cellCache:      p.cellCache,
+		cellVersion:    p.cellVersion,
+		viewportCache:  p.viewportCache,
+		viewportOffset: p.viewportOffset,
+		viewportWidth:  p.viewportWidth,
+		viewportHeight: p.viewportHeight,
+		viewportVersion:p.viewportVersion,
+		renderDirty:    p.renderDirty,
+		live:           p.live,
+		syncLost:       p.syncLost,
+		droppedBytes:   p.droppedBytes,
+		recovering:     p.recovering,
+		catchingUp:     p.catchingUp,
+		dirtyTicks:     p.dirtyTicks,
+		cleanTicks:     p.cleanTicks,
+		skipTick:       p.skipTick,
+		dirtyRowsKnown: p.dirtyRowsKnown,
+		dirtyRowStart:  p.dirtyRowStart,
+		dirtyRowEnd:    p.dirtyRowEnd,
+		dirtyColsKnown: p.dirtyColsKnown,
+		dirtyColStart:  p.dirtyColStart,
+		dirtyColEnd:    p.dirtyColEnd,
+	}
+}
+
 type textPrompt struct {
 	Kind     string
 	Title    string
