@@ -29,3 +29,25 @@ func TestApplyGroupsBuildsVisibleParkedExitedAndSelection(t *testing.T) {
 		t.Fatalf("expected first visible item selected, got %q", state.SelectedTerminalID)
 	}
 }
+
+func TestSelectionMovesAcrossGroups(t *testing.T) {
+	state := State{}
+	state.ApplyGroups(corepool.Groups{
+		Visible: []coreterminal.Metadata{{ID: types.TerminalID("term-visible"), Name: "visible-shell", State: coreterminal.StateRunning}},
+		Parked:  []coreterminal.Metadata{{ID: types.TerminalID("term-parked"), Name: "parked-shell", State: coreterminal.StateRunning}},
+		Exited:  []coreterminal.Metadata{{ID: types.TerminalID("term-exited"), Name: "exited-shell", State: coreterminal.StateExited}},
+	})
+
+	state.SelectNext()
+	if state.SelectedTerminalID != types.TerminalID("term-parked") {
+		t.Fatalf("expected parked selected after next, got %q", state.SelectedTerminalID)
+	}
+	state.SelectNext()
+	if state.SelectedTerminalID != types.TerminalID("term-exited") {
+		t.Fatalf("expected exited selected after next, got %q", state.SelectedTerminalID)
+	}
+	state.SelectPrev()
+	if state.SelectedTerminalID != types.TerminalID("term-parked") {
+		t.Fatalf("expected parked selected after prev, got %q", state.SelectedTerminalID)
+	}
+}

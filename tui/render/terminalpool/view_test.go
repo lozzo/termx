@@ -20,6 +20,15 @@ func TestTerminalPoolViewShowsVisibleParkedExitedGroups(t *testing.T) {
 	}
 }
 
+func TestTerminalPoolViewShowsActionHints(t *testing.T) {
+	view := Render(samplePoolProjection(), 120, 40)
+	for _, want := range []string{"j/k move", "x kill", "X remove", "? help"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected action hint %q, got %q", want, view)
+		}
+	}
+}
+
 func samplePoolProjection() projection.Screen {
 	return projection.Screen{
 		Pool: projection.TerminalPool{

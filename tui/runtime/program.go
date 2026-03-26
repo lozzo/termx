@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tui/app"
+	"github.com/lozzow/termx/tui/input"
 	renderoverlay "github.com/lozzow/termx/tui/render/overlay"
 	"github.com/lozzow/termx/tui/render/projection"
 	renderterminalpool "github.com/lozzow/termx/tui/render/terminalpool"
@@ -19,6 +20,7 @@ type BubbleTeaProgramRunner struct{}
 
 type renderModel struct {
 	model  app.Model
+	router input.Router
 	width  int
 	height int
 }
@@ -27,9 +29,13 @@ func NewProgramRunner() ProgramRunner {
 	return BubbleTeaProgramRunner{}
 }
 
+func NewRenderModel(model app.Model) tea.Model {
+	return &renderModel{model: model, router: input.NewRouter(), width: 80, height: 24}
+}
+
 func (BubbleTeaProgramRunner) Run(model tea.Model, input io.Reader, output io.Writer) error {
 	if root, ok := model.(app.Model); ok {
-		model = &renderModel{model: root, width: 80, height: 24}
+		model = NewRenderModel(root)
 	}
 	program := tea.NewProgram(model, tea.WithInput(input), tea.WithOutput(output))
 	_, err := program.Run()
@@ -44,6 +50,11 @@ func (m *renderModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if size, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = size.Width
 		m.height = size.Height
+	}
+	if key, ok := msg.(tea.KeyMsg); ok {
+		if intent := m.router.Translate(input.Context{Screen: m.model.Screen}, key); intent != nil {
+			msg = intent
+		}
 	}
 	next, cmd := m.model.Update(msg)
 	if typed, ok := next.(app.Model); ok {

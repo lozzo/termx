@@ -9,10 +9,12 @@ import (
 )
 
 func Render(screen projection.Screen, width, height int) string {
-	rows := 8 + len(screen.Pool.Visible) + len(screen.Pool.Parked) + len(screen.Pool.Exited)
+	rows := 10 + len(screen.Pool.Visible) + len(screen.Pool.Parked) + len(screen.Pool.Exited)
 	c := canvas.New(width, rows)
 	row := 0
 	c.WriteLine(row, "terminal pool")
+	row++
+	c.WriteLine(row, "j/k move  x kill  X remove  esc back  ? help")
 	row++
 	c.WriteLine(row, "visible")
 	row++

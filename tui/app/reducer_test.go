@@ -121,6 +121,17 @@ func TestReducerOpensConnectOverlayForUnconnectedPane(t *testing.T) {
 	}
 }
 
+func TestReducerOpensHelpOverlay(t *testing.T) {
+	model := NewModel("main")
+	model, effects := Reduce(model, IntentOpenHelpOverlay)
+	if len(effects) != 0 {
+		t.Fatalf("expected no effects for help overlay open, got %d", len(effects))
+	}
+	if model.Overlay.Active.Kind != featureoverlay.KindHelp {
+		t.Fatalf("expected help overlay, got %q", model.Overlay.Active.Kind)
+	}
+}
+
 func TestReducerConnectIntentReturnsConnectAndReloadEffects(t *testing.T) {
 	model := NewModel("main")
 	_, effects := Reduce(model, IntentConnectTerminal{TerminalID: types.TerminalID("term-2")})
@@ -132,6 +143,38 @@ func TestReducerConnectIntentReturnsConnectAndReloadEffects(t *testing.T) {
 	}
 	if _, ok := effects[1].(EffectLoadTerminalPool); !ok {
 		t.Fatalf("expected second effect to reload pool, got %#v", effects[1])
+	}
+}
+
+func TestReducerPoolSelectionAndSelectedTerminalActions(t *testing.T) {
+	model := sampleLiveWorkbenchModel()
+	model.Pool.ApplyGroups(corepool.Groups{
+		Visible: []coreterminal.Metadata{{ID: types.TerminalID("term-1"), Name: "shell", State: coreterminal.StateRunning}},
+		Parked:  []coreterminal.Metadata{{ID: types.TerminalID("term-2"), Name: "logs", State: coreterminal.StateRunning}},
+	})
+
+	model, effects := Reduce(model, IntentPoolSelectNext)
+	if len(effects) != 0 {
+		t.Fatalf("expected no effects for pool selection, got %d", len(effects))
+	}
+	if model.Pool.SelectedTerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected pool selection moved to term-2, got %q", model.Pool.SelectedTerminalID)
+	}
+
+	_, effects = Reduce(model, IntentKillSelectedTerminal{})
+	if len(effects) != 2 {
+		t.Fatalf("expected kill plus reload effects, got %d", len(effects))
+	}
+	if got, ok := effects[0].(EffectKillTerminal); !ok || got.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected kill selected term-2, got %#v", effects[0])
+	}
+
+	_, effects = Reduce(model, IntentRemoveSelectedTerminal{})
+	if len(effects) != 2 {
+		t.Fatalf("expected remove plus reload effects, got %d", len(effects))
+	}
+	if got, ok := effects[0].(EffectRemoveTerminal); !ok || got.TerminalID != types.TerminalID("term-2") {
+		t.Fatalf("expected remove selected term-2, got %#v", effects[0])
 	}
 }
 

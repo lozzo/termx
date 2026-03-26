@@ -1,6 +1,8 @@
 package app
 
 import (
+	"maps"
+
 	corepool "github.com/lozzow/termx/tui/core/pool"
 	coreterminal "github.com/lozzow/termx/tui/core/terminal"
 	"github.com/lozzow/termx/tui/core/types"
@@ -16,8 +18,11 @@ func Reduce(model Model, input any) (Model, []Effect) {
 			return model, []Effect{EffectLoadTerminalPool{}}
 		case IntentCloseScreen:
 			model.Screen = ScreenWorkbench
+			model.Overlay = model.Overlay.Clear()
 		case IntentOpenConnectOverlay:
 			model.Overlay = model.Overlay.OpenConnectPicker()
+		case IntentOpenHelpOverlay:
+			model.Overlay = model.Overlay.OpenHelp()
 		case IntentDisconnectActivePane:
 			pane := model.Workbench.ActivePane()
 			if pane.ID != "" && pane.TerminalID != "" {
@@ -28,11 +33,18 @@ func Reduce(model Model, input any) (Model, []Effect) {
 			if pane.TerminalID != "" {
 				return model, []Effect{EffectReconnectTerminal{TerminalID: pane.TerminalID}, EffectLoadTerminalPool{}}
 			}
+		case IntentPoolSelectNext:
+			model.Pool.SelectNext()
+		case IntentPoolSelectPrev:
+			model.Pool.SelectPrev()
 		}
 	case IntentConnectTerminal:
 		return model, []Effect{EffectConnectTerminal{TerminalID: typed.TerminalID}, EffectLoadTerminalPool{}}
 	case IntentKillSelectedTerminal:
 		terminalID := typed.TerminalID
+		if terminalID == "" {
+			terminalID = model.Pool.SelectedTerminalID
+		}
 		if terminalID == "" {
 			terminalID = model.Workbench.ActiveTerminalID()
 		}
@@ -41,6 +53,9 @@ func Reduce(model Model, input any) (Model, []Effect) {
 		}
 	case IntentRemoveSelectedTerminal:
 		terminalID := typed.TerminalID
+		if terminalID == "" {
+			terminalID = model.Pool.SelectedTerminalID
+		}
 		if terminalID == "" {
 			terminalID = model.Workbench.ActiveTerminalID()
 		}
@@ -78,15 +93,11 @@ func indexTerminalMetadata(items []coreterminal.Metadata) map[types.TerminalID]c
 
 func indexTerminalMetadataFromWorkbench(items map[types.TerminalID]coreterminal.Metadata) map[types.TerminalID]coreterminal.Metadata {
 	out := make(map[types.TerminalID]coreterminal.Metadata, len(items))
-	for id, item := range items {
-		out[id] = item
-	}
+	maps.Copy(out, items)
 	return out
 }
 
 func mergeTerminalMetadata(base map[types.TerminalID]coreterminal.Metadata, overlay map[types.TerminalID]coreterminal.Metadata) map[types.TerminalID]coreterminal.Metadata {
-	for id, item := range overlay {
-		base[id] = item
-	}
+	maps.Copy(base, overlay)
 	return base
 }

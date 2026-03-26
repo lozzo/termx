@@ -32,17 +32,64 @@ func (s *State) ApplyGroups(groups corepool.Groups) {
 	}
 }
 
+func (s *State) SelectNext() {
+	if s == nil {
+		return
+	}
+	items := s.allItems()
+	if len(items) == 0 {
+		s.SelectedTerminalID = ""
+		return
+	}
+	index := s.selectedIndex(items)
+	if index == -1 || index == len(items)-1 {
+		s.SelectedTerminalID = items[0].ID
+		return
+	}
+	s.SelectedTerminalID = items[index+1].ID
+}
+
+func (s *State) SelectPrev() {
+	if s == nil {
+		return
+	}
+	items := s.allItems()
+	if len(items) == 0 {
+		s.SelectedTerminalID = ""
+		return
+	}
+	index := s.selectedIndex(items)
+	if index <= 0 {
+		s.SelectedTerminalID = items[len(items)-1].ID
+		return
+	}
+	s.SelectedTerminalID = items[index-1].ID
+}
+
 func (s State) hasSelection() bool {
 	selected := s.SelectedTerminalID
 	if selected == "" {
 		return false
 	}
-	for _, item := range append(append(append([]Item{}, s.Visible...), s.Parked...), s.Exited...) {
+	for _, item := range s.allItems() {
 		if item.ID == selected {
 			return true
 		}
 	}
 	return false
+}
+
+func (s State) allItems() []Item {
+	return append(append(append([]Item{}, s.Visible...), s.Parked...), s.Exited...)
+}
+
+func (s State) selectedIndex(items []Item) int {
+	for index, item := range items {
+		if item.ID == s.SelectedTerminalID {
+			return index
+		}
+	}
+	return -1
 }
 
 func buildItems(items []coreterminal.Metadata) []Item {

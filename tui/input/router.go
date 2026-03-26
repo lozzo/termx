@@ -28,11 +28,27 @@ func (Router) Translate(ctx Context, msg tea.KeyMsg) any {
 				return app.IntentDisconnectActivePane
 			case 'r':
 				return app.IntentReconnectActivePane
+			case '?':
+				return app.IntentOpenHelpOverlay
 			}
 		}
 	case app.ScreenTerminalPool:
 		if msg.Type == tea.KeyEsc {
 			return app.IntentCloseScreen
+		}
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+			switch msg.Runes[0] {
+			case 'j':
+				return app.IntentPoolSelectNext
+			case 'k':
+				return app.IntentPoolSelectPrev
+			case 'x':
+				return app.IntentKillSelectedTerminal{}
+			case 'X':
+				return app.IntentRemoveSelectedTerminal{}
+			case '?':
+				return app.IntentOpenHelpOverlay
+			}
 		}
 	}
 	return nil
