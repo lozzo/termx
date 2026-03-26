@@ -16,6 +16,15 @@ func TestWorkbenchViewShowsLiveExitedAndUnconnectedPaneState(t *testing.T) {
 	}
 }
 
+func TestWorkbenchViewShowsPaneBodyLines(t *testing.T) {
+	view := Render(sampleProjectionWithThreePaneStates(), 120, 40)
+	for _, want := range []string{"hello from shell", "process done"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected body line %q, got %q", want, view)
+		}
+	}
+}
+
 func TestUnconnectedPaneShowsActions(t *testing.T) {
 	view := Render(sampleUnconnectedProjection(), 80, 24)
 	for _, want := range []string{"connect existing", "create terminal", "open pool"} {

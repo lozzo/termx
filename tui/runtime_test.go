@@ -49,6 +49,34 @@ func TestRunStartsWithWorkbenchScreen(t *testing.T) {
 	}
 }
 
+func TestRunBootstrapsSessionSnapshotForRootTUI(t *testing.T) {
+	runner := &captureProgramRunner{}
+	restore := swapProgramRunnerForTest(runner)
+	t.Cleanup(restore)
+
+	client := &stubClientForRunTest{
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{ID: "created", Name: "shell", State: "running"}}},
+		snapshotByID: map[string]*protocol.Snapshot{
+			"created": {
+				TerminalID: "created",
+				Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "bootstrapped body"}}}},
+			},
+		},
+	}
+	if err := Run(client, Config{Workspace: "main", DefaultShell: "/bin/sh"}, nil, io.Discard); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	root := capturedAppModelForRunTest(t, runner.model)
+	session := root.Workbench.Sessions[types.TerminalID("created")]
+	if session.Snapshot == nil || session.Snapshot.TerminalID != "created" {
+		t.Fatalf("expected bootstrap session snapshot, got %#v", root.Workbench.Sessions)
+	}
+	if got := root.Workbench.ActivePane().TerminalID; got != types.TerminalID("created") {
+		t.Fatalf("expected active pane attached to created terminal, got %q", got)
+	}
+}
+
 func TestRunRestoresWorkspaceStateAndRebindsSessions(t *testing.T) {
 	runner := &captureProgramRunner{}
 	restore := swapProgramRunnerForTest(runner)
@@ -112,6 +140,7 @@ func capturedAppModelForRunTest(t *testing.T, model tea.Model) app.Model {
 }
 
 type stubClientForRunTest struct {
+	listResult   *protocol.ListResult
 	snapshotByID map[string]*protocol.Snapshot
 }
 
@@ -126,6 +155,9 @@ func (c *stubClientForRunTest) SetMetadata(ctx context.Context, terminalID strin
 	return nil
 }
 func (c *stubClientForRunTest) List(ctx context.Context) (*protocol.ListResult, error) {
+	if c.listResult != nil {
+		return c.listResult, nil
+	}
 	return &protocol.ListResult{}, nil
 }
 func (c *stubClientForRunTest) Events(ctx context.Context, params protocol.EventsParams) (<-chan protocol.Event, error) {

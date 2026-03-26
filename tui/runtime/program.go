@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"io"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -19,10 +20,19 @@ type ProgramRunner interface {
 type BubbleTeaProgramRunner struct{}
 
 type renderModel struct {
-	model  app.Model
-	router input.Router
-	width  int
-	height int
+	model   app.Model
+	router  input.Router
+	runner  effectRunner
+	width   int
+	height  int
+}
+
+type effectRunner interface {
+	Run(ctx context.Context, effect app.Effect) app.Message
+}
+
+type effectResultMsg struct {
+	message app.Message
 }
 
 func NewProgramRunner() ProgramRunner {
@@ -31,6 +41,10 @@ func NewProgramRunner() ProgramRunner {
 
 func NewRenderModel(model app.Model) tea.Model {
 	return &renderModel{model: model, router: input.NewRouter(), width: 80, height: 24}
+}
+
+func NewRenderModelWithRunner(model app.Model, runner effectRunner) tea.Model {
+	return &renderModel{model: model, router: input.NewRouter(), runner: runner, width: 80, height: 24}
 }
 
 func (BubbleTeaProgramRunner) Run(model tea.Model, input io.Reader, output io.Writer) error {
@@ -51,16 +65,35 @@ func (m *renderModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = size.Width
 		m.height = size.Height
 	}
+	if result, ok := msg.(effectResultMsg); ok {
+		msg = result.message
+	}
 	if key, ok := msg.(tea.KeyMsg); ok {
 		if intent := m.router.Translate(input.Context{Screen: m.model.Screen, OverlayKind: m.model.Overlay.Active.Kind}, key); intent != nil {
 			msg = intent
 		}
 	}
-	next, cmd := m.model.Update(msg)
-	if typed, ok := next.(app.Model); ok {
-		m.model = typed
+	next, effects := app.Reduce(m.model, msg)
+	m.model = next
+	return m, batchEffectCmds(m.runner, effects)
+}
+
+func batchEffectCmds(runner effectRunner, effects []app.Effect) tea.Cmd {
+	if runner == nil || len(effects) == 0 {
+		return nil
 	}
-	return m, cmd
+	cmds := make([]tea.Cmd, 0, len(effects))
+	for _, effect := range effects {
+		effectCopy := effect
+		cmds = append(cmds, func() tea.Msg {
+			message := runner.Run(context.Background(), effectCopy)
+			if message == nil {
+				return nil
+			}
+			return effectResultMsg{message: message}
+		})
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m *renderModel) View() string {

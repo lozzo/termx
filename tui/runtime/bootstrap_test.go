@@ -11,6 +11,8 @@ import (
 func TestBootstrapCreatesLiveShellPane(t *testing.T) {
 	client := &stubClient{
 		createResult: &protocol.CreateResult{TerminalID: "term-1", State: "running"},
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{ID: "term-1", Name: "shell", State: "running"}}},
+		snapshotByID: map[string]*protocol.Snapshot{"term-1": {TerminalID: "term-1", Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "boot shell"}}}}}},
 	}
 
 	model, err := Bootstrap(context.Background(), client, BootstrapConfig{
@@ -37,5 +39,8 @@ func TestBootstrapCreatesLiveShellPane(t *testing.T) {
 	}
 	if meta.OwnerPaneID != pane.ID {
 		t.Fatalf("expected owner pane %q, got %q", pane.ID, meta.OwnerPaneID)
+	}
+	if session := model.Workbench.Sessions[types.TerminalID("term-1")]; session.Snapshot == nil || session.Snapshot.TerminalID != "term-1" {
+		t.Fatalf("expected bootstrap session snapshot, got %#v", model.Workbench.Sessions)
 	}
 }
