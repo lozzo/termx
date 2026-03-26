@@ -9,7 +9,7 @@ import (
 
 func TestWorkbenchViewShowsLiveExitedAndUnconnectedPaneState(t *testing.T) {
 	view := Render(sampleProjectionWithThreePaneStates(), 120, 40)
-	for _, want := range []string{"live", "exited", "unconnected"} {
+	for _, want := range []string{"live / connected", "exited / scrollback", "unconnected / waiting"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected view to contain %q", want)
 		}
@@ -25,18 +25,23 @@ func TestWorkbenchViewShowsPaneBodyLines(t *testing.T) {
 	}
 }
 
-func TestWorkbenchViewShowsHeaderAndKeyHints(t *testing.T) {
+func TestWorkbenchViewShowsWireframeHeaderAndFooter(t *testing.T) {
 	view := Render(sampleProjectionWithThreePaneStates(), 120, 40)
-	for _, want := range []string{"workbench panes=3", "keys: c connect", "> shell-live [live]"} {
+	for _, want := range []string{"termx [main] workbench", "layout: 3 pane(s)", "ACTIVE shell-live", "c connect  p pool"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected view detail %q, got %q", want, view)
+		}
+	}
+	for _, border := range []string{"┌", "┐", "└", "┘", "│", "─"} {
+		if !strings.Contains(view, border) {
+			t.Fatalf("expected wireframe border %q, got %q", border, view)
 		}
 	}
 }
 
 func TestUnconnectedPaneShowsActions(t *testing.T) {
 	view := Render(sampleUnconnectedProjection(), 80, 24)
-	for _, want := range []string{"connect existing", "create terminal", "open pool"} {
+	for _, want := range []string{"connect existing", "create terminal", "open pool", "actions: connect / create / pool"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected view to contain %q", want)
 		}

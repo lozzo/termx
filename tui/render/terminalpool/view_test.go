@@ -10,13 +10,25 @@ import (
 
 func TestTerminalPoolViewShowsVisibleParkedExitedGroups(t *testing.T) {
 	view := Render(samplePoolProjection(), 120, 40)
-	for _, want := range []string{"visible", "parked", "exited"} {
+	for _, want := range []string{"visible (1)", "parked (1)", "exited (1)"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected view to contain %q", want)
 		}
 	}
 	if !strings.Contains(view, "visible-shell") {
 		t.Fatalf("expected selected terminal name, got %q", view)
+	}
+}
+
+func TestTerminalPoolViewShowsThreeColumnWireframe(t *testing.T) {
+	view := Render(samplePoolProjection(), 120, 40)
+	for _, want := range []string{"three-column wireframe", "terminals", "preview", "details", "snapshot preview pending", "terminal id: term-visible"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected pool detail %q, got %q", want, view)
+		}
+	}
+	if !strings.Contains(view, "> visible-shell [running]") {
+		t.Fatalf("expected selected marker, got %q", view)
 	}
 }
 
