@@ -62,7 +62,7 @@ func (BubbleTeaProgramRunner) Run(model tea.Model, input io.Reader, output io.Wr
 	if root, ok := model.(app.Model); ok {
 		model = NewRenderModel(root)
 	}
-	program := tea.NewProgram(model, tea.WithInput(input), tea.WithOutput(output))
+	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithInput(input), tea.WithOutput(output))
 	_, err := program.Run()
 	return err
 }
