@@ -11,6 +11,9 @@ type stubClient struct {
 	createErr    error
 	createCalls  int
 
+	listResult *protocol.ListResult
+	listErr    error
+
 	removeCalls []string
 	removeErr   error
 
@@ -38,6 +41,12 @@ func (c *stubClient) Snapshot(ctx context.Context, terminalID string, offset, li
 }
 
 func (c *stubClient) List(ctx context.Context) (*protocol.ListResult, error) {
+	if c.listErr != nil {
+		return nil, c.listErr
+	}
+	if c.listResult != nil {
+		return c.listResult, nil
+	}
 	return &protocol.ListResult{}, nil
 }
 

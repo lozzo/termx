@@ -6,6 +6,8 @@ type Effect interface{}
 
 type EffectCreateTerminal struct{}
 
+type EffectLoadTerminalPool struct{}
+
 type EffectConnectTerminal struct {
 	TerminalID types.TerminalID
 }

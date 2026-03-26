@@ -7,6 +7,7 @@ import (
 	"github.com/lozzow/termx/tui/app"
 	renderoverlay "github.com/lozzow/termx/tui/render/overlay"
 	"github.com/lozzow/termx/tui/render/projection"
+	renderterminalpool "github.com/lozzow/termx/tui/render/terminalpool"
 	renderworkbench "github.com/lozzow/termx/tui/render/workbench"
 )
 
@@ -54,6 +55,9 @@ func (m *renderModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *renderModel) View() string {
 	screen := projection.Project(m.model, m.width, m.height)
 	view := renderworkbench.Render(screen, m.width, m.height)
+	if screen.Screen == app.ScreenTerminalPool {
+		view = renderterminalpool.Render(screen, m.width, m.height)
+	}
 	if screen.OverlayKind != "" {
 		overlayView := renderoverlay.Render(screen.OverlayKind)
 		if overlayView != "" {

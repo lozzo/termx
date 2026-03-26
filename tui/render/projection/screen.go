@@ -9,6 +9,7 @@ import (
 	"github.com/lozzow/termx/tui/core/types"
 	coreworkspace "github.com/lozzow/termx/tui/core/workspace"
 	featureoverlay "github.com/lozzow/termx/tui/features/overlay"
+	featureterminalpool "github.com/lozzow/termx/tui/features/terminalpool"
 )
 
 type Screen struct {
@@ -16,6 +17,7 @@ type Screen struct {
 	WorkspaceName string
 	OverlayKind   featureoverlay.Kind
 	Panes         []Pane
+	Pool          TerminalPool
 }
 
 type Pane struct {
@@ -25,11 +27,28 @@ type Pane struct {
 	Body   string
 }
 
+type TerminalPool struct {
+	SelectedTerminalID types.TerminalID
+	Visible            []PoolItem
+	Parked             []PoolItem
+	Exited             []PoolItem
+}
+
+type PoolItem struct {
+	ID    types.TerminalID
+	Name  string
+	State string
+}
+
 func Project(model app.Model, width, height int) Screen {
 	screen := Screen{
 		Screen:        model.Screen,
 		WorkspaceName: model.WorkspaceName,
 		OverlayKind:   model.Overlay.Active.Kind,
+	}
+	if model.Screen == app.ScreenTerminalPool {
+		screen.Pool = projectTerminalPool(model)
+		return screen
 	}
 	tab := model.Workbench.Workspace.ActiveTab()
 	if tab == nil {
@@ -49,6 +68,23 @@ func Project(model app.Model, width, height int) Screen {
 	}
 	screen.Panes = panes
 	return screen
+}
+
+func projectTerminalPool(model app.Model) TerminalPool {
+	return TerminalPool{
+		SelectedTerminalID: model.Pool.SelectedTerminalID,
+		Visible:            projectPoolItems(model.Pool.Visible),
+		Parked:             projectPoolItems(model.Pool.Parked),
+		Exited:             projectPoolItems(model.Pool.Exited),
+	}
+}
+
+func projectPoolItems(items []featureterminalpool.Item) []PoolItem {
+	out := make([]PoolItem, 0, len(items))
+	for _, item := range items {
+		out = append(out, PoolItem{ID: item.ID, Name: item.Name, State: string(item.State)})
+	}
+	return out
 }
 
 func orderedPaneIDs(panes map[types.PaneID]coreworkspace.PaneState, active types.PaneID) []types.PaneID {

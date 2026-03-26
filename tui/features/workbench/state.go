@@ -147,6 +147,23 @@ func (s *State) updatePanesForTerminal(terminalID types.TerminalID, update func(
 	return updated
 }
 
+func (s State) VisibleTerminalIDs() map[types.TerminalID]bool {
+	visible := make(map[types.TerminalID]bool)
+	if s.Workspace == nil {
+		return visible
+	}
+	tab := s.Workspace.ActiveTab()
+	if tab == nil {
+		return visible
+	}
+	for _, pane := range tab.Panes {
+		if pane.TerminalID != "" {
+			visible[pane.TerminalID] = true
+		}
+	}
+	return visible
+}
+
 func removePaneID(items []types.PaneID, target types.PaneID) []types.PaneID {
 	if len(items) == 0 {
 		return nil

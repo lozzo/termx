@@ -1,6 +1,9 @@
 package app
 
-import "github.com/lozzow/termx/tui/core/types"
+import (
+	coreterminal "github.com/lozzow/termx/tui/core/terminal"
+	"github.com/lozzow/termx/tui/core/types"
+)
 
 type Message interface{}
 
@@ -14,4 +17,8 @@ type MessageTerminalExited struct {
 
 type MessageTerminalRemoved struct {
 	TerminalID types.TerminalID
+}
+
+type MessageTerminalPoolLoaded struct {
+	Terminals []coreterminal.Metadata
 }

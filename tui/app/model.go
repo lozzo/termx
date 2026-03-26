@@ -3,6 +3,7 @@ package app
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	featureoverlay "github.com/lozzow/termx/tui/features/overlay"
+	featureterminalpool "github.com/lozzow/termx/tui/features/terminalpool"
 	featureworkbench "github.com/lozzow/termx/tui/features/workbench"
 )
 
@@ -10,6 +11,7 @@ type Model struct {
 	WorkspaceName string
 	Screen        Screen
 	Workbench     featureworkbench.State
+	Pool          featureterminalpool.State
 	Overlay       featureoverlay.State
 }
 
