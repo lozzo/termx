@@ -4,7 +4,7 @@
 
 **目标：** 重建一个首个可运行的 `termx` TUI 主线，实现 2026-03-25 产品定义：默认进入 workbench、pane/terminal 解耦、overlay 驱动的连接流程，以及独立的 terminal pool 页面。
 
-**架构：** 保持公开 `tui.Run` / `tui.Client` API 稳定，但把内部 TUI 重建为四层：状态模型层、根应用壳层、runtime 适配层、cell-based 渲染层。这里不做领域驱动开发，不引入额外业务术语；目录拆分只服务于状态归属清晰、测试好写、渲染链路稳定。`deprecated/tui-legacy/` 与 `deprecated/tui-reset-2026-03-25/` 只作为参考源，只抽取被验证过的局部思路和函数，不整包恢复任何旧实现。
+**架构：** 保持公开 `tui.Run` / `tui.Client` API 稳定，但把内部 TUI 重建为四层：状态模型层、根应用壳层、runtime 适配层、cell-based 渲染层。这里不做领域驱动开发，不引入额外业务术语；目录拆分只服务于状态归属清晰、测试好写、渲染链路稳定。`deprecated/tui-legacy/` 只作为参考源，只抽取被验证过的局部思路和函数，不整包恢复任何旧实现。
 
 **技术栈：** Go、Bubble Tea、现有 `protocol.Client` 封装、本地 vterm/snapshot 管线、cell canvas 渲染器、仓库内 Go 测试体系。
 
