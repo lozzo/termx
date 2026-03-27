@@ -805,6 +805,8 @@ type Model struct {
 	hostDefaultFG           string
 	hostDefaultBG           string
 	hostPalette             map[int]string
+	// Phase 2 introduces App as the TUI root object.
+	app *App
 	// Phase 1 keeps Model.workspace as the active source of truth.
 	// workbench only holds an owned bootstrap snapshot until later routing lands.
 	workbench *Workbench
@@ -1007,6 +1009,7 @@ func NewModel(client Client, cfg Config) *Model {
 		Tabs: []*Tab{newTab("1")},
 	}
 	workbench := NewWorkbench(workspace)
+	app := NewApp(workbench)
 	modelWorkspace := workspace
 	return &Model{
 		client: client,
@@ -1020,6 +1023,7 @@ func NewModel(client Client, cfg Config) *Model {
 			return pane.VTerm.Write(data)
 		},
 		workbench: workbench,
+		app:       app,
 		workspace: modelWorkspace,
 		renderInterval:          16 * time.Millisecond,
 		renderFastInterval:      8 * time.Millisecond,
@@ -1256,7 +1260,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activeWorkspace = msg.index
 		m.replaceWorkspace(msg.workspace)
 		m.workspaceStore[m.workspace.Name] = m.workspace
-		m.syncWorkbenchFromWorkspaceStore()
+		if m.app != nil {
+			_, _ = m.app.HandleWorkspaceActivated(msg.workspace, msg.index)
+		} else {
+			m.syncWorkbenchFromWorkspaceStore()
+		}
 		m.syncWorkspaceStoreFromWorkbench()
 		m.invalidateRender()
 		if msg.bootstrap {
@@ -3529,6 +3537,19 @@ func (m *Model) focusPaneByID(paneID string) {
 	if m == nil || strings.TrimSpace(paneID) == "" {
 		return
 	}
+	if m.app != nil {
+		if current := m.app.Workbench().Current(); current != nil {
+			*current = *cloneWorkspace(m.workspace)
+			m.app.Workbench().SnapshotCurrent()
+		}
+		if m.app.FocusPane(paneID) {
+			if workspace := m.app.Workbench().CurrentWorkspace(); workspace != nil {
+				syncLiveWorkspaceStructure(&m.workspace, workspace)
+			}
+			m.invalidateRender()
+		}
+		return
+	}
 	if m.workbench != nil {
 		if current := m.workbench.Current(); current != nil {
 			*current = *cloneWorkspace(m.workspace)
@@ -3536,7 +3557,7 @@ func (m *Model) focusPaneByID(paneID string) {
 		}
 		if m.workbench.FocusPane(paneID) {
 			if workspace := m.workbench.CurrentWorkspace(); workspace != nil {
-				m.workspace = *cloneWorkspace(*workspace)
+				syncLiveWorkspaceStructure(&m.workspace, workspace)
 			}
 			m.invalidateRender()
 		}
@@ -5413,7 +5434,24 @@ func (m *Model) paneByID(paneID string) *Pane {
 }
 
 func (m *Model) activateTab(index int) tea.Cmd {
-	if m == nil || m.workbench == nil {
+	if m == nil {
+		return nil
+	}
+	if m.app != nil {
+		if current := m.app.Workbench().Current(); current != nil {
+			*current = *cloneWorkspace(m.workspace)
+			m.app.Workbench().SnapshotCurrent()
+		}
+		if !m.app.ActivateTab(index) {
+			return nil
+		}
+		if workspace := m.app.Workbench().CurrentWorkspace(); workspace != nil {
+			syncLiveWorkspaceStructure(&m.workspace, workspace)
+		}
+		m.invalidateRender()
+		return tea.Batch(m.resizeVisiblePanesCmd(), m.autoAcquireCurrentTabResizeCmd())
+	}
+	if m.workbench == nil {
 		if !m.workspace.ActivateTab(index) {
 			return nil
 		}
@@ -5429,7 +5467,7 @@ func (m *Model) activateTab(index int) tea.Cmd {
 		return nil
 	}
 	if workspace := m.workbench.CurrentWorkspace(); workspace != nil {
-		m.workspace = *cloneWorkspace(*workspace)
+		syncLiveWorkspaceStructure(&m.workspace, workspace)
 	}
 	m.invalidateRender()
 	return tea.Batch(m.resizeVisiblePanesCmd(), m.autoAcquireCurrentTabResizeCmd())

@@ -1,0 +1,80 @@
+package tui
+
+import "strings"
+
+type App struct {
+	workbench *Workbench
+}
+
+func NewApp(workbench *Workbench) *App {
+	return &App{workbench: workbench}
+}
+
+func (a *App) Workbench() *Workbench {
+	if a == nil {
+		return nil
+	}
+	return a.workbench
+}
+
+func (a *App) ActivateTab(index int) bool {
+	if a == nil || a.workbench == nil {
+		return false
+	}
+	return a.workbench.ActivateTab(index)
+}
+
+func (a *App) FocusPane(paneID string) bool {
+	if a == nil || a.workbench == nil {
+		return false
+	}
+	return a.workbench.FocusPane(paneID)
+}
+
+func (a *App) TerminalPickerContext() (terminalPickerAction, bool) {
+	if a == nil || a.workbench == nil {
+		return terminalPickerAction{}, false
+	}
+	action := terminalPickerAction{Kind: terminalPickerActionReplace}
+	workspace := a.workbench.CurrentWorkspace()
+	if workspace != nil {
+		action.TabIndex = workspace.ActiveTab
+	}
+	pane := activePane(a.workbench.CurrentTab())
+	if pane == nil {
+		action.Kind = terminalPickerActionBootstrap
+		return action, true
+	}
+	if pane.Viewport == nil || pane.TerminalID == "" {
+		return action, true
+	}
+	return action, false
+}
+
+func (a *App) HandleWorkspaceActivated(workspace Workspace, index int) (notice string, bootstrap bool) {
+	if a == nil || a.workbench == nil {
+		return "", true
+	}
+	order := a.workbench.Order()
+	targetName := strings.TrimSpace(workspace.Name)
+	if targetName == "" && index >= 0 && index < len(order) {
+		targetName = order[index]
+	}
+	if targetName != "" {
+		if idx := index; idx >= 0 && idx < len(order) {
+			_ = a.workbench.SwitchTo(order[idx])
+		} else {
+			_ = a.workbench.SwitchTo(targetName)
+		}
+	}
+	current := a.workbench.Current()
+	if current == nil {
+		return "", true
+	}
+	*current = workspace
+	a.workbench.SnapshotCurrent()
+	if targetName != "" {
+		_ = a.workbench.SwitchTo(targetName)
+	}
+	return "", true
+}
