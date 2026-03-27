@@ -252,6 +252,54 @@ func (p *Pane) SetResizeAcquired(value bool) {
 	p.ResizeAcquired = value
 }
 
+func (p *Pane) HasStopStream() bool {
+	return p != nil && p.Session().HasStopStream()
+}
+
+func (p *Pane) StopStream() func() {
+	if p == nil {
+		return nil
+	}
+	return p.Session().StopStream()
+}
+
+func (p *Pane) SetStopStream(stop func()) {
+	if p == nil {
+		return
+	}
+	p.stopStream = stop
+}
+
+func (p *Pane) ClearStopStream() {
+	if p == nil {
+		return
+	}
+	p.stopStream = nil
+}
+
+func (p *Pane) DirtyRows() (start int, end int, known bool) {
+	if p == nil {
+		return 0, 0, false
+	}
+	return p.Session().DirtyRows()
+}
+
+func (p *Pane) SetDirtyRows(start int, end int, known bool) {
+	if p == nil {
+		return
+	}
+	p.dirtyRowStart = start
+	p.dirtyRowEnd = end
+	p.dirtyRowsKnown = known
+}
+
+func (p *Pane) ClearDirtyRows() {
+	if p == nil {
+		return
+	}
+	p.SetDirtyRows(0, 0, false)
+}
+
 type textPrompt struct {
 	Kind     string
 	Title    string
@@ -757,6 +805,9 @@ type Model struct {
 	hostDefaultFG           string
 	hostDefaultBG           string
 	hostPalette             map[int]string
+	// Phase 1 keeps Model.workspace as the active source of truth.
+	// workbench only holds an owned bootstrap snapshot until later routing lands.
+	workbench *Workbench
 
 	workspace       Workspace
 	width           int
@@ -951,6 +1002,12 @@ func NewModel(client Client, cfg Config) *Model {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	workspace := Workspace{
+		Name: cfg.Workspace,
+		Tabs: []*Tab{newTab("1")},
+	}
+	workbench := NewWorkbench(workspace)
+	modelWorkspace := workspace
 	return &Model{
 		client: client,
 		cfg:    cfg,
@@ -962,10 +1019,8 @@ func NewModel(client Client, cfg Config) *Model {
 			}
 			return pane.VTerm.Write(data)
 		},
-		workspace: Workspace{
-			Name: cfg.Workspace,
-			Tabs: []*Tab{newTab("1")},
-		},
+		workbench: workbench,
+		workspace: modelWorkspace,
 		renderInterval:          16 * time.Millisecond,
 		renderFastInterval:      8 * time.Millisecond,
 		renderInteractiveWindow: 200 * time.Millisecond,
@@ -1200,6 +1255,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.activeWorkspace = msg.index
 		m.replaceWorkspace(msg.workspace)
+		m.workspaceStore[m.workspace.Name] = m.workspace
+		m.syncWorkbenchFromWorkspaceStore()
+		m.syncWorkspaceStoreFromWorkbench()
 		m.invalidateRender()
 		if msg.bootstrap {
 			return m, m.startEmptyWorkspaceBootstrapCmd()
@@ -1212,6 +1270,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.workspaceOrder = msg.order
 		m.activeWorkspace = msg.active
 		m.replaceWorkspace(msg.workspace)
+		m.workspaceStore[m.workspace.Name] = m.workspace
+		m.syncWorkbenchFromWorkspaceStore()
+		m.syncWorkspaceStoreFromWorkbench()
 		m.invalidateRender()
 		if msg.bootstrap {
 			return m, m.startEmptyWorkspaceBootstrapCmd()
@@ -2873,7 +2934,7 @@ func (m *Model) replacePane(msg paneReplacedMsg) {
 	previousTerminalID := pane.TerminalID
 	previousResizeOwner := pane.IsResizeAcquired()
 	preferredOwnerID := preferredTerminalResizeOwnerID(m.workspace.Tabs, msg.pane.TerminalID, msg.paneID)
-	ownedStream := pane.stopStream != nil
+	ownedStream := pane.HasStopStream()
 	m.stopPaneStream(pane)
 	pane.Title = msg.pane.Title
 	pane.Viewport = msg.pane.Viewport
@@ -2902,7 +2963,7 @@ func (m *Model) startPaneStream(pane *Pane) {
 	if pane == nil || pane.Channel == 0 || m.client == nil {
 		return
 	}
-	if pane.stopStream != nil {
+	if pane.HasStopStream() {
 		return
 	}
 	if owner := m.terminalStreamOwner(pane.TerminalID, pane.ID); owner != nil {
@@ -2911,7 +2972,7 @@ func (m *Model) startPaneStream(pane *Pane) {
 	}
 	m.logger.Debug("starting pane stream", "pane_id", pane.ID, "terminal_id", pane.TerminalID, "channel", pane.Channel)
 	stream, stop := m.client.Stream(pane.Channel)
-	pane.stopStream = stop
+	pane.SetStopStream(stop)
 	if m.program == nil {
 		return
 	}
@@ -2924,11 +2985,11 @@ func (m *Model) startPaneStream(pane *Pane) {
 }
 
 func (m *Model) stopPaneStream(pane *Pane) {
-	if pane == nil || pane.stopStream == nil {
+	if pane == nil || !pane.HasStopStream() {
 		return
 	}
-	pane.stopStream()
-	pane.stopStream = nil
+	pane.StopStream()()
+	pane.ClearStopStream()
 }
 
 func (m *Model) panesForTerminal(terminalID string) []*Pane {
@@ -2952,7 +3013,7 @@ func (m *Model) panesForTerminal(terminalID string) []*Pane {
 
 func (m *Model) terminalStreamOwner(terminalID, excludePaneID string) *Pane {
 	for _, pane := range m.panesForTerminal(terminalID) {
-		if pane == nil || pane.ID == excludePaneID || pane.stopStream == nil {
+		if pane == nil || pane.ID == excludePaneID || !pane.HasStopStream() {
 			continue
 		}
 		return pane
@@ -2965,7 +3026,7 @@ func (m *Model) promoteTerminalStream(terminalID string) {
 		return
 	}
 	for _, pane := range m.panesForTerminal(terminalID) {
-		if pane == nil || pane.stopStream != nil {
+		if pane == nil || pane.HasStopStream() {
 			continue
 		}
 		m.startPaneStream(pane)
@@ -3181,14 +3242,13 @@ func (v *Viewport) markDirtyRows(start, end int) {
 	if end < 0 {
 		end = 0
 	}
-	if !v.dirtyRowsKnown {
-		v.dirtyRowsKnown = true
-		v.dirtyRowStart = start
-		v.dirtyRowEnd = end
+	pane := &Pane{Viewport: v}
+	currentStart, currentEnd, known := pane.DirtyRows()
+	if !known {
+		pane.SetDirtyRows(start, end, true)
 		return
 	}
-	v.dirtyRowStart = min(v.dirtyRowStart, start)
-	v.dirtyRowEnd = max(v.dirtyRowEnd, end)
+	pane.SetDirtyRows(min(currentStart, start), max(currentEnd, end), true)
 }
 
 func (v *Viewport) markDirtyRegion(rowStart, rowEnd, colStart, colEnd int) {
@@ -3216,9 +3276,7 @@ func (v *Viewport) clearDirtyRows() {
 	if v == nil {
 		return
 	}
-	v.dirtyRowsKnown = false
-	v.dirtyRowStart = 0
-	v.dirtyRowEnd = 0
+	(&Pane{Viewport: v}).ClearDirtyRows()
 }
 
 func (v *Viewport) clearDirtyRegion() {
@@ -3468,6 +3526,22 @@ func (m *Model) advanceLayoutPromptCmd() tea.Cmd {
 }
 
 func (m *Model) focusPaneByID(paneID string) {
+	if m == nil || strings.TrimSpace(paneID) == "" {
+		return
+	}
+	if m.workbench != nil {
+		if current := m.workbench.Current(); current != nil {
+			*current = *cloneWorkspace(m.workspace)
+			m.workbench.SnapshotCurrent()
+		}
+		if m.workbench.FocusPane(paneID) {
+			if workspace := m.workbench.CurrentWorkspace(); workspace != nil {
+				m.workspace = *cloneWorkspace(*workspace)
+			}
+			m.invalidateRender()
+		}
+		return
+	}
 	if m.workspace.FocusPane(paneID) {
 		m.invalidateRender()
 	}
@@ -4755,11 +4829,26 @@ func (m *Model) removePane(paneID string) bool {
 	terminalID := ""
 	if pane := m.paneByID(paneID); pane != nil {
 		terminalID = pane.TerminalID
-		if pane.stopStream != nil {
+		if pane.HasStopStream() {
 			m.stopPaneStream(pane)
 		}
 	}
-	tabRemoved, workspaceEmpty, removedTerminalID := m.workspace.RemovePane(paneID)
+
+	tabRemoved := false
+	workspaceEmpty := false
+	removedTerminalID := ""
+	if m.workbench != nil {
+		if current := m.workbench.Current(); current != nil {
+			*current = *cloneWorkspace(m.workspace)
+			m.workbench.SnapshotCurrent()
+		}
+		tabRemoved, workspaceEmpty, removedTerminalID = m.workbench.RemovePane(paneID)
+		if workspace := m.workbench.CurrentWorkspace(); workspace != nil {
+			syncLiveWorkspaceStructure(&m.workspace, workspace)
+		}
+	} else {
+		tabRemoved, workspaceEmpty, removedTerminalID = m.workspace.RemovePane(paneID)
+	}
 	if removedTerminalID != "" {
 		terminalID = removedTerminalID
 	}
@@ -4776,6 +4865,80 @@ func (m *Model) removePane(paneID string) bool {
 		}
 	}
 	m.invalidateRender()
+	return false
+}
+
+func syncLiveWorkspaceStructure(dst *Workspace, src *Workspace) {
+	if dst == nil || src == nil {
+		return
+	}
+	oldTabs := dst.Tabs
+	dst.Name = src.Name
+	dst.ActiveTab = src.ActiveTab
+	dst.Tabs = make([]*Tab, 0, len(src.Tabs))
+	for _, srcTab := range src.Tabs {
+		if srcTab == nil {
+			continue
+		}
+		var liveTab *Tab
+		for _, candidate := range oldTabs {
+			if candidate == nil {
+				continue
+			}
+			if tabsSharePane(candidate, srcTab) {
+				liveTab = candidate
+				break
+			}
+		}
+		if liveTab == nil {
+			liveTab = cloneTab(srcTab)
+			dst.Tabs = append(dst.Tabs, liveTab)
+			continue
+		}
+		syncLiveTabStructure(liveTab, srcTab)
+		dst.Tabs = append(dst.Tabs, liveTab)
+	}
+}
+
+func syncLiveTabStructure(dst *Tab, src *Tab) {
+	if dst == nil || src == nil {
+		return
+	}
+	oldPanes := dst.Panes
+	dst.Name = src.Name
+	dst.Root = cloneLayoutNode(src.Root)
+	dst.FloatingVisible = src.FloatingVisible
+	dst.ActivePaneID = src.ActivePaneID
+	dst.ZoomedPaneID = src.ZoomedPaneID
+	dst.LayoutPreset = src.LayoutPreset
+	dst.AutoAcquireResize = src.AutoAcquireResize
+	dst.renderCache = nil
+	dst.Panes = make(map[string]*Pane, len(src.Panes))
+	for paneID, srcPane := range src.Panes {
+		if livePane, ok := oldPanes[paneID]; ok && livePane != nil {
+			dst.Panes[paneID] = livePane
+			continue
+		}
+		dst.Panes[paneID] = clonePane(srcPane)
+	}
+	dst.Floating = make([]*FloatingPane, 0, len(src.Floating))
+	for _, floating := range src.Floating {
+		if floating == nil {
+			continue
+		}
+		dst.Floating = append(dst.Floating, cloneFloatingPane(floating))
+	}
+}
+
+func tabsSharePane(left *Tab, right *Tab) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	for paneID := range right.Panes {
+		if left.Panes[paneID] != nil {
+			return true
+		}
+	}
 	return false
 }
 
@@ -4806,7 +4969,7 @@ func (m *Model) unbindPaneTerminal(pane *Pane) {
 		return
 	}
 	terminalID := pane.TerminalID
-	ownedStream := pane.stopStream != nil
+	ownedStream := pane.HasStopStream()
 	m.stopPaneStream(pane)
 	if pane.Snapshot == nil && pane.VTerm != nil {
 		cols, rows := pane.VTerm.Size()
@@ -4843,9 +5006,9 @@ func (m *Model) markTerminalKilled(terminalID string) {
 			if pane == nil || pane.TerminalID != terminalID {
 				continue
 			}
-			if pane.stopStream != nil {
-				pane.stopStream()
-				pane.stopStream = nil
+			if pane.HasStopStream() {
+				pane.StopStream()()
+				pane.ClearStopStream()
 			}
 			pane.live = false
 			pane.Snapshot = nil
@@ -4877,9 +5040,9 @@ func (m *Model) markTerminalExited(terminalID string, exitCode int) {
 			if pane == nil || pane.TerminalID != terminalID {
 				continue
 			}
-			if pane.stopStream != nil {
-				pane.stopStream()
-				pane.stopStream = nil
+			if pane.HasStopStream() {
+				pane.StopStream()()
+				pane.ClearStopStream()
 			}
 			pane.live = pane.VTerm != nil
 			pane.TerminalState = "exited"
@@ -5115,9 +5278,9 @@ func (m *Model) replaceWorkspace(workspace Workspace) {
 			continue
 		}
 		for _, pane := range tab.Panes {
-			if pane != nil && pane.stopStream != nil {
-				pane.stopStream()
-				pane.stopStream = nil
+			if pane != nil && pane.HasStopStream() {
+				pane.StopStream()()
+				pane.ClearStopStream()
 			}
 		}
 	}
@@ -5250,8 +5413,23 @@ func (m *Model) paneByID(paneID string) *Pane {
 }
 
 func (m *Model) activateTab(index int) tea.Cmd {
-	if !m.workspace.ActivateTab(index) {
+	if m == nil || m.workbench == nil {
+		if !m.workspace.ActivateTab(index) {
+			return nil
+		}
+		m.invalidateRender()
+		return tea.Batch(m.resizeVisiblePanesCmd(), m.autoAcquireCurrentTabResizeCmd())
+	}
+	current := m.workbench.Current()
+	if current != nil {
+		*current = *cloneWorkspace(m.workspace)
+		m.workbench.SnapshotCurrent()
+	}
+	if !m.workbench.ActivateTab(index) {
 		return nil
+	}
+	if workspace := m.workbench.CurrentWorkspace(); workspace != nil {
+		m.workspace = *cloneWorkspace(*workspace)
 	}
 	m.invalidateRender()
 	return tea.Batch(m.resizeVisiblePanesCmd(), m.autoAcquireCurrentTabResizeCmd())
@@ -5270,7 +5448,7 @@ func (m *Model) autoAcquireCurrentTabResizeCmd() tea.Cmd {
 }
 
 func (m *Model) currentTab() *Tab {
-	if m.workspace.ActiveTab < 0 || m.workspace.ActiveTab >= len(m.workspace.Tabs) {
+	if m == nil || m.workspace.ActiveTab < 0 || m.workspace.ActiveTab >= len(m.workspace.Tabs) {
 		return nil
 	}
 	return m.workspace.Tabs[m.workspace.ActiveTab]

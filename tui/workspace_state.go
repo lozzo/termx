@@ -197,13 +197,21 @@ func exportModelWorkspaceState(model *Model) (*workspaceStateFile, error) {
 		return nil, fmt.Errorf("model is nil")
 	}
 	model.snapshotCurrentWorkspace()
+	order := append([]string(nil), model.workspaceOrder...)
+	store := model.workspaceStore
+	active := model.activeWorkspace
+	if model.workbench != nil {
+		order = model.workbench.Order()
+		store = model.workbench.CloneStore()
+		active = model.workbench.ActiveWorkspaceIndex()
+	}
 	state := &workspaceStateFile{
 		Version:         1,
-		ActiveWorkspace: model.activeWorkspace,
-		Workspaces:      make([]workspaceStateEntry, 0, len(model.workspaceOrder)),
+		ActiveWorkspace: active,
+		Workspaces:      make([]workspaceStateEntry, 0, len(order)),
 	}
-	for _, name := range model.workspaceOrder {
-		workspace, ok := model.workspaceStore[name]
+	for _, name := range order {
+		workspace, ok := store[name]
 		if !ok {
 			continue
 		}

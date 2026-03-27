@@ -285,23 +285,17 @@ func (m *Model) snapshotCurrentWorkspace() {
 		name = nextWorkspaceName(m.workspaceOrder)
 		m.workspace.Name = name
 	}
-	if m.activeWorkspace < 0 || m.activeWorkspace >= len(m.workspaceOrder) {
-		m.activeWorkspace = 0
+	if m.workbench == nil {
+		m.workbench = NewWorkbench(m.workspace)
 	}
-	if len(m.workspaceOrder) == 0 {
-		m.workspaceOrder = []string{name}
-		m.activeWorkspace = 0
+	m.workbench.SetOrder(m.workspaceOrder)
+	current := m.workbench.Current()
+	if current == nil {
+		return
 	}
-	if m.activeWorkspace >= len(m.workspaceOrder) {
-		m.workspaceOrder = append(m.workspaceOrder, name)
-		m.activeWorkspace = len(m.workspaceOrder) - 1
-	}
-	oldName := m.workspaceOrder[m.activeWorkspace]
-	if oldName != name {
-		delete(m.workspaceStore, oldName)
-		m.workspaceOrder[m.activeWorkspace] = name
-	}
-	m.workspaceStore[name] = m.workspace
+	*current = *cloneWorkspace(m.workspace)
+	m.workbench.SnapshotCurrent()
+	m.syncWorkspaceStoreFromWorkbench()
 }
 
 func (m *Model) ensureWorkspaceStore() {
@@ -309,8 +303,8 @@ func (m *Model) ensureWorkspaceStore() {
 		m.workspaceStore = make(map[string]Workspace)
 	}
 	if len(m.workspaceOrder) == 0 {
-		name := m.workspace.Name
-		if strings.TrimSpace(name) == "" {
+		name := strings.TrimSpace(m.workspace.Name)
+		if name == "" {
 			name = "main"
 			m.workspace.Name = name
 		}
@@ -318,6 +312,11 @@ func (m *Model) ensureWorkspaceStore() {
 		m.activeWorkspace = 0
 		m.workspaceStore[name] = m.workspace
 	}
+	if m.workbench == nil {
+		m.workbench = NewWorkbench(m.workspace)
+	}
+	m.syncWorkbenchFromWorkspaceStore()
+	m.syncWorkspaceStoreFromWorkbench()
 }
 
 func (m *Model) createWorkspaceCmd(name string) tea.Cmd {
@@ -326,9 +325,14 @@ func (m *Model) createWorkspaceCmd(name string) tea.Cmd {
 	if name == "" {
 		name = nextWorkspaceName(m.workspaceOrder)
 	}
-	if _, exists := m.workspaceStore[name]; !exists {
-		m.workspaceStore[name] = Workspace{Name: name, Tabs: []*Tab{newTab("1")}, ActiveTab: 0}
-		m.workspaceOrder = append(m.workspaceOrder, name)
+	if m.workbench == nil {
+		m.workbench = NewWorkbench(m.workspace)
+	}
+	order := append([]string(nil), m.workbench.Order()...)
+	if !slices.Contains(order, name) {
+		order = append(order, name)
+		m.workbench.SetOrder(order)
+		m.syncWorkspaceStoreFromWorkbench()
 	}
 	index := slices.Index(m.workspaceOrder, name)
 	if index < 0 {
@@ -347,11 +351,19 @@ func (m *Model) createWorkspaceCmd(name string) tea.Cmd {
 
 func (m *Model) switchWorkspaceCmd(name string) tea.Cmd {
 	m.snapshotCurrentWorkspace()
-	index := slices.Index(m.workspaceOrder, name)
-	if index < 0 {
+	if m.workbench == nil {
+		m.workbench = NewWorkbench(m.workspace)
+	}
+	if err := m.workbench.SwitchTo(name); err != nil {
 		return nil
 	}
-	workspace := m.workspaceStore[name]
+	m.syncWorkspaceStoreFromWorkbench()
+	index := m.workbench.ActiveWorkspaceIndex()
+	current := m.workbench.Current()
+	if current == nil {
+		return nil
+	}
+	workspace := *cloneWorkspace(*current)
 	return func() tea.Msg {
 		ctx, cancel := m.requestContext()
 		defer cancel()
@@ -405,6 +417,8 @@ func (m *Model) renameCurrentWorkspace(name string) {
 		m.workspaceOrder[m.activeWorkspace] = name
 	}
 	m.workspaceStore[name] = m.workspace
+	m.syncWorkbenchFromWorkspaceStore()
+	m.syncWorkspaceStoreFromWorkbench()
 }
 
 func (m *Model) deleteCurrentWorkspaceCmd() tea.Cmd {
@@ -422,6 +436,9 @@ func (m *Model) deleteCurrentWorkspaceCmd() tea.Cmd {
 	if index >= len(m.workspaceOrder) {
 		index = len(m.workspaceOrder) - 1
 	}
+	m.activeWorkspace = index
+	m.syncWorkbenchFromWorkspaceStore()
+	m.syncWorkspaceStoreFromWorkbench()
 	nextName := m.workspaceOrder[index]
 	workspace := m.workspaceStore[nextName]
 	return func() tea.Msg {
@@ -440,6 +457,44 @@ func (m *Model) deleteCurrentWorkspaceCmd() tea.Cmd {
 			notice:    "workspace: " + nextName,
 			bootstrap: workspaceNeedsBootstrap(workspace),
 		}
+	}
+}
+
+func (m *Model) syncWorkspaceStoreFromWorkbench() {
+	if m.workbench == nil {
+		return
+	}
+	m.workspaceOrder = m.workbench.Order()
+	m.workspaceStore = m.workbench.CloneStore()
+	m.activeWorkspace = m.workbench.ActiveWorkspaceIndex()
+}
+
+func (m *Model) syncWorkbenchFromWorkspaceStore() {
+	if m.workbench == nil {
+		m.workbench = NewWorkbench(m.workspace)
+	}
+	m.workbench.SetOrder(m.workspaceOrder)
+	activeName := ""
+	if m.activeWorkspace >= 0 && m.activeWorkspace < len(m.workspaceOrder) {
+		activeName = m.workspaceOrder[m.activeWorkspace]
+	}
+	for _, name := range m.workspaceOrder {
+		workspace, ok := m.workspaceStore[name]
+		if !ok {
+			continue
+		}
+		if err := m.workbench.SwitchTo(name); err != nil {
+			continue
+		}
+		current := m.workbench.Current()
+		if current == nil {
+			continue
+		}
+		*current = *cloneWorkspace(workspace)
+		m.workbench.SnapshotCurrent()
+	}
+	if activeName != "" {
+		_ = m.workbench.SwitchTo(activeName)
 	}
 }
 
@@ -473,7 +528,7 @@ func (m *Model) hydrateWorkspaceRuntime(workspace *Workspace, terminals []protoc
 			if info == nil || defaultTerminalState(info.State) != "running" {
 				pane.TerminalState = "exited"
 				pane.live = false
-				pane.stopStream = nil
+				pane.ClearStopStream()
 				tab.Panes[paneID] = pane
 				continue
 			}

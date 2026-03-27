@@ -283,7 +283,8 @@ func (c *composedCanvas) drawPaneBodyFull(rect Rect, pane *Pane, active bool) {
 }
 
 func (c *composedCanvas) drawPaneBodyDirtyRows(contentRect Rect, pane *Pane) bool {
-	if pane == nil || !pane.dirtyRowsKnown || !pane.renderDirty {
+	rowStart, rowEnd, rowsKnown := pane.DirtyRows()
+	if pane == nil || !rowsKnown || !pane.renderDirty {
 		return false
 	}
 	switch {
@@ -296,8 +297,8 @@ func (c *composedCanvas) drawPaneBodyDirtyRows(contentRect Rect, pane *Pane) boo
 		return false
 	}
 	offset := paneVisibleOffset(pane)
-	start := max(pane.dirtyRowStart-offset.Y, 0)
-	end := min(pane.dirtyRowEnd-offset.Y, contentRect.H-1)
+	start := max(rowStart-offset.Y, 0)
+	end := min(rowEnd-offset.Y, contentRect.H-1)
 	if start > end {
 		pane.clearDirtyRegion()
 		pane.renderDirty = false
@@ -306,7 +307,7 @@ func (c *composedCanvas) drawPaneBodyDirtyRows(contentRect Rect, pane *Pane) boo
 	for row := start; row <= end; row++ {
 		rowRect := Rect{X: contentRect.X, Y: contentRect.Y + row, W: contentRect.W, H: 1}
 		viewColStart := 0
-		if pane.dirtyColsKnown && pane.dirtyRowStart == pane.dirtyRowEnd && row == start {
+		if pane.dirtyColsKnown && rowStart == rowEnd && row == start {
 			colStart := max(pane.dirtyColStart-offset.X, 0)
 			colEnd := min(pane.dirtyColEnd-offset.X, contentRect.W-1)
 			if colStart <= colEnd {
@@ -1481,6 +1482,8 @@ func (m *Model) paneFrameMeta(tab *Tab, paneID string, pane *Pane, floating bool
 	if pane == nil {
 		return ""
 	}
+	visible := m.visibleWorkbenchState()
+	workspace := visible.Workspace
 	parts := make([]string, 0, 8)
 	switch paneTerminalState(pane) {
 	case "waiting":
@@ -1500,14 +1503,18 @@ func (m *Model) paneFrameMeta(tab *Tab, paneID string, pane *Pane, floating bool
 	default:
 		parts = append(parts, m.icons.token("live", m.icons.Running))
 	}
-	if connection := paneConnectionStatus(m.workspace.Tabs, pane); connection != "" {
+	workspaceTabs := []*Tab(nil)
+	if workspace != nil {
+		workspaceTabs = workspace.Tabs
+	}
+	if connection := paneConnectionStatus(workspaceTabs, pane); connection != "" {
 		if connection == "owner" {
 			parts = append(parts, m.icons.token("owner", m.icons.Owner))
 		} else {
 			parts = append(parts, m.icons.token("follower", m.icons.Follower))
 		}
 	}
-	if count := terminalBindingCount(m.workspace.Tabs, pane.TerminalID); count > 1 {
+	if count := terminalBindingCount(workspaceTabs, pane.TerminalID); count > 1 {
 		parts = append(parts, m.icons.countToken("share", m.icons.Shared, count))
 	}
 	if paneAccessMode(pane) == "observer" {

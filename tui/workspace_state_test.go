@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -596,7 +597,7 @@ func TestSaveWorkspaceStateCmdPersistsMultipleWorkspaces(t *testing.T) {
 							ID:    "pane-1",
 							Title: "primary-pane",
 							Viewport: &Viewport{
-								TerminalID:    "term-001",
+								TerminalID:    "term-101",
 								Command:       []string{"vim", "."},
 								TerminalState: "running",
 								Mode:          ViewportModeFit,
@@ -624,6 +625,23 @@ func TestSaveWorkspaceStateCmdPersistsMultipleWorkspaces(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"workspaces"`) || !strings.Contains(string(data), `"active_workspace": 1`) {
 		t.Fatalf("expected multi-workspace state, got:\n%s", string(data))
+	}
+
+	var state workspaceStateFile
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatalf("unmarshal workspace state: %v", err)
+	}
+	if len(state.Workspaces) != 2 {
+		t.Fatalf("expected 2 workspaces, got %#v", state.Workspaces)
+	}
+	if state.Workspaces[0].Name != "main" || len(state.Workspaces[0].Tabs) != 1 || state.Workspaces[0].Tabs[0].Name != "primary" {
+		t.Fatalf("expected saved main workspace to keep original tab tree, got %#v", state.Workspaces[0])
+	}
+	if len(state.Workspaces[0].Tabs[0].Panes) != 1 || state.Workspaces[0].Tabs[0].Panes[0].Title != "primary-pane" || state.Workspaces[0].Tabs[0].Panes[0].TerminalID != "term-101" {
+		t.Fatalf("expected saved main workspace pane metadata to remain distinct, got %#v", state.Workspaces[0].Tabs[0].Panes)
+	}
+	if state.Workspaces[1].Name != "workspace-2" || len(state.Workspaces[1].Tabs) != 1 || state.Workspaces[1].Tabs[0].Name != "secondary" {
+		t.Fatalf("expected saved secondary workspace to remain intact, got %#v", state.Workspaces[1])
 	}
 }
 

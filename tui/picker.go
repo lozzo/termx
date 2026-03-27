@@ -703,7 +703,7 @@ func (m *Model) attachTerminalToPaneGroupCmd(promptPaneID string, paneIDs []stri
 	}
 	if len(group) == 1 {
 		paneID := group[0]
-		existing := findPane(m.workspace.Tabs, paneID)
+		existing := m.workbench.FindPane(paneID)
 		mode := ViewportModeFit
 		offset := Point{}
 		pin := false
@@ -750,7 +750,7 @@ func (m *Model) attachTerminalToPaneGroupCmd(promptPaneID string, paneIDs []stri
 		defer cancel()
 		replaced := make([]paneReplacedMsg, 0, len(group))
 		for _, paneID := range group {
-			existing := findPane(m.workspace.Tabs, paneID)
+			existing := m.workbench.FindPane(paneID)
 			if existing == nil {
 				return errMsg{fmt.Errorf("missing pane %q for layout resolve attach", paneID)}
 			}
@@ -814,7 +814,7 @@ func (m *Model) createTerminalForPaneGroupCmdWithSpec(promptPaneID string, paneI
 	}
 	if len(group) == 1 {
 		paneID := group[0]
-		pane := findPane(m.workspace.Tabs, paneID)
+		pane := m.workbench.FindPane(paneID)
 		if pane == nil {
 			return nil
 		}
@@ -891,7 +891,7 @@ func (m *Model) createTerminalForPaneGroupCmdWithSpec(promptPaneID string, paneI
 		}
 	}
 
-	source := findPane(m.workspace.Tabs, group[0])
+	source := m.workbench.FindPane(group[0])
 	if source == nil {
 		return nil
 	}
@@ -925,7 +925,7 @@ func (m *Model) createTerminalForPaneGroupCmdWithSpec(promptPaneID string, paneI
 		}
 		replaced := make([]paneReplacedMsg, 0, len(group))
 		for _, paneID := range group {
-			pane := findPane(m.workspace.Tabs, paneID)
+			pane := m.workbench.FindPane(paneID)
 			if pane == nil {
 				return errMsg{fmt.Errorf("missing pane %q for layout resolve create", paneID)}
 			}

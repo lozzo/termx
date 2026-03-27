@@ -28,6 +28,27 @@ func activatePrefixForTest(model *Model) tea.Cmd {
 	return model.activatePrefix()
 }
 
+func TestModelNewWorkbenchStartsFromOwnedWorkspaceCopy(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh", Workspace: "main"})
+
+	if model.workbench == nil {
+		t.Fatal("expected model to initialize workbench")
+	}
+	owned := model.workbench.Current()
+	if owned == nil {
+		t.Fatal("expected workbench current workspace")
+	}
+	if &model.workspace == owned {
+		t.Fatal("expected model workspace to avoid aliasing workbench root")
+	}
+	if len(model.workspace.Tabs) != 1 || len(owned.Tabs) != 1 {
+		t.Fatalf("expected both views to start with one tab, got model=%d workbench=%d", len(model.workspace.Tabs), len(owned.Tabs))
+	}
+	if model.workspace.Tabs[0] == owned.Tabs[0] {
+		t.Fatal("expected phase-1 model workspace to keep its own tab pointer, not workbench-owned tab state")
+	}
+}
+
 func TestModelPrefixActions(t *testing.T) {
 	client := &fakeClient{}
 	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
@@ -2427,9 +2448,7 @@ func TestRenderTabCompositeFloatingRectChangeRebuildsOverlappedPaneFully(t *test
 	}
 
 	bottom.renderDirty = true
-	bottom.dirtyRowsKnown = true
-	bottom.dirtyRowStart = 0
-	bottom.dirtyRowEnd = 0
+	bottom.SetDirtyRows(0, 0, true)
 
 	tab.Floating[1].Rect = Rect{X: 48, Y: 3, W: 32, H: 8}
 
@@ -2506,14 +2525,10 @@ func TestRenderTabCompositeOverlapRedrawRestoresTopFloatingPaneFully(t *testing.
 		}},
 	}
 	bottom.renderDirty = true
-	bottom.dirtyRowsKnown = true
-	bottom.dirtyRowStart = 0
-	bottom.dirtyRowEnd = 0
+	bottom.SetDirtyRows(0, 0, true)
 
 	top.renderDirty = true
-	top.dirtyRowsKnown = true
-	top.dirtyRowStart = 0
-	top.dirtyRowEnd = 0
+	top.SetDirtyRows(0, 0, true)
 
 	out := xansi.Strip(model.renderTabComposite(tab, model.width, model.height-2))
 	if !containsAll(out, "TOP-ROW-0", "TOP-ROW-1", "TOP-ROW-2") {
@@ -2633,9 +2648,7 @@ func TestDrawPaneBodyAltScreenBypassesDirtyRowOptimization(t *testing.T) {
 	}
 	pane.live = true
 	pane.renderDirty = true
-	pane.dirtyRowsKnown = true
-	pane.dirtyRowStart = 0
-	pane.dirtyRowEnd = 0
+	pane.SetDirtyRows(0, 0, true)
 
 	_, _ = pane.VTerm.Write([]byte("SHELL-A\r\n"))
 	_, _ = pane.VTerm.Write([]byte("\x1b[?1049h\x1b[2J\x1b[HALT-ROW-0\r\nALT-ROW-1"))
@@ -4731,6 +4744,18 @@ func TestPrefixWorkspaceSubPrefixRenameAndDelete(t *testing.T) {
 	if model.workspace.Name != "dev" || model.workspaceOrder[1] != "dev" {
 		t.Fatalf("expected workspace rename to update active workspace, got name=%q order=%v", model.workspace.Name, model.workspaceOrder)
 	}
+	if model.activeWorkspace != 1 {
+		t.Fatalf("expected renamed workspace to remain active at index 1, got %d", model.activeWorkspace)
+	}
+	if main := model.workspaceStore["main"]; main.Name != "main" {
+		t.Fatalf("expected rename to preserve stored main workspace, got %#v", main)
+	}
+	if renamed := model.workspaceStore["dev"]; renamed.Name != "dev" {
+		t.Fatalf("expected rename to store renamed workspace under new name, got %#v", renamed)
+	}
+	if _, exists := model.workspaceStore["workspace-2"]; exists {
+		t.Fatalf("expected rename to prune stale workspace-2 entry, store=%v", model.workspaceStore)
+	}
 
 	_ = activatePrefixForTest(model)
 	_, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
@@ -4747,6 +4772,9 @@ func TestPrefixWorkspaceSubPrefixRenameAndDelete(t *testing.T) {
 	}
 	if len(model.workspaceOrder) != 1 || model.workspaceOrder[0] != "main" {
 		t.Fatalf("expected deleted workspace to be removed, got %v", model.workspaceOrder)
+	}
+	if _, exists := model.workspaceStore["dev"]; exists {
+		t.Fatalf("expected delete to prune stale dev entry, store=%v", model.workspaceStore)
 	}
 }
 
@@ -8379,10 +8407,10 @@ func TestStartPaneStreamSkipsDuplicateSharedTerminalStreams(t *testing.T) {
 	if client.streamCalls != 1 {
 		t.Fatalf("expected one stream source for shared terminal, got %d calls on channels %v", client.streamCalls, client.streamChannels)
 	}
-	if first.stopStream == nil {
+	if !first.HasStopStream() {
 		t.Fatal("expected first pane to own shared terminal stream")
 	}
-	if second.stopStream != nil {
+	if second.HasStopStream() {
 		t.Fatal("expected second pane to mirror shared terminal without starting another stream")
 	}
 }
@@ -8429,7 +8457,7 @@ func TestRemovePanePromotesSharedTerminalStreamOwner(t *testing.T) {
 	if client.streamCalls != 2 {
 		t.Fatalf("expected second shared pane to become stream owner after removal, got %d calls on channels %v", client.streamCalls, client.streamChannels)
 	}
-	if second.stopStream == nil {
+	if !second.HasStopStream() {
 		t.Fatal("expected second pane to own stream after first pane removal")
 	}
 }
@@ -9631,9 +9659,7 @@ func TestComposedCanvasDrawPaneBodyDirtyRowsKeepsOtherContentRowsClean(t *testin
 	canvas.fullDirty = false
 
 	pane.renderDirty = true
-	pane.dirtyRowsKnown = true
-	pane.dirtyRowStart = 1
-	pane.dirtyRowEnd = 1
+	pane.SetDirtyRows(1, 1, true)
 	canvas.drawPaneBody(rect, pane, false)
 
 	if canvas.rowDirty[0] {
@@ -9648,7 +9674,7 @@ func TestComposedCanvasDrawPaneBodyDirtyRowsKeepsOtherContentRowsClean(t *testin
 	if canvas.rowDirty[3] {
 		t.Fatal("expected lower untouched content row to stay clean")
 	}
-	if pane.renderDirty || pane.dirtyRowsKnown {
+	if _, _, known := pane.DirtyRows(); pane.renderDirty || known {
 		t.Fatal("expected dirty row state to clear after redraw")
 	}
 }
@@ -9690,9 +9716,7 @@ func TestComposedCanvasDrawPaneBodyDirtyRegionKeepsOtherColumnsClean(t *testing.
 
 	pane.Snapshot.Screen.Cells[0] = makeRow("abcXYZghijklmnop")
 	pane.renderDirty = true
-	pane.dirtyRowsKnown = true
-	pane.dirtyRowStart = 0
-	pane.dirtyRowEnd = 0
+	pane.SetDirtyRows(0, 0, true)
 	pane.dirtyColsKnown = true
 	pane.dirtyColStart = 3
 	pane.dirtyColEnd = 5
@@ -9745,9 +9769,7 @@ func TestComposedCanvasDrawPaneBodyDirtyRegionSupportsActivePaneCursor(t *testin
 
 	pane.Snapshot.Screen.Cells[0] = makeRow("abcXYZghijklmnop")
 	pane.renderDirty = true
-	pane.dirtyRowsKnown = true
-	pane.dirtyRowStart = 0
-	pane.dirtyRowEnd = 0
+	pane.SetDirtyRows(0, 0, true)
 	pane.dirtyColsKnown = true
 	pane.dirtyColStart = 3
 	pane.dirtyColEnd = 8

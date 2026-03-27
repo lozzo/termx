@@ -112,6 +112,27 @@ func (s *PaneSession) HasStopStream() bool {
 	return s != nil && s.stopStream != nil
 }
 
+func (s *PaneSession) StopStream() func() {
+	if s == nil {
+		return nil
+	}
+	return s.stopStream
+}
+
+func (s *PaneSession) SetStopStream(stop func()) {
+	if s == nil {
+		return
+	}
+	s.stopStream = stop
+}
+
+func (s *PaneSession) ClearStopStream() {
+	if s == nil {
+		return
+	}
+	s.stopStream = nil
+}
+
 func (s *PaneSession) DirtyRows() (start int, end int, known bool) {
 	if s == nil {
 		return 0, 0, false
