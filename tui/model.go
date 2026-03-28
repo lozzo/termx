@@ -407,18 +407,18 @@ type tabModeRuntimePlan struct {
 }
 
 type floatingModeRuntimePlan struct {
-	focusNext       bool
-	openNew         bool
-	closeActive     bool
+	focusNext        bool
+	openNew          bool
+	closeActive      bool
 	toggleVisibility bool
-	raise           bool
-	lower           bool
-	center          bool
-	moveDirection   Direction
-	resizeDirection Direction
-	resizeAmount    int
-	openPicker      bool
-	keep            bool
+	raise            bool
+	lower            bool
+	center           bool
+	moveDirection    Direction
+	resizeDirection  Direction
+	resizeAmount     int
+	openPicker       bool
+	keep             bool
 }
 
 type viewportModeRuntimePlan struct {
@@ -1012,10 +1012,14 @@ func NewModel(client Client, cfg Config) *Model {
 		Tabs: []*Tab{newTab("1")},
 	}
 	workbench := NewWorkbench(workspace)
-	app := NewApp(workbench)
 	terminalStore := NewTerminalStore()
+	terminalCoordinator := NewTerminalCoordinator(client, terminalStore)
+	resizer := NewResizer(terminalCoordinator)
+	renderer := NewRenderer(workbench, terminalStore)
+	renderLoop := NewRenderLoop(renderer)
+	app := NewApp(workbench, terminalCoordinator, resizer, renderLoop)
 	modelWorkspace := workspace
-	return &Model{
+	model := &Model{
 		client: client,
 		cfg:    cfg,
 		logger: logger,
@@ -1026,10 +1030,10 @@ func NewModel(client Client, cfg Config) *Model {
 			}
 			return pane.VTerm.Write(data)
 		},
-		workbench: workbench,
-		app:       app,
-		terminalStore: terminalStore,
-		workspace: modelWorkspace,
+		workbench:               workbench,
+		app:                     app,
+		terminalStore:           terminalStore,
+		workspace:               modelWorkspace,
 		renderInterval:          16 * time.Millisecond,
 		renderFastInterval:      8 * time.Millisecond,
 		renderInteractiveWindow: 200 * time.Millisecond,
@@ -1048,6 +1052,8 @@ func NewModel(client Client, cfg Config) *Model {
 		workspaceOrder:  []string{cfg.Workspace},
 		activeWorkspace: 0,
 	}
+	renderLoop.bindModel(model)
+	return model
 }
 
 func (m *Model) requestContext() (context.Context, context.CancelFunc) {
@@ -1148,23 +1154,36 @@ func (m *Model) wrapClientError(op string, err error, attrs ...any) error {
 	return err
 }
 
+func (m *Model) renderLoop() *RenderLoop {
+	if m == nil || m.app == nil {
+		return nil
+	}
+	return m.app.RenderLoop()
+}
+
 func (m *Model) SetProgram(program *tea.Program) {
 	m.program = program
 	m.startTerminalEventForwarder()
 	m.renderBatching = true
+	if loop := m.renderLoop(); loop != nil {
+		loop.startTicker()
+		return
+	}
 	m.startRenderTicker()
 }
 
 func (m *Model) StopRenderTicker() {
-	if m.renderTickerStop != nil {
+	if loop := m.renderLoop(); loop != nil {
+		loop.stopTicker()
+	} else if m.renderTickerStop != nil {
 		close(m.renderTickerStop)
 		m.renderTickerStop = nil
+		m.renderTickerRunning = false
 	}
 	if m.eventsCancel != nil {
 		m.eventsCancel()
 		m.eventsCancel = nil
 	}
-	m.renderTickerRunning = false
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -1325,7 +1344,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handlePaneRecoveryFailed(msg)
 		return m, nil
 	case renderTickMsg:
-		m.flushPendingRender()
+		if loop := m.renderLoop(); loop != nil {
+			loop.flushPendingRender()
+		} else {
+			m.flushPendingRender()
+		}
 		return m, nil
 	case prefixTimeoutMsg:
 		if m.prefixActive && msg.seq == m.prefixSeq {
@@ -1539,7 +1562,7 @@ func tabModeActionForInput(input prefixInput, directMode bool) tabModeAction {
 	if directMode && len(input.token) == 1 {
 		r := rune(input.token[0])
 		if r >= '1' && r <= '9' {
-			return tabModeAction{kind: tabModeActionJump, index: int(r-'1')}
+			return tabModeAction{kind: tabModeActionJump, index: int(r - '1')}
 		}
 	}
 	return tabModeAction{}
@@ -4762,6 +4785,16 @@ func (m *Model) resizeVisiblePanesCmd() tea.Cmd {
 			continue
 		}
 		resizedTerminals[pane.TerminalID] = struct{}{}
+		if m.app != nil && m.app.Resizer() != nil {
+			resizer := m.app.Resizer()
+			cmds = append(cmds, func(pane *Pane, cols, rows uint16) tea.Cmd {
+				return func() tea.Msg {
+					resizer.SyncPaneResize(pane, int(cols), int(rows))
+					return paneResizeMsg{channel: pane.Channel, cols: cols, rows: rows}
+				}
+			}(pane, cols, rows))
+			continue
+		}
 		cmds = append(cmds, func(channel uint16, cols, rows uint16) tea.Cmd {
 			return func() tea.Msg {
 				ctx, cancel := m.requestContext()
@@ -5022,6 +5055,9 @@ func (m *Model) unbindPaneTerminal(pane *Pane) {
 func (m *Model) markTerminalKilled(terminalID string) {
 	if terminalID == "" {
 		return
+	}
+	if m.app != nil && m.app.TerminalCoordinator() != nil {
+		m.app.TerminalCoordinator().MarkKilled(terminalID)
 	}
 	changed := false
 	for _, tab := range m.workspace.Tabs {

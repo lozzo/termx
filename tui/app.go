@@ -3,11 +3,42 @@ package tui
 import "strings"
 
 type App struct {
-	workbench *Workbench
+	workbench           *Workbench
+	terminalCoordinator *TerminalCoordinator
+	resizer             *Resizer
+	renderLoop          *RenderLoop
 }
 
-func NewApp(workbench *Workbench) *App {
-	return &App{workbench: workbench}
+func NewApp(workbench *Workbench, terminalCoordinator *TerminalCoordinator, resizer *Resizer, renderLoop *RenderLoop) *App {
+	return &App{workbench: workbench, terminalCoordinator: terminalCoordinator, resizer: resizer, renderLoop: renderLoop}
+}
+
+func (a *App) RenderLoop() *RenderLoop {
+	if a == nil {
+		return nil
+	}
+	return a.renderLoop
+}
+
+func (a *App) Renderer() *Renderer {
+	if a == nil || a.renderLoop == nil {
+		return nil
+	}
+	return a.renderLoop.Renderer()
+}
+
+func (a *App) Resizer() *Resizer {
+	if a == nil {
+		return nil
+	}
+	return a.resizer
+}
+
+func (a *App) TerminalCoordinator() *TerminalCoordinator {
+	if a == nil {
+		return nil
+	}
+	return a.terminalCoordinator
 }
 
 func (a *App) Workbench() *Workbench {

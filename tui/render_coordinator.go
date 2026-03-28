@@ -7,6 +7,10 @@ import (
 )
 
 func (m *Model) startRenderTicker() {
+	if loop := m.renderLoop(); loop != nil {
+		loop.startTicker()
+		return
+	}
 	if m.program == nil || m.renderTickerRunning || m.renderInterval <= 0 {
 		return
 	}
@@ -44,10 +48,18 @@ func (m *Model) startRenderTicker() {
 }
 
 func (m *Model) invalidateRender() {
+	if loop := m.renderLoop(); loop != nil {
+		loop.invalidateRender()
+		return
+	}
 	m.renderDirty = true
 }
 
 func (m *Model) scheduleRender() {
+	if loop := m.renderLoop(); loop != nil {
+		loop.scheduleRender()
+		return
+	}
 	if !m.renderBatching {
 		m.invalidateRender()
 		return
@@ -56,6 +68,10 @@ func (m *Model) scheduleRender() {
 }
 
 func (m *Model) flushPendingRender() {
+	if loop := m.renderLoop(); loop != nil {
+		loop.flushPendingRender()
+		return
+	}
 	if !m.renderBatching {
 		m.invalidateRender()
 		return
@@ -101,6 +117,10 @@ func (m *Model) noteInteraction() {
 }
 
 func (m *Model) requestInteractiveRender() {
+	if loop := m.renderLoop(); loop != nil {
+		loop.requestInteractiveRender()
+		return
+	}
 	if !m.renderBatching || m.program == nil {
 		m.invalidateRender()
 		return
@@ -221,15 +241,25 @@ func (m *Model) View() string {
 	}
 	m.renderViewCalls.Add(1)
 
-	if !m.renderDirty && m.renderCache != "" && (m.workspacePicker != nil || m.terminalManager != nil || m.terminalPicker != nil || m.showHelp || m.prompt != nil) {
-		m.renderCacheHits.Add(1)
-		return m.renderCache
+	renderer := (*Renderer)(nil)
+	if m.app != nil {
+		renderer = m.app.Renderer()
 	}
-
-	if m.renderBatching && !m.renderDirty && m.renderCache != "" {
-		if m.program != nil || !m.anyPaneDirty() {
+	if renderer != nil {
+		if cached := renderer.CachedFrame(m); cached != "" {
+			return cached
+		}
+	} else {
+		if !m.renderDirty && m.renderCache != "" && (m.workspacePicker != nil || m.terminalManager != nil || m.terminalPicker != nil || m.showHelp || m.prompt != nil) {
 			m.renderCacheHits.Add(1)
 			return m.renderCache
+		}
+
+		if m.renderBatching && !m.renderDirty && m.renderCache != "" {
+			if m.program != nil || !m.anyPaneDirty() {
+				m.renderCacheHits.Add(1)
+				return m.renderCache
+			}
 		}
 	}
 
@@ -259,11 +289,22 @@ func (m *Model) View() string {
 		return m.finishRenderedFrame(out)
 	}
 
-	out = strings.Join([]string{m.renderTabBar(), m.renderContentBody(), m.renderStatus()}, "\n")
+	if renderer != nil {
+		out = renderer.Render(m)
+	} else {
+		out = strings.Join([]string{m.renderTabBar(), m.renderContentBody(), m.renderStatus()}, "\n")
+	}
 	return m.finishRenderedFrame(out)
 }
 
 func (m *Model) finishRenderedFrame(out string) string {
+	renderer := (*Renderer)(nil)
+	if m.app != nil {
+		renderer = m.app.Renderer()
+	}
+	if renderer != nil {
+		return renderer.FinishFrame(m, out)
+	}
 	m.renderCache = out
 	m.renderDirty = false
 	m.renderLastFlush = m.now()

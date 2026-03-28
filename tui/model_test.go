@@ -8193,6 +8193,37 @@ func TestResizeVisiblePanesUsesAcquiredSharedPane(t *testing.T) {
 	}
 }
 
+func TestResizeVisiblePanesUsesResizerForOwnerPane(t *testing.T) {
+	client := &fakeClient{}
+	resizerClient := &fakeClient{}
+	model := NewModel(client, Config{DefaultShell: "/bin/sh"})
+	model.width = 120
+	model.height = 40
+
+	msg := mustRunCmd(t, model.Init())
+	_, _ = model.Update(msg)
+
+	tab := model.currentTab()
+	pane := tab.Panes[tab.ActivePaneID]
+	if pane == nil {
+		t.Fatal("expected active pane")
+	}
+	pane.ResizeAcquired = true
+	model.app = NewApp(model.workbench, model.app.TerminalCoordinator(), NewResizer(NewTerminalCoordinator(resizerClient, model.terminalStore)), model.app.RenderLoop())
+
+	runAllCmds(t, model.resizeVisiblePanesCmd())
+
+	if client.resizeCalls != 0 {
+		t.Fatalf("expected model client resize path to be bypassed, got %d calls", client.resizeCalls)
+	}
+	if resizerClient.resizeCalls != 1 {
+		t.Fatalf("expected resizer client to receive one resize call, got %d", resizerClient.resizeCalls)
+	}
+	if resizerClient.resizeChannel != pane.Channel {
+		t.Fatalf("expected resizer to drive channel %d, got %d", pane.Channel, resizerClient.resizeChannel)
+	}
+}
+
 func TestFloatingModeResizeUsesAcquiredSharedPane(t *testing.T) {
 	client := &fakeClient{}
 	model := NewModel(client, Config{DefaultShell: "/bin/sh"})

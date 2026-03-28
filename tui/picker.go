@@ -1011,6 +1011,28 @@ func (m *Model) attachInitialTerminalCmd(tabIndex int, terminalID string) tea.Cm
 func (m *Model) attachTerminalToBootstrapCmd(tabIndex int, item terminalPickerItem) tea.Cmd {
 	return func() tea.Msg {
 		m.logger.Debug("attaching terminal to bootstrap pane", "tab_index", tabIndex, "terminal_id", item.Info.ID)
+		if m.app != nil && m.app.TerminalCoordinator() != nil {
+			ctx, cancel := m.requestContext()
+			defer cancel()
+			view, err := m.app.TerminalCoordinator().AttachTerminal(ctx, item.Info)
+			if err != nil {
+				return errMsg{m.wrapClientError("attach terminal", err, "tab_index", tabIndex, "terminal_id", item.Info.ID)}
+			}
+			paneID := m.nextPaneID()
+			return paneCreatedMsg{
+				tabIndex: tabIndex,
+				pane: &Pane{
+					ID:    paneID,
+					Title: paneTitleForTerminal(item.Info),
+					Viewport: func() *Viewport {
+						if view == nil {
+							return nil
+						}
+						return viewportWithTerminalInfo(view, item.Info)
+					}(),
+				},
+			}
+		}
 		ctx, cancel := m.requestContext()
 		defer cancel()
 		attached, err := m.client.Attach(ctx, item.Info.ID, "collaborator")

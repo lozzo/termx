@@ -5,7 +5,7 @@ import "testing"
 func TestNewAppHoldsWorkbenchReference(t *testing.T) {
 	workbench := NewWorkbench(Workspace{Name: "main", Tabs: []*Tab{newTab("1")}})
 
-	app := NewApp(workbench)
+	app := NewApp(workbench, nil, nil, nil)
 
 	if app == nil {
 		t.Fatal("expected app")
@@ -21,7 +21,7 @@ func TestAppActivateTabDelegatesToWorkbench(t *testing.T) {
 		Tabs:      []*Tab{{Name: "1"}, {Name: "2"}},
 		ActiveTab: 0,
 	})
-	app := NewApp(workbench)
+	app := NewApp(workbench, nil, nil, nil)
 
 	if !app.ActivateTab(1) {
 		t.Fatal("expected activate tab to succeed")
@@ -42,7 +42,7 @@ func TestAppFocusPaneDelegatesToWorkbench(t *testing.T) {
 		Tabs:      []*Tab{tab},
 		ActiveTab: 0,
 	})
-	app := NewApp(workbench)
+	app := NewApp(workbench, nil, nil, nil)
 
 	if !app.FocusPane("p2") {
 		t.Fatal("expected focus pane to succeed")
@@ -70,7 +70,7 @@ func TestAppOpenTerminalPickerUsesWorkbenchSelection(t *testing.T) {
 		ActiveTab: 0,
 	}
 	workbench := NewWorkbench(workspace)
-	app := NewApp(workbench)
+	app := NewApp(workbench, nil, nil, nil)
 
 	if !app.ActivateTab(1) {
 		t.Fatal("expected activate tab to succeed")
@@ -90,7 +90,7 @@ func TestAppOpenTerminalPickerUsesWorkbenchSelection(t *testing.T) {
 
 func TestAppHandlesWorkspaceActivatedBySyncingWorkbench(t *testing.T) {
 	workbench := NewWorkbench(Workspace{Name: "main", Tabs: []*Tab{newTab("1")}, ActiveTab: 0})
-	app := NewApp(workbench)
+	app := NewApp(workbench, nil, nil, nil)
 	workspace := Workspace{Name: "dev", Tabs: []*Tab{newTab("2")}, ActiveTab: 0}
 
 	notice, bootstrap := app.HandleWorkspaceActivated(workspace, 0)
