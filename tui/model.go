@@ -137,8 +137,9 @@ type Viewport struct {
 }
 
 type Pane struct {
-	ID    string
-	Title string
+	ID       string
+	Title    string
+	Terminal *Terminal
 	*Viewport
 }
 
@@ -807,6 +808,8 @@ type Model struct {
 	hostPalette             map[int]string
 	// Phase 2 introduces App as the TUI root object.
 	app *App
+	// Phase 3 introduces TerminalStore as the TUI-local terminal registry.
+	terminalStore *TerminalStore
 	// Phase 1 keeps Model.workspace as the active source of truth.
 	// workbench only holds an owned bootstrap snapshot until later routing lands.
 	workbench *Workbench
@@ -1010,6 +1013,7 @@ func NewModel(client Client, cfg Config) *Model {
 	}
 	workbench := NewWorkbench(workspace)
 	app := NewApp(workbench)
+	terminalStore := NewTerminalStore()
 	modelWorkspace := workspace
 	return &Model{
 		client: client,
@@ -1024,6 +1028,7 @@ func NewModel(client Client, cfg Config) *Model {
 		},
 		workbench: workbench,
 		app:       app,
+		terminalStore: terminalStore,
 		workspace: modelWorkspace,
 		renderInterval:          16 * time.Millisecond,
 		renderFastInterval:      8 * time.Millisecond,
@@ -5418,6 +5423,28 @@ func paneTerminalState(pane *Pane) string {
 	return pane.TerminalState
 }
 
+func (m *Model) ensurePaneTerminal(pane *Pane) *Terminal {
+	if m == nil || m.terminalStore == nil || pane == nil {
+		return nil
+	}
+	if pane.Terminal != nil {
+		return pane.Terminal
+	}
+	terminalID := strings.TrimSpace(pane.TerminalID)
+	if terminalID == "" {
+		return nil
+	}
+	terminal := m.terminalStore.GetOrCreate(terminalID)
+	terminal.SetMetadata(pane.Name, pane.Command, pane.Tags)
+	terminal.State = pane.TerminalState
+	terminal.ExitCode = pane.ExitCode
+	terminal.Snapshot = pane.Snapshot
+	terminal.Channel = pane.Channel
+	terminal.AttachMode = pane.AttachMode
+	pane.Terminal = terminal
+	return terminal
+}
+
 func (m *Model) paneByID(paneID string) *Pane {
 	if strings.TrimSpace(paneID) == "" {
 		return nil
@@ -7924,6 +7951,13 @@ func terminalDisplayLabel(name string, command []string) string {
 	default:
 		return base
 	}
+}
+
+func paneTerminal(pane *Pane) *Terminal {
+	if pane == nil {
+		return nil
+	}
+	return pane.Terminal
 }
 
 func paneDisplayLabel(pane *Pane) string {

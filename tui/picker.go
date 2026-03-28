@@ -238,12 +238,17 @@ func (m *Model) terminalLocations() map[string][]string {
 				if pane == nil || pane.TerminalID == "" {
 					continue
 				}
-				key := pane.TerminalID + "\x00" + location
+				m.ensurePaneTerminal(pane)
+				terminalID := pane.TerminalID
+				if pane.Terminal != nil && strings.TrimSpace(pane.Terminal.ID) != "" {
+					terminalID = pane.Terminal.ID
+				}
+				key := terminalID + "\x00" + location
 				if _, ok := seen[key]; ok {
 					continue
 				}
 				seen[key] = struct{}{}
-				locations[pane.TerminalID] = append(locations[pane.TerminalID], location)
+				locations[terminalID] = append(locations[terminalID], location)
 			}
 		}
 	}

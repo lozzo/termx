@@ -28,6 +28,47 @@ func activatePrefixForTest(model *Model) tea.Cmd {
 	return model.activatePrefix()
 }
 
+func TestPaneCanReferenceSharedTerminalObject(t *testing.T) {
+	store := NewTerminalStore()
+	terminal := store.GetOrCreate("term-1")
+	terminal.SetMetadata("shared", []string{"bash"}, map[string]string{"role": "dev"})
+
+	first := &Pane{ID: "pane-1", Terminal: terminal, Viewport: &Viewport{}}
+	second := &Pane{ID: "pane-2", Terminal: terminal, Viewport: &Viewport{}}
+
+	terminal.Name = "renamed"
+
+	if first.Terminal.Name != "renamed" || second.Terminal.Name != "renamed" {
+		t.Fatal("expected panes to share terminal object reference")
+	}
+}
+
+func TestPaneTitleCanReadFromTerminalObject(t *testing.T) {
+	terminal := &Terminal{ID: "term-1", Name: "worker", Command: []string{"tail", "-f", "worker.log"}}
+	pane := &Pane{ID: "pane-1", Terminal: terminal, Viewport: &Viewport{TerminalID: "term-1"}}
+
+	if got := paneTitle(pane); got == "" {
+		t.Fatal("expected pane title from terminal-backed pane")
+	}
+}
+
+func TestTerminalPickerLocationsCanUseSharedTerminalMetadata(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	terminal := model.terminalStore.GetOrCreate("term-1")
+	terminal.SetMetadata("worker", []string{"bash"}, map[string]string{"role": "dev"})
+	pane := &Pane{ID: "pane-1", Title: "worker", Terminal: terminal, Viewport: &Viewport{TerminalID: "term-1"}}
+	tab := &Tab{Name: "1", Panes: map[string]*Pane{pane.ID: pane}, ActivePaneID: pane.ID}
+	model.workspace = Workspace{Name: "main", Tabs: []*Tab{tab}, ActiveTab: 0}
+	model.workspaceStore = map[string]Workspace{"main": model.workspace}
+	model.workspaceOrder = []string{"main"}
+	model.activeWorkspace = 0
+
+	locations := model.terminalLocations()
+	if len(locations["term-1"]) == 0 {
+		t.Fatal("expected location for terminal-backed pane")
+	}
+}
+
 func TestModelNewWorkbenchStartsFromOwnedWorkspaceCopy(t *testing.T) {
 	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh", Workspace: "main"})
 

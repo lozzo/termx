@@ -1443,6 +1443,15 @@ func paneDisplayTitle(pane *Pane) string {
 	if pane == nil {
 		return "pane"
 	}
+	if terminal := paneTerminal(pane); terminal != nil {
+		name := strings.TrimSpace(terminal.Name)
+		if name != "" {
+			return name
+		}
+		if command := firstCommandWord(terminal.Command); command != "" || strings.TrimSpace(terminal.ID) != "" {
+			return paneTitleForCommand(name, command, terminal.ID)
+		}
+	}
 	return coalesce(strings.TrimSpace(pane.Name), strings.TrimSpace(pane.Title), strings.TrimSpace(pane.TerminalID), strings.TrimSpace(pane.ID), "terminal")
 }
 
