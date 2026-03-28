@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewRendererHoldsWorkbenchAndStore(t *testing.T) {
@@ -44,6 +45,38 @@ func TestRendererViewAssemblesTabBodyAndStatus(t *testing.T) {
 	want := strings.Join([]string{model.renderTabBar(), model.renderContentBody(), model.renderStatus()}, "\n")
 	if got != want {
 		t.Fatalf("expected renderer to assemble top-level frame\nwant:\n%s\n\ngot:\n%s", want, got)
+	}
+}
+
+func TestModelViewUsesRendererBackedPath(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	model.width = 100
+	model.height = 40
+	model.renderDirty = true
+
+	out := model.View()
+	if out == "" {
+		t.Fatal("expected rendered output")
+	}
+	if model.renderCache == "" {
+		t.Fatal("expected renderer-backed view to finish frame into cache")
+	}
+}
+
+func TestRendererFinishFrameCachesAndClearsDirty(t *testing.T) {
+	renderer := NewRenderer(nil, nil)
+	model := &Model{renderDirty: true, timeNow: func() time.Time { return time.Unix(100, 0) }}
+
+	out := renderer.FinishFrame(model, "frame")
+
+	if out != "frame" {
+		t.Fatalf("expected frame output, got %q", out)
+	}
+	if model.renderCache != "frame" {
+		t.Fatalf("expected render cache to be updated, got %q", model.renderCache)
+	}
+	if model.renderDirty {
+		t.Fatal("expected render dirty flag cleared")
 	}
 }
 

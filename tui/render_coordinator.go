@@ -8,48 +8,14 @@ import (
 
 func (m *Model) startRenderTicker() {
 	if loop := m.renderLoop(); loop != nil {
-		loop.startTicker()
+		loop.StartTicker()
 		return
 	}
-	if m.program == nil || m.renderTickerRunning || m.renderInterval <= 0 {
-		return
-	}
-	stop := make(chan struct{})
-	m.renderTickerStop = stop
-	m.renderTickerRunning = true
-	interval := minPositiveDuration(m.renderFastInterval, m.renderInterval)
-	if interval <= 0 {
-		interval = m.renderInterval
-	}
-	statsInterval := m.renderStatsInterval
-	program := m.program
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		var statsTicker *time.Ticker
-		if statsInterval > 0 {
-			statsTicker = time.NewTicker(statsInterval)
-			defer statsTicker.Stop()
-		}
-		for {
-			select {
-			case <-stop:
-				return
-			case <-ticker.C:
-				if !m.renderPending.Load() {
-					continue
-				}
-				program.Send(renderTickMsg{})
-			case <-tickerChan(statsTicker):
-				m.logRenderStats()
-			}
-		}
-	}()
 }
 
 func (m *Model) invalidateRender() {
 	if loop := m.renderLoop(); loop != nil {
-		loop.invalidateRender()
+		loop.Invalidate()
 		return
 	}
 	m.renderDirty = true
@@ -57,39 +23,17 @@ func (m *Model) invalidateRender() {
 
 func (m *Model) scheduleRender() {
 	if loop := m.renderLoop(); loop != nil {
-		loop.scheduleRender()
+		loop.Schedule()
 		return
 	}
-	if !m.renderBatching {
-		m.invalidateRender()
-		return
-	}
-	m.renderPending.Store(true)
+	m.renderDirty = true
 }
 
 func (m *Model) flushPendingRender() {
 	if loop := m.renderLoop(); loop != nil {
-		loop.flushPendingRender()
+		loop.FlushPending()
 		return
 	}
-	if !m.renderBatching {
-		m.invalidateRender()
-		return
-	}
-	now := m.now()
-	interval := m.currentRenderInterval(now)
-	if interval > 0 && !m.renderLastFlush.IsZero() && now.Sub(m.renderLastFlush) < interval {
-		return
-	}
-	if !m.updateBackpressureState() {
-		return
-	}
-	if !m.renderPending.Load() && !m.anyPaneDirty() {
-		return
-	}
-	m.renderPending.Store(false)
-	m.renderLastFlush = now
-	m.invalidateRender()
 }
 
 func (m *Model) now() time.Time {
@@ -118,21 +62,10 @@ func (m *Model) noteInteraction() {
 
 func (m *Model) requestInteractiveRender() {
 	if loop := m.renderLoop(); loop != nil {
-		loop.requestInteractiveRender()
+		loop.RequestInteractiveRender()
 		return
 	}
-	if !m.renderBatching || m.program == nil {
-		m.invalidateRender()
-		return
-	}
-	now := m.now()
-	interval := m.currentRenderInterval(now)
-	if interval <= 0 || m.renderLastFlush.IsZero() || now.Sub(m.renderLastFlush) >= interval {
-		m.invalidateRender()
-		m.renderLastFlush = now
-		return
-	}
-	m.renderPending.Store(true)
+	m.renderDirty = true
 }
 
 func (m *Model) logRenderStats() {

@@ -46,6 +46,19 @@ func TestTerminalCoordinatorAttachLoadsSnapshotAndUpdatesStore(t *testing.T) {
 	}
 }
 
+func TestTerminalCoordinatorResizeTerminalUsesClientResize(t *testing.T) {
+	store := NewTerminalStore()
+	client := &fakeClient{}
+	coordinator := NewTerminalCoordinator(client, store)
+	pane := &Pane{Viewport: &Viewport{TerminalID: "term-1", Channel: 7, ResizeAcquired: true}}
+
+	coordinator.ResizeTerminal(context.Background(), pane, 120, 40)
+
+	if client.resizeCalls != 1 {
+		t.Fatalf("expected one resize call, got %d", client.resizeCalls)
+	}
+}
+
 func TestTerminalCoordinatorMarksTerminalExitedInStore(t *testing.T) {
 	store := NewTerminalStore()
 	terminal := store.GetOrCreate("term-1")

@@ -28,6 +28,44 @@ func activatePrefixForTest(model *Model) tea.Cmd {
 	return model.activatePrefix()
 }
 
+func TestTerminalLocationsUsesWorkbenchBackedWorkspaceState(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	model.workspace = Workspace{
+		Name: "main",
+		Tabs: []*Tab{{
+			Name: "1",
+			Panes: map[string]*Pane{
+				"p1": {ID: "p1", Terminal: &Terminal{ID: "term-1"}, Viewport: &Viewport{TerminalID: "term-1"}},
+			},
+		}},
+		ActiveTab: 0,
+	}
+	model.snapshotCurrentWorkspace()
+
+	locations := model.terminalLocations()
+	if len(locations["term-1"]) == 0 {
+		t.Fatal("expected workbench-backed terminal location")
+	}
+}
+
+func TestOpenTerminalPickerCmdUsesAppWorkspaceSync(t *testing.T) {
+	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
+	model.workspace = Workspace{
+		Name: "main",
+		Tabs: []*Tab{{Name: "1"}, {Name: "2", Panes: map[string]*Pane{"p2": {ID: "p2", Viewport: &Viewport{}}}, ActivePaneID: "p2"}},
+		ActiveTab: 1,
+	}
+	if model.workbench == nil {
+		t.Fatal("expected workbench")
+	}
+
+	_ = model.openTerminalPickerCmd()
+
+	if model.workbench.CurrentWorkspace().ActiveTab != 1 {
+		t.Fatalf("expected picker open to sync active tab 1, got %d", model.workbench.CurrentWorkspace().ActiveTab)
+	}
+}
+
 func TestPaneCanReferenceSharedTerminalObject(t *testing.T) {
 	store := NewTerminalStore()
 	terminal := store.GetOrCreate("term-1")

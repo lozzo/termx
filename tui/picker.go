@@ -67,19 +67,13 @@ func (m *Model) openTerminalPickerCmd() tea.Cmd {
 	action := terminalPickerAction{Kind: terminalPickerActionReplace, TabIndex: m.workspace.ActiveTab}
 	allowCreate := false
 	if m.app != nil {
-		if workbench := m.app.Workbench(); workbench != nil {
-			if current := workbench.Current(); current != nil {
-				*current = *cloneWorkspace(m.workspace)
-				workbench.SnapshotCurrent()
-			}
-		}
-		action, allowCreate = m.app.TerminalPickerContext()
+		action, allowCreate = m.app.TerminalPickerContextForWorkspace(m.workspace)
 	} else {
 		pane := activePane(m.currentTab())
 		if pane == nil {
 			action.Kind = terminalPickerActionBootstrap
 			allowCreate = true
-		} else if strings.TrimSpace(pane.TerminalID) == "" {
+		} else if pane.Viewport == nil || strings.TrimSpace(pane.TerminalID) == "" {
 			allowCreate = true
 		}
 	}

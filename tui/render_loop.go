@@ -25,6 +25,26 @@ func (l *RenderLoop) Renderer() *Renderer {
 	return l.renderer
 }
 
+func (l *RenderLoop) Invalidate() {
+	l.invalidateRender()
+}
+
+func (l *RenderLoop) Schedule() {
+	l.scheduleRender()
+}
+
+func (l *RenderLoop) FlushPending() {
+	l.flushPendingRender()
+}
+
+func (l *RenderLoop) RequestInteractiveRender() {
+	l.requestInteractiveRender()
+}
+
+func (l *RenderLoop) StartTicker() {
+	l.startTicker()
+}
+
 func (l *RenderLoop) invalidateRender() {
 	m := l.model
 	if m == nil {

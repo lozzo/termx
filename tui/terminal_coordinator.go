@@ -68,6 +68,19 @@ func (c *TerminalCoordinator) AttachTerminal(ctx context.Context, info protocol.
 	return view, nil
 }
 
+func (c *TerminalCoordinator) ResizeTerminal(ctx context.Context, pane *Pane, cols, rows int) {
+	if c == nil || c.client == nil || pane == nil || pane.Viewport == nil {
+		return
+	}
+	if !pane.ResizeAcquired || pane.Channel == 0 || cols <= 0 || rows <= 0 {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	_ = c.client.Resize(ctx, pane.Channel, uint16(cols), uint16(rows))
+}
+
 func (c *TerminalCoordinator) MarkExited(terminalID string, exitCode int) {
 	if c == nil || c.store == nil || terminalID == "" {
 		return

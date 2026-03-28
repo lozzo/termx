@@ -62,6 +62,26 @@ func (a *App) FocusPane(paneID string) bool {
 	return a.workbench.FocusPane(paneID)
 }
 
+func (a *App) SyncCurrentWorkspace(workspace Workspace) {
+	if a == nil || a.workbench == nil {
+		return
+	}
+	current := a.workbench.Current()
+	if current == nil {
+		return
+	}
+	*current = workspace
+	a.workbench.SnapshotCurrent()
+}
+
+func (a *App) TerminalPickerContextForWorkspace(workspace Workspace) (terminalPickerAction, bool) {
+	if a == nil {
+		return terminalPickerAction{}, false
+	}
+	a.SyncCurrentWorkspace(workspace)
+	return a.TerminalPickerContext()
+}
+
 func (a *App) TerminalPickerContext() (terminalPickerAction, bool) {
 	if a == nil || a.workbench == nil {
 		return terminalPickerAction{}, false
