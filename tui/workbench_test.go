@@ -138,7 +138,7 @@ func TestNewWorkbenchClonesPaneViewportOwnership(t *testing.T) {
 	snapshot := &protocol.Snapshot{
 		TerminalID: "term-1",
 		Size:       protocol.Size{Cols: 80, Rows: 24},
-		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "a", Width: 1}}}},
+		Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "a", Width: 1}}}},
 		Scrollback: [][]protocol.Cell{{{Content: "b", Width: 1}}},
 		Timestamp:  time.Unix(123, 0),
 	}
@@ -178,11 +178,19 @@ func TestNewWorkbenchClonesPaneViewportOwnership(t *testing.T) {
 		dirtyColStart:   3,
 		dirtyColEnd:     4,
 	}
+	pane := &Pane{ID: "pane-1", Title: "Pane 1", Viewport: viewport}
+	pane.MarkRenderDirty()
+	pane.SetCatchingUp(true)
+	pane.SetDirtyTicks(2)
+	pane.SetCleanTicks(3)
+	pane.SetSkipTick(true)
+	pane.SetDirtyRows(1, 2, true)
+	pane.SetDirtyCols(3, 4, true)
 	workspace := Workspace{
 		Name: "main",
 		Tabs: []*Tab{{
 			Name:  "1",
-			Panes: map[string]*Pane{"pane-1": {ID: "pane-1", Title: "Pane 1", Viewport: viewport}},
+			Panes: map[string]*Pane{"pane-1": pane},
 		}},
 	}
 
@@ -241,10 +249,10 @@ func TestNewWorkbenchClonesPaneViewportOwnership(t *testing.T) {
 	if ownedPane.Snapshot.Scrollback[0][0].Content != "b" {
 		t.Fatalf("expected cloned snapshot scrollback cell b, got %q", ownedPane.Snapshot.Scrollback[0][0].Content)
 	}
-	if ownedPane.stopStream != nil {
+	if ownedPane.StopStream() != nil {
 		t.Fatal("expected workbench-owned viewport to drop stopStream hook")
 	}
-	if ownedPane.cellCache != nil {
+	if ownedPane.CellCache() != nil {
 		t.Fatal("expected workbench-owned viewport to drop cell cache")
 	}
 	if ownedPane.viewportCache != nil {
@@ -259,20 +267,20 @@ func TestNewWorkbenchClonesPaneViewportOwnership(t *testing.T) {
 	if ownedPane.viewportOffset != (Point{}) {
 		t.Fatalf("expected viewport cache offset reset, got %+v", ownedPane.viewportOffset)
 	}
-	if ownedPane.renderDirty {
+	if ownedPane.IsRenderDirty() {
 		t.Fatal("expected workbench-owned viewport to start with clean render state")
 	}
-	if ownedPane.live || ownedPane.syncLost || ownedPane.recovering || ownedPane.catchingUp || ownedPane.skipTick {
-		t.Fatalf("expected runtime flags cleared, got live=%v syncLost=%v recovering=%v catchingUp=%v skipTick=%v", ownedPane.live, ownedPane.syncLost, ownedPane.recovering, ownedPane.catchingUp, ownedPane.skipTick)
+	if ownedPane.live || ownedPane.syncLost || ownedPane.recovering || ownedPane.IsCatchingUp() || ownedPane.SkipTick() {
+		t.Fatalf("expected runtime flags cleared, got live=%v syncLost=%v recovering=%v catchingUp=%v skipTick=%v", ownedPane.live, ownedPane.syncLost, ownedPane.recovering, ownedPane.IsCatchingUp(), ownedPane.SkipTick())
 	}
-	if ownedPane.droppedBytes != 0 || ownedPane.dirtyTicks != 0 || ownedPane.cleanTicks != 0 {
-		t.Fatalf("expected runtime counters cleared, got dropped=%d dirty=%d clean=%d", ownedPane.droppedBytes, ownedPane.dirtyTicks, ownedPane.cleanTicks)
+	if ownedPane.droppedBytes != 0 || ownedPane.DirtyTicks() != 0 || ownedPane.CleanTicks() != 0 {
+		t.Fatalf("expected runtime counters cleared, got dropped=%d dirty=%d clean=%d", ownedPane.droppedBytes, ownedPane.DirtyTicks(), ownedPane.CleanTicks())
 	}
-	if ownedPane.dirtyRowsKnown || ownedPane.dirtyColsKnown {
-		t.Fatalf("expected dirty range tracking cleared, got rows=%v cols=%v", ownedPane.dirtyRowsKnown, ownedPane.dirtyColsKnown)
+	if rowStart, rowEnd, rowsKnown := ownedPane.DirtyRows(); rowsKnown || rowStart != 0 || rowEnd != 0 {
+		t.Fatalf("expected dirty row tracking cleared, got known=%v row=%d..%d", rowsKnown, rowStart, rowEnd)
 	}
-	if ownedPane.dirtyRowStart != 0 || ownedPane.dirtyRowEnd != 0 || ownedPane.dirtyColStart != 0 || ownedPane.dirtyColEnd != 0 {
-		t.Fatalf("expected dirty range bounds reset, got row=%d..%d col=%d..%d", ownedPane.dirtyRowStart, ownedPane.dirtyRowEnd, ownedPane.dirtyColStart, ownedPane.dirtyColEnd)
+	if colStart, colEnd, colsKnown := ownedPane.DirtyCols(); colsKnown || colStart != 0 || colEnd != 0 {
+		t.Fatalf("expected dirty col tracking cleared, got known=%v col=%d..%d", colsKnown, colStart, colEnd)
 	}
 	if stopCalls != 1 {
 		t.Fatalf("expected source stopStream to remain callable exactly once, got %d", stopCalls)
@@ -473,8 +481,8 @@ func TestWorkbenchVisibleStateExposesCurrentTabAndActivePane(t *testing.T) {
 
 func TestWorkbenchActivateTabDelegatesToWorkspace(t *testing.T) {
 	workbench := NewWorkbench(Workspace{
-		Name: "main",
-		Tabs: []*Tab{{Name: "1"}, {Name: "2"}},
+		Name:      "main",
+		Tabs:      []*Tab{{Name: "1"}, {Name: "2"}},
 		ActiveTab: 0,
 	})
 

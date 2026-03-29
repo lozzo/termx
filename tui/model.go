@@ -141,44 +141,31 @@ type Pane struct {
 	Title    string
 	Terminal *Terminal
 	*Viewport
+	session *PaneSession
 }
 
 func (p *Pane) Session() *PaneSession {
-	if p == nil || p.Viewport == nil {
+	if p == nil {
 		return nil
 	}
-	return &PaneSession{
-		TerminalID:      p.TerminalID,
-		Channel:         p.Channel,
-		AttachMode:      p.AttachMode,
-		VTerm:           p.VTerm,
-		DefaultFG:       p.DefaultFG,
-		DefaultBG:       p.DefaultBG,
-		ResizeAcquired:  p.ResizeAcquired,
-		stopStream:      p.stopStream,
-		cellCache:       p.cellCache,
-		cellVersion:     p.cellVersion,
-		viewportCache:   p.viewportCache,
-		viewportOffset:  p.viewportOffset,
-		viewportWidth:   p.viewportWidth,
-		viewportHeight:  p.viewportHeight,
-		viewportVersion: p.viewportVersion,
-		renderDirty:     p.renderDirty,
-		live:            p.live,
-		syncLost:        p.syncLost,
-		droppedBytes:    p.droppedBytes,
-		recovering:      p.recovering,
-		catchingUp:      p.catchingUp,
-		dirtyTicks:      p.dirtyTicks,
-		cleanTicks:      p.cleanTicks,
-		skipTick:        p.skipTick,
-		dirtyRowsKnown:  p.dirtyRowsKnown,
-		dirtyRowStart:   p.dirtyRowStart,
-		dirtyRowEnd:     p.dirtyRowEnd,
-		dirtyColsKnown:  p.dirtyColsKnown,
-		dirtyColStart:   p.dirtyColStart,
-		dirtyColEnd:     p.dirtyColEnd,
+	if p.session == nil {
+		p.session = &PaneSession{}
 	}
+	if p.Viewport == nil {
+		return p.session
+	}
+	p.session.TerminalID = p.TerminalID
+	p.session.Channel = p.Channel
+	p.session.AttachMode = p.AttachMode
+	p.session.VTerm = p.VTerm
+	p.session.DefaultFG = p.DefaultFG
+	p.session.DefaultBG = p.DefaultBG
+	p.session.live = p.live
+	p.session.syncLost = p.syncLost
+	p.session.droppedBytes = p.droppedBytes
+	p.session.recovering = p.recovering
+	p.session.ResizeAcquired = p.ResizeAcquired
+	return p.session
 }
 
 func (p *Pane) IsRenderDirty() bool {
@@ -189,14 +176,14 @@ func (p *Pane) MarkRenderDirty() {
 	if p == nil {
 		return
 	}
-	p.renderDirty = true
+	p.Session().MarkRenderDirty()
 }
 
 func (p *Pane) ClearRenderDirty() {
 	if p == nil {
 		return
 	}
-	p.renderDirty = false
+	p.Session().ClearRenderDirty()
 }
 
 func (p *Pane) IsSyncLost() bool {
@@ -208,6 +195,7 @@ func (p *Pane) SetSyncLost(value bool) {
 		return
 	}
 	p.syncLost = value
+	p.Session().SetSyncLost(value)
 }
 
 func (p *Pane) DroppedBytes() uint64 {
@@ -222,6 +210,7 @@ func (p *Pane) AddDroppedBytes(value uint64) {
 		return
 	}
 	p.droppedBytes += value
+	p.Session().SetDroppedBytes(p.droppedBytes)
 }
 
 func (p *Pane) SetDroppedBytes(value uint64) {
@@ -229,6 +218,7 @@ func (p *Pane) SetDroppedBytes(value uint64) {
 		return
 	}
 	p.droppedBytes = value
+	p.Session().SetDroppedBytes(value)
 }
 
 func (p *Pane) IsRecovering() bool {
@@ -240,6 +230,7 @@ func (p *Pane) SetRecovering(value bool) {
 		return
 	}
 	p.recovering = value
+	p.Session().SetRecovering(value)
 }
 
 func (p *Pane) IsResizeAcquired() bool {
@@ -251,6 +242,7 @@ func (p *Pane) SetResizeAcquired(value bool) {
 		return
 	}
 	p.ResizeAcquired = value
+	p.Session().SetResizeAcquired(value)
 }
 
 func (p *Pane) HasStopStream() bool {
@@ -269,6 +261,7 @@ func (p *Pane) SetStopStream(stop func()) {
 		return
 	}
 	p.stopStream = stop
+	p.Session().SetStopStream(stop)
 }
 
 func (p *Pane) ClearStopStream() {
@@ -276,6 +269,7 @@ func (p *Pane) ClearStopStream() {
 		return
 	}
 	p.stopStream = nil
+	p.Session().ClearStopStream()
 }
 
 func (p *Pane) DirtyRows() (start int, end int, known bool) {
@@ -289,9 +283,7 @@ func (p *Pane) SetDirtyRows(start int, end int, known bool) {
 	if p == nil {
 		return
 	}
-	p.dirtyRowStart = start
-	p.dirtyRowEnd = end
-	p.dirtyRowsKnown = known
+	p.Session().SetDirtyRows(start, end, known)
 }
 
 func (p *Pane) ClearDirtyRows() {
@@ -299,6 +291,98 @@ func (p *Pane) ClearDirtyRows() {
 		return
 	}
 	p.SetDirtyRows(0, 0, false)
+}
+
+func (p *Pane) DirtyCols() (start int, end int, known bool) {
+	if p == nil {
+		return 0, 0, false
+	}
+	return p.Session().DirtyCols()
+}
+
+func (p *Pane) SetDirtyCols(start int, end int, known bool) {
+	if p == nil {
+		return
+	}
+	p.Session().SetDirtyCols(start, end, known)
+}
+
+func (p *Pane) ClearDirtyCols() {
+	if p == nil {
+		return
+	}
+	p.SetDirtyCols(0, 0, false)
+}
+
+func (p *Pane) IsCatchingUp() bool {
+	return p != nil && p.Session().IsCatchingUp()
+}
+
+func (p *Pane) SetCatchingUp(value bool) {
+	if p == nil {
+		return
+	}
+	p.Session().SetCatchingUp(value)
+}
+
+func (p *Pane) DirtyTicks() int {
+	if p == nil {
+		return 0
+	}
+	return p.Session().DirtyTicks()
+}
+
+func (p *Pane) SetDirtyTicks(value int) {
+	if p == nil {
+		return
+	}
+	p.Session().SetDirtyTicks(value)
+}
+
+func (p *Pane) CleanTicks() int {
+	if p == nil {
+		return 0
+	}
+	return p.Session().CleanTicks()
+}
+
+func (p *Pane) SetCleanTicks(value int) {
+	if p == nil {
+		return
+	}
+	p.Session().SetCleanTicks(value)
+}
+
+func (p *Pane) SkipTick() bool {
+	return p != nil && p.Session().SkipTick()
+}
+
+func (p *Pane) SetSkipTick(value bool) {
+	if p == nil {
+		return
+	}
+	p.Session().SetSkipTick(value)
+}
+
+func (p *Pane) CellCache() [][]drawCell {
+	if p == nil {
+		return nil
+	}
+	return p.Session().CellCache()
+}
+
+func (p *Pane) SetCellCache(grid [][]drawCell) {
+	if p == nil {
+		return
+	}
+	p.Session().SetCellCache(grid)
+}
+
+func (p *Pane) ClearCellCache() {
+	if p == nil {
+		return
+	}
+	p.Session().ClearCellCache()
 }
 
 type textPrompt struct {
@@ -3291,28 +3375,27 @@ func (v *Viewport) markDirtyRegion(rowStart, rowEnd, colStart, colEnd int) {
 	if v == nil {
 		return
 	}
-	v.markDirtyRows(rowStart, rowEnd)
+	pane := &Pane{Viewport: v}
+	pane.markDirtyRows(rowStart, rowEnd)
 	if rowStart != rowEnd || colStart > colEnd {
-		v.dirtyColsKnown = false
-		v.dirtyColStart = 0
-		v.dirtyColEnd = 0
+		pane.ClearDirtyCols()
 		return
 	}
-	if !v.dirtyColsKnown {
-		v.dirtyColsKnown = true
-		v.dirtyColStart = colStart
-		v.dirtyColEnd = colEnd
+	currentStart, currentEnd, known := pane.DirtyCols()
+	if !known {
+		pane.SetDirtyCols(colStart, colEnd, true)
 		return
 	}
-	v.dirtyColStart = min(v.dirtyColStart, colStart)
-	v.dirtyColEnd = max(v.dirtyColEnd, colEnd)
+	pane.SetDirtyCols(min(currentStart, colStart), max(currentEnd, colEnd), true)
 }
 
 func (v *Viewport) clearDirtyRows() {
 	if v == nil {
 		return
 	}
-	(&Pane{Viewport: v}).ClearDirtyRows()
+	pane := &Pane{Viewport: v}
+	pane.ClearDirtyRows()
+	pane.ClearDirtyCols()
 }
 
 func (v *Viewport) clearDirtyRegion() {
@@ -3320,9 +3403,6 @@ func (v *Viewport) clearDirtyRegion() {
 		return
 	}
 	v.clearDirtyRows()
-	v.dirtyColsKnown = false
-	v.dirtyColStart = 0
-	v.dirtyColEnd = 0
 }
 
 func clampDirtyCol(col, cols int) int {
@@ -3364,7 +3444,7 @@ func (m *Model) handlePaneRecovered(msg paneRecoveredMsg) {
 		target.cellVersion++
 		target.MarkRenderDirty()
 		target.clearDirtyRegion()
-		target.cellCache = nil
+		target.ClearCellCache()
 		if tab := m.tabForPane(target.ID); tab != nil {
 			if viewW, viewH, ok := m.paneViewportSizeInTab(tab, target.ID); ok && m.syncViewport(target, viewW, viewH) {
 				tab.renderCache = nil
@@ -5043,7 +5123,7 @@ func (m *Model) unbindPaneTerminal(pane *Pane) {
 	pane.SetResizeAcquired(false)
 	pane.SetSyncLost(false)
 	pane.SetRecovering(false)
-	pane.catchingUp = false
+	pane.SetCatchingUp(false)
 	pane.SetDroppedBytes(0)
 	pane.MarkRenderDirty()
 	if ownedStream {
@@ -5079,7 +5159,7 @@ func (m *Model) markTerminalKilled(terminalID string) {
 			pane.cellVersion++
 			pane.MarkRenderDirty()
 			pane.clearDirtyRegion()
-			pane.cellCache = nil
+			pane.ClearCellCache()
 			tab.renderCache = nil
 			changed = true
 		}
@@ -5810,7 +5890,7 @@ func (m *Model) statusStateParts() []string {
 			if connection := paneConnectionStatus(m.workspace.Tabs, pane); connection != "" {
 				parts = append(parts, "connection:"+connection)
 			}
-			if pane.syncLost || pane.recovering || pane.catchingUp {
+			if pane.IsSyncLost() || pane.IsRecovering() || pane.IsCatchingUp() {
 				parts = append(parts, fmt.Sprintf("catching-up:%dB", pane.DroppedBytes()))
 			}
 		}
@@ -6750,7 +6830,7 @@ func (m *Model) ensurePaneRuntime(pane *Pane) bool {
 		loadSnapshotIntoVTerm(pane.VTerm, pane.Snapshot)
 	}
 	pane.MarkRenderDirty()
-	pane.cellCache = nil
+	pane.ClearCellCache()
 	pane.viewportCache = nil
 	m.logger.Warn("recreated missing pane runtime", "pane_id", pane.ID, "terminal_id", pane.TerminalID, "channel", pane.Channel)
 	return true
@@ -6862,7 +6942,7 @@ func (m *Model) resizeTerminalPanes(terminalID, skipPaneID string, cols, rows ui
 			pane.cellVersion++
 			pane.MarkRenderDirty()
 			pane.clearDirtyRegion()
-			pane.cellCache = nil
+			pane.ClearCellCache()
 			if viewW, viewH, ok := m.paneViewportSizeInTab(tab, pane.ID); ok && m.syncViewport(pane, viewW, viewH) {
 				tab.renderCache = nil
 				continue

@@ -58,7 +58,7 @@ func BenchmarkModelViewFourPanesOneDirty(b *testing.B) {
 		if active == nil {
 			b.Fatal("expected active pane")
 		}
-		active.renderDirty = true
+		active.MarkRenderDirty()
 		benchmarkStringSink = model.View()
 	}
 }
@@ -105,7 +105,7 @@ func BenchmarkRenderTabCompositeFourPanesContentOnlyDirty(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		active.renderDirty = true
+		active.MarkRenderDirty()
 		benchmarkStringSink = model.renderTabComposite(tab, model.width, model.height-2)
 	}
 }
@@ -124,7 +124,7 @@ func BenchmarkRenderTabCompositeFourPanesCursorOnly(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		prev := tab.Panes[tab.ActivePaneID]
 		if prev != nil {
-			prev.renderDirty = false
+			prev.ClearRenderDirty()
 		}
 		tab.ActivePaneID = ids[i%len(ids)]
 		benchmarkStringSink = model.renderTabComposite(tab, model.width, model.height-2)
@@ -143,7 +143,7 @@ func BenchmarkRenderTabCompositeFloatingOverlayTiledDirty(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		basePane.renderDirty = true
+		basePane.MarkRenderDirty()
 		benchmarkStringSink = model.renderTabComposite(tab, model.width, model.height-2)
 	}
 }
@@ -160,7 +160,7 @@ func BenchmarkRenderTabCompositeFloatingOverlayTiledDirtyRows(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		basePane.renderDirty = true
+		basePane.MarkRenderDirty()
 		basePane.SetDirtyRows(0, 0, true)
 		benchmarkStringSink = model.renderTabComposite(tab, model.width, model.height-2)
 	}
@@ -178,7 +178,7 @@ func BenchmarkRenderTabCompositeFloatingOverlayTiledDirtySpan(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		basePane.renderDirty = true
+		basePane.MarkRenderDirty()
 		basePane.SetDirtyRows(0, 0, true)
 		basePane.dirtyColsKnown = true
 		basePane.dirtyColStart = 0
@@ -201,7 +201,7 @@ func BenchmarkRenderTabCompositeFloatingOverlayActiveTiledDirtySpan(b *testing.B
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		basePane.renderDirty = true
+		basePane.MarkRenderDirty()
 		basePane.SetDirtyRows(0, 0, true)
 		basePane.dirtyColsKnown = true
 		basePane.dirtyColStart = 0
@@ -225,7 +225,7 @@ func BenchmarkRenderTabCompositeFloatingOverlayFloatingDirty(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		floatPane.renderDirty = true
+		floatPane.MarkRenderDirty()
 		benchmarkStringSink = model.renderTabComposite(tab, model.width, model.height-2)
 	}
 }
@@ -572,7 +572,7 @@ func writeBenchmarkContent(tb testing.TB, pane *Pane, index int) {
 		}
 	}
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 }
 
 func runCmdForBenchmark(tb testing.TB, model *Model, cmd tea.Cmd) {

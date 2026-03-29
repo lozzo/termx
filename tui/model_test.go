@@ -51,8 +51,8 @@ func TestTerminalLocationsUsesWorkbenchBackedWorkspaceState(t *testing.T) {
 func TestOpenTerminalPickerCmdUsesAppWorkspaceSync(t *testing.T) {
 	model := NewModel(&fakeClient{}, Config{DefaultShell: "/bin/sh"})
 	model.workspace = Workspace{
-		Name: "main",
-		Tabs: []*Tab{{Name: "1"}, {Name: "2", Panes: map[string]*Pane{"p2": {ID: "p2", Viewport: &Viewport{}}}, ActivePaneID: "p2"}},
+		Name:      "main",
+		Tabs:      []*Tab{{Name: "1"}, {Name: "2", Panes: map[string]*Pane{"p2": {ID: "p2", Viewport: &Viewport{}}}, ActivePaneID: "p2"}},
 		ActiveTab: 1,
 	}
 	if model.workbench == nil {
@@ -1738,7 +1738,7 @@ func TestFloatingViewportCanBeHiddenWithPrefixWUpper(t *testing.T) {
 		t.Fatal("expected base pane")
 	}
 	basePane.live = true
-	basePane.renderDirty = true
+	basePane.MarkRenderDirty()
 	_, _ = basePane.VTerm.Write([]byte("TILED-BASE"))
 
 	createFloatingPaneViaPicker(t, model)
@@ -1753,7 +1753,7 @@ func TestFloatingViewportCanBeHiddenWithPrefixWUpper(t *testing.T) {
 	}
 	floating.Rect = Rect{X: 4, Y: 2, W: 28, H: 8}
 	floatPane.live = true
-	floatPane.renderDirty = true
+	floatPane.MarkRenderDirty()
 	_, _ = floatPane.VTerm.Write([]byte("FLOAT-ONLY-XYZ"))
 
 	visibleView := xansi.Strip(model.View())
@@ -1859,10 +1859,10 @@ func TestFloatingViewportZOrderCommandsAffectRender(t *testing.T) {
 
 	_, _ = firstFloat.VTerm.Write([]byte("BOTTOM-LAYER"))
 	firstFloat.live = true
-	firstFloat.renderDirty = true
+	firstFloat.MarkRenderDirty()
 	_, _ = secondFloat.VTerm.Write([]byte("TOP-LAYER"))
 	secondFloat.live = true
-	secondFloat.renderDirty = true
+	secondFloat.MarkRenderDirty()
 
 	view := xansi.Strip(model.View())
 	if !strings.Contains(view, "TOP-LAYER") || strings.Contains(view, "BOTTOM-LAYER") {
@@ -1875,8 +1875,8 @@ func TestFloatingViewportZOrderCommandsAffectRender(t *testing.T) {
 		t.Fatalf("expected z-order change to be synchronous")
 	}
 
-	firstFloat.renderDirty = true
-	secondFloat.renderDirty = true
+	firstFloat.MarkRenderDirty()
+	secondFloat.MarkRenderDirty()
 	view = xansi.Strip(model.View())
 	if !strings.Contains(view, "BOTTOM-LAYER") || strings.Contains(view, "TOP-LAYER") {
 		t.Fatalf("expected lowered floating viewport to move behind bottom one, got:\n%s", view)
@@ -1884,8 +1884,8 @@ func TestFloatingViewportZOrderCommandsAffectRender(t *testing.T) {
 
 	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
-	firstFloat.renderDirty = true
-	secondFloat.renderDirty = true
+	firstFloat.MarkRenderDirty()
+	secondFloat.MarkRenderDirty()
 	view = xansi.Strip(model.View())
 	if !strings.Contains(view, "TOP-LAYER") || strings.Contains(view, "BOTTOM-LAYER") {
 		t.Fatalf("expected raise command to bring floating viewport back to top, got:\n%s", view)
@@ -2068,7 +2068,7 @@ func TestFloatingViewportRenderKeepsFrameVisibleAcrossUnderlyingRedraws(t *testi
 		t.Fatal("expected base pane")
 	}
 	basePane.live = true
-	basePane.renderDirty = true
+	basePane.MarkRenderDirty()
 	_, _ = basePane.VTerm.Write([]byte("BASE-LAYER"))
 
 	createFloatingPaneViaPicker(t, model)
@@ -2084,7 +2084,7 @@ func TestFloatingViewportRenderKeepsFrameVisibleAcrossUnderlyingRedraws(t *testi
 	floating.Rect = Rect{X: 8, Y: 4, W: 34, H: 10}
 	floatPane.Title = "float-monitor"
 	floatPane.live = true
-	floatPane.renderDirty = true
+	floatPane.MarkRenderDirty()
 	_, _ = floatPane.VTerm.Write([]byte("FLOAT-TOP"))
 
 	view := xansi.Strip(model.View())
@@ -2094,7 +2094,7 @@ func TestFloatingViewportRenderKeepsFrameVisibleAcrossUnderlyingRedraws(t *testi
 
 	for i := 0; i < 64; i++ {
 		_, _ = basePane.VTerm.Write([]byte(fmt.Sprintf("\rBASE-%02d", i)))
-		basePane.renderDirty = true
+		basePane.MarkRenderDirty()
 
 		view = xansi.Strip(model.View())
 		if !containsAll(view, "float-monitor", "FLOAT-TOP") {
@@ -2129,8 +2129,8 @@ func TestFloatingViewportTitlesIncludeZOrder(t *testing.T) {
 	tab.Floating[1].Rect = Rect{X: 44, Y: 3, W: 36, H: 8}
 	tab.Panes[tab.Floating[0].PaneID].Title = "float-a"
 	tab.Panes[tab.Floating[1].PaneID].Title = "float-b"
-	tab.Panes[tab.Floating[0].PaneID].renderDirty = true
-	tab.Panes[tab.Floating[1].PaneID].renderDirty = true
+	tab.Panes[tab.Floating[0].PaneID].MarkRenderDirty()
+	tab.Panes[tab.Floating[1].PaneID].MarkRenderDirty()
 
 	view := xansi.Strip(model.View())
 	if !containsAll(view, "shell-2 [floating z:1]", "shell-3 [floating z:2]") {
@@ -2156,7 +2156,7 @@ func TestHelpAndStatusShowViewportControlsAndState(t *testing.T) {
 	pane.VTerm.Resize(20, 6)
 	_, _ = pane.VTerm.Write([]byte("0123456789ABCDEFGHIJ"))
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 
 	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'M'}})
@@ -2165,7 +2165,7 @@ func TestHelpAndStatusShowViewportControlsAndState(t *testing.T) {
 	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
 	pane.Offset = Point{X: 4, Y: 0}
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 
 	model.width = 240
 	status := xansi.Strip(model.renderStatus())
@@ -2503,7 +2503,7 @@ func TestRenderTabCompositeFloatingRectChangeRebuildsOverlappedPaneFully(t *test
 		}},
 	}
 	bottom.live = false
-	bottom.renderDirty = true
+	bottom.MarkRenderDirty()
 	bottom.clearDirtyRegion()
 
 	top.Title = "top"
@@ -2515,7 +2515,7 @@ func TestRenderTabCompositeFloatingRectChangeRebuildsOverlappedPaneFully(t *test
 		}},
 	}
 	top.live = false
-	top.renderDirty = true
+	top.MarkRenderDirty()
 	top.clearDirtyRegion()
 
 	initial := xansi.Strip(model.renderTabComposite(tab, model.width, model.height-2))
@@ -2526,7 +2526,7 @@ func TestRenderTabCompositeFloatingRectChangeRebuildsOverlappedPaneFully(t *test
 		t.Fatalf("expected top floating pane to occlude bottom pane before move, got:\n%s", initial)
 	}
 
-	bottom.renderDirty = true
+	bottom.MarkRenderDirty()
 	bottom.SetDirtyRows(0, 0, true)
 
 	tab.Floating[1].Rect = Rect{X: 48, Y: 3, W: 32, H: 8}
@@ -2574,7 +2574,7 @@ func TestRenderTabCompositeOverlapRedrawRestoresTopFloatingPaneFully(t *testing.
 		}},
 	}
 	bottom.live = false
-	bottom.renderDirty = true
+	bottom.MarkRenderDirty()
 	bottom.clearDirtyRegion()
 
 	top.Title = "top"
@@ -2588,7 +2588,7 @@ func TestRenderTabCompositeOverlapRedrawRestoresTopFloatingPaneFully(t *testing.
 		}},
 	}
 	top.live = false
-	top.renderDirty = true
+	top.MarkRenderDirty()
 	top.clearDirtyRegion()
 
 	initial := xansi.Strip(model.renderTabComposite(tab, model.width, model.height-2))
@@ -2603,10 +2603,10 @@ func TestRenderTabCompositeOverlapRedrawRestoresTopFloatingPaneFully(t *testing.
 			stringToProtocolRow("BOTTOM-LIVE-1"),
 		}},
 	}
-	bottom.renderDirty = true
+	bottom.MarkRenderDirty()
 	bottom.SetDirtyRows(0, 0, true)
 
-	top.renderDirty = true
+	top.MarkRenderDirty()
 	top.SetDirtyRows(0, 0, true)
 
 	out := xansi.Strip(model.renderTabComposite(tab, model.width, model.height-2))
@@ -2645,12 +2645,12 @@ func TestRenderTabCompositeFloatingRectDamageRedrawsLivePaneUnderMovedOverlay(t 
 
 	bottom.Title = "bottom"
 	bottom.live = true
-	bottom.renderDirty = true
+	bottom.MarkRenderDirty()
 	_, _ = bottom.VTerm.Write([]byte("BOTTOM-ROW-0\r\nBOTTOM-ROW-1\r\nBOTTOM-ROW-2"))
 
 	top.Title = "top"
 	top.live = true
-	top.renderDirty = true
+	top.MarkRenderDirty()
 	_, _ = top.VTerm.Write([]byte("TOP-LAYER"))
 
 	initial := xansi.Strip(model.renderTabComposite(tab, model.width, model.height-2))
@@ -2695,12 +2695,12 @@ func TestMouseDragFloatingPaneKeepsPreviouslyOccludedLivePaneVisible(t *testing.
 
 	bottom.Title = "bottom"
 	bottom.live = true
-	bottom.renderDirty = true
+	bottom.MarkRenderDirty()
 	_, _ = bottom.VTerm.Write([]byte("BOTTOM-ROW-0\r\nBOTTOM-ROW-1\r\nBOTTOM-ROW-2"))
 
 	top.Title = "top"
 	top.live = true
-	top.renderDirty = true
+	top.MarkRenderDirty()
 	_, _ = top.VTerm.Write([]byte("TOP-LAYER"))
 
 	initial := xansi.Strip(model.View())
@@ -2726,7 +2726,7 @@ func TestDrawPaneBodyAltScreenBypassesDirtyRowOptimization(t *testing.T) {
 		},
 	}
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 	pane.SetDirtyRows(0, 0, true)
 
 	_, _ = pane.VTerm.Write([]byte("SHELL-A\r\n"))
@@ -2835,7 +2835,7 @@ func TestModelViewPreservesAnsiColors(t *testing.T) {
 	}
 	_, _ = pane.VTerm.Write([]byte("\x1b[31mRED\x1b[0m"))
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 
 	view := model.View()
 	if !strings.Contains(view, "\x1b[") {
@@ -2862,7 +2862,7 @@ func TestExitedPaneHistoryUsesNeutralForeground(t *testing.T) {
 	}
 	_, _ = pane.VTerm.Write([]byte("\x1b[31mRED\x1b[0m"))
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 	model.markTerminalExited(pane.TerminalID, 0)
 
 	view := model.View()
@@ -2901,7 +2901,6 @@ func TestExitedSnapshotHistoryUsesNeutralForeground(t *testing.T) {
 					}},
 				},
 			},
-			renderDirty: true,
 		},
 	}
 	tab.Panes[pane.ID] = pane
@@ -2938,7 +2937,7 @@ func TestLivePaneRenderPreservesDefaultTerminalColors(t *testing.T) {
 		t.Fatalf("write failed: %v", err)
 	}
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 
 	model.handleInputEvent(uv.ForegroundColorEvent{Color: color.RGBA{R: 0x11, G: 0x22, B: 0x33, A: 0xff}})
 	model.handleInputEvent(uv.BackgroundColorEvent{Color: color.RGBA{R: 0xaa, G: 0xbb, B: 0xcc, A: 0xff}})
@@ -2989,7 +2988,7 @@ func TestLivePaneRenderPreservesAnsiPaletteIndices(t *testing.T) {
 		t.Fatalf("write failed: %v", err)
 	}
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 
 	model.handleInputEvent(uv.UnknownOscEvent("\x1b]4;1;rgb:12/34/56\x07"))
 
@@ -3036,11 +3035,11 @@ func TestHostTerminalColorChangeDoesNotDirtyRenderedPane(t *testing.T) {
 		t.Fatalf("write failed: %v", err)
 	}
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 
 	beforeView := model.View()
 	beforeVersion := pane.cellVersion
-	if pane.renderDirty {
+	if pane.IsRenderDirty() {
 		t.Fatal("expected pane to be clean after render")
 	}
 	model.renderDirty = false
@@ -3048,7 +3047,7 @@ func TestHostTerminalColorChangeDoesNotDirtyRenderedPane(t *testing.T) {
 	model.handleInputEvent(uv.ForegroundColorEvent{Color: color.RGBA{R: 0x12, G: 0x34, B: 0x56, A: 0xff}})
 	model.handleInputEvent(uv.BackgroundColorEvent{Color: color.RGBA{R: 0x65, G: 0x43, B: 0x21, A: 0xff}})
 
-	if pane.renderDirty {
+	if pane.IsRenderDirty() {
 		t.Fatal("expected host default color change not to dirty rendered pane")
 	}
 	if pane.cellVersion != beforeVersion {
@@ -3080,18 +3079,18 @@ func TestHostPaletteColorChangeDoesNotDirtyRenderedPane(t *testing.T) {
 		t.Fatalf("write failed: %v", err)
 	}
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 
 	beforeView := model.View()
 	beforeVersion := pane.cellVersion
-	if pane.renderDirty {
+	if pane.IsRenderDirty() {
 		t.Fatal("expected pane to be clean after render")
 	}
 	model.renderDirty = false
 
 	model.handleInputEvent(uv.UnknownOscEvent("\x1b]4;1;rgb:12/34/56\x07"))
 
-	if pane.renderDirty {
+	if pane.IsRenderDirty() {
 		t.Fatal("expected host palette color change not to dirty rendered pane")
 	}
 	if pane.cellVersion != beforeVersion {
@@ -3121,7 +3120,7 @@ func TestModelViewRendersCJKWithoutInsertedSpaces(t *testing.T) {
 	}
 	_, _ = pane.VTerm.Write([]byte("你a好"))
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 
 	view := xansi.Strip(model.View())
 	if !strings.Contains(view, "你a好") {
@@ -3149,7 +3148,7 @@ func TestModelViewRendersUnicodeClustersWithoutInsertedSpaces(t *testing.T) {
 	text := "e\u0301🙂한글"
 	_, _ = pane.VTerm.Write([]byte(text))
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 
 	view := xansi.Strip(model.View())
 	if !strings.Contains(view, norm.NFC.String(text)) {
@@ -3176,7 +3175,7 @@ func TestActivePaneRendersVisibleCursor(t *testing.T) {
 	}
 	_, _ = pane.VTerm.Write([]byte("\x1b[?25hcursor"))
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 
 	cursor := paneCursorForViewport(pane, model.width-2, model.height-3)
 	if !cursor.Visible || cursor.Row != 0 || cursor.Col != 6 {
@@ -5176,7 +5175,7 @@ func TestDirectViewModePansWithoutSubmode(t *testing.T) {
 	pane.VTerm.Resize(80, 12)
 	_, _ = pane.VTerm.Write([]byte(strings.Repeat("0123456789", 8)))
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 	pane.Mode = ViewportModeFixed
 	pane.Pin = true
 	pane.Offset = Point{}
@@ -8078,12 +8077,11 @@ func TestModelResizeMessageResizesAllSharedTerminalVTerms(t *testing.T) {
 		ID:    "pane-shared-float",
 		Title: "shared-float",
 		Viewport: &Viewport{
-			TerminalID:  base.TerminalID,
-			Channel:     base.Channel + 100,
-			VTerm:       localvterm.New(72, 18, 100, nil),
-			Snapshot:    sharedSnap,
-			Mode:        ViewportModeFixed,
-			renderDirty: true,
+			TerminalID: base.TerminalID,
+			Channel:    base.Channel + 100,
+			VTerm:      localvterm.New(72, 18, 100, nil),
+			Snapshot:   sharedSnap,
+			Mode:       ViewportModeFixed,
 		},
 	}
 	tab.Panes[floatPane.ID] = floatPane
@@ -8105,8 +8103,7 @@ func TestModelResizeMessageResizesAllSharedTerminalVTerms(t *testing.T) {
 				TerminalID: base.TerminalID,
 				Size:       protocol.Size{Cols: 64, Rows: 16},
 			},
-			Mode:        ViewportModeFit,
-			renderDirty: true,
+			Mode: ViewportModeFit,
 		},
 	}
 	secondTab.Panes[secondPane.ID] = secondPane
@@ -8162,8 +8159,7 @@ func TestResizeVisiblePanesUsesPreservedSharedOwner(t *testing.T) {
 				TerminalID: base.TerminalID,
 				Size:       protocol.Size{Cols: 64, Rows: 16},
 			},
-			Mode:        ViewportModeFit,
-			renderDirty: true,
+			Mode: ViewportModeFit,
 		},
 	}
 	tab.Panes[sharedPane.ID] = sharedPane
@@ -8210,8 +8206,7 @@ func TestResizeVisiblePanesUsesAcquiredSharedPane(t *testing.T) {
 				TerminalID: base.TerminalID,
 				Size:       protocol.Size{Cols: 64, Rows: 16},
 			},
-			Mode:        ViewportModeFit,
-			renderDirty: true,
+			Mode: ViewportModeFit,
 		},
 	}
 	tab.Panes[sharedPane.ID] = sharedPane
@@ -8345,8 +8340,7 @@ func TestAttachFloatingSharedPaneKeepsExistingResizeOwner(t *testing.T) {
 				TerminalID: base.TerminalID,
 				Size:       protocol.Size{Cols: 64, Rows: 16},
 			},
-			Mode:        ViewportModeFit,
-			renderDirty: true,
+			Mode: ViewportModeFit,
 		},
 	}
 
@@ -8400,8 +8394,7 @@ func TestViewRefreshesOwnerBadgesAndFocusBordersAfterSharedFloatingAttach(t *tes
 				TerminalID: base.TerminalID,
 				Size:       protocol.Size{Cols: 64, Rows: 16},
 			},
-			Mode:        ViewportModeFit,
-			renderDirty: true,
+			Mode: ViewportModeFit,
 		},
 	}
 	model.attachPane(paneCreatedMsg{
@@ -8681,8 +8674,7 @@ func TestHandlePaneOutputMirrorsSharedTerminalToAllPanes(t *testing.T) {
 				TerminalID: base.TerminalID,
 				Size:       protocol.Size{Cols: 80, Rows: 24},
 			},
-			Mode:        ViewportModeFixed,
-			renderDirty: true,
+			Mode: ViewportModeFixed,
 		},
 	}
 	tab.Panes[floatPane.ID] = floatPane
@@ -8797,7 +8789,7 @@ func TestPaneCellsUsesCacheUntilDirty(t *testing.T) {
 
 	_, _ = pane.VTerm.Write([]byte("changed"))
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 	third := paneCells(pane)
 	if &third[0] == &second[0] {
 		t.Fatal("expected dirty pane to rebuild cache")
@@ -8832,31 +8824,31 @@ func TestOneDirtyPaneDoesNotInvalidateSiblingCaches(t *testing.T) {
 
 	_, _ = left.VTerm.Write([]byte("left side"))
 	left.live = true
-	left.renderDirty = true
+	left.MarkRenderDirty()
 	_, _ = right.VTerm.Write([]byte("right side"))
 	right.live = true
-	right.renderDirty = true
+	right.MarkRenderDirty()
 
 	_ = model.View()
-	if left.renderDirty || right.renderDirty {
+	if left.IsRenderDirty() || right.IsRenderDirty() {
 		t.Fatal("expected initial render to clear dirty flags")
 	}
-	leftCached := firstCellPtr(left.cellCache)
-	rightCached := firstCellPtr(right.cellCache)
+	leftCached := firstCellPtr(left.CellCache())
+	rightCached := firstCellPtr(right.CellCache())
 
 	_, _ = left.VTerm.Write([]byte("\r\nchanged"))
 	left.live = true
-	left.renderDirty = true
+	left.MarkRenderDirty()
 
 	_ = model.View()
 
-	if left.renderDirty {
+	if left.IsRenderDirty() {
 		t.Fatal("expected dirty pane render to be flushed")
 	}
-	if got := firstCellPtr(right.cellCache); got != rightCached {
+	if got := firstCellPtr(right.CellCache()); got != rightCached {
 		t.Fatal("expected clean sibling pane cache to be reused")
 	}
-	if leftCached == nil && firstCellPtr(left.cellCache) != nil {
+	if leftCached == nil && firstCellPtr(left.CellCache()) != nil {
 		t.Fatal("expected live pane direct render to avoid populating full grid cache")
 	}
 }
@@ -9005,7 +8997,7 @@ func TestSyncLostRecoversPaneFromSnapshotAndKeepsStreaming(t *testing.T) {
 	}
 	_, _ = pane.VTerm.Write([]byte("stale"))
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 
 	_, cmd := model.Update(paneOutputMsg{
 		paneID: pane.ID,
@@ -9207,7 +9199,7 @@ func TestContinuousDirtyPaneEntersCatchingUpAndEventuallyRecovers(t *testing.T) 
 		_, _ = model.Update(renderTickMsg{})
 	}
 
-	if !pane.catchingUp {
+	if !pane.IsCatchingUp() {
 		t.Fatal("expected pane to enter catching-up mode after sustained dirty ticks")
 	}
 	if got := xansi.Strip(model.renderStatus()); !strings.Contains(got, "0B") {
@@ -9215,12 +9207,12 @@ func TestContinuousDirtyPaneEntersCatchingUpAndEventuallyRecovers(t *testing.T) 
 	}
 
 	for i := 0; i < 5; i++ {
-		pane.renderDirty = false
+		pane.ClearRenderDirty()
 		now = now.Add(model.renderInterval)
 		_, _ = model.Update(renderTickMsg{})
 	}
 
-	if pane.catchingUp {
+	if pane.IsCatchingUp() {
 		t.Fatal("expected pane to leave catching-up mode after clean ticks")
 	}
 }
@@ -9255,7 +9247,7 @@ func TestFixedModeViewportRendersCroppedContentAroundCursor(t *testing.T) {
 	pane.VTerm.Resize(20, 6)
 	_, _ = pane.VTerm.Write([]byte("0123456789ABCDEFGHIJ"))
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 
 	_ = activatePrefixForTest(model)
 	_, resizeCmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'M'}})
@@ -9295,7 +9287,7 @@ func TestPinnedFixedViewportAllowsManualOffsetPan(t *testing.T) {
 	pane.VTerm.Resize(20, 6)
 	_, _ = pane.VTerm.Write([]byte("0123456789ABCDEFGHIJ"))
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 
 	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'M'}})
@@ -9303,7 +9295,7 @@ func TestPinnedFixedViewportAllowsManualOffsetPan(t *testing.T) {
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'P'}})
 
 	pane.Offset = Point{X: 0, Y: 0}
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 	before := xansi.Strip(model.View())
 
 	_ = activatePrefixForTest(model)
@@ -9336,7 +9328,7 @@ func TestPinnedFixedViewportPanClampsToContentBounds(t *testing.T) {
 	pane.VTerm.Resize(20, 6)
 	_, _ = pane.VTerm.Write([]byte("0123456789ABCDEFGHIJ"))
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 
 	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'M'}})
@@ -9378,7 +9370,7 @@ func TestUnpinnedFixedViewportResumesCursorFollow(t *testing.T) {
 	pane.VTerm.Resize(20, 6)
 	_, _ = pane.VTerm.Write([]byte("0123456789ABCDEFGHIJ"))
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 
 	_ = activatePrefixForTest(model)
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'M'}})
@@ -9458,7 +9450,7 @@ func TestConsumePrefixInputHandlesCtrlPanKeys(t *testing.T) {
 	pane.VTerm.Resize(20, 6)
 	_, _ = pane.VTerm.Write([]byte("0123456789ABCDEFGHIJ"))
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 	pane.Mode = ViewportModeFixed
 	pane.Pin = true
 	pane.Offset = Point{X: 0, Y: 0}
@@ -9560,8 +9552,8 @@ func TestCatchingUpSkipsAlternateRenderTicks(t *testing.T) {
 	if pane == nil {
 		t.Fatal("expected active pane")
 	}
-	pane.catchingUp = true
-	pane.renderDirty = true
+	pane.SetCatchingUp(true)
+	pane.MarkRenderDirty()
 	model.renderCache = "cached"
 	model.renderDirty = false
 	model.renderPending.Store(true)
@@ -9644,9 +9636,8 @@ func TestComposedCanvasDrawPaneBodyKeepsBorderRowsClean(t *testing.T) {
 		ID:    "pane-001",
 		Title: "demo",
 		Viewport: &Viewport{
-			VTerm:       localvterm.New(16, 4, 100, nil),
-			live:        true,
-			renderDirty: true,
+			VTerm: localvterm.New(16, 4, 100, nil),
+			live:  true,
 		},
 	}
 	if _, err := pane.VTerm.Write([]byte("before")); err != nil {
@@ -9661,7 +9652,7 @@ func TestComposedCanvasDrawPaneBodyKeepsBorderRowsClean(t *testing.T) {
 	if _, err := pane.VTerm.Write([]byte("\rafter")); err != nil {
 		t.Fatalf("write updated content: %v", err)
 	}
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 
 	canvas.drawPaneBody(rect, pane, true)
 
@@ -9758,6 +9749,7 @@ func TestComposedCanvasDrawPaneBodyDirtyRowsKeepsOtherContentRowsClean(t *testin
 	if _, err := pane.VTerm.Write([]byte("row0\nrow1\nrow2")); err != nil {
 		t.Fatalf("write initial content: %v", err)
 	}
+	pane.SetDirtyRows(1, 1, true)
 
 	canvas := newComposedCanvas(14, 6)
 	rect := Rect{X: 0, Y: 0, W: 14, H: 6}
@@ -9768,7 +9760,7 @@ func TestComposedCanvasDrawPaneBodyDirtyRowsKeepsOtherContentRowsClean(t *testin
 	}
 	canvas.fullDirty = false
 
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 	pane.SetDirtyRows(1, 1, true)
 	canvas.drawPaneBody(rect, pane, false)
 
@@ -9784,7 +9776,7 @@ func TestComposedCanvasDrawPaneBodyDirtyRowsKeepsOtherContentRowsClean(t *testin
 	if canvas.rowDirty[3] {
 		t.Fatal("expected lower untouched content row to stay clean")
 	}
-	if _, _, known := pane.DirtyRows(); pane.renderDirty || known {
+	if pane.IsRenderDirty() {
 		t.Fatal("expected dirty row state to clear after redraw")
 	}
 }
@@ -9818,6 +9810,8 @@ func TestComposedCanvasDrawPaneBodyDirtyRegionKeepsOtherColumnsClean(t *testing.
 			dirtyColEnd:    5,
 		},
 	}
+	pane.SetDirtyRows(0, 0, true)
+	pane.SetDirtyCols(3, 5, true)
 
 	canvas := newComposedCanvas(18, 5)
 	rect := Rect{X: 0, Y: 0, W: 18, H: 5}
@@ -9825,20 +9819,16 @@ func TestComposedCanvasDrawPaneBodyDirtyRegionKeepsOtherColumnsClean(t *testing.
 	canvas.drawText(Rect{X: 1, Y: 1, W: 16, H: 1}, []string{"abcdefghijklmnop"}, drawStyle{})
 
 	pane.Snapshot.Screen.Cells[0] = makeRow("abcXYZghijklmnop")
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 	pane.SetDirtyRows(0, 0, true)
-	pane.dirtyColsKnown = true
-	pane.dirtyColStart = 3
-	pane.dirtyColEnd = 5
+	pane.SetDirtyCols(3, 5, true)
 	canvas.drawPaneBody(rect, pane, false)
 
 	body := xansi.Strip(rowToANSI(canvas.cells[1]))
 	if !strings.Contains(body, "abcXYZgh") {
 		t.Fatalf("expected updated mid-row segment, got %q", body)
 	}
-	if pane.dirtyColsKnown {
-		t.Fatal("expected dirty column state to clear after redraw")
-	}
+
 }
 
 func TestComposedCanvasDrawPaneBodyDirtyRegionSupportsActivePaneCursor(t *testing.T) {
@@ -9871,6 +9861,8 @@ func TestComposedCanvasDrawPaneBodyDirtyRegionSupportsActivePaneCursor(t *testin
 			dirtyColEnd:    8,
 		},
 	}
+	pane.SetDirtyRows(0, 0, true)
+	pane.SetDirtyCols(3, 8, true)
 
 	canvas := newComposedCanvas(18, 5)
 	rect := Rect{X: 0, Y: 0, W: 18, H: 5}
@@ -9878,11 +9870,9 @@ func TestComposedCanvasDrawPaneBodyDirtyRegionSupportsActivePaneCursor(t *testin
 	canvas.drawText(Rect{X: 1, Y: 1, W: 16, H: 1}, []string{"abcdefghijklmnop"}, drawStyle{})
 
 	pane.Snapshot.Screen.Cells[0] = makeRow("abcXYZghijklmnop")
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 	pane.SetDirtyRows(0, 0, true)
-	pane.dirtyColsKnown = true
-	pane.dirtyColStart = 3
-	pane.dirtyColEnd = 8
+	pane.SetDirtyCols(3, 8, true)
 	pane.Snapshot.Cursor.Col = 8
 	canvas.drawPaneBody(rect, pane, true)
 
@@ -9925,9 +9915,8 @@ func TestComposedCanvasDrawPaneCursorOnlyKeepsNonCursorRowsClean(t *testing.T) {
 		ID:    "pane-001",
 		Title: "demo",
 		Viewport: &Viewport{
-			VTerm:       localvterm.New(16, 4, 100, nil),
-			live:        true,
-			renderDirty: true,
+			VTerm: localvterm.New(16, 4, 100, nil),
+			live:  true,
 		},
 	}
 	if _, err := pane.VTerm.Write([]byte("cursor")); err != nil {
@@ -10009,11 +9998,11 @@ func TestPaneCellsForViewportCachesFixedCropForStableViewport(t *testing.T) {
 		Viewport: &Viewport{
 			Mode:        ViewportModeFixed,
 			Offset:      Point{X: 1, Y: 0},
-			cellCache:   [][]drawCell{stringToDrawCells("012345", drawStyle{}), stringToDrawCells("abcdef", drawStyle{})},
 			cellVersion: 1,
 		},
 	}
 
+	pane.SetCellCache([][]drawCell{stringToDrawCells("012345", drawStyle{}), stringToDrawCells("abcdef", drawStyle{})})
 	first := paneCellsForViewport(pane, 3, 2)
 	second := paneCellsForViewport(pane, 3, 2)
 	if len(first) == 0 || len(first[0]) == 0 {
@@ -10047,13 +10036,13 @@ func TestPaneCellsForViewportInvalidatesFixedCropWhenBaseGridChanges(t *testing.
 		Viewport: &Viewport{
 			Mode:        ViewportModeFixed,
 			Offset:      Point{X: 1, Y: 0},
-			cellCache:   [][]drawCell{stringToDrawCells("012345", drawStyle{})},
 			cellVersion: 1,
 		},
 	}
 
+	pane.SetCellCache([][]drawCell{stringToDrawCells("012345", drawStyle{})})
 	first := paneCellsForViewport(pane, 3, 1)
-	pane.cellCache = [][]drawCell{stringToDrawCells("xyz789", drawStyle{})}
+	pane.SetCellCache([][]drawCell{stringToDrawCells("xyz789", drawStyle{})})
 	pane.cellVersion++
 
 	second := paneCellsForViewport(pane, 3, 1)
@@ -10069,11 +10058,11 @@ func TestPaneCellsForViewportFixedLivePathAvoidsMaterializingFullGrid(t *testing
 	pane := &Pane{
 		ID: "pane-001",
 		Viewport: &Viewport{
-			Mode:        ViewportModeFixed,
-			Offset:      Point{X: 2, Y: 0},
-			VTerm:       localvterm.New(12, 4, 100, nil),
-			live:        true,
-			renderDirty: true,
+			Mode:   ViewportModeFixed,
+			Offset: Point{X: 2, Y: 0},
+			VTerm:  localvterm.New(12, 4, 100, nil),
+			live:   true,
+
 			cellVersion: 7,
 		},
 	}
@@ -10085,10 +10074,10 @@ func TestPaneCellsForViewportFixedLivePathAvoidsMaterializingFullGrid(t *testing
 	if got := rowToANSI(first[0]); got != "2345" {
 		t.Fatalf("expected cropped live viewport row 2345, got %q", got)
 	}
-	if pane.cellCache != nil {
+	if pane.CellCache() != nil {
 		t.Fatal("expected fixed live viewport render to avoid populating full grid cache")
 	}
-	if pane.renderDirty {
+	if pane.IsRenderDirty() {
 		t.Fatal("expected viewport render to clear dirty flag")
 	}
 
@@ -10115,16 +10104,16 @@ func TestViewLiveFitPaneAvoidsMaterializingFullGrid(t *testing.T) {
 		t.Fatalf("write vterm: %v", err)
 	}
 	pane.live = true
-	pane.renderDirty = true
+	pane.MarkRenderDirty()
 
 	view := xansi.Strip(model.View())
 	if !strings.Contains(view, "fit-direct-path") {
 		t.Fatalf("expected rendered output, got:\n%s", view)
 	}
-	if pane.cellCache != nil {
+	if pane.CellCache() != nil {
 		t.Fatal("expected live fit view render to avoid full grid cache")
 	}
-	if pane.renderDirty {
+	if pane.IsRenderDirty() {
 		t.Fatal("expected live fit render to clear dirty flag")
 	}
 }
@@ -10151,17 +10140,17 @@ func TestViewSnapshotFitPaneAvoidsMaterializingFullGrid(t *testing.T) {
 		},
 		Cursor: protocol.CursorState{Visible: true},
 	}
-	pane.renderDirty = true
-	pane.cellCache = nil
+	pane.MarkRenderDirty()
+	pane.ClearCellCache()
 
 	view := xansi.Strip(model.View())
 	if !strings.Contains(view, "snapshot-direct") {
 		t.Fatalf("expected rendered snapshot output, got:\n%s", view)
 	}
-	if pane.cellCache != nil {
+	if pane.CellCache() != nil {
 		t.Fatal("expected snapshot fit view render to avoid full grid cache")
 	}
-	if pane.renderDirty {
+	if pane.IsRenderDirty() {
 		t.Fatal("expected snapshot fit render to clear dirty flag")
 	}
 }

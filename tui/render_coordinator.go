@@ -118,7 +118,7 @@ func (m *Model) anyPaneDirty() bool {
 			continue
 		}
 		for _, pane := range tab.Panes {
-			if pane != nil && pane.renderDirty {
+			if pane != nil && pane.IsRenderDirty() {
 				return true
 			}
 		}
@@ -136,15 +136,15 @@ func (m *Model) updateBackpressureState() bool {
 			if pane == nil {
 				continue
 			}
-			if pane.renderDirty {
-				pane.dirtyTicks++
-				pane.cleanTicks = 0
-				if pane.dirtyTicks >= 30 {
-					pane.catchingUp = true
+			if pane.IsRenderDirty() {
+				pane.SetDirtyTicks(pane.DirtyTicks() + 1)
+				pane.SetCleanTicks(0)
+				if pane.DirtyTicks() >= 30 {
+					pane.SetCatchingUp(true)
 				}
-				if pane.catchingUp {
-					pane.skipTick = !pane.skipTick
-					if pane.skipTick {
+				if pane.IsCatchingUp() {
+					pane.SetSkipTick(!pane.SkipTick())
+					if pane.SkipTick() {
 						continue
 					}
 				}
@@ -152,13 +152,13 @@ func (m *Model) updateBackpressureState() bool {
 				continue
 			}
 
-			pane.dirtyTicks = 0
-			if pane.catchingUp {
-				pane.cleanTicks++
-				if pane.cleanTicks >= 5 {
-					pane.catchingUp = false
-					pane.cleanTicks = 0
-					pane.skipTick = false
+			pane.SetDirtyTicks(0)
+			if pane.IsCatchingUp() {
+				pane.SetCleanTicks(pane.CleanTicks() + 1)
+				if pane.CleanTicks() >= 5 {
+					pane.SetCatchingUp(false)
+					pane.SetCleanTicks(0)
+					pane.SetSkipTick(false)
 				}
 			}
 		}

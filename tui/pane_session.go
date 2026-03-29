@@ -36,6 +36,30 @@ type PaneSession struct {
 	dirtyColEnd     int
 }
 
+func cloneDrawCellGrid(grid [][]drawCell) [][]drawCell {
+	if grid == nil {
+		return nil
+	}
+	owned := make([][]drawCell, len(grid))
+	for i, row := range grid {
+		if row != nil {
+			owned[i] = append([]drawCell(nil), row...)
+		}
+	}
+	return owned
+}
+
+func clonePaneSession(session *PaneSession) *PaneSession {
+	if session == nil {
+		return nil
+	}
+	owned := *session
+	owned.stopStream = nil
+	owned.cellCache = cloneDrawCellGrid(session.cellCache)
+	owned.viewportCache = cloneDrawCellGrid(session.viewportCache)
+	return &owned
+}
+
 func (s *PaneSession) IsRenderDirty() bool {
 	return s != nil && s.renderDirty
 }
@@ -52,6 +76,27 @@ func (s *PaneSession) ClearRenderDirty() {
 		return
 	}
 	s.renderDirty = false
+}
+
+func (s *PaneSession) CellCache() [][]drawCell {
+	if s == nil {
+		return nil
+	}
+	return s.cellCache
+}
+
+func (s *PaneSession) SetCellCache(grid [][]drawCell) {
+	if s == nil {
+		return
+	}
+	s.cellCache = grid
+}
+
+func (s *PaneSession) ClearCellCache() {
+	if s == nil {
+		return
+	}
+	s.cellCache = nil
 }
 
 func (s *PaneSession) IsSyncLost() bool {
@@ -95,6 +140,56 @@ func (s *PaneSession) SetRecovering(value bool) {
 		return
 	}
 	s.recovering = value
+}
+
+func (s *PaneSession) IsCatchingUp() bool {
+	return s != nil && s.catchingUp
+}
+
+func (s *PaneSession) SetCatchingUp(value bool) {
+	if s == nil {
+		return
+	}
+	s.catchingUp = value
+}
+
+func (s *PaneSession) DirtyTicks() int {
+	if s == nil {
+		return 0
+	}
+	return s.dirtyTicks
+}
+
+func (s *PaneSession) SetDirtyTicks(value int) {
+	if s == nil {
+		return
+	}
+	s.dirtyTicks = value
+}
+
+func (s *PaneSession) CleanTicks() int {
+	if s == nil {
+		return 0
+	}
+	return s.cleanTicks
+}
+
+func (s *PaneSession) SetCleanTicks(value int) {
+	if s == nil {
+		return
+	}
+	s.cleanTicks = value
+}
+
+func (s *PaneSession) SkipTick() bool {
+	return s != nil && s.skipTick
+}
+
+func (s *PaneSession) SetSkipTick(value bool) {
+	if s == nil {
+		return
+	}
+	s.skipTick = value
 }
 
 func (s *PaneSession) IsResizeAcquired() bool {

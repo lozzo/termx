@@ -151,7 +151,7 @@ func (m *Model) renderTabComposite(tab *Tab, width, height int) string {
 			damage = append(damage, entry.Rect)
 			continue
 		}
-		if pane == nil || !pane.renderDirty {
+		if pane == nil || !pane.IsRenderDirty() {
 			continue
 		}
 		cache.canvas.drawPaneBody(entry.Rect, pane, active)
@@ -284,7 +284,7 @@ func (c *composedCanvas) drawPaneBodyFull(rect Rect, pane *Pane, active bool) {
 
 func (c *composedCanvas) drawPaneBodyDirtyRows(contentRect Rect, pane *Pane) bool {
 	rowStart, rowEnd, rowsKnown := pane.DirtyRows()
-	if pane == nil || !rowsKnown || !pane.renderDirty {
+	if pane == nil || !rowsKnown || !pane.IsRenderDirty() {
 		return false
 	}
 	switch {
@@ -301,15 +301,16 @@ func (c *composedCanvas) drawPaneBodyDirtyRows(contentRect Rect, pane *Pane) boo
 	end := min(rowEnd-offset.Y, contentRect.H-1)
 	if start > end {
 		pane.clearDirtyRegion()
-		pane.renderDirty = false
+		pane.ClearRenderDirty()
 		return true
 	}
 	for row := start; row <= end; row++ {
 		rowRect := Rect{X: contentRect.X, Y: contentRect.Y + row, W: contentRect.W, H: 1}
 		viewColStart := 0
-		if pane.dirtyColsKnown && rowStart == rowEnd && row == start {
-			colStart := max(pane.dirtyColStart-offset.X, 0)
-			colEnd := min(pane.dirtyColEnd-offset.X, contentRect.W-1)
+		colStart, colEnd, colsKnown := pane.DirtyCols()
+		if colsKnown && rowStart == rowEnd && row == start {
+			colStart = max(colStart-offset.X, 0)
+			colEnd = min(colEnd-offset.X, contentRect.W-1)
 			if colStart <= colEnd {
 				viewColStart = colStart
 				rowRect.X += colStart
@@ -319,7 +320,7 @@ func (c *composedCanvas) drawPaneBodyDirtyRows(contentRect Rect, pane *Pane) boo
 		c.fill(rowRect, blankDrawCell())
 		c.drawPaneSourceRow(rowRect, pane, row, viewColStart)
 	}
-	pane.renderDirty = false
+	pane.ClearRenderDirty()
 	pane.clearDirtyRegion()
 	return true
 }
@@ -335,7 +336,7 @@ func (c *composedCanvas) drawPaneSource(rect Rect, pane *Pane) bool {
 		c.drawSourceRegion(rect, offset, contentW, contentH, func(x, y int) drawCell {
 			return normalizePaneDrawCellStyle(pane, drawCellFromVTermCell(pane.VTerm.CellAt(x, y)))
 		})
-		pane.renderDirty = false
+		pane.ClearRenderDirty()
 		return true
 	case snapshotHasVisibleContent(pane.Snapshot):
 		rows := pane.Snapshot.Screen.Cells
@@ -346,7 +347,7 @@ func (c *composedCanvas) drawPaneSource(rect Rect, pane *Pane) bool {
 			}
 			return normalizePaneDrawCellStyle(pane, drawCellFromProtocolCell(row[x]))
 		})
-		pane.renderDirty = false
+		pane.ClearRenderDirty()
 		return true
 	default:
 		return false
@@ -931,8 +932,8 @@ func paneCells(pane *Pane) [][]drawCell {
 	if pane == nil {
 		return nil
 	}
-	if !pane.renderDirty && pane.cellCache != nil {
-		return pane.cellCache
+	if !pane.IsRenderDirty() && pane.CellCache() != nil {
+		return pane.CellCache()
 	}
 
 	var grid [][]drawCell
@@ -946,8 +947,8 @@ func paneCells(pane *Pane) [][]drawCell {
 	}
 	grid = normalizePaneGridStyle(pane, grid)
 
-	pane.cellCache = grid
-	pane.renderDirty = false
+	pane.SetCellCache(grid)
+	pane.ClearRenderDirty()
 	return grid
 }
 
@@ -975,7 +976,7 @@ func paneCellsForViewport(pane *Pane, viewW, viewH int) [][]drawCell {
 		pane.viewportWidth = viewW
 		pane.viewportHeight = viewH
 		pane.viewportVersion = pane.cellVersion
-		pane.renderDirty = false
+		pane.ClearRenderDirty()
 		return pane.viewportCache
 	}
 

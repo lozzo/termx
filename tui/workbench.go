@@ -364,6 +364,25 @@ func clonePane(pane *Pane) *Pane {
 	}
 	owned := *pane
 	owned.Viewport = cloneViewport(pane.Viewport)
+	owned.session = clonePaneSession(pane.Session())
+	if owned.session != nil {
+		owned.session.stopStream = nil
+		owned.session.renderDirty = false
+		owned.session.live = false
+		owned.session.syncLost = false
+		owned.session.droppedBytes = 0
+		owned.session.recovering = false
+		owned.session.catchingUp = false
+		owned.session.dirtyTicks = 0
+		owned.session.cleanTicks = 0
+		owned.session.skipTick = false
+		owned.session.dirtyRowsKnown = false
+		owned.session.dirtyRowStart = 0
+		owned.session.dirtyRowEnd = 0
+		owned.session.dirtyColsKnown = false
+		owned.session.dirtyColStart = 0
+		owned.session.dirtyColEnd = 0
+	}
 	return &owned
 }
 
@@ -385,28 +404,16 @@ func cloneViewport(viewport *Viewport) *Viewport {
 		owned.ExitCode = &exitCode
 	}
 	owned.stopStream = nil
-	owned.cellCache = nil
 	owned.cellVersion = 0
 	owned.viewportCache = nil
 	owned.viewportOffset = Point{}
 	owned.viewportWidth = 0
 	owned.viewportHeight = 0
 	owned.viewportVersion = 0
-	owned.renderDirty = false
 	owned.live = false
 	owned.syncLost = false
 	owned.droppedBytes = 0
 	owned.recovering = false
-	owned.catchingUp = false
-	owned.dirtyTicks = 0
-	owned.cleanTicks = 0
-	owned.skipTick = false
-	owned.dirtyRowsKnown = false
-	owned.dirtyRowStart = 0
-	owned.dirtyRowEnd = 0
-	owned.dirtyColsKnown = false
-	owned.dirtyColStart = 0
-	owned.dirtyColEnd = 0
 	return &owned
 }
 
