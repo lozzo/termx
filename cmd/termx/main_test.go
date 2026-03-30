@@ -12,6 +12,7 @@ import (
 
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tui"
+	"github.com/lozzow/termx/tuiv2/shared"
 )
 
 func TestRootCmdLayoutFlagPassesStartupLayoutToTUI(t *testing.T) {
@@ -235,6 +236,131 @@ func TestRootCmdPassesPrefixTimeoutFlag(t *testing.T) {
 	}
 	if got.PrefixTimeout != 5*time.Second {
 		t.Fatalf("expected root command to pass prefix timeout, got %v", got.PrefixTimeout)
+	}
+}
+
+func TestRootCmdTUIv2FlagRoutesToTUIv2(t *testing.T) {
+	oldInteractive := isInteractiveTerminal
+	oldRunv2 := runTUIv2
+	oldDial := dialOrStartTUIClient
+	oldRun := runTUI
+	t.Cleanup(func() {
+		isInteractiveTerminal = oldInteractive
+		runTUIv2 = oldRunv2
+		dialOrStartTUIClient = oldDial
+		runTUI = oldRun
+	})
+
+	isInteractiveTerminal = func() bool { return true }
+
+	v2Called := false
+	var gotCfg shared.Config
+	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
+		v2Called = true
+		gotCfg = cfg
+		return nil
+	}
+
+	dialOrStartTUIClient = func(path string, logFile string, logger *slog.Logger) (tui.Client, error) {
+		t.Fatal("v1 dial should not be called when --tui-v2 is set")
+		return nil, nil
+	}
+	runTUI = func(client tui.Client, cfg tui.Config, input io.Reader, output io.Writer) error {
+		t.Fatal("v1 runTUI should not be called when --tui-v2 is set")
+		return nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{
+		"--tui-v2",
+		"--log-file", filepath.Join(t.TempDir(), "termx.log"),
+	})
+	cmd.SetIn(bytes.NewBuffer(nil))
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !v2Called {
+		t.Fatal("expected runTUIv2 to be called when --tui-v2 flag is set")
+	}
+	if gotCfg.Workspace != "main" {
+		t.Fatalf("expected workspace=main, got %q", gotCfg.Workspace)
+	}
+}
+
+func TestRootCmdWithoutTUIv2FlagRoutesToV1(t *testing.T) {
+	oldInteractive := isInteractiveTerminal
+	oldRunv2 := runTUIv2
+	oldDial := dialOrStartTUIClient
+	oldRun := runTUI
+	t.Cleanup(func() {
+		isInteractiveTerminal = oldInteractive
+		runTUIv2 = oldRunv2
+		dialOrStartTUIClient = oldDial
+		runTUI = oldRun
+	})
+
+	isInteractiveTerminal = func() bool { return true }
+
+	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
+		t.Fatal("runTUIv2 should not be called without --tui-v2 flag")
+		return nil
+	}
+	dialOrStartTUIClient = func(path string, logFile string, logger *slog.Logger) (tui.Client, error) {
+		return &stubTUIClient{}, nil
+	}
+
+	v1Called := false
+	runTUI = func(client tui.Client, cfg tui.Config, input io.Reader, output io.Writer) error {
+		v1Called = true
+		return nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--log-file", filepath.Join(t.TempDir(), "termx.log")})
+	cmd.SetIn(bytes.NewBuffer(nil))
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !v1Called {
+		t.Fatal("expected v1 runTUI to be called when --tui-v2 flag is absent")
+	}
+}
+
+func TestRootCmdTUIv2BlocksNestedTUI(t *testing.T) {
+	oldInteractive := isInteractiveTerminal
+	oldRunv2 := runTUIv2
+	t.Cleanup(func() {
+		isInteractiveTerminal = oldInteractive
+		runTUIv2 = oldRunv2
+	})
+
+	isInteractiveTerminal = func() bool { return true }
+	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
+		t.Fatal("runTUIv2 should not be called when nested TUI is blocked")
+		return nil
+	}
+
+	t.Setenv("TERMX", "1")
+	t.Setenv("TERMX_ALLOW_NESTED", "")
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{
+		"--tui-v2",
+		"--log-file", filepath.Join(t.TempDir(), "termx.log"),
+	})
+	cmd.SetIn(bytes.NewBuffer(nil))
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "refusing to start termx TUI inside a termx-managed terminal") {
+		t.Fatalf("expected nested TUI rejection, got %v", err)
 	}
 }
 

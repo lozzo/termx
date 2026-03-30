@@ -16,6 +16,8 @@ import (
 	"github.com/lozzow/termx/protocol"
 	unixtransport "github.com/lozzow/termx/transport/unix"
 	"github.com/lozzow/termx/tui"
+	tuiv2app "github.com/lozzow/termx/tuiv2/app"
+	"github.com/lozzow/termx/tuiv2/shared" //nolint:typecheck
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -31,6 +33,9 @@ var (
 			return nil, err
 		}
 		return tui.NewProtocolClient(client), nil
+	}
+	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
+		return tuiv2app.Run(cfg, stdin, stdout)
 	}
 )
 
@@ -58,6 +63,7 @@ func newRootCmd() *cobra.Command {
 	var layout string
 	var iconSet string
 	var prefixTimeout time.Duration
+	var tuiv2Flag bool
 	cmd := &cobra.Command{
 		Use: "termx",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -66,6 +72,17 @@ func newRootCmd() *cobra.Command {
 				return err
 			}
 			defer closeLogger()
+			if tuiv2Flag {
+				logger.Info("starting tuiv2 root command", "log_file", logPath)
+				if !isInteractiveTerminal() {
+					return fmt.Errorf("termx TUI requires an interactive terminal; use `termx --help` or subcommands like `new`, `ls`, `attach`, `kill`, `daemon`")
+				}
+				if err := rejectNestedTUI(); err != nil {
+					logger.Warn("blocked nested tui launch")
+					return err
+				}
+				return runTUIv2(shared.Config{Workspace: "main"}, os.Stdin, os.Stdout)
+			}
 			logger.Info("starting tui root command", "socket", resolveSocket(socket), "log_file", logPath, "layout", layout)
 			if !isInteractiveTerminal() {
 				return fmt.Errorf("termx TUI requires an interactive terminal; use `termx --help` or subcommands like `new`, `ls`, `attach`, `kill`, `daemon`")
@@ -98,6 +115,7 @@ func newRootCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&iconSet, "icon-set", os.Getenv("TERMX_ICON_SET"), "icon set: ascii, unicode, nerd")
 	cmd.PersistentFlags().DurationVar(&prefixTimeout, "prefix-timeout", tui.DefaultPrefixTimeout, "mode hold timeout after Ctrl+ shortcuts")
 	cmd.Flags().StringVar(&layout, "layout", "", "startup layout name or YAML path")
+	cmd.Flags().BoolVar(&tuiv2Flag, "tui-v2", false, "use experimental tuiv2 interface")
 	cmd.AddCommand(daemonCommand(&socket))
 	cmd.AddCommand(newCommand(&socket, &logFile))
 	cmd.AddCommand(lsCommand(&socket, &logFile))
