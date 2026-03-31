@@ -15,8 +15,8 @@ import (
 	"github.com/lozzow/termx"
 	"github.com/lozzow/termx/protocol"
 	unixtransport "github.com/lozzow/termx/transport/unix"
-	"github.com/lozzow/termx/tui"
 	tuiv2app "github.com/lozzow/termx/tuiv2/app"
+	tuiv2bridge "github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared" //nolint:typecheck
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -26,16 +26,13 @@ var (
 	isInteractiveTerminal = func() bool {
 		return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
 	}
-	runTUI               = tui.Run
-	dialOrStartTUIClient = func(path string, logFile string, logger *slog.Logger) (tui.Client, error) {
-		client, err := dialOrStartClient(path, logFile, logger)
-		if err != nil {
-			return nil, err
-		}
-		return tui.NewProtocolClient(client), nil
-	}
 	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
-		return tuiv2app.Run(cfg, stdin, stdout)
+		client, err := dialOrStartClient(resolveSocket(cfg.SocketPath), cfg.LogFilePath, nil)
+		if err != nil {
+			return err
+		}
+		defer client.Close()
+		return tuiv2app.RunWithClient(cfg, tuiv2bridge.NewProtocolClient(client), stdin, stdout)
 	}
 )
 
@@ -60,10 +57,6 @@ func main() {
 func newRootCmd() *cobra.Command {
 	var socket string
 	var logFile string
-	var layout string
-	var iconSet string
-	var prefixTimeout time.Duration
-	var tuiv2Flag bool
 	cmd := &cobra.Command{
 		Use: "termx",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -72,18 +65,7 @@ func newRootCmd() *cobra.Command {
 				return err
 			}
 			defer closeLogger()
-			if tuiv2Flag {
-				logger.Info("starting tuiv2 root command", "log_file", logPath)
-				if !isInteractiveTerminal() {
-					return fmt.Errorf("termx TUI requires an interactive terminal; use `termx --help` or subcommands like `new`, `ls`, `attach`, `kill`, `daemon`")
-				}
-				if err := rejectNestedTUI(); err != nil {
-					logger.Warn("blocked nested tui launch")
-					return err
-				}
-				return runTUIv2(shared.Config{Workspace: "main"}, os.Stdin, os.Stdout)
-			}
-			logger.Info("starting tui root command", "socket", resolveSocket(socket), "log_file", logPath, "layout", layout)
+			logger.Info("starting tuiv2 root command", "log_file", logPath)
 			if !isInteractiveTerminal() {
 				return fmt.Errorf("termx TUI requires an interactive terminal; use `termx --help` or subcommands like `new`, `ls`, `attach`, `kill`, `daemon`")
 			}
@@ -91,36 +73,21 @@ func newRootCmd() *cobra.Command {
 				logger.Warn("blocked nested tui launch")
 				return err
 			}
-			client, err := dialOrStartTUIClient(resolveSocket(socket), logPath, logger)
-			if err != nil {
-				logger.Error("failed to connect to daemon", "error", err)
-				return err
-			}
-			defer client.Close()
-			return runTUI(client, tui.Config{
-				DefaultShell:       os.Getenv("SHELL"),
+			return runTUIv2(shared.Config{
 				Workspace:          "main",
-				IconSet:            iconSet,
-				PrefixTimeout:      prefixTimeout,
-				StartupLayout:      layout,
+				SocketPath:         socket,
+				LogFilePath:        logPath,
 				WorkspaceStatePath: resolveWorkspaceStatePath(),
-				StartupAutoLayout:  true,
-				StartupPicker:      true,
-				Logger:             logger,
 			}, os.Stdin, os.Stdout)
 		},
 	}
 	cmd.PersistentFlags().StringVar(&socket, "socket", "", "socket path")
 	cmd.PersistentFlags().StringVar(&logFile, "log-file", "", "log file path (default: $TERMX_LOG_FILE or XDG state dir)")
-	cmd.PersistentFlags().StringVar(&iconSet, "icon-set", os.Getenv("TERMX_ICON_SET"), "icon set: ascii, unicode, nerd")
-	cmd.PersistentFlags().DurationVar(&prefixTimeout, "prefix-timeout", tui.DefaultPrefixTimeout, "mode hold timeout after Ctrl+ shortcuts")
-	cmd.Flags().StringVar(&layout, "layout", "", "startup layout name or YAML path")
-	cmd.Flags().BoolVar(&tuiv2Flag, "tui-v2", false, "use experimental tuiv2 interface")
 	cmd.AddCommand(daemonCommand(&socket))
 	cmd.AddCommand(newCommand(&socket, &logFile))
 	cmd.AddCommand(lsCommand(&socket, &logFile))
 	cmd.AddCommand(killCommand(&socket, &logFile))
-	cmd.AddCommand(attachCommand(&socket, &logFile, &iconSet, &prefixTimeout))
+	cmd.AddCommand(attachCommand(&socket, &logFile))
 	return cmd
 }
 
@@ -259,7 +226,7 @@ func killCommand(socket *string, logFile *string) *cobra.Command {
 	}
 }
 
-func attachCommand(socket *string, logFile *string, iconSet *string, prefixTimeout *time.Duration) *cobra.Command {
+func attachCommand(socket *string, logFile *string) *cobra.Command {
 	return &cobra.Command{
 		Use:  "attach <id>",
 		Args: cobra.ExactArgs(1),
@@ -274,18 +241,11 @@ func attachCommand(socket *string, logFile *string, iconSet *string, prefixTimeo
 				logger.Warn("blocked nested attach tui", "terminal_id", args[0])
 				return err
 			}
-			client, err := dialOrStartTUIClient(resolveSocket(*socket), logPath, logger)
-			if err != nil {
-				return err
-			}
-			defer client.Close()
-			return runTUI(client, tui.Config{
-				DefaultShell:  os.Getenv("SHELL"),
-				Workspace:     "main",
-				AttachID:      args[0],
-				IconSet:       *iconSet,
-				PrefixTimeout: *prefixTimeout,
-				Logger:        logger,
+			return runTUIv2(shared.Config{
+				Workspace:   "main",
+				AttachID:    args[0],
+				SocketPath:  *socket,
+				LogFilePath: logPath,
 			}, os.Stdin, os.Stdout)
 		},
 	}
@@ -320,7 +280,7 @@ func dialOrStartClient(path string, logFile string, logger *slog.Logger) (*proto
 	if startErr := startDaemon(path, logFile); startErr != nil {
 		return nil, err
 	}
-	if waitErr := tui.WaitForSocket(path, 5*time.Second, func() error {
+	if waitErr := waitForSocket(path, 5*time.Second, func() error {
 		c, dialErr := dialClient(path)
 		if dialErr != nil {
 			return dialErr
@@ -334,6 +294,17 @@ func dialOrStartClient(path string, logFile string, logger *slog.Logger) (*proto
 		logger.Info("auto-started daemon became ready", "socket", path)
 	}
 	return dialClient(path)
+}
+
+func waitForSocket(path string, timeout time.Duration, try func() error) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if err := try(); err == nil {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("timed out waiting for daemon at %s", path)
 }
 
 func startDaemon(path string, logFile string) error {

@@ -5,6 +5,7 @@ type VisibleWorkbench struct {
 	WorkspaceName string
 	Tabs          []VisibleTab
 	ActiveTab     int
+	FloatingPanes []VisiblePane
 }
 
 type VisibleTab struct {
@@ -13,6 +14,7 @@ type VisibleTab struct {
 	Panes        []VisiblePane
 	ActivePaneID string
 	ZoomedPaneID string
+	ScrollOffset int
 }
 
 type VisiblePane struct {

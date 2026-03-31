@@ -13,10 +13,10 @@ func (w *Workbench) CurrentWorkspace() *WorkspaceState {
 
 func (w *Workbench) CurrentTab() *TabState {
 	workspace := w.CurrentWorkspace()
-	if workspace == nil || workspace.ActiveTab < 0 || workspace.ActiveTab >= len(workspace.Tabs) {
+	if workspace == nil {
 		return nil
 	}
-	return workspace.Tabs[workspace.ActiveTab]
+	return workspace.currentTab()
 }
 
 func (w *Workbench) ActivePane() *PaneState {
@@ -24,7 +24,7 @@ func (w *Workbench) ActivePane() *PaneState {
 	if tab == nil {
 		return nil
 	}
-	return tab.Panes[tab.ActivePaneID]
+	return tab.activePane()
 }
 
 func (w *Workbench) SwitchWorkspace(name string) bool {
@@ -73,6 +73,10 @@ func (w *Workbench) ListWorkspaces() []string {
 }
 
 func (w *Workbench) Visible() *VisibleWorkbench {
+	return w.VisibleWithSize(Rect{W: 1, H: 1})
+}
+
+func (w *Workbench) VisibleWithSize(bodyRect Rect) *VisibleWorkbench {
 	if w == nil {
 		return nil
 	}
@@ -83,22 +87,44 @@ func (w *Workbench) Visible() *VisibleWorkbench {
 	visible := &VisibleWorkbench{
 		WorkspaceName: workspace.Name,
 		Tabs:          make([]VisibleTab, 0, len(workspace.Tabs)),
-		ActiveTab:     workspace.ActiveTab,
+		ActiveTab:     -1,
+		FloatingPanes: nil,
 	}
+	activeTab := workspace.currentTab()
 	for _, tab := range workspace.Tabs {
 		if tab == nil {
 			continue
 		}
+		activePaneID := tab.activePaneIDOrFallback()
 		item := VisibleTab{
 			ID:           tab.ID,
 			Name:         tab.Name,
 			Panes:        make([]VisiblePane, 0, len(tab.Panes)),
-			ActivePaneID: tab.ActivePaneID,
-			ZoomedPaneID: tab.ZoomedPaneID,
+			ActivePaneID: activePaneID,
+			ZoomedPaneID: tab.visibleZoomedPaneID(),
+			ScrollOffset: tab.ScrollOffset,
 		}
 		var rects map[string]Rect
 		if tab.Root != nil {
-			rects = tab.Root.Rects(Rect{W: 1, H: 1})
+			rects = tab.Root.Rects(bodyRect)
+		}
+		if activeTab != nil && activeTab.ID == tab.ID {
+			visible.ActiveTab = len(visible.Tabs)
+			for _, floating := range tab.Floating {
+				if floating == nil {
+					continue
+				}
+				pane := tab.Panes[floating.PaneID]
+				if pane == nil {
+					continue
+				}
+				visible.FloatingPanes = append(visible.FloatingPanes, VisiblePane{
+					ID:         pane.ID,
+					Title:      pane.Title,
+					TerminalID: pane.TerminalID,
+					Rect:       floating.Rect,
+				})
+			}
 		}
 		for _, paneID := range tab.paneOrder() {
 			pane := tab.Panes[paneID]

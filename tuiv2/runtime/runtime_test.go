@@ -1,15 +1,19 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/lozzow/termx"
 	"github.com/lozzow/termx/protocol"
-	"github.com/lozzow/termx/tuiv2/bridge"
 	unixtransport "github.com/lozzow/termx/transport/unix"
+	"github.com/lozzow/termx/tuiv2/bridge"
 )
 
 func newTestRuntime(t *testing.T) (*Runtime, context.Context) {
@@ -82,6 +86,122 @@ func TestRuntimeListTerminalsSyncsRegistry(t *testing.T) {
 	}
 }
 
+func TestRuntimeAttachAndLoadSnapshotInitializesVTermCache(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 7, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 6, 3, []string{
+		"hello",
+		"world",
+	})
+
+	rt := New(client)
+
+	terminal, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator")
+	if err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if terminal.VTerm == nil {
+		t.Fatal("expected attach to initialize a vterm")
+	}
+
+	snapshot, err := rt.LoadSnapshot(ctx, "term-1", 0, 10)
+	if err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	if snapshot == nil {
+		t.Fatal("expected snapshot")
+	}
+
+	stored := rt.Registry().Get("term-1")
+	if stored == nil || stored.Snapshot == nil {
+		t.Fatal("expected snapshot cached on terminal runtime")
+	}
+	screen := stored.VTerm.ScreenContent()
+	if len(screen.Cells) < 2 || len(screen.Cells[0]) < 5 || len(screen.Cells[1]) < 5 {
+		t.Fatalf("unexpected vterm screen dimensions: %#v", screen.Cells)
+	}
+	if got := screen.Cells[0][0].Content + screen.Cells[0][1].Content + screen.Cells[0][2].Content + screen.Cells[0][3].Content + screen.Cells[0][4].Content; got != "hello" {
+		t.Fatalf("expected first row to contain hello, got %q", got)
+	}
+	if got := screen.Cells[1][0].Content + screen.Cells[1][1].Content + screen.Cells[1][2].Content + screen.Cells[1][3].Content + screen.Cells[1][4].Content; got != "world" {
+		t.Fatalf("expected second row to contain world, got %q", got)
+	}
+}
+
+func TestRuntimeStartStreamRefreshesSnapshotAndInvalidates(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+
+	var invalidateCount atomic.Int32
+	rt := New(client, WithInvalidate(func() {
+		invalidateCount.Add(1)
+	}))
+
+	terminal, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator")
+	if err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if terminal.VTerm == nil {
+		t.Fatal("expected attach to initialize a vterm")
+	}
+
+	if err := rt.StartStream(ctx, "term-1"); err != nil {
+		t.Fatalf("start stream: %v", err)
+	}
+
+	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("hi")})
+
+	waitFor(t, func() bool {
+		stored := rt.Registry().Get("term-1")
+		return stored != nil && stored.Snapshot != nil && snapshotContains(stored.Snapshot, "hi")
+	})
+
+	if invalidateCount.Load() == 0 {
+		t.Fatal("expected stream refresh to invalidate rendering")
+	}
+	if !snapshotContains(rt.Registry().Get("term-1").Snapshot, "hi") {
+		t.Fatal("expected refreshed snapshot to contain streamed output")
+	}
+}
+
+func TestRuntimeResizePaneUsesBindingChannelAndRefreshesSnapshot(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 6, 3, []string{"seed"})
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+
+	if err := rt.ResizePane(ctx, "pane-1", 100, 40); err != nil {
+		t.Fatalf("resize pane: %v", err)
+	}
+
+	if len(client.resizeCalls) != 1 {
+		t.Fatalf("expected 1 resize call, got %d", len(client.resizeCalls))
+	}
+	call := client.resizeCalls[0]
+	if call.channel != 11 || call.cols != 100 || call.rows != 40 {
+		t.Fatalf("unexpected resize call: %+v", call)
+	}
+	stored := rt.Registry().Get("term-1")
+	if stored == nil || stored.Snapshot == nil {
+		t.Fatal("expected terminal snapshot after resize")
+	}
+	if stored.Snapshot.Size.Cols != 100 || stored.Snapshot.Size.Rows != 40 {
+		t.Fatalf("expected resized snapshot size 100x40, got %dx%d", stored.Snapshot.Size.Cols, stored.Snapshot.Size.Rows)
+	}
+}
+
 func TestRuntimeAttachSnapshotInputAndResize(t *testing.T) {
 	rt, ctx := newTestRuntime(t)
 
@@ -116,7 +236,243 @@ func TestRuntimeAttachSnapshotInputAndResize(t *testing.T) {
 	if err := rt.SendInput(ctx, "pane-1", []byte("echo hi\n")); err != nil {
 		t.Fatalf("send input: %v", err)
 	}
-	if err := rt.ResizeTerminal(ctx, "pane-1", 100, 40); err != nil {
+	if err := rt.ResizePane(ctx, "pane-1", 100, 40); err != nil {
 		t.Fatalf("resize terminal: %v", err)
+	}
+}
+
+type fakeBridgeClient struct {
+	mu                 sync.Mutex
+	attachResult       *protocol.AttachResult
+	listResult         *protocol.ListResult
+	snapshotByTerminal map[string]*protocol.Snapshot
+	streams            map[uint16]chan protocol.StreamFrame
+	streamSubscriptions map[uint16]int
+	inputCalls         []inputCall
+	resizeCalls        []resizeCall
+}
+
+type inputCall struct {
+	channel uint16
+	data    []byte
+}
+
+type resizeCall struct {
+	channel uint16
+	cols    uint16
+	rows    uint16
+}
+
+func newFakeBridgeClient() *fakeBridgeClient {
+	return &fakeBridgeClient{
+		listResult:         &protocol.ListResult{},
+		snapshotByTerminal: make(map[string]*protocol.Snapshot),
+		streams:            make(map[uint16]chan protocol.StreamFrame),
+		streamSubscriptions: make(map[uint16]int),
+	}
+}
+
+func (f *fakeBridgeClient) Close() error { return nil }
+
+func (f *fakeBridgeClient) Create(context.Context, []string, string, protocol.Size) (*protocol.CreateResult, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (f *fakeBridgeClient) SetTags(context.Context, string, map[string]string) error { return nil }
+
+func (f *fakeBridgeClient) SetMetadata(context.Context, string, string, map[string]string) error {
+	return nil
+}
+
+func (f *fakeBridgeClient) List(context.Context) (*protocol.ListResult, error) {
+	return f.listResult, nil
+}
+
+func (f *fakeBridgeClient) Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (f *fakeBridgeClient) Attach(context.Context, string, string) (*protocol.AttachResult, error) {
+	if f.attachResult == nil {
+		return nil, fmt.Errorf("attach result not configured")
+	}
+	return f.attachResult, nil
+}
+
+func (f *fakeBridgeClient) Snapshot(context.Context, string, int, int) (*protocol.Snapshot, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, snapshot := range f.snapshotByTerminal {
+		return cloneSnapshot(snapshot), nil
+	}
+	return nil, fmt.Errorf("snapshot not configured")
+}
+
+func (f *fakeBridgeClient) Input(_ context.Context, channel uint16, data []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.inputCalls = append(f.inputCalls, inputCall{channel: channel, data: append([]byte(nil), data...)})
+	return nil
+}
+
+func (f *fakeBridgeClient) Resize(_ context.Context, channel uint16, cols, rows uint16) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resizeCalls = append(f.resizeCalls, resizeCall{channel: channel, cols: cols, rows: rows})
+	return nil
+}
+
+func (f *fakeBridgeClient) Stream(channel uint16) (<-chan protocol.StreamFrame, func()) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	stream := f.streams[channel]
+	if stream == nil {
+		stream = make(chan protocol.StreamFrame, 16)
+		f.streams[channel] = stream
+	}
+	f.streamSubscriptions[channel]++
+	return stream, func() {}
+}
+
+func (f *fakeBridgeClient) Kill(context.Context, string) error { return nil }
+
+func (f *fakeBridgeClient) sendFrame(channel uint16, frame protocol.StreamFrame) {
+	f.mu.Lock()
+	stream := f.streams[channel]
+	f.mu.Unlock()
+	if stream == nil {
+		panic("stream not initialized")
+	}
+	stream <- frame
+}
+
+func (f *fakeBridgeClient) closeStream(channel uint16) {
+	f.mu.Lock()
+	stream := f.streams[channel]
+	delete(f.streams, channel)
+	f.mu.Unlock()
+	if stream != nil {
+		close(stream)
+	}
+}
+
+func (f *fakeBridgeClient) subscriptionCount(channel uint16) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.streamSubscriptions[channel]
+}
+
+func snapshotWithLines(terminalID string, cols, rows uint16, lines []string) *protocol.Snapshot {
+	grid := make([][]protocol.Cell, rows)
+	for y := range rows {
+		grid[y] = make([]protocol.Cell, cols)
+		for x := range cols {
+			grid[y][x] = protocol.Cell{Content: " ", Width: 1}
+		}
+	}
+	for y, line := range lines {
+		if y >= int(rows) {
+			break
+		}
+		for x := 0; x < len(line) && x < int(cols); x++ {
+			grid[y][x] = protocol.Cell{Content: string(line[x]), Width: 1}
+		}
+	}
+	return &protocol.Snapshot{
+		TerminalID: terminalID,
+		Size:       protocol.Size{Cols: cols, Rows: rows},
+		Screen:     protocol.ScreenData{Cells: grid},
+		Cursor:     protocol.CursorState{Visible: true},
+		Modes:      protocol.TerminalModes{AutoWrap: true},
+		Timestamp:  time.Now(),
+	}
+}
+
+func cloneSnapshot(snapshot *protocol.Snapshot) *protocol.Snapshot {
+	if snapshot == nil {
+		return nil
+	}
+	cloned := *snapshot
+	cloned.Screen.Cells = make([][]protocol.Cell, len(snapshot.Screen.Cells))
+	for y, row := range snapshot.Screen.Cells {
+		cloned.Screen.Cells[y] = append([]protocol.Cell(nil), row...)
+	}
+	cloned.Scrollback = make([][]protocol.Cell, len(snapshot.Scrollback))
+	for y, row := range snapshot.Scrollback {
+		cloned.Scrollback[y] = append([]protocol.Cell(nil), row...)
+	}
+	return &cloned
+}
+
+func snapshotContains(snapshot *protocol.Snapshot, want string) bool {
+	if snapshot == nil {
+		return false
+	}
+	for _, row := range snapshot.Screen.Cells {
+		var buf bytes.Buffer
+		for _, cell := range row {
+			buf.WriteString(cell.Content)
+		}
+		if bytes.Contains(buf.Bytes(), []byte(want)) {
+			return true
+		}
+	}
+	return false
+}
+
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("condition not met before timeout")
+}
+
+func TestRuntimeStartStreamReconnectsAfterChannelClose(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+	rt := New(client)
+
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if err := rt.StartStream(ctx, "term-1"); err != nil {
+		t.Fatalf("start stream: %v", err)
+	}
+
+	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("one")})
+	waitFor(t, func() bool {
+		stored := rt.Registry().Get("term-1")
+		return stored != nil && stored.Snapshot != nil && snapshotContains(stored.Snapshot, "one")
+	})
+
+	client.closeStream(9)
+
+	waitFor(t, func() bool {
+		return client.subscriptionCount(9) >= 2
+	})
+
+	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("two")})
+	waitFor(t, func() bool {
+		stored := rt.Registry().Get("term-1")
+		return stored != nil && stored.Snapshot != nil && snapshotContains(stored.Snapshot, "two")
+	})
+
+	stored := rt.Registry().Get("term-1")
+	if stored == nil {
+		t.Fatal("expected terminal runtime after reconnect")
+	}
+	if stored.Stream.RetryCount != 0 {
+		t.Fatalf("expected retry count reset after successful frame, got %d", stored.Stream.RetryCount)
+	}
+	if !stored.Stream.Active {
+		t.Fatal("expected stream to be active after reconnect")
 	}
 }

@@ -3,25 +3,40 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"image/color"
 	"slices"
 
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"
+	localvterm "github.com/lozzow/termx/vterm"
 )
 
 type Runtime struct {
-	registry *TerminalRegistry
-	bindings map[string]*PaneBinding
-	client   bridge.Client
+	registry      *TerminalRegistry
+	bindings      map[string]*PaneBinding
+	client        bridge.Client
+	onInvalidate  func()
+	newVTerm      VTermFactory
+	hostDefaultFG string
+	hostDefaultBG string
+	hostPalette   map[int]string
 }
 
-func New(client bridge.Client) *Runtime {
-	return &Runtime{
-		registry: NewTerminalRegistry(),
-		bindings: make(map[string]*PaneBinding),
-		client:   client,
+func New(client bridge.Client, opts ...Option) *Runtime {
+	r := &Runtime{
+		registry:     NewTerminalRegistry(),
+		bindings:     make(map[string]*PaneBinding),
+		client:       client,
+		onInvalidate: func() {},
 	}
+	r.newVTerm = r.defaultVTermFactory
+	for _, opt := range opts {
+		if opt != nil {
+			opt(r)
+		}
+	}
+	return r
 }
 
 func (r *Runtime) Client() bridge.Client {
@@ -58,6 +73,127 @@ func (r *Runtime) BindPane(paneID string) *PaneBinding {
 	return binding
 }
 
+func WithInvalidate(fn func()) Option {
+	return func(r *Runtime) {
+		r.SetInvalidate(fn)
+	}
+}
+
+func WithVTermFactory(factory VTermFactory) Option {
+	return func(r *Runtime) {
+		if r == nil || factory == nil {
+			return
+		}
+		r.newVTerm = factory
+	}
+}
+
+func (r *Runtime) defaultVTermFactory(channel uint16) VTermLike {
+	return localvterm.New(80, 24, 10000, func(data []byte) {
+		if r == nil || r.client == nil || channel == 0 || len(data) == 0 {
+			return
+		}
+		_ = r.client.Input(context.Background(), channel, data)
+	})
+}
+
+func (r *Runtime) ensureVTerm(terminal *TerminalRuntime) VTermLike {
+	if r == nil || terminal == nil {
+		return nil
+	}
+	if terminal.VTerm != nil {
+		return terminal.VTerm
+	}
+	if r.newVTerm == nil {
+		r.newVTerm = r.defaultVTermFactory
+	}
+	terminal.VTerm = r.newVTerm(terminal.Channel)
+	r.applyHostColorsToVTerm(terminal.VTerm)
+	if terminal.Snapshot != nil {
+		loadSnapshotIntoVTerm(terminal.VTerm, terminal.Snapshot)
+	}
+	return terminal.VTerm
+}
+
+func (r *Runtime) SetHostDefaultColors(fg, bg color.Color) {
+	if r == nil {
+		return
+	}
+	nextFG := r.hostDefaultFG
+	nextBG := r.hostDefaultBG
+	if fg != nil {
+		nextFG = colorToHex(fg)
+	}
+	if bg != nil {
+		nextBG = colorToHex(bg)
+	}
+	if nextFG == r.hostDefaultFG && nextBG == r.hostDefaultBG {
+		return
+	}
+	r.hostDefaultFG = nextFG
+	r.hostDefaultBG = nextBG
+	for _, terminalID := range r.registry.IDs() {
+		terminal := r.registry.Get(terminalID)
+		if terminal == nil || terminal.VTerm == nil {
+			continue
+		}
+		terminal.VTerm.SetDefaultColors(nextFG, nextBG)
+	}
+}
+
+func (r *Runtime) SetHostPaletteColor(index int, c color.Color) {
+	if r == nil || c == nil || index < 0 || index > 255 {
+		return
+	}
+	if r.hostPalette == nil {
+		r.hostPalette = make(map[int]string)
+	}
+	value := colorToHex(c)
+	if r.hostPalette[index] == value {
+		return
+	}
+	r.hostPalette[index] = value
+	for _, terminalID := range r.registry.IDs() {
+		terminal := r.registry.Get(terminalID)
+		if terminal == nil || terminal.VTerm == nil {
+			continue
+		}
+		terminal.VTerm.SetIndexedColor(index, value)
+	}
+}
+
+func (r *Runtime) applyHostColorsToVTerm(vt VTermLike) {
+	if r == nil || vt == nil {
+		return
+	}
+	vt.SetDefaultColors(r.hostDefaultFG, r.hostDefaultBG)
+	for index, value := range r.hostPalette {
+		vt.SetIndexedColor(index, value)
+	}
+}
+
+func colorToHex(c color.Color) string {
+	if c == nil {
+		return ""
+	}
+	r, g, b, _ := c.RGBA()
+	return fmt.Sprintf("#%02x%02x%02x", uint8(r>>8), uint8(g>>8), uint8(b>>8))
+}
+
+func (r *Runtime) invalidate() {
+	if r == nil || r.onInvalidate == nil {
+		return
+	}
+	r.onInvalidate()
+}
+
+func (r *Runtime) SetInvalidate(fn func()) {
+	if r == nil || fn == nil {
+		return
+	}
+	r.onInvalidate = fn
+}
+
 func (r *Runtime) ListTerminals(ctx context.Context) ([]protocol.TerminalInfo, error) {
 	if r == nil || r.client == nil {
 		return nil, shared.UserVisibleError{Op: "list terminals", Err: fmt.Errorf("runtime client is nil")}
@@ -89,6 +225,7 @@ func (r *Runtime) Visible() *VisibleRuntime {
 			AttachMode:   terminal.AttachMode,
 			OwnerPaneID:  terminal.OwnerPaneID,
 			BoundPaneIDs: slices.Clone(terminal.BoundPaneIDs),
+			Snapshot:     terminal.Snapshot,
 		})
 	}
 	return visible

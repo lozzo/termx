@@ -21,10 +21,31 @@ func (r *Runtime) AttachTerminal(ctx context.Context, paneID, terminalID, mode s
 	}
 	terminal.Channel = attached.Channel
 	terminal.AttachMode = attached.Mode
+	r.ensureVTerm(terminal)
 	binding := r.BindPane(paneID)
 	if binding != nil {
+		binding.TerminalID = terminalID
+		if terminal.OwnerPaneID == "" || terminal.OwnerPaneID == paneID {
+			terminal.OwnerPaneID = paneID
+			binding.Role = BindingRoleOwner
+		} else {
+			binding.Role = BindingRoleFollower
+		}
 		binding.Channel = attached.Channel
 		binding.Connected = true
+		terminal.BoundPaneIDs = appendBoundPaneID(terminal.BoundPaneIDs, paneID)
+	}
+	if err := r.StartStream(ctx, terminalID); err != nil {
+		return nil, err
 	}
 	return terminal, nil
+}
+
+func appendBoundPaneID(ids []string, paneID string) []string {
+	for _, existing := range ids {
+		if existing == paneID {
+			return ids
+		}
+	}
+	return append(ids, paneID)
 }

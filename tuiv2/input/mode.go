@@ -7,6 +7,13 @@ type ModeKind string
 const (
 	ModeNormal          ModeKind = "normal"
 	ModePrefix          ModeKind = "prefix"
+	ModePane            ModeKind = "pane"
+	ModeResize          ModeKind = "resize"
+	ModeTab             ModeKind = "tab"
+	ModeWorkspace       ModeKind = "workspace"
+	ModeFloating        ModeKind = "floating"
+	ModeDisplay         ModeKind = "display"
+	ModeGlobal          ModeKind = "global"
 	ModePicker          ModeKind = "picker"
 	ModePrompt          ModeKind = "prompt"
 	ModeHelp            ModeKind = "help"

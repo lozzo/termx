@@ -41,6 +41,28 @@ func (n *LayoutNode) IsLeaf() bool {
 	return n != nil && n.First == nil && n.Second == nil
 }
 
+func (n *LayoutNode) Remove(paneID string) *LayoutNode {
+	if n == nil {
+		return nil
+	}
+	if n.IsLeaf() {
+		if n.PaneID == paneID {
+			return nil
+		}
+		return n
+	}
+	n.First = n.First.Remove(paneID)
+	n.Second = n.Second.Remove(paneID)
+	switch {
+	case n.First == nil:
+		return n.Second
+	case n.Second == nil:
+		return n.First
+	default:
+		return n
+	}
+}
+
 func (n *LayoutNode) LeafIDs() []string {
 	if n == nil {
 		return nil

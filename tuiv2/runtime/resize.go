@@ -8,6 +8,10 @@ import (
 )
 
 func (r *Runtime) ResizeTerminal(ctx context.Context, paneID string, cols, rows uint16) error {
+	return r.ResizePane(ctx, paneID, cols, rows)
+}
+
+func (r *Runtime) ResizePane(ctx context.Context, paneID string, cols, rows uint16) error {
 	binding := r.Binding(paneID)
 	if r == nil || r.client == nil {
 		return shared.UserVisibleError{Op: "resize terminal", Err: fmt.Errorf("runtime client is nil")}
@@ -17,6 +21,12 @@ func (r *Runtime) ResizeTerminal(ctx context.Context, paneID string, cols, rows 
 	}
 	if err := r.client.Resize(ctx, binding.Channel, cols, rows); err != nil {
 		return shared.UserVisibleError{Op: "resize terminal", Err: err}
+	}
+	if terminal := r.registry.Get(binding.TerminalID); terminal != nil {
+		if vt := r.ensureVTerm(terminal); vt != nil {
+			vt.Resize(int(cols), int(rows))
+		}
+		r.refreshSnapshot(binding.TerminalID)
 	}
 	return nil
 }

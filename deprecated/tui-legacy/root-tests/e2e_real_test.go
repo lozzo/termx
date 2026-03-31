@@ -12,7 +12,7 @@ import (
 
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/transport/memory"
-	"github.com/lozzow/termx/tui"
+	tui "github.com/lozzow/termx/deprecated/tui-legacy/pkg"
 )
 
 // skipIfMissing skips the test if the given command is not in PATH.

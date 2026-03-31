@@ -15,7 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
-	"github.com/lozzow/termx/tui"
+	tui "github.com/lozzow/termx/deprecated/tui-legacy/pkg"
 	localvterm "github.com/lozzow/termx/vterm"
 )
 

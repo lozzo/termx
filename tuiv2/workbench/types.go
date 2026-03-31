@@ -21,6 +21,7 @@ type TabState struct {
 	FloatingVisible bool
 	ActivePaneID    string
 	ZoomedPaneID    string
+	ScrollOffset    int
 	LayoutPreset    int
 }
 
