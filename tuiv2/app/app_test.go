@@ -847,6 +847,48 @@ func TestModelWorkspacePickerActions(t *testing.T) {
 	}
 }
 
+func TestModelModeCancelReturnsToNormal(t *testing.T) {
+	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
+
+	_, _ = model.Update(input.SemanticAction{Kind: input.ActionEnterPaneMode})
+	if got := model.input.Mode().Kind; got != input.ModePane {
+		t.Fatalf("expected pane mode, got %q", got)
+	}
+
+	_, _ = model.Update(input.SemanticAction{Kind: input.ActionCancelMode})
+	if got := model.input.Mode().Kind; got != input.ModeNormal {
+		t.Fatalf("expected normal mode after cancel, got %q", got)
+	}
+}
+
+func TestModelViewShowsModeSpecificStatusHints(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	model := New(shared.Config{}, wb, runtime.New(nil))
+	model.width = 100
+	model.height = 30
+	model.input.SetMode(input.ModeState{Kind: input.ModePane})
+
+	view := model.View()
+	for _, want := range []string{"PANE", "h/j/k/l FOCUS", "% VSPLIT", "w CLOSE", "Esc BACK"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected view to contain %q, got:\n%s", want, view)
+		}
+	}
+}
+
 func TestModelHelpActionsOpenAndCloseOverlay(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
 

@@ -23,7 +23,7 @@ func TestRouteKeyMsg_CtrlF_NormalMode_ProducesOpenPicker(t *testing.T) {
 	}
 }
 
-func TestRouteKeyMsg_NormalMode_ExtendedBindings(t *testing.T) {
+func TestRouteKeyMsg_NormalMode_AllModeEntryBindings(t *testing.T) {
 	r := NewRouter()
 	cases := []struct {
 		msg  tea.KeyMsg
@@ -37,14 +37,86 @@ func TestRouteKeyMsg_NormalMode_ExtendedBindings(t *testing.T) {
 		{msg: ctrlKey(tea.KeyCtrlV), want: ActionEnterDisplayMode},
 		{msg: ctrlKey(tea.KeyCtrlF), want: ActionOpenPicker},
 		{msg: ctrlKey(tea.KeyCtrlG), want: ActionEnterGlobalMode},
+		{msg: runeKey('?'), want: ActionOpenHelp},
 	}
 	for _, testCase := range cases {
 		result := r.RouteKeyMsg(testCase.msg)
 		if result.Action == nil || result.Action.Kind != testCase.want {
-			t.Fatalf("msg %v: expected %q, got %#v", testCase.msg, testCase.want, result.Action)
+			t.Fatalf("normal+%v: expected %q, got %#v", testCase.msg, testCase.want, result.Action)
 		}
 		if result.TerminalInput != nil {
-			t.Fatalf("msg %v: expected no terminal input, got %#v", testCase.msg, result.TerminalInput)
+			t.Fatalf("normal+%v: expected no terminal input, got %#v", testCase.msg, result.TerminalInput)
+		}
+	}
+}
+
+func TestRouteKeyMsg_PaneMode_PlainKeysProduceFocusActions(t *testing.T) {
+	r := NewRouter()
+	r.SetMode(ModeState{Kind: ModePane})
+	cases := []struct {
+		msg  tea.KeyMsg
+		want ActionKind
+	}{
+		{msg: runeKey('h'), want: ActionFocusPaneLeft},
+		{msg: runeKey('j'), want: ActionFocusPaneDown},
+		{msg: runeKey('k'), want: ActionFocusPaneUp},
+		{msg: runeKey('l'), want: ActionFocusPaneRight},
+		{msg: runeKey('%'), want: ActionSplitPane},
+		{msg: runeKey('"'), want: ActionSplitPaneHorizontal},
+		{msg: runeKey('z'), want: ActionZoomPane},
+		{msg: runeKey('w'), want: ActionClosePane},
+		{msg: specialKey(tea.KeyEsc), want: ActionCancelMode},
+	}
+	for _, testCase := range cases {
+		result := r.RouteKeyMsg(testCase.msg)
+		if result.Action == nil || result.Action.Kind != testCase.want {
+			t.Fatalf("pane+%v: expected %q, got %#v", testCase.msg, testCase.want, result.Action)
+		}
+	}
+}
+
+func TestRouteKeyMsg_ResizeMode_LargeStepBindings(t *testing.T) {
+	r := NewRouter()
+	r.SetMode(ModeState{Kind: ModeResize})
+	cases := []struct {
+		msg  tea.KeyMsg
+		want ActionKind
+	}{
+		{msg: runeKey('h'), want: ActionResizePaneLeft},
+		{msg: runeKey('H'), want: ActionResizePaneLargeLeft},
+		{msg: runeKey('j'), want: ActionResizePaneDown},
+		{msg: runeKey('J'), want: ActionResizePaneLargeDown},
+		{msg: runeKey('='), want: ActionBalancePanes},
+		{msg: specialKey(tea.KeySpace), want: ActionCycleLayout},
+	}
+	for _, testCase := range cases {
+		result := r.RouteKeyMsg(testCase.msg)
+		if result.Action == nil || result.Action.Kind != testCase.want {
+			t.Fatalf("resize+%v: expected %q, got %#v", testCase.msg, testCase.want, result.Action)
+		}
+	}
+}
+
+func TestRouteKeyMsg_NormalMode_NonInterceptedCtrlKeysPassthrough(t *testing.T) {
+	// Ctrl keys not bound to mode-entry shortcuts must pass through to the terminal.
+	r := NewRouter()
+	cases := []struct {
+		key  tea.KeyType
+		want byte
+	}{
+		{tea.KeyCtrlC, 0x03},
+		{tea.KeyCtrlD, 0x04},
+		{tea.KeyCtrlZ, 0x1a},
+		{tea.KeyCtrlA, 0x01},
+		{tea.KeyCtrlE, 0x05},
+	}
+	for _, tc := range cases {
+		result := r.RouteKeyMsg(ctrlKey(tc.key))
+		if result.Action != nil {
+			t.Fatalf("key %v should pass through, got action %q", tc.key, result.Action.Kind)
+		}
+		if result.TerminalInput == nil || len(result.TerminalInput.Data) != 1 || result.TerminalInput.Data[0] != tc.want {
+			t.Fatalf("key %v: expected passthrough byte 0x%02x, got %#v", tc.key, tc.want, result.TerminalInput)
 		}
 	}
 }
@@ -147,11 +219,13 @@ func TestRouteKeyMsg_NormalMode_CtrlBackslashProducesOpenWorkspacePicker(t *test
 	t.Skip("workspace root key moved to Ctrl-W per canonical keybinding spec")
 }
 
-func TestRouteKeyMsg_NormalMode_QuestionMarkProducesOpenHelp(t *testing.T) {
+func TestRouteKeyMsg_PaneMode_UnboundKeyIgnored(t *testing.T) {
+	// Unrecognised keys in pane mode are silently swallowed (not forwarded to terminal).
 	r := NewRouter()
-	result := r.RouteKeyMsg(ctrlKey(tea.KeyCtrlG))
-	if result.Action == nil || result.Action.Kind != ActionEnterGlobalMode {
-		t.Fatalf("expected ActionEnterGlobalMode from Ctrl-G, got %#v", result.Action)
+	r.SetMode(ModeState{Kind: ModePane})
+	result := r.RouteKeyMsg(runeKey('x'))
+	if result.Action != nil || result.TerminalInput != nil {
+		t.Fatalf("expected ignored key in pane mode, got %#v", result)
 	}
 }
 

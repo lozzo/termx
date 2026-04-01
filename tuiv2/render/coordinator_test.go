@@ -100,7 +100,7 @@ func TestRenderFrameHasTabBarAndStatusBar(t *testing.T) {
 	}
 	// Last line should be status bar
 	lastLine := lines[len(lines)-1]
-	if !strings.Contains(lastLine, "ws:main") && !strings.Contains(lastLine, "w WORKSPACE") {
+	if !strings.Contains(lastLine, "ws:main") && !strings.Contains(lastLine, "W WORKSPACE") {
 		t.Fatalf("last line should be status bar, got %q", lastLine)
 	}
 }

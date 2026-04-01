@@ -286,6 +286,33 @@ func adjustRatioForPane(node *LayoutNode, paneID string, dir Direction, delta fl
 	return adjustRatioForPane(node.Second, paneID, dir, delta)
 }
 
+// BalancePanes resets all pane split ratios to equal in the given tab.
+func (w *Workbench) BalancePanes(tabID string) {
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return
+	}
+	resetNodeRatios(tab.Root)
+}
+
+func resetNodeRatios(node *LayoutNode) {
+	if node == nil || node.IsLeaf() {
+		return
+	}
+	node.Ratio = 0.5
+	resetNodeRatios(node.First)
+	resetNodeRatios(node.Second)
+}
+
+// CycleLayout cycles through layout presets for the given tab.
+func (w *Workbench) CycleLayout(tabID string) {
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return
+	}
+	tab.LayoutPreset = (tab.LayoutPreset + 1) % 3
+}
+
 // BindPaneTerminal sets the TerminalID for a pane. This is the sole write
 // path for associating a backend terminal with a pane. Returns an error if
 // the tab or pane does not exist.

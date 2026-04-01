@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -13,6 +15,7 @@ import (
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
+	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -37,6 +40,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch typed := msg.(type) {
 	case tea.KeyMsg:
 		return m, m.handleKeyMsg(typed)
+	case prefixTimeoutMsg:
+		if typed.seq == m.prefixSeq && m.isStickyMode() {
+			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+			m.render.Invalidate()
+		}
+		return m, nil
 	case SemanticActionMsg:
 		if handled, cmd := m.handleLocalAction(typed.Action); handled {
 			return m, cmd
@@ -44,7 +53,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if handled, cmd := m.handleModalAction(typed.Action); handled {
 			return m, cmd
 		}
-		return m, m.applyEffects(m.enrichEffects(typed.Action, m.orchestrator.HandleSemanticAction(typed.Action)))
+		cmd := m.applyEffects(m.enrichEffects(typed.Action, m.orchestrator.HandleSemanticAction(typed.Action)))
+		if m.isStickyMode() {
+			cmd = tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
+		}
+		return m, cmd
 	case input.SemanticAction:
 		if handled, cmd := m.handleLocalAction(typed); handled {
 			return m, cmd
@@ -52,7 +65,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if handled, cmd := m.handleModalAction(typed); handled {
 			return m, cmd
 		}
-		return m, m.applyEffects(m.enrichEffects(typed, m.orchestrator.HandleSemanticAction(typed)))
+		cmd := m.applyEffects(m.enrichEffects(typed, m.orchestrator.HandleSemanticAction(typed)))
+		if m.isStickyMode() {
+			cmd = tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
+		}
+		return m, cmd
 	case TerminalInputMsg:
 		return m, m.handleTerminalInput(typed.Input)
 	case input.TerminalInput:
@@ -65,11 +82,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.modalHost.Picker = &modal.PickerState{}
 			}
 			m.modalHost.Picker.Items = typed.Items
-			if m.modalHost.Picker.Selected >= len(typed.Items) {
+			m.modalHost.Picker.ApplyFilter()
+			if m.modalHost.Picker.Selected >= len(m.modalHost.Picker.VisibleItems()) {
 				m.modalHost.Picker.Selected = 0
 			}
 			if m.modalHost.Session != nil {
 				m.modalHost.MarkReady(m.modalHost.Session.Kind, m.modalHost.Session.RequestID)
+			}
+		}
+		m.render.Invalidate()
+		return m, nil
+	case terminalManagerItemsLoadedMsg:
+		if m.modalHost != nil {
+			if m.modalHost.TerminalManager == nil {
+				m.modalHost.TerminalManager = &modal.TerminalManagerState{}
+			}
+			m.modalHost.TerminalManager.Items = typed.Items
+			m.modalHost.TerminalManager.ApplyFilter()
+			if m.modalHost.Session != nil {
+				m.modalHost.MarkReady(input.ModeTerminalManager, m.modalHost.Session.RequestID)
 			}
 		}
 		m.render.Invalidate()
@@ -111,6 +142,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case reattachFailedMsg:
 		return m, m.openPickerIfUnattached(typed.paneID)
+	case clearErrorMsg:
+		m.err = nil
+		m.render.Invalidate()
+		return m, nil
 	case InvalidateMsg:
 		return m, nil
 	case tea.WindowSizeMsg:
@@ -120,7 +155,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.resizeVisiblePanesCmd()
 	case error:
 		m.err = typed
-		return m, nil
+		m.render.Invalidate()
+		return m, clearErrorCmd()
 	default:
 		return m, nil
 	}
@@ -419,6 +455,52 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		default:
 			return false, nil
 		}
+	case input.ModeTerminalManager:
+		if m.modalHost.TerminalManager == nil {
+			return false, nil
+		}
+		switch action.Kind {
+		case input.ActionPickerUp:
+			m.modalHost.TerminalManager.Move(-1)
+			m.render.Invalidate()
+			return true, nil
+		case input.ActionPickerDown:
+			m.modalHost.TerminalManager.Move(1)
+			m.render.Invalidate()
+			return true, nil
+		case input.ActionCancelMode:
+			m.modalHost.Close(input.ModeTerminalManager, m.modalHost.Session.RequestID)
+			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+			m.render.Invalidate()
+			return true, nil
+		case input.ActionSubmitPrompt:
+			if selected := m.modalHost.TerminalManager.SelectedItem(); selected != nil && !selected.CreateNew {
+				return true, func() tea.Msg {
+					return input.SemanticAction{Kind: input.ActionOpenPicker, TargetID: selected.TerminalID, PaneID: action.PaneID}
+				}
+			}
+			return true, nil
+		case input.ActionKillTerminal:
+			if selected := m.modalHost.TerminalManager.SelectedItem(); selected != nil && !selected.CreateNew {
+				terminalID := selected.TerminalID
+				items := m.modalHost.TerminalManager.Items
+				filtered := items[:0]
+				for _, item := range items {
+					if item.TerminalID != terminalID {
+						filtered = append(filtered, item)
+					}
+				}
+				m.modalHost.TerminalManager.Items = filtered
+				m.modalHost.TerminalManager.ApplyFilter()
+				m.render.Invalidate()
+				return true, func() tea.Msg {
+					return orchestrator.KillTerminalEffect{TerminalID: terminalID}
+				}
+			}
+			return true, nil
+		default:
+			return false, nil
+		}
 	default:
 		if action.Kind == input.ActionCancelMode {
 			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
@@ -437,15 +519,15 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 	case input.ActionEnterPaneMode:
 		m.input.SetMode(input.ModeState{Kind: input.ModePane})
 		m.render.Invalidate()
-		return true, nil
+		return true, m.rearmPrefixTimeoutCmd()
 	case input.ActionEnterResizeMode:
 		m.input.SetMode(input.ModeState{Kind: input.ModeResize})
 		m.render.Invalidate()
-		return true, nil
+		return true, m.rearmPrefixTimeoutCmd()
 	case input.ActionEnterTabMode:
 		m.input.SetMode(input.ModeState{Kind: input.ModeTab})
 		m.render.Invalidate()
-		return true, nil
+		return true, m.rearmPrefixTimeoutCmd()
 	case input.ActionEnterWorkspaceMode:
 		m.input.SetMode(input.ModeState{Kind: input.ModeWorkspace})
 		m.render.Invalidate()
@@ -457,11 +539,18 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 	case input.ActionEnterDisplayMode:
 		m.input.SetMode(input.ModeState{Kind: input.ModeDisplay})
 		m.render.Invalidate()
-		return true, nil
+		return true, m.rearmPrefixTimeoutCmd()
 	case input.ActionEnterGlobalMode:
 		m.input.SetMode(input.ModeState{Kind: input.ModeGlobal})
 		m.render.Invalidate()
 		return true, nil
+	case input.ActionCancelMode:
+		if m.modalHost == nil || m.modalHost.Session == nil {
+			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+			m.render.Invalidate()
+			return true, nil
+		}
+		return false, nil
 	case input.ActionOpenHelp:
 		m.modalHost.Open(input.ModeHelp, "help")
 		m.modalHost.Help = modal.DefaultHelp()
@@ -498,10 +587,27 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		}
 		return false, nil
 	case input.ActionOpenTerminalManager:
-		if m.input.Mode().Kind == input.ModeNormal {
-			m.input.SetMode(input.ModeState{Kind: input.ModeFloating})
+		if m.input.Mode().Kind == input.ModeGlobal {
+			requestID := "terminal-manager"
+			m.modalHost.Open(input.ModeTerminalManager, requestID)
+			if m.modalHost.TerminalManager == nil {
+				m.modalHost.TerminalManager = &modal.TerminalManagerState{}
+			}
+			m.modalHost.TerminalManager.Title = "Terminal Manager"
+			m.modalHost.TerminalManager.Footer = "[Enter] attach  [Ctrl-K] kill  [Esc] close"
+			m.input.SetMode(input.ModeState{Kind: input.ModeTerminalManager, RequestID: requestID})
 			m.render.Invalidate()
-			return true, nil
+			return true, func() tea.Msg {
+				terminals, err := m.runtime.ListTerminals(context.Background())
+				if err != nil {
+					return err
+				}
+				items := make([]modal.PickerItem, 0, len(terminals))
+				for _, terminal := range terminals {
+					items = append(items, modal.PickerItem{TerminalID: terminal.ID, Name: terminal.Name, State: terminal.State})
+				}
+				return terminalManagerItemsLoadedMsg{Items: items}
+			}
 		}
 		return false, nil
 	case input.ActionZoomPane:
@@ -552,6 +658,21 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 	}
 }
 
+const prefixModeTimeout = 1500 * time.Millisecond
+
+func (m *Model) isStickyMode() bool {
+	kind := m.input.Mode().Kind
+	return kind == input.ModePane || kind == input.ModeResize || kind == input.ModeTab || kind == input.ModeDisplay
+}
+
+func (m *Model) rearmPrefixTimeoutCmd() tea.Cmd {
+	m.prefixSeq++
+	seq := m.prefixSeq
+	return tea.Tick(prefixModeTimeout, func(time.Time) tea.Msg {
+		return prefixTimeoutMsg{seq: seq}
+	})
+}
+
 func (m *Model) handleTerminalInput(in input.TerminalInput) tea.Cmd {
 	if len(in.Data) == 0 {
 		return nil
@@ -593,6 +714,62 @@ func (m *Model) openPickerIfUnattached(paneID string) tea.Cmd {
 	m.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: paneID})
 	m.render.Invalidate()
 	return m.applyEffects([]orchestrator.Effect{orchestrator.LoadPickerItemsEffect{}})
+}
+
+func (m *Model) splitPaneAndAttachTerminalCmd(paneID, terminalID string) tea.Cmd {
+	if m == nil || m.workbench == nil || paneID == "" || terminalID == "" {
+		return nil
+	}
+	tab := m.workbench.CurrentTab()
+	if tab == nil {
+		return nil
+	}
+	newPaneID := "pane-" + shared.GenerateShortID()
+	if err := m.workbench.SplitPane(tab.ID, paneID, newPaneID, workbench.SplitVertical); err != nil {
+		return func() tea.Msg { return err }
+	}
+	_ = m.workbench.FocusPane(tab.ID, newPaneID)
+	m.render.Invalidate()
+	return tea.Batch(m.attachPaneTerminalCmd("", newPaneID, terminalID), m.saveStateCmd())
+}
+
+func (m *Model) createTabAndAttachTerminalCmd(terminalID string) tea.Cmd {
+	if m == nil || m.workbench == nil || terminalID == "" {
+		return nil
+	}
+	ws := m.workbench.CurrentWorkspace()
+	if ws == nil {
+		return nil
+	}
+	tabID := "tab-" + shared.GenerateShortID()
+	paneID := "pane-" + shared.GenerateShortID()
+	name := strconv.Itoa(len(ws.Tabs) + 1)
+	if err := m.workbench.CreateTab(ws.Name, tabID, name); err != nil {
+		return func() tea.Msg { return err }
+	}
+	if err := m.workbench.CreateFirstPane(tabID, paneID); err != nil {
+		return func() tea.Msg { return err }
+	}
+	_ = m.workbench.SwitchTab(ws.Name, len(ws.Tabs)-1)
+	m.render.Invalidate()
+	return tea.Batch(m.attachPaneTerminalCmd("", paneID, terminalID), m.saveStateCmd())
+}
+
+func (m *Model) createFloatingPaneAndAttachTerminalCmd(terminalID string) tea.Cmd {
+	if m == nil || m.workbench == nil || terminalID == "" {
+		return nil
+	}
+	tab := m.workbench.CurrentTab()
+	if tab == nil {
+		return nil
+	}
+	paneID := "pane-" + shared.GenerateShortID()
+	if err := m.workbench.CreateFloatingPane(tab.ID, paneID, workbench.Rect{X: 10, Y: 5, W: 80, H: 24}); err != nil {
+		return func() tea.Msg { return err }
+	}
+	_ = m.workbench.FocusPane(tab.ID, paneID)
+	m.render.Invalidate()
+	return tea.Batch(m.attachPaneTerminalCmd("", paneID, terminalID), m.saveStateCmd())
 }
 
 func (m *Model) nextSequenceCmd(seq sequenceMsg) tea.Cmd {
@@ -735,6 +912,36 @@ func (m *Model) handleModalKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd) {
 	}
 }
 
+func cloneStringMap(src map[string]string) map[string]string {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(src))
+	for key, value := range src {
+		out[key] = value
+	}
+	return out
+}
+
+func (m *Model) openEditTerminalPrompt(terminalID string, currentName string) {
+	if m == nil || m.modalHost == nil || terminalID == "" {
+		return
+	}
+	requestID := "edit-terminal:" + terminalID
+	m.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: requestID}
+	m.modalHost.Prompt = &modal.PromptState{
+		Kind:        "edit-terminal-name",
+		Title:       "Edit Terminal",
+		Hint:        "[Enter] save  [Esc] cancel",
+		Value:       currentName,
+		Original:    currentName,
+		DefaultName: currentName,
+		PaneID:      terminalID,
+	}
+	m.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: requestID})
+	m.render.Invalidate()
+}
+
 func (m *Model) openCreateTerminalPrompt(paneID string) {
 	if m == nil || m.modalHost == nil {
 		return
@@ -778,6 +985,38 @@ func (m *Model) submitPromptCmd(paneID string) tea.Cmd {
 		prompt.Value = ""
 		m.render.Invalidate()
 		return nil
+	case "edit-terminal-name":
+		name := strings.TrimSpace(prompt.Value)
+		if name == "" {
+			name = strings.TrimSpace(prompt.Original)
+		}
+		terminalID := prompt.PaneID
+		requestID := m.modalHost.Session.RequestID
+		m.modalHost.Close(input.ModePrompt, requestID)
+		m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+		m.render.Invalidate()
+		return func() tea.Msg {
+			client := m.runtime.Client()
+			if client == nil {
+				return context.Canceled
+			}
+			registry := m.runtime.Registry()
+			var tags map[string]string
+			if registry != nil {
+				if terminal := registry.Get(terminalID); terminal != nil {
+					tags = cloneStringMap(terminal.Tags)
+				}
+			}
+			if err := client.SetMetadata(context.Background(), terminalID, name, tags); err != nil {
+				return err
+			}
+			if registry != nil {
+				if terminal := registry.Get(terminalID); terminal != nil {
+					terminal.Name = name
+				}
+			}
+			return nil
+		}
 	case "create-terminal-tags":
 		tags, err := parsePromptTags(prompt.Value)
 		if err != nil {

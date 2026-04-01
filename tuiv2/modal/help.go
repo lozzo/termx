@@ -12,19 +12,17 @@ type HelpBinding struct {
 func DefaultHelp() *HelpState {
 	return &HelpState{
 		Bindings: []HelpBinding{
-			{Key: "Ctrl+P", Action: "pane mode"},
-			{Key: "Ctrl+R", Action: "resize mode"},
-			{Key: "Ctrl+T", Action: "tab mode"},
-			{Key: "Ctrl+W", Action: "workspace mode"},
-			{Key: "Ctrl+O", Action: "floating mode"},
-			{Key: "Ctrl+V", Action: "display mode"},
+			{Key: "Ctrl+P", Action: "pane mode — h/j/k/l focus, %/\" split, z zoom, w close"},
+			{Key: "Ctrl+R", Action: "resize mode — h/j/k/l small, H/J/K/L large, = balance, Space layout"},
+			{Key: "Ctrl+T", Action: "tab mode — c new, n/p next/prev, w close"},
+			{Key: "Ctrl+W", Action: "workspace mode — n new, d delete, f picker"},
+			{Key: "Ctrl+O", Action: "floating mode — n new float"},
+			{Key: "Ctrl+V", Action: "display mode — u/d scroll, z zoom"},
 			{Key: "Ctrl+F", Action: "terminal picker"},
-			{Key: "Ctrl+G", Action: "global mode"},
-			{Key: "Pane: Ctrl+D/E/H/J/K/L/W", Action: "split / focus / close pane"},
-			{Key: "Tab: Ctrl+T/N/P/W", Action: "new / next / prev / close tab"},
-			{Key: "Display: Ctrl+U/Y/V", Action: "scroll up / down / zoom"},
-			{Key: "Global: Ctrl+Q / Ctrl+T", Action: "quit / terminal manager"},
-			{Key: "Esc", Action: "close current mode/modal"},
+			{Key: "Ctrl+G", Action: "global mode — Ctrl+Q quit, Ctrl+T manager"},
+			{Key: "Picker: Enter / Tab / Ctrl+E / Ctrl+K", Action: "attach / split attach / edit / kill"},
+			{Key: "Manager: Enter / Ctrl+T / Ctrl+O / Ctrl+E / Ctrl+K", Action: "attach / new tab / float / edit / kill"},
+			{Key: "All modes: Esc", Action: "exit mode / close modal"},
 		},
 	}
 }

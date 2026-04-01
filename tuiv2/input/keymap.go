@@ -15,7 +15,7 @@ type Binding struct {
 
 // Keymap holds per-mode key bindings.
 type Keymap struct {
-	// Normal holds bindings active in ModeNormal.
+	// Normal holds bindings active in ModeNormal (passthrough; Ctrl shortcuts intercepted).
 	Normal []Binding
 	// Pane holds bindings active in ModePane.
 	Pane []Binding
@@ -31,6 +31,8 @@ type Keymap struct {
 	Display []Binding
 	// Global holds bindings active in ModeGlobal.
 	Global []Binding
+	// TerminalManager holds bindings active in ModeTerminalManager.
+	TerminalManager []Binding
 	// Picker holds bindings active in ModePicker.
 	Picker []Binding
 	// WorkspacePicker holds bindings active in ModeWorkspacePicker.
@@ -42,6 +44,7 @@ type Keymap struct {
 // DefaultKeymap returns the canonical key bindings for tuiv2.
 func DefaultKeymap() Keymap {
 	return Keymap{
+		// Normal mode: Ctrl shortcuts enter sub-modes; everything else passes through.
 		Normal: []Binding{
 			{Type: tea.KeyCtrlP, Action: ActionEnterPaneMode},
 			{Type: tea.KeyCtrlR, Action: ActionEnterResizeMode},
@@ -54,16 +57,28 @@ func DefaultKeymap() Keymap {
 			{Type: tea.KeyRunes, Rune: '?', Action: ActionOpenHelp},
 		},
 		Pane: []Binding{
+			// Focus via plain rune keys
+			{Type: tea.KeyRunes, Rune: 'h', Action: ActionFocusPaneLeft},
+			{Type: tea.KeyRunes, Rune: 'j', Action: ActionFocusPaneDown},
+			{Type: tea.KeyRunes, Rune: 'k', Action: ActionFocusPaneUp},
+			{Type: tea.KeyRunes, Rune: 'l', Action: ActionFocusPaneRight},
+			// Focus via arrow keys
+			{Type: tea.KeyLeft, Action: ActionFocusPaneLeft},
+			{Type: tea.KeyDown, Action: ActionFocusPaneDown},
+			{Type: tea.KeyUp, Action: ActionFocusPaneUp},
+			{Type: tea.KeyRight, Action: ActionFocusPaneRight},
+			// Split
+			{Type: tea.KeyRunes, Rune: '%', Action: ActionSplitPane},
+			{Type: tea.KeyRunes, Rune: '"', Action: ActionSplitPaneHorizontal},
 			{Type: tea.KeyCtrlD, Action: ActionSplitPane},
 			{Type: tea.KeyCtrlE, Action: ActionSplitPaneHorizontal},
-			{Type: tea.KeyCtrlH, Action: ActionFocusPaneLeft},
-			{Type: tea.KeyCtrlL, Action: ActionFocusPaneRight},
-			{Type: tea.KeyCtrlJ, Action: ActionFocusPaneDown},
-			{Type: tea.KeyCtrlK, Action: ActionFocusPaneUp},
-			{Type: tea.KeyCtrlW, Action: ActionClosePane},
+			// Other
+			{Type: tea.KeyRunes, Rune: 'z', Action: ActionZoomPane},
+			{Type: tea.KeyRunes, Rune: 'w', Action: ActionClosePane},
 			{Type: tea.KeyEsc, Action: ActionCancelMode},
 		},
 		Resize: []Binding{
+			// Small step
 			{Type: tea.KeyRunes, Rune: 'h', Action: ActionResizePaneLeft},
 			{Type: tea.KeyRunes, Rune: 'l', Action: ActionResizePaneRight},
 			{Type: tea.KeyRunes, Rune: 'k', Action: ActionResizePaneUp},
@@ -72,13 +87,21 @@ func DefaultKeymap() Keymap {
 			{Type: tea.KeyRight, Action: ActionResizePaneRight},
 			{Type: tea.KeyUp, Action: ActionResizePaneUp},
 			{Type: tea.KeyDown, Action: ActionResizePaneDown},
+			// Large step
+			{Type: tea.KeyRunes, Rune: 'H', Action: ActionResizePaneLargeLeft},
+			{Type: tea.KeyRunes, Rune: 'L', Action: ActionResizePaneLargeRight},
+			{Type: tea.KeyRunes, Rune: 'K', Action: ActionResizePaneLargeUp},
+			{Type: tea.KeyRunes, Rune: 'J', Action: ActionResizePaneLargeDown},
+			// Balance / cycle
+			{Type: tea.KeyRunes, Rune: '=', Action: ActionBalancePanes},
+			{Type: tea.KeySpace, Action: ActionCycleLayout},
 			{Type: tea.KeyEsc, Action: ActionCancelMode},
 		},
 		Tab: []Binding{
-			{Type: tea.KeyCtrlT, Action: ActionCreateTab},
-			{Type: tea.KeyCtrlN, Action: ActionNextTab},
-			{Type: tea.KeyCtrlP, Action: ActionPrevTab},
-			{Type: tea.KeyCtrlW, Action: ActionCloseTab},
+			{Type: tea.KeyRunes, Rune: 'c', Action: ActionCreateTab},
+			{Type: tea.KeyRunes, Rune: 'n', Action: ActionNextTab},
+			{Type: tea.KeyRunes, Rune: 'p', Action: ActionPrevTab},
+			{Type: tea.KeyRunes, Rune: 'w', Action: ActionCloseTab},
 			{Type: tea.KeyEsc, Action: ActionCancelMode},
 		},
 		Workspace: []Binding{
@@ -92,9 +115,9 @@ func DefaultKeymap() Keymap {
 			{Type: tea.KeyEsc, Action: ActionCancelMode},
 		},
 		Display: []Binding{
-			{Type: tea.KeyCtrlU, Action: ActionScrollUp},
-			{Type: tea.KeyCtrlY, Action: ActionScrollDown},
-			{Type: tea.KeyCtrlV, Action: ActionZoomPane},
+			{Type: tea.KeyRunes, Rune: 'u', Action: ActionScrollUp},
+			{Type: tea.KeyRunes, Rune: 'd', Action: ActionScrollDown},
+			{Type: tea.KeyRunes, Rune: 'z', Action: ActionZoomPane},
 			{Type: tea.KeyEsc, Action: ActionCancelMode},
 		},
 		Global: []Binding{
@@ -102,10 +125,22 @@ func DefaultKeymap() Keymap {
 			{Type: tea.KeyCtrlT, Action: ActionOpenTerminalManager},
 			{Type: tea.KeyEsc, Action: ActionCancelMode},
 		},
+		TerminalManager: []Binding{
+			{Type: tea.KeyUp, Action: ActionPickerUp},
+			{Type: tea.KeyDown, Action: ActionPickerDown},
+			{Type: tea.KeyEnter, Action: ActionSubmitPrompt},
+			{Type: tea.KeyCtrlT, Action: ActionAttachTab},
+			{Type: tea.KeyCtrlO, Action: ActionAttachFloating},
+			{Type: tea.KeyCtrlE, Action: ActionEditTerminal},
+			{Type: tea.KeyCtrlK, Action: ActionKillTerminal},
+			{Type: tea.KeyEsc, Action: ActionCancelMode},
+		},
 		Picker: []Binding{
 			{Type: tea.KeyUp, Action: ActionPickerUp},
 			{Type: tea.KeyDown, Action: ActionPickerDown},
 			{Type: tea.KeyEnter, Action: ActionSubmitPrompt},
+			{Type: tea.KeyTab, Action: ActionPickerAttachSplit},
+			{Type: tea.KeyCtrlE, Action: ActionEditTerminal},
 			{Type: tea.KeyCtrlK, Action: ActionKillTerminal},
 			{Type: tea.KeyEsc, Action: ActionCancelMode},
 		},
@@ -131,6 +166,9 @@ func (km *Keymap) LookupWorkspace(msg tea.KeyMsg) ActionKind { return lookupBind
 func (km *Keymap) LookupFloating(msg tea.KeyMsg) ActionKind  { return lookupBindings(km.Floating, msg) }
 func (km *Keymap) LookupDisplay(msg tea.KeyMsg) ActionKind   { return lookupBindings(km.Display, msg) }
 func (km *Keymap) LookupGlobal(msg tea.KeyMsg) ActionKind    { return lookupBindings(km.Global, msg) }
+func (km *Keymap) LookupTerminalManager(msg tea.KeyMsg) ActionKind {
+	return lookupBindings(km.TerminalManager, msg)
+}
 
 // LookupPicker returns the ActionKind bound to msg in ModePicker, or "".
 func (km *Keymap) LookupPicker(msg tea.KeyMsg) ActionKind {

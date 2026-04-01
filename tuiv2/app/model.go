@@ -27,6 +27,8 @@ type Model struct {
 
 	startup bootstrap.StartupResult
 
+	prefixSeq int // incremented each time a sticky mode is entered or a valid action fires
+
 	send func(tea.Msg) // injected by run.go after tea.NewProgram
 
 	input        *input.Router
@@ -67,6 +69,9 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 		}
 		if model.modalHost != nil && model.modalHost.Session != nil && model.modalHost.Session.Kind == input.ModeWorkspacePicker {
 			state = render.AttachWorkspacePicker(state, model.modalHost.WorkspacePicker)
+		}
+		if model.modalHost != nil && model.modalHost.Session != nil && model.modalHost.Session.Kind == input.ModeTerminalManager {
+			state = render.AttachTerminalManager(state, model.modalHost.TerminalManager)
 		}
 		if model.modalHost != nil && model.modalHost.Session != nil && model.modalHost.Session.Kind == input.ModeHelp {
 			state.Help = model.modalHost.Help

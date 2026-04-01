@@ -28,9 +28,13 @@ const (
 	ActionCancelMode          ActionKind = "cancel-mode"
 	ActionPickerUp            ActionKind = "picker-up"
 	ActionPickerDown          ActionKind = "picker-down"
+	ActionPickerAttachSplit   ActionKind = "picker-attach-split"
+	ActionEditTerminal        ActionKind = "edit-terminal"
+	ActionAttachTab           ActionKind = "attach-tab"
+	ActionAttachFloating      ActionKind = "attach-floating"
 	ActionScrollUp            ActionKind = "scroll-up"
 	ActionScrollDown          ActionKind = "scroll-down"
-	ActionZoomPane           ActionKind = "zoom-pane"
+	ActionZoomPane            ActionKind = "zoom-pane"
 	ActionQuit                ActionKind = "quit"
 	ActionCreateWorkspace     ActionKind = "create-workspace"
 	ActionSwitchWorkspace     ActionKind = "switch-workspace"
@@ -47,6 +51,12 @@ const (
 	ActionResizePaneUp        ActionKind = "resize-pane-up"
 	ActionResizePaneDown      ActionKind = "resize-pane-down"
 	ActionCreateFloatingPane  ActionKind = "create-floating-pane"
+	ActionResizePaneLargeLeft  ActionKind = "resize-pane-large-left"
+	ActionResizePaneLargeRight ActionKind = "resize-pane-large-right"
+	ActionResizePaneLargeUp    ActionKind = "resize-pane-large-up"
+	ActionResizePaneLargeDown  ActionKind = "resize-pane-large-down"
+	ActionBalancePanes         ActionKind = "balance-panes"
+	ActionCycleLayout          ActionKind = "cycle-layout"
 )
 
 type SemanticAction struct {

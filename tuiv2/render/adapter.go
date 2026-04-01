@@ -11,6 +11,7 @@ type VisibleRenderState struct {
 	Runtime         *VisibleRuntimeStateProxy
 	Picker          *modal.PickerState
 	WorkspacePicker *modal.WorkspacePickerState
+	TerminalManager *modal.TerminalManagerState
 	Help            *modal.HelpState
 	Prompt          *modal.PromptState
 	TermSize        TermSize
@@ -52,6 +53,11 @@ func AttachPicker(state VisibleRenderState, picker *modal.PickerState) VisibleRe
 
 func AttachWorkspacePicker(state VisibleRenderState, picker *modal.WorkspacePickerState) VisibleRenderState {
 	state.WorkspacePicker = picker
+	return state
+}
+
+func AttachTerminalManager(state VisibleRenderState, manager *modal.TerminalManagerState) VisibleRenderState {
+	state.TerminalManager = manager
 	return state
 }
 

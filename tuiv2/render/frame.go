@@ -96,26 +96,27 @@ func renderStatusBar(state VisibleRenderState) string {
 	if mode == "" || mode == "normal" {
 		leftParts = append(leftParts, renderStatusChip("Ctrl", "#020617", "#f8fafc"))
 		leftParts = append(leftParts, renderStatusSep())
-		leftParts = append(leftParts, renderStatusChip("p PANE", "#86efac", "#020617"))
+		leftParts = append(leftParts, renderStatusChip("P PANE", "#86efac", "#020617"))
 		leftParts = append(leftParts, renderStatusSep())
-		leftParts = append(leftParts, renderStatusChip("r RESIZE", "#fca5a5", "#020617"))
+		leftParts = append(leftParts, renderStatusChip("R RESIZE", "#fca5a5", "#020617"))
 		leftParts = append(leftParts, renderStatusSep())
-		leftParts = append(leftParts, renderStatusChip("t TAB", "#93c5fd", "#020617"))
+		leftParts = append(leftParts, renderStatusChip("T TAB", "#93c5fd", "#020617"))
 		leftParts = append(leftParts, renderStatusSep())
-		leftParts = append(leftParts, renderStatusChip("w WORKSPACE", "#fcd34d", "#020617"))
+		leftParts = append(leftParts, renderStatusChip("W WORKSPACE", "#fcd34d", "#020617"))
 		leftParts = append(leftParts, renderStatusSep())
-		leftParts = append(leftParts, renderStatusChip("o FLOAT", "#fde047", "#020617"))
+		leftParts = append(leftParts, renderStatusChip("O FLOAT", "#fde047", "#020617"))
 		leftParts = append(leftParts, renderStatusSep())
-		leftParts = append(leftParts, renderStatusChip("v DISPLAY", "#c4b5fd", "#020617"))
+		leftParts = append(leftParts, renderStatusChip("V DISPLAY", "#c4b5fd", "#020617"))
 		leftParts = append(leftParts, renderStatusSep())
-		leftParts = append(leftParts, renderStatusChip("f PICKER", "#a7f3d0", "#020617"))
+		leftParts = append(leftParts, renderStatusChip("F PICKER", "#a7f3d0", "#020617"))
 		leftParts = append(leftParts, renderStatusSep())
-		leftParts = append(leftParts, renderStatusChip("g GLOBAL", "#67e8f9", "#020617"))
+		leftParts = append(leftParts, renderStatusChip("G GLOBAL", "#67e8f9", "#020617"))
 	} else {
 		badge := renderModeBadge(mode)
 		if badge != "" {
 			leftParts = append(leftParts, badge)
 		}
+		leftParts = append(leftParts, renderModeHints(mode)...)
 	}
 	left := strings.Join(leftParts, "")
 
@@ -155,14 +156,103 @@ func renderModeBadge(mode string) string {
 		bg = "#93c5fd"
 	case "WORKSPACE":
 		bg = "#fcd34d"
-	case "FLOAT":
+	case "FLOATING":
 		bg = "#fde047"
+	case "DISPLAY":
+		bg = "#c4b5fd"
 	case "PICKER":
 		bg = "#a7f3d0"
 	case "GLOBAL":
 		bg = "#67e8f9"
+	case "TERMINAL-MANAGER":
+		bg = "#67e8f9"
 	}
 	return renderStatusChip(label, bg, "#020617") + renderStatusSep()
+}
+
+func renderModeHints(mode string) []string {
+	switch mode {
+	case "pane":
+		return []string{
+			renderStatusChip("h/j/k/l FOCUS", "#86efac", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("% VSPLIT", "#86efac", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("\" HSPLIT", "#86efac", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("z ZOOM", "#86efac", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("w CLOSE", "#86efac", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("Esc BACK", "#334155", "#f8fafc"),
+		}
+	case "resize":
+		return []string{
+			renderStatusChip("h/j/k/l RESIZE", "#fca5a5", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("H/J/K/L RESIZE\u00d72", "#fca5a5", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("= BALANCE", "#fca5a5", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("Space LAYOUT", "#fca5a5", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("Esc BACK", "#334155", "#f8fafc"),
+		}
+	case "tab":
+		return []string{
+			renderStatusChip("c NEW", "#93c5fd", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("n/p NEXT/PREV", "#93c5fd", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("w CLOSE", "#93c5fd", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("Esc BACK", "#334155", "#f8fafc"),
+		}
+	case "workspace":
+		return []string{
+			renderStatusChip("Ctrl-F PICK", "#fcd34d", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("N NEW", "#fcd34d", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("D DELETE", "#fcd34d", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("Esc BACK", "#334155", "#f8fafc"),
+		}
+	case "floating":
+		return []string{
+			renderStatusChip("N NEW FLOAT", "#fde047", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("Esc BACK", "#334155", "#f8fafc"),
+		}
+	case "display":
+		return []string{
+			renderStatusChip("u/d SCROLL", "#c4b5fd", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("z ZOOM", "#c4b5fd", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("Esc BACK", "#334155", "#f8fafc"),
+		}
+	case "global":
+		return []string{
+			renderStatusChip("Ctrl-T MANAGER", "#67e8f9", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("Ctrl-Q QUIT", "#67e8f9", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("Esc BACK", "#334155", "#f8fafc"),
+		}
+	case "terminal-manager":
+		return []string{
+			renderStatusChip("↑/↓ MOVE", "#67e8f9", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("Enter ATTACH", "#67e8f9", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("Ctrl-K KILL", "#67e8f9", "#020617"),
+			renderStatusSep(),
+			renderStatusChip("Esc BACK", "#334155", "#f8fafc"),
+		}
+	default:
+		return []string{renderStatusChip("Esc BACK", "#334155", "#f8fafc")}
+	}
 }
 
 func fillLine(left, right string, width int, bg lipgloss.Color) string {

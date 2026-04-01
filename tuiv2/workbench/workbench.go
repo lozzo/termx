@@ -72,6 +72,28 @@ func (w *Workbench) ListWorkspaces() []string {
 	return append([]string(nil), w.order...)
 }
 
+func (w *Workbench) SetPaneTitleByTerminalID(terminalID, title string) {
+	if w == nil || terminalID == "" || title == "" {
+		return
+	}
+	for _, wsName := range w.order {
+		ws := w.store[wsName]
+		if ws == nil {
+			continue
+		}
+		for _, tab := range ws.Tabs {
+			if tab == nil {
+				continue
+			}
+			for _, pane := range tab.Panes {
+				if pane != nil && pane.TerminalID == terminalID {
+					pane.Title = title
+				}
+			}
+		}
+	}
+}
+
 func (w *Workbench) Visible() *VisibleWorkbench {
 	return w.VisibleWithSize(Rect{W: 1, H: 1})
 }

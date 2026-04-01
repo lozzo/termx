@@ -47,6 +47,9 @@ func (c *Coordinator) RenderFrame() string {
 	if overlay := renderWorkspacePickerOverlay(state.WorkspacePicker, TermSize{Width: state.TermSize.Width, Height: bodyHeight}); overlay != "" {
 		body = compositeOverlay(body, overlay, TermSize{Width: state.TermSize.Width, Height: bodyHeight})
 	}
+	if overlay := renderTerminalManagerOverlay(state.TerminalManager, TermSize{Width: state.TermSize.Width, Height: bodyHeight}); overlay != "" {
+		body = compositeOverlay(body, overlay, TermSize{Width: state.TermSize.Width, Height: bodyHeight})
+	}
 	if overlay := renderHelpOverlay(state.Help, TermSize{Width: state.TermSize.Width, Height: bodyHeight}); overlay != "" {
 		body = compositeOverlay(body, overlay, TermSize{Width: state.TermSize.Width, Height: bodyHeight})
 	}

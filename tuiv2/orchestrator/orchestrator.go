@@ -192,6 +192,42 @@ func (o *Orchestrator) HandleSemanticAction(action input.SemanticAction) []Effec
 		}
 		_ = o.workbench.AdjustPaneRatio(tab.ID, paneID, dir, 0.05)
 		return []Effect{InvalidateRenderEffect{}}
+	case input.ActionResizePaneLargeLeft, input.ActionResizePaneLargeRight, input.ActionResizePaneLargeUp, input.ActionResizePaneLargeDown:
+		tab := o.workbench.CurrentTab()
+		if tab == nil {
+			return nil
+		}
+		paneID := action.PaneID
+		if paneID == "" {
+			paneID = tab.ActivePaneID
+		}
+		var dir workbench.Direction
+		switch action.Kind {
+		case input.ActionResizePaneLargeLeft:
+			dir = workbench.DirectionLeft
+		case input.ActionResizePaneLargeRight:
+			dir = workbench.DirectionRight
+		case input.ActionResizePaneLargeUp:
+			dir = workbench.DirectionUp
+		default:
+			dir = workbench.DirectionDown
+		}
+		_ = o.workbench.AdjustPaneRatio(tab.ID, paneID, dir, 0.15)
+		return []Effect{InvalidateRenderEffect{}}
+	case input.ActionBalancePanes:
+		tab := o.workbench.CurrentTab()
+		if tab == nil {
+			return nil
+		}
+		o.workbench.BalancePanes(tab.ID)
+		return []Effect{InvalidateRenderEffect{}}
+	case input.ActionCycleLayout:
+		tab := o.workbench.CurrentTab()
+		if tab == nil {
+			return nil
+		}
+		o.workbench.CycleLayout(tab.ID)
+		return []Effect{InvalidateRenderEffect{}}
 	case input.ActionCreateWorkspace:
 		if o.workbench == nil {
 			return nil

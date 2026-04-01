@@ -20,7 +20,7 @@ func renderPickerOverlay(picker *modal.PickerState, termSize TermSize) string {
 		item := items[index]
 		itemLines = append(itemLines, item.RenderLine(innerWidth, index == picker.Selected, pickerLineStyle, pickerSelectedLineStyle, pickerCreateRowStyle))
 	}
-	return renderPickerCard(coalesce(picker.Title, "Terminal Picker"), picker.Query, itemLines, coalesce(picker.Footer, "[Enter] attach  [Esc] close"), width, height)
+	return renderPickerCard(coalesce(picker.Title, "Terminal Picker"), picker.Query, itemLines, coalesce(picker.Footer, "[Enter] attach  [Tab] split  [Ctrl-E] edit  [Ctrl-K] kill  [Esc] close"), width, height)
 }
 
 func renderPromptOverlay(prompt *modal.PromptState, termSize TermSize) string {
@@ -67,6 +67,29 @@ func renderWorkspacePickerOverlay(picker *modal.WorkspacePickerState, termSize T
 		picker.Query,
 		itemLines,
 		coalesce(picker.Footer, "[Enter] switch  [Esc] close"),
+		width,
+		height,
+	)
+}
+
+func renderTerminalManagerOverlay(manager *modal.TerminalManagerState, termSize TermSize) string {
+	if manager == nil {
+		return ""
+	}
+	width := maxInt(termSize.Width, 80)
+	height := maxInt(termSize.Height, 24)
+	innerWidth := pickerInnerWidth(width)
+	items := manager.VisibleItems()
+	itemLines := make([]string, 0, len(items))
+	for index := range items {
+		item := items[index]
+		itemLines = append(itemLines, item.RenderLine(innerWidth, index == manager.Selected, pickerLineStyle, pickerSelectedLineStyle, pickerCreateRowStyle))
+	}
+	return renderPickerCard(
+		coalesce(manager.Title, "Terminal Manager"),
+		manager.Query,
+		itemLines,
+		coalesce(manager.Footer, "[Enter] attach  [Ctrl-T] tab  [Ctrl-O] float  [Ctrl-E] edit  [Ctrl-K] kill  [Esc] close"),
 		width,
 		height,
 	)

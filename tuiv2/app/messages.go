@@ -27,7 +27,15 @@ type EffectAppliedMsg struct {
 
 type clearErrorMsg struct{}
 
+type terminalTitleMsg struct {
+	Title string
+}
+
 type pickerItemsLoadedMsg struct {
+	Items []modal.PickerItem
+}
+
+type terminalManagerItemsLoadedMsg struct {
 	Items []modal.PickerItem
 }
 
@@ -48,3 +56,5 @@ type reattachFailedMsg struct {
 	tabID  string
 	paneID string
 }
+
+type prefixTimeoutMsg struct{ seq int }
