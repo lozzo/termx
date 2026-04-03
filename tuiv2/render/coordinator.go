@@ -132,25 +132,10 @@ func (c *Coordinator) RenderFrame() string {
 	body := rendered.content
 	cursor := rendered.cursor
 
-	if overlay := renderPromptOverlay(state.Prompt, TermSize{Width: state.TermSize.Width, Height: bodyHeight}); overlay != "" {
+	overlaySize := TermSize{Width: state.TermSize.Width, Height: bodyHeight}
+	if overlay := renderActiveOverlay(state, overlaySize); overlay != "" {
 		body = compositeOverlay(body, overlay, TermSize{Width: state.TermSize.Width, Height: bodyHeight})
-		cursor = ""
-	}
-	if overlay := renderPickerOverlay(state.Picker, TermSize{Width: state.TermSize.Width, Height: bodyHeight}); overlay != "" {
-		body = compositeOverlay(body, overlay, TermSize{Width: state.TermSize.Width, Height: bodyHeight})
-		cursor = ""
-	}
-	if overlay := renderWorkspacePickerOverlay(state.WorkspacePicker, TermSize{Width: state.TermSize.Width, Height: bodyHeight}); overlay != "" {
-		body = compositeOverlay(body, overlay, TermSize{Width: state.TermSize.Width, Height: bodyHeight})
-		cursor = ""
-	}
-	if overlay := renderTerminalManagerOverlay(state.TerminalManager, TermSize{Width: state.TermSize.Width, Height: bodyHeight}); overlay != "" {
-		body = compositeOverlay(body, overlay, TermSize{Width: state.TermSize.Width, Height: bodyHeight})
-		cursor = ""
-	}
-	if overlay := renderHelpOverlay(state.Help, TermSize{Width: state.TermSize.Width, Height: bodyHeight}); overlay != "" {
-		body = compositeOverlay(body, overlay, TermSize{Width: state.TermSize.Width, Height: bodyHeight})
-		cursor = ""
+		cursor = hideCursorANSI()
 	}
 	frame := strings.Join([]string{tabBar, body, statusBar}, "\n") + cursor
 	c.mu.Lock()
@@ -212,9 +197,9 @@ func renderBodyFrame(state VisibleRenderState, width, height int) renderedBody {
 	if width <= 0 || height <= 0 {
 		return renderedBody{}
 	}
-	if state.TerminalPool != nil {
+	if state.Surface.Kind == VisibleSurfaceTerminalPool && state.Surface.TerminalPool != nil {
 		return renderedBody{
-			content: renderTerminalPoolPage(state.TerminalPool, state.Runtime, TermSize{Width: width, Height: height}),
+			content: renderTerminalPoolPage(state.Surface.TerminalPool, state.Runtime, TermSize{Width: width, Height: height}),
 		}
 	}
 	if state.Workbench == nil {
@@ -233,6 +218,23 @@ func renderBodyFrame(state VisibleRenderState, width, height int) renderedBody {
 	return renderedBody{
 		content: canvas.contentString(),
 		cursor:  canvas.cursorANSI(),
+	}
+}
+
+func renderActiveOverlay(state VisibleRenderState, termSize TermSize) string {
+	switch state.Overlay.Kind {
+	case VisibleOverlayPrompt:
+		return renderPromptOverlay(state.Overlay.Prompt, termSize)
+	case VisibleOverlayPicker:
+		return renderPickerOverlay(state.Overlay.Picker, termSize)
+	case VisibleOverlayWorkspacePicker:
+		return renderWorkspacePickerOverlay(state.Overlay.WorkspacePicker, termSize)
+	case VisibleOverlayTerminalManager:
+		return renderTerminalManagerOverlay(state.Overlay.TerminalManager, termSize)
+	case VisibleOverlayHelp:
+		return renderHelpOverlay(state.Overlay.Help, termSize)
+	default:
+		return ""
 	}
 }
 

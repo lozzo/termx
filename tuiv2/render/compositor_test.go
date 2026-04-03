@@ -113,10 +113,47 @@ func TestRenderFrameProjectsActivePaneCursor(t *testing.T) {
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
 	frame := NewCoordinator(func() VisibleRenderState { return state }).RenderFrame()
 
-	if !strings.Contains(frame, "\x1b[3;2H") {
+	if !strings.Contains(frame, "\x1b[?25h\x1b[3;2H") {
 		t.Fatalf("expected active pane cursor escape in frame, got %q", frame)
 	}
-	if cursorIdx := strings.Index(frame, "\x1b[3;2H"); cursorIdx <= strings.LastIndex(frame, "ws:main") {
+	if cursorIdx := strings.Index(frame, "\x1b[?25h\x1b[3;2H"); cursorIdx <= strings.LastIndex(frame, "ws:main") {
 		t.Fatalf("expected cursor escape to be emitted after the status bar, got %q", frame)
+	}
+}
+
+func TestRenderFrameHidesHostCursorWhenActivePaneCursorInvisible(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 20, Rows: 4},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{{{Content: "h", Width: 1}, {Content: "i", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Row: 0, Col: 0, Visible: false},
+	}
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
+	frame := NewCoordinator(func() VisibleRenderState { return state }).RenderFrame()
+
+	if !strings.Contains(frame, "\x1b[?25l") {
+		t.Fatalf("expected host cursor hide escape in frame, got %q", frame)
+	}
+	if strings.Contains(frame, "\x1b[?25h") {
+		t.Fatalf("expected no host cursor show escape when terminal cursor is invisible, got %q", frame)
 	}
 }

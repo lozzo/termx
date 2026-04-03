@@ -1,27 +1,56 @@
 package render
 
 import (
+	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 type VisibleRenderState struct {
-	Workbench       *workbench.VisibleWorkbench
-	Runtime         *VisibleRuntimeStateProxy
-	TerminalPool    *modal.TerminalManagerState
+	Workbench *workbench.VisibleWorkbench
+	Runtime   *VisibleRuntimeStateProxy
+	Surface   VisibleSurface
+	Overlay   VisibleOverlay
+	TermSize  TermSize
+	Notice    string
+	Error     string
+	InputMode string
+}
+
+type VisibleRuntimeStateProxy = runtime.VisibleRuntime
+
+type VisibleSurfaceKind uint8
+
+const (
+	VisibleSurfaceWorkbench VisibleSurfaceKind = iota
+	VisibleSurfaceTerminalPool
+)
+
+type VisibleSurface struct {
+	Kind         VisibleSurfaceKind
+	TerminalPool *modal.TerminalManagerState
+}
+
+type VisibleOverlayKind uint8
+
+const (
+	VisibleOverlayNone VisibleOverlayKind = iota
+	VisibleOverlayPrompt
+	VisibleOverlayPicker
+	VisibleOverlayWorkspacePicker
+	VisibleOverlayTerminalManager
+	VisibleOverlayHelp
+)
+
+type VisibleOverlay struct {
+	Kind            VisibleOverlayKind
+	Prompt          *modal.PromptState
 	Picker          *modal.PickerState
 	WorkspacePicker *modal.WorkspacePickerState
 	TerminalManager *modal.TerminalManagerState
 	Help            *modal.HelpState
-	Prompt          *modal.PromptState
-	TermSize        TermSize
-	Notice          string
-	Error           string
-	InputMode       string
 }
-
-type VisibleRuntimeStateProxy = runtime.VisibleRuntime
 
 type TermSize struct {
 	Width  int
@@ -33,7 +62,10 @@ func AdaptVisibleState(wb *workbench.Workbench, rt *runtime.Runtime) VisibleRend
 }
 
 func AdaptVisibleStateWithSize(wb *workbench.Workbench, rt *runtime.Runtime, bodyWidth, bodyHeight int) VisibleRenderState {
-	state := VisibleRenderState{}
+	state := VisibleRenderState{
+		Surface: VisibleSurface{Kind: VisibleSurfaceWorkbench},
+		Overlay: VisibleOverlay{Kind: VisibleOverlayNone},
+	}
 	if wb != nil {
 		if bodyWidth > 0 && bodyHeight > 0 {
 			state.Workbench = wb.VisibleWithSize(workbench.Rect{W: bodyWidth, H: bodyHeight})
@@ -48,22 +80,82 @@ func AdaptVisibleStateWithSize(wb *workbench.Workbench, rt *runtime.Runtime, bod
 }
 
 func AttachPicker(state VisibleRenderState, picker *modal.PickerState) VisibleRenderState {
-	state.Picker = picker
-	return state
+	return WithOverlayPicker(state, picker)
 }
 
 func AttachWorkspacePicker(state VisibleRenderState, picker *modal.WorkspacePickerState) VisibleRenderState {
-	state.WorkspacePicker = picker
-	return state
+	return WithOverlayWorkspacePicker(state, picker)
 }
 
 func AttachTerminalManager(state VisibleRenderState, manager *modal.TerminalManagerState) VisibleRenderState {
-	state.TerminalManager = manager
+	state.Overlay = VisibleOverlay{
+		Kind:            VisibleOverlayTerminalManager,
+		TerminalManager: manager,
+	}
 	return state
 }
 
 func AttachTerminalPool(state VisibleRenderState, pool *modal.TerminalManagerState) VisibleRenderState {
-	state.TerminalPool = pool
+	if pool == nil {
+		state.Surface = VisibleSurface{Kind: VisibleSurfaceWorkbench}
+		return state
+	}
+	state.Surface = VisibleSurface{
+		Kind:         VisibleSurfaceTerminalPool,
+		TerminalPool: pool,
+	}
+	return state
+}
+
+func AttachModalHost(state VisibleRenderState, host *modal.ModalHost) VisibleRenderState {
+	if host == nil || host.Session == nil {
+		state.Overlay = VisibleOverlay{Kind: VisibleOverlayNone}
+		return state
+	}
+	switch host.Session.Kind {
+	case input.ModePicker:
+		return AttachPicker(state, host.Picker)
+	case input.ModeWorkspacePicker:
+		return AttachWorkspacePicker(state, host.WorkspacePicker)
+	case input.ModeHelp:
+		return AttachHelp(state, host.Help)
+	case input.ModePrompt:
+		return AttachPrompt(state, host.Prompt)
+	default:
+		state.Overlay = VisibleOverlay{Kind: VisibleOverlayNone}
+		return state
+	}
+}
+
+func AttachHelp(state VisibleRenderState, help *modal.HelpState) VisibleRenderState {
+	state.Overlay = VisibleOverlay{
+		Kind: VisibleOverlayHelp,
+		Help: help,
+	}
+	return state
+}
+
+func AttachPrompt(state VisibleRenderState, prompt *modal.PromptState) VisibleRenderState {
+	state.Overlay = VisibleOverlay{
+		Kind:   VisibleOverlayPrompt,
+		Prompt: prompt,
+	}
+	return state
+}
+
+func WithOverlayPicker(state VisibleRenderState, picker *modal.PickerState) VisibleRenderState {
+	state.Overlay = VisibleOverlay{
+		Kind:   VisibleOverlayPicker,
+		Picker: picker,
+	}
+	return state
+}
+
+func WithOverlayWorkspacePicker(state VisibleRenderState, picker *modal.WorkspacePickerState) VisibleRenderState {
+	state.Overlay = VisibleOverlay{
+		Kind:            VisibleOverlayWorkspacePicker,
+		WorkspacePicker: picker,
+	}
 	return state
 }
 

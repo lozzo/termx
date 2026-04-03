@@ -445,7 +445,7 @@ func TestRenderBodyPrefersTitleOverMetaInNarrowPane(t *testing.T) {
 
 func TestRenderFrameUsesDedicatedTerminalPoolPageLayout(t *testing.T) {
 	state := makeTestState()
-	state.TerminalPool = &modal.TerminalManagerState{
+	state = AttachTerminalPool(state, &modal.TerminalManagerState{
 		Title:    "Terminal Pool",
 		Footer:   "[Enter] here  [Ctrl-T] tab  [Ctrl-O] float  [Ctrl-E] edit  [Ctrl-K] kill  [Esc] close",
 		Selected: 0,
@@ -453,7 +453,7 @@ func TestRenderFrameUsesDedicatedTerminalPoolPageLayout(t *testing.T) {
 			{TerminalID: "term-1", Name: "shell", State: "visible", Description: "running · 1 pane bound"},
 			{TerminalID: "term-2", Name: "logs", State: "parked", Description: "running · 0 panes bound"},
 		},
-	}
+	})
 	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
 
 	for _, want := range []string{"Terminal Pool", "term-1", "term-2"} {
@@ -468,7 +468,7 @@ func TestRenderFrameUsesDedicatedTerminalPoolPageLayout(t *testing.T) {
 
 func TestRenderFrameTerminalPoolPagePreservesFooterWhenDetailsOverflow(t *testing.T) {
 	state := makeTestState()
-	state.TerminalPool = &modal.TerminalManagerState{
+	state = AttachTerminalPool(state, &modal.TerminalManagerState{
 		Title:    "Terminal Pool",
 		Footer:   "[Enter] dedicated footer",
 		Selected: 0,
@@ -489,7 +489,7 @@ func TestRenderFrameTerminalPoolPagePreservesFooterWhenDetailsOverflow(t *testin
 				Description: "running · 0 panes bound",
 			},
 		},
-	}
+	})
 	state = WithTermSize(state, 100, 10)
 	state = WithStatus(state, "", "", "terminal-manager")
 

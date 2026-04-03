@@ -12,7 +12,7 @@ import (
 
 func TestTerminalPoolPageRendersGroupedListLivePreviewAndRelationships(t *testing.T) {
 	state := makeTestState()
-	state.TerminalPool = &modal.TerminalManagerState{
+	state = AttachTerminalPool(state, &modal.TerminalManagerState{
 		Title:    "Terminal Pool",
 		Footer:   "[Enter] here  [Ctrl-T] tab  [Ctrl-O] float  [Ctrl-E] edit  [Ctrl-K] kill  [Esc] close",
 		Selected: 0,
@@ -41,7 +41,7 @@ func TestTerminalPoolPageRendersGroupedListLivePreviewAndRelationships(t *testin
 				Description: "exited (23) · 0 panes bound",
 			},
 		},
-	}
+	})
 	state.Runtime = &VisibleRuntimeStateProxy{
 		Terminals: []runtime.VisibleTerminal{
 			{

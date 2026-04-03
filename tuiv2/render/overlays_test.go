@@ -111,7 +111,7 @@ func TestRenderFrameWithHelpOverlay(t *testing.T) {
 	rt.Registry().GetOrCreate("term-1").Name = "demo"
 	rt.Registry().Get("term-1").State = "running"
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 100, 28), 100, 30)
-	state.Help = modal.DefaultHelp()
+	state = AttachHelp(state, modal.DefaultHelp())
 	frame := NewCoordinator(func() VisibleRenderState { return state }).RenderFrame()
 	for _, want := range []string{"main", "tab 1", "Help", "Ctrl-P", "Ctrl-F", "Most Used"} {
 		if !strings.Contains(frame, want) {

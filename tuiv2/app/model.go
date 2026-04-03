@@ -73,29 +73,8 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 		workbench: wb,
 		runtime:   rt,
 	}
-	model.orchestrator = orchestrator.New(model.workbench, model.runtime, model.modalHost)
-	model.render = render.NewCoordinator(func() render.VisibleRenderState {
-		bodyHeight := maxInt(1, model.height-2) // tab bar + status bar = 2 rows
-		state := render.AdaptVisibleStateWithSize(model.workbench, model.runtime, model.width, bodyHeight)
-		state = render.WithTermSize(state, model.width, model.height)
-		state = render.WithStatus(state, "", renderErrorText(model.err), string(model.input.Mode().Kind))
-		if model.terminalPage != nil {
-			state = render.AttachTerminalPool(state, model.terminalPage)
-		}
-		if model.modalHost != nil && model.modalHost.Session != nil && model.modalHost.Session.Kind == input.ModePicker {
-			state = render.AttachPicker(state, model.modalHost.Picker)
-		}
-		if model.modalHost != nil && model.modalHost.Session != nil && model.modalHost.Session.Kind == input.ModeWorkspacePicker {
-			state = render.AttachWorkspacePicker(state, model.modalHost.WorkspacePicker)
-		}
-		if model.modalHost != nil && model.modalHost.Session != nil && model.modalHost.Session.Kind == input.ModeHelp {
-			state.Help = model.modalHost.Help
-		}
-		if model.modalHost != nil && model.modalHost.Session != nil && model.modalHost.Session.Kind == input.ModePrompt {
-			state.Prompt = model.modalHost.Prompt
-		}
-		return state
-	})
+	model.orchestrator = orchestrator.New(model.workbench, model.runtime)
+	model.render = render.NewCoordinator(func() render.VisibleRenderState { return model.visibleRenderState() })
 	// Default invalidate: no-op until SetSendFunc is called by run.go.
 	if model.runtime != nil {
 		model.runtime.SetInvalidate(func() {

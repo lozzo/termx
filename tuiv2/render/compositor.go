@@ -206,9 +206,13 @@ func (c *composedCanvas) contentString() string {
 
 func (c *composedCanvas) cursorANSI() string {
 	if c == nil || !c.cursorVisible {
-		return ""
+		return hideCursorANSI()
 	}
-	return fmt.Sprintf("\x1b[%d;%dH", c.cursorY+c.cursorOffsetY+1, c.cursorX+c.cursorOffsetX+1)
+	return fmt.Sprintf("\x1b[?25h\x1b[%d;%dH", c.cursorY+c.cursorOffsetY+1, c.cursorX+c.cursorOffsetX+1)
+}
+
+func hideCursorANSI() string {
+	return "\x1b[?25l"
 }
 
 func (c *composedCanvas) setCursor(x, y int) {

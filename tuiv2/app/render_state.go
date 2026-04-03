@@ -1,30 +1,12 @@
 package app
 
-import (
-	"time"
+import "github.com/lozzow/termx/tuiv2/render"
 
-	tea "github.com/charmbracelet/bubbletea"
-)
-
-var errorClearDelay = 5 * time.Second
-
-func renderErrorText(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
-}
-
-func clearErrorCmd(seq uint64) tea.Cmd {
-	return func() tea.Msg {
-		time.Sleep(errorClearDelay)
-		return clearErrorMsg{seq: seq}
-	}
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
+func (m *Model) visibleRenderState() render.VisibleRenderState {
+	bodyHeight := maxInt(1, m.height-2) // tab bar + status bar = 2 rows
+	state := render.AdaptVisibleStateWithSize(m.workbench, m.runtime, m.width, bodyHeight)
+	state = render.WithTermSize(state, m.width, m.height)
+	state = render.WithStatus(state, "", renderErrorText(m.err), string(m.input.Mode().Kind))
+	state = render.AttachTerminalPool(state, m.terminalPage)
+	return render.AttachModalHost(state, m.modalHost)
 }
