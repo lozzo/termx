@@ -1,0 +1,185 @@
+package app
+
+import (
+	"context"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/tuiv2/input"
+	"github.com/lozzow/termx/tuiv2/modal"
+	"github.com/lozzow/termx/tuiv2/orchestrator"
+)
+
+func (m *Model) applyEffects(effects []orchestrator.Effect) tea.Cmd {
+	if len(effects) == 0 {
+		return nil
+	}
+	cmds := make([]tea.Cmd, 0, len(effects))
+	for _, effect := range effects {
+		if cmd := m.effectCmd(effect); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	return tea.Batch(cmds...)
+}
+
+func (m *Model) effectCmd(effect orchestrator.Effect) tea.Cmd {
+	switch typed := effect.(type) {
+	case orchestrator.InvalidateRenderEffect:
+		m.render.Invalidate()
+		return nil
+	case orchestrator.ClosePaneEffect:
+		m.render.Invalidate()
+		return tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
+	case orchestrator.CreateTabEffect:
+		m.render.Invalidate()
+		return m.saveStateCmd()
+	case orchestrator.SwitchTabEffect:
+		m.render.Invalidate()
+		return m.resizeVisiblePanesCmd()
+	case orchestrator.CloseTabEffect:
+		m.render.Invalidate()
+		return m.saveStateCmd()
+	case orchestrator.KillTerminalEffect:
+		return func() tea.Msg {
+			client := m.runtime.Client()
+			if client == nil {
+				return nil
+			}
+			_ = client.Kill(context.Background(), typed.TerminalID)
+			return nil
+		}
+	case orchestrator.SetInputModeEffect:
+		return func() tea.Msg {
+			m.input.SetMode(typed.Mode)
+			return EffectAppliedMsg{Effect: typed}
+		}
+	case orchestrator.OpenPickerEffect:
+		m.applyEffectSideState(typed)
+		return func() tea.Msg {
+			return EffectAppliedMsg{Effect: typed}
+		}
+	case orchestrator.OpenWorkspacePickerEffect:
+		m.applyEffectSideState(typed)
+		return func() tea.Msg {
+			return EffectAppliedMsg{Effect: typed}
+		}
+	case orchestrator.CloseModalEffect:
+		m.applyEffectSideState(typed)
+		return func() tea.Msg {
+			return EffectAppliedMsg{Effect: typed}
+		}
+	case orchestrator.LoadPickerItemsEffect:
+		return func() tea.Msg {
+			terminals, err := m.runtime.ListTerminals(context.Background())
+			if err != nil && (m.runtime == nil || m.runtime.Registry() == nil || len(m.runtime.Registry().IDs()) == 0) {
+				return err
+			}
+			if err != nil {
+				terminals = nil
+			}
+			items := make([]modal.PickerItem, 0, len(terminals))
+			for _, terminal := range terminals {
+				if terminal.State == "exited" {
+					continue
+				}
+				items = append(items, modal.PickerItem{
+					TerminalID: terminal.ID,
+					Name:       terminal.Name,
+					State:      terminal.State,
+				})
+			}
+			items = append(items, modal.PickerItem{
+				CreateNew:   true,
+				Name:        "new terminal",
+				Description: "Create a new terminal",
+			})
+			return pickerItemsLoadedMsg{Items: items}
+		}
+	case orchestrator.LoadWorkspaceItemsEffect:
+		return func() tea.Msg {
+			if m.workbench == nil || m.modalHost == nil || m.modalHost.WorkspacePicker == nil {
+				return nil
+			}
+			names := m.workbench.ListWorkspaces()
+			items := make([]modal.WorkspacePickerItem, 0, len(names)+1)
+			for _, name := range names {
+				items = append(items, modal.WorkspacePickerItem{Name: name})
+			}
+			items = append(items, modal.WorkspacePickerItem{Name: "new workspace", CreateNew: true})
+			m.modalHost.WorkspacePicker.Items = items
+			m.modalHost.WorkspacePicker.ApplyFilter()
+			requestID := ""
+			if m.modalHost.Session != nil {
+				requestID = m.modalHost.Session.RequestID
+			}
+			m.modalHost.MarkReady(input.ModeWorkspacePicker, requestID)
+			m.render.Invalidate()
+			return nil
+		}
+	case orchestrator.LoadSnapshotEffect:
+		return func() tea.Msg {
+			snapshot, err := m.runtime.LoadSnapshot(context.Background(), typed.TerminalID, typed.Offset, typed.Limit)
+			if err != nil {
+				return err
+			}
+			return orchestrator.SnapshotLoadedMsg{TerminalID: typed.TerminalID, Snapshot: snapshot}
+		}
+	case orchestrator.AttachTerminalEffect:
+		return func() tea.Msg {
+			msgs, err := m.orchestrator.AttachAndLoadSnapshot(context.Background(), typed.PaneID, typed.TerminalID, typed.Mode, 0, 200)
+			if err != nil {
+				return err
+			}
+			cmds := make([]tea.Cmd, 0, len(msgs))
+			for _, msg := range msgs {
+				value := msg
+				cmds = append(cmds, func() tea.Msg { return value })
+			}
+			return tea.Batch(cmds...)()
+		}
+	default:
+		return nil
+	}
+}
+
+func (m *Model) enrichEffects(action input.SemanticAction, effects []orchestrator.Effect) []orchestrator.Effect {
+	if action.Kind != input.ActionOpenPicker {
+		return effects
+	}
+	return append(effects, orchestrator.LoadPickerItemsEffect{})
+}
+
+func (m *Model) applyEffectSideState(effect orchestrator.Effect) {
+	switch typed := effect.(type) {
+	case orchestrator.OpenPickerEffect:
+		if m.modalHost == nil {
+			return
+		}
+		if m.modalHost.Picker == nil {
+			m.modalHost.Picker = &modal.PickerState{}
+		}
+		m.modalHost.StartLoading(input.ModePicker, typed.RequestID)
+	case orchestrator.OpenWorkspacePickerEffect:
+		if m.modalHost == nil {
+			return
+		}
+		if m.modalHost.WorkspacePicker == nil {
+			m.modalHost.WorkspacePicker = &modal.WorkspacePickerState{}
+		}
+		m.modalHost.StartLoading(input.ModeWorkspacePicker, typed.RequestID)
+	case orchestrator.CloseModalEffect:
+		if m.modalHost == nil {
+			return
+		}
+		requestID := ""
+		if m.modalHost.Session != nil {
+			requestID = m.modalHost.Session.RequestID
+		}
+		m.modalHost.Close(typed.Kind, requestID)
+	case orchestrator.LoadPickerItemsEffect:
+		if m.modalHost != nil && m.modalHost.Session != nil {
+			m.modalHost.Session.Phase = modal.ModalPhaseLoading
+			m.modalHost.Session.Loading = true
+		}
+	}
+}

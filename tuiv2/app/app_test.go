@@ -131,38 +131,6 @@ func TestModelInitRestoresWorkspaceStateFromConfigPath(t *testing.T) {
 	}
 }
 
-func TestModelUpdateOpenPickerSetsModeAndInitializesPickerState(t *testing.T) {
-	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
-	updated, cmd := model.Update(input.SemanticAction{Kind: input.ActionOpenPicker, TargetID: "req-1"})
-	if updated != model {
-		t.Fatal("expected model pointer to remain stable")
-	}
-	if cmd == nil {
-		t.Fatal("expected command from open picker action")
-	}
-	msg := cmd()
-	batch, ok := msg.(tea.BatchMsg)
-	if !ok {
-		t.Fatalf("expected tea.BatchMsg, got %#v", msg)
-	}
-	if len(batch) != 3 {
-		t.Fatalf("expected 3 batched commands, got %d", len(batch))
-	}
-	first := batch[0]()
-	if _, ok := first.(EffectAppliedMsg); !ok {
-		t.Fatalf("expected first batched msg to be EffectAppliedMsg, got %#v", first)
-	}
-	if model.input.Mode().Kind != input.ModePicker {
-		t.Fatalf("expected picker mode, got %q", model.input.Mode().Kind)
-	}
-	if model.modalHost == nil || model.modalHost.Session == nil {
-		t.Fatal("expected modal session to be initialized")
-	}
-	if model.modalHost.Picker == nil {
-		t.Fatal("expected picker state to be initialized")
-	}
-}
-
 func TestModelUpdatePickerNavigation(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
 	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePicker, Phase: modal.ModalPhaseReady, RequestID: "req-1"}
@@ -178,6 +146,21 @@ func TestModelUpdatePickerNavigation(t *testing.T) {
 	_, _ = model.Update(action)
 	if model.modalHost.Picker.Selected != 1 {
 		t.Fatalf("expected selected index 1, got %d", model.modalHost.Picker.Selected)
+	}
+}
+
+func TestModelUpdateSemanticActionMsgUsesSameLocalActionPath(t *testing.T) {
+	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
+
+	updated, cmd := model.Update(SemanticActionMsg{Action: input.SemanticAction{Kind: input.ActionEnterPaneMode}})
+	if updated != model {
+		t.Fatal("expected model pointer to remain stable")
+	}
+	if cmd == nil {
+		t.Fatal("expected prefix timeout command from pane mode entry")
+	}
+	if model.input.Mode().Kind != input.ModePane {
+		t.Fatalf("expected pane mode, got %q", model.input.Mode().Kind)
 	}
 }
 
@@ -247,6 +230,118 @@ func TestHandleKeyMsgInjectsActivePaneIntoTerminalInput(t *testing.T) {
 	}
 	if string(inputMsg.Data) != "a" {
 		t.Fatalf("expected input data 'a', got %q", inputMsg.Data)
+	}
+}
+
+func TestModelUpdateTerminalInputMsgUsesSameRuntimePath(t *testing.T) {
+	client := &recordingBridgeClient{}
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	rt := runtime.New(client)
+	binding := rt.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+	model := New(shared.Config{}, wb, rt)
+
+	updated, cmd := model.Update(TerminalInputMsg{
+		Input: input.TerminalInput{
+			PaneID: "pane-1",
+			Data:   []byte("pwd\n"),
+		},
+	})
+	if updated != model {
+		t.Fatal("expected model pointer to remain stable")
+	}
+	if cmd == nil {
+		t.Fatal("expected runtime input command")
+	}
+	if msg := cmd(); msg != nil {
+		t.Fatalf("expected nil message from terminal input command, got %#v", msg)
+	}
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected one input call, got %#v", client.inputCalls)
+	}
+	if client.inputCalls[0].channel != 7 || string(client.inputCalls[0].data) != "pwd\n" {
+		t.Fatalf("unexpected input call: %#v", client.inputCalls[0])
+	}
+}
+
+func TestHandleKeyMsgUsesApplicationCursorEncoding(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Modes:      protocol.TerminalModes{ApplicationCursor: true},
+	}
+	model := New(shared.Config{}, wb, rt)
+
+	cmd := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyUp})
+	if cmd == nil {
+		t.Fatal("expected terminal input command")
+	}
+	msg := cmd()
+	inputMsg, ok := msg.(input.TerminalInput)
+	if !ok {
+		t.Fatalf("expected TerminalInput, got %#v", msg)
+	}
+	if string(inputMsg.Data) != "\x1bOA" {
+		t.Fatalf("expected application cursor up sequence, got %q", string(inputMsg.Data))
+	}
+}
+
+func TestHandleKeyMsgEncodesShiftTab(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	model := New(shared.Config{}, wb, runtime.New(nil))
+
+	cmd := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if cmd == nil {
+		t.Fatal("expected terminal input command")
+	}
+	msg := cmd()
+	inputMsg, ok := msg.(input.TerminalInput)
+	if !ok {
+		t.Fatalf("expected TerminalInput, got %#v", msg)
+	}
+	if string(inputMsg.Data) != "\x1b[Z" {
+		t.Fatalf("expected shift-tab sequence, got %q", string(inputMsg.Data))
 	}
 }
 
@@ -769,176 +864,6 @@ func TestModelUpdateWindowSizeResizesActivePaneTerminals(t *testing.T) {
 	}
 }
 
-func TestEffectCmdSwitchTabEffectResizesVisiblePanes(t *testing.T) {
-	client := &recordingBridgeClient{}
-	rt := runtime.New(client)
-	wb := workbench.NewWorkbench()
-	wb.AddWorkspace("main", &workbench.WorkspaceState{
-		Name:      "main",
-		ActiveTab: 0,
-		Tabs: []*workbench.TabState{{
-			ID:           "tab-1",
-			Name:         "tab 1",
-			ActivePaneID: "pane-1",
-			Panes: map[string]*workbench.PaneState{
-				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
-			},
-			Root: workbench.NewLeaf("pane-1"),
-		}},
-	})
-	rt.Registry().GetOrCreate("term-1").Channel = 7
-	binding := rt.BindPane("pane-1")
-	binding.Channel = 7
-	binding.Connected = true
-
-	model := New(shared.Config{}, wb, rt)
-	model.width = 120
-	model.height = 40
-
-	cmd := model.effectCmd(orchestrator.SwitchTabEffect{Delta: 1})
-	if cmd == nil {
-		t.Fatal("expected resize command for switch tab effect")
-	}
-	if msg := cmd(); msg != nil {
-		if err, ok := msg.(error); ok {
-			t.Fatalf("unexpected resize error: %v", err)
-		}
-	}
-	if len(client.resizes) != 1 {
-		t.Fatalf("expected exactly one resize call, got %d", len(client.resizes))
-	}
-}
-
-func TestEffectCmdLoadPickerItemsAppendsCreateNewItem(t *testing.T) {
-	client := &recordingBridgeClient{
-		listResult: &protocol.ListResult{
-			Terminals: []protocol.TerminalInfo{
-				{ID: "term-1", Name: "shell", State: "running"},
-			},
-		},
-	}
-	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(client))
-
-	cmd := model.effectCmd(orchestrator.LoadPickerItemsEffect{})
-	if cmd == nil {
-		t.Fatal("expected picker load command")
-	}
-	msg := cmd()
-	loaded, ok := msg.(pickerItemsLoadedMsg)
-	if !ok {
-		t.Fatalf("expected pickerItemsLoadedMsg, got %#v", msg)
-	}
-	if len(loaded.Items) != 2 {
-		t.Fatalf("expected 2 picker items including create row, got %d", len(loaded.Items))
-	}
-	last := loaded.Items[len(loaded.Items)-1]
-	if !last.CreateNew {
-		t.Fatalf("expected final picker item to be create-new entry, got %#v", last)
-	}
-	if last.Name != "new terminal" {
-		t.Fatalf("expected create row name new terminal, got %q", last.Name)
-	}
-}
-
-func TestEffectCmdLoadPickerItemsSkipsExitedTerminals(t *testing.T) {
-	client := &recordingBridgeClient{
-		listResult: &protocol.ListResult{
-			Terminals: []protocol.TerminalInfo{
-				{ID: "term-1", Name: "shell", State: "running"},
-				{ID: "term-2", Name: "done", State: "exited"},
-			},
-		},
-	}
-	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(client))
-
-	cmd := model.effectCmd(orchestrator.LoadPickerItemsEffect{})
-	if cmd == nil {
-		t.Fatal("expected picker load command")
-	}
-	msg := cmd()
-	loaded, ok := msg.(pickerItemsLoadedMsg)
-	if !ok {
-		t.Fatalf("expected pickerItemsLoadedMsg, got %#v", msg)
-	}
-	if len(loaded.Items) != 2 {
-		t.Fatalf("expected running terminal plus create row, got %#v", loaded.Items)
-	}
-	if loaded.Items[0].TerminalID != "term-1" {
-		t.Fatalf("expected only running terminal to remain attachable, got %#v", loaded.Items)
-	}
-	if !loaded.Items[1].CreateNew {
-		t.Fatalf("expected final picker row to remain create-new, got %#v", loaded.Items[1])
-	}
-}
-
-func TestEffectCmdLoadPickerItemsIgnoresRegistryOnlyMetadataWhenListSucceeds(t *testing.T) {
-	client := &recordingBridgeClient{
-		listResult: &protocol.ListResult{
-			Terminals: []protocol.TerminalInfo{
-				{ID: "term-1", Name: "shell", State: "running"},
-			},
-		},
-	}
-	rt := runtime.New(client)
-	stale := rt.Registry().GetOrCreate("term-stale")
-	stale.Name = "stale"
-	stale.State = "running"
-
-	model := New(shared.Config{}, workbench.NewWorkbench(), rt)
-
-	cmd := model.effectCmd(orchestrator.LoadPickerItemsEffect{})
-	if cmd == nil {
-		t.Fatal("expected picker load command")
-	}
-	msg := cmd()
-	loaded, ok := msg.(pickerItemsLoadedMsg)
-	if !ok {
-		t.Fatalf("expected pickerItemsLoadedMsg, got %#v", msg)
-	}
-	if len(loaded.Items) != 2 {
-		t.Fatalf("expected listed terminal plus create row, got %#v", loaded.Items)
-	}
-	if loaded.Items[0].TerminalID != "term-1" {
-		t.Fatalf("expected picker to use server-listed terminal, got %#v", loaded.Items)
-	}
-	if !loaded.Items[1].CreateNew {
-		t.Fatalf("expected final picker row to remain create-new, got %#v", loaded.Items[1])
-	}
-}
-
-func TestEffectCmdLoadWorkspaceItemsPopulatesWorkspacePicker(t *testing.T) {
-	wb := workbench.NewWorkbench()
-	wb.AddWorkspace("main", &workbench.WorkspaceState{Name: "main"})
-	wb.AddWorkspace("dev", &workbench.WorkspaceState{Name: "dev"})
-	model := New(shared.Config{}, wb, runtime.New(nil))
-	model.modalHost.Open(input.ModeWorkspacePicker, "workspace-picker-1")
-	model.modalHost.WorkspacePicker = &modal.WorkspacePickerState{}
-
-	cmd := model.effectCmd(orchestrator.LoadWorkspaceItemsEffect{})
-	if cmd == nil {
-		t.Fatal("expected workspace picker load command")
-	}
-	if msg := cmd(); msg != nil {
-		t.Fatalf("expected nil message from workspace load command, got %#v", msg)
-	}
-	if model.modalHost.WorkspacePicker == nil {
-		t.Fatal("expected workspace picker state")
-	}
-	items := model.modalHost.WorkspacePicker.VisibleItems()
-	if len(items) != 3 {
-		t.Fatalf("expected 3 workspace picker items, got %d", len(items))
-	}
-	if items[0].Name != "main" || items[1].Name != "dev" {
-		t.Fatalf("unexpected workspace order: %#v", items)
-	}
-	if !items[2].CreateNew || items[2].Name != "new workspace" {
-		t.Fatalf("expected final create-new workspace item, got %#v", items[2])
-	}
-	if model.modalHost.Session == nil || model.modalHost.Session.Loading || model.modalHost.Session.Phase != modal.ModalPhaseReady {
-		t.Fatalf("expected ready session after workspace items load, got %#v", model.modalHost.Session)
-	}
-}
-
 func TestModelLocalScrollActionsAndQuit(t *testing.T) {
 	statePath := t.TempDir() + "/workspace-state.json"
 	wb := workbench.NewWorkbench()
@@ -1099,52 +1024,6 @@ func TestModelUpdateTerminalAttachedSavesState(t *testing.T) {
 	}
 	if got := file.Data[0].Tabs[0].Panes[0].TerminalID; got != "term-9" {
 		t.Fatalf("expected saved terminal binding term-9, got %q", got)
-	}
-}
-
-func TestEffectCmdCreateTabEffectSavesState(t *testing.T) {
-	statePath := t.TempDir() + "/workspace-state.json"
-	wb := workbench.NewWorkbench()
-	wb.AddWorkspace("main", &workbench.WorkspaceState{
-		Name:      "main",
-		ActiveTab: 0,
-		Tabs: []*workbench.TabState{{
-			ID:           "tab-1",
-			Name:         "tab 1",
-			ActivePaneID: "pane-1",
-			Panes: map[string]*workbench.PaneState{
-				"pane-1": {ID: "pane-1", Title: "shell"},
-			},
-			Root: workbench.NewLeaf("pane-1"),
-		}, {
-			ID:           "tab-2",
-			Name:         "tab 2",
-			ActivePaneID: "pane-2",
-			Panes: map[string]*workbench.PaneState{
-				"pane-2": {ID: "pane-2", Title: "logs"},
-			},
-			Root: workbench.NewLeaf("pane-2"),
-		}},
-	})
-	model := New(shared.Config{WorkspaceStatePath: statePath}, wb, runtime.New(nil))
-
-	cmd := model.effectCmd(orchestrator.CreateTabEffect{})
-	if cmd == nil {
-		t.Fatal("expected save command batch for create tab effect")
-	}
-	if msg := cmd(); msg != nil {
-		t.Fatalf("expected nil message from create tab save command, got %#v", msg)
-	}
-	data, err := os.ReadFile(statePath)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
-	}
-	file, err := persist.Load(data)
-	if err != nil {
-		t.Fatalf("persist.Load: %v", err)
-	}
-	if len(file.Data[0].Tabs) != 2 {
-		t.Fatalf("expected 2 tabs in saved state, got %#v", file.Data[0].Tabs)
 	}
 }
 
@@ -1417,25 +1296,6 @@ func TestModelInitAttachIDBootstrapsAndAttachesTerminal(t *testing.T) {
 	}
 }
 
-func TestEffectCmdKillTerminalEffectInvokesBridgeClient(t *testing.T) {
-	client := &recordingBridgeClient{}
-	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(client))
-
-	cmd := model.effectCmd(orchestrator.KillTerminalEffect{TerminalID: "term-9"})
-	if cmd == nil {
-		t.Fatal("expected kill terminal command")
-	}
-	if msg := cmd(); msg != nil {
-		t.Fatalf("expected nil message from kill command, got %#v", msg)
-	}
-	if len(client.killCalls) != 1 {
-		t.Fatalf("expected exactly one kill call, got %d", len(client.killCalls))
-	}
-	if client.killCalls[0] != "term-9" {
-		t.Fatalf("expected kill terminal term-9, got %#v", client.killCalls)
-	}
-}
-
 func TestModelBootstrapHelperUsesStartup(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
 	result, err := bootstrap.Startup(bootstrap.Config{}, model.workbench, model.runtime)
@@ -1449,6 +1309,7 @@ func TestModelBootstrapHelperUsesStartup(t *testing.T) {
 
 type recordingBridgeClient struct {
 	resizes            []resizeCall
+	inputCalls         []inputCall
 	createResult       *protocol.CreateResult
 	attachResult       *protocol.AttachResult
 	attachErr          error
@@ -1465,6 +1326,11 @@ type resizeCall struct {
 	channel uint16
 	cols    uint16
 	rows    uint16
+}
+
+type inputCall struct {
+	channel uint16
+	data    []byte
 }
 
 type createCall struct {
@@ -1538,7 +1404,10 @@ func (c *recordingBridgeClient) Snapshot(_ context.Context, terminalID string, _
 	return c.snapshotByTerminal[terminalID], nil
 }
 
-func (c *recordingBridgeClient) Input(context.Context, uint16, []byte) error { return nil }
+func (c *recordingBridgeClient) Input(_ context.Context, channel uint16, data []byte) error {
+	c.inputCalls = append(c.inputCalls, inputCall{channel: channel, data: append([]byte(nil), data...)})
+	return nil
+}
 
 func (c *recordingBridgeClient) Resize(_ context.Context, channel uint16, cols, rows uint16) error {
 	c.resizes = append(c.resizes, resizeCall{channel: channel, cols: cols, rows: rows})

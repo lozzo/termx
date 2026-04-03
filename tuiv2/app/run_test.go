@@ -37,3 +37,33 @@ func TestUVMouseEventToTeaMouseMsgRejectsUnknownButton(t *testing.T) {
 		t.Fatal("expected unsupported mouse button to be rejected")
 	}
 }
+
+func TestUVKeyToTeaKeyMsgMapsShiftTab(t *testing.T) {
+	msg, ok := uvKeyToTeaKeyMsg(uv.KeyPressEvent(uv.Key{Code: uv.KeyTab, Mod: uv.ModShift}))
+	if !ok {
+		t.Fatal("expected shift-tab conversion")
+	}
+	if msg.Type != tea.KeyShiftTab {
+		t.Fatalf("expected KeyShiftTab, got %v", msg.Type)
+	}
+}
+
+func TestUVKeyToTeaKeyMsgMapsCtrlLeft(t *testing.T) {
+	msg, ok := uvKeyToTeaKeyMsg(uv.KeyPressEvent(uv.Key{Code: uv.KeyLeft, Mod: uv.ModCtrl}))
+	if !ok {
+		t.Fatal("expected ctrl-left conversion")
+	}
+	if msg.Type != tea.KeyCtrlLeft {
+		t.Fatalf("expected KeyCtrlLeft, got %v", msg.Type)
+	}
+}
+
+func TestUVKeyToTeaKeyMsgMapsFunctionKey(t *testing.T) {
+	msg, ok := uvKeyToTeaKeyMsg(uv.KeyPressEvent(uv.Key{Code: uv.KeyF5}))
+	if !ok {
+		t.Fatal("expected function-key conversion")
+	}
+	if msg.Type != tea.KeyF5 {
+		t.Fatalf("expected KeyF5, got %v", msg.Type)
+	}
+}
