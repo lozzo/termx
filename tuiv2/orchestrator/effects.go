@@ -22,6 +22,12 @@ type OpenWorkspacePickerEffect struct {
 
 func (OpenWorkspacePickerEffect) effectTag() {}
 
+type CloseModalEffect struct {
+	Kind input.ModeKind
+}
+
+func (CloseModalEffect) effectTag() {}
+
 type LoadWorkspaceItemsEffect struct{}
 
 func (LoadWorkspaceItemsEffect) effectTag() {}

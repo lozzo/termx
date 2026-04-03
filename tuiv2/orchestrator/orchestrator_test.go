@@ -12,7 +12,6 @@ import (
 	unixtransport "github.com/lozzow/termx/transport/unix"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/input"
-	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -62,8 +61,7 @@ func newTestOrchestrator(t *testing.T) (*Orchestrator, context.Context) {
 
 	rt := runtime.New(bridge.NewProtocolClient(client))
 	wb := workbench.NewWorkbench()
-	mh := modal.NewHost()
-	return New(wb, rt, mh), ctx
+	return New(wb, rt), ctx
 }
 
 func TestHandleSemanticActionOpenPicker(t *testing.T) {
@@ -75,9 +73,6 @@ func TestHandleSemanticActionOpenPicker(t *testing.T) {
 	})
 	if len(effects) != 2 {
 		t.Fatalf("expected 2 effects, got %d", len(effects))
-	}
-	if orch.modalHost.Session == nil || orch.modalHost.Session.Kind != input.ModePicker {
-		t.Fatalf("expected picker session, got %#v", orch.modalHost.Session)
 	}
 }
 
@@ -93,52 +88,42 @@ func TestHandleSemanticActionOpenWorkspacePicker(t *testing.T) {
 	if len(effects) != 3 {
 		t.Fatalf("expected 3 effects, got %d", len(effects))
 	}
-	if orch.modalHost.Session == nil || orch.modalHost.Session.Kind != input.ModeWorkspacePicker {
-		t.Fatalf("expected workspace picker session, got %#v", orch.modalHost.Session)
-	}
-	if orch.modalHost.WorkspacePicker == nil {
-		t.Fatal("expected workspace picker state to be initialized")
-	}
 }
 
 func TestHandleSemanticActionSwitchWorkspace(t *testing.T) {
 	orch, _ := newTestOrchestrator(t)
 	seedTabWithSinglePane(orch.workbench, "main", "tab-main", "pane-main")
 	seedTabWithSinglePane(orch.workbench, "dev", "tab-dev", "pane-dev")
-	orch.modalHost.Open(input.ModeWorkspacePicker, "workspace-picker-1")
-	orch.modalHost.WorkspacePicker = &modal.WorkspacePickerState{}
 
 	effects := orch.HandleSemanticAction(input.SemanticAction{
 		Kind: input.ActionSwitchWorkspace,
 		Text: "dev",
 	})
-	if len(effects) != 2 {
-		t.Fatalf("expected 2 effects, got %d", len(effects))
+	if len(effects) != 3 {
+		t.Fatalf("expected 3 effects, got %d", len(effects))
 	}
 	if current := orch.workbench.CurrentWorkspace(); current == nil || current.Name != "dev" {
 		t.Fatalf("expected current workspace dev, got %#v", current)
 	}
-	if orch.modalHost.Session != nil {
-		t.Fatalf("expected workspace picker modal to close, got %#v", orch.modalHost.Session)
+	if _, ok := effects[0].(CloseModalEffect); !ok {
+		t.Fatalf("expected first effect to close workspace picker, got %T", effects[0])
 	}
 }
 
 func TestHandleSemanticActionCreateWorkspaceClosesWorkspacePicker(t *testing.T) {
 	orch, _ := newTestOrchestrator(t)
 	seedTabWithSinglePane(orch.workbench, "main", "tab-main", "pane-main")
-	orch.modalHost.Open(input.ModeWorkspacePicker, "workspace-picker-1")
-	orch.modalHost.WorkspacePicker = &modal.WorkspacePickerState{}
 
 	effects := orch.HandleSemanticAction(input.SemanticAction{Kind: input.ActionCreateWorkspace})
-	if len(effects) != 2 {
-		t.Fatalf("expected 2 effects, got %d", len(effects))
+	if len(effects) != 3 {
+		t.Fatalf("expected 3 effects, got %d", len(effects))
 	}
 	current := orch.workbench.CurrentWorkspace()
 	if current == nil || current.Name == "" || current.Name == "main" {
 		t.Fatalf("expected newly created workspace to become current, got %#v", current)
 	}
-	if orch.modalHost.Session != nil {
-		t.Fatalf("expected workspace picker modal to close after create, got %#v", orch.modalHost.Session)
+	if _, ok := effects[0].(CloseModalEffect); !ok {
+		t.Fatalf("expected first effect to close workspace picker, got %T", effects[0])
 	}
 }
 
@@ -260,7 +245,7 @@ func (o *Orchestrator) runtimeVisibleClient() bridge.Client {
 }
 
 // TestHandleSemanticActionOpenPickerEffects 验证 ActionOpenPicker 产出
-// OpenPickerEffect 和 SetInputModeEffect，且 modalHost.Session 正确初始化。
+// OpenPickerEffect 和 SetInputModeEffect。
 func TestHandleSemanticActionOpenPickerEffects(t *testing.T) {
 	orch, _ := newTestOrchestrator(t)
 
@@ -297,16 +282,6 @@ func TestHandleSemanticActionOpenPickerEffects(t *testing.T) {
 	}
 	if !hasSetInputMode {
 		t.Error("expected SetInputModeEffect in effects")
-	}
-
-	if orch.modalHost.Session == nil {
-		t.Fatal("expected non-nil Session after ActionOpenPicker")
-	}
-	if orch.modalHost.Session.Kind != input.ModePicker {
-		t.Errorf("Session.Kind: got %q, want %q", orch.modalHost.Session.Kind, input.ModePicker)
-	}
-	if orch.modalHost.Session.RequestID != "req-picker-1" {
-		t.Errorf("Session.RequestID: got %q, want %q", orch.modalHost.Session.RequestID, "req-picker-1")
 	}
 }
 
@@ -499,9 +474,6 @@ func TestHandleSemanticActionSplitPaneCreatesNewPaneAndOpensPicker(t *testing.T)
 	if !strings.HasPrefix(tab.ActivePaneID, "pane-") {
 		t.Fatalf("expected generated pane ID prefix pane-, got %q", tab.ActivePaneID)
 	}
-	if orch.modalHost.Session == nil || orch.modalHost.Session.Kind != input.ModePicker {
-		t.Fatalf("expected picker session, got %#v", orch.modalHost.Session)
-	}
 
 	if len(effects) != 3 {
 		t.Fatalf("expected 3 effects, got %d", len(effects))
@@ -567,9 +539,6 @@ func TestHandleSemanticActionCreateTabCreatesPaneAndOpensPicker(t *testing.T) {
 	}
 	if ws.ActiveTab != 1 {
 		t.Fatalf("expected workspace active tab index 1, got %d", ws.ActiveTab)
-	}
-	if orch.modalHost.Session == nil || orch.modalHost.Session.Kind != input.ModePicker {
-		t.Fatalf("expected picker session, got %#v", orch.modalHost.Session)
 	}
 
 	if len(effects) != 3 {
