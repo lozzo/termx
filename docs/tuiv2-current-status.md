@@ -1,7 +1,7 @@
 # TUIV2 当前状态与目标
 
 状态：Active
-日期：2026-03-31
+日期：2026-04-03
 
 > **目标一句话**
 > `tuiv2` 现在已经具备可工作的 MVP；当前阶段的任务不是继续堆功能，而是把输入系统、工作流和日常使用体验收口到一个稳定、可维护、可持续演进的状态。
@@ -37,14 +37,17 @@
 已经打通的主要结构行为：
 
 - pane split / close / focus
-- tab create / switch / close
+- tab create / switch / close / jump / rename / kill
 - workspace picker 基础路径
+- workspace create / rename / delete / prev / next
 - zoom pane
-- floating pane 基础渲染
+- floating pane create + 基础渲染
 - help overlay
-- stream recovery 基础重连
-- scrollback 基础查看
+- terminal picker / terminal manager / create-terminal prompt 基础路径
+- scrollback 基础上下滚动
 - save + quit 基础链路
+- Terminal Pool 底栏快捷键在内容溢出时仍会保留
+- protocol client 已串行化发送，避免 `list terminals` 等并发请求导致 `broken pipe`
 
 ### 1.4 代码与验证状态
 
@@ -52,30 +55,21 @@
 
 ```bash
 cd /home/lozzow/workdir/termx
-PATH="$PWD/.toolchain/go/bin:$PATH" go build ./...
 PATH="$PWD/.toolchain/go/bin:$PATH" go test ./tuiv2/...
+PATH="$PWD/.toolchain/go/bin:$PATH" go test ./tuiv2/app -count=1
 ```
-
-并且：
-
-```bash
-grep -r '"github.com/lozzow/termx/tui"' tuiv2/
-```
-
-应保持空输出。
 
 ---
 
 ## 2. 当前最重要的结论
 
-### 2.1 MVP 不是问题，规范收口才是问题
+### 2.1 当前基线的重点是“真实状态”，不是补想象中的功能
 
-现在最需要做的，不是再证明一次 shell 能跑，而是：
+现在最需要做的，是把“已经实现”和“尚未实现”清楚分开：
 
-- 把快捷键体系收口
-- 把 help / status / mode 文案统一
-- 把“临时为 MVP 加的直接快捷键”回收到正式结构
-- 把剩余功能放回明确的 mode / workflow 里
+- 已实现能力继续保持可编译、可测试、可回归
+- 未实现动作只保留为待办，不通过测试或文档暗示它们已可用
+- help / status / 输入模式 / 测试只描述真实存在的行为
 
 ### 2.2 快捷键系统必须回归 prefix / mode 结构
 
@@ -127,11 +121,8 @@ grep -r '"github.com/lozzow/termx/tui"' tuiv2/
 
 在 keymap 收口之后，继续完成：
 
-- workspace mode 的完整二段式动作
-- global mode 中 terminal manager 入口
-- resize / floating mode 的最小可用动作或明确行为
-- 错误消息自动清除
-- OSC 2 标题更新
+- pane swap / reconnect / close+kill
+- floating move / resize / center / toggle / close
 
 ### 3.3 第三目标：再考虑进一步 polish
 
@@ -155,23 +146,21 @@ grep -r '"github.com/lozzow/termx/tui"' tuiv2/
 - 清理迁移期临时直接快捷键路径
 - 保证 help/status/tests 一致
 
-### B. Workspace / Global / Manager 工作流补齐
+### B. Terminal Pool / Global 工作流收口
 
-当前还需要补：
+当前状态：
 
-- workspace mode 内动作
-- global mode 内动作
-- global → terminal manager 路径
-- terminal manager 与全局管理行为的边界
+- global → Terminal Pool 已切到 first-class page
+- picker / prompt / help / workspace picker 仍保持 overlay
+- Terminal Pool 不再与 modal session 混用
+- attach picker 已过滤 exited terminal，避免对不可附着对象发 attach
 
-### C. 错误与标题体验补齐
+### C. 尚未实现但已明确保留为待办的动作
 
-仍待完成：
+当前测试基线里，这些动作只作为待办名义保留，不代表已可用：
 
-- 错误消息 5 秒自动清除
-- OSC 2 标题更新到 pane title
-
----
+- pane: `swap-pane-left` / `reconnect-pane` / `close-pane-kill`
+- floating: `move-floating-right` / `resize-floating-right` / `center-floating-pane` / `toggle-floating-visibility` / `close-floating-pane`
 
 ## 5. 当前工作的边界约束
 
@@ -181,17 +170,15 @@ grep -r '"github.com/lozzow/termx/tui"' tuiv2/
 2. 不允许继续无文档地向 normal 模式添加新快捷键
 3. `tuiv2/` 不得重新依赖旧 `tui/`
 4. `workbench.PaneState.TerminalID` 仍是唯一可写绑定真相
-5. 每完成一轮输入系统调整，都必须跑 build + `go test ./tuiv2/...`
+5. 每完成一轮输入系统调整，都必须至少跑 `go test ./tuiv2/...`
 
 ---
 
 ## 6. 建议的下一步顺序
 
 1. 完成 canonical keymap 回滚的剩余部分
-2. 补 workspace mode / global mode 二段式动作
-3. 接上 terminal manager 的正式入口
-4. 做 error auto-clear
-5. 做 OSC 2 title update
+2. 补 pane / floating / global mode 剩余二段式动作
+3. 继续补手工 smoke test
 
 ---
 

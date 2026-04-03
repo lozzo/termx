@@ -130,6 +130,7 @@ termx 对外的产品定义是：
 一个独立主页面，用来完整查看和管理 terminal 本体。
 
 它不是 picker 放大版，而是资源管理页。
+它应以 page/surface 形式进入，而不是复用 overlay modal。
 
 ### 5.3 Overlay 层
 
@@ -141,6 +142,7 @@ termx 对外的产品定义是：
 - help
 
 职责是承接高频局部动作，而不是替代主页面。
+其中 terminal attach picker 只暴露当前可直接 attach 的 terminal；`exited` terminal 仍留在 Terminal Pool 页面处理。
 
 ## 6. Workbench 定义
 

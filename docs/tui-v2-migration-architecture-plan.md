@@ -180,6 +180,7 @@ runtime 必须至少拆成两层：
 - `runtime.PaneBinding` 只持有运行时连接态、角色、channel/recovery 相关信息，不再重复存储独立可写的 `TerminalID`
 - persist 只序列化结构上的绑定意图，与 `workbench` 对齐
 - `TerminalRegistry` 中若存在 `OwnerPaneID` / `BoundPaneIDs`，它们只能是**只读派生缓存**，不得成为第二份可写绑定真相
+- attach 工作流应在 orchestrator 内同步写回 workbench 结构绑定；app 不应在收到 runtime 消息后再次补写一份结构真相
 
 ### 3.9 V1 复杂显示模型不进入一期核心 state contract
 
