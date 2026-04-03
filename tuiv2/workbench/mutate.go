@@ -1,6 +1,9 @@
 package workbench
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // findTab searches all workspaces for the tab with the given ID and returns it
 // together with its parent workspace. Returns an error if not found.
@@ -33,6 +36,7 @@ func (w *Workbench) CreateTab(wsName, tabID, tabName string) error {
 		Name:  tabName,
 		Panes: make(map[string]*PaneState),
 	})
+	w.touch()
 	return nil
 }
 
@@ -54,6 +58,7 @@ func (w *Workbench) CreateFirstPane(tabID, paneID string) error {
 	tab.Panes[paneID] = &PaneState{ID: paneID}
 	tab.Root = NewLeaf(paneID)
 	tab.ActivePaneID = paneID
+	w.touch()
 	return nil
 }
 
@@ -88,6 +93,7 @@ func (w *Workbench) SplitPane(tabID, paneID, newPaneID string, dir SplitDirectio
 
 	tab.Panes[newPaneID] = &PaneState{ID: newPaneID}
 	tab.ActivePaneID = newPaneID
+	w.touch()
 	return nil
 }
 
@@ -135,6 +141,7 @@ func (w *Workbench) FocusPane(tabID, paneID string) error {
 		return fmt.Errorf("workbench: pane %q not found in tab %q", paneID, tabID)
 	}
 	tab.ActivePaneID = paneID
+	w.touch()
 	return nil
 }
 
@@ -152,6 +159,7 @@ func (w *Workbench) ClosePane(tabID, paneID string) (string, error) {
 	if len(tab.Panes) == 0 {
 		ws.closeTabByID(tabID)
 	}
+	w.touch()
 	return terminalID, nil
 }
 
@@ -164,6 +172,7 @@ func (w *Workbench) SwitchTab(wsName string, index int) error {
 	if !ws.activateTab(index) {
 		return fmt.Errorf("workbench: tab index %d out of range in workspace %q", index, wsName)
 	}
+	w.touch()
 	return nil
 }
 
@@ -176,6 +185,21 @@ func (w *Workbench) CloseTab(tabID string) error {
 	if !ws.closeTabByID(tabID) {
 		return fmt.Errorf("workbench: tab %q not found", tabID)
 	}
+	w.touch()
+	return nil
+}
+
+// RenameTab updates the tab name in-place.
+func (w *Workbench) RenameTab(tabID, name string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("workbench: tab name must not be empty")
+	}
+	_, tab, err := w.findTab(tabID)
+	if err != nil {
+		return err
+	}
+	tab.Name = name
+	w.touch()
 	return nil
 }
 
@@ -202,6 +226,63 @@ func (w *Workbench) DeleteWorkspace(name string) error {
 	return nil
 }
 
+// RenameWorkspace renames an existing workspace while preserving order and
+// current selection.
+func (w *Workbench) RenameWorkspace(oldName, newName string) error {
+	if w == nil {
+		return fmt.Errorf("workbench: nil workbench")
+	}
+	if oldName == "" || newName == "" {
+		return fmt.Errorf("workbench: workspace name must not be empty")
+	}
+	if oldName == newName {
+		return nil
+	}
+	ws, exists := w.store[oldName]
+	if !exists {
+		return fmt.Errorf("workbench: workspace %q not found", oldName)
+	}
+	if _, exists := w.store[newName]; exists {
+		return fmt.Errorf("workbench: workspace %q already exists", newName)
+	}
+	delete(w.store, oldName)
+	ws.Name = newName
+	w.store[newName] = ws
+	for index, name := range w.order {
+		if name == oldName {
+			w.order[index] = newName
+			break
+		}
+	}
+	if w.current == oldName {
+		w.current = newName
+	}
+	w.touch()
+	return nil
+}
+
+// SwitchWorkspaceByOffset activates the workspace relative to the current
+// workspace, wrapping around the workspace order.
+func (w *Workbench) SwitchWorkspaceByOffset(delta int) error {
+	if w == nil || len(w.order) == 0 {
+		return fmt.Errorf("workbench: no workspaces available")
+	}
+	currentIndex := -1
+	for index, name := range w.order {
+		if name == w.current {
+			currentIndex = index
+			break
+		}
+	}
+	if currentIndex < 0 {
+		currentIndex = 0
+	}
+	nextIndex := (currentIndex + delta + len(w.order)) % len(w.order)
+	w.current = w.order[nextIndex]
+	w.touch()
+	return nil
+}
+
 // CreateFloatingPane adds a new floating pane to the tab identified by tabID.
 func (w *Workbench) CreateFloatingPane(tabID, paneID string, rect Rect) error {
 	_, tab, err := w.findTab(tabID)
@@ -215,7 +296,15 @@ func (w *Workbench) CreateFloatingPane(tabID, paneID string, rect Rect) error {
 		tab.Panes = make(map[string]*PaneState)
 	}
 	tab.Panes[paneID] = &PaneState{ID: paneID}
-	tab.Floating = append(tab.Floating, &FloatingState{PaneID: paneID, Rect: rect})
+	z := 0
+	for _, floating := range tab.Floating {
+		if floating != nil && floating.Z >= z {
+			z = floating.Z + 1
+		}
+	}
+	tab.Floating = append(tab.Floating, &FloatingState{PaneID: paneID, Rect: rect, Z: z})
+	tab.FloatingVisible = true
+	w.touch()
 	return nil
 }
 
@@ -231,6 +320,7 @@ func (w *Workbench) AdjustPaneRatio(tabID, paneID string, dir Direction, delta f
 		return nil
 	}
 	adjustRatioForPane(tab.Root, paneID, dir, delta)
+	w.touch()
 	return nil
 }
 
@@ -293,6 +383,7 @@ func (w *Workbench) BalancePanes(tabID string) {
 		return
 	}
 	resetNodeRatios(tab.Root)
+	w.touch()
 }
 
 func resetNodeRatios(node *LayoutNode) {
@@ -311,6 +402,7 @@ func (w *Workbench) CycleLayout(tabID string) {
 		return
 	}
 	tab.LayoutPreset = (tab.LayoutPreset + 1) % 3
+	w.touch()
 }
 
 // BindPaneTerminal sets the TerminalID for a pane. This is the sole write
@@ -326,5 +418,141 @@ func (w *Workbench) BindPaneTerminal(tabID, paneID, terminalID string) error {
 		return fmt.Errorf("workbench: pane %q not found in tab %q", paneID, tabID)
 	}
 	pane.TerminalID = terminalID
+	w.touch()
 	return nil
+}
+
+// MoveFloatingPane moves a floating pane to a new position.
+func (w *Workbench) MoveFloatingPane(tabID, paneID string, x, y int) bool {
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return false
+	}
+
+	for _, floating := range tab.Floating {
+		if floating != nil && floating.PaneID == paneID {
+			floating.Rect.X = maxInt(0, x)
+			floating.Rect.Y = maxInt(0, y)
+			w.touch()
+			return true
+		}
+	}
+	return false
+}
+
+func (w *Workbench) MoveFloatingPaneBy(tabID, paneID string, dx, dy int) bool {
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return false
+	}
+	for _, floating := range tab.Floating {
+		if floating != nil && floating.PaneID == paneID {
+			return w.MoveFloatingPane(tabID, paneID, floating.Rect.X+dx, floating.Rect.Y+dy)
+		}
+	}
+	return false
+}
+
+// ResizeFloatingPane resizes a floating pane.
+func (w *Workbench) ResizeFloatingPane(tabID, paneID string, width, height int) bool {
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return false
+	}
+
+	for _, floating := range tab.Floating {
+		if floating != nil && floating.PaneID == paneID {
+			floating.Rect.W = maxInt(10, width)
+			floating.Rect.H = maxInt(4, height)
+			w.touch()
+			return true
+		}
+	}
+	return false
+}
+
+func (w *Workbench) ResizeFloatingPaneBy(tabID, paneID string, dw, dh int) bool {
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return false
+	}
+	for _, floating := range tab.Floating {
+		if floating != nil && floating.PaneID == paneID {
+			return w.ResizeFloatingPane(tabID, paneID, floating.Rect.W+dw, floating.Rect.H+dh)
+		}
+	}
+	return false
+}
+
+// ReorderFloatingPane moves a floating pane to the top of the Z-order.
+func (w *Workbench) ReorderFloatingPane(tabID, paneID string, toTop bool) bool {
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return false
+	}
+
+	if !toTop {
+		return false
+	}
+
+	// 找到目标浮动窗口的索引
+	targetIndex := -1
+	for i, floating := range tab.Floating {
+		if floating != nil && floating.PaneID == paneID {
+			targetIndex = i
+			break
+		}
+	}
+
+	if targetIndex == -1 || targetIndex == len(tab.Floating)-1 {
+		return false
+	}
+
+	// 移动到最后（Z-order 最高）
+	target := tab.Floating[targetIndex]
+	tab.Floating = append(tab.Floating[:targetIndex], tab.Floating[targetIndex+1:]...)
+	tab.Floating = append(tab.Floating, target)
+	normalizeFloatingZ(tab.Floating)
+	w.touch()
+	return true
+}
+
+func (w *Workbench) CenterFloatingPane(tabID, paneID string, bounds Rect) bool {
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return false
+	}
+	for _, floating := range tab.Floating {
+		if floating == nil || floating.PaneID != paneID {
+			continue
+		}
+		width := floating.Rect.W
+		height := floating.Rect.H
+		if width <= 0 || height <= 0 {
+			return false
+		}
+		targetX := maxInt(0, (bounds.W-width)/2)
+		targetY := maxInt(0, (bounds.H-height)/2)
+		floating.Rect.X = targetX
+		floating.Rect.Y = targetY
+		w.touch()
+		return true
+	}
+	return false
+}
+
+func normalizeFloatingZ(entries []*FloatingState) {
+	for i, floating := range entries {
+		if floating == nil {
+			continue
+		}
+		floating.Z = i
+	}
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

@@ -110,5 +110,6 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 			terminal.ExitCode = &exitCode
 		}
 		terminal.State = "exited"
+		r.invalidate()
 	}
 }

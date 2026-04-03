@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/lozzow/termx/tuiv2/persist"
 	"github.com/lozzow/termx/tuiv2/runtime"
@@ -21,7 +22,7 @@ var ErrEmptyData = errors.New("bootstrap: restore called with empty data")
 // back to Startup.
 //
 // rt is accepted for future use and may be nil.
-func Restore(data []byte, wb *workbench.Workbench, _ *runtime.Runtime) error {
+func Restore(data []byte, wb *workbench.Workbench, rt *runtime.Runtime) error {
 	file, err := persist.Load(data)
 	if err != nil {
 		if errors.Is(err, persist.ErrEmptyStateData) {
@@ -29,10 +30,10 @@ func Restore(data []byte, wb *workbench.Workbench, _ *runtime.Runtime) error {
 		}
 		return err
 	}
-	return RestoreFile(file, wb, nil)
+	return RestoreFile(file, wb, rt)
 }
 
-func RestoreFile(file *persist.WorkspaceStateFileV2, wb *workbench.Workbench, _ *runtime.Runtime) error {
+func RestoreFile(file *persist.WorkspaceStateFileV2, wb *workbench.Workbench, rt *runtime.Runtime) error {
 	if file == nil {
 		return ErrEmptyData
 	}
@@ -82,12 +83,15 @@ func buildTab(entry persist.TabEntryV2) *workbench.TabState {
 		tab.Panes[pane.ID] = pane
 	}
 
+	tab.Floating = buildFloatingEntries(entry.Floating, tab.Panes)
+	tab.FloatingVisible = len(tab.Floating) > 0
+
 	// Restore the layout tree if one was persisted; otherwise build a
 	// simple linear chain from the pane list.
 	if entry.Layout != nil {
 		tab.Root = buildLayoutNode(entry.Layout)
 	} else {
-		tab.Root = buildDefaultLayout(entry.Panes)
+		tab.Root = buildDefaultLayout(tiledPaneEntries(entry.Panes, entry.Floating))
 	}
 
 	return tab
@@ -130,4 +134,56 @@ func buildDefaultLayout(panes []persist.PaneEntryV2) *workbench.LayoutNode {
 		First:     buildDefaultLayout(panes[:mid]),
 		Second:    buildDefaultLayout(panes[mid:]),
 	}
+}
+
+func buildFloatingEntries(entries []persist.FloatingEntryV2, panes map[string]*workbench.PaneState) []*workbench.FloatingState {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	floating := make([]*workbench.FloatingState, 0, len(entries))
+	for _, entry := range entries {
+		if entry.PaneID == "" || panes[entry.PaneID] == nil {
+			continue
+		}
+		floating = append(floating, &workbench.FloatingState{
+			PaneID: entry.PaneID,
+			Rect: workbench.Rect{
+				X: entry.Rect.X,
+				Y: entry.Rect.Y,
+				W: entry.Rect.W,
+				H: entry.Rect.H,
+			},
+			Z: entry.Z,
+		})
+	}
+	sort.SliceStable(floating, func(i, j int) bool {
+		return floating[i].Z < floating[j].Z
+	})
+	return floating
+}
+
+func tiledPaneEntries(panes []persist.PaneEntryV2, floating []persist.FloatingEntryV2) []persist.PaneEntryV2 {
+	if len(panes) == 0 {
+		return nil
+	}
+	if len(floating) == 0 {
+		return panes
+	}
+
+	floatingIDs := make(map[string]struct{}, len(floating))
+	for _, entry := range floating {
+		if entry.PaneID != "" {
+			floatingIDs[entry.PaneID] = struct{}{}
+		}
+	}
+
+	tiled := make([]persist.PaneEntryV2, 0, len(panes))
+	for _, pane := range panes {
+		if _, isFloating := floatingIDs[pane.ID]; isFloating {
+			continue
+		}
+		tiled = append(tiled, pane)
+	}
+	return tiled
 }

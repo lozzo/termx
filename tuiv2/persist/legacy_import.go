@@ -81,7 +81,6 @@ func ImportV1(data []byte) (*WorkspaceStateFileV2, error) {
 		Version: 2,
 		Data:    make([]WorkspaceEntryV2, 0, len(ordered)),
 	}
-	metadataByID := make(map[string]int)
 	for _, workspace := range ordered {
 		entry := WorkspaceEntryV2{
 			Name:      workspace.Name,
@@ -103,7 +102,6 @@ func ImportV1(data []byte) (*WorkspaceStateFileV2, error) {
 					Title:      pane.Title,
 					TerminalID: pane.TerminalID,
 				})
-				mergeTerminalMetadata(file, metadataByID, pane)
 			}
 			entry.Tabs = append(entry.Tabs, tabEntry)
 		}
@@ -124,31 +122,4 @@ func importLegacyLayout(node *legacyWorkspaceStateNode) *LayoutNodeEntry {
 		First:     importLegacyLayout(node.First),
 		Second:    importLegacyLayout(node.Second),
 	}
-}
-
-func mergeTerminalMetadata(file *WorkspaceStateFileV2, metadataByID map[string]int, pane legacyWorkspaceStatePane) {
-	if file == nil || pane.TerminalID == "" {
-		return
-	}
-	if index, ok := metadataByID[pane.TerminalID]; ok {
-		metadata := &file.Metadata[index]
-		if metadata.Name == "" {
-			metadata.Name = pane.Name
-		}
-		if len(metadata.Command) == 0 {
-			metadata.Command = cloneStrings(pane.Command)
-		}
-		if len(metadata.Tags) == 0 {
-			metadata.Tags = cloneStringMap(pane.Tags)
-		}
-		return
-	}
-
-	metadataByID[pane.TerminalID] = len(file.Metadata)
-	file.Metadata = append(file.Metadata, PersistedTerminalMetadata{
-		TerminalID: pane.TerminalID,
-		Name:       pane.Name,
-		Command:    cloneStrings(pane.Command),
-		Tags:       cloneStringMap(pane.Tags),
-	})
 }

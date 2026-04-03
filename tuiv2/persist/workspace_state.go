@@ -120,6 +120,7 @@ func exportTab(tab *workbench.TabState) TabEntryV2 {
 		LayoutPreset: tab.LayoutPreset,
 		Layout:       exportLayout(tab.Root),
 		Panes:        make([]PaneEntryV2, 0, len(tab.Panes)),
+		Floating:     make([]FloatingEntryV2, 0, len(tab.Floating)),
 	}
 	for _, paneID := range orderedPaneIDs(tab) {
 		pane := tab.Panes[paneID]
@@ -132,6 +133,24 @@ func exportTab(tab *workbench.TabState) TabEntryV2 {
 			TerminalID: pane.TerminalID,
 		})
 	}
+	for _, floating := range tab.Floating {
+		if floating == nil || floating.PaneID == "" {
+			continue
+		}
+		if tab.Panes[floating.PaneID] == nil {
+			continue
+		}
+		entry.Floating = append(entry.Floating, FloatingEntryV2{
+			PaneID: floating.PaneID,
+			Rect: RectEntryV2{
+				X: floating.Rect.X,
+				Y: floating.Rect.Y,
+				W: floating.Rect.W,
+				H: floating.Rect.H,
+			},
+			Z: floating.Z,
+		})
+	}
 	return entry
 }
 
@@ -141,6 +160,8 @@ func orderedPaneIDs(tab *workbench.TabState) []string {
 	}
 	seen := make(map[string]struct{}, len(tab.Panes))
 	out := make([]string, 0, len(tab.Panes))
+
+	// First, collect panes from the layout tree (tiled panes)
 	if tab.Root != nil {
 		for _, paneID := range tab.Root.LeafIDs() {
 			if _, ok := tab.Panes[paneID]; !ok {
@@ -154,11 +175,28 @@ func orderedPaneIDs(tab *workbench.TabState) []string {
 		}
 	}
 
+	// Then, collect floating panes
+	for _, floating := range tab.Floating {
+		if floating == nil || floating.PaneID == "" {
+			continue
+		}
+		paneID := floating.PaneID
+		if _, ok := tab.Panes[paneID]; !ok {
+			continue
+		}
+		if _, exists := seen[paneID]; exists {
+			continue
+		}
+		seen[paneID] = struct{}{}
+		out = append(out, paneID)
+	}
+
 	extras := make([]string, 0, len(tab.Panes)-len(out))
 	for paneID := range tab.Panes {
-		if _, exists := seen[paneID]; !exists {
-			extras = append(extras, paneID)
+		if _, exists := seen[paneID]; exists {
+			continue
 		}
+		extras = append(extras, paneID)
 	}
 	sort.Strings(extras)
 	return append(out, extras...)

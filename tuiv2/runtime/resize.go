@@ -7,11 +7,11 @@ import (
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
-func (r *Runtime) ResizeTerminal(ctx context.Context, paneID string, cols, rows uint16) error {
-	return r.ResizePane(ctx, paneID, cols, rows)
+func (r *Runtime) ResizeTerminal(ctx context.Context, paneID, terminalID string, cols, rows uint16) error {
+	return r.ResizePane(ctx, paneID, terminalID, cols, rows)
 }
 
-func (r *Runtime) ResizePane(ctx context.Context, paneID string, cols, rows uint16) error {
+func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, cols, rows uint16) error {
 	binding := r.Binding(paneID)
 	if r == nil || r.client == nil {
 		return shared.UserVisibleError{Op: "resize terminal", Err: fmt.Errorf("runtime client is nil")}
@@ -22,11 +22,11 @@ func (r *Runtime) ResizePane(ctx context.Context, paneID string, cols, rows uint
 	if err := r.client.Resize(ctx, binding.Channel, cols, rows); err != nil {
 		return shared.UserVisibleError{Op: "resize terminal", Err: err}
 	}
-	if terminal := r.registry.Get(binding.TerminalID); terminal != nil {
+	if terminal := r.registry.Get(terminalID); terminal != nil {
 		if vt := r.ensureVTerm(terminal); vt != nil {
 			vt.Resize(int(cols), int(rows))
 		}
-		r.refreshSnapshot(binding.TerminalID)
+		r.refreshSnapshot(terminalID)
 	}
 	return nil
 }

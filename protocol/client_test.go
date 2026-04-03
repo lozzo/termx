@@ -7,11 +7,15 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/lozzow/termx/transport/memory"
 )
+
+var errConcurrentSend = errors.New("concurrent send")
 
 func TestClientRequestStreamAndProtocolError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -352,6 +356,44 @@ func TestClientCloseWaitsForReadLoopAndUnblocksPendingRequest(t *testing.T) {
 	}
 }
 
+func TestClientSerializesConcurrentSends(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tr := newConcurrentUnsafeTransport()
+	client := NewClient(tr)
+	defer client.Close()
+
+	if err := client.Hello(ctx, Hello{Version: Version, Client: "test"}); err != nil {
+		t.Fatalf("hello failed: %v", err)
+	}
+
+	const workers = 8
+	start := make(chan struct{})
+	errCh := make(chan error, workers)
+
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := client.List(ctx)
+			errCh <- err
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("expected concurrent lists to succeed, got %v", err)
+		}
+	}
+}
+
 func runFakeProtocolServer(tr *memory.Transport) error {
 	if err := expectHello(tr); err != nil {
 		return err
@@ -475,6 +517,104 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 	}
 
 	return tr.Close()
+}
+
+type concurrentUnsafeTransport struct {
+	inFlight atomic.Int32
+	recvCh   chan []byte
+	done     chan struct{}
+	once     sync.Once
+}
+
+func newConcurrentUnsafeTransport() *concurrentUnsafeTransport {
+	return &concurrentUnsafeTransport{
+		recvCh: make(chan []byte, 32),
+		done:   make(chan struct{}),
+	}
+}
+
+func (t *concurrentUnsafeTransport) Send(frame []byte) error {
+	select {
+	case <-t.done:
+		return io.EOF
+	default:
+	}
+	if !t.inFlight.CompareAndSwap(0, 1) {
+		return errConcurrentSend
+	}
+	defer t.inFlight.Store(0)
+
+	time.Sleep(20 * time.Millisecond)
+
+	channel, typ, payload, err := DecodeFrame(frame)
+	if err != nil {
+		return err
+	}
+	if channel != 0 {
+		return fmt.Errorf("unexpected non-control channel %d", channel)
+	}
+
+	switch typ {
+	case TypeHello:
+		resp, err := json.Marshal(Hello{Version: Version, Server: "test"})
+		if err != nil {
+			return err
+		}
+		reply, err := EncodeFrame(0, TypeHello, resp)
+		if err != nil {
+			return err
+		}
+		t.recvCh <- reply
+		return nil
+	case TypeRequest:
+		var req Request
+		if err := json.Unmarshal(payload, &req); err != nil {
+			return err
+		}
+		if req.Method != "list" {
+			return fmt.Errorf("unexpected method %q", req.Method)
+		}
+		result, err := json.Marshal(ListResult{})
+		if err != nil {
+			return err
+		}
+		replyPayload, err := json.Marshal(Response{ID: req.ID, Result: result})
+		if err != nil {
+			return err
+		}
+		reply, err := EncodeFrame(0, TypeResponse, replyPayload)
+		if err != nil {
+			return err
+		}
+		t.recvCh <- reply
+		return nil
+	default:
+		return fmt.Errorf("unexpected frame type %d", typ)
+	}
+}
+
+func (t *concurrentUnsafeTransport) Recv() ([]byte, error) {
+	select {
+	case <-t.done:
+		return nil, io.EOF
+	case frame, ok := <-t.recvCh:
+		if !ok {
+			return nil, io.EOF
+		}
+		return frame, nil
+	}
+}
+
+func (t *concurrentUnsafeTransport) Close() error {
+	t.once.Do(func() {
+		close(t.done)
+		close(t.recvCh)
+	})
+	return nil
+}
+
+func (t *concurrentUnsafeTransport) Done() <-chan struct{} {
+	return t.done
 }
 
 func runFakeEventServer(tr *memory.Transport) error {

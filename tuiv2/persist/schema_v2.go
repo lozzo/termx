@@ -1,9 +1,8 @@
 package persist
 
 type WorkspaceStateFileV2 struct {
-	Version  int                         `json:"version"`
-	Metadata []PersistedTerminalMetadata `json:"terminal_metadata,omitempty"`
-	Data     []WorkspaceEntryV2          `json:"workspaces,omitempty"`
+	Version int                `json:"version"`
+	Data    []WorkspaceEntryV2 `json:"workspaces,omitempty"`
 }
 
 type WorkspaceEntryV2 struct {
@@ -13,12 +12,13 @@ type WorkspaceEntryV2 struct {
 }
 
 type TabEntryV2 struct {
-	Name         string           `json:"name"`
-	ActivePaneID string           `json:"active_pane_id,omitempty"`
-	ZoomedPaneID string           `json:"zoomed_pane_id,omitempty"`
-	LayoutPreset int              `json:"layout_preset,omitempty"`
-	Layout       *LayoutNodeEntry `json:"layout,omitempty"`
-	Panes        []PaneEntryV2    `json:"panes"`
+	Name         string            `json:"name"`
+	ActivePaneID string            `json:"active_pane_id,omitempty"`
+	ZoomedPaneID string            `json:"zoomed_pane_id,omitempty"`
+	LayoutPreset int               `json:"layout_preset,omitempty"`
+	Layout       *LayoutNodeEntry  `json:"layout,omitempty"`
+	Panes        []PaneEntryV2     `json:"panes"`
+	Floating     []FloatingEntryV2 `json:"floating,omitempty"`
 }
 
 type LayoutNodeEntry struct {
@@ -35,9 +35,15 @@ type PaneEntryV2 struct {
 	TerminalID string `json:"terminal_id,omitempty"`
 }
 
-type PersistedTerminalMetadata struct {
-	TerminalID string            `json:"terminal_id"`
-	Name       string            `json:"name,omitempty"`
-	Command    []string          `json:"command,omitempty"`
-	Tags       map[string]string `json:"tags,omitempty"`
+type FloatingEntryV2 struct {
+	PaneID string      `json:"pane_id"`
+	Rect   RectEntryV2 `json:"rect"`
+	Z      int         `json:"z,omitempty"`
+}
+
+type RectEntryV2 struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+	W int `json:"w"`
+	H int `json:"h"`
 }

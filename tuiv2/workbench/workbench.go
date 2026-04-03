@@ -1,7 +1,24 @@
 package workbench
 
+import "sort"
+
+type TerminalBindingLocation struct {
+	WorkspaceName string
+	TabID         string
+	TabName       string
+	PaneID        string
+	Visible       bool
+}
+
 func NewWorkbench() *Workbench {
 	return &Workbench{store: make(map[string]*WorkspaceState)}
+}
+
+func (w *Workbench) touch() {
+	if w == nil {
+		return
+	}
+	w.version++
 }
 
 func (w *Workbench) CurrentWorkspace() *WorkspaceState {
@@ -32,6 +49,7 @@ func (w *Workbench) SwitchWorkspace(name string) bool {
 		return false
 	}
 	w.current = name
+	w.touch()
 	return true
 }
 
@@ -46,6 +64,7 @@ func (w *Workbench) AddWorkspace(name string, ws *WorkspaceState) {
 	if w.current == "" {
 		w.current = name
 	}
+	w.touch()
 }
 
 func (w *Workbench) RemoveWorkspace(name string) {
@@ -66,6 +85,7 @@ func (w *Workbench) RemoveWorkspace(name string) {
 			w.current = w.order[0]
 		}
 	}
+	w.touch()
 }
 
 func (w *Workbench) ListWorkspaces() []string {
@@ -76,6 +96,7 @@ func (w *Workbench) SetPaneTitleByTerminalID(terminalID, title string) {
 	if w == nil || terminalID == "" || title == "" {
 		return
 	}
+	changed := false
 	for _, wsName := range w.order {
 		ws := w.store[wsName]
 		if ws == nil {
@@ -88,9 +109,13 @@ func (w *Workbench) SetPaneTitleByTerminalID(terminalID, title string) {
 			for _, pane := range tab.Panes {
 				if pane != nil && pane.TerminalID == terminalID {
 					pane.Title = title
+					changed = true
 				}
 			}
 		}
+	}
+	if changed {
+		w.touch()
 	}
 }
 
@@ -102,9 +127,16 @@ func (w *Workbench) VisibleWithSize(bodyRect Rect) *VisibleWorkbench {
 	if w == nil {
 		return nil
 	}
+	if w.visibleCache != nil && w.visibleVersion == w.version && w.visibleRect == bodyRect {
+		return w.visibleCache
+	}
 	workspace := w.CurrentWorkspace()
 	if workspace == nil {
-		return &VisibleWorkbench{ActiveTab: -1}
+		visible := &VisibleWorkbench{ActiveTab: -1}
+		w.visibleCache = visible
+		w.visibleRect = bodyRect
+		w.visibleVersion = w.version
+		return visible
 	}
 	visible := &VisibleWorkbench{
 		WorkspaceName: workspace.Name,
@@ -132,7 +164,7 @@ func (w *Workbench) VisibleWithSize(bodyRect Rect) *VisibleWorkbench {
 		}
 		if activeTab != nil && activeTab.ID == tab.ID {
 			visible.ActiveTab = len(visible.Tabs)
-			for _, floating := range tab.Floating {
+			for _, floating := range orderedFloating(tab.Floating) {
 				if floating == nil {
 					continue
 				}
@@ -162,18 +194,132 @@ func (w *Workbench) VisibleWithSize(bodyRect Rect) *VisibleWorkbench {
 		}
 		visible.Tabs = append(visible.Tabs, item)
 	}
+	w.visibleCache = visible
+	w.visibleRect = bodyRect
+	w.visibleVersion = w.version
 	return visible
+}
+
+func orderedFloating(entries []*FloatingState) []*FloatingState {
+	if len(entries) == 0 {
+		return nil
+	}
+	ordered := append([]*FloatingState(nil), entries...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return ordered[i].Z < ordered[j].Z
+	})
+	return ordered
+}
+
+func (w *Workbench) TerminalBindings() map[string][]TerminalBindingLocation {
+	if w == nil {
+		return nil
+	}
+	index := make(map[string][]TerminalBindingLocation)
+	currentTabID := ""
+	if tab := w.CurrentTab(); tab != nil {
+		currentTabID = tab.ID
+	}
+	for _, wsName := range w.order {
+		ws := w.store[wsName]
+		if ws == nil {
+			continue
+		}
+		for _, tab := range ws.Tabs {
+			if tab == nil {
+				continue
+			}
+			for _, paneID := range orderedPaneIDsForBindings(tab) {
+				pane := tab.Panes[paneID]
+				if pane == nil || pane.TerminalID == "" {
+					continue
+				}
+				index[pane.TerminalID] = append(index[pane.TerminalID], TerminalBindingLocation{
+					WorkspaceName: ws.Name,
+					TabID:         tab.ID,
+					TabName:       tab.Name,
+					PaneID:        pane.ID,
+					Visible:       ws.Name == w.current && tab.ID == currentTabID,
+				})
+			}
+		}
+	}
+	if len(index) == 0 {
+		return nil
+	}
+	return index
+}
+
+func orderedPaneIDsForBindings(tab *TabState) []string {
+	if tab == nil {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(tab.Panes))
+	order := make([]string, 0, len(tab.Panes))
+	for _, paneID := range tab.paneOrder() {
+		if _, exists := seen[paneID]; exists {
+			continue
+		}
+		if _, ok := tab.Panes[paneID]; !ok {
+			continue
+		}
+		seen[paneID] = struct{}{}
+		order = append(order, paneID)
+	}
+	for _, entry := range orderedFloating(tab.Floating) {
+		if entry == nil || entry.PaneID == "" {
+			continue
+		}
+		if _, exists := seen[entry.PaneID]; exists {
+			continue
+		}
+		if _, ok := tab.Panes[entry.PaneID]; !ok {
+			continue
+		}
+		seen[entry.PaneID] = struct{}{}
+		order = append(order, entry.PaneID)
+	}
+	extras := make([]string, 0, len(tab.Panes)-len(order))
+	for paneID := range tab.Panes {
+		if _, exists := seen[paneID]; exists {
+			continue
+		}
+		extras = append(extras, paneID)
+	}
+	sort.Strings(extras)
+	return append(order, extras...)
 }
 
 func (t *TabState) paneOrder() []string {
 	if t == nil {
 		return nil
 	}
+	floating := make(map[string]struct{}, len(t.Floating))
+	for _, entry := range t.Floating {
+		if entry == nil || entry.PaneID == "" {
+			continue
+		}
+		floating[entry.PaneID] = struct{}{}
+	}
 	if t.Root != nil {
-		return t.Root.LeafIDs()
+		leafIDs := t.Root.LeafIDs()
+		if len(floating) == 0 {
+			return leafIDs
+		}
+		order := make([]string, 0, len(leafIDs))
+		for _, paneID := range leafIDs {
+			if _, isFloating := floating[paneID]; isFloating {
+				continue
+			}
+			order = append(order, paneID)
+		}
+		return order
 	}
 	order := make([]string, 0, len(t.Panes))
 	for paneID := range t.Panes {
+		if _, isFloating := floating[paneID]; isFloating {
+			continue
+		}
 		order = append(order, paneID)
 	}
 	return order

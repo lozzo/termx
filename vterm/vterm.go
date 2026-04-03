@@ -70,13 +70,17 @@ type ScreenData struct {
 // the child process receives it.
 type ResponseHandler func(data []byte)
 
+// TitleHandler is called when the terminal title changes (OSC 2).
+type TitleHandler func(title string)
+
 type VTerm struct {
 	emu *charmvt.SafeEmulator
 
-	mu        sync.RWMutex
-	cursor    CursorState
-	modes     TerminalModes
+	mu     sync.RWMutex
+	cursor CursorState
+	modes  TerminalModes
 	resp      ResponseHandler
+	onTitle   TitleHandler
 	sbSize    int
 	defaultFG string
 	defaultBG string
@@ -129,6 +133,11 @@ func (v *VTerm) resetEmulator(cols, rows int) {
 		},
 		DisableMode: func(mode ansi.Mode) {
 			v.setMode(mode, false)
+		},
+		Title: func(title string) {
+			if v.onTitle != nil {
+				v.onTitle(title)
+			}
 		},
 	})
 
@@ -393,6 +402,12 @@ func uvCell(cell Cell) *uv.Cell {
 
 func (v *VTerm) Paste(text string) {
 	v.emu.Paste(text)
+}
+
+func (v *VTerm) SetTitleHandler(handler TitleHandler) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.onTitle = handler
 }
 
 func (v *VTerm) SetDefaultColors(fg, bg string) {

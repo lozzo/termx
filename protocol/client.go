@@ -16,6 +16,7 @@ type Client struct {
 	nextID    atomic.Uint64
 
 	mu      sync.Mutex
+	sendMu  sync.Mutex
 	waiters map[uint64]chan result
 	streams map[uint16]*clientStream
 	pending map[uint16][]StreamFrame
@@ -102,7 +103,7 @@ func (c *Client) Hello(ctx context.Context, hello Hello) error {
 	if err != nil {
 		return err
 	}
-	if err := c.transport.Send(frame); err != nil {
+	if err := c.send(frame); err != nil {
 		return err
 	}
 	select {
@@ -209,7 +210,7 @@ func (c *Client) Input(ctx context.Context, channel uint16, data []byte) error {
 	if err != nil {
 		return err
 	}
-	return c.transport.Send(frame)
+	return c.send(frame)
 }
 
 func (c *Client) Resize(ctx context.Context, channel uint16, cols, rows uint16) error {
@@ -217,7 +218,7 @@ func (c *Client) Resize(ctx context.Context, channel uint16, cols, rows uint16) 
 	if err != nil {
 		return err
 	}
-	return c.transport.Send(frame)
+	return c.send(frame)
 }
 
 func (c *Client) Stream(channel uint16) (<-chan StreamFrame, func()) {
@@ -280,7 +281,7 @@ func (c *Client) doRequest(ctx context.Context, method string, params any, out a
 		c.mu.Unlock()
 	}()
 
-	if err := c.transport.Send(frame); err != nil {
+	if err := c.send(frame); err != nil {
 		return err
 	}
 
@@ -296,6 +297,12 @@ func (c *Client) doRequest(ctx context.Context, method string, params any, out a
 		}
 		return json.Unmarshal(res.payload, out)
 	}
+}
+
+func (c *Client) send(frame []byte) error {
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	return c.transport.Send(frame)
 }
 
 func (c *Client) readLoop() {

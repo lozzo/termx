@@ -2,10 +2,8 @@ package runtime
 
 import (
 	"maps"
-	"slices"
 	"sort"
 
-	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/bridge"
 )
 
@@ -23,6 +21,7 @@ type TerminalRuntime struct {
 	Tags     map[string]string
 	State    string
 	ExitCode *int
+	Title    string // OSC 2 标题，由 VTerm 回调更新
 
 	Channel    uint16
 	AttachMode string
@@ -71,22 +70,16 @@ func (r *TerminalRegistry) IDs() []string {
 	return ids
 }
 
-func (r *TerminalRegistry) UpsertTerminalInfo(info protocol.TerminalInfo) *TerminalRuntime {
-	terminal := r.GetOrCreate(info.ID)
+func (r *TerminalRegistry) SetMetadata(terminalID string, name string, tags map[string]string) {
+	if r == nil || terminalID == "" {
+		return
+	}
+	terminal := r.Get(terminalID)
 	if terminal == nil {
-		return nil
+		return
 	}
-	terminal.Name = info.Name
-	terminal.Command = slices.Clone(info.Command)
-	terminal.Tags = cloneTags(info.Tags)
-	terminal.State = info.State
-	if info.ExitCode != nil {
-		exitCode := *info.ExitCode
-		terminal.ExitCode = &exitCode
-	} else {
-		terminal.ExitCode = nil
-	}
-	return terminal
+	terminal.Name = name
+	terminal.Tags = cloneTags(tags)
 }
 
 func cloneTags(tags map[string]string) map[string]string {

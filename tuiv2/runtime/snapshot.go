@@ -23,6 +23,7 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 		terminal.Snapshot = snapshot
 		r.ensureVTerm(terminal)
 		loadSnapshotIntoVTerm(terminal.VTerm, snapshot)
+		r.touch()
 	}
 	return snapshot, nil
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image/color"
 	"slices"
+	"sort"
 
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/bridge"
@@ -17,18 +18,24 @@ type Runtime struct {
 	bindings      map[string]*PaneBinding
 	client        bridge.Client
 	onInvalidate  func()
+	onTitleChange func(terminalID, title string)
 	newVTerm      VTermFactory
 	hostDefaultFG string
 	hostDefaultBG string
 	hostPalette   map[int]string
+
+	version        uint64
+	visibleVersion uint64
+	visibleCache   *VisibleRuntime
 }
 
 func New(client bridge.Client, opts ...Option) *Runtime {
 	r := &Runtime{
-		registry:     NewTerminalRegistry(),
-		bindings:     make(map[string]*PaneBinding),
-		client:       client,
-		onInvalidate: func() {},
+		registry:      NewTerminalRegistry(),
+		bindings:      make(map[string]*PaneBinding),
+		client:        client,
+		onInvalidate:  func() {},
+		onTitleChange: func(string, string) {},
 	}
 	r.newVTerm = r.defaultVTermFactory
 	for _, opt := range opts {
@@ -70,7 +77,47 @@ func (r *Runtime) BindPane(paneID string) *PaneBinding {
 	}
 	binding = &PaneBinding{PaneID: paneID}
 	r.bindings[paneID] = binding
+	r.touch()
 	return binding
+}
+
+func (r *Runtime) UnbindPane(paneID, terminalID string) {
+	if r == nil || paneID == "" {
+		return
+	}
+	delete(r.bindings, paneID)
+	r.unbindPaneFromTerminalCache(paneID, terminalID)
+	r.touch()
+}
+
+func (r *Runtime) unbindPaneFromTerminalCache(paneID, terminalID string) {
+	if r == nil || r.registry == nil || paneID == "" {
+		return
+	}
+	if terminalID != "" {
+		r.clearPaneFromTerminal(r.registry.Get(terminalID), paneID)
+		return
+	}
+	for _, id := range r.registry.IDs() {
+		r.clearPaneFromTerminal(r.registry.Get(id), paneID)
+	}
+}
+
+func (r *Runtime) clearPaneFromTerminal(terminal *TerminalRuntime, paneID string) {
+	if terminal == nil || paneID == "" {
+		return
+	}
+	terminal.BoundPaneIDs = removeBoundPaneID(terminal.BoundPaneIDs, paneID)
+	if terminal.OwnerPaneID == paneID {
+		terminal.OwnerPaneID = ""
+	}
+}
+
+func (r *Runtime) touch() {
+	if r == nil {
+		return
+	}
+	r.version++
 }
 
 func WithInvalidate(fn func()) Option {
@@ -101,17 +148,24 @@ func (r *Runtime) ensureVTerm(terminal *TerminalRuntime) VTermLike {
 	if r == nil || terminal == nil {
 		return nil
 	}
-	if terminal.VTerm != nil {
-		return terminal.VTerm
+	if terminal.VTerm == nil {
+		if r.newVTerm == nil {
+			r.newVTerm = r.defaultVTermFactory
+		}
+		terminal.VTerm = r.newVTerm(terminal.Channel)
+		r.applyHostColorsToVTerm(terminal.VTerm)
+		if terminal.Snapshot != nil {
+			loadSnapshotIntoVTerm(terminal.VTerm, terminal.Snapshot)
+		}
 	}
-	if r.newVTerm == nil {
-		r.newVTerm = r.defaultVTermFactory
-	}
-	terminal.VTerm = r.newVTerm(terminal.Channel)
-	r.applyHostColorsToVTerm(terminal.VTerm)
-	if terminal.Snapshot != nil {
-		loadSnapshotIntoVTerm(terminal.VTerm, terminal.Snapshot)
-	}
+	terminal.VTerm.SetTitleHandler(func(title string) {
+		terminal.Title = title
+		r.touch()
+		if r.onTitleChange != nil {
+			r.onTitleChange(terminal.TerminalID, title)
+		}
+		r.invalidate()
+	})
 	return terminal.VTerm
 }
 
@@ -181,7 +235,11 @@ func colorToHex(c color.Color) string {
 }
 
 func (r *Runtime) invalidate() {
-	if r == nil || r.onInvalidate == nil {
+	if r == nil {
+		return
+	}
+	r.touch()
+	if r.onInvalidate == nil {
 		return
 	}
 	r.onInvalidate()
@@ -194,6 +252,13 @@ func (r *Runtime) SetInvalidate(fn func()) {
 	r.onInvalidate = fn
 }
 
+func (r *Runtime) SetTitleChange(fn func(terminalID, title string)) {
+	if r == nil || fn == nil {
+		return
+	}
+	r.onTitleChange = fn
+}
+
 func (r *Runtime) ListTerminals(ctx context.Context) ([]protocol.TerminalInfo, error) {
 	if r == nil || r.client == nil {
 		return nil, shared.UserVisibleError{Op: "list terminals", Err: fmt.Errorf("runtime client is nil")}
@@ -202,9 +267,6 @@ func (r *Runtime) ListTerminals(ctx context.Context) ([]protocol.TerminalInfo, e
 	if err != nil {
 		return nil, shared.UserVisibleError{Op: "list terminals", Err: err}
 	}
-	for _, info := range result.Terminals {
-		r.registry.UpsertTerminalInfo(info)
-	}
 	return append([]protocol.TerminalInfo(nil), result.Terminals...), nil
 }
 
@@ -212,7 +274,13 @@ func (r *Runtime) Visible() *VisibleRuntime {
 	if r == nil || r.registry == nil {
 		return nil
 	}
-	visible := &VisibleRuntime{Terminals: make([]VisibleTerminal, 0, len(r.registry.terminals))}
+	if r.visibleCache != nil && r.visibleVersion == r.version {
+		return r.visibleCache
+	}
+	visible := &VisibleRuntime{
+		Terminals: make([]VisibleTerminal, 0, len(r.registry.terminals)),
+		Bindings:  make([]VisiblePaneBinding, 0, len(r.bindings)),
+	}
 	for _, terminalID := range r.registry.IDs() {
 		terminal := r.registry.Get(terminalID)
 		if terminal == nil {
@@ -222,11 +290,31 @@ func (r *Runtime) Visible() *VisibleRuntime {
 			TerminalID:   terminal.TerminalID,
 			Name:         terminal.Name,
 			State:        terminal.State,
+			ExitCode:     terminal.ExitCode,
+			Title:        terminal.Title,
 			AttachMode:   terminal.AttachMode,
 			OwnerPaneID:  terminal.OwnerPaneID,
 			BoundPaneIDs: slices.Clone(terminal.BoundPaneIDs),
 			Snapshot:     terminal.Snapshot,
 		})
 	}
+	paneIDs := make([]string, 0, len(r.bindings))
+	for paneID := range r.bindings {
+		paneIDs = append(paneIDs, paneID)
+	}
+	sort.Strings(paneIDs)
+	for _, paneID := range paneIDs {
+		binding := r.bindings[paneID]
+		if binding == nil {
+			continue
+		}
+		visible.Bindings = append(visible.Bindings, VisiblePaneBinding{
+			PaneID:    binding.PaneID,
+			Role:      string(binding.Role),
+			Connected: binding.Connected,
+		})
+	}
+	r.visibleCache = visible
+	r.visibleVersion = r.version
 	return visible
 }

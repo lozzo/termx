@@ -4,6 +4,11 @@ type Workbench struct {
 	current string
 	order   []string
 	store   map[string]*WorkspaceState
+
+	version        uint64
+	visibleRect    Rect
+	visibleVersion uint64
+	visibleCache   *VisibleWorkbench
 }
 
 type WorkspaceState struct {

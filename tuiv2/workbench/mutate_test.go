@@ -413,6 +413,18 @@ func TestCloseTab_LastTabLeavesWorkspaceWithoutActiveTab(t *testing.T) {
 	}
 }
 
+func TestRenameTab_UpdatesName(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Old")
+
+	if err := wb.RenameTab("tab1", "New"); err != nil {
+		t.Fatalf("RenameTab: unexpected error: %v", err)
+	}
+	if current := wb.CurrentTab(); current == nil || current.Name != "New" {
+		t.Fatalf("expected renamed current tab, got %#v", current)
+	}
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Visible() projection consistency
 // ────────────────────────────────────────────────────────────────────────────
@@ -468,6 +480,77 @@ func TestVisible_ReflectsMutations(t *testing.T) {
 		if r.W == 0 || r.H == 0 {
 			t.Errorf("pane %q has zero dimension rect %+v in 100×100 space", id, r)
 		}
+	}
+}
+
+func TestReorderFloatingPaneUpdatesZOrderMetadata(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.CreateFloatingPane("tab1", "pane2", Rect{X: 1, Y: 1, W: 20, H: 8})
+	_ = wb.CreateFloatingPane("tab1", "pane3", Rect{X: 4, Y: 3, W: 16, H: 6})
+
+	if !wb.ReorderFloatingPane("tab1", "pane2", true) {
+		t.Fatal("expected reorder to succeed")
+	}
+
+	tab := wb.store["main"].Tabs[0]
+	if len(tab.Floating) != 2 {
+		t.Fatalf("expected 2 floating panes, got %#v", tab.Floating)
+	}
+	if tab.Floating[0].PaneID != "pane3" || tab.Floating[0].Z != 0 {
+		t.Fatalf("expected pane3 to stay behind with z=0, got %#v", tab.Floating[0])
+	}
+	if tab.Floating[1].PaneID != "pane2" || tab.Floating[1].Z != 1 {
+		t.Fatalf("expected pane2 to move to top with z=1, got %#v", tab.Floating[1])
+	}
+}
+
+func TestMoveFloatingPaneByClampsAtOrigin(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.CreateFloatingPane("tab1", "pane2", Rect{X: 3, Y: 2, W: 20, H: 8})
+
+	if !wb.MoveFloatingPaneBy("tab1", "pane2", -10, -10) {
+		t.Fatal("expected move by to succeed")
+	}
+
+	tab := wb.store["main"].Tabs[0]
+	if tab.Floating[0].Rect.X != 0 || tab.Floating[0].Rect.Y != 0 {
+		t.Fatalf("expected floating pane to clamp to origin, got %#v", tab.Floating[0])
+	}
+}
+
+func TestResizeFloatingPaneByClampsMinimumSize(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.CreateFloatingPane("tab1", "pane2", Rect{X: 3, Y: 2, W: 20, H: 8})
+
+	if !wb.ResizeFloatingPaneBy("tab1", "pane2", -50, -50) {
+		t.Fatal("expected resize by to succeed")
+	}
+
+	tab := wb.store["main"].Tabs[0]
+	if tab.Floating[0].Rect.W != 10 || tab.Floating[0].Rect.H != 4 {
+		t.Fatalf("expected floating pane to clamp minimum size, got %#v", tab.Floating[0])
+	}
+}
+
+func TestCenterFloatingPaneCentersWithinBounds(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.CreateFloatingPane("tab1", "pane2", Rect{X: 0, Y: 0, W: 20, H: 8})
+
+	if !wb.CenterFloatingPane("tab1", "pane2", Rect{W: 100, H: 40}) {
+		t.Fatal("expected center to succeed")
+	}
+
+	tab := wb.store["main"].Tabs[0]
+	if tab.Floating[0].Rect.X != 40 || tab.Floating[0].Rect.Y != 16 {
+		t.Fatalf("expected centered floating pane, got %#v", tab.Floating[0])
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/persist"
+	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -135,6 +136,143 @@ func TestRestoreV2_PopulatesWorkbench(t *testing.T) {
 	opsWS := wb.CurrentWorkspace()
 	if len(opsWS.Tabs) != 1 {
 		t.Fatalf("expected 1 tab in 'ops', got %d", len(opsWS.Tabs))
+	}
+}
+
+func TestRestoreV2_RestoresFloatingEntries(t *testing.T) {
+	state := persist.WorkspaceStateFileV2{
+		Version: 2,
+		Data: []persist.WorkspaceEntryV2{{
+			Name:      "dev",
+			ActiveTab: 0,
+			Tabs: []persist.TabEntryV2{{
+				Name:         "code",
+				ActivePaneID: "p1",
+				Panes: []persist.PaneEntryV2{
+					{ID: "p1", Title: "editor", TerminalID: "t1"},
+					{ID: "p2", Title: "float-a", TerminalID: "t2"},
+					{ID: "p3", Title: "float-b", TerminalID: "t3"},
+				},
+				Layout: &persist.LayoutNodeEntry{PaneID: "p1"},
+				Floating: []persist.FloatingEntryV2{
+					{PaneID: "p2", Rect: persist.RectEntryV2{X: 4, Y: 2, W: 30, H: 8}, Z: 3},
+					{PaneID: "p3", Rect: persist.RectEntryV2{X: 8, Y: 6, W: 18, H: 7}, Z: 7},
+				},
+			}},
+		}},
+	}
+
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatalf("failed to marshal test state: %v", err)
+	}
+
+	wb := newWB()
+	if err := bootstrap.Restore(data, wb, nil); err != nil {
+		t.Fatalf("Restore returned unexpected error: %v", err)
+	}
+
+	tab := wb.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected restored current tab")
+	}
+	if len(tab.Floating) != 2 {
+		t.Fatalf("expected 2 restored floating entries, got %#v", tab.Floating)
+	}
+	if tab.Root == nil || tab.Root.PaneID != "p1" {
+		t.Fatalf("expected tiled root to stay separate from floating panes, got %#v", tab.Root)
+	}
+	if tab.Floating[0].PaneID != "p2" || tab.Floating[0].Rect.W != 30 || tab.Floating[0].Z != 3 {
+		t.Fatalf("unexpected first floating entry: %#v", tab.Floating[0])
+	}
+	if tab.Floating[1].PaneID != "p3" || tab.Floating[1].Rect.Y != 6 || tab.Floating[1].Z != 7 {
+		t.Fatalf("unexpected second floating entry: %#v", tab.Floating[1])
+	}
+}
+
+func TestRestoreV2_IgnoresPersistedTerminalMetadata(t *testing.T) {
+	data := []byte(`{
+		"version": 2,
+		"terminal_metadata": [{
+			"terminal_id": "t1",
+			"name": "shell",
+			"command": ["bash", "-lc", "htop"],
+			"tags": {"role": "dev"}
+		}],
+		"workspaces": [{
+			"name": "dev",
+			"active_tab": 0,
+			"tabs": [{
+				"name": "code",
+				"active_pane_id": "p1",
+				"panes": [{"id": "p1", "title": "editor", "terminal_id": "t1"}]
+			}]
+		}]
+	}`)
+
+	wb := newWB()
+	rt := runtime.New(nil)
+	if err := bootstrap.Restore(data, wb, rt); err != nil {
+		t.Fatalf("Restore returned unexpected error: %v", err)
+	}
+
+	terminal := rt.Registry().Get("t1")
+	if terminal != nil {
+		t.Fatalf("expected restore to ignore terminal metadata cache, got %#v", terminal)
+	}
+}
+
+func TestRestoreV2_AllFloatingTabStaysOutOfTiledProjection(t *testing.T) {
+	state := persist.WorkspaceStateFileV2{
+		Version: 2,
+		Data: []persist.WorkspaceEntryV2{{
+			Name:      "dev",
+			ActiveTab: 0,
+			Tabs: []persist.TabEntryV2{{
+				Name:         "floaters",
+				ActivePaneID: "p2",
+				Panes: []persist.PaneEntryV2{
+					{ID: "p2", Title: "float-a", TerminalID: "t2"},
+					{ID: "p3", Title: "float-b", TerminalID: "t3"},
+				},
+				Floating: []persist.FloatingEntryV2{
+					{PaneID: "p2", Rect: persist.RectEntryV2{X: 4, Y: 2, W: 30, H: 8}, Z: 3},
+					{PaneID: "p3", Rect: persist.RectEntryV2{X: 8, Y: 6, W: 18, H: 7}, Z: 7},
+				},
+			}},
+		}},
+	}
+
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatalf("failed to marshal test state: %v", err)
+	}
+
+	wb := newWB()
+	if err := bootstrap.Restore(data, wb, nil); err != nil {
+		t.Fatalf("Restore returned unexpected error: %v", err)
+	}
+
+	tab := wb.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected restored current tab")
+	}
+	if tab.Root != nil {
+		t.Fatalf("expected all-floating tab to restore without tiled root, got %#v", tab.Root)
+	}
+
+	visible := wb.VisibleWithSize(workbench.Rect{W: 100, H: 40})
+	if visible == nil {
+		t.Fatal("expected visible workbench")
+	}
+	if len(visible.Tabs) != 1 {
+		t.Fatalf("expected 1 visible tab, got %#v", visible.Tabs)
+	}
+	if len(visible.Tabs[0].Panes) != 0 {
+		t.Fatalf("expected no tiled panes for all-floating tab, got %#v", visible.Tabs[0].Panes)
+	}
+	if len(visible.FloatingPanes) != 2 {
+		t.Fatalf("expected 2 floating panes, got %#v", visible.FloatingPanes)
 	}
 }
 
@@ -342,18 +480,6 @@ func TestPersistLoadImportsLegacyV1State(t *testing.T) {
 	tab := file.Data[0].Tabs[0]
 	if tab.Layout == nil || tab.Layout.Direction != "horizontal" {
 		t.Fatalf("expected legacy root to become v2 layout, got %#v", tab.Layout)
-	}
-	if len(file.Metadata) != 2 {
-		t.Fatalf("expected terminal metadata for imported panes, got %d entries", len(file.Metadata))
-	}
-	if file.Metadata[0].TerminalID != "term-1" {
-		t.Fatalf("expected first imported metadata terminal to be term-1, got %q", file.Metadata[0].TerminalID)
-	}
-	if len(file.Metadata[0].Command) != 3 || file.Metadata[0].Command[2] != "htop" {
-		t.Fatalf("expected imported command metadata, got %#v", file.Metadata[0].Command)
-	}
-	if file.Metadata[0].Tags["role"] != "shell" {
-		t.Fatalf("expected imported tags, got %#v", file.Metadata[0].Tags)
 	}
 }
 

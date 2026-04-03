@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -62,7 +63,7 @@ func newTestRuntime(t *testing.T) (*Runtime, context.Context) {
 	return New(bridge.NewProtocolClient(client)), ctx
 }
 
-func TestRuntimeListTerminalsSyncsRegistry(t *testing.T) {
+func TestRuntimeListTerminalsDoesNotPopulateRegistry(t *testing.T) {
 	rt, ctx := newTestRuntime(t)
 
 	created, err := rt.client.Create(ctx, []string{"sh"}, "demo", protocol.Size{Cols: 80, Rows: 24})
@@ -78,11 +79,8 @@ func TestRuntimeListTerminalsSyncsRegistry(t *testing.T) {
 		t.Fatalf("expected 1 terminal, got %d", len(terminals))
 	}
 	stored := rt.Registry().Get(created.TerminalID)
-	if stored == nil {
-		t.Fatalf("expected terminal %q in registry", created.TerminalID)
-	}
-	if stored.Name != "demo" {
-		t.Fatalf("expected name demo, got %q", stored.Name)
+	if stored != nil {
+		t.Fatalf("expected list to avoid populating registry, got %#v", stored)
 	}
 }
 
@@ -182,7 +180,7 @@ func TestRuntimeResizePaneUsesBindingChannelAndRefreshesSnapshot(t *testing.T) {
 		t.Fatalf("load snapshot: %v", err)
 	}
 
-	if err := rt.ResizePane(ctx, "pane-1", 100, 40); err != nil {
+	if err := rt.ResizePane(ctx, "pane-1", "term-1", 100, 40); err != nil {
 		t.Fatalf("resize pane: %v", err)
 	}
 
@@ -236,20 +234,82 @@ func TestRuntimeAttachSnapshotInputAndResize(t *testing.T) {
 	if err := rt.SendInput(ctx, "pane-1", []byte("echo hi\n")); err != nil {
 		t.Fatalf("send input: %v", err)
 	}
-	if err := rt.ResizePane(ctx, "pane-1", 100, 40); err != nil {
+	if err := rt.ResizePane(ctx, "pane-1", created.TerminalID, 100, 40); err != nil {
 		t.Fatalf("resize terminal: %v", err)
 	}
 }
 
+func TestRuntimeAttachDoesNotRetainStructuralTerminalIDInBinding(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+
+	if _, ok := reflect.TypeOf(PaneBinding{}).FieldByName("TerminalID"); ok {
+		t.Fatal("expected PaneBinding to stop storing structural TerminalID")
+	}
+	binding := rt.Binding("pane-1")
+	if binding == nil || !binding.Connected || binding.Channel != 11 {
+		t.Fatalf("expected connected binding with channel only, got %#v", binding)
+	}
+}
+
+func TestRuntimeReattachSamePaneCleansPreviousTerminalBindingState(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach term-1: %v", err)
+	}
+
+	client.attachResult = &protocol.AttachResult{Channel: 12, Mode: "collaborator"}
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-2", "collaborator"); err != nil {
+		t.Fatalf("attach term-2: %v", err)
+	}
+
+	oldTerminal := rt.Registry().Get("term-1")
+	if oldTerminal == nil {
+		t.Fatal("expected old terminal runtime to remain present")
+	}
+	if oldTerminal.OwnerPaneID != "" {
+		t.Fatalf("expected old terminal owner to be cleared, got %q", oldTerminal.OwnerPaneID)
+	}
+	if len(oldTerminal.BoundPaneIDs) != 0 {
+		t.Fatalf("expected old terminal bound panes cleared, got %#v", oldTerminal.BoundPaneIDs)
+	}
+
+	newTerminal := rt.Registry().Get("term-2")
+	if newTerminal == nil {
+		t.Fatal("expected new terminal runtime")
+	}
+	if newTerminal.OwnerPaneID != "pane-1" {
+		t.Fatalf("expected new terminal owner pane-1, got %q", newTerminal.OwnerPaneID)
+	}
+	if !reflect.DeepEqual(newTerminal.BoundPaneIDs, []string{"pane-1"}) {
+		t.Fatalf("expected new terminal bound panes [pane-1], got %#v", newTerminal.BoundPaneIDs)
+	}
+
+	binding := rt.Binding("pane-1")
+	if binding == nil || binding.Channel != 12 || binding.Role != BindingRoleOwner || !binding.Connected {
+		t.Fatalf("expected binding reassigned to new channel/owner state, got %#v", binding)
+	}
+}
+
 type fakeBridgeClient struct {
-	mu                 sync.Mutex
-	attachResult       *protocol.AttachResult
-	listResult         *protocol.ListResult
-	snapshotByTerminal map[string]*protocol.Snapshot
-	streams            map[uint16]chan protocol.StreamFrame
+	mu                  sync.Mutex
+	attachResult        *protocol.AttachResult
+	listResult          *protocol.ListResult
+	snapshotByTerminal  map[string]*protocol.Snapshot
+	streams             map[uint16]chan protocol.StreamFrame
 	streamSubscriptions map[uint16]int
-	inputCalls         []inputCall
-	resizeCalls        []resizeCall
+	inputCalls          []inputCall
+	resizeCalls         []resizeCall
 }
 
 type inputCall struct {
@@ -265,9 +325,9 @@ type resizeCall struct {
 
 func newFakeBridgeClient() *fakeBridgeClient {
 	return &fakeBridgeClient{
-		listResult:         &protocol.ListResult{},
-		snapshotByTerminal: make(map[string]*protocol.Snapshot),
-		streams:            make(map[uint16]chan protocol.StreamFrame),
+		listResult:          &protocol.ListResult{},
+		snapshotByTerminal:  make(map[string]*protocol.Snapshot),
+		streams:             make(map[uint16]chan protocol.StreamFrame),
 		streamSubscriptions: make(map[uint16]int),
 	}
 }

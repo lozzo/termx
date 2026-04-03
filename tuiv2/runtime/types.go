@@ -31,6 +31,7 @@ type VTermLike interface {
 	Modes() localvterm.TerminalModes
 	SetDefaultColors(fg, bg string)
 	SetIndexedColor(index int, value string)
+	SetTitleHandler(handler localvterm.TitleHandler)
 }
 
 type Option func(*Runtime)
