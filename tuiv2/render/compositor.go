@@ -26,11 +26,13 @@ type drawCell struct {
 }
 
 type composedCanvas struct {
-	width    int
-	height   int
-	cells    [][]drawCell
-	rowCache []string
-	rowDirty []bool
+	width     int
+	height    int
+	cells     [][]drawCell
+	rowCache  []string
+	rowDirty  []bool
+	fullCache string
+	fullDirty bool
 
 	cursorVisible bool
 	cursorX       int
@@ -53,17 +55,17 @@ func newComposedCanvas(width, height int) *composedCanvas {
 		height = 1
 	}
 	c := &composedCanvas{
-		width:    width,
-		height:   height,
-		cells:    make([][]drawCell, height),
-		rowCache: make([]string, height),
-		rowDirty: make([]bool, height),
+		width:     width,
+		height:    height,
+		cells:     make([][]drawCell, height),
+		rowCache:  make([]string, height),
+		rowDirty:  make([]bool, height),
+		fullDirty: true,
 	}
+	blankRow := cachedBlankFillRow(width)
 	for y := 0; y < height; y++ {
 		row := make([]drawCell, width)
-		for x := 0; x < width; x++ {
-			row[x] = blankDrawCell()
-		}
+		copy(row, blankRow)
 		c.cells[y] = row
 		c.rowDirty[y] = true
 	}
@@ -82,10 +84,18 @@ func (c *composedCanvas) set(x, y int, cell drawCell) {
 		cell.Width = 1
 	}
 	cell.Continuation = false
-	c.cells[y][x] = cell
-	c.rowDirty[y] = true
+	if c.cells[y][x] != cell {
+		c.cells[y][x] = cell
+		c.rowDirty[y] = true
+		c.fullDirty = true
+	}
 	for i := 1; i < cell.Width && x+i < c.width; i++ {
-		c.cells[y][x+i] = drawCell{Continuation: true}
+		cont := drawCell{Continuation: true}
+		if c.cells[y][x+i] != cont {
+			c.cells[y][x+i] = cont
+			c.rowDirty[y] = true
+			c.fullDirty = true
+		}
 	}
 }
 
@@ -147,6 +157,16 @@ func (c *composedCanvas) String() string {
 	if c == nil {
 		return ""
 	}
+	return c.contentString() + c.cursorANSI()
+}
+
+func (c *composedCanvas) contentString() string {
+	if c == nil {
+		return ""
+	}
+	if !c.fullDirty && c.fullCache != "" {
+		return c.fullCache
+	}
 	for y := 0; y < c.height; y++ {
 		if !c.rowDirty[y] && c.rowCache[y] != "" {
 			continue
@@ -179,10 +199,16 @@ func (c *composedCanvas) String() string {
 		}
 		out.WriteString(c.rowCache[y])
 	}
-	if c.cursorVisible {
-		out.WriteString(fmt.Sprintf("\x1b[%d;%dH", c.cursorY+c.cursorOffsetY+1, c.cursorX+c.cursorOffsetX+1))
+	c.fullCache = out.String()
+	c.fullDirty = false
+	return c.fullCache
+}
+
+func (c *composedCanvas) cursorANSI() string {
+	if c == nil || !c.cursorVisible {
+		return ""
 	}
-	return out.String()
+	return fmt.Sprintf("\x1b[%d;%dH", c.cursorY+c.cursorOffsetY+1, c.cursorX+c.cursorOffsetX+1)
 }
 
 func (c *composedCanvas) setCursor(x, y int) {

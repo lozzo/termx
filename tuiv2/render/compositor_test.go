@@ -116,4 +116,7 @@ func TestRenderFrameProjectsActivePaneCursor(t *testing.T) {
 	if !strings.Contains(frame, "\x1b[3;2H") {
 		t.Fatalf("expected active pane cursor escape in frame, got %q", frame)
 	}
+	if cursorIdx := strings.Index(frame, "\x1b[3;2H"); cursorIdx <= strings.LastIndex(frame, "ws:main") {
+		t.Fatalf("expected cursor escape to be emitted after the status bar, got %q", frame)
+	}
 }

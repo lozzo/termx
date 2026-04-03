@@ -113,9 +113,32 @@ func TestRenderFrameWithHelpOverlay(t *testing.T) {
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 100, 28), 100, 30)
 	state.Help = modal.DefaultHelp()
 	frame := NewCoordinator(func() VisibleRenderState { return state }).RenderFrame()
-	for _, want := range []string{"main", "tab 1", "Help", "Ctrl+P", "Ctrl+F", "Ctrl+G"} {
+	for _, want := range []string{"main", "tab 1", "Help", "Ctrl-P", "Ctrl-F", "Most Used"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("frame missing %q:\n%s", want, frame)
+		}
+	}
+}
+
+func TestRenderTerminalManagerOverlayShowsSelectedTerminalDetails(t *testing.T) {
+	manager := &modal.TerminalManagerState{
+		Title:    "Terminal Manager",
+		Footer:   "[Enter] here  [Ctrl-T] tab  [Ctrl-O] float  [Ctrl-E] edit  [Ctrl-K] kill  [Esc] close",
+		Selected: 0,
+		Items: []modal.PickerItem{{
+			TerminalID:  "term-1",
+			Name:        "shell",
+			State:       "visible",
+			Command:     "bash -lc htop",
+			Location:    "main/tab 1/pane-1",
+			Observed:    true,
+			Description: "running · 1 pane bound",
+		}},
+	}
+	overlay := renderTerminalManagerOverlay(manager, TermSize{Width: 100, Height: 30})
+	for _, want := range []string{"Terminal Manager", "term-1", "bash -lc htop", "main/tab 1/pane-1", "Ctrl-T", "Ctrl-O", "Ctrl-E"} {
+		if !strings.Contains(overlay, want) {
+			t.Fatalf("terminal manager overlay missing %q:\n%s", want, overlay)
 		}
 	}
 }

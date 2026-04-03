@@ -9,6 +9,7 @@ import (
 type VisibleRenderState struct {
 	Workbench       *workbench.VisibleWorkbench
 	Runtime         *VisibleRuntimeStateProxy
+	TerminalPool    *modal.TerminalManagerState
 	Picker          *modal.PickerState
 	WorkspacePicker *modal.WorkspacePickerState
 	TerminalManager *modal.TerminalManagerState
@@ -58,6 +59,11 @@ func AttachWorkspacePicker(state VisibleRenderState, picker *modal.WorkspacePick
 
 func AttachTerminalManager(state VisibleRenderState, manager *modal.TerminalManagerState) VisibleRenderState {
 	state.TerminalManager = manager
+	return state
+}
+
+func AttachTerminalPool(state VisibleRenderState, pool *modal.TerminalManagerState) VisibleRenderState {
+	state.TerminalPool = pool
 	return state
 }
 

@@ -4,7 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -61,9 +63,9 @@ func TestRenderFrameContainsPaneBorder(t *testing.T) {
 	state := makeTestState()
 	c := NewCoordinator(func() VisibleRenderState { return state })
 	frame := c.RenderFrame()
-	// Pane border should contain the title "shell"
-	if !strings.Contains(frame, "shell") {
-		t.Fatalf("frame missing pane title 'shell':\n%s", frame)
+	// Pane border should prefer runtime metadata name over pane title.
+	if !strings.Contains(frame, "demo") {
+		t.Fatalf("frame missing pane title 'demo':\n%s", frame)
 	}
 	// Should have box drawing characters
 	if !strings.Contains(frame, "┌") || !strings.Contains(frame, "┘") {
@@ -162,7 +164,7 @@ func TestRenderBodyScrollbackOffsetShowsOlderRows(t *testing.T) {
 		TerminalID: "term-1",
 		Snapshot: &protocol.Snapshot{
 			Scrollback: [][]protocol.Cell{{{Content: "A", Width: 1}}},
-			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "B", Width: 1}}, {{Content: "C", Width: 1}}}},
+			Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "B", Width: 1}}, {{Content: "C", Width: 1}}}},
 		},
 	}}}
 
@@ -196,5 +198,303 @@ func TestRenderBodyDrawsFloatingPanesOnTop(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected body to contain %q:\n%s", want, body)
 		}
+	}
+}
+
+func TestRenderBodyFloatingPaneClearsUnderlyingContent(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-2",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "base", TerminalID: "term-1"},
+				"pane-2": {ID: "pane-2", Title: "float", TerminalID: "term-2"},
+			},
+			Root:     workbench.NewLeaf("pane-1"),
+			Floating: []*workbench.FloatingState{{PaneID: "pane-2", Rect: workbench.Rect{X: 8, Y: 3, W: 20, H: 6}, Z: 1}},
+		}},
+	})
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), 40, 14), 40, 16)
+	state.Runtime = &VisibleRuntimeStateProxy{Terminals: []runtime.VisibleTerminal{
+		{
+			TerminalID: "term-1",
+			Snapshot: &protocol.Snapshot{
+				Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+					repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+					repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+					repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+					repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+					repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+					repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+				}},
+			},
+		},
+		{
+			TerminalID: "term-2",
+			Name:       "float",
+			State:      "running",
+		},
+	}}
+
+	body := xansi.Strip(renderBody(state, 40, 14))
+	lines := strings.Split(body, "\n")
+	if len(lines) <= 5 {
+		t.Fatalf("expected rendered body height, got %d lines:\n%s", len(lines), body)
+	}
+	line := []rune(lines[5])
+	if len(line) <= 12 {
+		t.Fatalf("expected rendered body width, got line %q", lines[5])
+	}
+	if got := string(line[12]); got != " " {
+		t.Fatalf("expected floating interior to clear underlying content, got %q in line %q", got, lines[5])
+	}
+}
+
+func repeatCells(text string) []protocol.Cell {
+	cells := make([]protocol.Cell, 0, len(text))
+	for _, ch := range text {
+		cells = append(cells, protocol.Cell{Content: string(ch), Width: 1})
+	}
+	return cells
+}
+
+func TestRenderBodyShowsActionableEmptyStateForUnboundPane(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	body := xansi.Strip(renderBody(WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), 72, 12), 72, 14), 72, 12))
+	for _, want := range []string{"unconnected", "Attach existing terminal", "Create new terminal", "Open terminal manager"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected actionable empty-state hint %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestRenderBodyShowsExitedPaneMetaAndPreservesSnapshot(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	exitCode := 42
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), 72, 12), 72, 14)
+	state.Runtime = &VisibleRuntimeStateProxy{Terminals: []runtime.VisibleTerminal{{
+		TerminalID: "term-1",
+		Name:       "shell",
+		State:      "exited",
+		ExitCode:   &exitCode,
+		Snapshot: &protocol.Snapshot{
+			Screen: protocol.ScreenData{
+				Cells: [][]protocol.Cell{
+					{{Content: "l", Width: 1}, {Content: "a", Width: 1}, {Content: "s", Width: 1}, {Content: "t", Width: 1}, {Content: " ", Width: 1}, {Content: "o", Width: 1}, {Content: "u", Width: 1}, {Content: "t", Width: 1}, {Content: "p", Width: 1}, {Content: "u", Width: 1}, {Content: "t", Width: 1}},
+				},
+			},
+		},
+	}}}
+
+	body := xansi.Strip(renderBody(state, 72, 12))
+	for _, want := range []string{"○ 42", "last output"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected exited pane rendering to contain %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestRenderBodyShowsPaneMetaForSharedOwner(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), 72, 12), 72, 14)
+	state.Runtime = &VisibleRuntimeStateProxy{Terminals: []runtime.VisibleTerminal{{
+		TerminalID:   "term-1",
+		Name:         "shell",
+		State:        "running",
+		OwnerPaneID:  "pane-1",
+		BoundPaneIDs: []string{"pane-1", "pane-2"},
+	}}, Bindings: []runtime.VisiblePaneBinding{{
+		PaneID:    "pane-1",
+		Role:      "owner",
+		Connected: true,
+	}}}
+
+	body := xansi.Strip(renderBody(state, 72, 12))
+	if !strings.Contains(body, "● ◆ ⧉ 2") {
+		t.Fatalf("expected shared owner pane meta in frame:\n%s", body)
+	}
+}
+
+func TestRenderBodyShowsPaneMetaForSharedFollower(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-2",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "owner", TerminalID: "term-1"},
+				"pane-2": {ID: "pane-2", Title: "follower", TerminalID: "term-1"},
+			},
+			Root: &workbench.LayoutNode{
+				Direction: workbench.SplitVertical,
+				Ratio:     0.5,
+				First:     workbench.NewLeaf("pane-1"),
+				Second:    workbench.NewLeaf("pane-2"),
+			},
+		}},
+	})
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), 72, 12), 72, 14)
+	state.Runtime = &VisibleRuntimeStateProxy{
+		Terminals: []runtime.VisibleTerminal{{
+			TerminalID:   "term-1",
+			Name:         "shell",
+			State:        "running",
+			OwnerPaneID:  "pane-1",
+			BoundPaneIDs: []string{"pane-1", "pane-2"},
+		}},
+		Bindings: []runtime.VisiblePaneBinding{
+			{PaneID: "pane-1", Role: "owner", Connected: true},
+			{PaneID: "pane-2", Role: "follower", Connected: true},
+		},
+	}
+
+	body := xansi.Strip(renderBody(state, 72, 12))
+	if !strings.Contains(body, "● ◇ ⧉ 2") {
+		t.Fatalf("expected shared follower pane meta in frame:\n%s", body)
+	}
+}
+
+func TestRenderBodyPrefersTitleOverMetaInNarrowPane(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), 16, 8), 16, 10)
+	state.Runtime = &VisibleRuntimeStateProxy{
+		Terminals: []runtime.VisibleTerminal{{
+			TerminalID:   "term-1",
+			Name:         "shell",
+			State:        "running",
+			OwnerPaneID:  "pane-1",
+			BoundPaneIDs: []string{"pane-1", "pane-2"},
+		}},
+		Bindings: []runtime.VisiblePaneBinding{
+			{PaneID: "pane-1", Role: "owner", Connected: true},
+		},
+	}
+
+	body := xansi.Strip(renderBody(state, 16, 8))
+	if !strings.Contains(body, "shell") {
+		t.Fatalf("expected pane title to survive in narrow pane:\n%s", body)
+	}
+	if strings.Contains(body, "● ◆ ⧉ 2") {
+		t.Fatalf("expected compact meta to be dropped before title in narrow pane:\n%s", body)
+	}
+}
+
+func TestRenderFrameUsesDedicatedTerminalPoolPageLayout(t *testing.T) {
+	state := makeTestState()
+	state.TerminalPool = &modal.TerminalManagerState{
+		Title:    "Terminal Pool",
+		Footer:   "[Enter] here  [Ctrl-T] tab  [Ctrl-O] float  [Ctrl-E] edit  [Ctrl-K] kill  [Esc] close",
+		Selected: 0,
+		Items: []modal.PickerItem{
+			{TerminalID: "term-1", Name: "shell", State: "visible", Description: "running · 1 pane bound"},
+			{TerminalID: "term-2", Name: "logs", State: "parked", Description: "running · 0 panes bound"},
+		},
+	}
+	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
+
+	for _, want := range []string{"Terminal Pool", "term-1", "term-2"} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("expected terminal pool page to contain %q:\n%s", want, frame)
+		}
+	}
+	if strings.Contains(frame, "demo") {
+		t.Fatalf("expected workbench pane body to be replaced by terminal pool page:\n%s", frame)
+	}
+}
+
+func TestRenderFrameTerminalPoolPagePreservesFooterWhenDetailsOverflow(t *testing.T) {
+	state := makeTestState()
+	state.TerminalPool = &modal.TerminalManagerState{
+		Title:    "Terminal Pool",
+		Footer:   "[Enter] dedicated footer",
+		Selected: 0,
+		Items: []modal.PickerItem{
+			{
+				TerminalID:  "term-1",
+				Name:        "shell",
+				State:       "visible",
+				Command:     "bash -lc 'run-long-command'",
+				Location:    "main/tab 1/pane-1",
+				Description: "running · 1 pane bound",
+				Observed:    true,
+			},
+			{
+				TerminalID:  "term-2",
+				Name:        "logs",
+				State:       "parked",
+				Description: "running · 0 panes bound",
+			},
+		},
+	}
+	state = WithTermSize(state, 100, 10)
+	state = WithStatus(state, "", "", "terminal-manager")
+
+	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
+	if !strings.Contains(frame, "[Enter] dedicated footer") {
+		t.Fatalf("expected terminal pool footer to remain visible when details overflow:\n%s", frame)
 	}
 }
