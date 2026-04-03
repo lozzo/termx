@@ -17,6 +17,7 @@ import (
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
+	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 // TestE2ECreateShellAndInteract is a full end-to-end test of the MVP flow:
@@ -162,6 +163,255 @@ func TestE2ECreateShellAndInteract(t *testing.T) {
 	}
 }
 
+func TestE2EDetachAndReattachThroughPaneMode(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
+	srv := termx.NewServer(termx.WithSocketPath(socketPath))
+	srvDone := make(chan error, 1)
+	go func() { srvDone <- srv.ListenAndServe(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+		select {
+		case <-srvDone:
+		case <-time.After(3 * time.Second):
+		}
+	})
+	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
+		t.Fatalf("server socket never appeared: %v", err)
+	}
+
+	tr, err := unixtransport.Dial(socketPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	pc := protocol.NewClient(tr)
+	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+		t.Fatalf("hello: %v", err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+	adapted := bridge.NewProtocolClient(pc)
+
+	model := New(shared.Config{}, nil, runtime.New(adapted))
+	model.width = 120
+	model.height = 40
+
+	invalidated := make(chan struct{}, 64)
+	model.SetSendFunc(func(msg tea.Msg) {
+		if _, ok := msg.(InvalidateMsg); ok {
+			select {
+			case invalidated <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	e2eDrain(t, model, model.Init())
+	items := model.modalHost.Picker.VisibleItems()
+	for i := 0; i < len(items)-1; i++ {
+		_, _ = model.Update(input.SemanticAction{Kind: input.ActionPickerDown})
+	}
+	pane := model.workbench.ActivePane()
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: pane.ID})
+	e2eDrain(t, model, cmd)
+	paneID := model.modalHost.Prompt.PaneID
+	model.modalHost.Prompt.Value = "e2e-shell"
+	model.modalHost.Prompt.Command = []string{"sh", "-c", "printf 'e2e_ready\\n'; tail -f /dev/null"}
+	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID})
+	e2eDrain(t, model, cmd)
+	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID})
+	e2eDrain(t, model, cmd)
+
+	pane = model.workbench.ActivePane()
+	if pane == nil || pane.TerminalID == "" {
+		t.Fatalf("expected pane bound after create+attach, got %#v", pane)
+	}
+	terminalID := pane.TerminalID
+	e2eWaitForText(t, ctx, model, invalidated, "e2e_ready")
+
+	e2eDispatchKey(t, model, tea.KeyMsg{Type: tea.KeyCtrlP})
+	e2eDispatchKey(t, model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+
+	pane = model.workbench.ActivePane()
+	if pane == nil || pane.TerminalID != "" {
+		t.Fatalf("expected pane detached after pane-mode detach, got %#v", pane)
+	}
+
+	e2eDispatchKey(t, model, tea.KeyMsg{Type: tea.KeyCtrlF})
+	if model.modalHost.Picker == nil || len(model.modalHost.Picker.VisibleItems()) == 0 {
+		t.Fatalf("expected picker with attachable terminals after detach, got %#v", model.modalHost.Picker)
+	}
+	items = model.modalHost.Picker.VisibleItems()
+	targetIndex := -1
+	for index, item := range items {
+		if item.TerminalID == terminalID {
+			targetIndex = index
+			break
+		}
+	}
+	if targetIndex < 0 {
+		listed, listErr := model.runtime.ListTerminals(context.Background())
+		t.Fatalf(
+			"expected detached terminal %q to remain attachable, got %#v (session=%#v mode=%q registry=%s listErr=%v listed=%s)",
+			terminalID,
+			items,
+			model.modalHost.Session,
+			model.input.Mode().Kind,
+			e2eRegistrySummary(model.runtime),
+			listErr,
+			e2eTerminalInfoSummary(listed),
+		)
+	}
+	for model.modalHost.Picker.Selected != targetIndex {
+		e2eDispatchKey(t, model, tea.KeyMsg{Type: tea.KeyDown})
+	}
+	e2eDispatchKey(t, model, tea.KeyMsg{Type: tea.KeyEnter})
+
+	pane = model.workbench.ActivePane()
+	if pane == nil || pane.TerminalID != terminalID {
+		t.Fatalf("expected pane reattached to %q, got %#v", terminalID, pane)
+	}
+	e2eWaitForText(t, ctx, model, invalidated, "e2e_ready")
+}
+
+func TestE2EClosePaneLeavesTerminalAttachable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
+	srv := termx.NewServer(termx.WithSocketPath(socketPath))
+	srvDone := make(chan error, 1)
+	go func() { srvDone <- srv.ListenAndServe(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+		select {
+		case <-srvDone:
+		case <-time.After(3 * time.Second):
+		}
+	})
+	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
+		t.Fatalf("server socket never appeared: %v", err)
+	}
+
+	tr, err := unixtransport.Dial(socketPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	pc := protocol.NewClient(tr)
+	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+		t.Fatalf("hello: %v", err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+	adapted := bridge.NewProtocolClient(pc)
+
+	model := New(shared.Config{}, nil, runtime.New(adapted))
+	model.width = 120
+	model.height = 40
+
+	invalidated := make(chan struct{}, 64)
+	model.SetSendFunc(func(msg tea.Msg) {
+		if _, ok := msg.(InvalidateMsg); ok {
+			select {
+			case invalidated <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	e2eDrain(t, model, model.Init())
+	items := model.modalHost.Picker.VisibleItems()
+	for i := 0; i < len(items)-1; i++ {
+		_, _ = model.Update(input.SemanticAction{Kind: input.ActionPickerDown})
+	}
+	pane := model.workbench.ActivePane()
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: pane.ID})
+	e2eDrain(t, model, cmd)
+	paneID := model.modalHost.Prompt.PaneID
+	model.modalHost.Prompt.Value = "close-pane-shell"
+	model.modalHost.Prompt.Command = []string{"sh", "-c", "printf 'close_pane_ready\\n'; tail -f /dev/null"}
+	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID})
+	e2eDrain(t, model, cmd)
+	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID})
+	e2eDrain(t, model, cmd)
+
+	pane = model.workbench.ActivePane()
+	if pane == nil || pane.TerminalID == "" {
+		t.Fatalf("expected pane bound after create+attach, got %#v", pane)
+	}
+	terminalID := pane.TerminalID
+	e2eWaitForText(t, ctx, model, invalidated, "close_pane_ready")
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if err := model.workbench.SplitPane(tab.ID, pane.ID, "pane-2", workbench.SplitVertical); err != nil {
+		t.Fatalf("split pane: %v", err)
+	}
+	if err := model.workbench.FocusPane(tab.ID, pane.ID); err != nil {
+		t.Fatalf("focus pane: %v", err)
+	}
+
+	e2eDispatchKey(t, model, tea.KeyMsg{Type: tea.KeyCtrlP})
+	e2eDispatchKey(t, model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+
+	tab = model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab after close")
+	}
+	if _, exists := tab.Panes[pane.ID]; exists {
+		t.Fatalf("expected pane %q to be removed after close, panes=%#v", pane.ID, tab.Panes)
+	}
+	active := model.workbench.ActivePane()
+	if active == nil || active.ID != "pane-2" {
+		t.Fatalf("expected pane-2 active after close, got %#v", active)
+	}
+
+	e2eDispatchKey(t, model, tea.KeyMsg{Type: tea.KeyCtrlF})
+	if model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModePicker {
+		t.Fatalf("expected picker after close-pane flow, got %#v", model.modalHost.Session)
+	}
+	items = model.modalHost.Picker.VisibleItems()
+	targetIndex := -1
+	for index, item := range items {
+		if item.TerminalID == terminalID {
+			targetIndex = index
+			break
+		}
+	}
+	if targetIndex < 0 {
+		listed, listErr := model.runtime.ListTerminals(context.Background())
+		t.Fatalf(
+			"expected terminal %q from closed pane to remain attachable, got %#v (registry=%s listErr=%v listed=%s)",
+			terminalID,
+			items,
+			e2eRegistrySummary(model.runtime),
+			listErr,
+			e2eTerminalInfoSummary(listed),
+		)
+	}
+}
+
+func e2eDispatchKey(t *testing.T, m *Model, msg tea.KeyMsg) {
+	t.Helper()
+	_, cmd := m.Update(msg)
+	if cmd == nil {
+		return
+	}
+	e2eDrainSkippingPrefixTimeout(t, m, cmd)
+}
+
 // e2eDrain recursively executes cmd and all downstream commands, updating the
 // model with each returned message.  It handles tea.BatchMsg by processing
 // each item individually.
@@ -170,21 +420,40 @@ func e2eDrain(t *testing.T, m *Model, cmd tea.Cmd) {
 	if cmd == nil {
 		return
 	}
-	msg := cmd()
+	e2eDrainMsg(t, m, cmd(), false)
+}
+
+func e2eDrainSkippingPrefixTimeout(t *testing.T, m *Model, cmd tea.Cmd) {
+	t.Helper()
+	if cmd == nil {
+		return
+	}
+	e2eDrainMsg(t, m, cmd(), true)
+}
+
+func e2eDrainMsg(t *testing.T, m *Model, msg tea.Msg, skipPrefixTimeout bool) {
+	t.Helper()
 	if msg == nil {
 		return
+	}
+	if skipPrefixTimeout {
+		if _, ok := msg.(prefixTimeoutMsg); ok {
+			return
+		}
 	}
 	switch typed := msg.(type) {
 	case tea.BatchMsg:
 		for _, item := range typed {
-			if next := item(); next != nil {
-				_, nextCmd := m.Update(next)
-				e2eDrain(t, m, nextCmd)
+			if item == nil {
+				continue
 			}
+			e2eDrainMsg(t, m, item(), skipPrefixTimeout)
 		}
 	default:
 		_, nextCmd := m.Update(typed)
-		e2eDrain(t, m, nextCmd)
+		if nextCmd != nil {
+			e2eDrainMsg(t, m, nextCmd(), skipPrefixTimeout)
+		}
 	}
 }
 
@@ -221,4 +490,35 @@ func e2eWaitSocket(path string, timeout time.Duration) error {
 		time.Sleep(20 * time.Millisecond)
 	}
 	return fmt.Errorf("socket %s did not appear within %s", path, timeout)
+}
+
+func e2eRegistrySummary(rt *runtime.Runtime) string {
+	if rt == nil || rt.Registry() == nil {
+		return "<nil>"
+	}
+	ids := rt.Registry().IDs()
+	if len(ids) == 0 {
+		return "[]"
+	}
+	parts := make([]string, 0, len(ids))
+	for _, id := range ids {
+		terminal := rt.Registry().Get(id)
+		if terminal == nil {
+			parts = append(parts, id+":<nil>")
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s(state=%q,name=%q,owner=%q,bound=%v)", id, terminal.State, terminal.Name, terminal.OwnerPaneID, terminal.BoundPaneIDs))
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
+}
+
+func e2eTerminalInfoSummary(terminals []protocol.TerminalInfo) string {
+	if len(terminals) == 0 {
+		return "[]"
+	}
+	parts := make([]string, 0, len(terminals))
+	for _, terminal := range terminals {
+		parts = append(parts, fmt.Sprintf("%s(state=%q,name=%q)", terminal.ID, terminal.State, terminal.Name))
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
 }

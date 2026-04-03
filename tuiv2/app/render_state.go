@@ -15,10 +15,10 @@ func renderErrorText(err error) string {
 	return err.Error()
 }
 
-func clearErrorCmd() tea.Cmd {
+func clearErrorCmd(seq uint64) tea.Cmd {
 	return func() tea.Msg {
 		time.Sleep(errorClearDelay)
-		return clearErrorMsg{}
+		return clearErrorMsg{seq: seq}
 	}
 }
 

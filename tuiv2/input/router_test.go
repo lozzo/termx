@@ -37,7 +37,6 @@ func TestRouteKeyMsg_NormalMode_AllModeEntryBindings(t *testing.T) {
 		{msg: ctrlKey(tea.KeyCtrlV), want: ActionEnterDisplayMode},
 		{msg: ctrlKey(tea.KeyCtrlF), want: ActionOpenPicker},
 		{msg: ctrlKey(tea.KeyCtrlG), want: ActionEnterGlobalMode},
-		{msg: runeKey('?'), want: ActionOpenHelp},
 	}
 	for _, testCase := range cases {
 		result := r.RouteKeyMsg(testCase.msg)
@@ -64,6 +63,9 @@ func TestRouteKeyMsg_PaneMode_PlainKeysProduceFocusActions(t *testing.T) {
 		{msg: runeKey('%'), want: ActionSplitPane},
 		{msg: runeKey('"'), want: ActionSplitPaneHorizontal},
 		{msg: runeKey('z'), want: ActionZoomPane},
+		{msg: runeKey('d'), want: ActionDetachPane},
+		{msg: runeKey('r'), want: ActionReconnectPane},
+		{msg: runeKey('X'), want: ActionClosePaneKill},
 		{msg: runeKey('w'), want: ActionClosePane},
 		{msg: specialKey(tea.KeyEsc), want: ActionCancelMode},
 	}
@@ -71,6 +73,30 @@ func TestRouteKeyMsg_PaneMode_PlainKeysProduceFocusActions(t *testing.T) {
 		result := r.RouteKeyMsg(testCase.msg)
 		if result.Action == nil || result.Action.Kind != testCase.want {
 			t.Fatalf("pane+%v: expected %q, got %#v", testCase.msg, testCase.want, result.Action)
+		}
+	}
+}
+
+func TestRouteKeyMsg_StickyModes_CtrlFStillOpensPicker(t *testing.T) {
+	modes := []ModeKind{
+		ModePane,
+		ModeResize,
+		ModeTab,
+		ModeWorkspace,
+		ModeFloating,
+		ModeDisplay,
+		ModeGlobal,
+	}
+
+	for _, mode := range modes {
+		r := NewRouter()
+		r.SetMode(ModeState{Kind: mode})
+		result := r.RouteKeyMsg(ctrlKey(tea.KeyCtrlF))
+		if result.Action == nil || result.Action.Kind != ActionOpenPicker {
+			t.Fatalf("mode %q: expected Ctrl-F to open picker, got %#v", mode, result.Action)
+		}
+		if result.TerminalInput != nil {
+			t.Fatalf("mode %q: expected no terminal input, got %#v", mode, result.TerminalInput)
 		}
 	}
 }
@@ -93,6 +119,58 @@ func TestRouteKeyMsg_ResizeMode_LargeStepBindings(t *testing.T) {
 		result := r.RouteKeyMsg(testCase.msg)
 		if result.Action == nil || result.Action.Kind != testCase.want {
 			t.Fatalf("resize+%v: expected %q, got %#v", testCase.msg, testCase.want, result.Action)
+		}
+	}
+}
+
+func TestRouteKeyMsg_WorkspaceMode_UsesLegacyAlignedBindings(t *testing.T) {
+	r := NewRouter()
+	r.SetMode(ModeState{Kind: ModeWorkspace})
+	cases := []struct {
+		msg  tea.KeyMsg
+		want ActionKind
+	}{
+		{msg: runeKey('f'), want: ActionOpenWorkspacePicker},
+		{msg: runeKey('c'), want: ActionCreateWorkspace},
+		{msg: runeKey('r'), want: ActionRenameWorkspace},
+		{msg: runeKey('x'), want: ActionDeleteWorkspace},
+		{msg: runeKey('n'), want: ActionNextWorkspace},
+		{msg: runeKey('p'), want: ActionPrevWorkspace},
+		{msg: specialKey(tea.KeyEsc), want: ActionCancelMode},
+	}
+	for _, testCase := range cases {
+		result := r.RouteKeyMsg(testCase.msg)
+		if result.Action == nil || result.Action.Kind != testCase.want {
+			t.Fatalf("workspace+%v: expected %q, got %#v", testCase.msg, testCase.want, result.Action)
+		}
+	}
+}
+
+func TestRouteKeyMsg_TabMode_UsesLegacyAlignedBindings(t *testing.T) {
+	r := NewRouter()
+	r.SetMode(ModeState{Kind: ModeTab})
+
+	cases := []struct {
+		msg      tea.KeyMsg
+		want     ActionKind
+		wantText string
+	}{
+		{msg: runeKey('c'), want: ActionCreateTab},
+		{msg: runeKey('r'), want: ActionRenameTab},
+		{msg: runeKey('n'), want: ActionNextTab},
+		{msg: runeKey('p'), want: ActionPrevTab},
+		{msg: runeKey('x'), want: ActionKillTab},
+		{msg: runeKey('1'), want: ActionJumpTab, wantText: "1"},
+		{msg: specialKey(tea.KeyEsc), want: ActionCancelMode},
+	}
+
+	for _, testCase := range cases {
+		result := r.RouteKeyMsg(testCase.msg)
+		if result.Action == nil || result.Action.Kind != testCase.want {
+			t.Fatalf("tab+%v: expected %q, got %#v", testCase.msg, testCase.want, result.Action)
+		}
+		if testCase.wantText != "" && result.Action.Text != testCase.wantText {
+			t.Fatalf("tab+%v: expected action text %q, got %#v", testCase.msg, testCase.wantText, result.Action)
 		}
 	}
 }
@@ -154,6 +232,17 @@ func TestRouteKeyMsg_PrintableRune_NormalMode_Passthrough(t *testing.T) {
 	}
 }
 
+func TestRouteKeyMsg_QuestionMark_NormalMode_Passthrough(t *testing.T) {
+	r := NewRouter()
+	result := r.RouteKeyMsg(runeKey('?'))
+	if result.Action != nil {
+		t.Fatalf("expected no action, got %#v", result.Action)
+	}
+	if result.TerminalInput == nil || string(result.TerminalInput.Data) != "?" {
+		t.Fatalf("expected question mark passthrough, got %#v", result.TerminalInput)
+	}
+}
+
 func TestRouteKeyMsg_MultipleRunes_NormalMode_Passthrough(t *testing.T) {
 	r := NewRouter()
 	result := r.RouteKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h', 'i'}})
@@ -175,8 +264,29 @@ func TestRouteKeyMsg_PickerMode_UsesPickerBindings(t *testing.T) {
 		{msg: specialKey(tea.KeyUp), want: ActionPickerUp},
 		{msg: specialKey(tea.KeyDown), want: ActionPickerDown},
 		{msg: specialKey(tea.KeyEnter), want: ActionSubmitPrompt},
+		{msg: specialKey(tea.KeyTab), want: ActionPickerAttachSplit},
+		{msg: specialKey(tea.KeyCtrlE), want: ActionEditTerminal},
 		{msg: specialKey(tea.KeyCtrlK), want: ActionKillTerminal},
 		{msg: specialKey(tea.KeyEsc), want: ActionCancelMode},
+	}
+	for _, testCase := range cases {
+		result := r.RouteKeyMsg(testCase.msg)
+		if result.Action == nil || result.Action.Kind != testCase.want {
+			t.Fatalf("msg %v: expected %q, got %#v", testCase.msg, testCase.want, result.Action)
+		}
+	}
+}
+
+func TestRouteKeyMsg_PickerMode_LegacyAlignedBindingsRestored(t *testing.T) {
+	r := NewRouter()
+	r.SetMode(ModeState{Kind: ModePicker})
+
+	cases := []struct {
+		msg  tea.KeyMsg
+		want ActionKind
+	}{
+		{msg: specialKey(tea.KeyTab), want: ActionPickerAttachSplit},
+		{msg: specialKey(tea.KeyCtrlE), want: ActionEditTerminal},
 	}
 	for _, testCase := range cases {
 		result := r.RouteKeyMsg(testCase.msg)
@@ -192,6 +302,80 @@ func TestRouteKeyMsg_PickerMode_UnboundRuneIgnored(t *testing.T) {
 	result := r.RouteKeyMsg(runeKey('a'))
 	if result.Action != nil || result.TerminalInput != nil {
 		t.Fatalf("expected ignored key in picker mode, got %#v", result)
+	}
+}
+
+func TestRouteKeyMsg_TerminalManagerMode_UsesTerminalManagerBindings(t *testing.T) {
+	r := NewRouter()
+	r.SetMode(ModeState{Kind: ModeTerminalManager})
+	cases := []struct {
+		msg  tea.KeyMsg
+		want ActionKind
+	}{
+		{msg: specialKey(tea.KeyUp), want: ActionPickerUp},
+		{msg: specialKey(tea.KeyDown), want: ActionPickerDown},
+		{msg: specialKey(tea.KeyEnter), want: ActionSubmitPrompt},
+		{msg: specialKey(tea.KeyCtrlT), want: ActionAttachTab},
+		{msg: specialKey(tea.KeyCtrlO), want: ActionAttachFloating},
+		{msg: specialKey(tea.KeyCtrlE), want: ActionEditTerminal},
+		{msg: specialKey(tea.KeyCtrlK), want: ActionKillTerminal},
+		{msg: specialKey(tea.KeyEsc), want: ActionCancelMode},
+	}
+	for _, testCase := range cases {
+		result := r.RouteKeyMsg(testCase.msg)
+		if result.Action == nil || result.Action.Kind != testCase.want {
+			t.Fatalf("msg %v: expected %q, got %#v", testCase.msg, testCase.want, result.Action)
+		}
+	}
+}
+
+func TestRouteKeyMsg_GlobalMode_UsesLegacyAlignedBindings(t *testing.T) {
+	r := NewRouter()
+	r.SetMode(ModeState{Kind: ModeGlobal})
+
+	cases := []struct {
+		msg  tea.KeyMsg
+		want ActionKind
+	}{
+		{msg: runeKey('?'), want: ActionOpenHelp},
+		{msg: runeKey('t'), want: ActionOpenTerminalManager},
+		{msg: runeKey('q'), want: ActionQuit},
+		{msg: specialKey(tea.KeyEsc), want: ActionCancelMode},
+	}
+	for _, testCase := range cases {
+		result := r.RouteKeyMsg(testCase.msg)
+		if result.Action == nil || result.Action.Kind != testCase.want {
+			t.Fatalf("msg %v: expected %q, got %#v", testCase.msg, testCase.want, result.Action)
+		}
+	}
+}
+
+func TestRouteKeyMsg_FloatingMode_UsesCanonicalFloatingBindings(t *testing.T) {
+	r := NewRouter()
+	r.SetMode(ModeState{Kind: ModeFloating})
+	cases := []struct {
+		msg  tea.KeyMsg
+		want ActionKind
+	}{
+		{msg: specialKey(tea.KeyTab), want: ActionFocusNextFloatingPane},
+		{msg: specialKey(tea.KeyShiftTab), want: ActionFocusPrevFloatingPane},
+		{msg: runeKey('h'), want: ActionMoveFloatingLeft},
+		{msg: runeKey('j'), want: ActionMoveFloatingDown},
+		{msg: runeKey('k'), want: ActionMoveFloatingUp},
+		{msg: runeKey('l'), want: ActionMoveFloatingRight},
+		{msg: runeKey('H'), want: ActionResizeFloatingLeft},
+		{msg: runeKey('J'), want: ActionResizeFloatingDown},
+		{msg: runeKey('K'), want: ActionResizeFloatingUp},
+		{msg: runeKey('L'), want: ActionResizeFloatingRight},
+		{msg: runeKey('c'), want: ActionCenterFloatingPane},
+		{msg: runeKey('n'), want: ActionCreateFloatingPane},
+		{msg: specialKey(tea.KeyEsc), want: ActionCancelMode},
+	}
+	for _, testCase := range cases {
+		result := r.RouteKeyMsg(testCase.msg)
+		if result.Action == nil || result.Action.Kind != testCase.want {
+			t.Fatalf("msg %v: expected %q, got %#v", testCase.msg, testCase.want, result.Action)
+		}
 	}
 }
 

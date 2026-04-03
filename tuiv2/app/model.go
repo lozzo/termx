@@ -23,7 +23,7 @@ type Model struct {
 	height    int
 	quitting  bool
 	err       error
-	errShown  bool
+	errorSeq  uint64
 
 	startup bootstrap.StartupResult
 
@@ -34,13 +34,28 @@ type Model struct {
 	input        *input.Router
 	render       *render.Coordinator
 	modalHost    *modal.ModalHost
+	terminalPage *modal.TerminalManagerState
 	orchestrator *orchestrator.Orchestrator
 
 	// 只读引用，仅用于将 visible state 注入 render 层。
 	// 业务编排走 orchestrator，不直接通过这两个字段。
 	workbench *workbench.Workbench
 	runtime   *runtime.Runtime
+
+	// 鼠标拖动状态
+	mouseDragPaneID  string
+	mouseDragOffsetX int
+	mouseDragOffsetY int
+	mouseDragMode    mouseDragMode
 }
+
+type mouseDragMode int
+
+const (
+	mouseDragNone mouseDragMode = iota
+	mouseDragMove
+	mouseDragResize
+)
 
 func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model {
 	if wb == nil {
@@ -64,14 +79,14 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 		state := render.AdaptVisibleStateWithSize(model.workbench, model.runtime, model.width, bodyHeight)
 		state = render.WithTermSize(state, model.width, model.height)
 		state = render.WithStatus(state, "", renderErrorText(model.err), string(model.input.Mode().Kind))
+		if model.terminalPage != nil {
+			state = render.AttachTerminalPool(state, model.terminalPage)
+		}
 		if model.modalHost != nil && model.modalHost.Session != nil && model.modalHost.Session.Kind == input.ModePicker {
 			state = render.AttachPicker(state, model.modalHost.Picker)
 		}
 		if model.modalHost != nil && model.modalHost.Session != nil && model.modalHost.Session.Kind == input.ModeWorkspacePicker {
 			state = render.AttachWorkspacePicker(state, model.modalHost.WorkspacePicker)
-		}
-		if model.modalHost != nil && model.modalHost.Session != nil && model.modalHost.Session.Kind == input.ModeTerminalManager {
-			state = render.AttachTerminalManager(state, model.modalHost.TerminalManager)
 		}
 		if model.modalHost != nil && model.modalHost.Session != nil && model.modalHost.Session.Kind == input.ModeHelp {
 			state.Help = model.modalHost.Help
@@ -84,8 +99,14 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 	// Default invalidate: no-op until SetSendFunc is called by run.go.
 	if model.runtime != nil {
 		model.runtime.SetInvalidate(func() {
+			model.render.Invalidate()
 			if model.send != nil {
 				model.send(InvalidateMsg{})
+			}
+		})
+		model.runtime.SetTitleChange(func(terminalID, title string) {
+			if model.send != nil {
+				model.send(terminalTitleMsg{TerminalID: terminalID, Title: title})
 			}
 		})
 	}
@@ -101,6 +122,7 @@ func (m *Model) SetSendFunc(send func(tea.Msg)) {
 	m.send = send
 	if m.runtime != nil {
 		m.runtime.SetInvalidate(func() {
+			m.render.Invalidate()
 			send(InvalidateMsg{})
 		})
 	}
@@ -135,14 +157,26 @@ func (m *Model) saveStateCmd() tea.Cmd {
 		return nil
 	}
 	wb := m.workbench
+	rt := m.runtime
 	path := m.statePath
 	return func() tea.Msg {
-		data, err := persist.Save(wb)
-		if err != nil {
+		if err := saveState(path, wb, rt); err != nil {
 			return nil
 		}
-		_ = os.MkdirAll(filepath.Dir(path), 0o755)
-		_ = os.WriteFile(path, data, 0o644)
 		return nil
 	}
+}
+
+func saveState(path string, wb *workbench.Workbench, rt *runtime.Runtime) error {
+	if path == "" || wb == nil {
+		return nil
+	}
+	data, err := persist.Save(wb)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
 }

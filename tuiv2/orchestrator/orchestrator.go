@@ -17,6 +17,13 @@ type Orchestrator struct {
 	modalHost *modal.ModalHost
 }
 
+const (
+	floatingMoveStep   = 2
+	floatingResizeStep = 2
+	floatingBoundsW    = 200
+	floatingBoundsH    = 50
+)
+
 func New(wb *workbench.Workbench, rt *runtime.Runtime, mh *modal.ModalHost) *Orchestrator {
 	return &Orchestrator{workbench: wb, runtime: rt, modalHost: mh}
 }
@@ -97,11 +104,77 @@ func (o *Orchestrator) HandleSemanticAction(action input.SemanticAction) []Effec
 		if paneID == "" {
 			paneID = tab.ActivePaneID
 		}
-		_, _ = o.workbench.ClosePane(tab.ID, paneID)
+		terminalID, _ := o.workbench.ClosePane(tab.ID, paneID)
+		if o.runtime != nil {
+			o.runtime.UnbindPane(paneID, terminalID)
+		}
 		if current := o.workbench.CurrentTab(); current != nil && current.ID == tab.ID && current.ActivePaneID != "" {
 			_ = o.workbench.FocusPane(tab.ID, current.ActivePaneID)
 		}
 		return []Effect{InvalidateRenderEffect{}}
+	case input.ActionDetachPane:
+		tab := o.workbench.CurrentTab()
+		if tab == nil {
+			return nil
+		}
+		paneID := action.PaneID
+		if paneID == "" {
+			paneID = tab.ActivePaneID
+		}
+		pane := tab.Panes[paneID]
+		if pane == nil {
+			return nil
+		}
+		terminalID := pane.TerminalID
+		_ = o.workbench.BindPaneTerminal(tab.ID, paneID, "")
+		if o.runtime != nil {
+			o.runtime.UnbindPane(paneID, terminalID)
+		}
+		return []Effect{InvalidateRenderEffect{}}
+	case input.ActionReconnectPane:
+		tab := o.workbench.CurrentTab()
+		if tab == nil {
+			return nil
+		}
+		paneID := action.PaneID
+		if paneID == "" {
+			paneID = tab.ActivePaneID
+		}
+		pane := tab.Panes[paneID]
+		if pane == nil {
+			return nil
+		}
+		terminalID := pane.TerminalID
+		_ = o.workbench.BindPaneTerminal(tab.ID, paneID, "")
+		if o.runtime != nil {
+			o.runtime.UnbindPane(paneID, terminalID)
+		}
+		if o.modalHost != nil {
+			o.modalHost.Open(input.ModePicker, paneID)
+		}
+		return []Effect{
+			InvalidateRenderEffect{},
+			OpenPickerEffect{RequestID: paneID},
+			SetInputModeEffect{Mode: input.ModeState{Kind: input.ModePicker, RequestID: paneID}},
+		}
+	case input.ActionClosePaneKill:
+		tab := o.workbench.CurrentTab()
+		if tab == nil {
+			return nil
+		}
+		paneID := action.PaneID
+		if paneID == "" {
+			paneID = tab.ActivePaneID
+		}
+		terminalID, _ := o.workbench.ClosePane(tab.ID, paneID)
+		if o.runtime != nil {
+			o.runtime.UnbindPane(paneID, terminalID)
+		}
+		effects := []Effect{InvalidateRenderEffect{}}
+		if terminalID != "" {
+			effects = append(effects, KillTerminalEffect{TerminalID: terminalID})
+		}
+		return effects
 	case input.ActionCreateTab:
 		ws := o.workbench.CurrentWorkspace()
 		if ws == nil {
@@ -132,7 +205,7 @@ func (o *Orchestrator) HandleSemanticAction(action input.SemanticAction) []Effec
 		}
 		next := (ws.ActiveTab + delta + len(ws.Tabs)) % len(ws.Tabs)
 		_ = o.workbench.SwitchTab(ws.Name, next)
-		return []Effect{InvalidateRenderEffect{}}
+		return []Effect{SwitchTabEffect{Delta: delta}}
 	case input.ActionCloseTab:
 		tabID := action.TabID
 		if tabID == "" {
@@ -235,6 +308,9 @@ func (o *Orchestrator) HandleSemanticAction(action input.SemanticAction) []Effec
 		name := "workspace-" + shared.GenerateShortID()
 		_ = o.workbench.CreateWorkspace(name)
 		_ = o.workbench.SwitchWorkspace(name)
+		if o.modalHost != nil && o.modalHost.Session != nil && o.modalHost.Session.Kind == input.ModeWorkspacePicker {
+			o.modalHost.Close(input.ModeWorkspacePicker, o.modalHost.Session.RequestID)
+		}
 		return []Effect{
 			SetInputModeEffect{Mode: input.ModeState{Kind: input.ModeNormal}},
 			InvalidateRenderEffect{},
@@ -259,6 +335,7 @@ func (o *Orchestrator) HandleSemanticAction(action input.SemanticAction) []Effec
 		}
 		paneID := "pane-" + shared.GenerateShortID()
 		_ = o.workbench.CreateFloatingPane(tab.ID, paneID, workbench.Rect{X: 10, Y: 5, W: 80, H: 24})
+		_ = o.workbench.FocusPane(tab.ID, paneID)
 		if o.modalHost != nil {
 			o.modalHost.Open(input.ModePicker, paneID)
 		}
@@ -267,6 +344,106 @@ func (o *Orchestrator) HandleSemanticAction(action input.SemanticAction) []Effec
 			OpenPickerEffect{RequestID: paneID},
 			SetInputModeEffect{Mode: input.ModeState{Kind: input.ModePicker, RequestID: paneID}},
 		}
+	case input.ActionFocusPrevFloatingPane, input.ActionFocusNextFloatingPane:
+		tab := o.workbench.CurrentTab()
+		if tab == nil {
+			return nil
+		}
+		paneID := cycleFloatingPaneID(tab, action.PaneID, action.Kind)
+		if paneID == "" {
+			return nil
+		}
+		_ = o.workbench.FocusPane(tab.ID, paneID)
+		o.workbench.ReorderFloatingPane(tab.ID, paneID, true)
+		return []Effect{InvalidateRenderEffect{}}
+	case input.ActionMoveFloatingLeft, input.ActionMoveFloatingRight, input.ActionMoveFloatingUp, input.ActionMoveFloatingDown:
+		tab := o.workbench.CurrentTab()
+		if tab == nil {
+			return nil
+		}
+		paneID := activeFloatingPaneID(tab, action.PaneID)
+		if paneID == "" {
+			return nil
+		}
+		dx, dy := 0, 0
+		switch action.Kind {
+		case input.ActionMoveFloatingLeft:
+			dx = -floatingMoveStep
+		case input.ActionMoveFloatingRight:
+			dx = floatingMoveStep
+		case input.ActionMoveFloatingUp:
+			dy = -floatingMoveStep
+		case input.ActionMoveFloatingDown:
+			dy = floatingMoveStep
+		}
+		if !o.workbench.MoveFloatingPaneBy(tab.ID, paneID, dx, dy) {
+			return nil
+		}
+		o.workbench.ReorderFloatingPane(tab.ID, paneID, true)
+		return []Effect{InvalidateRenderEffect{}}
+	case input.ActionResizeFloatingLeft, input.ActionResizeFloatingRight, input.ActionResizeFloatingUp, input.ActionResizeFloatingDown:
+		tab := o.workbench.CurrentTab()
+		if tab == nil {
+			return nil
+		}
+		paneID := activeFloatingPaneID(tab, action.PaneID)
+		if paneID == "" {
+			return nil
+		}
+		dw, dh := 0, 0
+		switch action.Kind {
+		case input.ActionResizeFloatingLeft:
+			dw = -floatingResizeStep
+		case input.ActionResizeFloatingRight:
+			dw = floatingResizeStep
+		case input.ActionResizeFloatingUp:
+			dh = -floatingResizeStep
+		case input.ActionResizeFloatingDown:
+			dh = floatingResizeStep
+		}
+		if !o.workbench.ResizeFloatingPaneBy(tab.ID, paneID, dw, dh) {
+			return nil
+		}
+		o.workbench.ReorderFloatingPane(tab.ID, paneID, true)
+		return []Effect{InvalidateRenderEffect{}}
+	case input.ActionCenterFloatingPane:
+		tab := o.workbench.CurrentTab()
+		if tab == nil {
+			return nil
+		}
+		paneID := activeFloatingPaneID(tab, action.PaneID)
+		if paneID == "" {
+			return nil
+		}
+		if !o.workbench.CenterFloatingPane(tab.ID, paneID, workbench.Rect{W: floatingBoundsW, H: floatingBoundsH}) {
+			return nil
+		}
+		o.workbench.ReorderFloatingPane(tab.ID, paneID, true)
+		return []Effect{InvalidateRenderEffect{}}
+	case input.ActionToggleFloatingVisibility:
+		tab := o.workbench.CurrentTab()
+		if tab == nil {
+			return nil
+		}
+		tab.FloatingVisible = !tab.FloatingVisible
+		return []Effect{InvalidateRenderEffect{}}
+	case input.ActionCloseFloatingPane:
+		tab := o.workbench.CurrentTab()
+		if tab == nil {
+			return nil
+		}
+		paneID := activeFloatingPaneID(tab, action.PaneID)
+		if paneID == "" {
+			return nil
+		}
+		terminalID, err := o.workbench.ClosePane(tab.ID, paneID)
+		if err != nil {
+			return nil
+		}
+		if o.runtime != nil {
+			o.runtime.UnbindPane(paneID, terminalID)
+		}
+		return []Effect{InvalidateRenderEffect{}}
 	case input.ActionKillTerminal:
 		if action.TargetID == "" {
 			return nil
@@ -275,6 +452,87 @@ func (o *Orchestrator) HandleSemanticAction(action input.SemanticAction) []Effec
 	default:
 		return nil
 	}
+}
+
+func activeFloatingPaneID(tab *workbench.TabState, paneID string) string {
+	if tab == nil {
+		return ""
+	}
+	target := paneID
+	if target == "" {
+		target = tab.ActivePaneID
+	}
+	if target == "" {
+		return ""
+	}
+	for _, floating := range tab.Floating {
+		if floating != nil && floating.PaneID == target {
+			return target
+		}
+	}
+	return ""
+}
+
+func cycleFloatingPaneID(tab *workbench.TabState, paneID string, kind input.ActionKind) string {
+	if tab == nil || len(tab.Floating) == 0 {
+		return ""
+	}
+	return cycleFloatingPaneIDFromEntries(tab, paneID, kind)
+}
+
+func cycleFloatingPaneIDFromEntries(tab *workbench.TabState, paneID string, kind input.ActionKind) string {
+	ordered := make([]string, 0, len(tab.Floating))
+	for _, floating := range workbenchOrderedFloating(tab.Floating) {
+		if floating == nil || floating.PaneID == "" || tab.Panes[floating.PaneID] == nil {
+			continue
+		}
+		ordered = append(ordered, floating.PaneID)
+	}
+	if len(ordered) == 0 {
+		return ""
+	}
+	target := paneID
+	if target == "" {
+		target = activeFloatingPaneID(tab, "")
+	}
+	if target == "" {
+		if kind == input.ActionFocusPrevFloatingPane {
+			return ordered[len(ordered)-1]
+		}
+		return ordered[0]
+	}
+	currentIndex := -1
+	for index, candidate := range ordered {
+		if candidate == target {
+			currentIndex = index
+			break
+		}
+	}
+	if currentIndex < 0 {
+		if kind == input.ActionFocusPrevFloatingPane {
+			return ordered[len(ordered)-1]
+		}
+		return ordered[0]
+	}
+	delta := 1
+	if kind == input.ActionFocusPrevFloatingPane {
+		delta = -1
+	}
+	next := (currentIndex + delta + len(ordered)) % len(ordered)
+	return ordered[next]
+}
+
+func workbenchOrderedFloating(entries []*workbench.FloatingState) []*workbench.FloatingState {
+	if len(entries) == 0 {
+		return nil
+	}
+	ordered := append([]*workbench.FloatingState(nil), entries...)
+	for i := 1; i < len(ordered); i++ {
+		for j := i; j > 0 && ordered[j-1] != nil && ordered[j] != nil && ordered[j-1].Z > ordered[j].Z; j-- {
+			ordered[j-1], ordered[j] = ordered[j], ordered[j-1]
+		}
+	}
+	return ordered
 }
 
 func findNeighborPane(rects map[string]workbench.Rect, paneID string, kind input.ActionKind) string {
@@ -319,6 +577,7 @@ func (o *Orchestrator) AttachAndLoadSnapshot(ctx context.Context, paneID, termin
 	if err != nil {
 		return nil, err
 	}
+	o.bindWorkbenchPaneTerminal(paneID, terminalID)
 	snapshot, err := o.runtime.LoadSnapshot(ctx, terminalID, offset, limit)
 	if err != nil {
 		return nil, err
@@ -331,4 +590,22 @@ func (o *Orchestrator) AttachAndLoadSnapshot(ctx context.Context, paneID, termin
 		o.modalHost.MarkReady(o.modalHost.Session.Kind, o.modalHost.Session.RequestID)
 	}
 	return msgs, nil
+}
+
+func (o *Orchestrator) bindWorkbenchPaneTerminal(paneID, terminalID string) {
+	if o == nil || o.workbench == nil || paneID == "" || terminalID == "" {
+		return
+	}
+	workspace := o.workbench.CurrentWorkspace()
+	if workspace == nil {
+		return
+	}
+	for _, tab := range workspace.Tabs {
+		if tab == nil || tab.Panes[paneID] == nil {
+			continue
+		}
+		_ = o.workbench.BindPaneTerminal(tab.ID, paneID, terminalID)
+		_ = o.workbench.FocusPane(tab.ID, paneID)
+		return
+	}
 }

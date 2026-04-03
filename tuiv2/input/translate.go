@@ -12,8 +12,8 @@ func TranslateKeyMsg(msg tea.KeyMsg, mode ModeKind, km *Keymap) RouteResult {
 
 	switch mode {
 	case ModeNormal:
-		if action := km.LookupNormal(msg); action != "" {
-			return RouteResult{Action: &SemanticAction{Kind: action}}
+		if action := km.LookupNormal(msg); action != nil {
+			return RouteResult{Action: action}
 		}
 		data := encodeTeaKey(msg)
 		if len(data) == 0 {
@@ -21,63 +21,52 @@ func TranslateKeyMsg(msg tea.KeyMsg, mode ModeKind, km *Keymap) RouteResult {
 		}
 		return RouteResult{TerminalInput: &TerminalInput{Kind: TerminalInputBytes, Data: data}}
 	case ModePane:
-		if action := km.LookupPane(msg); action != "" {
-			return RouteResult{Action: &SemanticAction{Kind: action}}
-		}
-		return RouteResult{}
+		return routeStickyModeKeyMsg(msg, km.LookupPane, km)
 	case ModeResize:
-		if action := km.LookupResize(msg); action != "" {
-			return RouteResult{Action: &SemanticAction{Kind: action}}
-		}
-		return RouteResult{}
+		return routeStickyModeKeyMsg(msg, km.LookupResize, km)
 	case ModeTab:
-		if action := km.LookupTab(msg); action != "" {
-			return RouteResult{Action: &SemanticAction{Kind: action}}
-		}
-		return RouteResult{}
+		return routeStickyModeKeyMsg(msg, km.LookupTab, km)
 	case ModeWorkspace:
-		if action := km.LookupWorkspace(msg); action != "" {
-			return RouteResult{Action: &SemanticAction{Kind: action}}
-		}
-		return RouteResult{}
+		return routeStickyModeKeyMsg(msg, km.LookupWorkspace, km)
 	case ModeFloating:
-		if action := km.LookupFloating(msg); action != "" {
-			return RouteResult{Action: &SemanticAction{Kind: action}}
-		}
-		return RouteResult{}
+		return routeStickyModeKeyMsg(msg, km.LookupFloating, km)
 	case ModeDisplay:
-		if action := km.LookupDisplay(msg); action != "" {
-			return RouteResult{Action: &SemanticAction{Kind: action}}
-		}
-		return RouteResult{}
+		return routeStickyModeKeyMsg(msg, km.LookupDisplay, km)
 	case ModeGlobal:
-		if action := km.LookupGlobal(msg); action != "" {
-			return RouteResult{Action: &SemanticAction{Kind: action}}
-		}
-		return RouteResult{}
+		return routeStickyModeKeyMsg(msg, km.LookupGlobal, km)
 	case ModeTerminalManager:
-		if action := km.LookupTerminalManager(msg); action != "" {
-			return RouteResult{Action: &SemanticAction{Kind: action}}
+		if action := km.LookupTerminalManager(msg); action != nil {
+			return RouteResult{Action: action}
 		}
 		return RouteResult{}
 	case ModePicker:
-		if action := km.LookupPicker(msg); action != "" {
-			return RouteResult{Action: &SemanticAction{Kind: action}}
+		if action := km.LookupPicker(msg); action != nil {
+			return RouteResult{Action: action}
 		}
 		return RouteResult{}
 	case ModeWorkspacePicker:
-		if action := km.LookupWorkspacePicker(msg); action != "" {
-			return RouteResult{Action: &SemanticAction{Kind: action}}
+		if action := km.LookupWorkspacePicker(msg); action != nil {
+			return RouteResult{Action: action}
 		}
 		return RouteResult{}
 	case ModeHelp:
-		if action := km.LookupHelp(msg); action != "" {
-			return RouteResult{Action: &SemanticAction{Kind: action}}
+		if action := km.LookupHelp(msg); action != nil {
+			return RouteResult{Action: action}
 		}
 		return RouteResult{}
 	default:
 		return RouteResult{}
 	}
+}
+
+func routeStickyModeKeyMsg(msg tea.KeyMsg, lookup func(tea.KeyMsg) *SemanticAction, km *Keymap) RouteResult {
+	if action := lookup(msg); action != nil {
+		return RouteResult{Action: action}
+	}
+	if action := km.LookupNormal(msg); action != nil {
+		return RouteResult{Action: action}
+	}
+	return RouteResult{}
 }
 
 // encodeTeaKey converts a tea.KeyMsg to its raw byte representation suitable
@@ -182,6 +171,6 @@ func encodeTeaKey(msg tea.KeyMsg) []byte {
 	}
 }
 
-func TranslateKey(any) RouteResult { return RouteResult{} }
+func TranslateKey(any) RouteResult    { return RouteResult{} }
 func TranslateRaw([]byte) RouteResult { return RouteResult{} }
-func TranslateEvent(any) RouteResult { return RouteResult{} }
+func TranslateEvent(any) RouteResult  { return RouteResult{} }

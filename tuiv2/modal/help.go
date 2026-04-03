@@ -1,6 +1,13 @@
 package modal
 
+import "github.com/lozzow/termx/tuiv2/input"
+
 type HelpState struct {
+	Sections []HelpSection
+}
+
+type HelpSection struct {
+	Title    string
 	Bindings []HelpBinding
 }
 
@@ -10,19 +17,14 @@ type HelpBinding struct {
 }
 
 func DefaultHelp() *HelpState {
-	return &HelpState{
-		Bindings: []HelpBinding{
-			{Key: "Ctrl+P", Action: "pane mode — h/j/k/l focus, %/\" split, z zoom, w close"},
-			{Key: "Ctrl+R", Action: "resize mode — h/j/k/l small, H/J/K/L large, = balance, Space layout"},
-			{Key: "Ctrl+T", Action: "tab mode — c new, n/p next/prev, w close"},
-			{Key: "Ctrl+W", Action: "workspace mode — n new, d delete, f picker"},
-			{Key: "Ctrl+O", Action: "floating mode — n new float"},
-			{Key: "Ctrl+V", Action: "display mode — u/d scroll, z zoom"},
-			{Key: "Ctrl+F", Action: "terminal picker"},
-			{Key: "Ctrl+G", Action: "global mode — Ctrl+Q quit, Ctrl+T manager"},
-			{Key: "Picker: Enter / Tab / Ctrl+E / Ctrl+K", Action: "attach / split attach / edit / kill"},
-			{Key: "Manager: Enter / Ctrl+T / Ctrl+O / Ctrl+E / Ctrl+K", Action: "attach / new tab / float / edit / kill"},
-			{Key: "All modes: Esc", Action: "exit mode / close modal"},
-		},
+	sections := input.HelpSections()
+	out := &HelpState{Sections: make([]HelpSection, 0, len(sections))}
+	for _, section := range sections {
+		bindings := make([]HelpBinding, 0, len(section.Bindings))
+		for _, binding := range section.Bindings {
+			bindings = append(bindings, HelpBinding{Key: binding.Key, Action: binding.Action})
+		}
+		out.Sections = append(out.Sections, HelpSection{Title: section.Title, Bindings: bindings})
 	}
+	return out
 }

@@ -13,6 +13,8 @@ type PickerItem struct {
 	Name        string
 	State       string
 	Command     string
+	CommandArgs []string
+	Tags        map[string]string
 	Location    string
 	Observed    bool
 	Orphan      bool

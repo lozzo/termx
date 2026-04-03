@@ -33,6 +33,7 @@ func RunWithClient(cfg shared.Config, client bridge.Client, stdin io.Reader, std
 		tea.WithInput(nil),
 		tea.WithOutput(stdout),
 		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
 	}
 	p := tea.NewProgram(model, opts...)
 	model.SetSendFunc(p.Send)
@@ -109,6 +110,22 @@ func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() 
 					program.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(event.Content), Paste: true})
 				case uv.KeyPressEvent:
 					if msg, ok := uvKeyToTeaKeyMsg(event); ok {
+						program.Send(msg)
+					}
+				case uv.MouseClickEvent:
+					if msg, ok := uvMouseEventToTeaMouseMsg(event, tea.MouseActionPress); ok {
+						program.Send(msg)
+					}
+				case uv.MouseReleaseEvent:
+					if msg, ok := uvMouseEventToTeaMouseMsg(event, tea.MouseActionRelease); ok {
+						program.Send(msg)
+					}
+				case uv.MouseMotionEvent:
+					if msg, ok := uvMouseEventToTeaMouseMsg(event, tea.MouseActionMotion); ok {
+						program.Send(msg)
+					}
+				case uv.MouseWheelEvent:
+					if msg, ok := uvMouseEventToTeaMouseMsg(event, tea.MouseActionPress); ok {
 						program.Send(msg)
 					}
 				}
@@ -240,4 +257,52 @@ func uvKeyToTeaKeyMsg(event uv.KeyPressEvent) (tea.KeyMsg, bool) {
 		return tea.KeyMsg{}, false
 	}
 	return msg, true
+}
+
+func uvMouseEventToTeaMouseMsg(event uv.MouseEvent, action tea.MouseAction) (tea.MouseMsg, bool) {
+	mouse := event.Mouse()
+	button, ok := uvMouseButtonToTeaMouseButton(mouse.Button)
+	if !ok {
+		return tea.MouseMsg{}, false
+	}
+	return tea.MouseMsg{
+		X:      mouse.X,
+		Y:      mouse.Y,
+		Shift:  mouse.Mod.Contains(uv.ModShift),
+		Alt:    mouse.Mod.Contains(uv.ModAlt),
+		Ctrl:   mouse.Mod.Contains(uv.ModCtrl),
+		Action: action,
+		Button: button,
+	}, true
+}
+
+func uvMouseButtonToTeaMouseButton(button uv.MouseButton) (tea.MouseButton, bool) {
+	switch button {
+	case uv.MouseNone:
+		return tea.MouseButtonNone, true
+	case uv.MouseLeft:
+		return tea.MouseButtonLeft, true
+	case uv.MouseMiddle:
+		return tea.MouseButtonMiddle, true
+	case uv.MouseRight:
+		return tea.MouseButtonRight, true
+	case uv.MouseWheelUp:
+		return tea.MouseButtonWheelUp, true
+	case uv.MouseWheelDown:
+		return tea.MouseButtonWheelDown, true
+	case uv.MouseWheelLeft:
+		return tea.MouseButtonWheelLeft, true
+	case uv.MouseWheelRight:
+		return tea.MouseButtonWheelRight, true
+	case uv.MouseBackward:
+		return tea.MouseButtonBackward, true
+	case uv.MouseForward:
+		return tea.MouseButtonForward, true
+	case uv.MouseButton10:
+		return tea.MouseButton10, true
+	case uv.MouseButton11:
+		return tea.MouseButton11, true
+	default:
+		return tea.MouseButtonNone, false
+	}
 }

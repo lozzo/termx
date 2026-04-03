@@ -25,10 +25,13 @@ type EffectAppliedMsg struct {
 	Effect orchestrator.Effect
 }
 
-type clearErrorMsg struct{}
+type clearErrorMsg struct {
+	seq uint64
+}
 
 type terminalTitleMsg struct {
-	Title string
+	TerminalID string
+	Title      string
 }
 
 type pickerItemsLoadedMsg struct {

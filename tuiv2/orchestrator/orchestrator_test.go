@@ -123,6 +123,25 @@ func TestHandleSemanticActionSwitchWorkspace(t *testing.T) {
 	}
 }
 
+func TestHandleSemanticActionCreateWorkspaceClosesWorkspacePicker(t *testing.T) {
+	orch, _ := newTestOrchestrator(t)
+	seedTabWithSinglePane(orch.workbench, "main", "tab-main", "pane-main")
+	orch.modalHost.Open(input.ModeWorkspacePicker, "workspace-picker-1")
+	orch.modalHost.WorkspacePicker = &modal.WorkspacePickerState{}
+
+	effects := orch.HandleSemanticAction(input.SemanticAction{Kind: input.ActionCreateWorkspace})
+	if len(effects) != 2 {
+		t.Fatalf("expected 2 effects, got %d", len(effects))
+	}
+	current := orch.workbench.CurrentWorkspace()
+	if current == nil || current.Name == "" || current.Name == "main" {
+		t.Fatalf("expected newly created workspace to become current, got %#v", current)
+	}
+	if orch.modalHost.Session != nil {
+		t.Fatalf("expected workspace picker modal to close after create, got %#v", orch.modalHost.Session)
+	}
+}
+
 func TestHandleSemanticActionZoomPaneTogglesCurrentPane(t *testing.T) {
 	orch, _ := newTestOrchestrator(t)
 	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
@@ -166,6 +185,25 @@ func TestAttachAndLoadSnapshot(t *testing.T) {
 	}
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 msgs, got %d", len(msgs))
+	}
+}
+
+func TestAttachAndLoadSnapshotWritesWorkbenchStructuralBinding(t *testing.T) {
+	orch, ctx := newTestOrchestrator(t)
+	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
+
+	createdTerm, err := orch.runtimeClientCreate(ctx, []string{"sh"}, "demo")
+	if err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+
+	if _, err := orch.AttachAndLoadSnapshot(ctx, "pane-1", createdTerm.TerminalID, "collaborator", 0, 10); err != nil {
+		t.Fatalf("attach and load snapshot: %v", err)
+	}
+
+	pane := orch.workbench.ActivePane()
+	if pane == nil || pane.TerminalID != createdTerm.TerminalID {
+		t.Fatalf("expected orchestrator attach to write structural binding, got %#v", pane)
 	}
 }
 
@@ -578,8 +616,10 @@ func TestHandleSemanticActionSwitchesTabsAndWraps(t *testing.T) {
 	if len(effects) != 1 {
 		t.Fatalf("expected 1 effect, got %d", len(effects))
 	}
-	if _, ok := effects[0].(InvalidateRenderEffect); !ok {
-		t.Fatalf("expected InvalidateRenderEffect, got %T", effects[0])
+	if effect, ok := effects[0].(SwitchTabEffect); !ok {
+		t.Fatalf("expected SwitchTabEffect, got %T", effects[0])
+	} else if effect.Delta != -1 {
+		t.Fatalf("expected SwitchTabEffect delta -1, got %#v", effect)
 	}
 	if got := orch.workbench.CurrentTab().ID; got != "tab-2" {
 		t.Fatalf("expected prev tab to wrap to tab-2, got %q", got)
@@ -588,6 +628,11 @@ func TestHandleSemanticActionSwitchesTabsAndWraps(t *testing.T) {
 	effects = orch.HandleSemanticAction(input.SemanticAction{Kind: input.ActionNextTab})
 	if len(effects) != 1 {
 		t.Fatalf("expected 1 effect, got %d", len(effects))
+	}
+	if effect, ok := effects[0].(SwitchTabEffect); !ok {
+		t.Fatalf("expected SwitchTabEffect, got %T", effects[0])
+	} else if effect.Delta != 1 {
+		t.Fatalf("expected SwitchTabEffect delta 1, got %#v", effect)
 	}
 	if got := orch.workbench.CurrentTab().ID; got != "tab-1" {
 		t.Fatalf("expected next tab to wrap back to tab-1, got %q", got)

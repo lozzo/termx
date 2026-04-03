@@ -200,6 +200,9 @@ func TestModelTerminalAttachedBindsPaneAndClosesPicker(t *testing.T) {
 	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePicker, Phase: modal.ModalPhaseReady, RequestID: "req-1"}
 	model.modalHost.Picker = &modal.PickerState{Items: []modal.PickerItem{{TerminalID: "term-1", Name: "shell", State: "running"}}}
 	model.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: "req-1"})
+	if pane := model.workbench.ActivePane(); pane != nil {
+		pane.TerminalID = "term-1"
+	}
 
 	_, _ = model.Update(orchestrator.TerminalAttachedMsg{PaneID: "pane-1", TerminalID: "term-1", Channel: 1})
 	pane := model.workbench.ActivePane()
@@ -351,6 +354,235 @@ func TestModelPromptSubmitAdvancesCreateTerminalToTags(t *testing.T) {
 	}
 }
 
+func TestModelPromptSubmitAdvancesEditTerminalToTags(t *testing.T) {
+	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
+	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: "prompt-1"}
+	model.modalHost.Prompt = &modal.PromptState{
+		Kind:        "edit-terminal-name",
+		Title:       "Edit Terminal",
+		Value:       "renamed",
+		Original:    "shell",
+		DefaultName: "shell",
+		TerminalID:  "term-1",
+		Tags:        map[string]string{"env": "test", "role": "dev"},
+	}
+	model.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: "prompt-1"})
+
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt})
+	if cmd != nil {
+		if msg := cmd(); msg != nil {
+			t.Fatalf("expected local prompt advance without async msg, got %#v", msg)
+		}
+	}
+	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "edit-terminal-tags" {
+		t.Fatalf("expected edit-terminal-tags prompt, got %#v", model.modalHost.Prompt)
+	}
+	if model.modalHost.Prompt.Name != "renamed" {
+		t.Fatalf("expected prompt to retain edited name, got %#v", model.modalHost.Prompt)
+	}
+	if got := model.modalHost.Prompt.Value; got != "env=test role=dev" {
+		t.Fatalf("expected tags prompt to prefill stable tag text, got %q", got)
+	}
+}
+
+func TestModelPromptSubmitEditTerminalSavesMetadataAndState(t *testing.T) {
+	statePath := t.TempDir() + "/workspace-state.json"
+	client := &recordingBridgeClient{}
+	rt := runtime.New(client)
+	rt.Registry().GetOrCreate("term-1").Name = "shell"
+	rt.Registry().GetOrCreate("term-1").Command = []string{"bash"}
+	rt.Registry().GetOrCreate("term-1").Tags = map[string]string{"role": "dev"}
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	model := New(shared.Config{WorkspaceStatePath: statePath}, wb, rt)
+	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: "prompt-1"}
+	model.modalHost.Prompt = &modal.PromptState{
+		Kind:       "edit-terminal-tags",
+		Title:      "Edit Terminal",
+		Value:      "env=test role=ops",
+		Name:       "renamed",
+		Original:   "shell",
+		TerminalID: "term-1",
+		AllowEmpty: true,
+	}
+	model.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: "prompt-1"})
+
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt})
+	if cmd == nil {
+		t.Fatal("expected async edit metadata command")
+	}
+	if msg := cmd(); msg != nil {
+		t.Fatalf("expected nil message from edit metadata command, got %#v", msg)
+	}
+	if len(client.setMetadataCalls) != 1 {
+		t.Fatalf("expected one metadata call, got %#v", client.setMetadataCalls)
+	}
+	if client.setMetadataCalls[0].terminalID != "term-1" || client.setMetadataCalls[0].name != "renamed" {
+		t.Fatalf("unexpected metadata target: %#v", client.setMetadataCalls[0])
+	}
+	if client.setMetadataCalls[0].tags["env"] != "test" || client.setMetadataCalls[0].tags["role"] != "ops" {
+		t.Fatalf("unexpected metadata tags: %#v", client.setMetadataCalls[0].tags)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.Name != "renamed" {
+		t.Fatalf("expected runtime registry name updated, got %#v", terminal)
+	}
+	if terminal.Tags["env"] != "test" || terminal.Tags["role"] != "ops" {
+		t.Fatalf("expected runtime registry tags updated, got %#v", terminal.Tags)
+	}
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	file, err := persist.Load(data)
+	if err != nil {
+		t.Fatalf("persist.Load: %v", err)
+	}
+	_ = file
+	if strings.Contains(string(data), "\"terminal_metadata\"") {
+		t.Fatalf("expected workspace save to omit terminal metadata cache, got %s", string(data))
+	}
+}
+
+func TestModelPickerSubmitWithEmptyFilteredResultsIsNoop(t *testing.T) {
+	client := &recordingBridgeClient{
+		listResult: &protocol.ListResult{
+			Terminals: []protocol.TerminalInfo{
+				{ID: "term-1", Name: "shell", State: "running"},
+			},
+		},
+		attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{},
+	}
+	model := setupModel(t, modelOpts{client: client})
+	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePicker, Phase: modal.ModalPhaseReady, RequestID: "req-1"}
+	model.modalHost.Picker = &modal.PickerState{
+		Items: []modal.PickerItem{{TerminalID: "term-1", Name: "shell", State: "running"}},
+		Query: "missing",
+	}
+	model.modalHost.Picker.ApplyFilter()
+	model.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: "req-1"})
+
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: "pane-1"})
+	if cmd != nil {
+		if msg := cmd(); msg != nil {
+			t.Fatalf("expected nil submit result for empty filtered picker, got %#v", msg)
+		}
+	}
+	if len(client.attachCalls) != 0 {
+		t.Fatalf("expected no attach call for empty filtered picker, got %#v", client.attachCalls)
+	}
+	if model.input.Mode().Kind != input.ModePicker {
+		t.Fatalf("expected picker to remain open, got mode %q", model.input.Mode().Kind)
+	}
+}
+
+func TestModelTerminalManagerEditCancelReturnsToTerminalManagerMode(t *testing.T) {
+	client := &recordingBridgeClient{
+		listResult: &protocol.ListResult{
+			Terminals: []protocol.TerminalInfo{
+				{ID: "term-1", Name: "shell", State: "running"},
+				{ID: "term-2", Name: "logs", State: "running"},
+			},
+		},
+	}
+	model := setupModel(t, modelOpts{client: client})
+
+	_, _ = model.Update(input.SemanticAction{Kind: input.ActionEnterGlobalMode})
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionOpenTerminalManager})
+	drainCmd(t, model, cmd, 10)
+	_, _ = model.Update(input.SemanticAction{Kind: input.ActionPickerDown})
+	_, _ = model.Update(input.SemanticAction{Kind: input.ActionEditTerminal})
+
+	if model.input.Mode().Kind != input.ModePrompt {
+		t.Fatalf("expected prompt mode after edit open, got %q", model.input.Mode().Kind)
+	}
+
+	_, _ = model.Update(input.SemanticAction{Kind: input.ActionCancelMode})
+
+	if model.input.Mode().Kind != input.ModeTerminalManager {
+		t.Fatalf("expected terminal-manager mode after cancel, got %q", model.input.Mode().Kind)
+	}
+	if model.terminalPage == nil {
+		t.Fatal("expected terminal page to remain open after cancel")
+	}
+}
+
+func TestModelTerminalManagerEditSaveReturnsToTerminalManagerMode(t *testing.T) {
+	client := &recordingBridgeClient{
+		listResult: &protocol.ListResult{
+			Terminals: []protocol.TerminalInfo{
+				{ID: "term-1", Name: "shell", State: "running"},
+				{ID: "term-2", Name: "logs", State: "running", Tags: map[string]string{"role": "ops"}},
+			},
+		},
+	}
+	rt := runtime.New(client)
+	rt.Registry().GetOrCreate("term-2").Name = "logs"
+	rt.Registry().GetOrCreate("term-2").Tags = map[string]string{"role": "ops"}
+	model := New(shared.Config{WorkspaceStatePath: t.TempDir() + "/workspace-state.json"}, workbench.NewWorkbench(), rt)
+	model.width = 120
+	model.height = 40
+	model.workbench.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	_, _ = model.Update(input.SemanticAction{Kind: input.ActionEnterGlobalMode})
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionOpenTerminalManager})
+	drainCmd(t, model, cmd, 10)
+	_, _ = model.Update(input.SemanticAction{Kind: input.ActionPickerDown})
+	_, _ = model.Update(input.SemanticAction{Kind: input.ActionEditTerminal})
+
+	model.modalHost.Prompt.Value = "renamed"
+	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt})
+	if cmd != nil {
+		if msg := cmd(); msg != nil {
+			t.Fatalf("expected local advance to tags prompt, got %#v", msg)
+		}
+	}
+	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "edit-terminal-tags" {
+		t.Fatalf("expected tags prompt, got %#v", model.modalHost.Prompt)
+	}
+	model.modalHost.Prompt.Value = "role=ops env=test"
+
+	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt})
+	if cmd == nil {
+		t.Fatal("expected async metadata save command")
+	}
+	if msg := cmd(); msg != nil {
+		t.Fatalf("expected nil message from edit save command, got %#v", msg)
+	}
+
+	if model.input.Mode().Kind != input.ModeTerminalManager {
+		t.Fatalf("expected terminal-manager mode after save, got %q", model.input.Mode().Kind)
+	}
+	if model.terminalPage == nil {
+		t.Fatal("expected terminal page to remain open after save")
+	}
+}
+
 func TestModelPromptSubmitCreatesAndAttachesTerminal(t *testing.T) {
 	client := &recordingBridgeClient{
 		createResult: &protocol.CreateResult{TerminalID: "term-new"},
@@ -423,8 +655,31 @@ func TestModelPromptSubmitCreatesAndAttachesTerminal(t *testing.T) {
 	}
 }
 
-func TestModelPickerKillTerminalRemovesSelectedItemAndReturnsEffect(t *testing.T) {
+func TestModelPromptOverlayInputStillUpdatesValue(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
+	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: "prompt-1"}
+	model.modalHost.Prompt = &modal.PromptState{
+		Kind:   "create-terminal-name",
+		Title:  "Create Terminal",
+		Value:  "de",
+		PaneID: "pane-1",
+	}
+	model.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: "prompt-1"})
+
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	if got := model.modalHost.Prompt.Value; got != "dem" {
+		t.Fatalf("expected prompt value dem after rune input, got %q", got)
+	}
+
+	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	if got := model.modalHost.Prompt.Value; got != "de" {
+		t.Fatalf("expected prompt value de after backspace, got %q", got)
+	}
+}
+
+func TestModelPickerKillTerminalRemovesSelectedItemAndInvokesBridgeClient(t *testing.T) {
+	client := &recordingBridgeClient{}
+	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(client))
 	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePicker, Phase: modal.ModalPhaseReady, RequestID: "picker-1"}
 	model.modalHost.Picker = &modal.PickerState{
 		Selected: 1,
@@ -440,13 +695,14 @@ func TestModelPickerKillTerminalRemovesSelectedItemAndReturnsEffect(t *testing.T
 	if cmd == nil {
 		t.Fatal("expected kill terminal command")
 	}
-	msg := cmd()
-	effect, ok := msg.(orchestrator.KillTerminalEffect)
-	if !ok {
-		t.Fatalf("expected KillTerminalEffect, got %#v", msg)
+	if msg := cmd(); msg != nil {
+		t.Fatalf("expected nil message from kill command, got %#v", msg)
 	}
-	if effect.TerminalID != "term-2" {
-		t.Fatalf("expected terminal term-2, got %q", effect.TerminalID)
+	if len(client.killCalls) != 1 {
+		t.Fatalf("expected one kill call, got %d", len(client.killCalls))
+	}
+	if client.killCalls[0] != "term-2" {
+		t.Fatalf("expected terminal term-2 to be killed, got %#v", client.killCalls)
 	}
 	if len(model.modalHost.Picker.Items) != 1 {
 		t.Fatalf("expected 1 picker item after removal, got %d", len(model.modalHost.Picker.Items))
@@ -584,6 +840,72 @@ func TestEffectCmdLoadPickerItemsAppendsCreateNewItem(t *testing.T) {
 	}
 }
 
+func TestEffectCmdLoadPickerItemsSkipsExitedTerminals(t *testing.T) {
+	client := &recordingBridgeClient{
+		listResult: &protocol.ListResult{
+			Terminals: []protocol.TerminalInfo{
+				{ID: "term-1", Name: "shell", State: "running"},
+				{ID: "term-2", Name: "done", State: "exited"},
+			},
+		},
+	}
+	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(client))
+
+	cmd := model.effectCmd(orchestrator.LoadPickerItemsEffect{})
+	if cmd == nil {
+		t.Fatal("expected picker load command")
+	}
+	msg := cmd()
+	loaded, ok := msg.(pickerItemsLoadedMsg)
+	if !ok {
+		t.Fatalf("expected pickerItemsLoadedMsg, got %#v", msg)
+	}
+	if len(loaded.Items) != 2 {
+		t.Fatalf("expected running terminal plus create row, got %#v", loaded.Items)
+	}
+	if loaded.Items[0].TerminalID != "term-1" {
+		t.Fatalf("expected only running terminal to remain attachable, got %#v", loaded.Items)
+	}
+	if !loaded.Items[1].CreateNew {
+		t.Fatalf("expected final picker row to remain create-new, got %#v", loaded.Items[1])
+	}
+}
+
+func TestEffectCmdLoadPickerItemsIgnoresRegistryOnlyMetadataWhenListSucceeds(t *testing.T) {
+	client := &recordingBridgeClient{
+		listResult: &protocol.ListResult{
+			Terminals: []protocol.TerminalInfo{
+				{ID: "term-1", Name: "shell", State: "running"},
+			},
+		},
+	}
+	rt := runtime.New(client)
+	stale := rt.Registry().GetOrCreate("term-stale")
+	stale.Name = "stale"
+	stale.State = "running"
+
+	model := New(shared.Config{}, workbench.NewWorkbench(), rt)
+
+	cmd := model.effectCmd(orchestrator.LoadPickerItemsEffect{})
+	if cmd == nil {
+		t.Fatal("expected picker load command")
+	}
+	msg := cmd()
+	loaded, ok := msg.(pickerItemsLoadedMsg)
+	if !ok {
+		t.Fatalf("expected pickerItemsLoadedMsg, got %#v", msg)
+	}
+	if len(loaded.Items) != 2 {
+		t.Fatalf("expected listed terminal plus create row, got %#v", loaded.Items)
+	}
+	if loaded.Items[0].TerminalID != "term-1" {
+		t.Fatalf("expected picker to use server-listed terminal, got %#v", loaded.Items)
+	}
+	if !loaded.Items[1].CreateNew {
+		t.Fatalf("expected final picker row to remain create-new, got %#v", loaded.Items[1])
+	}
+}
+
 func TestEffectCmdLoadWorkspaceItemsPopulatesWorkspacePicker(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{Name: "main"})
@@ -633,7 +955,11 @@ func TestModelLocalScrollActionsAndQuit(t *testing.T) {
 			Root: workbench.NewLeaf("pane-1"),
 		}},
 	})
-	model := New(shared.Config{WorkspaceStatePath: statePath}, wb, runtime.New(nil))
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Name = "demo shell"
+	rt.Registry().GetOrCreate("term-1").Command = []string{"bash", "-lc", "htop"}
+	rt.Registry().GetOrCreate("term-1").Tags = map[string]string{"role": "dev"}
+	model := New(shared.Config{WorkspaceStatePath: statePath}, wb, rt)
 
 	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionScrollUp})
 	if cmd != nil {
@@ -657,8 +983,9 @@ func TestModelLocalScrollActionsAndQuit(t *testing.T) {
 
 	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionEnterGlobalMode})
 	if cmd != nil {
-		if msg := cmd(); msg != nil {
-			t.Fatalf("expected no async msg from entering global mode, got %#v", msg)
+		msg := cmd()
+		if _, ok := msg.(prefixTimeoutMsg); !ok {
+			t.Fatalf("expected prefix timeout rearm from entering global mode, got %#v", msg)
 		}
 	}
 	if got := model.input.Mode().Kind; got != input.ModeGlobal {
@@ -700,7 +1027,11 @@ func TestModelSaveStateCmdWritesWorkspaceStateFile(t *testing.T) {
 			Root: workbench.NewLeaf("pane-1"),
 		}},
 	})
-	model := New(shared.Config{WorkspaceStatePath: statePath}, wb, runtime.New(nil))
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Name = "demo shell"
+	rt.Registry().GetOrCreate("term-1").Command = []string{"bash", "-lc", "htop"}
+	rt.Registry().GetOrCreate("term-1").Tags = map[string]string{"role": "dev"}
+	model := New(shared.Config{WorkspaceStatePath: statePath}, wb, rt)
 
 	cmd := model.saveStateCmd()
 	if cmd == nil {
@@ -719,6 +1050,9 @@ func TestModelSaveStateCmdWritesWorkspaceStateFile(t *testing.T) {
 	}
 	if len(file.Data) != 1 || file.Data[0].Name != "main" {
 		t.Fatalf("expected saved main workspace, got %#v", file.Data)
+	}
+	if strings.Contains(string(data), "\"terminal_metadata\"") {
+		t.Fatalf("expected save to omit terminal metadata cache, got %s", string(data))
 	}
 }
 
@@ -739,6 +1073,9 @@ func TestModelUpdateTerminalAttachedSavesState(t *testing.T) {
 		}},
 	})
 	model := New(shared.Config{WorkspaceStatePath: statePath}, wb, runtime.New(nil))
+	if pane := model.workbench.ActivePane(); pane != nil {
+		pane.TerminalID = "term-9"
+	}
 
 	_, cmd := model.Update(orchestrator.TerminalAttachedMsg{PaneID: "pane-1", TerminalID: "term-9", Channel: 7})
 	if cmd == nil {
@@ -877,12 +1214,12 @@ func TestModelViewShowsModeSpecificStatusHints(t *testing.T) {
 		}},
 	})
 	model := New(shared.Config{}, wb, runtime.New(nil))
-	model.width = 100
+	model.width = 180
 	model.height = 30
 	model.input.SetMode(input.ModeState{Kind: input.ModePane})
 
 	view := model.View()
-	for _, want := range []string{"PANE", "h/j/k/l FOCUS", "% VSPLIT", "w CLOSE", "Esc BACK"} {
+	for _, want := range []string{"PANE", "h/j/k/l FOCUS", "% VSPLIT", "d DETACH", "r RECONNECT", "X CLOSE+KILL", "w CLOSE", "Esc BACK"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected view to contain %q, got:\n%s", want, view)
 		}
@@ -901,8 +1238,8 @@ func TestModelHelpActionsOpenAndCloseOverlay(t *testing.T) {
 	if model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModeHelp {
 		t.Fatalf("expected help modal session, got %#v", model.modalHost.Session)
 	}
-	if model.modalHost.Help == nil || len(model.modalHost.Help.Bindings) == 0 {
-		t.Fatalf("expected default help bindings, got %#v", model.modalHost.Help)
+	if model.modalHost.Help == nil || len(model.modalHost.Help.Sections) == 0 {
+		t.Fatalf("expected default help sections, got %#v", model.modalHost.Help)
 	}
 	if model.input.Mode().Kind != input.ModeHelp {
 		t.Fatalf("expected input mode help, got %q", model.input.Mode().Kind)
@@ -947,7 +1284,7 @@ func TestModelInitRestoreAutoReattachesPersistedPanes(t *testing.T) {
 			"term-restore": {
 				TerminalID: "term-restore",
 				Size:       protocol.Size{Cols: 80, Rows: 24},
-				Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "k", Width: 1}}}},
+				Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "k", Width: 1}}}},
 			},
 		},
 	}
@@ -1120,6 +1457,7 @@ type recordingBridgeClient struct {
 	createCalls        []createCall
 	attachCalls        []attachCall
 	setTagsCalls       []setTagsCall
+	setMetadataCalls   []setMetadataCall
 	killCalls          []string
 }
 
@@ -1137,6 +1475,12 @@ type createCall struct {
 
 type setTagsCall struct {
 	terminalID string
+	tags       map[string]string
+}
+
+type setMetadataCall struct {
+	terminalID string
+	name       string
 	tags       map[string]string
 }
 
@@ -1159,7 +1503,12 @@ func (c *recordingBridgeClient) SetTags(_ context.Context, terminalID string, ta
 	return nil
 }
 
-func (c *recordingBridgeClient) SetMetadata(context.Context, string, string, map[string]string) error {
+func (c *recordingBridgeClient) SetMetadata(_ context.Context, terminalID string, name string, tags map[string]string) error {
+	c.setMetadataCalls = append(c.setMetadataCalls, setMetadataCall{
+		terminalID: terminalID,
+		name:       name,
+		tags:       cloneTags(tags),
+	})
 	return nil
 }
 
