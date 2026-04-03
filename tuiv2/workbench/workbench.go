@@ -28,6 +28,20 @@ func (w *Workbench) CurrentWorkspace() *WorkspaceState {
 	return w.store[w.current]
 }
 
+func (w *Workbench) CurrentWorkspaceName() string {
+	if w == nil {
+		return ""
+	}
+	return w.current
+}
+
+func (w *Workbench) WorkspaceByName(name string) *WorkspaceState {
+	if w == nil || name == "" {
+		return nil
+	}
+	return w.store[name]
+}
+
 func (w *Workbench) CurrentTab() *TabState {
 	workspace := w.CurrentWorkspace()
 	if workspace == nil {

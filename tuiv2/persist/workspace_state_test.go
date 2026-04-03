@@ -137,6 +137,36 @@ func TestSave_PreservesPaneRecordStoreEntriesOutsideLayoutAndFloating(t *testing
 	}
 }
 
+func TestSave_DoesNotMutateCurrentWorkspaceWhileKeepingCurrentFirstInOutput(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{Name: "main"})
+	wb.AddWorkspace("ops", &workbench.WorkspaceState{Name: "ops"})
+	if !wb.SwitchWorkspace("ops") {
+		t.Fatal("expected switch to ops to succeed")
+	}
+
+	before := wb.CurrentWorkspaceName()
+	data, err := Save(wb)
+	if err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+	after := wb.CurrentWorkspaceName()
+	if after != before {
+		t.Fatalf("expected current workspace to remain %q after Save, got %q", before, after)
+	}
+
+	loaded, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(loaded.Data) != 2 {
+		t.Fatalf("expected 2 workspaces in saved output, got %#v", loaded.Data)
+	}
+	if loaded.Data[0].Name != "ops" || loaded.Data[1].Name != "main" {
+		t.Fatalf("expected current workspace first in output order, got %#v", loaded.Data)
+	}
+}
+
 func TestLoad_InvalidJSON(t *testing.T) {
 	_, err := Load([]byte("{invalid json"))
 	if err == nil {

@@ -221,6 +221,17 @@ func TestRouteKeyMsg_Escape_NormalMode_Passthrough(t *testing.T) {
 	}
 }
 
+func TestRouteKeyMsg_ShiftTab_NormalMode_UsesEncodedFallback(t *testing.T) {
+	r := NewRouter()
+	result := r.RouteKeyMsg(specialKey(tea.KeyShiftTab))
+	if result.Action != nil {
+		t.Fatalf("expected no action, got %#v", result.Action)
+	}
+	if result.TerminalInput == nil || result.TerminalInput.Kind != TerminalInputEncodedKey {
+		t.Fatalf("expected encoded-key terminal input, got %#v", result.TerminalInput)
+	}
+}
+
 func TestRouteKeyMsg_PrintableRune_NormalMode_Passthrough(t *testing.T) {
 	r := NewRouter()
 	result := r.RouteKeyMsg(runeKey('a'))

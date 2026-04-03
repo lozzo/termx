@@ -16,10 +16,10 @@ func TranslateKeyMsg(msg tea.KeyMsg, mode ModeKind, km *Keymap) RouteResult {
 			return RouteResult{Action: action}
 		}
 		data := encodeTeaKey(msg)
-		if len(data) == 0 {
-			return RouteResult{}
+		if len(data) != 0 {
+			return RouteResult{TerminalInput: &TerminalInput{Kind: TerminalInputBytes, Data: data}}
 		}
-		return RouteResult{TerminalInput: &TerminalInput{Kind: TerminalInputBytes, Data: data}}
+		return RouteResult{TerminalInput: &TerminalInput{Kind: TerminalInputEncodedKey}}
 	case ModePane:
 		return routeStickyModeKeyMsg(msg, km.LookupPane, km)
 	case ModeResize:
@@ -170,7 +170,3 @@ func encodeTeaKey(msg tea.KeyMsg) []byte {
 		return nil
 	}
 }
-
-func TranslateKey(any) RouteResult    { return RouteResult{} }
-func TranslateRaw([]byte) RouteResult { return RouteResult{} }
-func TranslateEvent(any) RouteResult  { return RouteResult{} }

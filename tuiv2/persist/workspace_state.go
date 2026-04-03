@@ -17,12 +17,13 @@ func Save(wb *workbench.Workbench) ([]byte, error) {
 		return nil, fmt.Errorf("persist: nil workbench")
 	}
 
+	ordered := orderedWorkspaceNames(wb)
 	file := WorkspaceStateFileV2{
 		Version: 2,
-		Data:    make([]WorkspaceEntryV2, 0, len(wb.ListWorkspaces())),
+		Data:    make([]WorkspaceEntryV2, 0, len(ordered)),
 	}
-	for _, name := range orderedWorkspaceNames(wb) {
-		ws := workspaceByName(wb, name)
+	for _, name := range ordered {
+		ws := wb.WorkspaceByName(name)
 		if ws == nil {
 			continue
 		}
@@ -63,38 +64,19 @@ func orderedWorkspaceNames(wb *workbench.Workbench) []string {
 		return nil
 	}
 	order := wb.ListWorkspaces()
-	current := wb.CurrentWorkspace()
-	if current == nil || current.Name == "" {
+	currentName := wb.CurrentWorkspaceName()
+	if currentName == "" {
 		return order
 	}
 
 	out := make([]string, 0, len(order))
-	out = append(out, current.Name)
+	out = append(out, currentName)
 	for _, name := range order {
-		if name != current.Name {
+		if name != currentName {
 			out = append(out, name)
 		}
 	}
 	return out
-}
-
-func workspaceByName(wb *workbench.Workbench, name string) *workbench.WorkspaceState {
-	if wb == nil || name == "" {
-		return nil
-	}
-	current := wb.CurrentWorkspace()
-	currentName := ""
-	if current != nil {
-		currentName = current.Name
-	}
-	if !wb.SwitchWorkspace(name) {
-		return nil
-	}
-	ws := wb.CurrentWorkspace()
-	if currentName != "" {
-		wb.SwitchWorkspace(currentName)
-	}
-	return ws
 }
 
 func exportWorkspace(ws *workbench.WorkspaceState) WorkspaceEntryV2 {

@@ -50,18 +50,3 @@ func (r *Router) SetMode(mode ModeState) {
 func (r *Router) RouteKeyMsg(msg tea.KeyMsg) RouteResult {
 	return TranslateKeyMsg(msg, r.mode.Kind, &r.keymap)
 }
-
-// RouteKey is the legacy stub kept for interface stability.
-func (r *Router) RouteKey(any) RouteResult {
-	return RouteResult{}
-}
-
-// RouteRaw is a stub for raw-byte routing (not yet implemented).
-func (r *Router) RouteRaw([]byte) RouteResult {
-	return RouteResult{}
-}
-
-// RouteEvent is a stub for generic event routing (not yet implemented).
-func (r *Router) RouteEvent(any) RouteResult {
-	return RouteResult{}
-}

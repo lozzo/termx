@@ -22,6 +22,12 @@ func TestWorkbenchAddRemoveAndListWorkspaces(t *testing.T) {
 	if wb.SwitchWorkspace("ops") {
 		t.Fatal("expected removed workspace switch to fail")
 	}
+	if got := wb.WorkspaceByName("main"); got == nil || got.Name != "main" {
+		t.Fatalf("expected WorkspaceByName(main), got %#v", got)
+	}
+	if got := wb.WorkspaceByName("ops"); got != nil {
+		t.Fatalf("expected removed workspace lookup to be nil, got %#v", got)
+	}
 }
 
 func TestWorkbenchRenameWorkspacePreservesOrderAndCurrent(t *testing.T) {
@@ -42,6 +48,9 @@ func TestWorkbenchRenameWorkspacePreservesOrderAndCurrent(t *testing.T) {
 	listed := wb.ListWorkspaces()
 	if len(listed) != 2 || listed[1] != "dev" {
 		t.Fatalf("expected renamed workspace order to be preserved, got %#v", listed)
+	}
+	if got := wb.CurrentWorkspaceName(); got != "dev" {
+		t.Fatalf("expected CurrentWorkspaceName to be dev, got %q", got)
 	}
 }
 
