@@ -8,12 +8,26 @@ import (
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
-// paneMeta generates the badge/meta string for a pane based on terminal state.
-func paneMeta(pane workbench.VisiblePane, runtimeState *VisibleRuntimeStateProxy) string {
-	return paneMetaWithLookup(pane, newRuntimeLookup(runtimeState))
+const ownerConfirmLabel = "become owner"
+
+const (
+	paneBorderStateSlotWidth = 4
+	paneBorderShareSlotWidth = 4
+	paneBorderRoleSlotWidth  = 14
+)
+
+type paneBorderInfo struct {
+	StateLabel string
+	ShareLabel string
+	RoleLabel  string
 }
 
-func paneMetaWithLookup(pane workbench.VisiblePane, lookup runtimeLookup) string {
+// paneMeta generates the badge/meta string for a pane based on terminal state.
+func paneMeta(pane workbench.VisiblePane, runtimeState *VisibleRuntimeStateProxy) string {
+	return paneMetaWithLookup(pane, newRuntimeLookup(runtimeState), "")
+}
+
+func paneMetaWithLookup(pane workbench.VisiblePane, lookup runtimeLookup, confirmPaneID string) string {
 	if pane.TerminalID == "" {
 		return "unconnected"
 	}
@@ -38,14 +52,65 @@ func paneMetaWithLookup(pane workbench.VisiblePane, lookup runtimeLookup) string
 	}
 	switch role := lookup.paneRole(pane.ID); role {
 	case "owner":
-		parts = append(parts, "◆")
+		parts = append(parts, "owner")
 	case "follower":
-		parts = append(parts, "◇")
+		if confirmPaneID == pane.ID {
+			parts = append(parts, ownerConfirmLabel)
+		} else if terminal.OwnerPaneID != "" && terminal.OwnerPaneID != pane.ID {
+			parts = append(parts, "follow:"+terminal.OwnerPaneID)
+		} else {
+			parts = append(parts, "follower")
+		}
 	}
 	if len(terminal.BoundPaneIDs) > 1 {
 		parts = append(parts, fmt.Sprintf("⧉ %d", len(terminal.BoundPaneIDs)))
 	}
 	return strings.Join(parts, " ")
+}
+
+func paneBorderInfoWithLookup(pane workbench.VisiblePane, lookup runtimeLookup, confirmPaneID string) paneBorderInfo {
+	if pane.TerminalID == "" {
+		return paneBorderInfo{}
+	}
+	terminal := lookup.terminal(pane.TerminalID)
+	if terminal == nil {
+		return paneBorderInfo{}
+	}
+	info := paneBorderInfo{
+		StateLabel: paneBorderStateLabel(terminal.State, terminal.ExitCode),
+	}
+	switch lookup.paneRole(pane.ID) {
+	case "owner":
+		info.RoleLabel = "owner"
+	case "follower":
+		if confirmPaneID == pane.ID {
+			info.RoleLabel = ownerConfirmLabel
+		} else {
+			info.RoleLabel = "follow"
+		}
+	}
+	if len(terminal.BoundPaneIDs) > 1 {
+		info.ShareLabel = fmt.Sprintf("x%d", len(terminal.BoundPaneIDs))
+	}
+	return info
+}
+
+func paneBorderStateLabel(state string, exitCode *int) string {
+	switch state {
+	case "running":
+		return "●"
+	case "exited":
+		if exitCode != nil {
+			return fmt.Sprintf("○%d", *exitCode)
+		}
+		return "○"
+	case "waiting":
+		return "…"
+	case "killed":
+		return "✕"
+	default:
+		return ""
+	}
 }
 
 func findVisibleTerminal(runtimeState *VisibleRuntimeStateProxy, terminalID string) *runtime.VisibleTerminal {

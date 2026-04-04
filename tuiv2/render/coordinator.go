@@ -51,7 +51,8 @@ type paneRenderEntry struct {
 	PaneID       string
 	Rect         workbench.Rect
 	Title        string
-	Meta         string
+	Border       paneBorderInfo
+	Overflow     paneOverflowHints
 	ContentKey   paneContentKey
 	FrameKey     paneFrameKey
 	TerminalID   string
@@ -60,10 +61,16 @@ type paneRenderEntry struct {
 }
 
 type paneFrameKey struct {
-	Rect   workbench.Rect
-	Title  string
-	Meta   string
-	Active bool
+	Rect     workbench.Rect
+	Title    string
+	Border   paneBorderInfo
+	Overflow paneOverflowHints
+	Active   bool
+}
+
+type paneOverflowHints struct {
+	Right  bool
+	Bottom bool
 }
 
 type paneContentKey struct {
@@ -212,7 +219,7 @@ func renderBodyFrame(state VisibleRenderState, width, height int) renderedBody {
 	}
 	tab := state.Workbench.Tabs[activeTabIdx]
 	lookup := newRuntimeLookup(state.Runtime)
-	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, lookup)
+	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, lookup, state.OwnerConfirmPaneID)
 
 	canvas := renderBodyCanvas(state, entries, width, height)
 	return renderedBody{
@@ -244,7 +251,7 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 		canvas := newComposedCanvas(width, height)
 		canvas.cursorOffsetY = 1
 		for _, entry := range entries {
-			drawPaneFrame(canvas, entry.Rect, workbench.VisiblePane{ID: entry.PaneID, TerminalID: entry.TerminalID}, runtimeLookup{}, entry.Title, entry.Meta, entry.Active)
+			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active)
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 		}
 		return canvas
@@ -254,7 +261,7 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 		canvas := newComposedCanvas(width, height)
 		canvas.cursorOffsetY = 1
 		for _, entry := range entries {
-			drawPaneFrame(canvas, entry.Rect, workbench.VisiblePane{ID: entry.PaneID, TerminalID: entry.TerminalID}, runtimeLookup{}, entry.Title, entry.Meta, entry.Active)
+			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active)
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 		}
 		coordinator.bodyCache = newBodyRenderCache(canvas, entries, width, height)
@@ -266,7 +273,7 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 		cache.canvas.cursorVisible = false
 		for _, entry := range entries {
 			if cache.frameKeys[entry.PaneID] != entry.FrameKey {
-				drawPaneFrame(cache.canvas, entry.Rect, workbench.VisiblePane{ID: entry.PaneID, TerminalID: entry.TerminalID}, runtimeLookup{}, entry.Title, entry.Meta, entry.Active)
+				drawPaneFrame(cache.canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active)
 				changed = true
 			}
 			if cache.contentKeys[entry.PaneID] != entry.ContentKey {
@@ -295,20 +302,16 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 		return cache.canvas
 	}
 
-	cache.canvas.cursorVisible = false
-	for _, rect := range damage {
-		fillRect(cache.canvas, rect, blankDrawCell())
-	}
+	canvas := newComposedCanvas(width, height)
+	canvas.cursorOffsetY = 1
 	for _, entry := range entries {
-		if !overlapsAnyRect(entry.Rect, damage) {
-			continue
-		}
-		drawPaneFrame(cache.canvas, entry.Rect, workbench.VisiblePane{ID: entry.PaneID, TerminalID: entry.TerminalID}, runtimeLookup{}, entry.Title, entry.Meta, entry.Active)
-		drawPaneContentWithKey(cache.canvas, entry.Rect, entry, state.Runtime)
+		drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active)
+		drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 	}
-	projectActiveEntryCursor(cache.canvas, entries, state.Runtime)
+	projectActiveEntryCursor(canvas, entries, state.Runtime)
+	cache.canvas = canvas
 	cache.reset(entries, width, height)
-	return cache.canvas
+	return canvas
 }
 
 func stateCoordinator(state VisibleRenderState) *Coordinator {
@@ -321,7 +324,7 @@ func stateCoordinator(state VisibleRenderState) *Coordinator {
 
 var currentCoordinator *Coordinator
 
-func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePane, width, height int, lookup runtimeLookup) []paneRenderEntry {
+func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePane, width, height int, lookup runtimeLookup, confirmPaneID string) []paneRenderEntry {
 	entries := make([]paneRenderEntry, 0, len(tab.Panes)+len(floating))
 	zoomedPaneID := tab.ZoomedPaneID
 	for _, pane := range tab.Panes {
@@ -332,25 +335,42 @@ func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePan
 			}
 			rect = workbench.Rect{X: 0, Y: 0, W: width, H: height}
 		}
-		if rect.W <= 0 || rect.H <= 0 {
+		rect, ok := clipRectToViewport(rect, width, height)
+		if !ok {
 			continue
 		}
-		entries = append(entries, buildPaneRenderEntry(pane, rect, tab.ActivePaneID, tab.ScrollOffset, lookup))
+		entries = append(entries, buildPaneRenderEntry(pane, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID))
 	}
 	for _, pane := range floating {
-		if pane.Rect.W <= 0 || pane.Rect.H <= 0 {
+		rect, ok := clipRectToViewport(pane.Rect, width, height)
+		if !ok {
 			continue
 		}
-		entries = append(entries, buildPaneRenderEntry(pane, pane.Rect, tab.ActivePaneID, tab.ScrollOffset, lookup))
+		entries = append(entries, buildPaneRenderEntry(pane, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID))
 	}
 	return entries
 }
 
-func buildPaneRenderEntry(pane workbench.VisiblePane, rect workbench.Rect, activePaneID string, scrollOffset int, lookup runtimeLookup) paneRenderEntry {
+func clipRectToViewport(rect workbench.Rect, width, height int) (workbench.Rect, bool) {
+	if rect.W <= 0 || rect.H <= 0 || width <= 0 || height <= 0 {
+		return workbench.Rect{}, false
+	}
+	x1 := maxInt(rect.X, 0)
+	y1 := maxInt(rect.Y, 0)
+	x2 := minInt(rect.X+rect.W, width)
+	y2 := minInt(rect.Y+rect.H, height)
+	if x1 >= x2 || y1 >= y2 {
+		return workbench.Rect{}, false
+	}
+	return workbench.Rect{X: x1, Y: y1, W: x2 - x1, H: y2 - y1}, true
+}
+
+func buildPaneRenderEntry(pane workbench.VisiblePane, rect workbench.Rect, activePaneID string, scrollOffset int, lookup runtimeLookup, confirmPaneID string) paneRenderEntry {
 	active := pane.ID == activePaneID
 	title := resolvePaneTitleWithLookup(pane, lookup)
-	meta := paneMetaWithLookup(pane, lookup)
+	border := paneBorderInfoWithLookup(pane, lookup, confirmPaneID)
 	terminal := lookup.terminal(pane.TerminalID)
+	overflow := paneOverflowHints{}
 	contentKey := paneContentKey{
 		TerminalID:    pane.TerminalID,
 		TerminalKnown: terminal != nil,
@@ -360,17 +380,34 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, rect workbench.Rect, activ
 		contentKey.Snapshot = terminal.Snapshot
 		contentKey.Name = terminal.Name
 		contentKey.State = terminal.State
+		overflow = snapshotOverflowHints(terminal.Snapshot, contentRectForPane(rect))
 	}
 	return paneRenderEntry{
 		PaneID:       pane.ID,
 		Rect:         rect,
 		Title:        title,
-		Meta:         meta,
+		Border:       border,
+		Overflow:     overflow,
 		ContentKey:   contentKey,
-		FrameKey:     paneFrameKey{Rect: rect, Title: title, Meta: meta, Active: active},
+		FrameKey:     paneFrameKey{Rect: rect, Title: title, Border: border, Overflow: overflow, Active: active},
 		TerminalID:   pane.TerminalID,
 		ScrollOffset: scrollOffset,
 		Active:       active,
+	}
+}
+
+func snapshotOverflowHints(snapshot *protocol.Snapshot, rect workbench.Rect) paneOverflowHints {
+	if snapshot == nil || rect.W <= 0 || rect.H <= 0 {
+		return paneOverflowHints{}
+	}
+	termW := int(snapshot.Size.Cols)
+	termH := int(snapshot.Size.Rows)
+	if termW <= 0 || termH <= 0 {
+		return paneOverflowHints{}
+	}
+	return paneOverflowHints{
+		Right:  termW > rect.W,
+		Bottom: termH > rect.H,
 	}
 }
 
@@ -461,9 +498,7 @@ func renderTerminalPoolPage(pool *modal.TerminalManagerState, runtimeState *Visi
 		}
 	}
 
-	footer := coalesce(pool.Footer, "[Enter] here  [Ctrl-T] tab  [Ctrl-O] float  [Ctrl-E] edit  [Ctrl-K] kill  [Esc] close")
-	footerLine := forceWidthANSIOverlay(pickerFooterStyle.Render(footer), width)
-	return renderPageWithPinnedFooter(headerLines, contentLines, footerLine, width, height)
+	return renderPageWithPinnedFooter(headerLines, contentLines, "", width, height)
 }
 
 func renderTerminalPoolDetails(item *modal.PickerItem, runtimeState *VisibleRuntimeStateProxy, innerWidth int) []string {
@@ -570,8 +605,8 @@ func resolvePaneTitleWithLookup(pane workbench.VisiblePane, lookup runtimeLookup
 	return pane.Title
 }
 
-// drawPaneFrame draws the border box with a title on the left and compact pane meta on the right.
-func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, pane workbench.VisiblePane, lookup runtimeLookup, title string, meta string, active bool) {
+// drawPaneFrame draws the border box with a title on the left and stable chrome slots on the right.
+func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, title string, border paneBorderInfo, overflow paneOverflowHints, active bool) {
 	if rect.W < 2 || rect.H < 2 {
 		return
 	}
@@ -583,16 +618,26 @@ func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, pane workbench.V
 	}
 	borderStyle := drawStyle{FG: borderFG}
 	titleStyle := drawStyle{FG: titleFG, Bold: true}
+	topEdge := "─"
+	bottomEdge := "─"
+	leftEdge := "│"
+	rightEdge := "│"
+	if overflow.Bottom {
+		bottomEdge = "┄"
+	}
+	if overflow.Right {
+		rightEdge = "┆"
+	}
 
 	// horizontal edges
 	for x := rect.X; x < rect.X+rect.W; x++ {
-		canvas.set(x, rect.Y, drawCell{Content: "─", Width: 1, Style: borderStyle})
-		canvas.set(x, rect.Y+rect.H-1, drawCell{Content: "─", Width: 1, Style: borderStyle})
+		canvas.set(x, rect.Y, drawCell{Content: topEdge, Width: 1, Style: borderStyle})
+		canvas.set(x, rect.Y+rect.H-1, drawCell{Content: bottomEdge, Width: 1, Style: borderStyle})
 	}
 	// vertical edges
 	for y := rect.Y; y < rect.Y+rect.H; y++ {
-		canvas.set(rect.X, y, drawCell{Content: "│", Width: 1, Style: borderStyle})
-		canvas.set(rect.X+rect.W-1, y, drawCell{Content: "│", Width: 1, Style: borderStyle})
+		canvas.set(rect.X, y, drawCell{Content: leftEdge, Width: 1, Style: borderStyle})
+		canvas.set(rect.X+rect.W-1, y, drawCell{Content: rightEdge, Width: 1, Style: borderStyle})
 	}
 	// corners
 	canvas.set(rect.X, rect.Y, drawCell{Content: "┌", Width: 1, Style: borderStyle})
@@ -600,10 +645,7 @@ func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, pane workbench.V
 	canvas.set(rect.X, rect.Y+rect.H-1, drawCell{Content: "└", Width: 1, Style: borderStyle})
 	canvas.set(rect.X+rect.W-1, rect.Y+rect.H-1, drawCell{Content: "┘", Width: 1, Style: borderStyle})
 
-	if meta == "" {
-		meta = paneMetaWithLookup(pane, lookup)
-	}
-	drawPaneTopBorderLabels(canvas, rect, titleStyle, title, meta)
+	drawPaneTopBorderLabels(canvas, rect, titleStyle, title, border)
 }
 
 // drawPaneContent fills the interior of a pane with terminal snapshot content.
@@ -630,7 +672,7 @@ func drawPaneContent(canvas *composedCanvas, rect workbench.Rect, pane workbench
 	}
 	drawSnapshotWithOffset(canvas, contentRect, terminal.Snapshot, scrollOffset)
 	if active {
-		projectPaneCursor(canvas, contentRect, terminal.Snapshot)
+		projectPaneCursor(canvas, contentRect, terminal.Snapshot, scrollOffset)
 	}
 }
 
@@ -652,7 +694,7 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 	}
 	drawSnapshotWithOffset(canvas, contentRect, terminal.Snapshot, entry.ScrollOffset)
 	if entry.Active {
-		projectPaneCursor(canvas, contentRect, terminal.Snapshot)
+		projectPaneCursor(canvas, contentRect, terminal.Snapshot, entry.ScrollOffset)
 	}
 }
 
@@ -662,6 +704,10 @@ func contentRectForPane(rect workbench.Rect) workbench.Rect {
 
 func fillRect(canvas *composedCanvas, rect workbench.Rect, cell drawCell) {
 	if canvas == nil || rect.W <= 0 || rect.H <= 0 {
+		return
+	}
+	rect, ok := clipRectToViewport(rect, canvas.width, canvas.height)
+	if !ok {
 		return
 	}
 	if cell == blankDrawCell() {
@@ -680,8 +726,8 @@ func fillRect(canvas *composedCanvas, rect workbench.Rect, cell drawCell) {
 	}
 }
 
-func projectPaneCursor(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot) {
-	if canvas == nil || snapshot == nil || !snapshot.Cursor.Visible {
+func projectPaneCursor(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, scrollOffset int) {
+	if canvas == nil || snapshot == nil || !snapshot.Cursor.Visible || scrollOffset > 0 {
 		return
 	}
 	x := rect.X + snapshot.Cursor.Col
@@ -689,7 +735,45 @@ func projectPaneCursor(canvas *composedCanvas, rect workbench.Rect, snapshot *pr
 	if x < rect.X || y < rect.Y || x >= rect.X+rect.W || y >= rect.Y+rect.H {
 		return
 	}
-	canvas.setCursor(x, y)
+	if useHostCursor(snapshot) {
+		canvas.setCursor(x, y)
+		return
+	}
+	drawSyntheticCursor(canvas, x, y, snapshot.Cursor)
+}
+
+func useHostCursor(snapshot *protocol.Snapshot) bool {
+	if snapshot == nil {
+		return false
+	}
+	return !snapshot.Modes.AlternateScreen && !snapshot.Screen.IsAlternateScreen
+}
+
+func drawSyntheticCursor(canvas *composedCanvas, x, y int, cursor protocol.CursorState) {
+	if canvas == nil || y < 0 || y >= canvas.height || x < 0 || x >= canvas.width {
+		return
+	}
+	leadX := x
+	for leadX > 0 && canvas.cells[y][leadX].Continuation {
+		leadX--
+	}
+	cell := canvas.cells[y][leadX]
+	if cell.Continuation {
+		cell = blankDrawCell()
+	}
+	if cell.Content == "" {
+		cell = blankDrawCell()
+	}
+	style := cell.Style
+	style.Reverse = !style.Reverse
+	switch cursor.Shape {
+	case "underline":
+		style.Underline = true
+	case "bar":
+		style.Bold = true
+	}
+	cell.Style = style
+	canvas.set(leadX, y, cell)
 }
 
 func drawEmptyPaneContent(canvas *composedCanvas, rect workbench.Rect, terminalID string) {
@@ -714,41 +798,127 @@ func drawEmptyPaneContent(canvas *composedCanvas, rect workbench.Rect, terminalI
 	}
 }
 
-func drawPaneTopBorderLabels(canvas *composedCanvas, rect workbench.Rect, style drawStyle, title, meta string) {
-	if canvas == nil || rect.W <= 4 {
+func drawPaneTopBorderLabels(canvas *composedCanvas, rect workbench.Rect, style drawStyle, title string, border paneBorderInfo) {
+	layout, ok := paneTopBorderLabelsLayout(rect, title, border)
+	if canvas == nil || !ok {
 		return
+	}
+	if layout.titleLabel != "" {
+		drawBorderLabel(canvas, layout.titleX, rect.Y, layout.titleLabel, style)
+	}
+	if layout.stateLabel != "" {
+		drawBorderLabel(canvas, layout.stateX, rect.Y, layout.stateLabel, style)
+	}
+	if layout.shareLabel != "" {
+		drawBorderLabel(canvas, layout.shareX, rect.Y, layout.shareLabel, style)
+	}
+	if layout.roleLabel != "" {
+		drawBorderLabel(canvas, layout.roleX, rect.Y, layout.roleLabel, style)
+	}
+}
+
+type paneBorderLabelsLayout struct {
+	titleX     int
+	titleLabel string
+	stateX     int
+	stateLabel string
+	shareX     int
+	shareLabel string
+	roleX      int
+	roleLabel  string
+}
+
+type paneBorderSlot struct {
+	label string
+	kind  string
+}
+
+func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBorderInfo) (paneBorderLabelsLayout, bool) {
+	if rect.W <= 4 {
+		return paneBorderLabelsLayout{}, false
 	}
 	innerX := rect.X + 2
 	innerW := rect.W - 4
 	if innerW <= 0 {
-		return
+		return paneBorderLabelsLayout{}, false
 	}
 
 	titleLabel := normalizePaneBorderLabel(title)
-	metaLabel := normalizePaneBorderLabel(meta)
-	titleLabel = xansi.Truncate(titleLabel, innerW, "")
-	titleW := xansi.StringWidth(titleLabel)
-	metaW := 0
-	if metaLabel != "" && titleW < innerW {
-		metaLabel = xansi.Truncate(metaLabel, innerW-titleW-1, "")
-		metaW = xansi.StringWidth(metaLabel)
-		if metaW == 0 {
-			metaLabel = ""
-		}
-	} else {
-		metaLabel = ""
+	active := make([]paneBorderSlot, 0, 3)
+	if label := padPaneBorderSlot(border.StateLabel, paneBorderStateSlotWidth); label != "" {
+		active = append(active, paneBorderSlot{kind: "state", label: label})
+	}
+	if label := padPaneBorderSlot(border.ShareLabel, paneBorderShareSlotWidth); label != "" {
+		active = append(active, paneBorderSlot{kind: "share", label: label})
+	}
+	if label := paneBorderRoleSlot(border.RoleLabel); label != "" {
+		active = append(active, paneBorderSlot{kind: "role", label: label})
 	}
 
-	if titleLabel != "" {
-		drawBorderLabel(canvas, innerX, rect.Y, titleLabel, style)
+	for len(active) > 0 && xansi.StringWidth(titleLabel)+paneBorderSlotsWidth(active) > innerW {
+		active = active[:len(active)-1]
 	}
-	if metaLabel != "" {
-		metaX := innerX + innerW - metaW
-		if metaX < innerX+titleW {
-			return
+	titleBudget := innerW - paneBorderSlotsWidth(active)
+	if titleBudget <= 0 {
+		titleBudget = innerW
+		active = nil
+	}
+	titleLabel = xansi.Truncate(titleLabel, titleBudget, "")
+	if titleLabel == "" {
+		return paneBorderLabelsLayout{}, false
+	}
+
+	layout := paneBorderLabelsLayout{
+		titleX:     innerX,
+		titleLabel: titleLabel,
+	}
+	right := innerX + innerW
+	for i := len(active) - 1; i >= 0; i-- {
+		slot := active[i]
+		slotW := xansi.StringWidth(slot.label)
+		x := right - slotW
+		switch slot.kind {
+		case "state":
+			layout.stateX = x
+			layout.stateLabel = slot.label
+		case "share":
+			layout.shareX = x
+			layout.shareLabel = slot.label
+		case "role":
+			layout.roleX = x
+			layout.roleLabel = slot.label
 		}
-		drawBorderLabel(canvas, metaX, rect.Y, metaLabel, style)
+		right = x - 1
 	}
+	return layout, true
+}
+
+func PaneOwnerButtonRect(pane workbench.VisiblePane, runtimeState *VisibleRuntimeStateProxy, confirmPaneID string) (workbench.Rect, bool) {
+	lookup := newRuntimeLookup(runtimeState)
+	layout, ok := paneTopBorderLabelsLayout(pane.Rect, resolvePaneTitleWithLookup(pane, lookup), paneBorderInfoWithLookup(pane, lookup, confirmPaneID))
+	if !ok || layout.roleLabel == "" {
+		return workbench.Rect{}, false
+	}
+	actionLabel := paneOwnerActionLabel(pane, lookup, confirmPaneID)
+	if actionLabel == "" {
+		return workbench.Rect{}, false
+	}
+	return workbench.Rect{
+		X: layout.roleX,
+		Y: pane.Rect.Y,
+		W: xansi.StringWidth(layout.roleLabel),
+		H: 1,
+	}, true
+}
+
+func paneOwnerActionLabel(pane workbench.VisiblePane, lookup runtimeLookup, confirmPaneID string) string {
+	if pane.TerminalID == "" || lookup.paneRole(pane.ID) != "follower" {
+		return ""
+	}
+	if confirmPaneID == pane.ID {
+		return ownerConfirmLabel
+	}
+	return "follow"
 }
 
 func normalizePaneBorderLabel(text string) string {
@@ -757,6 +927,35 @@ func normalizePaneBorderLabel(text string) string {
 		return ""
 	}
 	return " " + text + " "
+}
+
+func padPaneBorderSlot(text string, width int) string {
+	if strings.TrimSpace(text) == "" || width <= 0 {
+		return ""
+	}
+	text = xansi.Truncate(strings.TrimSpace(text), width, "")
+	pad := maxInt(0, width-xansi.StringWidth(text))
+	left := pad / 2
+	right := pad - left
+	return strings.Repeat(" ", left) + text + strings.Repeat(" ", right)
+}
+
+func paneBorderRoleSlot(text string) string {
+	if strings.TrimSpace(text) == "" {
+		return ""
+	}
+	return "[" + padPaneBorderSlot(text, paneBorderRoleSlotWidth-2) + "]"
+}
+
+func paneBorderSlotsWidth(slots []paneBorderSlot) int {
+	total := 0
+	for i, slot := range slots {
+		total += xansi.StringWidth(slot.label)
+		if i > 0 {
+			total++
+		}
+	}
+	return total
 }
 
 func drawBorderLabel(canvas *composedCanvas, x, y int, text string, style drawStyle) {
@@ -802,10 +1001,12 @@ func drawSnapshotWithOffset(canvas *composedCanvas, rect workbench.Rect, snapsho
 	}
 	if offset <= 0 {
 		canvas.drawSnapshotInRect(rect, snapshot)
+		drawSnapshotExtentHints(canvas, rect, snapshot)
 		return
 	}
 	totalRows := len(snapshot.Scrollback) + len(snapshot.Screen.Cells)
 	if totalRows == 0 {
+		drawSnapshotExtentHints(canvas, rect, snapshot)
 		return
 	}
 	end := totalRows - offset
@@ -838,6 +1039,42 @@ func drawSnapshotWithOffset(canvas *composedCanvas, rect workbench.Rect, snapsho
 		}
 		targetY++
 	}
+	drawSnapshotExtentHints(canvas, rect, snapshot)
+}
+
+func drawSnapshotExtentHints(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot) {
+	if canvas == nil || snapshot == nil || rect.W <= 0 || rect.H <= 0 {
+		return
+	}
+	termW := int(snapshot.Size.Cols)
+	termH := int(snapshot.Size.Rows)
+	if termW <= 0 || termH <= 0 {
+		return
+	}
+
+	dotStyle := drawStyle{FG: "#cbd5e1"}
+
+	visibleCols := minInt(rect.W, termW)
+	visibleRows := minInt(rect.H, termH)
+
+	if termW < rect.W {
+		startX := rect.X + visibleCols
+		endX := rect.X + rect.W
+		for y := rect.Y; y < rect.Y+visibleRows; y++ {
+			for x := startX; x < endX; x++ {
+				canvas.set(x, y, drawCell{Content: "·", Width: 1, Style: dotStyle})
+			}
+		}
+	}
+	if termH < rect.H {
+		startY := rect.Y + visibleRows
+		endY := rect.Y + rect.H
+		for y := startY; y < endY; y++ {
+			for x := rect.X; x < rect.X+rect.W; x++ {
+				canvas.set(x, y, drawCell{Content: "·", Width: 1, Style: dotStyle})
+			}
+		}
+	}
 }
 
 func projectActiveEntryCursor(canvas *composedCanvas, entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) {
@@ -851,7 +1088,7 @@ func projectActiveEntryCursor(canvas *composedCanvas, entries []paneRenderEntry,
 		}
 		terminal := findVisibleTerminal(runtimeState, entry.TerminalID)
 		if terminal != nil && terminal.Snapshot != nil {
-			projectPaneCursor(canvas, contentRectForPane(entry.Rect), terminal.Snapshot)
+			projectPaneCursor(canvas, contentRectForPane(entry.Rect), terminal.Snapshot, entry.ScrollOffset)
 		}
 		return
 	}

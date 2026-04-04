@@ -16,6 +16,7 @@ type drawStyle struct {
 	Bold      bool
 	Italic    bool
 	Underline bool
+	Reverse   bool
 }
 
 type drawCell struct {
@@ -137,6 +138,7 @@ func cellStyleFromSnapshot(cell protocol.Cell) drawStyle {
 		Bold:      cell.Style.Bold,
 		Italic:    cell.Style.Italic,
 		Underline: cell.Style.Underline,
+		Reverse:   cell.Style.Reverse,
 	}
 }
 
@@ -258,6 +260,9 @@ func styleANSI(s drawStyle) string {
 	}
 	if s.Underline {
 		b.WriteString(";4")
+	}
+	if s.Reverse {
+		b.WriteString(";7")
 	}
 	b.WriteByte('m')
 	ansi := b.String()

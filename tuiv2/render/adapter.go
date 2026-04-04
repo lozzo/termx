@@ -8,14 +8,15 @@ import (
 )
 
 type VisibleRenderState struct {
-	Workbench *workbench.VisibleWorkbench
-	Runtime   *VisibleRuntimeStateProxy
-	Surface   VisibleSurface
-	Overlay   VisibleOverlay
-	TermSize  TermSize
-	Notice    string
-	Error     string
-	InputMode string
+	Workbench          *workbench.VisibleWorkbench
+	Runtime            *VisibleRuntimeStateProxy
+	Surface            VisibleSurface
+	Overlay            VisibleOverlay
+	TermSize           TermSize
+	Notice             string
+	Error              string
+	InputMode          string
+	OwnerConfirmPaneID string
 }
 
 type VisibleRuntimeStateProxy = runtime.VisibleRuntime

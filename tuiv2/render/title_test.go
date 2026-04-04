@@ -107,6 +107,7 @@ func TestPaneMetaUsesPaneBindingRole(t *testing.T) {
 		Terminals: []runtime.VisibleTerminal{{
 			TerminalID:   "term-1",
 			State:        "running",
+			OwnerPaneID:  "pane-1",
 			BoundPaneIDs: []string{"pane-1", "pane-2"},
 		}},
 		Bindings: []runtime.VisiblePaneBinding{
@@ -118,10 +119,10 @@ func TestPaneMetaUsesPaneBindingRole(t *testing.T) {
 	ownerMeta := paneMeta(workbench.VisiblePane{ID: "pane-1", TerminalID: "term-1"}, runtimeState)
 	followerMeta := paneMeta(workbench.VisiblePane{ID: "pane-2", TerminalID: "term-1"}, runtimeState)
 
-	if ownerMeta != "● ◆ ⧉ 2" {
+	if ownerMeta != "● owner ⧉ 2" {
 		t.Fatalf("unexpected owner meta: %q", ownerMeta)
 	}
-	if followerMeta != "● ◇ ⧉ 2" {
+	if followerMeta != "● follow:pane-1 ⧉ 2" {
 		t.Fatalf("unexpected follower meta: %q", followerMeta)
 	}
 }
