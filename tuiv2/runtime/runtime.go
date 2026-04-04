@@ -111,6 +111,7 @@ func (r *Runtime) clearPaneFromTerminal(terminal *TerminalRuntime, paneID string
 	if terminal.OwnerPaneID == paneID {
 		terminal.OwnerPaneID = ""
 	}
+	r.syncTerminalOwnership(terminal)
 }
 
 func (r *Runtime) touch() {

@@ -554,6 +554,57 @@ func TestCenterFloatingPaneCentersWithinBounds(t *testing.T) {
 	}
 }
 
+func TestReflowFloatingPanesScalesRectsWithViewport(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.CreateFloatingPane("tab1", "pane2", Rect{X: 50, Y: 10, W: 30, H: 12})
+
+	if !wb.ReflowFloatingPanes(Rect{W: 100, H: 40}, Rect{W: 50, H: 20}) {
+		t.Fatal("expected reflow to report changes")
+	}
+
+	tab := wb.store["main"].Tabs[0]
+	got := tab.Floating[0].Rect
+	if got != (Rect{X: 25, Y: 5, W: 15, H: 6}) {
+		t.Fatalf("expected scaled floating rect, got %#v", got)
+	}
+}
+
+func TestReflowFloatingPanesClampsWithinSmallerViewport(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.CreateFloatingPane("tab1", "pane2", Rect{X: 70, Y: 30, W: 24, H: 10})
+
+	if !wb.ReflowFloatingPanes(Rect{W: 100, H: 40}, Rect{W: 30, H: 10}) {
+		t.Fatal("expected reflow to report changes")
+	}
+
+	tab := wb.store["main"].Tabs[0]
+	got := tab.Floating[0].Rect
+	if got.X < 0 || got.Y < 0 || got.X+got.W > 30 || got.Y+got.H > 10 {
+		t.Fatalf("expected floating rect clamped inside new viewport, got %#v", got)
+	}
+}
+
+func TestClampFloatingPanesToBoundsShrinksAndRepositions(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.CreateFloatingPane("tab1", "pane2", Rect{X: 60, Y: 20, W: 50, H: 20})
+
+	if !wb.ClampFloatingPanesToBounds(Rect{W: 40, H: 12}) {
+		t.Fatal("expected clamp to report changes")
+	}
+
+	tab := wb.store["main"].Tabs[0]
+	got := tab.Floating[0].Rect
+	if got != (Rect{X: 1, Y: 1, W: 39, H: 11}) {
+		t.Fatalf("expected floating rect clamped into viewport, got %#v", got)
+	}
+}
+
 func TestVisibleWithSize_ClampsStaleActiveReferences(t *testing.T) {
 	wb := NewWorkbench()
 	wb.AddWorkspace("main", &WorkspaceState{

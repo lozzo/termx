@@ -2,7 +2,13 @@ package workbench
 
 import (
 	"fmt"
+	"math"
 	"strings"
+)
+
+const (
+	minFloatingWidth  = 10
+	minFloatingHeight = 4
 )
 
 // findTab searches all workspaces for the tab with the given ID and returns it
@@ -462,8 +468,8 @@ func (w *Workbench) ResizeFloatingPane(tabID, paneID string, width, height int) 
 
 	for _, floating := range tab.Floating {
 		if floating != nil && floating.PaneID == paneID {
-			floating.Rect.W = maxInt(10, width)
-			floating.Rect.H = maxInt(4, height)
+			floating.Rect.W = maxInt(minFloatingWidth, width)
+			floating.Rect.H = maxInt(minFloatingHeight, height)
 			w.touch()
 			return true
 		}
@@ -539,6 +545,155 @@ func (w *Workbench) CenterFloatingPane(tabID, paneID string, bounds Rect) bool {
 		return true
 	}
 	return false
+}
+
+func (w *Workbench) ReflowFloatingPanes(from, to Rect) bool {
+	if w == nil || from.W <= 0 || from.H <= 0 || to.W <= 0 || to.H <= 0 {
+		return false
+	}
+	if from.W == to.W && from.H == to.H {
+		return false
+	}
+
+	changed := false
+	for _, ws := range w.store {
+		if ws == nil {
+			continue
+		}
+		for _, tab := range ws.Tabs {
+			if tab == nil {
+				continue
+			}
+			for _, floating := range tab.Floating {
+				if floating == nil {
+					continue
+				}
+				next := reflowFloatingRect(floating.Rect, from, to)
+				if next != floating.Rect {
+					floating.Rect = next
+					changed = true
+				}
+			}
+		}
+	}
+	if changed {
+		w.touch()
+	}
+	return changed
+}
+
+func (w *Workbench) ClampFloatingPanesToBounds(bounds Rect) bool {
+	if w == nil || bounds.W <= 0 || bounds.H <= 0 {
+		return false
+	}
+
+	changed := false
+	for _, ws := range w.store {
+		if ws == nil {
+			continue
+		}
+		for _, tab := range ws.Tabs {
+			if tab == nil {
+				continue
+			}
+			for _, floating := range tab.Floating {
+				if floating == nil {
+					continue
+				}
+				next := clampFloatingRectToBounds(floating.Rect, bounds)
+				if next != floating.Rect {
+					floating.Rect = next
+					changed = true
+				}
+			}
+		}
+	}
+	if changed {
+		w.touch()
+	}
+	return changed
+}
+
+func reflowFloatingRect(rect, from, to Rect) Rect {
+	left := scaleAxis(rect.X, from.W, to.W)
+	top := scaleAxis(rect.Y, from.H, to.H)
+	right := scaleAxis(rect.X+rect.W, from.W, to.W)
+	bottom := scaleAxis(rect.Y+rect.H, from.H, to.H)
+
+	width := right - left
+	height := bottom - top
+	if width <= 0 {
+		width = 1
+	}
+	if height <= 0 {
+		height = 1
+	}
+
+	width = clampFloatingDimension(width, to.W, minFloatingWidth)
+	height = clampFloatingDimension(height, to.H, minFloatingHeight)
+	left = clampFloatingOffset(left, width, to.W)
+	top = clampFloatingOffset(top, height, to.H)
+
+	return Rect{X: left, Y: top, W: width, H: height}
+}
+
+func clampFloatingRectToBounds(rect, bounds Rect) Rect {
+	width := clampFloatingDimension(rect.W, bounds.W, minFloatingWidth)
+	height := clampFloatingDimension(rect.H, bounds.H, minFloatingHeight)
+	left := clampFloatingOffset(rect.X, width, bounds.W)
+	top := clampFloatingOffset(rect.Y, height, bounds.H)
+	return Rect{X: left, Y: top, W: width, H: height}
+}
+
+func scaleAxis(value, from, to int) int {
+	if from <= 0 || to <= 0 {
+		return 0
+	}
+	return int(math.Round(float64(value) * float64(to) / float64(from)))
+}
+
+func clampFloatingDimension(value, limit, minimum int) int {
+	if limit <= 0 {
+		return 1
+	}
+	maximum := maxFloatingDimension(limit)
+	if value > maximum {
+		value = maximum
+	}
+	if limit >= minimum && value < minimum {
+		value = minimum
+	}
+	if value > maximum {
+		value = maximum
+	}
+	if value < 1 {
+		value = 1
+	}
+	return value
+}
+
+func maxFloatingDimension(limit int) int {
+	if limit <= 1 {
+		return 1
+	}
+	return limit - 1
+}
+
+func clampFloatingOffset(offset, size, limit int) int {
+	if limit <= 0 {
+		return 0
+	}
+	if size >= limit {
+		return 0
+	}
+	if offset < 0 {
+		return 0
+	}
+	maxOffset := limit - size
+	if offset > maxOffset {
+		return maxOffset
+	}
+	return offset
 }
 
 func normalizeFloatingZ(entries []*FloatingState) {

@@ -153,10 +153,11 @@ func (w *Workbench) VisibleWithSize(bodyRect Rect) *VisibleWorkbench {
 		return visible
 	}
 	visible := &VisibleWorkbench{
-		WorkspaceName: workspace.Name,
-		Tabs:          make([]VisibleTab, 0, len(workspace.Tabs)),
-		ActiveTab:     -1,
-		FloatingPanes: nil,
+		WorkspaceName:  workspace.Name,
+		WorkspaceCount: len(w.order),
+		Tabs:           make([]VisibleTab, 0, len(workspace.Tabs)),
+		ActiveTab:      -1,
+		FloatingPanes:  nil,
 	}
 	activeTab := workspace.currentTab()
 	for _, tab := range workspace.Tabs {

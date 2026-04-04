@@ -25,16 +25,11 @@ func (r *Runtime) AttachTerminal(ctx context.Context, paneID, terminalID, mode s
 	r.unbindPaneFromTerminalCache(paneID, "")
 	binding := r.BindPane(paneID)
 	if binding != nil {
-		if terminal.OwnerPaneID == "" || terminal.OwnerPaneID == paneID {
-			terminal.OwnerPaneID = paneID
-			binding.Role = BindingRoleOwner
-		} else {
-			binding.Role = BindingRoleFollower
-		}
 		binding.Channel = attached.Channel
 		binding.Connected = true
 		terminal.BoundPaneIDs = appendBoundPaneID(terminal.BoundPaneIDs, paneID)
 	}
+	r.syncTerminalOwnership(terminal)
 	r.touch()
 	if err := r.StartStream(ctx, terminalID); err != nil {
 		return nil, err

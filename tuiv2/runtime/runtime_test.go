@@ -200,6 +200,108 @@ func TestRuntimeResizePaneUsesBindingChannelAndRefreshesSnapshot(t *testing.T) {
 	}
 }
 
+func TestRuntimeResizePaneSkipsFollowerBindings(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 100, 40, []string{"seed"})
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach owner: %v", err)
+	}
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+
+	client.attachResult = &protocol.AttachResult{Channel: 12, Mode: "collaborator"}
+	if _, err := rt.AttachTerminal(ctx, "pane-2", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach follower: %v", err)
+	}
+	client.resizeCalls = nil
+
+	if err := rt.ResizePane(ctx, "pane-2", "term-1", 50, 16); err != nil {
+		t.Fatalf("resize follower: %v", err)
+	}
+
+	if len(client.resizeCalls) != 0 {
+		t.Fatalf("expected follower resize to be ignored, got %#v", client.resizeCalls)
+	}
+	if binding := rt.Binding("pane-1"); binding == nil || binding.Role != BindingRoleOwner {
+		t.Fatalf("expected pane-1 to remain owner, got %#v", binding)
+	}
+	if binding := rt.Binding("pane-2"); binding == nil || binding.Role != BindingRoleFollower {
+		t.Fatalf("expected pane-2 to remain follower, got %#v", binding)
+	}
+}
+
+func TestRuntimeUnbindOwnerPromotesRemainingFollower(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach owner: %v", err)
+	}
+	client.attachResult = &protocol.AttachResult{Channel: 12, Mode: "collaborator"}
+	if _, err := rt.AttachTerminal(ctx, "pane-2", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach follower: %v", err)
+	}
+
+	rt.UnbindPane("pane-1", "term-1")
+
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil {
+		t.Fatal("expected terminal runtime")
+	}
+	if terminal.OwnerPaneID != "pane-2" {
+		t.Fatalf("expected pane-2 promoted to owner, got %q", terminal.OwnerPaneID)
+	}
+	if !reflect.DeepEqual(terminal.BoundPaneIDs, []string{"pane-2"}) {
+		t.Fatalf("expected only pane-2 to remain bound, got %#v", terminal.BoundPaneIDs)
+	}
+	if binding := rt.Binding("pane-2"); binding == nil || binding.Role != BindingRoleOwner {
+		t.Fatalf("expected pane-2 binding promoted to owner, got %#v", binding)
+	}
+	if binding := rt.Binding("pane-1"); binding != nil {
+		t.Fatalf("expected pane-1 binding removed, got %#v", binding)
+	}
+}
+
+func TestRuntimeAcquireTerminalOwnershipPromotesRequestedPane(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach owner: %v", err)
+	}
+	client.attachResult = &protocol.AttachResult{Channel: 12, Mode: "collaborator"}
+	if _, err := rt.AttachTerminal(ctx, "pane-2", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach follower: %v", err)
+	}
+
+	if err := rt.AcquireTerminalOwnership("pane-2", "term-1"); err != nil {
+		t.Fatalf("acquire ownership: %v", err)
+	}
+
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil {
+		t.Fatal("expected terminal runtime")
+	}
+	if terminal.OwnerPaneID != "pane-2" {
+		t.Fatalf("expected pane-2 as owner, got %q", terminal.OwnerPaneID)
+	}
+	if binding := rt.Binding("pane-1"); binding == nil || binding.Role != BindingRoleFollower {
+		t.Fatalf("expected pane-1 demoted to follower, got %#v", binding)
+	}
+	if binding := rt.Binding("pane-2"); binding == nil || binding.Role != BindingRoleOwner {
+		t.Fatalf("expected pane-2 promoted to owner, got %#v", binding)
+	}
+}
+
 func TestRuntimeAttachSnapshotInputAndResize(t *testing.T) {
 	rt, ctx := newTestRuntime(t)
 
