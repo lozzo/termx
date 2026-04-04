@@ -1,0 +1,91 @@
+package app
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+var appDebugLogMu sync.Mutex
+
+func (m *Model) debugLog(event string, kv ...any) {
+	if m == nil || strings.TrimSpace(m.cfg.LogFilePath) == "" {
+		return
+	}
+	appendDebugLogLine(m.cfg.LogFilePath, event, kv...)
+}
+
+func appendDebugLogLine(path, event string, kv ...any) {
+	appDebugLogMu.Lock()
+	defer appDebugLogMu.Unlock()
+
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	var b strings.Builder
+	b.WriteString("time=")
+	b.WriteString(time.Now().UTC().Format(time.RFC3339Nano))
+	b.WriteString(` level="DEBUG" component="tuiv2-app" event=`)
+	b.WriteString(strconv.Quote(event))
+	for i := 0; i < len(kv); i += 2 {
+		key := fmt.Sprint(kv[i])
+		value := "<missing>"
+		if i+1 < len(kv) {
+			value = fmt.Sprint(kv[i+1])
+		}
+		b.WriteByte(' ')
+		b.WriteString(sanitizeDebugKey(key))
+		b.WriteByte('=')
+		b.WriteString(strconv.Quote(value))
+	}
+	b.WriteByte('\n')
+	_, _ = file.WriteString(b.String())
+}
+
+func sanitizeDebugKey(key string) string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "field"
+	}
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r
+		case r >= '0' && r <= '9':
+			return r
+		case r == '_' || r == '-':
+			return r
+		default:
+			return '_'
+		}
+	}, key)
+}
+
+func debugMessageFields(msg tea.Msg) []any {
+	switch typed := msg.(type) {
+	case terminalTitleMsg:
+		return []any{
+			"msg", "terminal_title",
+			"terminal_id", typed.TerminalID,
+			"title", typed.Title,
+		}
+	case InvalidateMsg:
+		return []any{
+			"msg", "invalidate",
+		}
+	default:
+		return []any{
+			"msg", fmt.Sprintf("%T", msg),
+		}
+	}
+}

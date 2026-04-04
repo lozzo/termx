@@ -89,6 +89,16 @@ func encodePrintableTeaKey(msg tea.KeyMsg) ([]byte, bool) {
 }
 
 func encodeControlTeaKey(msg tea.KeyMsg) ([]byte, bool) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		return prependEscape(msg.Alt, []byte{'\n'}), true
+	case tea.KeyTab:
+		return prependEscape(msg.Alt, []byte{'\t'}), true
+	case tea.KeyBackspace:
+		return prependEscape(msg.Alt, []byte{0x7f}), true
+	case tea.KeyEsc:
+		return []byte{0x1b}, true
+	}
 	if (msg.Type >= 0 && msg.Type <= 31) || msg.Type == 127 {
 		return prependEscape(msg.Alt, []byte{byte(msg.Type)}), true
 	}

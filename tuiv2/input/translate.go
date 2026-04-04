@@ -90,7 +90,7 @@ func encodeTeaKey(msg tea.KeyMsg) []byte {
 		}
 		return []byte{' '}
 	case tea.KeyEnter:
-		return []byte{'\r'}
+		return []byte{'\n'}
 	case tea.KeyBackspace:
 		return []byte{0x7f}
 	case tea.KeyTab:

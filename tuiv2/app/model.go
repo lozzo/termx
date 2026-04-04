@@ -58,6 +58,9 @@ type Model struct {
 	mouseDragBounds  workbench.Rect
 
 	ownerConfirmPaneID string
+
+	emptyPaneSelectionPaneID string
+	emptyPaneSelectionIndex  int
 }
 
 type mouseDragMode int
@@ -91,9 +94,7 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 	if model.runtime != nil {
 		model.runtime.SetInvalidate(func() { model.queueInvalidate() })
 		model.runtime.SetTitleChange(func(terminalID, title string) {
-			if model.send != nil {
-				model.send(terminalTitleMsg{TerminalID: terminalID, Title: title})
-			}
+			model.sendAsync(terminalTitleMsg{TerminalID: terminalID, Title: title})
 		})
 	}
 	return model
@@ -124,8 +125,23 @@ func (m *Model) queueInvalidate() {
 	}
 	m.render.Invalidate()
 	if m.send != nil && !m.invalidatePending.Swap(true) {
-		m.send(InvalidateMsg{})
+		m.sendAsync(InvalidateMsg{})
 	}
+}
+
+func (m *Model) sendAsync(msg tea.Msg) {
+	if m == nil || m.send == nil {
+		return
+	}
+	fields := debugMessageFields(msg)
+	m.debugLog("send_async_start", fields...)
+	// Runtime callbacks can fire from PTY/stream goroutines. Program.Send uses
+	// an unbuffered channel, so sending asynchronously avoids stalling terminal
+	// output when Bubble Tea is busy rendering or handling another message.
+	go func() {
+		m.send(msg)
+		m.debugLog("send_async_done", fields...)
+	}()
 }
 
 func (m *Model) bootstrapStartup() error {

@@ -7,7 +7,7 @@ import (
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
-func TestResolvePaneTitlePrefersTerminalTitle(t *testing.T) {
+func TestResolvePaneTitlePrefersTerminalNameOverProgramTitle(t *testing.T) {
 	pane := workbench.VisiblePane{
 		ID:         "pane-1",
 		Title:      "Pane Title",
@@ -18,14 +18,15 @@ func TestResolvePaneTitlePrefersTerminalTitle(t *testing.T) {
 		Terminals: []runtime.VisibleTerminal{
 			{
 				TerminalID: "term-1",
+				Name:       "Stable Terminal Name",
 				Title:      "Terminal OSC Title",
 			},
 		},
 	}
 
 	title := resolvePaneTitle(pane, runtimeState)
-	if title != "Terminal OSC Title" {
-		t.Errorf("Expected 'Terminal OSC Title', got '%s'", title)
+	if title != "Stable Terminal Name" {
+		t.Errorf("Expected 'Stable Terminal Name', got '%s'", title)
 	}
 }
 

@@ -140,9 +140,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.render.Invalidate()
 		return m, nil
 	case terminalTitleMsg:
-		if m.workbench != nil {
-			m.workbench.SetPaneTitleByTerminalID(typed.TerminalID, typed.Title)
-		}
 		m.render.Invalidate()
 		return m, nil
 	case InvalidateMsg:
@@ -187,6 +184,9 @@ func (m *Model) showError(err error) tea.Cmd {
 
 func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 	if handled, cmd := m.handleModalKeyMsg(msg); handled {
+		return cmd
+	}
+	if handled, cmd := m.handleEmptyPaneKeyMsg(msg); handled {
 		return cmd
 	}
 	result := m.input.RouteKeyMsg(msg)

@@ -54,18 +54,19 @@ type statusBarCacheKey struct {
 }
 
 type paneRenderEntry struct {
-	PaneID       string
-	Rect         workbench.Rect
-	Title        string
-	Border       paneBorderInfo
-	Theme        uiTheme
-	Overflow     paneOverflowHints
-	ContentKey   paneContentKey
-	FrameKey     paneFrameKey
-	TerminalID   string
-	ScrollOffset int
-	Active       bool
-	Floating     bool
+	PaneID              string
+	Rect                workbench.Rect
+	Title               string
+	Border              paneBorderInfo
+	Theme               uiTheme
+	Overflow            paneOverflowHints
+	ContentKey          paneContentKey
+	FrameKey            paneFrameKey
+	TerminalID          string
+	ScrollOffset        int
+	Active              bool
+	Floating            bool
+	EmptyActionSelected int
 }
 
 type paneFrameKey struct {
@@ -85,13 +86,14 @@ type paneOverflowHints struct {
 }
 
 type paneContentKey struct {
-	TerminalID    string
-	Snapshot      *protocol.Snapshot
-	Name          string
-	State         string
-	ThemeBG       string
-	TerminalKnown bool
-	ScrollOffset  int
+	TerminalID          string
+	Snapshot            *protocol.Snapshot
+	Name                string
+	State               string
+	ThemeBG             string
+	TerminalKnown       bool
+	ScrollOffset        int
+	EmptyActionSelected int
 }
 
 type bodyRenderCache struct {
@@ -265,7 +267,7 @@ func renderBodyFrame(state VisibleRenderState, width, height int) renderedBody {
 		return renderEmptyWorkbenchBody(state, width, height, emptyWorkbenchNoPanes)
 	}
 	lookup := newRuntimeLookup(state.Runtime)
-	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, lookup, state.OwnerConfirmPaneID, uiThemeForRuntime(state.Runtime))
+	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, lookup, state.OwnerConfirmPaneID, state.EmptyPaneSelectionPaneID, state.EmptyPaneSelectionIndex, uiThemeForRuntime(state.Runtime))
 
 	canvas := renderBodyCanvas(state, entries, width, height)
 	return renderedBody{
@@ -295,7 +297,7 @@ func visibleStateNeedsCursorBlink(state VisibleRenderState) bool {
 	if width <= 0 || height <= 0 {
 		return false
 	}
-	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, newRuntimeLookup(state.Runtime), state.OwnerConfirmPaneID, uiThemeForRuntime(state.Runtime))
+	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, newRuntimeLookup(state.Runtime), state.OwnerConfirmPaneID, state.EmptyPaneSelectionPaneID, state.EmptyPaneSelectionIndex, uiThemeForRuntime(state.Runtime))
 	_, snapshot, ok := activeEntryCursorTarget(entries, state.Runtime)
 	return ok && snapshot.Cursor.Blink
 }
@@ -442,7 +444,7 @@ func stateCoordinator(state VisibleRenderState) *Coordinator {
 
 var currentCoordinator *Coordinator
 
-func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePane, width, height int, lookup runtimeLookup, confirmPaneID string, theme uiTheme) []paneRenderEntry {
+func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePane, width, height int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, theme uiTheme) []paneRenderEntry {
 	entries := make([]paneRenderEntry, 0, len(tab.Panes)+len(floating))
 	zoomedPaneID := tab.ZoomedPaneID
 	for _, pane := range tab.Panes {
@@ -457,14 +459,14 @@ func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePan
 		if !ok {
 			continue
 		}
-		entries = append(entries, buildPaneRenderEntry(pane, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, theme))
+		entries = append(entries, buildPaneRenderEntry(pane, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, theme))
 	}
 	for _, pane := range floating {
 		rect, ok := clipRectToViewport(pane.Rect, width, height)
 		if !ok {
 			continue
 		}
-		entries = append(entries, buildPaneRenderEntry(pane, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, theme))
+		entries = append(entries, buildPaneRenderEntry(pane, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, theme))
 	}
 	return entries
 }
@@ -483,17 +485,22 @@ func clipRectToViewport(rect workbench.Rect, width, height int) (workbench.Rect,
 	return workbench.Rect{X: x1, Y: y1, W: x2 - x1, H: y2 - y1}, true
 }
 
-func buildPaneRenderEntry(pane workbench.VisiblePane, rect workbench.Rect, activePaneID string, scrollOffset int, lookup runtimeLookup, confirmPaneID string, theme uiTheme) paneRenderEntry {
+func buildPaneRenderEntry(pane workbench.VisiblePane, rect workbench.Rect, activePaneID string, scrollOffset int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, theme uiTheme) paneRenderEntry {
 	active := pane.ID == activePaneID
 	title := resolvePaneTitleWithLookup(pane, lookup)
 	border := paneBorderInfoWithLookup(pane, lookup, confirmPaneID)
 	terminal := lookup.terminal(pane.TerminalID)
 	overflow := paneOverflowHints{}
+	emptyActionSelected := -1
+	if pane.TerminalID == "" && pane.ID == emptyPaneSelectionPaneID {
+		emptyActionSelected = emptyPaneSelectionIndex
+	}
 	contentKey := paneContentKey{
-		TerminalID:    pane.TerminalID,
-		ThemeBG:       theme.panelBG,
-		TerminalKnown: terminal != nil,
-		ScrollOffset:  scrollOffset,
+		TerminalID:          pane.TerminalID,
+		ThemeBG:             theme.panelBG,
+		TerminalKnown:       terminal != nil,
+		ScrollOffset:        scrollOffset,
+		EmptyActionSelected: emptyActionSelected,
 	}
 	if terminal != nil {
 		contentKey.Snapshot = terminal.Snapshot
@@ -519,10 +526,11 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, rect workbench.Rect, activ
 			Floating:        pane.Floating,
 			ChromeSignature: paneChromeActionSignatureForFrame(rect, title, border, pane.Floating),
 		},
-		TerminalID:   pane.TerminalID,
-		ScrollOffset: scrollOffset,
-		Active:       active,
-		Floating:     pane.Floating,
+		TerminalID:          pane.TerminalID,
+		ScrollOffset:        scrollOffset,
+		Active:              active,
+		Floating:            pane.Floating,
+		EmptyActionSelected: emptyActionSelected,
 	}
 }
 
@@ -713,8 +721,9 @@ func renderPageWithPinnedFooter(headerLines, contentLines []string, footerLine s
 	return strings.Join(lines, "\n")
 }
 
-// resolvePaneTitle returns the title for a pane, preferring terminal OSC 2 title,
-// then persisted terminal metadata name, then the pane title.
+// resolvePaneTitle returns the stable title for a pane, preferring terminal
+// metadata name, then the persisted pane title. OSC/program titles are not used
+// for pane chrome because the chrome should stay anchored to the terminal name.
 func resolvePaneTitle(pane workbench.VisiblePane, runtimeState *VisibleRuntimeStateProxy) string {
 	return resolvePaneTitleWithLookup(pane, newRuntimeLookup(runtimeState))
 }
@@ -724,9 +733,6 @@ func resolvePaneTitleWithLookup(pane workbench.VisiblePane, lookup runtimeLookup
 		return "unconnected"
 	}
 	if terminal := lookup.terminal(pane.TerminalID); terminal != nil {
-		if terminal.Title != "" {
-			return terminal.Title
-		}
 		if terminal.Name != "" {
 			return terminal.Name
 		}
@@ -786,13 +792,13 @@ func drawPaneContent(canvas *composedCanvas, rect workbench.Rect, pane workbench
 	fillRect(canvas, contentRect, blankDrawCell())
 
 	if pane.TerminalID == "" {
-		drawEmptyPaneContent(canvas, contentRect, pane.ID, pane.TerminalID, defaultUITheme())
+		drawEmptyPaneContent(canvas, contentRect, pane.ID, pane.TerminalID, defaultUITheme(), -1)
 		return
 	}
 
 	terminal := lookup.terminal(pane.TerminalID)
 	if terminal == nil {
-		drawEmptyPaneContent(canvas, contentRect, pane.ID, pane.TerminalID, defaultUITheme())
+		drawEmptyPaneContent(canvas, contentRect, pane.ID, pane.TerminalID, defaultUITheme(), -1)
 		return
 	}
 	if terminal.Snapshot == nil || len(terminal.Snapshot.Screen.Cells) == 0 {
@@ -809,12 +815,12 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 	contentRect := contentRectForPane(rect)
 	fillRect(canvas, contentRect, blankDrawCell())
 	if entry.TerminalID == "" {
-		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID, entry.Theme)
+		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID, entry.Theme, entry.EmptyActionSelected)
 		return
 	}
 	terminal := findVisibleTerminal(runtimeState, entry.TerminalID)
 	if terminal == nil {
-		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID, entry.Theme)
+		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID, entry.Theme, -1)
 		return
 	}
 	if terminal.Snapshot == nil || len(terminal.Snapshot.Screen.Cells) == 0 {
@@ -904,7 +910,7 @@ func drawSyntheticCursor(canvas *composedCanvas, x, y int, cursor protocol.Curso
 	canvas.set(leadX, y, cell)
 }
 
-func drawEmptyPaneContent(canvas *composedCanvas, rect workbench.Rect, paneID, terminalID string, theme uiTheme) {
+func drawEmptyPaneContent(canvas *composedCanvas, rect workbench.Rect, paneID, terminalID string, theme uiTheme, selectedIndex int) {
 	if canvas == nil || rect.W <= 0 || rect.H <= 0 {
 		return
 	}
@@ -923,8 +929,12 @@ func drawEmptyPaneContent(canvas *composedCanvas, rect workbench.Rect, paneID, t
 		canvas.drawText(rect.X, headlineY, centerText(xansi.Truncate(headline, rect.W, ""), rect.W), drawStyle{FG: theme.panelMuted})
 	}
 
-	for _, item := range actions {
-		canvas.drawText(item.rowRect.X, item.rowRect.Y, item.lineText, drawStyle{FG: theme.info, Bold: true})
+	for index, item := range actions {
+		style := drawStyle{FG: theme.info, Bold: true}
+		if index == selectedIndex {
+			style = drawStyle{FG: contrastTextColor(theme.info), BG: theme.info, Bold: true}
+		}
+		canvas.drawText(item.rowRect.X, item.rowRect.Y, item.lineText, style)
 	}
 
 	if strings.TrimSpace(terminalID) != "" {

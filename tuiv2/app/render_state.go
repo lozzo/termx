@@ -11,6 +11,9 @@ func (m *Model) visibleRenderState() render.VisibleRenderState {
 	state = render.WithTermSize(state, m.width, m.height)
 	state = render.WithStatus(state, "", renderErrorText(m.err), string(m.visibleInputMode()))
 	state.OwnerConfirmPaneID = m.ownerConfirmPaneID
+	if paneID, selected, ok := m.currentEmptyPaneSelection(); ok {
+		state = render.WithEmptyPaneSelection(state, paneID, selected)
+	}
 	state = render.AttachTerminalPool(state, m.terminalPage)
 	return render.AttachModalHost(state, m.modalHost)
 }

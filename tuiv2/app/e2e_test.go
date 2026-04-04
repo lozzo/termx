@@ -168,6 +168,169 @@ func TestE2ECreateShellAndInteract(t *testing.T) {
 	}
 }
 
+func TestE2EInteractiveShellPromptTitleSurvivesRepeatedLS(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
+	srv := termx.NewServer(termx.WithSocketPath(socketPath))
+	srvDone := make(chan error, 1)
+	go func() { srvDone <- srv.ListenAndServe(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+		select {
+		case <-srvDone:
+		case <-time.After(3 * time.Second):
+		}
+	})
+	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
+		t.Fatalf("server socket never appeared: %v", err)
+	}
+
+	tr, err := unixtransport.Dial(socketPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	pc := protocol.NewClient(tr)
+	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+		t.Fatalf("hello: %v", err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+
+	created, err := pc.Create(ctx, protocol.CreateParams{
+		Command: []string{"bash", "--noprofile", "--norc", "-i"},
+		Name:    "prompt-title-shell",
+		Env: []string{
+			"PS1=termx$ ",
+			`PROMPT_COMMAND=printf '\033]2;termx-prompt\007'`,
+		},
+		Size: protocol.Size{Cols: 120, Rows: 40},
+	})
+	if err != nil {
+		t.Fatalf("create interactive shell: %v", err)
+	}
+
+	model := New(shared.Config{AttachID: created.TerminalID}, nil, runtime.New(bridge.NewProtocolClient(pc)))
+	model.width = 120
+	model.height = 40
+
+	invalidated := make(chan struct{}, 128)
+	model.SetSendFunc(func(msg tea.Msg) {
+		if _, ok := msg.(InvalidateMsg); ok {
+			select {
+			case invalidated <- struct{}{}:
+			default:
+			}
+		}
+		_, cmd := model.Update(msg)
+		e2eDrain(t, model, cmd)
+	})
+
+	e2eDrain(t, model, model.Init())
+
+	pane := model.workbench.ActivePane()
+	if pane == nil || pane.TerminalID != created.TerminalID {
+		t.Fatalf("expected active pane attached to %q, got %#v", created.TerminalID, pane)
+	}
+
+	e2eWaitForText(t, ctx, model, invalidated, "termx$")
+	e2eWaitForTitle(t, ctx, model, invalidated, created.TerminalID, "termx-prompt")
+
+	_, cmd := model.Update(input.TerminalInput{
+		PaneID: pane.ID,
+		Data:   []byte("ls >/dev/null\nls >/dev/null\nprintf 'ls_prompt_ok\\n'\n"),
+	})
+	e2eDrain(t, model, cmd)
+
+	e2eWaitForText(t, ctx, model, invalidated, "ls_prompt_ok")
+	e2eWaitForTitle(t, ctx, model, invalidated, created.TerminalID, "termx-prompt")
+}
+
+func TestE2EKeyEnterExecutesCommandInAttachedShell(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
+	srv := termx.NewServer(termx.WithSocketPath(socketPath))
+	srvDone := make(chan error, 1)
+	go func() { srvDone <- srv.ListenAndServe(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+		select {
+		case <-srvDone:
+		case <-time.After(3 * time.Second):
+		}
+	})
+	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
+		t.Fatalf("server socket never appeared: %v", err)
+	}
+
+	tr, err := unixtransport.Dial(socketPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	pc := protocol.NewClient(tr)
+	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+		t.Fatalf("hello: %v", err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+
+	created, err := pc.Create(ctx, protocol.CreateParams{
+		Command: []string{"bash", "--noprofile", "--norc", "-i"},
+		Name:    "enter-shell",
+		Env: []string{
+			"PS1=termx$ ",
+			`PROMPT_COMMAND=printf '\033]2;enter-shell-ready\007'`,
+		},
+		Size: protocol.Size{Cols: 120, Rows: 40},
+	})
+	if err != nil {
+		t.Fatalf("create interactive shell: %v", err)
+	}
+
+	model := New(shared.Config{AttachID: created.TerminalID}, nil, runtime.New(bridge.NewProtocolClient(pc)))
+	model.width = 120
+	model.height = 40
+
+	invalidated := make(chan struct{}, 128)
+	model.SetSendFunc(func(msg tea.Msg) {
+		if _, ok := msg.(InvalidateMsg); ok {
+			select {
+			case invalidated <- struct{}{}:
+			default:
+			}
+		}
+		_, cmd := model.Update(msg)
+		e2eDrain(t, model, cmd)
+	})
+
+	e2eDrain(t, model, model.Init())
+
+	pane := model.workbench.ActivePane()
+	if pane == nil || pane.TerminalID != created.TerminalID {
+		t.Fatalf("expected active pane attached to %q, got %#v", created.TerminalID, pane)
+	}
+
+	e2eWaitForText(t, ctx, model, invalidated, "termx$")
+	e2eWaitForTitle(t, ctx, model, invalidated, created.TerminalID, "enter-shell-ready")
+
+	e2eTypeText(t, model, "ls >/dev/null; printf 'key_enter_ls_ok\\n'")
+	e2eDispatchKey(t, model, tea.KeyMsg{Type: tea.KeyEnter})
+
+	e2eWaitForText(t, ctx, model, invalidated, "key_enter_ls_ok")
+	e2eWaitForTitle(t, ctx, model, invalidated, created.TerminalID, "enter-shell-ready")
+}
+
 func TestE2EDetachAndReattachThroughPaneMode(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: requires a real PTY, skipped with -short")
@@ -657,6 +820,87 @@ func TestE2EMousePaneChromeOmitsReconnectAction(t *testing.T) {
 	}
 }
 
+func TestE2EMouseFollowClickShowsConfirmAcrossTiledLayouts(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	cases := []struct {
+		name  string
+		build func(t *testing.T, env realMouseE2EEnv, paneID, terminalID string) string
+	}{
+		{
+			name: "vertical-split-active-follower",
+			build: func(t *testing.T, env realMouseE2EEnv, paneID, terminalID string) string {
+				return e2eShareTerminalInSplitPane(t, env, paneID, "pane-2", workbench.SplitVertical, terminalID)
+			},
+		},
+		{
+			name: "horizontal-split-active-follower",
+			build: func(t *testing.T, env realMouseE2EEnv, paneID, terminalID string) string {
+				return e2eShareTerminalInSplitPane(t, env, paneID, "pane-2", workbench.SplitHorizontal, terminalID)
+			},
+		},
+		{
+			name: "nested-right-bottom-follower",
+			build: func(t *testing.T, env realMouseE2EEnv, paneID, terminalID string) string {
+				right := e2eShareTerminalInSplitPane(t, env, paneID, "pane-2", workbench.SplitVertical, terminalID)
+				return e2eShareTerminalInSplitPane(t, env, right, "pane-3", workbench.SplitHorizontal, terminalID)
+			},
+		},
+		{
+			name: "nested-left-bottom-follower",
+			build: func(t *testing.T, env realMouseE2EEnv, paneID, terminalID string) string {
+				_ = e2eShareTerminalInSplitPane(t, env, paneID, "pane-2", workbench.SplitVertical, terminalID)
+				if err := env.model.workbench.FocusPane(env.model.workbench.CurrentTab().ID, paneID); err != nil {
+					t.Fatalf("refocus left pane: %v", err)
+				}
+				env.model.render.Invalidate()
+				return e2eShareTerminalInSplitPane(t, env, paneID, "pane-3", workbench.SplitHorizontal, terminalID)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newRealMouseE2EEnv(t)
+			model := env.model
+			ownerPaneID, terminalID := e2eCreateTerminalViaMouse(t, env, tc.name, tc.name+"_ready")
+			targetPaneID := tc.build(t, env, ownerPaneID, terminalID)
+
+			terminal := model.runtime.Registry().Get(terminalID)
+			if terminal == nil {
+				t.Fatalf("expected terminal %q in runtime registry", terminalID)
+			}
+			if terminal.OwnerPaneID != ownerPaneID {
+				t.Fatalf("expected %q to stay owner before mouse click, got %q", ownerPaneID, terminal.OwnerPaneID)
+			}
+
+			_ = model.View()
+			button := visiblePaneChromeRegion(t, model, targetPaneID, render.HitRegionPaneOwner)
+			e2eMouseClickAtImmediate(t, model, button.Rect.X, e2eScreenYForBodyY(model, button.Rect.Y))
+
+			if model.ownerConfirmPaneID != targetPaneID {
+				t.Fatalf("expected owner confirm armed for %q, got %q", targetPaneID, model.ownerConfirmPaneID)
+			}
+			if terminal.OwnerPaneID != ownerPaneID {
+				t.Fatalf("expected owner unchanged after first click, got %q", terminal.OwnerPaneID)
+			}
+			if !strings.Contains(model.View(), "◆ owner?") {
+				t.Fatalf("expected owner confirm rendered after first click:\n%s", model.View())
+			}
+
+			button = visiblePaneChromeRegion(t, model, targetPaneID, render.HitRegionPaneOwner)
+			e2eMouseClickAtImmediate(t, model, button.Rect.X, e2eScreenYForBodyY(model, button.Rect.Y))
+			e2eWaitForOwner(t, env.ctx, model, targetPaneID)
+
+			if terminal.OwnerPaneID != targetPaneID {
+				t.Fatalf("expected %q to become owner, got %q", targetPaneID, terminal.OwnerPaneID)
+			}
+		})
+	}
+}
+
 type realMouseE2EEnv struct {
 	ctx         context.Context
 	model       *Model
@@ -820,6 +1064,17 @@ func e2eMouseClickAt(t *testing.T, m *Model, x, y int) {
 	e2eDrain(t, m, cmd)
 }
 
+func e2eMouseClickAtImmediate(t *testing.T, m *Model, x, y int) {
+	t.Helper()
+	_, cmd := m.Update(tea.MouseMsg{
+		X:      x,
+		Y:      y,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	drainCmd(t, m, cmd, 20)
+}
+
 func e2eDismissActiveOverlayIfAny(t *testing.T, m *Model) {
 	t.Helper()
 	state := m.visibleRenderState()
@@ -966,6 +1221,80 @@ func e2eWaitForText(t *testing.T, ctx context.Context, m *Model, invalidated <-c
 		}
 	}
 	t.Fatalf("timeout: %q never appeared in view\nfinal view:\n%s", target, m.View())
+}
+
+func e2eWaitForTitle(t *testing.T, ctx context.Context, m *Model, invalidated <-chan struct{}, terminalID string, target string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		terminal := m.runtime.Registry().Get(terminalID)
+		if terminal != nil && terminal.Title == target {
+			return
+		}
+		select {
+		case <-invalidated:
+		case <-time.After(200 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatalf("context expired waiting for terminal %q title %q", terminalID, target)
+		}
+	}
+	terminal := m.runtime.Registry().Get(terminalID)
+	if terminal == nil {
+		t.Fatalf("timeout waiting for terminal %q title %q: terminal missing", terminalID, target)
+	}
+	t.Fatalf("timeout waiting for terminal %q title %q: got %q", terminalID, target, terminal.Title)
+}
+
+func e2eWaitForOwner(t *testing.T, ctx context.Context, m *Model, targetPaneID string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		pane := m.workbench.ActivePane()
+		if pane != nil && pane.TerminalID != "" {
+			terminal := m.runtime.Registry().Get(pane.TerminalID)
+			if terminal != nil && terminal.OwnerPaneID == targetPaneID {
+				return
+			}
+		}
+		select {
+		case <-time.After(20 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatalf("context expired waiting for owner %q", targetPaneID)
+		}
+	}
+	pane := m.workbench.ActivePane()
+	if pane == nil {
+		t.Fatalf("timeout waiting for owner %q: no active pane", targetPaneID)
+	}
+	terminal := m.runtime.Registry().Get(pane.TerminalID)
+	if terminal == nil {
+		t.Fatalf("timeout waiting for owner %q: terminal %q missing", targetPaneID, pane.TerminalID)
+	}
+	t.Fatalf("timeout waiting for owner %q: got %q", targetPaneID, terminal.OwnerPaneID)
+}
+
+func e2eShareTerminalInSplitPane(t *testing.T, env realMouseE2EEnv, sourcePaneID, newPaneID string, dir workbench.SplitDirection, terminalID string) string {
+	t.Helper()
+
+	model := env.model
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if err := model.workbench.SplitPane(tab.ID, sourcePaneID, newPaneID, dir); err != nil {
+		t.Fatalf("split pane %q -> %q: %v", sourcePaneID, newPaneID, err)
+	}
+	pane := tab.Panes[newPaneID]
+	if pane == nil {
+		t.Fatalf("expected new pane %q after split", newPaneID)
+	}
+	pane.TerminalID = terminalID
+	pane.Title = newPaneID
+	if _, err := model.runtime.AttachTerminal(env.ctx, newPaneID, terminalID, "collaborator"); err != nil {
+		t.Fatalf("attach shared terminal %q to pane %q: %v", terminalID, newPaneID, err)
+	}
+	model.render.Invalidate()
+	return newPaneID
 }
 
 // e2eWaitSocket dials the unix socket in a loop until it succeeds or the

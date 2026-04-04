@@ -106,17 +106,6 @@ func (m *Model) handleMouseClickNonFloating(x, y int) tea.Cmd {
 	}
 
 	bodyRect := m.bodyRect()
-	if tab.Root != nil {
-		if hit, ok := tab.Root.DividerAt(bodyRect, x, contentY); ok {
-			m.mouseDragPaneID = ""
-			m.mouseDragMode = mouseDragResizeSplit
-			m.mouseDragSplit = hit.Node
-			m.mouseDragBounds = hit.Root
-			m.mouseDragOffsetX = x - hit.Rect.X
-			m.mouseDragOffsetY = contentY - hit.Rect.Y
-			return nil
-		}
-	}
 	visible := m.workbench.VisibleWithSize(bodyRect)
 	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
 		return nil
@@ -140,14 +129,29 @@ func (m *Model) handleMouseClickNonFloating(x, y int) tea.Cmd {
 				m.render.Invalidate()
 				return cmd
 			}
-			if pane.ID != tab.ActivePaneID {
-				_ = m.workbench.FocusPane(tab.ID, pane.ID)
-				m.render.Invalidate()
-			}
+		}
+	}
+
+	if tab.Root != nil {
+		if hit, ok := tab.Root.DividerAt(bodyRect, x, contentY); ok {
+			m.mouseDragPaneID = ""
+			m.mouseDragMode = mouseDragResizeSplit
+			m.mouseDragSplit = hit.Node
+			m.mouseDragBounds = hit.Root
+			m.mouseDragOffsetX = x - hit.Rect.X
+			m.mouseDragOffsetY = contentY - hit.Rect.Y
 			return nil
 		}
 	}
 
+	tiled, _, ok := m.visiblePaneAt(x, contentY)
+	if !ok || tiled == nil {
+		return nil
+	}
+	if tiled.ID != tab.ActivePaneID {
+		_ = m.workbench.FocusPane(tab.ID, tiled.ID)
+		m.render.Invalidate()
+	}
 	return nil
 }
 
@@ -349,6 +353,7 @@ func (m *Model) handleOwnerActionClick(paneID string) tea.Cmd {
 	}
 	m.ownerConfirmPaneID = paneID
 	m.ownerSeq++
+	m.render.Invalidate()
 	return clearOwnerConfirmCmd(m.ownerSeq)
 }
 

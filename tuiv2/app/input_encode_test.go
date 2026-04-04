@@ -40,6 +40,8 @@ func TestEncodeTerminalKeyMsgControlAndPrintableKeys(t *testing.T) {
 		msg  tea.KeyMsg
 		want string
 	}{
+		{name: "enter", msg: tea.KeyMsg{Type: tea.KeyEnter}, want: "\n"},
+		{name: "alt-enter", msg: tea.KeyMsg{Type: tea.KeyEnter, Alt: true}, want: "\x1b\n"},
 		{name: "ctrl-c", msg: tea.KeyMsg{Type: tea.KeyCtrlC}, want: "\x03"},
 		{name: "alt-ctrl-c", msg: tea.KeyMsg{Type: tea.KeyCtrlC, Alt: true}, want: "\x1b\x03"},
 		{name: "alt-rune", msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}, Alt: true}, want: "\x1bx"},

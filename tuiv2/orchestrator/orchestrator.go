@@ -62,6 +62,7 @@ func (o *Orchestrator) AttachAndLoadSnapshot(ctx context.Context, paneID, termin
 		return nil, err
 	}
 	o.bindWorkbenchPaneTerminal(paneID, terminalID)
+	o.syncWorkbenchPaneTitle(terminalID, terminal)
 	snapshot, err := o.runtime.LoadSnapshot(ctx, terminalID, offset, limit)
 	if err != nil {
 		return nil, err
@@ -89,4 +90,11 @@ func (o *Orchestrator) bindWorkbenchPaneTerminal(paneID, terminalID string) {
 		_ = o.workbench.FocusPane(tab.ID, paneID)
 		return
 	}
+}
+
+func (o *Orchestrator) syncWorkbenchPaneTitle(terminalID string, terminal *runtime.TerminalRuntime) {
+	if o == nil || o.workbench == nil || terminalID == "" || terminal == nil || terminal.Name == "" {
+		return
+	}
+	o.workbench.SetPaneTitleByTerminalID(terminalID, terminal.Name)
 }

@@ -88,6 +88,11 @@ func TestRuntimeAttachAndLoadSnapshotInitializesVTermCache(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
 	client.attachResult = &protocol.AttachResult{Channel: 7, Mode: "collaborator"}
+	client.listResult = &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
+		ID:    "term-1",
+		Name:  "shell",
+		State: "running",
+	}}}
 	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 6, 3, []string{
 		"hello",
 		"world",
@@ -114,6 +119,9 @@ func TestRuntimeAttachAndLoadSnapshotInitializesVTermCache(t *testing.T) {
 	stored := rt.Registry().Get("term-1")
 	if stored == nil || stored.Snapshot == nil {
 		t.Fatal("expected snapshot cached on terminal runtime")
+	}
+	if stored.Name != "shell" {
+		t.Fatalf("expected attach to hydrate terminal metadata name, got %q", stored.Name)
 	}
 	screen := stored.VTerm.ScreenContent()
 	if len(screen.Cells) < 2 || len(screen.Cells[0]) < 5 || len(screen.Cells[1]) < 5 {

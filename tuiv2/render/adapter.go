@@ -8,15 +8,17 @@ import (
 )
 
 type VisibleRenderState struct {
-	Workbench          *workbench.VisibleWorkbench
-	Runtime            *VisibleRuntimeStateProxy
-	Surface            VisibleSurface
-	Overlay            VisibleOverlay
-	TermSize           TermSize
-	Notice             string
-	Error              string
-	InputMode          string
-	OwnerConfirmPaneID string
+	Workbench                *workbench.VisibleWorkbench
+	Runtime                  *VisibleRuntimeStateProxy
+	Surface                  VisibleSurface
+	Overlay                  VisibleOverlay
+	TermSize                 TermSize
+	Notice                   string
+	Error                    string
+	InputMode                string
+	OwnerConfirmPaneID       string
+	EmptyPaneSelectionPaneID string
+	EmptyPaneSelectionIndex  int
 }
 
 type VisibleRuntimeStateProxy = runtime.VisibleRuntime
@@ -169,5 +171,11 @@ func WithStatus(state VisibleRenderState, notice, errText, inputMode string) Vis
 	state.Notice = notice
 	state.Error = errText
 	state.InputMode = inputMode
+	return state
+}
+
+func WithEmptyPaneSelection(state VisibleRenderState, paneID string, selected int) VisibleRenderState {
+	state.EmptyPaneSelectionPaneID = paneID
+	state.EmptyPaneSelectionIndex = selected
 	return state
 }

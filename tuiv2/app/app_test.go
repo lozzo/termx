@@ -151,6 +151,66 @@ func TestModelUpdatePickerNavigation(t *testing.T) {
 	}
 }
 
+func TestModelUpdateEmptyPaneKeyboardNavigationEnterOpensPicker(t *testing.T) {
+	model := setupModel(t, modelOpts{
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{{
+					ID:           "tab-1",
+					Name:         "tab 1",
+					ActivePaneID: "pane-1",
+					Panes: map[string]*workbench.PaneState{
+						"pane-1": {ID: "pane-1", Title: "empty"},
+					},
+					Root: workbench.NewLeaf("pane-1"),
+				}},
+			},
+		},
+	})
+
+	dispatchKey(t, model, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModePicker {
+		t.Fatalf("expected picker session after enter, got %#v", model.modalHost.Session)
+	}
+	if got := model.emptyPaneSelectionIndex; got != 0 {
+		t.Fatalf("expected default empty-pane selection 0, got %d", got)
+	}
+}
+
+func TestModelUpdateEmptyPaneKeyboardNavigationDownEnterOpensCreatePrompt(t *testing.T) {
+	model := setupModel(t, modelOpts{
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{{
+					ID:           "tab-1",
+					Name:         "tab 1",
+					ActivePaneID: "pane-1",
+					Panes: map[string]*workbench.PaneState{
+						"pane-1": {ID: "pane-1", Title: "empty"},
+					},
+					Root: workbench.NewLeaf("pane-1"),
+				}},
+			},
+		},
+	})
+
+	dispatchKey(t, model, tea.KeyMsg{Type: tea.KeyDown})
+	if got := model.emptyPaneSelectionIndex; got != 1 {
+		t.Fatalf("expected empty-pane selection 1 after down, got %d", got)
+	}
+
+	dispatchKey(t, model, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-terminal-name" {
+		t.Fatalf("expected create-terminal prompt after down+enter, got %#v", model.modalHost.Prompt)
+	}
+}
+
 func TestModelUpdateSemanticActionMsgUsesSameLocalActionPath(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
 
@@ -163,6 +223,58 @@ func TestModelUpdateSemanticActionMsgUsesSameLocalActionPath(t *testing.T) {
 	}
 	if model.input.Mode().Kind != input.ModePane {
 		t.Fatalf("expected pane mode, got %q", model.input.Mode().Kind)
+	}
+}
+
+func TestAttachPaneTerminalShowsTerminalNameImmediately(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	client := &recordingBridgeClient{
+		attachResult: &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
+			ID:    "term-1",
+			Name:  "shell",
+			State: "running",
+		}}},
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-1": {
+				TerminalID: "term-1",
+				Size:       protocol.Size{Cols: 80, Rows: 24},
+				Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "x", Width: 1}}}},
+			},
+		},
+	}
+	model := New(shared.Config{}, wb, runtime.New(client))
+	model.width = 100
+	model.height = 30
+
+	cmd := model.attachPaneTerminalCmd("", "pane-1", "term-1")
+	if cmd == nil {
+		t.Fatal("expected attach command")
+	}
+	drainCmd(t, model, cmd, 20)
+
+	pane := model.workbench.ActivePane()
+	if pane == nil {
+		t.Fatal("expected active pane")
+	}
+	if pane.Title != "shell" {
+		t.Fatalf("expected pane title initialized from terminal name, got %q", pane.Title)
+	}
+	if view := xansi.Strip(model.View()); !strings.Contains(view, "shell") {
+		t.Fatalf("expected view to contain terminal name immediately, got:\n%s", view)
 	}
 }
 
@@ -432,22 +544,59 @@ func TestHandleTerminalInputQueuesWhileSendInFlight(t *testing.T) {
 
 func TestQueueInvalidateCoalescesPendingRedraws(t *testing.T) {
 	model := New(shared.Config{}, nil, runtime.New(nil))
-	var sent []tea.Msg
+	sent := make(chan tea.Msg, 4)
 	model.SetSendFunc(func(msg tea.Msg) {
-		sent = append(sent, msg)
+		sent <- msg
 	})
 
 	model.queueInvalidate()
 	model.queueInvalidate()
-	if len(sent) != 1 {
-		t.Fatalf("expected one coalesced invalidate message, got %#v", sent)
+	select {
+	case msg := <-sent:
+		if _, ok := msg.(InvalidateMsg); !ok {
+			t.Fatalf("expected invalidate message, got %#v", msg)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for coalesced invalidate message")
+	}
+	select {
+	case msg := <-sent:
+		t.Fatalf("expected one coalesced invalidate message before update, got extra %#v", msg)
+	case <-time.After(50 * time.Millisecond):
 	}
 
 	_, _ = model.Update(InvalidateMsg{})
 	model.queueInvalidate()
-	if len(sent) != 2 {
-		t.Fatalf("expected invalidate to be re-armed after handling message, got %#v", sent)
+	select {
+	case msg := <-sent:
+		if _, ok := msg.(InvalidateMsg); !ok {
+			t.Fatalf("expected invalidate message after re-arm, got %#v", msg)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for re-armed invalidate message")
 	}
+}
+
+func TestQueueInvalidateDoesNotBlockOnSend(t *testing.T) {
+	model := New(shared.Config{}, nil, runtime.New(nil))
+	release := make(chan struct{})
+	model.SetSendFunc(func(msg tea.Msg) {
+		<-release
+	})
+
+	done := make(chan struct{})
+	go func() {
+		model.queueInvalidate()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("queueInvalidate blocked on send")
+	}
+
+	close(release)
 }
 
 func TestModelViewShowsPickerItems(t *testing.T) {

@@ -128,6 +128,14 @@ func (m *Model) submitCreateTerminalTagsPrompt(prompt *modal.PromptState, paneID
 				return err
 			}
 		}
+		if m.runtime != nil && m.runtime.Registry() != nil {
+			terminal := m.runtime.Registry().GetOrCreate(created.TerminalID)
+			if terminal != nil {
+				terminal.Name = name
+				terminal.Tags = cloneStringMap(tags)
+				terminal.State = created.State
+			}
+		}
 		switch prompt.CreateTarget {
 		case modal.CreateTargetSplit:
 			if cmd := m.splitPaneAndAttachTerminalCmd(pane, created.TerminalID); cmd != nil {

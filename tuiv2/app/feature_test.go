@@ -150,8 +150,7 @@ func dispatchKey(t *testing.T, model *Model, msg tea.KeyMsg) {
 	if result == nil {
 		return
 	}
-	_, nextCmd := model.Update(result)
-	drainCmd(t, model, nextCmd, 20)
+	drainMsg(t, model, result, 20)
 }
 
 func assertMode(t *testing.T, model *Model, expected input.ModeKind) {
@@ -2342,6 +2341,42 @@ func TestFeatureKeyDrivenNormalPassthrough(t *testing.T) {
 	}
 	if string(client.inputCalls[0].data) != "a" {
 		t.Fatalf("expected passthrough input 'a', got %q", string(client.inputCalls[0].data))
+	}
+}
+
+func TestFeatureKeyDrivenNormalEnterPassthrough(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	client := model.runtime.Client().(*recordingBridgeClient)
+	assertMode(t, model, input.ModeNormal)
+
+	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected terminal input command for enter in normal mode")
+	}
+	drainCmd(t, model, cmd, 10)
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected one input call, got %#v", client.inputCalls)
+	}
+	if string(client.inputCalls[0].data) != "\n" {
+		t.Fatalf("expected enter passthrough '\\n', got %q", string(client.inputCalls[0].data))
+	}
+}
+
+func TestFeatureKeyDrivenNormalArrowPassthrough(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	client := model.runtime.Client().(*recordingBridgeClient)
+	assertMode(t, model, input.ModeNormal)
+
+	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if cmd == nil {
+		t.Fatal("expected terminal input command for down in normal mode")
+	}
+	drainCmd(t, model, cmd, 10)
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected one input call, got %#v", client.inputCalls)
+	}
+	if string(client.inputCalls[0].data) != "\x1b[B" {
+		t.Fatalf("expected down-arrow passthrough '\\x1b[B', got %q", string(client.inputCalls[0].data))
 	}
 }
 

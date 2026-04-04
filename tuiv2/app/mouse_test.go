@@ -396,6 +396,7 @@ func TestMouseClickOwnerButtonPromotesPaneAndResizesTerminal(t *testing.T) {
 	if !model.mouseHitsOwnerButton(pane, buttonRect.X, buttonRect.Y) {
 		t.Fatalf("expected owner action click at %+v to hit", buttonRect)
 	}
+	_ = model.View()
 
 	_, cmd := model.Update(tea.MouseMsg{
 		X:      buttonRect.X,
