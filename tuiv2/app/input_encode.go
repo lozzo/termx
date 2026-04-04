@@ -91,7 +91,8 @@ func encodePrintableTeaKey(msg tea.KeyMsg) ([]byte, bool) {
 func encodeControlTeaKey(msg tea.KeyMsg) ([]byte, bool) {
 	switch msg.Type {
 	case tea.KeyEnter:
-		return prependEscape(msg.Alt, []byte{'\n'}), true
+		// Enter and Ctrl-M are both carriage return at the terminal layer.
+		return prependEscape(msg.Alt, []byte{'\r'}), true
 	case tea.KeyTab:
 		return prependEscape(msg.Alt, []byte{'\t'}), true
 	case tea.KeyBackspace:

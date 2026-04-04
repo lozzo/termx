@@ -229,8 +229,30 @@ func TestRouteKeyMsg_Enter_NormalMode_Passthrough(t *testing.T) {
 	if result.Action != nil {
 		t.Fatalf("expected no action, got %#v", result.Action)
 	}
+	if result.TerminalInput == nil || len(result.TerminalInput.Data) != 1 || result.TerminalInput.Data[0] != '\r' {
+		t.Fatalf("expected enter passthrough carriage return, got %#v", result.TerminalInput)
+	}
+}
+
+func TestRouteKeyMsg_CtrlJ_NormalMode_Passthrough(t *testing.T) {
+	r := NewRouter()
+	result := r.RouteKeyMsg(ctrlKey(tea.KeyCtrlJ))
+	if result.Action != nil {
+		t.Fatalf("expected no action, got %#v", result.Action)
+	}
 	if result.TerminalInput == nil || len(result.TerminalInput.Data) != 1 || result.TerminalInput.Data[0] != '\n' {
-		t.Fatalf("expected enter passthrough newline, got %#v", result.TerminalInput)
+		t.Fatalf("expected Ctrl-J passthrough line feed, got %#v", result.TerminalInput)
+	}
+}
+
+func TestRouteKeyMsg_CtrlM_NormalMode_Passthrough(t *testing.T) {
+	r := NewRouter()
+	result := r.RouteKeyMsg(ctrlKey(tea.KeyCtrlM))
+	if result.Action != nil {
+		t.Fatalf("expected no action, got %#v", result.Action)
+	}
+	if result.TerminalInput == nil || len(result.TerminalInput.Data) != 1 || result.TerminalInput.Data[0] != '\r' {
+		t.Fatalf("expected Ctrl-M passthrough carriage return, got %#v", result.TerminalInput)
 	}
 }
 

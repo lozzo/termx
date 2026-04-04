@@ -2392,8 +2392,44 @@ func TestFeatureKeyDrivenNormalEnterPassthrough(t *testing.T) {
 	if len(client.inputCalls) != 1 {
 		t.Fatalf("expected one input call, got %#v", client.inputCalls)
 	}
+	if string(client.inputCalls[0].data) != "\r" {
+		t.Fatalf("expected enter passthrough '\\r', got %q", string(client.inputCalls[0].data))
+	}
+}
+
+func TestFeatureKeyDrivenNormalCtrlJPassthrough(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	client := model.runtime.Client().(*recordingBridgeClient)
+	assertMode(t, model, input.ModeNormal)
+
+	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	if cmd == nil {
+		t.Fatal("expected terminal input command for Ctrl-J in normal mode")
+	}
+	drainCmd(t, model, cmd, 10)
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected one input call, got %#v", client.inputCalls)
+	}
 	if string(client.inputCalls[0].data) != "\n" {
-		t.Fatalf("expected enter passthrough '\\n', got %q", string(client.inputCalls[0].data))
+		t.Fatalf("expected Ctrl-J passthrough '\\n', got %q", string(client.inputCalls[0].data))
+	}
+}
+
+func TestFeatureKeyDrivenNormalCtrlMPassthrough(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	client := model.runtime.Client().(*recordingBridgeClient)
+	assertMode(t, model, input.ModeNormal)
+
+	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlM})
+	if cmd == nil {
+		t.Fatal("expected terminal input command for Ctrl-M in normal mode")
+	}
+	drainCmd(t, model, cmd, 10)
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected one input call, got %#v", client.inputCalls)
+	}
+	if string(client.inputCalls[0].data) != "\r" {
+		t.Fatalf("expected Ctrl-M passthrough '\\r', got %q", string(client.inputCalls[0].data))
 	}
 }
 
