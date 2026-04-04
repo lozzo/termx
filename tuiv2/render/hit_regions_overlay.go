@@ -213,11 +213,7 @@ func promptOverlayHitRegions(prompt *modal.PromptState, width, height int) []Hit
 		}
 		rect := promptInputRect(layout, prompt, inputLine)
 		if prompt.IsForm() && fieldIndex < len(prompt.Fields) {
-			label := prompt.Fields[fieldIndex].Label
-			if prompt.Fields[fieldIndex].Required {
-				label += "*"
-			}
-			rect = promptInputRectForLabel(layout, label, inputLine)
+			rect = promptFormInputRect(layout, prompt, inputLine, fieldIndex)
 		}
 		regions = append(regions, HitRegion{
 			Kind:      HitRegionPromptInput,

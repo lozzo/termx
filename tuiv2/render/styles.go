@@ -98,42 +98,42 @@ func uiThemeFromHostColors(hostBG, hostFG string) uiTheme {
 		hostFG = contrastTextColor(hostBG)
 	}
 
-	chromeBG := mixHex(hostBG, "#0f172a", 0.76)
-	chromeAltBG := mixHex(hostBG, "#111827", 0.88)
-	panelBG := mixHex(hostBG, "#0b1324", 0.9)
-	panelAltBG := mixHex(hostBG, "#101a2e", 0.84)
-	panelStrong := mixHex(hostBG, "#172338", 0.84)
+	chromeBG := mixHex(hostBG, hostFG, 0.08)
+	chromeAltBG := mixHex(hostBG, hostFG, 0.12)
+	panelBG := mixHex(hostBG, hostFG, 0.06)
+	panelAltBG := mixHex(hostBG, hostFG, 0.1)
+	panelStrong := mixHex(hostBG, hostFG, 0.14)
 	panelText := contrastTextColor(panelBG)
-	panelMuted := mixHex(panelText, panelBG, 0.38)
-	panelBorder := mixHex(hostBG, panelText, 0.28)
-	panelBorder2 := mixHex(hostBG, panelText, 0.18)
-	fieldBG := mixHex(hostBG, "#101a2e", 0.8)
+	panelMuted := mixHex(panelText, panelBG, 0.4)
+	panelBorder := mixHex(hostBG, hostFG, 0.34)
+	panelBorder2 := mixHex(hostBG, hostFG, 0.22)
+	fieldBG := mixHex(hostBG, hostFG, 0.1)
 	fieldText := contrastTextColor(fieldBG)
-	selectedBG := mixHex(hostBG, "#1d4ed8", 0.7)
+	selectedBG := mixHex(hostBG, hostFG, 0.16)
 	selectedText := contrastTextColor(selectedBG)
-	createBG := mixHex(hostBG, "#14532d", 0.78)
+	createBG := mixHex(hostBG, hostFG, 0.18)
 	createText := contrastTextColor(createBG)
-	metaBG := mixHex(hostBG, "#121c2e", 0.84)
+	metaBG := mixHex(hostBG, hostFG, 0.11)
 	metaText := contrastTextColor(metaBG)
-	errorBG := mixHex(hostBG, "#7f1d1d", 0.92)
+	errorBG := mixHex(hostBG, hostFG, 0.2)
 	errorFG := contrastTextColor(errorBG)
-	noticeBG := mixHex(hostBG, "#0f766e", 0.86)
+	noticeBG := mixHex(hostBG, hostFG, 0.16)
 	noticeFG := contrastTextColor(noticeBG)
-	footerKeyBG := mixHex(hostBG, "#223554", 0.84)
+	footerKeyBG := mixHex(hostBG, hostFG, 0.14)
 	footerKeyFG := contrastTextColor(footerKeyBG)
-	footerTextBG := mixHex(hostBG, "#101a2e", 0.9)
+	footerTextBG := mixHex(hostBG, hostFG, 0.1)
 	footerTextFG := contrastTextColor(footerTextBG)
-	tabWorkspaceBG := mixHex(hostBG, "#182033", 0.9)
+	tabWorkspaceBG := mixHex(hostBG, hostFG, 0.14)
 	tabWorkspaceFG := contrastTextColor(tabWorkspaceBG)
 	tabActiveBG := hostBG
 	tabActiveFG := contrastTextColor(tabActiveBG)
-	tabInactiveBG := mixHex(hostBG, "#64748b", 0.32)
+	tabInactiveBG := mixHex(hostBG, hostFG, 0.18)
 	tabInactiveFG := mixHex(tabActiveFG, tabInactiveBG, 0.56)
 	tabCreateBG := tabActiveBG
 	tabCreateFG := tabActiveFG
-	tabActionBG := mixHex(hostBG, "#111827", 0.84)
+	tabActionBG := mixHex(hostBG, hostFG, 0.12)
 	tabActionFG := contrastTextColor(tabActionBG)
-	tabActionOnBG := mixHex(hostBG, "#1f2937", 0.82)
+	tabActionOnBG := mixHex(hostBG, hostFG, 0.16)
 	tabActionOnFG := contrastTextColor(tabActionOnBG)
 
 	return uiTheme{
@@ -143,8 +143,8 @@ func uiThemeFromHostColors(hostBG, hostFG string) uiTheme {
 		chromeBG:     chromeBG,
 		chromeAltBG:  chromeAltBG,
 		chromeText:   contrastTextColor(chromeBG),
-		chromeMuted:  mixHex(contrastTextColor(chromeBG), chromeBG, 0.42),
-		chromeAccent: mixHex("#8b5cf6", hostBG, 0.16),
+		chromeMuted:  mixHex(contrastTextColor(chromeBG), chromeBG, 0.46),
+		chromeAccent: mixHex(hostBG, hostFG, 0.58),
 
 		panelBG:      panelBG,
 		panelAltBG:   panelAltBG,
@@ -156,7 +156,7 @@ func uiThemeFromHostColors(hostBG, hostFG string) uiTheme {
 
 		fieldBG:     fieldBG,
 		fieldText:   fieldText,
-		fieldAccent: mixHex("#67e8f9", hostBG, 0.18),
+		fieldAccent: mixHex(hostBG, hostFG, 0.78),
 
 		selectedBG:   selectedBG,
 		selectedText: selectedText,
@@ -170,10 +170,10 @@ func uiThemeFromHostColors(hostBG, hostFG string) uiTheme {
 		noticeBG: noticeBG,
 		noticeFG: noticeFG,
 
-		success: mixHex("#4ade80", hostBG, 0.1),
-		warning: mixHex("#fbbf24", hostBG, 0.12),
-		danger:  mixHex("#f87171", hostBG, 0.12),
-		info:    mixHex("#67e8f9", hostBG, 0.14),
+		success: mixHex(hostBG, hostFG, 0.3),
+		warning: mixHex(hostBG, hostFG, 0.42),
+		danger:  mixHex(hostBG, hostFG, 0.24),
+		info:    mixHex(hostBG, hostFG, 0.5),
 
 		footerKeyBG:   footerKeyBG,
 		footerKeyFG:   footerKeyFG,
@@ -316,47 +316,41 @@ func statusMetaStyle(theme uiTheme) lipgloss.Style {
 
 func terminalPickerBodyStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.panelText)).
+		Foreground(lipgloss.Color(theme.hostFG)).
 		Background(lipgloss.Color(theme.hostBG))
 }
 
 func terminalPickerTitleStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.panelText)).
-		Background(lipgloss.Color(theme.panelStrong)).
+		Foreground(lipgloss.Color(theme.hostFG)).
+		Background(lipgloss.Color(theme.panelBG)).
 		Padding(0, 1).
 		Bold(true)
 }
 
 func modalBorderTitleStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.panelText)).
+		Foreground(lipgloss.Color(theme.hostFG)).
 		Background(lipgloss.Color(theme.panelBG)).
 		Bold(true)
 }
 
-func terminalPickerQueryStyle(theme uiTheme) lipgloss.Style {
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.fieldText)).
-		Background(lipgloss.Color(theme.fieldBG))
-}
-
 func pickerBorderStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.panelBorder)).
-		Background(lipgloss.Color(theme.panelBG))
+		Foreground(lipgloss.Color(mixHex(theme.hostBG, theme.hostFG, 0.42))).
+		Background(lipgloss.Color(mixHex(theme.hostBG, theme.hostFG, 0.06)))
 }
 
 func pickerFooterStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.panelMuted)).
-		Background(lipgloss.Color(theme.panelAltBG))
+		Background(lipgloss.Color(mixHex(theme.hostBG, theme.hostFG, 0.09)))
 }
 
 func pickerLineStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.panelText)).
-		Background(lipgloss.Color(theme.panelBG))
+		Foreground(lipgloss.Color(theme.hostFG)).
+		Background(lipgloss.Color(mixHex(theme.hostBG, theme.hostFG, 0.06)))
 }
 
 func pickerSelectedLineStyle(theme uiTheme) lipgloss.Style {
@@ -373,23 +367,30 @@ func pickerCreateRowStyle(theme uiTheme) lipgloss.Style {
 		Bold(true)
 }
 
-func overlayFieldPrefixStyle(theme uiTheme) lipgloss.Style {
+func overlayCardFillStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.fieldAccent)).
-		Background(lipgloss.Color(theme.fieldBG)).
+		Foreground(lipgloss.Color(theme.hostFG)).
+		Background(lipgloss.Color(mixHex(theme.hostBG, theme.hostFG, 0.06)))
+}
+
+func promptFieldMarkerStyle(theme uiTheme, _ bool) lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color(theme.panelMuted))
+}
+
+func promptFieldLabelStyle(theme uiTheme, _ bool) lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color(theme.panelMuted)).
 		Bold(true)
 }
 
-func overlayFieldValueStyle(theme uiTheme) lipgloss.Style {
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.fieldText)).
-		Background(lipgloss.Color(theme.fieldBG))
-}
-
-func overlayCardFillStyle(theme uiTheme) lipgloss.Style {
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.panelText)).
-		Background(lipgloss.Color(theme.panelBG))
+func promptFieldValueStyle(theme uiTheme, active bool) lipgloss.Style {
+	style := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(theme.hostFG))
+	if active {
+		style = style.Underline(true)
+	}
+	return style
 }
 
 func overlaySectionTitleStyle(theme uiTheme) lipgloss.Style {

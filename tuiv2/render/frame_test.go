@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	xansi "github.com/charmbracelet/x/ansi"
+	rtpkg "github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -113,5 +114,36 @@ func TestRenderStatusBarFloatingModeShowsOnlyActiveFloatingActions(t *testing.T)
 func TestPadPaneBorderSlotCentersText(t *testing.T) {
 	if got := padPaneBorderSlot("x2", 4); got != " x2 " {
 		t.Fatalf("expected centered slot padding, got %q", got)
+	}
+}
+
+func TestRenderTabBarFillerUsesActiveTabBackground(t *testing.T) {
+	state := VisibleRenderState{
+		Workbench: &workbench.VisibleWorkbench{
+			WorkspaceName: "main",
+			ActiveTab:     0,
+			Tabs: []workbench.VisibleTab{
+				{ID: "tab-1", Name: "build"},
+			},
+		},
+		Runtime: &rtpkg.VisibleRuntime{
+			HostDefaultBG: "#f5f5f5",
+			HostDefaultFG: "#111111",
+		},
+		TermSize: TermSize{Width: 60, Height: 20},
+	}
+
+	theme := uiThemeForState(state)
+	layout := buildTabBarLayout(state)
+	left := renderTabBarLeft(layout)
+	fillerWidth := state.TermSize.Width - xansi.StringWidth(left)
+	if fillerWidth <= 0 {
+		t.Fatalf("expected positive filler width, got %d", fillerWidth)
+	}
+
+	line := renderTabBar(state)
+	expectedFiller := backgroundStyle(theme.tabActiveBG).Width(fillerWidth).Render("")
+	if !strings.HasSuffix(line, expectedFiller) {
+		t.Fatalf("expected tab bar filler to use active bg %q", theme.tabActiveBG)
 	}
 }

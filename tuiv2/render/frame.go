@@ -22,7 +22,7 @@ func FrameBodyHeight(totalHeight int) int {
 func renderTabBar(state VisibleRenderState) string {
 	theme := uiThemeForState(state)
 	layout := buildTabBarLayout(state)
-	return fillLine(renderTabBarLeft(layout), layout.rightText, state.TermSize.Width, theme.chromeBG)
+	return fillLine(renderTabBarLeft(layout), layout.rightText, state.TermSize.Width, theme.tabActiveBG)
 }
 
 func renderStatusBar(state VisibleRenderState) string {

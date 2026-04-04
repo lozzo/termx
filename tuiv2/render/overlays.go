@@ -264,6 +264,25 @@ func promptInputRectForLabel(layout pickerCardLayout, label string, inputLine in
 	}
 }
 
+func promptFormInputRect(layout pickerCardLayout, prompt *modal.PromptState, inputLine, fieldIndex int) workbench.Rect {
+	if prompt == nil || fieldIndex < 0 || fieldIndex >= len(prompt.Fields) {
+		return workbench.Rect{}
+	}
+	label := prompt.Fields[fieldIndex].Label
+	if prompt.Fields[fieldIndex].Required {
+		label += "*"
+	}
+	prefixWidth := xansi.StringWidth("  " + strings.TrimSpace(label) + ": ")
+	editableX := layout.cardX + 1 + maxInt(0, prefixWidth)
+	editableW := maxInt(1, layout.innerWidth-maxInt(0, prefixWidth))
+	return workbench.Rect{
+		X: editableX,
+		Y: layout.firstItemY + inputLine,
+		W: editableW,
+		H: 1,
+	}
+}
+
 func layoutOverlayFooterActions(specs []overlayFooterActionSpec, rowRect workbench.Rect) (string, []overlayFooterActionLayout) {
 	return layoutOverlayFooterActionsWithTheme(defaultUITheme(), specs, rowRect)
 }
@@ -661,12 +680,14 @@ func renderCardContentRow(theme uiTheme, content string, innerWidth int) string 
 
 func renderOverlaySearchLine(theme uiTheme, query string, innerWidth int) string {
 	value := query + "_"
-	row := overlayFieldPrefixStyle(theme).Render("search: ") + overlayFieldValueStyle(theme).Render(value)
-	remain := innerWidth - xansi.StringWidth("search: ") - xansi.StringWidth(value)
+	row := promptFieldMarkerStyle(theme, false).Render("  ") +
+		promptFieldLabelStyle(theme, true).Render("search: ") +
+		promptFieldValueStyle(theme, true).Render(value)
+	remain := innerWidth - xansi.StringWidth("  ") - xansi.StringWidth("search: ") - xansi.StringWidth(value)
 	if remain > 0 {
-		row += overlayFieldValueStyle(theme).Render(strings.Repeat(" ", remain))
+		row += strings.Repeat(" ", remain)
 	}
-	return terminalPickerQueryStyle(theme).Render(forceWidthANSIOverlay(row, innerWidth))
+	return overlayCardFillStyle(theme).Width(innerWidth).Render(forceWidthANSIOverlay(row, innerWidth))
 }
 
 func renderOverlayFooterLine(theme uiTheme, footer string, innerWidth int) string {
@@ -678,8 +699,9 @@ func renderOverlayPromptField(theme uiTheme, prompt *modal.PromptState) string {
 		return ""
 	}
 	value := promptValueWithCursor(prompt)
-	row := overlayFieldPrefixStyle(theme).Render(promptFieldLabel(prompt.Kind)+": ") + overlayFieldValueStyle(theme).Render(value)
-	return row
+	return promptFieldMarkerStyle(theme, false).Render("  ") +
+		promptFieldLabelStyle(theme, true).Render(promptFieldLabel(prompt.Kind)+": ") +
+		promptFieldValueStyle(theme, true).Render(value)
 }
 
 func renderOverlayPromptFormField(theme uiTheme, prompt *modal.PromptState, fieldIndex int) string {
@@ -687,9 +709,10 @@ func renderOverlayPromptFormField(theme uiTheme, prompt *modal.PromptState, fiel
 		return ""
 	}
 	field := prompt.Fields[fieldIndex]
-	valueStyle := overlayFieldValueStyle(theme)
+	active := fieldIndex == prompt.ActiveField
+	valueStyle := promptFieldValueStyle(theme, active)
 	value := field.Value
-	if fieldIndex == prompt.ActiveField {
+	if active {
 		runes := []rune(field.Value)
 		cursor := field.Cursor
 		if cursor < 0 {
@@ -707,7 +730,9 @@ func renderOverlayPromptFormField(theme uiTheme, prompt *modal.PromptState, fiel
 	if field.Required {
 		label += "*"
 	}
-	return overlayFieldPrefixStyle(theme).Render(label+": ") + valueStyle.Render(value)
+	return promptFieldMarkerStyle(theme, false).Render("  ") +
+		promptFieldLabelStyle(theme, active).Render(label+": ") +
+		valueStyle.Render(value)
 }
 
 func renderOverlayFooterActionLabel(theme uiTheme, label string) string {
