@@ -5,7 +5,6 @@ import (
 	"strings"
 	"sync"
 
-	"charm.land/lipgloss/v2"
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -52,6 +51,7 @@ type paneRenderEntry struct {
 	Rect         workbench.Rect
 	Title        string
 	Border       paneBorderInfo
+	Theme        uiTheme
 	Overflow     paneOverflowHints
 	ContentKey   paneContentKey
 	FrameKey     paneFrameKey
@@ -65,6 +65,7 @@ type paneFrameKey struct {
 	Rect            workbench.Rect
 	Title           string
 	Border          paneBorderInfo
+	ThemeBG         string
 	Overflow        paneOverflowHints
 	Active          bool
 	Floating        bool
@@ -81,6 +82,7 @@ type paneContentKey struct {
 	Snapshot      *protocol.Snapshot
 	Name          string
 	State         string
+	ThemeBG       string
 	TerminalKnown bool
 	ScrollOffset  int
 }
@@ -222,7 +224,7 @@ func renderBodyFrame(state VisibleRenderState, width, height int) renderedBody {
 	}
 	tab := state.Workbench.Tabs[activeTabIdx]
 	lookup := newRuntimeLookup(state.Runtime)
-	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, lookup, state.OwnerConfirmPaneID)
+	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, lookup, state.OwnerConfirmPaneID, uiThemeForRuntime(state.Runtime))
 
 	canvas := renderBodyCanvas(state, entries, width, height)
 	return renderedBody{
@@ -232,17 +234,18 @@ func renderBodyFrame(state VisibleRenderState, width, height int) renderedBody {
 }
 
 func renderActiveOverlay(state VisibleRenderState, termSize TermSize) string {
+	theme := uiThemeForState(state)
 	switch state.Overlay.Kind {
 	case VisibleOverlayPrompt:
-		return renderPromptOverlay(state.Overlay.Prompt, termSize)
+		return renderPromptOverlayWithTheme(state.Overlay.Prompt, termSize, theme)
 	case VisibleOverlayPicker:
-		return renderPickerOverlay(state.Overlay.Picker, termSize)
+		return renderPickerOverlayWithTheme(state.Overlay.Picker, termSize, theme)
 	case VisibleOverlayWorkspacePicker:
-		return renderWorkspacePickerOverlay(state.Overlay.WorkspacePicker, termSize)
+		return renderWorkspacePickerOverlayWithTheme(state.Overlay.WorkspacePicker, termSize, theme)
 	case VisibleOverlayTerminalManager:
-		return renderTerminalManagerOverlay(state.Overlay.TerminalManager, termSize)
+		return renderTerminalManagerOverlayWithTheme(state.Overlay.TerminalManager, termSize, theme)
 	case VisibleOverlayHelp:
-		return renderHelpOverlay(state.Overlay.Help, termSize)
+		return renderHelpOverlayWithTheme(state.Overlay.Help, termSize, theme)
 	default:
 		return ""
 	}
@@ -254,7 +257,7 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 		canvas := newComposedCanvas(width, height)
 		canvas.cursorOffsetY = TopChromeRows
 		for _, entry := range entries {
-			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active, entry.Floating)
+			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 		}
 		return canvas
@@ -264,7 +267,7 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 		canvas := newComposedCanvas(width, height)
 		canvas.cursorOffsetY = TopChromeRows
 		for _, entry := range entries {
-			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active, entry.Floating)
+			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 		}
 		coordinator.bodyCache = newBodyRenderCache(canvas, entries, width, height)
@@ -276,7 +279,7 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 		cache.canvas.cursorVisible = false
 		for _, entry := range entries {
 			if cache.frameKeys[entry.PaneID] != entry.FrameKey {
-				drawPaneFrame(cache.canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active, entry.Floating)
+				drawPaneFrame(cache.canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
 				changed = true
 			}
 			if cache.contentKeys[entry.PaneID] != entry.ContentKey {
@@ -308,7 +311,7 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 	canvas := newComposedCanvas(width, height)
 	canvas.cursorOffsetY = TopChromeRows
 	for _, entry := range entries {
-		drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active, entry.Floating)
+		drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
 		drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 	}
 	projectActiveEntryCursor(canvas, entries, state.Runtime)
@@ -327,7 +330,7 @@ func stateCoordinator(state VisibleRenderState) *Coordinator {
 
 var currentCoordinator *Coordinator
 
-func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePane, width, height int, lookup runtimeLookup, confirmPaneID string) []paneRenderEntry {
+func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePane, width, height int, lookup runtimeLookup, confirmPaneID string, theme uiTheme) []paneRenderEntry {
 	entries := make([]paneRenderEntry, 0, len(tab.Panes)+len(floating))
 	zoomedPaneID := tab.ZoomedPaneID
 	for _, pane := range tab.Panes {
@@ -342,14 +345,14 @@ func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePan
 		if !ok {
 			continue
 		}
-		entries = append(entries, buildPaneRenderEntry(pane, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID))
+		entries = append(entries, buildPaneRenderEntry(pane, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, theme))
 	}
 	for _, pane := range floating {
 		rect, ok := clipRectToViewport(pane.Rect, width, height)
 		if !ok {
 			continue
 		}
-		entries = append(entries, buildPaneRenderEntry(pane, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID))
+		entries = append(entries, buildPaneRenderEntry(pane, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, theme))
 	}
 	return entries
 }
@@ -368,7 +371,7 @@ func clipRectToViewport(rect workbench.Rect, width, height int) (workbench.Rect,
 	return workbench.Rect{X: x1, Y: y1, W: x2 - x1, H: y2 - y1}, true
 }
 
-func buildPaneRenderEntry(pane workbench.VisiblePane, rect workbench.Rect, activePaneID string, scrollOffset int, lookup runtimeLookup, confirmPaneID string) paneRenderEntry {
+func buildPaneRenderEntry(pane workbench.VisiblePane, rect workbench.Rect, activePaneID string, scrollOffset int, lookup runtimeLookup, confirmPaneID string, theme uiTheme) paneRenderEntry {
 	active := pane.ID == activePaneID
 	title := resolvePaneTitleWithLookup(pane, lookup)
 	border := paneBorderInfoWithLookup(pane, lookup, confirmPaneID)
@@ -376,6 +379,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, rect workbench.Rect, activ
 	overflow := paneOverflowHints{}
 	contentKey := paneContentKey{
 		TerminalID:    pane.TerminalID,
+		ThemeBG:       theme.panelBG,
 		TerminalKnown: terminal != nil,
 		ScrollOffset:  scrollOffset,
 	}
@@ -390,12 +394,14 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, rect workbench.Rect, activ
 		Rect:       rect,
 		Title:      title,
 		Border:     border,
+		Theme:      theme,
 		Overflow:   overflow,
 		ContentKey: contentKey,
 		FrameKey: paneFrameKey{
 			Rect:            rect,
 			Title:           title,
 			Border:          border,
+			ThemeBG:         theme.panelBG,
 			Overflow:        overflow,
 			Active:          active,
 			Floating:        pane.Floating,
@@ -481,36 +487,38 @@ func renderTerminalPoolPage(pool *modal.TerminalManagerState, runtimeState *Visi
 	if pool == nil {
 		return ""
 	}
+	theme := uiThemeForRuntime(runtimeState)
 	width := maxInt(1, termSize.Width)
 	height := maxInt(1, termSize.Height)
 	layout := buildTerminalPoolPageLayout(pool, width, height)
 	innerWidth := layout.innerWidth
 	headerLines := make([]string, 0, 3)
 
-	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#f8fafc")).Render(coalesce(strings.TrimSpace(pool.Title), "Terminal Pool"))
-	headerLines = append(headerLines, forceWidthANSIOverlay(title, width))
-	headerLines = append(headerLines, forceWidthANSIOverlay(terminalPickerQueryStyle.Render("search: "+pool.Query+"_"), width))
-	headerLines = append(headerLines, forceWidthANSIOverlay("", width))
+	title := terminalPickerTitleStyle(theme).Width(width).Render(forceWidthANSIOverlay(coalesce(strings.TrimSpace(pool.Title), "Terminal Pool"), width))
+	headerLines = append(headerLines, title)
+	headerLines = append(headerLines, forceWidthANSIOverlay(renderOverlaySearchLine(theme, pool.Query, width), width))
+	headerLines = append(headerLines, overlayCardFillStyle(theme).Width(width).Render(""))
 
 	contentLines := make([]string, 0, height)
 
 	items := pool.VisibleItems()
 	for _, row := range terminalPoolListRows(items) {
 		if row.itemIndex < 0 {
-			contentLines = append(contentLines, "  "+forceWidthANSIOverlay(row.groupText, innerWidth))
+			contentLines = append(contentLines, "  "+forceWidthANSIOverlay(overlaySectionTitleStyle(theme).Render(row.groupText), innerWidth))
 			continue
 		}
-		line := items[row.itemIndex].RenderLine(innerWidth, row.itemIndex == pool.Selected, pickerLineStyle, pickerSelectedLineStyle, pickerCreateRowStyle)
+		line := items[row.itemIndex].RenderLine(innerWidth, row.itemIndex == pool.Selected, pickerLineStyle(theme), pickerSelectedLineStyle(theme), pickerCreateRowStyle(theme))
 		contentLines = append(contentLines, "  "+forceWidthANSIOverlay(line, innerWidth))
 	}
 	if detailLines := renderTerminalPoolDetails(pool.SelectedItem(), runtimeState, innerWidth); len(detailLines) > 0 {
-		contentLines = append(contentLines, forceWidthANSIOverlay("", width))
+		contentLines = append(contentLines, overlayCardFillStyle(theme).Width(width).Render(""))
 		for _, line := range detailLines {
 			contentLines = append(contentLines, "  "+forceWidthANSIOverlay(line, innerWidth))
 		}
 	}
 
-	return renderPageWithPinnedFooter(headerLines, contentLines, layout.footerLine, width, height)
+	footerLine, _ := layoutTerminalPoolFooterActionsWithTheme(theme, width, height)
+	return renderPageWithPinnedFooter(headerLines, contentLines, footerLine, width, height)
 }
 
 func renderTerminalPoolDetails(item *modal.PickerItem, runtimeState *VisibleRuntimeStateProxy, innerWidth int) []string {
@@ -615,15 +623,15 @@ func resolvePaneTitleWithLookup(pane workbench.VisiblePane, lookup runtimeLookup
 }
 
 // drawPaneFrame draws the border box with a title on the left and stable chrome slots on the right.
-func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, title string, border paneBorderInfo, overflow paneOverflowHints, active bool, floating bool) {
+func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, title string, border paneBorderInfo, theme uiTheme, overflow paneOverflowHints, active bool, floating bool) {
 	if rect.W < 2 || rect.H < 2 {
 		return
 	}
-	borderFG := "#d1d5db"
-	titleFG := "#e5e7eb"
+	borderFG := theme.panelBorder2
+	titleFG := theme.panelMuted
 	if active {
-		borderFG = "#4ade80"
-		titleFG = "#f0fdf4"
+		borderFG = mixHex(theme.panelBorder, theme.success, 0.38)
+		titleFG = theme.panelText
 	}
 	borderStyle := drawStyle{FG: borderFG}
 	titleStyle := drawStyle{FG: titleFG, Bold: true}
@@ -666,20 +674,20 @@ func drawPaneContent(canvas *composedCanvas, rect workbench.Rect, pane workbench
 	fillRect(canvas, contentRect, blankDrawCell())
 
 	if pane.TerminalID == "" {
-		drawEmptyPaneContent(canvas, contentRect, pane.ID, pane.TerminalID)
+		drawEmptyPaneContent(canvas, contentRect, pane.ID, pane.TerminalID, defaultUITheme())
 		return
 	}
 
 	terminal := lookup.terminal(pane.TerminalID)
 	if terminal == nil {
-		drawEmptyPaneContent(canvas, contentRect, pane.ID, pane.TerminalID)
+		drawEmptyPaneContent(canvas, contentRect, pane.ID, pane.TerminalID, defaultUITheme())
 		return
 	}
 	if terminal.Snapshot == nil || len(terminal.Snapshot.Screen.Cells) == 0 {
-		canvas.drawText(contentRect.X, contentRect.Y, terminal.Name+" ["+terminal.State+"]", drawStyle{FG: "#94a3b8"})
+		canvas.drawText(contentRect.X, contentRect.Y, terminal.Name+" ["+terminal.State+"]", drawStyle{FG: defaultUITheme().panelMuted})
 		return
 	}
-	drawSnapshotWithOffset(canvas, contentRect, terminal.Snapshot, scrollOffset)
+	drawSnapshotWithOffset(canvas, contentRect, terminal.Snapshot, scrollOffset, defaultUITheme())
 	if active {
 		projectPaneCursor(canvas, contentRect, terminal.Snapshot, scrollOffset)
 	}
@@ -689,19 +697,19 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 	contentRect := contentRectForPane(rect)
 	fillRect(canvas, contentRect, blankDrawCell())
 	if entry.TerminalID == "" {
-		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID)
+		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID, entry.Theme)
 		return
 	}
 	terminal := findVisibleTerminal(runtimeState, entry.TerminalID)
 	if terminal == nil {
-		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID)
+		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID, entry.Theme)
 		return
 	}
 	if terminal.Snapshot == nil || len(terminal.Snapshot.Screen.Cells) == 0 {
-		canvas.drawText(contentRect.X, contentRect.Y, terminal.Name+" ["+terminal.State+"]", drawStyle{FG: "#94a3b8"})
+		canvas.drawText(contentRect.X, contentRect.Y, terminal.Name+" ["+terminal.State+"]", drawStyle{FG: entry.Theme.panelMuted})
 		return
 	}
-	drawSnapshotWithOffset(canvas, contentRect, terminal.Snapshot, entry.ScrollOffset)
+	drawSnapshotWithOffset(canvas, contentRect, terminal.Snapshot, entry.ScrollOffset, entry.Theme)
 	if entry.Active {
 		projectPaneCursor(canvas, contentRect, terminal.Snapshot, entry.ScrollOffset)
 	}
@@ -785,7 +793,7 @@ func drawSyntheticCursor(canvas *composedCanvas, x, y int, cursor protocol.Curso
 	canvas.set(leadX, y, cell)
 }
 
-func drawEmptyPaneContent(canvas *composedCanvas, rect workbench.Rect, paneID, terminalID string) {
+func drawEmptyPaneContent(canvas *composedCanvas, rect workbench.Rect, paneID, terminalID string, theme uiTheme) {
 	if canvas == nil || rect.W <= 0 || rect.H <= 0 {
 		return
 	}
@@ -801,11 +809,11 @@ func drawEmptyPaneContent(canvas *composedCanvas, rect workbench.Rect, paneID, t
 	firstActionY := actions[0].rowRect.Y
 	headlineY := firstActionY - 1
 	if headlineY >= rect.Y {
-		canvas.drawText(rect.X, headlineY, centerText(xansi.Truncate(headline, rect.W, ""), rect.W), drawStyle{FG: "#64748b"})
+		canvas.drawText(rect.X, headlineY, centerText(xansi.Truncate(headline, rect.W, ""), rect.W), drawStyle{FG: theme.panelMuted})
 	}
 
 	for _, item := range actions {
-		canvas.drawText(item.rowRect.X, item.rowRect.Y, item.lineText, drawStyle{FG: "#93c5fd", Bold: true})
+		canvas.drawText(item.rowRect.X, item.rowRect.Y, item.lineText, drawStyle{FG: theme.info, Bold: true})
 	}
 
 	if strings.TrimSpace(terminalID) != "" {
@@ -813,7 +821,7 @@ func drawEmptyPaneContent(canvas *composedCanvas, rect workbench.Rect, paneID, t
 		terminalLineY := lastActionY + 1
 		if terminalLineY < rect.Y+rect.H {
 			line := centerText(xansi.Truncate("terminal="+terminalID, rect.W, ""), rect.W)
-			canvas.drawText(rect.X, terminalLineY, line, drawStyle{FG: "#64748b"})
+			canvas.drawText(rect.X, terminalLineY, line, drawStyle{FG: theme.panelMuted})
 		}
 	}
 }
@@ -1098,18 +1106,18 @@ func applyScrollbackOffset(snapshot *protocol.Snapshot, offset int, height int) 
 	return &cloned
 }
 
-func drawSnapshotWithOffset(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, offset int) {
+func drawSnapshotWithOffset(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, offset int, theme uiTheme) {
 	if canvas == nil || snapshot == nil || rect.W <= 0 || rect.H <= 0 {
 		return
 	}
 	if offset <= 0 {
 		canvas.drawSnapshotInRect(rect, snapshot)
-		drawSnapshotExtentHints(canvas, rect, snapshot)
+		drawSnapshotExtentHints(canvas, rect, snapshot, theme)
 		return
 	}
 	totalRows := len(snapshot.Scrollback) + len(snapshot.Screen.Cells)
 	if totalRows == 0 {
-		drawSnapshotExtentHints(canvas, rect, snapshot)
+		drawSnapshotExtentHints(canvas, rect, snapshot, theme)
 		return
 	}
 	end := totalRows - offset
@@ -1142,10 +1150,10 @@ func drawSnapshotWithOffset(canvas *composedCanvas, rect workbench.Rect, snapsho
 		}
 		targetY++
 	}
-	drawSnapshotExtentHints(canvas, rect, snapshot)
+	drawSnapshotExtentHints(canvas, rect, snapshot, theme)
 }
 
-func drawSnapshotExtentHints(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot) {
+func drawSnapshotExtentHints(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, theme uiTheme) {
 	if canvas == nil || snapshot == nil || rect.W <= 0 || rect.H <= 0 {
 		return
 	}
@@ -1155,7 +1163,7 @@ func drawSnapshotExtentHints(canvas *composedCanvas, rect workbench.Rect, snapsh
 		return
 	}
 
-	dotStyle := drawStyle{FG: "#cbd5e1"}
+	dotStyle := drawStyle{FG: theme.panelBorder}
 
 	visibleCols := minInt(rect.W, termW)
 	visibleRows := minInt(rect.H, termH)

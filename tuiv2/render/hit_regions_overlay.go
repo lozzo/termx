@@ -211,7 +211,7 @@ func helpOverlayHitRegions(help *modal.HelpState, width, height int) []HitRegion
 	if help == nil {
 		return nil
 	}
-	lineCount := len(helpOverlayLines(help, pickerInnerWidth(width)))
+	lineCount := len(helpOverlayLines(defaultUITheme(), help, pickerInnerWidth(width)))
 	layout := buildPickerCardLayout(width, height, lineCount, false)
 	card := pickerCardRect(layout)
 	regions := make([]HitRegion, 0, 5)

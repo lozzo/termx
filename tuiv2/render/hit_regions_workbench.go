@@ -63,6 +63,7 @@ type tabBarActionSpec struct {
 }
 
 type tabBarPalette struct {
+	barBG       string
 	workspaceFG string
 	workspaceBG string
 	activeFG    string
@@ -72,6 +73,10 @@ type tabBarPalette struct {
 	createFG    string
 	createBG    string
 	accent      string
+	actionFG    string
+	actionBG    string
+	actionOnFG  string
+	actionOnBG  string
 }
 
 func buildTabBarLayout(state VisibleRenderState) tabBarLayout {
@@ -229,40 +234,48 @@ func renderTabBarLeft(layout tabBarLayout) string {
 	var builder strings.Builder
 	builder.WriteString(renderWorkspaceToken(layout.workspaceLabel, layout.palette))
 	for _, tab := range layout.tabs {
-		builder.WriteString(renderTabSeparator())
+		builder.WriteString(renderTabSeparatorWithBG(layout.palette.barBG))
 		builder.WriteString(renderTabSwitchToken(tab.Label, tab.Active, layout.palette))
 		builder.WriteString(renderTabCloseToken(tab.Active, layout.palette))
 	}
 	if layout.createRect.W > 0 {
-		builder.WriteString(renderTabSeparator())
+		builder.WriteString(renderTabSeparatorWithBG(layout.palette.barBG))
 		builder.WriteString(renderTabCreateToken(layout.createLabel, layout.palette))
 	}
 	for _, slot := range layout.actions {
-		builder.WriteString(renderTabSeparator())
-		builder.WriteString(renderTopBarActionToken(slot.Label, slot.Active))
+		builder.WriteString(renderTabSeparatorWithBG(layout.palette.barBG))
+		builder.WriteString(renderTopBarActionTokenWithPalette(slot.Label, slot.Active, layout.palette))
 	}
 	return builder.String()
 }
 
 func tabBarRightText(state VisibleRenderState) string {
+	theme := uiThemeForState(state)
 	var rightParts []string
 	if state.Error != "" {
-		rightParts = append(rightParts, statusPartErrorStyle.Padding(0, 1).Render(state.Error))
+		rightParts = append(rightParts, statusPartErrorStyle(theme).Render(state.Error))
 	} else if state.Notice != "" {
-		rightParts = append(rightParts, statusPartNoticeStyle.Render(state.Notice))
+		rightParts = append(rightParts, statusPartNoticeStyle(theme).Render(state.Notice))
 	}
 	return strings.Join(rightParts, "  ")
 }
 
 func renderWorkspaceToken(label string, palette tabBarPalette) string {
-	return workspaceLabelStyle.
+	return workspaceLabelStyle(defaultUITheme()).
 		Foreground(lipgloss.Color(palette.workspaceFG)).
 		Background(lipgloss.Color(palette.workspaceBG)).
 		Render(label)
 }
 
 func renderTabSeparator() string {
-	return lipgloss.NewStyle().Background(tabBarBG).Render(" ")
+	return renderTabSeparatorWithBG("")
+}
+
+func renderTabSeparatorWithBG(bg string) string {
+	if strings.TrimSpace(bg) == "" {
+		bg = defaultUITheme().chromeBG
+	}
+	return lipgloss.NewStyle().Background(lipgloss.Color(bg)).Render(" ")
 }
 
 func renderTabSwitchToken(label string, active bool, palette tabBarPalette) string {
@@ -272,13 +285,12 @@ func renderTabSwitchToken(label string, active bool, palette tabBarPalette) stri
 			Foreground(lipgloss.Color(palette.accent)).
 			Background(lipgloss.Color(palette.activeBG)).
 			Render("▎") +
-			tabActiveStyle.
+			tabActiveStyle(defaultUITheme()).
 				Foreground(lipgloss.Color(palette.activeFG)).
 				Background(lipgloss.Color(palette.activeBG)).
-				Underline(false).
 				Render(" "+label+" ")
 	}
-	return tabInactiveStyle.
+	return tabInactiveStyle(defaultUITheme()).
 		Foreground(lipgloss.Color(palette.inactiveFG)).
 		Background(lipgloss.Color(palette.inactiveBG)).
 		Render("  " + label + " ")
@@ -286,117 +298,71 @@ func renderTabSwitchToken(label string, active bool, palette tabBarPalette) stri
 
 func renderTabCloseToken(active bool, palette tabBarPalette) string {
 	if active {
-		return tabCloseActiveStyle.
+		return tabCloseStyle(defaultUITheme(), true).
 			Foreground(lipgloss.Color(palette.activeFG)).
 			Background(lipgloss.Color(palette.activeBG)).
-			Underline(false).
 			Render("   ")
 	}
-	return tabCloseStyle.
+	return tabCloseStyle(defaultUITheme(), false).
 		Foreground(lipgloss.Color(palette.inactiveFG)).
 		Background(lipgloss.Color(palette.inactiveBG)).
 		Render("   ")
 }
 
 func renderTabCreateToken(label string, palette tabBarPalette) string {
-	return tabCreateStyle.
+	return tabCreateStyle(defaultUITheme()).
 		Foreground(lipgloss.Color(palette.createFG)).
 		Background(lipgloss.Color(palette.createBG)).
 		Render(" " + label + " ")
 }
 
 func renderTopBarActionToken(label string, active bool) string {
+	return renderTopBarActionTokenWithPalette(label, active, tabBarPalette{})
+}
+
+func renderTopBarActionTokenWithPalette(label string, active bool, palette tabBarPalette) string {
 	if active {
-		return tabActionActiveStyle.Render(label)
+		bg := palette.actionOnBG
+		fg := palette.actionOnFG
+		if bg == "" {
+			theme := defaultUITheme()
+			bg = theme.tabActionOnBG
+			fg = theme.tabActionOnFG
+		}
+		return tabActionActiveStyle(defaultUITheme()).
+			Foreground(lipgloss.Color(fg)).
+			Background(lipgloss.Color(bg)).
+			Render(label)
 	}
-	return tabActionStyle.Render(label)
+	bg := palette.actionBG
+	fg := palette.actionFG
+	if bg == "" {
+		theme := defaultUITheme()
+		bg = theme.tabActionBG
+		fg = theme.tabActionFG
+	}
+	return tabActionStyle(defaultUITheme()).
+		Foreground(lipgloss.Color(fg)).
+		Background(lipgloss.Color(bg)).
+		Render(label)
 }
 
 func tabBarPaletteForState(state VisibleRenderState) tabBarPalette {
-	activeBG := ""
-	if state.Runtime != nil {
-		activeBG = strings.TrimSpace(state.Runtime.HostDefaultBG)
-	}
-	if !isHexColor(activeBG) {
-		activeBG = "#000000"
-	}
+	theme := uiThemeForState(state)
 	return tabBarPalette{
-		workspaceFG: contrastTextColor("#182033"),
-		workspaceBG: "#182033",
-		activeFG:    contrastTextColor(activeBG),
-		activeBG:    activeBG,
-		inactiveFG:  mixHex(contrastTextColor(activeBG), activeBG, 0.62),
-		inactiveBG:  mixHex(activeBG, "#64748b", 0.34),
-		createFG:    "#ecfeff",
-		createBG:    mixHex(activeBG, "#0f766e", 0.82),
-		accent:      "#8b5cf6",
+		barBG:       theme.chromeBG,
+		workspaceFG: theme.tabWorkspaceFG,
+		workspaceBG: theme.tabWorkspaceBG,
+		activeFG:    theme.tabActiveFG,
+		activeBG:    theme.tabActiveBG,
+		inactiveFG:  theme.tabInactiveFG,
+		inactiveBG:  theme.tabInactiveBG,
+		createFG:    theme.tabCreateFG,
+		createBG:    theme.tabCreateBG,
+		accent:      theme.chromeAccent,
+		actionFG:    theme.tabActionFG,
+		actionBG:    theme.tabActionBG,
+		actionOnFG:  theme.tabActionOnFG,
+		actionOnBG:  theme.tabActionOnBG,
 	}
-}
-
-func isHexColor(value string) bool {
-	if len(value) != 7 || value[0] != '#' {
-		return false
-	}
-	for _, ch := range value[1:] {
-		switch {
-		case ch >= '0' && ch <= '9':
-		case ch >= 'a' && ch <= 'f':
-		case ch >= 'A' && ch <= 'F':
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-func contrastTextColor(bg string) string {
-	r, g, b, ok := parseHexColor(bg)
-	if !ok {
-		return "#f8fafc"
-	}
-	luminance := 0.2126*float64(r)/255 + 0.7152*float64(g)/255 + 0.0722*float64(b)/255
-	if luminance > 0.55 {
-		return "#0f172a"
-	}
-	return "#f8fafc"
-}
-
-func mixHex(a, b string, ratio float64) string {
-	ar, ag, ab, okA := parseHexColor(a)
-	br, bg, bb, okB := parseHexColor(b)
-	if !okA {
-		return b
-	}
-	if !okB {
-		return a
-	}
-	if ratio < 0 {
-		ratio = 0
-	}
-	if ratio > 1 {
-		ratio = 1
-	}
-	mix := func(x, y uint8) uint8 {
-		return uint8(float64(x)*(1-ratio) + float64(y)*ratio)
-	}
-	return fmt.Sprintf("#%02x%02x%02x", mix(ar, br), mix(ag, bg), mix(ab, bb))
-}
-
-func parseHexColor(value string) (uint8, uint8, uint8, bool) {
-	if !isHexColor(value) {
-		return 0, 0, 0, false
-	}
-	rv, err := strconv.ParseUint(value[1:3], 16, 8)
-	if err != nil {
-		return 0, 0, 0, false
-	}
-	gv, err := strconv.ParseUint(value[3:5], 16, 8)
-	if err != nil {
-		return 0, 0, 0, false
-	}
-	bv, err := strconv.ParseUint(value[5:7], 16, 8)
-	if err != nil {
-		return 0, 0, 0, false
-	}
-	return uint8(rv), uint8(gv), uint8(bv), true
 }

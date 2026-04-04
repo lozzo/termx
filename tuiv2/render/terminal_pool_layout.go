@@ -106,6 +106,10 @@ func terminalPoolFooterActionSpecs() []terminalPoolFooterActionSpec {
 }
 
 func layoutTerminalPoolFooterActions(width, height int) (string, []terminalPoolFooterActionLayout) {
+	return layoutTerminalPoolFooterActionsWithTheme(defaultUITheme(), width, height)
+}
+
+func layoutTerminalPoolFooterActionsWithTheme(theme uiTheme, width, height int) (string, []terminalPoolFooterActionLayout) {
 	if width <= 0 || height <= 0 {
 		return "", nil
 	}
@@ -115,12 +119,13 @@ func layoutTerminalPoolFooterActions(width, height int) (string, []terminalPoolF
 	parts := make([]string, 0, len(specs))
 	x := terminalPoolListLeftX
 	for _, spec := range specs {
-		labelW := xansi.StringWidth(spec.label)
+		label := renderOverlayFooterActionLabel(theme, spec.label)
+		labelW := xansi.StringWidth(label)
 		if labelW <= 0 || x+labelW > width {
 			break
 		}
 		slots = append(slots, terminalPoolFooterActionLayout{
-			label:  spec.label,
+			label:  label,
 			action: spec.action,
 			rect: workbench.Rect{
 				X: x,
@@ -129,12 +134,12 @@ func layoutTerminalPoolFooterActions(width, height int) (string, []terminalPoolF
 				H: 1,
 			},
 		})
-		parts = append(parts, spec.label)
+		parts = append(parts, label)
 		x += labelW + terminalPoolFooterActionGap
 	}
 	line := ""
 	if len(parts) > 0 {
 		line = strings.Repeat(" ", terminalPoolListLeftX) + strings.Join(parts, strings.Repeat(" ", terminalPoolFooterActionGap))
 	}
-	return pickerFooterStyle.Render(forceWidthANSIOverlay(line, width)), slots
+	return pickerFooterStyle(theme).Render(forceWidthANSIOverlay(line, width)), slots
 }

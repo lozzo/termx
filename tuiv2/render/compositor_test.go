@@ -285,7 +285,7 @@ func TestDrawSnapshotWithOffsetMarksPanelAreaOutsideTerminalWithDots(t *testing.
 	}
 
 	fillRect(canvas, rect, blankDrawCell())
-	drawSnapshotWithOffset(canvas, rect, snapshot, 0)
+	drawSnapshotWithOffset(canvas, rect, snapshot, 0, defaultUITheme())
 
 	if got := canvas.rawString(); got != "hi··\n····\n····" {
 		t.Fatalf("expected dot markers outside terminal extent, got %q", got)
@@ -296,7 +296,7 @@ func TestDrawPaneFrameMarksOverflowEdgesWithDashedBorder(t *testing.T) {
 	canvas := newComposedCanvas(6, 4)
 	rect := workbench.Rect{X: 0, Y: 0, W: 6, H: 4}
 
-	drawPaneFrame(canvas, rect, "", paneBorderInfo{}, paneOverflowHints{Right: true, Bottom: true}, false, false)
+	drawPaneFrame(canvas, rect, "", paneBorderInfo{}, defaultUITheme(), paneOverflowHints{Right: true, Bottom: true}, false, false)
 
 	lines := strings.Split(canvas.rawString(), "\n")
 	if len(lines) != 4 {

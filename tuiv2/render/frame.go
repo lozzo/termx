@@ -2,7 +2,6 @@ package render
 
 import (
 	"fmt"
-	"image/color"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -16,94 +15,18 @@ const (
 	BottomChromeRows = 1
 )
 
-var (
-	tabBarBG = lipgloss.Color("#050816")
-
-	workspaceLabelStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#f8fafc")).
-				Background(lipgloss.Color("#182033")).
-				Padding(0, 1)
-
-	tabInactiveStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#a5b4cf")).
-				Background(lipgloss.Color("#0f172a"))
-
-	tabActiveStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#f8fafc")).
-			Background(lipgloss.Color("#24314a")).
-			Underline(true).
-			UnderlineColor(lipgloss.Color("#7c3aed"))
-
-	tabCreateStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#ecfeff")).
-			Background(lipgloss.Color("#0f766e"))
-
-	tabActionStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#cbd5e1")).
-			Background(lipgloss.Color("#111827"))
-
-	tabActionActiveStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#f8fafc")).
-				Background(lipgloss.Color("#1f2937"))
-
-	tabCloseStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#cbd5e1")).
-			Background(lipgloss.Color("#0f172a"))
-
-	tabCloseActiveStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#f8fafc")).
-				Background(lipgloss.Color("#24314a")).
-				Underline(true).
-				UnderlineColor(lipgloss.Color("#7c3aed"))
-
-	statusBarBG = lipgloss.Color("#07101d")
-
-	statusChipStyle = lipgloss.NewStyle().
-			Bold(true).
-			Padding(0, 1)
-
-	statusSeparatorStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#4c5e7e")).
-				Background(statusBarBG)
-
-	statusPartDefaultStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#cbd5e1")).
-				Background(statusBarBG).
-				Padding(0, 1)
-
-	statusPartErrorStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#fee2e2")).
-				Background(lipgloss.Color("#7f1d1d")).
-				Bold(true).
-				Padding(0, 1)
-
-	statusPartNoticeStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#e0f2fe")).
-				Background(lipgloss.Color("#0f766e")).
-				Bold(true).
-				Padding(0, 1)
-
-	statusMetaStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#dbe6f7")).
-			Background(lipgloss.Color("#121c2e")).
-			Padding(0, 1)
-)
-
 func FrameBodyHeight(totalHeight int) int {
 	return maxInt(1, totalHeight-TopChromeRows-BottomChromeRows)
 }
 
 func renderTabBar(state VisibleRenderState) string {
+	theme := uiThemeForState(state)
 	layout := buildTabBarLayout(state)
-	return fillLine(renderTabBarLeft(layout), layout.rightText, state.TermSize.Width, tabBarBG)
+	return fillLine(renderTabBarLeft(layout), layout.rightText, state.TermSize.Width, theme.chromeBG)
 }
 
 func renderStatusBar(state VisibleRenderState) string {
+	theme := uiThemeForState(state)
 	width := state.TermSize.Width
 	labels := currentStatusTexts(state)
 
@@ -111,128 +34,124 @@ func renderStatusBar(state VisibleRenderState) string {
 	if !suppressStatusHints(state) {
 		mode := strings.TrimSpace(state.InputMode)
 		if mode == "" || mode == "normal" {
-			leftParts = append(leftParts, renderStatusChip("Ctrl", "#020617", "#f8fafc"))
-			rootColors := []string{"#86efac", "#fca5a5", "#93c5fd", "#fcd34d", "#fde047", "#c4b5fd", "#a7f3d0", "#67e8f9"}
+			leftParts = append(leftParts, renderDesktopHint(theme, "Ctrl", theme.chromeAltBG))
+			rootColors := []string{theme.success, theme.danger, "#93c5fd", theme.warning, "#fde047", "#c4b5fd", "#a7f3d0", theme.info}
 			for i, label := range labels {
 				if i >= len(rootColors) {
 					break
 				}
-				leftParts = append(leftParts, renderStatusSep())
-				leftParts = append(leftParts, renderStatusChip(label, rootColors[i], "#020617"))
+				leftParts = append(leftParts, renderStatusSep(theme))
+				leftParts = append(leftParts, renderDesktopHint(theme, label, rootColors[i]))
 			}
 		} else {
-			badge := renderModeBadge(mode)
+			badge := renderModeBadge(theme, mode)
 			if badge != "" {
 				leftParts = append(leftParts, badge)
 			}
-			leftParts = append(leftParts, renderModeHints(mode, labels)...)
+			leftParts = append(leftParts, renderModeHints(theme, mode, labels)...)
 		}
 	}
 	left := strings.Join(leftParts, "")
 
 	var rightParts []string
 	if state.Workbench != nil {
-		rightParts = append(rightParts, statusMetaStyle.Render("ws:"+state.Workbench.WorkspaceName))
+		rightParts = append(rightParts, statusMetaStyle(theme).Render("ws:"+state.Workbench.WorkspaceName))
 	}
 	if state.Runtime != nil {
-		rightParts = append(rightParts, statusMetaStyle.Render(fmt.Sprintf("terminals:%d", len(state.Runtime.Terminals))))
+		rightParts = append(rightParts, statusMetaStyle(theme).Render(fmt.Sprintf("terminals:%d", len(state.Runtime.Terminals))))
 	}
 	right := strings.Join(rightParts, " ")
 
-	return fillLine(left, right, width, statusBarBG)
+	return fillLine(left, right, width, theme.chromeBG)
 }
 
 func suppressStatusHints(state VisibleRenderState) bool {
 	return false
 }
 
-func renderStatusChip(label, bg, fg string) string {
-	return statusChipStyle.
+func renderStatusChip(theme uiTheme, label, bg, fg string) string {
+	return statusChipStyle(theme).
 		Foreground(lipgloss.Color(fg)).
 		Background(lipgloss.Color(bg)).
 		Render(label)
 }
 
-func renderStatusSep() string {
-	return statusSeparatorStyle.Render(" • ")
+func renderStatusSep(theme uiTheme) string {
+	return statusSeparatorStyle(theme).Render(" • ")
 }
 
-func renderModeBadge(mode string) string {
+func renderDesktopHint(theme uiTheme, label, bg string) string {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return ""
+	}
+	parts := strings.SplitN(label, " ", 2)
+	key := parts[0]
+	text := ""
+	if len(parts) > 1 {
+		text = parts[1]
+	}
+	keyStyle := statusHintKeyStyle(theme).
+		Foreground(lipgloss.Color(contrastTextColor(bg))).
+		Background(lipgloss.Color(bg))
+	if text == "" {
+		return keyStyle.Render(key)
+	}
+	textStyle := statusHintTextStyle(theme)
+	return keyStyle.Render(key) + textStyle.Render(" "+text)
+}
+
+func renderModeBadge(theme uiTheme, mode string) string {
 	label := strings.ToUpper(mode)
-	bg := "#d1d5db"
-	switch label {
-	case "PANE":
-		bg = "#86efac"
-	case "RESIZE":
-		bg = "#fca5a5"
-	case "TAB":
-		bg = "#93c5fd"
-	case "WORKSPACE":
-		bg = "#fcd34d"
-	case "FLOATING":
-		bg = "#fde047"
-	case "DISPLAY":
-		bg = "#c4b5fd"
-	case "PICKER":
-		bg = "#a7f3d0"
-	case "PROMPT":
-		bg = "#fdba74"
-	case "HELP":
-		bg = "#f9a8d4"
-	case "WORKSPACE-PICKER":
-		bg = "#fcd34d"
-	case "GLOBAL":
-		bg = "#67e8f9"
-	case "TERMINAL-MANAGER":
-		bg = "#67e8f9"
-	}
-	return renderStatusChip(label, bg, "#020617") + renderStatusSep()
+	bg := modeAccentColor(theme, input.ModeKind(mode))
+	return renderDesktopHint(theme, label, bg) + renderStatusSep(theme)
 }
 
-func renderModeHints(mode string, labels []string) []string {
+func renderModeHints(theme uiTheme, mode string, labels []string) []string {
 	modeKind := input.ModeKind(mode)
-	bg := "#d1d5db"
-	switch modeKind {
-	case input.ModePane:
-		bg = "#86efac"
-	case input.ModeResize:
-		bg = "#fca5a5"
-	case input.ModeTab:
-		bg = "#93c5fd"
-	case input.ModeWorkspace:
-		bg = "#fcd34d"
-	case input.ModeFloating:
-		bg = "#fde047"
-	case input.ModeDisplay:
-		bg = "#c4b5fd"
-	case input.ModePicker:
-		bg = "#a7f3d0"
-	case input.ModePrompt:
-		bg = "#fdba74"
-	case input.ModeHelp:
-		bg = "#f9a8d4"
-	case input.ModeWorkspacePicker:
-		bg = "#fcd34d"
-	case input.ModeGlobal, input.ModeTerminalManager:
-		bg = "#67e8f9"
-	}
+	bg := modeAccentColor(theme, modeKind)
 	if len(labels) == 0 {
-		return []string{renderStatusChip("Esc BACK", "#334155", "#f8fafc")}
+		return []string{renderDesktopHint(theme, "Esc BACK", theme.chromeAltBG)}
 	}
 	out := make([]string, 0, len(labels)*2)
 	for i, label := range labels {
 		if i > 0 {
-			out = append(out, renderStatusSep())
+			out = append(out, renderStatusSep(theme))
 		}
 		chipBG := bg
-		fg := "#020617"
 		if label == "Esc BACK" {
-			chipBG = "#334155"
-			fg = "#f8fafc"
+			chipBG = theme.chromeAltBG
 		}
-		out = append(out, renderStatusChip(label, chipBG, fg))
+		out = append(out, renderDesktopHint(theme, label, chipBG))
 	}
 	return out
+}
+
+func modeAccentColor(theme uiTheme, mode input.ModeKind) string {
+	switch mode {
+	case input.ModePane:
+		return theme.success
+	case input.ModeResize:
+		return theme.danger
+	case input.ModeTab:
+		return "#93c5fd"
+	case input.ModeWorkspace, input.ModeWorkspacePicker:
+		return theme.warning
+	case input.ModeFloating:
+		return "#fde047"
+	case input.ModeDisplay:
+		return "#c4b5fd"
+	case input.ModePicker:
+		return "#a7f3d0"
+	case input.ModePrompt:
+		return "#fdba74"
+	case input.ModeHelp:
+		return "#f9a8d4"
+	case input.ModeGlobal, input.ModeTerminalManager:
+		return theme.info
+	default:
+		return theme.chromeAltBG
+	}
 }
 
 type statusHintContext struct {
@@ -376,15 +295,15 @@ func (c statusHintContext) canBecomeOwner() bool {
 	return c.activePaneConnected() && c.activeRole == "follower"
 }
 
-func fillLine(left, right string, width int, bg color.Color) string {
+func fillLine(left, right string, width int, bg string) string {
 	if width <= 0 {
 		return ""
 	}
-	filler := lipgloss.NewStyle().Background(bg)
+	filler := backgroundStyle(bg)
 	leftW := xansi.StringWidth(left)
 	rightW := xansi.StringWidth(right)
 	if leftW+rightW >= width {
 		return forceWidthANSIOverlay(left+right, width)
 	}
-	return left + filler.Render(strings.Repeat(" ", width-leftW-rightW)) + right
+	return lipgloss.JoinHorizontal(lipgloss.Left, left, filler.Width(width-leftW-rightW).Render(""), right)
 }

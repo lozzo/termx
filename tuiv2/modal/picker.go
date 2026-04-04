@@ -109,28 +109,27 @@ func (i *PickerItem) RenderLineWithPrefix(width int, selected bool, normalPrefix
 	}
 	if normalPrefix == " " && selectedPrefix == " " && i.lineWidth != width {
 		i.lineWidth = width
-		plain := forceWidthANSI(" "+i.lineBody+" ", width)
-		active := forceWidthANSI(" "+i.lineBody+" ", width)
+		plain := lipgloss.JoinHorizontal(lipgloss.Left, " ", i.lineBody, " ")
 		if i.CreateNew {
-			i.lineNormal = createStyle.Render(plain)
+			i.lineNormal = createStyle.Width(width).MaxWidth(width).Render(plain)
 		} else {
-			i.lineNormal = normalStyle.Render(plain)
+			i.lineNormal = normalStyle.Width(width).MaxWidth(width).Render(plain)
 		}
-		i.lineActive = activeStyle.Render(active)
+		i.lineActive = activeStyle.Width(width).MaxWidth(width).Render(plain)
 	}
 	if normalPrefix != " " || selectedPrefix != " " {
 		prefix := normalPrefix
 		if selected {
 			prefix = selectedPrefix
 		}
-		plain := forceWidthANSI(prefix+i.lineBody+" ", width)
+		plain := lipgloss.JoinHorizontal(lipgloss.Left, prefix, i.lineBody, " ")
 		if selected {
-			return activeStyle.Render(plain)
+			return activeStyle.Width(width).MaxWidth(width).Render(plain)
 		}
 		if i.CreateNew {
-			return createStyle.Render(plain)
+			return createStyle.Width(width).MaxWidth(width).Render(plain)
 		}
-		return normalStyle.Render(plain)
+		return normalStyle.Width(width).MaxWidth(width).Render(plain)
 	}
 	if selected {
 		return i.lineActive
@@ -143,7 +142,14 @@ func (i *PickerItem) renderBody() string {
 		return ""
 	}
 	if i.CreateNew {
-		return "+ " + coalesce(i.Name, "new terminal") + "  " + coalesce(i.Description, "Create a new terminal")
+		return lipgloss.JoinHorizontal(
+			lipgloss.Left,
+			"+",
+			" ",
+			coalesce(i.Name, "new terminal"),
+			"  ",
+			coalesce(i.Description, "Create a new terminal"),
+		)
 	}
 	marker := "○"
 	if i.Observed {
@@ -159,7 +165,7 @@ func (i *PickerItem) renderBody() string {
 	if strings.TrimSpace(i.Location) != "" {
 		location = " @" + i.Location
 	}
-	return marker + " " + idPart + label + "  " + state + location
+	return lipgloss.JoinHorizontal(lipgloss.Left, marker, " ", idPart, label, "  ", state, location)
 }
 
 func forceWidthANSI(s string, width int) string {

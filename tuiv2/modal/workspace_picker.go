@@ -98,13 +98,13 @@ func (i *WorkspacePickerItem) RenderLine(width int, selected bool, normalStyle l
 	}
 	if i.lineWidth != width {
 		i.lineWidth = width
-		plain := forceWidthANSI(" "+i.lineBody+" ", width)
+		plain := lipgloss.JoinHorizontal(lipgloss.Left, " ", i.lineBody, " ")
 		if i.CreateNew {
-			i.lineNormal = createStyle.Render(plain)
+			i.lineNormal = createStyle.Width(width).MaxWidth(width).Render(plain)
 		} else {
-			i.lineNormal = normalStyle.Render(plain)
+			i.lineNormal = normalStyle.Width(width).MaxWidth(width).Render(plain)
 		}
-		i.lineActive = activeStyle.Render(plain)
+		i.lineActive = activeStyle.Width(width).MaxWidth(width).Render(plain)
 	}
 	if selected {
 		return i.lineActive
@@ -117,7 +117,7 @@ func (i *WorkspacePickerItem) primeCaches() {
 		return
 	}
 	i.searchTextLower = strings.ToLower(strings.TrimSpace(i.Name + " " + i.Description))
-	i.lineBody = strings.TrimSpace(i.Name + "  " + i.Description)
+	i.lineBody = lipgloss.JoinHorizontal(lipgloss.Left, strings.TrimSpace(i.Name), "  ", strings.TrimSpace(i.Description))
 	i.lineWidth = 0
 	i.lineNormal = ""
 	i.lineActive = ""

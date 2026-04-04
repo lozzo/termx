@@ -261,6 +261,10 @@ func promptInputRect(layout pickerCardLayout, prompt *modal.PromptState, inputLi
 }
 
 func layoutOverlayFooterActions(specs []overlayFooterActionSpec, rowRect workbench.Rect) (string, []overlayFooterActionLayout) {
+	return layoutOverlayFooterActionsWithTheme(defaultUITheme(), specs, rowRect)
+}
+
+func layoutOverlayFooterActionsWithTheme(theme uiTheme, specs []overlayFooterActionSpec, rowRect workbench.Rect) (string, []overlayFooterActionLayout) {
 	if rowRect.W <= 0 || rowRect.H <= 0 || len(specs) == 0 {
 		return "", nil
 	}
@@ -268,7 +272,7 @@ func layoutOverlayFooterActions(specs []overlayFooterActionSpec, rowRect workben
 	actions := make([]overlayFooterActionLayout, 0, len(specs))
 	currentX := 0
 	for _, spec := range specs {
-		label := renderOverlayFooterActionLabel(spec.Label)
+		label := renderOverlayFooterActionLabel(theme, spec.Label)
 		labelW := xansi.StringWidth(label)
 		if labelW <= 0 {
 			continue
@@ -301,6 +305,10 @@ func layoutOverlayFooterActions(specs []overlayFooterActionSpec, rowRect workben
 }
 
 func renderPickerOverlay(picker *modal.PickerState, termSize TermSize) string {
+	return renderPickerOverlayWithTheme(picker, termSize, defaultUITheme())
+}
+
+func renderPickerOverlayWithTheme(picker *modal.PickerState, termSize TermSize, theme uiTheme) string {
 	if picker == nil {
 		return ""
 	}
@@ -310,27 +318,32 @@ func renderPickerOverlay(picker *modal.PickerState, termSize TermSize) string {
 	itemLines := make([]string, 0, len(items))
 	for index := range items {
 		item := items[index]
-		itemLines = append(itemLines, item.RenderLineWithPrefix(innerWidth, index == picker.Selected, "  ", "> ", pickerLineStyle, pickerSelectedLineStyle, pickerCreateRowStyle))
+		itemLines = append(itemLines, item.RenderLineWithPrefix(innerWidth, index == picker.Selected, "  ", "> ", pickerLineStyle(theme), pickerSelectedLineStyle(theme), pickerCreateRowStyle(theme)))
 	}
-	footerLine, _ := layoutOverlayFooterActions(pickerFooterActionSpecs(), workbench.Rect{W: innerWidth, H: 1})
-	return renderPickerCard(coalesce(picker.Title, "Terminal Picker"), picker.Query, itemLines, footerLine, width, height)
+	footerLine, _ := layoutOverlayFooterActionsWithTheme(theme, pickerFooterActionSpecs(), workbench.Rect{W: innerWidth, H: 1})
+	header := renderOverlaySearchLine(theme, picker.Query, innerWidth)
+	return renderPickerCardWithTheme(theme, coalesce(picker.Title, "Terminal Picker"), header, itemLines, footerLine, width, height)
 }
 
 func renderPromptOverlay(prompt *modal.PromptState, termSize TermSize) string {
+	return renderPromptOverlayWithTheme(prompt, termSize, defaultUITheme())
+}
+
+func renderPromptOverlayWithTheme(prompt *modal.PromptState, termSize TermSize, theme uiTheme) string {
 	if prompt == nil {
 		return ""
 	}
 	width, height := overlayViewport(termSize)
 	lines, inputLine := promptOverlayContent(prompt)
 	if inputLine >= 0 && inputLine < len(lines) {
-		lines[inputLine] = renderOverlayPromptField(prompt)
+		lines[inputLine] = renderOverlayPromptField(theme, prompt)
 	}
-	footerLine, _ := layoutOverlayFooterActions(promptFooterActionSpecs(prompt), workbench.Rect{W: pickerInnerWidth(width), H: 1})
+	footerLine, _ := layoutOverlayFooterActionsWithTheme(theme, promptFooterActionSpecs(prompt), workbench.Rect{W: pickerInnerWidth(width), H: 1})
 	footer := footerLine
 	if strings.TrimSpace(footer) == "" {
 		footer = prompt.Hint
 	}
-	return renderPickerCard(coalesce(prompt.Title, "Prompt"), "", lines, footer, width, height)
+	return renderPickerCardWithTheme(theme, coalesce(prompt.Title, "Prompt"), "", lines, footer, width, height)
 }
 
 func promptOverlayContent(prompt *modal.PromptState) ([]string, int) {
@@ -414,6 +427,10 @@ func summarizeCommand(command []string) string {
 }
 
 func renderWorkspacePickerOverlay(picker *modal.WorkspacePickerState, termSize TermSize) string {
+	return renderWorkspacePickerOverlayWithTheme(picker, termSize, defaultUITheme())
+}
+
+func renderWorkspacePickerOverlayWithTheme(picker *modal.WorkspacePickerState, termSize TermSize, theme uiTheme) string {
 	if picker == nil {
 		return ""
 	}
@@ -423,12 +440,13 @@ func renderWorkspacePickerOverlay(picker *modal.WorkspacePickerState, termSize T
 	itemLines := make([]string, 0, len(items))
 	for index := range items {
 		item := items[index]
-		itemLines = append(itemLines, item.RenderLine(innerWidth, index == picker.Selected, pickerLineStyle, pickerSelectedLineStyle, pickerCreateRowStyle))
+		itemLines = append(itemLines, item.RenderLine(innerWidth, index == picker.Selected, pickerLineStyle(theme), pickerSelectedLineStyle(theme), pickerCreateRowStyle(theme)))
 	}
-	footerLine, _ := layoutOverlayFooterActions(workspacePickerFooterActionSpecs(), workbench.Rect{W: innerWidth, H: 1})
-	return renderPickerCard(
+	footerLine, _ := layoutOverlayFooterActionsWithTheme(theme, workspacePickerFooterActionSpecs(), workbench.Rect{W: innerWidth, H: 1})
+	return renderPickerCardWithTheme(
+		theme,
 		coalesce(picker.Title, "Workspaces"),
-		picker.Query,
+		renderOverlaySearchLine(theme, picker.Query, innerWidth),
 		itemLines,
 		footerLine,
 		width,
@@ -437,6 +455,10 @@ func renderWorkspacePickerOverlay(picker *modal.WorkspacePickerState, termSize T
 }
 
 func renderTerminalManagerOverlay(manager *modal.TerminalManagerState, termSize TermSize) string {
+	return renderTerminalManagerOverlayWithTheme(manager, termSize, defaultUITheme())
+}
+
+func renderTerminalManagerOverlayWithTheme(manager *modal.TerminalManagerState, termSize TermSize, theme uiTheme) string {
 	if manager == nil {
 		return ""
 	}
@@ -446,16 +468,17 @@ func renderTerminalManagerOverlay(manager *modal.TerminalManagerState, termSize 
 	itemLines := make([]string, 0, len(items))
 	for index := range items {
 		item := items[index]
-		itemLines = append(itemLines, item.RenderLine(innerWidth, index == manager.Selected, pickerLineStyle, pickerSelectedLineStyle, pickerCreateRowStyle))
+		itemLines = append(itemLines, item.RenderLine(innerWidth, index == manager.Selected, pickerLineStyle(theme), pickerSelectedLineStyle(theme), pickerCreateRowStyle(theme)))
 	}
 	if detailLines := renderTerminalManagerDetails(manager.SelectedItem(), innerWidth); len(detailLines) > 0 {
 		itemLines = append(itemLines, "")
 		itemLines = append(itemLines, detailLines...)
 	}
-	footerLine, _ := layoutOverlayFooterActions(terminalManagerFooterActionSpecs(), workbench.Rect{W: innerWidth, H: 1})
-	return renderPickerCard(
+	footerLine, _ := layoutOverlayFooterActionsWithTheme(theme, terminalManagerFooterActionSpecs(), workbench.Rect{W: innerWidth, H: 1})
+	return renderPickerCardWithTheme(
+		theme,
 		coalesce(manager.Title, "Terminal Manager"),
-		manager.Query,
+		renderOverlaySearchLine(theme, manager.Query, innerWidth),
 		itemLines,
 		footerLine,
 		width,
@@ -483,24 +506,28 @@ func renderTerminalManagerDetails(item *modal.PickerItem, innerWidth int) []stri
 }
 
 func renderHelpOverlay(help *modal.HelpState, termSize TermSize) string {
+	return renderHelpOverlayWithTheme(help, termSize, defaultUITheme())
+}
+
+func renderHelpOverlayWithTheme(help *modal.HelpState, termSize TermSize, theme uiTheme) string {
 	if help == nil {
 		return ""
 	}
 	width, height := overlayViewport(termSize)
 	innerWidth := pickerInnerWidth(width)
-	lines := helpOverlayLines(help, innerWidth)
-	return renderPickerCard("Help", "", lines, "", width, height)
+	lines := helpOverlayLines(theme, help, innerWidth)
+	return renderPickerCardWithTheme(theme, "Help", "", lines, "", width, height)
 }
 
-func helpOverlayLines(help *modal.HelpState, innerWidth int) []string {
+func helpOverlayLines(theme uiTheme, help *modal.HelpState, innerWidth int) []string {
 	if help == nil {
 		return nil
 	}
 	lines := make([]string, 0)
 	for _, section := range help.Sections {
-		lines = append(lines, forceWidthANSIOverlay(overlaySectionTitleStyle.Render("▍ "+section.Title), innerWidth))
+		lines = append(lines, forceWidthANSIOverlay(overlaySectionTitleStyle(theme).Render("▍ "+section.Title), innerWidth))
 		for _, binding := range section.Bindings {
-			line := overlayHelpKeyStyle.Render(binding.Key) + "  " + overlayHelpActionStyle.Render(binding.Action)
+			line := overlayHelpKeyStyle(theme).Render(binding.Key) + "  " + overlayHelpActionStyle(theme).Render(binding.Action)
 			lines = append(lines, forceWidthANSIOverlay(line, innerWidth))
 		}
 		lines = append(lines, "")
@@ -520,26 +547,35 @@ func compositeOverlay(body string, overlay string, _ TermSize) string {
 }
 
 func renderPickerCard(title, query string, items []string, footer string, width, height int) string {
+	return renderPickerCardWithTheme(defaultUITheme(), title, query, items, footer, width, height)
+}
+
+func renderPickerCardWithTheme(theme uiTheme, title, header string, items []string, footer string, width, height int) string {
 	layout := buildPickerCardLayout(width, height, len(items), strings.TrimSpace(footer) != "")
 
-	lines := make([]string, 0, layout.listHeight+layout.fixedRows)
-	lines = append(lines, centeredPickerBorderLine("top", layout.innerWidth, title))
-	lines = append(lines, centeredPickerContentLine("", layout.innerWidth))
-	lines = append(lines, centeredPickerContentLine(renderOverlaySearchLine(query, layout.innerWidth), layout.innerWidth))
+	lines := make([]string, 0, layout.cardHeight-2)
+	lines = append(lines, renderCardTitleRow(theme, title, layout.innerWidth))
+	lines = append(lines, renderCardHeaderRow(theme, header, layout.innerWidth))
 	for i := 0; i < layout.listHeight; i++ {
 		content := ""
 		if i < len(items) {
 			content = items[i]
 		}
-		lines = append(lines, centeredPickerContentLine(content, layout.innerWidth))
+		lines = append(lines, renderCardContentRow(theme, content, layout.innerWidth))
 	}
-	lines = append(lines, centeredPickerContentLine("", layout.innerWidth))
+	lines = append(lines, renderCardContentRow(theme, "", layout.innerWidth))
 	if layout.hasFooter {
-		lines = append(lines, centeredPickerContentLine(renderOverlayFooterLine(footer, layout.innerWidth), layout.innerWidth))
+		lines = append(lines, renderCardContentRow(theme, renderOverlayFooterLine(theme, footer, layout.innerWidth), layout.innerWidth))
 	}
-	lines = append(lines, centeredPickerBorderLine("bottom", layout.innerWidth, ""))
 
-	card := strings.Join(lines, "\n")
+	card := lipgloss.NewStyle().
+		Width(layout.innerWidth).
+		Height(layout.cardHeight - 2).
+		Background(lipgloss.Color(theme.panelBG)).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(theme.panelBorder)).
+		BorderBackground(lipgloss.Color(theme.panelBG)).
+		Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
 	body := lipgloss.Place(
 		layout.width,
 		layout.contentHeight,
@@ -547,11 +583,9 @@ func renderPickerCard(title, query string, items []string, footer string, width,
 		lipgloss.Center,
 		card,
 		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceStyle(
-			lipgloss.NewStyle().Background(lipgloss.Color("#050816")),
-		),
+		lipgloss.WithWhitespaceStyle(backgroundStyle(theme.hostBG)),
 	)
-	return terminalPickerBodyStyle.Render(forceHeight(body, layout.contentHeight))
+	return terminalPickerBodyStyle(theme).Render(forceHeight(body, layout.contentHeight))
 }
 
 func pickerInnerWidth(termWidth int) int {
@@ -560,53 +594,56 @@ func pickerInnerWidth(termWidth int) int {
 	return maxInt(24, modalWidth-2)
 }
 
-func centeredPickerBorderLine(edge string, innerWidth int, title string) string {
-	switch edge {
-	case "top":
-		title = terminalPickerTitleStyle.Render(lipgloss.NewStyle().MaxWidth(maxInt(0, innerWidth)).Render(title))
-		return pickerBorderStyle.Render("╭") + title + pickerBorderStyle.Render(strings.Repeat("─", maxInt(0, innerWidth-lipgloss.Width(title)))) + pickerBorderStyle.Render("╮")
-	default:
-		return pickerBorderStyle.Render("╰" + strings.Repeat("─", innerWidth) + "╯")
+func renderCardTitleRow(theme uiTheme, title string, innerWidth int) string {
+	return terminalPickerTitleStyle(theme).
+		Width(innerWidth).
+		MaxWidth(innerWidth).
+		Render(forceWidthANSIOverlay(title, innerWidth))
+}
+
+func renderCardHeaderRow(theme uiTheme, header string, innerWidth int) string {
+	if strings.TrimSpace(header) == "" {
+		return overlayCardFillStyle(theme).Width(innerWidth).Render("")
 	}
+	return overlayCardFillStyle(theme).Width(innerWidth).Render(forceWidthANSIOverlay(header, innerWidth))
 }
 
-func centeredPickerContentLine(content string, innerWidth int) string {
-	row := forceWidthANSIOverlay(content, innerWidth)
-	return pickerBorderStyle.Render("│") + overlayCardFillStyle.Render(row) + pickerBorderStyle.Render("│")
+func renderCardContentRow(theme uiTheme, content string, innerWidth int) string {
+	return overlayCardFillStyle(theme).Width(innerWidth).Render(forceWidthANSIOverlay(content, innerWidth))
 }
 
-func renderOverlaySearchLine(query string, innerWidth int) string {
+func renderOverlaySearchLine(theme uiTheme, query string, innerWidth int) string {
 	value := query + "_"
-	row := overlayFieldPrefixStyle.Render("search: ") + overlayFieldValueStyle.Render(value)
+	row := overlayFieldPrefixStyle(theme).Render("search: ") + overlayFieldValueStyle(theme).Render(value)
 	remain := innerWidth - xansi.StringWidth("search: ") - xansi.StringWidth(value)
 	if remain > 0 {
-		row += overlayFieldValueStyle.Render(strings.Repeat(" ", remain))
+		row += overlayFieldValueStyle(theme).Render(strings.Repeat(" ", remain))
 	}
-	return terminalPickerQueryStyle.Render(forceWidthANSIOverlay(row, innerWidth))
+	return terminalPickerQueryStyle(theme).Render(forceWidthANSIOverlay(row, innerWidth))
 }
 
-func renderOverlayFooterLine(footer string, innerWidth int) string {
-	return pickerFooterStyle.Render(forceWidthANSIOverlay(footer, innerWidth))
+func renderOverlayFooterLine(theme uiTheme, footer string, innerWidth int) string {
+	return pickerFooterStyle(theme).Render(forceWidthANSIOverlay(footer, innerWidth))
 }
 
-func renderOverlayPromptField(prompt *modal.PromptState) string {
+func renderOverlayPromptField(theme uiTheme, prompt *modal.PromptState) string {
 	if prompt == nil {
 		return ""
 	}
 	value := promptValueWithCursor(prompt)
-	row := overlayFieldPrefixStyle.Render(promptFieldLabel(prompt.Kind)+": ") + overlayFieldValueStyle.Render(value)
+	row := overlayFieldPrefixStyle(theme).Render(promptFieldLabel(prompt.Kind)+": ") + overlayFieldValueStyle(theme).Render(value)
 	return row
 }
 
-func renderOverlayFooterActionLabel(label string) string {
+func renderOverlayFooterActionLabel(theme uiTheme, label string) string {
 	key, text := splitOverlayFooterLabel(label)
 	switch {
 	case key != "" && text != "":
-		return overlayFooterKeyStyle.Render(key) + overlayFooterTextStyle.Render(text)
+		return overlayFooterKeyStyle(theme).Render(key) + overlayFooterTextStyle(theme).Render(text)
 	case key != "":
-		return overlayFooterKeyStyle.Render(key)
+		return overlayFooterKeyStyle(theme).Render(key)
 	default:
-		return overlayFooterPlainStyle.Render(label)
+		return overlayFooterPlainStyle(theme).Render(label)
 	}
 }
 
