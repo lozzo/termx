@@ -85,7 +85,7 @@ func buildTabBarLayout(state VisibleRenderState) tabBarLayout {
 		rightText:     tabBarRightText(state),
 		palette:       tabBarPaletteForState(state),
 	}
-	if state.Workbench == nil || len(state.Workbench.Tabs) == 0 {
+	if state.Workbench == nil {
 		return layout
 	}
 

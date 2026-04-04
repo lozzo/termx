@@ -94,6 +94,30 @@ func TestTabBarHitRegionsDropCreateWhenWidthIsTight(t *testing.T) {
 	}
 }
 
+func TestTabBarRetainsWorkspaceAndCreateAffordanceWhenWorkspaceHasNoTabs(t *testing.T) {
+	state := makeTabBarState(120, nil)
+
+	line := xansi.Strip(renderTabBar(state))
+	if !strings.Contains(line, "main") {
+		t.Fatalf("expected empty workspace tab bar to keep workspace label, got %q", line)
+	}
+	if !strings.Contains(line, " + ") {
+		t.Fatalf("expected empty workspace tab bar to keep create affordance, got %q", line)
+	}
+
+	regions := TabBarHitRegions(state)
+	counts := map[HitRegionKind]int{}
+	for _, region := range regions {
+		counts[region.Kind]++
+	}
+	if counts[HitRegionWorkspaceLabel] != 1 || counts[HitRegionTabCreate] != 1 {
+		t.Fatalf("expected workspace label and tab-create regions for empty workspace, got %#v", regions)
+	}
+	if counts[HitRegionTabSwitch] != 0 || counts[HitRegionTabClose] != 0 {
+		t.Fatalf("expected no tab regions when workspace has no tabs, got %#v", regions)
+	}
+}
+
 func TestTabBarOmitsWorkspaceAndTabManagementActions(t *testing.T) {
 	state := makeTabBarState(200, []string{"build", "logs"})
 	regions := TabBarHitRegions(state)

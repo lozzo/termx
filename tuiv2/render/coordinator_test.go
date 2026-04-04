@@ -293,6 +293,49 @@ func TestRenderBodyShowsActionableEmptyStateForUnboundPane(t *testing.T) {
 	}
 }
 
+func TestRenderBodyShowsRecoveryStateForEmptyWorkspace(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: -1,
+	})
+
+	body := xansi.Strip(renderBody(WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), 72, 12), 72, 14), 72, 12))
+	for _, want := range []string{
+		"No tabs in this workspace",
+		"Ctrl-F open terminal picker",
+		"Ctrl-T then c create a new tab",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected empty-workspace recovery hint %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestRenderBodyShowsRecoveryStateForEmptyTab(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:    "tab-1",
+			Name:  "tab 1",
+			Panes: map[string]*workbench.PaneState{},
+		}},
+	})
+
+	body := xansi.Strip(renderBody(WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), 72, 12), 72, 14), 72, 12))
+	for _, want := range []string{
+		"No panes in this tab",
+		"Ctrl-F create the first pane via terminal picker",
+		"Ctrl-T then c create a fresh tab",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected empty-tab recovery hint %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestRenderBodyShowsExitedPaneMetaAndPreservesSnapshot(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{

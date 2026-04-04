@@ -3,6 +3,7 @@ package render
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/runtime"
@@ -84,7 +85,7 @@ func TestItoa(t *testing.T) {
 	}
 }
 
-func TestRenderFrameProjectsHostCursorForActiveShellPane(t *testing.T) {
+func TestRenderFrameUsesSyntheticCursorForActiveShellPane(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -111,13 +112,14 @@ func TestRenderFrameProjectsHostCursorForActiveShellPane(t *testing.T) {
 	}
 
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
-	frame := NewCoordinator(func() VisibleRenderState { return state }).RenderFrame()
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+	frame := coordinator.RenderFrame()
 
-	if !strings.Contains(frame, "\x1b[?25h\x1b[3;2H") {
-		t.Fatalf("expected host cursor to be shown at active shell position, got %q", frame)
+	if strings.Contains(coordinator.CursorSequence(), "\x1b[?25h") {
+		t.Fatalf("expected shell pane to keep host cursor hidden, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
 	}
-	if strings.Contains(frame, "\x1b[0;7mh") {
-		t.Fatalf("expected no synthetic cursor highlight for active shell pane, got %q", frame)
+	if !strings.Contains(frame, styleANSI(drawStyle{FG: "#111111", BG: "#f5f5f5", Reverse: true})+"h") {
+		t.Fatalf("expected shell pane to use synthetic cursor highlight, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
 	}
 }
 
@@ -148,13 +150,14 @@ func TestRenderFrameHidesHostCursorWhenActivePaneCursorInvisible(t *testing.T) {
 	}
 
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
-	frame := NewCoordinator(func() VisibleRenderState { return state }).RenderFrame()
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+	frame := coordinator.RenderFrame()
 
-	if !strings.Contains(frame, "\x1b[?25l") {
-		t.Fatalf("expected host cursor hide escape in frame, got %q", frame)
+	if !strings.Contains(coordinator.CursorSequence(), "\x1b[?25l") {
+		t.Fatalf("expected host cursor hide escape, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
 	}
-	if strings.Contains(frame, "\x1b[?25h") {
-		t.Fatalf("expected no host cursor show escape when terminal cursor is invisible, got %q", frame)
+	if strings.Contains(coordinator.CursorSequence(), "\x1b[?25h") {
+		t.Fatalf("expected no host cursor show escape when terminal cursor is invisible, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
 	}
 }
 
@@ -187,17 +190,18 @@ func TestRenderFrameUsesSyntheticCursorForAlternateScreenPane(t *testing.T) {
 	}
 
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
-	frame := NewCoordinator(func() VisibleRenderState { return state }).RenderFrame()
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+	frame := coordinator.RenderFrame()
 
-	if strings.Contains(frame, "\x1b[?25h") {
-		t.Fatalf("expected alternate-screen pane to keep host cursor hidden, got %q", frame)
+	if strings.Contains(coordinator.CursorSequence(), "\x1b[?25h") {
+		t.Fatalf("expected alternate-screen pane to keep host cursor hidden, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
 	}
-	if !strings.Contains(frame, "\x1b[0;7mh") {
-		t.Fatalf("expected alternate-screen pane to use synthetic cursor highlight, got %q", frame)
+	if !strings.Contains(frame, styleANSI(drawStyle{FG: "#111111", BG: "#f5f5f5", Reverse: true})+"h") {
+		t.Fatalf("expected alternate-screen pane to use synthetic cursor highlight, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
 	}
 }
 
-func TestProjectPaneCursorUsesHostCursorForPlainShell(t *testing.T) {
+func TestProjectPaneCursorDrawsSyntheticCursorForPlainShell(t *testing.T) {
 	canvas := newComposedCanvas(6, 3)
 	rect := workbench.Rect{X: 1, Y: 1, W: 4, H: 1}
 	snapshot := &protocol.Snapshot{
@@ -213,13 +217,175 @@ func TestProjectPaneCursorUsesHostCursorForPlainShell(t *testing.T) {
 
 	cell := canvas.cells[1][1]
 	if cell.Content != "h" {
-		t.Fatalf("expected host-cursor path to preserve cell content, got %#v", cell)
+		t.Fatalf("expected cursor overlay to preserve cell content, got %#v", cell)
 	}
-	if cell.Style.Reverse {
-		t.Fatalf("expected host-cursor path to avoid synthetic reverse style, got %#v", cell.Style)
+	if !cell.Style.Reverse {
+		t.Fatalf("expected synthetic cursor to reverse the active cell style, got %#v", cell.Style)
 	}
-	if !canvas.cursorVisible || canvas.cursorX != 1 || canvas.cursorY != 1 {
-		t.Fatalf("expected host cursor to target content cell, got visible=%v x=%d y=%d", canvas.cursorVisible, canvas.cursorX, canvas.cursorY)
+	if canvas.cursorVisible {
+		t.Fatalf("expected synthetic cursor path to keep host cursor hidden")
+	}
+}
+
+func TestRenderFrameUsesHighContrastSyntheticCursorOnBlankShellCell(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 20, Rows: 4},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{{{Content: "$", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Row: 0, Col: 1, Visible: true, Shape: "block"},
+	}
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
+	frame := NewCoordinator(func() VisibleRenderState { return state }).RenderFrame()
+	want := styleANSI(drawStyle{FG: "#111111", BG: "#f5f5f5", Reverse: true}) + " "
+	if !strings.Contains(frame, want) {
+		t.Fatalf("expected blank shell cursor cell to use high-contrast synthetic cursor %q, got %q", want, frame)
+	}
+}
+
+func TestRenderFrameUsesHighContrastSyntheticCursorOnTextCellWithDefaultColors(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 20, Rows: 4},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{{{Content: "h", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Row: 0, Col: 0, Visible: true, Shape: "block"},
+	}
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
+	frame := NewCoordinator(func() VisibleRenderState { return state }).RenderFrame()
+	want := styleANSI(drawStyle{FG: "#111111", BG: "#f5f5f5", Reverse: true}) + "h"
+	if !strings.Contains(frame, want) {
+		t.Fatalf("expected text cursor cell to use high-contrast synthetic cursor %q, got %q", want, frame)
+	}
+}
+
+func TestProjectPaneCursorUsesVisibleBarCursorStyleOnTextCell(t *testing.T) {
+	canvas := newComposedCanvas(6, 3)
+	rect := workbench.Rect{X: 1, Y: 1, W: 4, H: 1}
+	snapshot := &protocol.Snapshot{
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{{{Content: "h", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Row: 0, Col: 0, Visible: true, Shape: "bar"},
+	}
+
+	fillRect(canvas, rect, blankDrawCell())
+	canvas.drawSnapshotInRect(rect, snapshot)
+	projectPaneCursor(canvas, rect, snapshot, 0)
+
+	cell := canvas.cells[1][1]
+	if !cell.Style.Reverse {
+		t.Fatalf("expected bar cursor to reverse active cell style, got %#v", cell.Style)
+	}
+	if cell.Style.FG != "#111111" || cell.Style.BG != "#f5f5f5" {
+		t.Fatalf("expected bar cursor to force visible fallback colors, got %#v", cell.Style)
+	}
+}
+
+func TestRenderFrameHidesBlinkingSyntheticCursorOffPhase(t *testing.T) {
+	prevNow := blinkTimeNow
+	blinkTimeNow = func() time.Time { return time.Unix(0, int64(CursorBlinkInterval)) }
+	defer func() { blinkTimeNow = prevNow }()
+
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 20, Rows: 4},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{{{Content: "h", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Row: 0, Col: 0, Visible: true, Shape: "block", Blink: true},
+	}
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
+	frame := NewCoordinator(func() VisibleRenderState { return state }).RenderFrame()
+	highlight := styleANSI(drawStyle{FG: "#111111", BG: "#f5f5f5", Reverse: true}) + "h"
+	if strings.Contains(frame, highlight) {
+		t.Fatalf("expected blinking synthetic cursor to disappear during off phase, got %q", frame)
+	}
+}
+
+func TestCoordinatorNeedsCursorTicksForBlinkingActivePane(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 20, Rows: 4},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{{{Content: "h", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Row: 0, Col: 0, Visible: true, Shape: "bar", Blink: true},
+	}
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+	if !coordinator.NeedsCursorTicks() {
+		t.Fatal("expected blinking active pane cursor to request render ticks")
 	}
 }
 

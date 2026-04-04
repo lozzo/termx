@@ -40,6 +40,10 @@ type composedCanvas struct {
 	cursorY       int
 	cursorOffsetX int
 	cursorOffsetY int
+	cursorShape   string
+	cursorBlink   bool
+
+	syntheticCursorBlink bool
 }
 
 var styleANSICache sync.Map
@@ -210,14 +214,40 @@ func (c *composedCanvas) cursorANSI() string {
 	if c == nil || !c.cursorVisible {
 		return hideCursorANSI()
 	}
-	return fmt.Sprintf("\x1b[?25h\x1b[%d;%dH", c.cursorY+c.cursorOffsetY+1, c.cursorX+c.cursorOffsetX+1)
+	return cursorShapeANSI(c.cursorShape, c.cursorBlink) +
+		fmt.Sprintf("\x1b[?25h\x1b[%d;%dH", c.cursorY+c.cursorOffsetY+1, c.cursorX+c.cursorOffsetX+1)
 }
 
 func hideCursorANSI() string {
 	return "\x1b[?25l"
 }
 
-func (c *composedCanvas) setCursor(x, y int) {
+func cursorShapeANSI(shape string, blink bool) string {
+	code := 0
+	switch shape {
+	case "underline":
+		if blink {
+			code = 3
+		} else {
+			code = 4
+		}
+	case "bar":
+		if blink {
+			code = 5
+		} else {
+			code = 6
+		}
+	default:
+		if blink {
+			code = 1
+		} else {
+			code = 2
+		}
+	}
+	return fmt.Sprintf("\x1b[%d q", code)
+}
+
+func (c *composedCanvas) setCursor(x, y int, shape string, blink bool) {
 	if c == nil || x < 0 || y < 0 || x >= c.width || y >= c.height {
 		c.cursorVisible = false
 		return
@@ -225,6 +255,8 @@ func (c *composedCanvas) setCursor(x, y int) {
 	c.cursorVisible = true
 	c.cursorX = x
 	c.cursorY = y
+	c.cursorShape = shape
+	c.cursorBlink = blink
 }
 
 func styleDiffANSI(from, to drawStyle) string {

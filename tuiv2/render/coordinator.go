@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
@@ -18,6 +19,7 @@ type Coordinator struct {
 	mu          sync.Mutex
 	dirty       bool
 	lastFrame   string
+	lastCursor  string
 	bodyCache   *bodyRenderCache
 	tabBarKey   tabBarCacheKey
 	tabBarValue string
@@ -25,11 +27,16 @@ type Coordinator struct {
 	statusValue string
 }
 
+const CursorBlinkInterval = 600 * time.Millisecond
+
+var blinkTimeNow = time.Now
+
 type VisibleStateFn func() VisibleRenderState
 
 type renderedBody struct {
 	content string
 	cursor  string
+	blink   bool
 }
 
 type tabBarCacheKey struct {
@@ -129,6 +136,7 @@ func (c *Coordinator) RenderFrame() string {
 	if state.Workbench == nil {
 		c.mu.Lock()
 		c.lastFrame = "tuiv2"
+		c.lastCursor = hideCursorANSI()
 		c.dirty = false
 		frame := c.lastFrame
 		c.mu.Unlock()
@@ -148,13 +156,43 @@ func (c *Coordinator) RenderFrame() string {
 	if overlay := renderActiveOverlay(state, overlaySize); overlay != "" {
 		body = compositeOverlay(body, overlay, TermSize{Width: state.TermSize.Width, Height: bodyHeight})
 		cursor = hideCursorANSI()
+		rendered.blink = false
 	}
-	frame := strings.Join([]string{tabBar, body, statusBar}, "\n") + cursor
+	frame := strings.Join([]string{tabBar, body, statusBar}, "\n")
 	c.mu.Lock()
-	c.lastFrame = frame
+	c.lastFrame = frame + cursor
+	c.lastCursor = cursor
 	c.dirty = false
+	frame = c.lastFrame
 	c.mu.Unlock()
 	return frame
+}
+
+func (c *Coordinator) CursorSequence() string {
+	if c == nil {
+		return hideCursorANSI()
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.lastCursor == "" {
+		return hideCursorANSI()
+	}
+	return c.lastCursor
+}
+
+func (c *Coordinator) NeedsCursorTicks() bool {
+	if c == nil || c.visibleFn == nil {
+		return false
+	}
+	return visibleStateNeedsCursorBlink(c.visibleFn())
+}
+
+func (c *Coordinator) syntheticCursorVisible(cursor protocol.CursorState) bool {
+	if !cursor.Blink {
+		return true
+	}
+	now := blinkTimeNow()
+	return (now.UnixNano()/int64(CursorBlinkInterval))%2 == 0
 }
 
 func (c *Coordinator) renderTabBarCached(state VisibleRenderState) string {
@@ -220,9 +258,12 @@ func renderBodyFrame(state VisibleRenderState, width, height int) renderedBody {
 
 	activeTabIdx := state.Workbench.ActiveTab
 	if activeTabIdx < 0 || activeTabIdx >= len(state.Workbench.Tabs) {
-		return renderedBody{content: strings.Repeat("\n", maxInt(0, height-1))}
+		return renderEmptyWorkbenchBody(state, width, height, emptyWorkbenchNoTabs)
 	}
 	tab := state.Workbench.Tabs[activeTabIdx]
+	if len(tab.Panes) == 0 {
+		return renderEmptyWorkbenchBody(state, width, height, emptyWorkbenchNoPanes)
+	}
 	lookup := newRuntimeLookup(state.Runtime)
 	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, lookup, state.OwnerConfirmPaneID, uiThemeForRuntime(state.Runtime))
 
@@ -230,6 +271,77 @@ func renderBodyFrame(state VisibleRenderState, width, height int) renderedBody {
 	return renderedBody{
 		content: canvas.contentString(),
 		cursor:  canvas.cursorANSI(),
+		blink:   canvas.syntheticCursorBlink,
+	}
+}
+
+func visibleStateNeedsCursorBlink(state VisibleRenderState) bool {
+	if state.Overlay.Kind != VisibleOverlayNone || state.Surface.Kind != VisibleSurfaceWorkbench {
+		return false
+	}
+	if state.Workbench == nil || state.Runtime == nil {
+		return false
+	}
+	activeTabIdx := state.Workbench.ActiveTab
+	if activeTabIdx < 0 || activeTabIdx >= len(state.Workbench.Tabs) {
+		return false
+	}
+	tab := state.Workbench.Tabs[activeTabIdx]
+	if len(tab.Panes) == 0 {
+		return false
+	}
+	width := state.TermSize.Width
+	height := FrameBodyHeight(state.TermSize.Height)
+	if width <= 0 || height <= 0 {
+		return false
+	}
+	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, newRuntimeLookup(state.Runtime), state.OwnerConfirmPaneID, uiThemeForRuntime(state.Runtime))
+	_, snapshot, ok := activeEntryCursorTarget(entries, state.Runtime)
+	return ok && snapshot.Cursor.Blink
+}
+
+type emptyWorkbenchKind uint8
+
+const (
+	emptyWorkbenchNoTabs emptyWorkbenchKind = iota
+	emptyWorkbenchNoPanes
+)
+
+func renderEmptyWorkbenchBody(state VisibleRenderState, width, height int, kind emptyWorkbenchKind) renderedBody {
+	canvas := newComposedCanvas(width, height)
+	theme := uiThemeForState(state)
+
+	headline := "No tabs in this workspace"
+	details := []string{
+		"Ctrl-F open terminal picker",
+		"Ctrl-T then c create a new tab",
+	}
+	if kind == emptyWorkbenchNoPanes {
+		headline = "No panes in this tab"
+		details = []string{
+			"Ctrl-F create the first pane via terminal picker",
+			"Ctrl-T then c create a fresh tab",
+		}
+	}
+
+	lines := append([]string{headline}, details...)
+	startY := maxInt(0, (height-len(lines))/2)
+	for i, line := range lines {
+		y := startY + i
+		if y >= height {
+			break
+		}
+		text := centerText(xansi.Truncate(line, width, ""), width)
+		style := drawStyle{FG: theme.panelMuted}
+		if i == 0 {
+			style = drawStyle{FG: theme.panelText, Bold: true}
+		}
+		canvas.drawText(0, y, text, style)
+	}
+
+	return renderedBody{
+		content: canvas.contentString(),
+		cursor:  hideCursorANSI(),
 	}
 }
 
@@ -752,22 +864,15 @@ func projectPaneCursor(canvas *composedCanvas, rect workbench.Rect, snapshot *pr
 	if x < rect.X || y < rect.Y || x >= rect.X+rect.W || y >= rect.Y+rect.H {
 		return
 	}
-	if useHostCursor(snapshot) {
-		canvas.setCursor(x, y)
-		return
-	}
 	drawSyntheticCursor(canvas, x, y, snapshot.Cursor)
-}
-
-func useHostCursor(snapshot *protocol.Snapshot) bool {
-	if snapshot == nil {
-		return false
-	}
-	return !snapshot.Modes.AlternateScreen && !snapshot.Screen.IsAlternateScreen
 }
 
 func drawSyntheticCursor(canvas *composedCanvas, x, y int, cursor protocol.CursorState) {
 	if canvas == nil || y < 0 || y >= canvas.height || x < 0 || x >= canvas.width {
+		return
+	}
+	canvas.syntheticCursorBlink = cursor.Blink
+	if coordinator := currentCoordinator; coordinator != nil && !coordinator.syntheticCursorVisible(cursor) {
 		return
 	}
 	leadX := x
@@ -783,6 +888,12 @@ func drawSyntheticCursor(canvas *composedCanvas, x, y int, cursor protocol.Curso
 	}
 	style := cell.Style
 	style.Reverse = !style.Reverse
+	// Default-color cells can remain effectively invisible in some terminals
+	// even with reverse enabled, so force a high-contrast fallback.
+	if style.FG == "" && style.BG == "" {
+		style.FG = "#111111"
+		style.BG = "#f5f5f5"
+	}
 	switch cursor.Shape {
 	case "underline":
 		style.Underline = true
@@ -1193,16 +1304,52 @@ func projectActiveEntryCursor(canvas *composedCanvas, entries []paneRenderEntry,
 		return
 	}
 	canvas.cursorVisible = false
-	for _, entry := range entries {
+	canvas.syntheticCursorBlink = false
+	rect, snapshot, ok := activeEntryCursorTarget(entries, runtimeState)
+	if !ok {
+		return
+	}
+	projectPaneCursor(canvas, rect, snapshot, 0)
+}
+
+func activeEntryCursorTarget(entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) (workbench.Rect, *protocol.Snapshot, bool) {
+	for i, entry := range entries {
 		if !entry.Active {
 			continue
 		}
 		terminal := findVisibleTerminal(runtimeState, entry.TerminalID)
-		if terminal != nil && terminal.Snapshot != nil {
-			projectPaneCursor(canvas, contentRectForPane(entry.Rect), terminal.Snapshot, entry.ScrollOffset)
+		if terminal == nil || terminal.Snapshot == nil {
+			return workbench.Rect{}, nil, false
 		}
-		return
+		rect := contentRectForPane(entry.Rect)
+		snapshot := terminal.Snapshot
+		if entry.ScrollOffset > 0 || !snapshot.Cursor.Visible || activeCursorOccluded(entries, i, rect, snapshot) {
+			return rect, snapshot, false
+		}
+		cursorX := rect.X + snapshot.Cursor.Col
+		cursorY := rect.Y + snapshot.Cursor.Row
+		if cursorX < rect.X || cursorY < rect.Y || cursorX >= rect.X+rect.W || cursorY >= rect.Y+rect.H {
+			return rect, snapshot, false
+		}
+		return rect, snapshot, true
 	}
+	return workbench.Rect{}, nil, false
+}
+
+func activeCursorOccluded(entries []paneRenderEntry, activeIdx int, rect workbench.Rect, snapshot *protocol.Snapshot) bool {
+	if activeIdx < 0 || activeIdx >= len(entries) || snapshot == nil || !snapshot.Cursor.Visible {
+		return false
+	}
+	cursorX := rect.X + snapshot.Cursor.Col
+	cursorY := rect.Y + snapshot.Cursor.Row
+	for i := activeIdx + 1; i < len(entries); i++ {
+		entryRect := entries[i].Rect
+		if cursorX >= entryRect.X && cursorX < entryRect.X+entryRect.W &&
+			cursorY >= entryRect.Y && cursorY < entryRect.Y+entryRect.H {
+			return true
+		}
+	}
+	return false
 }
 
 func entriesOverlap(entries []paneRenderEntry) bool {
