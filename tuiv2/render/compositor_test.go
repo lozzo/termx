@@ -296,7 +296,7 @@ func TestDrawPaneFrameMarksOverflowEdgesWithDashedBorder(t *testing.T) {
 	canvas := newComposedCanvas(6, 4)
 	rect := workbench.Rect{X: 0, Y: 0, W: 6, H: 4}
 
-	drawPaneFrame(canvas, rect, "", paneBorderInfo{}, paneOverflowHints{Right: true, Bottom: true}, false)
+	drawPaneFrame(canvas, rect, "", paneBorderInfo{}, paneOverflowHints{Right: true, Bottom: true}, false, false)
 
 	lines := strings.Split(canvas.rawString(), "\n")
 	if len(lines) != 4 {

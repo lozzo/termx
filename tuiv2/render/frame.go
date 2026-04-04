@@ -57,36 +57,8 @@ var (
 )
 
 func renderTabBar(state VisibleRenderState) string {
-	if state.Workbench == nil || len(state.Workbench.Tabs) == 0 {
-		return fillLine("[tuiv2]", "", state.TermSize.Width, tabBarBG)
-	}
-	wsLabel := workspaceLabelStyle.Render("[" + state.Workbench.WorkspaceName + "]")
-
-	items := make([]string, 0, len(state.Workbench.Tabs)+1)
-	items = append(items, wsLabel)
-	for i, tab := range state.Workbench.Tabs {
-		name := strings.TrimSpace(tab.Name)
-		if name == "" {
-			name = fmt.Sprintf("tab %d", i+1)
-		}
-		labelText := fmt.Sprintf("%d:%s", i+1, name)
-		if i == state.Workbench.ActiveTab {
-			items = append(items, tabActiveStyle.Render("["+labelText+"]"))
-		} else {
-			items = append(items, tabInactiveStyle.Render(labelText))
-		}
-	}
-	left := strings.Join(items, " ")
-
-	var rightParts []string
-	if state.Error != "" {
-		rightParts = append(rightParts, statusPartErrorStyle.Padding(0, 1).Render(state.Error))
-	} else if state.Notice != "" {
-		rightParts = append(rightParts, statusPartNoticeStyle.Render(state.Notice))
-	}
-	right := strings.Join(rightParts, "  ")
-
-	return fillLine(left, right, state.TermSize.Width, tabBarBG)
+	layout := buildTabBarLayout(state)
+	return fillLine(renderTabBarLeft(layout), layout.rightText, state.TermSize.Width, tabBarBG)
 }
 
 func renderStatusBar(state VisibleRenderState) string {

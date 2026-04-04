@@ -280,7 +280,14 @@ func TestRenderBodyShowsActionableEmptyStateForUnboundPane(t *testing.T) {
 	})
 
 	body := xansi.Strip(renderBody(WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), 72, 12), 72, 14), 72, 12))
-	for _, want := range []string{"unconnected", "Attach existing terminal", "Create new terminal", "Open terminal manager"} {
+	for _, want := range []string{
+		"unconnected",
+		"No terminal attached",
+		"[ Attach existing terminal ]",
+		"[ Create new terminal ]",
+		"[ Open terminal manager ]",
+		"[ Close pane ]",
+	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected actionable empty-state hint %q:\n%s", want, body)
 		}
@@ -458,7 +465,7 @@ func TestRenderFrameUsesDedicatedTerminalPoolPageLayout(t *testing.T) {
 	state = WithStatus(state, "", "", string(input.ModeTerminalManager))
 	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
 
-	for _, want := range []string{"Terminal Pool", "term-1", "term-2", "TERMINAL-MANAGER", "Enter HERE", "Ctrl-T TAB"} {
+	for _, want := range []string{"Terminal Pool", "term-1", "term-2", "[Enter] here", "[Ctrl-E] edit", "TERMINAL-MANAGER", "Enter HERE", "Ctrl-T TAB"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("expected terminal pool page to contain %q:\n%s", want, frame)
 		}

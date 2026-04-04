@@ -1781,8 +1781,10 @@ func TestFeatureRenderPickerOverlayUsesUnifiedBottomStatusHints(t *testing.T) {
 	if !strings.Contains(view, "Terminal Picker") {
 		t.Fatalf("expected picker overlay to render:\n%s", view)
 	}
-	if strings.Contains(view, "[Enter] attach") || strings.Contains(view, "[Tab] split+attach") {
-		t.Fatalf("expected picker overlay card to omit its old footer shortcuts:\n%s", view)
+	for _, want := range []string{"[Enter] attach", "[Tab] split+attach", "[Ctrl-E] edit", "[Ctrl-K] kill", "[Esc] close"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected picker overlay card footer shortcut %q:\n%s", want, view)
+		}
 	}
 	for _, want := range []string{"PICKER", "UP/DOWN MOVE", "TYPE FILTER", "Enter HERE", "Tab SPLIT", "Ctrl-E EDIT", "Ctrl-K KILL", "Esc BACK"} {
 		if !strings.Contains(view, want) {
@@ -1953,7 +1955,7 @@ func TestFeatureRenderUnboundPane(t *testing.T) {
 	model.height = 40
 
 	view := model.View()
-	for _, want := range []string{"unconnected", "Attach existing terminal", "Create new terminal", "Open terminal manager"} {
+	for _, want := range []string{"unconnected", "Attach existing terminal", "Create new terminal", "Open terminal manager", "Close pane"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing unbound pane state %q:\n%s", want, view)
 		}

@@ -16,6 +16,7 @@ type PromptState struct {
 	Title        string
 	Hint         string
 	Value        string
+	Cursor       int
 	AllowEmpty   bool
 	Original     string
 	PaneID       string

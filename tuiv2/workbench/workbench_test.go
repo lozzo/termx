@@ -126,6 +126,9 @@ func TestVisibleWithSizeProjectsFloatingPanes(t *testing.T) {
 	if floating.ID != "pane-2" || floating.Title != "float" {
 		t.Fatalf("unexpected floating pane projection: %#v", floating)
 	}
+	if !floating.Floating {
+		t.Fatalf("expected projected floating pane to carry Floating=true, got %#v", floating)
+	}
 	if floating.Rect.W != 20 || floating.Rect.H != 6 {
 		t.Fatalf("unexpected floating rect: %#v", floating.Rect)
 	}
@@ -198,5 +201,8 @@ func TestVisibleWithSizeDoesNotProjectAllFloatingTabsAsTiled(t *testing.T) {
 	}
 	if len(visible.FloatingPanes) != 2 {
 		t.Fatalf("expected 2 floating panes, got %#v", visible.FloatingPanes)
+	}
+	if !visible.FloatingPanes[0].Floating || !visible.FloatingPanes[1].Floating {
+		t.Fatalf("expected all projected floating panes to carry Floating=true, got %#v", visible.FloatingPanes)
 	}
 }

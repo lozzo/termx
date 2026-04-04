@@ -23,4 +23,5 @@ type VisiblePane struct {
 	Title      string
 	TerminalID string
 	Rect       Rect
+	Floating   bool
 }

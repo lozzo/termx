@@ -58,14 +58,17 @@ type paneRenderEntry struct {
 	TerminalID   string
 	ScrollOffset int
 	Active       bool
+	Floating     bool
 }
 
 type paneFrameKey struct {
-	Rect     workbench.Rect
-	Title    string
-	Border   paneBorderInfo
-	Overflow paneOverflowHints
-	Active   bool
+	Rect            workbench.Rect
+	Title           string
+	Border          paneBorderInfo
+	Overflow        paneOverflowHints
+	Active          bool
+	Floating        bool
+	ChromeSignature string
 }
 
 type paneOverflowHints struct {
@@ -251,7 +254,7 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 		canvas := newComposedCanvas(width, height)
 		canvas.cursorOffsetY = 1
 		for _, entry := range entries {
-			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active)
+			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active, entry.Floating)
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 		}
 		return canvas
@@ -261,7 +264,7 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 		canvas := newComposedCanvas(width, height)
 		canvas.cursorOffsetY = 1
 		for _, entry := range entries {
-			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active)
+			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active, entry.Floating)
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 		}
 		coordinator.bodyCache = newBodyRenderCache(canvas, entries, width, height)
@@ -273,7 +276,7 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 		cache.canvas.cursorVisible = false
 		for _, entry := range entries {
 			if cache.frameKeys[entry.PaneID] != entry.FrameKey {
-				drawPaneFrame(cache.canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active)
+				drawPaneFrame(cache.canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active, entry.Floating)
 				changed = true
 			}
 			if cache.contentKeys[entry.PaneID] != entry.ContentKey {
@@ -305,7 +308,7 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 	canvas := newComposedCanvas(width, height)
 	canvas.cursorOffsetY = 1
 	for _, entry := range entries {
-		drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active)
+		drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active, entry.Floating)
 		drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 	}
 	projectActiveEntryCursor(canvas, entries, state.Runtime)
@@ -383,16 +386,25 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, rect workbench.Rect, activ
 		overflow = snapshotOverflowHints(terminal.Snapshot, contentRectForPane(rect))
 	}
 	return paneRenderEntry{
-		PaneID:       pane.ID,
-		Rect:         rect,
-		Title:        title,
-		Border:       border,
-		Overflow:     overflow,
-		ContentKey:   contentKey,
-		FrameKey:     paneFrameKey{Rect: rect, Title: title, Border: border, Overflow: overflow, Active: active},
+		PaneID:     pane.ID,
+		Rect:       rect,
+		Title:      title,
+		Border:     border,
+		Overflow:   overflow,
+		ContentKey: contentKey,
+		FrameKey: paneFrameKey{
+			Rect:            rect,
+			Title:           title,
+			Border:          border,
+			Overflow:        overflow,
+			Active:          active,
+			Floating:        pane.Floating,
+			ChromeSignature: paneChromeActionSignatureForFrame(rect, title, border, pane.Floating),
+		},
 		TerminalID:   pane.TerminalID,
 		ScrollOffset: scrollOffset,
 		Active:       active,
+		Floating:     pane.Floating,
 	}
 }
 
@@ -471,7 +483,8 @@ func renderTerminalPoolPage(pool *modal.TerminalManagerState, runtimeState *Visi
 	}
 	width := maxInt(1, termSize.Width)
 	height := maxInt(1, termSize.Height)
-	innerWidth := maxInt(24, width-4)
+	layout := buildTerminalPoolPageLayout(pool, width, height)
+	innerWidth := layout.innerWidth
 	headerLines := make([]string, 0, 3)
 
 	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#f8fafc")).Render(coalesce(strings.TrimSpace(pool.Title), "Terminal Pool"))
@@ -482,13 +495,12 @@ func renderTerminalPoolPage(pool *modal.TerminalManagerState, runtimeState *Visi
 	contentLines := make([]string, 0, height)
 
 	items := pool.VisibleItems()
-	lastGroup := ""
-	for index := range items {
-		if group := strings.ToUpper(strings.TrimSpace(items[index].State)); group != "" && group != lastGroup {
-			contentLines = append(contentLines, "  "+forceWidthANSIOverlay(group, innerWidth))
-			lastGroup = group
+	for _, row := range terminalPoolListRows(items) {
+		if row.itemIndex < 0 {
+			contentLines = append(contentLines, "  "+forceWidthANSIOverlay(row.groupText, innerWidth))
+			continue
 		}
-		line := items[index].RenderLine(innerWidth, index == pool.Selected, pickerLineStyle, pickerSelectedLineStyle, pickerCreateRowStyle)
+		line := items[row.itemIndex].RenderLine(innerWidth, row.itemIndex == pool.Selected, pickerLineStyle, pickerSelectedLineStyle, pickerCreateRowStyle)
 		contentLines = append(contentLines, "  "+forceWidthANSIOverlay(line, innerWidth))
 	}
 	if detailLines := renderTerminalPoolDetails(pool.SelectedItem(), runtimeState, innerWidth); len(detailLines) > 0 {
@@ -498,7 +510,7 @@ func renderTerminalPoolPage(pool *modal.TerminalManagerState, runtimeState *Visi
 		}
 	}
 
-	return renderPageWithPinnedFooter(headerLines, contentLines, "", width, height)
+	return renderPageWithPinnedFooter(headerLines, contentLines, layout.footerLine, width, height)
 }
 
 func renderTerminalPoolDetails(item *modal.PickerItem, runtimeState *VisibleRuntimeStateProxy, innerWidth int) []string {
@@ -606,7 +618,7 @@ func resolvePaneTitleWithLookup(pane workbench.VisiblePane, lookup runtimeLookup
 }
 
 // drawPaneFrame draws the border box with a title on the left and stable chrome slots on the right.
-func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, title string, border paneBorderInfo, overflow paneOverflowHints, active bool) {
+func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, title string, border paneBorderInfo, overflow paneOverflowHints, active bool, floating bool) {
 	if rect.W < 2 || rect.H < 2 {
 		return
 	}
@@ -645,7 +657,7 @@ func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, title string, bo
 	canvas.set(rect.X, rect.Y+rect.H-1, drawCell{Content: "└", Width: 1, Style: borderStyle})
 	canvas.set(rect.X+rect.W-1, rect.Y+rect.H-1, drawCell{Content: "┘", Width: 1, Style: borderStyle})
 
-	drawPaneTopBorderLabels(canvas, rect, titleStyle, title, border)
+	drawPaneTopBorderLabels(canvas, rect, titleStyle, title, border, floating)
 }
 
 // drawPaneContent fills the interior of a pane with terminal snapshot content.
@@ -657,13 +669,13 @@ func drawPaneContent(canvas *composedCanvas, rect workbench.Rect, pane workbench
 	fillRect(canvas, contentRect, blankDrawCell())
 
 	if pane.TerminalID == "" {
-		drawEmptyPaneContent(canvas, contentRect, pane.TerminalID)
+		drawEmptyPaneContent(canvas, contentRect, pane.ID, pane.TerminalID)
 		return
 	}
 
 	terminal := lookup.terminal(pane.TerminalID)
 	if terminal == nil {
-		drawEmptyPaneContent(canvas, contentRect, pane.TerminalID)
+		drawEmptyPaneContent(canvas, contentRect, pane.ID, pane.TerminalID)
 		return
 	}
 	if terminal.Snapshot == nil || len(terminal.Snapshot.Screen.Cells) == 0 {
@@ -680,12 +692,12 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 	contentRect := contentRectForPane(rect)
 	fillRect(canvas, contentRect, blankDrawCell())
 	if entry.TerminalID == "" {
-		drawEmptyPaneContent(canvas, contentRect, entry.TerminalID)
+		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID)
 		return
 	}
 	terminal := findVisibleTerminal(runtimeState, entry.TerminalID)
 	if terminal == nil {
-		drawEmptyPaneContent(canvas, contentRect, entry.TerminalID)
+		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID)
 		return
 	}
 	if terminal.Snapshot == nil || len(terminal.Snapshot.Screen.Cells) == 0 {
@@ -776,32 +788,46 @@ func drawSyntheticCursor(canvas *composedCanvas, x, y int, cursor protocol.Curso
 	canvas.set(leadX, y, cell)
 }
 
-func drawEmptyPaneContent(canvas *composedCanvas, rect workbench.Rect, terminalID string) {
-	lines := []string{
-		"Attach existing terminal",
-		"Create new terminal",
-		"Open terminal manager",
+func drawEmptyPaneContent(canvas *composedCanvas, rect workbench.Rect, paneID, terminalID string) {
+	if canvas == nil || rect.W <= 0 || rect.H <= 0 {
+		return
 	}
-	if terminalID != "" {
-		lines = []string{
-			"Attach existing terminal",
-			"Create new terminal",
-			"Open terminal manager",
-			"terminal=" + terminalID,
-		}
+	actions := layoutEmptyPaneActions(rect, paneID)
+	if len(actions) == 0 {
+		return
 	}
-	for i, line := range lines {
-		if i >= rect.H {
-			return
+
+	headline := "No terminal attached"
+	if strings.TrimSpace(terminalID) != "" {
+		headline = "Terminal unavailable"
+	}
+	firstActionY := actions[0].rowRect.Y
+	headlineY := firstActionY - 1
+	if headlineY >= rect.Y {
+		canvas.drawText(rect.X, headlineY, centerText(xansi.Truncate(headline, rect.W, ""), rect.W), drawStyle{FG: "#64748b"})
+	}
+
+	for _, item := range actions {
+		canvas.drawText(item.rowRect.X, item.rowRect.Y, item.lineText, drawStyle{FG: "#93c5fd", Bold: true})
+	}
+
+	if strings.TrimSpace(terminalID) != "" {
+		lastActionY := actions[len(actions)-1].rowRect.Y
+		terminalLineY := lastActionY + 1
+		if terminalLineY < rect.Y+rect.H {
+			line := centerText(xansi.Truncate("terminal="+terminalID, rect.W, ""), rect.W)
+			canvas.drawText(rect.X, terminalLineY, line, drawStyle{FG: "#64748b"})
 		}
-		canvas.drawText(rect.X, rect.Y+i, line, drawStyle{FG: "#64748b"})
 	}
 }
 
-func drawPaneTopBorderLabels(canvas *composedCanvas, rect workbench.Rect, style drawStyle, title string, border paneBorderInfo) {
-	layout, ok := paneTopBorderLabelsLayout(rect, title, border)
+func drawPaneTopBorderLabels(canvas *composedCanvas, rect workbench.Rect, style drawStyle, title string, border paneBorderInfo, floating bool) {
+	layout, ok := paneTopBorderLabelsLayout(rect, title, border, paneChromeActionTokensForFrame(rect, title, border, floating))
 	if canvas == nil || !ok {
 		return
+	}
+	for _, slot := range layout.actionSlots {
+		drawBorderLabel(canvas, slot.X, rect.Y, slot.Label, style)
 	}
 	if layout.titleLabel != "" {
 		drawBorderLabel(canvas, layout.titleX, rect.Y, layout.titleLabel, style)
@@ -818,14 +844,15 @@ func drawPaneTopBorderLabels(canvas *composedCanvas, rect workbench.Rect, style 
 }
 
 type paneBorderLabelsLayout struct {
-	titleX     int
-	titleLabel string
-	stateX     int
-	stateLabel string
-	shareX     int
-	shareLabel string
-	roleX      int
-	roleLabel  string
+	actionSlots []paneChromeActionSlot
+	titleX      int
+	titleLabel  string
+	stateX      int
+	stateLabel  string
+	shareX      int
+	shareLabel  string
+	roleX       int
+	roleLabel   string
 }
 
 type paneBorderSlot struct {
@@ -833,7 +860,7 @@ type paneBorderSlot struct {
 	kind  string
 }
 
-func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBorderInfo) (paneBorderLabelsLayout, bool) {
+func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBorderInfo, actionTokens []paneChromeActionToken) (paneBorderLabelsLayout, bool) {
 	if rect.W <= 4 {
 		return paneBorderLabelsLayout{}, false
 	}
@@ -844,33 +871,51 @@ func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBor
 	}
 
 	titleLabel := normalizePaneBorderLabel(title)
-	active := make([]paneBorderSlot, 0, 3)
+	allSlots := make([]paneBorderSlot, 0, 3)
 	if label := padPaneBorderSlot(border.StateLabel, paneBorderStateSlotWidth); label != "" {
-		active = append(active, paneBorderSlot{kind: "state", label: label})
+		allSlots = append(allSlots, paneBorderSlot{kind: "state", label: label})
 	}
 	if label := padPaneBorderSlot(border.ShareLabel, paneBorderShareSlotWidth); label != "" {
-		active = append(active, paneBorderSlot{kind: "share", label: label})
+		allSlots = append(allSlots, paneBorderSlot{kind: "share", label: label})
 	}
 	if label := paneBorderRoleSlot(border.RoleLabel); label != "" {
-		active = append(active, paneBorderSlot{kind: "role", label: label})
+		allSlots = append(allSlots, paneBorderSlot{kind: "role", label: label})
 	}
-
-	for len(active) > 0 && xansi.StringWidth(titleLabel)+paneBorderSlotsWidth(active) > innerW {
-		active = active[:len(active)-1]
-	}
+	active := paneBorderSlotsForWidth(allSlots, innerW)
 	titleBudget := innerW - paneBorderSlotsWidth(active)
 	if titleBudget <= 0 {
-		titleBudget = innerW
-		active = nil
+		titleBudget = 0
 	}
 	titleLabel = xansi.Truncate(titleLabel, titleBudget, "")
-	if titleLabel == "" {
+	if titleLabel == "" && len(active) == 0 {
 		return paneBorderLabelsLayout{}, false
 	}
 
+	titleW := xansi.StringWidth(titleLabel)
+	spare := innerW - paneBorderSlotsWidth(active) - titleW
+	if spare < 0 {
+		spare = 0
+	}
+	actionCount := len(actionTokens)
+	for actionCount > 0 && paneChromeActionSlotsWidth(actionTokens, actionCount) > spare {
+		actionCount--
+	}
+	actionsW := paneChromeActionSlotsWidth(actionTokens, actionCount)
+
 	layout := paneBorderLabelsLayout{
-		titleX:     innerX,
-		titleLabel: titleLabel,
+		actionSlots: make([]paneChromeActionSlot, 0, actionCount),
+		titleX:      innerX + actionsW,
+		titleLabel:  titleLabel,
+	}
+	slotX := innerX
+	for i := 0; i < actionCount; i++ {
+		token := actionTokens[i]
+		layout.actionSlots = append(layout.actionSlots, paneChromeActionSlot{
+			Kind:  token.Kind,
+			Label: token.Label,
+			X:     slotX,
+		})
+		slotX += xansi.StringWidth(token.Label) + paneChromeActionGap
 	}
 	right := innerX + innerW
 	for i := len(active) - 1; i >= 0; i-- {
@@ -893,9 +938,45 @@ func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBor
 	return layout, true
 }
 
+func paneBorderSlotsForWidth(slots []paneBorderSlot, width int) []paneBorderSlot {
+	if len(slots) == 0 || width <= 0 {
+		return nil
+	}
+	active := append([]paneBorderSlot(nil), slots...)
+	for paneBorderSlotsWidth(active) > width {
+		removeIdx := paneBorderSlotRemovalIndex(active)
+		if removeIdx < 0 {
+			break
+		}
+		active = append(active[:removeIdx], active[removeIdx+1:]...)
+	}
+	if paneBorderSlotsWidth(active) > width {
+		return nil
+	}
+	return active
+}
+
+func paneBorderSlotRemovalIndex(slots []paneBorderSlot) int {
+	for _, kind := range []string{"share", "state", "role"} {
+		for i := len(slots) - 1; i >= 0; i-- {
+			if slots[i].kind == kind {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
 func PaneOwnerButtonRect(pane workbench.VisiblePane, runtimeState *VisibleRuntimeStateProxy, confirmPaneID string) (workbench.Rect, bool) {
 	lookup := newRuntimeLookup(runtimeState)
-	layout, ok := paneTopBorderLabelsLayout(pane.Rect, resolvePaneTitleWithLookup(pane, lookup), paneBorderInfoWithLookup(pane, lookup, confirmPaneID))
+	title := resolvePaneTitleWithLookup(pane, lookup)
+	border := paneBorderInfoWithLookup(pane, lookup, confirmPaneID)
+	layout, ok := paneTopBorderLabelsLayout(
+		pane.Rect,
+		title,
+		border,
+		paneChromeActionTokensForPane(pane, title, border),
+	)
 	if !ok || layout.roleLabel == "" {
 		return workbench.Rect{}, false
 	}

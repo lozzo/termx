@@ -1,6 +1,10 @@
 package workbench
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/lozzow/termx/tuiv2/shared"
+)
 
 type TerminalBindingLocation struct {
 	WorkspaceName string
@@ -192,6 +196,7 @@ func (w *Workbench) VisibleWithSize(bodyRect Rect) *VisibleWorkbench {
 					Title:      pane.Title,
 					TerminalID: pane.TerminalID,
 					Rect:       floating.Rect,
+					Floating:   true,
 				})
 			}
 		}
@@ -205,6 +210,7 @@ func (w *Workbench) VisibleWithSize(bodyRect Rect) *VisibleWorkbench {
 				Title:      pane.Title,
 				TerminalID: pane.TerminalID,
 				Rect:       rects[pane.ID],
+				Floating:   false,
 			})
 		}
 		visible.Tabs = append(visible.Tabs, item)
@@ -301,7 +307,9 @@ func orderedPaneIDsForBindings(tab *TabState) []string {
 		}
 		extras = append(extras, paneID)
 	}
-	sort.Strings(extras)
+	sort.Slice(extras, func(i, j int) bool {
+		return shared.LessNumericStrings(extras[i], extras[j])
+	})
 	return append(order, extras...)
 }
 
