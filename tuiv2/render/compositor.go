@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -118,20 +119,32 @@ func (c *composedCanvas) drawSnapshotInRect(rect workbench.Rect, snapshot *proto
 		return
 	}
 	for y := 0; y < rect.H && y < len(snapshot.Screen.Cells); y++ {
-		row := snapshot.Screen.Cells[y]
-		for x := 0; x < rect.W && x < len(row); x++ {
-			targetX := rect.X + x
-			targetY := rect.Y + y
-			if targetX < 0 || targetX >= c.width || targetY < 0 || targetY >= c.height {
-				continue
-			}
-			content := row[x].Content
-			if content == "" {
-				content = " "
-			}
-			style := cellStyleFromSnapshot(row[x])
-			c.set(targetX, targetY, drawCell{Content: content, Width: maxCellWidth(row[x].Width), Style: style})
+		c.drawProtocolRowInRect(rect, rect.Y+y, snapshot.Screen.Cells[y])
+	}
+}
+
+func (c *composedCanvas) drawProtocolRowInRect(rect workbench.Rect, targetY int, row []protocol.Cell) {
+	if c == nil || rect.W <= 0 || targetY < 0 || targetY >= c.height {
+		return
+	}
+	limit := minInt(rect.W, len(row))
+	for x := 0; x < limit; x++ {
+		cell := drawCellFromProtocolCell(row[x])
+		if cell.Continuation {
+			continue
 		}
+		if x+cell.Width > rect.W {
+			continue
+		}
+		if cell.Content == "" {
+			cell.Content = " "
+			cell.Width = 1
+		}
+		targetX := rect.X + x
+		if targetX < 0 || targetX >= c.width {
+			continue
+		}
+		c.set(targetX, targetY, cell)
 	}
 }
 
@@ -143,6 +156,23 @@ func cellStyleFromSnapshot(cell protocol.Cell) drawStyle {
 		Italic:    cell.Style.Italic,
 		Underline: cell.Style.Underline,
 		Reverse:   cell.Style.Reverse,
+	}
+}
+
+func drawCellFromProtocolCell(cell protocol.Cell) drawCell {
+	width := cell.Width
+	continuation := cell.Content == "" && width == 0
+	if width <= 0 {
+		width = xansi.StringWidth(cell.Content)
+	}
+	if width <= 0 {
+		width = 1
+	}
+	return drawCell{
+		Content:      cell.Content,
+		Width:        width,
+		Style:        cellStyleFromSnapshot(cell),
+		Continuation: continuation,
 	}
 }
 

@@ -1257,18 +1257,7 @@ func drawSnapshotWithOffset(canvas *composedCanvas, rect workbench.Rect, snapsho
 		} else {
 			row = snapshot.Screen.Cells[rowIndex-len(snapshot.Scrollback)]
 		}
-		for x := 0; x < rect.W && x < len(row); x++ {
-			cell := row[x]
-			content := cell.Content
-			if content == "" {
-				content = " "
-			}
-			canvas.set(rect.X+x, targetY, drawCell{
-				Content: content,
-				Width:   maxCellWidth(cell.Width),
-				Style:   cellStyleFromSnapshot(cell),
-			})
-		}
+		canvas.drawProtocolRowInRect(rect, targetY, row)
 		targetY++
 	}
 	drawSnapshotExtentHints(canvas, rect, snapshot, theme)
