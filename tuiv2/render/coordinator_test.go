@@ -6,6 +6,7 @@ import (
 
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -319,7 +320,7 @@ func TestRenderBodyShowsExitedPaneMetaAndPreservesSnapshot(t *testing.T) {
 	}}}
 
 	body := xansi.Strip(renderBody(state, 72, 12))
-	for _, want := range []string{"○ 42", "last output"} {
+	for _, want := range []string{"○42", "last output"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected exited pane rendering to contain %q:\n%s", want, body)
 		}
@@ -356,7 +357,7 @@ func TestRenderBodyShowsPaneMetaForSharedOwner(t *testing.T) {
 	}}}
 
 	body := xansi.Strip(renderBody(state, 72, 12))
-	if !strings.Contains(body, "● ◆ ⧉ 2") {
+	if !strings.Contains(body, "owner") || !strings.Contains(body, "x2") {
 		t.Fatalf("expected shared owner pane meta in frame:\n%s", body)
 	}
 }
@@ -399,7 +400,7 @@ func TestRenderBodyShowsPaneMetaForSharedFollower(t *testing.T) {
 	}
 
 	body := xansi.Strip(renderBody(state, 72, 12))
-	if !strings.Contains(body, "● ◇ ⧉ 2") {
+	if !strings.Contains(body, "follow") {
 		t.Fatalf("expected shared follower pane meta in frame:\n%s", body)
 	}
 }
@@ -438,7 +439,7 @@ func TestRenderBodyPrefersTitleOverMetaInNarrowPane(t *testing.T) {
 	if !strings.Contains(body, "shell") {
 		t.Fatalf("expected pane title to survive in narrow pane:\n%s", body)
 	}
-	if strings.Contains(body, "● ◆ ⧉ 2") {
+	if strings.Contains(body, "owner") {
 		t.Fatalf("expected compact meta to be dropped before title in narrow pane:\n%s", body)
 	}
 }
@@ -454,9 +455,10 @@ func TestRenderFrameUsesDedicatedTerminalPoolPageLayout(t *testing.T) {
 			{TerminalID: "term-2", Name: "logs", State: "parked", Description: "running · 0 panes bound"},
 		},
 	})
+	state = WithStatus(state, "", "", string(input.ModeTerminalManager))
 	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
 
-	for _, want := range []string{"Terminal Pool", "term-1", "term-2"} {
+	for _, want := range []string{"Terminal Pool", "term-1", "term-2", "TERMINAL-MANAGER", "Enter HERE", "Ctrl-T TAB"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("expected terminal pool page to contain %q:\n%s", want, frame)
 		}
@@ -466,7 +468,7 @@ func TestRenderFrameUsesDedicatedTerminalPoolPageLayout(t *testing.T) {
 	}
 }
 
-func TestRenderFrameTerminalPoolPagePreservesFooterWhenDetailsOverflow(t *testing.T) {
+func TestRenderFrameTerminalPoolPageUsesUnifiedStatusBarWhenDetailsOverflow(t *testing.T) {
 	state := makeTestState()
 	state = AttachTerminalPool(state, &modal.TerminalManagerState{
 		Title:    "Terminal Pool",
@@ -490,11 +492,16 @@ func TestRenderFrameTerminalPoolPagePreservesFooterWhenDetailsOverflow(t *testin
 			},
 		},
 	})
-	state = WithTermSize(state, 100, 10)
+	state = WithTermSize(state, 180, 10)
 	state = WithStatus(state, "", "", "terminal-manager")
 
 	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
-	if !strings.Contains(frame, "[Enter] dedicated footer") {
-		t.Fatalf("expected terminal pool footer to remain visible when details overflow:\n%s", frame)
+	if strings.Contains(frame, "[Enter] dedicated footer") {
+		t.Fatalf("expected terminal pool page footer to be removed from body:\n%s", frame)
+	}
+	for _, want := range []string{"TERMINAL-MANAGER", "Enter HERE", "Ctrl-T TAB", "Ctrl-O FLOAT", "Esc BACK"} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("expected terminal pool unified status hint %q:\n%s", want, frame)
+		}
 	}
 }

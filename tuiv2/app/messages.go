@@ -29,6 +29,10 @@ type clearErrorMsg struct {
 	seq uint64
 }
 
+type clearOwnerConfirmMsg struct {
+	seq uint64
+}
+
 type terminalTitleMsg struct {
 	TerminalID string
 	Title      string

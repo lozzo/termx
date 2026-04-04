@@ -69,6 +69,7 @@ func DefaultBindingCatalog() []BindingDoc {
 		{ID: "pane-split-horizontal-alias", ConfigKey: "pane.split.horizontal_alias", Mode: ModePane, Binding: Binding{Type: tea.KeyCtrlE, Action: ActionSplitPaneHorizontal}},
 		{ID: "pane-detach", ConfigKey: "pane.detach", Mode: ModePane, Group: "Pane", Binding: Binding{Type: tea.KeyRunes, Rune: 'd', Action: ActionDetachPane}, KeyLabel: "d", HelpText: "detach pane from current terminal", StatusText: "d DETACH"},
 		{ID: "pane-reconnect", ConfigKey: "pane.reconnect", Mode: ModePane, Group: "Pane", Binding: Binding{Type: tea.KeyRunes, Rune: 'r', Action: ActionReconnectPane}, KeyLabel: "r", HelpText: "reconnect pane via terminal picker", StatusText: "r RECONNECT"},
+		{ID: "pane-owner", ConfigKey: "pane.owner", Mode: ModePane, Group: "Shared Terminal", Binding: Binding{Type: tea.KeyRunes, Rune: 'a', Action: ActionBecomeOwner}, KeyLabel: "a", HelpText: "take terminal ownership for active pane", StatusText: "a OWNER"},
 		{ID: "pane-kill", ConfigKey: "pane.kill", Mode: ModePane, Group: "Pane", Binding: Binding{Type: tea.KeyRunes, Rune: 'X', Action: ActionClosePaneKill}, KeyLabel: "X", HelpText: "close pane and kill terminal", StatusText: "X CLOSE+KILL"},
 		{ID: "pane-zoom", ConfigKey: "pane.zoom", Mode: ModePane, Group: "Pane", Binding: Binding{Type: tea.KeyRunes, Rune: 'z', Action: ActionZoomPane}, KeyLabel: "z", HelpText: "zoom pane", StatusText: "z ZOOM"},
 		{ID: "pane-close", ConfigKey: "pane.close", Mode: ModePane, Group: "Pane", Binding: Binding{Type: tea.KeyRunes, Rune: 'w', Action: ActionClosePane}, KeyLabel: "w", HelpText: "close pane", StatusText: "w CLOSE"},
@@ -87,6 +88,7 @@ func DefaultBindingCatalog() []BindingDoc {
 		{ID: "resize-large-down", ConfigKey: "resize.large.down", Mode: ModeResize, Binding: Binding{Type: tea.KeyRunes, Rune: 'J', Action: ActionResizePaneLargeDown}},
 		{ID: "resize-large-up", ConfigKey: "resize.large.up", Mode: ModeResize, Binding: Binding{Type: tea.KeyRunes, Rune: 'K', Action: ActionResizePaneLargeUp}},
 		{ID: "resize-large-right", ConfigKey: "resize.large.right", Mode: ModeResize, Binding: Binding{Type: tea.KeyRunes, Rune: 'L', Action: ActionResizePaneLargeRight}},
+		{ID: "resize-owner", ConfigKey: "resize.owner", Mode: ModeResize, Group: "Shared Terminal", Binding: Binding{Type: tea.KeyRunes, Rune: 'a', Action: ActionBecomeOwner}, KeyLabel: "a", HelpText: "take terminal ownership for active pane", StatusText: "a OWNER"},
 		{ID: "resize-balance", ConfigKey: "resize.balance", Mode: ModeResize, Group: "Resize & Display", Binding: Binding{Type: tea.KeyRunes, Rune: '=', Action: ActionBalancePanes}, KeyLabel: "=", HelpText: "balance panes", StatusText: "= BALANCE"},
 		{ID: "resize-layout", ConfigKey: "resize.layout", Mode: ModeResize, Group: "Resize & Display", Binding: Binding{Type: tea.KeySpace, Action: ActionCycleLayout}, KeyLabel: "Space", HelpText: "cycle layout", StatusText: "Space LAYOUT"},
 		{ID: "resize-exit", ConfigKey: "resize.exit", Mode: ModeResize, Group: "Exit / Close", Binding: Binding{Type: tea.KeyEsc, Action: ActionCancelMode}, KeyLabel: "Esc", StatusText: "Esc BACK", FooterText: "close"},
@@ -123,6 +125,7 @@ func DefaultBindingCatalog() []BindingDoc {
 		{ID: "floating-resize-up", ConfigKey: "floating.resize.up", Mode: ModeFloating, Binding: Binding{Type: tea.KeyRunes, Rune: 'K', Action: ActionResizeFloatingUp}},
 		{ID: "floating-resize-right", ConfigKey: "floating.resize.right", Mode: ModeFloating, Binding: Binding{Type: tea.KeyRunes, Rune: 'L', Action: ActionResizeFloatingRight}},
 		{ID: "floating-center", ConfigKey: "floating.center", Mode: ModeFloating, Group: "Floating", Binding: Binding{Type: tea.KeyRunes, Rune: 'c', Action: ActionCenterFloatingPane}, KeyLabel: "c", HelpText: "center selected floating pane", StatusText: "c CENTER"},
+		{ID: "floating-owner", ConfigKey: "floating.owner", Mode: ModeFloating, Group: "Shared Terminal", Binding: Binding{Type: tea.KeyRunes, Rune: 'a', Action: ActionBecomeOwner}, KeyLabel: "a", HelpText: "take terminal ownership for active pane", StatusText: "a OWNER"},
 		{ID: "floating-toggle", ConfigKey: "floating.toggle", Mode: ModeFloating, Group: "Floating", Binding: Binding{Type: tea.KeyRunes, Rune: 'v', Action: ActionToggleFloatingVisibility}, KeyLabel: "v", HelpText: "toggle floating layer visibility", StatusText: "v TOGGLE"},
 		{ID: "floating-close", ConfigKey: "floating.close", Mode: ModeFloating, Group: "Floating", Binding: Binding{Type: tea.KeyRunes, Rune: 'x', Action: ActionCloseFloatingPane}, KeyLabel: "x", HelpText: "close active floating pane", StatusText: "x CLOSE"},
 		{ID: "floating-picker", ConfigKey: "floating.picker", Mode: ModeFloating, Group: "Floating", Binding: Binding{Type: tea.KeyRunes, Rune: 'f', Action: ActionOpenPicker}, KeyLabel: "f", HelpText: "open terminal picker for active floating pane", StatusText: "f PICK"},
@@ -159,12 +162,18 @@ func DefaultBindingCatalog() []BindingDoc {
 		{ID: "terminal-manager-kill", ConfigKey: "terminal_manager.kill", Mode: ModeTerminalManager, Group: "Shared Terminal", Binding: Binding{Type: tea.KeyCtrlK, Action: ActionKillTerminal}, KeyLabel: "Ctrl-K", StatusText: "Ctrl-K KILL", FooterText: "kill"},
 		{ID: "terminal-manager-exit", ConfigKey: "terminal_manager.exit", Mode: ModeTerminalManager, Group: "Exit / Close", Binding: Binding{Type: tea.KeyEsc, Action: ActionCancelMode}, KeyLabel: "Esc", StatusText: "Esc BACK", FooterText: "close"},
 
-		{ID: "workspace-picker-up", ConfigKey: "workspace_picker.up", Mode: ModeWorkspacePicker, Binding: Binding{Type: tea.KeyUp, Action: ActionPickerUp}},
-		{ID: "workspace-picker-down", ConfigKey: "workspace_picker.down", Mode: ModeWorkspacePicker, Binding: Binding{Type: tea.KeyDown, Action: ActionPickerDown}},
-		{ID: "workspace-picker-enter", ConfigKey: "workspace_picker.enter", Mode: ModeWorkspacePicker, Binding: Binding{Type: tea.KeyEnter, Action: ActionSubmitPrompt}},
-		{ID: "workspace-picker-exit", ConfigKey: "workspace_picker.exit", Mode: ModeWorkspacePicker, Group: "Exit / Close", Binding: Binding{Type: tea.KeyEsc, Action: ActionCancelMode}, KeyLabel: "Esc", FooterText: "close"},
+		{ID: "workspace-picker-up", ConfigKey: "workspace_picker.up", Mode: ModeWorkspacePicker, Group: "Workspace", Binding: Binding{Type: tea.KeyUp, Action: ActionPickerUp}, StatusText: "UP/DOWN MOVE"},
+		{ID: "workspace-picker-down", ConfigKey: "workspace_picker.down", Mode: ModeWorkspacePicker, Group: "Workspace", Binding: Binding{Type: tea.KeyDown, Action: ActionPickerDown}},
+		{ID: "workspace-picker-filter", ConfigKey: "workspace_picker.filter", Mode: ModeWorkspacePicker, Group: "Workspace", KeyLabel: "type", HelpText: "filter workspace results", StatusText: "TYPE FILTER"},
+		{ID: "workspace-picker-enter", ConfigKey: "workspace_picker.enter", Mode: ModeWorkspacePicker, Group: "Workspace", Binding: Binding{Type: tea.KeyEnter, Action: ActionSubmitPrompt}, KeyLabel: "Enter", HelpText: "switch or create workspace", StatusText: "Enter OPEN"},
+		{ID: "workspace-picker-exit", ConfigKey: "workspace_picker.exit", Mode: ModeWorkspacePicker, Group: "Exit / Close", Binding: Binding{Type: tea.KeyEsc, Action: ActionCancelMode}, KeyLabel: "Esc", StatusText: "Esc BACK", FooterText: "close"},
 
-		{ID: "help-exit", ConfigKey: "help.exit", Mode: ModeHelp, Group: "Exit / Close", Binding: Binding{Type: tea.KeyEsc, Action: ActionCancelMode}, KeyLabel: "Esc", HelpText: "exit current mode or close modal", FooterText: "close"},
+		{ID: "prompt-type", ConfigKey: "prompt.type", Mode: ModePrompt, Group: "Most Used", StatusText: "TYPE INPUT"},
+		{ID: "prompt-backspace", ConfigKey: "prompt.backspace", Mode: ModePrompt, Group: "Most Used", StatusText: "Backspace DELETE"},
+		{ID: "prompt-enter", ConfigKey: "prompt.enter", Mode: ModePrompt, Group: "Most Used", StatusText: "Enter CONTINUE"},
+		{ID: "prompt-exit", ConfigKey: "prompt.exit", Mode: ModePrompt, Group: "Exit / Close", StatusText: "Esc BACK"},
+
+		{ID: "help-exit", ConfigKey: "help.exit", Mode: ModeHelp, Group: "Exit / Close", Binding: Binding{Type: tea.KeyEsc, Action: ActionCancelMode}, KeyLabel: "Esc", HelpText: "exit current mode or close modal", StatusText: "Esc BACK", FooterText: "close"},
 	}
 }
 

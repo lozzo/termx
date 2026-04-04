@@ -97,13 +97,17 @@ func (p *PickerState) VisibleItems() []PickerItem {
 }
 
 func (i *PickerItem) RenderLine(width int, selected bool, normalStyle lipgloss.Style, activeStyle lipgloss.Style, createStyle lipgloss.Style) string {
+	return i.RenderLineWithPrefix(width, selected, " ", " ", normalStyle, activeStyle, createStyle)
+}
+
+func (i *PickerItem) RenderLineWithPrefix(width int, selected bool, normalPrefix string, selectedPrefix string, normalStyle lipgloss.Style, activeStyle lipgloss.Style, createStyle lipgloss.Style) string {
 	if i == nil || width <= 0 {
 		return ""
 	}
 	if i.lineBody == "" {
 		i.lineBody = i.renderBody()
 	}
-	if i.lineWidth != width {
+	if normalPrefix == " " && selectedPrefix == " " && i.lineWidth != width {
 		i.lineWidth = width
 		plain := forceWidthANSI(" "+i.lineBody+" ", width)
 		active := forceWidthANSI(" "+i.lineBody+" ", width)
@@ -113,6 +117,20 @@ func (i *PickerItem) RenderLine(width int, selected bool, normalStyle lipgloss.S
 			i.lineNormal = normalStyle.Render(plain)
 		}
 		i.lineActive = activeStyle.Render(active)
+	}
+	if normalPrefix != " " || selectedPrefix != " " {
+		prefix := normalPrefix
+		if selected {
+			prefix = selectedPrefix
+		}
+		plain := forceWidthANSI(prefix+i.lineBody+" ", width)
+		if selected {
+			return activeStyle.Render(plain)
+		}
+		if i.CreateNew {
+			return createStyle.Render(plain)
+		}
+		return normalStyle.Render(plain)
 	}
 	if selected {
 		return i.lineActive

@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/tuiv2/input"
+	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 var (
@@ -90,26 +91,29 @@ func renderTabBar(state VisibleRenderState) string {
 
 func renderStatusBar(state VisibleRenderState) string {
 	width := state.TermSize.Width
+	labels := currentStatusTexts(state)
 
 	// left: mode badge + shortcut hints
 	var leftParts []string
-	mode := strings.TrimSpace(state.InputMode)
-	if mode == "" || mode == "normal" {
-		leftParts = append(leftParts, renderStatusChip("Ctrl", "#020617", "#f8fafc"))
-		rootColors := []string{"#86efac", "#fca5a5", "#93c5fd", "#fcd34d", "#fde047", "#c4b5fd", "#a7f3d0", "#67e8f9"}
-		for i, label := range input.StatusTextsForMode(input.ModeNormal) {
-			if i >= len(rootColors) {
-				break
+	if !suppressStatusHints(state) {
+		mode := strings.TrimSpace(state.InputMode)
+		if mode == "" || mode == "normal" {
+			leftParts = append(leftParts, renderStatusChip("Ctrl", "#020617", "#f8fafc"))
+			rootColors := []string{"#86efac", "#fca5a5", "#93c5fd", "#fcd34d", "#fde047", "#c4b5fd", "#a7f3d0", "#67e8f9"}
+			for i, label := range labels {
+				if i >= len(rootColors) {
+					break
+				}
+				leftParts = append(leftParts, renderStatusSep())
+				leftParts = append(leftParts, renderStatusChip(label, rootColors[i], "#020617"))
 			}
-			leftParts = append(leftParts, renderStatusSep())
-			leftParts = append(leftParts, renderStatusChip(label, rootColors[i], "#020617"))
+		} else {
+			badge := renderModeBadge(mode)
+			if badge != "" {
+				leftParts = append(leftParts, badge)
+			}
+			leftParts = append(leftParts, renderModeHints(mode, labels)...)
 		}
-	} else {
-		badge := renderModeBadge(mode)
-		if badge != "" {
-			leftParts = append(leftParts, badge)
-		}
-		leftParts = append(leftParts, renderModeHints(mode)...)
 	}
 	left := strings.Join(leftParts, "")
 
@@ -124,6 +128,10 @@ func renderStatusBar(state VisibleRenderState) string {
 	right := statusPartDefaultStyle.Render(strings.Join(rightParts, "  "))
 
 	return fillLine(left, right, width, statusBarBG)
+}
+
+func suppressStatusHints(state VisibleRenderState) bool {
+	return false
 }
 
 func renderStatusChip(label, bg, fg string) string {
@@ -155,6 +163,12 @@ func renderModeBadge(mode string) string {
 		bg = "#c4b5fd"
 	case "PICKER":
 		bg = "#a7f3d0"
+	case "PROMPT":
+		bg = "#fdba74"
+	case "HELP":
+		bg = "#f9a8d4"
+	case "WORKSPACE-PICKER":
+		bg = "#fcd34d"
 	case "GLOBAL":
 		bg = "#67e8f9"
 	case "TERMINAL-MANAGER":
@@ -163,7 +177,7 @@ func renderModeBadge(mode string) string {
 	return renderStatusChip(label, bg, "#020617") + renderStatusSep()
 }
 
-func renderModeHints(mode string) []string {
+func renderModeHints(mode string, labels []string) []string {
 	modeKind := input.ModeKind(mode)
 	bg := "#d1d5db"
 	switch modeKind {
@@ -181,10 +195,15 @@ func renderModeHints(mode string) []string {
 		bg = "#c4b5fd"
 	case input.ModePicker:
 		bg = "#a7f3d0"
+	case input.ModePrompt:
+		bg = "#fdba74"
+	case input.ModeHelp:
+		bg = "#f9a8d4"
+	case input.ModeWorkspacePicker:
+		bg = "#fcd34d"
 	case input.ModeGlobal, input.ModeTerminalManager:
 		bg = "#67e8f9"
 	}
-	labels := input.StatusTextsForMode(modeKind)
 	if len(labels) == 0 {
 		return []string{renderStatusChip("Esc BACK", "#334155", "#f8fafc")}
 	}
@@ -202,6 +221,147 @@ func renderModeHints(mode string) []string {
 		out = append(out, renderStatusChip(label, chipBG, fg))
 	}
 	return out
+}
+
+type statusHintContext struct {
+	activeTab        *workbench.VisibleTab
+	activePane       *workbench.VisiblePane
+	activeRole       string
+	tabCount         int
+	workspaceCount   int
+	hasFloating      bool
+	activeIsFloating bool
+}
+
+func currentStatusTexts(state VisibleRenderState) []string {
+	mode := input.ModeKind(strings.TrimSpace(state.InputMode))
+	if mode == "" {
+		mode = input.ModeNormal
+	}
+	ctx := buildStatusHintContext(state)
+	out := make([]string, 0, 8)
+	seen := make(map[string]struct{})
+	for _, doc := range input.DefaultBindingCatalog() {
+		if doc.Mode != mode || strings.TrimSpace(doc.StatusText) == "" {
+			continue
+		}
+		if !statusDocVisible(doc, mode, ctx) {
+			continue
+		}
+		if _, ok := seen[doc.StatusText]; ok {
+			continue
+		}
+		seen[doc.StatusText] = struct{}{}
+		out = append(out, doc.StatusText)
+	}
+	return out
+}
+
+func buildStatusHintContext(state VisibleRenderState) statusHintContext {
+	ctx := statusHintContext{}
+	if state.Workbench == nil {
+		return ctx
+	}
+	ctx.tabCount = len(state.Workbench.Tabs)
+	ctx.workspaceCount = state.Workbench.WorkspaceCount
+	ctx.hasFloating = len(state.Workbench.FloatingPanes) > 0
+	if state.Workbench.ActiveTab < 0 || state.Workbench.ActiveTab >= len(state.Workbench.Tabs) {
+		return ctx
+	}
+	ctx.activeTab = &state.Workbench.Tabs[state.Workbench.ActiveTab]
+	activePaneID := strings.TrimSpace(ctx.activeTab.ActivePaneID)
+	if activePaneID == "" {
+		return ctx
+	}
+	for i := range state.Workbench.FloatingPanes {
+		if state.Workbench.FloatingPanes[i].ID == activePaneID {
+			ctx.activePane = &state.Workbench.FloatingPanes[i]
+			ctx.activeIsFloating = true
+			break
+		}
+	}
+	if ctx.activePane == nil {
+		for i := range ctx.activeTab.Panes {
+			if ctx.activeTab.Panes[i].ID == activePaneID {
+				ctx.activePane = &ctx.activeTab.Panes[i]
+				break
+			}
+		}
+	}
+	if ctx.activePane != nil {
+		ctx.activeRole = newRuntimeLookup(state.Runtime).paneRole(ctx.activePane.ID)
+	}
+	return ctx
+}
+
+func statusDocVisible(doc input.BindingDoc, mode input.ModeKind, ctx statusHintContext) bool {
+	switch mode {
+	case input.ModePane:
+		switch doc.Binding.Action {
+		case input.ActionDetachPane, input.ActionClosePaneKill:
+			return ctx.activePaneConnected()
+		case input.ActionBecomeOwner:
+			return ctx.canBecomeOwner()
+		case input.ActionFocusPaneLeft, input.ActionFocusPaneRight, input.ActionFocusPaneUp, input.ActionFocusPaneDown,
+			input.ActionSplitPane, input.ActionSplitPaneHorizontal, input.ActionReconnectPane,
+			input.ActionClosePane, input.ActionZoomPane:
+			return ctx.activePane != nil
+		}
+	case input.ModeResize:
+		switch doc.Binding.Action {
+		case input.ActionBecomeOwner:
+			return ctx.canBecomeOwner()
+		case input.ActionResizePaneLeft, input.ActionResizePaneRight, input.ActionResizePaneUp, input.ActionResizePaneDown,
+			input.ActionResizePaneLargeLeft, input.ActionResizePaneLargeRight, input.ActionResizePaneLargeUp, input.ActionResizePaneLargeDown,
+			input.ActionBalancePanes, input.ActionCycleLayout:
+			return ctx.activeTab != nil
+		}
+	case input.ModeTab:
+		switch doc.Binding.Action {
+		case input.ActionNextTab, input.ActionPrevTab, input.ActionJumpTab:
+			return ctx.tabCount > 1
+		case input.ActionRenameTab, input.ActionKillTab:
+			return ctx.activeTab != nil
+		case input.ActionCreateTab:
+			return ctx.tabCount >= 0
+		}
+	case input.ModeWorkspace:
+		switch doc.Binding.Action {
+		case input.ActionNextWorkspace, input.ActionPrevWorkspace:
+			return ctx.workspaceCount > 1
+		case input.ActionOpenWorkspacePicker, input.ActionCreateWorkspace, input.ActionRenameWorkspace, input.ActionDeleteWorkspace:
+			return ctx.workspaceCount >= 0
+		}
+	case input.ModeFloating:
+		switch doc.Binding.Action {
+		case input.ActionCreateFloatingPane:
+			return ctx.tabCount >= 0
+		case input.ActionFocusNextFloatingPane, input.ActionFocusPrevFloatingPane:
+			return ctx.hasFloating
+		case input.ActionMoveFloatingLeft, input.ActionMoveFloatingDown, input.ActionMoveFloatingUp, input.ActionMoveFloatingRight,
+			input.ActionResizeFloatingLeft, input.ActionResizeFloatingDown, input.ActionResizeFloatingUp, input.ActionResizeFloatingRight,
+			input.ActionCenterFloatingPane, input.ActionToggleFloatingVisibility, input.ActionCloseFloatingPane, input.ActionOpenPicker:
+			return ctx.activeIsFloating
+		case input.ActionBecomeOwner:
+			return ctx.activeIsFloating && ctx.canBecomeOwner()
+		}
+	case input.ModeDisplay:
+		switch doc.Binding.Action {
+		case input.ActionScrollUp, input.ActionScrollDown:
+			return ctx.activePaneConnected()
+		case input.ActionZoomPane:
+			return ctx.activePane != nil
+		}
+	}
+	return true
+}
+
+func (c statusHintContext) activePaneConnected() bool {
+	return c.activePane != nil && strings.TrimSpace(c.activePane.TerminalID) != ""
+}
+
+func (c statusHintContext) canBecomeOwner() bool {
+	return c.activePaneConnected() && c.activeRole == "follower"
 }
 
 func fillLine(left, right string, width int, bg lipgloss.Color) string {

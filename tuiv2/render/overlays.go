@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 )
 
@@ -19,9 +18,9 @@ func renderPickerOverlay(picker *modal.PickerState, termSize TermSize) string {
 	itemLines := make([]string, 0, len(items))
 	for index := range items {
 		item := items[index]
-		itemLines = append(itemLines, item.RenderLine(innerWidth, index == picker.Selected, pickerLineStyle, pickerSelectedLineStyle, pickerCreateRowStyle))
+		itemLines = append(itemLines, item.RenderLineWithPrefix(innerWidth, index == picker.Selected, "  ", "> ", pickerLineStyle, pickerSelectedLineStyle, pickerCreateRowStyle))
 	}
-	return renderPickerCard(coalesce(picker.Title, "Terminal Picker"), picker.Query, itemLines, coalesce(picker.Footer, input.FooterForMode(input.ModePicker, true)), width, height)
+	return renderPickerCard(coalesce(picker.Title, "Terminal Picker"), picker.Query, itemLines, "", width, height)
 }
 
 func renderPromptOverlay(prompt *modal.PromptState, termSize TermSize) string {
@@ -55,7 +54,7 @@ func renderPromptOverlay(prompt *modal.PromptState, termSize TermSize) string {
 	}
 	footer := prompt.Hint
 	if footer == "" {
-		footer = "[Enter] continue  [Esc] cancel"
+		footer = ""
 	}
 	return renderPickerCard(coalesce(prompt.Title, "Prompt"), "", lines, footer, width, height)
 }
@@ -114,7 +113,7 @@ func renderWorkspacePickerOverlay(picker *modal.WorkspacePickerState, termSize T
 		coalesce(picker.Title, "Workspaces"),
 		picker.Query,
 		itemLines,
-		coalesce(picker.Footer, "[type] filter  [Enter] switch  [Esc] close"),
+		"",
 		width,
 		height,
 	)
@@ -141,7 +140,7 @@ func renderTerminalManagerOverlay(manager *modal.TerminalManagerState, termSize 
 		coalesce(manager.Title, "Terminal Manager"),
 		manager.Query,
 		itemLines,
-		coalesce(manager.Footer, input.FooterForMode(input.ModeTerminalManager, true)),
+		"",
 		width,
 		height,
 	)
@@ -153,7 +152,6 @@ func renderTerminalManagerDetails(item *modal.PickerItem, innerWidth int) []stri
 	}
 	lines := []string{
 		forceWidthANSIOverlay("selected: "+coalesce(item.Name, item.TerminalID), innerWidth),
-		forceWidthANSIOverlay("actions: Enter here  Ctrl-T tab  Ctrl-O float  Ctrl-E edit  Ctrl-K kill  Esc close", innerWidth),
 	}
 	if strings.TrimSpace(item.Command) != "" {
 		lines = append(lines, forceWidthANSIOverlay("command: "+item.Command, innerWidth))
@@ -188,7 +186,7 @@ func renderHelpOverlay(help *modal.HelpState, termSize TermSize) string {
 		// Empty line between sections
 		lines = append(lines, "")
 	}
-	return renderPickerCard("Help", "", lines, "[Esc] close", width, height)
+	return renderPickerCard("Help", "", lines, "", width, height)
 }
 
 func compositeOverlay(body string, overlay string, _ TermSize) string {
@@ -205,12 +203,15 @@ func compositeOverlay(body string, overlay string, _ TermSize) string {
 func renderPickerCard(title, query string, items []string, footer string, width, height int) string {
 	contentHeight := maxInt(1, height-2)
 	innerWidth := pickerInnerWidth(width)
-	maxListHeight := maxInt(4, minInt(10, contentHeight-8))
+	hasFooter := strings.TrimSpace(footer) != ""
+	fixedRows := 5
+	if hasFooter {
+		fixedRows++
+	}
+	maxListHeight := maxInt(1, minInt(10, contentHeight-fixedRows))
 	listHeight := minInt(maxInt(4, len(items)), maxListHeight)
-	modalHeight := minInt(maxInt(8, listHeight+4), maxInt(8, contentHeight-2))
-	listHeight = maxInt(1, modalHeight-4)
 
-	lines := make([]string, 0, modalHeight)
+	lines := make([]string, 0, listHeight+fixedRows)
 	lines = append(lines, centeredPickerBorderLine("top", innerWidth, title))
 	lines = append(lines, centeredPickerContentLine("", innerWidth))
 	lines = append(lines, centeredPickerContentLine(terminalPickerQueryStyle.Render(forceWidthANSIOverlay("search: "+query+"_", innerWidth)), innerWidth))
@@ -222,7 +223,9 @@ func renderPickerCard(title, query string, items []string, footer string, width,
 		lines = append(lines, centeredPickerContentLine(content, innerWidth))
 	}
 	lines = append(lines, centeredPickerContentLine("", innerWidth))
-	lines = append(lines, centeredPickerContentLine(pickerFooterStyle.Render(forceWidthANSIOverlay(footer, innerWidth)), innerWidth))
+	if hasFooter {
+		lines = append(lines, centeredPickerContentLine(pickerFooterStyle.Render(forceWidthANSIOverlay(footer, innerWidth)), innerWidth))
+	}
 	lines = append(lines, centeredPickerBorderLine("bottom", innerWidth, ""))
 
 	card := strings.Join(lines, "\n")

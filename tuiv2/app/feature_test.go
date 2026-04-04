@@ -288,6 +288,49 @@ func TestFeaturePaneSplitHorizontal(t *testing.T) {
 	assertMode(t, model, input.ModePicker)
 }
 
+func TestFeaturePaneSplitRefreshesPickerFromDaemon(t *testing.T) {
+	client := &recordingBridgeClient{
+		attachResult: &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+		listResult: &protocol.ListResult{
+			Terminals: []protocol.TerminalInfo{
+				{ID: "term-live", Name: "live-shell", State: "running"},
+			},
+		},
+		snapshotByTerminal: map[string]*protocol.Snapshot{},
+	}
+	model := setupModel(t, modelOpts{client: client})
+	model.modalHost.Picker = &modal.PickerState{
+		Items:    []modal.PickerItem{{TerminalID: "term-stale", Name: "stale", State: "running"}},
+		Filtered: []modal.PickerItem{{TerminalID: "term-stale", Name: "stale", State: "running"}},
+		Selected: 0,
+		Query:    "stale",
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSplitPane, PaneID: "pane-1"})
+
+	assertPaneCount(t, model, 2)
+	assertMode(t, model, input.ModePicker)
+	if client.listCalls == 0 {
+		t.Fatal("expected split-opened picker to query daemon")
+	}
+	if model.modalHost.Picker == nil {
+		t.Fatal("expected picker state")
+	}
+	if model.modalHost.Picker.Query != "" {
+		t.Fatalf("expected picker query cleared on open, got %q", model.modalHost.Picker.Query)
+	}
+	items := model.modalHost.Picker.VisibleItems()
+	if len(items) != 2 {
+		t.Fatalf("expected live terminal plus create row, got %#v", items)
+	}
+	if items[0].TerminalID != "term-live" {
+		t.Fatalf("expected picker to use daemon terminal list, got %#v", items)
+	}
+	if !items[1].CreateNew {
+		t.Fatalf("expected final picker item to be create-new, got %#v", items[1])
+	}
+}
+
 func TestFeaturePaneFocusDirections(t *testing.T) {
 	model := setupTwoPaneModel(t)
 	assertActivePane(t, model, "pane-1")
@@ -454,6 +497,81 @@ func TestFeaturePaneReconnect(t *testing.T) {
 		t.Fatalf("expected previous terminal runtime cleaned during reconnect, got owner=%q bound=%#v", term.OwnerPaneID, term.BoundPaneIDs)
 	}
 	assertMode(t, model, input.ModePicker)
+}
+
+func TestFeatureBecomeOwnerPromotesActivePane(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	root := &workbench.LayoutNode{
+		Direction: workbench.SplitVertical,
+		Ratio:     0.5,
+		First:     workbench.NewLeaf("pane-1"),
+		Second:    workbench.NewLeaf("pane-2"),
+	}
+	model := setupModel(t, modelOpts{
+		client: client,
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{{
+					ID:           "tab-1",
+					Name:         "tab 1",
+					ActivePaneID: "pane-2",
+					Panes: map[string]*workbench.PaneState{
+						"pane-1": {ID: "pane-1", Title: "owner", TerminalID: "term-1"},
+						"pane-2": {ID: "pane-2", Title: "follower", TerminalID: "term-1"},
+					},
+					Root: root,
+				}},
+			},
+		},
+	})
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+
+	terminal := model.runtime.Registry().Get("term-1")
+	if terminal == nil {
+		terminal = model.runtime.Registry().GetOrCreate("term-1")
+	}
+	terminal.State = "running"
+	terminal.Channel = 1
+	terminal.OwnerPaneID = "pane-1"
+	terminal.BoundPaneIDs = []string{"pane-1", "pane-2"}
+	terminal.Snapshot = &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}}
+
+	ownerBinding := model.runtime.BindPane("pane-1")
+	ownerBinding.Channel = 1
+	ownerBinding.Connected = true
+	ownerBinding.Role = runtime.BindingRoleOwner
+
+	followerBinding := model.runtime.BindPane("pane-2")
+	followerBinding.Channel = 2
+	followerBinding.Connected = true
+	followerBinding.Role = runtime.BindingRoleFollower
+
+	_ = model.workbench.FocusPane(tab.ID, "pane-2")
+	model.input.SetMode(input.ModeState{Kind: input.ModePane})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionBecomeOwner, PaneID: "pane-2"})
+
+	if terminal.OwnerPaneID != "pane-2" {
+		t.Fatalf("expected pane-2 to become owner, got %q", terminal.OwnerPaneID)
+	}
+	if ownerBinding.Role != runtime.BindingRoleFollower {
+		t.Fatalf("expected pane-1 demoted to follower, got %q", ownerBinding.Role)
+	}
+	if followerBinding.Role != runtime.BindingRoleOwner {
+		t.Fatalf("expected pane-2 promoted to owner, got %q", followerBinding.Role)
+	}
+	if len(client.resizes) != 1 {
+		t.Fatalf("expected resize after owner takeover, got %#v", client.resizes)
+	}
+	if client.resizes[0].channel != 2 {
+		t.Fatalf("expected pane-2 channel to drive resize, got %#v", client.resizes[0])
+	}
+	assertViewContains(t, model, "follow", "owner")
 }
 
 func TestFeaturePaneCloseAndKill(t *testing.T) {
@@ -1647,14 +1765,45 @@ func TestFeatureRenderStatusBarShowsModeHints(t *testing.T) {
 	}
 }
 
+func TestFeatureRenderPickerOverlayUsesUnifiedBottomStatusHints(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 220})
+	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePicker, Phase: modal.ModalPhaseReady, RequestID: "req-1"}
+	model.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: "req-1"})
+	model.modalHost.Picker = &modal.PickerState{
+		Items: []modal.PickerItem{
+			{TerminalID: "term-1", Name: "shell"},
+		},
+	}
+	model.modalHost.Picker.ApplyFilter()
+	model.render.Invalidate()
+
+	view := model.View()
+	if !strings.Contains(view, "Terminal Picker") {
+		t.Fatalf("expected picker overlay to render:\n%s", view)
+	}
+	if strings.Contains(view, "[Enter] attach") || strings.Contains(view, "[Tab] split+attach") {
+		t.Fatalf("expected picker overlay card to omit its old footer shortcuts:\n%s", view)
+	}
+	for _, want := range []string{"PICKER", "UP/DOWN MOVE", "TYPE FILTER", "Enter HERE", "Tab SPLIT", "Ctrl-E EDIT", "Ctrl-K KILL", "Esc BACK"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected unified picker shortcut hint %q:\n%s", want, view)
+		}
+	}
+}
+
 func TestFeatureFloatingModeShowsCanonicalHints(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 200})
 	model.input.SetMode(input.ModeState{Kind: input.ModeFloating})
 	model.render.Invalidate()
 	view := model.View()
-	for _, want := range []string{"h/j/k/l", "H/J/K/L", "c CENTER"} {
+	for _, want := range []string{"N NEW FLOAT", "Esc BACK"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("floating mode view missing %q:\n%s", want, view)
+		}
+	}
+	for _, hidden := range []string{"h/j/k/l", "H/J/K/L", "c CENTER"} {
+		if strings.Contains(view, hidden) {
+			t.Fatalf("floating mode view unexpectedly contains %q without active floating pane:\n%s", hidden, view)
 		}
 	}
 }
@@ -1665,10 +1814,13 @@ func TestFeatureWorkspaceModeShowsLegacyAlignedHints(t *testing.T) {
 	model.render.Invalidate()
 
 	view := model.View()
-	for _, want := range []string{"F PICK", "C NEW", "R RENAME", "X DELETE", "N/P NEXT/PREV"} {
+	for _, want := range []string{"F PICK", "C NEW", "R RENAME", "X DELETE"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("workspace mode view missing %q:\n%s", want, view)
 		}
+	}
+	if strings.Contains(view, "N/P NEXT/PREV") {
+		t.Fatalf("workspace mode should hide next/prev when only one workspace exists:\n%s", view)
 	}
 }
 
@@ -1678,9 +1830,14 @@ func TestFeatureTabModeShowsLegacyAlignedHints(t *testing.T) {
 	model.render.Invalidate()
 
 	view := model.View()
-	for _, want := range []string{"C NEW", "R RENAME", "N/P NEXT/PREV", "1-9 JUMP", "X KILL"} {
+	for _, want := range []string{"C NEW", "R RENAME", "X KILL"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("tab mode view missing %q:\n%s", want, view)
+		}
+	}
+	for _, hidden := range []string{"N/P NEXT/PREV", "1-9 JUMP"} {
+		if strings.Contains(view, hidden) {
+			t.Fatalf("tab mode should hide %q when only one tab exists:\n%s", hidden, view)
 		}
 	}
 }

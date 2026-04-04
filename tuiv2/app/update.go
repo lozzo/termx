@@ -5,6 +5,7 @@ import (
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
+	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 func (m *Model) Init() tea.Cmd {
@@ -124,6 +125,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.render.Invalidate()
 		return m, nil
+	case clearOwnerConfirmMsg:
+		if typed.seq != m.ownerSeq {
+			return m, nil
+		}
+		m.ownerConfirmPaneID = ""
+		m.render.Invalidate()
+		return m, nil
 	case terminalTitleMsg:
 		if m.workbench != nil {
 			m.workbench.SetPaneTitleByTerminalID(typed.TerminalID, typed.Title)
@@ -134,6 +142,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.render.Invalidate()
 		return m, nil
 	case tea.WindowSizeMsg:
+		oldBodyRect := workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)}
+		newBodyRect := workbench.Rect{W: maxInt(1, typed.Width), H: maxInt(1, typed.Height-2)}
+		if m.workbench != nil {
+			if m.width > 0 && m.height > 0 {
+				m.workbench.ReflowFloatingPanes(oldBodyRect, newBodyRect)
+			} else {
+				m.workbench.ClampFloatingPanesToBounds(newBodyRect)
+			}
+		}
 		m.width = typed.Width
 		m.height = typed.Height
 		m.render.Invalidate()

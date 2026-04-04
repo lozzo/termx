@@ -65,6 +65,7 @@ func TestRouteKeyMsg_PaneMode_PlainKeysProduceFocusActions(t *testing.T) {
 		{msg: runeKey('z'), want: ActionZoomPane},
 		{msg: runeKey('d'), want: ActionDetachPane},
 		{msg: runeKey('r'), want: ActionReconnectPane},
+		{msg: runeKey('a'), want: ActionBecomeOwner},
 		{msg: runeKey('X'), want: ActionClosePaneKill},
 		{msg: runeKey('w'), want: ActionClosePane},
 		{msg: specialKey(tea.KeyEsc), want: ActionCancelMode},
@@ -112,6 +113,7 @@ func TestRouteKeyMsg_ResizeMode_LargeStepBindings(t *testing.T) {
 		{msg: runeKey('H'), want: ActionResizePaneLargeLeft},
 		{msg: runeKey('j'), want: ActionResizePaneDown},
 		{msg: runeKey('J'), want: ActionResizePaneLargeDown},
+		{msg: runeKey('a'), want: ActionBecomeOwner},
 		{msg: runeKey('='), want: ActionBalancePanes},
 		{msg: specialKey(tea.KeySpace), want: ActionCycleLayout},
 	}
@@ -378,6 +380,7 @@ func TestRouteKeyMsg_FloatingMode_UsesCanonicalFloatingBindings(t *testing.T) {
 		{msg: runeKey('J'), want: ActionResizeFloatingDown},
 		{msg: runeKey('K'), want: ActionResizeFloatingUp},
 		{msg: runeKey('L'), want: ActionResizeFloatingRight},
+		{msg: runeKey('a'), want: ActionBecomeOwner},
 		{msg: runeKey('c'), want: ActionCenterFloatingPane},
 		{msg: runeKey('n'), want: ActionCreateFloatingPane},
 		{msg: specialKey(tea.KeyEsc), want: ActionCancelMode},

@@ -1,8 +1,11 @@
 package app
 
 import (
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/input"
+	"github.com/lozzow/termx/tuiv2/render"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -58,6 +61,13 @@ func (m *Model) handleMouseClickNonFloating(x, y int) tea.Cmd {
 	for _, pane := range visibleTab.Panes {
 		rect := pane.Rect
 		if x >= rect.X && x < rect.X+rect.W && contentY >= rect.Y && contentY < rect.Y+rect.H {
+			if m.mouseHitsOwnerButton(pane, x, contentY) {
+				if pane.ID != tab.ActivePaneID {
+					_ = m.workbench.FocusPane(tab.ID, pane.ID)
+				}
+				m.render.Invalidate()
+				return m.handleOwnerActionClick(pane.ID)
+			}
 			if pane.ID != tab.ActivePaneID {
 				_ = m.workbench.FocusPane(tab.ID, pane.ID)
 				m.render.Invalidate()
@@ -86,6 +96,24 @@ func (m *Model) handleMouseClick(x, y int) tea.Cmd {
 
 	paneID, rect, isResize := m.findFloatingPaneAt(tab, x, contentY)
 	if paneID != "" {
+		bodyRect := workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)}
+		visible := m.workbench.VisibleWithSize(bodyRect)
+		if visible != nil {
+			for _, pane := range visible.FloatingPanes {
+				if pane.ID != paneID {
+					continue
+				}
+				if m.mouseHitsOwnerButton(pane, x, contentY) {
+					if tab.ActivePaneID != paneID {
+						_ = m.workbench.FocusPane(tab.ID, paneID)
+					}
+					m.workbench.ReorderFloatingPane(tab.ID, paneID, true)
+					m.render.Invalidate()
+					return m.handleOwnerActionClick(paneID)
+				}
+				break
+			}
+		}
 		if tab.ActivePaneID != paneID {
 			_ = m.workbench.FocusPane(tab.ID, paneID)
 		}
@@ -128,6 +156,7 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 		newX := x - m.mouseDragOffsetX
 		newY := contentY - m.mouseDragOffsetY
 		m.workbench.MoveFloatingPane(tab.ID, m.mouseDragPaneID, newX, newY)
+		m.workbench.ClampFloatingPanesToBounds(workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)})
 		m.render.Invalidate()
 	case mouseDragResize:
 		for _, floating := range tab.Floating {
@@ -135,6 +164,7 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 				newW := x - floating.Rect.X + 1
 				newH := contentY - floating.Rect.Y + 1
 				m.workbench.ResizeFloatingPane(tab.ID, m.mouseDragPaneID, newW, newH)
+				m.workbench.ClampFloatingPanesToBounds(workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)})
 				m.render.Invalidate()
 				return m.resizeVisiblePanesCmd()
 			}
@@ -171,6 +201,40 @@ func (m *Model) findFloatingPaneAt(tab *workbench.TabState, x, y int) (string, w
 	}
 
 	return "", workbench.Rect{}, false
+}
+
+func (m *Model) mouseHitsOwnerButton(pane workbench.VisiblePane, x, contentY int) bool {
+	if m == nil || m.runtime == nil {
+		return false
+	}
+	rect, ok := render.PaneOwnerButtonRect(pane, m.runtime.Visible(), m.ownerConfirmPaneID)
+	if !ok {
+		return false
+	}
+	return x >= rect.X && x < rect.X+rect.W && contentY >= rect.Y && contentY < rect.Y+rect.H
+}
+
+func (m *Model) becomeOwnerCmd(paneID string) tea.Cmd {
+	if strings.TrimSpace(paneID) == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		return input.SemanticAction{Kind: input.ActionBecomeOwner, PaneID: paneID}
+	}
+}
+
+func (m *Model) handleOwnerActionClick(paneID string) tea.Cmd {
+	if m == nil || strings.TrimSpace(paneID) == "" {
+		return nil
+	}
+	if m.ownerConfirmPaneID == paneID {
+		m.ownerConfirmPaneID = ""
+		m.ownerSeq++
+		return m.becomeOwnerCmd(paneID)
+	}
+	m.ownerConfirmPaneID = paneID
+	m.ownerSeq++
+	return clearOwnerConfirmCmd(m.ownerSeq)
 }
 
 func (m *Model) ensureFloatingModeTarget() {

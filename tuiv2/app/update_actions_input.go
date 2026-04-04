@@ -6,7 +6,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/input"
-	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
 )
 
@@ -54,9 +53,7 @@ func (m *Model) openPickerIfUnattached(paneID string) tea.Cmd {
 		return nil
 	}
 	m.modalHost.Open(input.ModePicker, paneID)
-	if m.modalHost.Picker == nil {
-		m.modalHost.Picker = &modal.PickerState{}
-	}
+	m.resetPickerState()
 	m.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: paneID})
 	m.render.Invalidate()
 	return m.applyEffects([]orchestrator.Effect{orchestrator.LoadPickerItemsEffect{}})

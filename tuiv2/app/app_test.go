@@ -864,6 +864,87 @@ func TestModelUpdateWindowSizeResizesActivePaneTerminals(t *testing.T) {
 	}
 }
 
+func TestModelUpdateWindowSizeReflowsFloatingPaneRects(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	model.width = 100
+	model.height = 42
+
+	tab := model.workbench.CurrentTab()
+	if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 50, Y: 10, W: 30, H: 12}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+
+	_, _ = model.Update(tea.WindowSizeMsg{Width: 50, Height: 22})
+
+	floating := findFloating(tab, "float-1")
+	if floating == nil {
+		t.Fatal("expected floating pane after resize")
+	}
+	if floating.Rect != (workbench.Rect{X: 25, Y: 5, W: 15, H: 6}) {
+		t.Fatalf("expected floating pane rect to be reflowed, got %#v", floating.Rect)
+	}
+}
+
+func TestModelUpdateWindowSizeDoesNotReflowFloatingPaneOnInitialSizing(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	model.width = 0
+	model.height = 0
+
+	tab := model.workbench.CurrentTab()
+	if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 10, Y: 5, W: 30, H: 12}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+
+	_, _ = model.Update(tea.WindowSizeMsg{Width: 100, Height: 42})
+
+	floating := findFloating(tab, "float-1")
+	if floating == nil {
+		t.Fatal("expected floating pane after initial sizing")
+	}
+	if floating.Rect != (workbench.Rect{X: 10, Y: 5, W: 30, H: 12}) {
+		t.Fatalf("expected initial sizing to preserve floating rect, got %#v", floating.Rect)
+	}
+}
+
+func TestModelUpdateWindowSizeClampsOversizedFloatingPaneOnInitialSizing(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	model.width = 0
+	model.height = 0
+
+	tab := model.workbench.CurrentTab()
+	if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 70, Y: 20, W: 50, H: 20}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+
+	_, _ = model.Update(tea.WindowSizeMsg{Width: 40, Height: 14})
+
+	floating := findFloating(tab, "float-1")
+	if floating == nil {
+		t.Fatal("expected floating pane after initial sizing")
+	}
+	if floating.Rect != (workbench.Rect{X: 1, Y: 1, W: 39, H: 11}) {
+		t.Fatalf("expected initial sizing to clamp oversized floating rect, got %#v", floating.Rect)
+	}
+}
+
+func TestInvalidateRenderEffectClampsFloatingPaneBelowViewportSize(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	tab := model.workbench.CurrentTab()
+	if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 0, Y: 0, W: 500, H: 500}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+
+	_ = model.applyEffects([]orchestrator.Effect{orchestrator.InvalidateRenderEffect{}})
+
+	floating := findFloating(tab, "float-1")
+	if floating == nil {
+		t.Fatal("expected floating pane to exist")
+	}
+	if floating.Rect.W != 119 || floating.Rect.H != 37 {
+		t.Fatalf("expected floating pane clamped below viewport size, got %#v", floating.Rect)
+	}
+}
+
 func TestModelLocalScrollActionsAndQuit(t *testing.T) {
 	statePath := t.TempDir() + "/workspace-state.json"
 	wb := workbench.NewWorkbench()
@@ -1103,6 +1184,9 @@ func TestModelViewShowsModeSpecificStatusHints(t *testing.T) {
 			t.Fatalf("expected view to contain %q, got:\n%s", want, view)
 		}
 	}
+	if strings.Contains(view, "a OWNER") {
+		t.Fatalf("expected owner action hidden without follower context, got:\n%s", view)
+	}
 }
 
 func TestModelHelpActionsOpenAndCloseOverlay(t *testing.T) {
@@ -1310,6 +1394,7 @@ func TestModelBootstrapHelperUsesStartup(t *testing.T) {
 type recordingBridgeClient struct {
 	resizes            []resizeCall
 	inputCalls         []inputCall
+	listCalls          int
 	createResult       *protocol.CreateResult
 	attachResult       *protocol.AttachResult
 	attachErr          error
@@ -1379,6 +1464,7 @@ func (c *recordingBridgeClient) SetMetadata(_ context.Context, terminalID string
 }
 
 func (c *recordingBridgeClient) List(context.Context) (*protocol.ListResult, error) {
+	c.listCalls++
 	if c.listResult == nil {
 		return &protocol.ListResult{}, nil
 	}

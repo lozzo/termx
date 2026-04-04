@@ -7,10 +7,17 @@ import (
 )
 
 var errorClearDelay = 3 * time.Second
+var ownerConfirmDelay = 400 * time.Millisecond
 
 func clearErrorCmd(seq uint64) tea.Cmd {
 	return tea.Tick(errorClearDelay, func(time.Time) tea.Msg {
 		return clearErrorMsg{seq: seq}
+	})
+}
+
+func clearOwnerConfirmCmd(seq uint64) tea.Cmd {
+	return tea.Tick(ownerConfirmDelay, func(time.Time) tea.Msg {
+		return clearOwnerConfirmMsg{seq: seq}
 	})
 }
 

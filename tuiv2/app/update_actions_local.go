@@ -68,6 +68,39 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			return true, nil
 		}
 		return false, nil
+	case input.ActionBecomeOwner:
+		if m.runtime == nil || m.workbench == nil {
+			return true, nil
+		}
+		switch m.input.Mode().Kind {
+		case input.ModeNormal, input.ModePane, input.ModeResize, input.ModeFloating:
+		default:
+			return false, nil
+		}
+		paneID := m.currentOrActionPaneID(action.PaneID)
+		if paneID == "" {
+			return true, nil
+		}
+		pane := m.workbench.ActivePane()
+		if pane == nil || pane.ID != paneID {
+			tab := m.workbench.CurrentTab()
+			if tab != nil {
+				pane = tab.Panes[paneID]
+			}
+		}
+		if pane == nil {
+			return true, nil
+		}
+		m.ownerConfirmPaneID = ""
+		m.ownerSeq++
+		if err := m.runtime.AcquireTerminalOwnership(paneID, pane.TerminalID); err != nil {
+			return true, m.showError(err)
+		}
+		m.render.Invalidate()
+		if m.runtime.Client() == nil {
+			return true, nil
+		}
+		return true, m.resizeVisiblePanesCmd()
 	case input.ActionOpenPrompt:
 		if m.input.Mode().Kind == input.ModeNormal {
 			m.input.SetMode(input.ModeState{Kind: input.ModeResize})
@@ -193,8 +226,7 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 	case input.ActionOpenTerminalManager:
 		if m.input.Mode().Kind == input.ModeGlobal {
 			m.terminalPage = &modal.TerminalManagerState{
-				Title:  "Terminal Pool",
-				Footer: input.FooterForMode(input.ModeTerminalManager, false),
+				Title: "Terminal Pool",
 			}
 			m.input.SetMode(input.ModeState{Kind: input.ModeTerminalManager, RequestID: terminalPoolPageModeToken})
 			m.render.Invalidate()

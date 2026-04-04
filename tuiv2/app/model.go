@@ -24,6 +24,7 @@ type Model struct {
 	quitting  bool
 	err       error
 	errorSeq  uint64
+	ownerSeq  uint64
 
 	startup bootstrap.StartupResult
 
@@ -47,6 +48,8 @@ type Model struct {
 	mouseDragOffsetX int
 	mouseDragOffsetY int
 	mouseDragMode    mouseDragMode
+
+	ownerConfirmPaneID string
 }
 
 type mouseDragMode int
@@ -125,7 +128,7 @@ func (m *Model) bootstrapStartup() error {
 	m.startup = result
 	if result.ShouldOpenPicker {
 		m.modalHost.Open(input.ModePicker, "startup-picker")
-		m.modalHost.Picker = &modal.PickerState{}
+		m.resetPickerState()
 		m.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: "startup-picker"})
 	}
 	return nil
