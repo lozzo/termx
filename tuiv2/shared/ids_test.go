@@ -34,3 +34,23 @@ func TestSequentialIDSource_Prefix(t *testing.T) {
 		t.Errorf("expected 'tab-2', got %q", id2)
 	}
 }
+
+func TestObserveScopedIDAdvancesCounter(t *testing.T) {
+	scope := "test-observe"
+	ObserveScopedID(scope, "41")
+	if got := NextScopedID(scope); got != "42" {
+		t.Fatalf("expected observed scope to continue at 42, got %q", got)
+	}
+}
+
+func TestLessNumericStrings(t *testing.T) {
+	if !LessNumericStrings("2", "10") {
+		t.Fatal("expected numeric ordering for plain numeric IDs")
+	}
+	if !LessNumericStrings("pane-2", "pane-10") {
+		t.Fatal("expected numeric ordering for legacy prefixed numeric IDs")
+	}
+	if LessNumericStrings("abc", "10") {
+		t.Fatal("expected numeric IDs to sort ahead of non-numeric IDs only when compared from left")
+	}
+}

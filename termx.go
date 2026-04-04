@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -107,10 +109,12 @@ func (s *Server) Create(ctx context.Context, opts CreateOptions) (*TerminalInfo,
 	id := opts.ID
 	if id == "" {
 		var err error
-		id, err = GenerateID()
+		id, err = s.nextGeneratedTerminalID()
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		ObserveGeneratedID(id)
 	}
 
 	size := opts.Size
@@ -194,6 +198,9 @@ func (s *Server) List(ctx context.Context, opts ...ListOptions) ([]*TerminalInfo
 		}
 		out = append(out, &values[len(values)-1])
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return lessNumericString(out[i].ID, out[j].ID)
+	})
 	return out, nil
 }
 
@@ -453,6 +460,9 @@ func (s *Server) protocolListResponse() (json.RawMessage, error) {
 		terms = append(terms, term)
 	}
 	s.mu.RUnlock()
+	sort.Slice(terms, func(i, j int) bool {
+		return lessNumericString(terms[i].ID(), terms[j].ID())
+	})
 
 	var buf bytes.Buffer
 	buf.WriteString(`{"terminals":[`)
@@ -480,6 +490,56 @@ func (s *Server) protocolListResponse() (json.RawMessage, error) {
 	}
 	s.mu.Unlock()
 	return result, nil
+}
+
+func (s *Server) nextGeneratedTerminalID() (string, error) {
+	s.mu.RLock()
+	existing := make([]string, 0, len(s.terminals))
+	for id := range s.terminals {
+		existing = append(existing, id)
+	}
+	s.mu.RUnlock()
+	for _, id := range existing {
+		ObserveGeneratedID(id)
+	}
+	for {
+		id, err := GenerateID()
+		if err != nil {
+			return "", err
+		}
+		s.mu.RLock()
+		_, exists := s.terminals[id]
+		s.mu.RUnlock()
+		if !exists {
+			return id, nil
+		}
+	}
+}
+
+func lessNumericString(a, b string) bool {
+	an, aok := parseNumericString(a)
+	bn, bok := parseNumericString(b)
+	if aok && bok {
+		if an != bn {
+			return an < bn
+		}
+	}
+	if aok != bok {
+		return aok
+	}
+	return a < b
+}
+
+func parseNumericString(raw string) (uint64, bool) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(value, 10, 64)
+	if err != nil || n == 0 {
+		return 0, false
+	}
+	return n, true
 }
 
 func matchTags(have, want map[string]string) bool {

@@ -118,16 +118,16 @@ func TestRestoreV2_PopulatesWorkbench(t *testing.T) {
 	if len(tab.Panes) != 2 {
 		t.Fatalf("expected 2 panes in tab 'code', got %d", len(tab.Panes))
 	}
-	if tab.ActivePaneID != "p1" {
-		t.Fatalf("expected ActivePaneID='p1', got %q", tab.ActivePaneID)
+	if tab.ActivePaneID == "" {
+		t.Fatal("expected restored active pane ID")
 	}
 
-	pane, ok := tab.Panes["p1"]
+	pane, ok := tab.Panes[tab.ActivePaneID]
 	if !ok {
-		t.Fatal("expected pane p1 to exist")
+		t.Fatalf("expected active pane %q to exist", tab.ActivePaneID)
 	}
 	if pane.TerminalID != "t1" {
-		t.Fatalf("expected pane p1 TerminalID='t1', got %q", pane.TerminalID)
+		t.Fatalf("expected active pane TerminalID='t1', got %q", pane.TerminalID)
 	}
 
 	if !wb.SwitchWorkspace("ops") {
@@ -179,13 +179,19 @@ func TestRestoreV2_RestoresFloatingEntries(t *testing.T) {
 	if len(tab.Floating) != 2 {
 		t.Fatalf("expected 2 restored floating entries, got %#v", tab.Floating)
 	}
-	if tab.Root == nil || tab.Root.PaneID != "p1" {
+	if tab.Root == nil || tab.Root.PaneID == "" {
 		t.Fatalf("expected tiled root to stay separate from floating panes, got %#v", tab.Root)
 	}
-	if tab.Floating[0].PaneID != "p2" || tab.Floating[0].Rect.W != 30 || tab.Floating[0].Z != 3 {
+	if tab.Root.PaneID == tab.Floating[0].PaneID || tab.Root.PaneID == tab.Floating[1].PaneID {
+		t.Fatalf("expected tiled root to stay separate from floating panes, got root=%q floating=%#v", tab.Root.PaneID, tab.Floating)
+	}
+	if tab.Panes[tab.Root.PaneID] == nil || tab.Panes[tab.Root.PaneID].TerminalID != "t1" {
+		t.Fatalf("expected tiled root pane to retain terminal t1, got %#v", tab.Panes[tab.Root.PaneID])
+	}
+	if tab.Panes[tab.Floating[0].PaneID] == nil || tab.Panes[tab.Floating[0].PaneID].TerminalID != "t2" || tab.Floating[0].Rect.W != 30 || tab.Floating[0].Z != 3 {
 		t.Fatalf("unexpected first floating entry: %#v", tab.Floating[0])
 	}
-	if tab.Floating[1].PaneID != "p3" || tab.Floating[1].Rect.Y != 6 || tab.Floating[1].Z != 7 {
+	if tab.Panes[tab.Floating[1].PaneID] == nil || tab.Panes[tab.Floating[1].PaneID].TerminalID != "t3" || tab.Floating[1].Rect.Y != 6 || tab.Floating[1].Z != 7 {
 		t.Fatalf("unexpected second floating entry: %#v", tab.Floating[1])
 	}
 }
@@ -396,11 +402,11 @@ func TestPersistSaveLoadRoundTripPreservesCurrentWorkspaceAndLayout(t *testing.T
 	if tab == nil {
 		t.Fatal("expected restored current tab")
 	}
-	if tab.ActivePaneID != "pane-right" {
-		t.Fatalf("expected active pane to round-trip, got %q", tab.ActivePaneID)
+	if pane := tab.Panes[tab.ActivePaneID]; pane == nil || pane.TerminalID != "term-right" {
+		t.Fatalf("expected active pane to retain terminal term-right, got %#v", pane)
 	}
-	if tab.ZoomedPaneID != "pane-left" {
-		t.Fatalf("expected zoomed pane to round-trip, got %q", tab.ZoomedPaneID)
+	if pane := tab.Panes[tab.ZoomedPaneID]; pane == nil || pane.TerminalID != "term-left" {
+		t.Fatalf("expected zoomed pane to retain terminal term-left, got %#v", pane)
 	}
 	if tab.Root == nil || tab.Root.Direction != workbench.SplitVertical || tab.Root.First == nil || tab.Root.Second == nil {
 		t.Fatalf("expected restored split layout, got %#v", tab.Root)

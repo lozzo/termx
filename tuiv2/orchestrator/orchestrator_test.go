@@ -3,7 +3,7 @@ package orchestrator
 import (
 	"context"
 	"path/filepath"
-	"strings"
+	"strconv"
 	"testing"
 	"time"
 
@@ -471,8 +471,8 @@ func TestHandleSemanticActionSplitPaneCreatesNewPaneAndOpensPicker(t *testing.T)
 	if tab.ActivePaneID == "" || tab.ActivePaneID == "pane-1" {
 		t.Fatalf("expected new active pane after split, got %q", tab.ActivePaneID)
 	}
-	if !strings.HasPrefix(tab.ActivePaneID, "pane-") {
-		t.Fatalf("expected generated pane ID prefix pane-, got %q", tab.ActivePaneID)
+	if !isNumericID(tab.ActivePaneID) {
+		t.Fatalf("expected generated pane ID to be numeric, got %q", tab.ActivePaneID)
 	}
 
 	if len(effects) != 3 {
@@ -519,8 +519,8 @@ func TestHandleSemanticActionCreateTabCreatesPaneAndOpensPicker(t *testing.T) {
 	if tab == nil {
 		t.Fatal("expected new tab at index 1")
 	}
-	if !strings.HasPrefix(tab.ID, "tab-") {
-		t.Fatalf("expected generated tab ID to start with tab-, got %q", tab.ID)
+	if !isNumericID(tab.ID) {
+		t.Fatalf("expected generated tab ID to be numeric, got %q", tab.ID)
 	}
 	if tab.Name != "2" {
 		t.Fatalf("expected generated tab name 2, got %q", tab.Name)
@@ -534,8 +534,8 @@ func TestHandleSemanticActionCreateTabCreatesPaneAndOpensPicker(t *testing.T) {
 	if _, ok := tab.Panes[tab.ActivePaneID]; !ok {
 		t.Fatalf("expected active pane %q in pane map", tab.ActivePaneID)
 	}
-	if !strings.HasPrefix(tab.ActivePaneID, "pane-") {
-		t.Fatalf("expected generated pane ID to start with pane-, got %q", tab.ActivePaneID)
+	if !isNumericID(tab.ActivePaneID) {
+		t.Fatalf("expected generated pane ID to be numeric, got %q", tab.ActivePaneID)
 	}
 	if ws.ActiveTab != 1 {
 		t.Fatalf("expected workspace active tab index 1, got %d", ws.ActiveTab)
@@ -566,6 +566,14 @@ func TestHandleSemanticActionCreateTabCreatesPaneAndOpensPicker(t *testing.T) {
 	if setMode.Mode.Kind != input.ModePicker || setMode.Mode.RequestID != tab.ActivePaneID {
 		t.Fatalf("unexpected SetInputModeEffect: %#v", setMode)
 	}
+}
+
+func isNumericID(value string) bool {
+	if value == "" {
+		return false
+	}
+	_, err := strconv.ParseUint(value, 10, 64)
+	return err == nil
 }
 
 func TestHandleSemanticActionSwitchesTabsAndWraps(t *testing.T) {

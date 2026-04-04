@@ -13,7 +13,7 @@ func (o *Orchestrator) handleFloatingAction(action input.SemanticAction) []Effec
 		if tab == nil {
 			return nil
 		}
-		paneID := "pane-" + shared.GenerateShortID()
+		paneID := shared.NextPaneID()
 		_ = o.workbench.CreateFloatingPane(tab.ID, paneID, workbench.Rect{X: 10, Y: 5, W: 80, H: 24})
 		_ = o.workbench.FocusPane(tab.ID, paneID)
 		return []Effect{

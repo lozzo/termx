@@ -14,9 +14,9 @@ func (o *Orchestrator) handleTabAction(action input.SemanticAction) []Effect {
 		if ws == nil {
 			return nil
 		}
-		tabID := "tab-" + shared.GenerateShortID()
+		tabID := shared.NextTabID()
 		tabName := fmt.Sprintf("%d", len(ws.Tabs)+1)
-		paneID := "pane-" + shared.GenerateShortID()
+		paneID := shared.NextPaneID()
 		_ = o.workbench.CreateTab(ws.Name, tabID, tabName)
 		_ = o.workbench.CreateFirstPane(tabID, paneID)
 		_ = o.workbench.SwitchTab(ws.Name, len(ws.Tabs)-1)

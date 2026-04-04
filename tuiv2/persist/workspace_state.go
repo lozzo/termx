@@ -7,6 +7,7 @@ import (
 	"maps"
 	"sort"
 
+	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -180,7 +181,9 @@ func orderedPaneIDs(tab *workbench.TabState) []string {
 		}
 		extras = append(extras, paneID)
 	}
-	sort.Strings(extras)
+	sort.Slice(extras, func(i, j int) bool {
+		return shared.LessNumericStrings(extras[i], extras[j])
+	})
 	return append(out, extras...)
 }
 

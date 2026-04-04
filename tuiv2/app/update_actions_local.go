@@ -126,7 +126,7 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		if m.input.Mode().Kind != input.ModeWorkspace || m.workbench == nil {
 			return false, nil
 		}
-		name := "workspace-" + shared.GenerateShortID()
+		name := shared.NextWorkspaceID()
 		if err := m.workbench.CreateWorkspace(name); err != nil {
 			return true, m.showError(err)
 		}

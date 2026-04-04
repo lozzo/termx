@@ -12,6 +12,7 @@ import (
 	"errors"
 
 	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -62,9 +63,12 @@ func Startup(cfg Config, wb *workbench.Workbench, _ *runtime.Runtime) (StartupRe
 		tabName = "1"
 	}
 
-	paneID := "pane-1"
+	paneID := "1"
+	shared.ObservePaneID(paneID)
+	tabID := "1"
+	shared.ObserveTabID(tabID)
 	tab := &workbench.TabState{
-		ID:           "tab-1",
+		ID:           tabID,
 		Name:         tabName,
 		Panes:        map[string]*workbench.PaneState{paneID: {ID: paneID}},
 		Root:         workbench.NewLeaf(paneID),

@@ -20,7 +20,7 @@ func (o *Orchestrator) handleWorkspaceAction(action input.SemanticAction) []Effe
 		if o.workbench == nil {
 			return nil
 		}
-		name := "workspace-" + shared.GenerateShortID()
+		name := shared.NextWorkspaceID()
 		_ = o.workbench.CreateWorkspace(name)
 		_ = o.workbench.SwitchWorkspace(name)
 		return []Effect{

@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/lozzow/termx/tuiv2/bridge"
+	"github.com/lozzow/termx/tuiv2/shared"
 )
 
 type TerminalRegistry struct {
@@ -66,7 +67,9 @@ func (r *TerminalRegistry) IDs() []string {
 	for id := range r.terminals {
 		ids = append(ids, id)
 	}
-	sort.Strings(ids)
+	sort.Slice(ids, func(i, j int) bool {
+		return shared.LessNumericStrings(ids[i], ids[j])
+	})
 	return ids
 }
 

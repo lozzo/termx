@@ -17,7 +17,7 @@ func (o *Orchestrator) handlePaneAction(action input.SemanticAction) []Effect {
 		if paneID == "" {
 			paneID = tab.ActivePaneID
 		}
-		newPaneID := "pane-" + shared.GenerateShortID()
+		newPaneID := shared.NextPaneID()
 		direction := workbench.SplitVertical
 		if action.Kind == input.ActionSplitPaneHorizontal {
 			direction = workbench.SplitHorizontal

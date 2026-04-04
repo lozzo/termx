@@ -2,12 +2,13 @@ package termx
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lozzow/termx/fanout"
@@ -15,6 +16,8 @@ import (
 	ptymgr "github.com/lozzow/termx/pty"
 	"github.com/lozzow/termx/vterm"
 )
+
+var terminalIDCounter atomic.Uint64
 
 type terminalConfig struct {
 	ID             string
@@ -437,16 +440,35 @@ func (t *Terminal) remove(reason string) {
 }
 
 func GenerateID() (string, error) {
-	const alphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
-	const size = 8
-	buf := make([]byte, size)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
+	return strconv.FormatUint(terminalIDCounter.Add(1), 10), nil
+}
+
+func ObserveGeneratedID(raw string) {
+	value, ok := parseObservedTerminalID(raw)
+	if !ok {
+		return
 	}
-	for i := range buf {
-		buf[i] = alphabet[int(buf[i])%len(alphabet)]
+	for {
+		current := terminalIDCounter.Load()
+		if current >= value {
+			return
+		}
+		if terminalIDCounter.CompareAndSwap(current, value) {
+			return
+		}
 	}
-	return string(buf), nil
+}
+
+func parseObservedTerminalID(raw string) (uint64, bool) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(value, 10, 64)
+	if err != nil || n == 0 {
+		return 0, false
+	}
+	return n, true
 }
 
 func copyTags(tags map[string]string) map[string]string {

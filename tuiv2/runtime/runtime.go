@@ -303,7 +303,9 @@ func (r *Runtime) Visible() *VisibleRuntime {
 	for paneID := range r.bindings {
 		paneIDs = append(paneIDs, paneID)
 	}
-	sort.Strings(paneIDs)
+	sort.Slice(paneIDs, func(i, j int) bool {
+		return shared.LessNumericStrings(paneIDs[i], paneIDs[j])
+	})
 	for _, paneID := range paneIDs {
 		binding := r.bindings[paneID]
 		if binding == nil {

@@ -20,7 +20,7 @@ func (m *Model) splitPaneAndAttachTerminalCmd(paneID, terminalID string) tea.Cmd
 	if tab == nil {
 		return nil
 	}
-	newPaneID := "pane-" + shared.GenerateShortID()
+	newPaneID := shared.NextPaneID()
 	if err := m.workbench.SplitPane(tab.ID, paneID, newPaneID, workbench.SplitVertical); err != nil {
 		return func() tea.Msg { return err }
 	}
@@ -37,8 +37,8 @@ func (m *Model) createTabAndAttachTerminalCmd(terminalID string) tea.Cmd {
 	if ws == nil {
 		return nil
 	}
-	tabID := "tab-" + shared.GenerateShortID()
-	paneID := "pane-" + shared.GenerateShortID()
+	tabID := shared.NextTabID()
+	paneID := shared.NextPaneID()
 	name := strconv.Itoa(len(ws.Tabs) + 1)
 	if err := m.workbench.CreateTab(ws.Name, tabID, name); err != nil {
 		return func() tea.Msg { return err }
@@ -59,7 +59,7 @@ func (m *Model) createFloatingPaneAndAttachTerminalCmd(terminalID string) tea.Cm
 	if tab == nil {
 		return nil
 	}
-	paneID := "pane-" + shared.GenerateShortID()
+	paneID := shared.NextPaneID()
 	if err := m.workbench.CreateFloatingPane(tab.ID, paneID, workbench.Rect{X: 10, Y: 5, W: 80, H: 24}); err != nil {
 		return func() tea.Msg { return err }
 	}
