@@ -624,16 +624,16 @@ func renderTerminalPoolPage(pool *modal.TerminalManagerState, runtimeState *Visi
 	items := pool.VisibleItems()
 	for _, row := range terminalPoolListRows(items) {
 		if row.itemIndex < 0 {
-			contentLines = append(contentLines, "  "+forceWidthANSIOverlay(overlaySectionTitleStyle(theme).Render(row.groupText), innerWidth))
+			contentLines = append(contentLines, renderOverlaySpan(overlayCardFillStyle(theme), "  "+overlaySectionTitleStyle(theme).Render(row.groupText), width))
 			continue
 		}
 		line := items[row.itemIndex].RenderLine(innerWidth, row.itemIndex == pool.Selected, pickerLineStyle(theme), pickerSelectedLineStyle(theme), pickerCreateRowStyle(theme))
-		contentLines = append(contentLines, "  "+forceWidthANSIOverlay(line, innerWidth))
+		contentLines = append(contentLines, renderOverlaySpan(overlayCardFillStyle(theme), "  "+line, width))
 	}
 	if detailLines := renderTerminalPoolDetails(pool.SelectedItem(), runtimeState, innerWidth); len(detailLines) > 0 {
 		contentLines = append(contentLines, overlayCardFillStyle(theme).Width(width).Render(""))
 		for _, line := range detailLines {
-			contentLines = append(contentLines, "  "+forceWidthANSIOverlay(line, innerWidth))
+			contentLines = append(contentLines, renderOverlaySpan(overlayCardFillStyle(theme), "  "+line, width))
 		}
 	}
 

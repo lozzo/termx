@@ -139,7 +139,13 @@ func layoutTerminalPoolFooterActionsWithTheme(theme uiTheme, width, height int) 
 	}
 	line := ""
 	if len(parts) > 0 {
-		line = strings.Repeat(" ", terminalPoolListLeftX) + strings.Join(parts, strings.Repeat(" ", terminalPoolFooterActionGap))
+		line = renderOverlaySpan(overlayFooterPlainStyle(theme), "", terminalPoolListLeftX)
+		for index, part := range parts {
+			if index > 0 {
+				line += renderOverlaySpan(overlayFooterPlainStyle(theme), "", terminalPoolFooterActionGap)
+			}
+			line += part
+		}
 	}
-	return pickerFooterStyle(theme).Render(forceWidthANSIOverlay(line, width)), slots
+	return renderOverlaySpan(pickerFooterStyle(theme), line, width), slots
 }

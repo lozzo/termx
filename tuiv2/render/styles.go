@@ -323,7 +323,7 @@ func terminalPickerBodyStyle(theme uiTheme) lipgloss.Style {
 func terminalPickerTitleStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.hostFG)).
-		Background(lipgloss.Color(theme.panelBG)).
+		Background(lipgloss.Color(overlayCardBG(theme))).
 		Padding(0, 1).
 		Bold(true)
 }
@@ -331,62 +331,69 @@ func terminalPickerTitleStyle(theme uiTheme) lipgloss.Style {
 func modalBorderTitleStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.hostFG)).
-		Background(lipgloss.Color(theme.panelBG)).
+		Background(lipgloss.Color(overlayCardBG(theme))).
 		Bold(true)
 }
 
 func pickerBorderStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(mixHex(theme.hostBG, theme.hostFG, 0.42))).
-		Background(lipgloss.Color(mixHex(theme.hostBG, theme.hostFG, 0.06)))
+		Background(lipgloss.Color(overlayCardBG(theme)))
 }
 
 func pickerFooterStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.panelMuted)).
-		Background(lipgloss.Color(mixHex(theme.hostBG, theme.hostFG, 0.09)))
+		Background(lipgloss.Color(overlayCardBG(theme)))
 }
 
 func pickerLineStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.hostFG)).
-		Background(lipgloss.Color(mixHex(theme.hostBG, theme.hostFG, 0.06)))
+		Background(lipgloss.Color(overlayCardBG(theme)))
 }
 
 func pickerSelectedLineStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.selectedText)).
-		Background(lipgloss.Color(theme.selectedBG)).
+		Background(lipgloss.Color(overlayCardBG(theme))).
 		Bold(true)
 }
 
 func pickerCreateRowStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.createText)).
-		Background(lipgloss.Color(theme.createBG)).
+		Background(lipgloss.Color(overlayCardBG(theme))).
 		Bold(true)
+}
+
+func overlayCardBG(theme uiTheme) string {
+	return theme.panelBG
 }
 
 func overlayCardFillStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.hostFG)).
-		Background(lipgloss.Color(mixHex(theme.hostBG, theme.hostFG, 0.06)))
+		Foreground(lipgloss.Color(theme.panelText)).
+		Background(lipgloss.Color(overlayCardBG(theme)))
 }
 
 func promptFieldMarkerStyle(theme uiTheme, _ bool) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.panelMuted))
+		Foreground(lipgloss.Color(theme.panelMuted)).
+		Background(lipgloss.Color(overlayCardBG(theme)))
 }
 
 func promptFieldLabelStyle(theme uiTheme, _ bool) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.panelMuted)).
+		Background(lipgloss.Color(overlayCardBG(theme))).
 		Bold(true)
 }
 
 func promptFieldValueStyle(theme uiTheme, active bool) lipgloss.Style {
 	style := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.hostFG))
+		Foreground(lipgloss.Color(theme.panelText)).
+		Background(lipgloss.Color(overlayCardBG(theme)))
 	if active {
 		style = style.Underline(true)
 	}
@@ -396,40 +403,40 @@ func promptFieldValueStyle(theme uiTheme, active bool) lipgloss.Style {
 func overlaySectionTitleStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.warning)).
-		Background(lipgloss.Color(theme.panelBG)).
+		Background(lipgloss.Color(overlayCardBG(theme))).
 		Bold(true)
 }
 
 func overlayHelpKeyStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.success)).
-		Background(lipgloss.Color(theme.panelBG)).
+		Background(lipgloss.Color(overlayCardBG(theme))).
 		Bold(true)
 }
 
 func overlayHelpActionStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.panelText)).
-		Background(lipgloss.Color(theme.panelBG))
+		Background(lipgloss.Color(overlayCardBG(theme)))
 }
 
 func overlayFooterKeyStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.footerKeyFG)).
-		Background(lipgloss.Color(theme.footerKeyBG)).
+		Background(lipgloss.Color(overlayCardBG(theme))).
 		Bold(true)
 }
 
 func overlayFooterTextStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.footerTextFG)).
-		Background(lipgloss.Color(theme.footerTextBG))
+		Background(lipgloss.Color(overlayCardBG(theme)))
 }
 
 func overlayFooterPlainStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.footerPlainFG)).
-		Background(lipgloss.Color(theme.footerPlainBG))
+		Background(lipgloss.Color(overlayCardBG(theme)))
 }
 
 func isHexColor(value string) bool {

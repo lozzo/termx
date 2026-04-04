@@ -308,7 +308,7 @@ func layoutOverlayFooterActionsWithTheme(theme uiTheme, specs []overlayFooterAct
 			break
 		}
 		if len(actions) > 0 {
-			builder.WriteString(strings.Repeat(" ", overlayFooterActionGap))
+			builder.WriteString(renderOverlaySpan(overlayFooterPlainStyle(theme), "", overlayFooterActionGap))
 			currentX += overlayFooterActionGap
 		}
 		actions = append(actions, overlayFooterActionLayout{
@@ -360,13 +360,13 @@ func renderPromptOverlayWithTheme(prompt *modal.PromptState, termSize TermSize, 
 	if prompt.IsForm() {
 		for fieldIndex, inputLine := range inputLines {
 			if inputLine >= 0 && inputLine < len(lines) {
-				lines[inputLine] = renderOverlayPromptFormField(theme, prompt, fieldIndex)
+				lines[inputLine] = renderOverlayPromptFormField(theme, prompt, fieldIndex, pickerInnerWidth(width))
 			}
 		}
 	} else if len(inputLines) > 0 {
 		inputLine := inputLines[0]
 		if inputLine >= 0 && inputLine < len(lines) {
-			lines[inputLine] = renderOverlayPromptField(theme, prompt)
+			lines[inputLine] = renderOverlayPromptField(theme, prompt, pickerInnerWidth(width))
 		}
 	}
 	footerLine, _ := layoutOverlayFooterActionsWithTheme(theme, promptFooterActionSpecs(prompt), workbench.Rect{W: pickerInnerWidth(width), H: 1})
@@ -568,10 +568,12 @@ func helpOverlayLines(theme uiTheme, help *modal.HelpState, innerWidth int) []st
 	}
 	lines := make([]string, 0)
 	for _, section := range help.Sections {
-		lines = append(lines, forceWidthANSIOverlay(overlaySectionTitleStyle(theme).Render("▍ "+section.Title), innerWidth))
+		lines = append(lines, renderOverlaySpan(overlaySectionTitleStyle(theme), "▍ "+section.Title, innerWidth))
 		for _, binding := range section.Bindings {
-			line := overlayHelpKeyStyle(theme).Render(binding.Key) + "  " + overlayHelpActionStyle(theme).Render(binding.Action)
-			lines = append(lines, forceWidthANSIOverlay(line, innerWidth))
+			line := overlayHelpKeyStyle(theme).Render(binding.Key) +
+				renderOverlaySpan(overlayHelpActionStyle(theme), "", 2) +
+				overlayHelpActionStyle(theme).Render(binding.Action)
+			lines = append(lines, renderOverlaySpan(overlayHelpActionStyle(theme), line, innerWidth))
 		}
 		lines = append(lines, "")
 	}
@@ -669,42 +671,44 @@ func renderCardTitleRow(theme uiTheme, title string, innerWidth int) string {
 
 func renderCardHeaderRow(theme uiTheme, header string, innerWidth int) string {
 	if strings.TrimSpace(header) == "" {
-		return overlayCardFillStyle(theme).Width(innerWidth).Render("")
+		return renderOverlaySpan(overlayCardFillStyle(theme), "", innerWidth)
 	}
-	return overlayCardFillStyle(theme).Width(innerWidth).Render(forceWidthANSIOverlay(header, innerWidth))
+	return renderOverlaySpan(overlayCardFillStyle(theme), header, innerWidth)
 }
 
 func renderCardContentRow(theme uiTheme, content string, innerWidth int) string {
-	return overlayCardFillStyle(theme).Width(innerWidth).Render(forceWidthANSIOverlay(content, innerWidth))
+	return renderOverlaySpan(overlayCardFillStyle(theme), content, innerWidth)
 }
 
 func renderOverlaySearchLine(theme uiTheme, query string, innerWidth int) string {
 	value := query + "_"
+	label := "search: "
+	prefix := "  " + label
+	valueWidth := maxInt(0, innerWidth-xansi.StringWidth(prefix))
 	row := promptFieldMarkerStyle(theme, false).Render("  ") +
-		promptFieldLabelStyle(theme, true).Render("search: ") +
-		promptFieldValueStyle(theme, true).Render(value)
-	remain := innerWidth - xansi.StringWidth("  ") - xansi.StringWidth("search: ") - xansi.StringWidth(value)
-	if remain > 0 {
-		row += strings.Repeat(" ", remain)
-	}
-	return overlayCardFillStyle(theme).Width(innerWidth).Render(forceWidthANSIOverlay(row, innerWidth))
+		promptFieldLabelStyle(theme, true).Render(label) +
+		renderOverlayPromptValue(promptFieldValueStyle(theme, true), value, valueWidth)
+	return renderOverlaySpan(overlayCardFillStyle(theme), row, innerWidth)
 }
 
 func renderOverlayFooterLine(theme uiTheme, footer string, innerWidth int) string {
-	return pickerFooterStyle(theme).Render(forceWidthANSIOverlay(footer, innerWidth))
+	return renderOverlaySpan(pickerFooterStyle(theme), footer, innerWidth)
 }
 
-func renderOverlayPromptField(theme uiTheme, prompt *modal.PromptState) string {
+func renderOverlayPromptField(theme uiTheme, prompt *modal.PromptState, innerWidth int) string {
 	if prompt == nil {
 		return ""
 	}
 	value := promptValueWithCursor(prompt)
+	label := promptFieldLabel(prompt.Kind) + ": "
+	prefix := "  " + label
+	valueWidth := maxInt(0, innerWidth-xansi.StringWidth(prefix))
 	return promptFieldMarkerStyle(theme, false).Render("  ") +
-		promptFieldLabelStyle(theme, true).Render(promptFieldLabel(prompt.Kind)+": ") +
-		promptFieldValueStyle(theme, true).Render(value)
+		promptFieldLabelStyle(theme, true).Render(label) +
+		renderOverlayPromptValue(promptFieldValueStyle(theme, true), value, valueWidth)
 }
 
-func renderOverlayPromptFormField(theme uiTheme, prompt *modal.PromptState, fieldIndex int) string {
+func renderOverlayPromptFormField(theme uiTheme, prompt *modal.PromptState, fieldIndex int, innerWidth int) string {
 	if prompt == nil || fieldIndex < 0 || fieldIndex >= len(prompt.Fields) {
 		return ""
 	}
@@ -730,9 +734,26 @@ func renderOverlayPromptFormField(theme uiTheme, prompt *modal.PromptState, fiel
 	if field.Required {
 		label += "*"
 	}
+	label += ": "
+	prefix := "  " + label
+	valueWidth := maxInt(0, innerWidth-xansi.StringWidth(prefix))
 	return promptFieldMarkerStyle(theme, false).Render("  ") +
-		promptFieldLabelStyle(theme, active).Render(label+": ") +
-		valueStyle.Render(value)
+		promptFieldLabelStyle(theme, active).Render(label) +
+		renderOverlayPromptValue(valueStyle, value, valueWidth)
+}
+
+func renderOverlayPromptValue(style lipgloss.Style, value string, width int) string {
+	return renderOverlaySpan(style, value, width)
+}
+
+func renderOverlaySpan(style lipgloss.Style, value string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(value) > width {
+		value = lipgloss.NewStyle().MaxWidth(width).Render(value)
+	}
+	return style.Width(width).Render(value)
 }
 
 func renderOverlayFooterActionLabel(theme uiTheme, label string) string {
