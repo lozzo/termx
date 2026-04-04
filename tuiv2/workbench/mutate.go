@@ -340,6 +340,16 @@ func containsPane(node *LayoutNode, paneID string) bool {
 	return containsPane(node.First, paneID) || containsPane(node.Second, paneID)
 }
 
+func containsNode(node, target *LayoutNode) bool {
+	if node == nil || target == nil {
+		return false
+	}
+	if node == target {
+		return true
+	}
+	return containsNode(node.First, target) || containsNode(node.Second, target)
+}
+
 // adjustRatioForPane finds the nearest ancestor split node whose axis aligns
 // with dir and adjusts its ratio so that the pane containing paneID grows or
 // shrinks in the requested direction.
@@ -488,6 +498,23 @@ func (w *Workbench) ResizeFloatingPaneBy(tabID, paneID string, dw, dh int) bool 
 		}
 	}
 	return false
+}
+
+// ResizeSplit repositions the divider for a concrete split node inside the
+// tab's layout tree. splitRoot must be the rect occupied by target.
+func (w *Workbench) ResizeSplit(tabID string, target *LayoutNode, splitRoot Rect, x, y, offsetX, offsetY int) bool {
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil || tab.Root == nil || target == nil {
+		return false
+	}
+	if !containsNode(tab.Root, target) {
+		return false
+	}
+	if !target.SetRatioFromDivider(splitRoot, x, y, offsetX, offsetY) {
+		return false
+	}
+	w.touch()
+	return true
 }
 
 // ReorderFloatingPane moves a floating pane to the top of the Z-order.

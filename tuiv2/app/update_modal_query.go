@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/input"
+	"github.com/lozzow/termx/tuiv2/modal"
 )
 
 func (m *Model) handleModalKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd) {
@@ -25,12 +26,32 @@ func (m *Model) handleModalKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyRunes:
 			if len(msg.Runes) > 0 {
-				m.modalHost.Prompt.Value += string(msg.Runes)
+				insertPromptRunes(m.modalHost.Prompt, msg.Runes)
 				m.render.Invalidate()
 			}
 			return true, nil
 		case tea.KeyBackspace:
-			if deleteLastRune(&m.modalHost.Prompt.Value) {
+			if deletePromptRuneBeforeCursor(m.modalHost.Prompt) {
+				m.render.Invalidate()
+			}
+			return true, nil
+		case tea.KeyLeft:
+			if movePromptCursor(m.modalHost.Prompt, -1) {
+				m.render.Invalidate()
+			}
+			return true, nil
+		case tea.KeyRight:
+			if movePromptCursor(m.modalHost.Prompt, 1) {
+				m.render.Invalidate()
+			}
+			return true, nil
+		case tea.KeyHome:
+			if setPromptCursor(m.modalHost.Prompt, 0) {
+				m.render.Invalidate()
+			}
+			return true, nil
+		case tea.KeyEnd:
+			if setPromptCursor(m.modalHost.Prompt, len([]rune(m.modalHost.Prompt.Value))) {
 				m.render.Invalidate()
 			}
 			return true, nil
@@ -143,4 +164,71 @@ func normalizeModalSelection(selected *int, count int) {
 	if count <= 0 || *selected < 0 || *selected >= count {
 		*selected = 0
 	}
+}
+
+func promptCursor(prompt *modal.PromptState) int {
+	if prompt == nil {
+		return 0
+	}
+	cursor := prompt.Cursor
+	maxCursor := len([]rune(prompt.Value))
+	if cursor < 0 {
+		return 0
+	}
+	if cursor > maxCursor {
+		return maxCursor
+	}
+	return cursor
+}
+
+func setPromptCursor(prompt *modal.PromptState, cursor int) bool {
+	if prompt == nil {
+		return false
+	}
+	clamped := cursor
+	if clamped < 0 {
+		clamped = 0
+	}
+	maxCursor := len([]rune(prompt.Value))
+	if clamped > maxCursor {
+		clamped = maxCursor
+	}
+	if prompt.Cursor == clamped {
+		return false
+	}
+	prompt.Cursor = clamped
+	return true
+}
+
+func movePromptCursor(prompt *modal.PromptState, delta int) bool {
+	return setPromptCursor(prompt, promptCursor(prompt)+delta)
+}
+
+func insertPromptRunes(prompt *modal.PromptState, runes []rune) {
+	if prompt == nil || len(runes) == 0 {
+		return
+	}
+	value := []rune(prompt.Value)
+	cursor := promptCursor(prompt)
+	next := make([]rune, 0, len(value)+len(runes))
+	next = append(next, value[:cursor]...)
+	next = append(next, runes...)
+	next = append(next, value[cursor:]...)
+	prompt.Value = string(next)
+	prompt.Cursor = cursor + len(runes)
+}
+
+func deletePromptRuneBeforeCursor(prompt *modal.PromptState) bool {
+	if prompt == nil {
+		return false
+	}
+	value := []rune(prompt.Value)
+	cursor := promptCursor(prompt)
+	if cursor <= 0 || len(value) == 0 {
+		return false
+	}
+	value = append(value[:cursor-1], value[cursor:]...)
+	prompt.Value = string(value)
+	prompt.Cursor = cursor - 1
+	return true
 }

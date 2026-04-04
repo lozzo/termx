@@ -48,6 +48,8 @@ type Model struct {
 	mouseDragOffsetX int
 	mouseDragOffsetY int
 	mouseDragMode    mouseDragMode
+	mouseDragSplit   *workbench.LayoutNode
+	mouseDragBounds  workbench.Rect
 
 	ownerConfirmPaneID string
 }
@@ -58,6 +60,7 @@ const (
 	mouseDragNone mouseDragMode = iota
 	mouseDragMove
 	mouseDragResize
+	mouseDragResizeSplit
 )
 
 func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model {

@@ -126,6 +126,80 @@ func encodeSpecialTeaKey(msg tea.KeyMsg, modes localvterm.TerminalModes) []byte 
 	return nil
 }
 
+func (m *Model) encodeTerminalMouseInput(msg tea.MouseMsg, paneID string, contentRect workbench.Rect) []byte {
+	if m == nil {
+		return nil
+	}
+	pane := m.activePaneForInput(paneID)
+	if pane == nil || pane.TerminalID == "" {
+		return nil
+	}
+	modes := m.terminalModesForPane(pane)
+	if !modes.MouseTracking {
+		return nil
+	}
+	col := msg.X - contentRect.X + 1
+	row := msg.Y - contentRect.Y + 1
+	if col < 1 || row < 1 || col > contentRect.W || row > contentRect.H {
+		return nil
+	}
+	return encodeSGR1006Mouse(msg, col, row)
+}
+
+func encodeSGR1006Mouse(msg tea.MouseMsg, col, row int) []byte {
+	if col < 1 || row < 1 {
+		return nil
+	}
+	mods := sgrMouseModifierBits(msg)
+	switch msg.Action {
+	case tea.MouseActionPress:
+		switch msg.Button {
+		case tea.MouseButtonLeft:
+			return encodeSGRMouseSequence(mods, col, row, false)
+		case tea.MouseButtonWheelUp:
+			return encodeSGRMouseSequence(64+mods, col, row, false)
+		case tea.MouseButtonWheelDown:
+			return encodeSGRMouseSequence(65+mods, col, row, false)
+		default:
+			return nil
+		}
+	case tea.MouseActionMotion:
+		if msg.Button != tea.MouseButtonLeft {
+			return nil
+		}
+		return encodeSGRMouseSequence(32+mods, col, row, false)
+	case tea.MouseActionRelease:
+		if msg.Button != tea.MouseButtonLeft {
+			return nil
+		}
+		return encodeSGRMouseSequence(3+mods, col, row, true)
+	default:
+		return nil
+	}
+}
+
+func encodeSGRMouseSequence(code, col, row int, release bool) []byte {
+	final := "M"
+	if release {
+		final = "m"
+	}
+	return []byte("\x1b[<" + itoa(code) + ";" + itoa(col) + ";" + itoa(row) + final)
+}
+
+func sgrMouseModifierBits(msg tea.MouseMsg) int {
+	mods := 0
+	if msg.Shift {
+		mods += 4
+	}
+	if msg.Alt {
+		mods += 8
+	}
+	if msg.Ctrl {
+		mods += 16
+	}
+	return mods
+}
+
 func arrowKeySpec(msg tea.KeyMsg) (byte, terminalModifiers, bool) {
 	switch msg.Type {
 	case tea.KeyUp:

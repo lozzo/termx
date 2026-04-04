@@ -483,6 +483,75 @@ func TestVisible_ReflectsMutations(t *testing.T) {
 	}
 }
 
+func TestDividerAtReturnsNestedSplitBounds(t *testing.T) {
+	root := &LayoutNode{
+		Direction: SplitVertical,
+		Ratio:     0.5,
+		First: &LayoutNode{
+			Direction: SplitHorizontal,
+			Ratio:     0.5,
+			First:     NewLeaf("pane1"),
+			Second:    NewLeaf("pane2"),
+		},
+		Second: NewLeaf("pane3"),
+	}
+
+	hit, ok := root.DividerAt(Rect{W: 100, H: 40}, 20, 19)
+	if !ok {
+		t.Fatal("expected nested horizontal divider hit")
+	}
+	if hit.Node != root.First {
+		t.Fatalf("expected nested split node, got %#v", hit.Node)
+	}
+	if hit.Root != (Rect{X: 0, Y: 0, W: 50, H: 40}) {
+		t.Fatalf("expected nested split bounds, got %#v", hit.Root)
+	}
+	if hit.Rect != (Rect{X: 0, Y: 19, W: 50, H: 2}) {
+		t.Fatalf("expected nested divider rect, got %#v", hit.Rect)
+	}
+}
+
+func TestResizeSplitUpdatesSiblingRects(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.SplitPane("tab1", "pane1", "pane2", SplitVertical)
+
+	tab := wb.store["main"].Tabs[0]
+	hit, ok := tab.Root.DividerAt(Rect{W: 100, H: 40}, 49, 10)
+	if !ok {
+		t.Fatal("expected root divider hit")
+	}
+	if !wb.ResizeSplit("tab1", hit.Node, hit.Root, 39, 10, 0, 0) {
+		t.Fatal("expected resize split to report change")
+	}
+
+	rects := tab.Root.Rects(Rect{W: 100, H: 40})
+	if rects["pane1"].W != 40 || rects["pane2"].W != 60 {
+		t.Fatalf("expected 40/60 widths after drag, got pane1=%#v pane2=%#v", rects["pane1"], rects["pane2"])
+	}
+}
+
+func TestResizeSplitHonorsDividerOffsetWithoutJitter(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.SplitPane("tab1", "pane1", "pane2", SplitVertical)
+
+	tab := wb.store["main"].Tabs[0]
+	hit, ok := tab.Root.DividerAt(Rect{W: 100, H: 40}, 50, 10)
+	if !ok {
+		t.Fatal("expected root divider hit")
+	}
+	offsetX := 50 - hit.Rect.X
+	if wb.ResizeSplit("tab1", hit.Node, hit.Root, 50, 10, offsetX, 0) {
+		t.Fatal("expected no-op resize when divider does not move")
+	}
+	if tab.Root.Ratio != 0.5 {
+		t.Fatalf("expected ratio to stay at 0.5, got %f", tab.Root.Ratio)
+	}
+}
+
 func TestReorderFloatingPaneUpdatesZOrderMetadata(t *testing.T) {
 	wb := setupWorkbench(t)
 	_ = wb.CreateTab("main", "tab1", "Tab One")

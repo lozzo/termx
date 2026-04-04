@@ -62,3 +62,74 @@ func TestEncodeTerminalPasteHonorsBracketedPaste(t *testing.T) {
 		t.Fatalf("expected bracketed paste sequence, got %q", got)
 	}
 }
+
+func TestEncodeSGR1006Mouse(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  tea.MouseMsg
+		col  int
+		row  int
+		want string
+	}{
+		{
+			name: "left-press",
+			msg: tea.MouseMsg{
+				Action: tea.MouseActionPress,
+				Button: tea.MouseButtonLeft,
+			},
+			col:  4,
+			row:  2,
+			want: "\x1b[<0;4;2M",
+		},
+		{
+			name: "left-motion",
+			msg: tea.MouseMsg{
+				Action: tea.MouseActionMotion,
+				Button: tea.MouseButtonLeft,
+			},
+			col:  9,
+			row:  3,
+			want: "\x1b[<32;9;3M",
+		},
+		{
+			name: "left-release",
+			msg: tea.MouseMsg{
+				Action: tea.MouseActionRelease,
+				Button: tea.MouseButtonLeft,
+			},
+			col:  9,
+			row:  3,
+			want: "\x1b[<3;9;3m",
+		},
+		{
+			name: "wheel-up-with-mods",
+			msg: tea.MouseMsg{
+				Action: tea.MouseActionPress,
+				Button: tea.MouseButtonWheelUp,
+				Shift:  true,
+				Alt:    true,
+			},
+			col:  1,
+			row:  1,
+			want: "\x1b[<76;1;1M",
+		},
+		{
+			name: "wheel-down",
+			msg: tea.MouseMsg{
+				Action: tea.MouseActionPress,
+				Button: tea.MouseButtonWheelDown,
+			},
+			col:  8,
+			row:  7,
+			want: "\x1b[<65;8;7M",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := string(encodeSGR1006Mouse(tc.msg, tc.col, tc.row)); got != tc.want {
+				t.Fatalf("expected %q, got %q", tc.want, got)
+			}
+		})
+	}
+}

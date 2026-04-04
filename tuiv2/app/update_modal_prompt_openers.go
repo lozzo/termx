@@ -32,6 +32,7 @@ func (m *Model) openEditTerminalPrompt(item *modal.PickerItem) {
 		Title:       "Edit Terminal",
 		Hint:        "[Enter] continue  [Esc] cancel",
 		Value:       name,
+		Cursor:      len([]rune(name)),
 		Original:    name,
 		DefaultName: name,
 		TerminalID:  item.TerminalID,
@@ -59,6 +60,7 @@ func (m *Model) openCreateTerminalPrompt(paneID string, target modal.CreateTarge
 		Kind:         "create-terminal-name",
 		Title:        "Create Terminal",
 		Hint:         "[Enter] continue  [Esc] cancel",
+		Cursor:       0,
 		Original:     defaultName,
 		DefaultName:  defaultName,
 		PaneID:       paneID,
@@ -84,6 +86,7 @@ func (m *Model) openRenameWorkspacePrompt() {
 		Title:      "rename workspace",
 		Hint:       "[Enter] save  [Esc] cancel",
 		Value:      workspace.Name,
+		Cursor:     len([]rune(workspace.Name)),
 		Original:   workspace.Name,
 		AllowEmpty: false,
 	}
@@ -106,6 +109,7 @@ func (m *Model) openRenameTabPrompt() {
 		Title:      "rename tab",
 		Hint:       "[Enter] save  [Esc] cancel",
 		Value:      tab.Name,
+		Cursor:     len([]rune(tab.Name)),
 		Original:   tab.Name,
 		AllowEmpty: false,
 	}

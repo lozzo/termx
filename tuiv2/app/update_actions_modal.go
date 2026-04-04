@@ -193,6 +193,59 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 				}
 			}
 			return true, nil
+		case input.ActionCreateWorkspace:
+			if m.workbench == nil {
+				return true, nil
+			}
+			name := shared.NextWorkspaceID()
+			if err := m.workbench.CreateWorkspace(name); err != nil {
+				return true, m.showError(err)
+			}
+			_ = m.workbench.SwitchWorkspace(name)
+			m.modalHost.Close(input.ModeWorkspacePicker, m.modalHost.Session.RequestID)
+			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+			m.render.Invalidate()
+			return true, tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
+		case input.ActionDeleteWorkspace:
+			if m.workbench == nil {
+				return true, nil
+			}
+			ws := m.workbench.CurrentWorkspace()
+			if ws == nil {
+				return true, nil
+			}
+			if err := m.workbench.DeleteWorkspace(ws.Name); err != nil {
+				return true, m.showError(err)
+			}
+			m.modalHost.Close(input.ModeWorkspacePicker, m.modalHost.Session.RequestID)
+			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+			m.render.Invalidate()
+			return true, tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
+		case input.ActionRenameWorkspace:
+			m.openRenameWorkspacePrompt()
+			return true, nil
+		case input.ActionPrevWorkspace:
+			if m.workbench == nil {
+				return true, nil
+			}
+			if err := m.workbench.SwitchWorkspaceByOffset(-1); err != nil {
+				return true, m.showError(err)
+			}
+			m.modalHost.Close(input.ModeWorkspacePicker, m.modalHost.Session.RequestID)
+			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+			m.render.Invalidate()
+			return true, tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
+		case input.ActionNextWorkspace:
+			if m.workbench == nil {
+				return true, nil
+			}
+			if err := m.workbench.SwitchWorkspaceByOffset(1); err != nil {
+				return true, m.showError(err)
+			}
+			m.modalHost.Close(input.ModeWorkspacePicker, m.modalHost.Session.RequestID)
+			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+			m.render.Invalidate()
+			return true, tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
 		default:
 			return false, nil
 		}

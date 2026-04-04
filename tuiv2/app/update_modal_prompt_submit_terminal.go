@@ -24,6 +24,7 @@ func (m *Model) submitCreateTerminalNamePrompt(prompt *modal.PromptState) tea.Cm
 	prompt.AllowEmpty = true
 	prompt.Name = name
 	prompt.Value = ""
+	prompt.Cursor = 0
 	m.render.Invalidate()
 	return nil
 }
@@ -42,6 +43,7 @@ func (m *Model) submitEditTerminalNamePrompt(prompt *modal.PromptState) tea.Cmd 
 	prompt.AllowEmpty = true
 	prompt.Name = name
 	prompt.Value = formatPromptTags(prompt.Tags)
+	prompt.Cursor = len([]rune(prompt.Value))
 	m.render.Invalidate()
 	return nil
 }

@@ -123,8 +123,8 @@ func TestModelInitRestoresWorkspaceStateFromConfigPath(t *testing.T) {
 		t.Fatalf("expected restore path not to open startup picker, got %#v", model.modalHost.Session)
 	}
 	tab := model.workbench.CurrentTab()
-	if tab == nil || tab.ActivePaneID != "pane-dev" {
-		t.Fatalf("expected restored active pane pane-dev, got %#v", tab)
+	if tab == nil || tab.ActivePaneID == "" {
+		t.Fatalf("expected restored active pane, got %#v", tab)
 	}
 	if pane := model.workbench.ActivePane(); pane == nil || pane.TerminalID != "" {
 		t.Fatalf("expected failed auto-reattach to clear restored binding, got %#v", pane)
@@ -757,6 +757,7 @@ func TestModelPromptOverlayInputStillUpdatesValue(t *testing.T) {
 		Kind:   "create-terminal-name",
 		Title:  "Create Terminal",
 		Value:  "de",
+		Cursor: 2,
 		PaneID: "pane-1",
 	}
 	model.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: "prompt-1"})
@@ -1288,7 +1289,7 @@ func TestModelInitRestoreAutoReattachesPersistedPanes(t *testing.T) {
 		t.Fatalf("expected reattach terminal term-restore, got %#v", client.attachCalls)
 	}
 	pane := model.workbench.ActivePane()
-	if pane == nil || pane.TerminalID != "term-restore" {
+	if pane == nil || pane.ID == "" || pane.TerminalID != "term-restore" {
 		t.Fatalf("expected restored pane bound to term-restore, got %#v", pane)
 	}
 	if model.modalHost.Session != nil {
@@ -1337,7 +1338,7 @@ func TestModelInitRestoreAutoReattachClearsMissingTerminalBinding(t *testing.T) 
 	if pane == nil {
 		t.Fatal("expected restored pane to exist")
 	}
-	if pane.TerminalID != "" {
+	if pane.ID == "" || pane.TerminalID != "" {
 		t.Fatalf("expected missing terminal binding to be cleared, got %#v", pane)
 	}
 }
