@@ -18,6 +18,7 @@ import (
 	unixtransport "github.com/lozzow/termx/transport/unix"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/input"
+	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/persist"
 	"github.com/lozzow/termx/tuiv2/render"
 	"github.com/lozzow/termx/tuiv2/runtime"
@@ -95,7 +96,8 @@ func TestE2ECreateShellAndInteract(t *testing.T) {
 		t.Fatalf("expected picker open after init, got session=%#v", model.modalHost.Session)
 	}
 	items := model.modalHost.Picker.VisibleItems()
-	if len(items) == 0 || !items[len(items)-1].CreateNew {
+	createIndex := pickerCreateRowIndex(items)
+	if createIndex < 0 {
 		t.Fatalf("expected create-new entry in picker items, got %#v", items)
 	}
 
@@ -104,8 +106,8 @@ func TestE2ECreateShellAndInteract(t *testing.T) {
 	if pane == nil {
 		t.Fatal("expected active pane after bootstrap")
 	}
-	// Move selection to the last (create-new) item.
-	for i := 0; i < len(items)-1; i++ {
+	// Move selection to the create-new item.
+	for i := 0; i < createIndex; i++ {
 		_, _ = model.Update(input.SemanticAction{Kind: input.ActionPickerDown})
 	}
 	// Submit → openCreateTerminalPrompt is called, mode switches to ModePrompt.
@@ -116,24 +118,16 @@ func TestE2ECreateShellAndInteract(t *testing.T) {
 		t.Fatalf("expected name prompt after create-new, got session=%#v", model.modalHost.Session)
 	}
 
-	// ── 6. Name prompt: set name and command, submit ─────────────────────────
+	// ── 6. Create form: set name and command, submit ─────────────────────────
 	// Override the command to produce deterministic output for the test.
 	// "echo e2e_ready; exec sh" prints a marker then hands off to an interactive sh.
 	paneID := model.modalHost.Prompt.PaneID
-	model.modalHost.Prompt.Value = "e2e-shell"
+	setCreateTerminalFormField(model.modalHost.Prompt, "name", "e2e-shell")
 	// Use a command that keeps its output on-screen: print the marker, then
 	// wait (cat holds stdin open so the process doesn't exit immediately).
-	model.modalHost.Prompt.Command = []string{"sh", "-c", "printf 'e2e_ready\\n'; cat"}
+	setCreateTerminalFormField(model.modalHost.Prompt, "command", "sh -c \"printf 'e2e_ready\\n'; cat\"")
 	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID})
 	e2eDrain(t, model, cmd)
-
-	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-terminal-tags" {
-		t.Fatalf("expected tags prompt after name submit, got prompt=%#v", model.modalHost.Prompt)
-	}
-
-	// ── 7. Tags prompt: empty submit → client.Create + AttachTerminal ────────
-	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID})
-	e2eDrain(t, model, cmd) // blocks until Create+Attach+Snapshot complete
 
 	// Pane should now be bound and modal closed.
 	pane = model.workbench.ActivePane()
@@ -382,15 +376,15 @@ func TestE2EDetachAndReattachThroughPaneMode(t *testing.T) {
 
 	e2eDrain(t, model, model.Init())
 	items := model.modalHost.Picker.VisibleItems()
-	for i := 0; i < len(items)-1; i++ {
+	for i := 0; i < pickerCreateRowIndex(items); i++ {
 		_, _ = model.Update(input.SemanticAction{Kind: input.ActionPickerDown})
 	}
 	pane := model.workbench.ActivePane()
 	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: pane.ID})
 	e2eDrain(t, model, cmd)
 	paneID := model.modalHost.Prompt.PaneID
-	model.modalHost.Prompt.Value = "e2e-shell"
-	model.modalHost.Prompt.Command = []string{"sh", "-c", "printf 'e2e_ready\\n'; tail -f /dev/null"}
+	setCreateTerminalFormField(model.modalHost.Prompt, "name", "e2e-shell")
+	setCreateTerminalFormField(model.modalHost.Prompt, "command", "sh -c \"printf 'e2e_ready\\n'; tail -f /dev/null\"")
 	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID})
 	e2eDrain(t, model, cmd)
 	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID})
@@ -499,17 +493,15 @@ func TestE2EClosePaneLeavesTerminalAttachable(t *testing.T) {
 
 	e2eDrain(t, model, model.Init())
 	items := model.modalHost.Picker.VisibleItems()
-	for i := 0; i < len(items)-1; i++ {
+	for i := 0; i < pickerCreateRowIndex(items); i++ {
 		_, _ = model.Update(input.SemanticAction{Kind: input.ActionPickerDown})
 	}
 	pane := model.workbench.ActivePane()
 	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: pane.ID})
 	e2eDrain(t, model, cmd)
 	paneID := model.modalHost.Prompt.PaneID
-	model.modalHost.Prompt.Value = "close-pane-shell"
-	model.modalHost.Prompt.Command = []string{"sh", "-c", "printf 'close_pane_ready\\n'; tail -f /dev/null"}
-	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID})
-	e2eDrain(t, model, cmd)
+	setCreateTerminalFormField(model.modalHost.Prompt, "name", "close-pane-shell")
+	setCreateTerminalFormField(model.modalHost.Prompt, "command", "sh -c \"printf 'close_pane_ready\\n'; tail -f /dev/null\"")
 	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID})
 	e2eDrain(t, model, cmd)
 
@@ -607,17 +599,15 @@ func TestE2ERestoreEmptyWorkspaceRecoversViaPicker(t *testing.T) {
 	}
 
 	items := model.modalHost.Picker.VisibleItems()
-	for i := 0; i < len(items)-1; i++ {
+	for i := 0; i < pickerCreateRowIndex(items); i++ {
 		_, _ = model.Update(input.SemanticAction{Kind: input.ActionPickerDown})
 	}
 	pane := model.workbench.ActivePane()
 	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: pane.ID})
 	e2eDrain(t, model, cmd)
 	paneID := model.modalHost.Prompt.PaneID
-	model.modalHost.Prompt.Value = "restore-empty-workspace"
-	model.modalHost.Prompt.Command = []string{"sh", "-c", "printf 'restore_empty_workspace_ready\\n'; cat"}
-	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID})
-	e2eDrain(t, model, cmd)
+	setCreateTerminalFormField(model.modalHost.Prompt, "name", "restore-empty-workspace")
+	setCreateTerminalFormField(model.modalHost.Prompt, "command", "sh -c \"printf 'restore_empty_workspace_ready\\n'; cat\"")
 	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID})
 	e2eDrain(t, model, cmd)
 
@@ -671,17 +661,15 @@ func TestE2ERestoreEmptyTabRecoversViaPicker(t *testing.T) {
 	}
 
 	items := model.modalHost.Picker.VisibleItems()
-	for i := 0; i < len(items)-1; i++ {
+	for i := 0; i < pickerCreateRowIndex(items); i++ {
 		_, _ = model.Update(input.SemanticAction{Kind: input.ActionPickerDown})
 	}
 	pane := model.workbench.ActivePane()
 	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: pane.ID})
 	e2eDrain(t, model, cmd)
 	paneID := model.modalHost.Prompt.PaneID
-	model.modalHost.Prompt.Value = "restore-empty-tab"
-	model.modalHost.Prompt.Command = []string{"sh", "-c", "printf 'restore_empty_tab_ready\\n'; cat"}
-	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID})
-	e2eDrain(t, model, cmd)
+	setCreateTerminalFormField(model.modalHost.Prompt, "name", "restore-empty-tab")
+	setCreateTerminalFormField(model.modalHost.Prompt, "command", "sh -c \"printf 'restore_empty_tab_ready\\n'; cat\"")
 	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID})
 	e2eDrain(t, model, cmd)
 
@@ -745,7 +733,7 @@ func TestE2EMouseWorkspacePickerFooterNextSwitchesWorkspace(t *testing.T) {
 		t.Fatalf("expected workspace picker after workspace label click, got %#v", model.modalHost)
 	}
 
-	next := e2eOverlayFooterActionRegion(t, model, input.ActionNextWorkspace)
+	next := e2eOverlayWorkspaceItemRegion(t, model, 1)
 	e2eMouseClickAt(t, model, next.Rect.X, e2eScreenYForBodyY(model, next.Rect.Y))
 
 	if model.input.Mode().Kind != input.ModeNormal {
@@ -768,31 +756,27 @@ func TestE2EMouseCreateTerminalFromPickerAndPromptFlow(t *testing.T) {
 		t.Fatalf("expected picker after init, got %#v", model.modalHost)
 	}
 	items := model.modalHost.Picker.VisibleItems()
-	targetIndex := len(items) - 1
-	if targetIndex < 0 || !items[targetIndex].CreateNew {
+	targetIndex := pickerCreateRowIndex(items)
+	if targetIndex < 0 {
 		t.Fatalf("expected create-new picker row, got %#v", items)
 	}
 
 	target := overlayPickerItemRegion(t, model, targetIndex)
 	e2eMouseClickAt(t, model, target.Rect.X, e2eScreenYForBodyY(model, target.Rect.Y))
 
-	if model.modalHost == nil || model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-terminal-name" {
-		t.Fatalf("expected create-terminal-name prompt after mouse picker click, got %#v", model.modalHost)
+	if model.modalHost == nil || model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-terminal-form" {
+		t.Fatalf("expected create-terminal-form prompt after mouse picker click, got %#v", model.modalHost)
 	}
 
 	inputRegion := e2eOverlayRegionByKind(t, model, render.HitRegionPromptInput)
 	e2eMouseClickAt(t, model, inputRegion.Rect.X, e2eScreenYForBodyY(model, inputRegion.Rect.Y))
 	e2eTypeText(t, model, "mouse-e2e-shell")
-	model.modalHost.Prompt.Command = []string{"sh", "-c", "printf 'mouse_e2e_ready\\n'; cat"}
+	if movePromptFormField(model.modalHost.Prompt, 1) {
+		model.render.Invalidate()
+	}
+	e2eTypeText(t, model, "sh -c \"printf 'mouse_e2e_ready\\n'; cat\"")
 
 	submit := e2eOverlayRegionByKind(t, model, render.HitRegionPromptSubmit)
-	e2eMouseClickAt(t, model, submit.Rect.X, e2eScreenYForBodyY(model, submit.Rect.Y))
-
-	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-terminal-tags" {
-		t.Fatalf("expected tags prompt after mouse submit, got %#v", model.modalHost.Prompt)
-	}
-
-	submit = e2eOverlayRegionByKind(t, model, render.HitRegionPromptSubmit)
 	e2eMouseClickAt(t, model, submit.Rect.X, e2eScreenYForBodyY(model, submit.Rect.Y))
 
 	pane := model.workbench.ActivePane()
@@ -1024,8 +1008,8 @@ func e2eCreateTerminalViaMouse(t *testing.T, env realMouseE2EEnv, name, readyMar
 	t.Helper()
 	model := env.model
 	items := model.modalHost.Picker.VisibleItems()
-	targetIndex := len(items) - 1
-	if targetIndex < 0 || !items[targetIndex].CreateNew {
+	targetIndex := pickerCreateRowIndex(items)
+	if targetIndex < 0 {
 		t.Fatalf("expected create-new picker row, got %#v", items)
 	}
 
@@ -1038,11 +1022,12 @@ func e2eCreateTerminalViaMouse(t *testing.T, env realMouseE2EEnv, name, readyMar
 	inputRegion := e2eOverlayRegionByKind(t, model, render.HitRegionPromptInput)
 	e2eMouseClickAt(t, model, inputRegion.Rect.X, e2eScreenYForBodyY(model, inputRegion.Rect.Y))
 	e2eTypeText(t, model, name)
-	model.modalHost.Prompt.Command = []string{"sh", "-c", fmt.Sprintf("printf '%s\\n'; cat", readyMarker)}
+	if movePromptFormField(model.modalHost.Prompt, 1) {
+		model.render.Invalidate()
+	}
+	e2eTypeText(t, model, fmt.Sprintf("sh -c \"printf '%s\\n'; cat\"", readyMarker))
 
 	submit := e2eOverlayRegionByKind(t, model, render.HitRegionPromptSubmit)
-	e2eMouseClickAt(t, model, submit.Rect.X, e2eScreenYForBodyY(model, submit.Rect.Y))
-	submit = e2eOverlayRegionByKind(t, model, render.HitRegionPromptSubmit)
 	e2eMouseClickAt(t, model, submit.Rect.X, e2eScreenYForBodyY(model, submit.Rect.Y))
 
 	pane := model.workbench.ActivePane()
@@ -1134,6 +1119,40 @@ func e2eOverlayFooterActionRegion(t *testing.T, m *Model, kind input.ActionKind)
 	}
 	t.Fatalf("expected overlay footer action region %q, got %#v", kind, regions)
 	return render.HitRegion{}
+}
+
+func e2eOverlayWorkspaceItemRegion(t *testing.T, m *Model, index int) render.HitRegion {
+	t.Helper()
+	state := m.visibleRenderState()
+	regions := render.OverlayHitRegions(state)
+	for _, region := range regions {
+		if region.Kind == render.HitRegionWorkspaceItem && region.ItemIndex == index {
+			return region
+		}
+	}
+	t.Fatalf("expected workspace item region %d, got %#v", index, regions)
+	return render.HitRegion{}
+}
+
+func pickerCreateRowIndex(items []modal.PickerItem) int {
+	for i, item := range items {
+		if item.CreateNew {
+			return i
+		}
+	}
+	return -1
+}
+
+func setCreateTerminalFormField(prompt *modal.PromptState, key, value string) {
+	if prompt == nil {
+		return
+	}
+	field := prompt.Field(key)
+	if field == nil {
+		return
+	}
+	field.Value = value
+	field.Cursor = len([]rune(value))
 }
 
 func overlayPickerItemRegion(t *testing.T, m *Model, index int) render.HitRegion {

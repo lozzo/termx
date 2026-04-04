@@ -731,6 +731,9 @@ func (m *Model) handlePromptInputMouseClick(region render.HitRegion, screenX int
 	if m == nil || m.modalHost == nil || m.modalHost.Prompt == nil {
 		return nil
 	}
+	if m.modalHost.Prompt.IsForm() && region.ItemIndex >= 0 && region.ItemIndex < len(m.modalHost.Prompt.Fields) {
+		m.modalHost.Prompt.ActiveField = region.ItemIndex
+	}
 	cursor := screenX - region.Rect.X
 	if cursor < 0 {
 		cursor = 0

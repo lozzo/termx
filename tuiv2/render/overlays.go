@@ -249,7 +249,11 @@ func overlayQueryInputRect(layout pickerCardLayout, prefixWidth int) workbench.R
 }
 
 func promptInputRect(layout pickerCardLayout, prompt *modal.PromptState, inputLine int) workbench.Rect {
-	prefixWidth := xansi.StringWidth(promptFieldLabel(prompt.Kind) + ": ")
+	return promptInputRectForLabel(layout, promptFieldLabel(prompt.Kind), inputLine)
+}
+
+func promptInputRectForLabel(layout pickerCardLayout, label string, inputLine int) workbench.Rect {
+	prefixWidth := xansi.StringWidth(strings.TrimSpace(label) + ": ")
 	editableX := layout.cardX + 1 + maxInt(0, prefixWidth)
 	editableW := maxInt(1, layout.innerWidth-maxInt(0, prefixWidth))
 	return workbench.Rect{
@@ -333,9 +337,18 @@ func renderPromptOverlayWithTheme(prompt *modal.PromptState, termSize TermSize, 
 		return ""
 	}
 	width, height := overlayViewport(termSize)
-	lines, inputLine := promptOverlayContent(prompt)
-	if inputLine >= 0 && inputLine < len(lines) {
-		lines[inputLine] = renderOverlayPromptField(theme, prompt)
+	lines, inputLines := promptOverlayContent(prompt)
+	if prompt.IsForm() {
+		for fieldIndex, inputLine := range inputLines {
+			if inputLine >= 0 && inputLine < len(lines) {
+				lines[inputLine] = renderOverlayPromptFormField(theme, prompt, fieldIndex)
+			}
+		}
+	} else if len(inputLines) > 0 {
+		inputLine := inputLines[0]
+		if inputLine >= 0 && inputLine < len(lines) {
+			lines[inputLine] = renderOverlayPromptField(theme, prompt)
+		}
 	}
 	footerLine, _ := layoutOverlayFooterActionsWithTheme(theme, promptFooterActionSpecs(prompt), workbench.Rect{W: pickerInnerWidth(width), H: 1})
 	footer := footerLine
@@ -345,9 +358,22 @@ func renderPromptOverlayWithTheme(prompt *modal.PromptState, termSize TermSize, 
 	return renderPickerCardWithTheme(theme, coalesce(prompt.Title, "Prompt"), "", lines, footer, width, height)
 }
 
-func promptOverlayContent(prompt *modal.PromptState) ([]string, int) {
+func promptOverlayContent(prompt *modal.PromptState) ([]string, []int) {
 	if prompt == nil {
-		return nil, -1
+		return nil, nil
+	}
+	if prompt.IsForm() {
+		lines := make([]string, 0, len(prompt.Fields)+3)
+		if hint := strings.TrimSpace(prompt.Hint); hint != "" {
+			lines = append(lines, hint)
+			lines = append(lines, "")
+		}
+		inputLines := make([]int, 0, len(prompt.Fields))
+		for _, field := range prompt.Fields {
+			inputLines = append(inputLines, len(lines))
+			lines = append(lines, field.Label+": "+field.Value)
+		}
+		return lines, inputLines
 	}
 	value := promptValueWithCursor(prompt)
 	field := promptFieldLabel(prompt.Kind)
@@ -373,7 +399,7 @@ func promptOverlayContent(prompt *modal.PromptState) ([]string, int) {
 		lines = append(lines, "")
 		lines = append(lines, "name: "+prompt.Name)
 	}
-	return lines, inputLine
+	return lines, []int{inputLine}
 }
 
 func promptValueWithCursor(prompt *modal.PromptState) string {
@@ -654,6 +680,34 @@ func renderOverlayPromptField(theme uiTheme, prompt *modal.PromptState) string {
 	value := promptValueWithCursor(prompt)
 	row := overlayFieldPrefixStyle(theme).Render(promptFieldLabel(prompt.Kind)+": ") + overlayFieldValueStyle(theme).Render(value)
 	return row
+}
+
+func renderOverlayPromptFormField(theme uiTheme, prompt *modal.PromptState, fieldIndex int) string {
+	if prompt == nil || fieldIndex < 0 || fieldIndex >= len(prompt.Fields) {
+		return ""
+	}
+	field := prompt.Fields[fieldIndex]
+	valueStyle := overlayFieldValueStyle(theme)
+	value := field.Value
+	if fieldIndex == prompt.ActiveField {
+		runes := []rune(field.Value)
+		cursor := field.Cursor
+		if cursor < 0 {
+			cursor = 0
+		}
+		if cursor > len(runes) {
+			cursor = len(runes)
+		}
+		value = string(runes[:cursor]) + "_" + string(runes[cursor:])
+	} else if value == "" && strings.TrimSpace(field.Placeholder) != "" {
+		value = field.Placeholder
+		valueStyle = valueStyle.Foreground(lipgloss.Color(theme.panelMuted))
+	}
+	label := field.Label
+	if field.Required {
+		label += "*"
+	}
+	return overlayFieldPrefixStyle(theme).Render(label+": ") + valueStyle.Render(value)
 }
 
 func renderOverlayFooterActionLabel(theme uiTheme, label string) string {

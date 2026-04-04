@@ -195,7 +195,7 @@ func promptOverlayHitRegions(prompt *modal.PromptState, width, height int) []Hit
 	if prompt == nil {
 		return nil
 	}
-	lines, inputLine := promptOverlayContent(prompt)
+	lines, inputLines := promptOverlayContent(prompt)
 	footerSpecs := promptFooterActionSpecs(prompt)
 	footer := ""
 	if len(footerSpecs) == 0 && prompt != nil {
@@ -207,10 +207,22 @@ func promptOverlayHitRegions(prompt *modal.PromptState, width, height int) []Hit
 	card := pickerCardRect(layout)
 	regions := make([]HitRegion, 0, 8)
 	regions = append(regions, dismissRegions(card, width, layout.contentHeight)...)
-	if inputLine >= 0 && inputLine < layout.listHeight {
+	for fieldIndex, inputLine := range inputLines {
+		if inputLine < 0 || inputLine >= layout.listHeight {
+			continue
+		}
+		rect := promptInputRect(layout, prompt, inputLine)
+		if prompt.IsForm() && fieldIndex < len(prompt.Fields) {
+			label := prompt.Fields[fieldIndex].Label
+			if prompt.Fields[fieldIndex].Required {
+				label += "*"
+			}
+			rect = promptInputRectForLabel(layout, label, inputLine)
+		}
 		regions = append(regions, HitRegion{
-			Kind: HitRegionPromptInput,
-			Rect: promptInputRect(layout, prompt, inputLine),
+			Kind:      HitRegionPromptInput,
+			ItemIndex: fieldIndex,
+			Rect:      rect,
 		})
 	}
 	if len(footerSpecs) > 0 {

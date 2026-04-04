@@ -124,11 +124,11 @@ func TestOverlayHitRegionsPromptAndHelpExposeCardAndDismiss(t *testing.T) {
 	if cancelRegions := collectRegionsByKind(promptRegions, HitRegionPromptCancel); len(cancelRegions) != 1 {
 		t.Fatalf("expected one prompt cancel region, got %#v", cancelRegions)
 	}
-	lines, inputLine := promptOverlayContent(promptState.Overlay.Prompt)
+	lines, inputLines := promptOverlayContent(promptState.Overlay.Prompt)
 	footerSpecs := promptFooterActionSpecs(promptState.Overlay.Prompt)
 	width, height := overlayViewport(TermSize{Width: 90, Height: FrameBodyHeight(24)})
 	layout := buildPickerCardLayout(width, height, len(lines), len(footerSpecs) > 0)
-	expectedInput := promptInputRect(layout, promptState.Overlay.Prompt, inputLine)
+	expectedInput := promptInputRect(layout, promptState.Overlay.Prompt, inputLines[0])
 	if got := collectRegionsByKind(promptRegions, HitRegionPromptInput)[0].Rect; got != expectedInput {
 		t.Fatalf("expected prompt input rect %#v, got %#v", expectedInput, got)
 	}

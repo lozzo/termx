@@ -206,7 +206,7 @@ func TestModelUpdateEmptyPaneKeyboardNavigationDownEnterOpensCreatePrompt(t *tes
 
 	dispatchKey(t, model, tea.KeyMsg{Type: tea.KeyEnter})
 
-	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-terminal-name" {
+	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-terminal-form" {
 		t.Fatalf("expected create-terminal prompt after down+enter, got %#v", model.modalHost.Prompt)
 	}
 }
@@ -668,38 +668,40 @@ func TestModelSubmitCreateNewPickerSelectionOpensPrompt(t *testing.T) {
 	if model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModePrompt {
 		t.Fatalf("expected prompt session, got %#v", model.modalHost.Session)
 	}
-	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-terminal-name" {
-		t.Fatalf("expected create-terminal-name prompt, got %#v", model.modalHost.Prompt)
+	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-terminal-form" {
+		t.Fatalf("expected create-terminal-form prompt, got %#v", model.modalHost.Prompt)
 	}
 	if model.input.Mode().Kind != input.ModePrompt {
 		t.Fatalf("expected input mode prompt, got %q", model.input.Mode().Kind)
 	}
 }
 
-func TestModelPromptSubmitAdvancesCreateTerminalToTags(t *testing.T) {
+func TestModelPromptSubmitCreateTerminalFormRequiresName(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
 	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: "prompt-1"}
 	model.modalHost.Prompt = &modal.PromptState{
-		Kind:        "create-terminal-name",
+		Kind:       "create-terminal-form",
 		Title:       "Create Terminal",
-		Value:       "demo",
-		Original:    "shell",
-		DefaultName: "shell",
 		PaneID:      "pane-1",
+		Command:     []string{"/bin/sh"},
+		DefaultName: "shell",
+		Fields: []modal.PromptField{
+			{Key: "name", Label: "name", Required: true},
+			{Key: "command", Label: "command", Placeholder: "/bin/sh"},
+			{Key: "workdir", Label: "workdir"},
+			{Key: "tags", Label: "tags"},
+		},
 	}
 	model.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: "prompt-1"})
 
 	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: "pane-1"})
 	if cmd != nil {
-		if msg := cmd(); msg != nil {
-			t.Fatalf("expected local prompt advance without async msg, got %#v", msg)
+		if msg := cmd(); msg == nil {
+			t.Fatal("expected validation error for empty name")
 		}
 	}
-	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-terminal-tags" {
-		t.Fatalf("expected tags step prompt, got %#v", model.modalHost.Prompt)
-	}
-	if model.modalHost.Prompt.Name != "demo" {
-		t.Fatalf("expected prompt to retain submitted name, got %#v", model.modalHost.Prompt)
+	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-terminal-form" {
+		t.Fatalf("expected create-terminal-form prompt to stay open, got %#v", model.modalHost.Prompt)
 	}
 }
 
@@ -964,14 +966,18 @@ func TestModelPromptSubmitCreatesAndAttachesTerminal(t *testing.T) {
 	model := New(shared.Config{}, wb, rt)
 	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: "prompt-1"}
 	model.modalHost.Prompt = &modal.PromptState{
-		Kind:        "create-terminal-tags",
+		Kind:        "create-terminal-form",
 		Title:       "Create Terminal",
-		Value:       "role=dev env=test",
-		Name:        "demo",
 		DefaultName: "shell",
 		PaneID:      "pane-1",
 		Command:     []string{"/bin/sh"},
-		AllowEmpty:  true,
+		Fields: []modal.PromptField{
+			{Key: "name", Label: "name", Value: "demo", Cursor: 4, Required: true},
+			{Key: "command", Label: "command"},
+			{Key: "workdir", Label: "workdir", Value: "/tmp/demo", Cursor: 9},
+			{Key: "tags", Label: "tags", Value: "role=dev env=test", Cursor: 17},
+		},
+		ActiveField: 3,
 	}
 	model.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: "prompt-1"})
 
@@ -992,8 +998,14 @@ func TestModelPromptSubmitCreatesAndAttachesTerminal(t *testing.T) {
 	if len(client.createCalls) != 1 {
 		t.Fatalf("expected one create call, got %d", len(client.createCalls))
 	}
-	if len(client.setTagsCalls) != 1 || client.setTagsCalls[0].tags["role"] != "dev" || client.setTagsCalls[0].tags["env"] != "test" {
-		t.Fatalf("unexpected tag calls: %#v", client.setTagsCalls)
+	if got := client.createCalls[0].params.Name; got != "demo" {
+		t.Fatalf("expected create name demo, got %q", got)
+	}
+	if got := client.createCalls[0].params.Dir; got != "/tmp/demo" {
+		t.Fatalf("expected create dir /tmp/demo, got %q", got)
+	}
+	if got := client.createCalls[0].params.Tags["role"]; got != "dev" || client.createCalls[0].params.Tags["env"] != "test" {
+		t.Fatalf("unexpected create tags: %#v", client.createCalls[0].params.Tags)
 	}
 	pane := model.workbench.ActivePane()
 	if pane == nil || pane.TerminalID != "term-new" {
@@ -1008,21 +1020,25 @@ func TestModelPromptOverlayInputStillUpdatesValue(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
 	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: "prompt-1"}
 	model.modalHost.Prompt = &modal.PromptState{
-		Kind:   "create-terminal-name",
-		Title:  "Create Terminal",
-		Value:  "de",
-		Cursor: 2,
+		Kind:  "create-terminal-form",
+		Title: "Create Terminal",
+		Fields: []modal.PromptField{
+			{Key: "name", Label: "name", Value: "de", Cursor: 2, Required: true},
+			{Key: "command", Label: "command"},
+			{Key: "workdir", Label: "workdir"},
+			{Key: "tags", Label: "tags"},
+		},
 		PaneID: "pane-1",
 	}
 	model.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: "prompt-1"})
 
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
-	if got := model.modalHost.Prompt.Value; got != "dem" {
+	if got := model.modalHost.Prompt.Field("name").Value; got != "dem" {
 		t.Fatalf("expected prompt value dem after rune input, got %q", got)
 	}
 
 	_, _ = model.Update(tea.KeyMsg{Type: tea.KeyBackspace})
-	if got := model.modalHost.Prompt.Value; got != "de" {
+	if got := model.modalHost.Prompt.Field("name").Value; got != "de" {
 		t.Fatalf("expected prompt value de after backspace, got %q", got)
 	}
 }
@@ -1677,9 +1693,7 @@ type inputCall struct {
 }
 
 type createCall struct {
-	command []string
-	name    string
-	size    protocol.Size
+	params protocol.CreateParams
 }
 
 type setTagsCall struct {
@@ -1702,8 +1716,11 @@ var _ bridge.Client = (*recordingBridgeClient)(nil)
 
 func (c *recordingBridgeClient) Close() error { return nil }
 
-func (c *recordingBridgeClient) Create(_ context.Context, command []string, name string, size protocol.Size) (*protocol.CreateResult, error) {
-	c.createCalls = append(c.createCalls, createCall{command: append([]string(nil), command...), name: name, size: size})
+func (c *recordingBridgeClient) Create(_ context.Context, params protocol.CreateParams) (*protocol.CreateResult, error) {
+	cloned := params
+	cloned.Command = append([]string(nil), params.Command...)
+	cloned.Tags = cloneTags(params.Tags)
+	c.createCalls = append(c.createCalls, createCall{params: cloned})
 	return c.createResult, nil
 }
 

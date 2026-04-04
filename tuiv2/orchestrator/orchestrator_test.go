@@ -193,7 +193,11 @@ func TestAttachAndLoadSnapshotWritesWorkbenchStructuralBinding(t *testing.T) {
 }
 
 func (o *Orchestrator) runtimeClientCreate(ctx context.Context, command []string, name string) (*protocol.CreateResult, error) {
-	return o.runtimeClient().Create(ctx, command, name, protocol.Size{Cols: 80, Rows: 24})
+	return o.runtimeClient().Create(ctx, protocol.CreateParams{
+		Command: command,
+		Name:    name,
+		Size:    protocol.Size{Cols: 80, Rows: 24},
+	})
 }
 
 func (o *Orchestrator) runtimeClient() bridge.Client {

@@ -8,7 +8,7 @@ import (
 
 type Client interface {
 	Close() error
-	Create(ctx context.Context, command []string, name string, size protocol.Size) (*protocol.CreateResult, error)
+	Create(ctx context.Context, params protocol.CreateParams) (*protocol.CreateResult, error)
 	SetTags(ctx context.Context, terminalID string, tags map[string]string) error
 	SetMetadata(ctx context.Context, terminalID string, name string, tags map[string]string) error
 	List(ctx context.Context) (*protocol.ListResult, error)
@@ -31,12 +31,8 @@ func NewProtocolClient(inner *protocol.Client) *ProtocolClient {
 
 func (c *ProtocolClient) Close() error { return c.inner.Close() }
 
-func (c *ProtocolClient) Create(ctx context.Context, command []string, name string, size protocol.Size) (*protocol.CreateResult, error) {
-	return c.inner.Create(ctx, protocol.CreateParams{
-		Command: command,
-		Name:    name,
-		Size:    size,
-	})
+func (c *ProtocolClient) Create(ctx context.Context, params protocol.CreateParams) (*protocol.CreateResult, error) {
+	return c.inner.Create(ctx, params)
 }
 
 func (c *ProtocolClient) SetTags(ctx context.Context, terminalID string, tags map[string]string) error {

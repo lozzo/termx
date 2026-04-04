@@ -14,6 +14,8 @@ func (m *Model) submitPromptCmd(paneID string) tea.Cmd {
 		return m.submitRenameTabPrompt(prompt)
 	case "rename-workspace":
 		return m.submitRenameWorkspacePrompt(prompt)
+	case "create-terminal-form":
+		return m.submitCreateTerminalFormPrompt(prompt, paneID)
 	case "create-terminal-name":
 		return m.submitCreateTerminalNamePrompt(prompt)
 	case "edit-terminal-name":

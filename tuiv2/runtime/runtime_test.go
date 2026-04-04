@@ -66,7 +66,11 @@ func newTestRuntime(t *testing.T) (*Runtime, context.Context) {
 func TestRuntimeListTerminalsDoesNotPopulateRegistry(t *testing.T) {
 	rt, ctx := newTestRuntime(t)
 
-	created, err := rt.client.Create(ctx, []string{"sh"}, "demo", protocol.Size{Cols: 80, Rows: 24})
+	created, err := rt.client.Create(ctx, protocol.CreateParams{
+		Command: []string{"sh"},
+		Name:    "demo",
+		Size:    protocol.Size{Cols: 80, Rows: 24},
+	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -313,7 +317,11 @@ func TestRuntimeAcquireTerminalOwnershipPromotesRequestedPane(t *testing.T) {
 func TestRuntimeAttachSnapshotInputAndResize(t *testing.T) {
 	rt, ctx := newTestRuntime(t)
 
-	created, err := rt.client.Create(ctx, []string{"sh"}, "demo", protocol.Size{Cols: 80, Rows: 24})
+	created, err := rt.client.Create(ctx, protocol.CreateParams{
+		Command: []string{"sh"},
+		Name:    "demo",
+		Size:    protocol.Size{Cols: 80, Rows: 24},
+	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -444,7 +452,7 @@ func newFakeBridgeClient() *fakeBridgeClient {
 
 func (f *fakeBridgeClient) Close() error { return nil }
 
-func (f *fakeBridgeClient) Create(context.Context, []string, string, protocol.Size) (*protocol.CreateResult, error) {
+func (f *fakeBridgeClient) Create(context.Context, protocol.CreateParams) (*protocol.CreateResult, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 

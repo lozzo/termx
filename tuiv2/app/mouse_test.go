@@ -1230,7 +1230,7 @@ func TestMouseClickWorkspacePickerFooterNextSwitchesWorkspace(t *testing.T) {
 	m.modalHost.MarkReady(input.ModeWorkspacePicker, "workspace")
 	m.input.SetMode(input.ModeState{Kind: input.ModeWorkspacePicker, RequestID: "workspace"})
 
-	next := overlayFooterActionRegion(t, m, input.ActionNextWorkspace)
+	next := overlayWorkspaceItemRegion(t, m, 1)
 	_, cmd := m.Update(tea.MouseMsg{X: next.Rect.X, Y: screenYForBodyY(m, next.Rect.Y), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	drainCmd(t, m, cmd, 20)
 
@@ -1243,7 +1243,7 @@ func TestMouseClickWorkspacePickerFooterNextSwitchesWorkspace(t *testing.T) {
 	}
 }
 
-func TestMouseClickPickerFooterAttachSplitOpensCreatePromptForCreateRow(t *testing.T) {
+func TestMouseClickPickerCreateRowOpensCreatePrompt(t *testing.T) {
 	m := setupModel(t, modelOpts{width: 220})
 	m.modalHost.Open(input.ModePicker, "pane-1")
 	m.modalHost.Picker = &modal.PickerState{
@@ -1256,19 +1256,19 @@ func TestMouseClickPickerFooterAttachSplitOpensCreatePromptForCreateRow(t *testi
 	m.modalHost.MarkReady(input.ModePicker, "pane-1")
 	m.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: "pane-1"})
 
-	action := overlayFooterActionRegion(t, m, input.ActionPickerAttachSplit)
+	action := overlayPickerItemRegion(t, m, 0)
 	_, cmd := m.Update(tea.MouseMsg{X: action.Rect.X, Y: screenYForBodyY(m, action.Rect.Y), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	drainCmd(t, m, cmd, 20)
 
 	assertMode(t, m, input.ModePrompt)
 	if m.modalHost == nil || m.modalHost.Prompt == nil {
-		t.Fatalf("expected create prompt after picker split+attach footer click, got %#v", m.modalHost)
+		t.Fatalf("expected create prompt after picker create-row click, got %#v", m.modalHost)
 	}
-	if m.modalHost.Prompt.Kind != "create-terminal-name" {
-		t.Fatalf("expected create-terminal-name prompt, got %#v", m.modalHost.Prompt)
+	if m.modalHost.Prompt.Kind != "create-terminal-form" {
+		t.Fatalf("expected create-terminal-form prompt, got %#v", m.modalHost.Prompt)
 	}
-	if m.modalHost.Prompt.CreateTarget != modal.CreateTargetSplit {
-		t.Fatalf("expected split create target, got %q", m.modalHost.Prompt.CreateTarget)
+	if m.modalHost.Prompt.CreateTarget != modal.CreateTargetReplace {
+		t.Fatalf("expected replace create target, got %q", m.modalHost.Prompt.CreateTarget)
 	}
 }
 
@@ -1563,6 +1563,19 @@ func overlayFooterActionRegion(t *testing.T, m *Model, kind input.ActionKind) re
 		}
 	}
 	t.Fatalf("expected overlay footer action region %q, got %#v", kind, regions)
+	return render.HitRegion{}
+}
+
+func overlayWorkspaceItemRegion(t *testing.T, m *Model, index int) render.HitRegion {
+	t.Helper()
+	state := m.visibleRenderState()
+	regions := render.OverlayHitRegions(state)
+	for _, region := range regions {
+		if region.Kind == render.HitRegionWorkspaceItem && region.ItemIndex == index {
+			return region
+		}
+	}
+	t.Fatalf("expected workspace item region %d, got %#v", index, regions)
 	return render.HitRegion{}
 }
 

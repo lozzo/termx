@@ -24,6 +24,21 @@ func (m *Model) handleModalKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd) {
 			return false, nil
 		}
 		switch msg.Type {
+		case tea.KeyUp:
+			if movePromptFormField(m.modalHost.Prompt, -1) {
+				m.render.Invalidate()
+			}
+			return true, nil
+		case tea.KeyDown, tea.KeyTab:
+			if movePromptFormField(m.modalHost.Prompt, 1) {
+				m.render.Invalidate()
+			}
+			return true, nil
+		case tea.KeyShiftTab:
+			if movePromptFormField(m.modalHost.Prompt, -1) {
+				m.render.Invalidate()
+			}
+			return true, nil
 		case tea.KeyRunes:
 			if len(msg.Runes) > 0 {
 				insertPromptRunes(m.modalHost.Prompt, msg.Runes)
@@ -170,8 +185,8 @@ func promptCursor(prompt *modal.PromptState) int {
 	if prompt == nil {
 		return 0
 	}
-	cursor := prompt.Cursor
-	maxCursor := len([]rune(prompt.Value))
+	cursor := promptEditableCursor(prompt)
+	maxCursor := len([]rune(promptEditableValue(prompt)))
 	if cursor < 0 {
 		return 0
 	}
@@ -182,22 +197,7 @@ func promptCursor(prompt *modal.PromptState) int {
 }
 
 func setPromptCursor(prompt *modal.PromptState, cursor int) bool {
-	if prompt == nil {
-		return false
-	}
-	clamped := cursor
-	if clamped < 0 {
-		clamped = 0
-	}
-	maxCursor := len([]rune(prompt.Value))
-	if clamped > maxCursor {
-		clamped = maxCursor
-	}
-	if prompt.Cursor == clamped {
-		return false
-	}
-	prompt.Cursor = clamped
-	return true
+	return setPromptEditableCursor(prompt, cursor)
 }
 
 func movePromptCursor(prompt *modal.PromptState, delta int) bool {
@@ -208,12 +208,18 @@ func insertPromptRunes(prompt *modal.PromptState, runes []rune) {
 	if prompt == nil || len(runes) == 0 {
 		return
 	}
-	value := []rune(prompt.Value)
+	field := promptEditableField(prompt)
+	value := []rune(promptEditableValue(prompt))
 	cursor := promptCursor(prompt)
 	next := make([]rune, 0, len(value)+len(runes))
 	next = append(next, value[:cursor]...)
 	next = append(next, runes...)
 	next = append(next, value[cursor:]...)
+	if field != nil {
+		field.Value = string(next)
+		field.Cursor = cursor + len(runes)
+		return
+	}
 	prompt.Value = string(next)
 	prompt.Cursor = cursor + len(runes)
 }
@@ -222,12 +228,18 @@ func deletePromptRuneBeforeCursor(prompt *modal.PromptState) bool {
 	if prompt == nil {
 		return false
 	}
-	value := []rune(prompt.Value)
+	field := promptEditableField(prompt)
+	value := []rune(promptEditableValue(prompt))
 	cursor := promptCursor(prompt)
 	if cursor <= 0 || len(value) == 0 {
 		return false
 	}
 	value = append(value[:cursor-1], value[cursor:]...)
+	if field != nil {
+		field.Value = string(value)
+		field.Cursor = cursor - 1
+		return true
+	}
 	prompt.Value = string(value)
 	prompt.Cursor = cursor - 1
 	return true

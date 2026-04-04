@@ -53,19 +53,22 @@ func (m *Model) openCreateTerminalPrompt(paneID string, target modal.CreateTarge
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	defaultName := filepath.Base(shell)
 	requestID := "create-terminal:" + paneID
 	m.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: requestID}
 	m.modalHost.Prompt = &modal.PromptState{
-		Kind:         "create-terminal-name",
+		Kind:         "create-terminal-form",
 		Title:        "Create Terminal",
-		Hint:         "[Enter] continue  [Esc] cancel",
-		Cursor:       0,
-		Original:     defaultName,
-		DefaultName:  defaultName,
+		Hint:         "name is required; command, workdir, tags are optional",
 		PaneID:       paneID,
 		Command:      []string{shell},
+		DefaultName:  filepath.Base(shell),
 		CreateTarget: target,
+		Fields: []modal.PromptField{
+			{Key: "name", Label: "name", Required: true},
+			{Key: "command", Label: "command", Placeholder: shell},
+			{Key: "workdir", Label: "workdir"},
+			{Key: "tags", Label: "tags", Placeholder: "role=dev env=test"},
+		},
 	}
 	m.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: requestID})
 	m.render.Invalidate()

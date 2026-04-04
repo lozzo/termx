@@ -10,6 +10,35 @@ import (
 	"github.com/lozzow/termx/tuiv2/modal"
 )
 
+func (m *Model) submitCreateTerminalFormPrompt(prompt *modal.PromptState, paneID string) tea.Cmd {
+	if m == nil || prompt == nil || m.modalHost == nil {
+		return nil
+	}
+	name := promptFieldValue(prompt, "name")
+	if name == "" {
+		return func() tea.Msg { return inputError("name is required") }
+	}
+	command, err := promptCommandFromField(prompt)
+	if err != nil {
+		return func() tea.Msg { return err }
+	}
+	if len(command) == 0 {
+		command = []string{"/bin/sh"}
+	}
+	workdir := promptWorkdirFromField(prompt)
+	tags, err := promptTagsFromField(prompt)
+	if err != nil {
+		return func() tea.Msg { return err }
+	}
+	return m.submitCreateTerminal(prompt, paneID, protocol.CreateParams{
+		Command: command,
+		Name:    name,
+		Tags:    tags,
+		Dir:     workdir,
+		Size:    protocol.Size{Cols: 80, Rows: 24},
+	})
+}
+
 func (m *Model) submitCreateTerminalNamePrompt(prompt *modal.PromptState) tea.Cmd {
 	if m == nil || prompt == nil {
 		return nil
@@ -88,7 +117,7 @@ func (m *Model) submitEditTerminalTagsPrompt(prompt *modal.PromptState) tea.Cmd 
 }
 
 func (m *Model) submitCreateTerminalTagsPrompt(prompt *modal.PromptState, paneID string) tea.Cmd {
-	if m == nil || prompt == nil || m.modalHost == nil {
+	if m == nil || prompt == nil {
 		return nil
 	}
 	name := strings.TrimSpace(prompt.Name)
@@ -107,6 +136,22 @@ func (m *Model) submitCreateTerminalTagsPrompt(prompt *modal.PromptState, paneID
 	if len(command) == 0 {
 		command = []string{"/bin/sh"}
 	}
+	return m.submitCreateTerminal(prompt, paneID, protocol.CreateParams{
+		Command: command,
+		Name:    name,
+		Tags:    tags,
+		Size:    protocol.Size{Cols: 80, Rows: 24},
+	})
+}
+
+func (m *Model) submitCreateTerminal(prompt *modal.PromptState, paneID string, params protocol.CreateParams) tea.Cmd {
+	if m == nil || prompt == nil || m.modalHost == nil {
+		return nil
+	}
+	pane := paneID
+	if pane == "" {
+		pane = prompt.PaneID
+	}
 	requestID := ""
 	if m.modalHost.Session != nil {
 		requestID = m.modalHost.Session.RequestID
@@ -119,20 +164,16 @@ func (m *Model) submitCreateTerminalTagsPrompt(prompt *modal.PromptState, paneID
 		if client == nil {
 			return context.Canceled
 		}
-		created, err := client.Create(context.Background(), command, name, protocol.Size{Cols: 80, Rows: 24})
+		created, err := client.Create(context.Background(), params)
 		if err != nil {
 			return err
-		}
-		if len(tags) > 0 {
-			if err := client.SetTags(context.Background(), created.TerminalID, tags); err != nil {
-				return err
-			}
 		}
 		if m.runtime != nil && m.runtime.Registry() != nil {
 			terminal := m.runtime.Registry().GetOrCreate(created.TerminalID)
 			if terminal != nil {
-				terminal.Name = name
-				terminal.Tags = cloneStringMap(tags)
+				terminal.Name = params.Name
+				terminal.Tags = cloneStringMap(params.Tags)
+				terminal.Command = append([]string(nil), params.Command...)
 				terminal.State = created.State
 			}
 		}

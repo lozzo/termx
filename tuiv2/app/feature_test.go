@@ -336,11 +336,11 @@ func TestFeaturePaneSplitRefreshesPickerFromDaemon(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("expected live terminal plus create row, got %#v", items)
 	}
-	if items[0].TerminalID != "term-live" {
-		t.Fatalf("expected picker to use daemon terminal list, got %#v", items)
+	if !items[0].CreateNew {
+		t.Fatalf("expected create row first, got %#v", items)
 	}
-	if !items[1].CreateNew {
-		t.Fatalf("expected final picker item to be create-new, got %#v", items[1])
+	if items[1].TerminalID != "term-live" {
+		t.Fatalf("expected picker to use daemon terminal list, got %#v", items)
 	}
 }
 
@@ -1093,10 +1093,13 @@ func TestFeaturePickerOpenNavigateAttach(t *testing.T) {
 		t.Fatalf("expected at least 2 picker items, got %d", len(model.modalHost.Picker.Items))
 	}
 
-	// Navigate down and submit
-	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionPickerDown})
-	if model.modalHost.Picker.Selected != 1 {
-		t.Fatalf("expected selected 1, got %d", model.modalHost.Picker.Selected)
+	// Navigate to term-2 and submit.
+	for {
+		selected := model.modalHost.Picker.SelectedItem()
+		if selected != nil && selected.TerminalID == "term-2" {
+			break
+		}
+		dispatchAction(t, model, input.SemanticAction{Kind: input.ActionPickerDown})
 	}
 
 	// Submit to attach (selected is term-2)
@@ -1806,9 +1809,9 @@ func TestFeatureRenderPickerOverlayUsesUnifiedBottomStatusHints(t *testing.T) {
 	if !strings.Contains(view, "Terminal Picker") {
 		t.Fatalf("expected picker overlay to render:\n%s", view)
 	}
-	for _, want := range []string{"[Enter] attach", "[Tab] split+attach", "[Ctrl-E] edit", "[Ctrl-K] kill", "[Esc] close"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("expected picker overlay card footer shortcut %q:\n%s", want, view)
+	for _, unwanted := range []string{"[Enter] attach", "[Tab] split+attach", "[Ctrl-E] edit", "[Ctrl-K] kill", "[Esc] close"} {
+		if strings.Contains(view, unwanted) {
+			t.Fatalf("expected picker overlay to omit footer shortcut %q:\n%s", unwanted, view)
 		}
 	}
 	for _, want := range []string{"PICKER", "UP/DOWN MOVE", "TYPE FILTER", "Enter HERE", "Tab SPLIT", "Ctrl-E EDIT", "Ctrl-K KILL", "Esc BACK"} {
@@ -2331,7 +2334,14 @@ func TestFeatureKeyDrivenDetachThenCtrlFReopensPicker(t *testing.T) {
 	}
 	assertMode(t, model, input.ModePicker)
 	items := model.modalHost.Picker.VisibleItems()
-	if len(items) == 0 || items[0].TerminalID != "term-1" {
+	found := false
+	for _, item := range items {
+		if item.TerminalID == "term-1" {
+			found = true
+			break
+		}
+	}
+	if !found {
 		t.Fatalf("expected detached terminal to be attachable in picker, got %#v", items)
 	}
 }
