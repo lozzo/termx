@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -173,7 +174,7 @@ func assertPaneCount(t *testing.T, model *Model, expected int) {
 
 func assertViewContains(t *testing.T, model *Model, substrings ...string) {
 	t.Helper()
-	view := model.View()
+	view := xansi.Strip(model.View())
 	for _, s := range substrings {
 		if !strings.Contains(view, s) {
 			t.Fatalf("view missing %q:\n%s", s, view)
@@ -1733,7 +1734,7 @@ func TestFeatureRenderTabBarShowsAllTabs(t *testing.T) {
 	assertTabCount(t, model, 2)
 
 	model.render.Invalidate()
-	view := model.View()
+	view := xansi.Strip(model.View())
 	if !strings.Contains(view, "tab 1") {
 		t.Fatalf("view missing tab 1:\n%s", view)
 	}
@@ -1758,7 +1759,7 @@ func TestFeatureRenderStatusBarShowsModeHints(t *testing.T) {
 	for _, tc := range tests {
 		model.input.SetMode(input.ModeState{Kind: tc.mode})
 		model.render.Invalidate()
-		view := model.View()
+		view := xansi.Strip(model.View())
 		if !strings.Contains(view, tc.hint) {
 			t.Fatalf("mode %q: view missing hint %q", tc.mode, tc.hint)
 		}
@@ -1777,7 +1778,7 @@ func TestFeatureRenderPickerOverlayUsesUnifiedBottomStatusHints(t *testing.T) {
 	model.modalHost.Picker.ApplyFilter()
 	model.render.Invalidate()
 
-	view := model.View()
+	view := xansi.Strip(model.View())
 	if !strings.Contains(view, "Terminal Picker") {
 		t.Fatalf("expected picker overlay to render:\n%s", view)
 	}
@@ -1797,7 +1798,7 @@ func TestFeatureFloatingModeShowsCanonicalHints(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 200})
 	model.input.SetMode(input.ModeState{Kind: input.ModeFloating})
 	model.render.Invalidate()
-	view := model.View()
+	view := xansi.Strip(model.View())
 	for _, want := range []string{"N NEW FLOAT", "Esc BACK"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("floating mode view missing %q:\n%s", want, view)
@@ -1815,7 +1816,7 @@ func TestFeatureWorkspaceModeShowsLegacyAlignedHints(t *testing.T) {
 	model.input.SetMode(input.ModeState{Kind: input.ModeWorkspace})
 	model.render.Invalidate()
 
-	view := model.View()
+	view := xansi.Strip(model.View())
 	for _, want := range []string{"F PICK", "C NEW", "R RENAME", "X DELETE"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("workspace mode view missing %q:\n%s", want, view)
@@ -1831,7 +1832,7 @@ func TestFeatureTabModeShowsLegacyAlignedHints(t *testing.T) {
 	model.input.SetMode(input.ModeState{Kind: input.ModeTab})
 	model.render.Invalidate()
 
-	view := model.View()
+	view := xansi.Strip(model.View())
 	for _, want := range []string{"C NEW", "R RENAME", "X KILL"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("tab mode view missing %q:\n%s", want, view)
@@ -1858,7 +1859,7 @@ func TestFeatureRenderPaneWithSnapshot(t *testing.T) {
 		},
 	}
 	model.render.Invalidate()
-	view := model.View()
+	view := xansi.Strip(model.View())
 	if !strings.Contains(view, "hello") {
 		t.Fatalf("view missing snapshot content 'hello':\n%s", view)
 	}
@@ -1874,7 +1875,7 @@ func TestFeatureRenderOverlayComposition(t *testing.T) {
 		},
 	}
 	model.render.Invalidate()
-	view := model.View()
+	view := xansi.Strip(model.View())
 	// Should see picker overlay in the view
 	if !strings.Contains(view, "Terminal Picker") {
 		t.Fatalf("view missing picker overlay:\n%s", view)
@@ -1890,7 +1891,7 @@ func TestFeatureRenderHelpOverlay(t *testing.T) {
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenHelp})
 
 	model.render.Invalidate()
-	view := model.View()
+	view := xansi.Strip(model.View())
 	if !strings.Contains(view, "Help") {
 		t.Fatalf("view missing help overlay:\n%s", view)
 	}
@@ -1929,7 +1930,7 @@ func TestFeatureRenderPromptOverlay(t *testing.T) {
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: "pane-1"})
 
 	model.render.Invalidate()
-	view := model.View()
+	view := xansi.Strip(model.View())
 	if !strings.Contains(view, "Create Terminal") {
 		t.Fatalf("view missing create-terminal prompt overlay:\n%s", view)
 	}
@@ -1954,7 +1955,7 @@ func TestFeatureRenderUnboundPane(t *testing.T) {
 	model.width = 120
 	model.height = 40
 
-	view := model.View()
+	view := xansi.Strip(model.View())
 	for _, want := range []string{"unconnected", "Attach existing terminal", "Create new terminal", "Open terminal manager", "Close pane"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing unbound pane state %q:\n%s", want, view)
@@ -1968,7 +1969,7 @@ func TestFeatureRenderZoomedPaneShowsSinglePane(t *testing.T) {
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionZoomPane, PaneID: "pane-1"})
 
 	model.render.Invalidate()
-	view := model.View()
+	view := xansi.Strip(model.View())
 	// In zoomed mode, only pane-1 should be drawn. pane-2's title "logs" should not appear.
 	// (This is a heuristic — if pane-2's title bar is drawn, zooming is broken.)
 	// We check that pane-1 title is visible (it's the zoomed pane).
@@ -2343,7 +2344,7 @@ func TestFeatureErrorDisplayAndClear(t *testing.T) {
 
 	// Error should be visible in view
 	model.render.Invalidate()
-	view := model.View()
+	view := xansi.Strip(model.View())
 	if !strings.Contains(view, "test error") {
 		t.Fatalf("view missing error text:\n%s", view)
 	}

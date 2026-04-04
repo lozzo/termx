@@ -31,13 +31,13 @@ func TestRenderTabBarIncludesCloseAndCreateAffordances(t *testing.T) {
 	state := makeTabBarState(120, []string{"build", "logs"})
 
 	line := xansi.Strip(renderTabBar(state))
-	if !strings.Contains(line, "[1:build]") || !strings.Contains(line, "[2:logs]") {
+	if !strings.Contains(line, "build") || !strings.Contains(line, "logs") {
 		t.Fatalf("expected tab switch affordances in tab bar, got %q", line)
 	}
-	if strings.Count(line, "[x]") < 2 {
+	if strings.Count(line, "") < 2 {
 		t.Fatalf("expected close affordance for each tab, got %q", line)
 	}
-	if !strings.Contains(line, "[+]") {
+	if !strings.Contains(line, " + ") {
 		t.Fatalf("expected create-tab affordance, got %q", line)
 	}
 }
@@ -89,17 +89,17 @@ func TestTabBarHitRegionsDropCreateWhenWidthIsTight(t *testing.T) {
 			t.Fatalf("expected create region to be omitted in tight width, got %#v", region)
 		}
 	}
-	if strings.Contains(line, "[+]") {
+	if strings.Contains(line, " + ") {
 		t.Fatalf("expected create affordance omitted in tight width, got %q", line)
 	}
 }
 
-func TestTabBarHitRegionsExposeWorkspaceAndTabManagementActions(t *testing.T) {
+func TestTabBarOmitsWorkspaceAndTabManagementActions(t *testing.T) {
 	state := makeTabBarState(200, []string{"build", "logs"})
 	regions := TabBarHitRegions(state)
 	line := xansi.Strip(renderTabBar(state))
 
-	wantKinds := []HitRegionKind{
+	disallowedKinds := []HitRegionKind{
 		HitRegionTabRename,
 		HitRegionTabKill,
 		HitRegionWorkspacePrev,
@@ -108,48 +108,31 @@ func TestTabBarHitRegionsExposeWorkspaceAndTabManagementActions(t *testing.T) {
 		HitRegionWorkspaceRename,
 		HitRegionWorkspaceDelete,
 	}
-	lastX := -1
-	for _, kind := range wantKinds {
-		found := false
+	for _, kind := range disallowedKinds {
 		for _, region := range regions {
-			if region.Kind != kind {
-				continue
+			if region.Kind == kind {
+				t.Fatalf("expected management region %q to be omitted, got %#v", kind, regions)
 			}
-			found = true
-			if region.Rect.X <= lastX {
-				t.Fatalf("expected action slots in stable left-to-right order, got %#v", regions)
-			}
-			lastX = region.Rect.X
-			break
-		}
-		if !found {
-			t.Fatalf("missing action region %q in %#v", kind, regions)
 		}
 	}
-
 	for _, token := range []string{"[tr]", "[tx]", "[w<]", "[w>]", "[w+]", "[wr]", "[wx]"} {
-		if !strings.Contains(line, token) {
-			t.Fatalf("expected tab bar to render %q, got %q", token, line)
+		if strings.Contains(line, token) {
+			t.Fatalf("expected tab bar to omit %q, got %q", token, line)
 		}
 	}
 }
 
-func TestTabBarHitRegionsDegradeNewActionsBeforeCoreNavigation(t *testing.T) {
+func TestTabBarHitRegionsKeepOnlyCoreNavigation(t *testing.T) {
 	wide := makeTabBarState(120, []string{"a"})
 	wideRegions := TabBarHitRegions(wide)
 	wideHasCreate := false
-	wideHasNewActions := false
 	for _, region := range wideRegions {
 		if region.Kind == HitRegionTabCreate {
 			wideHasCreate = true
 		}
-		switch region.Kind {
-		case HitRegionTabRename, HitRegionTabKill, HitRegionWorkspacePrev, HitRegionWorkspaceNext, HitRegionWorkspaceCreate, HitRegionWorkspaceRename, HitRegionWorkspaceDelete:
-			wideHasNewActions = true
-		}
 	}
-	if !wideHasCreate || !wideHasNewActions {
-		t.Fatalf("expected baseline width to contain create and management actions, got %#v", wideRegions)
+	if !wideHasCreate {
+		t.Fatalf("expected baseline width to contain create action, got %#v", wideRegions)
 	}
 
 	tight := makeTabBarState(26, []string{"a"})

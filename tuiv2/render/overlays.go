@@ -3,8 +3,8 @@ package render
 import (
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -44,7 +44,7 @@ func overlayViewport(termSize TermSize) (int, int) {
 }
 
 func buildPickerCardLayout(width, height, itemCount int, hasFooter bool) pickerCardLayout {
-	contentHeight := maxInt(1, height-2)
+	contentHeight := maxInt(1, height)
 	innerWidth := pickerInnerWidth(width)
 	fixedRows := 5
 	if hasFooter {
@@ -268,7 +268,8 @@ func layoutOverlayFooterActions(specs []overlayFooterActionSpec, rowRect workben
 	actions := make([]overlayFooterActionLayout, 0, len(specs))
 	currentX := 0
 	for _, spec := range specs {
-		labelW := xansi.StringWidth(spec.Label)
+		label := renderOverlayFooterActionLabel(spec.Label)
+		labelW := xansi.StringWidth(label)
 		if labelW <= 0 {
 			continue
 		}
@@ -284,7 +285,7 @@ func layoutOverlayFooterActions(specs []overlayFooterActionSpec, rowRect workben
 			currentX += overlayFooterActionGap
 		}
 		actions = append(actions, overlayFooterActionLayout{
-			Label:  spec.Label,
+			Label:  label,
 			Action: spec.Action,
 			Rect: workbench.Rect{
 				X: rowRect.X + currentX,
@@ -293,7 +294,7 @@ func layoutOverlayFooterActions(specs []overlayFooterActionSpec, rowRect workben
 				H: 1,
 			},
 		})
-		builder.WriteString(spec.Label)
+		builder.WriteString(label)
 		currentX += labelW
 	}
 	return builder.String(), actions
@@ -320,7 +321,10 @@ func renderPromptOverlay(prompt *modal.PromptState, termSize TermSize) string {
 		return ""
 	}
 	width, height := overlayViewport(termSize)
-	lines, _ := promptOverlayContent(prompt)
+	lines, inputLine := promptOverlayContent(prompt)
+	if inputLine >= 0 && inputLine < len(lines) {
+		lines[inputLine] = renderOverlayPromptField(prompt)
+	}
 	footerLine, _ := layoutOverlayFooterActions(promptFooterActionSpecs(prompt), workbench.Rect{W: pickerInnerWidth(width), H: 1})
 	footer := footerLine
 	if strings.TrimSpace(footer) == "" {
@@ -494,11 +498,9 @@ func helpOverlayLines(help *modal.HelpState, innerWidth int) []string {
 	}
 	lines := make([]string, 0)
 	for _, section := range help.Sections {
-		lines = append(lines, forceWidthANSIOverlay(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#fbbf24")).Render(section.Title), innerWidth))
+		lines = append(lines, forceWidthANSIOverlay(overlaySectionTitleStyle.Render("▍ "+section.Title), innerWidth))
 		for _, binding := range section.Bindings {
-			keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#86efac")).Bold(true)
-			actionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#cbd5e1"))
-			line := keyStyle.Render(binding.Key) + "  " + actionStyle.Render(binding.Action)
+			line := overlayHelpKeyStyle.Render(binding.Key) + "  " + overlayHelpActionStyle.Render(binding.Action)
 			lines = append(lines, forceWidthANSIOverlay(line, innerWidth))
 		}
 		lines = append(lines, "")
@@ -523,7 +525,7 @@ func renderPickerCard(title, query string, items []string, footer string, width,
 	lines := make([]string, 0, layout.listHeight+layout.fixedRows)
 	lines = append(lines, centeredPickerBorderLine("top", layout.innerWidth, title))
 	lines = append(lines, centeredPickerContentLine("", layout.innerWidth))
-	lines = append(lines, centeredPickerContentLine(terminalPickerQueryStyle.Render(forceWidthANSIOverlay("search: "+query+"_", layout.innerWidth)), layout.innerWidth))
+	lines = append(lines, centeredPickerContentLine(renderOverlaySearchLine(query, layout.innerWidth), layout.innerWidth))
 	for i := 0; i < layout.listHeight; i++ {
 		content := ""
 		if i < len(items) {
@@ -533,12 +535,22 @@ func renderPickerCard(title, query string, items []string, footer string, width,
 	}
 	lines = append(lines, centeredPickerContentLine("", layout.innerWidth))
 	if layout.hasFooter {
-		lines = append(lines, centeredPickerContentLine(pickerFooterStyle.Render(forceWidthANSIOverlay(footer, layout.innerWidth)), layout.innerWidth))
+		lines = append(lines, centeredPickerContentLine(renderOverlayFooterLine(footer, layout.innerWidth), layout.innerWidth))
 	}
 	lines = append(lines, centeredPickerBorderLine("bottom", layout.innerWidth, ""))
 
 	card := strings.Join(lines, "\n")
-	body := lipgloss.Place(layout.width, layout.contentHeight, lipgloss.Center, lipgloss.Center, card, lipgloss.WithWhitespaceChars(" "), lipgloss.WithWhitespaceBackground(lipgloss.Color("#020617")))
+	body := lipgloss.Place(
+		layout.width,
+		layout.contentHeight,
+		lipgloss.Center,
+		lipgloss.Center,
+		card,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceStyle(
+			lipgloss.NewStyle().Background(lipgloss.Color("#050816")),
+		),
+	)
 	return terminalPickerBodyStyle.Render(forceHeight(body, layout.contentHeight))
 }
 
@@ -551,15 +563,68 @@ func pickerInnerWidth(termWidth int) int {
 func centeredPickerBorderLine(edge string, innerWidth int, title string) string {
 	switch edge {
 	case "top":
-		title = lipgloss.NewStyle().MaxWidth(innerWidth).Render(" " + title + " ")
-		return pickerBorderStyle.Render("┌") + terminalPickerTitleStyle.Render(title) + pickerBorderStyle.Render(strings.Repeat("─", maxInt(0, innerWidth-lipgloss.Width(title)))) + pickerBorderStyle.Render("┐")
+		title = terminalPickerTitleStyle.Render(lipgloss.NewStyle().MaxWidth(maxInt(0, innerWidth)).Render(title))
+		return pickerBorderStyle.Render("╭") + title + pickerBorderStyle.Render(strings.Repeat("─", maxInt(0, innerWidth-lipgloss.Width(title)))) + pickerBorderStyle.Render("╮")
 	default:
-		return pickerBorderStyle.Render("└" + strings.Repeat("─", innerWidth) + "┘")
+		return pickerBorderStyle.Render("╰" + strings.Repeat("─", innerWidth) + "╯")
 	}
 }
 
 func centeredPickerContentLine(content string, innerWidth int) string {
-	return pickerBorderStyle.Render("│") + forceWidthANSIOverlay(content, innerWidth) + pickerBorderStyle.Render("│")
+	row := forceWidthANSIOverlay(content, innerWidth)
+	return pickerBorderStyle.Render("│") + overlayCardFillStyle.Render(row) + pickerBorderStyle.Render("│")
+}
+
+func renderOverlaySearchLine(query string, innerWidth int) string {
+	value := query + "_"
+	row := overlayFieldPrefixStyle.Render("search: ") + overlayFieldValueStyle.Render(value)
+	remain := innerWidth - xansi.StringWidth("search: ") - xansi.StringWidth(value)
+	if remain > 0 {
+		row += overlayFieldValueStyle.Render(strings.Repeat(" ", remain))
+	}
+	return terminalPickerQueryStyle.Render(forceWidthANSIOverlay(row, innerWidth))
+}
+
+func renderOverlayFooterLine(footer string, innerWidth int) string {
+	return pickerFooterStyle.Render(forceWidthANSIOverlay(footer, innerWidth))
+}
+
+func renderOverlayPromptField(prompt *modal.PromptState) string {
+	if prompt == nil {
+		return ""
+	}
+	value := promptValueWithCursor(prompt)
+	row := overlayFieldPrefixStyle.Render(promptFieldLabel(prompt.Kind)+": ") + overlayFieldValueStyle.Render(value)
+	return row
+}
+
+func renderOverlayFooterActionLabel(label string) string {
+	key, text := splitOverlayFooterLabel(label)
+	switch {
+	case key != "" && text != "":
+		return overlayFooterKeyStyle.Render(key) + overlayFooterTextStyle.Render(text)
+	case key != "":
+		return overlayFooterKeyStyle.Render(key)
+	default:
+		return overlayFooterPlainStyle.Render(label)
+	}
+}
+
+func splitOverlayFooterLabel(label string) (string, string) {
+	label = strings.TrimSpace(label)
+	if !strings.HasPrefix(label, "[") {
+		return "", label
+	}
+	end := strings.Index(label, "]")
+	if end <= 0 {
+		return "", label
+	}
+	key := label[:end+1]
+	text := strings.TrimSpace(label[end+1:])
+	if text != "" {
+		text = " " + text
+	}
+	return key, text
 }
 
 func forceWidthANSIOverlay(s string, width int) string {

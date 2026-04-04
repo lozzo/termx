@@ -2,59 +2,101 @@ package render
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
+const (
+	TopChromeRows    = 1
+	BottomChromeRows = 1
+)
+
 var (
-	tabBarBG = lipgloss.Color("#020617")
+	tabBarBG = lipgloss.Color("#050816")
 
 	workspaceLabelStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("#e2e8f0")).
-				Background(lipgloss.Color("#0f172a")).
+				Foreground(lipgloss.Color("#f8fafc")).
+				Background(lipgloss.Color("#182033")).
 				Padding(0, 1)
 
 	tabInactiveStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#94a3b8")).
-				Background(tabBarBG)
+				Foreground(lipgloss.Color("#a5b4cf")).
+				Background(lipgloss.Color("#0f172a"))
 
 	tabActiveStyle = lipgloss.NewStyle().
 			Bold(true).
+			Foreground(lipgloss.Color("#f8fafc")).
+			Background(lipgloss.Color("#24314a")).
 			Underline(true).
-			Foreground(lipgloss.Color("#e2e8f0")).
-			Background(tabBarBG)
+			UnderlineColor(lipgloss.Color("#7c3aed"))
 
-	statusBarBG = lipgloss.Color("#020617")
+	tabCreateStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#ecfeff")).
+			Background(lipgloss.Color("#0f766e"))
+
+	tabActionStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#cbd5e1")).
+			Background(lipgloss.Color("#111827"))
+
+	tabActionActiveStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("#f8fafc")).
+				Background(lipgloss.Color("#1f2937"))
+
+	tabCloseStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#cbd5e1")).
+			Background(lipgloss.Color("#0f172a"))
+
+	tabCloseActiveStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("#f8fafc")).
+				Background(lipgloss.Color("#24314a")).
+				Underline(true).
+				UnderlineColor(lipgloss.Color("#7c3aed"))
+
+	statusBarBG = lipgloss.Color("#07101d")
 
 	statusChipStyle = lipgloss.NewStyle().
 			Bold(true).
 			Padding(0, 1)
 
 	statusSeparatorStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#64748b")).
-				Background(statusBarBG).
-				Bold(true)
+				Foreground(lipgloss.Color("#4c5e7e")).
+				Background(statusBarBG)
 
 	statusPartDefaultStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#cbd5e1")).
-				Background(statusBarBG)
+				Background(statusBarBG).
+				Padding(0, 1)
 
 	statusPartErrorStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#fee2e2")).
 				Background(lipgloss.Color("#7f1d1d")).
-				Bold(true)
+				Bold(true).
+				Padding(0, 1)
 
 	statusPartNoticeStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#e0f2fe")).
 				Background(lipgloss.Color("#0f766e")).
 				Bold(true).
 				Padding(0, 1)
+
+	statusMetaStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#dbe6f7")).
+			Background(lipgloss.Color("#121c2e")).
+			Padding(0, 1)
 )
+
+func FrameBodyHeight(totalHeight int) int {
+	return maxInt(1, totalHeight-TopChromeRows-BottomChromeRows)
+}
 
 func renderTabBar(state VisibleRenderState) string {
 	layout := buildTabBarLayout(state)
@@ -65,7 +107,6 @@ func renderStatusBar(state VisibleRenderState) string {
 	width := state.TermSize.Width
 	labels := currentStatusTexts(state)
 
-	// left: mode badge + shortcut hints
 	var leftParts []string
 	if !suppressStatusHints(state) {
 		mode := strings.TrimSpace(state.InputMode)
@@ -89,15 +130,14 @@ func renderStatusBar(state VisibleRenderState) string {
 	}
 	left := strings.Join(leftParts, "")
 
-	// right: state summary
 	var rightParts []string
 	if state.Workbench != nil {
-		rightParts = append(rightParts, "ws:"+state.Workbench.WorkspaceName)
+		rightParts = append(rightParts, statusMetaStyle.Render("ws:"+state.Workbench.WorkspaceName))
 	}
 	if state.Runtime != nil {
-		rightParts = append(rightParts, fmt.Sprintf("terminals:%d", len(state.Runtime.Terminals)))
+		rightParts = append(rightParts, statusMetaStyle.Render(fmt.Sprintf("terminals:%d", len(state.Runtime.Terminals))))
 	}
-	right := statusPartDefaultStyle.Render(strings.Join(rightParts, "  "))
+	right := strings.Join(rightParts, " ")
 
 	return fillLine(left, right, width, statusBarBG)
 }
@@ -114,7 +154,7 @@ func renderStatusChip(label, bg, fg string) string {
 }
 
 func renderStatusSep() string {
-	return statusSeparatorStyle.Render(" \u25b8 ")
+	return statusSeparatorStyle.Render(" • ")
 }
 
 func renderModeBadge(mode string) string {
@@ -336,7 +376,7 @@ func (c statusHintContext) canBecomeOwner() bool {
 	return c.activePaneConnected() && c.activeRole == "follower"
 }
 
-func fillLine(left, right string, width int, bg lipgloss.Color) string {
+func fillLine(left, right string, width int, bg color.Color) string {
 	if width <= 0 {
 		return ""
 	}

@@ -7,7 +7,6 @@ import (
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
-	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 func (m *Model) applyEffects(effects []orchestrator.Effect) tea.Cmd {
@@ -27,7 +26,7 @@ func (m *Model) clampFloatingPanesToViewport() {
 	if m == nil || m.workbench == nil || m.width <= 0 || m.height <= 0 {
 		return
 	}
-	m.workbench.ClampFloatingPanesToBounds(workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)})
+	m.workbench.ClampFloatingPanesToBounds(m.bodyRect())
 }
 
 func (m *Model) effectCmd(effect orchestrator.Effect) tea.Cmd {

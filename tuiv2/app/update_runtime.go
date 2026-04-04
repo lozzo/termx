@@ -148,7 +148,7 @@ func (m *Model) resizeVisiblePanesCmd() tea.Cmd {
 	if m == nil || m.runtime == nil || m.workbench == nil {
 		return nil
 	}
-	bodyRect := workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)}
+	bodyRect := m.bodyRect()
 	visible := m.workbench.VisibleWithSize(bodyRect)
 	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
 		return nil

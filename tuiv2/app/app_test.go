@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/bridge"
@@ -42,7 +43,7 @@ func TestModelViewShowsProjectedState(t *testing.T) {
 	model := New(shared.Config{}, wb, rt)
 	model.width = 100
 	model.height = 30
-	view := model.View()
+	view := xansi.Strip(model.View())
 	// tab bar contains workspace name and tab name
 	for _, want := range []string{"main", "tab 1"} {
 		if !strings.Contains(view, want) {
@@ -372,7 +373,7 @@ func TestModelViewShowsPickerItems(t *testing.T) {
 			{TerminalID: "term-2", Name: "logs", State: "exited"},
 		},
 	}
-	view := model.View()
+	view := xansi.Strip(model.View())
 	for _, want := range []string{"Terminal Picker", "shell", "logs"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("picker view missing %q:\n%s", want, view)
@@ -1179,7 +1180,7 @@ func TestModelViewShowsModeSpecificStatusHints(t *testing.T) {
 	model.height = 30
 	model.input.SetMode(input.ModeState{Kind: input.ModePane})
 
-	view := model.View()
+	view := xansi.Strip(model.View())
 	for _, want := range []string{"PANE", "h/j/k/l FOCUS", "% VSPLIT", "d DETACH", "r RECONNECT", "X CLOSE+KILL", "w CLOSE", "Esc BACK"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected view to contain %q, got:\n%s", want, view)

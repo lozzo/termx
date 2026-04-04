@@ -67,7 +67,7 @@ func TestFloatingFollowerResizeDoesNotUpdateSharedPTYSize(t *testing.T) {
 		t.Fatalf("bind shared floating terminal: %v", err)
 	}
 
-	bodyRect := workbench.Rect{W: maxInt(1, model.width), H: maxInt(1, model.height-2)}
+	bodyRect := model.bodyRect()
 	visible := model.workbench.VisibleWithSize(bodyRect)
 	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) || len(visible.Tabs[visible.ActiveTab].Panes) == 0 {
 		t.Fatal("expected visible tiled pane")

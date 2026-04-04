@@ -6,7 +6,7 @@ import (
 )
 
 func (m *Model) visibleRenderState() render.VisibleRenderState {
-	bodyHeight := maxInt(1, m.height-2) // tab bar + status bar = 2 rows
+	bodyHeight := m.bodyHeight()
 	state := render.AdaptVisibleStateWithSize(m.workbench, m.runtime, m.width, bodyHeight)
 	state = render.WithTermSize(state, m.width, m.height)
 	state = render.WithStatus(state, "", renderErrorText(m.err), string(m.visibleInputMode()))

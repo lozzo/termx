@@ -99,7 +99,7 @@ func benchmarkState(tb testing.TB, paneCount, width, height int) VisibleRenderSt
 		terminal.Snapshot = benchmarkSnapshot(terminalID, width, height, i)
 	}
 
-	state := AdaptVisibleStateWithSize(wb, rt, width, height-2)
+	state := AdaptVisibleStateWithSize(wb, rt, width, FrameBodyHeight(height))
 	state = WithTermSize(state, width, height)
 	return state
 }

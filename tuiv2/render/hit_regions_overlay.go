@@ -22,7 +22,7 @@ func OverlayHitRegions(state VisibleRenderState) []HitRegion {
 	}
 	overlaySize := TermSize{
 		Width:  state.TermSize.Width,
-		Height: maxInt(1, state.TermSize.Height-2),
+		Height: FrameBodyHeight(state.TermSize.Height),
 	}
 	width, height := overlayViewport(overlaySize)
 	switch state.Overlay.Kind {
@@ -49,7 +49,7 @@ func TerminalPoolHitRegions(state VisibleRenderState) []HitRegion {
 		return nil
 	}
 	width := maxInt(1, state.TermSize.Width)
-	height := maxInt(1, state.TermSize.Height-2)
+	height := FrameBodyHeight(state.TermSize.Height)
 	layout := buildTerminalPoolPageLayout(state.Surface.TerminalPool, width, height)
 	if len(layout.itemRows) == 0 && len(layout.footerActions) == 0 {
 		return nil

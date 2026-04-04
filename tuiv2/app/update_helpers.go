@@ -4,6 +4,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/tuiv2/render"
+	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 var errorClearDelay = 3 * time.Second
@@ -26,6 +28,24 @@ func renderErrorText(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+func (m *Model) bodyHeight() int {
+	if m == nil {
+		return render.FrameBodyHeight(0)
+	}
+	return render.FrameBodyHeight(m.height)
+}
+
+func (m *Model) contentOriginY() int {
+	return render.TopChromeRows
+}
+
+func (m *Model) bodyRect() workbench.Rect {
+	if m == nil {
+		return workbench.Rect{W: 1, H: render.FrameBodyHeight(0)}
+	}
+	return workbench.Rect{W: maxInt(1, m.width), H: m.bodyHeight()}
 }
 
 func maxInt(a, b int) int {

@@ -8,12 +8,12 @@ import (
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
-const ownerConfirmLabel = "become owner"
+const ownerConfirmLabel = "◆ owner?"
 
 const (
-	paneBorderStateSlotWidth = 4
+	paneBorderStateSlotWidth = 3
 	paneBorderShareSlotWidth = 4
-	paneBorderRoleSlotWidth  = 14
+	paneBorderRoleSlotWidth  = 10
 )
 
 type paneBorderInfo struct {
@@ -81,16 +81,16 @@ func paneBorderInfoWithLookup(pane workbench.VisiblePane, lookup runtimeLookup, 
 	}
 	switch lookup.paneRole(pane.ID) {
 	case "owner":
-		info.RoleLabel = "owner"
+		info.RoleLabel = "◆ owner"
 	case "follower":
 		if confirmPaneID == pane.ID {
 			info.RoleLabel = ownerConfirmLabel
 		} else {
-			info.RoleLabel = "follow"
+			info.RoleLabel = "◇ follow"
 		}
 	}
 	if len(terminal.BoundPaneIDs) > 1 {
-		info.ShareLabel = fmt.Sprintf("x%d", len(terminal.BoundPaneIDs))
+		info.ShareLabel = fmt.Sprintf("⇄%d", len(terminal.BoundPaneIDs))
 	}
 	return info
 }

@@ -5,6 +5,7 @@ import (
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
+	"github.com/lozzow/termx/tuiv2/render"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -142,8 +143,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.render.Invalidate()
 		return m, nil
 	case tea.WindowSizeMsg:
-		oldBodyRect := workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)}
-		newBodyRect := workbench.Rect{W: maxInt(1, typed.Width), H: maxInt(1, typed.Height-2)}
+		oldBodyRect := m.bodyRect()
+		newBodyRect := workbench.Rect{W: maxInt(1, typed.Width), H: render.FrameBodyHeight(typed.Height)}
 		if m.workbench != nil {
 			if m.width > 0 && m.height > 0 {
 				m.workbench.ReflowFloatingPanes(oldBodyRect, newBodyRect)

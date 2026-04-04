@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -305,7 +306,7 @@ func TestEffectCmdSetInputModeEffectInvalidatesCachedFrame(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 200})
 	model.input.SetMode(input.ModeState{Kind: input.ModePane})
 	model.render.Invalidate()
-	if view := model.View(); !strings.Contains(view, "PANE") {
+	if view := xansi.Strip(model.View()); !strings.Contains(view, "PANE") {
 		t.Fatalf("expected initial pane hints in view:\n%s", view)
 	}
 
@@ -321,7 +322,7 @@ func TestEffectCmdSetInputModeEffectInvalidatesCachedFrame(t *testing.T) {
 		t.Fatalf("expected no follow-up command, got %#v", next)
 	}
 
-	view := model.View()
+	view := xansi.Strip(model.View())
 	if !strings.Contains(view, "GLOBAL") {
 		t.Fatalf("expected global hints after set-input-mode effect:\n%s", view)
 	}

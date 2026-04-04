@@ -279,8 +279,10 @@ func (r *Runtime) Visible() *VisibleRuntime {
 		return r.visibleCache
 	}
 	visible := &VisibleRuntime{
-		Terminals: make([]VisibleTerminal, 0, len(r.registry.terminals)),
-		Bindings:  make([]VisiblePaneBinding, 0, len(r.bindings)),
+		Terminals:     make([]VisibleTerminal, 0, len(r.registry.terminals)),
+		Bindings:      make([]VisiblePaneBinding, 0, len(r.bindings)),
+		HostDefaultFG: r.hostDefaultFG,
+		HostDefaultBG: r.hostDefaultBG,
 	}
 	for _, terminalID := range r.registry.IDs() {
 		terminal := r.registry.Get(terminalID)

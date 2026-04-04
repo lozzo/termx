@@ -8,8 +8,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"charm.land/lipgloss/v2"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	uv "github.com/charmbracelet/ultraviolet"
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
@@ -1186,7 +1186,9 @@ func (m *Model) renderCenteredPickerModal(title, query string, items []string, f
 		lipgloss.Center,
 		card,
 		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceBackground(lipgloss.Color("#020617")),
+		lipgloss.WithWhitespaceStyle(
+			lipgloss.NewStyle().Background(lipgloss.Color("#020617")),
+		),
 	)
 	body = terminalPickerBodyStyle.Render(forceHeight(body, contentHeight))
 	return strings.Join([]string{tabBar, body, status}, "\n")

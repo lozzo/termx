@@ -43,7 +43,7 @@ func TestMouseDragFloatingPane(t *testing.T) {
 	// 模拟鼠标点击浮动窗口
 	clickMsg := tea.MouseMsg{
 		X:      15, // 在浮动窗口内
-		Y:      6,  // tab bar 高度为 1，所以内容区域 Y=5 对应屏幕 Y=6
+		Y:      screenYForBodyY(m, 5),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	}
@@ -62,7 +62,7 @@ func TestMouseDragFloatingPane(t *testing.T) {
 	// 模拟鼠标拖动
 	dragMsg := tea.MouseMsg{
 		X:      25, // 向右移动 10
-		Y:      11, // 向下移动 5
+		Y:      screenYForBodyY(m, 10),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionMotion,
 	}
@@ -98,7 +98,7 @@ func TestMouseDragFloatingPane(t *testing.T) {
 	// 模拟鼠标释放
 	releaseMsg := tea.MouseMsg{
 		X:      25,
-		Y:      11,
+		Y:      screenYForBodyY(m, 10),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionRelease,
 	}
@@ -120,7 +120,7 @@ func TestMouseClickSelectsNonFloatingPane(t *testing.T) {
 
 	model, _ := m.Update(tea.MouseMsg{
 		X:      90,
-		Y:      5,
+		Y:      screenYForBodyY(m, 4),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -144,7 +144,7 @@ func TestMouseDragSplitDividerResizesTiledPanes(t *testing.T) {
 
 	model, _ := m.Update(tea.MouseMsg{
 		X:      59,
-		Y:      10,
+		Y:      screenYForBodyY(m, 10),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -159,14 +159,14 @@ func TestMouseDragSplitDividerResizesTiledPanes(t *testing.T) {
 
 	model, cmd := m.Update(tea.MouseMsg{
 		X:      49,
-		Y:      10,
+		Y:      screenYForBodyY(m, 10),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionMotion,
 	})
 	m = model.(*Model)
 	drainCmd(t, m, cmd, 20)
 
-	bodyRect := workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)}
+	bodyRect := m.bodyRect()
 	visible := m.workbench.VisibleWithSize(bodyRect)
 	if visible == nil || visible.ActiveTab < 0 {
 		t.Fatal("expected visible workbench")
@@ -184,7 +184,7 @@ func TestMouseDragSplitDividerResizesTiledPanes(t *testing.T) {
 
 	model, _ = m.Update(tea.MouseMsg{
 		X:      49,
-		Y:      10,
+		Y:      screenYForBodyY(m, 10),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionRelease,
 	})
@@ -206,7 +206,7 @@ func TestMouseClickSelectsFloatingPane(t *testing.T) {
 
 	model, _ := m.Update(tea.MouseMsg{
 		X:      12,
-		Y:      7,
+		Y:      screenYForBodyY(m, 6),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -236,7 +236,7 @@ func TestMouseClickNonFloatingKeepsFloatingPanesVisible(t *testing.T) {
 
 	model, _ := m.Update(tea.MouseMsg{
 		X:      2,
-		Y:      3,
+		Y:      screenYForBodyY(m, 3),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -282,20 +282,20 @@ func TestMouseClickNonFloatingKeepsFloatingTerminalPanesVisibleWithExtentHints(t
 	}
 
 	before := m.View()
-	if !strings.Contains(before, "term-f1") || !strings.Contains(before, "term-f2") {
+	if strings.Count(before, "◎") < 2 {
 		t.Fatalf("expected floating terminal panes visible before click:\n%s", before)
 	}
 
 	model, _ := m.Update(tea.MouseMsg{
 		X:      2,
-		Y:      3,
+		Y:      screenYForBodyY(m, 3),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
 	m = model.(*Model)
 
 	after := m.View()
-	if !strings.Contains(after, "term-f1") || !strings.Contains(after, "term-f2") {
+	if strings.Count(after, "◎") < 2 {
 		t.Fatalf("expected floating terminal panes to remain visible after tiled click:\n%s", after)
 	}
 }
@@ -325,7 +325,7 @@ func TestMouseClickSplitPaneKeepsFloatingPanesVisible(t *testing.T) {
 
 	model, _ := m.Update(tea.MouseMsg{
 		X:      90,
-		Y:      5,
+		Y:      screenYForBodyY(m, 4),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -382,7 +382,7 @@ func TestMouseClickOwnerButtonPromotesPaneAndResizesTerminal(t *testing.T) {
 	followerBinding.Connected = true
 	followerBinding.Role = "follower"
 
-	bodyRect := workbench.Rect{W: maxInt(1, model.width), H: maxInt(1, model.height-2)}
+	bodyRect := model.bodyRect()
 	visible := model.workbench.VisibleWithSize(bodyRect)
 	if visible == nil || visible.ActiveTab < 0 || len(visible.Tabs[visible.ActiveTab].Panes) < 2 {
 		t.Fatal("expected visible split panes")
@@ -399,7 +399,7 @@ func TestMouseClickOwnerButtonPromotesPaneAndResizesTerminal(t *testing.T) {
 
 	_, cmd := model.Update(tea.MouseMsg{
 		X:      buttonRect.X,
-		Y:      buttonRect.Y + 1,
+		Y:      screenYForBodyY(model, buttonRect.Y),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -413,7 +413,7 @@ func TestMouseClickOwnerButtonPromotesPaneAndResizesTerminal(t *testing.T) {
 	if model.ownerConfirmPaneID != "pane-2" {
 		t.Fatalf("expected first click to arm owner confirmation for pane-2, got %q", model.ownerConfirmPaneID)
 	}
-	if !strings.Contains(model.View(), "become owner") {
+	if !strings.Contains(model.View(), "◆ owner?") {
 		t.Fatalf("expected armed owner confirmation in view:\n%s", model.View())
 	}
 	if len(client.resizes) != 0 {
@@ -432,7 +432,7 @@ func TestMouseClickOwnerButtonPromotesPaneAndResizesTerminal(t *testing.T) {
 
 	_, cmd = model.Update(tea.MouseMsg{
 		X:      buttonRect.X,
-		Y:      buttonRect.Y + 1,
+		Y:      screenYForBodyY(model, buttonRect.Y),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -507,7 +507,7 @@ func TestMouseClickTabSwitchesActiveTab(t *testing.T) {
 
 func TestMouseClickPaneChromeZoomTogglesTargetPane(t *testing.T) {
 	m := setupTwoPaneModel(t)
-	bodyRect := workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)}
+	bodyRect := m.bodyRect()
 	visible := m.workbench.VisibleWithSize(bodyRect)
 	if visible == nil || visible.ActiveTab < 0 || len(visible.Tabs[visible.ActiveTab].Panes) < 2 {
 		t.Fatal("expected visible split panes")
@@ -530,7 +530,7 @@ func TestMouseClickPaneChromeZoomTogglesTargetPane(t *testing.T) {
 
 	_, cmd := m.Update(tea.MouseMsg{
 		X:      target.Rect.X,
-		Y:      target.Rect.Y + 1,
+		Y:      screenYForBodyY(m, target.Rect.Y),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -558,7 +558,7 @@ func TestMouseClickFloatingPaneChromeCloseDoesNotStartDrag(t *testing.T) {
 		t.Fatalf("create floating pane: %v", err)
 	}
 
-	bodyRect := workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)}
+	bodyRect := m.bodyRect()
 	visible := m.workbench.VisibleWithSize(bodyRect)
 	if visible == nil || len(visible.FloatingPanes) == 0 {
 		t.Fatal("expected visible floating pane")
@@ -581,7 +581,7 @@ func TestMouseClickFloatingPaneChromeCloseDoesNotStartDrag(t *testing.T) {
 
 	_, cmd := m.Update(tea.MouseMsg{
 		X:      target.Rect.X,
-		Y:      target.Rect.Y + 1,
+		Y:      screenYForBodyY(m, target.Rect.Y),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -680,101 +680,23 @@ func TestMouseClickTabCloseClosesActiveTab(t *testing.T) {
 	}
 }
 
-func TestMouseClickTopChromeRenameTabOpensPrompt(t *testing.T) {
+func TestMouseTopChromeDoesNotExposeTabManagementActions(t *testing.T) {
 	m := setupModel(t, modelOpts{width: 180})
-
-	target := tabBarRegionByKind(t, m, render.HitRegionTabRename)
-	_, cmd := m.Update(tea.MouseMsg{X: target.Rect.X, Y: target.Rect.Y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	drainCmd(t, m, cmd, 20)
-
-	assertMode(t, m, input.ModePrompt)
-	if m.modalHost == nil || m.modalHost.Prompt == nil || m.modalHost.Prompt.Kind != "rename-tab" {
-		t.Fatalf("expected rename-tab prompt after top chrome click, got %#v", m.modalHost)
-	}
-}
-
-func TestMouseClickTopChromeKillTabClosesActiveTab(t *testing.T) {
-	m := setupModel(t, modelOpts{width: 180})
-	createSecondTab(t, m)
-
-	target := tabBarRegionByKind(t, m, render.HitRegionTabKill)
-	_, cmd := m.Update(tea.MouseMsg{X: target.Rect.X, Y: target.Rect.Y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	drainCmd(t, m, cmd, 20)
-
-	assertTabCount(t, m, 1)
-}
-
-func TestMouseClickTopChromeWorkspaceActionsManageCurrentWorkspace(t *testing.T) {
-	m := setupModel(t, modelOpts{width: 220})
-
-	create := tabBarRegionByKind(t, m, render.HitRegionWorkspaceCreate)
-	_, cmd := m.Update(tea.MouseMsg{X: create.Rect.X, Y: create.Rect.Y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	drainCmd(t, m, cmd, 20)
-
-	if len(m.workbench.ListWorkspaces()) != 2 {
-		t.Fatalf("expected workspace create click to add workspace, got %#v", m.workbench.ListWorkspaces())
-	}
-}
-
-func TestMouseClickTopChromeWorkspacePrevNextRenameDelete(t *testing.T) {
-	newModel := func() *Model {
-		m := setupModel(t, modelOpts{width: 1000})
-		m.workbench.AddWorkspace("dev", &workbench.WorkspaceState{
-			Name:      "dev",
-			ActiveTab: 0,
-			Tabs: []*workbench.TabState{{
-				ID:           "tab-2",
-				Name:         "tab 2",
-				ActivePaneID: "pane-2",
-				Panes:        map[string]*workbench.PaneState{"pane-2": {ID: "pane-2", Title: "logs", TerminalID: "term-2"}},
-				Root:         workbench.NewLeaf("pane-2"),
-			}},
-		})
-		return m
-	}
-
-	m := newModel()
-	if !m.workbench.SwitchWorkspace("main") {
-		t.Fatal("switch workspace to main")
-	}
-	next := tabBarRegionByKind(t, m, render.HitRegionWorkspaceNext)
-	_, cmd := m.Update(tea.MouseMsg{X: next.Rect.X, Y: next.Rect.Y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	drainCmd(t, m, cmd, 20)
-	if got := m.workbench.CurrentWorkspace().Name; got != "dev" {
-		t.Fatalf("expected next workspace click to switch to dev, got %q", got)
-	}
-
-	m = newModel()
-	if !m.workbench.SwitchWorkspace("dev") {
-		t.Fatal("switch workspace to dev")
-	}
-	prev := tabBarRegionByKind(t, m, render.HitRegionWorkspacePrev)
-	_, cmd = m.Update(tea.MouseMsg{X: prev.Rect.X, Y: prev.Rect.Y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	drainCmd(t, m, cmd, 20)
-	if got := m.workbench.CurrentWorkspace().Name; got != "main" {
-		t.Fatalf("expected prev workspace click to switch to main, got %q", got)
-	}
-
-	m = newModel()
-	if !m.workbench.SwitchWorkspace("main") {
-		t.Fatal("switch workspace to main")
-	}
-	rename := tabBarRegionByKind(t, m, render.HitRegionWorkspaceRename)
-	_, cmd = m.Update(tea.MouseMsg{X: rename.Rect.X, Y: rename.Rect.Y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	drainCmd(t, m, cmd, 20)
-	assertMode(t, m, input.ModePrompt)
-	if m.modalHost == nil || m.modalHost.Prompt == nil || m.modalHost.Prompt.Kind != "rename-workspace" {
-		t.Fatalf("expected rename-workspace prompt after top chrome click, got %#v", m.modalHost)
-	}
-
-	dispatchAction(t, m, input.SemanticAction{Kind: input.ActionCancelMode})
-
-	deleteRegion := tabBarRegionByKind(t, m, render.HitRegionWorkspaceDelete)
-	_, cmd = m.Update(tea.MouseMsg{X: deleteRegion.Rect.X, Y: deleteRegion.Rect.Y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	drainCmd(t, m, cmd, 20)
-
-	if len(m.workbench.ListWorkspaces()) != 1 {
-		t.Fatalf("expected workspace delete click to remove current workspace, got %#v", m.workbench.ListWorkspaces())
+	state := m.visibleRenderState()
+	for _, kind := range []render.HitRegionKind{
+		render.HitRegionTabRename,
+		render.HitRegionTabKill,
+		render.HitRegionWorkspacePrev,
+		render.HitRegionWorkspaceNext,
+		render.HitRegionWorkspaceCreate,
+		render.HitRegionWorkspaceRename,
+		render.HitRegionWorkspaceDelete,
+	} {
+		for _, region := range render.TabBarHitRegions(state) {
+			if region.Kind == kind {
+				t.Fatalf("expected top chrome management region %q to be omitted, got %#v", kind, region)
+			}
+		}
 	}
 }
 
@@ -795,7 +717,7 @@ func TestMouseClickEmptyPaneAttachOpensPicker(t *testing.T) {
 		},
 	})
 
-	bodyRect := workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)}
+	bodyRect := m.bodyRect()
 	visible := m.workbench.VisibleWithSize(bodyRect)
 	pane := visible.Tabs[visible.ActiveTab].Panes[0]
 	regions := render.EmptyPaneActionRegions(pane)
@@ -805,7 +727,7 @@ func TestMouseClickEmptyPaneAttachOpensPicker(t *testing.T) {
 
 	_, cmd := m.Update(tea.MouseMsg{
 		X:      regions[0].Rect.X,
-		Y:      regions[0].Rect.Y + 1,
+		Y:      screenYForBodyY(m, regions[0].Rect.Y),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -818,7 +740,7 @@ func TestMouseClickEmptyPaneAttachOpensPicker(t *testing.T) {
 
 func TestMouseClickPaneChromeSplitVerticalCreatesPaneAndOpensPicker(t *testing.T) {
 	m := setupModel(t, modelOpts{})
-	bodyRect := workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)}
+	bodyRect := m.bodyRect()
 	visible := m.workbench.VisibleWithSize(bodyRect)
 	if visible == nil || visible.ActiveTab < 0 || len(visible.Tabs[visible.ActiveTab].Panes) == 0 {
 		t.Fatal("expected visible pane")
@@ -841,7 +763,7 @@ func TestMouseClickPaneChromeSplitVerticalCreatesPaneAndOpensPicker(t *testing.T
 
 	_, cmd := m.Update(tea.MouseMsg{
 		X:      target.Rect.X,
-		Y:      target.Rect.Y + 1,
+		Y:      screenYForBodyY(m, target.Rect.Y),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -856,7 +778,7 @@ func TestMouseClickPaneChromeSplitVerticalCreatesPaneAndOpensPicker(t *testing.T
 	}
 }
 
-func TestMouseClickPaneChromeDetachDetachesTerminal(t *testing.T) {
+func TestMousePaneChromeOmitsSecondaryTiledActions(t *testing.T) {
 	m := setupModel(t, modelOpts{})
 	term := m.runtime.Registry().Get("term-1")
 	if term == nil {
@@ -871,70 +793,16 @@ func TestMouseClickPaneChromeDetachDetachesTerminal(t *testing.T) {
 	}
 	binding.Role = "owner"
 
-	target := visiblePaneChromeRegion(t, m, "pane-1", render.HitRegionPaneDetach)
-	_, cmd := m.Update(tea.MouseMsg{X: target.Rect.X, Y: target.Rect.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	drainCmd(t, m, cmd, 20)
-
-	pane := m.workbench.ActivePane()
-	if pane == nil || pane.TerminalID != "" {
-		t.Fatalf("expected pane detached after chrome click, got %#v", pane)
-	}
-	if got := m.runtime.Binding("pane-1"); got != nil {
-		t.Fatalf("expected runtime binding cleared after detach click, got %#v", got)
-	}
-}
-
-func TestMouseClickPaneChromeReconnectOpensPicker(t *testing.T) {
-	m := setupModel(t, modelOpts{})
-	term := m.runtime.Registry().Get("term-1")
-	if term == nil {
-		t.Fatal("expected term-1 runtime")
-	}
-	term.OwnerPaneID = "pane-1"
-	term.BoundPaneIDs = []string{"pane-1"}
-
-	binding := m.runtime.Binding("pane-1")
-	if binding == nil {
-		t.Fatal("expected pane-1 binding")
-	}
-	binding.Role = "owner"
-
-	target := visiblePaneChromeRegion(t, m, "pane-1", render.HitRegionPaneReconnect)
-	_, cmd := m.Update(tea.MouseMsg{X: target.Rect.X, Y: target.Rect.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	drainCmd(t, m, cmd, 20)
-
-	pane := m.workbench.ActivePane()
-	if pane == nil || pane.TerminalID != "" {
-		t.Fatalf("expected reconnect click to detach pane before reopening picker, got %#v", pane)
-	}
-	assertMode(t, m, input.ModePicker)
-}
-
-func TestMouseClickPaneChromeCloseKillClosesPaneAndKillsTerminal(t *testing.T) {
-	m := setupModel(t, modelOpts{})
-	term := m.runtime.Registry().Get("term-1")
-	if term == nil {
-		t.Fatal("expected term-1 runtime")
-	}
-	term.OwnerPaneID = "pane-1"
-	term.BoundPaneIDs = []string{"pane-1"}
-
-	binding := m.runtime.Binding("pane-1")
-	if binding == nil {
-		t.Fatal("expected pane-1 binding")
-	}
-	binding.Role = "owner"
-
-	target := visiblePaneChromeRegion(t, m, "pane-1", render.HitRegionPaneCloseKill)
-	_, cmd := m.Update(tea.MouseMsg{X: target.Rect.X, Y: target.Rect.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	drainCmd(t, m, cmd, 20)
-
-	client := m.runtime.Client().(*recordingBridgeClient)
-	if len(client.killCalls) != 1 || client.killCalls[0] != "term-1" {
-		t.Fatalf("expected close+kill click to kill term-1, got %#v", client.killCalls)
-	}
-	if tab := m.workbench.CurrentTab(); tab != nil && len(tab.Panes) != 0 {
-		t.Fatalf("expected pane removed after close+kill click, got %#v", tab.Panes)
+	for _, kind := range []render.HitRegionKind{
+		render.HitRegionPaneDetach,
+		render.HitRegionPaneReconnect,
+		render.HitRegionPaneCloseKill,
+		render.HitRegionPaneBalancePanes,
+		render.HitRegionPaneCycleLayout,
+	} {
+		if paneChromeRegionPresent(m, "pane-1", kind) {
+			t.Fatalf("expected tiled pane chrome to omit %q", kind)
+		}
 	}
 }
 
@@ -951,16 +819,10 @@ func TestMouseClickFloatingPaneChromeActions(t *testing.T) {
 		t.Fatalf("focus floating pane: %v", err)
 	}
 
-	openPicker := visiblePaneChromeRegion(t, m, "float-1", render.HitRegionPaneOpenPicker)
-	_, cmd := m.Update(tea.MouseMsg{X: openPicker.Rect.X, Y: openPicker.Rect.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	drainCmd(t, m, cmd, 20)
-	assertMode(t, m, input.ModePicker)
-	dispatchAction(t, m, input.SemanticAction{Kind: input.ActionCancelMode})
-
 	m.workbench.MoveFloatingPane(tab.ID, "float-1", 0, 0)
 	center := visiblePaneChromeRegion(t, m, "float-1", render.HitRegionPaneCenterFloating)
 	beforeRect := findFloating(tab, "float-1").Rect
-	_, cmd = m.Update(tea.MouseMsg{X: center.Rect.X, Y: center.Rect.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	_, cmd := m.Update(tea.MouseMsg{X: center.Rect.X, Y: screenYForBodyY(m, center.Rect.Y), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	drainCmd(t, m, cmd, 20)
 	after := findFloating(tab, "float-1")
 	if after == nil {
@@ -970,15 +832,17 @@ func TestMouseClickFloatingPaneChromeActions(t *testing.T) {
 		t.Fatalf("expected center click to move floating pane, got %+v", after.Rect)
 	}
 
-	toggle := visiblePaneChromeRegion(t, m, "float-1", render.HitRegionPaneToggleFloating)
-	_, cmd = m.Update(tea.MouseMsg{X: toggle.Rect.X, Y: toggle.Rect.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	drainCmd(t, m, cmd, 20)
-	if tab.FloatingVisible {
-		t.Fatal("expected floating layer hidden after toggle click")
+	for _, kind := range []render.HitRegionKind{
+		render.HitRegionPaneOpenPicker,
+		render.HitRegionPaneToggleFloating,
+	} {
+		if paneChromeRegionPresent(m, "float-1", kind) {
+			t.Fatalf("expected floating pane chrome to omit %q", kind)
+		}
 	}
 }
 
-func TestMouseClickPaneChromeLayoutActionsBalanceAndCycle(t *testing.T) {
+func TestMousePaneChromeOmitsLayoutActions(t *testing.T) {
 	m := setupTwoPaneModel(t)
 	tab := m.workbench.CurrentTab()
 	if tab == nil || tab.Root == nil {
@@ -989,19 +853,13 @@ func TestMouseClickPaneChromeLayoutActionsBalanceAndCycle(t *testing.T) {
 	if tab.Root.Ratio == 0.5 {
 		t.Fatal("expected ratio changed before balance click")
 	}
-
-	balance := visiblePaneChromeRegion(t, m, "pane-1", render.HitRegionPaneBalancePanes)
-	_, cmd := m.Update(tea.MouseMsg{X: balance.Rect.X, Y: balance.Rect.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	drainCmd(t, m, cmd, 20)
-	if tab.Root.Ratio != 0.5 {
-		t.Fatalf("expected balance click to restore split ratio, got %f", tab.Root.Ratio)
-	}
-
-	cycle := visiblePaneChromeRegion(t, m, "pane-1", render.HitRegionPaneCycleLayout)
-	_, cmd = m.Update(tea.MouseMsg{X: cycle.Rect.X, Y: cycle.Rect.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
-	drainCmd(t, m, cmd, 20)
-	if m.workbench.CurrentTab() == nil {
-		t.Fatal("expected tab to survive cycle layout click")
+	for _, kind := range []render.HitRegionKind{
+		render.HitRegionPaneBalancePanes,
+		render.HitRegionPaneCycleLayout,
+	} {
+		if paneChromeRegionPresent(m, "pane-1", kind) {
+			t.Fatalf("expected split pane chrome to omit %q", kind)
+		}
 	}
 }
 
@@ -1053,7 +911,7 @@ func TestMouseClickPickerItemAttachesSelectedTerminal(t *testing.T) {
 
 	_, cmd := m.Update(tea.MouseMsg{
 		X:      target.Rect.X,
-		Y:      target.Rect.Y + 1,
+		Y:      screenYForBodyY(m, target.Rect.Y),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -1090,7 +948,7 @@ func TestMouseClickOverlayDismissClosesPicker(t *testing.T) {
 
 	_, cmd := m.Update(tea.MouseMsg{
 		X:      dismiss.Rect.X,
-		Y:      dismiss.Rect.Y + 1,
+		Y:      screenYForBodyY(m, dismiss.Rect.Y),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -1131,7 +989,7 @@ func TestMouseClickTerminalPoolRowSelectsItem(t *testing.T) {
 
 	_, cmd := m.Update(tea.MouseMsg{
 		X:      target.Rect.X,
-		Y:      target.Rect.Y + 1,
+		Y:      screenYForBodyY(m, target.Rect.Y),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -1175,7 +1033,7 @@ func TestMouseClickTerminalPoolFooterAttachHereDispatchesModalAction(t *testing.
 
 	_, cmd := m.Update(tea.MouseMsg{
 		X:      target.Rect.X,
-		Y:      target.Rect.Y + 1,
+		Y:      screenYForBodyY(m, target.Rect.Y),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -1221,7 +1079,7 @@ func TestMouseClickTerminalPoolFooterAttachFloatingCreatesFloatingPane(t *testin
 	target := terminalPoolFooterActionRegion(t, m, input.ActionAttachFloating)
 	_, cmd := m.Update(tea.MouseMsg{
 		X:      target.Rect.X,
-		Y:      target.Rect.Y + 1,
+		Y:      screenYForBodyY(m, target.Rect.Y),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -1263,7 +1121,7 @@ func TestMouseClickTerminalPoolFooterEditOpensPrompt(t *testing.T) {
 	target := terminalPoolFooterActionRegion(t, m, input.ActionEditTerminal)
 	_, cmd := m.Update(tea.MouseMsg{
 		X:      target.Rect.X,
-		Y:      target.Rect.Y + 1,
+		Y:      screenYForBodyY(m, target.Rect.Y),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -1291,7 +1149,7 @@ func TestMouseClickTerminalPoolFooterKillRemovesItemAndInvokesBridgeClient(t *te
 	target := terminalPoolFooterActionRegion(t, m, input.ActionKillTerminal)
 	_, cmd := m.Update(tea.MouseMsg{
 		X:      target.Rect.X,
-		Y:      target.Rect.Y + 1,
+		Y:      screenYForBodyY(m, target.Rect.Y),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -1311,7 +1169,7 @@ func TestMouseClickPromptInputMovesCursorAndSubmitFooterDispatches(t *testing.T)
 
 	inputRegion := overlayRegionByKind(t, m, render.HitRegionPromptInput)
 	clickX := inputRegion.Rect.X + 1
-	_, cmd := m.Update(tea.MouseMsg{X: clickX, Y: inputRegion.Rect.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	_, cmd := m.Update(tea.MouseMsg{X: clickX, Y: screenYForBodyY(m, inputRegion.Rect.Y), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	drainCmd(t, m, cmd, 20)
 
 	if m.modalHost == nil || m.modalHost.Prompt == nil {
@@ -1327,7 +1185,7 @@ func TestMouseClickPromptInputMovesCursorAndSubmitFooterDispatches(t *testing.T)
 	}
 
 	submit := overlayRegionByKind(t, m, render.HitRegionPromptSubmit)
-	_, cmd = m.Update(tea.MouseMsg{X: submit.Rect.X, Y: submit.Rect.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	_, cmd = m.Update(tea.MouseMsg{X: submit.Rect.X, Y: screenYForBodyY(m, submit.Rect.Y), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	drainCmd(t, m, cmd, 20)
 
 	assertMode(t, m, input.ModeNormal)
@@ -1341,7 +1199,7 @@ func TestMouseClickPromptCancelFooterClosesPrompt(t *testing.T) {
 	m.openRenameWorkspacePrompt()
 
 	cancel := overlayRegionByKind(t, m, render.HitRegionPromptCancel)
-	_, cmd := m.Update(tea.MouseMsg{X: cancel.Rect.X, Y: cancel.Rect.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	_, cmd := m.Update(tea.MouseMsg{X: cancel.Rect.X, Y: screenYForBodyY(m, cancel.Rect.Y), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	drainCmd(t, m, cmd, 20)
 
 	assertMode(t, m, input.ModeNormal)
@@ -1372,7 +1230,7 @@ func TestMouseClickWorkspacePickerFooterNextSwitchesWorkspace(t *testing.T) {
 	m.input.SetMode(input.ModeState{Kind: input.ModeWorkspacePicker, RequestID: "workspace"})
 
 	next := overlayFooterActionRegion(t, m, input.ActionNextWorkspace)
-	_, cmd := m.Update(tea.MouseMsg{X: next.Rect.X, Y: next.Rect.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	_, cmd := m.Update(tea.MouseMsg{X: next.Rect.X, Y: screenYForBodyY(m, next.Rect.Y), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	drainCmd(t, m, cmd, 20)
 
 	if ws := m.workbench.CurrentWorkspace(); ws == nil || ws.Name != "dev" {
@@ -1398,7 +1256,7 @@ func TestMouseClickPickerFooterAttachSplitOpensCreatePromptForCreateRow(t *testi
 	m.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: "pane-1"})
 
 	action := overlayFooterActionRegion(t, m, input.ActionPickerAttachSplit)
-	_, cmd := m.Update(tea.MouseMsg{X: action.Rect.X, Y: action.Rect.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	_, cmd := m.Update(tea.MouseMsg{X: action.Rect.X, Y: screenYForBodyY(m, action.Rect.Y), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	drainCmd(t, m, cmd, 20)
 
 	assertMode(t, m, input.ModePrompt)
@@ -1544,7 +1402,7 @@ func TestMouseContentVsChromeBoundaryDoesNotForwardPaneChrome(t *testing.T) {
 
 	_, cmd := m.Update(tea.MouseMsg{
 		X:      rect.X + 1,
-		Y:      rect.Y + 1, // pane top border row in screen coordinates
+		Y:      screenYForBodyY(m, rect.Y), // pane top border row in screen coordinates
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	})
@@ -1574,7 +1432,7 @@ func activePaneRect(t *testing.T, m *Model) workbench.Rect {
 	if tab == nil {
 		t.Fatal("expected current tab")
 	}
-	bodyRect := workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)}
+	bodyRect := m.bodyRect()
 	visible := m.workbench.VisibleWithSize(bodyRect)
 	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
 		t.Fatalf("expected visible state, got %#v", visible)
@@ -1600,7 +1458,11 @@ func activePaneContentScreenOrigin(t *testing.T, m *Model) (int, int) {
 	if !ok {
 		t.Fatalf("invalid content rect for pane %+v", rect)
 	}
-	return contentRect.X, contentRect.Y + 1
+	return contentRect.X, screenYForBodyY(m, contentRect.Y)
+}
+
+func screenYForBodyY(m *Model, bodyY int) int {
+	return bodyY + m.contentOriginY()
 }
 
 func terminalPoolFooterActionRegion(t *testing.T, m *Model, kind input.ActionKind) render.HitRegion {
@@ -1631,10 +1493,24 @@ func tabBarRegionByKind(t *testing.T, m *Model, kind render.HitRegionKind) rende
 
 func visiblePaneChromeRegion(t *testing.T, m *Model, paneID string, kind render.HitRegionKind) render.HitRegion {
 	t.Helper()
-	bodyRect := workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)}
+	region, ok := findVisiblePaneChromeRegion(m, paneID, kind)
+	if ok {
+		return region
+	}
+	t.Fatalf("expected pane chrome region %q for pane %q", kind, paneID)
+	return render.HitRegion{}
+}
+
+func paneChromeRegionPresent(m *Model, paneID string, kind render.HitRegionKind) bool {
+	_, ok := findVisiblePaneChromeRegion(m, paneID, kind)
+	return ok
+}
+
+func findVisiblePaneChromeRegion(m *Model, paneID string, kind render.HitRegionKind) (render.HitRegion, bool) {
+	bodyRect := m.bodyRect()
 	visible := m.workbench.VisibleWithSize(bodyRect)
 	if visible == nil {
-		t.Fatal("expected visible workbench")
+		return render.HitRegion{}, false
 	}
 	for _, pane := range visible.FloatingPanes {
 		if pane.ID != paneID {
@@ -1643,7 +1519,7 @@ func visiblePaneChromeRegion(t *testing.T, m *Model, paneID string, kind render.
 		regions := render.PaneChromeHitRegions(pane, m.runtime.Visible(), m.ownerConfirmPaneID)
 		for _, region := range regions {
 			if region.Kind == kind {
-				return region
+				return region, true
 			}
 		}
 	}
@@ -1655,13 +1531,12 @@ func visiblePaneChromeRegion(t *testing.T, m *Model, paneID string, kind render.
 			regions := render.PaneChromeHitRegions(pane, m.runtime.Visible(), m.ownerConfirmPaneID)
 			for _, region := range regions {
 				if region.Kind == kind {
-					return region
+					return region, true
 				}
 			}
 		}
 	}
-	t.Fatalf("expected pane chrome region %q for pane %q", kind, paneID)
-	return render.HitRegion{}
+	return render.HitRegion{}, false
 }
 
 func overlayRegionByKind(t *testing.T, m *Model, kind render.HitRegionKind) render.HitRegion {

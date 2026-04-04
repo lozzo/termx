@@ -38,7 +38,7 @@ func TestOverlayHitRegionsPickerRowsAndDismissUseCardLayout(t *testing.T) {
 	if len(itemRegions) != 3 {
 		t.Fatalf("expected 3 picker item regions, got %#v", itemRegions)
 	}
-	layout := buildPickerCardLayout(100, 28, 3, true)
+	layout := buildPickerCardLayout(100, FrameBodyHeight(30), 3, true)
 	for i, region := range itemRegions {
 		if region.ItemIndex != i {
 			t.Fatalf("expected item index %d, got %#v", i, region)
@@ -89,7 +89,8 @@ func TestOverlayHitRegionsWorkspacePickerItemRows(t *testing.T) {
 	if len(itemRegions) != 2 {
 		t.Fatalf("expected 2 workspace item regions, got %#v", itemRegions)
 	}
-	layout := buildPickerCardLayout(96, 24, 2, true)
+	_, overlayHeight := overlayViewport(TermSize{Width: 96, Height: FrameBodyHeight(26)})
+	layout := buildPickerCardLayout(96, overlayHeight, 2, true)
 	if itemRegions[0].Rect.Y != layout.firstItemY || itemRegions[1].Rect.Y != layout.firstItemY+1 {
 		t.Fatalf("workspace picker row placement mismatch: %#v", itemRegions)
 	}
@@ -125,7 +126,7 @@ func TestOverlayHitRegionsPromptAndHelpExposeCardAndDismiss(t *testing.T) {
 	}
 	lines, inputLine := promptOverlayContent(promptState.Overlay.Prompt)
 	footerSpecs := promptFooterActionSpecs(promptState.Overlay.Prompt)
-	width, height := overlayViewport(TermSize{Width: 90, Height: maxInt(1, 24-2)})
+	width, height := overlayViewport(TermSize{Width: 90, Height: FrameBodyHeight(24)})
 	layout := buildPickerCardLayout(width, height, len(lines), len(footerSpecs) > 0)
 	expectedInput := promptInputRect(layout, promptState.Overlay.Prompt, inputLine)
 	if got := collectRegionsByKind(promptRegions, HitRegionPromptInput)[0].Rect; got != expectedInput {
@@ -170,7 +171,7 @@ func TestOverlayHitRegionsWorkspacePickerQueryInputUsesEditableFieldRect(t *test
 	if len(queryRegions) != 1 {
 		t.Fatalf("expected one workspace query region, got %#v", queryRegions)
 	}
-	layout := buildPickerCardLayout(100, 28, 1, true)
+	layout := buildPickerCardLayout(100, FrameBodyHeight(30), 1, true)
 	if got, want := queryRegions[0].Rect, pickerQueryRowRect(layout); got != want {
 		t.Fatalf("expected workspace query rect %#v, got %#v", want, got)
 	}
@@ -191,7 +192,7 @@ func TestOverlayHitRegionsPromptFooterKindMappingTracksClippedPrefix(t *testing.
 	regions := OverlayHitRegions(state)
 	lines, _ := promptOverlayContent(prompt)
 	footerSpecs := promptFooterActionSpecs(prompt)
-	width, height := overlayViewport(TermSize{Width: 60, Height: maxInt(1, 24-2)})
+	width, height := overlayViewport(TermSize{Width: 60, Height: FrameBodyHeight(24)})
 	layout := buildPickerCardLayout(width, height, len(lines), true)
 	_, expected := layoutOverlayFooterActions(footerSpecs, workbench.Rect{
 		X: layout.cardX + 1,
@@ -246,7 +247,7 @@ func TestOverlayHitRegionsPickerRowLimitMatchesRenderedListHeight(t *testing.T) 
 	}
 	regions := OverlayHitRegions(state)
 	itemRegions := collectRegionsByKind(regions, HitRegionPickerItem)
-	layout := buildPickerCardLayout(100, 26, len(items), true)
+	layout := buildPickerCardLayout(100, FrameBodyHeight(28), len(items), true)
 	if len(itemRegions) != layout.listHeight {
 		t.Fatalf("expected picker rows clipped to list height %d, got %d", layout.listHeight, len(itemRegions))
 	}
@@ -305,7 +306,7 @@ func TestOverlayHitRegionsWorkspacePickerFooterActionsExposeManagementSemantics(
 		input.ActionNextWorkspace,
 		input.ActionCancelMode,
 	}
-	layout := buildPickerCardLayout(140, 28, 2, true)
+	layout := buildPickerCardLayout(140, FrameBodyHeight(30), 2, true)
 	_, expected := layoutOverlayFooterActions(workspacePickerFooterActionSpecs(), workbench.Rect{W: layout.innerWidth, H: 1})
 	wantActions := fullActions[:len(expected)]
 	if len(actionRegions) != len(wantActions) {
@@ -340,7 +341,7 @@ func TestOverlayHitRegionsTerminalManagerFooterActionsExposeActionOrder(t *testi
 		input.ActionKillTerminal,
 		input.ActionCancelMode,
 	}
-	layout := buildPickerCardLayout(140, 28, 1, true)
+	layout := buildPickerCardLayout(140, FrameBodyHeight(30), 1, true)
 	_, expected := layoutOverlayFooterActions(terminalManagerFooterActionSpecs(), workbench.Rect{W: layout.innerWidth, H: 1})
 	wantActions := fullActions[:len(expected)]
 	if len(actionRegions) != len(wantActions) {
@@ -409,7 +410,11 @@ func TestTerminalPoolHitRegionsIncludeFooterActions(t *testing.T) {
 		t.Fatalf("expected %d footer regions, got %#v", len(wantActions), footerRegions)
 	}
 
-	footerY := state.TermSize.Height - 3
+	layout := buildTerminalPoolPageLayout(state.Surface.TerminalPool, state.TermSize.Width, FrameBodyHeight(state.TermSize.Height))
+	if len(layout.footerActions) == 0 {
+		t.Fatalf("expected terminal pool footer actions in layout")
+	}
+	footerY := layout.footerActions[0].rect.Y
 	lastX := -1
 	for index, region := range footerRegions {
 		if region.Action.Kind != wantActions[index] {

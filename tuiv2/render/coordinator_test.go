@@ -45,7 +45,7 @@ func TestRenderFrameNonEmpty(t *testing.T) {
 func TestRenderFrameContainsWorkspaceName(t *testing.T) {
 	state := makeTestState()
 	c := NewCoordinator(func() VisibleRenderState { return state })
-	frame := c.RenderFrame()
+	frame := xansi.Strip(c.RenderFrame())
 	if !strings.Contains(frame, "main") {
 		t.Fatalf("frame missing workspace name:\n%s", frame)
 	}
@@ -54,7 +54,7 @@ func TestRenderFrameContainsWorkspaceName(t *testing.T) {
 func TestRenderFrameContainsTabInfo(t *testing.T) {
 	state := makeTestState()
 	c := NewCoordinator(func() VisibleRenderState { return state })
-	frame := c.RenderFrame()
+	frame := xansi.Strip(c.RenderFrame())
 	if !strings.Contains(frame, "tab 1") {
 		t.Fatalf("frame missing tab info:\n%s", frame)
 	}
@@ -63,7 +63,7 @@ func TestRenderFrameContainsTabInfo(t *testing.T) {
 func TestRenderFrameContainsPaneBorder(t *testing.T) {
 	state := makeTestState()
 	c := NewCoordinator(func() VisibleRenderState { return state })
-	frame := c.RenderFrame()
+	frame := xansi.Strip(c.RenderFrame())
 	// Pane border should prefer runtime metadata name over pane title.
 	if !strings.Contains(frame, "demo") {
 		t.Fatalf("frame missing pane title 'demo':\n%s", frame)
@@ -83,7 +83,7 @@ func TestRenderFrameNilCoordinator(t *testing.T) {
 
 func TestRenderFrameNoState(t *testing.T) {
 	c := NewCoordinator(func() VisibleRenderState { return VisibleRenderState{} })
-	frame := c.RenderFrame()
+	frame := xansi.Strip(c.RenderFrame())
 	if !strings.Contains(frame, "tuiv2") {
 		t.Fatalf("empty state frame should contain fallback 'tuiv2', got %q", frame)
 	}
@@ -97,7 +97,6 @@ func TestRenderFrameHasTabBarAndStatusBar(t *testing.T) {
 	if len(lines) < 3 {
 		t.Fatalf("expected at least 3 lines (tab bar + body + status bar), got %d", len(lines))
 	}
-	// First line should be tab bar with workspace name
 	if !strings.Contains(lines[0], "main") {
 		t.Fatalf("first line should be tab bar with workspace, got %q", lines[0])
 	}
@@ -364,7 +363,7 @@ func TestRenderBodyShowsPaneMetaForSharedOwner(t *testing.T) {
 	}}}
 
 	body := xansi.Strip(renderBody(state, 72, 12))
-	if !strings.Contains(body, "owner") || !strings.Contains(body, "x2") {
+	if !strings.Contains(body, "◆ owner") || !strings.Contains(body, "⇄2") {
 		t.Fatalf("expected shared owner pane meta in frame:\n%s", body)
 	}
 }

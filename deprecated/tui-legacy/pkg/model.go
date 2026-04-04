@@ -18,8 +18,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"charm.land/lipgloss/v2"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	uv "github.com/charmbracelet/ultraviolet"
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
@@ -248,18 +248,18 @@ type tabModeRuntimePlan struct {
 }
 
 type floatingModeRuntimePlan struct {
-	focusNext       bool
-	openNew         bool
-	closeActive     bool
+	focusNext        bool
+	openNew          bool
+	closeActive      bool
 	toggleVisibility bool
-	raise           bool
-	lower           bool
-	center          bool
-	moveDirection   Direction
-	resizeDirection Direction
-	resizeAmount    int
-	openPicker      bool
-	keep            bool
+	raise            bool
+	lower            bool
+	center           bool
+	moveDirection    Direction
+	resizeDirection  Direction
+	resizeAmount     int
+	openPicker       bool
+	keep             bool
 }
 
 type viewportModeRuntimePlan struct {
@@ -1765,7 +1765,7 @@ func tabModeActionForInput(input prefixInput, directMode bool) tabModeAction {
 	if directMode && len(input.token) == 1 {
 		r := rune(input.token[0])
 		if r >= '1' && r <= '9' {
-			return tabModeAction{kind: tabModeActionJump, index: int(r-'1')}
+			return tabModeAction{kind: tabModeActionJump, index: int(r - '1')}
 		}
 	}
 	return tabModeAction{}
@@ -8025,7 +8025,9 @@ func (m *Model) renderEmptyStateBody(contentHeight int) string {
 		lipgloss.Center,
 		card,
 		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceBackground(lipgloss.Color("#020617")),
+		lipgloss.WithWhitespaceStyle(
+			lipgloss.NewStyle().Background(lipgloss.Color("#020617")),
+		),
 	)
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#e2e8f0")).
@@ -8059,7 +8061,9 @@ func (m *Model) renderPromptScreen() string {
 		lipgloss.Center,
 		card,
 		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceBackground(lipgloss.Color("#020617")),
+		lipgloss.WithWhitespaceStyle(
+			lipgloss.NewStyle().Background(lipgloss.Color("#020617")),
+		),
 	)
 	body = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#e2e8f0")).
@@ -8403,7 +8407,9 @@ func (m *Model) renderHelpScreen() string {
 		lipgloss.Center,
 		card,
 		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceBackground(lipgloss.Color("#020617")),
+		lipgloss.WithWhitespaceStyle(
+			lipgloss.NewStyle().Background(lipgloss.Color("#020617")),
+		),
 	)
 	body = lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#e2e8f0")).

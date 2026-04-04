@@ -19,16 +19,16 @@ func TestPaneChromeHitRegionsExposeStableTiledActions(t *testing.T) {
 	}
 
 	wantKinds := []HitRegionKind{
-		HitRegionPaneClose,
 		HitRegionPaneZoom,
 		HitRegionPaneSplitV,
 		HitRegionPaneSplitH,
+		HitRegionPaneClose,
 	}
 	wantActions := []input.ActionKind{
-		input.ActionClosePane,
 		input.ActionZoomPane,
 		input.ActionSplitPane,
 		input.ActionSplitPaneHorizontal,
+		input.ActionClosePane,
 	}
 	for i, region := range regions {
 		if region.Kind != wantKinds[i] {
@@ -57,15 +57,13 @@ func TestPaneChromeHitRegionsHideSplitActionsForFloatingPanes(t *testing.T) {
 	}
 
 	regions := PaneChromeHitRegions(pane, nil, "")
-	if len(regions) != 5 {
-		t.Fatalf("expected 5 floating pane chrome regions, got %#v", regions)
+	if len(regions) != 3 {
+		t.Fatalf("expected 3 floating pane chrome regions, got %#v", regions)
 	}
 	wantKinds := []HitRegionKind{
-		HitRegionPaneClose,
-		HitRegionPaneZoom,
-		HitRegionPaneOpenPicker,
 		HitRegionPaneCenterFloating,
-		HitRegionPaneToggleFloating,
+		HitRegionPaneZoom,
+		HitRegionPaneClose,
 	}
 	for i, want := range wantKinds {
 		if regions[i].Kind != want {
@@ -74,7 +72,7 @@ func TestPaneChromeHitRegionsHideSplitActionsForFloatingPanes(t *testing.T) {
 	}
 }
 
-func TestPaneChromeHitRegionsExposeAttachedAndLayoutClusterActions(t *testing.T) {
+func TestPaneChromeHitRegionsKeepAttachedAndLayoutActionsHidden(t *testing.T) {
 	pane := workbench.VisiblePane{
 		ID:         "pane-1",
 		TerminalID: "term-1",
@@ -83,15 +81,10 @@ func TestPaneChromeHitRegionsExposeAttachedAndLayoutClusterActions(t *testing.T)
 
 	regions := PaneChromeHitRegions(pane, nil, "")
 	wantKinds := []HitRegionKind{
-		HitRegionPaneClose,
 		HitRegionPaneZoom,
 		HitRegionPaneSplitV,
 		HitRegionPaneSplitH,
-		HitRegionPaneDetach,
-		HitRegionPaneReconnect,
-		HitRegionPaneCloseKill,
-		HitRegionPaneBalancePanes,
-		HitRegionPaneCycleLayout,
+		HitRegionPaneClose,
 	}
 	if len(regions) != len(wantKinds) {
 		t.Fatalf("expected %d pane chrome regions, got %#v", len(wantKinds), regions)
@@ -130,15 +123,10 @@ func TestPaneChromeHitRegionsClipByStableActionPrefix(t *testing.T) {
 	}
 
 	fullOrder := []HitRegionKind{
-		HitRegionPaneClose,
 		HitRegionPaneZoom,
 		HitRegionPaneSplitV,
 		HitRegionPaneSplitH,
-		HitRegionPaneDetach,
-		HitRegionPaneReconnect,
-		HitRegionPaneCloseKill,
-		HitRegionPaneBalancePanes,
-		HitRegionPaneCycleLayout,
+		HitRegionPaneClose,
 	}
 	if len(regions) > len(fullOrder) {
 		t.Fatalf("unexpected action count %d for clipped region set", len(regions))
@@ -153,11 +141,7 @@ func TestPaneChromeHitRegionsClipByStableActionPrefix(t *testing.T) {
 func TestPaneTopBorderLabelsLayoutKeepsRoleSlotInNarrowPane(t *testing.T) {
 	rect := workbench.Rect{X: 0, Y: 0, W: 34, H: 8}
 	title := " shell "
-	border := paneBorderInfo{
-		StateLabel: "●",
-		ShareLabel: "x2",
-		RoleLabel:  "follow",
-	}
+	border := paneBorderInfo{StateLabel: "●", ShareLabel: "⇄2", RoleLabel: "◇ follow"}
 	tokens := paneChromeActionTokensForFrame(rect, title, border, false)
 	layout, ok := paneTopBorderLabelsLayout(rect, title, border, tokens)
 	if !ok {

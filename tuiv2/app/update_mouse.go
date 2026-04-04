@@ -55,7 +55,7 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) tea.Cmd {
 	if handled, cmd := m.handleTerminalPoolMouseWheel(state, delta); handled {
 		return cmd
 	}
-	if y == 0 {
+	if y < m.contentOriginY() {
 		if delta > 0 {
 			return m.switchCurrentTabByOffsetMouse(-1)
 		}
@@ -65,7 +65,7 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) tea.Cmd {
 		return cmd
 	}
 
-	contentY := y - 1
+	contentY := y - m.contentOriginY()
 	if contentY < 0 {
 		return nil
 	}
@@ -100,12 +100,12 @@ func (m *Model) handleMouseClickNonFloating(x, y int) tea.Cmd {
 		return nil
 	}
 
-	contentY := y - 1
+	contentY := y - m.contentOriginY()
 	if contentY < 0 {
 		return nil
 	}
 
-	bodyRect := workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)}
+	bodyRect := m.bodyRect()
 	if tab.Root != nil {
 		if hit, ok := tab.Root.DividerAt(bodyRect, x, contentY); ok {
 			m.mouseDragPaneID = ""
@@ -177,14 +177,14 @@ func (m *Model) handleMouseClick(msg tea.MouseMsg) tea.Cmd {
 		return nil
 	}
 
-	contentY := y - 1
+	contentY := y - m.contentOriginY()
 	if contentY < 0 {
 		return nil
 	}
 
 	paneID, rect, isResize := m.findFloatingPaneAt(tab, x, contentY)
 	if paneID != "" {
-		bodyRect := workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)}
+		bodyRect := m.bodyRect()
 		visible := m.workbench.VisibleWithSize(bodyRect)
 		if visible != nil {
 			for _, pane := range visible.FloatingPanes {
@@ -247,7 +247,7 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 		return nil
 	}
 
-	contentY := y - 1
+	contentY := y - m.contentOriginY()
 	if contentY < 0 {
 		contentY = 0
 	}
@@ -260,7 +260,7 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 		newX := x - m.mouseDragOffsetX
 		newY := contentY - m.mouseDragOffsetY
 		m.workbench.MoveFloatingPane(tab.ID, m.mouseDragPaneID, newX, newY)
-		m.workbench.ClampFloatingPanesToBounds(workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)})
+		m.workbench.ClampFloatingPanesToBounds(m.bodyRect())
 		m.render.Invalidate()
 	case mouseDragResize:
 		if m.mouseDragPaneID == "" {
@@ -271,7 +271,7 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 				newW := x - floating.Rect.X + 1
 				newH := contentY - floating.Rect.Y + 1
 				m.workbench.ResizeFloatingPane(tab.ID, m.mouseDragPaneID, newW, newH)
-				m.workbench.ClampFloatingPanesToBounds(workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)})
+				m.workbench.ClampFloatingPanesToBounds(m.bodyRect())
 				m.render.Invalidate()
 				return m.resizeVisiblePanesCmd()
 			}
@@ -426,7 +426,7 @@ func (m *Model) handleOverlayMouseClick(state render.VisibleRenderState, x, y in
 	if state.Overlay.Kind == render.VisibleOverlayNone {
 		return false, nil
 	}
-	bodyY := y - 1
+	bodyY := y - m.contentOriginY()
 	if bodyY < 0 {
 		return true, nil
 	}
@@ -507,7 +507,7 @@ func (m *Model) handleTerminalPoolMouseClick(state render.VisibleRenderState, x,
 	if m.terminalPage == nil {
 		return false, nil
 	}
-	bodyY := y - 1
+	bodyY := y - m.contentOriginY()
 	if bodyY < 0 {
 		return true, nil
 	}
@@ -617,7 +617,7 @@ func (m *Model) visiblePaneAt(x, contentY int) (*workbench.VisiblePane, *workben
 	if m == nil || m.workbench == nil {
 		return nil, nil, false
 	}
-	bodyRect := workbench.Rect{W: maxInt(1, m.width), H: maxInt(1, m.height-2)}
+	bodyRect := m.bodyRect()
 	visible := m.workbench.VisibleWithSize(bodyRect)
 	if visible == nil {
 		return nil, nil, false
@@ -653,7 +653,7 @@ func (m *Model) forwardTerminalMouseInputCmd(msg tea.MouseMsg) tea.Cmd {
 		return nil
 	}
 	contentMsg := msg
-	contentMsg.Y = msg.Y - 1
+	contentMsg.Y = msg.Y - m.contentOriginY()
 	encoded := m.encodeTerminalMouseInput(contentMsg, targetPaneID, contentRect)
 	if len(encoded) == 0 {
 		return nil
@@ -664,14 +664,14 @@ func (m *Model) forwardTerminalMouseInputCmd(msg tea.MouseMsg) tea.Cmd {
 }
 
 func (m *Model) activeContentMouseTarget(screenX, screenY int) (string, workbench.Rect, bool) {
-	if m == nil || m.workbench == nil || screenY <= 0 {
+	if m == nil || m.workbench == nil || screenY < m.contentOriginY() {
 		return "", workbench.Rect{}, false
 	}
 	tab := m.workbench.CurrentTab()
 	if tab == nil || strings.TrimSpace(tab.ActivePaneID) == "" {
 		return "", workbench.Rect{}, false
 	}
-	contentY := screenY - 1
+	contentY := screenY - m.contentOriginY()
 	tiled, floating, ok := m.visiblePaneAt(screenX, contentY)
 	if !ok {
 		return "", workbench.Rect{}, false

@@ -3,8 +3,10 @@ package runtime
 import "github.com/lozzow/termx/protocol"
 
 type VisibleRuntime struct {
-	Terminals []VisibleTerminal
-	Bindings  []VisiblePaneBinding
+	Terminals     []VisibleTerminal
+	Bindings      []VisiblePaneBinding
+	HostDefaultFG string
+	HostDefaultBG string
 }
 
 type VisibleTerminal struct {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -135,7 +135,7 @@ func (c *Coordinator) RenderFrame() string {
 
 	tabBar := c.renderTabBarCached(state)
 	statusBar := c.renderStatusBarCached(state)
-	bodyHeight := maxInt(1, state.TermSize.Height-2)
+	bodyHeight := FrameBodyHeight(state.TermSize.Height)
 	currentCoordinator = c
 	rendered := renderBodyFrame(state, state.TermSize.Width, bodyHeight)
 	currentCoordinator = nil
@@ -252,7 +252,7 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 	coordinator := stateCoordinator(state)
 	if coordinator == nil {
 		canvas := newComposedCanvas(width, height)
-		canvas.cursorOffsetY = 1
+		canvas.cursorOffsetY = TopChromeRows
 		for _, entry := range entries {
 			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active, entry.Floating)
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
@@ -262,7 +262,7 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 	cache := coordinator.bodyCache
 	if cache == nil || !cache.matches(entries, width, height) {
 		canvas := newComposedCanvas(width, height)
-		canvas.cursorOffsetY = 1
+		canvas.cursorOffsetY = TopChromeRows
 		for _, entry := range entries {
 			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active, entry.Floating)
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
@@ -306,7 +306,7 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 	}
 
 	canvas := newComposedCanvas(width, height)
-	canvas.cursorOffsetY = 1
+	canvas.cursorOffsetY = TopChromeRows
 	for _, entry := range entries {
 		drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Overflow, entry.Active, entry.Floating)
 		drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
@@ -518,10 +518,7 @@ func renderTerminalPoolDetails(item *modal.PickerItem, runtimeState *VisibleRunt
 		return nil
 	}
 	lookup := newRuntimeLookup(runtimeState)
-	lines := []string{
-		forceWidthANSIOverlay("PREVIEW", innerWidth),
-		forceWidthANSIOverlay("live preview", innerWidth),
-	}
+	lines := []string{forceWidthANSIOverlay("PREVIEW", innerWidth)}
 	if terminal := lookup.terminal(item.TerminalID); terminal != nil {
 		lines = append(lines, terminalPoolPreviewLines(terminal.Snapshot, innerWidth, 4)...)
 		if strings.TrimSpace(terminal.OwnerPaneID) != "" {
@@ -870,7 +867,7 @@ func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBor
 		return paneBorderLabelsLayout{}, false
 	}
 
-	titleLabel := normalizePaneBorderLabel(title)
+	fullTitleLabel := normalizePaneBorderLabel(title)
 	allSlots := make([]paneBorderSlot, 0, 3)
 	if label := padPaneBorderSlot(border.StateLabel, paneBorderStateSlotWidth); label != "" {
 		allSlots = append(allSlots, paneBorderSlot{kind: "state", label: label})
@@ -881,43 +878,60 @@ func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBor
 	if label := paneBorderRoleSlot(border.RoleLabel); label != "" {
 		allSlots = append(allSlots, paneBorderSlot{kind: "role", label: label})
 	}
-	active := paneBorderSlotsForWidth(allSlots, innerW)
-	titleBudget := innerW - paneBorderSlotsWidth(active)
-	if titleBudget <= 0 {
-		titleBudget = 0
-	}
-	titleLabel = xansi.Truncate(titleLabel, titleBudget, "")
-	if titleLabel == "" && len(active) == 0 {
+	titleFullWidth := xansi.StringWidth(fullTitleLabel)
+	active := paneBorderSlotsForWidth(allSlots, maxInt(0, innerW-titleFullWidth))
+	if fullTitleLabel == "" && len(active) == 0 {
 		return paneBorderLabelsLayout{}, false
 	}
 
-	titleW := xansi.StringWidth(titleLabel)
-	spare := innerW - paneBorderSlotsWidth(active) - titleW
-	if spare < 0 {
-		spare = 0
-	}
 	actionCount := len(actionTokens)
-	for actionCount > 0 && paneChromeActionSlotsWidth(actionTokens, actionCount) > spare {
-		actionCount--
+	reservedStatuses := paneBorderSlotsWidth(active)
+	preferActionCluster := len(actionTokens) > 0 && actionTokens[0].Kind == HitRegionPaneCenterFloating
+	for {
+		reservedRight := reservedStatuses + paneChromeActionClusterWidth(actionTokens, actionCount)
+		titleBudget := innerW - reservedRight
+		titleFits := titleFullWidth <= titleBudget
+		if preferActionCluster {
+			titleFits = titleBudget >= 1
+		}
+		if titleFits || (fullTitleLabel == "" && reservedRight <= innerW) {
+			break
+		}
+		if actionCount > 0 {
+			actionCount--
+			continue
+		}
+		removeIdx := paneBorderSlotRemovalIndex(active)
+		if removeIdx >= 0 {
+			active = append(active[:removeIdx], active[removeIdx+1:]...)
+			reservedStatuses = paneBorderSlotsWidth(active)
+			continue
+		}
+		break
 	}
-	actionsW := paneChromeActionSlotsWidth(actionTokens, actionCount)
+	titleLabel := xansi.Truncate(fullTitleLabel, maxInt(0, innerW-reservedStatuses-paneChromeActionClusterWidth(actionTokens, actionCount)), "")
+	if titleLabel == "" && len(active) == 0 && actionCount == 0 {
+		return paneBorderLabelsLayout{}, false
+	}
 
 	layout := paneBorderLabelsLayout{
-		actionSlots: make([]paneChromeActionSlot, 0, actionCount),
-		titleX:      innerX + actionsW,
+		actionSlots: make([]paneChromeActionSlot, actionCount),
+		titleX:      innerX,
 		titleLabel:  titleLabel,
 	}
-	slotX := innerX
-	for i := 0; i < actionCount; i++ {
-		token := actionTokens[i]
-		layout.actionSlots = append(layout.actionSlots, paneChromeActionSlot{
-			Kind:  token.Kind,
-			Label: token.Label,
-			X:     slotX,
-		})
-		slotX += xansi.StringWidth(token.Label) + paneChromeActionGap
-	}
 	right := innerX + innerW
+	actionXs := make([]int, actionCount)
+	for i := actionCount - 1; i >= 0; i-- {
+		labelW := xansi.StringWidth(actionTokens[i].Label)
+		right -= labelW
+		actionXs[i] = right
+		if i > 0 {
+			right -= paneChromeActionGap
+		}
+	}
+	if len(active) > 0 && actionCount > 0 {
+		right--
+	}
 	for i := len(active) - 1; i >= 0; i-- {
 		slot := active[i]
 		slotW := xansi.StringWidth(slot.label)
@@ -934,6 +948,14 @@ func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBor
 			layout.roleLabel = slot.label
 		}
 		right = x - 1
+	}
+	for i := 0; i < actionCount; i++ {
+		token := actionTokens[i]
+		layout.actionSlots[i] = paneChromeActionSlot{
+			Kind:  token.Kind,
+			Label: token.Label,
+			X:     actionXs[i],
+		}
 	}
 	return layout, true
 }
@@ -1025,7 +1047,7 @@ func paneBorderRoleSlot(text string) string {
 	if strings.TrimSpace(text) == "" {
 		return ""
 	}
-	return "[" + padPaneBorderSlot(text, paneBorderRoleSlotWidth-2) + "]"
+	return padPaneBorderSlot(text, paneBorderRoleSlotWidth)
 }
 
 func paneBorderSlotsWidth(slots []paneBorderSlot) int {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx"
 	"github.com/lozzow/termx/protocol"
 	unixtransport "github.com/lozzow/termx/transport/unix"
@@ -143,7 +144,7 @@ func TestE2ECreateShellAndInteract(t *testing.T) {
 	// ── 8. Wait for "e2e_ready" to arrive via stream ─────────────────────────
 	e2eWaitForText(t, ctx, model, invalidated, "e2e_ready")
 
-	view := model.View()
+	view := xansi.Strip(model.View())
 	if strings.Contains(view, "unbound pane") {
 		t.Fatalf("pane still rendered as unbound:\n%s", view)
 	}
@@ -404,96 +405,22 @@ func TestE2EClosePaneLeavesTerminalAttachable(t *testing.T) {
 	}
 }
 
-func TestE2EMouseTopChromeWorkspaceCreateAndRenameFlow(t *testing.T) {
+func TestE2EMouseTopChromeOmitsManagementActions(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 1000})
-
-	create := tabBarRegionByKind(t, model, render.HitRegionWorkspaceCreate)
-	e2eMouseClickAt(t, model, create.Rect.X, create.Rect.Y)
-
-	workspace := model.workbench.CurrentWorkspace()
-	if workspace == nil {
-		t.Fatal("expected current workspace after mouse create")
-	}
-	if len(model.workbench.ListWorkspaces()) != 2 {
-		t.Fatalf("expected workspace create to add a second workspace, got %#v", model.workbench.ListWorkspaces())
-	}
-	if err := model.workbench.CreateTab(workspace.Name, "tab-2", "tab 2"); err != nil {
-		t.Fatalf("create tab in new workspace: %v", err)
-	}
-	if err := model.workbench.CreateFirstPane("tab-2", "pane-2"); err != nil {
-		t.Fatalf("create pane in new workspace: %v", err)
-	}
-
-	rename := tabBarRegionByKind(t, model, render.HitRegionWorkspaceRename)
-	e2eMouseClickAt(t, model, rename.Rect.X, rename.Rect.Y)
-
-	if model.modalHost == nil || model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "rename-workspace" {
-		t.Fatalf("expected rename-workspace prompt after mouse rename click, got %#v", model.modalHost)
-	}
-
-	inputRegion := overlayRegionByKind(t, model, render.HitRegionPromptInput)
-	e2eMouseClickAt(t, model, inputRegion.Rect.X, inputRegion.Rect.Y+1)
-	model.modalHost.Prompt.Value = "mouse-renamed"
-	model.modalHost.Prompt.Cursor = len([]rune(model.modalHost.Prompt.Value))
-
-	submit := overlayRegionByKind(t, model, render.HitRegionPromptSubmit)
-	e2eMouseClickAt(t, model, submit.Rect.X, submit.Rect.Y+1)
-
-	workspace = model.workbench.CurrentWorkspace()
-	if workspace == nil || workspace.Name != "mouse-renamed" {
-		t.Fatalf("expected workspace renamed through mouse flow, got %#v", workspace)
-	}
-	if model.modalHost != nil && model.modalHost.Session != nil {
-		t.Fatalf("expected prompt closed after mouse workspace rename, got %#v", model.modalHost.Session)
-	}
-}
-
-func TestE2EMouseTopChromeTabRenameAndKillFlow(t *testing.T) {
-	if testing.Short() {
-		t.Skip("e2e: requires a real PTY, skipped with -short")
-	}
-
-	env := newRealMouseE2EEnv(t)
-	model := env.model
-	model.width = 260
-	e2eDismissActiveOverlayIfAny(t, model)
-
-	ws := model.workbench.CurrentWorkspace()
-	if ws == nil {
-		t.Fatal("expected current workspace")
-	}
-	if err := model.workbench.CreateTab(ws.Name, "tab-2", "tab 2"); err != nil {
-		t.Fatalf("create tab-2: %v", err)
-	}
-	if err := model.workbench.CreateFirstPane("tab-2", "pane-2"); err != nil {
-		t.Fatalf("create first pane for tab-2: %v", err)
-	}
-
-	rename := e2eTabBarRegionByKind(t, model, render.HitRegionTabRename)
-	e2eMouseClickAt(t, model, rename.Rect.X, rename.Rect.Y)
-
-	if model.modalHost == nil || model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "rename-tab" {
-		t.Fatalf("expected rename-tab prompt after mouse top chrome rename, got %#v", model.modalHost)
-	}
-
-	inputRegion := e2eOverlayRegionByKind(t, model, render.HitRegionPromptInput)
-	e2eMouseClickAt(t, model, inputRegion.Rect.X+1, inputRegion.Rect.Y+1)
-	e2eTypeText(t, model, "x")
-
-	submit := e2eOverlayRegionByKind(t, model, render.HitRegionPromptSubmit)
-	e2eMouseClickAt(t, model, submit.Rect.X, submit.Rect.Y+1)
-
-	tab := model.workbench.CurrentTab()
-	if tab == nil || !strings.Contains(tab.Name, "x") {
-		t.Fatalf("expected active tab renamed by prompt mouse flow, got %#v", tab)
-	}
-
-	kill := e2eTabBarRegionByKind(t, model, render.HitRegionTabKill)
-	e2eMouseClickAt(t, model, kill.Rect.X, kill.Rect.Y)
-
-	ws = model.workbench.CurrentWorkspace()
-	if ws == nil || len(ws.Tabs) != 1 {
-		t.Fatalf("expected one tab left after mouse top chrome kill, got %#v", ws)
+	for _, kind := range []render.HitRegionKind{
+		render.HitRegionTabRename,
+		render.HitRegionTabKill,
+		render.HitRegionWorkspacePrev,
+		render.HitRegionWorkspaceNext,
+		render.HitRegionWorkspaceCreate,
+		render.HitRegionWorkspaceRename,
+		render.HitRegionWorkspaceDelete,
+	} {
+		for _, region := range render.TabBarHitRegions(model.visibleRenderState()) {
+			if region.Kind == kind {
+				t.Fatalf("expected management region %q to be omitted, got %#v", kind, region)
+			}
+		}
 	}
 }
 
@@ -532,7 +459,7 @@ func TestE2EMouseWorkspacePickerFooterNextSwitchesWorkspace(t *testing.T) {
 	}
 
 	next := e2eOverlayFooterActionRegion(t, model, input.ActionNextWorkspace)
-	e2eMouseClickAt(t, model, next.Rect.X, next.Rect.Y+1)
+	e2eMouseClickAt(t, model, next.Rect.X, e2eScreenYForBodyY(model, next.Rect.Y))
 
 	if model.input.Mode().Kind != input.ModeNormal {
 		t.Fatalf("expected workspace picker footer click to close picker, got mode %q", model.input.Mode().Kind)
@@ -560,26 +487,26 @@ func TestE2EMouseCreateTerminalFromPickerAndPromptFlow(t *testing.T) {
 	}
 
 	target := overlayPickerItemRegion(t, model, targetIndex)
-	e2eMouseClickAt(t, model, target.Rect.X, target.Rect.Y+1)
+	e2eMouseClickAt(t, model, target.Rect.X, e2eScreenYForBodyY(model, target.Rect.Y))
 
 	if model.modalHost == nil || model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-terminal-name" {
 		t.Fatalf("expected create-terminal-name prompt after mouse picker click, got %#v", model.modalHost)
 	}
 
 	inputRegion := e2eOverlayRegionByKind(t, model, render.HitRegionPromptInput)
-	e2eMouseClickAt(t, model, inputRegion.Rect.X, inputRegion.Rect.Y+1)
+	e2eMouseClickAt(t, model, inputRegion.Rect.X, e2eScreenYForBodyY(model, inputRegion.Rect.Y))
 	e2eTypeText(t, model, "mouse-e2e-shell")
 	model.modalHost.Prompt.Command = []string{"sh", "-c", "printf 'mouse_e2e_ready\\n'; cat"}
 
 	submit := e2eOverlayRegionByKind(t, model, render.HitRegionPromptSubmit)
-	e2eMouseClickAt(t, model, submit.Rect.X, submit.Rect.Y+1)
+	e2eMouseClickAt(t, model, submit.Rect.X, e2eScreenYForBodyY(model, submit.Rect.Y))
 
 	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-terminal-tags" {
 		t.Fatalf("expected tags prompt after mouse submit, got %#v", model.modalHost.Prompt)
 	}
 
 	submit = e2eOverlayRegionByKind(t, model, render.HitRegionPromptSubmit)
-	e2eMouseClickAt(t, model, submit.Rect.X, submit.Rect.Y+1)
+	e2eMouseClickAt(t, model, submit.Rect.X, e2eScreenYForBodyY(model, submit.Rect.Y))
 
 	pane := model.workbench.ActivePane()
 	if pane == nil || pane.TerminalID == "" {
@@ -592,45 +519,18 @@ func TestE2EMouseCreateTerminalFromPickerAndPromptFlow(t *testing.T) {
 	e2eWaitForText(t, env.ctx, model, env.invalidated, "mouse_e2e_ready")
 }
 
-func TestE2EMouseReconnectFromPaneChromeAndPickerItem(t *testing.T) {
+func TestE2EMousePaneChromeOmitsReconnectAction(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: requires a real PTY, skipped with -short")
 	}
 
 	env := newRealMouseE2EEnv(t)
 	model := env.model
-	paneID, terminalID := e2eCreateTerminalViaMouse(t, env, "mouse-reconnect-shell", "mouse_reconnect_ready")
+	paneID, _ := e2eCreateTerminalViaMouse(t, env, "mouse-reconnect-shell", "mouse_reconnect_ready")
 
-	reconnect := visiblePaneChromeRegion(t, model, paneID, render.HitRegionPaneReconnect)
-	e2eMouseClickAt(t, model, reconnect.Rect.X, reconnect.Rect.Y+1)
-
-	pane := model.workbench.ActivePane()
-	if pane == nil || pane.TerminalID != "" {
-		t.Fatalf("expected pane detached after reconnect chrome click, got %#v", pane)
+	if paneChromeRegionPresent(model, paneID, render.HitRegionPaneReconnect) {
+		t.Fatalf("expected pane chrome to omit reconnect action for pane %q", paneID)
 	}
-	if model.modalHost == nil || model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModePicker {
-		t.Fatalf("expected picker after reconnect chrome click, got %#v", model.modalHost)
-	}
-
-	targetIndex := -1
-	for index, item := range model.modalHost.Picker.VisibleItems() {
-		if item.TerminalID == terminalID {
-			targetIndex = index
-			break
-		}
-	}
-	if targetIndex < 0 {
-		t.Fatalf("expected detached terminal %q to remain picker-selectable, got %#v", terminalID, model.modalHost.Picker.VisibleItems())
-	}
-
-	target := overlayPickerItemRegion(t, model, targetIndex)
-	e2eMouseClickAt(t, model, target.Rect.X, target.Rect.Y+1)
-
-	pane = model.workbench.ActivePane()
-	if pane == nil || pane.TerminalID != terminalID {
-		t.Fatalf("expected pane reattached to %q after mouse picker click, got %#v", terminalID, pane)
-	}
-	e2eWaitForText(t, env.ctx, model, env.invalidated, "mouse_reconnect_ready")
 }
 
 type realMouseE2EEnv struct {
@@ -701,20 +601,20 @@ func e2eCreateTerminalViaMouse(t *testing.T, env realMouseE2EEnv, name, readyMar
 	}
 
 	target := overlayPickerItemRegion(t, model, targetIndex)
-	e2eMouseClickAt(t, model, target.Rect.X, target.Rect.Y+1)
+	e2eMouseClickAt(t, model, target.Rect.X, e2eScreenYForBodyY(model, target.Rect.Y))
 	if model.modalHost == nil || model.modalHost.Prompt == nil {
 		t.Fatalf("expected prompt after mouse create-row click, got %#v", model.modalHost)
 	}
 
 	inputRegion := e2eOverlayRegionByKind(t, model, render.HitRegionPromptInput)
-	e2eMouseClickAt(t, model, inputRegion.Rect.X, inputRegion.Rect.Y+1)
+	e2eMouseClickAt(t, model, inputRegion.Rect.X, e2eScreenYForBodyY(model, inputRegion.Rect.Y))
 	e2eTypeText(t, model, name)
 	model.modalHost.Prompt.Command = []string{"sh", "-c", fmt.Sprintf("printf '%s\\n'; cat", readyMarker)}
 
 	submit := e2eOverlayRegionByKind(t, model, render.HitRegionPromptSubmit)
-	e2eMouseClickAt(t, model, submit.Rect.X, submit.Rect.Y+1)
+	e2eMouseClickAt(t, model, submit.Rect.X, e2eScreenYForBodyY(model, submit.Rect.Y))
 	submit = e2eOverlayRegionByKind(t, model, render.HitRegionPromptSubmit)
-	e2eMouseClickAt(t, model, submit.Rect.X, submit.Rect.Y+1)
+	e2eMouseClickAt(t, model, submit.Rect.X, e2eScreenYForBodyY(model, submit.Rect.Y))
 
 	pane := model.workbench.ActivePane()
 	if pane == nil || pane.TerminalID == "" {
@@ -742,7 +642,11 @@ func e2eDismissActiveOverlayIfAny(t *testing.T, m *Model) {
 		return
 	}
 	dismiss := e2eOverlayRegionByKind(t, m, render.HitRegionOverlayDismiss)
-	e2eMouseClickAt(t, m, dismiss.Rect.X, dismiss.Rect.Y+1)
+	e2eMouseClickAt(t, m, dismiss.Rect.X, e2eScreenYForBodyY(m, dismiss.Rect.Y))
+}
+
+func e2eScreenYForBodyY(m *Model, bodyY int) int {
+	return bodyY + m.contentOriginY()
 }
 
 func e2eTypeText(t *testing.T, m *Model, text string) {

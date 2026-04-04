@@ -73,7 +73,7 @@ func TestRenderFrameWithPickerOverlay(t *testing.T) {
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 100, 28), 100, 30)
 	state = WithStatus(state, "", "", string(input.ModePicker))
 	state = AttachPicker(state, &modal.PickerState{Title: "Terminal Picker", Items: []modal.PickerItem{{TerminalID: "term-1", Name: "shell", State: "running"}}})
-	frame := NewCoordinator(func() VisibleRenderState { return state }).RenderFrame()
+	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
 	for _, want := range []string{"main", "tab 1", "Terminal Picker"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("frame missing %q:\n%s", want, frame)
@@ -110,7 +110,7 @@ func TestRenderFrameWithWorkspacePickerOverlay(t *testing.T) {
 		Title: "Workspaces",
 		Items: []modal.WorkspacePickerItem{{Name: "main"}, {Name: "dev"}},
 	})
-	frame := NewCoordinator(func() VisibleRenderState { return state }).RenderFrame()
+	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
 	for _, want := range []string{"main", "tab 1", "Workspaces", "dev"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("frame missing %q:\n%s", want, frame)
@@ -144,7 +144,7 @@ func TestRenderFrameWithHelpOverlay(t *testing.T) {
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 100, 28), 100, 30)
 	state = WithStatus(state, "", "", string(input.ModeHelp))
 	state = AttachHelp(state, modal.DefaultHelp())
-	frame := NewCoordinator(func() VisibleRenderState { return state }).RenderFrame()
+	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
 	for _, want := range []string{"main", "tab 1", "Help", "Ctrl-P", "Ctrl-F", "Most Used"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("frame missing %q:\n%s", want, frame)
@@ -170,7 +170,7 @@ func TestRenderTerminalManagerOverlayShowsSelectedTerminalDetails(t *testing.T) 
 			Description: "running · 1 pane bound",
 		}},
 	}
-	overlay := renderTerminalManagerOverlay(manager, TermSize{Width: 100, Height: 30})
+	overlay := xansi.Strip(renderTerminalManagerOverlay(manager, TermSize{Width: 100, Height: 30}))
 	for _, want := range []string{"Terminal Manager", "term-1", "bash -lc htop", "main/tab 1/pane-1"} {
 		if !strings.Contains(overlay, want) {
 			t.Fatalf("terminal manager overlay missing %q:\n%s", want, overlay)
