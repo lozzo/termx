@@ -67,7 +67,7 @@ func (p *PickerState) ApplyFilter() {
 	}
 	query := strings.ToLower(strings.TrimSpace(p.Query))
 	if query == "" {
-		p.Filtered = append([]PickerItem(nil), p.Items...)
+		p.Filtered = pickerItemsCreateFirst(append([]PickerItem(nil), p.Items...))
 		if p.Selected >= len(p.Filtered) {
 			p.Selected = 0
 		}
@@ -80,7 +80,7 @@ func (p *PickerState) ApplyFilter() {
 			filtered = append(filtered, item)
 		}
 	}
-	p.Filtered = filtered
+	p.Filtered = pickerItemsCreateFirst(filtered)
 	if p.Selected >= len(p.Filtered) {
 		p.Selected = 0
 	}
@@ -93,7 +93,7 @@ func (p *PickerState) VisibleItems() []PickerItem {
 	if len(p.Filtered) > 0 || strings.TrimSpace(p.Query) != "" {
 		return p.Filtered
 	}
-	return p.Items
+	return pickerItemsCreateFirst(p.Items)
 }
 
 func (i *PickerItem) RenderLine(width int, selected bool, normalStyle lipgloss.Style, activeStyle lipgloss.Style, createStyle lipgloss.Style) string {
@@ -111,11 +111,11 @@ func (i *PickerItem) RenderLineWithPrefix(width int, selected bool, normalPrefix
 		i.lineWidth = width
 		plain := lipgloss.JoinHorizontal(lipgloss.Left, " ", i.lineBody, " ")
 		if i.CreateNew {
-			i.lineNormal = createStyle.Width(width).MaxWidth(width).Render(plain)
+			i.lineNormal = renderPickerLine(createStyle, plain, width)
 		} else {
-			i.lineNormal = normalStyle.Width(width).MaxWidth(width).Render(plain)
+			i.lineNormal = renderPickerLine(normalStyle, plain, width)
 		}
-		i.lineActive = activeStyle.Width(width).MaxWidth(width).Render(plain)
+		i.lineActive = renderPickerLine(activeStyle, plain, width)
 	}
 	if normalPrefix != " " || selectedPrefix != " " {
 		prefix := normalPrefix
@@ -124,17 +124,42 @@ func (i *PickerItem) RenderLineWithPrefix(width int, selected bool, normalPrefix
 		}
 		plain := lipgloss.JoinHorizontal(lipgloss.Left, prefix, i.lineBody, " ")
 		if selected {
-			return activeStyle.Width(width).MaxWidth(width).Render(plain)
+			return renderPickerLine(activeStyle, plain, width)
 		}
 		if i.CreateNew {
-			return createStyle.Width(width).MaxWidth(width).Render(plain)
+			return renderPickerLine(createStyle, plain, width)
 		}
-		return normalStyle.Width(width).MaxWidth(width).Render(plain)
+		return renderPickerLine(normalStyle, plain, width)
 	}
 	if selected {
 		return i.lineActive
 	}
 	return i.lineNormal
+}
+
+func renderPickerLine(style lipgloss.Style, plain string, width int) string {
+	return style.Render(forceWidthANSI(plain, width))
+}
+
+func pickerItemsCreateFirst(items []PickerItem) []PickerItem {
+	if len(items) == 0 {
+		return items
+	}
+	createIndex := -1
+	for index := range items {
+		if items[index].CreateNew {
+			createIndex = index
+			break
+		}
+	}
+	if createIndex <= 0 {
+		return items
+	}
+	ordered := make([]PickerItem, 0, len(items))
+	ordered = append(ordered, items[createIndex])
+	ordered = append(ordered, items[:createIndex]...)
+	ordered = append(ordered, items[createIndex+1:]...)
+	return ordered
 }
 
 func (i *PickerItem) renderBody() string {

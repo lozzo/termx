@@ -320,9 +320,8 @@ func renderPickerOverlayWithTheme(picker *modal.PickerState, termSize TermSize, 
 		item := items[index]
 		itemLines = append(itemLines, item.RenderLineWithPrefix(innerWidth, index == picker.Selected, "  ", "> ", pickerLineStyle(theme), pickerSelectedLineStyle(theme), pickerCreateRowStyle(theme)))
 	}
-	footerLine, _ := layoutOverlayFooterActionsWithTheme(theme, pickerFooterActionSpecs(), workbench.Rect{W: innerWidth, H: 1})
 	header := renderOverlaySearchLine(theme, picker.Query, innerWidth)
-	return renderPickerCardWithTheme(theme, coalesce(picker.Title, "Terminal Picker"), header, itemLines, footerLine, width, height)
+	return renderPickerCardWithTheme(theme, coalesce(picker.Title, "Terminal Picker"), header, itemLines, "", width, height)
 }
 
 func renderPromptOverlay(prompt *modal.PromptState, termSize TermSize) string {
@@ -440,15 +439,14 @@ func renderWorkspacePickerOverlayWithTheme(picker *modal.WorkspacePickerState, t
 	itemLines := make([]string, 0, len(items))
 	for index := range items {
 		item := items[index]
-		itemLines = append(itemLines, item.RenderLine(innerWidth, index == picker.Selected, pickerLineStyle(theme), pickerSelectedLineStyle(theme), pickerCreateRowStyle(theme)))
+		itemLines = append(itemLines, item.RenderLineWithPrefix(innerWidth, index == picker.Selected, "  ", "> ", pickerLineStyle(theme), pickerSelectedLineStyle(theme), pickerCreateRowStyle(theme)))
 	}
-	footerLine, _ := layoutOverlayFooterActionsWithTheme(theme, workspacePickerFooterActionSpecs(), workbench.Rect{W: innerWidth, H: 1})
 	return renderPickerCardWithTheme(
 		theme,
 		coalesce(picker.Title, "Workspaces"),
 		renderOverlaySearchLine(theme, picker.Query, innerWidth),
 		itemLines,
-		footerLine,
+		"",
 		width,
 		height,
 	)
@@ -554,7 +552,7 @@ func renderPickerCardWithTheme(theme uiTheme, title, header string, items []stri
 	layout := buildPickerCardLayout(width, height, len(items), strings.TrimSpace(footer) != "")
 
 	lines := make([]string, 0, layout.cardHeight-2)
-	lines = append(lines, renderCardTitleRow(theme, title, layout.innerWidth))
+	lines = append(lines, renderCardContentRow(theme, "", layout.innerWidth))
 	lines = append(lines, renderCardHeaderRow(theme, header, layout.innerWidth))
 	for i := 0; i < layout.listHeight; i++ {
 		content := ""
@@ -568,14 +566,13 @@ func renderPickerCardWithTheme(theme uiTheme, title, header string, items []stri
 		lines = append(lines, renderCardContentRow(theme, renderOverlayFooterLine(theme, footer, layout.innerWidth), layout.innerWidth))
 	}
 
-	card := lipgloss.NewStyle().
-		Width(layout.innerWidth).
-		Height(layout.cardHeight - 2).
-		Background(lipgloss.Color(theme.panelBG)).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color(theme.panelBorder)).
-		BorderBackground(lipgloss.Color(theme.panelBG)).
-		Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
+	cardLines := make([]string, 0, len(lines)+2)
+	cardLines = append(cardLines, renderModalTopBorder(theme, title, layout.innerWidth))
+	for _, line := range lines {
+		cardLines = append(cardLines, renderModalFramedRow(theme, line, layout.innerWidth))
+	}
+	cardLines = append(cardLines, renderModalBottomBorder(theme, layout.innerWidth))
+	card := strings.Join(cardLines, "\n")
 	body := lipgloss.Place(
 		layout.width,
 		layout.contentHeight,
@@ -586,6 +583,30 @@ func renderPickerCardWithTheme(theme uiTheme, title, header string, items []stri
 		lipgloss.WithWhitespaceStyle(backgroundStyle(theme.hostBG)),
 	)
 	return terminalPickerBodyStyle(theme).Render(forceHeight(body, layout.contentHeight))
+}
+
+func renderModalTopBorder(theme uiTheme, title string, innerWidth int) string {
+	border := pickerBorderStyle(theme)
+	titleText := strings.TrimSpace(title)
+	if titleText == "" {
+		titleText = "modal"
+	}
+	maxTitleWidth := maxInt(1, innerWidth-1)
+	titleText = xansi.Truncate(titleText, maxTitleWidth, "")
+	titleWidth := xansi.StringWidth(titleText)
+	rightWidth := maxInt(0, innerWidth-1-titleWidth)
+	return border.Render("╭─") +
+		modalBorderTitleStyle(theme).Render(titleText) +
+		border.Render(strings.Repeat("─", rightWidth)+"╮")
+}
+
+func renderModalBottomBorder(theme uiTheme, innerWidth int) string {
+	return pickerBorderStyle(theme).Render("╰" + strings.Repeat("─", maxInt(0, innerWidth)) + "╯")
+}
+
+func renderModalFramedRow(theme uiTheme, content string, innerWidth int) string {
+	border := pickerBorderStyle(theme)
+	return border.Render("│") + forceWidthANSIOverlay(content, innerWidth) + border.Render("│")
 }
 
 func pickerInnerWidth(termWidth int) int {

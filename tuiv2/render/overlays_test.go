@@ -14,32 +14,32 @@ import (
 func TestRenderPickerOverlayUsesCenteredCard(t *testing.T) {
 	picker := &modal.PickerState{
 		Title:    "Terminal Picker",
-		Footer:   "[Enter] attach  [Esc] close",
 		Selected: 0,
 		Items:    []modal.PickerItem{{TerminalID: "term-1", Name: "shell", State: "running"}},
 	}
 	overlay := xansi.Strip(renderPickerOverlay(picker, TermSize{Width: 100, Height: 30}))
-	for _, want := range []string{"Terminal Picker", "search:", "> ○ term-1 shell  running"} {
+	for _, want := range []string{"╭─Terminal Picker", "search:", "> ○ term-1 shell  running"} {
 		if !strings.Contains(overlay, want) {
 			t.Fatalf("overlay missing %q:\n%s", want, overlay)
 		}
 	}
-	for _, want := range []string{"[Enter] attach", "[Tab] split+attach"} {
-		if !strings.Contains(overlay, want) {
-			t.Fatalf("expected picker footer action %q:\n%s", want, overlay)
-		}
+	if strings.Contains(overlay, "[Enter] attach") {
+		t.Fatalf("picker overlay should not repeat footer shortcuts:\n%s", overlay)
 	}
 }
 
-func TestRenderWorkspacePickerOverlayDoesNotAddTerminalIndicator(t *testing.T) {
+func TestRenderWorkspacePickerOverlayUsesSameSelectionPrefixAsTerminalPicker(t *testing.T) {
 	picker := &modal.WorkspacePickerState{
 		Title:    "Workspaces",
 		Selected: 0,
 		Items:    []modal.WorkspacePickerItem{{Name: "main", Description: "1 tab(s), 1 pane(s)"}},
 	}
 	overlay := xansi.Strip(renderWorkspacePickerOverlay(picker, TermSize{Width: 100, Height: 30}))
-	if strings.Contains(overlay, "> main") {
-		t.Fatalf("workspace picker should not reuse terminal indicator:\n%s", overlay)
+	if !strings.Contains(overlay, "> main") {
+		t.Fatalf("workspace picker should render the same selected prefix as terminal picker:\n%s", overlay)
+	}
+	if strings.Contains(overlay, "[Enter] open") {
+		t.Fatalf("workspace picker should not repeat footer shortcuts:\n%s", overlay)
 	}
 }
 

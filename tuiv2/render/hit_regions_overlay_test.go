@@ -38,7 +38,7 @@ func TestOverlayHitRegionsPickerRowsAndDismissUseCardLayout(t *testing.T) {
 	if len(itemRegions) != 3 {
 		t.Fatalf("expected 3 picker item regions, got %#v", itemRegions)
 	}
-	layout := buildPickerCardLayout(100, FrameBodyHeight(30), 3, true)
+	layout := buildPickerCardLayout(100, FrameBodyHeight(30), 3, false)
 	for i, region := range itemRegions {
 		if region.ItemIndex != i {
 			t.Fatalf("expected item index %d, got %#v", i, region)
@@ -90,7 +90,7 @@ func TestOverlayHitRegionsWorkspacePickerItemRows(t *testing.T) {
 		t.Fatalf("expected 2 workspace item regions, got %#v", itemRegions)
 	}
 	_, overlayHeight := overlayViewport(TermSize{Width: 96, Height: FrameBodyHeight(26)})
-	layout := buildPickerCardLayout(96, overlayHeight, 2, true)
+	layout := buildPickerCardLayout(96, overlayHeight, 2, false)
 	if itemRegions[0].Rect.Y != layout.firstItemY || itemRegions[1].Rect.Y != layout.firstItemY+1 {
 		t.Fatalf("workspace picker row placement mismatch: %#v", itemRegions)
 	}
@@ -171,7 +171,7 @@ func TestOverlayHitRegionsWorkspacePickerQueryInputUsesEditableFieldRect(t *test
 	if len(queryRegions) != 1 {
 		t.Fatalf("expected one workspace query region, got %#v", queryRegions)
 	}
-	layout := buildPickerCardLayout(100, FrameBodyHeight(30), 1, true)
+	layout := buildPickerCardLayout(100, FrameBodyHeight(30), 1, false)
 	if got, want := queryRegions[0].Rect, pickerQueryRowRect(layout); got != want {
 		t.Fatalf("expected workspace query rect %#v, got %#v", want, got)
 	}
@@ -247,13 +247,13 @@ func TestOverlayHitRegionsPickerRowLimitMatchesRenderedListHeight(t *testing.T) 
 	}
 	regions := OverlayHitRegions(state)
 	itemRegions := collectRegionsByKind(regions, HitRegionPickerItem)
-	layout := buildPickerCardLayout(100, FrameBodyHeight(28), len(items), true)
+	layout := buildPickerCardLayout(100, FrameBodyHeight(28), len(items), false)
 	if len(itemRegions) != layout.listHeight {
 		t.Fatalf("expected picker rows clipped to list height %d, got %d", layout.listHeight, len(itemRegions))
 	}
 }
 
-func TestOverlayHitRegionsPickerFooterActionsHaveStablePrefixOrder(t *testing.T) {
+func TestOverlayHitRegionsPickerHasNoFooterActionRegions(t *testing.T) {
 	state := VisibleRenderState{
 		TermSize: TermSize{Width: 100, Height: 28},
 		Overlay: VisibleOverlay{
@@ -267,22 +267,12 @@ func TestOverlayHitRegionsPickerFooterActionsHaveStablePrefixOrder(t *testing.T)
 	}
 	regions := OverlayHitRegions(state)
 	actionRegions := collectRegionsByKind(regions, HitRegionOverlayFooterAction)
-	if len(actionRegions) != 3 {
-		t.Fatalf("expected clipped picker footer actions prefix (3), got %#v", actionRegions)
-	}
-	wantActions := []input.ActionKind{
-		input.ActionSubmitPrompt,
-		input.ActionPickerAttachSplit,
-		input.ActionEditTerminal,
-	}
-	for index, region := range actionRegions {
-		if region.Action.Kind != wantActions[index] {
-			t.Fatalf("picker footer action[%d]=%q, want %q", index, region.Action.Kind, wantActions[index])
-		}
+	if len(actionRegions) != 0 {
+		t.Fatalf("expected picker overlay footer actions to be hidden, got %#v", actionRegions)
 	}
 }
 
-func TestOverlayHitRegionsWorkspacePickerFooterActionsExposeManagementSemantics(t *testing.T) {
+func TestOverlayHitRegionsWorkspacePickerHasNoFooterActionRegions(t *testing.T) {
 	state := VisibleRenderState{
 		TermSize: TermSize{Width: 140, Height: 30},
 		Overlay: VisibleOverlay{
@@ -297,25 +287,8 @@ func TestOverlayHitRegionsWorkspacePickerFooterActionsExposeManagementSemantics(
 	}
 	regions := OverlayHitRegions(state)
 	actionRegions := collectRegionsByKind(regions, HitRegionOverlayFooterAction)
-	fullActions := []input.ActionKind{
-		input.ActionSubmitPrompt,
-		input.ActionCreateWorkspace,
-		input.ActionRenameWorkspace,
-		input.ActionDeleteWorkspace,
-		input.ActionPrevWorkspace,
-		input.ActionNextWorkspace,
-		input.ActionCancelMode,
-	}
-	layout := buildPickerCardLayout(140, FrameBodyHeight(30), 2, true)
-	_, expected := layoutOverlayFooterActions(workspacePickerFooterActionSpecs(), workbench.Rect{W: layout.innerWidth, H: 1})
-	wantActions := fullActions[:len(expected)]
-	if len(actionRegions) != len(wantActions) {
-		t.Fatalf("expected clipped workspace footer prefix of %d actions, got %#v", len(wantActions), actionRegions)
-	}
-	for index, region := range actionRegions {
-		if region.Action.Kind != wantActions[index] {
-			t.Fatalf("workspace footer action[%d]=%q, want %q", index, region.Action.Kind, wantActions[index])
-		}
+	if len(actionRegions) != 0 {
+		t.Fatalf("expected workspace picker overlay footer actions to be hidden, got %#v", actionRegions)
 	}
 }
 

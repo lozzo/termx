@@ -77,10 +77,9 @@ func pickerOverlayHitRegions(picker *modal.PickerState, width, height int) []Hit
 		return nil
 	}
 	items := picker.VisibleItems()
-	footerSpecs := pickerFooterActionSpecs()
-	layout := buildPickerCardLayout(width, height, len(items), len(footerSpecs) > 0)
+	layout := buildPickerCardLayout(width, height, len(items), false)
 	card := pickerCardRect(layout)
-	regions := make([]HitRegion, 0, len(items)+len(footerSpecs)+5)
+	regions := make([]HitRegion, 0, len(items)+5)
 	regions = append(regions, dismissRegions(card, width, layout.contentHeight)...)
 	regions = append(regions, HitRegion{
 		Kind: HitRegionOverlayQueryInput,
@@ -99,21 +98,6 @@ func pickerOverlayHitRegions(picker *modal.PickerState, width, height int) []Hit
 			},
 		})
 	}
-	if len(footerSpecs) > 0 {
-		_, actions := layoutOverlayFooterActions(footerSpecs, workbench.Rect{
-			X: card.X + 1,
-			Y: pickerFooterRowY(layout),
-			W: layout.innerWidth,
-			H: 1,
-		})
-		for _, action := range actions {
-			regions = append(regions, HitRegion{
-				Kind:   HitRegionOverlayFooterAction,
-				Rect:   action.Rect,
-				Action: action.Action,
-			})
-		}
-	}
 	return regions
 }
 
@@ -122,10 +106,9 @@ func workspacePickerOverlayHitRegions(picker *modal.WorkspacePickerState, width,
 		return nil
 	}
 	items := picker.VisibleItems()
-	footerSpecs := workspacePickerFooterActionSpecs()
-	layout := buildPickerCardLayout(width, height, len(items), len(footerSpecs) > 0)
+	layout := buildPickerCardLayout(width, height, len(items), false)
 	card := pickerCardRect(layout)
-	regions := make([]HitRegion, 0, len(items)+len(footerSpecs)+5)
+	regions := make([]HitRegion, 0, len(items)+5)
 	regions = append(regions, dismissRegions(card, width, layout.contentHeight)...)
 	regions = append(regions, HitRegion{
 		Kind: HitRegionOverlayQueryInput,
@@ -143,21 +126,6 @@ func workspacePickerOverlayHitRegions(picker *modal.WorkspacePickerState, width,
 				H: 1,
 			},
 		})
-	}
-	if len(footerSpecs) > 0 {
-		_, actions := layoutOverlayFooterActions(footerSpecs, workbench.Rect{
-			X: card.X + 1,
-			Y: pickerFooterRowY(layout),
-			W: layout.innerWidth,
-			H: 1,
-		})
-		for _, action := range actions {
-			regions = append(regions, HitRegion{
-				Kind:   HitRegionOverlayFooterAction,
-				Rect:   action.Rect,
-				Action: action.Action,
-			})
-		}
 	}
 	return regions
 }

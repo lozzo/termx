@@ -95,3 +95,23 @@ func TestPickerStateZeroValue(t *testing.T) {
 		t.Errorf("expected empty Query, got %q", ps.Query)
 	}
 }
+
+func TestPickerStateVisibleItemsKeepsCreateRowFirst(t *testing.T) {
+	ps := PickerState{
+		Items: []PickerItem{
+			{TerminalID: "term-1", Name: "shell"},
+			{CreateNew: true, Name: "new terminal"},
+			{TerminalID: "term-2", Name: "worker"},
+		},
+	}
+	items := ps.VisibleItems()
+	if len(items) != 3 {
+		t.Fatalf("expected 3 visible items, got %d", len(items))
+	}
+	if !items[0].CreateNew {
+		t.Fatalf("expected create row to be first, got %#v", items)
+	}
+	if items[1].TerminalID != "term-1" || items[2].TerminalID != "term-2" {
+		t.Fatalf("expected non-create items to preserve order, got %#v", items)
+	}
+}

@@ -129,8 +129,8 @@ func uiThemeFromHostColors(hostBG, hostFG string) uiTheme {
 	tabActiveFG := contrastTextColor(tabActiveBG)
 	tabInactiveBG := mixHex(hostBG, "#64748b", 0.32)
 	tabInactiveFG := mixHex(tabActiveFG, tabInactiveBG, 0.56)
-	tabCreateBG := mixHex(hostBG, "#0f766e", 0.84)
-	tabCreateFG := contrastTextColor(tabCreateBG)
+	tabCreateBG := tabActiveBG
+	tabCreateFG := tabActiveFG
 	tabActionBG := mixHex(hostBG, "#111827", 0.84)
 	tabActionFG := contrastTextColor(tabActionBG)
 	tabActionOnBG := mixHex(hostBG, "#1f2937", 0.82)
@@ -325,6 +325,13 @@ func terminalPickerTitleStyle(theme uiTheme) lipgloss.Style {
 		Foreground(lipgloss.Color(theme.panelText)).
 		Background(lipgloss.Color(theme.panelStrong)).
 		Padding(0, 1).
+		Bold(true)
+}
+
+func modalBorderTitleStyle(theme uiTheme) lipgloss.Style {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color(theme.panelText)).
+		Background(lipgloss.Color(theme.panelBG)).
 		Bold(true)
 }
 

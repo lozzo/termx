@@ -90,21 +90,39 @@ func (p *WorkspacePickerState) VisibleItems() []WorkspacePickerItem {
 }
 
 func (i *WorkspacePickerItem) RenderLine(width int, selected bool, normalStyle lipgloss.Style, activeStyle lipgloss.Style, createStyle lipgloss.Style) string {
+	return i.RenderLineWithPrefix(width, selected, "  ", "> ", normalStyle, activeStyle, createStyle)
+}
+
+func (i *WorkspacePickerItem) RenderLineWithPrefix(width int, selected bool, normalPrefix string, selectedPrefix string, normalStyle lipgloss.Style, activeStyle lipgloss.Style, createStyle lipgloss.Style) string {
 	if i == nil || width <= 0 {
 		return ""
 	}
 	if i.searchTextLower == "" {
 		i.primeCaches()
 	}
-	if i.lineWidth != width {
+	if normalPrefix == " " && selectedPrefix == " " && i.lineWidth != width {
 		i.lineWidth = width
 		plain := lipgloss.JoinHorizontal(lipgloss.Left, " ", i.lineBody, " ")
 		if i.CreateNew {
-			i.lineNormal = createStyle.Width(width).MaxWidth(width).Render(plain)
+			i.lineNormal = renderPickerLine(createStyle, plain, width)
 		} else {
-			i.lineNormal = normalStyle.Width(width).MaxWidth(width).Render(plain)
+			i.lineNormal = renderPickerLine(normalStyle, plain, width)
 		}
-		i.lineActive = activeStyle.Width(width).MaxWidth(width).Render(plain)
+		i.lineActive = renderPickerLine(activeStyle, plain, width)
+	}
+	if normalPrefix != " " || selectedPrefix != " " {
+		prefix := normalPrefix
+		if selected {
+			prefix = selectedPrefix
+		}
+		plain := lipgloss.JoinHorizontal(lipgloss.Left, prefix, i.lineBody, " ")
+		if selected {
+			return renderPickerLine(activeStyle, plain, width)
+		}
+		if i.CreateNew {
+			return renderPickerLine(createStyle, plain, width)
+		}
+		return renderPickerLine(normalStyle, plain, width)
 	}
 	if selected {
 		return i.lineActive
