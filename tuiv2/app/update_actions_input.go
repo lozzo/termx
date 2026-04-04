@@ -33,12 +33,11 @@ func (m *Model) handleTerminalInput(in input.TerminalInput) tea.Cmd {
 			return m.openPickerIfUnattached(pane.ID)
 		}
 	}
-	return func() tea.Msg {
-		if err := m.runtime.SendInput(context.Background(), in.PaneID, in.Data); err != nil {
-			return err
-		}
+	m.pendingTerminalInputs = append(m.pendingTerminalInputs, in)
+	if m.terminalInputSending {
 		return nil
 	}
+	return m.dequeueTerminalInputCmd()
 }
 
 func (m *Model) openPickerIfUnattached(paneID string) tea.Cmd {
@@ -57,4 +56,22 @@ func (m *Model) openPickerIfUnattached(paneID string) tea.Cmd {
 	m.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: paneID})
 	m.render.Invalidate()
 	return m.applyEffects([]orchestrator.Effect{orchestrator.LoadPickerItemsEffect{}})
+}
+
+func (m *Model) dequeueTerminalInputCmd() tea.Cmd {
+	if m == nil {
+		return nil
+	}
+	if len(m.pendingTerminalInputs) == 0 {
+		m.terminalInputSending = false
+		return nil
+	}
+	next := m.pendingTerminalInputs[0]
+	m.pendingTerminalInputs = m.pendingTerminalInputs[1:]
+	m.terminalInputSending = true
+	return func() tea.Msg {
+		return terminalInputSentMsg{
+			err: m.runtime.SendInput(context.Background(), next.PaneID, next.Data),
+		}
+	}
 }

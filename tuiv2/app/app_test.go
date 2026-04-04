@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
@@ -216,21 +217,25 @@ func TestHandleKeyMsgInjectsActivePaneIntoTerminalInput(t *testing.T) {
 			Root: workbench.NewLeaf("pane-1"),
 		}},
 	})
-	model := New(shared.Config{}, wb, runtime.New(nil))
+	client := &recordingBridgeClient{}
+	rt := runtime.New(client)
+	binding := rt.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+	model := New(shared.Config{}, wb, rt)
 	cmd := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	if cmd == nil {
-		t.Fatal("expected terminal input command")
+		t.Fatal("expected queued terminal input command")
 	}
-	msg := cmd()
-	inputMsg, ok := msg.(input.TerminalInput)
-	if !ok {
-		t.Fatalf("expected TerminalInput, got %#v", msg)
+	drainCmd(t, model, cmd, 10)
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected one input call, got %#v", client.inputCalls)
 	}
-	if inputMsg.PaneID != "pane-1" {
-		t.Fatalf("expected pane-1 injected, got %q", inputMsg.PaneID)
+	if client.inputCalls[0].channel != 7 {
+		t.Fatalf("expected pane-1 binding channel 7, got %#v", client.inputCalls[0])
 	}
-	if string(inputMsg.Data) != "a" {
-		t.Fatalf("expected input data 'a', got %q", inputMsg.Data)
+	if string(client.inputCalls[0].data) != "a" {
+		t.Fatalf("expected input data 'a', got %q", client.inputCalls[0].data)
 	}
 }
 
@@ -266,11 +271,9 @@ func TestModelUpdateTerminalInputMsgUsesSameRuntimePath(t *testing.T) {
 		t.Fatal("expected model pointer to remain stable")
 	}
 	if cmd == nil {
-		t.Fatal("expected runtime input command")
+		t.Fatal("expected terminal input command")
 	}
-	if msg := cmd(); msg != nil {
-		t.Fatalf("expected nil message from terminal input command, got %#v", msg)
-	}
+	drainCmd(t, model, cmd, 10)
 	if len(client.inputCalls) != 1 {
 		t.Fatalf("expected one input call, got %#v", client.inputCalls)
 	}
@@ -299,19 +302,25 @@ func TestHandleKeyMsgUsesApplicationCursorEncoding(t *testing.T) {
 		TerminalID: "term-1",
 		Modes:      protocol.TerminalModes{ApplicationCursor: true},
 	}
-	model := New(shared.Config{}, wb, rt)
+	client := &recordingBridgeClient{}
+	rt.SetInvalidate(func() {})
+	rt2 := runtime.New(client)
+	rt2.Registry().GetOrCreate("term-1").Snapshot = rt.Registry().Get("term-1").Snapshot
+	binding := rt2.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+	model := New(shared.Config{}, wb, rt2)
 
 	cmd := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyUp})
 	if cmd == nil {
 		t.Fatal("expected terminal input command")
 	}
-	msg := cmd()
-	inputMsg, ok := msg.(input.TerminalInput)
-	if !ok {
-		t.Fatalf("expected TerminalInput, got %#v", msg)
+	drainCmd(t, model, cmd, 10)
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected one input call, got %#v", client.inputCalls)
 	}
-	if string(inputMsg.Data) != "\x1bOA" {
-		t.Fatalf("expected application cursor up sequence, got %q", string(inputMsg.Data))
+	if string(client.inputCalls[0].data) != "\x1bOA" {
+		t.Fatalf("expected application cursor up sequence, got %q", string(client.inputCalls[0].data))
 	}
 }
 
@@ -330,19 +339,114 @@ func TestHandleKeyMsgEncodesShiftTab(t *testing.T) {
 			Root: workbench.NewLeaf("pane-1"),
 		}},
 	})
-	model := New(shared.Config{}, wb, runtime.New(nil))
+	client := &recordingBridgeClient{}
+	rt := runtime.New(client)
+	binding := rt.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+	model := New(shared.Config{}, wb, rt)
 
 	cmd := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyShiftTab})
 	if cmd == nil {
 		t.Fatal("expected terminal input command")
 	}
-	msg := cmd()
-	inputMsg, ok := msg.(input.TerminalInput)
-	if !ok {
-		t.Fatalf("expected TerminalInput, got %#v", msg)
+	drainCmd(t, model, cmd, 10)
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected one input call, got %#v", client.inputCalls)
 	}
-	if string(inputMsg.Data) != "\x1b[Z" {
-		t.Fatalf("expected shift-tab sequence, got %q", string(inputMsg.Data))
+	if string(client.inputCalls[0].data) != "\x1b[Z" {
+		t.Fatalf("expected shift-tab sequence, got %q", string(client.inputCalls[0].data))
+	}
+}
+
+func TestHandleTerminalInputQueuesWhileSendInFlight(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	started := make(chan inputCall, 1)
+	release := make(chan struct{})
+	client := &recordingBridgeClient{inputStarted: started, inputBlock: release}
+	rt := runtime.New(client)
+	binding := rt.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+	model := New(shared.Config{}, wb, rt)
+
+	firstCmd := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if firstCmd == nil {
+		t.Fatal("expected first queued terminal input command")
+	}
+	done := make(chan tea.Msg, 1)
+	go func() {
+		done <- firstCmd()
+	}()
+	select {
+	case call := <-started:
+		if string(call.data) != "a" {
+			t.Fatalf("expected first input call to send 'a', got %#v", call)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for first input send to start")
+	}
+
+	secondCmd := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	if secondCmd != nil {
+		t.Fatalf("expected second input to queue behind in-flight send, got cmd %#v", secondCmd)
+	}
+	if !model.terminalInputSending {
+		t.Fatal("expected input queue to remain marked as sending")
+	}
+	if len(model.pendingTerminalInputs) != 1 || string(model.pendingTerminalInputs[0].Data) != "b" {
+		t.Fatalf("expected second input to remain queued, got %#v", model.pendingTerminalInputs)
+	}
+
+	close(release)
+	firstMsg := <-done
+	_, nextCmd := model.Update(firstMsg)
+	if nextCmd == nil {
+		t.Fatal("expected queued follow-up input command after first send completed")
+	}
+	drainCmd(t, model, nextCmd, 10)
+
+	if len(client.inputCalls) != 2 {
+		t.Fatalf("expected two ordered input calls, got %#v", client.inputCalls)
+	}
+	if got := string(client.inputCalls[0].data) + string(client.inputCalls[1].data); got != "ab" {
+		t.Fatalf("expected ordered queued input calls, got %q", got)
+	}
+	if model.terminalInputSending {
+		t.Fatal("expected input queue to become idle after draining")
+	}
+}
+
+func TestQueueInvalidateCoalescesPendingRedraws(t *testing.T) {
+	model := New(shared.Config{}, nil, runtime.New(nil))
+	var sent []tea.Msg
+	model.SetSendFunc(func(msg tea.Msg) {
+		sent = append(sent, msg)
+	})
+
+	model.queueInvalidate()
+	model.queueInvalidate()
+	if len(sent) != 1 {
+		t.Fatalf("expected one coalesced invalidate message, got %#v", sent)
+	}
+
+	_, _ = model.Update(InvalidateMsg{})
+	model.queueInvalidate()
+	if len(sent) != 2 {
+		t.Fatalf("expected invalidate to be re-armed after handling message, got %#v", sent)
 	}
 }
 
@@ -1396,6 +1500,9 @@ func TestModelBootstrapHelperUsesStartup(t *testing.T) {
 type recordingBridgeClient struct {
 	resizes            []resizeCall
 	inputCalls         []inputCall
+	inputStarted       chan inputCall
+	inputBlock         <-chan struct{}
+	inputErr           error
 	listCalls          int
 	createResult       *protocol.CreateResult
 	attachResult       *protocol.AttachResult
@@ -1493,8 +1600,18 @@ func (c *recordingBridgeClient) Snapshot(_ context.Context, terminalID string, _
 }
 
 func (c *recordingBridgeClient) Input(_ context.Context, channel uint16, data []byte) error {
-	c.inputCalls = append(c.inputCalls, inputCall{channel: channel, data: append([]byte(nil), data...)})
-	return nil
+	call := inputCall{channel: channel, data: append([]byte(nil), data...)}
+	c.inputCalls = append(c.inputCalls, call)
+	if c.inputStarted != nil {
+		select {
+		case c.inputStarted <- call:
+		default:
+		}
+	}
+	if c.inputBlock != nil {
+		<-c.inputBlock
+	}
+	return c.inputErr
 }
 
 func (c *recordingBridgeClient) Resize(_ context.Context, channel uint16, cols, rows uint16) error {

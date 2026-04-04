@@ -108,6 +108,18 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			return true, nil
 		}
 		return false, nil
+	case input.ActionOpenPicker:
+		if m.workbench == nil {
+			return false, nil
+		}
+		if pane := m.workbench.ActivePane(); pane != nil && pane.ID != "" {
+			return false, nil
+		}
+		paneID, err := m.ensureRecoverablePane()
+		if err != nil {
+			return true, m.showError(err)
+		}
+		return true, tea.Batch(m.openPickerForPaneCmd(paneID), m.saveStateCmd())
 	case input.ActionCreateTab:
 		if m.input.Mode().Kind == input.ModeNormal {
 			m.input.SetMode(input.ModeState{Kind: input.ModeTab})
@@ -224,13 +236,14 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		}
 		return true, m.killCurrentTabCmd()
 	case input.ActionOpenTerminalManager:
-		if m.input.Mode().Kind == input.ModeGlobal {
-			m.terminalPage = &modal.TerminalManagerState{
-				Title: "Terminal Pool",
+		if m.workbench != nil && m.workbench.ActivePane() == nil && m.workbench.CurrentWorkspace() != nil {
+			if _, err := m.ensureRecoverablePane(); err != nil {
+				return true, m.showError(err)
 			}
-			m.input.SetMode(input.ModeState{Kind: input.ModeTerminalManager, RequestID: terminalPoolPageModeToken})
-			m.render.Invalidate()
-			return true, m.loadTerminalManagerItemsCmd()
+			return true, tea.Batch(m.openTerminalManagerCmd(), m.saveStateCmd())
+		}
+		if m.input.Mode().Kind == input.ModeGlobal {
+			return true, m.openTerminalManagerCmd()
 		}
 		return false, nil
 	case input.ActionZoomPane:

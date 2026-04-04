@@ -21,6 +21,10 @@ type TerminalInputMsg struct {
 	Input input.TerminalInput
 }
 
+type terminalInputSentMsg struct {
+	err error
+}
+
 type EffectAppliedMsg struct {
 	Effect orchestrator.Effect
 }

@@ -66,6 +66,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleTerminalInput(typed.Input)
 	case input.TerminalInput:
 		return m, m.handleTerminalInput(typed)
+	case terminalInputSentMsg:
+		next := m.dequeueTerminalInputCmd()
+		if typed.err != nil {
+			return m, tea.Batch(m.showError(typed.err), next)
+		}
+		return m, next
 	case sequenceMsg:
 		return m, m.nextSequenceCmd(typed)
 	case pickerItemsLoadedMsg:
@@ -140,7 +146,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.render.Invalidate()
 		return m, nil
 	case InvalidateMsg:
+		m.invalidatePending.Store(false)
 		m.render.Invalidate()
+		return m, nil
+	case RenderTickMsg:
+		if m.render != nil && m.render.NeedsCursorTicks() {
+			m.render.Invalidate()
+		}
 		return m, nil
 	case tea.WindowSizeMsg:
 		oldBodyRect := m.bodyRect()
@@ -202,7 +214,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		if encoded := m.encodeActiveTerminalInput(msg, inputMsg.PaneID); len(encoded) > 0 {
 			inputMsg.Data = encoded
 		}
-		return func() tea.Msg { return inputMsg }
+		return m.handleTerminalInput(inputMsg)
 	}
 	return nil
 }

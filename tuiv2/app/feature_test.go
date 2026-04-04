@@ -1963,6 +1963,104 @@ func TestFeatureRenderUnboundPane(t *testing.T) {
 	}
 }
 
+func TestFeatureRenderEmptyWorkspace(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: -1,
+	})
+	model := New(shared.Config{}, wb, runtime.New(nil))
+	model.width = 120
+	model.height = 40
+
+	view := xansi.Strip(model.View())
+	for _, want := range []string{"main", "No tabs in this workspace", "Ctrl-F open terminal picker", "Ctrl-T then c create a new tab"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view missing empty-workspace state %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestFeatureRenderEmptyTab(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:    "tab-1",
+			Name:  "tab 1",
+			Panes: map[string]*workbench.PaneState{},
+		}},
+	})
+	model := New(shared.Config{}, wb, runtime.New(nil))
+	model.width = 120
+	model.height = 40
+
+	view := xansi.Strip(model.View())
+	for _, want := range []string{"tab 1", "No panes in this tab", "Ctrl-F create the first pane via terminal picker"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view missing empty-tab state %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestFeatureOpenPickerSeedsEmptyWorkspace(t *testing.T) {
+	model := setupModel(t, modelOpts{
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: -1,
+			},
+		},
+	})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenPicker})
+
+	assertMode(t, model, input.ModePicker)
+	assertTabCount(t, model, 1)
+	pane := model.workbench.ActivePane()
+	if pane == nil || pane.ID == "" {
+		t.Fatalf("expected seeded pane after opening picker from empty workspace, got %#v", pane)
+	}
+	if model.modalHost.Session == nil || model.modalHost.Session.RequestID != pane.ID {
+		t.Fatalf("expected picker request to target seeded pane %q, got %#v", pane.ID, model.modalHost.Session)
+	}
+}
+
+func TestFeatureOpenPickerSeedsEmptyTab(t *testing.T) {
+	model := setupModel(t, modelOpts{
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{{
+					ID:    "tab-1",
+					Name:  "tab 1",
+					Panes: map[string]*workbench.PaneState{},
+				}},
+			},
+		},
+	})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenPicker})
+
+	assertMode(t, model, input.ModePicker)
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab after opening picker from empty tab")
+	}
+	if len(tab.Panes) != 1 {
+		t.Fatalf("expected seeded first pane in empty tab, got %#v", tab.Panes)
+	}
+	pane := model.workbench.ActivePane()
+	if pane == nil || pane.ID == "" {
+		t.Fatalf("expected active pane after seeding empty tab, got %#v", pane)
+	}
+	if model.modalHost.Session == nil || model.modalHost.Session.RequestID != pane.ID {
+		t.Fatalf("expected picker request to target seeded pane %q, got %#v", pane.ID, model.modalHost.Session)
+	}
+}
+
 func TestFeatureRenderZoomedPaneShowsSinglePane(t *testing.T) {
 	model := setupTwoPaneModel(t)
 	// Zoom pane-1
@@ -2230,6 +2328,7 @@ func TestFeatureKeyDrivenGlobalQuit(t *testing.T) {
 
 func TestFeatureKeyDrivenNormalPassthrough(t *testing.T) {
 	model := setupModel(t, modelOpts{})
+	client := model.runtime.Client().(*recordingBridgeClient)
 	assertMode(t, model, input.ModeNormal)
 
 	// Regular key in normal mode should produce terminal input, not action
@@ -2237,9 +2336,12 @@ func TestFeatureKeyDrivenNormalPassthrough(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected terminal input command for 'a' in normal mode")
 	}
-	msg := cmd()
-	if _, ok := msg.(input.TerminalInput); !ok {
-		t.Fatalf("expected TerminalInput, got %T", msg)
+	drainCmd(t, model, cmd, 10)
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected one input call, got %#v", client.inputCalls)
+	}
+	if string(client.inputCalls[0].data) != "a" {
+		t.Fatalf("expected passthrough input 'a', got %q", string(client.inputCalls[0].data))
 	}
 }
 
@@ -2315,18 +2417,18 @@ func TestFeatureTerminalInputOnUnboundPaneOpensPicker(t *testing.T) {
 
 func TestFeatureQuestionMarkPassesThroughInNormal(t *testing.T) {
 	model := setupModel(t, modelOpts{})
+	client := model.runtime.Client().(*recordingBridgeClient)
 
 	_, cmd := model.Update(runeKeyMsg('?'))
 	if cmd == nil {
-		t.Fatal("expected terminal input command for '?' in normal mode")
+		t.Fatal("expected queued terminal input command for '?' in normal mode")
 	}
-	msg := cmd()
-	terminalInput, ok := msg.(input.TerminalInput)
-	if !ok {
-		t.Fatalf("expected TerminalInput for '?', got %T", msg)
+	drainCmd(t, model, cmd, 10)
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected one input call, got %#v", client.inputCalls)
 	}
-	if string(terminalInput.Data) != "?" {
-		t.Fatalf("expected question mark passthrough, got %q", string(terminalInput.Data))
+	if string(client.inputCalls[0].data) != "?" {
+		t.Fatalf("expected question mark passthrough, got %q", string(client.inputCalls[0].data))
 	}
 	assertMode(t, model, input.ModeNormal)
 }

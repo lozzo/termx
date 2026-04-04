@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,6 +18,7 @@ import (
 	unixtransport "github.com/lozzow/termx/transport/unix"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/input"
+	"github.com/lozzow/termx/tuiv2/persist"
 	"github.com/lozzow/termx/tuiv2/render"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
@@ -405,6 +408,127 @@ func TestE2EClosePaneLeavesTerminalAttachable(t *testing.T) {
 	}
 }
 
+func TestE2ERestoreEmptyWorkspaceRecoversViaPicker(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	env := newRealRestoreE2EEnv(t, persist.WorkspaceStateFileV2{
+		Version: 2,
+		Data: []persist.WorkspaceEntryV2{{
+			Name:      "main",
+			ActiveTab: -1,
+			Tabs:      []persist.TabEntryV2{},
+		}},
+	})
+	model := env.model
+
+	view := xansi.Strip(model.View())
+	for _, want := range []string{"No tabs in this workspace", "Ctrl-F open terminal picker"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected empty workspace recovery state %q:\n%s", want, view)
+		}
+	}
+	if ws := model.workbench.CurrentWorkspace(); ws == nil || len(ws.Tabs) != 0 {
+		t.Fatalf("expected restored workspace with 0 tabs, got %#v", ws)
+	}
+
+	e2eDispatchKey(t, model, tea.KeyMsg{Type: tea.KeyCtrlF})
+
+	if model.modalHost == nil || model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModePicker {
+		t.Fatalf("expected picker after Ctrl-F from empty workspace, got %#v", model.modalHost)
+	}
+	ws := model.workbench.CurrentWorkspace()
+	if ws == nil || len(ws.Tabs) != 1 {
+		t.Fatalf("expected Ctrl-F recovery to seed one tab, got %#v", ws)
+	}
+
+	items := model.modalHost.Picker.VisibleItems()
+	for i := 0; i < len(items)-1; i++ {
+		_, _ = model.Update(input.SemanticAction{Kind: input.ActionPickerDown})
+	}
+	pane := model.workbench.ActivePane()
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: pane.ID})
+	e2eDrain(t, model, cmd)
+	paneID := model.modalHost.Prompt.PaneID
+	model.modalHost.Prompt.Value = "restore-empty-workspace"
+	model.modalHost.Prompt.Command = []string{"sh", "-c", "printf 'restore_empty_workspace_ready\\n'; cat"}
+	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID})
+	e2eDrain(t, model, cmd)
+	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID})
+	e2eDrain(t, model, cmd)
+
+	pane = model.workbench.ActivePane()
+	if pane == nil || pane.TerminalID == "" {
+		t.Fatalf("expected attached pane after empty-workspace recovery, got %#v", pane)
+	}
+	e2eWaitForText(t, env.ctx, model, env.invalidated, "restore_empty_workspace_ready")
+}
+
+func TestE2ERestoreEmptyTabRecoversViaPicker(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	env := newRealRestoreE2EEnv(t, persist.WorkspaceStateFileV2{
+		Version: 2,
+		Data: []persist.WorkspaceEntryV2{{
+			Name:      "main",
+			ActiveTab: 0,
+			Tabs: []persist.TabEntryV2{{
+				Name:  "blank",
+				Panes: []persist.PaneEntryV2{},
+			}},
+		}},
+	})
+	model := env.model
+
+	view := xansi.Strip(model.View())
+	for _, want := range []string{"blank", "No panes in this tab", "Ctrl-F create the first pane via terminal picker"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected empty tab recovery state %q:\n%s", want, view)
+		}
+	}
+	tab := model.workbench.CurrentTab()
+	if tab == nil || len(tab.Panes) != 0 {
+		t.Fatalf("expected restored empty tab before recovery, got %#v", tab)
+	}
+
+	e2eDispatchKey(t, model, tea.KeyMsg{Type: tea.KeyCtrlF})
+
+	if model.modalHost == nil || model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModePicker {
+		t.Fatalf("expected picker after Ctrl-F from empty tab, got %#v", model.modalHost)
+	}
+	tab = model.workbench.CurrentTab()
+	if tab == nil || len(tab.Panes) != 1 {
+		t.Fatalf("expected Ctrl-F recovery to seed first pane, got %#v", tab)
+	}
+	if tab.Name != "blank" {
+		t.Fatalf("expected recovery to preserve tab name, got %#v", tab)
+	}
+
+	items := model.modalHost.Picker.VisibleItems()
+	for i := 0; i < len(items)-1; i++ {
+		_, _ = model.Update(input.SemanticAction{Kind: input.ActionPickerDown})
+	}
+	pane := model.workbench.ActivePane()
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: pane.ID})
+	e2eDrain(t, model, cmd)
+	paneID := model.modalHost.Prompt.PaneID
+	model.modalHost.Prompt.Value = "restore-empty-tab"
+	model.modalHost.Prompt.Command = []string{"sh", "-c", "printf 'restore_empty_tab_ready\\n'; cat"}
+	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID})
+	e2eDrain(t, model, cmd)
+	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID})
+	e2eDrain(t, model, cmd)
+
+	pane = model.workbench.ActivePane()
+	if pane == nil || pane.TerminalID == "" {
+		t.Fatalf("expected attached pane after empty-tab recovery, got %#v", pane)
+	}
+	e2eWaitForText(t, env.ctx, model, env.invalidated, "restore_empty_tab_ready")
+}
+
 func TestE2EMouseTopChromeOmitsManagementActions(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 1000})
 	for _, kind := range []render.HitRegionKind{
@@ -570,6 +694,67 @@ func newRealMouseE2EEnv(t *testing.T) realMouseE2EEnv {
 	t.Cleanup(func() { _ = pc.Close() })
 
 	model := New(shared.Config{}, nil, runtime.New(bridge.NewProtocolClient(pc)))
+	model.width = 120
+	model.height = 40
+
+	invalidated := make(chan struct{}, 64)
+	model.SetSendFunc(func(msg tea.Msg) {
+		if _, ok := msg.(InvalidateMsg); ok {
+			select {
+			case invalidated <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	e2eDrain(t, model, model.Init())
+	return realMouseE2EEnv{
+		ctx:         ctx,
+		model:       model,
+		invalidated: invalidated,
+	}
+}
+
+func newRealRestoreE2EEnv(t *testing.T, file persist.WorkspaceStateFileV2) realMouseE2EEnv {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
+	srv := termx.NewServer(termx.WithSocketPath(socketPath))
+	srvDone := make(chan error, 1)
+	go func() { srvDone <- srv.ListenAndServe(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+		select {
+		case <-srvDone:
+		case <-time.After(3 * time.Second):
+		}
+	})
+	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
+		t.Fatalf("server socket never appeared: %v", err)
+	}
+
+	tr, err := unixtransport.Dial(socketPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	pc := protocol.NewClient(tr)
+	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+		t.Fatalf("hello: %v", err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+
+	statePath := filepath.Join(t.TempDir(), "workspace-state.json")
+	data, err := json.Marshal(file)
+	if err != nil {
+		t.Fatalf("marshal state: %v", err)
+	}
+	if err := os.WriteFile(statePath, data, 0o644); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+
+	model := New(shared.Config{WorkspaceStatePath: statePath}, workbench.NewWorkbench(), runtime.New(bridge.NewProtocolClient(pc)))
 	model.width = 120
 	model.height = 40
 

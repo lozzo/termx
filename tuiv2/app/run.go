@@ -18,6 +18,10 @@ func Run(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
 }
 
 func RunWithClient(cfg shared.Config, client bridge.Client, stdin io.Reader, stdout io.Writer) error {
+	return runWithClientOptions(cfg, client, stdin, stdout)
+}
+
+func runWithClientOptions(cfg shared.Config, client bridge.Client, stdin io.Reader, stdout io.Writer, extraOpts ...tea.ProgramOption) error {
 	model := New(cfg, nil, runtime.New(client))
 	opts := []tea.ProgramOption{
 		tea.WithInput(nil),
@@ -25,8 +29,11 @@ func RunWithClient(cfg shared.Config, client bridge.Client, stdin io.Reader, std
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	}
+	opts = append(opts, extraOpts...)
 	p := tea.NewProgram(model, opts...)
 	model.SetSendFunc(p.Send)
+	stopCursorBlink := startCursorBlinkForwarder(p, model.render)
+	defer stopCursorBlink()
 
 	stopInput, restoreInput, err := startInputForwarder(p, stdin)
 	if err != nil {

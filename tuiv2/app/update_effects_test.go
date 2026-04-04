@@ -18,7 +18,7 @@ import (
 )
 
 func TestModelUpdateOpenPickerSetsModeAndInitializesPickerState(t *testing.T) {
-	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
+	model := setupModel(t, modelOpts{})
 	updated, cmd := model.Update(input.SemanticAction{Kind: input.ActionOpenPicker, TargetID: "req-1"})
 	if updated != model {
 		t.Fatal("expected model pointer to remain stable")

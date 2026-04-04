@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"sync/atomic"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/bootstrap"
@@ -42,6 +43,11 @@ type Model struct {
 	// 业务编排走 orchestrator，不直接通过这两个字段。
 	workbench *workbench.Workbench
 	runtime   *runtime.Runtime
+	cursorOut cursorSequenceWriter
+
+	pendingTerminalInputs []input.TerminalInput
+	terminalInputSending  bool
+	invalidatePending     atomic.Bool
 
 	// 鼠标拖动状态
 	mouseDragPaneID  string
@@ -83,12 +89,7 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 	model.render = render.NewCoordinator(func() render.VisibleRenderState { return model.visibleRenderState() })
 	// Default invalidate: no-op until SetSendFunc is called by run.go.
 	if model.runtime != nil {
-		model.runtime.SetInvalidate(func() {
-			model.render.Invalidate()
-			if model.send != nil {
-				model.send(InvalidateMsg{})
-			}
-		})
+		model.runtime.SetInvalidate(func() { model.queueInvalidate() })
 		model.runtime.SetTitleChange(func(terminalID, title string) {
 			if model.send != nil {
 				model.send(terminalTitleMsg{TerminalID: terminalID, Title: title})
@@ -96,6 +97,13 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 		})
 	}
 	return model
+}
+
+func (m *Model) SetCursorWriter(writer cursorSequenceWriter) {
+	if m == nil {
+		return
+	}
+	m.cursorOut = writer
 }
 
 // SetSendFunc wires p.Send into the model so that the runtime stream goroutine
@@ -106,10 +114,17 @@ func (m *Model) SetSendFunc(send func(tea.Msg)) {
 	}
 	m.send = send
 	if m.runtime != nil {
-		m.runtime.SetInvalidate(func() {
-			m.render.Invalidate()
-			send(InvalidateMsg{})
-		})
+		m.runtime.SetInvalidate(func() { m.queueInvalidate() })
+	}
+}
+
+func (m *Model) queueInvalidate() {
+	if m == nil {
+		return
+	}
+	m.render.Invalidate()
+	if m.send != nil && !m.invalidatePending.Swap(true) {
+		m.send(InvalidateMsg{})
 	}
 }
 

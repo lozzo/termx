@@ -1,10 +1,16 @@
 package app
 
 import (
+	"fmt"
+	"strconv"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/tuiv2/input"
+	"github.com/lozzow/termx/tuiv2/modal"
+	"github.com/lozzow/termx/tuiv2/orchestrator"
 	"github.com/lozzow/termx/tuiv2/render"
+	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -53,4 +59,68 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func (m *Model) ensureRecoverablePane() (string, error) {
+	if m == nil || m.workbench == nil {
+		return "", fmt.Errorf("workbench unavailable")
+	}
+	if pane := m.workbench.ActivePane(); pane != nil && pane.ID != "" {
+		return pane.ID, nil
+	}
+
+	ws := m.workbench.CurrentWorkspace()
+	if ws == nil {
+		return "", fmt.Errorf("no workspace available")
+	}
+	if tab := m.workbench.CurrentTab(); tab != nil {
+		if len(tab.Panes) > 0 {
+			if tab.ActivePaneID != "" {
+				return tab.ActivePaneID, nil
+			}
+			return "", fmt.Errorf("current tab has no active pane")
+		}
+		paneID := shared.NextPaneID()
+		if err := m.workbench.CreateFirstPane(tab.ID, paneID); err != nil {
+			return "", err
+		}
+		m.render.Invalidate()
+		return paneID, nil
+	}
+
+	tabID := shared.NextTabID()
+	paneID := shared.NextPaneID()
+	name := strconv.Itoa(len(ws.Tabs) + 1)
+	if err := m.workbench.CreateTab(ws.Name, tabID, name); err != nil {
+		return "", err
+	}
+	if err := m.workbench.CreateFirstPane(tabID, paneID); err != nil {
+		return "", err
+	}
+	_ = m.workbench.SwitchTab(ws.Name, len(ws.Tabs)-1)
+	m.render.Invalidate()
+	return paneID, nil
+}
+
+func (m *Model) openPickerForPaneCmd(paneID string) tea.Cmd {
+	if m == nil || m.modalHost == nil || paneID == "" {
+		return nil
+	}
+	m.resetPickerState()
+	m.modalHost.StartLoading(input.ModePicker, paneID)
+	m.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: paneID})
+	m.render.Invalidate()
+	return m.effectCmd(orchestrator.LoadPickerItemsEffect{})
+}
+
+func (m *Model) openTerminalManagerCmd() tea.Cmd {
+	if m == nil {
+		return nil
+	}
+	m.terminalPage = &modal.TerminalManagerState{
+		Title: "Terminal Pool",
+	}
+	m.input.SetMode(input.ModeState{Kind: input.ModeTerminalManager, RequestID: terminalPoolPageModeToken})
+	m.render.Invalidate()
+	return m.loadTerminalManagerItemsCmd()
 }
