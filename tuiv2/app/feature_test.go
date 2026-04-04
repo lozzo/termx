@@ -203,6 +203,19 @@ func assertActivePane(t *testing.T, model *Model, expectedID string) {
 	}
 }
 
+func createWorkspaceViaPrompt(t *testing.T, model *Model, name string) {
+	t.Helper()
+	model.input.SetMode(input.ModeState{Kind: input.ModeWorkspace})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCreateWorkspace})
+	assertMode(t, model, input.ModePrompt)
+	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "rename-workspace" || model.modalHost.Prompt.Original != "" {
+		t.Fatalf("expected create-workspace prompt state, got %#v", model.modalHost.Prompt)
+	}
+	model.modalHost.Prompt.Value = name
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt})
+	assertMode(t, model, input.ModeNormal)
+}
+
 func findFloating(tab *workbench.TabState, paneID string) *workbench.FloatingState {
 	for _, f := range tab.Floating {
 		if f.PaneID == paneID {
@@ -724,7 +737,7 @@ func TestFeatureWorkspaceCreate(t *testing.T) {
 	model := setupModel(t, modelOpts{})
 	initialWs := model.workbench.CurrentWorkspace().Name
 
-	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCreateWorkspace})
+	createWorkspaceViaPrompt(t, model, "dev")
 
 	ws := model.workbench.CurrentWorkspace()
 	if ws.Name == initialWs {
@@ -736,9 +749,30 @@ func TestFeatureWorkspaceCreate(t *testing.T) {
 	}
 }
 
+func TestFeatureWorkspaceCreateRejectsEmptyName(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	model.input.SetMode(input.ModeState{Kind: input.ModeWorkspace})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCreateWorkspace})
+
+	assertMode(t, model, input.ModePrompt)
+	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "rename-workspace" || model.modalHost.Prompt.Original != "" {
+		t.Fatalf("expected create-workspace prompt state, got %#v", model.modalHost.Prompt)
+	}
+	model.modalHost.Prompt.Value = "   "
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt})
+
+	assertMode(t, model, input.ModePrompt)
+	if ws := model.workbench.CurrentWorkspace(); ws == nil || ws.Name != "main" {
+		t.Fatalf("expected current workspace to remain main, got %#v", ws)
+	}
+	if got := len(model.workbench.ListWorkspaces()); got != 1 {
+		t.Fatalf("expected no new workspace on empty name, got %d", got)
+	}
+}
+
 func TestFeatureWorkspaceSwitch(t *testing.T) {
 	model := setupModel(t, modelOpts{})
-	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCreateWorkspace})
+	createWorkspaceViaPrompt(t, model, "dev")
 	newWs := model.workbench.CurrentWorkspace().Name
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSwitchWorkspace, Text: "main"})
@@ -757,7 +791,7 @@ func TestFeatureWorkspaceSwitch(t *testing.T) {
 
 func TestFeatureWorkspaceDelete(t *testing.T) {
 	model := setupModel(t, modelOpts{})
-	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCreateWorkspace})
+	createWorkspaceViaPrompt(t, model, "dev")
 	if len(model.workbench.ListWorkspaces()) != 2 {
 		t.Fatal("expected 2 workspaces before delete")
 	}
@@ -792,7 +826,7 @@ func TestFeatureWorkspaceRename(t *testing.T) {
 
 func TestFeatureWorkspaceNextPrev(t *testing.T) {
 	model := setupModel(t, modelOpts{})
-	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCreateWorkspace})
+	createWorkspaceViaPrompt(t, model, "dev")
 	secondWs := model.workbench.CurrentWorkspace().Name
 
 	model.input.SetMode(input.ModeState{Kind: input.ModeWorkspace})
@@ -1169,31 +1203,22 @@ func TestFeaturePickerCreateFlow(t *testing.T) {
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: "pane-1"})
 
 	assertMode(t, model, input.ModePrompt)
-	if model.modalHost.Prompt.Kind != "create-terminal-name" {
-		t.Fatalf("expected create-terminal-name prompt, got %q", model.modalHost.Prompt.Kind)
+	if model.modalHost.Prompt.Kind != "create-terminal-form" {
+		t.Fatalf("expected create-terminal-form prompt, got %q", model.modalHost.Prompt.Kind)
 	}
-
-	// Set name and submit
-	model.modalHost.Prompt.Value = "my-term"
-	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: "pane-1"})
-
-	if model.modalHost.Prompt.Kind != "create-terminal-tags" {
-		t.Fatalf("expected create-terminal-tags prompt, got %q", model.modalHost.Prompt.Kind)
-	}
-	if model.modalHost.Prompt.Name != "my-term" {
-		t.Fatalf("expected prompt.Name my-term, got %q", model.modalHost.Prompt.Name)
-	}
-
-	// Submit tags
-	model.modalHost.Prompt.Value = "env=test"
+	model.modalHost.Prompt.Field("name").Value = "my-term"
+	model.modalHost.Prompt.Field("name").Cursor = len([]rune("my-term"))
+	model.modalHost.Prompt.Field("tags").Value = "env=test"
+	model.modalHost.Prompt.Field("tags").Cursor = len([]rune("env=test"))
+	model.modalHost.Prompt.ActiveField = 3
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: "pane-1"})
 
 	// After create, the pane should be bound
 	if len(client.createCalls) != 1 {
 		t.Fatalf("expected 1 create call, got %d", len(client.createCalls))
 	}
-	if client.createCalls[0].name != "my-term" {
-		t.Fatalf("expected create name my-term, got %q", client.createCalls[0].name)
+	if client.createCalls[0].params.Name != "my-term" {
+		t.Fatalf("expected create name my-term, got %q", client.createCalls[0].params.Name)
 	}
 }
 
@@ -1225,7 +1250,7 @@ func TestFeaturePickerSplitCreateFlowSetsSplitTarget(t *testing.T) {
 func TestFeatureWorkspacePickerOpenSwitchClose(t *testing.T) {
 	model := setupModel(t, modelOpts{})
 	// Create a second workspace
-	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCreateWorkspace})
+	createWorkspaceViaPrompt(t, model, "dev")
 	secondWs := model.workbench.CurrentWorkspace().Name
 	// Switch back to main
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSwitchWorkspace, Text: "main"})
@@ -1289,18 +1314,18 @@ func TestFeatureWorkspacePickerCreateRowCreatesWorkspace(t *testing.T) {
 	model.modalHost.WorkspacePicker.Selected = createIdx
 
 	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt})
-	if cmd == nil {
-		t.Fatal("expected create workspace command")
+	if cmd != nil {
+		drainCmd(t, model, cmd, 20)
 	}
-	msg := cmd()
-	action, ok := msg.(input.SemanticAction)
-	if !ok || action.Kind != input.ActionCreateWorkspace {
-		t.Fatalf("expected create workspace action, got %#v", msg)
+	assertMode(t, model, input.ModePrompt)
+	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "rename-workspace" || model.modalHost.Prompt.Original != "" {
+		t.Fatalf("expected create-workspace prompt state, got %#v", model.modalHost.Prompt)
 	}
-	dispatchAction(t, model, action)
+	model.modalHost.Prompt.Value = "dev"
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt})
 
 	ws := model.workbench.CurrentWorkspace()
-	if ws == nil || ws.Name == "" || ws.Name == "main" {
+	if ws == nil || ws.Name != "dev" {
 		t.Fatalf("expected newly created workspace to become current, got %#v", ws)
 	}
 	assertMode(t, model, input.ModeNormal)
@@ -2401,7 +2426,7 @@ func TestFeatureMultipleWorkspacesWithTabs(t *testing.T) {
 	model := setupModel(t, modelOpts{})
 
 	// Create second workspace
-	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCreateWorkspace})
+	createWorkspaceViaPrompt(t, model, "dev")
 	secondWsName := model.workbench.CurrentWorkspace().Name
 	// Create a tab in second workspace
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCreateTab})

@@ -184,9 +184,8 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		case input.ActionSubmitPrompt:
 			if selected := m.modalHost.WorkspacePicker.SelectedItem(); selected != nil {
 				if selected.CreateNew {
-					return true, func() tea.Msg {
-						return input.SemanticAction{Kind: input.ActionCreateWorkspace}
-					}
+					m.openCreateWorkspaceNamePrompt(input.ModeNormal)
+					return true, nil
 				}
 				return true, func() tea.Msg {
 					return input.SemanticAction{Kind: input.ActionSwitchWorkspace, Text: selected.Name}
@@ -197,15 +196,8 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			if m.workbench == nil {
 				return true, nil
 			}
-			name := shared.NextWorkspaceID()
-			if err := m.workbench.CreateWorkspace(name); err != nil {
-				return true, m.showError(err)
-			}
-			_ = m.workbench.SwitchWorkspace(name)
-			m.modalHost.Close(input.ModeWorkspacePicker, m.modalHost.Session.RequestID)
-			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
-			m.render.Invalidate()
-			return true, tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
+			m.openCreateWorkspaceNamePrompt(input.ModeNormal)
+			return true, nil
 		case input.ActionDeleteWorkspace:
 			if m.workbench == nil {
 				return true, nil

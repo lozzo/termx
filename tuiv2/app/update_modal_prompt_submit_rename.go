@@ -2,11 +2,13 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
+	"github.com/lozzow/termx/tuiv2/shared"
 )
 
 func (m *Model) submitRenameTabPrompt(prompt *modal.PromptState) tea.Cmd {
@@ -41,16 +43,28 @@ func (m *Model) submitRenameWorkspacePrompt(prompt *modal.PromptState) tea.Cmd {
 	if m == nil || prompt == nil || m.modalHost == nil {
 		return nil
 	}
-	name := strings.TrimSpace(prompt.Value)
-	if name == "" {
-		name = strings.TrimSpace(prompt.Original)
-	}
 	original := strings.TrimSpace(prompt.Original)
+	name := strings.TrimSpace(prompt.Value)
 	if m.workbench == nil {
 		return func() tea.Msg { return context.Canceled }
 	}
-	if err := m.workbench.RenameWorkspace(original, name); err != nil {
-		return func() tea.Msg { return err }
+	if original == "" {
+		if name == "" {
+			return m.showError(shared.UserVisibleError{Op: "create workspace", Err: errors.New("name is required")})
+		}
+		if err := m.workbench.CreateWorkspace(name); err != nil {
+			return func() tea.Msg { return err }
+		}
+		if !m.workbench.SwitchWorkspace(name) {
+			return func() tea.Msg { return context.Canceled }
+		}
+	} else {
+		if name == "" {
+			name = original
+		}
+		if err := m.workbench.RenameWorkspace(original, name); err != nil {
+			return func() tea.Msg { return err }
+		}
 	}
 	requestID := ""
 	if m.modalHost.Session != nil {
@@ -59,5 +73,5 @@ func (m *Model) submitRenameWorkspacePrompt(prompt *modal.PromptState) tea.Cmd {
 	m.modalHost.Close(input.ModePrompt, requestID)
 	m.restorePromptReturnMode(prompt)
 	m.render.Invalidate()
-	return m.saveStateCmd()
+	return tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
 }

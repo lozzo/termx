@@ -7,7 +7,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
-	"github.com/lozzow/termx/tuiv2/shared"
 )
 
 func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
@@ -138,14 +137,8 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		if m.input.Mode().Kind != input.ModeWorkspace || m.workbench == nil {
 			return false, nil
 		}
-		name := shared.NextWorkspaceID()
-		if err := m.workbench.CreateWorkspace(name); err != nil {
-			return true, m.showError(err)
-		}
-		_ = m.workbench.SwitchWorkspace(name)
-		m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
-		m.render.Invalidate()
-		return true, m.saveStateCmd()
+		m.openCreateWorkspaceNamePrompt(input.ModeNormal)
+		return true, nil
 	case input.ActionDeleteWorkspace:
 		if m.input.Mode().Kind != input.ModeWorkspace || m.workbench == nil {
 			return false, nil
