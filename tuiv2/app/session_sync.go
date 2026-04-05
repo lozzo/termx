@@ -77,41 +77,12 @@ func (m *Model) updateSessionViewCmd() tea.Cmd {
 }
 
 func (m *Model) acquireSessionLeaseAndResizeCmd(paneID, terminalID string) tea.Cmd {
-	if m == nil || m.sessionID == "" || m.sessionViewID == "" || m.runtime == nil || m.runtime.Client() == nil {
-		return m.resizePaneIfNeededCmd(paneID)
-	}
-	if paneID == "" || terminalID == "" {
-		return nil
-	}
-	client := m.runtime.Client()
-	params := protocol.AcquireSessionLeaseParams{
-		SessionID:  m.sessionID,
-		ViewID:     m.sessionViewID,
-		PaneID:     paneID,
-		TerminalID: terminalID,
-	}
-	return func() tea.Msg {
-		lease, err := client.AcquireSessionLease(context.Background(), params)
-		if err != nil {
-			if isSessionLeaseUnsupported(err) {
-				return fmt.Errorf("connected termx daemon is too old for shared resize control; restart the daemon and reconnect")
-			}
-			return err
-		}
-		if lease != nil {
-			if m.sessionLeases == nil {
-				m.sessionLeases = make(map[string]protocol.LeaseInfo)
-			}
-			m.sessionLeases[lease.TerminalID] = *lease
-		}
-		if m.runtime != nil {
-			m.runtime.ApplySessionLeases(m.sessionViewID, m.currentSessionLeases())
-		}
-		if cmd := m.resizePaneIfNeededCmd(paneID); cmd != nil {
-			return cmd()
-		}
-		return nil
-	}
+	return m.syncTerminalInteractionCmd(terminalInteractionRequest{
+		PaneID:           paneID,
+		TerminalID:       terminalID,
+		ResizeIfNeeded:   true,
+		ExplicitTakeover: true,
+	})
 }
 
 func (m *Model) releaseSessionLeaseCmd(terminalID string) tea.Cmd {

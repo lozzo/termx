@@ -176,9 +176,7 @@ func (c *Coordinator) RenderFrame() string {
 	tabBar := c.renderTabBarCached(state)
 	statusBar := c.renderStatusBarCached(state)
 	bodyHeight := FrameBodyHeight(state.TermSize.Height)
-	currentCoordinator = c
-	rendered := renderBodyFrame(state, state.TermSize.Width, bodyHeight)
-	currentCoordinator = nil
+	rendered := renderBodyFrameWithCoordinator(c, state, state.TermSize.Width, bodyHeight)
 	body := rendered.content
 	cursor := rendered.cursor
 
@@ -315,10 +313,14 @@ func (c *Coordinator) renderStatusBarCached(state VisibleRenderState) string {
 }
 
 func renderBody(state VisibleRenderState, width, height int) string {
-	return renderBodyFrame(state, width, height).content
+	return renderBodyFrameWithCoordinator(nil, state, width, height).content
 }
 
 func renderBodyFrame(state VisibleRenderState, width, height int) renderedBody {
+	return renderBodyFrameWithCoordinator(nil, state, width, height)
+}
+
+func renderBodyFrameWithCoordinator(coordinator *Coordinator, state VisibleRenderState, width, height int) renderedBody {
 	if width <= 0 || height <= 0 {
 		return renderedBody{}
 	}
@@ -342,7 +344,7 @@ func renderBodyFrame(state VisibleRenderState, width, height int) renderedBody {
 	lookup := newRuntimeLookup(state.Runtime)
 	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, lookup, state.OwnerConfirmPaneID, state.EmptyPaneSelectionPaneID, state.EmptyPaneSelectionIndex, uiThemeForRuntime(state.Runtime))
 
-	canvas := renderBodyCanvas(state, entries, width, height)
+	canvas := renderBodyCanvas(coordinator, state, entries, width, height)
 	return renderedBody{
 		content: canvas.contentString(),
 		cursor:  canvas.cursorANSI(),
@@ -440,8 +442,7 @@ func renderActiveOverlay(state VisibleRenderState, termSize TermSize) string {
 	}
 }
 
-func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width, height int) *composedCanvas {
-	coordinator := stateCoordinator(state)
+func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entries []paneRenderEntry, width, height int) *composedCanvas {
 	if coordinator == nil {
 		canvas := newComposedCanvas(width, height)
 		canvas.cursorOffsetY = TopChromeRows
@@ -455,6 +456,7 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 	if cache == nil || !cache.matches(entries, width, height) {
 		canvas := newComposedCanvas(width, height)
 		canvas.cursorOffsetY = TopChromeRows
+		canvas.syntheticCursorVisibleFn = coordinator.syntheticCursorVisible
 		for _, entry := range entries {
 			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
@@ -466,10 +468,11 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 	// Overlapping panes need a full rebuild. The cached active-pane refresh path
 	// redraws the active pane content to clear the old cursor, which is correct
 	// for tiled layouts but will paint over floating panes layered above it.
-	if entriesOverlap(entries) {
-		canvas := newComposedCanvas(width, height)
-		canvas.cursorOffsetY = TopChromeRows
-		for _, entry := range entries {
+		if entriesOverlap(entries) {
+			canvas := newComposedCanvas(width, height)
+			canvas.cursorOffsetY = TopChromeRows
+			canvas.syntheticCursorVisibleFn = coordinator.syntheticCursorVisible
+			for _, entry := range entries {
 			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 		}
@@ -505,16 +508,6 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 
 	return cache.canvas
 }
-
-func stateCoordinator(state VisibleRenderState) *Coordinator {
-	// renderBodyFrame is only called from Coordinator.RenderFrame on the same goroutine.
-	// We stash the active coordinator in the state via a private field substitute:
-	// since we don't have that field, use the singleton current coordinator path.
-	// This helper exists only to keep cache plumbing local.
-	return currentCoordinator
-}
-
-var currentCoordinator *Coordinator
 
 func restoreActiveEntryContent(canvas *composedCanvas, entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) {
 	if canvas == nil {
@@ -1003,7 +996,7 @@ func drawSyntheticCursor(canvas *composedCanvas, x, y int, cursor protocol.Curso
 		return
 	}
 	canvas.syntheticCursorBlink = true
-	if coordinator := currentCoordinator; coordinator != nil && !coordinator.syntheticCursorVisible(cursor) {
+	if canvas.syntheticCursorVisibleFn != nil && !canvas.syntheticCursorVisibleFn(cursor) {
 		return
 	}
 	leadX := x

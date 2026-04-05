@@ -108,17 +108,13 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		}
 		m.ownerConfirmPaneID = ""
 		m.ownerSeq++
-		if m.sessionID != "" {
-			return true, m.acquireSessionLeaseAndResizeCmd(paneID, pane.TerminalID)
-		}
-		if err := m.runtime.AcquireTerminalOwnership(paneID, pane.TerminalID); err != nil {
-			return true, m.showError(err)
-		}
 		m.render.Invalidate()
-		if m.runtime.Client() == nil {
-			return true, nil
-		}
-		return true, m.resizePaneIfNeededCmd(paneID)
+		return true, m.syncTerminalInteractionCmd(terminalInteractionRequest{
+			PaneID:           paneID,
+			TerminalID:       pane.TerminalID,
+			ResizeIfNeeded:   true,
+			ExplicitTakeover: true,
+		})
 	case input.ActionOpenPrompt:
 		if m.input.Mode().Kind == input.ModeNormal {
 			m.input.SetMode(input.ModeState{Kind: input.ModeResize})

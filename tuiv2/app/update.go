@@ -30,33 +30,56 @@ func (m *Model) Init() tea.Cmd {
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if cmd, ok := m.handleInteractionMessage(msg); ok {
+		return m, cmd
+	}
+	if cmd, ok := m.handleUIStateMessage(msg); ok {
+		return m, cmd
+	}
+	if cmd, ok := m.handleSessionMessage(msg); ok {
+		return m, cmd
+	}
+	if cmd, ok := m.handleLifecycleMessage(msg); ok {
+		return m, cmd
+	}
+	return m, nil
+}
+
+func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 	switch typed := msg.(type) {
 	case tea.MouseMsg:
-		return m, m.handleMouseMsg(typed)
+		return m.handleMouseMsg(typed), true
 	case tea.KeyMsg:
-		return m, m.handleKeyMsg(typed)
+		return m.handleKeyMsg(typed), true
 	case prefixTimeoutMsg:
 		if typed.seq == m.prefixSeq && m.isStickyMode() {
 			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
 			m.render.Invalidate()
 		}
-		return m, nil
+		return nil, true
 	case SemanticActionMsg:
-		return m, m.dispatchSemanticActionCmd(typed.Action, true)
+		return m.dispatchSemanticActionCmd(typed.Action, true), true
 	case input.SemanticAction:
-		return m, m.dispatchSemanticActionCmd(typed, true)
+		return m.dispatchSemanticActionCmd(typed, true), true
 	case TerminalInputMsg:
-		return m, m.handleTerminalInput(typed.Input)
+		return m.handleTerminalInput(typed.Input), true
 	case input.TerminalInput:
-		return m, m.handleTerminalInput(typed)
+		return m.handleTerminalInput(typed), true
 	case terminalInputSentMsg:
 		next := m.dequeueTerminalInputCmd()
 		if typed.err != nil {
-			return m, tea.Batch(m.showError(typed.err), next)
+			return tea.Batch(m.showError(typed.err), next), true
 		}
-		return m, next
+		return next, true
 	case sequenceMsg:
-		return m, m.nextSequenceCmd(typed)
+		return m.nextSequenceCmd(typed), true
+	default:
+		return nil, false
+	}
+}
+
+func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
+	switch typed := msg.(type) {
 	case pickerItemsLoadedMsg:
 		if m.modalHost != nil {
 			if m.modalHost.Picker == nil {
@@ -72,7 +95,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.render.Invalidate()
-		return m, nil
+		return nil, true
 	case terminalManagerItemsLoadedMsg:
 		if m.terminalPage == nil {
 			m.terminalPage = &modal.TerminalManagerState{}
@@ -80,64 +103,71 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.terminalPage.Items = typed.Items
 		m.terminalPage.ApplyFilter()
 		m.render.Invalidate()
-		return m, nil
+		return nil, true
 	case orchestrator.KillTerminalEffect:
-		return m, m.effectCmd(typed)
+		return m.effectCmd(typed), true
 	case EffectAppliedMsg:
 		m.applyEffectSideState(typed.Effect)
-		return m, nil
+		return nil, true
 	case orchestrator.TerminalAttachedMsg:
 		if m.modalHost != nil && m.modalHost.Session != nil && m.modalHost.Session.Kind == input.ModePicker {
 			m.modalHost.Close(input.ModePicker, m.modalHost.Session.RequestID)
 			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
 		}
 		m.render.Invalidate()
-		return m, m.saveStateCmd()
+		return m.saveStateCmd(), true
 	case orchestrator.SnapshotLoadedMsg:
 		m.render.Invalidate()
-		return m, m.maybeAutoFitFloatingPanesCmd()
+		return m.maybeAutoFitFloatingPanesCmd(), true
 	case hostDefaultColorsMsg:
 		if m.runtime != nil {
 			m.runtime.SetHostDefaultColors(typed.FG, typed.BG)
 		}
-		return m, nil
+		return nil, true
 	case hostPaletteColorMsg:
 		if m.runtime != nil {
 			m.runtime.SetHostPaletteColor(typed.Index, typed.Color)
 		}
-		return m, nil
+		return nil, true
 	case reattachFailedMsg:
-		return m, m.openPickerIfUnattached(typed.paneID)
+		return m.openPickerIfUnattached(typed.paneID), true
 	case clearErrorMsg:
 		if typed.seq != m.errorSeq {
-			return m, nil
+			return nil, true
 		}
 		m.err = nil
 		m.render.Invalidate()
-		return m, nil
+		return nil, true
 	case clearOwnerConfirmMsg:
 		if typed.seq != m.ownerSeq {
-			return m, nil
+			return nil, true
 		}
 		m.ownerConfirmPaneID = ""
 		m.render.Invalidate()
-		return m, nil
+		return nil, true
 	case terminalTitleMsg:
 		m.render.Invalidate()
-		return m, nil
+		return nil, true
+	default:
+		return nil, false
+	}
+}
+
+func (m *Model) handleSessionMessage(msg tea.Msg) (tea.Cmd, bool) {
+	switch typed := msg.(type) {
 	case sessionSnapshotMsg:
 		if typed.Snapshot != nil && typed.Snapshot.Session.Revision != m.sessionRevision {
 			m.applySessionSnapshot(typed.Snapshot)
 		}
 		if typed.Err != nil {
-			return m, m.showError(typed.Err)
+			return m.showError(typed.Err), true
 		}
-		return m, nil
+		return nil, true
 	case sessionEventMsg:
 		switch typed.Event.Type {
 		case protocol.EventSessionDeleted:
 			if typed.Event.SessionID == m.sessionID {
-				return m, m.showError(fmt.Errorf("session %s was deleted", m.sessionID))
+				return m.showError(fmt.Errorf("session %s was deleted", m.sessionID)), true
 			}
 		case protocol.EventSessionCreated, protocol.EventSessionUpdated:
 			if typed.Event.SessionID == m.sessionID {
@@ -148,31 +178,38 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					viewID = typed.Event.Session.ViewID
 				}
 				if revision > m.sessionRevision && viewID != m.sessionViewID {
-					return m, m.pullSessionCmd()
+					return m.pullSessionCmd(), true
 				}
 			}
 		}
-		return m, nil
+		return nil, true
 	case sessionViewUpdatedMsg:
 		if typed.View != nil && typed.View.ViewID != "" {
 			m.sessionViewID = typed.View.ViewID
 		}
 		if typed.Err != nil {
-			return m, m.showError(typed.Err)
+			return m.showError(typed.Err), true
 		}
-		return m, nil
+		return nil, true
+	default:
+		return nil, false
+	}
+}
+
+func (m *Model) handleLifecycleMessage(msg tea.Msg) (tea.Cmd, bool) {
+	switch typed := msg.(type) {
 	case InvalidateMsg:
 		m.invalidatePending.Store(false)
 		m.render.Invalidate()
 		if m.invalidateDeferred.Swap(false) {
 			m.queueInvalidate()
 		}
-		return m, m.maybeAutoFitFloatingPanesCmd()
+		return m.maybeAutoFitFloatingPanesCmd(), true
 	case RenderTickMsg:
 		if m.render != nil {
 			m.render.AdvanceCursorBlink()
 		}
-		return m, nil
+		return nil, true
 	case tea.WindowSizeMsg:
 		oldBodyRect := m.bodyRect()
 		newBodyRect := workbench.Rect{W: maxInt(1, typed.Width), H: render.FrameBodyHeight(typed.Height)}
@@ -186,11 +223,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = typed.Width
 		m.height = typed.Height
 		m.render.Invalidate()
-		return m, batchCmds(m.resizeVisiblePanesCmd(), m.maybeAutoFitFloatingPanesCmd(), m.updateSessionViewCmd())
+		return batchCmds(m.resizeVisiblePanesCmd(), m.maybeAutoFitFloatingPanesCmd(), m.updateSessionViewCmd()), true
 	case error:
-		return m, m.showError(typed)
+		return m.showError(typed), true
 	default:
-		return m, nil
+		return nil, false
 	}
 }
 

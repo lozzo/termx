@@ -200,25 +200,11 @@ func (m *Model) resizeActivePaneIfNeededCmd() tea.Cmd {
 	return m.resizePaneIfNeededCmd("")
 }
 
-func (m *Model) maybeSyncActivePaneInteractiveOwnershipCmd() tea.Cmd {
-	if m == nil || m.workbench == nil || m.runtime == nil || m.sessionID != "" {
-		return nil
-	}
-	pane := m.workbench.ActivePane()
-	if pane == nil || pane.ID == "" || pane.TerminalID == "" {
-		return nil
-	}
-	terminal := m.runtime.Registry().Get(pane.TerminalID)
-	if terminal == nil || terminal.OwnerPaneID == pane.ID || len(terminal.BoundPaneIDs) < 2 {
-		return nil
-	}
-	if terminal.Snapshot == nil || !terminal.Snapshot.Cursor.Visible {
-		return nil
-	}
-	if err := m.runtime.AcquireTerminalOwnership(pane.ID, pane.TerminalID); err != nil {
-		return m.showError(err)
-	}
-	return m.resizePaneIfNeededCmd(pane.ID)
+func (m *Model) syncActivePaneInteractiveOwnershipCmd() tea.Cmd {
+	return m.syncTerminalInteractionCmd(terminalInteractionRequest{
+		ResizeIfNeeded:           true,
+		ImplicitInteractiveOwner: true,
+	})
 }
 
 func (m *Model) resizeCmdForAction(action input.SemanticAction) tea.Cmd {
@@ -248,5 +234,5 @@ func (m *Model) resizeCmdForAction(action input.SemanticAction) tea.Cmd {
 }
 
 func (m *Model) syncActivePaneOwnershipAndResizeCmd() tea.Cmd {
-	return m.resizeActivePaneIfNeededCmd()
+	return m.syncTerminalInteractionCmd(terminalInteractionRequest{ResizeIfNeeded: true})
 }

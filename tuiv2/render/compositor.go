@@ -45,6 +45,7 @@ type composedCanvas struct {
 	cursorBlink   bool
 
 	syntheticCursorBlink bool
+	syntheticCursorVisibleFn func(protocol.CursorState) bool
 }
 
 var styleANSICache sync.Map

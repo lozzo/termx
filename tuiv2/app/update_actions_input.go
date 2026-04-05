@@ -5,7 +5,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -82,65 +81,30 @@ func (m *Model) dequeueTerminalInputCmd() tea.Cmd {
 }
 
 func (m *Model) prepareTerminalInput(ctx context.Context, paneID string) error {
-	if m == nil || m.workbench == nil || paneID == "" {
+	target, ok := m.resolveTerminalInteractionTarget(terminalInteractionRequest{PaneID: paneID})
+	if !ok {
 		return nil
 	}
-	tabState := m.workbench.CurrentTab()
-	if tabState == nil {
-		return nil
-	}
-	pane := tabState.Panes[paneID]
-	if pane == nil || pane.TerminalID == "" {
-		return nil
-	}
-	if m.sessionID == "" {
-		_, rect, _ := m.visiblePaneForInput(paneID)
-		return m.ensurePaneTerminalSize(ctx, pane.ID, pane.TerminalID, rect)
-	}
-	_, rect, _ := m.visiblePaneForInput(paneID)
-	return m.ensurePaneTerminalSize(ctx, pane.ID, pane.TerminalID, rect)
+	return m.syncTerminalInteraction(ctx, terminalInteractionRequest{
+		PaneID:               target.paneID,
+		TerminalID:           target.terminalID,
+		Rect:                 target.rect,
+		ResizeIfNeeded:       true,
+		ImplicitSessionLease: true,
+	}, target)
 }
 
 func (m *Model) ensurePaneTerminalSize(ctx context.Context, paneID, terminalID string, rect workbench.Rect) error {
-	if m == nil || m.runtime == nil {
-		return nil
-	}
-	if m.runtime.Client() == nil {
-		return nil
-	}
-	if paneID == "" || terminalID == "" {
-		return nil
-	}
-	if m.sessionID != "" && m.sessionViewID != "" && m.runtime.Client() != nil && m.implicitSessionLeaseNeedsAcquire(terminalID, paneID) {
-		lease, err := m.runtime.Client().AcquireSessionLease(ctx, protocol.AcquireSessionLeaseParams{
-			SessionID:  m.sessionID,
-			ViewID:     m.sessionViewID,
-			PaneID:     paneID,
-			TerminalID: terminalID,
-		})
-		if err != nil {
-			if isSessionLeaseUnsupported(err) {
-				return sharedInputLeaseUnsupportedError()
-			}
-			return err
-		}
-		if lease != nil {
-			if m.sessionLeases == nil {
-				m.sessionLeases = make(map[string]protocol.LeaseInfo)
-			}
-			m.sessionLeases[lease.TerminalID] = *lease
-		}
-		m.runtime.ApplySessionLeases(m.sessionViewID, m.currentSessionLeases())
-	}
-	if rect.W <= 0 || rect.H <= 0 {
-		return nil
-	}
-	targetCols := uint16(maxInt(2, rect.W-2))
-	targetRows := uint16(maxInt(2, rect.H-2))
-	if m.terminalAlreadySized(terminalID, targetCols, targetRows) {
-		return nil
-	}
-	return m.runtime.ResizeTerminal(ctx, paneID, terminalID, targetCols, targetRows)
+	return m.syncTerminalInteraction(ctx, terminalInteractionRequest{
+		PaneID:         paneID,
+		TerminalID:     terminalID,
+		Rect:           rect,
+		ResizeIfNeeded: true,
+	}, terminalInteractionTarget{
+		paneID:     paneID,
+		terminalID: terminalID,
+		rect:       rect,
+	})
 }
 
 func (m *Model) implicitSessionLeaseNeedsAcquire(terminalID, paneID string) bool {

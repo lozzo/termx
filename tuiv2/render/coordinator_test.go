@@ -376,9 +376,7 @@ func TestRenderBodyCachedOverlapDoesNotPaintActivePaneOverFloating(t *testing.T)
 	}}
 
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
-	currentCoordinator = coordinator
-	body := xansi.Strip(renderBody(state, 40, 14))
-	currentCoordinator = nil
+	body := xansi.Strip(renderBodyFrameWithCoordinator(coordinator, state, 40, 14).content)
 	lines := strings.Split(body, "\n")
 	if got := string([]rune(lines[6])[12]); got != " " {
 		t.Fatalf("expected floating interior blank on first render, got %q in %q", got, lines[6])
@@ -386,9 +384,7 @@ func TestRenderBodyCachedOverlapDoesNotPaintActivePaneOverFloating(t *testing.T)
 
 	snapshot.Screen.Cells[0][0].Content = "Z"
 
-	currentCoordinator = coordinator
-	body = xansi.Strip(renderBody(state, 40, 14))
-	currentCoordinator = nil
+	body = xansi.Strip(renderBodyFrameWithCoordinator(coordinator, state, 40, 14).content)
 	lines = strings.Split(body, "\n")
 	if got := string([]rune(lines[6])[12]); got != " " {
 		t.Fatalf("expected cached overlap render to preserve floating interior, got %q in %q", got, lines[6])
