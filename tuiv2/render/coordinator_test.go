@@ -74,6 +74,87 @@ func TestRenderFrameContainsPaneBorder(t *testing.T) {
 	}
 }
 
+func TestDrawPaneFrameUsesTieredChromeStylesForActivePane(t *testing.T) {
+	canvas := newComposedCanvas(40, 6)
+	rect := workbench.Rect{X: 0, Y: 0, W: 40, H: 6}
+	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
+	border := paneBorderInfo{StateLabel: "●", ShareLabel: "⇄2", RoleLabel: "◆ owner"}
+
+	drawPaneFrame(canvas, rect, "demo", border, theme, paneOverflowHints{}, true, false)
+	layout, ok := paneTopBorderLabelsLayout(rect, "demo", border, paneChromeActionTokensForFrame(rect, "demo", border, false))
+	if !ok {
+		t.Fatal("expected pane chrome layout")
+	}
+	if len(layout.actionSlots) == 0 {
+		t.Fatal("expected action slots in pane chrome")
+	}
+
+	titleFG := canvas.cells[rect.Y][layout.titleX].Style.FG
+	metaFG := canvas.cells[rect.Y][layout.stateX].Style.FG
+	actionFG := canvas.cells[rect.Y][layout.actionSlots[0].X].Style.FG
+
+	if titleFG == "" || metaFG == "" || actionFG == "" {
+		t.Fatalf("expected pane chrome styles to set explicit colors, got title=%q meta=%q action=%q", titleFG, metaFG, actionFG)
+	}
+	if titleFG == metaFG {
+		t.Fatalf("expected active pane title to differ from meta, both %q", titleFG)
+	}
+	if actionFG == metaFG {
+		t.Fatalf("expected action slots to differ from meta, both %q", actionFG)
+	}
+}
+
+func TestDrawPaneFrameKeepsTopRightCornerAlignedWithWideBorderLabels(t *testing.T) {
+	canvas := newComposedCanvas(40, 6)
+	rect := workbench.Rect{X: 0, Y: 0, W: 40, H: 6}
+	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
+	border := paneBorderInfo{StateLabel: paneRunningIcon(), RoleLabel: "◆ owner"}
+
+	drawPaneFrame(canvas, rect, "demo界", border, theme, paneOverflowHints{}, true, false)
+
+	lines := strings.Split(xansi.Strip(canvas.String()), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected at least two rendered lines, got %d", len(lines))
+	}
+	if got := xansi.StringWidth(lines[0]); got != rect.W {
+		t.Fatalf("expected top border visual width %d, got %d: %q", rect.W, got, lines[0])
+	}
+	if got := xansi.StringWidth(lines[1]); got != rect.W {
+		t.Fatalf("expected second row visual width %d, got %d: %q", rect.W, got, lines[1])
+	}
+	if !strings.HasSuffix(lines[0], "┐") {
+		t.Fatalf("expected top row to end at the right corner, got %q", lines[0])
+	}
+	if !strings.HasSuffix(lines[1], "│") {
+		t.Fatalf("expected second row to end at the right border, got %q", lines[1])
+	}
+}
+
+func TestEmptyPaneActionStylesSeparatePrimarySecondaryAndDanger(t *testing.T) {
+	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
+
+	attach := emptyPaneActionDrawStyle(theme, HitRegionEmptyPaneAttach, false)
+	create := emptyPaneActionDrawStyle(theme, HitRegionEmptyPaneCreate, false)
+	manager := emptyPaneActionDrawStyle(theme, HitRegionEmptyPaneManager, false)
+	close := emptyPaneActionDrawStyle(theme, HitRegionEmptyPaneClose, false)
+
+	if attach.FG == "" || create.FG == "" || manager.FG == "" || close.FG == "" {
+		t.Fatalf("expected empty pane action styles to define colors: %#v %#v %#v %#v", attach, create, manager, close)
+	}
+	if attach.FG == manager.FG {
+		t.Fatalf("expected attach and manager to use different emphasis, both %q", attach.FG)
+	}
+	if close.FG == attach.FG {
+		t.Fatalf("expected close to use danger emphasis, both %q", close.FG)
+	}
+	if !attach.Bold || !create.Bold || close.Bold == false {
+		t.Fatalf("expected primary and danger actions to stay bold: attach=%#v create=%#v close=%#v", attach, create, close)
+	}
+	if manager.Bold {
+		t.Fatalf("expected manager action to be secondary emphasis, got %#v", manager)
+	}
+}
+
 func TestRenderFrameNilCoordinator(t *testing.T) {
 	var c *Coordinator
 	if got := c.RenderFrame(); got != "" {
@@ -102,7 +183,7 @@ func TestRenderFrameHasTabBarAndStatusBar(t *testing.T) {
 	}
 	// Last line should be status bar
 	lastLine := lines[len(lines)-1]
-	if !strings.Contains(lastLine, "ws:main") && !strings.Contains(lastLine, "W WORKSPACE") {
+	if !strings.Contains(lastLine, "[Ctrl]") && !strings.Contains(lastLine, "[P] PANE") {
 		t.Fatalf("last line should be status bar, got %q", lastLine)
 	}
 }
@@ -194,7 +275,7 @@ func TestRenderBodyDrawsFloatingPanesOnTop(t *testing.T) {
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), 100, 28), 100, 30)
 
 	body := renderBody(state, 100, 28)
-	for _, want := range []string{"base", "float"} {
+	for _, want := range []string{"base", "flo"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected body to contain %q:\n%s", want, body)
 		}
@@ -254,6 +335,66 @@ func TestRenderBodyFloatingPaneClearsUnderlyingContent(t *testing.T) {
 	}
 }
 
+func TestRenderBodyCachedOverlapDoesNotPaintActivePaneOverFloating(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:              "tab-1",
+			Name:            "tab 1",
+			ActivePaneID:    "pane-1",
+			FloatingVisible: true,
+			Panes: map[string]*workbench.PaneState{
+				"pane-1":  {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+				"float-1": {ID: "float-1", Title: "float", TerminalID: "term-2"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+			Floating: []*workbench.FloatingState{{
+				PaneID: "float-1",
+				Rect:   workbench.Rect{X: 10, Y: 4, W: 14, H: 6},
+				Z:      0,
+			}},
+		}},
+	})
+
+	snapshot := &protocol.Snapshot{
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+		}},
+	}
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), 40, 14), 40, 16)
+	state.Runtime = &VisibleRuntimeStateProxy{Terminals: []runtime.VisibleTerminal{
+		{TerminalID: "term-1", Snapshot: snapshot},
+		{TerminalID: "term-2", Name: "float", State: "running"},
+	}}
+
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+	currentCoordinator = coordinator
+	body := xansi.Strip(renderBody(state, 40, 14))
+	currentCoordinator = nil
+	lines := strings.Split(body, "\n")
+	if got := string([]rune(lines[6])[12]); got != " " {
+		t.Fatalf("expected floating interior blank on first render, got %q in %q", got, lines[6])
+	}
+
+	snapshot.Screen.Cells[0][0].Content = "Z"
+
+	currentCoordinator = coordinator
+	body = xansi.Strip(renderBody(state, 40, 14))
+	currentCoordinator = nil
+	lines = strings.Split(body, "\n")
+	if got := string([]rune(lines[6])[12]); got != " " {
+		t.Fatalf("expected cached overlap render to preserve floating interior, got %q in %q", got, lines[6])
+	}
+}
+
 func repeatCells(text string) []protocol.Cell {
 	cells := make([]protocol.Cell, 0, len(text))
 	for _, ch := range text {
@@ -282,7 +423,7 @@ func TestRenderBodyShowsActionableEmptyStateForUnboundPane(t *testing.T) {
 	for _, want := range []string{
 		"unconnected",
 		"No terminal attached",
-		"[ Attach existing terminal ]",
+		"Attach existing terminal",
 		"[ Create new terminal ]",
 		"[ Open terminal manager ]",
 		"[ Close pane ]",
@@ -369,7 +510,7 @@ func TestRenderBodyShowsExitedPaneMetaAndPreservesSnapshot(t *testing.T) {
 	}}}
 
 	body := xansi.Strip(renderBody(state, 72, 12))
-	for _, want := range []string{"○42", "last output"} {
+	for _, want := range []string{paneExitedIcon() + "42", "last output"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected exited pane rendering to contain %q:\n%s", want, body)
 		}
@@ -507,7 +648,7 @@ func TestRenderFrameUsesDedicatedTerminalPoolPageLayout(t *testing.T) {
 	state = WithStatus(state, "", "", string(input.ModeTerminalManager))
 	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
 
-	for _, want := range []string{"Terminal Pool", "term-1", "term-2", "[Enter] here", "[Ctrl-E] edit", "TERMINAL-MANAGER", "Enter HERE", "Ctrl-T TAB"} {
+	for _, want := range []string{"Terminal Pool", "term-1", "term-2", "[Enter] here", "[Ctrl-E] edit", "TERMINAL-MANAGER", "[Enter] HERE", "[Ctrl-T] TAB"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("expected terminal pool page to contain %q:\n%s", want, frame)
 		}
@@ -548,7 +689,7 @@ func TestRenderFrameTerminalPoolPageUsesUnifiedStatusBarWhenDetailsOverflow(t *t
 	if strings.Contains(frame, "[Enter] dedicated footer") {
 		t.Fatalf("expected terminal pool page footer to be removed from body:\n%s", frame)
 	}
-	for _, want := range []string{"TERMINAL-MANAGER", "Enter HERE", "Ctrl-T TAB", "Ctrl-O FLOAT", "Esc BACK"} {
+	for _, want := range []string{"TERMINAL-MANAGER", "[Enter] HERE", "[Ctrl-T] TAB", "[Ctrl-O] FLOAT", "[Esc] BACK"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("expected terminal pool unified status hint %q:\n%s", want, frame)
 		}

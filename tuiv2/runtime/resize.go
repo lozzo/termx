@@ -29,7 +29,8 @@ func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, col
 		} else if ownerPaneID != paneID {
 			return nil
 		}
-		if terminalAlreadySized(terminal, cols, rows) {
+		forceResize := terminal.PendingOwnerResize
+		if !forceResize && terminalAlreadySized(terminal, cols, rows) {
 			return nil
 		}
 	}
@@ -37,6 +38,7 @@ func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, col
 		return shared.UserVisibleError{Op: "resize terminal", Err: err}
 	}
 	if terminal != nil {
+		terminal.PendingOwnerResize = false
 		if vt := r.ensureVTerm(terminal); vt != nil {
 			vt.Resize(int(cols), int(rows))
 		}

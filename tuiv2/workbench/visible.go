@@ -2,11 +2,14 @@ package workbench
 
 // VisibleWorkbench 是 render 层消费的只读投影。
 type VisibleWorkbench struct {
-	WorkspaceName  string
-	WorkspaceCount int
-	Tabs           []VisibleTab
-	ActiveTab      int
-	FloatingPanes  []VisiblePane
+	WorkspaceName     string
+	WorkspaceCount    int
+	Tabs              []VisibleTab
+	ActiveTab         int
+	FloatingPanes     []VisiblePane
+	FloatingTotal     int
+	FloatingCollapsed int
+	FloatingHidden    int
 }
 
 type VisibleTab struct {

@@ -212,7 +212,7 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			m.modalHost.Close(input.ModeWorkspacePicker, m.modalHost.Session.RequestID)
 			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
 			m.render.Invalidate()
-			return true, tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
+			return true, m.saveStateCmd()
 		case input.ActionRenameWorkspace:
 			m.openRenameWorkspacePrompt()
 			return true, nil
@@ -226,7 +226,7 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			m.modalHost.Close(input.ModeWorkspacePicker, m.modalHost.Session.RequestID)
 			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
 			m.render.Invalidate()
-			return true, tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
+			return true, m.saveStateCmd()
 		case input.ActionNextWorkspace:
 			if m.workbench == nil {
 				return true, nil
@@ -237,7 +237,7 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			m.modalHost.Close(input.ModeWorkspacePicker, m.modalHost.Session.RequestID)
 			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
 			m.render.Invalidate()
-			return true, tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
+			return true, m.saveStateCmd()
 		default:
 			return false, nil
 		}
@@ -247,6 +247,36 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			m.modalHost.Close(input.ModeHelp, m.modalHost.Session.RequestID)
 			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
 			m.render.Invalidate()
+			return true, nil
+		default:
+			return false, nil
+		}
+	case input.ModeFloatingOverview:
+		if m.modalHost.FloatingOverview == nil {
+			return false, nil
+		}
+		switch action.Kind {
+		case input.ActionPickerUp:
+			m.modalHost.FloatingOverview.Move(-1)
+			m.render.Invalidate()
+			return true, nil
+		case input.ActionPickerDown:
+			m.modalHost.FloatingOverview.Move(1)
+			m.render.Invalidate()
+			return true, nil
+		case input.ActionCancelMode:
+			m.closeFloatingOverview()
+			return true, nil
+		case input.ActionSubmitPrompt:
+			return true, m.focusFloatingOverviewSelection()
+		case input.ActionExpandAllFloatingPanes:
+			return true, m.expandAllFloatingPanes()
+		case input.ActionCollapseAllFloatingPanes:
+			return true, m.collapseAllFloatingPanes()
+		case input.ActionCloseFloatingPane:
+			if selected := m.modalHost.FloatingOverview.SelectedItem(); selected != nil {
+				return true, m.closeFloatingPaneDirect(selected.PaneID)
+			}
 			return true, nil
 		default:
 			return false, nil

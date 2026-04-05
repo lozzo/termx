@@ -42,6 +42,8 @@ type Keymap struct {
 	Picker []Binding
 	// WorkspacePicker holds bindings active in ModeWorkspacePicker.
 	WorkspacePicker []Binding
+	// FloatingOverview holds bindings active in ModeFloatingOverview.
+	FloatingOverview []Binding
 	// Help holds bindings active in ModeHelp.
 	Help []Binding
 }
@@ -76,6 +78,8 @@ func DefaultKeymap() Keymap {
 			km.Picker = append(km.Picker, doc.Binding)
 		case ModeWorkspacePicker:
 			km.WorkspacePicker = append(km.WorkspacePicker, doc.Binding)
+		case ModeFloatingOverview:
+			km.FloatingOverview = append(km.FloatingOverview, doc.Binding)
 		case ModeHelp:
 			km.Help = append(km.Help, doc.Binding)
 		}
@@ -113,6 +117,10 @@ func (km *Keymap) LookupPicker(msg tea.KeyMsg) *SemanticAction {
 // LookupWorkspacePicker returns the SemanticAction bound to msg in ModeWorkspacePicker, or nil.
 func (km *Keymap) LookupWorkspacePicker(msg tea.KeyMsg) *SemanticAction {
 	return lookupBindings(km.WorkspacePicker, msg)
+}
+
+func (km *Keymap) LookupFloatingOverview(msg tea.KeyMsg) *SemanticAction {
+	return lookupBindings(km.FloatingOverview, msg)
 }
 
 // LookupHelp returns the SemanticAction bound to msg in ModeHelp, or nil.

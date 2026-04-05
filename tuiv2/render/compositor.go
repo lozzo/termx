@@ -106,11 +106,21 @@ func (c *composedCanvas) set(x, y int, cell drawCell) {
 }
 
 func (c *composedCanvas) drawText(x, y int, text string, style drawStyle) {
-	for i, ch := range text {
-		if x+i >= c.width {
+	cursorX := x
+	for _, ch := range text {
+		if cursorX >= c.width {
 			break
 		}
-		c.set(x+i, y, drawCell{Content: string(ch), Width: 1, Style: style})
+		content := string(ch)
+		width := xansi.StringWidth(content)
+		if width <= 0 {
+			width = 1
+		}
+		if cursorX+width > c.width {
+			break
+		}
+		c.set(cursorX, y, drawCell{Content: content, Width: width, Style: style})
+		cursorX += width
 	}
 }
 

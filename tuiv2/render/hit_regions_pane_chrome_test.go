@@ -57,11 +57,12 @@ func TestPaneChromeHitRegionsHideSplitActionsForFloatingPanes(t *testing.T) {
 	}
 
 	regions := PaneChromeHitRegions(pane, nil, "")
-	if len(regions) != 3 {
-		t.Fatalf("expected 3 floating pane chrome regions, got %#v", regions)
+	if len(regions) != 4 {
+		t.Fatalf("expected 4 floating pane chrome regions, got %#v", regions)
 	}
 	wantKinds := []HitRegionKind{
 		HitRegionPaneCenterFloating,
+		HitRegionPaneCollapseFloating,
 		HitRegionPaneZoom,
 		HitRegionPaneClose,
 	}

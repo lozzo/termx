@@ -56,7 +56,7 @@ func (m *Model) killCurrentTabCmd() tea.Cmd {
 		}
 		m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
-		if cmd := tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd()); cmd != nil {
+		if cmd := m.saveStateCmd(); cmd != nil {
 			return cmd()
 		}
 		return nil

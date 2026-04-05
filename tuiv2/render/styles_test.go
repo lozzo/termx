@@ -129,8 +129,75 @@ func TestRenderOverlaySpanFillsRequestedWidth(t *testing.T) {
 	}
 }
 
-func sameColor(a, b interface{ RGBA() (r, g, bl, alpha uint32) }) bool {
+func TestDarkThemeAccentTokensStayColorfulWithoutHostPalette(t *testing.T) {
+	theme := uiThemeFromHostColors("#080b14", "#e5e7eb", nil)
+
+	if theme.chromeBG != "#080b14" || theme.panelBG != "#080b14" {
+		t.Fatalf("expected chrome and panel backgrounds to stay host-native, got chrome=%q panel=%q", theme.chromeBG, theme.panelBG)
+	}
+	if got := contrastRatio(theme.chromeAccent, theme.chromeBG); got < 3.0 {
+		t.Fatalf("accent contrast = %.2f, want >= 3.00", got)
+	}
+	if got := contrastRatio(theme.panelBorder2, theme.panelBG); got < 1.05 {
+		t.Fatalf("muted border contrast = %.2f, want >= 1.05", got)
+	}
+	if theme.footerTextFG != theme.hintTextFG {
+		t.Fatalf("expected overlay/footer hint text styles to share the same muted fg, got footer=%q hint=%q", theme.footerTextFG, theme.hintTextFG)
+	}
+}
+
+func TestHostPaletteDrivesSemanticAccentTokens(t *testing.T) {
+	palette := map[int]string{
+		14: "#58e1ff",
+		10: "#78f5b2",
+		11: "#ffd666",
+		9:  "#ff7b96",
+	}
+	theme := uiThemeFromHostColors("#09111f", "#dbeafe", palette)
+
+	if got := contrastRatio(theme.chromeAccent, "#09111f"); got < 3.2 {
+		t.Fatalf("chrome accent contrast = %.2f, want >= 3.20", got)
+	}
+	if theme.success == ensureContrast("#34d399", "#09111f", 3.0) {
+		t.Fatalf("expected host palette success color to override fallback, got %q", theme.success)
+	}
+	if theme.success != ensureContrast("#78f5b2", "#09111f", 3.0) {
+		t.Fatalf("expected success color to use host palette, got %q", theme.success)
+	}
+	if theme.chromeAccent != ensureContrast("#58e1ff", "#09111f", 3.2) {
+		t.Fatalf("expected chrome accent to use host palette, got %q", theme.chromeAccent)
+	}
+}
+
+func TestTopBarHierarchySeparatesCreateAndActionIntensity(t *testing.T) {
+	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
+
+	createContrast := contrastRatio(theme.tabCreateFG, theme.chromeBG)
+	actionContrast := contrastRatio(theme.tabActionFG, theme.chromeBG)
+	actionOnContrast := contrastRatio(theme.tabActionOnFG, theme.chromeBG)
+
+	if createContrast <= actionContrast {
+		t.Fatalf("expected create token to stand above regular action, got create %.2f action %.2f", createContrast, actionContrast)
+	}
+	if actionOnContrast <= actionContrast {
+		t.Fatalf("expected active action token to stand above regular action, got active %.2f action %.2f", actionOnContrast, actionContrast)
+	}
+}
+
+func sameColor(a, b interface {
+	RGBA() (r, g, bl, alpha uint32)
+}) bool {
 	ar, ag, ab, aa := a.RGBA()
 	br, bg, bb, ba := b.RGBA()
 	return ar == br && ag == bg && ab == bb && aa == ba
+}
+
+func colorChannelSpread(value string) int {
+	r, g, b, ok := parseHexColor(value)
+	if !ok {
+		return 0
+	}
+	maxv := maxInt(int(r), maxInt(int(g), int(b)))
+	minv := minInt(int(r), minInt(int(g), int(b)))
+	return maxv - minv
 }

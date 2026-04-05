@@ -7,8 +7,13 @@ import (
 )
 
 const (
-	minFloatingWidth  = 10
-	minFloatingHeight = 4
+	minFloatingWidth           = 10
+	minFloatingHeight          = 4
+	defaultFloatingWidth       = 80
+	defaultFloatingHeight      = 24
+	floatingCascadeStepX       = 4
+	floatingCascadeStepY       = 2
+	floatingPlacementMaxSearch = 128
 )
 
 // findTab searches all workspaces for the tab with the given ID and returns it
@@ -302,16 +307,220 @@ func (w *Workbench) CreateFloatingPane(tabID, paneID string, rect Rect) error {
 		tab.Panes = make(map[string]*PaneState)
 	}
 	tab.Panes[paneID] = &PaneState{ID: paneID}
+	placed := nextFloatingRectForTab(tab, "", rect, Rect{})
 	z := 0
 	for _, floating := range tab.Floating {
 		if floating != nil && floating.Z >= z {
 			z = floating.Z + 1
 		}
 	}
-	tab.Floating = append(tab.Floating, &FloatingState{PaneID: paneID, Rect: rect, Z: z})
+	tab.Floating = append(tab.Floating, &FloatingState{
+		PaneID:      paneID,
+		Rect:        placed,
+		Z:           z,
+		Display:     FloatingDisplayExpanded,
+		FitMode:     FloatingFitManual,
+		RestoreRect: placed,
+	})
 	tab.FloatingVisible = true
 	w.touch()
 	return nil
+}
+
+// NextFloatingRect returns a cascaded floating rect for tabID that avoids
+// heavy overlap with currently expanded floating panes when possible.
+func (w *Workbench) NextFloatingRect(tabID string, desired Rect, bounds Rect) (Rect, error) {
+	_, tab, err := w.findTab(tabID)
+	if err != nil {
+		return Rect{}, err
+	}
+	return nextFloatingRectForTab(tab, "", desired, bounds), nil
+}
+
+func nextFloatingRectForTab(tab *TabState, exceptPaneID string, desired, bounds Rect) Rect {
+	base := normalizeFloatingRect(desired, bounds)
+	if tab == nil || len(tab.Floating) == 0 {
+		return base
+	}
+
+	best := base
+	bestScore := floatingOverlapScore(tab, exceptPaneID, base)
+	if bestScore == 0 {
+		return base
+	}
+
+	seen := make(map[Rect]struct{}, floatingPlacementMaxSearch)
+	seen[base] = struct{}{}
+	for attempt := 1; attempt <= floatingPlacementMaxSearch; attempt++ {
+		candidate := floatingCascadeRect(base, attempt, bounds)
+		if _, exists := seen[candidate]; exists {
+			continue
+		}
+		seen[candidate] = struct{}{}
+
+		score := floatingOverlapScore(tab, exceptPaneID, candidate)
+		if score == 0 {
+			return candidate
+		}
+		if score < bestScore {
+			best = candidate
+			bestScore = score
+		}
+	}
+	return best
+}
+
+func restoreFloatingRectForTab(tab *TabState, exceptPaneID string, desired, bounds Rect) Rect {
+	base := normalizeFloatingRect(desired, bounds)
+	if tab == nil || len(tab.Floating) == 0 {
+		return base
+	}
+	targetZ := floatingZForPane(tab, exceptPaneID)
+	if !floatingTitleFullyOccluded(tab, exceptPaneID, targetZ, base) {
+		return base
+	}
+	for attempt := 1; attempt <= floatingPlacementMaxSearch; attempt++ {
+		candidate := floatingCascadeRect(base, attempt, bounds)
+		if !floatingTitleFullyOccluded(tab, exceptPaneID, targetZ, candidate) {
+			return candidate
+		}
+	}
+	return base
+}
+
+func floatingDesiredRestoreRect(floating *FloatingState) Rect {
+	if floating == nil {
+		return Rect{}
+	}
+	restore := floating.RestoreRect
+	if restore.W <= 0 || restore.H <= 0 {
+		restore = floating.Rect
+	}
+	return restore
+}
+
+func floatingTitleFullyOccluded(tab *TabState, exceptPaneID string, targetZ int, target Rect) bool {
+	if tab == nil || target.W <= 0 || target.H <= 0 {
+		return false
+	}
+	titleY := target.Y
+	titleLeft := target.X
+	titleRight := target.X + target.W
+	if target.W > 2 {
+		titleLeft++
+		titleRight--
+	}
+	for _, floating := range tab.Floating {
+		if floating == nil || floating.PaneID == exceptPaneID {
+			continue
+		}
+		normalizeFloatingState(floating)
+		if !floatingStateVisible(floating) {
+			continue
+		}
+		if floating.Z <= targetZ {
+			continue
+		}
+		other := floating.Rect
+		if titleY < other.Y || titleY >= other.Y+other.H {
+			continue
+		}
+		if other.X <= titleLeft && other.X+other.W >= titleRight {
+			return true
+		}
+	}
+	return false
+}
+
+func floatingZForPane(tab *TabState, paneID string) int {
+	if tab == nil || paneID == "" {
+		return -1
+	}
+	for _, floating := range tab.Floating {
+		if floating != nil && floating.PaneID == paneID {
+			return floating.Z
+		}
+	}
+	return -1
+}
+
+func resolveExpandedFloatingTitleOcclusions(tab *TabState) {
+	if tab == nil || len(tab.Floating) == 0 {
+		return
+	}
+	for _, floating := range orderedFloating(tab.Floating) {
+		if floating == nil {
+			continue
+		}
+		normalizeFloatingState(floating)
+		if !floatingStateVisible(floating) {
+			continue
+		}
+		if !floatingTitleFullyOccluded(tab, floating.PaneID, floating.Z, floating.Rect) {
+			continue
+		}
+		floating.Rect = restoreFloatingRectForTab(tab, floating.PaneID, floatingDesiredRestoreRect(floating), Rect{})
+	}
+}
+
+func normalizeFloatingRect(rect, bounds Rect) Rect {
+	next := rect
+	if next.W <= 0 {
+		next.W = defaultFloatingWidth
+	}
+	if next.H <= 0 {
+		next.H = defaultFloatingHeight
+	}
+	next.W = maxInt(minFloatingWidth, next.W)
+	next.H = maxInt(minFloatingHeight, next.H)
+	next.X = maxInt(0, next.X)
+	next.Y = maxInt(0, next.Y)
+	if bounds.W > 0 && bounds.H > 0 {
+		next = clampFloatingRectToBounds(next, bounds)
+	}
+	return next
+}
+
+func floatingCascadeRect(base Rect, attempt int, bounds Rect) Rect {
+	if attempt <= 0 {
+		return base
+	}
+	next := base
+	next.X += attempt * floatingCascadeStepX
+	next.Y += attempt * floatingCascadeStepY
+	if bounds.W > 0 && bounds.H > 0 {
+		next = clampFloatingRectToBounds(next, bounds)
+	}
+	return next
+}
+
+func floatingOverlapScore(tab *TabState, exceptPaneID string, target Rect) int {
+	if tab == nil || target.W <= 0 || target.H <= 0 {
+		return 0
+	}
+	total := 0
+	for _, floating := range tab.Floating {
+		if floating == nil || floating.PaneID == exceptPaneID {
+			continue
+		}
+		normalizeFloatingState(floating)
+		if !floatingStateVisible(floating) {
+			continue
+		}
+		total += rectOverlapArea(target, floating.Rect)
+	}
+	return total
+}
+
+func rectOverlapArea(a, b Rect) int {
+	left := maxInt(a.X, b.X)
+	top := maxInt(a.Y, b.Y)
+	right := minInt(a.X+a.W, b.X+b.W)
+	bottom := minInt(a.Y+a.H, b.Y+b.H)
+	if right <= left || bottom <= top {
+		return 0
+	}
+	return (right - left) * (bottom - top)
 }
 
 // AdjustPaneRatio walks the layout tree of the tab and adjusts the split ratio
@@ -447,8 +656,12 @@ func (w *Workbench) MoveFloatingPane(tabID, paneID string, x, y int) bool {
 
 	for _, floating := range tab.Floating {
 		if floating != nil && floating.PaneID == paneID {
+			normalizeFloatingState(floating)
 			floating.Rect.X = maxInt(0, x)
 			floating.Rect.Y = maxInt(0, y)
+			if floatingStateVisible(floating) {
+				floating.RestoreRect = floating.Rect
+			}
 			w.touch()
 			return true
 		}
@@ -478,13 +691,263 @@ func (w *Workbench) ResizeFloatingPane(tabID, paneID string, width, height int) 
 
 	for _, floating := range tab.Floating {
 		if floating != nil && floating.PaneID == paneID {
+			normalizeFloatingState(floating)
 			floating.Rect.W = maxInt(minFloatingWidth, width)
 			floating.Rect.H = maxInt(minFloatingHeight, height)
+			floating.FitMode = FloatingFitManual
+			floating.AutoFitCols = 0
+			floating.AutoFitRows = 0
+			if floatingStateVisible(floating) {
+				floating.RestoreRect = floating.Rect
+			}
 			w.touch()
 			return true
 		}
 	}
 	return false
+}
+
+func (w *Workbench) SetFloatingPaneDisplay(tabID, paneID string, display FloatingDisplayState) bool {
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return false
+	}
+	nextDisplay := normalizeFloatingDisplay(display)
+	for _, floating := range tab.Floating {
+		if floating == nil || floating.PaneID != paneID {
+			continue
+		}
+		normalizeFloatingState(floating)
+		if floating.Display == nextDisplay {
+			return false
+		}
+		if nextDisplay == FloatingDisplayExpanded {
+			restore := floatingDesiredRestoreRect(floating)
+			floating.Rect = restoreFloatingRectForTab(tab, paneID, restore, Rect{})
+			if floating.RestoreRect.W <= 0 || floating.RestoreRect.H <= 0 {
+				floating.RestoreRect = restore
+			}
+			tab.FloatingVisible = true
+		} else {
+			floating.RestoreRect = floating.Rect
+		}
+		floating.Display = nextDisplay
+		if !hasExpandedFloating(tab.Floating) {
+			tab.FloatingVisible = false
+		}
+		w.touch()
+		return true
+	}
+	return false
+}
+
+func (w *Workbench) ToggleFloatingPaneCollapsed(tabID, paneID string) bool {
+	state := w.FloatingState(tabID, paneID)
+	if state == nil {
+		return false
+	}
+	if state.Display == FloatingDisplayCollapsed {
+		return w.SetFloatingPaneDisplay(tabID, paneID, FloatingDisplayExpanded)
+	}
+	return w.SetFloatingPaneDisplay(tabID, paneID, FloatingDisplayCollapsed)
+}
+
+func (w *Workbench) SetFloatingPaneFitMode(tabID, paneID string, mode FloatingFitMode) bool {
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return false
+	}
+	nextMode := normalizeFloatingFitMode(mode)
+	for _, floating := range tab.Floating {
+		if floating == nil || floating.PaneID != paneID {
+			continue
+		}
+		normalizeFloatingState(floating)
+		if floating.FitMode == nextMode {
+			return false
+		}
+		floating.FitMode = nextMode
+		if nextMode == FloatingFitManual {
+			floating.AutoFitCols = 0
+			floating.AutoFitRows = 0
+		}
+		w.touch()
+		return true
+	}
+	return false
+}
+
+func (w *Workbench) SetFloatingPaneAutoFitSize(tabID, paneID string, cols, rows int) bool {
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return false
+	}
+	nextCols := maxInt(0, cols)
+	nextRows := maxInt(0, rows)
+	for _, floating := range tab.Floating {
+		if floating == nil || floating.PaneID != paneID {
+			continue
+		}
+		normalizeFloatingState(floating)
+		if floating.AutoFitCols == nextCols && floating.AutoFitRows == nextRows {
+			return false
+		}
+		floating.AutoFitCols = nextCols
+		floating.AutoFitRows = nextRows
+		w.touch()
+		return true
+	}
+	return false
+}
+
+func (w *Workbench) ExpandAllFloatingPanes(tabID string) bool {
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return false
+	}
+	changed := false
+	for _, floating := range tab.Floating {
+		if floating == nil {
+			continue
+		}
+		normalizeFloatingState(floating)
+		if floating.Display == FloatingDisplayExpanded && tab.FloatingVisible {
+			continue
+		}
+		restore := floatingDesiredRestoreRect(floating)
+		floating.Rect = normalizeFloatingRect(restore, Rect{})
+		if floating.RestoreRect.W <= 0 || floating.RestoreRect.H <= 0 {
+			floating.RestoreRect = floating.Rect
+		}
+		floating.Display = FloatingDisplayExpanded
+		changed = true
+	}
+	if !tab.FloatingVisible {
+		tab.FloatingVisible = true
+		changed = true
+	}
+	if changed {
+		resolveExpandedFloatingTitleOcclusions(tab)
+		if tab.ActivePaneID == "" || tab.Panes[tab.ActivePaneID] == nil || w.FloatingState(tabID, tab.ActivePaneID) == nil {
+			if top := w.TopmostVisibleFloatingPaneID(tabID); top != "" {
+				tab.ActivePaneID = top
+			}
+		}
+		tab.FloatingVisible = true
+		w.touch()
+	}
+	return changed
+}
+
+func (w *Workbench) CollapseAllFloatingPanes(tabID string) bool {
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return false
+	}
+	changed := false
+	for _, floating := range tab.Floating {
+		if floating == nil {
+			continue
+		}
+		normalizeFloatingState(floating)
+		if floating.Display != FloatingDisplayExpanded {
+			continue
+		}
+		floating.RestoreRect = floating.Rect
+		floating.Display = FloatingDisplayCollapsed
+		changed = true
+	}
+	if changed {
+		tab.FloatingVisible = false
+		tab.ensureActivePane()
+		w.touch()
+	}
+	return changed
+}
+
+func (w *Workbench) ApplyFloatingAutoFit(tabID, paneID string, cols, rows int, bounds Rect) bool {
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return false
+	}
+	cols = maxInt(0, cols)
+	rows = maxInt(0, rows)
+	if cols == 0 || rows == 0 {
+		return false
+	}
+	for _, floating := range tab.Floating {
+		if floating == nil || floating.PaneID != paneID {
+			continue
+		}
+		normalizeFloatingState(floating)
+		base := floating.Rect
+		if floating.Display != FloatingDisplayExpanded && floating.RestoreRect.W > 0 && floating.RestoreRect.H > 0 {
+			base = floating.RestoreRect
+		}
+		next := Rect{
+			X: base.X,
+			Y: base.Y,
+			W: cols + 2,
+			H: rows + 2,
+		}
+		next = normalizeFloatingRect(next, bounds)
+		changed := floating.AutoFitCols != cols || floating.AutoFitRows != rows
+		if floating.Display == FloatingDisplayExpanded {
+			if next != floating.Rect {
+				floating.Rect = next
+				changed = true
+			}
+		}
+		if next != floating.RestoreRect {
+			floating.RestoreRect = next
+			changed = true
+		}
+		if floating.AutoFitCols != cols || floating.AutoFitRows != rows {
+			floating.AutoFitCols = cols
+			floating.AutoFitRows = rows
+			changed = true
+		}
+		if changed {
+			w.touch()
+		}
+		return changed
+	}
+	return false
+}
+
+func (w *Workbench) FloatingState(tabID, paneID string) *FloatingState {
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return nil
+	}
+	for _, floating := range tab.Floating {
+		if floating == nil || floating.PaneID != paneID {
+			continue
+		}
+		normalizeFloatingState(floating)
+		return floating
+	}
+	return nil
+}
+
+func (w *Workbench) OrderedFloating(tabID string) []*FloatingState {
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return nil
+	}
+	return orderedFloating(tab.Floating)
+}
+
+func (w *Workbench) TopmostVisibleFloatingPaneID(tabID string) string {
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return ""
+	}
+	visible := visibleFloatingStates(tab.Floating)
+	if len(visible) == 0 {
+		return ""
+	}
+	return visible[len(visible)-1].PaneID
 }
 
 func (w *Workbench) ResizeFloatingPaneBy(tabID, paneID string, dw, dh int) bool {
@@ -559,6 +1022,7 @@ func (w *Workbench) CenterFloatingPane(tabID, paneID string, bounds Rect) bool {
 		if floating == nil || floating.PaneID != paneID {
 			continue
 		}
+		normalizeFloatingState(floating)
 		width := floating.Rect.W
 		height := floating.Rect.H
 		if width <= 0 || height <= 0 {
@@ -568,6 +1032,9 @@ func (w *Workbench) CenterFloatingPane(tabID, paneID string, bounds Rect) bool {
 		targetY := maxInt(0, (bounds.H-height)/2)
 		floating.Rect.X = targetX
 		floating.Rect.Y = targetY
+		if floatingStateVisible(floating) {
+			floating.RestoreRect = floating.Rect
+		}
 		w.touch()
 		return true
 	}
@@ -595,9 +1062,13 @@ func (w *Workbench) ReflowFloatingPanes(from, to Rect) bool {
 				if floating == nil {
 					continue
 				}
+				normalizeFloatingState(floating)
 				next := reflowFloatingRect(floating.Rect, from, to)
 				if next != floating.Rect {
 					floating.Rect = next
+					if floatingStateVisible(floating) {
+						floating.RestoreRect = next
+					}
 					changed = true
 				}
 			}
@@ -627,9 +1098,13 @@ func (w *Workbench) ClampFloatingPanesToBounds(bounds Rect) bool {
 				if floating == nil {
 					continue
 				}
+				normalizeFloatingState(floating)
 				next := clampFloatingRectToBounds(floating.Rect, bounds)
 				if next != floating.Rect {
 					floating.Rect = next
+					if floatingStateVisible(floating) {
+						floating.RestoreRect = next
+					}
 					changed = true
 				}
 			}
@@ -734,6 +1209,13 @@ func normalizeFloatingZ(entries []*FloatingState) {
 
 func maxInt(a, b int) int {
 	if a > b {
+		return a
+	}
+	return b
+}
+
+func minInt(a, b int) int {
+	if a < b {
 		return a
 	}
 	return b

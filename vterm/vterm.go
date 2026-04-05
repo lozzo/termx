@@ -76,9 +76,10 @@ type TitleHandler func(title string)
 type VTerm struct {
 	emu *charmvt.SafeEmulator
 
-	mu     sync.RWMutex
-	cursor CursorState
-	modes  TerminalModes
+	mu        sync.RWMutex
+	cursor    CursorState
+	modes     TerminalModes
+	mouseMode mouseModeState
 	resp      ResponseHandler
 	onTitle   TitleHandler
 	sbSize    int
@@ -87,6 +88,14 @@ type VTerm struct {
 	palette   map[int]string
 
 	done chan struct{} // closed when drain goroutine exits
+}
+
+type mouseModeState struct {
+	x10         bool
+	normal      bool
+	highlight   bool
+	buttonEvent bool
+	anyEvent    bool
 }
 
 func New(cols, rows int, scrollbackSize int, onResponse ResponseHandler) *VTerm {
@@ -189,6 +198,10 @@ func (v *VTerm) Write(data []byte) (n int, err error) {
 }
 
 func (v *VTerm) LoadSnapshot(screen ScreenData, cursor CursorState, modes TerminalModes) {
+	v.LoadSnapshotWithScrollback(nil, screen, cursor, modes)
+}
+
+func (v *VTerm) LoadSnapshotWithScrollback(scrollback [][]Cell, screen ScreenData, cursor CursorState, modes TerminalModes) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
@@ -220,6 +233,13 @@ func (v *VTerm) LoadSnapshot(screen ScreenData, cursor CursorState, modes Termin
 	v.cursor = cursor
 	v.modes = modes
 	v.resetEmulator(width, height)
+	v.setMouseTrackingAggregateLocked(modes.MouseTracking)
+	if len(scrollback) > 0 {
+		sb := v.emu.Emulator.Scrollback()
+		for _, row := range scrollback {
+			sb.Push(uvLine(row))
+		}
+	}
 	if modes.AlternateScreen {
 		_, _ = v.emu.Write([]byte("\x1b[?1049h"))
 	}
@@ -334,6 +354,24 @@ func (v *VTerm) setMode(mode ansi.Mode, enabled bool) {
 	switch mode {
 	case ansi.ModeCursorKeys:
 		v.modes.ApplicationCursor = enabled
+	case ansi.ModeMouseX10:
+		v.mouseMode.x10 = enabled
+		v.updateMouseTrackingLocked()
+	case ansi.ModeMouseNormal:
+		v.mouseMode.normal = enabled
+		v.updateMouseTrackingLocked()
+	case ansi.ModeMouseHighlight:
+		v.mouseMode.highlight = enabled
+		v.updateMouseTrackingLocked()
+	case ansi.ModeMouseButtonEvent:
+		v.mouseMode.buttonEvent = enabled
+		v.updateMouseTrackingLocked()
+	case ansi.ModeMouseAnyEvent:
+		v.mouseMode.anyEvent = enabled
+		v.updateMouseTrackingLocked()
+	case ansi.ModeMouseExtSgr:
+		// SGR 1006 only changes encoding. It should not on its own imply that
+		// applications are actively asking for mouse events.
 	case ansi.ModeNumericKeypad:
 		// x/vt uses "numeric keypad" mode for keypad application mode.
 		// Keep this for future input translation support if needed.
@@ -342,6 +380,19 @@ func (v *VTerm) setMode(mode ansi.Mode, enabled bool) {
 	case ansi.ModeAutoWrap:
 		v.modes.AutoWrap = enabled
 	}
+}
+
+func (v *VTerm) setMouseTrackingAggregateLocked(enabled bool) {
+	v.mouseMode = mouseModeState{buttonEvent: enabled}
+	v.modes.MouseTracking = enabled
+}
+
+func (v *VTerm) updateMouseTrackingLocked() {
+	v.modes.MouseTracking = v.mouseMode.x10 ||
+		v.mouseMode.normal ||
+		v.mouseMode.highlight ||
+		v.mouseMode.buttonEvent ||
+		v.mouseMode.anyEvent
 }
 
 func (v *VTerm) RenderLines() []string {
@@ -398,6 +449,14 @@ func uvCell(cell Cell) *uv.Cell {
 		c.Style.Underline = uv.UnderlineSingle
 	}
 	return c
+}
+
+func uvLine(row []Cell) uv.Line {
+	line := make(uv.Line, 0, len(row))
+	for _, cell := range row {
+		line = append(line, *uvCell(cell))
+	}
+	return line
 }
 
 func (v *VTerm) Paste(text string) {

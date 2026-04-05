@@ -25,11 +25,11 @@ type Coordinator struct {
 	tabBarValue string
 	statusKey   statusBarCacheKey
 	statusValue string
+
+	cursorBlinkVisible bool
 }
 
 const CursorBlinkInterval = 600 * time.Millisecond
-
-var blinkTimeNow = time.Now
 
 type VisibleStateFn func() VisibleRenderState
 
@@ -107,7 +107,11 @@ type bodyRenderCache struct {
 }
 
 func NewCoordinator(fn VisibleStateFn) *Coordinator {
-	return &Coordinator{visibleFn: fn, dirty: true}
+	return &Coordinator{
+		visibleFn:          fn,
+		dirty:              true,
+		cursorBlinkVisible: true,
+	}
 }
 
 func (c *Coordinator) Invalidate() {
@@ -162,6 +166,9 @@ func (c *Coordinator) RenderFrame() string {
 	}
 	frame := strings.Join([]string{tabBar, body, statusBar}, "\n")
 	c.mu.Lock()
+	if !rendered.blink {
+		c.cursorBlinkVisible = true
+	}
 	c.lastFrame = frame + cursor
 	c.lastCursor = cursor
 	c.dirty = false
@@ -189,12 +196,30 @@ func (c *Coordinator) NeedsCursorTicks() bool {
 	return visibleStateNeedsCursorBlink(c.visibleFn())
 }
 
+func (c *Coordinator) AdvanceCursorBlink() bool {
+	if c == nil {
+		return false
+	}
+	if !c.NeedsCursorTicks() {
+		c.mu.Lock()
+		c.cursorBlinkVisible = true
+		c.mu.Unlock()
+		return false
+	}
+	c.mu.Lock()
+	c.cursorBlinkVisible = !c.cursorBlinkVisible
+	c.dirty = true
+	c.mu.Unlock()
+	return true
+}
+
 func (c *Coordinator) syntheticCursorVisible(cursor protocol.CursorState) bool {
-	if !cursor.Blink {
+	if c == nil {
 		return true
 	}
-	now := blinkTimeNow()
-	return (now.UnixNano()/int64(CursorBlinkInterval))%2 == 0
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.cursorBlinkVisible
 }
 
 func (c *Coordinator) renderTabBarCached(state VisibleRenderState) string {
@@ -298,8 +323,8 @@ func visibleStateNeedsCursorBlink(state VisibleRenderState) bool {
 		return false
 	}
 	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, newRuntimeLookup(state.Runtime), state.OwnerConfirmPaneID, state.EmptyPaneSelectionPaneID, state.EmptyPaneSelectionIndex, uiThemeForRuntime(state.Runtime))
-	_, snapshot, ok := activeEntryCursorTarget(entries, state.Runtime)
-	return ok && snapshot.Cursor.Blink
+	_, _, ok := activeEntryCursorTarget(entries, state.Runtime)
+	return ok
 }
 
 type emptyWorkbenchKind uint8
@@ -360,6 +385,8 @@ func renderActiveOverlay(state VisibleRenderState, termSize TermSize) string {
 		return renderTerminalManagerOverlayWithTheme(state.Overlay.TerminalManager, termSize, theme)
 	case VisibleOverlayHelp:
 		return renderHelpOverlayWithTheme(state.Overlay.Help, termSize, theme)
+	case VisibleOverlayFloatingOverview:
+		return renderFloatingOverviewOverlayWithTheme(state.Overlay.FloatingOverview, termSize, theme)
 	default:
 		return ""
 	}
@@ -388,6 +415,22 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 		return canvas
 	}
 
+	// Overlapping panes need a full rebuild. The cached active-pane refresh path
+	// redraws the active pane content to clear the old cursor, which is correct
+	// for tiled layouts but will paint over floating panes layered above it.
+	if entriesOverlap(entries) {
+		canvas := newComposedCanvas(width, height)
+		canvas.cursorOffsetY = TopChromeRows
+		for _, entry := range entries {
+			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
+		}
+		projectActiveEntryCursor(canvas, entries, state.Runtime)
+		cache.canvas = canvas
+		cache.reset(entries, width, height)
+		return canvas
+	}
+
 	if !entriesOverlap(entries) {
 		changed := false
 		cache.canvas.cursorVisible = false
@@ -402,6 +445,7 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 				changed = true
 			}
 		}
+		restoreActiveEntryContent(cache.canvas, entries, state.Runtime)
 		if changed {
 			projectActiveEntryCursor(cache.canvas, entries, state.Runtime)
 			cache.reset(entries, width, height)
@@ -411,27 +455,7 @@ func renderBodyCanvas(state VisibleRenderState, entries []paneRenderEntry, width
 		return cache.canvas
 	}
 
-	damage := make([]workbench.Rect, 0, len(entries))
-	for _, entry := range entries {
-		if cache.frameKeys[entry.PaneID] != entry.FrameKey || cache.contentKeys[entry.PaneID] != entry.ContentKey {
-			damage = append(damage, entry.Rect)
-		}
-	}
-	if len(damage) == 0 {
-		projectActiveEntryCursor(cache.canvas, entries, state.Runtime)
-		return cache.canvas
-	}
-
-	canvas := newComposedCanvas(width, height)
-	canvas.cursorOffsetY = TopChromeRows
-	for _, entry := range entries {
-		drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
-		drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
-	}
-	projectActiveEntryCursor(canvas, entries, state.Runtime)
-	cache.canvas = canvas
-	cache.reset(entries, width, height)
-	return canvas
+	return cache.canvas
 }
 
 func stateCoordinator(state VisibleRenderState) *Coordinator {
@@ -443,6 +467,21 @@ func stateCoordinator(state VisibleRenderState) *Coordinator {
 }
 
 var currentCoordinator *Coordinator
+
+func restoreActiveEntryContent(canvas *composedCanvas, entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) {
+	if canvas == nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.Active {
+			continue
+		}
+		base := entry
+		base.Active = false
+		drawPaneContentWithKey(canvas, entry.Rect, base, runtimeState)
+		return
+	}
+}
 
 func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePane, width, height int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, theme uiTheme) []paneRenderEntry {
 	entries := make([]paneRenderEntry, 0, len(tab.Panes)+len(floating))
@@ -747,22 +786,37 @@ func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, title string, bo
 	}
 	borderFG := theme.panelBorder2
 	titleFG := theme.panelMuted
+	metaFG := theme.panelMuted
+	actionFG := theme.panelMuted
+	stateFG := theme.panelMuted
 	if active {
-		borderFG = mixHex(theme.panelBorder, theme.success, 0.38)
+		borderFG = theme.chromeAccent
 		titleFG = theme.panelText
+		metaFG = theme.panelMuted
+		actionFG = theme.panelText
+		switch border.StateTone {
+		case "success":
+			stateFG = theme.success
+		case "warning":
+			stateFG = theme.warning
+		case "danger":
+			stateFG = theme.danger
+		default:
+			stateFG = metaFG
+		}
 	}
 	borderStyle := drawStyle{FG: borderFG}
-	titleStyle := drawStyle{FG: titleFG, Bold: true}
+	chromeStyles := paneChromeDrawStyles{
+		Title:         drawStyle{FG: titleFG, Bold: true},
+		Meta:          drawStyle{FG: metaFG},
+		State:         drawStyle{FG: stateFG},
+		Action:        drawStyle{FG: actionFG, Bold: active},
+		EmphasizeRole: active,
+	}
 	topEdge := "─"
-	bottomEdge := "─"
 	leftEdge := "│"
+	bottomEdge := "─"
 	rightEdge := "│"
-	if overflow.Bottom {
-		bottomEdge = "┄"
-	}
-	if overflow.Right {
-		rightEdge = "┆"
-	}
 
 	// horizontal edges
 	for x := rect.X; x < rect.X+rect.W; x++ {
@@ -780,7 +834,30 @@ func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, title string, bo
 	canvas.set(rect.X, rect.Y+rect.H-1, drawCell{Content: "└", Width: 1, Style: borderStyle})
 	canvas.set(rect.X+rect.W-1, rect.Y+rect.H-1, drawCell{Content: "┘", Width: 1, Style: borderStyle})
 
-	drawPaneTopBorderLabels(canvas, rect, titleStyle, title, border, floating)
+	drawPaneOverflowMarkers(canvas, rect, theme, overflow, active)
+	drawPaneTopBorderLabels(canvas, rect, chromeStyles, title, border, floating)
+}
+
+func drawPaneOverflowMarkers(canvas *composedCanvas, rect workbench.Rect, theme uiTheme, overflow paneOverflowHints, active bool) {
+	if canvas == nil || rect.W < 3 || rect.H < 3 {
+		return
+	}
+	if overflow.Right {
+		markerFG := theme.panelMuted
+		if active {
+			markerFG = ensureContrast(mixHex(theme.chromeAccent, theme.panelText, 0.35), theme.hostBG, 4.2)
+		}
+		markerStyle := drawStyle{FG: markerFG, Bold: active}
+		canvas.set(rect.X+rect.W-1, rect.Y+rect.H-2, drawCell{Content: ">", Width: 1, Style: markerStyle})
+	}
+	if overflow.Bottom {
+		markerFG := theme.panelMuted
+		if active {
+			markerFG = ensureContrast(theme.warning, theme.hostBG, 4.2)
+		}
+		markerStyle := drawStyle{FG: markerFG, Bold: active}
+		canvas.set(rect.X+rect.W-2, rect.Y+rect.H-1, drawCell{Content: "v", Width: 1, Style: markerStyle})
+	}
 }
 
 // drawPaneContent fills the interior of a pane with terminal snapshot content.
@@ -877,7 +954,7 @@ func drawSyntheticCursor(canvas *composedCanvas, x, y int, cursor protocol.Curso
 	if canvas == nil || y < 0 || y >= canvas.height || x < 0 || x >= canvas.width {
 		return
 	}
-	canvas.syntheticCursorBlink = cursor.Blink
+	canvas.syntheticCursorBlink = true
 	if coordinator := currentCoordinator; coordinator != nil && !coordinator.syntheticCursorVisible(cursor) {
 		return
 	}
@@ -893,13 +970,9 @@ func drawSyntheticCursor(canvas *composedCanvas, x, y int, cursor protocol.Curso
 		cell = blankDrawCell()
 	}
 	style := cell.Style
-	style.Reverse = !style.Reverse
-	// Default-color cells can remain effectively invisible in some terminals
-	// even with reverse enabled, so force a high-contrast fallback.
-	if style.FG == "" && style.BG == "" {
-		style.FG = "#111111"
-		style.BG = "#f5f5f5"
-	}
+	style.Reverse = false
+	style.FG = "#000000"
+	style.BG = "#ffffff"
 	switch cursor.Shape {
 	case "underline":
 		style.Underline = true
@@ -926,15 +999,14 @@ func drawEmptyPaneContent(canvas *composedCanvas, rect workbench.Rect, paneID, t
 	firstActionY := actions[0].rowRect.Y
 	headlineY := firstActionY - 1
 	if headlineY >= rect.Y {
-		canvas.drawText(rect.X, headlineY, centerText(xansi.Truncate(headline, rect.W, ""), rect.W), drawStyle{FG: theme.panelMuted})
+		headlineStyle := drawStyle{FG: theme.panelText}
+		canvas.drawText(rect.X, headlineY, centerText(xansi.Truncate(headline, rect.W, ""), rect.W), headlineStyle)
 	}
 
 	for index, item := range actions {
-		style := drawStyle{FG: theme.info, Bold: true}
-		if index == selectedIndex {
-			style = drawStyle{FG: contrastTextColor(theme.info), BG: theme.info, Bold: true}
-		}
-		canvas.drawText(item.rowRect.X, item.rowRect.Y, item.lineText, style)
+		style := emptyPaneActionDrawStyle(theme, item.spec.Kind, index == selectedIndex)
+		lineText := centerText(xansi.Truncate(wrapEmptyPaneActionLabel(item.spec, index == selectedIndex), rect.W, ""), rect.W)
+		canvas.drawText(item.rowRect.X, item.rowRect.Y, lineText, style)
 	}
 
 	if strings.TrimSpace(terminalID) != "" {
@@ -947,25 +1019,55 @@ func drawEmptyPaneContent(canvas *composedCanvas, rect workbench.Rect, paneID, t
 	}
 }
 
-func drawPaneTopBorderLabels(canvas *composedCanvas, rect workbench.Rect, style drawStyle, title string, border paneBorderInfo, floating bool) {
+func emptyPaneActionDrawStyle(theme uiTheme, kind HitRegionKind, selected bool) drawStyle {
+	accent := theme.panelText
+	switch kind {
+	case HitRegionEmptyPaneAttach:
+		accent = theme.chromeAccent
+	case HitRegionEmptyPaneCreate:
+		accent = theme.success
+	case HitRegionEmptyPaneManager:
+		accent = theme.panelText
+	case HitRegionEmptyPaneClose:
+		accent = theme.danger
+	}
+	if selected {
+		return drawStyle{FG: ensureContrast(mixHex(accent, theme.panelText, 0.2), theme.hostBG, 4.0), Bold: true}
+	}
+	return drawStyle{FG: ensureContrast(accent, theme.hostBG, 3.8), Bold: kind != HitRegionEmptyPaneManager}
+}
+
+type paneChromeDrawStyles struct {
+	Title         drawStyle
+	Meta          drawStyle
+	State         drawStyle
+	Action        drawStyle
+	EmphasizeRole bool
+}
+
+func drawPaneTopBorderLabels(canvas *composedCanvas, rect workbench.Rect, styles paneChromeDrawStyles, title string, border paneBorderInfo, floating bool) {
 	layout, ok := paneTopBorderLabelsLayout(rect, title, border, paneChromeActionTokensForFrame(rect, title, border, floating))
 	if canvas == nil || !ok {
 		return
 	}
 	for _, slot := range layout.actionSlots {
-		drawBorderLabel(canvas, slot.X, rect.Y, slot.Label, style)
+		drawBorderLabel(canvas, slot.X, rect.Y, slot.Label, styles.Action)
 	}
 	if layout.titleLabel != "" {
-		drawBorderLabel(canvas, layout.titleX, rect.Y, layout.titleLabel, style)
+		drawBorderLabel(canvas, layout.titleX, rect.Y, layout.titleLabel, styles.Title)
 	}
 	if layout.stateLabel != "" {
-		drawBorderLabel(canvas, layout.stateX, rect.Y, layout.stateLabel, style)
+		drawBorderLabel(canvas, layout.stateX, rect.Y, layout.stateLabel, styles.State)
 	}
 	if layout.shareLabel != "" {
-		drawBorderLabel(canvas, layout.shareX, rect.Y, layout.shareLabel, style)
+		drawBorderLabel(canvas, layout.shareX, rect.Y, layout.shareLabel, styles.Meta)
 	}
 	if layout.roleLabel != "" {
-		drawBorderLabel(canvas, layout.roleX, rect.Y, layout.roleLabel, style)
+		roleStyle := styles.Meta
+		if styles.EmphasizeRole {
+			roleStyle = styles.Action
+		}
+		drawBorderLabel(canvas, layout.roleX, rect.Y, layout.roleLabel, roleStyle)
 	}
 }
 
@@ -1191,9 +1293,10 @@ func paneBorderSlotsWidth(slots []paneBorderSlot) int {
 }
 
 func drawBorderLabel(canvas *composedCanvas, x, y int, text string, style drawStyle) {
-	for idx, ch := range []rune(text) {
-		canvas.set(x+idx, y, drawCell{Content: string(ch), Width: 1, Style: style})
+	if canvas == nil || strings.TrimSpace(text) == "" {
+		return
 	}
+	canvas.drawText(x, y, text, style)
 }
 
 func applyScrollbackOffset(snapshot *protocol.Snapshot, offset int, height int) *protocol.Snapshot {
@@ -1267,8 +1370,7 @@ func drawSnapshotExtentHints(canvas *composedCanvas, rect workbench.Rect, snapsh
 	if canvas == nil || snapshot == nil || rect.W <= 0 || rect.H <= 0 {
 		return
 	}
-	termW := int(snapshot.Size.Cols)
-	termH := int(snapshot.Size.Rows)
+	termW, termH := snapshotExtentSize(snapshot)
 	if termW <= 0 || termH <= 0 {
 		return
 	}
@@ -1296,6 +1398,38 @@ func drawSnapshotExtentHints(canvas *composedCanvas, rect workbench.Rect, snapsh
 			}
 		}
 	}
+}
+
+func snapshotExtentSize(snapshot *protocol.Snapshot) (int, int) {
+	if snapshot == nil {
+		return 0, 0
+	}
+	termW := int(snapshot.Size.Cols)
+	termH := int(snapshot.Size.Rows)
+	if screenH := len(snapshot.Screen.Cells); screenH > termH {
+		termH = screenH
+	}
+	for _, row := range snapshot.Screen.Cells {
+		if rowW := protocolRowDisplayWidth(row); rowW > termW {
+			termW = rowW
+		}
+	}
+	return termW, termH
+}
+
+func protocolRowDisplayWidth(row []protocol.Cell) int {
+	width := 0
+	for _, cell := range row {
+		switch {
+		case cell.Width > 0:
+			width += cell.Width
+		case cell.Content != "":
+			width++
+		default:
+			width++
+		}
+	}
+	return width
 }
 
 func projectActiveEntryCursor(canvas *composedCanvas, entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) {

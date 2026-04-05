@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -57,7 +58,7 @@ func (m *Model) replaceSessionCmd() tea.Cmd {
 		}
 		latest, latestErr := client.GetSession(context.Background(), params.SessionID)
 		if latestErr == nil && latest != nil && isRevisionConflict(err) {
-			return sessionSnapshotMsg{Snapshot: latest, Err: err}
+			return sessionSnapshotMsg{Snapshot: latest}
 		}
 		return sessionSnapshotMsg{Err: err}
 	}
@@ -73,6 +74,82 @@ func (m *Model) updateSessionViewCmd() tea.Cmd {
 		view, err := client.UpdateSessionView(context.Background(), params)
 		return sessionViewUpdatedMsg{View: view, Err: err}
 	}
+}
+
+func (m *Model) acquireSessionLeaseAndResizeCmd(paneID, terminalID string) tea.Cmd {
+	if m == nil || m.sessionID == "" || m.sessionViewID == "" || m.runtime == nil || m.runtime.Client() == nil {
+		return m.resizePaneIfNeededCmd(paneID)
+	}
+	if paneID == "" || terminalID == "" {
+		return nil
+	}
+	client := m.runtime.Client()
+	params := protocol.AcquireSessionLeaseParams{
+		SessionID:  m.sessionID,
+		ViewID:     m.sessionViewID,
+		PaneID:     paneID,
+		TerminalID: terminalID,
+	}
+	return func() tea.Msg {
+		lease, err := client.AcquireSessionLease(context.Background(), params)
+		if err != nil {
+			if isSessionLeaseUnsupported(err) {
+				return fmt.Errorf("connected termx daemon is too old for shared resize control; restart the daemon and reconnect")
+			}
+			return err
+		}
+		if lease != nil {
+			if m.sessionLeases == nil {
+				m.sessionLeases = make(map[string]protocol.LeaseInfo)
+			}
+			m.sessionLeases[lease.TerminalID] = *lease
+		}
+		if m.runtime != nil {
+			m.runtime.ApplySessionLeases(m.sessionViewID, m.currentSessionLeases())
+		}
+		if cmd := m.resizePaneIfNeededCmd(paneID); cmd != nil {
+			return cmd()
+		}
+		return nil
+	}
+}
+
+func (m *Model) releaseSessionLeaseCmd(terminalID string) tea.Cmd {
+	if m == nil || m.sessionID == "" || m.sessionViewID == "" || m.runtime == nil || m.runtime.Client() == nil || terminalID == "" {
+		return nil
+	}
+	client := m.runtime.Client()
+	params := protocol.ReleaseSessionLeaseParams{
+		SessionID:  m.sessionID,
+		ViewID:     m.sessionViewID,
+		TerminalID: terminalID,
+	}
+	return func() tea.Msg {
+		if err := client.ReleaseSessionLease(context.Background(), params); err != nil {
+			if isSessionLeaseUnsupported(err) {
+				return fmt.Errorf("connected termx daemon is too old for shared resize control; restart the daemon and reconnect")
+			}
+			return err
+		}
+		if m.sessionLeases != nil {
+			delete(m.sessionLeases, terminalID)
+		}
+		if m.runtime != nil {
+			m.runtime.ApplySessionLeases(m.sessionViewID, m.currentSessionLeases())
+		}
+		return nil
+	}
+}
+
+func (m *Model) currentSessionLeases() []protocol.LeaseInfo {
+	if m == nil || len(m.sessionLeases) == 0 {
+		return nil
+	}
+	leases := make([]protocol.LeaseInfo, 0, len(m.sessionLeases))
+	for _, lease := range m.sessionLeases {
+		leases = append(leases, lease)
+	}
+	return leases
 }
 
 func (m *Model) currentSessionViewParams() protocol.UpdateSessionViewParams {
@@ -100,6 +177,10 @@ func (m *Model) currentSessionViewParams() protocol.UpdateSessionViewParams {
 
 func isRevisionConflict(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "revision conflict")
+}
+
+func isSessionLeaseUnsupported(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "unknown session method: session.acquire_lease")
 }
 
 func (m *Model) exportSessionWorkbench() *workbenchdoc.Doc {
@@ -161,6 +242,6 @@ func (m *Model) reconcileSessionRuntime(ctx context.Context, oldBindings, nextBi
 		if _, err := m.runtime.AttachTerminal(ctx, paneID, terminalID, "collaborator"); err != nil {
 			continue
 		}
-		_, _ = m.runtime.LoadSnapshot(ctx, terminalID, 0, 200)
+		_, _ = m.runtime.LoadSnapshot(ctx, terminalID, 0, defaultTerminalSnapshotScrollbackLimit)
 	}
 }

@@ -29,10 +29,17 @@ type TerminalRuntime struct {
 	Snapshot   *bridge.SnapshotRef
 	VTerm      VTermLike
 
+	ScrollbackLoadedLimit  int
+	ScrollbackLoadingLimit int
+	ScrollbackExhausted    bool
+
 	OwnerPaneID  string   // 只读派生缓存，不是第二份可写绑定真相
 	BoundPaneIDs []string // 只读派生缓存，不是第二份可写绑定真相
 	// Owner release freezes further PTY resize until a view explicitly reacquires control.
 	RequiresExplicitOwner bool
+	// Owner handoff should force the next resize from the new owner even if the
+	// local snapshot cache still happens to match the requested geometry.
+	PendingOwnerResize bool
 
 	Stream   StreamState
 	Recovery RecoveryState

@@ -24,25 +24,36 @@ func emptyPaneActionSpecs(paneID string) []emptyPaneActionSpec {
 	return []emptyPaneActionSpec{
 		{
 			Kind:   HitRegionEmptyPaneAttach,
-			Label:  "[ Attach existing terminal ]",
+			Label:  "Attach existing terminal",
 			Action: input.SemanticAction{Kind: input.ActionOpenPicker, TargetID: paneID, PaneID: paneID},
 		},
 		{
 			Kind:   HitRegionEmptyPaneCreate,
-			Label:  "[ Create new terminal ]",
+			Label:  "Create new terminal",
 			Action: input.SemanticAction{Kind: input.ActionOpenPicker, TargetID: paneID, PaneID: paneID},
 		},
 		{
 			Kind:   HitRegionEmptyPaneManager,
-			Label:  "[ Open terminal manager ]",
+			Label:  "Open terminal manager",
 			Action: input.SemanticAction{Kind: input.ActionOpenTerminalManager, PaneID: paneID},
 		},
 		{
 			Kind:   HitRegionEmptyPaneClose,
-			Label:  "[ Close pane ]",
+			Label:  "Close pane",
 			Action: input.SemanticAction{Kind: input.ActionClosePane, PaneID: paneID},
 		},
 	}
+}
+
+func wrapEmptyPaneActionLabel(spec emptyPaneActionSpec, selected bool) string {
+	label := strings.TrimSpace(spec.Label)
+	if label == "" {
+		return ""
+	}
+	if selected {
+		return "► " + label + " ◄"
+	}
+	return "[ " + label + " ]"
 }
 
 func EmptyPaneActionRegions(pane workbench.VisiblePane) []HitRegion {
@@ -77,7 +88,7 @@ func layoutEmptyPaneActions(contentRect workbench.Rect, paneID string) []emptyPa
 		if y >= contentRect.Y+contentRect.H {
 			break
 		}
-		lineText := centerText(xansi.Truncate(spec.Label, contentRect.W, ""), contentRect.W)
+		lineText := centerText(xansi.Truncate(wrapEmptyPaneActionLabel(spec, false), contentRect.W, ""), contentRect.W)
 		out = append(out, emptyPaneActionLayout{
 			spec:     spec,
 			rowRect:  workbench.Rect{X: contentRect.X, Y: y, W: contentRect.W, H: 1},

@@ -575,6 +575,218 @@ func TestReorderFloatingPaneUpdatesZOrderMetadata(t *testing.T) {
 	}
 }
 
+func TestCreateFloatingPaneCascadesOverlappingPlacement(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.CreateFloatingPane("tab1", "pane2", Rect{})
+	_ = wb.CreateFloatingPane("tab1", "pane3", Rect{})
+
+	tab := wb.store["main"].Tabs[0]
+	if len(tab.Floating) != 2 {
+		t.Fatalf("expected 2 floating panes, got %#v", tab.Floating)
+	}
+	first := tab.Floating[0].Rect
+	second := tab.Floating[1].Rect
+	if first == second {
+		t.Fatalf("expected cascaded placement to avoid exact overlap, got %#v", second)
+	}
+	if overlap := rectOverlapArea(first, second); overlap >= first.W*first.H {
+		t.Fatalf("expected less than full overlap after cascade, overlap=%d first=%#v second=%#v", overlap, first, second)
+	}
+}
+
+func TestNextFloatingRectFindsNonOverlappingCandidate(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.CreateFloatingPane("tab1", "pane2", Rect{X: 10, Y: 5, W: 20, H: 8})
+
+	next, err := wb.NextFloatingRect("tab1", Rect{X: 10, Y: 5, W: 20, H: 8}, Rect{})
+	if err != nil {
+		t.Fatalf("NextFloatingRect: unexpected error: %v", err)
+	}
+	if next == (Rect{X: 10, Y: 5, W: 20, H: 8}) {
+		t.Fatalf("expected next floating rect to move away from existing one, got %#v", next)
+	}
+	if overlap := rectOverlapArea(next, Rect{X: 10, Y: 5, W: 20, H: 8}); overlap != 0 {
+		t.Fatalf("expected non-overlapping candidate, overlap=%d rect=%#v", overlap, next)
+	}
+}
+
+func TestSetFloatingPaneDisplayRestoresRectWhenExpanded(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.CreateFloatingPane("tab1", "pane2", Rect{X: 10, Y: 5, W: 20, H: 8})
+
+	if !wb.MoveFloatingPane("tab1", "pane2", 12, 6) {
+		t.Fatal("expected initial move to succeed")
+	}
+	tab := wb.store["main"].Tabs[0]
+	if tab.Floating[0].Rect != (Rect{X: 12, Y: 6, W: 20, H: 8}) {
+		t.Fatalf("unexpected rect after move: %#v", tab.Floating[0].Rect)
+	}
+
+	if !wb.SetFloatingPaneDisplay("tab1", "pane2", FloatingDisplayCollapsed) {
+		t.Fatal("expected collapse to change state")
+	}
+	if tab.Floating[0].Display != FloatingDisplayCollapsed {
+		t.Fatalf("expected collapsed display state, got %#v", tab.Floating[0].Display)
+	}
+	if tab.Floating[0].RestoreRect != (Rect{X: 12, Y: 6, W: 20, H: 8}) {
+		t.Fatalf("expected restore rect to capture expanded rect, got %#v", tab.Floating[0].RestoreRect)
+	}
+
+	// Moving while collapsed should not rewrite restore geometry.
+	if !wb.MoveFloatingPane("tab1", "pane2", 40, 20) {
+		t.Fatal("expected move while collapsed to succeed")
+	}
+	if tab.Floating[0].RestoreRect != (Rect{X: 12, Y: 6, W: 20, H: 8}) {
+		t.Fatalf("expected restore rect to remain stable while collapsed, got %#v", tab.Floating[0].RestoreRect)
+	}
+
+	if !wb.SetFloatingPaneDisplay("tab1", "pane2", FloatingDisplayExpanded) {
+		t.Fatal("expected expand to change state")
+	}
+	if tab.Floating[0].Display != FloatingDisplayExpanded {
+		t.Fatalf("expected expanded display state, got %#v", tab.Floating[0].Display)
+	}
+	if tab.Floating[0].Rect != (Rect{X: 12, Y: 6, W: 20, H: 8}) {
+		t.Fatalf("expected expand to restore previous rect, got %#v", tab.Floating[0].Rect)
+	}
+}
+
+func TestSetFloatingPaneFitModeAndAutoFitSize(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.CreateFloatingPane("tab1", "pane2", Rect{X: 8, Y: 4, W: 24, H: 10})
+
+	if !wb.SetFloatingPaneFitMode("tab1", "pane2", FloatingFitAuto) {
+		t.Fatal("expected fit mode update to auto")
+	}
+	if !wb.SetFloatingPaneAutoFitSize("tab1", "pane2", 120, 40) {
+		t.Fatal("expected auto-fit size metadata update")
+	}
+
+	tab := wb.store["main"].Tabs[0]
+	if tab.Floating[0].FitMode != FloatingFitAuto {
+		t.Fatalf("expected auto fit mode, got %#v", tab.Floating[0].FitMode)
+	}
+	if tab.Floating[0].AutoFitCols != 120 || tab.Floating[0].AutoFitRows != 40 {
+		t.Fatalf("expected auto-fit metadata 120x40, got cols=%d rows=%d", tab.Floating[0].AutoFitCols, tab.Floating[0].AutoFitRows)
+	}
+
+	if !wb.SetFloatingPaneFitMode("tab1", "pane2", FloatingFitManual) {
+		t.Fatal("expected fit mode update to manual")
+	}
+	if tab.Floating[0].AutoFitCols != 0 || tab.Floating[0].AutoFitRows != 0 {
+		t.Fatalf("expected manual fit mode to clear auto-fit metadata, got cols=%d rows=%d", tab.Floating[0].AutoFitCols, tab.Floating[0].AutoFitRows)
+	}
+}
+
+func TestSetFloatingPaneDisplayRestorePreservesPositionWhenUnobstructed(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.CreateFloatingPane("tab1", "pane2", Rect{X: 12, Y: 6, W: 20, H: 8})
+
+	if !wb.SetFloatingPaneDisplay("tab1", "pane2", FloatingDisplayCollapsed) {
+		t.Fatal("expected collapse to succeed")
+	}
+	if !wb.SetFloatingPaneDisplay("tab1", "pane2", FloatingDisplayExpanded) {
+		t.Fatal("expected re-expand to succeed")
+	}
+
+	tab := wb.store["main"].Tabs[0]
+	if got := tab.Floating[0].Rect; got != (Rect{X: 12, Y: 6, W: 20, H: 8}) {
+		t.Fatalf("expected re-expand to preserve original rect, got %#v", got)
+	}
+}
+
+func TestSetFloatingPaneDisplayRestoreOffsetsWhenPositionConflicts(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.CreateFloatingPane("tab1", "pane2", Rect{X: 12, Y: 6, W: 20, H: 8})
+	_ = wb.CreateFloatingPane("tab1", "pane3", Rect{X: 40, Y: 6, W: 20, H: 8})
+
+	if !wb.MoveFloatingPane("tab1", "pane3", 11, 6) {
+		t.Fatal("expected move to overlapping position to succeed")
+	}
+	if !wb.SetFloatingPaneDisplay("tab1", "pane2", FloatingDisplayCollapsed) {
+		t.Fatal("expected collapse to succeed")
+	}
+	if !wb.SetFloatingPaneDisplay("tab1", "pane2", FloatingDisplayExpanded) {
+		t.Fatal("expected re-expand to succeed")
+	}
+
+	tab := wb.store["main"].Tabs[0]
+	got := tab.Floating[0].Rect
+	if got == (Rect{X: 12, Y: 6, W: 20, H: 8}) {
+		t.Fatalf("expected conflicting restore to offset from original rect, got %#v", got)
+	}
+	if got.X <= 12 {
+		t.Fatalf("expected conflicting restore to cascade far enough to show title, got %#v", got)
+	}
+	if tab.Floating[0].RestoreRect != (Rect{X: 12, Y: 6, W: 20, H: 8}) {
+		t.Fatalf("expected restore rect to preserve user's original position, got %#v", tab.Floating[0].RestoreRect)
+	}
+}
+
+func TestSetFloatingPaneDisplayRestoreKeepsPositionWhenOnlyBodiesOverlap(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.CreateFloatingPane("tab1", "pane2", Rect{X: 12, Y: 6, W: 20, H: 8})
+	_ = wb.CreateFloatingPane("tab1", "pane3", Rect{X: 16, Y: 10, W: 20, H: 8})
+
+	if !wb.SetFloatingPaneDisplay("tab1", "pane2", FloatingDisplayCollapsed) {
+		t.Fatal("expected collapse to succeed")
+	}
+	if !wb.SetFloatingPaneDisplay("tab1", "pane2", FloatingDisplayExpanded) {
+		t.Fatal("expected re-expand to succeed")
+	}
+
+	tab := wb.store["main"].Tabs[0]
+	if got := tab.Floating[0].Rect; got != (Rect{X: 12, Y: 6, W: 20, H: 8}) {
+		t.Fatalf("expected body-only overlap to preserve original rect, got %#v", got)
+	}
+}
+
+func TestExpandAllFloatingPanesPreservesRestoreRectUntilConflict(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.CreateFloatingPane("tab1", "pane2", Rect{X: 12, Y: 6, W: 20, H: 8})
+	_ = wb.CreateFloatingPane("tab1", "pane3", Rect{X: 40, Y: 6, W: 20, H: 8})
+
+	if !wb.MoveFloatingPane("tab1", "pane3", 11, 6) {
+		t.Fatal("expected move to overlapping position to succeed")
+	}
+	if !wb.CollapseAllFloatingPanes("tab1") {
+		t.Fatal("expected collapse-all to succeed")
+	}
+	if !wb.ExpandAllFloatingPanes("tab1") {
+		t.Fatal("expected expand-all to succeed")
+	}
+
+	tab := wb.store["main"].Tabs[0]
+	if got := tab.Floating[0].Rect; got == (Rect{X: 12, Y: 6, W: 20, H: 8}) {
+		t.Fatalf("expected lower floating pane to offset because its title is fully occluded, got %#v", got)
+	}
+	if tab.Floating[0].RestoreRect != (Rect{X: 12, Y: 6, W: 20, H: 8}) {
+		t.Fatalf("expected lower floating pane restore rect to remain original, got %#v", tab.Floating[0].RestoreRect)
+	}
+	if got := tab.Floating[1].Rect; got != (Rect{X: 11, Y: 6, W: 20, H: 8}) {
+		t.Fatalf("expected top floating pane to preserve original overlapping position because its title stays visible, got %#v", got)
+	}
+	if tab.Floating[1].RestoreRect != (Rect{X: 11, Y: 6, W: 20, H: 8}) {
+		t.Fatalf("expected top floating pane restore rect to remain original, got %#v", tab.Floating[1].RestoreRect)
+	}
+}
+
 func TestMoveFloatingPaneByClampsAtOrigin(t *testing.T) {
 	wb := setupWorkbench(t)
 	_ = wb.CreateTab("main", "tab1", "Tab One")

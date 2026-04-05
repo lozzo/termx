@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"image/color"
+	"maps"
 	"slices"
 	"sort"
 
@@ -195,6 +196,7 @@ func (r *Runtime) SetHostDefaultColors(fg, bg color.Color) {
 		}
 		terminal.VTerm.SetDefaultColors(nextFG, nextBG)
 	}
+	r.invalidate()
 }
 
 func (r *Runtime) SetHostPaletteColor(index int, c color.Color) {
@@ -216,6 +218,7 @@ func (r *Runtime) SetHostPaletteColor(index int, c color.Color) {
 		}
 		terminal.VTerm.SetIndexedColor(index, value)
 	}
+	r.invalidate()
 }
 
 func (r *Runtime) applyHostColorsToVTerm(vt VTermLike) {
@@ -284,6 +287,7 @@ func (r *Runtime) Visible() *VisibleRuntime {
 		Bindings:      make([]VisiblePaneBinding, 0, len(r.bindings)),
 		HostDefaultFG: r.hostDefaultFG,
 		HostDefaultBG: r.hostDefaultBG,
+		HostPalette:   maps.Clone(r.hostPalette),
 	}
 	for _, terminalID := range r.registry.IDs() {
 		terminal := r.registry.Get(terminalID)

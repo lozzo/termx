@@ -3,9 +3,9 @@ package bootstrap
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
-	"sort"
 
 	"github.com/lozzow/termx/tuiv2/persist"
 	"github.com/lozzow/termx/tuiv2/runtime"
@@ -90,7 +90,7 @@ func buildTab(entry persist.TabEntryV2) *workbench.TabState {
 	tab.ActivePaneID = remapPaneID(entry.ActivePaneID, paneIDMap)
 	tab.ZoomedPaneID = remapPaneID(entry.ZoomedPaneID, paneIDMap)
 	tab.Floating = buildFloatingEntries(entry.Floating, tab.Panes, paneIDMap)
-	tab.FloatingVisible = len(tab.Floating) > 0
+	tab.FloatingVisible = restoredFloatingVisible(entry, tab.Floating)
 
 	// Restore the layout tree if one was persisted; otherwise build a
 	// simple linear chain from the pane list.
@@ -101,6 +101,13 @@ func buildTab(entry persist.TabEntryV2) *workbench.TabState {
 	}
 
 	return tab
+}
+
+func restoredFloatingVisible(entry persist.TabEntryV2, floating []*workbench.FloatingState) bool {
+	if entry.FloatingVisible != nil {
+		return *entry.FloatingVisible
+	}
+	return len(floating) > 0
 }
 
 // buildLayoutNode recursively converts a LayoutNodeEntry into a LayoutNode.
@@ -161,7 +168,17 @@ func buildFloatingEntries(entries []persist.FloatingEntryV2, panes map[string]*w
 				W: entry.Rect.W,
 				H: entry.Rect.H,
 			},
-			Z: entry.Z,
+			Z:       entry.Z,
+			Display: workbench.FloatingDisplayState(entry.Display),
+			FitMode: workbench.FloatingFitMode(entry.FitMode),
+			RestoreRect: workbench.Rect{
+				X: entry.RestoreRect.X,
+				Y: entry.RestoreRect.Y,
+				W: entry.RestoreRect.W,
+				H: entry.RestoreRect.H,
+			},
+			AutoFitCols: entry.AutoFitCols,
+			AutoFitRows: entry.AutoFitRows,
 		})
 	}
 	sort.SliceStable(floating, func(i, j int) bool {

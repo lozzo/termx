@@ -961,6 +961,51 @@ func TestE2EMultiClientSessionKeepsLocalTabSelectionIndependent(t *testing.T) {
 	e2eWaitForCurrentTabID(t, env.ctx, clientA, firstTabID)
 }
 
+func TestE2EMultiClientSharedSessionSyncsTabClose(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	env := newSharedSessionE2EHarness(t)
+	term1 := env.createTerminal(t, "tab-close-1", "tab_close_one_ready")
+	clientA := env.newClient(t, 120, 40, term1)
+	e2eWaitForText(t, env.ctx, clientA.model, clientA.invalidated, "tab_close_one_ready")
+
+	clientB := env.newClient(t, 80, 20, "")
+	e2eWaitForText(t, env.ctx, clientB.model, clientB.invalidated, "tab_close_one_ready")
+
+	term2 := env.createTerminal(t, "tab-close-2", "tab_close_two_ready")
+	e2eDrainSkippingPrefixTimeout(t, clientA.model, clientA.model.createTabAndAttachTerminalCmd(term2))
+	snapshot := e2eWaitForSessionRevision(t, env.ctx, env.control, 2)
+	e2eWaitForTabCount(t, env.ctx, clientB, 2)
+
+	wsA := clientA.model.workbench.CurrentWorkspace()
+	if wsA == nil || len(wsA.Tabs) != 2 {
+		t.Fatalf("expected clientA to have 2 tabs, got %#v", wsA)
+	}
+	secondTabID := wsA.Tabs[1].ID
+
+	_, cmd := clientA.model.Update(input.SemanticAction{Kind: input.ActionCloseTab, TabID: secondTabID})
+	e2eDrainSkippingPrefixTimeout(t, clientA.model, cmd)
+
+	snapshot = e2eWaitForSessionRevision(t, env.ctx, env.control, snapshot.Session.Revision+1)
+	ws := snapshot.Workbench.Workspaces["main"]
+	if ws == nil {
+		t.Fatalf("expected daemon session main workspace, got %#v", snapshot.Workbench)
+	}
+	if len(ws.Tabs) != 1 {
+		t.Fatalf("expected daemon session to contain 1 tab after close, got %#v", ws.Tabs)
+	}
+	for _, tab := range ws.Tabs {
+		if tab != nil && tab.ID == secondTabID {
+			t.Fatalf("expected daemon session to remove closed tab %q, got %#v", secondTabID, ws.Tabs)
+		}
+	}
+
+	_ = e2eWaitForSessionEvent(t, env.ctx, clientB, snapshot.Session.Revision)
+	e2eWaitForTabCount(t, env.ctx, clientB, 1)
+}
+
 func TestE2EMultiClientReconnectRestoresSessionAndReceivesLaterUpdates(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: requires a real PTY, skipped with -short")
@@ -989,6 +1034,81 @@ func TestE2EMultiClientReconnectRestoresSessionAndReceivesLaterUpdates(t *testin
 	_, cmd := clientA.model.Update(input.SemanticAction{Kind: input.ActionClosePane, PaneID: secondPaneID})
 	e2eDrainSkippingPrefixTimeout(t, clientA.model, cmd)
 	e2eWaitForPaneAbsent(t, env.ctx, clientC, secondPaneID)
+}
+
+func TestE2ETabSwitchSharedTerminalPromotesOwnerResizesAndShowsCursor(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	env := newRealMouseE2EEnv(t)
+	model := env.model
+	client := model.runtime.Client()
+	if client == nil {
+		t.Fatal("expected runtime client")
+	}
+
+	created, err := client.Create(env.ctx, protocol.CreateParams{
+		Command: []string{"sh", "-c", "printf '\\033[30;90H@\\033[30;90H'; cat"},
+		Name:    "shared-tab-cursor",
+		Size:    protocol.Size{Cols: 120, Rows: 40},
+	})
+	if err != nil {
+		t.Fatalf("create shared terminal: %v", err)
+	}
+
+	e2eDrainSkippingPrefixTimeout(t, model, model.attachInitialTerminalCmd(created.TerminalID))
+	firstPane := model.workbench.ActivePane()
+	if firstPane == nil || firstPane.TerminalID != created.TerminalID {
+		t.Fatalf("expected first pane attached to %q, got %#v", created.TerminalID, firstPane)
+	}
+	firstPaneID := firstPane.ID
+
+	e2eDrainSkippingPrefixTimeout(t, model, model.createTabAndAttachTerminalCmd(created.TerminalID))
+	secondPane := model.workbench.ActivePane()
+	if secondPane == nil || secondPane.TerminalID != created.TerminalID {
+		t.Fatalf("expected second tab pane attached to %q, got %#v", created.TerminalID, secondPane)
+	}
+	secondPaneID := secondPane.ID
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected second tab after createTabAndAttachTerminalCmd")
+	}
+	if err := model.workbench.SplitPane(tab.ID, secondPaneID, "pane-side", workbench.SplitVertical); err != nil {
+		t.Fatalf("split second tab pane: %v", err)
+	}
+	if err := model.workbench.FocusPane(tab.ID, secondPaneID); err != nil {
+		t.Fatalf("refocus shared pane on second tab: %v", err)
+	}
+	model.render.Invalidate()
+
+	e2eDrainSkippingPrefixTimeout(t, model, model.switchTabByIndexMouse(0))
+	e2eWaitForTerminalOwnerPane(t, env.ctx, model, created.TerminalID, firstPaneID)
+
+	e2eDrainSkippingPrefixTimeout(t, model, model.switchTabByIndexMouse(1))
+	e2eWaitForTerminalOwnerPane(t, env.ctx, model, created.TerminalID, secondPaneID)
+
+	visible := model.workbench.VisibleWithSize(model.bodyRect())
+	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
+		t.Fatalf("expected visible state after second tab switch, got %#v", visible)
+	}
+	var target *workbench.VisiblePane
+	for i := range visible.Tabs[visible.ActiveTab].Panes {
+		pane := &visible.Tabs[visible.ActiveTab].Panes[i]
+		if pane.ID == secondPaneID {
+			target = pane
+			break
+		}
+	}
+	if target == nil {
+		t.Fatalf("expected visible pane %q after second tab switch, got %#v", secondPaneID, visible.Tabs[visible.ActiveTab].Panes)
+	}
+
+	wantCols := uint16(maxInt(2, target.Rect.W-2))
+	wantRows := uint16(maxInt(2, target.Rect.H-2))
+	e2eWaitForTerminalSize(t, env.ctx, model, created.TerminalID, wantCols, wantRows)
+	e2eWaitForCursorHighlight(t, env.ctx, model, env.invalidated)
 }
 
 type realMouseE2EEnv struct {
@@ -1642,6 +1762,74 @@ func e2eWaitForOwner(t *testing.T, ctx context.Context, m *Model, targetPaneID s
 		t.Fatalf("timeout waiting for owner %q: terminal %q missing", targetPaneID, pane.TerminalID)
 	}
 	t.Fatalf("timeout waiting for owner %q: got %q", targetPaneID, terminal.OwnerPaneID)
+}
+
+func e2eWaitForTerminalOwnerPane(t *testing.T, ctx context.Context, m *Model, terminalID, paneID string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		terminal := m.runtime.Registry().Get(terminalID)
+		if terminal != nil && terminal.OwnerPaneID == paneID {
+			return
+		}
+		select {
+		case <-time.After(20 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatalf("context expired waiting for terminal %q owner %q", terminalID, paneID)
+		}
+	}
+	terminal := m.runtime.Registry().Get(terminalID)
+	if terminal == nil {
+		t.Fatalf("timeout waiting for terminal %q owner %q: terminal missing", terminalID, paneID)
+	}
+	t.Fatalf("timeout waiting for terminal %q owner %q: got %q", terminalID, paneID, terminal.OwnerPaneID)
+}
+
+func e2eWaitForTerminalSize(t *testing.T, ctx context.Context, m *Model, terminalID string, cols, rows uint16) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		terminal := m.runtime.Registry().Get(terminalID)
+		if terminal != nil && terminal.Snapshot != nil &&
+			terminal.Snapshot.Size.Cols == cols && terminal.Snapshot.Size.Rows == rows {
+			return
+		}
+		select {
+		case <-time.After(20 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatalf("context expired waiting for terminal %q size %dx%d", terminalID, cols, rows)
+		}
+	}
+	terminal := m.runtime.Registry().Get(terminalID)
+	if terminal == nil || terminal.Snapshot == nil {
+		t.Fatalf("timeout waiting for terminal %q size %dx%d: snapshot missing", terminalID, cols, rows)
+	}
+	t.Fatalf(
+		"timeout waiting for terminal %q size %dx%d: got %dx%d",
+		terminalID,
+		cols,
+		rows,
+		terminal.Snapshot.Size.Cols,
+		terminal.Snapshot.Size.Rows,
+	)
+}
+
+func e2eWaitForCursorHighlight(t *testing.T, ctx context.Context, m *Model, invalidated <-chan struct{}) {
+	t.Helper()
+	const syntheticCursorANSI = "\x1b[0;38;2;0;0;0;48;2;255;255;255m"
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(m.View(), syntheticCursorANSI) {
+			return
+		}
+		select {
+		case <-invalidated:
+		case <-time.After(100 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatal("context expired waiting for synthetic cursor highlight")
+		}
+	}
+	t.Fatalf("timeout waiting for synthetic cursor highlight:\n%s", m.View())
 }
 
 func e2eShareTerminalInSplitPane(t *testing.T, env realMouseE2EEnv, sourcePaneID, newPaneID string, dir workbench.SplitDirection, terminalID string) string {

@@ -49,6 +49,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, batchCmds(cmd, m.updateSessionViewCmd())
 		}
 		cmd := m.applyEffects(m.enrichEffects(typed.Action, m.orchestrator.HandleSemanticAction(typed.Action)))
+		cmd = batchCmds(cmd, m.resizeCmdForAction(typed.Action))
 		if m.isStickyMode() {
 			cmd = tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
 		}
@@ -61,6 +62,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, batchCmds(cmd, m.updateSessionViewCmd())
 		}
 		cmd := m.applyEffects(m.enrichEffects(typed, m.orchestrator.HandleSemanticAction(typed)))
+		cmd = batchCmds(cmd, m.resizeCmdForAction(typed))
 		if m.isStickyMode() {
 			cmd = tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
 		}
@@ -112,10 +114,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
 		}
 		m.render.Invalidate()
-		return m, tea.Batch(m.saveStateCmd(), m.resizeVisiblePanesCmd())
+		return m, m.saveStateCmd()
 	case orchestrator.SnapshotLoadedMsg:
 		m.render.Invalidate()
-		return m, nil
+		return m, m.maybeAutoFitFloatingPanesCmd()
 	case hostDefaultColorsMsg:
 		if m.runtime != nil {
 			m.runtime.SetHostDefaultColors(typed.FG, typed.BG)
@@ -184,10 +186,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case InvalidateMsg:
 		m.invalidatePending.Store(false)
 		m.render.Invalidate()
-		return m, nil
+		return m, m.maybeAutoFitFloatingPanesCmd()
 	case RenderTickMsg:
-		if m.render != nil && m.render.NeedsCursorTicks() {
-			m.render.Invalidate()
+		if m.render != nil {
+			m.render.AdvanceCursorBlink()
 		}
 		return m, nil
 	case tea.WindowSizeMsg:
@@ -203,7 +205,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = typed.Width
 		m.height = typed.Height
 		m.render.Invalidate()
-		return m, batchCmds(m.resizeVisiblePanesCmd(), m.updateSessionViewCmd())
+		return m, batchCmds(m.resizeVisiblePanesCmd(), m.maybeAutoFitFloatingPanesCmd(), m.updateSessionViewCmd())
 	case error:
 		return m, m.showError(typed)
 	default:

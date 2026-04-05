@@ -3,7 +3,6 @@ package render
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/runtime"
@@ -63,6 +62,21 @@ func TestComposedCanvasDrawText(t *testing.T) {
 	}
 }
 
+func TestComposedCanvasDrawTextAdvancesByDisplayWidth(t *testing.T) {
+	canvas := newComposedCanvas(8, 1)
+	canvas.drawText(0, 0, "[界]X", drawStyle{FG: "#00ff00"})
+
+	if got := canvas.cells[0][1].Content; got != "界" {
+		t.Fatalf("expected wide glyph at x=1, got %q", got)
+	}
+	if !canvas.cells[0][2].Continuation {
+		t.Fatalf("expected x=2 to be marked as continuation for wide glyph, got %#v", canvas.cells[0][2])
+	}
+	if got := canvas.cells[0][4].Content; got != "X" {
+		t.Fatalf("expected trailing text to land after wide glyph width, got %q", got)
+	}
+}
+
 func TestHexToRGB(t *testing.T) {
 	rgb, ok := hexToRGB("#ff8000")
 	if !ok {
@@ -118,7 +132,7 @@ func TestRenderFrameUsesSyntheticCursorForActiveShellPane(t *testing.T) {
 	if strings.Contains(coordinator.CursorSequence(), "\x1b[?25h") {
 		t.Fatalf("expected shell pane to keep host cursor hidden, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
 	}
-	if !strings.Contains(frame, styleANSI(drawStyle{FG: "#111111", BG: "#f5f5f5", Reverse: true})+"h") {
+	if !strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+"h") {
 		t.Fatalf("expected shell pane to use synthetic cursor highlight, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
 	}
 }
@@ -196,7 +210,7 @@ func TestRenderFrameUsesSyntheticCursorForAlternateScreenPane(t *testing.T) {
 	if strings.Contains(coordinator.CursorSequence(), "\x1b[?25h") {
 		t.Fatalf("expected alternate-screen pane to keep host cursor hidden, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
 	}
-	if !strings.Contains(frame, styleANSI(drawStyle{FG: "#111111", BG: "#f5f5f5", Reverse: true})+"h") {
+	if !strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+"h") {
 		t.Fatalf("expected alternate-screen pane to use synthetic cursor highlight, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
 	}
 }
@@ -219,8 +233,8 @@ func TestProjectPaneCursorDrawsSyntheticCursorForPlainShell(t *testing.T) {
 	if cell.Content != "h" {
 		t.Fatalf("expected cursor overlay to preserve cell content, got %#v", cell)
 	}
-	if !cell.Style.Reverse {
-		t.Fatalf("expected synthetic cursor to reverse the active cell style, got %#v", cell.Style)
+	if cell.Style.Reverse || cell.Style.FG != "#000000" || cell.Style.BG != "#ffffff" {
+		t.Fatalf("expected synthetic cursor to force explicit white cursor colors, got %#v", cell.Style)
 	}
 	if canvas.cursorVisible {
 		t.Fatalf("expected synthetic cursor path to keep host cursor hidden")
@@ -255,7 +269,7 @@ func TestRenderFrameUsesHighContrastSyntheticCursorOnBlankShellCell(t *testing.T
 
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
 	frame := NewCoordinator(func() VisibleRenderState { return state }).RenderFrame()
-	want := styleANSI(drawStyle{FG: "#111111", BG: "#f5f5f5", Reverse: true}) + " "
+	want := styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"}) + " "
 	if !strings.Contains(frame, want) {
 		t.Fatalf("expected blank shell cursor cell to use high-contrast synthetic cursor %q, got %q", want, frame)
 	}
@@ -289,7 +303,7 @@ func TestRenderFrameUsesHighContrastSyntheticCursorOnTextCellWithDefaultColors(t
 
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
 	frame := NewCoordinator(func() VisibleRenderState { return state }).RenderFrame()
-	want := styleANSI(drawStyle{FG: "#111111", BG: "#f5f5f5", Reverse: true}) + "h"
+	want := styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"}) + "h"
 	if !strings.Contains(frame, want) {
 		t.Fatalf("expected text cursor cell to use high-contrast synthetic cursor %q, got %q", want, frame)
 	}
@@ -310,19 +324,15 @@ func TestProjectPaneCursorUsesVisibleBarCursorStyleOnTextCell(t *testing.T) {
 	projectPaneCursor(canvas, rect, snapshot, 0)
 
 	cell := canvas.cells[1][1]
-	if !cell.Style.Reverse {
-		t.Fatalf("expected bar cursor to reverse active cell style, got %#v", cell.Style)
+	if cell.Style.Reverse {
+		t.Fatalf("expected bar cursor to avoid reverse-video fallback, got %#v", cell.Style)
 	}
-	if cell.Style.FG != "#111111" || cell.Style.BG != "#f5f5f5" {
+	if cell.Style.FG != "#000000" || cell.Style.BG != "#ffffff" {
 		t.Fatalf("expected bar cursor to force visible fallback colors, got %#v", cell.Style)
 	}
 }
 
 func TestRenderFrameHidesBlinkingSyntheticCursorOffPhase(t *testing.T) {
-	prevNow := blinkTimeNow
-	blinkTimeNow = func() time.Time { return time.Unix(0, int64(CursorBlinkInterval)) }
-	defer func() { blinkTimeNow = prevNow }()
-
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -349,14 +359,17 @@ func TestRenderFrameHidesBlinkingSyntheticCursorOffPhase(t *testing.T) {
 	}
 
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
-	frame := NewCoordinator(func() VisibleRenderState { return state }).RenderFrame()
-	highlight := styleANSI(drawStyle{FG: "#111111", BG: "#f5f5f5", Reverse: true}) + "h"
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+	_ = coordinator.RenderFrame()
+	coordinator.AdvanceCursorBlink()
+	frame := coordinator.RenderFrame()
+	highlight := styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"}) + "h"
 	if strings.Contains(frame, highlight) {
 		t.Fatalf("expected blinking synthetic cursor to disappear during off phase, got %q", frame)
 	}
 }
 
-func TestCoordinatorNeedsCursorTicksForBlinkingActivePane(t *testing.T) {
+func TestCoordinatorNeedsCursorTicksForVisibleActivePane(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -379,13 +392,13 @@ func TestCoordinatorNeedsCursorTicksForBlinkingActivePane(t *testing.T) {
 		Screen: protocol.ScreenData{
 			Cells: [][]protocol.Cell{{{Content: "h", Width: 1}}},
 		},
-		Cursor: protocol.CursorState{Row: 0, Col: 0, Visible: true, Shape: "bar", Blink: true},
+		Cursor: protocol.CursorState{Row: 0, Col: 0, Visible: true, Shape: "bar"},
 	}
 
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
 	if !coordinator.NeedsCursorTicks() {
-		t.Fatal("expected blinking active pane cursor to request render ticks")
+		t.Fatal("expected visible active pane cursor to request render ticks")
 	}
 }
 
@@ -409,8 +422,8 @@ func TestProjectPaneCursorDrawsSyntheticCursorOnCanvas(t *testing.T) {
 	if cell.Content != "h" {
 		t.Fatalf("expected cursor overlay to preserve cell content, got %#v", cell)
 	}
-	if !cell.Style.Reverse {
-		t.Fatalf("expected cursor overlay to reverse the active cell style, got %#v", cell.Style)
+	if cell.Style.Reverse || cell.Style.FG != "#000000" || cell.Style.BG != "#ffffff" {
+		t.Fatalf("expected cursor overlay to use explicit white cursor colors, got %#v", cell.Style)
 	}
 	if canvas.cursorVisible {
 		t.Fatalf("expected synthetic cursor overlay to avoid host cursor movement")
@@ -458,7 +471,51 @@ func TestDrawSnapshotWithOffsetMarksPanelAreaOutsideTerminalWithDots(t *testing.
 	}
 }
 
-func TestDrawPaneFrameMarksOverflowEdgesWithDashedBorder(t *testing.T) {
+func TestDrawSnapshotWithOffsetUsesRenderedScreenHeightWhenSnapshotRowsLag(t *testing.T) {
+	canvas := newComposedCanvas(4, 3)
+	rect := workbench.Rect{X: 0, Y: 0, W: 4, H: 3}
+	snapshot := &protocol.Snapshot{
+		Size: protocol.Size{Cols: 4, Rows: 1},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{
+				{{Content: "a", Width: 1}},
+				{{Content: "b", Width: 1}},
+				{{Content: "c", Width: 1}},
+			},
+		},
+	}
+
+	fillRect(canvas, rect, blankDrawCell())
+	drawSnapshotWithOffset(canvas, rect, snapshot, 0, defaultUITheme())
+
+	if got := canvas.rawString(); got != "a\nb\nc" {
+		t.Fatalf("expected rendered screen height to suppress stale bottom dots, got %q", got)
+	}
+}
+
+func TestDrawSnapshotWithOffsetUsesRenderedScreenWidthWhenSnapshotColsLag(t *testing.T) {
+	canvas := newComposedCanvas(4, 1)
+	rect := workbench.Rect{X: 0, Y: 0, W: 4, H: 1}
+	snapshot := &protocol.Snapshot{
+		Size: protocol.Size{Cols: 1, Rows: 1},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{{
+				{Content: "a", Width: 1},
+				{Content: "b", Width: 1},
+				{Content: "c", Width: 1},
+			}},
+		},
+	}
+
+	fillRect(canvas, rect, blankDrawCell())
+	drawSnapshotWithOffset(canvas, rect, snapshot, 0, defaultUITheme())
+
+	if got := canvas.rawString(); got != "abc·" {
+		t.Fatalf("expected rendered screen width to suppress stale right-side dots, got %q", got)
+	}
+}
+
+func TestDrawPaneFrameMarksOverflowWithStableCornerIndicators(t *testing.T) {
 	canvas := newComposedCanvas(6, 4)
 	rect := workbench.Rect{X: 0, Y: 0, W: 6, H: 4}
 
@@ -468,10 +525,41 @@ func TestDrawPaneFrameMarksOverflowEdgesWithDashedBorder(t *testing.T) {
 	if len(lines) != 4 {
 		t.Fatalf("expected 4 rendered lines, got %d", len(lines))
 	}
-	if !strings.Contains(lines[1], "┆") || !strings.Contains(lines[2], "┆") {
-		t.Fatalf("expected dashed right border, got %q / %q", lines[1], lines[2])
+	if !strings.HasSuffix(lines[0], "┐") {
+		t.Fatalf("expected top-right corner to remain solid, got %q", lines[0])
 	}
-	if !strings.Contains(lines[3], "┄") {
-		t.Fatalf("expected dashed bottom border, got %q", lines[3])
+	if !strings.HasPrefix(lines[3], "└") || !strings.HasSuffix(lines[3], "┘") {
+		t.Fatalf("expected bottom corners to remain solid, got %q", lines[3])
+	}
+	if !strings.HasSuffix(lines[2], ">") {
+		t.Fatalf("expected right overflow marker near bottom-right edge, got %q", lines[2])
+	}
+	if !strings.Contains(lines[3], "v┘") {
+		t.Fatalf("expected bottom overflow marker before bottom-right corner, got %q", lines[3])
+	}
+}
+
+func TestDrawPaneFrameHighlightsOverflowMarkersForActivePane(t *testing.T) {
+	canvas := newComposedCanvas(8, 5)
+	rect := workbench.Rect{X: 0, Y: 0, W: 8, H: 5}
+	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
+
+	drawPaneFrame(canvas, rect, "", paneBorderInfo{}, theme, paneOverflowHints{Right: true, Bottom: true}, true, false)
+
+	rightMarker := canvas.cells[rect.Y+rect.H-2][rect.X+rect.W-1]
+	bottomMarker := canvas.cells[rect.Y+rect.H-1][rect.X+rect.W-2]
+	borderCell := canvas.cells[rect.Y][rect.X+rect.W-1]
+
+	if rightMarker.Style.FG == "" || bottomMarker.Style.FG == "" {
+		t.Fatalf("expected active overflow markers to use explicit colors, got right=%#v bottom=%#v", rightMarker.Style, bottomMarker.Style)
+	}
+	if rightMarker.Style.FG == borderCell.Style.FG {
+		t.Fatalf("expected active right marker color to differ from border, both %q", rightMarker.Style.FG)
+	}
+	if bottomMarker.Style.FG == borderCell.Style.FG {
+		t.Fatalf("expected active bottom marker color to differ from border, both %q", bottomMarker.Style.FG)
+	}
+	if !rightMarker.Style.Bold || !bottomMarker.Style.Bold {
+		t.Fatalf("expected active overflow markers to be bold, got right=%#v bottom=%#v", rightMarker.Style, bottomMarker.Style)
 	}
 }

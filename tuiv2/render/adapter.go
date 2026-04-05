@@ -44,15 +44,17 @@ const (
 	VisibleOverlayWorkspacePicker
 	VisibleOverlayTerminalManager
 	VisibleOverlayHelp
+	VisibleOverlayFloatingOverview
 )
 
 type VisibleOverlay struct {
-	Kind            VisibleOverlayKind
-	Prompt          *modal.PromptState
-	Picker          *modal.PickerState
-	WorkspacePicker *modal.WorkspacePickerState
-	TerminalManager *modal.TerminalManagerState
-	Help            *modal.HelpState
+	Kind             VisibleOverlayKind
+	Prompt           *modal.PromptState
+	Picker           *modal.PickerState
+	WorkspacePicker  *modal.WorkspacePickerState
+	TerminalManager  *modal.TerminalManagerState
+	Help             *modal.HelpState
+	FloatingOverview *modal.FloatingOverviewState
 }
 
 type TermSize struct {
@@ -124,6 +126,8 @@ func AttachModalHost(state VisibleRenderState, host *modal.ModalHost) VisibleRen
 		return AttachHelp(state, host.Help)
 	case input.ModePrompt:
 		return AttachPrompt(state, host.Prompt)
+	case input.ModeFloatingOverview:
+		return AttachFloatingOverview(state, host.FloatingOverview)
 	default:
 		state.Overlay = VisibleOverlay{Kind: VisibleOverlayNone}
 		return state
@@ -142,6 +146,14 @@ func AttachPrompt(state VisibleRenderState, prompt *modal.PromptState) VisibleRe
 	state.Overlay = VisibleOverlay{
 		Kind:   VisibleOverlayPrompt,
 		Prompt: prompt,
+	}
+	return state
+}
+
+func AttachFloatingOverview(state VisibleRenderState, overview *modal.FloatingOverviewState) VisibleRenderState {
+	state.Overlay = VisibleOverlay{
+		Kind:             VisibleOverlayFloatingOverview,
+		FloatingOverview: overview,
 	}
 	return state
 }

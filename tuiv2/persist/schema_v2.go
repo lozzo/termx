@@ -12,13 +12,14 @@ type WorkspaceEntryV2 struct {
 }
 
 type TabEntryV2 struct {
-	Name         string            `json:"name"`
-	ActivePaneID string            `json:"active_pane_id,omitempty"`
-	ZoomedPaneID string            `json:"zoomed_pane_id,omitempty"`
-	LayoutPreset int               `json:"layout_preset,omitempty"`
-	Layout       *LayoutNodeEntry  `json:"layout,omitempty"`
-	Panes        []PaneEntryV2     `json:"panes"`
-	Floating     []FloatingEntryV2 `json:"floating,omitempty"`
+	Name            string            `json:"name"`
+	ActivePaneID    string            `json:"active_pane_id,omitempty"`
+	ZoomedPaneID    string            `json:"zoomed_pane_id,omitempty"`
+	FloatingVisible *bool             `json:"floating_visible,omitempty"`
+	LayoutPreset    int               `json:"layout_preset,omitempty"`
+	Layout          *LayoutNodeEntry  `json:"layout,omitempty"`
+	Panes           []PaneEntryV2     `json:"panes"`
+	Floating        []FloatingEntryV2 `json:"floating,omitempty"`
 }
 
 type LayoutNodeEntry struct {
@@ -36,9 +37,14 @@ type PaneEntryV2 struct {
 }
 
 type FloatingEntryV2 struct {
-	PaneID string      `json:"pane_id"`
-	Rect   RectEntryV2 `json:"rect"`
-	Z      int         `json:"z,omitempty"`
+	PaneID      string      `json:"pane_id"`
+	Rect        RectEntryV2 `json:"rect"`
+	Z           int         `json:"z,omitempty"`
+	Display     string      `json:"display,omitempty"`
+	FitMode     string      `json:"fit_mode,omitempty"`
+	RestoreRect RectEntryV2 `json:"restore_rect,omitempty"`
+	AutoFitCols int         `json:"auto_fit_cols,omitempty"`
+	AutoFitRows int         `json:"auto_fit_rows,omitempty"`
 }
 
 type RectEntryV2 struct {

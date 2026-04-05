@@ -91,6 +91,7 @@ func (r *Runtime) AcquireTerminalOwnership(paneID, terminalID string) error {
 	}
 	terminal.OwnerPaneID = paneID
 	terminal.RequiresExplicitOwner = false
+	terminal.PendingOwnerResize = true
 	r.syncTerminalOwnership(terminal)
 	return nil
 }

@@ -54,7 +54,7 @@ func (t *TabState) removePane(paneID string) (string, bool) {
 	removedTerminalID := t.Panes[paneID].TerminalID
 	delete(t.Panes, paneID)
 	t.Floating = removeFloatingPane(t.Floating, paneID)
-	if len(t.Floating) == 0 {
+	if len(t.Floating) == 0 || !hasExpandedFloating(t.Floating) {
 		t.FloatingVisible = false
 	}
 	if t.Root != nil {

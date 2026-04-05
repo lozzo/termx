@@ -27,6 +27,8 @@ type Client interface {
 	ApplySession(ctx context.Context, params protocol.ApplySessionParams) (*protocol.SessionSnapshot, error)
 	ReplaceSession(ctx context.Context, params protocol.ReplaceSessionParams) (*protocol.SessionSnapshot, error)
 	UpdateSessionView(ctx context.Context, params protocol.UpdateSessionViewParams) (*protocol.ViewInfo, error)
+	AcquireSessionLease(ctx context.Context, params protocol.AcquireSessionLeaseParams) (*protocol.LeaseInfo, error)
+	ReleaseSessionLease(ctx context.Context, params protocol.ReleaseSessionLeaseParams) error
 }
 
 type ProtocolClient struct {
@@ -113,4 +115,12 @@ func (c *ProtocolClient) ReplaceSession(ctx context.Context, params protocol.Rep
 
 func (c *ProtocolClient) UpdateSessionView(ctx context.Context, params protocol.UpdateSessionViewParams) (*protocol.ViewInfo, error) {
 	return c.inner.UpdateSessionView(ctx, params)
+}
+
+func (c *ProtocolClient) AcquireSessionLease(ctx context.Context, params protocol.AcquireSessionLeaseParams) (*protocol.LeaseInfo, error) {
+	return c.inner.AcquireSessionLease(ctx, params)
+}
+
+func (c *ProtocolClient) ReleaseSessionLease(ctx context.Context, params protocol.ReleaseSessionLeaseParams) error {
+	return c.inner.ReleaseSessionLease(ctx, params)
 }

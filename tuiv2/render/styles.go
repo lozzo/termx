@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -73,24 +74,24 @@ type uiTheme struct {
 }
 
 func defaultUITheme() uiTheme {
-	return uiThemeFromHostColors("", "")
+	return uiThemeFromHostColors("", "", nil)
 }
 
 func uiThemeForState(state VisibleRenderState) uiTheme {
 	if state.Runtime == nil {
 		return defaultUITheme()
 	}
-	return uiThemeFromHostColors(state.Runtime.HostDefaultBG, state.Runtime.HostDefaultFG)
+	return uiThemeFromHostColors(state.Runtime.HostDefaultBG, state.Runtime.HostDefaultFG, state.Runtime.HostPalette)
 }
 
 func uiThemeForRuntime(runtimeState *VisibleRuntimeStateProxy) uiTheme {
 	if runtimeState == nil {
 		return defaultUITheme()
 	}
-	return uiThemeFromHostColors(runtimeState.HostDefaultBG, runtimeState.HostDefaultFG)
+	return uiThemeFromHostColors(runtimeState.HostDefaultBG, runtimeState.HostDefaultFG, runtimeState.HostPalette)
 }
 
-func uiThemeFromHostColors(hostBG, hostFG string) uiTheme {
+func uiThemeFromHostColors(hostBG, hostFG string, hostPalette map[int]string) uiTheme {
 	if !isHexColor(strings.TrimSpace(hostBG)) {
 		hostBG = "#000000"
 	}
@@ -98,43 +99,54 @@ func uiThemeFromHostColors(hostBG, hostFG string) uiTheme {
 		hostFG = contrastTextColor(hostBG)
 	}
 
-	chromeBG := mixHex(hostBG, hostFG, 0.08)
-	chromeAltBG := mixHex(hostBG, hostFG, 0.12)
-	panelBG := mixHex(hostBG, hostFG, 0.06)
-	panelAltBG := mixHex(hostBG, hostFG, 0.1)
-	panelStrong := mixHex(hostBG, hostFG, 0.14)
-	panelText := contrastTextColor(panelBG)
-	panelMuted := mixHex(panelText, panelBG, 0.4)
-	panelBorder := mixHex(hostBG, hostFG, 0.34)
-	panelBorder2 := mixHex(hostBG, hostFG, 0.22)
-	fieldBG := mixHex(hostBG, hostFG, 0.1)
-	fieldText := contrastTextColor(fieldBG)
-	selectedBG := mixHex(hostBG, hostFG, 0.16)
-	selectedText := contrastTextColor(selectedBG)
-	createBG := mixHex(hostBG, hostFG, 0.18)
-	createText := contrastTextColor(createBG)
-	metaBG := mixHex(hostBG, hostFG, 0.11)
-	metaText := contrastTextColor(metaBG)
-	errorBG := mixHex(hostBG, hostFG, 0.2)
-	errorFG := contrastTextColor(errorBG)
-	noticeBG := mixHex(hostBG, hostFG, 0.16)
-	noticeFG := contrastTextColor(noticeBG)
-	footerKeyBG := mixHex(hostBG, hostFG, 0.14)
-	footerKeyFG := contrastTextColor(footerKeyBG)
-	footerTextBG := mixHex(hostBG, hostFG, 0.1)
-	footerTextFG := contrastTextColor(footerTextBG)
-	tabWorkspaceBG := mixHex(hostBG, hostFG, 0.14)
-	tabWorkspaceFG := contrastTextColor(tabWorkspaceBG)
+	chromeBG := hostBG
+	chromeAltBG := mixHex(hostBG, hostFG, 0.04)
+	panelBG := hostBG
+	panelAltBG := mixHex(hostBG, hostFG, 0.05)
+	panelStrong := mixHex(hostBG, hostFG, 0.08)
+	panelText := hostFG
+	accentFallback := ensureContrast(mixHex(hostFG, mixHex(hostBG, hostFG, 0.5), 0.35), hostBG, 3.2)
+	accent := resolveSemanticColor(hostBG, hostPalette, []int{12, 13, 14, 6, 5, 4}, accentFallback, 3.2)
+	panelMuted := ensureContrast(mixHex(hostBG, hostFG, 0.46), panelBG, 2.0)
+	success := resolveSemanticColor(hostBG, hostPalette, []int{10, 2}, ensureContrast(mixHex(hostFG, accent, 0.12), hostBG, 2.8), 2.8)
+	warning := resolveSemanticColor(hostBG, hostPalette, []int{11, 3}, ensureContrast(mixHex(hostFG, accent, 0.24), hostBG, 2.8), 2.8)
+	danger := resolveSemanticColor(hostBG, hostPalette, []int{9, 1}, ensureContrast(mixHex(hostFG, accent, 0.36), hostBG, 2.8), 2.8)
+	info := resolveSemanticColor(hostBG, hostPalette, []int{14, 6}, ensureContrast(mixHex(hostFG, accent, 0.5), hostBG, 2.8), 2.8)
+	panelBorder := ensureContrast(mixHex(hostBG, hostFG, 0.22), panelBG, 1.22)
+	panelBorder2 := ensureContrast(mixHex(hostBG, hostFG, 0.34), panelBG, 1.5)
+	fieldBG := panelAltBG
+	fieldText := panelText
+	selectedBG := panelAltBG
+	selectedText := panelText
+	createBG := hostBG
+	createText := success
+	metaBG := hostBG
+	metaText := panelMuted
+	errorBG := hostBG
+	errorFG := danger
+	noticeBG := hostBG
+	noticeFG := info
+	hintKeyBG := chromeBG
+	hintKeyFG := ensureContrast(accent, chromeBG, 3.6)
+	hintTextBG := chromeBG
+	hintTextFG := panelMuted
+	footerKeyBG := hintKeyBG
+	footerKeyFG := hintKeyFG
+	footerTextBG := hintTextBG
+	footerTextFG := hintTextFG
+	tabWorkspaceBG := chromeBG
+	tabWorkspaceFG := panelMuted
 	tabActiveBG := hostBG
-	tabActiveFG := contrastTextColor(tabActiveBG)
-	tabInactiveBG := mixHex(hostBG, hostFG, 0.18)
-	tabInactiveFG := mixHex(tabActiveFG, tabInactiveBG, 0.56)
-	tabCreateBG := tabActiveBG
-	tabCreateFG := tabActiveFG
-	tabActionBG := mixHex(hostBG, hostFG, 0.12)
-	tabActionFG := contrastTextColor(tabActionBG)
-	tabActionOnBG := mixHex(hostBG, hostFG, 0.16)
-	tabActionOnFG := contrastTextColor(tabActionOnBG)
+	tabActiveFG := panelText
+	tabInactiveBG := hostBG
+	tabInactiveFG := panelMuted
+	tabCreateBG := hostBG
+	tabCreateFG := ensureContrast(success, hostBG, 3.2)
+	tabActionBG := hostBG
+	tabActionFG := panelMuted
+	tabActionOnBG := hostBG
+	tabActionOnFG := panelText
+	chromeText := hostFG
 
 	return uiTheme{
 		hostBG: hostBG,
@@ -142,9 +154,9 @@ func uiThemeFromHostColors(hostBG, hostFG string) uiTheme {
 
 		chromeBG:     chromeBG,
 		chromeAltBG:  chromeAltBG,
-		chromeText:   contrastTextColor(chromeBG),
-		chromeMuted:  mixHex(contrastTextColor(chromeBG), chromeBG, 0.46),
-		chromeAccent: mixHex(hostBG, hostFG, 0.58),
+		chromeText:   chromeText,
+		chromeMuted:  panelMuted,
+		chromeAccent: accent,
 
 		panelBG:      panelBG,
 		panelAltBG:   panelAltBG,
@@ -156,7 +168,7 @@ func uiThemeFromHostColors(hostBG, hostFG string) uiTheme {
 
 		fieldBG:     fieldBG,
 		fieldText:   fieldText,
-		fieldAccent: mixHex(hostBG, hostFG, 0.78),
+		fieldAccent: accent,
 
 		selectedBG:   selectedBG,
 		selectedText: selectedText,
@@ -170,10 +182,10 @@ func uiThemeFromHostColors(hostBG, hostFG string) uiTheme {
 		noticeBG: noticeBG,
 		noticeFG: noticeFG,
 
-		success: mixHex(hostBG, hostFG, 0.3),
-		warning: mixHex(hostBG, hostFG, 0.42),
-		danger:  mixHex(hostBG, hostFG, 0.24),
-		info:    mixHex(hostBG, hostFG, 0.5),
+		success: success,
+		warning: warning,
+		danger:  danger,
+		info:    info,
 
 		footerKeyBG:   footerKeyBG,
 		footerKeyFG:   footerKeyFG,
@@ -181,10 +193,10 @@ func uiThemeFromHostColors(hostBG, hostFG string) uiTheme {
 		footerTextFG:  footerTextFG,
 		footerPlainBG: footerTextBG,
 		footerPlainFG: footerTextFG,
-		hintKeyBG:     footerKeyBG,
-		hintKeyFG:     footerKeyFG,
-		hintTextBG:    footerTextBG,
-		hintTextFG:    footerTextFG,
+		hintKeyBG:     hintKeyBG,
+		hintKeyFG:     hintKeyFG,
+		hintTextBG:    hintTextBG,
+		hintTextFG:    hintTextFG,
 
 		tabWorkspaceBG: tabWorkspaceBG,
 		tabWorkspaceFG: tabWorkspaceFG,
@@ -207,10 +219,9 @@ func backgroundStyle(bg string) lipgloss.Style {
 
 func workspaceLabelStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Bold(true).
 		Foreground(lipgloss.Color(theme.tabWorkspaceFG)).
 		Background(lipgloss.Color(theme.tabWorkspaceBG)).
-		Padding(0, 1)
+		Padding(0, 0, 0, 1)
 }
 
 func tabInactiveStyle(theme uiTheme) lipgloss.Style {
@@ -268,14 +279,12 @@ func statusChipStyle(theme uiTheme) lipgloss.Style {
 func statusHintKeyStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color(theme.hintKeyFG)).
-		Background(lipgloss.Color(theme.hintKeyBG))
+		Foreground(lipgloss.Color(theme.hintKeyFG))
 }
 
 func statusHintTextStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.hintTextFG)).
-		Background(lipgloss.Color(theme.hintTextBG))
+		Foreground(lipgloss.Color(theme.hintTextFG))
 }
 
 func statusSeparatorStyle(theme uiTheme) lipgloss.Style {
@@ -286,32 +295,24 @@ func statusSeparatorStyle(theme uiTheme) lipgloss.Style {
 
 func statusPartDefaultStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.chromeText)).
-		Background(lipgloss.Color(theme.chromeBG)).
-		Padding(0, 1)
+		Foreground(lipgloss.Color(theme.chromeText))
 }
 
 func statusPartErrorStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.errorFG)).
-		Background(lipgloss.Color(theme.errorBG)).
-		Bold(true).
-		Padding(0, 1)
+		Bold(true)
 }
 
 func statusPartNoticeStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.noticeFG)).
-		Background(lipgloss.Color(theme.noticeBG)).
-		Bold(true).
-		Padding(0, 1)
+		Bold(true)
 }
 
 func statusMetaStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.metaText)).
-		Background(lipgloss.Color(theme.metaBG)).
-		Padding(0, 1)
+		Foreground(lipgloss.Color(theme.metaText))
 }
 
 func terminalPickerBodyStyle(theme uiTheme) lipgloss.Style {
@@ -337,7 +338,7 @@ func modalBorderTitleStyle(theme uiTheme) lipgloss.Style {
 
 func pickerBorderStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(mixHex(theme.hostBG, theme.hostFG, 0.42))).
+		Foreground(lipgloss.Color(ensureContrast(mixHex(theme.panelText, theme.chromeAccent, 0.12), overlayCardBG(theme), 1.35))).
 		Background(lipgloss.Color(overlayCardBG(theme)))
 }
 
@@ -355,7 +356,7 @@ func pickerLineStyle(theme uiTheme) lipgloss.Style {
 
 func pickerSelectedLineStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.selectedText)).
+		Foreground(lipgloss.Color(theme.chromeAccent)).
 		Background(lipgloss.Color(overlayCardBG(theme))).
 		Bold(true)
 }
@@ -368,7 +369,7 @@ func pickerCreateRowStyle(theme uiTheme) lipgloss.Style {
 }
 
 func overlayCardBG(theme uiTheme) string {
-	return theme.panelBG
+	return theme.panelAltBG
 }
 
 func overlayCardFillStyle(theme uiTheme) lipgloss.Style {
@@ -379,13 +380,13 @@ func overlayCardFillStyle(theme uiTheme) lipgloss.Style {
 
 func promptFieldMarkerStyle(theme uiTheme, _ bool) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.panelMuted)).
+		Foreground(lipgloss.Color(theme.chromeAccent)).
 		Background(lipgloss.Color(overlayCardBG(theme)))
 }
 
 func promptFieldLabelStyle(theme uiTheme, _ bool) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.panelMuted)).
+		Foreground(lipgloss.Color(theme.chromeAccent)).
 		Background(lipgloss.Color(overlayCardBG(theme))).
 		Bold(true)
 }
@@ -409,7 +410,7 @@ func overlaySectionTitleStyle(theme uiTheme) lipgloss.Style {
 
 func overlayHelpKeyStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.success)).
+		Foreground(lipgloss.Color(theme.footerKeyFG)).
 		Background(lipgloss.Color(overlayCardBG(theme))).
 		Bold(true)
 }
@@ -456,6 +457,10 @@ func isHexColor(value string) bool {
 }
 
 func contrastTextColor(bg string) string {
+	return chromeTextColor(bg)
+}
+
+func chromeTextColor(bg string) string {
 	r, g, b, ok := parseHexColor(bg)
 	if !ok {
 		return "#f8fafc"
@@ -486,6 +491,64 @@ func mixHex(a, b string, ratio float64) string {
 		return uint8(float64(x)*(1-ratio) + float64(y)*ratio)
 	}
 	return fmt.Sprintf("#%02x%02x%02x", mix(ar, br), mix(ag, bg), mix(ab, bb))
+}
+
+func resolveSemanticColor(bg string, palette map[int]string, indexes []int, fallback string, minContrast float64) string {
+	for _, index := range indexes {
+		if candidate, ok := palette[index]; ok && isHexColor(strings.TrimSpace(candidate)) {
+			return ensureContrast(candidate, bg, minContrast)
+		}
+	}
+	return ensureContrast(fallback, bg, minContrast)
+}
+
+func ensureContrast(fg, bg string, minContrast float64) string {
+	if !isHexColor(strings.TrimSpace(fg)) || !isHexColor(strings.TrimSpace(bg)) {
+		return fg
+	}
+	if contrastRatio(fg, bg) >= minContrast {
+		return fg
+	}
+	target := chromeTextColor(bg)
+	best := fg
+	for i := 1; i <= 8; i++ {
+		candidate := mixHex(fg, target, float64(i)/8)
+		best = candidate
+		if contrastRatio(candidate, bg) >= minContrast {
+			return candidate
+		}
+	}
+	return best
+}
+
+func contrastRatio(a, b string) float64 {
+	al := relativeLuminance(a)
+	bl := relativeLuminance(b)
+	if al < 0 || bl < 0 {
+		return 0
+	}
+	if al < bl {
+		al, bl = bl, al
+	}
+	return (al + 0.05) / (bl + 0.05)
+}
+
+func relativeLuminance(value string) float64 {
+	r, g, b, ok := parseHexColor(value)
+	if !ok {
+		return -1
+	}
+	toLinear := func(channel uint8) float64 {
+		v := float64(channel) / 255
+		if v <= 0.03928 {
+			return v / 12.92
+		}
+		return math.Pow((v+0.055)/1.055, 2.4)
+	}
+	lr := toLinear(r)
+	lg := toLinear(g)
+	lb := toLinear(b)
+	return 0.2126*lr + 0.7152*lg + 0.0722*lb
 }
 
 func parseHexColor(value string) (uint8, uint8, uint8, bool) {

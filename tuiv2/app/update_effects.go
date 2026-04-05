@@ -46,7 +46,7 @@ func (m *Model) effectCmd(effect orchestrator.Effect) tea.Cmd {
 	case orchestrator.SwitchTabEffect:
 		m.clampFloatingPanesToViewport()
 		m.render.Invalidate()
-		return m.resizeVisiblePanesCmd()
+		return nil
 	case orchestrator.CloseTabEffect:
 		m.clampFloatingPanesToViewport()
 		m.render.Invalidate()
@@ -139,7 +139,7 @@ func (m *Model) effectCmd(effect orchestrator.Effect) tea.Cmd {
 		}
 	case orchestrator.AttachTerminalEffect:
 		return func() tea.Msg {
-			msgs, err := m.orchestrator.AttachAndLoadSnapshot(context.Background(), typed.PaneID, typed.TerminalID, typed.Mode, 0, 200)
+			msgs, err := m.orchestrator.AttachAndLoadSnapshot(context.Background(), typed.PaneID, typed.TerminalID, typed.Mode, 0, defaultTerminalSnapshotScrollbackLimit)
 			if err != nil {
 				return err
 			}

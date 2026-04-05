@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	localvterm "github.com/lozzow/termx/vterm"
 )
 
 func TestTerminalLifecycleAndSnapshot(t *testing.T) {
@@ -126,6 +128,41 @@ func TestSubscribeAfterExitReplaysSnapshotAndClosed(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for closed frame")
+	}
+}
+
+func TestTerminalSnapshotReturnsNewestScrollbackWindow(t *testing.T) {
+	vt := localvterm.New(4, 2, 16, nil)
+	if _, err := vt.Write([]byte("1\n2\n3\n4\n5\n")); err != nil {
+		t.Fatalf("write scrollback seed failed: %v", err)
+	}
+
+	term := &Terminal{
+		id:    "snap-1",
+		size:  Size{Cols: 4, Rows: 2},
+		vterm: vt,
+	}
+
+	latest := term.Snapshot(0, 2)
+	if len(latest.Scrollback) != 2 {
+		t.Fatalf("expected 2 latest scrollback rows, got %d", len(latest.Scrollback))
+	}
+	if got := snapshotRowString(latest.Scrollback[0]); !strings.Contains(got, "3") {
+		t.Fatalf("expected latest window to start near newest history, got %q", got)
+	}
+	if got := snapshotRowString(latest.Scrollback[1]); !strings.Contains(got, "4") {
+		t.Fatalf("expected latest window to end at newest history, got %q", got)
+	}
+
+	older := term.Snapshot(2, 2)
+	if len(older.Scrollback) != 2 {
+		t.Fatalf("expected 2 older scrollback rows, got %d", len(older.Scrollback))
+	}
+	if got := snapshotRowString(older.Scrollback[0]); !strings.Contains(got, "1") {
+		t.Fatalf("expected older window to include oldest history, got %q", got)
+	}
+	if got := snapshotRowString(older.Scrollback[1]); !strings.Contains(got, "2") {
+		t.Fatalf("expected older window to include next history row, got %q", got)
 	}
 }
 

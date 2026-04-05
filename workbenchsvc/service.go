@@ -80,6 +80,15 @@ type ReplaceRequest struct {
 	Doc          *workbenchdoc.Doc
 }
 
+type AcquireLeaseRequest struct {
+	PaneID     string
+	TerminalID string
+}
+
+type ReleaseLeaseRequest struct {
+	TerminalID string
+}
+
 type SessionSnapshot struct {
 	Session *SessionState
 	View    *ViewState
@@ -323,6 +332,63 @@ func (s *Service) UpdateView(sessionID, viewID string, req UpdateViewRequest) (*
 	}
 	view.UpdatedAt = time.Now().UTC()
 	return cloneViewState(view), nil
+}
+
+func (s *Service) AcquireLease(sessionID, viewID string, req AcquireLeaseRequest) (*LeaseState, error) {
+	if s == nil {
+		return nil, fmt.Errorf("workbenchsvc: nil service")
+	}
+	if req.TerminalID == "" {
+		return nil, fmt.Errorf("workbenchsvc: terminal id is required")
+	}
+	if req.PaneID == "" {
+		return nil, fmt.Errorf("workbenchsvc: pane id is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	view := s.views[viewID]
+	if view == nil || view.SessionID != sessionID {
+		return nil, fmt.Errorf("workbenchsvc: view %q not found in session %q", viewID, sessionID)
+	}
+	if s.sessions[sessionID] == nil {
+		return nil, fmt.Errorf("workbenchsvc: session %q not found", sessionID)
+	}
+	lease := &LeaseState{
+		TerminalID: req.TerminalID,
+		SessionID:  sessionID,
+		ViewID:     viewID,
+		PaneID:     req.PaneID,
+		AcquiredAt: time.Now().UTC(),
+	}
+	s.leases[req.TerminalID] = lease
+	return cloneLeaseState(lease), nil
+}
+
+func (s *Service) ReleaseLease(sessionID, viewID string, req ReleaseLeaseRequest) error {
+	if s == nil {
+		return fmt.Errorf("workbenchsvc: nil service")
+	}
+	if req.TerminalID == "" {
+		return fmt.Errorf("workbenchsvc: terminal id is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	view := s.views[viewID]
+	if view == nil || view.SessionID != sessionID {
+		return fmt.Errorf("workbenchsvc: view %q not found in session %q", viewID, sessionID)
+	}
+	lease := s.leases[req.TerminalID]
+	if lease == nil {
+		return nil
+	}
+	if lease.SessionID != sessionID {
+		return fmt.Errorf("workbenchsvc: terminal %q lease is not in session %q", req.TerminalID, sessionID)
+	}
+	if lease.ViewID != viewID {
+		return nil
+	}
+	delete(s.leases, req.TerminalID)
+	return nil
 }
 
 func cloneSessionState(session *SessionState) *SessionState {

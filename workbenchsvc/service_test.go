@@ -130,3 +130,41 @@ func TestDetachRemovesView(t *testing.T) {
 		t.Fatal("expected update view to fail after detach")
 	}
 }
+
+func TestAcquireAndReleaseLease(t *testing.T) {
+	svc := New()
+	if _, err := svc.CreateSession(CreateSessionOptions{ID: "main"}); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	attached, err := svc.AttachSession("main", AttachSessionOptions{ClientID: "client-a"})
+	if err != nil {
+		t.Fatalf("attach session: %v", err)
+	}
+	lease, err := svc.AcquireLease("main", attached.View.ViewID, AcquireLeaseRequest{
+		PaneID:     "1",
+		TerminalID: "term-1",
+	})
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	if lease.ViewID != attached.View.ViewID || lease.PaneID != "1" || lease.TerminalID != "term-1" {
+		t.Fatalf("unexpected lease: %#v", lease)
+	}
+	snapshot, err := svc.GetSession("main")
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	if len(snapshot.Leases) != 1 || snapshot.Leases[0].TerminalID != "term-1" {
+		t.Fatalf("expected one lease for term-1, got %#v", snapshot.Leases)
+	}
+	if err := svc.ReleaseLease("main", attached.View.ViewID, ReleaseLeaseRequest{TerminalID: "term-1"}); err != nil {
+		t.Fatalf("release lease: %v", err)
+	}
+	snapshot, err = svc.GetSession("main")
+	if err != nil {
+		t.Fatalf("get session after release: %v", err)
+	}
+	if len(snapshot.Leases) != 0 {
+		t.Fatalf("expected released lease to disappear, got %#v", snapshot.Leases)
+	}
+}

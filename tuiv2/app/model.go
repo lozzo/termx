@@ -35,6 +35,7 @@ type Model struct {
 	sessionViewID    string
 	sessionRevision  uint64
 	sessionSharedDoc *workbenchdoc.Doc
+	sessionLeases    map[string]protocol.LeaseInfo
 
 	startup bootstrap.StartupResult
 
@@ -240,18 +241,31 @@ func (m *Model) applySessionSnapshot(snapshot *protocol.SessionSnapshot) {
 		return
 	}
 	projection := m.captureLocalViewProjection()
+	currentViewID := m.sessionViewID
 	if snapshot.Session.ID != "" {
 		m.sessionID = snapshot.Session.ID
 	}
 	if snapshot.View != nil {
 		m.sessionViewID = snapshot.View.ViewID
-		projection.WorkspaceName = snapshot.View.ActiveWorkspaceName
-		projection.ActiveTabID = snapshot.View.ActiveTabID
-		projection.FocusedPaneID = snapshot.View.FocusedPaneID
+		if shouldAdoptSnapshotViewProjection(currentViewID, snapshot.View.ViewID, projection) {
+			projection.WorkspaceName = snapshot.View.ActiveWorkspaceName
+			projection.ActiveTabID = snapshot.View.ActiveTabID
+			projection.FocusedPaneID = snapshot.View.FocusedPaneID
+		}
 	}
 	m.sessionRevision = snapshot.Session.Revision
 	if snapshot.Workbench != nil {
 		m.sessionSharedDoc = snapshot.Workbench.Clone()
+	}
+	if len(snapshot.Leases) > 0 {
+		m.sessionLeases = make(map[string]protocol.LeaseInfo, len(snapshot.Leases))
+		for _, lease := range snapshot.Leases {
+			if lease.TerminalID != "" {
+				m.sessionLeases[lease.TerminalID] = lease
+			}
+		}
+	} else {
+		m.sessionLeases = nil
 	}
 
 	oldBindings := sessionstate.PaneTerminalBindings(sessionstate.ExportWorkbench(m.workbench))
@@ -262,8 +276,19 @@ func (m *Model) applySessionSnapshot(snapshot *protocol.SessionSnapshot) {
 	if m.runtime != nil {
 		nextBindings := sessionstate.PaneTerminalBindings(snapshot.Workbench)
 		m.reconcileSessionRuntime(context.Background(), oldBindings, nextBindings)
+		m.runtime.ApplySessionLeases(m.sessionViewID, snapshot.Leases)
 	}
 	m.render.Invalidate()
+}
+
+func shouldAdoptSnapshotViewProjection(currentViewID, snapshotViewID string, projection localViewProjection) bool {
+	if snapshotViewID == "" {
+		return false
+	}
+	if currentViewID == "" || currentViewID != snapshotViewID {
+		return true
+	}
+	return projection.WorkspaceName == "" && projection.ActiveTabID == "" && projection.FocusedPaneID == ""
 }
 
 func saveState(path string, wb *workbench.Workbench, rt *runtime.Runtime) error {

@@ -9,6 +9,12 @@ func (m *Model) applyMouseSemanticAction(action input.SemanticAction) tea.Cmd {
 	if m == nil {
 		return nil
 	}
+	if handled, cmd := m.handleLocalAction(action); handled {
+		if m.isStickyMode() {
+			return tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
+		}
+		return cmd
+	}
 	if handled, cmd := m.handleMouseLocalAction(action); handled {
 		if m.isStickyMode() {
 			return tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
@@ -71,5 +77,5 @@ func (m *Model) switchWorkspaceByOffsetMouse(offset int) tea.Cmd {
 		return m.showError(err)
 	}
 	m.render.Invalidate()
-	return tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
+	return m.saveStateCmd()
 }

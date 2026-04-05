@@ -96,10 +96,13 @@ func TestSave_RoundTripPersistsFloatingEntriesSeparately(t *testing.T) {
 	if len(savedTab.Floating) != 2 {
 		t.Fatalf("expected 2 explicit floating entries, got %#v", savedTab.Floating)
 	}
-	if savedTab.Floating[0].PaneID != "pane-c" || savedTab.Floating[0].Rect.X != 2 || savedTab.Floating[0].Z != 0 {
+	if savedTab.FloatingVisible == nil || !*savedTab.FloatingVisible {
+		t.Fatalf("expected floating_visible to be persisted, got %#v", savedTab.FloatingVisible)
+	}
+	if savedTab.Floating[0].PaneID != "pane-c" || savedTab.Floating[0].Z != 0 || savedTab.Floating[0].Display != "expanded" || savedTab.Floating[0].FitMode != "manual" {
 		t.Fatalf("unexpected first floating entry: %#v", savedTab.Floating[0])
 	}
-	if savedTab.Floating[1].PaneID != "pane-b" || savedTab.Floating[1].Rect.W != 22 || savedTab.Floating[1].Z != 1 {
+	if savedTab.Floating[1].PaneID != "pane-b" || savedTab.Floating[1].Rect.W != 22 || savedTab.Floating[1].Z != 1 || savedTab.Floating[1].Display != "expanded" {
 		t.Fatalf("unexpected second floating entry: %#v", savedTab.Floating[1])
 	}
 }
@@ -134,6 +137,35 @@ func TestSave_PreservesPaneRecordStoreEntriesOutsideLayoutAndFloating(t *testing
 	}
 	if !foundOrphan {
 		t.Fatalf("expected orphan pane to remain in persisted pane store, got %#v", savedTab.Panes)
+	}
+}
+
+func TestSave_RoundTripPersistsCollapsedFloatingLayerVisibility(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	ws := &workbench.WorkspaceState{Name: "main"}
+	wb.AddWorkspace("main", ws)
+	_ = wb.CreateTab("main", "tab-1", "one")
+	_ = wb.CreateFirstPane("tab-1", "pane-a")
+	_ = wb.CreateFloatingPane("tab-1", "pane-b", workbench.Rect{X: 7, Y: 3, W: 22, H: 9})
+	if !wb.CollapseAllFloatingPanes("tab-1") {
+		t.Fatal("expected collapse to succeed")
+	}
+
+	data, err := Save(wb)
+	if err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+	loaded, err := Load(data)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	savedTab := loaded.Data[0].Tabs[0]
+	if savedTab.FloatingVisible == nil {
+		t.Fatal("expected floating_visible field to be present")
+	}
+	if *savedTab.FloatingVisible {
+		t.Fatalf("expected collapsed floating layer to persist as hidden, got %#v", savedTab.FloatingVisible)
 	}
 }
 

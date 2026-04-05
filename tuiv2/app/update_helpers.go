@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"time"
@@ -16,6 +17,12 @@ import (
 
 var errorClearDelay = 3 * time.Second
 var ownerConfirmDelay = 400 * time.Millisecond
+
+const (
+	defaultTerminalSnapshotScrollbackLimit = 500
+	maxTerminalSnapshotScrollbackLimit     = 10000
+	terminalScrollbackPrefetchMargin       = 8
+)
 
 func clearErrorCmd(seq uint64) tea.Cmd {
 	return tea.Tick(errorClearDelay, func(time.Time) tea.Msg {
@@ -52,6 +59,79 @@ func (m *Model) bodyRect() workbench.Rect {
 		return workbench.Rect{W: 1, H: render.FrameBodyHeight(0)}
 	}
 	return workbench.Rect{W: maxInt(1, m.width), H: m.bodyHeight()}
+}
+
+func (m *Model) activePaneContentRect() (workbench.Rect, bool) {
+	if m == nil || m.workbench == nil {
+		return workbench.Rect{}, false
+	}
+	tab := m.workbench.CurrentTab()
+	if tab == nil || tab.ActivePaneID == "" {
+		return workbench.Rect{}, false
+	}
+	visible := m.workbench.VisibleWithSize(m.bodyRect())
+	if visible == nil {
+		return workbench.Rect{}, false
+	}
+	for _, pane := range visible.FloatingPanes {
+		if pane.ID != tab.ActivePaneID {
+			continue
+		}
+		return paneContentRect(pane.Rect)
+	}
+	if visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
+		return workbench.Rect{}, false
+	}
+	for _, pane := range visible.Tabs[visible.ActiveTab].Panes {
+		if pane.ID != tab.ActivePaneID {
+			continue
+		}
+		return paneContentRect(pane.Rect)
+	}
+	return workbench.Rect{}, false
+}
+
+func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
+	if m == nil || m.workbench == nil || m.runtime == nil {
+		return nil
+	}
+	tab := m.workbench.CurrentTab()
+	pane := m.workbench.ActivePane()
+	if tab == nil || pane == nil || pane.TerminalID == "" || tab.ScrollOffset <= 0 {
+		return nil
+	}
+	contentRect, ok := m.activePaneContentRect()
+	if !ok {
+		return nil
+	}
+	terminal := m.runtime.Registry().Get(pane.TerminalID)
+	if terminal == nil || terminal.Snapshot == nil || terminal.Snapshot.Modes.AlternateScreen || terminal.ScrollbackExhausted {
+		return nil
+	}
+	loaded := len(terminal.Snapshot.Scrollback)
+	want := tab.ScrollOffset + contentRect.H + terminalScrollbackPrefetchMargin
+	if want <= loaded {
+		return nil
+	}
+	nextLimit := maxInt(defaultTerminalSnapshotScrollbackLimit, loaded)
+	for nextLimit < want && nextLimit < maxTerminalSnapshotScrollbackLimit {
+		nextLimit *= 2
+	}
+	if nextLimit > maxTerminalSnapshotScrollbackLimit {
+		nextLimit = maxTerminalSnapshotScrollbackLimit
+	}
+	if nextLimit <= loaded || terminal.ScrollbackLoadingLimit >= nextLimit {
+		return nil
+	}
+	terminal.ScrollbackLoadingLimit = nextLimit
+	terminalID := pane.TerminalID
+	return func() tea.Msg {
+		snapshot, err := m.runtime.LoadSnapshot(context.Background(), terminalID, 0, nextLimit)
+		if err != nil {
+			return err
+		}
+		return orchestrator.SnapshotLoadedMsg{TerminalID: terminalID, Snapshot: snapshot}
+	}
 }
 
 func maxInt(a, b int) int {

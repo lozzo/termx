@@ -90,8 +90,13 @@ func cloneFloating(floating *FloatingPane) *FloatingPane {
 		return nil
 	}
 	return &FloatingPane{
-		PaneID: floating.PaneID,
-		Rect:   floating.Rect,
-		Z:      floating.Z,
+		PaneID:      floating.PaneID,
+		Rect:        floating.Rect,
+		Z:           floating.Z,
+		Display:     floating.Display,
+		FitMode:     floating.FitMode,
+		RestoreRect: floating.RestoreRect,
+		AutoFitCols: floating.AutoFitCols,
+		AutoFitRows: floating.AutoFitRows,
 	}
 }

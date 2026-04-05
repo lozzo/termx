@@ -23,6 +23,7 @@ type RecoveryState struct {
 type VTermLike interface {
 	Write(data []byte) (int, error)
 	LoadSnapshot(screen localvterm.ScreenData, cursor localvterm.CursorState, modes localvterm.TerminalModes)
+	LoadSnapshotWithScrollback(scrollback [][]localvterm.Cell, screen localvterm.ScreenData, cursor localvterm.CursorState, modes localvterm.TerminalModes)
 	Resize(cols, rows int)
 	Size() (int, int)
 	ScreenContent() localvterm.ScreenData

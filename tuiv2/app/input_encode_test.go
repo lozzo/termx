@@ -106,6 +106,36 @@ func TestEncodeSGR1006Mouse(t *testing.T) {
 			want: "\x1b[<3;9;3m",
 		},
 		{
+			name: "middle-press",
+			msg: tea.MouseMsg{
+				Action: tea.MouseActionPress,
+				Button: tea.MouseButtonMiddle,
+			},
+			col:  2,
+			row:  5,
+			want: "\x1b[<1;2;5M",
+		},
+		{
+			name: "right-motion",
+			msg: tea.MouseMsg{
+				Action: tea.MouseActionMotion,
+				Button: tea.MouseButtonRight,
+			},
+			col:  3,
+			row:  4,
+			want: "\x1b[<34;3;4M",
+		},
+		{
+			name: "middle-release",
+			msg: tea.MouseMsg{
+				Action: tea.MouseActionRelease,
+				Button: tea.MouseButtonMiddle,
+			},
+			col:  2,
+			row:  5,
+			want: "\x1b[<3;2;5m",
+		},
+		{
 			name: "wheel-up-with-mods",
 			msg: tea.MouseMsg{
 				Action: tea.MouseActionPress,
@@ -126,6 +156,16 @@ func TestEncodeSGR1006Mouse(t *testing.T) {
 			col:  8,
 			row:  7,
 			want: "\x1b[<65;8;7M",
+		},
+		{
+			name: "wheel-right",
+			msg: tea.MouseMsg{
+				Action: tea.MouseActionPress,
+				Button: tea.MouseButtonWheelRight,
+			},
+			col:  6,
+			row:  2,
+			want: "\x1b[<67;6;2M",
 		},
 	}
 

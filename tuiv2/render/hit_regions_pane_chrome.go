@@ -14,14 +14,15 @@ const (
 )
 
 const (
-	HitRegionPaneDetach         HitRegionKind = "pane-detach"
-	HitRegionPaneReconnect      HitRegionKind = "pane-reconnect"
-	HitRegionPaneCloseKill      HitRegionKind = "pane-close-kill"
-	HitRegionPaneOpenPicker     HitRegionKind = "pane-open-picker"
-	HitRegionPaneCenterFloating HitRegionKind = "pane-center-floating"
-	HitRegionPaneToggleFloating HitRegionKind = "pane-toggle-floating"
-	HitRegionPaneBalancePanes   HitRegionKind = "pane-balance-panes"
-	HitRegionPaneCycleLayout    HitRegionKind = "pane-cycle-layout"
+	HitRegionPaneDetach           HitRegionKind = "pane-detach"
+	HitRegionPaneReconnect        HitRegionKind = "pane-reconnect"
+	HitRegionPaneCloseKill        HitRegionKind = "pane-close-kill"
+	HitRegionPaneOpenPicker       HitRegionKind = "pane-open-picker"
+	HitRegionPaneCenterFloating   HitRegionKind = "pane-center-floating"
+	HitRegionPaneToggleFloating   HitRegionKind = "pane-toggle-floating"
+	HitRegionPaneCollapseFloating HitRegionKind = "pane-collapse-floating"
+	HitRegionPaneBalancePanes     HitRegionKind = "pane-balance-panes"
+	HitRegionPaneCycleLayout      HitRegionKind = "pane-cycle-layout"
 )
 
 type paneChromeActionToken struct {
@@ -41,6 +42,17 @@ type paneChromeContext struct {
 	TerminalAttached bool
 	LayoutCluster    bool
 }
+
+func paneZoomIcon() string             { return "󰊓" }
+func paneSplitVerticalIcon() string    { return "󰤽" }
+func paneSplitHorizontalIcon() string  { return "󰤼" }
+func paneCloseIcon() string            { return "󰖭" }
+func paneCenterFloatingIcon() string   { return "󰆚" }
+func paneCollapseFloatingIcon() string { return "󰏤" }
+func paneRunningIcon() string          { return "" }
+func paneWaitingIcon() string          { return "󰔟" }
+func paneExitedIcon() string           { return "" }
+func paneKilledIcon() string           { return "" }
 
 func paneChromeTerminalAttached(title string, border paneBorderInfo) bool {
 	if strings.TrimSpace(border.StateLabel) != "" || strings.TrimSpace(border.ShareLabel) != "" || strings.TrimSpace(border.RoleLabel) != "" {
@@ -64,16 +76,17 @@ func paneChromeContextForPane(pane workbench.VisiblePane, title string, border p
 func paneChromeActionTokensForContext(ctx paneChromeContext) []paneChromeActionToken {
 	if ctx.Floating {
 		return []paneChromeActionToken{
-			{Kind: HitRegionPaneCenterFloating, Label: "◎", Action: input.ActionCenterFloatingPane},
-			{Kind: HitRegionPaneZoom, Label: "⛶", Action: input.ActionZoomPane},
-			{Kind: HitRegionPaneClose, Label: "×", Action: input.ActionClosePane},
+			{Kind: HitRegionPaneCenterFloating, Label: "[" + paneCenterFloatingIcon() + "]", Action: input.ActionCenterFloatingPane},
+			{Kind: HitRegionPaneCollapseFloating, Label: "[" + paneCollapseFloatingIcon() + "]", Action: input.ActionCollapseFloatingPane},
+			{Kind: HitRegionPaneZoom, Label: "[" + paneZoomIcon() + "]", Action: input.ActionZoomPane},
+			{Kind: HitRegionPaneClose, Label: "[" + paneCloseIcon() + "]", Action: input.ActionClosePane},
 		}
 	}
 	tokens := []paneChromeActionToken{
-		{Kind: HitRegionPaneZoom, Label: "⛶", Action: input.ActionZoomPane},
-		{Kind: HitRegionPaneSplitV, Label: "│", Action: input.ActionSplitPane},
-		{Kind: HitRegionPaneSplitH, Label: "─", Action: input.ActionSplitPaneHorizontal},
-		{Kind: HitRegionPaneClose, Label: "×", Action: input.ActionClosePane},
+		{Kind: HitRegionPaneZoom, Label: "[" + paneZoomIcon() + "]", Action: input.ActionZoomPane},
+		{Kind: HitRegionPaneSplitV, Label: "[" + paneSplitVerticalIcon() + "]", Action: input.ActionSplitPane},
+		{Kind: HitRegionPaneSplitH, Label: "[" + paneSplitHorizontalIcon() + "]", Action: input.ActionSplitPaneHorizontal},
+		{Kind: HitRegionPaneClose, Label: "[" + paneCloseIcon() + "]", Action: input.ActionClosePane},
 	}
 	return tokens
 }
@@ -140,6 +153,8 @@ func paneChromeActionSlotForKind(kind HitRegionKind, paneID string) (input.Seman
 		return input.SemanticAction{Kind: input.ActionOpenPicker, PaneID: paneID, TargetID: paneID}, true
 	case HitRegionPaneCenterFloating:
 		return input.SemanticAction{Kind: input.ActionCenterFloatingPane, PaneID: paneID}, true
+	case HitRegionPaneCollapseFloating:
+		return input.SemanticAction{Kind: input.ActionCollapseFloatingPane, PaneID: paneID}, true
 	case HitRegionPaneToggleFloating:
 		return input.SemanticAction{Kind: input.ActionToggleFloatingVisibility, PaneID: paneID}, true
 	case HitRegionPaneBalancePanes:

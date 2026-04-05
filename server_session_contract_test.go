@@ -153,6 +153,49 @@ func TestHandleRequestSessionAttachApplyAndViewUpdate(t *testing.T) {
 		t.Fatalf("expected focused pane 2, got %#v", updated)
 	}
 
+	result = mustHandleSessionRequest(t, srv, ctx, allocator, attachments, &attachmentsMu, protocol.Request{
+		ID:     41,
+		Method: "session.acquire_lease",
+		Params: mustJSONRaw(t, protocol.AcquireSessionLeaseParams{
+			SessionID:  "main",
+			ViewID:     attached.View.ViewID,
+			PaneID:     "2",
+			TerminalID: "term-2",
+		}),
+	}, sendFrame)
+
+	var lease protocol.LeaseInfo
+	if err := json.Unmarshal(result, &lease); err != nil {
+		t.Fatalf("unmarshal acquire lease result: %v", err)
+	}
+	if lease.ViewID != attached.View.ViewID || lease.PaneID != "2" || lease.TerminalID != "term-2" {
+		t.Fatalf("unexpected lease payload: %#v", lease)
+	}
+
+	result = mustHandleSessionRequest(t, srv, ctx, allocator, attachments, &attachmentsMu, protocol.Request{
+		ID:     42,
+		Method: "session.get",
+		Params: mustJSONRaw(t, protocol.GetSessionParams{SessionID: "main"}),
+	}, sendFrame)
+
+	var leased protocol.SessionSnapshot
+	if err := json.Unmarshal(result, &leased); err != nil {
+		t.Fatalf("unmarshal leased snapshot: %v", err)
+	}
+	if len(leased.Leases) != 1 || leased.Leases[0].TerminalID != "term-2" {
+		t.Fatalf("expected lease in session snapshot, got %#v", leased.Leases)
+	}
+
+	_ = mustHandleSessionRequest(t, srv, ctx, allocator, attachments, &attachmentsMu, protocol.Request{
+		ID:     43,
+		Method: "session.release_lease",
+		Params: mustJSONRaw(t, protocol.ReleaseSessionLeaseParams{
+			SessionID:  "main",
+			ViewID:     attached.View.ViewID,
+			TerminalID: "term-2",
+		}),
+	}, sendFrame)
+
 	replacement := applied.Workbench.Clone()
 	replacement.Workspaces["main"].Tabs[0].Name = "replaced"
 	result = mustHandleSessionRequest(t, srv, ctx, allocator, attachments, &attachmentsMu, protocol.Request{

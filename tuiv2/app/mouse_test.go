@@ -9,6 +9,7 @@ import (
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/render"
+	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -178,8 +179,8 @@ func TestMouseDragSplitDividerResizesTiledPanes(t *testing.T) {
 	if panes[0].Rect.W != 50 || panes[1].Rect.W != 70 {
 		t.Fatalf("expected pane widths 50/70 after drag, got %#v %#v", panes[0].Rect, panes[1].Rect)
 	}
-	if len(client.resizes) < 2 {
-		t.Fatalf("expected resize calls after tiled drag, got %#v", client.resizes)
+	if len(client.resizes) != 2 {
+		t.Fatalf("expected both tiled panes to resize after drag, got %#v", client.resizes)
 	}
 
 	model, _ = m.Update(tea.MouseMsg{
@@ -191,6 +192,80 @@ func TestMouseDragSplitDividerResizesTiledPanes(t *testing.T) {
 	m = model.(*Model)
 	if m.mouseDragMode != mouseDragNone || m.mouseDragSplit != nil {
 		t.Fatalf("expected split drag state cleared, mode=%v split=%#v", m.mouseDragMode, m.mouseDragSplit)
+	}
+}
+
+func TestMouseDragSplitDividerResizesOwnerPaneWithoutActivatingIt(t *testing.T) {
+	m := setupModel(t, modelOpts{
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{{
+					ID:           "tab-1",
+					Name:         "tab 1",
+					ActivePaneID: "pane-2",
+					Panes: map[string]*workbench.PaneState{
+						"pane-1": {ID: "pane-1", Title: "owner", TerminalID: "term-1"},
+						"pane-2": {ID: "pane-2", Title: "follower", TerminalID: "term-1"},
+					},
+					Root: &workbench.LayoutNode{
+						Direction: workbench.SplitVertical,
+						Ratio:     0.5,
+						First:     workbench.NewLeaf("pane-1"),
+						Second:    workbench.NewLeaf("pane-2"),
+					},
+				}},
+			},
+		},
+	})
+	client, ok := m.runtime.Client().(*recordingBridgeClient)
+	if !ok {
+		t.Fatal("expected recording bridge client")
+	}
+
+	terminal := m.runtime.Registry().GetOrCreate("term-1")
+	terminal.State = "running"
+	terminal.Channel = 1
+	terminal.OwnerPaneID = "pane-1"
+	terminal.BoundPaneIDs = []string{"pane-1", "pane-2"}
+	terminal.Snapshot = &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 58, Rows: 36}}
+
+	ownerBinding := m.runtime.BindPane("pane-1")
+	ownerBinding.Channel = 1
+	ownerBinding.Connected = true
+	ownerBinding.Role = runtime.BindingRoleOwner
+
+	followerBinding := m.runtime.BindPane("pane-2")
+	followerBinding.Channel = 2
+	followerBinding.Connected = true
+	followerBinding.Role = runtime.BindingRoleFollower
+
+	model, _ := m.Update(tea.MouseMsg{
+		X:      59,
+		Y:      screenYForBodyY(m, 10),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	m = model.(*Model)
+
+	model, cmd := m.Update(tea.MouseMsg{
+		X:      49,
+		Y:      screenYForBodyY(m, 10),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionMotion,
+	})
+	m = model.(*Model)
+	drainCmd(t, m, cmd, 20)
+
+	if len(client.resizes) != 1 {
+		t.Fatalf("expected owner pane to issue one resize during split drag, got %#v", client.resizes)
+	}
+	if client.resizes[0].channel != 1 {
+		t.Fatalf("expected owner pane channel to drive resize, got %#v", client.resizes[0])
+	}
+	if tab := m.workbench.CurrentTab(); tab == nil || tab.ActivePaneID != "pane-2" {
+		t.Fatalf("expected drag not to require owner activation, active=%#v", tab)
 	}
 }
 
@@ -282,7 +357,7 @@ func TestMouseClickNonFloatingKeepsFloatingTerminalPanesVisibleWithExtentHints(t
 	}
 
 	before := m.View()
-	if strings.Count(before, "◎") < 2 {
+	if strings.Count(before, "󰆚") < 2 {
 		t.Fatalf("expected floating terminal panes visible before click:\n%s", before)
 	}
 
@@ -295,7 +370,7 @@ func TestMouseClickNonFloatingKeepsFloatingTerminalPanesVisibleWithExtentHints(t
 	m = model.(*Model)
 
 	after := m.View()
-	if strings.Count(after, "◎") < 2 {
+	if strings.Count(after, "󰆚") < 2 {
 		t.Fatalf("expected floating terminal panes to remain visible after tiled click:\n%s", after)
 	}
 }
@@ -1389,6 +1464,26 @@ func TestMouseWheelForwardsToTerminalWhenTrackingEnabled(t *testing.T) {
 	}
 	if tab.ScrollOffset != 0 {
 		t.Fatalf("expected no fallback scrolling when wheel forwarded, got %d", tab.ScrollOffset)
+	}
+}
+
+func TestMouseMiddlePressForwardsToTerminalWhenTrackingEnabled(t *testing.T) {
+	m := setupModel(t, modelOpts{})
+	client, ok := m.runtime.Client().(*recordingBridgeClient)
+	if !ok {
+		t.Fatal("expected recording bridge client")
+	}
+	setActivePaneMouseTracking(t, m, true)
+	x, y := activePaneContentScreenOrigin(t, m)
+
+	_, cmd := m.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonMiddle, Action: tea.MouseActionPress})
+	drainCmd(t, m, cmd, 20)
+
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected middle press to be forwarded once, got %#v", client.inputCalls)
+	}
+	if got := string(client.inputCalls[0].data); got != "\x1b[<1;1;1M" {
+		t.Fatalf("unexpected middle press payload %q", got)
 	}
 }
 

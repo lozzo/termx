@@ -98,7 +98,7 @@ func (m *Model) attachPaneTerminalCmd(tabID, paneID, terminalID string) tea.Cmd 
 		return nil
 	}
 	return func() tea.Msg {
-		msgs, err := m.orchestrator.AttachAndLoadSnapshot(context.Background(), paneID, terminalID, "collaborator", 0, 200)
+		msgs, err := m.orchestrator.AttachAndLoadSnapshot(context.Background(), paneID, terminalID, "collaborator", 0, defaultTerminalSnapshotScrollbackLimit)
 		if err != nil {
 			return err
 		}
@@ -174,4 +174,58 @@ func (m *Model) resizeVisiblePanesCmd() tea.Cmd {
 		})
 	}
 	return tea.Batch(cmds...)
+}
+
+func (m *Model) resizePaneIfNeededCmd(paneID string) tea.Cmd {
+	if m == nil || m.runtime == nil || m.workbench == nil {
+		return nil
+	}
+	target := m.currentOrActionPaneID(paneID)
+	if target == "" {
+		return nil
+	}
+	pane, rect, ok := m.visiblePaneForInput(target)
+	if !ok || pane == nil || pane.TerminalID == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		if err := m.ensurePaneTerminalSize(context.Background(), pane.ID, pane.TerminalID, rect); err != nil {
+			return err
+		}
+		return nil
+	}
+}
+
+func (m *Model) resizeActivePaneIfNeededCmd() tea.Cmd {
+	return m.resizePaneIfNeededCmd("")
+}
+
+func (m *Model) resizeCmdForAction(action input.SemanticAction) tea.Cmd {
+	switch action.Kind {
+	case input.ActionSplitPane,
+		input.ActionSplitPaneHorizontal,
+		input.ActionZoomPane,
+		input.ActionResizePaneLeft,
+		input.ActionResizePaneRight,
+		input.ActionResizePaneUp,
+		input.ActionResizePaneDown,
+		input.ActionResizePaneLargeLeft,
+		input.ActionResizePaneLargeRight,
+		input.ActionResizePaneLargeUp,
+		input.ActionResizePaneLargeDown,
+		input.ActionBalancePanes,
+		input.ActionCycleLayout:
+		return m.resizeVisiblePanesCmd()
+	case input.ActionResizeFloatingLeft,
+		input.ActionResizeFloatingRight,
+		input.ActionResizeFloatingUp,
+		input.ActionResizeFloatingDown:
+		return m.resizePaneIfNeededCmd(action.PaneID)
+	default:
+		return nil
+	}
+}
+
+func (m *Model) syncActivePaneOwnershipAndResizeCmd() tea.Cmd {
+	return m.resizeActivePaneIfNeededCmd()
 }

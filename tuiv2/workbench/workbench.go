@@ -183,12 +183,27 @@ func (w *Workbench) VisibleWithSize(bodyRect Rect) *VisibleWorkbench {
 		}
 		if activeTab != nil && activeTab.ID == tab.ID {
 			visible.ActiveTab = len(visible.Tabs)
+			floatingLayerVisible := tab.FloatingVisible || hasExpandedFloating(tab.Floating)
 			for _, floating := range orderedFloating(tab.Floating) {
 				if floating == nil {
 					continue
 				}
+				normalizeFloatingState(floating)
 				pane := tab.Panes[floating.PaneID]
 				if pane == nil {
+					continue
+				}
+				visible.FloatingTotal++
+				if floating.Display == FloatingDisplayCollapsed {
+					visible.FloatingCollapsed++
+					continue
+				}
+				if floating.Display == FloatingDisplayHidden || !floatingLayerVisible {
+					visible.FloatingHidden++
+					continue
+				}
+				if !floatingStateVisible(floating) {
+					visible.FloatingHidden++
 					continue
 				}
 				visible.FloatingPanes = append(visible.FloatingPanes, VisiblePane{

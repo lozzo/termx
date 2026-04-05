@@ -46,13 +46,14 @@ const (
 )
 
 const (
-	HitRegionTabRename       HitRegionKind = "tab-rename"
-	HitRegionTabKill         HitRegionKind = "tab-kill"
-	HitRegionWorkspacePrev   HitRegionKind = "workspace-prev"
-	HitRegionWorkspaceNext   HitRegionKind = "workspace-next"
-	HitRegionWorkspaceCreate HitRegionKind = "workspace-create"
-	HitRegionWorkspaceRename HitRegionKind = "workspace-rename"
-	HitRegionWorkspaceDelete HitRegionKind = "workspace-delete"
+	HitRegionTabRename        HitRegionKind = "tab-rename"
+	HitRegionTabKill          HitRegionKind = "tab-kill"
+	HitRegionWorkspacePrev    HitRegionKind = "workspace-prev"
+	HitRegionWorkspaceNext    HitRegionKind = "workspace-next"
+	HitRegionWorkspaceCreate  HitRegionKind = "workspace-create"
+	HitRegionWorkspaceRename  HitRegionKind = "workspace-rename"
+	HitRegionWorkspaceDelete  HitRegionKind = "workspace-delete"
+	HitRegionFloatingOverview HitRegionKind = "floating-overview"
 )
 
 type tabBarActionSpec struct {
@@ -73,6 +74,7 @@ type tabBarPalette struct {
 	createFG    string
 	createBG    string
 	accent      string
+	danger      string
 	actionFG    string
 	actionBG    string
 	actionOnFG  string
@@ -223,6 +225,49 @@ func TabBarHitRegions(state VisibleRenderState) []HitRegion {
 	return regions
 }
 
+func StatusBarHitRegions(state VisibleRenderState) []HitRegion {
+	if state.TermSize.Width <= 0 || state.TermSize.Height <= 0 {
+		return nil
+	}
+	tokens := statusBarRightTokens(state)
+	if len(tokens) == 0 {
+		return nil
+	}
+	labelWidths := make([]int, 0, len(tokens))
+	totalWidth := 0
+	for _, token := range tokens {
+		if strings.TrimSpace(token.Label) == "" {
+			continue
+		}
+		w := xansi.StringWidth(token.Label)
+		labelWidths = append(labelWidths, w)
+		totalWidth += w
+	}
+	if totalWidth == 0 {
+		return nil
+	}
+	totalWidth += maxInt(0, len(labelWidths)-1)
+	x := maxInt(0, state.TermSize.Width-totalWidth)
+	regions := make([]HitRegion, 0, len(tokens))
+	widthIndex := 0
+	for _, token := range tokens {
+		if strings.TrimSpace(token.Label) == "" {
+			continue
+		}
+		w := labelWidths[widthIndex]
+		widthIndex++
+		if token.Action.Kind != "" {
+			regions = append(regions, HitRegion{
+				Kind:   token.Kind,
+				Rect:   workbench.Rect{X: x, Y: state.TermSize.Height - 1, W: w, H: 1},
+				Action: token.Action,
+			})
+		}
+		x += w + 1
+	}
+	return regions
+}
+
 func renderTabBarLeft(layout tabBarLayout) string {
 	if layout.fallbackLabel != "" {
 		return layout.fallbackLabel
@@ -293,27 +338,27 @@ func renderTabSwitchToken(label string, active bool, palette tabBarPalette) stri
 	return tabInactiveStyle(defaultUITheme()).
 		Foreground(lipgloss.Color(palette.inactiveFG)).
 		Background(lipgloss.Color(palette.inactiveBG)).
-		Render("  " + label + " ")
+		Render(" " + label + " ")
 }
 
 func renderTabCloseToken(active bool, palette tabBarPalette) string {
 	if active {
 		return tabCloseStyle(defaultUITheme(), true).
-			Foreground(lipgloss.Color(palette.activeFG)).
+			Foreground(lipgloss.Color(palette.danger)).
 			Background(lipgloss.Color(palette.activeBG)).
-			Render("   ")
+			Render(" " + paneCloseIcon() + " ")
 	}
 	return tabCloseStyle(defaultUITheme(), false).
 		Foreground(lipgloss.Color(palette.inactiveFG)).
 		Background(lipgloss.Color(palette.inactiveBG)).
-		Render("   ")
+		Render(" " + paneCloseIcon() + " ")
 }
 
 func renderTabCreateToken(label string, palette tabBarPalette) string {
 	return tabCreateStyle(defaultUITheme()).
 		Foreground(lipgloss.Color(palette.createFG)).
 		Background(lipgloss.Color(palette.createBG)).
-		Render(" " + label + " ")
+		Render("[" + label + "]")
 }
 
 func renderTopBarActionToken(label string, active bool) string {
@@ -360,6 +405,7 @@ func tabBarPaletteForState(state VisibleRenderState) tabBarPalette {
 		createFG:    theme.tabCreateFG,
 		createBG:    theme.tabCreateBG,
 		accent:      theme.chromeAccent,
+		danger:      theme.danger,
 		actionFG:    theme.tabActionFG,
 		actionBG:    theme.tabActionBG,
 		actionOnFG:  theme.tabActionOnFG,

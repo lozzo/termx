@@ -73,5 +73,5 @@ func (m *Model) submitRenameWorkspacePrompt(prompt *modal.PromptState) tea.Cmd {
 	m.modalHost.Close(input.ModePrompt, requestID)
 	m.restorePromptReturnMode(prompt)
 	m.render.Invalidate()
-	return tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
+	return m.saveStateCmd()
 }

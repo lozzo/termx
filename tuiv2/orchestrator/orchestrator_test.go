@@ -622,7 +622,7 @@ func TestHandleSemanticActionSwitchesTabsAndWraps(t *testing.T) {
 	}
 }
 
-func TestHandleSemanticActionCloseTabInvalidates(t *testing.T) {
+func TestHandleSemanticActionCloseTabProducesCloseEffect(t *testing.T) {
 	orch, _ := newTestOrchestrator(t)
 	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
 	if err := orch.workbench.CreateTab("main", "tab-2", "Tab Two"); err != nil {
@@ -637,8 +637,10 @@ func TestHandleSemanticActionCloseTabInvalidates(t *testing.T) {
 	if len(effects) != 1 {
 		t.Fatalf("expected 1 effect, got %d", len(effects))
 	}
-	if _, ok := effects[0].(InvalidateRenderEffect); !ok {
-		t.Fatalf("expected InvalidateRenderEffect, got %T", effects[0])
+	if effect, ok := effects[0].(CloseTabEffect); !ok {
+		t.Fatalf("expected CloseTabEffect, got %T", effects[0])
+	} else if effect.TabID != "tab-2" {
+		t.Fatalf("expected CloseTabEffect for tab-2, got %#v", effect)
 	}
 	ws := orch.workbench.CurrentWorkspace()
 	if ws == nil || len(ws.Tabs) != 1 {

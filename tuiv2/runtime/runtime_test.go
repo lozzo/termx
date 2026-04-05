@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"image/color"
 	"path/filepath"
 	"reflect"
 	"sync"
@@ -178,6 +179,52 @@ func TestRuntimeStartStreamRefreshesSnapshotAndInvalidates(t *testing.T) {
 	}
 }
 
+func TestRuntimeSetHostDefaultColorsRefreshesVisibleState(t *testing.T) {
+	var invalidateCount atomic.Int32
+	rt := New(nil, WithInvalidate(func() {
+		invalidateCount.Add(1)
+	}))
+
+	initial := rt.Visible()
+	if initial == nil {
+		t.Fatal("expected visible runtime")
+	}
+	if initial.HostDefaultFG != "" || initial.HostDefaultBG != "" {
+		t.Fatalf("expected empty initial host colors, got fg=%q bg=%q", initial.HostDefaultFG, initial.HostDefaultBG)
+	}
+
+	rt.SetHostDefaultColors(color.RGBA{R: 0xaa, G: 0xbb, B: 0xcc, A: 0xff}, color.RGBA{R: 0x11, G: 0x22, B: 0x33, A: 0xff})
+
+	visible := rt.Visible()
+	if visible.HostDefaultFG != "#aabbcc" || visible.HostDefaultBG != "#112233" {
+		t.Fatalf("expected visible host colors to refresh, got fg=%q bg=%q", visible.HostDefaultFG, visible.HostDefaultBG)
+	}
+	if invalidateCount.Load() == 0 {
+		t.Fatal("expected host default color update to invalidate rendering")
+	}
+}
+
+func TestRuntimeSetHostPaletteColorRefreshesVisibleState(t *testing.T) {
+	var invalidateCount atomic.Int32
+	rt := New(nil, WithInvalidate(func() {
+		invalidateCount.Add(1)
+	}))
+
+	if visible := rt.Visible(); visible == nil {
+		t.Fatal("expected visible runtime")
+	}
+
+	rt.SetHostPaletteColor(5, color.RGBA{R: 0x44, G: 0x88, B: 0xcc, A: 0xff})
+
+	visible := rt.Visible()
+	if got := visible.HostPalette[5]; got != "#4488cc" {
+		t.Fatalf("expected visible host palette to refresh, got %q", got)
+	}
+	if invalidateCount.Load() == 0 {
+		t.Fatal("expected host palette update to invalidate rendering")
+	}
+}
+
 func TestRuntimeResizePaneUsesBindingChannelAndRefreshesSnapshot(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
@@ -314,6 +361,41 @@ func TestRuntimeAcquireTerminalOwnershipPromotesRequestedPane(t *testing.T) {
 	}
 }
 
+func TestRuntimeAcquireTerminalOwnershipForcesNextOwnerResize(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 50, 16, []string{"seed"})
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach owner: %v", err)
+	}
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+
+	client.attachResult = &protocol.AttachResult{Channel: 12, Mode: "collaborator"}
+	if _, err := rt.AttachTerminal(ctx, "pane-2", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach follower: %v", err)
+	}
+	if err := rt.AcquireTerminalOwnership("pane-2", "term-1"); err != nil {
+		t.Fatalf("acquire ownership: %v", err)
+	}
+
+	client.resizeCalls = nil
+	if err := rt.ResizePane(ctx, "pane-2", "term-1", 50, 16); err != nil {
+		t.Fatalf("resize pane: %v", err)
+	}
+
+	if len(client.resizeCalls) != 1 {
+		t.Fatalf("expected forced resize after owner handoff, got %#v", client.resizeCalls)
+	}
+	if got := rt.Registry().Get("term-1"); got == nil || got.PendingOwnerResize {
+		t.Fatalf("expected pending owner resize cleared after resize, got %#v", got)
+	}
+}
+
 func TestRuntimeResizeDoesNothingWithoutExplicitOwner(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
@@ -335,6 +417,51 @@ func TestRuntimeResizeDoesNothingWithoutExplicitOwner(t *testing.T) {
 	}
 	if len(client.resizeCalls) != 0 {
 		t.Fatalf("expected no resize calls without explicit owner, got %#v", client.resizeCalls)
+	}
+}
+
+func TestRuntimeApplySessionLeasesDemotesForeignLeaseAndPromotesLocalLease(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach owner: %v", err)
+	}
+	client.attachResult = &protocol.AttachResult{Channel: 12, Mode: "collaborator"}
+	if _, err := rt.AttachTerminal(ctx, "pane-2", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach follower: %v", err)
+	}
+
+	rt.ApplySessionLeases("view-local", []protocol.LeaseInfo{{
+		TerminalID: "term-1",
+		ViewID:     "view-remote",
+		PaneID:     "pane-9",
+	}})
+
+	if terminal := rt.Registry().Get("term-1"); terminal == nil || terminal.OwnerPaneID != "" || !terminal.RequiresExplicitOwner {
+		t.Fatalf("expected foreign lease to demote local panes, got %#v", terminal)
+	}
+	if binding := rt.Binding("pane-1"); binding == nil || binding.Role != BindingRoleFollower {
+		t.Fatalf("expected pane-1 follower under foreign lease, got %#v", binding)
+	}
+
+	rt.ApplySessionLeases("view-local", []protocol.LeaseInfo{{
+		TerminalID: "term-1",
+		ViewID:     "view-local",
+		PaneID:     "pane-2",
+	}})
+
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.OwnerPaneID != "pane-2" || terminal.RequiresExplicitOwner {
+		t.Fatalf("expected local lease to promote pane-2 owner, got %#v", terminal)
+	}
+	if !terminal.PendingOwnerResize {
+		t.Fatalf("expected local lease promotion to force next resize, got %#v", terminal)
+	}
+	if binding := rt.Binding("pane-2"); binding == nil || binding.Role != BindingRoleOwner {
+		t.Fatalf("expected pane-2 owner under local lease, got %#v", binding)
 	}
 }
 
@@ -568,6 +695,14 @@ func (f *fakeBridgeClient) ReplaceSession(context.Context, protocol.ReplaceSessi
 
 func (f *fakeBridgeClient) UpdateSessionView(context.Context, protocol.UpdateSessionViewParams) (*protocol.ViewInfo, error) {
 	return nil, fmt.Errorf("not implemented")
+}
+
+func (f *fakeBridgeClient) AcquireSessionLease(context.Context, protocol.AcquireSessionLeaseParams) (*protocol.LeaseInfo, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (f *fakeBridgeClient) ReleaseSessionLease(context.Context, protocol.ReleaseSessionLeaseParams) error {
+	return fmt.Errorf("not implemented")
 }
 
 func (f *fakeBridgeClient) sendFrame(channel uint16, frame protocol.StreamFrame) {

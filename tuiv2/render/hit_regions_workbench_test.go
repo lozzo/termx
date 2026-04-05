@@ -34,10 +34,10 @@ func TestRenderTabBarIncludesCloseAndCreateAffordances(t *testing.T) {
 	if !strings.Contains(line, "build") || !strings.Contains(line, "logs") {
 		t.Fatalf("expected tab switch affordances in tab bar, got %q", line)
 	}
-	if strings.Count(line, "") < 2 {
+	if strings.Count(line, paneCloseIcon()) < 2 {
 		t.Fatalf("expected close affordance for each tab, got %q", line)
 	}
-	if !strings.Contains(line, " + ") {
+	if !strings.Contains(line, "[+]") {
 		t.Fatalf("expected create-tab affordance, got %q", line)
 	}
 }
@@ -89,7 +89,7 @@ func TestTabBarHitRegionsDropCreateWhenWidthIsTight(t *testing.T) {
 			t.Fatalf("expected create region to be omitted in tight width, got %#v", region)
 		}
 	}
-	if strings.Contains(line, " + ") {
+	if strings.Contains(line, "[+]") {
 		t.Fatalf("expected create affordance omitted in tight width, got %q", line)
 	}
 }
@@ -101,7 +101,7 @@ func TestTabBarRetainsWorkspaceAndCreateAffordanceWhenWorkspaceHasNoTabs(t *test
 	if !strings.Contains(line, "main") {
 		t.Fatalf("expected empty workspace tab bar to keep workspace label, got %q", line)
 	}
-	if !strings.Contains(line, " + ") {
+	if !strings.Contains(line, "[+]") {
 		t.Fatalf("expected empty workspace tab bar to keep create affordance, got %q", line)
 	}
 

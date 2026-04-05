@@ -254,6 +254,18 @@ func (c *Client) UpdateSessionView(ctx context.Context, params UpdateSessionView
 	return &out, nil
 }
 
+func (c *Client) AcquireSessionLease(ctx context.Context, params AcquireSessionLeaseParams) (*LeaseInfo, error) {
+	var out LeaseInfo
+	if err := c.doRequest(ctx, "session.acquire_lease", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) ReleaseSessionLease(ctx context.Context, params ReleaseSessionLeaseParams) error {
+	return c.doRequest(ctx, "session.release_lease", params, nil)
+}
+
 func (c *Client) Events(ctx context.Context, params EventsParams) (<-chan Event, error) {
 	c.mu.Lock()
 	if c.events == nil {

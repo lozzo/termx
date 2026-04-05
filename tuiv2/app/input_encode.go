@@ -164,28 +164,65 @@ func encodeSGR1006Mouse(msg tea.MouseMsg, col, row int) []byte {
 	mods := sgrMouseModifierBits(msg)
 	switch msg.Action {
 	case tea.MouseActionPress:
-		switch msg.Button {
-		case tea.MouseButtonLeft:
-			return encodeSGRMouseSequence(mods, col, row, false)
-		case tea.MouseButtonWheelUp:
-			return encodeSGRMouseSequence(64+mods, col, row, false)
-		case tea.MouseButtonWheelDown:
-			return encodeSGRMouseSequence(65+mods, col, row, false)
-		default:
-			return nil
+		if code, ok := sgrMousePressCode(msg.Button); ok {
+			return encodeSGRMouseSequence(code+mods, col, row, false)
 		}
+		return nil
 	case tea.MouseActionMotion:
-		if msg.Button != tea.MouseButtonLeft {
-			return nil
+		if code, ok := sgrMouseMotionCode(msg.Button); ok {
+			return encodeSGRMouseSequence(code+mods, col, row, false)
 		}
-		return encodeSGRMouseSequence(32+mods, col, row, false)
+		return nil
 	case tea.MouseActionRelease:
-		if msg.Button != tea.MouseButtonLeft {
+		if !isSGRReleaseButton(msg.Button) {
 			return nil
 		}
 		return encodeSGRMouseSequence(3+mods, col, row, true)
 	default:
 		return nil
+	}
+}
+
+func sgrMousePressCode(button tea.MouseButton) (int, bool) {
+	switch button {
+	case tea.MouseButtonLeft:
+		return 0, true
+	case tea.MouseButtonMiddle:
+		return 1, true
+	case tea.MouseButtonRight:
+		return 2, true
+	case tea.MouseButtonWheelUp:
+		return 64, true
+	case tea.MouseButtonWheelDown:
+		return 65, true
+	case tea.MouseButtonWheelLeft:
+		return 66, true
+	case tea.MouseButtonWheelRight:
+		return 67, true
+	default:
+		return 0, false
+	}
+}
+
+func sgrMouseMotionCode(button tea.MouseButton) (int, bool) {
+	switch button {
+	case tea.MouseButtonLeft:
+		return 32, true
+	case tea.MouseButtonMiddle:
+		return 33, true
+	case tea.MouseButtonRight:
+		return 34, true
+	default:
+		return 0, false
+	}
+}
+
+func isSGRReleaseButton(button tea.MouseButton) bool {
+	switch button {
+	case tea.MouseButtonLeft, tea.MouseButtonMiddle, tea.MouseButtonRight:
+		return true
+	default:
+		return false
 	}
 }
 

@@ -96,14 +96,16 @@ func exportWorkspace(ws *workbench.WorkspaceState) WorkspaceEntryV2 {
 }
 
 func exportTab(tab *workbench.TabState) TabEntryV2 {
+	floatingVisible := tab.FloatingVisible
 	entry := TabEntryV2{
-		Name:         tab.Name,
-		ActivePaneID: tab.ActivePaneID,
-		ZoomedPaneID: tab.ZoomedPaneID,
-		LayoutPreset: tab.LayoutPreset,
-		Layout:       exportLayout(tab.Root),
-		Panes:        make([]PaneEntryV2, 0, len(tab.Panes)),
-		Floating:     make([]FloatingEntryV2, 0, len(tab.Floating)),
+		Name:            tab.Name,
+		ActivePaneID:    tab.ActivePaneID,
+		ZoomedPaneID:    tab.ZoomedPaneID,
+		FloatingVisible: &floatingVisible,
+		LayoutPreset:    tab.LayoutPreset,
+		Layout:          exportLayout(tab.Root),
+		Panes:           make([]PaneEntryV2, 0, len(tab.Panes)),
+		Floating:        make([]FloatingEntryV2, 0, len(tab.Floating)),
 	}
 	for _, paneID := range orderedPaneIDs(tab) {
 		pane := tab.Panes[paneID]
@@ -131,7 +133,17 @@ func exportTab(tab *workbench.TabState) TabEntryV2 {
 				W: floating.Rect.W,
 				H: floating.Rect.H,
 			},
-			Z: floating.Z,
+			Z:       floating.Z,
+			Display: string(floating.Display),
+			FitMode: string(floating.FitMode),
+			RestoreRect: RectEntryV2{
+				X: floating.RestoreRect.X,
+				Y: floating.RestoreRect.Y,
+				W: floating.RestoreRect.W,
+				H: floating.RestoreRect.H,
+			},
+			AutoFitCols: floating.AutoFitCols,
+			AutoFitRows: floating.AutoFitRows,
 		})
 	}
 	return entry

@@ -54,9 +54,14 @@ type Pane struct {
 }
 
 type FloatingPane struct {
-	PaneID string `json:"pane_id"`
-	Rect   Rect   `json:"rect"`
-	Z      int    `json:"z,omitempty"`
+	PaneID      string `json:"pane_id"`
+	Rect        Rect   `json:"rect"`
+	Z           int    `json:"z,omitempty"`
+	Display     string `json:"display,omitempty"`
+	FitMode     string `json:"fit_mode,omitempty"`
+	RestoreRect Rect   `json:"restore_rect,omitempty"`
+	AutoFitCols int    `json:"auto_fit_cols,omitempty"`
+	AutoFitRows int    `json:"auto_fit_rows,omitempty"`
 }
 
 func New() *Doc {

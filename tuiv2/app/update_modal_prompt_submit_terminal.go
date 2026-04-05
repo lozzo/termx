@@ -194,7 +194,7 @@ func (m *Model) submitCreateTerminal(prompt *modal.PromptState, paneID string, p
 			}
 			return nil
 		default:
-			msgs, err := m.orchestrator.AttachAndLoadSnapshot(context.Background(), pane, created.TerminalID, "collaborator", 0, 200)
+			msgs, err := m.orchestrator.AttachAndLoadSnapshot(context.Background(), pane, created.TerminalID, "collaborator", 0, defaultTerminalSnapshotScrollbackLimit)
 			if err != nil {
 				return err
 			}

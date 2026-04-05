@@ -18,6 +18,7 @@ const (
 
 type paneBorderInfo struct {
 	StateLabel string
+	StateTone  string
 	ShareLabel string
 	RoleLabel  string
 }
@@ -38,17 +39,17 @@ func paneMetaWithLookup(pane workbench.VisiblePane, lookup runtimeLookup, confir
 	parts := make([]string, 0, 4)
 	switch terminal.State {
 	case "running":
-		parts = append(parts, "●")
+		parts = append(parts, paneRunningIcon())
 	case "exited":
 		if terminal.ExitCode != nil {
-			parts = append(parts, fmt.Sprintf("○ %d", *terminal.ExitCode))
+			parts = append(parts, fmt.Sprintf("%s %d", paneExitedIcon(), *terminal.ExitCode))
 		} else {
-			parts = append(parts, "○")
+			parts = append(parts, paneExitedIcon())
 		}
 	case "waiting":
-		parts = append(parts, "…")
+		parts = append(parts, paneWaitingIcon())
 	case "killed":
-		parts = append(parts, "✕")
+		parts = append(parts, paneKilledIcon())
 	}
 	switch role := lookup.paneRole(pane.ID); role {
 	case "owner":
@@ -78,6 +79,7 @@ func paneBorderInfoWithLookup(pane workbench.VisiblePane, lookup runtimeLookup, 
 	}
 	info := paneBorderInfo{
 		StateLabel: paneBorderStateLabel(terminal.State, terminal.ExitCode),
+		StateTone:  paneBorderStateTone(terminal.State),
 	}
 	switch lookup.paneRole(pane.ID) {
 	case "owner":
@@ -98,16 +100,29 @@ func paneBorderInfoWithLookup(pane workbench.VisiblePane, lookup runtimeLookup, 
 func paneBorderStateLabel(state string, exitCode *int) string {
 	switch state {
 	case "running":
-		return "●"
+		return paneRunningIcon()
 	case "exited":
 		if exitCode != nil {
-			return fmt.Sprintf("○%d", *exitCode)
+			return fmt.Sprintf("%s%d", paneExitedIcon(), *exitCode)
 		}
-		return "○"
+		return paneExitedIcon()
 	case "waiting":
-		return "…"
+		return paneWaitingIcon()
 	case "killed":
-		return "✕"
+		return paneKilledIcon()
+	default:
+		return ""
+	}
+}
+
+func paneBorderStateTone(state string) string {
+	switch state {
+	case "running":
+		return "success"
+	case "waiting":
+		return "warning"
+	case "exited", "killed":
+		return "danger"
 	default:
 		return ""
 	}

@@ -587,6 +587,77 @@ func TestFeatureBecomeOwnerPromotesActivePane(t *testing.T) {
 	assertViewContains(t, model, "follow", "owner")
 }
 
+func TestFeatureSessionBecomeOwnerAcquiresLeaseExplicitly(t *testing.T) {
+	client := &recordingBridgeClient{
+		attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{},
+	}
+	root := &workbench.LayoutNode{
+		Direction: workbench.SplitVertical,
+		Ratio:     0.5,
+		First:     workbench.NewLeaf("pane-1"),
+		Second:    workbench.NewLeaf("pane-2"),
+	}
+	model := setupModel(t, modelOpts{
+		client: client,
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{{
+					ID:           "tab-1",
+					Name:         "tab 1",
+					ActivePaneID: "pane-2",
+					Panes: map[string]*workbench.PaneState{
+						"pane-1": {ID: "pane-1", Title: "left", TerminalID: "term-1"},
+						"pane-2": {ID: "pane-2", Title: "right", TerminalID: "term-1"},
+					},
+					Root: root,
+				}},
+			},
+		},
+	})
+	model.sessionID = "main"
+	model.sessionViewID = "view-local"
+	model.sessionLeases = map[string]protocol.LeaseInfo{
+		"term-1": {TerminalID: "term-1", SessionID: "main", ViewID: "view-remote", PaneID: "pane-x"},
+	}
+
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.State = "running"
+	terminal.Channel = 1
+	terminal.BoundPaneIDs = []string{"pane-1", "pane-2"}
+	terminal.Snapshot = &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}}
+
+	ownerBinding := model.runtime.BindPane("pane-1")
+	ownerBinding.Channel = 1
+	ownerBinding.Connected = true
+	followerBinding := model.runtime.BindPane("pane-2")
+	followerBinding.Channel = 2
+	followerBinding.Connected = true
+	model.runtime.ApplySessionLeases(model.sessionViewID, model.currentSessionLeases())
+
+	_ = model.workbench.FocusPane("tab-1", "pane-2")
+	model.input.SetMode(input.ModeState{Kind: input.ModePane})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionBecomeOwner, PaneID: "pane-2"})
+
+	if len(client.acquireLeaseCalls) != 1 {
+		t.Fatalf("expected one explicit lease acquire, got %#v", client.acquireLeaseCalls)
+	}
+	if got := client.acquireLeaseCalls[0]; got.ViewID != "view-local" || got.PaneID != "pane-2" || got.TerminalID != "term-1" {
+		t.Fatalf("unexpected lease acquire params: %#v", got)
+	}
+	if terminal.OwnerPaneID != "pane-2" {
+		t.Fatalf("expected pane-2 promoted after explicit lease acquire, got %q", terminal.OwnerPaneID)
+	}
+	if ownerBinding.Role != runtime.BindingRoleFollower || followerBinding.Role != runtime.BindingRoleOwner {
+		t.Fatalf("expected lease acquire to update local roles, owner=%#v follower=%#v", ownerBinding, followerBinding)
+	}
+	if len(client.resizes) != 1 || client.resizes[0].channel != 2 {
+		t.Fatalf("expected resize from pane-2 channel after lease acquire, got %#v", client.resizes)
+	}
+}
+
 func TestFeaturePaneCloseAndKill(t *testing.T) {
 	model := setupModel(t, modelOpts{})
 	assertPaneCount(t, model, 1)
@@ -614,6 +685,170 @@ func TestFeaturePaneCloseAndKill(t *testing.T) {
 	}
 	if model.workbench.CurrentTab() != nil && len(model.workbench.CurrentTab().Panes) != 0 {
 		t.Fatalf("expected pane removed after close+kill, got %#v", model.workbench.CurrentTab().Panes)
+	}
+}
+
+func TestFeatureTabSwitchKeepsSharedTerminalOwnerStable(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	model := setupModel(t, modelOpts{
+		client: client,
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{
+					{
+						ID:           "tab-1",
+						Name:         "tab 1",
+						ActivePaneID: "pane-1",
+						Panes: map[string]*workbench.PaneState{
+							"pane-1": {ID: "pane-1", Title: "owner", TerminalID: "term-1"},
+						},
+						Root: workbench.NewLeaf("pane-1"),
+					},
+					{
+						ID:           "tab-2",
+						Name:         "tab 2",
+						ActivePaneID: "pane-2",
+						Panes: map[string]*workbench.PaneState{
+							"pane-2": {ID: "pane-2", Title: "shared", TerminalID: "term-1"},
+							"pane-3": {ID: "pane-3", Title: "empty"},
+						},
+						Root: &workbench.LayoutNode{
+							Direction: workbench.SplitVertical,
+							Ratio:     0.5,
+							First:     workbench.NewLeaf("pane-2"),
+							Second:    workbench.NewLeaf("pane-3"),
+						},
+					},
+				},
+			},
+		},
+	})
+
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.Name = "shared"
+	terminal.State = "running"
+	terminal.Channel = 1
+	terminal.OwnerPaneID = "pane-1"
+	terminal.BoundPaneIDs = []string{"pane-1", "pane-2"}
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 118, Rows: 36},
+	}
+
+	ownerBinding := model.runtime.BindPane("pane-1")
+	ownerBinding.Channel = 1
+	ownerBinding.Connected = true
+	ownerBinding.Role = runtime.BindingRoleOwner
+
+	followerBinding := model.runtime.BindPane("pane-2")
+	followerBinding.Channel = 2
+	followerBinding.Connected = true
+	followerBinding.Role = runtime.BindingRoleFollower
+
+	cmd := model.switchTabByIndexMouse(1)
+	drainCmd(t, model, cmd, 20)
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil || tab.ID != "tab-2" {
+		t.Fatalf("expected tab-2 active after switch, got %#v", tab)
+	}
+	if terminal.OwnerPaneID != "pane-1" {
+		t.Fatalf("expected pane-1 to stay owner on tab switch, got %q", terminal.OwnerPaneID)
+	}
+	if ownerBinding.Role != runtime.BindingRoleOwner {
+		t.Fatalf("expected pane-1 to stay owner after tab switch, got %q", ownerBinding.Role)
+	}
+	if followerBinding.Role != runtime.BindingRoleFollower {
+		t.Fatalf("expected pane-2 to stay follower after tab switch, got %q", followerBinding.Role)
+	}
+
+	visible := model.workbench.VisibleWithSize(model.bodyRect())
+	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
+		t.Fatalf("expected visible active tab after switch, got %#v", visible)
+	}
+	var target *workbench.VisiblePane
+	for i := range visible.Tabs[visible.ActiveTab].Panes {
+		pane := &visible.Tabs[visible.ActiveTab].Panes[i]
+		if pane.ID == "pane-2" {
+			target = pane
+			break
+		}
+	}
+	if target == nil {
+		t.Fatalf("expected visible pane-2 after switch, got %#v", visible.Tabs[visible.ActiveTab].Panes)
+	}
+	if len(client.resizes) != 0 {
+		t.Fatalf("expected hidden follower tab switch not to resize PTY, got %#v", client.resizes)
+	}
+}
+
+func TestFeatureSessionTabSwitchDoesNotImplicitlyAcquireLease(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	model := setupModel(t, modelOpts{
+		client: client,
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{
+					{
+						ID:           "tab-1",
+						Name:         "tab 1",
+						ActivePaneID: "pane-1",
+						Panes: map[string]*workbench.PaneState{
+							"pane-1": {ID: "pane-1", Title: "left", TerminalID: "term-1"},
+						},
+						Root: workbench.NewLeaf("pane-1"),
+					},
+					{
+						ID:           "tab-2",
+						Name:         "tab 2",
+						ActivePaneID: "pane-2",
+						Panes: map[string]*workbench.PaneState{
+							"pane-2": {ID: "pane-2", Title: "right", TerminalID: "term-1"},
+						},
+						Root: workbench.NewLeaf("pane-2"),
+					},
+				},
+			},
+		},
+	})
+	model.sessionID = "main"
+	model.sessionViewID = "view-local"
+	model.sessionLeases = map[string]protocol.LeaseInfo{
+		"term-1": {TerminalID: "term-1", SessionID: "main", ViewID: "view-remote", PaneID: "pane-remote"},
+	}
+
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.State = "running"
+	terminal.Channel = 1
+	terminal.BoundPaneIDs = []string{"pane-1", "pane-2"}
+	terminal.Snapshot = &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 118, Rows: 36}}
+
+	binding1 := model.runtime.BindPane("pane-1")
+	binding1.Channel = 1
+	binding1.Connected = true
+	binding2 := model.runtime.BindPane("pane-2")
+	binding2.Channel = 2
+	binding2.Connected = true
+	model.runtime.ApplySessionLeases(model.sessionViewID, model.currentSessionLeases())
+
+	cmd := model.switchTabByIndexMouse(1)
+	drainCmd(t, model, cmd, 20)
+
+	if terminal.OwnerPaneID != "" {
+		t.Fatalf("expected remote lease to keep local view follower-only, got owner=%q", terminal.OwnerPaneID)
+	}
+	if len(client.acquireLeaseCalls) != 0 {
+		t.Fatalf("expected tab switch not to acquire lease implicitly, got %#v", client.acquireLeaseCalls)
+	}
+	if len(client.resizes) != 0 {
+		t.Fatalf("expected follower-only tab switch not to resize PTY, got %#v", client.resizes)
+	}
+	if binding2.Role != runtime.BindingRoleFollower {
+		t.Fatalf("expected pane-2 to stay follower after tab switch, got %#v", binding2)
 	}
 }
 
@@ -995,6 +1230,75 @@ func TestFeatureFloatingClose(t *testing.T) {
 	}
 }
 
+func TestFeatureFloatingOverviewOpensWithItems(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	tab := model.workbench.CurrentTab()
+	_ = model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 10, Y: 5, W: 30, H: 10})
+	_ = model.workbench.CreateFloatingPane(tab.ID, "float-2", workbench.Rect{X: 20, Y: 8, W: 30, H: 10})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenFloatingOverview})
+
+	if model.modalHost == nil || model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModeFloatingOverview {
+		t.Fatalf("expected floating overview modal, got %#v", model.modalHost)
+	}
+	if model.modalHost.FloatingOverview == nil || len(model.modalHost.FloatingOverview.Items) != 2 {
+		t.Fatalf("expected 2 floating overview items, got %#v", model.modalHost.FloatingOverview)
+	}
+}
+
+func TestFeatureSummonCollapsedFloatingPane(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	tab := model.workbench.CurrentTab()
+	_ = model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 10, Y: 5, W: 30, H: 10})
+	_ = model.workbench.CreateFloatingPane(tab.ID, "float-2", workbench.Rect{X: 20, Y: 8, W: 30, H: 10})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCollapseFloatingPane, PaneID: "float-2"})
+
+	if got := model.workbench.FloatingState(tab.ID, "float-2"); got == nil || got.Display != workbench.FloatingDisplayCollapsed {
+		t.Fatalf("expected float-2 collapsed, got %#v", got)
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSummonFloatingPane, Text: "1"})
+
+	if got := model.workbench.FloatingState(tab.ID, "float-2"); got == nil || got.Display != workbench.FloatingDisplayExpanded {
+		t.Fatalf("expected float-2 restored by summon, got %#v", got)
+	}
+	if got := tab.ActivePaneID; got != "float-2" {
+		t.Fatalf("expected summon to focus float-2, got %q", got)
+	}
+}
+
+func TestFeatureFloatingFitOnceUsesSnapshotExtent(t *testing.T) {
+	client := &recordingBridgeClient{
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-float": {
+				TerminalID: "term-float",
+				Size:       protocol.Size{Cols: 48, Rows: 14},
+			},
+		},
+	}
+	model := setupModel(t, modelOpts{client: client})
+	tab := model.workbench.CurrentTab()
+	_ = model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 10, Y: 5, W: 20, H: 8})
+	if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+		t.Fatalf("bind floating terminal: %v", err)
+	}
+	model.runtime.Registry().GetOrCreate("term-float").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-float",
+		Size:       protocol.Size{Cols: 48, Rows: 14},
+	}
+	binding := model.runtime.BindPane("float-1")
+	binding.Role = runtime.BindingRoleOwner
+	binding.Channel = 7
+	binding.Connected = true
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionAutoFitFloatingPane, PaneID: "float-1"})
+
+	if got := model.workbench.FloatingState(tab.ID, "float-1"); got == nil || got.Rect.W != 50 || got.Rect.H != 16 {
+		t.Fatalf("expected fit-once rect 50x16, got %#v", got)
+	}
+}
+
 // ─── Group 5: Resize Operations ─────────────────────────────────────────────
 
 func TestFeatureResizeAdjustRatio(t *testing.T) {
@@ -1009,6 +1313,10 @@ func TestFeatureResizeAdjustRatio(t *testing.T) {
 	tab = model.workbench.CurrentTab()
 	if tab.Root.Ratio == 0.5 {
 		t.Fatal("expected ratio to change after resize")
+	}
+	client := model.runtime.Client().(*recordingBridgeClient)
+	if len(client.resizes) != 2 {
+		t.Fatalf("expected both resized panes to update their PTYs, got %#v", client.resizes)
 	}
 }
 
@@ -1814,7 +2122,7 @@ func TestFeatureRenderPickerOverlayUsesUnifiedBottomStatusHints(t *testing.T) {
 			t.Fatalf("expected picker overlay to omit footer shortcut %q:\n%s", unwanted, view)
 		}
 	}
-	for _, want := range []string{"PICKER", "UP/DOWN MOVE", "TYPE FILTER", "Enter HERE", "Tab SPLIT", "Ctrl-E EDIT", "Ctrl-K KILL", "Esc BACK"} {
+	for _, want := range []string{"PICKER", "[UP/DOWN] MOVE", "[TYPE] FILTER", "[Enter] HERE", "[Tab] SPLIT", "[Ctrl-E] EDIT", "[Ctrl-K] KILL", "[Esc] BACK"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected unified picker shortcut hint %q:\n%s", want, view)
 		}
@@ -1826,7 +2134,7 @@ func TestFeatureFloatingModeShowsCanonicalHints(t *testing.T) {
 	model.input.SetMode(input.ModeState{Kind: input.ModeFloating})
 	model.render.Invalidate()
 	view := xansi.Strip(model.View())
-	for _, want := range []string{"N NEW FLOAT", "Esc BACK"} {
+	for _, want := range []string{"[N] NEW FLOAT", "[Esc] BACK"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("floating mode view missing %q:\n%s", want, view)
 		}
@@ -1844,7 +2152,7 @@ func TestFeatureWorkspaceModeShowsLegacyAlignedHints(t *testing.T) {
 	model.render.Invalidate()
 
 	view := xansi.Strip(model.View())
-	for _, want := range []string{"F PICK", "C NEW", "R RENAME", "X DELETE"} {
+	for _, want := range []string{"[F] PICK", "[C] NEW", "[R] RENAME", "[X] DELETE"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("workspace mode view missing %q:\n%s", want, view)
 		}
@@ -1860,7 +2168,7 @@ func TestFeatureTabModeShowsLegacyAlignedHints(t *testing.T) {
 	model.render.Invalidate()
 
 	view := xansi.Strip(model.View())
-	for _, want := range []string{"C NEW", "R RENAME", "X KILL"} {
+	for _, want := range []string{"[C] NEW", "[R] RENAME", "[X] KILL"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("tab mode view missing %q:\n%s", want, view)
 		}
@@ -2126,7 +2434,7 @@ func TestFeatureWindowResizePropagatesToTerminal(t *testing.T) {
 	}
 }
 
-func TestFeatureTabSwitchResizesNewVisiblePanes(t *testing.T) {
+func TestFeatureTabSwitchDoesNotResizeNewVisiblePanes(t *testing.T) {
 	client := &recordingBridgeClient{
 		attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
 		snapshotByTerminal: map[string]*protocol.Snapshot{},
@@ -2142,8 +2450,8 @@ func TestFeatureTabSwitchResizesNewVisiblePanes(t *testing.T) {
 	model.input.SetMode(input.ModeState{Kind: input.ModeTab})
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionPrevTab})
 
-	if len(client.resizes) == 0 {
-		t.Fatal("expected resize after tab switch")
+	if len(client.resizes) != 0 {
+		t.Fatalf("expected tab switch not to resize panes, got %#v", client.resizes)
 	}
 }
 
@@ -2537,6 +2845,364 @@ func TestFeatureQuestionMarkPassesThroughInNormal(t *testing.T) {
 		t.Fatalf("expected question mark passthrough, got %q", string(client.inputCalls[0].data))
 	}
 	assertMode(t, model, input.ModeNormal)
+}
+
+func TestFeatureSessionTerminalInputDoesNotAcquireLeaseImplicitly(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	root := &workbench.LayoutNode{
+		Direction: workbench.SplitVertical,
+		Ratio:     0.5,
+		First:     workbench.NewLeaf("pane-1"),
+		Second:    workbench.NewLeaf("pane-2"),
+	}
+	model := setupModel(t, modelOpts{
+		client: client,
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{{
+					ID:           "tab-1",
+					Name:         "tab 1",
+					ActivePaneID: "pane-2",
+					Panes: map[string]*workbench.PaneState{
+						"pane-1": {ID: "pane-1", Title: "left", TerminalID: "term-1"},
+						"pane-2": {ID: "pane-2", Title: "right", TerminalID: "term-1"},
+					},
+					Root: root,
+				}},
+			},
+		},
+	})
+	model.sessionID = "main"
+	model.sessionViewID = "view-local"
+	model.sessionLeases = map[string]protocol.LeaseInfo{
+		"term-1": {TerminalID: "term-1", SessionID: "main", ViewID: "view-remote", PaneID: "pane-remote"},
+	}
+
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.State = "running"
+	terminal.Channel = 1
+	terminal.BoundPaneIDs = []string{"pane-1", "pane-2"}
+	terminal.Snapshot = &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}}
+
+	binding1 := model.runtime.BindPane("pane-1")
+	binding1.Channel = 1
+	binding1.Connected = true
+	binding2 := model.runtime.BindPane("pane-2")
+	binding2.Channel = 2
+	binding2.Connected = true
+	model.runtime.ApplySessionLeases(model.sessionViewID, model.currentSessionLeases())
+
+	cmd := model.handleTerminalInput(input.TerminalInput{PaneID: "pane-2", Data: []byte("a")})
+	drainCmd(t, model, cmd, 20)
+
+	if len(client.acquireLeaseCalls) != 0 {
+		t.Fatalf("expected terminal input not to acquire a lease implicitly, got %#v", client.acquireLeaseCalls)
+	}
+	if len(client.resizes) != 0 {
+		t.Fatalf("expected follower terminal input not to resize PTY, got %#v", client.resizes)
+	}
+	if len(client.inputCalls) != 1 || client.inputCalls[0].channel != 2 || string(client.inputCalls[0].data) != "a" {
+		t.Fatalf("expected terminal input forwarded without ownership change, got %#v", client.inputCalls)
+	}
+	if terminal.OwnerPaneID != "" {
+		t.Fatalf("expected terminal input to keep local view follower-only, got owner=%q", terminal.OwnerPaneID)
+	}
+}
+
+func TestFeatureSessionTerminalInputReacquiresLeaseForSameOwnerPane(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	model := setupModel(t, modelOpts{
+		client: client,
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{{
+					ID:           "tab-1",
+					Name:         "tab 1",
+					ActivePaneID: "pane-1",
+					Panes: map[string]*workbench.PaneState{
+						"pane-1": {ID: "pane-1", Title: "owner", TerminalID: "term-1"},
+					},
+					Root: workbench.NewLeaf("pane-1"),
+				}},
+			},
+		},
+	})
+	model.sessionID = "main"
+	model.sessionViewID = "view-local"
+	model.sessionLeases = map[string]protocol.LeaseInfo{
+		"term-1": {TerminalID: "term-1", SessionID: "main", ViewID: "view-remote", PaneID: "pane-1"},
+	}
+
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.State = "running"
+	terminal.Channel = 1
+	terminal.BoundPaneIDs = []string{"pane-1"}
+	terminal.Snapshot = &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}}
+
+	binding := model.runtime.BindPane("pane-1")
+	binding.Channel = 1
+	binding.Connected = true
+	model.runtime.ApplySessionLeases(model.sessionViewID, model.currentSessionLeases())
+
+	cmd := model.handleTerminalInput(input.TerminalInput{PaneID: "pane-1", Data: []byte("a")})
+	drainCmd(t, model, cmd, 20)
+
+	if len(client.acquireLeaseCalls) != 1 {
+		t.Fatalf("expected same-pane terminal input to reacquire lease, got %#v", client.acquireLeaseCalls)
+	}
+	if got := client.acquireLeaseCalls[0]; got.ViewID != "view-local" || got.PaneID != "pane-1" || got.TerminalID != "term-1" {
+		t.Fatalf("unexpected lease acquire params: %#v", got)
+	}
+	if len(client.resizes) != 1 || client.resizes[0].channel != 1 {
+		t.Fatalf("expected same-pane terminal input to resize from pane-1 channel, got %#v", client.resizes)
+	}
+	if len(client.inputCalls) != 1 || client.inputCalls[0].channel != 1 || string(client.inputCalls[0].data) != "a" {
+		t.Fatalf("expected terminal input forwarded after same-pane lease reacquire, got %#v", client.inputCalls)
+	}
+	if terminal.OwnerPaneID != "pane-1" {
+		t.Fatalf("expected same-pane lease reacquire to restore pane-1 control, got %q", terminal.OwnerPaneID)
+	}
+}
+
+func TestFeatureSessionTerminalInputKeepsFollowerStateWhenSizeMatches(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	root := &workbench.LayoutNode{
+		Direction: workbench.SplitVertical,
+		Ratio:     0.5,
+		First:     workbench.NewLeaf("pane-1"),
+		Second:    workbench.NewLeaf("pane-2"),
+	}
+	model := setupModel(t, modelOpts{
+		client: client,
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{{
+					ID:           "tab-1",
+					Name:         "tab 1",
+					ActivePaneID: "pane-2",
+					Panes: map[string]*workbench.PaneState{
+						"pane-1": {ID: "pane-1", Title: "left", TerminalID: "term-1"},
+						"pane-2": {ID: "pane-2", Title: "right", TerminalID: "term-1"},
+					},
+					Root: root,
+				}},
+			},
+		},
+	})
+	model.sessionID = "main"
+	model.sessionViewID = "view-local"
+	model.sessionLeases = map[string]protocol.LeaseInfo{
+		"term-1": {TerminalID: "term-1", SessionID: "main", ViewID: "view-remote", PaneID: "pane-remote"},
+	}
+
+	visible := model.workbench.VisibleWithSize(model.bodyRect())
+	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
+		t.Fatalf("expected visible active tab, got %#v", visible)
+	}
+	var target *workbench.VisiblePane
+	for i := range visible.Tabs[visible.ActiveTab].Panes {
+		pane := &visible.Tabs[visible.ActiveTab].Panes[i]
+		if pane.ID == "pane-2" {
+			target = pane
+			break
+		}
+	}
+	if target == nil {
+		t.Fatalf("expected visible pane-2, got %#v", visible.Tabs[visible.ActiveTab].Panes)
+	}
+	targetCols := uint16(maxInt(2, target.Rect.W-2))
+	targetRows := uint16(maxInt(2, target.Rect.H-2))
+
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.State = "running"
+	terminal.Channel = 1
+	terminal.BoundPaneIDs = []string{"pane-1", "pane-2"}
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: targetCols, Rows: targetRows},
+	}
+
+	binding1 := model.runtime.BindPane("pane-1")
+	binding1.Channel = 1
+	binding1.Connected = true
+	binding2 := model.runtime.BindPane("pane-2")
+	binding2.Channel = 2
+	binding2.Connected = true
+	model.runtime.ApplySessionLeases(model.sessionViewID, model.currentSessionLeases())
+
+	cmd := model.handleTerminalInput(input.TerminalInput{PaneID: "pane-2", Data: []byte("a")})
+	drainCmd(t, model, cmd, 20)
+
+	if len(client.acquireLeaseCalls) != 0 {
+		t.Fatalf("expected matching-size terminal input not to acquire a lease implicitly, got %#v", client.acquireLeaseCalls)
+	}
+	if len(client.resizes) != 0 {
+		t.Fatalf("expected matching-size follower input to avoid resize, got %#v", client.resizes)
+	}
+	if len(client.inputCalls) != 1 || client.inputCalls[0].channel != 2 || string(client.inputCalls[0].data) != "a" {
+		t.Fatalf("expected terminal input forwarded without resize, got %#v", client.inputCalls)
+	}
+	if terminal.OwnerPaneID != "" {
+		t.Fatalf("expected matching-size input to keep local view follower-only, got owner=%q", terminal.OwnerPaneID)
+	}
+}
+
+func TestFeatureSessionTerminalInputReclaimsSamePaneLeaseAndResizesActivePane(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	root := &workbench.LayoutNode{
+		Direction: workbench.SplitVertical,
+		Ratio:     0.5,
+		First:     workbench.NewLeaf("pane-1"),
+		Second:    workbench.NewLeaf("pane-2"),
+	}
+	model := setupModel(t, modelOpts{
+		client: client,
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{{
+					ID:           "tab-1",
+					Name:         "tab 1",
+					ActivePaneID: "pane-2",
+					Panes: map[string]*workbench.PaneState{
+						"pane-1": {ID: "pane-1", Title: "left", TerminalID: "term-1"},
+						"pane-2": {ID: "pane-2", Title: "right", TerminalID: "term-1"},
+					},
+					Root: root,
+				}},
+			},
+		},
+	})
+	model.sessionID = "main"
+	model.sessionViewID = "view-local"
+	model.sessionLeases = map[string]protocol.LeaseInfo{
+		"term-1": {TerminalID: "term-1", SessionID: "main", ViewID: "view-remote", PaneID: "pane-2"},
+	}
+
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.State = "running"
+	terminal.Channel = 1
+	terminal.BoundPaneIDs = []string{"pane-1", "pane-2"}
+	terminal.Snapshot = &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}}
+
+	binding1 := model.runtime.BindPane("pane-1")
+	binding1.Channel = 1
+	binding1.Connected = true
+	binding2 := model.runtime.BindPane("pane-2")
+	binding2.Channel = 2
+	binding2.Connected = true
+	model.runtime.ApplySessionLeases(model.sessionViewID, model.currentSessionLeases())
+
+	cmd := model.handleTerminalInput(input.TerminalInput{PaneID: "pane-2", Data: []byte("a")})
+	drainCmd(t, model, cmd, 20)
+
+	if len(client.acquireLeaseCalls) != 1 {
+		t.Fatalf("expected one implicit lease acquire for the same pane, got %#v", client.acquireLeaseCalls)
+	}
+	if got := client.acquireLeaseCalls[0]; got.ViewID != "view-local" || got.PaneID != "pane-2" || got.TerminalID != "term-1" {
+		t.Fatalf("unexpected lease acquire params: %#v", got)
+	}
+	if len(client.resizes) != 1 || client.resizes[0].channel != 2 {
+		t.Fatalf("expected terminal input to resize from pane-2 channel, got %#v", client.resizes)
+	}
+	if len(client.inputCalls) != 1 || client.inputCalls[0].channel != 2 || string(client.inputCalls[0].data) != "a" {
+		t.Fatalf("expected terminal input forwarded after same-pane lease reclaim, got %#v", client.inputCalls)
+	}
+	if terminal.OwnerPaneID != "pane-2" {
+		t.Fatalf("expected pane-2 restored as local owner after same-pane lease reclaim, got %q", terminal.OwnerPaneID)
+	}
+}
+
+func TestFeatureSessionTerminalInputReclaimsSamePaneLeaseWithoutResizeWhenSizeMatches(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	root := &workbench.LayoutNode{
+		Direction: workbench.SplitVertical,
+		Ratio:     0.5,
+		First:     workbench.NewLeaf("pane-1"),
+		Second:    workbench.NewLeaf("pane-2"),
+	}
+	model := setupModel(t, modelOpts{
+		client: client,
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{{
+					ID:           "tab-1",
+					Name:         "tab 1",
+					ActivePaneID: "pane-2",
+					Panes: map[string]*workbench.PaneState{
+						"pane-1": {ID: "pane-1", Title: "left", TerminalID: "term-1"},
+						"pane-2": {ID: "pane-2", Title: "right", TerminalID: "term-1"},
+					},
+					Root: root,
+				}},
+			},
+		},
+	})
+	model.sessionID = "main"
+	model.sessionViewID = "view-local"
+	model.sessionLeases = map[string]protocol.LeaseInfo{
+		"term-1": {TerminalID: "term-1", SessionID: "main", ViewID: "view-remote", PaneID: "pane-2"},
+	}
+
+	visible := model.workbench.VisibleWithSize(model.bodyRect())
+	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
+		t.Fatalf("expected visible active tab, got %#v", visible)
+	}
+	var target *workbench.VisiblePane
+	for i := range visible.Tabs[visible.ActiveTab].Panes {
+		pane := &visible.Tabs[visible.ActiveTab].Panes[i]
+		if pane.ID == "pane-2" {
+			target = pane
+			break
+		}
+	}
+	if target == nil {
+		t.Fatalf("expected visible pane-2, got %#v", visible.Tabs[visible.ActiveTab].Panes)
+	}
+	targetCols := uint16(maxInt(2, target.Rect.W-2))
+	targetRows := uint16(maxInt(2, target.Rect.H-2))
+
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.State = "running"
+	terminal.Channel = 1
+	terminal.BoundPaneIDs = []string{"pane-1", "pane-2"}
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: targetCols, Rows: targetRows},
+	}
+
+	binding1 := model.runtime.BindPane("pane-1")
+	binding1.Channel = 1
+	binding1.Connected = true
+	binding2 := model.runtime.BindPane("pane-2")
+	binding2.Channel = 2
+	binding2.Connected = true
+	model.runtime.ApplySessionLeases(model.sessionViewID, model.currentSessionLeases())
+
+	cmd := model.handleTerminalInput(input.TerminalInput{PaneID: "pane-2", Data: []byte("a")})
+	drainCmd(t, model, cmd, 20)
+
+	if len(client.acquireLeaseCalls) != 1 {
+		t.Fatalf("expected one implicit lease acquire for the same pane, got %#v", client.acquireLeaseCalls)
+	}
+	if len(client.resizes) != 0 {
+		t.Fatalf("expected matching size to avoid resize after same-pane lease reclaim, got %#v", client.resizes)
+	}
+	if len(client.inputCalls) != 1 || client.inputCalls[0].channel != 2 || string(client.inputCalls[0].data) != "a" {
+		t.Fatalf("expected terminal input forwarded without resize, got %#v", client.inputCalls)
+	}
+	if terminal.OwnerPaneID != "pane-2" {
+		t.Fatalf("expected pane-2 restored as local owner after same-pane lease reclaim, got %q", terminal.OwnerPaneID)
+	}
 }
 
 func TestFeatureErrorDisplayAndClear(t *testing.T) {

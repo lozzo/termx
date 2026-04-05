@@ -9,11 +9,13 @@ import (
 )
 
 const (
-	HitRegionOverlayFooterAction HitRegionKind = "overlay-footer-action"
-	HitRegionOverlayQueryInput   HitRegionKind = "overlay-query-input"
-	HitRegionPromptInput         HitRegionKind = "prompt-input"
-	HitRegionPromptSubmit        HitRegionKind = "prompt-submit"
-	HitRegionPromptCancel        HitRegionKind = "prompt-cancel"
+	HitRegionOverlayFooterAction  HitRegionKind = "overlay-footer-action"
+	HitRegionOverlayQueryInput    HitRegionKind = "overlay-query-input"
+	HitRegionPromptInput          HitRegionKind = "prompt-input"
+	HitRegionPromptSubmit         HitRegionKind = "prompt-submit"
+	HitRegionPromptCancel         HitRegionKind = "prompt-cancel"
+	HitRegionFloatingOverviewItem HitRegionKind = "floating-overview-item"
+	HitRegionFloatingOverviewCard HitRegionKind = "floating-overview-card"
 )
 
 func OverlayHitRegions(state VisibleRenderState) []HitRegion {
@@ -36,6 +38,8 @@ func OverlayHitRegions(state VisibleRenderState) []HitRegion {
 		return promptOverlayHitRegions(state.Overlay.Prompt, width, height)
 	case VisibleOverlayTerminalManager:
 		return terminalManagerOverlayHitRegions(state.Overlay.TerminalManager, width, height)
+	case VisibleOverlayFloatingOverview:
+		return floatingOverviewOverlayHitRegions(state.Overlay.FloatingOverview, width, height)
 	default:
 		return nil
 	}
@@ -247,6 +251,47 @@ func promptOverlayHitRegions(prompt *modal.PromptState, width, height int) []Hit
 		Kind: HitRegionPromptCard,
 		Rect: card,
 	})
+	return regions
+}
+
+func floatingOverviewOverlayHitRegions(overview *modal.FloatingOverviewState, width, height int) []HitRegion {
+	if overview == nil {
+		return nil
+	}
+	footerSpecs := floatingOverviewFooterActionSpecs()
+	layout := buildPickerCardLayout(width, height, len(overview.Items), len(footerSpecs) > 0)
+	card := pickerCardRect(layout)
+	regions := make([]HitRegion, 0, len(overview.Items)+len(footerSpecs)+4)
+	regions = append(regions, dismissRegions(card, width, layout.contentHeight)...)
+	rows := minInt(layout.listHeight, len(overview.Items))
+	for i := 0; i < rows; i++ {
+		regions = append(regions, HitRegion{
+			Kind:      HitRegionFloatingOverviewItem,
+			ItemIndex: i,
+			Rect: workbench.Rect{
+				X: card.X + 1,
+				Y: layout.firstItemY + i,
+				W: layout.innerWidth,
+				H: 1,
+			},
+		})
+	}
+	if len(footerSpecs) > 0 {
+		_, actions := layoutOverlayFooterActions(footerSpecs, workbench.Rect{
+			X: card.X + 1,
+			Y: pickerFooterRowY(layout),
+			W: layout.innerWidth,
+			H: 1,
+		})
+		for _, action := range actions {
+			regions = append(regions, HitRegion{
+				Kind:   HitRegionOverlayFooterAction,
+				Rect:   action.Rect,
+				Action: action.Action,
+			})
+		}
+	}
+	regions = append(regions, HitRegion{Kind: HitRegionFloatingOverviewCard, Rect: card})
 	return regions
 }
 

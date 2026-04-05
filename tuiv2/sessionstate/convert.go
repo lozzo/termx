@@ -129,7 +129,17 @@ func exportTab(tab *workbench.TabState) *workbenchdoc.Tab {
 				W: floating.Rect.W,
 				H: floating.Rect.H,
 			},
-			Z: floating.Z,
+			Z:       floating.Z,
+			Display: string(floating.Display),
+			FitMode: string(floating.FitMode),
+			RestoreRect: workbenchdoc.Rect{
+				X: floating.RestoreRect.X,
+				Y: floating.RestoreRect.Y,
+				W: floating.RestoreRect.W,
+				H: floating.RestoreRect.H,
+			},
+			AutoFitCols: floating.AutoFitCols,
+			AutoFitRows: floating.AutoFitRows,
 		})
 	}
 	return out
@@ -208,7 +218,17 @@ func importTab(tab *workbenchdoc.Tab) *workbench.TabState {
 				W: floating.Rect.W,
 				H: floating.Rect.H,
 			},
-			Z: floating.Z,
+			Z:       floating.Z,
+			Display: workbench.FloatingDisplayState(floating.Display),
+			FitMode: workbench.FloatingFitMode(floating.FitMode),
+			RestoreRect: workbench.Rect{
+				X: floating.RestoreRect.X,
+				Y: floating.RestoreRect.Y,
+				W: floating.RestoreRect.W,
+				H: floating.RestoreRect.H,
+			},
+			AutoFitCols: floating.AutoFitCols,
+			AutoFitRows: floating.AutoFitRows,
 		})
 	}
 	return out

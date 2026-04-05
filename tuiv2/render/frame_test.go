@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	rtpkg "github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/runtime"
+	rtpkg "github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -31,10 +31,10 @@ func TestRenderStatusBarHidesUnavailablePaneActionsForUnconnectedPane(t *testing
 	state = WithStatus(state, "", "", string(input.ModePane))
 
 	line := xansi.Strip(renderStatusBar(state))
-	if strings.Contains(line, "d DETACH") || strings.Contains(line, "a OWNER") || strings.Contains(line, "X CLOSE+KILL") {
+	if strings.Contains(line, "[d] DETACH") || strings.Contains(line, "[a] OWNER") || strings.Contains(line, "[X] CLOSE+KILL") {
 		t.Fatalf("expected unavailable pane actions to be hidden for unconnected pane:\n%s", line)
 	}
-	if !strings.Contains(line, "r RECONNECT") || !strings.Contains(line, "z ZOOM") {
+	if !strings.Contains(line, "[r] RECONNECT") || !strings.Contains(line, "[z] ZOOM") {
 		t.Fatalf("expected still-available pane actions to remain visible:\n%s", line)
 	}
 }
@@ -76,7 +76,7 @@ func TestRenderStatusBarShowsOwnerActionForSharedFollower(t *testing.T) {
 	state = WithStatus(state, "", "", string(input.ModePane))
 
 	line := xansi.Strip(renderStatusBar(state))
-	if !strings.Contains(line, "a OWNER") || !strings.Contains(line, "d DETACH") {
+	if !strings.Contains(line, "[a] OWNER") || !strings.Contains(line, "[d] DETACH") {
 		t.Fatalf("expected shared follower shortcuts to remain visible:\n%s", line)
 	}
 }
@@ -101,10 +101,10 @@ func TestRenderStatusBarFloatingModeShowsOnlyActiveFloatingActions(t *testing.T)
 	state = WithStatus(state, "", "", string(input.ModeFloating))
 
 	line := xansi.Strip(renderStatusBar(state))
-	if !strings.Contains(line, "N NEW FLOAT") {
+	if !strings.Contains(line, "[N] NEW FLOAT") {
 		t.Fatalf("expected floating mode to preserve create action:\n%s", line)
 	}
-	for _, hidden := range []string{"h/j/k/l MOVE", "H/J/K/L RESIZE", "x CLOSE", "v TOGGLE", "a OWNER"} {
+	for _, hidden := range []string{"[h/j/k/l] MOVE", "[H/J/K/L] RESIZE", "[x] CLOSE", "[v] TOGGLE", "[a] OWNER"} {
 		if strings.Contains(line, hidden) {
 			t.Fatalf("expected %q to be hidden without an active floating pane:\n%s", hidden, line)
 		}

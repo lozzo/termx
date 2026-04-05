@@ -35,6 +35,8 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		m.input.SetMode(input.ModeState{Kind: input.ModeFloating})
 		m.render.Invalidate()
 		return true, m.rearmPrefixTimeoutCmd()
+	case input.ActionOpenFloatingOverview:
+		return true, m.openFloatingOverview()
 	case input.ActionEnterDisplayMode:
 		m.input.SetMode(input.ModeState{Kind: input.ModeDisplay})
 		m.render.Invalidate()
@@ -60,6 +62,20 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		m.input.SetMode(input.ModeState{Kind: input.ModeHelp, RequestID: "help"})
 		m.render.Invalidate()
 		return true, nil
+	case input.ActionCollapseFloatingPane:
+		return true, m.hideFloatingPane(action.PaneID)
+	case input.ActionToggleFloatingVisibility:
+		return true, m.toggleAllFloatingPanes()
+	case input.ActionExpandAllFloatingPanes:
+		return true, m.expandAllFloatingPanes()
+	case input.ActionCollapseAllFloatingPanes:
+		return true, m.collapseAllFloatingPanes()
+	case input.ActionSummonFloatingPane:
+		return true, m.summonFloatingPane(action.Text)
+	case input.ActionAutoFitFloatingPane:
+		return true, m.fitFloatingPaneToContent(action.PaneID)
+	case input.ActionToggleFloatingAutoFit:
+		return true, m.toggleFloatingAutoFit(action.PaneID)
 	case input.ActionFocusPane:
 		if m.input.Mode().Kind == input.ModeNormal {
 			m.input.SetMode(input.ModeState{Kind: input.ModePane})
@@ -92,6 +108,9 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		}
 		m.ownerConfirmPaneID = ""
 		m.ownerSeq++
+		if m.sessionID != "" {
+			return true, m.acquireSessionLeaseAndResizeCmd(paneID, pane.TerminalID)
+		}
 		if err := m.runtime.AcquireTerminalOwnership(paneID, pane.TerminalID); err != nil {
 			return true, m.showError(err)
 		}
@@ -99,13 +118,17 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		if m.runtime.Client() == nil {
 			return true, nil
 		}
-		return true, m.resizeVisiblePanesCmd()
+		return true, m.resizePaneIfNeededCmd(paneID)
 	case input.ActionOpenPrompt:
 		if m.input.Mode().Kind == input.ModeNormal {
 			m.input.SetMode(input.ModeState{Kind: input.ModeResize})
 			m.render.Invalidate()
 			return true, nil
 		}
+		return false, nil
+	case input.ActionMoveFloatingLeft, input.ActionMoveFloatingRight, input.ActionMoveFloatingUp, input.ActionMoveFloatingDown,
+		input.ActionResizeFloatingLeft, input.ActionResizeFloatingRight, input.ActionResizeFloatingUp, input.ActionResizeFloatingDown:
+		m.disableFloatingAutoFitForActionPane(action.PaneID)
 		return false, nil
 	case input.ActionOpenPicker:
 		if m.workbench == nil {
@@ -202,7 +225,7 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		}
 		m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
-		return true, tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
+		return true, m.saveStateCmd()
 	case input.ActionPrevTab:
 		if m.input.Mode().Kind != input.ModeTab || m.workbench == nil {
 			return false, nil
@@ -212,7 +235,7 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		}
 		m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
-		return true, tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
+		return true, m.saveStateCmd()
 	case input.ActionNextTab:
 		if m.input.Mode().Kind != input.ModeTab || m.workbench == nil {
 			return false, nil
@@ -222,7 +245,7 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		}
 		m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
-		return true, tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
+		return true, m.saveStateCmd()
 	case input.ActionKillTab:
 		if m.input.Mode().Kind != input.ModeTab {
 			return false, nil
@@ -265,7 +288,7 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			tab.ScrollOffset += 1
 			m.render.Invalidate()
 		}
-		return true, nil
+		return true, m.ensureActivePaneScrollbackCmd()
 	case input.ActionScrollDown:
 		if tab := m.workbench.CurrentTab(); tab != nil {
 			if tab.ScrollOffset > 0 {
@@ -273,7 +296,7 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			}
 			m.render.Invalidate()
 		}
-		return true, nil
+		return true, m.ensureActivePaneScrollbackCmd()
 	case input.ActionQuit:
 		if m.input.Mode().Kind == input.ModeNormal {
 			m.input.SetMode(input.ModeState{Kind: input.ModeGlobal})

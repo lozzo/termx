@@ -79,7 +79,7 @@ func TestRenderFrameWithPickerOverlay(t *testing.T) {
 			t.Fatalf("frame missing %q:\n%s", want, frame)
 		}
 	}
-	for _, want := range []string{"PICKER", "UP/DOWN MOVE", "Enter HERE"} {
+	for _, want := range []string{"PICKER", "[UP/DOWN] MOVE", "[Enter] HERE"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("expected picker shortcuts in unified status bar; missing %q:\n%s", want, frame)
 		}
@@ -116,7 +116,7 @@ func TestRenderFrameWithWorkspacePickerOverlay(t *testing.T) {
 			t.Fatalf("frame missing %q:\n%s", want, frame)
 		}
 	}
-	for _, want := range []string{"WORKSPACE-PICKER", "UP/DOWN MOVE", "TYPE FILTER", "Enter OPEN", "Esc BACK"} {
+	for _, want := range []string{"WORKSPACE-PICKER", "[UP/DOWN] MOVE", "[TYPE] FILTER", "[Enter] OPEN", "[Esc] BACK"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("expected workspace picker shortcuts in unified status bar; missing %q:\n%s", want, frame)
 		}
@@ -150,7 +150,7 @@ func TestRenderFrameWithHelpOverlay(t *testing.T) {
 			t.Fatalf("frame missing %q:\n%s", want, frame)
 		}
 	}
-	if !strings.Contains(frame, "Esc BACK") {
+	if !strings.Contains(frame, "[Esc] BACK") {
 		t.Fatalf("expected help shortcut in unified status bar:\n%s", frame)
 	}
 }

@@ -7,6 +7,7 @@ type VisibleRuntime struct {
 	Bindings      []VisiblePaneBinding
 	HostDefaultFG string
 	HostDefaultBG string
+	HostPalette   map[int]string
 }
 
 type VisibleTerminal struct {

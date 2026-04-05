@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -218,6 +219,130 @@ func TestSaveStateCmdReplacesSessionWhenSessionAttached(t *testing.T) {
 	}
 	if client.replaceCalls[0].SessionID != "main" || client.replaceCalls[0].BaseRevision != 1 {
 		t.Fatalf("unexpected replace params: %#v", client.replaceCalls[0])
+	}
+}
+
+func TestSaveStateCmdSuppressesRecoverableSessionRevisionConflict(t *testing.T) {
+	client := &recordingBridgeClient{
+		sessionSnapshot: &protocol.SessionSnapshot{
+			Session: protocol.SessionInfo{ID: "main", Revision: 10},
+			View:    &protocol.ViewInfo{ViewID: "view-1", SessionID: "main"},
+		},
+		replaceSessionErr: fmt.Errorf("protocol error 409: workbenchsvc: session revision conflict: expected 9, got 10"),
+	}
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "1",
+			Name:         "1",
+			ActivePaneID: "1",
+			Panes:        map[string]*workbench.PaneState{"1": {ID: "1", TerminalID: "term-1"}},
+			Root:         workbench.NewLeaf("1"),
+		}},
+	})
+	model := New(shared.Config{SessionID: "main"}, wb, runtime.New(client))
+	model.sessionID = "main"
+	model.sessionRevision = 9
+
+	cmd := model.saveStateCmd()
+	if cmd == nil {
+		t.Fatal("expected session replace cmd")
+	}
+	msg := cmd()
+	snapshot, ok := msg.(sessionSnapshotMsg)
+	if !ok {
+		t.Fatalf("expected sessionSnapshotMsg, got %#v", msg)
+	}
+	if snapshot.Err != nil {
+		t.Fatalf("expected revision conflict to be absorbed, got %v", snapshot.Err)
+	}
+	if snapshot.Snapshot == nil || snapshot.Snapshot.Session.Revision != 10 {
+		t.Fatalf("expected latest session snapshot after conflict, got %#v", snapshot.Snapshot)
+	}
+	if len(client.getSessionCalls) != 1 || client.getSessionCalls[0] != "main" {
+		t.Fatalf("expected conflict path to fetch latest session, got %#v", client.getSessionCalls)
+	}
+}
+
+func TestApplySessionSnapshotKeepsLocalProjectionForCurrentView(t *testing.T) {
+	model := setupModel(t, modelOpts{
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{{
+					ID:              "tab-1",
+					Name:            "tab 1",
+					ActivePaneID:    "pane-1",
+					FloatingVisible: true,
+					Panes: map[string]*workbench.PaneState{
+						"pane-1":  {ID: "pane-1", Title: "tiled"},
+						"float-1": {ID: "float-1", Title: "float"},
+					},
+					Root: workbench.NewLeaf("pane-1"),
+					Floating: []*workbench.FloatingState{{
+						PaneID: "float-1",
+						Rect:   workbench.Rect{X: 10, Y: 5, W: 20, H: 8},
+						Z:      0,
+					}},
+				}},
+			},
+		},
+	})
+	model.sessionID = "main"
+	model.sessionViewID = "view-local"
+
+	model.applySessionSnapshot(&protocol.SessionSnapshot{
+		Session: protocol.SessionInfo{ID: "main", Revision: 2},
+		View: &protocol.ViewInfo{
+			ViewID:              "view-local",
+			SessionID:           "main",
+			ActiveWorkspaceName: "main",
+			ActiveTabID:         "tab-1",
+			FocusedPaneID:       "float-1",
+		},
+		Workbench: &workbenchdoc.Doc{
+			CurrentWorkspace: "main",
+			WorkspaceOrder:   []string{"main"},
+			Workspaces: map[string]*workbenchdoc.Workspace{
+				"main": {
+					Name:      "main",
+					ActiveTab: 0,
+					Tabs: []*workbenchdoc.Tab{{
+						ID:              "tab-1",
+						Name:            "tab 1",
+						ActivePaneID:    "float-1",
+						FloatingVisible: true,
+						Root:            workbenchdoc.NewLeaf("pane-1"),
+						Panes: map[string]*workbenchdoc.Pane{
+							"pane-1":  {ID: "pane-1", Title: "tiled"},
+							"float-1": {ID: "float-1", Title: "float"},
+						},
+						Floating: []*workbenchdoc.FloatingPane{{
+							PaneID: "float-1",
+							Rect:   workbenchdoc.Rect{X: 10, Y: 5, W: 20, H: 8},
+							Z:      0,
+						}},
+					}},
+				},
+			},
+		},
+	})
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab after snapshot apply")
+	}
+	if tab.ActivePaneID != "pane-1" {
+		t.Fatalf("expected local focused pane to win for current view, got %q", tab.ActivePaneID)
+	}
+	if !tab.FloatingVisible {
+		t.Fatal("expected floating layer visibility to remain enabled")
+	}
+	if visible := model.workbench.VisibleWithSize(model.bodyRect()); visible == nil || len(visible.FloatingPanes) != 1 {
+		t.Fatalf("expected floating pane to stay projected after snapshot, got %#v", visible)
 	}
 }
 
@@ -1223,6 +1348,49 @@ func TestModelUpdateWindowSizeResizesActivePaneTerminals(t *testing.T) {
 	}
 }
 
+func TestModelTerminalAttachedInSessionDoesNotAcquireLeaseImplicitly(t *testing.T) {
+	client := &recordingBridgeClient{
+		attachResult:       &protocol.AttachResult{Channel: 7, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{},
+	}
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	rt := runtime.New(client)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.Channel = 7
+	terminal.State = "running"
+	terminal.BoundPaneIDs = []string{"pane-1"}
+	binding := rt.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+
+	model := New(shared.Config{SessionID: "main"}, wb, rt)
+	model.sessionID = "main"
+	model.sessionViewID = "view-1"
+
+	_, cmd := model.Update(orchestrator.TerminalAttachedMsg{PaneID: "pane-1", TerminalID: "term-1", Channel: 7})
+	drainCmd(t, model, cmd, 10)
+
+	if len(client.acquireLeaseCalls) != 0 {
+		t.Fatalf("expected terminal attach not to acquire a lease implicitly, got %#v", client.acquireLeaseCalls)
+	}
+	if len(client.resizes) != 0 {
+		t.Fatalf("expected terminal attach not to trigger resize, got %#v", client.resizes)
+	}
+}
+
 func TestModelUpdateWindowSizeReflowsFloatingPaneRects(t *testing.T) {
 	model := setupModel(t, modelOpts{})
 	model.width = 100
@@ -1538,12 +1706,12 @@ func TestModelViewShowsModeSpecificStatusHints(t *testing.T) {
 	model.input.SetMode(input.ModeState{Kind: input.ModePane})
 
 	view := xansi.Strip(model.View())
-	for _, want := range []string{"PANE", "h/j/k/l FOCUS", "% VSPLIT", "d DETACH", "r RECONNECT", "X CLOSE+KILL", "w CLOSE", "Esc BACK"} {
+	for _, want := range []string{"PANE", "[h/j/k/l] FOCUS", "[%] VSPLIT", "[d] DETACH", "[r] RECONNECT", "[X] CLOSE+KILL", "[w] CLOSE", "[Esc] BACK"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected view to contain %q, got:\n%s", want, view)
 		}
 	}
-	if strings.Contains(view, "a OWNER") {
+	if strings.Contains(view, "[a] OWNER") {
 		t.Fatalf("expected owner action hidden without follower context, got:\n%s", view)
 	}
 }
@@ -1776,6 +1944,8 @@ type recordingBridgeClient struct {
 	attachSessionCalls []protocol.AttachSessionParams
 	replaceCalls       []protocol.ReplaceSessionParams
 	viewUpdateCalls    []protocol.UpdateSessionViewParams
+	acquireLeaseCalls  []protocol.AcquireSessionLeaseParams
+	releaseLeaseCalls  []protocol.ReleaseSessionLeaseParams
 }
 
 type resizeCall struct {
@@ -1952,6 +2122,21 @@ func (c *recordingBridgeClient) UpdateSessionView(_ context.Context, params prot
 		return &protocol.ViewInfo{ViewID: params.ViewID, SessionID: params.SessionID}, nil
 	}
 	return c.sessionView, nil
+}
+
+func (c *recordingBridgeClient) AcquireSessionLease(_ context.Context, params protocol.AcquireSessionLeaseParams) (*protocol.LeaseInfo, error) {
+	c.acquireLeaseCalls = append(c.acquireLeaseCalls, params)
+	return &protocol.LeaseInfo{
+		TerminalID: params.TerminalID,
+		SessionID:  params.SessionID,
+		ViewID:     params.ViewID,
+		PaneID:     params.PaneID,
+	}, nil
+}
+
+func (c *recordingBridgeClient) ReleaseSessionLease(_ context.Context, params protocol.ReleaseSessionLeaseParams) error {
+	c.releaseLeaseCalls = append(c.releaseLeaseCalls, params)
+	return nil
 }
 
 func cloneTags(tags map[string]string) map[string]string {

@@ -34,8 +34,8 @@ func renderStatusBar(state VisibleRenderState) string {
 	if !suppressStatusHints(state) {
 		mode := strings.TrimSpace(state.InputMode)
 		if mode == "" || mode == "normal" {
-			leftParts = append(leftParts, renderDesktopHint(theme, "Ctrl", theme.chromeAltBG))
-			rootColors := []string{theme.success, theme.danger, "#93c5fd", theme.warning, "#fde047", "#c4b5fd", "#a7f3d0", theme.info}
+			leftParts = append(leftParts, renderDesktopHint(theme, "Ctrl", theme.hintKeyFG))
+			rootColors := []string{theme.success, theme.danger, theme.chromeAccent, theme.warning, theme.warning, theme.info, theme.success, theme.info}
 			for i, label := range labels {
 				if i >= len(rootColors) {
 					break
@@ -53,16 +53,63 @@ func renderStatusBar(state VisibleRenderState) string {
 	}
 	left := strings.Join(leftParts, "")
 
-	var rightParts []string
-	if state.Workbench != nil {
-		rightParts = append(rightParts, statusMetaStyle(theme).Render("ws:"+state.Workbench.WorkspaceName))
-	}
-	if state.Runtime != nil {
-		rightParts = append(rightParts, statusMetaStyle(theme).Render(fmt.Sprintf("terminals:%d", len(state.Runtime.Terminals))))
-	}
-	right := strings.Join(rightParts, " ")
+	right := renderStatusBarRight(theme, statusBarRightTokens(state))
 
 	return fillLine(left, right, width, theme.chromeBG)
+}
+
+type statusBarToken struct {
+	Kind   HitRegionKind
+	Label  string
+	Action input.SemanticAction
+}
+
+func statusBarRightTokens(state VisibleRenderState) []statusBarToken {
+	tokens := make([]statusBarToken, 0, 3)
+	if state.Workbench != nil {
+		tokens = append(tokens, statusBarToken{Label: "ws:" + state.Workbench.WorkspaceName})
+		if label := floatingSummaryLabel(state.Workbench); label != "" {
+			tokens = append(tokens, statusBarToken{
+				Kind:   HitRegionFloatingOverview,
+				Label:  label,
+				Action: input.SemanticAction{Kind: input.ActionOpenFloatingOverview},
+			})
+		}
+	}
+	if state.Runtime != nil {
+		tokens = append(tokens, statusBarToken{Label: fmt.Sprintf("terminals:%d", len(state.Runtime.Terminals))})
+	}
+	return tokens
+}
+
+func renderStatusBarRight(theme uiTheme, tokens []statusBarToken) string {
+	if len(tokens) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		if strings.TrimSpace(token.Label) == "" {
+			continue
+		}
+		parts = append(parts, statusMetaStyle(theme).Render(token.Label))
+	}
+	return strings.Join(parts, " ")
+}
+
+func floatingSummaryLabel(visible *workbench.VisibleWorkbench) string {
+	if visible == nil || visible.FloatingTotal == 0 {
+		return ""
+	}
+	if visible.FloatingCollapsed > 0 {
+		if visible.FloatingHidden > 0 {
+			return fmt.Sprintf("float:%d collapsed:%d hidden:%d", visible.FloatingTotal, visible.FloatingCollapsed, visible.FloatingHidden)
+		}
+		return fmt.Sprintf("float:%d collapsed:%d", visible.FloatingTotal, visible.FloatingCollapsed)
+	}
+	if visible.FloatingHidden > 0 {
+		return fmt.Sprintf("float:%d hidden:%d", visible.FloatingTotal, visible.FloatingHidden)
+	}
+	return fmt.Sprintf("float:%d", visible.FloatingTotal)
 }
 
 func suppressStatusHints(state VisibleRenderState) bool {
@@ -92,19 +139,18 @@ func renderDesktopHint(theme uiTheme, label, bg string) string {
 		text = parts[1]
 	}
 	keyStyle := statusHintKeyStyle(theme).
-		Foreground(lipgloss.Color(contrastTextColor(bg))).
-		Background(lipgloss.Color(bg))
+		Foreground(lipgloss.Color(ensureContrast(bg, theme.chromeBG, 3.2)))
 	if text == "" {
-		return keyStyle.Render(key)
+		return keyStyle.Render("[" + key + "]")
 	}
 	textStyle := statusHintTextStyle(theme)
-	return keyStyle.Render(key) + textStyle.Render(" "+text)
+	return keyStyle.Render("["+key+"]") + textStyle.Render(" "+text)
 }
 
 func renderModeBadge(theme uiTheme, mode string) string {
 	label := strings.ToUpper(mode)
 	bg := modeAccentColor(theme, input.ModeKind(mode))
-	return renderDesktopHint(theme, label, bg) + renderStatusSep(theme)
+	return renderStatusChip(theme, label, bg, contrastTextColor(bg)) + renderStatusSep(theme)
 }
 
 func renderModeHints(theme uiTheme, mode string, labels []string) []string {
@@ -120,7 +166,7 @@ func renderModeHints(theme uiTheme, mode string, labels []string) []string {
 		}
 		chipBG := bg
 		if label == "Esc BACK" {
-			chipBG = theme.chromeAltBG
+			chipBG = theme.chromeText
 		}
 		out = append(out, renderDesktopHint(theme, label, chipBG))
 	}
@@ -134,23 +180,25 @@ func modeAccentColor(theme uiTheme, mode input.ModeKind) string {
 	case input.ModeResize:
 		return theme.danger
 	case input.ModeTab:
-		return "#93c5fd"
+		return theme.chromeAccent
 	case input.ModeWorkspace, input.ModeWorkspacePicker:
 		return theme.warning
 	case input.ModeFloating:
-		return "#fde047"
+		return theme.warning
+	case input.ModeFloatingOverview:
+		return theme.warning
 	case input.ModeDisplay:
-		return "#c4b5fd"
+		return theme.info
 	case input.ModePicker:
-		return "#a7f3d0"
+		return theme.success
 	case input.ModePrompt:
-		return "#fdba74"
+		return theme.chromeAccent
 	case input.ModeHelp:
-		return "#f9a8d4"
+		return theme.info
 	case input.ModeGlobal, input.ModeTerminalManager:
 		return theme.info
 	default:
-		return theme.chromeAltBG
+		return theme.chromeText
 	}
 }
 
@@ -269,9 +317,13 @@ func statusDocVisible(doc input.BindingDoc, mode input.ModeKind, ctx statusHintC
 			return ctx.tabCount >= 0
 		case input.ActionFocusNextFloatingPane, input.ActionFocusPrevFloatingPane:
 			return ctx.hasFloating
+		case input.ActionOpenFloatingOverview, input.ActionSummonFloatingPane,
+			input.ActionExpandAllFloatingPanes, input.ActionCollapseAllFloatingPanes:
+			return ctx.hasFloating
 		case input.ActionMoveFloatingLeft, input.ActionMoveFloatingDown, input.ActionMoveFloatingUp, input.ActionMoveFloatingRight,
 			input.ActionResizeFloatingLeft, input.ActionResizeFloatingDown, input.ActionResizeFloatingUp, input.ActionResizeFloatingRight,
-			input.ActionCenterFloatingPane, input.ActionToggleFloatingVisibility, input.ActionCloseFloatingPane, input.ActionOpenPicker:
+			input.ActionCenterFloatingPane, input.ActionToggleFloatingVisibility, input.ActionCloseFloatingPane, input.ActionOpenPicker,
+			input.ActionCollapseFloatingPane, input.ActionAutoFitFloatingPane, input.ActionToggleFloatingAutoFit:
 			return ctx.activeIsFloating
 		case input.ActionBecomeOwner:
 			return ctx.activeIsFloating && ctx.canBecomeOwner()

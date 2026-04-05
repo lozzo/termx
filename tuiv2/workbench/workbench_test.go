@@ -110,8 +110,9 @@ func TestVisibleWithSizeProjectsFloatingPanes(t *testing.T) {
 				"pane-1": {ID: "pane-1", Title: "base", TerminalID: "term-1"},
 				"pane-2": {ID: "pane-2", Title: "float", TerminalID: "term-2"},
 			},
-			Root:     NewLeaf("pane-1"),
-			Floating: []*FloatingState{{PaneID: "pane-2", Rect: Rect{X: 5, Y: 4, W: 20, H: 6}, Z: 1}},
+			Root:            NewLeaf("pane-1"),
+			FloatingVisible: true,
+			Floating:        []*FloatingState{{PaneID: "pane-2", Rect: Rect{X: 5, Y: 4, W: 20, H: 6}, Z: 1}},
 		}},
 	})
 
@@ -147,7 +148,8 @@ func TestVisibleWithSizeProjectsFloatingPanesInStoredOrder(t *testing.T) {
 				"pane-2": {ID: "pane-2", Title: "float-a", TerminalID: "term-2"},
 				"pane-3": {ID: "pane-3", Title: "float-b", TerminalID: "term-3"},
 			},
-			Root: NewLeaf("pane-1"),
+			Root:            NewLeaf("pane-1"),
+			FloatingVisible: true,
 			Floating: []*FloatingState{
 				{PaneID: "pane-2", Rect: Rect{X: 1, Y: 2, W: 16, H: 5}, Z: 2},
 				{PaneID: "pane-3", Rect: Rect{X: 9, Y: 4, W: 24, H: 7}, Z: 5},
@@ -182,6 +184,7 @@ func TestVisibleWithSizeDoesNotProjectAllFloatingTabsAsTiled(t *testing.T) {
 				"pane-2": {ID: "pane-2", Title: "float-a", TerminalID: "term-2"},
 				"pane-3": {ID: "pane-3", Title: "float-b", TerminalID: "term-3"},
 			},
+			FloatingVisible: true,
 			Floating: []*FloatingState{
 				{PaneID: "pane-2", Rect: Rect{X: 2, Y: 3, W: 18, H: 6}, Z: 1},
 				{PaneID: "pane-3", Rect: Rect{X: 10, Y: 7, W: 22, H: 9}, Z: 2},
@@ -204,5 +207,41 @@ func TestVisibleWithSizeDoesNotProjectAllFloatingTabsAsTiled(t *testing.T) {
 	}
 	if !visible.FloatingPanes[0].Floating || !visible.FloatingPanes[1].Floating {
 		t.Fatalf("expected all projected floating panes to carry Floating=true, got %#v", visible.FloatingPanes)
+	}
+}
+
+func TestVisibleWithSizeSkipsCollapsedAndHiddenFloatingPanes(t *testing.T) {
+	wb := NewWorkbench()
+	wb.AddWorkspace("main", &WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*TabState{{
+			ID:           "tab-1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*PaneState{
+				"pane-1": {ID: "pane-1", Title: "base", TerminalID: "term-1"},
+				"pane-2": {ID: "pane-2", Title: "expanded", TerminalID: "term-2"},
+				"pane-3": {ID: "pane-3", Title: "collapsed", TerminalID: "term-3"},
+				"pane-4": {ID: "pane-4", Title: "hidden", TerminalID: "term-4"},
+			},
+			Root:            NewLeaf("pane-1"),
+			FloatingVisible: true,
+			Floating: []*FloatingState{
+				{PaneID: "pane-2", Rect: Rect{X: 2, Y: 3, W: 18, H: 6}, Z: 1, Display: FloatingDisplayExpanded},
+				{PaneID: "pane-3", Rect: Rect{X: 9, Y: 4, W: 20, H: 7}, Z: 2, Display: FloatingDisplayCollapsed},
+				{PaneID: "pane-4", Rect: Rect{X: 16, Y: 5, W: 22, H: 8}, Z: 3, Display: FloatingDisplayHidden},
+			},
+		}},
+	})
+
+	visible := wb.VisibleWithSize(Rect{W: 100, H: 40})
+	if visible == nil {
+		t.Fatal("expected visible workbench")
+	}
+	if len(visible.FloatingPanes) != 1 {
+		t.Fatalf("expected only expanded floating pane to be projected, got %#v", visible.FloatingPanes)
+	}
+	if visible.FloatingPanes[0].ID != "pane-2" {
+		t.Fatalf("unexpected projected floating pane: %#v", visible.FloatingPanes[0])
 	}
 }

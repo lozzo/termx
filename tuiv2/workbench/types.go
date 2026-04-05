@@ -36,8 +36,28 @@ type PaneState struct {
 	TerminalID string // 唯一可写绑定真相
 }
 
+type FloatingDisplayState string
+
+const (
+	FloatingDisplayExpanded  FloatingDisplayState = "expanded"
+	FloatingDisplayCollapsed FloatingDisplayState = "collapsed"
+	FloatingDisplayHidden    FloatingDisplayState = "hidden"
+)
+
+type FloatingFitMode string
+
+const (
+	FloatingFitManual FloatingFitMode = "manual"
+	FloatingFitAuto   FloatingFitMode = "auto"
+)
+
 type FloatingState struct {
-	PaneID string
-	Rect   Rect
-	Z      int
+	PaneID      string
+	Rect        Rect
+	Z           int
+	Display     FloatingDisplayState
+	FitMode     FloatingFitMode
+	RestoreRect Rect
+	AutoFitCols int
+	AutoFitRows int
 }

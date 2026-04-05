@@ -1109,6 +1109,40 @@ func (s *Server) handleSessionRequest(ctx context.Context, remote string, req pr
 			return nil, 500, err
 		}
 		return result, 0, nil
+	case "session.acquire_lease":
+		var params protocol.AcquireSessionLeaseParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return nil, 400, err
+		}
+		lease, err := s.workbench.AcquireLease(params.SessionID, params.ViewID, workbenchsvc.AcquireLeaseRequest{
+			PaneID:     params.PaneID,
+			TerminalID: params.TerminalID,
+		})
+		if err != nil {
+			return nil, 404, err
+		}
+		result, err := json.Marshal(protocol.LeaseInfo{
+			TerminalID: lease.TerminalID,
+			SessionID:  lease.SessionID,
+			ViewID:     lease.ViewID,
+			PaneID:     lease.PaneID,
+			AcquiredAt: lease.AcquiredAt,
+		})
+		if err != nil {
+			return nil, 500, err
+		}
+		return result, 0, nil
+	case "session.release_lease":
+		var params protocol.ReleaseSessionLeaseParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return nil, 400, err
+		}
+		if err := s.workbench.ReleaseLease(params.SessionID, params.ViewID, workbenchsvc.ReleaseLeaseRequest{
+			TerminalID: params.TerminalID,
+		}); err != nil {
+			return nil, 404, err
+		}
+		return json.RawMessage(`{}`), 0, nil
 	default:
 		return nil, 400, fmt.Errorf("unknown session method: %s", req.Method)
 	}

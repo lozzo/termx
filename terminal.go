@@ -244,9 +244,13 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	if offset > len(scrollback) {
 		offset = len(scrollback)
 	}
-	end := offset + limit
-	if end > len(scrollback) {
-		end = len(scrollback)
+	end := len(scrollback) - offset
+	if end < 0 {
+		end = 0
+	}
+	start := end - limit
+	if start < 0 {
+		start = 0
 	}
 
 	t.mu.RLock()
@@ -258,7 +262,7 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 		TerminalID: id,
 		Size:       size,
 		Screen:     convertScreenData(t.vterm.ScreenContent()),
-		Scrollback: convertRows(scrollback[offset:end]),
+		Scrollback: convertRows(scrollback[start:end]),
 		Cursor:     convertCursorState(t.vterm.CursorState()),
 		Modes:      convertModes(t.vterm.Modes()),
 		Timestamp:  time.Now().UTC(),

@@ -21,6 +21,15 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 	terminal := r.registry.GetOrCreate(terminalID)
 	if terminal != nil {
 		terminal.Snapshot = snapshot
+		terminal.ScrollbackLoadingLimit = 0
+		if offset == 0 && snapshot != nil {
+			if loaded := len(snapshot.Scrollback); loaded > terminal.ScrollbackLoadedLimit {
+				terminal.ScrollbackLoadedLimit = loaded
+			}
+			if limit > 0 {
+				terminal.ScrollbackExhausted = len(snapshot.Scrollback) < limit
+			}
+		}
 		r.ensureVTerm(terminal)
 		loadSnapshotIntoVTerm(terminal.VTerm, snapshot)
 		r.touch()
@@ -45,7 +54,7 @@ func loadSnapshotIntoVTerm(vt VTermLike, snap *protocol.Snapshot) {
 		return
 	}
 	cols, rows := vt.Size()
-	vt.LoadSnapshot(protocolScreenToVTerm(snap.Screen), protocolCursorToVTerm(snap.Cursor), protocolModesToVTerm(snap.Modes))
+	vt.LoadSnapshotWithScrollback(protocolRowsToVTerm(snap.Scrollback), protocolScreenToVTerm(snap.Screen), protocolCursorToVTerm(snap.Cursor), protocolModesToVTerm(snap.Modes))
 	if cols > 0 && rows > 0 {
 		vt.Resize(cols, rows)
 	}
@@ -105,12 +114,12 @@ func protocolCellFromVTermCell(cell localvterm.Cell) protocol.Cell {
 	}
 }
 
-func protocolScreenToVTerm(screen protocol.ScreenData) localvterm.ScreenData {
-	rows := make([][]localvterm.Cell, len(screen.Cells))
-	for y, row := range screen.Cells {
-		rows[y] = make([]localvterm.Cell, len(row))
+func protocolRowsToVTerm(rows [][]protocol.Cell) [][]localvterm.Cell {
+	out := make([][]localvterm.Cell, len(rows))
+	for y, row := range rows {
+		out[y] = make([]localvterm.Cell, len(row))
 		for x, cell := range row {
-			rows[y][x] = localvterm.Cell{
+			out[y][x] = localvterm.Cell{
 				Content: cell.Content,
 				Width:   cell.Width,
 				Style: localvterm.CellStyle{
@@ -126,8 +135,12 @@ func protocolScreenToVTerm(screen protocol.ScreenData) localvterm.ScreenData {
 			}
 		}
 	}
+	return out
+}
+
+func protocolScreenToVTerm(screen protocol.ScreenData) localvterm.ScreenData {
 	return localvterm.ScreenData{
-		Cells:             rows,
+		Cells:             protocolRowsToVTerm(screen.Cells),
 		IsAlternateScreen: screen.IsAlternateScreen,
 	}
 }

@@ -97,7 +97,7 @@ func TestModelUpdateEffectAppliedMsgAppliesWorkspacePickerSideState(t *testing.T
 	}
 }
 
-func TestEffectCmdSwitchTabEffectResizesVisiblePanes(t *testing.T) {
+func TestEffectCmdSwitchTabEffectDoesNotResizeVisiblePanes(t *testing.T) {
 	client := &recordingBridgeClient{}
 	rt := runtime.New(client)
 	wb := workbench.NewWorkbench()
@@ -124,16 +124,15 @@ func TestEffectCmdSwitchTabEffectResizesVisiblePanes(t *testing.T) {
 	model.height = 40
 
 	cmd := model.effectCmd(orchestrator.SwitchTabEffect{Delta: 1})
-	if cmd == nil {
-		t.Fatal("expected resize command for switch tab effect")
-	}
-	if msg := cmd(); msg != nil {
-		if err, ok := msg.(error); ok {
-			t.Fatalf("unexpected resize error: %v", err)
+	if cmd != nil {
+		if msg := cmd(); msg != nil {
+			if err, ok := msg.(error); ok {
+				t.Fatalf("unexpected switch-tab error: %v", err)
+			}
 		}
 	}
-	if len(client.resizes) != 1 {
-		t.Fatalf("expected exactly one resize call, got %d", len(client.resizes))
+	if len(client.resizes) != 0 {
+		t.Fatalf("expected switch tab effect not to resize panes, got %d", len(client.resizes))
 	}
 }
 

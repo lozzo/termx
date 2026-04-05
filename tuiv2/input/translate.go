@@ -49,6 +49,11 @@ func TranslateKeyMsg(msg tea.KeyMsg, mode ModeKind, km *Keymap) RouteResult {
 			return RouteResult{Action: action}
 		}
 		return RouteResult{}
+	case ModeFloatingOverview:
+		if action := km.LookupFloatingOverview(msg); action != nil {
+			return RouteResult{Action: action}
+		}
+		return RouteResult{}
 	case ModeHelp:
 		if action := km.LookupHelp(msg); action != nil {
 			return RouteResult{Action: action}

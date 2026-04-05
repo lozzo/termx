@@ -320,6 +320,19 @@ type UpdateSessionViewParams struct {
 	View      UpdateSessionViewPatch `json:"view"`
 }
 
+type AcquireSessionLeaseParams struct {
+	SessionID  string `json:"session_id"`
+	ViewID     string `json:"view_id"`
+	PaneID     string `json:"pane_id"`
+	TerminalID string `json:"terminal_id"`
+}
+
+type ReleaseSessionLeaseParams struct {
+	SessionID  string `json:"session_id"`
+	ViewID     string `json:"view_id"`
+	TerminalID string `json:"terminal_id"`
+}
+
 func (s *Snapshot) UnmarshalJSON(data []byte) error {
 	type jsonStyle struct {
 		FG            string `json:"fg,omitempty"`
