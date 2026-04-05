@@ -92,6 +92,15 @@ func (o *Orchestrator) handlePaneAction(action input.SemanticAction) []Effect {
 			return nil
 		}
 		terminalID := pane.TerminalID
+		if terminalID != "" && o.runtime != nil {
+			if terminal := o.runtime.Registry().Get(terminalID); terminal != nil && terminal.State == "exited" {
+				return []Effect{
+					InvalidateRenderEffect{},
+					OpenPickerEffect{RequestID: paneID},
+					SetInputModeEffect{Mode: input.ModeState{Kind: input.ModePicker, RequestID: paneID}},
+				}
+			}
+		}
 		_ = o.workbench.BindPaneTerminal(tab.ID, paneID, "")
 		if o.runtime != nil {
 			o.runtime.UnbindPane(paneID, terminalID)

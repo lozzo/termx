@@ -32,6 +32,7 @@ func (r *Runtime) AttachTerminal(ctx context.Context, paneID, terminalID, mode s
 		terminal.BoundPaneIDs = appendBoundPaneID(terminal.BoundPaneIDs, paneID)
 		if terminal.OwnerPaneID == "" {
 			terminal.OwnerPaneID = paneID
+			terminal.ControlPaneID = paneID
 			terminal.RequiresExplicitOwner = false
 		}
 	}

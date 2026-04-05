@@ -134,6 +134,10 @@ func (c *Client) Kill(ctx context.Context, terminalID string) error {
 	return c.doRequest(ctx, "kill", GetParams{TerminalID: terminalID}, nil)
 }
 
+func (c *Client) Restart(ctx context.Context, terminalID string) error {
+	return c.doRequest(ctx, "restart", GetParams{TerminalID: terminalID}, nil)
+}
+
 func (c *Client) Remove(ctx context.Context, terminalID string) error {
 	return c.doRequest(ctx, "remove", GetParams{TerminalID: terminalID}, nil)
 }

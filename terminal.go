@@ -39,19 +39,23 @@ type Terminal struct {
 	vterm  *vterm.VTerm
 	stream *fanout.Fanout
 
-	mu            sync.RWMutex
-	id            string
-	name          string
-	command       []string
-	tags          map[string]string
-	size          Size
-	state         TerminalState
-	createdAt     time.Time
-	exitCode      *int
-	keepAfterExit time.Duration
-	removeFunc    func(string, string)
-	updateFunc    func()
-	removed       bool
+	mu             sync.RWMutex
+	id             string
+	name           string
+	command        []string
+	tags           map[string]string
+	size           Size
+	dir            string
+	env            []string
+	scrollbackSize int
+	state          TerminalState
+	createdAt      time.Time
+	exitCode       *int
+	keepAfterExit  time.Duration
+	removeFunc     func(string, string)
+	updateFunc     func()
+	removed        bool
+	processEpoch   uint64
 
 	// These caches hold deep-copied metadata snapshots so hot read paths do not
 	// have to rebuild command/tag payloads for every request.
@@ -67,40 +71,32 @@ type Terminal struct {
 }
 
 func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Terminal, error) {
-	p, err := ptymgr.Spawn(ptymgr.SpawnOptions{
-		Command:    cfg.Command,
-		Dir:        cfg.Dir,
-		Env:        cfg.Env,
-		TerminalID: cfg.ID,
-		Size:       ptymgr.Size{Cols: cfg.Size.Cols, Rows: cfg.Size.Rows},
-	})
+	p, vt, err := spawnTerminalProcess(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrSpawnFailed, err)
+		return nil, err
 	}
-
-	vt := vterm.New(int(cfg.Size.Cols), int(cfg.Size.Rows), cfg.ScrollbackSize, func(data []byte) {
-		// Forward emulator responses (e.g. DSR cursor position) to the PTY
-		// so the child process receives them.
-		_, _ = p.Write(data)
-	})
 	t := &Terminal{
-		events:        events,
-		pty:           p,
-		vterm:         vt,
-		stream:        fanout.New(),
-		id:            cfg.ID,
-		name:          cfg.Name,
-		command:       append([]string(nil), cfg.Command...),
-		tags:          copyTags(cfg.Tags),
-		size:          cfg.Size,
-		state:         StateRunning,
-		createdAt:     time.Now().UTC(),
-		keepAfterExit: cfg.KeepAfterExit,
-		removeFunc:    cfg.RemoveFunc,
-		updateFunc:    cfg.UpdateFunc,
-		attachments:   make(map[string]AttachInfo),
-		done:          make(chan struct{}),
-		readDone:      make(chan struct{}),
+		events:         events,
+		pty:            p,
+		vterm:          vt,
+		stream:         fanout.New(),
+		id:             cfg.ID,
+		name:           cfg.Name,
+		command:        append([]string(nil), cfg.Command...),
+		tags:           copyTags(cfg.Tags),
+		size:           cfg.Size,
+		dir:            cfg.Dir,
+		env:            append([]string(nil), cfg.Env...),
+		scrollbackSize: cfg.ScrollbackSize,
+		state:          StateRunning,
+		createdAt:      time.Now().UTC(),
+		keepAfterExit:  cfg.KeepAfterExit,
+		removeFunc:     cfg.RemoveFunc,
+		updateFunc:     cfg.UpdateFunc,
+		attachments:    make(map[string]AttachInfo),
+		done:           make(chan struct{}),
+		readDone:       make(chan struct{}),
+		processEpoch:   1,
 	}
 
 	t.events.Publish(Event{
@@ -114,9 +110,27 @@ func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Te
 		},
 	})
 
-	go t.readLoop()
-	go t.waitLoop()
+	t.startProcessLoops()
 	return t, nil
+}
+
+func spawnTerminalProcess(cfg terminalConfig) (*ptymgr.PTY, *vterm.VTerm, error) {
+	p, err := ptymgr.Spawn(ptymgr.SpawnOptions{
+		Command:    cfg.Command,
+		Dir:        cfg.Dir,
+		Env:        cfg.Env,
+		TerminalID: cfg.ID,
+		Size:       ptymgr.Size{Cols: cfg.Size.Cols, Rows: cfg.Size.Rows},
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %v", ErrSpawnFailed, err)
+	}
+	vt := vterm.New(int(cfg.Size.Cols), int(cfg.Size.Rows), cfg.ScrollbackSize, func(data []byte) {
+		// Forward emulator responses (e.g. DSR cursor position) to the PTY
+		// so the child process receives them.
+		_, _ = p.Write(data)
+	})
+	return p, vt, nil
 }
 
 func (t *Terminal) ID() string {
@@ -225,6 +239,67 @@ func (t *Terminal) Kill() error {
 
 func (t *Terminal) Close() error {
 	return t.pty.Close()
+}
+
+func (t *Terminal) Restart() error {
+	t.mu.Lock()
+	if t.state != StateExited {
+		t.mu.Unlock()
+		return ErrTerminalNotExited
+	}
+	cfg := terminalConfig{
+		ID:             t.id,
+		Command:        append([]string(nil), t.command...),
+		Dir:            t.dir,
+		Env:            append([]string(nil), t.env...),
+		Size:           t.size,
+		ScrollbackSize: t.scrollbackSize,
+	}
+	currentEpoch := t.processEpoch
+	t.mu.Unlock()
+
+	p, vt, err := spawnTerminalProcess(cfg)
+	if err != nil {
+		return err
+	}
+
+	t.mu.Lock()
+	if t.removed {
+		t.mu.Unlock()
+		_ = p.Close()
+		return ErrNotFound
+	}
+	if t.state != StateExited || t.processEpoch != currentEpoch {
+		t.mu.Unlock()
+		_ = p.Close()
+		return ErrTerminalNotExited
+	}
+	oldState := t.state
+	t.pty = p
+	t.vterm = vt
+	t.stream = fanout.New()
+	t.state = StateRunning
+	t.exitCode = nil
+	t.done = make(chan struct{})
+	t.readDone = make(chan struct{})
+	t.processEpoch++
+	t.invalidateProtocolInfoCacheLocked()
+	t.mu.Unlock()
+
+	if t.updateFunc != nil {
+		t.updateFunc()
+	}
+	t.events.Publish(Event{
+		Type:       EventTerminalStateChanged,
+		TerminalID: t.id,
+		Timestamp:  time.Now().UTC(),
+		StateChanged: &TerminalStateChangedData{
+			OldState: oldState,
+			NewState: StateRunning,
+		},
+	})
+	t.startProcessLoops()
+	return nil
 }
 
 func (t *Terminal) MarkRemoved() {
@@ -347,20 +422,37 @@ func (t *Terminal) RevokeCollaborators() int {
 	return revoked
 }
 
-func (t *Terminal) readLoop() {
-	defer close(t.readDone)
+func (t *Terminal) startProcessLoops() {
+	t.mu.RLock()
+	epoch := t.processEpoch
+	p := t.pty
+	vt := t.vterm
+	stream := t.stream
+	readDone := t.readDone
+	done := t.done
+	t.mu.RUnlock()
+	go t.readLoop(epoch, p, vt, stream, readDone)
+	go t.waitLoop(epoch, p, stream, readDone, done)
+}
+
+func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, vt *vterm.VTerm, stream *fanout.Fanout, readDone chan struct{}) {
+	defer close(readDone)
 	buf := make([]byte, 32*1024)
 	for {
-		n, err := t.pty.Read(buf)
+		n, err := p.Read(buf)
 		if n > 0 {
 			chunk := append([]byte(nil), buf[:n]...)
-			t.stream.Broadcast(chunk)
-			_, _ = t.vterm.Write(chunk)
+			stream.Broadcast(chunk)
+			_, _ = vt.Write(chunk)
 		}
 		if err != nil {
 			t.mu.RLock()
 			removed := t.removed
+			currentEpoch := t.processEpoch
 			t.mu.RUnlock()
+			if currentEpoch != epoch {
+				return
+			}
 			if err != io.EOF {
 				if removed {
 					return
@@ -377,20 +469,25 @@ func (t *Terminal) readLoop() {
 	}
 }
 
-func (t *Terminal) waitLoop() {
-	<-t.pty.Wait()
-	code := t.pty.ExitCode()
+func (t *Terminal) waitLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, readDone <-chan struct{}, done chan struct{}) {
+	<-p.Wait()
+	code := p.ExitCode()
 
 	select {
-	case <-t.readDone:
+	case <-readDone:
 	case <-time.After(500 * time.Millisecond):
 	}
 
 	t.mu.Lock()
+	if t.processEpoch != epoch || t.pty != p {
+		t.mu.Unlock()
+		return
+	}
 	oldState := t.state
 	t.state = StateExited
 	t.exitCode = &code
 	removed := t.removed
+	keepAfterExit := t.keepAfterExit
 	t.invalidateProtocolInfoCacheLocked()
 	t.mu.Unlock()
 
@@ -400,7 +497,7 @@ func (t *Terminal) waitLoop() {
 		t.updateFunc()
 	}
 
-	t.stream.Close(&code)
+	stream.Close(&code)
 	if !removed {
 		t.events.Publish(Event{
 			Type:       EventTerminalStateChanged,
@@ -413,20 +510,20 @@ func (t *Terminal) waitLoop() {
 			},
 		})
 	}
-	close(t.done)
+	close(done)
 	if removed {
 		return
 	}
 
-	if t.keepAfterExit <= 0 {
-		t.remove("expired")
+	if keepAfterExit <= 0 {
+		t.removeIfEpoch(epoch, "expired")
 		return
 	}
 
-	timer := time.NewTimer(t.keepAfterExit)
+	timer := time.NewTimer(keepAfterExit)
 	defer timer.Stop()
 	<-timer.C
-	t.remove("expired")
+	t.removeIfEpoch(epoch, "expired")
 }
 
 func (t *Terminal) remove(reason string) {
@@ -440,6 +537,22 @@ func (t *Terminal) remove(reason string) {
 
 	if t.removeFunc != nil {
 		t.removeFunc(t.id, reason)
+	}
+}
+
+func (t *Terminal) removeIfEpoch(epoch uint64, reason string) {
+	t.mu.Lock()
+	if t.removed || t.processEpoch != epoch || t.state != StateExited {
+		t.mu.Unlock()
+		return
+	}
+	t.removed = true
+	id := t.id
+	removeFunc := t.removeFunc
+	t.mu.Unlock()
+
+	if removeFunc != nil {
+		removeFunc(id, reason)
 	}
 }
 

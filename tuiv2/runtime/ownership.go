@@ -11,26 +11,45 @@ func (r *Runtime) syncTerminalOwnership(terminal *TerminalRuntime) string {
 		return ""
 	}
 	ownerPaneID := terminal.OwnerPaneID
-	if ownerPaneID != "" {
-		if !containsPaneID(terminal.BoundPaneIDs, ownerPaneID) || r.bindings[ownerPaneID] == nil {
-			ownerPaneID = ""
+	controlPaneID := terminal.ControlPaneID
+	if controlPaneID == "" {
+		controlPaneID = r.inferControlPaneID(terminal, ownerPaneID)
+	}
+	if controlPaneID != "" {
+		if controlPaneID != ownerPaneID || !containsPaneID(terminal.BoundPaneIDs, controlPaneID) || r.bindings[controlPaneID] == nil {
+			controlPaneID = ""
 		}
 	}
-	changed := terminal.OwnerPaneID != ownerPaneID
+	changed := terminal.OwnerPaneID != ownerPaneID || terminal.ControlPaneID != controlPaneID
 	if terminal.OwnerPaneID != "" && ownerPaneID == "" {
 		terminal.RequiresExplicitOwner = true
 	}
-	if ownerPaneID != "" {
+	if controlPaneID != "" {
 		terminal.RequiresExplicitOwner = false
 	}
 	terminal.OwnerPaneID = ownerPaneID
+	terminal.ControlPaneID = controlPaneID
 	if r.syncBindingRolesForTerminal(terminal) {
 		changed = true
 	}
 	if changed {
 		r.touch()
 	}
-	return ownerPaneID
+	return controlPaneID
+}
+
+func (r *Runtime) inferControlPaneID(terminal *TerminalRuntime, ownerPaneID string) string {
+	if r == nil || terminal == nil || ownerPaneID == "" || !containsPaneID(terminal.BoundPaneIDs, ownerPaneID) {
+		return ""
+	}
+	binding := r.bindings[ownerPaneID]
+	if binding == nil || !binding.Connected {
+		return ""
+	}
+	if binding.Role == BindingRoleOwner {
+		return ownerPaneID
+	}
+	return ""
 }
 
 func (r *Runtime) syncBindingRolesForTerminal(terminal *TerminalRuntime) bool {
@@ -44,7 +63,7 @@ func (r *Runtime) syncBindingRolesForTerminal(terminal *TerminalRuntime) bool {
 			continue
 		}
 		nextRole := BindingRoleFollower
-		if paneID == terminal.OwnerPaneID {
+		if paneID == terminal.ControlPaneID {
 			nextRole = BindingRoleOwner
 		}
 		if binding.Role == nextRole {
@@ -90,6 +109,7 @@ func (r *Runtime) AcquireTerminalOwnership(paneID, terminalID string) error {
 		return nil
 	}
 	terminal.OwnerPaneID = paneID
+	terminal.ControlPaneID = paneID
 	terminal.RequiresExplicitOwner = false
 	terminal.PendingOwnerResize = true
 	r.syncTerminalOwnership(terminal)

@@ -3,11 +3,12 @@ package termx
 import "errors"
 
 var (
-	ErrNotFound         = errors.New("termx: terminal not found")
-	ErrDuplicateID      = errors.New("termx: terminal ID already exists")
-	ErrInvalidCommand   = errors.New("termx: command is required")
-	ErrTerminalExited   = errors.New("termx: terminal has exited")
-	ErrPermissionDenied = errors.New("termx: permission denied")
-	ErrSpawnFailed      = errors.New("termx: failed to spawn process")
-	ErrServerClosed     = errors.New("termx: server is closed")
+	ErrNotFound          = errors.New("termx: terminal not found")
+	ErrDuplicateID       = errors.New("termx: terminal ID already exists")
+	ErrInvalidCommand    = errors.New("termx: command is required")
+	ErrTerminalExited    = errors.New("termx: terminal has exited")
+	ErrTerminalNotExited = errors.New("termx: terminal is not exited")
+	ErrPermissionDenied  = errors.New("termx: permission denied")
+	ErrSpawnFailed       = errors.New("termx: failed to spawn process")
+	ErrServerClosed      = errors.New("termx: server is closed")
 )

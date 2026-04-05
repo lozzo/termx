@@ -67,6 +67,9 @@ func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 				}
 				terminal.Stream.RetryCount = 0
 				r.handleStreamFrame(terminalID, frame)
+				if frame.Type == protocol.TypeClosed {
+					return
+				}
 			}
 		}
 	}()

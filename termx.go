@@ -229,6 +229,16 @@ func (s *Server) Kill(ctx context.Context, id string) error {
 	return term.Kill()
 }
 
+func (s *Server) Restart(ctx context.Context, id string) error {
+	_ = ctx
+	term, err := s.getTerminal(id)
+	if err != nil {
+		return err
+	}
+	s.cfg.logger.Info("server restart terminal requested", "terminal_id", id)
+	return term.Restart()
+}
+
 func (s *Server) SetTags(ctx context.Context, id string, tags map[string]string) error {
 	_ = ctx
 	term, err := s.getTerminal(id)
@@ -784,6 +794,18 @@ func (s *Server) handleRequest(
 			return nil, protocolErrorCode(err), err
 		}
 		return json.RawMessage(`{}`), 0, nil
+	case "restart":
+		var params protocol.GetParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return nil, 400, err
+		}
+		if err := requireControlPermission(attachments, attachmentsMu, params.TerminalID); err != nil {
+			return nil, protocolErrorCode(err), err
+		}
+		if err := s.Restart(ctx, params.TerminalID); err != nil {
+			return nil, protocolErrorCode(err), err
+		}
+		return json.RawMessage(`{}`), 0, nil
 	case "remove":
 		var params protocol.GetParams
 		if err := json.Unmarshal(req.Params, &params); err != nil {
@@ -1121,6 +1143,10 @@ func (s *Server) handleSessionRequest(ctx context.Context, remote string, req pr
 		if err != nil {
 			return nil, 404, err
 		}
+		snapshot, err := s.workbench.GetSession(params.SessionID)
+		if err != nil {
+			return nil, 404, err
+		}
 		result, err := json.Marshal(protocol.LeaseInfo{
 			TerminalID: lease.TerminalID,
 			SessionID:  lease.SessionID,
@@ -1131,6 +1157,7 @@ func (s *Server) handleSessionRequest(ctx context.Context, remote string, req pr
 		if err != nil {
 			return nil, 500, err
 		}
+		s.publishSessionEvent(EventSessionUpdated, params.SessionID, snapshot.Session.Revision, params.ViewID)
 		return result, 0, nil
 	case "session.release_lease":
 		var params protocol.ReleaseSessionLeaseParams
@@ -1142,6 +1169,11 @@ func (s *Server) handleSessionRequest(ctx context.Context, remote string, req pr
 		}); err != nil {
 			return nil, 404, err
 		}
+		snapshot, err := s.workbench.GetSession(params.SessionID)
+		if err != nil {
+			return nil, 404, err
+		}
+		s.publishSessionEvent(EventSessionUpdated, params.SessionID, snapshot.Session.Revision, params.ViewID)
 		return json.RawMessage(`{}`), 0, nil
 	default:
 		return nil, 400, fmt.Errorf("unknown session method: %s", req.Method)
@@ -1342,7 +1374,7 @@ func protocolErrorCode(err error) int {
 		return 409
 	case errors.Is(err, ErrPermissionDenied):
 		return 403
-	case errors.Is(err, ErrInvalidCommand), errors.Is(err, ErrTerminalExited):
+	case errors.Is(err, ErrInvalidCommand), errors.Is(err, ErrTerminalExited), errors.Is(err, ErrTerminalNotExited):
 		return 400
 	default:
 		return 500

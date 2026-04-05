@@ -20,25 +20,34 @@ func (r *Runtime) ApplySessionLeases(viewID string, leases []protocol.LeaseInfo)
 			continue
 		}
 		prevOwner := terminal.OwnerPaneID
+		prevControl := terminal.ControlPaneID
 		lease, ok := index[terminalID]
 		switch {
 		case !ok:
 			terminal.OwnerPaneID = ""
+			terminal.ControlPaneID = ""
 			terminal.RequiresExplicitOwner = len(terminal.BoundPaneIDs) > 0
-		case lease.ViewID != "" && lease.ViewID == viewID && containsPaneID(terminal.BoundPaneIDs, lease.PaneID) && r.bindings[lease.PaneID] != nil:
+		case lease.ViewID != "":
 			terminal.OwnerPaneID = lease.PaneID
-			terminal.RequiresExplicitOwner = false
-			if prevOwner != lease.PaneID {
+			if lease.ViewID == viewID && containsPaneID(terminal.BoundPaneIDs, lease.PaneID) && r.bindings[lease.PaneID] != nil {
+				terminal.ControlPaneID = lease.PaneID
+				terminal.RequiresExplicitOwner = false
+			} else {
+				terminal.ControlPaneID = ""
+				terminal.RequiresExplicitOwner = len(terminal.BoundPaneIDs) > 0
+			}
+			if prevControl != terminal.ControlPaneID && terminal.ControlPaneID != "" {
 				terminal.PendingOwnerResize = true
 			}
 		default:
 			terminal.OwnerPaneID = ""
+			terminal.ControlPaneID = ""
 			terminal.RequiresExplicitOwner = len(terminal.BoundPaneIDs) > 0
 		}
 		if r.syncBindingRolesForTerminal(terminal) {
 			changed = true
 		}
-		if prevOwner != terminal.OwnerPaneID {
+		if prevOwner != terminal.OwnerPaneID || prevControl != terminal.ControlPaneID {
 			changed = true
 		}
 	}

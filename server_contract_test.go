@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -859,6 +860,46 @@ func TestServerKillExitedRemovesImmediately(t *testing.T) {
 	if _, err := srv.Get(ctx, info.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected terminal removal after kill, got %v", err)
 	}
+}
+
+func TestServerRestartExitedTerminalReusesID(t *testing.T) {
+	ctx := context.Background()
+	srv := NewServer(WithDefaultKeepAfterExit(10 * time.Second))
+
+	flagPath := filepath.Join(t.TempDir(), "restart-flag")
+	command := fmt.Sprintf("if [ -f %q ]; then printf 'restart_pass_2\\n'; cat; else touch %q; printf 'restart_pass_1\\n'; exit 0; fi", flagPath, flagPath)
+	info, err := srv.Create(ctx, CreateOptions{
+		ID:      "restart01",
+		Command: []string{"bash", "-lc", command},
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create failed: %v", err)
+	}
+
+	waitFor(t, 5*time.Second, func() bool {
+		got, err := srv.Get(ctx, info.ID)
+		return err == nil && got.State == StateExited
+	})
+	waitForSnapshotContains(t, srv, info.ID, "restart_pass_1")
+
+	if err := srv.Restart(ctx, info.ID); err != nil {
+		t.Fatalf("restart failed: %v", err)
+	}
+
+	waitFor(t, 5*time.Second, func() bool {
+		got, err := srv.Get(ctx, info.ID)
+		return err == nil && got.State == StateRunning
+	})
+	waitForSnapshotContains(t, srv, info.ID, "restart_pass_2")
+
+	if err := srv.WriteInput(ctx, info.ID, []byte("restart_echo\n")); err != nil {
+		t.Fatalf("write input after restart failed: %v", err)
+	}
+	waitForSnapshotContains(t, srv, info.ID, "restart_echo")
 }
 
 func TestServerRemoveCleansAttachmentsAndClosesTerminal(t *testing.T) {

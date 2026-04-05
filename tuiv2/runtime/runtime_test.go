@@ -440,7 +440,7 @@ func TestRuntimeApplySessionLeasesDemotesForeignLeaseAndPromotesLocalLease(t *te
 		PaneID:     "pane-9",
 	}})
 
-	if terminal := rt.Registry().Get("term-1"); terminal == nil || terminal.OwnerPaneID != "" || !terminal.RequiresExplicitOwner {
+	if terminal := rt.Registry().Get("term-1"); terminal == nil || terminal.OwnerPaneID != "pane-9" || terminal.ControlPaneID != "" || !terminal.RequiresExplicitOwner {
 		t.Fatalf("expected foreign lease to demote local panes, got %#v", terminal)
 	}
 	if binding := rt.Binding("pane-1"); binding == nil || binding.Role != BindingRoleFollower {
@@ -577,6 +577,7 @@ type fakeBridgeClient struct {
 	snapshotByTerminal  map[string]*protocol.Snapshot
 	streams             map[uint16]chan protocol.StreamFrame
 	streamSubscriptions map[uint16]int
+	streamStops         map[uint16]int
 	inputCalls          []inputCall
 	resizeCalls         []resizeCall
 }
@@ -598,6 +599,7 @@ func newFakeBridgeClient() *fakeBridgeClient {
 		snapshotByTerminal:  make(map[string]*protocol.Snapshot),
 		streams:             make(map[uint16]chan protocol.StreamFrame),
 		streamSubscriptions: make(map[uint16]int),
+		streamStops:         make(map[uint16]int),
 	}
 }
 
@@ -660,10 +662,16 @@ func (f *fakeBridgeClient) Stream(channel uint16) (<-chan protocol.StreamFrame, 
 		f.streams[channel] = stream
 	}
 	f.streamSubscriptions[channel]++
-	return stream, func() {}
+	return stream, func() {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.streamStops[channel]++
+	}
 }
 
 func (f *fakeBridgeClient) Kill(context.Context, string) error { return nil }
+
+func (f *fakeBridgeClient) Restart(context.Context, string) error { return nil }
 
 func (f *fakeBridgeClient) CreateSession(context.Context, protocol.CreateSessionParams) (*protocol.SessionSnapshot, error) {
 	return nil, fmt.Errorf("not implemented")
@@ -729,6 +737,12 @@ func (f *fakeBridgeClient) subscriptionCount(channel uint16) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.streamSubscriptions[channel]
+}
+
+func (f *fakeBridgeClient) stopCount(channel uint16) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.streamStops[channel]
 }
 
 func snapshotWithLines(terminalID string, cols, rows uint16, lines []string) *protocol.Snapshot {
@@ -844,4 +858,27 @@ func TestRuntimeStartStreamReconnectsAfterChannelClose(t *testing.T) {
 	if !stored.Stream.Active {
 		t.Fatal("expected stream to be active after reconnect")
 	}
+}
+
+func TestRuntimeClosedStreamStopsImmediately(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+	rt := New(client)
+
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+
+	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeClosed, Payload: protocol.EncodeClosedPayload(0)})
+
+	waitFor(t, func() bool {
+		terminal := rt.Registry().Get("term-1")
+		return terminal != nil && terminal.State == "exited"
+	})
+	waitFor(t, func() bool {
+		return client.stopCount(9) == 1
+	})
 }

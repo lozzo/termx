@@ -33,8 +33,9 @@ type TerminalRuntime struct {
 	ScrollbackLoadingLimit int
 	ScrollbackExhausted    bool
 
-	OwnerPaneID  string   // 只读派生缓存，不是第二份可写绑定真相
-	BoundPaneIDs []string // 只读派生缓存，不是第二份可写绑定真相
+	OwnerPaneID   string   // 全局 owner pane，用于所有视图的共享展示
+	ControlPaneID string   // 当前本地视图可实际驱动 resize/control 的 pane
+	BoundPaneIDs  []string // 只读派生缓存，不是第二份可写绑定真相
 	// Owner release freezes further PTY resize until a view explicitly reacquires control.
 	RequiresExplicitOwner bool
 	// Owner handoff should force the next resize from the new owner even if the

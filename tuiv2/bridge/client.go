@@ -19,6 +19,7 @@ type Client interface {
 	Resize(ctx context.Context, channel uint16, cols, rows uint16) error
 	Stream(channel uint16) (<-chan protocol.StreamFrame, func())
 	Kill(ctx context.Context, terminalID string) error
+	Restart(ctx context.Context, terminalID string) error
 	CreateSession(ctx context.Context, params protocol.CreateSessionParams) (*protocol.SessionSnapshot, error)
 	ListSessions(ctx context.Context) (*protocol.ListSessionsResult, error)
 	GetSession(ctx context.Context, sessionID string) (*protocol.SessionSnapshot, error)
@@ -83,6 +84,10 @@ func (c *ProtocolClient) Stream(channel uint16) (<-chan protocol.StreamFrame, fu
 
 func (c *ProtocolClient) Kill(ctx context.Context, terminalID string) error {
 	return c.inner.Kill(ctx, terminalID)
+}
+
+func (c *ProtocolClient) Restart(ctx context.Context, terminalID string) error {
+	return c.inner.Restart(ctx, terminalID)
 }
 
 func (c *ProtocolClient) CreateSession(ctx context.Context, params protocol.CreateSessionParams) (*protocol.SessionSnapshot, error) {
