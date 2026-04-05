@@ -54,6 +54,12 @@ func loadSnapshotIntoVTerm(vt VTermLike, snap *protocol.Snapshot) {
 		return
 	}
 	cols, rows := vt.Size()
+	if snap.Size.Cols > 0 {
+		cols = int(snap.Size.Cols)
+	}
+	if snap.Size.Rows > 0 {
+		rows = int(snap.Size.Rows)
+	}
 	vt.LoadSnapshotWithScrollback(protocolRowsToVTerm(snap.Scrollback), protocolScreenToVTerm(snap.Screen), protocolCursorToVTerm(snap.Cursor), protocolModesToVTerm(snap.Modes))
 	if cols > 0 && rows > 0 {
 		vt.Resize(cols, rows)

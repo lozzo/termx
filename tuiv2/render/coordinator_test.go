@@ -130,6 +130,28 @@ func TestDrawPaneFrameKeepsTopRightCornerAlignedWithWideBorderLabels(t *testing.
 	}
 }
 
+func TestPaneEntriesForTabMarksViewportClippedPaneOverflow(t *testing.T) {
+	tab := workbench.VisibleTab{
+		ID:           "tab-1",
+		ActivePaneID: "pane-1",
+		Panes: []workbench.VisiblePane{{
+			ID:   "pane-1",
+			Rect: workbench.Rect{X: 8, Y: 1, W: 10, H: 6},
+		}},
+	}
+
+	entries := paneEntriesForTab(tab, nil, 12, 6, runtimeLookup{}, "", "", -1, "", -1, true, defaultUITheme())
+	if len(entries) != 1 {
+		t.Fatalf("expected one visible pane entry, got %d", len(entries))
+	}
+	if !entries[0].Overflow.Right {
+		t.Fatalf("expected right overflow marker when pane extends past viewport, got %#v", entries[0].Overflow)
+	}
+	if !entries[0].Overflow.Bottom {
+		t.Fatalf("expected bottom overflow marker when pane extends past viewport, got %#v", entries[0].Overflow)
+	}
+}
+
 func TestEmptyPaneActionStylesSeparatePrimarySecondaryAndDanger(t *testing.T) {
 	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
 
@@ -588,6 +610,76 @@ func TestRenderBodyShowsPaneMetaForSharedFollower(t *testing.T) {
 	body := xansi.Strip(renderBody(state, 72, 12))
 	if !strings.Contains(body, "follow") {
 		t.Fatalf("expected shared follower pane meta in frame:\n%s", body)
+	}
+}
+
+func TestRenderBodyShowsOverflowArrowWhenTerminalLargerThanVisiblePane(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), 18, 6), 18, 8)
+	state.Runtime = &VisibleRuntimeStateProxy{Terminals: []runtime.VisibleTerminal{{
+		TerminalID: "term-1",
+		Name:       "shell",
+		State:      "running",
+		Snapshot: &protocol.Snapshot{
+			Size: protocol.Size{Cols: 40, Rows: 10},
+			Screen: protocol.ScreenData{
+				Cells: [][]protocol.Cell{{{Content: "h", Width: 1}, {Content: "i", Width: 1}}},
+			},
+		},
+	}}}
+
+	body := xansi.Strip(renderBody(state, 18, 6))
+	if !strings.Contains(body, ">") {
+		t.Fatalf("expected overflow arrow when terminal is wider than pane:\n%s", body)
+	}
+}
+
+func TestRenderBodyShowsDotsWhenTerminalSmallerThanVisiblePane(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), 18, 6), 18, 8)
+	state.Runtime = &VisibleRuntimeStateProxy{Terminals: []runtime.VisibleTerminal{{
+		TerminalID: "term-1",
+		Name:       "shell",
+		State:      "running",
+		Snapshot: &protocol.Snapshot{
+			Size: protocol.Size{Cols: 2, Rows: 1},
+			Screen: protocol.ScreenData{
+				Cells: [][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "k", Width: 1}}},
+			},
+		},
+	}}}
+
+	body := xansi.Strip(renderBody(state, 18, 6))
+	if !strings.Contains(body, "··") {
+		t.Fatalf("expected dot fill when terminal is smaller than pane:\n%s", body)
 	}
 }
 

@@ -179,6 +179,49 @@ func TestRuntimeStartStreamRefreshesSnapshotAndInvalidates(t *testing.T) {
 	}
 }
 
+func TestRuntimeStreamOutputPreservesAuthoritativeSnapshotSize(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 118, 36, []string{"ready"})
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+
+	stored := rt.Registry().Get("term-1")
+	if stored == nil || stored.Snapshot == nil {
+		t.Fatalf("expected cached snapshot, got %#v", stored)
+	}
+	if stored.Snapshot.Size.Cols != 118 || stored.Snapshot.Size.Rows != 36 {
+		t.Fatalf("expected loaded snapshot size 118x36, got %#v", stored.Snapshot.Size)
+	}
+
+	if err := rt.StartStream(ctx, "term-1"); err != nil {
+		t.Fatalf("start stream: %v", err)
+	}
+	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("x")})
+
+	waitFor(t, func() bool {
+		current := rt.Registry().Get("term-1")
+		return current != nil && current.Snapshot != nil && snapshotContains(current.Snapshot, "x")
+	})
+
+	current := rt.Registry().Get("term-1")
+	if current == nil || current.Snapshot == nil {
+		t.Fatalf("expected refreshed snapshot, got %#v", current)
+	}
+	if current.Snapshot.Size.Cols != 118 || current.Snapshot.Size.Rows != 36 {
+		t.Fatalf("expected streamed output to preserve snapshot size 118x36, got %#v", current.Snapshot.Size)
+	}
+}
+
 func TestRuntimeSetHostDefaultColorsRefreshesVisibleState(t *testing.T) {
 	var invalidateCount atomic.Int32
 	rt := New(nil, WithInvalidate(func() {

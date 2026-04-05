@@ -3320,6 +3320,70 @@ func TestFeatureSessionTerminalInputReclaimsSamePaneLeaseForcesResizeWhenSizeMat
 	}
 }
 
+func TestFeatureWindowResizeReclaimsSamePaneSessionLeaseForActivePane(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	root := &workbench.LayoutNode{
+		Direction: workbench.SplitVertical,
+		Ratio:     0.5,
+		First:     workbench.NewLeaf("pane-1"),
+		Second:    workbench.NewLeaf("pane-2"),
+	}
+	model := setupModel(t, modelOpts{
+		client: client,
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{{
+					ID:           "tab-1",
+					Name:         "tab 1",
+					ActivePaneID: "pane-2",
+					Panes: map[string]*workbench.PaneState{
+						"pane-1": {ID: "pane-1", Title: "left", TerminalID: "term-1"},
+						"pane-2": {ID: "pane-2", Title: "right", TerminalID: "term-1"},
+					},
+					Root: root,
+				}},
+			},
+		},
+	})
+	model.sessionID = "main"
+	model.sessionViewID = "view-local"
+	model.sessionLeases = map[string]protocol.LeaseInfo{
+		"term-1": {TerminalID: "term-1", SessionID: "main", ViewID: "view-remote", PaneID: "pane-2"},
+	}
+
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.State = "running"
+	terminal.Channel = 1
+	terminal.BoundPaneIDs = []string{"pane-1", "pane-2"}
+	terminal.Snapshot = &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}}
+
+	binding1 := model.runtime.BindPane("pane-1")
+	binding1.Channel = 1
+	binding1.Connected = true
+	binding2 := model.runtime.BindPane("pane-2")
+	binding2.Channel = 2
+	binding2.Connected = true
+	model.runtime.ApplySessionLeases(model.sessionViewID, model.currentSessionLeases())
+
+	_, cmd := model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	drainCmd(t, model, cmd, 20)
+
+	if len(client.acquireLeaseCalls) != 1 {
+		t.Fatalf("expected window resize to reclaim same-pane lease once, got %#v", client.acquireLeaseCalls)
+	}
+	if got := client.acquireLeaseCalls[0]; got.ViewID != "view-local" || got.PaneID != "pane-2" || got.TerminalID != "term-1" {
+		t.Fatalf("unexpected lease acquire params: %#v", got)
+	}
+	if len(client.resizes) != 1 || client.resizes[0].channel != 2 {
+		t.Fatalf("expected window resize to issue one resize from pane-2 channel, got %#v", client.resizes)
+	}
+	if terminal.OwnerPaneID != "pane-2" {
+		t.Fatalf("expected pane-2 restored as local owner after window resize, got %q", terminal.OwnerPaneID)
+	}
+}
+
 func TestFeatureTerminalResizeEventReloadsSnapshot(t *testing.T) {
 	client := &recordingBridgeClient{
 		snapshotByTerminal: map[string]*protocol.Snapshot{

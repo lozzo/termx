@@ -209,11 +209,22 @@ func (m *Model) resizeVisiblePanesCmd() tea.Cmd {
 		if pane.ID == "" || pane.TerminalID == "" {
 			continue
 		}
-		cols := uint16(maxInt(2, pane.Rect.W-2))
-		rows := uint16(maxInt(2, pane.Rect.H-2))
-		paneID := pane.ID
+		target := terminalInteractionTarget{
+			paneID:     pane.ID,
+			terminalID: pane.TerminalID,
+			rect:       pane.Rect,
+		}
+		req := terminalInteractionRequest{
+			PaneID:         pane.ID,
+			TerminalID:     pane.TerminalID,
+			Rect:           pane.Rect,
+			ResizeIfNeeded: true,
+		}
+		if m.sessionID != "" && pane.ID == tab.ActivePaneID {
+			req.ImplicitSessionLease = true
+		}
 		cmds = append(cmds, func() tea.Msg {
-			if err := m.runtime.ResizeTerminal(context.Background(), paneID, pane.TerminalID, cols, rows); err != nil {
+			if err := m.syncTerminalInteraction(context.Background(), req, target); err != nil {
 				return err
 			}
 			return nil

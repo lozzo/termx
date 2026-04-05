@@ -111,6 +111,11 @@ type paneOverflowHints struct {
 	Bottom bool
 }
 
+type renderTerminalMetrics struct {
+	Cols int
+	Rows int
+}
+
 type paneContentKey struct {
 	TerminalID           string
 	Snapshot             *protocol.Snapshot
@@ -568,25 +573,28 @@ func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePan
 	entries := make([]paneRenderEntry, 0, len(tab.Panes)+len(floating))
 	zoomedPaneID := tab.ZoomedPaneID
 	for _, pane := range tab.Panes {
-		rect := pane.Rect
+		originalRect := pane.Rect
+		rect := originalRect
 		if zoomedPaneID != "" {
 			if pane.ID != zoomedPaneID {
 				continue
 			}
+			originalRect = workbench.Rect{X: 0, Y: 0, W: width, H: height}
 			rect = workbench.Rect{X: 0, Y: 0, W: width, H: height}
 		}
 		rect, ok := clipRectToViewport(rect, width, height)
 		if !ok {
 			continue
 		}
-		entries = append(entries, buildPaneRenderEntry(pane, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, theme))
+		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, theme))
 	}
 	for _, pane := range floating {
-		rect, ok := clipRectToViewport(pane.Rect, width, height)
+		originalRect := pane.Rect
+		rect, ok := clipRectToViewport(originalRect, width, height)
 		if !ok {
 			continue
 		}
-		entries = append(entries, buildPaneRenderEntry(pane, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, theme))
+		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, theme))
 	}
 	return entries
 }
@@ -605,12 +613,12 @@ func clipRectToViewport(rect workbench.Rect, width, height int) (workbench.Rect,
 	return workbench.Rect{X: x1, Y: y1, W: x2 - x1, H: y2 - y1}, true
 }
 
-func buildPaneRenderEntry(pane workbench.VisiblePane, rect workbench.Rect, activePaneID string, scrollOffset int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, exitedPaneSelectionPaneID string, exitedPaneSelectionIndex int, exitedPaneSelectionPulse bool, theme uiTheme) paneRenderEntry {
+func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workbench.Rect, activePaneID string, scrollOffset int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, exitedPaneSelectionPaneID string, exitedPaneSelectionIndex int, exitedPaneSelectionPulse bool, theme uiTheme) paneRenderEntry {
 	active := pane.ID == activePaneID
 	title := resolvePaneTitleWithLookup(pane, lookup)
 	border := paneBorderInfoWithLookup(pane, lookup, confirmPaneID)
 	terminal := lookup.terminal(pane.TerminalID)
-	overflow := paneOverflowHints{}
+	overflow := paneOverflowHintsForRender(originalRect, rect, nil)
 	emptyActionSelected := -1
 	if pane.TerminalID == "" && pane.ID == emptyPaneSelectionPaneID {
 		emptyActionSelected = emptyPaneSelectionIndex
@@ -634,7 +642,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, rect workbench.Rect, activ
 		contentKey.Snapshot = terminal.Snapshot
 		contentKey.Name = terminal.Name
 		contentKey.State = terminal.State
-		overflow = snapshotOverflowHints(terminal.Snapshot, contentRectForPane(rect))
+		overflow = paneOverflowHintsForRender(originalRect, rect, terminal.Snapshot)
 	}
 	return paneRenderEntry{
 		PaneID:     pane.ID,
@@ -664,19 +672,23 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, rect workbench.Rect, activ
 	}
 }
 
-func snapshotOverflowHints(snapshot *protocol.Snapshot, rect workbench.Rect) paneOverflowHints {
-	if snapshot == nil || rect.W <= 0 || rect.H <= 0 {
+func paneOverflowHintsForRender(originalRect, clippedRect workbench.Rect, snapshot *protocol.Snapshot) paneOverflowHints {
+	if originalRect.W <= 0 || originalRect.H <= 0 || clippedRect.W <= 0 || clippedRect.H <= 0 {
 		return paneOverflowHints{}
 	}
-	termW := int(snapshot.Size.Cols)
-	termH := int(snapshot.Size.Rows)
-	if termW <= 0 || termH <= 0 {
-		return paneOverflowHints{}
+	overflow := paneOverflowHints{
+		Right:  originalRect.X+originalRect.W > clippedRect.X+clippedRect.W,
+		Bottom: originalRect.Y+originalRect.H > clippedRect.Y+clippedRect.H,
 	}
-	return paneOverflowHints{
-		Right:  termW > rect.W,
-		Bottom: termH > rect.H,
+	metrics := renderTerminalMetricsForSnapshot(snapshot)
+	contentRect := contentRectForPane(clippedRect)
+	if metrics.Cols > 0 && contentRect.W > 0 && metrics.Cols > contentRect.W {
+		overflow.Right = true
 	}
+	if metrics.Rows > 0 && contentRect.H > 0 && metrics.Rows > contentRect.H {
+		overflow.Bottom = true
+	}
+	return overflow
 }
 
 func newBodyRenderCache(canvas *composedCanvas, entries []paneRenderEntry, width, height int) *bodyRenderCache {
@@ -1525,17 +1537,17 @@ func drawSnapshotExtentHints(canvas *composedCanvas, rect workbench.Rect, snapsh
 	if canvas == nil || snapshot == nil || rect.W <= 0 || rect.H <= 0 {
 		return
 	}
-	termW, termH := snapshotExtentSize(snapshot)
-	if termW <= 0 || termH <= 0 {
+	metrics := renderTerminalMetricsForSnapshot(snapshot)
+	if metrics.Cols <= 0 || metrics.Rows <= 0 {
 		return
 	}
 
 	dotStyle := drawStyle{FG: theme.panelBorder}
 
-	visibleCols := minInt(rect.W, termW)
-	visibleRows := minInt(rect.H, termH)
+	visibleCols := minInt(rect.W, metrics.Cols)
+	visibleRows := minInt(rect.H, metrics.Rows)
 
-	if termW < rect.W {
+	if metrics.Cols < rect.W {
 		startX := rect.X + visibleCols
 		endX := rect.X + rect.W
 		for y := rect.Y; y < rect.Y+visibleRows; y++ {
@@ -1544,7 +1556,7 @@ func drawSnapshotExtentHints(canvas *composedCanvas, rect workbench.Rect, snapsh
 			}
 		}
 	}
-	if termH < rect.H {
+	if metrics.Rows < rect.H {
 		startY := rect.Y + visibleRows
 		endY := rect.Y + rect.H
 		for y := startY; y < endY; y++ {
@@ -1555,21 +1567,25 @@ func drawSnapshotExtentHints(canvas *composedCanvas, rect workbench.Rect, snapsh
 	}
 }
 
-func snapshotExtentSize(snapshot *protocol.Snapshot) (int, int) {
+func renderTerminalMetricsForSnapshot(snapshot *protocol.Snapshot) renderTerminalMetrics {
 	if snapshot == nil {
-		return 0, 0
+		return renderTerminalMetrics{}
 	}
-	termW := int(snapshot.Size.Cols)
-	termH := int(snapshot.Size.Rows)
-	if screenH := len(snapshot.Screen.Cells); screenH > termH {
-		termH = screenH
+	metrics := renderTerminalMetrics{
+		Cols: int(snapshot.Size.Cols),
+		Rows: int(snapshot.Size.Rows),
 	}
-	for _, row := range snapshot.Screen.Cells {
-		if rowW := protocolRowDisplayWidth(row); rowW > termW {
-			termW = rowW
+	if metrics.Rows <= 0 {
+		metrics.Rows = len(snapshot.Screen.Cells)
+	}
+	if metrics.Cols <= 0 {
+		for _, row := range snapshot.Screen.Cells {
+			if rowW := protocolRowDisplayWidth(row); rowW > metrics.Cols {
+				metrics.Cols = rowW
+			}
 		}
 	}
-	return termW, termH
+	return metrics
 }
 
 func protocolRowDisplayWidth(row []protocol.Cell) int {

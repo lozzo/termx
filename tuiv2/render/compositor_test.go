@@ -471,7 +471,7 @@ func TestDrawSnapshotWithOffsetMarksPanelAreaOutsideTerminalWithDots(t *testing.
 	}
 }
 
-func TestDrawSnapshotWithOffsetUsesRenderedScreenHeightWhenSnapshotRowsLag(t *testing.T) {
+func TestDrawSnapshotWithOffsetUsesSnapshotHeightWhenRenderedRowsLagAfterShrink(t *testing.T) {
 	canvas := newComposedCanvas(4, 3)
 	rect := workbench.Rect{X: 0, Y: 0, W: 4, H: 3}
 	snapshot := &protocol.Snapshot{
@@ -488,12 +488,12 @@ func TestDrawSnapshotWithOffsetUsesRenderedScreenHeightWhenSnapshotRowsLag(t *te
 	fillRect(canvas, rect, blankDrawCell())
 	drawSnapshotWithOffset(canvas, rect, snapshot, 0, defaultUITheme())
 
-	if got := canvas.rawString(); got != "a\nb\nc" {
-		t.Fatalf("expected rendered screen height to suppress stale bottom dots, got %q", got)
+	if got := canvas.rawString(); got != "a\n····\n····" {
+		t.Fatalf("expected resized terminal height to blank stale lower rows with dots, got %q", got)
 	}
 }
 
-func TestDrawSnapshotWithOffsetUsesRenderedScreenWidthWhenSnapshotColsLag(t *testing.T) {
+func TestDrawSnapshotWithOffsetUsesSnapshotWidthWhenRenderedColsLagAfterShrink(t *testing.T) {
 	canvas := newComposedCanvas(4, 1)
 	rect := workbench.Rect{X: 0, Y: 0, W: 4, H: 1}
 	snapshot := &protocol.Snapshot{
@@ -510,8 +510,8 @@ func TestDrawSnapshotWithOffsetUsesRenderedScreenWidthWhenSnapshotColsLag(t *tes
 	fillRect(canvas, rect, blankDrawCell())
 	drawSnapshotWithOffset(canvas, rect, snapshot, 0, defaultUITheme())
 
-	if got := canvas.rawString(); got != "abc·" {
-		t.Fatalf("expected rendered screen width to suppress stale right-side dots, got %q", got)
+	if got := canvas.rawString(); got != "a···" {
+		t.Fatalf("expected resized terminal width to blank stale right-side cells with dots, got %q", got)
 	}
 }
 
