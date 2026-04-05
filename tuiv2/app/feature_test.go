@@ -512,6 +512,40 @@ func TestFeaturePaneReconnect(t *testing.T) {
 	assertMode(t, model, input.ModePicker)
 }
 
+func TestFeatureExitedPaneReconnectKeepsBindingAndOpensPicker(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	term := model.runtime.Registry().Get("term-1")
+	if term == nil {
+		t.Fatal("expected term-1 runtime")
+	}
+	term.State = "exited"
+	term.OwnerPaneID = "pane-1"
+	term.BoundPaneIDs = []string{"pane-1"}
+	binding := model.runtime.Binding("pane-1")
+	if binding == nil {
+		t.Fatal("expected pane-1 binding")
+	}
+	binding.Role = runtime.BindingRoleOwner
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionReconnectPane, PaneID: "pane-1"})
+
+	pane := model.workbench.ActivePane()
+	if pane == nil || pane.TerminalID != "term-1" {
+		t.Fatalf("expected exited pane to stay bound during picker reopen, got %#v", pane)
+	}
+	if got := model.runtime.Binding("pane-1"); got == nil {
+		t.Fatal("expected pane binding retained for exited reconnect")
+	}
+	term = model.runtime.Registry().Get("term-1")
+	if term == nil {
+		t.Fatal("expected terminal runtime retained after exited reconnect")
+	}
+	if term.OwnerPaneID != "pane-1" || len(term.BoundPaneIDs) != 1 || term.BoundPaneIDs[0] != "pane-1" {
+		t.Fatalf("expected exited terminal binding preserved, got owner=%q bound=%#v", term.OwnerPaneID, term.BoundPaneIDs)
+	}
+	assertMode(t, model, input.ModePicker)
+}
+
 func TestFeatureBecomeOwnerPromotesActivePane(t *testing.T) {
 	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
 	root := &workbench.LayoutNode{
@@ -838,8 +872,8 @@ func TestFeatureSessionTabSwitchDoesNotImplicitlyAcquireLease(t *testing.T) {
 	cmd := model.switchTabByIndexMouse(1)
 	drainCmd(t, model, cmd, 20)
 
-	if terminal.OwnerPaneID != "" {
-		t.Fatalf("expected remote lease to keep local view follower-only, got owner=%q", terminal.OwnerPaneID)
+	if terminal.OwnerPaneID != "pane-remote" {
+		t.Fatalf("expected remote lease to preserve global owner, got owner=%q", terminal.OwnerPaneID)
 	}
 	if len(client.acquireLeaseCalls) != 0 {
 		t.Fatalf("expected tab switch not to acquire lease implicitly, got %#v", client.acquireLeaseCalls)
@@ -1320,6 +1354,24 @@ func TestFeatureResizeAdjustRatio(t *testing.T) {
 	}
 }
 
+func TestFeatureResizeAdjustRatioPersistsSession(t *testing.T) {
+	model := setupTwoPaneModel(t)
+	model.sessionID = "main"
+	model.sessionRevision = 7
+	model.sessionViewID = "view-1"
+
+	client := model.runtime.Client().(*recordingBridgeClient)
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionResizePaneRight, PaneID: "pane-1"})
+
+	if len(client.replaceCalls) != 1 {
+		t.Fatalf("expected one replace call after resize, got %d", len(client.replaceCalls))
+	}
+	if got := client.replaceCalls[0]; got.SessionID != "main" || got.BaseRevision != 7 || got.ViewID != "view-1" {
+		t.Fatalf("unexpected replace params: %#v", got)
+	}
+}
+
 func TestFeatureResizeBalance(t *testing.T) {
 	model := setupTwoPaneModel(t)
 	// First change the ratio
@@ -1337,6 +1389,20 @@ func TestFeatureResizeBalance(t *testing.T) {
 	}
 }
 
+func TestFeatureResizeBalancePersistsSession(t *testing.T) {
+	model := setupTwoPaneModel(t)
+	model.sessionID = "main"
+	model.sessionRevision = 3
+
+	client := model.runtime.Client().(*recordingBridgeClient)
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionBalancePanes})
+
+	if len(client.replaceCalls) != 1 {
+		t.Fatalf("expected one replace call after balance, got %d", len(client.replaceCalls))
+	}
+}
+
 func TestFeatureResizeCycleLayout(t *testing.T) {
 	model := setupTwoPaneModel(t)
 
@@ -1346,6 +1412,20 @@ func TestFeatureResizeCycleLayout(t *testing.T) {
 	tab := model.workbench.CurrentTab()
 	if tab == nil {
 		t.Fatal("expected tab to exist after cycle layout")
+	}
+}
+
+func TestFeatureResizeCycleLayoutPersistsSession(t *testing.T) {
+	model := setupTwoPaneModel(t)
+	model.sessionID = "main"
+	model.sessionRevision = 5
+
+	client := model.runtime.Client().(*recordingBridgeClient)
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCycleLayout})
+
+	if len(client.replaceCalls) != 1 {
+		t.Fatalf("expected one replace call after cycle layout, got %d", len(client.replaceCalls))
 	}
 }
 
@@ -1823,6 +1903,41 @@ func TestFeatureTerminalPoolExitedItemDoesNotAttemptAttach(t *testing.T) {
 	assertMode(t, model, input.ModeTerminalManager)
 	if model.terminalPage == nil {
 		t.Fatal("expected terminal pool page to stay open on invalid attach action")
+	}
+}
+
+func TestFeatureExitedPaneRestartReattachesSameTerminal(t *testing.T) {
+	client := &recordingBridgeClient{
+		listResult: &protocol.ListResult{
+			Terminals: []protocol.TerminalInfo{
+				{ID: "term-1", Name: "shell", Command: []string{"bash"}, State: "running"},
+			},
+		},
+		attachResult: &protocol.AttachResult{Channel: 9, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-1": {TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}},
+		},
+	}
+	model := setupModel(t, modelOpts{client: client})
+
+	exitCode := 23
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.State = "exited"
+	terminal.ExitCode = &exitCode
+
+	dispatchKey(t, model, runeKeyMsg('R'))
+
+	if len(client.restartCalls) != 1 || client.restartCalls[0] != "term-1" {
+		t.Fatalf("expected restart for term-1, got %#v", client.restartCalls)
+	}
+	if len(client.attachCalls) != 1 || client.attachCalls[0].terminalID != "term-1" {
+		t.Fatalf("expected restart flow to reattach term-1, got %#v", client.attachCalls)
+	}
+	if terminal.State != "running" {
+		t.Fatalf("expected terminal state refreshed to running, got %#v", terminal)
+	}
+	if binding := model.runtime.Binding("pane-1"); binding == nil || binding.Channel != 9 || !binding.Connected {
+		t.Fatalf("expected pane binding updated to restarted channel, got %#v", binding)
 	}
 }
 
@@ -2906,8 +3021,8 @@ func TestFeatureSessionTerminalInputDoesNotAcquireLeaseImplicitly(t *testing.T) 
 	if len(client.inputCalls) != 1 || client.inputCalls[0].channel != 2 || string(client.inputCalls[0].data) != "a" {
 		t.Fatalf("expected terminal input forwarded without ownership change, got %#v", client.inputCalls)
 	}
-	if terminal.OwnerPaneID != "" {
-		t.Fatalf("expected terminal input to keep local view follower-only, got owner=%q", terminal.OwnerPaneID)
+	if terminal.OwnerPaneID != "pane-remote" {
+		t.Fatalf("expected terminal input to preserve global owner, got owner=%q", terminal.OwnerPaneID)
 	}
 }
 
@@ -3048,8 +3163,8 @@ func TestFeatureSessionTerminalInputKeepsFollowerStateWhenSizeMatches(t *testing
 	if len(client.inputCalls) != 1 || client.inputCalls[0].channel != 2 || string(client.inputCalls[0].data) != "a" {
 		t.Fatalf("expected terminal input forwarded without resize, got %#v", client.inputCalls)
 	}
-	if terminal.OwnerPaneID != "" {
-		t.Fatalf("expected matching-size input to keep local view follower-only, got owner=%q", terminal.OwnerPaneID)
+	if terminal.OwnerPaneID != "pane-remote" {
+		t.Fatalf("expected matching-size input to preserve global owner, got owner=%q", terminal.OwnerPaneID)
 	}
 }
 
@@ -3120,7 +3235,7 @@ func TestFeatureSessionTerminalInputReclaimsSamePaneLeaseAndResizesActivePane(t 
 	}
 }
 
-func TestFeatureSessionTerminalInputReclaimsSamePaneLeaseWithoutResizeWhenSizeMatches(t *testing.T) {
+func TestFeatureSessionTerminalInputReclaimsSamePaneLeaseForcesResizeWhenSizeMatchesLocally(t *testing.T) {
 	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
 	root := &workbench.LayoutNode{
 		Direction: workbench.SplitVertical,
@@ -3194,14 +3309,38 @@ func TestFeatureSessionTerminalInputReclaimsSamePaneLeaseWithoutResizeWhenSizeMa
 	if len(client.acquireLeaseCalls) != 1 {
 		t.Fatalf("expected one implicit lease acquire for the same pane, got %#v", client.acquireLeaseCalls)
 	}
-	if len(client.resizes) != 0 {
-		t.Fatalf("expected matching size to avoid resize after same-pane lease reclaim, got %#v", client.resizes)
+	if len(client.resizes) != 1 || client.resizes[0].channel != 2 {
+		t.Fatalf("expected same-pane lease reclaim to force resize despite matching local size, got %#v", client.resizes)
 	}
 	if len(client.inputCalls) != 1 || client.inputCalls[0].channel != 2 || string(client.inputCalls[0].data) != "a" {
 		t.Fatalf("expected terminal input forwarded without resize, got %#v", client.inputCalls)
 	}
 	if terminal.OwnerPaneID != "pane-2" {
 		t.Fatalf("expected pane-2 restored as local owner after same-pane lease reclaim, got %q", terminal.OwnerPaneID)
+	}
+}
+
+func TestFeatureTerminalResizeEventReloadsSnapshot(t *testing.T) {
+	client := &recordingBridgeClient{
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-1": {TerminalID: "term-1", Size: protocol.Size{Cols: 88, Rows: 26}},
+		},
+	}
+	model := setupModel(t, modelOpts{client: client})
+
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.State = "running"
+	terminal.Channel = 1
+	terminal.Snapshot = &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 118, Rows: 36}}
+
+	_, cmd := model.Update(terminalEventMsg{Event: protocol.Event{
+		Type:       protocol.EventTerminalResized,
+		TerminalID: "term-1",
+	}})
+	drainCmd(t, model, cmd, 10)
+
+	if terminal.Snapshot == nil || terminal.Snapshot.Size.Cols != 88 || terminal.Snapshot.Size.Rows != 26 {
+		t.Fatalf("expected terminal snapshot reloaded from resize event, got %#v", terminal.Snapshot)
 	}
 }
 

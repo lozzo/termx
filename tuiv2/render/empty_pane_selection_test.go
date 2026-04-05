@@ -3,6 +3,7 @@ package render
 import (
 	"testing"
 
+	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -34,5 +35,38 @@ func TestCoordinatorRenderFrameUpdatesEmptyPaneSelection(t *testing.T) {
 
 	if first == second {
 		t.Fatal("expected frame to change when empty-pane selection changes")
+	}
+}
+
+func TestCoordinatorRenderFrameUpdatesExitedPaneSelection(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").State = "exited"
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 100, 18), 100, 20)
+	state = WithExitedPaneSelection(state, "pane-1", 0)
+
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+	first := coordinator.RenderFrame()
+
+	state = WithExitedPaneSelection(state, "pane-1", 1)
+	coordinator.Invalidate()
+	second := coordinator.RenderFrame()
+
+	if first == second {
+		t.Fatal("expected frame to change when exited-pane selection changes")
 	}
 }

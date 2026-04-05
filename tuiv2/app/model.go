@@ -57,6 +57,8 @@ type Model struct {
 
 	pendingTerminalInputs []input.TerminalInput
 	terminalInputSending  bool
+	pendingPaneAttaches   map[string]string
+	pendingPaneResizes    map[string]pendingPaneResize
 	invalidatePending     atomic.Bool
 	invalidateDeferred    atomic.Bool
 
@@ -67,11 +69,15 @@ type Model struct {
 	mouseDragMode    mouseDragMode
 	mouseDragSplit   *workbench.LayoutNode
 	mouseDragBounds  workbench.Rect
+	mouseDragDirty   bool
 
 	ownerConfirmPaneID string
 
 	emptyPaneSelectionPaneID string
 	emptyPaneSelectionIndex  int
+
+	exitedPaneSelectionPaneID string
+	exitedPaneSelectionIndex  int
 }
 
 type mouseDragMode int
@@ -92,12 +98,14 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 	}
 	host := modal.NewHost()
 	model := &Model{
-		cfg:       cfg,
-		statePath: cfg.WorkspaceStatePath,
-		input:     input.NewRouter(),
-		modalHost: host,
-		workbench: wb,
-		runtime:   rt,
+		cfg:                 cfg,
+		statePath:           cfg.WorkspaceStatePath,
+		input:               input.NewRouter(),
+		modalHost:           host,
+		workbench:           wb,
+		runtime:             rt,
+		pendingPaneAttaches: make(map[string]string),
+		pendingPaneResizes:  make(map[string]pendingPaneResize),
 	}
 	model.orchestrator = orchestrator.New(model.workbench, model.runtime)
 	model.render = render.NewCoordinator(func() render.VisibleRenderState { return model.visibleRenderState() })

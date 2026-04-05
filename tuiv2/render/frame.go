@@ -210,6 +210,7 @@ type statusHintContext struct {
 	workspaceCount   int
 	hasFloating      bool
 	activeIsFloating bool
+	state            *VisibleRenderState
 }
 
 func currentStatusTexts(state VisibleRenderState) []string {
@@ -237,7 +238,7 @@ func currentStatusTexts(state VisibleRenderState) []string {
 }
 
 func buildStatusHintContext(state VisibleRenderState) statusHintContext {
-	ctx := statusHintContext{}
+	ctx := statusHintContext{state: &state}
 	if state.Workbench == nil {
 		return ctx
 	}
@@ -279,10 +280,14 @@ func statusDocVisible(doc input.BindingDoc, mode input.ModeKind, ctx statusHintC
 		switch doc.Binding.Action {
 		case input.ActionDetachPane, input.ActionClosePaneKill:
 			return ctx.activePaneConnected()
+		case input.ActionRestartTerminal:
+			return ctx.activePaneExited()
 		case input.ActionBecomeOwner:
 			return ctx.canBecomeOwner()
+		case input.ActionReconnectPane:
+			return ctx.activePane != nil && !ctx.activePaneExited()
 		case input.ActionFocusPaneLeft, input.ActionFocusPaneRight, input.ActionFocusPaneUp, input.ActionFocusPaneDown,
-			input.ActionSplitPane, input.ActionSplitPaneHorizontal, input.ActionReconnectPane,
+			input.ActionSplitPane, input.ActionSplitPaneHorizontal,
 			input.ActionClosePane, input.ActionZoomPane:
 			return ctx.activePane != nil
 		}
@@ -341,6 +346,15 @@ func statusDocVisible(doc input.BindingDoc, mode input.ModeKind, ctx statusHintC
 
 func (c statusHintContext) activePaneConnected() bool {
 	return c.activePane != nil && strings.TrimSpace(c.activePane.TerminalID) != ""
+}
+
+func (c statusHintContext) activePaneExited() bool {
+	if !c.activePaneConnected() || c.state == nil {
+		return false
+	}
+	lookup := newRuntimeLookup(c.state.Runtime)
+	terminal := lookup.terminal(c.activePane.TerminalID)
+	return terminal != nil && terminal.State == "exited"
 }
 
 func (c statusHintContext) canBecomeOwner() bool {

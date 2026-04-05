@@ -69,5 +69,5 @@ func (m *Model) switchWorkspaceByOffsetMouse(offset int) tea.Cmd {
 		return m.showError(err)
 	}
 	m.render.Invalidate()
-	return m.saveStateCmd()
+	return batchCmds(m.resizeVisiblePanesCmd(), m.resizePendingPaneResizesCmd(), m.saveStateCmd())
 }

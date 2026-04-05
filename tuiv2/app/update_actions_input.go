@@ -29,6 +29,10 @@ func (m *Model) handleTerminalInput(in input.TerminalInput) tea.Cmd {
 	if len(in.Data) == 0 {
 		return nil
 	}
+	if m.isPaneAttachPending(in.PaneID) {
+		m.pendingTerminalInputs = append(m.pendingTerminalInputs, in)
+		return nil
+	}
 	if m.workbench != nil {
 		if pane := m.workbench.ActivePane(); pane != nil && pane.TerminalID == "" {
 			return m.openPickerIfUnattached(pane.ID)
@@ -68,6 +72,10 @@ func (m *Model) dequeueTerminalInputCmd() tea.Cmd {
 		return nil
 	}
 	next := m.pendingTerminalInputs[0]
+	if m.isPaneAttachPending(next.PaneID) {
+		m.terminalInputSending = false
+		return nil
+	}
 	m.pendingTerminalInputs = m.pendingTerminalInputs[1:]
 	m.terminalInputSending = true
 	return func() tea.Msg {
@@ -181,3 +189,35 @@ func sharedInputLeaseUnsupportedError() error {
 type teaErr string
 
 func (e teaErr) Error() string { return string(e) }
+
+func (m *Model) markPendingPaneAttach(paneID, terminalID string) {
+	if m == nil || paneID == "" {
+		return
+	}
+	if m.pendingPaneAttaches == nil {
+		m.pendingPaneAttaches = make(map[string]string)
+	}
+	m.pendingPaneAttaches[paneID] = terminalID
+}
+
+func (m *Model) clearPendingPaneAttach(paneID, terminalID string) {
+	if m == nil || len(m.pendingPaneAttaches) == 0 || paneID == "" {
+		return
+	}
+	current, ok := m.pendingPaneAttaches[paneID]
+	if !ok {
+		return
+	}
+	if terminalID != "" && current != "" && current != terminalID {
+		return
+	}
+	delete(m.pendingPaneAttaches, paneID)
+}
+
+func (m *Model) isPaneAttachPending(paneID string) bool {
+	if m == nil || paneID == "" || len(m.pendingPaneAttaches) == 0 {
+		return false
+	}
+	_, ok := m.pendingPaneAttaches[paneID]
+	return ok
+}

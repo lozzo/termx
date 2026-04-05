@@ -126,6 +126,13 @@ func (m *Model) handleMouseClickNonFloating(x, y int) tea.Cmd {
 				m.render.Invalidate()
 				return cmd
 			}
+			if cmd := m.handleExitedPaneClick(pane, x, contentY); cmd != nil {
+				if pane.ID != tab.ActivePaneID {
+					_ = m.workbench.FocusPane(tab.ID, pane.ID)
+				}
+				m.render.Invalidate()
+				return cmd
+			}
 		}
 	}
 
@@ -135,6 +142,7 @@ func (m *Model) handleMouseClickNonFloating(x, y int) tea.Cmd {
 			m.mouseDragMode = mouseDragResizeSplit
 			m.mouseDragSplit = hit.Node
 			m.mouseDragBounds = hit.Root
+			m.mouseDragDirty = false
 			m.mouseDragOffsetX = x - hit.Rect.X
 			m.mouseDragOffsetY = contentY - hit.Rect.Y
 			return nil
@@ -204,6 +212,14 @@ func (m *Model) handleMouseClick(msg tea.MouseMsg) tea.Cmd {
 					return m.handlePaneChromeRegion(region)
 				}
 				if cmd := m.handleEmptyPaneClick(pane, x, contentY); cmd != nil {
+					if tab.ActivePaneID != paneID {
+						_ = m.workbench.FocusPane(tab.ID, paneID)
+					}
+					m.workbench.ReorderFloatingPane(tab.ID, paneID, true)
+					m.render.Invalidate()
+					return cmd
+				}
+				if cmd := m.handleExitedPaneClick(pane, x, contentY); cmd != nil {
 					if tab.ActivePaneID != paneID {
 						_ = m.workbench.FocusPane(tab.ID, paneID)
 					}
@@ -287,6 +303,7 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 		if !m.workbench.ResizeSplit(tab.ID, m.mouseDragSplit, m.mouseDragBounds, x, contentY, m.mouseDragOffsetX, m.mouseDragOffsetY) {
 			return nil
 		}
+		m.mouseDragDirty = true
 		m.render.Invalidate()
 		return m.resizeVisiblePanesCmd()
 	}
@@ -295,13 +312,18 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 }
 
 func (m *Model) handleMouseRelease() tea.Cmd {
+	cmd := tea.Cmd(nil)
+	if m.mouseDragMode == mouseDragResizeSplit && m.mouseDragDirty {
+		cmd = m.saveStateCmd()
+	}
 	m.mouseDragPaneID = ""
 	m.mouseDragOffsetX = 0
 	m.mouseDragOffsetY = 0
 	m.mouseDragMode = mouseDragNone
 	m.mouseDragSplit = nil
 	m.mouseDragBounds = workbench.Rect{}
-	return nil
+	m.mouseDragDirty = false
+	return cmd
 }
 
 func (m *Model) findFloatingPaneAt(tab *workbench.TabState, x, y int) (string, workbench.Rect, bool) {
@@ -615,7 +637,7 @@ func (m *Model) switchTabByIndexMouse(index int) tea.Cmd {
 		return m.showError(err)
 	}
 	m.render.Invalidate()
-	return batchCmds(m.syncActivePaneInteractiveOwnershipCmd(), m.saveStateCmd())
+	return batchCmds(m.resizeVisiblePanesCmd(), m.resizePendingPaneResizesCmd(), m.syncActivePaneInteractiveOwnershipCmd(), m.saveStateCmd())
 }
 
 func (m *Model) switchCurrentTabByOffsetMouse(offset int) tea.Cmd {
@@ -623,7 +645,7 @@ func (m *Model) switchCurrentTabByOffsetMouse(offset int) tea.Cmd {
 		return m.showError(err)
 	}
 	m.render.Invalidate()
-	return batchCmds(m.syncActivePaneInteractiveOwnershipCmd(), m.saveStateCmd())
+	return batchCmds(m.resizeVisiblePanesCmd(), m.resizePendingPaneResizesCmd(), m.syncActivePaneInteractiveOwnershipCmd(), m.saveStateCmd())
 }
 
 func (m *Model) handleEmptyPaneClick(pane workbench.VisiblePane, x, contentY int) tea.Cmd {
@@ -641,6 +663,28 @@ func (m *Model) handleEmptyPaneClick(pane workbench.VisiblePane, x, contentY int
 		return m.openTerminalManagerMouse()
 	case render.HitRegionEmptyPaneClose:
 		return m.applyMouseSemanticAction(input.SemanticAction{Kind: input.ActionClosePane, PaneID: pane.ID})
+	default:
+		return nil
+	}
+}
+
+func (m *Model) handleExitedPaneClick(pane workbench.VisiblePane, x, contentY int) tea.Cmd {
+	if m == nil || m.runtime == nil {
+		return nil
+	}
+	state := m.visibleRenderState()
+	region, ok := render.HitRegionAt(render.ExitedPaneRecoveryRegions(pane, state.Runtime), x, contentY)
+	if !ok {
+		return nil
+	}
+	switch region.Kind {
+	case render.HitRegionExitedPaneRestart:
+		if pane.TerminalID == "" {
+			return nil
+		}
+		return m.restartPaneTerminalCmd(pane.ID, pane.TerminalID)
+	case render.HitRegionExitedPaneChoose:
+		return tea.Batch(m.openPickerForPaneCmd(pane.ID), m.saveStateCmd())
 	default:
 		return nil
 	}

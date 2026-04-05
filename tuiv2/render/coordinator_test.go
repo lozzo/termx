@@ -506,7 +506,7 @@ func TestRenderBodyShowsExitedPaneMetaAndPreservesSnapshot(t *testing.T) {
 	}}}
 
 	body := xansi.Strip(renderBody(state, 72, 12))
-	for _, want := range []string{paneExitedIcon() + "42", "last output"} {
+	for _, want := range []string{paneExitedIcon() + "42", "last output", "R restart current terminal", "Ctrl-F choose another terminal"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected exited pane rendering to contain %q:\n%s", want, body)
 		}

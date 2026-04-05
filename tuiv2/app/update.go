@@ -36,6 +36,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if cmd, ok := m.handleUIStateMessage(msg); ok {
 		return m, cmd
 	}
+	if cmd, ok := m.handleTerminalEventMessage(msg); ok {
+		return m, cmd
+	}
 	if cmd, ok := m.handleSessionMessage(msg); ok {
 		return m, cmd
 	}
@@ -78,6 +81,26 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 	}
 }
 
+func (m *Model) handleTerminalEventMessage(msg tea.Msg) (tea.Cmd, bool) {
+	switch typed := msg.(type) {
+	case terminalEventMsg:
+		switch typed.Event.Type {
+		case protocol.EventTerminalResized:
+			if m == nil || m.runtime == nil || typed.Event.TerminalID == "" {
+				return nil, true
+			}
+			if m.runtime.Registry().Get(typed.Event.TerminalID) == nil {
+				return nil, true
+			}
+			return m.reloadTerminalSnapshotCmd(typed.Event.TerminalID), true
+		default:
+			return nil, true
+		}
+	default:
+		return nil, false
+	}
+}
+
 func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 	switch typed := msg.(type) {
 	case pickerItemsLoadedMsg:
@@ -110,12 +133,16 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		m.applyEffectSideState(typed.Effect)
 		return nil, true
 	case orchestrator.TerminalAttachedMsg:
+		m.clearPendingPaneAttach(typed.PaneID, typed.TerminalID)
+		m.resetPaneScrollOffset(typed.TabID, typed.PaneID)
 		if m.modalHost != nil && m.modalHost.Session != nil && m.modalHost.Session.Kind == input.ModePicker {
 			m.modalHost.Close(input.ModePicker, m.modalHost.Session.RequestID)
 			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
 		}
 		m.render.Invalidate()
-		return m.saveStateCmd(), true
+		return batchCmds(m.saveStateCmd(), m.finalizeTerminalAttachCmd(typed.TabID, typed.PaneID, typed.TerminalID)), true
+	case terminalAttachReadyMsg:
+		return m.dequeueTerminalInputCmd(), true
 	case orchestrator.SnapshotLoadedMsg:
 		m.render.Invalidate()
 		return m.maybeAutoFitFloatingPanesCmd(), true
@@ -156,7 +183,7 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 func (m *Model) handleSessionMessage(msg tea.Msg) (tea.Cmd, bool) {
 	switch typed := msg.(type) {
 	case sessionSnapshotMsg:
-		if typed.Snapshot != nil && typed.Snapshot.Session.Revision != m.sessionRevision {
+		if shouldApplySessionSnapshot(typed.Snapshot) {
 			m.applySessionSnapshot(typed.Snapshot)
 		}
 		if typed.Err != nil {
@@ -177,7 +204,7 @@ func (m *Model) handleSessionMessage(msg tea.Msg) (tea.Cmd, bool) {
 					revision = typed.Event.Session.Revision
 					viewID = typed.Event.Session.ViewID
 				}
-				if revision > m.sessionRevision && viewID != m.sessionViewID {
+				if viewID != m.sessionViewID && revision >= m.sessionRevision {
 					return m.pullSessionCmd(), true
 				}
 			}
@@ -223,7 +250,7 @@ func (m *Model) handleLifecycleMessage(msg tea.Msg) (tea.Cmd, bool) {
 		m.width = typed.Width
 		m.height = typed.Height
 		m.render.Invalidate()
-		return batchCmds(m.resizeVisiblePanesCmd(), m.maybeAutoFitFloatingPanesCmd(), m.updateSessionViewCmd()), true
+		return batchCmds(m.resizeVisiblePanesCmd(), m.resizePendingPaneResizesCmd(), m.maybeAutoFitFloatingPanesCmd(), m.updateSessionViewCmd()), true
 	case error:
 		return m.showError(typed), true
 	default:
@@ -231,21 +258,28 @@ func (m *Model) handleLifecycleMessage(msg tea.Msg) (tea.Cmd, bool) {
 	}
 }
 
+func shouldApplySessionSnapshot(snapshot *protocol.SessionSnapshot) bool {
+	if snapshot == nil {
+		return false
+	}
+	return snapshot.Session.ID != "" || snapshot.Workbench != nil || snapshot.View != nil || len(snapshot.Leases) > 0
+}
+
 func (m *Model) dispatchSemanticActionCmd(action input.SemanticAction, allowLocal bool) tea.Cmd {
 	if allowLocal {
 		if handled, cmd := m.handleLocalAction(action); handled {
-			return batchCmds(cmd, m.updateSessionViewCmd())
+			return batchCmds(cmd, m.resizePendingPaneResizesCmd(), m.updateSessionViewCmd())
 		}
 	}
 	if handled, cmd := m.handleModalAction(action); handled {
-		return batchCmds(cmd, m.updateSessionViewCmd())
+		return batchCmds(cmd, m.resizePendingPaneResizesCmd(), m.updateSessionViewCmd())
 	}
 	cmd := m.applyEffects(m.enrichEffects(action, m.orchestrator.HandleSemanticAction(action)))
-	cmd = batchCmds(cmd, m.resizeCmdForAction(action))
+	cmd = batchCmds(cmd, m.resizeCmdForAction(action), m.saveCmdForAction(action))
 	if m.isStickyMode() {
 		cmd = tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
 	}
-	return batchCmds(cmd, m.updateSessionViewCmd())
+	return batchCmds(cmd, m.resizePendingPaneResizesCmd(), m.updateSessionViewCmd())
 }
 
 func (m *Model) showError(err error) tea.Cmd {
@@ -264,6 +298,12 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 	}
 	if handled, cmd := m.handleEmptyPaneKeyMsg(msg); handled {
 		return cmd
+	}
+	if handled, cmd := m.handleExitedPaneKeyMsg(msg); handled {
+		return cmd
+	}
+	if action, ok := m.restartActionForKeyMsg(msg); ok {
+		return func() tea.Msg { return action }
 	}
 	result := m.input.RouteKeyMsg(msg)
 	if result.Action != nil {
@@ -293,4 +333,25 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		return m.handleTerminalInput(inputMsg)
 	}
 	return nil
+}
+
+func (m *Model) restartActionForKeyMsg(msg tea.KeyMsg) (input.SemanticAction, bool) {
+	if m == nil || m.input == nil || m.input.Mode().Kind != input.ModeNormal {
+		return input.SemanticAction{}, false
+	}
+	if msg.Type != tea.KeyRunes || len(msg.Runes) != 1 || msg.Runes[0] != 'R' {
+		return input.SemanticAction{}, false
+	}
+	if m.workbench == nil || m.runtime == nil {
+		return input.SemanticAction{}, false
+	}
+	pane := m.workbench.ActivePane()
+	if pane == nil || pane.ID == "" || pane.TerminalID == "" {
+		return input.SemanticAction{}, false
+	}
+	terminal := m.runtime.Registry().Get(pane.TerminalID)
+	if terminal == nil || terminal.State != "exited" {
+		return input.SemanticAction{}, false
+	}
+	return input.SemanticAction{Kind: input.ActionRestartTerminal, PaneID: pane.ID}, true
 }

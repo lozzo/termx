@@ -23,6 +23,8 @@ const (
 	HitRegionEmptyPaneCreate    HitRegionKind = "empty-pane-create"
 	HitRegionEmptyPaneManager   HitRegionKind = "empty-pane-manager"
 	HitRegionEmptyPaneClose     HitRegionKind = "empty-pane-close"
+	HitRegionExitedPaneRestart  HitRegionKind = "exited-pane-restart"
+	HitRegionExitedPaneChoose   HitRegionKind = "exited-pane-choose"
 	HitRegionPaneClose          HitRegionKind = "pane-close"
 	HitRegionPaneZoom           HitRegionKind = "pane-zoom"
 	HitRegionPaneSplitV         HitRegionKind = "pane-split-vertical"

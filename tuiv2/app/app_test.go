@@ -424,6 +424,41 @@ func TestModelUpdateEmptyPaneKeyboardNavigationDownEnterOpensCreatePrompt(t *tes
 	}
 }
 
+func TestModelUpdateExitedPaneKeyboardNavigationDownEnterOpensPicker(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	terminal := model.runtime.Registry().Get("term-1")
+	if terminal == nil {
+		t.Fatal("expected term-1 runtime")
+	}
+	terminal.State = "exited"
+
+	dispatchKey(t, model, tea.KeyMsg{Type: tea.KeyDown})
+	if got := model.exitedPaneSelectionIndex; got != 1 {
+		t.Fatalf("expected exited-pane selection 1 after down, got %d", got)
+	}
+
+	dispatchKey(t, model, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModePicker {
+		t.Fatalf("expected picker after exited-pane down+enter, got %#v", model.modalHost.Session)
+	}
+}
+
+func TestTerminalAttachedResetsTabScrollOffset(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	tab.ScrollOffset = 3
+
+	_, _ = model.Update(orchestrator.TerminalAttachedMsg{PaneID: "pane-1", TerminalID: "term-1", Channel: 7})
+
+	if got := tab.ScrollOffset; got != 0 {
+		t.Fatalf("expected attach to reset scroll offset, got %d", got)
+	}
+}
+
 func TestModelUpdateSemanticActionMsgUsesSameLocalActionPath(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
 
@@ -524,6 +559,45 @@ func TestModelTerminalAttachedBindsPaneAndClosesPicker(t *testing.T) {
 	}
 	if model.input.Mode().Kind != input.ModeNormal {
 		t.Fatalf("expected input mode normal after attach, got %q", model.input.Mode().Kind)
+	}
+}
+
+func TestModelTerminalAttachedResizesLocalPaneBeforeReady(t *testing.T) {
+	client := &recordingBridgeClient{}
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	rt := runtime.New(client)
+	binding := rt.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.State = "running"
+	terminal.Channel = 7
+	terminal.BoundPaneIDs = []string{"pane-1"}
+	terminal.OwnerPaneID = "pane-1"
+	terminal.Snapshot = &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}}
+
+	model := New(shared.Config{}, wb, rt)
+	model.width = 100
+	model.height = 30
+
+	_, cmd := model.Update(orchestrator.TerminalAttachedMsg{PaneID: "pane-1", TerminalID: "term-1", Channel: 7})
+	drainCmd(t, model, cmd, 20)
+
+	if len(client.resizes) != 1 || client.resizes[0].channel != 7 {
+		t.Fatalf("expected local attach to resize pane once, got %#v", client.resizes)
 	}
 }
 
@@ -646,6 +720,38 @@ func TestHandleKeyMsgUsesApplicationCursorEncoding(t *testing.T) {
 	}
 	if string(client.inputCalls[0].data) != "\x1bOA" {
 		t.Fatalf("expected application cursor up sequence, got %q", string(client.inputCalls[0].data))
+	}
+}
+
+func TestHandleKeyMsgInterceptsNormalModeRestartForExitedPane(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	model := New(shared.Config{}, wb, runtime.New(nil))
+	model.runtime.Registry().GetOrCreate("term-1").State = "exited"
+
+	cmd := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+	if cmd == nil {
+		t.Fatal("expected restart action command for exited pane")
+	}
+	msg := cmd()
+	action, ok := msg.(input.SemanticAction)
+	if !ok {
+		t.Fatalf("expected restart semantic action, got %#v", msg)
+	}
+	if action.Kind != input.ActionRestartTerminal || action.PaneID != "pane-1" {
+		t.Fatalf("unexpected restart action: %#v", action)
 	}
 }
 
@@ -810,6 +916,72 @@ func TestQueueInvalidateDoesNotBlockOnSend(t *testing.T) {
 	}
 
 	close(release)
+}
+
+func TestPendingAttachBuffersTerminalInputUntilAttachCompletes(t *testing.T) {
+	client := &recordingBridgeClient{}
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	rt := runtime.New(client)
+	model := New(shared.Config{}, wb, rt)
+	model.width = 120
+	model.height = 40
+	model.markPendingPaneAttach("pane-1", "")
+
+	for _, ch := range []rune{'A', 'B', 'C', 'D'} {
+		cmd := model.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		if cmd != nil {
+			t.Fatalf("expected input %q to stay buffered while attach is pending, got cmd %#v", string(ch), cmd)
+		}
+	}
+	if got := len(model.pendingTerminalInputs); got != 4 {
+		t.Fatalf("expected four buffered inputs, got %d", got)
+	}
+	if model.modalHost.Session != nil {
+		t.Fatalf("expected pending attach input not to reopen picker, got %#v", model.modalHost.Session)
+	}
+
+	pane := model.workbench.ActivePane()
+	if pane == nil {
+		t.Fatal("expected active pane")
+	}
+	pane.TerminalID = "term-1"
+	binding := rt.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+	rt.Registry().GetOrCreate("term-1").State = "running"
+
+	_, cmd := model.Update(orchestrator.TerminalAttachedMsg{PaneID: "pane-1", TerminalID: "term-1", Channel: 7})
+	drainCmd(t, model, cmd, 20)
+
+	if len(client.resizes) != 1 || client.resizes[0].channel != 7 {
+		t.Fatalf("expected attach completion to resize pane before flushing input, got %#v", client.resizes)
+	}
+	if len(client.inputCalls) != 4 {
+		t.Fatalf("expected four flushed input calls after attach, got %#v", client.inputCalls)
+	}
+	var got strings.Builder
+	for _, call := range client.inputCalls {
+		got.Write(call.data)
+	}
+	if got.String() != "ABCD" {
+		t.Fatalf("expected buffered input order preserved, got %q", got.String())
+	}
+	if model.isPaneAttachPending("pane-1") {
+		t.Fatal("expected pending attach marker cleared after attach")
+	}
 }
 
 func TestModelViewShowsPickerItems(t *testing.T) {
@@ -1907,6 +2079,95 @@ func TestModelInitAttachIDBootstrapsAndAttachesTerminal(t *testing.T) {
 	}
 }
 
+func TestModelInitAttachIDDefersResizeUntilFirstWindowSize(t *testing.T) {
+	client := &recordingBridgeClient{
+		attachResult: &protocol.AttachResult{Channel: 9, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-attach": {
+				TerminalID: "term-attach",
+				Size:       protocol.Size{Cols: 80, Rows: 24},
+			},
+		},
+	}
+	model := New(shared.Config{AttachID: "term-attach"}, workbench.NewWorkbench(), runtime.New(client))
+
+	drainCmd(t, model, model.Init(), 20)
+
+	if got := len(client.resizes); got != 0 {
+		t.Fatalf("expected no resize before first window size, got %#v", client.resizes)
+	}
+
+	_, cmd := model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	drainCmd(t, model, cmd, 20)
+
+	if got := len(client.resizes); got != 1 {
+		t.Fatalf("expected exactly one resize after window size, got %#v", client.resizes)
+	}
+	if resize := client.resizes[0]; resize.cols != 118 || resize.rows != 36 {
+		t.Fatalf("expected resize to full pane 118x36, got %#v", resize)
+	}
+
+	_, cmd = model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	drainCmd(t, model, cmd, 20)
+
+	if got := len(client.resizes); got != 1 {
+		t.Fatalf("expected duplicate window size to avoid extra resize, got %#v", client.resizes)
+	}
+}
+
+func TestModelAttachResizesPaneInHiddenTab(t *testing.T) {
+	client := &recordingBridgeClient{
+		attachResult: &protocol.AttachResult{Channel: 7, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-hidden": {
+				TerminalID: "term-hidden",
+				Size:       protocol.Size{Cols: 80, Rows: 24},
+			},
+		},
+	}
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{
+			{
+				ID:           "tab-1",
+				Name:         "1",
+				ActivePaneID: "pane-1",
+				Panes: map[string]*workbench.PaneState{
+					"pane-1": {ID: "pane-1"},
+				},
+				Root: workbench.NewLeaf("pane-1"),
+			},
+			{
+				ID:           "tab-2",
+				Name:         "2",
+				ActivePaneID: "pane-2",
+				Panes: map[string]*workbench.PaneState{
+					"pane-2": {ID: "pane-2"},
+				},
+				Root: workbench.NewLeaf("pane-2"),
+			},
+		},
+	})
+	model := New(shared.Config{}, wb, runtime.New(client))
+	model.width = 120
+	model.height = 40
+
+	drainCmd(t, model, model.attachPaneTerminalCmd("tab-2", "pane-2", "term-hidden"), 20)
+
+	tab := wb.CurrentWorkspace().Tabs[1]
+	if pane := tab.Panes["pane-2"]; pane == nil || pane.TerminalID != "term-hidden" {
+		t.Fatalf("expected hidden-tab pane bound to term-hidden, got %#v", pane)
+	}
+	if got := len(client.resizes); got != 1 {
+		t.Fatalf("expected one resize for hidden tab attach, got %#v", client.resizes)
+	}
+	if resize := client.resizes[0]; resize.cols != 118 || resize.rows != 36 {
+		t.Fatalf("expected hidden tab resize to 118x36, got %#v", resize)
+	}
+}
+
 func TestModelBootstrapHelperUsesStartup(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
 	result, err := bootstrap.Startup(bootstrap.Config{}, model.workbench, model.runtime)
@@ -1935,6 +2196,7 @@ type recordingBridgeClient struct {
 	setTagsCalls       []setTagsCall
 	setMetadataCalls   []setMetadataCall
 	killCalls          []string
+	restartCalls       []string
 	sessionSnapshot    *protocol.SessionSnapshot
 	sessionView        *protocol.ViewInfo
 	getSessionErr      error
@@ -2060,6 +2322,11 @@ func (c *recordingBridgeClient) Stream(uint16) (<-chan protocol.StreamFrame, fun
 
 func (c *recordingBridgeClient) Kill(_ context.Context, terminalID string) error {
 	c.killCalls = append(c.killCalls, terminalID)
+	return nil
+}
+
+func (c *recordingBridgeClient) Restart(_ context.Context, terminalID string) error {
+	c.restartCalls = append(c.restartCalls, terminalID)
 	return nil
 }
 

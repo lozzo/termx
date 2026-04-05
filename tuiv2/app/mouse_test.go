@@ -269,6 +269,55 @@ func TestMouseDragSplitDividerResizesOwnerPaneWithoutActivatingIt(t *testing.T) 
 	}
 }
 
+func TestMouseDragSplitDividerPersistsSessionOnRelease(t *testing.T) {
+	m := setupTwoPaneModel(t)
+	m.sessionID = "main"
+	m.sessionRevision = 9
+	m.sessionViewID = "view-1"
+
+	client, ok := m.runtime.Client().(*recordingBridgeClient)
+	if !ok {
+		t.Fatal("expected recording bridge client")
+	}
+
+	model, _ := m.Update(tea.MouseMsg{
+		X:      59,
+		Y:      screenYForBodyY(m, 10),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	m = model.(*Model)
+
+	model, cmd := m.Update(tea.MouseMsg{
+		X:      49,
+		Y:      screenYForBodyY(m, 10),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionMotion,
+	})
+	m = model.(*Model)
+	drainCmd(t, m, cmd, 20)
+
+	if len(client.replaceCalls) != 0 {
+		t.Fatalf("expected no replace call during split drag motion, got %#v", client.replaceCalls)
+	}
+
+	model, cmd = m.Update(tea.MouseMsg{
+		X:      49,
+		Y:      screenYForBodyY(m, 10),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionRelease,
+	})
+	m = model.(*Model)
+	drainCmd(t, m, cmd, 20)
+
+	if len(client.replaceCalls) != 1 {
+		t.Fatalf("expected one replace call on split drag release, got %d", len(client.replaceCalls))
+	}
+	if got := client.replaceCalls[0]; got.SessionID != "main" || got.BaseRevision != 9 || got.ViewID != "view-1" {
+		t.Fatalf("unexpected replace params: %#v", got)
+	}
+}
+
 func TestMouseClickSelectsFloatingPane(t *testing.T) {
 	m := setupModel(t, modelOpts{})
 	tab := m.workbench.CurrentTab()

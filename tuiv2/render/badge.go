@@ -51,7 +51,7 @@ func paneMetaWithLookup(pane workbench.VisiblePane, lookup runtimeLookup, confir
 	case "killed":
 		parts = append(parts, paneKilledIcon())
 	}
-	switch role := lookup.paneRole(pane.ID); role {
+	switch role := paneDisplayRole(pane.ID, terminal, lookup); role {
 	case "owner":
 		parts = append(parts, "owner")
 	case "follower":
@@ -81,7 +81,7 @@ func paneBorderInfoWithLookup(pane workbench.VisiblePane, lookup runtimeLookup, 
 		StateLabel: paneBorderStateLabel(terminal.State, terminal.ExitCode),
 		StateTone:  paneBorderStateTone(terminal.State),
 	}
-	switch lookup.paneRole(pane.ID) {
+	switch paneDisplayRole(pane.ID, terminal, lookup) {
 	case "owner":
 		info.RoleLabel = "◆ owner"
 	case "follower":
@@ -95,6 +95,30 @@ func paneBorderInfoWithLookup(pane workbench.VisiblePane, lookup runtimeLookup, 
 		info.ShareLabel = fmt.Sprintf("⇄%d", len(terminal.BoundPaneIDs))
 	}
 	return info
+}
+
+func paneDisplayRole(paneID string, terminal *runtime.VisibleTerminal, lookup runtimeLookup) string {
+	if paneID == "" || terminal == nil {
+		return ""
+	}
+	if terminal.OwnerPaneID != "" {
+		if terminal.OwnerPaneID == paneID {
+			return "owner"
+		}
+		if containsPaneID(terminal.BoundPaneIDs, paneID) {
+			return "follower"
+		}
+	}
+	return lookup.paneRole(paneID)
+}
+
+func containsPaneID(ids []string, paneID string) bool {
+	for _, existing := range ids {
+		if existing == paneID {
+			return true
+		}
+	}
+	return false
 }
 
 func paneBorderStateLabel(state string, exitCode *int) string {

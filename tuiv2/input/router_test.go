@@ -65,6 +65,7 @@ func TestRouteKeyMsg_PaneMode_PlainKeysProduceFocusActions(t *testing.T) {
 		{msg: runeKey('z'), want: ActionZoomPane},
 		{msg: runeKey('d'), want: ActionDetachPane},
 		{msg: runeKey('r'), want: ActionReconnectPane},
+		{msg: runeKey('R'), want: ActionRestartTerminal},
 		{msg: runeKey('a'), want: ActionBecomeOwner},
 		{msg: runeKey('X'), want: ActionClosePaneKill},
 		{msg: runeKey('w'), want: ActionClosePane},

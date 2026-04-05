@@ -97,6 +97,7 @@ func (m *Model) attachPaneTerminalCmd(tabID, paneID, terminalID string) tea.Cmd 
 	if m == nil || m.orchestrator == nil || paneID == "" || terminalID == "" {
 		return nil
 	}
+	m.markPendingPaneAttach(paneID, terminalID)
 	return func() tea.Msg {
 		msgs, err := m.orchestrator.AttachAndLoadSnapshot(context.Background(), paneID, terminalID, "collaborator", 0, defaultTerminalSnapshotScrollbackLimit)
 		if err != nil {
@@ -114,6 +115,51 @@ func (m *Model) attachPaneTerminalCmd(tabID, paneID, terminalID string) tea.Cmd 
 			cmds = append(cmds, func() tea.Msg { return value })
 		}
 		return tea.Batch(cmds...)()
+	}
+}
+
+func (m *Model) restartPaneTerminalCmd(paneID, terminalID string) tea.Cmd {
+	if m == nil || m.runtime == nil || m.orchestrator == nil || paneID == "" || terminalID == "" {
+		return nil
+	}
+	m.markPendingPaneAttach(paneID, terminalID)
+	return func() tea.Msg {
+		client := m.runtime.Client()
+		if client == nil {
+			return teaErr("attach terminal: runtime client is nil")
+		}
+		if err := client.Restart(context.Background(), terminalID); err != nil {
+			return err
+		}
+		msgs, err := m.orchestrator.AttachAndLoadSnapshot(context.Background(), paneID, terminalID, "collaborator", 0, defaultTerminalSnapshotScrollbackLimit)
+		if err != nil {
+			return err
+		}
+		cmds := make([]tea.Cmd, 0, len(msgs))
+		for _, msg := range msgs {
+			value := msg
+			cmds = append(cmds, func() tea.Msg { return value })
+		}
+		return tea.Batch(cmds...)()
+	}
+}
+
+func (m *Model) finalizeTerminalAttachCmd(tabID, paneID, terminalID string) tea.Cmd {
+	if m == nil || paneID == "" || terminalID == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		if m.sessionID == "" {
+			if pane, rect, ok := m.paneResizeTarget(tabID, paneID); ok && pane != nil && pane.TerminalID == terminalID {
+				if err := m.ensurePaneTerminalSize(context.Background(), paneID, terminalID, rect); err != nil {
+					return err
+				}
+				m.clearPendingPaneResize(paneID, terminalID)
+			} else {
+				m.markPendingPaneResize(tabID, paneID, terminalID)
+			}
+		}
+		return terminalAttachReadyMsg{paneID: paneID, terminalID: terminalID}
 	}
 }
 
@@ -228,6 +274,26 @@ func (m *Model) resizeCmdForAction(action input.SemanticAction) tea.Cmd {
 		input.ActionResizeFloatingUp,
 		input.ActionResizeFloatingDown:
 		return m.resizePaneIfNeededCmd(action.PaneID)
+	default:
+		return nil
+	}
+}
+
+func (m *Model) saveCmdForAction(action input.SemanticAction) tea.Cmd {
+	switch action.Kind {
+	case input.ActionSplitPane,
+		input.ActionSplitPaneHorizontal,
+		input.ActionResizePaneLeft,
+		input.ActionResizePaneRight,
+		input.ActionResizePaneUp,
+		input.ActionResizePaneDown,
+		input.ActionResizePaneLargeLeft,
+		input.ActionResizePaneLargeRight,
+		input.ActionResizePaneLargeUp,
+		input.ActionResizePaneLargeDown,
+		input.ActionBalancePanes,
+		input.ActionCycleLayout:
+		return m.saveStateCmd()
 	default:
 		return nil
 	}

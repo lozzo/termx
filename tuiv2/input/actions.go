@@ -14,6 +14,7 @@ const (
 	ActionClosePaneKill               ActionKind = "close-pane-kill"
 	ActionDetachPane                  ActionKind = "detach-pane"
 	ActionReconnectPane               ActionKind = "reconnect-pane"
+	ActionRestartTerminal             ActionKind = "restart-terminal"
 	ActionSwapPaneLeft                ActionKind = "swap-pane-left"
 	ActionEnterPaneMode               ActionKind = "enter-pane-mode"
 	ActionEnterResizeMode             ActionKind = "enter-resize-mode"

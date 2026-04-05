@@ -26,6 +26,11 @@ type terminalInputSentMsg struct {
 	err error
 }
 
+type terminalAttachReadyMsg struct {
+	paneID     string
+	terminalID string
+}
+
 type EffectAppliedMsg struct {
 	Effect orchestrator.Effect
 }
@@ -82,5 +87,9 @@ type sessionViewUpdatedMsg struct {
 }
 
 type sessionEventMsg struct {
+	Event protocol.Event
+}
+
+type terminalEventMsg struct {
 	Event protocol.Event
 }

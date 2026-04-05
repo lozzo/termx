@@ -14,6 +14,9 @@ func (m *Model) visibleRenderState() render.VisibleRenderState {
 	if paneID, selected, ok := m.currentEmptyPaneSelection(); ok {
 		state = render.WithEmptyPaneSelection(state, paneID, selected)
 	}
+	if paneID, selected, ok := m.currentExitedPaneSelection(); ok {
+		state = render.WithExitedPaneSelection(state, paneID, selected)
+	}
 	state = render.AttachTerminalPool(state, m.terminalPage)
 	return render.AttachModalHost(state, m.modalHost)
 }

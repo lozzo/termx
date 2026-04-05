@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/tuiv2/orchestrator"
 	"github.com/lozzow/termx/tuiv2/sessionstate"
 	"github.com/lozzow/termx/workbenchdoc"
 )
@@ -73,6 +74,19 @@ func (m *Model) updateSessionViewCmd() tea.Cmd {
 	return func() tea.Msg {
 		view, err := client.UpdateSessionView(context.Background(), params)
 		return sessionViewUpdatedMsg{View: view, Err: err}
+	}
+}
+
+func (m *Model) reloadTerminalSnapshotCmd(terminalID string) tea.Cmd {
+	if m == nil || m.runtime == nil || m.runtime.Client() == nil || terminalID == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		snapshot, err := m.runtime.LoadSnapshot(context.Background(), terminalID, 0, defaultTerminalSnapshotScrollbackLimit)
+		if err != nil {
+			return err
+		}
+		return orchestrator.SnapshotLoadedMsg{TerminalID: terminalID, Snapshot: snapshot}
 	}
 }
 

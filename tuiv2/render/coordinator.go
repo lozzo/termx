@@ -41,24 +41,26 @@ type renderedBody struct {
 }
 
 type renderStateKey struct {
-	Workbench                *workbench.VisibleWorkbench
-	Runtime                  *VisibleRuntimeStateProxy
-	SurfaceKind              VisibleSurfaceKind
-	SurfaceTerminalPool      *modal.TerminalManagerState
-	OverlayKind              VisibleOverlayKind
-	OverlayPrompt            *modal.PromptState
-	OverlayPicker            *modal.PickerState
-	OverlayWorkspacePicker   *modal.WorkspacePickerState
-	OverlayTerminalManager   *modal.TerminalManagerState
-	OverlayHelp              *modal.HelpState
-	OverlayFloatingOverview  *modal.FloatingOverviewState
-	TermSize                 TermSize
-	Notice                   string
-	Error                    string
-	InputMode                string
-	OwnerConfirmPaneID       string
-	EmptyPaneSelectionPaneID string
-	EmptyPaneSelectionIndex  int
+	Workbench                 *workbench.VisibleWorkbench
+	Runtime                   *VisibleRuntimeStateProxy
+	SurfaceKind               VisibleSurfaceKind
+	SurfaceTerminalPool       *modal.TerminalManagerState
+	OverlayKind               VisibleOverlayKind
+	OverlayPrompt             *modal.PromptState
+	OverlayPicker             *modal.PickerState
+	OverlayWorkspacePicker    *modal.WorkspacePickerState
+	OverlayTerminalManager    *modal.TerminalManagerState
+	OverlayHelp               *modal.HelpState
+	OverlayFloatingOverview   *modal.FloatingOverviewState
+	TermSize                  TermSize
+	Notice                    string
+	Error                     string
+	InputMode                 string
+	OwnerConfirmPaneID        string
+	EmptyPaneSelectionPaneID  string
+	EmptyPaneSelectionIndex   int
+	ExitedPaneSelectionPaneID string
+	ExitedPaneSelectionIndex  int
 }
 
 type tabBarCacheKey struct {
@@ -76,19 +78,21 @@ type statusBarCacheKey struct {
 }
 
 type paneRenderEntry struct {
-	PaneID              string
-	Rect                workbench.Rect
-	Title               string
-	Border              paneBorderInfo
-	Theme               uiTheme
-	Overflow            paneOverflowHints
-	ContentKey          paneContentKey
-	FrameKey            paneFrameKey
-	TerminalID          string
-	ScrollOffset        int
-	Active              bool
-	Floating            bool
-	EmptyActionSelected int
+	PaneID               string
+	Rect                 workbench.Rect
+	Title                string
+	Border               paneBorderInfo
+	Theme                uiTheme
+	Overflow             paneOverflowHints
+	ContentKey           paneContentKey
+	FrameKey             paneFrameKey
+	TerminalID           string
+	ScrollOffset         int
+	Active               bool
+	Floating             bool
+	EmptyActionSelected  int
+	ExitedActionSelected int
+	ExitedActionPulse    bool
 }
 
 type paneFrameKey struct {
@@ -108,14 +112,16 @@ type paneOverflowHints struct {
 }
 
 type paneContentKey struct {
-	TerminalID          string
-	Snapshot            *protocol.Snapshot
-	Name                string
-	State               string
-	ThemeBG             string
-	TerminalKnown       bool
-	ScrollOffset        int
-	EmptyActionSelected int
+	TerminalID           string
+	Snapshot             *protocol.Snapshot
+	Name                 string
+	State                string
+	ThemeBG              string
+	TerminalKnown        bool
+	ScrollOffset         int
+	EmptyActionSelected  int
+	ExitedActionSelected int
+	ExitedActionPulse    bool
 }
 
 type bodyRenderCache struct {
@@ -202,24 +208,26 @@ func (c *Coordinator) RenderFrame() string {
 
 func stateKey(state VisibleRenderState) renderStateKey {
 	return renderStateKey{
-		Workbench:                state.Workbench,
-		Runtime:                  state.Runtime,
-		SurfaceKind:              state.Surface.Kind,
-		SurfaceTerminalPool:      state.Surface.TerminalPool,
-		OverlayKind:              state.Overlay.Kind,
-		OverlayPrompt:            state.Overlay.Prompt,
-		OverlayPicker:            state.Overlay.Picker,
-		OverlayWorkspacePicker:   state.Overlay.WorkspacePicker,
-		OverlayTerminalManager:   state.Overlay.TerminalManager,
-		OverlayHelp:              state.Overlay.Help,
-		OverlayFloatingOverview:  state.Overlay.FloatingOverview,
-		TermSize:                 state.TermSize,
-		Notice:                   state.Notice,
-		Error:                    state.Error,
-		InputMode:                state.InputMode,
-		OwnerConfirmPaneID:       state.OwnerConfirmPaneID,
-		EmptyPaneSelectionPaneID: state.EmptyPaneSelectionPaneID,
-		EmptyPaneSelectionIndex:  state.EmptyPaneSelectionIndex,
+		Workbench:                 state.Workbench,
+		Runtime:                   state.Runtime,
+		SurfaceKind:               state.Surface.Kind,
+		SurfaceTerminalPool:       state.Surface.TerminalPool,
+		OverlayKind:               state.Overlay.Kind,
+		OverlayPrompt:             state.Overlay.Prompt,
+		OverlayPicker:             state.Overlay.Picker,
+		OverlayWorkspacePicker:    state.Overlay.WorkspacePicker,
+		OverlayTerminalManager:    state.Overlay.TerminalManager,
+		OverlayHelp:               state.Overlay.Help,
+		OverlayFloatingOverview:   state.Overlay.FloatingOverview,
+		TermSize:                  state.TermSize,
+		Notice:                    state.Notice,
+		Error:                     state.Error,
+		InputMode:                 state.InputMode,
+		OwnerConfirmPaneID:        state.OwnerConfirmPaneID,
+		EmptyPaneSelectionPaneID:  state.EmptyPaneSelectionPaneID,
+		EmptyPaneSelectionIndex:   state.EmptyPaneSelectionIndex,
+		ExitedPaneSelectionPaneID: state.ExitedPaneSelectionPaneID,
+		ExitedPaneSelectionIndex:  state.ExitedPaneSelectionIndex,
 	}
 }
 
@@ -342,7 +350,13 @@ func renderBodyFrameWithCoordinator(coordinator *Coordinator, state VisibleRende
 		return renderEmptyWorkbenchBody(state, width, height, emptyWorkbenchNoPanes)
 	}
 	lookup := newRuntimeLookup(state.Runtime)
-	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, lookup, state.OwnerConfirmPaneID, state.EmptyPaneSelectionPaneID, state.EmptyPaneSelectionIndex, uiThemeForRuntime(state.Runtime))
+	exitedSelectionPulse := true
+	if coordinator != nil {
+		coordinator.mu.Lock()
+		exitedSelectionPulse = coordinator.cursorBlinkVisible
+		coordinator.mu.Unlock()
+	}
+	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, lookup, state.OwnerConfirmPaneID, state.EmptyPaneSelectionPaneID, state.EmptyPaneSelectionIndex, state.ExitedPaneSelectionPaneID, state.ExitedPaneSelectionIndex, exitedSelectionPulse, uiThemeForRuntime(state.Runtime))
 
 	canvas := renderBodyCanvas(coordinator, state, entries, width, height)
 	return renderedBody{
@@ -372,9 +386,35 @@ func visibleStateNeedsCursorBlink(state VisibleRenderState) bool {
 	if width <= 0 || height <= 0 {
 		return false
 	}
-	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, newRuntimeLookup(state.Runtime), state.OwnerConfirmPaneID, state.EmptyPaneSelectionPaneID, state.EmptyPaneSelectionIndex, uiThemeForRuntime(state.Runtime))
+	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, newRuntimeLookup(state.Runtime), state.OwnerConfirmPaneID, state.EmptyPaneSelectionPaneID, state.EmptyPaneSelectionIndex, state.ExitedPaneSelectionPaneID, state.ExitedPaneSelectionIndex, true, uiThemeForRuntime(state.Runtime))
+	if activeExitedPaneHasRecoverySelection(state) {
+		return true
+	}
 	_, _, ok := activeEntryCursorTarget(entries, state.Runtime)
 	return ok
+}
+
+func activeExitedPaneHasRecoverySelection(state VisibleRenderState) bool {
+	if state.Workbench == nil || state.Runtime == nil || state.ExitedPaneSelectionPaneID == "" {
+		return false
+	}
+	activeTabIdx := state.Workbench.ActiveTab
+	if activeTabIdx < 0 || activeTabIdx >= len(state.Workbench.Tabs) {
+		return false
+	}
+	tab := state.Workbench.Tabs[activeTabIdx]
+	if tab.ActivePaneID == "" || tab.ActivePaneID != state.ExitedPaneSelectionPaneID {
+		return false
+	}
+	for i := range tab.Panes {
+		pane := &tab.Panes[i]
+		if pane.ID != tab.ActivePaneID || pane.TerminalID == "" {
+			continue
+		}
+		terminal := findVisibleTerminal(state.Runtime, pane.TerminalID)
+		return terminal != nil && terminal.State == "exited"
+	}
+	return false
 }
 
 type emptyWorkbenchKind uint8
@@ -468,11 +508,11 @@ func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entrie
 	// Overlapping panes need a full rebuild. The cached active-pane refresh path
 	// redraws the active pane content to clear the old cursor, which is correct
 	// for tiled layouts but will paint over floating panes layered above it.
-		if entriesOverlap(entries) {
-			canvas := newComposedCanvas(width, height)
-			canvas.cursorOffsetY = TopChromeRows
-			canvas.syntheticCursorVisibleFn = coordinator.syntheticCursorVisible
-			for _, entry := range entries {
+	if entriesOverlap(entries) {
+		canvas := newComposedCanvas(width, height)
+		canvas.cursorOffsetY = TopChromeRows
+		canvas.syntheticCursorVisibleFn = coordinator.syntheticCursorVisible
+		for _, entry := range entries {
 			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 		}
@@ -524,7 +564,7 @@ func restoreActiveEntryContent(canvas *composedCanvas, entries []paneRenderEntry
 	}
 }
 
-func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePane, width, height int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, theme uiTheme) []paneRenderEntry {
+func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePane, width, height int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, exitedPaneSelectionPaneID string, exitedPaneSelectionIndex int, exitedPaneSelectionPulse bool, theme uiTheme) []paneRenderEntry {
 	entries := make([]paneRenderEntry, 0, len(tab.Panes)+len(floating))
 	zoomedPaneID := tab.ZoomedPaneID
 	for _, pane := range tab.Panes {
@@ -539,14 +579,14 @@ func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePan
 		if !ok {
 			continue
 		}
-		entries = append(entries, buildPaneRenderEntry(pane, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, theme))
+		entries = append(entries, buildPaneRenderEntry(pane, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, theme))
 	}
 	for _, pane := range floating {
 		rect, ok := clipRectToViewport(pane.Rect, width, height)
 		if !ok {
 			continue
 		}
-		entries = append(entries, buildPaneRenderEntry(pane, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, theme))
+		entries = append(entries, buildPaneRenderEntry(pane, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, theme))
 	}
 	return entries
 }
@@ -565,7 +605,7 @@ func clipRectToViewport(rect workbench.Rect, width, height int) (workbench.Rect,
 	return workbench.Rect{X: x1, Y: y1, W: x2 - x1, H: y2 - y1}, true
 }
 
-func buildPaneRenderEntry(pane workbench.VisiblePane, rect workbench.Rect, activePaneID string, scrollOffset int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, theme uiTheme) paneRenderEntry {
+func buildPaneRenderEntry(pane workbench.VisiblePane, rect workbench.Rect, activePaneID string, scrollOffset int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, exitedPaneSelectionPaneID string, exitedPaneSelectionIndex int, exitedPaneSelectionPulse bool, theme uiTheme) paneRenderEntry {
 	active := pane.ID == activePaneID
 	title := resolvePaneTitleWithLookup(pane, lookup)
 	border := paneBorderInfoWithLookup(pane, lookup, confirmPaneID)
@@ -575,12 +615,20 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, rect workbench.Rect, activ
 	if pane.TerminalID == "" && pane.ID == emptyPaneSelectionPaneID {
 		emptyActionSelected = emptyPaneSelectionIndex
 	}
+	exitedActionSelected := -1
+	if pane.TerminalID != "" && pane.ID == exitedPaneSelectionPaneID {
+		if terminal := lookup.terminal(pane.TerminalID); terminal != nil && terminal.State == "exited" {
+			exitedActionSelected = exitedPaneSelectionIndex
+		}
+	}
 	contentKey := paneContentKey{
-		TerminalID:          pane.TerminalID,
-		ThemeBG:             theme.panelBG,
-		TerminalKnown:       terminal != nil,
-		ScrollOffset:        scrollOffset,
-		EmptyActionSelected: emptyActionSelected,
+		TerminalID:           pane.TerminalID,
+		ThemeBG:              theme.panelBG,
+		TerminalKnown:        terminal != nil,
+		ScrollOffset:         scrollOffset,
+		EmptyActionSelected:  emptyActionSelected,
+		ExitedActionSelected: exitedActionSelected,
+		ExitedActionPulse:    exitedPaneSelectionPulse,
 	}
 	if terminal != nil {
 		contentKey.Snapshot = terminal.Snapshot
@@ -606,11 +654,13 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, rect workbench.Rect, activ
 			Floating:        pane.Floating,
 			ChromeSignature: paneChromeActionSignatureForFrame(rect, title, border, pane.Floating),
 		},
-		TerminalID:          pane.TerminalID,
-		ScrollOffset:        scrollOffset,
-		Active:              active,
-		Floating:            pane.Floating,
-		EmptyActionSelected: emptyActionSelected,
+		TerminalID:           pane.TerminalID,
+		ScrollOffset:         scrollOffset,
+		Active:               active,
+		Floating:             pane.Floating,
+		EmptyActionSelected:  emptyActionSelected,
+		ExitedActionSelected: exitedActionSelected,
+		ExitedActionPulse:    exitedPaneSelectionPulse,
 	}
 }
 
@@ -921,11 +971,17 @@ func drawPaneContent(canvas *composedCanvas, rect workbench.Rect, pane workbench
 	}
 	if terminal.Snapshot == nil || len(terminal.Snapshot.Screen.Cells) == 0 {
 		canvas.drawText(contentRect.X, contentRect.Y, terminal.Name+" ["+terminal.State+"]", drawStyle{FG: defaultUITheme().panelMuted})
+		if terminal.State == "exited" {
+			drawExitedPaneRecoveryHints(canvas, contentRect, defaultUITheme(), -1, true)
+		}
 		return
 	}
 	drawSnapshotWithOffset(canvas, contentRect, terminal.Snapshot, scrollOffset, defaultUITheme())
 	if active {
 		projectPaneCursor(canvas, contentRect, terminal.Snapshot, scrollOffset)
+	}
+	if terminal.State == "exited" {
+		drawExitedPaneRecoveryHints(canvas, contentRect, defaultUITheme(), -1, true)
 	}
 }
 
@@ -943,11 +999,17 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 	}
 	if terminal.Snapshot == nil || len(terminal.Snapshot.Screen.Cells) == 0 {
 		canvas.drawText(contentRect.X, contentRect.Y, terminal.Name+" ["+terminal.State+"]", drawStyle{FG: entry.Theme.panelMuted})
+		if terminal.State == "exited" {
+			drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
+		}
 		return
 	}
 	drawSnapshotWithOffset(canvas, contentRect, terminal.Snapshot, entry.ScrollOffset, entry.Theme)
 	if entry.Active {
 		projectPaneCursor(canvas, contentRect, terminal.Snapshot, entry.ScrollOffset)
+	}
+	if terminal.State == "exited" {
+		drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
 	}
 }
 
@@ -1058,6 +1120,40 @@ func drawEmptyPaneContent(canvas *composedCanvas, rect workbench.Rect, paneID, t
 			canvas.drawText(rect.X, terminalLineY, line, drawStyle{FG: theme.panelMuted})
 		}
 	}
+}
+
+func drawExitedPaneRecoveryHints(canvas *composedCanvas, rect workbench.Rect, theme uiTheme, selectedIndex int, pulse bool) {
+	if canvas == nil || rect.W <= 0 || rect.H < 2 {
+		return
+	}
+	actions := layoutExitedPaneRecoveryActions(rect, "pane")
+	if len(actions) == 0 {
+		return
+	}
+	if rect.H >= len(actions)+1 {
+		headlineY := actions[0].rowRect.Y - 1
+		headline := centerText(xansi.Truncate("last output", rect.W, ""), rect.W)
+		canvas.drawText(rect.X, headlineY, headline, drawStyle{FG: theme.panelText, Bold: true})
+	}
+	for index, item := range actions {
+		style := exitedPaneActionDrawStyle(theme, item.spec.Kind, index == selectedIndex)
+		text := centerText(xansi.Truncate(wrapExitedPaneActionLabel(item.spec, index == selectedIndex, pulse), rect.W, ""), rect.W)
+		canvas.drawText(item.rowRect.X, item.rowRect.Y, text, style)
+	}
+}
+
+func exitedPaneActionDrawStyle(theme uiTheme, kind HitRegionKind, selected bool) drawStyle {
+	accent := theme.panelText
+	switch kind {
+	case HitRegionExitedPaneRestart:
+		accent = theme.success
+	case HitRegionExitedPaneChoose:
+		accent = theme.chromeAccent
+	}
+	if selected {
+		return drawStyle{FG: ensureContrast(mixHex(accent, theme.panelText, 0.15), theme.hostBG, 4.0), Bold: true}
+	}
+	return drawStyle{FG: ensureContrast(accent, theme.hostBG, 3.8), Bold: true}
 }
 
 func emptyPaneActionDrawStyle(theme uiTheme, kind HitRegionKind, selected bool) drawStyle {

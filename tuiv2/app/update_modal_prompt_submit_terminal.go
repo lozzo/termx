@@ -159,6 +159,9 @@ func (m *Model) submitCreateTerminal(prompt *modal.PromptState, paneID string, p
 	m.modalHost.Close(input.ModePrompt, requestID)
 	m.restorePromptReturnMode(prompt)
 	m.render.Invalidate()
+	if pane != "" {
+		m.markPendingPaneAttach(pane, "")
+	}
 	return func() tea.Msg {
 		client := m.runtime.Client()
 		if client == nil {
@@ -177,6 +180,9 @@ func (m *Model) submitCreateTerminal(prompt *modal.PromptState, paneID string, p
 				terminal.State = created.State
 			}
 		}
+		if pane != "" {
+			m.markPendingPaneAttach(pane, created.TerminalID)
+		}
 		switch prompt.CreateTarget {
 		case modal.CreateTargetSplit:
 			if cmd := m.splitPaneAndAttachTerminalCmd(pane, created.TerminalID); cmd != nil {
@@ -194,6 +200,7 @@ func (m *Model) submitCreateTerminal(prompt *modal.PromptState, paneID string, p
 			}
 			return nil
 		default:
+			m.markPendingPaneAttach(pane, created.TerminalID)
 			msgs, err := m.orchestrator.AttachAndLoadSnapshot(context.Background(), pane, created.TerminalID, "collaborator", 0, defaultTerminalSnapshotScrollbackLimit)
 			if err != nil {
 				return err

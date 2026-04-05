@@ -9,13 +9,13 @@ import (
 )
 
 type terminalInteractionRequest struct {
-	PaneID                    string
-	TerminalID                string
-	Rect                      workbench.Rect
-	ResizeIfNeeded            bool
-	ExplicitTakeover          bool
-	ImplicitInteractiveOwner  bool
-	ImplicitSessionLease      bool
+	PaneID                   string
+	TerminalID               string
+	Rect                     workbench.Rect
+	ResizeIfNeeded           bool
+	ExplicitTakeover         bool
+	ImplicitInteractiveOwner bool
+	ImplicitSessionLease     bool
 }
 
 type terminalInteractionTarget struct {
@@ -156,8 +156,16 @@ func (m *Model) resizeTerminalIfNeeded(ctx context.Context, target terminalInter
 	}
 	targetCols := uint16(maxInt(2, target.rect.W-2))
 	targetRows := uint16(maxInt(2, target.rect.H-2))
-	if m.terminalAlreadySized(target.terminalID, targetCols, targetRows) {
+	if !m.shouldForceTerminalResize(target.terminalID) && m.terminalAlreadySized(target.terminalID, targetCols, targetRows) {
 		return nil
 	}
 	return m.runtime.ResizeTerminal(ctx, target.paneID, target.terminalID, targetCols, targetRows)
+}
+
+func (m *Model) shouldForceTerminalResize(terminalID string) bool {
+	if m == nil || m.runtime == nil || terminalID == "" {
+		return false
+	}
+	terminal := m.runtime.Registry().Get(terminalID)
+	return terminal != nil && terminal.PendingOwnerResize
 }

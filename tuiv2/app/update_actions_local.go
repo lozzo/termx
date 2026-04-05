@@ -115,6 +115,34 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			ResizeIfNeeded:   true,
 			ExplicitTakeover: true,
 		})
+	case input.ActionRestartTerminal:
+		if m.runtime == nil || m.workbench == nil {
+			return true, nil
+		}
+		switch m.input.Mode().Kind {
+		case input.ModeNormal, input.ModePane:
+		default:
+			return false, nil
+		}
+		paneID := m.currentOrActionPaneID(action.PaneID)
+		if paneID == "" {
+			return true, nil
+		}
+		pane := m.workbench.ActivePane()
+		if pane == nil || pane.ID != paneID {
+			tab := m.workbench.CurrentTab()
+			if tab != nil {
+				pane = tab.Panes[paneID]
+			}
+		}
+		if pane == nil || pane.TerminalID == "" {
+			return true, nil
+		}
+		terminal := m.runtime.Registry().Get(pane.TerminalID)
+		if terminal == nil || terminal.State != "exited" {
+			return true, nil
+		}
+		return true, m.restartPaneTerminalCmd(paneID, pane.TerminalID)
 	case input.ActionOpenPrompt:
 		if m.input.Mode().Kind == input.ModeNormal {
 			m.input.SetMode(input.ModeState{Kind: input.ModeResize})

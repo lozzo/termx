@@ -193,6 +193,32 @@ func (m *Model) openPickerForPaneCmd(paneID string) tea.Cmd {
 	return m.effectCmd(orchestrator.LoadPickerItemsEffect{})
 }
 
+func (m *Model) resetPaneScrollOffset(tabID, paneID string) {
+	if m == nil || m.workbench == nil || paneID == "" {
+		return
+	}
+	workspace := m.workbench.CurrentWorkspace()
+	if workspace == nil {
+		return
+	}
+	for _, tab := range workspace.Tabs {
+		if tab == nil {
+			continue
+		}
+		if tabID != "" && tab.ID != tabID {
+			continue
+		}
+		if tab.Panes[paneID] == nil {
+			continue
+		}
+		if tab.ScrollOffset != 0 {
+			tab.ScrollOffset = 0
+			m.render.Invalidate()
+		}
+		return
+	}
+}
+
 func (m *Model) openTerminalManagerCmd() tea.Cmd {
 	if m == nil {
 		return nil

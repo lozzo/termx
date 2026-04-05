@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -160,6 +161,495 @@ func TestE2ECreateShellAndInteract(t *testing.T) {
 		t.Logf("final view:\n%s", model.View())
 		t.Fatal("expected e2e_interaction_ok in view after sending echo command")
 	}
+}
+
+func TestE2EInitialAttachResizesAfterFirstWindowSize(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
+	srv := termx.NewServer(termx.WithSocketPath(socketPath))
+	srvDone := make(chan error, 1)
+	go func() { srvDone <- srv.ListenAndServe(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+		select {
+		case <-srvDone:
+		case <-time.After(3 * time.Second):
+		}
+	})
+	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
+		t.Fatalf("server socket never appeared: %v", err)
+	}
+
+	tr, err := unixtransport.Dial(socketPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	pc := protocol.NewClient(tr)
+	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+		t.Fatalf("hello: %v", err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+
+	created, err := pc.Create(ctx, protocol.CreateParams{
+		Command: []string{"sh", "-c", "printf 'ready\\n'; while IFS= read -r line; do if [ \"$line\" = size ]; then stty size; printf 'window_size_ok\\n'; fi; done"},
+		Name:    "delayed-window-shell",
+		Size:    protocol.Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		t.Fatalf("create interactive shell: %v", err)
+	}
+
+	model := New(shared.Config{AttachID: created.TerminalID}, nil, runtime.New(bridge.NewProtocolClient(pc)))
+
+	invalidated := make(chan struct{}, 128)
+	model.SetSendFunc(func(msg tea.Msg) {
+		if _, ok := msg.(InvalidateMsg); ok {
+			select {
+			case invalidated <- struct{}{}:
+			default:
+			}
+		}
+		_, cmd := model.Update(msg)
+		e2eDrain(t, model, cmd)
+	})
+
+	e2eDrain(t, model, model.Init())
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(e2eActiveSnapshotExcerpt(model), "ready") {
+			break
+		}
+		select {
+		case <-invalidated:
+		case <-time.After(200 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatalf("context expired waiting for initial snapshot text")
+		}
+	}
+	if !strings.Contains(e2eActiveSnapshotExcerpt(model), "ready") {
+		t.Fatalf("timeout waiting for initial snapshot text, got:\n%s", e2eActiveSnapshotExcerpt(model))
+	}
+
+	if terminal := model.runtime.Registry().Get(created.TerminalID); terminal == nil || terminal.Snapshot == nil || terminal.Snapshot.Size.Cols != 80 || terminal.Snapshot.Size.Rows != 24 {
+		t.Fatalf("expected pre-window attach to keep default 80x24 snapshot, got %#v", terminal)
+	}
+
+	_, cmd := model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	e2eDrain(t, model, cmd)
+
+	pane := model.workbench.ActivePane()
+	if pane == nil {
+		t.Fatal("expected active pane after attach")
+	}
+	_, cmd = model.Update(input.TerminalInput{
+		PaneID: pane.ID,
+		Data:   []byte("size\n"),
+	})
+	e2eDrain(t, model, cmd)
+
+	e2eWaitForText(t, ctx, model, invalidated, "36 118")
+	e2eWaitForText(t, ctx, model, invalidated, "window_size_ok")
+
+	terminal := model.runtime.Registry().Get(created.TerminalID)
+	if terminal == nil || terminal.Snapshot == nil {
+		t.Fatalf("expected terminal snapshot after resize, got %#v", terminal)
+	}
+	if terminal.Snapshot.Size.Cols != 118 || terminal.Snapshot.Size.Rows != 36 {
+		t.Fatalf("expected resized snapshot 118x36, got %#v", terminal.Snapshot.Size)
+	}
+}
+
+func TestE2EExitedPaneRestartReusesSameTerminal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
+	srv := termx.NewServer(termx.WithSocketPath(socketPath))
+	srvDone := make(chan error, 1)
+	go func() { srvDone <- srv.ListenAndServe(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+		select {
+		case <-srvDone:
+		case <-time.After(3 * time.Second):
+		}
+	})
+	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
+		t.Fatalf("server socket never appeared: %v", err)
+	}
+
+	tr, err := unixtransport.Dial(socketPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	pc := protocol.NewClient(tr)
+	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+		t.Fatalf("hello: %v", err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+
+	flagPath := filepath.Join(t.TempDir(), "restart-flag")
+	command := fmt.Sprintf("if [ -f %q ]; then printf 'restart_pass_2\\n'; cat; else touch %q; sleep 1; exit 0; fi", flagPath, flagPath)
+	created, err := pc.Create(ctx, protocol.CreateParams{
+		Command: []string{"bash", "-lc", command},
+		Name:    "restart-e2e",
+		Size:    protocol.Size{Cols: 120, Rows: 40},
+	})
+	if err != nil {
+		t.Fatalf("create restart test terminal: %v", err)
+	}
+
+	model := New(shared.Config{AttachID: created.TerminalID}, nil, runtime.New(bridge.NewProtocolClient(pc)))
+	model.width = 120
+	model.height = 40
+
+	invalidated := make(chan struct{}, 128)
+	model.SetSendFunc(func(msg tea.Msg) {
+		if _, ok := msg.(InvalidateMsg); ok {
+			select {
+			case invalidated <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	e2eDrain(t, model, model.Init())
+	e2eWaitForRuntimeTerminalState(t, ctx, model, created.TerminalID, "exited")
+
+	e2eDispatchKey(t, model, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'R'}})
+
+	e2eWaitForRuntimeTerminalState(t, ctx, model, created.TerminalID, "running")
+	e2eWaitForText(t, ctx, model, invalidated, "restart_pass_2")
+
+	pane := model.workbench.ActivePane()
+	if pane == nil || pane.TerminalID != created.TerminalID {
+		t.Fatalf("expected restarted pane to stay bound to %q, got %#v", created.TerminalID, pane)
+	}
+
+	_, cmd := model.Update(input.TerminalInput{PaneID: pane.ID, Data: []byte("restart_e2e_ok\n")})
+	e2eDrainSkippingPrefixTimeout(t, model, cmd)
+	e2eWaitForText(t, ctx, model, invalidated, "restart_e2e_ok")
+}
+
+func TestE2ECreateAfterExitedPaneDoesNotDropBufferedInput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
+	srv := termx.NewServer(termx.WithSocketPath(socketPath))
+	srvDone := make(chan error, 1)
+	go func() { srvDone <- srv.ListenAndServe(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+		select {
+		case <-srvDone:
+		case <-time.After(3 * time.Second):
+		}
+	})
+	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
+		t.Fatalf("server socket never appeared: %v", err)
+	}
+
+	tr, err := unixtransport.Dial(socketPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	pc := protocol.NewClient(tr)
+	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+		t.Fatalf("hello: %v", err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+
+	first, err := pc.Create(ctx, protocol.CreateParams{
+		Command: []string{"bash", "-lc", "sleep 1; exit 0"},
+		Name:    "first-exit",
+		Size:    protocol.Size{Cols: 120, Rows: 40},
+	})
+	if err != nil {
+		t.Fatalf("create first terminal: %v", err)
+	}
+
+	delayedClient := &delayedAttachBridgeClient{Client: bridge.NewProtocolClient(pc)}
+	model := New(shared.Config{AttachID: first.TerminalID}, nil, runtime.New(delayedClient))
+	model.width = 120
+	model.height = 40
+
+	invalidated := make(chan struct{}, 128)
+	model.SetSendFunc(func(msg tea.Msg) {
+		if _, ok := msg.(InvalidateMsg); ok {
+			select {
+			case invalidated <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	e2eDrain(t, model, model.Init())
+	e2eWaitForRuntimeTerminalState(t, ctx, model, first.TerminalID, "exited")
+
+	e2eDispatchKey(t, model, tea.KeyMsg{Type: tea.KeyCtrlF})
+	if model.modalHost == nil || model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModePicker {
+		t.Fatalf("expected picker after Ctrl-F on exited pane, got %#v", model.modalHost)
+	}
+
+	pane := model.workbench.ActivePane()
+	if pane == nil {
+		t.Fatal("expected active pane before create")
+	}
+	createIndex := pickerCreateRowIndex(model.modalHost.Picker.VisibleItems())
+	for i := 0; i < createIndex; i++ {
+		e2eDispatchKey(t, model, tea.KeyMsg{Type: tea.KeyDown})
+	}
+	e2eDispatchKey(t, model, tea.KeyMsg{Type: tea.KeyEnter})
+	if model.modalHost == nil || model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-terminal-form" {
+		t.Fatalf("expected create terminal prompt, got %#v", model.modalHost)
+	}
+
+	setCreateTerminalFormField(model.modalHost.Prompt, "name", "buffered-create")
+	setCreateTerminalFormField(model.modalHost.Prompt, "command", "sh -c \"printf 'buffered_ready\\n'; IFS= read -r line; printf '%s\\n' \\\"$line\\\"; cat\"")
+
+	release := make(chan struct{})
+	attachStarted := make(chan struct{}, 1)
+	delayedClient.DelayNextAttach(release, attachStarted)
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: pane.ID})
+	if cmd == nil {
+		t.Fatal("expected create-terminal submit command")
+	}
+	done := make(chan tea.Msg, 1)
+	go func() {
+		done <- cmd()
+	}()
+
+	select {
+	case <-attachStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for delayed attach to start")
+	}
+
+	for _, ch := range []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune{'A'}},
+		{Type: tea.KeyRunes, Runes: []rune{'B'}},
+		{Type: tea.KeyRunes, Runes: []rune{'C'}},
+		{Type: tea.KeyRunes, Runes: []rune{'D'}},
+		{Type: tea.KeyEnter},
+	} {
+		_, keyCmd := model.Update(ch)
+		if keyCmd != nil {
+			e2eDrainSkippingPrefixTimeout(t, model, keyCmd)
+		}
+	}
+
+	close(release)
+	select {
+	case msg := <-done:
+		e2eDrainMsg(t, model, msg, true)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for delayed create+attach to complete")
+	}
+
+	e2eWaitForText(t, ctx, model, invalidated, "buffered_ready")
+	e2eWaitForText(t, ctx, model, invalidated, "ABCD")
+}
+
+func TestE2EAttachAfterExitedPaneKeepsFastEchoWhenChannelIsReused(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
+	srv := termx.NewServer(termx.WithSocketPath(socketPath))
+	srvDone := make(chan error, 1)
+	go func() { srvDone <- srv.ListenAndServe(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+		select {
+		case <-srvDone:
+		case <-time.After(3 * time.Second):
+		}
+	})
+	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
+		t.Fatalf("server socket never appeared: %v", err)
+	}
+
+	tr, err := unixtransport.Dial(socketPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	pc := protocol.NewClient(tr)
+	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+		t.Fatalf("hello: %v", err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+
+	first, err := pc.Create(ctx, protocol.CreateParams{
+		Command: []string{"bash", "-lc", "printf 'first_exit\\n'; exit 0"},
+		Name:    "first-exit",
+		Size:    protocol.Size{Cols: 120, Rows: 40},
+	})
+	if err != nil {
+		t.Fatalf("create first terminal: %v", err)
+	}
+
+	model := New(shared.Config{AttachID: first.TerminalID}, nil, runtime.New(bridge.NewProtocolClient(pc)))
+	model.width = 120
+	model.height = 40
+
+	invalidated := make(chan struct{}, 128)
+	model.SetSendFunc(func(msg tea.Msg) {
+		if _, ok := msg.(InvalidateMsg); ok {
+			select {
+			case invalidated <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	e2eDrain(t, model, model.Init())
+	e2eWaitForRuntimeTerminalState(t, ctx, model, first.TerminalID, "exited")
+
+	firstRuntime := model.runtime.Registry().Get(first.TerminalID)
+	if firstRuntime == nil || firstRuntime.Channel == 0 {
+		t.Fatalf("expected exited runtime with channel, got %#v", firstRuntime)
+	}
+
+	second, err := pc.Create(ctx, protocol.CreateParams{
+		Command: []string{"bash", "-lc", "cat"},
+		Name:    "second-shell",
+		Size:    protocol.Size{Cols: 120, Rows: 40},
+	})
+	if err != nil {
+		t.Fatalf("create second terminal: %v", err)
+	}
+
+	pane := model.workbench.ActivePane()
+	if pane == nil {
+		t.Fatal("expected active pane before reattach")
+	}
+	e2eDrainSkippingPrefixTimeout(t, model, model.attachPaneTerminalCmd("", pane.ID, second.TerminalID))
+	e2eWaitForRuntimeTerminalState(t, ctx, model, second.TerminalID, "running")
+
+	secondRuntime := model.runtime.Registry().Get(second.TerminalID)
+	if secondRuntime == nil {
+		t.Fatalf("expected second runtime after attach")
+	}
+	if secondRuntime.Channel != firstRuntime.Channel {
+		t.Fatalf("expected channel reuse for regression test, got first=%d second=%d", firstRuntime.Channel, secondRuntime.Channel)
+	}
+
+	for _, chunk := range []string{"A", "B", "C", "D", "\n"} {
+		_, cmd := model.Update(input.TerminalInput{PaneID: pane.ID, Data: []byte(chunk)})
+		e2eDrainSkippingPrefixTimeout(t, model, cmd)
+	}
+
+	e2eWaitForText(t, ctx, model, invalidated, "ABCD")
+}
+
+func TestE2EAttachAfterExitedPaneRestoresCursorHighlight(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
+	srv := termx.NewServer(termx.WithSocketPath(socketPath))
+	srvDone := make(chan error, 1)
+	go func() { srvDone <- srv.ListenAndServe(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+		select {
+		case <-srvDone:
+		case <-time.After(3 * time.Second):
+		}
+	})
+	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
+		t.Fatalf("server socket never appeared: %v", err)
+	}
+
+	tr, err := unixtransport.Dial(socketPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	pc := protocol.NewClient(tr)
+	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+		t.Fatalf("hello: %v", err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+
+	first, err := pc.Create(ctx, protocol.CreateParams{
+		Command: []string{"bash", "-lc", "exit 0"},
+		Name:    "first-exit",
+		Size:    protocol.Size{Cols: 120, Rows: 40},
+	})
+	if err != nil {
+		t.Fatalf("create first terminal: %v", err)
+	}
+
+	model := New(shared.Config{AttachID: first.TerminalID}, nil, runtime.New(bridge.NewProtocolClient(pc)))
+	model.width = 120
+	model.height = 40
+
+	invalidated := make(chan struct{}, 128)
+	model.SetSendFunc(func(msg tea.Msg) {
+		if _, ok := msg.(InvalidateMsg); ok {
+			select {
+			case invalidated <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	e2eDrain(t, model, model.Init())
+	e2eWaitForRuntimeTerminalState(t, ctx, model, first.TerminalID, "exited")
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	tab.ScrollOffset = 4
+
+	second, err := pc.Create(ctx, protocol.CreateParams{
+		Command: []string{"sh", "-c", "printf '\\033[8;20H@\\033[8;20H'; cat"},
+		Name:    "cursor-restore",
+		Size:    protocol.Size{Cols: 120, Rows: 40},
+	})
+	if err != nil {
+		t.Fatalf("create second terminal: %v", err)
+	}
+
+	pane := model.workbench.ActivePane()
+	if pane == nil {
+		t.Fatal("expected active pane")
+	}
+	e2eDrainSkippingPrefixTimeout(t, model, model.attachPaneTerminalCmd("", pane.ID, second.TerminalID))
+	e2eWaitForRuntimeTerminalState(t, ctx, model, second.TerminalID, "running")
+	if got := model.workbench.CurrentTab().ScrollOffset; got != 0 {
+		t.Fatalf("expected attach to reset scroll offset before cursor projection, got %d", got)
+	}
+	e2eWaitForCursorHighlight(t, ctx, model, invalidated)
 }
 
 func TestE2EInteractiveShellPromptTitleSurvivesRepeatedLS(t *testing.T) {
@@ -1036,6 +1526,72 @@ func TestE2EMultiClientReconnectRestoresSessionAndReceivesLaterUpdates(t *testin
 	e2eWaitForPaneAbsent(t, env.ctx, clientC, secondPaneID)
 }
 
+func TestE2EMultiClientSharedPaneInputSyncsOwnerBadgeAndLastActiveSize(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	env := newSharedSessionE2EHarness(t)
+	terminalID := env.createTerminal(t, "shared-same-pane", "shared_same_pane_ready")
+
+	clientA := env.newClient(t, 120, 40, terminalID)
+	e2eWaitForText(t, env.ctx, clientA.model, clientA.invalidated, "shared_same_pane_ready")
+
+	clientB := env.newClient(t, 90, 30, "")
+	e2eWaitForText(t, env.ctx, clientB.model, clientB.invalidated, "shared_same_pane_ready")
+
+	paneA := clientA.model.workbench.ActivePane()
+	paneB := clientB.model.workbench.ActivePane()
+	if paneA == nil || paneB == nil {
+		t.Fatalf("expected active panes in both clients, got A=%#v B=%#v", paneA, paneB)
+	}
+	if paneA.ID != paneB.ID {
+		t.Fatalf("expected both clients to show the same pane, got A=%q B=%q", paneA.ID, paneB.ID)
+	}
+	if paneA.TerminalID != terminalID || paneB.TerminalID != terminalID {
+		t.Fatalf("expected both clients bound to %q, got A=%q B=%q", terminalID, paneA.TerminalID, paneB.TerminalID)
+	}
+
+	rectA := e2eVisiblePaneRect(t, clientA.model, paneA.ID)
+	wantACols := uint16(maxInt(2, rectA.W-2))
+	wantARows := uint16(maxInt(2, rectA.H-2))
+
+	e2eDrainSkippingPrefixTimeout(t, clientA.model, clientA.model.acquireSessionLeaseAndResizeCmd(paneA.ID, terminalID))
+	e2eWaitForTerminalOwnerPane(t, env.ctx, clientA.model, terminalID, paneA.ID)
+	e2eWaitForTerminalOwnerPane(t, env.ctx, clientB.model, terminalID, paneA.ID)
+	e2eWaitForTerminalSize(t, env.ctx, clientA.model, terminalID, wantACols, wantARows)
+	e2eWaitForServerTerminalSize(t, env.ctx, env.control, terminalID, wantACols, wantARows)
+	e2eWaitForSharedPaneOwnerBadge(t, env.ctx, clientA, paneA.ID)
+	e2eWaitForSharedPaneOwnerBadge(t, env.ctx, clientB, paneA.ID)
+
+	_, cmd := clientB.model.Update(input.TerminalInput{PaneID: paneB.ID, Data: []byte("client_b_active\n")})
+	e2eDrainSkippingPrefixTimeout(t, clientB.model, cmd)
+	e2eWaitForText(t, env.ctx, clientB.model, clientB.invalidated, "client_b_active")
+	e2eWaitForText(t, env.ctx, clientA.model, clientA.invalidated, "client_b_active")
+
+	rectB := e2eVisiblePaneRect(t, clientB.model, paneB.ID)
+	wantBCols := uint16(maxInt(2, rectB.W-2))
+	wantBRows := uint16(maxInt(2, rectB.H-2))
+	e2eWaitForTerminalOwnerPane(t, env.ctx, clientA.model, terminalID, paneA.ID)
+	e2eWaitForTerminalOwnerPane(t, env.ctx, clientB.model, terminalID, paneA.ID)
+	e2eWaitForTerminalSize(t, env.ctx, clientB.model, terminalID, wantBCols, wantBRows)
+	e2eWaitForServerTerminalSize(t, env.ctx, env.control, terminalID, wantBCols, wantBRows)
+	e2eWaitForSharedPaneOwnerBadge(t, env.ctx, clientA, paneA.ID)
+	e2eWaitForSharedPaneOwnerBadge(t, env.ctx, clientB, paneA.ID)
+
+	_, cmd = clientA.model.Update(input.TerminalInput{PaneID: paneA.ID, Data: []byte("client_a_active\n")})
+	e2eDrainSkippingPrefixTimeout(t, clientA.model, cmd)
+	e2eWaitForText(t, env.ctx, clientA.model, clientA.invalidated, "client_a_active")
+	e2eWaitForText(t, env.ctx, clientB.model, clientB.invalidated, "client_a_active")
+
+	e2eWaitForTerminalOwnerPane(t, env.ctx, clientA.model, terminalID, paneA.ID)
+	e2eWaitForTerminalOwnerPane(t, env.ctx, clientB.model, terminalID, paneA.ID)
+	e2eWaitForTerminalSize(t, env.ctx, clientA.model, terminalID, wantACols, wantARows)
+	e2eWaitForServerTerminalSize(t, env.ctx, env.control, terminalID, wantACols, wantARows)
+	e2eWaitForSharedPaneOwnerBadge(t, env.ctx, clientA, paneA.ID)
+	e2eWaitForSharedPaneOwnerBadge(t, env.ctx, clientB, paneA.ID)
+}
+
 func TestE2ETabSwitchSharedTerminalPromotesOwnerResizesAndShowsCursor(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: requires a real PTY, skipped with -short")
@@ -1322,6 +1878,15 @@ func (h sharedSessionE2EHarness) newClient(t *testing.T, width, height int, atta
 	if err != nil {
 		t.Fatalf("subscribe session events: %v", err)
 	}
+	terminalEventsClient := e2eDialProtocolClient(t, h.ctx, h.socketPath)
+	terminalEvents, err := terminalEventsClient.Events(h.ctx, protocol.EventsParams{
+		Types: []protocol.EventType{
+			protocol.EventTerminalResized,
+		},
+	})
+	if err != nil {
+		t.Fatalf("subscribe terminal events: %v", err)
+	}
 	go func() {
 		for evt := range events {
 			select {
@@ -1333,6 +1898,16 @@ func (h sharedSessionE2EHarness) newClient(t *testing.T, width, height int, atta
 			default:
 			}
 			_, cmd := model.Update(sessionEventMsg{Event: evt})
+			e2eDrainSkippingPrefixTimeout(t, model, cmd)
+		}
+	}()
+	go func() {
+		for evt := range terminalEvents {
+			select {
+			case invalidated <- struct{}{}:
+			default:
+			}
+			_, cmd := model.Update(terminalEventMsg{Event: evt})
 			e2eDrainSkippingPrefixTimeout(t, model, cmd)
 		}
 	}()
@@ -1839,6 +2414,134 @@ func e2eWaitForTerminalSize(t *testing.T, ctx context.Context, m *Model, termina
 		terminal.Snapshot.Size.Cols,
 		terminal.Snapshot.Size.Rows,
 	)
+}
+
+func e2eWaitForRuntimeTerminalState(t *testing.T, ctx context.Context, m *Model, terminalID, want string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		terminal := m.runtime.Registry().Get(terminalID)
+		if terminal != nil && terminal.State == want {
+			return
+		}
+		select {
+		case <-time.After(20 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatalf("context expired waiting for terminal %q state %q", terminalID, want)
+		}
+	}
+	terminal := m.runtime.Registry().Get(terminalID)
+	if terminal == nil {
+		t.Fatalf("timeout waiting for terminal %q state %q: terminal missing", terminalID, want)
+	}
+	t.Fatalf("timeout waiting for terminal %q state %q: got %q", terminalID, want, terminal.State)
+}
+
+func e2eWaitForServerTerminalSize(t *testing.T, ctx context.Context, client *protocol.Client, terminalID string, cols, rows uint16) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		snapshot, err := client.Snapshot(ctx, terminalID, 0, 0)
+		if err == nil && snapshot != nil && snapshot.Size.Cols == cols && snapshot.Size.Rows == rows {
+			return
+		}
+		select {
+		case <-time.After(20 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatalf("context expired waiting for server terminal %q size %dx%d", terminalID, cols, rows)
+		}
+	}
+	snapshot, err := client.Snapshot(ctx, terminalID, 0, 0)
+	if err != nil || snapshot == nil {
+		t.Fatalf("timeout waiting for server terminal %q size %dx%d: snapshot err=%v snapshot=%#v", terminalID, cols, rows, err, snapshot)
+	}
+	t.Fatalf(
+		"timeout waiting for server terminal %q size %dx%d: got %dx%d",
+		terminalID,
+		cols,
+		rows,
+		snapshot.Size.Cols,
+		snapshot.Size.Rows,
+	)
+}
+
+type delayedAttachBridgeClient struct {
+	bridge.Client
+
+	mu            sync.Mutex
+	release       <-chan struct{}
+	attachStarted chan<- struct{}
+}
+
+func (c *delayedAttachBridgeClient) DelayNextAttach(release <-chan struct{}, attachStarted chan<- struct{}) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.release = release
+	c.attachStarted = attachStarted
+}
+
+func (c *delayedAttachBridgeClient) Attach(ctx context.Context, terminalID, mode string) (*protocol.AttachResult, error) {
+	c.mu.Lock()
+	release := c.release
+	attachStarted := c.attachStarted
+	c.release = nil
+	c.attachStarted = nil
+	c.mu.Unlock()
+
+	if release != nil {
+		if attachStarted != nil {
+			select {
+			case attachStarted <- struct{}{}:
+			default:
+			}
+		}
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return c.Client.Attach(ctx, terminalID, mode)
+}
+
+func e2eVisiblePaneRect(t *testing.T, m *Model, paneID string) workbench.Rect {
+	t.Helper()
+	visible := m.workbench.VisibleWithSize(m.bodyRect())
+	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
+		t.Fatalf("expected visible state for pane %q, got %#v", paneID, visible)
+	}
+	for i := range visible.Tabs[visible.ActiveTab].Panes {
+		pane := visible.Tabs[visible.ActiveTab].Panes[i]
+		if pane.ID == paneID {
+			return pane.Rect
+		}
+	}
+	for i := range visible.FloatingPanes {
+		pane := visible.FloatingPanes[i]
+		if pane.ID == paneID {
+			return pane.Rect
+		}
+	}
+	t.Fatalf("expected visible pane %q, got tiled=%#v floating=%#v", paneID, visible.Tabs[visible.ActiveTab].Panes, visible.FloatingPanes)
+	return workbench.Rect{}
+}
+
+func e2eWaitForSharedPaneOwnerBadge(t *testing.T, ctx context.Context, client sharedSessionClient, paneID string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		view := xansi.Strip(client.model.View())
+		if strings.Contains(view, "◆ owner") && !strings.Contains(view, "◇ follow") {
+			return
+		}
+		select {
+		case <-client.invalidated:
+		case <-time.After(100 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatalf("context expired waiting for shared pane %q owner badge", paneID)
+		}
+	}
+	t.Fatalf("timeout waiting for shared pane %q owner badge:\n%s", paneID, xansi.Strip(client.model.View()))
 }
 
 func e2eWaitForCursorHighlight(t *testing.T, ctx context.Context, m *Model, invalidated <-chan struct{}) {
