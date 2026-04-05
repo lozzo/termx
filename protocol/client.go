@@ -191,6 +191,69 @@ func (c *Client) Snapshot(ctx context.Context, terminalID string, offset, limit 
 	return &out, nil
 }
 
+func (c *Client) CreateSession(ctx context.Context, params CreateSessionParams) (*SessionSnapshot, error) {
+	var out SessionSnapshot
+	if err := c.doRequest(ctx, "session.create", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) ListSessions(ctx context.Context) (*ListSessionsResult, error) {
+	var out ListSessionsResult
+	if err := c.doRequest(ctx, "session.list", map[string]any{}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) GetSession(ctx context.Context, sessionID string) (*SessionSnapshot, error) {
+	var out SessionSnapshot
+	if err := c.doRequest(ctx, "session.get", GetSessionParams{SessionID: sessionID}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) AttachSession(ctx context.Context, params AttachSessionParams) (*SessionSnapshot, error) {
+	var out SessionSnapshot
+	if err := c.doRequest(ctx, "session.attach", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) DetachSession(ctx context.Context, sessionID, viewID string) error {
+	return c.doRequest(ctx, "session.detach", DetachSessionParams{
+		SessionID: sessionID,
+		ViewID:    viewID,
+	}, nil)
+}
+
+func (c *Client) ApplySession(ctx context.Context, params ApplySessionParams) (*SessionSnapshot, error) {
+	var out SessionSnapshot
+	if err := c.doRequest(ctx, "session.apply", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) ReplaceSession(ctx context.Context, params ReplaceSessionParams) (*SessionSnapshot, error) {
+	var out SessionSnapshot
+	if err := c.doRequest(ctx, "session.replace", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) UpdateSessionView(ctx context.Context, params UpdateSessionViewParams) (*ViewInfo, error) {
+	var out ViewInfo
+	if err := c.doRequest(ctx, "session.view_update", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *Client) Events(ctx context.Context, params EventsParams) (<-chan Event, error) {
 	c.mu.Lock()
 	if c.events == nil {

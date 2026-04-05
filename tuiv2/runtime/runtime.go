@@ -110,6 +110,7 @@ func (r *Runtime) clearPaneFromTerminal(terminal *TerminalRuntime, paneID string
 	terminal.BoundPaneIDs = removeBoundPaneID(terminal.BoundPaneIDs, paneID)
 	if terminal.OwnerPaneID == paneID {
 		terminal.OwnerPaneID = ""
+		terminal.RequiresExplicitOwner = true
 	}
 	r.syncTerminalOwnership(terminal)
 }

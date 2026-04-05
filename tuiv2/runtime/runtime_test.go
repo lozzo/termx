@@ -247,7 +247,7 @@ func TestRuntimeResizePaneSkipsFollowerBindings(t *testing.T) {
 	}
 }
 
-func TestRuntimeUnbindOwnerPromotesRemainingFollower(t *testing.T) {
+func TestRuntimeUnbindOwnerLeavesTerminalWithoutOwner(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
 	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
@@ -267,14 +267,14 @@ func TestRuntimeUnbindOwnerPromotesRemainingFollower(t *testing.T) {
 	if terminal == nil {
 		t.Fatal("expected terminal runtime")
 	}
-	if terminal.OwnerPaneID != "pane-2" {
-		t.Fatalf("expected pane-2 promoted to owner, got %q", terminal.OwnerPaneID)
+	if terminal.OwnerPaneID != "" {
+		t.Fatalf("expected terminal owner cleared, got %q", terminal.OwnerPaneID)
 	}
 	if !reflect.DeepEqual(terminal.BoundPaneIDs, []string{"pane-2"}) {
 		t.Fatalf("expected only pane-2 to remain bound, got %#v", terminal.BoundPaneIDs)
 	}
-	if binding := rt.Binding("pane-2"); binding == nil || binding.Role != BindingRoleOwner {
-		t.Fatalf("expected pane-2 binding promoted to owner, got %#v", binding)
+	if binding := rt.Binding("pane-2"); binding == nil || binding.Role != BindingRoleFollower {
+		t.Fatalf("expected pane-2 binding to remain follower, got %#v", binding)
 	}
 	if binding := rt.Binding("pane-1"); binding != nil {
 		t.Fatalf("expected pane-1 binding removed, got %#v", binding)
@@ -311,6 +311,30 @@ func TestRuntimeAcquireTerminalOwnershipPromotesRequestedPane(t *testing.T) {
 	}
 	if binding := rt.Binding("pane-2"); binding == nil || binding.Role != BindingRoleOwner {
 		t.Fatalf("expected pane-2 promoted to owner, got %#v", binding)
+	}
+}
+
+func TestRuntimeResizeDoesNothingWithoutExplicitOwner(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach owner: %v", err)
+	}
+	client.attachResult = &protocol.AttachResult{Channel: 12, Mode: "collaborator"}
+	if _, err := rt.AttachTerminal(ctx, "pane-2", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach follower: %v", err)
+	}
+
+	rt.UnbindPane("pane-1", "term-1")
+
+	if err := rt.ResizePane(ctx, "pane-2", "term-1", 100, 30); err != nil {
+		t.Fatalf("resize pane: %v", err)
+	}
+	if len(client.resizeCalls) != 0 {
+		t.Fatalf("expected no resize calls without explicit owner, got %#v", client.resizeCalls)
 	}
 }
 
@@ -513,6 +537,38 @@ func (f *fakeBridgeClient) Stream(channel uint16) (<-chan protocol.StreamFrame, 
 }
 
 func (f *fakeBridgeClient) Kill(context.Context, string) error { return nil }
+
+func (f *fakeBridgeClient) CreateSession(context.Context, protocol.CreateSessionParams) (*protocol.SessionSnapshot, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (f *fakeBridgeClient) ListSessions(context.Context) (*protocol.ListSessionsResult, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (f *fakeBridgeClient) GetSession(context.Context, string) (*protocol.SessionSnapshot, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (f *fakeBridgeClient) AttachSession(context.Context, protocol.AttachSessionParams) (*protocol.SessionSnapshot, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (f *fakeBridgeClient) DetachSession(context.Context, string, string) error {
+	return fmt.Errorf("not implemented")
+}
+
+func (f *fakeBridgeClient) ApplySession(context.Context, protocol.ApplySessionParams) (*protocol.SessionSnapshot, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (f *fakeBridgeClient) ReplaceSession(context.Context, protocol.ReplaceSessionParams) (*protocol.SessionSnapshot, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (f *fakeBridgeClient) UpdateSessionView(context.Context, protocol.UpdateSessionViewParams) (*protocol.ViewInfo, error) {
+	return nil, fmt.Errorf("not implemented")
+}
 
 func (f *fakeBridgeClient) sendFrame(channel uint16, frame protocol.StreamFrame) {
 	f.mu.Lock()

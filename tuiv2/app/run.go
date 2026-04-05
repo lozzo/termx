@@ -34,6 +34,8 @@ func runWithClientOptions(cfg shared.Config, client bridge.Client, stdin io.Read
 	model.SetSendFunc(p.Send)
 	stopCursorBlink := startCursorBlinkForwarder(p, model.render)
 	defer stopCursorBlink()
+	stopSessionEvents := startSessionEventsForwarder(p.Send, cfg, client)
+	defer stopSessionEvents()
 
 	stopInput, restoreInput, err := startInputForwarder(p, stdin)
 	if err != nil {

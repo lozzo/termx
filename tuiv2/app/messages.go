@@ -3,6 +3,7 @@ package app
 import (
 	"image/color"
 
+	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
@@ -69,3 +70,17 @@ type reattachFailedMsg struct {
 }
 
 type prefixTimeoutMsg struct{ seq int }
+
+type sessionSnapshotMsg struct {
+	Snapshot *protocol.SessionSnapshot
+	Err      error
+}
+
+type sessionViewUpdatedMsg struct {
+	View *protocol.ViewInfo
+	Err  error
+}
+
+type sessionEventMsg struct {
+	Event protocol.Event
+}

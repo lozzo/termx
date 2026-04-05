@@ -597,3 +597,106 @@ func TestStartInputForwarderPreservesKeyOrderIntoBubbleTea(t *testing.T) {
 		t.Fatal("timed out waiting for Bubble Tea program to exit")
 	}
 }
+
+type fakeSessionEventsClient struct {
+	events   chan protocol.Event
+	session  *protocol.SessionSnapshot
+	getCalls []string
+}
+
+func (f *fakeSessionEventsClient) Close() error { return nil }
+
+func (f *fakeSessionEventsClient) Events(context.Context, protocol.EventsParams) (<-chan protocol.Event, error) {
+	return f.events, nil
+}
+
+func (f *fakeSessionEventsClient) GetSession(_ context.Context, sessionID string) (*protocol.SessionSnapshot, error) {
+	f.getCalls = append(f.getCalls, sessionID)
+	if f.session == nil {
+		return &protocol.SessionSnapshot{}, nil
+	}
+	return f.session, nil
+}
+
+func TestStartSessionEventsForwarderReconnectsAndRequestsResync(t *testing.T) {
+	originalFactory := newSessionEventsClient
+	originalDelay := sessionEventsReconnectDelay
+	defer func() {
+		newSessionEventsClient = originalFactory
+		sessionEventsReconnectDelay = originalDelay
+	}()
+
+	first := &fakeSessionEventsClient{events: make(chan protocol.Event, 4)}
+	second := &fakeSessionEventsClient{
+		events: make(chan protocol.Event, 4),
+		session: &protocol.SessionSnapshot{
+			Session: protocol.SessionInfo{ID: "main", Revision: 7},
+		},
+	}
+	clients := []*fakeSessionEventsClient{first, second}
+	var mu sync.Mutex
+	dials := 0
+	newSessionEventsClient = func(context.Context, string) (sessionEventsClient, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if dials >= len(clients) {
+			return nil, errors.New("unexpected extra dial")
+		}
+		client := clients[dials]
+		dials++
+		return client, nil
+	}
+	sessionEventsReconnectDelay = 10 * time.Millisecond
+
+	msgs := make(chan tea.Msg, 8)
+	stop := startSessionEventsForwarder(func(msg tea.Msg) {
+		msgs <- msg
+	}, shared.Config{SessionID: "main", SocketPath: "/tmp/termx.sock"}, nil)
+	defer stop()
+
+	first.events <- protocol.Event{Type: protocol.EventSessionUpdated, SessionID: "main"}
+	select {
+	case msg := <-msgs:
+		typed, ok := msg.(sessionEventMsg)
+		if !ok {
+			t.Fatalf("expected sessionEventMsg, got %T", msg)
+		}
+		if typed.Event.Type != protocol.EventSessionUpdated || typed.Event.SessionID != "main" {
+			t.Fatalf("unexpected event %#v", typed.Event)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for forwarded session event")
+	}
+
+	close(first.events)
+
+	select {
+	case msg := <-msgs:
+		typed, ok := msg.(sessionSnapshotMsg)
+		if !ok {
+			t.Fatalf("expected sessionSnapshotMsg after reconnect, got %T", msg)
+		}
+		if typed.Err != nil {
+			t.Fatalf("unexpected resync error: %v", typed.Err)
+		}
+		if typed.Snapshot == nil || typed.Snapshot.Session.ID != "main" || typed.Snapshot.Session.Revision != 7 {
+			t.Fatalf("unexpected resync snapshot %#v", typed.Snapshot)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for session resync snapshot")
+	}
+
+	second.events <- protocol.Event{Type: protocol.EventSessionDeleted, SessionID: "main"}
+	select {
+	case msg := <-msgs:
+		typed, ok := msg.(sessionEventMsg)
+		if !ok {
+			t.Fatalf("expected sessionEventMsg after reconnect, got %T", msg)
+		}
+		if typed.Event.Type != protocol.EventSessionDeleted || typed.Event.SessionID != "main" {
+			t.Fatalf("unexpected reconnected event %#v", typed.Event)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for forwarded event after reconnect")
+	}
+}

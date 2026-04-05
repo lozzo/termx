@@ -1,7 +1,10 @@
 package app
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
@@ -40,28 +43,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case SemanticActionMsg:
 		if handled, cmd := m.handleLocalAction(typed.Action); handled {
-			return m, cmd
+			return m, batchCmds(cmd, m.updateSessionViewCmd())
 		}
 		if handled, cmd := m.handleModalAction(typed.Action); handled {
-			return m, cmd
+			return m, batchCmds(cmd, m.updateSessionViewCmd())
 		}
 		cmd := m.applyEffects(m.enrichEffects(typed.Action, m.orchestrator.HandleSemanticAction(typed.Action)))
 		if m.isStickyMode() {
 			cmd = tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
 		}
-		return m, cmd
+		return m, batchCmds(cmd, m.updateSessionViewCmd())
 	case input.SemanticAction:
 		if handled, cmd := m.handleLocalAction(typed); handled {
-			return m, cmd
+			return m, batchCmds(cmd, m.updateSessionViewCmd())
 		}
 		if handled, cmd := m.handleModalAction(typed); handled {
-			return m, cmd
+			return m, batchCmds(cmd, m.updateSessionViewCmd())
 		}
 		cmd := m.applyEffects(m.enrichEffects(typed, m.orchestrator.HandleSemanticAction(typed)))
 		if m.isStickyMode() {
 			cmd = tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
 		}
-		return m, cmd
+		return m, batchCmds(cmd, m.updateSessionViewCmd())
 	case TerminalInputMsg:
 		return m, m.handleTerminalInput(typed.Input)
 	case input.TerminalInput:
@@ -142,6 +145,42 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case terminalTitleMsg:
 		m.render.Invalidate()
 		return m, nil
+	case sessionSnapshotMsg:
+		if typed.Snapshot != nil && typed.Snapshot.Session.Revision != m.sessionRevision {
+			m.applySessionSnapshot(typed.Snapshot)
+		}
+		if typed.Err != nil {
+			return m, m.showError(typed.Err)
+		}
+		return m, nil
+	case sessionEventMsg:
+		switch typed.Event.Type {
+		case protocol.EventSessionDeleted:
+			if typed.Event.SessionID == m.sessionID {
+				return m, m.showError(fmt.Errorf("session %s was deleted", m.sessionID))
+			}
+		case protocol.EventSessionCreated, protocol.EventSessionUpdated:
+			if typed.Event.SessionID == m.sessionID {
+				revision := uint64(0)
+				viewID := ""
+				if typed.Event.Session != nil {
+					revision = typed.Event.Session.Revision
+					viewID = typed.Event.Session.ViewID
+				}
+				if revision > m.sessionRevision && viewID != m.sessionViewID {
+					return m, m.pullSessionCmd()
+				}
+			}
+		}
+		return m, nil
+	case sessionViewUpdatedMsg:
+		if typed.View != nil && typed.View.ViewID != "" {
+			m.sessionViewID = typed.View.ViewID
+		}
+		if typed.Err != nil {
+			return m, m.showError(typed.Err)
+		}
+		return m, nil
 	case InvalidateMsg:
 		m.invalidatePending.Store(false)
 		m.render.Invalidate()
@@ -164,7 +203,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = typed.Width
 		m.height = typed.Height
 		m.render.Invalidate()
-		return m, m.resizeVisiblePanesCmd()
+		return m, batchCmds(m.resizeVisiblePanesCmd(), m.updateSessionViewCmd())
 	case error:
 		return m, m.showError(typed)
 	default:

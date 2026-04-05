@@ -16,19 +16,13 @@ func (r *Runtime) syncTerminalOwnership(terminal *TerminalRuntime) string {
 			ownerPaneID = ""
 		}
 	}
-	if ownerPaneID == "" {
-		for _, paneID := range terminal.BoundPaneIDs {
-			if paneID == "" {
-				continue
-			}
-			if r.bindings[paneID] == nil {
-				continue
-			}
-			ownerPaneID = paneID
-			break
-		}
-	}
 	changed := terminal.OwnerPaneID != ownerPaneID
+	if terminal.OwnerPaneID != "" && ownerPaneID == "" {
+		terminal.RequiresExplicitOwner = true
+	}
+	if ownerPaneID != "" {
+		terminal.RequiresExplicitOwner = false
+	}
 	terminal.OwnerPaneID = ownerPaneID
 	if r.syncBindingRolesForTerminal(terminal) {
 		changed = true
@@ -90,12 +84,13 @@ func (r *Runtime) AcquireTerminalOwnership(paneID, terminalID string) error {
 		return shared.UserVisibleError{Op: "take terminal ownership", Err: fmt.Errorf("pane %s is not attached", paneID)}
 	}
 	if !containsPaneID(terminal.BoundPaneIDs, paneID) {
-		return shared.UserVisibleError{Op: "take terminal ownership", Err: fmt.Errorf("pane %s is not bound to terminal %s", paneID, terminalID)}
+		return shared.UserVisibleError{Op: "take terminal ownership", Err: fmt.Errorf("pane %s is not locally bound to terminal %s", paneID, terminalID)}
 	}
 	if terminal.OwnerPaneID == paneID {
 		return nil
 	}
 	terminal.OwnerPaneID = paneID
+	terminal.RequiresExplicitOwner = false
 	r.syncTerminalOwnership(terminal)
 	return nil
 }

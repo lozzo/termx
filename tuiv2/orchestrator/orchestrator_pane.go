@@ -58,7 +58,7 @@ func (o *Orchestrator) handlePaneAction(action input.SemanticAction) []Effect {
 		if current := o.workbench.CurrentTab(); current != nil && current.ID == tab.ID && current.ActivePaneID != "" {
 			_ = o.workbench.FocusPane(tab.ID, current.ActivePaneID)
 		}
-		return []Effect{InvalidateRenderEffect{}}
+		return []Effect{ClosePaneEffect{PaneID: paneID}}
 	case input.ActionDetachPane:
 		tab := o.workbench.CurrentTab()
 		if tab == nil {
@@ -114,7 +114,7 @@ func (o *Orchestrator) handlePaneAction(action input.SemanticAction) []Effect {
 		if o.runtime != nil {
 			o.runtime.UnbindPane(paneID, terminalID)
 		}
-		effects := []Effect{InvalidateRenderEffect{}}
+		effects := []Effect{ClosePaneEffect{PaneID: paneID}}
 		if terminalID != "" {
 			effects = append(effects, KillTerminalEffect{TerminalID: terminalID})
 		}

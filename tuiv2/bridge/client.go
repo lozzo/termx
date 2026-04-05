@@ -19,6 +19,14 @@ type Client interface {
 	Resize(ctx context.Context, channel uint16, cols, rows uint16) error
 	Stream(channel uint16) (<-chan protocol.StreamFrame, func())
 	Kill(ctx context.Context, terminalID string) error
+	CreateSession(ctx context.Context, params protocol.CreateSessionParams) (*protocol.SessionSnapshot, error)
+	ListSessions(ctx context.Context) (*protocol.ListSessionsResult, error)
+	GetSession(ctx context.Context, sessionID string) (*protocol.SessionSnapshot, error)
+	AttachSession(ctx context.Context, params protocol.AttachSessionParams) (*protocol.SessionSnapshot, error)
+	DetachSession(ctx context.Context, sessionID, viewID string) error
+	ApplySession(ctx context.Context, params protocol.ApplySessionParams) (*protocol.SessionSnapshot, error)
+	ReplaceSession(ctx context.Context, params protocol.ReplaceSessionParams) (*protocol.SessionSnapshot, error)
+	UpdateSessionView(ctx context.Context, params protocol.UpdateSessionViewParams) (*protocol.ViewInfo, error)
 }
 
 type ProtocolClient struct {
@@ -73,4 +81,36 @@ func (c *ProtocolClient) Stream(channel uint16) (<-chan protocol.StreamFrame, fu
 
 func (c *ProtocolClient) Kill(ctx context.Context, terminalID string) error {
 	return c.inner.Kill(ctx, terminalID)
+}
+
+func (c *ProtocolClient) CreateSession(ctx context.Context, params protocol.CreateSessionParams) (*protocol.SessionSnapshot, error) {
+	return c.inner.CreateSession(ctx, params)
+}
+
+func (c *ProtocolClient) ListSessions(ctx context.Context) (*protocol.ListSessionsResult, error) {
+	return c.inner.ListSessions(ctx)
+}
+
+func (c *ProtocolClient) GetSession(ctx context.Context, sessionID string) (*protocol.SessionSnapshot, error) {
+	return c.inner.GetSession(ctx, sessionID)
+}
+
+func (c *ProtocolClient) AttachSession(ctx context.Context, params protocol.AttachSessionParams) (*protocol.SessionSnapshot, error) {
+	return c.inner.AttachSession(ctx, params)
+}
+
+func (c *ProtocolClient) DetachSession(ctx context.Context, sessionID, viewID string) error {
+	return c.inner.DetachSession(ctx, sessionID, viewID)
+}
+
+func (c *ProtocolClient) ApplySession(ctx context.Context, params protocol.ApplySessionParams) (*protocol.SessionSnapshot, error) {
+	return c.inner.ApplySession(ctx, params)
+}
+
+func (c *ProtocolClient) ReplaceSession(ctx context.Context, params protocol.ReplaceSessionParams) (*protocol.SessionSnapshot, error) {
+	return c.inner.ReplaceSession(ctx, params)
+}
+
+func (c *ProtocolClient) UpdateSessionView(ctx context.Context, params protocol.UpdateSessionViewParams) (*protocol.ViewInfo, error) {
+	return c.inner.UpdateSessionView(ctx, params)
 }

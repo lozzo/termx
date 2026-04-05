@@ -45,6 +45,9 @@ func TestRootCmdRoutesToTUIv2ByDefault(t *testing.T) {
 	if gotCfg.Workspace != "main" {
 		t.Fatalf("expected workspace=main, got %q", gotCfg.Workspace)
 	}
+	if gotCfg.SessionID != "main" {
+		t.Fatalf("expected session=main, got %q", gotCfg.SessionID)
+	}
 	if gotCfg.AttachID != "" {
 		t.Fatalf("expected empty attach id for root command, got %q", gotCfg.AttachID)
 	}
@@ -110,6 +113,9 @@ func TestAttachCmdRoutesToTUIv2WithAttachID(t *testing.T) {
 	}
 	if gotCfg.AttachID != "term-001" {
 		t.Fatalf("expected attach id term-001, got %q", gotCfg.AttachID)
+	}
+	if gotCfg.SessionID != "main" {
+		t.Fatalf("expected attach command session main, got %q", gotCfg.SessionID)
 	}
 	if gotCfg.WorkspaceStatePath != "" {
 		t.Fatalf("expected attach command to avoid workspace persistence path, got %q", gotCfg.WorkspaceStatePath)

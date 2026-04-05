@@ -22,7 +22,11 @@ func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, col
 	terminal := r.registry.Get(terminalID)
 	if terminal != nil {
 		ownerPaneID := r.syncTerminalOwnership(terminal)
-		if ownerPaneID != "" && ownerPaneID != paneID {
+		if ownerPaneID == "" {
+			if terminal.RequiresExplicitOwner {
+				return nil
+			}
+		} else if ownerPaneID != paneID {
 			return nil
 		}
 		if terminalAlreadySized(terminal, cols, rows) {

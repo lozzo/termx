@@ -17,6 +17,9 @@ const (
 	EventTerminalRemoved
 	EventCollaboratorsRevoked
 	EventTerminalReadError
+	EventSessionCreated
+	EventSessionUpdated
+	EventSessionDeleted
 )
 
 type TerminalCreatedData struct {
@@ -46,9 +49,15 @@ type TerminalReadErrorData struct {
 	Error string `json:"error"`
 }
 
+type SessionEventData struct {
+	Revision uint64 `json:"revision,omitempty"`
+	ViewID   string `json:"view_id,omitempty"`
+}
+
 type Event struct {
 	Type                 EventType                 `json:"type"`
 	TerminalID           string                    `json:"terminal_id"`
+	SessionID            string                    `json:"session_id,omitempty"`
 	Timestamp            time.Time                 `json:"timestamp"`
 	Created              *TerminalCreatedData      `json:"created,omitempty"`
 	StateChanged         *TerminalStateChangedData `json:"state_changed,omitempty"`
@@ -56,12 +65,14 @@ type Event struct {
 	Removed              *TerminalRemovedData      `json:"removed,omitempty"`
 	CollaboratorsRevoked *CollaboratorsRevokedData `json:"collaborators_revoked,omitempty"`
 	ReadError            *TerminalReadErrorData    `json:"read_error,omitempty"`
+	Session              *SessionEventData         `json:"session,omitempty"`
 }
 
 type EventsOption func(*eventsConfig)
 
 type eventsConfig struct {
 	terminalID string
+	sessionID  string
 	types      map[EventType]struct{}
 }
 
@@ -79,6 +90,12 @@ func WithTypeFilter(types ...EventType) EventsOption {
 		for _, typ := range types {
 			cfg.types[typ] = struct{}{}
 		}
+	}
+}
+
+func WithSessionFilter(id string) EventsOption {
+	return func(cfg *eventsConfig) {
+		cfg.sessionID = id
 	}
 }
 
@@ -158,6 +175,9 @@ func (b *EventBus) Close() {
 
 func (s *eventSubscriber) matches(evt Event) bool {
 	if s.cfg.terminalID != "" && s.cfg.terminalID != evt.TerminalID {
+		return false
+	}
+	if s.cfg.sessionID != "" && s.cfg.sessionID != evt.SessionID {
 		return false
 	}
 	if len(s.cfg.types) == 0 {

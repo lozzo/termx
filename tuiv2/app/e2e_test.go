@@ -284,7 +284,9 @@ func TestE2EKeyEnterExecutesCommandInAttachedShell(t *testing.T) {
 		Name:    "enter-shell",
 		Env: []string{
 			"PS1=termx$ ",
-			`PROMPT_COMMAND=printf '\033]2;enter-shell-ready\007'`,
+			// Reuse the same prompt/title contract as the repeated-LS shell E2E so
+			// this test isolates Enter-key behavior rather than shell init variance.
+			`PROMPT_COMMAND=printf '\033]2;termx-prompt\007'`,
 		},
 		Size: protocol.Size{Cols: 120, Rows: 40},
 	})
@@ -315,14 +317,11 @@ func TestE2EKeyEnterExecutesCommandInAttachedShell(t *testing.T) {
 		t.Fatalf("expected active pane attached to %q, got %#v", created.TerminalID, pane)
 	}
 
-	e2eWaitForText(t, ctx, model, invalidated, "termx$")
-	e2eWaitForTitle(t, ctx, model, invalidated, created.TerminalID, "enter-shell-ready")
-
 	e2eTypeText(t, model, "ls >/dev/null; printf 'key_enter_ls_ok\\n'")
 	e2eDispatchKey(t, model, tea.KeyMsg{Type: tea.KeyEnter})
 
 	e2eWaitForText(t, ctx, model, invalidated, "key_enter_ls_ok")
-	e2eWaitForTitle(t, ctx, model, invalidated, created.TerminalID, "enter-shell-ready")
+	e2eWaitForTitle(t, ctx, model, invalidated, created.TerminalID, "termx-prompt")
 }
 
 func TestE2EDetachAndReattachThroughPaneMode(t *testing.T) {
@@ -885,10 +884,130 @@ func TestE2EMouseFollowClickShowsConfirmAcrossTiledLayouts(t *testing.T) {
 	}
 }
 
+func TestE2EMultiClientSharedSessionSyncsPaneLifecycle(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	env := newSharedSessionE2EHarness(t)
+	term1 := env.createTerminal(t, "shared-1", "shared_one_ready")
+	clientA := env.newClient(t, 120, 40, term1)
+	e2eWaitForText(t, env.ctx, clientA.model, clientA.invalidated, "shared_one_ready")
+
+	clientB := env.newClient(t, 90, 30, "")
+	e2eWaitForText(t, env.ctx, clientB.model, clientB.invalidated, "shared_one_ready")
+
+	term2 := env.createTerminal(t, "shared-2", "shared_two_ready")
+	e2eDrainSkippingPrefixTimeout(t, clientA.model, clientA.model.splitPaneAndAttachTerminalCmd("1", term2))
+	newPaneID := clientA.model.workbench.CurrentTab().ActivePaneID
+	if newPaneID == "" || newPaneID == "1" {
+		t.Fatalf("expected split pane to create a new active pane, got %q", newPaneID)
+	}
+	snapshot := e2eWaitForSessionRevision(t, env.ctx, env.control, 2)
+	if tab := snapshot.Workbench.Workspaces["main"].Tabs[0]; tab == nil || tab.Panes[newPaneID] == nil {
+		t.Fatalf("expected daemon session to contain pane %q, got %#v", newPaneID, snapshot.Workbench)
+	}
+	_ = e2eWaitForSessionEvent(t, env.ctx, clientB, 2)
+
+	e2eWaitForPaneTerminal(t, env.ctx, clientB, newPaneID, term2)
+	e2eWaitForText(t, env.ctx, clientB.model, clientB.invalidated, "shared_two_ready")
+
+	_, cmd := clientA.model.Update(input.SemanticAction{Kind: input.ActionClosePane, PaneID: newPaneID})
+	e2eDrainSkippingPrefixTimeout(t, clientA.model, cmd)
+	snapshot = e2eWaitForSessionRevision(t, env.ctx, env.control, snapshot.Session.Revision+1)
+	if tab := snapshot.Workbench.Workspaces["main"].Tabs[0]; tab != nil && tab.Panes[newPaneID] != nil {
+		t.Fatalf("expected daemon session to remove pane %q, got %#v", newPaneID, snapshot.Workbench)
+	}
+	_ = e2eWaitForSessionEvent(t, env.ctx, clientB, snapshot.Session.Revision)
+	e2eWaitForPaneAbsent(t, env.ctx, clientB, newPaneID)
+}
+
+func TestE2EMultiClientSessionKeepsLocalTabSelectionIndependent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	env := newSharedSessionE2EHarness(t)
+	term1 := env.createTerminal(t, "tab-shared-1", "tab_one_ready")
+	clientA := env.newClient(t, 120, 40, term1)
+	e2eWaitForText(t, env.ctx, clientA.model, clientA.invalidated, "tab_one_ready")
+
+	clientB := env.newClient(t, 80, 20, "")
+	e2eWaitForText(t, env.ctx, clientB.model, clientB.invalidated, "tab_one_ready")
+
+	term2 := env.createTerminal(t, "tab-shared-2", "tab_two_ready")
+	e2eDrainSkippingPrefixTimeout(t, clientA.model, clientA.model.createTabAndAttachTerminalCmd(term2))
+	_ = e2eWaitForSessionRevision(t, env.ctx, env.control, 2)
+	e2eWaitForTabCount(t, env.ctx, clientB, 2)
+
+	wsA := clientA.model.workbench.CurrentWorkspace()
+	if wsA == nil || len(wsA.Tabs) != 2 {
+		t.Fatalf("expected clientA to have 2 tabs, got %#v", wsA)
+	}
+	firstTabID := wsA.Tabs[0].ID
+	secondTabID := wsA.Tabs[1].ID
+
+	if err := clientA.model.workbench.SwitchTab(wsA.Name, 0); err != nil {
+		t.Fatalf("switch clientA back to first tab: %v", err)
+	}
+	e2eDrainSkippingPrefixTimeout(t, clientA.model, clientA.model.saveStateCmd())
+	e2eWaitForCurrentTabID(t, env.ctx, clientA, firstTabID)
+
+	if err := clientB.model.workbench.SwitchTab(wsA.Name, 1); err != nil {
+		t.Fatalf("switch clientB to second tab: %v", err)
+	}
+	e2eDrainSkippingPrefixTimeout(t, clientB.model, clientB.model.saveStateCmd())
+	e2eWaitForCurrentTabID(t, env.ctx, clientB, secondTabID)
+	e2eWaitForCurrentTabID(t, env.ctx, clientA, firstTabID)
+}
+
+func TestE2EMultiClientReconnectRestoresSessionAndReceivesLaterUpdates(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	env := newSharedSessionE2EHarness(t)
+	term1 := env.createTerminal(t, "reconnect-1", "reconnect_one_ready")
+	clientA := env.newClient(t, 120, 40, term1)
+	e2eWaitForText(t, env.ctx, clientA.model, clientA.invalidated, "reconnect_one_ready")
+
+	clientB := env.newClient(t, 100, 30, "")
+	e2eWaitForText(t, env.ctx, clientB.model, clientB.invalidated, "reconnect_one_ready")
+
+	term2 := env.createTerminal(t, "reconnect-2", "reconnect_two_ready")
+	e2eDrainSkippingPrefixTimeout(t, clientA.model, clientA.model.splitPaneAndAttachTerminalCmd("1", term2))
+	secondPaneID := clientA.model.workbench.CurrentTab().ActivePaneID
+	_ = e2eWaitForSessionRevision(t, env.ctx, env.control, 2)
+	e2eWaitForPaneTerminal(t, env.ctx, clientB, secondPaneID, term2)
+
+	_ = clientB.raw.Close()
+
+	clientC := env.newClient(t, 100, 30, "")
+	e2eWaitForPaneTerminal(t, env.ctx, clientC, secondPaneID, term2)
+	e2eWaitForText(t, env.ctx, clientC.model, clientC.invalidated, "reconnect_two_ready")
+
+	_, cmd := clientA.model.Update(input.SemanticAction{Kind: input.ActionClosePane, PaneID: secondPaneID})
+	e2eDrainSkippingPrefixTimeout(t, clientA.model, cmd)
+	e2eWaitForPaneAbsent(t, env.ctx, clientC, secondPaneID)
+}
+
 type realMouseE2EEnv struct {
 	ctx         context.Context
 	model       *Model
 	invalidated chan struct{}
+}
+
+type sharedSessionE2EHarness struct {
+	ctx        context.Context
+	socketPath string
+	control    *protocol.Client
+}
+
+type sharedSessionClient struct {
+	model       *Model
+	invalidated chan struct{}
+	raw         *protocol.Client
+	events      chan protocol.Event
 }
 
 func newRealMouseE2EEnv(t *testing.T) realMouseE2EEnv {
@@ -1002,6 +1121,239 @@ func newRealRestoreE2EEnv(t *testing.T, file persist.WorkspaceStateFileV2) realM
 		model:       model,
 		invalidated: invalidated,
 	}
+}
+
+func newSharedSessionE2EHarness(t *testing.T) sharedSessionE2EHarness {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	socketPath := filepath.Join(t.TempDir(), "termx-shared-e2e.sock")
+	srv := termx.NewServer(termx.WithSocketPath(socketPath))
+	srvDone := make(chan error, 1)
+	go func() { srvDone <- srv.ListenAndServe(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+		select {
+		case <-srvDone:
+		case <-time.After(3 * time.Second):
+		}
+	})
+	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
+		t.Fatalf("server socket never appeared: %v", err)
+	}
+	control := e2eDialProtocolClient(t, ctx, socketPath)
+	return sharedSessionE2EHarness{
+		ctx:        ctx,
+		socketPath: socketPath,
+		control:    control,
+	}
+}
+
+func e2eDialProtocolClient(t *testing.T, ctx context.Context, socketPath string) *protocol.Client {
+	t.Helper()
+	tr, err := unixtransport.Dial(socketPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	pc := protocol.NewClient(tr)
+	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+		t.Fatalf("hello: %v", err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+	return pc
+}
+
+func (h sharedSessionE2EHarness) newClient(t *testing.T, width, height int, attachID string) sharedSessionClient {
+	t.Helper()
+	pc := e2eDialProtocolClient(t, h.ctx, h.socketPath)
+	model := New(shared.Config{SessionID: "main", AttachID: attachID}, nil, runtime.New(bridge.NewProtocolClient(pc)))
+	model.width = width
+	model.height = height
+
+	invalidated := make(chan struct{}, 128)
+	eventLog := make(chan protocol.Event, 32)
+	model.SetSendFunc(func(msg tea.Msg) {
+		if _, ok := msg.(InvalidateMsg); ok {
+			select {
+			case invalidated <- struct{}{}:
+			default:
+			}
+		}
+		_, cmd := model.Update(msg)
+		e2eDrainSkippingPrefixTimeout(t, model, cmd)
+	})
+
+	if err := model.bootstrapStartup(); err != nil {
+		t.Fatalf("bootstrap startup: %v", err)
+	}
+	if attachID != "" {
+		e2eDrainSkippingPrefixTimeout(t, model, model.attachInitialTerminalCmd(attachID))
+	}
+
+	events, err := pc.Events(h.ctx, protocol.EventsParams{
+		SessionID: "main",
+		Types: []protocol.EventType{
+			protocol.EventSessionCreated,
+			protocol.EventSessionUpdated,
+			protocol.EventSessionDeleted,
+		},
+	})
+	if err != nil {
+		t.Fatalf("subscribe session events: %v", err)
+	}
+	go func() {
+		for evt := range events {
+			select {
+			case invalidated <- struct{}{}:
+			default:
+			}
+			select {
+			case eventLog <- evt:
+			default:
+			}
+			_, cmd := model.Update(sessionEventMsg{Event: evt})
+			e2eDrainSkippingPrefixTimeout(t, model, cmd)
+		}
+	}()
+
+	return sharedSessionClient{
+		model:       model,
+		invalidated: invalidated,
+		raw:         pc,
+		events:      eventLog,
+	}
+}
+
+func (h sharedSessionE2EHarness) createTerminal(t *testing.T, name, marker string) string {
+	t.Helper()
+	created, err := h.control.Create(h.ctx, protocol.CreateParams{
+		Command: []string{"sh", "-c", fmt.Sprintf("printf '%s\\n'; cat", marker)},
+		Name:    name,
+		Size:    protocol.Size{Cols: 120, Rows: 40},
+	})
+	if err != nil {
+		t.Fatalf("create terminal %q: %v", name, err)
+	}
+	return created.TerminalID
+}
+
+func e2eWaitForPaneTerminal(t *testing.T, ctx context.Context, client sharedSessionClient, paneID, terminalID string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		tab := client.model.workbench.CurrentTab()
+		if tab != nil {
+			if pane := tab.Panes[paneID]; pane != nil && pane.TerminalID == terminalID {
+				return
+			}
+		}
+		select {
+		case <-client.invalidated:
+		case <-time.After(100 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatalf("context expired waiting for pane %q terminal %q", paneID, terminalID)
+		}
+	}
+	t.Fatalf("timeout waiting for pane %q terminal %q", paneID, terminalID)
+}
+
+func e2eWaitForTabCount(t *testing.T, ctx context.Context, client sharedSessionClient, count int) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		ws := client.model.workbench.CurrentWorkspace()
+		if ws != nil && len(ws.Tabs) == count {
+			return
+		}
+		select {
+		case <-client.invalidated:
+		case <-time.After(100 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatalf("context expired waiting for tab count %d", count)
+		}
+	}
+	ws := client.model.workbench.CurrentWorkspace()
+	if ws == nil {
+		t.Fatalf("timeout waiting for tab count %d: no workspace", count)
+	}
+	t.Fatalf("timeout waiting for tab count %d: got %d", count, len(ws.Tabs))
+}
+
+func e2eWaitForPaneAbsent(t *testing.T, ctx context.Context, client sharedSessionClient, paneID string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		tab := client.model.workbench.CurrentTab()
+		if tab == nil || tab.Panes[paneID] == nil {
+			return
+		}
+		select {
+		case <-client.invalidated:
+		case <-time.After(100 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatalf("context expired waiting for pane %q to disappear", paneID)
+		}
+	}
+	t.Fatalf("timeout waiting for pane %q to disappear", paneID)
+}
+
+func e2eWaitForCurrentTabID(t *testing.T, ctx context.Context, client sharedSessionClient, tabID string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		tab := client.model.workbench.CurrentTab()
+		if tab != nil && tab.ID == tabID {
+			return
+		}
+		select {
+		case <-client.invalidated:
+		case <-time.After(100 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatalf("context expired waiting for current tab %q", tabID)
+		}
+	}
+	tab := client.model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatalf("timeout waiting for current tab %q: no current tab", tabID)
+	}
+	t.Fatalf("timeout waiting for current tab %q: got %q", tabID, tab.ID)
+}
+
+func e2eWaitForSessionRevision(t *testing.T, ctx context.Context, client *protocol.Client, revision uint64) *protocol.SessionSnapshot {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		snapshot, err := client.GetSession(ctx, "main")
+		if err == nil && snapshot != nil && snapshot.Session.Revision >= revision {
+			return snapshot
+		}
+		select {
+		case <-time.After(100 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatalf("context expired waiting for session revision %d", revision)
+		}
+	}
+	t.Fatalf("timeout waiting for session revision %d", revision)
+	return nil
+}
+
+func e2eWaitForSessionEvent(t *testing.T, ctx context.Context, client sharedSessionClient, minRevision uint64) protocol.Event {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case evt := <-client.events:
+			if evt.Session != nil && evt.Session.Revision >= minRevision {
+				return evt
+			}
+		case <-time.After(100 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatalf("context expired waiting for session event revision %d", minRevision)
+		}
+	}
+	t.Fatalf("timeout waiting for session event revision %d", minRevision)
+	return protocol.Event{}
 }
 
 func e2eCreateTerminalViaMouse(t *testing.T, env realMouseE2EEnv, name, readyMarker string) (string, string) {

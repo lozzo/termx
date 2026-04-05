@@ -31,6 +31,8 @@ type TerminalRuntime struct {
 
 	OwnerPaneID  string   // 只读派生缓存，不是第二份可写绑定真相
 	BoundPaneIDs []string // 只读派生缓存，不是第二份可写绑定真相
+	// Owner release freezes further PTY resize until a view explicitly reacquires control.
+	RequiresExplicitOwner bool
 
 	Stream   StreamState
 	Recovery RecoveryState

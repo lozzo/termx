@@ -1,11 +1,13 @@
 package app
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sync/atomic"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -13,8 +15,10 @@ import (
 	"github.com/lozzow/termx/tuiv2/persist"
 	"github.com/lozzow/termx/tuiv2/render"
 	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/sessionstate"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
+	"github.com/lozzow/termx/workbenchdoc"
 )
 
 type Model struct {
@@ -26,6 +30,11 @@ type Model struct {
 	err       error
 	errorSeq  uint64
 	ownerSeq  uint64
+
+	sessionID        string
+	sessionViewID    string
+	sessionRevision  uint64
+	sessionSharedDoc *workbenchdoc.Doc
 
 	startup bootstrap.StartupResult
 
@@ -148,6 +157,9 @@ func (m *Model) bootstrapStartup() error {
 	if m == nil || m.workbench == nil {
 		return nil
 	}
+	if m.cfg.SessionID != "" {
+		return m.bootstrapSessionStartup(context.Background())
+	}
 	if m.workbench.CurrentWorkspace() != nil {
 		return nil
 	}
@@ -168,8 +180,48 @@ func (m *Model) bootstrapStartup() error {
 	return nil
 }
 
+func (m *Model) bootstrapSessionStartup(ctx context.Context) error {
+	if m == nil || m.runtime == nil || m.workbench == nil || m.cfg.SessionID == "" {
+		return nil
+	}
+	client := m.runtime.Client()
+	if client == nil {
+		return nil
+	}
+	sessionID := m.cfg.SessionID
+	if _, err := client.GetSession(ctx, sessionID); err != nil {
+		if _, createErr := client.CreateSession(ctx, protocol.CreateSessionParams{
+			SessionID: sessionID,
+			Name:      sessionID,
+		}); createErr != nil {
+			return createErr
+		}
+	}
+	snapshot, err := client.AttachSession(ctx, protocol.AttachSessionParams{
+		SessionID:  sessionID,
+		WindowCols: uint16(maxInt(0, m.width)),
+		WindowRows: uint16(maxInt(0, m.height)),
+	})
+	if err != nil {
+		return err
+	}
+	m.applySessionSnapshot(snapshot)
+	if pane := m.workbench.ActivePane(); pane != nil && pane.TerminalID == "" {
+		m.modalHost.Open(input.ModePicker, "startup-picker")
+		m.resetPickerState()
+		m.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: "startup-picker"})
+	}
+	return nil
+}
+
 func (m *Model) saveStateCmd() tea.Cmd {
-	if m == nil || m.statePath == "" || m.workbench == nil {
+	if m == nil || m.workbench == nil {
+		return nil
+	}
+	if m.sessionID != "" {
+		return batchCmds(m.replaceSessionCmd(), m.updateSessionViewCmd())
+	}
+	if m.statePath == "" {
 		return nil
 	}
 	wb := m.workbench
@@ -181,6 +233,37 @@ func (m *Model) saveStateCmd() tea.Cmd {
 		}
 		return nil
 	}
+}
+
+func (m *Model) applySessionSnapshot(snapshot *protocol.SessionSnapshot) {
+	if m == nil || snapshot == nil {
+		return
+	}
+	projection := m.captureLocalViewProjection()
+	if snapshot.Session.ID != "" {
+		m.sessionID = snapshot.Session.ID
+	}
+	if snapshot.View != nil {
+		m.sessionViewID = snapshot.View.ViewID
+		projection.WorkspaceName = snapshot.View.ActiveWorkspaceName
+		projection.ActiveTabID = snapshot.View.ActiveTabID
+		projection.FocusedPaneID = snapshot.View.FocusedPaneID
+	}
+	m.sessionRevision = snapshot.Session.Revision
+	if snapshot.Workbench != nil {
+		m.sessionSharedDoc = snapshot.Workbench.Clone()
+	}
+
+	oldBindings := sessionstate.PaneTerminalBindings(sessionstate.ExportWorkbench(m.workbench))
+	m.workbench = sessionstate.ImportDoc(snapshot.Workbench)
+	m.applyLocalViewProjection(projection)
+	m.orchestrator = orchestrator.New(m.workbench, m.runtime)
+
+	if m.runtime != nil {
+		nextBindings := sessionstate.PaneTerminalBindings(snapshot.Workbench)
+		m.reconcileSessionRuntime(context.Background(), oldBindings, nextBindings)
+	}
+	m.render.Invalidate()
 }
 
 func saveState(path string, wb *workbench.Workbench, rt *runtime.Runtime) error {

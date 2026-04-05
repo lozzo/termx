@@ -27,7 +27,9 @@ var (
 		return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
 	}
 	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
-		client, err := dialOrStartClient(resolveSocket(cfg.SocketPath), cfg.LogFilePath, nil)
+		socketPath := resolveSocket(cfg.SocketPath)
+		cfg.SocketPath = socketPath
+		client, err := dialOrStartClient(socketPath, cfg.LogFilePath, nil)
 		if err != nil {
 			return err
 		}
@@ -75,6 +77,7 @@ func newRootCmd() *cobra.Command {
 			}
 			return runTUIv2(shared.Config{
 				Workspace:          "main",
+				SessionID:          "main",
 				SocketPath:         socket,
 				LogFilePath:        logPath,
 				WorkspaceStatePath: resolveWorkspaceStatePath(),
@@ -243,6 +246,7 @@ func attachCommand(socket *string, logFile *string) *cobra.Command {
 			}
 			return runTUIv2(shared.Config{
 				Workspace:   "main",
+				SessionID:   "main",
 				AttachID:    args[0],
 				SocketPath:  *socket,
 				LogFilePath: logPath,

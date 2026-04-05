@@ -20,6 +20,7 @@ import (
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
+	"github.com/lozzow/termx/workbenchdoc"
 )
 
 func TestModelViewShowsProjectedState(t *testing.T) {
@@ -130,6 +131,93 @@ func TestModelInitRestoresWorkspaceStateFromConfigPath(t *testing.T) {
 	}
 	if pane := model.workbench.ActivePane(); pane == nil || pane.TerminalID != "" {
 		t.Fatalf("expected failed auto-reattach to clear restored binding, got %#v", pane)
+	}
+}
+
+func TestModelInitBootstrapsFromSessionSnapshot(t *testing.T) {
+	client := &recordingBridgeClient{
+		getSessionErr: errors.New("session not found"),
+		sessionSnapshot: &protocol.SessionSnapshot{
+			Session: protocol.SessionInfo{ID: "main", Revision: 1},
+			View:    &protocol.ViewInfo{ViewID: "view-1", SessionID: "main"},
+			Workbench: &workbenchdoc.Doc{
+				CurrentWorkspace: "main",
+				WorkspaceOrder:   []string{"main"},
+				Workspaces: map[string]*workbenchdoc.Workspace{
+					"main": {
+						Name: "main",
+						Tabs: []*workbenchdoc.Tab{{
+							ID:           "1",
+							Name:         "1",
+							Root:         workbenchdoc.NewLeaf("1"),
+							Panes:        map[string]*workbenchdoc.Pane{"1": {ID: "1"}},
+							ActivePaneID: "1",
+						}},
+						ActiveTab: 0,
+					},
+				},
+			},
+		},
+	}
+	model := New(shared.Config{SessionID: "main"}, workbench.NewWorkbench(), runtime.New(client))
+	cmd := model.Init()
+	if cmd == nil {
+		t.Fatal("expected init cmd after session bootstrap")
+	}
+	if len(client.createSessionCalls) != 1 || client.createSessionCalls[0].SessionID != "main" {
+		t.Fatalf("expected create session call for main, got %#v", client.createSessionCalls)
+	}
+	if len(client.attachSessionCalls) != 1 || client.attachSessionCalls[0].SessionID != "main" {
+		t.Fatalf("expected attach session call for main, got %#v", client.attachSessionCalls)
+	}
+	if model.sessionID != "main" || model.sessionViewID != "view-1" || model.sessionRevision != 1 {
+		t.Fatalf("unexpected session state: id=%q view=%q rev=%d", model.sessionID, model.sessionViewID, model.sessionRevision)
+	}
+	if ws := model.workbench.CurrentWorkspace(); ws == nil || ws.Name != "main" {
+		t.Fatalf("expected imported session workspace, got %#v", ws)
+	}
+}
+
+func TestSaveStateCmdReplacesSessionWhenSessionAttached(t *testing.T) {
+	client := &recordingBridgeClient{
+		sessionSnapshot: &protocol.SessionSnapshot{
+			Session: protocol.SessionInfo{ID: "main", Revision: 2},
+			View:    &protocol.ViewInfo{ViewID: "view-1", SessionID: "main"},
+		},
+	}
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "1",
+			Name:         "1",
+			ActivePaneID: "1",
+			Panes:        map[string]*workbench.PaneState{"1": {ID: "1", TerminalID: "term-1"}},
+			Root:         workbench.NewLeaf("1"),
+		}},
+	})
+	model := New(shared.Config{SessionID: "main"}, wb, runtime.New(client))
+	model.sessionID = "main"
+	model.sessionRevision = 1
+
+	cmd := model.saveStateCmd()
+	if cmd == nil {
+		t.Fatal("expected session replace cmd")
+	}
+	msg := cmd()
+	snapshot, ok := msg.(sessionSnapshotMsg)
+	if !ok {
+		t.Fatalf("expected sessionSnapshotMsg, got %#v", msg)
+	}
+	if snapshot.Err != nil {
+		t.Fatalf("unexpected session replace error: %v", snapshot.Err)
+	}
+	if len(client.replaceCalls) != 1 {
+		t.Fatalf("expected one replace call, got %d", len(client.replaceCalls))
+	}
+	if client.replaceCalls[0].SessionID != "main" || client.replaceCalls[0].BaseRevision != 1 {
+		t.Fatalf("unexpected replace params: %#v", client.replaceCalls[0])
 	}
 }
 
@@ -680,7 +768,7 @@ func TestModelPromptSubmitCreateTerminalFormRequiresName(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
 	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: "prompt-1"}
 	model.modalHost.Prompt = &modal.PromptState{
-		Kind:       "create-terminal-form",
+		Kind:        "create-terminal-form",
 		Title:       "Create Terminal",
 		PaneID:      "pane-1",
 		Command:     []string{"/bin/sh"},
@@ -1679,6 +1767,15 @@ type recordingBridgeClient struct {
 	setTagsCalls       []setTagsCall
 	setMetadataCalls   []setMetadataCall
 	killCalls          []string
+	sessionSnapshot    *protocol.SessionSnapshot
+	sessionView        *protocol.ViewInfo
+	getSessionErr      error
+	replaceSessionErr  error
+	createSessionCalls []protocol.CreateSessionParams
+	getSessionCalls    []string
+	attachSessionCalls []protocol.AttachSessionParams
+	replaceCalls       []protocol.ReplaceSessionParams
+	viewUpdateCalls    []protocol.UpdateSessionViewParams
 }
 
 type resizeCall struct {
@@ -1794,6 +1891,67 @@ func (c *recordingBridgeClient) Stream(uint16) (<-chan protocol.StreamFrame, fun
 func (c *recordingBridgeClient) Kill(_ context.Context, terminalID string) error {
 	c.killCalls = append(c.killCalls, terminalID)
 	return nil
+}
+
+func (c *recordingBridgeClient) CreateSession(_ context.Context, params protocol.CreateSessionParams) (*protocol.SessionSnapshot, error) {
+	c.createSessionCalls = append(c.createSessionCalls, params)
+	if c.sessionSnapshot == nil {
+		return &protocol.SessionSnapshot{}, nil
+	}
+	return c.sessionSnapshot, nil
+}
+
+func (c *recordingBridgeClient) ListSessions(context.Context) (*protocol.ListSessionsResult, error) {
+	return &protocol.ListSessionsResult{}, nil
+}
+
+func (c *recordingBridgeClient) GetSession(_ context.Context, sessionID string) (*protocol.SessionSnapshot, error) {
+	c.getSessionCalls = append(c.getSessionCalls, sessionID)
+	if c.getSessionErr != nil {
+		return nil, c.getSessionErr
+	}
+	if c.sessionSnapshot == nil {
+		return &protocol.SessionSnapshot{}, nil
+	}
+	return c.sessionSnapshot, nil
+}
+
+func (c *recordingBridgeClient) AttachSession(_ context.Context, params protocol.AttachSessionParams) (*protocol.SessionSnapshot, error) {
+	c.attachSessionCalls = append(c.attachSessionCalls, params)
+	if c.sessionSnapshot == nil {
+		return &protocol.SessionSnapshot{}, nil
+	}
+	return c.sessionSnapshot, nil
+}
+
+func (c *recordingBridgeClient) DetachSession(context.Context, string, string) error {
+	return nil
+}
+
+func (c *recordingBridgeClient) ApplySession(context.Context, protocol.ApplySessionParams) (*protocol.SessionSnapshot, error) {
+	if c.sessionSnapshot == nil {
+		return &protocol.SessionSnapshot{}, nil
+	}
+	return c.sessionSnapshot, nil
+}
+
+func (c *recordingBridgeClient) ReplaceSession(_ context.Context, params protocol.ReplaceSessionParams) (*protocol.SessionSnapshot, error) {
+	c.replaceCalls = append(c.replaceCalls, params)
+	if c.replaceSessionErr != nil {
+		return nil, c.replaceSessionErr
+	}
+	if c.sessionSnapshot == nil {
+		return &protocol.SessionSnapshot{}, nil
+	}
+	return c.sessionSnapshot, nil
+}
+
+func (c *recordingBridgeClient) UpdateSessionView(_ context.Context, params protocol.UpdateSessionViewParams) (*protocol.ViewInfo, error) {
+	c.viewUpdateCalls = append(c.viewUpdateCalls, params)
+	if c.sessionView == nil {
+		return &protocol.ViewInfo{ViewID: params.ViewID, SessionID: params.SessionID}, nil
+	}
+	return c.sessionView, nil
 }
 
 func cloneTags(tags map[string]string) map[string]string {

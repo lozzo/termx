@@ -423,7 +423,7 @@ func TestHandleSemanticActionFocusPaneMovesToNeighbor(t *testing.T) {
 	})
 }
 
-func TestHandleSemanticActionClosePaneRemovesPaneAndInvalidates(t *testing.T) {
+func TestHandleSemanticActionClosePaneRemovesPaneAndReturnsCloseEffect(t *testing.T) {
 	orch, _ := newTestOrchestrator(t)
 	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
 	if err := orch.workbench.SplitPane("tab-1", "pane-1", "pane-2", workbench.SplitVertical); err != nil {
@@ -438,8 +438,10 @@ func TestHandleSemanticActionClosePaneRemovesPaneAndInvalidates(t *testing.T) {
 	if len(effects) != 1 {
 		t.Fatalf("expected 1 effect, got %d", len(effects))
 	}
-	if _, ok := effects[0].(InvalidateRenderEffect); !ok {
-		t.Fatalf("expected InvalidateRenderEffect, got %T", effects[0])
+	if effect, ok := effects[0].(ClosePaneEffect); !ok {
+		t.Fatalf("expected ClosePaneEffect, got %T", effects[0])
+	} else if effect.PaneID != "pane-2" {
+		t.Fatalf("expected ClosePaneEffect for pane-2, got %#v", effect)
 	}
 	tab := orch.workbench.CurrentTab()
 	if tab == nil {

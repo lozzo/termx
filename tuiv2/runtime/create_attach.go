@@ -30,6 +30,10 @@ func (r *Runtime) AttachTerminal(ctx context.Context, paneID, terminalID, mode s
 		binding.Channel = attached.Channel
 		binding.Connected = true
 		terminal.BoundPaneIDs = appendBoundPaneID(terminal.BoundPaneIDs, paneID)
+		if terminal.OwnerPaneID == "" {
+			terminal.OwnerPaneID = paneID
+			terminal.RequiresExplicitOwner = false
+		}
 	}
 	r.syncTerminalOwnership(terminal)
 	r.touch()

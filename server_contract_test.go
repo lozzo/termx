@@ -280,6 +280,68 @@ func TestHandleTransportEventsSubscriptionDeliversFilteredEvents(t *testing.T) {
 	}
 }
 
+func TestHandleTransportEventsSubscriptionDeliversSessionEvents(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewServer()
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+	defer serverTransport.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.handleTransport(ctx, serverTransport, "memory")
+	}()
+
+	client := protocol.NewClient(clientTransport)
+	defer client.Close()
+
+	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+		t.Fatalf("hello failed: %v", err)
+	}
+
+	events, err := client.Events(ctx, protocol.EventsParams{
+		SessionID: "main",
+		Types:     []protocol.EventType{protocol.EventSessionUpdated},
+	})
+	if err != nil {
+		t.Fatalf("events subscribe failed: %v", err)
+	}
+
+	srv.events.Publish(Event{
+		Type:      EventSessionUpdated,
+		SessionID: "main",
+		Timestamp: time.Now().UTC(),
+		Session: &SessionEventData{
+			Revision: 2,
+			ViewID:   "view-1",
+		},
+	})
+
+	select {
+	case evt := <-events:
+		if evt.Type != protocol.EventSessionUpdated || evt.SessionID != "main" {
+			t.Fatalf("unexpected event: %#v", evt)
+		}
+		if evt.Session == nil || evt.Session.Revision != 2 || evt.Session.ViewID != "view-1" {
+			t.Fatalf("unexpected session payload: %#v", evt)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for session event")
+	}
+
+	_ = client.Close()
+	select {
+	case err := <-done:
+		if err != nil && !errors.Is(err, io.EOF) {
+			t.Fatalf("handleTransport failed: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for transport shutdown")
+	}
+}
+
 func TestServerShutdownClosesEventsAndRejectsCreate(t *testing.T) {
 	srv := NewServer()
 
