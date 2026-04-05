@@ -615,7 +615,7 @@ func (m *Model) switchTabByIndexMouse(index int) tea.Cmd {
 		return m.showError(err)
 	}
 	m.render.Invalidate()
-	return m.saveStateCmd()
+	return batchCmds(m.maybeSyncActivePaneInteractiveOwnershipCmd(), m.saveStateCmd())
 }
 
 func (m *Model) switchCurrentTabByOffsetMouse(offset int) tea.Cmd {
@@ -623,7 +623,7 @@ func (m *Model) switchCurrentTabByOffsetMouse(offset int) tea.Cmd {
 		return m.showError(err)
 	}
 	m.render.Invalidate()
-	return m.saveStateCmd()
+	return batchCmds(m.maybeSyncActivePaneInteractiveOwnershipCmd(), m.saveStateCmd())
 }
 
 func (m *Model) handleEmptyPaneClick(pane workbench.VisiblePane, x, contentY int) tea.Cmd {

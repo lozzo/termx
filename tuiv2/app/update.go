@@ -42,31 +42,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case SemanticActionMsg:
-		if handled, cmd := m.handleLocalAction(typed.Action); handled {
-			return m, batchCmds(cmd, m.updateSessionViewCmd())
-		}
-		if handled, cmd := m.handleModalAction(typed.Action); handled {
-			return m, batchCmds(cmd, m.updateSessionViewCmd())
-		}
-		cmd := m.applyEffects(m.enrichEffects(typed.Action, m.orchestrator.HandleSemanticAction(typed.Action)))
-		cmd = batchCmds(cmd, m.resizeCmdForAction(typed.Action))
-		if m.isStickyMode() {
-			cmd = tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
-		}
-		return m, batchCmds(cmd, m.updateSessionViewCmd())
+		return m, m.dispatchSemanticActionCmd(typed.Action, true)
 	case input.SemanticAction:
-		if handled, cmd := m.handleLocalAction(typed); handled {
-			return m, batchCmds(cmd, m.updateSessionViewCmd())
-		}
-		if handled, cmd := m.handleModalAction(typed); handled {
-			return m, batchCmds(cmd, m.updateSessionViewCmd())
-		}
-		cmd := m.applyEffects(m.enrichEffects(typed, m.orchestrator.HandleSemanticAction(typed)))
-		cmd = batchCmds(cmd, m.resizeCmdForAction(typed))
-		if m.isStickyMode() {
-			cmd = tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
-		}
-		return m, batchCmds(cmd, m.updateSessionViewCmd())
+		return m, m.dispatchSemanticActionCmd(typed, true)
 	case TerminalInputMsg:
 		return m, m.handleTerminalInput(typed.Input)
 	case input.TerminalInput:
@@ -186,6 +164,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case InvalidateMsg:
 		m.invalidatePending.Store(false)
 		m.render.Invalidate()
+		if m.invalidateDeferred.Swap(false) {
+			m.queueInvalidate()
+		}
 		return m, m.maybeAutoFitFloatingPanesCmd()
 	case RenderTickMsg:
 		if m.render != nil {
@@ -211,6 +192,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		return m, nil
 	}
+}
+
+func (m *Model) dispatchSemanticActionCmd(action input.SemanticAction, allowLocal bool) tea.Cmd {
+	if allowLocal {
+		if handled, cmd := m.handleLocalAction(action); handled {
+			return batchCmds(cmd, m.updateSessionViewCmd())
+		}
+	}
+	if handled, cmd := m.handleModalAction(action); handled {
+		return batchCmds(cmd, m.updateSessionViewCmd())
+	}
+	cmd := m.applyEffects(m.enrichEffects(action, m.orchestrator.HandleSemanticAction(action)))
+	cmd = batchCmds(cmd, m.resizeCmdForAction(action))
+	if m.isStickyMode() {
+		cmd = tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
+	}
+	return batchCmds(cmd, m.updateSessionViewCmd())
 }
 
 func (m *Model) showError(err error) tea.Cmd {

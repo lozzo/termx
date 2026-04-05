@@ -99,3 +99,29 @@ func TestDrawSnapshotWithOffsetClipsWideCellAtPaneEdge(t *testing.T) {
 		t.Fatalf("expected no scrollback continuation spill outside pane rect, got %#v", canvas.cells[0][2])
 	}
 }
+
+func TestDrawSnapshotInRectKeepsTopRowsWhenHeightClipped(t *testing.T) {
+	canvas := newComposedCanvas(6, 2)
+	snapshot := &protocol.Snapshot{
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{
+				repeatCells("top"),
+				repeatCells("mid"),
+				repeatCells("bot"),
+			},
+		},
+	}
+
+	canvas.drawSnapshotInRect(workbench.Rect{X: 0, Y: 0, W: 6, H: 2}, snapshot)
+	got := canvas.rawString()
+
+	if !strings.Contains(got, "top") {
+		t.Fatalf("expected clipped snapshot to keep first row visible, got %q", got)
+	}
+	if !strings.Contains(got, "mid") {
+		t.Fatalf("expected clipped snapshot to keep second row visible, got %q", got)
+	}
+	if strings.Contains(got, "bot") {
+		t.Fatalf("expected clipped snapshot to drop overflow rows, got %q", got)
+	}
+}

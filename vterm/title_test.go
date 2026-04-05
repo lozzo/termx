@@ -1,6 +1,7 @@
 package vterm
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -32,5 +33,25 @@ func TestVTermTitleCallbackNotSetDoesNotPanic(t *testing.T) {
 	_, err := vt.Write([]byte("\x1b]2;Test Title\x1b\\"))
 	if err != nil {
 		t.Fatalf("Write failed: %v", err)
+	}
+}
+
+func TestVTermTitleBELPreservesFollowingPromptText(t *testing.T) {
+	var capturedTitle string
+	vt := New(80, 24, 1000, nil)
+	vt.SetTitleHandler(func(title string) {
+		capturedTitle = title
+	})
+
+	if _, err := vt.Write([]byte("\x1b]2;termx-prompt\x07termx$ ")); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	if capturedTitle != "termx-prompt" {
+		t.Fatalf("expected title termx-prompt, got %q", capturedTitle)
+	}
+	rendered := strings.Join(vt.RenderLines(), "\n")
+	if !strings.Contains(rendered, "termx$") {
+		t.Fatalf("expected prompt text to remain visible, got %q", rendered)
 	}
 }

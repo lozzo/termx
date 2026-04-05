@@ -1701,7 +1701,8 @@ func e2eWaitForText(t *testing.T, ctx context.Context, m *Model, invalidated <-c
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if strings.Contains(m.View(), target) {
+		view := xansi.Strip(m.View())
+		if strings.Contains(view, target) {
 			return
 		}
 		select {
@@ -1711,7 +1712,33 @@ func e2eWaitForText(t *testing.T, ctx context.Context, m *Model, invalidated <-c
 			t.Fatalf("context expired waiting for %q in view", target)
 		}
 	}
-	t.Fatalf("timeout: %q never appeared in view\nfinal view:\n%s", target, m.View())
+	t.Fatalf("timeout: %q never appeared in view\nfinal view:\n%s\nsnapshot excerpt:\n%s", target, xansi.Strip(m.View()), e2eActiveSnapshotExcerpt(m))
+}
+
+func e2eActiveSnapshotExcerpt(m *Model) string {
+	if m == nil || m.workbench == nil || m.runtime == nil {
+		return "<unavailable>"
+	}
+	pane := m.workbench.ActivePane()
+	if pane == nil || pane.TerminalID == "" {
+		return "<no active terminal>"
+	}
+	terminal := m.runtime.Registry().Get(pane.TerminalID)
+	if terminal == nil || terminal.Snapshot == nil {
+		return "<no snapshot>"
+	}
+	lines := make([]string, 0, 8)
+	for _, row := range terminal.Snapshot.Screen.Cells {
+		var b strings.Builder
+		for _, cell := range row {
+			b.WriteString(cell.Content)
+		}
+		lines = append(lines, b.String())
+		if len(lines) >= 8 {
+			break
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func e2eWaitForTitle(t *testing.T, ctx context.Context, m *Model, invalidated <-chan struct{}, terminalID string, target string) {

@@ -20,6 +20,7 @@ type Coordinator struct {
 	dirty       bool
 	lastFrame   string
 	lastCursor  string
+	lastState   renderStateKey
 	bodyCache   *bodyRenderCache
 	tabBarKey   tabBarCacheKey
 	tabBarValue string
@@ -37,6 +38,27 @@ type renderedBody struct {
 	content string
 	cursor  string
 	blink   bool
+}
+
+type renderStateKey struct {
+	Workbench                *workbench.VisibleWorkbench
+	Runtime                  *VisibleRuntimeStateProxy
+	SurfaceKind              VisibleSurfaceKind
+	SurfaceTerminalPool      *modal.TerminalManagerState
+	OverlayKind              VisibleOverlayKind
+	OverlayPrompt            *modal.PromptState
+	OverlayPicker            *modal.PickerState
+	OverlayWorkspacePicker   *modal.WorkspacePickerState
+	OverlayTerminalManager   *modal.TerminalManagerState
+	OverlayHelp              *modal.HelpState
+	OverlayFloatingOverview  *modal.FloatingOverviewState
+	TermSize                 TermSize
+	Notice                   string
+	Error                    string
+	InputMode                string
+	OwnerConfirmPaneID       string
+	EmptyPaneSelectionPaneID string
+	EmptyPaneSelectionIndex  int
 }
 
 type tabBarCacheKey struct {
@@ -131,18 +153,20 @@ func (c *Coordinator) RenderFrame() string {
 	if c == nil || c.visibleFn == nil {
 		return ""
 	}
+	state := c.visibleFn()
+	key := stateKey(state)
 	c.mu.Lock()
-	if !c.dirty && c.lastFrame != "" {
+	if !c.dirty && c.lastFrame != "" && c.lastState == key {
 		frame := c.lastFrame
 		c.mu.Unlock()
 		return frame
 	}
 	c.mu.Unlock()
-	state := c.visibleFn()
 	if state.Workbench == nil {
 		c.mu.Lock()
 		c.lastFrame = "tuiv2"
 		c.lastCursor = hideCursorANSI()
+		c.lastState = key
 		c.dirty = false
 		frame := c.lastFrame
 		c.mu.Unlock()
@@ -171,10 +195,34 @@ func (c *Coordinator) RenderFrame() string {
 	}
 	c.lastFrame = frame + cursor
 	c.lastCursor = cursor
+	c.lastState = key
 	c.dirty = false
 	frame = c.lastFrame
 	c.mu.Unlock()
 	return frame
+}
+
+func stateKey(state VisibleRenderState) renderStateKey {
+	return renderStateKey{
+		Workbench:                state.Workbench,
+		Runtime:                  state.Runtime,
+		SurfaceKind:              state.Surface.Kind,
+		SurfaceTerminalPool:      state.Surface.TerminalPool,
+		OverlayKind:              state.Overlay.Kind,
+		OverlayPrompt:            state.Overlay.Prompt,
+		OverlayPicker:            state.Overlay.Picker,
+		OverlayWorkspacePicker:   state.Overlay.WorkspacePicker,
+		OverlayTerminalManager:   state.Overlay.TerminalManager,
+		OverlayHelp:              state.Overlay.Help,
+		OverlayFloatingOverview:  state.Overlay.FloatingOverview,
+		TermSize:                 state.TermSize,
+		Notice:                   state.Notice,
+		Error:                    state.Error,
+		InputMode:                state.InputMode,
+		OwnerConfirmPaneID:       state.OwnerConfirmPaneID,
+		EmptyPaneSelectionPaneID: state.EmptyPaneSelectionPaneID,
+		EmptyPaneSelectionIndex:  state.EmptyPaneSelectionIndex,
+	}
 }
 
 func (c *Coordinator) CursorSequence() string {
@@ -1119,7 +1167,7 @@ func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBor
 	reservedStatuses := paneBorderSlotsWidth(active)
 	preferActionCluster := len(actionTokens) > 0 && actionTokens[0].Kind == HitRegionPaneCenterFloating
 	for {
-		reservedRight := reservedStatuses + paneChromeActionClusterWidth(actionTokens, actionCount)
+		reservedRight := reservedStatuses + visiblePaneChromeActionClusterWidth(actionTokens, actionCount, preferActionCluster)
 		titleBudget := innerW - reservedRight
 		titleFits := titleFullWidth <= titleBudget
 		if preferActionCluster {
@@ -1140,7 +1188,7 @@ func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBor
 		}
 		break
 	}
-	titleLabel := xansi.Truncate(fullTitleLabel, maxInt(0, innerW-reservedStatuses-paneChromeActionClusterWidth(actionTokens, actionCount)), "")
+	titleLabel := xansi.Truncate(fullTitleLabel, maxInt(0, innerW-reservedStatuses-visiblePaneChromeActionClusterWidth(actionTokens, actionCount, preferActionCluster)), "")
 	if titleLabel == "" && len(active) == 0 && actionCount == 0 {
 		return paneBorderLabelsLayout{}, false
 	}
@@ -1150,10 +1198,11 @@ func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBor
 		titleX:      innerX,
 		titleLabel:  titleLabel,
 	}
+	visibleActionTokens := visiblePaneChromeActionTokens(actionTokens, actionCount, preferActionCluster)
 	right := innerX + innerW
 	actionXs := make([]int, actionCount)
 	for i := actionCount - 1; i >= 0; i-- {
-		labelW := xansi.StringWidth(actionTokens[i].Label)
+		labelW := xansi.StringWidth(visibleActionTokens[i].Label)
 		right -= labelW
 		actionXs[i] = right
 		if i > 0 {
@@ -1181,7 +1230,7 @@ func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBor
 		right = x - 1
 	}
 	for i := 0; i < actionCount; i++ {
-		token := actionTokens[i]
+		token := visibleActionTokens[i]
 		layout.actionSlots[i] = paneChromeActionSlot{
 			Kind:  token.Kind,
 			Label: token.Label,
@@ -1189,6 +1238,23 @@ func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBor
 		}
 	}
 	return layout, true
+}
+
+func visiblePaneChromeActionTokens(tokens []paneChromeActionToken, count int, preferSuffix bool) []paneChromeActionToken {
+	if count <= 0 || len(tokens) == 0 {
+		return nil
+	}
+	if count >= len(tokens) {
+		return tokens
+	}
+	if preferSuffix {
+		return tokens[len(tokens)-count:]
+	}
+	return tokens[:count]
+}
+
+func visiblePaneChromeActionClusterWidth(tokens []paneChromeActionToken, count int, preferSuffix bool) int {
+	return paneChromeActionClusterWidth(visiblePaneChromeActionTokens(tokens, count, preferSuffix), count)
 }
 
 func paneBorderSlotsForWidth(slots []paneBorderSlot, width int) []paneBorderSlot {

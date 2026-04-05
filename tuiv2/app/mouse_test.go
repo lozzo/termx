@@ -357,7 +357,7 @@ func TestMouseClickNonFloatingKeepsFloatingTerminalPanesVisibleWithExtentHints(t
 	}
 
 	before := m.View()
-	if strings.Count(before, "󰆚") < 2 {
+	if strings.Count(before, "󰏤") < 2 {
 		t.Fatalf("expected floating terminal panes visible before click:\n%s", before)
 	}
 
@@ -370,7 +370,7 @@ func TestMouseClickNonFloatingKeepsFloatingTerminalPanesVisibleWithExtentHints(t
 	m = model.(*Model)
 
 	after := m.View()
-	if strings.Count(after, "󰆚") < 2 {
+	if strings.Count(after, "󰏤") < 2 {
 		t.Fatalf("expected floating terminal panes to remain visible after tiled click:\n%s", after)
 	}
 }

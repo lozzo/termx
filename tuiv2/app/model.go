@@ -58,6 +58,7 @@ type Model struct {
 	pendingTerminalInputs []input.TerminalInput
 	terminalInputSending  bool
 	invalidatePending     atomic.Bool
+	invalidateDeferred    atomic.Bool
 
 	// 鼠标拖动状态
 	mouseDragPaneID  string
@@ -134,9 +135,14 @@ func (m *Model) queueInvalidate() {
 		return
 	}
 	m.render.Invalidate()
-	if m.send != nil && !m.invalidatePending.Swap(true) {
-		m.sendAsync(InvalidateMsg{})
+	if m.send == nil {
+		return
 	}
+	if !m.invalidatePending.Swap(true) {
+		m.sendAsync(InvalidateMsg{})
+		return
+	}
+	m.invalidateDeferred.Store(true)
 }
 
 func (m *Model) sendAsync(msg tea.Msg) {

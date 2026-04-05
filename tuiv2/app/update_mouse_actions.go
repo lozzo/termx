@@ -9,23 +9,13 @@ func (m *Model) applyMouseSemanticAction(action input.SemanticAction) tea.Cmd {
 	if m == nil {
 		return nil
 	}
-	if handled, cmd := m.handleLocalAction(action); handled {
-		if m.isStickyMode() {
-			return tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
-		}
-		return cmd
-	}
 	if handled, cmd := m.handleMouseLocalAction(action); handled {
 		if m.isStickyMode() {
 			return tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
 		}
 		return cmd
 	}
-	cmd := m.applyEffects(m.enrichEffects(action, m.orchestrator.HandleSemanticAction(action)))
-	if m.isStickyMode() {
-		return tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
-	}
-	return cmd
+	return m.dispatchSemanticActionCmd(action, true)
 }
 
 func (m *Model) cancelActiveModal() tea.Cmd {
@@ -43,6 +33,8 @@ func (m *Model) handleMouseLocalAction(action input.SemanticAction) (bool, tea.C
 		return false, nil
 	}
 	switch action.Kind {
+	case input.ActionCreateTab, input.ActionOpenWorkspacePicker, input.ActionZoomPane:
+		return true, m.dispatchSemanticActionCmd(action, false)
 	case input.ActionRenameTab:
 		if m.workbench.CurrentTab() == nil {
 			return true, nil
