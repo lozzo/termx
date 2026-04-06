@@ -140,6 +140,74 @@ func TestRuntimeAttachAndLoadSnapshotInitializesVTermCache(t *testing.T) {
 	}
 }
 
+func TestRuntimeAttachTerminalDoesNotStartStreamBeforeSnapshotLoad(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 7, Mode: "collaborator"}
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+
+	if got := client.subscriptionCount(7); got != 0 {
+		t.Fatalf("expected attach to avoid starting stream before snapshot load, got %d subscriptions", got)
+	}
+}
+
+func TestRuntimeLoadSnapshotDoesNotRaceWithAlternateScreenExit(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 80, Rows: 24},
+		Screen: protocol.ScreenData{
+			Cells:             [][]protocol.Cell{{{Content: "v", Width: 1}, {Content: "i", Width: 1}}},
+			IsAlternateScreen: true,
+		},
+		Cursor:     protocol.CursorState{Visible: false},
+		Modes:      protocol.TerminalModes{AutoWrap: true, AlternateScreen: true, MouseTracking: true},
+		Timestamp:  time.Now(),
+	}
+	client.snapshotHook = func() {
+		if client.subscriptionCount(9) != 0 {
+			t.Fatalf("snapshot load should run before stream subscription")
+		}
+	}
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	if err := rt.StartStream(ctx, "term-1"); err != nil {
+		t.Fatalf("start stream: %v", err)
+	}
+
+	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("\x1b[?1049l\x1b[?25h\x1b[?1002l$\x20")})
+	waitFor(t, func() bool {
+		stored := rt.Registry().Get("term-1")
+		return stored != nil && stored.Snapshot != nil && snapshotContains(stored.Snapshot, "$ ")
+	})
+
+	stored := rt.Registry().Get("term-1")
+	if stored == nil || stored.Snapshot == nil {
+		t.Fatalf("expected terminal snapshot after stream, got %#v", stored)
+	}
+	if !stored.Snapshot.Cursor.Visible {
+		t.Fatalf("expected streamed cursor show to win over older snapshot, got %#v", stored.Snapshot.Cursor)
+	}
+	if stored.Snapshot.Modes.MouseTracking {
+		t.Fatalf("expected streamed mouse disable to win over older snapshot, got %#v", stored.Snapshot.Modes)
+	}
+	if stored.Snapshot.Modes.AlternateScreen || stored.Snapshot.Screen.IsAlternateScreen {
+		t.Fatalf("expected alternate screen exit to win over older snapshot, got screen=%#v modes=%#v", stored.Snapshot.Screen, stored.Snapshot.Modes)
+	}
+}
+
 func TestRuntimeStartStreamRefreshesSnapshotAndInvalidates(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -645,6 +713,7 @@ type fakeBridgeClient struct {
 	attachResult        *protocol.AttachResult
 	listResult          *protocol.ListResult
 	snapshotByTerminal  map[string]*protocol.Snapshot
+	snapshotHook        func()
 	streams             map[uint16]chan protocol.StreamFrame
 	streamSubscriptions map[uint16]int
 	streamStops         map[uint16]int
@@ -702,9 +771,18 @@ func (f *fakeBridgeClient) Attach(context.Context, string, string) (*protocol.At
 
 func (f *fakeBridgeClient) Snapshot(context.Context, string, int, int) (*protocol.Snapshot, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, snapshot := range f.snapshotByTerminal {
-		return cloneSnapshot(snapshot), nil
+	var snapshot *protocol.Snapshot
+	hook := f.snapshotHook
+	for _, candidate := range f.snapshotByTerminal {
+		snapshot = cloneSnapshot(candidate)
+		break
+	}
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+	if snapshot != nil {
+		return snapshot, nil
 	}
 	return nil, fmt.Errorf("snapshot not configured")
 }
@@ -1000,6 +1078,9 @@ func TestRuntimeClosedStreamStopsImmediately(t *testing.T) {
 
 	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
 		t.Fatalf("attach terminal: %v", err)
+	}
+	if err := rt.StartStream(ctx, "term-1"); err != nil {
+		t.Fatalf("start stream: %v", err)
 	}
 
 	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeClosed, Payload: protocol.EncodeClosedPayload(0)})

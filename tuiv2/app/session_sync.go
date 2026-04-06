@@ -227,6 +227,9 @@ func (m *Model) reconcileSessionRuntime(ctx context.Context, oldBindings, nextBi
 		if _, err := m.runtime.AttachTerminal(ctx, paneID, terminalID, "collaborator"); err != nil {
 			continue
 		}
-		_, _ = m.runtime.LoadSnapshot(ctx, terminalID, 0, defaultTerminalSnapshotScrollbackLimit)
+		if _, err := m.runtime.LoadSnapshot(ctx, terminalID, 0, defaultTerminalSnapshotScrollbackLimit); err != nil {
+			continue
+		}
+		_ = m.runtime.StartStream(ctx, terminalID)
 	}
 }

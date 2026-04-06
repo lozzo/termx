@@ -38,9 +38,6 @@ func (r *Runtime) AttachTerminal(ctx context.Context, paneID, terminalID, mode s
 	}
 	r.syncTerminalOwnership(terminal)
 	r.touch()
-	if err := r.StartStream(ctx, terminalID); err != nil {
-		return nil, err
-	}
 	return terminal, nil
 }
 

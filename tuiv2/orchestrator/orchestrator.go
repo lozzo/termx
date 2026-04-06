@@ -67,6 +67,9 @@ func (o *Orchestrator) AttachAndLoadSnapshot(ctx context.Context, paneID, termin
 	if err != nil {
 		return nil, err
 	}
+	if err := o.runtime.StartStream(ctx, terminalID); err != nil {
+		return nil, err
+	}
 	msgs := []any{
 		TerminalAttachedMsg{PaneID: paneID, TerminalID: terminalID, Channel: terminal.Channel},
 		SnapshotLoadedMsg{PaneID: paneID, TerminalID: terminalID, Snapshot: snapshot},
