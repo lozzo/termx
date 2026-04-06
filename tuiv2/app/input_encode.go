@@ -157,6 +157,21 @@ func (m *Model) encodeTerminalMouseInput(msg tea.MouseMsg, paneID string, conten
 	return encodeSGR1006Mouse(msg, col, row)
 }
 
+func encodeTerminalWheelFallback(msg tea.MouseMsg, modes localvterm.TerminalModes) []byte {
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		return encodeCursorKey('A', terminalModifiers{}, modes.ApplicationCursor)
+	case tea.MouseButtonWheelDown:
+		return encodeCursorKey('B', terminalModifiers{}, modes.ApplicationCursor)
+	case tea.MouseButtonWheelLeft:
+		return encodeCursorKey('D', terminalModifiers{}, modes.ApplicationCursor)
+	case tea.MouseButtonWheelRight:
+		return encodeCursorKey('C', terminalModifiers{}, modes.ApplicationCursor)
+	default:
+		return nil
+	}
+}
+
 func encodeSGR1006Mouse(msg tea.MouseMsg, col, row int) []byte {
 	if col < 1 || row < 1 {
 		return nil

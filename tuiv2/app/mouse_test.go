@@ -1489,6 +1489,62 @@ func TestMouseWheelFallsBackWhenTrackingDisabled(t *testing.T) {
 	}
 }
 
+func TestMouseWheelAlternateScreenFallsBackToCursorKeysWhenTrackingDisabled(t *testing.T) {
+	m := setupModel(t, modelOpts{})
+	client, ok := m.runtime.Client().(*recordingBridgeClient)
+	if !ok {
+		t.Fatal("expected recording bridge client")
+	}
+	setActivePaneTerminalModes(t, m, protocol.TerminalModes{
+		AlternateScreen: true,
+		MouseTracking:   false,
+		AutoWrap:        true,
+	})
+	x, y := activePaneContentScreenOrigin(t, m)
+
+	_, cmd := m.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	drainCmd(t, m, cmd, 20)
+
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected one alternate-screen wheel fallback input, got %#v", client.inputCalls)
+	}
+	if got := string(client.inputCalls[0].data); got != "\x1b[A" {
+		t.Fatalf("unexpected alternate-screen wheel fallback payload %q", got)
+	}
+	tab := m.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if tab.ScrollOffset != 0 {
+		t.Fatalf("expected no scrollback fallback in alternate screen, got %d", tab.ScrollOffset)
+	}
+}
+
+func TestMouseWheelAlternateScreenHonorsApplicationCursorMode(t *testing.T) {
+	m := setupModel(t, modelOpts{})
+	client, ok := m.runtime.Client().(*recordingBridgeClient)
+	if !ok {
+		t.Fatal("expected recording bridge client")
+	}
+	setActivePaneTerminalModes(t, m, protocol.TerminalModes{
+		AlternateScreen:   true,
+		MouseTracking:     false,
+		ApplicationCursor: true,
+		AutoWrap:          true,
+	})
+	x, y := activePaneContentScreenOrigin(t, m)
+
+	_, cmd := m.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+	drainCmd(t, m, cmd, 20)
+
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected one alternate-screen wheel fallback input, got %#v", client.inputCalls)
+	}
+	if got := string(client.inputCalls[0].data); got != "\x1bOB" {
+		t.Fatalf("unexpected application-cursor wheel fallback payload %q", got)
+	}
+}
+
 func TestMouseWheelForwardsToTerminalWhenTrackingEnabled(t *testing.T) {
 	m := setupModel(t, modelOpts{})
 	client, ok := m.runtime.Client().(*recordingBridgeClient)
@@ -1569,6 +1625,20 @@ func setActivePaneMouseTracking(t *testing.T, m *Model, enabled bool) {
 		terminal.Snapshot = &protocol.Snapshot{TerminalID: pane.TerminalID}
 	}
 	terminal.Snapshot.Modes.MouseTracking = enabled
+}
+
+func setActivePaneTerminalModes(t *testing.T, m *Model, modes protocol.TerminalModes) {
+	t.Helper()
+	pane := m.workbench.ActivePane()
+	if pane == nil || pane.TerminalID == "" {
+		t.Fatalf("expected active pane with terminal, got %#v", pane)
+	}
+	terminal := m.runtime.Registry().GetOrCreate(pane.TerminalID)
+	if terminal.Snapshot == nil {
+		terminal.Snapshot = &protocol.Snapshot{TerminalID: pane.TerminalID}
+	}
+	terminal.Snapshot.Modes = modes
+	terminal.Snapshot.Screen.IsAlternateScreen = modes.AlternateScreen
 }
 
 func activePaneRect(t *testing.T, m *Model) workbench.Rect {

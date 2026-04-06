@@ -177,3 +177,43 @@ func TestEncodeSGR1006Mouse(t *testing.T) {
 		})
 	}
 }
+
+func TestEncodeTerminalWheelFallback(t *testing.T) {
+	tests := []struct {
+		name  string
+		msg   tea.MouseMsg
+		modes localvterm.TerminalModes
+		want  string
+	}{
+		{
+			name: "wheel-up-normal-cursor",
+			msg: tea.MouseMsg{
+				Button: tea.MouseButtonWheelUp,
+			},
+			want: "\x1b[A",
+		},
+		{
+			name: "wheel-down-application-cursor",
+			msg: tea.MouseMsg{
+				Button: tea.MouseButtonWheelDown,
+			},
+			modes: localvterm.TerminalModes{ApplicationCursor: true},
+			want:  "\x1bOB",
+		},
+		{
+			name: "wheel-left",
+			msg: tea.MouseMsg{
+				Button: tea.MouseButtonWheelLeft,
+			},
+			want: "\x1b[D",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := string(encodeTerminalWheelFallback(tc.msg, tc.modes)); got != tc.want {
+				t.Fatalf("expected %q, got %q", tc.want, got)
+			}
+		})
+	}
+}

@@ -61,6 +61,9 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) tea.Cmd {
 	if cmd := m.forwardTerminalMouseInputCmd(msg); cmd != nil {
 		return cmd
 	}
+	if cmd := m.forwardAlternateScreenWheelCmd(msg); cmd != nil {
+		return cmd
+	}
 
 	contentY := y - m.contentOriginY()
 	if contentY < 0 {
@@ -85,6 +88,31 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) tea.Cmd {
 		return m.ensureActivePaneScrollbackCmd()
 	}
 	return nil
+}
+
+func (m *Model) forwardAlternateScreenWheelCmd(msg tea.MouseMsg) tea.Cmd {
+	if m == nil || m.workbench == nil {
+		return nil
+	}
+	targetPaneID, _, ok := m.activeContentMouseTarget(msg.X, msg.Y)
+	if !ok {
+		return nil
+	}
+	pane := m.activePaneForInput(targetPaneID)
+	if pane == nil || pane.TerminalID == "" {
+		return nil
+	}
+	modes := m.terminalModesForPane(pane)
+	if !modes.AlternateScreen || modes.MouseTracking {
+		return nil
+	}
+	encoded := encodeTerminalWheelFallback(msg, modes)
+	if len(encoded) == 0 {
+		return nil
+	}
+	return func() tea.Msg {
+		return input.TerminalInput{PaneID: targetPaneID, Data: encoded}
+	}
 }
 
 func (m *Model) handleMouseClickNonFloating(x, y int) tea.Cmd {
@@ -694,8 +722,7 @@ func (m *Model) openTerminalManagerMouse() tea.Cmd {
 	if m == nil {
 		return nil
 	}
-	m.terminalPage = &modal.TerminalManagerState{Title: "Terminal Pool"}
-	m.input.SetMode(input.ModeState{Kind: input.ModeTerminalManager, RequestID: terminalPoolPageModeToken})
+	m.openTerminalPool()
 	m.render.Invalidate()
 	return m.loadTerminalManagerItemsCmd()
 }
