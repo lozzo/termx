@@ -235,14 +235,14 @@ func TestRenderBodyZoomedPaneOccupiesWholeBody(t *testing.T) {
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), 100, 28), 100, 30)
 
 	body := renderBody(state, 100, 28)
-	if !strings.Contains(body, "left") {
-		t.Fatalf("expected zoomed pane title in body:\n%s", body)
+	if !strings.Contains(body, "term-1") {
+		t.Fatalf("expected zoomed pane body to remain visible:\n%s", body)
 	}
-	if strings.Contains(body, "right") {
+	if strings.Contains(body, "right") || strings.Contains(body, "term-2") {
 		t.Fatalf("expected non-zoomed pane to be hidden:\n%s", body)
 	}
-	if strings.Count(body, "┌") != 1 {
-		t.Fatalf("expected exactly one pane frame when zoomed:\n%s", body)
+	if strings.Contains(body, "┌") || strings.Contains(body, "│") || strings.Contains(body, "┘") {
+		t.Fatalf("expected zoomed pane body to be frameless:\n%s", body)
 	}
 }
 

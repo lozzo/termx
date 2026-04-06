@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -212,6 +213,76 @@ func TestRenderFrameUsesSyntheticCursorForAlternateScreenPane(t *testing.T) {
 	}
 	if !strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+"h") {
 		t.Fatalf("expected alternate-screen pane to use synthetic cursor highlight, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
+	}
+}
+
+func TestRenderFrameImmersiveZoomHidesChromeAndOtherPanes(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			ZoomedPaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+				"pane-2": {ID: "pane-2", Title: "logs", TerminalID: "term-2"},
+			},
+			Root: &workbench.LayoutNode{
+				Direction: workbench.SplitVertical,
+				Ratio:     0.5,
+				First:     workbench.NewLeaf("pane-1"),
+				Second:    workbench.NewLeaf("pane-2"),
+			},
+		}},
+	})
+
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Name = "shell"
+	rt.Registry().Get("term-1").State = "running"
+	rt.Registry().Get("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 20, Rows: 4},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{
+				repeatCells("zoom-pane"),
+				repeatCells("only-this"),
+			},
+		},
+		Cursor: protocol.CursorState{Visible: false},
+	}
+	rt.Registry().GetOrCreate("term-2").Name = "logs"
+	rt.Registry().Get("term-2").State = "running"
+	rt.Registry().Get("term-2").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-2",
+		Size:       protocol.Size{Cols: 20, Rows: 4},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{
+				repeatCells("hidden-pane"),
+			},
+		},
+		Cursor: protocol.CursorState{Visible: false},
+	}
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 40, 10), 40, 10)
+	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
+
+	if strings.Contains(frame, "tab 1") || strings.Contains(frame, "terminals:") || strings.Contains(frame, "float:") {
+		t.Fatalf("expected immersive zoom to hide top/bottom chrome:\n%s", frame)
+	}
+	if strings.Contains(frame, "┌") || strings.Contains(frame, "│") || strings.Contains(frame, "┘") {
+		t.Fatalf("expected immersive zoom to hide pane borders:\n%s", frame)
+	}
+	if !strings.Contains(frame, "zoom-pane") || !strings.Contains(frame, "only-this") {
+		t.Fatalf("expected zoomed pane content to remain visible:\n%s", frame)
+	}
+	if strings.Contains(frame, "hidden-pane") || strings.Contains(frame, "logs") {
+		t.Fatalf("expected non-zoomed pane content to disappear:\n%s", frame)
+	}
+	if got := len(strings.Split(frame, "\n")); got != 10 {
+		t.Fatalf("expected immersive zoom frame height 10, got %d lines:\n%s", got, frame)
 	}
 }
 
@@ -512,6 +583,37 @@ func TestDrawSnapshotWithOffsetUsesSnapshotWidthWhenRenderedColsLagAfterShrink(t
 
 	if got := canvas.rawString(); got != "a···" {
 		t.Fatalf("expected resized terminal width to blank stale right-side cells with dots, got %q", got)
+	}
+}
+
+func TestActiveEntryCursorTargetUsesFramelessRectForZoomedPane(t *testing.T) {
+	entries := []paneRenderEntry{{
+		PaneID:     "pane-1",
+		TerminalID: "term-1",
+		Rect:       workbench.Rect{X: 0, Y: 0, W: 10, H: 4},
+		Frameless:  true,
+		Active:     true,
+	}}
+	runtimeState := &runtime.VisibleRuntime{
+		Terminals: []runtime.VisibleTerminal{{
+			TerminalID: "term-1",
+			Snapshot: &protocol.Snapshot{
+				TerminalID: "term-1",
+				Size:       protocol.Size{Cols: 10, Rows: 4},
+				Screen: protocol.ScreenData{
+					Cells: [][]protocol.Cell{{{Content: "x", Width: 1}}},
+				},
+				Cursor: protocol.CursorState{Row: 0, Col: 0, Visible: true},
+			},
+		}},
+	}
+
+	rect, snapshot, ok := activeEntryCursorTarget(entries, runtimeState)
+	if !ok || snapshot == nil {
+		t.Fatalf("expected active cursor target, got rect=%#v snapshot=%#v ok=%v", rect, snapshot, ok)
+	}
+	if rect != (workbench.Rect{X: 0, Y: 0, W: 10, H: 4}) {
+		t.Fatalf("expected frameless zoom cursor rect to stay unshifted, got %#v", rect)
 	}
 }
 

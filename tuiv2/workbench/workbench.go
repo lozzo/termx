@@ -184,36 +184,52 @@ func (w *Workbench) VisibleWithSize(bodyRect Rect) *VisibleWorkbench {
 		if activeTab != nil && activeTab.ID == tab.ID {
 			visible.ActiveTab = len(visible.Tabs)
 			floatingLayerVisible := tab.FloatingVisible || hasExpandedFloating(tab.Floating)
-			for _, floating := range orderedFloating(tab.Floating) {
-				if floating == nil {
-					continue
+			if item.ZoomedPaneID == "" {
+				for _, floating := range orderedFloating(tab.Floating) {
+					if floating == nil {
+						continue
+					}
+					normalizeFloatingState(floating)
+					pane := tab.Panes[floating.PaneID]
+					if pane == nil {
+						continue
+					}
+					visible.FloatingTotal++
+					if floating.Display == FloatingDisplayCollapsed {
+						visible.FloatingCollapsed++
+						continue
+					}
+					if floating.Display == FloatingDisplayHidden || !floatingLayerVisible {
+						visible.FloatingHidden++
+						continue
+					}
+					if !floatingStateVisible(floating) {
+						visible.FloatingHidden++
+						continue
+					}
+					visible.FloatingPanes = append(visible.FloatingPanes, VisiblePane{
+						ID:         pane.ID,
+						Title:      pane.Title,
+						TerminalID: pane.TerminalID,
+						Rect:       floating.Rect,
+						Floating:   true,
+					})
 				}
-				normalizeFloatingState(floating)
-				pane := tab.Panes[floating.PaneID]
-				if pane == nil {
-					continue
-				}
-				visible.FloatingTotal++
-				if floating.Display == FloatingDisplayCollapsed {
-					visible.FloatingCollapsed++
-					continue
-				}
-				if floating.Display == FloatingDisplayHidden || !floatingLayerVisible {
-					visible.FloatingHidden++
-					continue
-				}
-				if !floatingStateVisible(floating) {
-					visible.FloatingHidden++
-					continue
-				}
-				visible.FloatingPanes = append(visible.FloatingPanes, VisiblePane{
+			}
+		}
+		if item.ZoomedPaneID != "" {
+			pane := tab.Panes[item.ZoomedPaneID]
+			if pane != nil {
+				item.Panes = append(item.Panes, VisiblePane{
 					ID:         pane.ID,
 					Title:      pane.Title,
 					TerminalID: pane.TerminalID,
-					Rect:       floating.Rect,
-					Floating:   true,
+					Rect:       bodyRect,
+					Floating:   false,
 				})
 			}
+			visible.Tabs = append(visible.Tabs, item)
+			continue
 		}
 		for _, paneID := range tab.paneOrder() {
 			pane := tab.Panes[paneID]

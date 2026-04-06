@@ -324,12 +324,15 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 				if paneID == "" {
 					paneID = tab.ActivePaneID
 				}
+				enteringZoom := tab.ZoomedPaneID != paneID
 				if tab.ZoomedPaneID == paneID {
 					tab.ZoomedPaneID = ""
 				} else {
 					tab.ZoomedPaneID = paneID
 				}
+				m.setMode(input.ModeState{Kind: input.ModeNormal})
 				m.render.Invalidate()
+				return true, m.syncZoomViewportCmd(paneID, enteringZoom)
 			}
 		}
 		return true, nil

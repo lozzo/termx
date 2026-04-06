@@ -2,11 +2,13 @@ package app
 
 import (
 	"context"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
+	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -171,6 +173,18 @@ func (m *Model) resizeVisiblePanesCmd() tea.Cmd {
 	if m == nil || m.runtime == nil || m.workbench == nil {
 		return nil
 	}
+	return func() tea.Msg {
+		if err := m.resizeVisiblePanes(context.Background()); err != nil {
+			return err
+		}
+		return nil
+	}
+}
+
+func (m *Model) resizeVisiblePanes(ctx context.Context) error {
+	if m == nil || m.runtime == nil || m.workbench == nil {
+		return nil
+	}
 	bodyRect := m.bodyRect()
 	visible := m.workbench.VisibleWithSize(bodyRect)
 	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
@@ -181,7 +195,6 @@ func (m *Model) resizeVisiblePanesCmd() tea.Cmd {
 	panes = append(panes, tab.Panes...)
 	panes = append(panes, visible.FloatingPanes...)
 
-	cmds := make([]tea.Cmd, 0, len(panes))
 	for _, pane := range panes {
 		if pane.ID == "" || pane.TerminalID == "" {
 			continue
@@ -200,14 +213,69 @@ func (m *Model) resizeVisiblePanesCmd() tea.Cmd {
 		if m.sessionID != "" && pane.ID == tab.ActivePaneID {
 			req.ImplicitSessionLease = true
 		}
-		cmds = append(cmds, func() tea.Msg {
-			if err := m.syncTerminalInteraction(context.Background(), req, target); err != nil {
-				return err
-			}
-			return nil
-		})
+		if err := m.syncTerminalInteraction(ctx, req, target); err != nil {
+			return err
+		}
 	}
-	return tea.Batch(cmds...)
+	return nil
+}
+
+func (m *Model) syncZoomViewportCmd(paneID string, explicitTakeover bool) tea.Cmd {
+	if m == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx := context.Background()
+		if explicitTakeover && m.zoomShouldTakeOwnership(paneID) {
+			req := terminalInteractionRequest{
+				PaneID:           paneID,
+				ResizeIfNeeded:   true,
+				ExplicitTakeover: true,
+			}
+			if target, ok := m.resolveTerminalInteractionTarget(req); ok {
+				if err := m.syncTerminalInteraction(ctx, req, target); err != nil {
+					return err
+				}
+			}
+		}
+		if err := m.resizeVisiblePanes(ctx); err != nil {
+			return err
+		}
+		if m.sessionID == "" {
+			if cmd := m.saveStateCmd(); cmd != nil {
+				return cmd()
+			}
+		}
+		return nil
+	}
+}
+
+func (m *Model) zoomShouldTakeOwnership(paneID string) bool {
+	if m == nil || m.workbench == nil || m.runtime == nil || strings.TrimSpace(paneID) == "" {
+		return false
+	}
+	tab := m.workbench.CurrentTab()
+	if tab == nil {
+		return false
+	}
+	pane := tab.Panes[paneID]
+	if pane == nil || pane.TerminalID == "" {
+		return false
+	}
+	if m.sessionID != "" {
+		return true
+	}
+	terminal := m.runtime.Registry().Get(pane.TerminalID)
+	if terminal == nil {
+		return false
+	}
+	if len(terminal.BoundPaneIDs) > 1 || strings.TrimSpace(terminal.OwnerPaneID) != "" {
+		return true
+	}
+	if binding := m.runtime.Binding(paneID); binding != nil && binding.Role == runtime.BindingRoleFollower {
+		return true
+	}
+	return false
 }
 
 func (m *Model) resizePaneIfNeededCmd(paneID string) tea.Cmd {

@@ -921,6 +921,54 @@ func TestVisibleWithSize_ClampsStaleActiveReferences(t *testing.T) {
 	}
 }
 
+func TestVisibleWithSize_ZoomShowsOnlyZoomedPane(t *testing.T) {
+	wb := NewWorkbench()
+	wb.AddWorkspace("main", &WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*TabState{{
+			ID:           "tab1",
+			Name:         "Tab One",
+			ActivePaneID: "pane1",
+			ZoomedPaneID: "pane1",
+			Panes: map[string]*PaneState{
+				"pane1":  {ID: "pane1", Title: "Pane One", TerminalID: "term-1"},
+				"pane2":  {ID: "pane2", Title: "Pane Two", TerminalID: "term-2"},
+				"float1": {ID: "float1", Title: "Float One", TerminalID: "term-3"},
+			},
+			Root: &LayoutNode{
+				Direction: SplitVertical,
+				Ratio:     0.5,
+				First:     NewLeaf("pane1"),
+				Second:    NewLeaf("pane2"),
+			},
+			FloatingVisible: true,
+			Floating: []*FloatingState{{
+				PaneID:  "float1",
+				Rect:    Rect{X: 10, Y: 5, W: 20, H: 8},
+				Display: FloatingDisplayExpanded,
+			}},
+		}},
+	})
+
+	visible := wb.VisibleWithSize(Rect{W: 80, H: 24})
+	if len(visible.Tabs) != 1 {
+		t.Fatalf("expected 1 visible tab, got %d", len(visible.Tabs))
+	}
+	if got := visible.Tabs[0].ZoomedPaneID; got != "pane1" {
+		t.Fatalf("expected visible zoomed pane pane1, got %q", got)
+	}
+	if len(visible.Tabs[0].Panes) != 1 {
+		t.Fatalf("expected only zoomed pane to remain visible, got %#v", visible.Tabs[0].Panes)
+	}
+	if got := visible.Tabs[0].Panes[0]; got.ID != "pane1" || got.Rect != (Rect{W: 80, H: 24}) {
+		t.Fatalf("expected zoomed pane to occupy full body rect, got %#v", got)
+	}
+	if len(visible.FloatingPanes) != 0 {
+		t.Fatalf("expected floating panes hidden during zoom, got %#v", visible.FloatingPanes)
+	}
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // helpers
 // ────────────────────────────────────────────────────────────────────────────

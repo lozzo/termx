@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -46,10 +47,16 @@ func (m *Model) bodyHeight() int {
 	if m == nil {
 		return render.FrameBodyHeight(0)
 	}
+	if m.immersiveZoomActive() {
+		return maxInt(1, m.height)
+	}
 	return render.FrameBodyHeight(m.height)
 }
 
 func (m *Model) contentOriginY() int {
+	if m.immersiveZoomActive() {
+		return 0
+	}
 	return render.TopChromeRows
 }
 
@@ -58,6 +65,32 @@ func (m *Model) bodyRect() workbench.Rect {
 		return workbench.Rect{W: 1, H: render.FrameBodyHeight(0)}
 	}
 	return workbench.Rect{W: maxInt(1, m.width), H: m.bodyHeight()}
+}
+
+func (m *Model) immersiveZoomActive() bool {
+	if m == nil || m.workbench == nil {
+		return false
+	}
+	tab := m.workbench.CurrentTab()
+	return tab != nil && tab.ZoomedPaneID != ""
+}
+
+func (m *Model) paneUsesImmersiveViewport(paneID string) bool {
+	if m == nil || m.workbench == nil || strings.TrimSpace(paneID) == "" {
+		return false
+	}
+	tab := m.workbench.CurrentTab()
+	return tab != nil && tab.ZoomedPaneID == paneID
+}
+
+func (m *Model) terminalViewportRect(paneID string, rect workbench.Rect) (workbench.Rect, bool) {
+	if rect.W <= 0 || rect.H <= 0 {
+		return workbench.Rect{}, false
+	}
+	if m.paneUsesImmersiveViewport(paneID) {
+		return rect, true
+	}
+	return paneContentRect(rect)
 }
 
 func (m *Model) activePaneContentRect() (workbench.Rect, bool) {

@@ -294,13 +294,23 @@ func (m *Model) fitFloatingPaneToContent(paneID string) tea.Cmd {
 	if cols <= 0 || rows <= 0 {
 		return nil
 	}
-	nextW := cols + 2
-	nextH := rows + 2
-	if !m.workbench.ResizeFloatingPane(tab.ID, target, nextW, nextH) {
+	changed := false
+	if floating.FitMode == workbench.FloatingFitAuto {
+		changed = m.workbench.ApplyFloatingAutoFit(tab.ID, target, cols, rows, m.bodyRect())
+	} else {
+		nextW := cols + 2
+		nextH := rows + 2
+		if m.workbench.ResizeFloatingPane(tab.ID, target, nextW, nextH) {
+			changed = true
+		}
+		if m.workbench.SetFloatingPaneAutoFitSize(tab.ID, target, cols, rows) {
+			changed = true
+		}
+	}
+	if !changed {
 		return nil
 	}
 	m.workbench.ClampFloatingPanesToBounds(m.bodyRect())
-	m.workbench.SetFloatingPaneAutoFitSize(tab.ID, target, cols, rows)
 	m.refreshFloatingOverview(target)
 	m.render.Invalidate()
 	return tea.Batch(m.resizePaneIfNeededCmd(target), m.saveStateCmd())
@@ -337,8 +347,7 @@ func (m *Model) maybeAutoFitFloatingPanesCmd() tea.Cmd {
 		if cols == floating.AutoFitCols && rows == floating.AutoFitRows {
 			continue
 		}
-		if m.workbench.ResizeFloatingPane(tab.ID, floating.PaneID, cols+2, rows+2) {
-			m.workbench.SetFloatingPaneAutoFitSize(tab.ID, floating.PaneID, cols, rows)
+		if m.workbench.ApplyFloatingAutoFit(tab.ID, floating.PaneID, cols, rows, m.bodyRect()) {
 			changed = true
 		}
 	}

@@ -467,6 +467,7 @@ func TestFeaturePaneZoom(t *testing.T) {
 	if tab.ZoomedPaneID != "pane-1" {
 		t.Fatalf("expected zoomed pane-1, got %q", tab.ZoomedPaneID)
 	}
+	assertMode(t, model, input.ModeNormal)
 
 	// Toggle zoom off
 	model.input.SetMode(input.ModeState{Kind: input.ModeDisplay})
@@ -476,6 +477,7 @@ func TestFeaturePaneZoom(t *testing.T) {
 	if tab.ZoomedPaneID != "" {
 		t.Fatalf("expected zoom cleared, got %q", tab.ZoomedPaneID)
 	}
+	assertMode(t, model, input.ModeNormal)
 }
 
 func TestFeaturePaneReconnect(t *testing.T) {
@@ -689,6 +691,76 @@ func TestFeatureSessionBecomeOwnerAcquiresLeaseExplicitly(t *testing.T) {
 	}
 	if len(client.resizes) != 1 || client.resizes[0].channel != 2 {
 		t.Fatalf("expected resize from pane-2 channel after lease acquire, got %#v", client.resizes)
+	}
+}
+
+func TestFeatureZoomOnFollowerPaneTakesOwnershipAndResizes(t *testing.T) {
+	client := &recordingBridgeClient{
+		attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{},
+	}
+	root := &workbench.LayoutNode{
+		Direction: workbench.SplitVertical,
+		Ratio:     0.5,
+		First:     workbench.NewLeaf("pane-1"),
+		Second:    workbench.NewLeaf("pane-2"),
+	}
+	model := setupModel(t, modelOpts{
+		client: client,
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{{
+					ID:           "tab-1",
+					Name:         "tab 1",
+					ActivePaneID: "pane-2",
+					Panes: map[string]*workbench.PaneState{
+						"pane-1": {ID: "pane-1", Title: "owner", TerminalID: "term-1"},
+						"pane-2": {ID: "pane-2", Title: "follower", TerminalID: "term-1"},
+					},
+					Root: root,
+				}},
+			},
+		},
+	})
+
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.State = "running"
+	terminal.Channel = 1
+	terminal.OwnerPaneID = "pane-1"
+	terminal.BoundPaneIDs = []string{"pane-1", "pane-2"}
+	terminal.Snapshot = &protocol.Snapshot{TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}}
+
+	ownerBinding := model.runtime.BindPane("pane-1")
+	ownerBinding.Channel = 1
+	ownerBinding.Connected = true
+	ownerBinding.Role = runtime.BindingRoleOwner
+
+	followerBinding := model.runtime.BindPane("pane-2")
+	followerBinding.Channel = 2
+	followerBinding.Connected = true
+	followerBinding.Role = runtime.BindingRoleFollower
+
+	dispatchKey(t, model, ctrlKey(tea.KeyCtrlP))
+	dispatchKey(t, model, runeKeyMsg('z'))
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil || tab.ZoomedPaneID != "pane-2" {
+		t.Fatalf("expected pane-2 zoomed, got %#v", tab)
+	}
+	if terminal.OwnerPaneID != "pane-2" {
+		t.Fatalf("expected zoom to promote pane-2 owner, got %q", terminal.OwnerPaneID)
+	}
+	if ownerBinding.Role != runtime.BindingRoleFollower || followerBinding.Role != runtime.BindingRoleOwner {
+		t.Fatalf("expected bindings to swap owner/follower, owner=%#v follower=%#v", ownerBinding, followerBinding)
+	}
+	if len(client.resizes) == 0 {
+		t.Fatal("expected resize after follower zoom takeover")
+	}
+	last := client.resizes[len(client.resizes)-1]
+	if last.channel != 2 || last.cols != 120 || last.rows != 40 {
+		t.Fatalf("expected follower channel fullscreen resize after zoom, got %#v", last)
 	}
 }
 
@@ -2514,15 +2586,19 @@ func TestFeatureOpenPickerSeedsEmptyTab(t *testing.T) {
 func TestFeatureRenderZoomedPaneShowsSinglePane(t *testing.T) {
 	model := setupTwoPaneModel(t)
 	// Zoom pane-1
-	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionZoomPane, PaneID: "pane-1"})
+	dispatchKey(t, model, ctrlKey(tea.KeyCtrlP))
+	dispatchKey(t, model, runeKeyMsg('z'))
 
 	model.render.Invalidate()
 	view := xansi.Strip(model.View())
-	// In zoomed mode, only pane-1 should be drawn. pane-2's title "logs" should not appear.
-	// (This is a heuristic — if pane-2's title bar is drawn, zooming is broken.)
-	// We check that pane-1 title is visible (it's the zoomed pane).
-	if !strings.Contains(view, "shell") {
-		t.Fatalf("view missing zoomed pane title:\n%s", view)
+	if strings.Contains(view, "logs") {
+		t.Fatalf("expected non-zoomed pane to be hidden:\n%s", view)
+	}
+	if strings.Contains(view, "Ctrl") || strings.Contains(view, "terminals:") || strings.Contains(view, "tab 1") {
+		t.Fatalf("expected zoom to hide top/bottom chrome:\n%s", view)
+	}
+	if strings.Contains(view, "┌") || strings.Contains(view, "│") || strings.Contains(view, "┘") {
+		t.Fatalf("expected zoom to hide pane borders:\n%s", view)
 	}
 }
 
@@ -2546,6 +2622,54 @@ func TestFeatureWindowResizePropagatesToTerminal(t *testing.T) {
 	// Body width = 160, pane content = 160-2(border) = 158
 	if got.cols != 158 || got.rows != 46 {
 		t.Fatalf("expected resize 158x46, got %dx%d", got.cols, got.rows)
+	}
+}
+
+func TestFeatureZoomResizePropagatesToTerminal(t *testing.T) {
+	model := setupTwoPaneModel(t)
+	client := model.runtime.Client().(*recordingBridgeClient)
+
+	dispatchKey(t, model, ctrlKey(tea.KeyCtrlP))
+	dispatchKey(t, model, runeKeyMsg('z'))
+	assertMode(t, model, input.ModeNormal)
+
+	if len(client.resizes) == 0 {
+		t.Fatal("expected resize call after zoom")
+	}
+	zoomResize := client.resizes[len(client.resizes)-1]
+	if zoomResize.channel != 1 {
+		t.Fatalf("expected zoom resize on active pane channel 1, got %#v", zoomResize)
+	}
+	if zoomResize.cols != 120 || zoomResize.rows != 40 {
+		t.Fatalf("expected fullscreen zoom resize 120x40, got %#v", zoomResize)
+	}
+
+	resizeCountAfterZoom := len(client.resizes)
+	dispatchKey(t, model, ctrlKey(tea.KeyCtrlP))
+	dispatchKey(t, model, runeKeyMsg('z'))
+	assertMode(t, model, input.ModeNormal)
+
+	if len(client.resizes) <= resizeCountAfterZoom {
+		t.Fatal("expected resize call after unzoom")
+	}
+	lastResize := client.resizes[len(client.resizes)-1]
+	visible := model.workbench.VisibleWithSize(model.bodyRect())
+	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
+		t.Fatal("expected visible tab after unzoom")
+	}
+	var paneRect workbench.Rect
+	for _, pane := range visible.Tabs[visible.ActiveTab].Panes {
+		if pane.ID == "pane-1" {
+			paneRect = pane.Rect
+			break
+		}
+	}
+	expectedRect, ok := model.terminalViewportRect("pane-1", paneRect)
+	if !ok {
+		t.Fatal("expected pane-1 terminal viewport after unzoom")
+	}
+	if lastResize.cols != uint16(expectedRect.W) || lastResize.rows != uint16(expectedRect.H) {
+		t.Fatalf("expected unzoom resize %dx%d, got %#v", expectedRect.W, expectedRect.H, lastResize)
 	}
 }
 

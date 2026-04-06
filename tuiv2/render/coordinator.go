@@ -87,6 +87,7 @@ type statusBarCacheKey struct {
 type paneRenderEntry struct {
 	PaneID               string
 	Rect                 workbench.Rect
+	Frameless            bool
 	Title                string
 	Border               paneBorderInfo
 	Theme                uiTheme
@@ -111,6 +112,7 @@ type paneRenderEntry struct {
 
 type paneFrameKey struct {
 	Rect            workbench.Rect
+	Frameless       bool
 	Title           string
 	Border          paneBorderInfo
 	ThemeBG         string
@@ -215,9 +217,16 @@ func (c *Coordinator) RenderFrame() string {
 		return frame
 	}
 
-	tabBar := c.renderTabBarCached(state)
-	statusBar := c.renderStatusBarCached(state)
+	immersiveZoom := immersiveZoomActive(state)
+	tabBar := ""
+	statusBar := ""
 	bodyHeight := FrameBodyHeight(state.TermSize.Height)
+	if immersiveZoom {
+		bodyHeight = maxInt(1, state.TermSize.Height)
+	} else {
+		tabBar = c.renderTabBarCached(state)
+		statusBar = c.renderStatusBarCached(state)
+	}
 	rendered := renderBodyFrameWithCoordinator(c, state, state.TermSize.Width, bodyHeight)
 	body := rendered.content
 	cursor := rendered.cursor
@@ -232,7 +241,11 @@ func (c *Coordinator) RenderFrame() string {
 		cursor = hideCursorANSI()
 		rendered.blink = false
 	}
-	frame := strings.Join([]string{tabBar, body, statusBar}, "\n")
+	frameParts := []string{body}
+	if !immersiveZoom {
+		frameParts = []string{tabBar, body, statusBar}
+	}
+	frame := strings.Join(frameParts, "\n")
 	c.mu.Lock()
 	if !rendered.blink {
 		c.cursorBlinkVisible = true
@@ -440,6 +453,9 @@ func visibleStateNeedsCursorBlink(state VisibleRenderState) bool {
 	}
 	width := state.TermSize.Width
 	height := FrameBodyHeight(state.TermSize.Height)
+	if immersiveZoomActive(state) {
+		height = maxInt(1, state.TermSize.Height)
+	}
 	if width <= 0 || height <= 0 {
 		return false
 	}
@@ -557,11 +573,18 @@ func renderActiveOverlayWithCursor(state VisibleRenderState, termSize TermSize, 
 }
 
 func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entries []paneRenderEntry, width, height int) *composedCanvas {
+	immersiveZoom := immersiveZoomActive(state)
+	cursorOffsetY := TopChromeRows
+	if immersiveZoom {
+		cursorOffsetY = 0
+	}
 	if coordinator == nil {
 		canvas := newComposedCanvas(width, height)
-		canvas.cursorOffsetY = TopChromeRows
+		canvas.cursorOffsetY = cursorOffsetY
 		for _, entry := range entries {
-			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+			if !entry.Frameless {
+				drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+			}
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 		}
 		return canvas
@@ -569,10 +592,12 @@ func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entrie
 	cache := coordinator.bodyCache
 	if cache == nil || !cache.matches(entries, width, height) {
 		canvas := newComposedCanvas(width, height)
-		canvas.cursorOffsetY = TopChromeRows
+		canvas.cursorOffsetY = cursorOffsetY
 		canvas.syntheticCursorVisibleFn = coordinator.syntheticCursorVisible
 		for _, entry := range entries {
-			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+			if !entry.Frameless {
+				drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+			}
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 		}
 		coordinator.bodyCache = newBodyRenderCache(canvas, entries, width, height)
@@ -584,10 +609,12 @@ func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entrie
 	// for tiled layouts but will paint over floating panes layered above it.
 	if entriesOverlap(entries) {
 		canvas := newComposedCanvas(width, height)
-		canvas.cursorOffsetY = TopChromeRows
+		canvas.cursorOffsetY = cursorOffsetY
 		canvas.syntheticCursorVisibleFn = coordinator.syntheticCursorVisible
 		for _, entry := range entries {
-			drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+			if !entry.Frameless {
+				drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+			}
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 		}
 		projectActiveEntryCursor(canvas, entries, state.Runtime)
@@ -600,12 +627,18 @@ func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entrie
 		changed := false
 		cache.canvas.cursorVisible = false
 		for _, entry := range entries {
+			frameChanged := false
 			if cache.frameKeys[entry.PaneID] != entry.FrameKey {
-				drawPaneFrame(cache.canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+				if entry.Frameless {
+					fillRect(cache.canvas, entry.Rect, blankDrawCell())
+				} else {
+					drawPaneFrame(cache.canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+				}
+				frameChanged = true
 				changed = true
 			}
-			if cache.contentKeys[entry.PaneID] != entry.ContentKey {
-				fillRect(cache.canvas, contentRectForPane(entry.Rect), blankDrawCell())
+			if frameChanged || cache.contentKeys[entry.PaneID] != entry.ContentKey {
+				fillRect(cache.canvas, contentRectForEntry(entry), blankDrawCell())
 				drawPaneContentWithKey(cache.canvas, entry.Rect, entry, state.Runtime)
 				changed = true
 			}
@@ -641,21 +674,24 @@ func restoreActiveEntryContent(canvas *composedCanvas, entries []paneRenderEntry
 func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePane, width, height int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, exitedPaneSelectionPaneID string, exitedPaneSelectionIndex int, exitedPaneSelectionPulse bool, state VisibleRenderState, theme uiTheme) []paneRenderEntry {
 	entries := make([]paneRenderEntry, 0, len(tab.Panes)+len(floating))
 	zoomedPaneID := tab.ZoomedPaneID
+	immersiveZoom := immersiveZoomActive(state)
 	for _, pane := range tab.Panes {
 		originalRect := pane.Rect
 		rect := originalRect
+		frameless := false
 		if zoomedPaneID != "" {
 			if pane.ID != zoomedPaneID {
 				continue
 			}
 			originalRect = workbench.Rect{X: 0, Y: 0, W: width, H: height}
 			rect = workbench.Rect{X: 0, Y: 0, W: width, H: height}
+			frameless = immersiveZoom
 		}
 		rect, ok := clipRectToViewport(rect, width, height)
 		if !ok {
 			continue
 		}
-		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, state.CopyModePaneID, state.CopyModeCursorRow, state.CopyModeCursorCol, state.CopyModeViewTopRow, state.CopyModeMarkSet, state.CopyModeMarkRow, state.CopyModeMarkCol, theme))
+		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, frameless, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, state.CopyModePaneID, state.CopyModeCursorRow, state.CopyModeCursorCol, state.CopyModeViewTopRow, state.CopyModeMarkSet, state.CopyModeMarkRow, state.CopyModeMarkCol, theme))
 	}
 	for _, pane := range floating {
 		originalRect := pane.Rect
@@ -663,7 +699,7 @@ func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePan
 		if !ok {
 			continue
 		}
-		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, state.CopyModePaneID, state.CopyModeCursorRow, state.CopyModeCursorCol, state.CopyModeViewTopRow, state.CopyModeMarkSet, state.CopyModeMarkRow, state.CopyModeMarkCol, theme))
+		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, false, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, state.CopyModePaneID, state.CopyModeCursorRow, state.CopyModeCursorCol, state.CopyModeViewTopRow, state.CopyModeMarkSet, state.CopyModeMarkRow, state.CopyModeMarkCol, theme))
 	}
 	return entries
 }
@@ -682,7 +718,7 @@ func clipRectToViewport(rect workbench.Rect, width, height int) (workbench.Rect,
 	return workbench.Rect{X: x1, Y: y1, W: x2 - x1, H: y2 - y1}, true
 }
 
-func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workbench.Rect, activePaneID string, scrollOffset int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, exitedPaneSelectionPaneID string, exitedPaneSelectionIndex int, exitedPaneSelectionPulse bool, copyModePaneID string, copyModeCursorRow, copyModeCursorCol, copyModeViewTopRow int, copyModeMarkSet bool, copyModeMarkRow, copyModeMarkCol int, theme uiTheme) paneRenderEntry {
+func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workbench.Rect, frameless bool, activePaneID string, scrollOffset int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, exitedPaneSelectionPaneID string, exitedPaneSelectionIndex int, exitedPaneSelectionPulse bool, copyModePaneID string, copyModeCursorRow, copyModeCursorCol, copyModeViewTopRow int, copyModeMarkSet bool, copyModeMarkRow, copyModeMarkCol int, theme uiTheme) paneRenderEntry {
 	active := pane.ID == activePaneID
 	title := resolvePaneTitleWithLookup(pane, lookup)
 	border := paneBorderInfoWithLookup(pane, lookup, confirmPaneID)
@@ -724,6 +760,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 	return paneRenderEntry{
 		PaneID:     pane.ID,
 		Rect:       rect,
+		Frameless:  frameless,
 		Title:      title,
 		Border:     border,
 		Theme:      theme,
@@ -731,6 +768,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		ContentKey: contentKey,
 		FrameKey: paneFrameKey{
 			Rect:            rect,
+			Frameless:       frameless,
 			Title:           title,
 			Border:          border,
 			ThemeBG:         theme.panelBG,
@@ -1082,7 +1120,7 @@ func drawPaneContent(canvas *composedCanvas, rect workbench.Rect, pane workbench
 }
 
 func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) {
-	contentRect := contentRectForPane(rect)
+	contentRect := contentRectForEntry(entry)
 	fillRect(canvas, contentRect, blankDrawCell())
 	if entry.TerminalID == "" {
 		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID, entry.Theme, entry.EmptyActionSelected)
@@ -1117,6 +1155,24 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 
 func contentRectForPane(rect workbench.Rect) workbench.Rect {
 	return workbench.Rect{X: rect.X + 1, Y: rect.Y + 1, W: rect.W - 2, H: rect.H - 2}
+}
+
+func contentRectForEntry(entry paneRenderEntry) workbench.Rect {
+	if entry.Frameless {
+		return entry.Rect
+	}
+	return contentRectForPane(entry.Rect)
+}
+
+func immersiveZoomActive(state VisibleRenderState) bool {
+	if state.Surface.Kind != VisibleSurfaceWorkbench || state.Workbench == nil {
+		return false
+	}
+	activeTab := state.Workbench.ActiveTab
+	if activeTab < 0 || activeTab >= len(state.Workbench.Tabs) {
+		return false
+	}
+	return strings.TrimSpace(state.Workbench.Tabs[activeTab].ZoomedPaneID) != ""
 }
 
 func fillRect(canvas *composedCanvas, rect workbench.Rect, cell drawCell) {
@@ -1865,7 +1921,7 @@ func activeEntryCursorTarget(entries []paneRenderEntry, runtimeState *VisibleRun
 		if terminal == nil || terminal.Snapshot == nil {
 			return workbench.Rect{}, nil, false
 		}
-		rect := contentRectForPane(entry.Rect)
+		rect := contentRectForEntry(entry)
 		snapshot := terminal.Snapshot
 		if entry.CopyModeActive || entry.ScrollOffset > 0 || !snapshot.Cursor.Visible || activeCursorOccluded(entries, i, rect, snapshot) {
 			return rect, snapshot, false

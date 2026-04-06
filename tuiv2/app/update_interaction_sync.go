@@ -151,11 +151,12 @@ func (m *Model) resizeTerminalIfNeeded(ctx context.Context, target terminalInter
 	if m == nil || m.runtime == nil || m.runtime.Client() == nil {
 		return nil
 	}
-	if target.rect.W <= 0 || target.rect.H <= 0 {
+	viewportRect, ok := m.terminalViewportRect(target.paneID, target.rect)
+	if !ok {
 		return nil
 	}
-	targetCols := uint16(maxInt(2, target.rect.W-2))
-	targetRows := uint16(maxInt(2, target.rect.H-2))
+	targetCols := uint16(maxInt(2, viewportRect.W))
+	targetRows := uint16(maxInt(2, viewportRect.H))
 	if !m.shouldForceTerminalResize(target.terminalID) && m.terminalAlreadySized(target.terminalID, targetCols, targetRows) {
 		return nil
 	}
