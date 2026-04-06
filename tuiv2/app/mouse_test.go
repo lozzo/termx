@@ -195,6 +195,70 @@ func TestMouseDragSplitDividerResizesTiledPanes(t *testing.T) {
 	}
 }
 
+func TestMouseClickHiddenFloatingAreaFocusesUnderlyingPane(t *testing.T) {
+	m := setupTwoPaneModel(t)
+	tab := m.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if err := m.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 80, Y: 4, W: 20, H: 8}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+
+	dispatchAction(t, m, input.SemanticAction{Kind: input.ActionToggleFloatingVisibility})
+
+	if tab.FloatingVisible {
+		t.Fatal("expected floating layer hidden")
+	}
+	if tab.ActivePaneID != "pane-1" {
+		t.Fatalf("expected fallback focus on pane-1 after hiding float, got %q", tab.ActivePaneID)
+	}
+
+	model, _ := m.Update(tea.MouseMsg{
+		X:      90,
+		Y:      screenYForBodyY(m, 6),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	m = model.(*Model)
+
+	if tab.ActivePaneID != "pane-2" {
+		t.Fatalf("expected click through hidden floating area to focus pane-2, got %q", tab.ActivePaneID)
+	}
+	}
+
+func TestMouseClickHiddenFloatingAreaStartsDividerDrag(t *testing.T) {
+	m := setupTwoPaneModel(t)
+	tab := m.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if err := m.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 50, Y: 4, W: 20, H: 8}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+
+	dispatchAction(t, m, input.SemanticAction{Kind: input.ActionToggleFloatingVisibility})
+
+	if tab.FloatingVisible {
+		t.Fatal("expected floating layer hidden")
+	}
+
+	model, _ := m.Update(tea.MouseMsg{
+		X:      59,
+		Y:      screenYForBodyY(m, 10),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	m = model.(*Model)
+
+	if m.mouseDragMode != mouseDragResizeSplit {
+		t.Fatalf("expected hidden floating area click on divider to start split drag, got %v", m.mouseDragMode)
+	}
+	if m.mouseDragSplit == nil {
+		t.Fatal("expected split drag target after clicking divider behind hidden float")
+	}
+	}
+
 func TestMouseDragSplitDividerResizesOwnerPaneWithoutActivatingIt(t *testing.T) {
 	m := setupModel(t, modelOpts{
 		workspaces: map[string]*workbench.WorkspaceState{

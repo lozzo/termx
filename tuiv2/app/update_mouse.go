@@ -355,20 +355,20 @@ func (m *Model) handleMouseRelease() tea.Cmd {
 }
 
 func (m *Model) findFloatingPaneAt(tab *workbench.TabState, x, y int) (string, workbench.Rect, bool) {
-	if tab == nil || len(tab.Floating) == 0 {
+	if m == nil || m.workbench == nil || tab == nil || len(tab.Floating) == 0 {
 		return "", workbench.Rect{}, false
 	}
 
-	for i := len(tab.Floating) - 1; i >= 0; i-- {
-		floating := tab.Floating[i]
-		if floating == nil {
-			continue
-		}
-
-		rect := floating.Rect
+	visible := m.workbench.VisibleWithSize(m.bodyRect())
+	if visible == nil {
+		return "", workbench.Rect{}, false
+	}
+	for i := len(visible.FloatingPanes) - 1; i >= 0; i-- {
+		pane := visible.FloatingPanes[i]
+		rect := pane.Rect
 		if x >= rect.X && x < rect.X+rect.W && y >= rect.Y && y < rect.Y+rect.H {
 			isResize := x >= rect.X+rect.W-2 && y >= rect.Y+rect.H-2
-			return floating.PaneID, rect, isResize
+			return pane.ID, rect, isResize
 		}
 	}
 
