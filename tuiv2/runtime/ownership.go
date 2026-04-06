@@ -84,6 +84,20 @@ func containsPaneID(ids []string, paneID string) bool {
 	return false
 }
 
+func (r *Runtime) localConnectedOwnerPaneID(terminal *TerminalRuntime) string {
+	if r == nil || terminal == nil || terminal.OwnerPaneID == "" {
+		return ""
+	}
+	if !containsPaneID(terminal.BoundPaneIDs, terminal.OwnerPaneID) {
+		return ""
+	}
+	binding := r.bindings[terminal.OwnerPaneID]
+	if binding == nil || !binding.Connected {
+		return ""
+	}
+	return terminal.OwnerPaneID
+}
+
 func (r *Runtime) AcquireTerminalOwnership(paneID, terminalID string) error {
 	if r == nil || r.registry == nil {
 		return shared.UserVisibleError{Op: "take terminal ownership", Err: fmt.Errorf("runtime unavailable")}

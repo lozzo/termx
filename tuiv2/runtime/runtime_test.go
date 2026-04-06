@@ -508,6 +508,33 @@ func TestRuntimeApplySessionLeasesDemotesForeignLeaseAndPromotesLocalLease(t *te
 	}
 }
 
+func TestRuntimeApplySessionLeasesPreservesFirstLocalOwnerWithoutLease(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach owner: %v", err)
+	}
+
+	rt.ApplySessionLeases("view-local", nil)
+
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil {
+		t.Fatal("expected terminal runtime")
+	}
+	if terminal.OwnerPaneID != "pane-1" || terminal.ControlPaneID != "pane-1" {
+		t.Fatalf("expected first local attach to stay owner without lease, got %#v", terminal)
+	}
+	if terminal.RequiresExplicitOwner {
+		t.Fatalf("expected first local attach not to require explicit owner, got %#v", terminal)
+	}
+	if binding := rt.Binding("pane-1"); binding == nil || binding.Role != BindingRoleOwner {
+		t.Fatalf("expected pane-1 to remain owner, got %#v", binding)
+	}
+}
+
 func TestRuntimeAttachSnapshotInputAndResize(t *testing.T) {
 	rt, ctx := newTestRuntime(t)
 

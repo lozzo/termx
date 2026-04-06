@@ -24,9 +24,15 @@ func (r *Runtime) ApplySessionLeases(viewID string, leases []protocol.LeaseInfo)
 		lease, ok := index[terminalID]
 		switch {
 		case !ok:
-			terminal.OwnerPaneID = ""
-			terminal.ControlPaneID = ""
-			terminal.RequiresExplicitOwner = len(terminal.BoundPaneIDs) > 0
+			if localOwnerPaneID := r.localConnectedOwnerPaneID(terminal); localOwnerPaneID != "" {
+				terminal.OwnerPaneID = localOwnerPaneID
+				terminal.ControlPaneID = localOwnerPaneID
+				terminal.RequiresExplicitOwner = false
+			} else {
+				terminal.OwnerPaneID = ""
+				terminal.ControlPaneID = ""
+				terminal.RequiresExplicitOwner = len(terminal.BoundPaneIDs) > 0
+			}
 		case lease.ViewID != "":
 			terminal.OwnerPaneID = lease.PaneID
 			if lease.ViewID == viewID && containsPaneID(terminal.BoundPaneIDs, lease.PaneID) && r.bindings[lease.PaneID] != nil {
