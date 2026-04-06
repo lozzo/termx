@@ -903,6 +903,66 @@ func TestRuntimeStartStreamReconnectsAfterChannelClose(t *testing.T) {
 	}
 }
 
+func TestRuntimeStreamResizeFrameResizesFollowerVTerm(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 80, 24, []string{"initial"})
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.VTerm == nil {
+		t.Fatal("expected terminal with VTerm")
+	}
+	cols, rows := terminal.VTerm.Size()
+	if cols != 80 || rows != 24 {
+		t.Fatalf("expected initial VTerm size 80x24, got %dx%d", cols, rows)
+	}
+
+	if err := rt.StartStream(ctx, "term-1"); err != nil {
+		t.Fatalf("start stream: %v", err)
+	}
+
+	// Simulate server sending a resize frame (as if the owner resized the PTY)
+	client.sendFrame(9, protocol.StreamFrame{
+		Type:    protocol.TypeResize,
+		Payload: protocol.EncodeResizePayload(120, 40),
+	})
+
+	waitFor(t, func() bool {
+		c, r := terminal.VTerm.Size()
+		return c == 120 && r == 40
+	})
+
+	cols, rows = terminal.VTerm.Size()
+	if cols != 120 || rows != 40 {
+		t.Fatalf("expected VTerm resized to 120x40 after resize frame, got %dx%d", cols, rows)
+	}
+
+	// Verify snapshot also reflects the new size
+	if terminal.Snapshot == nil {
+		t.Fatal("expected snapshot after resize")
+	}
+	if terminal.Snapshot.Size.Cols != 120 || terminal.Snapshot.Size.Rows != 40 {
+		t.Fatalf("expected snapshot size 120x40, got %dx%d", terminal.Snapshot.Size.Cols, terminal.Snapshot.Size.Rows)
+	}
+
+	// Subsequent output should be processed correctly at the new size
+	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("after-resize")})
+	waitFor(t, func() bool {
+		return snapshotContains(terminal.Snapshot, "after-resize")
+	})
+}
+
 func TestRuntimeClosedStreamStopsImmediately(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

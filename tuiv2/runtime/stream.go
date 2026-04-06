@@ -98,6 +98,20 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 		}
 		terminal.Recovery = RecoveryState{}
 		r.refreshSnapshot(terminalID)
+	case protocol.TypeResize:
+		cols, rows, err := protocol.DecodeResizePayload(frame.Payload)
+		if err != nil || cols == 0 || rows == 0 {
+			return
+		}
+		vt := r.ensureVTerm(terminal)
+		if vt == nil {
+			return
+		}
+		currentCols, currentRows := vt.Size()
+		if currentCols != int(cols) || currentRows != int(rows) {
+			vt.Resize(int(cols), int(rows))
+			r.refreshSnapshot(terminalID)
+		}
 	case protocol.TypeSyncLost:
 		terminal.Recovery.SyncLost = true
 		dropped, err := protocol.DecodeSyncLostPayload(frame.Payload)

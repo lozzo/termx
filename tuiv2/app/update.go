@@ -89,7 +89,18 @@ func (m *Model) handleTerminalEventMessage(msg tea.Msg) (tea.Cmd, bool) {
 			if m == nil || m.runtime == nil || typed.Event.TerminalID == "" {
 				return nil, true
 			}
-			if m.runtime.Registry().Get(typed.Event.TerminalID) == nil {
+			terminal := m.runtime.Registry().Get(typed.Event.TerminalID)
+			if terminal == nil {
+				return nil, true
+			}
+			// When a stream is active, the in-band resize frame already
+			// updated the local VTerm dimensions.  Reloading the snapshot
+			// here would race with the stream — the snapshot is sampled at
+			// a single point in time and loading it resets the VTerm,
+			// discarding any output the stream delivered between the
+			// snapshot sample and the load.  This creates holes in the
+			// cell grid that persist until htop redraws those areas.
+			if terminal.Stream.Active {
 				return nil, true
 			}
 			return m.reloadTerminalSnapshotCmd(typed.Event.TerminalID), true

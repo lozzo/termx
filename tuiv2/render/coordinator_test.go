@@ -277,6 +277,53 @@ func TestRenderBodyScrollbackOffsetShowsOlderRows(t *testing.T) {
 	}
 }
 
+func TestRenderBodyCacheAlwaysRedrawsActivePaneContent(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	snapshot := &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 12, Rows: 4},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			repeatCells("AAAA"),
+			repeatCells("BBBB"),
+			repeatCells("CCCC"),
+			repeatCells("DDDD"),
+		}},
+	}
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), 24, 8), 24, 10)
+	state.Runtime = &VisibleRuntimeStateProxy{Terminals: []runtime.VisibleTerminal{{
+		TerminalID: "term-1",
+		Snapshot:   snapshot,
+	}}}
+
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+	first := xansi.Strip(renderBodyFrameWithCoordinator(coordinator, state, 24, 8).content)
+	if !strings.Contains(first, "AAAA") {
+		t.Fatalf("expected first render to contain original content, got %q", first)
+	}
+
+	snapshot.Screen.Cells[0][0].Content = "Z"
+
+	second := xansi.Strip(renderBodyFrameWithCoordinator(coordinator, state, 24, 8).content)
+	if !strings.Contains(second, "ZAAA") {
+		t.Fatalf("expected cached render path to repaint active pane content, got %q", second)
+	}
+}
+
 func TestRenderBodyDrawsFloatingPanesOnTop(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
