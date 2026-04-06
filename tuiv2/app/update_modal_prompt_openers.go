@@ -26,7 +26,9 @@ func (m *Model) openEditTerminalPrompt(item *modal.PickerItem) {
 	}
 	name := strings.TrimSpace(item.Name)
 	requestID := "edit-terminal:" + item.TerminalID
-	m.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: requestID}
+	returnMode := m.promptReturnMode()
+	m.openModal(input.ModePrompt, requestID)
+	m.markModalReady(input.ModePrompt, requestID)
 	m.modalHost.Prompt = &modal.PromptState{
 		Kind:        "edit-terminal-name",
 		Title:       "Edit Terminal",
@@ -39,9 +41,8 @@ func (m *Model) openEditTerminalPrompt(item *modal.PickerItem) {
 		Command:     append([]string(nil), item.CommandArgs...),
 		Name:        name,
 		Tags:        cloneStringMap(item.Tags),
-		ReturnMode:  m.promptReturnMode(),
+		ReturnMode:  returnMode,
 	}
-	m.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: requestID})
 	m.render.Invalidate()
 }
 
@@ -54,7 +55,8 @@ func (m *Model) openCreateTerminalPrompt(paneID string, target modal.CreateTarge
 		shell = "/bin/sh"
 	}
 	requestID := "create-terminal:" + paneID
-	m.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: requestID}
+	m.openModal(input.ModePrompt, requestID)
+	m.markModalReady(input.ModePrompt, requestID)
 	m.modalHost.Prompt = &modal.PromptState{
 		Kind:         "create-terminal-form",
 		Title:        "Create Terminal",
@@ -70,7 +72,6 @@ func (m *Model) openCreateTerminalPrompt(paneID string, target modal.CreateTarge
 			{Key: "tags", Label: "tags", Placeholder: "role=dev env=test"},
 		},
 	}
-	m.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: requestID})
 	m.render.Invalidate()
 }
 
@@ -83,7 +84,8 @@ func (m *Model) openRenameWorkspacePrompt() {
 		return
 	}
 	requestID := "rename-workspace:" + workspace.Name
-	m.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: requestID}
+	m.openModal(input.ModePrompt, requestID)
+	m.markModalReady(input.ModePrompt, requestID)
 	m.modalHost.Prompt = &modal.PromptState{
 		Kind:       "rename-workspace",
 		Title:      "rename workspace",
@@ -93,7 +95,6 @@ func (m *Model) openRenameWorkspacePrompt() {
 		Original:   workspace.Name,
 		AllowEmpty: false,
 	}
-	m.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: requestID})
 	m.render.Invalidate()
 }
 
@@ -106,7 +107,8 @@ func (m *Model) openRenameTabPrompt() {
 		return
 	}
 	requestID := "rename-tab:" + tab.ID
-	m.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: requestID}
+	m.openModal(input.ModePrompt, requestID)
+	m.markModalReady(input.ModePrompt, requestID)
 	m.modalHost.Prompt = &modal.PromptState{
 		Kind:       "rename-tab",
 		Title:      "rename tab",
@@ -116,7 +118,6 @@ func (m *Model) openRenameTabPrompt() {
 		Original:   tab.Name,
 		AllowEmpty: false,
 	}
-	m.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: requestID})
 	m.render.Invalidate()
 }
 
@@ -124,7 +125,7 @@ func (m *Model) promptReturnMode() input.ModeKind {
 	if m == nil {
 		return input.ModeNormal
 	}
-	if m.input.Mode().Kind == input.ModeTerminalManager && m.terminalPage != nil {
+	if m.mode().Kind == input.ModeTerminalManager && m.terminalPage != nil {
 		return input.ModeTerminalManager
 	}
 	return input.ModeNormal
@@ -142,5 +143,5 @@ func (m *Model) restorePromptReturnMode(prompt *modal.PromptState) {
 	if mode == input.ModeTerminalManager {
 		next.RequestID = terminalPoolPageModeToken
 	}
-	m.input.SetMode(next)
+	m.setMode(next)
 }

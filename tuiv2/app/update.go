@@ -56,7 +56,7 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 		return m.handleKeyMsg(typed), true
 	case prefixTimeoutMsg:
 		if typed.seq == m.prefixSeq && m.isStickyMode() {
-			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+			m.setMode(input.ModeState{Kind: input.ModeNormal})
 			m.render.Invalidate()
 		}
 		return nil, true
@@ -125,14 +125,14 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 				m.modalHost.Picker.Selected = 0
 			}
 			if m.modalHost.Session != nil {
-				m.modalHost.MarkReady(m.modalHost.Session.Kind, m.modalHost.Session.RequestID)
+				m.markModalReady(m.modalHost.Session.Kind, m.modalHost.Session.RequestID)
 			}
 		}
 		m.render.Invalidate()
 		return nil, true
 	case terminalManagerItemsLoadedMsg:
 		if m.terminalPage == nil {
-			m.terminalPage = &modal.TerminalManagerState{}
+			m.openTerminalPool()
 		}
 		m.terminalPage.Items = typed.Items
 		m.terminalPage.ApplyFilter()
@@ -147,8 +147,7 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		m.clearPendingPaneAttach(typed.PaneID, typed.TerminalID)
 		m.resetPaneScrollOffset(typed.TabID, typed.PaneID)
 		if m.modalHost != nil && m.modalHost.Session != nil && m.modalHost.Session.Kind == input.ModePicker {
-			m.modalHost.Close(input.ModePicker, m.modalHost.Session.RequestID)
-			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+			m.closeModal(input.ModePicker, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
 		}
 		m.render.Invalidate()
 		return batchCmds(m.saveStateCmd(), m.finalizeTerminalAttachCmd(typed.TabID, typed.PaneID, typed.TerminalID)), true
@@ -347,7 +346,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 }
 
 func (m *Model) restartActionForKeyMsg(msg tea.KeyMsg) (input.SemanticAction, bool) {
-	if m == nil || m.input == nil || m.input.Mode().Kind != input.ModeNormal {
+	if m == nil || m.input == nil || m.mode().Kind != input.ModeNormal {
 		return input.SemanticAction{}, false
 	}
 	if msg.Type != tea.KeyRunes || len(msg.Runes) != 1 || msg.Runes[0] != 'R' {

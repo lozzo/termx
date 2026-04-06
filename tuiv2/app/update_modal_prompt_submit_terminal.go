@@ -94,7 +94,7 @@ func (m *Model) submitEditTerminalTagsPrompt(prompt *modal.PromptState) tea.Cmd 
 	if m.modalHost.Session != nil {
 		requestID = m.modalHost.Session.RequestID
 	}
-	m.modalHost.Close(input.ModePrompt, requestID)
+	m.closeModal(input.ModePrompt, requestID, input.ModeState{})
 	m.restorePromptReturnMode(prompt)
 	m.render.Invalidate()
 	return func() tea.Msg {
@@ -156,7 +156,7 @@ func (m *Model) submitCreateTerminal(prompt *modal.PromptState, paneID string, p
 	if m.modalHost.Session != nil {
 		requestID = m.modalHost.Session.RequestID
 	}
-	m.modalHost.Close(input.ModePrompt, requestID)
+	m.closeModal(input.ModePrompt, requestID, input.ModeState{})
 	m.restorePromptReturnMode(prompt)
 	m.render.Invalidate()
 	if pane != "" {

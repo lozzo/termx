@@ -42,7 +42,7 @@ func (m *Model) emptyPaneKeyboardNavigationEnabled() bool {
 	if m.modalHost != nil && m.modalHost.Session != nil {
 		return false
 	}
-	return m.input.Mode().Kind == input.ModeNormal
+	return m.mode().Kind == input.ModeNormal
 }
 
 func (m *Model) activeEmptyPaneID() string {

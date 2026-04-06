@@ -2,70 +2,48 @@ package app
 
 import (
 	"context"
-	"strconv"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
-	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 func (m *Model) splitPaneAndAttachTerminalCmd(paneID, terminalID string) tea.Cmd {
-	if m == nil || m.workbench == nil || paneID == "" || terminalID == "" {
+	if m == nil || m.orchestrator == nil || paneID == "" || terminalID == "" {
 		return nil
 	}
-	tab := m.workbench.CurrentTab()
-	if tab == nil {
-		return nil
-	}
-	newPaneID := shared.NextPaneID()
-	if err := m.workbench.SplitPane(tab.ID, paneID, newPaneID, workbench.SplitVertical); err != nil {
+	tabID, newPaneID, err := m.orchestrator.PrepareSplitAttachTarget(paneID)
+	if err != nil {
 		return func() tea.Msg { return err }
 	}
-	_ = m.workbench.FocusPane(tab.ID, newPaneID)
 	m.render.Invalidate()
-	return tea.Batch(m.attachPaneTerminalCmd("", newPaneID, terminalID), m.saveStateCmd())
+	return tea.Batch(m.attachPaneTerminalCmd(tabID, newPaneID, terminalID), m.saveStateCmd())
 }
 
 func (m *Model) createTabAndAttachTerminalCmd(terminalID string) tea.Cmd {
-	if m == nil || m.workbench == nil || terminalID == "" {
+	if m == nil || m.orchestrator == nil || terminalID == "" {
 		return nil
 	}
-	ws := m.workbench.CurrentWorkspace()
-	if ws == nil {
-		return nil
-	}
-	tabID := shared.NextTabID()
-	paneID := shared.NextPaneID()
-	name := strconv.Itoa(len(ws.Tabs) + 1)
-	if err := m.workbench.CreateTab(ws.Name, tabID, name); err != nil {
+	tabID, paneID, err := m.orchestrator.PrepareTabAttachTarget()
+	if err != nil {
 		return func() tea.Msg { return err }
 	}
-	if err := m.workbench.CreateFirstPane(tabID, paneID); err != nil {
-		return func() tea.Msg { return err }
-	}
-	_ = m.workbench.SwitchTab(ws.Name, len(ws.Tabs)-1)
 	m.render.Invalidate()
-	return tea.Batch(m.attachPaneTerminalCmd("", paneID, terminalID), m.saveStateCmd())
+	return tea.Batch(m.attachPaneTerminalCmd(tabID, paneID, terminalID), m.saveStateCmd())
 }
 
 func (m *Model) createFloatingPaneAndAttachTerminalCmd(terminalID string) tea.Cmd {
-	if m == nil || m.workbench == nil || terminalID == "" {
+	if m == nil || m.orchestrator == nil || terminalID == "" {
 		return nil
 	}
-	tab := m.workbench.CurrentTab()
-	if tab == nil {
-		return nil
-	}
-	paneID := shared.NextPaneID()
-	if err := m.workbench.CreateFloatingPane(tab.ID, paneID, workbench.Rect{X: 10, Y: 5, W: 80, H: 24}); err != nil {
+	tabID, paneID, err := m.orchestrator.PrepareFloatingAttachTarget()
+	if err != nil {
 		return func() tea.Msg { return err }
 	}
-	_ = m.workbench.FocusPane(tab.ID, paneID)
 	m.render.Invalidate()
-	return tea.Batch(m.attachPaneTerminalCmd("", paneID, terminalID), m.saveStateCmd())
+	return tea.Batch(m.attachPaneTerminalCmd(tabID, paneID, terminalID), m.saveStateCmd())
 }
 
 func (m *Model) nextSequenceCmd(seq sequenceMsg) tea.Cmd {
@@ -86,8 +64,7 @@ func (m *Model) attachInitialTerminalCmd(terminalID string) tea.Cmd {
 		return nil
 	}
 	if m.modalHost != nil && m.modalHost.Session != nil && m.modalHost.Session.Kind == input.ModePicker {
-		m.modalHost.Close(input.ModePicker, m.modalHost.Session.RequestID)
-		m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+		m.closeModal(input.ModePicker, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
 	}
 	paneID := pane.ID
 	return m.attachPaneTerminalCmd("", paneID, terminalID)

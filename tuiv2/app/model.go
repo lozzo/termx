@@ -43,10 +43,11 @@ type Model struct {
 
 	send func(tea.Msg) // injected by run.go after tea.NewProgram
 
-	input        *input.Router
+	ui           *UIState
+	input        *input.Router // compatibility alias; UIState owns the router
 	render       *render.Coordinator
-	modalHost    *modal.ModalHost
-	terminalPage *modal.TerminalManagerState
+	modalHost    *modal.ModalHost            // compatibility alias; UIState owns modal state
+	terminalPage *modal.TerminalManagerState // compatibility alias; UIState owns surface state
 	orchestrator *orchestrator.Orchestrator
 
 	// 只读引用，仅用于将 visible state 注入 render 层。
@@ -96,12 +97,13 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 	if rt == nil {
 		rt = runtime.New(nil)
 	}
-	host := modal.NewHost()
+	ui := NewUIState()
 	model := &Model{
 		cfg:                 cfg,
 		statePath:           cfg.WorkspaceStatePath,
-		input:               input.NewRouter(),
-		modalHost:           host,
+		ui:                  ui,
+		input:               ui.Router(),
+		modalHost:           ui.ModalHost(),
 		workbench:           wb,
 		runtime:             rt,
 		pendingPaneAttaches: make(map[string]string),
@@ -188,9 +190,8 @@ func (m *Model) bootstrapStartup() error {
 	}
 	m.startup = result
 	if result.ShouldOpenPicker {
-		m.modalHost.Open(input.ModePicker, "startup-picker")
+		m.openModal(input.ModePicker, "startup-picker")
 		m.resetPickerState()
-		m.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: "startup-picker"})
 	}
 	return nil
 }
@@ -222,9 +223,8 @@ func (m *Model) bootstrapSessionStartup(ctx context.Context) error {
 	}
 	m.applySessionSnapshot(snapshot)
 	if pane := m.workbench.ActivePane(); pane != nil && pane.TerminalID == "" {
-		m.modalHost.Open(input.ModePicker, "startup-picker")
+		m.openModal(input.ModePicker, "startup-picker")
 		m.resetPickerState()
-		m.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: "startup-picker"})
 	}
 	return nil
 }

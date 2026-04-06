@@ -15,7 +15,7 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 	if m == nil {
 		return false, nil
 	}
-	if m.input.Mode().Kind == input.ModeTerminalManager && m.terminalPage != nil {
+	if m.mode().Kind == input.ModeTerminalManager && m.terminalPage != nil {
 		switch action.Kind {
 		case input.ActionPickerUp:
 			m.terminalPage.Move(-1)
@@ -100,8 +100,7 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			m.render.Invalidate()
 			return true, nil
 		case input.ActionCancelMode:
-			m.modalHost.Close(input.ModePicker, m.modalHost.Session.RequestID)
-			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+			m.closeModal(input.ModePicker, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
 			m.render.Invalidate()
 			return true, nil
 		case input.ActionSubmitPrompt:
@@ -122,8 +121,7 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 				m.openCreateTerminalPrompt(action.PaneID, modal.CreateTargetSplit)
 				return true, nil
 			}
-			m.modalHost.Close(input.ModePicker, m.modalHost.Session.RequestID)
-			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+			m.closeModal(input.ModePicker, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
 			m.render.Invalidate()
 			return true, m.splitPaneAndAttachTerminalCmd(m.currentOrActionPaneID(action.PaneID), selected.TerminalID)
 		case input.ActionEditTerminal:
@@ -154,7 +152,7 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 	case input.ModePrompt:
 		switch action.Kind {
 		case input.ActionCancelMode:
-			m.modalHost.Close(input.ModePrompt, m.modalHost.Session.RequestID)
+			m.closeModal(input.ModePrompt, m.modalHost.Session.RequestID, input.ModeState{})
 			m.restorePromptReturnMode(m.modalHost.Prompt)
 			m.render.Invalidate()
 			return true, nil
@@ -177,8 +175,7 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			m.render.Invalidate()
 			return true, nil
 		case input.ActionCancelMode:
-			m.modalHost.Close(input.ModeWorkspacePicker, m.modalHost.Session.RequestID)
-			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+			m.closeModal(input.ModeWorkspacePicker, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
 			m.render.Invalidate()
 			return true, nil
 		case input.ActionSubmitPrompt:
@@ -209,8 +206,7 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			if err := m.workbench.DeleteWorkspace(ws.Name); err != nil {
 				return true, m.showError(err)
 			}
-			m.modalHost.Close(input.ModeWorkspacePicker, m.modalHost.Session.RequestID)
-			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+			m.closeModal(input.ModeWorkspacePicker, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
 			m.render.Invalidate()
 			return true, m.saveStateCmd()
 		case input.ActionRenameWorkspace:
@@ -223,8 +219,7 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			if err := m.workbench.SwitchWorkspaceByOffset(-1); err != nil {
 				return true, m.showError(err)
 			}
-			m.modalHost.Close(input.ModeWorkspacePicker, m.modalHost.Session.RequestID)
-			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+			m.closeModal(input.ModeWorkspacePicker, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
 			m.render.Invalidate()
 			return true, m.saveStateCmd()
 		case input.ActionNextWorkspace:
@@ -234,8 +229,7 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			if err := m.workbench.SwitchWorkspaceByOffset(1); err != nil {
 				return true, m.showError(err)
 			}
-			m.modalHost.Close(input.ModeWorkspacePicker, m.modalHost.Session.RequestID)
-			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+			m.closeModal(input.ModeWorkspacePicker, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
 			m.render.Invalidate()
 			return true, m.saveStateCmd()
 		default:
@@ -244,8 +238,7 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 	case input.ModeHelp:
 		switch action.Kind {
 		case input.ActionCancelMode:
-			m.modalHost.Close(input.ModeHelp, m.modalHost.Session.RequestID)
-			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+			m.closeModal(input.ModeHelp, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
 			m.render.Invalidate()
 			return true, nil
 		default:
@@ -283,7 +276,7 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		}
 	default:
 		if action.Kind == input.ActionCancelMode {
-			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+			m.setMode(input.ModeState{Kind: input.ModeNormal})
 			m.render.Invalidate()
 			return true, nil
 		}
@@ -314,8 +307,7 @@ func (m *Model) closeTerminalManager() {
 	if m == nil {
 		return
 	}
-	m.terminalPage = nil
-	m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+	m.closeTerminalPoolSurface()
 	m.render.Invalidate()
 }
 

@@ -192,6 +192,71 @@ func TestAttachAndLoadSnapshotWritesWorkbenchStructuralBinding(t *testing.T) {
 	}
 }
 
+func TestPrepareSplitAttachTarget(t *testing.T) {
+	orch, _ := newTestOrchestrator(t)
+	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
+
+	tabID, paneID, err := orch.PrepareSplitAttachTarget("pane-1")
+	if err != nil {
+		t.Fatalf("PrepareSplitAttachTarget: %v", err)
+	}
+	if tabID != "tab-1" {
+		t.Fatalf("expected tab-1, got %q", tabID)
+	}
+	tab := orch.workbench.CurrentTab()
+	if tab == nil || paneID == "" || tab.Panes[paneID] == nil {
+		t.Fatalf("expected new pane in current tab, got tab=%#v paneID=%q", tab, paneID)
+	}
+	if tab.ActivePaneID != paneID {
+		t.Fatalf("expected new pane focused, got %q", tab.ActivePaneID)
+	}
+}
+
+func TestPrepareTabAttachTarget(t *testing.T) {
+	orch, _ := newTestOrchestrator(t)
+	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
+
+	tabID, paneID, err := orch.PrepareTabAttachTarget()
+	if err != nil {
+		t.Fatalf("PrepareTabAttachTarget: %v", err)
+	}
+	if tabID == "" || paneID == "" {
+		t.Fatalf("expected non-empty tab/pane IDs, got tab=%q pane=%q", tabID, paneID)
+	}
+	ws := orch.workbench.CurrentWorkspace()
+	if ws == nil || len(ws.Tabs) != 2 {
+		t.Fatalf("expected second tab created, got %#v", ws)
+	}
+	tab := orch.workbench.CurrentTab()
+	if tab == nil || tab.ID != tabID || tab.ActivePaneID != paneID {
+		t.Fatalf("expected new tab active with new pane, got %#v", tab)
+	}
+}
+
+func TestPrepareFloatingAttachTarget(t *testing.T) {
+	orch, _ := newTestOrchestrator(t)
+	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
+
+	tabID, paneID, err := orch.PrepareFloatingAttachTarget()
+	if err != nil {
+		t.Fatalf("PrepareFloatingAttachTarget: %v", err)
+	}
+	tab := orch.workbench.CurrentTab()
+	if tab == nil || tab.ID != tabID {
+		t.Fatalf("expected current tab %q, got %#v", tabID, tab)
+	}
+	if tab.Panes[paneID] == nil {
+		t.Fatalf("expected floating pane %q to exist", paneID)
+	}
+	floating := orch.workbench.FloatingState(tabID, paneID)
+	if floating == nil {
+		t.Fatalf("expected floating state for %q", paneID)
+	}
+	if tab.ActivePaneID != paneID {
+		t.Fatalf("expected floating pane focused, got %q", tab.ActivePaneID)
+	}
+}
+
 func (o *Orchestrator) runtimeClientCreate(ctx context.Context, command []string, name string) (*protocol.CreateResult, error) {
 	return o.runtimeClient().Create(ctx, protocol.CreateParams{
 		Command: command,

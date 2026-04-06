@@ -11,7 +11,7 @@ import (
 )
 
 func (m *Model) isStickyMode() bool {
-	kind := m.input.Mode().Kind
+	kind := m.mode().Kind
 	return kind == input.ModePane || kind == input.ModeResize || kind == input.ModeTab ||
 		kind == input.ModeWorkspace || kind == input.ModeFloating || kind == input.ModeDisplay ||
 		kind == input.ModeGlobal
@@ -56,9 +56,8 @@ func (m *Model) openPickerIfUnattached(paneID string) tea.Cmd {
 	if m.modalHost.Session != nil {
 		return nil
 	}
-	m.modalHost.Open(input.ModePicker, paneID)
+	m.openModal(input.ModePicker, paneID)
 	m.resetPickerState()
-	m.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: paneID})
 	m.render.Invalidate()
 	return m.applyEffects([]orchestrator.Effect{orchestrator.LoadPickerItemsEffect{}})
 }

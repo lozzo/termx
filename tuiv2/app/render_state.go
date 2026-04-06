@@ -1,9 +1,6 @@
 package app
 
-import (
-	"github.com/lozzow/termx/tuiv2/input"
-	"github.com/lozzow/termx/tuiv2/render"
-)
+import "github.com/lozzow/termx/tuiv2/render"
 
 func (m *Model) visibleRenderState() render.VisibleRenderState {
 	bodyHeight := m.bodyHeight()
@@ -22,17 +19,8 @@ func (m *Model) visibleRenderState() render.VisibleRenderState {
 }
 
 func (m *Model) visibleInputMode() string {
-	if m == nil {
+	if m == nil || m.ui == nil {
 		return ""
 	}
-	if m.terminalPage != nil {
-		return string(input.ModeTerminalManager)
-	}
-	if m.modalHost != nil && m.modalHost.Session != nil {
-		return string(m.modalHost.Session.Kind)
-	}
-	if m.input == nil {
-		return ""
-	}
-	return string(m.input.Mode().Kind)
+	return string(m.ui.VisibleInputMode())
 }

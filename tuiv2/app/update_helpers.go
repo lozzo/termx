@@ -8,7 +8,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/input"
-	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
 	"github.com/lozzow/termx/tuiv2/render"
 	"github.com/lozzow/termx/tuiv2/shared"
@@ -187,8 +186,7 @@ func (m *Model) openPickerForPaneCmd(paneID string) tea.Cmd {
 		return nil
 	}
 	m.resetPickerState()
-	m.modalHost.StartLoading(input.ModePicker, paneID)
-	m.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: paneID})
+	m.startLoadingModal(input.ModePicker, paneID)
 	m.render.Invalidate()
 	return m.effectCmd(orchestrator.LoadPickerItemsEffect{})
 }
@@ -223,10 +221,7 @@ func (m *Model) openTerminalManagerCmd() tea.Cmd {
 	if m == nil {
 		return nil
 	}
-	m.terminalPage = &modal.TerminalManagerState{
-		Title: "Terminal Pool",
-	}
-	m.input.SetMode(input.ModeState{Kind: input.ModeTerminalManager, RequestID: terminalPoolPageModeToken})
+	m.openTerminalPool()
 	m.render.Invalidate()
 	return m.loadTerminalManagerItemsCmd()
 }

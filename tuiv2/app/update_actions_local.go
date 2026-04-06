@@ -15,51 +15,50 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 	}
 	switch action.Kind {
 	case input.ActionEnterPaneMode:
-		m.input.SetMode(input.ModeState{Kind: input.ModePane})
+		m.setMode(input.ModeState{Kind: input.ModePane})
 		m.render.Invalidate()
 		return true, m.rearmPrefixTimeoutCmd()
 	case input.ActionEnterResizeMode:
-		m.input.SetMode(input.ModeState{Kind: input.ModeResize})
+		m.setMode(input.ModeState{Kind: input.ModeResize})
 		m.render.Invalidate()
 		return true, m.rearmPrefixTimeoutCmd()
 	case input.ActionEnterTabMode:
-		m.input.SetMode(input.ModeState{Kind: input.ModeTab})
+		m.setMode(input.ModeState{Kind: input.ModeTab})
 		m.render.Invalidate()
 		return true, m.rearmPrefixTimeoutCmd()
 	case input.ActionEnterWorkspaceMode:
-		m.input.SetMode(input.ModeState{Kind: input.ModeWorkspace})
+		m.setMode(input.ModeState{Kind: input.ModeWorkspace})
 		m.render.Invalidate()
 		return true, m.rearmPrefixTimeoutCmd()
 	case input.ActionEnterFloatingMode:
 		m.ensureFloatingModeTarget()
-		m.input.SetMode(input.ModeState{Kind: input.ModeFloating})
+		m.setMode(input.ModeState{Kind: input.ModeFloating})
 		m.render.Invalidate()
 		return true, m.rearmPrefixTimeoutCmd()
 	case input.ActionOpenFloatingOverview:
 		return true, m.openFloatingOverview()
 	case input.ActionEnterDisplayMode:
-		m.input.SetMode(input.ModeState{Kind: input.ModeDisplay})
+		m.setMode(input.ModeState{Kind: input.ModeDisplay})
 		m.render.Invalidate()
 		return true, m.rearmPrefixTimeoutCmd()
 	case input.ActionEnterGlobalMode:
-		m.input.SetMode(input.ModeState{Kind: input.ModeGlobal})
+		m.setMode(input.ModeState{Kind: input.ModeGlobal})
 		m.render.Invalidate()
 		return true, m.rearmPrefixTimeoutCmd()
 	case input.ActionCancelMode:
-		if m.input.Mode().Kind == input.ModeTerminalManager && m.terminalPage != nil {
+		if m.mode().Kind == input.ModeTerminalManager && m.terminalPage != nil {
 			return false, nil
 		}
 		if m.modalHost == nil || m.modalHost.Session == nil {
-			m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+			m.setMode(input.ModeState{Kind: input.ModeNormal})
 			m.render.Invalidate()
 			return true, nil
 		}
 		return false, nil
 	case input.ActionOpenHelp:
-		m.modalHost.Open(input.ModeHelp, "help")
+		m.openModal(input.ModeHelp, "help")
 		m.modalHost.Help = modal.DefaultHelp()
-		m.modalHost.MarkReady(input.ModeHelp, "help")
-		m.input.SetMode(input.ModeState{Kind: input.ModeHelp, RequestID: "help"})
+		m.markModalReady(input.ModeHelp, "help")
 		m.render.Invalidate()
 		return true, nil
 	case input.ActionCollapseFloatingPane:
@@ -77,8 +76,8 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 	case input.ActionToggleFloatingAutoFit:
 		return true, m.toggleFloatingAutoFit(action.PaneID)
 	case input.ActionFocusPane:
-		if m.input.Mode().Kind == input.ModeNormal {
-			m.input.SetMode(input.ModeState{Kind: input.ModePane})
+		if m.mode().Kind == input.ModeNormal {
+			m.setMode(input.ModeState{Kind: input.ModePane})
 			m.render.Invalidate()
 			return true, nil
 		}
@@ -87,7 +86,7 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		if m.runtime == nil || m.workbench == nil {
 			return true, nil
 		}
-		switch m.input.Mode().Kind {
+		switch m.mode().Kind {
 		case input.ModeNormal, input.ModePane, input.ModeResize, input.ModeFloating:
 		default:
 			return false, nil
@@ -119,7 +118,7 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		if m.runtime == nil || m.workbench == nil {
 			return true, nil
 		}
-		switch m.input.Mode().Kind {
+		switch m.mode().Kind {
 		case input.ModeNormal, input.ModePane:
 		default:
 			return false, nil
@@ -144,8 +143,8 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		}
 		return true, m.restartPaneTerminalCmd(paneID, pane.TerminalID)
 	case input.ActionOpenPrompt:
-		if m.input.Mode().Kind == input.ModeNormal {
-			m.input.SetMode(input.ModeState{Kind: input.ModeResize})
+		if m.mode().Kind == input.ModeNormal {
+			m.setMode(input.ModeState{Kind: input.ModeResize})
 			m.render.Invalidate()
 			return true, nil
 		}
@@ -167,27 +166,27 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		}
 		return true, tea.Batch(m.openPickerForPaneCmd(paneID), m.saveStateCmd())
 	case input.ActionCreateTab:
-		if m.input.Mode().Kind == input.ModeNormal {
-			m.input.SetMode(input.ModeState{Kind: input.ModeTab})
+		if m.mode().Kind == input.ModeNormal {
+			m.setMode(input.ModeState{Kind: input.ModeTab})
 			m.render.Invalidate()
 			return true, nil
 		}
 		return false, nil
 	case input.ActionOpenWorkspacePicker:
-		if m.input.Mode().Kind == input.ModeNormal {
-			m.input.SetMode(input.ModeState{Kind: input.ModeWorkspace})
+		if m.mode().Kind == input.ModeNormal {
+			m.setMode(input.ModeState{Kind: input.ModeWorkspace})
 			m.render.Invalidate()
 			return true, nil
 		}
 		return false, nil
 	case input.ActionCreateWorkspace:
-		if m.input.Mode().Kind != input.ModeWorkspace || m.workbench == nil {
+		if m.mode().Kind != input.ModeWorkspace || m.workbench == nil {
 			return false, nil
 		}
 		m.openCreateWorkspaceNamePrompt(input.ModeNormal)
 		return true, nil
 	case input.ActionDeleteWorkspace:
-		if m.input.Mode().Kind != input.ModeWorkspace || m.workbench == nil {
+		if m.mode().Kind != input.ModeWorkspace || m.workbench == nil {
 			return false, nil
 		}
 		ws := m.workbench.CurrentWorkspace()
@@ -197,43 +196,43 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		if err := m.workbench.DeleteWorkspace(ws.Name); err != nil {
 			return true, m.showError(err)
 		}
-		m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+		m.setMode(input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
 		return true, m.saveStateCmd()
 	case input.ActionRenameWorkspace:
-		if m.input.Mode().Kind != input.ModeWorkspace {
+		if m.mode().Kind != input.ModeWorkspace {
 			return false, nil
 		}
 		m.openRenameWorkspacePrompt()
 		return true, nil
 	case input.ActionPrevWorkspace:
-		if m.input.Mode().Kind != input.ModeWorkspace || m.workbench == nil {
+		if m.mode().Kind != input.ModeWorkspace || m.workbench == nil {
 			return false, nil
 		}
 		if err := m.workbench.SwitchWorkspaceByOffset(-1); err != nil {
 			return true, m.showError(err)
 		}
-		m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+		m.setMode(input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
 		return true, m.saveStateCmd()
 	case input.ActionNextWorkspace:
-		if m.input.Mode().Kind != input.ModeWorkspace || m.workbench == nil {
+		if m.mode().Kind != input.ModeWorkspace || m.workbench == nil {
 			return false, nil
 		}
 		if err := m.workbench.SwitchWorkspaceByOffset(1); err != nil {
 			return true, m.showError(err)
 		}
-		m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+		m.setMode(input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
 		return true, m.saveStateCmd()
 	case input.ActionRenameTab:
-		if m.input.Mode().Kind != input.ModeTab {
+		if m.mode().Kind != input.ModeTab {
 			return false, nil
 		}
 		m.openRenameTabPrompt()
 		return true, nil
 	case input.ActionJumpTab:
-		if m.input.Mode().Kind != input.ModeTab || m.workbench == nil {
+		if m.mode().Kind != input.ModeTab || m.workbench == nil {
 			return false, nil
 		}
 		index, err := strconv.Atoi(strings.TrimSpace(action.Text))
@@ -247,31 +246,31 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		if err := m.workbench.SwitchTab(ws.Name, index-1); err != nil {
 			return true, m.showError(err)
 		}
-		m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+		m.setMode(input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
 		return true, m.saveStateCmd()
 	case input.ActionPrevTab:
-		if m.input.Mode().Kind != input.ModeTab || m.workbench == nil {
+		if m.mode().Kind != input.ModeTab || m.workbench == nil {
 			return false, nil
 		}
 		if err := m.switchCurrentTabByOffset(-1); err != nil {
 			return true, m.showError(err)
 		}
-		m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+		m.setMode(input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
 		return true, m.saveStateCmd()
 	case input.ActionNextTab:
-		if m.input.Mode().Kind != input.ModeTab || m.workbench == nil {
+		if m.mode().Kind != input.ModeTab || m.workbench == nil {
 			return false, nil
 		}
 		if err := m.switchCurrentTabByOffset(1); err != nil {
 			return true, m.showError(err)
 		}
-		m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+		m.setMode(input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
 		return true, m.saveStateCmd()
 	case input.ActionKillTab:
-		if m.input.Mode().Kind != input.ModeTab {
+		if m.mode().Kind != input.ModeTab {
 			return false, nil
 		}
 		return true, m.killCurrentTabCmd()
@@ -282,13 +281,13 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			}
 			return true, tea.Batch(m.openTerminalManagerCmd(), m.saveStateCmd())
 		}
-		if m.input.Mode().Kind == input.ModeGlobal {
+		if m.mode().Kind == input.ModeGlobal {
 			return true, m.openTerminalManagerCmd()
 		}
 		return false, nil
 	case input.ActionZoomPane:
-		if m.input.Mode().Kind == input.ModeNormal {
-			m.input.SetMode(input.ModeState{Kind: input.ModeDisplay})
+		if m.mode().Kind == input.ModeNormal {
+			m.setMode(input.ModeState{Kind: input.ModeDisplay})
 			m.render.Invalidate()
 			return true, nil
 		}
@@ -322,8 +321,8 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		}
 		return true, m.ensureActivePaneScrollbackCmd()
 	case input.ActionQuit:
-		if m.input.Mode().Kind == input.ModeNormal {
-			m.input.SetMode(input.ModeState{Kind: input.ModeGlobal})
+		if m.mode().Kind == input.ModeNormal {
+			m.setMode(input.ModeState{Kind: input.ModeGlobal})
 			m.render.Invalidate()
 			return true, nil
 		}

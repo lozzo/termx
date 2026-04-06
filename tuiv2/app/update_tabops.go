@@ -54,7 +54,7 @@ func (m *Model) killCurrentTabCmd() tea.Cmd {
 				_ = m.runtime.Client().Kill(context.Background(), terminalID)
 			}
 		}
-		m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+		m.setMode(input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
 		if cmd := m.saveStateCmd(); cmd != nil {
 			return cmd()

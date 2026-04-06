@@ -33,7 +33,7 @@ func (m *Model) submitRenameTabPrompt(prompt *modal.PromptState) tea.Cmd {
 	if m.modalHost.Session != nil {
 		requestID = m.modalHost.Session.RequestID
 	}
-	m.modalHost.Close(input.ModePrompt, requestID)
+	m.closeModal(input.ModePrompt, requestID, input.ModeState{})
 	m.restorePromptReturnMode(prompt)
 	m.render.Invalidate()
 	return m.saveStateCmd()
@@ -70,7 +70,7 @@ func (m *Model) submitRenameWorkspacePrompt(prompt *modal.PromptState) tea.Cmd {
 	if m.modalHost.Session != nil {
 		requestID = m.modalHost.Session.RequestID
 	}
-	m.modalHost.Close(input.ModePrompt, requestID)
+	m.closeModal(input.ModePrompt, requestID, input.ModeState{})
 	m.restorePromptReturnMode(prompt)
 	m.render.Invalidate()
 	return m.saveStateCmd()

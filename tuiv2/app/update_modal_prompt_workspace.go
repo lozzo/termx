@@ -10,7 +10,8 @@ func (m *Model) openCreateWorkspaceNamePrompt(returnMode input.ModeKind) {
 		return
 	}
 	requestID := "create-workspace"
-	m.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: requestID}
+	m.openModal(input.ModePrompt, requestID)
+	m.markModalReady(input.ModePrompt, requestID)
 	m.modalHost.Prompt = &modal.PromptState{
 		Kind:       "rename-workspace",
 		Title:      "create workspace",
@@ -18,6 +19,5 @@ func (m *Model) openCreateWorkspaceNamePrompt(returnMode input.ModeKind) {
 		AllowEmpty: false,
 		ReturnMode: returnMode,
 	}
-	m.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: requestID})
 	m.render.Invalidate()
 }
