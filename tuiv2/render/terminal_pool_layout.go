@@ -17,6 +17,7 @@ const (
 
 type terminalPoolPageLayout struct {
 	innerWidth    int
+	queryRect     workbench.Rect
 	itemRows      []terminalPoolItemRowLayout
 	footerLine    string
 	footerActions []terminalPoolFooterActionLayout
@@ -48,6 +49,12 @@ func buildTerminalPoolPageLayout(pool *modal.TerminalManagerState, width, height
 	height = maxInt(1, height)
 	layout := terminalPoolPageLayout{
 		innerWidth: maxInt(24, width-4),
+		queryRect: workbench.Rect{
+			X: 2 + xansi.StringWidth("search: "),
+			Y: 1,
+			W: maxInt(1, width-2-xansi.StringWidth("search: ")),
+			H: 1,
+		},
 	}
 
 	if pool != nil {

@@ -19,7 +19,7 @@ func TestSnapshotUnmarshalJSON(t *testing.T) {
 			{"cells": [{"r": "o"}, {"r": "k"}]}
 		],
 		"cursor": {"row": 1, "col": 2, "visible": true, "shape": "block"},
-		"modes": {"alternate_screen": false, "mouse_tracking": false, "bracketed_paste": true, "application_cursor": false, "auto_wrap": true},
+		"modes": {"alternate_screen": false, "alternate_scroll": true, "mouse_tracking": false, "bracketed_paste": true, "application_cursor": false, "auto_wrap": true},
 		"timestamp": "2026-03-18T00:00:00Z"
 	}`)
 
@@ -40,7 +40,7 @@ func TestSnapshotUnmarshalJSON(t *testing.T) {
 	if len(snap.Scrollback) != 1 || snap.Scrollback[0][0].Content != "o" {
 		t.Fatalf("unexpected scrollback: %#v", snap.Scrollback)
 	}
-	if !snap.Modes.BracketedPaste || !snap.Cursor.Visible || snap.Cursor.Shape != "block" {
+	if !snap.Modes.BracketedPaste || !snap.Modes.AlternateScroll || !snap.Cursor.Visible || snap.Cursor.Shape != "block" {
 		t.Fatalf("unexpected cursor or modes: %#v %#v", snap.Cursor, snap.Modes)
 	}
 }

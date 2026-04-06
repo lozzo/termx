@@ -22,6 +22,8 @@ type WorkspacePickerState struct {
 	Title       string
 	Footer      string
 	Query       string
+	Cursor      int
+	CursorSet   bool
 	Items       []WorkspacePickerItem
 	Filtered    []WorkspacePickerItem
 	Selected    int

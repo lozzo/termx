@@ -758,7 +758,7 @@ func renderTerminalPoolPage(pool *modal.TerminalManagerState, runtimeState *Visi
 
 	title := terminalPickerTitleStyle(theme).Width(width).Render(forceWidthANSIOverlay(coalesce(strings.TrimSpace(pool.Title), "Terminal Pool"), width))
 	headerLines = append(headerLines, title)
-	headerLines = append(headerLines, forceWidthANSIOverlay(renderOverlaySearchLine(theme, pool.Query, width), width))
+	headerLines = append(headerLines, forceWidthANSIOverlay(renderOverlaySearchLine(theme, pool.Query, pool.Cursor, pool.CursorSet, width), width))
 	headerLines = append(headerLines, overlayCardFillStyle(theme).Width(width).Render(""))
 
 	contentLines := make([]string, 0, height)

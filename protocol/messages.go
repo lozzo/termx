@@ -208,6 +208,7 @@ type CursorState struct {
 
 type TerminalModes struct {
 	AlternateScreen   bool `json:"alternate_screen"`
+	AlternateScroll   bool `json:"alternate_scroll,omitempty"`
 	MouseTracking     bool `json:"mouse_tracking"`
 	BracketedPaste    bool `json:"bracketed_paste"`
 	ApplicationCursor bool `json:"application_cursor"`

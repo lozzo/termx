@@ -164,6 +164,7 @@ func protocolCursorToVTerm(cursor protocol.CursorState) localvterm.CursorState {
 func protocolModesToVTerm(modes protocol.TerminalModes) localvterm.TerminalModes {
 	return localvterm.TerminalModes{
 		AlternateScreen:   modes.AlternateScreen,
+		AlternateScroll:   modes.AlternateScroll,
 		MouseTracking:     modes.MouseTracking,
 		BracketedPaste:    modes.BracketedPaste,
 		ApplicationCursor: modes.ApplicationCursor,
@@ -184,6 +185,7 @@ func protocolCursorFromVTerm(cursor localvterm.CursorState) protocol.CursorState
 func protocolModesFromVTerm(modes localvterm.TerminalModes) protocol.TerminalModes {
 	return protocol.TerminalModes{
 		AlternateScreen:   modes.AlternateScreen,
+		AlternateScroll:   modes.AlternateScroll,
 		MouseTracking:     modes.MouseTracking,
 		BracketedPaste:    modes.BracketedPaste,
 		ApplicationCursor: modes.ApplicationCursor,

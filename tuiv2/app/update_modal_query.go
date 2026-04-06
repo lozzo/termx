@@ -12,7 +12,7 @@ func (m *Model) handleModalKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd) {
 	if m == nil {
 		return false, nil
 	}
-	if m.input.Mode().Kind == input.ModeTerminalManager && m.terminalPage != nil {
+	if m.mode().Kind == input.ModeTerminalManager && m.terminalPage != nil {
 		return m.handleTerminalManagerQueryKeyMsg(msg)
 	}
 	if m.modalHost == nil || m.modalHost.Session == nil {
@@ -99,9 +99,25 @@ func (m *Model) handlePickerQueryKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd) {
 		if len(msg.Runes) == 0 {
 			return true, nil
 		}
-		m.modalHost.Picker.Query += string(msg.Runes)
+		insertQueryRunes(&m.modalHost.Picker.Query, &m.modalHost.Picker.Cursor, &m.modalHost.Picker.CursorSet, msg.Runes)
 	case tea.KeyBackspace:
-		if !deleteLastRune(&m.modalHost.Picker.Query) {
+		if !deleteQueryRuneBeforeCursor(&m.modalHost.Picker.Query, &m.modalHost.Picker.Cursor, &m.modalHost.Picker.CursorSet) {
+			return true, nil
+		}
+	case tea.KeyLeft:
+		if !moveQueryCursor(&m.modalHost.Picker.Query, &m.modalHost.Picker.Cursor, &m.modalHost.Picker.CursorSet, -1) {
+			return true, nil
+		}
+	case tea.KeyRight:
+		if !moveQueryCursor(&m.modalHost.Picker.Query, &m.modalHost.Picker.Cursor, &m.modalHost.Picker.CursorSet, 1) {
+			return true, nil
+		}
+	case tea.KeyHome:
+		if !setQueryCursor(&m.modalHost.Picker.Query, &m.modalHost.Picker.Cursor, &m.modalHost.Picker.CursorSet, 0) {
+			return true, nil
+		}
+	case tea.KeyEnd:
+		if !setQueryCursor(&m.modalHost.Picker.Query, &m.modalHost.Picker.Cursor, &m.modalHost.Picker.CursorSet, len([]rune(m.modalHost.Picker.Query))) {
 			return true, nil
 		}
 	default:
@@ -122,9 +138,25 @@ func (m *Model) handleWorkspacePickerQueryKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd)
 		if len(msg.Runes) == 0 {
 			return true, nil
 		}
-		m.modalHost.WorkspacePicker.Query += string(msg.Runes)
+		insertQueryRunes(&m.modalHost.WorkspacePicker.Query, &m.modalHost.WorkspacePicker.Cursor, &m.modalHost.WorkspacePicker.CursorSet, msg.Runes)
 	case tea.KeyBackspace:
-		if !deleteLastRune(&m.modalHost.WorkspacePicker.Query) {
+		if !deleteQueryRuneBeforeCursor(&m.modalHost.WorkspacePicker.Query, &m.modalHost.WorkspacePicker.Cursor, &m.modalHost.WorkspacePicker.CursorSet) {
+			return true, nil
+		}
+	case tea.KeyLeft:
+		if !moveQueryCursor(&m.modalHost.WorkspacePicker.Query, &m.modalHost.WorkspacePicker.Cursor, &m.modalHost.WorkspacePicker.CursorSet, -1) {
+			return true, nil
+		}
+	case tea.KeyRight:
+		if !moveQueryCursor(&m.modalHost.WorkspacePicker.Query, &m.modalHost.WorkspacePicker.Cursor, &m.modalHost.WorkspacePicker.CursorSet, 1) {
+			return true, nil
+		}
+	case tea.KeyHome:
+		if !setQueryCursor(&m.modalHost.WorkspacePicker.Query, &m.modalHost.WorkspacePicker.Cursor, &m.modalHost.WorkspacePicker.CursorSet, 0) {
+			return true, nil
+		}
+	case tea.KeyEnd:
+		if !setQueryCursor(&m.modalHost.WorkspacePicker.Query, &m.modalHost.WorkspacePicker.Cursor, &m.modalHost.WorkspacePicker.CursorSet, len([]rune(m.modalHost.WorkspacePicker.Query))) {
 			return true, nil
 		}
 	default:
@@ -145,9 +177,25 @@ func (m *Model) handleTerminalManagerQueryKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd)
 		if len(msg.Runes) == 0 {
 			return true, nil
 		}
-		m.terminalPage.Query += string(msg.Runes)
+		insertQueryRunes(&m.terminalPage.Query, &m.terminalPage.Cursor, &m.terminalPage.CursorSet, msg.Runes)
 	case tea.KeyBackspace:
-		if !deleteLastRune(&m.terminalPage.Query) {
+		if !deleteQueryRuneBeforeCursor(&m.terminalPage.Query, &m.terminalPage.Cursor, &m.terminalPage.CursorSet) {
+			return true, nil
+		}
+	case tea.KeyLeft:
+		if !moveQueryCursor(&m.terminalPage.Query, &m.terminalPage.Cursor, &m.terminalPage.CursorSet, -1) {
+			return true, nil
+		}
+	case tea.KeyRight:
+		if !moveQueryCursor(&m.terminalPage.Query, &m.terminalPage.Cursor, &m.terminalPage.CursorSet, 1) {
+			return true, nil
+		}
+	case tea.KeyHome:
+		if !setQueryCursor(&m.terminalPage.Query, &m.terminalPage.Cursor, &m.terminalPage.CursorSet, 0) {
+			return true, nil
+		}
+	case tea.KeyEnd:
+		if !setQueryCursor(&m.terminalPage.Query, &m.terminalPage.Cursor, &m.terminalPage.CursorSet, len([]rune(m.terminalPage.Query))) {
 			return true, nil
 		}
 	default:
@@ -169,6 +217,78 @@ func deleteLastRune(value *string) bool {
 	} else {
 		*value = ""
 	}
+	return true
+}
+
+func queryCursor(value *string, cursor *int, cursorSet *bool) int {
+	if value == nil || cursor == nil || cursorSet == nil {
+		return 0
+	}
+	maxCursor := len([]rune(*value))
+	if !*cursorSet {
+		return maxCursor
+	}
+	if *cursor < 0 {
+		return 0
+	}
+	if *cursor > maxCursor {
+		return maxCursor
+	}
+	return *cursor
+}
+
+func setQueryCursor(value *string, cursor *int, cursorSet *bool, next int) bool {
+	if value == nil || cursor == nil || cursorSet == nil {
+		return false
+	}
+	maxCursor := len([]rune(*value))
+	if next < 0 {
+		next = 0
+	}
+	if next > maxCursor {
+		next = maxCursor
+	}
+	current := queryCursor(value, cursor, cursorSet)
+	if *cursorSet && current == next {
+		return false
+	}
+	*cursor = next
+	*cursorSet = true
+	return true
+}
+
+func moveQueryCursor(value *string, cursor *int, cursorSet *bool, delta int) bool {
+	return setQueryCursor(value, cursor, cursorSet, queryCursor(value, cursor, cursorSet)+delta)
+}
+
+func insertQueryRunes(value *string, cursor *int, cursorSet *bool, runes []rune) {
+	if value == nil || cursor == nil || cursorSet == nil || len(runes) == 0 {
+		return
+	}
+	current := []rune(*value)
+	index := queryCursor(value, cursor, cursorSet)
+	next := make([]rune, 0, len(current)+len(runes))
+	next = append(next, current[:index]...)
+	next = append(next, runes...)
+	next = append(next, current[index:]...)
+	*value = string(next)
+	*cursor = index + len(runes)
+	*cursorSet = true
+}
+
+func deleteQueryRuneBeforeCursor(value *string, cursor *int, cursorSet *bool) bool {
+	if value == nil || cursor == nil || cursorSet == nil {
+		return false
+	}
+	current := []rune(*value)
+	index := queryCursor(value, cursor, cursorSet)
+	if index <= 0 || len(current) == 0 {
+		return false
+	}
+	current = append(current[:index-1], current[index:]...)
+	*value = string(current)
+	*cursor = index - 1
+	*cursorSet = true
 	return true
 }
 

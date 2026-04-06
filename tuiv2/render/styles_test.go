@@ -59,7 +59,7 @@ func TestOverlayInlineStylesUseSharedBackground(t *testing.T) {
 
 func TestRenderOverlaySearchLineFillsEditableWidth(t *testing.T) {
 	theme := defaultUITheme()
-	line := renderOverlaySearchLine(theme, "", 40)
+	line := renderOverlaySearchLine(theme, "", 0, false, 40)
 	if got := xansi.StringWidth(line); got != 40 {
 		t.Fatalf("search line width = %d, want 40", got)
 	}

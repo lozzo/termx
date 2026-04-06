@@ -59,6 +59,10 @@ func TerminalPoolHitRegions(state VisibleRenderState) []HitRegion {
 		return nil
 	}
 	regions := make([]HitRegion, 0, len(layout.itemRows)+len(layout.footerActions))
+	regions = append(regions, HitRegion{
+		Kind: HitRegionOverlayQueryInput,
+		Rect: layout.queryRect,
+	})
 	for _, row := range layout.itemRows {
 		regions = append(regions, HitRegion{
 			Kind:      HitRegionTerminalPoolItem,

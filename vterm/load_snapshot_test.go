@@ -90,3 +90,34 @@ func TestLoadSnapshotRestoresMouseTrackingMode(t *testing.T) {
 		t.Fatal("expected snapshot restore to preserve mouse tracking")
 	}
 }
+
+func TestVTermTracksAlternateScrollModeFromEscapeSequences(t *testing.T) {
+	vt := New(20, 5, 100, nil)
+
+	if vt.Modes().AlternateScroll {
+		t.Fatal("expected alternate scroll disabled by default")
+	}
+	if _, err := vt.Write([]byte("\x1b[?1007h")); err != nil {
+		t.Fatalf("enable alternate scroll failed: %v", err)
+	}
+	if !vt.Modes().AlternateScroll {
+		t.Fatal("expected alternate scroll enabled after escape sequence")
+	}
+	if _, err := vt.Write([]byte("\x1b[?1007l")); err != nil {
+		t.Fatalf("disable alternate scroll failed: %v", err)
+	}
+	if vt.Modes().AlternateScroll {
+		t.Fatal("expected alternate scroll disabled after reset")
+	}
+}
+
+func TestLoadSnapshotRestoresAlternateScrollMode(t *testing.T) {
+	vt := New(10, 4, 100, nil)
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{{{Content: "x", Width: 1}}},
+	}, CursorState{Row: 0, Col: 1, Visible: true}, TerminalModes{AutoWrap: true, AlternateScroll: true})
+
+	if !vt.Modes().AlternateScroll {
+		t.Fatal("expected snapshot restore to preserve alternate scroll")
+	}
+}

@@ -27,7 +27,7 @@ Status legend:
 | Prompt input click-to-place cursor | implemented | Prompt input hit-region maps x-position to cursor index. | No selection/drag highlight. |
 | Prompt submit/cancel buttons | implemented | Separate hit-region kinds for submit/cancel, routed to modal action handler. | None critical. |
 | Overlay wheel scrolling | partial | Picker + workspace picker support wheel navigation. Prompt/help/terminal-manager overlay wheel currently no-op. | Add wheel scroll for long help/detail content. |
-| Query input click-to-focus/cursor for picker/workspace/terminal-manager | partial | Query row hit-regions exist, but clicks currently do not move query cursor or change focus semantics. | Add explicit query cursor model and click placement behavior. |
+| Query input click-to-focus/cursor for picker/workspace/terminal-manager | implemented | Query hit-regions now place an explicit cursor so subsequent typing edits at the clicked position. | No selection/drag highlight within query fields. |
 
 ## Pane Chrome
 
@@ -45,7 +45,7 @@ Status legend:
 |---|---|---|---|
 | Click to focus active pane | implemented | Clicking pane interior focuses pane (and floating pane reorders to top). | No marquee/selection semantics at app layer. |
 | Terminal mouse forwarding (SGR) | implemented | Press/motion/release/wheel forwarded only for active pane content rect, only when terminal mouse tracking is enabled. UI chrome has priority over forwarding. | No forwarding for inactive pane content by design (could be made configurable). |
-| Wheel scroll fallback (non-forwarded path) | implemented | When not forwarded, wheel on pane area updates tab scroll offset (with focus adjustments for floating target). | No per-pane independent scroll history controls via mouse gestures. |
+| Wheel scroll fallback (non-forwarded path) | implemented | When not forwarded, wheel on pane area updates tab scroll offset; alternate-screen / alternate-scroll terminals fall back to cursor-key scrolling instead. | No per-pane independent scroll history controls via mouse gestures. |
 
 ## Terminal Pool Surface
 

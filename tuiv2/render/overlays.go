@@ -364,7 +364,7 @@ func renderPickerOverlayWithTheme(picker *modal.PickerState, termSize TermSize, 
 		item := items[index]
 		itemLines = append(itemLines, item.RenderLineWithPrefix(innerWidth, index == picker.Selected, "  ", "> ", pickerLineStyle(theme), pickerSelectedLineStyle(theme), pickerCreateRowStyle(theme)))
 	}
-	header := renderOverlaySearchLine(theme, picker.Query, innerWidth)
+	header := renderOverlaySearchLine(theme, picker.Query, picker.Cursor, picker.CursorSet, innerWidth)
 	return renderPickerCardWithTheme(theme, coalesce(picker.Title, "Terminal Picker"), header, itemLines, "", width, height)
 }
 
@@ -510,7 +510,7 @@ func renderWorkspacePickerOverlayWithTheme(picker *modal.WorkspacePickerState, t
 	return renderPickerCardWithTheme(
 		theme,
 		coalesce(picker.Title, "Workspaces"),
-		renderOverlaySearchLine(theme, picker.Query, innerWidth),
+		renderOverlaySearchLine(theme, picker.Query, picker.Cursor, picker.CursorSet, innerWidth),
 		itemLines,
 		"",
 		width,
@@ -542,7 +542,7 @@ func renderTerminalManagerOverlayWithTheme(manager *modal.TerminalManagerState, 
 	return renderPickerCardWithTheme(
 		theme,
 		coalesce(manager.Title, "Terminal Manager"),
-		renderOverlaySearchLine(theme, manager.Query, innerWidth),
+		renderOverlaySearchLine(theme, manager.Query, manager.Cursor, manager.CursorSet, innerWidth),
 		itemLines,
 		footerLine,
 		width,
@@ -750,8 +750,8 @@ func renderCardContentRow(theme uiTheme, content string, innerWidth int) string 
 	return renderOverlaySpan(overlayCardFillStyle(theme), content, innerWidth)
 }
 
-func renderOverlaySearchLine(theme uiTheme, query string, innerWidth int) string {
-	value := query + "_"
+func renderOverlaySearchLine(theme uiTheme, query string, cursor int, cursorSet bool, innerWidth int) string {
+	value := queryValueWithCursor(query, cursor, cursorSet)
 	label := "search: "
 	prefix := "  " + label
 	valueWidth := maxInt(0, innerWidth-xansi.StringWidth(prefix))
@@ -759,6 +759,21 @@ func renderOverlaySearchLine(theme uiTheme, query string, innerWidth int) string
 		promptFieldLabelStyle(theme, true).Render(label) +
 		renderOverlayPromptValue(promptFieldValueStyle(theme, true), value, valueWidth)
 	return renderOverlaySpan(overlayCardFillStyle(theme), row, innerWidth)
+}
+
+func queryValueWithCursor(query string, cursor int, cursorSet bool) string {
+	runes := []rune(query)
+	if !cursorSet {
+		cursor = len(runes)
+	} else {
+		if cursor < 0 {
+			cursor = 0
+		}
+		if cursor > len(runes) {
+			cursor = len(runes)
+		}
+	}
+	return string(runes[:cursor]) + "_" + string(runes[cursor:])
 }
 
 func renderOverlayFooterLine(theme uiTheme, footer string, innerWidth int) string {

@@ -55,6 +55,7 @@ func (m *Model) terminalModesForPane(pane *workbench.PaneState) localvterm.Termi
 	if terminal.Snapshot != nil {
 		return localvterm.TerminalModes{
 			AlternateScreen:   terminal.Snapshot.Modes.AlternateScreen,
+			AlternateScroll:   terminal.Snapshot.Modes.AlternateScroll,
 			MouseTracking:     terminal.Snapshot.Modes.MouseTracking,
 			BracketedPaste:    terminal.Snapshot.Modes.BracketedPaste,
 			ApplicationCursor: terminal.Snapshot.Modes.ApplicationCursor,

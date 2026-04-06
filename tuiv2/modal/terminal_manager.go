@@ -10,6 +10,8 @@ type TerminalManagerState struct {
 	Filtered []PickerItem
 	Selected int
 	Query    string
+	Cursor   int
+	CursorSet bool
 }
 
 func (m *TerminalManagerState) SelectedItem() *PickerItem {

@@ -403,6 +403,29 @@ func TestTerminalPoolHitRegionsIncludeFooterActions(t *testing.T) {
 	}
 }
 
+func TestTerminalPoolHitRegionsIncludeQueryInput(t *testing.T) {
+	state := VisibleRenderState{
+		TermSize: TermSize{Width: 80, Height: 20},
+		Surface: VisibleSurface{
+			Kind: VisibleSurfaceTerminalPool,
+			TerminalPool: &modal.TerminalManagerState{
+				Items: []modal.PickerItem{{TerminalID: "term-1", State: "running"}},
+			},
+		},
+	}
+
+	regions := TerminalPoolHitRegions(state)
+	queryRegions := collectRegionsByKind(regions, HitRegionOverlayQueryInput)
+	if len(queryRegions) != 1 {
+		t.Fatalf("expected one terminal pool query region, got %#v", queryRegions)
+	}
+
+	layout := buildTerminalPoolPageLayout(state.Surface.TerminalPool, state.TermSize.Width, FrameBodyHeight(state.TermSize.Height))
+	if got, want := queryRegions[0].Rect, layout.queryRect; got != want {
+		t.Fatalf("terminal pool query rect=%+v, want %+v", got, want)
+	}
+}
+
 func TestTerminalPoolHitRegionsClipsFooterActionsWhenWidthIsTight(t *testing.T) {
 	state := VisibleRenderState{
 		TermSize: TermSize{Width: 30, Height: 20},

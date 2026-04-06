@@ -54,6 +54,7 @@ type CursorState struct {
 
 type TerminalModes struct {
 	AlternateScreen   bool
+	AlternateScroll   bool
 	MouseTracking     bool
 	BracketedPaste    bool
 	ApplicationCursor bool
@@ -97,6 +98,8 @@ type mouseModeState struct {
 	buttonEvent bool
 	anyEvent    bool
 }
+
+const modeAlternateScroll ansi.DECMode = 1007
 
 func New(cols, rows int, scrollbackSize int, onResponse ResponseHandler) *VTerm {
 	v := &VTerm{
@@ -354,6 +357,8 @@ func (v *VTerm) setMode(mode ansi.Mode, enabled bool) {
 	switch mode {
 	case ansi.ModeCursorKeys:
 		v.modes.ApplicationCursor = enabled
+	case modeAlternateScroll:
+		v.modes.AlternateScroll = enabled
 	case ansi.ModeMouseX10:
 		v.mouseMode.x10 = enabled
 		v.updateMouseTrackingLocked()

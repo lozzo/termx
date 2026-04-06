@@ -62,7 +62,7 @@ func (m *Model) effectCmd(effect orchestrator.Effect) tea.Cmd {
 		}
 	case orchestrator.SetInputModeEffect:
 		return func() tea.Msg {
-			m.input.SetMode(typed.Mode)
+			m.setMode(typed.Mode)
 			m.render.Invalidate()
 			return EffectAppliedMsg{Effect: typed}
 		}
@@ -125,7 +125,7 @@ func (m *Model) effectCmd(effect orchestrator.Effect) tea.Cmd {
 			if m.modalHost.Session != nil {
 				requestID = m.modalHost.Session.RequestID
 			}
-			m.modalHost.MarkReady(input.ModeWorkspacePicker, requestID)
+			m.markModalReady(input.ModeWorkspacePicker, requestID)
 			m.render.Invalidate()
 			return nil
 		}
@@ -180,7 +180,7 @@ func (m *Model) applyEffectSideState(effect orchestrator.Effect) {
 			return
 		}
 		m.resetPickerState()
-		m.modalHost.StartLoading(input.ModePicker, typed.RequestID)
+		m.startLoadingModal(input.ModePicker, typed.RequestID)
 		m.render.Invalidate()
 	case orchestrator.OpenWorkspacePickerEffect:
 		if m.modalHost == nil {
@@ -189,7 +189,7 @@ func (m *Model) applyEffectSideState(effect orchestrator.Effect) {
 		if m.modalHost.WorkspacePicker == nil {
 			m.modalHost.WorkspacePicker = &modal.WorkspacePickerState{}
 		}
-		m.modalHost.StartLoading(input.ModeWorkspacePicker, typed.RequestID)
+		m.startLoadingModal(input.ModeWorkspacePicker, typed.RequestID)
 		m.render.Invalidate()
 	case orchestrator.CloseModalEffect:
 		if m.modalHost == nil {
@@ -199,7 +199,7 @@ func (m *Model) applyEffectSideState(effect orchestrator.Effect) {
 		if m.modalHost.Session != nil {
 			requestID = m.modalHost.Session.RequestID
 		}
-		m.modalHost.Close(typed.Kind, requestID)
+		m.closeModal(typed.Kind, requestID, input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
 	case orchestrator.LoadPickerItemsEffect:
 		if m.modalHost != nil && m.modalHost.Session != nil {
@@ -224,4 +224,6 @@ func (m *Model) resetPickerState() {
 	m.modalHost.Picker.Filtered = nil
 	m.modalHost.Picker.Selected = 0
 	m.modalHost.Picker.Query = ""
+	m.modalHost.Picker.Cursor = 0
+	m.modalHost.Picker.CursorSet = false
 }

@@ -1288,6 +1288,50 @@ func TestMouseClickTerminalPoolFooterKillRemovesItemAndInvokesBridgeClient(t *te
 	}
 }
 
+func TestMouseClickTerminalPoolQueryMovesCursorAndEditsAtPoint(t *testing.T) {
+	m := setupModel(t, modelOpts{width: 220})
+	m.terminalPage = &modal.TerminalManagerState{
+		Title: "Terminal Pool",
+		Query: "logs",
+		Items: []modal.PickerItem{
+			{TerminalID: "term-1", Name: "logs", State: "running"},
+		},
+	}
+	m.terminalPage.ApplyFilter()
+	m.input.SetMode(input.ModeState{Kind: input.ModeTerminalManager, RequestID: terminalPoolPageModeToken})
+
+	state := m.visibleRenderState()
+	regions := render.TerminalPoolHitRegions(state)
+	var query render.HitRegion
+	found := false
+	for _, region := range regions {
+		if region.Kind == render.HitRegionOverlayQueryInput {
+			query = region
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected terminal pool query region, got %#v", regions)
+	}
+
+	clickX := query.Rect.X + 1
+	_, cmd := m.Update(tea.MouseMsg{X: clickX, Y: screenYForBodyY(m, query.Rect.Y), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	drainCmd(t, m, cmd, 20)
+
+	if m.terminalPage == nil {
+		t.Fatal("expected terminal pool state")
+	}
+	if got := m.terminalPage.Cursor; got != 1 || !m.terminalPage.CursorSet {
+		t.Fatalf("expected terminal pool query cursor moved to 1 and marked explicit, got cursor=%d set=%v", m.terminalPage.Cursor, m.terminalPage.CursorSet)
+	}
+
+	dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
+	if got := m.terminalPage.Query; got != "lXogs" {
+		t.Fatalf("expected terminal pool query edited at cursor, got %q", got)
+	}
+}
+
 func TestMouseClickPromptInputMovesCursorAndSubmitFooterDispatches(t *testing.T) {
 	m := setupModel(t, modelOpts{})
 	m.openRenameTabPrompt()
@@ -1330,6 +1374,64 @@ func TestMouseClickPromptCancelFooterClosesPrompt(t *testing.T) {
 	assertMode(t, m, input.ModeNormal)
 	if m.modalHost != nil && m.modalHost.Session != nil {
 		t.Fatalf("expected prompt closed after cancel click, got %#v", m.modalHost.Session)
+	}
+}
+
+func TestMouseClickPickerQueryMovesCursorAndEditsAtPoint(t *testing.T) {
+	m := setupModel(t, modelOpts{width: 220})
+	m.modalHost.Open(input.ModePicker, "pane-1")
+	m.modalHost.Picker = &modal.PickerState{
+		Query: "term",
+		Items: []modal.PickerItem{{TerminalID: "term-1", Name: "term-1"}},
+	}
+	m.modalHost.Picker.ApplyFilter()
+	m.modalHost.MarkReady(input.ModePicker, "pane-1")
+	m.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: "pane-1"})
+
+	query := overlayRegionByKind(t, m, render.HitRegionOverlayQueryInput)
+	clickX := query.Rect.X + 2
+	_, cmd := m.Update(tea.MouseMsg{X: clickX, Y: screenYForBodyY(m, query.Rect.Y), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	drainCmd(t, m, cmd, 20)
+
+	if m.modalHost == nil || m.modalHost.Picker == nil {
+		t.Fatalf("expected picker state, got %#v", m.modalHost)
+	}
+	if got := m.modalHost.Picker.Cursor; got != 2 {
+		t.Fatalf("expected picker query cursor moved to 2, got %d", got)
+	}
+
+	dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
+	if got := m.modalHost.Picker.Query; got != "teXrm" {
+		t.Fatalf("expected picker query edited at cursor, got %q", got)
+	}
+}
+
+func TestMouseClickWorkspacePickerQueryMovesCursorAndEditsAtPoint(t *testing.T) {
+	m := setupModel(t, modelOpts{width: 220})
+	m.modalHost.Open(input.ModeWorkspacePicker, "workspace")
+	m.modalHost.WorkspacePicker = &modal.WorkspacePickerState{
+		Query: "main",
+		Items: []modal.WorkspacePickerItem{{Name: "main"}},
+	}
+	m.modalHost.WorkspacePicker.ApplyFilter()
+	m.modalHost.MarkReady(input.ModeWorkspacePicker, "workspace")
+	m.input.SetMode(input.ModeState{Kind: input.ModeWorkspacePicker, RequestID: "workspace"})
+
+	query := overlayRegionByKind(t, m, render.HitRegionOverlayQueryInput)
+	clickX := query.Rect.X + 1
+	_, cmd := m.Update(tea.MouseMsg{X: clickX, Y: screenYForBodyY(m, query.Rect.Y), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	drainCmd(t, m, cmd, 20)
+
+	if m.modalHost == nil || m.modalHost.WorkspacePicker == nil {
+		t.Fatalf("expected workspace picker state, got %#v", m.modalHost)
+	}
+	if got := m.modalHost.WorkspacePicker.Cursor; got != 1 {
+		t.Fatalf("expected workspace picker query cursor moved to 1, got %d", got)
+	}
+
+	dispatchKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
+	if got := m.modalHost.WorkspacePicker.Query; got != "mXain" {
+		t.Fatalf("expected workspace picker query edited at cursor, got %q", got)
 	}
 }
 
@@ -1542,6 +1644,30 @@ func TestMouseWheelAlternateScreenHonorsApplicationCursorMode(t *testing.T) {
 	}
 	if got := string(client.inputCalls[0].data); got != "\x1bOB" {
 		t.Fatalf("unexpected application-cursor wheel fallback payload %q", got)
+	}
+}
+
+func TestMouseWheelAlternateScrollFallsBackToCursorKeys(t *testing.T) {
+	m := setupModel(t, modelOpts{})
+	client, ok := m.runtime.Client().(*recordingBridgeClient)
+	if !ok {
+		t.Fatal("expected recording bridge client")
+	}
+	setActivePaneTerminalModes(t, m, protocol.TerminalModes{
+		AlternateScroll: true,
+		MouseTracking:   false,
+		AutoWrap:        true,
+	})
+	x, y := activePaneContentScreenOrigin(t, m)
+
+	_, cmd := m.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	drainCmd(t, m, cmd, 20)
+
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected one alternate-scroll wheel fallback input, got %#v", client.inputCalls)
+	}
+	if got := string(client.inputCalls[0].data); got != "\x1b[A" {
+		t.Fatalf("unexpected alternate-scroll wheel fallback payload %q", got)
 	}
 }
 

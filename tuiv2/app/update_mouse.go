@@ -103,7 +103,7 @@ func (m *Model) forwardAlternateScreenWheelCmd(msg tea.MouseMsg) tea.Cmd {
 		return nil
 	}
 	modes := m.terminalModesForPane(pane)
-	if !modes.AlternateScreen || modes.MouseTracking {
+	if (!modes.AlternateScreen && !modes.AlternateScroll) || modes.MouseTracking {
 		return nil
 	}
 	encoded := encodeTerminalWheelFallback(msg, modes)
@@ -501,6 +501,8 @@ func (m *Model) handleOverlayMouseClick(state render.VisibleRenderState, x, y in
 		switch region.Kind {
 		case render.HitRegionOverlayDismiss:
 			return true, m.cancelActiveModal()
+		case render.HitRegionOverlayQueryInput:
+			return true, m.handleOverlayQueryInputMouseClick(region, overlayQueryPicker, x)
 		case render.HitRegionPickerItem:
 			m.modalHost.Picker.Selected = region.ItemIndex
 			normalizeModalSelection(&m.modalHost.Picker.Selected, len(m.modalHost.Picker.VisibleItems()))
@@ -519,6 +521,8 @@ func (m *Model) handleOverlayMouseClick(state render.VisibleRenderState, x, y in
 		switch region.Kind {
 		case render.HitRegionOverlayDismiss:
 			return true, m.cancelActiveModal()
+		case render.HitRegionOverlayQueryInput:
+			return true, m.handleOverlayQueryInputMouseClick(region, overlayQueryWorkspace, x)
 		case render.HitRegionWorkspaceItem:
 			m.modalHost.WorkspacePicker.Selected = region.ItemIndex
 			normalizeModalSelection(&m.modalHost.WorkspacePicker.Selected, len(m.modalHost.WorkspacePicker.VisibleItems()))
@@ -549,6 +553,9 @@ func (m *Model) handleOverlayMouseClick(state render.VisibleRenderState, x, y in
 		if state.Overlay.Kind == render.VisibleOverlayPrompt && region.Kind == render.HitRegionPromptInput {
 			return true, m.handlePromptInputMouseClick(region, x)
 		}
+		if state.Overlay.Kind == render.VisibleOverlayTerminalManager && region.Kind == render.HitRegionOverlayQueryInput {
+			return true, m.handleOverlayQueryInputMouseClick(region, overlayQueryTerminalManager, x)
+		}
 		return true, m.dispatchOverlayRegionAction(region.Action)
 	default:
 		return true, nil
@@ -575,11 +582,59 @@ func (m *Model) handleOverlayMouseWheel(state render.VisibleRenderState, delta i
 			m.render.Invalidate()
 		}
 		return true, nil
-	case render.VisibleOverlayPrompt, render.VisibleOverlayHelp, render.VisibleOverlayTerminalManager:
+	case render.VisibleOverlayTerminalManager:
+		if m.terminalPage != nil {
+			m.terminalPage.Move(-delta)
+			m.render.Invalidate()
+		}
+		return true, nil
+	case render.VisibleOverlayPrompt, render.VisibleOverlayHelp:
 		return true, nil
 	default:
 		return false, nil
 	}
+}
+
+type overlayQueryTarget int
+
+const (
+	overlayQueryPicker overlayQueryTarget = iota
+	overlayQueryWorkspace
+	overlayQueryTerminalManager
+)
+
+func (m *Model) handleOverlayQueryInputMouseClick(region render.HitRegion, target overlayQueryTarget, screenX int) tea.Cmd {
+	if m == nil {
+		return nil
+	}
+	cursor := screenX - region.Rect.X
+	if cursor < 0 {
+		cursor = 0
+	}
+	switch target {
+	case overlayQueryPicker:
+		if m.modalHost == nil || m.modalHost.Picker == nil {
+			return nil
+		}
+		if setQueryCursor(&m.modalHost.Picker.Query, &m.modalHost.Picker.Cursor, &m.modalHost.Picker.CursorSet, cursor) {
+			m.render.Invalidate()
+		}
+	case overlayQueryWorkspace:
+		if m.modalHost == nil || m.modalHost.WorkspacePicker == nil {
+			return nil
+		}
+		if setQueryCursor(&m.modalHost.WorkspacePicker.Query, &m.modalHost.WorkspacePicker.Cursor, &m.modalHost.WorkspacePicker.CursorSet, cursor) {
+			m.render.Invalidate()
+		}
+	case overlayQueryTerminalManager:
+		if m.terminalPage == nil {
+			return nil
+		}
+		if setQueryCursor(&m.terminalPage.Query, &m.terminalPage.Cursor, &m.terminalPage.CursorSet, cursor) {
+			m.render.Invalidate()
+		}
+	}
+	return nil
 }
 
 func (m *Model) handleTerminalPoolMouseClick(state render.VisibleRenderState, x, y int) (bool, tea.Cmd) {
@@ -595,6 +650,8 @@ func (m *Model) handleTerminalPoolMouseClick(state render.VisibleRenderState, x,
 		return true, nil
 	}
 	switch region.Kind {
+	case render.HitRegionOverlayQueryInput:
+		return true, m.handleOverlayQueryInputMouseClick(region, overlayQueryTerminalManager, x)
 	case render.HitRegionTerminalPoolItem:
 		m.terminalPage.Selected = region.ItemIndex
 		normalizeModalSelection(&m.terminalPage.Selected, len(m.terminalPage.VisibleItems()))

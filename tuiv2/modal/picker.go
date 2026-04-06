@@ -36,6 +36,8 @@ type PickerState struct {
 	Filtered []PickerItem
 	Selected int
 	Query    string
+	Cursor   int
+	CursorSet bool
 }
 
 func (p *PickerState) SelectedItem() *PickerItem {
