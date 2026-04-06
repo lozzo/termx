@@ -21,6 +21,7 @@ const (
 	StreamOutput StreamMessageType = iota + 1
 	StreamSyncLost
 	StreamClosed
+	StreamResize
 )
 
 type StreamMessage struct {
@@ -28,6 +29,8 @@ type StreamMessage struct {
 	Output       []byte
 	DroppedBytes uint64
 	ExitCode     *int
+	Cols         uint16
+	Rows         uint16
 }
 
 type TerminalInfo struct {

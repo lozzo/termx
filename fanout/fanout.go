@@ -12,6 +12,7 @@ const (
 	StreamOutput StreamMessageType = iota + 1
 	StreamSyncLost
 	StreamClosed
+	StreamResize
 )
 
 type StreamMessage struct {
@@ -19,6 +20,8 @@ type StreamMessage struct {
 	Output       []byte
 	DroppedBytes uint64
 	ExitCode     *int
+	Cols         uint16
+	Rows         uint16
 }
 
 type Fanout struct {
@@ -77,6 +80,17 @@ func (f *Fanout) Broadcast(data []byte) {
 		case sub.ch <- StreamMessage{Type: StreamOutput, Output: msg}:
 		default:
 			sub.droppedBytes.Add(uint64(len(msg)))
+		}
+	}
+}
+
+func (f *Fanout) BroadcastResize(cols, rows uint16) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	for sub := range f.subs {
+		select {
+		case sub.ch <- StreamMessage{Type: StreamResize, Cols: cols, Rows: rows}:
+		default:
 		}
 	}
 }

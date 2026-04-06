@@ -57,6 +57,11 @@ type Terminal struct {
 	removed        bool
 	processEpoch   uint64
 
+	// streamMu serializes readLoop broadcasts and resize notifications so that
+	// subscribers always see resize frames at the correct position relative to
+	// output frames.
+	streamMu sync.Mutex
+
 	// These caches hold deep-copied metadata snapshots so hot read paths do not
 	// have to rebuild command/tag payloads for every request.
 	protocolInfoCache json.RawMessage
@@ -186,6 +191,8 @@ func (t *Terminal) Subscribe(ctx context.Context) <-chan StreamMessage {
 				Output:       append([]byte(nil), msg.Output...),
 				DroppedBytes: msg.DroppedBytes,
 				ExitCode:     copyIntPtr(msg.ExitCode),
+				Cols:         msg.Cols,
+				Rows:         msg.Rows,
 			}
 		}
 	}()
@@ -217,10 +224,14 @@ func (t *Terminal) Resize(cols, rows uint16) error {
 	t.invalidateProtocolInfoCacheLocked()
 	t.mu.Unlock()
 
+	t.streamMu.Lock()
 	if err := t.pty.Resize(cols, rows); err != nil {
+		t.streamMu.Unlock()
 		return err
 	}
 	t.vterm.Resize(int(cols), int(rows))
+	t.stream.BroadcastResize(cols, rows)
+	t.streamMu.Unlock()
 	t.events.Publish(Event{
 		Type:       EventTerminalResized,
 		TerminalID: t.id,
@@ -442,7 +453,9 @@ func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, vt *vterm.VTerm, stream
 		n, err := p.Read(buf)
 		if n > 0 {
 			chunk := append([]byte(nil), buf[:n]...)
+			t.streamMu.Lock()
 			stream.Broadcast(chunk)
+			t.streamMu.Unlock()
 			_, _ = vt.Write(chunk)
 		}
 		if err != nil {

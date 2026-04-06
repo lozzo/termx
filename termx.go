@@ -933,6 +933,13 @@ func (s *Server) handleRequest(
 						return
 					}
 					err = sendRawFrame(sendFrame, frame)
+				case StreamResize:
+					frame, encodeErr := protocol.EncodeFrame(ch, protocol.TypeResize, protocol.EncodeResizePayload(msg.Cols, msg.Rows))
+					if encodeErr != nil {
+						cancel()
+						return
+					}
+					err = sendRawFrame(sendFrame, frame)
 				case StreamClosed:
 					code := 0
 					if msg.ExitCode != nil {
