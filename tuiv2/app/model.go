@@ -22,14 +22,19 @@ import (
 )
 
 type Model struct {
-	cfg       shared.Config
-	statePath string
-	width     int
-	height    int
-	quitting  bool
-	err       error
-	errorSeq  uint64
-	ownerSeq  uint64
+	cfg              shared.Config
+	statePath        string
+	width            int
+	height           int
+	quitting         bool
+	err              error
+	errorSeq         uint64
+	ownerSeq         uint64
+	notice           string
+	noticeSeq        uint64
+	yankBuffer       string
+	clipboardHistory []clipboardHistoryEntry
+	clipboardSeq     uint64
 
 	sessionID        string
 	sessionViewID    string
@@ -79,6 +84,8 @@ type Model struct {
 
 	exitedPaneSelectionPaneID string
 	exitedPaneSelectionIndex  int
+
+	copyMode copyModeState
 }
 
 type mouseDragMode int

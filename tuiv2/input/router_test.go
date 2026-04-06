@@ -397,6 +397,15 @@ func TestRouteKeyMsg_GlobalMode_UsesLegacyAlignedBindings(t *testing.T) {
 	}
 }
 
+func TestRouteKeyMsg_DisplayMode_HOpensClipboardHistory(t *testing.T) {
+	r := NewRouter()
+	r.SetMode(ModeState{Kind: ModeDisplay})
+	result := r.RouteKeyMsg(runeKey('h'))
+	if result.Action == nil || result.Action.Kind != ActionOpenClipboardHistory {
+		t.Fatalf("expected h to open clipboard history in display mode, got %#v", result.Action)
+	}
+}
+
 func TestRouteKeyMsg_FloatingMode_UsesCanonicalFloatingBindings(t *testing.T) {
 	r := NewRouter()
 	r.SetMode(ModeState{Kind: ModeFloating})

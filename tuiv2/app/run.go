@@ -23,9 +23,15 @@ func RunWithClient(cfg shared.Config, client bridge.Client, stdin io.Reader, std
 
 func runWithClientOptions(cfg shared.Config, client bridge.Client, stdin io.Reader, stdout io.Writer, extraOpts ...tea.ProgramOption) error {
 	model := New(cfg, nil, runtime.New(client))
+	output := stdout
+	if stdout != nil {
+		writer := newOutputCursorWriter(stdout)
+		model.SetCursorWriter(writer)
+		output = writer
+	}
 	opts := []tea.ProgramOption{
 		tea.WithInput(nil),
-		tea.WithOutput(stdout),
+		tea.WithOutput(output),
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	}
@@ -46,8 +52,8 @@ func runWithClientOptions(cfg shared.Config, client bridge.Client, stdin io.Read
 	defer func() { _ = restoreInput() }()
 	defer stopInput()
 
-	if stdout != nil {
-		_, _ = io.WriteString(stdout, xansi.RequestForegroundColor+xansi.RequestBackgroundColor+requestTerminalPaletteQueries())
+	if output != nil {
+		_, _ = io.WriteString(output, xansi.RequestForegroundColor+xansi.RequestBackgroundColor+requestTerminalPaletteQueries())
 	}
 
 	_, err = p.Run()

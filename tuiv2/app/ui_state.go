@@ -160,6 +160,9 @@ func (m *Model) setMode(mode input.ModeState) {
 	if m == nil || m.ui == nil {
 		return
 	}
+	if m.ui.Mode().Kind == input.ModeDisplay && mode.Kind != input.ModeDisplay {
+		m.leaveCopyMode()
+	}
 	m.ui.SetMode(mode)
 	m.syncUIAliases()
 }

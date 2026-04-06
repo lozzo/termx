@@ -13,7 +13,7 @@ import (
 func (m *Model) isStickyMode() bool {
 	kind := m.mode().Kind
 	return kind == input.ModePane || kind == input.ModeResize || kind == input.ModeTab ||
-		kind == input.ModeWorkspace || kind == input.ModeFloating || kind == input.ModeDisplay ||
+		kind == input.ModeWorkspace || kind == input.ModeFloating ||
 		kind == input.ModeGlobal
 }
 
@@ -26,6 +26,11 @@ func (m *Model) rearmPrefixTimeoutCmd() tea.Cmd {
 }
 
 func (m *Model) handleTerminalInput(in input.TerminalInput) tea.Cmd {
+	if len(in.Data) == 0 && in.Kind == input.TerminalInputPaste && in.Text != "" {
+		if encoded := m.encodeActiveTerminalPaste(in.Text, in.PaneID); len(encoded) > 0 {
+			in.Data = encoded
+		}
+	}
 	if len(in.Data) == 0 {
 		return nil
 	}

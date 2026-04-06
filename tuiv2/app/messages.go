@@ -43,6 +43,14 @@ type clearOwnerConfirmMsg struct {
 	seq uint64
 }
 
+type clearNoticeMsg struct {
+	seq uint64
+}
+
+type copyModeAutoScrollMsg struct {
+	seq uint64
+}
+
 type terminalTitleMsg struct {
 	TerminalID string
 	Title      string

@@ -21,6 +21,13 @@ type VisibleRenderState struct {
 	EmptyPaneSelectionIndex   int
 	ExitedPaneSelectionPaneID string
 	ExitedPaneSelectionIndex  int
+	CopyModePaneID            string
+	CopyModeCursorRow         int
+	CopyModeCursorCol         int
+	CopyModeViewTopRow        int
+	CopyModeMarkSet           bool
+	CopyModeMarkRow           int
+	CopyModeMarkCol           int
 }
 
 type VisibleRuntimeStateProxy = runtime.VisibleRuntime
@@ -197,5 +204,16 @@ func WithEmptyPaneSelection(state VisibleRenderState, paneID string, selected in
 func WithExitedPaneSelection(state VisibleRenderState, paneID string, selected int) VisibleRenderState {
 	state.ExitedPaneSelectionPaneID = paneID
 	state.ExitedPaneSelectionIndex = selected
+	return state
+}
+
+func WithCopyMode(state VisibleRenderState, paneID string, cursorRow, cursorCol int, viewTopRow int, markSet bool, markRow, markCol int) VisibleRenderState {
+	state.CopyModePaneID = paneID
+	state.CopyModeCursorRow = cursorRow
+	state.CopyModeCursorCol = cursorCol
+	state.CopyModeViewTopRow = viewTopRow
+	state.CopyModeMarkSet = markSet
+	state.CopyModeMarkRow = markRow
+	state.CopyModeMarkCol = markCol
 	return state
 }

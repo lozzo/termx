@@ -21,11 +21,18 @@ func (m *Model) handleMouseMsg(msg tea.MouseMsg) tea.Cmd {
 		}
 		return m.forwardTerminalMouseInputCmd(msg)
 	case tea.MouseActionMotion:
+		if msg.Button == tea.MouseButtonLeft && m.copyMode.MouseSelecting {
+			return m.updateMouseCopySelection(msg.X, msg.Y)
+		}
 		if msg.Button == tea.MouseButtonLeft && m.mouseDragMode != mouseDragNone {
 			return m.handleMouseDrag(msg.X, msg.Y)
 		}
 		return m.forwardTerminalMouseInputCmd(msg)
 	case tea.MouseActionRelease:
+		if msg.Button == tea.MouseButtonLeft && m.copyMode.MouseSelecting {
+			m.stopMouseCopySelection()
+			return nil
+		}
 		if msg.Button == tea.MouseButtonLeft && m.mouseDragMode != mouseDragNone {
 			return m.handleMouseRelease()
 		}
@@ -51,6 +58,9 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) tea.Cmd {
 	}
 	if handled, cmd := m.handleTerminalPoolMouseWheel(state, delta); handled {
 		return cmd
+	}
+	if m.mode().Kind == input.ModeDisplay {
+		return m.moveCopyCursorVertical(-delta)
 	}
 	if y < m.contentOriginY() {
 		if delta > 0 {
@@ -203,6 +213,9 @@ func (m *Model) handleMouseClick(msg tea.MouseMsg) tea.Cmd {
 	}
 	if handled, cmd := m.handleBottomChromeMouseClick(state, x, y); handled {
 		return cmd
+	}
+	if m.mode().Kind == input.ModeDisplay && m.startMouseCopySelection(x, y) {
+		return nil
 	}
 	if cmd := m.forwardTerminalMouseInputCmd(msg); cmd != nil {
 		return cmd
@@ -813,6 +826,9 @@ func (m *Model) visiblePaneAt(x, contentY int) (*workbench.VisiblePane, *workben
 
 func (m *Model) forwardTerminalMouseInputCmd(msg tea.MouseMsg) tea.Cmd {
 	if m == nil || m.workbench == nil {
+		return nil
+	}
+	if m.mode().Kind == input.ModeDisplay {
 		return nil
 	}
 	state := m.visibleRenderState()

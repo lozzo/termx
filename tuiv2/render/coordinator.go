@@ -61,6 +61,13 @@ type renderStateKey struct {
 	EmptyPaneSelectionIndex   int
 	ExitedPaneSelectionPaneID string
 	ExitedPaneSelectionIndex  int
+	CopyModePaneID            string
+	CopyModeCursorRow         int
+	CopyModeCursorCol         int
+	CopyModeViewTopRow        int
+	CopyModeMarkSet           bool
+	CopyModeMarkRow           int
+	CopyModeMarkCol           int
 }
 
 type tabBarCacheKey struct {
@@ -93,6 +100,13 @@ type paneRenderEntry struct {
 	EmptyActionSelected  int
 	ExitedActionSelected int
 	ExitedActionPulse    bool
+	CopyModeActive       bool
+	CopyModeCursorRow    int
+	CopyModeCursorCol    int
+	CopyModeViewTopRow   int
+	CopyModeMarkSet      bool
+	CopyModeMarkRow      int
+	CopyModeMarkCol      int
 }
 
 type paneFrameKey struct {
@@ -127,6 +141,13 @@ type paneContentKey struct {
 	EmptyActionSelected  int
 	ExitedActionSelected int
 	ExitedActionPulse    bool
+	CopyModeActive       bool
+	CopyModeCursorRow    int
+	CopyModeCursorCol    int
+	CopyModeViewTopRow   int
+	CopyModeMarkSet      bool
+	CopyModeMarkRow      int
+	CopyModeMarkCol      int
 }
 
 type bodyRenderCache struct {
@@ -247,6 +268,13 @@ func stateKey(state VisibleRenderState) renderStateKey {
 		EmptyPaneSelectionIndex:   state.EmptyPaneSelectionIndex,
 		ExitedPaneSelectionPaneID: state.ExitedPaneSelectionPaneID,
 		ExitedPaneSelectionIndex:  state.ExitedPaneSelectionIndex,
+		CopyModePaneID:            state.CopyModePaneID,
+		CopyModeCursorRow:         state.CopyModeCursorRow,
+		CopyModeCursorCol:         state.CopyModeCursorCol,
+		CopyModeViewTopRow:        state.CopyModeViewTopRow,
+		CopyModeMarkSet:           state.CopyModeMarkSet,
+		CopyModeMarkRow:           state.CopyModeMarkRow,
+		CopyModeMarkCol:           state.CopyModeMarkCol,
 	}
 }
 
@@ -382,7 +410,7 @@ func renderBodyFrameWithCoordinator(coordinator *Coordinator, state VisibleRende
 		exitedSelectionPulse = coordinator.cursorBlinkVisible
 		coordinator.mu.Unlock()
 	}
-	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, lookup, state.OwnerConfirmPaneID, state.EmptyPaneSelectionPaneID, state.EmptyPaneSelectionIndex, state.ExitedPaneSelectionPaneID, state.ExitedPaneSelectionIndex, exitedSelectionPulse, uiThemeForRuntime(state.Runtime))
+	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, lookup, state.OwnerConfirmPaneID, state.EmptyPaneSelectionPaneID, state.EmptyPaneSelectionIndex, state.ExitedPaneSelectionPaneID, state.ExitedPaneSelectionIndex, exitedSelectionPulse, state, uiThemeForRuntime(state.Runtime))
 
 	canvas := renderBodyCanvas(coordinator, state, entries, width, height)
 	return renderedBody{
@@ -415,7 +443,7 @@ func visibleStateNeedsCursorBlink(state VisibleRenderState) bool {
 	if width <= 0 || height <= 0 {
 		return false
 	}
-	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, newRuntimeLookup(state.Runtime), state.OwnerConfirmPaneID, state.EmptyPaneSelectionPaneID, state.EmptyPaneSelectionIndex, state.ExitedPaneSelectionPaneID, state.ExitedPaneSelectionIndex, true, uiThemeForRuntime(state.Runtime))
+	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, newRuntimeLookup(state.Runtime), state.OwnerConfirmPaneID, state.EmptyPaneSelectionPaneID, state.EmptyPaneSelectionIndex, state.ExitedPaneSelectionPaneID, state.ExitedPaneSelectionIndex, true, state, uiThemeForRuntime(state.Runtime))
 	if activeExitedPaneHasRecoverySelection(state) {
 		return true
 	}
@@ -610,7 +638,7 @@ func restoreActiveEntryContent(canvas *composedCanvas, entries []paneRenderEntry
 	}
 }
 
-func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePane, width, height int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, exitedPaneSelectionPaneID string, exitedPaneSelectionIndex int, exitedPaneSelectionPulse bool, theme uiTheme) []paneRenderEntry {
+func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePane, width, height int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, exitedPaneSelectionPaneID string, exitedPaneSelectionIndex int, exitedPaneSelectionPulse bool, state VisibleRenderState, theme uiTheme) []paneRenderEntry {
 	entries := make([]paneRenderEntry, 0, len(tab.Panes)+len(floating))
 	zoomedPaneID := tab.ZoomedPaneID
 	for _, pane := range tab.Panes {
@@ -627,7 +655,7 @@ func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePan
 		if !ok {
 			continue
 		}
-		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, theme))
+		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, state.CopyModePaneID, state.CopyModeCursorRow, state.CopyModeCursorCol, state.CopyModeViewTopRow, state.CopyModeMarkSet, state.CopyModeMarkRow, state.CopyModeMarkCol, theme))
 	}
 	for _, pane := range floating {
 		originalRect := pane.Rect
@@ -635,7 +663,7 @@ func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePan
 		if !ok {
 			continue
 		}
-		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, theme))
+		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, state.CopyModePaneID, state.CopyModeCursorRow, state.CopyModeCursorCol, state.CopyModeViewTopRow, state.CopyModeMarkSet, state.CopyModeMarkRow, state.CopyModeMarkCol, theme))
 	}
 	return entries
 }
@@ -654,12 +682,13 @@ func clipRectToViewport(rect workbench.Rect, width, height int) (workbench.Rect,
 	return workbench.Rect{X: x1, Y: y1, W: x2 - x1, H: y2 - y1}, true
 }
 
-func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workbench.Rect, activePaneID string, scrollOffset int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, exitedPaneSelectionPaneID string, exitedPaneSelectionIndex int, exitedPaneSelectionPulse bool, theme uiTheme) paneRenderEntry {
+func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workbench.Rect, activePaneID string, scrollOffset int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, exitedPaneSelectionPaneID string, exitedPaneSelectionIndex int, exitedPaneSelectionPulse bool, copyModePaneID string, copyModeCursorRow, copyModeCursorCol, copyModeViewTopRow int, copyModeMarkSet bool, copyModeMarkRow, copyModeMarkCol int, theme uiTheme) paneRenderEntry {
 	active := pane.ID == activePaneID
 	title := resolvePaneTitleWithLookup(pane, lookup)
 	border := paneBorderInfoWithLookup(pane, lookup, confirmPaneID)
 	terminal := lookup.terminal(pane.TerminalID)
 	overflow := paneOverflowHintsForRender(originalRect, rect, nil)
+	copyModeActive := pane.ID == copyModePaneID
 	emptyActionSelected := -1
 	if pane.TerminalID == "" && pane.ID == emptyPaneSelectionPaneID {
 		emptyActionSelected = emptyPaneSelectionIndex
@@ -678,6 +707,13 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		EmptyActionSelected:  emptyActionSelected,
 		ExitedActionSelected: exitedActionSelected,
 		ExitedActionPulse:    exitedPaneSelectionPulse,
+		CopyModeActive:       copyModeActive,
+		CopyModeCursorRow:    copyModeCursorRow,
+		CopyModeCursorCol:    copyModeCursorCol,
+		CopyModeViewTopRow:   copyModeViewTopRow,
+		CopyModeMarkSet:      copyModeMarkSet,
+		CopyModeMarkRow:      copyModeMarkRow,
+		CopyModeMarkCol:      copyModeMarkCol,
 	}
 	if terminal != nil {
 		contentKey.Snapshot = terminal.Snapshot
@@ -710,6 +746,13 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		EmptyActionSelected:  emptyActionSelected,
 		ExitedActionSelected: exitedActionSelected,
 		ExitedActionPulse:    exitedPaneSelectionPulse,
+		CopyModeActive:       copyModeActive,
+		CopyModeCursorRow:    copyModeCursorRow,
+		CopyModeCursorCol:    copyModeCursorCol,
+		CopyModeViewTopRow:   copyModeViewTopRow,
+		CopyModeMarkSet:      copyModeMarkSet,
+		CopyModeMarkRow:      copyModeMarkRow,
+		CopyModeMarkCol:      copyModeMarkCol,
 	}
 }
 
@@ -1057,9 +1100,15 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 		}
 		return
 	}
-	drawSnapshotWithOffset(canvas, contentRect, terminal.Snapshot, entry.ScrollOffset, entry.Theme)
-	if entry.Active {
-		projectPaneCursor(canvas, contentRect, terminal.Snapshot, entry.ScrollOffset)
+	renderOffset := entry.ScrollOffset
+	if entry.CopyModeActive {
+		renderOffset = scrollOffsetForViewportTop(terminal.Snapshot, contentRect.H, entry.CopyModeViewTopRow)
+	}
+	drawSnapshotWithOffset(canvas, contentRect, terminal.Snapshot, renderOffset, entry.Theme)
+	if entry.CopyModeActive {
+		drawCopyModeOverlay(canvas, contentRect, terminal.Snapshot, entry.Theme, entry.CopyModeCursorRow, entry.CopyModeCursorCol, entry.CopyModeViewTopRow, entry.CopyModeMarkSet, entry.CopyModeMarkRow, entry.CopyModeMarkCol)
+	} else if entry.Active {
+		projectPaneCursor(canvas, contentRect, terminal.Snapshot, renderOffset)
 	}
 	if terminal.State == "exited" {
 		drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
@@ -1644,6 +1693,156 @@ func protocolRowDisplayWidth(row []protocol.Cell) int {
 	return width
 }
 
+func drawCopyModeOverlay(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, theme uiTheme, cursorRow, cursorCol, viewTopRow int, markSet bool, markRow, markCol int) {
+	if canvas == nil || snapshot == nil || rect.W <= 0 || rect.H <= 0 {
+		return
+	}
+	totalRows := len(snapshot.Scrollback) + len(snapshot.Screen.Cells)
+	if totalRows <= 0 {
+		return
+	}
+	cursorRow, cursorCol = clampCopyPoint(snapshot, cursorRow, cursorCol)
+	selectionStartRow, selectionStartCol := markRow, markCol
+	selectionEndRow, selectionEndCol := cursorRow, cursorCol
+	if markSet {
+		selectionStartRow, selectionStartCol = clampCopyPoint(snapshot, selectionStartRow, selectionStartCol)
+		selectionEndRow, selectionEndCol = clampCopyPoint(snapshot, selectionEndRow, selectionEndCol)
+		if selectionStartRow > selectionEndRow || (selectionStartRow == selectionEndRow && selectionStartCol > selectionEndCol) {
+			selectionStartRow, selectionEndRow = selectionEndRow, selectionStartRow
+			selectionStartCol, selectionEndCol = selectionEndCol, selectionStartCol
+		}
+	}
+	start := clampCopyViewportTop(snapshot, rect.H, viewTopRow)
+	selectionBG := ensureContrast(mixHex(theme.info, theme.chromeAccent, 0.35), theme.hostBG, 1.2)
+	cursorBG := ensureContrast(theme.warning, theme.hostBG, 1.2)
+	for visibleRow := 0; visibleRow < rect.H; visibleRow++ {
+		rowIndex := start + visibleRow
+		if rowIndex < 0 || rowIndex >= totalRows {
+			continue
+		}
+		if markSet && rowIndex >= selectionStartRow && rowIndex <= selectionEndRow {
+			firstCol := 0
+			lastCol := rowMaxCol(snapshot, rowIndex)
+			if rowIndex == selectionStartRow {
+				firstCol = selectionStartCol
+			}
+			if rowIndex == selectionEndRow {
+				lastCol = selectionEndCol
+			}
+			for col := firstCol; col <= lastCol; col++ {
+				drawCopyModeCellHighlight(canvas, rect.X+col, rect.Y+visibleRow, selectionBG)
+			}
+		}
+	}
+	screenRow := cursorRow - start
+	if screenRow >= 0 && screenRow < rect.H {
+		drawCopyModeCellHighlight(canvas, rect.X+cursorCol, rect.Y+screenRow, cursorBG)
+	}
+}
+
+func drawCopyModeCellHighlight(canvas *composedCanvas, x, y int, bg string) {
+	if canvas == nil || x < 0 || y < 0 || x >= canvas.width || y >= canvas.height {
+		return
+	}
+	leadX := x
+	for leadX > 0 && canvas.cells[y][leadX].Continuation {
+		leadX--
+	}
+	cell := canvas.cells[y][leadX]
+	if cell.Continuation {
+		cell = blankDrawCell()
+	}
+	if cell.Content == "" {
+		cell = blankDrawCell()
+	}
+	style := cell.Style
+	style.BG = bg
+	style.FG = contrastTextColor(bg)
+	cell.Style = style
+	canvas.set(leadX, y, cell)
+}
+
+func clampCopyViewportTop(snapshot *protocol.Snapshot, height, viewTopRow int) int {
+	totalRows := len(snapshot.Scrollback) + len(snapshot.Screen.Cells)
+	if totalRows <= 0 {
+		return 0
+	}
+	maxTop := maxInt(0, totalRows-maxInt(1, height))
+	if viewTopRow < 0 {
+		viewTopRow = 0
+	}
+	if viewTopRow > maxTop {
+		viewTopRow = maxTop
+	}
+	return viewTopRow
+}
+
+func scrollOffsetForViewportTop(snapshot *protocol.Snapshot, height, viewTopRow int) int {
+	if snapshot == nil {
+		return 0
+	}
+	totalRows := len(snapshot.Scrollback) + len(snapshot.Screen.Cells)
+	viewTopRow = clampCopyViewportTop(snapshot, height, viewTopRow)
+	offset := totalRows - (viewTopRow + maxInt(1, height))
+	if offset < 0 {
+		offset = 0
+	}
+	if viewTopRow < len(snapshot.Scrollback) && offset == 0 && len(snapshot.Scrollback) > 0 {
+		offset = 1
+	}
+	return offset
+}
+
+func snapshotRow(snapshot *protocol.Snapshot, rowIndex int) []protocol.Cell {
+	if snapshot == nil || rowIndex < 0 {
+		return nil
+	}
+	if rowIndex < len(snapshot.Scrollback) {
+		return snapshot.Scrollback[rowIndex]
+	}
+	rowIndex -= len(snapshot.Scrollback)
+	if rowIndex < 0 || rowIndex >= len(snapshot.Screen.Cells) {
+		return nil
+	}
+	return snapshot.Screen.Cells[rowIndex]
+}
+
+func rowMaxCol(snapshot *protocol.Snapshot, rowIndex int) int {
+	row := snapshotRow(snapshot, rowIndex)
+	if len(row) > 0 {
+		return len(row) - 1
+	}
+	if snapshot == nil || snapshot.Size.Cols == 0 {
+		return 0
+	}
+	return int(snapshot.Size.Cols) - 1
+}
+
+func clampCopyPoint(snapshot *protocol.Snapshot, row, col int) (int, int) {
+	totalRows := len(snapshot.Scrollback) + len(snapshot.Screen.Cells)
+	if totalRows <= 0 {
+		return 0, 0
+	}
+	if row < 0 {
+		row = 0
+	}
+	if row >= totalRows {
+		row = totalRows - 1
+	}
+	maxCol := rowMaxCol(snapshot, row)
+	if col < 0 {
+		col = 0
+	}
+	if col > maxCol {
+		col = maxCol
+	}
+	rowCells := snapshotRow(snapshot, row)
+	for col > 0 && col < len(rowCells) && rowCells[col].Content == "" && rowCells[col].Width == 0 {
+		col--
+	}
+	return row, col
+}
+
 func projectActiveEntryCursor(canvas *composedCanvas, entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) {
 	if canvas == nil {
 		return
@@ -1668,7 +1867,7 @@ func activeEntryCursorTarget(entries []paneRenderEntry, runtimeState *VisibleRun
 		}
 		rect := contentRectForPane(entry.Rect)
 		snapshot := terminal.Snapshot
-		if entry.ScrollOffset > 0 || !snapshot.Cursor.Visible || activeCursorOccluded(entries, i, rect, snapshot) {
+		if entry.CopyModeActive || entry.ScrollOffset > 0 || !snapshot.Cursor.Visible || activeCursorOccluded(entries, i, rect, snapshot) {
 			return rect, snapshot, false
 		}
 		cursorX := rect.X + snapshot.Cursor.Col

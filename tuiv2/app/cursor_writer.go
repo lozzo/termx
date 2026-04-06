@@ -9,6 +9,7 @@ import (
 
 type cursorSequenceWriter interface {
 	SetCursorSequence(seq string)
+	WriteControlSequence(seq string) error
 }
 
 type outputCursorWriter struct {
@@ -37,6 +38,16 @@ func (w *outputCursorWriter) SetCursorSequence(seq string) {
 	w.mu.Lock()
 	w.cursor = seq
 	w.mu.Unlock()
+}
+
+func (w *outputCursorWriter) WriteControlSequence(seq string) error {
+	if w == nil || w.out == nil || seq == "" {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	_, err := io.WriteString(w.out, seq)
+	return err
 }
 
 func (w *outputCursorWriter) Write(p []byte) (int, error) {

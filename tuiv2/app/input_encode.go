@@ -27,6 +27,17 @@ func (m *Model) encodeActiveTerminalInput(msg tea.KeyMsg, paneID string) []byte 
 	return encodeTerminalKeyMsg(msg, modes)
 }
 
+func (m *Model) encodeActiveTerminalPaste(text, paneID string) []byte {
+	if m == nil || text == "" {
+		return nil
+	}
+	pane := m.activePaneForInput(paneID)
+	if pane == nil {
+		return nil
+	}
+	return encodeTerminalPaste(text, m.terminalModesForPane(pane))
+}
+
 func (m *Model) activePaneForInput(paneID string) *workbench.PaneState {
 	if m == nil || m.workbench == nil {
 		return nil

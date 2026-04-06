@@ -90,6 +90,36 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		if m.modalHost.Picker == nil {
 			return false, nil
 		}
+		if m.modalHost.Session.RequestID == clipboardHistoryRequestID() {
+			switch action.Kind {
+			case input.ActionPickerUp:
+				m.modalHost.Picker.Move(-1)
+				m.render.Invalidate()
+				return true, nil
+			case input.ActionPickerDown:
+				m.modalHost.Picker.Move(1)
+				m.render.Invalidate()
+				return true, nil
+			case input.ActionCancelMode:
+				m.closeModal(input.ModePicker, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeDisplay})
+				m.render.Invalidate()
+				return true, nil
+			case input.ActionSubmitPrompt:
+				selected := m.modalHost.Picker.SelectedItem()
+				if selected == nil || strings.TrimSpace(selected.TerminalID) == "" {
+					return true, nil
+				}
+				entry := m.clipboardHistoryEntryByID(selected.TerminalID)
+				m.closeModal(input.ModePicker, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
+				m.leaveCopyMode()
+				if entry == nil {
+					return true, m.showError(fmt.Errorf("clipboard history entry not found"))
+				}
+				return true, m.pasteTextToActiveCmd(entry.Text)
+			default:
+				return false, nil
+			}
+		}
 		switch action.Kind {
 		case input.ActionPickerUp:
 			m.modalHost.Picker.Move(-1)

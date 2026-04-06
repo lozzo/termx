@@ -76,6 +76,8 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 		return next, true
 	case sequenceMsg:
 		return m.nextSequenceCmd(typed), true
+	case copyModeAutoScrollMsg:
+		return m.handleCopyModeAutoScroll(typed.seq), true
 	default:
 		return nil, false
 	}
@@ -154,6 +156,7 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 	case terminalAttachReadyMsg:
 		return m.dequeueTerminalInputCmd(), true
 	case orchestrator.SnapshotLoadedMsg:
+		m.adjustCopyModeAfterSnapshotLoaded(typed.TerminalID)
 		m.render.Invalidate()
 		return m.maybeAutoFitFloatingPanesCmd(), true
 	case hostDefaultColorsMsg:
@@ -180,6 +183,13 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 			return nil, true
 		}
 		m.ownerConfirmPaneID = ""
+		m.render.Invalidate()
+		return nil, true
+	case clearNoticeMsg:
+		if typed.seq != m.noticeSeq {
+			return nil, true
+		}
+		m.notice = ""
 		m.render.Invalidate()
 		return nil, true
 	case terminalTitleMsg:

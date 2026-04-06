@@ -225,7 +225,7 @@ func TestMouseClickHiddenFloatingAreaFocusesUnderlyingPane(t *testing.T) {
 	if tab.ActivePaneID != "pane-2" {
 		t.Fatalf("expected click through hidden floating area to focus pane-2, got %q", tab.ActivePaneID)
 	}
-	}
+}
 
 func TestMouseClickHiddenFloatingAreaStartsDividerDrag(t *testing.T) {
 	m := setupTwoPaneModel(t)
@@ -257,7 +257,7 @@ func TestMouseClickHiddenFloatingAreaStartsDividerDrag(t *testing.T) {
 	if m.mouseDragSplit == nil {
 		t.Fatal("expected split drag target after clicking divider behind hidden float")
 	}
-	}
+}
 
 func TestMouseDragSplitDividerResizesOwnerPaneWithoutActivatingIt(t *testing.T) {
 	m := setupModel(t, modelOpts{

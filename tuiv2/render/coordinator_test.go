@@ -140,7 +140,7 @@ func TestPaneEntriesForTabMarksViewportClippedPaneOverflow(t *testing.T) {
 		}},
 	}
 
-	entries := paneEntriesForTab(tab, nil, 12, 6, runtimeLookup{}, "", "", -1, "", -1, true, defaultUITheme())
+	entries := paneEntriesForTab(tab, nil, 12, 6, runtimeLookup{}, "", "", -1, "", -1, true, VisibleRenderState{}, defaultUITheme())
 	if len(entries) != 1 {
 		t.Fatalf("expected one visible pane entry, got %d", len(entries))
 	}
