@@ -26,48 +26,48 @@ func (m *Model) handleModalKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyUp:
 			if movePromptFormField(m.modalHost.Prompt, -1) {
-				m.render.Invalidate()
+				m.revealCursorAndInvalidate()
 			}
 			return true, nil
 		case tea.KeyDown, tea.KeyTab:
 			if movePromptFormField(m.modalHost.Prompt, 1) {
-				m.render.Invalidate()
+				m.revealCursorAndInvalidate()
 			}
 			return true, nil
 		case tea.KeyShiftTab:
 			if movePromptFormField(m.modalHost.Prompt, -1) {
-				m.render.Invalidate()
+				m.revealCursorAndInvalidate()
 			}
 			return true, nil
 		case tea.KeyRunes:
 			if len(msg.Runes) > 0 {
 				insertPromptRunes(m.modalHost.Prompt, msg.Runes)
-				m.render.Invalidate()
+				m.revealCursorAndInvalidate()
 			}
 			return true, nil
 		case tea.KeyBackspace:
 			if deletePromptRuneBeforeCursor(m.modalHost.Prompt) {
-				m.render.Invalidate()
+				m.revealCursorAndInvalidate()
 			}
 			return true, nil
 		case tea.KeyLeft:
 			if movePromptCursor(m.modalHost.Prompt, -1) {
-				m.render.Invalidate()
+				m.revealCursorAndInvalidate()
 			}
 			return true, nil
 		case tea.KeyRight:
 			if movePromptCursor(m.modalHost.Prompt, 1) {
-				m.render.Invalidate()
+				m.revealCursorAndInvalidate()
 			}
 			return true, nil
 		case tea.KeyHome:
 			if setPromptCursor(m.modalHost.Prompt, 0) {
-				m.render.Invalidate()
+				m.revealCursorAndInvalidate()
 			}
 			return true, nil
 		case tea.KeyEnd:
 			if setPromptCursor(m.modalHost.Prompt, len([]rune(m.modalHost.Prompt.Value))) {
-				m.render.Invalidate()
+				m.revealCursorAndInvalidate()
 			}
 			return true, nil
 		case tea.KeyEnter:
@@ -125,7 +125,7 @@ func (m *Model) handlePickerQueryKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd) {
 	}
 	m.modalHost.Picker.ApplyFilter()
 	normalizeModalSelection(&m.modalHost.Picker.Selected, len(m.modalHost.Picker.VisibleItems()))
-	m.render.Invalidate()
+	m.revealCursorAndInvalidate()
 	return true, nil
 }
 
@@ -164,7 +164,7 @@ func (m *Model) handleWorkspacePickerQueryKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd)
 	}
 	m.modalHost.WorkspacePicker.ApplyFilter()
 	normalizeModalSelection(&m.modalHost.WorkspacePicker.Selected, len(m.modalHost.WorkspacePicker.VisibleItems()))
-	m.render.Invalidate()
+	m.revealCursorAndInvalidate()
 	return true, nil
 }
 
@@ -203,7 +203,7 @@ func (m *Model) handleTerminalManagerQueryKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd)
 	}
 	m.terminalPage.ApplyFilter()
 	normalizeModalSelection(&m.terminalPage.Selected, len(m.terminalPage.VisibleItems()))
-	m.render.Invalidate()
+	m.revealCursorAndInvalidate()
 	return true, nil
 }
 

@@ -617,21 +617,21 @@ func (m *Model) handleOverlayQueryInputMouseClick(region render.HitRegion, targe
 			return nil
 		}
 		if setQueryCursor(&m.modalHost.Picker.Query, &m.modalHost.Picker.Cursor, &m.modalHost.Picker.CursorSet, cursor) {
-			m.render.Invalidate()
+			m.revealCursorAndInvalidate()
 		}
 	case overlayQueryWorkspace:
 		if m.modalHost == nil || m.modalHost.WorkspacePicker == nil {
 			return nil
 		}
 		if setQueryCursor(&m.modalHost.WorkspacePicker.Query, &m.modalHost.WorkspacePicker.Cursor, &m.modalHost.WorkspacePicker.CursorSet, cursor) {
-			m.render.Invalidate()
+			m.revealCursorAndInvalidate()
 		}
 	case overlayQueryTerminalManager:
 		if m.terminalPage == nil {
 			return nil
 		}
 		if setQueryCursor(&m.terminalPage.Query, &m.terminalPage.Cursor, &m.terminalPage.CursorSet, cursor) {
-			m.render.Invalidate()
+			m.revealCursorAndInvalidate()
 		}
 	}
 	return nil
@@ -905,7 +905,7 @@ func (m *Model) handlePromptInputMouseClick(region render.HitRegion, screenX int
 		cursor = 0
 	}
 	if setPromptCursor(m.modalHost.Prompt, cursor) {
-		m.render.Invalidate()
+		m.revealCursorAndInvalidate()
 	}
 	return nil
 }

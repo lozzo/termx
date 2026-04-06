@@ -156,6 +156,16 @@ func (c *Coordinator) Invalidate() {
 	c.mu.Unlock()
 }
 
+func (c *Coordinator) RevealCursorBlink() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.cursorBlinkVisible = true
+	c.dirty = true
+	c.mu.Unlock()
+}
+
 func (c *Coordinator) Schedule()     {}
 func (c *Coordinator) FlushPending() {}
 func (c *Coordinator) StartTicker()  {}
@@ -192,7 +202,11 @@ func (c *Coordinator) RenderFrame() string {
 	cursor := rendered.cursor
 
 	overlaySize := TermSize{Width: state.TermSize.Width, Height: bodyHeight}
-	if overlay := renderActiveOverlay(state, overlaySize); overlay != "" {
+	overlayCursorVisible := true
+	c.mu.Lock()
+	overlayCursorVisible = c.cursorBlinkVisible
+	c.mu.Unlock()
+	if overlay := renderActiveOverlayWithCursor(state, overlaySize, overlayCursorVisible); overlay != "" {
 		body = compositeOverlay(body, overlay, TermSize{Width: state.TermSize.Width, Height: bodyHeight})
 		cursor = hideCursorANSI()
 		rendered.blink = false
@@ -338,8 +352,15 @@ func renderBodyFrameWithCoordinator(coordinator *Coordinator, state VisibleRende
 		return renderedBody{}
 	}
 	if state.Surface.Kind == VisibleSurfaceTerminalPool && state.Surface.TerminalPool != nil {
+		cursorVisible := true
+		if coordinator != nil {
+			coordinator.mu.Lock()
+			cursorVisible = coordinator.cursorBlinkVisible
+			coordinator.mu.Unlock()
+		}
 		return renderedBody{
-			content: renderTerminalPoolPage(state.Surface.TerminalPool, state.Runtime, TermSize{Width: width, Height: height}),
+			content: renderTerminalPoolPage(state.Surface.TerminalPool, state.Runtime, TermSize{Width: width, Height: height}, cursorVisible),
+			cursor:  hideCursorANSI(),
 		}
 	}
 	if state.Workbench == nil {
@@ -372,6 +393,9 @@ func renderBodyFrameWithCoordinator(coordinator *Coordinator, state VisibleRende
 }
 
 func visibleStateNeedsCursorBlink(state VisibleRenderState) bool {
+	if overlayNeedsCursorBlink(state.Overlay) || terminalPoolNeedsCursorBlink(state.Surface) {
+		return true
+	}
 	if state.Overlay.Kind != VisibleOverlayNone || state.Surface.Kind != VisibleSurfaceWorkbench {
 		return false
 	}
@@ -397,6 +421,19 @@ func visibleStateNeedsCursorBlink(state VisibleRenderState) bool {
 	}
 	_, _, ok := activeEntryCursorTarget(entries, state.Runtime)
 	return ok
+}
+
+func overlayNeedsCursorBlink(overlay VisibleOverlay) bool {
+	switch overlay.Kind {
+	case VisibleOverlayPrompt, VisibleOverlayPicker, VisibleOverlayWorkspacePicker, VisibleOverlayTerminalManager:
+		return true
+	default:
+		return false
+	}
+}
+
+func terminalPoolNeedsCursorBlink(surface VisibleSurface) bool {
+	return surface.Kind == VisibleSurfaceTerminalPool && surface.TerminalPool != nil
 }
 
 func activeExitedPaneHasRecoverySelection(state VisibleRenderState) bool {
@@ -468,16 +505,20 @@ func renderEmptyWorkbenchBody(state VisibleRenderState, width, height int, kind 
 }
 
 func renderActiveOverlay(state VisibleRenderState, termSize TermSize) string {
+	return renderActiveOverlayWithCursor(state, termSize, true)
+}
+
+func renderActiveOverlayWithCursor(state VisibleRenderState, termSize TermSize, cursorVisible bool) string {
 	theme := uiThemeForState(state)
 	switch state.Overlay.Kind {
 	case VisibleOverlayPrompt:
-		return renderPromptOverlayWithTheme(state.Overlay.Prompt, termSize, theme)
+		return renderPromptOverlayWithThemeAndCursor(state.Overlay.Prompt, termSize, theme, cursorVisible)
 	case VisibleOverlayPicker:
-		return renderPickerOverlayWithTheme(state.Overlay.Picker, termSize, theme)
+		return renderPickerOverlayWithThemeAndCursor(state.Overlay.Picker, termSize, theme, cursorVisible)
 	case VisibleOverlayWorkspacePicker:
-		return renderWorkspacePickerOverlayWithTheme(state.Overlay.WorkspacePicker, termSize, theme)
+		return renderWorkspacePickerOverlayWithThemeAndCursor(state.Overlay.WorkspacePicker, termSize, theme, cursorVisible)
 	case VisibleOverlayTerminalManager:
-		return renderTerminalManagerOverlayWithTheme(state.Overlay.TerminalManager, termSize, theme)
+		return renderTerminalManagerOverlayWithThemeAndCursor(state.Overlay.TerminalManager, termSize, theme, cursorVisible)
 	case VisibleOverlayHelp:
 		return renderHelpOverlayWithTheme(state.Overlay.Help, termSize, theme)
 	case VisibleOverlayFloatingOverview:
@@ -745,7 +786,7 @@ func (c *bodyRenderCache) matches(entries []paneRenderEntry, width, height int) 
 	return true
 }
 
-func renderTerminalPoolPage(pool *modal.TerminalManagerState, runtimeState *VisibleRuntimeStateProxy, termSize TermSize) string {
+func renderTerminalPoolPage(pool *modal.TerminalManagerState, runtimeState *VisibleRuntimeStateProxy, termSize TermSize, cursorVisible bool) string {
 	if pool == nil {
 		return ""
 	}
@@ -758,7 +799,7 @@ func renderTerminalPoolPage(pool *modal.TerminalManagerState, runtimeState *Visi
 
 	title := terminalPickerTitleStyle(theme).Width(width).Render(forceWidthANSIOverlay(coalesce(strings.TrimSpace(pool.Title), "Terminal Pool"), width))
 	headerLines = append(headerLines, title)
-	headerLines = append(headerLines, forceWidthANSIOverlay(renderOverlaySearchLine(theme, pool.Query, pool.Cursor, pool.CursorSet, width), width))
+	headerLines = append(headerLines, forceWidthANSIOverlay(renderOverlaySearchLineWithCursor(theme, pool.Query, pool.Cursor, pool.CursorSet, width, cursorVisible), width))
 	headerLines = append(headerLines, overlayCardFillStyle(theme).Width(width).Render(""))
 
 	contentLines := make([]string, 0, height)
