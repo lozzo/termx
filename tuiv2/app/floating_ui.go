@@ -19,17 +19,16 @@ func (m *Model) openFloatingOverview() tea.Cmd {
 		return nil
 	}
 	returnMode := input.ModeNormal
-	if m.input != nil {
-		returnMode = m.input.Mode().Kind
+	if m.ui != nil {
+		returnMode = m.mode().Kind
 	}
 	requestID := string(returnMode)
 	m.refreshFloatingOverview("")
 	if m.modalHost.FloatingOverview == nil {
 		return nil
 	}
-	m.modalHost.Open(input.ModeFloatingOverview, requestID)
-	m.modalHost.MarkReady(input.ModeFloatingOverview, requestID)
-	m.input.SetMode(input.ModeState{Kind: input.ModeFloatingOverview, RequestID: requestID})
+	m.openModal(input.ModeFloatingOverview, requestID)
+	m.markModalReady(input.ModeFloatingOverview, requestID)
 	m.render.Invalidate()
 	return nil
 }
@@ -95,12 +94,11 @@ func (m *Model) closeFloatingOverview() {
 		return
 	}
 	requestID := m.modalHost.Session.RequestID
-	m.modalHost.Close(input.ModeFloatingOverview, requestID)
 	nextMode := input.ModeNormal
 	if requestID == string(input.ModeFloating) {
 		nextMode = input.ModeFloating
 	}
-	m.input.SetMode(input.ModeState{Kind: nextMode})
+	m.closeModal(input.ModeFloatingOverview, requestID, input.ModeState{Kind: nextMode})
 	m.render.Invalidate()
 }
 
