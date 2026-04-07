@@ -124,11 +124,11 @@ func TestSerializeCellContentKeepsRawAmbiguousEmojiVariationSelector(t *testing.
 	}
 }
 
-func TestSerializeCellContentAdvancesAfterAmbiguousEmojiVariationSelector(t *testing.T) {
+func TestSerializeCellContentUsesStableFallbackForOneColumnAmbiguousEmojiVariationSelectorHosts(t *testing.T) {
 	got := serializeCellContent("♻️", 2, shared.AmbiguousEmojiVariationSelectorAdvance)
-	want := "♻️" + xansi.CursorForward(1)
+	want := "♻ "
 	if got != want {
-		t.Fatalf("expected advance mode to keep emoji and compensate with cursor move, got %q want %q", got, want)
+		t.Fatalf("expected one-column host classification to use stable fallback, got %q want %q", got, want)
 	}
 }
 
@@ -138,19 +138,19 @@ func TestSerializeCellContentStripsAmbiguousEmojiVariationSelectorAsFallback(t *
 	}
 }
 
-func TestComposedCanvasContentStringUsesAdvanceModeForAmbiguousEmojiVariationSelector(t *testing.T) {
+func TestComposedCanvasContentStringUsesStableFallbackForOneColumnAmbiguousEmojiVariationSelectorHosts(t *testing.T) {
 	canvas := newComposedCanvas(6, 1)
 	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorAdvance
 	canvas.drawText(0, 0, "♻️X", drawStyle{})
 
 	rendered := canvas.contentString()
-	want := xansi.CHA(1) + "♻️" + xansi.CHA(3) + "X"
+	want := xansi.CHA(1) + "♻ X"
 	if !strings.Contains(rendered, want) {
-		t.Fatalf("expected serialized row to keep emoji and re-anchor the next cell with CHA, got %q want substring %q", rendered, want)
+		t.Fatalf("expected serialized row to use the stable fallback instead of cursor movement, got %q want substring %q", rendered, want)
 	}
 }
 
-func TestComposedCanvasDrawSnapshotRawModeReplacesContinuationWithSpace(t *testing.T) {
+func TestComposedCanvasDrawSnapshotRawModeUsesCompensationSpaceAndDeferredCHA(t *testing.T) {
 	canvas := newComposedCanvas(6, 1)
 	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorRaw
 	canvas.drawSnapshot(&protocol.Snapshot{
@@ -164,13 +164,9 @@ func TestComposedCanvasDrawSnapshotRawModeReplacesContinuationWithSpace(t *testi
 	})
 
 	rendered := canvas.contentString()
-	// Raw mode materializes the continuation column as a printable space, then
-	// re-anchors the next lead cell after that space instead of immediately after
-	// the emoji bytes. This keeps iTerm2 happy while still correcting hosts that
-	// only advanced the emoji by one column.
 	want := "♻️ " + xansi.CHA(3) + "X"
 	if !strings.Contains(rendered, want) {
-		t.Fatalf("expected raw-mode snapshot serialization to compensate with a space and deferred CHA, got %q want substring %q", rendered, want)
+		t.Fatalf("expected raw-mode snapshot serialization to use a compensation space plus deferred CHA, got %q want substring %q", rendered, want)
 	}
 }
 
@@ -192,11 +188,11 @@ func TestComposedCanvasDrawSnapshotRawModePromptWithEmojiFollowedByTypedChars(t 
 	rendered := canvas.contentString()
 	want := "♻️ " + xansi.CHA(3) + "ls"
 	if !strings.Contains(rendered, want) {
-		t.Fatalf("expected raw-mode prompt serialization to compensate with a space and deferred CHA, got %q want substring %q", rendered, want)
+		t.Fatalf("expected raw-mode prompt serialization to use a compensation space plus deferred CHA, got %q want substring %q", rendered, want)
 	}
 }
 
-func TestComposedCanvasDrawTextRawModeAddsCompensationSpaceAndDeferredCHA(t *testing.T) {
+func TestComposedCanvasDrawTextRawModeUsesCompensationSpaceAndDeferredCHA(t *testing.T) {
 	canvas := newComposedCanvas(6, 1)
 	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorRaw
 	canvas.drawText(0, 0, "♻️X", drawStyle{})
@@ -231,7 +227,7 @@ func TestComposedCanvasDrawSnapshotRawModeContinuationSpaceOnlyForAmbiguousEmoji
 	}
 }
 
-func TestComposedCanvasDrawSnapshotUsesAdvanceModeForAmbiguousEmojiVariationSelector(t *testing.T) {
+func TestComposedCanvasDrawSnapshotUsesStableFallbackForOneColumnAmbiguousEmojiVariationSelectorHosts(t *testing.T) {
 	canvas := newComposedCanvas(6, 1)
 	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorAdvance
 	canvas.drawSnapshot(&protocol.Snapshot{
@@ -245,9 +241,9 @@ func TestComposedCanvasDrawSnapshotUsesAdvanceModeForAmbiguousEmojiVariationSele
 	})
 
 	rendered := canvas.contentString()
-	want := xansi.CHA(1) + "♻️" + xansi.CHA(3) + "X"
+	want := xansi.CHA(1) + "♻ X"
 	if !strings.Contains(rendered, want) {
-		t.Fatalf("expected snapshot serialization to keep emoji and re-anchor the next cell with CHA, got %q want substring %q", rendered, want)
+		t.Fatalf("expected snapshot serialization to use the stable fallback instead of cursor movement, got %q want substring %q", rendered, want)
 	}
 }
 

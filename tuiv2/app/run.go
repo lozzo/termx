@@ -56,12 +56,14 @@ func runWithClientOptions(cfg shared.Config, client bridge.Client, stdin io.Read
 	}
 	if model.runtime != nil {
 		if probeSupported {
-			// Default to the conservative fallback until the host terminal reports
-			// how far it actually advances for an ambiguous FE0F emoji cluster.
+			// 中文说明：先默认走保守的 strip 模式，等宿主终端明确回报
+			// 这个 FE0F 歧义 emoji 实际前进了几列，再决定是否保留原始字形。
 			model.runtime.SetHostAmbiguousEmojiVariationSelectorMode(shared.AmbiguousEmojiVariationSelectorStrip)
 			model.hostEmojiProbePending = true
 		} else {
-			model.runtime.SetHostAmbiguousEmojiVariationSelectorMode(shared.AmbiguousEmojiVariationSelectorRaw)
+			// 中文说明：拿不到探测结果时不要猜。这里宁可牺牲 emoji 的原始展示，
+			// 也要优先保证不同终端上的 pane 网格、边框和提示符列宽稳定。
+			model.runtime.SetHostAmbiguousEmojiVariationSelectorMode(shared.AmbiguousEmojiVariationSelectorStrip)
 			model.hostEmojiProbePending = false
 		}
 		if writer := model.cursorOut; writer != nil && model.hostEmojiProbePending {

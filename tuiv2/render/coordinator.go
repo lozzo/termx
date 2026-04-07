@@ -526,13 +526,17 @@ func renderEmptyWorkbenchBody(state VisibleRenderState, width, height int, kind 
 
 func emojiVariationSelectorModeForRuntime(runtimeState *VisibleRuntimeStateProxy) shared.AmbiguousEmojiVariationSelectorMode {
 	if runtimeState == nil {
-		return shared.AmbiguousEmojiVariationSelectorRaw
+		return shared.AmbiguousEmojiVariationSelectorStrip
 	}
 	switch runtimeState.HostEmojiVS16Mode {
-	case shared.AmbiguousEmojiVariationSelectorAdvance, shared.AmbiguousEmojiVariationSelectorStrip:
-		return runtimeState.HostEmojiVS16Mode
-	default:
+	case shared.AmbiguousEmojiVariationSelectorRaw:
 		return shared.AmbiguousEmojiVariationSelectorRaw
+	case shared.AmbiguousEmojiVariationSelectorAdvance, shared.AmbiguousEmojiVariationSelectorStrip:
+		// 中文说明：即便探测分类里有 advance，真正进入 Bubble Tea 行渲染时
+		// 也要合并到 strip，因为这里不能安全依赖行内光标移动来补齐宽度。
+		return shared.AmbiguousEmojiVariationSelectorStrip
+	default:
+		return shared.AmbiguousEmojiVariationSelectorStrip
 	}
 }
 

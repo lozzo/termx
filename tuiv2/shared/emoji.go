@@ -13,9 +13,12 @@ const (
 	// AmbiguousEmojiVariationSelectorRaw keeps the original grapheme untouched.
 	// Use this when the host terminal already advances the cursor by two cells.
 	AmbiguousEmojiVariationSelectorRaw AmbiguousEmojiVariationSelectorMode = "raw"
-	// AmbiguousEmojiVariationSelectorAdvance keeps the original grapheme visible
-	// and emits a one-column cursor advance after it. This compensates for hosts
-	// that render the grapheme but only advance one column.
+	// 中文说明：advance 只表示“宿主把这个 emoji 画出来了，但光标只前进 1 列”。
+	// 由于标准行渲染不能安全夹带行内光标移动，最终会按 strip 的方式输出。
+	// AmbiguousEmojiVariationSelectorAdvance classifies hosts that render the
+	// grapheme but only advance one column. The renderer treats this the same as
+	// strip mode because the standard line renderer cannot safely embed mid-line
+	// cursor movement in a frame string.
 	AmbiguousEmojiVariationSelectorAdvance AmbiguousEmojiVariationSelectorMode = "advance"
 	// AmbiguousEmojiVariationSelectorStrip falls back to the text presentation
 	// plus a visible padding cell. It is the safest fallback when the host

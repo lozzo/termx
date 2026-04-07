@@ -947,7 +947,7 @@ func TestE2EZshPromptWithEmojiVariationKeepsSingleRightBorder(t *testing.T) {
 	_, cmd = model.Update(hostCursorPositionMsg{X: 1, Y: 0})
 	e2eDrain(t, model, cmd)
 
-	e2eWaitForText(t, ctx, model, invalidated, "RedmiBook♻️")
+	e2eWaitForText(t, ctx, model, invalidated, "RedmiBook♻ ")
 	e2eWaitForText(t, ctx, model, invalidated, "[1d11220]")
 
 	payload := "ζ ♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:"
@@ -957,8 +957,11 @@ func TestE2EZshPromptWithEmojiVariationKeepsSingleRightBorder(t *testing.T) {
 	e2eWaitForText(t, ctx, model, invalidated, "ζ")
 
 	view := xansi.Strip(model.View())
-	if !regexp.MustCompile(`♻️\x1b\[[0-9]+G`).MatchString(model.View()) {
-		t.Fatalf("expected rendered frame to preserve the emoji and re-anchor the next cell with CHA, got:\n%q", model.View())
+	if regexp.MustCompile(`♻️\x1b\[[0-9]+G`).MatchString(model.View()) {
+		t.Fatalf("expected rendered frame to avoid mid-line CHA after ambiguous emoji, got:\n%q", model.View())
+	}
+	if !strings.Contains(view, "RedmiBook♻ ") {
+		t.Fatalf("expected rendered frame to use the stable fallback for ambiguous emoji, got:\n%q", model.View())
 	}
 	lines := strings.Split(view, "\n")
 	if len(lines) != model.height {

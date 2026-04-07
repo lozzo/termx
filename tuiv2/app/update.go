@@ -212,13 +212,11 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		m.debugLog("host_emoji_probe_give_up")
 		m.hostEmojiProbePending = false
-		// The host terminal did not respond to the DECXCPR probe (e.g.
-		// macOS Terminal.app).  Fall back to raw mode so the emoji is
-		// preserved as-is (♻️ instead of degrading to ♻).  The
-		// continuation-space compensation in drawProtocolRowInRect
-		// handles the case where the host only advances one column.
+		// 中文说明：像 macOS Terminal.app 这类不回 DECXCPR 的宿主，不能再
+		// 继续假设“显示成 emoji 就一定会前进两列”。这里统一退回 strip 模式，
+		// 避免 pane 边框和 prompt 因为列宽判断错误而串位。
 		if m.runtime != nil {
-			m.runtime.SetHostAmbiguousEmojiVariationSelectorMode(shared.AmbiguousEmojiVariationSelectorRaw)
+			m.runtime.SetHostAmbiguousEmojiVariationSelectorMode(shared.AmbiguousEmojiVariationSelectorStrip)
 		}
 		return nil, true
 	case hostCursorPositionMsg:
@@ -275,8 +273,11 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 func hostEmojiProbeModeFromReportedColumn(x int) (shared.AmbiguousEmojiVariationSelectorMode, bool) {
 	switch x {
 	case 1:
-		return shared.AmbiguousEmojiVariationSelectorAdvance, true
+		// 中文说明：宿主只前进 1 列，说明不能安全保留原始 FE0F emoji；
+		// 渲染端要走 strip 回退，显式补一个空格把模型宽度补齐。
+		return shared.AmbiguousEmojiVariationSelectorStrip, true
 	case 2:
+		// 中文说明：宿主已经按 2 列推进，可以直接保留原始 grapheme。
 		return shared.AmbiguousEmojiVariationSelectorRaw, true
 	default:
 		return "", false

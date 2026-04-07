@@ -135,7 +135,7 @@ func TestModelInitRestoresWorkspaceStateFromConfigPath(t *testing.T) {
 	}
 }
 
-func TestModelHostCursorPositionProbeSelectsAdvanceModeForAmbiguousEmoji(t *testing.T) {
+func TestModelHostCursorPositionProbeSelectsStableFallbackForOneColumnAmbiguousEmojiHosts(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
 	model.hostEmojiProbePending = true
 
@@ -148,8 +148,8 @@ func TestModelHostCursorPositionProbeSelectsAdvanceModeForAmbiguousEmoji(t *test
 	if visible == nil {
 		t.Fatal("expected visible runtime")
 	}
-	if visible.HostEmojiVS16Mode != shared.AmbiguousEmojiVariationSelectorAdvance {
-		t.Fatalf("expected host probe to select advance mode, got %q", visible.HostEmojiVS16Mode)
+	if visible.HostEmojiVS16Mode != shared.AmbiguousEmojiVariationSelectorStrip {
+		t.Fatalf("expected host probe to select the stable fallback for one-column hosts, got %q", visible.HostEmojiVS16Mode)
 	}
 	if model.hostEmojiProbePending {
 		t.Fatal("expected host emoji probe to be marked complete")
@@ -174,6 +174,24 @@ func TestModelHostCursorPositionProbeAcceptsNonOriginRowForAmbiguousEmoji(t *tes
 	}
 	if model.hostEmojiProbePending {
 		t.Fatal("expected host emoji probe to be marked complete")
+	}
+}
+
+func TestModelHostEmojiProbeGiveUpKeepsStableFallback(t *testing.T) {
+	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
+	model.hostEmojiProbePending = true
+
+	_, _ = model.Update(hostEmojiProbeGiveUpMsg{})
+
+	visible := model.runtime.Visible()
+	if visible == nil {
+		t.Fatal("expected visible runtime")
+	}
+	if visible.HostEmojiVS16Mode != shared.AmbiguousEmojiVariationSelectorStrip {
+		t.Fatalf("expected give-up path to keep stable fallback, got %q", visible.HostEmojiVS16Mode)
+	}
+	if model.hostEmojiProbePending {
+		t.Fatal("expected probe to stop pending after give-up")
 	}
 }
 

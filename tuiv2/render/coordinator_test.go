@@ -223,6 +223,7 @@ func TestDrawPaneFrameKeepsTopRightCornerAlignedWithEmojiVariationTitle(t *testi
 
 func TestDrawPaneFrameKeepsTopRightCornerAlignedWithEmojiVariationTitleAcrossHostWidths(t *testing.T) {
 	canvas := newComposedCanvas(40, 6)
+	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorStrip
 	rect := workbench.Rect{X: 0, Y: 0, W: 40, H: 6}
 	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
 	border := paneBorderInfo{StateLabel: paneRunningIcon(), RoleLabel: "◆ owner"}
@@ -305,7 +306,7 @@ func TestRenderBodyKeepsPaneWidthStableWithEmojiVariationSnapshotNearRightEdge(t
 	}
 }
 
-func TestRenderBodyReanchorsAmbiguousEmojiVariationSelectorWithCHAWhenHostRequiresIt(t *testing.T) {
+func TestRenderBodyUsesStableFallbackForOneColumnAmbiguousEmojiVariationSelectorHosts(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -345,8 +346,8 @@ func TestRenderBodyReanchorsAmbiguousEmojiVariationSelectorWithCHAWhenHostRequir
 	}
 
 	body := renderBody(state, bodyWidth, bodyHeight)
-	if !strings.Contains(body, "♻️"+xansi.CHA(6)+":") {
-		t.Fatalf("expected renderBody to keep emoji and re-anchor the next cell with CHA, got %q", body)
+	if !strings.Contains(body, "♻ :") {
+		t.Fatalf("expected renderBody to use the stable fallback instead of cursor movement, got %q", body)
 	}
 }
 
@@ -414,8 +415,8 @@ func TestRenderBodyKeepsWidthStableForPromptWithEmojiVariationHostAcrossWidths(t
 					}}}
 
 				rawBody := renderBody(state, bodyWidth, 6)
-				if promptCase.name == "emoji-variation" && !strings.Contains(rawBody, "RedmiBook♻️"+xansi.CHA(22)+":") {
-					t.Fatalf("expected render output to preserve ambiguous emoji variation selectors and re-anchor the next cell with CHA, got body:\n%q", rawBody)
+				if promptCase.name == "emoji-variation" && !strings.Contains(rawBody, "RedmiBook♻ :") {
+					t.Fatalf("expected render output to use the stable fallback for ambiguous emoji variation selectors, got body:\n%q", rawBody)
 				}
 				body := xansi.Strip(rawBody)
 				lines := strings.Split(body, "\n")
@@ -498,7 +499,7 @@ func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiAdvanceModeWhenHostAdv
 	}
 }
 
-func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiRawModeAcrossHostWidths(t *testing.T) {
+func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiRawModeWhenHostAdvancesTwoColumns(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -539,29 +540,86 @@ func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiRawModeAcrossHostWidth
 		}},
 	}
 
-	// Raw mode prints a compensation space after the ambiguous emoji and then
-	// re-anchors the next lead cell after that space. That should keep the pane
-	// border stable whether the host advanced the emoji by 1 or 2 columns.
-	for _, ambiguousWidth := range []int{1, 2} {
-		host := newFakeHostFrame(bodyWidth, bodyHeight)
-		host.apply(renderBody(state, bodyWidth, bodyHeight), ambiguousWidth)
+	host := newFakeHostFrame(bodyWidth, bodyHeight)
+	host.apply(renderBody(state, bodyWidth, bodyHeight), 2)
 
-		promptLine := ""
-		for _, line := range host.lines() {
-			if strings.Contains(line, "RedmiBook") {
-				promptLine = line
-				break
-			}
+	promptLine := ""
+	for _, line := range host.lines() {
+		if strings.Contains(line, "RedmiBook") {
+			promptLine = line
+			break
 		}
-		if promptLine == "" {
-			t.Fatalf("expected prompt line in fake host frame:\n%s", strings.Join(host.lines(), "\n"))
+	}
+	if promptLine == "" {
+		t.Fatalf("expected prompt line in fake host frame:\n%s", strings.Join(host.lines(), "\n"))
+	}
+	if got := strings.Count(promptLine, "│"); got != 2 {
+		t.Fatalf("expected raw-mode render to keep a single left/right border pair when the host advances ♻️ by 2 columns, got %d in %q", got, promptLine)
+	}
+	if !strings.HasSuffix(promptLine, "│") {
+		t.Fatalf("expected prompt line to keep the right border in the last column when the host advances ♻️ by 2 columns, got %q", promptLine)
+	}
+}
+
+func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiRawModeWhenHostAdvancesOneColumn(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	bodyWidth := 120
+	bodyHeight := 6
+	contentWidth := bodyWidth - 3
+	prompt := "# lozzow@RedmiBook♻️: ~/Documents/workdir/termx <>                                                                                             (23:17:15)"
+
+	vt := localvterm.New(contentWidth, 3, 10, nil)
+	if _, err := vt.Write([]byte(prompt)); err != nil {
+		t.Fatalf("write prompt into vterm: %v", err)
+	}
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), bodyWidth, bodyHeight), bodyWidth, bodyHeight+2)
+	state.Runtime = &VisibleRuntimeStateProxy{
+		HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
+		Terminals: []runtime.VisibleTerminal{{
+			TerminalID: "term-1",
+			Snapshot: &protocol.Snapshot{
+				TerminalID: "term-1",
+				Size:       protocol.Size{Cols: uint16(contentWidth), Rows: 3},
+				Screen:     protocol.ScreenData{Cells: protocolRowsFromVTermCells(vt.ScreenContent().Cells)},
+				Cursor:     protocol.CursorState{Visible: false},
+				Modes:      protocol.TerminalModes{AutoWrap: true},
+			},
+		}},
+	}
+
+	host := newFakeHostFrame(bodyWidth, bodyHeight)
+	host.apply(renderBody(state, bodyWidth, bodyHeight), 1)
+
+	promptLine := ""
+	for _, line := range host.lines() {
+		if strings.Contains(line, "RedmiBook") {
+			promptLine = line
+			break
 		}
-		if got := strings.Count(promptLine, "│"); got != 2 {
-			t.Fatalf("expected raw-mode render to keep a single left/right border pair when the host advances ♻️ by %d column(s), got %d in %q", ambiguousWidth, got, promptLine)
-		}
-		if !strings.HasSuffix(promptLine, "│") {
-			t.Fatalf("expected prompt line to keep the right border in the last column when the host advances ♻️ by %d column(s), got %q", ambiguousWidth, promptLine)
-		}
+	}
+	if promptLine == "" {
+		t.Fatalf("expected prompt line in fake host frame:\n%s", strings.Join(host.lines(), "\n"))
+	}
+	if got := strings.Count(promptLine, "│"); got != 2 {
+		t.Fatalf("expected raw-mode render to keep a single left/right border pair when the host advances ♻️ by 1 column, got %d in %q", got, promptLine)
+	}
+	if !strings.HasSuffix(promptLine, "│") {
+		t.Fatalf("expected prompt line to keep the right border in the last column when the host advances ♻️ by 1 column, got %q", promptLine)
 	}
 }
 
@@ -853,18 +911,8 @@ func TestRenderFrameKeepsSplitBoundaryStableAcrossRepeatedEmojiVariationUpdates(
 				lines := strings.Split(frame, "\n")
 				for i, line := range lines {
 					got := xansi.StringWidth(line)
-					// In raw mode, each ambiguous FE0F emoji in the pane
-					// content gets a continuation space that advances the
-					// host cursor by one extra column.  xansi.StringWidth
-					// counts the emoji as 2-wide plus the space as 1-wide
-					// (total 3 for 2 canvas columns).  The real host
-					// terminal's right-side gutter absorbs this, but the
-					// text-level measurement shows it.  Allow up to +N
-					// where N is the number of ♻️ occurrences in the line.
-					emojiCount := strings.Count(line, "♻️")
-					maxWidth := bodyWidth + emojiCount
-					if got < bodyWidth || got > maxWidth {
-						t.Fatalf("expected rendered row %d width in [%d, %d] at update %d, got %d: %q", i, bodyWidth, maxWidth, count, got, line)
+					if got != bodyWidth {
+						t.Fatalf("expected rendered row %d width %d at update %d, got %d: %q", i, bodyWidth, count, got, line)
 					}
 					if strings.Count(line, "│") > 4 {
 						t.Fatalf("expected split layout to keep distinct pane borders without extra divider ghosts at update %d, got %q", count, line)

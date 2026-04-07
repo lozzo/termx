@@ -301,14 +301,11 @@ func serializeCellContent(content string, width int, mode shared.AmbiguousEmojiV
 		return content
 	}
 	switch mode {
-	case shared.AmbiguousEmojiVariationSelectorAdvance:
-		// Some host terminals render a FE0F grapheme like "♻️" but only advance
-		// one column. Appending a cursor-forward keeps the visible emoji while
-		// restoring the two-column footprint expected by the pane layout model.
-		return content + xansi.CursorForward(1)
-	case shared.AmbiguousEmojiVariationSelectorStrip:
-		// Visible text-presentation plus a padding cell is the safe fallback when
-		// we haven't yet proven the host terminal can keep the emoji width stable.
+	case shared.AmbiguousEmojiVariationSelectorAdvance, shared.AmbiguousEmojiVariationSelectorStrip:
+		// 中文说明：Bubble Tea 的标准渲染器把整行当成普通 ANSI 文本做 diff。
+		// 如果在行中间插 CHA/CUF 这类“挪光标”控制序列，某些终端会把后续单元格
+		// 对齐弄乱。这里统一降级成“去掉 FE0F + 补一个可见空格”，用真实字符而不
+		// 是中途移动光标来保持整行宽度稳定。
 		return strings.ReplaceAll(content, "\uFE0F", "") + " "
 	default:
 		return content
@@ -316,35 +313,7 @@ func serializeCellContent(content string, width int, mode shared.AmbiguousEmojiV
 }
 
 func serializeCellContentForDisplay(content string, width int, mode shared.AmbiguousEmojiVariationSelectorMode, nextCol int) string {
-	if !isAmbiguousEmojiVariationSelectorCluster(content, width) {
-		return content
-	}
-	switch mode {
-	case shared.AmbiguousEmojiVariationSelectorStrip:
-		return strings.ReplaceAll(content, "\uFE0F", "") + " "
-	case shared.AmbiguousEmojiVariationSelectorAdvance:
-		if nextCol <= 0 {
-			return content
-		}
-		// The host terminal only advances one column for this FE0F cluster.
-		// Re-anchor the cursor so that subsequent cells and the right border
-		// stay aligned with the pane grid.
-		return content + xansi.CHA(nextCol)
-	default:
-		// Raw mode: do NOT append any cursor-positioning sequence after the
-		// emoji.  Any form of cursor movement (CHA, CUF, SGR+CHA) directly
-		// following the emoji bytes causes the host terminal (e.g. iTerm2)
-		// to associate the positioning with the emoji glyph, leading to
-		// visual overlap between the emoji and the next character.
-		//
-		// Instead, the canvas materializes the emoji's continuation column as a
-		// real space cell. Row serialization prints that space immediately after
-		// the emoji, then emits any corrective CHA only before the next lead cell.
-		// Hosts that advanced one column consume the space as the missing second
-		// column; hosts that advanced two may overshoot by one, and the deferred
-		// CHA pulls the next lead cell back onto the model grid.
-		return content
-	}
+	return serializeCellContent(content, width, mode)
 }
 
 func (c *composedCanvas) isRawAmbiguousContinuationSpace(x, y int) bool {

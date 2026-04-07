@@ -291,6 +291,88 @@ func TestRuntimeStreamOutputPreservesAuthoritativeSnapshotSize(t *testing.T) {
 	}
 }
 
+func TestRuntimeStreamOutputPreservesWideSnapshotCellsAfterReattach(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 8, Rows: 2},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			{
+				{Content: "你", Width: 2},
+				{Content: "", Width: 0},
+				{Content: "好", Width: 2},
+				{Content: "", Width: 0},
+				{Content: "A", Width: 1},
+				{Content: " ", Width: 1},
+				{Content: " ", Width: 1},
+				{Content: " ", Width: 1},
+			},
+			{
+				{Content: " ", Width: 1},
+				{Content: " ", Width: 1},
+				{Content: " ", Width: 1},
+				{Content: " ", Width: 1},
+				{Content: " ", Width: 1},
+				{Content: " ", Width: 1},
+				{Content: " ", Width: 1},
+				{Content: " ", Width: 1},
+			},
+		}},
+		Cursor: protocol.CursorState{Row: 0, Col: 5, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	}
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	if err := rt.StartStream(ctx, "term-1"); err != nil {
+		t.Fatalf("start stream: %v", err)
+	}
+
+	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("!")})
+
+	waitFor(t, func() bool {
+		current := rt.Registry().Get("term-1")
+		if current == nil || current.Snapshot == nil {
+			return false
+		}
+		row := current.Snapshot.Screen.Cells[0]
+		return len(row) > 5 && row[5].Content == "!"
+	})
+
+	current := rt.Registry().Get("term-1")
+	if current == nil || current.Snapshot == nil {
+		t.Fatalf("expected refreshed snapshot, got %#v", current)
+	}
+	row := current.Snapshot.Screen.Cells[0]
+	if got := row[0]; got.Content != "你" || got.Width != 2 {
+		t.Fatalf("expected first wide snapshot cell preserved after stream output, got %#v", got)
+	}
+	if got := row[1]; got.Content != "" || got.Width != 0 {
+		t.Fatalf("expected first continuation preserved after stream output, got %#v", got)
+	}
+	if got := row[2]; got.Content != "好" || got.Width != 2 {
+		t.Fatalf("expected second wide snapshot cell preserved after stream output, got %#v", got)
+	}
+	if got := row[3]; got.Content != "" || got.Width != 0 {
+		t.Fatalf("expected second continuation preserved after stream output, got %#v", got)
+	}
+	if got := row[4]; got.Content != "A" || got.Width != 1 {
+		t.Fatalf("expected ASCII cell before stream output preserved, got %#v", got)
+	}
+	if got := row[5]; got.Content != "!" || got.Width != 1 {
+		t.Fatalf("expected streamed output appended after preserved wide cells, got %#v", got)
+	}
+}
+
 func TestRuntimeSetHostDefaultColorsRefreshesVisibleState(t *testing.T) {
 	var invalidateCount atomic.Int32
 	rt := New(nil, WithInvalidate(func() {

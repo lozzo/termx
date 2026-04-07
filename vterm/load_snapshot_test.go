@@ -57,6 +57,56 @@ func TestLoadSnapshotWithScrollbackRestoresHistory(t *testing.T) {
 	}
 }
 
+func TestLoadSnapshotPreservesWideCellContinuationsAcrossSubsequentWrites(t *testing.T) {
+	vt := New(8, 2, 100, nil)
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{
+			{
+				{Content: "你", Width: 2},
+				{Content: "", Width: 0},
+				{Content: "好", Width: 2},
+				{Content: "", Width: 0},
+				{Content: "A", Width: 1},
+			},
+		},
+	}, CursorState{Row: 0, Col: 5, Visible: true}, TerminalModes{AutoWrap: true})
+
+	screen := vt.ScreenContent()
+	if got := screen.Cells[0][0]; got.Content != "你" || got.Width != 2 {
+		t.Fatalf("expected first wide cell restored, got %#v", got)
+	}
+	if got := screen.Cells[0][1]; got.Content != "" || got.Width != 0 {
+		t.Fatalf("expected wide-cell continuation placeholder at x=1, got %#v", got)
+	}
+	if got := screen.Cells[0][2]; got.Content != "好" || got.Width != 2 {
+		t.Fatalf("expected second wide cell restored, got %#v", got)
+	}
+	if got := screen.Cells[0][3]; got.Content != "" || got.Width != 0 {
+		t.Fatalf("expected wide-cell continuation placeholder at x=3, got %#v", got)
+	}
+
+	if _, err := vt.Write([]byte("!")); err != nil {
+		t.Fatalf("write after wide-cell snapshot failed: %v", err)
+	}
+
+	screen = vt.ScreenContent()
+	if got := screen.Cells[0][0]; got.Content != "你" || got.Width != 2 {
+		t.Fatalf("expected first wide cell preserved after write, got %#v", got)
+	}
+	if got := screen.Cells[0][1]; got.Content != "" || got.Width != 0 {
+		t.Fatalf("expected continuation placeholder preserved at x=1 after write, got %#v", got)
+	}
+	if got := screen.Cells[0][2]; got.Content != "好" || got.Width != 2 {
+		t.Fatalf("expected second wide cell preserved after write, got %#v", got)
+	}
+	if got := screen.Cells[0][3]; got.Content != "" || got.Width != 0 {
+		t.Fatalf("expected continuation placeholder preserved at x=3 after write, got %#v", got)
+	}
+	if got := screen.Cells[0][5]; got.Content != "!" || got.Width != 1 {
+		t.Fatalf("expected trailing ASCII write after restored wide cells, got %#v", got)
+	}
+}
+
 func TestLoadSnapshotWithTimestampsRestoresRowTimes(t *testing.T) {
 	vt := New(6, 3, 100, nil)
 	scrollbackTS := []time.Time{time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC)}

@@ -279,10 +279,10 @@ func (v *VTerm) LoadSnapshotWithMetadata(scrollback [][]Cell, scrollbackTimestam
 	if modes.AlternateScreen {
 		_, _ = v.emu.Write([]byte("\x1b[?1049h"))
 	}
-	for y, row := range screen.Cells {
-		for x, cell := range row {
-			v.emu.SetCell(x, y, uvCell(cell))
-		}
+	if len(screen.Cells) > 0 {
+		// 中文说明：不要逐格 SetCell。直接回放整屏 ANSI 可以把内容、样式和
+		// 宽字符续位一次性恢复进 emulator，避免宽字符在后续刷新时被打散。
+		_, _ = safeEmulatorWrite(v.emu, encodeScreenSnapshot(screen.Cells))
 	}
 	if cursor.Visible {
 		_, _ = v.emu.Write([]byte("\x1b[?25h"))
@@ -510,6 +510,11 @@ func (v *VTerm) SendText(text string) {
 }
 
 func uvCell(cell Cell) *uv.Cell {
+	if cell.Content == "" && cell.Width == 0 {
+		// 中文说明：这是宽字符的续位占位符，不是普通空格。恢复快照时必须原样保留，
+		// 否则后续增量写入会把已经正确的中日韩宽字符行重新串成“字符 + 一堆空格”。
+		return &uv.Cell{}
+	}
 	c := &uv.Cell{
 		Content: cell.Content,
 		Width:   cell.Width,
@@ -553,6 +558,101 @@ func uvLine(row []Cell) uv.Line {
 		line = append(line, *uvCell(cell))
 	}
 	return line
+}
+
+func encodeScreenSnapshot(rows [][]Cell) []byte {
+	var b strings.Builder
+	for y, row := range rows {
+		for x, cell := range row {
+			if cell.Content == "" && cell.Width == 0 {
+				// 中文说明：续位列本身不再重复写字符，由前一个宽字符占满即可。
+				continue
+			}
+			content := cell.Content
+			if content == "" {
+				content = " "
+			}
+			b.WriteString(fmt.Sprintf("\x1b[%d;%dH", y+1, x+1))
+			b.WriteString(cellStyleANSI(cell.Style))
+			b.WriteString(content)
+		}
+	}
+	if b.Len() == 0 {
+		return nil
+	}
+	b.WriteString("\x1b[0m")
+	return []byte(b.String())
+}
+
+func cellStyleANSI(style CellStyle) string {
+	var b strings.Builder
+	b.WriteString("\x1b[0")
+	if style.Bold {
+		b.WriteString(";1")
+	}
+	if style.Italic {
+		b.WriteString(";3")
+	}
+	if style.Underline {
+		b.WriteString(";4")
+	}
+	if style.Blink {
+		b.WriteString(";5")
+	}
+	if style.Reverse {
+		b.WriteString(";7")
+	}
+	if style.Strikethrough {
+		b.WriteString(";9")
+	}
+	writeCellStyleColor(&b, style.FG, true)
+	writeCellStyleColor(&b, style.BG, false)
+	b.WriteByte('m')
+	return b.String()
+}
+
+func writeCellStyleColor(b *strings.Builder, value string, foreground bool) {
+	if b == nil || strings.TrimSpace(value) == "" {
+		return
+	}
+	switch c := decodeTerminalColor(value).(type) {
+	case ansi.BasicColor:
+		code := int(c)
+		if code < 8 {
+			if foreground {
+				b.WriteString(fmt.Sprintf(";3%d", code))
+			} else {
+				b.WriteString(fmt.Sprintf(";4%d", code))
+			}
+			return
+		}
+		if foreground {
+			b.WriteString(fmt.Sprintf(";9%d", code-8))
+		} else {
+			b.WriteString(fmt.Sprintf(";10%d", code-8))
+		}
+	case ansi.IndexedColor:
+		if foreground {
+			b.WriteString(fmt.Sprintf(";38;5;%d", int(c)))
+		} else {
+			b.WriteString(fmt.Sprintf(";48;5;%d", int(c)))
+		}
+	case ansi.RGBColor:
+		if foreground {
+			b.WriteString(fmt.Sprintf(";38;2;%d;%d;%d", c.R, c.G, c.B))
+		} else {
+			b.WriteString(fmt.Sprintf(";48;2;%d;%d;%d", c.R, c.G, c.B))
+		}
+	default:
+		if rgb := ansi.XParseColor(value); rgb != nil {
+			r, g, bl, _ := rgb.RGBA()
+			if foreground {
+				b.WriteString(fmt.Sprintf(";38;2;%d;%d;%d", uint8(r>>8), uint8(g>>8), uint8(bl>>8)))
+			} else {
+				b.WriteString(fmt.Sprintf(";48;2;%d;%d;%d", uint8(r>>8), uint8(g>>8), uint8(bl>>8)))
+			}
+		}
+	}
 }
 
 func (v *VTerm) Paste(text string) {
