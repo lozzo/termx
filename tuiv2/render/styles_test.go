@@ -57,6 +57,26 @@ func TestOverlayInlineStylesUseSharedBackground(t *testing.T) {
 	}
 }
 
+func TestStatusBarInlineStylesUseChromeBackground(t *testing.T) {
+	theme := defaultUITheme()
+	want := lipgloss.Color(theme.chromeBG)
+	for _, tc := range []struct {
+		name string
+		got  lipgloss.Style
+	}{
+		{name: "hint-key", got: statusHintKeyStyle(theme)},
+		{name: "hint-text", got: statusHintTextStyle(theme)},
+		{name: "meta", got: statusMetaStyle(theme)},
+		{name: "default", got: statusPartDefaultStyle(theme)},
+		{name: "error", got: statusPartErrorStyle(theme)},
+		{name: "notice", got: statusPartNoticeStyle(theme)},
+	} {
+		if !sameColor(tc.got.GetBackground(), want) {
+			t.Fatalf("%s background = %#v, want %#v", tc.name, tc.got.GetBackground(), want)
+		}
+	}
+}
+
 func TestRenderOverlaySearchLineFillsEditableWidth(t *testing.T) {
 	theme := defaultUITheme()
 	line := renderOverlaySearchLine(theme, "", 0, false, 40)
@@ -143,6 +163,42 @@ func TestDarkThemeAccentTokensStayColorfulWithoutHostPalette(t *testing.T) {
 	}
 	if theme.footerTextFG != theme.hintTextFG {
 		t.Fatalf("expected overlay/footer hint text styles to share the same muted fg, got footer=%q hint=%q", theme.footerTextFG, theme.hintTextFG)
+	}
+}
+
+func TestSemanticColorsHaveVisibleHueWithoutHostPalette(t *testing.T) {
+	for _, bg := range []string{"#000000", "#080b14", "#ffffff", "#f5f5f5"} {
+		theme := uiThemeFromHostColors(bg, "", nil)
+		for _, tc := range []struct {
+			name  string
+			color string
+		}{
+			{"success", theme.success},
+			{"danger", theme.danger},
+			{"warning", theme.warning},
+			{"info", theme.info},
+			{"chromeAccent", theme.chromeAccent},
+		} {
+			spread := colorChannelSpread(tc.color)
+			if spread < 20 {
+				t.Errorf("bg=%s %s=%q channel spread %d < 20, looks gray", bg, tc.name, tc.color, spread)
+			}
+			if cr := contrastRatio(tc.color, bg); cr < 2.5 {
+				t.Errorf("bg=%s %s=%q contrast %.2f < 2.5, invisible", bg, tc.name, tc.color, cr)
+			}
+		}
+	}
+}
+
+func TestStatusBarChipColorsAreDistinguishable(t *testing.T) {
+	theme := defaultUITheme()
+	rootColors := []string{theme.success, theme.danger, theme.chromeAccent, theme.warning, theme.info}
+	for i := 0; i < len(rootColors); i++ {
+		for j := i + 1; j < len(rootColors); j++ {
+			if rootColors[i] == rootColors[j] {
+				t.Errorf("rootColors[%d]=%q and rootColors[%d]=%q are identical", i, rootColors[i], j, rootColors[j])
+			}
+		}
 	}
 }
 

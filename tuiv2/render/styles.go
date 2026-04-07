@@ -105,13 +105,17 @@ func uiThemeFromHostColors(hostBG, hostFG string, hostPalette map[int]string) ui
 	panelAltBG := mixHex(hostBG, hostFG, 0.05)
 	panelStrong := mixHex(hostBG, hostFG, 0.08)
 	panelText := hostFG
-	accentFallback := ensureContrast(mixHex(hostFG, mixHex(hostBG, hostFG, 0.5), 0.35), hostBG, 3.2)
+	// Use colorful hardcoded fallbacks so status-bar chips have visible hue
+	// even when the host terminal does not report a palette via OSC queries.
+	// The old approach mixed hostBG/hostFG which are achromatic, producing
+	// indistinguishable gray chips on black or white terminals.
+	accentFallback := ensureContrast("#818cf8", hostBG, 3.2) // indigo
 	accent := resolveSemanticColor(hostBG, hostPalette, []int{12, 13, 14, 6, 5, 4}, accentFallback, 3.2)
 	panelMuted := ensureContrast(mixHex(hostBG, hostFG, 0.46), panelBG, 2.0)
-	success := resolveSemanticColor(hostBG, hostPalette, []int{10, 2}, ensureContrast(mixHex(hostFG, accent, 0.12), hostBG, 2.8), 2.8)
-	warning := resolveSemanticColor(hostBG, hostPalette, []int{11, 3}, ensureContrast(mixHex(hostFG, accent, 0.24), hostBG, 2.8), 2.8)
-	danger := resolveSemanticColor(hostBG, hostPalette, []int{9, 1}, ensureContrast(mixHex(hostFG, accent, 0.36), hostBG, 2.8), 2.8)
-	info := resolveSemanticColor(hostBG, hostPalette, []int{14, 6}, ensureContrast(mixHex(hostFG, accent, 0.5), hostBG, 2.8), 2.8)
+	success := resolveSemanticColor(hostBG, hostPalette, []int{10, 2}, ensureContrast("#34d399", hostBG, 2.8), 2.8)
+	warning := resolveSemanticColor(hostBG, hostPalette, []int{11, 3}, ensureContrast("#fbbf24", hostBG, 2.8), 2.8)
+	danger := resolveSemanticColor(hostBG, hostPalette, []int{9, 1}, ensureContrast("#f87171", hostBG, 2.8), 2.8)
+	info := resolveSemanticColor(hostBG, hostPalette, []int{14, 6}, ensureContrast("#60a5fa", hostBG, 2.8), 2.8)
 	panelBorder := ensureContrast(mixHex(hostBG, hostFG, 0.22), panelBG, 1.22)
 	panelBorder2 := ensureContrast(mixHex(hostBG, hostFG, 0.34), panelBG, 1.5)
 	fieldBG := panelAltBG
@@ -279,12 +283,14 @@ func statusChipStyle(theme uiTheme) lipgloss.Style {
 func statusHintKeyStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color(theme.hintKeyFG))
+		Foreground(lipgloss.Color(theme.hintKeyFG)).
+		Background(lipgloss.Color(theme.chromeBG))
 }
 
 func statusHintTextStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.hintTextFG))
+		Foreground(lipgloss.Color(theme.hintTextFG)).
+		Background(lipgloss.Color(theme.chromeBG))
 }
 
 func statusSeparatorStyle(theme uiTheme) lipgloss.Style {
@@ -295,24 +301,28 @@ func statusSeparatorStyle(theme uiTheme) lipgloss.Style {
 
 func statusPartDefaultStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.chromeText))
+		Foreground(lipgloss.Color(theme.chromeText)).
+		Background(lipgloss.Color(theme.chromeBG))
 }
 
 func statusPartErrorStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.errorFG)).
+		Background(lipgloss.Color(theme.chromeBG)).
 		Bold(true)
 }
 
 func statusPartNoticeStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.noticeFG)).
+		Background(lipgloss.Color(theme.chromeBG)).
 		Bold(true)
 }
 
 func statusMetaStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.metaText))
+		Foreground(lipgloss.Color(theme.metaText)).
+		Background(lipgloss.Color(theme.chromeBG))
 }
 
 func terminalPickerBodyStyle(theme uiTheme) lipgloss.Style {
