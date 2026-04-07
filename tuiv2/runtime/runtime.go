@@ -20,14 +20,11 @@ type Runtime struct {
 	client        bridge.Client
 	onInvalidate  func()
 	onTitleChange func(terminalID, title string)
-	// Fullscreen programs can change how the host terminal advances ambiguous
-	// FE0F emoji clusters. App uses this callback to re-probe on alt-screen exit.
-	onAlternateScreenChange func(terminalID string, active bool)
-	newVTerm                VTermFactory
-	hostDefaultFG           string
-	hostDefaultBG           string
-	hostPalette             map[int]string
-	hostEmojiVS16           shared.AmbiguousEmojiVariationSelectorMode
+	newVTerm      VTermFactory
+	hostDefaultFG string
+	hostDefaultBG string
+	hostPalette   map[int]string
+	hostEmojiVS16 shared.AmbiguousEmojiVariationSelectorMode
 
 	version        uint64
 	visibleVersion uint64
@@ -36,13 +33,12 @@ type Runtime struct {
 
 func New(client bridge.Client, opts ...Option) *Runtime {
 	r := &Runtime{
-		registry:                NewTerminalRegistry(),
-		bindings:                make(map[string]*PaneBinding),
-		client:                  client,
-		onInvalidate:            func() {},
-		onTitleChange:           func(string, string) {},
-		onAlternateScreenChange: func(string, bool) {},
-		hostEmojiVS16:           shared.AmbiguousEmojiVariationSelectorRaw,
+		registry:      NewTerminalRegistry(),
+		bindings:      make(map[string]*PaneBinding),
+		client:        client,
+		onInvalidate:  func() {},
+		onTitleChange: func(string, string) {},
+		hostEmojiVS16: shared.AmbiguousEmojiVariationSelectorRaw,
 	}
 	r.newVTerm = r.defaultVTermFactory
 	for _, opt := range opts {
@@ -289,13 +285,6 @@ func (r *Runtime) SetTitleChange(fn func(terminalID, title string)) {
 		return
 	}
 	r.onTitleChange = fn
-}
-
-func (r *Runtime) SetAlternateScreenChange(fn func(terminalID string, active bool)) {
-	if r == nil || fn == nil {
-		return
-	}
-	r.onAlternateScreenChange = fn
 }
 
 func (r *Runtime) ListTerminals(ctx context.Context) ([]protocol.TerminalInfo, error) {

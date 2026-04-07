@@ -125,9 +125,6 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 		model.runtime.SetTitleChange(func(terminalID, title string) {
 			model.sendAsync(terminalTitleMsg{TerminalID: terminalID, Title: title})
 		})
-		model.runtime.SetAlternateScreenChange(func(terminalID string, active bool) {
-			model.sendAsync(terminalAlternateScreenMsg{TerminalID: terminalID, Active: active})
-		})
 	}
 	return model
 }
@@ -148,9 +145,6 @@ func (m *Model) SetSendFunc(send func(tea.Msg)) {
 	m.send = send
 	if m.runtime != nil {
 		m.runtime.SetInvalidate(func() { m.queueInvalidate() })
-		m.runtime.SetAlternateScreenChange(func(terminalID string, active bool) {
-			m.sendAsync(terminalAlternateScreenMsg{TerminalID: terminalID, Active: active})
-		})
 	}
 }
 

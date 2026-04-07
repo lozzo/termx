@@ -58,20 +58,6 @@ func (m *Model) hostEmojiProbeCmd(attempt int, delay time.Duration) tea.Cmd {
 	})
 }
 
-func (m *Model) restartHostEmojiProbeCmd() tea.Cmd {
-	if m == nil || m.runtime == nil || m.cursorOut == nil || m.hostEmojiProbePending {
-		return nil
-	}
-	// Fullscreen apps can leave the host terminal in a different FE0F width mode
-	// than the startup probe observed. Drop back to the conservative serializer,
-	// queue a fresh probe after the next frame, and let the exact-width response
-	// pick raw/advance again.
-	m.runtime.SetHostAmbiguousEmojiVariationSelectorMode(shared.AmbiguousEmojiVariationSelectorStrip)
-	m.hostEmojiProbePending = true
-	m.cursorOut.QueueControlSequenceAfterWrite(hostEmojiVariationProbeSequence)
-	return m.hostEmojiProbeCmd(1, hostEmojiProbeRetryDelay)
-}
-
 func hostEmojiProbeGiveUpCmd(delay time.Duration) tea.Cmd {
 	if delay <= 0 {
 		return func() tea.Msg { return hostEmojiProbeGiveUpMsg{} }
@@ -227,30 +213,20 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		if m.runtime == nil || !m.hostEmojiProbePending {
 			return nil, true
 		}
-		mode, ok := hostEmojiProbeModeFromReportedColumn(typed.X)
-		if !ok {
-			// DECXCPR responses can arrive late and reflect whatever cursor column
-			// the host is at when the report is finally flushed. Only exact one- and
-			// two-column answers are trustworthy for the ambiguous FE0F probe.
-			m.debugLog("host_emoji_probe_response_ignored", "x", typed.X, "y", typed.Y)
-			return nil, true
-		}
 		m.hostEmojiProbePending = false
+		mode := shared.AmbiguousEmojiVariationSelectorStrip
+		switch {
+		case typed.X >= 2:
+			mode = shared.AmbiguousEmojiVariationSelectorRaw
+		case typed.X == 1:
+			mode = shared.AmbiguousEmojiVariationSelectorAdvance
+		}
 		// Only the reported column matters for this probe. Some terminals answer
 		// from a non-origin row after alt-screen transitions or delayed paints, so
 		// rejecting non-zero Y would leave us stuck in the conservative fallback.
 		m.debugLog("host_emoji_probe_response", "x", typed.X, "y", typed.Y, "mode", mode)
 		m.runtime.SetHostAmbiguousEmojiVariationSelectorMode(mode)
 		return nil, true
-	case terminalAlternateScreenMsg:
-		if typed.Active {
-			return nil, true
-		}
-		// A host that probed as raw at startup can still regress to one-column
-		// FE0F handling after leaving a fullscreen app. Re-arm the probe on exit
-		// so the next prompt doesn't drag the right border one cell to the left.
-		m.debugLog("host_emoji_probe_rearm", "terminal_id", typed.TerminalID)
-		return m.restartHostEmojiProbeCmd(), true
 	case reattachFailedMsg:
 		return m.openPickerIfUnattached(typed.paneID), true
 	case clearErrorMsg:
@@ -279,17 +255,6 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		return nil, true
 	default:
 		return nil, false
-	}
-}
-
-func hostEmojiProbeModeFromReportedColumn(x int) (shared.AmbiguousEmojiVariationSelectorMode, bool) {
-	switch x {
-	case 1:
-		return shared.AmbiguousEmojiVariationSelectorAdvance, true
-	case 2:
-		return shared.AmbiguousEmojiVariationSelectorRaw, true
-	default:
-		return "", false
 	}
 }
 

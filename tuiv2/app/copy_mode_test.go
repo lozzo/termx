@@ -14,7 +14,6 @@ import (
 type recordingControlWriter struct {
 	cursor   string
 	controls []string
-	queued   []string
 }
 
 func (w *recordingControlWriter) SetCursorSequence(seq string) {
@@ -26,9 +25,7 @@ func (w *recordingControlWriter) WriteControlSequence(seq string) error {
 	return nil
 }
 
-func (w *recordingControlWriter) QueueControlSequenceAfterWrite(seq string) {
-	w.queued = append(w.queued, seq)
-}
+func (w *recordingControlWriter) QueueControlSequenceAfterWrite(seq string) {}
 
 func protocolRowFromText(text string, cols int) []protocol.Cell {
 	if cols <= 0 {

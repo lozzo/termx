@@ -85,11 +85,6 @@ type hostEmojiProbeMsg struct {
 
 type hostEmojiProbeGiveUpMsg struct{}
 
-type terminalAlternateScreenMsg struct {
-	TerminalID string
-	Active     bool
-}
-
 // reattachFailedMsg is sent when a pane's terminal could not be re-attached on
 // startup. The handler opens the terminal picker for that pane if it is still
 // the active pane and has no terminal bound.
