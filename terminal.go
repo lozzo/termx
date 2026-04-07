@@ -258,6 +258,7 @@ func (t *Terminal) Restart() error {
 		t.mu.Unlock()
 		return ErrTerminalNotExited
 	}
+	preservedScrollback, preservedScrollbackTimestamps, preservedScrollbackRowKinds := restartPreservedScrollback(t.vterm)
 	cfg := terminalConfig{
 		ID:             t.id,
 		Command:        append([]string(nil), t.command...),
@@ -273,6 +274,7 @@ func (t *Terminal) Restart() error {
 	if err != nil {
 		return err
 	}
+	seedRestartScrollback(vt, preservedScrollback, preservedScrollbackTimestamps, preservedScrollbackRowKinds)
 
 	t.mu.Lock()
 	if t.removed {
@@ -313,6 +315,70 @@ func (t *Terminal) Restart() error {
 	return nil
 }
 
+func restartPreservedScrollback(vt *vterm.VTerm) ([][]vterm.Cell, []time.Time, []string) {
+	if vt == nil {
+		return nil, nil, nil
+	}
+	scrollback := vt.ScrollbackContent()
+	scrollbackTimestamps := vt.ScrollbackTimestamps()
+	scrollbackRowKinds := vt.ScrollbackRowKinds()
+	screen := trimTrailingBlankVTermRows(vt.ScreenContent().Cells)
+	screenTimestamps := trimTrailingZeroTimes(vt.ScreenTimestamps(), len(screen))
+	screenRowKinds := trimTrailingStrings(vt.ScreenRowKinds(), len(screen))
+	restartAt := time.Now().UTC()
+	if len(screen) == 0 {
+		out := append([][]vterm.Cell(nil), scrollback...)
+		timestamps := append([]time.Time(nil), scrollbackTimestamps...)
+		rowKinds := append([]string(nil), scrollbackRowKinds...)
+		return appendRestartMarker(out, timestamps, rowKinds, restartAt)
+	}
+	out := make([][]vterm.Cell, 0, len(scrollback)+len(screen))
+	out = append(out, scrollback...)
+	out = append(out, screen...)
+	timestamps := make([]time.Time, 0, len(scrollbackTimestamps)+len(screenTimestamps))
+	timestamps = append(timestamps, scrollbackTimestamps...)
+	timestamps = append(timestamps, screenTimestamps...)
+	rowKinds := make([]string, 0, len(scrollbackRowKinds)+len(screenRowKinds))
+	rowKinds = append(rowKinds, scrollbackRowKinds...)
+	rowKinds = append(rowKinds, screenRowKinds...)
+	return appendRestartMarker(out, timestamps, rowKinds, restartAt)
+}
+
+func appendRestartMarker(rows [][]vterm.Cell, timestamps []time.Time, rowKinds []string, restartAt time.Time) ([][]vterm.Cell, []time.Time, []string) {
+	rows = append(rows, nil)
+	timestamps = append(timestamps, restartAt)
+	rowKinds = append(rowKinds, SnapshotRowKindRestart)
+	return rows, timestamps, rowKinds
+}
+
+func seedRestartScrollback(vt *vterm.VTerm, scrollback [][]vterm.Cell, scrollbackTimestamps []time.Time, scrollbackRowKinds []string) {
+	if vt == nil || len(scrollback) == 0 {
+		return
+	}
+	screen := vt.ScreenContent()
+	vt.LoadSnapshotWithMetadata(scrollback, scrollbackTimestamps, scrollbackRowKinds, screen, nil, nil, vt.CursorState(), vt.Modes())
+}
+
+func trimTrailingBlankVTermRows(rows [][]vterm.Cell) [][]vterm.Cell {
+	last := len(rows)
+	for last > 0 && isBlankVTermRow(rows[last-1]) {
+		last--
+	}
+	return rows[:last]
+}
+
+func isBlankVTermRow(row []vterm.Cell) bool {
+	for _, cell := range row {
+		if strings.TrimSpace(cell.Content) != "" {
+			return false
+		}
+		if cell.Style != (vterm.CellStyle{}) {
+			return false
+		}
+	}
+	return true
+}
+
 func (t *Terminal) MarkRemoved() {
 	t.mu.Lock()
 	t.removed = true
@@ -343,15 +409,23 @@ func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
 	size := t.size
 	id := t.id
 	t.mu.RUnlock()
+	scrollbackTimestamps := t.vterm.ScrollbackTimestamps()
+	screenTimestamps := t.vterm.ScreenTimestamps()
+	scrollbackRowKinds := t.vterm.ScrollbackRowKinds()
+	screenRowKinds := t.vterm.ScreenRowKinds()
 
 	return &Snapshot{
-		TerminalID: id,
-		Size:       size,
-		Screen:     convertScreenData(t.vterm.ScreenContent()),
-		Scrollback: convertRows(scrollback[start:end]),
-		Cursor:     convertCursorState(t.vterm.CursorState()),
-		Modes:      convertModes(t.vterm.Modes()),
-		Timestamp:  time.Now().UTC(),
+		TerminalID:           id,
+		Size:                 size,
+		Screen:               convertScreenData(t.vterm.ScreenContent()),
+		Scrollback:           convertRows(scrollback[start:end]),
+		ScreenTimestamps:     cloneTimeSlice(screenTimestamps),
+		ScrollbackTimestamps: sliceTimeRange(scrollbackTimestamps, start, end),
+		ScreenRowKinds:       cloneStringSlice(screenRowKinds),
+		ScrollbackRowKinds:   sliceStringRange(scrollbackRowKinds, start, end),
+		Cursor:               convertCursorState(t.vterm.CursorState()),
+		Modes:                convertModes(t.vterm.Modes()),
+		Timestamp:            time.Now().UTC(),
 	}
 }
 
@@ -735,6 +809,78 @@ func cloneRows(rows [][]Cell) [][]Cell {
 		out[i] = append([]Cell(nil), row...)
 	}
 	return out
+}
+
+func cloneTimeSlice(values []time.Time) []time.Time {
+	if len(values) == 0 {
+		return nil
+	}
+	return append([]time.Time(nil), values...)
+}
+
+func cloneStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	return append([]string(nil), values...)
+}
+
+func sliceTimeRange(values []time.Time, start, end int) []time.Time {
+	if len(values) == 0 {
+		return nil
+	}
+	if start < 0 {
+		start = 0
+	}
+	if end < start {
+		end = start
+	}
+	if start > len(values) {
+		start = len(values)
+	}
+	if end > len(values) {
+		end = len(values)
+	}
+	return cloneTimeSlice(values[start:end])
+}
+
+func sliceStringRange(values []string, start, end int) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	if start < 0 {
+		start = 0
+	}
+	if end < start {
+		end = start
+	}
+	if start > len(values) {
+		start = len(values)
+	}
+	if end > len(values) {
+		end = len(values)
+	}
+	return cloneStringSlice(values[start:end])
+}
+
+func trimTrailingZeroTimes(values []time.Time, count int) []time.Time {
+	if count <= 0 {
+		return nil
+	}
+	if count > len(values) {
+		count = len(values)
+	}
+	return cloneTimeSlice(values[:count])
+}
+
+func trimTrailingStrings(values []string, count int) []string {
+	if count <= 0 {
+		return nil
+	}
+	if count > len(values) {
+		count = len(values)
+	}
+	return cloneStringSlice(values[:count])
 }
 
 func convertScreenData(in vterm.ScreenData) ScreenData {

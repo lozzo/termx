@@ -80,7 +80,7 @@ func (m *Model) attachPaneTerminalCmd(tabID, paneID, terminalID string) tea.Cmd 
 	return func() tea.Msg {
 		msgs, err := m.orchestrator.AttachAndLoadSnapshot(context.Background(), paneID, terminalID, "collaborator", 0, defaultTerminalSnapshotScrollbackLimit)
 		if err != nil {
-			return err
+			return paneAttachFailure(paneID, terminalID, err)
 		}
 		for index := range msgs {
 			if attached, ok := msgs[index].(orchestrator.TerminalAttachedMsg); ok {
@@ -105,14 +105,14 @@ func (m *Model) restartPaneTerminalCmd(paneID, terminalID string) tea.Cmd {
 	return func() tea.Msg {
 		client := m.runtime.Client()
 		if client == nil {
-			return teaErr("attach terminal: runtime client is nil")
+			return paneAttachFailure(paneID, terminalID, teaErr("attach terminal: runtime client is nil"))
 		}
 		if err := client.Restart(context.Background(), terminalID); err != nil {
-			return err
+			return paneAttachFailure(paneID, terminalID, err)
 		}
 		msgs, err := m.orchestrator.AttachAndLoadSnapshot(context.Background(), paneID, terminalID, "collaborator", 0, defaultTerminalSnapshotScrollbackLimit)
 		if err != nil {
-			return err
+			return paneAttachFailure(paneID, terminalID, err)
 		}
 		cmds := make([]tea.Cmd, 0, len(msgs))
 		for _, msg := range msgs {
@@ -155,7 +155,8 @@ func (m *Model) reattachRestoredPanesCmd(hints []bootstrap.PaneReattachHint) tea
 				return reattachFailedMsg{tabID: h.TabID, paneID: h.PaneID}
 			}
 			msg := cmd()
-			if _, ok := msg.(error); ok {
+			switch msg.(type) {
+			case error, paneAttachFailedMsg:
 				if m.workbench != nil && h.TabID != "" {
 					_ = m.workbench.BindPaneTerminal(h.TabID, h.PaneID, "")
 				}

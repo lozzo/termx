@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	uv "github.com/charmbracelet/ultraviolet"
@@ -88,6 +89,11 @@ type VTerm struct {
 	defaultBG string
 	palette   map[int]string
 
+	scrollbackTimestamps []time.Time
+	screenTimestamps     []time.Time
+	scrollbackRowKinds   []string
+	screenRowKinds       []string
+
 	done chan struct{} // closed when drain goroutine exits
 }
 
@@ -121,6 +127,10 @@ func (v *VTerm) resetEmulator(cols, rows int) {
 	emu.SetScrollbackSize(v.sbSize)
 	v.applyDefaultColorsToEmulator(emu)
 	v.emu = emu
+	v.scrollbackTimestamps = nil
+	v.screenTimestamps = make([]time.Time, maxInt(rows, 1))
+	v.scrollbackRowKinds = nil
+	v.screenRowKinds = make([]string, maxInt(rows, 1))
 	emu.SetCallbacks(charmvt.Callbacks{
 		AltScreen: func(on bool) {
 			// Called from within Write(), which already holds v.mu.Lock()
@@ -185,6 +195,9 @@ func (v *VTerm) drainResponses(emu *charmvt.SafeEmulator, handler ResponseHandle
 func (v *VTerm) Write(data []byte) (n int, err error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	beforeScreen := v.screenRowsLocked()
+	beforeScreenTimestamps := cloneTimeSlice(v.screenTimestamps)
+	beforeScreenRowKinds := cloneStringSlice(v.screenRowKinds)
 	defer func() {
 		if r := recover(); r != nil {
 			n = 0
@@ -197,6 +210,7 @@ func (v *VTerm) Write(data []byte) (n int, err error) {
 	v.cursor.Row = pos.Y
 	v.cursor.Col = pos.X
 	v.modes.AlternateScreen = v.emu.IsAltScreen()
+	v.reconcileRowMetadataLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, time.Now().UTC())
 	return n, err
 }
 
@@ -205,6 +219,14 @@ func (v *VTerm) LoadSnapshot(screen ScreenData, cursor CursorState, modes Termin
 }
 
 func (v *VTerm) LoadSnapshotWithScrollback(scrollback [][]Cell, screen ScreenData, cursor CursorState, modes TerminalModes) {
+	v.LoadSnapshotWithTimestamps(scrollback, nil, screen, nil, cursor, modes)
+}
+
+func (v *VTerm) LoadSnapshotWithTimestamps(scrollback [][]Cell, scrollbackTimestamps []time.Time, screen ScreenData, screenTimestamps []time.Time, cursor CursorState, modes TerminalModes) {
+	v.LoadSnapshotWithMetadata(scrollback, scrollbackTimestamps, nil, screen, screenTimestamps, nil, cursor, modes)
+}
+
+func (v *VTerm) LoadSnapshotWithMetadata(scrollback [][]Cell, scrollbackTimestamps []time.Time, scrollbackRowKinds []string, screen ScreenData, screenTimestamps []time.Time, screenRowKinds []string, cursor CursorState, modes TerminalModes) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
@@ -236,6 +258,10 @@ func (v *VTerm) LoadSnapshotWithScrollback(scrollback [][]Cell, screen ScreenDat
 	v.cursor = cursor
 	v.modes = modes
 	v.resetEmulator(width, height)
+	v.scrollbackTimestamps = normalizeTimeSlice(scrollbackTimestamps, len(scrollback))
+	v.scrollbackRowKinds = normalizeStringSlice(scrollbackRowKinds, len(scrollback))
+	v.screenTimestamps = normalizeTimeSlice(screenTimestamps, height)
+	v.screenRowKinds = normalizeStringSlice(screenRowKinds, height)
 	v.setMouseTrackingAggregateLocked(modes.MouseTracking)
 	if len(scrollback) > 0 {
 		sb := v.emu.Emulator.Scrollback()
@@ -243,6 +269,7 @@ func (v *VTerm) LoadSnapshotWithScrollback(scrollback [][]Cell, screen ScreenDat
 			sb.Push(uvLine(row))
 		}
 	}
+	v.alignScrollbackMetadataLocked()
 	if modes.AlternateScreen {
 		_, _ = v.emu.Write([]byte("\x1b[?1049h"))
 	}
@@ -277,10 +304,14 @@ func (v *VTerm) LoadSnapshotWithScrollback(scrollback [][]Cell, screen ScreenDat
 func (v *VTerm) Resize(cols, rows int) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	beforeScreen := v.screenRowsLocked()
+	beforeScreenTimestamps := cloneTimeSlice(v.screenTimestamps)
+	beforeScreenRowKinds := cloneStringSlice(v.screenRowKinds)
 	v.emu.Resize(cols, rows)
 	pos := v.emu.CursorPosition()
 	v.cursor.Row = pos.Y
 	v.cursor.Col = pos.X
+	v.reconcileRowMetadataLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, time.Now().UTC())
 }
 
 func (v *VTerm) CellAt(x, y int) Cell {
@@ -317,6 +348,10 @@ func (v *VTerm) Size() (int, int) {
 func (v *VTerm) ScrollbackContent() [][]Cell {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
+	return v.scrollbackRowsLocked()
+}
+
+func (v *VTerm) scrollbackRowsLocked() [][]Cell {
 	count := v.emu.ScrollbackLen()
 	width := v.emu.Width()
 	rows := make([][]Cell, 0, count)
@@ -333,6 +368,30 @@ func (v *VTerm) ScrollbackContent() [][]Cell {
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+func (v *VTerm) ScreenTimestamps() []time.Time {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return cloneTimeSlice(v.screenTimestamps)
+}
+
+func (v *VTerm) ScrollbackTimestamps() []time.Time {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return cloneTimeSlice(v.scrollbackTimestamps)
+}
+
+func (v *VTerm) ScreenRowKinds() []string {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return cloneStringSlice(v.screenRowKinds)
+}
+
+func (v *VTerm) ScrollbackRowKinds() []string {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return cloneStringSlice(v.scrollbackRowKinds)
 }
 
 func (v *VTerm) CursorState() CursorState {
@@ -605,6 +664,221 @@ func (v *VTerm) applyDefaultColorsToEmulator(emu *charmvt.SafeEmulator) {
 	for index, value := range v.palette {
 		emu.SetIndexedColor(index, ansi.XParseColor(value))
 	}
+}
+
+func (v *VTerm) screenRowsLocked() [][]Cell {
+	height := v.emu.Height()
+	width := v.emu.Width()
+	rows := make([][]Cell, height)
+	for y := 0; y < height; y++ {
+		row := make([]Cell, width)
+		for x := 0; x < width; x++ {
+			row[x] = v.convertCell(v.emu.CellAt(x, y))
+		}
+		rows[y] = row
+	}
+	return rows
+}
+
+func (v *VTerm) reconcileRowMetadataLocked(beforeScreen [][]Cell, beforeScreenTimestamps []time.Time, beforeScreenRowKinds []string, now time.Time) {
+	if v.emu == nil {
+		v.screenTimestamps = nil
+		v.scrollbackTimestamps = nil
+		v.screenRowKinds = nil
+		v.scrollbackRowKinds = nil
+		return
+	}
+	afterScreen := v.screenRowsLocked()
+	afterScrollback := v.scrollbackRowsLocked()
+	scrollShift := detectScreenScrollShift(beforeScreen, afterScreen)
+	afterScrollbackLen := len(afterScrollback)
+	oldScrollbackLen := len(v.scrollbackTimestamps)
+	requiredAppends := scrollShift
+	if minAppend := afterScrollbackLen - oldScrollbackLen; minAppend > requiredAppends {
+		requiredAppends = minAppend
+	}
+	appendedRows := afterScrollback[maxInt(0, afterScrollbackLen-requiredAppends):]
+	preservedFromBefore := 0
+	for preservedFromBefore < len(appendedRows) && preservedFromBefore < len(beforeScreen) && preservedFromBefore < len(beforeScreenTimestamps) {
+		if beforeScreenTimestamps[preservedFromBefore].IsZero() && isBlankRow(beforeScreen[preservedFromBefore]) {
+			break
+		}
+		if !rowsEqual(beforeScreen[preservedFromBefore], appendedRows[preservedFromBefore]) {
+			break
+		}
+		preservedFromBefore++
+	}
+	for i := 0; i < preservedFromBefore; i++ {
+		ts := beforeScreenTimestamps[i]
+		if ts.IsZero() && shouldAssignTimestampToScreenRow(beforeScreen[i], i, v.cursor.Row) {
+			ts = now
+		}
+		v.scrollbackTimestamps = append(v.scrollbackTimestamps, ts)
+		v.scrollbackRowKinds = append(v.scrollbackRowKinds, stringAt(beforeScreenRowKinds, i))
+	}
+	for i := preservedFromBefore; i < requiredAppends; i++ {
+		v.scrollbackTimestamps = append(v.scrollbackTimestamps, now)
+		v.scrollbackRowKinds = append(v.scrollbackRowKinds, "")
+	}
+	v.alignScrollbackMetadataLocked()
+
+	nextScreenTimestamps := make([]time.Time, len(afterScreen))
+	nextScreenRowKinds := make([]string, len(afterScreen))
+	for row := range afterScreen {
+		mappedRow := row + preservedFromBefore
+		if mappedRow < len(beforeScreen) && mappedRow < len(beforeScreenTimestamps) && rowsEqual(beforeScreen[mappedRow], afterScreen[row]) {
+			nextScreenTimestamps[row] = beforeScreenTimestamps[mappedRow]
+			nextScreenRowKinds[row] = stringAt(beforeScreenRowKinds, mappedRow)
+		}
+		if nextScreenTimestamps[row].IsZero() && shouldAssignTimestampToScreenRow(afterScreen[row], row, v.cursor.Row) {
+			nextScreenTimestamps[row] = now
+		}
+	}
+	v.screenTimestamps = nextScreenTimestamps
+	v.screenRowKinds = nextScreenRowKinds
+}
+
+func detectScreenScrollShift(before, after [][]Cell) int {
+	limit := minInt(len(before), len(after))
+	if limit <= 1 {
+		return 0
+	}
+	bestShift := 0
+	bestScore := rowAlignmentScore(before, after, 0)
+	for shift := 1; shift < limit; shift++ {
+		score := rowAlignmentScore(before, after, shift)
+		if score > bestScore {
+			bestScore = score
+			bestShift = shift
+		}
+	}
+	if bestShift == 0 {
+		return 0
+	}
+	if bestScore <= rowAlignmentScore(before, after, 0) {
+		return 0
+	}
+	return bestShift
+}
+
+func rowAlignmentScore(before, after [][]Cell, shift int) int {
+	score := 0
+	for row := 0; row+shift < len(before) && row < len(after); row++ {
+		if rowsEqual(before[row+shift], after[row]) {
+			score++
+		}
+	}
+	return score
+}
+
+func rowsEqual(left, right []Cell) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func isBlankRow(row []Cell) bool {
+	for _, cell := range row {
+		if strings.TrimSpace(cell.Content) != "" {
+			return false
+		}
+		if cell.Style != (CellStyle{}) {
+			return false
+		}
+	}
+	return true
+}
+
+func cloneTimeSlice(values []time.Time) []time.Time {
+	if len(values) == 0 {
+		return nil
+	}
+	return append([]time.Time(nil), values...)
+}
+
+func cloneStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	return append([]string(nil), values...)
+}
+
+func normalizeTimeSlice(values []time.Time, count int) []time.Time {
+	if count <= 0 {
+		return nil
+	}
+	out := make([]time.Time, count)
+	copy(out, values)
+	return out
+}
+
+func normalizeStringSlice(values []string, count int) []string {
+	if count <= 0 {
+		return nil
+	}
+	out := make([]string, count)
+	copy(out, values)
+	return out
+}
+
+func stringAt(values []string, idx int) string {
+	if idx < 0 || idx >= len(values) {
+		return ""
+	}
+	return values[idx]
+}
+
+func shouldAssignTimestampToScreenRow(row []Cell, rowIndex, cursorRow int) bool {
+	if !isBlankRow(row) {
+		return true
+	}
+	return rowIndex >= 0 && rowIndex <= cursorRow
+}
+
+func (v *VTerm) alignScrollbackMetadataLocked() {
+	if v.emu == nil {
+		v.scrollbackTimestamps = nil
+		v.scrollbackRowKinds = nil
+		return
+	}
+	alignLen := v.emu.ScrollbackLen()
+	switch {
+	case alignLen <= 0:
+		v.scrollbackTimestamps = nil
+		v.scrollbackRowKinds = nil
+	case alignLen < len(v.scrollbackTimestamps):
+		v.scrollbackTimestamps = append([]time.Time(nil), v.scrollbackTimestamps[len(v.scrollbackTimestamps)-alignLen:]...)
+	case alignLen > len(v.scrollbackTimestamps):
+		v.scrollbackTimestamps = append(v.scrollbackTimestamps, make([]time.Time, alignLen-len(v.scrollbackTimestamps))...)
+	}
+	switch {
+	case alignLen <= 0:
+		v.scrollbackRowKinds = nil
+	case alignLen < len(v.scrollbackRowKinds):
+		v.scrollbackRowKinds = append([]string(nil), v.scrollbackRowKinds[len(v.scrollbackRowKinds)-alignLen:]...)
+	case alignLen > len(v.scrollbackRowKinds):
+		v.scrollbackRowKinds = append(v.scrollbackRowKinds, make([]string, alignLen-len(v.scrollbackRowKinds))...)
+	}
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func normalizeRenderableUTF8(data []byte) []byte {

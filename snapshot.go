@@ -3,6 +3,7 @@ package termx
 import (
 	"encoding/json"
 	"strings"
+	"time"
 )
 
 func (s Snapshot) MarshalJSON() ([]byte, error) {
@@ -29,14 +30,18 @@ func (s Snapshot) MarshalJSON() ([]byte, error) {
 		Rows        []jsonRow `json:"rows"`
 	}
 	type jsonSnapshot struct {
-		TerminalID     string        `json:"terminal_id"`
-		Size           Size          `json:"size"`
-		Screen         jsonScreen    `json:"screen"`
-		ScrollbackRows int           `json:"scrollback_rows"`
-		Scrollback     []jsonRow     `json:"scrollback,omitempty"`
-		Cursor         CursorState   `json:"cursor"`
-		Modes          TerminalModes `json:"modes"`
-		Timestamp      string        `json:"timestamp"`
+		TerminalID           string        `json:"terminal_id"`
+		Size                 Size          `json:"size"`
+		Screen               jsonScreen    `json:"screen"`
+		ScrollbackRows       int           `json:"scrollback_rows"`
+		Scrollback           []jsonRow     `json:"scrollback,omitempty"`
+		ScreenTimestamps     []string      `json:"screen_timestamps,omitempty"`
+		ScrollbackTimestamps []string      `json:"scrollback_timestamps,omitempty"`
+		ScreenRowKinds       []string      `json:"screen_row_kinds,omitempty"`
+		ScrollbackRowKinds   []string      `json:"scrollback_row_kinds,omitempty"`
+		Cursor               CursorState   `json:"cursor"`
+		Modes                TerminalModes `json:"modes"`
+		Timestamp            string        `json:"timestamp"`
 	}
 
 	encodeCell := func(cell Cell) jsonCell {
@@ -86,6 +91,43 @@ func (s Snapshot) MarshalJSON() ([]byte, error) {
 	for _, row := range s.Scrollback {
 		scrollbackRows = append(scrollbackRows, encodeRow(row))
 	}
+	encodeRowTimestamps := func(values []time.Time) []string {
+		if len(values) == 0 {
+			return nil
+		}
+		out := make([]string, len(values))
+		nonEmpty := false
+		for i, value := range values {
+			if value.IsZero() {
+				continue
+			}
+			out[i] = value.UTC().Format(time.RFC3339Nano)
+			nonEmpty = true
+		}
+		if !nonEmpty {
+			return nil
+		}
+		return out
+	}
+	encodeStringSlice := func(values []string) []string {
+		if len(values) == 0 {
+			return nil
+		}
+		out := make([]string, len(values))
+		nonEmpty := false
+		for i, value := range values {
+			value = strings.TrimSpace(value)
+			if value == "" {
+				continue
+			}
+			out[i] = value
+			nonEmpty = true
+		}
+		if !nonEmpty {
+			return nil
+		}
+		return out
+	}
 
 	return json.Marshal(jsonSnapshot{
 		TerminalID: s.TerminalID,
@@ -94,11 +136,15 @@ func (s Snapshot) MarshalJSON() ([]byte, error) {
 			IsAlternate: s.Screen.IsAlternateScreen,
 			Rows:        screenRows,
 		},
-		ScrollbackRows: len(s.Scrollback),
-		Scrollback:     scrollbackRows,
-		Cursor:         s.Cursor,
-		Modes:          s.Modes,
-		Timestamp:      s.Timestamp.UTC().Format(timeLayout),
+		ScrollbackRows:       len(s.Scrollback),
+		Scrollback:           scrollbackRows,
+		ScreenTimestamps:     encodeRowTimestamps(s.ScreenTimestamps),
+		ScrollbackTimestamps: encodeRowTimestamps(s.ScrollbackTimestamps),
+		ScreenRowKinds:       encodeStringSlice(s.ScreenRowKinds),
+		ScrollbackRowKinds:   encodeStringSlice(s.ScrollbackRowKinds),
+		Cursor:               s.Cursor,
+		Modes:                s.Modes,
+		Timestamp:            s.Timestamp.UTC().Format(timeLayout),
 	})
 }
 

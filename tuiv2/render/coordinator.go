@@ -23,9 +23,7 @@ type Coordinator struct {
 	lastCursor  string
 	lastState   renderStateKey
 	bodyCache   *bodyRenderCache
-	tabBarKey   tabBarCacheKey
 	tabBarValue string
-	statusKey   statusBarCacheKey
 	statusValue string
 
 	cursorBlinkVisible bool
@@ -69,20 +67,6 @@ type renderStateKey struct {
 	CopyModeMarkSet           bool
 	CopyModeMarkRow           int
 	CopyModeMarkCol           int
-}
-
-type tabBarCacheKey struct {
-	Workbench *workbench.VisibleWorkbench
-	Width     int
-	Error     string
-	Notice    string
-}
-
-type statusBarCacheKey struct {
-	Workbench *workbench.VisibleWorkbench
-	Runtime   *VisibleRuntimeStateProxy
-	Width     int
-	InputMode string
 }
 
 type paneRenderEntry struct {
@@ -345,45 +329,27 @@ func (c *Coordinator) syntheticCursorVisible(cursor protocol.CursorState) bool {
 }
 
 func (c *Coordinator) renderTabBarCached(state VisibleRenderState) string {
-	key := tabBarCacheKey{
-		Workbench: state.Workbench,
-		Width:     state.TermSize.Width,
-		Error:     state.Error,
-		Notice:    state.Notice,
-	}
-	c.mu.Lock()
-	if c.tabBarKey == key && c.tabBarValue != "" {
-		value := c.tabBarValue
-		c.mu.Unlock()
-		return value
-	}
-	c.mu.Unlock()
 	value := renderTabBar(state)
 	c.mu.Lock()
-	c.tabBarKey = key
-	c.tabBarValue = value
+	// Reuse the previous string allocation if the content is identical
+	// to reduce GC pressure and help bubbletea detect unchanged lines.
+	if c.tabBarValue == value {
+		value = c.tabBarValue
+	} else {
+		c.tabBarValue = value
+	}
 	c.mu.Unlock()
 	return value
 }
 
 func (c *Coordinator) renderStatusBarCached(state VisibleRenderState) string {
-	key := statusBarCacheKey{
-		Workbench: state.Workbench,
-		Runtime:   state.Runtime,
-		Width:     state.TermSize.Width,
-		InputMode: state.InputMode,
-	}
-	c.mu.Lock()
-	if c.statusKey == key && c.statusValue != "" {
-		value := c.statusValue
-		c.mu.Unlock()
-		return value
-	}
-	c.mu.Unlock()
 	value := renderStatusBar(state)
 	c.mu.Lock()
-	c.statusKey = key
-	c.statusValue = value
+	if c.statusValue == value {
+		value = c.statusValue
+	} else {
+		c.statusValue = value
+	}
 	c.mu.Unlock()
 	return value
 }
@@ -467,12 +433,13 @@ func visibleStateNeedsCursorBlink(state VisibleRenderState) bool {
 	if width <= 0 || height <= 0 {
 		return false
 	}
-	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, newRuntimeLookup(state.Runtime), state.OwnerConfirmPaneID, state.EmptyPaneSelectionPaneID, state.EmptyPaneSelectionIndex, state.ExitedPaneSelectionPaneID, state.ExitedPaneSelectionIndex, true, state, uiThemeForRuntime(state.Runtime))
 	if activeExitedPaneHasRecoverySelection(state) {
 		return true
 	}
-	_, _, ok := activeEntryCursorTarget(entries, state.Runtime)
-	return ok
+	// Keep the in-pane synthetic cursor steady. Blinking it forces full-frame
+	// redraws every tick, which causes visible footer/status-bar shimmer in
+	// some host terminals even though only the pane cursor changes.
+	return false
 }
 
 func overlayNeedsCursorBlink(overlay VisibleOverlay) bool {
@@ -750,6 +717,10 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 	terminal := lookup.terminal(pane.TerminalID)
 	overflow := paneOverflowHintsForRender(originalRect, rect, nil)
 	copyModeActive := pane.ID == copyModePaneID
+	if copyModeActive && terminal != nil {
+		border.CopyTimeLabel = copyModeTimestampLabel(terminal.Snapshot, copyModeCursorRow)
+		border.CopyRowLabel = copyModeRowPositionLabel(terminal.Snapshot, copyModeCursorRow)
+	}
 	emptyActionSelected := -1
 	if pane.TerminalID == "" && pane.ID == emptyPaneSelectionPaneID {
 		emptyActionSelected = emptyPaneSelectionIndex
@@ -1570,18 +1541,28 @@ func drawPaneTopBorderLabels(canvas *composedCanvas, rect workbench.Rect, styles
 		}
 		drawBorderLabel(canvas, layout.roleX, rect.Y, layout.roleLabel, roleStyle)
 	}
+	if layout.copyTimeLabel != "" {
+		drawBorderLabel(canvas, layout.copyTimeX, rect.Y, layout.copyTimeLabel, styles.Meta)
+	}
+	if layout.copyRowLabel != "" {
+		drawBorderLabel(canvas, layout.copyRowX, rect.Y, layout.copyRowLabel, styles.Meta)
+	}
 }
 
 type paneBorderLabelsLayout struct {
-	actionSlots []paneChromeActionSlot
-	titleX      int
-	titleLabel  string
-	stateX      int
-	stateLabel  string
-	shareX      int
-	shareLabel  string
-	roleX       int
-	roleLabel   string
+	actionSlots   []paneChromeActionSlot
+	titleX        int
+	titleLabel    string
+	stateX        int
+	stateLabel    string
+	shareX        int
+	shareLabel    string
+	roleX         int
+	roleLabel     string
+	copyTimeX     int
+	copyTimeLabel string
+	copyRowX      int
+	copyRowLabel  string
 }
 
 type paneBorderSlot struct {
@@ -1600,7 +1581,7 @@ func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBor
 	}
 
 	fullTitleLabel := normalizePaneBorderLabel(title)
-	allSlots := make([]paneBorderSlot, 0, 3)
+	allSlots := make([]paneBorderSlot, 0, 5)
 	if label := padPaneBorderSlot(border.StateLabel, paneBorderStateSlotWidth); label != "" {
 		allSlots = append(allSlots, paneBorderSlot{kind: "state", label: label})
 	}
@@ -1609,6 +1590,12 @@ func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBor
 	}
 	if label := paneBorderRoleSlot(border.RoleLabel); label != "" {
 		allSlots = append(allSlots, paneBorderSlot{kind: "role", label: label})
+	}
+	if label := normalizePaneBorderLabel(border.CopyTimeLabel); label != "" {
+		allSlots = append(allSlots, paneBorderSlot{kind: "copy-time", label: label})
+	}
+	if label := normalizePaneBorderLabel(border.CopyRowLabel); label != "" {
+		allSlots = append(allSlots, paneBorderSlot{kind: "copy-row", label: label})
 	}
 	titleFullWidth := xansi.StringWidth(fullTitleLabel)
 	active := paneBorderSlotsForWidth(allSlots, maxInt(0, innerW-titleFullWidth))
@@ -1679,6 +1666,12 @@ func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBor
 		case "role":
 			layout.roleX = x
 			layout.roleLabel = slot.label
+		case "copy-time":
+			layout.copyTimeX = x
+			layout.copyTimeLabel = slot.label
+		case "copy-row":
+			layout.copyRowX = x
+			layout.copyRowLabel = slot.label
 		}
 		right = x - 1
 	}
@@ -1729,7 +1722,7 @@ func paneBorderSlotsForWidth(slots []paneBorderSlot, width int) []paneBorderSlot
 }
 
 func paneBorderSlotRemovalIndex(slots []paneBorderSlot) int {
-	for _, kind := range []string{"share", "state", "role"} {
+	for _, kind := range []string{"share", "state", "role", "copy-time", "copy-row"} {
 		for i := len(slots) - 1; i >= 0; i-- {
 			if slots[i].kind == kind {
 				return i
@@ -1818,6 +1811,76 @@ func drawBorderLabel(canvas *composedCanvas, x, y int, text string, style drawSt
 	canvas.drawText(x, y, text, style)
 }
 
+func copyModeTimestampLabel(snapshot *protocol.Snapshot, row int) string {
+	ts := snapshotRowTimestamp(snapshot, row)
+	if ts.IsZero() {
+		return ""
+	}
+	return formatSnapshotRowTimestamp(ts)
+}
+
+func copyModeRowPositionLabel(snapshot *protocol.Snapshot, row int) string {
+	totalRows := snapshotTotalRows(snapshot)
+	if totalRows <= 0 || row < 0 || row >= totalRows {
+		return ""
+	}
+	return strconv.Itoa(row+1) + "/" + strconv.Itoa(totalRows)
+}
+
+func formatSnapshotRowTimestamp(ts time.Time) string {
+	if ts.IsZero() {
+		return ""
+	}
+	return ts.Local().Format("2006-01-02 15:04:05")
+}
+
+func snapshotRowTimestamp(snapshot *protocol.Snapshot, row int) time.Time {
+	if snapshot == nil || row < 0 {
+		return time.Time{}
+	}
+	if row < len(snapshot.Scrollback) {
+		if row < len(snapshot.ScrollbackTimestamps) {
+			return snapshot.ScrollbackTimestamps[row]
+		}
+		return time.Time{}
+	}
+	row -= len(snapshot.Scrollback)
+	if row < 0 || row >= len(snapshot.Screen.Cells) {
+		return time.Time{}
+	}
+	if row < len(snapshot.ScreenTimestamps) {
+		return snapshot.ScreenTimestamps[row]
+	}
+	return time.Time{}
+}
+
+func snapshotRowKind(snapshot *protocol.Snapshot, row int) string {
+	if snapshot == nil || row < 0 {
+		return ""
+	}
+	if row < len(snapshot.Scrollback) {
+		if row < len(snapshot.ScrollbackRowKinds) {
+			return snapshot.ScrollbackRowKinds[row]
+		}
+		return ""
+	}
+	row -= len(snapshot.Scrollback)
+	if row < 0 || row >= len(snapshot.Screen.Cells) {
+		return ""
+	}
+	if row < len(snapshot.ScreenRowKinds) {
+		return snapshot.ScreenRowKinds[row]
+	}
+	return ""
+}
+
+func snapshotTotalRows(snapshot *protocol.Snapshot) int {
+	if snapshot == nil {
+		return 0
+	}
+	return len(snapshot.Scrollback) + len(snapshot.Screen.Cells)
+}
+
 func applyScrollbackOffset(snapshot *protocol.Snapshot, offset int, height int) *protocol.Snapshot {
 	if snapshot == nil || offset <= 0 || height <= 0 {
 		return snapshot
@@ -1873,16 +1936,59 @@ func drawSnapshotWithOffset(canvas *composedCanvas, rect workbench.Rect, snapsho
 	}
 	targetY := rect.Y
 	for rowIndex := start; rowIndex < end && targetY < rect.Y+rect.H; rowIndex++ {
-		var row []protocol.Cell
-		if rowIndex < len(snapshot.Scrollback) {
-			row = snapshot.Scrollback[rowIndex]
-		} else {
-			row = snapshot.Screen.Cells[rowIndex-len(snapshot.Scrollback)]
-		}
-		canvas.drawProtocolRowInRect(rect, targetY, row)
+		drawSnapshotRowInRect(canvas, rect, snapshot, rowIndex, targetY, theme)
 		targetY++
 	}
-	drawSnapshotExtentHints(canvas, rect, snapshot, theme)
+	drawSnapshotExtentHints(canvas, rect, snapshotExtentHintsView(snapshot, totalRows), theme)
+}
+
+func drawSnapshotRowInRect(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, rowIndex int, targetY int, theme uiTheme) {
+	if kind := snapshotRowKind(snapshot, rowIndex); kind != "" {
+		if drawSnapshotMarkerRow(canvas, rect, targetY, kind, snapshotRowTimestamp(snapshot, rowIndex), theme) {
+			return
+		}
+	}
+	canvas.drawProtocolRowInRect(rect, targetY, snapshotRow(snapshot, rowIndex))
+}
+
+func drawSnapshotMarkerRow(canvas *composedCanvas, rect workbench.Rect, targetY int, kind string, ts time.Time, theme uiTheme) bool {
+	if canvas == nil || rect.W <= 0 {
+		return false
+	}
+	label := snapshotMarkerLabel(kind, ts)
+	if strings.TrimSpace(label) == "" {
+		return false
+	}
+	canvas.drawText(rect.X, targetY, centerText(label, rect.W), drawStyle{FG: theme.panelMuted})
+	return true
+}
+
+func snapshotMarkerLabel(kind string, ts time.Time) string {
+	switch kind {
+	case protocol.SnapshotRowKindRestart:
+		label := "[ restarted ]"
+		if formatted := formatSnapshotRowTimestamp(ts); formatted != "" {
+			label = "[ restarted " + formatted + " ]"
+		}
+		return label
+	default:
+		return ""
+	}
+}
+
+func snapshotExtentHintsView(snapshot *protocol.Snapshot, rows int) *protocol.Snapshot {
+	if snapshot == nil || rows <= 0 {
+		return snapshot
+	}
+	if int(snapshot.Size.Rows) >= rows {
+		return snapshot
+	}
+	cloned := *snapshot
+	if rows > int(^uint16(0)) {
+		rows = int(^uint16(0))
+	}
+	cloned.Size.Rows = uint16(rows)
+	return &cloned
 }
 
 func drawSnapshotExtentHints(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, theme uiTheme) {

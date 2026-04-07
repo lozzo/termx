@@ -91,14 +91,20 @@ type ScreenData struct {
 	IsAlternateScreen bool     `json:"is_alternate"`
 }
 
+const SnapshotRowKindRestart = "restart"
+
 type Snapshot struct {
-	TerminalID string        `json:"terminal_id"`
-	Size       Size          `json:"size"`
-	Screen     ScreenData    `json:"screen"`
-	Scrollback [][]Cell      `json:"scrollback,omitempty"`
-	Cursor     CursorState   `json:"cursor"`
-	Modes      TerminalModes `json:"modes"`
-	Timestamp  time.Time     `json:"timestamp"`
+	TerminalID           string        `json:"terminal_id"`
+	Size                 Size          `json:"size"`
+	Screen               ScreenData    `json:"screen"`
+	Scrollback           [][]Cell      `json:"scrollback,omitempty"`
+	ScreenTimestamps     []time.Time   `json:"screen_timestamps,omitempty"`
+	ScrollbackTimestamps []time.Time   `json:"scrollback_timestamps,omitempty"`
+	ScreenRowKinds       []string      `json:"screen_row_kinds,omitempty"`
+	ScrollbackRowKinds   []string      `json:"scrollback_row_kinds,omitempty"`
+	Cursor               CursorState   `json:"cursor"`
+	Modes                TerminalModes `json:"modes"`
+	Timestamp            time.Time     `json:"timestamp"`
 }
 
 type SnapshotOptions struct {

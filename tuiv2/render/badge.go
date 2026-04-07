@@ -17,10 +17,12 @@ const (
 )
 
 type paneBorderInfo struct {
-	StateLabel string
-	StateTone  string
-	ShareLabel string
-	RoleLabel  string
+	StateLabel    string
+	StateTone     string
+	ShareLabel    string
+	RoleLabel     string
+	CopyTimeLabel string
+	CopyRowLabel  string
 }
 
 // paneMeta generates the badge/meta string for a pane based on terminal state.

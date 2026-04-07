@@ -165,11 +165,11 @@ func (m *Model) submitCreateTerminal(prompt *modal.PromptState, paneID string, p
 	return func() tea.Msg {
 		client := m.runtime.Client()
 		if client == nil {
-			return context.Canceled
+			return paneAttachFailure(pane, "", context.Canceled)
 		}
 		created, err := client.Create(context.Background(), params)
 		if err != nil {
-			return err
+			return paneAttachFailure(pane, "", err)
 		}
 		if m.runtime != nil && m.runtime.Registry() != nil {
 			terminal := m.runtime.Registry().GetOrCreate(created.TerminalID)
@@ -185,16 +185,25 @@ func (m *Model) submitCreateTerminal(prompt *modal.PromptState, paneID string, p
 		}
 		switch prompt.CreateTarget {
 		case modal.CreateTargetSplit:
+			if pane != "" {
+				m.clearPendingPaneAttach(pane, created.TerminalID)
+			}
 			if cmd := m.splitPaneAndAttachTerminalCmd(pane, created.TerminalID); cmd != nil {
 				return cmd()
 			}
 			return nil
 		case modal.CreateTargetNewTab:
+			if pane != "" {
+				m.clearPendingPaneAttach(pane, created.TerminalID)
+			}
 			if cmd := m.createTabAndAttachTerminalCmd(created.TerminalID); cmd != nil {
 				return cmd()
 			}
 			return nil
 		case modal.CreateTargetFloating:
+			if pane != "" {
+				m.clearPendingPaneAttach(pane, created.TerminalID)
+			}
 			if cmd := m.createFloatingPaneAndAttachTerminalCmd(created.TerminalID); cmd != nil {
 				return cmd()
 			}
@@ -203,7 +212,7 @@ func (m *Model) submitCreateTerminal(prompt *modal.PromptState, paneID string, p
 			m.markPendingPaneAttach(pane, created.TerminalID)
 			msgs, err := m.orchestrator.AttachAndLoadSnapshot(context.Background(), pane, created.TerminalID, "collaborator", 0, defaultTerminalSnapshotScrollbackLimit)
 			if err != nil {
-				return err
+				return paneAttachFailure(pane, created.TerminalID, err)
 			}
 			cmds := make([]tea.Cmd, 0, len(msgs))
 			for _, msg := range msgs {

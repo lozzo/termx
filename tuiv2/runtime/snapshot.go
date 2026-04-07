@@ -10,6 +10,24 @@ import (
 	localvterm "github.com/lozzow/termx/vterm"
 )
 
+type timestampedSnapshotLoader interface {
+	LoadSnapshotWithTimestamps(scrollback [][]localvterm.Cell, scrollbackTimestamps []time.Time, screen localvterm.ScreenData, screenTimestamps []time.Time, cursor localvterm.CursorState, modes localvterm.TerminalModes)
+}
+
+type timestampedSnapshotSource interface {
+	ScreenTimestamps() []time.Time
+	ScrollbackTimestamps() []time.Time
+}
+
+type metadataSnapshotLoader interface {
+	LoadSnapshotWithMetadata(scrollback [][]localvterm.Cell, scrollbackTimestamps []time.Time, scrollbackRowKinds []string, screen localvterm.ScreenData, screenTimestamps []time.Time, screenRowKinds []string, cursor localvterm.CursorState, modes localvterm.TerminalModes)
+}
+
+type metadataSnapshotSource interface {
+	ScreenRowKinds() []string
+	ScrollbackRowKinds() []string
+}
+
 func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, limit int) (*protocol.Snapshot, error) {
 	if r == nil || r.client == nil {
 		return nil, shared.UserVisibleError{Op: "snapshot terminal", Err: fmt.Errorf("runtime client is nil")}
@@ -60,7 +78,29 @@ func loadSnapshotIntoVTerm(vt VTermLike, snap *protocol.Snapshot) {
 	if snap.Size.Rows > 0 {
 		rows = int(snap.Size.Rows)
 	}
-	vt.LoadSnapshotWithScrollback(protocolRowsToVTerm(snap.Scrollback), protocolScreenToVTerm(snap.Screen), protocolCursorToVTerm(snap.Cursor), protocolModesToVTerm(snap.Modes))
+	if loader, ok := vt.(metadataSnapshotLoader); ok {
+		loader.LoadSnapshotWithMetadata(
+			protocolRowsToVTerm(snap.Scrollback),
+			append([]time.Time(nil), snap.ScrollbackTimestamps...),
+			append([]string(nil), snap.ScrollbackRowKinds...),
+			protocolScreenToVTerm(snap.Screen),
+			append([]time.Time(nil), snap.ScreenTimestamps...),
+			append([]string(nil), snap.ScreenRowKinds...),
+			protocolCursorToVTerm(snap.Cursor),
+			protocolModesToVTerm(snap.Modes),
+		)
+	} else if loader, ok := vt.(timestampedSnapshotLoader); ok {
+		loader.LoadSnapshotWithTimestamps(
+			protocolRowsToVTerm(snap.Scrollback),
+			append([]time.Time(nil), snap.ScrollbackTimestamps...),
+			protocolScreenToVTerm(snap.Screen),
+			append([]time.Time(nil), snap.ScreenTimestamps...),
+			protocolCursorToVTerm(snap.Cursor),
+			protocolModesToVTerm(snap.Modes),
+		)
+	} else {
+		vt.LoadSnapshotWithScrollback(protocolRowsToVTerm(snap.Scrollback), protocolScreenToVTerm(snap.Screen), protocolCursorToVTerm(snap.Cursor), protocolModesToVTerm(snap.Modes))
+	}
 	if cols > 0 && rows > 0 {
 		vt.Resize(cols, rows)
 	}
@@ -69,6 +109,18 @@ func loadSnapshotIntoVTerm(vt VTermLike, snap *protocol.Snapshot) {
 func snapshotFromVTerm(terminalID string, vt VTermLike) *protocol.Snapshot {
 	if vt == nil {
 		return nil
+	}
+	screenTimestamps := []time.Time(nil)
+	scrollbackTimestamps := []time.Time(nil)
+	if source, ok := vt.(timestampedSnapshotSource); ok {
+		screenTimestamps = source.ScreenTimestamps()
+		scrollbackTimestamps = source.ScrollbackTimestamps()
+	}
+	screenRowKinds := []string(nil)
+	scrollbackRowKinds := []string(nil)
+	if source, ok := vt.(metadataSnapshotSource); ok {
+		screenRowKinds = source.ScreenRowKinds()
+		scrollbackRowKinds = source.ScrollbackRowKinds()
 	}
 	cols, rows := vt.Size()
 	screen := vt.ScreenContent()
@@ -96,10 +148,14 @@ func snapshotFromVTerm(terminalID string, vt VTermLike) *protocol.Snapshot {
 			Cells:             outRows,
 			IsAlternateScreen: screen.IsAlternateScreen,
 		},
-		Scrollback: backlog,
-		Cursor:     protocolCursorFromVTerm(vt.CursorState()),
-		Modes:      protocolModesFromVTerm(vt.Modes()),
-		Timestamp:  time.Now(),
+		Scrollback:           backlog,
+		ScreenTimestamps:     append([]time.Time(nil), screenTimestamps...),
+		ScrollbackTimestamps: append([]time.Time(nil), scrollbackTimestamps...),
+		ScreenRowKinds:       append([]string(nil), screenRowKinds...),
+		ScrollbackRowKinds:   append([]string(nil), scrollbackRowKinds...),
+		Cursor:               protocolCursorFromVTerm(vt.CursorState()),
+		Modes:                protocolModesFromVTerm(vt.Modes()),
+		Timestamp:            time.Now(),
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	xansi "github.com/charmbracelet/x/ansi"
@@ -75,6 +76,65 @@ func TestRenderFrameContainsPaneBorder(t *testing.T) {
 	// Should have box drawing characters
 	if !strings.Contains(frame, "┌") || !strings.Contains(frame, "┘") {
 		t.Fatalf("frame missing pane border box characters:\n%s", frame)
+	}
+}
+
+func TestRenderFrameShowsCopyModeRowTimestampInPaneChrome(t *testing.T) {
+	state := makeTestState()
+	ts := time.Date(2026, 4, 7, 12, 34, 56, 0, time.UTC)
+	snapshot := &protocol.Snapshot{
+		TerminalID:           "term-1",
+		Size:                 protocol.Size{Cols: 80, Rows: 2},
+		Scrollback:           [][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "l", Width: 1}, {Content: "d", Width: 1}}},
+		ScrollbackTimestamps: []time.Time{ts},
+		Screen:               protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "n", Width: 1}, {Content: "e", Width: 1}, {Content: "w", Width: 1}}}},
+		ScreenTimestamps:     []time.Time{ts.Add(time.Second)},
+		Cursor:               protocol.CursorState{Row: 0, Col: 0, Visible: true},
+		Modes:                protocol.TerminalModes{AutoWrap: true},
+		Timestamp:            ts.Add(2 * time.Second),
+	}
+	state.Runtime = &VisibleRuntimeStateProxy{Terminals: []runtime.VisibleTerminal{{
+		TerminalID: "term-1",
+		Name:       "demo",
+		State:      "running",
+		Snapshot:   snapshot,
+	}}}
+	state = WithCopyMode(state, "pane-1", 0, 0, 0, false, 0, 0)
+
+	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
+	if !strings.Contains(frame, copyModeTimestampLabel(snapshot, 0)) {
+		t.Fatalf("expected copy mode timestamp in pane chrome:\n%s", frame)
+	}
+	if !strings.Contains(frame, copyModeRowPositionLabel(snapshot, 0)) {
+		t.Fatalf("expected copy mode row position in pane chrome:\n%s", frame)
+	}
+}
+
+func TestRenderFrameShowsCopyModeTimestampForBlankRow(t *testing.T) {
+	state := makeTestState()
+	ts := time.Date(2026, 4, 7, 12, 34, 56, 0, time.UTC)
+	snapshot := &protocol.Snapshot{
+		TerminalID:           "term-1",
+		Size:                 protocol.Size{Cols: 80, Rows: 1},
+		Scrollback:           [][]protocol.Cell{{}},
+		ScrollbackTimestamps: []time.Time{ts},
+		Screen:               protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "x", Width: 1}}}},
+		ScreenTimestamps:     []time.Time{ts.Add(time.Second)},
+		Cursor:               protocol.CursorState{Row: 0, Col: 0, Visible: true},
+		Modes:                protocol.TerminalModes{AutoWrap: true},
+		Timestamp:            ts.Add(2 * time.Second),
+	}
+	state.Runtime = &VisibleRuntimeStateProxy{Terminals: []runtime.VisibleTerminal{{
+		TerminalID: "term-1",
+		Name:       "demo",
+		State:      "running",
+		Snapshot:   snapshot,
+	}}}
+	state = WithCopyMode(state, "pane-1", 0, 0, 0, false, 0, 0)
+
+	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
+	if !strings.Contains(frame, copyModeTimestampLabel(snapshot, 0)) {
+		t.Fatalf("expected blank row timestamp in pane chrome:\n%s", frame)
 	}
 }
 

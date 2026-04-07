@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestSnapshotUnmarshalJSON(t *testing.T) {
@@ -18,6 +19,10 @@ func TestSnapshotUnmarshalJSON(t *testing.T) {
 		"scrollback": [
 			{"cells": [{"r": "o"}, {"r": "k"}]}
 		],
+		"screen_timestamps": ["2026-03-18T00:00:02Z"],
+		"scrollback_timestamps": ["2026-03-18T00:00:01Z"],
+		"screen_row_kinds": ["restart"],
+		"scrollback_row_kinds": ["restart"],
 		"cursor": {"row": 1, "col": 2, "visible": true, "shape": "block"},
 		"modes": {"alternate_screen": false, "alternate_scroll": true, "mouse_tracking": false, "bracketed_paste": true, "application_cursor": false, "auto_wrap": true},
 		"timestamp": "2026-03-18T00:00:00Z"
@@ -39,6 +44,18 @@ func TestSnapshotUnmarshalJSON(t *testing.T) {
 	}
 	if len(snap.Scrollback) != 1 || snap.Scrollback[0][0].Content != "o" {
 		t.Fatalf("unexpected scrollback: %#v", snap.Scrollback)
+	}
+	if len(snap.ScreenTimestamps) != 1 || !snap.ScreenTimestamps[0].Equal(time.Date(2026, 3, 18, 0, 0, 2, 0, time.UTC)) {
+		t.Fatalf("unexpected screen timestamps: %#v", snap.ScreenTimestamps)
+	}
+	if len(snap.ScrollbackTimestamps) != 1 || !snap.ScrollbackTimestamps[0].Equal(time.Date(2026, 3, 18, 0, 0, 1, 0, time.UTC)) {
+		t.Fatalf("unexpected scrollback timestamps: %#v", snap.ScrollbackTimestamps)
+	}
+	if len(snap.ScreenRowKinds) != 1 || snap.ScreenRowKinds[0] != SnapshotRowKindRestart {
+		t.Fatalf("unexpected screen row kinds: %#v", snap.ScreenRowKinds)
+	}
+	if len(snap.ScrollbackRowKinds) != 1 || snap.ScrollbackRowKinds[0] != SnapshotRowKindRestart {
+		t.Fatalf("unexpected scrollback row kinds: %#v", snap.ScrollbackRowKinds)
 	}
 	if !snap.Modes.BracketedPaste || !snap.Modes.AlternateScroll || !snap.Cursor.Visible || snap.Cursor.Shape != "block" {
 		t.Fatalf("unexpected cursor or modes: %#v %#v", snap.Cursor, snap.Modes)

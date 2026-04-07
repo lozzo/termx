@@ -172,6 +172,10 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		m.render.Invalidate()
 		return batchCmds(m.saveStateCmd(), m.finalizeTerminalAttachCmd(typed.TabID, typed.PaneID, typed.TerminalID)), true
+	case paneAttachFailedMsg:
+		m.clearPendingPaneAttach(typed.PaneID, typed.TerminalID)
+		m.render.Invalidate()
+		return m.showError(typed.Err), true
 	case terminalAttachReadyMsg:
 		return m.dequeueTerminalInputCmd(), true
 	case orchestrator.SnapshotLoadedMsg:

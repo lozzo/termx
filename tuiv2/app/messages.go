@@ -31,6 +31,12 @@ type terminalAttachReadyMsg struct {
 	terminalID string
 }
 
+type paneAttachFailedMsg struct {
+	PaneID     string
+	TerminalID string
+	Err        error
+}
+
 type EffectAppliedMsg struct {
 	Effect orchestrator.Effect
 }

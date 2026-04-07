@@ -3,6 +3,7 @@ package render
 import (
 	"strings"
 	"testing"
+	"time"
 
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
@@ -20,6 +21,22 @@ func TestComposedCanvasDrawSnapshot(t *testing.T) {
 	output := canvas.rawString()
 	if !strings.Contains(output, "hi") {
 		t.Fatalf("expected snapshot text in canvas output, got %q", output)
+	}
+}
+
+func TestDrawSnapshotWithOffsetShowsRestartMarker(t *testing.T) {
+	snapshot := &protocol.Snapshot{
+		Size:                 protocol.Size{Cols: 30, Rows: 1},
+		Scrollback:           [][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "l", Width: 1}, {Content: "d", Width: 1}}, {}},
+		ScrollbackTimestamps: []time.Time{time.Date(2026, 4, 7, 12, 34, 55, 0, time.UTC), time.Date(2026, 4, 7, 12, 34, 56, 0, time.UTC)},
+		ScrollbackRowKinds:   []string{"", protocol.SnapshotRowKindRestart},
+		Screen:               protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "n", Width: 1}, {Content: "e", Width: 1}, {Content: "w", Width: 1}}}},
+	}
+	canvas := newComposedCanvas(30, 2)
+	drawSnapshotWithOffset(canvas, workbench.Rect{X: 0, Y: 0, W: 30, H: 2}, snapshot, 1, defaultUITheme())
+	output := xansi.Strip(canvas.rawString())
+	if !strings.Contains(output, "restarted") {
+		t.Fatalf("expected restart marker in drawn snapshot, got %q", output)
 	}
 }
 
@@ -660,7 +677,7 @@ func TestProjectPaneCursorUsesVisibleBarCursorStyleOnTextCell(t *testing.T) {
 	}
 }
 
-func TestRenderFrameHidesBlinkingSyntheticCursorOffPhase(t *testing.T) {
+func TestRenderFrameKeepsSyntheticCursorVisibleWithoutTicks(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -689,15 +706,17 @@ func TestRenderFrameHidesBlinkingSyntheticCursorOffPhase(t *testing.T) {
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
 	_ = coordinator.RenderFrame()
-	coordinator.AdvanceCursorBlink()
+	if coordinator.AdvanceCursorBlink() {
+		t.Fatal("expected steady synthetic cursor to avoid blink ticks")
+	}
 	frame := coordinator.RenderFrame()
 	highlight := styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"}) + "h"
-	if strings.Contains(frame, highlight) {
-		t.Fatalf("expected blinking synthetic cursor to disappear during off phase, got %q", frame)
+	if !strings.Contains(frame, highlight) {
+		t.Fatalf("expected steady synthetic cursor to remain visible, got %q", frame)
 	}
 }
 
-func TestCoordinatorNeedsCursorTicksForVisibleActivePane(t *testing.T) {
+func TestCoordinatorDoesNotNeedCursorTicksForVisibleActivePane(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -725,8 +744,8 @@ func TestCoordinatorNeedsCursorTicksForVisibleActivePane(t *testing.T) {
 
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
-	if !coordinator.NeedsCursorTicks() {
-		t.Fatal("expected visible active pane cursor to request render ticks")
+	if coordinator.NeedsCursorTicks() {
+		t.Fatal("expected visible active pane cursor to stay steady without render ticks")
 	}
 }
 

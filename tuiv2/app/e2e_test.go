@@ -310,7 +310,7 @@ func TestE2EExitedPaneRestartReusesSameTerminal(t *testing.T) {
 	t.Cleanup(func() { _ = pc.Close() })
 
 	flagPath := filepath.Join(t.TempDir(), "restart-flag")
-	command := fmt.Sprintf("if [ -f %q ]; then printf 'restart_pass_2\\n'; cat; else touch %q; sleep 1; exit 0; fi", flagPath, flagPath)
+	command := fmt.Sprintf("if [ -f %q ]; then printf 'restart_pass_2\\n'; cat; else touch %q; printf 'restart_pass_1\\n'; sleep 1; exit 0; fi", flagPath, flagPath)
 	created, err := pc.Create(ctx, protocol.CreateParams{
 		Command: []string{"bash", "-lc", command},
 		Name:    "restart-e2e",
@@ -341,6 +341,16 @@ func TestE2EExitedPaneRestartReusesSameTerminal(t *testing.T) {
 
 	e2eWaitForRuntimeTerminalState(t, ctx, model, created.TerminalID, "running")
 	e2eWaitForText(t, ctx, model, invalidated, "restart_pass_2")
+	snapshot, err := pc.Snapshot(ctx, created.TerminalID, 0, 100)
+	if err != nil {
+		t.Fatalf("snapshot after restart: %v", err)
+	}
+	if snapshot == nil {
+		t.Fatal("expected restart snapshot")
+	}
+	if !e2eSnapshotContains(snapshot, "restart_pass_1") {
+		t.Fatalf("expected snapshot scrollback to preserve first pass output, got %#v", snapshot)
+	}
 
 	pane := model.workbench.ActivePane()
 	if pane == nil || pane.TerminalID != created.TerminalID {
@@ -350,6 +360,31 @@ func TestE2EExitedPaneRestartReusesSameTerminal(t *testing.T) {
 	_, cmd := model.Update(input.TerminalInput{PaneID: pane.ID, Data: []byte("restart_e2e_ok\n")})
 	e2eDrainSkippingPrefixTimeout(t, model, cmd)
 	e2eWaitForText(t, ctx, model, invalidated, "restart_e2e_ok")
+}
+
+func e2eSnapshotContains(snapshot *protocol.Snapshot, needle string) bool {
+	if snapshot == nil {
+		return false
+	}
+	for _, row := range snapshot.Scrollback {
+		if strings.Contains(e2eSnapshotRowString(row), needle) {
+			return true
+		}
+	}
+	for _, row := range snapshot.Screen.Cells {
+		if strings.Contains(e2eSnapshotRowString(row), needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func e2eSnapshotRowString(row []protocol.Cell) string {
+	var b strings.Builder
+	for _, cell := range row {
+		b.WriteString(cell.Content)
+	}
+	return strings.TrimRight(b.String(), " ")
 }
 
 func TestE2ECreateAfterExitedPaneDoesNotDropBufferedInput(t *testing.T) {

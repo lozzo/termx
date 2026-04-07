@@ -3,6 +3,7 @@ package protocol
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -220,14 +221,20 @@ type ScreenData struct {
 	IsAlternateScreen bool     `json:"-"`
 }
 
+const SnapshotRowKindRestart = "restart"
+
 type Snapshot struct {
-	TerminalID string        `json:"terminal_id"`
-	Size       Size          `json:"size"`
-	Screen     ScreenData    `json:"screen"`
-	Scrollback [][]Cell      `json:"scrollback,omitempty"`
-	Cursor     CursorState   `json:"cursor"`
-	Modes      TerminalModes `json:"modes"`
-	Timestamp  time.Time     `json:"timestamp"`
+	TerminalID           string        `json:"terminal_id"`
+	Size                 Size          `json:"size"`
+	Screen               ScreenData    `json:"screen"`
+	Scrollback           [][]Cell      `json:"scrollback,omitempty"`
+	ScreenTimestamps     []time.Time   `json:"screen_timestamps,omitempty"`
+	ScrollbackTimestamps []time.Time   `json:"scrollback_timestamps,omitempty"`
+	ScreenRowKinds       []string      `json:"screen_row_kinds,omitempty"`
+	ScrollbackRowKinds   []string      `json:"scrollback_row_kinds,omitempty"`
+	Cursor               CursorState   `json:"cursor"`
+	Modes                TerminalModes `json:"modes"`
+	Timestamp            time.Time     `json:"timestamp"`
 }
 
 type SessionOp = workbenchops.Op
@@ -358,13 +365,17 @@ func (s *Snapshot) UnmarshalJSON(data []byte) error {
 		Rows        []jsonRow `json:"rows"`
 	}
 	type jsonSnapshot struct {
-		TerminalID string        `json:"terminal_id"`
-		Size       Size          `json:"size"`
-		Screen     jsonScreen    `json:"screen"`
-		Scrollback []jsonRow     `json:"scrollback"`
-		Cursor     CursorState   `json:"cursor"`
-		Modes      TerminalModes `json:"modes"`
-		Timestamp  time.Time     `json:"timestamp"`
+		TerminalID           string        `json:"terminal_id"`
+		Size                 Size          `json:"size"`
+		Screen               jsonScreen    `json:"screen"`
+		Scrollback           []jsonRow     `json:"scrollback"`
+		ScreenTimestamps     []string      `json:"screen_timestamps,omitempty"`
+		ScrollbackTimestamps []string      `json:"scrollback_timestamps,omitempty"`
+		ScreenRowKinds       []string      `json:"screen_row_kinds,omitempty"`
+		ScrollbackRowKinds   []string      `json:"scrollback_row_kinds,omitempty"`
+		Cursor               CursorState   `json:"cursor"`
+		Modes                TerminalModes `json:"modes"`
+		Timestamp            time.Time     `json:"timestamp"`
 	}
 
 	var raw jsonSnapshot
@@ -394,11 +405,33 @@ func (s *Snapshot) UnmarshalJSON(data []byte) error {
 		}
 		return out
 	}
+	decodeRowTimestamps := func(raw []string) []time.Time {
+		if len(raw) == 0 {
+			return nil
+		}
+		out := make([]time.Time, len(raw))
+		for i, value := range raw {
+			value = strings.TrimSpace(value)
+			if value == "" {
+				continue
+			}
+			parsed, err := time.Parse(time.RFC3339Nano, value)
+			if err != nil {
+				continue
+			}
+			out[i] = parsed
+		}
+		return out
+	}
 
 	s.TerminalID = raw.TerminalID
 	s.Size = raw.Size
 	s.Screen = ScreenData{Cells: convertRows(raw.Screen.Rows), IsAlternateScreen: raw.Screen.IsAlternate}
 	s.Scrollback = convertRows(raw.Scrollback)
+	s.ScreenTimestamps = decodeRowTimestamps(raw.ScreenTimestamps)
+	s.ScrollbackTimestamps = decodeRowTimestamps(raw.ScrollbackTimestamps)
+	s.ScreenRowKinds = append([]string(nil), raw.ScreenRowKinds...)
+	s.ScrollbackRowKinds = append([]string(nil), raw.ScrollbackRowKinds...)
 	s.Cursor = raw.Cursor
 	s.Modes = raw.Modes
 	s.Timestamp = raw.Timestamp

@@ -166,6 +166,69 @@ func TestTerminalSnapshotReturnsNewestScrollbackWindow(t *testing.T) {
 	}
 }
 
+func TestTerminalRestartPreservesScrollbackAcrossRestart(t *testing.T) {
+	ctx := context.Background()
+	bus := NewEventBus(nil)
+	flagPath := t.TempDir() + "/restart-flag"
+
+	term, err := newTerminal(ctx, bus, terminalConfig{
+		ID:             "restart123",
+		Name:           "restart",
+		Command:        []string{"bash", "-lc", "if [ -f " + shellQuote(flagPath) + " ]; then printf 'second-pass\\n'; sleep 5; else touch " + shellQuote(flagPath) + "; printf 'first-pass\\n'; exit 0; fi"},
+		Size:           Size{Cols: 80, Rows: 24},
+		ScrollbackSize: 128,
+		KeepAfterExit:  time.Second,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("new terminal failed: %v", err)
+	}
+	defer term.Close()
+
+	select {
+	case <-term.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for first terminal exit")
+	}
+
+	firstSnap := term.Snapshot(0, 50)
+	if !snapshotContains(firstSnap, "first-pass") {
+		t.Fatalf("expected first run output before restart, got %#v", firstSnap)
+	}
+	if ts, ok := snapshotTimestampForNeedle(firstSnap, "first-pass"); !ok || ts.IsZero() {
+		t.Fatalf("expected first run output to have a timestamp before restart, got %v (ok=%v)", ts, ok)
+	}
+
+	if err := term.Restart(); err != nil {
+		t.Fatalf("restart failed: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		snap := term.Snapshot(0, 100)
+		if snapshotContains(snap, "second-pass") {
+			if !snapshotContains(snap, "first-pass") {
+				t.Fatalf("expected restart snapshot to preserve first run output, got %#v", snap)
+			}
+			if ts, ok := snapshotTimestampForNeedle(snap, "first-pass"); !ok || ts.IsZero() {
+				t.Fatalf("expected preserved first run output to retain a timestamp after restart, got %v (ok=%v)", ts, ok)
+			}
+			if ts, ok := snapshotTimestampForRowKind(snap, SnapshotRowKindRestart); !ok || ts.IsZero() {
+				t.Fatalf("expected restart snapshot to include a restart marker with timestamp, got %v (ok=%v)", ts, ok)
+			}
+			if err := term.Kill(); err != nil {
+				t.Fatalf("kill restarted terminal failed: %v", err)
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	t.Fatal("timed out waiting for restarted terminal output")
+}
+
 func TestTerminalDeliversTrailingOutputBeforeClosedFrame(t *testing.T) {
 	ctx := context.Background()
 	bus := NewEventBus(nil)
@@ -233,10 +296,62 @@ func snapshotContains(s *Snapshot, needle string) bool {
 	return false
 }
 
+func snapshotTimestampForNeedle(s *Snapshot, needle string) (time.Time, bool) {
+	if s == nil {
+		return time.Time{}, false
+	}
+	for i, row := range s.Scrollback {
+		if strings.Contains(rowToString(row), needle) {
+			if i < len(s.ScrollbackTimestamps) {
+				return s.ScrollbackTimestamps[i], true
+			}
+			return time.Time{}, false
+		}
+	}
+	for i, row := range s.Screen.Cells {
+		if strings.Contains(rowToString(row), needle) {
+			if i < len(s.ScreenTimestamps) {
+				return s.ScreenTimestamps[i], true
+			}
+			return time.Time{}, false
+		}
+	}
+	return time.Time{}, false
+}
+
+func snapshotTimestampForRowKind(s *Snapshot, kind string) (time.Time, bool) {
+	if s == nil || kind == "" {
+		return time.Time{}, false
+	}
+	for i, rowKind := range s.ScrollbackRowKinds {
+		if rowKind != kind {
+			continue
+		}
+		if i < len(s.ScrollbackTimestamps) {
+			return s.ScrollbackTimestamps[i], true
+		}
+		return time.Time{}, false
+	}
+	for i, rowKind := range s.ScreenRowKinds {
+		if rowKind != kind {
+			continue
+		}
+		if i < len(s.ScreenTimestamps) {
+			return s.ScreenTimestamps[i], true
+		}
+		return time.Time{}, false
+	}
+	return time.Time{}, false
+}
+
 func rowToString(row []Cell) string {
 	var b strings.Builder
 	for _, cell := range row {
 		b.WriteString(cell.Content)
 	}
 	return strings.TrimRight(b.String(), " ")
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }

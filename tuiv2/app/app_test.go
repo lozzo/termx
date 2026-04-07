@@ -1091,6 +1091,54 @@ func TestPendingAttachBuffersTerminalInputUntilAttachCompletes(t *testing.T) {
 	}
 }
 
+func TestAttachPaneTerminalFailureClearsPendingAttach(t *testing.T) {
+	client := &recordingBridgeClient{
+		attachErr:          errors.New("attach failed"),
+		snapshotByTerminal: map[string]*protocol.Snapshot{},
+	}
+	model := setupModel(t, modelOpts{client: client})
+
+	drainCmd(t, model, model.attachPaneTerminalCmd("tab-1", "pane-1", "term-2"), 20)
+
+	if model.isPaneAttachPending("pane-1") {
+		t.Fatal("expected pending attach marker cleared after attach failure")
+	}
+	if len(client.attachCalls) != 1 || client.attachCalls[0].terminalID != "term-2" {
+		t.Fatalf("expected attach attempt for term-2, got %#v", client.attachCalls)
+	}
+	if model.err == nil || !strings.Contains(model.err.Error(), "attach failed") {
+		t.Fatalf("expected attach failure surfaced in model error, got %#v", model.err)
+	}
+}
+
+func TestRestartPaneTerminalFailureClearsPendingAttach(t *testing.T) {
+	client := &recordingBridgeClient{
+		attachErr:          errors.New("attach after restart failed"),
+		snapshotByTerminal: map[string]*protocol.Snapshot{},
+	}
+	model := setupModel(t, modelOpts{client: client})
+
+	exitCode := 23
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.State = "exited"
+	terminal.ExitCode = &exitCode
+
+	dispatchKey(t, model, runeKeyMsg('R'))
+
+	if len(client.restartCalls) != 1 || client.restartCalls[0] != "term-1" {
+		t.Fatalf("expected restart for term-1, got %#v", client.restartCalls)
+	}
+	if len(client.attachCalls) != 1 || client.attachCalls[0].terminalID != "term-1" {
+		t.Fatalf("expected attach retry for term-1 after restart, got %#v", client.attachCalls)
+	}
+	if model.isPaneAttachPending("pane-1") {
+		t.Fatal("expected pending attach marker cleared after restart attach failure")
+	}
+	if model.err == nil || !strings.Contains(model.err.Error(), "attach after restart failed") {
+		t.Fatalf("expected restart attach failure surfaced in model error, got %#v", model.err)
+	}
+}
+
 func TestModelViewShowsPickerItems(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{

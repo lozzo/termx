@@ -1,6 +1,9 @@
 package vterm
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestLoadSnapshotRestoresScreenAndCursor(t *testing.T) {
 	vt := New(10, 4, 100, nil)
@@ -51,6 +54,79 @@ func TestLoadSnapshotWithScrollbackRestoresHistory(t *testing.T) {
 	}
 	if got := scrollback[0][0].Content + scrollback[0][1].Content + scrollback[0][2].Content; got != "old" {
 		t.Fatalf("expected restored scrollback %q, got %q", "old", got)
+	}
+}
+
+func TestLoadSnapshotWithTimestampsRestoresRowTimes(t *testing.T) {
+	vt := New(6, 3, 100, nil)
+	scrollbackTS := []time.Time{time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC)}
+	screenTS := []time.Time{time.Date(2026, 4, 7, 10, 0, 1, 0, time.UTC)}
+
+	vt.LoadSnapshotWithTimestamps([][]Cell{
+		{{Content: "o", Width: 1}, {Content: "l", Width: 1}, {Content: "d", Width: 1}},
+	}, scrollbackTS, ScreenData{
+		Cells: [][]Cell{
+			{
+				{Content: "n", Width: 1},
+				{Content: "e", Width: 1},
+				{Content: "w", Width: 1},
+			},
+		},
+	}, screenTS, CursorState{Row: 0, Col: 3, Visible: true}, TerminalModes{AutoWrap: true})
+
+	if got := vt.ScrollbackTimestamps(); len(got) != 1 || !got[0].Equal(scrollbackTS[0]) {
+		t.Fatalf("unexpected restored scrollback timestamps: %#v", got)
+	}
+	if got := vt.ScreenTimestamps(); len(got) == 0 || !got[0].Equal(screenTS[0]) {
+		t.Fatalf("unexpected restored screen timestamps: %#v", got)
+	}
+}
+
+func TestLoadSnapshotWithMetadataRestoresRowKinds(t *testing.T) {
+	vt := New(6, 3, 100, nil)
+
+	vt.LoadSnapshotWithMetadata([][]Cell{{}}, []time.Time{time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC)}, []string{"restart"}, ScreenData{
+		Cells: [][]Cell{
+			{
+				{Content: "n", Width: 1},
+				{Content: "e", Width: 1},
+				{Content: "w", Width: 1},
+			},
+		},
+	}, []time.Time{time.Date(2026, 4, 7, 10, 0, 1, 0, time.UTC)}, []string{""}, CursorState{Row: 0, Col: 3, Visible: true}, TerminalModes{AutoWrap: true})
+
+	if got := vt.ScrollbackRowKinds(); len(got) != 1 || got[0] != "restart" {
+		t.Fatalf("unexpected restored scrollback row kinds: %#v", got)
+	}
+}
+
+func TestVTermWriteAssignsRowTimestamps(t *testing.T) {
+	vt := New(6, 2, 100, nil)
+
+	if _, err := vt.Write([]byte("one\ntwo\nthree\n")); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	scrollbackTS := vt.ScrollbackTimestamps()
+	if len(scrollbackTS) == 0 || scrollbackTS[0].IsZero() {
+		t.Fatalf("expected scrollback timestamp after scroll, got %#v", scrollbackTS)
+	}
+	screenTS := vt.ScreenTimestamps()
+	if len(screenTS) == 0 || screenTS[0].IsZero() {
+		t.Fatalf("expected screen timestamps for visible rows, got %#v", screenTS)
+	}
+}
+
+func TestVTermWriteAssignsTimestampsToBlankRows(t *testing.T) {
+	vt := New(6, 3, 100, nil)
+
+	if _, err := vt.Write([]byte("\n")); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	screenTS := vt.ScreenTimestamps()
+	if len(screenTS) < 2 || screenTS[0].IsZero() || screenTS[1].IsZero() {
+		t.Fatalf("expected blank rows created by newline to receive timestamps, got %#v", screenTS)
 	}
 }
 
