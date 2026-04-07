@@ -1,6 +1,7 @@
 package render
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -134,16 +135,105 @@ func TestRenderTabBarFillerUsesActiveTabBackground(t *testing.T) {
 	}
 
 	theme := uiThemeForState(state)
-	layout := buildTabBarLayout(state)
-	left := renderTabBarLeft(layout)
-	fillerWidth := state.TermSize.Width - xansi.StringWidth(left)
-	if fillerWidth <= 0 {
-		t.Fatalf("expected positive filler width, got %d", fillerWidth)
-	}
-
 	line := renderTabBar(state)
-	expectedFiller := backgroundStyle(theme.tabActiveBG).Width(fillerWidth).Render("")
-	if !strings.HasSuffix(line, expectedFiller) {
-		t.Fatalf("expected tab bar filler to use active bg %q", theme.tabActiveBG)
+	// The filler uses styleANSI with the active tab BG — verify
+	// the rendered ANSI contains the matching 48;2;R;G;B sequence.
+	r, g, b, ok := parseHexColor(theme.tabActiveBG)
+	if !ok {
+		t.Fatalf("could not parse tabActiveBG %q", theme.tabActiveBG)
+	}
+	wantBG := fmt.Sprintf("48;2;%d;%d;%d", r, g, b)
+	if !strings.Contains(line, wantBG) {
+		t.Fatalf("expected tab bar filler to contain BG %s for active bg %q, got:\n%q", wantBG, theme.tabActiveBG, line)
+	}
+}
+
+func TestFillLineKeepsRightSegmentSeparatedWhenTight(t *testing.T) {
+	line := xansi.Strip(fillLine("[V] COPY [F] PICKER [G] GLOBAL", "ws:main terminals:1", 40, "#000000"))
+	if !strings.Contains(line, " ws:main terminals:1") {
+		t.Fatalf("expected right segment to stay separated, got %q", line)
+	}
+	if strings.Contains(line, "GLOBALws:main") {
+		t.Fatalf("expected left and right segments not to merge, got %q", line)
+	}
+}
+
+func TestStatusBarHintTokensUseForegroundColor(t *testing.T) {
+	theme := defaultUITheme()
+	rootColors := rootStatusHintColors(theme)
+	labels := []string{"P PANE", "R RESIZE", "T TAB", "W WORKSPACE", "O FLOAT", "V COPY", "F PICKER", "G GLOBAL"}
+	for i, color := range rootColors {
+		if i >= len(labels) {
+			break
+		}
+		hint := renderDesktopHint(theme, labels[i], color)
+		// The key bracket should use the semantic color as FG
+		r, g, b, ok := parseHexColor(color)
+		if !ok {
+			t.Fatalf("cannot parse color %q", color)
+		}
+		wantFG := fmt.Sprintf("38;2;%d;%d;%d", r, g, b)
+		if !strings.Contains(hint, wantFG) {
+			t.Errorf("%s: expected FG %s in hint output %q", labels[i], wantFG, hint)
+		}
+	}
+}
+
+func TestStatusBarRenderIsDeterministic(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	rt := runtime.New(nil)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.State = "running"
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 120, 18), 120, 20)
+	state = WithStatus(state, "", "", string(input.ModeNormal))
+
+	first := renderStatusBar(state)
+	for i := 0; i < 5; i++ {
+		got := renderStatusBar(state)
+		if got != first {
+			t.Fatalf("status bar render %d differs from first:\nfirst=%q\ngot=%q", i, first, got)
+		}
+	}
+}
+
+func TestFillLineStartsWithCHAAnchor(t *testing.T) {
+	line := fillLine("left", "right", 40, "#000000")
+	if !strings.HasPrefix(line, "\x1b[1G") {
+		t.Fatalf("expected fillLine to start with CHA(1), got prefix %q", line[:minInt(10, len(line))])
+	}
+}
+
+func TestStatusBarTruncationPreservesColors(t *testing.T) {
+	theme := defaultUITheme()
+	hint := renderDesktopHint(theme, "V COPY", theme.hintKeyFG)
+	sep := renderStatusSep(theme)
+	hint2 := renderDesktopHint(theme, "G GLOBAL", theme.hintKeyFG)
+	long := hint + sep + hint2
+	truncated := xansi.Truncate(long, 15, "")
+	if !strings.Contains(truncated, "48;2;") {
+		t.Errorf("truncated hint lost BG color: %q", truncated)
+	}
+}
+
+func TestModeAccentColorUsesBaseHintAccentForDisplayAndGlobal(t *testing.T) {
+	theme := defaultUITheme()
+	for _, mode := range []input.ModeKind{input.ModeDisplay, input.ModeGlobal, input.ModeTerminalManager} {
+		if got := modeAccentColor(theme, mode); got != theme.hintKeyFG {
+			t.Fatalf("mode %q accent=%q, want base hint accent %q", mode, got, theme.hintKeyFG)
+		}
 	}
 }

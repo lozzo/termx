@@ -35,7 +35,7 @@ func renderStatusBar(state VisibleRenderState) string {
 		mode := strings.TrimSpace(state.InputMode)
 		if mode == "" || mode == "normal" {
 			leftParts = append(leftParts, renderDesktopHint(theme, "Ctrl", theme.hintKeyFG))
-			rootColors := []string{theme.success, theme.danger, theme.chromeAccent, theme.warning, theme.warning, theme.info, theme.success, theme.info}
+			rootColors := rootStatusHintColors(theme)
 			for i, label := range labels {
 				if i >= len(rootColors) {
 					break
@@ -54,6 +54,9 @@ func renderStatusBar(state VisibleRenderState) string {
 	left := strings.Join(leftParts, "")
 
 	right := renderStatusBarRight(theme, statusBarRightTokens(state))
+	if right != "" && xansi.StringWidth(left)+1+xansi.StringWidth(right) > width {
+		right = ""
+	}
 
 	return fillLine(left, right, width, theme.chromeBG)
 }
@@ -127,7 +130,7 @@ func renderStatusSep(theme uiTheme) string {
 	return statusSeparatorStyle(theme).Render(" • ")
 }
 
-func renderDesktopHint(theme uiTheme, label, bg string) string {
+func renderDesktopHint(theme uiTheme, label, color string) string {
 	label = strings.TrimSpace(label)
 	if label == "" {
 		return ""
@@ -138,8 +141,11 @@ func renderDesktopHint(theme uiTheme, label, bg string) string {
 	if len(parts) > 1 {
 		text = parts[1]
 	}
+	// Use foreground-only coloring (no background chip). Colored backgrounds
+	// are especially noticeable during full-frame redraws triggered by cursor
+	// position changes, making the status bar appear to flash.
 	keyStyle := statusHintKeyStyle(theme).
-		Foreground(lipgloss.Color(ensureContrast(bg, theme.chromeBG, 3.2)))
+		Foreground(lipgloss.Color(color))
 	if text == "" {
 		return keyStyle.Render("[" + key + "]")
 	}
@@ -149,26 +155,29 @@ func renderDesktopHint(theme uiTheme, label, bg string) string {
 
 func renderModeBadge(theme uiTheme, mode string) string {
 	label := strings.ToUpper(mode)
-	bg := modeAccentColor(theme, input.ModeKind(mode))
-	return renderStatusChip(theme, label, bg, contrastTextColor(bg)) + renderStatusSep(theme)
+	color := modeAccentColor(theme, input.ModeKind(mode))
+	return statusPartDefaultStyle(theme).
+		Bold(true).
+		Foreground(lipgloss.Color(color)).
+		Render(label) + renderStatusSep(theme)
 }
 
 func renderModeHints(theme uiTheme, mode string, labels []string) []string {
 	modeKind := input.ModeKind(mode)
-	bg := modeAccentColor(theme, modeKind)
+	color := modeAccentColor(theme, modeKind)
 	if len(labels) == 0 {
-		return []string{renderDesktopHint(theme, "Esc BACK", theme.chromeAltBG)}
+		return []string{renderDesktopHint(theme, "Esc BACK", theme.panelMuted)}
 	}
 	out := make([]string, 0, len(labels)*2)
 	for i, label := range labels {
 		if i > 0 {
 			out = append(out, renderStatusSep(theme))
 		}
-		chipBG := bg
+		fg := color
 		if label == "Esc BACK" {
-			chipBG = theme.chromeText
+			fg = theme.panelMuted
 		}
-		out = append(out, renderDesktopHint(theme, label, chipBG))
+		out = append(out, renderDesktopHint(theme, label, fg))
 	}
 	return out
 }
@@ -188,7 +197,7 @@ func modeAccentColor(theme uiTheme, mode input.ModeKind) string {
 	case input.ModeFloatingOverview:
 		return theme.warning
 	case input.ModeDisplay:
-		return theme.info
+		return theme.hintKeyFG
 	case input.ModePicker:
 		return theme.success
 	case input.ModePrompt:
@@ -196,9 +205,26 @@ func modeAccentColor(theme uiTheme, mode input.ModeKind) string {
 	case input.ModeHelp:
 		return theme.info
 	case input.ModeGlobal, input.ModeTerminalManager:
-		return theme.info
+		return theme.hintKeyFG
 	default:
 		return theme.chromeText
+	}
+}
+
+func rootStatusHintColors(theme uiTheme) []string {
+	// Display/global are the only root shortcuts that fan into the most
+	// saturated info accent. On Terminal.app that accent is the most prone to
+	// looking like footer shimmer during redraws, so keep those roots on the
+	// base hint accent while preserving the other semantic group colors.
+	return []string{
+		theme.success,
+		theme.danger,
+		theme.chromeAccent,
+		theme.warning,
+		theme.warning,
+		theme.hintKeyFG,
+		theme.success,
+		theme.hintKeyFG,
 	}
 }
 
@@ -365,11 +391,36 @@ func fillLine(left, right string, width int, bg string) string {
 	if width <= 0 {
 		return ""
 	}
-	filler := backgroundStyle(bg)
 	leftW := xansi.StringWidth(left)
 	rightW := xansi.StringWidth(right)
-	if leftW+rightW >= width {
-		return forceWidthANSIOverlay(left+right, width)
+	gap := 0
+	if strings.TrimSpace(left) != "" && strings.TrimSpace(right) != "" {
+		gap = 1
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Left, left, filler.Width(width-leftW-rightW).Render(""), right)
+	if rightW >= width {
+		return xansi.CHA(1) + forceWidthANSIOverlay(right, width)
+	}
+	maxLeftW := maxInt(0, width-rightW-gap)
+	if leftW > maxLeftW {
+		left = xansi.Truncate(left, maxLeftW, "")
+		leftW = xansi.StringWidth(left)
+	}
+	fillW := maxInt(0, width-leftW-rightW-gap)
+
+	// Build the filler with direct ANSI instead of lipgloss to avoid
+	// lipgloss reset/re-set artifacts that can eat background colors
+	// on some terminals.
+	var b strings.Builder
+	b.WriteString(xansi.CHA(1))
+	b.WriteString(left)
+	if fillW+gap > 0 {
+		b.WriteString(styleANSI(drawStyle{BG: bg}))
+		b.WriteString(strings.Repeat(" ", fillW+gap))
+		b.WriteString("\x1b[0m")
+	}
+	b.WriteString(right)
+	// Erase to end of line to prevent stale characters from previous
+	// wider renders lingering on the right.
+	b.WriteString("\x1b[K")
+	return b.String()
 }
