@@ -44,6 +44,8 @@ func Spawn(opts SpawnOptions) (*PTY, error) {
 	cmd.Env = mergedEnv(opts.TerminalID, opts.Env)
 
 	size := &creackpty.Winsize{Cols: opts.Size.Cols, Rows: opts.Size.Rows}
+	// creack/pty.StartWithSize creates a new session and controlling TTY.
+	// Adding Setpgid on top breaks PTY launches on Darwin with EPERM.
 	file, err := creackpty.StartWithSize(cmd, size)
 	if err != nil {
 		return nil, err

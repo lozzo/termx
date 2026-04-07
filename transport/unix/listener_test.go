@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -90,5 +92,48 @@ func TestListenerAcceptContextCancel(t *testing.T) {
 
 	if _, err := listener.Accept(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestListenerSupportsLongSocketPath(t *testing.T) {
+	base := filepath.Join(t.TempDir(), strings.Repeat("socket-dir-", 8))
+	path := filepath.Join(base, "termx.sock")
+	if len(path) <= maxSocketPathBytes() {
+		t.Fatalf("expected long socket path, got len=%d limit=%d", len(path), maxSocketPathBytes())
+	}
+
+	listener, err := NewListener(path)
+	if err != nil {
+		t.Fatalf("new listener failed: %v", err)
+	}
+	defer listener.Close()
+
+	if _, err := os.Lstat(path); err != nil {
+		t.Fatalf("expected visible alias at original path: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	accepted := make(chan transport.Transport, 1)
+	go func() {
+		conn, err := listener.Accept(ctx)
+		if err != nil {
+			return
+		}
+		accepted <- conn
+	}()
+
+	client, err := Dial(path)
+	if err != nil {
+		t.Fatalf("dial failed: %v", err)
+	}
+	defer client.Close()
+
+	select {
+	case server := <-accepted:
+		defer server.Close()
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for accept on long socket path")
 	}
 }

@@ -38,10 +38,11 @@ func Spawn(opts SpawnOptions) (*PTY, error)
 创建流程：
 
 1. 构建 `exec.Cmd`，设置 `Dir` 和 `Env`
-2. 设置 `Setpgid: true`（创建独立进程组，便于后续整组 kill）
-3. 调用 `creack/pty.StartWithSize()` 启动进程并获取 PTY master fd
-4. 启动 goroutine 等待进程退出（`cmd.Wait()`），完成后关闭 `done` channel
-5. 返回 `PTY` 实例
+2. 调用 `creack/pty.StartWithSize()` 启动进程并获取 PTY master fd
+   - `creack/pty` 会为子进程创建新 session 并设置 controlling TTY
+   - 不额外设置 `Setpgid`，因为这会在 Darwin 上导致 PTY 启动返回 `EPERM`
+3. 启动 goroutine 等待进程退出（`cmd.Wait()`），完成后关闭 `done` channel
+4. 返回 `PTY` 实例
 
 ### 读取输出（Read）
 
@@ -91,14 +92,12 @@ SIGHUP → (等待 500ms) → SIGTERM → (等待 2s) → SIGKILL
 2. **SIGTERM**：如果 SIGHUP 后进程仍在运行，发送标准终止信号
 3. **SIGKILL**：最后手段，强制杀死进程
 
-使用 **进程组** 确保子进程创建的所有后代进程都被一起终止：
+利用 PTY 子进程的新 session / 进程组，确保子进程创建的后代进程可以被一起终止：
 
 ```go
-cmd.SysProcAttr = &syscall.SysProcAttr{
-    Setpgid: true,
-}
+// creack/pty.StartWithSize() 会设置 Setsid 和 Setctty
 
-// Kill 时对整个进程组发送信号
+// Kill 时对该子进程对应的进程组发送信号
 syscall.Kill(-cmd.Process.Pid, syscall.SIGHUP)
 ```
 
