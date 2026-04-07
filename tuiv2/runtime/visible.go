@@ -1,13 +1,17 @@
 package runtime
 
-import "github.com/lozzow/termx/protocol"
+import (
+	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/tuiv2/shared"
+)
 
 type VisibleRuntime struct {
-	Terminals     []VisibleTerminal
-	Bindings      []VisiblePaneBinding
-	HostDefaultFG string
-	HostDefaultBG string
-	HostPalette   map[int]string
+	Terminals         []VisibleTerminal
+	Bindings          []VisiblePaneBinding
+	HostDefaultFG     string
+	HostDefaultBG     string
+	HostPalette       map[int]string
+	HostEmojiVS16Mode shared.AmbiguousEmojiVariationSelectorMode
 }
 
 type VisibleTerminal struct {

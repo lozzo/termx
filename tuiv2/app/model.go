@@ -67,6 +67,7 @@ type Model struct {
 	pendingPaneResizes    map[string]pendingPaneResize
 	invalidatePending     atomic.Bool
 	invalidateDeferred    atomic.Bool
+	hostEmojiProbePending bool
 
 	// 鼠标拖动状态
 	mouseDragPaneID  string

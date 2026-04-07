@@ -65,6 +65,8 @@ func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() 
 					program.Send(hostDefaultColorsMsg{FG: event.Color})
 				case uv.BackgroundColorEvent:
 					program.Send(hostDefaultColorsMsg{BG: event.Color})
+				case uv.CursorPositionEvent:
+					program.Send(hostCursorPositionMsg{X: event.X, Y: event.Y})
 				case uv.UnknownOscEvent:
 					if index, c, ok := parsePaletteColorEvent(string(event)); ok {
 						program.Send(hostPaletteColorMsg{Index: index, Color: c})

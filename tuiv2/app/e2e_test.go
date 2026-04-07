@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -814,6 +815,132 @@ func TestE2EKeyEnterExecutesCommandInAttachedShell(t *testing.T) {
 	e2eWaitForTitle(t, ctx, model, invalidated, created.TerminalID, "termx-prompt")
 }
 
+func TestE2EZshPromptWithEmojiVariationKeepsSingleRightBorder(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+	if _, err := exec.LookPath("zsh"); err != nil {
+		t.Skipf("e2e: zsh not available: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+
+	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
+	srv := termx.NewServer(termx.WithSocketPath(socketPath))
+	srvDone := make(chan error, 1)
+	go func() { srvDone <- srv.ListenAndServe(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+		select {
+		case <-srvDone:
+		case <-time.After(3 * time.Second):
+		}
+	})
+	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
+		t.Fatalf("server socket never appeared: %v", err)
+	}
+
+	tr, err := unixtransport.Dial(socketPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	pc := protocol.NewClient(tr)
+	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+		t.Fatalf("hello: %v", err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+
+	created, err := pc.Create(ctx, protocol.CreateParams{
+		Command: []string{"zsh", "-f", "-i"},
+		Name:    "emoji-zsh",
+		Env: []string{
+			"TERM=xterm-256color",
+			"PROMPT_EOL_MARK=",
+			"RPROMPT=",
+		},
+		Size: protocol.Size{Cols: 96, Rows: 28},
+	})
+	if err != nil {
+		t.Fatalf("create interactive zsh: %v", err)
+	}
+
+	model := New(shared.Config{AttachID: created.TerminalID}, nil, runtime.New(bridge.NewProtocolClient(pc)))
+	model.width = 96
+	model.height = 30
+
+	invalidated := make(chan struct{}, 256)
+	model.SetSendFunc(func(msg tea.Msg) {
+		if _, ok := msg.(InvalidateMsg); ok {
+			select {
+			case invalidated <- struct{}{}:
+			default:
+			}
+		}
+		_, cmd := model.Update(msg)
+		e2eDrain(t, model, cmd)
+	})
+
+	e2eDrain(t, model, model.Init())
+
+	pane := model.workbench.ActivePane()
+	if pane == nil || pane.TerminalID != created.TerminalID {
+		t.Fatalf("expected active pane attached to %q, got %#v", created.TerminalID, pane)
+	}
+
+	_, cmd := model.Update(input.TerminalInput{
+		PaneID: pane.ID,
+		Data: []byte(
+			"PROMPT=$'# lozzow@RedmiBook♻️: ~/Documents/workdir/termx <> '\n" +
+				"RPROMPT='[1d11220]'\n" +
+				"PROMPT_EOL_MARK=''\n" +
+				"clear\n",
+		),
+	})
+	e2eDrain(t, model, cmd)
+
+	model.hostEmojiProbePending = true
+	_, cmd = model.Update(hostCursorPositionMsg{X: 1, Y: 0})
+	e2eDrain(t, model, cmd)
+
+	e2eWaitForText(t, ctx, model, invalidated, "RedmiBook♻️")
+	e2eWaitForText(t, ctx, model, invalidated, "[1d11220]")
+
+	payload := "ζ ♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:"
+	_, cmd = model.Update(input.TerminalInput{PaneID: pane.ID, Data: []byte(payload)})
+	e2eDrain(t, model, cmd)
+
+	e2eWaitForText(t, ctx, model, invalidated, "ζ")
+
+	view := xansi.Strip(model.View())
+	if !regexp.MustCompile(`♻️\x1b\[[0-9]+G`).MatchString(model.View()) {
+		t.Fatalf("expected rendered frame to preserve the emoji and re-anchor the next cell with CHA, got:\n%q", model.View())
+	}
+	lines := strings.Split(view, "\n")
+	if len(lines) != model.height {
+		t.Fatalf("expected %d frame rows, got %d:\n%s", model.height, len(lines), view)
+	}
+
+	bodyLines := lines[1 : len(lines)-1]
+	foundPromptOrInput := false
+	for i, line := range bodyLines {
+		if got := xansi.StringWidth(line); got != model.width {
+			t.Fatalf("expected body row %d to keep width %d, got %d: %q", i, model.width, got, line)
+		}
+		if !strings.Contains(line, "RedmiBook") && !strings.Contains(line, "ζ") && !strings.Contains(line, "[1d11220]") {
+			continue
+		}
+		foundPromptOrInput = true
+		if count := strings.Count(line, "│"); count != 2 {
+			t.Fatalf("expected prompt/input row %d to contain a single left/right border pair, got %d in %q\nsnapshot excerpt:\n%s", i, count, line, e2eActiveSnapshotExcerpt(model))
+		}
+	}
+	if !foundPromptOrInput {
+		t.Fatalf("expected prompt or typed input in rendered body:\n%s\nsnapshot excerpt:\n%s", view, e2eActiveSnapshotExcerpt(model))
+	}
+}
+
 func TestE2EDetachAndReattachThroughPaneMode(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: requires a real PTY, skipped with -short")
@@ -1553,8 +1680,12 @@ func TestE2EMultiClientSharedPaneInputSyncsOwnerBadgeAndLastActiveSize(t *testin
 	}
 
 	rectA := e2eVisiblePaneRect(t, clientA.model, paneA.ID)
-	wantACols := uint16(maxInt(2, rectA.W-2))
-	wantARows := uint16(maxInt(2, rectA.H-2))
+	contentA, ok := paneContentRect(rectA)
+	if !ok {
+		t.Fatal("expected client A content rect")
+	}
+	wantACols := uint16(maxInt(2, contentA.W))
+	wantARows := uint16(maxInt(2, contentA.H))
 
 	e2eDrainSkippingPrefixTimeout(t, clientA.model, clientA.model.acquireSessionLeaseAndResizeCmd(paneA.ID, terminalID))
 	e2eWaitForTerminalOwnerPane(t, env.ctx, clientA.model, terminalID, paneA.ID)
@@ -1570,8 +1701,12 @@ func TestE2EMultiClientSharedPaneInputSyncsOwnerBadgeAndLastActiveSize(t *testin
 	e2eWaitForText(t, env.ctx, clientA.model, clientA.invalidated, "client_b_active")
 
 	rectB := e2eVisiblePaneRect(t, clientB.model, paneB.ID)
-	wantBCols := uint16(maxInt(2, rectB.W-2))
-	wantBRows := uint16(maxInt(2, rectB.H-2))
+	contentB, ok := paneContentRect(rectB)
+	if !ok {
+		t.Fatal("expected client B content rect")
+	}
+	wantBCols := uint16(maxInt(2, contentB.W))
+	wantBRows := uint16(maxInt(2, contentB.H))
 	e2eWaitForTerminalOwnerPane(t, env.ctx, clientA.model, terminalID, paneA.ID)
 	e2eWaitForTerminalOwnerPane(t, env.ctx, clientB.model, terminalID, paneA.ID)
 	e2eWaitForTerminalSize(t, env.ctx, clientB.model, terminalID, wantBCols, wantBRows)
@@ -1661,8 +1796,12 @@ func TestE2ETabSwitchSharedTerminalPromotesOwnerResizesAndShowsCursor(t *testing
 		t.Fatalf("expected visible pane %q after second tab switch, got %#v", secondPaneID, visible.Tabs[visible.ActiveTab].Panes)
 	}
 
-	wantCols := uint16(maxInt(2, target.Rect.W-2))
-	wantRows := uint16(maxInt(2, target.Rect.H-2))
+	targetContent, ok := paneContentRectForVisible(*target)
+	if !ok {
+		t.Fatal("expected target content rect")
+	}
+	wantCols := uint16(maxInt(2, targetContent.W))
+	wantRows := uint16(maxInt(2, targetContent.H))
 	e2eWaitForTerminalSize(t, env.ctx, model, created.TerminalID, wantCols, wantRows)
 	e2eWaitForCursorHighlight(t, env.ctx, model, env.invalidated)
 }
@@ -2591,7 +2730,7 @@ func e2eShareTerminalInSplitPane(t *testing.T, env realMouseE2EEnv, sourcePaneID
 func e2eWaitSocket(path string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		conn, err := net.Dial("unix", path)
+		conn, err := unixtransport.Dial(path)
 		if err == nil {
 			_ = conn.Close()
 			return nil

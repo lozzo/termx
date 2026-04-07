@@ -16,6 +16,7 @@ import (
 	"github.com/lozzow/termx/protocol"
 	unixtransport "github.com/lozzow/termx/transport/unix"
 	"github.com/lozzow/termx/tuiv2/bridge"
+	"github.com/lozzow/termx/tuiv2/shared"
 )
 
 func newTestRuntime(t *testing.T) (*Runtime, context.Context) {
@@ -166,9 +167,9 @@ func TestRuntimeLoadSnapshotDoesNotRaceWithAlternateScreenExit(t *testing.T) {
 			Cells:             [][]protocol.Cell{{{Content: "v", Width: 1}, {Content: "i", Width: 1}}},
 			IsAlternateScreen: true,
 		},
-		Cursor:     protocol.CursorState{Visible: false},
-		Modes:      protocol.TerminalModes{AutoWrap: true, AlternateScreen: true, MouseTracking: true},
-		Timestamp:  time.Now(),
+		Cursor:    protocol.CursorState{Visible: false},
+		Modes:     protocol.TerminalModes{AutoWrap: true, AlternateScreen: true, MouseTracking: true},
+		Timestamp: time.Now(),
 	}
 	client.snapshotHook = func() {
 		if client.subscriptionCount(9) != 0 {
@@ -333,6 +334,29 @@ func TestRuntimeSetHostPaletteColorRefreshesVisibleState(t *testing.T) {
 	}
 	if invalidateCount.Load() == 0 {
 		t.Fatal("expected host palette update to invalidate rendering")
+	}
+}
+
+func TestRuntimeSetHostAmbiguousEmojiVariationSelectorModeRefreshesVisibleState(t *testing.T) {
+	var invalidateCount atomic.Int32
+	rt := New(nil, WithInvalidate(func() {
+		invalidateCount.Add(1)
+	}))
+
+	if visible := rt.Visible(); visible == nil {
+		t.Fatal("expected visible runtime")
+	} else if visible.HostEmojiVS16Mode != shared.AmbiguousEmojiVariationSelectorRaw {
+		t.Fatalf("expected raw host emoji mode by default, got %q", visible.HostEmojiVS16Mode)
+	}
+
+	rt.SetHostAmbiguousEmojiVariationSelectorMode(shared.AmbiguousEmojiVariationSelectorAdvance)
+
+	visible := rt.Visible()
+	if visible.HostEmojiVS16Mode != shared.AmbiguousEmojiVariationSelectorAdvance {
+		t.Fatalf("expected visible host emoji mode to refresh, got %q", visible.HostEmojiVS16Mode)
+	}
+	if invalidateCount.Load() == 0 {
+		t.Fatal("expected host emoji mode update to invalidate rendering")
 	}
 }
 

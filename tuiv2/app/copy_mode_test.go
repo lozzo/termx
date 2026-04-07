@@ -25,6 +25,8 @@ func (w *recordingControlWriter) WriteControlSequence(seq string) error {
 	return nil
 }
 
+func (w *recordingControlWriter) QueueControlSequenceAfterWrite(seq string) {}
+
 func protocolRowFromText(text string, cols int) []protocol.Cell {
 	if cols <= 0 {
 		cols = len(text)

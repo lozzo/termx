@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
@@ -9,24 +10,24 @@ import (
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
 	"github.com/lozzow/termx/tuiv2/render"
+	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 func (m *Model) Init() tea.Cmd {
+	var initCmd tea.Cmd
 	if err := m.bootstrapStartup(); err != nil {
 		return func() tea.Msg { return err }
 	}
 	if m.cfg.AttachID != "" {
-		return m.attachInitialTerminalCmd(m.cfg.AttachID)
+		initCmd = m.attachInitialTerminalCmd(m.cfg.AttachID)
+	} else if len(m.startup.PanesToReattach) > 0 {
+		initCmd = m.reattachRestoredPanesCmd(m.startup.PanesToReattach)
+	} else if m.modalHost != nil && m.modalHost.Session != nil {
+		// If startup opened a picker, immediately load the terminal list.
+		initCmd = m.applyEffects([]orchestrator.Effect{orchestrator.LoadPickerItemsEffect{}})
 	}
-	if len(m.startup.PanesToReattach) > 0 {
-		return m.reattachRestoredPanesCmd(m.startup.PanesToReattach)
-	}
-	// If startup opened a picker, immediately load the terminal list.
-	if m.modalHost != nil && m.modalHost.Session != nil {
-		return m.applyEffects([]orchestrator.Effect{orchestrator.LoadPickerItemsEffect{}})
-	}
-	return nil
+	return batchCmds(initCmd, m.hostEmojiProbeCmd(1, hostEmojiProbeRetryDelay))
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -46,6 +47,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	return m, nil
+}
+
+func (m *Model) hostEmojiProbeCmd(attempt int, delay time.Duration) tea.Cmd {
+	if m == nil || !m.hostEmojiProbePending || m.cursorOut == nil || attempt <= 0 {
+		return nil
+	}
+	return tea.Tick(delay, func(time.Time) tea.Msg {
+		return hostEmojiProbeMsg{Attempt: attempt}
+	})
+}
+
+func hostEmojiProbeGiveUpCmd(delay time.Duration) tea.Cmd {
+	if delay <= 0 {
+		return func() tea.Msg { return hostEmojiProbeGiveUpMsg{} }
+	}
+	return tea.Tick(delay, func(time.Time) tea.Msg {
+		return hostEmojiProbeGiveUpMsg{}
+	})
 }
 
 func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
@@ -168,6 +187,45 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		if m.runtime != nil {
 			m.runtime.SetHostPaletteColor(typed.Index, typed.Color)
 		}
+		return nil, true
+	case hostEmojiProbeMsg:
+		if m.runtime == nil || !m.hostEmojiProbePending || m.cursorOut == nil || typed.Attempt <= 0 {
+			return nil, true
+		}
+		m.debugLog("host_emoji_probe_send", "attempt", typed.Attempt)
+		if err := m.cursorOut.WriteControlSequence(hostEmojiVariationProbeSequence); err != nil {
+			m.debugLog("host_emoji_probe_write_failed", "attempt", typed.Attempt, "err", err)
+			m.hostEmojiProbePending = false
+			return nil, true
+		}
+		if typed.Attempt >= hostEmojiProbeMaxAttempts {
+			return hostEmojiProbeGiveUpCmd(hostEmojiProbeRetryDelay), true
+		}
+		return m.hostEmojiProbeCmd(typed.Attempt+1, hostEmojiProbeRetryDelay), true
+	case hostEmojiProbeGiveUpMsg:
+		if !m.hostEmojiProbePending {
+			return nil, true
+		}
+		m.debugLog("host_emoji_probe_give_up")
+		m.hostEmojiProbePending = false
+		return nil, true
+	case hostCursorPositionMsg:
+		if m.runtime == nil || !m.hostEmojiProbePending {
+			return nil, true
+		}
+		m.hostEmojiProbePending = false
+		mode := shared.AmbiguousEmojiVariationSelectorStrip
+		switch {
+		case typed.X >= 2:
+			mode = shared.AmbiguousEmojiVariationSelectorRaw
+		case typed.X == 1:
+			mode = shared.AmbiguousEmojiVariationSelectorAdvance
+		}
+		// Only the reported column matters for this probe. Some terminals answer
+		// from a non-origin row after alt-screen transitions or delayed paints, so
+		// rejecting non-zero Y would leave us stuck in the conservative fallback.
+		m.debugLog("host_emoji_probe_response", "x", typed.X, "y", typed.Y, "mode", mode)
+		m.runtime.SetHostAmbiguousEmojiVariationSelectorMode(mode)
 		return nil, true
 	case reattachFailedMsg:
 		return m.openPickerIfUnattached(typed.paneID), true

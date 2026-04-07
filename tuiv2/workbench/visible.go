@@ -27,4 +27,6 @@ type VisiblePane struct {
 	TerminalID string
 	Rect       Rect
 	Floating   bool
+	SharedLeft bool
+	SharedTop  bool
 }

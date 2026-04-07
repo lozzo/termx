@@ -90,6 +90,13 @@ func (m *Model) terminalViewportRect(paneID string, rect workbench.Rect) (workbe
 	if m.paneUsesImmersiveViewport(paneID) {
 		return rect, true
 	}
+	if visiblePane, ok := m.visiblePaneProjection(paneID); ok {
+		// Resize PTYs against the same shared-edge-aware content rect that render
+		// uses. If resize math and draw math diverge by even one gutter/divider
+		// column, the terminal can legitimately paint into what render thinks is
+		// border space.
+		return paneContentRectForVisible(visiblePane)
+	}
 	return paneContentRect(rect)
 }
 
@@ -109,7 +116,7 @@ func (m *Model) activePaneContentRect() (workbench.Rect, bool) {
 		if pane.ID != tab.ActivePaneID {
 			continue
 		}
-		return paneContentRect(pane.Rect)
+		return paneContentRectForVisible(pane)
 	}
 	if visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
 		return workbench.Rect{}, false
@@ -118,9 +125,32 @@ func (m *Model) activePaneContentRect() (workbench.Rect, bool) {
 		if pane.ID != tab.ActivePaneID {
 			continue
 		}
-		return paneContentRect(pane.Rect)
+		return paneContentRectForVisible(pane)
 	}
 	return workbench.Rect{}, false
+}
+
+func (m *Model) visiblePaneProjection(paneID string) (workbench.VisiblePane, bool) {
+	if m == nil || m.workbench == nil || strings.TrimSpace(paneID) == "" {
+		return workbench.VisiblePane{}, false
+	}
+	visible := m.workbench.VisibleWithSize(m.bodyRect())
+	if visible == nil {
+		return workbench.VisiblePane{}, false
+	}
+	for _, pane := range visible.FloatingPanes {
+		if pane.ID == paneID {
+			return pane, true
+		}
+	}
+	for _, tab := range visible.Tabs {
+		for _, pane := range tab.Panes {
+			if pane.ID == paneID {
+				return pane, true
+			}
+		}
+	}
+	return workbench.VisiblePane{}, false
 }
 
 func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {

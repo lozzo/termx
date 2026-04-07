@@ -640,7 +640,11 @@ func TestMouseClickOwnerButtonPromotesPaneAndResizesTerminal(t *testing.T) {
 	if call.channel != 2 {
 		t.Fatalf("expected pane-2 channel to drive resize, got %#v", call)
 	}
-	if wantCols, wantRows := uint16(maxInt(2, pane.Rect.W-2)), uint16(maxInt(2, pane.Rect.H-2)); call.cols != wantCols || call.rows != wantRows {
+	contentRect, ok := paneContentRectForVisible(pane)
+	if !ok {
+		t.Fatal("expected visible pane content rect")
+	}
+	if wantCols, wantRows := uint16(maxInt(2, contentRect.W)), uint16(maxInt(2, contentRect.H)); call.cols != wantCols || call.rows != wantRows {
 		t.Fatalf("expected resize to %dx%d, got %#v", wantCols, wantRows, call)
 	}
 }

@@ -1,15 +1,19 @@
 package render
 
 import (
+	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
+	localvterm "github.com/lozzow/termx/vterm"
 )
 
 func makeTestState() VisibleRenderState {
@@ -80,7 +84,7 @@ func TestDrawPaneFrameUsesTieredChromeStylesForActivePane(t *testing.T) {
 	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
 	border := paneBorderInfo{StateLabel: "●", ShareLabel: "⇄2", RoleLabel: "◆ owner"}
 
-	drawPaneFrame(canvas, rect, "demo", border, theme, paneOverflowHints{}, true, false)
+	drawPaneFrame(canvas, rect, false, false, "demo", border, theme, paneOverflowHints{}, true, false)
 	layout, ok := paneTopBorderLabelsLayout(rect, "demo", border, paneChromeActionTokensForFrame(rect, "demo", border, false))
 	if !ok {
 		t.Fatal("expected pane chrome layout")
@@ -110,7 +114,7 @@ func TestDrawPaneFrameKeepsTopRightCornerAlignedWithWideBorderLabels(t *testing.
 	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
 	border := paneBorderInfo{StateLabel: paneRunningIcon(), RoleLabel: "◆ owner"}
 
-	drawPaneFrame(canvas, rect, "demo界", border, theme, paneOverflowHints{}, true, false)
+	drawPaneFrame(canvas, rect, false, false, "demo界", border, theme, paneOverflowHints{}, true, false)
 
 	lines := strings.Split(xansi.Strip(canvas.String()), "\n")
 	if len(lines) < 2 {
@@ -128,6 +132,555 @@ func TestDrawPaneFrameKeepsTopRightCornerAlignedWithWideBorderLabels(t *testing.
 	if !strings.HasSuffix(lines[1], "│") {
 		t.Fatalf("expected second row to end at the right border, got %q", lines[1])
 	}
+}
+
+func TestDrawPaneFrameKeepsTopRightCornerAlignedWithEmojiVariationTitle(t *testing.T) {
+	canvas := newComposedCanvas(40, 6)
+	rect := workbench.Rect{X: 0, Y: 0, W: 40, H: 6}
+	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
+	border := paneBorderInfo{StateLabel: paneRunningIcon(), RoleLabel: "◆ owner"}
+
+	drawPaneFrame(canvas, rect, false, false, "RedmiBook♻️", border, theme, paneOverflowHints{}, true, false)
+
+	lines := strings.Split(xansi.Strip(canvas.String()), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected at least two rendered lines, got %d", len(lines))
+	}
+	if got := xansi.StringWidth(lines[0]); got != rect.W {
+		t.Fatalf("expected top border visual width %d, got %d: %q", rect.W, got, lines[0])
+	}
+	if got := xansi.StringWidth(lines[1]); got != rect.W {
+		t.Fatalf("expected second row visual width %d, got %d: %q", rect.W, got, lines[1])
+	}
+	if !strings.HasSuffix(lines[0], "┐") {
+		t.Fatalf("expected top row to end at the right corner, got %q", lines[0])
+	}
+	if !strings.HasSuffix(lines[1], "│") {
+		t.Fatalf("expected second row to end at the right border, got %q", lines[1])
+	}
+}
+
+func TestRenderBodyKeepsPaneWidthStableWithEmojiVariationSnapshotNearRightEdge(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	row := []protocol.Cell{
+		{Content: "ζ", Width: 1},
+		{Content: " ", Width: 1},
+		{Content: "♻️", Width: 2},
+		{Content: "", Width: 0},
+		{Content: ":", Width: 1},
+		{Content: "♻️", Width: 2},
+		{Content: "", Width: 0},
+		{Content: ":", Width: 1},
+		{Content: "♻️", Width: 2},
+		{Content: "", Width: 0},
+		{Content: ":", Width: 1},
+	}
+	bodyWidth := 14
+	bodyHeight := 5
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), bodyWidth, bodyHeight), bodyWidth, bodyHeight+2)
+	state.Runtime = &VisibleRuntimeStateProxy{
+		HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorAdvance,
+		Terminals: []runtime.VisibleTerminal{{
+			TerminalID: "term-1",
+			Snapshot: &protocol.Snapshot{
+				TerminalID: "term-1",
+				Size:       protocol.Size{Cols: 11, Rows: 1},
+				Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{row}},
+				Cursor:     protocol.CursorState{Visible: false},
+				Modes:      protocol.TerminalModes{AutoWrap: true},
+			},
+		}}}
+
+	body := xansi.Strip(renderBody(state, bodyWidth, bodyHeight))
+	lines := strings.Split(body, "\n")
+	if len(lines) != bodyHeight {
+		t.Fatalf("expected %d body rows, got %d:\n%s", bodyHeight, len(lines), body)
+	}
+	for i, line := range lines {
+		if got := xansi.StringWidth(line); got != bodyWidth {
+			t.Fatalf("expected body row %d to stay width %d, got %d: %q", i, bodyWidth, got, line)
+		}
+	}
+	if got := strings.Count(lines[1], "│"); got != 2 {
+		t.Fatalf("expected content row to keep a single left/right border pair, got %d in %q", got, lines[1])
+	}
+}
+
+func TestRenderBodyReanchorsAmbiguousEmojiVariationSelectorWithCHAWhenHostRequiresIt(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	bodyWidth := 20
+	bodyHeight := 4
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), bodyWidth, bodyHeight), bodyWidth, bodyHeight+2)
+	state.Runtime = &VisibleRuntimeStateProxy{
+		HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorAdvance,
+		Terminals: []runtime.VisibleTerminal{{
+			TerminalID: "term-1",
+			Snapshot: &protocol.Snapshot{
+				TerminalID: "term-1",
+				Size:       protocol.Size{Cols: 17, Rows: 1},
+				Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{
+					{Content: "#", Width: 1},
+					{Content: " ", Width: 1},
+					{Content: "♻️", Width: 2},
+					{Content: "", Width: 0},
+					{Content: ":", Width: 1},
+				}}},
+				Cursor: protocol.CursorState{Visible: false},
+				Modes:  protocol.TerminalModes{AutoWrap: true},
+			},
+		}},
+	}
+
+	body := renderBody(state, bodyWidth, bodyHeight)
+	if !strings.Contains(body, "♻️"+xansi.CHA(6)+":") {
+		t.Fatalf("expected renderBody to keep emoji and re-anchor the next cell with CHA, got %q", body)
+	}
+}
+
+func TestProtocolRowDisplayWidthIgnoresContinuationCells(t *testing.T) {
+	row := []protocol.Cell{
+		{Content: "ζ", Width: 1},
+		{Content: " ", Width: 1},
+		{Content: "♻️", Width: 2},
+		{Content: "", Width: 0},
+		{Content: ":", Width: 1},
+	}
+
+	if got := protocolRowDisplayWidth(row); got != 5 {
+		t.Fatalf("expected row display width 5, got %d for %#v", got, row)
+	}
+}
+
+func TestRenderBodyKeepsWidthStableForPromptWithEmojiVariationHostAcrossWidths(t *testing.T) {
+	prompts := []struct {
+		name   string
+		prompt string
+	}{
+		{name: "emoji-variation", prompt: "# lozzow@RedmiBook♻️: ~/Documents/workdir/termx <>                                                                                             (23:17:15)"},
+		{name: "single-wide-emoji", prompt: "# lozzow🙂: ~/Documents/workdir/termx <>                                                                                                       (23:17:15)"},
+		{name: "zwj-emoji", prompt: "# lozzow👩‍💻: ~/Documents/workdir/termx <>                                                                                                      (23:17:15)"},
+		{name: "cjk-wide", prompt: "# 终端界面: ~/Documents/workdir/termx <>                                                                                                         (23:17:15)"},
+	}
+
+	for _, promptCase := range prompts {
+		t.Run(promptCase.name, func(t *testing.T) {
+			for _, bodyWidth := range []int{100, 110, 118, 119, 120, 121, 122, 123, 124, 125} {
+				wb := workbench.NewWorkbench()
+				wb.AddWorkspace("main", &workbench.WorkspaceState{
+					Name:      "main",
+					ActiveTab: 0,
+					Tabs: []*workbench.TabState{{
+						ID:           "tab-1",
+						Name:         "tab 1",
+						ActivePaneID: "pane-1",
+						Panes: map[string]*workbench.PaneState{
+							"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+						},
+						Root: workbench.NewLeaf("pane-1"),
+					}},
+				})
+
+				contentWidth := bodyWidth - 3
+				vt := localvterm.New(contentWidth, 3, 10, nil)
+				if _, err := vt.Write([]byte(promptCase.prompt)); err != nil {
+					t.Fatalf("write prompt into vterm: %v", err)
+				}
+
+				state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), bodyWidth, 6), bodyWidth, 8)
+				state.Runtime = &VisibleRuntimeStateProxy{
+					HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorAdvance,
+					Terminals: []runtime.VisibleTerminal{{
+						TerminalID: "term-1",
+						Snapshot: &protocol.Snapshot{
+							TerminalID: "term-1",
+							Size:       protocol.Size{Cols: uint16(contentWidth), Rows: 3},
+							Screen:     protocol.ScreenData{Cells: protocolRowsFromVTermCells(vt.ScreenContent().Cells)},
+							Cursor:     protocol.CursorState{Visible: false},
+							Modes:      protocol.TerminalModes{AutoWrap: true},
+						},
+					}}}
+
+				rawBody := renderBody(state, bodyWidth, 6)
+				if promptCase.name == "emoji-variation" && !strings.Contains(rawBody, "RedmiBook♻️"+xansi.CHA(22)+":") {
+					t.Fatalf("expected render output to preserve ambiguous emoji variation selectors and re-anchor the next cell with CHA, got body:\n%q", rawBody)
+				}
+				body := xansi.Strip(rawBody)
+				lines := strings.Split(body, "\n")
+				if len(lines) != 6 {
+					t.Fatalf("expected 6 body rows at width %d, got %d:\n%s", bodyWidth, len(lines), body)
+				}
+				for i, line := range lines {
+					if got := xansi.StringWidth(line); got != bodyWidth {
+						t.Fatalf("expected body row %d to stay width %d at frame width %d, got %d: %q", i, bodyWidth, bodyWidth, got, line)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiRawModeWhenHostAdvancesOneColumn(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	bodyWidth := 120
+	bodyHeight := 6
+	contentWidth := bodyWidth - 3
+	prompt := "# lozzow@RedmiBook♻️: ~/Documents/workdir/termx <>                                                                                             (23:17:15)"
+
+	vt := localvterm.New(contentWidth, 3, 10, nil)
+	if _, err := vt.Write([]byte(prompt)); err != nil {
+		t.Fatalf("write prompt into vterm: %v", err)
+	}
+
+	makeState := func(mode shared.AmbiguousEmojiVariationSelectorMode) VisibleRenderState {
+		state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), bodyWidth, bodyHeight), bodyWidth, bodyHeight+2)
+		state.Runtime = &VisibleRuntimeStateProxy{
+			HostEmojiVS16Mode: mode,
+			Terminals: []runtime.VisibleTerminal{{
+				TerminalID: "term-1",
+				Snapshot: &protocol.Snapshot{
+					TerminalID: "term-1",
+					Size:       protocol.Size{Cols: uint16(contentWidth), Rows: 3},
+					Screen:     protocol.ScreenData{Cells: protocolRowsFromVTermCells(vt.ScreenContent().Cells)},
+					Cursor:     protocol.CursorState{Visible: false},
+					Modes:      protocol.TerminalModes{AutoWrap: true},
+				},
+			}},
+		}
+		return state
+	}
+
+	host := newFakeHostFrame(bodyWidth, bodyHeight)
+	host.apply(renderBody(makeState(shared.AmbiguousEmojiVariationSelectorStrip), bodyWidth, bodyHeight), 1)
+	host.apply(renderBody(makeState(shared.AmbiguousEmojiVariationSelectorRaw), bodyWidth, bodyHeight), 1)
+
+	promptLine := ""
+	for _, line := range host.lines() {
+		if strings.Contains(line, "RedmiBook") {
+			promptLine = line
+			break
+		}
+	}
+	if promptLine == "" {
+		t.Fatalf("expected prompt line in fake host frame:\n%s", strings.Join(host.lines(), "\n"))
+	}
+	if got := strings.Count(promptLine, "│"); got != 2 {
+		t.Fatalf("expected raw-mode render to keep a single left/right border pair even when host advances ♻️ by one column, got %d in %q", got, promptLine)
+	}
+	if !strings.HasSuffix(promptLine, "│") {
+		t.Fatalf("expected prompt line to keep the right border in the last column, got %q", promptLine)
+	}
+}
+
+type fakeHostFrame struct {
+	width  int
+	height int
+	cells  [][]string
+}
+
+func newFakeHostFrame(width, height int) *fakeHostFrame {
+	cells := make([][]string, height)
+	for y := 0; y < height; y++ {
+		cells[y] = make([]string, width)
+		for x := 0; x < width; x++ {
+			cells[y][x] = " "
+		}
+	}
+	return &fakeHostFrame{width: width, height: height, cells: cells}
+}
+
+func (f *fakeHostFrame) apply(frame string, ambiguousWidth int) {
+	if f == nil {
+		return
+	}
+	row, col := 0, 0
+	for i := 0; i < len(frame); {
+		switch frame[i] {
+		case '\x1b':
+			consumed, nextRow, nextCol := consumeFakeHostEscape(frame[i:], row, col)
+			if consumed <= 0 {
+				i++
+				continue
+			}
+			i += consumed
+			row, col = nextRow, nextCol
+		case '\n':
+			row++
+			col = 0
+			i++
+		default:
+			if strings.HasPrefix(frame[i:], "♻️") {
+				f.put(row, col, "♻️")
+				col += ambiguousWidth
+				i += len("♻️")
+				continue
+			}
+			r, size := utf8.DecodeRuneInString(frame[i:])
+			if r == utf8.RuneError && size == 1 {
+				i++
+				continue
+			}
+			f.put(row, col, string(r))
+			col++
+			i += size
+		}
+	}
+}
+
+func consumeFakeHostEscape(src string, row, col int) (int, int, int) {
+	if len(src) < 2 || src[0] != '\x1b' || src[1] != '[' {
+		return 0, row, col
+	}
+	i := 2
+	for i < len(src) {
+		b := src[i]
+		if b >= 0x40 && b <= 0x7e {
+			params := src[2:i]
+			switch b {
+			case 'C':
+				col += fakeHostFirstParam(params, 1)
+			case 'G':
+				col = maxInt(0, fakeHostFirstParam(params, 1)-1)
+			case 'H':
+				parts := strings.Split(strings.TrimPrefix(params, "?"), ";")
+				if len(parts) >= 1 {
+					row = maxInt(0, fakeHostParseParam(parts[0], 1)-1)
+				}
+				if len(parts) >= 2 {
+					col = maxInt(0, fakeHostParseParam(parts[1], 1)-1)
+				}
+			}
+			return i + 1, row, col
+		}
+		i++
+	}
+	return 0, row, col
+}
+
+func fakeHostFirstParam(params string, fallback int) int {
+	params = strings.TrimPrefix(params, "?")
+	if params == "" {
+		return fallback
+	}
+	if idx := strings.IndexByte(params, ';'); idx >= 0 {
+		params = params[:idx]
+	}
+	return fakeHostParseParam(params, fallback)
+}
+
+func fakeHostParseParam(raw string, fallback int) int {
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+func (f *fakeHostFrame) put(row, col int, content string) {
+	if f == nil || row < 0 || row >= f.height || col < 0 || col >= f.width {
+		return
+	}
+	f.cells[row][col] = content
+}
+
+func (f *fakeHostFrame) lines() []string {
+	if f == nil {
+		return nil
+	}
+	lines := make([]string, 0, f.height)
+	for _, row := range f.cells {
+		var b strings.Builder
+		for _, cell := range row {
+			if cell == "" {
+				cell = " "
+			}
+			b.WriteString(cell)
+		}
+		lines = append(lines, b.String())
+	}
+	return lines
+}
+
+func TestRenderFrameKeepsSplitBoundaryStableAcrossRepeatedEmojiVariationUpdates(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "left", TerminalID: "term-1"},
+				"pane-2": {ID: "pane-2", Title: "right", TerminalID: "term-2"},
+			},
+			Root: &workbench.LayoutNode{
+				Direction: workbench.SplitVertical,
+				Ratio:     0.5,
+				First:     workbench.NewLeaf("pane-1"),
+				Second:    workbench.NewLeaf("pane-2"),
+			},
+		}},
+	})
+
+	bodyWidth := 80
+	bodyHeight := 8
+	var state VisibleRenderState
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+
+	patterns := []struct {
+		name   string
+		repeat string
+	}{
+		{name: "emoji-variation", repeat: "♻️:"},
+		{name: "single-wide-emoji", repeat: "🙂:"},
+		{name: "zwj-emoji", repeat: "👩‍💻:"},
+		{name: "cjk-wide", repeat: "漢字:"},
+	}
+
+	for _, pattern := range patterns {
+		t.Run(pattern.name, func(t *testing.T) {
+			for count := 1; count <= 24; count++ {
+				state = WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), bodyWidth, bodyHeight), bodyWidth, bodyHeight+2)
+				visible := state.Workbench
+				leftPane := visible.Tabs[visible.ActiveTab].Panes[0]
+				contentRect, ok := workbench.FramedPaneContentRect(leftPane.Rect, leftPane.SharedLeft, leftPane.SharedTop)
+				if !ok {
+					t.Fatal("expected left pane content rect")
+				}
+
+				vt := localvterm.New(contentRect.W, 4, 10, nil)
+				if _, err := vt.Write([]byte("ζ " + strings.Repeat(pattern.repeat, count))); err != nil {
+					t.Fatalf("write repeated prompt into vterm: %v", err)
+				}
+
+				state.Runtime = &VisibleRuntimeStateProxy{Terminals: []runtime.VisibleTerminal{
+					{
+						TerminalID: "term-1",
+						Snapshot: &protocol.Snapshot{
+							TerminalID: "term-1",
+							Size:       protocol.Size{Cols: uint16(contentRect.W), Rows: 4},
+							Screen:     protocol.ScreenData{Cells: protocolRowsFromVTermCells(vt.ScreenContent().Cells)},
+							Cursor:     protocol.CursorState{Visible: false},
+							Modes:      protocol.TerminalModes{AutoWrap: true},
+						},
+					},
+					{
+						TerminalID: "term-2",
+						Snapshot: &protocol.Snapshot{
+							TerminalID: "term-2",
+							Size:       protocol.Size{Cols: 4, Rows: 4},
+							Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: " ", Width: 1}}}},
+							Cursor:     protocol.CursorState{Visible: false},
+							Modes:      protocol.TerminalModes{AutoWrap: true},
+						},
+					},
+				}}
+
+				frame := xansi.Strip(coordinator.RenderFrame())
+				lines := strings.Split(frame, "\n")
+				for i, line := range lines {
+					if got := xansi.StringWidth(line); got != bodyWidth {
+						t.Fatalf("expected rendered row %d to stay width %d at update %d, got %d: %q", i, bodyWidth, count, got, line)
+					}
+					if strings.Count(line, "│") > 3 {
+						t.Fatalf("expected split layout to keep a single shared divider at update %d, got %q", count, line)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestDrawPaneContentWithKeyClearsReservedRightGutterGhosts(t *testing.T) {
+	canvas := newComposedCanvas(16, 6)
+	entry := paneRenderEntry{
+		PaneID:     "pane-1",
+		TerminalID: "term-1",
+		Rect:       workbench.Rect{X: 0, Y: 0, W: 16, H: 6},
+		Theme:      defaultUITheme(),
+	}
+	contentRect := contentRectForEntry(entry)
+	gutterX := entry.Rect.X + entry.Rect.W - 2
+	gutterY := contentRect.Y
+	canvas.set(gutterX, gutterY, drawCell{Content: "│", Width: 1})
+
+	runtimeState := &VisibleRuntimeStateProxy{Terminals: []runtime.VisibleTerminal{{
+		TerminalID: "term-1",
+		Snapshot: &protocol.Snapshot{
+			TerminalID: "term-1",
+			Size:       protocol.Size{Cols: uint16(contentRect.W), Rows: uint16(contentRect.H)},
+			Screen: protocol.ScreenData{
+				Cells: [][]protocol.Cell{{
+					{Content: "o", Width: 1},
+					{Content: "k", Width: 1},
+				}},
+			},
+			Cursor: protocol.CursorState{Visible: false},
+			Modes:  protocol.TerminalModes{AutoWrap: true},
+		},
+	}}}
+
+	drawPaneContentWithKey(canvas, entry.Rect, entry, runtimeState)
+
+	if got := canvas.cells[gutterY][gutterX]; got.Content != " " || got.Continuation {
+		t.Fatalf("expected reserved right gutter to be cleared during content redraw, got %#v", got)
+	}
+}
+
+func protocolRowsFromVTermCells(rows [][]localvterm.Cell) [][]protocol.Cell {
+	out := make([][]protocol.Cell, len(rows))
+	for y, row := range rows {
+		out[y] = make([]protocol.Cell, len(row))
+		for x, cell := range row {
+			out[y][x] = protocol.Cell{
+				Content: cell.Content,
+				Width:   cell.Width,
+			}
+		}
+	}
+	return out
 }
 
 func TestPaneEntriesForTabMarksViewportClippedPaneOverflow(t *testing.T) {

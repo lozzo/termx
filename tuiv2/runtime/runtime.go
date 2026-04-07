@@ -24,6 +24,7 @@ type Runtime struct {
 	hostDefaultFG string
 	hostDefaultBG string
 	hostPalette   map[int]string
+	hostEmojiVS16 shared.AmbiguousEmojiVariationSelectorMode
 
 	version        uint64
 	visibleVersion uint64
@@ -37,6 +38,7 @@ func New(client bridge.Client, opts ...Option) *Runtime {
 		client:        client,
 		onInvalidate:  func() {},
 		onTitleChange: func(string, string) {},
+		hostEmojiVS16: shared.AmbiguousEmojiVariationSelectorRaw,
 	}
 	r.newVTerm = r.defaultVTermFactory
 	for _, opt := range opts {
@@ -224,6 +226,24 @@ func (r *Runtime) SetHostPaletteColor(index int, c color.Color) {
 	r.invalidate()
 }
 
+func (r *Runtime) SetHostAmbiguousEmojiVariationSelectorMode(mode shared.AmbiguousEmojiVariationSelectorMode) {
+	if r == nil {
+		return
+	}
+	// Keep the negotiated host behavior in visible runtime state so render can
+	// switch serialization strategies without re-probing every pane.
+	switch mode {
+	case shared.AmbiguousEmojiVariationSelectorRaw, shared.AmbiguousEmojiVariationSelectorAdvance, shared.AmbiguousEmojiVariationSelectorStrip:
+	default:
+		mode = shared.AmbiguousEmojiVariationSelectorRaw
+	}
+	if r.hostEmojiVS16 == mode {
+		return
+	}
+	r.hostEmojiVS16 = mode
+	r.invalidate()
+}
+
 func (r *Runtime) applyHostColorsToVTerm(vt VTermLike) {
 	if r == nil || vt == nil {
 		return
@@ -286,11 +306,12 @@ func (r *Runtime) Visible() *VisibleRuntime {
 		return r.visibleCache
 	}
 	visible := &VisibleRuntime{
-		Terminals:     make([]VisibleTerminal, 0, len(r.registry.terminals)),
-		Bindings:      make([]VisiblePaneBinding, 0, len(r.bindings)),
-		HostDefaultFG: r.hostDefaultFG,
-		HostDefaultBG: r.hostDefaultBG,
-		HostPalette:   maps.Clone(r.hostPalette),
+		Terminals:         make([]VisibleTerminal, 0, len(r.registry.terminals)),
+		Bindings:          make([]VisiblePaneBinding, 0, len(r.bindings)),
+		HostDefaultFG:     r.hostDefaultFG,
+		HostDefaultBG:     r.hostDefaultBG,
+		HostPalette:       maps.Clone(r.hostPalette),
+		HostEmojiVS16Mode: r.hostEmojiVS16,
 	}
 	for _, terminalID := range r.registry.IDs() {
 		terminal := r.registry.Get(terminalID)

@@ -497,7 +497,7 @@ func (m *Model) copyModePointAtMouse(screenX, screenY int) (copyModePoint, bool)
 	if pane == nil || pane.ID != tab.ActivePaneID || pane.ID != m.copyMode.PaneID {
 		return copyModePoint{}, false
 	}
-	contentRect, ok := paneContentRect(pane.Rect)
+	contentRect, ok := paneContentRectForVisible(*pane)
 	if !ok {
 		return copyModePoint{}, false
 	}

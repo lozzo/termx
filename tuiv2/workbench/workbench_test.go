@@ -135,6 +135,41 @@ func TestVisibleWithSizeProjectsFloatingPanes(t *testing.T) {
 	}
 }
 
+func TestVisibleWithSizeMarksSharedSplitEdges(t *testing.T) {
+	wb := NewWorkbench()
+	wb.AddWorkspace("main", &WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*TabState{{
+			ID:           "tab-1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*PaneState{
+				"pane-1": {ID: "pane-1", Title: "left"},
+				"pane-2": {ID: "pane-2", Title: "right"},
+			},
+			Root: &LayoutNode{
+				Direction: SplitVertical,
+				Ratio:     0.5,
+				First:     NewLeaf("pane-1"),
+				Second:    NewLeaf("pane-2"),
+			},
+		}},
+	})
+
+	visible := wb.VisibleWithSize(Rect{W: 80, H: 24})
+	if visible == nil || len(visible.Tabs) != 1 || len(visible.Tabs[0].Panes) != 2 {
+		t.Fatalf("unexpected visible workbench: %#v", visible)
+	}
+	left := visible.Tabs[0].Panes[0]
+	right := visible.Tabs[0].Panes[1]
+	if left.SharedLeft || left.SharedTop {
+		t.Fatalf("expected left pane to own its outer edges, got %#v", left)
+	}
+	if !right.SharedLeft || right.SharedTop {
+		t.Fatalf("expected right pane to share only its left divider edge, got %#v", right)
+	}
+}
+
 func TestVisibleWithSizeProjectsFloatingPanesInStoredOrder(t *testing.T) {
 	wb := NewWorkbench()
 	wb.AddWorkspace("main", &WorkspaceState{

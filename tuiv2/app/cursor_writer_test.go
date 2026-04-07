@@ -1,0 +1,116 @@
+package app
+
+import (
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+type cursorWriterProbeModel struct {
+	view string
+}
+
+func (m cursorWriterProbeModel) Init() tea.Cmd {
+	return tea.Tick(10*time.Millisecond, func(time.Time) tea.Msg {
+		return tea.Quit()
+	})
+}
+
+func (m cursorWriterProbeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	return m, nil
+}
+
+func (m cursorWriterProbeModel) View() string {
+	return m.view
+}
+
+type cursorWriterProbeSink struct {
+	mu     sync.Mutex
+	writes []string
+}
+
+func (s *cursorWriterProbeSink) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.writes = append(s.writes, string(append([]byte(nil), p...)))
+	return len(p), nil
+}
+
+func TestOutputCursorWriterInterleavesCursorSequenceWithBubbleTeaWrites(t *testing.T) {
+	sink := &cursorWriterProbeSink{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetCursorSequence("<CURSOR>")
+
+	program := tea.NewProgram(
+		cursorWriterProbeModel{
+			view: "│# lozzow@RedmiBook♻️: ~/Documents/workdir/termx <>                                                  (23:17:15)   │",
+		},
+		tea.WithInput(nil),
+		tea.WithOutput(writer),
+		tea.WithAltScreen(),
+	)
+	if _, err := program.Run(); err != nil {
+		t.Fatalf("run bubbletea probe: %v", err)
+	}
+
+	sink.mu.Lock()
+	writes := append([]string(nil), sink.writes...)
+	sink.mu.Unlock()
+
+	if len(writes) < 4 {
+		t.Fatalf("expected multiple writes through output cursor writer, got %#v", writes)
+	}
+
+	frameChunk := -1
+	cursorChunksBeforeFrame := 0
+	totalCursorChunks := 0
+	for i, write := range writes {
+		if write == "<CURSOR>" {
+			totalCursorChunks++
+			if frameChunk < 0 {
+				cursorChunksBeforeFrame++
+			}
+			continue
+		}
+		if strings.Contains(write, "RedmiBook♻️") {
+			frameChunk = i
+		}
+	}
+
+	if frameChunk < 0 {
+		t.Fatalf("expected probe frame chunk in writes, got %#v", writes)
+	}
+	if totalCursorChunks < 2 {
+		t.Fatalf("expected cursor sequence to be injected multiple times, got %#v", writes)
+	}
+	if cursorChunksBeforeFrame == 0 {
+		t.Fatalf("expected cursor sequence to be injected before frame bytes, got %#v", writes)
+	}
+}
+
+func TestOutputCursorWriterQueuesControlSequenceAfterNextWrite(t *testing.T) {
+	sink := &cursorWriterProbeSink{}
+	writer := newOutputCursorWriter(sink)
+	writer.QueueControlSequenceAfterWrite("<PROBE>")
+
+	if _, err := writer.Write([]byte("frame-1")); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	if _, err := writer.Write([]byte("frame-2")); err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+
+	sink.mu.Lock()
+	writes := append([]string(nil), sink.writes...)
+	sink.mu.Unlock()
+
+	if len(writes) != 3 {
+		t.Fatalf("expected first frame, one queued probe, second frame; got %#v", writes)
+	}
+	if writes[0] != "frame-1" || writes[1] != "<PROBE>" || writes[2] != "frame-2" {
+		t.Fatalf("unexpected queued write order %#v", writes)
+	}
+}

@@ -872,7 +872,7 @@ func (m *Model) activeContentMouseTarget(screenX, screenY int) (string, workbenc
 	if pane == nil || pane.ID != tab.ActivePaneID {
 		return "", workbench.Rect{}, false
 	}
-	contentRect, ok := paneContentRect(pane.Rect)
+	contentRect, ok := paneContentRectForVisible(*pane)
 	if !ok || !pointInMouseRect(contentRect, screenX, contentY) {
 		return "", workbench.Rect{}, false
 	}
@@ -880,16 +880,11 @@ func (m *Model) activeContentMouseTarget(screenX, screenY int) (string, workbenc
 }
 
 func paneContentRect(rect workbench.Rect) (workbench.Rect, bool) {
-	contentRect := workbench.Rect{
-		X: rect.X + 1,
-		Y: rect.Y + 1,
-		W: rect.W - 2,
-		H: rect.H - 2,
-	}
-	if contentRect.W <= 0 || contentRect.H <= 0 {
-		return workbench.Rect{}, false
-	}
-	return contentRect, true
+	return workbench.FramedPaneContentRect(rect, false, false)
+}
+
+func paneContentRectForVisible(pane workbench.VisiblePane) (workbench.Rect, bool) {
+	return workbench.FramedPaneContentRect(pane.Rect, pane.SharedLeft, pane.SharedTop)
 }
 
 func pointInMouseRect(rect workbench.Rect, x, y int) bool {

@@ -135,6 +135,91 @@ func TestModelInitRestoresWorkspaceStateFromConfigPath(t *testing.T) {
 	}
 }
 
+func TestModelHostCursorPositionProbeSelectsAdvanceModeForAmbiguousEmoji(t *testing.T) {
+	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
+	model.hostEmojiProbePending = true
+
+	_, cmd := model.Update(hostCursorPositionMsg{X: 1, Y: 0})
+	if cmd != nil {
+		_ = cmd()
+	}
+
+	visible := model.runtime.Visible()
+	if visible == nil {
+		t.Fatal("expected visible runtime")
+	}
+	if visible.HostEmojiVS16Mode != shared.AmbiguousEmojiVariationSelectorAdvance {
+		t.Fatalf("expected host probe to select advance mode, got %q", visible.HostEmojiVS16Mode)
+	}
+	if model.hostEmojiProbePending {
+		t.Fatal("expected host emoji probe to be marked complete")
+	}
+}
+
+func TestModelHostCursorPositionProbeAcceptsNonOriginRowForAmbiguousEmoji(t *testing.T) {
+	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
+	model.hostEmojiProbePending = true
+
+	_, cmd := model.Update(hostCursorPositionMsg{X: 2, Y: 7})
+	if cmd != nil {
+		_ = cmd()
+	}
+
+	visible := model.runtime.Visible()
+	if visible == nil {
+		t.Fatal("expected visible runtime")
+	}
+	if visible.HostEmojiVS16Mode != shared.AmbiguousEmojiVariationSelectorRaw {
+		t.Fatalf("expected host probe to accept non-origin row and select raw mode, got %q", visible.HostEmojiVS16Mode)
+	}
+	if model.hostEmojiProbePending {
+		t.Fatal("expected host emoji probe to be marked complete")
+	}
+}
+
+func TestModelHostEmojiProbeRetriesUntilGiveUp(t *testing.T) {
+	originalMaxAttempts := hostEmojiProbeMaxAttempts
+	originalRetryDelay := hostEmojiProbeRetryDelay
+	t.Cleanup(func() {
+		hostEmojiProbeMaxAttempts = originalMaxAttempts
+		hostEmojiProbeRetryDelay = originalRetryDelay
+	})
+	hostEmojiProbeMaxAttempts = 2
+	hostEmojiProbeRetryDelay = time.Millisecond
+
+	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
+	writer := &recordingControlWriter{}
+	model.SetCursorWriter(writer)
+	model.hostEmojiProbePending = true
+
+	_, cmd := model.Update(hostEmojiProbeMsg{Attempt: 1})
+	if len(writer.controls) != 1 || writer.controls[0] != hostEmojiVariationProbeSequence {
+		t.Fatalf("expected first probe write %#v, got %#v", hostEmojiVariationProbeSequence, writer.controls)
+	}
+	if !model.hostEmojiProbePending {
+		t.Fatal("expected probe to stay pending after first attempt")
+	}
+	if cmd == nil {
+		t.Fatal("expected retry command after first attempt")
+	}
+
+	_, cmd = model.Update(hostEmojiProbeMsg{Attempt: 2})
+	if len(writer.controls) != 2 || writer.controls[1] != hostEmojiVariationProbeSequence {
+		t.Fatalf("expected second probe write %#v, got %#v", hostEmojiVariationProbeSequence, writer.controls)
+	}
+	if !model.hostEmojiProbePending {
+		t.Fatal("expected probe to stay pending until give-up window expires")
+	}
+	if cmd == nil {
+		t.Fatal("expected give-up command after final attempt")
+	}
+
+	_, _ = model.Update(hostEmojiProbeGiveUpMsg{})
+	if model.hostEmojiProbePending {
+		t.Fatal("expected probe to stop pending after give-up")
+	}
+}
+
 func TestModelInitBootstrapsFromSessionSnapshot(t *testing.T) {
 	client := &recordingBridgeClient{
 		getSessionErr: errors.New("session not found"),
@@ -1515,7 +1600,15 @@ func TestModelUpdateWindowSizeResizesActivePaneTerminals(t *testing.T) {
 		t.Fatalf("expected exactly one resize call, got %d", len(client.resizes))
 	}
 	got := client.resizes[0]
-	if got.channel != 7 || got.cols != 118 || got.rows != 36 {
+	visible := wb.VisibleWithSize(model.bodyRect())
+	if visible == nil || visible.ActiveTab < 0 || len(visible.Tabs[visible.ActiveTab].Panes) == 0 {
+		t.Fatalf("expected visible pane after resize, got %#v", visible)
+	}
+	wantRect, ok := paneContentRectForVisible(visible.Tabs[visible.ActiveTab].Panes[0])
+	if !ok {
+		t.Fatal("expected visible pane content rect")
+	}
+	if got.channel != 7 || got.cols != uint16(wantRect.W) || got.rows != uint16(wantRect.H) {
 		t.Fatalf("unexpected resize call: %+v", got)
 	}
 }
@@ -2103,8 +2196,16 @@ func TestModelInitAttachIDDefersResizeUntilFirstWindowSize(t *testing.T) {
 	if got := len(client.resizes); got != 1 {
 		t.Fatalf("expected exactly one resize after window size, got %#v", client.resizes)
 	}
-	if resize := client.resizes[0]; resize.cols != 118 || resize.rows != 36 {
-		t.Fatalf("expected resize to full pane 118x36, got %#v", resize)
+	visible := model.workbench.VisibleWithSize(model.bodyRect())
+	if visible == nil || visible.ActiveTab < 0 || len(visible.Tabs[visible.ActiveTab].Panes) == 0 {
+		t.Fatalf("expected visible pane after window size, got %#v", visible)
+	}
+	wantRect, ok := paneContentRectForVisible(visible.Tabs[visible.ActiveTab].Panes[0])
+	if !ok {
+		t.Fatal("expected visible pane content rect")
+	}
+	if resize := client.resizes[0]; resize.cols != uint16(wantRect.W) || resize.rows != uint16(wantRect.H) {
+		t.Fatalf("expected resize to visible pane %#v, got %#v", wantRect, resize)
 	}
 
 	_, cmd = model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -2163,8 +2264,16 @@ func TestModelAttachResizesPaneInHiddenTab(t *testing.T) {
 	if got := len(client.resizes); got != 1 {
 		t.Fatalf("expected one resize for hidden tab attach, got %#v", client.resizes)
 	}
-	if resize := client.resizes[0]; resize.cols != 118 || resize.rows != 36 {
-		t.Fatalf("expected hidden tab resize to 118x36, got %#v", resize)
+	visible := model.workbench.VisibleWithSize(model.bodyRect())
+	if visible == nil || len(visible.Tabs) < 2 || len(visible.Tabs[1].Panes) == 0 {
+		t.Fatalf("expected visible hidden tab pane projection, got %#v", visible)
+	}
+	wantRect, ok := paneContentRectForVisible(visible.Tabs[1].Panes[0])
+	if !ok {
+		t.Fatal("expected hidden tab content rect")
+	}
+	if resize := client.resizes[0]; resize.cols != uint16(wantRect.W) || resize.rows != uint16(wantRect.H) {
+		t.Fatalf("expected hidden tab resize to %#v, got %#v", wantRect, resize)
 	}
 }
 

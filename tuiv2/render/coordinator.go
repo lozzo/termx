@@ -9,6 +9,7 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/modal"
+	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -88,6 +89,8 @@ type paneRenderEntry struct {
 	PaneID               string
 	Rect                 workbench.Rect
 	Frameless            bool
+	SharedLeft           bool
+	SharedTop            bool
 	Title                string
 	Border               paneBorderInfo
 	Theme                uiTheme
@@ -113,6 +116,8 @@ type paneRenderEntry struct {
 type paneFrameKey struct {
 	Rect            workbench.Rect
 	Frameless       bool
+	SharedLeft      bool
+	SharedTop       bool
 	Title           string
 	Border          paneBorderInfo
 	ThemeBG         string
@@ -139,6 +144,8 @@ type paneContentKey struct {
 	State                string
 	ThemeBG              string
 	TerminalKnown        bool
+	SharedLeft           bool
+	SharedTop            bool
 	ScrollOffset         int
 	EmptyActionSelected  int
 	ExitedActionSelected int
@@ -153,13 +160,14 @@ type paneContentKey struct {
 }
 
 type bodyRenderCache struct {
-	width       int
-	height      int
-	order       []string
-	rects       map[string]workbench.Rect
-	frameKeys   map[string]paneFrameKey
-	contentKeys map[string]paneContentKey
-	canvas      *composedCanvas
+	width             int
+	height            int
+	order             []string
+	rects             map[string]workbench.Rect
+	frameKeys         map[string]paneFrameKey
+	contentKeys       map[string]paneContentKey
+	canvas            *composedCanvas
+	hostEmojiVS16Mode shared.AmbiguousEmojiVariationSelectorMode
 }
 
 func NewCoordinator(fn VisibleStateFn) *Coordinator {
@@ -512,6 +520,7 @@ const (
 
 func renderEmptyWorkbenchBody(state VisibleRenderState, width, height int, kind emptyWorkbenchKind) renderedBody {
 	canvas := newComposedCanvas(width, height)
+	canvas.hostEmojiVS16Mode = emojiVariationSelectorModeForRuntime(state.Runtime)
 	theme := uiThemeForState(state)
 
 	headline := "No tabs in this workspace"
@@ -548,6 +557,18 @@ func renderEmptyWorkbenchBody(state VisibleRenderState, width, height int, kind 
 	}
 }
 
+func emojiVariationSelectorModeForRuntime(runtimeState *VisibleRuntimeStateProxy) shared.AmbiguousEmojiVariationSelectorMode {
+	if runtimeState == nil {
+		return shared.AmbiguousEmojiVariationSelectorRaw
+	}
+	switch runtimeState.HostEmojiVS16Mode {
+	case shared.AmbiguousEmojiVariationSelectorAdvance, shared.AmbiguousEmojiVariationSelectorStrip:
+		return runtimeState.HostEmojiVS16Mode
+	default:
+		return shared.AmbiguousEmojiVariationSelectorRaw
+	}
+}
+
 func renderActiveOverlay(state VisibleRenderState, termSize TermSize) string {
 	return renderActiveOverlayWithCursor(state, termSize, true)
 }
@@ -574,29 +595,32 @@ func renderActiveOverlayWithCursor(state VisibleRenderState, termSize TermSize, 
 
 func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entries []paneRenderEntry, width, height int) *composedCanvas {
 	immersiveZoom := immersiveZoomActive(state)
+	hostEmojiMode := emojiVariationSelectorModeForRuntime(state.Runtime)
 	cursorOffsetY := TopChromeRows
 	if immersiveZoom {
 		cursorOffsetY = 0
 	}
 	if coordinator == nil {
 		canvas := newComposedCanvas(width, height)
+		canvas.hostEmojiVS16Mode = hostEmojiMode
 		canvas.cursorOffsetY = cursorOffsetY
 		for _, entry := range entries {
 			if !entry.Frameless {
-				drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+				drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
 			}
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 		}
 		return canvas
 	}
 	cache := coordinator.bodyCache
-	if cache == nil || !cache.matches(entries, width, height) {
+	if cache == nil || !cache.matches(entries, width, height, hostEmojiMode) {
 		canvas := newComposedCanvas(width, height)
+		canvas.hostEmojiVS16Mode = hostEmojiMode
 		canvas.cursorOffsetY = cursorOffsetY
 		canvas.syntheticCursorVisibleFn = coordinator.syntheticCursorVisible
 		for _, entry := range entries {
 			if !entry.Frameless {
-				drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+				drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
 			}
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 		}
@@ -609,11 +633,12 @@ func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entrie
 	// for tiled layouts but will paint over floating panes layered above it.
 	if entriesOverlap(entries) {
 		canvas := newComposedCanvas(width, height)
+		canvas.hostEmojiVS16Mode = hostEmojiMode
 		canvas.cursorOffsetY = cursorOffsetY
 		canvas.syntheticCursorVisibleFn = coordinator.syntheticCursorVisible
 		for _, entry := range entries {
 			if !entry.Frameless {
-				drawPaneFrame(canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+				drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
 			}
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 		}
@@ -632,7 +657,7 @@ func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entrie
 				if entry.Frameless {
 					fillRect(cache.canvas, entry.Rect, blankDrawCell())
 				} else {
-					drawPaneFrame(cache.canvas, entry.Rect, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+					drawPaneFrame(cache.canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
 				}
 				frameChanged = true
 				changed = true
@@ -739,6 +764,8 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		TerminalID:           pane.TerminalID,
 		ThemeBG:              theme.panelBG,
 		TerminalKnown:        terminal != nil,
+		SharedLeft:           pane.SharedLeft,
+		SharedTop:            pane.SharedTop,
 		ScrollOffset:         scrollOffset,
 		EmptyActionSelected:  emptyActionSelected,
 		ExitedActionSelected: exitedActionSelected,
@@ -761,6 +788,8 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		PaneID:     pane.ID,
 		Rect:       rect,
 		Frameless:  frameless,
+		SharedLeft: pane.SharedLeft,
+		SharedTop:  pane.SharedTop,
 		Title:      title,
 		Border:     border,
 		Theme:      theme,
@@ -769,6 +798,8 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		FrameKey: paneFrameKey{
 			Rect:            rect,
 			Frameless:       frameless,
+			SharedLeft:      pane.SharedLeft,
+			SharedTop:       pane.SharedTop,
 			Title:           title,
 			Border:          border,
 			ThemeBG:         theme.panelBG,
@@ -825,6 +856,9 @@ func (c *bodyRenderCache) reset(entries []paneRenderEntry, width, height int) {
 	}
 	c.width = width
 	c.height = height
+	if c.canvas != nil {
+		c.hostEmojiVS16Mode = c.canvas.hostEmojiVS16Mode
+	}
 	c.order = c.order[:0]
 	if c.rects == nil {
 		c.rects = make(map[string]workbench.Rect, len(entries))
@@ -855,8 +889,8 @@ func (c *bodyRenderCache) reset(entries []paneRenderEntry, width, height int) {
 	}
 }
 
-func (c *bodyRenderCache) matches(entries []paneRenderEntry, width, height int) bool {
-	if c == nil || c.canvas == nil || c.width != width || c.height != height || len(c.order) != len(entries) {
+func (c *bodyRenderCache) matches(entries []paneRenderEntry, width, height int, hostEmojiMode shared.AmbiguousEmojiVariationSelectorMode) bool {
+	if c == nil || c.canvas == nil || c.width != width || c.height != height || c.hostEmojiVS16Mode != hostEmojiMode || len(c.order) != len(entries) {
 		return false
 	}
 	for i, entry := range entries {
@@ -1005,7 +1039,7 @@ func resolvePaneTitleWithLookup(pane workbench.VisiblePane, lookup runtimeLookup
 }
 
 // drawPaneFrame draws the border box with a title on the left and stable chrome slots on the right.
-func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, title string, border paneBorderInfo, theme uiTheme, overflow paneOverflowHints, active bool, floating bool) {
+func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, sharedLeft, sharedTop bool, title string, border paneBorderInfo, theme uiTheme, overflow paneOverflowHints, active bool, floating bool) {
 	if rect.W < 2 || rect.H < 2 {
 		return
 	}
@@ -1038,26 +1072,18 @@ func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, title string, bo
 		Action:        drawStyle{FG: actionFG, Bold: active},
 		EmphasizeRole: active,
 	}
-	topEdge := "─"
-	leftEdge := "│"
-	bottomEdge := "─"
-	rightEdge := "│"
+	topX := rect.X
+	if sharedLeft {
+		topX--
+	}
+	bottomX := topX
 
-	// horizontal edges
-	for x := rect.X; x < rect.X+rect.W; x++ {
-		canvas.set(x, rect.Y, drawCell{Content: topEdge, Width: 1, Style: borderStyle})
-		canvas.set(x, rect.Y+rect.H-1, drawCell{Content: bottomEdge, Width: 1, Style: borderStyle})
+	drawHorizontalBorder(canvas, topX, rect.X+rect.W-1, rect.Y, borderStyle, sharedLeft, true, false)
+	drawHorizontalBorder(canvas, bottomX, rect.X+rect.W-1, rect.Y+rect.H-1, borderStyle, sharedLeft, false, true)
+	if !sharedLeft {
+		drawVerticalBorder(canvas, rect.X, verticalBorderStart(rect.Y, sharedTop), rect.Y+rect.H-2, borderStyle, sharedTop)
 	}
-	// vertical edges
-	for y := rect.Y; y < rect.Y+rect.H; y++ {
-		canvas.set(rect.X, y, drawCell{Content: leftEdge, Width: 1, Style: borderStyle})
-		canvas.set(rect.X+rect.W-1, y, drawCell{Content: rightEdge, Width: 1, Style: borderStyle})
-	}
-	// corners
-	canvas.set(rect.X, rect.Y, drawCell{Content: "┌", Width: 1, Style: borderStyle})
-	canvas.set(rect.X+rect.W-1, rect.Y, drawCell{Content: "┐", Width: 1, Style: borderStyle})
-	canvas.set(rect.X, rect.Y+rect.H-1, drawCell{Content: "└", Width: 1, Style: borderStyle})
-	canvas.set(rect.X+rect.W-1, rect.Y+rect.H-1, drawCell{Content: "┘", Width: 1, Style: borderStyle})
+	drawVerticalBorder(canvas, rect.X+rect.W-1, verticalBorderStart(rect.Y, sharedTop), rect.Y+rect.H-2, borderStyle, sharedTop)
 
 	drawPaneOverflowMarkers(canvas, rect, theme, overflow, active)
 	drawPaneTopBorderLabels(canvas, rect, chromeStyles, title, border, floating)
@@ -1085,13 +1111,121 @@ func drawPaneOverflowMarkers(canvas *composedCanvas, rect workbench.Rect, theme 
 	}
 }
 
+const (
+	borderConnUp = 1 << iota
+	borderConnDown
+	borderConnLeft
+	borderConnRight
+)
+
+var borderGlyphConnections = map[string]uint8{
+	"│": borderConnUp | borderConnDown,
+	"─": borderConnLeft | borderConnRight,
+	"┌": borderConnDown | borderConnRight,
+	"┐": borderConnDown | borderConnLeft,
+	"└": borderConnUp | borderConnRight,
+	"┘": borderConnUp | borderConnLeft,
+	"├": borderConnUp | borderConnDown | borderConnRight,
+	"┤": borderConnUp | borderConnDown | borderConnLeft,
+	"┬": borderConnDown | borderConnLeft | borderConnRight,
+	"┴": borderConnUp | borderConnLeft | borderConnRight,
+	"┼": borderConnUp | borderConnDown | borderConnLeft | borderConnRight,
+}
+
+var borderConnectionGlyph = map[uint8]string{
+	borderConnUp | borderConnDown:                                    "│",
+	borderConnLeft | borderConnRight:                                 "─",
+	borderConnDown | borderConnRight:                                 "┌",
+	borderConnDown | borderConnLeft:                                  "┐",
+	borderConnUp | borderConnRight:                                   "└",
+	borderConnUp | borderConnLeft:                                    "┘",
+	borderConnUp | borderConnDown | borderConnRight:                  "├",
+	borderConnUp | borderConnDown | borderConnLeft:                   "┤",
+	borderConnDown | borderConnLeft | borderConnRight:                "┬",
+	borderConnUp | borderConnLeft | borderConnRight:                  "┴",
+	borderConnUp | borderConnDown | borderConnLeft | borderConnRight: "┼",
+}
+
+func drawHorizontalBorder(canvas *composedCanvas, startX, endX, y int, style drawStyle, sharedStart bool, downAtEnd bool, upAtEnd bool) {
+	if canvas == nil || startX > endX {
+		return
+	}
+	for x := startX; x <= endX; x++ {
+		connections := uint8(0)
+		if x == startX {
+			if sharedStart {
+				connections |= borderConnRight
+			} else if upAtEnd {
+				connections |= borderConnRight | borderConnUp
+			} else {
+				connections |= borderConnRight | borderConnDown
+			}
+		} else if x == endX {
+			if upAtEnd {
+				connections |= borderConnLeft | borderConnUp
+			} else if downAtEnd {
+				connections |= borderConnLeft | borderConnDown
+			} else {
+				connections |= borderConnLeft
+			}
+		} else {
+			connections |= borderConnLeft | borderConnRight
+		}
+		mergeBorderCell(canvas, x, y, connections, style)
+	}
+}
+
+func drawVerticalBorder(canvas *composedCanvas, x, startY, endY int, style drawStyle, sharedStart bool) {
+	if canvas == nil || startY > endY {
+		return
+	}
+	for y := startY; y <= endY; y++ {
+		connections := uint8(0)
+		if y == startY {
+			if sharedStart {
+				connections |= borderConnDown
+			} else {
+				connections |= borderConnUp | borderConnDown
+			}
+		} else {
+			connections |= borderConnUp | borderConnDown
+		}
+		mergeBorderCell(canvas, x, y, connections, style)
+	}
+}
+
+func verticalBorderStart(y int, sharedTop bool) int {
+	if sharedTop {
+		return y - 1
+	}
+	return y + 1
+}
+
+func mergeBorderCell(canvas *composedCanvas, x, y int, connections uint8, style drawStyle) {
+	if canvas == nil || x < 0 || y < 0 || x >= canvas.width || y >= canvas.height {
+		return
+	}
+	if existing, ok := borderGlyphConnections[canvas.cells[y][x].Content]; ok {
+		connections |= existing
+	}
+	glyph, ok := borderConnectionGlyph[connections]
+	if !ok {
+		return
+	}
+	canvas.set(x, y, drawCell{Content: glyph, Width: 1, Style: style})
+}
+
 // drawPaneContent fills the interior of a pane with terminal snapshot content.
 func drawPaneContent(canvas *composedCanvas, rect workbench.Rect, pane workbench.VisiblePane, lookup runtimeLookup, scrollOffset int, active bool) {
 	if rect.W < 3 || rect.H < 3 {
 		return
 	}
-	contentRect := workbench.Rect{X: rect.X + 1, Y: rect.Y + 1, W: rect.W - 2, H: rect.H - 2}
-	fillRect(canvas, contentRect, blankDrawCell())
+	contentRect := contentRectForPaneEdges(rect, pane.SharedLeft, pane.SharedTop)
+	// Clear the full framed interior, not just the terminal content rect. The
+	// reserved right gutter intentionally sits outside contentRect so that pane
+	// borders stay visually stable; if we only clear contentRect, stale border
+	// glyphs can survive in that gutter and reappear as duplicate right edges.
+	fillRect(canvas, interiorRectForPaneEdges(rect, pane.SharedLeft, pane.SharedTop), blankDrawCell())
 
 	if pane.TerminalID == "" {
 		drawEmptyPaneContent(canvas, contentRect, pane.ID, pane.TerminalID, defaultUITheme(), -1)
@@ -1121,7 +1255,10 @@ func drawPaneContent(canvas *composedCanvas, rect workbench.Rect, pane workbench
 
 func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) {
 	contentRect := contentRectForEntry(entry)
-	fillRect(canvas, contentRect, blankDrawCell())
+	// Keep the cached redraw path on the same invariant as drawPaneContent():
+	// every content repaint owns the whole framed interior, including the
+	// reserved gutter column.
+	fillRect(canvas, interiorRectForEntry(entry), blankDrawCell())
 	if entry.TerminalID == "" {
 		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID, entry.Theme, entry.EmptyActionSelected)
 		return
@@ -1154,14 +1291,44 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 }
 
 func contentRectForPane(rect workbench.Rect) workbench.Rect {
-	return workbench.Rect{X: rect.X + 1, Y: rect.Y + 1, W: rect.W - 2, H: rect.H - 2}
+	content, _ := workbench.FramedPaneContentRect(rect, false, false)
+	return content
+}
+
+func interiorRectForPane(rect workbench.Rect) workbench.Rect {
+	return interiorRectForPaneEdges(rect, false, false)
+}
+
+func interiorRectForPaneEdges(rect workbench.Rect, sharedLeft, sharedTop bool) workbench.Rect {
+	interior := workbench.Rect{X: rect.X + 1, Y: rect.Y + 1, W: rect.W - 2, H: rect.H - 2}
+	if sharedLeft {
+		interior.X--
+		interior.W++
+	}
+	if sharedTop {
+		interior.Y--
+		interior.H++
+	}
+	return interior
+}
+
+func contentRectForPaneEdges(rect workbench.Rect, sharedLeft, sharedTop bool) workbench.Rect {
+	content, _ := workbench.FramedPaneContentRect(rect, sharedLeft, sharedTop)
+	return content
+}
+
+func interiorRectForEntry(entry paneRenderEntry) workbench.Rect {
+	if entry.Frameless {
+		return entry.Rect
+	}
+	return interiorRectForPaneEdges(entry.Rect, entry.SharedLeft, entry.SharedTop)
 }
 
 func contentRectForEntry(entry paneRenderEntry) workbench.Rect {
 	if entry.Frameless {
 		return entry.Rect
 	}
-	return contentRectForPane(entry.Rect)
+	return contentRectForPaneEdges(entry.Rect, entry.SharedLeft, entry.SharedTop)
 }
 
 func immersiveZoomActive(state VisibleRenderState) bool {
@@ -1186,6 +1353,10 @@ func fillRect(canvas *composedCanvas, rect workbench.Rect, cell drawCell) {
 	if cell == blankDrawCell() {
 		blankRow := cachedBlankFillRow(rect.W)
 		for y := rect.Y; y < rect.Y+rect.H; y++ {
+			clearBlankFillBoundaryFootprint(canvas, rect.X, y)
+			if rect.W > 1 {
+				clearBlankFillBoundaryFootprint(canvas, rect.X+rect.W-1, y)
+			}
 			copy(canvas.cells[y][rect.X:rect.X+rect.W], blankRow)
 			canvas.rowDirty[y] = true
 			canvas.fullDirty = true
@@ -1197,6 +1368,20 @@ func fillRect(canvas *composedCanvas, rect workbench.Rect, cell drawCell) {
 			canvas.set(x, y, cell)
 		}
 	}
+}
+
+func clearBlankFillBoundaryFootprint(canvas *composedCanvas, x, y int) {
+	if canvas == nil || x < 0 || y < 0 || x >= canvas.width || y >= canvas.height {
+		return
+	}
+	cell := canvas.cells[y][x]
+	// When a blank fill starts or ends in the middle of a wide-cell footprint,
+	// clear the entire footprint first so we do not leave a stale lead or
+	// continuation cell straddling the fill boundary.
+	if !cell.Continuation && canvas.cellFootprintWidth(x, y) <= 1 {
+		return
+	}
+	canvas.clearOverlappingCellFootprints(x, y, 1)
 }
 
 func projectPaneCursor(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, scrollOffset int) {
@@ -1738,10 +1923,12 @@ func protocolRowDisplayWidth(row []protocol.Cell) int {
 	width := 0
 	for _, cell := range row {
 		switch {
+		case cell.Content == "" && cell.Width == 0:
+			continue
 		case cell.Width > 0:
 			width += cell.Width
 		case cell.Content != "":
-			width++
+			width += xansi.StringWidth(cell.Content)
 		default:
 			width++
 		}

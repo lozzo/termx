@@ -7,6 +7,7 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -75,6 +76,147 @@ func TestComposedCanvasDrawTextAdvancesByDisplayWidth(t *testing.T) {
 	}
 	if got := canvas.cells[0][4].Content; got != "X" {
 		t.Fatalf("expected trailing text to land after wide glyph width, got %q", got)
+	}
+}
+
+func TestComposedCanvasDrawTextKeepsEmojiVariationSelectorClusterIntact(t *testing.T) {
+	canvas := newComposedCanvas(6, 1)
+	canvas.drawText(0, 0, "♻️X", drawStyle{FG: "#00ff00"})
+
+	if got := canvas.cells[0][0].Content; got != "♻️" {
+		t.Fatalf("expected emoji variation sequence to stay in one cell, got %q", got)
+	}
+	if !canvas.cells[0][1].Continuation {
+		t.Fatalf("expected second column to be a continuation for emoji cluster, got %#v", canvas.cells[0][1])
+	}
+	if got := canvas.cells[0][2].Content; got != "X" {
+		t.Fatalf("expected trailing text to land after emoji cluster width, got %q", got)
+	}
+}
+
+func TestSerializeCellContentLeavesSingleCodepointEmojiUntouched(t *testing.T) {
+	if got := serializeCellContent("😆", 2, shared.AmbiguousEmojiVariationSelectorAdvance); got != "😆" {
+		t.Fatalf("expected single-codepoint emoji to remain unchanged, got %q", got)
+	}
+}
+
+func TestSerializeCellContentKeepsRawAmbiguousEmojiVariationSelector(t *testing.T) {
+	if got := serializeCellContent("♻️", 2, shared.AmbiguousEmojiVariationSelectorRaw); got != "♻️" {
+		t.Fatalf("expected raw mode to preserve original grapheme, got %q", got)
+	}
+}
+
+func TestSerializeCellContentAdvancesAfterAmbiguousEmojiVariationSelector(t *testing.T) {
+	got := serializeCellContent("♻️", 2, shared.AmbiguousEmojiVariationSelectorAdvance)
+	want := "♻️" + xansi.CursorForward(1)
+	if got != want {
+		t.Fatalf("expected advance mode to keep emoji and compensate with cursor move, got %q want %q", got, want)
+	}
+}
+
+func TestSerializeCellContentStripsAmbiguousEmojiVariationSelectorAsFallback(t *testing.T) {
+	if got := serializeCellContent("♻️", 2, shared.AmbiguousEmojiVariationSelectorStrip); got != "♻ " {
+		t.Fatalf("expected strip mode fallback to keep two-column footprint, got %q", got)
+	}
+}
+
+func TestComposedCanvasContentStringUsesAdvanceModeForAmbiguousEmojiVariationSelector(t *testing.T) {
+	canvas := newComposedCanvas(6, 1)
+	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorAdvance
+	canvas.drawText(0, 0, "♻️X", drawStyle{})
+
+	rendered := canvas.contentString()
+	want := xansi.CHA(1) + "♻️" + xansi.CHA(3) + "X"
+	if !strings.Contains(rendered, want) {
+		t.Fatalf("expected serialized row to keep emoji and re-anchor the next cell with CHA, got %q want substring %q", rendered, want)
+	}
+}
+
+func TestComposedCanvasDrawSnapshotUsesAdvanceModeForAmbiguousEmojiVariationSelector(t *testing.T) {
+	canvas := newComposedCanvas(6, 1)
+	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorAdvance
+	canvas.drawSnapshot(&protocol.Snapshot{
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{{
+				{Content: "♻️", Width: 2},
+				{Content: "", Width: 0},
+				{Content: "X", Width: 1},
+			}},
+		},
+	})
+
+	rendered := canvas.contentString()
+	want := xansi.CHA(1) + "♻️" + xansi.CHA(3) + "X"
+	if !strings.Contains(rendered, want) {
+		t.Fatalf("expected snapshot serialization to keep emoji and re-anchor the next cell with CHA, got %q want substring %q", rendered, want)
+	}
+}
+
+func TestComposedCanvasSetClearsWideCellContinuationWhenLeadOverwritten(t *testing.T) {
+	canvas := newComposedCanvas(4, 1)
+	canvas.set(0, 0, drawCell{Content: "♻️", Width: 2})
+	canvas.set(0, 0, drawCell{Content: "A", Width: 1})
+
+	if got := canvas.cells[0][0].Content; got != "A" {
+		t.Fatalf("expected overwritten lead cell to contain replacement glyph, got %#v", canvas.cells[0][0])
+	}
+	if canvas.cells[0][1].Continuation {
+		t.Fatalf("expected overwrite to clear stale continuation cell, got %#v", canvas.cells[0][1])
+	}
+	line := strings.Split(xansi.Strip(canvas.String()), "\n")[0]
+	if got := xansi.StringWidth(line); got != 4 {
+		t.Fatalf("expected rendered row width 4 after overwrite, got %d: %q", got, line)
+	}
+}
+
+func TestComposedCanvasSetClearsWideCellLeadWhenContinuationOverwritten(t *testing.T) {
+	canvas := newComposedCanvas(4, 1)
+	canvas.set(0, 0, drawCell{Content: "♻️", Width: 2})
+	canvas.set(1, 0, drawCell{Content: "│", Width: 1})
+
+	if got := canvas.cells[0][1].Content; got != "│" {
+		t.Fatalf("expected overwrite inside wide-cell footprint to preserve replacement glyph, got %#v", canvas.cells[0][1])
+	}
+	if got := canvas.cells[0][0].Content; got != " " || canvas.cells[0][0].Continuation {
+		t.Fatalf("expected overwrite inside continuation to clear original lead cell, got %#v", canvas.cells[0][0])
+	}
+	line := strings.Split(xansi.Strip(canvas.String()), "\n")[0]
+	if got := xansi.StringWidth(line); got != 4 {
+		t.Fatalf("expected rendered row width 4 after continuation overwrite, got %d: %q", got, line)
+	}
+}
+
+func TestFillRectBlankClearsWideCellFootprintsCrossingClearBoundary(t *testing.T) {
+	canvas := newComposedCanvas(5, 1)
+	canvas.set(1, 0, drawCell{Content: "♻️", Width: 2})
+
+	fillRect(canvas, workbench.Rect{X: 2, Y: 0, W: 2, H: 1}, blankDrawCell())
+
+	if got := canvas.cells[0][1]; got.Content != " " || got.Continuation {
+		t.Fatalf("expected partial blank fill to clear overlapping wide-cell lead, got %#v", got)
+	}
+	if got := canvas.cells[0][2]; got.Content != " " || got.Continuation {
+		t.Fatalf("expected partial blank fill to clear overlapping continuation, got %#v", got)
+	}
+	line := strings.Split(xansi.Strip(canvas.String()), "\n")[0]
+	if got := xansi.StringWidth(line); got != 5 {
+		t.Fatalf("expected rendered row width 5 after partial blank fill, got %d: %q", got, line)
+	}
+}
+
+func TestDrawPaneFrameMergesSharedVerticalDivider(t *testing.T) {
+	canvas := newComposedCanvas(40, 8)
+	theme := uiTheme{}
+
+	drawPaneFrame(canvas, workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, false, "left", paneBorderInfo{}, theme, paneOverflowHints{}, true, false)
+	drawPaneFrame(canvas, workbench.Rect{X: 20, Y: 0, W: 20, H: 8}, true, false, "right", paneBorderInfo{}, theme, paneOverflowHints{}, false, false)
+
+	frame := canvas.rawString()
+	if strings.Contains(frame, "││") {
+		t.Fatalf("expected shared divider to render as a single column, got:\n%s", frame)
+	}
+	if !strings.Contains(frame, "┬") || !strings.Contains(frame, "┴") {
+		t.Fatalf("expected shared divider junctions, got:\n%s", frame)
 	}
 }
 
@@ -621,7 +763,7 @@ func TestDrawPaneFrameMarksOverflowWithStableCornerIndicators(t *testing.T) {
 	canvas := newComposedCanvas(6, 4)
 	rect := workbench.Rect{X: 0, Y: 0, W: 6, H: 4}
 
-	drawPaneFrame(canvas, rect, "", paneBorderInfo{}, defaultUITheme(), paneOverflowHints{Right: true, Bottom: true}, false, false)
+	drawPaneFrame(canvas, rect, false, false, "", paneBorderInfo{}, defaultUITheme(), paneOverflowHints{Right: true, Bottom: true}, false, false)
 
 	lines := strings.Split(canvas.rawString(), "\n")
 	if len(lines) != 4 {
@@ -646,7 +788,7 @@ func TestDrawPaneFrameHighlightsOverflowMarkersForActivePane(t *testing.T) {
 	rect := workbench.Rect{X: 0, Y: 0, W: 8, H: 5}
 	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
 
-	drawPaneFrame(canvas, rect, "", paneBorderInfo{}, theme, paneOverflowHints{Right: true, Bottom: true}, true, false)
+	drawPaneFrame(canvas, rect, false, false, "", paneBorderInfo{}, theme, paneOverflowHints{Right: true, Bottom: true}, true, false)
 
 	rightMarker := canvas.cells[rect.Y+rect.H-2][rect.X+rect.W-1]
 	bottomMarker := canvas.cells[rect.Y+rect.H-1][rect.X+rect.W-2]

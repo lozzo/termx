@@ -10,14 +10,19 @@ import (
 type cursorSequenceWriter interface {
 	SetCursorSequence(seq string)
 	WriteControlSequence(seq string) error
+	// QueueControlSequenceAfterWrite defers a control sequence until after the
+	// next Bubble Tea frame write. Startup probes rely on this so the host sees
+	// the probe only after alt-screen entry and the first frame are live.
+	QueueControlSequenceAfterWrite(seq string)
 }
 
 type outputCursorWriter struct {
 	out io.Writer
 	tty xterm.File
 
-	mu     sync.RWMutex
-	cursor string
+	mu         sync.Mutex
+	cursor     string
+	afterWrite []string
 }
 
 func newOutputCursorWriter(out io.Writer) *outputCursorWriter {
@@ -50,17 +55,36 @@ func (w *outputCursorWriter) WriteControlSequence(seq string) error {
 	return err
 }
 
+func (w *outputCursorWriter) QueueControlSequenceAfterWrite(seq string) {
+	if w == nil || seq == "" {
+		return
+	}
+	w.mu.Lock()
+	w.afterWrite = append(w.afterWrite, seq)
+	w.mu.Unlock()
+}
+
 func (w *outputCursorWriter) Write(p []byte) (int, error) {
 	if w == nil || w.out == nil {
 		return 0, nil
 	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	n, err := w.out.Write(p)
 	if err != nil {
 		return n, err
 	}
-	w.mu.RLock()
 	cursor := w.cursor
-	w.mu.RUnlock()
+	afterWrite := append([]string(nil), w.afterWrite...)
+	w.afterWrite = nil
+	for _, seq := range afterWrite {
+		if seq == "" {
+			continue
+		}
+		if _, err := io.WriteString(w.out, seq); err != nil {
+			return n, err
+		}
+	}
 	if cursor == "" {
 		return n, nil
 	}

@@ -56,7 +56,7 @@ func ExitedPaneRecoveryRegions(pane workbench.VisiblePane, runtimeState *Visible
 	if terminal == nil || terminal.State != "exited" {
 		return nil
 	}
-	layout := layoutExitedPaneRecoveryActions(contentRectForPane(pane.Rect), pane.ID)
+	layout := layoutExitedPaneRecoveryActions(contentRectForPaneEdges(pane.Rect, pane.SharedLeft, pane.SharedTop), pane.ID)
 	regions := make([]HitRegion, 0, len(layout))
 	for _, item := range layout {
 		regions = append(regions, HitRegion{

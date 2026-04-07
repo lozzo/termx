@@ -2618,10 +2618,16 @@ func TestFeatureWindowResizePropagatesToTerminal(t *testing.T) {
 		t.Fatal("expected resize call after window size change")
 	}
 	got := client.resizes[len(client.resizes)-1]
-	// Body height = 50-2 = 48, pane content = body-2(border) = 46
-	// Body width = 160, pane content = 160-2(border) = 158
-	if got.cols != 158 || got.rows != 46 {
-		t.Fatalf("expected resize 158x46, got %dx%d", got.cols, got.rows)
+	visible := model.workbench.VisibleWithSize(model.bodyRect())
+	if visible == nil || visible.ActiveTab < 0 || len(visible.Tabs[visible.ActiveTab].Panes) == 0 {
+		t.Fatalf("expected visible pane after resize, got %#v", visible)
+	}
+	wantRect, ok := paneContentRectForVisible(visible.Tabs[visible.ActiveTab].Panes[0])
+	if !ok {
+		t.Fatal("expected visible pane content rect")
+	}
+	if got.cols != uint16(wantRect.W) || got.rows != uint16(wantRect.H) {
+		t.Fatalf("expected resize %dx%d, got %dx%d", wantRect.W, wantRect.H, got.cols, got.rows)
 	}
 }
 
@@ -2652,7 +2658,6 @@ func TestFeatureZoomResizePropagatesToTerminal(t *testing.T) {
 	if len(client.resizes) <= resizeCountAfterZoom {
 		t.Fatal("expected resize call after unzoom")
 	}
-	lastResize := client.resizes[len(client.resizes)-1]
 	visible := model.workbench.VisibleWithSize(model.bodyRect())
 	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
 		t.Fatal("expected visible tab after unzoom")
@@ -2668,8 +2673,18 @@ func TestFeatureZoomResizePropagatesToTerminal(t *testing.T) {
 	if !ok {
 		t.Fatal("expected pane-1 terminal viewport after unzoom")
 	}
-	if lastResize.cols != uint16(expectedRect.W) || lastResize.rows != uint16(expectedRect.H) {
-		t.Fatalf("expected unzoom resize %dx%d, got %#v", expectedRect.W, expectedRect.H, lastResize)
+	var paneResize *resizeCall
+	for i := resizeCountAfterZoom; i < len(client.resizes); i++ {
+		if client.resizes[i].channel == 1 {
+			paneResize = &client.resizes[i]
+			break
+		}
+	}
+	if paneResize == nil {
+		t.Fatalf("expected pane-1 resize after unzoom, got %#v", client.resizes[resizeCountAfterZoom:])
+	}
+	if paneResize.cols != uint16(expectedRect.W) || paneResize.rows != uint16(expectedRect.H) {
+		t.Fatalf("expected unzoom resize %dx%d, got %#v", expectedRect.W, expectedRect.H, paneResize)
 	}
 }
 
@@ -3255,8 +3270,12 @@ func TestFeatureSessionTerminalInputKeepsFollowerStateWhenSizeMatches(t *testing
 	if target == nil {
 		t.Fatalf("expected visible pane-2, got %#v", visible.Tabs[visible.ActiveTab].Panes)
 	}
-	targetCols := uint16(maxInt(2, target.Rect.W-2))
-	targetRows := uint16(maxInt(2, target.Rect.H-2))
+	targetContent, ok := paneContentRectForVisible(*target)
+	if !ok {
+		t.Fatal("expected target pane content rect")
+	}
+	targetCols := uint16(maxInt(2, targetContent.W))
+	targetRows := uint16(maxInt(2, targetContent.H))
 
 	terminal := model.runtime.Registry().GetOrCreate("term-1")
 	terminal.State = "running"
@@ -3407,8 +3426,12 @@ func TestFeatureSessionTerminalInputReclaimsSamePaneLeaseForcesResizeWhenSizeMat
 	if target == nil {
 		t.Fatalf("expected visible pane-2, got %#v", visible.Tabs[visible.ActiveTab].Panes)
 	}
-	targetCols := uint16(maxInt(2, target.Rect.W-2))
-	targetRows := uint16(maxInt(2, target.Rect.H-2))
+	targetContent, ok := paneContentRectForVisible(*target)
+	if !ok {
+		t.Fatal("expected target pane content rect")
+	}
+	targetCols := uint16(maxInt(2, targetContent.W))
+	targetRows := uint16(maxInt(2, targetContent.H))
 
 	terminal := model.runtime.Registry().GetOrCreate("term-1")
 	terminal.State = "running"

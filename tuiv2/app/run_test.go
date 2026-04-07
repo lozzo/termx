@@ -16,6 +16,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	uv "github.com/charmbracelet/ultraviolet"
+	xansi "github.com/charmbracelet/x/ansi"
 	creackpty "github.com/creack/pty"
 	"github.com/lozzow/termx"
 	"github.com/lozzow/termx/protocol"
@@ -151,38 +152,182 @@ func TestE2ERunWithClientRendersInitialFrameOnPTY(t *testing.T) {
 		errc <- runWithClientOptions(shared.Config{}, nil, tty, tty, tea.WithContext(ctx))
 	}()
 
-	outputc := make(chan string, 1)
+	recorder := &ptyOutputRecorder{eventc: make(chan struct{}, 1)}
 	go func() {
-		var b strings.Builder
 		buf := make([]byte, 4096)
 		for {
 			n, err := ptmx.Read(buf)
 			if n > 0 {
-				b.Write(buf[:n])
-				text := b.String()
-				if strings.Contains(text, "main") || strings.Contains(text, "No tabs in this workspace") {
-					outputc <- text
-					return
-				}
+				recorder.Append(string(buf[:n]))
 			}
 			if err != nil {
-				if err != io.EOF {
-					outputc <- b.String()
-				}
 				return
 			}
 		}
 	}()
 
-	var output string
-	select {
-	case output = <-outputc:
-	case <-ctx.Done():
-		t.Fatalf("timed out waiting for initial frame on PTY")
-	}
+	waitForPTYText(t, ctx, recorder, "main")
+	output := recorder.Text()
 
 	if !strings.Contains(output, "main") {
 		t.Fatalf("expected initial frame to include workspace chrome, got %q", output)
+	}
+
+	cancel()
+	select {
+	case err := <-errc:
+		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
+			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for TUI shutdown")
+	}
+}
+
+func TestRunWithClientNonTTYOutputDoesNotEmitEmojiProbe(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	var out bytes.Buffer
+	err := runWithClientOptions(shared.Config{}, nil, nil, &out, tea.WithContext(ctx))
+	if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
+		t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
+	}
+	if strings.Contains(out.String(), xansi.RequestExtendedCursorPositionReport) {
+		t.Fatalf("expected non-tty output not to emit decxcpr probe, got output %q", out.String())
+	}
+}
+
+func TestE2ERunWithClientRetriesHostEmojiProbeWhenFirstCPRIsDropped(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	originalRetryDelay := hostEmojiProbeRetryDelay
+	originalMaxAttempts := hostEmojiProbeMaxAttempts
+	t.Cleanup(func() {
+		hostEmojiProbeRetryDelay = originalRetryDelay
+		hostEmojiProbeMaxAttempts = originalMaxAttempts
+	})
+	hostEmojiProbeRetryDelay = 15 * time.Millisecond
+	hostEmojiProbeMaxAttempts = 3
+
+	ptmx, tty, err := creackpty.Open()
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("open pty: %v", err)
+	}
+	defer ptmx.Close()
+	defer tty.Close()
+
+	if err := creackpty.Setsize(ptmx, &creackpty.Winsize{Cols: 120, Rows: 40}); err != nil {
+		t.Fatalf("set pty size: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	errc := make(chan error, 1)
+	go func() {
+		errc <- runWithClientOptions(shared.Config{}, nil, tty, tty, tea.WithContext(ctx))
+	}()
+
+	recorder := &ptyOutputRecorder{eventc: make(chan struct{}, 1)}
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := ptmx.Read(buf)
+			if n > 0 {
+				recorder.Append(string(buf[:n]))
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	waitForPTYSubstringCount(t, ctx, recorder, xansi.RequestExtendedCursorPositionReport, 2)
+
+	cancel()
+	select {
+	case err := <-errc:
+		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
+			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for TUI shutdown")
+	}
+}
+
+func TestE2ERunWithClientAcceptsNonOriginExtendedCursorReportForEmojiProbe(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	originalRetryDelay := hostEmojiProbeRetryDelay
+	originalMaxAttempts := hostEmojiProbeMaxAttempts
+	t.Cleanup(func() {
+		hostEmojiProbeRetryDelay = originalRetryDelay
+		hostEmojiProbeMaxAttempts = originalMaxAttempts
+	})
+	hostEmojiProbeRetryDelay = 20 * time.Millisecond
+	hostEmojiProbeMaxAttempts = 3
+
+	ptmx, tty, err := creackpty.Open()
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("open pty: %v", err)
+	}
+	defer ptmx.Close()
+	defer tty.Close()
+
+	if err := creackpty.Setsize(ptmx, &creackpty.Winsize{Cols: 120, Rows: 40}); err != nil {
+		t.Fatalf("set pty size: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	errc := make(chan error, 1)
+	go func() {
+		errc <- runWithClientOptions(shared.Config{}, nil, tty, tty, tea.WithContext(ctx))
+	}()
+
+	recorder := &ptyOutputRecorder{eventc: make(chan struct{}, 1)}
+	responded := make(chan struct{}, 1)
+	go func() {
+		buf := make([]byte, 4096)
+		sent := false
+		for {
+			n, err := ptmx.Read(buf)
+			if n > 0 {
+				chunk := string(buf[:n])
+				recorder.Append(chunk)
+				if !sent && strings.Contains(recorder.Text(), xansi.RequestExtendedCursorPositionReport) {
+					sent = true
+					_, _ = ptmx.Write([]byte(xansi.ExtendedCursorPositionReport(8, 3, 0)))
+					responded <- struct{}{}
+				}
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	select {
+	case <-responded:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting to respond to startup decxcpr probe")
+	}
+
+	time.Sleep(3 * hostEmojiProbeRetryDelay)
+	if got := strings.Count(recorder.Text(), xansi.RequestExtendedCursorPositionReport); got != 1 {
+		t.Fatalf("expected non-origin decxcpr response to stop retries after first probe, got %d probes in output:\n%s", got, recorder.Text())
 	}
 
 	cancel()
@@ -482,6 +627,23 @@ func waitForPTYOutputLength(t *testing.T, ctx context.Context, recorder *ptyOutp
 	t.Fatalf("timeout waiting for PTY output length >= %d\nlatest output length=%d", min, len(recorder.Text()))
 }
 
+func waitForPTYSubstringCount(t *testing.T, ctx context.Context, recorder *ptyOutputRecorder, target string, want int) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Count(recorder.Text(), target) >= want {
+			return
+		}
+		select {
+		case <-recorder.eventc:
+		case <-ctx.Done():
+			t.Fatalf("context expired waiting for %d occurrences of %q", want, target)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	t.Fatalf("timeout waiting for %d occurrences of %q\nlatest output:\n%s", want, target, recorder.Text())
+}
+
 func waitForTerminalState(t *testing.T, ctx context.Context, srv *termx.Server, terminalID string, want termx.TerminalState) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -595,6 +757,86 @@ func TestStartInputForwarderPreservesKeyOrderIntoBubbleTea(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("timed out waiting for Bubble Tea program to exit")
+	}
+}
+
+type hostCursorPositionCaptureModel struct {
+	got   bool
+	x, y  int
+	extra []tea.KeyMsg
+}
+
+func (m hostCursorPositionCaptureModel) Init() tea.Cmd { return nil }
+
+func (m hostCursorPositionCaptureModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch typed := msg.(type) {
+	case hostCursorPositionMsg:
+		m.got = true
+		m.x = typed.X
+		m.y = typed.Y
+		return m, tea.Quit
+	case tea.KeyMsg:
+		m.extra = append(m.extra, typed)
+	}
+	return m, nil
+}
+
+func (m hostCursorPositionCaptureModel) View() string { return "" }
+
+func TestStartInputForwarderParsesExtendedCursorPositionReport(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	ptmx, tty, err := creackpty.Open()
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("open pty: %v", err)
+	}
+	defer ptmx.Close()
+	defer tty.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	model := hostCursorPositionCaptureModel{}
+	program := tea.NewProgram(model, tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithContext(ctx))
+	stopInput, restoreInput, err := startInputForwarder(program, tty)
+	if err != nil {
+		t.Fatalf("start input forwarder: %v", err)
+	}
+	defer func() { _ = restoreInput() }()
+	defer stopInput()
+
+	done := make(chan tea.Model, 1)
+	go func() {
+		finalModel, _ := program.Run()
+		done <- finalModel
+	}()
+
+	if _, err := ptmx.Write([]byte(xansi.ExtendedCursorPositionReport(1, 3, 0))); err != nil {
+		t.Fatalf("write decxcpr: %v", err)
+	}
+
+	select {
+	case rawModel := <-done:
+		finalModel, ok := rawModel.(hostCursorPositionCaptureModel)
+		if !ok {
+			t.Fatalf("unexpected final model type %T", rawModel)
+		}
+		if !finalModel.got {
+			t.Fatal("expected host cursor position report to reach bubbletea model")
+		}
+		if finalModel.x != 2 || finalModel.y != 0 {
+			t.Fatalf("expected zero-based decxcpr coordinates 2,0 got %d,%d", finalModel.x, finalModel.y)
+		}
+		if len(finalModel.extra) != 0 {
+			t.Fatalf("expected no spurious key events alongside decxcpr, got %#v", finalModel.extra)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for extended cursor position report to reach Bubble Tea")
 	}
 }
 

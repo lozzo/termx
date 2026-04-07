@@ -8,7 +8,9 @@ import (
 
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
+	"github.com/rivo/uniseg"
 )
 
 type drawStyle struct {
@@ -36,6 +38,8 @@ type composedCanvas struct {
 	fullCache string
 	fullDirty bool
 
+	hostEmojiVS16Mode shared.AmbiguousEmojiVariationSelectorMode
+
 	cursorVisible bool
 	cursorX       int
 	cursorY       int
@@ -44,7 +48,7 @@ type composedCanvas struct {
 	cursorShape   string
 	cursorBlink   bool
 
-	syntheticCursorBlink bool
+	syntheticCursorBlink     bool
 	syntheticCursorVisibleFn func(protocol.CursorState) bool
 }
 
@@ -62,12 +66,13 @@ func newComposedCanvas(width, height int) *composedCanvas {
 		height = 1
 	}
 	c := &composedCanvas{
-		width:     width,
-		height:    height,
-		cells:     make([][]drawCell, height),
-		rowCache:  make([]string, height),
-		rowDirty:  make([]bool, height),
-		fullDirty: true,
+		width:             width,
+		height:            height,
+		cells:             make([][]drawCell, height),
+		rowCache:          make([]string, height),
+		rowDirty:          make([]bool, height),
+		fullDirty:         true,
+		hostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
 	}
 	blankRow := cachedBlankFillRow(width)
 	for y := 0; y < height; y++ {
@@ -91,38 +96,110 @@ func (c *composedCanvas) set(x, y int, cell drawCell) {
 		cell.Width = 1
 	}
 	cell.Continuation = false
-	if c.cells[y][x] != cell {
-		c.cells[y][x] = cell
-		c.rowDirty[y] = true
-		c.fullDirty = true
-	}
+	c.clearOverlappingCellFootprints(x, y, cell.Width)
+	c.writeCell(x, y, cell)
 	for i := 1; i < cell.Width && x+i < c.width; i++ {
-		cont := drawCell{Continuation: true}
-		if c.cells[y][x+i] != cont {
-			c.cells[y][x+i] = cont
-			c.rowDirty[y] = true
-			c.fullDirty = true
+		c.writeCell(x+i, y, drawCell{Continuation: true})
+	}
+}
+
+func (c *composedCanvas) clearOverlappingCellFootprints(x, y, width int) {
+	if c == nil || y < 0 || y >= c.height || x < 0 || x >= c.width {
+		return
+	}
+	start := x
+	for start > 0 && c.cells[y][start].Continuation {
+		start--
+	}
+	end := minInt(c.width, x+maxCellWidth(width))
+	for i := start; i < end; i++ {
+		if c.cells[y][i].Continuation {
+			lead := i
+			for lead > 0 && c.cells[y][lead].Continuation {
+				lead--
+			}
+			if lead < start {
+				start = lead
+				i = start - 1
+				continue
+			}
+			if span := c.cellFootprintWidth(lead, y); lead+span > end {
+				end = minInt(c.width, lead+span)
+			}
+			continue
+		}
+		if span := c.cellFootprintWidth(i, y); i+span > end {
+			end = minInt(c.width, i+span)
 		}
 	}
+	for i := start; i < end; i++ {
+		c.writeCell(i, y, blankDrawCell())
+	}
+}
+
+func (c *composedCanvas) cellFootprintWidth(x, y int) int {
+	if c == nil || y < 0 || y >= c.height || x < 0 || x >= c.width {
+		return 1
+	}
+	cell := c.cells[y][x]
+	width := cell.Width
+	if width <= 0 && cell.Content != "" {
+		width = xansi.StringWidth(cell.Content)
+	}
+	return maxCellWidth(width)
+}
+
+func (c *composedCanvas) writeCell(x, y int, cell drawCell) {
+	if c == nil || x < 0 || y < 0 || x >= c.width || y >= c.height {
+		return
+	}
+	if c.cells[y][x] == cell {
+		return
+	}
+	c.cells[y][x] = cell
+	c.rowDirty[y] = true
+	c.fullDirty = true
 }
 
 func (c *composedCanvas) drawText(x, y int, text string, style drawStyle) {
 	cursorX := x
-	for _, ch := range text {
+	for _, cluster := range splitTextClusters(text) {
 		if cursorX >= c.width {
 			break
 		}
-		content := string(ch)
-		width := xansi.StringWidth(content)
-		if width <= 0 {
-			width = 1
-		}
+		content := cluster.Content
+		width := cluster.Width
 		if cursorX+width > c.width {
 			break
 		}
 		c.set(cursorX, y, drawCell{Content: content, Width: width, Style: style})
 		cursorX += width
 	}
+}
+
+type textCluster struct {
+	Content string
+	Width   int
+}
+
+func splitTextClusters(s string) []textCluster {
+	graphemes := uniseg.NewGraphemes(s)
+	out := make([]textCluster, 0, len(s))
+	lastBase := -1
+	for graphemes.Next() {
+		cluster := graphemes.Str()
+		width := xansi.StringWidth(cluster)
+		if width <= 0 {
+			if lastBase >= 0 {
+				out[lastBase].Content += cluster
+				continue
+			}
+			width = 1
+		}
+		out = append(out, textCluster{Content: cluster, Width: width})
+		lastBase = len(out) - 1
+	}
+	return out
 }
 
 func (c *composedCanvas) drawSnapshotInRect(rect workbench.Rect, snapshot *protocol.Snapshot) {
@@ -187,6 +264,54 @@ func drawCellFromProtocolCell(cell protocol.Cell) drawCell {
 	}
 }
 
+func isAmbiguousEmojiVariationSelectorCluster(content string, width int) bool {
+	if width != 2 || !strings.ContainsRune(content, '\uFE0F') {
+		return false
+	}
+	if strings.ContainsRune(content, '\u200D') || strings.ContainsRune(content, '\u20E3') {
+		return false
+	}
+	stripped := strings.ReplaceAll(content, "\uFE0F", "")
+	return stripped != "" && xansi.StringWidth(stripped) == 1
+}
+
+func serializeCellContent(content string, width int, mode shared.AmbiguousEmojiVariationSelectorMode) string {
+	if !isAmbiguousEmojiVariationSelectorCluster(content, width) {
+		return content
+	}
+	switch mode {
+	case shared.AmbiguousEmojiVariationSelectorAdvance:
+		// Some host terminals render a FE0F grapheme like "♻️" but only advance
+		// one column. Appending a cursor-forward keeps the visible emoji while
+		// restoring the two-column footprint expected by the pane layout model.
+		return content + xansi.CursorForward(1)
+	case shared.AmbiguousEmojiVariationSelectorStrip:
+		// Visible text-presentation plus a padding cell is the safe fallback when
+		// we haven't yet proven the host terminal can keep the emoji width stable.
+		return strings.ReplaceAll(content, "\uFE0F", "") + " "
+	default:
+		return content
+	}
+}
+
+func serializeCellContentForDisplay(content string, width int, mode shared.AmbiguousEmojiVariationSelectorMode, nextCol int) string {
+	if !isAmbiguousEmojiVariationSelectorCluster(content, width) {
+		return content
+	}
+	switch mode {
+	case shared.AmbiguousEmojiVariationSelectorStrip:
+		return strings.ReplaceAll(content, "\uFE0F", "") + " "
+	default:
+		if nextCol <= 0 {
+			return content
+		}
+		// Re-anchor the cursor to the next expected grid column after writing an
+		// ambiguous FE0F grapheme. This keeps later cells and pane borders aligned
+		// even if the host terminal advances the cursor by a different width.
+		return content + xansi.CHA(nextCol)
+	}
+}
+
 // drawSnapshot draws a snapshot starting at (0,0).
 func (c *composedCanvas) drawSnapshot(snapshot *protocol.Snapshot) {
 	if c == nil || snapshot == nil {
@@ -220,6 +345,10 @@ func (c *composedCanvas) contentString() string {
 		}
 		var row strings.Builder
 		current := drawStyle{}
+		// Each serialized row re-anchors itself at column 1 so any per-cell CHA
+		// adjustments stay relative to the row grid rather than the host cursor's
+		// previous position.
+		row.WriteString(xansi.CHA(1))
 		for x := 0; x < c.width; x++ {
 			cell := c.cells[y][x]
 			if cell.Continuation {
@@ -233,7 +362,11 @@ func (c *composedCanvas) contentString() string {
 				row.WriteString(styleDiffANSI(current, cell.Style))
 				current = cell.Style
 			}
-			row.WriteString(content)
+			nextCol := 0
+			if x+cell.Width < c.width {
+				nextCol = x + cell.Width + 1
+			}
+			row.WriteString(serializeCellContentForDisplay(content, cell.Width, c.hostEmojiVS16Mode, nextCol))
 		}
 		row.WriteString("\x1b[0m")
 		c.rowCache[y] = row.String()

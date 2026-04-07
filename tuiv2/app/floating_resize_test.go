@@ -48,8 +48,16 @@ func TestFloatingResizeUpdatesPTYSize(t *testing.T) {
 	if floatCall == nil {
 		t.Fatalf("expected resize call for floating pane, got %#v", client.resizes)
 	}
-	if floatCall.cols != 50 || floatCall.rows != 16 {
-		t.Fatalf("expected floating PTY resize to 50x16, got %dx%d", floatCall.cols, floatCall.rows)
+	visible := model.workbench.VisibleWithSize(model.bodyRect())
+	if visible == nil || len(visible.FloatingPanes) == 0 {
+		t.Fatalf("expected visible floating pane, got %#v", visible)
+	}
+	floatContent, ok := paneContentRectForVisible(visible.FloatingPanes[0])
+	if !ok {
+		t.Fatal("expected floating pane content rect")
+	}
+	if floatCall.cols != uint16(floatContent.W) || floatCall.rows != uint16(floatContent.H) {
+		t.Fatalf("expected floating PTY resize to %dx%d, got %dx%d", floatContent.W, floatContent.H, floatCall.cols, floatCall.rows)
 	}
 }
 
@@ -73,8 +81,12 @@ func TestFloatingFollowerResizeDoesNotUpdateSharedPTYSize(t *testing.T) {
 		t.Fatal("expected visible tiled pane")
 	}
 	ownerPane := visible.Tabs[visible.ActiveTab].Panes[0]
-	ownerCols := uint16(maxInt(2, ownerPane.Rect.W-2))
-	ownerRows := uint16(maxInt(2, ownerPane.Rect.H-2))
+	ownerContent, ok := paneContentRectForVisible(ownerPane)
+	if !ok {
+		t.Fatal("expected owner pane content rect")
+	}
+	ownerCols := uint16(maxInt(2, ownerContent.W))
+	ownerRows := uint16(maxInt(2, ownerContent.H))
 
 	terminal := model.runtime.Registry().Get("term-1")
 	if terminal == nil {
