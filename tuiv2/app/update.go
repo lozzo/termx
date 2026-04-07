@@ -208,6 +208,14 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		m.debugLog("host_emoji_probe_give_up")
 		m.hostEmojiProbePending = false
+		// The host terminal did not respond to the DECXCPR probe (e.g.
+		// macOS Terminal.app).  Fall back to raw mode so the emoji is
+		// preserved as-is (♻️ instead of degrading to ♻).  The
+		// continuation-space compensation in drawProtocolRowInRect
+		// handles the case where the host only advances one column.
+		if m.runtime != nil {
+			m.runtime.SetHostAmbiguousEmojiVariationSelectorMode(shared.AmbiguousEmojiVariationSelectorRaw)
+		}
 		return nil, true
 	case hostCursorPositionMsg:
 		if m.runtime == nil || !m.hostEmojiProbePending {
