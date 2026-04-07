@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -757,7 +756,7 @@ func waitForTerminalState(t *testing.T, ctx context.Context, srv *termx.Server, 
 func waitTestSocket(path string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		conn, err := net.Dial("unix", path)
+		conn, err := unixtransport.Dial(path)
 		if err == nil {
 			_ = conn.Close()
 			return nil

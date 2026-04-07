@@ -249,21 +249,29 @@ func TestE2EInitialAttachResizesAfterFirstWindowSize(t *testing.T) {
 	if pane == nil {
 		t.Fatal("expected active pane after attach")
 	}
+	visible := model.workbench.VisibleWithSize(model.bodyRect())
+	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) || len(visible.Tabs[visible.ActiveTab].Panes) == 0 {
+		t.Fatalf("expected visible pane after resize, got %#v", visible)
+	}
+	wantRect, ok := paneContentRectForVisible(visible.Tabs[visible.ActiveTab].Panes[0])
+	if !ok {
+		t.Fatal("expected visible pane content rect after resize")
+	}
 	_, cmd = model.Update(input.TerminalInput{
 		PaneID: pane.ID,
 		Data:   []byte("size\n"),
 	})
 	e2eDrain(t, model, cmd)
 
-	e2eWaitForText(t, ctx, model, invalidated, "36 118")
+	e2eWaitForText(t, ctx, model, invalidated, fmt.Sprintf("%d %d", wantRect.H, wantRect.W))
 	e2eWaitForText(t, ctx, model, invalidated, "window_size_ok")
 
 	terminal := model.runtime.Registry().Get(created.TerminalID)
 	if terminal == nil || terminal.Snapshot == nil {
 		t.Fatalf("expected terminal snapshot after resize, got %#v", terminal)
 	}
-	if terminal.Snapshot.Size.Cols != 118 || terminal.Snapshot.Size.Rows != 36 {
-		t.Fatalf("expected resized snapshot 118x36, got %#v", terminal.Snapshot.Size)
+	if terminal.Snapshot.Size.Cols != uint16(wantRect.W) || terminal.Snapshot.Size.Rows != uint16(wantRect.H) {
+		t.Fatalf("expected resized snapshot %dx%d, got %#v", wantRect.W, wantRect.H, terminal.Snapshot.Size)
 	}
 }
 
