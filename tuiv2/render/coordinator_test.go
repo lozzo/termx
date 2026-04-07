@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
@@ -242,6 +241,56 @@ func TestDrawPaneFrameKeepsTopRightCornerAlignedWithEmojiVariationTitleAcrossHos
 		}
 		if !strings.HasSuffix(lines[1], "│") {
 			t.Fatalf("expected second row to keep the right border when host advances ♻️ by %d column(s), got %q", ambiguousWidth, lines[1])
+		}
+	}
+}
+
+func TestDrawPaneFrameKeepsTopRightCornerAlignedWithOtherEmojiVariationTitleAcrossHostWidths(t *testing.T) {
+	canvas := newComposedCanvas(40, 6)
+	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorRaw
+	rect := workbench.Rect{X: 0, Y: 0, W: 40, H: 6}
+	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
+	border := paneBorderInfo{StateLabel: paneRunningIcon(), RoleLabel: "◆ owner"}
+
+	drawPaneFrame(canvas, rect, false, false, "RedmiBook✈️", border, theme, paneOverflowHints{}, true, false)
+
+	for _, ambiguousWidth := range []int{1, 2} {
+		host := newFakeHostFrame(rect.W, rect.H)
+		host.apply(canvas.String(), ambiguousWidth)
+		lines := host.lines()
+		if len(lines) < 2 {
+			t.Fatalf("expected at least two rendered lines, got %d", len(lines))
+		}
+		if !strings.HasSuffix(lines[0], "┐") {
+			t.Fatalf("expected top row to keep the right corner when host advances ✈️ by %d column(s), got %q", ambiguousWidth, lines[0])
+		}
+		if !strings.HasSuffix(lines[1], "│") {
+			t.Fatalf("expected second row to keep the right border when host advances ✈️ by %d column(s), got %q", ambiguousWidth, lines[1])
+		}
+	}
+}
+
+func TestDrawPaneFrameKeepsTopRightCornerAlignedWithWideBaseEmojiVariationTitleAcrossHostWidths(t *testing.T) {
+	canvas := newComposedCanvas(40, 6)
+	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorRaw
+	rect := workbench.Rect{X: 0, Y: 0, W: 40, H: 6}
+	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
+	border := paneBorderInfo{StateLabel: paneRunningIcon(), RoleLabel: "◆ owner"}
+
+	drawPaneFrame(canvas, rect, false, false, "RedmiBook☕️", border, theme, paneOverflowHints{}, true, false)
+
+	for _, ambiguousWidth := range []int{1, 2} {
+		host := newFakeHostFrame(rect.W, rect.H)
+		host.apply(canvas.String(), ambiguousWidth)
+		lines := host.lines()
+		if len(lines) < 2 {
+			t.Fatalf("expected at least two rendered lines, got %d", len(lines))
+		}
+		if !strings.HasSuffix(lines[0], "┐") {
+			t.Fatalf("expected top row to keep the right corner when host advances ☕️ by %d column(s), got %q", ambiguousWidth, lines[0])
+		}
+		if !strings.HasSuffix(lines[1], "│") {
+			t.Fatalf("expected second row to keep the right border when host advances ☕️ by %d column(s), got %q", ambiguousWidth, lines[1])
 		}
 	}
 }
@@ -623,6 +672,130 @@ func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiRawModeWhenHostAdvance
 	}
 }
 
+func TestRenderBodyKeepsSingleRightBorderForOtherAmbiguousEmojiRawModeWhenHostAdvancesOneColumn(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	bodyWidth := 120
+	bodyHeight := 6
+	contentWidth := bodyWidth - 3
+	prompt := "# lozzow@RedmiBook✈️: ~/Documents/workdir/termx <>                                                                                             (23:17:15)"
+
+	vt := localvterm.New(contentWidth, 3, 10, nil)
+	if _, err := vt.Write([]byte(prompt)); err != nil {
+		t.Fatalf("write prompt into vterm: %v", err)
+	}
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), bodyWidth, bodyHeight), bodyWidth, bodyHeight+2)
+	state.Runtime = &VisibleRuntimeStateProxy{
+		HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
+		Terminals: []runtime.VisibleTerminal{{
+			TerminalID: "term-1",
+			Snapshot: &protocol.Snapshot{
+				TerminalID: "term-1",
+				Size:       protocol.Size{Cols: uint16(contentWidth), Rows: 3},
+				Screen:     protocol.ScreenData{Cells: protocolRowsFromVTermCells(vt.ScreenContent().Cells)},
+				Cursor:     protocol.CursorState{Visible: false},
+				Modes:      protocol.TerminalModes{AutoWrap: true},
+			},
+		}},
+	}
+
+	host := newFakeHostFrame(bodyWidth, bodyHeight)
+	host.apply(renderBody(state, bodyWidth, bodyHeight), 1)
+
+	promptLine := ""
+	for _, line := range host.lines() {
+		if strings.Contains(line, "RedmiBook") {
+			promptLine = line
+			break
+		}
+	}
+	if promptLine == "" {
+		t.Fatalf("expected prompt line in fake host frame:\n%s", strings.Join(host.lines(), "\n"))
+	}
+	if got := strings.Count(promptLine, "│"); got != 2 {
+		t.Fatalf("expected raw-mode render to keep a single left/right border pair when the host advances ✈️ by 1 column, got %d in %q", got, promptLine)
+	}
+	if !strings.HasSuffix(promptLine, "│") {
+		t.Fatalf("expected prompt line to keep the right border in the last column when the host advances ✈️ by 1 column, got %q", promptLine)
+	}
+}
+
+func TestRenderBodyKeepsSingleRightBorderForWideBaseEmojiVariationRawModeWhenHostAdvancesOneColumn(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	bodyWidth := 120
+	bodyHeight := 6
+	contentWidth := bodyWidth - 3
+	prompt := "# lozzow@RedmiBook☕️: ~/Documents/workdir/termx <>                                                                                             (23:17:15)"
+
+	vt := localvterm.New(contentWidth, 3, 10, nil)
+	if _, err := vt.Write([]byte(prompt)); err != nil {
+		t.Fatalf("write prompt into vterm: %v", err)
+	}
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), bodyWidth, bodyHeight), bodyWidth, bodyHeight+2)
+	state.Runtime = &VisibleRuntimeStateProxy{
+		HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
+		Terminals: []runtime.VisibleTerminal{{
+			TerminalID: "term-1",
+			Snapshot: &protocol.Snapshot{
+				TerminalID: "term-1",
+				Size:       protocol.Size{Cols: uint16(contentWidth), Rows: 3},
+				Screen:     protocol.ScreenData{Cells: protocolRowsFromVTermCells(vt.ScreenContent().Cells)},
+				Cursor:     protocol.CursorState{Visible: false},
+				Modes:      protocol.TerminalModes{AutoWrap: true},
+			},
+		}},
+	}
+
+	host := newFakeHostFrame(bodyWidth, bodyHeight)
+	host.apply(renderBody(state, bodyWidth, bodyHeight), 1)
+
+	promptLine := ""
+	for _, line := range host.lines() {
+		if strings.Contains(line, "RedmiBook") {
+			promptLine = line
+			break
+		}
+	}
+	if promptLine == "" {
+		t.Fatalf("expected prompt line in fake host frame:\n%s", strings.Join(host.lines(), "\n"))
+	}
+	if got := strings.Count(promptLine, "│"); got != 2 {
+		t.Fatalf("expected raw-mode render to keep a single left/right border pair when the host advances ☕️ by 1 column, got %d in %q", got, promptLine)
+	}
+	if !strings.HasSuffix(promptLine, "│") {
+		t.Fatalf("expected prompt line to keep the right border in the last column when the host advances ☕️ by 1 column, got %q", promptLine)
+	}
+}
+
 func TestRenderBodyKeepsDistinctVerticalPaneBordersBetweenSplitPanes(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
@@ -739,20 +912,30 @@ func (f *fakeHostFrame) apply(frame string, ambiguousWidth int) {
 			col = 0
 			i++
 		default:
-			if strings.HasPrefix(frame[i:], "♻️") {
-				f.put(row, col, "♻️")
-				col += ambiguousWidth
-				i += len("♻️")
-				continue
-			}
-			r, size := utf8.DecodeRuneInString(frame[i:])
-			if r == utf8.RuneError && size == 1 {
+			clusters := splitTextClusters(frame[i:])
+			if len(clusters) == 0 {
 				i++
 				continue
 			}
-			f.put(row, col, string(r))
-			col++
-			i += size
+			cluster := clusters[0]
+			if esc := strings.IndexByte(cluster.Content, '\x1b'); esc >= 0 {
+				if esc == 0 {
+					i++
+					continue
+				}
+				cluster.Content = cluster.Content[:esc]
+				cluster.Width = xansi.StringWidth(cluster.Content)
+			}
+			width := cluster.Width
+			if isAmbiguousEmojiVariationSelectorCluster(cluster.Content, cluster.Width) {
+				width = ambiguousWidth
+			}
+			if width <= 0 {
+				width = maxInt(1, xansi.StringWidth(cluster.Content))
+			}
+			f.put(row, col, cluster.Content)
+			col += width
+			i += len(cluster.Content)
 		}
 	}
 }
@@ -863,6 +1046,8 @@ func TestRenderFrameKeepsSplitBoundaryStableAcrossRepeatedEmojiVariationUpdates(
 		repeat string
 	}{
 		{name: "emoji-variation", repeat: "♻️:"},
+		{name: "other-emoji-variation", repeat: "✈️:"},
+		{name: "wide-base-emoji-variation", repeat: "☕️:"},
 		{name: "single-wide-emoji", repeat: "🙂:"},
 		{name: "zwj-emoji", repeat: "👩‍💻:"},
 		{name: "cjk-wide", repeat: "漢字:"},

@@ -277,11 +277,8 @@ func hostEmojiProbeModeFromReportedColumn(x int) (shared.AmbiguousEmojiVariation
 		// 渲染端要走 strip 回退，显式补一个空格把模型宽度补齐。
 		return shared.AmbiguousEmojiVariationSelectorStrip, true
 	case 2:
-		// 中文说明：单个探针 glyph（当前是 ♻️）按 2 列推进，并不代表所有带
-		// FE0F 的歧义 emoji 都安全。像 ✈️ / ☁️ 这类 cluster 在同一个宿主里
-		// 仍可能和探针表现不一致。这里最多记录“host 会按两列推进过某些 glyph”，
-		// render 层依旧统一走稳定 fallback，避免 pane 右边框再次被顶坏。
-		return shared.AmbiguousEmojiVariationSelectorAdvance, true
+		// 中文说明：宿主已经按 2 列推进，可以直接保留原始 grapheme。
+		return shared.AmbiguousEmojiVariationSelectorRaw, true
 	default:
 		return "", false
 	}

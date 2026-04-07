@@ -293,7 +293,21 @@ func isAmbiguousEmojiVariationSelectorCluster(content string, width int) bool {
 		return false
 	}
 	stripped := strings.ReplaceAll(content, "\uFE0F", "")
-	return stripped != "" && xansi.StringWidth(stripped) == 1
+	return stripped != "" && xansi.StringWidth(stripped) > 0 && xansi.StringWidth(stripped) <= width
+}
+
+func fallbackAmbiguousEmojiVariationSelectorContent(content string, width int) string {
+	stripped := strings.ReplaceAll(content, "\uFE0F", "")
+	if stripped == "" {
+		return strings.Repeat(" ", maxInt(1, width))
+	}
+	if got := xansi.StringWidth(stripped); got > width {
+		stripped = xansi.Truncate(stripped, width, "")
+	}
+	if got := xansi.StringWidth(stripped); got < width {
+		stripped += strings.Repeat(" ", width-got)
+	}
+	return stripped
 }
 
 func serializeCellContent(content string, width int, mode shared.AmbiguousEmojiVariationSelectorMode) string {
@@ -304,9 +318,9 @@ func serializeCellContent(content string, width int, mode shared.AmbiguousEmojiV
 	case shared.AmbiguousEmojiVariationSelectorAdvance, shared.AmbiguousEmojiVariationSelectorStrip:
 		// 中文说明：Bubble Tea 的标准渲染器把整行当成普通 ANSI 文本做 diff。
 		// 如果在行中间插 CHA/CUF 这类“挪光标”控制序列，某些终端会把后续单元格
-		// 对齐弄乱。这里统一降级成“去掉 FE0F + 补一个可见空格”，用真实字符而不
-		// 是中途移动光标来保持整行宽度稳定。
-		return strings.ReplaceAll(content, "\uFE0F", "") + " "
+		// 对齐弄乱。这里统一降级成“去掉 FE0F，并把文本表示精确补到原模型宽度”，
+		// 用真实字符而不是中途移动光标来保持整行宽度稳定。
+		return fallbackAmbiguousEmojiVariationSelectorContent(content, width)
 	default:
 		return content
 	}

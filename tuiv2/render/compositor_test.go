@@ -138,9 +138,15 @@ func TestSerializeCellContentStripsAmbiguousEmojiVariationSelectorAsFallback(t *
 	}
 }
 
-func TestSerializeCellContentStripsOtherAmbiguousEmojiVariationSelectorClustersAsFallback(t *testing.T) {
-	if got := serializeCellContent("✈️", 2, shared.AmbiguousEmojiVariationSelectorAdvance); got != "✈ " {
-		t.Fatalf("expected other FE0F ambiguous emoji to use the same stable fallback, got %q", got)
+func TestSerializeCellContentKeepsRawOtherAmbiguousEmojiVariationSelectorCluster(t *testing.T) {
+	if got := serializeCellContent("✈️", 2, shared.AmbiguousEmojiVariationSelectorRaw); got != "✈️" {
+		t.Fatalf("expected other FE0F ambiguous emoji to preserve raw grapheme, got %q", got)
+	}
+}
+
+func TestSerializeCellContentStripsWideBaseEmojiVariationSelectorWithoutExtraPadding(t *testing.T) {
+	if got := serializeCellContent("☕️", 2, shared.AmbiguousEmojiVariationSelectorStrip); got != "☕" {
+		t.Fatalf("expected wide-base FE0F fallback to preserve the two-column footprint without extra padding, got %q", got)
 	}
 }
 
