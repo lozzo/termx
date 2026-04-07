@@ -55,6 +55,46 @@ func TestModelViewShowsProjectedState(t *testing.T) {
 	}
 }
 
+func TestModelViewDelegatesCursorSequenceToWriter(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 10, Rows: 4},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{{{Content: "h", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Row: 0, Col: 0, Visible: true, Shape: "block"},
+	}
+
+	model := New(shared.Config{}, wb, rt)
+	model.width = 100
+	model.height = 30
+	writer := &recordingControlWriter{}
+	model.SetCursorWriter(writer)
+
+	view := model.View()
+	if strings.Contains(view, "\x1b[?25h") {
+		t.Fatalf("expected view content without embedded host cursor sequence, got %q", view)
+	}
+	if !strings.Contains(writer.cursor, "\x1b[?25h") {
+		t.Fatalf("expected cursor writer to receive host cursor sequence, got %q", writer.cursor)
+	}
+}
+
 func TestModelInitBootstrapsDefaultWorkspace(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
 	if model.workbench.CurrentWorkspace() != nil {

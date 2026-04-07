@@ -1303,6 +1303,65 @@ func TestRenderBodyCachedOverlapDoesNotPaintActivePaneOverFloating(t *testing.T)
 	}
 }
 
+func TestRenderBodyMovingFloatingPaneRestoresPreviouslyCoveredTiledContent(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:              "tab-1",
+			Name:            "tab 1",
+			ActivePaneID:    "pane-1",
+			FloatingVisible: true,
+			Panes: map[string]*workbench.PaneState{
+				"pane-1":  {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+				"float-1": {ID: "float-1", Title: "float", TerminalID: "term-2"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+			Floating: []*workbench.FloatingState{{
+				PaneID: "float-1",
+				Rect:   workbench.Rect{X: 10, Y: 4, W: 14, H: 6},
+				Z:      0,
+			}},
+		}},
+	})
+
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+		}},
+	}
+	rt.Registry().GetOrCreate("term-2").Name = "float"
+	rt.Registry().Get("term-2").State = "running"
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 40, 14), 40, 16)
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+
+	body := xansi.Strip(renderBodyFrameWithCoordinator(coordinator, state, 40, 14).content)
+	lines := strings.Split(body, "\n")
+	if got := string([]rune(lines[6])[12]); got != " " {
+		t.Fatalf("expected first render to cover tiled content under floating pane, got %q in %q", got, lines[6])
+	}
+
+	if !wb.MoveFloatingPane("tab-1", "float-1", 22, 4) {
+		t.Fatal("expected floating pane move to succeed")
+	}
+	state = WithTermSize(AdaptVisibleStateWithSize(wb, rt, 40, 14), 40, 16)
+
+	body = xansi.Strip(renderBodyFrameWithCoordinator(coordinator, state, 40, 14).content)
+	lines = strings.Split(body, "\n")
+	if got := string([]rune(lines[6])[12]); got != "X" {
+		t.Fatalf("expected moving floating pane to restore tiled content in previously covered area, got %q in %q", got, lines[6])
+	}
+}
+
 func TestRenderBodyFloatingPaneBorderCornersDoNotMergeUnderlyingPaneBorders(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{

@@ -82,13 +82,13 @@ func TestOutputCursorWriterInterleavesCursorSequenceWithBubbleTeaWrites(t *testi
 	}
 
 	frameChunk := -1
-	cursorChunksBeforeFrame := 0
+	cursorChunkAfterFrame := false
 	totalCursorChunks := 0
 	for i, write := range writes {
 		if write == "<CURSOR>" {
 			totalCursorChunks++
-			if frameChunk < 0 {
-				cursorChunksBeforeFrame++
+			if frameChunk >= 0 {
+				cursorChunkAfterFrame = true
 			}
 			continue
 		}
@@ -100,11 +100,11 @@ func TestOutputCursorWriterInterleavesCursorSequenceWithBubbleTeaWrites(t *testi
 	if frameChunk < 0 {
 		t.Fatalf("expected probe frame chunk in writes, got %#v", writes)
 	}
-	if totalCursorChunks < 2 {
-		t.Fatalf("expected cursor sequence to be injected multiple times, got %#v", writes)
+	if totalCursorChunks == 0 {
+		t.Fatalf("expected cursor sequence to be injected at least once, got %#v", writes)
 	}
-	if cursorChunksBeforeFrame == 0 {
-		t.Fatalf("expected cursor sequence to be injected before frame bytes, got %#v", writes)
+	if !cursorChunkAfterFrame {
+		t.Fatalf("expected cursor sequence after frame bytes, got %#v", writes)
 	}
 }
 
@@ -129,6 +129,73 @@ func TestOutputCursorWriterQueuesControlSequenceAfterNextWrite(t *testing.T) {
 	}
 	if writes[0] != "frame-1" || writes[1] != "<PROBE>" || writes[2] != "frame-2" {
 		t.Fatalf("unexpected queued write order %#v", writes)
+	}
+}
+
+func TestOutputCursorWriterRestoresBubbleTeaCursorBeforeNextFrame(t *testing.T) {
+	sink := &cursorWriterProbeSink{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetCursorSequence("<CURSOR>")
+
+	const anchor = "\x1b[;5H"
+	if _, err := writer.Write([]byte("frame-1" + anchor)); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	if _, err := writer.Write([]byte("frame-2")); err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+
+	sink.mu.Lock()
+	writes := append([]string(nil), sink.writes...)
+	sink.mu.Unlock()
+
+	want := []string{
+		"frame-1" + anchor,
+		"<CURSOR>",
+		anchor,
+		"frame-2",
+		"<CURSOR>",
+	}
+	if len(writes) != len(want) {
+		t.Fatalf("expected restored frame write sequence %#v, got %#v", want, writes)
+	}
+	for i := range want {
+		if writes[i] != want[i] {
+			t.Fatalf("unexpected write %d: got %q want %q; full=%#v", i, writes[i], want[i], writes)
+		}
+	}
+}
+
+func TestOutputCursorWriterRestoresBubbleTeaCursorBeforeControlWrites(t *testing.T) {
+	sink := &cursorWriterProbeSink{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetCursorSequence("<CURSOR>")
+
+	const anchor = "\x1b[;5H"
+	if _, err := writer.Write([]byte("frame-1" + anchor)); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	if _, err := writer.Write([]byte("\x1b[2K")); err != nil {
+		t.Fatalf("control write: %v", err)
+	}
+
+	sink.mu.Lock()
+	writes := append([]string(nil), sink.writes...)
+	sink.mu.Unlock()
+
+	want := []string{
+		"frame-1" + anchor,
+		"<CURSOR>",
+		anchor,
+		"\x1b[2K",
+	}
+	if len(writes) != len(want) {
+		t.Fatalf("expected restored control write sequence %#v, got %#v", want, writes)
+	}
+	for i := range want {
+		if writes[i] != want[i] {
+			t.Fatalf("unexpected write %d: got %q want %q; full=%#v", i, writes[i], want[i], writes)
+		}
 	}
 }
 

@@ -358,7 +358,7 @@ func TestItoa(t *testing.T) {
 	}
 }
 
-func TestRenderFrameUsesSyntheticCursorForActiveShellPane(t *testing.T) {
+func TestRenderFrameProjectsHostCursorForActiveShellPane(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -388,11 +388,11 @@ func TestRenderFrameUsesSyntheticCursorForActiveShellPane(t *testing.T) {
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
 	frame := coordinator.RenderFrame()
 
-	if strings.Contains(coordinator.CursorSequence(), "\x1b[?25h") {
-		t.Fatalf("expected shell pane to keep host cursor hidden, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
+	if !strings.Contains(coordinator.CursorSequence(), "\x1b[?25h\x1b[3;2H") {
+		t.Fatalf("expected shell pane to project host cursor into pane content, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
 	}
-	if !strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+"h") {
-		t.Fatalf("expected shell pane to use synthetic cursor highlight, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
+	if strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+"h") {
+		t.Fatalf("expected shell pane content to stay unmodified when using host cursor, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
 	}
 }
 
@@ -434,7 +434,7 @@ func TestRenderFrameHidesHostCursorWhenActivePaneCursorInvisible(t *testing.T) {
 	}
 }
 
-func TestRenderFrameUsesSyntheticCursorForAlternateScreenPane(t *testing.T) {
+func TestRenderFrameProjectsHostCursorForAlternateScreenPane(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -466,11 +466,11 @@ func TestRenderFrameUsesSyntheticCursorForAlternateScreenPane(t *testing.T) {
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
 	frame := coordinator.RenderFrame()
 
-	if strings.Contains(coordinator.CursorSequence(), "\x1b[?25h") {
-		t.Fatalf("expected alternate-screen pane to keep host cursor hidden, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
+	if !strings.Contains(coordinator.CursorSequence(), "\x1b[?25h\x1b[3;2H") {
+		t.Fatalf("expected alternate-screen pane to project host cursor into pane content, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
 	}
-	if !strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+"h") {
-		t.Fatalf("expected alternate-screen pane to use synthetic cursor highlight, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
+	if strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+"h") {
+		t.Fatalf("expected alternate-screen pane content to stay unmodified when using host cursor, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
 	}
 }
 
@@ -570,7 +570,7 @@ func TestProjectPaneCursorDrawsSyntheticCursorForPlainShell(t *testing.T) {
 	}
 }
 
-func TestRenderFrameUsesHighContrastSyntheticCursorOnBlankShellCell(t *testing.T) {
+func TestRenderFrameProjectsHostCursorOntoBlankShellCell(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -597,14 +597,17 @@ func TestRenderFrameUsesHighContrastSyntheticCursorOnBlankShellCell(t *testing.T
 	}
 
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
-	frame := NewCoordinator(func() VisibleRenderState { return state }).RenderFrame()
-	want := styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"}) + " "
-	if !strings.Contains(frame, want) {
-		t.Fatalf("expected blank shell cursor cell to use high-contrast synthetic cursor %q, got %q", want, frame)
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+	frame := coordinator.RenderFrame()
+	if !strings.Contains(coordinator.CursorSequence(), "\x1b[?25h\x1b[3;3H") {
+		t.Fatalf("expected blank shell cursor to move host cursor onto the blank cell, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
+	}
+	if strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+" ") {
+		t.Fatalf("expected blank shell cursor to avoid synthetic highlight, got %q", frame)
 	}
 }
 
-func TestRenderFrameUsesHighContrastSyntheticCursorOnTextCellWithDefaultColors(t *testing.T) {
+func TestRenderFrameProjectsHostCursorOntoTextCellWithDefaultColors(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -631,10 +634,13 @@ func TestRenderFrameUsesHighContrastSyntheticCursorOnTextCellWithDefaultColors(t
 	}
 
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
-	frame := NewCoordinator(func() VisibleRenderState { return state }).RenderFrame()
-	want := styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"}) + "h"
-	if !strings.Contains(frame, want) {
-		t.Fatalf("expected text cursor cell to use high-contrast synthetic cursor %q, got %q", want, frame)
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+	frame := coordinator.RenderFrame()
+	if !strings.Contains(coordinator.CursorSequence(), "\x1b[?25h\x1b[3;2H") {
+		t.Fatalf("expected text cursor to move host cursor onto the text cell, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
+	}
+	if strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+"h") {
+		t.Fatalf("expected text cursor to avoid synthetic highlight, got %q", frame)
 	}
 }
 
@@ -661,7 +667,7 @@ func TestProjectPaneCursorUsesVisibleBarCursorStyleOnTextCell(t *testing.T) {
 	}
 }
 
-func TestRenderFrameKeepsSyntheticCursorVisibleWithoutTicks(t *testing.T) {
+func TestRenderFrameKeepsHostCursorVisibleWithoutTicks(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -691,12 +697,10 @@ func TestRenderFrameKeepsSyntheticCursorVisibleWithoutTicks(t *testing.T) {
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
 	_ = coordinator.RenderFrame()
 	if coordinator.AdvanceCursorBlink() {
-		t.Fatal("expected steady synthetic cursor to avoid blink ticks")
+		t.Fatal("expected steady host cursor to avoid render-driven blink ticks")
 	}
-	frame := coordinator.RenderFrame()
-	highlight := styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"}) + "h"
-	if !strings.Contains(frame, highlight) {
-		t.Fatalf("expected steady synthetic cursor to remain visible, got %q", frame)
+	if got := coordinator.CursorSequence(); !strings.Contains(got, "\x1b[?25h\x1b[3;2H") {
+		t.Fatalf("expected steady host cursor to remain projected, got %q", got)
 	}
 }
 

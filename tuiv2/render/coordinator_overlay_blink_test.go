@@ -8,45 +8,58 @@ import (
 	"github.com/lozzow/termx/tuiv2/modal"
 )
 
-func TestCoordinatorKeepsHostCursorHiddenForPickerOverlay(t *testing.T) {
+func TestCoordinatorProjectsHostCursorForPickerOverlay(t *testing.T) {
 	state := makeTestState()
-	state = WithOverlayPicker(state, &modal.PickerState{
+	picker := &modal.PickerState{
 		Items:     []modal.PickerItem{{TerminalID: "term-1", Name: "demo"}},
 		Query:     "demo",
 		Cursor:    2,
 		CursorSet: true,
-	})
+	}
+	state = WithOverlayPicker(state, picker)
 
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
 	_ = coordinator.RenderFrame()
 
-	if got := coordinator.CursorSequence(); got != hideCursorANSI() {
-		t.Fatalf("expected picker overlay to keep host cursor hidden, got %q", got)
+	x, y, ok := pickerOverlayCursorTarget(picker, TermSize{Width: state.TermSize.Width, Height: FrameBodyHeight(state.TermSize.Height)})
+	if !ok {
+		t.Fatal("expected picker overlay cursor target")
+	}
+	if got, want := coordinator.CursorSequence(), hostCursorANSI(x, y+TopChromeRows, "bar", false); got != want {
+		t.Fatalf("expected picker overlay to project host cursor, got %q want %q", got, want)
 	}
 }
 
-func TestCoordinatorBlinksPickerOverlayUnderscoreCursor(t *testing.T) {
+func TestCoordinatorBlinksPickerOverlayHostCursor(t *testing.T) {
 	state := makeTestState()
-	state = WithOverlayPicker(state, &modal.PickerState{
+	picker := &modal.PickerState{
 		Items:     []modal.PickerItem{{TerminalID: "term-1", Name: "demo"}},
 		Query:     "demo",
 		Cursor:    2,
 		CursorSet: true,
-	})
+	}
+	state = WithOverlayPicker(state, picker)
 
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
 	frameOn := xansi.Strip(coordinator.RenderFrame())
-	if !strings.Contains(frameOn, "search: de_mo") {
-		t.Fatalf("expected visible picker underscore cursor, got %q", frameOn)
+	if !strings.Contains(frameOn, "search: demo") {
+		t.Fatalf("expected visible picker query text without synthetic cursor marker, got %q", frameOn)
+	}
+	x, y, ok := pickerOverlayCursorTarget(picker, TermSize{Width: state.TermSize.Width, Height: FrameBodyHeight(state.TermSize.Height)})
+	if !ok {
+		t.Fatal("expected picker overlay cursor target")
+	}
+	if got, want := coordinator.CursorSequence(), hostCursorANSI(x, y+TopChromeRows, "bar", false); got != want {
+		t.Fatalf("expected visible picker host cursor, got %q want %q", got, want)
 	}
 
 	coordinator.AdvanceCursorBlink()
 	frameOff := xansi.Strip(coordinator.RenderFrame())
-	if strings.Contains(frameOff, "search: de_mo") {
-		t.Fatalf("expected picker underscore cursor to disappear during off phase, got %q", frameOff)
-	}
-	if !strings.Contains(frameOff, "search: de mo") {
+	if !strings.Contains(frameOff, "search: demo") {
 		t.Fatalf("expected picker cursor off phase to keep layout stable, got %q", frameOff)
+	}
+	if got := coordinator.CursorSequence(); got != hideCursorANSI() {
+		t.Fatalf("expected picker cursor off phase to hide host cursor, got %q", got)
 	}
 }
 
@@ -64,31 +77,34 @@ func TestCoordinatorNeedsCursorTicksForPromptOverlay(t *testing.T) {
 	}
 }
 
-func TestCoordinatorBlinksTerminalPoolUnderscoreCursor(t *testing.T) {
+func TestCoordinatorBlinksTerminalPoolHostCursor(t *testing.T) {
 	state := makeTestState()
-	state = AttachTerminalPool(state, &modal.TerminalManagerState{
+	manager := &modal.TerminalManagerState{
 		Items:     []modal.PickerItem{{TerminalID: "term-1", Name: "demo", State: "running"}},
 		Query:     "demo",
 		Cursor:    1,
 		CursorSet: true,
-	})
+	}
+	state = AttachTerminalPool(state, manager)
 
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
 	frameOn := xansi.Strip(coordinator.RenderFrame())
-	if !strings.Contains(frameOn, "search: d_emo") {
-		t.Fatalf("expected visible terminal pool underscore cursor, got %q", frameOn)
+	if !strings.Contains(frameOn, "search: demo") {
+		t.Fatalf("expected visible terminal pool query text without synthetic cursor marker, got %q", frameOn)
 	}
-	if got := coordinator.CursorSequence(); got != hideCursorANSI() {
-		t.Fatalf("expected terminal pool to keep host cursor hidden, got %q", got)
+	layout := buildTerminalPoolPageLayout(manager, state.TermSize.Width, FrameBodyHeight(state.TermSize.Height))
+	want := hostCursorANSI(layout.queryRect.X+valueCursorCellOffset(manager.Query, queryCursorIndex(manager.Query, manager.Cursor, manager.CursorSet), layout.queryRect.W), layout.queryRect.Y+TopChromeRows, "bar", false)
+	if got := coordinator.CursorSequence(); got != want {
+		t.Fatalf("expected terminal pool to project host cursor, got %q want %q", got, want)
 	}
 
 	coordinator.AdvanceCursorBlink()
 	frameOff := xansi.Strip(coordinator.RenderFrame())
-	if strings.Contains(frameOff, "search: d_emo") {
-		t.Fatalf("expected terminal pool underscore cursor to disappear during off phase, got %q", frameOff)
-	}
-	if !strings.Contains(frameOff, "search: d emo") {
+	if !strings.Contains(frameOff, "search: demo") {
 		t.Fatalf("expected terminal pool cursor off phase to keep layout stable, got %q", frameOff)
+	}
+	if got := coordinator.CursorSequence(); got != hideCursorANSI() {
+		t.Fatalf("expected terminal pool cursor off phase to hide host cursor, got %q", got)
 	}
 }
 
@@ -105,13 +121,20 @@ func TestCoordinatorRevealCursorBlinkShowsOverlayCursorImmediately(t *testing.T)
 	_ = coordinator.RenderFrame()
 	coordinator.AdvanceCursorBlink()
 	frameOff := xansi.Strip(coordinator.RenderFrame())
-	if !strings.Contains(frameOff, "search: de mo") {
+	if !strings.Contains(frameOff, "search: demo") {
 		t.Fatalf("expected off phase before reveal, got %q", frameOff)
+	}
+	if got := coordinator.CursorSequence(); got != hideCursorANSI() {
+		t.Fatalf("expected reveal precondition to hide host cursor, got %q", got)
 	}
 
 	coordinator.RevealCursorBlink()
-	frameOn := xansi.Strip(coordinator.RenderFrame())
-	if !strings.Contains(frameOn, "search: de_mo") {
-		t.Fatalf("expected reveal to show overlay cursor immediately, got %q", frameOn)
+	_ = coordinator.RenderFrame()
+	x, y, ok := pickerOverlayCursorTarget(state.Overlay.Picker, TermSize{Width: state.TermSize.Width, Height: FrameBodyHeight(state.TermSize.Height)})
+	if !ok {
+		t.Fatal("expected picker overlay cursor target")
+	}
+	if got, want := coordinator.CursorSequence(), hostCursorANSI(x, y+TopChromeRows, "bar", false); got != want {
+		t.Fatalf("expected reveal to show overlay host cursor immediately, got %q want %q", got, want)
 	}
 }

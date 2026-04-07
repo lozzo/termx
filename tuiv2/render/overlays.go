@@ -455,19 +455,11 @@ func promptValueWithCursor(prompt *modal.PromptState) string {
 }
 
 func promptValueWithCursorVisible(prompt *modal.PromptState, cursorVisible bool) string {
+	_ = cursorVisible
 	if prompt == nil {
 		return ""
 	}
-	runes := []rune(prompt.Value)
-	cursor := prompt.Cursor
-	if cursor < 0 || cursor > len(runes) {
-		cursor = len(runes)
-	}
-	marker := " "
-	if cursorVisible {
-		marker = "_"
-	}
-	return string(runes[:cursor]) + marker + string(runes[cursor:])
+	return prompt.Value
 }
 
 func promptFieldLabel(kind string) string {
@@ -779,6 +771,7 @@ func renderOverlaySearchLine(theme uiTheme, query string, cursor int, cursorSet 
 }
 
 func renderOverlaySearchLineWithCursor(theme uiTheme, query string, cursor int, cursorSet bool, innerWidth int, cursorVisible bool) string {
+	_ = cursorVisible
 	value := queryValueWithCursorVisible(query, cursor, cursorSet, cursorVisible)
 	label := "search: "
 	prefix := "  " + label
@@ -794,22 +787,10 @@ func queryValueWithCursor(query string, cursor int, cursorSet bool) string {
 }
 
 func queryValueWithCursorVisible(query string, cursor int, cursorSet bool, cursorVisible bool) string {
-	runes := []rune(query)
-	if !cursorSet {
-		cursor = len(runes)
-	} else {
-		if cursor < 0 {
-			cursor = 0
-		}
-		if cursor > len(runes) {
-			cursor = len(runes)
-		}
-	}
-	marker := " "
-	if cursorVisible {
-		marker = "_"
-	}
-	return string(runes[:cursor]) + marker + string(runes[cursor:])
+	_ = cursor
+	_ = cursorSet
+	_ = cursorVisible
+	return query
 }
 
 func renderOverlayFooterLine(theme uiTheme, footer string, innerWidth int) string {
@@ -821,6 +802,7 @@ func renderOverlayPromptField(theme uiTheme, prompt *modal.PromptState, innerWid
 }
 
 func renderOverlayPromptFieldWithCursor(theme uiTheme, prompt *modal.PromptState, innerWidth int, cursorVisible bool) string {
+	_ = cursorVisible
 	if prompt == nil {
 		return ""
 	}
@@ -838,6 +820,7 @@ func renderOverlayPromptFormField(theme uiTheme, prompt *modal.PromptState, fiel
 }
 
 func renderOverlayPromptFormFieldWithCursor(theme uiTheme, prompt *modal.PromptState, fieldIndex int, innerWidth int, cursorVisible bool) string {
+	_ = cursorVisible
 	if prompt == nil || fieldIndex < 0 || fieldIndex >= len(prompt.Fields) {
 		return ""
 	}
@@ -845,21 +828,7 @@ func renderOverlayPromptFormFieldWithCursor(theme uiTheme, prompt *modal.PromptS
 	active := fieldIndex == prompt.ActiveField
 	valueStyle := promptFieldValueStyle(theme, active)
 	value := field.Value
-	if active {
-		runes := []rune(field.Value)
-		cursor := field.Cursor
-		if cursor < 0 {
-			cursor = 0
-		}
-		if cursor > len(runes) {
-			cursor = len(runes)
-		}
-		marker := " "
-		if cursorVisible {
-			marker = "_"
-		}
-		value = string(runes[:cursor]) + marker + string(runes[cursor:])
-	} else if value == "" && strings.TrimSpace(field.Placeholder) != "" {
+	if !active && value == "" && strings.TrimSpace(field.Placeholder) != "" {
 		value = field.Placeholder
 		valueStyle = valueStyle.Foreground(lipgloss.Color(theme.panelMuted))
 	}
@@ -877,6 +846,122 @@ func renderOverlayPromptFormFieldWithCursor(theme uiTheme, prompt *modal.PromptS
 
 func renderOverlayPromptValue(style lipgloss.Style, value string, width int) string {
 	return renderOverlaySpan(style, value, width)
+}
+
+func promptCursorIndex(prompt *modal.PromptState) int {
+	if prompt == nil {
+		return 0
+	}
+	runes := []rune(prompt.Value)
+	cursor := prompt.Cursor
+	if cursor < 0 || cursor > len(runes) {
+		return len(runes)
+	}
+	return cursor
+}
+
+func promptFieldCursorIndex(field modal.PromptField) int {
+	runes := []rune(field.Value)
+	cursor := field.Cursor
+	if cursor < 0 {
+		return 0
+	}
+	if cursor > len(runes) {
+		return len(runes)
+	}
+	return cursor
+}
+
+func queryCursorIndex(query string, cursor int, cursorSet bool) int {
+	runes := []rune(query)
+	if !cursorSet {
+		return len(runes)
+	}
+	if cursor < 0 {
+		return 0
+	}
+	if cursor > len(runes) {
+		return len(runes)
+	}
+	return cursor
+}
+
+func valueCursorCellOffset(value string, cursor int, maxWidth int) int {
+	runes := []rune(value)
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(runes) {
+		cursor = len(runes)
+	}
+	offset := xansi.StringWidth(string(runes[:cursor]))
+	if maxWidth <= 0 {
+		return 0
+	}
+	if offset >= maxWidth {
+		return maxWidth - 1
+	}
+	return offset
+}
+
+func pickerOverlayCursorTarget(picker *modal.PickerState, termSize TermSize) (int, int, bool) {
+	if picker == nil {
+		return 0, 0, false
+	}
+	width, height := overlayViewport(termSize)
+	layout := buildPickerCardLayout(width, height, len(picker.VisibleItems()), false)
+	rect := pickerQueryRowRect(layout)
+	return rect.X + valueCursorCellOffset(picker.Query, queryCursorIndex(picker.Query, picker.Cursor, picker.CursorSet), rect.W), rect.Y, true
+}
+
+func workspacePickerOverlayCursorTarget(picker *modal.WorkspacePickerState, termSize TermSize) (int, int, bool) {
+	if picker == nil {
+		return 0, 0, false
+	}
+	width, height := overlayViewport(termSize)
+	layout := buildPickerCardLayout(width, height, len(picker.VisibleItems()), false)
+	rect := pickerQueryRowRect(layout)
+	return rect.X + valueCursorCellOffset(picker.Query, queryCursorIndex(picker.Query, picker.Cursor, picker.CursorSet), rect.W), rect.Y, true
+}
+
+func terminalManagerOverlayCursorTarget(manager *modal.TerminalManagerState, termSize TermSize) (int, int, bool) {
+	if manager == nil {
+		return 0, 0, false
+	}
+	width, height := overlayViewport(termSize)
+	layout := buildPickerCardLayout(width, height, len(manager.VisibleItems()), len(terminalManagerFooterActionSpecs()) > 0)
+	rect := pickerQueryRowRect(layout)
+	return rect.X + valueCursorCellOffset(manager.Query, queryCursorIndex(manager.Query, manager.Cursor, manager.CursorSet), rect.W), rect.Y, true
+}
+
+func promptOverlayCursorTarget(prompt *modal.PromptState, termSize TermSize) (int, int, bool) {
+	if prompt == nil {
+		return 0, 0, false
+	}
+	width, height := overlayViewport(termSize)
+	lines, inputLines := promptOverlayContent(prompt)
+	footerSpecs := promptFooterActionSpecs(prompt)
+	footer := ""
+	if len(footerSpecs) == 0 && prompt != nil {
+		footer = prompt.Hint
+	}
+	layout := buildPickerCardLayout(width, height, len(lines), len(footerSpecs) > 0 || strings.TrimSpace(footer) != "")
+	if prompt.IsForm() {
+		activeField := prompt.ActiveField
+		if activeField < 0 {
+			activeField = 0
+		}
+		if activeField >= len(prompt.Fields) || activeField >= len(inputLines) {
+			return 0, 0, false
+		}
+		rect := promptFormInputRect(layout, prompt, inputLines[activeField], activeField)
+		return rect.X + valueCursorCellOffset(prompt.Fields[activeField].Value, promptFieldCursorIndex(prompt.Fields[activeField]), rect.W), rect.Y, true
+	}
+	if len(inputLines) == 0 {
+		return 0, 0, false
+	}
+	rect := promptInputRect(layout, prompt, inputLines[0])
+	return rect.X + valueCursorCellOffset(prompt.Value, promptCursorIndex(prompt), rect.W), rect.Y, true
 }
 
 func renderOverlaySpan(style lipgloss.Style, value string, width int) string {

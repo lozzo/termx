@@ -2731,20 +2731,20 @@ func e2eWaitForSharedPaneOwnerBadge(t *testing.T, ctx context.Context, client sh
 
 func e2eWaitForCursorHighlight(t *testing.T, ctx context.Context, m *Model, invalidated <-chan struct{}) {
 	t.Helper()
-	const syntheticCursorANSI = "\x1b[0;38;2;0;0;0;48;2;255;255;255m"
+	hostCursorANSI := regexp.MustCompile(`\x1b\[[0-9]+ q\x1b\[\?25h\x1b\[[0-9]+;[0-9]+H`)
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if strings.Contains(m.View(), syntheticCursorANSI) {
+		if hostCursorANSI.MatchString(m.View()) {
 			return
 		}
 		select {
 		case <-invalidated:
 		case <-time.After(100 * time.Millisecond):
 		case <-ctx.Done():
-			t.Fatal("context expired waiting for synthetic cursor highlight")
+			t.Fatal("context expired waiting for projected host cursor")
 		}
 	}
-	t.Fatalf("timeout waiting for synthetic cursor highlight:\n%s", m.View())
+	t.Fatalf("timeout waiting for projected host cursor:\n%s", m.View())
 }
 
 func e2eShareTerminalInSplitPane(t *testing.T, env realMouseE2EEnv, sourcePaneID, newPaneID string, dir workbench.SplitDirection, terminalID string) string {

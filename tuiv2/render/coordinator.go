@@ -210,6 +210,10 @@ func (c *Coordinator) RenderFrame() string {
 	}
 
 	immersiveZoom := immersiveZoomActive(state)
+	bodyCursorOffsetY := TopChromeRows
+	if immersiveZoom {
+		bodyCursorOffsetY = 0
+	}
 	tabBar := ""
 	statusBar := ""
 	bodyHeight := FrameBodyHeight(state.TermSize.Height)
@@ -228,10 +232,10 @@ func (c *Coordinator) RenderFrame() string {
 	c.mu.Lock()
 	overlayCursorVisible = c.cursorBlinkVisible
 	c.mu.Unlock()
-	if overlay := renderActiveOverlayWithCursor(state, overlaySize, overlayCursorVisible); overlay != "" {
-		body = compositeOverlay(body, overlay, TermSize{Width: state.TermSize.Width, Height: bodyHeight})
-		cursor = hideCursorANSI()
-		rendered.blink = false
+	if overlay := renderActiveOverlayWithCursor(state, overlaySize, bodyCursorOffsetY, overlayCursorVisible); overlay.content != "" {
+		body = compositeOverlay(body, overlay.content, TermSize{Width: state.TermSize.Width, Height: bodyHeight})
+		cursor = overlay.cursor
+		rendered.blink = overlay.blink
 	}
 	frameParts := []string{body}
 	if !immersiveZoom {
@@ -242,7 +246,7 @@ func (c *Coordinator) RenderFrame() string {
 	if !rendered.blink {
 		c.cursorBlinkVisible = true
 	}
-	c.lastFrame = frame + cursor
+	c.lastFrame = frame
 	c.lastCursor = cursor
 	c.lastState = key
 	c.dirty = false
@@ -366,6 +370,10 @@ func renderBodyFrameWithCoordinator(coordinator *Coordinator, state VisibleRende
 	if width <= 0 || height <= 0 {
 		return renderedBody{}
 	}
+	cursorOffsetY := TopChromeRows
+	if immersiveZoomActive(state) {
+		cursorOffsetY = 0
+	}
 	if state.Surface.Kind == VisibleSurfaceTerminalPool && state.Surface.TerminalPool != nil {
 		cursorVisible := true
 		if coordinator != nil {
@@ -373,10 +381,7 @@ func renderBodyFrameWithCoordinator(coordinator *Coordinator, state VisibleRende
 			cursorVisible = coordinator.cursorBlinkVisible
 			coordinator.mu.Unlock()
 		}
-		return renderedBody{
-			content: renderTerminalPoolPage(state.Surface.TerminalPool, state.Runtime, TermSize{Width: width, Height: height}, cursorVisible),
-			cursor:  hideCursorANSI(),
-		}
+		return renderTerminalPoolPageWithCursor(state.Surface.TerminalPool, state.Runtime, TermSize{Width: width, Height: height}, cursorOffsetY, cursorVisible)
 	}
 	if state.Workbench == nil {
 		return renderedBody{content: strings.Repeat("\n", maxInt(0, height-1))}
@@ -541,27 +546,53 @@ func emojiVariationSelectorModeForRuntime(runtimeState *VisibleRuntimeStateProxy
 }
 
 func renderActiveOverlay(state VisibleRenderState, termSize TermSize) string {
-	return renderActiveOverlayWithCursor(state, termSize, true)
+	return renderActiveOverlayWithCursor(state, termSize, 0, true).content
 }
 
-func renderActiveOverlayWithCursor(state VisibleRenderState, termSize TermSize, cursorVisible bool) string {
+func renderActiveOverlayWithCursor(state VisibleRenderState, termSize TermSize, cursorOffsetY int, cursorVisible bool) renderedBody {
 	theme := uiThemeForState(state)
+	result := renderedBody{cursor: hideCursorANSI()}
 	switch state.Overlay.Kind {
 	case VisibleOverlayPrompt:
-		return renderPromptOverlayWithThemeAndCursor(state.Overlay.Prompt, termSize, theme, cursorVisible)
+		result.content = renderPromptOverlayWithThemeAndCursor(state.Overlay.Prompt, termSize, theme, cursorVisible)
+		result.blink = true
+		if cursorVisible {
+			if x, y, ok := promptOverlayCursorTarget(state.Overlay.Prompt, termSize); ok {
+				result.cursor = hostCursorANSI(x, y+cursorOffsetY, "bar", false)
+			}
+		}
 	case VisibleOverlayPicker:
-		return renderPickerOverlayWithThemeAndCursor(state.Overlay.Picker, termSize, theme, cursorVisible)
+		result.content = renderPickerOverlayWithThemeAndCursor(state.Overlay.Picker, termSize, theme, cursorVisible)
+		result.blink = true
+		if cursorVisible {
+			if x, y, ok := pickerOverlayCursorTarget(state.Overlay.Picker, termSize); ok {
+				result.cursor = hostCursorANSI(x, y+cursorOffsetY, "bar", false)
+			}
+		}
 	case VisibleOverlayWorkspacePicker:
-		return renderWorkspacePickerOverlayWithThemeAndCursor(state.Overlay.WorkspacePicker, termSize, theme, cursorVisible)
+		result.content = renderWorkspacePickerOverlayWithThemeAndCursor(state.Overlay.WorkspacePicker, termSize, theme, cursorVisible)
+		result.blink = true
+		if cursorVisible {
+			if x, y, ok := workspacePickerOverlayCursorTarget(state.Overlay.WorkspacePicker, termSize); ok {
+				result.cursor = hostCursorANSI(x, y+cursorOffsetY, "bar", false)
+			}
+		}
 	case VisibleOverlayTerminalManager:
-		return renderTerminalManagerOverlayWithThemeAndCursor(state.Overlay.TerminalManager, termSize, theme, cursorVisible)
+		result.content = renderTerminalManagerOverlayWithThemeAndCursor(state.Overlay.TerminalManager, termSize, theme, cursorVisible)
+		result.blink = true
+		if cursorVisible {
+			if x, y, ok := terminalManagerOverlayCursorTarget(state.Overlay.TerminalManager, termSize); ok {
+				result.cursor = hostCursorANSI(x, y+cursorOffsetY, "bar", false)
+			}
+		}
 	case VisibleOverlayHelp:
-		return renderHelpOverlayWithTheme(state.Overlay.Help, termSize, theme)
+		result.content = renderHelpOverlayWithTheme(state.Overlay.Help, termSize, theme)
 	case VisibleOverlayFloatingOverview:
-		return renderFloatingOverviewOverlayWithTheme(state.Overlay.FloatingOverview, termSize, theme)
+		result.content = renderFloatingOverviewOverlayWithTheme(state.Overlay.FloatingOverview, termSize, theme)
 	default:
-		return ""
+		return renderedBody{}
 	}
+	return result
 }
 
 func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entries []paneRenderEntry, width, height int) *composedCanvas {
@@ -581,6 +612,7 @@ func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entrie
 			}
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 		}
+		projectActiveEntryCursor(canvas, entries, state.Runtime)
 		return canvas
 	}
 	cache := coordinator.bodyCache
@@ -595,6 +627,7 @@ func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entrie
 			}
 			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
 		}
+		projectActiveEntryCursor(canvas, entries, state.Runtime)
 		coordinator.bodyCache = newBodyRenderCache(canvas, entries, width, height)
 		return canvas
 	}
@@ -876,9 +909,9 @@ func (c *bodyRenderCache) matches(entries []paneRenderEntry, width, height int, 
 	return true
 }
 
-func renderTerminalPoolPage(pool *modal.TerminalManagerState, runtimeState *VisibleRuntimeStateProxy, termSize TermSize, cursorVisible bool) string {
+func renderTerminalPoolPageWithCursor(pool *modal.TerminalManagerState, runtimeState *VisibleRuntimeStateProxy, termSize TermSize, cursorOffsetY int, cursorVisible bool) renderedBody {
 	if pool == nil {
-		return ""
+		return renderedBody{}
 	}
 	theme := uiThemeForRuntime(runtimeState)
 	width := maxInt(1, termSize.Width)
@@ -911,7 +944,15 @@ func renderTerminalPoolPage(pool *modal.TerminalManagerState, runtimeState *Visi
 	}
 
 	footerLine, _ := layoutTerminalPoolFooterActionsWithTheme(theme, width, height)
-	return renderPageWithPinnedFooter(headerLines, contentLines, footerLine, width, height)
+	result := renderedBody{
+		content: renderPageWithPinnedFooter(headerLines, contentLines, footerLine, width, height),
+		cursor:  hideCursorANSI(),
+	}
+	if cursorVisible {
+		cursorX := layout.queryRect.X + valueCursorCellOffset(pool.Query, queryCursorIndex(pool.Query, pool.Cursor, pool.CursorSet), layout.queryRect.W)
+		result.cursor = hostCursorANSI(cursorX, layout.queryRect.Y+cursorOffsetY, "bar", false)
+	}
+	return result
 }
 
 func renderTerminalPoolDetails(item *modal.PickerItem, runtimeState *VisibleRuntimeStateProxy, innerWidth int) []string {
@@ -1284,8 +1325,6 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 	drawSnapshotWithOffset(canvas, contentRect, terminal.Snapshot, renderOffset, entry.Theme)
 	if entry.CopyModeActive {
 		drawCopyModeOverlay(canvas, contentRect, terminal.Snapshot, entry.Theme, entry.CopyModeCursorRow, entry.CopyModeCursorCol, entry.CopyModeViewTopRow, entry.CopyModeMarkSet, entry.CopyModeMarkRow, entry.CopyModeMarkCol)
-	} else if entry.Active {
-		projectPaneCursor(canvas, contentRect, terminal.Snapshot, renderOffset)
 	}
 	if terminal.State == "exited" {
 		drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
@@ -2224,10 +2263,13 @@ func projectActiveEntryCursor(canvas *composedCanvas, entries []paneRenderEntry,
 	canvas.cursorVisible = false
 	canvas.syntheticCursorBlink = false
 	rect, snapshot, ok := activeEntryCursorTarget(entries, runtimeState)
-	if !ok {
+	if !ok || snapshot == nil {
 		return
 	}
-	projectPaneCursor(canvas, rect, snapshot, 0)
+	// 中文说明：输入法候选框跟的是宿主终端真实光标，不是画布里反白出来的假光标。
+	// 活动 pane 在最终合成完成后再统一投射 host cursor，候选框位置才能和终端
+	// 程序看到的输入光标保持一致。
+	canvas.setCursor(rect.X+snapshot.Cursor.Col, rect.Y+snapshot.Cursor.Row, snapshot.Cursor.Shape, snapshot.Cursor.Blink)
 }
 
 func activeEntryCursorTarget(entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) (workbench.Rect, *protocol.Snapshot, bool) {

@@ -183,18 +183,18 @@ func TestRenderTerminalManagerOverlayShowsSelectedTerminalDetails(t *testing.T) 
 	}
 }
 
-func TestPromptValueWithCursorRespectsExplicitPosition(t *testing.T) {
+func TestPromptValueWithCursorKeepsRawValueForHostCursorProjection(t *testing.T) {
 	prompt := &modal.PromptState{Value: "shell"}
 	prompt.Cursor = 0
-	if got, want := promptValueWithCursor(prompt), "_shell"; got != want {
+	if got, want := promptValueWithCursor(prompt), "shell"; got != want {
 		t.Fatalf("cursor at start got %q, want %q", got, want)
 	}
 	prompt.Cursor = 2
-	if got, want := promptValueWithCursor(prompt), "sh_ell"; got != want {
+	if got, want := promptValueWithCursor(prompt), "shell"; got != want {
 		t.Fatalf("cursor in middle got %q, want %q", got, want)
 	}
 	prompt.Cursor = -1
-	if got, want := promptValueWithCursor(prompt), "shell_"; got != want {
+	if got, want := promptValueWithCursor(prompt), "shell"; got != want {
 		t.Fatalf("negative cursor should fallback to end, got %q, want %q", got, want)
 	}
 }

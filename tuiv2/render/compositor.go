@@ -419,12 +419,18 @@ func (c *composedCanvas) cursorANSI() string {
 	if c == nil || !c.cursorVisible {
 		return hideCursorANSI()
 	}
-	return cursorShapeANSI(c.cursorShape, c.cursorBlink) +
-		fmt.Sprintf("\x1b[?25h\x1b[%d;%dH", c.cursorY+c.cursorOffsetY+1, c.cursorX+c.cursorOffsetX+1)
+	return hostCursorANSI(c.cursorX+c.cursorOffsetX, c.cursorY+c.cursorOffsetY, c.cursorShape, c.cursorBlink)
 }
 
 func hideCursorANSI() string {
 	return "\x1b[?25l"
+}
+
+func hostCursorANSI(x, y int, shape string, blink bool) string {
+	if x < 0 || y < 0 {
+		return hideCursorANSI()
+	}
+	return cursorShapeANSI(shape, blink) + fmt.Sprintf("\x1b[?25h\x1b[%d;%dH", y+1, x+1)
 }
 
 func cursorShapeANSI(shape string, blink bool) string {

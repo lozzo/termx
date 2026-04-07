@@ -2,6 +2,8 @@ package app
 
 import (
 	"io"
+	"regexp"
+	"strings"
 	"sync"
 
 	xansi "github.com/charmbracelet/x/ansi"
@@ -24,11 +26,15 @@ type outputCursorWriter struct {
 	mu         sync.Mutex
 	cursor     string
 	afterWrite []string
+
+	bubbleTeaRestore string
+	cursorProjected  bool
 }
 
 var (
 	synchronizedOutputBegin = xansi.DECSET(xansi.ModeSynchronizedOutput)
 	synchronizedOutputEnd   = xansi.DECRST(xansi.ModeSynchronizedOutput)
+	trailingControlSuffixRE = regexp.MustCompile(`(?:\r|\x1b\[[0-9;?]*[ -/]*[@-~])+$`)
 )
 
 func newOutputCursorWriter(out io.Writer) *outputCursorWriter {
@@ -76,11 +82,21 @@ func (w *outputCursorWriter) Write(p []byte) (int, error) {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	frameLike := frameLikeWritePayload(p)
 	syncOutput := w.tty != nil
 	if syncOutput {
 		if _, err := io.WriteString(w.out, synchronizedOutputBegin); err != nil {
 			return 0, err
 		}
+	}
+	if w.cursorProjected && w.bubbleTeaRestore != "" {
+		if _, err := io.WriteString(w.out, w.bubbleTeaRestore); err != nil {
+			if syncOutput {
+				_, _ = io.WriteString(w.out, synchronizedOutputEnd)
+			}
+			return 0, err
+		}
+		w.cursorProjected = false
 	}
 	n, err := w.out.Write(p)
 	if err != nil {
@@ -92,6 +108,9 @@ func (w *outputCursorWriter) Write(p []byte) (int, error) {
 	cursor := w.cursor
 	afterWrite := append([]string(nil), w.afterWrite...)
 	w.afterWrite = nil
+	if frameLike {
+		w.bubbleTeaRestore = bubbleTeaRestoreSequence(p)
+	}
 	for _, seq := range afterWrite {
 		if seq == "" {
 			continue
@@ -108,8 +127,15 @@ func (w *outputCursorWriter) Write(p []byte) (int, error) {
 		}
 		return n, nil
 	}
-	if _, err := io.WriteString(w.out, cursor); err != nil {
-		return n, err
+	// Only append the projected host cursor after frame-like writes. Bubble Tea
+	// may emit setup/control writes before the actual frame bytes; injecting the
+	// cursor after those intermediate writes can reposition the host cursor in
+	// the middle of a redraw and corrupt the visible layout.
+	if frameLike {
+		if _, err := io.WriteString(w.out, cursor); err != nil {
+			return n, err
+		}
+		w.cursorProjected = true
 	}
 	if syncOutput {
 		if _, err := io.WriteString(w.out, synchronizedOutputEnd); err != nil {
@@ -141,3 +167,14 @@ func (w *outputCursorWriter) Fd() uintptr {
 }
 
 var _ xterm.File = (*outputCursorWriter)(nil)
+
+func frameLikeWritePayload(p []byte) bool {
+	return strings.Trim(xansi.Strip(string(p)), "\r\n") != ""
+}
+
+func bubbleTeaRestoreSequence(p []byte) string {
+	if len(p) == 0 {
+		return ""
+	}
+	return trailingControlSuffixRE.FindString(string(p))
+}
