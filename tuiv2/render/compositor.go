@@ -305,9 +305,11 @@ func serializeCellContentForDisplay(content string, width int, mode shared.Ambig
 		if nextCol <= 0 {
 			return content
 		}
-		// Re-anchor the cursor to the next expected grid column after writing an
-		// ambiguous FE0F grapheme. This keeps later cells and pane borders aligned
-		// even if the host terminal advances the cursor by a different width.
+		// Preserve the original grapheme in both raw and advance modes, but still
+		// re-anchor the host cursor to the pane grid. "Raw" means keep emoji
+		// presentation intact, not "trust the host terminal's column advance".
+		// Without this CHA, hosts that visually render ♻️ but only advance one
+		// column will drag later cells and the right border one column left.
 		return content + xansi.CHA(nextCol)
 	}
 }

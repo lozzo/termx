@@ -341,6 +341,98 @@ func TestE2ERunWithClientAcceptsNonOriginExtendedCursorReportForEmojiProbe(t *te
 	}
 }
 
+func TestE2ERunWithClientIgnoresUnexpectedProbeColumnsUntilValidResponse(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	originalRetryDelay := hostEmojiProbeRetryDelay
+	originalMaxAttempts := hostEmojiProbeMaxAttempts
+	t.Cleanup(func() {
+		hostEmojiProbeRetryDelay = originalRetryDelay
+		hostEmojiProbeMaxAttempts = originalMaxAttempts
+	})
+	hostEmojiProbeRetryDelay = 20 * time.Millisecond
+	hostEmojiProbeMaxAttempts = 4
+
+	ptmx, tty, err := creackpty.Open()
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("open pty: %v", err)
+	}
+	defer ptmx.Close()
+	defer tty.Close()
+
+	if err := creackpty.Setsize(ptmx, &creackpty.Winsize{Cols: 120, Rows: 40}); err != nil {
+		t.Fatalf("set pty size: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	errc := make(chan error, 1)
+	go func() {
+		errc <- runWithClientOptions(shared.Config{}, nil, tty, tty, tea.WithContext(ctx))
+	}()
+
+	recorder := &ptyOutputRecorder{eventc: make(chan struct{}, 1)}
+	respondedInvalid := make(chan struct{}, 1)
+	respondedValid := make(chan struct{}, 1)
+	go func() {
+		buf := make([]byte, 4096)
+		invalidSent := false
+		validSent := false
+		for {
+			n, err := ptmx.Read(buf)
+			if n > 0 {
+				recorder.Append(string(buf[:n]))
+				probes := strings.Count(recorder.Text(), xansi.RequestExtendedCursorPositionReport)
+				if !invalidSent && probes >= 1 {
+					invalidSent = true
+					_, _ = ptmx.Write([]byte(xansi.ExtendedCursorPositionReport(8, 18, 0)))
+					respondedInvalid <- struct{}{}
+				}
+				if invalidSent && !validSent && probes >= 2 {
+					validSent = true
+					_, _ = ptmx.Write([]byte(xansi.ExtendedCursorPositionReport(8, 2, 0)))
+					respondedValid <- struct{}{}
+				}
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	select {
+	case <-respondedInvalid:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting to respond to initial decxcpr probe")
+	}
+	select {
+	case <-respondedValid:
+	case <-ctx.Done():
+		t.Fatal("timed out waiting to respond to retried decxcpr probe")
+	}
+
+	time.Sleep(3 * hostEmojiProbeRetryDelay)
+	if got := strings.Count(recorder.Text(), xansi.RequestExtendedCursorPositionReport); got != 2 {
+		t.Fatalf("expected invalid decxcpr response to be ignored until the next exact-width probe succeeds, got %d probes in output:\n%s", got, recorder.Text())
+	}
+
+	cancel()
+	select {
+	case err := <-errc:
+		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
+			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for TUI shutdown")
+	}
+}
+
 func TestE2ERunWithClientAttachShellAcceptsRepeatedCommandsOnPTY(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: requires a real PTY, skipped with -short")

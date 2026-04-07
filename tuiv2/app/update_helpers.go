@@ -91,8 +91,8 @@ func (m *Model) terminalViewportRect(paneID string, rect workbench.Rect) (workbe
 		return rect, true
 	}
 	if visiblePane, ok := m.visiblePaneProjection(paneID); ok {
-		// Resize PTYs against the same shared-edge-aware content rect that render
-		// uses. If resize math and draw math diverge by even one gutter/divider
+		// Resize PTYs against the same framed content rect that render uses. If
+		// resize math and draw math diverge by even one gutter/divider
 		// column, the terminal can legitimately paint into what render thinks is
 		// border space.
 		return paneContentRectForVisible(visiblePane)

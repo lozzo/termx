@@ -132,6 +132,18 @@ func TestComposedCanvasContentStringUsesAdvanceModeForAmbiguousEmojiVariationSel
 	}
 }
 
+func TestComposedCanvasContentStringReanchorsRawAmbiguousEmojiVariationSelector(t *testing.T) {
+	canvas := newComposedCanvas(6, 1)
+	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorRaw
+	canvas.drawText(0, 0, "♻️X", drawStyle{})
+
+	rendered := canvas.contentString()
+	want := xansi.CHA(1) + "♻️" + xansi.CHA(3) + "X"
+	if !strings.Contains(rendered, want) {
+		t.Fatalf("expected raw mode to preserve the grapheme and re-anchor the next cell, got %q want substring %q", rendered, want)
+	}
+}
+
 func TestComposedCanvasDrawSnapshotUsesAdvanceModeForAmbiguousEmojiVariationSelector(t *testing.T) {
 	canvas := newComposedCanvas(6, 1)
 	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorAdvance
@@ -204,7 +216,7 @@ func TestFillRectBlankClearsWideCellFootprintsCrossingClearBoundary(t *testing.T
 	}
 }
 
-func TestDrawPaneFrameMergesSharedVerticalDivider(t *testing.T) {
+func TestDrawPaneFrameKeepsDistinctVerticalDividerColumns(t *testing.T) {
 	canvas := newComposedCanvas(40, 8)
 	theme := uiTheme{}
 
@@ -212,11 +224,32 @@ func TestDrawPaneFrameMergesSharedVerticalDivider(t *testing.T) {
 	drawPaneFrame(canvas, workbench.Rect{X: 20, Y: 0, W: 20, H: 8}, true, false, "right", paneBorderInfo{}, theme, paneOverflowHints{}, false, false)
 
 	frame := canvas.rawString()
-	if strings.Contains(frame, "││") {
-		t.Fatalf("expected shared divider to render as a single column, got:\n%s", frame)
+	if !strings.Contains(frame, "││") {
+		t.Fatalf("expected split panes to keep both middle border columns, got:\n%s", frame)
 	}
-	if !strings.Contains(frame, "┬") || !strings.Contains(frame, "┴") {
-		t.Fatalf("expected shared divider junctions, got:\n%s", frame)
+	if strings.Contains(frame, "┬") || strings.Contains(frame, "┴") {
+		t.Fatalf("expected split panes to avoid merged divider junctions, got:\n%s", frame)
+	}
+}
+
+func TestDrawPaneFrameFloatingPaneOverwritesUnderlyingBorderIntersections(t *testing.T) {
+	canvas := newComposedCanvas(20, 10)
+	theme := defaultUITheme()
+
+	drawPaneFrame(canvas, workbench.Rect{X: 0, Y: 0, W: 20, H: 10}, false, false, "base", paneBorderInfo{}, theme, paneOverflowHints{}, false, false)
+	drawPaneFrame(canvas, workbench.Rect{X: 0, Y: 3, W: 10, H: 5}, false, false, "float", paneBorderInfo{}, theme, paneOverflowHints{}, true, true)
+
+	if got := canvas.cells[3][0].Content; got != "┌" {
+		t.Fatalf("expected floating top-left corner to overwrite the inactive border instead of merging, got %q", got)
+	}
+	if got := canvas.cells[7][0].Content; got != "└" {
+		t.Fatalf("expected floating bottom-left corner to overwrite the inactive border instead of merging, got %q", got)
+	}
+	if got := canvas.cells[3][0].Style.FG; got != theme.chromeAccent {
+		t.Fatalf("expected floating active corner to keep active border color %q, got %q", theme.chromeAccent, got)
+	}
+	if got := canvas.cells[2][0].Style.FG; got != theme.panelBorder2 {
+		t.Fatalf("expected underlying tiled border above the float to keep inactive color %q, got %q", theme.panelBorder2, got)
 	}
 }
 

@@ -244,46 +244,12 @@ func (w *Workbench) VisibleWithSize(bodyRect Rect) *VisibleWorkbench {
 				Floating:   false,
 			})
 		}
-		annotateSharedPaneEdges(item.Panes)
 		visible.Tabs = append(visible.Tabs, item)
 	}
 	w.visibleCache = visible
 	w.visibleRect = bodyRect
 	w.visibleVersion = w.version
 	return visible
-}
-
-func annotateSharedPaneEdges(panes []VisiblePane) {
-	for i := range panes {
-		panes[i].SharedLeft = false
-		panes[i].SharedTop = false
-		if panes[i].Floating {
-			continue
-		}
-		for j := range panes {
-			if i == j || panes[j].Floating {
-				continue
-			}
-			if rectsOverlapVertically(panes[i].Rect, panes[j].Rect) && panes[j].Rect.X+panes[j].Rect.W == panes[i].Rect.X {
-				panes[i].SharedLeft = true
-			}
-			if rectsOverlapHorizontally(panes[i].Rect, panes[j].Rect) && panes[j].Rect.Y+panes[j].Rect.H == panes[i].Rect.Y {
-				panes[i].SharedTop = true
-			}
-		}
-	}
-}
-
-func rectsOverlapVertically(a, b Rect) bool {
-	top := max(a.Y, b.Y)
-	bottom := min(a.Y+a.H, b.Y+b.H)
-	return top < bottom
-}
-
-func rectsOverlapHorizontally(a, b Rect) bool {
-	left := max(a.X, b.X)
-	right := min(a.X+a.W, b.X+b.W)
-	return left < right
 }
 
 func orderedFloating(entries []*FloatingState) []*FloatingState {

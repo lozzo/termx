@@ -135,7 +135,7 @@ func TestVisibleWithSizeProjectsFloatingPanes(t *testing.T) {
 	}
 }
 
-func TestVisibleWithSizeMarksSharedSplitEdges(t *testing.T) {
+func TestVisibleWithSizeKeepsDistinctSplitPaneEdges(t *testing.T) {
 	wb := NewWorkbench()
 	wb.AddWorkspace("main", &WorkspaceState{
 		Name:      "main",
@@ -165,8 +165,8 @@ func TestVisibleWithSizeMarksSharedSplitEdges(t *testing.T) {
 	if left.SharedLeft || left.SharedTop {
 		t.Fatalf("expected left pane to own its outer edges, got %#v", left)
 	}
-	if !right.SharedLeft || right.SharedTop {
-		t.Fatalf("expected right pane to share only its left divider edge, got %#v", right)
+	if right.SharedLeft || right.SharedTop {
+		t.Fatalf("expected split panes to keep distinct frame edges, got %#v", right)
 	}
 }
 

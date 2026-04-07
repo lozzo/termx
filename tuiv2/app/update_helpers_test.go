@@ -7,7 +7,7 @@ import (
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
-func TestTerminalViewportRectUsesSharedPaneEdges(t *testing.T) {
+func TestTerminalViewportRectKeepsDistinctPaneEdges(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -47,6 +47,6 @@ func TestTerminalViewportRectUsesSharedPaneEdges(t *testing.T) {
 		t.Fatal("expected framed pane content rect")
 	}
 	if viewport != want {
-		t.Fatalf("expected shared-left viewport %#v, got %#v", want, viewport)
+		t.Fatalf("expected framed viewport %#v, got %#v", want, viewport)
 	}
 }

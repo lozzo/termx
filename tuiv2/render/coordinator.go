@@ -1040,6 +1040,8 @@ func resolvePaneTitleWithLookup(pane workbench.VisiblePane, lookup runtimeLookup
 
 // drawPaneFrame draws the border box with a title on the left and stable chrome slots on the right.
 func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, sharedLeft, sharedTop bool, title string, border paneBorderInfo, theme uiTheme, overflow paneOverflowHints, active bool, floating bool) {
+	_ = sharedLeft
+	_ = sharedTop
 	if rect.W < 2 || rect.H < 2 {
 		return
 	}
@@ -1072,21 +1074,46 @@ func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, sharedLeft, shar
 		Action:        drawStyle{FG: actionFG, Bold: active},
 		EmphasizeRole: active,
 	}
-	topX := rect.X
-	if sharedLeft {
-		topX--
+	if floating {
+		// Floating panes are true overlays. If we merge their border connections
+		// with whatever tiled border glyph is already underneath, the corner cell
+		// turns into ├/┼ and the single resulting glyph inherits only one style.
+		// That visually "activates" the underlying pane border at the junction.
+		// Overwrite the floating frame directly so its corners stay real corners.
+		drawDirectPaneBorder(canvas, rect, borderStyle)
+		drawPaneOverflowMarkers(canvas, rect, theme, overflow, active)
+		drawPaneTopBorderLabels(canvas, rect, chromeStyles, title, border, floating)
+		return
 	}
-	bottomX := topX
-
-	drawHorizontalBorder(canvas, topX, rect.X+rect.W-1, rect.Y, borderStyle, sharedLeft, true, false)
-	drawHorizontalBorder(canvas, bottomX, rect.X+rect.W-1, rect.Y+rect.H-1, borderStyle, sharedLeft, false, true)
-	if !sharedLeft {
-		drawVerticalBorder(canvas, rect.X, verticalBorderStart(rect.Y, sharedTop), rect.Y+rect.H-2, borderStyle, sharedTop)
-	}
-	drawVerticalBorder(canvas, rect.X+rect.W-1, verticalBorderStart(rect.Y, sharedTop), rect.Y+rect.H-2, borderStyle, sharedTop)
+	// Framed split panes intentionally keep their own left/top borders instead
+	// of merging into a single shared divider. Collapsing neighboring pane
+	// frames saves a column, but it also changes the visual contract of split
+	// layouts and makes the center separator disappear into one line.
+	drawHorizontalBorder(canvas, rect.X, rect.X+rect.W-1, rect.Y, borderStyle, false, true, false)
+	drawHorizontalBorder(canvas, rect.X, rect.X+rect.W-1, rect.Y+rect.H-1, borderStyle, false, false, true)
+	drawVerticalBorder(canvas, rect.X, verticalBorderStart(rect.Y, false), rect.Y+rect.H-2, borderStyle, false)
+	drawVerticalBorder(canvas, rect.X+rect.W-1, verticalBorderStart(rect.Y, false), rect.Y+rect.H-2, borderStyle, false)
 
 	drawPaneOverflowMarkers(canvas, rect, theme, overflow, active)
 	drawPaneTopBorderLabels(canvas, rect, chromeStyles, title, border, floating)
+}
+
+func drawDirectPaneBorder(canvas *composedCanvas, rect workbench.Rect, style drawStyle) {
+	if canvas == nil || rect.W < 2 || rect.H < 2 {
+		return
+	}
+	for x := rect.X; x < rect.X+rect.W; x++ {
+		canvas.set(x, rect.Y, drawCell{Content: "─", Width: 1, Style: style})
+		canvas.set(x, rect.Y+rect.H-1, drawCell{Content: "─", Width: 1, Style: style})
+	}
+	for y := rect.Y; y < rect.Y+rect.H; y++ {
+		canvas.set(rect.X, y, drawCell{Content: "│", Width: 1, Style: style})
+		canvas.set(rect.X+rect.W-1, y, drawCell{Content: "│", Width: 1, Style: style})
+	}
+	canvas.set(rect.X, rect.Y, drawCell{Content: "┌", Width: 1, Style: style})
+	canvas.set(rect.X+rect.W-1, rect.Y, drawCell{Content: "┐", Width: 1, Style: style})
+	canvas.set(rect.X, rect.Y+rect.H-1, drawCell{Content: "└", Width: 1, Style: style})
+	canvas.set(rect.X+rect.W-1, rect.Y+rect.H-1, drawCell{Content: "┘", Width: 1, Style: style})
 }
 
 func drawPaneOverflowMarkers(canvas *composedCanvas, rect workbench.Rect, theme uiTheme, overflow paneOverflowHints, active bool) {
@@ -1300,15 +1327,9 @@ func interiorRectForPane(rect workbench.Rect) workbench.Rect {
 }
 
 func interiorRectForPaneEdges(rect workbench.Rect, sharedLeft, sharedTop bool) workbench.Rect {
+	_ = sharedLeft
+	_ = sharedTop
 	interior := workbench.Rect{X: rect.X + 1, Y: rect.Y + 1, W: rect.W - 2, H: rect.H - 2}
-	if sharedLeft {
-		interior.X--
-		interior.W++
-	}
-	if sharedTop {
-		interior.Y--
-		interior.H++
-	}
 	return interior
 }
 

@@ -213,14 +213,16 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		if m.runtime == nil || !m.hostEmojiProbePending {
 			return nil, true
 		}
-		m.hostEmojiProbePending = false
-		mode := shared.AmbiguousEmojiVariationSelectorStrip
-		switch {
-		case typed.X >= 2:
-			mode = shared.AmbiguousEmojiVariationSelectorRaw
-		case typed.X == 1:
-			mode = shared.AmbiguousEmojiVariationSelectorAdvance
+		mode, ok := hostEmojiProbeModeFromReportedColumn(typed.X)
+		if !ok {
+			// DECXCPR can arrive late and report whatever column the host cursor had
+			// reached by the time the terminal flushed the response. Only exact
+			// one- and two-column answers are trustworthy for the ambiguous FE0F
+			// width probe; anything else must be ignored so we can retry.
+			m.debugLog("host_emoji_probe_response_ignored", "x", typed.X, "y", typed.Y)
+			return nil, true
 		}
+		m.hostEmojiProbePending = false
 		// Only the reported column matters for this probe. Some terminals answer
 		// from a non-origin row after alt-screen transitions or delayed paints, so
 		// rejecting non-zero Y would leave us stuck in the conservative fallback.
@@ -255,6 +257,17 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		return nil, true
 	default:
 		return nil, false
+	}
+}
+
+func hostEmojiProbeModeFromReportedColumn(x int) (shared.AmbiguousEmojiVariationSelectorMode, bool) {
+	switch x {
+	case 1:
+		return shared.AmbiguousEmojiVariationSelectorAdvance, true
+	case 2:
+		return shared.AmbiguousEmojiVariationSelectorRaw, true
+	default:
+		return "", false
 	}
 }
 

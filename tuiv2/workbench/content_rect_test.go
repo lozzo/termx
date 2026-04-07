@@ -13,12 +13,12 @@ func TestFramedPaneContentRectReservesRightGutter(t *testing.T) {
 	}
 }
 
-func TestFramedPaneContentRectKeepsSharedEdgesAndRightGutter(t *testing.T) {
+func TestFramedPaneContentRectKeepsDistinctEdgesAndRightGutter(t *testing.T) {
 	content, ok := FramedPaneContentRect(Rect{X: 20, Y: 10, W: 20, H: 8}, true, true)
 	if !ok {
 		t.Fatal("expected content rect")
 	}
-	want := Rect{X: 20, Y: 10, W: 18, H: 7}
+	want := Rect{X: 21, Y: 11, W: 17, H: 6}
 	if content != want {
 		t.Fatalf("expected %#v, got %#v", want, content)
 	}

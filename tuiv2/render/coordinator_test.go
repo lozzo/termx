@@ -347,7 +347,7 @@ func TestRenderBodyKeepsWidthStableForPromptWithEmojiVariationHostAcrossWidths(t
 	}
 }
 
-func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiRawModeWhenHostAdvancesOneColumn(t *testing.T) {
+func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiAdvanceModeWhenHostAdvancesOneColumn(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -393,7 +393,7 @@ func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiRawModeWhenHostAdvance
 
 	host := newFakeHostFrame(bodyWidth, bodyHeight)
 	host.apply(renderBody(makeState(shared.AmbiguousEmojiVariationSelectorStrip), bodyWidth, bodyHeight), 1)
-	host.apply(renderBody(makeState(shared.AmbiguousEmojiVariationSelectorRaw), bodyWidth, bodyHeight), 1)
+	host.apply(renderBody(makeState(shared.AmbiguousEmojiVariationSelectorAdvance), bodyWidth, bodyHeight), 1)
 
 	promptLine := ""
 	for _, line := range host.lines() {
@@ -406,10 +406,151 @@ func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiRawModeWhenHostAdvance
 		t.Fatalf("expected prompt line in fake host frame:\n%s", strings.Join(host.lines(), "\n"))
 	}
 	if got := strings.Count(promptLine, "│"); got != 2 {
-		t.Fatalf("expected raw-mode render to keep a single left/right border pair even when host advances ♻️ by one column, got %d in %q", got, promptLine)
+		t.Fatalf("expected advance-mode render to keep a single left/right border pair when host advances ♻️ by one column, got %d in %q", got, promptLine)
 	}
 	if !strings.HasSuffix(promptLine, "│") {
 		t.Fatalf("expected prompt line to keep the right border in the last column, got %q", promptLine)
+	}
+}
+
+func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiRawModeWhenHostAdvancesOneColumn(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	bodyWidth := 120
+	bodyHeight := 6
+	contentWidth := bodyWidth - 3
+	prompt := "# lozzow@RedmiBook♻️: ~/Documents/workdir/termx <>                                                                                             (23:17:15)"
+
+	vt := localvterm.New(contentWidth, 3, 10, nil)
+	if _, err := vt.Write([]byte(prompt)); err != nil {
+		t.Fatalf("write prompt into vterm: %v", err)
+	}
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), bodyWidth, bodyHeight), bodyWidth, bodyHeight+2)
+	state.Runtime = &VisibleRuntimeStateProxy{
+		HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
+		Terminals: []runtime.VisibleTerminal{{
+			TerminalID: "term-1",
+			Snapshot: &protocol.Snapshot{
+				TerminalID: "term-1",
+				Size:       protocol.Size{Cols: uint16(contentWidth), Rows: 3},
+				Screen:     protocol.ScreenData{Cells: protocolRowsFromVTermCells(vt.ScreenContent().Cells)},
+				Cursor:     protocol.CursorState{Visible: false},
+				Modes:      protocol.TerminalModes{AutoWrap: true},
+			},
+		}},
+	}
+
+	host := newFakeHostFrame(bodyWidth, bodyHeight)
+	host.apply(renderBody(state, bodyWidth, bodyHeight), 1)
+
+	promptLine := ""
+	for _, line := range host.lines() {
+		if strings.Contains(line, "RedmiBook") {
+			promptLine = line
+			break
+		}
+	}
+	if promptLine == "" {
+		t.Fatalf("expected prompt line in fake host frame:\n%s", strings.Join(host.lines(), "\n"))
+	}
+	if got := strings.Count(promptLine, "│"); got != 2 {
+		t.Fatalf("expected raw-mode render to keep a single left/right border pair even when the host advances ♻️ by one column, got %d in %q", got, promptLine)
+	}
+	if !strings.HasSuffix(promptLine, "│") {
+		t.Fatalf("expected prompt line to keep the right border in the last column, got %q", promptLine)
+	}
+}
+
+func TestRenderBodyKeepsDistinctVerticalPaneBordersBetweenSplitPanes(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "left", TerminalID: "term-1"},
+				"pane-2": {ID: "pane-2", Title: "right", TerminalID: "term-2"},
+			},
+			Root: &workbench.LayoutNode{
+				Direction: workbench.SplitVertical,
+				Ratio:     0.5,
+				First:     workbench.NewLeaf("pane-1"),
+				Second:    workbench.NewLeaf("pane-2"),
+			},
+		}},
+	})
+
+	bodyWidth := 40
+	bodyHeight := 8
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), bodyWidth, bodyHeight), bodyWidth, bodyHeight+2)
+
+	body := xansi.Strip(renderBody(state, bodyWidth, bodyHeight))
+	lines := strings.Split(body, "\n")
+	if len(lines) != bodyHeight {
+		t.Fatalf("expected %d body rows, got %d:\n%s", bodyHeight, len(lines), body)
+	}
+	if got := strings.Count(lines[1], "│"); got != 4 {
+		t.Fatalf("expected split panes to keep distinct left/right borders with a double divider, got %d in %q", got, lines[1])
+	}
+	if !strings.Contains(lines[1], "││") {
+		t.Fatalf("expected split panes to keep both middle border columns, got %q", lines[1])
+	}
+}
+
+func TestRenderBodyKeepsDistinctHorizontalPaneBordersBetweenSplitPanes(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "top", TerminalID: "term-1"},
+				"pane-2": {ID: "pane-2", Title: "bottom", TerminalID: "term-2"},
+			},
+			Root: &workbench.LayoutNode{
+				Direction: workbench.SplitHorizontal,
+				Ratio:     0.5,
+				First:     workbench.NewLeaf("pane-1"),
+				Second:    workbench.NewLeaf("pane-2"),
+			},
+		}},
+	})
+
+	bodyWidth := 40
+	bodyHeight := 12
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), bodyWidth, bodyHeight), bodyWidth, bodyHeight+2)
+
+	body := xansi.Strip(renderBody(state, bodyWidth, bodyHeight))
+	lines := strings.Split(body, "\n")
+	if len(lines) != bodyHeight {
+		t.Fatalf("expected %d body rows, got %d:\n%s", bodyHeight, len(lines), body)
+	}
+	mid := bodyHeight / 2
+	if !strings.HasPrefix(lines[mid-1], "└") || !strings.HasSuffix(lines[mid-1], "┘") {
+		t.Fatalf("expected upper pane to keep its own bottom border row, got %q", lines[mid-1])
+	}
+	if !strings.HasPrefix(lines[mid], "┌") || !strings.HasSuffix(lines[mid], "┐") {
+		t.Fatalf("expected lower pane to keep its own top border row, got %q", lines[mid])
 	}
 }
 
@@ -624,8 +765,8 @@ func TestRenderFrameKeepsSplitBoundaryStableAcrossRepeatedEmojiVariationUpdates(
 					if got := xansi.StringWidth(line); got != bodyWidth {
 						t.Fatalf("expected rendered row %d to stay width %d at update %d, got %d: %q", i, bodyWidth, count, got, line)
 					}
-					if strings.Count(line, "│") > 3 {
-						t.Fatalf("expected split layout to keep a single shared divider at update %d, got %q", count, line)
+					if strings.Count(line, "│") > 4 {
+						t.Fatalf("expected split layout to keep distinct pane borders without extra divider ghosts at update %d, got %q", count, line)
 					}
 				}
 			}
@@ -1010,6 +1151,49 @@ func TestRenderBodyCachedOverlapDoesNotPaintActivePaneOverFloating(t *testing.T)
 	lines = strings.Split(body, "\n")
 	if got := string([]rune(lines[6])[12]); got != " " {
 		t.Fatalf("expected cached overlap render to preserve floating interior, got %q in %q", got, lines[6])
+	}
+}
+
+func TestRenderBodyFloatingPaneBorderCornersDoNotMergeUnderlyingPaneBorders(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:              "tab-1",
+			Name:            "tab 1",
+			ActivePaneID:    "float-1",
+			FloatingVisible: true,
+			Panes: map[string]*workbench.PaneState{
+				"pane-1":  {ID: "pane-1", Title: "base", TerminalID: "term-1"},
+				"float-1": {ID: "float-1", Title: "float", TerminalID: "term-2"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+			Floating: []*workbench.FloatingState{{
+				PaneID: "float-1",
+				Rect:   workbench.Rect{X: 0, Y: 3, W: 18, H: 6},
+				Z:      0,
+			}},
+		}},
+	})
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), 40, 12), 40, 14)
+	body := xansi.Strip(renderBody(state, 40, 12))
+	lines := strings.Split(body, "\n")
+	if len(lines) != 12 {
+		t.Fatalf("expected 12 body rows, got %d:\n%s", len(lines), body)
+	}
+	if strings.HasPrefix(lines[3], "├") || strings.HasPrefix(lines[3], "┼") {
+		t.Fatalf("expected floating top-left corner to stay a corner instead of merging into the underlying border, got %q", lines[3])
+	}
+	if !strings.HasPrefix(lines[3], "┌") {
+		t.Fatalf("expected floating top-left border row to start with ┌, got %q", lines[3])
+	}
+	if strings.HasPrefix(lines[8], "├") || strings.HasPrefix(lines[8], "┼") {
+		t.Fatalf("expected floating bottom-left corner to stay a corner instead of merging into the underlying border, got %q", lines[8])
+	}
+	if !strings.HasPrefix(lines[8], "└") {
+		t.Fatalf("expected floating bottom border row to start with └, got %q", lines[8])
 	}
 }
 
