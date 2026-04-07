@@ -138,6 +138,12 @@ func TestSerializeCellContentStripsAmbiguousEmojiVariationSelectorAsFallback(t *
 	}
 }
 
+func TestSerializeCellContentStripsOtherAmbiguousEmojiVariationSelectorClustersAsFallback(t *testing.T) {
+	if got := serializeCellContent("✈️", 2, shared.AmbiguousEmojiVariationSelectorAdvance); got != "✈ " {
+		t.Fatalf("expected other FE0F ambiguous emoji to use the same stable fallback, got %q", got)
+	}
+}
+
 func TestComposedCanvasContentStringUsesStableFallbackForOneColumnAmbiguousEmojiVariationSelectorHosts(t *testing.T) {
 	canvas := newComposedCanvas(6, 1)
 	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorAdvance

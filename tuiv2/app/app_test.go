@@ -209,8 +209,8 @@ func TestModelHostCursorPositionProbeAcceptsNonOriginRowForAmbiguousEmoji(t *tes
 	if visible == nil {
 		t.Fatal("expected visible runtime")
 	}
-	if visible.HostEmojiVS16Mode != shared.AmbiguousEmojiVariationSelectorRaw {
-		t.Fatalf("expected host probe to accept non-origin row and select raw mode, got %q", visible.HostEmojiVS16Mode)
+	if visible.HostEmojiVS16Mode != shared.AmbiguousEmojiVariationSelectorAdvance {
+		t.Fatalf("expected host probe to accept non-origin row and record two-column advance mode, got %q", visible.HostEmojiVS16Mode)
 	}
 	if model.hostEmojiProbePending {
 		t.Fatal("expected host emoji probe to be marked complete")
