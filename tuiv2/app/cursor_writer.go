@@ -4,6 +4,7 @@ import (
 	"io"
 	"sync"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	xterm "github.com/charmbracelet/x/term"
 )
 
@@ -24,6 +25,11 @@ type outputCursorWriter struct {
 	cursor     string
 	afterWrite []string
 }
+
+var (
+	synchronizedOutputBegin = xansi.DECSET(xansi.ModeSynchronizedOutput)
+	synchronizedOutputEnd   = xansi.DECRST(xansi.ModeSynchronizedOutput)
+)
 
 func newOutputCursorWriter(out io.Writer) *outputCursorWriter {
 	if out == nil {
@@ -70,8 +76,17 @@ func (w *outputCursorWriter) Write(p []byte) (int, error) {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	syncOutput := w.tty != nil
+	if syncOutput {
+		if _, err := io.WriteString(w.out, synchronizedOutputBegin); err != nil {
+			return 0, err
+		}
+	}
 	n, err := w.out.Write(p)
 	if err != nil {
+		if syncOutput {
+			_, _ = io.WriteString(w.out, synchronizedOutputEnd)
+		}
 		return n, err
 	}
 	cursor := w.cursor
@@ -86,10 +101,20 @@ func (w *outputCursorWriter) Write(p []byte) (int, error) {
 		}
 	}
 	if cursor == "" {
+		if syncOutput {
+			if _, err := io.WriteString(w.out, synchronizedOutputEnd); err != nil {
+				return n, err
+			}
+		}
 		return n, nil
 	}
 	if _, err := io.WriteString(w.out, cursor); err != nil {
 		return n, err
+	}
+	if syncOutput {
+		if _, err := io.WriteString(w.out, synchronizedOutputEnd); err != nil {
+			return n, err
+		}
 	}
 	return n, nil
 }

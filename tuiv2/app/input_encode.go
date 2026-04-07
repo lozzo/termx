@@ -68,6 +68,11 @@ func (m *Model) terminalModesForPane(pane *workbench.PaneState) localvterm.Termi
 			AlternateScreen:   terminal.Snapshot.Modes.AlternateScreen,
 			AlternateScroll:   terminal.Snapshot.Modes.AlternateScroll,
 			MouseTracking:     terminal.Snapshot.Modes.MouseTracking,
+			MouseX10:          terminal.Snapshot.Modes.MouseX10,
+			MouseNormal:       terminal.Snapshot.Modes.MouseNormal,
+			MouseButtonEvent:  terminal.Snapshot.Modes.MouseButtonEvent,
+			MouseAnyEvent:     terminal.Snapshot.Modes.MouseAnyEvent,
+			MouseSGR:          terminal.Snapshot.Modes.MouseSGR,
 			BracketedPaste:    terminal.Snapshot.Modes.BracketedPaste,
 			ApplicationCursor: terminal.Snapshot.Modes.ApplicationCursor,
 			AutoWrap:          terminal.Snapshot.Modes.AutoWrap,
@@ -166,6 +171,9 @@ func (m *Model) encodeTerminalMouseInput(msg tea.MouseMsg, paneID string, conten
 	if col < 1 || row < 1 || col > contentRect.W || row > contentRect.H {
 		return nil
 	}
+	if !modes.MouseSGR {
+		return encodeX10Mouse(msg, col, row)
+	}
 	return encodeSGR1006Mouse(msg, col, row)
 }
 
@@ -208,6 +216,32 @@ func encodeSGR1006Mouse(msg tea.MouseMsg, col, row int) []byte {
 	default:
 		return nil
 	}
+}
+
+func encodeX10Mouse(msg tea.MouseMsg, col, row int) []byte {
+	if col < 1 || row < 1 || col > 223 || row > 223 {
+		return nil
+	}
+	mods := sgrMouseModifierBits(msg)
+	switch msg.Action {
+	case tea.MouseActionPress:
+		if code, ok := sgrMousePressCode(msg.Button); ok {
+			return encodeX10MouseSequence(code+mods, col, row)
+		}
+	case tea.MouseActionMotion:
+		if code, ok := sgrMouseMotionCode(msg.Button); ok {
+			return encodeX10MouseSequence(code+mods, col, row)
+		}
+	case tea.MouseActionRelease:
+		if isSGRReleaseButton(msg.Button) {
+			return encodeX10MouseSequence(3+mods, col, row)
+		}
+	}
+	return nil
+}
+
+func encodeX10MouseSequence(code, col, row int) []byte {
+	return []byte{0x1b, '[', 'M', byte(code + 32), byte(col + 32), byte(row + 32)}
 }
 
 func sgrMousePressCode(button tea.MouseButton) (int, bool) {

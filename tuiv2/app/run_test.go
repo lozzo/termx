@@ -183,6 +183,68 @@ func TestE2ERunWithClientRendersInitialFrameOnPTY(t *testing.T) {
 	}
 }
 
+func TestE2ERunWithClientWrapsTTYFramesWithSynchronizedOutput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	ptmx, tty, err := creackpty.Open()
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("open pty: %v", err)
+	}
+	defer ptmx.Close()
+	defer tty.Close()
+
+	if err := creackpty.Setsize(ptmx, &creackpty.Winsize{Cols: 120, Rows: 40}); err != nil {
+		t.Fatalf("set pty size: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	errc := make(chan error, 1)
+	go func() {
+		errc <- runWithClientOptions(shared.Config{}, nil, tty, tty, tea.WithContext(ctx))
+	}()
+
+	recorder := &ptyOutputRecorder{eventc: make(chan struct{}, 1)}
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := ptmx.Read(buf)
+			if n > 0 {
+				recorder.Append(string(buf[:n]))
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	waitForPTYSubstringCount(t, ctx, recorder, synchronizedOutputBegin, 1)
+	waitForPTYSubstringCount(t, ctx, recorder, synchronizedOutputEnd, 1)
+
+	output := recorder.Text()
+	beginAt := strings.Index(output, synchronizedOutputBegin)
+	endAt := strings.Index(output, synchronizedOutputEnd)
+	if beginAt < 0 || endAt < 0 || beginAt >= endAt {
+		t.Fatalf("expected synchronized output markers in order, got output %q", output)
+	}
+
+	cancel()
+	select {
+	case err := <-errc:
+		if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
+			t.Fatalf("runWithClientOptions returned unexpected error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for TUI shutdown")
+	}
+}
+
 func TestRunWithClientNonTTYOutputDoesNotEmitEmojiProbe(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()

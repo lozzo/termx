@@ -1766,6 +1766,29 @@ func TestMouseWheelForwardsToTerminalWhenTrackingEnabled(t *testing.T) {
 	}
 }
 
+func TestMouseWheelForwardsLegacyEncodingWhenSGRNotEnabled(t *testing.T) {
+	m := setupModel(t, modelOpts{})
+	client, ok := m.runtime.Client().(*recordingBridgeClient)
+	if !ok {
+		t.Fatal("expected recording bridge client")
+	}
+	setActivePaneTerminalModes(t, m, protocol.TerminalModes{
+		MouseTracking: true,
+		MouseNormal:   true,
+	})
+	x, y := activePaneContentScreenOrigin(t, m)
+
+	_, cmd := m.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	drainCmd(t, m, cmd, 20)
+
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected one forwarded mouse wheel event, got %#v", client.inputCalls)
+	}
+	if got := string(client.inputCalls[0].data); got != "\x1b[M`!!" {
+		t.Fatalf("unexpected legacy wheel payload %q", got)
+	}
+}
+
 func TestMouseMiddlePressForwardsToTerminalWhenTrackingEnabled(t *testing.T) {
 	m := setupModel(t, modelOpts{})
 	client, ok := m.runtime.Client().(*recordingBridgeClient)
@@ -1819,6 +1842,8 @@ func setActivePaneMouseTracking(t *testing.T, m *Model, enabled bool) {
 		terminal.Snapshot = &protocol.Snapshot{TerminalID: pane.TerminalID}
 	}
 	terminal.Snapshot.Modes.MouseTracking = enabled
+	terminal.Snapshot.Modes.MouseButtonEvent = enabled
+	terminal.Snapshot.Modes.MouseSGR = enabled
 }
 
 func setActivePaneTerminalModes(t *testing.T, m *Model, modes protocol.TerminalModes) {

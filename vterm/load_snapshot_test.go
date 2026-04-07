@@ -142,11 +142,17 @@ func TestVTermTracksMouseModesFromEscapeSequences(t *testing.T) {
 	if !vt.Modes().MouseTracking {
 		t.Fatal("expected mouse tracking after enabling button-event mode")
 	}
+	if !vt.Modes().MouseButtonEvent || !vt.Modes().MouseSGR {
+		t.Fatalf("expected button-event+SGR mouse mode flags, got %#v", vt.Modes())
+	}
 	if _, err := vt.Write([]byte("\x1b[?1006l")); err != nil {
 		t.Fatalf("disable sgr mode failed: %v", err)
 	}
 	if !vt.Modes().MouseTracking {
 		t.Fatal("expected mouse tracking to remain enabled after disabling sgr encoding only")
+	}
+	if vt.Modes().MouseSGR {
+		t.Fatalf("expected SGR flag cleared after disabling 1006, got %#v", vt.Modes())
 	}
 	if _, err := vt.Write([]byte("\x1b[?1002l")); err != nil {
 		t.Fatalf("disable mouse tracking failed: %v", err)
@@ -160,10 +166,24 @@ func TestLoadSnapshotRestoresMouseTrackingMode(t *testing.T) {
 	vt := New(10, 4, 100, nil)
 	vt.LoadSnapshot(ScreenData{
 		Cells: [][]Cell{{{Content: "x", Width: 1}}},
-	}, CursorState{Row: 0, Col: 1, Visible: true}, TerminalModes{AutoWrap: true, MouseTracking: true})
+	}, CursorState{Row: 0, Col: 1, Visible: true}, TerminalModes{AutoWrap: true, MouseTracking: true, MouseNormal: true})
 
 	if !vt.Modes().MouseTracking {
 		t.Fatal("expected snapshot restore to preserve mouse tracking")
+	}
+	if !vt.Modes().MouseNormal || vt.Modes().MouseSGR {
+		t.Fatalf("expected snapshot restore to preserve legacy mouse encoding, got %#v", vt.Modes())
+	}
+}
+
+func TestLoadSnapshotRestoresSGRMouseEncodingMode(t *testing.T) {
+	vt := New(10, 4, 100, nil)
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{{{Content: "x", Width: 1}}},
+	}, CursorState{Row: 0, Col: 1, Visible: true}, TerminalModes{AutoWrap: true, MouseTracking: true, MouseButtonEvent: true, MouseSGR: true})
+
+	if !vt.Modes().MouseTracking || !vt.Modes().MouseButtonEvent || !vt.Modes().MouseSGR {
+		t.Fatalf("expected snapshot restore to preserve SGR mouse encoding, got %#v", vt.Modes())
 	}
 }
 

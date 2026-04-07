@@ -1,6 +1,7 @@
 package app
 
 import (
+	"io"
 	"strings"
 	"sync"
 	"testing"
@@ -37,6 +38,22 @@ func (s *cursorWriterProbeSink) Write(p []byte) (int, error) {
 	defer s.mu.Unlock()
 	s.writes = append(s.writes, string(append([]byte(nil), p...)))
 	return len(p), nil
+}
+
+type cursorWriterProbeTTY struct {
+	cursorWriterProbeSink
+}
+
+func (s *cursorWriterProbeTTY) Read([]byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (s *cursorWriterProbeTTY) Close() error {
+	return nil
+}
+
+func (s *cursorWriterProbeTTY) Fd() uintptr {
+	return 1
 }
 
 func TestOutputCursorWriterInterleavesCursorSequenceWithBubbleTeaWrites(t *testing.T) {
@@ -112,5 +129,36 @@ func TestOutputCursorWriterQueuesControlSequenceAfterNextWrite(t *testing.T) {
 	}
 	if writes[0] != "frame-1" || writes[1] != "<PROBE>" || writes[2] != "frame-2" {
 		t.Fatalf("unexpected queued write order %#v", writes)
+	}
+}
+
+func TestOutputCursorWriterWrapsTTYWritesWithSynchronizedOutput(t *testing.T) {
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.QueueControlSequenceAfterWrite("<PROBE>")
+	writer.SetCursorSequence("<CURSOR>")
+
+	if _, err := writer.Write([]byte("frame")); err != nil {
+		t.Fatalf("write frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	writes := append([]string(nil), sink.writes...)
+	sink.mu.Unlock()
+
+	want := []string{
+		synchronizedOutputBegin,
+		"frame",
+		"<PROBE>",
+		"<CURSOR>",
+		synchronizedOutputEnd,
+	}
+	if len(writes) != len(want) {
+		t.Fatalf("expected synchronized frame write sequence %#v, got %#v", want, writes)
+	}
+	for i := range want {
+		if writes[i] != want[i] {
+			t.Fatalf("unexpected write %d: got %q want %q; full=%#v", i, writes[i], want[i], writes)
+		}
 	}
 }

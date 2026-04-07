@@ -211,6 +211,11 @@ type TerminalModes struct {
 	AlternateScreen   bool `json:"alternate_screen"`
 	AlternateScroll   bool `json:"alternate_scroll,omitempty"`
 	MouseTracking     bool `json:"mouse_tracking"`
+	MouseX10          bool `json:"mouse_x10,omitempty"`
+	MouseNormal       bool `json:"mouse_normal,omitempty"`
+	MouseButtonEvent  bool `json:"mouse_button_event,omitempty"`
+	MouseAnyEvent     bool `json:"mouse_any_event,omitempty"`
+	MouseSGR          bool `json:"mouse_sgr,omitempty"`
 	BracketedPaste    bool `json:"bracketed_paste"`
 	ApplicationCursor bool `json:"application_cursor"`
 	AutoWrap          bool `json:"auto_wrap"`

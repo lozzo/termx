@@ -57,6 +57,11 @@ type TerminalModes struct {
 	AlternateScreen   bool
 	AlternateScroll   bool
 	MouseTracking     bool
+	MouseX10          bool
+	MouseNormal       bool
+	MouseButtonEvent  bool
+	MouseAnyEvent     bool
+	MouseSGR          bool
 	BracketedPaste    bool
 	ApplicationCursor bool
 	AutoWrap          bool
@@ -103,6 +108,7 @@ type mouseModeState struct {
 	highlight   bool
 	buttonEvent bool
 	anyEvent    bool
+	sgr         bool
 }
 
 const modeAlternateScroll ansi.DECMode = 1007
@@ -262,7 +268,7 @@ func (v *VTerm) LoadSnapshotWithMetadata(scrollback [][]Cell, scrollbackTimestam
 	v.scrollbackRowKinds = normalizeStringSlice(scrollbackRowKinds, len(scrollback))
 	v.screenTimestamps = normalizeTimeSlice(screenTimestamps, height)
 	v.screenRowKinds = normalizeStringSlice(screenRowKinds, height)
-	v.setMouseTrackingAggregateLocked(modes.MouseTracking)
+	v.loadMouseModesLocked(modes)
 	if len(scrollback) > 0 {
 		sb := v.emu.Emulator.Scrollback()
 		for _, row := range scrollback {
@@ -434,8 +440,8 @@ func (v *VTerm) setMode(mode ansi.Mode, enabled bool) {
 		v.mouseMode.anyEvent = enabled
 		v.updateMouseTrackingLocked()
 	case ansi.ModeMouseExtSgr:
-		// SGR 1006 only changes encoding. It should not on its own imply that
-		// applications are actively asking for mouse events.
+		v.mouseMode.sgr = enabled
+		v.updateMouseTrackingLocked()
 	case ansi.ModeNumericKeypad:
 		// x/vt uses "numeric keypad" mode for keypad application mode.
 		// Keep this for future input translation support if needed.
@@ -447,16 +453,42 @@ func (v *VTerm) setMode(mode ansi.Mode, enabled bool) {
 }
 
 func (v *VTerm) setMouseTrackingAggregateLocked(enabled bool) {
-	v.mouseMode = mouseModeState{buttonEvent: enabled}
-	v.modes.MouseTracking = enabled
+	v.mouseMode = mouseModeState{normal: enabled}
+	v.syncMouseModesLocked()
 }
 
 func (v *VTerm) updateMouseTrackingLocked() {
+	v.syncMouseModesLocked()
+}
+
+func (v *VTerm) syncMouseModesLocked() {
+	v.modes.MouseX10 = v.mouseMode.x10
+	v.modes.MouseNormal = v.mouseMode.normal
+	v.modes.MouseButtonEvent = v.mouseMode.buttonEvent
+	v.modes.MouseAnyEvent = v.mouseMode.anyEvent
+	v.modes.MouseSGR = v.mouseMode.sgr
 	v.modes.MouseTracking = v.mouseMode.x10 ||
 		v.mouseMode.normal ||
 		v.mouseMode.highlight ||
 		v.mouseMode.buttonEvent ||
 		v.mouseMode.anyEvent
+}
+
+func (v *VTerm) loadMouseModesLocked(modes TerminalModes) {
+	v.mouseMode = mouseModeState{
+		x10:         modes.MouseX10,
+		normal:      modes.MouseNormal,
+		buttonEvent: modes.MouseButtonEvent,
+		anyEvent:    modes.MouseAnyEvent,
+		sgr:         modes.MouseSGR,
+	}
+	if !v.mouseMode.x10 && !v.mouseMode.normal && !v.mouseMode.buttonEvent && !v.mouseMode.anyEvent && modes.MouseTracking {
+		// Older snapshots only persisted the aggregate tracking bit. Preserve the
+		// previous compatibility behavior by treating that as button-event mode
+		// until explicit protocol fields are available.
+		v.mouseMode.buttonEvent = true
+	}
+	v.syncMouseModesLocked()
 }
 
 func (v *VTerm) RenderLines() []string {
