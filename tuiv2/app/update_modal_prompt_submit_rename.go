@@ -26,6 +26,9 @@ func (m *Model) submitRenameTabPrompt(prompt *modal.PromptState) tea.Cmd {
 	if tab == nil {
 		return func() tea.Msg { return context.Canceled }
 	}
+	if err := m.validateUniqueCurrentWorkspaceTabName(tab.ID, name); err != nil {
+		return func() tea.Msg { return err }
+	}
 	if err := m.workbench.RenameTab(tab.ID, name); err != nil {
 		return func() tea.Msg { return err }
 	}

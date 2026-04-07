@@ -1,5 +1,10 @@
 package workbench
 
+import (
+	"strconv"
+	"strings"
+)
+
 func (ws *WorkspaceState) activeTabIndex() int {
 	if ws == nil || len(ws.Tabs) == 0 {
 		return -1
@@ -65,4 +70,27 @@ func (ws *WorkspaceState) closeTabByID(tabID string) bool {
 		return true
 	}
 	return false
+}
+
+func (ws *WorkspaceState) NextAvailableTabName() string {
+	if ws == nil {
+		return "1"
+	}
+	used := make(map[string]struct{}, len(ws.Tabs))
+	for _, tab := range ws.Tabs {
+		if tab == nil {
+			continue
+		}
+		name := strings.TrimSpace(tab.Name)
+		if name == "" {
+			continue
+		}
+		used[name] = struct{}{}
+	}
+	for next := len(ws.Tabs) + 1; ; next++ {
+		candidate := strconv.Itoa(next)
+		if _, exists := used[candidate]; !exists {
+			return candidate
+		}
+	}
 }

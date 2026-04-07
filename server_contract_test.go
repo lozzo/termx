@@ -45,6 +45,60 @@ func TestServerCreateRejectsInvalidCommandAndDuplicateID(t *testing.T) {
 	}
 }
 
+func TestServerCreateRejectsDuplicateName(t *testing.T) {
+	srv := NewServer()
+	ctx := context.Background()
+
+	_, err := srv.Create(ctx, CreateOptions{
+		ID:      "dupname01",
+		Name:    "shell",
+		Command: []string{"bash", "--noprofile", "--norc"},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create failed: %v", err)
+	}
+
+	if _, err := srv.Create(ctx, CreateOptions{
+		ID:      "dupname02",
+		Name:    "shell",
+		Command: []string{"bash", "--noprofile", "--norc"},
+	}); !errors.Is(err, ErrDuplicateName) {
+		t.Fatalf("expected ErrDuplicateName, got %v", err)
+	}
+}
+
+func TestServerSetMetadataRejectsDuplicateName(t *testing.T) {
+	srv := NewServer()
+	ctx := context.Background()
+
+	first, err := srv.Create(ctx, CreateOptions{
+		ID:      "meta-dup-1",
+		Name:    "shell",
+		Command: []string{"bash", "--noprofile", "--norc"},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create first terminal: %v", err)
+	}
+	second, err := srv.Create(ctx, CreateOptions{
+		ID:      "meta-dup-2",
+		Name:    "logs",
+		Command: []string{"bash", "--noprofile", "--norc"},
+	})
+	if err != nil {
+		t.Fatalf("create second terminal: %v", err)
+	}
+
+	if err := srv.SetMetadata(ctx, second.ID, first.Name, nil); !errors.Is(err, ErrDuplicateName) {
+		t.Fatalf("expected ErrDuplicateName, got %v", err)
+	}
+}
+
 func TestServerListFiltersByStateAndAllowsTagRemoval(t *testing.T) {
 	ctx := context.Background()
 	srv := NewServer(WithDefaultKeepAfterExit(2 * time.Second))

@@ -639,6 +639,29 @@ func TestHandleSemanticActionCreateTabCreatesPaneAndOpensPicker(t *testing.T) {
 	}
 }
 
+func TestHandleSemanticActionCreateTabUsesNextAvailableTabName(t *testing.T) {
+	orch, _ := newTestOrchestrator(t)
+	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
+	ws := orch.workbench.CurrentWorkspace()
+	ws.Tabs[0].Name = "1"
+	if err := orch.workbench.CreateTab("main", "tab-3", "3"); err != nil {
+		t.Fatalf("CreateTab: %v", err)
+	}
+	if err := orch.workbench.CreateFirstPane("tab-3", "pane-3"); err != nil {
+		t.Fatalf("CreateFirstPane: %v", err)
+	}
+
+	orch.HandleSemanticAction(input.SemanticAction{Kind: input.ActionCreateTab})
+
+	ws = orch.workbench.CurrentWorkspace()
+	if len(ws.Tabs) != 3 {
+		t.Fatalf("expected 3 tabs, got %d", len(ws.Tabs))
+	}
+	if got := ws.Tabs[2].Name; got != "4" {
+		t.Fatalf("expected new tab name 4, got %q", got)
+	}
+}
+
 func isNumericID(value string) bool {
 	if value == "" {
 		return false

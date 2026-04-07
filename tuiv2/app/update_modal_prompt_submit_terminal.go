@@ -18,6 +18,9 @@ func (m *Model) submitCreateTerminalFormPrompt(prompt *modal.PromptState, paneID
 	if name == "" {
 		return func() tea.Msg { return inputError("name is required") }
 	}
+	if err := m.validateUniqueTerminalName(name, ""); err != nil {
+		return func() tea.Msg { return err }
+	}
 	command, err := promptCommandFromField(prompt)
 	if err != nil {
 		return func() tea.Msg { return err }
@@ -66,6 +69,9 @@ func (m *Model) submitEditTerminalNamePrompt(prompt *modal.PromptState) tea.Cmd 
 	if name == "" {
 		name = strings.TrimSpace(prompt.Original)
 	}
+	if err := m.validateUniqueTerminalName(name, prompt.TerminalID); err != nil {
+		return func() tea.Msg { return err }
+	}
 	prompt.Kind = "edit-terminal-tags"
 	prompt.Title = "Edit Terminal"
 	prompt.Hint = "[Enter] save  [Esc] cancel"
@@ -85,6 +91,9 @@ func (m *Model) submitEditTerminalTagsPrompt(prompt *modal.PromptState) tea.Cmd 
 	name := strings.TrimSpace(prompt.Name)
 	if name == "" {
 		name = strings.TrimSpace(prompt.DefaultName)
+	}
+	if err := m.validateUniqueTerminalName(name, terminalID); err != nil {
+		return func() tea.Msg { return err }
 	}
 	tags, err := parsePromptTags(prompt.Value)
 	if err != nil {
@@ -123,6 +132,9 @@ func (m *Model) submitCreateTerminalTagsPrompt(prompt *modal.PromptState, paneID
 	name := strings.TrimSpace(prompt.Name)
 	if name == "" {
 		name = strings.TrimSpace(prompt.DefaultName)
+	}
+	if err := m.validateUniqueTerminalName(name, ""); err != nil {
+		return func() tea.Msg { return err }
 	}
 	tags, err := parsePromptTags(prompt.Value)
 	if err != nil {

@@ -2,7 +2,6 @@ package orchestrator
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -36,7 +35,7 @@ func (o *Orchestrator) PrepareTabAttachTarget() (tabID, paneID string, err error
 	}
 	tabID = shared.NextTabID()
 	paneID = shared.NextPaneID()
-	tabName := strconv.Itoa(len(ws.Tabs) + 1)
+	tabName := ws.NextAvailableTabName()
 	if err := o.workbench.CreateTab(ws.Name, tabID, tabName); err != nil {
 		return "", "", err
 	}

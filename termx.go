@@ -140,7 +140,7 @@ func (s *Server) Create(ctx context.Context, opts CreateOptions) (*TerminalInfo,
 		keepAfterExit = s.cfg.defaultKeepAfterExit
 	}
 
-	name := opts.Name
+	name := strings.TrimSpace(opts.Name)
 	if name == "" {
 		name = id
 	}
@@ -150,6 +150,10 @@ func (s *Server) Create(ctx context.Context, opts CreateOptions) (*TerminalInfo,
 	if _, exists := s.terminals[id]; exists {
 		s.mu.Unlock()
 		return nil, ErrDuplicateID
+	}
+	if s.terminalNameExistsLocked(name, "") {
+		s.mu.Unlock()
+		return nil, ErrDuplicateName
 	}
 	s.mu.Unlock()
 
@@ -175,6 +179,10 @@ func (s *Server) Create(ctx context.Context, opts CreateOptions) (*TerminalInfo,
 	if _, exists := s.terminals[id]; exists {
 		_ = term.Close()
 		return nil, ErrDuplicateID
+	}
+	if s.terminalNameExistsLocked(name, "") {
+		_ = term.Close()
+		return nil, ErrDuplicateName
 	}
 	s.terminals[id] = term
 	s.invalidateProtocolListCacheLocked()
@@ -252,12 +260,22 @@ func (s *Server) SetTags(ctx context.Context, id string, tags map[string]string)
 
 func (s *Server) SetMetadata(ctx context.Context, id string, name string, tags map[string]string) error {
 	_ = ctx
-	term, err := s.getTerminal(id)
-	if err != nil {
-		return err
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	term, ok := s.terminals[id]
+	if !ok {
+		return ErrNotFound
+	}
+	currentName := strings.TrimSpace(term.Name())
+	nextName := strings.TrimSpace(name)
+	if nextName == "" {
+		nextName = currentName
+	}
+	if nextName != currentName && s.terminalNameExistsLocked(nextName, id) {
+		return ErrDuplicateName
 	}
 	term.SetMetadata(name, tags)
-	s.invalidateProtocolListCache()
+	s.invalidateProtocolListCacheLocked()
 	return nil
 }
 
@@ -456,6 +474,22 @@ func (s *Server) invalidateProtocolListCache() {
 func (s *Server) invalidateProtocolListCacheLocked() {
 	s.protocolListCache = nil
 	s.protocolListCacheVersion++
+}
+
+func (s *Server) terminalNameExistsLocked(name, exceptID string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	for id, term := range s.terminals {
+		if id == exceptID || term == nil {
+			continue
+		}
+		if strings.TrimSpace(term.Name()) == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *Terminal) appendTerminalInfoIfMatch(dst []TerminalInfo, filter ListOptions) ([]TerminalInfo, bool) {
@@ -1377,7 +1411,7 @@ func protocolErrorCode(err error) int {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		return 404
-	case errors.Is(err, ErrDuplicateID):
+	case errors.Is(err, ErrDuplicateID), errors.Is(err, ErrDuplicateName):
 		return 409
 	case errors.Is(err, ErrPermissionDenied):
 		return 403

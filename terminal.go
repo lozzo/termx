@@ -142,6 +142,12 @@ func (t *Terminal) ID() string {
 	return t.id
 }
 
+func (t *Terminal) Name() string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.name
+}
+
 func (t *Terminal) Info() *TerminalInfo {
 	info, _ := t.listInfoSnapshot(ListOptions{})
 	// Return a distinct top-level struct so callers cannot mutate cached scalar

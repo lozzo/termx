@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -203,6 +202,20 @@ func maxInt(a, b int) int {
 	return b
 }
 
+func paneAttachFailure(paneID, terminalID string, err error) tea.Msg {
+	if err == nil {
+		return nil
+	}
+	if paneID == "" && terminalID == "" {
+		return err
+	}
+	return paneAttachFailedMsg{
+		PaneID:     paneID,
+		TerminalID: terminalID,
+		Err:        err,
+	}
+}
+
 func (m *Model) ensureRecoverablePane() (string, error) {
 	if m == nil || m.workbench == nil {
 		return "", fmt.Errorf("workbench unavailable")
@@ -232,7 +245,7 @@ func (m *Model) ensureRecoverablePane() (string, error) {
 
 	tabID := shared.NextTabID()
 	paneID := shared.NextPaneID()
-	name := strconv.Itoa(len(ws.Tabs) + 1)
+	name := ws.NextAvailableTabName()
 	if err := m.workbench.CreateTab(ws.Name, tabID, name); err != nil {
 		return "", err
 	}

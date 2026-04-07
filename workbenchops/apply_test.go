@@ -96,3 +96,60 @@ func TestApplyWorkspaceRenameUpdatesCurrentAndOrder(t *testing.T) {
 		t.Fatal("expected renamed workspace entry")
 	}
 }
+
+func TestApplyCreateTabRejectsDuplicateNameInWorkspace(t *testing.T) {
+	doc := &workbenchdoc.Doc{
+		CurrentWorkspace: "main",
+		WorkspaceOrder:   []string{"main"},
+		Workspaces: map[string]*workbenchdoc.Workspace{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbenchdoc.Tab{{
+					ID:           "tab-1",
+					Name:         "1",
+					Root:         workbenchdoc.NewLeaf("pane-1"),
+					Panes:        map[string]*workbenchdoc.Pane{"pane-1": {ID: "pane-1"}},
+					ActivePaneID: "pane-1",
+				}},
+			},
+		},
+	}
+
+	if _, err := Apply(doc, []Op{{Kind: OpCreateTab, WorkspaceName: "main", TabID: "tab-2", TabName: "1"}}); err == nil {
+		t.Fatal("expected duplicate tab name error")
+	}
+}
+
+func TestApplyRenameTabRejectsDuplicateNameInWorkspace(t *testing.T) {
+	doc := &workbenchdoc.Doc{
+		CurrentWorkspace: "main",
+		WorkspaceOrder:   []string{"main"},
+		Workspaces: map[string]*workbenchdoc.Workspace{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbenchdoc.Tab{
+					{
+						ID:           "tab-1",
+						Name:         "one",
+						Root:         workbenchdoc.NewLeaf("pane-1"),
+						Panes:        map[string]*workbenchdoc.Pane{"pane-1": {ID: "pane-1"}},
+						ActivePaneID: "pane-1",
+					},
+					{
+						ID:           "tab-2",
+						Name:         "two",
+						Root:         workbenchdoc.NewLeaf("pane-2"),
+						Panes:        map[string]*workbenchdoc.Pane{"pane-2": {ID: "pane-2"}},
+						ActivePaneID: "pane-2",
+					},
+				},
+			},
+		},
+	}
+
+	if _, err := Apply(doc, []Op{{Kind: OpRenameTab, TabID: "tab-1", NewName: "two"}}); err == nil {
+		t.Fatal("expected duplicate tab name error")
+	}
+}

@@ -68,14 +68,21 @@ func applyOne(doc *workbenchdoc.Doc, op Op) error {
 	case OpCreateTab:
 		return createTab(doc, op.WorkspaceName, op.TabID, op.TabName)
 	case OpRenameTab:
-		_, _, tab, err := findTab(doc, op.TabID)
+		_, ws, tab, err := findTab(doc, op.TabID)
 		if err != nil {
 			return err
 		}
-		if strings.TrimSpace(op.NewName) == "" {
+		nextName := strings.TrimSpace(op.NewName)
+		if nextName == "" {
 			return fmt.Errorf("workbenchops: tab name must not be empty")
 		}
-		tab.Name = op.NewName
+		if strings.TrimSpace(tab.Name) == nextName {
+			return nil
+		}
+		if workspaceHasTabName(ws, nextName, op.TabID) {
+			return fmt.Errorf("workbenchops: tab name %q already exists in workspace %q", nextName, ws.Name)
+		}
+		tab.Name = nextName
 		return nil
 	case OpDeleteTab:
 		return deleteTab(doc, op.TabID)
@@ -184,18 +191,41 @@ func createTab(doc *workbenchdoc.Doc, workspaceName, tabID, tabName string) erro
 	if strings.TrimSpace(tabID) == "" {
 		return fmt.Errorf("workbenchops: tab id must not be empty")
 	}
+	nextName := strings.TrimSpace(tabName)
 	for _, existing := range ws.Tabs {
-		if existing != nil && existing.ID == tabID {
+		if existing == nil {
+			continue
+		}
+		if existing.ID == tabID {
 			return fmt.Errorf("workbenchops: tab %q already exists", tabID)
+		}
+		if nextName != "" && strings.TrimSpace(existing.Name) == nextName {
+			return fmt.Errorf("workbenchops: tab name %q already exists in workspace %q", nextName, workspaceName)
 		}
 	}
 	ws.Tabs = append(ws.Tabs, &workbenchdoc.Tab{
 		ID:    tabID,
-		Name:  tabName,
+		Name:  nextName,
 		Panes: make(map[string]*workbenchdoc.Pane),
 	})
 	ws.ActiveTab = len(ws.Tabs) - 1
 	return nil
+}
+
+func workspaceHasTabName(ws *workbenchdoc.Workspace, name, exceptTabID string) bool {
+	name = strings.TrimSpace(name)
+	if ws == nil || name == "" {
+		return false
+	}
+	for _, tab := range ws.Tabs {
+		if tab == nil || tab.ID == exceptTabID {
+			continue
+		}
+		if strings.TrimSpace(tab.Name) == name {
+			return true
+		}
+	}
+	return false
 }
 
 func deleteTab(doc *workbenchdoc.Doc, tabID string) error {

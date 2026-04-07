@@ -1245,6 +1245,44 @@ func TestModelPromptSubmitCreateTerminalFormRequiresName(t *testing.T) {
 	}
 }
 
+func TestModelPromptSubmitCreateTerminalFormRejectsDuplicateName(t *testing.T) {
+	client := &recordingBridgeClient{
+		listResult: &protocol.ListResult{
+			Terminals: []protocol.TerminalInfo{{ID: "term-1", Name: "demo", State: "running"}},
+		},
+	}
+	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(client))
+	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: "prompt-1"}
+	model.modalHost.Prompt = &modal.PromptState{
+		Kind:        "create-terminal-form",
+		Title:       "Create Terminal",
+		PaneID:      "pane-1",
+		Command:     []string{"/bin/sh"},
+		DefaultName: "shell",
+		Fields: []modal.PromptField{
+			{Key: "name", Label: "name", Value: "demo", Cursor: 4, Required: true},
+			{Key: "command", Label: "command", Placeholder: "/bin/sh"},
+			{Key: "workdir", Label: "workdir"},
+			{Key: "tags", Label: "tags"},
+		},
+	}
+	model.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: "prompt-1"})
+
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: "pane-1"})
+	if cmd == nil {
+		t.Fatal("expected duplicate-name validation command")
+	}
+	if msg := cmd(); msg == nil {
+		t.Fatal("expected duplicate-name validation error")
+	}
+	if len(client.createCalls) != 0 {
+		t.Fatalf("expected create not to be called, got %#v", client.createCalls)
+	}
+	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-terminal-form" {
+		t.Fatalf("expected create-terminal-form prompt to stay open, got %#v", model.modalHost.Prompt)
+	}
+}
+
 func TestModelPromptSubmitAdvancesEditTerminalToTags(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
 	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: "prompt-1"}
@@ -1273,6 +1311,40 @@ func TestModelPromptSubmitAdvancesEditTerminalToTags(t *testing.T) {
 	}
 	if got := model.modalHost.Prompt.Value; got != "env=test role=dev" {
 		t.Fatalf("expected tags prompt to prefill stable tag text, got %q", got)
+	}
+}
+
+func TestModelPromptSubmitEditTerminalNameRejectsDuplicateName(t *testing.T) {
+	client := &recordingBridgeClient{
+		listResult: &protocol.ListResult{
+			Terminals: []protocol.TerminalInfo{
+				{ID: "term-1", Name: "shell", State: "running"},
+				{ID: "term-2", Name: "logs", State: "running"},
+			},
+		},
+	}
+	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(client))
+	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: "prompt-1"}
+	model.modalHost.Prompt = &modal.PromptState{
+		Kind:        "edit-terminal-name",
+		Title:       "Edit Terminal",
+		Value:       "logs",
+		Original:    "shell",
+		DefaultName: "shell",
+		TerminalID:  "term-1",
+		Tags:        map[string]string{"env": "test"},
+	}
+	model.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: "prompt-1"})
+
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt})
+	if cmd == nil {
+		t.Fatal("expected duplicate-name validation command")
+	}
+	if msg := cmd(); msg == nil {
+		t.Fatal("expected duplicate-name validation error")
+	}
+	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "edit-terminal-name" {
+		t.Fatalf("expected edit-terminal-name prompt to stay open, got %#v", model.modalHost.Prompt)
 	}
 }
 
@@ -1344,6 +1416,43 @@ func TestModelPromptSubmitEditTerminalSavesMetadataAndState(t *testing.T) {
 	_ = file
 	if strings.Contains(string(data), "\"terminal_metadata\"") {
 		t.Fatalf("expected workspace save to omit terminal metadata cache, got %s", string(data))
+	}
+}
+
+func TestModelPromptSubmitEditTerminalTagsRejectsDuplicateName(t *testing.T) {
+	client := &recordingBridgeClient{
+		listResult: &protocol.ListResult{
+			Terminals: []protocol.TerminalInfo{
+				{ID: "term-1", Name: "shell", State: "running"},
+				{ID: "term-2", Name: "logs", State: "running"},
+			},
+		},
+	}
+	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(client))
+	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: "prompt-1"}
+	model.modalHost.Prompt = &modal.PromptState{
+		Kind:       "edit-terminal-tags",
+		Title:      "Edit Terminal",
+		Value:      "env=test",
+		Name:       "logs",
+		Original:   "shell",
+		TerminalID: "term-1",
+		AllowEmpty: true,
+	}
+	model.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: "prompt-1"})
+
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt})
+	if cmd == nil {
+		t.Fatal("expected duplicate-name validation command")
+	}
+	if msg := cmd(); msg == nil {
+		t.Fatal("expected duplicate-name validation error")
+	}
+	if len(client.setMetadataCalls) != 0 {
+		t.Fatalf("expected metadata not to be saved, got %#v", client.setMetadataCalls)
+	}
+	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "edit-terminal-tags" {
+		t.Fatalf("expected edit-terminal-tags prompt to stay open, got %#v", model.modalHost.Prompt)
 	}
 }
 
@@ -1471,6 +1580,58 @@ func TestModelTerminalManagerEditSaveReturnsToTerminalManagerMode(t *testing.T) 
 	}
 	if model.terminalPage == nil {
 		t.Fatal("expected terminal page to remain open after save")
+	}
+}
+
+func TestModelPromptSubmitRenameTabRejectsDuplicateName(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{
+			{
+				ID:           "tab-1",
+				Name:         "one",
+				ActivePaneID: "pane-1",
+				Panes: map[string]*workbench.PaneState{
+					"pane-1": {ID: "pane-1"},
+				},
+				Root: workbench.NewLeaf("pane-1"),
+			},
+			{
+				ID:           "tab-2",
+				Name:         "two",
+				ActivePaneID: "pane-2",
+				Panes: map[string]*workbench.PaneState{
+					"pane-2": {ID: "pane-2"},
+				},
+				Root: workbench.NewLeaf("pane-2"),
+			},
+		},
+	})
+	model := New(shared.Config{}, wb, runtime.New(nil))
+	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: "prompt-1"}
+	model.modalHost.Prompt = &modal.PromptState{
+		Kind:       "rename-tab",
+		Title:      "rename tab",
+		Value:      "two",
+		Original:   "one",
+		AllowEmpty: false,
+	}
+	model.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: "prompt-1"})
+
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt})
+	if cmd == nil {
+		t.Fatal("expected duplicate-name validation command")
+	}
+	if msg := cmd(); msg == nil {
+		t.Fatal("expected duplicate-name validation error")
+	}
+	if got := model.workbench.CurrentTab().Name; got != "one" {
+		t.Fatalf("expected current tab name to remain one, got %q", got)
+	}
+	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "rename-tab" {
+		t.Fatalf("expected rename-tab prompt to stay open, got %#v", model.modalHost.Prompt)
 	}
 }
 

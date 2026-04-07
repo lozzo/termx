@@ -1,8 +1,6 @@
 package orchestrator
 
 import (
-	"fmt"
-
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
@@ -15,7 +13,7 @@ func (o *Orchestrator) handleTabAction(action input.SemanticAction) []Effect {
 			return nil
 		}
 		tabID := shared.NextTabID()
-		tabName := fmt.Sprintf("%d", len(ws.Tabs)+1)
+		tabName := ws.NextAvailableTabName()
 		paneID := shared.NextPaneID()
 		_ = o.workbench.CreateTab(ws.Name, tabID, tabName)
 		_ = o.workbench.CreateFirstPane(tabID, paneID)

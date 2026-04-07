@@ -37,14 +37,21 @@ func (w *Workbench) CreateTab(wsName, tabID, tabName string) error {
 	if !ok {
 		return fmt.Errorf("workbench: workspace %q not found", wsName)
 	}
+	normalizedName := strings.TrimSpace(tabName)
 	for _, t := range ws.Tabs {
-		if t != nil && t.ID == tabID {
+		if t == nil {
+			continue
+		}
+		if t.ID == tabID {
 			return fmt.Errorf("workbench: tab ID %q already exists in workspace %q", tabID, wsName)
+		}
+		if normalizedName != "" && strings.TrimSpace(t.Name) == normalizedName {
+			return fmt.Errorf("workbench: tab name %q already exists in workspace %q", normalizedName, wsName)
 		}
 	}
 	ws.appendTab(&TabState{
 		ID:    tabID,
-		Name:  tabName,
+		Name:  normalizedName,
 		Panes: make(map[string]*PaneState),
 	})
 	w.touch()
@@ -202,14 +209,21 @@ func (w *Workbench) CloseTab(tabID string) error {
 
 // RenameTab updates the tab name in-place.
 func (w *Workbench) RenameTab(tabID, name string) error {
-	if strings.TrimSpace(name) == "" {
+	normalizedName := strings.TrimSpace(name)
+	if normalizedName == "" {
 		return fmt.Errorf("workbench: tab name must not be empty")
 	}
-	_, tab, err := w.findTab(tabID)
+	ws, tab, err := w.findTab(tabID)
 	if err != nil {
 		return err
 	}
-	tab.Name = name
+	if strings.TrimSpace(tab.Name) == normalizedName {
+		return nil
+	}
+	if workspaceHasTabName(ws, normalizedName, tabID) {
+		return fmt.Errorf("workbench: tab name %q already exists in workspace %q", normalizedName, ws.Name)
+	}
+	tab.Name = normalizedName
 	w.touch()
 	return nil
 }
@@ -270,6 +284,22 @@ func (w *Workbench) RenameWorkspace(oldName, newName string) error {
 	}
 	w.touch()
 	return nil
+}
+
+func workspaceHasTabName(ws *WorkspaceState, name, exceptTabID string) bool {
+	name = strings.TrimSpace(name)
+	if ws == nil || name == "" {
+		return false
+	}
+	for _, tab := range ws.Tabs {
+		if tab == nil || tab.ID == exceptTabID {
+			continue
+		}
+		if strings.TrimSpace(tab.Name) == name {
+			return true
+		}
+	}
+	return false
 }
 
 // SwitchWorkspaceByOffset activates the workspace relative to the current

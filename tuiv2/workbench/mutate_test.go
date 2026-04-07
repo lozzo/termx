@@ -48,6 +48,14 @@ func TestCreateTab_DuplicateID_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestCreateTab_DuplicateName_ReturnsError(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	if err := wb.CreateTab("main", "tab2", "Tab One"); err == nil {
+		t.Fatal("expected error for duplicate tab name")
+	}
+}
+
 func TestCreateTab_ActivatesNewTab(t *testing.T) {
 	wb := setupWorkbench(t)
 	_ = wb.CreateTab("main", "tab1", "Tab One")
@@ -422,6 +430,30 @@ func TestRenameTab_UpdatesName(t *testing.T) {
 	}
 	if current := wb.CurrentTab(); current == nil || current.Name != "New" {
 		t.Fatalf("expected renamed current tab, got %#v", current)
+	}
+}
+
+func TestRenameTab_DuplicateName_ReturnsError(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "One")
+	_ = wb.CreateTab("main", "tab2", "Two")
+
+	if err := wb.RenameTab("tab1", "Two"); err == nil {
+		t.Fatal("expected duplicate tab name error")
+	}
+}
+
+func TestWorkspaceNextAvailableTabName_AvoidsDuplicateGeneratedName(t *testing.T) {
+	ws := &WorkspaceState{
+		Name: "main",
+		Tabs: []*TabState{
+			{ID: "tab-1", Name: "1"},
+			{ID: "tab-3", Name: "3"},
+		},
+	}
+
+	if got := ws.NextAvailableTabName(); got != "4" {
+		t.Fatalf("expected next available tab name 4, got %q", got)
 	}
 }
 
