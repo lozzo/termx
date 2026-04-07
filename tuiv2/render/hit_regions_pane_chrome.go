@@ -43,16 +43,16 @@ type paneChromeContext struct {
 	LayoutCluster    bool
 }
 
-func paneZoomIcon() string             { return "󰊓" }
-func paneSplitVerticalIcon() string    { return "󰤽" }
-func paneSplitHorizontalIcon() string  { return "󰤼" }
-func paneCloseIcon() string            { return "󰖭" }
-func paneCenterFloatingIcon() string   { return "󰆚" }
-func paneCollapseFloatingIcon() string { return "󰏤" }
-func paneRunningIcon() string          { return "" }
-func paneWaitingIcon() string          { return "󰔟" }
-func paneExitedIcon() string           { return "" }
-func paneKilledIcon() string           { return "" }
+func paneZoomIcon() string             { return paneChromeGlyphs.Zoom }
+func paneSplitVerticalIcon() string    { return paneChromeGlyphs.SplitVertical }
+func paneSplitHorizontalIcon() string  { return paneChromeGlyphs.SplitHorizontal }
+func paneCloseIcon() string            { return paneChromeGlyphs.Close }
+func paneCenterFloatingIcon() string   { return paneChromeGlyphs.CenterFloating }
+func paneCollapseFloatingIcon() string { return paneChromeGlyphs.CollapseFloating }
+func paneRunningIcon() string          { return paneChromeGlyphs.Running }
+func paneWaitingIcon() string          { return paneChromeGlyphs.Waiting }
+func paneExitedIcon() string           { return paneChromeGlyphs.Exited }
+func paneKilledIcon() string           { return paneChromeGlyphs.Killed }
 
 func paneChromeTerminalAttached(title string, border paneBorderInfo) bool {
 	if strings.TrimSpace(border.StateLabel) != "" || strings.TrimSpace(border.ShareLabel) != "" || strings.TrimSpace(border.RoleLabel) != "" {
