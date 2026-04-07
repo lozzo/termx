@@ -233,6 +233,24 @@ func (c *composedCanvas) drawProtocolRowInRect(rect workbench.Rect, targetY int,
 			continue
 		}
 		c.set(targetX, targetY, cell)
+		// In raw mode, replace the continuation cell of an ambiguous FE0F
+		// emoji with a visible space.  This is the sole cursor-advance
+		// compensation: the space advances the host cursor by one physical
+		// column, covering the case where the host only advanced one column
+		// for the emoji despite the probe reporting two.  If the host
+		// really did advance two, the extra column is absorbed by the
+		// right-side gutter (framedPaneRightGutterCols).
+		//
+		// This is done here (snapshot drawing) rather than in contentString
+		// so that border-title emojis (drawn via drawText) are unaffected —
+		// border rows have no gutter to absorb the extra column.
+		if c.hostEmojiVS16Mode == shared.AmbiguousEmojiVariationSelectorRaw &&
+			isAmbiguousEmojiVariationSelectorCluster(cell.Content, cell.Width) {
+			contX := targetX + 1
+			if contX < c.width {
+				c.writeCell(contX, targetY, drawCell{Content: " ", Width: 1})
+			}
+		}
 	}
 }
 
@@ -301,16 +319,29 @@ func serializeCellContentForDisplay(content string, width int, mode shared.Ambig
 	switch mode {
 	case shared.AmbiguousEmojiVariationSelectorStrip:
 		return strings.ReplaceAll(content, "\uFE0F", "") + " "
-	default:
+	case shared.AmbiguousEmojiVariationSelectorAdvance:
 		if nextCol <= 0 {
 			return content
 		}
-		// Preserve the original grapheme in both raw and advance modes, but still
-		// re-anchor the host cursor to the pane grid. "Raw" means keep emoji
-		// presentation intact, not "trust the host terminal's column advance".
-		// Without this CHA, hosts that visually render ♻️ but only advance one
-		// column will drag later cells and the right border one column left.
+		// The host terminal only advances one column for this FE0F cluster.
+		// Re-anchor the cursor so that subsequent cells and the right border
+		// stay aligned with the pane grid.
 		return content + xansi.CHA(nextCol)
+	default:
+		// Raw mode: do NOT append any cursor-positioning sequence after the
+		// emoji.  Any form of cursor movement (CHA, CUF, SGR+CHA) directly
+		// following the emoji bytes causes the host terminal (e.g. iTerm2)
+		// to associate the positioning with the emoji glyph, leading to
+		// visual overlap between the emoji and the next character.
+		//
+		// Instead, contentString() emits a space for the emoji's
+		// continuation cell.  The space is a real printed character that
+		// advances the host cursor by one column — compensating if the host
+		// only advanced one column for the emoji (despite the probe
+		// reporting two).  If the host really did advance two columns, the
+		// extra column is absorbed by the right-side gutter
+		// (framedPaneRightGutterCols).
+		return content
 	}
 }
 

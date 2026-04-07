@@ -132,15 +132,97 @@ func TestComposedCanvasContentStringUsesAdvanceModeForAmbiguousEmojiVariationSel
 	}
 }
 
-func TestComposedCanvasContentStringReanchorsRawAmbiguousEmojiVariationSelector(t *testing.T) {
+func TestComposedCanvasDrawSnapshotRawModeReplacesContinuationWithSpace(t *testing.T) {
+	canvas := newComposedCanvas(6, 1)
+	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorRaw
+	canvas.drawSnapshot(&protocol.Snapshot{
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{{
+				{Content: "♻️", Width: 2},
+				{Content: "", Width: 0},
+				{Content: "X", Width: 1},
+			}},
+		},
+	})
+
+	rendered := canvas.contentString()
+	// For snapshot content in raw mode, the continuation cell of an
+	// ambiguous FE0F emoji is replaced with a space in the canvas model.
+	// This advances the host cursor by one column — compensating if the
+	// host only advanced one — without any cursor-positioning sequence
+	// after the emoji (which causes visual overlap).
+	if strings.Contains(rendered, xansi.CHA(3)) {
+		t.Fatalf("raw mode must NOT emit CHA after the emoji for snapshot content, got %q", rendered)
+	}
+	want := "♻️ X"
+	if !strings.Contains(rendered, want) {
+		t.Fatalf("expected emoji + continuation space + next char in snapshot, got %q want substring %q", rendered, want)
+	}
+}
+
+func TestComposedCanvasDrawSnapshotRawModePromptWithEmojiFollowedByTypedChars(t *testing.T) {
+	// Reproduce the exact bug: snapshot with prompt ♻️ followed by typed chars.
+	canvas := newComposedCanvas(10, 1)
+	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorRaw
+	canvas.drawSnapshot(&protocol.Snapshot{
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{{
+				{Content: "♻️", Width: 2},
+				{Content: "", Width: 0},
+				{Content: "l", Width: 1},
+				{Content: "s", Width: 1},
+			}},
+		},
+	})
+
+	rendered := canvas.contentString()
+	if strings.Contains(rendered, xansi.CHA(3)) {
+		t.Fatalf("raw mode must NOT emit CHA(3) after the emoji, got %q", rendered)
+	}
+	want := "♻️ ls"
+	if !strings.Contains(rendered, want) {
+		t.Fatalf("expected emoji + continuation space + typed chars, got %q want substring %q", rendered, want)
+	}
+}
+
+func TestComposedCanvasDrawTextRawModeDoesNotAddContinuationSpace(t *testing.T) {
+	// Border-title emojis (drawn via drawText, not snapshot) must NOT get
+	// the continuation space — border rows have no gutter to absorb it.
 	canvas := newComposedCanvas(6, 1)
 	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorRaw
 	canvas.drawText(0, 0, "♻️X", drawStyle{})
 
 	rendered := canvas.contentString()
-	want := xansi.CHA(1) + "♻️" + xansi.CHA(3) + "X"
-	if !strings.Contains(rendered, want) {
-		t.Fatalf("expected raw mode to preserve the grapheme and re-anchor the next cell, got %q want substring %q", rendered, want)
+	// drawText emojis should NOT have the continuation space.
+	if strings.Contains(rendered, "♻️ X") {
+		t.Fatalf("drawText emoji must NOT get continuation space (no gutter), got %q", rendered)
+	}
+	// The emoji is just emitted as-is (raw mode, no CHA).
+	if !strings.Contains(rendered, "♻️X") {
+		t.Fatalf("expected drawText emoji directly followed by next char, got %q", rendered)
+	}
+}
+
+func TestComposedCanvasDrawSnapshotRawModeContinuationSpaceOnlyForAmbiguousEmoji(t *testing.T) {
+	// Regular wide characters (e.g. CJK) must NOT get a continuation space.
+	canvas := newComposedCanvas(6, 1)
+	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorRaw
+	canvas.drawSnapshot(&protocol.Snapshot{
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{{
+				{Content: "界", Width: 2},
+				{Content: "", Width: 0},
+				{Content: "X", Width: 1},
+			}},
+		},
+	})
+
+	rendered := canvas.contentString()
+	if strings.Contains(rendered, "界 X") {
+		t.Fatalf("regular wide char must NOT get a continuation space, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "界X") {
+		t.Fatalf("expected wide char directly followed by next char, got %q", rendered)
 	}
 }
 
