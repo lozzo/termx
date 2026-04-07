@@ -172,7 +172,9 @@ func (c *composedCanvas) drawText(x, y int, text string, style drawStyle) {
 		if cursorX+width > c.width {
 			break
 		}
-		c.set(cursorX, y, drawCell{Content: content, Width: width, Style: style})
+		cell := drawCell{Content: content, Width: width, Style: style}
+		c.set(cursorX, y, cell)
+		c.materializeRawAmbiguousContinuation(cursorX, y, cell)
 		cursorX += width
 	}
 }
@@ -233,25 +235,26 @@ func (c *composedCanvas) drawProtocolRowInRect(rect workbench.Rect, targetY int,
 			continue
 		}
 		c.set(targetX, targetY, cell)
-		// In raw mode, replace the continuation cell of an ambiguous FE0F
-		// emoji with a visible space.  This is the sole cursor-advance
-		// compensation: the space advances the host cursor by one physical
-		// column, covering the case where the host only advanced one column
-		// for the emoji despite the probe reporting two.  If the host
-		// really did advance two, the extra column is absorbed by the
-		// right-side gutter (framedPaneRightGutterCols).
-		//
-		// This is done here (snapshot drawing) rather than in contentString
-		// so that border-title emojis (drawn via drawText) are unaffected —
-		// border rows have no gutter to absorb the extra column.
-		if c.hostEmojiVS16Mode == shared.AmbiguousEmojiVariationSelectorRaw &&
-			isAmbiguousEmojiVariationSelectorCluster(cell.Content, cell.Width) {
-			contX := targetX + 1
-			if contX < c.width {
-				c.writeCell(contX, targetY, drawCell{Content: " ", Width: 1})
-			}
-		}
+		c.materializeRawAmbiguousContinuation(targetX, targetY, cell)
 	}
+}
+
+func (c *composedCanvas) materializeRawAmbiguousContinuation(x, y int, cell drawCell) {
+	if c == nil || c.hostEmojiVS16Mode != shared.AmbiguousEmojiVariationSelectorRaw {
+		return
+	}
+	if !isAmbiguousEmojiVariationSelectorCluster(cell.Content, cell.Width) {
+		return
+	}
+	contX := x + 1
+	if contX >= c.width {
+		return
+	}
+	// Emit a real printable cell after the ambiguous emoji. Hosts that only
+	// advance one column consume it as the missing second column; hosts that
+	// advance two will overshoot by one, and the next serialized lead cell
+	// re-anchors with CHA after this space rather than directly after the emoji.
+	c.writeCell(contX, y, drawCell{Content: " ", Width: 1, Style: cell.Style})
 }
 
 func cellStyleFromSnapshot(cell protocol.Cell) drawStyle {
@@ -334,15 +337,32 @@ func serializeCellContentForDisplay(content string, width int, mode shared.Ambig
 		// to associate the positioning with the emoji glyph, leading to
 		// visual overlap between the emoji and the next character.
 		//
-		// Instead, contentString() emits a space for the emoji's
-		// continuation cell.  The space is a real printed character that
-		// advances the host cursor by one column — compensating if the host
-		// only advanced one column for the emoji (despite the probe
-		// reporting two).  If the host really did advance two columns, the
-		// extra column is absorbed by the right-side gutter
-		// (framedPaneRightGutterCols).
+		// Instead, the canvas materializes the emoji's continuation column as a
+		// real space cell. Row serialization prints that space immediately after
+		// the emoji, then emits any corrective CHA only before the next lead cell.
+		// Hosts that advanced one column consume the space as the missing second
+		// column; hosts that advanced two may overshoot by one, and the deferred
+		// CHA pulls the next lead cell back onto the model grid.
 		return content
 	}
+}
+
+func (c *composedCanvas) isRawAmbiguousContinuationSpace(x, y int) bool {
+	if c == nil || c.hostEmojiVS16Mode != shared.AmbiguousEmojiVariationSelectorRaw {
+		return false
+	}
+	if y < 0 || y >= c.height || x <= 0 || x >= c.width {
+		return false
+	}
+	cell := c.cells[y][x]
+	if cell.Continuation || cell.Width != 1 || cell.Content != " " {
+		return false
+	}
+	prev := c.cells[y][x-1]
+	if prev.Continuation {
+		return false
+	}
+	return isAmbiguousEmojiVariationSelectorCluster(prev.Content, prev.Width)
 }
 
 // drawSnapshot draws a snapshot starting at (0,0).
@@ -378,6 +398,7 @@ func (c *composedCanvas) contentString() string {
 		}
 		var row strings.Builder
 		current := drawStyle{}
+		needsReanchor := false
 		// Each serialized row re-anchors itself at column 1 so any per-cell CHA
 		// adjustments stay relative to the row grid rather than the host cursor's
 		// previous position.
@@ -391,6 +412,11 @@ func (c *composedCanvas) contentString() string {
 			if content == "" {
 				content = " "
 			}
+			isCompensationSpace := c.isRawAmbiguousContinuationSpace(x, y)
+			if needsReanchor && !isCompensationSpace {
+				row.WriteString(xansi.CHA(x + 1))
+				needsReanchor = false
+			}
 			if current != cell.Style {
 				row.WriteString(styleDiffANSI(current, cell.Style))
 				current = cell.Style
@@ -400,6 +426,9 @@ func (c *composedCanvas) contentString() string {
 				nextCol = x + cell.Width + 1
 			}
 			row.WriteString(serializeCellContentForDisplay(content, cell.Width, c.hostEmojiVS16Mode, nextCol))
+			if isCompensationSpace {
+				needsReanchor = true
+			}
 		}
 		row.WriteString("\x1b[0m")
 		c.rowCache[y] = row.String()

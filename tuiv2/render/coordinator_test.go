@@ -196,6 +196,7 @@ func TestDrawPaneFrameKeepsTopRightCornerAlignedWithWideBorderLabels(t *testing.
 
 func TestDrawPaneFrameKeepsTopRightCornerAlignedWithEmojiVariationTitle(t *testing.T) {
 	canvas := newComposedCanvas(40, 6)
+	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorAdvance
 	rect := workbench.Rect{X: 0, Y: 0, W: 40, H: 6}
 	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
 	border := paneBorderInfo{StateLabel: paneRunningIcon(), RoleLabel: "◆ owner"}
@@ -217,6 +218,30 @@ func TestDrawPaneFrameKeepsTopRightCornerAlignedWithEmojiVariationTitle(t *testi
 	}
 	if !strings.HasSuffix(lines[1], "│") {
 		t.Fatalf("expected second row to end at the right border, got %q", lines[1])
+	}
+}
+
+func TestDrawPaneFrameKeepsTopRightCornerAlignedWithEmojiVariationTitleAcrossHostWidths(t *testing.T) {
+	canvas := newComposedCanvas(40, 6)
+	rect := workbench.Rect{X: 0, Y: 0, W: 40, H: 6}
+	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
+	border := paneBorderInfo{StateLabel: paneRunningIcon(), RoleLabel: "◆ owner"}
+
+	drawPaneFrame(canvas, rect, false, false, "RedmiBook♻️", border, theme, paneOverflowHints{}, true, false)
+
+	for _, ambiguousWidth := range []int{1, 2} {
+		host := newFakeHostFrame(rect.W, rect.H)
+		host.apply(canvas.String(), ambiguousWidth)
+		lines := host.lines()
+		if len(lines) < 2 {
+			t.Fatalf("expected at least two rendered lines, got %d", len(lines))
+		}
+		if !strings.HasSuffix(lines[0], "┐") {
+			t.Fatalf("expected top row to keep the right corner when host advances ♻️ by %d column(s), got %q", ambiguousWidth, lines[0])
+		}
+		if !strings.HasSuffix(lines[1], "│") {
+			t.Fatalf("expected second row to keep the right border when host advances ♻️ by %d column(s), got %q", ambiguousWidth, lines[1])
+		}
 	}
 }
 
@@ -473,7 +498,7 @@ func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiAdvanceModeWhenHostAdv
 	}
 }
 
-func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiRawModeWhenHostAdvancesOneColumn(t *testing.T) {
+func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiRawModeAcrossHostWidths(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -514,26 +539,29 @@ func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiRawModeWhenHostAdvance
 		}},
 	}
 
-	// Raw mode still emits a deferred CHA to keep the border aligned even
-	// when the host inconsistently advances only 1 column for the emoji.
-	host := newFakeHostFrame(bodyWidth, bodyHeight)
-	host.apply(renderBody(state, bodyWidth, bodyHeight), 1)
+	// Raw mode prints a compensation space after the ambiguous emoji and then
+	// re-anchors the next lead cell after that space. That should keep the pane
+	// border stable whether the host advanced the emoji by 1 or 2 columns.
+	for _, ambiguousWidth := range []int{1, 2} {
+		host := newFakeHostFrame(bodyWidth, bodyHeight)
+		host.apply(renderBody(state, bodyWidth, bodyHeight), ambiguousWidth)
 
-	promptLine := ""
-	for _, line := range host.lines() {
-		if strings.Contains(line, "RedmiBook") {
-			promptLine = line
-			break
+		promptLine := ""
+		for _, line := range host.lines() {
+			if strings.Contains(line, "RedmiBook") {
+				promptLine = line
+				break
+			}
 		}
-	}
-	if promptLine == "" {
-		t.Fatalf("expected prompt line in fake host frame:\n%s", strings.Join(host.lines(), "\n"))
-	}
-	if got := strings.Count(promptLine, "│"); got != 2 {
-		t.Fatalf("expected raw-mode render to keep a single left/right border pair even when the host advances ♻️ by one column, got %d in %q", got, promptLine)
-	}
-	if !strings.HasSuffix(promptLine, "│") {
-		t.Fatalf("expected prompt line to keep the right border in the last column, got %q", promptLine)
+		if promptLine == "" {
+			t.Fatalf("expected prompt line in fake host frame:\n%s", strings.Join(host.lines(), "\n"))
+		}
+		if got := strings.Count(promptLine, "│"); got != 2 {
+			t.Fatalf("expected raw-mode render to keep a single left/right border pair when the host advances ♻️ by %d column(s), got %d in %q", ambiguousWidth, got, promptLine)
+		}
+		if !strings.HasSuffix(promptLine, "│") {
+			t.Fatalf("expected prompt line to keep the right border in the last column when the host advances ♻️ by %d column(s), got %q", ambiguousWidth, promptLine)
+		}
 	}
 }
 

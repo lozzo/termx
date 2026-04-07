@@ -98,6 +98,7 @@ func TestComposedCanvasDrawTextAdvancesByDisplayWidth(t *testing.T) {
 
 func TestComposedCanvasDrawTextKeepsEmojiVariationSelectorClusterIntact(t *testing.T) {
 	canvas := newComposedCanvas(6, 1)
+	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorAdvance
 	canvas.drawText(0, 0, "♻️X", drawStyle{FG: "#00ff00"})
 
 	if got := canvas.cells[0][0].Content; got != "♻️" {
@@ -163,17 +164,13 @@ func TestComposedCanvasDrawSnapshotRawModeReplacesContinuationWithSpace(t *testi
 	})
 
 	rendered := canvas.contentString()
-	// For snapshot content in raw mode, the continuation cell of an
-	// ambiguous FE0F emoji is replaced with a space in the canvas model.
-	// This advances the host cursor by one column — compensating if the
-	// host only advanced one — without any cursor-positioning sequence
-	// after the emoji (which causes visual overlap).
-	if strings.Contains(rendered, xansi.CHA(3)) {
-		t.Fatalf("raw mode must NOT emit CHA after the emoji for snapshot content, got %q", rendered)
-	}
-	want := "♻️ X"
+	// Raw mode materializes the continuation column as a printable space, then
+	// re-anchors the next lead cell after that space instead of immediately after
+	// the emoji bytes. This keeps iTerm2 happy while still correcting hosts that
+	// only advanced the emoji by one column.
+	want := "♻️ " + xansi.CHA(3) + "X"
 	if !strings.Contains(rendered, want) {
-		t.Fatalf("expected emoji + continuation space + next char in snapshot, got %q want substring %q", rendered, want)
+		t.Fatalf("expected raw-mode snapshot serialization to compensate with a space and deferred CHA, got %q want substring %q", rendered, want)
 	}
 }
 
@@ -193,30 +190,21 @@ func TestComposedCanvasDrawSnapshotRawModePromptWithEmojiFollowedByTypedChars(t 
 	})
 
 	rendered := canvas.contentString()
-	if strings.Contains(rendered, xansi.CHA(3)) {
-		t.Fatalf("raw mode must NOT emit CHA(3) after the emoji, got %q", rendered)
-	}
-	want := "♻️ ls"
+	want := "♻️ " + xansi.CHA(3) + "ls"
 	if !strings.Contains(rendered, want) {
-		t.Fatalf("expected emoji + continuation space + typed chars, got %q want substring %q", rendered, want)
+		t.Fatalf("expected raw-mode prompt serialization to compensate with a space and deferred CHA, got %q want substring %q", rendered, want)
 	}
 }
 
-func TestComposedCanvasDrawTextRawModeDoesNotAddContinuationSpace(t *testing.T) {
-	// Border-title emojis (drawn via drawText, not snapshot) must NOT get
-	// the continuation space — border rows have no gutter to absorb it.
+func TestComposedCanvasDrawTextRawModeAddsCompensationSpaceAndDeferredCHA(t *testing.T) {
 	canvas := newComposedCanvas(6, 1)
 	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorRaw
 	canvas.drawText(0, 0, "♻️X", drawStyle{})
 
 	rendered := canvas.contentString()
-	// drawText emojis should NOT have the continuation space.
-	if strings.Contains(rendered, "♻️ X") {
-		t.Fatalf("drawText emoji must NOT get continuation space (no gutter), got %q", rendered)
-	}
-	// The emoji is just emitted as-is (raw mode, no CHA).
-	if !strings.Contains(rendered, "♻️X") {
-		t.Fatalf("expected drawText emoji directly followed by next char, got %q", rendered)
+	want := "♻️ " + xansi.CHA(3) + "X"
+	if !strings.Contains(rendered, want) {
+		t.Fatalf("expected drawText raw mode to use a compensation space plus deferred CHA, got %q want substring %q", rendered, want)
 	}
 }
 
