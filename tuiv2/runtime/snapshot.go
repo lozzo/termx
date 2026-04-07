@@ -20,6 +20,7 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 	}
 	terminal := r.registry.GetOrCreate(terminalID)
 	if terminal != nil {
+		wasAlternateScreen := snapshotUsesAlternateScreen(terminal.Snapshot)
 		terminal.Snapshot = snapshot
 		terminal.ScrollbackLoadingLimit = 0
 		if offset == 0 && snapshot != nil {
@@ -32,6 +33,7 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 		}
 		r.ensureVTerm(terminal)
 		loadSnapshotIntoVTerm(terminal.VTerm, snapshot)
+		r.notifyAlternateScreenChange(terminalID, wasAlternateScreen, snapshotUsesAlternateScreen(snapshot))
 		r.touch()
 	}
 	return snapshot, nil
@@ -45,8 +47,27 @@ func (r *Runtime) refreshSnapshot(terminalID string) {
 	if terminal == nil || terminal.VTerm == nil {
 		return
 	}
+	wasAlternateScreen := snapshotUsesAlternateScreen(terminal.Snapshot)
 	terminal.Snapshot = snapshotFromVTerm(terminalID, terminal.VTerm)
+	r.notifyAlternateScreenChange(terminalID, wasAlternateScreen, snapshotUsesAlternateScreen(terminal.Snapshot))
 	r.invalidate()
+}
+
+func snapshotUsesAlternateScreen(snapshot *protocol.Snapshot) bool {
+	if snapshot == nil {
+		return false
+	}
+	return snapshot.Modes.AlternateScreen || snapshot.Screen.IsAlternateScreen
+}
+
+func (r *Runtime) notifyAlternateScreenChange(terminalID string, before, after bool) {
+	if r == nil || before == after || terminalID == "" || r.onAlternateScreenChange == nil {
+		return
+	}
+	// Stream refreshes are the only place where termx can reliably observe an
+	// alt-screen exit from fullscreen apps like htop. Surface that transition so
+	// app can re-negotiate ambiguous FE0F width before drawing the next prompt.
+	r.onAlternateScreenChange(terminalID, after)
 }
 
 func loadSnapshotIntoVTerm(vt VTermLike, snap *protocol.Snapshot) {

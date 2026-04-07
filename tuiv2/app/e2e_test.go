@@ -869,6 +869,8 @@ func TestE2EZshPromptWithEmojiVariationKeepsSingleRightBorder(t *testing.T) {
 	model := New(shared.Config{AttachID: created.TerminalID}, nil, runtime.New(bridge.NewProtocolClient(pc)))
 	model.width = 96
 	model.height = 30
+	writer := &recordingControlWriter{}
+	model.SetCursorWriter(writer)
 
 	invalidated := make(chan struct{}, 256)
 	model.SetSendFunc(func(msg tea.Msg) {
@@ -938,6 +940,198 @@ func TestE2EZshPromptWithEmojiVariationKeepsSingleRightBorder(t *testing.T) {
 	}
 	if !foundPromptOrInput {
 		t.Fatalf("expected prompt or typed input in rendered body:\n%s\nsnapshot excerpt:\n%s", view, e2eActiveSnapshotExcerpt(model))
+	}
+}
+
+func TestE2EZshEmojiVariationInputStaysStableAfterHtopExit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+	if _, err := exec.LookPath("zsh"); err != nil {
+		t.Skipf("e2e: zsh not available: %v", err)
+	}
+	if _, err := exec.LookPath("htop"); err != nil {
+		t.Skipf("e2e: htop not available: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	defer cancel()
+
+	socketPath := filepath.Join(t.TempDir(), "termx-e2e.sock")
+	srv := termx.NewServer(termx.WithSocketPath(socketPath))
+	srvDone := make(chan error, 1)
+	go func() { srvDone <- srv.ListenAndServe(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		_ = srv.Shutdown(context.Background())
+		select {
+		case <-srvDone:
+		case <-time.After(3 * time.Second):
+		}
+	})
+	if err := e2eWaitSocket(socketPath, 5*time.Second); err != nil {
+		t.Fatalf("server socket never appeared: %v", err)
+	}
+
+	tr, err := unixtransport.Dial(socketPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	pc := protocol.NewClient(tr)
+	if err := pc.Hello(ctx, protocol.Hello{Version: protocol.Version}); err != nil {
+		t.Fatalf("hello: %v", err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+
+	created, err := pc.Create(ctx, protocol.CreateParams{
+		Command: []string{"zsh", "-f", "-i"},
+		Name:    "emoji-zsh-alt",
+		Env: []string{
+			"TERM=xterm-256color",
+			"PROMPT_EOL_MARK=",
+			"RPROMPT=",
+		},
+		Size: protocol.Size{Cols: 96, Rows: 28},
+	})
+	if err != nil {
+		t.Fatalf("create interactive zsh: %v", err)
+	}
+
+	model := New(shared.Config{AttachID: created.TerminalID}, nil, runtime.New(bridge.NewProtocolClient(pc)))
+	model.width = 96
+	model.height = 30
+	writer := &recordingControlWriter{}
+	model.SetCursorWriter(writer)
+
+	invalidated := make(chan struct{}, 256)
+	model.SetSendFunc(func(msg tea.Msg) {
+		if _, ok := msg.(InvalidateMsg); ok {
+			select {
+			case invalidated <- struct{}{}:
+			default:
+			}
+		}
+		_, cmd := model.Update(msg)
+		e2eDrain(t, model, cmd)
+	})
+
+	e2eDrain(t, model, model.Init())
+
+	pane := model.workbench.ActivePane()
+	if pane == nil || pane.TerminalID != created.TerminalID {
+		t.Fatalf("expected active pane attached to %q, got %#v", created.TerminalID, pane)
+	}
+
+	_, cmd := model.Update(input.TerminalInput{
+		PaneID: pane.ID,
+		Data: []byte(
+			"PROMPT=$'# lozzow@RedmiBook♻️: ~/Documents/workdir/termx <> '\n" +
+				"RPROMPT=''\n" +
+				"PROMPT_EOL_MARK=''\n" +
+				"clear\n",
+		),
+	})
+	e2eDrain(t, model, cmd)
+
+	model.hostEmojiProbePending = true
+	_, cmd = model.Update(hostCursorPositionMsg{X: 2, Y: 0})
+	e2eDrain(t, model, cmd)
+
+	e2eWaitForText(t, ctx, model, invalidated, "RedmiBook♻️")
+
+	_, cmd = model.Update(input.TerminalInput{PaneID: pane.ID, Data: []byte("htop\n")})
+	e2eDrain(t, model, cmd)
+
+	deadline := time.NewTimer(8 * time.Second)
+	defer deadline.Stop()
+	for {
+		terminal := model.runtime.Registry().Get(created.TerminalID)
+		if terminal != nil && terminal.Snapshot != nil && terminal.Snapshot.Modes.AlternateScreen {
+			break
+		}
+		select {
+		case <-invalidated:
+		case <-deadline.C:
+			t.Fatalf("timeout waiting for htop alternate-screen snapshot:\n%s", e2eActiveSnapshotExcerpt(model))
+		case <-ctx.Done():
+			t.Fatalf("context expired waiting for htop alternate-screen snapshot:\n%s", e2eActiveSnapshotExcerpt(model))
+		}
+	}
+
+	_, cmd = model.Update(input.TerminalInput{PaneID: pane.ID, Data: []byte("q")})
+	e2eDrain(t, model, cmd)
+
+	deadline.Reset(10 * time.Second)
+	for {
+		terminal := model.runtime.Registry().Get(created.TerminalID)
+		if terminal != nil && terminal.Snapshot != nil && !terminal.Snapshot.Modes.AlternateScreen &&
+			strings.Contains(e2eActiveSnapshotExcerpt(model), "RedmiBook♻️") {
+			break
+		}
+		select {
+		case <-invalidated:
+		case <-deadline.C:
+			t.Fatalf("timeout waiting for prompt after htop exit:\n%s", e2eActiveSnapshotExcerpt(model))
+		case <-ctx.Done():
+			t.Fatalf("context expired waiting for prompt after htop exit:\n%s", e2eActiveSnapshotExcerpt(model))
+		}
+	}
+
+	deadline.Reset(5 * time.Second)
+	for len(writer.queued) == 0 && len(writer.controls) == 0 {
+		select {
+		case <-invalidated:
+		case <-time.After(10 * time.Millisecond):
+		case <-deadline.C:
+			t.Fatalf("timeout waiting for host emoji reprobe after htop exit")
+		case <-ctx.Done():
+			t.Fatalf("context expired waiting for host emoji reprobe after htop exit")
+		}
+	}
+	visible := model.runtime.Visible()
+	if visible == nil {
+		t.Fatal("expected visible runtime")
+	}
+	if visible.HostEmojiVS16Mode != shared.AmbiguousEmojiVariationSelectorStrip {
+		t.Fatalf("expected htop exit to drop back to strip until host reprobe, got %q", visible.HostEmojiVS16Mode)
+	}
+
+	_, cmd = model.Update(hostCursorPositionMsg{X: 1, Y: 5})
+	e2eDrain(t, model, cmd)
+	visible = model.runtime.Visible()
+	if visible == nil || visible.HostEmojiVS16Mode != shared.AmbiguousEmojiVariationSelectorAdvance {
+		t.Fatalf("expected post-htop host reprobe to select advance mode, got %#v", visible)
+	}
+
+	payload := "♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:"
+	_, cmd = model.Update(input.TerminalInput{PaneID: pane.ID, Data: []byte(payload)})
+	e2eDrain(t, model, cmd)
+
+	e2eWaitForText(t, ctx, model, invalidated, "RedmiBook")
+	if !regexp.MustCompile(`♻️\x1b\[[0-9]+G`).MatchString(model.View()) {
+		t.Fatalf("expected post-htop advance-mode host render to preserve the emoji and re-anchor the next cell, got:\n%q", model.View())
+	}
+
+	view := xansi.Strip(model.View())
+	lines := strings.Split(view, "\n")
+	if len(lines) != model.height {
+		t.Fatalf("expected %d frame rows, got %d:\n%s", model.height, len(lines), view)
+	}
+	foundInput := false
+	for i, line := range lines[1 : len(lines)-1] {
+		if !strings.Contains(line, "♻️") {
+			continue
+		}
+		foundInput = true
+		if got := xansi.StringWidth(line); got != model.width {
+			t.Fatalf("expected post-htop input row %d to keep width %d, got %d: %q\nsnapshot excerpt:\n%s", i, model.width, got, line, e2eActiveSnapshotExcerpt(model))
+		}
+		if count := strings.Count(line, "│"); count != 2 {
+			t.Fatalf("expected post-htop emoji input row %d to contain a single left/right border pair, got %d in %q\nsnapshot excerpt:\n%s", i, count, line, e2eActiveSnapshotExcerpt(model))
+		}
+	}
+	if !foundInput {
+		t.Fatalf("expected post-htop frame to contain emoji input:\n%s\nsnapshot excerpt:\n%s", view, e2eActiveSnapshotExcerpt(model))
 	}
 }
 

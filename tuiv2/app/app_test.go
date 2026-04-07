@@ -177,6 +177,54 @@ func TestModelHostCursorPositionProbeAcceptsNonOriginRowForAmbiguousEmoji(t *tes
 	}
 }
 
+func TestModelHostCursorPositionProbeIgnoresUnexpectedColumnForAmbiguousEmoji(t *testing.T) {
+	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
+	model.runtime.SetHostAmbiguousEmojiVariationSelectorMode(shared.AmbiguousEmojiVariationSelectorStrip)
+	model.hostEmojiProbePending = true
+
+	_, cmd := model.Update(hostCursorPositionMsg{X: 17, Y: 7})
+	if cmd != nil {
+		_ = cmd()
+	}
+
+	visible := model.runtime.Visible()
+	if visible == nil {
+		t.Fatal("expected visible runtime")
+	}
+	if visible.HostEmojiVS16Mode != shared.AmbiguousEmojiVariationSelectorStrip {
+		t.Fatalf("expected invalid host probe column to keep conservative mode, got %q", visible.HostEmojiVS16Mode)
+	}
+	if !model.hostEmojiProbePending {
+		t.Fatal("expected invalid host probe column to keep probe pending")
+	}
+}
+
+func TestModelTerminalAlternateScreenExitRearmsHostEmojiProbe(t *testing.T) {
+	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
+	writer := &recordingControlWriter{}
+	model.SetCursorWriter(writer)
+	model.runtime.SetHostAmbiguousEmojiVariationSelectorMode(shared.AmbiguousEmojiVariationSelectorRaw)
+
+	_, cmd := model.Update(terminalAlternateScreenMsg{TerminalID: "term-1", Active: false})
+	if cmd == nil {
+		t.Fatal("expected alternate-screen exit to schedule a host emoji reprobe")
+	}
+
+	visible := model.runtime.Visible()
+	if visible == nil {
+		t.Fatal("expected visible runtime")
+	}
+	if visible.HostEmojiVS16Mode != shared.AmbiguousEmojiVariationSelectorStrip {
+		t.Fatalf("expected alternate-screen exit to drop back to strip until reprobe, got %q", visible.HostEmojiVS16Mode)
+	}
+	if !model.hostEmojiProbePending {
+		t.Fatal("expected alternate-screen exit to mark probe pending")
+	}
+	if len(writer.queued) != 1 || writer.queued[0] != hostEmojiVariationProbeSequence {
+		t.Fatalf("expected alternate-screen exit to queue one probe %#v, got %#v", hostEmojiVariationProbeSequence, writer.queued)
+	}
+}
+
 func TestModelHostEmojiProbeRetriesUntilGiveUp(t *testing.T) {
 	originalMaxAttempts := hostEmojiProbeMaxAttempts
 	originalRetryDelay := hostEmojiProbeRetryDelay

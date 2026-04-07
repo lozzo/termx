@@ -209,6 +209,50 @@ func TestRuntimeLoadSnapshotDoesNotRaceWithAlternateScreenExit(t *testing.T) {
 	}
 }
 
+func TestRuntimeNotifiesAlternateScreenExitAfterStreamRefresh(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 80, Rows: 24},
+		Screen: protocol.ScreenData{
+			Cells:             [][]protocol.Cell{{{Content: "v", Width: 1}, {Content: "i", Width: 1}}},
+			IsAlternateScreen: true,
+		},
+		Modes: protocol.TerminalModes{AlternateScreen: true},
+	}
+
+	statec := make(chan bool, 2)
+	rt := New(client)
+
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	rt.SetAlternateScreenChange(func(_ string, active bool) {
+		statec <- active
+	})
+	if err := rt.StartStream(ctx, "term-1"); err != nil {
+		t.Fatalf("start stream: %v", err)
+	}
+
+	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("\x1b[?1049l$ ")})
+
+	select {
+	case active := <-statec:
+		if active {
+			t.Fatal("expected alternate-screen callback to report exit, got enter")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for alternate-screen exit callback")
+	}
+}
+
 func TestRuntimeStartStreamRefreshesSnapshotAndInvalidates(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
