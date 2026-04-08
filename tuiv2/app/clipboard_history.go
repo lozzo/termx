@@ -81,7 +81,7 @@ func (m *Model) openClipboardHistory() tea.Cmd {
 		items = append(items, modal.PickerItem{
 			Name:        "Clipboard history is empty",
 			State:       "copy text first",
-			Description: "Use Space to mark, then y or Enter to copy in copy mode.",
+			Description: "Use Space to mark, then Space or y to copy in copy mode.",
 		})
 	}
 	m.modalHost.Picker = &modal.PickerState{

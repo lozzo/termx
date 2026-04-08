@@ -2299,12 +2299,17 @@ func activeEntryCursorTarget(entries []paneRenderEntry, runtimeState *VisibleRun
 		if !entry.Active {
 			continue
 		}
-		terminal := findVisibleTerminal(runtimeState, entry.TerminalID)
-		if terminal == nil || terminal.Snapshot == nil {
+		snapshot := entry.Snapshot
+		if snapshot == nil {
+			terminal := findVisibleTerminal(runtimeState, entry.TerminalID)
+			if terminal != nil {
+				snapshot = terminal.Snapshot
+			}
+		}
+		if snapshot == nil {
 			return workbench.Rect{}, nil, false
 		}
 		rect := contentRectForEntry(entry)
-		snapshot := terminal.Snapshot
 		if entry.CopyModeActive || entry.ScrollOffset > 0 || !snapshot.Cursor.Visible || activeCursorOccluded(entries, i, rect, snapshot) {
 			return rect, snapshot, false
 		}

@@ -127,16 +127,13 @@ func (w *outputCursorWriter) Write(p []byte) (int, error) {
 		}
 		return n, nil
 	}
-	// Only append the projected host cursor after frame-like writes. Bubble Tea
-	// may emit setup/control writes before the actual frame bytes; injecting the
-	// cursor after those intermediate writes can reposition the host cursor in
-	// the middle of a redraw and corrupt the visible layout.
-	if frameLike {
-		if _, err := io.WriteString(w.out, cursor); err != nil {
-			return n, err
-		}
-		w.cursorProjected = true
+	// 中文说明：tmux/zellij 都会在一次输出结束后把真实终端光标留在 pane/
+	// 输入框的最终位置。这里即使 Bubble Tea 这次只写了控制序列，也要把 host
+	// cursor 重新投回去，否则输入法候选框会跟着框架内部的临时光标跑偏。
+	if _, err := io.WriteString(w.out, cursor); err != nil {
+		return n, err
 	}
+	w.cursorProjected = w.bubbleTeaRestore != ""
 	if syncOutput {
 		if _, err := io.WriteString(w.out, synchronizedOutputEnd); err != nil {
 			return n, err

@@ -397,12 +397,20 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		}
 		return true, nil
 	case input.ActionCopyModeBeginSelection:
+		if m.ensureCopyMode() && m.copyMode.Mark != nil {
+			return true, m.copySelectionToClipboard(false)
+		}
 		m.beginCopySelection()
 		return true, nil
 	case input.ActionCopyModeCopySelection:
 		return true, m.copySelectionToClipboard(false)
 	case input.ActionCopyModeCopySelectionExit:
-		return true, m.copySelectionToClipboard(true)
+		if m.ensureCopyMode() && m.copyMode.Mark != nil {
+			return true, m.copySelectionToClipboard(true)
+		}
+		m.setMode(input.ModeState{Kind: input.ModeNormal})
+		m.render.Invalidate()
+		return true, nil
 	case input.ActionQuit:
 		if m.mode().Kind == input.ModeNormal {
 			m.setMode(input.ModeState{Kind: input.ModeGlobal})

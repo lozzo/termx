@@ -259,6 +259,44 @@ func TestRunWithClientNonTTYOutputDoesNotEmitEmojiProbe(t *testing.T) {
 	}
 }
 
+func TestConfigureProgramOutputKeepsNonTTYCursorInline(t *testing.T) {
+	model := New(shared.Config{}, nil, nil)
+	var out bytes.Buffer
+
+	output, probeSupported := configureProgramOutput(model, &out)
+
+	if output != &out {
+		t.Fatalf("expected non-tty output to remain unchanged, got %#v", output)
+	}
+	if probeSupported {
+		t.Fatal("expected non-tty output to disable host emoji probe")
+	}
+	if model.cursorOut != nil {
+		t.Fatalf("expected non-tty output to keep inline cursor projection, got writer %#v", model.cursorOut)
+	}
+}
+
+func TestConfigureProgramOutputUsesCursorWriterForTTY(t *testing.T) {
+	model := New(shared.Config{}, nil, nil)
+	tty := &cursorWriterProbeTTY{}
+
+	output, probeSupported := configureProgramOutput(model, tty)
+
+	writer, ok := output.(*outputCursorWriter)
+	if !ok || writer == nil {
+		t.Fatalf("expected tty output to use outputCursorWriter, got %#v", output)
+	}
+	if !probeSupported {
+		t.Fatal("expected tty output to enable host emoji probe")
+	}
+	if model.cursorOut == nil {
+		t.Fatal("expected tty output to configure model cursor writer")
+	}
+	if model.cursorOut != writer {
+		t.Fatalf("expected model cursor writer to match configured output writer, got %#v want %#v", model.cursorOut, writer)
+	}
+}
+
 func TestE2ERunWithClientRetriesHostEmojiProbeWhenFirstCPRIsDropped(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: requires a real PTY, skipped with -short")

@@ -101,6 +101,34 @@ func (m *Model) resetCopyMode() {
 	m.copyMode = copyModeState{}
 }
 
+func (m *Model) clearCopySelection() {
+	if m == nil {
+		return
+	}
+	m.copyMode.Mark = nil
+	m.stopMouseCopySelection()
+}
+
+func (m *Model) reconcileCopyModeContext() {
+	if m == nil || m.workbench == nil || m.copyMode.PaneID == "" {
+		return
+	}
+	pane := m.workbench.ActivePane()
+	if pane != nil && pane.ID == m.copyMode.PaneID {
+		return
+	}
+	if tab := m.workbench.CurrentTab(); tab != nil {
+		tab.ScrollOffset = 0
+	}
+	m.clearCopySelection()
+	m.resetCopyMode()
+	m.copyModeResume = copyModeResumeState{}
+	if m.mode().Kind == input.ModeDisplay {
+		m.setMode(input.ModeState{Kind: input.ModeNormal})
+	}
+	m.render.Invalidate()
+}
+
 func (m *Model) prepareCopyModeExit() {
 	if m == nil || m.copyMode.PaneID == "" || m.copyMode.Snapshot == nil || m.workbench == nil || m.runtime == nil {
 		m.copyModeResume = copyModeResumeState{}
@@ -170,6 +198,9 @@ func (m *Model) ensureCopyMode() bool {
 	pane := m.workbench.ActivePane()
 	tab := m.workbench.CurrentTab()
 	if pane == nil || tab == nil || pane.ID == "" || pane.TerminalID == "" {
+		return false
+	}
+	if m.copyMode.PaneID != "" && m.copyMode.PaneID != pane.ID {
 		return false
 	}
 	if m.copyMode.PaneID == pane.ID {
@@ -586,6 +617,8 @@ func (m *Model) copySelectionToClipboard(exit bool) tea.Cmd {
 	if exit {
 		m.leaveCopyMode()
 		m.setMode(input.ModeState{Kind: input.ModeNormal})
+	} else {
+		m.clearCopySelection()
 	}
 	m.render.Invalidate()
 	if clipboardErr != nil && m.yankBuffer == "" {

@@ -10,6 +10,7 @@ import (
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
+	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 type recordingControlWriter struct {
@@ -76,15 +77,69 @@ func copyModeTestSnapshot(scrollback, screen []string) *protocol.Snapshot {
 
 func seedCopyModeSnapshot(t *testing.T, m *Model, scrollback, screen []string) {
 	t.Helper()
-	terminal := m.runtime.Registry().GetOrCreate("term-1")
+	seedCopyModeSnapshotForTerminal(t, m, "term-1", scrollback, screen)
+}
+
+func seedCopyModeSnapshotForTerminal(t *testing.T, m *Model, terminalID string, scrollback, screen []string) {
+	t.Helper()
+	terminal := m.runtime.Registry().GetOrCreate(terminalID)
 	snapshot := copyModeTestSnapshot(scrollback, screen)
+	snapshot.TerminalID = terminalID
 	terminal.Snapshot = snapshot
 	if client, ok := m.runtime.Client().(*recordingBridgeClient); ok {
 		if client.snapshotByTerminal == nil {
 			client.snapshotByTerminal = make(map[string]*protocol.Snapshot)
 		}
-		client.snapshotByTerminal["term-1"] = snapshot
+		client.snapshotByTerminal[terminalID] = snapshot
 	}
+}
+
+func setupSplitCopyModeModel(t *testing.T) *Model {
+	t.Helper()
+	root := &workbench.LayoutNode{
+		Direction: workbench.SplitVertical,
+		Ratio:     0.5,
+		First:     workbench.NewLeaf("pane-1"),
+		Second:    workbench.NewLeaf("pane-2"),
+	}
+	model := setupModel(t, modelOpts{
+		width:  80,
+		height: 12,
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{{
+					ID:           "tab-1",
+					Name:         "tab 1",
+					ActivePaneID: "pane-1",
+					Panes: map[string]*workbench.PaneState{
+						"pane-1": {ID: "pane-1", Title: "left", TerminalID: "term-1"},
+						"pane-2": {ID: "pane-2", Title: "right", TerminalID: "term-2"},
+					},
+					Root: root,
+				}},
+			},
+		},
+	})
+	for _, item := range []struct {
+		paneID     string
+		terminalID string
+		channel    uint16
+		name       string
+	}{
+		{paneID: "pane-1", terminalID: "term-1", channel: 1, name: "left"},
+		{paneID: "pane-2", terminalID: "term-2", channel: 2, name: "right"},
+	} {
+		terminal := model.runtime.Registry().GetOrCreate(item.terminalID)
+		terminal.Name = item.name
+		terminal.State = "running"
+		terminal.Channel = item.channel
+		binding := model.runtime.BindPane(item.paneID)
+		binding.Channel = item.channel
+		binding.Connected = true
+	}
+	return model
 }
 
 func TestCopyModeKeyboardSelectionCopiesOSC52(t *testing.T) {
@@ -120,6 +175,100 @@ func TestCopyModeKeyboardSelectionCopiesOSC52(t *testing.T) {
 	}
 	if got := model.workbench.CurrentTab().ScrollOffset; got != 0 {
 		t.Fatalf("expected copy+exit to reset scroll offset, got %d", got)
+	}
+}
+
+func TestCopyModeMouseSwitchPaneClearsDisplayState(t *testing.T) {
+	model := setupSplitCopyModeModel(t)
+	seedCopyModeSnapshotForTerminal(t, model, "term-1", []string{"hist-left"}, []string{"live-left"})
+	seedCopyModeSnapshotForTerminal(t, model, "term-2", []string{"hist-right"}, []string{"live-right"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeBeginSelection})
+	if got := model.copyMode.PaneID; got != "pane-1" {
+		t.Fatalf("expected copy mode bound to pane-1, got %q", got)
+	}
+	if model.copyMode.Mark == nil {
+		t.Fatal("expected copy-mode mark before pane switch")
+	}
+
+	visible := model.workbench.VisibleWithSize(model.bodyRect())
+	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
+		t.Fatal("expected visible workbench")
+	}
+	var pane2 *workbench.VisiblePane
+	for i := range visible.Tabs[visible.ActiveTab].Panes {
+		if visible.Tabs[visible.ActiveTab].Panes[i].ID == "pane-2" {
+			pane2 = &visible.Tabs[visible.ActiveTab].Panes[i]
+			break
+		}
+	}
+	if pane2 == nil {
+		t.Fatal("expected visible pane-2")
+	}
+	contentRect, ok := paneContentRectForVisible(*pane2)
+	if !ok {
+		t.Fatal("expected pane-2 content rect")
+	}
+	x := contentRect.X
+	y := model.contentOriginY() + contentRect.Y
+	_, cmd := model.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	drainCmd(t, model, cmd, 20)
+	_ = model.View()
+
+	if pane := model.workbench.ActivePane(); pane == nil || pane.ID != "pane-2" {
+		t.Fatalf("expected pane-2 focused after click, got %#v", pane)
+	}
+	if got := model.input.Mode().Kind; got != input.ModeNormal {
+		t.Fatalf("expected pane switch to leave display mode, got %q", got)
+	}
+	if got := model.copyMode.PaneID; got != "" {
+		t.Fatalf("expected pane switch to clear copy mode binding, got %q", got)
+	}
+	if model.copyMode.Mark != nil {
+		t.Fatalf("expected pane switch to clear copy mode selection, got %#v", model.copyMode.Mark)
+	}
+}
+
+func TestCopyModeSpaceCopiesAndClearsSelection(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"alpha", "bravo"}, []string{"charl", "delta", "echoo"})
+	writer := &recordingControlWriter{}
+	model.SetCursorWriter(writer)
+
+	dispatchKey(t, model, ctrlKey(tea.KeyCtrlV))
+	dispatchKey(t, model, runeKeyMsg('g'))
+	dispatchKey(t, model, tea.KeyMsg{Type: tea.KeySpace})
+	if model.copyMode.Mark == nil {
+		t.Fatal("expected first space to begin selection")
+	}
+	dispatchKey(t, model, runeKeyMsg('l'))
+	dispatchKey(t, model, tea.KeyMsg{Type: tea.KeySpace})
+
+	if got := len(writer.controls); got != 1 {
+		t.Fatalf("expected second space to copy once, got %#v", writer.controls)
+	}
+	if want := osc52ClipboardSequence("al"); writer.controls[0] != want {
+		t.Fatalf("unexpected clipboard payload %q want %q", writer.controls[0], want)
+	}
+	if got := model.input.Mode().Kind; got != input.ModeDisplay {
+		t.Fatalf("expected space copy to keep display mode, got %q", got)
+	}
+	if model.copyMode.Mark != nil {
+		t.Fatalf("expected copied selection to clear mark, got %#v", model.copyMode.Mark)
+	}
+	if model.copyMode.MouseSelecting {
+		t.Fatal("expected copied selection to stop mouse-select state")
+	}
+
+	dispatchKey(t, model, tea.KeyMsg{Type: tea.KeyDown})
+	if model.copyMode.Mark != nil {
+		t.Fatalf("expected navigation after copy to stay out of selection mode, got %#v", model.copyMode.Mark)
+	}
+
+	dispatchKey(t, model, tea.KeyMsg{Type: tea.KeySpace})
+	if model.copyMode.Mark == nil {
+		t.Fatal("expected third space to start a fresh selection")
 	}
 }
 

@@ -95,6 +95,30 @@ func TestModelViewDelegatesCursorSequenceToWriter(t *testing.T) {
 	}
 }
 
+func TestModelViewInlinesCursorForPromptModeEvenWithWriter(t *testing.T) {
+	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
+	model.width = 80
+	model.height = 24
+	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: "prompt-1"}
+	model.modalHost.Prompt = &modal.PromptState{
+		Kind:  "rename-tab",
+		Title: "Rename Tab",
+		Value: "demo",
+	}
+	model.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: "prompt-1"})
+	writer := &recordingControlWriter{}
+	model.SetCursorWriter(writer)
+
+	view := model.View()
+
+	if !strings.Contains(view, "\x1b[?25h") {
+		t.Fatalf("expected prompt mode to inline host cursor for IME positioning, got %q", view)
+	}
+	if writer.cursor != "" {
+		t.Fatalf("expected prompt mode to suppress split cursor writer projection, got %q", writer.cursor)
+	}
+}
+
 func TestModelInitBootstrapsDefaultWorkspace(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
 	if model.workbench.CurrentWorkspace() != nil {

@@ -899,6 +899,58 @@ func TestActiveEntryCursorTargetUsesFramelessRectForZoomedPane(t *testing.T) {
 	}
 }
 
+func TestRenderFrameUsesRenderedEntrySnapshotForHostCursorProjection(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 20, Rows: 4},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{
+				{{Content: "r", Width: 1}},
+				{{Content: "u", Width: 1}},
+			},
+		},
+		Cursor: protocol.CursorState{Row: 0, Col: 0, Visible: true},
+	}
+
+	override := &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 20, Rows: 4},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{
+				{{Content: "r", Width: 1}},
+				{{Content: "u", Width: 1}},
+			},
+		},
+		Cursor: protocol.CursorState{Row: 1, Col: 0, Visible: true},
+	}
+
+	state := WithPaneSnapshotOverride(WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6), "pane-1", override)
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+	_ = coordinator.RenderFrame()
+
+	// Cursor must follow the actual snapshot rendered in this frame (override row=1),
+	// not the stale runtime snapshot cursor (row=0).
+	if got := coordinator.CursorSequence(); !strings.Contains(got, "\x1b[?25h\x1b[4;2H") {
+		t.Fatalf("expected host cursor projection to follow rendered entry snapshot row, got %q", got)
+	}
+}
+
 func TestDrawPaneFrameMarksOverflowWithStableCornerIndicators(t *testing.T) {
 	canvas := newComposedCanvas(6, 4)
 	rect := workbench.Rect{X: 0, Y: 0, W: 6, H: 4}

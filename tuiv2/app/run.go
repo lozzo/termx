@@ -44,16 +44,24 @@ func RunWithClient(cfg shared.Config, client bridge.Client, stdin io.Reader, std
 	return runWithClientOptions(cfg, client, stdin, stdout)
 }
 
+func configureProgramOutput(model *Model, stdout io.Writer) (io.Writer, bool) {
+	if stdout == nil {
+		return nil, false
+	}
+	writer := newOutputCursorWriter(stdout)
+	if writer == nil || writer.tty == nil {
+		// Non-TTY hosts should keep cursor projection embedded in View() output.
+		return stdout, false
+	}
+	if model != nil {
+		model.SetCursorWriter(writer)
+	}
+	return writer, true
+}
+
 func runWithClientOptions(cfg shared.Config, client bridge.Client, stdin io.Reader, stdout io.Writer, extraOpts ...tea.ProgramOption) error {
 	model := New(cfg, nil, runtime.New(client))
-	output := stdout
-	probeSupported := false
-	if stdout != nil {
-		writer := newOutputCursorWriter(stdout)
-		model.SetCursorWriter(writer)
-		output = writer
-		probeSupported = writer != nil && writer.tty != nil
-	}
+	output, probeSupported := configureProgramOutput(model, stdout)
 	if model.runtime != nil {
 		if probeSupported {
 			// 中文说明：先默认走保守的 strip 模式，等宿主终端明确回报
