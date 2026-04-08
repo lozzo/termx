@@ -44,9 +44,7 @@ func protocolRowFromText(text string, cols int) []protocol.Cell {
 	return row
 }
 
-func seedCopyModeSnapshot(t *testing.T, m *Model, scrollback, screen []string) {
-	t.Helper()
-	terminal := m.runtime.Registry().GetOrCreate("term-1")
+func copyModeTestSnapshot(scrollback, screen []string) *protocol.Snapshot {
 	sbRows := make([][]protocol.Cell, 0, len(scrollback))
 	maxCols := 1
 	for _, line := range scrollback {
@@ -66,7 +64,7 @@ func seedCopyModeSnapshot(t *testing.T, m *Model, scrollback, screen []string) {
 	for _, line := range screen {
 		screenRows = append(screenRows, protocolRowFromText(line, maxCols))
 	}
-	snapshot := &protocol.Snapshot{
+	return &protocol.Snapshot{
 		TerminalID: "term-1",
 		Size:       protocol.Size{Cols: uint16(maxCols), Rows: uint16(len(screenRows))},
 		Scrollback: sbRows,
@@ -74,6 +72,12 @@ func seedCopyModeSnapshot(t *testing.T, m *Model, scrollback, screen []string) {
 		Cursor:     protocol.CursorState{Row: maxInt(0, len(screenRows)-1), Col: 0, Visible: true},
 		Modes:      protocol.TerminalModes{AutoWrap: true},
 	}
+}
+
+func seedCopyModeSnapshot(t *testing.T, m *Model, scrollback, screen []string) {
+	t.Helper()
+	terminal := m.runtime.Registry().GetOrCreate("term-1")
+	snapshot := copyModeTestSnapshot(scrollback, screen)
 	terminal.Snapshot = snapshot
 	if client, ok := m.runtime.Client().(*recordingBridgeClient); ok {
 		if client.snapshotByTerminal == nil {
@@ -225,6 +229,75 @@ func TestCopyModeFrozenViewResumesLiveSnapshotOnExit(t *testing.T) {
 	liveView := xansi.Strip(model.View())
 	if !strings.Contains(liveView, "tail-a") || !strings.Contains(liveView, "tail-b") {
 		t.Fatalf("expected live snapshot to appear again after leaving copy mode, got:\n%s", liveView)
+	}
+}
+
+func TestCopyModeExitRefreshesLatestLocalVTermSnapshot(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"hist-a"}, []string{"old-live"})
+
+	if _, err := model.runtime.LoadSnapshot(context.Background(), "term-1", 0, 0); err != nil {
+		t.Fatalf("load snapshot into vterm: %v", err)
+	}
+	terminal := model.runtime.Registry().Get("term-1")
+	if terminal == nil || terminal.VTerm == nil {
+		t.Fatalf("expected live vterm after snapshot load, got %#v", terminal)
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+
+	if _, err := terminal.VTerm.Write([]byte("\x1b[2J\x1b[Hnew-live")); err != nil {
+		t.Fatalf("write live vterm update: %v", err)
+	}
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCancelMode})
+
+	view := xansi.Strip(model.View())
+	if !strings.Contains(view, "new-live") {
+		t.Fatalf("expected exit from copy mode to refresh the latest local vterm snapshot, got:\n%s", view)
+	}
+	if strings.Contains(view, "old-live") {
+		t.Fatalf("expected stale pre-copy snapshot to be replaced on exit, got:\n%s", view)
+	}
+}
+
+func TestCopyModeExitKeepsFrozenSnapshotUntilLiveSnapshotAdvances(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"hist-a"}, []string{"queued-text"})
+	client := model.runtime.Client().(*recordingBridgeClient)
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+
+	terminal := model.runtime.Registry().Get("term-1")
+	if terminal == nil {
+		t.Fatal("expected terminal runtime")
+	}
+	terminal.Stream.Active = true
+	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot([]string{"hist-a"}, []string{"transient-live"})
+	if _, err := model.runtime.LoadSnapshot(context.Background(), "term-1", 0, 0); err != nil {
+		t.Fatalf("load transient live snapshot: %v", err)
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCancelMode})
+
+	frozenView := xansi.Strip(model.View())
+	if !strings.Contains(frozenView, "queued-text") {
+		t.Fatalf("expected copy-mode exit to keep the frozen snapshot while the live stream is still on the same frame, got:\n%s", frozenView)
+	}
+	if strings.Contains(frozenView, "transient-live") {
+		t.Fatalf("expected transient live frame to stay hidden until the stream advances, got:\n%s", frozenView)
+	}
+
+	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot([]string{"hist-a"}, []string{"settled-live"})
+	if _, err := model.runtime.LoadSnapshot(context.Background(), "term-1", 0, 0); err != nil {
+		t.Fatalf("load settled live snapshot: %v", err)
+	}
+
+	liveView := xansi.Strip(model.View())
+	if !strings.Contains(liveView, "settled-live") {
+		t.Fatalf("expected view to switch back to the live snapshot after the stream advances, got:\n%s", liveView)
+	}
+	if strings.Contains(liveView, "queued-text") {
+		t.Fatalf("expected frozen snapshot override to stop once the live snapshot changes, got:\n%s", liveView)
 	}
 }
 

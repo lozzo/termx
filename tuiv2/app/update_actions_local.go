@@ -52,7 +52,7 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		}
 		if m.modalHost == nil || m.modalHost.Session == nil {
 			if m.mode().Kind == input.ModeDisplay {
-				m.leaveCopyMode()
+				m.prepareCopyModeExit()
 			} else {
 				m.resetCopyMode()
 			}

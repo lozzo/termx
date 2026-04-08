@@ -9,27 +9,29 @@ import (
 )
 
 type VisibleRenderState struct {
-	Workbench                 *workbench.VisibleWorkbench
-	Runtime                   *VisibleRuntimeStateProxy
-	Surface                   VisibleSurface
-	Overlay                   VisibleOverlay
-	TermSize                  TermSize
-	Notice                    string
-	Error                     string
-	InputMode                 string
-	OwnerConfirmPaneID        string
-	EmptyPaneSelectionPaneID  string
-	EmptyPaneSelectionIndex   int
-	ExitedPaneSelectionPaneID string
-	ExitedPaneSelectionIndex  int
-	CopyModePaneID            string
-	CopyModeCursorRow         int
-	CopyModeCursorCol         int
-	CopyModeViewTopRow        int
-	CopyModeMarkSet           bool
-	CopyModeMarkRow           int
-	CopyModeMarkCol           int
-	CopyModeSnapshot          *protocol.Snapshot
+	Workbench                  *workbench.VisibleWorkbench
+	Runtime                    *VisibleRuntimeStateProxy
+	Surface                    VisibleSurface
+	Overlay                    VisibleOverlay
+	TermSize                   TermSize
+	Notice                     string
+	Error                      string
+	InputMode                  string
+	OwnerConfirmPaneID         string
+	EmptyPaneSelectionPaneID   string
+	EmptyPaneSelectionIndex    int
+	ExitedPaneSelectionPaneID  string
+	ExitedPaneSelectionIndex   int
+	PaneSnapshotOverridePaneID string
+	PaneSnapshotOverride       *protocol.Snapshot
+	CopyModePaneID             string
+	CopyModeCursorRow          int
+	CopyModeCursorCol          int
+	CopyModeViewTopRow         int
+	CopyModeMarkSet            bool
+	CopyModeMarkRow            int
+	CopyModeMarkCol            int
+	CopyModeSnapshot           *protocol.Snapshot
 }
 
 type VisibleRuntimeStateProxy = runtime.VisibleRuntime
@@ -206,6 +208,12 @@ func WithEmptyPaneSelection(state VisibleRenderState, paneID string, selected in
 func WithExitedPaneSelection(state VisibleRenderState, paneID string, selected int) VisibleRenderState {
 	state.ExitedPaneSelectionPaneID = paneID
 	state.ExitedPaneSelectionIndex = selected
+	return state
+}
+
+func WithPaneSnapshotOverride(state VisibleRenderState, paneID string, snapshot *protocol.Snapshot) VisibleRenderState {
+	state.PaneSnapshotOverridePaneID = paneID
+	state.PaneSnapshotOverride = snapshot
 	return state
 }
 

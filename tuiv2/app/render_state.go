@@ -14,6 +14,9 @@ func (m *Model) visibleRenderState() render.VisibleRenderState {
 	if paneID, selected, ok := m.currentExitedPaneSelection(); ok {
 		state = render.WithExitedPaneSelection(state, paneID, selected)
 	}
+	if paneID, snapshot, ok := m.activeCopyModeResumeSnapshot(); ok {
+		state = render.WithPaneSnapshotOverride(state, paneID, snapshot)
+	}
 	if m.copyMode.PaneID != "" {
 		markSet := m.copyMode.Mark != nil
 		markRow := 0

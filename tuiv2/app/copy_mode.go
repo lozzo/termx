@@ -29,6 +29,13 @@ type copyModeState struct {
 	AutoScrollSeq  uint64
 }
 
+type copyModeResumeState struct {
+	PaneID     string
+	TerminalID string
+	Snapshot   *protocol.Snapshot
+	Baseline   *protocol.Snapshot
+}
+
 type copyModeBuffer struct {
 	snapshot *protocol.Snapshot
 	height   int
@@ -92,6 +99,55 @@ func (m *Model) resetCopyMode() {
 		return
 	}
 	m.copyMode = copyModeState{}
+}
+
+func (m *Model) prepareCopyModeExit() {
+	if m == nil || m.copyMode.PaneID == "" || m.copyMode.Snapshot == nil || m.workbench == nil || m.runtime == nil {
+		m.copyModeResume = copyModeResumeState{}
+		return
+	}
+	pane := m.workbench.ActivePane()
+	if pane == nil || pane.ID != m.copyMode.PaneID || pane.TerminalID == "" {
+		m.copyModeResume = copyModeResumeState{}
+		return
+	}
+	terminal := m.runtime.Registry().Get(pane.TerminalID)
+	if terminal == nil {
+		m.copyModeResume = copyModeResumeState{}
+		return
+	}
+	if terminal.VTerm != nil {
+		m.runtime.RefreshSnapshotFromVTerm(pane.TerminalID)
+		terminal = m.runtime.Registry().Get(pane.TerminalID)
+	}
+	if terminal == nil || !terminal.Stream.Active || terminal.Snapshot == nil {
+		m.copyModeResume = copyModeResumeState{}
+		return
+	}
+	m.copyModeResume = copyModeResumeState{
+		PaneID:     pane.ID,
+		TerminalID: pane.TerminalID,
+		Snapshot:   cloneSnapshot(m.copyMode.Snapshot),
+		Baseline:   terminal.Snapshot,
+	}
+}
+
+func (m *Model) activeCopyModeResumeSnapshot() (string, *protocol.Snapshot, bool) {
+	if m == nil || m.copyModeResume.Snapshot == nil || m.workbench == nil || m.runtime == nil {
+		return "", nil, false
+	}
+	pane := m.workbench.ActivePane()
+	if pane == nil || pane.ID != m.copyModeResume.PaneID || pane.TerminalID != m.copyModeResume.TerminalID {
+		return "", nil, false
+	}
+	terminal := m.runtime.Registry().Get(pane.TerminalID)
+	if terminal == nil || !terminal.Stream.Active || terminal.Snapshot == nil {
+		return "", nil, false
+	}
+	if terminal.Snapshot != m.copyModeResume.Baseline {
+		return "", nil, false
+	}
+	return pane.ID, m.copyModeResume.Snapshot, true
 }
 
 func (m *Model) leaveCopyMode() {

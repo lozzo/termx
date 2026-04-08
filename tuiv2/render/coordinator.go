@@ -40,34 +40,36 @@ type renderedBody struct {
 }
 
 type renderStateKey struct {
-	Workbench                 *workbench.VisibleWorkbench
-	Runtime                   *VisibleRuntimeStateProxy
-	SurfaceKind               VisibleSurfaceKind
-	SurfaceTerminalPool       *modal.TerminalManagerState
-	OverlayKind               VisibleOverlayKind
-	OverlayPrompt             *modal.PromptState
-	OverlayPicker             *modal.PickerState
-	OverlayWorkspacePicker    *modal.WorkspacePickerState
-	OverlayTerminalManager    *modal.TerminalManagerState
-	OverlayHelp               *modal.HelpState
-	OverlayFloatingOverview   *modal.FloatingOverviewState
-	TermSize                  TermSize
-	Notice                    string
-	Error                     string
-	InputMode                 string
-	OwnerConfirmPaneID        string
-	EmptyPaneSelectionPaneID  string
-	EmptyPaneSelectionIndex   int
-	ExitedPaneSelectionPaneID string
-	ExitedPaneSelectionIndex  int
-	CopyModePaneID            string
-	CopyModeCursorRow         int
-	CopyModeCursorCol         int
-	CopyModeViewTopRow        int
-	CopyModeMarkSet           bool
-	CopyModeMarkRow           int
-	CopyModeMarkCol           int
-	CopyModeSnapshot          *protocol.Snapshot
+	Workbench                  *workbench.VisibleWorkbench
+	Runtime                    *VisibleRuntimeStateProxy
+	SurfaceKind                VisibleSurfaceKind
+	SurfaceTerminalPool        *modal.TerminalManagerState
+	OverlayKind                VisibleOverlayKind
+	OverlayPrompt              *modal.PromptState
+	OverlayPicker              *modal.PickerState
+	OverlayWorkspacePicker     *modal.WorkspacePickerState
+	OverlayTerminalManager     *modal.TerminalManagerState
+	OverlayHelp                *modal.HelpState
+	OverlayFloatingOverview    *modal.FloatingOverviewState
+	TermSize                   TermSize
+	Notice                     string
+	Error                      string
+	InputMode                  string
+	OwnerConfirmPaneID         string
+	EmptyPaneSelectionPaneID   string
+	EmptyPaneSelectionIndex    int
+	ExitedPaneSelectionPaneID  string
+	ExitedPaneSelectionIndex   int
+	PaneSnapshotOverridePaneID string
+	PaneSnapshotOverride       *protocol.Snapshot
+	CopyModePaneID             string
+	CopyModeCursorRow          int
+	CopyModeCursorCol          int
+	CopyModeViewTopRow         int
+	CopyModeMarkSet            bool
+	CopyModeMarkRow            int
+	CopyModeMarkCol            int
+	CopyModeSnapshot           *protocol.Snapshot
 }
 
 type paneRenderEntry struct {
@@ -259,34 +261,36 @@ func (c *Coordinator) RenderFrame() string {
 
 func stateKey(state VisibleRenderState) renderStateKey {
 	return renderStateKey{
-		Workbench:                 state.Workbench,
-		Runtime:                   state.Runtime,
-		SurfaceKind:               state.Surface.Kind,
-		SurfaceTerminalPool:       state.Surface.TerminalPool,
-		OverlayKind:               state.Overlay.Kind,
-		OverlayPrompt:             state.Overlay.Prompt,
-		OverlayPicker:             state.Overlay.Picker,
-		OverlayWorkspacePicker:    state.Overlay.WorkspacePicker,
-		OverlayTerminalManager:    state.Overlay.TerminalManager,
-		OverlayHelp:               state.Overlay.Help,
-		OverlayFloatingOverview:   state.Overlay.FloatingOverview,
-		TermSize:                  state.TermSize,
-		Notice:                    state.Notice,
-		Error:                     state.Error,
-		InputMode:                 state.InputMode,
-		OwnerConfirmPaneID:        state.OwnerConfirmPaneID,
-		EmptyPaneSelectionPaneID:  state.EmptyPaneSelectionPaneID,
-		EmptyPaneSelectionIndex:   state.EmptyPaneSelectionIndex,
-		ExitedPaneSelectionPaneID: state.ExitedPaneSelectionPaneID,
-		ExitedPaneSelectionIndex:  state.ExitedPaneSelectionIndex,
-		CopyModePaneID:            state.CopyModePaneID,
-		CopyModeCursorRow:         state.CopyModeCursorRow,
-		CopyModeCursorCol:         state.CopyModeCursorCol,
-		CopyModeViewTopRow:        state.CopyModeViewTopRow,
-		CopyModeMarkSet:           state.CopyModeMarkSet,
-		CopyModeMarkRow:           state.CopyModeMarkRow,
-		CopyModeMarkCol:           state.CopyModeMarkCol,
-		CopyModeSnapshot:          state.CopyModeSnapshot,
+		Workbench:                  state.Workbench,
+		Runtime:                    state.Runtime,
+		SurfaceKind:                state.Surface.Kind,
+		SurfaceTerminalPool:        state.Surface.TerminalPool,
+		OverlayKind:                state.Overlay.Kind,
+		OverlayPrompt:              state.Overlay.Prompt,
+		OverlayPicker:              state.Overlay.Picker,
+		OverlayWorkspacePicker:     state.Overlay.WorkspacePicker,
+		OverlayTerminalManager:     state.Overlay.TerminalManager,
+		OverlayHelp:                state.Overlay.Help,
+		OverlayFloatingOverview:    state.Overlay.FloatingOverview,
+		TermSize:                   state.TermSize,
+		Notice:                     state.Notice,
+		Error:                      state.Error,
+		InputMode:                  state.InputMode,
+		OwnerConfirmPaneID:         state.OwnerConfirmPaneID,
+		EmptyPaneSelectionPaneID:   state.EmptyPaneSelectionPaneID,
+		EmptyPaneSelectionIndex:    state.EmptyPaneSelectionIndex,
+		ExitedPaneSelectionPaneID:  state.ExitedPaneSelectionPaneID,
+		ExitedPaneSelectionIndex:   state.ExitedPaneSelectionIndex,
+		PaneSnapshotOverridePaneID: state.PaneSnapshotOverridePaneID,
+		PaneSnapshotOverride:       state.PaneSnapshotOverride,
+		CopyModePaneID:             state.CopyModePaneID,
+		CopyModeCursorRow:          state.CopyModeCursorRow,
+		CopyModeCursorCol:          state.CopyModeCursorCol,
+		CopyModeViewTopRow:         state.CopyModeViewTopRow,
+		CopyModeMarkSet:            state.CopyModeMarkSet,
+		CopyModeMarkRow:            state.CopyModeMarkRow,
+		CopyModeMarkCol:            state.CopyModeMarkCol,
+		CopyModeSnapshot:           state.CopyModeSnapshot,
 	}
 }
 
@@ -723,7 +727,7 @@ func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePan
 		if !ok {
 			continue
 		}
-		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, frameless, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, state.CopyModePaneID, state.CopyModeCursorRow, state.CopyModeCursorCol, state.CopyModeViewTopRow, state.CopyModeMarkSet, state.CopyModeMarkRow, state.CopyModeMarkCol, state.CopyModeSnapshot, theme))
+		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, frameless, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, state.PaneSnapshotOverridePaneID, state.PaneSnapshotOverride, state.CopyModePaneID, state.CopyModeCursorRow, state.CopyModeCursorCol, state.CopyModeViewTopRow, state.CopyModeMarkSet, state.CopyModeMarkRow, state.CopyModeMarkCol, state.CopyModeSnapshot, theme))
 	}
 	for _, pane := range floating {
 		originalRect := pane.Rect
@@ -731,7 +735,7 @@ func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePan
 		if !ok {
 			continue
 		}
-		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, false, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, state.CopyModePaneID, state.CopyModeCursorRow, state.CopyModeCursorCol, state.CopyModeViewTopRow, state.CopyModeMarkSet, state.CopyModeMarkRow, state.CopyModeMarkCol, state.CopyModeSnapshot, theme))
+		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, false, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, state.PaneSnapshotOverridePaneID, state.PaneSnapshotOverride, state.CopyModePaneID, state.CopyModeCursorRow, state.CopyModeCursorCol, state.CopyModeViewTopRow, state.CopyModeMarkSet, state.CopyModeMarkRow, state.CopyModeMarkCol, state.CopyModeSnapshot, theme))
 	}
 	return entries
 }
@@ -750,7 +754,7 @@ func clipRectToViewport(rect workbench.Rect, width, height int) (workbench.Rect,
 	return workbench.Rect{X: x1, Y: y1, W: x2 - x1, H: y2 - y1}, true
 }
 
-func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workbench.Rect, frameless bool, activePaneID string, scrollOffset int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, exitedPaneSelectionPaneID string, exitedPaneSelectionIndex int, exitedPaneSelectionPulse bool, copyModePaneID string, copyModeCursorRow, copyModeCursorCol, copyModeViewTopRow int, copyModeMarkSet bool, copyModeMarkRow, copyModeMarkCol int, copyModeSnapshot *protocol.Snapshot, theme uiTheme) paneRenderEntry {
+func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workbench.Rect, frameless bool, activePaneID string, scrollOffset int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, exitedPaneSelectionPaneID string, exitedPaneSelectionIndex int, exitedPaneSelectionPulse bool, paneSnapshotOverridePaneID string, paneSnapshotOverride *protocol.Snapshot, copyModePaneID string, copyModeCursorRow, copyModeCursorCol, copyModeViewTopRow int, copyModeMarkSet bool, copyModeMarkRow, copyModeMarkCol int, copyModeSnapshot *protocol.Snapshot, theme uiTheme) paneRenderEntry {
 	active := pane.ID == activePaneID
 	title := resolvePaneTitleWithLookup(pane, lookup)
 	border := paneBorderInfoWithLookup(pane, lookup, confirmPaneID)
@@ -760,6 +764,9 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 	snapshot := (*protocol.Snapshot)(nil)
 	if terminal != nil {
 		snapshot = terminal.Snapshot
+	}
+	if pane.ID == paneSnapshotOverridePaneID && paneSnapshotOverride != nil {
+		snapshot = paneSnapshotOverride
 	}
 	if copyModeActive && copyModeSnapshot != nil {
 		snapshot = copyModeSnapshot

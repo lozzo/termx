@@ -88,7 +88,8 @@ type Model struct {
 	exitedPaneSelectionPaneID string
 	exitedPaneSelectionIndex  int
 
-	copyMode copyModeState
+	copyMode       copyModeState
+	copyModeResume copyModeResumeState
 }
 
 type mouseDragMode int

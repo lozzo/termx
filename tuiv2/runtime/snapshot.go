@@ -67,6 +67,18 @@ func (r *Runtime) refreshSnapshot(terminalID string) {
 	r.invalidate()
 }
 
+func (r *Runtime) RefreshSnapshotFromVTerm(terminalID string) bool {
+	if r == nil || r.registry == nil || terminalID == "" {
+		return false
+	}
+	terminal := r.registry.Get(terminalID)
+	if terminal == nil || terminal.VTerm == nil {
+		return false
+	}
+	r.refreshSnapshot(terminalID)
+	return true
+}
+
 func loadSnapshotIntoVTerm(vt VTermLike, snap *protocol.Snapshot) {
 	if vt == nil || snap == nil {
 		return
