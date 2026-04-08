@@ -116,7 +116,7 @@ func (w *outputCursorWriter) WriteFrame(frame, cursor string) error {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	frame = w.fitFrameToTTY(frame)
+	frame = normalizeFrameForTTY(w.fitFrameToTTY(frame))
 	syncOutput := w.tty != nil
 	if syncOutput {
 		if _, err := io.WriteString(w.out, synchronizedOutputBegin); err != nil {
@@ -193,6 +193,13 @@ func truncateFrameToWidth(frame string, width int) string {
 		lines[i] = xansi.Truncate(lines[i], width, "")
 	}
 	return strings.Join(lines, "\n")
+}
+
+func normalizeFrameForTTY(frame string) string {
+	if frame == "" {
+		return frame
+	}
+	return strings.ReplaceAll(frame, "\n", "\r\n")
 }
 
 func newOutputCursorWriter(out io.Writer) *outputCursorWriter {

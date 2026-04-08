@@ -350,7 +350,7 @@ func TestOutputCursorWriterWritesDirectFrame(t *testing.T) {
 	writer := newOutputCursorWriter(sink)
 	writer.QueueControlSequenceAfterWrite("<PROBE>")
 
-	if err := writer.WriteFrame("frame", "<CURSOR>"); err != nil {
+	if err := writer.WriteFrame("frame-1\nframe-2", "<CURSOR>"); err != nil {
 		t.Fatalf("write direct frame: %v", err)
 	}
 
@@ -362,7 +362,7 @@ func TestOutputCursorWriterWritesDirectFrame(t *testing.T) {
 		synchronizedOutputBegin,
 		hideHostCursorSequence,
 		xansi.MoveCursorOrigin,
-		"frame",
+		"frame-1\r\nframe-2",
 		"<PROBE>",
 		"<CURSOR>",
 		synchronizedOutputEnd,
@@ -381,5 +381,12 @@ func TestTruncateFrameToWidthClipsEachRenderedLine(t *testing.T) {
 	frame := "123456\nabcdef"
 	if got, want := truncateFrameToWidth(frame, 4), "1234\nabcd"; got != want {
 		t.Fatalf("expected direct frame truncation to clip each line, got %q want %q", got, want)
+	}
+}
+
+func TestNormalizeFrameForTTYUsesCRLF(t *testing.T) {
+	frame := "a\nb\nc"
+	if got, want := normalizeFrameForTTY(frame), "a\r\nb\r\nc"; got != want {
+		t.Fatalf("expected direct frame output to normalize line endings, got %q want %q", got, want)
 	}
 }
