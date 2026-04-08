@@ -40,6 +40,7 @@ type composedCanvas struct {
 
 	hostEmojiVS16Mode shared.AmbiguousEmojiVariationSelectorMode
 
+	cursorPlaced  bool
 	cursorVisible bool
 	cursorX       int
 	cursorY       int
@@ -443,8 +444,11 @@ func (c *composedCanvas) contentString() string {
 }
 
 func (c *composedCanvas) cursorANSI() string {
-	if c == nil || !c.cursorVisible {
+	if c == nil || !c.cursorPlaced {
 		return hideCursorANSI()
+	}
+	if !c.cursorVisible {
+		return hostHiddenCursorANSI(c.cursorX+c.cursorOffsetX, c.cursorY+c.cursorOffsetY, c.cursorShape, c.cursorBlink)
 	}
 	return hostCursorANSI(c.cursorX+c.cursorOffsetX, c.cursorY+c.cursorOffsetY, c.cursorShape, c.cursorBlink)
 }
@@ -457,7 +461,20 @@ func hostCursorANSI(x, y int, shape string, blink bool) string {
 	if x < 0 || y < 0 {
 		return hideCursorANSI()
 	}
-	return cursorShapeANSI(shape, blink) + fmt.Sprintf("\x1b[?25h\x1b[%d;%dH", y+1, x+1)
+	return fmt.Sprintf("\x1b[%d;%dH", y+1, x+1) + cursorShapeANSI(shape, blink) + "\x1b[?25h"
+}
+
+func hostHiddenCursorANSI(x, y int, shape string, blink bool) string {
+	if x < 0 || y < 0 {
+		return hideCursorANSI()
+	}
+	// Keep the host cursor parked at the in-pane insertion point so IME/preedit
+	// UIs anchor locally, but leave it hidden to avoid host-side bleed.
+	// Match zellij's hidden-cursor path: hide first, then move the hidden host
+	// cursor into place. Hidden anchors do not need an explicit DECSCUSR shape.
+	_ = shape
+	_ = blink
+	return "\x1b[?25l" + fmt.Sprintf("\x1b[%d;%dH", y+1, x+1)
 }
 
 func cursorShapeANSI(shape string, blink bool) string {
@@ -487,14 +504,40 @@ func cursorShapeANSI(shape string, blink bool) string {
 
 func (c *composedCanvas) setCursor(x, y int, shape string, blink bool) {
 	if c == nil || x < 0 || y < 0 || x >= c.width || y >= c.height {
-		c.cursorVisible = false
+		c.clearCursor()
 		return
 	}
+	c.cursorPlaced = true
 	c.cursorVisible = true
 	c.cursorX = x
 	c.cursorY = y
 	c.cursorShape = shape
 	c.cursorBlink = blink
+}
+
+func (c *composedCanvas) setHiddenCursor(x, y int, shape string, blink bool) {
+	if c == nil || x < 0 || y < 0 || x >= c.width || y >= c.height {
+		c.clearCursor()
+		return
+	}
+	c.cursorPlaced = true
+	c.cursorVisible = false
+	c.cursorX = x
+	c.cursorY = y
+	c.cursorShape = shape
+	c.cursorBlink = blink
+}
+
+func (c *composedCanvas) clearCursor() {
+	if c == nil {
+		return
+	}
+	c.cursorPlaced = false
+	c.cursorVisible = false
+	c.cursorX = 0
+	c.cursorY = 0
+	c.cursorShape = ""
+	c.cursorBlink = false
 }
 
 func styleDiffANSI(from, to drawStyle) string {

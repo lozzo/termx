@@ -2731,7 +2731,7 @@ func e2eWaitForSharedPaneOwnerBadge(t *testing.T, ctx context.Context, client sh
 
 func e2eWaitForCursorHighlight(t *testing.T, ctx context.Context, m *Model, invalidated <-chan struct{}) {
 	t.Helper()
-	hostCursorANSI := regexp.MustCompile(`\x1b\[[0-9]+ q\x1b\[\?25h\x1b\[[0-9]+;[0-9]+H`)
+	hostCursorANSI := regexp.MustCompile(`(?:\x1b\[[0-9]+;[0-9]+H\x1b\[[0-9]+ q\x1b\[\?25h)|(?:\x1b\[\?25l\x1b\[[0-9]+;[0-9]+H)`)
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if hostCursorANSI.MatchString(m.View()) {

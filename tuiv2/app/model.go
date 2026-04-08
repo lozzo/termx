@@ -60,6 +60,7 @@ type Model struct {
 	workbench      *workbench.Workbench
 	runtime        *runtime.Runtime
 	cursorOut      cursorSequenceWriter
+	frameOut       frameSequenceWriter
 	lastViewFrame  string
 	lastViewCursor string
 
@@ -137,6 +138,13 @@ func (m *Model) SetCursorWriter(writer cursorSequenceWriter) {
 		return
 	}
 	m.cursorOut = writer
+}
+
+func (m *Model) SetFrameWriter(writer frameSequenceWriter) {
+	if m == nil {
+		return
+	}
+	m.frameOut = writer
 }
 
 // SetSendFunc wires p.Send into the model so that the runtime stream goroutine

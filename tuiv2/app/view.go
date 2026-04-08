@@ -7,6 +7,12 @@ func (m *Model) View() string {
 	m.reconcileCopyModeContext()
 	frame := m.render.RenderFrame()
 	cursor := m.render.CursorSequence()
+	if m.frameOut != nil {
+		_ = m.frameOut.WriteFrame(frame, cursor)
+		m.lastViewFrame = frame
+		m.lastViewCursor = cursor
+		return ""
+	}
 	if m.cursorOut != nil {
 		// 中文说明：Bubble Tea 的 standardRenderer.flush() 在渲染完所有行后，
 		// 总会追加 MoveCursor(linesRendered, 0) 把终端光标移到屏幕左下角。

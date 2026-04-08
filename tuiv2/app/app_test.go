@@ -24,6 +24,17 @@ import (
 	"github.com/lozzow/termx/workbenchdoc"
 )
 
+type recordingFrameWriter struct {
+	frame  string
+	cursor string
+}
+
+func (w *recordingFrameWriter) WriteFrame(frame, cursor string) error {
+	w.frame = frame
+	w.cursor = cursor
+	return nil
+}
+
 func TestModelViewShowsProjectedState(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
@@ -88,8 +99,8 @@ func TestModelViewProjectsCursorViaWriterAndEmbedsInView(t *testing.T) {
 
 	view := model.View()
 	// View still embeds cursor for BT change detection
-	if !strings.Contains(view, "\x1b[?25h") {
-		t.Fatalf("expected view content with embedded host cursor sequence, got %q", view)
+	if !strings.Contains(view, "\x1b[?25l") {
+		t.Fatalf("expected pane view content with embedded hidden host cursor sequence, got %q", view)
 	}
 	// Writer must also receive cursor for post-BT projection (IME anchor fix)
 	if writer.cursor == "" {
@@ -120,6 +131,48 @@ func TestModelViewProjectsCursorViaWriterForPromptMode(t *testing.T) {
 	// Writer must also receive cursor for post-BT projection
 	if writer.cursor == "" {
 		t.Fatalf("expected prompt mode to set cursor on writer for post-BT projection, got empty")
+	}
+}
+
+func TestModelViewWritesFrameDirectlyWhenFrameWriterConfigured(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 10, Rows: 4},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{{{Content: "h", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Row: 0, Col: 0, Visible: true, Shape: "block"},
+	}
+
+	model := New(shared.Config{}, wb, rt)
+	model.width = 100
+	model.height = 30
+	writer := &recordingFrameWriter{}
+	model.SetFrameWriter(writer)
+
+	if got := model.View(); got != "" {
+		t.Fatalf("expected direct frame mode to return an empty Bubble Tea view, got %q", got)
+	}
+	if writer.frame == "" {
+		t.Fatal("expected direct frame writer to receive a frame")
+	}
+	if writer.cursor == "" {
+		t.Fatal("expected direct frame writer to receive a cursor sequence")
 	}
 }
 
@@ -197,7 +250,7 @@ func TestModelViewUpdatesWriterCursorOnCursorMove(t *testing.T) {
 		t.Fatalf("expected writer cursor to update after cursor move")
 	}
 	// Embedded cursor should reflect the new position
-	if !strings.Contains(second, "\x1b[?25h\x1b[3;3H") {
+	if !strings.Contains(second, "\x1b[?25l\x1b[3;3H") {
 		t.Fatalf("expected embedded cursor at new position, got %q", second)
 	}
 }

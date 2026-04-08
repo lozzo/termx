@@ -2,6 +2,8 @@ package app
 
 import (
 	"io"
+	"os"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -59,9 +61,29 @@ func configureProgramOutput(model *Model, stdout io.Writer) (io.Writer, bool) {
 	return writer, true
 }
 
+func directRenderEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("TERMX_EXPERIMENTAL_DIRECT_RENDER"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
 func runWithClientOptions(cfg shared.Config, client bridge.Client, stdin io.Reader, stdout io.Writer, extraOpts ...tea.ProgramOption) error {
 	model := New(cfg, nil, runtime.New(client))
 	output, probeSupported := configureProgramOutput(model, stdout)
+	directRender := directRenderEnabled()
+	var directWriter *outputCursorWriter
+	if directRender {
+		if writer, ok := output.(*outputCursorWriter); ok && writer.tty != nil {
+			directWriter = writer
+			model.SetFrameWriter(writer)
+			model.SetCursorWriter(writer)
+		} else {
+			directRender = false
+		}
+	}
 	if model.runtime != nil {
 		if probeSupported {
 			// 中文说明：先默认走保守的 strip 模式，等宿主终端明确回报
@@ -81,8 +103,11 @@ func runWithClientOptions(cfg shared.Config, client bridge.Client, stdin io.Read
 	opts := []tea.ProgramOption{
 		tea.WithInput(nil),
 		tea.WithOutput(output),
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
+	}
+	if directRender {
+		opts = append(opts, tea.WithoutRenderer())
+	} else {
+		opts = append(opts, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	}
 	opts = append(opts, extraOpts...)
 	p := tea.NewProgram(model, opts...)
@@ -103,6 +128,12 @@ func runWithClientOptions(cfg shared.Config, client bridge.Client, stdin io.Read
 
 	if output != nil {
 		_, _ = io.WriteString(output, xansi.RequestForegroundColor+xansi.RequestBackgroundColor+requestTerminalPaletteQueries())
+	}
+	if directWriter != nil {
+		if err := directWriter.enterDirectTerminal(); err != nil {
+			return err
+		}
+		defer func() { _ = directWriter.exitDirectTerminal() }()
 	}
 
 	_, err = p.Run()

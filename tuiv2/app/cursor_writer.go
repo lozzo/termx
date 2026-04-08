@@ -19,6 +19,10 @@ type cursorSequenceWriter interface {
 	QueueControlSequenceAfterWrite(seq string)
 }
 
+type frameSequenceWriter interface {
+	WriteFrame(frame, cursor string) error
+}
+
 type outputCursorWriter struct {
 	out io.Writer
 	tty xterm.File
@@ -29,6 +33,10 @@ type outputCursorWriter struct {
 
 	bubbleTeaRestore string
 	cursorProjected  bool
+
+	directAltScreen      bool
+	directMouseCell      bool
+	directBracketedPaste bool
 }
 
 var (
@@ -36,6 +44,133 @@ var (
 	synchronizedOutputEnd   = xansi.DECRST(xansi.ModeSynchronizedOutput)
 	trailingControlSuffixRE = regexp.MustCompile(`(?:\r|\x1b\[[0-9;?]*[ -/]*[@-~])+$`)
 )
+
+const hideHostCursorSequence = "\x1b[?25l"
+
+func (w *outputCursorWriter) enterDirectTerminal() error {
+	if w == nil || w.out == nil {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.directAltScreen {
+		return nil
+	}
+	if _, err := io.WriteString(w.out, xansi.HideCursor); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w.out, xansi.EnableAltScreenBuffer); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w.out, xansi.EraseEntireDisplay+xansi.MoveCursorOrigin); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w.out, xansi.HideCursor); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w.out, xansi.EnableBracketedPaste); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w.out, xansi.EnableMouseCellMotion+xansi.EnableMouseSgrExt); err != nil {
+		return err
+	}
+	w.directAltScreen = true
+	w.directMouseCell = true
+	w.directBracketedPaste = true
+	return nil
+}
+
+func (w *outputCursorWriter) exitDirectTerminal() error {
+	if w == nil || w.out == nil {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.directBracketedPaste {
+		if _, err := io.WriteString(w.out, xansi.DisableBracketedPaste); err != nil {
+			return err
+		}
+		w.directBracketedPaste = false
+	}
+	if _, err := io.WriteString(w.out, xansi.ShowCursor); err != nil {
+		return err
+	}
+	if w.directMouseCell {
+		if _, err := io.WriteString(w.out, xansi.DisableMouseCellMotion+xansi.DisableMouseSgrExt); err != nil {
+			return err
+		}
+		w.directMouseCell = false
+	}
+	if w.directAltScreen {
+		if _, err := io.WriteString(w.out, xansi.DisableAltScreenBuffer); err != nil {
+			return err
+		}
+		w.directAltScreen = false
+	}
+	return nil
+}
+
+func (w *outputCursorWriter) WriteFrame(frame, cursor string) error {
+	if w == nil || w.out == nil {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	syncOutput := w.tty != nil
+	if syncOutput {
+		if _, err := io.WriteString(w.out, synchronizedOutputBegin); err != nil {
+			return err
+		}
+	}
+	if _, err := io.WriteString(w.out, hideHostCursorSequence); err != nil {
+		if syncOutput {
+			_, _ = io.WriteString(w.out, synchronizedOutputEnd)
+		}
+		return err
+	}
+	if _, err := io.WriteString(w.out, xansi.MoveCursorOrigin); err != nil {
+		if syncOutput {
+			_, _ = io.WriteString(w.out, synchronizedOutputEnd)
+		}
+		return err
+	}
+	if _, err := io.WriteString(w.out, frame); err != nil {
+		if syncOutput {
+			_, _ = io.WriteString(w.out, synchronizedOutputEnd)
+		}
+		return err
+	}
+	afterWrite := append([]string(nil), w.afterWrite...)
+	w.afterWrite = nil
+	for _, seq := range afterWrite {
+		if seq == "" {
+			continue
+		}
+		if _, err := io.WriteString(w.out, seq); err != nil {
+			if syncOutput {
+				_, _ = io.WriteString(w.out, synchronizedOutputEnd)
+			}
+			return err
+		}
+	}
+	if cursor == "" {
+		cursor = hideHostCursorSequence
+	}
+	if _, err := io.WriteString(w.out, cursor); err != nil {
+		if syncOutput {
+			_, _ = io.WriteString(w.out, synchronizedOutputEnd)
+		}
+		return err
+	}
+	w.bubbleTeaRestore = ""
+	w.cursorProjected = false
+	if syncOutput {
+		if _, err := io.WriteString(w.out, synchronizedOutputEnd); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 func newOutputCursorWriter(out io.Writer) *outputCursorWriter {
 	if out == nil {
@@ -98,18 +233,30 @@ func (w *outputCursorWriter) Write(p []byte) (int, error) {
 		}
 		w.cursorProjected = false
 	}
-	n, err := w.out.Write(p)
+	cursor := w.cursor
+	payload := string(p)
+	if cursor != "" {
+		payload = stripEmbeddedCursorSequence(payload, cursor)
+	}
+	if cursor != "" {
+		if _, err := io.WriteString(w.out, hideHostCursorSequence); err != nil {
+			if syncOutput {
+				_, _ = io.WriteString(w.out, synchronizedOutputEnd)
+			}
+			return 0, err
+		}
+	}
+	n, err := io.WriteString(w.out, payload)
 	if err != nil {
 		if syncOutput {
 			_, _ = io.WriteString(w.out, synchronizedOutputEnd)
 		}
 		return n, err
 	}
-	cursor := w.cursor
 	afterWrite := append([]string(nil), w.afterWrite...)
 	w.afterWrite = nil
 	if frameLike {
-		w.bubbleTeaRestore = bubbleTeaRestoreSequence(p)
+		w.bubbleTeaRestore = bubbleTeaRestoreSequence([]byte(payload))
 	}
 	for _, seq := range afterWrite {
 		if seq == "" {
@@ -136,10 +283,10 @@ func (w *outputCursorWriter) Write(p []byte) (int, error) {
 	w.cursorProjected = w.bubbleTeaRestore != ""
 	if syncOutput {
 		if _, err := io.WriteString(w.out, synchronizedOutputEnd); err != nil {
-			return n, err
+			return len(p), err
 		}
 	}
-	return n, nil
+	return len(p), nil
 }
 
 func (w *outputCursorWriter) Read(p []byte) (int, error) {
@@ -174,4 +321,16 @@ func bubbleTeaRestoreSequence(p []byte) string {
 		return ""
 	}
 	return trailingControlSuffixRE.FindString(string(p))
+}
+
+func stripEmbeddedCursorSequence(payload, cursor string) string {
+	if payload == "" || cursor == "" {
+		return payload
+	}
+	trailing := bubbleTeaRestoreSequence([]byte(payload))
+	body := strings.TrimSuffix(payload, trailing)
+	if !strings.HasSuffix(body, cursor) {
+		return payload
+	}
+	return strings.TrimSuffix(body, cursor) + trailing
 }

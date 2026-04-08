@@ -7,6 +7,7 @@ import (
 
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -406,11 +407,11 @@ func TestRenderFrameProjectsHostCursorForActiveShellPane(t *testing.T) {
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
 	frame := coordinator.RenderFrame()
 
-	if !strings.Contains(coordinator.CursorSequence(), "\x1b[?25h\x1b[3;2H") {
-		t.Fatalf("expected shell pane to project host cursor into pane content, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
+	if got, want := coordinator.CursorSequence(), hostHiddenCursorANSI(1, 2, "", false); got != want {
+		t.Fatalf("expected shell pane to keep a hidden host cursor parked in-pane, got frame=%q cursor=%q want=%q", frame, got, want)
 	}
-	if strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+"h") {
-		t.Fatalf("expected shell pane content to stay unmodified when using host cursor, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
+	if !strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+"h") {
+		t.Fatalf("expected shell pane content to show a synthetic cursor highlight, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
 	}
 }
 
@@ -444,11 +445,8 @@ func TestRenderFrameHidesHostCursorWhenActivePaneCursorInvisible(t *testing.T) {
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
 	frame := coordinator.RenderFrame()
 
-	if !strings.Contains(coordinator.CursorSequence(), "\x1b[?25l") {
-		t.Fatalf("expected host cursor hide escape, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
-	}
-	if strings.Contains(coordinator.CursorSequence(), "\x1b[?25h") {
-		t.Fatalf("expected no host cursor show escape when terminal cursor is invisible, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
+	if got, want := coordinator.CursorSequence(), hostHiddenCursorANSI(1, 2, "", false); got != want {
+		t.Fatalf("expected hidden active pane cursor to keep the host cursor parked in-pane, got frame=%q cursor=%q want=%q", frame, got, want)
 	}
 }
 
@@ -484,11 +482,11 @@ func TestRenderFrameProjectsHostCursorForAlternateScreenPane(t *testing.T) {
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
 	frame := coordinator.RenderFrame()
 
-	if !strings.Contains(coordinator.CursorSequence(), "\x1b[?25h\x1b[3;2H") {
-		t.Fatalf("expected alternate-screen pane to project host cursor into pane content, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
+	if got, want := coordinator.CursorSequence(), hostHiddenCursorANSI(1, 2, "", false); got != want {
+		t.Fatalf("expected alternate-screen pane to keep a hidden host cursor parked in-pane, got frame=%q cursor=%q want=%q", frame, got, want)
 	}
-	if strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+"h") {
-		t.Fatalf("expected alternate-screen pane content to stay unmodified when using host cursor, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
+	if !strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+"h") {
+		t.Fatalf("expected alternate-screen pane content to show a synthetic cursor highlight, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
 	}
 }
 
@@ -617,11 +615,231 @@ func TestRenderFrameProjectsHostCursorOntoBlankShellCell(t *testing.T) {
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
 	frame := coordinator.RenderFrame()
-	if !strings.Contains(coordinator.CursorSequence(), "\x1b[?25h\x1b[3;3H") {
-		t.Fatalf("expected blank shell cursor to move host cursor onto the blank cell, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
+	if got, want := coordinator.CursorSequence(), hostHiddenCursorANSI(2, 2, "block", false); got != want {
+		t.Fatalf("expected blank shell cursor to keep a hidden host cursor on the blank cell, got frame=%q cursor=%q want=%q", frame, got, want)
 	}
-	if strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+" ") {
-		t.Fatalf("expected blank shell cursor to avoid synthetic highlight, got %q", frame)
+	if !strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+" ") {
+		t.Fatalf("expected blank shell cursor to render a synthetic highlight, got %q", frame)
+	}
+}
+
+func TestRenderFrameProjectsHostCursorForLeftSplitPane(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "left", TerminalID: "term-1"},
+				"pane-2": {ID: "pane-2", Title: "right", TerminalID: "term-2"},
+			},
+			Root: &workbench.LayoutNode{
+				Direction: workbench.SplitVertical,
+				Ratio:     0.5,
+				First:     workbench.NewLeaf("pane-1"),
+				Second:    workbench.NewLeaf("pane-2"),
+			},
+		}},
+	})
+
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 20, Rows: 4},
+		Screen: protocol.ScreenData{
+			IsAlternateScreen: true,
+			Cells:             [][]protocol.Cell{{{Content: "$", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Row: 0, Col: 1, Visible: true, Shape: "block"},
+		Modes:  protocol.TerminalModes{AlternateScreen: true, BracketedPaste: true, MouseTracking: true},
+	}
+	rt.Registry().GetOrCreate("term-2").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-2",
+		Size:       protocol.Size{Cols: 20, Rows: 4},
+		Screen: protocol.ScreenData{
+			IsAlternateScreen: true,
+			Cells:             [][]protocol.Cell{{{Content: "R", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Visible: false},
+		Modes:  protocol.TerminalModes{AlternateScreen: true, BracketedPaste: true, MouseTracking: true},
+	}
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 40, 4), 40, 6)
+	entries := paneEntriesForTab(
+		state.Workbench.Tabs[state.Workbench.ActiveTab],
+		state.Workbench.FloatingPanes,
+		40, 4,
+		newRuntimeLookup(state.Runtime),
+		"", "", -1, "", -1, true, state, uiThemeForRuntime(state.Runtime),
+	)
+	target, ok := activeEntryCursorRenderTarget(entries, state.Runtime)
+	if !ok {
+		t.Fatal("expected active cursor render target")
+	}
+	if !target.Visible {
+		t.Fatalf("expected left split pane cursor target to remain visible, got %#v", target)
+	}
+
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+	frame := coordinator.RenderFrame()
+	if got, want := coordinator.CursorSequence(), hostHiddenCursorANSI(target.X, target.Y+TopChromeRows, target.Shape, target.Blink); got != want {
+		t.Fatalf("expected left split pane to keep a hidden host cursor parked in-pane, got %q want %q", got, want)
+	}
+	if !strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+" ") {
+		t.Fatalf("expected left split pane to render a synthetic cursor highlight, got %q", frame)
+	}
+}
+
+func TestRenderFrameKeepsHostCursorForRightmostSplitPane(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-2",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "left", TerminalID: "term-1"},
+				"pane-2": {ID: "pane-2", Title: "right", TerminalID: "term-2"},
+			},
+			Root: &workbench.LayoutNode{
+				Direction: workbench.SplitVertical,
+				Ratio:     0.5,
+				First:     workbench.NewLeaf("pane-1"),
+				Second:    workbench.NewLeaf("pane-2"),
+			},
+		}},
+	})
+
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 20, Rows: 4},
+		Screen: protocol.ScreenData{
+			IsAlternateScreen: true,
+			Cells:             [][]protocol.Cell{{{Content: "L", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Visible: false},
+		Modes:  protocol.TerminalModes{AlternateScreen: true, BracketedPaste: true, MouseTracking: true},
+	}
+	rt.Registry().GetOrCreate("term-2").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-2",
+		Size:       protocol.Size{Cols: 20, Rows: 4},
+		Screen: protocol.ScreenData{
+			IsAlternateScreen: true,
+			Cells:             [][]protocol.Cell{{{Content: "$", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Row: 0, Col: 1, Visible: true, Shape: "block"},
+		Modes:  protocol.TerminalModes{AlternateScreen: true, BracketedPaste: true, MouseTracking: true},
+	}
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 40, 4), 40, 6)
+	entries := paneEntriesForTab(
+		state.Workbench.Tabs[state.Workbench.ActiveTab],
+		state.Workbench.FloatingPanes,
+		40, 4,
+		newRuntimeLookup(state.Runtime),
+		"", "", -1, "", -1, true, state, uiThemeForRuntime(state.Runtime),
+	)
+	target, ok := activeEntryCursorRenderTarget(entries, state.Runtime)
+	if !ok {
+		t.Fatal("expected active cursor render target")
+	}
+	if !target.Visible {
+		t.Fatalf("expected right split pane cursor target to remain visible, got %#v", target)
+	}
+
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+	_ = coordinator.RenderFrame()
+	if got, want := coordinator.CursorSequence(), hostHiddenCursorANSI(target.X, target.Y+TopChromeRows, target.Shape, target.Blink); got != want {
+		t.Fatalf("expected rightmost split pane to keep a hidden host cursor parked in-pane, got %q want %q", got, want)
+	}
+}
+
+func TestRenderFrameRestoresSplitPaneHostCursorAfterOverlayBlinkOff(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "left", TerminalID: "term-1"},
+				"pane-2": {ID: "pane-2", Title: "right", TerminalID: "term-2"},
+			},
+			Root: &workbench.LayoutNode{
+				Direction: workbench.SplitVertical,
+				Ratio:     0.5,
+				First:     workbench.NewLeaf("pane-1"),
+				Second:    workbench.NewLeaf("pane-2"),
+			},
+		}},
+	})
+
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 20, Rows: 4},
+		Screen: protocol.ScreenData{
+			IsAlternateScreen: true,
+			Cells:             [][]protocol.Cell{{{Content: "$", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Row: 0, Col: 1, Visible: true, Shape: "block"},
+		Modes:  protocol.TerminalModes{AlternateScreen: true, BracketedPaste: true, MouseTracking: true},
+	}
+	rt.Registry().GetOrCreate("term-2").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-2",
+		Size:       protocol.Size{Cols: 20, Rows: 4},
+		Screen: protocol.ScreenData{
+			IsAlternateScreen: true,
+			Cells:             [][]protocol.Cell{{{Content: "R", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Visible: false},
+		Modes:  protocol.TerminalModes{AlternateScreen: true, BracketedPaste: true, MouseTracking: true},
+	}
+
+	base := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 40, 4), 40, 6)
+	state := WithOverlayPicker(base, &modal.PickerState{
+		Items:     []modal.PickerItem{{TerminalID: "term-1", Name: "demo"}},
+		Query:     "demo",
+		Cursor:    2,
+		CursorSet: true,
+	})
+
+	entries := paneEntriesForTab(
+		base.Workbench.Tabs[base.Workbench.ActiveTab],
+		base.Workbench.FloatingPanes,
+		40, 4,
+		newRuntimeLookup(base.Runtime),
+		"", "", -1, "", -1, true, base, uiThemeForRuntime(base.Runtime),
+	)
+	target, ok := activeEntryCursorRenderTarget(entries, base.Runtime)
+	if !ok {
+		t.Fatal("expected active cursor render target")
+	}
+	if !target.Visible {
+		t.Fatalf("expected left split pane cursor target to remain visible, got %#v", target)
+	}
+
+	current := state
+	coordinator := NewCoordinator(func() VisibleRenderState { return current })
+	_ = coordinator.RenderFrame()
+	coordinator.AdvanceCursorBlink()
+	_ = coordinator.RenderFrame()
+
+	current = base
+	frame := coordinator.RenderFrame()
+	if !strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+" ") {
+		t.Fatalf("expected split pane to restore the synthetic cursor highlight after overlay close, got %q", frame)
+	}
+	if got, want := coordinator.CursorSequence(), hostHiddenCursorANSI(target.X, target.Y+TopChromeRows, target.Shape, target.Blink); got != want {
+		t.Fatalf("expected overlay close to restore the split pane hidden host cursor anchor, got %q want %q", got, want)
 	}
 }
 
@@ -654,11 +872,11 @@ func TestRenderFrameProjectsHostCursorOntoTextCellWithDefaultColors(t *testing.T
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
 	frame := coordinator.RenderFrame()
-	if !strings.Contains(coordinator.CursorSequence(), "\x1b[?25h\x1b[3;2H") {
-		t.Fatalf("expected text cursor to move host cursor onto the text cell, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
+	if got, want := coordinator.CursorSequence(), hostHiddenCursorANSI(1, 2, "block", false); got != want {
+		t.Fatalf("expected text cursor to keep a hidden host cursor on the text cell, got frame=%q cursor=%q want=%q", frame, got, want)
 	}
-	if strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+"h") {
-		t.Fatalf("expected text cursor to avoid synthetic highlight, got %q", frame)
+	if !strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+"h") {
+		t.Fatalf("expected text cursor to render a synthetic highlight, got %q", frame)
 	}
 }
 
@@ -717,8 +935,8 @@ func TestRenderFrameKeepsHostCursorVisibleWithoutTicks(t *testing.T) {
 	if coordinator.AdvanceCursorBlink() {
 		t.Fatal("expected steady host cursor to avoid render-driven blink ticks")
 	}
-	if got := coordinator.CursorSequence(); !strings.Contains(got, "\x1b[?25h\x1b[3;2H") {
-		t.Fatalf("expected steady host cursor to remain projected, got %q", got)
+	if got, want := coordinator.CursorSequence(), hostHiddenCursorANSI(1, 2, "block", true); !strings.Contains(got, want) {
+		t.Fatalf("expected steady hidden host cursor anchor to remain projected, got %q", got)
 	}
 }
 
@@ -946,7 +1164,7 @@ func TestRenderFrameUsesRenderedEntrySnapshotForHostCursorProjection(t *testing.
 
 	// Cursor must follow the actual snapshot rendered in this frame (override row=1),
 	// not the stale runtime snapshot cursor (row=0).
-	if got := coordinator.CursorSequence(); !strings.Contains(got, "\x1b[?25h\x1b[4;2H") {
+	if got, want := coordinator.CursorSequence(), hostHiddenCursorANSI(1, 3, "", false); !strings.Contains(got, want) {
 		t.Fatalf("expected host cursor projection to follow rendered entry snapshot row, got %q", got)
 	}
 }
@@ -991,7 +1209,7 @@ func TestRenderFramePrefersVisualCursorCellWhenAlternateScreenCursorStuckAtTop(t
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
 	_ = coordinator.RenderFrame()
 
-	if got := coordinator.CursorSequence(); !strings.Contains(got, "\x1b[?25h\x1b[5;3H") {
+	if got, want := coordinator.CursorSequence(), hostHiddenCursorANSI(2, 4, "block", false); !strings.Contains(got, want) {
 		t.Fatalf("expected visual cursor fallback at bottom input row, got %q", got)
 	}
 }
@@ -1036,7 +1254,7 @@ func TestRenderFrameIgnoresLongBottomHighlightWhenChoosingVisualCursorFallback(t
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
 	_ = coordinator.RenderFrame()
 
-	if got := coordinator.CursorSequence(); !strings.Contains(got, "\x1b[?25h\x1b[3;3H") {
+	if got, want := coordinator.CursorSequence(), hostHiddenCursorANSI(2, 2, "block", false); !strings.Contains(got, want) {
 		t.Fatalf("expected regular snapshot cursor to win when bottom highlight spans multiple cells, got %q", got)
 	}
 }

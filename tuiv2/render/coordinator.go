@@ -330,13 +330,11 @@ func (c *Coordinator) AdvanceCursorBlink() bool {
 	return true
 }
 
-func (c *Coordinator) syntheticCursorVisible(cursor protocol.CursorState) bool {
-	if c == nil {
-		return true
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.cursorBlinkVisible
+func (c *Coordinator) syntheticCursorVisible(_ protocol.CursorState) bool {
+	_ = c
+	// Pane-local synthetic cursors stay steady. Reusing overlay blink state here
+	// leaves them stranded in the hidden phase after overlays close.
+	return true
 }
 
 func (c *Coordinator) renderTabBarCached(state VisibleRenderState) string {
@@ -661,7 +659,7 @@ func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entrie
 
 	if !entriesOverlap(entries) {
 		changed := false
-		cache.canvas.cursorVisible = false
+		cache.canvas.clearCursor()
 		for _, entry := range entries {
 			frameChanged := false
 			if cache.frameKeys[entry.PaneID] != entry.FrameKey {
@@ -1457,7 +1455,6 @@ func drawSyntheticCursor(canvas *composedCanvas, x, y int, cursor protocol.Curso
 	if canvas == nil || y < 0 || y >= canvas.height || x < 0 || x >= canvas.width {
 		return
 	}
-	canvas.syntheticCursorBlink = true
 	if canvas.syntheticCursorVisibleFn != nil && !canvas.syntheticCursorVisibleFn(cursor) {
 		return
 	}
@@ -2282,16 +2279,25 @@ func projectActiveEntryCursor(canvas *composedCanvas, entries []paneRenderEntry,
 	if canvas == nil {
 		return
 	}
-	canvas.cursorVisible = false
+	canvas.clearCursor()
 	canvas.syntheticCursorBlink = false
-	target, ok := activeEntryCursorTarget(entries, runtimeState)
+	target, ok := activeEntryCursorRenderTarget(entries, runtimeState)
 	if !ok {
 		return
 	}
-	// 中文说明：输入法候选框跟的是宿主终端真实光标，不是画布里反白出来的假光标。
-	// 活动 pane 在最终合成完成后再统一投射 host cursor，候选框位置才能和终端
-	// 程序看到的输入光标保持一致。
-	canvas.setCursor(target.X, target.Y, target.Shape, target.Blink)
+	// 中文说明：活动 pane 采用“双光标”策略：
+	// 1. 宿主光标始终 hidden + positioned，用来给 IME/preedit 提供正确锚点；
+	// 2. pane 内真正可见的光标由合成画布里的 synthetic cursor 承担，避免宿主侧
+	//    的整行高亮/预编辑背景越过 pane 边界。
+	canvas.setHiddenCursor(target.X, target.Y, target.Shape, target.Blink)
+	if !target.Visible {
+		return
+	}
+	drawSyntheticCursor(canvas, target.X, target.Y, protocol.CursorState{
+		Visible: true,
+		Shape:   target.Shape,
+		Blink:   target.Blink,
+	})
 }
 
 type cursorProjectionTarget struct {
@@ -2301,7 +2307,12 @@ type cursorProjectionTarget struct {
 	Blink bool
 }
 
-func activeEntryCursorTarget(entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) (cursorProjectionTarget, bool) {
+type cursorRenderTarget struct {
+	cursorProjectionTarget
+	Visible bool
+}
+
+func activeEntryCursorRenderTarget(entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) (cursorRenderTarget, bool) {
 	for i, entry := range entries {
 		if !entry.Active {
 			continue
@@ -2314,30 +2325,58 @@ func activeEntryCursorTarget(entries []paneRenderEntry, runtimeState *VisibleRun
 			}
 		}
 		if snapshot == nil {
-			return cursorProjectionTarget{}, false
+			return cursorRenderTarget{}, false
 		}
 		rect := contentRectForEntry(entry)
-		if entry.CopyModeActive || entry.ScrollOffset > 0 || activeCursorOccluded(entries, i, rect, snapshot) {
-			return cursorProjectionTarget{}, false
+		if entry.CopyModeActive || entry.ScrollOffset > 0 {
+			return cursorRenderTarget{}, false
 		}
-		snapshotTarget, snapshotOK := snapshotCursorProjectionTarget(rect, snapshot)
-		fallbackTarget, fallbackOK := visualCursorProjectionTarget(rect, snapshot)
-		switch {
-		case snapshotOK && shouldPreferVisualCursorTarget(snapshot, snapshotTarget, fallbackTarget, fallbackOK):
-			return fallbackTarget, true
-		case snapshotOK:
-			return snapshotTarget, true
-		case fallbackOK:
-			return fallbackTarget, true
-		default:
-			return cursorProjectionTarget{}, false
+		target, ok := entryCursorRenderTarget(rect, snapshot)
+		if !ok {
+			return cursorRenderTarget{}, false
 		}
+		if activeCursorOccluded(entries, i, target.cursorProjectionTarget) {
+			return cursorRenderTarget{}, false
+		}
+		return target, true
 	}
-	return cursorProjectionTarget{}, false
+	return cursorRenderTarget{}, false
+}
+
+func activeEntryCursorTarget(entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) (cursorProjectionTarget, bool) {
+	target, ok := activeEntryCursorRenderTarget(entries, runtimeState)
+	if !ok {
+		return cursorProjectionTarget{}, false
+	}
+	return target.cursorProjectionTarget, true
+}
+
+func entryCursorRenderTarget(rect workbench.Rect, snapshot *protocol.Snapshot) (cursorRenderTarget, bool) {
+	snapshotTarget, snapshotOK := snapshotCursorProjectionTarget(rect, snapshot)
+	fallbackTarget, fallbackOK := visualCursorProjectionTarget(rect, snapshot)
+	switch {
+	case snapshotOK && shouldPreferVisualCursorTarget(snapshot, snapshotTarget, fallbackTarget, fallbackOK):
+		return cursorRenderTarget{
+			cursorProjectionTarget: fallbackTarget,
+			Visible:                snapshot.Cursor.Visible,
+		}, true
+	case snapshotOK:
+		return cursorRenderTarget{
+			cursorProjectionTarget: snapshotTarget,
+			Visible:                snapshot.Cursor.Visible,
+		}, true
+	case fallbackOK:
+		return cursorRenderTarget{
+			cursorProjectionTarget: fallbackTarget,
+			Visible:                snapshot != nil && snapshot.Cursor.Visible,
+		}, true
+	default:
+		return cursorRenderTarget{}, false
+	}
 }
 
 func snapshotCursorProjectionTarget(rect workbench.Rect, snapshot *protocol.Snapshot) (cursorProjectionTarget, bool) {
-	if snapshot == nil || !snapshot.Cursor.Visible {
+	if snapshot == nil {
 		return cursorProjectionTarget{}, false
 	}
 	cursorX := rect.X + snapshot.Cursor.Col
@@ -2454,16 +2493,14 @@ func sameCellStyle(a, b protocol.CellStyle) bool {
 		a.Strikethrough == b.Strikethrough
 }
 
-func activeCursorOccluded(entries []paneRenderEntry, activeIdx int, rect workbench.Rect, snapshot *protocol.Snapshot) bool {
-	if activeIdx < 0 || activeIdx >= len(entries) || snapshot == nil || !snapshot.Cursor.Visible {
+func activeCursorOccluded(entries []paneRenderEntry, activeIdx int, target cursorProjectionTarget) bool {
+	if activeIdx < 0 || activeIdx >= len(entries) {
 		return false
 	}
-	cursorX := rect.X + snapshot.Cursor.Col
-	cursorY := rect.Y + snapshot.Cursor.Row
 	for i := activeIdx + 1; i < len(entries); i++ {
 		entryRect := entries[i].Rect
-		if cursorX >= entryRect.X && cursorX < entryRect.X+entryRect.W &&
-			cursorY >= entryRect.Y && cursorY < entryRect.Y+entryRect.H {
+		if target.X >= entryRect.X && target.X < entryRect.X+entryRect.W &&
+			target.Y >= entryRect.Y && target.Y < entryRect.Y+entryRect.H {
 			return true
 		}
 	}

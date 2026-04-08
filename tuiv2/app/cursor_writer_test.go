@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	xansi "github.com/charmbracelet/x/ansi"
 )
 
 type cursorWriterProbeModel struct {
@@ -150,9 +151,11 @@ func TestOutputCursorWriterRestoresBubbleTeaCursorBeforeNextFrame(t *testing.T) 
 	sink.mu.Unlock()
 
 	want := []string{
+		hideHostCursorSequence,
 		"frame-1" + anchor,
 		"<CURSOR>",
 		anchor,
+		hideHostCursorSequence,
 		"frame-2",
 		"<CURSOR>",
 	}
@@ -184,9 +187,11 @@ func TestOutputCursorWriterRestoresBubbleTeaCursorBeforeControlWrites(t *testing
 	sink.mu.Unlock()
 
 	want := []string{
+		hideHostCursorSequence,
 		"frame-1" + anchor,
 		"<CURSOR>",
 		anchor,
+		hideHostCursorSequence,
 		"\x1b[2K",
 		"<CURSOR>",
 	}
@@ -221,12 +226,15 @@ func TestOutputCursorWriterRestoresBubbleTeaCursorBeforeFrameAfterControlWrite(t
 	sink.mu.Unlock()
 
 	want := []string{
+		hideHostCursorSequence,
 		"frame-1" + anchor,
 		"<CURSOR>",
 		anchor,
+		hideHostCursorSequence,
 		"\x1b[2K",
 		"<CURSOR>",
 		anchor,
+		hideHostCursorSequence,
 		"frame-2",
 		"<CURSOR>",
 	}
@@ -256,6 +264,7 @@ func TestOutputCursorWriterWrapsTTYWritesWithSynchronizedOutput(t *testing.T) {
 
 	want := []string{
 		synchronizedOutputBegin,
+		hideHostCursorSequence,
 		"frame",
 		"<PROBE>",
 		"<CURSOR>",
@@ -263,6 +272,103 @@ func TestOutputCursorWriterWrapsTTYWritesWithSynchronizedOutput(t *testing.T) {
 	}
 	if len(writes) != len(want) {
 		t.Fatalf("expected synchronized frame write sequence %#v, got %#v", want, writes)
+	}
+	for i := range want {
+		if writes[i] != want[i] {
+			t.Fatalf("unexpected write %d: got %q want %q; full=%#v", i, writes[i], want[i], writes)
+		}
+	}
+}
+
+func TestOutputCursorWriterStripsEmbeddedCursorFromFramePayload(t *testing.T) {
+	sink := &cursorWriterProbeSink{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetCursorSequence("<CURSOR>")
+
+	if _, err := writer.Write([]byte("frame<CURSOR>\x1b[;5H")); err != nil {
+		t.Fatalf("write frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	writes := append([]string(nil), sink.writes...)
+	sink.mu.Unlock()
+
+	want := []string{
+		hideHostCursorSequence,
+		"frame\x1b[;5H",
+		"<CURSOR>",
+	}
+	if len(writes) != len(want) {
+		t.Fatalf("expected stripped embedded-cursor write sequence %#v, got %#v", want, writes)
+	}
+	for i := range want {
+		if writes[i] != want[i] {
+			t.Fatalf("unexpected write %d: got %q want %q; full=%#v", i, writes[i], want[i], writes)
+		}
+	}
+}
+
+func TestOutputCursorWriterEnterAndExitDirectTerminal(t *testing.T) {
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+
+	if err := writer.enterDirectTerminal(); err != nil {
+		t.Fatalf("enter direct terminal: %v", err)
+	}
+	if err := writer.exitDirectTerminal(); err != nil {
+		t.Fatalf("exit direct terminal: %v", err)
+	}
+
+	sink.mu.Lock()
+	writes := append([]string(nil), sink.writes...)
+	sink.mu.Unlock()
+
+	want := []string{
+		xansi.HideCursor,
+		xansi.EnableAltScreenBuffer,
+		xansi.EraseEntireDisplay + xansi.MoveCursorOrigin,
+		xansi.HideCursor,
+		xansi.EnableBracketedPaste,
+		xansi.EnableMouseCellMotion + xansi.EnableMouseSgrExt,
+		xansi.DisableBracketedPaste,
+		xansi.ShowCursor,
+		xansi.DisableMouseCellMotion + xansi.DisableMouseSgrExt,
+		xansi.DisableAltScreenBuffer,
+	}
+	if len(writes) != len(want) {
+		t.Fatalf("expected direct terminal lifecycle writes %#v, got %#v", want, writes)
+	}
+	for i := range want {
+		if writes[i] != want[i] {
+			t.Fatalf("unexpected write %d: got %q want %q; full=%#v", i, writes[i], want[i], writes)
+		}
+	}
+}
+
+func TestOutputCursorWriterWritesDirectFrame(t *testing.T) {
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.QueueControlSequenceAfterWrite("<PROBE>")
+
+	if err := writer.WriteFrame("frame", "<CURSOR>"); err != nil {
+		t.Fatalf("write direct frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	writes := append([]string(nil), sink.writes...)
+	sink.mu.Unlock()
+
+	want := []string{
+		synchronizedOutputBegin,
+		hideHostCursorSequence,
+		xansi.MoveCursorOrigin,
+		"frame",
+		"<PROBE>",
+		"<CURSOR>",
+		synchronizedOutputEnd,
+	}
+	if len(writes) != len(want) {
+		t.Fatalf("expected direct frame write sequence %#v, got %#v", want, writes)
 	}
 	for i := range want {
 		if writes[i] != want[i] {
