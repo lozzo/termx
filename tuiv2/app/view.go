@@ -1,19 +1,5 @@
 package app
 
-import "github.com/lozzow/termx/tuiv2/input"
-
-func (m *Model) shouldInlineCursorProjection() bool {
-	if m == nil {
-		return false
-	}
-	switch m.mode().Kind {
-	case input.ModePrompt, input.ModePicker, input.ModeWorkspacePicker, input.ModeTerminalManager:
-		return true
-	default:
-		return false
-	}
-}
-
 func (m *Model) View() string {
 	if m == nil || m.render == nil {
 		return ""
@@ -21,21 +7,13 @@ func (m *Model) View() string {
 	m.reconcileCopyModeContext()
 	frame := m.render.RenderFrame()
 	cursor := m.render.CursorSequence()
-	inlineCursor := m.shouldInlineCursorProjection()
 	if m.cursorOut != nil {
-		if inlineCursor {
-			m.cursorOut.SetCursorSequence("")
-			m.lastViewFrame = frame
-			m.lastViewCursor = cursor
-			return frame + cursor
-		}
-		m.cursorOut.SetCursorSequence(cursor)
-		if m.lastViewFrame == frame && m.lastViewCursor != "" && m.lastViewCursor != cursor {
-			_ = m.cursorOut.WriteControlSequence(cursor)
-		}
+		// 中文说明：把 host cursor 直接并入最终 View 输出，避免 pane 场景下
+		// 光标单独走旁路写入，导致输入法预编辑文本和候选框锚到错误位置。
+		m.cursorOut.SetCursorSequence("")
 		m.lastViewFrame = frame
 		m.lastViewCursor = cursor
-		return frame
+		return frame + cursor
 	}
 	m.lastViewFrame = frame
 	m.lastViewCursor = cursor

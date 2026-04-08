@@ -55,7 +55,7 @@ func TestModelViewShowsProjectedState(t *testing.T) {
 	}
 }
 
-func TestModelViewDelegatesCursorSequenceToWriter(t *testing.T) {
+func TestModelViewKeepsCursorInlineEvenWithWriter(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -87,11 +87,11 @@ func TestModelViewDelegatesCursorSequenceToWriter(t *testing.T) {
 	model.SetCursorWriter(writer)
 
 	view := model.View()
-	if strings.Contains(view, "\x1b[?25h") {
-		t.Fatalf("expected view content without embedded host cursor sequence, got %q", view)
+	if !strings.Contains(view, "\x1b[?25h") {
+		t.Fatalf("expected view content with embedded host cursor sequence, got %q", view)
 	}
-	if !strings.Contains(writer.cursor, "\x1b[?25h") {
-		t.Fatalf("expected cursor writer to receive host cursor sequence, got %q", writer.cursor)
+	if writer.cursor != "" {
+		t.Fatalf("expected split cursor writer projection to stay disabled, got %q", writer.cursor)
 	}
 }
 
@@ -143,7 +143,7 @@ func TestModelInitBootstrapsDefaultWorkspace(t *testing.T) {
 	}
 }
 
-func TestModelViewProjectsCursorWhenFrameDoesNotChange(t *testing.T) {
+func TestModelViewKeepsCursorInlineWhenFrameDoesNotChange(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -183,14 +183,17 @@ func TestModelViewProjectsCursorWhenFrameDoesNotChange(t *testing.T) {
 	model.render.Invalidate()
 
 	second := model.View()
-	if first != second {
-		t.Fatalf("expected cursor-only move to keep frame content stable, got first=%q second=%q", first, second)
+	if first == second {
+		t.Fatalf("expected cursor-only move to update the embedded cursor sequence, got first=%q second=%q", first, second)
 	}
-	if got := len(writer.controls); got != 1 {
-		t.Fatalf("expected one direct cursor projection when frame stays unchanged, got %#v", writer.controls)
+	if got := len(writer.controls); got != 0 {
+		t.Fatalf("expected no direct cursor projection when frame stays unchanged, got %#v", writer.controls)
 	}
-	if got := writer.controls[0]; !strings.Contains(got, "\x1b[?25h\x1b[3;3H") {
-		t.Fatalf("expected direct cursor projection onto the moved blank cell, got %q", got)
+	if !strings.Contains(second, "\x1b[?25h\x1b[3;3H") {
+		t.Fatalf("expected embedded cursor projection onto the moved blank cell, got %q", second)
+	}
+	if writer.cursor != "" {
+		t.Fatalf("expected split cursor writer projection to remain disabled, got %q", writer.cursor)
 	}
 }
 
