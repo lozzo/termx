@@ -376,3 +376,10 @@ func TestOutputCursorWriterWritesDirectFrame(t *testing.T) {
 		}
 	}
 }
+
+func TestTruncateFrameToWidthClipsEachRenderedLine(t *testing.T) {
+	frame := "123456\nabcdef"
+	if got, want := truncateFrameToWidth(frame, 4), "1234\nabcd"; got != want {
+		t.Fatalf("expected direct frame truncation to clip each line, got %q want %q", got, want)
+	}
+}

@@ -2,8 +2,6 @@ package app
 
 import (
 	"io"
-	"os"
-	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -56,33 +54,22 @@ func configureProgramOutput(model *Model, stdout io.Writer) (io.Writer, bool) {
 		return stdout, false
 	}
 	if model != nil {
+		// 中文说明：TTY 上默认走 termx 自己的整帧输出路径，不再把最终帧交给
+		// Bubble Tea 的 standardRenderer。后者会额外做逐行 diff / truncate /
+		// clear / cursor move，这会和 termx 自己的 full-frame compositor 冲突，
+		// 之前已经实测会重新引入 host cursor/IME 背景串行渲染问题。
+		model.SetFrameWriter(writer)
 		model.SetCursorWriter(writer)
 	}
 	return writer, true
 }
 
-func directRenderEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("TERMX_EXPERIMENTAL_DIRECT_RENDER"))) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
-}
-
 func runWithClientOptions(cfg shared.Config, client bridge.Client, stdin io.Reader, stdout io.Writer, extraOpts ...tea.ProgramOption) error {
 	model := New(cfg, nil, runtime.New(client))
 	output, probeSupported := configureProgramOutput(model, stdout)
-	directRender := directRenderEnabled()
 	var directWriter *outputCursorWriter
-	if directRender {
-		if writer, ok := output.(*outputCursorWriter); ok && writer.tty != nil {
-			directWriter = writer
-			model.SetFrameWriter(writer)
-			model.SetCursorWriter(writer)
-		} else {
-			directRender = false
-		}
+	if writer, ok := output.(*outputCursorWriter); ok && writer.tty != nil {
+		directWriter = writer
 	}
 	if model.runtime != nil {
 		if probeSupported {
@@ -104,7 +91,7 @@ func runWithClientOptions(cfg shared.Config, client bridge.Client, stdin io.Read
 		tea.WithInput(nil),
 		tea.WithOutput(output),
 	}
-	if directRender {
+	if directWriter != nil {
 		opts = append(opts, tea.WithoutRenderer())
 	} else {
 		opts = append(opts, tea.WithAltScreen(), tea.WithMouseCellMotion())
