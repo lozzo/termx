@@ -331,10 +331,13 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 			if floating != nil && floating.PaneID == m.mouseDragPaneID {
 				newW := x - floating.Rect.X + 1
 				newH := contentY - floating.Rect.Y + 1
-				m.workbench.ResizeFloatingPane(tab.ID, m.mouseDragPaneID, newW, newH)
+				if !m.workbench.ResizeFloatingPane(tab.ID, m.mouseDragPaneID, newW, newH) {
+					return nil
+				}
 				m.workbench.ClampFloatingPanesToBounds(m.bodyRect())
+				m.mouseDragDirty = true
 				m.render.Invalidate()
-				return m.resizePaneIfNeededCmd(m.mouseDragPaneID)
+				return nil
 			}
 		}
 	case mouseDragResizeSplit:
@@ -346,7 +349,7 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 		}
 		m.mouseDragDirty = true
 		m.render.Invalidate()
-		return m.resizeVisiblePanesCmd()
+		return nil
 	}
 
 	return nil
@@ -354,8 +357,15 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 
 func (m *Model) handleMouseRelease() tea.Cmd {
 	cmd := tea.Cmd(nil)
-	if m.mouseDragMode == mouseDragResizeSplit && m.mouseDragDirty {
-		cmd = m.saveStateCmd()
+	switch m.mouseDragMode {
+	case mouseDragResize:
+		if m.mouseDragDirty {
+			cmd = batchCmds(m.resizePaneIfNeededCmd(m.mouseDragPaneID), m.saveStateCmd())
+		}
+	case mouseDragResizeSplit:
+		if m.mouseDragDirty {
+			cmd = batchCmds(m.resizeVisiblePanesCmd(), m.saveStateCmd())
+		}
 	}
 	m.mouseDragPaneID = ""
 	m.mouseDragOffsetX = 0

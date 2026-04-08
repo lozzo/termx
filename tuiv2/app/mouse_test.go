@@ -179,17 +179,21 @@ func TestMouseDragSplitDividerResizesTiledPanes(t *testing.T) {
 	if panes[0].Rect.W != 50 || panes[1].Rect.W != 70 {
 		t.Fatalf("expected pane widths 50/70 after drag, got %#v %#v", panes[0].Rect, panes[1].Rect)
 	}
-	if len(client.resizes) != 2 {
-		t.Fatalf("expected both tiled panes to resize after drag, got %#v", client.resizes)
+	if len(client.resizes) != 0 {
+		t.Fatalf("expected split drag motion to avoid PTY resize until release, got %#v", client.resizes)
 	}
 
-	model, _ = m.Update(tea.MouseMsg{
+	model, cmd = m.Update(tea.MouseMsg{
 		X:      49,
 		Y:      screenYForBodyY(m, 10),
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionRelease,
 	})
 	m = model.(*Model)
+	drainCmd(t, m, cmd, 20)
+	if len(client.resizes) != 2 {
+		t.Fatalf("expected both tiled panes to resize on drag release, got %#v", client.resizes)
+	}
 	if m.mouseDragMode != mouseDragNone || m.mouseDragSplit != nil {
 		t.Fatalf("expected split drag state cleared, mode=%v split=%#v", m.mouseDragMode, m.mouseDragSplit)
 	}
@@ -322,8 +326,21 @@ func TestMouseDragSplitDividerResizesOwnerPaneWithoutActivatingIt(t *testing.T) 
 	m = model.(*Model)
 	drainCmd(t, m, cmd, 20)
 
+	if len(client.resizes) != 0 {
+		t.Fatalf("expected split drag motion to avoid PTY resize until release, got %#v", client.resizes)
+	}
+
+	model, cmd = m.Update(tea.MouseMsg{
+		X:      49,
+		Y:      screenYForBodyY(m, 10),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionRelease,
+	})
+	m = model.(*Model)
+	drainCmd(t, m, cmd, 20)
+
 	if len(client.resizes) != 1 {
-		t.Fatalf("expected owner pane to issue one resize during split drag, got %#v", client.resizes)
+		t.Fatalf("expected owner pane to issue one resize on split drag release, got %#v", client.resizes)
 	}
 	if client.resizes[0].channel != 1 {
 		t.Fatalf("expected owner pane channel to drive resize, got %#v", client.resizes[0])
@@ -364,6 +381,9 @@ func TestMouseDragSplitDividerPersistsSessionOnRelease(t *testing.T) {
 	if len(client.replaceCalls) != 0 {
 		t.Fatalf("expected no replace call during split drag motion, got %#v", client.replaceCalls)
 	}
+	if len(client.resizes) != 0 {
+		t.Fatalf("expected no PTY resize during split drag motion, got %#v", client.resizes)
+	}
 
 	model, cmd = m.Update(tea.MouseMsg{
 		X:      49,
@@ -379,6 +399,82 @@ func TestMouseDragSplitDividerPersistsSessionOnRelease(t *testing.T) {
 	}
 	if got := client.replaceCalls[0]; got.SessionID != "main" || got.BaseRevision != 9 || got.ViewID != "view-1" {
 		t.Fatalf("unexpected replace params: %#v", got)
+	}
+}
+
+func TestMouseDragFloatingResizeDefersPTYResizeUntilRelease(t *testing.T) {
+	client := &recordingBridgeClient{
+		attachResult: &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-1":     {TerminalID: "term-1", Size: protocol.Size{Cols: 80, Rows: 24}},
+			"term-float": {TerminalID: "term-float", Size: protocol.Size{Cols: 80, Rows: 24}},
+		},
+	}
+	m := setupModel(t, modelOpts{client: client})
+	tab := m.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if err := m.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 10, Y: 5, W: 20, H: 8}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+	if err := m.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+		t.Fatalf("bind floating terminal: %v", err)
+	}
+	m.runtime.Registry().GetOrCreate("term-float").Name = "float"
+	m.runtime.Registry().Get("term-float").State = "running"
+	m.runtime.Registry().Get("term-float").Channel = 7
+	binding := m.runtime.BindPane("float-1")
+	binding.Channel = 7
+	binding.Connected = true
+
+	model, _ := m.Update(tea.MouseMsg{
+		X:      29,
+		Y:      screenYForBodyY(m, 12),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	m = model.(*Model)
+	if m.mouseDragMode != mouseDragResize {
+		t.Fatalf("expected floating resize drag mode, got %v", m.mouseDragMode)
+	}
+
+	model, cmd := m.Update(tea.MouseMsg{
+		X:      35,
+		Y:      screenYForBodyY(m, 16),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionMotion,
+	})
+	m = model.(*Model)
+	drainCmd(t, m, cmd, 20)
+
+	if len(client.resizes) != 0 {
+		t.Fatalf("expected floating drag motion to avoid PTY resize until release, got %#v", client.resizes)
+	}
+
+	visible := m.workbench.VisibleWithSize(m.bodyRect())
+	if visible == nil || len(visible.FloatingPanes) == 0 {
+		t.Fatalf("expected visible floating pane, got %#v", visible)
+	}
+	contentRect, ok := paneContentRectForVisible(visible.FloatingPanes[0])
+	if !ok {
+		t.Fatal("expected floating pane content rect")
+	}
+
+	model, cmd = m.Update(tea.MouseMsg{
+		X:      35,
+		Y:      screenYForBodyY(m, 16),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionRelease,
+	})
+	m = model.(*Model)
+	drainCmd(t, m, cmd, 20)
+
+	if len(client.resizes) != 1 {
+		t.Fatalf("expected one floating PTY resize on drag release, got %#v", client.resizes)
+	}
+	if got := client.resizes[0]; got.channel != 7 || got.cols != uint16(contentRect.W) || got.rows != uint16(contentRect.H) {
+		t.Fatalf("expected floating PTY resize to %dx%d on channel 7, got %#v", contentRect.W, contentRect.H, got)
 	}
 }
 
