@@ -23,6 +23,7 @@ func (m *Model) visibleRenderState() render.VisibleRenderState {
 			markCol = m.copyMode.Mark.Col
 		}
 		state = render.WithCopyMode(state, m.copyMode.PaneID, m.copyMode.Cursor.Row, m.copyMode.Cursor.Col, m.copyMode.ViewTopRow, markSet, markRow, markCol)
+		state = render.WithCopyModeSnapshot(state, m.copyMode.Snapshot)
 	}
 	state = render.AttachTerminalPool(state, m.terminalPage)
 	return render.AttachModalHost(state, m.modalHost)

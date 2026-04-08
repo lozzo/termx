@@ -1,6 +1,7 @@
 package render
 
 import (
+	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/runtime"
@@ -28,6 +29,7 @@ type VisibleRenderState struct {
 	CopyModeMarkSet           bool
 	CopyModeMarkRow           int
 	CopyModeMarkCol           int
+	CopyModeSnapshot          *protocol.Snapshot
 }
 
 type VisibleRuntimeStateProxy = runtime.VisibleRuntime
@@ -215,5 +217,10 @@ func WithCopyMode(state VisibleRenderState, paneID string, cursorRow, cursorCol 
 	state.CopyModeMarkSet = markSet
 	state.CopyModeMarkRow = markRow
 	state.CopyModeMarkCol = markCol
+	return state
+}
+
+func WithCopyModeSnapshot(state VisibleRenderState, snapshot *protocol.Snapshot) VisibleRenderState {
+	state.CopyModeSnapshot = snapshot
 	return state
 }

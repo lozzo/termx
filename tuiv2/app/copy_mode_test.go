@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -159,7 +160,7 @@ func TestCopyModeMouseAutoScrollExtendsSelection(t *testing.T) {
 	}
 }
 
-func TestCopyModePreservesCursorWhenScrollbackExpands(t *testing.T) {
+func TestCopyModeFreezesCursorAndSelectionWhenScrollbackExpands(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, []string{"old2", "old3"}, []string{"line0", "line1", "line2", "line3"})
 
@@ -169,19 +170,61 @@ func TestCopyModePreservesCursorWhenScrollbackExpands(t *testing.T) {
 
 	beforeRow := model.copyMode.Cursor.Row
 	beforeMark := *model.copyMode.Mark
+	beforeSnapshot := model.copyMode.Snapshot
 
 	seedCopyModeSnapshot(t, model, []string{"old0", "old1", "old2", "old3"}, []string{"line0", "line1", "line2", "line3"})
-	_, cmd := model.Update(orchestrator.SnapshotLoadedMsg{TerminalID: "term-1", Snapshot: model.runtime.Registry().Get("term-1").Snapshot})
+	loaded, err := model.runtime.LoadSnapshot(context.Background(), "term-1", 0, 0)
+	if err != nil {
+		t.Fatalf("load updated snapshot: %v", err)
+	}
+	_, cmd := model.Update(orchestrator.SnapshotLoadedMsg{TerminalID: "term-1", Snapshot: loaded})
 	drainCmd(t, model, cmd, 20)
 
-	if got := model.copyMode.Cursor.Row; got != beforeRow+2 {
-		t.Fatalf("expected cursor row to shift with prepended scrollback, before=%d after=%d", beforeRow, got)
+	if got := model.copyMode.Cursor.Row; got != beforeRow {
+		t.Fatalf("expected frozen copy-mode cursor row to stay fixed, before=%d after=%d", beforeRow, got)
 	}
 	if model.copyMode.Mark == nil {
 		t.Fatal("expected mark to remain set")
 	}
-	if got := model.copyMode.Mark.Row; got != beforeMark.Row+2 {
-		t.Fatalf("expected mark row to shift with prepended scrollback, before=%d after=%d", beforeMark.Row, got)
+	if got := model.copyMode.Mark.Row; got != beforeMark.Row {
+		t.Fatalf("expected frozen copy-mode mark row to stay fixed, before=%d after=%d", beforeMark.Row, got)
+	}
+	if model.copyMode.Snapshot != beforeSnapshot {
+		t.Fatal("expected copy mode to keep rendering the frozen snapshot while live scrollback changes")
+	}
+}
+
+func TestCopyModeFrozenViewResumesLiveSnapshotOnExit(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"hist-a", "hist-b"}, []string{"live-a", "live-b"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	frozenView := xansi.Strip(model.View())
+	if !strings.Contains(frozenView, "hist-a") || !strings.Contains(frozenView, "live-a") {
+		t.Fatalf("expected copy mode to show the initial snapshot, got:\n%s", frozenView)
+	}
+
+	seedCopyModeSnapshot(t, model, []string{"next-a", "next-b"}, []string{"tail-a", "tail-b"})
+	loaded, err := model.runtime.LoadSnapshot(context.Background(), "term-1", 0, 0)
+	if err != nil {
+		t.Fatalf("load live snapshot while frozen: %v", err)
+	}
+	_, cmd := model.Update(orchestrator.SnapshotLoadedMsg{TerminalID: "term-1", Snapshot: loaded})
+	drainCmd(t, model, cmd, 20)
+
+	stillFrozen := xansi.Strip(model.View())
+	if strings.Contains(stillFrozen, "next-a") || strings.Contains(stillFrozen, "tail-b") {
+		t.Fatalf("expected copy mode view to stay frozen while active, got:\n%s", stillFrozen)
+	}
+	if !strings.Contains(stillFrozen, "hist-a") || !strings.Contains(stillFrozen, "live-a") {
+		t.Fatalf("expected copy mode view to preserve frozen rows while active, got:\n%s", stillFrozen)
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCancelMode})
+
+	liveView := xansi.Strip(model.View())
+	if !strings.Contains(liveView, "tail-a") || !strings.Contains(liveView, "tail-b") {
+		t.Fatalf("expected live snapshot to appear again after leaving copy mode, got:\n%s", liveView)
 	}
 }
 

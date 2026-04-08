@@ -119,6 +119,57 @@ func TestModelInitBootstrapsDefaultWorkspace(t *testing.T) {
 	}
 }
 
+func TestModelViewProjectsCursorWhenFrameDoesNotChange(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 10, Rows: 4},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{{{Content: "$", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Row: 0, Col: 0, Visible: true, Shape: "block"},
+	}
+
+	model := New(shared.Config{}, wb, rt)
+	model.width = 100
+	model.height = 30
+	writer := &recordingControlWriter{}
+	model.SetCursorWriter(writer)
+
+	first := model.View()
+	if got := len(writer.controls); got != 0 {
+		t.Fatalf("expected no direct control writes on first frame, got %#v", writer.controls)
+	}
+
+	rt.Registry().Get("term-1").Snapshot.Cursor.Col = 1
+	model.render.Invalidate()
+
+	second := model.View()
+	if first != second {
+		t.Fatalf("expected cursor-only move to keep frame content stable, got first=%q second=%q", first, second)
+	}
+	if got := len(writer.controls); got != 1 {
+		t.Fatalf("expected one direct cursor projection when frame stays unchanged, got %#v", writer.controls)
+	}
+	if got := writer.controls[0]; !strings.Contains(got, "\x1b[?25h\x1b[3;3H") {
+		t.Fatalf("expected direct cursor projection onto the moved blank cell, got %q", got)
+	}
+}
+
 func TestModelInitRestoresWorkspaceStateFromConfigPath(t *testing.T) {
 	source := workbench.NewWorkbench()
 	source.AddWorkspace("dev", &workbench.WorkspaceState{
