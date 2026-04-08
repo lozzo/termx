@@ -2284,43 +2284,174 @@ func projectActiveEntryCursor(canvas *composedCanvas, entries []paneRenderEntry,
 	}
 	canvas.cursorVisible = false
 	canvas.syntheticCursorBlink = false
-	rect, snapshot, ok := activeEntryCursorTarget(entries, runtimeState)
-	if !ok || snapshot == nil {
+	target, ok := activeEntryCursorTarget(entries, runtimeState)
+	if !ok {
 		return
 	}
 	// 中文说明：输入法候选框跟的是宿主终端真实光标，不是画布里反白出来的假光标。
 	// 活动 pane 在最终合成完成后再统一投射 host cursor，候选框位置才能和终端
 	// 程序看到的输入光标保持一致。
-	canvas.setCursor(rect.X+snapshot.Cursor.Col, rect.Y+snapshot.Cursor.Row, snapshot.Cursor.Shape, snapshot.Cursor.Blink)
+	canvas.setCursor(target.X, target.Y, target.Shape, target.Blink)
 }
 
-func activeEntryCursorTarget(entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) (workbench.Rect, *protocol.Snapshot, bool) {
+type cursorProjectionTarget struct {
+	X     int
+	Y     int
+	Shape string
+	Blink bool
+}
+
+func activeEntryCursorTarget(entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) (cursorProjectionTarget, bool) {
 	for i, entry := range entries {
 		if !entry.Active {
 			continue
 		}
+		terminal := findVisibleTerminal(runtimeState, entry.TerminalID)
 		snapshot := entry.Snapshot
 		if snapshot == nil {
-			terminal := findVisibleTerminal(runtimeState, entry.TerminalID)
 			if terminal != nil {
 				snapshot = terminal.Snapshot
 			}
 		}
 		if snapshot == nil {
-			return workbench.Rect{}, nil, false
+			return cursorProjectionTarget{}, false
 		}
 		rect := contentRectForEntry(entry)
-		if entry.CopyModeActive || entry.ScrollOffset > 0 || !snapshot.Cursor.Visible || activeCursorOccluded(entries, i, rect, snapshot) {
-			return rect, snapshot, false
+		if entry.CopyModeActive || entry.ScrollOffset > 0 || activeCursorOccluded(entries, i, rect, snapshot) {
+			return cursorProjectionTarget{}, false
 		}
-		cursorX := rect.X + snapshot.Cursor.Col
-		cursorY := rect.Y + snapshot.Cursor.Row
-		if cursorX < rect.X || cursorY < rect.Y || cursorX >= rect.X+rect.W || cursorY >= rect.Y+rect.H {
-			return rect, snapshot, false
+		snapshotTarget, snapshotOK := snapshotCursorProjectionTarget(rect, snapshot)
+		fallbackTarget, fallbackOK := visualCursorProjectionTarget(rect, snapshot)
+		switch {
+		case snapshotOK && shouldPreferVisualCursorTarget(snapshot, snapshotTarget, fallbackTarget, fallbackOK):
+			return fallbackTarget, true
+		case snapshotOK:
+			return snapshotTarget, true
+		case fallbackOK:
+			return fallbackTarget, true
+		default:
+			return cursorProjectionTarget{}, false
 		}
-		return rect, snapshot, true
 	}
-	return workbench.Rect{}, nil, false
+	return cursorProjectionTarget{}, false
+}
+
+func snapshotCursorProjectionTarget(rect workbench.Rect, snapshot *protocol.Snapshot) (cursorProjectionTarget, bool) {
+	if snapshot == nil || !snapshot.Cursor.Visible {
+		return cursorProjectionTarget{}, false
+	}
+	cursorX := rect.X + snapshot.Cursor.Col
+	cursorY := rect.Y + snapshot.Cursor.Row
+	if cursorX < rect.X || cursorY < rect.Y || cursorX >= rect.X+rect.W || cursorY >= rect.Y+rect.H {
+		return cursorProjectionTarget{}, false
+	}
+	return cursorProjectionTarget{
+		X:     cursorX,
+		Y:     cursorY,
+		Shape: snapshot.Cursor.Shape,
+		Blink: snapshot.Cursor.Blink,
+	}, true
+}
+
+func shouldPreferVisualCursorTarget(snapshot *protocol.Snapshot, snapshotTarget, visualTarget cursorProjectionTarget, visualOK bool) bool {
+	if snapshot == nil || !visualOK {
+		return false
+	}
+	if !snapshot.Cursor.Visible {
+		return true
+	}
+	if !snapshotLikelyOwnsVisualCursor(snapshot) {
+		return false
+	}
+	// 中文说明：Claude/Cloud Code 这类全屏 TUI 可能把真实终端 cursor 留在顶部，
+	// 再在底部输入区自己画一个块光标。这里仅在“真实 cursor 还停在顶部，而视觉
+	// 光标明确出现在更下方”时切换，避免误伤普通终端程序。
+	return snapshot.Cursor.Row <= 1 && visualTarget.Y >= snapshotTarget.Y+2
+}
+
+func visualCursorProjectionTarget(rect workbench.Rect, snapshot *protocol.Snapshot) (cursorProjectionTarget, bool) {
+	if snapshot == nil || !snapshotLikelyOwnsVisualCursor(snapshot) {
+		return cursorProjectionTarget{}, false
+	}
+	rows := snapshot.Screen.Cells
+	if len(rows) == 0 {
+		return cursorProjectionTarget{}, false
+	}
+	startRow := maxInt(0, len(rows)/2)
+	for row := len(rows) - 1; row >= startRow; row-- {
+		cells := rows[row]
+		for col := 0; col < len(cells) && col < rect.W; col++ {
+			if !cellLooksLikeVisualCursor(cells, col) {
+				continue
+			}
+			return cursorProjectionTarget{
+				X:     rect.X + col,
+				Y:     rect.Y + row,
+				Shape: "block",
+				Blink: false,
+			}, true
+		}
+	}
+	return cursorProjectionTarget{}, false
+}
+
+func snapshotLikelyOwnsVisualCursor(snapshot *protocol.Snapshot) bool {
+	if snapshot == nil {
+		return false
+	}
+	return snapshot.Screen.IsAlternateScreen ||
+		snapshot.Modes.AlternateScreen ||
+		snapshot.Modes.MouseTracking ||
+		snapshot.Modes.BracketedPaste
+}
+
+func cellLooksLikeVisualCursor(row []protocol.Cell, col int) bool {
+	if col < 0 || col >= len(row) {
+		return false
+	}
+	cell := row[col]
+	if cell.Content == "" && cell.Width == 0 {
+		return false
+	}
+	if !styleLooksLikeVisualCursor(cell.Style) {
+		return false
+	}
+	run := styledCellRunLength(row, col)
+	return run >= 1 && run <= 2
+}
+
+func styleLooksLikeVisualCursor(style protocol.CellStyle) bool {
+	if style.Reverse {
+		return true
+	}
+	return (style.FG == "#000000" && style.BG == "#ffffff") ||
+		(style.FG == "#ffffff" && style.BG == "#000000")
+}
+
+func styledCellRunLength(row []protocol.Cell, col int) int {
+	if col < 0 || col >= len(row) {
+		return 0
+	}
+	style := row[col].Style
+	run := 1
+	for i := col - 1; i >= 0 && sameCellStyle(row[i].Style, style); i-- {
+		run++
+	}
+	for i := col + 1; i < len(row) && sameCellStyle(row[i].Style, style); i++ {
+		run++
+	}
+	return run
+}
+
+func sameCellStyle(a, b protocol.CellStyle) bool {
+	return a.FG == b.FG &&
+		a.BG == b.BG &&
+		a.Bold == b.Bold &&
+		a.Italic == b.Italic &&
+		a.Underline == b.Underline &&
+		a.Blink == b.Blink &&
+		a.Reverse == b.Reverse &&
+		a.Strikethrough == b.Strikethrough
 }
 
 func activeCursorOccluded(entries []paneRenderEntry, activeIdx int, rect workbench.Rect, snapshot *protocol.Snapshot) bool {

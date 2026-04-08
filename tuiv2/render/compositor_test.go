@@ -890,12 +890,12 @@ func TestActiveEntryCursorTargetUsesFramelessRectForZoomedPane(t *testing.T) {
 		}},
 	}
 
-	rect, snapshot, ok := activeEntryCursorTarget(entries, runtimeState)
-	if !ok || snapshot == nil {
-		t.Fatalf("expected active cursor target, got rect=%#v snapshot=%#v ok=%v", rect, snapshot, ok)
+	target, ok := activeEntryCursorTarget(entries, runtimeState)
+	if !ok {
+		t.Fatalf("expected active cursor target, got target=%#v ok=%v", target, ok)
 	}
-	if rect != (workbench.Rect{X: 0, Y: 0, W: 10, H: 4}) {
-		t.Fatalf("expected frameless zoom cursor rect to stay unshifted, got %#v", rect)
+	if target.X != 0 || target.Y != 0 {
+		t.Fatalf("expected frameless zoom cursor target to stay unshifted, got %#v", target)
 	}
 }
 
@@ -948,6 +948,96 @@ func TestRenderFrameUsesRenderedEntrySnapshotForHostCursorProjection(t *testing.
 	// not the stale runtime snapshot cursor (row=0).
 	if got := coordinator.CursorSequence(); !strings.Contains(got, "\x1b[?25h\x1b[4;2H") {
 		t.Fatalf("expected host cursor projection to follow rendered entry snapshot row, got %q", got)
+	}
+}
+
+func TestRenderFramePrefersVisualCursorCellWhenAlternateScreenCursorStuckAtTop(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "claude", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 20, Rows: 4},
+		Screen: protocol.ScreenData{
+			IsAlternateScreen: true,
+			Cells: [][]protocol.Cell{
+				{{Content: "t", Width: 1}, {Content: "o", Width: 1}},
+				{{Content: "p", Width: 1}},
+				{
+					{Content: ">", Width: 1},
+					{Content: " ", Width: 1, Style: protocol.CellStyle{FG: "#000000", BG: "#ffffff"}},
+					{Content: " ", Width: 1},
+				},
+			},
+		},
+		Cursor: protocol.CursorState{Row: 0, Col: 1, Visible: true, Shape: "block"},
+		Modes:  protocol.TerminalModes{AlternateScreen: true, MouseTracking: true, BracketedPaste: true},
+	}
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+	_ = coordinator.RenderFrame()
+
+	if got := coordinator.CursorSequence(); !strings.Contains(got, "\x1b[?25h\x1b[5;3H") {
+		t.Fatalf("expected visual cursor fallback at bottom input row, got %q", got)
+	}
+}
+
+func TestRenderFrameIgnoresLongBottomHighlightWhenChoosingVisualCursorFallback(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "claude", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 20, Rows: 4},
+		Screen: protocol.ScreenData{
+			IsAlternateScreen: true,
+			Cells: [][]protocol.Cell{
+				{{Content: "t", Width: 1}, {Content: "o", Width: 1}},
+				{{Content: "p", Width: 1}},
+				{
+					{Content: "x", Width: 1, Style: protocol.CellStyle{FG: "#000000", BG: "#ffffff"}},
+					{Content: "y", Width: 1, Style: protocol.CellStyle{FG: "#000000", BG: "#ffffff"}},
+					{Content: "z", Width: 1, Style: protocol.CellStyle{FG: "#000000", BG: "#ffffff"}},
+				},
+			},
+		},
+		Cursor: protocol.CursorState{Row: 0, Col: 1, Visible: true, Shape: "block"},
+		Modes:  protocol.TerminalModes{AlternateScreen: true, MouseTracking: true},
+	}
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 20, 4), 20, 6)
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+	_ = coordinator.RenderFrame()
+
+	if got := coordinator.CursorSequence(); !strings.Contains(got, "\x1b[?25h\x1b[3;3H") {
+		t.Fatalf("expected regular snapshot cursor to win when bottom highlight spans multiple cells, got %q", got)
 	}
 }
 

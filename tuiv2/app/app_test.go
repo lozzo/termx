@@ -55,7 +55,7 @@ func TestModelViewShowsProjectedState(t *testing.T) {
 	}
 }
 
-func TestModelViewKeepsCursorInlineEvenWithWriter(t *testing.T) {
+func TestModelViewProjectsCursorViaWriterAndEmbedsInView(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -87,15 +87,17 @@ func TestModelViewKeepsCursorInlineEvenWithWriter(t *testing.T) {
 	model.SetCursorWriter(writer)
 
 	view := model.View()
+	// View still embeds cursor for BT change detection
 	if !strings.Contains(view, "\x1b[?25h") {
 		t.Fatalf("expected view content with embedded host cursor sequence, got %q", view)
 	}
-	if writer.cursor != "" {
-		t.Fatalf("expected split cursor writer projection to stay disabled, got %q", writer.cursor)
+	// Writer must also receive cursor for post-BT projection (IME anchor fix)
+	if writer.cursor == "" {
+		t.Fatalf("expected writer to receive cursor for post-BT projection, but got empty")
 	}
 }
 
-func TestModelViewInlinesCursorForPromptModeEvenWithWriter(t *testing.T) {
+func TestModelViewProjectsCursorViaWriterForPromptMode(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
 	model.width = 80
 	model.height = 24
@@ -111,11 +113,13 @@ func TestModelViewInlinesCursorForPromptModeEvenWithWriter(t *testing.T) {
 
 	view := model.View()
 
+	// View still embeds cursor for BT change detection
 	if !strings.Contains(view, "\x1b[?25h") {
-		t.Fatalf("expected prompt mode to inline host cursor for IME positioning, got %q", view)
+		t.Fatalf("expected prompt mode to embed host cursor for BT change detection, got %q", view)
 	}
-	if writer.cursor != "" {
-		t.Fatalf("expected prompt mode to suppress split cursor writer projection, got %q", writer.cursor)
+	// Writer must also receive cursor for post-BT projection
+	if writer.cursor == "" {
+		t.Fatalf("expected prompt mode to set cursor on writer for post-BT projection, got empty")
 	}
 }
 
@@ -143,7 +147,7 @@ func TestModelInitBootstrapsDefaultWorkspace(t *testing.T) {
 	}
 }
 
-func TestModelViewKeepsCursorInlineWhenFrameDoesNotChange(t *testing.T) {
+func TestModelViewUpdatesWriterCursorOnCursorMove(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -175,25 +179,26 @@ func TestModelViewKeepsCursorInlineWhenFrameDoesNotChange(t *testing.T) {
 	model.SetCursorWriter(writer)
 
 	first := model.View()
-	if got := len(writer.controls); got != 0 {
-		t.Fatalf("expected no direct control writes on first frame, got %#v", writer.controls)
+	firstWriterCursor := writer.cursor
+	if firstWriterCursor == "" {
+		t.Fatal("expected writer to receive cursor on first frame")
 	}
 
 	rt.Registry().Get("term-1").Snapshot.Cursor.Col = 1
 	model.render.Invalidate()
 
 	second := model.View()
+	// View string should change (embedded cursor changes for BT change detection)
 	if first == second {
-		t.Fatalf("expected cursor-only move to update the embedded cursor sequence, got first=%q second=%q", first, second)
+		t.Fatalf("expected cursor-only move to update the embedded cursor sequence")
 	}
-	if got := len(writer.controls); got != 0 {
-		t.Fatalf("expected no direct cursor projection when frame stays unchanged, got %#v", writer.controls)
+	// Writer cursor should reflect the new position
+	if writer.cursor == firstWriterCursor {
+		t.Fatalf("expected writer cursor to update after cursor move")
 	}
+	// Embedded cursor should reflect the new position
 	if !strings.Contains(second, "\x1b[?25h\x1b[3;3H") {
-		t.Fatalf("expected embedded cursor projection onto the moved blank cell, got %q", second)
-	}
-	if writer.cursor != "" {
-		t.Fatalf("expected split cursor writer projection to remain disabled, got %q", writer.cursor)
+		t.Fatalf("expected embedded cursor at new position, got %q", second)
 	}
 }
 
