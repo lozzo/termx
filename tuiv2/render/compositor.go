@@ -396,7 +396,23 @@ func (c *composedCanvas) contentString() string {
 				content = " "
 			}
 			isCompensationSpace := c.isRawAmbiguousContinuationSpace(x, y)
-			if needsReanchor && !isCompensationSpace {
+			if isCompensationSpace {
+				// Do NOT emit the compensation space as a printable character.
+				// It exists in the canvas model so that hosts advancing the
+				// FE0F emoji by only one column see a filled gap, but actually
+				// printing it adds a surplus visible column to the serialised
+				// row. Bubble Tea's standard renderer truncates each line to
+				// the terminal width via ansi.Truncate (which counts printable
+				// display‐width). The extra column pushes the rightmost border
+				// character past the truncation boundary, making it disappear
+				// on every FE0F row.  Skipping the space and relying on the
+				// deferred CHA to re‐anchor the cursor keeps the row within
+				// the terminal width while still positioning correctly on both
+				// 1-column and 2-column emoji hosts.
+				needsReanchor = true
+				continue
+			}
+			if needsReanchor {
 				row.WriteString(xansi.CHA(x + 1))
 				needsReanchor = false
 			}
@@ -409,9 +425,6 @@ func (c *composedCanvas) contentString() string {
 				nextCol = x + cell.Width + 1
 			}
 			row.WriteString(serializeCellContentForDisplay(content, cell.Width, c.hostEmojiVS16Mode, nextCol))
-			if isCompensationSpace {
-				needsReanchor = true
-			}
 		}
 		row.WriteString("\x1b[0m")
 		c.rowCache[y] = row.String()

@@ -176,9 +176,11 @@ func TestComposedCanvasDrawSnapshotRawModeUsesCompensationSpaceAndDeferredCHA(t 
 	})
 
 	rendered := canvas.contentString()
-	want := "♻️ " + xansi.CHA(3) + "X"
+	// The compensation space is skipped in serialization to avoid inflating
+	// the row's visible width.  Only the emoji + deferred CHA appear.
+	want := "♻️" + xansi.CHA(3) + "X"
 	if !strings.Contains(rendered, want) {
-		t.Fatalf("expected raw-mode snapshot serialization to use a compensation space plus deferred CHA, got %q want substring %q", rendered, want)
+		t.Fatalf("expected raw-mode snapshot serialization to skip compensation space and use deferred CHA, got %q want substring %q", rendered, want)
 	}
 }
 
@@ -198,9 +200,13 @@ func TestComposedCanvasDrawSnapshotRawModePromptWithEmojiFollowedByTypedChars(t 
 	})
 
 	rendered := canvas.contentString()
-	want := "♻️ " + xansi.CHA(3) + "ls"
+	// The compensation space is NOT emitted as a visible character to avoid
+	// inflating the row's display width (which Bubble Tea's ansi.Truncate
+	// uses to clip lines).  Instead the space is skipped and the deferred
+	// CHA re-anchors the cursor at the next real cell.
+	want := "♻️" + xansi.CHA(3) + "ls"
 	if !strings.Contains(rendered, want) {
-		t.Fatalf("expected raw-mode prompt serialization to use a compensation space plus deferred CHA, got %q want substring %q", rendered, want)
+		t.Fatalf("expected raw-mode prompt serialization to skip compensation space and use deferred CHA, got %q want substring %q", rendered, want)
 	}
 }
 
@@ -210,9 +216,9 @@ func TestComposedCanvasDrawTextRawModeUsesCompensationSpaceAndDeferredCHA(t *tes
 	canvas.drawText(0, 0, "♻️X", drawStyle{})
 
 	rendered := canvas.contentString()
-	want := "♻️ " + xansi.CHA(3) + "X"
+	want := "♻️" + xansi.CHA(3) + "X"
 	if !strings.Contains(rendered, want) {
-		t.Fatalf("expected drawText raw mode to use a compensation space plus deferred CHA, got %q want substring %q", rendered, want)
+		t.Fatalf("expected drawText raw mode to skip compensation space and use deferred CHA, got %q want substring %q", rendered, want)
 	}
 }
 

@@ -1108,6 +1108,145 @@ func TestRenderFrameKeepsSplitBoundaryStableAcrossRepeatedEmojiVariationUpdates(
 	}
 }
 
+// TestInactivePaneRightBorderOnFE0FRowsCachedSwitch verifies that the right
+// border of the rightmost tiled pane keeps the correct inactive color and
+// position on rows containing FE0F emoji after the pane switches from active
+// to inactive.  The test exercises the Coordinator's cached canvas path.
+func TestInactivePaneRightBorderOnFE0FRowsCachedSwitch(t *testing.T) {
+	theme := defaultUITheme()
+
+	mkWorkbench := func(activePaneID string) *workbench.Workbench {
+		wb := workbench.NewWorkbench()
+		wb.AddWorkspace("main", &workbench.WorkspaceState{
+			Name: "main", ActiveTab: 0,
+			Tabs: []*workbench.TabState{{
+				ID: "tab-1", Name: "tab 1", ActivePaneID: activePaneID,
+				Panes: map[string]*workbench.PaneState{
+					"pane-1": {ID: "pane-1", Title: "left", TerminalID: "term-1"},
+					"pane-2": {ID: "pane-2", Title: "right", TerminalID: "term-2"},
+				},
+				Root: &workbench.LayoutNode{
+					Direction: workbench.SplitVertical, Ratio: 0.5,
+					First: workbench.NewLeaf("pane-1"), Second: workbench.NewLeaf("pane-2"),
+				},
+			}},
+		})
+		return wb
+	}
+
+	bodyWidth, bodyHeight := 80, 8
+	state1 := WithTermSize(AdaptVisibleStateWithSize(mkWorkbench("pane-2"), runtime.New(nil), bodyWidth, bodyHeight), bodyWidth, bodyHeight+2)
+	var rightPane workbench.VisiblePane
+	for _, pane := range state1.Workbench.Tabs[state1.Workbench.ActiveTab].Panes {
+		if pane.ID == "pane-2" {
+			rightPane = pane
+			break
+		}
+	}
+	contentRect, ok := workbench.FramedPaneContentRect(rightPane.Rect, rightPane.SharedLeft, rightPane.SharedTop)
+	if !ok {
+		t.Fatal("expected right pane content rect")
+	}
+	rows := make([][]protocol.Cell, contentRect.H)
+	for y := range rows {
+		row := make([]protocol.Cell, contentRect.W)
+		for x := range row {
+			row[x] = protocol.Cell{Content: " ", Width: 1}
+		}
+		if y == 0 {
+			row[0] = protocol.Cell{Content: "♻\uFE0F", Width: 2}
+			row[1] = protocol.Cell{Content: "", Width: 0}
+			row[2] = protocol.Cell{Content: ":", Width: 1}
+		}
+		rows[y] = row
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
+		Terminals: []runtime.VisibleTerminal{
+			{TerminalID: "term-1", Snapshot: &protocol.Snapshot{
+				TerminalID: "term-1", Size: protocol.Size{Cols: 8, Rows: 2},
+				Screen: protocol.ScreenData{Cells: [][]protocol.Cell{repeatCells("left")}},
+				Cursor: protocol.CursorState{Visible: false}, Modes: protocol.TerminalModes{AutoWrap: true},
+			}},
+			{TerminalID: "term-2", Snapshot: &protocol.Snapshot{
+				TerminalID: "term-2", Size: protocol.Size{Cols: uint16(contentRect.W), Rows: uint16(contentRect.H)},
+				Screen: protocol.ScreenData{Cells: rows}, Cursor: protocol.CursorState{Visible: false},
+				Modes: protocol.TerminalModes{AutoWrap: true},
+			}},
+		},
+	}
+	state1.Runtime = runtimeState
+
+	// Use a SINGLE workbench and FocusPane() to mimic the real app flow.
+	sharedWB := mkWorkbench("pane-2")
+
+	// Build the closure-based visible state so the coordinator always sees
+	// the latest workbench visible snapshot when visibleFn is called.
+	visibleState := func() VisibleRenderState {
+		s := WithTermSize(AdaptVisibleStateWithSize(sharedWB, runtime.New(nil), bodyWidth, bodyHeight), bodyWidth, bodyHeight+2)
+		s.Runtime = runtimeState
+		return s
+	}
+
+	// Frame 1: right pane active.
+	coordinator := NewCoordinator(visibleState)
+	coordinator.Invalidate()
+	frame1 := coordinator.RenderFrame()
+
+	// Frame 2: switch focus to left pane using FocusPane on the same workbench.
+	if err := sharedWB.FocusPane("tab-1", "pane-1"); err != nil {
+		t.Fatalf("FocusPane: %v", err)
+	}
+	coordinator.Invalidate()
+	frame2 := coordinator.RenderFrame()
+
+	// Simulate Bubble Tea's line-level diff: any line that is identical
+	// between frame1 and frame2 would NOT be redrawn by Bubble Tea.
+	frame1Lines := strings.Split(frame1, "\n")
+	frameLines := strings.Split(frame2, "\n")
+	fe0fRow := 1 + rightPane.Rect.Y + 1 // tab bar + pane top border + first content row
+	for i := 0; i < len(frameLines) && i < len(frame1Lines); i++ {
+		if frame1Lines[i] == frameLines[i] {
+			isBodyRow := i >= 1 && i <= bodyHeight
+			isBorderRow := isBodyRow && i >= 1+rightPane.Rect.Y+1 && i <= 1+rightPane.Rect.Y+rightPane.Rect.H-2
+			if isBorderRow {
+				t.Errorf("line %d (body row %d) is IDENTICAL between active/inactive frames — Bubble Tea will skip redraw! fe0f=%v",
+					i, i-1, i == fe0fRow)
+			}
+		}
+	}
+	state2 := visibleState()
+
+	rightBorderX := rightPane.Rect.X + rightPane.Rect.W - 1
+
+	// The border must land at the correct column on hosts that render
+	// FE0F emoji as either 1 or 2 columns wide.
+	bodyContent := strings.Join(frameLines[1:1+bodyHeight], "\n")
+	for _, ambiguousWidth := range []int{1, 2} {
+		host := newFakeHostFrame(bodyWidth, bodyHeight)
+		host.apply(bodyContent, ambiguousWidth)
+		for y := rightPane.Rect.Y + 1; y <= rightPane.Rect.Y+rightPane.Rect.H-2; y++ {
+			if host.cells[y][rightBorderX] != "│" {
+				t.Fatalf("ambiguousWidth=%d row %d: expected border │ at col %d, got %q",
+					ambiguousWidth, y, rightBorderX, host.cells[y][rightBorderX])
+			}
+		}
+	}
+
+	// Canvas cells must carry the inactive border FG on every row.
+	entries2 := paneEntriesForTab(
+		state2.Workbench.Tabs[state2.Workbench.ActiveTab], state2.Workbench.FloatingPanes,
+		bodyWidth, bodyHeight, newRuntimeLookup(state2.Runtime),
+		"", "", -1, "", -1, true, state2, uiThemeForRuntime(state2.Runtime),
+	)
+	canvas2 := renderBodyCanvas(coordinator, state2, entries2, bodyWidth, bodyHeight)
+	for y := rightPane.Rect.Y + 1; y <= rightPane.Rect.Y+rightPane.Rect.H-2; y++ {
+		if got := canvas2.cells[y][rightBorderX].Style.FG; got != theme.panelBorder2 {
+			t.Fatalf("row %d: expected inactive border FG %q, got %q", y, theme.panelBorder2, got)
+		}
+	}
+}
+
 func TestDrawPaneContentWithKeyClearsReservedRightGutterGhosts(t *testing.T) {
 	canvas := newComposedCanvas(16, 6)
 	entry := paneRenderEntry{
