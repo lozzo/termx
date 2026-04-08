@@ -248,6 +248,89 @@ func TestRuntimeStartStreamRefreshesSnapshotAndInvalidates(t *testing.T) {
 	}
 }
 
+func TestRuntimeHandleStreamFrameDefersSnapshotRefreshDuringSynchronizedOutput(t *testing.T) {
+	var invalidateCount atomic.Int32
+	rt := New(nil, WithInvalidate(func() {
+		invalidateCount.Add(1)
+	}))
+
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.Snapshot = snapshotWithLines("term-1", 12, 4, []string{"old state"})
+	if vt := rt.ensureVTerm(terminal); vt == nil {
+		t.Fatal("expected vterm cache")
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{
+		Type:    protocol.TypeOutput,
+		Payload: []byte("\x1b[?2026h\x1b[H\x1b[J"),
+	})
+
+	if terminal.Snapshot == nil || !snapshotContains(terminal.Snapshot, "old state") {
+		t.Fatalf("expected old snapshot to stay visible during synchronized output, got %#v", terminal.Snapshot)
+	}
+	if invalidateCount.Load() != 0 {
+		t.Fatalf("expected no redraw invalidation during synchronized output, got %d", invalidateCount.Load())
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{
+		Type:    protocol.TypeOutput,
+		Payload: []byte("new state\x1b[?2026l"),
+	})
+
+	if terminal.Snapshot == nil || !snapshotContains(terminal.Snapshot, "new state") {
+		t.Fatalf("expected synchronized output flush to refresh snapshot, got %#v", terminal.Snapshot)
+	}
+	if invalidateCount.Load() != 1 {
+		t.Fatalf("expected exactly one redraw invalidation after synchronized output flush, got %d", invalidateCount.Load())
+	}
+}
+
+func TestRuntimeHandleStreamFrameTracksSynchronizedOutputAcrossFrameBoundaries(t *testing.T) {
+	var invalidateCount atomic.Int32
+	rt := New(nil, WithInvalidate(func() {
+		invalidateCount.Add(1)
+	}))
+
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.Snapshot = snapshotWithLines("term-1", 12, 4, []string{"steady"})
+	if vt := rt.ensureVTerm(terminal); vt == nil {
+		t.Fatal("expected vterm cache")
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{
+		Type:    protocol.TypeOutput,
+		Payload: []byte("\x1b[?20"),
+	})
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{
+		Type:    protocol.TypeOutput,
+		Payload: []byte("26h\x1b[H\x1b[J"),
+	})
+
+	if terminal.Snapshot == nil || !snapshotContains(terminal.Snapshot, "steady") {
+		t.Fatalf("expected split synchronized-output begin to keep old snapshot visible, got %#v", terminal.Snapshot)
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{
+		Type:    protocol.TypeOutput,
+		Payload: []byte("done\x1b[?202"),
+	})
+	if terminal.Snapshot == nil || !snapshotContains(terminal.Snapshot, "steady") {
+		t.Fatalf("expected partial synchronized-output end to keep old snapshot visible, got %#v", terminal.Snapshot)
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{
+		Type:    protocol.TypeOutput,
+		Payload: []byte("6l"),
+	})
+
+	if terminal.Snapshot == nil || !snapshotContains(terminal.Snapshot, "done") {
+		t.Fatalf("expected split synchronized-output end to flush refreshed snapshot, got %#v", terminal.Snapshot)
+	}
+	if invalidateCount.Load() == 0 {
+		t.Fatal("expected synchronized-output flush to invalidate rendering")
+	}
+}
+
 func TestRuntimeStreamOutputPreservesAuthoritativeSnapshotSize(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

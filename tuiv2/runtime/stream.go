@@ -3,10 +3,16 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/shared"
+)
+
+const (
+	synchronizedOutputBegin = "\x1b[?2026h"
+	synchronizedOutputEnd   = "\x1b[?2026l"
 )
 
 func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
@@ -93,10 +99,15 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 			if dropped := len(frame.Payload) - max(0, n); dropped > 0 {
 				terminal.Recovery.DroppedBytes += uint64(dropped)
 			}
+			resetSynchronizedOutputState(&terminal.Stream)
 			r.recoverSnapshot(terminalID)
 			return
 		}
+		syncActive := updateSynchronizedOutputState(&terminal.Stream, frame.Payload)
 		terminal.Recovery = RecoveryState{}
+		if syncActive {
+			return
+		}
 		r.refreshSnapshot(terminalID)
 	case protocol.TypeResize:
 		cols, rows, err := protocol.DecodeResizePayload(frame.Payload)
@@ -110,9 +121,11 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 		currentCols, currentRows := vt.Size()
 		if currentCols != int(cols) || currentRows != int(rows) {
 			vt.Resize(int(cols), int(rows))
+			resetSynchronizedOutputState(&terminal.Stream)
 			r.refreshSnapshot(terminalID)
 		}
 	case protocol.TypeSyncLost:
+		resetSynchronizedOutputState(&terminal.Stream)
 		terminal.Recovery.SyncLost = true
 		dropped, err := protocol.DecodeSyncLostPayload(frame.Payload)
 		if err == nil {
@@ -121,12 +134,64 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 		r.recoverSnapshot(terminalID)
 	case protocol.TypeClosed:
 		terminal.Stream.Active = false
+		resetSynchronizedOutputState(&terminal.Stream)
 		code, err := protocol.DecodeClosedPayload(frame.Payload)
 		if err == nil {
 			exitCode := int(code)
 			terminal.ExitCode = &exitCode
 		}
 		terminal.State = "exited"
+		r.refreshSnapshot(terminalID)
 		r.invalidate()
 	}
+}
+
+func updateSynchronizedOutputState(state *StreamState, payload []byte) bool {
+	if state == nil {
+		return false
+	}
+	if len(payload) == 0 {
+		return state.synchronizedOutputActive
+	}
+
+	tail := state.synchronizedOutputTail
+	combined := tail + string(payload)
+	tailLen := len(tail)
+
+	for i := 0; i < len(combined); {
+		switch {
+		case strings.HasPrefix(combined[i:], synchronizedOutputBegin):
+			if i+len(synchronizedOutputBegin) <= tailLen {
+				i++
+				continue
+			}
+			state.synchronizedOutputActive = true
+			i += len(synchronizedOutputBegin)
+		case strings.HasPrefix(combined[i:], synchronizedOutputEnd):
+			if i+len(synchronizedOutputEnd) <= tailLen {
+				i++
+				continue
+			}
+			state.synchronizedOutputActive = false
+			i += len(synchronizedOutputEnd)
+		default:
+			i++
+		}
+	}
+
+	maxTail := len(synchronizedOutputBegin) - 1
+	if len(combined) > maxTail {
+		state.synchronizedOutputTail = combined[len(combined)-maxTail:]
+	} else {
+		state.synchronizedOutputTail = combined
+	}
+	return state.synchronizedOutputActive
+}
+
+func resetSynchronizedOutputState(state *StreamState) {
+	if state == nil {
+		return
+	}
+	state.synchronizedOutputActive = false
+	state.synchronizedOutputTail = ""
 }

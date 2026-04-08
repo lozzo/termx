@@ -13,6 +13,9 @@ type StreamState struct {
 	Active     bool
 	Stop       func()
 	RetryCount int
+
+	synchronizedOutputActive bool
+	synchronizedOutputTail   string
 }
 
 type RecoveryState struct {
