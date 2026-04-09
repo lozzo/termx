@@ -99,6 +99,8 @@ type VTerm struct {
 	screenTimestamps     []time.Time
 	scrollbackRowKinds   []string
 	screenRowKinds       []string
+	screenRowCache       [][]Cell
+	scrollbackRowCache   [][]Cell
 
 	done chan struct{} // closed when drain goroutine exits
 }
@@ -148,6 +150,7 @@ func (v *VTerm) resetEmulator(cols, rows int) {
 	v.screenTimestamps = make([]time.Time, maxInt(rows, 1))
 	v.scrollbackRowKinds = nil
 	v.screenRowKinds = make([]string, maxInt(rows, 1))
+	v.invalidateRowCachesLocked()
 	emu.SetCallbacks(charmvt.Callbacks{
 		AltScreen: func(on bool) {
 			// Called from within Write(), which already holds v.mu.Lock()
@@ -238,6 +241,7 @@ func (v *VTerm) Write(data []byte) (n int, err error) {
 	reconcileFinish := perftrace.Measure("vterm.write.reconcile")
 	v.reconcileRowMetadataLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, time.Now().UTC())
 	reconcileFinish(0)
+	v.invalidateRowCachesLocked()
 	return n, err
 }
 
@@ -250,6 +254,7 @@ func (v *VTerm) Close() error {
 	err := v.emu.Close()
 	<-v.done
 	v.emu = nil
+	v.invalidateRowCachesLocked()
 	return err
 }
 
@@ -338,6 +343,7 @@ func (v *VTerm) LoadSnapshotWithMetadata(scrollback [][]Cell, scrollbackTimestam
 	if cursor.Row >= 0 && cursor.Col >= 0 {
 		_, _ = v.emu.Write([]byte(fmt.Sprintf("\x1b[%d;%dH", cursor.Row+1, cursor.Col+1)))
 	}
+	v.invalidateRowCachesLocked()
 }
 
 func (v *VTerm) Resize(cols, rows int) {
@@ -351,6 +357,7 @@ func (v *VTerm) Resize(cols, rows int) {
 	v.cursor.Row = pos.Y
 	v.cursor.Col = pos.X
 	v.reconcileRowMetadataLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, time.Now().UTC())
+	v.invalidateRowCachesLocked()
 }
 
 func (v *VTerm) CellAt(x, y int) Cell {
@@ -365,7 +372,7 @@ func (v *VTerm) ScreenContent() ScreenData {
 	height := v.emu.Height()
 	rows := make([][]Cell, height)
 	for y := 0; y < height; y++ {
-		rows[y] = v.screenRowLocked(y)
+		rows[y] = cloneCellSlice(v.screenRowViewLocked(y))
 	}
 	return ScreenData{
 		Cells:             rows,
@@ -385,7 +392,15 @@ func (v *VTerm) ScreenRowCount() int {
 func (v *VTerm) ScreenRow(y int) []Cell {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
-	return v.screenRowLocked(y)
+	return cloneCellSlice(v.screenRowViewLocked(y))
+}
+
+// ScreenRowView returns a read-only view of the current screen row.
+// The returned slice is invalidated by the next write, resize, or snapshot load.
+func (v *VTerm) ScreenRowView(y int) []Cell {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.screenRowViewLocked(y)
 }
 
 func (v *VTerm) Size() (int, int) {
@@ -397,7 +412,12 @@ func (v *VTerm) Size() (int, int) {
 func (v *VTerm) ScrollbackContent() [][]Cell {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
-	return v.scrollbackRowsLocked()
+	rows := v.scrollbackRowsLocked()
+	out := make([][]Cell, len(rows))
+	for i, row := range rows {
+		out[i] = cloneCellSlice(row)
+	}
+	return out
 }
 
 func (v *VTerm) ScrollbackRowCount() int {
@@ -412,14 +432,22 @@ func (v *VTerm) ScrollbackRowCount() int {
 func (v *VTerm) ScrollbackRow(y int) []Cell {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
-	return v.scrollbackRowLocked(y)
+	return cloneCellSlice(v.scrollbackRowViewLocked(y))
+}
+
+// ScrollbackRowView returns a read-only view of the current scrollback row.
+// The returned slice is invalidated by the next write, resize, or snapshot load.
+func (v *VTerm) ScrollbackRowView(y int) []Cell {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.scrollbackRowViewLocked(y)
 }
 
 func (v *VTerm) scrollbackRowsLocked() [][]Cell {
 	count := v.scrollbackRowCountLocked()
 	rows := make([][]Cell, 0, count)
 	for y := 0; y < count; y++ {
-		rows = append(rows, v.scrollbackRowLocked(y))
+		rows = append(rows, v.scrollbackRowViewLocked(y))
 	}
 	return rows
 }
@@ -1022,7 +1050,7 @@ func (v *VTerm) screenRowsLocked() [][]Cell {
 	height := v.screenRowCountLocked()
 	rows := make([][]Cell, height)
 	for y := 0; y < height; y++ {
-		rows[y] = v.screenRowLocked(y)
+		rows[y] = v.screenRowViewLocked(y)
 	}
 	return rows
 }
@@ -1042,20 +1070,36 @@ func (v *VTerm) scrollbackRowCountLocked() int {
 }
 
 func (v *VTerm) screenRowLocked(y int) []Cell {
+	return cloneCellSlice(v.screenRowViewLocked(y))
+}
+
+func (v *VTerm) screenRowViewLocked(y int) []Cell {
 	if v.emu == nil || y < 0 || y >= v.emu.Height() {
 		return nil
+	}
+	if cached := v.screenRowCache[y]; cached != nil {
+		return cached
 	}
 	width := v.emu.Width()
 	row := make([]Cell, width)
 	for x := 0; x < width; x++ {
 		row[x] = v.convertCell(v.emu.CellAt(x, y))
 	}
+	v.screenRowCache[y] = row
 	return row
 }
 
 func (v *VTerm) scrollbackRowLocked(y int) []Cell {
+	return cloneCellSlice(v.scrollbackRowViewLocked(y))
+}
+
+func (v *VTerm) scrollbackRowViewLocked(y int) []Cell {
 	if v.emu == nil || y < 0 || y >= v.emu.ScrollbackLen() {
 		return nil
+	}
+	v.ensureScrollbackRowCacheLocked(v.emu.ScrollbackLen())
+	if cached := v.scrollbackRowCache[y]; cached != nil {
+		return cached
 	}
 	width := v.emu.Width()
 	row := make([]Cell, 0, width)
@@ -1067,7 +1111,39 @@ func (v *VTerm) scrollbackRowLocked(y int) []Cell {
 		}
 		row = append(row, v.convertCell(cell))
 	}
+	v.scrollbackRowCache[y] = row
 	return row
+}
+
+func (v *VTerm) invalidateRowCachesLocked() {
+	if v.emu == nil {
+		v.screenRowCache = nil
+		v.scrollbackRowCache = nil
+		return
+	}
+	height := maxInt(v.emu.Height(), 0)
+	if cap(v.screenRowCache) >= height {
+		v.screenRowCache = v.screenRowCache[:height]
+		clear(v.screenRowCache)
+	} else {
+		v.screenRowCache = make([][]Cell, height)
+	}
+	v.scrollbackRowCache = nil
+}
+
+func (v *VTerm) ensureScrollbackRowCacheLocked(count int) {
+	switch {
+	case count <= 0:
+		v.scrollbackRowCache = nil
+	case cap(v.scrollbackRowCache) >= count:
+		prevLen := len(v.scrollbackRowCache)
+		v.scrollbackRowCache = v.scrollbackRowCache[:count]
+		if count > prevLen {
+			clear(v.scrollbackRowCache[prevLen:])
+		}
+	default:
+		v.scrollbackRowCache = make([][]Cell, count)
+	}
 }
 
 func (v *VTerm) screenRowFingerprintsLocked() []rowFingerprint {
@@ -1348,6 +1424,13 @@ func cloneStringSlice(values []string) []string {
 		return nil
 	}
 	return append([]string(nil), values...)
+}
+
+func cloneCellSlice(values []Cell) []Cell {
+	if len(values) == 0 {
+		return nil
+	}
+	return append([]Cell(nil), values...)
 }
 
 func normalizeTimeSlice(values []time.Time, count int) []time.Time {

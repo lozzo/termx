@@ -159,6 +159,50 @@ func TestVTermPreservesRowTimestampAcrossScroll(t *testing.T) {
 	}
 }
 
+func TestVTermRowViewsReuseCacheWithoutExposingMutableRows(t *testing.T) {
+	vt := New(4, 2, 10, nil)
+
+	if _, err := vt.Write([]byte("abcd\r\nefgh\r\nijkl")); err != nil {
+		t.Fatalf("seed write failed: %v", err)
+	}
+
+	screenViewA := vt.ScreenRowView(1)
+	screenViewB := vt.ScreenRowView(1)
+	if len(screenViewA) == 0 || len(screenViewB) == 0 {
+		t.Fatal("expected cached screen row view")
+	}
+	if &screenViewA[0] != &screenViewB[0] {
+		t.Fatal("expected screen row view to reuse cached backing storage")
+	}
+
+	screenCopy := vt.ScreenRow(1)
+	screenCopy[0].Content = "z"
+	if got := strings.TrimSpace(rowToString(vt.ScreenRow(1))); got != "ijkl" {
+		t.Fatalf("expected ScreenRow to return a copy, got %q", got)
+	}
+	if got := strings.TrimSpace(rowToString(vt.ScreenRowView(1))); got != "ijkl" {
+		t.Fatalf("expected ScreenRowView to remain unchanged, got %q", got)
+	}
+
+	scrollViewA := vt.ScrollbackRowView(0)
+	scrollViewB := vt.ScrollbackRowView(0)
+	if len(scrollViewA) == 0 || len(scrollViewB) == 0 {
+		t.Fatal("expected cached scrollback row view")
+	}
+	if &scrollViewA[0] != &scrollViewB[0] {
+		t.Fatal("expected scrollback row view to reuse cached backing storage")
+	}
+
+	scrollCopy := vt.ScrollbackRow(0)
+	scrollCopy[0].Content = "z"
+	if got := strings.TrimSpace(rowToString(vt.ScrollbackRow(0))); got != "abcd" {
+		t.Fatalf("expected ScrollbackRow to return a copy, got %q", got)
+	}
+	if got := strings.TrimSpace(rowToString(vt.ScrollbackRowView(0))); got != "abcd" {
+		t.Fatalf("expected ScrollbackRowView to remain unchanged, got %q", got)
+	}
+}
+
 func rowToString(row []Cell) string {
 	var b strings.Builder
 	for _, cell := range row {

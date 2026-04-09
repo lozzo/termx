@@ -176,6 +176,51 @@ attach 后，client runtime 维护一份本地权威可见状态:
 
 - `render.frame` 在 burst scroll 场景里从 `17/33` 次降到 `1` 次。
 
+### F. VTerm row-view cache
+
+目标:
+
+- 去掉 render 读取 screen/scrollback 时重复的 `uv.Cell -> vterm.Cell -> protocol.Cell` 热路径。
+
+已落地:
+
+1. `VTerm` 新增只读 `ScreenRowView()/ScrollbackRowView()`。
+2. 内部维护 row cache，下一次 `Write/Resize/LoadSnapshot` 前复用同一版 row。
+3. 对外公开的 `ScreenRow()/ScrollbackRow()` 仍然返回副本，不改包外语义。
+4. `tuiv2/runtime/surface.go` 改为消费 row view，而不是每次重新 materialize row。
+
+关键文件:
+
+- `vterm/vterm.go`
+- `vterm/spike_test.go`
+- `tuiv2/runtime/surface.go`
+
+效果:
+
+- `down_single / up_single / down_burst_8` 的 `render.frame` 和 `app.view` 进一步明显下降。
+
+### G. Synchronized-output-aware client batching
+
+目标:
+
+- 避免把同一个 `nvim` synchronized output group 切成两次 client `VTerm.Write()` / `RenderFrame()`。
+
+已落地:
+
+1. client stream 合批现在不仅看时间窗，也看 synchronized output 是否已经闭合。
+2. 如果当前 output 还处于 `DECSET 2026` 打开的状态，会在很短的 grace window 内继续等后续 frame。
+3. grace window 只对“同步输出尚未结束”的情况生效，不影响普通 output。
+
+关键文件:
+
+- `tuiv2/runtime/stream.go`
+- `tuiv2/runtime/runtime_test.go`
+
+效果:
+
+- `up_burst_8` 在多数跑法下可以重新压回 `1` 次 local `vterm.write / render.frame`。
+- 即使仍偶发拆成 `2` 次，首帧和总 render 时间也显著低于更早的基线。
+
 ## Perf Harness
 
 为了避免继续凭体感猜，仓库里现在有两套对照工具:
@@ -223,26 +268,30 @@ termx web -- nvim -u NONE your-file
 
 对比基线:
 
-- 旧报告: `/tmp/termx-perf-single-vterm/nvim-scroll.json`
-- 新报告: `/tmp/termx-perf-view-reuse/nvim-scroll.json`
+- 输入延迟基线: `/tmp/termx-perf-interactive-latency-v2/nvim-scroll.json`
+- 新报告:
+  - `/tmp/termx-perf-row-cache-sync-batch-5ms/nvim-scroll.json`
+  - `/tmp/termx-perf-row-cache-sync-batch-5ms-rerun/nvim-scroll.json`
 
 关键变化:
 
 1. `down_burst_8`
-   - `app.update`: `17 -> 3`
-   - `render.frame`: `17 -> 1`
-   - `cursor_writer.direct_flush`: `3 -> 1`
+   - `first_output_ms`: `14.69 -> 9.27`
+   - `render.frame`: `7.87ms -> 4.37ms`
+   - `vterm.write`: `1.97ms -> 0.92ms`
 
 2. `up_burst_8`
-   - `app.update`: `17 -> 3`
-   - `render.frame`: `17 -> 1`
-   - `vterm.write.count`: 仍为 `1`
+   - 基线 `first_output_ms`: `17.70`
+   - 新报告里首帧通常在 `10-17ms` 区间
+   - 多数跑法已能回到 `1` 次 `vterm.write / render.frame`
+   - 偶发仍会拆成 `2` 次，这说明 `nvim` output 分组本身仍有波动
 
 3. `alternating_16`
-   - `app.update`: `33 -> 4`
-   - `render.frame`: `33 -> 1`
+   - 基线 `render.frame`: `3.79ms`
+   - 新报告常见在 `3-7ms`
+   - 多数跑法已回到 `1` 次 render
 
-这说明当前剩余问题已经不再主要是“重复整帧渲染”。
+这说明当前剩余问题已经不再主要是“重复整帧渲染”或“row materialize 热点”。
 
 ## Current Bottleneck Hypothesis
 
@@ -306,6 +355,7 @@ termx web -- nvim -u NONE your-file
 2. 紧接着到来的首个 output batch 会走更短的 client stream 合批窗口。
 3. `Model.queueInvalidate()` 在这个窗口内直接绕过 `invalidateBatchDelay`。
 4. `outputCursorWriter` 在这个窗口内直接绕过 `directFrameBatchDelay`。
+5. 如果 output 处于 synchronized output group 内，client stream 合批会优先等到 sync end，再交给本地 `VTerm.Write()`。
 
 注意:
 

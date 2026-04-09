@@ -346,6 +346,7 @@ func TestCoalesceClientOutputFramesMergesBurstOutput(t *testing.T) {
 		protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("a")},
 		stream,
 		clientOutputBatchDelay,
+		StreamState{},
 	)
 
 	if merged.Type != protocol.TypeOutput || string(merged.Payload) != "abc" {
@@ -369,6 +370,7 @@ func TestCoalesceClientOutputFramesPreservesNonOutputBoundary(t *testing.T) {
 		protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("a")},
 		stream,
 		clientOutputBatchDelay,
+		StreamState{},
 	)
 
 	if merged.Type != protocol.TypeOutput || string(merged.Payload) != "ab" {
@@ -397,6 +399,32 @@ func TestRuntimeClientOutputBatchDelayBypassesAfterRecentInput(t *testing.T) {
 	}
 	if got := rt.clientOutputBatchDelay(); got != clientOutputBatchDelay {
 		t.Fatalf("expected interactive bypass to be one-shot, got %v", got)
+	}
+}
+
+func TestCoalesceClientOutputFramesWaitsForSynchronizedOutputEnd(t *testing.T) {
+	stream := make(chan protocol.StreamFrame, 1)
+	go func() {
+		time.Sleep(2 * time.Millisecond)
+		stream <- protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("body\x1b[?2026l")}
+		close(stream)
+	}()
+
+	merged, pending, hasPending, ok := coalesceClientOutputFrames(
+		protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("\x1b[?2026h")},
+		stream,
+		500*time.Microsecond,
+		StreamState{},
+	)
+
+	if merged.Type != protocol.TypeOutput || string(merged.Payload) != "\x1b[?2026hbody\x1b[?2026l" {
+		t.Fatalf("expected synchronized output burst to merge, got %#v", merged)
+	}
+	if hasPending {
+		t.Fatalf("expected no pending frame, got %#v", pending)
+	}
+	if ok {
+		t.Fatal("expected closed source stream after synchronized output merge")
 	}
 }
 

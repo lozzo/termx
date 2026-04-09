@@ -27,8 +27,8 @@ type rowSurfaceSource interface {
 	IsAltScreen() bool
 	ScreenRowCount() int
 	ScrollbackRowCount() int
-	ScreenRow(row int) []localvterm.Cell
-	ScrollbackRow(row int) []localvterm.Cell
+	ScreenRowView(row int) []localvterm.Cell
+	ScrollbackRowView(row int) []localvterm.Cell
 	ScreenRowTimestampAt(row int) time.Time
 	ScrollbackRowTimestampAt(row int) time.Time
 	ScreenRowKindAt(row int) string
@@ -91,13 +91,13 @@ func (s vtermSurface) Row(rowIndex int) []protocol.Cell {
 		return nil
 	}
 	if rowIndex < s.ScrollbackRows() {
-		return protocolCellsFromVTermRow(s.source.ScrollbackRow(rowIndex))
+		return protocolCellsFromVTermRow(s.source.ScrollbackRowView(rowIndex))
 	}
 	rowIndex -= s.ScrollbackRows()
 	if rowIndex < 0 || rowIndex >= s.ScreenRows() {
 		return nil
 	}
-	return protocolCellsFromVTermRow(s.source.ScreenRow(rowIndex))
+	return protocolCellsFromVTermRow(s.source.ScreenRowView(rowIndex))
 }
 
 func (s vtermSurface) RowTimestamp(rowIndex int) time.Time {

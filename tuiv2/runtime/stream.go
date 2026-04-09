@@ -12,10 +12,18 @@ import (
 )
 
 const (
-	synchronizedOutputBegin     = "\x1b[?2026h"
-	synchronizedOutputEnd       = "\x1b[?2026l"
-	clientOutputBatchDelay      = 2 * time.Millisecond
-	interactiveOutputBatchDelay = 500 * time.Microsecond
+	synchronizedOutputBegin      = "\x1b[?2026h"
+	synchronizedOutputEnd        = "\x1b[?2026l"
+	clientOutputBatchDelay       = 2 * time.Millisecond
+	interactiveOutputBatchDelay  = 500 * time.Microsecond
+	// If a synchronized-output group is still open when the normal batch timer
+	// fires, wait in small increments for the trailing sync-end chunk so we can
+	// keep the whole redraw in one local VTerm.Write()/render pass.
+	synchronizedOutputWaitStep   = 500 * time.Microsecond
+	// Cap the extra wait so an incomplete or delayed sync group cannot stall the
+	// first visible frame indefinitely. This is a pragmatic latency ceiling, not
+	// a protocol guarantee.
+	synchronizedOutputWaitBudget = 5 * time.Millisecond
 )
 
 func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
@@ -84,7 +92,7 @@ func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 				continue
 			}
 			if frame.Type == protocol.TypeOutput {
-				frame, pending, hasPending, ok = coalesceClientOutputFrames(frame, stream, r.clientOutputBatchDelay())
+				frame, pending, hasPending, ok = coalesceClientOutputFrames(frame, stream, r.clientOutputBatchDelay(), terminal.Stream)
 			}
 			terminal.Stream.RetryCount = 0
 			r.handleStreamFrame(terminalID, frame)
@@ -126,11 +134,12 @@ func (r *Runtime) clientOutputBatchDelay() time.Duration {
 	return clientOutputBatchDelay
 }
 
-func coalesceClientOutputFrames(first protocol.StreamFrame, stream <-chan protocol.StreamFrame, batchDelay time.Duration) (protocol.StreamFrame, protocol.StreamFrame, bool, bool) {
+func coalesceClientOutputFrames(first protocol.StreamFrame, stream <-chan protocol.StreamFrame, batchDelay time.Duration, syncState StreamState) (protocol.StreamFrame, protocol.StreamFrame, bool, bool) {
 	merged := protocol.StreamFrame{
 		Type:    protocol.TypeOutput,
 		Payload: append([]byte(nil), first.Payload...),
 	}
+	_ = updateSynchronizedOutputState(&syncState, first.Payload)
 	handle := func(frame protocol.StreamFrame) (protocol.StreamFrame, bool, bool) {
 		if frame.Type != protocol.TypeOutput {
 			return frame, true, true
@@ -139,6 +148,7 @@ func coalesceClientOutputFrames(first protocol.StreamFrame, stream <-chan protoc
 			return frame, true, true
 		}
 		merged.Payload = append(merged.Payload, frame.Payload...)
+		_ = updateSynchronizedOutputState(&syncState, frame.Payload)
 		return protocol.StreamFrame{}, false, true
 	}
 	drainReady := func() (protocol.StreamFrame, bool, bool) {
@@ -162,6 +172,7 @@ func coalesceClientOutputFrames(first protocol.StreamFrame, stream <-chan protoc
 	}
 	timer := time.NewTimer(batchDelay)
 	defer timer.Stop()
+	waitedForSync := time.Duration(0)
 	for {
 		select {
 		case frame, ok := <-stream:
@@ -175,6 +186,15 @@ func coalesceClientOutputFrames(first protocol.StreamFrame, stream <-chan protoc
 				return merged, protocol.StreamFrame{}, false, true
 			}
 		case <-timer.C:
+			if syncState.synchronizedOutputActive && synchronizedOutputWaitBudget > waitedForSync {
+				waitStep := synchronizedOutputWaitStep
+				if remaining := synchronizedOutputWaitBudget - waitedForSync; waitStep > remaining {
+					waitStep = remaining
+				}
+				waitedForSync += waitStep
+				timer.Reset(waitStep)
+				continue
+			}
 			pending, hasPending, ok := drainReady()
 			return merged, pending, hasPending, ok
 		}
