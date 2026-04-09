@@ -39,12 +39,36 @@ type StreamFrame struct {
 }
 
 type clientStream struct {
-	mu sync.Mutex
-	ch chan StreamFrame
+	mu                  sync.Mutex
+	cond                *sync.Cond
+	ch                  chan StreamFrame
+	done                chan struct{}
+	queue               []StreamFrame
+	queueLimit          int
+	pendingDroppedBytes uint64
+	closed              bool
 }
 
 func newClientStream() *clientStream {
-	return &clientStream{ch: make(chan StreamFrame, 256)}
+	return newClientStreamWithConfig(256, 1)
+}
+
+func newClientStreamWithConfig(queueLimit, channelCapacity int) *clientStream {
+	if queueLimit <= 0 {
+		queueLimit = 1
+	}
+	if channelCapacity < 0 {
+		channelCapacity = 0
+	}
+	s := &clientStream{
+		ch:         make(chan StreamFrame, channelCapacity),
+		done:       make(chan struct{}),
+		queueLimit: queueLimit,
+		queue:      make([]StreamFrame, 0, min(queueLimit, 16)),
+	}
+	s.cond = sync.NewCond(&s.mu)
+	go s.run()
+	return s
 }
 
 func (s *clientStream) channel() chan StreamFrame {
@@ -54,23 +78,135 @@ func (s *clientStream) channel() chan StreamFrame {
 func (s *clientStream) send(frame StreamFrame) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.ch == nil {
+	if s.closed {
 		return
 	}
-	select {
-	case s.ch <- frame:
+	switch frame.Type {
+	case TypeOutput:
+		if !s.enqueueOutputLocked(frame.Payload) {
+			s.noteDroppedOutputLocked(uint64(len(frame.Payload)))
+			s.flushPendingSyncLostLocked()
+		}
+	case TypeSyncLost:
+		dropped, err := DecodeSyncLostPayload(frame.Payload)
+		if err != nil {
+			return
+		}
+		s.noteDroppedOutputLocked(dropped)
+		s.flushPendingSyncLostLocked()
 	default:
+		s.flushPendingSyncLostLocked()
+		s.enqueueFrameLocked(frame)
 	}
+	s.cond.Signal()
 }
 
 func (s *clientStream) close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.ch == nil {
+	if s.closed {
 		return
 	}
-	close(s.ch)
-	s.ch = nil
+	s.closed = true
+	close(s.done)
+	s.queue = nil
+	s.pendingDroppedBytes = 0
+	s.cond.Broadcast()
+}
+
+func (s *clientStream) run() {
+	ch := s.channel()
+	defer close(ch)
+	for {
+		frame, ok := s.nextFrame()
+		if !ok {
+			return
+		}
+		select {
+		case ch <- frame:
+		case <-s.done:
+			return
+		}
+	}
+}
+
+func (s *clientStream) nextFrame() (StreamFrame, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for {
+		s.flushPendingSyncLostLocked()
+		if len(s.queue) > 0 {
+			frame := s.queue[0]
+			copy(s.queue, s.queue[1:])
+			last := len(s.queue) - 1
+			s.queue[last] = StreamFrame{}
+			s.queue = s.queue[:last]
+			return frame, true
+		}
+		if s.closed {
+			return StreamFrame{}, false
+		}
+		s.cond.Wait()
+	}
+}
+
+func (s *clientStream) enqueueOutputLocked(payload []byte) bool {
+	s.flushPendingSyncLostLocked()
+	if len(s.queue) > 0 {
+		last := &s.queue[len(s.queue)-1]
+		if last.Type == TypeOutput && len(last.Payload)+len(payload) <= MaxFrameSize {
+			last.Payload = append(last.Payload, payload...)
+			return true
+		}
+	}
+	if len(s.queue) >= s.queueLimit {
+		return false
+	}
+	s.queue = append(s.queue, StreamFrame{
+		Type:    TypeOutput,
+		Payload: append([]byte(nil), payload...),
+	})
+	return true
+}
+
+func (s *clientStream) enqueueFrameLocked(frame StreamFrame) {
+	payload := frame.Payload
+	if len(payload) > 0 {
+		payload = append([]byte(nil), payload...)
+	}
+	s.queue = append(s.queue, StreamFrame{
+		Type:    frame.Type,
+		Payload: payload,
+	})
+}
+
+func (s *clientStream) noteDroppedOutputLocked(dropped uint64) {
+	if dropped == 0 {
+		return
+	}
+	s.pendingDroppedBytes += dropped
+}
+
+func (s *clientStream) flushPendingSyncLostLocked() {
+	if s.pendingDroppedBytes == 0 {
+		return
+	}
+	if len(s.queue) > 0 {
+		last := &s.queue[len(s.queue)-1]
+		if last.Type == TypeSyncLost {
+			current, err := DecodeSyncLostPayload(last.Payload)
+			if err == nil {
+				last.Payload = EncodeSyncLostPayload(current + s.pendingDroppedBytes)
+				s.pendingDroppedBytes = 0
+				return
+			}
+		}
+	}
+	s.queue = append(s.queue, StreamFrame{
+		Type:    TypeSyncLost,
+		Payload: EncodeSyncLostPayload(s.pendingDroppedBytes),
+	})
+	s.pendingDroppedBytes = 0
 }
 
 func NewClient(t transport.Transport) *Client {

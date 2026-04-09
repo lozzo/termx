@@ -20,10 +20,17 @@ func (r *Runtime) AttachTerminal(ctx context.Context, paneID, terminalID, mode s
 	if terminal == nil {
 		return nil, shared.UserVisibleError{Op: "attach terminal", Err: fmt.Errorf("terminal registry unavailable")}
 	}
+	r.resetTerminalLiveState(terminal)
 	terminal.Channel = attached.Channel
 	terminal.AttachMode = attached.Mode
 	r.hydrateTerminalMetadata(ctx, terminalID)
 	r.ensureVTerm(terminal)
+	// If the VTerm was seeded from a preserved snapshot, bump SurfaceVersion
+	// so the surface is immediately visible for the first render frame.
+	// This closes the timing gap between attach and bootstrap replay arrival.
+	if terminal.VTerm != nil && terminal.Snapshot != nil {
+		r.bumpSurfaceVersion(terminal)
+	}
 	r.unbindPaneFromTerminalCache(paneID, "")
 	binding := r.BindPane(paneID)
 	if binding != nil {
@@ -39,6 +46,30 @@ func (r *Runtime) AttachTerminal(ctx context.Context, paneID, terminalID, mode s
 	r.syncTerminalOwnership(terminal)
 	r.touch()
 	return terminal, nil
+}
+
+func (r *Runtime) resetTerminalLiveState(terminal *TerminalRuntime) {
+	if r == nil || terminal == nil {
+		return
+	}
+	if terminal.Stream.Stop != nil {
+		terminal.Stream.Stop()
+	}
+	terminal.Stream = StreamState{}
+	terminal.Recovery = RecoveryState{}
+	// Preserve terminal.Snapshot as a transitional render source: the old
+	// snapshot provides content for the first render frame while the bootstrap
+	// replay from the stream is still in-flight.  ensureVTerm will seed the
+	// new VTerm from this snapshot so the surface is immediately visible.
+	// The snapshot (and surface) will be superseded once the first stream
+	// frames arrive and bumpSurfaceVersion / refreshSnapshot run.
+	terminal.SnapshotVersion = 0
+	terminal.SurfaceVersion = 0
+	terminal.BootstrapPending = false
+	terminal.ScrollbackLoadedLimit = 0
+	terminal.ScrollbackLoadingLimit = 0
+	terminal.ScrollbackExhausted = false
+	terminal.VTerm = nil
 }
 
 func (r *Runtime) hydrateTerminalMetadata(ctx context.Context, terminalID string) {

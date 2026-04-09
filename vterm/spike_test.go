@@ -135,6 +135,30 @@ func TestVTermWriteRecoversFromEmulatorPanic(t *testing.T) {
 	}
 }
 
+func TestVTermPreservesRowTimestampAcrossScroll(t *testing.T) {
+	vt := New(4, 2, 10, nil)
+
+	if _, err := vt.Write([]byte("abcd\r\nefgh")); err != nil {
+		t.Fatalf("seed write failed: %v", err)
+	}
+
+	firstRowTS := vt.ScreenRowTimestampAt(0)
+	if firstRowTS.IsZero() {
+		t.Fatal("expected first row timestamp to be set")
+	}
+
+	if _, err := vt.Write([]byte("\r\nijkl")); err != nil {
+		t.Fatalf("scroll write failed: %v", err)
+	}
+
+	if got := strings.TrimSpace(rowToString(vt.ScrollbackRow(0))); got != "abcd" {
+		t.Fatalf("expected first row to scroll into scrollback, got %q", got)
+	}
+	if got := vt.ScrollbackRowTimestampAt(0); !got.Equal(firstRowTS) {
+		t.Fatalf("expected scrollback timestamp %v, got %v", firstRowTS, got)
+	}
+}
+
 func rowToString(row []Cell) string {
 	var b strings.Builder
 	for _, cell := range row {

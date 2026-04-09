@@ -42,6 +42,10 @@ func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, col
 		if vt := r.ensureVTerm(terminal); vt != nil {
 			vt.Resize(int(cols), int(rows))
 		}
+		if terminal.BootstrapPending {
+			return nil
+		}
+		r.bumpSurfaceVersion(terminal)
 		r.refreshSnapshot(terminalID)
 	}
 	return nil

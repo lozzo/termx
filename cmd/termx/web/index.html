@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>termx web · {{.TerminalID}}</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #091018;
+        --bg-alt: #121f2d;
+        --panel: rgba(10, 18, 28, 0.82);
+        --panel-strong: rgba(16, 27, 40, 0.92);
+        --line: rgba(157, 181, 205, 0.14);
+        --text: #eef4fa;
+        --muted: #8d9dad;
+        --accent: #d1ff74;
+        --accent-soft: rgba(209, 255, 116, 0.16);
+        --danger: #ff8d87;
+        --shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+        --ui-font: "IBM Plex Sans", "SF Pro Display", "Segoe UI", sans-serif;
+        --mono-font: "Iosevka Term", "JetBrains Mono", "SFMono-Regular", ui-monospace, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: var(--ui-font);
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(85, 133, 255, 0.18), transparent 28%),
+          radial-gradient(circle at top right, rgba(209, 255, 116, 0.12), transparent 24%),
+          linear-gradient(160deg, var(--bg) 0%, var(--bg-alt) 100%);
+      }
+
+      .app {
+        min-height: 100vh;
+        padding: 18px;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: 16px;
+      }
+
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 16px 18px;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: var(--panel);
+        backdrop-filter: blur(18px);
+        box-shadow: var(--shadow);
+      }
+
+      .titleblock {
+        display: grid;
+        gap: 6px;
+      }
+
+      .eyebrow {
+        margin: 0;
+        font-size: 12px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .title {
+        margin: 0;
+        font-size: clamp(20px, 2.8vw, 28px);
+        line-height: 1.05;
+      }
+
+      .subtitle {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .pillrow {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.03);
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .pill strong {
+        color: var(--text);
+        font-family: var(--mono-font);
+        font-weight: 600;
+      }
+
+      .statusdot {
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+        background: var(--accent);
+        box-shadow: 0 0 18px rgba(209, 255, 116, 0.55);
+      }
+
+      .statusdot.offline {
+        background: var(--danger);
+        box-shadow: 0 0 14px rgba(255, 141, 135, 0.45);
+      }
+
+      .main {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 300px;
+        gap: 16px;
+      }
+
+      .terminalcard,
+      .sidecard {
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--panel-strong);
+        backdrop-filter: blur(18px);
+        box-shadow: var(--shadow);
+        min-height: 0;
+      }
+
+      .terminalcard {
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+      }
+
+      .terminalhead {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent);
+      }
+
+      .windowdots {
+        display: inline-flex;
+        gap: 8px;
+      }
+
+      .windowdots span {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.15);
+      }
+
+      .windowdots span:first-child {
+        background: #ff8d87;
+      }
+
+      .windowdots span:nth-child(2) {
+        background: #ffd470;
+      }
+
+      .windowdots span:nth-child(3) {
+        background: #96e271;
+      }
+
+      .termhint {
+        margin: 0;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .terminalwrap {
+        min-height: 0;
+        padding: 10px 12px 12px;
+      }
+
+      #terminal {
+        width: 100%;
+        height: 100%;
+      }
+
+      .sidecard {
+        padding: 16px;
+        display: grid;
+        align-content: start;
+        gap: 12px;
+      }
+
+      .paneltitle {
+        margin: 0;
+        font-size: 14px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .metricgrid {
+        display: grid;
+        gap: 10px;
+      }
+
+      .metric {
+        padding: 12px;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.025);
+      }
+
+      .metriclabel {
+        font-size: 12px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .metricvalue {
+        margin-top: 6px;
+        font-family: var(--mono-font);
+        font-size: 20px;
+        color: var(--text);
+      }
+
+      .note {
+        margin: 0;
+        padding: 12px;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background: var(--accent-soft);
+        color: #eef7d2;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .note.danger {
+        background: rgba(255, 141, 135, 0.12);
+        color: #ffd0cb;
+      }
+
+      @media (max-width: 980px) {
+        .main {
+          grid-template-columns: 1fr;
+          grid-template-rows: minmax(58vh, 1fr) auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="titleblock">
+          <p class="eyebrow">termx web compare</p>
+          <h1 class="title">{{.Title}}</h1>
+          <p class="subtitle">terminal {{.TerminalID}} · mode {{.Mode}}</p>
+        </div>
+        <div class="pillrow">
+          <div class="pill">
+            <span id="status-dot" class="statusdot"></span>
+            <span>status <strong id="status-text">connecting</strong></span>
+          </div>
+          <div class="pill">
+            <span>server size <strong id="server-size">-</strong></span>
+          </div>
+          <div class="pill">
+            <span>client size <strong id="client-size">-</strong></span>
+          </div>
+        </div>
+      </header>
+
+      <main class="main">
+        <section class="terminalcard">
+          <div class="terminalhead">
+            <div class="windowdots" aria-hidden="true">
+              <span></span><span></span><span></span>
+            </div>
+            <p class="termhint">xterm.js bridge over termx protocol</p>
+          </div>
+          <div class="terminalwrap">
+            <div id="terminal"></div>
+          </div>
+        </section>
+
+        <aside class="sidecard">
+          <h2 class="paneltitle">Live Stats</h2>
+          <div class="metricgrid">
+            <div class="metric">
+              <div class="metriclabel">Output Bytes</div>
+              <div id="bytes-in" class="metricvalue">0</div>
+            </div>
+            <div class="metric">
+              <div class="metriclabel">Input Bytes</div>
+              <div id="bytes-out" class="metricvalue">0</div>
+            </div>
+            <div class="metric">
+              <div class="metriclabel">Output Chunks</div>
+              <div id="chunks-in" class="metricvalue">0</div>
+            </div>
+            <div class="metric">
+              <div class="metriclabel">Resize Sends</div>
+              <div id="resize-count" class="metricvalue">0</div>
+            </div>
+          </div>
+          <p id="mode-note" class="note"></p>
+          <p id="warning-note" class="note" hidden></p>
+        </aside>
+      </main>
+    </div>
+
+    <script>
+      window.__TERMX_WEB__ = {
+        terminalID: {{printf "%q" .TerminalID}},
+        mode: {{printf "%q" .Mode}},
+        title: {{printf "%q" .Title}}
+      };
+    </script>
+    <script type="module">
+      import { Terminal } from 'https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/+esm';
+      import { FitAddon } from 'https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/+esm';
+
+      const config = window.__TERMX_WEB__;
+      const encoder = new TextEncoder();
+      const shell = document.getElementById('terminal');
+      const warningNote = document.getElementById('warning-note');
+      const statusDot = document.getElementById('status-dot');
+      const statusText = document.getElementById('status-text');
+      const serverSize = document.getElementById('server-size');
+      const clientSize = document.getElementById('client-size');
+      const bytesIn = document.getElementById('bytes-in');
+      const bytesOut = document.getElementById('bytes-out');
+      const chunksIn = document.getElementById('chunks-in');
+      const resizeCount = document.getElementById('resize-count');
+      const modeNote = document.getElementById('mode-note');
+
+      const state = {
+        status: 'connecting',
+        inBytes: 0,
+        outBytes: 0,
+        inChunks: 0,
+        resizeSends: 0,
+        serverCols: 0,
+        serverRows: 0,
+        bootstrapped: false,
+        ws: null
+      };
+
+      const terminal = new Terminal({
+        allowTransparency: true,
+        cursorBlink: true,
+        disableStdin: config.mode === 'observer',
+        fontFamily: '"Iosevka Term","JetBrains Mono","SFMono-Regular",ui-monospace,monospace',
+        fontSize: 14,
+        lineHeight: 1.14,
+        scrollback: 10000,
+        theme: {
+          background: '#091018',
+          foreground: '#eef4fa',
+          cursor: '#d1ff74',
+          selectionBackground: 'rgba(209, 255, 116, 0.24)',
+          black: '#16202a',
+          red: '#ff8d87',
+          green: '#9be564',
+          yellow: '#ffd470',
+          blue: '#7ab7ff',
+          magenta: '#d5a6ff',
+          cyan: '#7de3ff',
+          white: '#d9e5ef',
+          brightBlack: '#6f8091',
+          brightRed: '#ffb1ac',
+          brightGreen: '#c5ff98',
+          brightYellow: '#ffe59f',
+          brightBlue: '#a6ceff',
+          brightMagenta: '#e2c1ff',
+          brightCyan: '#a0eeff',
+          brightWhite: '#ffffff'
+        }
+      });
+      const fitAddon = new FitAddon();
+      terminal.loadAddon(fitAddon);
+      terminal.open(shell);
+      terminal.focus();
+
+      modeNote.textContent = config.mode === 'observer'
+        ? 'Observer mode: this page will not send input or resize the shared terminal.'
+        : 'Collaborator mode: browser input and resize go directly to the shared terminal.';
+
+      function formatNumber(value) {
+        return new Intl.NumberFormat().format(value);
+      }
+
+      function showWarning(text, danger = false) {
+        warningNote.hidden = !text;
+        warningNote.textContent = text;
+        warningNote.classList.toggle('danger', danger);
+      }
+
+      function updateHUD() {
+        statusText.textContent = state.status;
+        statusDot.classList.toggle('offline', state.status !== 'live');
+        serverSize.textContent = state.serverCols > 0 && state.serverRows > 0
+          ? `${state.serverCols}×${state.serverRows}`
+          : '-';
+        clientSize.textContent = `${terminal.cols}×${terminal.rows}`;
+        bytesIn.textContent = formatNumber(state.inBytes);
+        bytesOut.textContent = formatNumber(state.outBytes);
+        chunksIn.textContent = formatNumber(state.inChunks);
+        resizeCount.textContent = formatNumber(state.resizeSends);
+      }
+
+      function sendResize() {
+        if (config.mode !== 'collaborator' || !state.ws || state.ws.readyState !== WebSocket.OPEN) {
+          return;
+        }
+        fitAddon.fit();
+        const cols = terminal.cols;
+        const rows = terminal.rows;
+        if (!cols || !rows) {
+          return;
+        }
+        state.resizeSends += 1;
+        state.ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+        updateHUD();
+      }
+
+      const debouncedResize = (() => {
+        let timer = 0;
+        return () => {
+          window.clearTimeout(timer);
+          timer = window.setTimeout(() => {
+            sendResize();
+          }, 60);
+        };
+      })();
+
+      function handleServerEvent(message) {
+        switch (message.type) {
+          case 'ready':
+            state.status = 'live';
+            showWarning('');
+            break;
+          case 'resize':
+            state.serverCols = message.cols || 0;
+            state.serverRows = message.rows || 0;
+            if (!state.bootstrapped && state.serverCols > 0 && state.serverRows > 0) {
+              terminal.resize(state.serverCols, state.serverRows);
+            }
+            break;
+          case 'bootstrap_done':
+            state.bootstrapped = true;
+            if (config.mode === 'collaborator') {
+              requestAnimationFrame(() => sendResize());
+            }
+            break;
+          case 'sync_lost':
+            state.status = 'degraded';
+            showWarning(`termx stream dropped ${formatNumber(message.dropped_bytes || 0)} bytes. Reload if the screen looks wrong.`, true);
+            break;
+          case 'closed':
+            state.status = 'closed';
+            showWarning(`terminal exited${typeof message.exit_code === 'number' ? ` with code ${message.exit_code}` : ''}.`, true);
+            break;
+          case 'error':
+            state.status = 'error';
+            showWarning(message.error || 'bridge error', true);
+            break;
+        }
+        updateHUD();
+      }
+
+      function connect() {
+        const wsScheme = location.protocol === 'https:' ? 'wss' : 'ws';
+        const ws = new WebSocket(`${wsScheme}://${location.host}/ws`);
+        ws.binaryType = 'arraybuffer';
+        state.ws = ws;
+        updateHUD();
+
+        ws.addEventListener('open', () => {
+          state.status = 'live';
+          updateHUD();
+        });
+
+        ws.addEventListener('message', (event) => {
+          if (typeof event.data === 'string') {
+            handleServerEvent(JSON.parse(event.data));
+            return;
+          }
+          const chunk = new Uint8Array(event.data);
+          state.inBytes += chunk.byteLength;
+          state.inChunks += 1;
+          terminal.write(chunk);
+          updateHUD();
+        });
+
+        ws.addEventListener('close', () => {
+          if (state.status === 'live') {
+            state.status = 'closed';
+          }
+          updateHUD();
+        });
+
+        ws.addEventListener('error', () => {
+          state.status = 'error';
+          showWarning('websocket bridge failed', true);
+          updateHUD();
+        });
+
+        terminal.onData((data) => {
+          if (config.mode !== 'collaborator' || ws.readyState !== WebSocket.OPEN) {
+            return;
+          }
+          const payload = encoder.encode(data);
+          state.outBytes += payload.byteLength;
+          ws.send(payload);
+          updateHUD();
+        });
+
+        window.addEventListener('resize', debouncedResize);
+        shell.addEventListener('click', () => terminal.focus());
+      }
+
+      updateHUD();
+      connect();
+    </script>
+  </body>
+</html>

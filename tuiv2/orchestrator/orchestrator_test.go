@@ -168,8 +168,8 @@ func TestAttachAndLoadSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("attach and load snapshot: %v", err)
 	}
-	if len(msgs) != 2 {
-		t.Fatalf("expected 2 msgs, got %d", len(msgs))
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 msg, got %d", len(msgs))
 	}
 }
 

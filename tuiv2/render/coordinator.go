@@ -7,8 +7,10 @@ import (
 	"time"
 
 	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/modal"
+	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -86,6 +88,8 @@ type paneRenderEntry struct {
 	FrameKey             paneFrameKey
 	TerminalID           string
 	Snapshot             *protocol.Snapshot
+	Surface              runtime.TerminalSurface
+	SurfaceVersion       uint64
 	ScrollOffset         int
 	Active               bool
 	Floating             bool
@@ -128,6 +132,7 @@ type renderTerminalMetrics struct {
 type paneContentKey struct {
 	TerminalID           string
 	Snapshot             *protocol.Snapshot
+	SurfaceVersion       uint64
 	Name                 string
 	State                string
 	ThemeBG              string
@@ -190,6 +195,13 @@ func (c *Coordinator) FlushPending() {}
 func (c *Coordinator) StartTicker()  {}
 
 func (c *Coordinator) RenderFrame() string {
+	finish := perftrace.Measure("render.frame")
+	frame := ""
+	cacheMetric := "render.frame.cache_miss"
+	defer func() {
+		perftrace.Count(cacheMetric, len(frame))
+		finish(len(frame))
+	}()
 	if c == nil || c.visibleFn == nil {
 		return ""
 	}
@@ -197,7 +209,8 @@ func (c *Coordinator) RenderFrame() string {
 	key := stateKey(state)
 	c.mu.Lock()
 	if !c.dirty && c.lastFrame != "" && c.lastState == key {
-		frame := c.lastFrame
+		frame = c.lastFrame
+		cacheMetric = "render.frame.cache_hit"
 		c.mu.Unlock()
 		return frame
 	}
@@ -208,7 +221,7 @@ func (c *Coordinator) RenderFrame() string {
 		c.lastCursor = hideCursorANSI()
 		c.lastState = key
 		c.dirty = false
-		frame := c.lastFrame
+		frame = c.lastFrame
 		c.mu.Unlock()
 		return frame
 	}
@@ -245,7 +258,7 @@ func (c *Coordinator) RenderFrame() string {
 	if !immersiveZoom {
 		frameParts = []string{tabBar, body, statusBar}
 	}
-	frame := strings.Join(frameParts, "\n")
+	frame = strings.Join(frameParts, "\n")
 	c.mu.Lock()
 	if !rendered.blink {
 		c.cursorBlinkVisible = true
@@ -304,6 +317,24 @@ func (c *Coordinator) CursorSequence() string {
 		return hideCursorANSI()
 	}
 	return c.lastCursor
+}
+
+func (c *Coordinator) CachedFrameAndCursor() (string, string, bool) {
+	if c == nil || c.visibleFn == nil {
+		return "", hideCursorANSI(), false
+	}
+	state := c.visibleFn()
+	key := stateKey(state)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.dirty || c.lastFrame == "" || c.lastState != key {
+		return "", "", false
+	}
+	cursor := c.lastCursor
+	if cursor == "" {
+		cursor = hideCursorANSI()
+	}
+	return c.lastFrame, cursor, true
 }
 
 func (c *Coordinator) NeedsCursorTicks() bool {
@@ -757,17 +788,25 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 	title := resolvePaneTitleWithLookup(pane, lookup)
 	border := paneBorderInfoWithLookup(pane, lookup, confirmPaneID)
 	terminal := lookup.terminal(pane.TerminalID)
-	overflow := paneOverflowHintsForRender(originalRect, rect, nil)
+	overflow := paneOverflowHintsForRender(originalRect, rect, nil, nil)
 	copyModeActive := pane.ID == copyModePaneID
 	snapshot := (*protocol.Snapshot)(nil)
+	surface := runtime.TerminalSurface(nil)
+	surfaceVersion := uint64(0)
 	if terminal != nil {
 		snapshot = terminal.Snapshot
+		surface = terminal.Surface
+		surfaceVersion = terminal.SurfaceVersion
 	}
 	if pane.ID == paneSnapshotOverridePaneID && paneSnapshotOverride != nil {
 		snapshot = paneSnapshotOverride
+		surface = nil
+		surfaceVersion = 0
 	}
 	if copyModeActive && copyModeSnapshot != nil {
 		snapshot = copyModeSnapshot
+		surface = nil
+		surfaceVersion = 0
 	}
 	if copyModeActive {
 		border.CopyTimeLabel = copyModeTimestampLabel(snapshot, copyModeCursorRow)
@@ -802,10 +841,13 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		CopyModeMarkCol:      copyModeMarkCol,
 	}
 	if terminal != nil {
-		contentKey.Snapshot = snapshot
+		if snapshot != nil && surface == nil {
+			contentKey.Snapshot = snapshot
+		}
+		contentKey.SurfaceVersion = surfaceVersion
 		contentKey.Name = terminal.Name
 		contentKey.State = terminal.State
-		overflow = paneOverflowHintsForRender(originalRect, rect, snapshot)
+		overflow = paneOverflowHintsForRender(originalRect, rect, snapshot, surface)
 	}
 	return paneRenderEntry{
 		PaneID:     pane.ID,
@@ -833,6 +875,8 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		},
 		TerminalID:           pane.TerminalID,
 		Snapshot:             snapshot,
+		Surface:              surface,
+		SurfaceVersion:       surfaceVersion,
 		ScrollOffset:         scrollOffset,
 		Active:               active,
 		Floating:             pane.Floating,
@@ -849,7 +893,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 	}
 }
 
-func paneOverflowHintsForRender(originalRect, clippedRect workbench.Rect, snapshot *protocol.Snapshot) paneOverflowHints {
+func paneOverflowHintsForRender(originalRect, clippedRect workbench.Rect, snapshot *protocol.Snapshot, surface runtime.TerminalSurface) paneOverflowHints {
 	if originalRect.W <= 0 || originalRect.H <= 0 || clippedRect.W <= 0 || clippedRect.H <= 0 {
 		return paneOverflowHints{}
 	}
@@ -857,7 +901,7 @@ func paneOverflowHintsForRender(originalRect, clippedRect workbench.Rect, snapsh
 		Right:  originalRect.X+originalRect.W > clippedRect.X+clippedRect.W,
 		Bottom: originalRect.Y+originalRect.H > clippedRect.Y+clippedRect.H,
 	}
-	metrics := renderTerminalMetricsForSnapshot(snapshot)
+	metrics := terminalMetricsForSource(renderSource(snapshot, surface))
 	contentRect := contentRectForPane(clippedRect)
 	if metrics.Cols > 0 && contentRect.W > 0 && metrics.Cols > contentRect.W {
 		overflow.Right = true
@@ -978,7 +1022,7 @@ func renderTerminalPoolDetails(item *modal.PickerItem, runtimeState *VisibleRunt
 	lookup := newRuntimeLookup(runtimeState)
 	lines := []string{forceWidthANSIOverlay("PREVIEW", innerWidth)}
 	if terminal := lookup.terminal(item.TerminalID); terminal != nil {
-		lines = append(lines, terminalPoolPreviewLines(terminal.Snapshot, innerWidth, 4)...)
+		lines = append(lines, terminalPoolPreviewLines(terminal.Snapshot, terminal.Surface, innerWidth, 4)...)
 		if strings.TrimSpace(terminal.OwnerPaneID) != "" {
 			lines = append(lines, forceWidthANSIOverlay("owner pane: "+terminal.OwnerPaneID, innerWidth))
 		}
@@ -1001,16 +1045,18 @@ func renderTerminalPoolDetails(item *modal.PickerItem, runtimeState *VisibleRunt
 	return lines
 }
 
-func terminalPoolPreviewLines(snapshot *protocol.Snapshot, innerWidth int, maxLines int) []string {
-	if snapshot == nil || maxLines <= 0 {
+func terminalPoolPreviewLines(snapshot *protocol.Snapshot, surface runtime.TerminalSurface, innerWidth int, maxLines int) []string {
+	source := renderSource(snapshot, surface)
+	if source == nil || maxLines <= 0 {
 		return []string{forceWidthANSIOverlay("(no live preview)", innerWidth)}
 	}
-	rows := snapshot.Screen.Cells
-	if len(rows) == 0 {
+	if source.ScreenRows() == 0 {
 		return []string{forceWidthANSIOverlay("(no live preview)", innerWidth)}
 	}
-	lines := make([]string, 0, minInt(len(rows), maxLines))
-	for _, row := range rows {
+	lines := make([]string, 0, minInt(source.ScreenRows(), maxLines))
+	base := source.ScrollbackRows()
+	for rowIndex := 0; rowIndex < source.ScreenRows() && len(lines) < maxLines; rowIndex++ {
+		row := source.Row(base + rowIndex)
 		if len(lines) >= maxLines {
 			break
 		}
@@ -1296,16 +1342,17 @@ func drawPaneContent(canvas *composedCanvas, rect workbench.Rect, pane workbench
 		drawEmptyPaneContent(canvas, contentRect, pane.ID, pane.TerminalID, defaultUITheme(), -1)
 		return
 	}
-	if terminal.Snapshot == nil || len(terminal.Snapshot.Screen.Cells) == 0 {
+	source := renderSource(terminal.Snapshot, terminal.Surface)
+	if source == nil || source.ScreenRows() == 0 {
 		canvas.drawText(contentRect.X, contentRect.Y, terminal.Name+" ["+terminal.State+"]", drawStyle{FG: defaultUITheme().panelMuted})
 		if terminal.State == "exited" {
 			drawExitedPaneRecoveryHints(canvas, contentRect, defaultUITheme(), -1, true)
 		}
 		return
 	}
-	drawSnapshotWithOffset(canvas, contentRect, terminal.Snapshot, scrollOffset, defaultUITheme())
+	drawTerminalSourceWithOffset(canvas, contentRect, source, scrollOffset, defaultUITheme())
 	if active {
-		projectPaneCursor(canvas, contentRect, terminal.Snapshot, scrollOffset)
+		projectPaneCursorSource(canvas, contentRect, source, scrollOffset)
 	}
 	if terminal.State == "exited" {
 		drawExitedPaneRecoveryHints(canvas, contentRect, defaultUITheme(), -1, true)
@@ -1328,10 +1375,15 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 		return
 	}
 	snapshot := entry.Snapshot
-	if snapshot == nil {
+	surface := entry.Surface
+	if snapshot == nil && surface == nil {
+		surface = terminal.Surface
+	}
+	if snapshot == nil && surface == nil {
 		snapshot = terminal.Snapshot
 	}
-	if snapshot == nil || len(snapshot.Screen.Cells) == 0 {
+	source := renderSource(snapshot, surface)
+	if source == nil || source.ScreenRows() == 0 {
 		canvas.drawText(contentRect.X, contentRect.Y, terminal.Name+" ["+terminal.State+"]", drawStyle{FG: entry.Theme.panelMuted})
 		if terminal.State == "exited" {
 			drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
@@ -1342,7 +1394,7 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 	if entry.CopyModeActive {
 		renderOffset = scrollOffsetForViewportTop(snapshot, contentRect.H, entry.CopyModeViewTopRow)
 	}
-	drawSnapshotWithOffset(canvas, contentRect, snapshot, renderOffset, entry.Theme)
+	drawTerminalSourceWithOffset(canvas, contentRect, source, renderOffset, entry.Theme)
 	if entry.CopyModeActive {
 		drawCopyModeOverlay(canvas, contentRect, snapshot, entry.Theme, entry.CopyModeCursorRow, entry.CopyModeCursorCol, entry.CopyModeViewTopRow, entry.CopyModeMarkSet, entry.CopyModeMarkRow, entry.CopyModeMarkCol)
 	}
@@ -1440,15 +1492,20 @@ func clearBlankFillBoundaryFootprint(canvas *composedCanvas, x, y int) {
 }
 
 func projectPaneCursor(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, scrollOffset int) {
-	if canvas == nil || snapshot == nil || !snapshot.Cursor.Visible || scrollOffset > 0 {
+	projectPaneCursorSource(canvas, rect, renderSource(snapshot, nil), scrollOffset)
+}
+
+func projectPaneCursorSource(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, scrollOffset int) {
+	if canvas == nil || source == nil || !source.Cursor().Visible || scrollOffset > 0 {
 		return
 	}
-	x := rect.X + snapshot.Cursor.Col
-	y := rect.Y + snapshot.Cursor.Row
+	cursor := source.Cursor()
+	x := rect.X + cursor.Col
+	y := rect.Y + cursor.Row
 	if x < rect.X || y < rect.Y || x >= rect.X+rect.W || y >= rect.Y+rect.H {
 		return
 	}
-	drawSyntheticCursor(canvas, x, y, snapshot.Cursor)
+	drawSyntheticCursor(canvas, x, y, cursor)
 }
 
 func drawSyntheticCursor(canvas *composedCanvas, x, y int, cursor protocol.CursorState) {
@@ -1975,17 +2032,21 @@ func applyScrollbackOffset(snapshot *protocol.Snapshot, offset int, height int) 
 }
 
 func drawSnapshotWithOffset(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, offset int, theme uiTheme) {
-	if canvas == nil || snapshot == nil || rect.W <= 0 || rect.H <= 0 {
+	drawTerminalSourceWithOffset(canvas, rect, renderSource(snapshot, nil), offset, theme)
+}
+
+func drawTerminalSourceWithOffset(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, offset int, theme uiTheme) {
+	if canvas == nil || source == nil || rect.W <= 0 || rect.H <= 0 {
 		return
 	}
 	if offset <= 0 {
-		canvas.drawSnapshotInRect(rect, snapshot)
-		drawSnapshotExtentHints(canvas, rect, snapshot, theme)
+		drawTerminalSourceInRect(canvas, rect, source)
+		drawTerminalExtentHints(canvas, rect, source, theme)
 		return
 	}
-	totalRows := len(snapshot.Scrollback) + len(snapshot.Screen.Cells)
+	totalRows := source.TotalRows()
 	if totalRows == 0 {
-		drawSnapshotExtentHints(canvas, rect, snapshot, theme)
+		drawTerminalExtentHints(canvas, rect, source, theme)
 		return
 	}
 	end := totalRows - offset
@@ -1998,19 +2059,36 @@ func drawSnapshotWithOffset(canvas *composedCanvas, rect workbench.Rect, snapsho
 	}
 	targetY := rect.Y
 	for rowIndex := start; rowIndex < end && targetY < rect.Y+rect.H; rowIndex++ {
-		drawSnapshotRowInRect(canvas, rect, snapshot, rowIndex, targetY, theme)
+		drawTerminalSourceRowInRect(canvas, rect, source, rowIndex, targetY, theme)
 		targetY++
 	}
-	drawSnapshotExtentHints(canvas, rect, snapshotExtentHintsView(snapshot, totalRows), theme)
+	drawTerminalExtentHints(canvas, rect, terminalExtentHintsView(source, totalRows), theme)
 }
 
 func drawSnapshotRowInRect(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, rowIndex int, targetY int, theme uiTheme) {
-	if kind := snapshotRowKind(snapshot, rowIndex); kind != "" {
-		if drawSnapshotMarkerRow(canvas, rect, targetY, kind, snapshotRowTimestamp(snapshot, rowIndex), theme) {
+	drawTerminalSourceRowInRect(canvas, rect, renderSource(snapshot, nil), rowIndex, targetY, theme)
+}
+
+func drawTerminalSourceInRect(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource) {
+	if canvas == nil || source == nil || rect.W <= 0 || rect.H <= 0 {
+		return
+	}
+	base := source.ScrollbackRows()
+	for y := 0; y < rect.H && y < source.ScreenRows(); y++ {
+		canvas.drawProtocolRowInRect(rect, rect.Y+y, source.Row(base+y))
+	}
+}
+
+func drawTerminalSourceRowInRect(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, rowIndex int, targetY int, theme uiTheme) {
+	if source == nil {
+		return
+	}
+	if kind := source.RowKind(rowIndex); kind != "" {
+		if drawSnapshotMarkerRow(canvas, rect, targetY, kind, source.RowTimestamp(rowIndex), theme) {
 			return
 		}
 	}
-	canvas.drawProtocolRowInRect(rect, targetY, snapshotRow(snapshot, rowIndex))
+	canvas.drawProtocolRowInRect(rect, targetY, source.Row(rowIndex))
 }
 
 func drawSnapshotMarkerRow(canvas *composedCanvas, rect workbench.Rect, targetY int, kind string, ts time.Time, theme uiTheme) bool {
@@ -2053,11 +2131,30 @@ func snapshotExtentHintsView(snapshot *protocol.Snapshot, rows int) *protocol.Sn
 	return &cloned
 }
 
+func terminalExtentHintsView(source terminalRenderSource, rows int) terminalRenderSource {
+	if source == nil || rows <= 0 {
+		return source
+	}
+	if size := source.Size(); int(size.Rows) >= rows {
+		return source
+	}
+	switch typed := source.(type) {
+	case snapshotRenderSource:
+		return renderSource(snapshotExtentHintsView(typed.snapshot, rows), nil)
+	default:
+		return source
+	}
+}
+
 func drawSnapshotExtentHints(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, theme uiTheme) {
-	if canvas == nil || snapshot == nil || rect.W <= 0 || rect.H <= 0 {
+	drawTerminalExtentHints(canvas, rect, renderSource(snapshot, nil), theme)
+}
+
+func drawTerminalExtentHints(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, theme uiTheme) {
+	if canvas == nil || source == nil || rect.W <= 0 || rect.H <= 0 {
 		return
 	}
-	metrics := renderTerminalMetricsForSnapshot(snapshot)
+	metrics := terminalMetricsForSource(source)
 	if metrics.Cols <= 0 || metrics.Rows <= 0 {
 		return
 	}
@@ -2088,41 +2185,7 @@ func drawSnapshotExtentHints(canvas *composedCanvas, rect workbench.Rect, snapsh
 }
 
 func renderTerminalMetricsForSnapshot(snapshot *protocol.Snapshot) renderTerminalMetrics {
-	if snapshot == nil {
-		return renderTerminalMetrics{}
-	}
-	metrics := renderTerminalMetrics{
-		Cols: int(snapshot.Size.Cols),
-		Rows: int(snapshot.Size.Rows),
-	}
-	if metrics.Rows <= 0 {
-		metrics.Rows = len(snapshot.Screen.Cells)
-	}
-	if metrics.Cols <= 0 {
-		for _, row := range snapshot.Screen.Cells {
-			if rowW := protocolRowDisplayWidth(row); rowW > metrics.Cols {
-				metrics.Cols = rowW
-			}
-		}
-	}
-	return metrics
-}
-
-func protocolRowDisplayWidth(row []protocol.Cell) int {
-	width := 0
-	for _, cell := range row {
-		switch {
-		case cell.Content == "" && cell.Width == 0:
-			continue
-		case cell.Width > 0:
-			width += cell.Width
-		case cell.Content != "":
-			width += xansi.StringWidth(cell.Content)
-		default:
-			width++
-		}
-	}
-	return width
+	return terminalMetricsForSource(renderSource(snapshot, nil))
 }
 
 func drawCopyModeOverlay(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, theme uiTheme, cursorRow, cursorCol, viewTopRow int, markSet bool, markRow, markCol int) {
@@ -2319,19 +2382,22 @@ func activeEntryCursorRenderTarget(entries []paneRenderEntry, runtimeState *Visi
 		}
 		terminal := findVisibleTerminal(runtimeState, entry.TerminalID)
 		snapshot := entry.Snapshot
-		if snapshot == nil {
-			if terminal != nil {
-				snapshot = terminal.Snapshot
-			}
+		surface := entry.Surface
+		if snapshot == nil && surface == nil && terminal != nil {
+			surface = terminal.Surface
 		}
-		if snapshot == nil {
+		if snapshot == nil && surface == nil && terminal != nil {
+			snapshot = terminal.Snapshot
+		}
+		source := renderSource(snapshot, surface)
+		if source == nil {
 			return cursorRenderTarget{}, false
 		}
 		rect := contentRectForEntry(entry)
 		if entry.CopyModeActive || entry.ScrollOffset > 0 {
 			return cursorRenderTarget{}, false
 		}
-		target, ok := entryCursorRenderTarget(rect, snapshot)
+		target, ok := entryCursorRenderTarget(rect, source)
 		if !ok {
 			return cursorRenderTarget{}, false
 		}
@@ -2351,24 +2417,28 @@ func activeEntryCursorTarget(entries []paneRenderEntry, runtimeState *VisibleRun
 	return target.cursorProjectionTarget, true
 }
 
-func entryCursorRenderTarget(rect workbench.Rect, snapshot *protocol.Snapshot) (cursorRenderTarget, bool) {
-	snapshotTarget, snapshotOK := snapshotCursorProjectionTarget(rect, snapshot)
-	fallbackTarget, fallbackOK := visualCursorProjectionTarget(rect, snapshot)
+func entryCursorRenderTarget(rect workbench.Rect, source terminalRenderSource) (cursorRenderTarget, bool) {
+	snapshotTarget, snapshotOK := renderSourceCursorProjectionTarget(rect, source)
+	fallbackTarget, fallbackOK := visualCursorProjectionTargetForSource(rect, source)
+	cursor := protocol.CursorState{}
+	if source != nil {
+		cursor = source.Cursor()
+	}
 	switch {
-	case snapshotOK && shouldPreferVisualCursorTarget(snapshot, snapshotTarget, fallbackTarget, fallbackOK):
+	case snapshotOK && shouldPreferVisualCursorTargetForSource(source, snapshotTarget, fallbackTarget, fallbackOK):
 		return cursorRenderTarget{
 			cursorProjectionTarget: fallbackTarget,
-			Visible:                snapshot.Cursor.Visible,
+			Visible:                cursor.Visible,
 		}, true
 	case snapshotOK:
 		return cursorRenderTarget{
 			cursorProjectionTarget: snapshotTarget,
-			Visible:                snapshot.Cursor.Visible,
+			Visible:                cursor.Visible,
 		}, true
 	case fallbackOK:
 		return cursorRenderTarget{
 			cursorProjectionTarget: fallbackTarget,
-			Visible:                snapshot != nil && snapshot.Cursor.Visible,
+			Visible:                cursor.Visible,
 		}, true
 	default:
 		return cursorRenderTarget{}, false

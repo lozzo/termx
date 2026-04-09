@@ -22,6 +22,7 @@ const (
 	StreamSyncLost
 	StreamClosed
 	StreamResize
+	StreamBootstrapDone
 )
 
 type StreamMessage struct {

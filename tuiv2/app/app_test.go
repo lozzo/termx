@@ -1,16 +1,20 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/bridge"
@@ -33,6 +37,36 @@ func (w *recordingFrameWriter) WriteFrame(frame, cursor string) error {
 	w.frame = frame
 	w.cursor = cursor
 	return nil
+}
+
+type backlogProbeFrameWriter struct {
+	mu        sync.Mutex
+	pending   atomic.Bool
+	drainHook func()
+}
+
+func (w *backlogProbeFrameWriter) WriteFrame(string, string) error {
+	return nil
+}
+
+func (w *backlogProbeFrameWriter) HasPendingFrame() bool {
+	return w.pending.Load()
+}
+
+func (w *backlogProbeFrameWriter) SetDrainHook(hook func()) {
+	w.mu.Lock()
+	w.drainHook = hook
+	w.mu.Unlock()
+}
+
+func (w *backlogProbeFrameWriter) Drain() {
+	w.pending.Store(false)
+	w.mu.Lock()
+	hook := w.drainHook
+	w.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 }
 
 func TestModelViewShowsProjectedState(t *testing.T) {
@@ -173,6 +207,37 @@ func TestModelViewWritesFrameDirectlyWhenFrameWriterConfigured(t *testing.T) {
 	}
 	if writer.cursor == "" {
 		t.Fatal("expected direct frame writer to receive a cursor sequence")
+	}
+}
+
+func TestModelViewSkipsRenderWhenDirectFrameIsUnchanged(t *testing.T) {
+	model := New(shared.Config{}, nil, runtime.New(nil))
+	model.SetFrameWriter(&recordingFrameWriter{})
+
+	recorder := perftrace.Enable()
+	defer perftrace.Disable()
+	recorder.Reset()
+
+	if got := model.View(); got != "" {
+		t.Fatalf("expected direct frame mode to return an empty Bubble Tea view, got %q", got)
+	}
+	first := recorder.Snapshot()
+	renderEvent, ok := first.Event("render.frame")
+	if !ok || renderEvent.Count != 1 {
+		t.Fatalf("expected first direct view to render once, got %#v", first.Events)
+	}
+
+	recorder.Reset()
+	if got := model.View(); got != "" {
+		t.Fatalf("expected cached direct frame mode to return an empty Bubble Tea view, got %q", got)
+	}
+	second := recorder.Snapshot()
+	if renderEvent, ok := second.Event("render.frame"); ok && renderEvent.Count > 0 {
+		t.Fatalf("expected cached direct view to skip render.frame, got %#v", second.Events)
+	}
+	reuseEvent, ok := second.Event("app.view.reuse")
+	if !ok || reuseEvent.Count != 1 {
+		t.Fatalf("expected cached direct view reuse metric, got %#v", second.Events)
 	}
 }
 
@@ -982,6 +1047,50 @@ func TestModelUpdateTerminalInputMsgUsesSameRuntimePath(t *testing.T) {
 	}
 }
 
+func TestModelUpdateKeyBurstMsgUsesSameRuntimePath(t *testing.T) {
+	client := &recordingBridgeClient{}
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	rt := runtime.New(client)
+	binding := rt.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+	model := New(shared.Config{}, wb, rt)
+
+	updated, cmd := model.Update(keyBurstMsg{
+		Msg:    tea.KeyMsg{Type: tea.KeyCtrlY},
+		Repeat: 8,
+	})
+	if updated != model {
+		t.Fatal("expected model pointer to remain stable")
+	}
+	if cmd == nil {
+		t.Fatal("expected burst terminal input command")
+	}
+	drainCmd(t, model, cmd, 10)
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected one input call, got %#v", client.inputCalls)
+	}
+	if client.inputCalls[0].channel != 7 {
+		t.Fatalf("expected pane-1 binding channel 7, got %#v", client.inputCalls[0])
+	}
+	if want := bytes.Repeat([]byte{0x19}, 8); !bytes.Equal(client.inputCalls[0].data, want) {
+		t.Fatalf("expected repeated ctrl-y burst %q, got %q", want, client.inputCalls[0].data)
+	}
+}
+
 func TestHandleKeyMsgUsesApplicationCursorEncoding(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
@@ -1162,6 +1271,213 @@ func TestHandleTerminalInputQueuesWhileSendInFlight(t *testing.T) {
 	}
 }
 
+func TestHandleTerminalWheelInputMergesMatchingPendingTail(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	started := make(chan inputCall, 1)
+	release := make(chan struct{})
+	client := &recordingBridgeClient{inputStarted: started, inputBlock: release}
+	rt := runtime.New(client)
+	binding := rt.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+	model := New(shared.Config{}, wb, rt)
+
+	firstCmd := model.handleTerminalInput(input.TerminalInput{
+		Kind:           input.TerminalInputWheel,
+		PaneID:         "pane-1",
+		Data:           []byte("up"),
+		WheelDirection: 1,
+	})
+	if firstCmd == nil {
+		t.Fatal("expected first wheel input command")
+	}
+	done := make(chan tea.Msg, 1)
+	go func() {
+		done <- firstCmd()
+	}()
+	select {
+	case call := <-started:
+		if got := string(call.data); got != "up" {
+			t.Fatalf("expected first wheel input to send \"up\", got %q", got)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for first wheel send to start")
+	}
+
+	for i := 0; i < 2; i++ {
+		if cmd := model.handleTerminalInput(input.TerminalInput{
+			Kind:           input.TerminalInputWheel,
+			PaneID:         "pane-1",
+			Data:           []byte("up"),
+			WheelDirection: 1,
+		}); cmd != nil {
+			t.Fatalf("expected queued wheel input %d to stay buffered, got cmd %#v", i, cmd)
+		}
+	}
+	if len(model.pendingTerminalInputs) != 1 {
+		t.Fatalf("expected one merged pending wheel input, got %#v", model.pendingTerminalInputs)
+	}
+	if got := model.pendingTerminalInputs[0].Repeat; got != 2 {
+		t.Fatalf("expected merged wheel repeat=2, got %#v", model.pendingTerminalInputs)
+	}
+
+	close(release)
+	firstMsg := <-done
+	_, nextCmd := model.Update(firstMsg)
+	if nextCmd == nil {
+		t.Fatal("expected merged wheel follow-up command")
+	}
+	drainCmd(t, model, nextCmd, 10)
+
+	if len(client.inputCalls) != 2 {
+		t.Fatalf("expected first wheel send plus one merged follow-up, got %#v", client.inputCalls)
+	}
+	if got := string(client.inputCalls[1].data); got != "upup" {
+		t.Fatalf("expected merged wheel payload \"upup\", got %q", got)
+	}
+}
+
+func TestInteractionBatchCombinesMixedTerminalInputIntoOneSend(t *testing.T) {
+	client := &recordingBridgeClient{}
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	rt := runtime.New(client)
+	binding := rt.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+	model := New(shared.Config{}, wb, rt)
+
+	_, cmd := model.Update(interactionBatchMsg{Messages: []tea.Msg{
+		tea.KeyMsg{Type: tea.KeyCtrlE},
+		tea.KeyMsg{Type: tea.KeyCtrlY},
+		tea.KeyMsg{Type: tea.KeyCtrlE},
+		tea.KeyMsg{Type: tea.KeyCtrlY},
+	}})
+	if cmd == nil {
+		t.Fatal("expected batched interaction command")
+	}
+	drainCmd(t, model, cmd, 20)
+
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected one combined input send, got %#v", client.inputCalls)
+	}
+	if got := string(client.inputCalls[0].data); got != "\x05\x19\x05\x19" {
+		t.Fatalf("expected combined ctrl-e/ctrl-y payload, got %q", got)
+	}
+}
+
+func TestHandleTerminalWheelInputCancelsOppositePendingTail(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	started := make(chan inputCall, 1)
+	release := make(chan struct{})
+	client := &recordingBridgeClient{inputStarted: started, inputBlock: release}
+	rt := runtime.New(client)
+	binding := rt.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+	model := New(shared.Config{}, wb, rt)
+
+	firstCmd := model.handleTerminalInput(input.TerminalInput{
+		Kind:           input.TerminalInputWheel,
+		PaneID:         "pane-1",
+		Data:           []byte("up"),
+		WheelDirection: 1,
+	})
+	if firstCmd == nil {
+		t.Fatal("expected first wheel input command")
+	}
+	done := make(chan tea.Msg, 1)
+	go func() {
+		done <- firstCmd()
+	}()
+	select {
+	case <-started:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for first wheel send to start")
+	}
+
+	for i := 0; i < 2; i++ {
+		if cmd := model.handleTerminalInput(input.TerminalInput{
+			Kind:           input.TerminalInputWheel,
+			PaneID:         "pane-1",
+			Data:           []byte("up"),
+			WheelDirection: 1,
+		}); cmd != nil {
+			t.Fatalf("expected pending up wheel %d to stay buffered, got cmd %#v", i, cmd)
+		}
+	}
+	for i := 0; i < 3; i++ {
+		if cmd := model.handleTerminalInput(input.TerminalInput{
+			Kind:           input.TerminalInputWheel,
+			PaneID:         "pane-1",
+			Data:           []byte("down"),
+			WheelDirection: -1,
+		}); cmd != nil {
+			t.Fatalf("expected pending down wheel %d to stay buffered, got cmd %#v", i, cmd)
+		}
+	}
+	if len(model.pendingTerminalInputs) != 1 {
+		t.Fatalf("expected pending queue to collapse to one down wheel, got %#v", model.pendingTerminalInputs)
+	}
+	pending := model.pendingTerminalInputs[0]
+	if got := string(pending.Data); got != "down" || pending.WheelDirection != -1 || pending.Repeat != 1 {
+		t.Fatalf("unexpected collapsed pending wheel %#v", pending)
+	}
+
+	close(release)
+	firstMsg := <-done
+	_, nextCmd := model.Update(firstMsg)
+	if nextCmd == nil {
+		t.Fatal("expected opposite-direction follow-up command")
+	}
+	drainCmd(t, model, nextCmd, 10)
+
+	if len(client.inputCalls) != 2 {
+		t.Fatalf("expected first wheel send plus one collapsed opposite follow-up, got %#v", client.inputCalls)
+	}
+	if got := string(client.inputCalls[1].data); got != "down" {
+		t.Fatalf("expected collapsed opposite wheel payload \"down\", got %q", got)
+	}
+}
+
 func TestQueueInvalidateCoalescesPendingRedraws(t *testing.T) {
 	model := New(shared.Config{}, nil, runtime.New(nil))
 	sent := make(chan tea.Msg, 4)
@@ -1197,6 +1513,36 @@ func TestQueueInvalidateCoalescesPendingRedraws(t *testing.T) {
 	}
 }
 
+func TestQueueInvalidateBatchesBurstBeforeSending(t *testing.T) {
+	originalDelay := invalidateBatchDelay
+	invalidateBatchDelay = 40 * time.Millisecond
+	defer func() { invalidateBatchDelay = originalDelay }()
+
+	model := New(shared.Config{}, nil, runtime.New(nil))
+	sent := make(chan tea.Msg, 4)
+	model.SetSendFunc(func(msg tea.Msg) {
+		sent <- msg
+	})
+
+	model.queueInvalidate()
+	model.queueInvalidate()
+
+	select {
+	case msg := <-sent:
+		t.Fatalf("expected invalidate batching to delay the burst, got %#v", msg)
+	case <-time.After(10 * time.Millisecond):
+	}
+
+	select {
+	case msg := <-sent:
+		if _, ok := msg.(InvalidateMsg); !ok {
+			t.Fatalf("expected invalidate message after batch delay, got %#v", msg)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for batched invalidate message")
+	}
+}
+
 func TestQueueInvalidateDoesNotBlockOnSend(t *testing.T) {
 	model := New(shared.Config{}, nil, runtime.New(nil))
 	release := make(chan struct{})
@@ -1217,6 +1563,40 @@ func TestQueueInvalidateDoesNotBlockOnSend(t *testing.T) {
 	}
 
 	close(release)
+}
+
+func TestQueueInvalidateWaitsForFrameWriterDrainBeforeSending(t *testing.T) {
+	originalDelay := invalidateBatchDelay
+	invalidateBatchDelay = 0
+	defer func() { invalidateBatchDelay = originalDelay }()
+
+	model := New(shared.Config{}, nil, runtime.New(nil))
+	writer := &backlogProbeFrameWriter{}
+	writer.pending.Store(true)
+	model.SetFrameWriter(writer)
+	sent := make(chan tea.Msg, 4)
+	model.SetSendFunc(func(msg tea.Msg) {
+		sent <- msg
+	})
+
+	model.queueInvalidate()
+
+	select {
+	case msg := <-sent:
+		t.Fatalf("expected frame-writer backlog to defer invalidate, got %#v", msg)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	writer.Drain()
+
+	select {
+	case msg := <-sent:
+		if _, ok := msg.(InvalidateMsg); !ok {
+			t.Fatalf("expected invalidate after frame-writer drain, got %#v", msg)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for invalidate after frame-writer drain")
+	}
 }
 
 func TestPendingAttachBuffersTerminalInputUntilAttachCompletes(t *testing.T) {
@@ -1270,8 +1650,8 @@ func TestPendingAttachBuffersTerminalInputUntilAttachCompletes(t *testing.T) {
 	if len(client.resizes) != 1 || client.resizes[0].channel != 7 {
 		t.Fatalf("expected attach completion to resize pane before flushing input, got %#v", client.resizes)
 	}
-	if len(client.inputCalls) != 4 {
-		t.Fatalf("expected four flushed input calls after attach, got %#v", client.inputCalls)
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected buffered attach input to flush in one send, got %#v", client.inputCalls)
 	}
 	var got strings.Builder
 	for _, call := range client.inputCalls {
@@ -1881,15 +2261,7 @@ func TestModelPromptSubmitCreatesAndAttachesTerminal(t *testing.T) {
 		t.Fatal("expected async create command")
 	}
 	msg := cmd()
-	batch, ok := msg.(tea.BatchMsg)
-	if !ok || len(batch) == 0 {
-		t.Fatalf("expected batch of attach/snapshot messages, got %#v", msg)
-	}
-	for _, item := range batch {
-		if next := item(); next != nil {
-			_, _ = model.Update(next)
-		}
-	}
+	applyTestMsg(t, model, msg, "attach terminal submit")
 	if len(client.createCalls) != 1 {
 		t.Fatalf("expected one create call, got %d", len(client.createCalls))
 	}
@@ -2475,28 +2847,7 @@ func TestModelInitRestoreAutoReattachesPersistedPanes(t *testing.T) {
 		t.Fatal("expected init command for restore auto-reattach")
 	}
 	msg := cmd()
-	batch, ok := msg.(tea.BatchMsg)
-	if !ok || len(batch) == 0 {
-		t.Fatalf("expected batch from init restore auto-reattach, got %#v", msg)
-	}
-	for _, item := range batch {
-		if next := item(); next != nil {
-			_, nextCmd := model.Update(next)
-			if nextCmd != nil {
-				if nested := nextCmd(); nested != nil {
-					if nestedBatch, ok := nested.(tea.BatchMsg); ok {
-						for _, nestedItem := range nestedBatch {
-							if final := nestedItem(); final != nil {
-								_, _ = model.Update(final)
-							}
-						}
-					} else {
-						_, _ = model.Update(nested)
-					}
-				}
-			}
-		}
-	}
+	applyTestMsg(t, model, msg, "init restore auto-reattach")
 
 	if len(client.attachCalls) != 1 {
 		t.Fatalf("expected one auto-reattach call, got %d", len(client.attachCalls))
@@ -2579,15 +2930,7 @@ func TestModelInitAttachIDBootstrapsAndAttachesTerminal(t *testing.T) {
 		t.Fatal("expected init command for attach bootstrap")
 	}
 	msg := cmd()
-	batch, ok := msg.(tea.BatchMsg)
-	if !ok || len(batch) == 0 {
-		t.Fatalf("expected attach batch from init, got %#v", msg)
-	}
-	for _, item := range batch {
-		if next := item(); next != nil {
-			_, _ = model.Update(next)
-		}
-	}
+	applyTestMsg(t, model, msg, "init attach bootstrap")
 	pane := model.workbench.ActivePane()
 	if pane == nil || pane.TerminalID != "term-attach" {
 		t.Fatalf("expected active pane attached to term-attach, got %#v", pane)
@@ -2938,6 +3281,40 @@ func (c *recordingBridgeClient) AcquireSessionLease(_ context.Context, params pr
 func (c *recordingBridgeClient) ReleaseSessionLease(_ context.Context, params protocol.ReleaseSessionLeaseParams) error {
 	c.releaseLeaseCalls = append(c.releaseLeaseCalls, params)
 	return nil
+}
+
+func applyTestMsg(t *testing.T, model *Model, msg tea.Msg, label string) {
+	t.Helper()
+	if msg == nil {
+		t.Fatalf("%s: expected message, got nil", label)
+	}
+	applyTestMsgRecursive(t, model, msg, label)
+}
+
+func applyTestMsgRecursive(t *testing.T, model *Model, msg tea.Msg, label string) {
+	t.Helper()
+	switch typed := msg.(type) {
+	case nil:
+		return
+	case tea.BatchMsg:
+		if len(typed) == 0 {
+			t.Fatalf("%s: expected non-empty batch", label)
+		}
+		for _, item := range typed {
+			if item == nil {
+				continue
+			}
+			applyTestMsgRecursive(t, model, item(), label)
+		}
+	default:
+		_, nextCmd := model.Update(typed)
+		if nextCmd == nil {
+			return
+		}
+		if next := nextCmd(); next != nil {
+			applyTestMsgRecursive(t, model, next, label)
+		}
+	}
 }
 
 func cloneTags(tags map[string]string) map[string]string {

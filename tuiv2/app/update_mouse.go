@@ -42,16 +42,26 @@ func (m *Model) handleMouseMsg(msg tea.MouseMsg) tea.Cmd {
 }
 
 func (m *Model) handleMouseWheel(msg tea.MouseMsg) tea.Cmd {
+	return m.handleMouseWheelRepeated(msg, 1)
+}
+
+func (m *Model) handleMouseWheelBurstMsg(msg mouseWheelBurstMsg) tea.Cmd {
+	return m.handleMouseWheelRepeated(msg.Msg, maxInt(1, msg.Repeat))
+}
+
+func (m *Model) handleMouseWheelRepeated(msg tea.MouseMsg, repeat int) tea.Cmd {
 	if m == nil || m.workbench == nil {
 		return nil
 	}
 	x := msg.X
 	y := msg.Y
 	button := msg.Button
-	delta := -1
+	step := -1
 	if button == tea.MouseButtonWheelUp {
-		delta = 1
+		step = 1
 	}
+	repeat = maxInt(1, repeat)
+	delta := step * repeat
 	state := m.visibleRenderState()
 	if handled, cmd := m.handleOverlayMouseWheel(state, delta); handled {
 		return cmd
@@ -64,15 +74,15 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) tea.Cmd {
 	}
 	if y < m.contentOriginY() {
 		if delta > 0 {
-			return m.switchCurrentTabByOffsetMouse(-1)
+			return m.switchCurrentTabByOffsetMouse(-repeat)
 		}
-		return m.switchCurrentTabByOffsetMouse(1)
+		return m.switchCurrentTabByOffsetMouse(repeat)
 	}
-	if cmd := m.forwardTerminalMouseInputCmd(msg); cmd != nil {
-		return cmd
+	if in, ok := m.terminalWheelInputForMouseMsg(msg, step, repeat); ok {
+		return m.handleTerminalInput(in)
 	}
-	if cmd := m.forwardAlternateScreenWheelCmd(msg); cmd != nil {
-		return cmd
+	if in, ok := m.alternateScreenWheelInputForMouseMsg(msg, step, repeat); ok {
+		return m.handleTerminalInput(in)
 	}
 
 	contentY := y - m.contentOriginY()
@@ -100,28 +110,88 @@ func (m *Model) handleMouseWheel(msg tea.MouseMsg) tea.Cmd {
 	return nil
 }
 
-func (m *Model) forwardAlternateScreenWheelCmd(msg tea.MouseMsg) tea.Cmd {
-	if m == nil || m.workbench == nil {
-		return nil
-	}
-	targetPaneID, _, ok := m.activeContentMouseTarget(msg.X, msg.Y)
+func (m *Model) forwardTerminalWheelInputCmd(msg tea.MouseMsg, delta int) tea.Cmd {
+	in, ok := m.terminalWheelInputForMouseMsg(msg, delta, 1)
 	if !ok {
 		return nil
 	}
+	return terminalWheelInputCmd(in)
+}
+
+func (m *Model) forwardAlternateScreenWheelCmd(msg tea.MouseMsg, delta int) tea.Cmd {
+	in, ok := m.alternateScreenWheelInputForMouseMsg(msg, delta, 1)
+	if !ok {
+		return nil
+	}
+	return terminalWheelInputCmd(in)
+}
+
+func (m *Model) terminalWheelInputForMouseMsg(msg tea.MouseMsg, delta, repeat int) (input.TerminalInput, bool) {
+	if m == nil || m.workbench == nil {
+		return input.TerminalInput{}, false
+	}
+	if m.mode().Kind == input.ModeDisplay {
+		return input.TerminalInput{}, false
+	}
+	state := m.visibleRenderState()
+	if state.Overlay.Kind != render.VisibleOverlayNone || state.Surface.Kind == render.VisibleSurfaceTerminalPool {
+		return input.TerminalInput{}, false
+	}
+	targetPaneID, contentRect, ok := m.activeContentMouseTarget(msg.X, msg.Y)
+	if !ok {
+		return input.TerminalInput{}, false
+	}
+	contentMsg := msg
+	contentMsg.Y = msg.Y - m.contentOriginY()
+	encoded := m.encodeTerminalMouseInput(contentMsg, targetPaneID, contentRect)
+	if len(encoded) == 0 {
+		return input.TerminalInput{}, false
+	}
+	return input.TerminalInput{
+		Kind:           input.TerminalInputWheel,
+		PaneID:         targetPaneID,
+		Data:           encoded,
+		Repeat:         maxInt(1, repeat),
+		WheelDirection: delta,
+	}, true
+}
+
+func (m *Model) alternateScreenWheelInputForMouseMsg(msg tea.MouseMsg, delta, repeat int) (input.TerminalInput, bool) {
+	if m == nil || m.workbench == nil {
+		return input.TerminalInput{}, false
+	}
+	targetPaneID, _, ok := m.activeContentMouseTarget(msg.X, msg.Y)
+	if !ok {
+		return input.TerminalInput{}, false
+	}
 	pane := m.activePaneForInput(targetPaneID)
 	if pane == nil || pane.TerminalID == "" {
-		return nil
+		return input.TerminalInput{}, false
 	}
 	modes := m.terminalModesForPane(pane)
 	if (!modes.AlternateScreen && !modes.AlternateScroll) || modes.MouseTracking {
-		return nil
+		return input.TerminalInput{}, false
 	}
 	encoded := encodeTerminalWheelFallback(msg, modes)
 	if len(encoded) == 0 {
+		return input.TerminalInput{}, false
+	}
+	return input.TerminalInput{
+		Kind:           input.TerminalInputWheel,
+		PaneID:         targetPaneID,
+		Data:           encoded,
+		Repeat:         maxInt(1, repeat),
+		WheelDirection: delta,
+	}, true
+}
+
+func terminalWheelInputCmd(in input.TerminalInput) tea.Cmd {
+	if in.PaneID == "" || len(in.Data) == 0 || in.WheelDirection == 0 {
 		return nil
 	}
 	return func() tea.Msg {
-		return input.TerminalInput{PaneID: targetPaneID, Data: encoded}
+		in.Repeat = maxInt(1, in.Repeat)
+		return in
 	}
 }
 

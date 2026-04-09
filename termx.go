@@ -974,6 +974,13 @@ func (s *Server) handleRequest(
 						return
 					}
 					err = sendRawFrame(sendFrame, frame)
+				case StreamBootstrapDone:
+					frame, encodeErr := protocol.EncodeFrame(ch, protocol.TypeBootstrapDone, nil)
+					if encodeErr != nil {
+						cancel()
+						return
+					}
+					err = sendRawFrame(sendFrame, frame)
 				case StreamClosed:
 					code := 0
 					if msg.ExitCode != nil {

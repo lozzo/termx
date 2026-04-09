@@ -56,23 +56,18 @@ func (o *Orchestrator) HandleSemanticAction(action input.SemanticAction) []Effec
 	}
 }
 
-func (o *Orchestrator) AttachAndLoadSnapshot(ctx context.Context, paneID, terminalID, mode string, offset, limit int) ([]any, error) {
+func (o *Orchestrator) AttachAndLoadSnapshot(ctx context.Context, paneID, terminalID, mode string, _ int, _ int) ([]any, error) {
 	terminal, err := o.runtime.AttachTerminal(ctx, paneID, terminalID, mode)
 	if err != nil {
 		return nil, err
 	}
 	o.bindWorkbenchPaneTerminal(paneID, terminalID)
 	o.syncWorkbenchPaneTitle(terminalID, terminal)
-	snapshot, err := o.runtime.LoadSnapshot(ctx, terminalID, offset, limit)
-	if err != nil {
-		return nil, err
-	}
 	if err := o.runtime.StartStream(ctx, terminalID); err != nil {
 		return nil, err
 	}
 	msgs := []any{
 		TerminalAttachedMsg{PaneID: paneID, TerminalID: terminalID, Channel: terminal.Channel},
-		SnapshotLoadedMsg{PaneID: paneID, TerminalID: terminalID, Snapshot: snapshot},
 	}
 	return msgs, nil
 }

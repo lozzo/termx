@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
+	localvterm "github.com/lozzow/termx/vterm"
 )
 
 type cursorWriterProbeModel struct {
@@ -346,6 +347,10 @@ func TestOutputCursorWriterEnterAndExitDirectTerminal(t *testing.T) {
 }
 
 func TestOutputCursorWriterWritesDirectFrame(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
 	sink := &cursorWriterProbeTTY{}
 	writer := newOutputCursorWriter(sink)
 	writer.QueueControlSequenceAfterWrite("<PROBE>")
@@ -358,22 +363,255 @@ func TestOutputCursorWriterWritesDirectFrame(t *testing.T) {
 	writes := append([]string(nil), sink.writes...)
 	sink.mu.Unlock()
 
-	want := []string{
-		synchronizedOutputBegin,
-		hideHostCursorSequence,
-		xansi.MoveCursorOrigin,
-		"frame-1\r\nframe-2",
-		"<PROBE>",
-		"<CURSOR>",
-		synchronizedOutputEnd,
+	// 单次缓冲写入：所有序列合并为一次 io.WriteString
+	wantSingle := synchronizedOutputBegin +
+		hideHostCursorSequence +
+		xansi.MoveCursorOrigin +
+		"frame-1\r\nframe-2" +
+		"<PROBE>" +
+		"<CURSOR>" +
+		synchronizedOutputEnd
+	if len(writes) != 1 {
+		t.Fatalf("expected single buffered write, got %d writes: %#v", len(writes), writes)
 	}
-	if len(writes) != len(want) {
-		t.Fatalf("expected direct frame write sequence %#v, got %#v", want, writes)
+	if writes[0] != wantSingle {
+		t.Fatalf("unexpected buffered write:\n got %q\nwant %q", writes[0], wantSingle)
 	}
-	for i := range want {
-		if writes[i] != want[i] {
-			t.Fatalf("unexpected write %d: got %q want %q; full=%#v", i, writes[i], want[i], writes)
+}
+
+func TestOutputCursorWriterCoalescesBurstDirectFrames(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	originalIdleThreshold := directFrameIdleThreshold
+	directFrameBatchDelay = 20 * time.Millisecond
+	directFrameIdleThreshold = time.Hour
+	defer func() {
+		directFrameBatchDelay = originalDelay
+		directFrameIdleThreshold = originalIdleThreshold
+	}()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.mu.Lock()
+	writer.lastFlushAt = time.Now()
+	writer.mu.Unlock()
+
+	if err := writer.WriteFrame("frame-a", "<CURSOR-A>"); err != nil {
+		t.Fatalf("write frame a: %v", err)
+	}
+	if err := writer.WriteFrame("frame-b", "<CURSOR-B>"); err != nil {
+		t.Fatalf("write frame b: %v", err)
+	}
+	if err := writer.WriteFrame("frame-c", "<CURSOR-C>"); err != nil {
+		t.Fatalf("write frame c: %v", err)
+	}
+
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		sink.mu.Lock()
+		writes := append([]string(nil), sink.writes...)
+		sink.mu.Unlock()
+		if len(writes) >= 1 {
+			got := strings.Join(writes, "")
+			if strings.Contains(got, "frame-c") {
+				if strings.Contains(got, "frame-a") || strings.Contains(got, "frame-b") {
+					t.Fatalf("expected burst coalescing to keep only latest frame, got %#v", writes)
+				}
+				return
+			}
 		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	t.Fatalf("timed out waiting for coalesced direct frame flush, got %#v", sink.writes)
+}
+
+func TestOutputCursorWriterDrainHookFiresAfterPendingFrameFlush(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	originalIdleThreshold := directFrameIdleThreshold
+	directFrameBatchDelay = 20 * time.Millisecond
+	directFrameIdleThreshold = time.Hour
+	defer func() {
+		directFrameBatchDelay = originalDelay
+		directFrameIdleThreshold = originalIdleThreshold
+	}()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.mu.Lock()
+	writer.lastFlushAt = time.Now()
+	writer.mu.Unlock()
+	drained := make(chan struct{}, 1)
+	writer.SetDrainHook(func() {
+		select {
+		case drained <- struct{}{}:
+		default:
+		}
+	})
+
+	if err := writer.WriteFrame("frame-a", "<CURSOR-A>"); err != nil {
+		t.Fatalf("write frame a: %v", err)
+	}
+	if !writer.HasPendingFrame() {
+		t.Fatal("expected pending frame backlog after buffered write")
+	}
+
+	select {
+	case <-drained:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for drain hook")
+	}
+	if writer.HasPendingFrame() {
+		t.Fatal("expected pending frame backlog cleared after flush")
+	}
+}
+
+func TestOutputCursorWriterFlushesImmediatelyAfterIdle(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	originalIdleThreshold := directFrameIdleThreshold
+	directFrameBatchDelay = 20 * time.Millisecond
+	directFrameIdleThreshold = 10 * time.Millisecond
+	defer func() {
+		directFrameBatchDelay = originalDelay
+		directFrameIdleThreshold = originalIdleThreshold
+	}()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.mu.Lock()
+	writer.lastFlushAt = time.Now().Add(-time.Second)
+	writer.mu.Unlock()
+
+	if err := writer.WriteFrame("frame-a", "<CURSOR-A>"); err != nil {
+		t.Fatalf("write frame a: %v", err)
+	}
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	if len(sink.writes) != 1 {
+		t.Fatalf("expected idle direct frame to flush immediately, got %#v", sink.writes)
+	}
+}
+
+func TestOutputCursorWriterSkipsRedundantCursorOnlyDirectFrame(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+
+	if err := writer.WriteFrame("frame-a", "<CURSOR-A>"); err != nil {
+		t.Fatalf("write frame a: %v", err)
+	}
+	if err := writer.WriteFrame("frame-a", "<CURSOR-A>"); err != nil {
+		t.Fatalf("rewrite identical frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	if len(sink.writes) != 1 {
+		t.Fatalf("expected redundant cursor-only direct frame to be skipped, got %#v", sink.writes)
+	}
+}
+
+func TestOutputCursorWriterDiffsLaterRowsAtCorrectAbsoluteRow(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+
+	if err := writer.WriteFrame("row-1\nrow-2\nrow-3\nrow-4", "<CURSOR>"); err != nil {
+		t.Fatalf("write initial frame: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrame("row-1\nrow-2\nrow-3\nROW-4", "<CURSOR>"); err != nil {
+		t.Fatalf("write diff frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if !strings.Contains(got, "\x1b[4;1H") {
+		t.Fatalf("expected later-row diff to target absolute row 4, got %q", got)
+	}
+	if strings.Contains(got, "\x1b[1;4H") {
+		t.Fatalf("expected not to swap CUP row/column when diffing later rows, got %q", got)
+	}
+}
+
+func TestOutputCursorWriterFullRepaintAfterScrollKeepsMiddleRowsInPlace(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+
+	frame1 := strings.Join([]string{
+		"HDR-1........................",
+		"HDR-2........................",
+		"HDR-3........................",
+		"row-01.......................",
+		"row-02.......................",
+		"row-03.......................",
+		"row-04.......................",
+		"row-05.......................",
+		"row-06.......................",
+		"FTR-1........................",
+	}, "\n")
+	frame2 := strings.Join([]string{
+		"HDR-1........................",
+		"HDR-2........................",
+		"HDR-3........................",
+		"row-02.......................",
+		"row-03.......................",
+		"row-04.......................",
+		"row-05.......................",
+		"row-06.......................",
+		"row-07.......................",
+		"FTR-1........................",
+	}, "\n")
+	frame3 := strings.Join([]string{
+		"HDR-1........................",
+		"HDR-2........................",
+		"HDR-3........................",
+		"mid-01.......................",
+		"mid-02.......................",
+		"MIDDLE-HELLO.................",
+		"mid-04.......................",
+		"mid-05.......................",
+		"mid-06.......................",
+		"FTR-2........................",
+	}, "\n")
+
+	for _, frame := range []string{frame1, frame2, frame3} {
+		if err := writer.WriteFrame(frame, ""); err != nil {
+			t.Fatalf("write frame %q: %v", frame, err)
+		}
+	}
+
+	sink.mu.Lock()
+	stream := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	vt := localvterm.New(32, 10, 0, nil)
+	if _, err := vt.Write([]byte(stream)); err != nil {
+		t.Fatalf("replay writer output into host vterm: %v", err)
+	}
+
+	lines := vtermScreenLines(vt.ScreenContent())
+	if got := strings.TrimRight(lines[5], " "); !strings.Contains(got, "MIDDLE-HELLO") {
+		t.Fatalf("expected full repaint after scroll to keep middle text on row 6, got row6=%q full=%#v", got, lines)
+	}
+	if got := strings.TrimRight(lines[0], " "); strings.Contains(got, "MIDDLE-HELLO") {
+		t.Fatalf("expected middle text not to jump to top row, got row1=%q full=%#v", got, lines)
 	}
 }
 
@@ -382,6 +620,22 @@ func TestTruncateFrameToWidthClipsEachRenderedLine(t *testing.T) {
 	if got, want := truncateFrameToWidth(frame, 4), "1234\nabcd"; got != want {
 		t.Fatalf("expected direct frame truncation to clip each line, got %q want %q", got, want)
 	}
+}
+
+func vtermScreenLines(screen localvterm.ScreenData) []string {
+	lines := make([]string, len(screen.Cells))
+	for y, row := range screen.Cells {
+		var b strings.Builder
+		for _, cell := range row {
+			content := cell.Content
+			if content == "" {
+				content = " "
+			}
+			b.WriteString(content)
+		}
+		lines[y] = b.String()
+	}
+	return lines
 }
 
 func TestNormalizeFrameForTTYUsesCRLF(t *testing.T) {

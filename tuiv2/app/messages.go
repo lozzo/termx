@@ -3,6 +3,7 @@ package app
 import (
 	"image/color"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -20,6 +21,20 @@ type SemanticActionMsg struct {
 
 type TerminalInputMsg struct {
 	Input input.TerminalInput
+}
+
+type interactionBatchMsg struct {
+	Messages []tea.Msg
+}
+
+type keyBurstMsg struct {
+	Msg    tea.KeyMsg
+	Repeat int
+}
+
+type mouseWheelBurstMsg struct {
+	Msg    tea.MouseMsg
+	Repeat int
 }
 
 type terminalInputSentMsg struct {

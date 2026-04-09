@@ -39,7 +39,6 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 	terminal := r.registry.GetOrCreate(terminalID)
 	if terminal != nil {
 		terminal.Snapshot = snapshot
-		terminal.ScrollbackLoadingLimit = 0
 		if offset == 0 && snapshot != nil {
 			if loaded := len(snapshot.Scrollback); loaded > terminal.ScrollbackLoadedLimit {
 				terminal.ScrollbackLoadedLimit = loaded
@@ -50,6 +49,9 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 		}
 		r.ensureVTerm(terminal)
 		loadSnapshotIntoVTerm(terminal.VTerm, snapshot)
+		r.bumpSurfaceVersion(terminal)
+		terminal.SnapshotVersion = terminal.SurfaceVersion
+		terminal.ScrollbackLoadingLimit = 0
 		r.touch()
 	}
 	return snapshot, nil
@@ -64,6 +66,15 @@ func (r *Runtime) refreshSnapshot(terminalID string) {
 		return
 	}
 	terminal.Snapshot = snapshotFromVTerm(terminalID, terminal.VTerm)
+	terminal.SnapshotVersion = terminal.SurfaceVersion
+	if terminal.Snapshot != nil {
+		if loaded := len(terminal.Snapshot.Scrollback); loaded > terminal.ScrollbackLoadedLimit {
+			terminal.ScrollbackLoadedLimit = loaded
+		}
+		if terminal.ScrollbackLoadingLimit > 0 && len(terminal.Snapshot.Scrollback) >= terminal.ScrollbackLoadingLimit {
+			terminal.ScrollbackLoadingLimit = 0
+		}
+	}
 	r.invalidate()
 }
 

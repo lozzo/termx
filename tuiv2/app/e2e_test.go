@@ -2484,19 +2484,35 @@ func e2eActiveSnapshotExcerpt(m *Model) string {
 		return "<no active terminal>"
 	}
 	terminal := m.runtime.Registry().Get(pane.TerminalID)
-	if terminal == nil || terminal.Snapshot == nil {
-		return "<no snapshot>"
+	if terminal == nil {
+		return "<no terminal>"
 	}
 	lines := make([]string, 0, 8)
-	for _, row := range terminal.Snapshot.Screen.Cells {
-		var b strings.Builder
-		for _, cell := range row {
-			b.WriteString(cell.Content)
+	switch {
+	case terminal.VTerm != nil:
+		for _, row := range terminal.VTerm.ScreenContent().Cells {
+			var b strings.Builder
+			for _, cell := range row {
+				b.WriteString(cell.Content)
+			}
+			lines = append(lines, b.String())
+			if len(lines) >= 8 {
+				break
+			}
 		}
-		lines = append(lines, b.String())
-		if len(lines) >= 8 {
-			break
+	case terminal.Snapshot != nil:
+		for _, row := range terminal.Snapshot.Screen.Cells {
+			var b strings.Builder
+			for _, cell := range row {
+				b.WriteString(cell.Content)
+			}
+			lines = append(lines, b.String())
+			if len(lines) >= 8 {
+				break
+			}
 		}
+	default:
+		return "<no snapshot>"
 	}
 	return strings.Join(lines, "\n")
 }

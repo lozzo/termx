@@ -5,6 +5,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -31,6 +32,8 @@ func (m *Model) Init() tea.Cmd {
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	finish := perftrace.Measure("app.update")
+	defer finish(0)
 	if cmd, ok := m.handleInteractionMessage(msg); ok {
 		return m, cmd
 	}
@@ -69,6 +72,12 @@ func hostEmojiProbeGiveUpCmd(delay time.Duration) tea.Cmd {
 
 func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 	switch typed := msg.(type) {
+	case interactionBatchMsg:
+		return m.handleInteractionBatch(typed.Messages), true
+	case mouseWheelBurstMsg:
+		return m.handleMouseWheelBurstMsg(typed), true
+	case keyBurstMsg:
+		return m.handleKeyBurstMsg(typed), true
 	case tea.MouseMsg:
 		return m.handleMouseMsg(typed), true
 	case tea.KeyMsg:
@@ -100,6 +109,33 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 	default:
 		return nil, false
 	}
+}
+
+func (m *Model) handleInteractionBatch(messages []tea.Msg) tea.Cmd {
+	if len(messages) == 0 {
+		return nil
+	}
+	perftrace.Count("app.interaction.batch", len(messages))
+	wasSending := m.terminalInputSending
+	prevBatchState := m.interactionBatchActive
+	m.interactionBatchActive = true
+	defer func() {
+		m.interactionBatchActive = prevBatchState
+	}()
+	cmds := make([]tea.Cmd, 0, len(messages))
+	for _, msg := range messages {
+		cmd, ok := m.handleInteractionMessage(msg)
+		if !ok || cmd == nil {
+			continue
+		}
+		cmds = append(cmds, cmd)
+	}
+	if !wasSending {
+		if cmd := m.dequeueTerminalInputCmd(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	return batchCmds(cmds...)
 }
 
 func (m *Model) handleTerminalEventMessage(msg tea.Msg) (tea.Cmd, bool) {

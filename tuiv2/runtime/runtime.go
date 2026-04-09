@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"
@@ -266,6 +267,7 @@ func (r *Runtime) invalidate() {
 	if r == nil {
 		return
 	}
+	perftrace.Count("runtime.invalidate", 0)
 	r.touch()
 	if r.onInvalidate == nil {
 		return
@@ -299,10 +301,17 @@ func (r *Runtime) ListTerminals(ctx context.Context) ([]protocol.TerminalInfo, e
 }
 
 func (r *Runtime) Visible() *VisibleRuntime {
+	finish := perftrace.Measure("runtime.visible")
+	cacheMetric := "runtime.visible.cache_miss"
+	defer func() {
+		perftrace.Count(cacheMetric, 0)
+		finish(0)
+	}()
 	if r == nil || r.registry == nil {
 		return nil
 	}
 	if r.visibleCache != nil && r.visibleVersion == r.version {
+		cacheMetric = "runtime.visible.cache_hit"
 		return r.visibleCache
 	}
 	visible := &VisibleRuntime{
@@ -319,15 +328,18 @@ func (r *Runtime) Visible() *VisibleRuntime {
 			continue
 		}
 		visible.Terminals = append(visible.Terminals, VisibleTerminal{
-			TerminalID:   terminal.TerminalID,
-			Name:         terminal.Name,
-			State:        terminal.State,
-			ExitCode:     terminal.ExitCode,
-			Title:        terminal.Title,
-			AttachMode:   terminal.AttachMode,
-			OwnerPaneID:  terminal.OwnerPaneID,
-			BoundPaneIDs: slices.Clone(terminal.BoundPaneIDs),
-			Snapshot:     terminal.Snapshot,
+			TerminalID:      terminal.TerminalID,
+			Name:            terminal.Name,
+			State:           terminal.State,
+			ExitCode:        terminal.ExitCode,
+			Title:           terminal.Title,
+			AttachMode:      terminal.AttachMode,
+			OwnerPaneID:     terminal.OwnerPaneID,
+			BoundPaneIDs:    slices.Clone(terminal.BoundPaneIDs),
+			Snapshot:        terminal.Snapshot,
+			Surface:         visibleSurface(terminal),
+			SurfaceVersion:  terminal.SurfaceVersion,
+			SnapshotVersion: terminal.SnapshotVersion,
 		})
 	}
 	paneIDs := make([]string, 0, len(r.bindings))

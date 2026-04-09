@@ -24,10 +24,12 @@ type TerminalRuntime struct {
 	ExitCode *int
 	Title    string // OSC 2 标题，由 VTerm 回调更新
 
-	Channel    uint16
-	AttachMode string
-	Snapshot   *bridge.SnapshotRef
-	VTerm      VTermLike
+	Channel         uint16
+	AttachMode      string
+	Snapshot        *bridge.SnapshotRef
+	SnapshotVersion uint64
+	SurfaceVersion  uint64
+	VTerm           VTermLike
 
 	ScrollbackLoadedLimit  int
 	ScrollbackLoadingLimit int
@@ -44,6 +46,8 @@ type TerminalRuntime struct {
 
 	Stream   StreamState
 	Recovery RecoveryState
+
+	BootstrapPending bool
 }
 
 func NewTerminalRegistry() *TerminalRegistry {

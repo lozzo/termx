@@ -13,6 +13,7 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	charmvt "github.com/charmbracelet/x/vt"
+	"github.com/lozzow/termx/perftrace"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -111,7 +112,17 @@ type mouseModeState struct {
 	sgr         bool
 }
 
+type rowFingerprint struct {
+	hash  uint64
+	blank bool
+}
+
 const modeAlternateScroll ansi.DECMode = 1007
+
+const (
+	rowFingerprintOffset64 = 14695981039346656037
+	rowFingerprintPrime64  = 1099511628211
+)
 
 func New(cols, rows int, scrollbackSize int, onResponse ResponseHandler) *VTerm {
 	v := &VTerm{
@@ -199,11 +210,17 @@ func (v *VTerm) drainResponses(emu *charmvt.SafeEmulator, handler ResponseHandle
 }
 
 func (v *VTerm) Write(data []byte) (n int, err error) {
+	finish := perftrace.Measure("vterm.write")
+	defer func() {
+		finish(len(data))
+	}()
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	beforeScreen := v.screenRowsLocked()
+	snapshotFinish := perftrace.Measure("vterm.write.before_snapshot")
+	beforeScreen := v.screenRowFingerprintsLocked()
 	beforeScreenTimestamps := cloneTimeSlice(v.screenTimestamps)
 	beforeScreenRowKinds := cloneStringSlice(v.screenRowKinds)
+	snapshotFinish(0)
 	defer func() {
 		if r := recover(); r != nil {
 			n = 0
@@ -211,13 +228,29 @@ func (v *VTerm) Write(data []byte) (n int, err error) {
 		}
 	}()
 	normalized := normalizeRenderableUTF8(data)
+	emulatorFinish := perftrace.Measure("vterm.write.emulator")
 	n, err = safeEmulatorWrite(v.emu, normalized)
+	emulatorFinish(len(normalized))
 	pos := v.emu.CursorPosition()
 	v.cursor.Row = pos.Y
 	v.cursor.Col = pos.X
 	v.modes.AlternateScreen = v.emu.IsAltScreen()
+	reconcileFinish := perftrace.Measure("vterm.write.reconcile")
 	v.reconcileRowMetadataLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, time.Now().UTC())
+	reconcileFinish(0)
 	return n, err
+}
+
+func (v *VTerm) Close() error {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.emu == nil {
+		return nil
+	}
+	err := v.emu.Close()
+	<-v.done
+	v.emu = nil
+	return err
 }
 
 func (v *VTerm) LoadSnapshot(screen ScreenData, cursor CursorState, modes TerminalModes) {
@@ -310,7 +343,7 @@ func (v *VTerm) LoadSnapshotWithMetadata(scrollback [][]Cell, scrollbackTimestam
 func (v *VTerm) Resize(cols, rows int) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	beforeScreen := v.screenRowsLocked()
+	beforeScreen := v.screenRowFingerprintsLocked()
 	beforeScreenTimestamps := cloneTimeSlice(v.screenTimestamps)
 	beforeScreenRowKinds := cloneStringSlice(v.screenRowKinds)
 	v.emu.Resize(cols, rows)
@@ -330,19 +363,29 @@ func (v *VTerm) ScreenContent() ScreenData {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	height := v.emu.Height()
-	width := v.emu.Width()
 	rows := make([][]Cell, height)
 	for y := 0; y < height; y++ {
-		row := make([]Cell, width)
-		for x := 0; x < width; x++ {
-			row[x] = v.convertCell(v.emu.CellAt(x, y))
-		}
-		rows[y] = row
+		rows[y] = v.screenRowLocked(y)
 	}
 	return ScreenData{
 		Cells:             rows,
 		IsAlternateScreen: v.emu.IsAltScreen(),
 	}
+}
+
+func (v *VTerm) ScreenRowCount() int {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	if v.emu == nil {
+		return 0
+	}
+	return v.emu.Height()
+}
+
+func (v *VTerm) ScreenRow(y int) []Cell {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.screenRowLocked(y)
 }
 
 func (v *VTerm) Size() (int, int) {
@@ -357,21 +400,26 @@ func (v *VTerm) ScrollbackContent() [][]Cell {
 	return v.scrollbackRowsLocked()
 }
 
+func (v *VTerm) ScrollbackRowCount() int {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	if v.emu == nil {
+		return 0
+	}
+	return v.emu.ScrollbackLen()
+}
+
+func (v *VTerm) ScrollbackRow(y int) []Cell {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.scrollbackRowLocked(y)
+}
+
 func (v *VTerm) scrollbackRowsLocked() [][]Cell {
-	count := v.emu.ScrollbackLen()
-	width := v.emu.Width()
+	count := v.scrollbackRowCountLocked()
 	rows := make([][]Cell, 0, count)
 	for y := 0; y < count; y++ {
-		row := make([]Cell, 0, width)
-		for x := 0; x < width; x++ {
-			cell := v.emu.ScrollbackCellAt(x, y)
-			if cell == nil && x >= len(row) {
-				row = append(row, Cell{})
-				continue
-			}
-			row = append(row, v.convertCell(cell))
-		}
-		rows = append(rows, row)
+		rows = append(rows, v.scrollbackRowLocked(y))
 	}
 	return rows
 }
@@ -388,6 +436,18 @@ func (v *VTerm) ScrollbackTimestamps() []time.Time {
 	return cloneTimeSlice(v.scrollbackTimestamps)
 }
 
+func (v *VTerm) ScreenRowTimestampAt(y int) time.Time {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return timeAt(v.screenTimestamps, y)
+}
+
+func (v *VTerm) ScrollbackRowTimestampAt(y int) time.Time {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return timeAt(v.scrollbackTimestamps, y)
+}
+
 func (v *VTerm) ScreenRowKinds() []string {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
@@ -398,6 +458,18 @@ func (v *VTerm) ScrollbackRowKinds() []string {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	return cloneStringSlice(v.scrollbackRowKinds)
+}
+
+func (v *VTerm) ScreenRowKindAt(y int) string {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return stringAt(v.screenRowKinds, y)
+}
+
+func (v *VTerm) ScrollbackRowKindAt(y int) string {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return stringAt(v.scrollbackRowKinds, y)
 }
 
 func (v *VTerm) CursorState() CursorState {
@@ -416,6 +488,17 @@ func (v *VTerm) IsAltScreen() bool {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	return v.emu.IsAltScreen()
+}
+
+func (v *VTerm) EncodeReplay(scrollbackLimit int) []byte {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+
+	scrollback := v.scrollbackRowsLocked()
+	if scrollbackLimit > 0 && len(scrollback) > scrollbackLimit {
+		scrollback = scrollback[len(scrollback)-scrollbackLimit:]
+	}
+	return encodeTerminalReplay(scrollback, v.screenRowsLocked(), v.cursor, v.modes)
 }
 
 func (v *VTerm) setMode(mode ansi.Mode, enabled bool) {
@@ -582,6 +665,143 @@ func encodeScreenSnapshot(rows [][]Cell) []byte {
 	}
 	b.WriteString("\x1b[0m")
 	return []byte(b.String())
+}
+
+func encodeTerminalReplay(scrollback, screen [][]Cell, cursor CursorState, modes TerminalModes) []byte {
+	var b strings.Builder
+
+	if !modes.AlternateScreen && len(scrollback) > 0 {
+		writeSequentialRows(&b, scrollback)
+		b.WriteString("\r\n")
+		visibleRows := len(screen)
+		if visibleRows < 1 {
+			visibleRows = 1
+		}
+		for i := 0; i < visibleRows-1; i++ {
+			b.WriteByte('\n')
+		}
+		b.WriteString("\x1b[0m")
+	}
+
+	if modes.AlternateScreen {
+		b.WriteString("\x1b[?1049h")
+	}
+	b.WriteString("\x1b[H\x1b[2J\x1b[H")
+	b.Write(encodeScreenSnapshot(screen))
+	writeTerminalModesANSI(&b, modes)
+	writeCursorShapeANSI(&b, cursor)
+	if cursor.Row >= 0 && cursor.Col >= 0 {
+		fmt.Fprintf(&b, "\x1b[%d;%dH", cursor.Row+1, cursor.Col+1)
+	}
+	if cursor.Visible {
+		b.WriteString("\x1b[?25h")
+	} else {
+		b.WriteString("\x1b[?25l")
+	}
+
+	return []byte(b.String())
+}
+
+func writeSequentialRows(b *strings.Builder, rows [][]Cell) {
+	if b == nil || len(rows) == 0 {
+		return
+	}
+	for i, row := range rows {
+		writeSequentialRow(b, row)
+		if i < len(rows)-1 {
+			b.WriteString("\r\n")
+		}
+	}
+}
+
+func writeSequentialRow(b *strings.Builder, row []Cell) {
+	if b == nil {
+		return
+	}
+	last := len(row) - 1
+	for last >= 0 {
+		cell := row[last]
+		if cell.Content == "" || strings.TrimSpace(cell.Content) == "" {
+			last--
+			continue
+		}
+		break
+	}
+	for i := 0; i <= last; i++ {
+		cell := row[i]
+		if cell.Content == "" && cell.Width == 0 {
+			continue
+		}
+		content := cell.Content
+		if content == "" {
+			content = " "
+		}
+		b.WriteString(cellStyleANSI(cell.Style))
+		b.WriteString(content)
+	}
+	b.WriteString("\x1b[0m")
+}
+
+func writeTerminalModesANSI(b *strings.Builder, modes TerminalModes) {
+	if b == nil {
+		return
+	}
+	writePrivateModeANSI(b, 1, modes.ApplicationCursor)
+	writePrivateModeANSI(b, 7, modes.AutoWrap)
+	writePrivateModeANSI(b, 1007, modes.AlternateScroll)
+	writePrivateModeANSI(b, 2004, modes.BracketedPaste)
+
+	mouseX10 := modes.MouseX10
+	mouseNormal := modes.MouseNormal
+	mouseButton := modes.MouseButtonEvent
+	mouseAny := modes.MouseAnyEvent
+	if modes.MouseTracking && !mouseX10 && !mouseNormal && !mouseButton && !mouseAny {
+		mouseNormal = true
+	}
+	writePrivateModeANSI(b, 9, mouseX10)
+	writePrivateModeANSI(b, 1000, mouseNormal)
+	writePrivateModeANSI(b, 1002, mouseButton)
+	writePrivateModeANSI(b, 1003, mouseAny)
+	writePrivateModeANSI(b, 1005, false)
+	writePrivateModeANSI(b, 1006, modes.MouseSGR)
+}
+
+func writeCursorShapeANSI(b *strings.Builder, cursor CursorState) {
+	if b == nil {
+		return
+	}
+	code := 0
+	switch cursor.Shape {
+	case CursorUnderline:
+		if cursor.Blink {
+			code = 3
+		} else {
+			code = 4
+		}
+	case CursorBar:
+		if cursor.Blink {
+			code = 5
+		} else {
+			code = 6
+		}
+	case CursorBlock:
+		if cursor.Blink {
+			code = 1
+		} else {
+			code = 2
+		}
+	}
+	if code > 0 {
+		fmt.Fprintf(b, "\x1b[%d q", code)
+	}
+}
+
+func writePrivateModeANSI(b *strings.Builder, mode int, enabled bool) {
+	if enabled {
+		fmt.Fprintf(b, "\x1b[?%dh", mode)
+		return
+	}
+	fmt.Fprintf(b, "\x1b[?%dl", mode)
 }
 
 func cellStyleANSI(style CellStyle) string {
@@ -791,28 +1011,123 @@ func (v *VTerm) applyDefaultColorsToEmulator(emu *charmvt.SafeEmulator) {
 	if emu == nil {
 		return
 	}
-	emu.Emulator.SetDefaultForegroundColor(ansi.XParseColor(v.defaultFG))
-	emu.Emulator.SetDefaultBackgroundColor(ansi.XParseColor(v.defaultBG))
+	emu.SetDefaultForegroundColor(ansi.XParseColor(v.defaultFG))
+	emu.SetDefaultBackgroundColor(ansi.XParseColor(v.defaultBG))
 	for index, value := range v.palette {
 		emu.SetIndexedColor(index, ansi.XParseColor(value))
 	}
 }
 
 func (v *VTerm) screenRowsLocked() [][]Cell {
-	height := v.emu.Height()
-	width := v.emu.Width()
+	height := v.screenRowCountLocked()
 	rows := make([][]Cell, height)
 	for y := 0; y < height; y++ {
-		row := make([]Cell, width)
-		for x := 0; x < width; x++ {
-			row[x] = v.convertCell(v.emu.CellAt(x, y))
-		}
-		rows[y] = row
+		rows[y] = v.screenRowLocked(y)
 	}
 	return rows
 }
 
-func (v *VTerm) reconcileRowMetadataLocked(beforeScreen [][]Cell, beforeScreenTimestamps []time.Time, beforeScreenRowKinds []string, now time.Time) {
+func (v *VTerm) screenRowCountLocked() int {
+	if v.emu == nil {
+		return 0
+	}
+	return v.emu.Height()
+}
+
+func (v *VTerm) scrollbackRowCountLocked() int {
+	if v.emu == nil {
+		return 0
+	}
+	return v.emu.ScrollbackLen()
+}
+
+func (v *VTerm) screenRowLocked(y int) []Cell {
+	if v.emu == nil || y < 0 || y >= v.emu.Height() {
+		return nil
+	}
+	width := v.emu.Width()
+	row := make([]Cell, width)
+	for x := 0; x < width; x++ {
+		row[x] = v.convertCell(v.emu.CellAt(x, y))
+	}
+	return row
+}
+
+func (v *VTerm) scrollbackRowLocked(y int) []Cell {
+	if v.emu == nil || y < 0 || y >= v.emu.ScrollbackLen() {
+		return nil
+	}
+	width := v.emu.Width()
+	row := make([]Cell, 0, width)
+	for x := 0; x < width; x++ {
+		cell := v.emu.ScrollbackCellAt(x, y)
+		if cell == nil && x >= len(row) {
+			row = append(row, Cell{})
+			continue
+		}
+		row = append(row, v.convertCell(cell))
+	}
+	return row
+}
+
+func (v *VTerm) screenRowFingerprintsLocked() []rowFingerprint {
+	height := v.screenRowCountLocked()
+	rows := make([]rowFingerprint, height)
+	for y := 0; y < height; y++ {
+		rows[y] = v.screenRowFingerprintLocked(y)
+	}
+	return rows
+}
+
+func (v *VTerm) screenRowFingerprintLocked(y int) rowFingerprint {
+	if v.emu == nil || y < 0 || y >= v.emu.Height() {
+		return rowFingerprint{}
+	}
+	return v.rowFingerprintLocked(v.emu.Width(), func(x int) *uv.Cell {
+		return v.emu.CellAt(x, y)
+	})
+}
+
+func (v *VTerm) scrollbackTailRowFingerprintsLocked(count int) []rowFingerprint {
+	if count <= 0 {
+		return nil
+	}
+	total := v.scrollbackRowCountLocked()
+	if total <= 0 {
+		return nil
+	}
+	start := maxInt(0, total-count)
+	rows := make([]rowFingerprint, 0, total-start)
+	for y := start; y < total; y++ {
+		rows = append(rows, v.scrollbackRowFingerprintLocked(y))
+	}
+	return rows
+}
+
+func (v *VTerm) scrollbackRowFingerprintLocked(y int) rowFingerprint {
+	if v.emu == nil || y < 0 || y >= v.emu.ScrollbackLen() {
+		return rowFingerprint{}
+	}
+	return v.rowFingerprintLocked(v.emu.Width(), func(x int) *uv.Cell {
+		return v.emu.ScrollbackCellAt(x, y)
+	})
+}
+
+func (v *VTerm) rowFingerprintLocked(width int, cellAt func(int) *uv.Cell) rowFingerprint {
+	fingerprint := rowFingerprint{
+		hash:  rowFingerprintOffset64,
+		blank: true,
+	}
+	hashUint64(&fingerprint.hash, uint64(width))
+	for x := 0; x < width; x++ {
+		if !hashCellFingerprint(&fingerprint.hash, cellAt(x)) {
+			fingerprint.blank = false
+		}
+	}
+	return fingerprint
+}
+
+func (v *VTerm) reconcileRowMetadataLocked(beforeScreen []rowFingerprint, beforeScreenTimestamps []time.Time, beforeScreenRowKinds []string, now time.Time) {
 	if v.emu == nil {
 		v.screenTimestamps = nil
 		v.scrollbackTimestamps = nil
@@ -820,29 +1135,28 @@ func (v *VTerm) reconcileRowMetadataLocked(beforeScreen [][]Cell, beforeScreenTi
 		v.scrollbackRowKinds = nil
 		return
 	}
-	afterScreen := v.screenRowsLocked()
-	afterScrollback := v.scrollbackRowsLocked()
+	afterScreen := v.screenRowFingerprintsLocked()
 	scrollShift := detectScreenScrollShift(beforeScreen, afterScreen)
-	afterScrollbackLen := len(afterScrollback)
+	afterScrollbackLen := v.scrollbackRowCountLocked()
 	oldScrollbackLen := len(v.scrollbackTimestamps)
 	requiredAppends := scrollShift
 	if minAppend := afterScrollbackLen - oldScrollbackLen; minAppend > requiredAppends {
 		requiredAppends = minAppend
 	}
-	appendedRows := afterScrollback[maxInt(0, afterScrollbackLen-requiredAppends):]
+	appendedRows := v.scrollbackTailRowFingerprintsLocked(requiredAppends)
 	preservedFromBefore := 0
 	for preservedFromBefore < len(appendedRows) && preservedFromBefore < len(beforeScreen) && preservedFromBefore < len(beforeScreenTimestamps) {
-		if beforeScreenTimestamps[preservedFromBefore].IsZero() && isBlankRow(beforeScreen[preservedFromBefore]) {
+		if beforeScreenTimestamps[preservedFromBefore].IsZero() && rowFingerprintIsBlank(beforeScreen[preservedFromBefore]) {
 			break
 		}
-		if !rowsEqual(beforeScreen[preservedFromBefore], appendedRows[preservedFromBefore]) {
+		if !rowFingerprintsEqual(beforeScreen[preservedFromBefore], appendedRows[preservedFromBefore]) {
 			break
 		}
 		preservedFromBefore++
 	}
 	for i := 0; i < preservedFromBefore; i++ {
 		ts := beforeScreenTimestamps[i]
-		if ts.IsZero() && shouldAssignTimestampToScreenRow(beforeScreen[i], i, v.cursor.Row) {
+		if ts.IsZero() && shouldAssignTimestampToRowFingerprint(beforeScreen[i], i, v.cursor.Row) {
 			ts = now
 		}
 		v.scrollbackTimestamps = append(v.scrollbackTimestamps, ts)
@@ -858,11 +1172,11 @@ func (v *VTerm) reconcileRowMetadataLocked(beforeScreen [][]Cell, beforeScreenTi
 	nextScreenRowKinds := make([]string, len(afterScreen))
 	for row := range afterScreen {
 		mappedRow := row + preservedFromBefore
-		if mappedRow < len(beforeScreen) && mappedRow < len(beforeScreenTimestamps) && rowsEqual(beforeScreen[mappedRow], afterScreen[row]) {
+		if mappedRow < len(beforeScreen) && mappedRow < len(beforeScreenTimestamps) && rowFingerprintsEqual(beforeScreen[mappedRow], afterScreen[row]) {
 			nextScreenTimestamps[row] = beforeScreenTimestamps[mappedRow]
 			nextScreenRowKinds[row] = stringAt(beforeScreenRowKinds, mappedRow)
 		}
-		if nextScreenTimestamps[row].IsZero() && shouldAssignTimestampToScreenRow(afterScreen[row], row, v.cursor.Row) {
+		if nextScreenTimestamps[row].IsZero() && shouldAssignTimestampToRowFingerprint(afterScreen[row], row, v.cursor.Row) {
 			nextScreenTimestamps[row] = now
 		}
 	}
@@ -870,7 +1184,7 @@ func (v *VTerm) reconcileRowMetadataLocked(beforeScreen [][]Cell, beforeScreenTi
 	v.screenRowKinds = nextScreenRowKinds
 }
 
-func detectScreenScrollShift(before, after [][]Cell) int {
+func detectScreenScrollShift(before, after []rowFingerprint) int {
 	limit := minInt(len(before), len(after))
 	if limit <= 1 {
 		return 0
@@ -893,14 +1207,22 @@ func detectScreenScrollShift(before, after [][]Cell) int {
 	return bestShift
 }
 
-func rowAlignmentScore(before, after [][]Cell, shift int) int {
+func rowAlignmentScore(before, after []rowFingerprint, shift int) int {
 	score := 0
 	for row := 0; row+shift < len(before) && row < len(after); row++ {
-		if rowsEqual(before[row+shift], after[row]) {
+		if rowFingerprintsEqual(before[row+shift], after[row]) {
 			score++
 		}
 	}
 	return score
+}
+
+func rowFingerprintsEqual(left, right rowFingerprint) bool {
+	return left.hash == right.hash && left.blank == right.blank
+}
+
+func rowFingerprintIsBlank(row rowFingerprint) bool {
+	return row.blank
 }
 
 func rowsEqual(left, right []Cell) bool {
@@ -913,6 +1235,93 @@ func rowsEqual(left, right []Cell) bool {
 		}
 	}
 	return true
+}
+
+func hashCellFingerprint(hash *uint64, cell *uv.Cell) bool {
+	content := ""
+	width := 0
+	var fg color.Color
+	var bg color.Color
+	var attrs uint8
+	var underline uv.UnderlineStyle
+	if cell != nil {
+		content = cell.Content
+		width = cell.Width
+		fg = cell.Style.Fg
+		bg = cell.Style.Bg
+		attrs = cell.Style.Attrs
+		underline = cell.Style.Underline
+	}
+
+	bold := attrs&uv.AttrBold != 0
+	italic := attrs&uv.AttrItalic != 0
+	underlined := underline != 0
+	blink := attrs&uv.AttrBlink != 0
+	reverse := attrs&uv.AttrReverse != 0
+	strikethrough := attrs&uv.AttrStrikethrough != 0
+
+	hashString(hash, content)
+	hashUint64(hash, uint64(width))
+	hashBool(hash, bold)
+	hashBool(hash, italic)
+	hashBool(hash, underlined)
+	hashBool(hash, blink)
+	hashBool(hash, reverse)
+	hashBool(hash, strikethrough)
+	hashColorFingerprint(hash, fg)
+	hashColorFingerprint(hash, bg)
+
+	return strings.TrimSpace(content) == "" &&
+		fg == nil &&
+		bg == nil &&
+		!bold &&
+		!italic &&
+		!underlined &&
+		!blink &&
+		!reverse &&
+		!strikethrough
+}
+
+func hashColorFingerprint(hash *uint64, value color.Color) {
+	if value == nil {
+		hashUint64(hash, 0)
+		return
+	}
+	switch colorValue := value.(type) {
+	case ansi.BasicColor:
+		hashUint64(hash, 1)
+		hashUint64(hash, uint64(colorValue))
+	case ansi.IndexedColor:
+		hashUint64(hash, 2)
+		hashUint64(hash, uint64(colorValue))
+	default:
+		r, g, b, _ := value.RGBA()
+		hashUint64(hash, 3)
+		hashUint64(hash, uint64(uint8(r>>8)))
+		hashUint64(hash, uint64(uint8(g>>8)))
+		hashUint64(hash, uint64(uint8(b>>8)))
+	}
+}
+
+func hashString(hash *uint64, value string) {
+	hashUint64(hash, uint64(len(value)))
+	for i := 0; i < len(value); i++ {
+		*hash ^= uint64(value[i])
+		*hash *= rowFingerprintPrime64
+	}
+}
+
+func hashBool(hash *uint64, value bool) {
+	if value {
+		hashUint64(hash, 1)
+		return
+	}
+	hashUint64(hash, 0)
+}
+
+func hashUint64(hash *uint64, value uint64) {
+	*hash ^= value
+	*hash *= rowFingerprintPrime64
 }
 
 func isBlankRow(row []Cell) bool {
@@ -966,8 +1375,22 @@ func stringAt(values []string, idx int) string {
 	return values[idx]
 }
 
+func timeAt(values []time.Time, idx int) time.Time {
+	if idx < 0 || idx >= len(values) {
+		return time.Time{}
+	}
+	return values[idx]
+}
+
 func shouldAssignTimestampToScreenRow(row []Cell, rowIndex, cursorRow int) bool {
 	if !isBlankRow(row) {
+		return true
+	}
+	return rowIndex >= 0 && rowIndex <= cursorRow
+}
+
+func shouldAssignTimestampToRowFingerprint(row rowFingerprint, rowIndex, cursorRow int) bool {
+	if !rowFingerprintIsBlank(row) {
 		return true
 	}
 	return rowIndex >= 0 && rowIndex <= cursorRow

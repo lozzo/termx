@@ -30,10 +30,10 @@ type copyModeState struct {
 }
 
 type copyModeResumeState struct {
-	PaneID     string
-	TerminalID string
-	Snapshot   *protocol.Snapshot
-	Baseline   *protocol.Snapshot
+	PaneID          string
+	TerminalID      string
+	Snapshot        *protocol.Snapshot
+	BaselineVersion uint64
 }
 
 type copyModeBuffer struct {
@@ -153,10 +153,10 @@ func (m *Model) prepareCopyModeExit() {
 		return
 	}
 	m.copyModeResume = copyModeResumeState{
-		PaneID:     pane.ID,
-		TerminalID: pane.TerminalID,
-		Snapshot:   cloneSnapshot(m.copyMode.Snapshot),
-		Baseline:   terminal.Snapshot,
+		PaneID:          pane.ID,
+		TerminalID:      pane.TerminalID,
+		Snapshot:        cloneSnapshot(m.copyMode.Snapshot),
+		BaselineVersion: terminal.SurfaceVersion,
 	}
 }
 
@@ -172,7 +172,7 @@ func (m *Model) activeCopyModeResumeSnapshot() (string, *protocol.Snapshot, bool
 	if terminal == nil || !terminal.Stream.Active || terminal.Snapshot == nil {
 		return "", nil, false
 	}
-	if terminal.Snapshot != m.copyModeResume.Baseline {
+	if terminal.SurfaceVersion != m.copyModeResume.BaselineVersion {
 		return "", nil, false
 	}
 	return pane.ID, m.copyModeResume.Snapshot, true
@@ -281,6 +281,13 @@ func (m *Model) activeLiveCopyModeBuffer() (copyModeBuffer, bool) {
 		return copyModeBuffer{}, false
 	}
 	terminal := m.runtime.Registry().Get(pane.TerminalID)
+	if terminal == nil {
+		return copyModeBuffer{}, false
+	}
+	if terminal.VTerm != nil && terminal.SnapshotVersion != terminal.SurfaceVersion {
+		m.runtime.RefreshSnapshotFromVTerm(pane.TerminalID)
+		terminal = m.runtime.Registry().Get(pane.TerminalID)
+	}
 	if terminal == nil || terminal.Snapshot == nil {
 		return copyModeBuffer{}, false
 	}

@@ -111,7 +111,14 @@ func (m *Model) shouldAcquireLocalOwnership(req terminalInteractionRequest, targ
 	if !req.ImplicitInteractiveOwner {
 		return false
 	}
-	if len(terminal.BoundPaneIDs) < 2 || terminal.Snapshot == nil || !terminal.Snapshot.Cursor.Visible {
+	cursorVisible := false
+	switch {
+	case terminal.VTerm != nil:
+		cursorVisible = terminal.VTerm.CursorState().Visible
+	case terminal.Snapshot != nil:
+		cursorVisible = terminal.Snapshot.Cursor.Visible
+	}
+	if len(terminal.BoundPaneIDs) < 2 || !cursorVisible {
 		return false
 	}
 	return terminal.OwnerPaneID != target.paneID

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
@@ -13,6 +14,7 @@ import (
 const (
 	synchronizedOutputBegin = "\x1b[?2026h"
 	synchronizedOutputEnd   = "\x1b[?2026l"
+	clientOutputBatchDelay  = 2 * time.Millisecond
 )
 
 func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
@@ -30,6 +32,7 @@ func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 	if terminal.Stream.Active {
 		return nil
 	}
+	terminal.BootstrapPending = true
 	stream, stop := r.client.Stream(terminal.Channel)
 	terminal.Stream.Active = true
 	terminal.Stream.Stop = stop
@@ -41,48 +44,136 @@ func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 			terminal.Stream.Active = false
 			terminal.Stream.Stop = nil
 		}()
-		for {
+		reconnectStream := func() bool {
+			terminal.Stream.Active = false
+			terminal.Stream.Stop = nil
+			if terminal.State == "exited" || ctx.Err() != nil {
+				return false
+			}
+			attempt := terminal.Stream.RetryCount
+			if attempt > 5 {
+				attempt = 5
+			}
+			backoff := time.Duration(1<<attempt) * 200 * time.Millisecond
+			terminal.Stream.RetryCount++
 			select {
 			case <-ctx.Done():
-				return
-			case frame, ok := <-stream:
-				if !ok {
-					terminal.Stream.Active = false
-					terminal.Stream.Stop = nil
-					if terminal.State == "exited" || ctx.Err() != nil {
-						return
-					}
-					attempt := terminal.Stream.RetryCount
-					if attempt > 5 {
-						attempt = 5
-					}
-					backoff := time.Duration(1<<attempt) * 200 * time.Millisecond
-					terminal.Stream.RetryCount++
-					select {
-					case <-ctx.Done():
-						return
-					case <-time.After(backoff):
-					}
-					if stop != nil {
-						stop()
-					}
-					stream, stop = r.client.Stream(terminal.Channel)
-					terminal.Stream.Active = true
-					terminal.Stream.Stop = stop
-					continue
-				}
-				terminal.Stream.RetryCount = 0
-				r.handleStreamFrame(terminalID, frame)
-				if frame.Type == protocol.TypeClosed {
+				return false
+			case <-time.After(backoff):
+			}
+			if stop != nil {
+				stop()
+			}
+			stream, stop = r.client.Stream(terminal.Channel)
+			terminal.Stream.Active = true
+			terminal.Stream.Stop = stop
+			return true
+		}
+		var (
+			pending    protocol.StreamFrame
+			hasPending bool
+		)
+		for {
+			frame, ok := nextClientStreamFrame(ctx, stream, &pending, &hasPending)
+			if !ok {
+				if !reconnectStream() {
 					return
 				}
+				hasPending = false
+				continue
+			}
+			if frame.Type == protocol.TypeOutput {
+				frame, pending, hasPending, ok = coalesceClientOutputFrames(frame, stream)
+			}
+			terminal.Stream.RetryCount = 0
+			r.handleStreamFrame(terminalID, frame)
+			if frame.Type == protocol.TypeClosed {
+				return
+			}
+			if !ok {
+				if !reconnectStream() {
+					return
+				}
+				hasPending = false
 			}
 		}
 	}()
 	return nil
 }
 
+func nextClientStreamFrame(ctx context.Context, stream <-chan protocol.StreamFrame, pending *protocol.StreamFrame, hasPending *bool) (protocol.StreamFrame, bool) {
+	if hasPending != nil && *hasPending {
+		*hasPending = false
+		return *pending, true
+	}
+	select {
+	case <-ctx.Done():
+		return protocol.StreamFrame{}, false
+	case frame, ok := <-stream:
+		return frame, ok
+	}
+}
+
+func coalesceClientOutputFrames(first protocol.StreamFrame, stream <-chan protocol.StreamFrame) (protocol.StreamFrame, protocol.StreamFrame, bool, bool) {
+	merged := protocol.StreamFrame{
+		Type:    protocol.TypeOutput,
+		Payload: append([]byte(nil), first.Payload...),
+	}
+	handle := func(frame protocol.StreamFrame) (protocol.StreamFrame, bool, bool) {
+		if frame.Type != protocol.TypeOutput {
+			return frame, true, true
+		}
+		if len(merged.Payload) > 0 && len(merged.Payload)+len(frame.Payload) > protocol.MaxFrameSize {
+			return frame, true, true
+		}
+		merged.Payload = append(merged.Payload, frame.Payload...)
+		return protocol.StreamFrame{}, false, true
+	}
+	drainReady := func() (protocol.StreamFrame, bool, bool) {
+		for {
+			select {
+			case frame, ok := <-stream:
+				if !ok {
+					return protocol.StreamFrame{}, false, false
+				}
+				if pending, hasPending, ok := handle(frame); hasPending || !ok {
+					return pending, hasPending, ok
+				}
+			default:
+				return protocol.StreamFrame{}, false, true
+			}
+		}
+	}
+	if clientOutputBatchDelay <= 0 || len(merged.Payload) >= protocol.MaxFrameSize {
+		pending, hasPending, ok := drainReady()
+		return merged, pending, hasPending, ok
+	}
+	timer := time.NewTimer(clientOutputBatchDelay)
+	defer timer.Stop()
+	for {
+		select {
+		case frame, ok := <-stream:
+			if !ok {
+				return merged, protocol.StreamFrame{}, false, false
+			}
+			if pending, hasPending, ok := handle(frame); hasPending || !ok {
+				return merged, pending, hasPending, ok
+			}
+			if len(merged.Payload) >= protocol.MaxFrameSize {
+				return merged, protocol.StreamFrame{}, false, true
+			}
+		case <-timer.C:
+			pending, hasPending, ok := drainReady()
+			return merged, pending, hasPending, ok
+		}
+	}
+}
+
 func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFrame) {
+	finish := perftrace.Measure(streamFrameMetric(frame.Type))
+	defer func() {
+		finish(len(frame.Payload))
+	}()
 	terminal := r.registry.Get(terminalID)
 	if terminal == nil {
 		return
@@ -108,7 +199,13 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 		if syncActive {
 			return
 		}
-		r.refreshSnapshot(terminalID)
+		terminal.BootstrapPending = false
+		r.bumpSurfaceVersion(terminal)
+		if terminal.Snapshot == nil {
+			r.refreshSnapshot(terminalID)
+			return
+		}
+		r.invalidate()
 	case protocol.TypeResize:
 		cols, rows, err := protocol.DecodeResizePayload(frame.Payload)
 		if err != nil || cols == 0 || rows == 0 {
@@ -122,9 +219,21 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 		if currentCols != int(cols) || currentRows != int(rows) {
 			vt.Resize(int(cols), int(rows))
 			resetSynchronizedOutputState(&terminal.Stream)
+			if terminal.BootstrapPending {
+				return
+			}
+			r.bumpSurfaceVersion(terminal)
 			r.refreshSnapshot(terminalID)
 		}
+	case protocol.TypeBootstrapDone:
+		if !terminal.BootstrapPending {
+			return
+		}
+		terminal.BootstrapPending = false
+		r.bumpSurfaceVersion(terminal)
+		r.refreshSnapshot(terminalID)
 	case protocol.TypeSyncLost:
+		terminal.BootstrapPending = false
 		resetSynchronizedOutputState(&terminal.Stream)
 		terminal.Recovery.SyncLost = true
 		dropped, err := protocol.DecodeSyncLostPayload(frame.Payload)
@@ -134,6 +243,7 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 		r.recoverSnapshot(terminalID)
 	case protocol.TypeClosed:
 		terminal.Stream.Active = false
+		terminal.BootstrapPending = false
 		resetSynchronizedOutputState(&terminal.Stream)
 		code, err := protocol.DecodeClosedPayload(frame.Payload)
 		if err == nil {
@@ -141,8 +251,25 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 			terminal.ExitCode = &exitCode
 		}
 		terminal.State = "exited"
-		r.refreshSnapshot(terminalID)
+		syncSurfaceScrollbackState(terminal)
 		r.invalidate()
+	}
+}
+
+func streamFrameMetric(frameType uint8) string {
+	switch frameType {
+	case protocol.TypeOutput:
+		return "runtime.stream.output"
+	case protocol.TypeResize:
+		return "runtime.stream.resize"
+	case protocol.TypeBootstrapDone:
+		return "runtime.stream.bootstrap_done"
+	case protocol.TypeSyncLost:
+		return "runtime.stream.sync_lost"
+	case protocol.TypeClosed:
+		return "runtime.stream.closed"
+	default:
+		return "runtime.stream.unknown"
 	}
 }
 

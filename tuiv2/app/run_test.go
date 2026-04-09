@@ -877,28 +877,47 @@ func (m keyCaptureModel) Init() tea.Cmd { return nil }
 func (m keyCaptureModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch typed := msg.(type) {
 	case tea.KeyMsg:
-		switch typed.Type {
-		case tea.KeyRunes:
-			m.keys.WriteString(string(typed.Runes))
-			m.count += len(typed.Runes)
-		case tea.KeySpace:
-			m.keys.WriteByte(' ')
-			m.count++
-		case tea.KeyEnter:
-			m.keys.WriteByte('\n')
-			m.count++
-		case tea.KeyCtrlJ:
-			m.keys.WriteByte('\n')
-			m.count++
+		m.appendKey(typed, 1)
+	case keyBurstMsg:
+		m.appendKey(typed.Msg, maxInt(1, typed.Repeat))
+	case interactionBatchMsg:
+		for _, item := range typed.Messages {
+			switch nested := item.(type) {
+			case tea.KeyMsg:
+				m.appendKey(nested, 1)
+			case keyBurstMsg:
+				m.appendKey(nested.Msg, maxInt(1, nested.Repeat))
+			}
 		}
-		if m.targetCount > 0 && m.count >= m.targetCount {
-			return m, tea.Quit
-		}
+	}
+	if m.targetCount > 0 && m.count >= m.targetCount {
+		return m, tea.Quit
 	}
 	return m, nil
 }
 
 func (m keyCaptureModel) View() string { return "" }
+
+func (m *keyCaptureModel) appendKey(msg tea.KeyMsg, repeat int) {
+	repeat = maxInt(1, repeat)
+	switch msg.Type {
+	case tea.KeyRunes:
+		for i := 0; i < repeat; i++ {
+			m.keys.WriteString(string(msg.Runes))
+			m.count += len(msg.Runes)
+		}
+	case tea.KeySpace:
+		for i := 0; i < repeat; i++ {
+			m.keys.WriteByte(' ')
+			m.count++
+		}
+	case tea.KeyEnter, tea.KeyCtrlJ:
+		for i := 0; i < repeat; i++ {
+			m.keys.WriteByte('\n')
+			m.count++
+		}
+	}
+}
 
 func TestStartInputForwarderPreservesKeyOrderIntoBubbleTea(t *testing.T) {
 	if testing.Short() {
@@ -948,6 +967,86 @@ func TestStartInputForwarderPreservesKeyOrderIntoBubbleTea(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("timed out waiting for Bubble Tea program to exit")
+	}
+}
+
+type keyBurstCaptureModel struct {
+	got keyBurstMsg
+}
+
+func (m keyBurstCaptureModel) Init() tea.Cmd { return nil }
+
+func (m keyBurstCaptureModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch typed := msg.(type) {
+	case keyBurstMsg:
+		m.got = typed
+		return m, tea.Quit
+	case interactionBatchMsg:
+		for _, item := range typed.Messages {
+			burst, ok := item.(keyBurstMsg)
+			if !ok {
+				continue
+			}
+			m.got = burst
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m keyBurstCaptureModel) View() string { return "" }
+
+func TestStartInputForwarderBatchesRepeatedKeyPresses(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: requires a real PTY, skipped with -short")
+	}
+
+	ptmx, tty, err := creackpty.Open()
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("open pty: %v", err)
+	}
+	defer ptmx.Close()
+	defer tty.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	model := keyBurstCaptureModel{}
+	program := tea.NewProgram(model, tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithContext(ctx))
+	stopInput, restoreInput, err := startInputForwarder(program, tty)
+	if err != nil {
+		t.Fatalf("start input forwarder: %v", err)
+	}
+	defer func() { _ = restoreInput() }()
+	defer stopInput()
+
+	done := make(chan tea.Model, 1)
+	go func() {
+		finalModel, _ := program.Run()
+		done <- finalModel
+	}()
+
+	if _, err := ptmx.Write(bytes.Repeat([]byte{0x19}, 8)); err != nil {
+		t.Fatalf("write PTY input: %v", err)
+	}
+
+	select {
+	case rawModel := <-done:
+		finalModel, ok := rawModel.(keyBurstCaptureModel)
+		if !ok {
+			t.Fatalf("unexpected final model type %T", rawModel)
+		}
+		if finalModel.got.Repeat < 2 {
+			t.Fatalf("expected repeated key burst, got %#v", finalModel.got)
+		}
+		if finalModel.got.Msg.Type != tea.KeyCtrlY {
+			t.Fatalf("expected ctrl-y burst, got %#v", finalModel.got)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for key burst to reach Bubble Tea")
 	}
 }
 

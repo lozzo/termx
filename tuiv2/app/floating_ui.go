@@ -287,6 +287,13 @@ func (m *Model) fitFloatingPaneToContent(paneID string) tea.Cmd {
 		return nil
 	}
 	terminal := m.runtime.Registry().Get(pane.TerminalID)
+	if terminal == nil {
+		return nil
+	}
+	if terminal.VTerm != nil && terminal.SnapshotVersion != terminal.SurfaceVersion {
+		m.runtime.RefreshSnapshotFromVTerm(pane.TerminalID)
+		terminal = m.runtime.Registry().Get(pane.TerminalID)
+	}
 	if terminal == nil || terminal.Snapshot == nil {
 		return nil
 	}
@@ -337,6 +344,13 @@ func (m *Model) maybeAutoFitFloatingPanesCmd() tea.Cmd {
 			continue
 		}
 		terminal := m.runtime.Registry().Get(pane.TerminalID)
+		if terminal == nil {
+			continue
+		}
+		if terminal.VTerm != nil && terminal.SnapshotVersion != terminal.SurfaceVersion {
+			m.runtime.RefreshSnapshotFromVTerm(pane.TerminalID)
+			terminal = m.runtime.Registry().Get(pane.TerminalID)
+		}
 		if terminal == nil || terminal.Snapshot == nil {
 			continue
 		}
@@ -504,6 +518,13 @@ func (m *Model) loadFloatingPaneSnapshot(paneID string) *protocol.Snapshot {
 		return nil
 	}
 	terminal := m.runtime.Registry().Get(pane.TerminalID)
+	if terminal == nil {
+		return nil
+	}
+	if terminal.VTerm != nil && terminal.SnapshotVersion != terminal.SurfaceVersion {
+		m.runtime.RefreshSnapshotFromVTerm(pane.TerminalID)
+		terminal = m.runtime.Registry().Get(pane.TerminalID)
+	}
 	if terminal == nil {
 		return nil
 	}

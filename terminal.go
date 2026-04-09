@@ -57,9 +57,9 @@ type Terminal struct {
 	removed        bool
 	processEpoch   uint64
 
-	// streamMu serializes readLoop broadcasts and resize notifications so that
-	// subscribers always see resize frames at the correct position relative to
-	// output frames.
+	// streamMu serializes VTerm updates, bootstrap capture, broadcasts and
+	// resize/close notifications so subscribers can replay a consistent screen
+	// state before switching to live frames.
 	streamMu sync.Mutex
 
 	// These caches hold deep-copied metadata snapshots so hot read paths do not
@@ -71,9 +71,15 @@ type Terminal struct {
 	attachMu    sync.Mutex
 	attachments map[string]AttachInfo
 
+	pendingVTermEpoch  uint64
+	pendingVTermOutput []byte
+
 	done     chan struct{}
 	readDone chan struct{}
 }
+
+const attachReplayScrollbackLimit = 500
+const serverVTermFlushThreshold = 256 * 1024
 
 func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Terminal, error) {
 	p, vt, err := spawnTerminalProcess(cfg)
@@ -161,21 +167,23 @@ func (t *Terminal) Done() <-chan struct{} {
 }
 
 func (t *Terminal) Subscribe(ctx context.Context) <-chan StreamMessage {
+	t.streamMu.Lock()
+	t.flushPendingVTermOutputLocked()
+	bootstrap := t.bootstrapMessagesLocked(attachReplayScrollbackLimit)
 	t.mu.RLock()
 	state := t.state
 	exitCode := copyIntPtr(t.exitCode)
 	t.mu.RUnlock()
 	if state == StateExited {
-		snap := t.Snapshot(0, 500)
-		replay := snapshotReplayPayload(snap)
-		ch := make(chan StreamMessage, 2)
+		t.streamMu.Unlock()
+		ch := make(chan StreamMessage, len(bootstrap)+1)
 		go func() {
 			defer close(ch)
-			if len(replay) > 0 {
+			for _, msg := range bootstrap {
 				select {
 				case <-ctx.Done():
 					return
-				case ch <- StreamMessage{Type: StreamOutput, Output: replay}:
+				case ch <- msg:
 				}
 			}
 			select {
@@ -188,21 +196,134 @@ func (t *Terminal) Subscribe(ctx context.Context) <-chan StreamMessage {
 	}
 
 	src := t.stream.Subscribe(ctx)
-	dst := make(chan StreamMessage, 256)
+	t.streamMu.Unlock()
+	dst := make(chan StreamMessage, 1)
 	go func() {
 		defer close(dst)
-		for msg := range src {
-			dst <- StreamMessage{
-				Type:         StreamMessageType(msg.Type),
-				Output:       append([]byte(nil), msg.Output...),
-				DroppedBytes: msg.DroppedBytes,
-				ExitCode:     copyIntPtr(msg.ExitCode),
-				Cols:         msg.Cols,
-				Rows:         msg.Rows,
+		for _, msg := range bootstrap {
+			select {
+			case <-ctx.Done():
+				return
+			case dst <- cloneTerminalStreamMessage(msg):
 			}
 		}
+		forwardLiveStreamMessages(ctx, src, dst)
 	}()
 	return dst
+}
+
+const maxMergedLiveOutputBytes = protocol.MaxFrameSize
+
+func forwardLiveStreamMessages(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage) {
+	var (
+		pending    fanout.StreamMessage
+		hasPending bool
+	)
+	for {
+		msg, ok := nextLiveStreamMessage(src, &pending, &hasPending)
+		if !ok {
+			return
+		}
+		if msg.Type != fanout.StreamOutput && msg.Type != fanout.StreamSyncLost {
+			select {
+			case <-ctx.Done():
+				return
+			case dst <- cloneFanoutStreamMessage(msg):
+			}
+			continue
+		}
+		batch, next, nextOK := coalesceLiveStreamMessages(msg, src)
+		for _, out := range batch {
+			select {
+			case <-ctx.Done():
+				return
+			case dst <- out:
+			}
+		}
+		if !nextOK {
+			return
+		}
+		pending = next
+		hasPending = true
+	}
+}
+
+func nextLiveStreamMessage(src <-chan fanout.StreamMessage, pending *fanout.StreamMessage, hasPending *bool) (fanout.StreamMessage, bool) {
+	if hasPending != nil && *hasPending {
+		*hasPending = false
+		return *pending, true
+	}
+	msg, ok := <-src
+	return msg, ok
+}
+
+func coalesceLiveStreamMessages(first fanout.StreamMessage, src <-chan fanout.StreamMessage) ([]StreamMessage, fanout.StreamMessage, bool) {
+	batch := make([]StreamMessage, 0, 4)
+	var (
+		output  []byte
+		dropped uint64
+	)
+	flushOutput := func() {
+		if len(output) == 0 {
+			return
+		}
+		batch = append(batch, StreamMessage{Type: StreamOutput, Output: output})
+		output = nil
+	}
+	flushDropped := func() {
+		if dropped == 0 {
+			return
+		}
+		batch = append(batch, StreamMessage{Type: StreamSyncLost, DroppedBytes: dropped})
+		dropped = 0
+	}
+	handle := func(msg fanout.StreamMessage) (fanout.StreamMessage, bool, bool) {
+		switch msg.Type {
+		case fanout.StreamOutput:
+			if dropped > 0 {
+				flushDropped()
+			}
+			if len(output) > 0 && len(output)+len(msg.Output) > maxMergedLiveOutputBytes {
+				flushOutput()
+			}
+			output = append(output, msg.Output...)
+			return fanout.StreamMessage{}, false, true
+		case fanout.StreamSyncLost:
+			flushOutput()
+			dropped += msg.DroppedBytes
+			return fanout.StreamMessage{}, false, true
+		default:
+			flushOutput()
+			flushDropped()
+			return msg, true, true
+		}
+	}
+	if pending, hasPending, ok := handle(first); hasPending || !ok {
+		if !ok {
+			return batch, fanout.StreamMessage{}, false
+		}
+		return batch, pending, true
+	}
+	for {
+		select {
+		case msg, ok := <-src:
+			if !ok {
+				flushOutput()
+				flushDropped()
+				return batch, fanout.StreamMessage{}, false
+			}
+			if pending, hasPending, ok := handle(msg); hasPending || !ok {
+				if !ok {
+					return batch, fanout.StreamMessage{}, false
+				}
+				return batch, pending, true
+			}
+		default:
+			flushOutput()
+			flushDropped()
+			return batch, fanout.StreamMessage{}, true
+		}
+	}
 }
 
 func (t *Terminal) WriteInput(data []byte) error {
@@ -235,6 +356,7 @@ func (t *Terminal) Resize(cols, rows uint16) error {
 		t.streamMu.Unlock()
 		return err
 	}
+	t.flushPendingVTermOutputLocked()
 	t.vterm.Resize(int(cols), int(rows))
 	t.stream.BroadcastResize(cols, rows)
 	t.streamMu.Unlock()
@@ -259,6 +381,7 @@ func (t *Terminal) Close() error {
 }
 
 func (t *Terminal) Restart() error {
+	t.flushPendingVTermOutput(0)
 	t.mu.Lock()
 	if t.state != StateExited {
 		t.mu.Unlock()
@@ -392,6 +515,7 @@ func (t *Terminal) MarkRemoved() {
 }
 
 func (t *Terminal) Snapshot(offset, limit int) *Snapshot {
+	t.flushPendingVTermOutput(0)
 	if limit <= 0 {
 		limit = 500
 	}
@@ -517,16 +641,63 @@ func (t *Terminal) startProcessLoops() {
 	t.mu.RLock()
 	epoch := t.processEpoch
 	p := t.pty
-	vt := t.vterm
 	stream := t.stream
 	readDone := t.readDone
 	done := t.done
 	t.mu.RUnlock()
-	go t.readLoop(epoch, p, vt, stream, readDone)
+	go t.readLoop(epoch, p, stream, readDone)
 	go t.waitLoop(epoch, p, stream, readDone, done)
 }
 
-func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, vt *vterm.VTerm, stream *fanout.Fanout, readDone chan struct{}) {
+func (t *Terminal) queuePendingVTermOutputLocked(epoch uint64, chunk []byte) {
+	if t == nil || len(chunk) == 0 {
+		return
+	}
+	if t.pendingVTermEpoch != epoch {
+		t.clearPendingVTermOutputLocked()
+		t.pendingVTermEpoch = epoch
+	}
+	t.pendingVTermOutput = append(t.pendingVTermOutput, chunk...)
+	if len(t.pendingVTermOutput) >= serverVTermFlushThreshold || len(t.pendingVTermOutput) >= protocol.MaxFrameSize {
+		t.flushPendingVTermOutputLocked()
+	}
+}
+
+func (t *Terminal) flushPendingVTermOutput(epoch uint64) {
+	if t == nil {
+		return
+	}
+	t.streamMu.Lock()
+	defer t.streamMu.Unlock()
+	if epoch != 0 && t.pendingVTermEpoch != 0 && t.pendingVTermEpoch != epoch {
+		return
+	}
+	t.flushPendingVTermOutputLocked()
+}
+
+func (t *Terminal) flushPendingVTermOutputLocked() {
+	if t == nil {
+		return
+	}
+	if len(t.pendingVTermOutput) == 0 {
+		return
+	}
+	output := append([]byte(nil), t.pendingVTermOutput...)
+	t.pendingVTermOutput = t.pendingVTermOutput[:0]
+	if t.vterm != nil {
+		_, _ = t.vterm.Write(output)
+	}
+}
+
+func (t *Terminal) clearPendingVTermOutputLocked() {
+	if t == nil {
+		return
+	}
+	t.pendingVTermOutput = nil
+	t.pendingVTermEpoch = 0
+}
+
+func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, readDone chan struct{}) {
 	defer close(readDone)
 	buf := make([]byte, 32*1024)
 	for {
@@ -534,9 +705,9 @@ func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, vt *vterm.VTerm, stream
 		if n > 0 {
 			chunk := append([]byte(nil), buf[:n]...)
 			t.streamMu.Lock()
+			t.queuePendingVTermOutputLocked(epoch, chunk)
 			stream.Broadcast(chunk)
 			t.streamMu.Unlock()
-			_, _ = vt.Write(chunk)
 		}
 		if err != nil {
 			t.mu.RLock()
@@ -590,7 +761,10 @@ func (t *Terminal) waitLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, 
 		t.updateFunc()
 	}
 
+	t.streamMu.Lock()
+	t.flushPendingVTermOutputLocked()
 	stream.Close(&code)
+	t.streamMu.Unlock()
 	if !removed {
 		t.events.Publish(Event{
 			Type:       EventTerminalStateChanged,
@@ -719,6 +893,48 @@ func snapshotReplayPayload(s *Snapshot) []byte {
 		return nil
 	}
 	return []byte(strings.Join(lines, "\n") + "\n")
+}
+
+func (t *Terminal) bootstrapMessagesLocked(scrollbackLimit int) []StreamMessage {
+	if t == nil {
+		return nil
+	}
+	t.mu.RLock()
+	size := t.size
+	t.mu.RUnlock()
+	msgs := make([]StreamMessage, 0, 3)
+	if size.Cols > 0 && size.Rows > 0 {
+		msgs = append(msgs, StreamMessage{Type: StreamResize, Cols: size.Cols, Rows: size.Rows})
+	}
+	if t.vterm != nil {
+		if replay := t.vterm.EncodeReplay(scrollbackLimit); len(replay) > 0 {
+			msgs = append(msgs, StreamMessage{Type: StreamOutput, Output: replay})
+		}
+	}
+	msgs = append(msgs, StreamMessage{Type: StreamBootstrapDone})
+	return msgs
+}
+
+func cloneTerminalStreamMessage(msg StreamMessage) StreamMessage {
+	return StreamMessage{
+		Type:         msg.Type,
+		Output:       append([]byte(nil), msg.Output...),
+		DroppedBytes: msg.DroppedBytes,
+		ExitCode:     copyIntPtr(msg.ExitCode),
+		Cols:         msg.Cols,
+		Rows:         msg.Rows,
+	}
+}
+
+func cloneFanoutStreamMessage(msg fanout.StreamMessage) StreamMessage {
+	return StreamMessage{
+		Type:         StreamMessageType(msg.Type),
+		Output:       append([]byte(nil), msg.Output...),
+		DroppedBytes: msg.DroppedBytes,
+		ExitCode:     copyIntPtr(msg.ExitCode),
+		Cols:         msg.Cols,
+		Rows:         msg.Rows,
+	}
 }
 
 func snapshotRowString(row []Cell) string {

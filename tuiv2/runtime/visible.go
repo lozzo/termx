@@ -15,15 +15,18 @@ type VisibleRuntime struct {
 }
 
 type VisibleTerminal struct {
-	TerminalID   string
-	Name         string
-	State        string
-	ExitCode     *int
-	Title        string
-	AttachMode   string
-	OwnerPaneID  string
-	BoundPaneIDs []string
-	Snapshot     *protocol.Snapshot
+	TerminalID      string
+	Name            string
+	State           string
+	ExitCode        *int
+	Title           string
+	AttachMode      string
+	OwnerPaneID     string
+	BoundPaneIDs    []string
+	Snapshot        *protocol.Snapshot
+	Surface         TerminalSurface
+	SurfaceVersion  uint64
+	SnapshotVersion uint64
 }
 
 type VisiblePaneBinding struct {

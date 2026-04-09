@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lozzow/termx/fanout"
 	localvterm "github.com/lozzow/termx/vterm"
 )
 
@@ -106,13 +107,37 @@ func TestSubscribeAfterExitReplaysSnapshotAndClosed(t *testing.T) {
 	select {
 	case msg, ok := <-stream:
 		if !ok {
+			t.Fatal("expected resize bootstrap frame")
+		}
+		if msg.Type != StreamResize || msg.Cols != 80 || msg.Rows != 24 {
+			t.Fatalf("expected resize bootstrap, got %#v", msg)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for resize bootstrap")
+	}
+
+	select {
+	case msg, ok := <-stream:
+		if !ok {
 			t.Fatal("expected replay output frame")
 		}
-		if msg.Type != StreamOutput || !strings.Contains(string(msg.Output), "replay-me") {
+		if msg.Type != StreamOutput || !replayContainsText(msg.Output, 80, 24, "replay-me") {
 			t.Fatalf("expected replay output, got %#v", msg)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for replay output")
+	}
+
+	select {
+	case msg, ok := <-stream:
+		if !ok {
+			t.Fatal("expected closed frame")
+		}
+		if msg.Type != StreamBootstrapDone {
+			t.Fatalf("expected bootstrap-done frame, got %#v", msg)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for bootstrap-done frame")
 	}
 
 	select {
@@ -128,6 +153,190 @@ func TestSubscribeAfterExitReplaysSnapshotAndClosed(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for closed frame")
+	}
+}
+
+func TestSubscribeRunningTerminalBootstrapsResizeReplayThenLiveOutput(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	vt := localvterm.New(6, 2, 16, nil)
+	if _, err := vt.Write([]byte("hello\r\nworld")); err != nil {
+		t.Fatalf("seed vterm: %v", err)
+	}
+
+	term := &Terminal{
+		size:   Size{Cols: 6, Rows: 2},
+		state:  StateRunning,
+		vterm:  vt,
+		stream: fanout.New(),
+	}
+
+	stream := term.Subscribe(ctx)
+
+	select {
+	case msg := <-stream:
+		if msg.Type != StreamResize || msg.Cols != 6 || msg.Rows != 2 {
+			t.Fatalf("expected resize bootstrap, got %#v", msg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for resize bootstrap")
+	}
+
+	select {
+	case msg := <-stream:
+		if msg.Type != StreamOutput || !replayContainsText(msg.Output, 6, 2, "hello") || !replayContainsText(msg.Output, 6, 2, "world") {
+			t.Fatalf("expected replay bootstrap output, got %#v", msg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for replay bootstrap")
+	}
+
+	term.stream.Broadcast([]byte("later"))
+
+	select {
+	case msg := <-stream:
+		if msg.Type != StreamBootstrapDone {
+			t.Fatalf("expected bootstrap-done before live output, got %#v", msg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for bootstrap-done frame")
+	}
+
+	select {
+	case msg := <-stream:
+		if msg.Type != StreamOutput || string(msg.Output) != "later" {
+			t.Fatalf("expected live output after bootstrap, got %#v", msg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for live output")
+	}
+}
+
+func TestTerminalSnapshotFlushesPendingVTermOutput(t *testing.T) {
+	vt := localvterm.New(8, 2, 16, nil)
+	term := &Terminal{
+		id:           "snap-pending",
+		size:         Size{Cols: 8, Rows: 2},
+		state:        StateRunning,
+		vterm:        vt,
+		processEpoch: 1,
+	}
+
+	term.streamMu.Lock()
+	term.queuePendingVTermOutputLocked(1, []byte("hello"))
+	term.streamMu.Unlock()
+	if replayContainsText(vt.EncodeReplay(16), 8, 2, "hello") {
+		t.Fatal("expected pending output to remain buffered until a flush boundary")
+	}
+
+	snap := term.Snapshot(0, 10)
+	if !snapshotContains(snap, "hello") {
+		t.Fatalf("expected snapshot to flush pending vterm output, got %#v", snap)
+	}
+}
+
+func TestSubscribeFlushesPendingVTermOutputBeforeBootstrap(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	vt := localvterm.New(8, 2, 16, nil)
+	term := &Terminal{
+		size:         Size{Cols: 8, Rows: 2},
+		state:        StateRunning,
+		vterm:        vt,
+		stream:       fanout.New(),
+		processEpoch: 1,
+	}
+
+	term.streamMu.Lock()
+	term.queuePendingVTermOutputLocked(1, []byte("hello"))
+	term.streamMu.Unlock()
+
+	stream := term.Subscribe(ctx)
+
+	select {
+	case msg := <-stream:
+		if msg.Type != StreamResize || msg.Cols != 8 || msg.Rows != 2 {
+			t.Fatalf("expected resize bootstrap, got %#v", msg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for resize bootstrap")
+	}
+
+	select {
+	case msg := <-stream:
+		if msg.Type != StreamOutput || !replayContainsText(msg.Output, 8, 2, "hello") {
+			t.Fatalf("expected replay bootstrap output with pending bytes, got %#v", msg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for replay bootstrap")
+	}
+}
+
+func TestForwardLiveStreamMessagesCoalescesBurstOutput(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	src := make(chan fanout.StreamMessage, 8)
+	dst := make(chan StreamMessage, 8)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		forwardLiveStreamMessages(ctx, src, dst)
+		close(dst)
+	}()
+
+	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("a")}
+	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("b")}
+	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("c")}
+	close(src)
+
+	received := collectStreamMessages(t, dst)
+	<-done
+	if len(received) != 1 {
+		t.Fatalf("expected one merged output frame, got %#v", received)
+	}
+	if received[0].Type != StreamOutput || string(received[0].Output) != "abc" {
+		t.Fatalf("expected merged output %q, got %#v", "abc", received[0])
+	}
+}
+
+func TestForwardLiveStreamMessagesPreservesSyncLostBoundaries(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	src := make(chan fanout.StreamMessage, 8)
+	dst := make(chan StreamMessage, 8)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		forwardLiveStreamMessages(ctx, src, dst)
+		close(dst)
+	}()
+
+	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("ab")}
+	src <- fanout.StreamMessage{Type: fanout.StreamSyncLost, DroppedBytes: 7}
+	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("cd")}
+	src <- fanout.StreamMessage{Type: fanout.StreamResize, Cols: 80, Rows: 24}
+	close(src)
+
+	received := collectStreamMessages(t, dst)
+	<-done
+	if len(received) != 4 {
+		t.Fatalf("expected output, sync-lost, output, resize; got %#v", received)
+	}
+	if received[0].Type != StreamOutput || string(received[0].Output) != "ab" {
+		t.Fatalf("unexpected first frame %#v", received[0])
+	}
+	if received[1].Type != StreamSyncLost || received[1].DroppedBytes != 7 {
+		t.Fatalf("unexpected sync-lost frame %#v", received[1])
+	}
+	if received[2].Type != StreamOutput || string(received[2].Output) != "cd" {
+		t.Fatalf("unexpected second output %#v", received[2])
+	}
+	if received[3].Type != StreamResize || received[3].Cols != 80 || received[3].Rows != 24 {
+		t.Fatalf("unexpected resize frame %#v", received[3])
 	}
 }
 
@@ -296,6 +505,23 @@ func snapshotContains(s *Snapshot, needle string) bool {
 	return false
 }
 
+func collectStreamMessages(t *testing.T, ch <-chan StreamMessage) []StreamMessage {
+	t.Helper()
+	out := make([]StreamMessage, 0, 4)
+	timeout := time.After(3 * time.Second)
+	for {
+		select {
+		case msg, ok := <-ch:
+			if !ok {
+				return out
+			}
+			out = append(out, msg)
+		case <-timeout:
+			t.Fatalf("timed out collecting stream messages: %#v", out)
+		}
+	}
+}
+
 func snapshotTimestampForNeedle(s *Snapshot, needle string) (time.Time, bool) {
 	if s == nil {
 		return time.Time{}, false
@@ -317,6 +543,33 @@ func snapshotTimestampForNeedle(s *Snapshot, needle string) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
+}
+
+func replayContainsText(payload []byte, cols, rows int, needle string) bool {
+	if len(payload) == 0 {
+		return false
+	}
+	if cols < 1 {
+		cols = 1
+	}
+	if rows < 1 {
+		rows = 1
+	}
+	vt := localvterm.New(cols, rows, 256, nil)
+	if _, err := vt.Write(payload); err != nil {
+		return false
+	}
+	for _, row := range vt.ScrollbackContent() {
+		if strings.Contains(vtermRowToString(row), needle) {
+			return true
+		}
+	}
+	for _, row := range vt.ScreenContent().Cells {
+		if strings.Contains(vtermRowToString(row), needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func snapshotTimestampForRowKind(s *Snapshot, kind string) (time.Time, bool) {
@@ -345,6 +598,14 @@ func snapshotTimestampForRowKind(s *Snapshot, kind string) (time.Time, bool) {
 }
 
 func rowToString(row []Cell) string {
+	var b strings.Builder
+	for _, cell := range row {
+		b.WriteString(cell.Content)
+	}
+	return strings.TrimRight(b.String(), " ")
+}
+
+func vtermRowToString(row []localvterm.Cell) string {
 	var b strings.Builder
 	for _, cell := range row {
 		b.WriteString(cell.Content)

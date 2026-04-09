@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"time"
 
@@ -35,7 +36,7 @@ func (m *Model) handleTerminalInput(in input.TerminalInput) tea.Cmd {
 		return nil
 	}
 	if m.isPaneAttachPending(in.PaneID) {
-		m.pendingTerminalInputs = append(m.pendingTerminalInputs, in)
+		m.enqueueTerminalInput(in)
 		return nil
 	}
 	if m.workbench != nil {
@@ -43,11 +44,103 @@ func (m *Model) handleTerminalInput(in input.TerminalInput) tea.Cmd {
 			return m.openPickerIfUnattached(pane.ID)
 		}
 	}
-	m.pendingTerminalInputs = append(m.pendingTerminalInputs, in)
+	m.enqueueTerminalInput(in)
+	if m.interactionBatchActive {
+		return nil
+	}
 	if m.terminalInputSending {
 		return nil
 	}
 	return m.dequeueTerminalInputCmd()
+}
+
+func (m *Model) handleKeyBurstMsg(msg keyBurstMsg) tea.Cmd {
+	repeat := maxInt(1, msg.Repeat)
+	if repeat == 1 {
+		return m.handleKeyMsg(msg.Msg)
+	}
+	if inputMsg, ok := m.repeatedTerminalInputForKeyMsg(msg.Msg, repeat); ok {
+		return m.handleTerminalInput(inputMsg)
+	}
+	cmds := make([]tea.Cmd, 0, repeat)
+	for i := 0; i < repeat; i++ {
+		if cmd := m.handleKeyMsg(msg.Msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	return batchCmds(cmds...)
+}
+
+func (m *Model) repeatedTerminalInputForKeyMsg(msg tea.KeyMsg, repeat int) (input.TerminalInput, bool) {
+	if m == nil || m.input == nil || repeat <= 1 {
+		return input.TerminalInput{}, false
+	}
+	if m.modalHost != nil && m.modalHost.Session != nil {
+		return input.TerminalInput{}, false
+	}
+	if m.emptyPaneSelectionPaneID != "" || m.exitedPaneSelectionPaneID != "" {
+		return input.TerminalInput{}, false
+	}
+	if _, ok := m.restartActionForKeyMsg(msg); ok {
+		return input.TerminalInput{}, false
+	}
+	result := m.input.RouteKeyMsg(msg)
+	if result.Action != nil || result.TerminalInput == nil {
+		return input.TerminalInput{}, false
+	}
+	inputMsg := *result.TerminalInput
+	if inputMsg.PaneID == "" && m.workbench != nil {
+		if pane := m.workbench.ActivePane(); pane != nil {
+			inputMsg.PaneID = pane.ID
+		}
+	}
+	if encoded := m.encodeActiveTerminalInput(msg, inputMsg.PaneID); len(encoded) > 0 {
+		inputMsg.Data = encoded
+	}
+	if len(inputMsg.Data) == 0 {
+		return input.TerminalInput{}, false
+	}
+	inputMsg.Repeat = repeat
+	return inputMsg, true
+}
+
+func (m *Model) enqueueTerminalInput(in input.TerminalInput) {
+	if m == nil {
+		return
+	}
+	in.Repeat = maxInt(1, in.Repeat)
+	if in.Kind != input.TerminalInputWheel || in.PaneID == "" || in.WheelDirection == 0 {
+		m.pendingTerminalInputs = append(m.pendingTerminalInputs, in)
+		return
+	}
+	for len(m.pendingTerminalInputs) > 0 {
+		lastIdx := len(m.pendingTerminalInputs) - 1
+		last := &m.pendingTerminalInputs[lastIdx]
+		if last.Kind != input.TerminalInputWheel || last.PaneID != in.PaneID || last.WheelDirection == 0 {
+			break
+		}
+		lastRepeat := maxInt(1, last.Repeat)
+		inRepeat := maxInt(1, in.Repeat)
+		if last.WheelDirection == in.WheelDirection && bytes.Equal(last.Data, in.Data) {
+			last.Repeat = lastRepeat + inRepeat
+			return
+		}
+		if last.WheelDirection != -in.WheelDirection {
+			break
+		}
+		switch {
+		case lastRepeat > inRepeat:
+			last.Repeat = lastRepeat - inRepeat
+			return
+		case lastRepeat == inRepeat:
+			m.pendingTerminalInputs = m.pendingTerminalInputs[:lastIdx]
+			return
+		default:
+			m.pendingTerminalInputs = m.pendingTerminalInputs[:lastIdx]
+			in.Repeat = inRepeat - lastRepeat
+		}
+	}
+	m.pendingTerminalInputs = append(m.pendingTerminalInputs, in)
 }
 
 func (m *Model) openPickerIfUnattached(paneID string) tea.Cmd {
@@ -71,16 +164,11 @@ func (m *Model) dequeueTerminalInputCmd() tea.Cmd {
 	if m == nil {
 		return nil
 	}
-	if len(m.pendingTerminalInputs) == 0 {
+	next, ok := m.dequeueTerminalInputBatch()
+	if !ok {
 		m.terminalInputSending = false
 		return nil
 	}
-	next := m.pendingTerminalInputs[0]
-	if m.isPaneAttachPending(next.PaneID) {
-		m.terminalInputSending = false
-		return nil
-	}
-	m.pendingTerminalInputs = m.pendingTerminalInputs[1:]
 	m.terminalInputSending = true
 	return func() tea.Msg {
 		if err := m.prepareTerminalInput(context.Background(), next.PaneID); err != nil {
@@ -90,6 +178,37 @@ func (m *Model) dequeueTerminalInputCmd() tea.Cmd {
 			err: m.runtime.SendInput(context.Background(), next.PaneID, next.Data),
 		}
 	}
+}
+
+func (m *Model) dequeueTerminalInputBatch() (input.TerminalInput, bool) {
+	if m == nil || len(m.pendingTerminalInputs) == 0 {
+		return input.TerminalInput{}, false
+	}
+	first := m.pendingTerminalInputs[0]
+	if m.isPaneAttachPending(first.PaneID) {
+		return input.TerminalInput{}, false
+	}
+	batch := input.TerminalInput{
+		Kind:   first.Kind,
+		PaneID: first.PaneID,
+	}
+	data := make([]byte, 0, len(first.Data))
+	consumed := 0
+	for consumed < len(m.pendingTerminalInputs) {
+		next := m.pendingTerminalInputs[consumed]
+		if next.PaneID != batch.PaneID {
+			break
+		}
+		if next.Repeat > 1 {
+			data = append(data, bytes.Repeat(next.Data, next.Repeat)...)
+		} else {
+			data = append(data, next.Data...)
+		}
+		consumed++
+	}
+	m.pendingTerminalInputs = m.pendingTerminalInputs[consumed:]
+	batch.Data = data
+	return batch, true
 }
 
 func (m *Model) prepareTerminalInput(ctx context.Context, paneID string) error {

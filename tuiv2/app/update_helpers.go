@@ -166,10 +166,19 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 		return nil
 	}
 	terminal := m.runtime.Registry().Get(pane.TerminalID)
-	if terminal == nil || terminal.Snapshot == nil || terminal.Snapshot.Modes.AlternateScreen || terminal.ScrollbackExhausted {
+	if terminal == nil || terminal.ScrollbackExhausted {
 		return nil
 	}
-	loaded := len(terminal.Snapshot.Scrollback)
+	if terminal.VTerm != nil && terminal.VTerm.Modes().AlternateScreen {
+		return nil
+	}
+	if terminal.VTerm == nil && terminal.Snapshot != nil && terminal.Snapshot.Modes.AlternateScreen {
+		return nil
+	}
+	loaded := terminal.ScrollbackLoadedLimit
+	if terminal.Snapshot != nil && len(terminal.Snapshot.Scrollback) > loaded {
+		loaded = len(terminal.Snapshot.Scrollback)
+	}
 	want := tab.ScrollOffset + contentRect.H + terminalScrollbackPrefetchMargin
 	if want <= loaded {
 		return nil

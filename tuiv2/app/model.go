@@ -5,8 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"sync/atomic"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/input"
@@ -64,13 +66,16 @@ type Model struct {
 	lastViewFrame  string
 	lastViewCursor string
 
-	pendingTerminalInputs []input.TerminalInput
-	terminalInputSending  bool
-	pendingPaneAttaches   map[string]string
-	pendingPaneResizes    map[string]pendingPaneResize
-	invalidatePending     atomic.Bool
-	invalidateDeferred    atomic.Bool
-	hostEmojiProbePending bool
+	pendingTerminalInputs       []input.TerminalInput
+	terminalInputSending        bool
+	interactionBatchActive      bool
+	pendingPaneAttaches         map[string]string
+	pendingPaneResizes          map[string]pendingPaneResize
+	invalidatePending           atomic.Bool
+	invalidateDeferred          atomic.Bool
+	invalidateScheduled         atomic.Bool
+	invalidateBlockedByFrameOut atomic.Bool
+	hostEmojiProbePending       bool
 
 	// 鼠标拖动状态
 	mouseDragPaneID  string
@@ -94,6 +99,8 @@ type Model struct {
 }
 
 type mouseDragMode int
+
+var invalidateBatchDelay = 4 * time.Millisecond
 
 const (
 	mouseDragNone mouseDragMode = iota
@@ -144,7 +151,15 @@ func (m *Model) SetFrameWriter(writer frameSequenceWriter) {
 	if m == nil {
 		return
 	}
+	if current, ok := m.frameOut.(frameBackpressureWriter); ok {
+		current.SetDrainHook(nil)
+	}
 	m.frameOut = writer
+	if aware, ok := writer.(frameBackpressureWriter); ok {
+		aware.SetDrainHook(func() {
+			m.onFrameWriterDrained()
+		})
+	}
 }
 
 // SetSendFunc wires p.Send into the model so that the runtime stream goroutine
@@ -163,15 +178,75 @@ func (m *Model) queueInvalidate() {
 	if m == nil {
 		return
 	}
+	perftrace.Count("app.invalidate.request", 0)
 	m.render.Invalidate()
 	if m.send == nil {
 		return
 	}
+	if m.invalidatePending.Load() {
+		perftrace.Count("app.invalidate.pending_skip", 0)
+		m.invalidateDeferred.Store(true)
+		return
+	}
+	if m.invalidateScheduled.Load() {
+		perftrace.Count("app.invalidate.scheduled_skip", 0)
+		m.invalidateDeferred.Store(true)
+		return
+	}
+	if m.frameWriterHasBacklog() {
+		perftrace.Count("app.invalidate.backlog_blocked", 0)
+		m.invalidateBlockedByFrameOut.Store(true)
+		return
+	}
+	if invalidateBatchDelay <= 0 {
+		m.queueInvalidateImmediate()
+		return
+	}
+	if m.invalidateScheduled.Swap(true) {
+		perftrace.Count("app.invalidate.timer_skip", 0)
+		m.invalidateDeferred.Store(true)
+		return
+	}
+	perftrace.Count("app.invalidate.timer_scheduled", 0)
+	time.AfterFunc(invalidateBatchDelay, func() {
+		if m == nil {
+			return
+		}
+		m.invalidateScheduled.Store(false)
+		m.queueInvalidateImmediate()
+	})
+}
+
+func (m *Model) queueInvalidateImmediate() {
+	if m == nil || m.send == nil {
+		return
+	}
 	if !m.invalidatePending.Swap(true) {
+		perftrace.Count("app.invalidate.sent", 0)
 		m.sendAsync(InvalidateMsg{})
 		return
 	}
+	perftrace.Count("app.invalidate.deferred", 0)
 	m.invalidateDeferred.Store(true)
+}
+
+func (m *Model) frameWriterHasBacklog() bool {
+	if m == nil {
+		return false
+	}
+	writer, ok := m.frameOut.(frameBackpressureWriter)
+	return ok && writer.HasPendingFrame()
+}
+
+func (m *Model) onFrameWriterDrained() {
+	if m == nil || m.send == nil {
+		return
+	}
+	if !m.invalidateBlockedByFrameOut.Swap(false) {
+		return
+	}
+	perftrace.Count("app.invalidate.frame_writer_drained", 0)
+	m.queueInvalidateImmediate()
 }
 
 func (m *Model) sendAsync(msg tea.Msg) {

@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -394,6 +395,71 @@ func TestClientSerializesConcurrentSends(t *testing.T) {
 	}
 }
 
+func TestClientStreamCoalescesAdjacentOutputFrames(t *testing.T) {
+	stream := newClientStreamWithConfig(4, 0)
+	defer stream.close()
+
+	stream.send(StreamFrame{Type: TypeOutput, Payload: []byte("a")})
+	waitForClientStreamState(t, stream, func() bool {
+		return len(stream.queue) == 0
+	})
+
+	stream.send(StreamFrame{Type: TypeOutput, Payload: []byte("b")})
+	stream.send(StreamFrame{Type: TypeOutput, Payload: []byte("c")})
+
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	if len(stream.queue) != 1 {
+		t.Fatalf("expected one queued output frame, got %d", len(stream.queue))
+	}
+	frame := stream.queue[0]
+	if frame.Type != TypeOutput || string(frame.Payload) != "bc" {
+		t.Fatalf("expected merged output payload %q, got %#v", "bc", frame)
+	}
+}
+
+func TestClientStreamOverflowQueuesSyncLostInsteadOfSilentDrop(t *testing.T) {
+	stream := newClientStreamWithConfig(2, 0)
+	defer stream.close()
+
+	payload := bytes.Repeat([]byte("x"), MaxFrameSize/2+1)
+	stream.send(StreamFrame{Type: TypeOutput, Payload: payload})
+	waitForClientStreamState(t, stream, func() bool {
+		return len(stream.queue) == 0
+	})
+
+	stream.send(StreamFrame{Type: TypeOutput, Payload: payload})
+	stream.send(StreamFrame{Type: TypeOutput, Payload: payload})
+	stream.send(StreamFrame{Type: TypeOutput, Payload: payload})
+
+	waitForClientStreamState(t, stream, func() bool {
+		if len(stream.queue) != 3 {
+			return false
+		}
+		return stream.queue[2].Type == TypeSyncLost
+	})
+
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	if len(stream.queue) != 3 {
+		t.Fatalf("expected queued overflow state, got %d frames", len(stream.queue))
+	}
+	frame := stream.queue[2]
+	if frame.Type != TypeSyncLost {
+		t.Fatalf("expected sync-lost frame after overflow, got %#v", frame)
+	}
+	dropped, err := DecodeSyncLostPayload(frame.Payload)
+	if err != nil {
+		t.Fatalf("decode sync-lost payload: %v", err)
+	}
+	if dropped != uint64(len(payload)) {
+		t.Fatalf("expected dropped byte count %d, got %d", len(payload), dropped)
+	}
+	if stream.pendingDroppedBytes != 0 {
+		t.Fatalf("expected dropped bytes to be flushed into sync-lost frame, got %d", stream.pendingDroppedBytes)
+	}
+}
+
 func runFakeProtocolServer(tr *memory.Transport) error {
 	if err := expectHello(tr); err != nil {
 		return err
@@ -517,6 +583,23 @@ func runFakeProtocolServer(tr *memory.Transport) error {
 	}
 
 	return tr.Close()
+}
+
+func waitForClientStreamState(t *testing.T, stream *clientStream, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		stream.mu.Lock()
+		ok := cond()
+		stream.mu.Unlock()
+		if ok {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
+	t.Fatalf("timed out waiting for client stream state: queued=%d dropped=%d", len(stream.queue), stream.pendingDroppedBytes)
 }
 
 type concurrentUnsafeTransport struct {

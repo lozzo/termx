@@ -1,12 +1,35 @@
 package app
 
+import "github.com/lozzow/termx/perftrace"
+
 func (m *Model) View() string {
+	finish := perftrace.Measure("app.view")
+	viewBytes := 0
+	defer func() {
+		finish(viewBytes)
+	}()
 	if m == nil || m.render == nil {
 		return ""
 	}
 	m.reconcileCopyModeContext()
+	if frame, cursor, ok := m.render.CachedFrameAndCursor(); ok {
+		perftrace.Count("app.view.reuse", len(frame)+len(cursor))
+		viewBytes = len(frame) + len(cursor)
+		if m.frameOut != nil {
+			m.lastViewFrame = frame
+			m.lastViewCursor = cursor
+			return ""
+		}
+		if m.cursorOut != nil {
+			m.cursorOut.SetCursorSequence(cursor)
+		}
+		m.lastViewFrame = frame
+		m.lastViewCursor = cursor
+		return frame + cursor
+	}
 	frame := m.render.RenderFrame()
 	cursor := m.render.CursorSequence()
+	viewBytes = len(frame) + len(cursor)
 	if m.frameOut != nil {
 		_ = m.frameOut.WriteFrame(frame, cursor)
 		m.lastViewFrame = frame
