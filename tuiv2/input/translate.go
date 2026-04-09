@@ -74,6 +74,14 @@ func routeStickyModeKeyMsg(msg tea.KeyMsg, lookup func(tea.KeyMsg) *SemanticActi
 	return RouteResult{}
 }
 
+func terminalInputForKeyMsg(msg tea.KeyMsg) *TerminalInput {
+	data := encodeTeaKey(msg)
+	if len(data) != 0 {
+		return &TerminalInput{Kind: TerminalInputBytes, Data: data}
+	}
+	return &TerminalInput{Kind: TerminalInputEncodedKey}
+}
+
 // encodeTeaKey converts a tea.KeyMsg to its raw byte representation suitable
 // for forwarding to a PTY. All printable keys and Ctrl combinations are covered
 // so that ModeNormal is a true passthrough.

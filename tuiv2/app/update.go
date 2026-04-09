@@ -433,6 +433,20 @@ func (m *Model) showError(err error) tea.Cmd {
 }
 
 func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
+	if m != nil && m.input != nil {
+		if result := m.input.TryRepeatedPassthrough(msg); result.TerminalInput != nil {
+			inputMsg := *result.TerminalInput
+			if inputMsg.PaneID == "" && m.workbench != nil {
+				if pane := m.workbench.ActivePane(); pane != nil {
+					inputMsg.PaneID = pane.ID
+				}
+			}
+			if encoded := m.encodeActiveTerminalInput(msg, inputMsg.PaneID); len(encoded) > 0 {
+				inputMsg.Data = encoded
+			}
+			return m.handleTerminalInput(inputMsg)
+		}
+	}
 	if handled, cmd := m.handleModalKeyMsg(msg); handled {
 		return cmd
 	}

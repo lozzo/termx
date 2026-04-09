@@ -2,6 +2,7 @@ package input
 
 import (
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -458,6 +459,84 @@ func TestRouteKeyMsg_WorkspacePickerMode_UsesWorkspacePickerBindings(t *testing.
 
 func TestRouteKeyMsg_NormalMode_CtrlBackslashProducesOpenWorkspacePicker(t *testing.T) {
 	t.Skip("workspace root key moved to Ctrl-W per canonical keybinding spec")
+}
+
+func TestRouteKeyMsg_RepeatedRootShortcutPassthroughsWithinWindow(t *testing.T) {
+	now := time.Unix(0, 0)
+	r := newRouterWithClock(DefaultKeymap(), func() time.Time { return now })
+
+	first := r.RouteKeyMsg(ctrlKey(tea.KeyCtrlG))
+	if first.Action == nil || first.Action.Kind != ActionEnterGlobalMode {
+		t.Fatalf("expected first Ctrl-G to enter global mode, got %#v", first)
+	}
+
+	r.SetMode(ModeState{Kind: ModeGlobal})
+
+	now = now.Add(120 * time.Millisecond)
+	second := r.RouteKeyMsg(ctrlKey(tea.KeyCtrlG))
+	if second.Action != nil {
+		t.Fatalf("expected second Ctrl-G to passthrough, got action %#v", second.Action)
+	}
+	if second.TerminalInput == nil || len(second.TerminalInput.Data) != 1 || second.TerminalInput.Data[0] != 0x07 {
+		t.Fatalf("expected second Ctrl-G passthrough byte 0x07, got %#v", second.TerminalInput)
+	}
+
+	now = now.Add(120 * time.Millisecond)
+	third := r.RouteKeyMsg(ctrlKey(tea.KeyCtrlG))
+	if third.Action != nil {
+		t.Fatalf("expected third Ctrl-G to keep passthrough window alive, got action %#v", third.Action)
+	}
+	if third.TerminalInput == nil || len(third.TerminalInput.Data) != 1 || third.TerminalInput.Data[0] != 0x07 {
+		t.Fatalf("expected third Ctrl-G passthrough byte 0x07, got %#v", third.TerminalInput)
+	}
+}
+
+func TestRouteKeyMsg_RepeatedRootShortcutExpiresOutsideWindow(t *testing.T) {
+	now := time.Unix(0, 0)
+	r := newRouterWithClock(DefaultKeymap(), func() time.Time { return now })
+
+	first := r.RouteKeyMsg(ctrlKey(tea.KeyCtrlG))
+	if first.Action == nil || first.Action.Kind != ActionEnterGlobalMode {
+		t.Fatalf("expected first Ctrl-G to enter global mode, got %#v", first)
+	}
+
+	r.SetMode(ModeState{Kind: ModeGlobal})
+
+	now = now.Add(repeatedRootShortcutPassthroughWindow + time.Millisecond)
+	second := r.RouteKeyMsg(ctrlKey(tea.KeyCtrlG))
+	if second.Action == nil || second.Action.Kind != ActionEnterGlobalMode {
+		t.Fatalf("expected Ctrl-G after timeout to be intercepted again, got %#v", second)
+	}
+	if second.TerminalInput != nil {
+		t.Fatalf("expected no passthrough after timeout, got %#v", second.TerminalInput)
+	}
+}
+
+func TestRouteKeyMsg_RepeatedRootShortcutClearedByDifferentKey(t *testing.T) {
+	now := time.Unix(0, 0)
+	r := newRouterWithClock(DefaultKeymap(), func() time.Time { return now })
+
+	first := r.RouteKeyMsg(ctrlKey(tea.KeyCtrlG))
+	if first.Action == nil || first.Action.Kind != ActionEnterGlobalMode {
+		t.Fatalf("expected first Ctrl-G to enter global mode, got %#v", first)
+	}
+
+	r.SetMode(ModeState{Kind: ModeGlobal})
+
+	now = now.Add(100 * time.Millisecond)
+	different := r.RouteKeyMsg(ctrlKey(tea.KeyCtrlF))
+	if different.Action == nil || different.Action.Kind != ActionOpenPicker {
+		t.Fatalf("expected Ctrl-F to replace the repeat candidate, got %#v", different)
+	}
+
+	now = now.Add(100 * time.Millisecond)
+	again := r.RouteKeyMsg(ctrlKey(tea.KeyCtrlG))
+	if again.Action == nil || again.Action.Kind != ActionEnterGlobalMode {
+		t.Fatalf("expected Ctrl-G after a different shortcut to be intercepted again, got %#v", again)
+	}
+	if again.TerminalInput != nil {
+		t.Fatalf("expected no passthrough after a different shortcut, got %#v", again.TerminalInput)
+	}
 }
 
 func TestRouteKeyMsg_PaneMode_UnboundKeyIgnored(t *testing.T) {

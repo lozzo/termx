@@ -2922,6 +2922,74 @@ func TestFeatureKeyDrivenGlobalQuit(t *testing.T) {
 	}
 }
 
+func TestFeatureRepeatedRootShortcutPassthroughFromStickyMode(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	client := model.runtime.Client().(*recordingBridgeClient)
+
+	dispatchKey(t, model, ctrlKey(tea.KeyCtrlG))
+	assertMode(t, model, input.ModeGlobal)
+
+	dispatchKey(t, model, ctrlKey(tea.KeyCtrlG))
+	dispatchKey(t, model, ctrlKey(tea.KeyCtrlG))
+
+	if len(client.inputCalls) != 2 {
+		t.Fatalf("expected two passthrough input calls after repeated Ctrl-G, got %#v", client.inputCalls)
+	}
+	if string(client.inputCalls[0].data) != "\a" || string(client.inputCalls[1].data) != "\a" {
+		t.Fatalf("expected repeated Ctrl-G passthrough payloads, got %#v", client.inputCalls)
+	}
+	assertMode(t, model, input.ModeGlobal)
+}
+
+func TestFeatureRepeatedRootShortcutPassthroughFromPickerModal(t *testing.T) {
+	client := &recordingBridgeClient{
+		listResult:         &protocol.ListResult{Terminals: []protocol.TerminalInfo{{ID: "term-1", Name: "shell", State: "running"}}},
+		attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{},
+	}
+	model := setupModel(t, modelOpts{client: client})
+
+	dispatchKey(t, model, ctrlKey(tea.KeyCtrlF))
+	if model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModePicker {
+		t.Fatalf("expected picker session after first Ctrl-F, got %#v", model.modalHost.Session)
+	}
+
+	dispatchKey(t, model, ctrlKey(tea.KeyCtrlF))
+
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected repeated Ctrl-F to reach the terminal once, got %#v", client.inputCalls)
+	}
+	if string(client.inputCalls[0].data) != "\x06" {
+		t.Fatalf("expected repeated Ctrl-F payload 0x06, got %q", string(client.inputCalls[0].data))
+	}
+	assertMode(t, model, input.ModePicker)
+}
+
+func TestFeatureRepeatedRootShortcutPassthroughClearedByPickerQueryInput(t *testing.T) {
+	client := &recordingBridgeClient{
+		listResult:         &protocol.ListResult{Terminals: []protocol.TerminalInfo{{ID: "term-1", Name: "shell", State: "running"}}},
+		attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{},
+	}
+	model := setupModel(t, modelOpts{client: client})
+
+	dispatchKey(t, model, ctrlKey(tea.KeyCtrlF))
+	if model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModePicker {
+		t.Fatalf("expected picker session after first Ctrl-F, got %#v", model.modalHost.Session)
+	}
+
+	dispatchKey(t, model, runeKeyMsg('s'))
+	if model.modalHost.Picker == nil || model.modalHost.Picker.Query != "s" {
+		t.Fatalf("expected picker query to consume the intervening key, got %#v", model.modalHost.Picker)
+	}
+
+	dispatchKey(t, model, ctrlKey(tea.KeyCtrlF))
+
+	if len(client.inputCalls) != 0 {
+		t.Fatalf("expected picker query input to clear repeated shortcut passthrough, got %#v", client.inputCalls)
+	}
+}
+
 func TestFeatureKeyDrivenNormalPassthrough(t *testing.T) {
 	model := setupModel(t, modelOpts{})
 	client := model.runtime.Client().(*recordingBridgeClient)
