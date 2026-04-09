@@ -12,9 +12,10 @@ import (
 )
 
 const (
-	synchronizedOutputBegin = "\x1b[?2026h"
-	synchronizedOutputEnd   = "\x1b[?2026l"
-	clientOutputBatchDelay  = 2 * time.Millisecond
+	synchronizedOutputBegin     = "\x1b[?2026h"
+	synchronizedOutputEnd       = "\x1b[?2026l"
+	clientOutputBatchDelay      = 2 * time.Millisecond
+	interactiveOutputBatchDelay = 500 * time.Microsecond
 )
 
 func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
@@ -83,7 +84,7 @@ func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 				continue
 			}
 			if frame.Type == protocol.TypeOutput {
-				frame, pending, hasPending, ok = coalesceClientOutputFrames(frame, stream)
+				frame, pending, hasPending, ok = coalesceClientOutputFrames(frame, stream, r.clientOutputBatchDelay())
 			}
 			terminal.Stream.RetryCount = 0
 			r.handleStreamFrame(terminalID, frame)
@@ -114,7 +115,18 @@ func nextClientStreamFrame(ctx context.Context, stream <-chan protocol.StreamFra
 	}
 }
 
-func coalesceClientOutputFrames(first protocol.StreamFrame, stream <-chan protocol.StreamFrame) (protocol.StreamFrame, protocol.StreamFrame, bool, bool) {
+func (r *Runtime) clientOutputBatchDelay() time.Duration {
+	if clientOutputBatchDelay <= 0 {
+		return 0
+	}
+	if r != nil && r.consumeInteractiveBypass() {
+		perftrace.Count("runtime.stream.output.interactive_bypass", 0)
+		return interactiveOutputBatchDelay
+	}
+	return clientOutputBatchDelay
+}
+
+func coalesceClientOutputFrames(first protocol.StreamFrame, stream <-chan protocol.StreamFrame, batchDelay time.Duration) (protocol.StreamFrame, protocol.StreamFrame, bool, bool) {
 	merged := protocol.StreamFrame{
 		Type:    protocol.TypeOutput,
 		Payload: append([]byte(nil), first.Payload...),
@@ -144,11 +156,11 @@ func coalesceClientOutputFrames(first protocol.StreamFrame, stream <-chan protoc
 			}
 		}
 	}
-	if clientOutputBatchDelay <= 0 || len(merged.Payload) >= protocol.MaxFrameSize {
+	if batchDelay <= 0 || len(merged.Payload) >= protocol.MaxFrameSize {
 		pending, hasPending, ok := drainReady()
 		return merged, pending, hasPending, ok
 	}
-	timer := time.NewTimer(clientOutputBatchDelay)
+	timer := time.NewTimer(batchDelay)
 	defer timer.Stop()
 	for {
 		select {

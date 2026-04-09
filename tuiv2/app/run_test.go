@@ -759,7 +759,13 @@ func TestE2ERunWithClientAttachHtopCanQuitOnPTY(t *testing.T) {
 type ptyOutputRecorder struct {
 	mu     sync.RWMutex
 	text   string
+	events []ptyOutputEvent
 	eventc chan struct{}
+}
+
+type ptyOutputEvent struct {
+	end int
+	at  time.Time
 }
 
 func (r *ptyOutputRecorder) Append(chunk string) {
@@ -768,6 +774,7 @@ func (r *ptyOutputRecorder) Append(chunk string) {
 	}
 	r.mu.Lock()
 	r.text += chunk
+	r.events = append(r.events, ptyOutputEvent{end: len(r.text), at: time.Now()})
 	r.mu.Unlock()
 	select {
 	case r.eventc <- struct{}{}:
@@ -782,6 +789,20 @@ func (r *ptyOutputRecorder) Text() string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.text
+}
+
+func (r *ptyOutputRecorder) FirstAppendAfter(offset int) time.Time {
+	if r == nil {
+		return time.Time{}
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, event := range r.events {
+		if event.end > offset {
+			return event.at
+		}
+	}
+	return time.Time{}
 }
 
 func waitForPTYText(t *testing.T, ctx context.Context, recorder *ptyOutputRecorder, target string) {

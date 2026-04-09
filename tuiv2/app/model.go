@@ -198,6 +198,11 @@ func (m *Model) queueInvalidate() {
 		m.invalidateBlockedByFrameOut.Store(true)
 		return
 	}
+	if m.runtime != nil && m.runtime.RecentLocalInput() {
+		perftrace.Count("app.invalidate.interactive_bypass", 0)
+		m.queueInvalidateImmediate()
+		return
+	}
 	if invalidateBatchDelay <= 0 {
 		m.queueInvalidateImmediate()
 		return

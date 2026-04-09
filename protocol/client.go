@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/transport"
 )
 
@@ -421,6 +422,10 @@ func (c *Client) Events(ctx context.Context, params EventsParams) (<-chan Event,
 }
 
 func (c *Client) Input(ctx context.Context, channel uint16, data []byte) error {
+	finish := perftrace.Measure("protocol.input.send")
+	defer func() {
+		finish(len(data))
+	}()
 	frame, err := EncodeFrame(channel, TypeInput, data)
 	if err != nil {
 		return err

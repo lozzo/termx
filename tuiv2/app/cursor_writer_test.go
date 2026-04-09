@@ -493,6 +493,31 @@ func TestOutputCursorWriterFlushesImmediatelyAfterIdle(t *testing.T) {
 	}
 }
 
+func TestOutputCursorWriterFlushesImmediatelyAfterInteractiveInput(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	originalIdleThreshold := directFrameIdleThreshold
+	directFrameBatchDelay = 20 * time.Millisecond
+	directFrameIdleThreshold = time.Hour
+	defer func() {
+		directFrameBatchDelay = originalDelay
+		directFrameIdleThreshold = originalIdleThreshold
+	}()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetInteractiveFlushHint(func() bool { return true })
+
+	if err := writer.WriteFrame("frame-a", "<CURSOR-A>"); err != nil {
+		t.Fatalf("write frame a: %v", err)
+	}
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	if len(sink.writes) != 1 {
+		t.Fatalf("expected interactive direct frame to flush immediately, got %#v", sink.writes)
+	}
+}
+
 func TestOutputCursorWriterSkipsRedundantCursorOnlyDirectFrame(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0

@@ -38,6 +38,7 @@ type nvimScrollPerfAction struct {
 	SyncFrames  int                `json:"sync_frames"`
 	OriginCount int                `json:"origin_count"`
 	ClearCount  int                `json:"clear_count"`
+	FirstOutput float64            `json:"first_output_ms"`
 	SettleMs    float64            `json:"settle_ms"`
 	Sample      string             `json:"sample"`
 	Metrics     perftrace.Snapshot `json:"metrics"`
@@ -103,8 +104,9 @@ func TestPerfNvimScrollReport(t *testing.T) {
 		vtermWrite, _ := action.Metrics.Event("vterm.write")
 		directFlush, _ := action.Metrics.Event("cursor_writer.direct_flush")
 		t.Logf(
-			"%s settle_ms=%.2f out=%d sync=%d update_calls=%d update_ms=%.2f render_calls=%d render_ms=%.2f visible_calls=%d visible_ms=%.2f vterm_calls=%d vterm_ms=%.2f direct_flush_calls=%d direct_flush_ms=%.2f",
+			"%s first_output_ms=%.2f settle_ms=%.2f out=%d sync=%d update_calls=%d update_ms=%.2f render_calls=%d render_ms=%.2f visible_calls=%d visible_ms=%.2f vterm_calls=%d vterm_ms=%.2f direct_flush_calls=%d direct_flush_ms=%.2f",
 			action.Label,
+			action.FirstOutput,
 			action.SettleMs,
 			action.OutputBytes,
 			action.SyncFrames,
@@ -255,6 +257,10 @@ func (h *nvimPerfHarness) runAction(t *testing.T, label string, seq []byte, reco
 		t.Fatalf("write %s: %v", label, err)
 	}
 	waitForPTYGrowthIfAny(t, h.ctx, h.recorder, before, 750*time.Millisecond)
+	firstOutputMs := 0.0
+	if firstAt := h.recorder.FirstAppendAfter(before); !firstAt.IsZero() {
+		firstOutputMs = float64(firstAt.Sub(start)) / float64(time.Millisecond)
+	}
 	waitForPTYQuiet(t, h.ctx, h.recorder, 250*time.Millisecond)
 	delta := h.recorder.Text()[before:]
 	return nvimScrollPerfAction{
@@ -264,6 +270,7 @@ func (h *nvimPerfHarness) runAction(t *testing.T, label string, seq []byte, reco
 		SyncFrames:  strings.Count(delta, synchronizedOutputBegin),
 		OriginCount: strings.Count(delta, xansi.MoveCursorOrigin),
 		ClearCount:  strings.Count(delta, xansi.EraseEntireDisplay),
+		FirstOutput: firstOutputMs,
 		SettleMs:    float64(time.Since(start)) / float64(time.Millisecond),
 		Sample:      debugEscape(delta, 220),
 		Metrics:     recorder.Snapshot(),

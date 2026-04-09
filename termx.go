@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/transport"
 	unixtransport "github.com/lozzow/termx/transport/unix"
@@ -280,6 +281,10 @@ func (s *Server) SetMetadata(ctx context.Context, id string, name string, tags m
 }
 
 func (s *Server) WriteInput(ctx context.Context, id string, data []byte) error {
+	finish := perftrace.Measure("server.input.write")
+	defer func() {
+		finish(len(data))
+	}()
 	_ = ctx
 	term, err := s.getTerminal(id)
 	if err != nil {

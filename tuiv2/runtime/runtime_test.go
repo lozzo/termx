@@ -345,6 +345,7 @@ func TestCoalesceClientOutputFramesMergesBurstOutput(t *testing.T) {
 	merged, pending, hasPending, ok := coalesceClientOutputFrames(
 		protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("a")},
 		stream,
+		clientOutputBatchDelay,
 	)
 
 	if merged.Type != protocol.TypeOutput || string(merged.Payload) != "abc" {
@@ -367,6 +368,7 @@ func TestCoalesceClientOutputFramesPreservesNonOutputBoundary(t *testing.T) {
 	merged, pending, hasPending, ok := coalesceClientOutputFrames(
 		protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("a")},
 		stream,
+		clientOutputBatchDelay,
 	)
 
 	if merged.Type != protocol.TypeOutput || string(merged.Payload) != "ab" {
@@ -380,6 +382,21 @@ func TestCoalesceClientOutputFramesPreservesNonOutputBoundary(t *testing.T) {
 	}
 	if !ok {
 		t.Fatal("expected source stream to remain open after boundary frame")
+	}
+}
+
+func TestRuntimeClientOutputBatchDelayBypassesAfterRecentInput(t *testing.T) {
+	rt := New(nil)
+	if got := rt.clientOutputBatchDelay(); got != clientOutputBatchDelay {
+		t.Fatalf("expected default client output batch delay %v, got %v", clientOutputBatchDelay, got)
+	}
+
+	rt.noteLocalInput()
+	if got := rt.clientOutputBatchDelay(); got != interactiveOutputBatchDelay {
+		t.Fatalf("expected recent local input to shrink output batch delay to %v, got %v", interactiveOutputBatchDelay, got)
+	}
+	if got := rt.clientOutputBatchDelay(); got != clientOutputBatchDelay {
+		t.Fatalf("expected interactive bypass to be one-shot, got %v", got)
 	}
 }
 

@@ -1543,6 +1543,38 @@ func TestQueueInvalidateBatchesBurstBeforeSending(t *testing.T) {
 	}
 }
 
+func TestQueueInvalidateBypassesBatchDelayAfterRecentInput(t *testing.T) {
+	originalDelay := invalidateBatchDelay
+	invalidateBatchDelay = 40 * time.Millisecond
+	defer func() { invalidateBatchDelay = originalDelay }()
+
+	client := &recordingBridgeClient{}
+	rt := runtime.New(client)
+	binding := rt.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+	if err := rt.SendInput(context.Background(), "pane-1", []byte("a")); err != nil {
+		t.Fatalf("note recent input: %v", err)
+	}
+
+	model := New(shared.Config{}, nil, rt)
+	sent := make(chan tea.Msg, 4)
+	model.SetSendFunc(func(msg tea.Msg) {
+		sent <- msg
+	})
+
+	model.queueInvalidate()
+
+	select {
+	case msg := <-sent:
+		if _, ok := msg.(InvalidateMsg); !ok {
+			t.Fatalf("expected immediate invalidate after recent input, got %#v", msg)
+		}
+	case <-time.After(10 * time.Millisecond):
+		t.Fatal("expected recent input to bypass invalidate batch delay")
+	}
+}
+
 func TestQueueInvalidateDoesNotBlockOnSend(t *testing.T) {
 	model := New(shared.Config{}, nil, runtime.New(nil))
 	release := make(chan struct{})

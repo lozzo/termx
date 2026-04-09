@@ -257,6 +257,61 @@ termx web -- nvim -u NONE your-file
 
 “为什么 frame 已经只渲染一次了，滚动还是不够跟手？”
 
+## Input Latency Findings
+
+后续已经补了一轮输入路径打点，metric 包括:
+
+- `app.input.prepare`
+- `app.input.send`
+- `runtime.input.send`
+- `protocol.input.send`
+- `server.input.write`
+- `terminal.input.write`
+
+同时 perf harness 现在会记录 `first_output_ms`。
+
+### 结论
+
+协议发送链本身很轻，不是主要瓶颈。
+
+以 `/tmp/termx-perf-interactive-latency-v2/nvim-scroll.json` 为例:
+
+1. `down_single`
+   - `first_output_ms`: `11.62`
+   - `protocol.input.send`: `0.029ms`
+   - `server.input.write`: `0.023ms`
+   - `terminal.input.write`: `0.019ms`
+
+2. `up_burst_8`
+   - `first_output_ms`: `17.70`
+   - `protocol.input.send`: `0.020ms`
+   - `runtime.stream.output`: `5.448ms`
+   - 同场景下 `vterm.write` 与 `render.frame` 仍然占据主要本地处理时间
+
+这说明:
+
+1. `Input RPC` 不是拖手感的主因。
+2. 首帧延迟主要由:
+   - 程序本身对输入的响应时间
+   - output 到达 client 后的 `VTerm.Write()`
+   - 首次 `RenderFrame()`
+3. 所谓“端到端输入延迟”，在当前基线上已经更多是在问:
+   “output 到了以后，termx 还能不能更快把第一帧画出来？”
+
+## Interactive Low-latency Path
+
+后续又加了一条更偏交互手感的低延迟旁路:
+
+1. `Runtime.SendInput()` 会标记“最近有本地输入”。
+2. 紧接着到来的首个 output batch 会走更短的 client stream 合批窗口。
+3. `Model.queueInvalidate()` 在这个窗口内直接绕过 `invalidateBatchDelay`。
+4. `outputCursorWriter` 在这个窗口内直接绕过 `directFrameBatchDelay`。
+
+注意:
+
+- 这条旁路只对“最近本地输入”生效。
+- 试过把 input forwarder 的 key/wheel 首帧也改成立即发送，但会重新把 `up_burst / alternating` 拆成多次 `vterm.write` 和 `render.frame`，所以当前没有保留。
+
 ## Recommended Next Measurements
 
 下一步建议直接做时间戳打点，而不是继续改缓存策略:

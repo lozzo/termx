@@ -52,6 +52,7 @@ type outputCursorWriter struct {
 	lastDirectCursor     string
 	lastFlushAt          time.Time
 	drainHook            func()
+	interactiveFlushHint func() bool
 	backlogActive        atomic.Bool
 }
 
@@ -456,9 +457,22 @@ func (w *outputCursorWriter) flushPendingFrameLocked() (func(), error) {
 	return w.drainHook, nil
 }
 
+func (w *outputCursorWriter) SetInteractiveFlushHint(hint func() bool) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	w.interactiveFlushHint = hint
+	w.mu.Unlock()
+}
+
 func (w *outputCursorWriter) shouldFlushDirectFrameImmediatelyLocked() bool {
 	if w == nil {
 		return false
+	}
+	if w.interactiveFlushHint != nil && w.interactiveFlushHint() {
+		perftrace.Count("cursor_writer.direct_flush.interactive_bypass", 0)
+		return true
 	}
 	if directFrameIdleThreshold <= 0 {
 		return true

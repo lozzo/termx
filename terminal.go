@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/fanout"
+	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	ptymgr "github.com/lozzow/termx/pty"
 	"github.com/lozzow/termx/vterm"
@@ -327,6 +328,10 @@ func coalesceLiveStreamMessages(first fanout.StreamMessage, src <-chan fanout.St
 }
 
 func (t *Terminal) WriteInput(data []byte) error {
+	finish := perftrace.Measure("terminal.input.write")
+	defer func() {
+		finish(len(data))
+	}()
 	t.mu.RLock()
 	if t.state == StateExited {
 		t.mu.RUnlock()

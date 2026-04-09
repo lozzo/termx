@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -171,11 +172,17 @@ func (m *Model) dequeueTerminalInputCmd() tea.Cmd {
 	}
 	m.terminalInputSending = true
 	return func() tea.Msg {
-		if err := m.prepareTerminalInput(context.Background(), next.PaneID); err != nil {
+		prepareFinish := perftrace.Measure("app.input.prepare")
+		err := m.prepareTerminalInput(context.Background(), next.PaneID)
+		prepareFinish(len(next.Data))
+		if err != nil {
 			return terminalInputSentMsg{err: err}
 		}
+		sendFinish := perftrace.Measure("app.input.send")
+		err = m.runtime.SendInput(context.Background(), next.PaneID, next.Data)
+		sendFinish(len(next.Data))
 		return terminalInputSentMsg{
-			err: m.runtime.SendInput(context.Background(), next.PaneID, next.Data),
+			err: err,
 		}
 	}
 }
