@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -78,8 +77,11 @@ type framePresenter struct {
 }
 
 type presentedRow struct {
-	raw   string
-	cells []presentedCell
+	raw       string
+	cells     []presentedCell
+	hasStyled bool
+	hasWide   bool
+	hasErase  bool
 }
 
 type presentedCell struct {
@@ -119,7 +121,6 @@ type verticalScrollPlan struct {
 var (
 	synchronizedOutputBegin = xansi.DECSET(xansi.ModeSynchronizedOutput)
 	synchronizedOutputEnd   = xansi.DECRST(xansi.ModeSynchronizedOutput)
-	trailingControlSuffixRE = regexp.MustCompile(`(?:\r|\x1b\[[0-9;?]*[ -/]*[@-~])+$`)
 	presentedStyleCache     sync.Map
 	presentedCellPool       sync.Pool
 )
@@ -432,35 +433,17 @@ func renderChangedRowDiff(out *strings.Builder, previous, next presentedRow, row
 	if previous.raw == next.raw {
 		return true
 	}
-	if !canUseSuffixDiff(previous) || !canUseSuffixDiff(next) {
+	if previous.hasErase || previous.hasWide || next.hasErase || next.hasWide {
 		return false
 	}
 	prevCells := previous.cells
 	nextCells := next.cells
-	if canUseRunDiff(previous) && canUseRunDiff(next) && len(prevCells) == len(nextCells) {
+	if !previous.hasStyled && !next.hasStyled && len(prevCells) == len(nextCells) {
 		if renderChangedRowRuns(out, prevCells, nextCells, row) {
 			return true
 		}
 	}
 	return renderChangedRowSuffix(out, previous, next, row)
-}
-
-func canUseSuffixDiff(row presentedRow) bool {
-	for _, cell := range row.cells {
-		if cell.Erase || cell.Width != 1 {
-			return false
-		}
-	}
-	return true
-}
-
-func canUseRunDiff(row presentedRow) bool {
-	for _, cell := range row.cells {
-		if cell.Style != (presentedStyle{}) {
-			return false
-		}
-	}
-	return true
 }
 
 func renderChangedRowRuns(out *strings.Builder, previous, next []presentedCell, row int) bool {
@@ -535,6 +518,8 @@ func parsePresentedRow(row string) presentedRow {
 func parsePresentedRowASCII(row string) (presentedRow, bool) {
 	style := presentedStyle{}
 	cells := acquirePresentedCells(len(row))
+	hasStyled := false
+	hasErase := false
 	fail := func() (presentedRow, bool) {
 		releasePresentedCells(cells)
 		return presentedRow{}, false
@@ -569,6 +554,10 @@ func parsePresentedRowASCII(row string) (presentedRow, bool) {
 				if !ok {
 					return fail()
 				}
+				hasErase = true
+				if style != (presentedStyle{}) {
+					hasStyled = true
+				}
 				for k := 0; k < count; k++ {
 					cells = append(cells, presentedCell{Content: " ", Width: 1, Style: style, Erase: true})
 				}
@@ -579,10 +568,13 @@ func parsePresentedRowASCII(row string) (presentedRow, bool) {
 		if b >= utf8.RuneSelf || b < 0x20 || b == 0x7f {
 			return fail()
 		}
+		if style != (presentedStyle{}) {
+			hasStyled = true
+		}
 		cells = append(cells, presentedCell{Content: row[i : i+1], Width: 1, Style: style})
 		i++
 	}
-	return presentedRow{raw: row, cells: cells}, true
+	return presentedRow{raw: row, cells: cells, hasStyled: hasStyled, hasErase: hasErase}, true
 }
 
 func parsePresentedRowGeneric(row string) presentedRow {
@@ -592,6 +584,9 @@ func parsePresentedRowGeneric(row string) presentedRow {
 	rest := row
 	style := presentedStyle{}
 	cells := acquirePresentedCells(xansi.StringWidth(row))
+	hasStyled := false
+	hasWide := false
+	hasErase := false
 	for len(rest) > 0 {
 		seq, width, n, nextState := xansi.DecodeSequence(rest, state, parser)
 		if n <= 0 {
@@ -599,6 +594,12 @@ func parsePresentedRowGeneric(row string) presentedRow {
 		}
 		token := string(seq)
 		if width > 0 {
+			if style != (presentedStyle{}) {
+				hasStyled = true
+			}
+			if width != 1 {
+				hasWide = true
+			}
 			cells = append(cells, presentedCell{Content: token, Width: width, Style: style})
 		} else if len(token) > 0 && token[0] == '\x1b' {
 			switch xansi.Cmd(parser.Command()).Final() {
@@ -609,6 +610,10 @@ func parsePresentedRowGeneric(row string) presentedRow {
 				if !ok || count <= 0 {
 					count = 1
 				}
+				hasErase = true
+				if style != (presentedStyle{}) {
+					hasStyled = true
+				}
 				for i := 0; i < count; i++ {
 					cells = append(cells, presentedCell{Content: " ", Width: 1, Style: style, Erase: true})
 				}
@@ -617,7 +622,7 @@ func parsePresentedRowGeneric(row string) presentedRow {
 		state = nextState
 		rest = rest[n:]
 	}
-	return presentedRow{raw: row, cells: cells}
+	return presentedRow{raw: row, cells: cells, hasStyled: hasStyled, hasWide: hasWide, hasErase: hasErase}
 }
 
 func acquirePresentedCells(capHint int) []presentedCell {
@@ -1436,7 +1441,49 @@ func bubbleTeaRestoreSequence(p []byte) string {
 	if len(p) == 0 {
 		return ""
 	}
-	return trailingControlSuffixRE.FindString(string(p))
+	i := len(p)
+	for i > 0 {
+		if p[i-1] == '\r' {
+			i--
+			continue
+		}
+		start := trailingCSISequenceStart(p[:i])
+		if start < 0 {
+			break
+		}
+		i = start
+	}
+	return string(p[i:])
+}
+
+func trailingCSISequenceStart(p []byte) int {
+	if len(p) < 3 {
+		return -1
+	}
+	final := p[len(p)-1]
+	if final < '@' || final > '~' {
+		return -1
+	}
+	i := len(p) - 1
+	for i > 0 {
+		b := p[i-1]
+		if b < ' ' || b > '/' {
+			break
+		}
+		i--
+	}
+	for i > 0 {
+		b := p[i-1]
+		if (b >= '0' && b <= '9') || b == ';' || b == '?' {
+			i--
+			continue
+		}
+		break
+	}
+	if i >= 2 && p[i-2] == '\x1b' && p[i-1] == '[' {
+		return i - 2
+	}
+	return -1
 }
 
 func stripEmbeddedCursorSequence(payload, cursor string) string {

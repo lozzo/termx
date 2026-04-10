@@ -876,6 +876,21 @@ func TestNormalizeFrameForTTYUsesCRLF(t *testing.T) {
 	}
 }
 
+func TestBubbleTeaRestoreSequenceExtractsTrailingCRAndCSI(t *testing.T) {
+	payload := []byte("body\x1b[12;8H\r\x1b[?25h")
+	if got, want := bubbleTeaRestoreSequence(payload), "\x1b[12;8H\r\x1b[?25h"; got != want {
+		t.Fatalf("expected trailing cursor restore suffix, got %q want %q", got, want)
+	}
+}
+
+func TestStripEmbeddedCursorSequenceKeepsTrailingRestoreCursorSuffix(t *testing.T) {
+	cursor := "\x1b[12;8H"
+	payload := "body" + cursor + "\r\x1b[?25h"
+	if got := stripEmbeddedCursorSequence(payload, cursor); got != payload {
+		t.Fatalf("expected trailing restore suffix to remain untouched, got %q want %q", got, payload)
+	}
+}
+
 func TestOutputCursorWriterCopyModeRoundTripRepaintsScrollbackViewBackToLive(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
