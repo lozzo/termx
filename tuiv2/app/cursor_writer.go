@@ -365,6 +365,7 @@ func (p *framePresenter) renderChangedRows(next []string) (string, int, []presen
 	changed := 0
 	reclaim := make([][]presentedCell, 0, len(next)/2)
 	var out strings.Builder
+	out.Grow(len(next) * 16)
 	for row := range next {
 		if next[row] == p.lines[row] {
 			continue
@@ -376,13 +377,10 @@ func (p *framePresenter) renderChangedRows(next []string) (string, int, []presen
 		if len(prevRow.cells) > 0 {
 			reclaim = append(reclaim, prevRow.cells)
 		}
-		span, ok := renderChangedRowDiff(prevRow, nextRow, row)
-		if !ok {
+		if !renderChangedRowDiff(&out, prevRow, nextRow, row) {
 			out.WriteString(xansi.CUP(1, row+1))
 			out.WriteString(next[row])
-			continue
 		}
-		out.WriteString(span)
 	}
 	return out.String(), changed, nextParsed, reclaim
 }
@@ -399,21 +397,21 @@ func (p *framePresenter) presentedRow(index int) presentedRow {
 	return row
 }
 
-func renderChangedRowDiff(previous, next presentedRow, row int) (string, bool) {
+func renderChangedRowDiff(out *strings.Builder, previous, next presentedRow, row int) bool {
 	if previous.raw == next.raw {
-		return "", true
+		return true
 	}
 	if !canUseSuffixDiff(previous) || !canUseSuffixDiff(next) {
-		return "", false
+		return false
 	}
 	prevCells := previous.cells
 	nextCells := next.cells
 	if canUseRunDiff(previous) && canUseRunDiff(next) && len(prevCells) == len(nextCells) {
-		if spans, ok := renderChangedRowRuns(prevCells, nextCells, row); ok {
-			return spans, true
+		if renderChangedRowRuns(out, prevCells, nextCells, row) {
+			return true
 		}
 	}
-	return renderChangedRowSuffix(previous, next, row)
+	return renderChangedRowSuffix(out, previous, next, row)
 }
 
 func canUseSuffixDiff(row presentedRow) bool {
@@ -434,21 +432,20 @@ func canUseRunDiff(row presentedRow) bool {
 	return true
 }
 
-func renderChangedRowRuns(previous, next []presentedCell, row int) (string, bool) {
+func renderChangedRowRuns(out *strings.Builder, previous, next []presentedCell, row int) bool {
 	if len(previous) != len(next) {
-		return "", false
+		return false
 	}
 	prevCol := 1
 	nextCol := 1
 	runStart := -1
 	runStartCol := 1
-	var out strings.Builder
 	flush := func(end int) {
 		if runStart < 0 || runStart >= end {
 			return
 		}
 		out.WriteString(xansi.CUP(runStartCol, row+1))
-		out.WriteString(serializePresentedCells(next[runStart:end], runStartCol))
+		writePresentedCells(out, next[runStart:end], runStartCol)
 		if end == len(next) {
 			out.WriteString(xansi.EraseLineRight)
 		}
@@ -466,13 +463,13 @@ func renderChangedRowRuns(previous, next []presentedCell, row int) (string, bool
 		nextCol += maxInt(1, next[i].Width)
 	}
 	if prevCol != nextCol {
-		return "", false
+		return false
 	}
 	flush(len(next))
-	return out.String(), true
+	return true
 }
 
-func renderChangedRowSuffix(previous, next presentedRow, row int) (string, bool) {
+func renderChangedRowSuffix(out *strings.Builder, previous, next presentedRow, row int) bool {
 	prevCells := previous.cells
 	nextCells := next.cells
 	prefixIndex := 0
@@ -482,13 +479,16 @@ func renderChangedRowSuffix(previous, next presentedRow, row int) (string, bool)
 		prefixIndex++
 	}
 	if prefixIndex == len(prevCells) && prefixIndex == len(nextCells) {
-		return "", true
+		return true
 	}
-	span := serializePresentedCells(nextCells[prefixIndex:], prefixWidth+1)
-	if span == "" {
-		return xansi.CUP(prefixWidth+1, row+1) + xansi.EraseLineRight, true
+	out.WriteString(xansi.CUP(prefixWidth+1, row+1))
+	if len(nextCells[prefixIndex:]) == 0 {
+		out.WriteString(xansi.EraseLineRight)
+		return true
 	}
-	return xansi.CUP(prefixWidth+1, row+1) + span + xansi.EraseLineRight, true
+	writePresentedCells(out, nextCells[prefixIndex:], prefixWidth+1)
+	out.WriteString(xansi.EraseLineRight)
+	return true
 }
 
 func parsePresentedRow(row string) presentedRow {
@@ -665,11 +665,10 @@ func (s presentedStyle) withSGRASCII(raw string) (presentedStyle, bool) {
 	return s.withSGRInts(params), true
 }
 
-func serializePresentedCells(cells []presentedCell, startCol int) string {
-	if len(cells) == 0 {
-		return ""
+func writePresentedCells(out *strings.Builder, cells []presentedCell, startCol int) {
+	if out == nil || len(cells) == 0 {
+		return
 	}
-	var out strings.Builder
 	current := presentedStyle{}
 	first := true
 	cursorCol := maxInt(1, startCol)
@@ -696,7 +695,6 @@ func serializePresentedCells(cells []presentedCell, startCol int) string {
 	if current != (presentedStyle{}) {
 		out.WriteString(presentedResetStyleSequence)
 	}
-	return out.String()
 }
 
 func (s presentedStyle) ansi() string {
