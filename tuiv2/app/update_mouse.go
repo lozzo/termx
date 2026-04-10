@@ -781,6 +781,9 @@ func (m *Model) handleTerminalPoolMouseWheel(state render.VisibleRenderState, de
 }
 
 func (m *Model) handleTopChromeMouseClick(state render.VisibleRenderState, x, y int) (bool, tea.Cmd) {
+	if m != nil && m.immersiveZoomActive() {
+		return false, nil
+	}
 	if y != 0 {
 		return false, nil
 	}
@@ -800,6 +803,9 @@ func (m *Model) handleTopChromeMouseClick(state render.VisibleRenderState, x, y 
 }
 
 func (m *Model) handleBottomChromeMouseClick(state render.VisibleRenderState, x, y int) (bool, tea.Cmd) {
+	if m != nil && m.immersiveZoomActive() {
+		return false, nil
+	}
 	if m == nil || y != m.height-1 {
 		return false, nil
 	}
@@ -974,6 +980,12 @@ func paneContentRect(rect workbench.Rect) (workbench.Rect, bool) {
 }
 
 func paneContentRectForVisible(pane workbench.VisiblePane) (workbench.Rect, bool) {
+	if pane.Frameless {
+		if pane.Rect.W <= 0 || pane.Rect.H <= 0 {
+			return workbench.Rect{}, false
+		}
+		return pane.Rect, true
+	}
 	return workbench.FramedPaneContentRect(pane.Rect, pane.SharedLeft, pane.SharedTop)
 }
 

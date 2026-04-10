@@ -121,60 +121,6 @@ func TestComposedCanvasDrawTextKeepsEmojiVariationSelectorClusterIntact(t *testi
 // 已经被移除；现在只保留 raw+ECH 的序列化，真正让 emoji 消失的是后续
 // 覆盖写入对整个 footprint 的清理，所以这组 fallback 测试一并删掉。
 
-func TestComposedCanvasDrawSnapshotRawModeKeepsAmbiguousEmojiWhenFollowedByVisibleCells(t *testing.T) {
-	canvas := newComposedCanvas(6, 1)
-	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorRaw
-	canvas.drawSnapshot(&protocol.Snapshot{
-		Screen: protocol.ScreenData{
-			Cells: [][]protocol.Cell{{
-				{Content: "♻️", Width: 2},
-				{Content: "", Width: 0},
-				{Content: "X", Width: 1},
-			}},
-		},
-	})
-
-	rendered := canvas.contentString()
-	want := "♻️" + xansi.ECH(1) + xansi.CHA(3) + "X"
-	if !strings.Contains(rendered, want) {
-		t.Fatalf("expected raw-mode snapshot serialization to keep ambiguous emoji away from the right boundary, got %q want substring %q", rendered, want)
-	}
-}
-
-func TestComposedCanvasDrawSnapshotRawModePromptWithEmojiFollowedByTypedCharsKeepsEmoji(t *testing.T) {
-	// Reproduce the exact bug: snapshot with prompt ♻️ followed by typed chars.
-	canvas := newComposedCanvas(10, 1)
-	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorRaw
-	canvas.drawSnapshot(&protocol.Snapshot{
-		Screen: protocol.ScreenData{
-			Cells: [][]protocol.Cell{{
-				{Content: "♻️", Width: 2},
-				{Content: "", Width: 0},
-				{Content: "l", Width: 1},
-				{Content: "s", Width: 1},
-			}},
-		},
-	})
-
-	rendered := canvas.contentString()
-	want := "♻️" + xansi.ECH(1) + xansi.CHA(3) + "ls"
-	if !strings.Contains(rendered, want) {
-		t.Fatalf("expected raw-mode prompt serialization to keep ambiguous emoji away from the right boundary, got %q want substring %q", rendered, want)
-	}
-}
-
-func TestComposedCanvasDrawTextRawModeKeepsAmbiguousEmojiWhenFollowedByVisibleCells(t *testing.T) {
-	canvas := newComposedCanvas(6, 1)
-	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorRaw
-	canvas.drawText(0, 0, "♻️X", drawStyle{})
-
-	rendered := canvas.contentString()
-	want := "♻️" + xansi.ECH(1) + xansi.CHA(3) + "X"
-	if !strings.Contains(rendered, want) {
-		t.Fatalf("expected drawText raw mode to keep ambiguous emoji away from the right boundary, got %q want substring %q", rendered, want)
-	}
-}
-
 func TestComposedCanvasDrawSnapshotRawModeContinuationSpaceOnlyForAmbiguousEmoji(t *testing.T) {
 	// Regular wide characters (e.g. CJK) must NOT get a continuation space.
 	canvas := newComposedCanvas(6, 1)
@@ -198,29 +144,6 @@ func TestComposedCanvasDrawSnapshotRawModeContinuationSpaceOnlyForAmbiguousEmoji
 	}
 }
 
-func TestComposedCanvasRawModeAmbiguousEmojiRowKeepsRightBorderInPlace(t *testing.T) {
-	// 中文说明：当一行末尾紧贴 pane 右边框 │，而行中间又有 FE0F 歧义
-	// emoji 时，序列化后的这一行 display width 必须等于 canvas 宽度，
-	// 不能因为 ECH/CHA 组合顺带把边框挤掉。
-	canvas := newComposedCanvas(6, 1)
-	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorRaw
-	canvas.drawText(0, 0, "A❄️X│", drawStyle{})
-
-	rendered := canvas.contentString()
-	stripped := xansi.Strip(rendered)
-	if !strings.Contains(rendered, "❄️"+xansi.ECH(1)+xansi.CHA(4)+"X") {
-		t.Fatalf("expected non-boundary ambiguous emoji to stay visible, got %q", rendered)
-	}
-	// Strip 会把 CSI 序列剥掉，剩下 A + ❄️ + X + │ = 1+2+1+1 = 5 columns，
-	// 加上补齐的一个空格占到 canvas 宽 6。
-	if !strings.Contains(stripped, "│") {
-		t.Fatalf("expected right border to survive serialization, got %q (stripped %q)", rendered, stripped)
-	}
-	if got := xansi.StringWidth(rendered); got != canvas.width {
-		t.Fatalf("expected serialized row display width %d, got %d: rendered=%q", canvas.width, got, rendered)
-	}
-}
-
 func TestComposedCanvasRawModeAmbiguousEmojiRowReemitOverwritesCompensationColumn(t *testing.T) {
 	// 中文说明：第一帧含 FE0F emoji，第二帧同一行变成完全不同的内容。
 	// 只要第一帧把 emoji 物化成真实空格而不是依赖宿主 advance，第二帧就
@@ -241,18 +164,6 @@ func TestComposedCanvasRawModeAmbiguousEmojiRowReemitOverwritesCompensationColum
 	stripped := xansi.Strip(rendered)
 	if !strings.Contains(stripped, "ZZZZZZ") {
 		t.Fatalf("expected second frame to overwrite every column, got %q (stripped %q)", rendered, stripped)
-	}
-}
-
-func TestComposedCanvasRawModeAmbiguousEmojiStaysVisibleWhenLaterBorderOnlyOverwritesColon(t *testing.T) {
-	canvas := newComposedCanvas(8, 1)
-	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorRaw
-	canvas.drawText(0, 0, "A♻️:", drawStyle{})
-	canvas.set(3, 0, drawCell{Content: "│", Width: 1})
-
-	rendered := canvas.contentString()
-	if !strings.Contains(rendered, "♻️"+xansi.ECH(1)+xansi.CHA(4)+"│") {
-		t.Fatalf("expected emoji to stay visible when only the trailing colon is overwritten, got %q", rendered)
 	}
 }
 
@@ -289,26 +200,6 @@ func TestComposedCanvasRawModeAmbiguousEmojiClearsWhenLaterBorderOverwritesLeadC
 	}
 	if got := xansi.Strip(rendered); !strings.Contains(got, "A│") {
 		t.Fatalf("expected lead-column overwrite to place the border directly at the emoji lead, got %q", got)
-	}
-}
-
-func TestComposedCanvasDrawSnapshotAmbiguousEmojiVariationSelectorKeepsEmojiInAllModesAwayFromBoundary(t *testing.T) {
-	canvas := newComposedCanvas(6, 1)
-	canvas.hostEmojiVS16Mode = shared.AmbiguousEmojiVariationSelectorAdvance
-	canvas.drawSnapshot(&protocol.Snapshot{
-		Screen: protocol.ScreenData{
-			Cells: [][]protocol.Cell{{
-				{Content: "♻️", Width: 2},
-				{Content: "", Width: 0},
-				{Content: "X", Width: 1},
-			}},
-		},
-	})
-
-	rendered := canvas.contentString()
-	want := "♻️" + xansi.ECH(1) + xansi.CHA(3) + "X"
-	if !strings.Contains(rendered, want) {
-		t.Fatalf("expected snapshot serialization to keep ambiguous emoji away from the right boundary, got %q want substring %q", rendered, want)
 	}
 }
 

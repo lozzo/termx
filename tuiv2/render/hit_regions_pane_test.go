@@ -76,3 +76,22 @@ func TestLayoutEmptyPaneActionsClampsToVisibleHeight(t *testing.T) {
 		t.Fatalf("expected first actions to remain stable, got %#v", layout)
 	}
 }
+
+func TestEmptyPaneActionRegionsUseFramelessPaneRect(t *testing.T) {
+	pane := workbench.VisiblePane{
+		ID:        "pane-1",
+		Rect:      workbench.Rect{X: 0, Y: 0, W: 40, H: 8},
+		Frameless: true,
+	}
+
+	regions := EmptyPaneActionRegions(pane)
+	if len(regions) == 0 {
+		t.Fatalf("expected frameless empty-pane regions, got %#v", regions)
+	}
+	if regions[0].Rect.Y != 1 {
+		t.Fatalf("expected frameless actions to start inside the visible pane body without frame offset, got %#v", regions)
+	}
+	if regions[0].Rect.X != pane.Rect.X || regions[0].Rect.W != pane.Rect.W {
+		t.Fatalf("expected frameless actions to use full pane width, got %#v", regions[0].Rect)
+	}
+}

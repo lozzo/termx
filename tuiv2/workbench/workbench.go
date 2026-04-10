@@ -226,6 +226,7 @@ func (w *Workbench) VisibleWithSize(bodyRect Rect) *VisibleWorkbench {
 					TerminalID: pane.TerminalID,
 					Rect:       bodyRect,
 					Floating:   false,
+					Frameless:  true,
 				})
 			}
 			visible.Tabs = append(visible.Tabs, item)

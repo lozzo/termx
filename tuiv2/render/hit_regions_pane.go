@@ -60,7 +60,7 @@ func EmptyPaneActionRegions(pane workbench.VisiblePane) []HitRegion {
 	if pane.ID == "" || strings.TrimSpace(pane.TerminalID) != "" {
 		return nil
 	}
-	layout := layoutEmptyPaneActions(contentRectForPaneEdges(pane.Rect, pane.SharedLeft, pane.SharedTop), pane.ID)
+	layout := layoutEmptyPaneActions(interactiveContentRectForPane(pane), pane.ID)
 	regions := make([]HitRegion, 0, len(layout))
 	for _, item := range layout {
 		regions = append(regions, HitRegion{
@@ -71,6 +71,13 @@ func EmptyPaneActionRegions(pane workbench.VisiblePane) []HitRegion {
 		})
 	}
 	return regions
+}
+
+func interactiveContentRectForPane(pane workbench.VisiblePane) workbench.Rect {
+	if pane.Frameless {
+		return pane.Rect
+	}
+	return contentRectForPaneEdges(pane.Rect, pane.SharedLeft, pane.SharedTop)
 }
 
 func layoutEmptyPaneActions(contentRect workbench.Rect, paneID string) []emptyPaneActionLayout {

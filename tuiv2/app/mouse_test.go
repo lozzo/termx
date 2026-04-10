@@ -1911,6 +1911,65 @@ func TestMouseWheelForwardsToTerminalWhenTrackingEnabled(t *testing.T) {
 	}
 }
 
+func TestMouseForwardsZoomedTerminalTopRowsWithoutFrameOffset(t *testing.T) {
+	m := setupModel(t, modelOpts{})
+	client, ok := m.runtime.Client().(*recordingBridgeClient)
+	if !ok {
+		t.Fatal("expected recording bridge client")
+	}
+
+	m.input.SetMode(input.ModeState{Kind: input.ModeDisplay})
+	dispatchAction(t, m, input.SemanticAction{Kind: input.ActionZoomPane, PaneID: "pane-1"})
+	tab := m.workbench.CurrentTab()
+	if tab == nil || tab.ZoomedPaneID != "pane-1" {
+		t.Fatalf("expected pane-1 zoomed, got %#v", tab)
+	}
+	m.input.SetMode(input.ModeState{Kind: input.ModeNormal})
+	if got := m.mode().Kind; got != input.ModeNormal {
+		t.Fatalf("expected normal mode after zoom setup, got %q", got)
+	}
+
+	setActivePaneMouseTracking(t, m, true)
+
+	topMsg := tea.MouseMsg{X: 0, Y: screenYForBodyY(m, 0), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
+	topPaneID, topContentRect, ok := m.activeContentMouseTarget(topMsg.X, topMsg.Y)
+	if !ok {
+		t.Fatalf("expected zoomed top row to resolve content target, mode=%q pane=%q rect=%#v", m.mode().Kind, topPaneID, topContentRect)
+	}
+	topContentMsg := topMsg
+	topContentMsg.Y -= m.contentOriginY()
+	if encoded := m.encodeTerminalMouseInput(topContentMsg, topPaneID, topContentRect); len(encoded) == 0 {
+		pane := m.workbench.ActivePane()
+		t.Fatalf("expected zoomed top row to encode mouse input, pane=%#v modes=%+v rect=%#v", pane, m.terminalModesForPane(pane), topContentRect)
+	}
+	_, cmd := m.Update(topMsg)
+	if cmd == nil {
+		state := m.visibleRenderState()
+		t.Fatalf("expected zoomed top-row click to produce terminal input command, surface=%q overlay=%q mode=%q", state.Surface.Kind, state.Overlay.Kind, m.mode().Kind)
+	}
+	drainCmd(t, m, cmd, 20)
+
+	secondMsg := tea.MouseMsg{X: 0, Y: screenYForBodyY(m, 1), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
+	if paneID, contentRect, ok := m.activeContentMouseTarget(secondMsg.X, secondMsg.Y); !ok {
+		t.Fatalf("expected zoomed second row to resolve content target, mode=%q pane=%q rect=%#v", m.mode().Kind, paneID, contentRect)
+	}
+	_, cmd = m.Update(secondMsg)
+	if cmd == nil {
+		t.Fatalf("expected zoomed second-row click to produce terminal input command")
+	}
+	drainCmd(t, m, cmd, 20)
+
+	if len(client.inputCalls) != 2 {
+		t.Fatalf("expected 2 forwarded zoomed mouse events, got %#v", client.inputCalls)
+	}
+	if got := string(client.inputCalls[0].data); got != "\x1b[<0;1;1M" {
+		t.Fatalf("unexpected zoomed top-row payload %q", got)
+	}
+	if got := string(client.inputCalls[1].data); got != "\x1b[<0;1;2M" {
+		t.Fatalf("unexpected zoomed second-row payload %q", got)
+	}
+}
+
 func TestMouseWheelForwardsLegacyEncodingWhenSGRNotEnabled(t *testing.T) {
 	m := setupModel(t, modelOpts{})
 	client, ok := m.runtime.Client().(*recordingBridgeClient)
@@ -1983,6 +2042,7 @@ func setActivePaneMouseTracking(t *testing.T, m *Model, enabled bool) {
 		t.Fatalf("expected active pane with terminal, got %#v", pane)
 	}
 	terminal := m.runtime.Registry().GetOrCreate(pane.TerminalID)
+	terminal.VTerm = nil
 	if terminal.Snapshot == nil {
 		terminal.Snapshot = &protocol.Snapshot{TerminalID: pane.TerminalID}
 	}
@@ -1998,6 +2058,7 @@ func setActivePaneTerminalModes(t *testing.T, m *Model, modes protocol.TerminalM
 		t.Fatalf("expected active pane with terminal, got %#v", pane)
 	}
 	terminal := m.runtime.Registry().GetOrCreate(pane.TerminalID)
+	terminal.VTerm = nil
 	if terminal.Snapshot == nil {
 		terminal.Snapshot = &protocol.Snapshot{TerminalID: pane.TerminalID}
 	}
@@ -2032,10 +2093,9 @@ func activePaneRect(t *testing.T, m *Model) workbench.Rect {
 
 func activePaneContentScreenOrigin(t *testing.T, m *Model) (int, int) {
 	t.Helper()
-	rect := activePaneRect(t, m)
-	contentRect, ok := paneContentRect(rect)
+	contentRect, ok := m.activePaneContentRect()
 	if !ok {
-		t.Fatalf("invalid content rect for pane %+v", rect)
+		t.Fatal("expected active pane content rect")
 	}
 	return contentRect.X, screenYForBodyY(m, contentRect.Y)
 }

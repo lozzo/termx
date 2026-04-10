@@ -139,6 +139,20 @@ func TestPaneChromeHitRegionsClipByStableActionPrefix(t *testing.T) {
 	}
 }
 
+func TestPaneChromeHitRegionsOmitFramelessPane(t *testing.T) {
+	pane := workbench.VisiblePane{
+		ID:         "pane-1",
+		TerminalID: "term-1",
+		Rect:       workbench.Rect{X: 0, Y: 0, W: 80, H: 24},
+		Frameless:  true,
+	}
+
+	regions := PaneChromeHitRegions(pane, nil, "")
+	if len(regions) != 0 {
+		t.Fatalf("expected frameless pane to omit chrome hit regions, got %#v", regions)
+	}
+}
+
 func TestPaneTopBorderLabelsLayoutKeepsRoleSlotInNarrowPane(t *testing.T) {
 	rect := workbench.Rect{X: 0, Y: 0, W: 34, H: 8}
 	title := " shell "

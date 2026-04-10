@@ -166,7 +166,7 @@ func paneChromeActionSlotForKind(kind HitRegionKind, paneID string) (input.Seman
 }
 
 func PaneChromeHitRegions(pane workbench.VisiblePane, runtimeState *VisibleRuntimeStateProxy, confirmPaneID string) []HitRegion {
-	if strings.TrimSpace(pane.ID) == "" {
+	if strings.TrimSpace(pane.ID) == "" || pane.Frameless {
 		return nil
 	}
 	lookup := newRuntimeLookup(runtimeState)
