@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	xansi "github.com/charmbracelet/x/ansi"
 	xterm "github.com/charmbracelet/x/term"
@@ -117,10 +118,12 @@ var (
 	synchronizedOutputEnd   = xansi.DECRST(xansi.ModeSynchronizedOutput)
 	trailingControlSuffixRE = regexp.MustCompile(`(?:\r|\x1b\[[0-9;?]*[ -/]*[@-~])+$`)
 	presentedStyleCache     sync.Map
+	presentedCellPool       sync.Pool
 )
 
 const hideHostCursorSequence = "\x1b[?25l"
 const presentedResetStyleSequence = "\x1b[0m"
+const maxPooledPresentedCellCapacity = 2048
 
 var directFrameBatchDelay = 4 * time.Millisecond
 var directFrameIdleThreshold = 12 * time.Millisecond
@@ -129,6 +132,7 @@ func (p *framePresenter) Reset() {
 	if p == nil {
 		return
 	}
+	releasePresentedRows(p.parsed)
 	p.lines = nil
 	p.parsed = nil
 	p.ready = false
@@ -145,23 +149,25 @@ func (p *framePresenter) Present(frame string) string {
 		return frame
 	}
 	if len(lines) != len(p.lines) {
+		releasePresentedRows(p.parsed)
 		p.setLines(lines, true)
 		return xansi.EraseEntireDisplay + frame
 	}
 	if payload := p.presentVerticalScroll(lines); payload != "" {
+		releasePresentedRows(p.parsed)
 		p.setLines(lines, true)
 		return payload
 	}
-	payload, changedCount, nextParsed := p.renderChangedRows(lines)
+	payload, changedCount, nextParsed, reclaim := p.renderChangedRows(lines)
 	if changedCount == 0 {
 		return ""
 	}
-	if len(lines) > 6 && len(payload) >= len(frame) {
-		p.setLines(lines, true)
-		return xansi.EraseEntireDisplay + frame
-	}
 	p.setLines(lines, false)
 	copy(p.parsed, nextParsed)
+	releasePresentedCellSlices(reclaim)
+	if len(lines) > 6 && len(payload) >= len(frame) {
+		return xansi.EraseEntireDisplay + frame
+	}
 	return payload
 }
 
@@ -350,13 +356,14 @@ func renderChangedRows(previous, next []string) (string, int) {
 	return out.String(), len(changed)
 }
 
-func (p *framePresenter) renderChangedRows(next []string) (string, int, []presentedRow) {
+func (p *framePresenter) renderChangedRows(next []string) (string, int, []presentedRow, [][]presentedCell) {
 	if p == nil || len(next) != len(p.lines) {
-		return "", 0, nil
+		return "", 0, nil, nil
 	}
 	nextParsed := make([]presentedRow, len(next))
 	copy(nextParsed, p.parsed)
 	changed := 0
+	reclaim := make([][]presentedCell, 0, len(next)/2)
 	var out strings.Builder
 	for row := range next {
 		if next[row] == p.lines[row] {
@@ -366,6 +373,9 @@ func (p *framePresenter) renderChangedRows(next []string) (string, int, []presen
 		prevRow := p.presentedRow(row)
 		nextRow := parsePresentedRow(next[row])
 		nextParsed[row] = nextRow
+		if len(prevRow.cells) > 0 {
+			reclaim = append(reclaim, prevRow.cells)
+		}
 		span, ok := renderChangedRowDiff(prevRow, nextRow, row)
 		if !ok {
 			out.WriteString(xansi.CUP(1, row+1))
@@ -374,7 +384,7 @@ func (p *framePresenter) renderChangedRows(next []string) (string, int, []presen
 		}
 		out.WriteString(span)
 	}
-	return out.String(), changed, nextParsed
+	return out.String(), changed, nextParsed, reclaim
 }
 
 func (p *framePresenter) presentedRow(index int) presentedRow {
@@ -485,12 +495,72 @@ func parsePresentedRow(row string) presentedRow {
 	if row == "" {
 		return presentedRow{raw: row}
 	}
+	if fast, ok := parsePresentedRowASCII(row); ok {
+		return fast
+	}
+	return parsePresentedRowGeneric(row)
+}
+
+func parsePresentedRowASCII(row string) (presentedRow, bool) {
+	style := presentedStyle{}
+	cells := acquirePresentedCells(len(row))
+	fail := func() (presentedRow, bool) {
+		releasePresentedCells(cells)
+		return presentedRow{}, false
+	}
+	for i := 0; i < len(row); {
+		b := row[i]
+		if b == '\x1b' {
+			if i+1 >= len(row) || row[i+1] != '[' {
+				return fail()
+			}
+			j := i + 2
+			for j < len(row) && (row[j] < '@' || row[j] > '~') {
+				if row[j] >= utf8.RuneSelf {
+					return fail()
+				}
+				j++
+			}
+			if j >= len(row) {
+				return fail()
+			}
+			final := row[j]
+			params := row[i+2 : j]
+			switch final {
+			case 'm':
+				next, ok := style.withSGRASCII(params)
+				if !ok {
+					return fail()
+				}
+				style = next
+			case 'X':
+				count, ok := parseCSIIntASCII(params, 1)
+				if !ok {
+					return fail()
+				}
+				for k := 0; k < count; k++ {
+					cells = append(cells, presentedCell{Content: " ", Width: 1, Style: style, Erase: true})
+				}
+			}
+			i = j + 1
+			continue
+		}
+		if b >= utf8.RuneSelf || b < 0x20 || b == 0x7f {
+			return fail()
+		}
+		cells = append(cells, presentedCell{Content: row[i : i+1], Width: 1, Style: style})
+		i++
+	}
+	return presentedRow{raw: row, cells: cells}, true
+}
+
+func parsePresentedRowGeneric(row string) presentedRow {
 	parser := xansi.GetParser()
 	defer xansi.PutParser(parser)
 	state := byte(0)
 	rest := row
 	style := presentedStyle{}
-	cells := make([]presentedCell, 0, xansi.StringWidth(row))
+	cells := acquirePresentedCells(xansi.StringWidth(row))
 	for len(rest) > 0 {
 		seq, width, n, nextState := xansi.DecodeSequence(rest, state, parser)
 		if n <= 0 {
@@ -517,6 +587,82 @@ func parsePresentedRow(row string) presentedRow {
 		rest = rest[n:]
 	}
 	return presentedRow{raw: row, cells: cells}
+}
+
+func acquirePresentedCells(capHint int) []presentedCell {
+	if capHint < 0 {
+		capHint = 0
+	}
+	if pooled, ok := presentedCellPool.Get().([]presentedCell); ok {
+		if cap(pooled) >= capHint {
+			return pooled[:0]
+		}
+		releasePresentedCells(pooled)
+	}
+	return make([]presentedCell, 0, capHint)
+}
+
+func releasePresentedRows(rows []presentedRow) {
+	for i := range rows {
+		releasePresentedCells(rows[i].cells)
+		rows[i] = presentedRow{}
+	}
+}
+
+func releasePresentedCellSlices(cells [][]presentedCell) {
+	for _, cellSlice := range cells {
+		releasePresentedCells(cellSlice)
+	}
+}
+
+func releasePresentedCells(cells []presentedCell) {
+	if len(cells) == 0 || cap(cells) > maxPooledPresentedCellCapacity {
+		return
+	}
+	clear(cells)
+	presentedCellPool.Put(cells[:0])
+}
+
+func parseCSIIntASCII(raw string, def int) (int, bool) {
+	if raw == "" {
+		return def, true
+	}
+	value := 0
+	for i := 0; i < len(raw); i++ {
+		if raw[i] == ';' {
+			break
+		}
+		if raw[i] < '0' || raw[i] > '9' {
+			return def, false
+		}
+		value = value*10 + int(raw[i]-'0')
+	}
+	return value, true
+}
+
+func (s presentedStyle) withSGRASCII(raw string) (presentedStyle, bool) {
+	var local [8]int
+	params := local[:0]
+	value := 0
+	hasValue := false
+	for i := 0; i <= len(raw); i++ {
+		if i == len(raw) || raw[i] == ';' {
+			if hasValue {
+				params = append(params, value)
+			} else {
+				params = append(params, 0)
+			}
+			value = 0
+			hasValue = false
+			continue
+		}
+		if raw[i] < '0' || raw[i] > '9' {
+			return presentedStyle{}, false
+		}
+		value = value*10 + int(raw[i]-'0')
+		hasValue = true
+	}
+	return s.withSGRInts(params), true
 }
 
 func serializePresentedCells(cells []presentedCell, startCol int) string {
@@ -658,6 +804,93 @@ func (s presentedStyle) withSGR(params xansi.Params) presentedStyle {
 				if !okR || !okG || !okB {
 					continue
 				}
+				code := strconv.Itoa(param) + ";2;" + strconv.Itoa(r) + ";" + strconv.Itoa(g) + ";" + strconv.Itoa(b)
+				if param == 38 {
+					next.FGCode = code
+				} else {
+					next.BGCode = code
+				}
+				i += 4
+			}
+		default:
+			switch {
+			case 30 <= param && param <= 37:
+				next.FGCode = strconv.Itoa(param)
+			case 90 <= param && param <= 97:
+				next.FGCode = strconv.Itoa(param)
+			case 40 <= param && param <= 47:
+				next.BGCode = strconv.Itoa(param)
+			case 100 <= param && param <= 107:
+				next.BGCode = strconv.Itoa(param)
+			}
+		}
+	}
+	return next
+}
+
+func (s presentedStyle) withSGRInts(params []int) presentedStyle {
+	if len(params) == 0 {
+		return presentedStyle{}
+	}
+	next := s
+	for i := 0; i < len(params); i++ {
+		param := params[i]
+		switch param {
+		case 0:
+			next = presentedStyle{}
+		case 1:
+			next.Bold = true
+		case 3:
+			next.Italic = true
+		case 4:
+			next.Underline = true
+		case 5:
+			next.Blink = true
+		case 7:
+			next.Reverse = true
+		case 9:
+			next.Strikethrough = true
+		case 22:
+			next.Bold = false
+		case 23:
+			next.Italic = false
+		case 24:
+			next.Underline = false
+		case 25:
+			next.Blink = false
+		case 27:
+			next.Reverse = false
+		case 29:
+			next.Strikethrough = false
+		case 39:
+			next.FGCode = ""
+		case 49:
+			next.BGCode = ""
+		case 38, 48:
+			if i+1 >= len(params) {
+				continue
+			}
+			mode := params[i+1]
+			switch mode {
+			case 5:
+				if i+2 >= len(params) {
+					continue
+				}
+				value := params[i+2]
+				code := strconv.Itoa(param) + ";5;" + strconv.Itoa(value)
+				if param == 38 {
+					next.FGCode = code
+				} else {
+					next.BGCode = code
+				}
+				i += 2
+			case 2:
+				if i+4 >= len(params) {
+					continue
+				}
+				r := params[i+2]
+				g := params[i+3]
+				b := params[i+4]
 				code := strconv.Itoa(param) + ";2;" + strconv.Itoa(r) + ";" + strconv.Itoa(g) + ";" + strconv.Itoa(b)
 				if param == 38 {
 					next.FGCode = code
