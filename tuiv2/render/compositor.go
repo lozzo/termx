@@ -89,6 +89,51 @@ func newComposedCanvas(width, height int) *composedCanvas {
 	return c
 }
 
+func (c *composedCanvas) resetToBlank() {
+	if c == nil || c.width <= 0 || c.height <= 0 {
+		return
+	}
+	blankRow := cachedBlankFillRow(c.width)
+	for y := 0; y < c.height; y++ {
+		copy(c.cells[y], blankRow)
+		c.rowCache[y] = ""
+		c.rowDirty[y] = true
+	}
+	c.fullCache = ""
+	c.fullDirty = true
+	c.syntheticCursorBlink = false
+	c.clearCursor()
+}
+
+func (c *composedCanvas) blit(src *composedCanvas, dstX, dstY int) {
+	if c == nil || src == nil || src.width <= 0 || src.height <= 0 {
+		return
+	}
+	for y := 0; y < src.height; y++ {
+		targetY := dstY + y
+		if targetY < 0 || targetY >= c.height {
+			continue
+		}
+		startX := dstX
+		srcStartX := 0
+		width := src.width
+		if startX < 0 {
+			srcStartX = -startX
+			width -= srcStartX
+			startX = 0
+		}
+		if width <= 0 || startX >= c.width {
+			continue
+		}
+		if startX+width > c.width {
+			width = c.width - startX
+		}
+		copy(c.cells[targetY][startX:startX+width], src.cells[y][srcStartX:srcStartX+width])
+		c.rowDirty[targetY] = true
+	}
+	c.fullDirty = true
+}
+
 func (c *composedCanvas) set(x, y int, cell drawCell) {
 	if x < 0 || y < 0 || x >= c.width || y >= c.height {
 		return

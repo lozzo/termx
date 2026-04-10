@@ -159,8 +159,21 @@ type bodyRenderCache struct {
 	rects             map[string]workbench.Rect
 	frameKeys         map[string]paneFrameKey
 	contentKeys       map[string]paneContentKey
+	contentSprites    map[string]*paneContentSpriteCacheEntry
 	canvas            *composedCanvas
 	hostEmojiVS16Mode shared.AmbiguousEmojiVariationSelectorMode
+}
+
+type paneContentSpriteKey struct {
+	ContentKey paneContentKey
+	Theme      uiTheme
+	Width      int
+	Height     int
+}
+
+type paneContentSpriteCacheEntry struct {
+	key    paneContentSpriteKey
+	canvas *composedCanvas
 }
 
 func NewCoordinator(fn VisibleStateFn) *Coordinator {
@@ -652,43 +665,24 @@ func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entrie
 		return canvas
 	}
 	cache := coordinator.bodyCache
+	overlap := entriesOverlap(entries)
 	if cache == nil || !cache.matches(entries, width, height, hostEmojiMode) {
-		canvas := newComposedCanvas(width, height)
-		canvas.hostEmojiVS16Mode = hostEmojiMode
-		canvas.cursorOffsetY = cursorOffsetY
-		canvas.syntheticCursorVisibleFn = coordinator.syntheticCursorVisible
-		for _, entry := range entries {
-			if !entry.Frameless {
-				drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
-			}
-			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
-		}
-		projectActiveEntryCursor(canvas, entries, state.Runtime)
-		coordinator.bodyCache = newBodyRenderCache(canvas, entries, width, height)
+		canvas := rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, coordinator.syntheticCursorVisible, state.Runtime)
+		coordinator.bodyCache = newBodyRenderCache(cache, canvas, entries, width, height)
 		return canvas
 	}
 
 	// Overlapping panes need a full rebuild. The cached active-pane refresh path
 	// redraws the active pane content to clear the old cursor, which is correct
 	// for tiled layouts but will paint over floating panes layered above it.
-	if entriesOverlap(entries) {
-		canvas := newComposedCanvas(width, height)
-		canvas.hostEmojiVS16Mode = hostEmojiMode
-		canvas.cursorOffsetY = cursorOffsetY
-		canvas.syntheticCursorVisibleFn = coordinator.syntheticCursorVisible
-		for _, entry := range entries {
-			if !entry.Frameless {
-				drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
-			}
-			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
-		}
-		projectActiveEntryCursor(canvas, entries, state.Runtime)
+	if overlap {
+		canvas := rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, coordinator.syntheticCursorVisible, state.Runtime)
 		cache.canvas = canvas
 		cache.reset(entries, width, height)
 		return canvas
 	}
 
-	if !entriesOverlap(entries) {
+	if !overlap {
 		changed := false
 		cache.canvas.clearCursor()
 		for _, entry := range entries {
@@ -703,8 +697,7 @@ func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entrie
 				changed = true
 			}
 			if frameChanged || cache.contentKeys[entry.PaneID] != entry.ContentKey {
-				fillRect(cache.canvas, contentRectForEntry(entry), blankDrawCell())
-				drawPaneContentWithKey(cache.canvas, entry.Rect, entry, state.Runtime)
+				drawPaneContentFromCache(cache.canvas, cache, entry, state.Runtime, true)
 				changed = true
 			}
 		}
@@ -719,6 +712,134 @@ func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entrie
 	}
 
 	return cache.canvas
+}
+
+func rebuildBodyCanvas(cache *bodyRenderCache, entries []paneRenderEntry, width, height int, hostEmojiMode shared.AmbiguousEmojiVariationSelectorMode, cursorOffsetY int, cursorVisibleFn func(protocol.CursorState) bool, runtimeState *VisibleRuntimeStateProxy) *composedCanvas {
+	var canvas *composedCanvas
+	if cache != nil && cache.canvas != nil && cache.width == width && cache.height == height {
+		canvas = cache.canvas
+		canvas.hostEmojiVS16Mode = hostEmojiMode
+		canvas.cursorOffsetY = cursorOffsetY
+		canvas.syntheticCursorVisibleFn = cursorVisibleFn
+		canvas.resetToBlank()
+	} else {
+		canvas = newComposedCanvas(width, height)
+		canvas.hostEmojiVS16Mode = hostEmojiMode
+		canvas.cursorOffsetY = cursorOffsetY
+		canvas.syntheticCursorVisibleFn = cursorVisibleFn
+	}
+	for _, entry := range entries {
+		if !entry.Frameless {
+			drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+		}
+		drawPaneContentFromCache(canvas, cache, entry, runtimeState, false)
+	}
+	projectActiveEntryCursor(canvas, entries, runtimeState)
+	return canvas
+}
+
+func drawPaneContentFromCache(canvas *composedCanvas, cache *bodyRenderCache, entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy, clearInterior bool) {
+	if canvas == nil {
+		return
+	}
+	if cache == nil {
+		drawPaneContentWithKey(canvas, entry.Rect, entry, runtimeState)
+		return
+	}
+	interior := interiorRectForEntry(entry)
+	if interior.W <= 0 || interior.H <= 0 {
+		return
+	}
+	sprite := cache.contentSprite(entry, runtimeState)
+	if sprite == nil {
+		drawPaneContentWithKey(canvas, entry.Rect, entry, runtimeState)
+		return
+	}
+	if clearInterior {
+		fillRect(canvas, interior, blankDrawCell())
+	}
+	canvas.blit(sprite, interior.X, interior.Y)
+}
+
+func (c *bodyRenderCache) contentSprite(entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) *composedCanvas {
+	if c == nil {
+		return nil
+	}
+	interior := interiorRectForEntry(entry)
+	if interior.W <= 0 || interior.H <= 0 {
+		return nil
+	}
+	key := paneContentSpriteKey{
+		ContentKey: entry.ContentKey,
+		Theme:      entry.Theme,
+		Width:      interior.W,
+		Height:     interior.H,
+	}
+	if c.contentSprites == nil {
+		c.contentSprites = make(map[string]*paneContentSpriteCacheEntry)
+	}
+	if cached := c.contentSprites[entry.PaneID]; cached != nil && cached.key == key && cached.canvas != nil {
+		perftrace.Count("render.pane_content_sprite.hit", interior.W*interior.H)
+		return cached.canvas
+	}
+	var sprite *composedCanvas
+	if cached := c.contentSprites[entry.PaneID]; cached != nil && cached.canvas != nil && cached.key.Width == key.Width && cached.key.Height == key.Height {
+		sprite = cached.canvas
+		sprite.resetToBlank()
+	} else {
+		sprite = newComposedCanvas(interior.W, interior.H)
+	}
+	drawPaneContentSprite(sprite, entry, runtimeState)
+	c.contentSprites[entry.PaneID] = &paneContentSpriteCacheEntry{key: key, canvas: sprite}
+	perftrace.Count("render.pane_content_sprite.miss", interior.W*interior.H)
+	return sprite
+}
+
+func drawPaneContentSprite(canvas *composedCanvas, entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) {
+	if canvas == nil {
+		return
+	}
+	fillRect(canvas, workbench.Rect{W: canvas.width, H: canvas.height}, blankDrawCell())
+	contentRect := localContentRectForEntry(entry)
+	if contentRect.W <= 0 || contentRect.H <= 0 {
+		return
+	}
+	if entry.TerminalID == "" {
+		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID, entry.Theme, entry.EmptyActionSelected)
+		return
+	}
+	terminal := findVisibleTerminal(runtimeState, entry.TerminalID)
+	if terminal == nil {
+		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID, entry.Theme, -1)
+		return
+	}
+	snapshot := entry.Snapshot
+	surface := entry.Surface
+	if snapshot == nil && surface == nil {
+		surface = terminal.Surface
+	}
+	if snapshot == nil && surface == nil {
+		snapshot = terminal.Snapshot
+	}
+	source := renderSource(snapshot, surface)
+	if source == nil || source.ScreenRows() == 0 {
+		canvas.drawText(contentRect.X, contentRect.Y, terminal.Name+" ["+terminal.State+"]", drawStyle{FG: entry.Theme.panelMuted})
+		if terminal.State == "exited" {
+			drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
+		}
+		return
+	}
+	renderOffset := entry.ScrollOffset
+	if entry.CopyModeActive {
+		renderOffset = scrollOffsetForViewportTop(snapshot, contentRect.H, entry.CopyModeViewTopRow)
+	}
+	drawTerminalSourceWithOffset(canvas, contentRect, source, renderOffset, entry.Theme)
+	if entry.CopyModeActive {
+		drawCopyModeOverlay(canvas, contentRect, snapshot, entry.Theme, entry.CopyModeCursorRow, entry.CopyModeCursorCol, entry.CopyModeViewTopRow, entry.CopyModeMarkSet, entry.CopyModeMarkRow, entry.CopyModeMarkCol)
+	}
+	if terminal.State == "exited" {
+		drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
+	}
 }
 
 func restoreActiveEntryContent(canvas *composedCanvas, entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) {
@@ -912,8 +1033,11 @@ func paneOverflowHintsForRender(originalRect, clippedRect workbench.Rect, snapsh
 	return overflow
 }
 
-func newBodyRenderCache(canvas *composedCanvas, entries []paneRenderEntry, width, height int) *bodyRenderCache {
+func newBodyRenderCache(previous *bodyRenderCache, canvas *composedCanvas, entries []paneRenderEntry, width, height int) *bodyRenderCache {
 	cache := &bodyRenderCache{canvas: canvas}
+	if previous != nil && previous.contentSprites != nil {
+		cache.contentSprites = previous.contentSprites
+	}
 	cache.reset(entries, width, height)
 	return cache
 }
@@ -949,11 +1073,20 @@ func (c *bodyRenderCache) reset(entries []paneRenderEntry, width, height int) {
 			delete(c.contentKeys, key)
 		}
 	}
+	keepSprites := make(map[string]struct{}, len(entries))
 	for _, entry := range entries {
 		c.order = append(c.order, entry.PaneID)
 		c.rects[entry.PaneID] = entry.Rect
 		c.frameKeys[entry.PaneID] = entry.FrameKey
 		c.contentKeys[entry.PaneID] = entry.ContentKey
+		keepSprites[entry.PaneID] = struct{}{}
+	}
+	if c.contentSprites != nil {
+		for paneID := range c.contentSprites {
+			if _, ok := keepSprites[paneID]; !ok {
+				delete(c.contentSprites, paneID)
+			}
+		}
 	}
 }
 
@@ -1436,6 +1569,17 @@ func contentRectForEntry(entry paneRenderEntry) workbench.Rect {
 		return entry.Rect
 	}
 	return contentRectForPaneEdges(entry.Rect, entry.SharedLeft, entry.SharedTop)
+}
+
+func localContentRectForEntry(entry paneRenderEntry) workbench.Rect {
+	interior := interiorRectForEntry(entry)
+	content := contentRectForEntry(entry)
+	return workbench.Rect{
+		X: content.X - interior.X,
+		Y: content.Y - interior.Y,
+		W: content.W,
+		H: content.H,
+	}
 }
 
 func immersiveZoomActive(state VisibleRenderState) bool {

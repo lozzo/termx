@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -113,6 +114,54 @@ func TestMouseDragFloatingPane(t *testing.T) {
 	}
 	if m.mouseDragMode != mouseDragNone {
 		t.Errorf("expected mouseDragMode=mouseDragNone, got %v", m.mouseDragMode)
+	}
+}
+
+func TestMouseDragFloatingPaneNoOpSkipsInvalidate(t *testing.T) {
+	m := setupModel(t, modelOpts{})
+	tab := m.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if err := m.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 10, Y: 5, W: 40, H: 20}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+
+	m.mouseDragPaneID = "float-1"
+	m.mouseDragMode = mouseDragMove
+	m.mouseDragOffsetX = 5
+	m.mouseDragOffsetY = 0
+
+	_ = m.render.RenderFrame()
+
+	recorder := perftrace.Enable()
+	defer perftrace.Disable()
+	recorder.Reset()
+
+	before := findFloating(tab, "float-1")
+	if before == nil {
+		t.Fatal("expected floating pane before noop drag")
+	}
+	beforeRect := before.Rect
+	m.handleMouseDrag(15, screenYForBodyY(m, 5))
+	_ = m.render.RenderFrame()
+
+	snapshot := perftrace.SnapshotCurrent()
+	if event, ok := snapshot.Event("app.mouse.drag.move.noop"); !ok || event.Count != 1 {
+		t.Fatalf("expected one noop drag event, got %+v", event)
+	}
+	if event, ok := snapshot.Event("app.mouse.drag.move.changed"); ok && event.Count != 0 {
+		t.Fatalf("expected no changed drag events, got %+v", event)
+	}
+	if event, ok := snapshot.Event("render.frame.cache_hit"); !ok || event.Count != 1 {
+		t.Fatalf("expected cached frame after noop drag, got %+v", event)
+	}
+	after := findFloating(tab, "float-1")
+	if after == nil {
+		t.Fatal("expected floating pane after noop drag")
+	}
+	if after.Rect != beforeRect {
+		t.Fatalf("expected floating rect unchanged after noop drag, got %#v", after.Rect)
 	}
 }
 

@@ -687,10 +687,16 @@ func (w *Workbench) MoveFloatingPane(tabID, paneID string, x, y int) bool {
 	for _, floating := range tab.Floating {
 		if floating != nil && floating.PaneID == paneID {
 			normalizeFloatingState(floating)
-			floating.Rect.X = maxInt(0, x)
-			floating.Rect.Y = maxInt(0, y)
+			next := floating.Rect
+			next.X = maxInt(0, x)
+			next.Y = maxInt(0, y)
+			restoreNeedsUpdate := floatingStateVisible(floating) && floating.RestoreRect != next
+			if next == floating.Rect && !restoreNeedsUpdate {
+				return false
+			}
+			floating.Rect = next
 			if floatingStateVisible(floating) {
-				floating.RestoreRect = floating.Rect
+				floating.RestoreRect = next
 			}
 			w.touch()
 			return true
@@ -722,13 +728,20 @@ func (w *Workbench) ResizeFloatingPane(tabID, paneID string, width, height int) 
 	for _, floating := range tab.Floating {
 		if floating != nil && floating.PaneID == paneID {
 			normalizeFloatingState(floating)
-			floating.Rect.W = maxInt(minFloatingWidth, width)
-			floating.Rect.H = maxInt(minFloatingHeight, height)
+			next := floating.Rect
+			next.W = maxInt(minFloatingWidth, width)
+			next.H = maxInt(minFloatingHeight, height)
+			restoreNeedsUpdate := floatingStateVisible(floating) && floating.RestoreRect != next
+			fitNeedsUpdate := floating.FitMode != FloatingFitManual || floating.AutoFitCols != 0 || floating.AutoFitRows != 0
+			if next == floating.Rect && !restoreNeedsUpdate && !fitNeedsUpdate {
+				return false
+			}
+			floating.Rect = next
 			floating.FitMode = FloatingFitManual
 			floating.AutoFitCols = 0
 			floating.AutoFitRows = 0
 			if floatingStateVisible(floating) {
-				floating.RestoreRect = floating.Rect
+				floating.RestoreRect = next
 			}
 			w.touch()
 			return true

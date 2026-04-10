@@ -638,6 +638,107 @@ func TestOutputCursorWriterDiffsLaterRowsAtCorrectAbsoluteRow(t *testing.T) {
 	}
 }
 
+func TestOutputCursorWriterDiffsChangedSpanAtCorrectAbsoluteColumn(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+
+	if err := writer.WriteFrame("abcdef", "<CURSOR>"); err != nil {
+		t.Fatalf("write initial frame: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrame("abZdef", "<CURSOR>"); err != nil {
+		t.Fatalf("write diff frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if !strings.Contains(got, "\x1b[1;3H") {
+		t.Fatalf("expected span diff to target absolute column 3, got %q", got)
+	}
+	if strings.Contains(got, "abZdef") {
+		t.Fatalf("expected span diff not to rewrite the full row, got %q", got)
+	}
+	if !strings.Contains(got, "Z") {
+		t.Fatalf("expected span diff payload to contain changed grapheme, got %q", got)
+	}
+}
+
+func TestOutputCursorWriterFallsBackToFullRowForStyledDiff(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+
+	frame1 := xansi.CHA(1) + "ABCD\x1b[0m\x1b[K"
+	frame2 := xansi.CHA(1) + "A\x1b[0;31mB\x1b[0mCD\x1b[0m\x1b[K"
+	if err := writer.WriteFrame(frame1, "<CURSOR>"); err != nil {
+		t.Fatalf("write initial styled frame: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrame(frame2, "<CURSOR>"); err != nil {
+		t.Fatalf("write styled diff frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if !strings.Contains(got, "\x1b[1;1H") {
+		t.Fatalf("expected styled diff fallback to target absolute column 1, got %q", got)
+	}
+	if !strings.Contains(got, frame2) {
+		t.Fatalf("expected styled diff fallback to rewrite the full styled row, got %q", got)
+	}
+}
+
+func TestOutputCursorWriterDiffsDisjointSpansAsSeparateAbsolutePatches(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+
+	if err := writer.WriteFrame("abc123xyz", "<CURSOR>"); err != nil {
+		t.Fatalf("write initial frame: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrame("abZ123xYz", "<CURSOR>"); err != nil {
+		t.Fatalf("write diff frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if !strings.Contains(got, "\x1b[1;3H") {
+		t.Fatalf("expected first patch to target absolute column 3, got %q", got)
+	}
+	if !strings.Contains(got, "\x1b[1;8H") {
+		t.Fatalf("expected second patch to target absolute column 8, got %q", got)
+	}
+	if strings.Contains(got, "Z123xYz") {
+		t.Fatalf("expected disjoint diff not to rewrite the unchanged middle suffix, got %q", got)
+	}
+}
+
 func TestOutputCursorWriterFullRepaintAfterScrollKeepsMiddleRowsInPlace(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
@@ -782,6 +883,44 @@ func TestOutputCursorWriterCopyModeRoundTripRepaintsScrollbackViewBackToLive(t *
 	for row := range want {
 		if strings.TrimRight(got[row], " ") != strings.TrimRight(want[row], " ") {
 			t.Fatalf("copy-mode round trip left stale host content on row %d\ngot=%#v\nwant=%#v", row, got, want)
+		}
+	}
+}
+
+func TestOutputCursorWriterRoundTripMovingStyledPaneMatchesFinalFrame(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	replay := func(frames []string) []string {
+		sink := &cursorWriterProbeTTY{}
+		writer := newOutputCursorWriter(sink)
+		for _, frame := range frames {
+			if err := writer.WriteFrame(frame, ""); err != nil {
+				t.Fatalf("write frame: %v", err)
+			}
+		}
+		sink.mu.Lock()
+		stream := strings.Join(sink.writes, "")
+		sink.mu.Unlock()
+		vt := localvterm.New(120, 36, 0, nil)
+		if _, err := vt.Write([]byte(stream)); err != nil {
+			t.Fatalf("replay stream into host vterm: %v", err)
+		}
+		return vtermScreenLines(vt.ScreenContent())
+	}
+
+	frames := []string{
+		benchmarkCursorWriterFrame(120, 36, 18, 7, 54, 16, true),
+		benchmarkCursorWriterFrame(120, 36, 19, 7, 54, 16, true),
+		benchmarkCursorWriterFrame(120, 36, 20, 7, 54, 16, true),
+		benchmarkCursorWriterFrame(120, 36, 21, 7, 54, 16, true),
+	}
+	got := replay(frames)
+	want := replay(frames[len(frames)-1:])
+	for row := range want {
+		if strings.TrimRight(got[row], " ") != strings.TrimRight(want[row], " ") {
+			t.Fatalf("moving styled pane round trip diverged on row %d\ngot=%#v\nwant=%#v", row, got, want)
 		}
 	}
 }

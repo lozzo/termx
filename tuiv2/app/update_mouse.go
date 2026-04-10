@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/render"
@@ -25,6 +26,7 @@ func (m *Model) handleMouseMsg(msg tea.MouseMsg) tea.Cmd {
 			return m.updateMouseCopySelection(msg.X, msg.Y)
 		}
 		if msg.Button == tea.MouseButtonLeft && m.mouseDragMode != mouseDragNone {
+			perftrace.Count("app.mouse.drag.motion", 0)
 			return m.handleMouseDrag(msg.X, msg.Y)
 		}
 		return m.forwardTerminalMouseInputCmd(msg)
@@ -390,8 +392,13 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 		}
 		newX := x - m.mouseDragOffsetX
 		newY := contentY - m.mouseDragOffsetY
-		m.workbench.MoveFloatingPane(tab.ID, m.mouseDragPaneID, newX, newY)
-		m.workbench.ClampFloatingPanesToBounds(m.bodyRect())
+		moved := m.workbench.MoveFloatingPane(tab.ID, m.mouseDragPaneID, newX, newY)
+		clamped := m.workbench.ClampFloatingPanesToBounds(m.bodyRect())
+		if !moved && !clamped {
+			perftrace.Count("app.mouse.drag.move.noop", 0)
+			return nil
+		}
+		perftrace.Count("app.mouse.drag.move.changed", 0)
 		m.render.Invalidate()
 	case mouseDragResize:
 		if m.mouseDragPaneID == "" {
@@ -401,11 +408,14 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 			if floating != nil && floating.PaneID == m.mouseDragPaneID {
 				newW := x - floating.Rect.X + 1
 				newH := contentY - floating.Rect.Y + 1
-				if !m.workbench.ResizeFloatingPane(tab.ID, m.mouseDragPaneID, newW, newH) {
+				resized := m.workbench.ResizeFloatingPane(tab.ID, m.mouseDragPaneID, newW, newH)
+				if !resized {
+					perftrace.Count("app.mouse.drag.resize.noop", 0)
 					return nil
 				}
 				m.workbench.ClampFloatingPanesToBounds(m.bodyRect())
 				m.mouseDragDirty = true
+				perftrace.Count("app.mouse.drag.resize.changed", 0)
 				m.render.Invalidate()
 				return nil
 			}

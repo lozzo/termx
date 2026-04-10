@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -67,8 +68,32 @@ type pendingDirectFrame struct {
 }
 
 type framePresenter struct {
-	lines []string
-	ready bool
+	lines  []string
+	parsed []presentedRow
+	ready  bool
+}
+
+type presentedRow struct {
+	raw   string
+	cells []presentedCell
+}
+
+type presentedCell struct {
+	Content string
+	Width   int
+	Style   presentedStyle
+	Erase   bool
+}
+
+type presentedStyle struct {
+	FGCode        string
+	BGCode        string
+	Bold          bool
+	Italic        bool
+	Underline     bool
+	Blink         bool
+	Reverse       bool
+	Strikethrough bool
 }
 
 type verticalScrollDirection uint8
@@ -91,9 +116,11 @@ var (
 	synchronizedOutputBegin = xansi.DECSET(xansi.ModeSynchronizedOutput)
 	synchronizedOutputEnd   = xansi.DECRST(xansi.ModeSynchronizedOutput)
 	trailingControlSuffixRE = regexp.MustCompile(`(?:\r|\x1b\[[0-9;?]*[ -/]*[@-~])+$`)
+	presentedStyleCache     sync.Map
 )
 
 const hideHostCursorSequence = "\x1b[?25l"
+const presentedResetStyleSequence = "\x1b[0m"
 
 var directFrameBatchDelay = 4 * time.Millisecond
 var directFrameIdleThreshold = 12 * time.Millisecond
@@ -103,6 +130,7 @@ func (p *framePresenter) Reset() {
 		return
 	}
 	p.lines = nil
+	p.parsed = nil
 	p.ready = false
 }
 
@@ -112,28 +140,44 @@ func (p *framePresenter) Present(frame string) string {
 	}
 	lines := strings.Split(frame, "\n")
 	if !p.ready {
-		p.lines = append(p.lines[:0], lines...)
+		p.setLines(lines, true)
 		p.ready = true
 		return frame
 	}
 	if len(lines) != len(p.lines) {
-		p.lines = append(p.lines[:0], lines...)
+		p.setLines(lines, true)
 		return xansi.EraseEntireDisplay + frame
 	}
 	if payload := p.presentVerticalScroll(lines); payload != "" {
-		p.lines = append(p.lines[:0], lines...)
+		p.setLines(lines, true)
 		return payload
 	}
-	payload, changedCount := renderChangedRows(p.lines, lines)
+	payload, changedCount, nextParsed := p.renderChangedRows(lines)
 	if changedCount == 0 {
 		return ""
 	}
-	if changedCount*4 >= len(lines)*3 {
-		p.lines = append(p.lines[:0], lines...)
+	if len(lines) > 6 && len(payload) >= len(frame) {
+		p.setLines(lines, true)
 		return xansi.EraseEntireDisplay + frame
 	}
-	p.lines = append(p.lines[:0], lines...)
+	p.setLines(lines, false)
+	copy(p.parsed, nextParsed)
 	return payload
+}
+
+func (p *framePresenter) setLines(lines []string, resetParsed bool) {
+	if p == nil {
+		return
+	}
+	p.lines = append(p.lines[:0], lines...)
+	if cap(p.parsed) < len(lines) {
+		p.parsed = make([]presentedRow, len(lines))
+	} else {
+		p.parsed = p.parsed[:len(lines)]
+	}
+	if resetParsed {
+		clear(p.parsed)
+	}
 }
 
 func (p *framePresenter) presentVerticalScroll(lines []string) string {
@@ -304,6 +348,328 @@ func renderChangedRows(previous, next []string) (string, int) {
 		i++
 	}
 	return out.String(), len(changed)
+}
+
+func (p *framePresenter) renderChangedRows(next []string) (string, int, []presentedRow) {
+	if p == nil || len(next) != len(p.lines) {
+		return "", 0, nil
+	}
+	nextParsed := make([]presentedRow, len(next))
+	copy(nextParsed, p.parsed)
+	changed := 0
+	var out strings.Builder
+	for row := range next {
+		if next[row] == p.lines[row] {
+			continue
+		}
+		changed++
+		prevRow := p.presentedRow(row)
+		nextRow := parsePresentedRow(next[row])
+		nextParsed[row] = nextRow
+		span, ok := renderChangedRowDiff(prevRow, nextRow, row)
+		if !ok {
+			out.WriteString(xansi.CUP(1, row+1))
+			out.WriteString(next[row])
+			continue
+		}
+		out.WriteString(span)
+	}
+	return out.String(), changed, nextParsed
+}
+
+func (p *framePresenter) presentedRow(index int) presentedRow {
+	if p == nil || index < 0 || index >= len(p.lines) {
+		return presentedRow{}
+	}
+	if p.parsed[index].raw == p.lines[index] {
+		return p.parsed[index]
+	}
+	row := parsePresentedRow(p.lines[index])
+	p.parsed[index] = row
+	return row
+}
+
+func renderChangedRowDiff(previous, next presentedRow, row int) (string, bool) {
+	if previous.raw == next.raw {
+		return "", true
+	}
+	if !canUseCellDiff(previous) || !canUseCellDiff(next) {
+		return "", false
+	}
+	prevCells := previous.cells
+	nextCells := next.cells
+	if len(prevCells) == len(nextCells) {
+		if spans, ok := renderChangedRowRuns(prevCells, nextCells, row); ok {
+			return spans, true
+		}
+	}
+	return renderChangedRowSuffix(previous, next, row)
+}
+
+func canUseCellDiff(row presentedRow) bool {
+	for _, cell := range row.cells {
+		if cell.Erase || cell.Style != (presentedStyle{}) || cell.Width != 1 {
+			return false
+		}
+	}
+	return true
+}
+
+func renderChangedRowRuns(previous, next []presentedCell, row int) (string, bool) {
+	if len(previous) != len(next) {
+		return "", false
+	}
+	prevCol := 1
+	nextCol := 1
+	runStart := -1
+	runStartCol := 1
+	var out strings.Builder
+	flush := func(end int) {
+		if runStart < 0 || runStart >= end {
+			return
+		}
+		out.WriteString(xansi.CUP(runStartCol, row+1))
+		out.WriteString(serializePresentedCells(next[runStart:end], runStartCol))
+		if end == len(next) {
+			out.WriteString(xansi.EraseLineRight)
+		}
+		runStart = -1
+	}
+	for i := range next {
+		same := previous[i] == next[i] && prevCol == nextCol
+		if same {
+			flush(i)
+		} else if runStart < 0 {
+			runStart = i
+			runStartCol = nextCol
+		}
+		prevCol += maxInt(1, previous[i].Width)
+		nextCol += maxInt(1, next[i].Width)
+	}
+	if prevCol != nextCol {
+		return "", false
+	}
+	flush(len(next))
+	return out.String(), true
+}
+
+func renderChangedRowSuffix(previous, next presentedRow, row int) (string, bool) {
+	prevCells := previous.cells
+	nextCells := next.cells
+	prefixIndex := 0
+	prefixWidth := 0
+	for prefixIndex < len(prevCells) && prefixIndex < len(nextCells) && prevCells[prefixIndex] == nextCells[prefixIndex] {
+		prefixWidth += nextCells[prefixIndex].Width
+		prefixIndex++
+	}
+	if prefixIndex == len(prevCells) && prefixIndex == len(nextCells) {
+		return "", true
+	}
+	span := serializePresentedCells(nextCells[prefixIndex:], prefixWidth+1)
+	if span == "" {
+		return xansi.CUP(prefixWidth+1, row+1) + xansi.EraseLineRight, true
+	}
+	return xansi.CUP(prefixWidth+1, row+1) + span + xansi.EraseLineRight, true
+}
+
+func parsePresentedRow(row string) presentedRow {
+	if row == "" {
+		return presentedRow{raw: row}
+	}
+	parser := xansi.NewParser()
+	state := byte(0)
+	rest := row
+	style := presentedStyle{}
+	cells := make([]presentedCell, 0, xansi.StringWidth(row))
+	for len(rest) > 0 {
+		seq, width, n, nextState := xansi.DecodeSequence(rest, state, parser)
+		if n <= 0 {
+			break
+		}
+		token := string(seq)
+		if width > 0 {
+			cells = append(cells, presentedCell{Content: token, Width: width, Style: style})
+		} else if len(token) > 0 && token[0] == '\x1b' {
+			switch xansi.Cmd(parser.Command()).Final() {
+			case 'm':
+				style = style.withSGR(parser.Params())
+			case 'X':
+				count, ok := parser.Param(0, 1)
+				if !ok || count <= 0 {
+					count = 1
+				}
+				for i := 0; i < count; i++ {
+					cells = append(cells, presentedCell{Content: " ", Width: 1, Style: style, Erase: true})
+				}
+			}
+		}
+		state = nextState
+		rest = rest[n:]
+	}
+	return presentedRow{raw: row, cells: cells}
+}
+
+func serializePresentedCells(cells []presentedCell, startCol int) string {
+	if len(cells) == 0 {
+		return ""
+	}
+	var out strings.Builder
+	current := presentedStyle{}
+	first := true
+	cursorCol := maxInt(1, startCol)
+	needsReanchor := false
+	for _, cell := range cells {
+		if needsReanchor {
+			out.WriteString(xansi.CHA(cursorCol))
+			needsReanchor = false
+		}
+		if first || cell.Style != current {
+			out.WriteString(cell.Style.ansi())
+			current = cell.Style
+			first = false
+		}
+		if cell.Erase {
+			out.WriteString(xansi.ECH(maxInt(1, cell.Width)))
+			cursorCol += maxInt(1, cell.Width)
+			needsReanchor = true
+			continue
+		}
+		out.WriteString(cell.Content)
+		cursorCol += maxInt(1, cell.Width)
+	}
+	if current != (presentedStyle{}) {
+		out.WriteString(presentedResetStyleSequence)
+	}
+	return out.String()
+}
+
+func (s presentedStyle) ansi() string {
+	if cached, ok := presentedStyleCache.Load(s); ok {
+		return cached.(string)
+	}
+	var b strings.Builder
+	b.WriteString("\x1b[0")
+	if s.FGCode != "" {
+		b.WriteByte(';')
+		b.WriteString(s.FGCode)
+	}
+	if s.BGCode != "" {
+		b.WriteByte(';')
+		b.WriteString(s.BGCode)
+	}
+	if s.Bold {
+		b.WriteString(";1")
+	}
+	if s.Italic {
+		b.WriteString(";3")
+	}
+	if s.Underline {
+		b.WriteString(";4")
+	}
+	if s.Blink {
+		b.WriteString(";5")
+	}
+	if s.Reverse {
+		b.WriteString(";7")
+	}
+	if s.Strikethrough {
+		b.WriteString(";9")
+	}
+	b.WriteByte('m')
+	ansi := b.String()
+	presentedStyleCache.Store(s, ansi)
+	return ansi
+}
+
+func (s presentedStyle) withSGR(params xansi.Params) presentedStyle {
+	if len(params) == 0 {
+		return presentedStyle{}
+	}
+	next := s
+	for i := 0; i < len(params); i++ {
+		param, _, ok := params.Param(i, 0)
+		if !ok {
+			continue
+		}
+		switch param {
+		case 0:
+			next = presentedStyle{}
+		case 1:
+			next.Bold = true
+		case 3:
+			next.Italic = true
+		case 4:
+			next.Underline = true
+		case 5:
+			next.Blink = true
+		case 7:
+			next.Reverse = true
+		case 9:
+			next.Strikethrough = true
+		case 22:
+			next.Bold = false
+		case 23:
+			next.Italic = false
+		case 24:
+			next.Underline = false
+		case 25:
+			next.Blink = false
+		case 27:
+			next.Reverse = false
+		case 29:
+			next.Strikethrough = false
+		case 39:
+			next.FGCode = ""
+		case 49:
+			next.BGCode = ""
+		case 38, 48:
+			modeIndex := i + 1
+			mode, _, ok := params.Param(modeIndex, 0)
+			if !ok {
+				continue
+			}
+			switch mode {
+			case 5:
+				value, _, ok := params.Param(i+2, 0)
+				if !ok {
+					continue
+				}
+				code := strconv.Itoa(param) + ";5;" + strconv.Itoa(value)
+				if param == 38 {
+					next.FGCode = code
+				} else {
+					next.BGCode = code
+				}
+				i += 2
+			case 2:
+				r, _, okR := params.Param(i+2, 0)
+				g, _, okG := params.Param(i+3, 0)
+				b, _, okB := params.Param(i+4, 0)
+				if !okR || !okG || !okB {
+					continue
+				}
+				code := strconv.Itoa(param) + ";2;" + strconv.Itoa(r) + ";" + strconv.Itoa(g) + ";" + strconv.Itoa(b)
+				if param == 38 {
+					next.FGCode = code
+				} else {
+					next.BGCode = code
+				}
+				i += 4
+			}
+		default:
+			switch {
+			case 30 <= param && param <= 37:
+				next.FGCode = strconv.Itoa(param)
+			case 90 <= param && param <= 97:
+				next.FGCode = strconv.Itoa(param)
+			case 40 <= param && param <= 47:
+				next.BGCode = strconv.Itoa(param)
+			case 100 <= param && param <= 107:
+				next.BGCode = strconv.Itoa(param)
+			}
+		}
+	}
+	return next
 }
 
 func (w *outputCursorWriter) enterDirectTerminal() error {

@@ -835,6 +835,21 @@ func TestMoveFloatingPaneByClampsAtOrigin(t *testing.T) {
 	}
 }
 
+func TestMoveFloatingPaneNoOpDoesNotTouch(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.CreateFloatingPane("tab1", "pane2", Rect{X: 3, Y: 2, W: 20, H: 8})
+
+	version := wb.version
+	if wb.MoveFloatingPane("tab1", "pane2", 3, 2) {
+		t.Fatal("expected move to same rect to report no change")
+	}
+	if wb.version != version {
+		t.Fatalf("expected version to remain %d, got %d", version, wb.version)
+	}
+}
+
 func TestResizeFloatingPaneByClampsMinimumSize(t *testing.T) {
 	wb := setupWorkbench(t)
 	_ = wb.CreateTab("main", "tab1", "Tab One")
@@ -851,6 +866,47 @@ func TestResizeFloatingPaneByClampsMinimumSize(t *testing.T) {
 	}
 }
 
+func TestResizeFloatingPaneNoOpDoesNotTouch(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.CreateFloatingPane("tab1", "pane2", Rect{X: 3, Y: 2, W: 20, H: 8})
+
+	version := wb.version
+	if wb.ResizeFloatingPane("tab1", "pane2", 20, 8) {
+		t.Fatal("expected resize to same size to report no change")
+	}
+	if wb.version != version {
+		t.Fatalf("expected version to remain %d, got %d", version, wb.version)
+	}
+}
+
+func TestResizeFloatingPaneSameSizeClearsAutoFit(t *testing.T) {
+	wb := setupWorkbench(t)
+	_ = wb.CreateTab("main", "tab1", "Tab One")
+	_ = wb.CreateFirstPane("tab1", "pane1")
+	_ = wb.CreateFloatingPane("tab1", "pane2", Rect{X: 3, Y: 2, W: 20, H: 8})
+
+	tab := wb.store["main"].Tabs[0]
+	floating := tab.Floating[0]
+	floating.FitMode = FloatingFitAuto
+	floating.AutoFitCols = 80
+	floating.AutoFitRows = 24
+
+	version := wb.version
+	if !wb.ResizeFloatingPane("tab1", "pane2", 20, 8) {
+		t.Fatal("expected same-size resize to clear auto-fit state")
+	}
+	if wb.version != version+1 {
+		t.Fatalf("expected version to increment to %d, got %d", version+1, wb.version)
+	}
+	if floating.FitMode != FloatingFitManual {
+		t.Fatalf("expected fit mode manual, got %q", floating.FitMode)
+	}
+	if floating.AutoFitCols != 0 || floating.AutoFitRows != 0 {
+		t.Fatalf("expected auto-fit metadata cleared, got cols=%d rows=%d", floating.AutoFitCols, floating.AutoFitRows)
+	}
+}
 func TestCenterFloatingPaneCentersWithinBounds(t *testing.T) {
 	wb := setupWorkbench(t)
 	_ = wb.CreateTab("main", "tab1", "Tab One")
