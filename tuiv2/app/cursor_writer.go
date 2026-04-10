@@ -69,9 +69,12 @@ type pendingDirectFrame struct {
 }
 
 type framePresenter struct {
-	lines  []string
-	parsed []presentedRow
-	ready  bool
+	lines         []string
+	parsed        []presentedRow
+	scratchLines  []string
+	scratchParsed []presentedRow
+	reclaim       [][]presentedCell
+	ready         bool
 }
 
 type presentedRow struct {
@@ -135,6 +138,9 @@ func (p *framePresenter) Reset() {
 	releasePresentedRows(p.parsed)
 	p.lines = nil
 	p.parsed = nil
+	p.scratchLines = nil
+	p.scratchParsed = nil
+	p.reclaim = nil
 	p.ready = false
 }
 
@@ -142,7 +148,7 @@ func (p *framePresenter) Present(frame string) string {
 	if p == nil {
 		return frame
 	}
-	lines := strings.Split(frame, "\n")
+	lines := splitFrameLines(frame, p.scratchLines[:0])
 	if !p.ready {
 		p.setLines(lines, true)
 		p.ready = true
@@ -175,12 +181,16 @@ func (p *framePresenter) setLines(lines []string, resetParsed bool) {
 	if p == nil {
 		return
 	}
-	p.lines = append(p.lines[:0], lines...)
-	if cap(p.parsed) < len(lines) {
+	previousLines := p.lines
+	p.lines = lines
+	p.scratchLines = previousLines[:0]
+	previousParsed := p.parsed
+	if cap(p.scratchParsed) < len(lines) {
 		p.parsed = make([]presentedRow, len(lines))
 	} else {
-		p.parsed = p.parsed[:len(lines)]
+		p.parsed = p.scratchParsed[:len(lines)]
 	}
+	p.scratchParsed = previousParsed[:0]
 	if resetParsed {
 		clear(p.parsed)
 	}
@@ -360,10 +370,10 @@ func (p *framePresenter) renderChangedRows(next []string) (string, int, []presen
 	if p == nil || len(next) != len(p.lines) {
 		return "", 0, nil, nil
 	}
-	nextParsed := make([]presentedRow, len(next))
+	nextParsed := ensurePresentedRows(p.scratchParsed, len(next))
 	copy(nextParsed, p.parsed)
 	changed := 0
-	reclaim := make([][]presentedCell, 0, len(next)/2)
+	reclaim := p.reclaim[:0]
 	var out strings.Builder
 	out.Grow(len(next) * 16)
 	for row := range next {
@@ -383,6 +393,27 @@ func (p *framePresenter) renderChangedRows(next []string) (string, int, []presen
 		}
 	}
 	return out.String(), changed, nextParsed, reclaim
+}
+
+func ensurePresentedRows(rows []presentedRow, size int) []presentedRow {
+	if cap(rows) < size {
+		return make([]presentedRow, size)
+	}
+	rows = rows[:size]
+	clear(rows)
+	return rows
+}
+
+func splitFrameLines(frame string, dst []string) []string {
+	start := 0
+	for i := 0; i < len(frame); i++ {
+		if frame[i] != '\n' {
+			continue
+		}
+		dst = append(dst, frame[start:i])
+		start = i + 1
+	}
+	return append(dst, frame[start:])
 }
 
 func (p *framePresenter) presentedRow(index int) presentedRow {
@@ -1103,7 +1134,7 @@ func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite [
 	defer func() {
 		finish(writtenBytes)
 	}()
-	payload := normalizeFrameForTTY(w.presenter.Present(frame))
+	payload := w.presenter.Present(frame)
 	syncOutput := w.tty != nil
 	if cursor == "" {
 		cursor = hideHostCursorSequence
@@ -1114,7 +1145,7 @@ func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite [
 	}
 
 	// 预估总长度，一次性写入以避免多次 syscall 和中间刷新
-	estLen := len(payload) + len(cursor) + 64
+	estLen := normalizedFrameLen(payload) + len(cursor) + 64
 	for _, seq := range afterWrite {
 		estLen += len(seq)
 	}
@@ -1125,7 +1156,7 @@ func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite [
 	}
 	buf.WriteString(hideHostCursorSequence)
 	buf.WriteString(xansi.MoveCursorOrigin)
-	buf.WriteString(payload)
+	writeNormalizedFrame(&buf, payload)
 	for _, seq := range afterWrite {
 		buf.WriteString(seq)
 	}
@@ -1177,6 +1208,33 @@ func normalizeFrameForTTY(frame string) string {
 		return frame
 	}
 	return strings.ReplaceAll(frame, "\n", "\r\n")
+}
+
+func normalizedFrameLen(frame string) int {
+	if frame == "" {
+		return 0
+	}
+	return len(frame) + strings.Count(frame, "\n")
+}
+
+func writeNormalizedFrame(out *strings.Builder, frame string) {
+	if out == nil || frame == "" {
+		return
+	}
+	start := 0
+	for i := 0; i < len(frame); i++ {
+		if frame[i] != '\n' {
+			continue
+		}
+		if start < i {
+			out.WriteString(frame[start:i])
+		}
+		out.WriteString("\r\n")
+		start = i + 1
+	}
+	if start < len(frame) {
+		out.WriteString(frame[start:])
+	}
 }
 
 func newOutputCursorWriter(out io.Writer) *outputCursorWriter {
