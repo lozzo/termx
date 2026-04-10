@@ -1557,18 +1557,20 @@ func (w *outputCursorWriter) fitFrameToTTY(frame string) string {
 }
 
 func (w *outputCursorWriter) fitLinesToTTY(lines []string) []string {
-	if w == nil || w.tty == nil || len(lines) == 0 {
-		return append([]string(nil), lines...)
+	if len(lines) == 0 {
+		return nil
+	}
+	if w == nil || w.tty == nil {
+		return lines
 	}
 	width, _, err := xterm.GetSize(w.tty.Fd())
 	if err != nil || width <= 0 {
-		return append([]string(nil), lines...)
+		return lines
+	}
+	if width == w.lastTTYWidth {
+		return lines
 	}
 	out := make([]string, len(lines))
-	if width == w.lastTTYWidth {
-		copy(out, lines)
-		return out
-	}
 	w.lastTTYWidth = width
 	for i := range lines {
 		out[i] = xansi.Truncate(lines[i], width, "")
