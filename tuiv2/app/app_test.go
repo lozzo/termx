@@ -39,6 +39,26 @@ func (w *recordingFrameWriter) WriteFrame(frame, cursor string) error {
 	return nil
 }
 
+type recordingLinesWriter struct {
+	frameCalled bool
+	lines       []string
+	cursor      string
+}
+
+func (w *recordingLinesWriter) WriteFrame(frame, cursor string) error {
+	w.frameCalled = true
+	w.lines = strings.Split(frame, "\n")
+	w.cursor = cursor
+	return nil
+}
+
+func (w *recordingLinesWriter) WriteFrameLines(lines []string, cursor string) error {
+	w.frameCalled = false
+	w.lines = append([]string(nil), lines...)
+	w.cursor = cursor
+	return nil
+}
+
 type backlogProbeFrameWriter struct {
 	mu        sync.Mutex
 	pending   atomic.Bool
@@ -97,6 +117,26 @@ func TestModelViewShowsProjectedState(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q:\n%s", want, view)
 		}
+	}
+}
+
+func TestModelViewUsesFrameLinesWriterFastPath(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	writer := &recordingLinesWriter{}
+	model.SetFrameWriter(writer)
+
+	view := model.View()
+	if view != "" {
+		t.Fatalf("expected direct writer path to return empty view, got %q", view)
+	}
+	if writer.frameCalled {
+		t.Fatal("expected View to use WriteFrameLines fast path")
+	}
+	if len(writer.lines) == 0 {
+		t.Fatal("expected frame lines to be written")
+	}
+	if !strings.Contains(xansi.Strip(strings.Join(writer.lines, "\n")), "main") {
+		t.Fatalf("expected lines output to contain workspace name, got %#v", writer.lines)
 	}
 }
 

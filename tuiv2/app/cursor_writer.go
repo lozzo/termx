@@ -30,6 +30,10 @@ type frameSequenceWriter interface {
 	WriteFrame(frame, cursor string) error
 }
 
+type frameLinesWriter interface {
+	WriteFrameLines(lines []string, cursor string) error
+}
+
 type frameBackpressureWriter interface {
 	frameSequenceWriter
 	HasPendingFrame() bool
@@ -65,6 +69,7 @@ type outputCursorWriter struct {
 type pendingDirectFrame struct {
 	scheduled  bool
 	frame      string
+	lines      []string
 	cursor     string
 	afterWrite []string
 }
@@ -153,15 +158,26 @@ func (p *framePresenter) Present(frame string) string {
 		return frame
 	}
 	lines := splitFrameLines(frame, p.scratchLines[:0])
+	return p.presentLines(lines)
+}
+
+func (p *framePresenter) PresentLines(lines []string) string {
+	if p == nil {
+		return strings.Join(lines, "\n")
+	}
+	return p.presentLines(lines)
+}
+
+func (p *framePresenter) presentLines(lines []string) string {
 	if !p.ready {
 		p.setLines(lines, true)
 		p.ready = true
-		return frame
+		return strings.Join(lines, "\n")
 	}
 	if len(lines) != len(p.lines) {
 		releasePresentedRows(p.parsed)
 		p.setLines(lines, true)
-		return xansi.EraseEntireDisplay + frame
+		return xansi.EraseEntireDisplay + strings.Join(lines, "\n")
 	}
 	if payload := p.presentVerticalScroll(lines); payload != "" {
 		releasePresentedRows(p.parsed)
@@ -175,10 +191,21 @@ func (p *framePresenter) Present(frame string) string {
 	p.setLines(lines, false)
 	copy(p.parsed, nextParsed)
 	releasePresentedCellSlices(reclaim)
-	if len(lines) > 6 && len(payload) >= len(frame) {
-		return xansi.EraseEntireDisplay + frame
+	if len(lines) > 6 && len(payload) >= joinedLinesLen(lines) {
+		return xansi.EraseEntireDisplay + strings.Join(lines, "\n")
 	}
 	return payload
+}
+
+func joinedLinesLen(lines []string) int {
+	if len(lines) == 0 {
+		return 0
+	}
+	total := len(lines) - 1
+	for _, line := range lines {
+		total += len(line)
+	}
+	return total
 }
 
 func (p *framePresenter) setLines(lines []string, resetParsed bool) {
@@ -1231,6 +1258,67 @@ func (w *outputCursorWriter) WriteFrame(frame, cursor string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.pending.frame = w.fitFrameToTTY(frame)
+	w.pending.lines = nil
+	w.pending.cursor = cursor
+	w.pending.afterWrite = append(w.pending.afterWrite, w.afterWrite...)
+	w.afterWrite = nil
+	w.backlogActive.Store(true)
+	if directFrameBatchDelay <= 0 {
+		if w.moveTrace != nil && w.moveTrace.HasPending() {
+			w.moveTrace.Mark("frame.flush.immediate")
+		}
+		hook, err := w.flushPendingFrameLocked()
+		w.mu.Unlock()
+		if hook != nil {
+			hook()
+		}
+		w.mu.Lock()
+		return err
+	}
+	if w.shouldFlushDirectFrameImmediatelyLocked() {
+		if w.moveTrace != nil && w.moveTrace.HasPending() {
+			w.moveTrace.Mark("frame.flush.immediate")
+		}
+		hook, err := w.flushPendingFrameLocked()
+		w.mu.Unlock()
+		if hook != nil {
+			hook()
+		}
+		w.mu.Lock()
+		return err
+	}
+	if w.pending.scheduled {
+		if w.moveTrace != nil && w.moveTrace.HasPending() {
+			w.moveTrace.Mark("frame.flush.already_scheduled")
+		}
+		return nil
+	}
+	w.pending.scheduled = true
+	if w.moveTrace != nil && w.moveTrace.HasPending() {
+		w.moveTrace.Mark("frame.flush.deferred")
+	}
+	time.AfterFunc(directFrameBatchDelay, func() {
+		w.flushPendingFrame()
+	})
+	return nil
+}
+
+func (w *outputCursorWriter) WriteFrameLines(lines []string, cursor string) error {
+	finish := perftrace.Measure("cursor_writer.write_frame")
+	lineBytes := joinedLinesLen(lines) + len(cursor)
+	defer func() {
+		finish(lineBytes)
+	}()
+	if w == nil || w.out == nil {
+		return nil
+	}
+	if w.moveTrace != nil && w.moveTrace.HasPending() {
+		w.moveTrace.Mark("frame.write.start")
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.pending.frame = ""
+	w.pending.lines = w.fitLinesToTTY(lines)
 	w.pending.cursor = cursor
 	w.pending.afterWrite = append(w.pending.afterWrite, w.afterWrite...)
 	w.afterWrite = nil
@@ -1295,15 +1383,21 @@ func (w *outputCursorWriter) flushPendingFrameLocked() (func(), error) {
 		w.moveTrace.Mark("frame.flush.start")
 	}
 	frame := w.pending.frame
+	lines := w.pending.lines
 	cursor := w.pending.cursor
 	afterWrite := append([]string(nil), w.pending.afterWrite...)
 	w.pending = pendingDirectFrame{}
-	if frame == "" && len(afterWrite) == 0 {
+	if frame == "" && len(lines) == 0 && len(afterWrite) == 0 {
 		perftrace.Count("cursor_writer.direct_flush.empty", 0)
 		w.backlogActive.Store(false)
 		return w.drainHook, nil
 	}
-	err := w.writeFrameLocked(frame, cursor, afterWrite)
+	err := error(nil)
+	if len(lines) > 0 {
+		err = w.writeFrameLinesLocked(lines, cursor, afterWrite)
+	} else {
+		err = w.writeFrameLocked(frame, cursor, afterWrite)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1393,6 +1487,59 @@ func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite [
 	return err
 }
 
+func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, cursor string, afterWrite []string) error {
+	finish := perftrace.Measure("cursor_writer.direct_flush")
+	writtenBytes := 0
+	defer func() {
+		finish(writtenBytes)
+	}()
+	presentFinish := perftrace.Measure("cursor_writer.present")
+	payload := w.presenter.PresentLines(lines)
+	presentFinish(len(payload))
+	syncOutput := w.tty != nil
+	if cursor == "" {
+		cursor = hideHostCursorSequence
+	}
+	if payload == "" && len(afterWrite) == 0 && cursor == w.lastDirectCursor {
+		perftrace.Count("cursor_writer.direct_skip", 0)
+		return nil
+	}
+	estLen := normalizedLinesLen(lines) + len(cursor) + 64
+	for _, seq := range afterWrite {
+		estLen += len(seq)
+	}
+	var buf strings.Builder
+	buf.Grow(estLen)
+	if syncOutput {
+		buf.WriteString(synchronizedOutputBegin)
+	}
+	buf.WriteString(hideHostCursorSequence)
+	buf.WriteString(xansi.MoveCursorOrigin)
+	writeNormalizedFrame(&buf, payload)
+	for _, seq := range afterWrite {
+		buf.WriteString(seq)
+	}
+	buf.WriteString(cursor)
+	if syncOutput {
+		buf.WriteString(synchronizedOutputEnd)
+	}
+	w.bubbleTeaRestore = ""
+	w.cursorProjected = false
+	output := buf.String()
+	writtenBytes = len(output)
+	ioFinish := perftrace.Measure("cursor_writer.io_write")
+	_, err := io.WriteString(w.out, output)
+	ioFinish(writtenBytes)
+	if err == nil {
+		w.appendFrameDumpLocked("direct_frame", output)
+		w.lastDirectCursor = cursor
+		if w.moveTrace != nil {
+			w.moveTrace.Complete("frame.flushed", workbench.Rect{})
+		}
+	}
+	return err
+}
+
 func (w *outputCursorWriter) fitFrameToTTY(frame string) string {
 	if w == nil || w.tty == nil || frame == "" {
 		return frame
@@ -1407,6 +1554,26 @@ func (w *outputCursorWriter) fitFrameToTTY(frame string) string {
 	}
 	w.lastTTYWidth = width
 	return truncateFrameToWidth(frame, width)
+}
+
+func (w *outputCursorWriter) fitLinesToTTY(lines []string) []string {
+	if w == nil || w.tty == nil || len(lines) == 0 {
+		return append([]string(nil), lines...)
+	}
+	width, _, err := xterm.GetSize(w.tty.Fd())
+	if err != nil || width <= 0 {
+		return append([]string(nil), lines...)
+	}
+	out := make([]string, len(lines))
+	if width == w.lastTTYWidth {
+		copy(out, lines)
+		return out
+	}
+	w.lastTTYWidth = width
+	for i := range lines {
+		out[i] = xansi.Truncate(lines[i], width, "")
+	}
+	return out
 }
 
 func truncateFrameToWidth(frame string, width int) string {
@@ -1432,6 +1599,17 @@ func normalizedFrameLen(frame string) int {
 		return 0
 	}
 	return len(frame) + strings.Count(frame, "\n")
+}
+
+func normalizedLinesLen(lines []string) int {
+	if len(lines) == 0 {
+		return 0
+	}
+	total := len(lines) - 1
+	for _, line := range lines {
+		total += len(line)
+	}
+	return total
 }
 
 func writeNormalizedFrame(out *strings.Builder, frame string) {

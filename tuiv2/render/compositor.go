@@ -414,6 +414,38 @@ func (c *composedCanvas) contentString() string {
 	if !c.fullDirty && c.fullCache != "" {
 		return c.fullCache
 	}
+	c.ensureRowCache()
+	var out strings.Builder
+	totalLen := maxInt(0, c.height-1)
+	for y := 0; y < c.height; y++ {
+		totalLen += len(c.rowCache[y])
+	}
+	out.Grow(totalLen)
+	for y := 0; y < c.height; y++ {
+		if y > 0 {
+			out.WriteByte('\n')
+		}
+		out.WriteString(c.rowCache[y])
+	}
+	c.fullCache = out.String()
+	c.fullDirty = false
+	return c.fullCache
+}
+
+func (c *composedCanvas) contentLines() []string {
+	if c == nil {
+		return nil
+	}
+	c.ensureRowCache()
+	lines := make([]string, len(c.rowCache))
+	copy(lines, c.rowCache)
+	return lines
+}
+
+func (c *composedCanvas) ensureRowCache() {
+	if c == nil {
+		return
+	}
 	for y := 0; y < c.height; y++ {
 		if !c.rowDirty[y] && c.rowCache[y] != "" {
 			continue
@@ -486,21 +518,6 @@ func (c *composedCanvas) contentString() string {
 		c.rowCache[y] = row.String()
 		c.rowDirty[y] = false
 	}
-	var out strings.Builder
-	totalLen := maxInt(0, c.height-1)
-	for y := 0; y < c.height; y++ {
-		totalLen += len(c.rowCache[y])
-	}
-	out.Grow(totalLen)
-	for y := 0; y < c.height; y++ {
-		if y > 0 {
-			out.WriteByte('\n')
-		}
-		out.WriteString(c.rowCache[y])
-	}
-	c.fullCache = out.String()
-	c.fullDirty = false
-	return c.fullCache
 }
 
 func (c *composedCanvas) cursorANSI() string {

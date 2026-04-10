@@ -46,6 +46,19 @@ func TestRenderFrameNonEmpty(t *testing.T) {
 	}
 }
 
+func TestRenderFrameLinesMatchRenderFrame(t *testing.T) {
+	state := makeTestState()
+	c := NewCoordinator(func() VisibleRenderState { return state })
+	lines, cursor := c.RenderFrameLines()
+	frame := c.RenderFrame()
+	if got := strings.Join(lines, "\n"); got != frame {
+		t.Fatalf("expected RenderFrameLines to match RenderFrame\nlines=%q\nframe=%q", got, frame)
+	}
+	if cursor != c.CursorSequence() {
+		t.Fatalf("expected cursor sequence to match cached cursor, got %q want %q", cursor, c.CursorSequence())
+	}
+}
+
 func TestRenderFrameContainsWorkspaceName(t *testing.T) {
 	state := makeTestState()
 	c := NewCoordinator(func() VisibleRenderState { return state })

@@ -22,6 +22,7 @@ type Coordinator struct {
 	mu          sync.Mutex
 	dirty       bool
 	lastFrame   string
+	lastLines   []string
 	lastCursor  string
 	lastState   renderStateKey
 	bodyCache   *bodyRenderCache
@@ -264,9 +265,21 @@ func (c *Coordinator) RenderFrame() string {
 		return frame
 	}
 	c.mu.Unlock()
+	if c != nil {
+		c.mu.Lock()
+		if !c.dirty && c.lastFrame == "" && len(c.lastLines) > 0 && c.lastState == key {
+			frame = strings.Join(c.lastLines, "\n")
+			c.lastFrame = frame
+			cacheMetric = "render.frame.cache_hit"
+			c.mu.Unlock()
+			return frame
+		}
+		c.mu.Unlock()
+	}
 	if state.Workbench == nil {
 		c.mu.Lock()
 		c.lastFrame = "tuiv2"
+		c.lastLines = []string{"tuiv2"}
 		c.lastCursor = hideCursorANSI()
 		c.lastState = key
 		c.dirty = false
@@ -313,12 +326,41 @@ func (c *Coordinator) RenderFrame() string {
 		c.cursorBlinkVisible = true
 	}
 	c.lastFrame = frame
+	c.lastLines = splitRenderedLines(frame, c.lastLines[:0])
 	c.lastCursor = cursor
 	c.lastState = key
 	c.dirty = false
 	frame = c.lastFrame
 	c.mu.Unlock()
 	return frame
+}
+
+func (c *Coordinator) RenderFrameLines() ([]string, string) {
+	if c == nil || c.visibleFn == nil {
+		return nil, hideCursorANSI()
+	}
+	state := c.visibleFn()
+	key := stateKey(state)
+	c.mu.Lock()
+	if !c.dirty && len(c.lastLines) > 0 && c.lastState == key {
+		lines := append([]string(nil), c.lastLines...)
+		cursor := c.lastCursor
+		if cursor == "" {
+			cursor = hideCursorANSI()
+		}
+		c.mu.Unlock()
+		return lines, cursor
+	}
+	c.mu.Unlock()
+	lines, cursor := renderFrameLinesWithCoordinator(c, state)
+	c.mu.Lock()
+	c.lastLines = append(c.lastLines[:0], lines...)
+	c.lastFrame = ""
+	c.lastCursor = cursor
+	c.lastState = key
+	c.dirty = false
+	c.mu.Unlock()
+	return append([]string(nil), lines...), cursor
 }
 
 func stateKey(state VisibleRenderState) renderStateKey {
@@ -384,6 +426,24 @@ func (c *Coordinator) CachedFrameAndCursor() (string, string, bool) {
 		cursor = hideCursorANSI()
 	}
 	return c.lastFrame, cursor, true
+}
+
+func (c *Coordinator) CachedFrameLinesAndCursor() ([]string, string, bool) {
+	if c == nil || c.visibleFn == nil {
+		return nil, hideCursorANSI(), false
+	}
+	state := c.visibleFn()
+	key := stateKey(state)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.dirty || len(c.lastLines) == 0 || c.lastState != key {
+		return nil, "", false
+	}
+	cursor := c.lastCursor
+	if cursor == "" {
+		cursor = hideCursorANSI()
+	}
+	return append([]string(nil), c.lastLines...), cursor, true
 }
 
 func (c *Coordinator) NeedsCursorTicks() bool {
@@ -456,6 +516,91 @@ func (c *Coordinator) renderStatusBarCached(state VisibleRenderState) string {
 	c.statusKey = key
 	c.mu.Unlock()
 	return value
+}
+
+func renderFrameLinesWithCoordinator(c *Coordinator, state VisibleRenderState) ([]string, string) {
+	if state.Workbench == nil {
+		return []string{"tuiv2"}, hideCursorANSI()
+	}
+	immersiveZoom := immersiveZoomActive(state)
+	bodyCursorOffsetY := TopChromeRows
+	if immersiveZoom {
+		bodyCursorOffsetY = 0
+	}
+	bodyHeight := FrameBodyHeight(state.TermSize.Height)
+	if immersiveZoom {
+		bodyHeight = maxInt(1, state.TermSize.Height)
+	}
+	bodyLines, cursor, blink := renderBodyLinesWithCoordinator(c, state, state.TermSize.Width, bodyHeight)
+	overlaySize := TermSize{Width: state.TermSize.Width, Height: bodyHeight}
+	overlayCursorVisible := true
+	c.mu.Lock()
+	overlayCursorVisible = c.cursorBlinkVisible
+	c.mu.Unlock()
+	if overlay := renderActiveOverlayWithCursor(state, overlaySize, bodyCursorOffsetY, overlayCursorVisible); overlay.content != "" {
+		body := compositeOverlay(strings.Join(bodyLines, "\n"), overlay.content, TermSize{Width: state.TermSize.Width, Height: bodyHeight})
+		bodyLines = strings.Split(body, "\n")
+		cursor = overlay.cursor
+		blink = overlay.blink
+	}
+	lines := make([]string, 0, len(bodyLines)+2)
+	if !immersiveZoom {
+		lines = append(lines, c.renderTabBarCached(state))
+	}
+	lines = append(lines, bodyLines...)
+	if !immersiveZoom {
+		lines = append(lines, c.renderStatusBarCached(state))
+	}
+	c.mu.Lock()
+	if !blink {
+		c.cursorBlinkVisible = true
+	}
+	c.mu.Unlock()
+	return lines, cursor
+}
+
+func renderBodyLinesWithCoordinator(coordinator *Coordinator, state VisibleRenderState, width, height int) ([]string, string, bool) {
+	if width <= 0 || height <= 0 {
+		return nil, hideCursorANSI(), false
+	}
+	cursorOffsetY := TopChromeRows
+	if immersiveZoomActive(state) {
+		cursorOffsetY = 0
+	}
+	if state.Surface.Kind == VisibleSurfaceTerminalPool && state.Surface.TerminalPool != nil {
+		cursorVisible := true
+		if coordinator != nil {
+			coordinator.mu.Lock()
+			cursorVisible = coordinator.cursorBlinkVisible
+			coordinator.mu.Unlock()
+		}
+		rendered := renderTerminalPoolPageWithCursor(state.Surface.TerminalPool, state.Runtime, TermSize{Width: width, Height: height}, cursorOffsetY, cursorVisible)
+		return strings.Split(rendered.content, "\n"), rendered.cursor, rendered.blink
+	}
+	if state.Workbench == nil {
+		rendered := renderedBody{content: strings.Repeat("\n", maxInt(0, height-1))}
+		return strings.Split(rendered.content, "\n"), rendered.cursor, rendered.blink
+	}
+	activeTabIdx := state.Workbench.ActiveTab
+	if activeTabIdx < 0 || activeTabIdx >= len(state.Workbench.Tabs) {
+		rendered := renderEmptyWorkbenchBody(state, width, height, emptyWorkbenchNoTabs)
+		return strings.Split(rendered.content, "\n"), rendered.cursor, rendered.blink
+	}
+	tab := state.Workbench.Tabs[activeTabIdx]
+	if len(tab.Panes) == 0 {
+		rendered := renderEmptyWorkbenchBody(state, width, height, emptyWorkbenchNoPanes)
+		return strings.Split(rendered.content, "\n"), rendered.cursor, rendered.blink
+	}
+	lookup := newRuntimeLookup(state.Runtime)
+	exitedSelectionPulse := true
+	if coordinator != nil {
+		coordinator.mu.Lock()
+		exitedSelectionPulse = coordinator.cursorBlinkVisible
+		coordinator.mu.Unlock()
+	}
+	entries := paneEntriesForTab(tab, state.Workbench.FloatingPanes, width, height, lookup, state.OwnerConfirmPaneID, state.EmptyPaneSelectionPaneID, state.EmptyPaneSelectionIndex, state.ExitedPaneSelectionPaneID, state.ExitedPaneSelectionIndex, exitedSelectionPulse, state, uiThemeForRuntime(state.Runtime))
+	canvas := renderBodyCanvas(coordinator, state, entries, width, height)
+	return canvas.contentLines(), canvas.cursorANSI(), canvas.syntheticCursorBlink
 }
 
 func (k tabBarCacheKey) matches(state VisibleRenderState, theme uiTheme) bool {
@@ -552,6 +697,19 @@ func statusBarCacheKeyForState(state VisibleRenderState, theme uiTheme) statusBa
 
 func renderBody(state VisibleRenderState, width, height int) string {
 	return renderBodyFrameWithCoordinator(nil, state, width, height).content
+}
+
+func splitRenderedLines(frame string, dst []string) []string {
+	dst = dst[:0]
+	start := 0
+	for i := 0; i < len(frame); i++ {
+		if frame[i] != '\n' {
+			continue
+		}
+		dst = append(dst, frame[start:i])
+		start = i + 1
+	}
+	return append(dst, frame[start:])
 }
 
 func renderBodyFrame(state VisibleRenderState, width, height int) renderedBody {

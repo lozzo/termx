@@ -14,6 +14,37 @@ func (m *Model) View() string {
 	if m == nil || m.render == nil {
 		return ""
 	}
+	if rowsWriter, ok := m.frameOut.(frameLinesWriter); ok {
+		if m.moveTrace != nil && m.moveTrace.HasPending() {
+			m.moveTrace.Mark("view.start")
+		}
+		if lines, cursor, ok := m.render.CachedFrameLinesAndCursor(); ok {
+			viewBytes = joinedLinesLen(lines) + len(cursor)
+			if m.moveTrace != nil && m.moveTrace.HasPending() {
+				m.moveTrace.Mark("view.cache_hit")
+				m.moveTrace.Mark("view.reuse_no_write")
+				m.moveTrace.Complete("view.reuse", workbench.Rect{})
+			}
+			m.lastViewFrame = ""
+			m.lastViewCursor = cursor
+			return ""
+		}
+		if m.moveTrace != nil && m.moveTrace.HasPending() {
+			m.moveTrace.Mark("render.start")
+		}
+		lines, cursor := m.render.RenderFrameLines()
+		if m.moveTrace != nil && m.moveTrace.HasPending() {
+			m.moveTrace.Mark("render.done")
+		}
+		viewBytes = joinedLinesLen(lines) + len(cursor)
+		if m.moveTrace != nil && m.moveTrace.HasPending() {
+			m.moveTrace.Mark("frame.write.submit")
+		}
+		_ = rowsWriter.WriteFrameLines(lines, cursor)
+		m.lastViewFrame = ""
+		m.lastViewCursor = cursor
+		return ""
+	}
 	if m.moveTrace != nil && m.moveTrace.HasPending() {
 		m.moveTrace.Mark("view.start")
 	}
