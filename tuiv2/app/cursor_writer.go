@@ -70,7 +70,6 @@ type pendingDirectFrame struct {
 type framePresenter struct {
 	lines  []string
 	parsed []presentedRow
-	scratch []presentedRow
 	ready  bool
 }
 
@@ -132,7 +131,6 @@ func (p *framePresenter) Reset() {
 	}
 	p.lines = nil
 	p.parsed = nil
-	p.scratch = nil
 	p.ready = false
 }
 
@@ -154,7 +152,7 @@ func (p *framePresenter) Present(frame string) string {
 		p.setLines(lines, true)
 		return payload
 	}
-	payload, changedCount := p.renderChangedRows(lines)
+	payload, changedCount, nextParsed := p.renderChangedRows(lines)
 	if changedCount == 0 {
 		return ""
 	}
@@ -163,7 +161,7 @@ func (p *framePresenter) Present(frame string) string {
 		return xansi.EraseEntireDisplay + frame
 	}
 	p.setLines(lines, false)
-	p.parsed, p.scratch = p.scratch, p.parsed
+	copy(p.parsed, nextParsed)
 	return payload
 }
 
@@ -177,14 +175,8 @@ func (p *framePresenter) setLines(lines []string, resetParsed bool) {
 	} else {
 		p.parsed = p.parsed[:len(lines)]
 	}
-	if cap(p.scratch) < len(lines) {
-		p.scratch = make([]presentedRow, len(lines))
-	} else {
-		p.scratch = p.scratch[:len(lines)]
-	}
 	if resetParsed {
 		clear(p.parsed)
-		clear(p.scratch)
 	}
 }
 
@@ -358,21 +350,21 @@ func renderChangedRows(previous, next []string) (string, int) {
 	return out.String(), len(changed)
 }
 
-func (p *framePresenter) renderChangedRows(next []string) (string, int) {
+func (p *framePresenter) renderChangedRows(next []string) (string, int, []presentedRow) {
 	if p == nil || len(next) != len(p.lines) {
-		return "", 0
+		return "", 0, nil
 	}
-	nextParsed := p.scratch[:len(next)]
+	nextParsed := make([]presentedRow, len(next))
+	copy(nextParsed, p.parsed)
 	changed := 0
 	var out strings.Builder
 	for row := range next {
 		if next[row] == p.lines[row] {
-			nextParsed[row] = p.parsed[row]
 			continue
 		}
 		changed++
 		prevRow := p.presentedRow(row)
-		nextRow := parsePresentedRow(next[row], nextParsed[row].cells[:0])
+		nextRow := parsePresentedRow(next[row])
 		nextParsed[row] = nextRow
 		span, ok := renderChangedRowDiff(prevRow, nextRow, row)
 		if !ok {
@@ -382,7 +374,7 @@ func (p *framePresenter) renderChangedRows(next []string) (string, int) {
 		}
 		out.WriteString(span)
 	}
-	return out.String(), changed
+	return out.String(), changed, nextParsed
 }
 
 func (p *framePresenter) presentedRow(index int) presentedRow {
@@ -392,7 +384,7 @@ func (p *framePresenter) presentedRow(index int) presentedRow {
 	if p.parsed[index].raw == p.lines[index] {
 		return p.parsed[index]
 	}
-	row := parsePresentedRow(p.lines[index], p.parsed[index].cells[:0])
+	row := parsePresentedRow(p.lines[index])
 	p.parsed[index] = row
 	return row
 }
@@ -416,7 +408,7 @@ func renderChangedRowDiff(previous, next presentedRow, row int) (string, bool) {
 
 func canUseCellDiff(row presentedRow) bool {
 	for _, cell := range row.cells {
-		if cell.Erase || cell.Width != 1 {
+		if cell.Erase || cell.Style != (presentedStyle{}) || cell.Width != 1 {
 			return false
 		}
 	}
@@ -480,7 +472,7 @@ func renderChangedRowSuffix(previous, next presentedRow, row int) (string, bool)
 	return xansi.CUP(prefixWidth+1, row+1) + span + xansi.EraseLineRight, true
 }
 
-func parsePresentedRow(row string, cells []presentedCell) presentedRow {
+func parsePresentedRow(row string) presentedRow {
 	if row == "" {
 		return presentedRow{raw: row}
 	}
@@ -489,11 +481,7 @@ func parsePresentedRow(row string, cells []presentedCell) presentedRow {
 	state := byte(0)
 	rest := row
 	style := presentedStyle{}
-	if cells == nil {
-		cells = make([]presentedCell, 0, xansi.StringWidth(row))
-	} else {
-		cells = cells[:0]
-	}
+	cells := make([]presentedCell, 0, xansi.StringWidth(row))
 	for len(rest) > 0 {
 		seq, width, n, nextState := xansi.DecodeSequence(rest, state, parser)
 		if n <= 0 {
