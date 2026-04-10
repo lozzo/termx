@@ -1,7 +1,9 @@
 package app
 
 import (
+	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -51,6 +53,7 @@ type outputCursorWriter struct {
 	lastTTYWidth         int
 	lastDirectCursor     string
 	lastFlushAt          time.Time
+	frameDumpPath        string
 	drainHook            func()
 	interactiveFlushHint func() bool
 	backlogActive        atomic.Bool
@@ -257,9 +260,13 @@ func renderVerticalScrollPlan(plan verticalScrollPlan, totalLines int) string {
 	out.WriteString(xansi.CUP(1, plan.start+1))
 	switch plan.direction {
 	case scrollUp:
-		out.WriteString(xansi.DL(plan.shift))
+		// Prefer SU/SD over DL/IL here. Some host terminals are more likely to
+		// leave stale rows behind when line insert/delete is used inside a
+		// constrained scroll region, while the region-scroll sequences map more
+		// directly to the intended "viewport moved by N rows" operation.
+		out.WriteString(xansi.SU(plan.shift))
 	case scrollDown:
-		out.WriteString(xansi.IL(plan.shift))
+		out.WriteString(xansi.SD(plan.shift))
 	}
 	out.WriteString("\x1b[r")
 	out.WriteString(xansi.DECRST(xansi.ModeOrigin))
@@ -525,6 +532,7 @@ func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite [
 	writtenBytes = len(output)
 	_, err := io.WriteString(w.out, output)
 	if err == nil {
+		w.appendFrameDumpLocked("direct_frame", output)
 		w.lastDirectCursor = cursor
 	}
 	return err
@@ -568,7 +576,10 @@ func newOutputCursorWriter(out io.Writer) *outputCursorWriter {
 	if out == nil {
 		return nil
 	}
-	writer := &outputCursorWriter{out: out}
+	writer := &outputCursorWriter{
+		out:           out,
+		frameDumpPath: os.Getenv("TERMX_FRAME_DUMP"),
+	}
 	if tty, ok := out.(xterm.File); ok {
 		writer.tty = tty
 	}
@@ -591,6 +602,9 @@ func (w *outputCursorWriter) WriteControlSequence(seq string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	_, err := io.WriteString(w.out, seq)
+	if err == nil {
+		w.appendFrameDumpLocked("control_sequence", seq)
+	}
 	return err
 }
 
@@ -617,6 +631,22 @@ func (w *outputCursorWriter) SetDrainHook(hook func()) {
 	w.mu.Lock()
 	w.drainHook = hook
 	w.mu.Unlock()
+}
+
+func (w *outputCursorWriter) appendFrameDumpLocked(kind, payload string) {
+	if w == nil || w.frameDumpPath == "" || payload == "" {
+		return
+	}
+	f, err := os.OpenFile(w.frameDumpPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	header := fmt.Sprintf("--- %s %s len=%d ---\n", kind, time.Now().Format(time.RFC3339Nano), len(payload))
+	_, _ = io.WriteString(f, header)
+	_, _ = io.WriteString(f, payload)
+	_, _ = io.WriteString(f, "\n")
 }
 
 func (w *outputCursorWriter) Write(p []byte) (int, error) {

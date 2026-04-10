@@ -947,7 +947,9 @@ func TestE2EZshPromptWithEmojiVariationKeepsSingleRightBorder(t *testing.T) {
 	_, cmd = model.Update(hostCursorPositionMsg{X: 1, Y: 0})
 	e2eDrain(t, model, cmd)
 
-	e2eWaitForText(t, ctx, model, invalidated, "RedmiBook♻ ")
+	// 中文说明：这里只是普通 prompt 文本，emoji 后面还有 ":" 等真实内容，
+	// 不属于“贴右边界会和 pane border 重叠”的场景，所以原字形仍应保留。
+	e2eWaitForText(t, ctx, model, invalidated, "RedmiBook♻️")
 	e2eWaitForText(t, ctx, model, invalidated, "[1d11220]")
 
 	payload := "ζ ♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:♻️:"
@@ -957,11 +959,12 @@ func TestE2EZshPromptWithEmojiVariationKeepsSingleRightBorder(t *testing.T) {
 	e2eWaitForText(t, ctx, model, invalidated, "ζ")
 
 	view := xansi.Strip(model.View())
-	if regexp.MustCompile(`♻️\x1b\[[0-9]+G`).MatchString(model.View()) {
-		t.Fatalf("expected rendered frame to avoid mid-line CHA after ambiguous emoji, got:\n%q", model.View())
+	rawView := model.View()
+	if !regexp.MustCompile(`♻️\x1b\[X\x1b\[[0-9]+G`).MatchString(rawView) {
+		t.Fatalf("expected rendered frame to keep non-overlapping ambiguous emoji on the raw+ECH path, got:\n%q", rawView)
 	}
-	if !strings.Contains(view, "RedmiBook♻ ") {
-		t.Fatalf("expected rendered frame to use the stable fallback for ambiguous emoji, got:\n%q", model.View())
+	if !strings.Contains(view, "RedmiBook♻️") {
+		t.Fatalf("expected rendered frame to preserve non-overlapping ambiguous emoji, got:\n%q", rawView)
 	}
 	lines := strings.Split(view, "\n")
 	if len(lines) != model.height {

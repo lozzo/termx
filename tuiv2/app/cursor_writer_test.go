@@ -2,6 +2,8 @@ package app
 
 import (
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -9,6 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/lozzow/termx/tuiv2/input"
 	localvterm "github.com/lozzow/termx/vterm"
 )
 
@@ -379,6 +382,70 @@ func TestOutputCursorWriterWritesDirectFrame(t *testing.T) {
 	}
 }
 
+func TestOutputCursorWriterDirectFrameDumpCapturesExactBufferedPayload(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	dumpPath := filepath.Join(t.TempDir(), "frames.bin")
+	t.Setenv("TERMX_FRAME_DUMP", dumpPath)
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	frame := xansi.CHA(1) + "AAA❄️" + xansi.ECH(1) + xansi.CHA(6) + "BB" + "\x1b[0m\x1b[K"
+
+	if err := writer.WriteFrame(frame, "<CURSOR>"); err != nil {
+		t.Fatalf("write direct frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	writes := append([]string(nil), sink.writes...)
+	sink.mu.Unlock()
+	if len(writes) != 1 {
+		t.Fatalf("expected single buffered write, got %#v", writes)
+	}
+
+	data, err := os.ReadFile(dumpPath)
+	if err != nil {
+		t.Fatalf("read frame dump: %v", err)
+	}
+	dump := string(data)
+	if !strings.Contains(dump, "--- direct_frame ") {
+		t.Fatalf("expected direct-frame dump header, got %q", dump)
+	}
+	if !strings.Contains(dump, writes[0]) {
+		t.Fatalf("expected dump to include exact buffered output %q, got %q", writes[0], dump)
+	}
+	if !strings.Contains(dump, "❄️"+xansi.ECH(1)+xansi.CHA(6)+"BB") {
+		t.Fatalf("expected dump to preserve FE0F + ECH + CHA bytes, got %q", dump)
+	}
+}
+
+func TestOutputCursorWriterControlSequenceDumpCapturesRawProbeBytes(t *testing.T) {
+	dumpPath := filepath.Join(t.TempDir(), "frames.bin")
+	t.Setenv("TERMX_FRAME_DUMP", dumpPath)
+
+	sink := &cursorWriterProbeSink{}
+	writer := newOutputCursorWriter(sink)
+	seq := xansi.SaveCursor + "❄️" + xansi.ECH(1) + xansi.RequestExtendedCursorPositionReport + xansi.RestoreCursor
+
+	if err := writer.WriteControlSequence(seq); err != nil {
+		t.Fatalf("write control sequence: %v", err)
+	}
+
+	data, err := os.ReadFile(dumpPath)
+	if err != nil {
+		t.Fatalf("read frame dump: %v", err)
+	}
+	dump := string(data)
+	if !strings.Contains(dump, "--- control_sequence ") {
+		t.Fatalf("expected control-sequence dump header, got %q", dump)
+	}
+	if !strings.Contains(dump, seq) {
+		t.Fatalf("expected dump to include exact control sequence %q, got %q", seq, dump)
+	}
+}
+
 func TestOutputCursorWriterCoalescesBurstDirectFrames(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	originalIdleThreshold := directFrameIdleThreshold
@@ -667,5 +734,54 @@ func TestNormalizeFrameForTTYUsesCRLF(t *testing.T) {
 	frame := "a\nb\nc"
 	if got, want := normalizeFrameForTTY(frame), "a\r\nb\r\nc"; got != want {
 		t.Fatalf("expected direct frame output to normalize line endings, got %q want %q", got, want)
+	}
+}
+
+func TestOutputCursorWriterCopyModeRoundTripRepaintsScrollbackViewBackToLive(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	model := setupModel(t, modelOpts{width: 50, height: 14})
+	seedCopyModeSnapshot(t, model, []string{"hist-0", "hist-1", "hist-2"}, []string{"live-0", "live-1", "live-2"})
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	tab.ScrollOffset = 1
+	model.render.Invalidate()
+	frame1 := model.View()
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	frame2 := model.View()
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCancelMode})
+	frame3 := model.View()
+
+	replay := func(frames []string) []string {
+		sink := &cursorWriterProbeTTY{}
+		writer := newOutputCursorWriter(sink)
+		for _, frame := range frames {
+			if err := writer.WriteFrame(frame, ""); err != nil {
+				t.Fatalf("write frame: %v", err)
+			}
+		}
+		sink.mu.Lock()
+		stream := strings.Join(sink.writes, "")
+		sink.mu.Unlock()
+		vt := localvterm.New(50, 14, 0, nil)
+		if _, err := vt.Write([]byte(stream)); err != nil {
+			t.Fatalf("replay stream into host vterm: %v", err)
+		}
+		return vtermScreenLines(vt.ScreenContent())
+	}
+
+	got := replay([]string{frame1, frame2, frame3})
+	want := replay([]string{frame3})
+	for row := range want {
+		if strings.TrimRight(got[row], " ") != strings.TrimRight(want[row], " ") {
+			t.Fatalf("copy-mode round trip left stale host content on row %d\ngot=%#v\nwant=%#v", row, got, want)
+		}
 	}
 }

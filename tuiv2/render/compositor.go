@@ -27,6 +27,10 @@ type drawCell struct {
 	Width        int
 	Style        drawStyle
 	Continuation bool
+	// Marks the synthetic second column we materialize for FE0F ambiguous emoji.
+	// It participates in overlap clearing like a wide-cell continuation, but it
+	// still serializes through the raw+ECH path instead of being skipped.
+	AmbiguousCompensation bool
 }
 
 type composedCanvas struct {
@@ -109,14 +113,14 @@ func (c *composedCanvas) clearOverlappingCellFootprints(x, y, width int) {
 		return
 	}
 	start := x
-	for start > 0 && c.cells[y][start].Continuation {
+	for start > 0 && c.cellBelongsToWideFootprint(start, y) {
 		start--
 	}
 	end := minInt(c.width, x+maxCellWidth(width))
 	for i := start; i < end; i++ {
-		if c.cells[y][i].Continuation {
+		if c.cellBelongsToWideFootprint(i, y) {
 			lead := i
-			for lead > 0 && c.cells[y][lead].Continuation {
+			for lead > 0 && c.cellBelongsToWideFootprint(lead, y) {
 				lead--
 			}
 			if lead < start {
@@ -136,6 +140,14 @@ func (c *composedCanvas) clearOverlappingCellFootprints(x, y, width int) {
 	for i := start; i < end; i++ {
 		c.writeCell(i, y, blankDrawCell())
 	}
+}
+
+func (c *composedCanvas) cellBelongsToWideFootprint(x, y int) bool {
+	if c == nil || y < 0 || y >= c.height || x < 0 || x >= c.width {
+		return false
+	}
+	cell := c.cells[y][x]
+	return cell.Continuation || cell.AmbiguousCompensation
 }
 
 func (c *composedCanvas) cellFootprintWidth(x, y int) int {
@@ -241,7 +253,7 @@ func (c *composedCanvas) drawProtocolRowInRect(rect workbench.Rect, targetY int,
 }
 
 func (c *composedCanvas) materializeRawAmbiguousContinuation(x, y int, cell drawCell) {
-	if c == nil || c.hostEmojiVS16Mode != shared.AmbiguousEmojiVariationSelectorRaw {
+	if c == nil {
 		return
 	}
 	if !isAmbiguousEmojiVariationSelectorCluster(cell.Content, cell.Width) {
@@ -251,11 +263,12 @@ func (c *composedCanvas) materializeRawAmbiguousContinuation(x, y int, cell draw
 	if contX >= c.width {
 		return
 	}
-	// Emit a real printable cell after the ambiguous emoji. Hosts that only
-	// advance one column consume it as the missing second column; hosts that
-	// advance two will overshoot by one, and the next serialized lead cell
-	// re-anchors with CHA after this space rather than directly after the emoji.
-	c.writeCell(contX, y, drawCell{Content: " ", Width: 1, Style: cell.Style})
+	c.writeCell(contX, y, drawCell{
+		Content:               " ",
+		Width:                 1,
+		Style:                 cell.Style,
+		AmbiguousCompensation: true,
+	})
 }
 
 func cellStyleFromSnapshot(cell protocol.Cell) drawStyle {
@@ -297,48 +310,28 @@ func isAmbiguousEmojiVariationSelectorCluster(content string, width int) bool {
 	return stripped != "" && xansi.StringWidth(stripped) > 0 && xansi.StringWidth(stripped) <= width
 }
 
-func fallbackAmbiguousEmojiVariationSelectorContent(content string, width int) string {
-	stripped := strings.ReplaceAll(content, "\uFE0F", "")
-	if stripped == "" {
-		return strings.Repeat(" ", maxInt(1, width))
-	}
-	if got := xansi.StringWidth(stripped); got > width {
-		stripped = xansi.Truncate(stripped, width, "")
-	}
-	if got := xansi.StringWidth(stripped); got < width {
-		stripped += strings.Repeat(" ", width-got)
-	}
-	return stripped
-}
-
-func serializeCellContent(content string, width int, mode shared.AmbiguousEmojiVariationSelectorMode) string {
-	if !isAmbiguousEmojiVariationSelectorCluster(content, width) {
-		return content
-	}
-	switch mode {
-	case shared.AmbiguousEmojiVariationSelectorAdvance, shared.AmbiguousEmojiVariationSelectorStrip:
-		// 中文说明：Bubble Tea 的标准渲染器把整行当成普通 ANSI 文本做 diff。
-		// 如果在行中间插 CHA/CUF 这类“挪光标”控制序列，某些终端会把后续单元格
-		// 对齐弄乱。这里统一降级成“去掉 FE0F，并把文本表示精确补到原模型宽度”，
-		// 用真实字符而不是中途移动光标来保持整行宽度稳定。
-		return fallbackAmbiguousEmojiVariationSelectorContent(content, width)
-	default:
-		return content
-	}
-}
+// 中文说明：这里只保留“原样输出 cell 内容”这个最小职责。FE0F 歧义 emoji
+// 是否需要消失，不在序列化阶段猜测，而是交给后续覆盖写入去清掉整个
+// footprint。
 
 func serializeCellContentForDisplay(content string, width int, mode shared.AmbiguousEmojiVariationSelectorMode, nextCol int) string {
-	return serializeCellContent(content, width, mode)
+	// 保留 mode/nextCol 形参是为了不牵动调用点；新策略下它们已不再影响输出。
+	_ = mode
+	_ = nextCol
+	return content
 }
 
 func (c *composedCanvas) isRawAmbiguousContinuationSpace(x, y int) bool {
-	if c == nil || c.hostEmojiVS16Mode != shared.AmbiguousEmojiVariationSelectorRaw {
+	if c == nil {
 		return false
 	}
 	if y < 0 || y >= c.height || x <= 0 || x >= c.width {
 		return false
 	}
 	cell := c.cells[y][x]
+	if cell.AmbiguousCompensation {
+		return true
+	}
 	if cell.Continuation || cell.Width != 1 || cell.Content != " " {
 		return false
 	}
@@ -398,18 +391,30 @@ func (c *composedCanvas) contentString() string {
 			}
 			isCompensationSpace := c.isRawAmbiguousContinuationSpace(x, y)
 			if isCompensationSpace {
-				// Do NOT emit the compensation space as a printable character.
-				// It exists in the canvas model so that hosts advancing the
-				// FE0F emoji by only one column see a filled gap, but actually
-				// printing it adds a surplus visible column to the serialised
-				// row. Bubble Tea's standard renderer truncates each line to
-				// the terminal width via ansi.Truncate (which counts printable
-				// display‐width). The extra column pushes the rightmost border
-				// character past the truncation boundary, making it disappear
-				// on every FE0F row.  Skipping the space and relying on the
-				// deferred CHA to re‐anchor the cursor keeps the row within
-				// the terminal width while still positioning correctly on both
-				// 1-column and 2-column emoji hosts.
+				// 中文说明：紧跟在 FE0F 歧义宽度 emoji 后的补偿列。
+				// 不能把它当成可打印空格吐出去——那会让这一行的 display width
+				// 比 c.width 多 1 列，ansi.Truncate 会把最右侧的边框截掉。
+				// 但如果只是单纯跳过（老做法），advance-1 的宿主（只把 emoji
+				// 前进 1 列）会让补偿列永远没有机会被新帧覆盖，pane 移走后
+				// 就会看到旧帧残留。
+				//
+				// 这里在 emoji 刚吐完、光标还停在宿主实际前进到的位置时，
+				// 直接发一个 ECH(1) 原地擦除一个 cell：
+				//   * 在 advance-1 宿主上，光标在补偿列上，ECH 正好清掉
+				//     可能残留的旧字符；
+				//   * 在 advance-2 宿主上，光标已经越过 emoji 到达下一列，
+				//     ECH 擦掉的是下一个真实 cell 的位置——而紧接着 CHA 会
+				//     把它重新写回去，不会破坏 emoji 本身的字形；
+				//   * ECH 是 CSI 序列，ansi.Truncate 视之为 0 宽，因此不会
+				//     顶掉最右侧的边框字符。
+				// 接着设置 needsReanchor，循环到下一个真实 cell 时再用绝对
+				// CHA 重锚，和宿主对 FE0F 宽度的判断脱钩。
+				//
+				// 行为参考：tmux screen-write.c 在 variation-selector-always-wide
+				// 下绘制 force_wide cell 之后调用 tty_invalidate(tty) 让
+				// 光标缓存作废，下一 cell 会用绝对定位重放——语义与这里的
+				// ECH + 延迟 CHA 等价。
+				row.WriteString(xansi.ECH(1))
 				needsReanchor = true
 				continue
 			}
