@@ -419,6 +419,11 @@ func (c *composedCanvas) contentString() string {
 			continue
 		}
 		var row strings.Builder
+		rowHint := len(c.rowCache[y])
+		if rowHint <= 0 {
+			rowHint = c.width + 16
+		}
+		row.Grow(rowHint)
 		current := drawStyle{}
 		needsReanchor := false
 		// Each serialized row re-anchors itself at column 1 so any per-cell CHA
