@@ -672,7 +672,7 @@ func TestOutputCursorWriterDiffsChangedSpanAtCorrectAbsoluteColumn(t *testing.T)
 	}
 }
 
-func TestOutputCursorWriterFallsBackToFullRowForStyledDiff(t *testing.T) {
+func TestOutputCursorWriterDiffsStyledSpanAtCorrectAbsoluteColumn(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
 	defer func() { directFrameBatchDelay = originalDelay }()
@@ -697,11 +697,47 @@ func TestOutputCursorWriterFallsBackToFullRowForStyledDiff(t *testing.T) {
 	got := strings.Join(sink.writes, "")
 	sink.mu.Unlock()
 
+	if !strings.Contains(got, "\x1b[1;2H") {
+		t.Fatalf("expected styled span diff to target absolute column 2, got %q", got)
+	}
+	if !strings.Contains(got, "\x1b[0;31mB\x1b[0m") {
+		t.Fatalf("expected styled span diff to carry its own SGR state, got %q", got)
+	}
+	if strings.Contains(got, frame2) {
+		t.Fatalf("expected styled span diff not to rewrite the full styled row, got %q", got)
+	}
+}
+
+func TestOutputCursorWriterFallsBackToFullRowForUnsafeEmojiRow(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+
+	frame1 := xansi.CHA(1) + "AAA❄️" + xansi.ECH(1) + xansi.CHA(6) + "BB" + "\x1b[0m\x1b[K"
+	frame2 := xansi.CHA(1) + "AAA❄️" + xansi.ECH(1) + xansi.CHA(6) + "BC" + "\x1b[0m\x1b[K"
+	if err := writer.WriteFrame(frame1, "<CURSOR>"); err != nil {
+		t.Fatalf("write initial unsafe frame: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrame(frame2, "<CURSOR>"); err != nil {
+		t.Fatalf("write unsafe diff frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
 	if !strings.Contains(got, "\x1b[1;1H") {
-		t.Fatalf("expected styled diff fallback to target absolute column 1, got %q", got)
+		t.Fatalf("expected unsafe row fallback to target absolute column 1, got %q", got)
 	}
 	if !strings.Contains(got, frame2) {
-		t.Fatalf("expected styled diff fallback to rewrite the full styled row, got %q", got)
+		t.Fatalf("expected unsafe row fallback to rewrite the full row, got %q", got)
 	}
 }
 
