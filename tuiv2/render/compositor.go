@@ -424,7 +424,7 @@ func (c *composedCanvas) contentString() string {
 		// Each serialized row re-anchors itself at column 1 so any per-cell CHA
 		// adjustments stay relative to the row grid rather than the host cursor's
 		// previous position.
-		row.WriteString(xansi.CHA(1))
+		writeCHAANSI(&row, 1)
 		for x := 0; x < c.width; x++ {
 			cell := c.cells[y][x]
 			if cell.Continuation {
@@ -459,12 +459,12 @@ func (c *composedCanvas) contentString() string {
 				// 下绘制 force_wide cell 之后调用 tty_invalidate(tty) 让
 				// 光标缓存作废，下一 cell 会用绝对定位重放——语义与这里的
 				// ECH + 延迟 CHA 等价。
-				row.WriteString(xansi.ECH(1))
+				writeECHANSI(&row, 1)
 				needsReanchor = true
 				continue
 			}
 			if needsReanchor {
-				row.WriteString(xansi.CHA(x + 1))
+				writeCHAANSI(&row, x+1)
 				needsReanchor = false
 			}
 			if current != cell.Style {
@@ -482,6 +482,11 @@ func (c *composedCanvas) contentString() string {
 		c.rowDirty[y] = false
 	}
 	var out strings.Builder
+	totalLen := maxInt(0, c.height-1)
+	for y := 0; y < c.height; y++ {
+		totalLen += len(c.rowCache[y])
+	}
+	out.Grow(totalLen)
 	for y := 0; y < c.height; y++ {
 		if y > 0 {
 			out.WriteByte('\n')
@@ -595,6 +600,33 @@ func styleDiffANSI(from, to drawStyle) string {
 		return ""
 	}
 	return styleANSI(to)
+}
+
+func writeCHAANSI(out *strings.Builder, col int) {
+	writeSimpleCSI(out, 'G', col)
+}
+
+func writeECHANSI(out *strings.Builder, count int) {
+	writeSimpleCSI(out, 'X', count)
+}
+
+func writeSimpleCSI(out *strings.Builder, final byte, value int) {
+	if out == nil {
+		return
+	}
+	out.WriteByte('\x1b')
+	out.WriteByte('[')
+	writeANSIInt(out, value)
+	out.WriteByte(final)
+}
+
+func writeANSIInt(out *strings.Builder, value int) {
+	if out == nil {
+		return
+	}
+	var scratch [24]byte
+	buf := strconv.AppendInt(scratch[:0], int64(value), 10)
+	_, _ = out.Write(buf)
 }
 
 func styleANSI(s drawStyle) string {

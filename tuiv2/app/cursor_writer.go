@@ -124,6 +124,7 @@ var (
 	synchronizedOutputBegin = xansi.DECSET(xansi.ModeSynchronizedOutput)
 	synchronizedOutputEnd   = xansi.DECRST(xansi.ModeSynchronizedOutput)
 	presentedStyleCache     sync.Map
+	presentedStyleDiffCache sync.Map
 	presentedCellPool       sync.Pool
 )
 
@@ -717,7 +718,7 @@ func writePresentedCells(out *strings.Builder, cells []presentedCell, startCol i
 			needsReanchor = false
 		}
 		if first || cell.Style != current {
-			out.WriteString(cell.Style.ansi())
+			out.WriteString(presentedStyleDiffANSI(current, cell.Style))
 			current = cell.Style
 			first = false
 		}
@@ -807,6 +808,83 @@ func (s presentedStyle) ansi() string {
 	ansi := b.String()
 	presentedStyleCache.Store(s, ansi)
 	return ansi
+}
+
+type presentedStyleTransitionKey struct {
+	From presentedStyle
+	To   presentedStyle
+}
+
+func presentedStyleDiffANSI(from, to presentedStyle) string {
+	if from == to {
+		return ""
+	}
+	key := presentedStyleTransitionKey{From: from, To: to}
+	if cached, ok := presentedStyleDiffCache.Load(key); ok {
+		return cached.(string)
+	}
+	ansi := buildPresentedStyleDiffANSI(from, to)
+	presentedStyleDiffCache.Store(key, ansi)
+	return ansi
+}
+
+func buildPresentedStyleDiffANSI(from, to presentedStyle) string {
+	if from == to {
+		return ""
+	}
+	if to == (presentedStyle{}) {
+		return presentedResetStyleSequence
+	}
+	var b strings.Builder
+	b.WriteString("\x1b[")
+	first := true
+	appendPresentedStyleToggle(&b, &first, from.Bold, to.Bold, "1", "22")
+	appendPresentedStyleToggle(&b, &first, from.Italic, to.Italic, "3", "23")
+	appendPresentedStyleToggle(&b, &first, from.Underline, to.Underline, "4", "24")
+	appendPresentedStyleToggle(&b, &first, from.Blink, to.Blink, "5", "25")
+	appendPresentedStyleToggle(&b, &first, from.Reverse, to.Reverse, "7", "27")
+	appendPresentedStyleToggle(&b, &first, from.Strikethrough, to.Strikethrough, "9", "29")
+	if from.FGCode != to.FGCode {
+		if to.FGCode == "" {
+			appendPresentedStyleCode(&b, &first, "39")
+		} else {
+			appendPresentedStyleCode(&b, &first, to.FGCode)
+		}
+	}
+	if from.BGCode != to.BGCode {
+		if to.BGCode == "" {
+			appendPresentedStyleCode(&b, &first, "49")
+		} else {
+			appendPresentedStyleCode(&b, &first, to.BGCode)
+		}
+	}
+	if first {
+		return ""
+	}
+	b.WriteByte('m')
+	return b.String()
+}
+
+func appendPresentedStyleToggle(b *strings.Builder, first *bool, from, to bool, onCode, offCode string) {
+	if from == to {
+		return
+	}
+	if to {
+		appendPresentedStyleCode(b, first, onCode)
+		return
+	}
+	appendPresentedStyleCode(b, first, offCode)
+}
+
+func appendPresentedStyleCode(b *strings.Builder, first *bool, code string) {
+	if b == nil || first == nil || code == "" {
+		return
+	}
+	if !*first {
+		b.WriteByte(';')
+	}
+	b.WriteString(code)
+	*first = false
 }
 
 func (s presentedStyle) withSGR(params xansi.Params) presentedStyle {
