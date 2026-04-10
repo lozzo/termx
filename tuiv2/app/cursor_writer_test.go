@@ -674,7 +674,7 @@ func TestOutputCursorWriterDiffsChangedSpanAtCorrectAbsoluteColumn(t *testing.T)
 	}
 }
 
-func TestOutputCursorWriterFallsBackToFullRowForStyledDiff(t *testing.T) {
+func TestOutputCursorWriterDiffsStyledSpanAtCorrectAbsoluteColumn(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
 	defer func() { directFrameBatchDelay = originalDelay }()
@@ -699,11 +699,14 @@ func TestOutputCursorWriterFallsBackToFullRowForStyledDiff(t *testing.T) {
 	got := strings.Join(sink.writes, "")
 	sink.mu.Unlock()
 
-	if !strings.Contains(got, "\x1b[1;1H") {
-		t.Fatalf("expected styled diff fallback to target absolute column 1, got %q", got)
+	if !strings.Contains(got, "\x1b[1;2H") {
+		t.Fatalf("expected styled suffix diff to target absolute column 2, got %q", got)
 	}
-	if !strings.Contains(got, frame2) {
-		t.Fatalf("expected styled diff fallback to rewrite the full styled row, got %q", got)
+	if !strings.Contains(got, "\x1b[0;31mB\x1b[0m") {
+		t.Fatalf("expected styled suffix diff to carry its own SGR state, got %q", got)
+	}
+	if strings.Contains(got, frame2) {
+		t.Fatalf("expected styled suffix diff not to rewrite the full styled row, got %q", got)
 	}
 }
 

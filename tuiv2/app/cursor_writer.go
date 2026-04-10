@@ -393,12 +393,12 @@ func renderChangedRowDiff(previous, next presentedRow, row int) (string, bool) {
 	if previous.raw == next.raw {
 		return "", true
 	}
-	if !canUseCellDiff(previous) || !canUseCellDiff(next) {
+	if !canUseSuffixDiff(previous) || !canUseSuffixDiff(next) {
 		return "", false
 	}
 	prevCells := previous.cells
 	nextCells := next.cells
-	if len(prevCells) == len(nextCells) {
+	if canUseRunDiff(previous) && canUseRunDiff(next) && len(prevCells) == len(nextCells) {
 		if spans, ok := renderChangedRowRuns(prevCells, nextCells, row); ok {
 			return spans, true
 		}
@@ -406,9 +406,18 @@ func renderChangedRowDiff(previous, next presentedRow, row int) (string, bool) {
 	return renderChangedRowSuffix(previous, next, row)
 }
 
-func canUseCellDiff(row presentedRow) bool {
+func canUseSuffixDiff(row presentedRow) bool {
 	for _, cell := range row.cells {
-		if cell.Erase || cell.Style != (presentedStyle{}) || cell.Width != 1 {
+		if cell.Erase || cell.Width != 1 {
+			return false
+		}
+	}
+	return true
+}
+
+func canUseRunDiff(row presentedRow) bool {
+	for _, cell := range row.cells {
+		if cell.Style != (presentedStyle{}) {
 			return false
 		}
 	}
