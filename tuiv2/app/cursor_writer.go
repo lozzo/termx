@@ -476,7 +476,8 @@ func parsePresentedRow(row string) presentedRow {
 	if row == "" {
 		return presentedRow{raw: row}
 	}
-	parser := xansi.NewParser()
+	parser := xansi.GetParser()
+	defer xansi.PutParser(parser)
 	state := byte(0)
 	rest := row
 	style := presentedStyle{}
