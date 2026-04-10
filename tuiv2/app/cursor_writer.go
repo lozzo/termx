@@ -14,6 +14,7 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/lozzow/termx/perftrace"
+	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 type cursorSequenceWriter interface {
@@ -58,6 +59,7 @@ type outputCursorWriter struct {
 	drainHook            func()
 	interactiveFlushHint func() bool
 	backlogActive        atomic.Bool
+	moveTrace            *floatingMoveTraceRecorder
 }
 
 type pendingDirectFrame struct {
@@ -316,18 +318,18 @@ func renderVerticalScrollPlan(plan verticalScrollPlan, totalLines int) string {
 		return ""
 	}
 	var out strings.Builder
-	out.WriteString(xansi.DECSTBM(plan.start+1, plan.end+1))
+	writeCSI(&out, 'r', plan.start+1, plan.end+1)
 	out.WriteString(xansi.DECRST(xansi.ModeOrigin))
-	out.WriteString(xansi.CUP(1, plan.start+1))
+	writeCUP(&out, 1, plan.start+1)
 	switch plan.direction {
 	case scrollUp:
 		// Prefer SU/SD over DL/IL here. Some host terminals are more likely to
 		// leave stale rows behind when line insert/delete is used inside a
 		// constrained scroll region, while the region-scroll sequences map more
 		// directly to the intended "viewport moved by N rows" operation.
-		out.WriteString(xansi.SU(plan.shift))
+		writeCSI(&out, 'S', plan.shift)
 	case scrollDown:
-		out.WriteString(xansi.SD(plan.shift))
+		writeCSI(&out, 'T', plan.shift)
 	}
 	out.WriteString("\x1b[r")
 	out.WriteString(xansi.DECRST(xansi.ModeOrigin))
@@ -355,7 +357,7 @@ func renderChangedRows(previous, next []string) (string, int) {
 			i++
 			end = changed[i]
 		}
-		out.WriteString(xansi.CUP(1, start+1))
+		writeCUP(&out, 1, start+1)
 		for row := start; row <= end; row++ {
 			if row > start {
 				out.WriteByte('\n')
@@ -389,7 +391,7 @@ func (p *framePresenter) renderChangedRows(next []string) (string, int, []presen
 			reclaim = append(reclaim, prevRow.cells)
 		}
 		if !renderChangedRowDiff(&out, prevRow, nextRow, row) {
-			out.WriteString(xansi.CUP(1, row+1))
+			writeCUP(&out, 1, row+1)
 			out.WriteString(next[row])
 		}
 	}
@@ -458,7 +460,7 @@ func renderChangedRowRuns(out *strings.Builder, previous, next []presentedCell, 
 		if runStart < 0 || runStart >= end {
 			return
 		}
-		out.WriteString(xansi.CUP(runStartCol, row+1))
+		writeCUP(out, runStartCol, row+1)
 		writePresentedCells(out, next[runStart:end], runStartCol)
 		if end == len(next) {
 			out.WriteString(xansi.EraseLineRight)
@@ -495,7 +497,7 @@ func renderChangedRowSuffix(out *strings.Builder, previous, next presentedRow, r
 	if prefixIndex == len(prevCells) && prefixIndex == len(nextCells) {
 		return true
 	}
-	out.WriteString(xansi.CUP(prefixWidth+1, row+1))
+	writeCUP(out, prefixWidth+1, row+1)
 	if len(nextCells[prefixIndex:]) == 0 {
 		out.WriteString(xansi.EraseLineRight)
 		return true
@@ -711,7 +713,7 @@ func writePresentedCells(out *strings.Builder, cells []presentedCell, startCol i
 	needsReanchor := false
 	for _, cell := range cells {
 		if needsReanchor {
-			out.WriteString(xansi.CHA(cursorCol))
+			writeCHA(out, cursorCol)
 			needsReanchor = false
 		}
 		if first || cell.Style != current {
@@ -720,7 +722,7 @@ func writePresentedCells(out *strings.Builder, cells []presentedCell, startCol i
 			first = false
 		}
 		if cell.Erase {
-			out.WriteString(xansi.ECH(maxInt(1, cell.Width)))
+			writeECH(out, maxInt(1, cell.Width))
 			cursorCol += maxInt(1, cell.Width)
 			needsReanchor = true
 			continue
@@ -731,6 +733,42 @@ func writePresentedCells(out *strings.Builder, cells []presentedCell, startCol i
 	if current != (presentedStyle{}) {
 		out.WriteString(presentedResetStyleSequence)
 	}
+}
+
+func writeCUP(out *strings.Builder, col, row int) {
+	writeCSI(out, 'H', row, col)
+}
+
+func writeCHA(out *strings.Builder, col int) {
+	writeCSI(out, 'G', col)
+}
+
+func writeECH(out *strings.Builder, count int) {
+	writeCSI(out, 'X', count)
+}
+
+func writeCSI(out *strings.Builder, final byte, params ...int) {
+	if out == nil {
+		return
+	}
+	out.WriteByte('\x1b')
+	out.WriteByte('[')
+	for i, param := range params {
+		if i > 0 {
+			out.WriteByte(';')
+		}
+		writeBuilderInt(out, param)
+	}
+	out.WriteByte(final)
+}
+
+func writeBuilderInt(out *strings.Builder, value int) {
+	if out == nil {
+		return
+	}
+	var scratch [24]byte
+	buf := strconv.AppendInt(scratch[:0], int64(value), 10)
+	_, _ = out.Write(buf)
 }
 
 func (s presentedStyle) ansi() string {
@@ -849,13 +887,13 @@ func (s presentedStyle) withSGR(params xansi.Params) presentedStyle {
 		default:
 			switch {
 			case 30 <= param && param <= 37:
-				next.FGCode = strconv.Itoa(param)
+				next.FGCode = ansiSimpleColorCode(param)
 			case 90 <= param && param <= 97:
-				next.FGCode = strconv.Itoa(param)
+				next.FGCode = ansiSimpleColorCode(param)
 			case 40 <= param && param <= 47:
-				next.BGCode = strconv.Itoa(param)
+				next.BGCode = ansiSimpleColorCode(param)
 			case 100 <= param && param <= 107:
-				next.BGCode = strconv.Itoa(param)
+				next.BGCode = ansiSimpleColorCode(param)
 			}
 		}
 	}
@@ -936,17 +974,88 @@ func (s presentedStyle) withSGRInts(params []int) presentedStyle {
 		default:
 			switch {
 			case 30 <= param && param <= 37:
-				next.FGCode = strconv.Itoa(param)
+				next.FGCode = ansiSimpleColorCode(param)
 			case 90 <= param && param <= 97:
-				next.FGCode = strconv.Itoa(param)
+				next.FGCode = ansiSimpleColorCode(param)
 			case 40 <= param && param <= 47:
-				next.BGCode = strconv.Itoa(param)
+				next.BGCode = ansiSimpleColorCode(param)
 			case 100 <= param && param <= 107:
-				next.BGCode = strconv.Itoa(param)
+				next.BGCode = ansiSimpleColorCode(param)
 			}
 		}
 	}
 	return next
+}
+
+func ansiSimpleColorCode(param int) string {
+	switch param {
+	case 30:
+		return "30"
+	case 31:
+		return "31"
+	case 32:
+		return "32"
+	case 33:
+		return "33"
+	case 34:
+		return "34"
+	case 35:
+		return "35"
+	case 36:
+		return "36"
+	case 37:
+		return "37"
+	case 40:
+		return "40"
+	case 41:
+		return "41"
+	case 42:
+		return "42"
+	case 43:
+		return "43"
+	case 44:
+		return "44"
+	case 45:
+		return "45"
+	case 46:
+		return "46"
+	case 47:
+		return "47"
+	case 90:
+		return "90"
+	case 91:
+		return "91"
+	case 92:
+		return "92"
+	case 93:
+		return "93"
+	case 94:
+		return "94"
+	case 95:
+		return "95"
+	case 96:
+		return "96"
+	case 97:
+		return "97"
+	case 100:
+		return "100"
+	case 101:
+		return "101"
+	case 102:
+		return "102"
+	case 103:
+		return "103"
+	case 104:
+		return "104"
+	case 105:
+		return "105"
+	case 106:
+		return "106"
+	case 107:
+		return "107"
+	default:
+		return strconv.Itoa(param)
+	}
 }
 
 func (w *outputCursorWriter) enterDirectTerminal() error {
@@ -1038,6 +1147,9 @@ func (w *outputCursorWriter) WriteFrame(frame, cursor string) error {
 	if w == nil || w.out == nil {
 		return nil
 	}
+	if w.moveTrace != nil && w.moveTrace.HasPending() {
+		w.moveTrace.Mark("frame.write.start")
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.pending.frame = w.fitFrameToTTY(frame)
@@ -1046,6 +1158,9 @@ func (w *outputCursorWriter) WriteFrame(frame, cursor string) error {
 	w.afterWrite = nil
 	w.backlogActive.Store(true)
 	if directFrameBatchDelay <= 0 {
+		if w.moveTrace != nil && w.moveTrace.HasPending() {
+			w.moveTrace.Mark("frame.flush.immediate")
+		}
 		hook, err := w.flushPendingFrameLocked()
 		w.mu.Unlock()
 		if hook != nil {
@@ -1055,6 +1170,9 @@ func (w *outputCursorWriter) WriteFrame(frame, cursor string) error {
 		return err
 	}
 	if w.shouldFlushDirectFrameImmediatelyLocked() {
+		if w.moveTrace != nil && w.moveTrace.HasPending() {
+			w.moveTrace.Mark("frame.flush.immediate")
+		}
 		hook, err := w.flushPendingFrameLocked()
 		w.mu.Unlock()
 		if hook != nil {
@@ -1064,9 +1182,15 @@ func (w *outputCursorWriter) WriteFrame(frame, cursor string) error {
 		return err
 	}
 	if w.pending.scheduled {
+		if w.moveTrace != nil && w.moveTrace.HasPending() {
+			w.moveTrace.Mark("frame.flush.already_scheduled")
+		}
 		return nil
 	}
 	w.pending.scheduled = true
+	if w.moveTrace != nil && w.moveTrace.HasPending() {
+		w.moveTrace.Mark("frame.flush.deferred")
+	}
 	time.AfterFunc(directFrameBatchDelay, func() {
 		w.flushPendingFrame()
 	})
@@ -1088,6 +1212,9 @@ func (w *outputCursorWriter) flushPendingFrame() {
 func (w *outputCursorWriter) flushPendingFrameLocked() (func(), error) {
 	if w == nil || w.out == nil {
 		return nil, nil
+	}
+	if w.moveTrace != nil && w.moveTrace.HasPending() {
+		w.moveTrace.Mark("frame.flush.start")
 	}
 	frame := w.pending.frame
 	cursor := w.pending.cursor
@@ -1139,7 +1266,9 @@ func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite [
 	defer func() {
 		finish(writtenBytes)
 	}()
+	presentFinish := perftrace.Measure("cursor_writer.present")
 	payload := w.presenter.Present(frame)
+	presentFinish(len(payload))
 	syncOutput := w.tty != nil
 	if cursor == "" {
 		cursor = hideHostCursorSequence
@@ -1173,10 +1302,15 @@ func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite [
 	w.cursorProjected = false
 	output := buf.String()
 	writtenBytes = len(output)
+	ioFinish := perftrace.Measure("cursor_writer.io_write")
 	_, err := io.WriteString(w.out, output)
+	ioFinish(writtenBytes)
 	if err == nil {
 		w.appendFrameDumpLocked("direct_frame", output)
 		w.lastDirectCursor = cursor
+		if w.moveTrace != nil {
+			w.moveTrace.Complete("frame.flushed", workbench.Rect{})
+		}
 	}
 	return err
 }
@@ -1300,6 +1434,15 @@ func (w *outputCursorWriter) SetDrainHook(hook func()) {
 	}
 	w.mu.Lock()
 	w.drainHook = hook
+	w.mu.Unlock()
+}
+
+func (w *outputCursorWriter) SetFloatingMoveTraceRecorder(recorder *floatingMoveTraceRecorder) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	w.moveTrace = recorder
 	w.mu.Unlock()
 }
 

@@ -1,6 +1,9 @@
 package app
 
-import "github.com/lozzow/termx/perftrace"
+import (
+	"github.com/lozzow/termx/perftrace"
+	"github.com/lozzow/termx/tuiv2/workbench"
+)
 
 func (m *Model) View() string {
 	finish := perftrace.Measure("app.view")
@@ -11,13 +14,23 @@ func (m *Model) View() string {
 	if m == nil || m.render == nil {
 		return ""
 	}
+	if m.moveTrace != nil && m.moveTrace.HasPending() {
+		m.moveTrace.Mark("view.start")
+	}
 	m.reconcileCopyModeContext()
 	if frame, cursor, ok := m.render.CachedFrameAndCursor(); ok {
 		perftrace.Count("app.view.reuse", len(frame)+len(cursor))
+		if m.moveTrace != nil && m.moveTrace.HasPending() {
+			m.moveTrace.Mark("view.cache_hit")
+		}
 		viewBytes = len(frame) + len(cursor)
 		if m.frameOut != nil {
 			m.lastViewFrame = frame
 			m.lastViewCursor = cursor
+			if m.moveTrace != nil && m.moveTrace.HasPending() {
+				m.moveTrace.Mark("view.reuse_no_write")
+				m.moveTrace.Complete("view.reuse", workbench.Rect{})
+			}
 			return ""
 		}
 		if m.cursorOut != nil {
@@ -25,15 +38,30 @@ func (m *Model) View() string {
 		}
 		m.lastViewFrame = frame
 		m.lastViewCursor = cursor
+		if m.moveTrace != nil && m.moveTrace.HasPending() {
+			m.moveTrace.Complete("view.return", workbench.Rect{})
+		}
 		return frame + cursor
+	}
+	if m.moveTrace != nil && m.moveTrace.HasPending() {
+		m.moveTrace.Mark("render.start")
 	}
 	frame := m.render.RenderFrame()
 	cursor := m.render.CursorSequence()
+	if m.moveTrace != nil && m.moveTrace.HasPending() {
+		m.moveTrace.Mark("render.done")
+	}
 	viewBytes = len(frame) + len(cursor)
 	if m.frameOut != nil {
+		if m.moveTrace != nil && m.moveTrace.HasPending() {
+			m.moveTrace.Mark("frame.write.submit")
+		}
 		_ = m.frameOut.WriteFrame(frame, cursor)
 		m.lastViewFrame = frame
 		m.lastViewCursor = cursor
+		if _, ok := m.frameOut.(floatingMoveTraceAwareWriter); !ok && m.moveTrace != nil && m.moveTrace.HasPending() {
+			m.moveTrace.Complete("frame.write.submit", workbench.Rect{})
+		}
 		return ""
 	}
 	if m.cursorOut != nil {
@@ -52,9 +80,15 @@ func (m *Model) View() string {
 		m.cursorOut.SetCursorSequence(cursor)
 		m.lastViewFrame = frame
 		m.lastViewCursor = cursor
+		if m.moveTrace != nil && m.moveTrace.HasPending() {
+			m.moveTrace.Complete("view.return", workbench.Rect{})
+		}
 		return frame + cursor
 	}
 	m.lastViewFrame = frame
 	m.lastViewCursor = cursor
+	if m.moveTrace != nil && m.moveTrace.HasPending() {
+		m.moveTrace.Complete("view.return", workbench.Rect{})
+	}
 	return frame + cursor
 }

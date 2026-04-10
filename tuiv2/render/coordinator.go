@@ -27,6 +27,8 @@ type Coordinator struct {
 	bodyCache   *bodyRenderCache
 	tabBarValue string
 	statusValue string
+	tabBarKey   tabBarCacheKey
+	statusKey   statusBarCacheKey
 
 	cursorBlinkVisible bool
 }
@@ -39,6 +41,40 @@ type renderedBody struct {
 	content string
 	cursor  string
 	blink   bool
+}
+
+type tabBarCacheKey struct {
+	Theme         uiTheme
+	Width         int
+	WorkspaceName string
+	ActiveTab     int
+	Error         string
+	Notice        string
+	Tabs          []tabBarCacheTab
+}
+
+type tabBarCacheTab struct {
+	ID   string
+	Name string
+}
+
+type statusBarCacheKey struct {
+	Theme             uiTheme
+	Width             int
+	InputMode         string
+	WorkspaceName     string
+	WorkspaceCount    int
+	TabCount          int
+	ActiveTabID       string
+	ActivePaneID      string
+	ActiveTerminalID  string
+	ActivePaneRole    string
+	ActivePaneExited  bool
+	ActiveIsFloating  bool
+	FloatingTotal     int
+	FloatingCollapsed int
+	FloatingHidden    int
+	TerminalCount     int
 }
 
 type renderStateKey struct {
@@ -382,29 +418,136 @@ func (c *Coordinator) syntheticCursorVisible(_ protocol.CursorState) bool {
 }
 
 func (c *Coordinator) renderTabBarCached(state VisibleRenderState) string {
+	theme := uiThemeForState(state)
+	c.mu.Lock()
+	if c.tabBarKey.matches(state, theme) {
+		value := c.tabBarValue
+		c.mu.Unlock()
+		return value
+	}
+	c.mu.Unlock()
 	value := renderTabBar(state)
 	c.mu.Lock()
-	// Reuse the previous string allocation if the content is identical
-	// to reduce GC pressure and help bubbletea detect unchanged lines.
 	if c.tabBarValue == value {
 		value = c.tabBarValue
-	} else {
-		c.tabBarValue = value
 	}
+	c.tabBarValue = value
+	c.tabBarKey.capture(state, theme)
 	c.mu.Unlock()
 	return value
 }
 
 func (c *Coordinator) renderStatusBarCached(state VisibleRenderState) string {
+	theme := uiThemeForState(state)
+	key := statusBarCacheKeyForState(state, theme)
+	c.mu.Lock()
+	if c.statusKey == key {
+		value := c.statusValue
+		c.mu.Unlock()
+		return value
+	}
+	c.mu.Unlock()
 	value := renderStatusBar(state)
 	c.mu.Lock()
 	if c.statusValue == value {
 		value = c.statusValue
-	} else {
-		c.statusValue = value
 	}
+	c.statusValue = value
+	c.statusKey = key
 	c.mu.Unlock()
 	return value
+}
+
+func (k tabBarCacheKey) matches(state VisibleRenderState, theme uiTheme) bool {
+	if k.Theme != theme || k.Width != state.TermSize.Width || k.Error != state.Error || k.Notice != state.Notice {
+		return false
+	}
+	if state.Workbench == nil {
+		return k.WorkspaceName == "" && k.ActiveTab == -1 && len(k.Tabs) == 0
+	}
+	if k.WorkspaceName != state.Workbench.WorkspaceName || k.ActiveTab != state.Workbench.ActiveTab || len(k.Tabs) != len(state.Workbench.Tabs) {
+		return false
+	}
+	for i := range state.Workbench.Tabs {
+		tab := state.Workbench.Tabs[i]
+		if k.Tabs[i].ID != tab.ID || k.Tabs[i].Name != tab.Name {
+			return false
+		}
+	}
+	return true
+}
+
+func (k *tabBarCacheKey) capture(state VisibleRenderState, theme uiTheme) {
+	if k == nil {
+		return
+	}
+	k.Theme = theme
+	k.Width = state.TermSize.Width
+	k.Error = state.Error
+	k.Notice = state.Notice
+	k.WorkspaceName = ""
+	k.ActiveTab = -1
+	if state.Workbench == nil {
+		k.Tabs = k.Tabs[:0]
+		return
+	}
+	k.WorkspaceName = state.Workbench.WorkspaceName
+	k.ActiveTab = state.Workbench.ActiveTab
+	if cap(k.Tabs) < len(state.Workbench.Tabs) {
+		k.Tabs = make([]tabBarCacheTab, len(state.Workbench.Tabs))
+	} else {
+		k.Tabs = k.Tabs[:len(state.Workbench.Tabs)]
+	}
+	for i, tab := range state.Workbench.Tabs {
+		k.Tabs[i] = tabBarCacheTab{ID: tab.ID, Name: tab.Name}
+	}
+}
+
+func statusBarCacheKeyForState(state VisibleRenderState, theme uiTheme) statusBarCacheKey {
+	key := statusBarCacheKey{
+		Theme:         theme,
+		Width:         state.TermSize.Width,
+		InputMode:     strings.TrimSpace(state.InputMode),
+		WorkspaceName: "",
+	}
+	if state.Workbench != nil {
+		key.WorkspaceName = state.Workbench.WorkspaceName
+		key.WorkspaceCount = state.Workbench.WorkspaceCount
+		key.TabCount = len(state.Workbench.Tabs)
+		key.FloatingTotal = state.Workbench.FloatingTotal
+		key.FloatingCollapsed = state.Workbench.FloatingCollapsed
+		key.FloatingHidden = state.Workbench.FloatingHidden
+		if state.Workbench.ActiveTab >= 0 && state.Workbench.ActiveTab < len(state.Workbench.Tabs) {
+			tab := state.Workbench.Tabs[state.Workbench.ActiveTab]
+			key.ActiveTabID = tab.ID
+			key.ActivePaneID = tab.ActivePaneID
+			for i := range state.Workbench.FloatingPanes {
+				if state.Workbench.FloatingPanes[i].ID == key.ActivePaneID {
+					key.ActiveIsFloating = true
+					key.ActiveTerminalID = state.Workbench.FloatingPanes[i].TerminalID
+					break
+				}
+			}
+			if key.ActiveTerminalID == "" {
+				for i := range tab.Panes {
+					if tab.Panes[i].ID == key.ActivePaneID {
+						key.ActiveTerminalID = tab.Panes[i].TerminalID
+						break
+					}
+				}
+			}
+		}
+	}
+	if state.Runtime != nil {
+		key.TerminalCount = len(state.Runtime.Terminals)
+	}
+	if key.ActivePaneID != "" {
+		ctx := buildStatusHintContext(state)
+		key.ActivePaneRole = ctx.activeRole
+		key.ActivePaneExited = ctx.activePaneExited()
+		key.ActiveIsFloating = ctx.activeIsFloating
+	}
+	return key
 }
 
 func renderBody(state VisibleRenderState, width, height int) string {
@@ -416,6 +559,8 @@ func renderBodyFrame(state VisibleRenderState, width, height int) renderedBody {
 }
 
 func renderBodyFrameWithCoordinator(coordinator *Coordinator, state VisibleRenderState, width, height int) renderedBody {
+	finish := perftrace.Measure("render.body")
+	defer finish(0)
 	if width <= 0 || height <= 0 {
 		return renderedBody{}
 	}
@@ -645,6 +790,8 @@ func renderActiveOverlayWithCursor(state VisibleRenderState, termSize TermSize, 
 }
 
 func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entries []paneRenderEntry, width, height int) *composedCanvas {
+	finish := perftrace.Measure("render.body.canvas")
+	defer finish(0)
 	immersiveZoom := immersiveZoomActive(state)
 	hostEmojiMode := emojiVariationSelectorModeForRuntime(state.Runtime)
 	cursorOffsetY := TopChromeRows

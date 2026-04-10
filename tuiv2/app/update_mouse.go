@@ -390,15 +390,34 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 		if m.mouseDragPaneID == "" {
 			return nil
 		}
+		traceRect := workbench.Rect{}
+		traceStarted := false
+		if floating := m.workbench.FloatingState(tab.ID, m.mouseDragPaneID); floating != nil {
+			traceRect = floating.Rect
+			m.moveTrace.Start("mouse", "drag_move", m.mouseDragPaneID, traceRect)
+			traceStarted = true
+			m.moveTrace.Mark("mutation.begin")
+		}
 		newX := x - m.mouseDragOffsetX
 		newY := contentY - m.mouseDragOffsetY
 		moved := m.workbench.MoveFloatingPane(tab.ID, m.mouseDragPaneID, newX, newY)
 		clamped := m.workbench.ClampFloatingPanesToBounds(m.bodyRect())
 		if !moved && !clamped {
 			perftrace.Count("app.mouse.drag.move.noop", 0)
+			if traceStarted {
+				m.moveTrace.Complete("noop", traceRect)
+			}
 			return nil
 		}
+		if traceStarted {
+			if floating := m.workbench.FloatingState(tab.ID, m.mouseDragPaneID); floating != nil {
+				m.moveTrace.MutationApplied(floating.Rect)
+			}
+		}
 		perftrace.Count("app.mouse.drag.move.changed", 0)
+		if traceStarted {
+			m.moveTrace.Mark("render.invalidate")
+		}
 		m.render.Invalidate()
 	case mouseDragResize:
 		if m.mouseDragPaneID == "" {

@@ -33,6 +33,9 @@ func (m *Model) effectCmd(effect orchestrator.Effect) tea.Cmd {
 	switch typed := effect.(type) {
 	case orchestrator.InvalidateRenderEffect:
 		m.clampFloatingPanesToViewport()
+		if m.moveTrace != nil && m.moveTrace.HasPending() {
+			m.moveTrace.Mark("render.invalidate")
+		}
 		m.render.Invalidate()
 		return nil
 	case orchestrator.ClosePaneEffect:

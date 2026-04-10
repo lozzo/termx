@@ -60,6 +60,7 @@ func configureProgramOutput(model *Model, stdout io.Writer) (io.Writer, bool) {
 		// 之前已经实测会重新引入 host cursor/IME 背景串行渲染问题。
 		model.SetFrameWriter(writer)
 		model.SetCursorWriter(writer)
+		writer.SetFloatingMoveTraceRecorder(model.moveTrace)
 		if model.runtime != nil {
 			writer.SetInteractiveFlushHint(model.runtime.RecentLocalInput)
 		}
