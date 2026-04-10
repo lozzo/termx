@@ -980,6 +980,9 @@ func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entrie
 	// Overlapping panes need a full rebuild. The cached active-pane refresh path
 	// redraws the active pane content to clear the old cursor, which is correct
 	// for tiled layouts but will paint over floating panes layered above it.
+	// TODO(perf): If floating-window drag is still not smooth enough under heavy
+	// styled content, prototype a damaged-rect path for non-overlapping floating
+	// moves before doing more ANSI micro-optimizations. Re-profile first.
 	if overlap {
 		canvas := rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, coordinator.syntheticCursorVisible, state.Runtime)
 		cache.canvas = canvas

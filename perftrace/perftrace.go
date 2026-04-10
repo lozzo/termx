@@ -89,14 +89,6 @@ func Count(name string, bytes int) {
 	recorder.observe(name, 0, bytes)
 }
 
-func ObserveDuration(name string, duration time.Duration) {
-	recorder := Current()
-	if recorder == nil || name == "" {
-		return
-	}
-	recorder.observe(name, duration, 0)
-}
-
 func SnapshotCurrent() Snapshot {
 	recorder := Current()
 	if recorder == nil {

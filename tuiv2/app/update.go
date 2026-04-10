@@ -406,19 +406,15 @@ func shouldApplySessionSnapshot(snapshot *protocol.SessionSnapshot) bool {
 }
 
 func (m *Model) dispatchSemanticActionCmd(action input.SemanticAction, allowLocal bool) tea.Cmd {
-	traceHandle := m.beginFloatingMoveActionTrace(action)
 	if allowLocal {
 		if handled, cmd := m.handleLocalAction(action); handled {
-			m.finishFloatingMoveActionTrace(traceHandle)
 			return batchCmds(cmd, m.resizePendingPaneResizesCmd(), m.updateSessionViewCmd())
 		}
 	}
 	if handled, cmd := m.handleModalAction(action); handled {
-		m.finishFloatingMoveActionTrace(traceHandle)
 		return batchCmds(cmd, m.resizePendingPaneResizesCmd(), m.updateSessionViewCmd())
 	}
 	cmd := m.applyEffects(m.enrichEffects(action, m.orchestrator.HandleSemanticAction(action)))
-	m.finishFloatingMoveActionTrace(traceHandle)
 	cmd = batchCmds(cmd, m.resizeCmdForAction(action), m.saveCmdForAction(action))
 	if m.isStickyMode() {
 		cmd = tea.Batch(cmd, m.rearmPrefixTimeoutCmd())

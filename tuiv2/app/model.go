@@ -65,7 +65,6 @@ type Model struct {
 	frameOut       frameSequenceWriter
 	lastViewFrame  string
 	lastViewCursor string
-	moveTrace      *floatingMoveTraceRecorder
 
 	pendingTerminalInputs       []input.TerminalInput
 	terminalInputSending        bool
@@ -101,10 +100,6 @@ type Model struct {
 
 type mouseDragMode int
 
-type floatingMoveTraceAwareWriter interface {
-	SetFloatingMoveTraceRecorder(*floatingMoveTraceRecorder)
-}
-
 var invalidateBatchDelay = 4 * time.Millisecond
 
 const (
@@ -130,7 +125,6 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 		modalHost:           ui.ModalHost(),
 		workbench:           wb,
 		runtime:             rt,
-		moveTrace:           newFloatingMoveTraceRecorder(os.Getenv(floatingMoveTraceEnv)),
 		pendingPaneAttaches: make(map[string]string),
 		pendingPaneResizes:  make(map[string]pendingPaneResize),
 	}
@@ -161,9 +155,6 @@ func (m *Model) SetFrameWriter(writer frameSequenceWriter) {
 		current.SetDrainHook(nil)
 	}
 	m.frameOut = writer
-	if aware, ok := writer.(floatingMoveTraceAwareWriter); ok {
-		aware.SetFloatingMoveTraceRecorder(m.moveTrace)
-	}
 	if aware, ok := writer.(frameBackpressureWriter); ok {
 		aware.SetDrainHook(func() {
 			m.onFrameWriterDrained()

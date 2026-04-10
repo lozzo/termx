@@ -14,7 +14,6 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 type cursorSequenceWriter interface {
@@ -63,7 +62,6 @@ type outputCursorWriter struct {
 	drainHook            func()
 	interactiveFlushHint func() bool
 	backlogActive        atomic.Bool
-	moveTrace            *floatingMoveTraceRecorder
 }
 
 type pendingDirectFrame struct {
@@ -1252,9 +1250,6 @@ func (w *outputCursorWriter) WriteFrame(frame, cursor string) error {
 	if w == nil || w.out == nil {
 		return nil
 	}
-	if w.moveTrace != nil && w.moveTrace.HasPending() {
-		w.moveTrace.Mark("frame.write.start")
-	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.pending.frame = w.fitFrameToTTY(frame)
@@ -1264,9 +1259,6 @@ func (w *outputCursorWriter) WriteFrame(frame, cursor string) error {
 	w.afterWrite = nil
 	w.backlogActive.Store(true)
 	if directFrameBatchDelay <= 0 {
-		if w.moveTrace != nil && w.moveTrace.HasPending() {
-			w.moveTrace.Mark("frame.flush.immediate")
-		}
 		hook, err := w.flushPendingFrameLocked()
 		w.mu.Unlock()
 		if hook != nil {
@@ -1276,9 +1268,6 @@ func (w *outputCursorWriter) WriteFrame(frame, cursor string) error {
 		return err
 	}
 	if w.shouldFlushDirectFrameImmediatelyLocked() {
-		if w.moveTrace != nil && w.moveTrace.HasPending() {
-			w.moveTrace.Mark("frame.flush.immediate")
-		}
 		hook, err := w.flushPendingFrameLocked()
 		w.mu.Unlock()
 		if hook != nil {
@@ -1288,15 +1277,9 @@ func (w *outputCursorWriter) WriteFrame(frame, cursor string) error {
 		return err
 	}
 	if w.pending.scheduled {
-		if w.moveTrace != nil && w.moveTrace.HasPending() {
-			w.moveTrace.Mark("frame.flush.already_scheduled")
-		}
 		return nil
 	}
 	w.pending.scheduled = true
-	if w.moveTrace != nil && w.moveTrace.HasPending() {
-		w.moveTrace.Mark("frame.flush.deferred")
-	}
 	time.AfterFunc(directFrameBatchDelay, func() {
 		w.flushPendingFrame()
 	})
@@ -1312,9 +1295,6 @@ func (w *outputCursorWriter) WriteFrameLines(lines []string, cursor string) erro
 	if w == nil || w.out == nil {
 		return nil
 	}
-	if w.moveTrace != nil && w.moveTrace.HasPending() {
-		w.moveTrace.Mark("frame.write.start")
-	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.pending.frame = ""
@@ -1324,9 +1304,6 @@ func (w *outputCursorWriter) WriteFrameLines(lines []string, cursor string) erro
 	w.afterWrite = nil
 	w.backlogActive.Store(true)
 	if directFrameBatchDelay <= 0 {
-		if w.moveTrace != nil && w.moveTrace.HasPending() {
-			w.moveTrace.Mark("frame.flush.immediate")
-		}
 		hook, err := w.flushPendingFrameLocked()
 		w.mu.Unlock()
 		if hook != nil {
@@ -1336,9 +1313,6 @@ func (w *outputCursorWriter) WriteFrameLines(lines []string, cursor string) erro
 		return err
 	}
 	if w.shouldFlushDirectFrameImmediatelyLocked() {
-		if w.moveTrace != nil && w.moveTrace.HasPending() {
-			w.moveTrace.Mark("frame.flush.immediate")
-		}
 		hook, err := w.flushPendingFrameLocked()
 		w.mu.Unlock()
 		if hook != nil {
@@ -1348,15 +1322,9 @@ func (w *outputCursorWriter) WriteFrameLines(lines []string, cursor string) erro
 		return err
 	}
 	if w.pending.scheduled {
-		if w.moveTrace != nil && w.moveTrace.HasPending() {
-			w.moveTrace.Mark("frame.flush.already_scheduled")
-		}
 		return nil
 	}
 	w.pending.scheduled = true
-	if w.moveTrace != nil && w.moveTrace.HasPending() {
-		w.moveTrace.Mark("frame.flush.deferred")
-	}
 	time.AfterFunc(directFrameBatchDelay, func() {
 		w.flushPendingFrame()
 	})
@@ -1378,9 +1346,6 @@ func (w *outputCursorWriter) flushPendingFrame() {
 func (w *outputCursorWriter) flushPendingFrameLocked() (func(), error) {
 	if w == nil || w.out == nil {
 		return nil, nil
-	}
-	if w.moveTrace != nil && w.moveTrace.HasPending() {
-		w.moveTrace.Mark("frame.flush.start")
 	}
 	frame := w.pending.frame
 	lines := w.pending.lines
@@ -1480,9 +1445,6 @@ func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite [
 	if err == nil {
 		w.appendFrameDumpLocked("direct_frame", output)
 		w.lastDirectCursor = cursor
-		if w.moveTrace != nil {
-			w.moveTrace.Complete("frame.flushed", workbench.Rect{})
-		}
 	}
 	return err
 }
@@ -1533,9 +1495,6 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, cursor string
 	if err == nil {
 		w.appendFrameDumpLocked("direct_frame", output)
 		w.lastDirectCursor = cursor
-		if w.moveTrace != nil {
-			w.moveTrace.Complete("frame.flushed", workbench.Rect{})
-		}
 	}
 	return err
 }
@@ -1692,15 +1651,6 @@ func (w *outputCursorWriter) SetDrainHook(hook func()) {
 	}
 	w.mu.Lock()
 	w.drainHook = hook
-	w.mu.Unlock()
-}
-
-func (w *outputCursorWriter) SetFloatingMoveTraceRecorder(recorder *floatingMoveTraceRecorder) {
-	if w == nil {
-		return
-	}
-	w.mu.Lock()
-	w.moveTrace = recorder
 	w.mu.Unlock()
 }
 
