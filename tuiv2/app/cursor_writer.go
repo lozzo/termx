@@ -59,6 +59,7 @@ type outputCursorWriter struct {
 	lastDirectCursor     string
 	lastFlushAt          time.Time
 	frameDumpPath        string
+	disableVerticalScroll bool
 	drainHook            func()
 	interactiveFlushHint func() bool
 	backlogActive        atomic.Bool
@@ -81,6 +82,8 @@ type framePresenter struct {
 	ready         bool
 	allowVerticalScroll bool
 	fullWidthLines      bool
+	debugFaultScrollDropRemainderEvery int
+	verticalScrollCount                int
 }
 
 type presentedRow struct {
@@ -153,6 +156,7 @@ func (p *framePresenter) Reset() {
 	p.ready = false
 	p.allowVerticalScroll = true
 	p.fullWidthLines = false
+	p.verticalScrollCount = 0
 }
 
 func (p *framePresenter) Present(frame string) string {
@@ -246,6 +250,10 @@ func (p *framePresenter) presentVerticalScroll(lines []string) string {
 	}
 	var out strings.Builder
 	out.WriteString(renderVerticalScrollPlan(plan, len(lines)))
+	p.verticalScrollCount++
+	if p.debugFaultScrollDropRemainderEvery > 0 && p.verticalScrollCount%p.debugFaultScrollDropRemainderEvery == 0 {
+		return out.String()
+	}
 	out.WriteString(remainder)
 	return out.String()
 }
@@ -1235,6 +1243,7 @@ func (w *outputCursorWriter) enterDirectTerminal() error {
 	w.directBracketedPaste = true
 	w.pending = pendingDirectFrame{}
 	w.presenter.Reset()
+	w.presenter.allowVerticalScroll = !w.disableVerticalScroll
 	w.lastTTYWidth = 0
 	w.lastDirectCursor = ""
 	return nil
@@ -1662,10 +1671,12 @@ func newOutputCursorWriter(out io.Writer) *outputCursorWriter {
 		return nil
 	}
 	writer := &outputCursorWriter{
-		out:           out,
-		frameDumpPath: os.Getenv("TERMX_FRAME_DUMP"),
+		out:                   out,
+		frameDumpPath:         os.Getenv("TERMX_FRAME_DUMP"),
+		disableVerticalScroll: os.Getenv("TERMX_DISABLE_VERTICAL_SCROLL") == "1",
 	}
-	writer.presenter.allowVerticalScroll = true
+	writer.presenter.allowVerticalScroll = !writer.disableVerticalScroll
+	writer.presenter.debugFaultScrollDropRemainderEvery = parsePositiveIntEnv("TERMX_DEBUG_FAULT_SCROLL_DROP_REMAINDER_EVERY")
 	if tty, ok := out.(xterm.File); ok {
 		writer.tty = tty
 	}
@@ -1677,8 +1688,20 @@ func (w *outputCursorWriter) SetVerticalScrollEnabled(enabled bool) {
 		return
 	}
 	w.mu.Lock()
-	w.presenter.allowVerticalScroll = enabled
+	w.presenter.allowVerticalScroll = enabled && !w.disableVerticalScroll
 	w.mu.Unlock()
+}
+
+func parsePositiveIntEnv(key string) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return 0
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return 0
+	}
+	return value
 }
 
 func (w *outputCursorWriter) SetCursorSequence(seq string) {

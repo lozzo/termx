@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"image/color"
 	"io"
 	"os"
@@ -847,6 +848,119 @@ func TestOutputCursorWriterFullRepaintAfterScrollKeepsMiddleRowsInPlace(t *testi
 	}
 }
 
+func TestOutputCursorWriterDisableVerticalScrollEnvSkipsScrollRegionOptimization(t *testing.T) {
+	t.Setenv("TERMX_DISABLE_VERTICAL_SCROLL", "1")
+
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+
+	frame1 := strings.Join([]string{
+		"HDR-1........................",
+		"HDR-2........................",
+		"HDR-3........................",
+		"row-01.......................",
+		"row-02.......................",
+		"row-03.......................",
+		"row-04.......................",
+		"row-05.......................",
+		"row-06.......................",
+		"FTR-1........................",
+	}, "\n")
+	frame2 := strings.Join([]string{
+		"HDR-1........................",
+		"HDR-2........................",
+		"HDR-3........................",
+		"row-02.......................",
+		"row-03.......................",
+		"row-04.......................",
+		"row-05.......................",
+		"row-06.......................",
+		"row-07.......................",
+		"FTR-1........................",
+	}, "\n")
+
+	if err := writer.WriteFrame(frame1, ""); err != nil {
+		t.Fatalf("write initial frame: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrame(frame2, ""); err != nil {
+		t.Fatalf("write scrolled frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if strings.Contains(got, "\x1b[4;9r") || strings.Contains(got, "\x1b[1S") || strings.Contains(got, "\x1b[1T") {
+		t.Fatalf("expected vertical scroll optimization disabled, got %q", got)
+	}
+}
+
+func TestOutputCursorWriterDebugFaultScrollDropRemainderEveryInjectsStaleScrollFrame(t *testing.T) {
+	t.Setenv("TERMX_DEBUG_FAULT_SCROLL_DROP_REMAINDER_EVERY", "1")
+
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+
+	frame1 := strings.Join([]string{
+		"HDR-1........................",
+		"HDR-2........................",
+		"HDR-3........................",
+		"row-01.......................",
+		"row-02.......................",
+		"row-03.......................",
+		"row-04.......................",
+		"row-05.......................",
+		"row-06.......................",
+		"FTR-1........................",
+	}, "\n")
+	frame2 := strings.Join([]string{
+		"HDR-1........................",
+		"HDR-2........................",
+		"HDR-3........................",
+		"row-02.......................",
+		"row-03.......................",
+		"row-04.......................",
+		"row-05.......................",
+		"row-06.......................",
+		"row-07.......................",
+		"FTR-1........................",
+	}, "\n")
+
+	if err := writer.WriteFrame(frame1, ""); err != nil {
+		t.Fatalf("write initial frame: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrame(frame2, ""); err != nil {
+		t.Fatalf("write scrolled frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if !strings.Contains(got, "\x1b[1S") {
+		t.Fatalf("expected scroll optimization to remain active under fault injection, got %q", got)
+	}
+	if strings.Contains(got, "row-07") {
+		t.Fatalf("expected injected fault to drop scroll remainder repaint, got %q", got)
+	}
+}
+
 func TestTruncateFrameToWidthClipsEachRenderedLine(t *testing.T) {
 	frame := "123456\nabcdef"
 	if got, want := truncateFrameToWidth(frame, 4), "1234\nabcd"; got != want {
@@ -1454,6 +1568,212 @@ func TestOutputCursorWriterBatchedFocusSwitchAfterTextScrollPreservesTopNvimBack
 	assertScreenEqual(t, got, want)
 }
 
+func TestOutputCursorWriterFrameLinesPathMovingFloatingPanePreservesUnderlyingNvimBackground(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	buildModel := func(rect workbench.Rect) *Model {
+		t.Helper()
+		model := setupModel(t, modelOpts{width: 120, height: 36})
+		base := model.runtime.Registry().GetOrCreate("term-1")
+		base.Snapshot = cursorWriterNvimLikeSnapshot("term-1", 118, 30, "#444444")
+
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", rect); err != nil {
+			t.Fatalf("create floating pane: %v", err)
+		}
+		if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+			t.Fatalf("bind floating pane terminal: %v", err)
+		}
+		floatTerminal := model.runtime.Registry().GetOrCreate("term-float")
+		floatTerminal.Name = "float"
+		floatTerminal.State = "running"
+		floatTerminal.Snapshot = cursorWriterStyledSnapshot("term-float", 51, 14)
+		model.runtime.BindPane("float-1").Connected = true
+		return model
+	}
+
+	captureScreen := func(model *Model, positions []workbench.Rect) localvterm.ScreenData {
+		t.Helper()
+		sink := &cursorWriterProbeTTY{}
+		writer := newOutputCursorWriter(sink)
+		model.SetFrameWriter(writer)
+		model.SetCursorWriter(writer)
+
+		model.render.Invalidate()
+		_ = model.View()
+
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		for _, rect := range positions {
+			if !model.workbench.MoveFloatingPane(tab.ID, "float-1", rect.X, rect.Y) {
+				t.Fatalf("expected move to %v to change pane", rect)
+			}
+			model.render.Invalidate()
+			_ = model.View()
+		}
+
+		sink.mu.Lock()
+		stream := strings.Join(sink.writes, "")
+		sink.mu.Unlock()
+		vt := localvterm.New(120, 36, 0, nil)
+		if _, err := vt.Write([]byte(stream)); err != nil {
+			t.Fatalf("replay stream into host vterm: %v", err)
+		}
+		return vt.ScreenContent()
+	}
+
+	start := workbench.Rect{X: 18, Y: 7, W: 54, H: 16}
+	path := []workbench.Rect{
+		{X: 19, Y: 7, W: 54, H: 16},
+		{X: 21, Y: 7, W: 54, H: 16},
+		{X: 23, Y: 7, W: 54, H: 16},
+		{X: 25, Y: 7, W: 54, H: 16},
+	}
+
+	got := captureScreen(buildModel(start), path)
+	want := captureScreen(buildModel(path[len(path)-1]), nil)
+	assertScreenEqual(t, got, want)
+}
+
+func TestOutputCursorWriterFrameLinesPathStreamingFloatingPanePreservesUnderlyingNvimBackground(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	buildModel := func(start int) *Model {
+		t.Helper()
+		model := setupModel(t, modelOpts{width: 120, height: 36})
+		base := model.runtime.Registry().GetOrCreate("term-1")
+		base.Snapshot = cursorWriterNvimLikeSnapshot("term-1", 118, 30, "#444444")
+
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		rect := workbench.Rect{X: 18, Y: 7, W: 54, H: 16}
+		if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", rect); err != nil {
+			t.Fatalf("create floating pane: %v", err)
+		}
+		if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+			t.Fatalf("bind floating pane terminal: %v", err)
+		}
+		floatTerminal := model.runtime.Registry().GetOrCreate("term-float")
+		floatTerminal.Name = "float"
+		floatTerminal.State = "running"
+		floatTerminal.Snapshot = cursorWriterScrollingSnapshot("term-float", 51, 14, start)
+		model.runtime.BindPane("float-1").Connected = true
+		return model
+	}
+
+	captureScreen := func(model *Model, starts []int) localvterm.ScreenData {
+		t.Helper()
+		sink := &cursorWriterProbeTTY{}
+		writer := newOutputCursorWriter(sink)
+		model.SetFrameWriter(writer)
+		model.SetCursorWriter(writer)
+
+		model.render.Invalidate()
+		_ = model.View()
+
+		floatTerminal := model.runtime.Registry().Get("term-float")
+		if floatTerminal == nil {
+			t.Fatal("expected floating terminal")
+		}
+		for _, start := range starts {
+			floatTerminal.Snapshot = cursorWriterScrollingSnapshot("term-float", 51, 14, start)
+			touchRuntimeVisibleStateForTest(model.runtime, uint8(start))
+			model.render.Invalidate()
+			_ = model.View()
+		}
+
+		sink.mu.Lock()
+		stream := strings.Join(sink.writes, "")
+		sink.mu.Unlock()
+		vt := localvterm.New(120, 36, 0, nil)
+		if _, err := vt.Write([]byte(stream)); err != nil {
+			t.Fatalf("replay stream into host vterm: %v", err)
+		}
+		return vt.ScreenContent()
+	}
+
+	got := captureScreen(buildModel(0), []int{1, 2, 3, 4, 5, 6, 7, 8})
+	want := captureScreen(buildModel(8), nil)
+	assertScreenEqual(t, got, want)
+}
+
+func TestOutputCursorWriterFrameLinesPathStreamingWideFloatingPaneMatchesFinalScreen(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	buildModel := func(start int) *Model {
+		t.Helper()
+		model := setupModel(t, modelOpts{width: 120, height: 36})
+		base := model.runtime.Registry().GetOrCreate("term-1")
+		base.Snapshot = cursorWriterStyledSnapshot("term-1", 118, 30)
+
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		rect := workbench.Rect{X: 18, Y: 7, W: 54, H: 16}
+		if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", rect); err != nil {
+			t.Fatalf("create floating pane: %v", err)
+		}
+		if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+			t.Fatalf("bind floating pane terminal: %v", err)
+		}
+		floatTerminal := model.runtime.Registry().GetOrCreate("term-float")
+		floatTerminal.Name = "float"
+		floatTerminal.State = "running"
+		floatTerminal.Snapshot = cursorWriterWideScrollingSnapshot("term-float", 51, 14, start)
+		model.runtime.BindPane("float-1").Connected = true
+		return model
+	}
+
+	captureScreen := func(model *Model, starts []int) localvterm.ScreenData {
+		t.Helper()
+		sink := &cursorWriterProbeTTY{}
+		writer := newOutputCursorWriter(sink)
+		model.SetFrameWriter(writer)
+		model.SetCursorWriter(writer)
+
+		model.render.Invalidate()
+		_ = model.View()
+
+		floatTerminal := model.runtime.Registry().Get("term-float")
+		if floatTerminal == nil {
+			t.Fatal("expected floating terminal")
+		}
+		for _, start := range starts {
+			floatTerminal.Snapshot = cursorWriterWideScrollingSnapshot("term-float", 51, 14, start)
+			touchRuntimeVisibleStateForTest(model.runtime, uint8(start))
+			model.render.Invalidate()
+			_ = model.View()
+		}
+
+		sink.mu.Lock()
+		stream := strings.Join(sink.writes, "")
+		sink.mu.Unlock()
+		vt := localvterm.New(120, 36, 0, nil)
+		if _, err := vt.Write([]byte(stream)); err != nil {
+			t.Fatalf("replay stream into host vterm: %v", err)
+		}
+		return vt.ScreenContent()
+	}
+
+	got := captureScreen(buildModel(0), []int{1, 2, 3, 4, 5, 6, 7, 8})
+	want := captureScreen(buildModel(8), nil)
+	assertScreenEqual(t, got, want)
+}
+
 func cursorWriterStyledSnapshot(terminalID string, cols, rows int) *protocol.Snapshot {
 	if cols <= 0 {
 		cols = 1
@@ -1565,6 +1885,93 @@ func cursorWriterDenseTextSnapshot(terminalID string, cols, rows, start int) *pr
 		Cursor:     protocol.CursorState{Row: rows - 1, Col: minInt(cols-1, 24), Visible: true},
 		Modes:      protocol.TerminalModes{AutoWrap: true},
 	}
+}
+
+func cursorWriterScrollingSnapshot(terminalID string, cols, rows, start int) *protocol.Snapshot {
+	if cols <= 0 {
+		cols = 1
+	}
+	if rows <= 0 {
+		rows = 1
+	}
+	screen := make([][]protocol.Cell, 0, rows)
+	for y := 0; y < rows; y++ {
+		label := " row-" + strings.ToUpper(strconv.FormatInt(int64(start+y), 16)) + " "
+		row := make([]protocol.Cell, 0, cols)
+		for x := 0; x < cols; x++ {
+			style := protocol.CellStyle{FG: "#f8fafc", BG: "#1f2937"}
+			ch := " "
+			if x < len(label) {
+				ch = string(label[x])
+			} else if (x+y)%11 == 0 {
+				ch = string('a' + rune((start+x+y)%26))
+				style = protocol.CellStyle{FG: "#fde68a", BG: "#0f172a", Bold: true}
+			}
+			row = append(row, protocol.Cell{
+				Content: ch,
+				Width:   1,
+				Style:   style,
+			})
+		}
+		screen = append(screen, row)
+	}
+	return &protocol.Snapshot{
+		TerminalID: terminalID,
+		Size:       protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
+		Screen:     protocol.ScreenData{Cells: screen},
+		Cursor:     protocol.CursorState{Row: rows - 1, Col: minInt(cols-1, 8), Visible: true},
+		Modes:      protocol.TerminalModes{AutoWrap: true},
+	}
+}
+
+func cursorWriterWideScrollingSnapshot(terminalID string, cols, rows, start int) *protocol.Snapshot {
+	if cols <= 0 {
+		cols = 1
+	}
+	if rows <= 0 {
+		rows = 1
+	}
+	screen := make([][]protocol.Cell, 0, rows)
+	for y := 0; y < rows; y++ {
+		label := fmt.Sprintf("第%02d行 已完成 🔒 现在滚动到这里", start+y)
+		screen = append(screen, protocolStyledWideRowFromText(label, cols, protocol.CellStyle{FG: "#f8fafc", BG: "#1f2937"}))
+	}
+	return &protocol.Snapshot{
+		TerminalID: terminalID,
+		Size:       protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
+		Screen:     protocol.ScreenData{Cells: screen},
+		Cursor:     protocol.CursorState{Row: rows - 1, Col: minInt(cols-1, 8), Visible: true},
+		Modes:      protocol.TerminalModes{AutoWrap: true},
+	}
+}
+
+func protocolStyledWideRowFromText(text string, cols int, style protocol.CellStyle) []protocol.Cell {
+	if cols <= 0 {
+		return nil
+	}
+	row := make([]protocol.Cell, cols)
+	for i := range row {
+		row[i] = protocol.Cell{Content: " ", Width: 1, Style: style}
+	}
+	col := 0
+	for _, r := range text {
+		if col >= cols {
+			break
+		}
+		width := xansi.StringWidth(string(r))
+		if width <= 0 {
+			continue
+		}
+		if col+width > cols {
+			break
+		}
+		row[col] = protocol.Cell{Content: string(r), Width: width, Style: style}
+		for i := 1; i < width && col+i < cols; i++ {
+			row[col+i] = protocol.Cell{Content: "", Width: 0, Style: style}
+		}
+		col += width
+	}
+	return row
 }
 
 func replayCursorWriterScreen(t *testing.T, width, height int, frames []string) localvterm.ScreenData {
