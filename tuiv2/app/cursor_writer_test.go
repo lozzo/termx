@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1090,6 +1091,248 @@ func TestOutputCursorWriterRoundTripMovingOverlappingFloatingPanesMatchesFinalFr
 	}
 }
 
+func TestOutputCursorWriterRoundTripStreamingFloatingPaneMatchesFinalFrame(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	model := setupModel(t, modelOpts{width: 120, height: 36})
+	base := model.runtime.Registry().GetOrCreate("term-1")
+	base.Snapshot = cursorWriterStyledSnapshot("term-1", 118, 30)
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 18, Y: 7, W: 54, H: 16}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+	if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+		t.Fatalf("bind floating pane terminal: %v", err)
+	}
+	floatTerminal := model.runtime.Registry().GetOrCreate("term-float")
+	floatTerminal.Name = "float"
+	floatTerminal.State = "running"
+	floatTerminal.Snapshot = cursorWriterScrollingSnapshot("term-float", 51, 14, 0)
+	model.runtime.BindPane("float-1").Connected = true
+
+	replay := func(frames []string) []string {
+		sink := &cursorWriterProbeTTY{}
+		writer := newOutputCursorWriter(sink)
+		for _, frame := range frames {
+			if err := writer.WriteFrame(frame, ""); err != nil {
+				t.Fatalf("write frame: %v", err)
+			}
+		}
+		sink.mu.Lock()
+		stream := strings.Join(sink.writes, "")
+		sink.mu.Unlock()
+		vt := localvterm.New(120, 36, 0, nil)
+		if _, err := vt.Write([]byte(stream)); err != nil {
+			t.Fatalf("replay stream into host vterm: %v", err)
+		}
+		return vtermScreenLines(vt.ScreenContent())
+	}
+
+	frames := []string{model.View()}
+	for start := 1; start <= 8; start++ {
+		floatTerminal.Snapshot = cursorWriterScrollingSnapshot("term-float", 51, 14, start)
+		model.render.Invalidate()
+		frames = append(frames, model.View())
+	}
+
+	got := replay(frames)
+	want := replay(frames[len(frames)-1:])
+	for row := range want {
+		if strings.TrimRight(got[row], " ") != strings.TrimRight(want[row], " ") {
+			t.Fatalf("streaming floating pane round trip diverged on row %d\ngot=%#v\nwant=%#v", row, got, want)
+		}
+	}
+}
+
+func TestOutputCursorWriterRoundTripMovingFloatingPanePreservesUnderlyingBackgroundStyles(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	model := setupModel(t, modelOpts{width: 120, height: 36})
+	base := model.runtime.Registry().GetOrCreate("term-1")
+	base.Snapshot = cursorWriterNvimLikeSnapshot("term-1", 118, 30, "#444444")
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 18, Y: 7, W: 54, H: 16}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+	if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+		t.Fatalf("bind floating pane terminal: %v", err)
+	}
+	floatTerminal := model.runtime.Registry().GetOrCreate("term-float")
+	floatTerminal.Name = "float"
+	floatTerminal.State = "running"
+	floatTerminal.Snapshot = cursorWriterStyledSnapshot("term-float", 51, 14)
+	model.runtime.BindPane("float-1").Connected = true
+
+	frames := []string{model.View()}
+	positions := []workbench.Rect{
+		{X: 19, Y: 7, W: 54, H: 16},
+		{X: 21, Y: 7, W: 54, H: 16},
+		{X: 23, Y: 7, W: 54, H: 16},
+		{X: 25, Y: 7, W: 54, H: 16},
+	}
+	for _, rect := range positions {
+		if !model.workbench.MoveFloatingPane(tab.ID, "float-1", rect.X, rect.Y) {
+			t.Fatalf("expected move to %v to change pane", rect)
+		}
+		model.render.Invalidate()
+		frames = append(frames, model.View())
+	}
+
+	got := replayCursorWriterScreen(t, 120, 36, frames)
+	want := replayCursorWriterScreen(t, 120, 36, frames[len(frames)-1:])
+	for y := range want.Cells {
+		for x := range want.Cells[y] {
+			gotCell := got.Cells[y][x]
+			wantCell := want.Cells[y][x]
+			if gotCell.Content != wantCell.Content || gotCell.Style != wantCell.Style {
+				t.Fatalf("background/style diverged at (%d,%d): got=%#v want=%#v", x, y, gotCell, wantCell)
+			}
+		}
+	}
+}
+
+func TestOutputCursorWriterRoundTripStreamingFloatingPanePreservesUnderlyingBackgroundStyles(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	model := setupModel(t, modelOpts{width: 120, height: 36})
+	base := model.runtime.Registry().GetOrCreate("term-1")
+	base.Snapshot = cursorWriterNvimLikeSnapshot("term-1", 118, 30, "#444444")
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 18, Y: 7, W: 54, H: 16}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+	if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+		t.Fatalf("bind floating pane terminal: %v", err)
+	}
+	floatTerminal := model.runtime.Registry().GetOrCreate("term-float")
+	floatTerminal.Name = "float"
+	floatTerminal.State = "running"
+	floatTerminal.Snapshot = cursorWriterScrollingSnapshot("term-float", 51, 14, 0)
+	model.runtime.BindPane("float-1").Connected = true
+
+	frames := []string{model.View()}
+	for start := 1; start <= 8; start++ {
+		floatTerminal.Snapshot = cursorWriterScrollingSnapshot("term-float", 51, 14, start)
+		model.render.Invalidate()
+		frames = append(frames, model.View())
+	}
+
+	got := replayCursorWriterScreen(t, 120, 36, frames)
+	want := replayCursorWriterScreen(t, 120, 36, frames[len(frames)-1:])
+	for y := range want.Cells {
+		for x := range want.Cells[y] {
+			gotCell := got.Cells[y][x]
+			wantCell := want.Cells[y][x]
+			if gotCell.Content != wantCell.Content || gotCell.Style != wantCell.Style {
+				t.Fatalf("streaming float style diverged at (%d,%d): got=%#v want=%#v", x, y, gotCell, wantCell)
+			}
+		}
+	}
+}
+
+func TestRenderFrameFloatingPaneKeepsUnderlyingNvimBackgroundVisibleOutsideOverlay(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 120, height: 36})
+	base := model.runtime.Registry().GetOrCreate("term-1")
+	base.Snapshot = cursorWriterNvimLikeSnapshot("term-1", 118, 30, "#444444")
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 18, Y: 7, W: 54, H: 16}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+	if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+		t.Fatalf("bind floating pane terminal: %v", err)
+	}
+	floatTerminal := model.runtime.Registry().GetOrCreate("term-float")
+	floatTerminal.Name = "float"
+	floatTerminal.State = "running"
+	floatTerminal.Snapshot = cursorWriterStyledSnapshot("term-float", 51, 14)
+	model.runtime.BindPane("float-1").Connected = true
+	model.render.Invalidate()
+
+	screen := replayCursorWriterScreen(t, 120, 36, []string{model.View()})
+	visible := model.workbench.VisibleWithSize(model.bodyRect())
+	if visible == nil || len(visible.FloatingPanes) == 0 || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) || len(visible.Tabs[visible.ActiveTab].Panes) == 0 {
+		t.Fatalf("expected visible tiled pane plus floating pane, got %#v", visible)
+	}
+	basePane := visible.Tabs[visible.ActiveTab].Panes[0]
+	floatPane := visible.FloatingPanes[0]
+	checkY := model.contentOriginY() + floatPane.Rect.Y + 2
+	leftX := basePane.Rect.X + 3
+	rightX := floatPane.Rect.X + floatPane.Rect.W + 3
+	if got := screen.Cells[checkY][leftX].Style.BG; got != "#444444" {
+		t.Fatalf("expected left visible nvim background to stay gray, got %q at (%d,%d)", got, leftX, checkY)
+	}
+	if rightX < len(screen.Cells[checkY]) {
+		if got := screen.Cells[checkY][rightX].Style.BG; got != "#444444" {
+			t.Fatalf("expected right visible nvim background to stay gray, got %q at (%d,%d)", got, rightX, checkY)
+		}
+	}
+}
+
+func TestOutputCursorWriterOpeningFloatingPanePreservesUnderlyingNvimBackgroundStyles(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	model := setupModel(t, modelOpts{width: 120, height: 36})
+	base := model.runtime.Registry().GetOrCreate("term-1")
+	base.Snapshot = cursorWriterNvimLikeSnapshot("term-1", 118, 30, "#444444")
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+
+	frames := []string{model.View()}
+
+	if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 18, Y: 7, W: 54, H: 16}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+	if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+		t.Fatalf("bind floating pane terminal: %v", err)
+	}
+	floatTerminal := model.runtime.Registry().GetOrCreate("term-float")
+	floatTerminal.Name = "float"
+	floatTerminal.State = "running"
+	floatTerminal.Snapshot = cursorWriterStyledSnapshot("term-float", 51, 14)
+	model.runtime.BindPane("float-1").Connected = true
+	model.render.Invalidate()
+	frames = append(frames, model.View())
+
+	got := replayCursorWriterScreen(t, 120, 36, frames)
+	want := replayCursorWriterScreen(t, 120, 36, frames[len(frames)-1:])
+	for y := range want.Cells {
+		for x := range want.Cells[y] {
+			gotCell := got.Cells[y][x]
+			wantCell := want.Cells[y][x]
+			if gotCell.Content != wantCell.Content || gotCell.Style != wantCell.Style {
+				t.Fatalf("opening float style diverged at (%d,%d): got=%#v want=%#v", x, y, gotCell, wantCell)
+			}
+		}
+	}
+}
+
 func cursorWriterStyledSnapshot(terminalID string, cols, rows int) *protocol.Snapshot {
 	if cols <= 0 {
 		cols = 1
@@ -1125,6 +1368,100 @@ func cursorWriterStyledSnapshot(terminalID string, cols, rows int) *protocol.Sna
 		Size:       protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
 		Screen:     protocol.ScreenData{Cells: screen},
 		Cursor:     protocol.CursorState{Row: 0, Col: 0, Visible: true},
+		Modes:      protocol.TerminalModes{AutoWrap: true},
+	}
+}
+
+func cursorWriterNvimLikeSnapshot(terminalID string, cols, rows int, bg string) *protocol.Snapshot {
+	if cols <= 0 {
+		cols = 1
+	}
+	if rows <= 0 {
+		rows = 1
+	}
+	screen := make([][]protocol.Cell, 0, rows)
+	for y := 0; y < rows; y++ {
+		row := make([]protocol.Cell, 0, cols)
+		label := "line " + strconv.Itoa(y+1)
+		for x := 0; x < cols; x++ {
+			cell := protocol.Cell{
+				Content: " ",
+				Width:   1,
+				Style:   protocol.CellStyle{BG: bg},
+			}
+			if y == 0 && x < len(label) {
+				cell.Content = string(label[x])
+				cell.Style.FG = "#ffffff"
+			}
+			if y > 0 && x == 0 {
+				cell.Content = "~"
+				cell.Style.FG = "#4f5258"
+			}
+			row = append(row, cell)
+		}
+		screen = append(screen, row)
+	}
+	return &protocol.Snapshot{
+		TerminalID: terminalID,
+		Size:       protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
+		Screen:     protocol.ScreenData{Cells: screen},
+		Cursor:     protocol.CursorState{Row: 0, Col: 0, Visible: true},
+		Modes:      protocol.TerminalModes{AlternateScreen: true, MouseTracking: true, BracketedPaste: true},
+	}
+}
+
+func replayCursorWriterScreen(t *testing.T, width, height int, frames []string) localvterm.ScreenData {
+	t.Helper()
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	for _, frame := range frames {
+		if err := writer.WriteFrame(frame, ""); err != nil {
+			t.Fatalf("write frame: %v", err)
+		}
+	}
+	sink.mu.Lock()
+	stream := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	vt := localvterm.New(width, height, 0, nil)
+	if _, err := vt.Write([]byte(stream)); err != nil {
+		t.Fatalf("replay stream into host vterm: %v", err)
+	}
+	return vt.ScreenContent()
+}
+
+func cursorWriterScrollingSnapshot(terminalID string, cols, rows, start int) *protocol.Snapshot {
+	if cols <= 0 {
+		cols = 1
+	}
+	if rows <= 0 {
+		rows = 1
+	}
+	screen := make([][]protocol.Cell, 0, rows)
+	for y := 0; y < rows; y++ {
+		label := " row-" + strings.ToUpper(strconv.FormatInt(int64(start+y), 16)) + " "
+		row := make([]protocol.Cell, 0, cols)
+		for x := 0; x < cols; x++ {
+			style := protocol.CellStyle{FG: "#f8fafc", BG: "#1f2937"}
+			ch := " "
+			if x < len(label) {
+				ch = string(label[x])
+			} else if (x+y)%11 == 0 {
+				ch = string('a' + rune((start+x+y)%26))
+				style = protocol.CellStyle{FG: "#fde68a", BG: "#0f172a", Bold: true}
+			}
+			row = append(row, protocol.Cell{
+				Content: ch,
+				Width:   1,
+				Style:   style,
+			})
+		}
+		screen = append(screen, row)
+	}
+	return &protocol.Snapshot{
+		TerminalID: terminalID,
+		Size:       protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
+		Screen:     protocol.ScreenData{Cells: screen},
+		Cursor:     protocol.CursorState{Row: rows - 1, Col: minInt(cols-1, 8), Visible: true},
 		Modes:      protocol.TerminalModes{AutoWrap: true},
 	}
 }

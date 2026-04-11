@@ -487,9 +487,12 @@ func renderChangedRowRuns(out *strings.Builder, previous, next []presentedCell, 
 			return
 		}
 		writeCUP(out, runStartCol, row+1)
-		writePresentedCells(out, next[runStart:end], runStartCol)
+		lastStyle := writePresentedCells(out, next[runStart:end], runStartCol)
 		if end == len(next) {
 			out.WriteString(xansi.EraseLineRight)
+		}
+		if lastStyle != (presentedStyle{}) {
+			out.WriteString(presentedResetStyleSequence)
 		}
 		runStart = -1
 	}
@@ -528,8 +531,11 @@ func renderChangedRowSuffix(out *strings.Builder, previous, next presentedRow, r
 		out.WriteString(xansi.EraseLineRight)
 		return true
 	}
-	writePresentedCells(out, nextCells[prefixIndex:], prefixWidth+1)
+	lastStyle := writePresentedCells(out, nextCells[prefixIndex:], prefixWidth+1)
 	out.WriteString(xansi.EraseLineRight)
+	if lastStyle != (presentedStyle{}) {
+		out.WriteString(presentedResetStyleSequence)
+	}
 	return true
 }
 
@@ -729,9 +735,9 @@ func (s presentedStyle) withSGRASCII(raw string) (presentedStyle, bool) {
 	return s.withSGRInts(params), true
 }
 
-func writePresentedCells(out *strings.Builder, cells []presentedCell, startCol int) {
+func writePresentedCells(out *strings.Builder, cells []presentedCell, startCol int) presentedStyle {
 	if out == nil || len(cells) == 0 {
-		return
+		return presentedStyle{}
 	}
 	current := presentedStyle{}
 	first := true
@@ -756,9 +762,7 @@ func writePresentedCells(out *strings.Builder, cells []presentedCell, startCol i
 		out.WriteString(cell.Content)
 		cursorCol += maxInt(1, cell.Width)
 	}
-	if current != (presentedStyle{}) {
-		out.WriteString(presentedResetStyleSequence)
-	}
+	return current
 }
 
 func writeCUP(out *strings.Builder, col, row int) {
