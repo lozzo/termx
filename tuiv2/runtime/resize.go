@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/lozzow/termx/terminalmeta"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
@@ -21,6 +22,9 @@ func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, col
 	}
 	terminal := r.registry.Get(terminalID)
 	if terminal != nil {
+		if terminalmeta.SizeLocked(terminal.Tags) {
+			return nil
+		}
 		ownerPaneID := r.syncTerminalOwnership(terminal)
 		if ownerPaneID == "" {
 			if terminal.RequiresExplicitOwner {

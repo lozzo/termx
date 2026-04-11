@@ -15,6 +15,7 @@ import (
 	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	ptymgr "github.com/lozzow/termx/pty"
+	"github.com/lozzow/termx/terminalmeta"
 	"github.com/lozzow/termx/vterm"
 )
 
@@ -350,6 +351,10 @@ func (t *Terminal) Resize(cols, rows uint16) error {
 	if t.state == StateExited {
 		t.mu.Unlock()
 		return ErrTerminalExited
+	}
+	if terminalmeta.SizeLocked(t.tags) {
+		t.mu.Unlock()
+		return fmt.Errorf("%w: terminal %q size is locked", ErrPermissionDenied, t.id)
 	}
 	old := t.size
 	t.size = Size{Cols: cols, Rows: rows}

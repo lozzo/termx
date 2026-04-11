@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/lozzow/termx/terminalmeta"
 )
 
 // PickerItem 是 picker 列表中的一条终端记录。
@@ -185,6 +186,9 @@ func (i *PickerItem) renderBody() string {
 		marker = "●"
 	}
 	label := coalesce(strings.TrimSpace(i.Name), coalesce(strings.TrimSpace(i.Command), "terminal"))
+	if terminalmeta.SizeLocked(i.Tags) {
+		label = terminalmeta.SizeLockLockedIcon + " " + label
+	}
 	state := coalesce(strings.TrimSpace(i.State), "running")
 	idPart := strings.TrimSpace(i.TerminalID)
 	if idPart != "" {

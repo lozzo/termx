@@ -114,8 +114,8 @@ func (m *Model) submitEditTerminalTagsPrompt(prompt *modal.PromptState) tea.Cmd 
 		if err := client.SetMetadata(context.Background(), terminalID, name, tags); err != nil {
 			return err
 		}
-		if m.runtime != nil && m.runtime.Registry() != nil {
-			m.runtime.Registry().SetMetadata(terminalID, name, tags)
+		if m.runtime != nil {
+			m.runtime.SetTerminalMetadata(terminalID, name, tags)
 		}
 		if err := saveState(m.statePath, m.workbench, m.runtime); err != nil {
 			return err

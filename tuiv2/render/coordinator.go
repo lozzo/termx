@@ -1214,7 +1214,7 @@ func clipRectToViewport(rect workbench.Rect, width, height int) (workbench.Rect,
 
 func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workbench.Rect, frameless bool, activePaneID string, scrollOffset int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, exitedPaneSelectionPaneID string, exitedPaneSelectionIndex int, exitedPaneSelectionPulse bool, paneSnapshotOverridePaneID string, paneSnapshotOverride *protocol.Snapshot, copyModePaneID string, copyModeCursorRow, copyModeCursorCol, copyModeViewTopRow int, copyModeMarkSet bool, copyModeMarkRow, copyModeMarkCol int, copyModeSnapshot *protocol.Snapshot, theme uiTheme) paneRenderEntry {
 	active := pane.ID == activePaneID
-	title := resolvePaneTitleWithLookup(pane, lookup)
+	title := displayPaneTitleWithLookup(pane, lookup)
 	border := paneBorderInfoWithLookup(pane, lookup, confirmPaneID)
 	terminal := lookup.terminal(pane.TerminalID)
 	overflow := paneOverflowHintsForRender(originalRect, rect, nil, nil)
@@ -1555,6 +1555,19 @@ func resolvePaneTitleWithLookup(pane workbench.VisiblePane, lookup runtimeLookup
 		}
 	}
 	return pane.Title
+}
+
+func displayPaneTitleWithLookup(pane workbench.VisiblePane, lookup runtimeLookup) string {
+	title := resolvePaneTitleWithLookup(pane, lookup)
+	buttonLabel := paneSizeLockButtonLabel(pane, lookup)
+	if buttonLabel == "" {
+		return title
+	}
+	title = strings.TrimSpace(title)
+	if title == "" {
+		title = "terminal"
+	}
+	return buttonLabel + " " + title
 }
 
 // drawPaneFrame draws the border box with a title on the left and stable chrome slots on the right.
@@ -2305,7 +2318,7 @@ func paneBorderSlotRemovalIndex(slots []paneBorderSlot) int {
 
 func PaneOwnerButtonRect(pane workbench.VisiblePane, runtimeState *VisibleRuntimeStateProxy, confirmPaneID string) (workbench.Rect, bool) {
 	lookup := newRuntimeLookup(runtimeState)
-	title := resolvePaneTitleWithLookup(pane, lookup)
+	title := displayPaneTitleWithLookup(pane, lookup)
 	border := paneBorderInfoWithLookup(pane, lookup, confirmPaneID)
 	layout, ok := paneTopBorderLabelsLayout(
 		pane.Rect,

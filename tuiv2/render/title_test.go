@@ -3,6 +3,7 @@ package render
 import (
 	"testing"
 
+	"github.com/lozzow/termx/terminalmeta"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -100,6 +101,46 @@ func TestResolvePaneTitleWithNilRuntime(t *testing.T) {
 	title := resolvePaneTitle(pane, nil)
 	if title != "Pane Title" {
 		t.Errorf("Expected 'Pane Title', got '%s'", title)
+	}
+}
+
+func TestDisplayPaneTitleAddsLockBadge(t *testing.T) {
+	pane := workbench.VisiblePane{
+		ID:         "pane-1",
+		Title:      "Pane Title",
+		TerminalID: "term-1",
+	}
+	runtimeState := &runtime.VisibleRuntime{
+		Terminals: []runtime.VisibleTerminal{{
+			TerminalID: "term-1",
+			Name:       "Stable Terminal Name",
+			SizeLocked: true,
+		}},
+	}
+
+	title := displayPaneTitleWithLookup(pane, newRuntimeLookup(runtimeState))
+	if title != terminalmeta.SizeLockButtonLabel(true)+" Stable Terminal Name" {
+		t.Fatalf("expected lock badge in pane title, got %q", title)
+	}
+}
+
+func TestDisplayPaneTitleAddsUnlockButtonWhenTerminalIsKnown(t *testing.T) {
+	pane := workbench.VisiblePane{
+		ID:         "pane-1",
+		Title:      "Pane Title",
+		TerminalID: "term-1",
+	}
+	runtimeState := &runtime.VisibleRuntime{
+		Terminals: []runtime.VisibleTerminal{{
+			TerminalID: "term-1",
+			Name:       "Stable Terminal Name",
+			SizeLocked: false,
+		}},
+	}
+
+	title := displayPaneTitleWithLookup(pane, newRuntimeLookup(runtimeState))
+	if title != terminalmeta.SizeLockButtonLabel(false)+" Stable Terminal Name" {
+		t.Fatalf("expected unlock button in pane title, got %q", title)
 	}
 }
 

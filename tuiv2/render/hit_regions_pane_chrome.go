@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/lozzow/termx/terminalmeta"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -53,6 +54,17 @@ func paneRunningIcon() string          { return paneChromeGlyphs.Running }
 func paneWaitingIcon() string          { return paneChromeGlyphs.Waiting }
 func paneExitedIcon() string           { return paneChromeGlyphs.Exited }
 func paneKilledIcon() string           { return paneChromeGlyphs.Killed }
+
+func paneSizeLockButtonLabel(pane workbench.VisiblePane, lookup runtimeLookup) string {
+	if strings.TrimSpace(pane.TerminalID) == "" {
+		return ""
+	}
+	terminal := lookup.terminal(pane.TerminalID)
+	if terminal == nil {
+		return ""
+	}
+	return terminalmeta.SizeLockButtonLabel(terminal.SizeLocked)
+}
 
 func paneChromeTerminalAttached(title string, border paneBorderInfo) bool {
 	if strings.TrimSpace(border.StateLabel) != "" || strings.TrimSpace(border.ShareLabel) != "" || strings.TrimSpace(border.RoleLabel) != "" {
@@ -161,6 +173,8 @@ func paneChromeActionSlotForKind(kind HitRegionKind, paneID string) (input.Seman
 		return input.SemanticAction{Kind: input.ActionBalancePanes, PaneID: paneID}, true
 	case HitRegionPaneCycleLayout:
 		return input.SemanticAction{Kind: input.ActionCycleLayout, PaneID: paneID}, true
+	case HitRegionPaneSizeLock:
+		return input.SemanticAction{Kind: input.ActionToggleTerminalSizeLock, PaneID: paneID}, true
 	}
 	return input.SemanticAction{}, false
 }
@@ -170,7 +184,7 @@ func PaneChromeHitRegions(pane workbench.VisiblePane, runtimeState *VisibleRunti
 		return nil
 	}
 	lookup := newRuntimeLookup(runtimeState)
-	title := resolvePaneTitleWithLookup(pane, lookup)
+	title := displayPaneTitleWithLookup(pane, lookup)
 	border := paneBorderInfoWithLookup(pane, lookup, confirmPaneID)
 	if strings.TrimSpace(pane.TerminalID) != "" && !paneChromeTerminalAttached(title, border) {
 		title = "terminal"
@@ -199,6 +213,22 @@ func PaneChromeHitRegions(pane workbench.VisiblePane, runtimeState *VisibleRunti
 				X: slot.X,
 				Y: pane.Rect.Y,
 				W: xansi.StringWidth(slot.Label),
+				H: 1,
+			},
+		})
+	}
+	if buttonLabel := paneSizeLockButtonLabel(pane, lookup); buttonLabel != "" && strings.HasPrefix(strings.TrimSpace(layout.titleLabel), buttonLabel) {
+		regions = append(regions, HitRegion{
+			Kind:   HitRegionPaneSizeLock,
+			PaneID: pane.ID,
+			Action: input.SemanticAction{
+				Kind:   input.ActionToggleTerminalSizeLock,
+				PaneID: pane.ID,
+			},
+			Rect: workbench.Rect{
+				X: layout.titleX + 1,
+				Y: pane.Rect.Y,
+				W: xansi.StringWidth(buttonLabel),
 				H: 1,
 			},
 		})

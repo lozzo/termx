@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/lozzow/termx/tuiv2/input"
+	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -94,6 +95,40 @@ func TestPaneChromeHitRegionsKeepAttachedAndLayoutActionsHidden(t *testing.T) {
 		if regions[i].Kind != want {
 			t.Fatalf("expected region[%d] kind=%q, got %#v", i, want, regions)
 		}
+	}
+}
+
+func TestPaneChromeHitRegionsExposeSizeLockButtonWhenRuntimeKnowsTerminal(t *testing.T) {
+	pane := workbench.VisiblePane{
+		ID:         "pane-1",
+		TerminalID: "term-1",
+		Rect:       workbench.Rect{X: 0, Y: 0, W: 96, H: 20},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		Terminals: []runtime.VisibleTerminal{{
+			TerminalID: "term-1",
+			Name:       "shell",
+			State:      "running",
+		}},
+	}
+
+	regions := PaneChromeHitRegions(pane, runtimeState, "")
+	found := false
+	for _, region := range regions {
+		if region.Kind != HitRegionPaneSizeLock {
+			continue
+		}
+		found = true
+		if region.Action.Kind != input.ActionToggleTerminalSizeLock {
+			t.Fatalf("expected size lock action, got %#v", region)
+		}
+		if region.PaneID != pane.ID || region.Action.PaneID != pane.ID {
+			t.Fatalf("expected pane scoping on size lock region, got %#v", region)
+		}
+		break
+	}
+	if !found {
+		t.Fatalf("expected size lock hit region, got %#v", regions)
 	}
 }
 

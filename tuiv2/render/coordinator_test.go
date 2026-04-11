@@ -8,6 +8,7 @@ import (
 
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/terminalmeta"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/runtime"
@@ -2015,20 +2016,37 @@ func TestRenderFrameUsesDedicatedTerminalPoolPageLayout(t *testing.T) {
 		Footer:   "[Enter] here  [Ctrl-T] tab  [Ctrl-O] float  [Ctrl-E] edit  [Ctrl-K] kill  [Esc] close",
 		Selected: 0,
 		Items: []modal.PickerItem{
-			{TerminalID: "term-1", Name: "shell", State: "visible", Description: "running · 1 pane bound"},
+			{TerminalID: "term-1", Name: "shell", State: "visible", Description: "running · 1 pane bound", Tags: map[string]string{"termx.size_lock": "lock"}},
 			{TerminalID: "term-2", Name: "logs", State: "parked", Description: "running · 0 panes bound"},
 		},
 	})
 	state = WithStatus(state, "", "", string(input.ModeTerminalManager))
 	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
 
-	for _, want := range []string{"Terminal Pool", "term-1", "term-2", "[Enter] here", "[Ctrl-E] edit", "TERMINAL-MANAGER", "[Enter] HERE", "[Ctrl-T] TAB"} {
+	for _, want := range []string{"Terminal Pool", "term-1", terminalmeta.SizeLockLockedIcon + " shell", "term-2", "[Enter] here", "[Ctrl-E] edit", "TERMINAL-MANAGER", "[Enter] HERE", "[Ctrl-T] TAB"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("expected terminal pool page to contain %q:\n%s", want, frame)
 		}
 	}
 	if strings.Contains(frame, "demo") {
 		t.Fatalf("expected workbench pane body to be replaced by terminal pool page:\n%s", frame)
+	}
+}
+
+func TestRenderFrameShowsSizeLockIconAtLeftOfPaneTitle(t *testing.T) {
+	state := makeTestState()
+	state.Runtime = &VisibleRuntimeStateProxy{
+		Terminals: []runtime.VisibleTerminal{{
+			TerminalID: "term-1",
+			Name:       "demo",
+			State:      "running",
+			SizeLocked: true,
+		}},
+	}
+
+	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
+	if !strings.Contains(frame, terminalmeta.SizeLockButtonLabel(true)+" demo") {
+		t.Fatalf("expected pane title to show size lock icon on the left:\n%s", frame)
 	}
 }
 

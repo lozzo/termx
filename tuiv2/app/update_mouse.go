@@ -248,6 +248,9 @@ func (m *Model) handleMouseClickNonFloating(x, y int) tea.Cmd {
 
 	if tab.Root != nil {
 		if hit, ok := tab.Root.DividerAt(bodyRect, x, contentY); ok {
+			if m.currentTabHasLockedTerminal() {
+				return m.showNotice(terminalSizeLockedNotice)
+			}
 			m.mouseDragPaneID = ""
 			m.mouseDragMode = mouseDragResizeSplit
 			m.mouseDragSplit = hit.Node
@@ -352,6 +355,9 @@ func (m *Model) handleMouseClick(msg tea.MouseMsg) tea.Cmd {
 		m.mouseDragSplit = nil
 		m.mouseDragBounds = workbench.Rect{}
 		if isResize {
+			if m.paneTerminalSizeLocked(paneID) {
+				return m.showNotice(terminalSizeLockedNotice)
+			}
 			m.mouseDragMode = mouseDragResize
 			m.mouseDragOffsetX = 0
 			m.mouseDragOffsetY = 0

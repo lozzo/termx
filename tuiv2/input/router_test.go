@@ -68,6 +68,7 @@ func TestRouteKeyMsg_PaneMode_PlainKeysProduceFocusActions(t *testing.T) {
 		{msg: runeKey('r'), want: ActionReconnectPane},
 		{msg: runeKey('R'), want: ActionRestartTerminal},
 		{msg: runeKey('a'), want: ActionBecomeOwner},
+		{msg: runeKey('s'), want: ActionToggleTerminalSizeLock},
 		{msg: runeKey('X'), want: ActionClosePaneKill},
 		{msg: runeKey('w'), want: ActionClosePane},
 		{msg: specialKey(tea.KeyEsc), want: ActionCancelMode},
@@ -116,6 +117,7 @@ func TestRouteKeyMsg_ResizeMode_LargeStepBindings(t *testing.T) {
 		{msg: runeKey('j'), want: ActionResizePaneDown},
 		{msg: runeKey('J'), want: ActionResizePaneLargeDown},
 		{msg: runeKey('a'), want: ActionBecomeOwner},
+		{msg: runeKey('s'), want: ActionToggleTerminalSizeLock},
 		{msg: runeKey('='), want: ActionBalancePanes},
 		{msg: specialKey(tea.KeySpace), want: ActionCycleLayout},
 	}

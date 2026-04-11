@@ -23,6 +23,7 @@ type VisibleTerminal struct {
 	AttachMode      string
 	OwnerPaneID     string
 	BoundPaneIDs    []string
+	SizeLocked      bool
 	Snapshot        *protocol.Snapshot
 	Surface         TerminalSurface
 	SurfaceVersion  uint64

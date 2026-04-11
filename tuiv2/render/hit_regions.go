@@ -30,6 +30,7 @@ const (
 	HitRegionPaneSplitV         HitRegionKind = "pane-split-vertical"
 	HitRegionPaneSplitH         HitRegionKind = "pane-split-horizontal"
 	HitRegionPaneOwner          HitRegionKind = "pane-owner"
+	HitRegionPaneSizeLock       HitRegionKind = "pane-size-lock"
 )
 
 type HitRegion struct {

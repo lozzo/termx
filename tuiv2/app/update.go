@@ -195,6 +195,8 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		m.terminalPage.ApplyFilter()
 		m.render.Invalidate()
 		return nil, true
+	case terminalSizeLockToggledMsg:
+		return m.showNotice(typed.Notice), true
 	case orchestrator.KillTerminalEffect:
 		return m.effectCmd(typed), true
 	case EffectAppliedMsg:
@@ -413,6 +415,9 @@ func (m *Model) dispatchSemanticActionCmd(action input.SemanticAction, allowLoca
 	}
 	if handled, cmd := m.handleModalAction(action); handled {
 		return batchCmds(cmd, m.resizePendingPaneResizesCmd(), m.updateSessionViewCmd())
+	}
+	if m.blocksSemanticActionForTerminalSizeLock(action) {
+		return batchCmds(m.showNotice(terminalSizeLockedNotice), m.resizePendingPaneResizesCmd(), m.updateSessionViewCmd())
 	}
 	cmd := m.applyEffects(m.enrichEffects(action, m.orchestrator.HandleSemanticAction(action)))
 	cmd = batchCmds(cmd, m.resizeCmdForAction(action), m.saveCmdForAction(action))

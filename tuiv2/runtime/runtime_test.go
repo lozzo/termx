@@ -14,6 +14,7 @@ import (
 
 	"github.com/lozzow/termx"
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/terminalmeta"
 	unixtransport "github.com/lozzow/termx/transport/unix"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"
@@ -735,6 +736,35 @@ func TestRuntimeResizePaneSkipsFollowerBindings(t *testing.T) {
 	}
 	if binding := rt.Binding("pane-2"); binding == nil || binding.Role != BindingRoleFollower {
 		t.Fatalf("expected pane-2 to remain follower, got %#v", binding)
+	}
+}
+
+func TestRuntimeResizePaneSkipsSizeLockedTerminal(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 80, 24, []string{"seed"})
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil {
+		t.Fatal("expected terminal runtime")
+	}
+	terminal.Tags = map[string]string{terminalmeta.SizeLockTag: terminalmeta.SizeLockLock}
+
+	if err := rt.ResizePane(ctx, "pane-1", "term-1", 100, 40); err != nil {
+		t.Fatalf("resize pane: %v", err)
+	}
+	if len(client.resizeCalls) != 0 {
+		t.Fatalf("expected locked terminal to skip resize call, got %#v", client.resizeCalls)
+	}
+
+	visible := rt.Visible()
+	if len(visible.Terminals) != 1 || !visible.Terminals[0].SizeLocked {
+		t.Fatalf("expected visible runtime to expose locked terminal, got %#v", visible.Terminals)
 	}
 }
 

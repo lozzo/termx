@@ -760,7 +760,9 @@ func (s *Server) handleTransport(ctx context.Context, t transport.Transport, rem
 			if err != nil {
 				continue
 			}
-			if err := s.Resize(sessionCtx, attachment.terminalID, cols, rows); err != nil && !errors.Is(err, ErrTerminalExited) {
+			if err := s.Resize(sessionCtx, attachment.terminalID, cols, rows); err != nil &&
+				!errors.Is(err, ErrTerminalExited) &&
+				!errors.Is(err, ErrPermissionDenied) {
 				s.cfg.logger.Warn("transport resize failed", "remote", remote, "terminal_id", attachment.terminalID, "error", err)
 				return err
 			}

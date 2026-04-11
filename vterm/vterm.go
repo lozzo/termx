@@ -101,6 +101,8 @@ type VTerm struct {
 	screenRowKinds       []string
 	screenRowCache       [][]Cell
 	scrollbackRowCache   [][]Cell
+	resizeTailStartCol   int
+	resizeTailBG         []string
 
 	done chan struct{} // closed when drain goroutine exits
 }
@@ -241,6 +243,7 @@ func (v *VTerm) Write(data []byte) (n int, err error) {
 	reconcileFinish := perftrace.Measure("vterm.write.reconcile")
 	v.reconcileRowMetadataLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, time.Now().UTC())
 	reconcileFinish(0)
+	v.clearResizeTailFillLocked()
 	v.invalidateRowCachesLocked()
 	return n, err
 }
@@ -314,6 +317,7 @@ func (v *VTerm) LoadSnapshotWithMetadata(scrollback [][]Cell, scrollbackTimestam
 		}
 	}
 	v.alignScrollbackMetadataLocked()
+	v.clearResizeTailFillLocked()
 	if modes.AlternateScreen {
 		_, _ = v.emu.Write([]byte("\x1b[?1049h"))
 	}
@@ -349,6 +353,8 @@ func (v *VTerm) LoadSnapshotWithMetadata(scrollback [][]Cell, scrollbackTimestam
 func (v *VTerm) Resize(cols, rows int) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	oldCols, oldRows := v.emu.Width(), v.emu.Height()
+	v.captureResizeTailFillLocked(oldCols, oldRows, cols, rows)
 	beforeScreen := v.screenRowFingerprintsLocked()
 	beforeScreenTimestamps := cloneTimeSlice(v.screenTimestamps)
 	beforeScreenRowKinds := cloneStringSlice(v.screenRowKinds)
@@ -1085,6 +1091,7 @@ func (v *VTerm) screenRowViewLocked(y int) []Cell {
 	for x := 0; x < width; x++ {
 		row[x] = v.convertCell(v.emu.CellAt(x, y))
 	}
+	v.applyResizeTailFillLocked(y, row)
 	v.screenRowCache[y] = row
 	return row
 }
@@ -1129,6 +1136,56 @@ func (v *VTerm) invalidateRowCachesLocked() {
 		v.screenRowCache = make([][]Cell, height)
 	}
 	v.scrollbackRowCache = nil
+}
+
+func (v *VTerm) clearResizeTailFillLocked() {
+	v.resizeTailStartCol = 0
+	v.resizeTailBG = nil
+}
+
+func (v *VTerm) captureResizeTailFillLocked(oldCols, oldRows, newCols, newRows int) {
+	v.clearResizeTailFillLocked()
+	if v.emu == nil || oldCols <= 0 || newCols <= oldCols || oldRows <= 0 || !v.emu.IsAltScreen() {
+		return
+	}
+	count := minInt(oldRows, maxInt(newRows, 0))
+	if count <= 0 {
+		return
+	}
+	bg := make([]string, count)
+	hasAny := false
+	for y := 0; y < count; y++ {
+		cell := v.convertCell(v.emu.CellAt(oldCols-1, y))
+		if cell.Style.BG == "" {
+			continue
+		}
+		bg[y] = cell.Style.BG
+		hasAny = true
+	}
+	if !hasAny {
+		return
+	}
+	v.resizeTailStartCol = oldCols
+	v.resizeTailBG = bg
+}
+
+func (v *VTerm) applyResizeTailFillLocked(y int, row []Cell) {
+	if v == nil || y < 0 || y >= len(v.resizeTailBG) || v.resizeTailStartCol <= 0 || v.resizeTailStartCol >= len(row) {
+		return
+	}
+	bg := v.resizeTailBG[y]
+	if bg == "" {
+		return
+	}
+	for x := v.resizeTailStartCol; x < len(row); x++ {
+		if row[x].Content != " " || row[x].Width != 1 {
+			continue
+		}
+		if row[x].Style.BG != "" {
+			continue
+		}
+		row[x].Style.BG = bg
+	}
 }
 
 func (v *VTerm) ensureScrollbackRowCacheLocked(count int) {

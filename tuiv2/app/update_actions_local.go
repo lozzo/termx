@@ -120,6 +120,8 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			ResizeIfNeeded:   true,
 			ExplicitTakeover: true,
 		})
+	case input.ActionToggleTerminalSizeLock:
+		return true, m.toggleTerminalSizeLockCmd(action.PaneID)
 	case input.ActionRestartTerminal:
 		if m.runtime == nil || m.workbench == nil {
 			return true, nil
@@ -317,6 +319,9 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			m.setMode(input.ModeState{Kind: input.ModeDisplay})
 			m.render.Invalidate()
 			return true, nil
+		}
+		if m.blocksSemanticActionForTerminalSizeLock(action) {
+			return true, m.showNotice(terminalSizeLockedNotice)
 		}
 		if m.workbench != nil {
 			if tab := m.workbench.CurrentTab(); tab != nil {

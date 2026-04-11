@@ -107,6 +107,31 @@ func TestLoadSnapshotPreservesWideCellContinuationsAcrossSubsequentWrites(t *tes
 	}
 }
 
+func TestVTermResizeRoundTripPreservesBackgroundStyleAcrossExpandedTail(t *testing.T) {
+	vt := New(8, 3, 100, nil)
+	bg := CellStyle{BG: "#444444"}
+	screen := make([][]Cell, 3)
+	for y := range screen {
+		screen[y] = make([]Cell, 8)
+		for x := range screen[y] {
+			screen[y][x] = Cell{Content: " ", Width: 1, Style: bg}
+		}
+		screen[y][0].Content = "~"
+	}
+	vt.LoadSnapshot(ScreenData{Cells: screen}, CursorState{Row: 0, Col: 0, Visible: true}, TerminalModes{AlternateScreen: true, MouseTracking: true})
+
+	vt.Resize(4, 2)
+	vt.Resize(8, 3)
+
+	restored := vt.ScreenContent()
+	if len(restored.Cells) < 2 || len(restored.Cells[1]) < 8 {
+		t.Fatalf("unexpected restored screen dimensions: %#v", restored.Cells)
+	}
+	if got := restored.Cells[1][6].Style.BG; got == "" {
+		t.Fatalf("expected expanded tail cell to retain background style, got %#v", restored.Cells[1][6])
+	}
+}
+
 func TestLoadSnapshotWithTimestampsRestoresRowTimes(t *testing.T) {
 	vt := New(6, 3, 100, nil)
 	scrollbackTS := []time.Time{time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC)}

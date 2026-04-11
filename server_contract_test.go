@@ -729,6 +729,75 @@ func TestObserverAttachCannotWriteOrResize(t *testing.T) {
 	}
 }
 
+func TestCollaboratorResizeLockedTerminalIsIgnored(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewServer(WithDefaultScrollback(128))
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+	defer serverTransport.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.handleTransport(ctx, serverTransport, "memory")
+	}()
+
+	client := protocol.NewClient(clientTransport)
+	defer client.Close()
+
+	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+		t.Fatalf("hello failed: %v", err)
+	}
+
+	created, err := client.Create(ctx, protocol.CreateParams{
+		ID:      "lock-resize-01",
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Tags:    map[string]string{"termx.size_lock": "lock"},
+		Size:    protocol.Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create failed: %v", err)
+	}
+
+	attach, err := client.Attach(ctx, created.TerminalID, string(ModeCollaborator))
+	if err != nil {
+		t.Fatalf("attach collaborator failed: %v", err)
+	}
+
+	if err := client.Resize(ctx, attach.Channel, 120, 50); err != nil {
+		t.Fatalf("resize send failed: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	snap, err := client.Snapshot(ctx, created.TerminalID, 0, 20)
+	if err != nil {
+		t.Fatalf("snapshot failed: %v", err)
+	}
+	if snap.Size.Cols != 80 || snap.Size.Rows != 24 {
+		t.Fatalf("expected locked size to stay 80x24, got %#v", snap.Size)
+	}
+
+	list, err := client.List(ctx)
+	if err != nil {
+		t.Fatalf("expected transport to stay alive after locked resize, got %v", err)
+	}
+	if len(list.Terminals) != 1 || list.Terminals[0].ID != created.TerminalID {
+		t.Fatalf("unexpected list result after locked resize: %#v", list.Terminals)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for handler exit")
+	}
+}
+
 func TestHandleRequestKillDeniedForObserverAttachment(t *testing.T) {
 	ctx := context.Background()
 	srv := NewServer()

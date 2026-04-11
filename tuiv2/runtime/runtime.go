@@ -12,6 +12,7 @@ import (
 
 	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/terminalmeta"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"
 	localvterm "github.com/lozzow/termx/vterm"
@@ -342,6 +343,7 @@ func (r *Runtime) Visible() *VisibleRuntime {
 			AttachMode:      terminal.AttachMode,
 			OwnerPaneID:     terminal.OwnerPaneID,
 			BoundPaneIDs:    slices.Clone(terminal.BoundPaneIDs),
+			SizeLocked:      terminalmeta.SizeLocked(terminal.Tags),
 			Snapshot:        terminal.Snapshot,
 			Surface:         visibleSurface(terminal),
 			SurfaceVersion:  terminal.SurfaceVersion,

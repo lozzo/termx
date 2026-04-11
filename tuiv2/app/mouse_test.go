@@ -886,6 +886,30 @@ func TestMouseClickPaneChromeZoomTogglesTargetPane(t *testing.T) {
 	}
 }
 
+func TestMouseClickPaneChromeSizeLockTogglesTerminalMetadata(t *testing.T) {
+	client := &recordingBridgeClient{
+		attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{},
+	}
+	m := setupModel(t, modelOpts{client: client})
+	target := visiblePaneChromeRegion(t, m, "pane-1", render.HitRegionPaneSizeLock)
+
+	_, cmd := m.Update(tea.MouseMsg{
+		X:      target.Rect.X,
+		Y:      screenYForBodyY(m, target.Rect.Y),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	drainCmd(t, m, cmd, 20)
+
+	if len(client.setMetadataCalls) != 1 {
+		t.Fatalf("expected one metadata toggle call, got %#v", client.setMetadataCalls)
+	}
+	if got := client.setMetadataCalls[0].tags["termx.size_lock"]; got != "lock" {
+		t.Fatalf("expected size lock tag to be saved, got %#v", client.setMetadataCalls[0].tags)
+	}
+}
+
 func TestMouseClickFloatingPaneChromeCloseDoesNotStartDrag(t *testing.T) {
 	m := setupModel(t, modelOpts{})
 	tab := m.workbench.CurrentTab()

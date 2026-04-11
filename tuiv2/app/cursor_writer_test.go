@@ -1995,19 +1995,26 @@ func replayCursorWriterScreen(t *testing.T, width, height int, frames []string) 
 
 func assertScreenEqual(t *testing.T, got, want localvterm.ScreenData) {
 	t.Helper()
+	if err := screenDiffError(got, want); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func screenDiffError(got, want localvterm.ScreenData) error {
 	if len(got.Cells) != len(want.Cells) {
-		t.Fatalf("screen height mismatch: got=%d want=%d", len(got.Cells), len(want.Cells))
+		return fmt.Errorf("screen height mismatch: got=%d want=%d", len(got.Cells), len(want.Cells))
 	}
 	for y := range want.Cells {
 		if len(got.Cells[y]) != len(want.Cells[y]) {
-			t.Fatalf("screen width mismatch on row %d: got=%d want=%d", y, len(got.Cells[y]), len(want.Cells[y]))
+			return fmt.Errorf("screen width mismatch on row %d: got=%d want=%d", y, len(got.Cells[y]), len(want.Cells[y]))
 		}
 		for x := range want.Cells[y] {
 			if got.Cells[y][x] != want.Cells[y][x] {
-				t.Fatalf("screen diverged at (%d,%d): got=%#v want=%#v", x, y, got.Cells[y][x], want.Cells[y][x])
+				return fmt.Errorf("screen diverged at (%d,%d): got=%#v want=%#v", x, y, got.Cells[y][x], want.Cells[y][x])
 			}
 		}
 	}
+	return nil
 }
 
 func TestOutputCursorWriterFrameLinesPathCopyModeScrollbackThenFocusSwitchClearsStaleState(t *testing.T) {

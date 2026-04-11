@@ -85,6 +85,10 @@ type terminalManagerItemsLoadedMsg struct {
 	Items []modal.PickerItem
 }
 
+type terminalSizeLockToggledMsg struct {
+	Notice string
+}
+
 type hostDefaultColorsMsg struct {
 	FG color.Color
 	BG color.Color

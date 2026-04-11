@@ -75,6 +75,7 @@ const (
 	ActionKillTerminal                ActionKind = "kill-terminal"
 	ActionRemoveTerminal              ActionKind = "remove-terminal"
 	ActionBecomeOwner                 ActionKind = "become-owner"
+	ActionToggleTerminalSizeLock      ActionKind = "toggle-terminal-size-lock"
 	ActionResizePaneLeft              ActionKind = "resize-pane-left"
 	ActionResizePaneRight             ActionKind = "resize-pane-right"
 	ActionResizePaneUp                ActionKind = "resize-pane-up"

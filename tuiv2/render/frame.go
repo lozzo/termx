@@ -310,6 +310,8 @@ func statusDocVisible(doc input.BindingDoc, mode input.ModeKind, ctx statusHintC
 			return ctx.activePaneExited()
 		case input.ActionBecomeOwner:
 			return ctx.canBecomeOwner()
+		case input.ActionToggleTerminalSizeLock:
+			return ctx.activePaneConnected()
 		case input.ActionReconnectPane:
 			return ctx.activePane != nil && !ctx.activePaneExited()
 		case input.ActionFocusPaneLeft, input.ActionFocusPaneRight, input.ActionFocusPaneUp, input.ActionFocusPaneDown,
@@ -321,6 +323,8 @@ func statusDocVisible(doc input.BindingDoc, mode input.ModeKind, ctx statusHintC
 		switch doc.Binding.Action {
 		case input.ActionBecomeOwner:
 			return ctx.canBecomeOwner()
+		case input.ActionToggleTerminalSizeLock:
+			return ctx.activePaneConnected()
 		case input.ActionResizePaneLeft, input.ActionResizePaneRight, input.ActionResizePaneUp, input.ActionResizePaneDown,
 			input.ActionResizePaneLargeLeft, input.ActionResizePaneLargeRight, input.ActionResizePaneLargeUp, input.ActionResizePaneLargeDown,
 			input.ActionBalancePanes, input.ActionCycleLayout:

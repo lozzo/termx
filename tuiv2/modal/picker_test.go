@@ -1,8 +1,10 @@
 package modal
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/lozzow/termx/terminalmeta"
 	"github.com/lozzow/termx/tuiv2/input"
 )
 
@@ -39,6 +41,19 @@ func TestPickerItemState(t *testing.T) {
 	item := PickerItem{TerminalID: "t3", Name: "htop", State: "exited"}
 	if item.State != "exited" {
 		t.Errorf("expected State=%q, got %q", "exited", item.State)
+	}
+}
+
+func TestPickerItemRenderBodyShowsSizeLockBadge(t *testing.T) {
+	item := PickerItem{
+		TerminalID: "t3",
+		Name:       "htop",
+		State:      "running",
+		Tags:       map[string]string{"termx.size_lock": "lock"},
+	}
+	body := item.renderBody()
+	if !strings.Contains(body, terminalmeta.SizeLockLockedIcon+" htop") {
+		t.Fatalf("expected lock badge in picker body, got %q", body)
 	}
 }
 

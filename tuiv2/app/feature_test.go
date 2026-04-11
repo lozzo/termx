@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/terminalmeta"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
@@ -2036,6 +2037,73 @@ func TestFeatureTerminalPoolExitedItemBindsPaneAndClosesManager(t *testing.T) {
 	assertMode(t, model, input.ModeNormal)
 	if model.terminalPage != nil {
 		t.Fatalf("expected terminal manager to close after selection, got %#v", model.terminalPage)
+	}
+}
+
+func TestFeatureZoomPaneBlockedByTerminalSizeLock(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.Tags = map[string]string{"termx.size_lock": "lock"}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionZoomPane, PaneID: "pane-1"})
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if tab.ZoomedPaneID != "" {
+		t.Fatalf("expected zoom to stay blocked for locked terminal, got %q", tab.ZoomedPaneID)
+	}
+	if got := strings.TrimSpace(model.notice); got != terminalSizeLockedNotice {
+		t.Fatalf("expected lock notice %q, got %q", terminalSizeLockedNotice, got)
+	}
+}
+
+func TestFeatureToggleTerminalSizeLockWithKeyboardSavesMetadata(t *testing.T) {
+	client := &recordingBridgeClient{
+		attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{},
+	}
+	model := setupModel(t, modelOpts{client: client})
+	if before := xansi.Strip(model.View()); !strings.Contains(before, terminalmeta.SizeLockButtonLabel(false)+" shell") {
+		t.Fatalf("expected unlocked size lock button before toggle, got:\n%s", before)
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterPaneMode})
+	dispatchKey(t, model, runeKeyMsg('s'))
+
+	if len(client.setMetadataCalls) != 1 {
+		t.Fatalf("expected one metadata toggle call, got %#v", client.setMetadataCalls)
+	}
+	if got := client.setMetadataCalls[0].tags["termx.size_lock"]; got != "lock" {
+		t.Fatalf("expected size lock tag to be saved, got %#v", client.setMetadataCalls[0].tags)
+	}
+	terminal := model.runtime.Registry().Get("term-1")
+	if terminal == nil || !terminalmeta.SizeLocked(terminal.Tags) {
+		t.Fatalf("expected runtime registry tags to reflect locked state, got %#v", terminal)
+	}
+	if got := strings.TrimSpace(model.notice); got != terminalSizeLockedNotice {
+		t.Fatalf("expected notice %q, got %q", terminalSizeLockedNotice, got)
+	}
+	if afterLock := xansi.Strip(model.View()); !strings.Contains(afterLock, terminalmeta.SizeLockButtonLabel(true)+" shell") {
+		t.Fatalf("expected locked size lock button after toggle, got:\n%s", afterLock)
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterPaneMode})
+	dispatchKey(t, model, runeKeyMsg('s'))
+
+	if len(client.setMetadataCalls) != 2 {
+		t.Fatalf("expected second metadata toggle call, got %#v", client.setMetadataCalls)
+	}
+	if _, ok := client.setMetadataCalls[1].tags["termx.size_lock"]; ok {
+		t.Fatalf("expected unlock to clear size lock tag, got %#v", client.setMetadataCalls[1].tags)
+	}
+	if terminalmeta.SizeLocked(model.runtime.Registry().Get("term-1").Tags) {
+		t.Fatalf("expected runtime registry tags to reflect unlocked state, got %#v", model.runtime.Registry().Get("term-1"))
+	}
+	if afterUnlock := xansi.Strip(model.View()); !strings.Contains(afterUnlock, terminalmeta.SizeLockButtonLabel(false)+" shell") {
+		t.Fatalf("expected unlocked size lock button after second toggle, got:\n%s", afterUnlock)
 	}
 }
 

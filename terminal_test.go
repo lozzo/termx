@@ -2,6 +2,7 @@ package termx
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -71,6 +72,35 @@ func TestTerminalLifecycleAndSnapshot(t *testing.T) {
 
 	if got := term.Info(); got.State != StateExited {
 		t.Fatalf("unexpected state: %s", got.State)
+	}
+}
+
+func TestTerminalResizeRejectsSizeLockedTerminal(t *testing.T) {
+	ctx := context.Background()
+	bus := NewEventBus(nil)
+
+	term, err := newTerminal(ctx, bus, terminalConfig{
+		ID:             "lock1234",
+		Name:           "shell",
+		Command:        []string{"bash", "--noprofile", "--norc"},
+		Tags:           map[string]string{"termx.size_lock": "lock"},
+		Size:           Size{Cols: 80, Rows: 24},
+		ScrollbackSize: 128,
+		KeepAfterExit:  time.Second,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("new terminal failed: %v", err)
+	}
+	defer term.Close()
+
+	if err := term.Resize(100, 40); !errors.Is(err, ErrPermissionDenied) {
+		t.Fatalf("expected ErrPermissionDenied, got %v", err)
+	}
+	if got := term.Info().Size; got != (Size{Cols: 80, Rows: 24}) {
+		t.Fatalf("expected size to remain locked at 80x24, got %#v", got)
 	}
 }
 
