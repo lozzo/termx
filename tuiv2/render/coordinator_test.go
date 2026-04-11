@@ -17,6 +17,60 @@ import (
 	localvterm "github.com/lozzow/termx/vterm"
 )
 
+func protocolStyledWideRowFromText(text string, cols int, style protocol.CellStyle) []protocol.Cell {
+	if cols <= 0 {
+		return nil
+	}
+	row := make([]protocol.Cell, cols)
+	for i := range row {
+		row[i] = protocol.Cell{Content: " ", Width: 1, Style: style}
+	}
+	col := 0
+	for _, r := range text {
+		if col >= cols {
+			break
+		}
+		width := xansi.StringWidth(string(r))
+		if width <= 0 || col+width > cols {
+			continue
+		}
+		row[col] = protocol.Cell{Content: string(r), Width: width, Style: style}
+		for i := 1; i < width && col+i < cols; i++ {
+			row[col+i] = protocol.Cell{Content: "", Width: 0, Style: style}
+		}
+		col += width
+	}
+	return row
+}
+
+func replayRenderedBodySequence(t *testing.T, width, height int, frames []string) localvterm.ScreenData {
+	t.Helper()
+	vt := localvterm.New(width, height, 0, nil)
+	for _, frame := range frames {
+		if _, err := vt.Write([]byte(frame)); err != nil {
+			t.Fatalf("replay rendered body: %v", err)
+		}
+	}
+	return vt.ScreenContent()
+}
+
+func assertReplayScreenEqual(t *testing.T, got, want localvterm.ScreenData) {
+	t.Helper()
+	if len(got.Cells) != len(want.Cells) {
+		t.Fatalf("screen height mismatch: got=%d want=%d", len(got.Cells), len(want.Cells))
+	}
+	for y := range want.Cells {
+		if len(got.Cells[y]) != len(want.Cells[y]) {
+			t.Fatalf("screen width mismatch row=%d got=%d want=%d", y, len(got.Cells[y]), len(want.Cells[y]))
+		}
+		for x := range want.Cells[y] {
+			if got.Cells[y][x] != want.Cells[y][x] {
+				t.Fatalf("screen diverged at (%d,%d): got=%#v want=%#v", x, y, got.Cells[y][x], want.Cells[y][x])
+			}
+		}
+	}
+}
+
 func makeTestState() VisibleRenderState {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
@@ -1655,6 +1709,74 @@ func TestRenderBodyMovingFloatingPaneRestoresPreviouslyCoveredTiledContent(t *te
 	if got := string([]rune(lines[6])[12]); got != "X" {
 		t.Fatalf("expected moving floating pane to restore tiled content in previously covered area, got %q in %q", got, lines[6])
 	}
+}
+
+func TestRenderBodyMovingFloatingPaneRoundTripPreservesStyles(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:              "tab-1",
+			Name:            "tab 1",
+			ActivePaneID:    "pane-1",
+			FloatingVisible: true,
+			Panes: map[string]*workbench.PaneState{
+				"pane-1":  {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+				"float-1": {ID: "float-1", Title: "float", TerminalID: "term-2"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+			Floating: []*workbench.FloatingState{{
+				PaneID: "float-1",
+				Rect:   workbench.Rect{X: 10, Y: 4, W: 14, H: 6},
+				Z:      0,
+			}},
+		}},
+	})
+
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 38, Rows: 12},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			protocolStyledWideRowFromText("base layer with gray background", 38, protocol.CellStyle{FG: "#e5e7eb", BG: "#444444"}),
+			protocolStyledWideRowFromText("second row with gray background", 38, protocol.CellStyle{FG: "#e5e7eb", BG: "#444444"}),
+			protocolStyledWideRowFromText("third row with gray background", 38, protocol.CellStyle{FG: "#e5e7eb", BG: "#444444"}),
+			protocolStyledWideRowFromText("fourth row with gray background", 38, protocol.CellStyle{FG: "#e5e7eb", BG: "#444444"}),
+			protocolStyledWideRowFromText("fifth row with gray background", 38, protocol.CellStyle{FG: "#e5e7eb", BG: "#444444"}),
+			protocolStyledWideRowFromText("sixth row with gray background", 38, protocol.CellStyle{FG: "#e5e7eb", BG: "#444444"}),
+			protocolStyledWideRowFromText("seventh row with gray background", 38, protocol.CellStyle{FG: "#e5e7eb", BG: "#444444"}),
+			protocolStyledWideRowFromText("eighth row with gray background", 38, protocol.CellStyle{FG: "#e5e7eb", BG: "#444444"}),
+			protocolStyledWideRowFromText("ninth row with gray background", 38, protocol.CellStyle{FG: "#e5e7eb", BG: "#444444"}),
+			protocolStyledWideRowFromText("tenth row with gray background", 38, protocol.CellStyle{FG: "#e5e7eb", BG: "#444444"}),
+			protocolStyledWideRowFromText("eleventh row with gray background", 38, protocol.CellStyle{FG: "#e5e7eb", BG: "#444444"}),
+			protocolStyledWideRowFromText("twelfth row with gray background", 38, protocol.CellStyle{FG: "#e5e7eb", BG: "#444444"}),
+		}},
+	}
+	rt.Registry().GetOrCreate("term-2").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-2",
+		Size:       protocol.Size{Cols: 11, Rows: 4},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			protocolStyledWideRowFromText("FLOAT PANEL", 11, protocol.CellStyle{FG: "#111827", BG: "#fde68a"}),
+			protocolStyledWideRowFromText("EDITOR", 11, protocol.CellStyle{FG: "#111827", BG: "#fde68a"}),
+			protocolStyledWideRowFromText("STATE", 11, protocol.CellStyle{FG: "#111827", BG: "#fde68a"}),
+			protocolStyledWideRowFromText("READY", 11, protocol.CellStyle{FG: "#111827", BG: "#fde68a"}),
+		}},
+	}
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 40, 14), 40, 16)
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+
+	first := renderBodyFrameWithCoordinator(coordinator, state, 40, 14).content
+	if !wb.MoveFloatingPane("tab-1", "float-1", 22, 4) {
+		t.Fatal("expected floating pane move to succeed")
+	}
+	state = WithTermSize(AdaptVisibleStateWithSize(wb, rt, 40, 14), 40, 16)
+	second := renderBodyFrameWithCoordinator(coordinator, state, 40, 14).content
+
+	got := replayRenderedBodySequence(t, 40, 14, []string{first, second})
+	want := replayRenderedBodySequence(t, 40, 14, []string{second})
+	assertReplayScreenEqual(t, got, want)
 }
 
 func TestRenderBodyFloatingPaneBorderCornersDoNotMergeUnderlyingPaneBorders(t *testing.T) {
