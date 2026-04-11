@@ -514,10 +514,7 @@ func (c *composedCanvas) ensureRowCache() {
 			}
 			row.WriteString(serializeCellContentForDisplay(content, cell.Width, c.hostEmojiVS16Mode, nextCol))
 		}
-		row.WriteString("\x1b[K")
-		if current != (drawStyle{}) {
-			row.WriteString("\x1b[0m")
-		}
+		row.WriteString("\x1b[0m\x1b[K")
 		c.rowCache[y] = row.String()
 		c.rowDirty[y] = false
 	}
