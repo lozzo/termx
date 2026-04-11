@@ -66,6 +66,22 @@ func (m *Model) bodyRect() workbench.Rect {
 	return workbench.Rect{W: maxInt(1, m.width), H: m.bodyHeight()}
 }
 
+func (m *Model) allowVerticalScrollOptimization() bool {
+	if m == nil || m.workbench == nil {
+		return false
+	}
+	state := m.visibleRenderState()
+	if state.Surface.Kind != render.VisibleSurfaceWorkbench || state.Overlay.Kind != render.VisibleOverlayNone || state.Workbench == nil {
+		return false
+	}
+	activeTab := state.Workbench.ActiveTab
+	if activeTab < 0 || activeTab >= len(state.Workbench.Tabs) {
+		return false
+	}
+	visiblePaneCount := len(state.Workbench.Tabs[activeTab].Panes) + len(state.Workbench.FloatingPanes)
+	return visiblePaneCount <= 1
+}
+
 func (m *Model) immersiveZoomActive() bool {
 	if m == nil || m.workbench == nil {
 		return false

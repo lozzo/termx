@@ -172,6 +172,12 @@ func (m *Model) activeCopyModeResumeSnapshot() (string, *protocol.Snapshot, bool
 	if terminal == nil || !terminal.Stream.Active || terminal.Snapshot == nil {
 		return "", nil, false
 	}
+	// If a live local surface exists, prefer it immediately on copy-mode exit.
+	// Keeping the frozen snapshot until another interaction lands makes the
+	// terminal appear stuck even though the local VTerm is already current.
+	if terminal.VTerm != nil && terminal.SurfaceVersion > 0 {
+		return "", nil, false
+	}
 	if terminal.SurfaceVersion != m.copyModeResume.BaselineVersion {
 		return "", nil, false
 	}

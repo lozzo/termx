@@ -79,6 +79,8 @@ type framePresenter struct {
 	scratchParsed []presentedRow
 	reclaim       [][]presentedCell
 	ready         bool
+	allowVerticalScroll bool
+	fullWidthLines      bool
 }
 
 type presentedRow struct {
@@ -149,6 +151,8 @@ func (p *framePresenter) Reset() {
 	p.scratchParsed = nil
 	p.reclaim = nil
 	p.ready = false
+	p.allowVerticalScroll = true
+	p.fullWidthLines = false
 }
 
 func (p *framePresenter) Present(frame string) string {
@@ -177,10 +181,12 @@ func (p *framePresenter) presentLines(lines []string) string {
 		p.setLines(lines, true)
 		return xansi.EraseEntireDisplay + strings.Join(lines, "\n")
 	}
-	if payload := p.presentVerticalScroll(lines); payload != "" {
-		releasePresentedRows(p.parsed)
-		p.setLines(lines, true)
-		return payload
+	if p.allowVerticalScroll {
+		if payload := p.presentVerticalScroll(lines); payload != "" {
+			releasePresentedRows(p.parsed)
+			p.setLines(lines, true)
+			return payload
+		}
 	}
 	payload, changedCount, nextParsed, reclaim := p.renderChangedRows(lines)
 	if changedCount == 0 {
@@ -416,7 +422,7 @@ func (p *framePresenter) renderChangedRows(next []string) (string, int, []presen
 		if len(prevRow.cells) > 0 {
 			reclaim = append(reclaim, prevRow.cells)
 		}
-		if !renderChangedRowDiff(&out, prevRow, nextRow, row) {
+		if !renderChangedRowDiff(&out, prevRow, nextRow, row, p.fullWidthLines) {
 			writeCUP(&out, 1, row+1)
 			out.WriteString(next[row])
 		}
@@ -457,7 +463,7 @@ func (p *framePresenter) presentedRow(index int) presentedRow {
 	return row
 }
 
-func renderChangedRowDiff(out *strings.Builder, previous, next presentedRow, row int) bool {
+func renderChangedRowDiff(out *strings.Builder, previous, next presentedRow, row int, fullWidthLines bool) bool {
 	if previous.raw == next.raw {
 		return true
 	}
@@ -467,14 +473,14 @@ func renderChangedRowDiff(out *strings.Builder, previous, next presentedRow, row
 	prevCells := previous.cells
 	nextCells := next.cells
 	if !previous.hasStyled && !next.hasStyled && len(prevCells) == len(nextCells) {
-		if renderChangedRowRuns(out, prevCells, nextCells, row) {
+		if renderChangedRowRuns(out, prevCells, nextCells, row, fullWidthLines, rowOwnsLineEnd(next)) {
 			return true
 		}
 	}
-	return renderChangedRowSuffix(out, previous, next, row)
+	return renderChangedRowSuffix(out, previous, next, row, fullWidthLines, rowOwnsLineEnd(next))
 }
 
-func renderChangedRowRuns(out *strings.Builder, previous, next []presentedCell, row int) bool {
+func renderChangedRowRuns(out *strings.Builder, previous, next []presentedCell, row int, fullWidthLines bool, ownsLineEnd bool) bool {
 	if len(previous) != len(next) {
 		return false
 	}
@@ -487,9 +493,15 @@ func renderChangedRowRuns(out *strings.Builder, previous, next []presentedCell, 
 			return
 		}
 		writeCUP(out, runStartCol, row+1)
-		writePresentedCells(out, next[runStart:end], runStartCol)
+		lastStyle := writePresentedCells(out, next[runStart:end], runStartCol)
 		if end == len(next) {
-			out.WriteString(xansi.EraseLineRight)
+			if fullWidthLines {
+				// Lines from RenderFrameLines() already serialize every column.
+			} else if ownsLineEnd {
+				writeOwnedLineEndClear(out, lastStyle)
+			} else {
+				out.WriteString(xansi.EraseLineRight)
+			}
 		}
 		runStart = -1
 	}
@@ -511,7 +523,7 @@ func renderChangedRowRuns(out *strings.Builder, previous, next []presentedCell, 
 	return true
 }
 
-func renderChangedRowSuffix(out *strings.Builder, previous, next presentedRow, row int) bool {
+func renderChangedRowSuffix(out *strings.Builder, previous, next presentedRow, row int, fullWidthLines bool, ownsLineEnd bool) bool {
 	prevCells := previous.cells
 	nextCells := next.cells
 	prefixIndex := 0
@@ -525,12 +537,41 @@ func renderChangedRowSuffix(out *strings.Builder, previous, next presentedRow, r
 	}
 	writeCUP(out, prefixWidth+1, row+1)
 	if len(nextCells[prefixIndex:]) == 0 {
-		out.WriteString(xansi.EraseLineRight)
+		if !fullWidthLines && !ownsLineEnd {
+			out.WriteString(xansi.EraseLineRight)
+		}
 		return true
 	}
-	writePresentedCells(out, nextCells[prefixIndex:], prefixWidth+1)
-	out.WriteString(xansi.EraseLineRight)
+	lastStyle := writePresentedCells(out, nextCells[prefixIndex:], prefixWidth+1)
+	if fullWidthLines {
+		return true
+	}
+	if ownsLineEnd {
+		writeOwnedLineEndClear(out, lastStyle)
+	} else {
+		out.WriteString(xansi.EraseLineRight)
+	}
 	return true
+}
+
+func rowOwnsLineEnd(row presentedRow) bool {
+	if row.raw == "" {
+		return false
+	}
+	return strings.Contains(row.raw, "\x1b[K")
+}
+
+func writeOwnedLineEndClear(out *strings.Builder, style presentedStyle) {
+	if out == nil {
+		return
+	}
+	if style != (presentedStyle{}) {
+		out.WriteString(presentedStyleDiffANSI(presentedStyle{}, style))
+	}
+	writeECH(out, 1)
+	if style != (presentedStyle{}) {
+		out.WriteString(presentedResetStyleSequence)
+	}
 }
 
 func parsePresentedRow(row string) presentedRow {
@@ -729,9 +770,9 @@ func (s presentedStyle) withSGRASCII(raw string) (presentedStyle, bool) {
 	return s.withSGRInts(params), true
 }
 
-func writePresentedCells(out *strings.Builder, cells []presentedCell, startCol int) {
+func writePresentedCells(out *strings.Builder, cells []presentedCell, startCol int) presentedStyle {
 	if out == nil || len(cells) == 0 {
-		return
+		return presentedStyle{}
 	}
 	current := presentedStyle{}
 	first := true
@@ -759,6 +800,7 @@ func writePresentedCells(out *strings.Builder, cells []presentedCell, startCol i
 	if current != (presentedStyle{}) {
 		out.WriteString(presentedResetStyleSequence)
 	}
+	return current
 }
 
 func writeCUP(out *strings.Builder, col, row int) {
@@ -1404,6 +1446,7 @@ func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite [
 		finish(writtenBytes)
 	}()
 	presentFinish := perftrace.Measure("cursor_writer.present")
+	w.presenter.fullWidthLines = false
 	payload := w.presenter.Present(frame)
 	presentFinish(len(payload))
 	syncOutput := w.tty != nil
@@ -1456,7 +1499,8 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, cursor string
 		finish(writtenBytes)
 	}()
 	presentFinish := perftrace.Measure("cursor_writer.present")
-	payload := w.presenter.PresentLines(lines)
+	w.presenter.fullWidthLines = true
+	payload := w.presenter.PresentLines(stripTrailingEraseLineRight(lines))
 	presentFinish(len(payload))
 	syncOutput := w.tty != nil
 	if cursor == "" {
@@ -1537,6 +1581,26 @@ func (w *outputCursorWriter) fitLinesToTTY(lines []string) []string {
 	return out
 }
 
+func stripTrailingEraseLineRight(lines []string) []string {
+	if len(lines) == 0 {
+		return nil
+	}
+	var out []string
+	for i := range lines {
+		line := lines[i]
+		if strings.HasSuffix(line, xansi.EraseLineRight) {
+			if out == nil {
+				out = append([]string(nil), lines...)
+			}
+			out[i] = strings.TrimSuffix(line, xansi.EraseLineRight)
+		}
+	}
+	if out == nil {
+		return lines
+	}
+	return out
+}
+
 func truncateFrameToWidth(frame string, width int) string {
 	if frame == "" || width <= 0 {
 		return frame
@@ -1601,10 +1665,20 @@ func newOutputCursorWriter(out io.Writer) *outputCursorWriter {
 		out:           out,
 		frameDumpPath: os.Getenv("TERMX_FRAME_DUMP"),
 	}
+	writer.presenter.allowVerticalScroll = true
 	if tty, ok := out.(xterm.File); ok {
 		writer.tty = tty
 	}
 	return writer
+}
+
+func (w *outputCursorWriter) SetVerticalScrollEnabled(enabled bool) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	w.presenter.allowVerticalScroll = enabled
+	w.mu.Unlock()
 }
 
 func (w *outputCursorWriter) SetCursorSequence(seq string) {

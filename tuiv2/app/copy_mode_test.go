@@ -409,7 +409,7 @@ func TestCopyModeExitRefreshesLatestLocalVTermSnapshot(t *testing.T) {
 	}
 }
 
-func TestCopyModeExitKeepsFrozenSnapshotUntilLiveSnapshotAdvances(t *testing.T) {
+func TestCopyModeExitReturnsToLiveSurfaceImmediatelyWhenLocalVTermIsCurrent(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, []string{"hist-a"}, []string{"queued-text"})
 	client := model.runtime.Client().(*recordingBridgeClient)
@@ -428,25 +428,12 @@ func TestCopyModeExitKeepsFrozenSnapshotUntilLiveSnapshotAdvances(t *testing.T) 
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCancelMode})
 
-	frozenView := xansi.Strip(model.View())
-	if !strings.Contains(frozenView, "queued-text") {
-		t.Fatalf("expected copy-mode exit to keep the frozen snapshot while the live stream is still on the same frame, got:\n%s", frozenView)
-	}
-	if strings.Contains(frozenView, "transient-live") {
-		t.Fatalf("expected transient live frame to stay hidden until the stream advances, got:\n%s", frozenView)
-	}
-
-	client.snapshotByTerminal["term-1"] = copyModeTestSnapshot([]string{"hist-a"}, []string{"settled-live"})
-	if _, err := model.runtime.LoadSnapshot(context.Background(), "term-1", 0, 0); err != nil {
-		t.Fatalf("load settled live snapshot: %v", err)
-	}
-
 	liveView := xansi.Strip(model.View())
-	if !strings.Contains(liveView, "settled-live") {
-		t.Fatalf("expected view to switch back to the live snapshot after the stream advances, got:\n%s", liveView)
+	if !strings.Contains(liveView, "transient-live") {
+		t.Fatalf("expected copy-mode exit to return to the current live surface immediately, got:\n%s", liveView)
 	}
 	if strings.Contains(liveView, "queued-text") {
-		t.Fatalf("expected frozen snapshot override to stop once the live snapshot changes, got:\n%s", liveView)
+		t.Fatalf("expected frozen copy-mode snapshot to clear on exit, got:\n%s", liveView)
 	}
 }
 

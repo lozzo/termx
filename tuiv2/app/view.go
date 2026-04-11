@@ -11,7 +11,11 @@ func (m *Model) View() string {
 	if m == nil || m.render == nil {
 		return ""
 	}
+	m.reconcileCopyModeContext()
 	if rowsWriter, ok := m.frameOut.(frameLinesWriter); ok {
+		if directWriter, ok := rowsWriter.(*outputCursorWriter); ok {
+			directWriter.SetVerticalScrollEnabled(m.allowVerticalScrollOptimization())
+		}
 		if lines, cursor, ok := m.render.CachedFrameLinesAndCursor(); ok {
 			viewBytes = joinedLinesLen(lines) + len(cursor)
 			m.lastViewFrame = ""
@@ -25,7 +29,6 @@ func (m *Model) View() string {
 		m.lastViewCursor = cursor
 		return ""
 	}
-	m.reconcileCopyModeContext()
 	if frame, cursor, ok := m.render.CachedFrameAndCursor(); ok {
 		perftrace.Count("app.view.reuse", len(frame)+len(cursor))
 		viewBytes = len(frame) + len(cursor)
