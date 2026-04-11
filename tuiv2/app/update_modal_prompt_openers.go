@@ -20,6 +20,14 @@ func cloneStringMap(src map[string]string) map[string]string {
 	return out
 }
 
+func cloneIntPointer(src *int) *int {
+	if src == nil {
+		return nil
+	}
+	value := *src
+	return &value
+}
+
 func (m *Model) openEditTerminalPrompt(item *modal.PickerItem) {
 	if m == nil || m.modalHost == nil || item == nil || item.TerminalID == "" {
 		return

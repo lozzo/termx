@@ -8,7 +8,6 @@ import (
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
-	"github.com/lozzow/termx/tuiv2/shared"
 )
 
 func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
@@ -29,30 +28,30 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			m.closeTerminalManager()
 			return true, nil
 		case input.ActionSubmitPrompt:
-			if selected := m.selectedAttachableTerminalPageItem(); selected != nil {
+			if selected := m.selectedTerminalManagerItem(); selected != nil {
 				m.closeTerminalManager()
+				if terminalSelectionNeedsReferenceBinding(selected) {
+					return true, m.bindTerminalSelectionCmd("", m.currentOrActionPaneID(action.PaneID), *selected)
+				}
 				return true, m.attachPaneTerminalCmd("", m.currentOrActionPaneID(action.PaneID), selected.TerminalID)
-			}
-			if m.selectedTerminalManagerItem() != nil {
-				return true, m.showError(shared.UserVisibleError{Op: "attach terminal", Err: fmt.Errorf("selected terminal is exited")})
 			}
 			return true, nil
 		case input.ActionAttachTab:
-			if selected := m.selectedAttachableTerminalPageItem(); selected != nil {
+			if selected := m.selectedTerminalManagerItem(); selected != nil {
 				m.closeTerminalManager()
+				if terminalSelectionNeedsReferenceBinding(selected) {
+					return true, m.createTabAndBindTerminalCmd(*selected)
+				}
 				return true, m.createTabAndAttachTerminalCmd(selected.TerminalID)
-			}
-			if m.selectedTerminalManagerItem() != nil {
-				return true, m.showError(shared.UserVisibleError{Op: "attach terminal", Err: fmt.Errorf("selected terminal is exited")})
 			}
 			return true, nil
 		case input.ActionAttachFloating:
-			if selected := m.selectedAttachableTerminalPageItem(); selected != nil {
+			if selected := m.selectedTerminalManagerItem(); selected != nil {
 				m.closeTerminalManager()
+				if terminalSelectionNeedsReferenceBinding(selected) {
+					return true, m.createFloatingPaneAndBindTerminalCmd(*selected)
+				}
 				return true, m.createFloatingPaneAndAttachTerminalCmd(selected.TerminalID)
-			}
-			if m.selectedTerminalManagerItem() != nil {
-				return true, m.showError(shared.UserVisibleError{Op: "attach terminal", Err: fmt.Errorf("selected terminal is exited")})
 			}
 			return true, nil
 		case input.ActionEditTerminal:
@@ -138,8 +137,14 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 				m.openCreateTerminalPrompt(action.PaneID, modal.CreateTargetReplace)
 				return true, nil
 			}
-			if m.modalHost.Picker.SelectedItem() == nil {
+			selected := m.modalHost.Picker.SelectedItem()
+			if selected == nil {
 				return true, nil
+			}
+			if terminalSelectionNeedsReferenceBinding(selected) {
+				m.closeModal(input.ModePicker, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
+				m.render.Invalidate()
+				return true, m.bindTerminalSelectionCmd("", m.currentOrActionPaneID(action.PaneID), *selected)
 			}
 			return false, nil
 		case input.ActionPickerAttachSplit:
@@ -153,6 +158,9 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			}
 			m.closeModal(input.ModePicker, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
 			m.render.Invalidate()
+			if terminalSelectionNeedsReferenceBinding(selected) {
+				return true, m.splitPaneAndBindTerminalCmd(m.currentOrActionPaneID(action.PaneID), *selected)
+			}
 			return true, m.splitPaneAndAttachTerminalCmd(m.currentOrActionPaneID(action.PaneID), selected.TerminalID)
 		case input.ActionEditTerminal:
 			if selected := m.modalHost.Picker.SelectedItem(); selected != nil && !selected.CreateNew {
@@ -325,12 +333,11 @@ func (m *Model) selectedTerminalManagerItem() *modal.PickerItem {
 	return selected
 }
 
-func (m *Model) selectedAttachableTerminalPageItem() *modal.PickerItem {
-	selected := m.selectedTerminalManagerItem()
-	if selected == nil || selected.State == "exited" {
-		return nil
+func terminalSelectionNeedsReferenceBinding(item *modal.PickerItem) bool {
+	if item == nil || item.CreateNew || item.TerminalID == "" {
+		return false
 	}
-	return selected
+	return terminalSelectionState(*item) != "running"
 }
 
 func (m *Model) closeTerminalManager() {

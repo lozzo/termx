@@ -167,12 +167,13 @@ func TestEffectCmdLoadPickerItemsAppendsCreateNewItem(t *testing.T) {
 	}
 }
 
-func TestEffectCmdLoadPickerItemsSkipsExitedTerminals(t *testing.T) {
+func TestEffectCmdLoadPickerItemsIncludesExitedTerminals(t *testing.T) {
+	exited := 23
 	client := &recordingBridgeClient{
 		listResult: &protocol.ListResult{
 			Terminals: []protocol.TerminalInfo{
 				{ID: "term-1", Name: "shell", State: "running"},
-				{ID: "term-2", Name: "done", State: "exited"},
+				{ID: "term-2", Name: "done", State: "exited", ExitCode: &exited},
 			},
 		},
 	}
@@ -187,14 +188,20 @@ func TestEffectCmdLoadPickerItemsSkipsExitedTerminals(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected pickerItemsLoadedMsg, got %#v", msg)
 	}
-	if len(loaded.Items) != 2 {
-		t.Fatalf("expected running terminal plus create row, got %#v", loaded.Items)
+	if len(loaded.Items) != 3 {
+		t.Fatalf("expected running terminal, exited terminal, and create row, got %#v", loaded.Items)
 	}
-	if loaded.Items[0].TerminalID != "term-1" {
-		t.Fatalf("expected only running terminal to remain attachable, got %#v", loaded.Items)
+	if loaded.Items[0].TerminalID != "term-1" || loaded.Items[0].TerminalState != "running" {
+		t.Fatalf("expected running terminal metadata, got %#v", loaded.Items[0])
 	}
-	if !loaded.Items[1].CreateNew {
-		t.Fatalf("expected final picker row to remain create-new, got %#v", loaded.Items[1])
+	if loaded.Items[1].TerminalID != "term-2" || loaded.Items[1].TerminalState != "exited" {
+		t.Fatalf("expected exited terminal to remain selectable, got %#v", loaded.Items[1])
+	}
+	if loaded.Items[1].ExitCode == nil || *loaded.Items[1].ExitCode != exited {
+		t.Fatalf("expected exited terminal exit code metadata, got %#v", loaded.Items[1])
+	}
+	if !loaded.Items[2].CreateNew {
+		t.Fatalf("expected final picker row to remain create-new, got %#v", loaded.Items[2])
 	}
 }
 

@@ -2,11 +2,13 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/input"
+	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -46,6 +48,129 @@ func (m *Model) createFloatingPaneAndAttachTerminalCmd(terminalID string) tea.Cm
 	}
 	m.render.Invalidate()
 	return tea.Batch(m.attachPaneTerminalCmd(tabID, paneID, terminalID), m.saveStateCmd())
+}
+
+func (m *Model) splitPaneAndBindTerminalCmd(paneID string, item modal.PickerItem) tea.Cmd {
+	if m == nil || m.orchestrator == nil || paneID == "" || item.TerminalID == "" {
+		return nil
+	}
+	tabID, newPaneID, err := m.orchestrator.PrepareSplitAttachTarget(paneID)
+	if err != nil {
+		return func() tea.Msg { return err }
+	}
+	return m.bindTerminalSelectionCmd(tabID, newPaneID, item)
+}
+
+func (m *Model) createTabAndBindTerminalCmd(item modal.PickerItem) tea.Cmd {
+	if m == nil || m.orchestrator == nil || item.TerminalID == "" {
+		return nil
+	}
+	tabID, paneID, err := m.orchestrator.PrepareTabAttachTarget()
+	if err != nil {
+		return func() tea.Msg { return err }
+	}
+	return m.bindTerminalSelectionCmd(tabID, paneID, item)
+}
+
+func (m *Model) createFloatingPaneAndBindTerminalCmd(item modal.PickerItem) tea.Cmd {
+	if m == nil || m.orchestrator == nil || item.TerminalID == "" {
+		return nil
+	}
+	tabID, paneID, err := m.orchestrator.PrepareFloatingAttachTarget()
+	if err != nil {
+		return func() tea.Msg { return err }
+	}
+	return m.bindTerminalSelectionCmd(tabID, paneID, item)
+}
+
+func (m *Model) bindTerminalSelectionCmd(tabID, paneID string, item modal.PickerItem) tea.Cmd {
+	if m == nil || m.workbench == nil || paneID == "" || item.TerminalID == "" {
+		return nil
+	}
+	resolvedTabID, oldTerminalID, err := m.resolveTerminalSelectionTarget(tabID, paneID)
+	if err != nil {
+		return func() tea.Msg { return err }
+	}
+	if err := m.workbench.BindPaneTerminal(resolvedTabID, paneID, item.TerminalID); err != nil {
+		return func() tea.Msg { return err }
+	}
+	_ = m.workbench.FocusPane(resolvedTabID, paneID)
+	if name := strings.TrimSpace(item.Name); name != "" {
+		m.workbench.SetPaneTitleByTerminalID(item.TerminalID, name)
+	}
+	if m.runtime != nil {
+		m.runtime.UnbindPane(paneID, oldTerminalID)
+		terminal := m.runtime.Registry().GetOrCreate(item.TerminalID)
+		if terminal != nil {
+			terminal.Name = strings.TrimSpace(item.Name)
+			if len(item.CommandArgs) > 0 {
+				terminal.Command = append([]string(nil), item.CommandArgs...)
+			}
+			terminal.Tags = cloneStringMap(item.Tags)
+			terminal.State = terminalSelectionState(item)
+			terminal.ExitCode = cloneIntPointer(item.ExitCode)
+			terminal.Channel = 0
+			terminal.AttachMode = ""
+			terminal.OwnerPaneID = paneID
+			terminal.ControlPaneID = ""
+			terminal.RequiresExplicitOwner = false
+			terminal.BoundPaneIDs = appendUniqueValue(terminal.BoundPaneIDs, paneID)
+		}
+	}
+	m.resetPaneScrollOffset(resolvedTabID, paneID)
+	m.render.Invalidate()
+	cmds := []tea.Cmd{m.saveStateCmd()}
+	if m.runtime != nil && terminalSelectionState(item) == "exited" {
+		cmds = append(cmds, m.effectCmd(orchestrator.LoadSnapshotEffect{
+			TerminalID: item.TerminalID,
+			Offset:     0,
+			Limit:      defaultTerminalSnapshotScrollbackLimit,
+		}))
+	}
+	return batchCmds(cmds...)
+}
+
+func (m *Model) resolveTerminalSelectionTarget(tabID, paneID string) (string, string, error) {
+	if m == nil || m.workbench == nil || paneID == "" {
+		return "", "", fmt.Errorf("select terminal: target pane is required")
+	}
+	workspace := m.workbench.CurrentWorkspace()
+	if workspace == nil {
+		return "", "", fmt.Errorf("select terminal: no current workspace")
+	}
+	for _, tab := range workspace.Tabs {
+		if tab == nil || tab.Panes[paneID] == nil {
+			continue
+		}
+		if tabID != "" && tab.ID != tabID {
+			continue
+		}
+		return tab.ID, tab.Panes[paneID].TerminalID, nil
+	}
+	if tabID != "" {
+		return "", "", fmt.Errorf("select terminal: pane %s not found in tab %s", paneID, tabID)
+	}
+	return "", "", fmt.Errorf("select terminal: pane %s not found", paneID)
+}
+
+func terminalSelectionState(item modal.PickerItem) string {
+	state := strings.TrimSpace(item.TerminalState)
+	if state != "" {
+		return state
+	}
+	return strings.TrimSpace(item.State)
+}
+
+func appendUniqueValue(values []string, value string) []string {
+	if value == "" {
+		return values
+	}
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
 }
 
 func (m *Model) nextSequenceCmd(seq sequenceMsg) tea.Cmd {

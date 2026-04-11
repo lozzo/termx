@@ -9,18 +9,20 @@ import (
 
 // PickerItem 是 picker 列表中的一条终端记录。
 type PickerItem struct {
-	TerminalID  string
-	Name        string
-	State       string
-	Command     string
-	CommandArgs []string
-	Tags        map[string]string
-	Location    string
-	Observed    bool
-	Orphan      bool
-	CreateNew   bool
-	Description string
-	CreatedAt   time.Time
+	TerminalID    string
+	Name          string
+	State         string
+	TerminalState string
+	ExitCode      *int
+	Command       string
+	CommandArgs   []string
+	Tags          map[string]string
+	Location      string
+	Observed      bool
+	Orphan        bool
+	CreateNew     bool
+	Description   string
+	CreatedAt     time.Time
 
 	lineBody   string
 	lineWidth  int
@@ -30,13 +32,13 @@ type PickerItem struct {
 
 // PickerState 保存 picker modal 的全部 UI 状态。
 type PickerState struct {
-	Title    string
-	Footer   string
-	Items    []PickerItem
-	Filtered []PickerItem
-	Selected int
-	Query    string
-	Cursor   int
+	Title     string
+	Footer    string
+	Items     []PickerItem
+	Filtered  []PickerItem
+	Selected  int
+	Query     string
+	Cursor    int
 	CursorSet bool
 }
 
@@ -77,7 +79,7 @@ func (p *PickerState) ApplyFilter() {
 	}
 	filtered := make([]PickerItem, 0, len(p.Items))
 	for _, item := range p.Items {
-		search := strings.ToLower(strings.Join([]string{item.TerminalID, item.Name, item.Command, item.Location, item.State, item.Description}, " "))
+		search := strings.ToLower(strings.Join([]string{item.TerminalID, item.Name, item.Command, item.Location, item.State, item.TerminalState, item.Description}, " "))
 		if strings.Contains(search, query) {
 			filtered = append(filtered, item)
 		}

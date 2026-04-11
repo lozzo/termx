@@ -50,17 +50,19 @@ func (m *Model) buildTerminalManagerItems(terminals []protocol.TerminalInfo) []m
 			group = "visible"
 		}
 		items = append(items, modal.PickerItem{
-			TerminalID:  terminal.ID,
-			Name:        terminal.Name,
-			State:       group,
-			Command:     strings.Join(terminal.Command, " "),
-			CommandArgs: append([]string(nil), terminal.Command...),
-			Tags:        cloneStringMap(terminal.Tags),
-			Location:    formatTerminalManagerLocation(locations),
-			Observed:    visibleCount > 0,
-			Orphan:      len(locations) == 0,
-			Description: formatTerminalManagerDescription(terminal, len(locations)),
-			CreatedAt:   terminal.CreatedAt,
+			TerminalID:    terminal.ID,
+			Name:          terminal.Name,
+			State:         group,
+			TerminalState: terminal.State,
+			ExitCode:      cloneIntPointer(terminal.ExitCode),
+			Command:       strings.Join(terminal.Command, " "),
+			CommandArgs:   append([]string(nil), terminal.Command...),
+			Tags:          cloneStringMap(terminal.Tags),
+			Location:      formatTerminalManagerLocation(locations),
+			Observed:      visibleCount > 0,
+			Orphan:        len(locations) == 0,
+			Description:   formatTerminalManagerDescription(terminal, len(locations)),
+			CreatedAt:     terminal.CreatedAt,
 		})
 	}
 	sort.SliceStable(items, func(i, j int) bool {

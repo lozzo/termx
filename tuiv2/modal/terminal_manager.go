@@ -4,13 +4,13 @@ import "strings"
 
 // TerminalManagerState 保存 terminal manager modal 的 UI 状态。
 type TerminalManagerState struct {
-	Title    string
-	Footer   string
-	Items    []PickerItem
-	Filtered []PickerItem
-	Selected int
-	Query    string
-	Cursor   int
+	Title     string
+	Footer    string
+	Items     []PickerItem
+	Filtered  []PickerItem
+	Selected  int
+	Query     string
+	Cursor    int
 	CursorSet bool
 }
 
@@ -51,7 +51,7 @@ func (m *TerminalManagerState) ApplyFilter() {
 	}
 	filtered := make([]PickerItem, 0, len(m.Items))
 	for _, item := range m.Items {
-		search := strings.ToLower(strings.Join([]string{item.TerminalID, item.Name, item.Command, item.Location, item.State, item.Description}, " "))
+		search := strings.ToLower(strings.Join([]string{item.TerminalID, item.Name, item.Command, item.Location, item.State, item.TerminalState, item.Description}, " "))
 		if strings.Contains(search, query) {
 			filtered = append(filtered, item)
 		}

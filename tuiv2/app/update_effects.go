@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/input"
@@ -92,13 +93,16 @@ func (m *Model) effectCmd(effect orchestrator.Effect) tea.Cmd {
 			}
 			items := make([]modal.PickerItem, 0, len(terminals))
 			for _, terminal := range terminals {
-				if terminal.State == "exited" {
-					continue
-				}
 				items = append(items, modal.PickerItem{
-					TerminalID: terminal.ID,
-					Name:       terminal.Name,
-					State:      terminal.State,
+					TerminalID:    terminal.ID,
+					Name:          terminal.Name,
+					State:         terminal.State,
+					TerminalState: terminal.State,
+					ExitCode:      cloneIntPointer(terminal.ExitCode),
+					Command:       strings.Join(terminal.Command, " "),
+					CommandArgs:   append([]string(nil), terminal.Command...),
+					Tags:          cloneStringMap(terminal.Tags),
+					CreatedAt:     terminal.CreatedAt,
 				})
 			}
 			items = append(items, modal.PickerItem{

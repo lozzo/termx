@@ -1950,7 +1950,7 @@ func TestFeatureTerminalManagerEnterAttachesSelectedTerminalHere(t *testing.T) {
 	}
 }
 
-func TestFeatureTerminalPoolExitedItemDoesNotAttemptAttach(t *testing.T) {
+func TestFeaturePickerExitedItemBindsPaneAndLoadsSnapshot(t *testing.T) {
 	exited := 23
 	client := &recordingBridgeClient{
 		listResult: &protocol.ListResult{
@@ -1959,8 +1959,62 @@ func TestFeatureTerminalPoolExitedItemDoesNotAttemptAttach(t *testing.T) {
 				{ID: "term-2", Name: "done", State: "exited", ExitCode: &exited},
 			},
 		},
-		attachResult:       &protocol.AttachResult{Channel: 9, Mode: "collaborator"},
-		snapshotByTerminal: map[string]*protocol.Snapshot{},
+		attachResult: &protocol.AttachResult{Channel: 9, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-2": {
+				TerminalID: "term-2",
+				Size:       protocol.Size{Cols: 80, Rows: 24},
+				Screen: protocol.ScreenData{
+					Cells: [][]protocol.Cell{{{Content: "done", Width: 4}}},
+				},
+			},
+		},
+	}
+	model := setupModel(t, modelOpts{client: client})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenPicker, PaneID: "pane-1", TargetID: "pane-1"})
+	dispatchKey(t, model, tea.KeyMsg{Type: tea.KeyDown})
+	dispatchKey(t, model, tea.KeyMsg{Type: tea.KeyDown})
+	dispatchKey(t, model, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if len(client.attachCalls) != 0 {
+		t.Fatalf("expected exited picker selection not to attach, got %#v", client.attachCalls)
+	}
+	if pane := model.workbench.ActivePane(); pane == nil || pane.TerminalID != "term-2" {
+		t.Fatalf("expected active pane rebound to exited term-2, got %#v", pane)
+	}
+	terminal := model.runtime.Registry().Get("term-2")
+	if terminal == nil || terminal.State != "exited" {
+		t.Fatalf("expected exited runtime cached for term-2, got %#v", terminal)
+	}
+	if terminal.ExitCode == nil || *terminal.ExitCode != exited {
+		t.Fatalf("expected exit code retained on selected terminal, got %#v", terminal)
+	}
+	if terminal.Snapshot == nil || len(terminal.Snapshot.Screen.Cells) == 0 {
+		t.Fatalf("expected exited terminal snapshot loaded after selection, got %#v", terminal)
+	}
+	assertMode(t, model, input.ModeNormal)
+}
+
+func TestFeatureTerminalPoolExitedItemBindsPaneAndClosesManager(t *testing.T) {
+	exited := 23
+	client := &recordingBridgeClient{
+		listResult: &protocol.ListResult{
+			Terminals: []protocol.TerminalInfo{
+				{ID: "term-1", Name: "shell", State: "running"},
+				{ID: "term-2", Name: "done", State: "exited", ExitCode: &exited},
+			},
+		},
+		attachResult: &protocol.AttachResult{Channel: 9, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-2": {
+				TerminalID: "term-2",
+				Size:       protocol.Size{Cols: 80, Rows: 24},
+				Screen: protocol.ScreenData{
+					Cells: [][]protocol.Cell{{{Content: "done", Width: 4}}},
+				},
+			},
+		},
 	}
 	model := setupModel(t, modelOpts{client: client})
 
@@ -1970,11 +2024,18 @@ func TestFeatureTerminalPoolExitedItemDoesNotAttemptAttach(t *testing.T) {
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionSubmitPrompt})
 
 	if len(client.attachCalls) != 0 {
-		t.Fatalf("expected exited terminal to be non-attachable, got %#v", client.attachCalls)
+		t.Fatalf("expected exited terminal manager selection not to attach, got %#v", client.attachCalls)
 	}
-	assertMode(t, model, input.ModeTerminalManager)
-	if model.terminalPage == nil {
-		t.Fatal("expected terminal pool page to stay open on invalid attach action")
+	if pane := model.workbench.ActivePane(); pane == nil || pane.TerminalID != "term-2" {
+		t.Fatalf("expected active pane rebound to exited term-2, got %#v", pane)
+	}
+	terminal := model.runtime.Registry().Get("term-2")
+	if terminal == nil || terminal.State != "exited" || terminal.Snapshot == nil {
+		t.Fatalf("expected exited terminal cached with snapshot, got %#v", terminal)
+	}
+	assertMode(t, model, input.ModeNormal)
+	if model.terminalPage != nil {
+		t.Fatalf("expected terminal manager to close after selection, got %#v", model.terminalPage)
 	}
 }
 
