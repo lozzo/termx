@@ -34,7 +34,6 @@ type PickerItem struct {
 // PickerState 保存 picker modal 的全部 UI 状态。
 type PickerState struct {
 	Title     string
-	Footer    string
 	Items     []PickerItem
 	Filtered  []PickerItem
 	Selected  int

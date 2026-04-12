@@ -5,7 +5,6 @@ import "strings"
 // TerminalManagerState 保存 terminal manager modal 的 UI 状态。
 type TerminalManagerState struct {
 	Title     string
-	Footer    string
 	Items     []PickerItem
 	Filtered  []PickerItem
 	Selected  int

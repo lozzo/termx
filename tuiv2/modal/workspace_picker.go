@@ -49,7 +49,6 @@ type WorkspacePickerItem struct {
 
 type WorkspacePickerState struct {
 	Title       string
-	Footer      string
 	Query       string
 	Cursor      int
 	CursorSet   bool

@@ -225,7 +225,6 @@ func (m *Model) resetPickerState() {
 		return
 	}
 	m.modalHost.Picker.Title = ""
-	m.modalHost.Picker.Footer = ""
 	m.modalHost.Picker.Items = nil
 	m.modalHost.Picker.Filtered = nil
 	m.modalHost.Picker.Selected = 0

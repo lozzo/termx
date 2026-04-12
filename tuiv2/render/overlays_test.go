@@ -200,7 +200,6 @@ func TestRenderFrameWithHelpOverlay(t *testing.T) {
 func TestRenderTerminalManagerOverlayShowsSelectedTerminalDetails(t *testing.T) {
 	manager := &modal.TerminalManagerState{
 		Title:    "Terminal Manager",
-		Footer:   "here  tab  float  edit  kill  close",
 		Selected: 0,
 		Items: []modal.PickerItem{{
 			TerminalID:  "term-1",

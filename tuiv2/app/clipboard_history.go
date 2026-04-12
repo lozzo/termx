@@ -86,7 +86,6 @@ func (m *Model) openClipboardHistory() tea.Cmd {
 	}
 	m.modalHost.Picker = &modal.PickerState{
 		Title:    "Clipboard History",
-		Footer:   "[Enter] paste  [Esc] close",
 		Items:    items,
 		Selected: 0,
 	}

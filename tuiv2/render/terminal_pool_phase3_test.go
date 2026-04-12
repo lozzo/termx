@@ -14,7 +14,6 @@ func TestTerminalPoolPageRendersGroupedListLivePreviewAndRelationships(t *testin
 	state := makeTestState()
 	state = AttachTerminalPool(state, &modal.TerminalManagerState{
 		Title:    "Terminal Pool",
-		Footer:   "[Enter] here  [Ctrl-T] tab  [Ctrl-O] float  [Ctrl-E] edit  [Ctrl-K] kill  [Esc] close",
 		Selected: 0,
 		Items: []modal.PickerItem{
 			{

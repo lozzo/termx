@@ -4,8 +4,7 @@ import "testing"
 
 func TestWorkspacePickerStateFieldsAndFiltering(t *testing.T) {
 	state := WorkspacePickerState{
-		Title:  "Choose Workspace",
-		Footer: "[Enter] switch or create  [Esc] close",
+		Title: "Choose Workspace",
 		Items: []WorkspacePickerItem{
 			{Name: "ws-3", Description: "Create a new workspace", CreateNew: true},
 			{Name: "main", Description: "1 tab(s), 1 pane(s)"},
@@ -20,9 +19,6 @@ func TestWorkspacePickerStateFieldsAndFiltering(t *testing.T) {
 
 	if state.Title != "Choose Workspace" {
 		t.Fatalf("expected title to round-trip, got %q", state.Title)
-	}
-	if state.Footer == "" {
-		t.Fatal("expected footer to be stored")
 	}
 	if state.RenderWidth != 72 {
 		t.Fatalf("expected render width 72, got %d", state.RenderWidth)

@@ -2135,7 +2135,6 @@ func TestRenderFrameUsesDedicatedTerminalPoolPageLayout(t *testing.T) {
 	state := makeTestState()
 	state = AttachTerminalPool(state, &modal.TerminalManagerState{
 		Title:    "Terminal Pool",
-		Footer:   "[Enter] here  [Ctrl-T] tab  [Ctrl-O] float  [Ctrl-E] edit  [Ctrl-K] kill  [Esc] close",
 		Selected: 0,
 		Items: []modal.PickerItem{
 			{TerminalID: "term-1", Name: "shell", State: "visible", Description: "running · 1 pane bound", Tags: map[string]string{"termx.size_lock": "lock"}},
@@ -2143,6 +2142,7 @@ func TestRenderFrameUsesDedicatedTerminalPoolPageLayout(t *testing.T) {
 		},
 	})
 	state = WithStatus(state, "", "", string(input.ModeTerminalManager))
+	state = WithStatusHints(state, []string{"Enter HERE", "Ctrl-T TAB", "Ctrl-O FLOAT", "Ctrl-E EDIT", "Esc BACK"})
 	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
 
 	for _, want := range []string{"Terminal Pool", "term-1", terminalmeta.SizeLockLockedIcon + " shell", "term-2", "[Enter] here", "[Ctrl-E] edit", "TERMINAL-MANAGER", "[Enter] HERE", "[Ctrl-T] TAB"} {
@@ -2176,7 +2176,6 @@ func TestRenderFrameTerminalPoolPageUsesUnifiedStatusBarWhenDetailsOverflow(t *t
 	state := makeTestState()
 	state = AttachTerminalPool(state, &modal.TerminalManagerState{
 		Title:    "Terminal Pool",
-		Footer:   "[Enter] dedicated footer",
 		Selected: 0,
 		Items: []modal.PickerItem{
 			{
@@ -2198,6 +2197,7 @@ func TestRenderFrameTerminalPoolPageUsesUnifiedStatusBarWhenDetailsOverflow(t *t
 	})
 	state = WithTermSize(state, 180, 10)
 	state = WithStatus(state, "", "", "terminal-manager")
+	state = WithStatusHints(state, []string{"Enter HERE", "Ctrl-T TAB", "Ctrl-O FLOAT", "Esc BACK"})
 
 	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
 	if strings.Contains(frame, "[Enter] dedicated footer") {
