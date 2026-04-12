@@ -130,13 +130,13 @@ func (s *terminalInteractionService) acquireSessionLease(ctx context.Context, pa
 		}
 		return err
 	}
-	if lease != nil {
-		if s.model.sessionLeases == nil {
-			s.model.sessionLeases = make(map[string]protocol.LeaseInfo)
-		}
-		s.model.sessionLeases[lease.TerminalID] = *lease
+	sessionRuntime := s.model.sessionRuntimeService()
+	if lease != nil && sessionRuntime != nil {
+		sessionRuntime.storeLease(*lease)
 	}
-	s.model.runtime.ApplySessionLeases(s.model.sessionViewID, s.model.currentSessionLeases())
+	if sessionRuntime != nil {
+		sessionRuntime.applyCurrentLeases()
+	}
 	return nil
 }
 

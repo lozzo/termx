@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -100,30 +99,11 @@ func (m *Model) acquireSessionLeaseAndResizeCmd(paneID, terminalID string) tea.C
 }
 
 func (m *Model) releaseSessionLeaseCmd(terminalID string) tea.Cmd {
-	if m == nil || m.sessionID == "" || m.sessionViewID == "" || m.runtime == nil || m.runtime.Client() == nil || terminalID == "" {
+	service := m.sessionRuntimeService()
+	if service == nil {
 		return nil
 	}
-	client := m.runtime.Client()
-	params := protocol.ReleaseSessionLeaseParams{
-		SessionID:  m.sessionID,
-		ViewID:     m.sessionViewID,
-		TerminalID: terminalID,
-	}
-	return func() tea.Msg {
-		if err := client.ReleaseSessionLease(context.Background(), params); err != nil {
-			if isSessionLeaseUnsupported(err) {
-				return fmt.Errorf("connected termx daemon is too old for shared resize control; restart the daemon and reconnect")
-			}
-			return err
-		}
-		if m.sessionLeases != nil {
-			delete(m.sessionLeases, terminalID)
-		}
-		if m.runtime != nil {
-			m.runtime.ApplySessionLeases(m.sessionViewID, m.currentSessionLeases())
-		}
-		return nil
-	}
+	return service.releaseLeaseCmd(terminalID)
 }
 
 func (m *Model) currentSessionLeases() []protocol.LeaseInfo {
@@ -206,27 +186,9 @@ func (m *Model) exportSessionWorkbench() *workbenchdoc.Doc {
 }
 
 func (m *Model) reconcileSessionRuntime(ctx context.Context, oldBindings, nextBindings map[string]string) {
-	if m == nil || m.runtime == nil {
+	service := m.sessionRuntimeService()
+	if service == nil {
 		return
 	}
-	for paneID, terminalID := range oldBindings {
-		if nextBindings[paneID] == terminalID {
-			continue
-		}
-		m.runtime.UnbindPane(paneID, terminalID)
-	}
-	for paneID, terminalID := range nextBindings {
-		if paneID == "" || terminalID == "" {
-			continue
-		}
-		if oldBindings[paneID] == terminalID {
-			if binding := m.runtime.Binding(paneID); binding != nil && binding.Connected {
-				continue
-			}
-		}
-		if _, err := m.runtime.AttachTerminal(ctx, paneID, terminalID, "collaborator"); err != nil {
-			continue
-		}
-		_ = m.runtime.StartStream(ctx, terminalID)
-	}
+	service.reconcileRuntime(ctx, oldBindings, nextBindings)
 }

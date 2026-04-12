@@ -172,3 +172,51 @@ func TestTerminalInteractionServiceSyncExplicitSessionTakeoverAcquiresLeaseAndRe
 		t.Fatalf("expected local lease stored after acquire, got %#v", lease)
 	}
 }
+
+func TestTerminalInteractionServiceShouldAcquireSessionLeaseForExplicitAndImplicitPaths(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	model.sessionID = "session-main"
+	model.sessionViewID = "view-local"
+	model.sessionLeases = map[string]protocol.LeaseInfo{
+		"term-1": {TerminalID: "term-1", SessionID: "session-main", ViewID: "view-remote", PaneID: "pane-1"},
+	}
+	service := model.terminalInteractionService()
+	target := terminalInteractionTarget{paneID: "pane-1", terminalID: "term-1"}
+
+	if !service.shouldAcquireSessionLease(terminalInteractionRequest{ExplicitTakeover: true}, target) {
+		t.Fatal("expected explicit takeover to require session lease acquire")
+	}
+	if !service.shouldAcquireSessionLease(terminalInteractionRequest{ImplicitSessionLease: true}, target) {
+		t.Fatal("expected implicit same-pane remote lease to require acquire")
+	}
+	if service.shouldAcquireSessionLease(terminalInteractionRequest{}, target) {
+		t.Fatal("expected plain interaction not to acquire session lease")
+	}
+}
+
+func TestTerminalInteractionServiceResizeIfNeededForcesPendingOwnerResize(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	model := setupModel(t, modelOpts{client: client})
+	service := model.terminalInteractionService()
+	target, ok := service.resolveTarget(terminalInteractionRequest{PaneID: "pane-1"})
+	if !ok {
+		t.Fatal("expected target resolution to succeed")
+	}
+	rect, ok := model.activePaneContentRect()
+	if !ok {
+		t.Fatal("expected active pane content rect")
+	}
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: uint16(rect.W), Rows: uint16(rect.H)},
+	}
+	terminal.PendingOwnerResize = true
+
+	if err := service.resizeIfNeeded(context.Background(), target); err != nil {
+		t.Fatalf("resize with pending owner force: %v", err)
+	}
+	if len(client.resizes) != 1 {
+		t.Fatalf("expected forced resize despite matching size, got %#v", client.resizes)
+	}
+}

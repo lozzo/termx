@@ -389,7 +389,9 @@ func (m *Model) applySessionSnapshot(snapshot *protocol.SessionSnapshot) {
 	if m.runtime != nil {
 		nextBindings := sessionstate.PaneTerminalBindings(snapshot.Workbench)
 		m.reconcileSessionRuntime(context.Background(), oldBindings, nextBindings)
-		m.runtime.ApplySessionLeases(m.sessionViewID, snapshot.Leases)
+		if service := m.sessionRuntimeService(); service != nil {
+			service.applyCurrentLeases()
+		}
 	}
 	m.render.Invalidate()
 }
