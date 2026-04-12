@@ -1192,6 +1192,81 @@ func TestStripEmbeddedCursorSequenceKeepsTrailingRestoreCursorSuffix(t *testing.
 	}
 }
 
+func TestPresentedStyleWithSGRASCIIParsesSimpleAttributes(t *testing.T) {
+	style, ok := (presentedStyle{}).withSGRASCII("31;44;1")
+	if !ok {
+		t.Fatal("expected sgr parse success")
+	}
+	if style.FGCode != "31" || style.BGCode != "44" || !style.Bold {
+		t.Fatalf("unexpected parsed style %#v", style)
+	}
+}
+
+func TestParsePresentedRowASCIICapturesStyledEraseCells(t *testing.T) {
+	row, ok := parsePresentedRowASCII("\x1b[31mA\x1b[2X\x1b[0m")
+	if !ok {
+		t.Fatal("expected ascii row parse success")
+	}
+	if !row.hasStyled || !row.hasErase {
+		t.Fatalf("expected styled erase row flags, got %#v", row)
+	}
+	if len(row.cells) != 3 {
+		t.Fatalf("expected one glyph and two erase cells, got %#v", row.cells)
+	}
+	if row.cells[0].Content != "A" || row.cells[0].Style.FGCode != "31" {
+		t.Fatalf("unexpected styled leading cell %#v", row.cells[0])
+	}
+	if !row.cells[1].Erase || !row.cells[2].Erase {
+		t.Fatalf("expected trailing erase cells, got %#v", row.cells)
+	}
+}
+
+func TestParsePresentedRowGenericMarksWideCells(t *testing.T) {
+	row := parsePresentedRow("界")
+	if !row.hasWide {
+		t.Fatalf("expected wide-row marker, got %#v", row)
+	}
+	if len(row.cells) != 1 || row.cells[0].Width != 2 {
+		t.Fatalf("expected one wide cell, got %#v", row.cells)
+	}
+}
+
+func TestRowOwnsLineEndDetectsEraseLineSuffix(t *testing.T) {
+	if !rowOwnsLineEnd(presentedRow{raw: "body\x1b[K"}) {
+		t.Fatal("expected erase-line suffix to claim line end")
+	}
+	if rowOwnsLineEnd(presentedRow{raw: "body"}) {
+		t.Fatal("expected plain row not to claim line end")
+	}
+}
+
+func TestWriteOwnedLineEndClearPreservesStyleAndResets(t *testing.T) {
+	var out strings.Builder
+	style := presentedStyle{FGCode: "31"}
+	writeOwnedLineEndClear(&out, style)
+	want := presentedStyleDiffANSI(presentedStyle{}, style) + "\x1b[1X" + presentedResetStyleSequence
+	if got := out.String(); got != want {
+		t.Fatalf("unexpected owned-line-end clear %q want %q", got, want)
+	}
+}
+
+func TestWritePresentedCellsEmitsStyledEraseAndReset(t *testing.T) {
+	var out strings.Builder
+	style := presentedStyle{FGCode: "31"}
+	cells := []presentedCell{
+		{Content: "A", Width: 1, Style: style},
+		{Content: " ", Width: 1, Style: style, Erase: true},
+	}
+	finalStyle := writePresentedCells(&out, cells, 1)
+	if finalStyle != style {
+		t.Fatalf("expected final style %#v, got %#v", style, finalStyle)
+	}
+	want := presentedStyleDiffANSI(presentedStyle{}, style) + "A" + "\x1b[1X" + presentedResetStyleSequence
+	if got := out.String(); got != want {
+		t.Fatalf("unexpected presented cell payload %q want %q", got, want)
+	}
+}
+
 func TestOutputCursorWriterCopyModeRoundTripRepaintsScrollbackViewBackToLive(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
