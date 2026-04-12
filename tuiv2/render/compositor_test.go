@@ -302,6 +302,52 @@ func TestHexToRGB(t *testing.T) {
 	}
 }
 
+func TestParsePaletteColorHelpers(t *testing.T) {
+	if got, ok := parseAnsiColor("ansi:12"); !ok || got != 12 {
+		t.Fatalf("expected ansi palette parse, got value=%d ok=%v", got, ok)
+	}
+	if got, ok := parseIdxColor("idx:203"); !ok || got != 203 {
+		t.Fatalf("expected idx palette parse, got value=%d ok=%v", got, ok)
+	}
+	if _, ok := parseAnsiColor("ansi:99"); ok {
+		t.Fatal("expected out-of-range ansi palette to fail")
+	}
+	if _, ok := parseIdxColor("idx:-1"); ok {
+		t.Fatal("expected negative idx palette to fail")
+	}
+}
+
+func TestWriteSimpleCSIEmitsExpectedSequence(t *testing.T) {
+	var b strings.Builder
+	writeSimpleCSI(&b, 'G', 12)
+	if got, want := b.String(), "\x1b[12G"; got != want {
+		t.Fatalf("unexpected CSI sequence %q want %q", got, want)
+	}
+}
+
+func TestWriteFGColorAndBGColorSupportAnsiIdxAndRGB(t *testing.T) {
+	tests := []struct {
+		name string
+		fn   func(*strings.Builder, string)
+		arg  string
+		want string
+	}{
+		{name: "fg ansi", fn: writeFGColor, arg: "ansi:12", want: ";94"},
+		{name: "bg idx", fn: writeBGColor, arg: "idx:203", want: ";48;5;203"},
+		{name: "fg rgb", fn: writeFGColor, arg: "#ff8000", want: ";38;2;255;128;0"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var b strings.Builder
+			tt.fn(&b, tt.arg)
+			if got := b.String(); got != tt.want {
+				t.Fatalf("unexpected color sequence %q want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestItoa(t *testing.T) {
 	if itoa(0) != "0" {
 		t.Fatalf("itoa(0) = %q", itoa(0))
