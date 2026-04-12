@@ -7,6 +7,7 @@ import (
 	"charm.land/lipgloss/v2"
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/tuiv2/input"
+	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -68,7 +69,10 @@ type statusBarToken struct {
 }
 
 func statusBarRightTokens(state VisibleRenderState) []statusBarToken {
-	tokens := make([]statusBarToken, 0, 3)
+	tokens := make([]statusBarToken, 0, 8)
+	if state.Overlay.Kind == VisibleOverlayWorkspacePicker && state.Overlay.WorkspacePicker != nil {
+		tokens = append(tokens, workspacePickerStatusBarRightTokens(state.Overlay.WorkspacePicker.SelectedItem())...)
+	}
 	if state.Workbench != nil {
 		tokens = append(tokens, statusBarToken{Label: "ws:" + state.Workbench.WorkspaceName})
 		if label := floatingSummaryLabel(state.Workbench); label != "" {
@@ -83,6 +87,53 @@ func statusBarRightTokens(state VisibleRenderState) []statusBarToken {
 		tokens = append(tokens, statusBarToken{Label: fmt.Sprintf("terminals:%d", len(state.Runtime.Terminals))})
 	}
 	return tokens
+}
+
+func workspacePickerStatusBarRightTokens(item *modal.WorkspacePickerItem) []statusBarToken {
+	if item == nil {
+		return nil
+	}
+	switch {
+	case item.CreateNew:
+		label := "sel:new-workspace"
+		if name := strings.TrimSpace(item.CreateName); name != "" {
+			label = "sel:new:" + name
+		}
+		return []statusBarToken{{Label: label}}
+	case strings.TrimSpace(item.PaneID) != "":
+		tokens := []statusBarToken{{Label: "sel:pane:" + strings.TrimSpace(item.Name)}}
+		if state := strings.TrimSpace(item.State); state != "" {
+			tokens = append(tokens, statusBarToken{Label: state})
+		}
+		if role := strings.TrimSpace(item.Role); role != "" {
+			tokens = append(tokens, statusBarToken{Label: role})
+		}
+		if item.Floating {
+			tokens = append(tokens, statusBarToken{Label: "floating"})
+		}
+		return tokens
+	case strings.TrimSpace(item.TabID) != "":
+		tokens := []statusBarToken{{Label: "sel:tab:" + strings.TrimSpace(item.Name)}}
+		if item.PaneCount > 0 {
+			tokens = append(tokens, statusBarToken{Label: fmt.Sprintf("panes:%d", item.PaneCount)})
+		}
+		if item.FloatingCount > 0 {
+			tokens = append(tokens, statusBarToken{Label: fmt.Sprintf("float:%d", item.FloatingCount)})
+		}
+		return tokens
+	default:
+		tokens := []statusBarToken{{Label: "sel:ws:" + strings.TrimSpace(item.Name)}}
+		if item.TabCount > 0 {
+			tokens = append(tokens, statusBarToken{Label: fmt.Sprintf("tabs:%d", item.TabCount)})
+		}
+		if item.PaneCount > 0 {
+			tokens = append(tokens, statusBarToken{Label: fmt.Sprintf("panes:%d", item.PaneCount)})
+		}
+		if item.FloatingCount > 0 {
+			tokens = append(tokens, statusBarToken{Label: fmt.Sprintf("float:%d", item.FloatingCount)})
+		}
+		return tokens
+	}
 }
 
 func renderStatusBarRight(theme uiTheme, tokens []statusBarToken) string {
@@ -236,6 +287,7 @@ type statusHintContext struct {
 	workspaceCount   int
 	hasFloating      bool
 	activeIsFloating bool
+	selectedTreeItem *modal.WorkspacePickerItem
 	state            *VisibleRenderState
 }
 
@@ -265,6 +317,9 @@ func currentStatusTexts(state VisibleRenderState) []string {
 
 func buildStatusHintContext(state VisibleRenderState) statusHintContext {
 	ctx := statusHintContext{state: &state}
+	if state.Overlay.Kind == VisibleOverlayWorkspacePicker && state.Overlay.WorkspacePicker != nil {
+		ctx.selectedTreeItem = state.Overlay.WorkspacePicker.SelectedItem()
+	}
 	if state.Workbench == nil {
 		return ctx
 	}
@@ -346,6 +401,20 @@ func statusDocVisible(doc input.BindingDoc, mode input.ModeKind, ctx statusHintC
 		case input.ActionOpenWorkspacePicker, input.ActionCreateWorkspace, input.ActionRenameWorkspace, input.ActionDeleteWorkspace:
 			return ctx.workspaceCount >= 0
 		}
+	case input.ModeWorkspacePicker:
+		selectedKind := ctx.selectedWorkspaceTreeItemKind()
+		switch doc.Binding.Action {
+		case input.ActionSubmitPrompt:
+			return selectedKind != ""
+		case input.ActionCreateWorkspace:
+			return selectedKind == "" || selectedKind == "workspace" || selectedKind == "create"
+		case input.ActionRenameWorkspace:
+			return selectedKind == "workspace" || selectedKind == "tab"
+		case input.ActionDeleteWorkspace:
+			return selectedKind == "workspace" || selectedKind == "tab" || selectedKind == "pane"
+		case input.ActionDetachPane, input.ActionZoomPane:
+			return selectedKind == "pane"
+		}
 	case input.ModeFloating:
 		switch doc.Binding.Action {
 		case input.ActionCreateFloatingPane:
@@ -372,6 +441,22 @@ func statusDocVisible(doc input.BindingDoc, mode input.ModeKind, ctx statusHintC
 		}
 	}
 	return true
+}
+
+func (c statusHintContext) selectedWorkspaceTreeItemKind() string {
+	if c.selectedTreeItem == nil {
+		return ""
+	}
+	switch {
+	case c.selectedTreeItem.CreateNew:
+		return "create"
+	case strings.TrimSpace(c.selectedTreeItem.PaneID) != "":
+		return "pane"
+	case strings.TrimSpace(c.selectedTreeItem.TabID) != "":
+		return "tab"
+	default:
+		return "workspace"
+	}
 }
 
 func (c statusHintContext) activePaneConnected() bool {

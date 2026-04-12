@@ -956,6 +956,9 @@ func workbenchTreeActionSpecs(item *modal.WorkspacePickerItem) []overlayFooterAc
 	case modal.WorkspacePickerItemPane:
 		return []overlayFooterActionSpec{
 			{Label: "Open", Action: input.SemanticAction{Kind: input.ActionSubmitPrompt}},
+			{Label: "Zoom", Action: input.SemanticAction{Kind: input.ActionZoomPane}},
+			{Label: "Detach", Action: input.SemanticAction{Kind: input.ActionDetachPane}},
+			{Label: "Close", Action: input.SemanticAction{Kind: input.ActionDeleteWorkspace}},
 		}
 	case modal.WorkspacePickerItemCreate:
 		return []overlayFooterActionSpec{

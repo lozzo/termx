@@ -17,16 +17,21 @@ func (m *Model) openCreateWorkspaceNamePromptWithValue(returnMode input.ModeKind
 	}
 	initialValue = strings.TrimSpace(initialValue)
 	requestID := "create-workspace"
+	returnRequestID := ""
+	if returnMode == input.ModeWorkspacePicker && m.modalHost != nil && m.modalHost.Session != nil {
+		returnRequestID = m.modalHost.Session.RequestID
+	}
 	m.openModal(input.ModePrompt, requestID)
 	m.markModalReady(input.ModePrompt, requestID)
 	m.modalHost.Prompt = &modal.PromptState{
-		Kind:       "rename-workspace",
-		Title:      "create workspace",
-		Hint:       "[Enter] create  [Esc] cancel",
-		Value:      initialValue,
-		Cursor:     len([]rune(initialValue)),
-		AllowEmpty: false,
-		ReturnMode: returnMode,
+		Kind:            "rename-workspace",
+		Title:           "create workspace",
+		Hint:            "[Enter] create  [Esc] cancel",
+		Value:           initialValue,
+		Cursor:          len([]rune(initialValue)),
+		AllowEmpty:      false,
+		ReturnMode:      returnMode,
+		ReturnRequestID: returnRequestID,
 	}
 	m.render.Invalidate()
 }

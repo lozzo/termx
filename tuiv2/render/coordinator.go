@@ -76,6 +76,7 @@ type statusBarCacheKey struct {
 	FloatingCollapsed int
 	FloatingHidden    int
 	TerminalCount     int
+	SelectedTreeSig   string
 }
 
 type renderStateKey struct {
@@ -692,7 +693,35 @@ func statusBarCacheKeyForState(state VisibleRenderState, theme uiTheme) statusBa
 		key.ActivePaneExited = ctx.activePaneExited()
 		key.ActiveIsFloating = ctx.activeIsFloating
 	}
+	if state.Overlay.Kind == VisibleOverlayWorkspacePicker && state.Overlay.WorkspacePicker != nil {
+		key.SelectedTreeSig = statusBarSelectedTreeSignature(state.Overlay.WorkspacePicker.SelectedItem())
+	}
 	return key
+}
+
+func statusBarSelectedTreeSignature(item *modal.WorkspacePickerItem) string {
+	if item == nil {
+		return ""
+	}
+	parts := []string{
+		string(item.Kind),
+		item.Name,
+		item.WorkspaceName,
+		item.TabID,
+		strconv.Itoa(item.TabIndex),
+		item.PaneID,
+		item.State,
+		item.Role,
+		strconv.FormatBool(item.CreateNew),
+		item.CreateName,
+		strconv.FormatBool(item.Current),
+		strconv.FormatBool(item.Active),
+		strconv.FormatBool(item.Floating),
+		strconv.Itoa(item.TabCount),
+		strconv.Itoa(item.PaneCount),
+		strconv.Itoa(item.FloatingCount),
+	}
+	return strings.Join(parts, "|")
 }
 
 func renderBody(state VisibleRenderState, width, height int) string {

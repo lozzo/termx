@@ -1792,9 +1792,9 @@ func TestFeatureWorkspacePickerCreateRowCreatesWorkspace(t *testing.T) {
 	if ws == nil || ws.Name != "dev" {
 		t.Fatalf("expected newly created workspace to become current, got %#v", ws)
 	}
-	assertMode(t, model, input.ModeNormal)
-	if model.modalHost.Session != nil {
-		t.Fatalf("expected workspace picker modal to close after create, got %#v", model.modalHost.Session)
+	assertMode(t, model, input.ModeWorkspacePicker)
+	if model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModeWorkspacePicker {
+		t.Fatalf("expected workspace picker modal to remain open after create, got %#v", model.modalHost.Session)
 	}
 }
 

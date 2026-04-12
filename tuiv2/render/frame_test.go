@@ -7,6 +7,7 @@ import (
 
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/tuiv2/input"
+	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	rtpkg "github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -207,6 +208,116 @@ func TestStatusBarRenderIsDeterministic(t *testing.T) {
 		if got != first {
 			t.Fatalf("status bar render %d differs from first:\nfirst=%q\ngot=%q", i, first, got)
 		}
+	}
+}
+
+func TestWorkspacePickerStatusHintsFollowSelectedItemKind(t *testing.T) {
+	state := VisibleRenderState{
+		TermSize:  TermSize{Width: 180, Height: 20},
+		InputMode: string(input.ModeWorkspacePicker),
+		Workbench: &workbench.VisibleWorkbench{WorkspaceName: "main"},
+		Overlay: VisibleOverlay{
+			Kind: VisibleOverlayWorkspacePicker,
+			WorkspacePicker: &modal.WorkspacePickerState{
+				Items: []modal.WorkspacePickerItem{
+					{Kind: modal.WorkspacePickerItemWorkspace, Name: "main", WorkspaceName: "main"},
+					{Kind: modal.WorkspacePickerItemTab, Name: "backend", WorkspaceName: "main", TabID: "tab-1", TabIndex: 0, Depth: 1},
+					{Kind: modal.WorkspacePickerItemPane, Name: "vim", WorkspaceName: "main", TabID: "tab-1", TabIndex: 0, PaneID: "pane-1", Depth: 2},
+				},
+				Filtered: []modal.WorkspacePickerItem{
+					{Kind: modal.WorkspacePickerItemWorkspace, Name: "main", WorkspaceName: "main"},
+					{Kind: modal.WorkspacePickerItemTab, Name: "backend", WorkspaceName: "main", TabID: "tab-1", TabIndex: 0, Depth: 1},
+					{Kind: modal.WorkspacePickerItemPane, Name: "vim", WorkspaceName: "main", TabID: "tab-1", TabIndex: 0, PaneID: "pane-1", Depth: 2},
+				},
+			},
+		},
+	}
+
+	state.Overlay.WorkspacePicker.Selected = 0
+	line := xansi.Strip(renderStatusBar(state))
+	if !strings.Contains(line, "[Ctrl-R] RENAME") || !strings.Contains(line, "[Ctrl-X] REMOVE") {
+		t.Fatalf("expected workspace actions in status bar:\n%s", line)
+	}
+	if strings.Contains(line, "[Ctrl-D] DETACH") || strings.Contains(line, "[Ctrl-Z] ZOOM") {
+		t.Fatalf("did not expect pane-only actions for workspace selection:\n%s", line)
+	}
+
+	state.Overlay.WorkspacePicker.Selected = 2
+	line = xansi.Strip(renderStatusBar(state))
+	for _, want := range []string{"[Ctrl-X] REMOVE", "[Ctrl-D] DETACH", "[Ctrl-Z] ZOOM"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("expected pane actions %q in status bar:\n%s", want, line)
+		}
+	}
+	for _, forbidden := range []string{"[Ctrl-R] RENAME", "[Ctrl-N] NEW"} {
+		if strings.Contains(line, forbidden) {
+			t.Fatalf("did not expect action %q for pane selection:\n%s", forbidden, line)
+		}
+	}
+}
+
+func TestWorkspacePickerStatusBarRightTokensFollowSelectedItem(t *testing.T) {
+	state := VisibleRenderState{
+		TermSize: TermSize{Width: 180, Height: 20},
+		Overlay: VisibleOverlay{
+			Kind: VisibleOverlayWorkspacePicker,
+			WorkspacePicker: &modal.WorkspacePickerState{
+				Items: []modal.WorkspacePickerItem{
+					{Kind: modal.WorkspacePickerItemWorkspace, Name: "main", WorkspaceName: "main", TabCount: 3, PaneCount: 6, FloatingCount: 1},
+					{Kind: modal.WorkspacePickerItemTab, Name: "backend", WorkspaceName: "main", TabID: "tab-1", TabIndex: 0, PaneCount: 3},
+					{Kind: modal.WorkspacePickerItemPane, Name: "vim", WorkspaceName: "main", TabID: "tab-1", PaneID: "pane-1", State: "running", Role: "owner"},
+				},
+				Filtered: []modal.WorkspacePickerItem{
+					{Kind: modal.WorkspacePickerItemWorkspace, Name: "main", WorkspaceName: "main", TabCount: 3, PaneCount: 6, FloatingCount: 1},
+					{Kind: modal.WorkspacePickerItemTab, Name: "backend", WorkspaceName: "main", TabID: "tab-1", TabIndex: 0, PaneCount: 3},
+					{Kind: modal.WorkspacePickerItemPane, Name: "vim", WorkspaceName: "main", TabID: "tab-1", PaneID: "pane-1", State: "running", Role: "owner"},
+				},
+			},
+		},
+		Workbench: &workbench.VisibleWorkbench{WorkspaceName: "main"},
+	}
+
+	state.Overlay.WorkspacePicker.Selected = 0
+	right := xansi.Strip(renderStatusBarRight(defaultUITheme(), statusBarRightTokens(state)))
+	for _, want := range []string{"sel:ws:main", "tabs:3", "panes:6", "float:1"} {
+		if !strings.Contains(right, want) {
+			t.Fatalf("expected workspace token %q in right status bar:\n%s", want, right)
+		}
+	}
+
+	state.Overlay.WorkspacePicker.Selected = 2
+	right = xansi.Strip(renderStatusBarRight(defaultUITheme(), statusBarRightTokens(state)))
+	for _, want := range []string{"sel:pane:vim", "running", "owner"} {
+		if !strings.Contains(right, want) {
+			t.Fatalf("expected pane token %q in right status bar:\n%s", want, right)
+		}
+	}
+}
+
+func TestStatusBarCacheKeyChangesWithWorkspacePickerSelection(t *testing.T) {
+	state := VisibleRenderState{
+		TermSize:  TermSize{Width: 120, Height: 20},
+		InputMode: string(input.ModeWorkspacePicker),
+		Overlay: VisibleOverlay{
+			Kind: VisibleOverlayWorkspacePicker,
+			WorkspacePicker: &modal.WorkspacePickerState{
+				Items: []modal.WorkspacePickerItem{
+					{Kind: modal.WorkspacePickerItemWorkspace, Name: "main", WorkspaceName: "main"},
+					{Kind: modal.WorkspacePickerItemPane, Name: "vim", WorkspaceName: "main", TabID: "tab-1", PaneID: "pane-1", State: "running", Role: "owner"},
+				},
+				Filtered: []modal.WorkspacePickerItem{
+					{Kind: modal.WorkspacePickerItemWorkspace, Name: "main", WorkspaceName: "main"},
+					{Kind: modal.WorkspacePickerItemPane, Name: "vim", WorkspaceName: "main", TabID: "tab-1", PaneID: "pane-1", State: "running", Role: "owner"},
+				},
+			},
+		},
+	}
+	theme := defaultUITheme()
+	key1 := statusBarCacheKeyForState(state, theme)
+	state.Overlay.WorkspacePicker.Selected = 1
+	key2 := statusBarCacheKeyForState(state, theme)
+	if key1 == key2 {
+		t.Fatalf("expected status bar cache key to change with selected tree item, got %#v", key1)
 	}
 }
 

@@ -315,6 +315,9 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 		}
 		return true, m.openClipboardHistory()
 	case input.ActionZoomPane:
+		if m.mode().Kind == input.ModeWorkspacePicker {
+			return false, nil
+		}
 		if m.mode().Kind == input.ModeNormal {
 			m.setMode(input.ModeState{Kind: input.ModeDisplay})
 			m.render.Invalidate()

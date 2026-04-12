@@ -452,6 +452,8 @@ func TestRouteKeyMsg_WorkspacePickerMode_UsesWorkspacePickerBindings(t *testing.
 		{msg: ctrlKey(tea.KeyCtrlN), want: ActionCreateWorkspace},
 		{msg: ctrlKey(tea.KeyCtrlR), want: ActionRenameWorkspace},
 		{msg: ctrlKey(tea.KeyCtrlX), want: ActionDeleteWorkspace},
+		{msg: ctrlKey(tea.KeyCtrlD), want: ActionDetachPane},
+		{msg: ctrlKey(tea.KeyCtrlZ), want: ActionZoomPane},
 		{msg: specialKey(tea.KeyEsc), want: ActionCancelMode},
 	}
 	for _, testCase := range cases {

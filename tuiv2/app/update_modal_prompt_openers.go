@@ -34,22 +34,23 @@ func (m *Model) openEditTerminalPrompt(item *modal.PickerItem) {
 	}
 	name := strings.TrimSpace(item.Name)
 	requestID := "edit-terminal:" + item.TerminalID
-	returnMode := m.promptReturnMode()
+	returnMode, returnRequestID := m.promptReturnContext()
 	m.openModal(input.ModePrompt, requestID)
 	m.markModalReady(input.ModePrompt, requestID)
 	m.modalHost.Prompt = &modal.PromptState{
-		Kind:        "edit-terminal-name",
-		Title:       "Edit Terminal",
-		Hint:        "[Enter] continue  [Esc] cancel",
-		Value:       name,
-		Cursor:      len([]rune(name)),
-		Original:    name,
-		DefaultName: name,
-		TerminalID:  item.TerminalID,
-		Command:     append([]string(nil), item.CommandArgs...),
-		Name:        name,
-		Tags:        cloneStringMap(item.Tags),
-		ReturnMode:  returnMode,
+		Kind:            "edit-terminal-name",
+		Title:           "Edit Terminal",
+		Hint:            "[Enter] continue  [Esc] cancel",
+		Value:           name,
+		Cursor:          len([]rune(name)),
+		Original:        name,
+		DefaultName:     name,
+		TerminalID:      item.TerminalID,
+		Command:         append([]string(nil), item.CommandArgs...),
+		Name:            name,
+		Tags:            cloneStringMap(item.Tags),
+		ReturnMode:      returnMode,
+		ReturnRequestID: returnRequestID,
 	}
 	m.render.Invalidate()
 }
@@ -99,16 +100,19 @@ func (m *Model) openRenameWorkspacePromptFor(name string) {
 		return
 	}
 	requestID := "rename-workspace:" + workspace.Name
+	returnMode, returnRequestID := m.promptReturnContext()
 	m.openModal(input.ModePrompt, requestID)
 	m.markModalReady(input.ModePrompt, requestID)
 	m.modalHost.Prompt = &modal.PromptState{
-		Kind:       "rename-workspace",
-		Title:      "rename workspace",
-		Hint:       "[Enter] save  [Esc] cancel",
-		Value:      workspace.Name,
-		Cursor:     len([]rune(workspace.Name)),
-		Original:   workspace.Name,
-		AllowEmpty: false,
+		Kind:            "rename-workspace",
+		Title:           "rename workspace",
+		Hint:            "[Enter] save  [Esc] cancel",
+		Value:           workspace.Name,
+		Cursor:          len([]rune(workspace.Name)),
+		Original:        workspace.Name,
+		AllowEmpty:      false,
+		ReturnMode:      returnMode,
+		ReturnRequestID: returnRequestID,
 	}
 	m.render.Invalidate()
 }
@@ -135,30 +139,40 @@ func (m *Model) openRenameTabPromptFor(workspaceName, tabID, name string) {
 		return
 	}
 	requestID := "rename-tab:" + tabID
+	returnMode, returnRequestID := m.promptReturnContext()
 	m.openModal(input.ModePrompt, requestID)
 	m.markModalReady(input.ModePrompt, requestID)
 	m.modalHost.Prompt = &modal.PromptState{
-		Kind:          "rename-tab",
-		Title:         "rename tab",
-		Hint:          "[Enter] save  [Esc] cancel",
-		WorkspaceName: workspaceName,
-		Value:         name,
-		Cursor:        len([]rune(name)),
-		Original:      name,
-		TabID:         tabID,
-		AllowEmpty:    false,
+		Kind:            "rename-tab",
+		Title:           "rename tab",
+		Hint:            "[Enter] save  [Esc] cancel",
+		WorkspaceName:   workspaceName,
+		Value:           name,
+		Cursor:          len([]rune(name)),
+		Original:        name,
+		TabID:           tabID,
+		AllowEmpty:      false,
+		ReturnMode:      returnMode,
+		ReturnRequestID: returnRequestID,
 	}
 	m.render.Invalidate()
 }
 
-func (m *Model) promptReturnMode() input.ModeKind {
+func (m *Model) promptReturnContext() (input.ModeKind, string) {
 	if m == nil {
-		return input.ModeNormal
+		return input.ModeNormal, ""
 	}
 	if m.mode().Kind == input.ModeTerminalManager && m.terminalPage != nil {
-		return input.ModeTerminalManager
+		return input.ModeTerminalManager, terminalPoolPageModeToken
 	}
-	return input.ModeNormal
+	if m.mode().Kind == input.ModeWorkspacePicker && m.modalHost != nil && m.modalHost.WorkspacePicker != nil {
+		requestID := "workspace-picker"
+		if m.modalHost.Session != nil && strings.TrimSpace(m.modalHost.Session.RequestID) != "" {
+			requestID = m.modalHost.Session.RequestID
+		}
+		return input.ModeWorkspacePicker, requestID
+	}
+	return input.ModeNormal, ""
 }
 
 func (m *Model) restorePromptReturnMode(prompt *modal.PromptState) {
@@ -166,8 +180,22 @@ func (m *Model) restorePromptReturnMode(prompt *modal.PromptState) {
 		return
 	}
 	mode := input.ModeNormal
+	requestID := ""
 	if prompt != nil && prompt.ReturnMode != "" {
 		mode = prompt.ReturnMode
+		requestID = prompt.ReturnRequestID
+	}
+	if mode == input.ModeWorkspacePicker && m.modalHost != nil && m.modalHost.WorkspacePicker != nil {
+		if strings.TrimSpace(requestID) == "" {
+			requestID = "workspace-picker"
+		}
+		m.openModal(input.ModeWorkspacePicker, requestID)
+		m.markModalReady(input.ModeWorkspacePicker, requestID)
+		m.modalHost.WorkspacePicker.Items = m.workspacePickerItems()
+		m.modalHost.WorkspacePicker.ApplyFilter()
+		normalizeModalSelection(&m.modalHost.WorkspacePicker.Selected, len(m.modalHost.WorkspacePicker.VisibleItems()))
+		m.setMode(input.ModeState{Kind: input.ModeWorkspacePicker, RequestID: requestID})
+		return
 	}
 	next := input.ModeState{Kind: mode}
 	if mode == input.ModeTerminalManager {
