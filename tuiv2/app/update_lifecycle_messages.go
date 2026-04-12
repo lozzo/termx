@@ -34,6 +34,32 @@ func (m *Model) handleLifecycleMessage(msg tea.Msg) (tea.Cmd, bool) {
 		m.height = typed.Height
 		m.render.Invalidate()
 		return batchCmds(m.resizeVisiblePanesCmd(), m.resizePendingPaneResizesCmd(), m.maybeAutoFitFloatingPanesCmd(), m.updateSessionViewCmd()), true
+	case reattachFailedMsg:
+		return m.openPickerIfUnattached(typed.paneID), true
+	case clearErrorMsg:
+		if typed.seq != m.errorSeq {
+			return nil, true
+		}
+		m.err = nil
+		m.render.Invalidate()
+		return nil, true
+	case clearOwnerConfirmMsg:
+		if typed.seq != m.ownerSeq {
+			return nil, true
+		}
+		m.ownerConfirmPaneID = ""
+		m.render.Invalidate()
+		return nil, true
+	case clearNoticeMsg:
+		if typed.seq != m.noticeSeq {
+			return nil, true
+		}
+		m.notice = ""
+		m.render.Invalidate()
+		return nil, true
+	case terminalTitleMsg:
+		m.render.Invalidate()
+		return nil, true
 	case error:
 		return m.showError(typed), true
 	default:
