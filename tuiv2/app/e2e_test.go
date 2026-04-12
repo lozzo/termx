@@ -1265,14 +1265,31 @@ func TestE2EMouseWorkspacePickerFooterNextSwitchesWorkspace(t *testing.T) {
 		t.Fatalf("expected workspace picker after workspace label click, got %#v", model.modalHost)
 	}
 
-	next := e2eOverlayWorkspaceItemRegion(t, model, 1)
+	devIndex := -1
+	items := model.modalHost.WorkspacePicker.VisibleItems()
+	for i, item := range items {
+		if item.Name == "dev" && (item.Kind == modal.WorkspacePickerItemWorkspace || (item.Kind == "" && item.TabID == "")) {
+			devIndex = i
+			break
+		}
+	}
+	if devIndex < 0 {
+		t.Fatalf("expected dev workspace row, got %#v", items)
+	}
+	next := e2eOverlayWorkspaceItemRegion(t, model, devIndex)
 	e2eMouseClickAt(t, model, next.Rect.X, e2eScreenYForBodyY(model, next.Rect.Y))
+	if got := model.modalHost.WorkspacePicker.Selected; got != devIndex {
+		t.Fatalf("expected workspace row click to select dev index %d, got %d", devIndex, got)
+	}
+
+	open := e2eOverlayFooterActionRegion(t, model, input.ActionSubmitPrompt)
+	e2eMouseClickAt(t, model, open.Rect.X, e2eScreenYForBodyY(model, open.Rect.Y))
 
 	if model.input.Mode().Kind != input.ModeNormal {
-		t.Fatalf("expected workspace picker footer click to close picker, got mode %q", model.input.Mode().Kind)
+		t.Fatalf("expected workspace open action to close picker, got mode %q", model.input.Mode().Kind)
 	}
 	if ws := model.workbench.CurrentWorkspace(); ws == nil || ws.Name != "dev" {
-		t.Fatalf("expected workspace footer next to switch to dev, got %#v", ws)
+		t.Fatalf("expected workspace open action to switch to dev, got %#v", ws)
 	}
 }
 

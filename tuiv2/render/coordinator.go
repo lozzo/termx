@@ -922,7 +922,7 @@ func renderActiveOverlayWithCursor(state VisibleRenderState, termSize TermSize, 
 			}
 		}
 	case VisibleOverlayWorkspacePicker:
-		result.content = renderWorkspacePickerOverlayWithThemeAndCursor(state.Overlay.WorkspacePicker, termSize, theme, cursorVisible)
+		result.content = renderWorkspacePickerOverlayWithThemeAndCursor(state.Overlay.WorkspacePicker, state.Runtime, termSize, theme, cursorVisible)
 		result.blink = true
 		if cursorVisible {
 			if x, y, ok := workspacePickerOverlayCursorTarget(state.Overlay.WorkspacePicker, termSize); ok {

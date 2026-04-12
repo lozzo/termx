@@ -1631,7 +1631,7 @@ func TestFeatureWorkspacePickerSearchFilter(t *testing.T) {
 		t.Fatalf("expected workspace picker query lo, got %q", got)
 	}
 	visible := model.modalHost.WorkspacePicker.VisibleItems()
-	if len(visible) != 1 || visible[0].Name != "logs" {
+	if len(visible) != 2 || visible[0].Name != "logs" || !visible[1].CreateNew {
 		t.Fatalf("expected filter to show only logs, got %#v", visible)
 	}
 
@@ -1642,8 +1642,8 @@ func TestFeatureWorkspacePickerSearchFilter(t *testing.T) {
 		t.Fatalf("expected workspace picker query to clear, got %q", got)
 	}
 	visible = model.modalHost.WorkspacePicker.VisibleItems()
-	if len(visible) != 3 {
-		t.Fatalf("expected all 3 workspaces after clearing filter, got %d", len(visible))
+	if len(visible) != 4 || !visible[len(visible)-1].CreateNew {
+		t.Fatalf("expected all 3 workspaces plus create row after clearing filter, got %#v", visible)
 	}
 }
 

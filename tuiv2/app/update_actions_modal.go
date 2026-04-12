@@ -217,38 +217,62 @@ func (m *Model) handleModalAction(action input.SemanticAction) (bool, tea.Cmd) {
 			m.render.Invalidate()
 			return true, nil
 		case input.ActionSubmitPrompt:
-			if selected := m.modalHost.WorkspacePicker.SelectedItem(); selected != nil {
-				if selected.CreateNew {
-					m.openCreateWorkspaceNamePrompt(input.ModeNormal)
-					return true, nil
-				}
-				return true, func() tea.Msg {
-					return input.SemanticAction{Kind: input.ActionSwitchWorkspace, Text: selected.Name}
-				}
-			}
-			return true, nil
+			return true, m.openSelectedWorkspaceTreeItem()
 		case input.ActionCreateWorkspace:
 			if m.workbench == nil {
 				return true, nil
 			}
-			m.openCreateWorkspaceNamePrompt(input.ModeNormal)
+			initialValue := ""
+			if m.modalHost.WorkspacePicker != nil {
+				initialValue = strings.TrimSpace(m.modalHost.WorkspacePicker.Query)
+			}
+			m.openCreateWorkspaceNamePromptWithValue(input.ModeNormal, initialValue)
 			return true, nil
 		case input.ActionDeleteWorkspace:
 			if m.workbench == nil {
 				return true, nil
 			}
-			ws := m.workbench.CurrentWorkspace()
-			if ws == nil {
+			selected := m.selectedWorkspacePickerItem()
+			if selected == nil || selected.CreateNew || selectedWorkspaceTreeItemKind(*selected) != modal.WorkspacePickerItemWorkspace {
 				return true, nil
 			}
-			if err := m.workbench.DeleteWorkspace(ws.Name); err != nil {
+			if err := m.workbench.DeleteWorkspace(selectedWorkspaceTreeWorkspaceName(*selected)); err != nil {
 				return true, m.showError(err)
 			}
-			m.closeModal(input.ModeWorkspacePicker, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
+			m.modalHost.WorkspacePicker.Items = m.workspacePickerItems()
+			m.modalHost.WorkspacePicker.ApplyFilter()
+			normalizeModalSelection(&m.modalHost.WorkspacePicker.Selected, len(m.modalHost.WorkspacePicker.VisibleItems()))
 			m.render.Invalidate()
 			return true, m.saveStateCmd()
 		case input.ActionRenameWorkspace:
-			m.openRenameWorkspacePrompt()
+			selected := m.selectedWorkspacePickerItem()
+			if selected == nil || selected.CreateNew || selectedWorkspaceTreeItemKind(*selected) != modal.WorkspacePickerItemWorkspace {
+				return true, nil
+			}
+			m.openRenameWorkspacePromptFor(selectedWorkspaceTreeWorkspaceName(*selected))
+			return true, nil
+		case input.ActionRenameTab:
+			selected := m.selectedWorkspacePickerItem()
+			if selected == nil || selectedWorkspaceTreeItemKind(*selected) != modal.WorkspacePickerItemTab {
+				return true, nil
+			}
+			m.openRenameTabPromptFor(selectedWorkspaceTreeWorkspaceName(*selected), selected.TabID, selected.Name)
+			return true, nil
+		case input.ActionCloseTab:
+			if m.workbench == nil {
+				return true, nil
+			}
+			selected := m.selectedWorkspacePickerItem()
+			if selected == nil || selectedWorkspaceTreeItemKind(*selected) != modal.WorkspacePickerItemTab {
+				return true, nil
+			}
+			if err := m.workbench.CloseTab(selected.TabID); err != nil {
+				return true, m.showError(err)
+			}
+			m.modalHost.WorkspacePicker.Items = m.workspacePickerItems()
+			m.modalHost.WorkspacePicker.ApplyFilter()
+			normalizeModalSelection(&m.modalHost.WorkspacePicker.Selected, len(m.modalHost.WorkspacePicker.VisibleItems()))
+			m.render.Invalidate()
 			return true, nil
 		case input.ActionPrevWorkspace:
 			if m.workbench == nil {
@@ -331,6 +355,85 @@ func (m *Model) selectedTerminalManagerItem() *modal.PickerItem {
 		return nil
 	}
 	return selected
+}
+
+func (m *Model) selectedWorkspacePickerItem() *modal.WorkspacePickerItem {
+	if m == nil || m.modalHost == nil || m.modalHost.WorkspacePicker == nil {
+		return nil
+	}
+	selected := m.modalHost.WorkspacePicker.SelectedItem()
+	if selected == nil || strings.TrimSpace(selected.Name) == "" {
+		return nil
+	}
+	return selected
+}
+
+func (m *Model) openSelectedWorkspaceTreeItem() tea.Cmd {
+	if m == nil || m.workbench == nil || m.modalHost == nil || m.modalHost.WorkspacePicker == nil {
+		return nil
+	}
+	selected := m.selectedWorkspacePickerItem()
+	if selected == nil {
+		return nil
+	}
+	if selected.CreateNew {
+		m.openCreateWorkspaceNamePromptWithValue(input.ModeNormal, selected.CreateName)
+		return nil
+	}
+	switch selectedWorkspaceTreeItemKind(*selected) {
+	case modal.WorkspacePickerItemWorkspace:
+		workspaceName := selectedWorkspaceTreeWorkspaceName(*selected)
+		if !m.workbench.SwitchWorkspace(workspaceName) {
+			return m.showError(fmt.Errorf("workspace %q not found", workspaceName))
+		}
+	case modal.WorkspacePickerItemTab:
+		workspaceName := selectedWorkspaceTreeWorkspaceName(*selected)
+		if !m.workbench.SwitchWorkspace(workspaceName) {
+			return m.showError(fmt.Errorf("workspace %q not found", workspaceName))
+		}
+		if err := m.workbench.SwitchTab(workspaceName, selected.TabIndex); err != nil {
+			return m.showError(err)
+		}
+	case modal.WorkspacePickerItemPane:
+		workspaceName := selectedWorkspaceTreeWorkspaceName(*selected)
+		if !m.workbench.SwitchWorkspace(workspaceName) {
+			return m.showError(fmt.Errorf("workspace %q not found", workspaceName))
+		}
+		if err := m.workbench.SwitchTab(workspaceName, selected.TabIndex); err != nil {
+			return m.showError(err)
+		}
+		if err := m.workbench.FocusPane(selected.TabID, selected.PaneID); err != nil {
+			return m.showError(err)
+		}
+	default:
+		return nil
+	}
+	m.closeModal(input.ModeWorkspacePicker, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
+	m.render.Invalidate()
+	return nil
+}
+
+func selectedWorkspaceTreeItemKind(item modal.WorkspacePickerItem) modal.WorkspacePickerItemKind {
+	switch {
+	case item.CreateNew:
+		return modal.WorkspacePickerItemCreate
+	case item.Kind != "":
+		return item.Kind
+	case strings.TrimSpace(item.TabID) != "":
+		return modal.WorkspacePickerItemTab
+	default:
+		return modal.WorkspacePickerItemWorkspace
+	}
+}
+
+func selectedWorkspaceTreeWorkspaceName(item modal.WorkspacePickerItem) string {
+	if name := strings.TrimSpace(item.WorkspaceName); name != "" {
+		return name
+	}
+	if selectedWorkspaceTreeItemKind(item) == modal.WorkspacePickerItemWorkspace {
+		return strings.TrimSpace(item.Name)
+	}
+	return ""
 }
 
 func terminalSelectionNeedsReferenceBinding(item *modal.PickerItem) bool {

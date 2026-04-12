@@ -18,7 +18,7 @@ func TestRenderPickerOverlayUsesCenteredCard(t *testing.T) {
 		Items:    []modal.PickerItem{{TerminalID: "term-1", Name: "shell", State: "running"}},
 	}
 	overlay := xansi.Strip(renderPickerOverlay(picker, TermSize{Width: 100, Height: 30}))
-	for _, want := range []string{"╭─Terminal Picker", "search:", "> ○ term-1 shell  running"} {
+	for _, want := range []string{"╭─Terminal Picker", "search:", "▸ ○ term-1 shell  running"} {
 		if !strings.Contains(overlay, want) {
 			t.Fatalf("overlay missing %q:\n%s", want, overlay)
 		}
@@ -34,12 +34,51 @@ func TestRenderWorkspacePickerOverlayUsesSameSelectionPrefixAsTerminalPicker(t *
 		Selected: 0,
 		Items:    []modal.WorkspacePickerItem{{Name: "main", Description: "1 tab(s), 1 pane(s)"}},
 	}
-	overlay := xansi.Strip(renderWorkspacePickerOverlay(picker, TermSize{Width: 100, Height: 30}))
-	if !strings.Contains(overlay, "> main") {
-		t.Fatalf("workspace picker should render the same selected prefix as terminal picker:\n%s", overlay)
+	overlay := xansi.Strip(renderWorkspacePickerOverlay(picker, TermSize{Width: 140, Height: 30}))
+	for _, want := range []string{"TREE", "WORKSPACE", "▍▾ main", "SUMMARY", "Open  Rename  Delete"} {
+		if !strings.Contains(overlay, want) {
+			t.Fatalf("workspace picker should render %q:\n%s", want, overlay)
+		}
 	}
-	if strings.Contains(overlay, "[Enter] open") {
-		t.Fatalf("workspace picker should not repeat footer shortcuts:\n%s", overlay)
+	for _, forbidden := range []string{"[Enter] open", "[Ctrl-N] new", "[Ctrl-R] rename", "[Ctrl-X] delete"} {
+		if strings.Contains(overlay, forbidden) {
+			t.Fatalf("workspace picker should not render shortcut hint %q:\n%s", forbidden, overlay)
+		}
+	}
+}
+
+func TestRenderWorkspacePickerOverlayShowsPaneNodesAndPaneActions(t *testing.T) {
+	picker := &modal.WorkspacePickerState{
+		Title:    "Workspaces",
+		Selected: 2,
+		Items: []modal.WorkspacePickerItem{
+			{Kind: modal.WorkspacePickerItemWorkspace, Name: "main", WorkspaceName: "main"},
+			{Kind: modal.WorkspacePickerItemTab, Name: "backend", WorkspaceName: "main", TabID: "tab-1", TabIndex: 0, Depth: 1},
+			{Kind: modal.WorkspacePickerItemPane, Name: "server-logs", WorkspaceName: "main", TabID: "tab-1", TabIndex: 0, PaneID: "pane-1", Depth: 2, State: "running", Role: "owner"},
+		},
+	}
+	overlay := xansi.Strip(renderWorkspacePickerOverlay(picker, TermSize{Width: 140, Height: 30}))
+	for _, want := range []string{"PANE", "• server-logs", "running", "owner", "Open"} {
+		if !strings.Contains(overlay, want) {
+			t.Fatalf("workspace picker should render %q:\n%s", want, overlay)
+		}
+	}
+}
+
+func TestRenderWorkspacePickerOverlayShowsTabPaneSeparators(t *testing.T) {
+	picker := &modal.WorkspacePickerState{
+		Title:    "Workspaces",
+		Selected: 1,
+		Items: []modal.WorkspacePickerItem{
+			{Kind: modal.WorkspacePickerItemWorkspace, Name: "main", WorkspaceName: "main"},
+			{Kind: modal.WorkspacePickerItemTab, Name: "backend", WorkspaceName: "main", TabID: "tab-1", TabIndex: 0, Depth: 1, Active: true},
+			{Kind: modal.WorkspacePickerItemPane, Name: "vim", WorkspaceName: "main", TabID: "tab-1", TabName: "backend", PaneID: "pane-1", Depth: 2, State: "running"},
+			{Kind: modal.WorkspacePickerItemPane, Name: "codex", WorkspaceName: "main", TabID: "tab-1", TabName: "backend", PaneID: "pane-2", Depth: 2, State: "running"},
+		},
+	}
+	overlay := xansi.Strip(renderWorkspacePickerOverlay(picker, TermSize{Width: 140, Height: 30}))
+	if !strings.Contains(overlay, "PANES") || !strings.Contains(overlay, "──") {
+		t.Fatalf("workspace picker tab preview should show pane separators:\n%s", overlay)
 	}
 }
 
@@ -231,8 +270,6 @@ func TestWorkspacePickerFooterActionSpecsOrderStable(t *testing.T) {
 		input.ActionCreateWorkspace,
 		input.ActionRenameWorkspace,
 		input.ActionDeleteWorkspace,
-		input.ActionPrevWorkspace,
-		input.ActionNextWorkspace,
 		input.ActionCancelMode,
 	}
 	if len(specs) != len(want) {

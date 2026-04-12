@@ -94,7 +94,7 @@ func renderStatusBarRight(theme uiTheme, tokens []statusBarToken) string {
 		if strings.TrimSpace(token.Label) == "" {
 			continue
 		}
-		parts = append(parts, statusMetaStyle(theme).Render(token.Label))
+		parts = append(parts, statusMetaTokenStyle(theme, token.Action.Kind != "").Render(token.Label))
 	}
 	return strings.Join(parts, " ")
 }

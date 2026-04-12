@@ -84,10 +84,17 @@ func (m *Model) openCreateTerminalPrompt(paneID string, target modal.CreateTarge
 }
 
 func (m *Model) openRenameWorkspacePrompt() {
+	if m == nil || m.workbench == nil {
+		return
+	}
+	m.openRenameWorkspacePromptFor(m.workbench.CurrentWorkspaceName())
+}
+
+func (m *Model) openRenameWorkspacePromptFor(name string) {
 	if m == nil || m.modalHost == nil || m.workbench == nil {
 		return
 	}
-	workspace := m.workbench.CurrentWorkspace()
+	workspace := m.workbench.WorkspaceByName(name)
 	if workspace == nil {
 		return
 	}
@@ -107,24 +114,39 @@ func (m *Model) openRenameWorkspacePrompt() {
 }
 
 func (m *Model) openRenameTabPrompt() {
-	if m == nil || m.modalHost == nil || m.workbench == nil {
+	if m == nil || m.workbench == nil {
 		return
 	}
 	tab := m.workbench.CurrentTab()
 	if tab == nil {
 		return
 	}
-	requestID := "rename-tab:" + tab.ID
+	m.openRenameTabPromptFor(m.workbench.CurrentWorkspaceName(), tab.ID, tab.Name)
+}
+
+func (m *Model) openRenameTabPromptFor(workspaceName, tabID, name string) {
+	if m == nil || m.modalHost == nil || m.workbench == nil {
+		return
+	}
+	workspaceName = strings.TrimSpace(workspaceName)
+	tabID = strings.TrimSpace(tabID)
+	name = strings.TrimSpace(name)
+	if tabID == "" || name == "" {
+		return
+	}
+	requestID := "rename-tab:" + tabID
 	m.openModal(input.ModePrompt, requestID)
 	m.markModalReady(input.ModePrompt, requestID)
 	m.modalHost.Prompt = &modal.PromptState{
-		Kind:       "rename-tab",
-		Title:      "rename tab",
-		Hint:       "[Enter] save  [Esc] cancel",
-		Value:      tab.Name,
-		Cursor:     len([]rune(tab.Name)),
-		Original:   tab.Name,
-		AllowEmpty: false,
+		Kind:          "rename-tab",
+		Title:         "rename tab",
+		Hint:          "[Enter] save  [Esc] cancel",
+		WorkspaceName: workspaceName,
+		Value:         name,
+		Cursor:        len([]rune(name)),
+		Original:      name,
+		TabID:         tabID,
+		AllowEmpty:    false,
 	}
 	m.render.Invalidate()
 }

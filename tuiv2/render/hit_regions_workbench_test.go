@@ -31,7 +31,7 @@ func TestRenderTabBarIncludesCloseAndCreateAffordances(t *testing.T) {
 	state := makeTabBarState(120, []string{"build", "logs"})
 
 	line := xansi.Strip(renderTabBar(state))
-	if !strings.Contains(line, "build") || !strings.Contains(line, "logs") {
+	if !strings.Contains(line, "1 build") || !strings.Contains(line, "2 logs") {
 		t.Fatalf("expected tab switch affordances in tab bar, got %q", line)
 	}
 	if strings.Count(line, paneCloseIcon()) < 2 {

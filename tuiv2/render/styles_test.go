@@ -31,28 +31,30 @@ func TestOverlayContainerStylesUseSharedBackground(t *testing.T) {
 
 func TestOverlayInlineStylesUseSharedBackground(t *testing.T) {
 	theme := defaultUITheme()
-	want := lipgloss.Color(overlayCardBG(theme))
 	for _, tc := range []struct {
 		name string
 		got  lipgloss.Style
+		want interface {
+			RGBA() (r, g, bl, alpha uint32)
+		}
 	}{
-		{name: "footer", got: pickerFooterStyle(theme)},
-		{name: "line", got: pickerLineStyle(theme)},
-		{name: "selected-line", got: pickerSelectedLineStyle(theme)},
-		{name: "create-line", got: pickerCreateRowStyle(theme)},
-		{name: "marker", got: promptFieldMarkerStyle(theme, true)},
-		{name: "label", got: promptFieldLabelStyle(theme, true)},
-		{name: "active-value", got: promptFieldValueStyle(theme, true)},
-		{name: "inactive-value", got: promptFieldValueStyle(theme, false)},
-		{name: "section-title", got: overlaySectionTitleStyle(theme)},
-		{name: "help-key", got: overlayHelpKeyStyle(theme)},
-		{name: "help-action", got: overlayHelpActionStyle(theme)},
-		{name: "footer-key", got: overlayFooterKeyStyle(theme)},
-		{name: "footer-text", got: overlayFooterTextStyle(theme)},
-		{name: "footer-plain", got: overlayFooterPlainStyle(theme)},
+		{name: "footer", got: pickerFooterStyle(theme), want: lipgloss.Color(theme.footerTextBG)},
+		{name: "line", got: pickerLineStyle(theme), want: lipgloss.Color(overlayCardBG(theme))},
+		{name: "selected-line", got: pickerSelectedLineStyle(theme), want: lipgloss.Color(theme.selectedBG)},
+		{name: "create-line", got: pickerCreateRowStyle(theme), want: lipgloss.Color(theme.createBG)},
+		{name: "marker", got: promptFieldMarkerStyle(theme, true), want: lipgloss.Color(theme.fieldBG)},
+		{name: "label", got: promptFieldLabelStyle(theme, true), want: lipgloss.Color(theme.fieldBG)},
+		{name: "active-value", got: promptFieldValueStyle(theme, true), want: lipgloss.Color(theme.fieldBG)},
+		{name: "inactive-value", got: promptFieldValueStyle(theme, false), want: lipgloss.Color(theme.fieldBG)},
+		{name: "section-title", got: overlaySectionTitleStyle(theme), want: lipgloss.Color(overlayCardBG(theme))},
+		{name: "help-key", got: overlayHelpKeyStyle(theme), want: lipgloss.Color(overlayCardBG(theme))},
+		{name: "help-action", got: overlayHelpActionStyle(theme), want: lipgloss.Color(overlayCardBG(theme))},
+		{name: "footer-key", got: overlayFooterKeyStyle(theme), want: lipgloss.Color(theme.footerKeyBG)},
+		{name: "footer-text", got: overlayFooterTextStyle(theme), want: lipgloss.Color(theme.footerTextBG)},
+		{name: "footer-plain", got: overlayFooterPlainStyle(theme), want: lipgloss.Color(theme.footerPlainBG)},
 	} {
-		if !sameColor(tc.got.GetBackground(), want) {
-			t.Fatalf("%s background = %#v, want %#v", tc.name, tc.got.GetBackground(), want)
+		if !sameColor(tc.got.GetBackground(), tc.want) {
+			t.Fatalf("%s background = %#v, want %#v", tc.name, tc.got.GetBackground(), tc.want)
 		}
 	}
 }

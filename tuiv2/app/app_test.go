@@ -2787,21 +2787,106 @@ func TestModelWorkspacePickerActions(t *testing.T) {
 	}
 
 	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt})
-	if cmd == nil {
-		t.Fatal("expected workspace switch command")
+	if cmd != nil {
+		t.Fatalf("expected direct workspace open without deferred command, got %#v", cmd)
 	}
-	msg := cmd()
-	action, ok := msg.(input.SemanticAction)
-	if !ok || action.Kind != input.ActionSwitchWorkspace || action.Text != "dev" {
-		t.Fatalf("expected switch workspace action for dev, got %#v", msg)
+	if ws := model.workbench.CurrentWorkspace(); ws == nil || ws.Name != "dev" {
+		t.Fatalf("expected workspace switched to dev, got %#v", ws)
 	}
-
-	_, _ = model.Update(input.SemanticAction{Kind: input.ActionCancelMode})
 	if model.modalHost.Session != nil {
-		t.Fatalf("expected workspace picker modal to close, got %#v", model.modalHost.Session)
+		t.Fatalf("expected workspace picker modal to close after open, got %#v", model.modalHost.Session)
 	}
 	if model.input.Mode().Kind != input.ModeNormal {
-		t.Fatalf("expected normal mode after cancel, got %q", model.input.Mode().Kind)
+		t.Fatalf("expected normal mode after open, got %q", model.input.Mode().Kind)
+	}
+}
+
+func TestModelWorkspacePickerRenameUsesSelectedWorkspace(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{Name: "main"})
+	wb.AddWorkspace("dev", &workbench.WorkspaceState{Name: "dev"})
+	model := New(shared.Config{}, wb, runtime.New(nil))
+	model.modalHost.Session = &modal.ModalSession{Kind: input.ModeWorkspacePicker, Phase: modal.ModalPhaseReady, RequestID: "workspace-picker-1"}
+	model.modalHost.WorkspacePicker = &modal.WorkspacePickerState{
+		Items:    []modal.WorkspacePickerItem{{Name: "main"}, {Name: "dev"}},
+		Filtered: []modal.WorkspacePickerItem{{Name: "main"}, {Name: "dev"}},
+		Selected: 1,
+	}
+	model.input.SetMode(input.ModeState{Kind: input.ModeWorkspacePicker, RequestID: "workspace-picker-1"})
+
+	_, _ = model.Update(input.SemanticAction{Kind: input.ActionRenameWorkspace})
+	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Original != "dev" || model.modalHost.Prompt.Value != "dev" {
+		t.Fatalf("expected rename prompt seeded from selected workspace, got %#v", model.modalHost.Prompt)
+	}
+}
+
+func TestModelWorkspacePickerDeleteUsesSelectedWorkspaceAndStaysOpen(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{Name: "main"})
+	wb.AddWorkspace("dev", &workbench.WorkspaceState{Name: "dev"})
+	model := New(shared.Config{}, wb, runtime.New(nil))
+	model.modalHost.Session = &modal.ModalSession{Kind: input.ModeWorkspacePicker, Phase: modal.ModalPhaseReady, RequestID: "workspace-picker-1"}
+	model.modalHost.WorkspacePicker = &modal.WorkspacePickerState{
+		Items:    []modal.WorkspacePickerItem{{Name: "main"}, {Name: "dev"}},
+		Filtered: []modal.WorkspacePickerItem{{Name: "main"}, {Name: "dev"}},
+		Selected: 1,
+	}
+	model.input.SetMode(input.ModeState{Kind: input.ModeWorkspacePicker, RequestID: "workspace-picker-1"})
+
+	_, _ = model.Update(input.SemanticAction{Kind: input.ActionDeleteWorkspace})
+	if got := len(model.workbench.ListWorkspaces()); got != 1 {
+		t.Fatalf("expected one workspace after delete, got %d", got)
+	}
+	if model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModeWorkspacePicker {
+		t.Fatalf("expected workspace picker to stay open after delete, got %#v", model.modalHost.Session)
+	}
+	if items := model.modalHost.WorkspacePicker.VisibleItems(); len(items) != 2 || items[0].Name != "main" || !items[1].CreateNew {
+		t.Fatalf("expected refreshed picker items after delete, got %#v", items)
+	}
+}
+
+func TestModelWorkspacePickerOpenPaneFocusesTarget(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "backend",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell"},
+				"pane-2": {ID: "pane-2", Title: "logs"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	model := New(shared.Config{}, wb, runtime.New(nil))
+	model.modalHost.Session = &modal.ModalSession{Kind: input.ModeWorkspacePicker, Phase: modal.ModalPhaseReady, RequestID: "workspace-picker-1"}
+	model.modalHost.WorkspacePicker = &modal.WorkspacePickerState{
+		Items: []modal.WorkspacePickerItem{
+			{Kind: modal.WorkspacePickerItemWorkspace, Name: "main", WorkspaceName: "main"},
+			{Kind: modal.WorkspacePickerItemTab, Name: "backend", WorkspaceName: "main", TabID: "tab-1", TabIndex: 0, Depth: 1},
+			{Kind: modal.WorkspacePickerItemPane, Name: "logs", WorkspaceName: "main", TabID: "tab-1", TabIndex: 0, PaneID: "pane-2", Depth: 2},
+		},
+		Filtered: []modal.WorkspacePickerItem{
+			{Kind: modal.WorkspacePickerItemWorkspace, Name: "main", WorkspaceName: "main"},
+			{Kind: modal.WorkspacePickerItemTab, Name: "backend", WorkspaceName: "main", TabID: "tab-1", TabIndex: 0, Depth: 1},
+			{Kind: modal.WorkspacePickerItemPane, Name: "logs", WorkspaceName: "main", TabID: "tab-1", TabIndex: 0, PaneID: "pane-2", Depth: 2},
+		},
+		Selected: 2,
+	}
+	model.input.SetMode(input.ModeState{Kind: input.ModeWorkspacePicker, RequestID: "workspace-picker-1"})
+
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt})
+	if cmd != nil {
+		t.Fatalf("expected direct pane open without deferred command, got %#v", cmd)
+	}
+	if tab := model.workbench.CurrentTab(); tab == nil || tab.ActivePaneID != "pane-2" {
+		t.Fatalf("expected pane-2 focused after opening pane node, got %#v", tab)
+	}
+	if model.modalHost.Session != nil {
+		t.Fatalf("expected modal closed after opening pane node, got %#v", model.modalHost.Session)
 	}
 }
 

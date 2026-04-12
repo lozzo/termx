@@ -442,6 +442,40 @@ func (c *composedCanvas) contentLines() []string {
 	return lines
 }
 
+func (c *composedCanvas) embeddedContentLines() []string {
+	if c == nil {
+		return nil
+	}
+	lines := make([]string, c.height)
+	for y := 0; y < c.height; y++ {
+		var row strings.Builder
+		current := drawStyle{}
+		for x := 0; x < c.width; x++ {
+			cell := c.cells[y][x]
+			if cell.Continuation {
+				continue
+			}
+			if c.isRawAmbiguousContinuationSpace(x, y) {
+				continue
+			}
+			content := cell.Content
+			if content == "" {
+				content = " "
+			}
+			if current != cell.Style {
+				row.WriteString(styleDiffANSI(current, cell.Style))
+				current = cell.Style
+			}
+			row.WriteString(serializeCellContentForDisplay(content, cell.Width, c.hostEmojiVS16Mode, 0))
+		}
+		if current != (drawStyle{}) {
+			row.WriteString(styleANSI(drawStyle{}))
+		}
+		lines[y] = row.String()
+	}
+	return lines
+}
+
 func (c *composedCanvas) ensureRowCache() {
 	if c == nil {
 		return

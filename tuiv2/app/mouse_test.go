@@ -1696,9 +1696,16 @@ func TestMouseClickWorkspacePickerFooterNextSwitchesWorkspace(t *testing.T) {
 	next := overlayWorkspaceItemRegion(t, m, 1)
 	_, cmd := m.Update(tea.MouseMsg{X: next.Rect.X, Y: screenYForBodyY(m, next.Rect.Y), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	drainCmd(t, m, cmd, 20)
+	if got := m.modalHost.WorkspacePicker.Selected; got != 1 {
+		t.Fatalf("expected row click to select workspace row 1, got %d", got)
+	}
+
+	open := overlayFooterActionRegion(t, m, input.ActionSubmitPrompt)
+	_, cmd = m.Update(tea.MouseMsg{X: open.Rect.X, Y: screenYForBodyY(m, open.Rect.Y), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	drainCmd(t, m, cmd, 20)
 
 	if ws := m.workbench.CurrentWorkspace(); ws == nil || ws.Name != "dev" {
-		t.Fatalf("expected next workspace footer click to switch to dev, got %#v", ws)
+		t.Fatalf("expected open action to switch to dev, got %#v", ws)
 	}
 	assertMode(t, m, input.ModeNormal)
 	if m.modalHost != nil && m.modalHost.Session != nil {

@@ -12,24 +12,26 @@ const (
 )
 
 type PromptState struct {
-	Kind         string
-	Title        string
-	Hint         string
-	Value        string
-	Cursor       int
-	AllowEmpty   bool
-	Original     string
-	PaneID       string
-	TerminalID   string
-	Command      []string
-	Workdir      string
-	DefaultName  string
-	Name         string
-	Tags         map[string]string
-	CreateTarget CreateTargetKind
-	ReturnMode   input.ModeKind
-	Fields       []PromptField
-	ActiveField  int
+	Kind          string
+	Title         string
+	Hint          string
+	WorkspaceName string
+	Value         string
+	Cursor        int
+	AllowEmpty    bool
+	Original      string
+	TabID         string
+	PaneID        string
+	TerminalID    string
+	Command       []string
+	Workdir       string
+	DefaultName   string
+	Name          string
+	Tags          map[string]string
+	CreateTarget  CreateTargetKind
+	ReturnMode    input.ModeKind
+	Fields        []PromptField
+	ActiveField   int
 }
 
 type PromptField struct {

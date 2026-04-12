@@ -22,14 +22,22 @@ func (m *Model) submitRenameTabPrompt(prompt *modal.PromptState) tea.Cmd {
 	if m.workbench == nil {
 		return func() tea.Msg { return context.Canceled }
 	}
-	tab := m.workbench.CurrentTab()
-	if tab == nil {
-		return func() tea.Msg { return context.Canceled }
+	tabID := strings.TrimSpace(prompt.TabID)
+	if tabID == "" {
+		tab := m.workbench.CurrentTab()
+		if tab == nil {
+			return func() tea.Msg { return context.Canceled }
+		}
+		tabID = tab.ID
 	}
-	if err := m.validateUniqueCurrentWorkspaceTabName(tab.ID, name); err != nil {
+	workspaceName := strings.TrimSpace(prompt.WorkspaceName)
+	if workspaceName == "" {
+		workspaceName = m.workbench.CurrentWorkspaceName()
+	}
+	if err := m.validateUniqueWorkspaceTabName(workspaceName, tabID, name); err != nil {
 		return func() tea.Msg { return err }
 	}
-	if err := m.workbench.RenameTab(tab.ID, name); err != nil {
+	if err := m.workbench.RenameTab(tabID, name); err != nil {
 		return func() tea.Msg { return err }
 	}
 	requestID := ""

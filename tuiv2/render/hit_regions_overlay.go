@@ -114,26 +114,36 @@ func workspacePickerOverlayHitRegions(picker *modal.WorkspacePickerState, width,
 		return nil
 	}
 	items := picker.VisibleItems()
-	layout := buildPickerCardLayout(width, height, len(items), false)
-	card := pickerCardRect(layout)
-	regions := make([]HitRegion, 0, len(items)+5)
+	layout := buildWorkbenchTreeCardLayout(width, height, len(items), picker.Selected)
+	card := workbench.Rect{X: layout.cardX, Y: layout.cardY, W: layout.cardWidth, H: layout.cardHeight}
+	regions := make([]HitRegion, 0, minInt(layout.treeRows, len(items))+8)
 	regions = append(regions, dismissRegions(card, width, layout.contentHeight)...)
 	regions = append(regions, HitRegion{
 		Kind: HitRegionOverlayQueryInput,
-		Rect: pickerQueryRowRect(layout),
+		Rect: layout.queryRect,
 	})
-	rows := minInt(layout.listHeight, len(items))
-	for i := 0; i < rows; i++ {
+	start, end := workbenchTreeWindow(len(items), picker.Selected, layout.treeRows)
+	for i := start; i < end; i++ {
 		regions = append(regions, HitRegion{
 			Kind:      HitRegionWorkspaceItem,
 			ItemIndex: i,
 			Rect: workbench.Rect{
-				X: card.X + 1,
-				Y: layout.firstItemY + i,
-				W: layout.innerWidth,
+				X: layout.leftRect.X,
+				Y: layout.leftRect.Y + (i - start),
+				W: layout.leftRect.W,
 				H: 1,
 			},
 		})
+	}
+	if selected := picker.SelectedItem(); selected != nil {
+		_, actions := layoutOverlayFooterActions(workbenchTreeActionSpecs(selected), layout.actionRowRect)
+		for _, action := range actions {
+			regions = append(regions, HitRegion{
+				Kind:   HitRegionOverlayFooterAction,
+				Rect:   action.Rect,
+				Action: action.Action,
+			})
+		}
 	}
 	return regions
 }

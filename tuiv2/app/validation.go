@@ -72,10 +72,14 @@ func (m *Model) terminalValidationSnapshot() ([]protocol.TerminalInfo, error) {
 }
 
 func (m *Model) validateUniqueCurrentWorkspaceTabName(tabID, name string) error {
+	return m.validateUniqueWorkspaceTabName(m.workbench.CurrentWorkspaceName(), tabID, name)
+}
+
+func (m *Model) validateUniqueWorkspaceTabName(workspaceName, tabID, name string) error {
 	if m == nil || m.workbench == nil {
 		return nil
 	}
-	workspace := m.workbench.CurrentWorkspace()
+	workspace := m.workbench.WorkspaceByName(strings.TrimSpace(workspaceName))
 	if workspace == nil {
 		return nil
 	}

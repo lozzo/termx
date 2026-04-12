@@ -204,6 +204,9 @@ func DefaultBindingCatalog() []BindingDoc {
 		{ID: "workspace-picker-down", ConfigKey: "workspace_picker.down", Mode: ModeWorkspacePicker, Group: "Workspace", Binding: Binding{Type: tea.KeyDown, Action: ActionPickerDown}},
 		{ID: "workspace-picker-filter", ConfigKey: "workspace_picker.filter", Mode: ModeWorkspacePicker, Group: "Workspace", KeyLabel: "type", HelpText: "filter workspace results", StatusText: "TYPE FILTER"},
 		{ID: "workspace-picker-enter", ConfigKey: "workspace_picker.enter", Mode: ModeWorkspacePicker, Group: "Workspace", Binding: Binding{Type: tea.KeyEnter, Action: ActionSubmitPrompt}, KeyLabel: "Enter", HelpText: "switch or create workspace", StatusText: "Enter OPEN"},
+		{ID: "workspace-picker-create", ConfigKey: "workspace_picker.create", Mode: ModeWorkspacePicker, Group: "Workspace", Binding: Binding{Type: tea.KeyCtrlN, Action: ActionCreateWorkspace}, KeyLabel: "Ctrl-N", HelpText: "create workspace", FooterText: "new"},
+		{ID: "workspace-picker-rename", ConfigKey: "workspace_picker.rename", Mode: ModeWorkspacePicker, Group: "Workspace", Binding: Binding{Type: tea.KeyCtrlR, Action: ActionRenameWorkspace}, KeyLabel: "Ctrl-R", HelpText: "rename selected workspace", FooterText: "rename"},
+		{ID: "workspace-picker-delete", ConfigKey: "workspace_picker.delete", Mode: ModeWorkspacePicker, Group: "Workspace", Binding: Binding{Type: tea.KeyCtrlX, Action: ActionDeleteWorkspace}, KeyLabel: "Ctrl-X", HelpText: "delete selected workspace", FooterText: "delete"},
 		{ID: "workspace-picker-exit", ConfigKey: "workspace_picker.exit", Mode: ModeWorkspacePicker, Group: "Exit / Close", Binding: Binding{Type: tea.KeyEsc, Action: ActionCancelMode}, KeyLabel: "Esc", StatusText: "Esc BACK", FooterText: "close"},
 
 		{ID: "prompt-type", ConfigKey: "prompt.type", Mode: ModePrompt, Group: "Most Used", StatusText: "TYPE INPUT"},

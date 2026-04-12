@@ -118,9 +118,8 @@ func buildTabBarLayout(state VisibleRenderState) tabBarLayout {
 		if name == "" {
 			name = fmt.Sprintf("tab %d", i+1)
 		}
-		label := name
 		active := i == state.Workbench.ActiveTab
-		switchWidth := xansi.StringWidth(renderTabSwitchToken(label, active, layout.palette))
+		switchWidth := xansi.StringWidth(renderTabSwitchToken(i+1, name, active, layout.palette))
 		closeWidth := xansi.StringWidth(renderTabCloseToken(active, layout.palette))
 		totalWidth := sepWidth + switchWidth + closeWidth
 		if x+totalWidth > maxLeftWidth {
@@ -129,7 +128,7 @@ func buildTabBarLayout(state VisibleRenderState) tabBarLayout {
 
 		x += sepWidth
 		item := tabBarItemLayout{
-			Label:    label,
+			Label:    name,
 			Rect:     workbench.Rect{X: x, Y: 0, W: switchWidth, H: 1},
 			Active:   active,
 			TabIndex: i,
@@ -280,7 +279,7 @@ func renderTabBarLeft(layout tabBarLayout) string {
 	builder.WriteString(renderWorkspaceToken(layout.workspaceLabel, layout.palette))
 	for _, tab := range layout.tabs {
 		builder.WriteString(renderTabSeparatorWithBG(layout.palette.barBG))
-		builder.WriteString(renderTabSwitchToken(tab.Label, tab.Active, layout.palette))
+		builder.WriteString(renderTabSwitchToken(tab.TabIndex+1, tab.Label, tab.Active, layout.palette))
 		builder.WriteString(renderTabCloseToken(tab.Active, layout.palette))
 	}
 	if layout.createRect.W > 0 {
@@ -323,22 +322,33 @@ func renderTabSeparatorWithBG(bg string) string {
 	return lipgloss.NewStyle().Background(lipgloss.Color(bg)).Render(" ")
 }
 
-func renderTabSwitchToken(label string, active bool, palette tabBarPalette) string {
+func renderTabSwitchToken(index int, label string, active bool, palette tabBarPalette) string {
+	indexText := strconv.Itoa(index)
 	if active {
+		indexStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color(palette.accent)).
+			Background(lipgloss.Color(palette.activeBG))
 		return lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color(palette.accent)).
 			Background(lipgloss.Color(palette.activeBG)).
 			Render("▎") +
+			indexStyle.Render(" "+indexText+" ") +
 			tabActiveStyle(defaultUITheme()).
 				Foreground(lipgloss.Color(palette.activeFG)).
 				Background(lipgloss.Color(palette.activeBG)).
-				Render(" "+label+" ")
+				Render(label+" ")
 	}
-	return tabInactiveStyle(defaultUITheme()).
-		Foreground(lipgloss.Color(palette.inactiveFG)).
+	indexColor := mixHex(palette.inactiveFG, palette.accent, 0.22)
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color(indexColor)).
 		Background(lipgloss.Color(palette.inactiveBG)).
-		Render(" " + label + " ")
+		Render(" "+indexText+" ") +
+		tabInactiveStyle(defaultUITheme()).
+			Foreground(lipgloss.Color(palette.inactiveFG)).
+			Background(lipgloss.Color(palette.inactiveBG)).
+			Render(label+" ")
 }
 
 func renderTabCloseToken(active bool, palette tabBarPalette) string {

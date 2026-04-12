@@ -265,7 +265,10 @@ func TestEffectCmdLoadWorkspaceItemsPopulatesWorkspacePicker(t *testing.T) {
 	if items[0].Name != "main" || items[1].Name != "dev" {
 		t.Fatalf("unexpected workspace order: %#v", items)
 	}
-	if !items[2].CreateNew || items[2].Name != "new workspace" {
+	if !items[0].Current {
+		t.Fatalf("expected current workspace marker on first row, got %#v", items[0])
+	}
+	if !items[2].CreateNew || items[2].Name != "New workspace" {
 		t.Fatalf("expected final create-new workspace item, got %#v", items[2])
 	}
 	if model.modalHost.Session == nil || model.modalHost.Session.Loading || model.modalHost.Session.Phase != modal.ModalPhaseReady {

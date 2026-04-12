@@ -636,8 +636,7 @@ func (m *Model) handleOverlayMouseClick(state render.VisibleRenderState, x, y in
 			m.modalHost.WorkspacePicker.Selected = region.ItemIndex
 			normalizeModalSelection(&m.modalHost.WorkspacePicker.Selected, len(m.modalHost.WorkspacePicker.VisibleItems()))
 			m.render.Invalidate()
-			_, cmd := m.handleModalAction(input.SemanticAction{Kind: input.ActionSubmitPrompt})
-			return true, cmd
+			return true, nil
 		default:
 			return true, m.dispatchOverlayRegionAction(region.Action)
 		}

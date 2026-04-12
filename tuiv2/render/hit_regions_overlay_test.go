@@ -86,12 +86,12 @@ func TestOverlayHitRegionsWorkspacePickerItemRows(t *testing.T) {
 
 	regions := OverlayHitRegions(state)
 	itemRegions := collectRegionsByKind(regions, HitRegionWorkspaceItem)
-	if len(itemRegions) != 2 {
-		t.Fatalf("expected 2 workspace item regions, got %#v", itemRegions)
+	if len(itemRegions) != 3 {
+		t.Fatalf("expected 3 workspace item regions including create row, got %#v", itemRegions)
 	}
 	_, overlayHeight := overlayViewport(TermSize{Width: 96, Height: FrameBodyHeight(26)})
-	layout := buildPickerCardLayout(96, overlayHeight, 2, false)
-	if itemRegions[0].Rect.Y != layout.firstItemY || itemRegions[1].Rect.Y != layout.firstItemY+1 {
+	layout := buildWorkbenchTreeCardLayout(96, overlayHeight, 3, 0)
+	if itemRegions[0].Rect.Y != layout.leftRect.Y || itemRegions[1].Rect.Y != layout.leftRect.Y+1 || itemRegions[2].Rect.Y != layout.leftRect.Y+2 {
 		t.Fatalf("workspace picker row placement mismatch: %#v", itemRegions)
 	}
 }
@@ -171,8 +171,8 @@ func TestOverlayHitRegionsWorkspacePickerQueryInputUsesEditableFieldRect(t *test
 	if len(queryRegions) != 1 {
 		t.Fatalf("expected one workspace query region, got %#v", queryRegions)
 	}
-	layout := buildPickerCardLayout(100, FrameBodyHeight(30), 1, false)
-	if got, want := queryRegions[0].Rect, pickerQueryRowRect(layout); got != want {
+	layout := buildWorkbenchTreeCardLayout(100, FrameBodyHeight(30), 2, 0)
+	if got, want := queryRegions[0].Rect, layout.queryRect; got != want {
 		t.Fatalf("expected workspace query rect %#v, got %#v", want, got)
 	}
 }
@@ -272,7 +272,7 @@ func TestOverlayHitRegionsPickerHasNoFooterActionRegions(t *testing.T) {
 	}
 }
 
-func TestOverlayHitRegionsWorkspacePickerHasNoFooterActionRegions(t *testing.T) {
+func TestOverlayHitRegionsWorkspacePickerFooterActionsExposeActionOrder(t *testing.T) {
 	state := VisibleRenderState{
 		TermSize: TermSize{Width: 140, Height: 30},
 		Overlay: VisibleOverlay{
@@ -287,8 +287,23 @@ func TestOverlayHitRegionsWorkspacePickerHasNoFooterActionRegions(t *testing.T) 
 	}
 	regions := OverlayHitRegions(state)
 	actionRegions := collectRegionsByKind(regions, HitRegionOverlayFooterAction)
-	if len(actionRegions) != 0 {
-		t.Fatalf("expected workspace picker overlay footer actions to be hidden, got %#v", actionRegions)
+	layout := buildWorkbenchTreeCardLayout(140, FrameBodyHeight(30), 3, 0)
+	_, expected := layoutOverlayFooterActions(workbenchTreeActionSpecs(state.Overlay.WorkspacePicker.SelectedItem()), workbench.Rect{
+		X: layout.actionRowRect.X,
+		Y: layout.actionRowRect.Y,
+		W: layout.actionRowRect.W,
+		H: 1,
+	})
+	if len(actionRegions) != len(expected) {
+		t.Fatalf("expected %d workspace footer regions, got %#v", len(expected), actionRegions)
+	}
+	for i, want := range expected {
+		if actionRegions[i].Action.Kind != want.Action.Kind {
+			t.Fatalf("expected workspace footer action[%d]=%q, got %q", i, want.Action.Kind, actionRegions[i].Action.Kind)
+		}
+		if actionRegions[i].Rect != want.Rect {
+			t.Fatalf("expected workspace footer rect[%d]=%#v, got %#v", i, want.Rect, actionRegions[i].Rect)
+		}
 	}
 }
 
