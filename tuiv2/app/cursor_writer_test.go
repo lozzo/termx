@@ -14,6 +14,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
+	creackpty "github.com/creack/pty"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/runtime"
@@ -1102,6 +1103,77 @@ func TestNormalizeFrameForTTYUsesCRLF(t *testing.T) {
 	frame := "a\nb\nc"
 	if got, want := normalizeFrameForTTY(frame), "a\r\nb\r\nc"; got != want {
 		t.Fatalf("expected direct frame output to normalize line endings, got %q want %q", got, want)
+	}
+}
+
+func TestNormalizedFrameLenCountsInsertedCRBytes(t *testing.T) {
+	frame := "ab\ncd\n"
+	if got, want := normalizedFrameLen(frame), len("ab\ncd\n")+2; got != want {
+		t.Fatalf("unexpected normalized frame len %d want %d", got, want)
+	}
+}
+
+func TestNormalizedLinesLenCountsLineBreakSeparators(t *testing.T) {
+	lines := []string{"ab", "cde", ""}
+	if got, want := normalizedLinesLen(lines), len("ab")+len("cde")+len("")+2; got != want {
+		t.Fatalf("unexpected normalized lines len %d want %d", got, want)
+	}
+}
+
+func TestFitFrameToTTYTruncatesOnlyWhenTTYWidthChanges(t *testing.T) {
+	ptmx, tty, err := creackpty.Open()
+	if err != nil {
+		t.Fatalf("open pty: %v", err)
+	}
+	defer ptmx.Close()
+	defer tty.Close()
+	if err := creackpty.Setsize(ptmx, &creackpty.Winsize{Cols: 4, Rows: 10}); err != nil {
+		t.Fatalf("set pty size: %v", err)
+	}
+
+	writer := newOutputCursorWriter(io.Discard)
+	writer.tty = tty
+
+	if got, want := writer.fitFrameToTTY("123456\nabcdef"), "1234\nabcd"; got != want {
+		t.Fatalf("unexpected truncated frame %q want %q", got, want)
+	}
+	if got, want := writer.fitFrameToTTY("wxyz123"), "wxyz123"; got != want {
+		t.Fatalf("expected cached width fast path to keep frame unchanged, got %q want %q", got, want)
+	}
+}
+
+func TestFitLinesToTTYTruncatesOnlyWhenTTYWidthChanges(t *testing.T) {
+	ptmx, tty, err := creackpty.Open()
+	if err != nil {
+		t.Fatalf("open pty: %v", err)
+	}
+	defer ptmx.Close()
+	defer tty.Close()
+	if err := creackpty.Setsize(ptmx, &creackpty.Winsize{Cols: 4, Rows: 10}); err != nil {
+		t.Fatalf("set pty size: %v", err)
+	}
+
+	writer := newOutputCursorWriter(io.Discard)
+	writer.tty = tty
+
+	got := writer.fitLinesToTTY([]string{"123456", "abcdef"})
+	want := []string{"1234", "abcd"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("unexpected truncated lines %q want %q", got, want)
+	}
+	got = writer.fitLinesToTTY([]string{"wxyz123", "longer"})
+	want = []string{"wxyz123", "longer"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("expected cached width fast path to keep lines unchanged, got %q want %q", got, want)
+	}
+}
+
+func TestStripTrailingEraseLineRightDropsTerminalResetOnlyOnLastLine(t *testing.T) {
+	lines := []string{"a\x1b[0m\x1b[K", "b\x1b[0m\x1b[K"}
+	got := stripTrailingEraseLineRight(lines)
+	want := []string{"a\x1b[0m", "b\x1b[0m"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("unexpected stripped lines %q want %q", got, want)
 	}
 }
 
