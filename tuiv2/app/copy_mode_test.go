@@ -509,6 +509,50 @@ func TestCopyModeSelectedTextNormalizesReverseMultiRowSelection(t *testing.T) {
 	}
 }
 
+func TestCopyModePointAtMouseMapsScreenPositionToBufferedRow(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"hist0", "hist1", "hist2"}, []string{"live0", "live1", "live2"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	model.copyMode.ViewTopRow = 1
+	model.copyMode.Cursor = copyModePoint{Row: 1, Col: 0}
+	x, y := activePaneContentScreenOrigin(t, model)
+
+	point, ok := model.copyModePointAtMouse(x+2, y+1)
+	if !ok {
+		t.Fatal("expected mouse point inside active copy-mode pane")
+	}
+	if point != (copyModePoint{Row: 2, Col: 2}) {
+		t.Fatalf("unexpected mapped copy-mode point %#v", point)
+	}
+}
+
+func TestHandleCopyModeAutoScrollSkipsWhenSeqOrDirectionDoesNotMatch(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"hist0", "hist1", "hist2"}, []string{"live0", "live1", "live2"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	before := model.copyMode.Cursor
+	model.copyMode.MouseSelecting = true
+	model.copyMode.AutoScrollDir = 1
+	model.copyMode.AutoScrollSeq = 7
+
+	if cmd := model.handleCopyModeAutoScroll(6); cmd != nil {
+		t.Fatalf("expected mismatched sequence to skip auto-scroll, got %#v", cmd)
+	}
+	if model.copyMode.Cursor != before {
+		t.Fatalf("expected mismatched sequence to keep cursor unchanged, got %#v want %#v", model.copyMode.Cursor, before)
+	}
+
+	model.copyMode.AutoScrollDir = 0
+	if cmd := model.handleCopyModeAutoScroll(7); cmd != nil {
+		t.Fatalf("expected zero auto-scroll direction to skip tick, got %#v", cmd)
+	}
+	if model.copyMode.Cursor != before {
+		t.Fatalf("expected zero auto-scroll direction to keep cursor unchanged, got %#v want %#v", model.copyMode.Cursor, before)
+	}
+}
+
 func TestActiveLiveCopyModeBufferRefreshesStaleVTermSnapshot(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, []string{"hist-a"}, []string{"old-live"})
