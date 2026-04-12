@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/bootstrap"
+	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
 )
@@ -160,6 +161,19 @@ func (s *terminalAttachService) reattachRestoredCmd(hint bootstrap.PaneReattachH
 	}
 }
 
+func (s *terminalAttachService) handleAttachedMsg(attached orchestrator.TerminalAttachedMsg) tea.Cmd {
+	if s == nil || s.model == nil {
+		return nil
+	}
+	s.model.clearPendingPaneAttach(attached.PaneID, attached.TerminalID)
+	s.model.resetPaneScrollOffset(attached.TabID, attached.PaneID)
+	if s.model.modalHost != nil && s.model.modalHost.Session != nil && s.model.modalHost.Session.Kind == input.ModePicker {
+		s.model.closeModal(input.ModePicker, s.model.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
+	}
+	s.model.render.Invalidate()
+	return batchCmds(s.model.saveStateCmd(), s.finalizeAttachCmd(attached.TabID, attached.PaneID, attached.TerminalID))
+}
+
 func (s *terminalAttachService) attachMsg(tabID, paneID, terminalID string) tea.Msg {
 	if s == nil || s.model == nil || s.model.orchestrator == nil || paneID == "" || terminalID == "" {
 		return nil
@@ -203,5 +217,24 @@ func (s *terminalAttachService) rollbackRestoredBinding(tabID, paneID, terminalI
 	s.model.clearPendingPaneAttach(paneID, terminalID)
 	if s.model.workbench != nil && tabID != "" {
 		_ = s.model.workbench.BindPaneTerminal(tabID, paneID, "")
+	}
+}
+
+func (s *terminalAttachService) finalizeAttachCmd(tabID, paneID, terminalID string) tea.Cmd {
+	if s == nil || s.model == nil || paneID == "" || terminalID == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		if s.model.sessionID == "" {
+			if pane, rect, ok := s.model.paneResizeTarget(tabID, paneID); ok && pane != nil && pane.TerminalID == terminalID {
+				if err := s.model.ensurePaneTerminalSize(context.Background(), paneID, terminalID, rect); err != nil {
+					return err
+				}
+				s.model.clearPendingPaneResize(paneID, terminalID)
+			} else {
+				s.model.markPendingPaneResize(tabID, paneID, terminalID)
+			}
+		}
+		return terminalAttachReadyMsg{paneID: paneID, terminalID: terminalID}
 	}
 }

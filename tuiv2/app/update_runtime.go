@@ -129,22 +129,11 @@ func (m *Model) restartPaneTerminalCmd(paneID, terminalID string) tea.Cmd {
 }
 
 func (m *Model) finalizeTerminalAttachCmd(tabID, paneID, terminalID string) tea.Cmd {
-	if m == nil || paneID == "" || terminalID == "" {
+	service := m.terminalAttachService()
+	if service == nil {
 		return nil
 	}
-	return func() tea.Msg {
-		if m.sessionID == "" {
-			if pane, rect, ok := m.paneResizeTarget(tabID, paneID); ok && pane != nil && pane.TerminalID == terminalID {
-				if err := m.ensurePaneTerminalSize(context.Background(), paneID, terminalID, rect); err != nil {
-					return err
-				}
-				m.clearPendingPaneResize(paneID, terminalID)
-			} else {
-				m.markPendingPaneResize(tabID, paneID, terminalID)
-			}
-		}
-		return terminalAttachReadyMsg{paneID: paneID, terminalID: terminalID}
-	}
+	return service.finalizeAttachCmd(tabID, paneID, terminalID)
 }
 
 func (m *Model) reattachRestoredPanesCmd(hints []bootstrap.PaneReattachHint) tea.Cmd {

@@ -203,13 +203,10 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		m.applyEffectSideState(typed.Effect)
 		return nil, true
 	case orchestrator.TerminalAttachedMsg:
-		m.clearPendingPaneAttach(typed.PaneID, typed.TerminalID)
-		m.resetPaneScrollOffset(typed.TabID, typed.PaneID)
-		if m.modalHost != nil && m.modalHost.Session != nil && m.modalHost.Session.Kind == input.ModePicker {
-			m.closeModal(input.ModePicker, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
+		if service := m.terminalAttachService(); service != nil {
+			return service.handleAttachedMsg(typed), true
 		}
-		m.render.Invalidate()
-		return batchCmds(m.saveStateCmd(), m.finalizeTerminalAttachCmd(typed.TabID, typed.PaneID, typed.TerminalID)), true
+		return nil, true
 	case paneAttachFailedMsg:
 		m.clearPendingPaneAttach(typed.PaneID, typed.TerminalID)
 		m.render.Invalidate()
