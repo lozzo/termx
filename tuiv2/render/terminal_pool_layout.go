@@ -104,11 +104,11 @@ func terminalPoolListRows(items []modal.PickerItem) []terminalPoolListRow {
 
 func terminalPoolFooterActionSpecs() []terminalPoolFooterActionSpec {
 	return []terminalPoolFooterActionSpec{
-		{label: "[Enter] here", action: input.SemanticAction{Kind: input.ActionSubmitPrompt}},
-		{label: "[Ctrl-T] tab", action: input.SemanticAction{Kind: input.ActionAttachTab}},
-		{label: "[Ctrl-O] float", action: input.SemanticAction{Kind: input.ActionAttachFloating}},
-		{label: "[Ctrl-E] edit", action: input.SemanticAction{Kind: input.ActionEditTerminal}},
-		{label: "[Ctrl-K] kill", action: input.SemanticAction{Kind: input.ActionKillTerminal}},
+		{label: "here", action: input.SemanticAction{Kind: input.ActionSubmitPrompt}},
+		{label: "tab", action: input.SemanticAction{Kind: input.ActionAttachTab}},
+		{label: "float", action: input.SemanticAction{Kind: input.ActionAttachFloating}},
+		{label: "edit", action: input.SemanticAction{Kind: input.ActionEditTerminal}},
+		{label: "kill", action: input.SemanticAction{Kind: input.ActionKillTerminal}},
 	}
 }
 

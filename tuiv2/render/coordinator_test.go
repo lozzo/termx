@@ -2145,7 +2145,7 @@ func TestRenderFrameUsesDedicatedTerminalPoolPageLayout(t *testing.T) {
 	state = WithStatusHints(state, []string{"Enter HERE", "Ctrl-T TAB", "Ctrl-O FLOAT", "Ctrl-E EDIT", "Esc BACK"})
 	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
 
-	for _, want := range []string{"Terminal Pool", "term-1", terminalmeta.SizeLockLockedIcon + " shell", "term-2", "[Enter] here", "[Ctrl-E] edit", "TERMINAL-MANAGER", "[Enter] HERE", "[Ctrl-T] TAB"} {
+	for _, want := range []string{"Terminal Pool", "term-1", terminalmeta.SizeLockLockedIcon + " shell", "term-2", "here", "edit", "TERMINAL-MANAGER", "[Enter] HERE", "[Ctrl-T] TAB"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("expected terminal pool page to contain %q:\n%s", want, frame)
 		}
