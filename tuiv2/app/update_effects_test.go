@@ -276,6 +276,97 @@ func TestEffectCmdLoadWorkspaceItemsPopulatesWorkspacePicker(t *testing.T) {
 	}
 }
 
+func TestWorkspacePickerItemsOrdersRootFloatingAndDetachedPanes(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "backend",
+			ActivePaneID: "pane-2",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+				"pane-2": {ID: "pane-2", Title: "logs", TerminalID: "term-2"},
+				"pane-3": {ID: "pane-3", Title: "float", TerminalID: "term-3"},
+				"pane-4": {ID: "pane-4", Title: "orphan", TerminalID: "term-4"},
+			},
+			Root: &workbench.LayoutNode{
+				Direction: workbench.SplitVertical,
+				First:     workbench.NewLeaf("pane-1"),
+				Second:    workbench.NewLeaf("pane-2"),
+			},
+			Floating: []*workbench.FloatingState{
+				{PaneID: "pane-3"},
+			},
+		}},
+	})
+	model := New(shared.Config{}, wb, runtime.New(nil))
+
+	items := model.workspacePickerItems()
+	if len(items) != 6 {
+		t.Fatalf("expected workspace, tab, four panes, got %#v", items)
+	}
+	if items[0].Kind != modal.WorkspacePickerItemWorkspace || items[0].Name != "main" {
+		t.Fatalf("expected workspace row first, got %#v", items[0])
+	}
+	if items[1].Kind != modal.WorkspacePickerItemTab || items[1].Name != "backend" {
+		t.Fatalf("expected tab row second, got %#v", items[1])
+	}
+	paneIDs := []string{items[2].PaneID, items[3].PaneID, items[4].PaneID, items[5].PaneID}
+	if want := []string{"pane-1", "pane-2", "pane-3", "pane-4"}; strings.Join(paneIDs, ",") != strings.Join(want, ",") {
+		t.Fatalf("unexpected pane order %v want %v", paneIDs, want)
+	}
+	if items[4].PaneID != "pane-3" || !items[4].Floating {
+		t.Fatalf("expected floating pane metadata on pane-3 row, got %#v", items[4])
+	}
+	if items[5].PaneID != "pane-4" || items[5].Floating {
+		t.Fatalf("expected detached pane to appear last without floating marker, got %#v", items[5])
+	}
+}
+
+func TestWorkspacePickerItemsIncludeRuntimeRoleAndTerminalMetadata(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "backend",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	rt := runtime.New(nil)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.Name = "shell"
+	terminal.State = "exited"
+	binding := rt.BindPane("pane-1")
+	binding.Role = runtime.BindingRoleOwner
+
+	model := New(shared.Config{}, wb, rt)
+	items := model.workspacePickerItems()
+	if len(items) != 3 {
+		t.Fatalf("expected workspace, tab, pane rows, got %#v", items)
+	}
+	pane := items[2]
+	if pane.Kind != modal.WorkspacePickerItemPane {
+		t.Fatalf("expected pane item, got %#v", pane)
+	}
+	if pane.Name != "shell" {
+		t.Fatalf("expected terminal name fallback for untitled pane, got %#v", pane)
+	}
+	if pane.State != "exited" {
+		t.Fatalf("expected terminal state from runtime registry, got %#v", pane)
+	}
+	if pane.Role != string(runtime.BindingRoleOwner) {
+		t.Fatalf("expected bound runtime role, got %#v", pane)
+	}
+}
+
 func TestApplyEffectsBatchesOnlyExecutableCommands(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
 
