@@ -492,6 +492,23 @@ func TestCopyModeBufferViewportRangeUsesScrollbackBoundary(t *testing.T) {
 	}
 }
 
+func TestCopyModeSelectedTextNormalizesReverseMultiRowSelection(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"alpha", "bravo"}, []string{"charl", "delta"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	model.copyMode.Mark = &copyModePoint{Row: 2, Col: 2}
+	model.copyMode.Cursor = copyModePoint{Row: 0, Col: 1}
+
+	text, ok := model.copyModeSelectedText()
+	if !ok {
+		t.Fatal("expected selection text")
+	}
+	if text != "lpha\nbravo\ncha" {
+		t.Fatalf("unexpected normalized selection text %q", text)
+	}
+}
+
 func TestActiveLiveCopyModeBufferRefreshesStaleVTermSnapshot(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, []string{"hist-a"}, []string{"old-live"})
