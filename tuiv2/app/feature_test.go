@@ -970,6 +970,86 @@ func TestFeatureTabSwitchPromotesSharedTerminalOwnerWhenGeometryDiffers(t *testi
 	}
 }
 
+func TestFeatureTabSwitchPromotesSharedTerminalOwnerWhileBootstrapPendingUpdatesSnapshotSize(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	model := setupModel(t, modelOpts{
+		client: client,
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{
+					{
+						ID:           "tab-1",
+						Name:         "tab 1",
+						ActivePaneID: "pane-1",
+						Panes: map[string]*workbench.PaneState{
+							"pane-1": {ID: "pane-1", Title: "owner", TerminalID: "term-1"},
+						},
+						Root: workbench.NewLeaf("pane-1"),
+					},
+					{
+						ID:           "tab-2",
+						Name:         "tab 2",
+						ActivePaneID: "pane-2",
+						Panes: map[string]*workbench.PaneState{
+							"pane-2": {ID: "pane-2", Title: "shared", TerminalID: "term-1"},
+							"pane-3": {ID: "pane-3", Title: "side"},
+						},
+						Root: &workbench.LayoutNode{
+							Direction: workbench.SplitVertical,
+							Ratio:     0.5,
+							First:     workbench.NewLeaf("pane-2"),
+							Second:    workbench.NewLeaf("pane-3"),
+						},
+					},
+				},
+			},
+		},
+	})
+
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.Name = "shared"
+	terminal.State = "running"
+	terminal.Channel = 1
+	terminal.OwnerPaneID = "pane-1"
+	terminal.BoundPaneIDs = []string{"pane-1", "pane-2"}
+	terminal.BootstrapPending = true
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 118, Rows: 36},
+	}
+
+	ownerBinding := model.runtime.BindPane("pane-1")
+	ownerBinding.Channel = 1
+	ownerBinding.Connected = true
+	ownerBinding.Role = runtime.BindingRoleOwner
+
+	followerBinding := model.runtime.BindPane("pane-2")
+	followerBinding.Channel = 2
+	followerBinding.Connected = true
+	followerBinding.Role = runtime.BindingRoleFollower
+
+	cmd := model.switchTabByIndexMouse(1)
+	drainCmd(t, model, cmd, 20)
+
+	if terminal.OwnerPaneID != "pane-2" {
+		t.Fatalf("expected pane-2 promoted to owner after tab switch, got %q", terminal.OwnerPaneID)
+	}
+	if ownerBinding.Role != runtime.BindingRoleFollower || followerBinding.Role != runtime.BindingRoleOwner {
+		t.Fatalf("expected roles swapped after tab switch, owner=%#v follower=%#v", ownerBinding, followerBinding)
+	}
+	if len(client.resizes) == 0 {
+		t.Fatal("expected resize after owner promotion on tab switch")
+	}
+	if terminal.Snapshot == nil || terminal.Snapshot.Size.Cols >= 118 {
+		t.Fatalf("expected bootstrap-pending resize to refresh snapshot size, got %#v", terminal.Snapshot)
+	}
+	if terminal.PendingOwnerResize {
+		t.Fatalf("expected pending owner resize cleared after bootstrap-pending resize, got %#v", terminal)
+	}
+}
+
 func TestFeatureSessionTabSwitchDoesNotImplicitlyAcquireLease(t *testing.T) {
 	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
 	model := setupModel(t, modelOpts{

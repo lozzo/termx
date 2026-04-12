@@ -47,6 +47,11 @@ func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, col
 			vt.Resize(int(cols), int(rows))
 		}
 		if terminal.BootstrapPending {
+			// Keep the local surface snapshot geometry in sync even before the
+			// first bootstrap replay completes, otherwise owner handoff resizes
+			// can stay stuck on the previous tab's size until the stream emits.
+			r.bumpSurfaceVersion(terminal)
+			r.refreshSnapshot(terminalID)
 			return nil
 		}
 		r.bumpSurfaceVersion(terminal)

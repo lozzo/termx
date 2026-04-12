@@ -768,6 +768,44 @@ func TestRuntimeResizePaneSkipsSizeLockedTerminal(t *testing.T) {
 	}
 }
 
+func TestRuntimeResizePaneRefreshesSnapshotWhileBootstrapPending(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 80, 24, []string{"seed"})
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.Snapshot == nil || terminal.VTerm == nil {
+		t.Fatalf("expected hydrated terminal runtime, got %#v", terminal)
+	}
+	terminal.BootstrapPending = true
+	client.resizeCalls = nil
+
+	if err := rt.ResizePane(ctx, "pane-1", "term-1", 57, 36); err != nil {
+		t.Fatalf("resize pane: %v", err)
+	}
+
+	if len(client.resizeCalls) != 1 {
+		t.Fatalf("expected bootstrap-pending resize to reach bridge client, got %#v", client.resizeCalls)
+	}
+	if terminal.Snapshot == nil || terminal.Snapshot.Size.Cols != 57 || terminal.Snapshot.Size.Rows != 36 {
+		t.Fatalf("expected snapshot size refreshed during bootstrap pending resize, got %#v", terminal.Snapshot)
+	}
+	if cols, rows := terminal.VTerm.Size(); cols != 57 || rows != 36 {
+		t.Fatalf("expected live vterm resized during bootstrap pending resize, got %dx%d", cols, rows)
+	}
+	if terminal.PendingOwnerResize {
+		t.Fatalf("expected pending owner resize cleared after resize, got %#v", terminal)
+	}
+}
+
 func TestRuntimeUnbindOwnerLeavesTerminalWithoutOwner(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
@@ -1401,7 +1439,7 @@ func TestRuntimeStartStreamReconnectsAfterChannelClose(t *testing.T) {
 	}
 }
 
-func TestRuntimeStreamResizeFrameDefersSnapshotRefreshUntilBootstrapCompletes(t *testing.T) {
+func TestRuntimeStreamResizeFrameRefreshesSnapshotGeometryDuringBootstrap(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1446,12 +1484,11 @@ func TestRuntimeStreamResizeFrameDefersSnapshotRefreshUntilBootstrapCompletes(t 
 		t.Fatalf("expected VTerm resized to 120x40 after resize frame, got %dx%d", cols, rows)
 	}
 
-	// During bootstrap, resize frames should not surface a blank snapshot yet.
-	if terminal.Snapshot == nil {
-		t.Fatal("expected snapshot after resize")
-	}
-	if terminal.Snapshot.Size.Cols != 80 || terminal.Snapshot.Size.Rows != 24 {
-		t.Fatalf("expected bootstrap resize to preserve previous snapshot until bootstrap completes, got %dx%d", terminal.Snapshot.Size.Cols, terminal.Snapshot.Size.Rows)
+	waitFor(t, func() bool {
+		return terminal.Snapshot != nil && terminal.Snapshot.Size.Cols == 120 && terminal.Snapshot.Size.Rows == 40
+	})
+	if !snapshotContains(terminal.Snapshot, "initial") {
+		t.Fatalf("expected bootstrap resize to preserve provisional snapshot content, got %#v", terminal.Snapshot)
 	}
 
 	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeBootstrapDone})

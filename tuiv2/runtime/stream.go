@@ -12,14 +12,14 @@ import (
 )
 
 const (
-	synchronizedOutputBegin      = "\x1b[?2026h"
-	synchronizedOutputEnd        = "\x1b[?2026l"
-	clientOutputBatchDelay       = 2 * time.Millisecond
-	interactiveOutputBatchDelay  = 500 * time.Microsecond
+	synchronizedOutputBegin     = "\x1b[?2026h"
+	synchronizedOutputEnd       = "\x1b[?2026l"
+	clientOutputBatchDelay      = 2 * time.Millisecond
+	interactiveOutputBatchDelay = 500 * time.Microsecond
 	// If a synchronized-output group is still open when the normal batch timer
 	// fires, wait in small increments for the trailing sync-end chunk so we can
 	// keep the whole redraw in one local VTerm.Write()/render pass.
-	synchronizedOutputWaitStep   = 500 * time.Microsecond
+	synchronizedOutputWaitStep = 500 * time.Microsecond
 	// Cap the extra wait so an incomplete or delayed sync group cannot stall the
 	// first visible frame indefinitely. This is a pragmatic latency ceiling, not
 	// a protocol guarantee.
@@ -252,6 +252,12 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 			vt.Resize(int(cols), int(rows))
 			resetSynchronizedOutputState(&terminal.Stream)
 			if terminal.BootstrapPending {
+				// Mirror local resize behavior during bootstrap: keep the
+				// provisional snapshot geometry aligned with the live surface so
+				// follower views don't stay pinned to stale dimensions while the
+				// initial replay is still in-flight.
+				r.bumpSurfaceVersion(terminal)
+				r.refreshSnapshot(terminalID)
 				return
 			}
 			r.bumpSurfaceVersion(terminal)
