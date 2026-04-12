@@ -43,6 +43,21 @@ func normalizeFloatingState(state *FloatingState) {
 	}
 }
 
+func normalizedFloatingState(state *FloatingState) FloatingState {
+	if state == nil {
+		return FloatingState{}
+	}
+	normalized := *state
+	normalized.Display = normalizeFloatingDisplay(normalized.Display)
+	normalized.FitMode = normalizeFloatingFitMode(normalized.FitMode)
+	if normalized.Display == FloatingDisplayExpanded && normalized.Rect.W > 0 && normalized.Rect.H > 0 {
+		if normalized.RestoreRect.W <= 0 || normalized.RestoreRect.H <= 0 {
+			normalized.RestoreRect = normalized.Rect
+		}
+	}
+	return normalized
+}
+
 func floatingStateVisible(state *FloatingState) bool {
 	if state == nil {
 		return false
@@ -59,11 +74,12 @@ func visibleFloatingStates(entries []*FloatingState) []*FloatingState {
 		if entry == nil {
 			continue
 		}
-		normalizeFloatingState(entry)
-		if !floatingStateVisible(entry) {
+		normalized := normalizedFloatingState(entry)
+		if !floatingStateVisible(&normalized) {
 			continue
 		}
-		visible = append(visible, entry)
+		copy := normalized
+		visible = append(visible, &copy)
 	}
 	return visible
 }
@@ -73,8 +89,8 @@ func hasExpandedFloating(entries []*FloatingState) bool {
 		if entry == nil {
 			continue
 		}
-		normalizeFloatingState(entry)
-		if entry.Display == FloatingDisplayExpanded {
+		normalized := normalizedFloatingState(entry)
+		if normalized.Display == FloatingDisplayExpanded {
 			return true
 		}
 	}

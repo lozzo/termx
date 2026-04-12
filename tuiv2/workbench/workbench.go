@@ -6,6 +6,20 @@ import (
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
+func normalizeWorkspaceState(ws *WorkspaceState) {
+	if ws == nil {
+		return
+	}
+	for _, tab := range ws.Tabs {
+		if tab == nil {
+			continue
+		}
+		for _, floating := range tab.Floating {
+			normalizeFloatingState(floating)
+		}
+	}
+}
+
 type TerminalBindingLocation struct {
 	WorkspaceName string
 	TabID         string
@@ -23,6 +37,13 @@ func (w *Workbench) touch() {
 		return
 	}
 	w.version++
+}
+
+func (w *Workbench) Version() uint64 {
+	if w == nil {
+		return 0
+	}
+	return w.version
 }
 
 func (w *Workbench) CurrentWorkspace() *WorkspaceState {
@@ -75,6 +96,7 @@ func (w *Workbench) AddWorkspace(name string, ws *WorkspaceState) {
 	if w == nil || ws == nil || name == "" {
 		return
 	}
+	normalizeWorkspaceState(ws)
 	if _, exists := w.store[name]; !exists {
 		w.order = append(w.order, name)
 	}
@@ -189,21 +211,21 @@ func (w *Workbench) VisibleWithSize(bodyRect Rect) *VisibleWorkbench {
 					if floating == nil {
 						continue
 					}
-					normalizeFloatingState(floating)
 					pane := tab.Panes[floating.PaneID]
 					if pane == nil {
 						continue
 					}
+					normalized := normalizedFloatingState(floating)
 					visible.FloatingTotal++
-					if floating.Display == FloatingDisplayCollapsed {
+					if normalized.Display == FloatingDisplayCollapsed {
 						visible.FloatingCollapsed++
 						continue
 					}
-					if floating.Display == FloatingDisplayHidden || !floatingLayerVisible {
+					if normalized.Display == FloatingDisplayHidden || !floatingLayerVisible {
 						visible.FloatingHidden++
 						continue
 					}
-					if !floatingStateVisible(floating) {
+					if !floatingStateVisible(&normalized) {
 						visible.FloatingHidden++
 						continue
 					}
@@ -211,7 +233,7 @@ func (w *Workbench) VisibleWithSize(bodyRect Rect) *VisibleWorkbench {
 						ID:         pane.ID,
 						Title:      pane.Title,
 						TerminalID: pane.TerminalID,
-						Rect:       floating.Rect,
+						Rect:       normalized.Rect,
 						Floating:   true,
 					})
 				}

@@ -280,3 +280,78 @@ func TestVisibleWithSizeSkipsCollapsedAndHiddenFloatingPanes(t *testing.T) {
 		t.Fatalf("unexpected projected floating pane: %#v", visible.FloatingPanes[0])
 	}
 }
+
+func TestAddWorkspaceNormalizesFloatingStateOnWrite(t *testing.T) {
+	wb := NewWorkbench()
+	ws := &WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*TabState{{
+			ID:           "tab-1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*PaneState{
+				"pane-1": {ID: "pane-1", Title: "base"},
+				"pane-2": {ID: "pane-2", Title: "float"},
+			},
+			Root: NewLeaf("pane-1"),
+			Floating: []*FloatingState{{
+				PaneID: "pane-2",
+				Rect:   Rect{X: 5, Y: 4, W: 20, H: 6},
+			}},
+		}},
+	}
+
+	wb.AddWorkspace("main", ws)
+
+	floating := ws.Tabs[0].Floating[0]
+	if floating.Display != FloatingDisplayExpanded {
+		t.Fatalf("expected floating display normalized to expanded, got %#v", floating)
+	}
+	if floating.FitMode != FloatingFitManual {
+		t.Fatalf("expected floating fit mode normalized to manual, got %#v", floating)
+	}
+	if floating.RestoreRect != floating.Rect {
+		t.Fatalf("expected restore rect initialized from visible rect, got %#v", floating)
+	}
+}
+
+func TestVisibleWithSizeDoesNotMutateFloatingState(t *testing.T) {
+	wb := NewWorkbench()
+	ws := &WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*TabState{{
+			ID:           "tab-1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*PaneState{
+				"pane-1": {ID: "pane-1", Title: "base"},
+				"pane-2": {ID: "pane-2", Title: "float"},
+			},
+			Root:            NewLeaf("pane-1"),
+			FloatingVisible: true,
+			Floating: []*FloatingState{{
+				PaneID: "pane-2",
+				Rect:   Rect{X: 5, Y: 4, W: 20, H: 6},
+			}},
+		}},
+	}
+	wb.AddWorkspace("main", ws)
+
+	floating := ws.Tabs[0].Floating[0]
+	floating.Display = ""
+	floating.FitMode = ""
+	floating.RestoreRect = Rect{}
+	before := *floating
+	versionBefore := wb.Version()
+
+	visible := wb.VisibleWithSize(Rect{W: 100, H: 40})
+	if visible == nil || len(visible.FloatingPanes) != 1 {
+		t.Fatalf("expected pure-read projection to still show normalized floating pane, got %#v", visible)
+	}
+	if *floating != before {
+		t.Fatalf("expected VisibleWithSize not to mutate floating state, before=%#v after=%#v", before, *floating)
+	}
+	if versionAfter := wb.Version(); versionAfter != versionBefore {
+		t.Fatalf("expected VisibleWithSize not to change workbench version, before=%d after=%d", versionBefore, versionAfter)
+	}
+}
