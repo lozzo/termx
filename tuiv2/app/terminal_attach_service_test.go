@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
@@ -184,5 +185,102 @@ func TestTerminalAttachServiceAttachCmdResizesHiddenTabPane(t *testing.T) {
 	}
 	if got := len(client.resizes); got != 1 {
 		t.Fatalf("expected one resize for hidden tab attach, got %#v", client.resizes)
+	}
+}
+
+func TestTerminalAttachServiceReattachRestoredCmdClearsBindingAndPendingOnFailure(t *testing.T) {
+	client := &recordingBridgeClient{attachErr: teaErr("terminal not found"), snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	model := setupModel(t, modelOpts{
+		client: client,
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{{
+					ID:           "tab-1",
+					Name:         "tab 1",
+					ActivePaneID: "pane-1",
+					Panes: map[string]*workbench.PaneState{
+						"pane-1": {ID: "pane-1", TerminalID: "term-missing"},
+					},
+					Root: workbench.NewLeaf("pane-1"),
+				}},
+			},
+		},
+	})
+	service := model.terminalAttachService()
+
+	cmd := service.reattachRestoredCmd(bootstrap.PaneReattachHint{
+		TabID:      "tab-1",
+		PaneID:     "pane-1",
+		TerminalID: "term-missing",
+	})
+	if cmd == nil {
+		t.Fatal("expected restore reattach cmd")
+	}
+	msg := cmd()
+	if _, ok := msg.(reattachFailedMsg); !ok {
+		t.Fatalf("expected reattachFailedMsg, got %#v", msg)
+	}
+	pane := model.workbench.ActivePane()
+	if pane == nil || pane.TerminalID != "" {
+		t.Fatalf("expected restored binding cleared after failure, got %#v", pane)
+	}
+	if model.isPaneAttachPending("pane-1") {
+		t.Fatal("expected pending attach cleared after failed restore reattach")
+	}
+}
+
+func TestTerminalAttachServiceReattachRestoredCmdSucceedsAndClearsPending(t *testing.T) {
+	client := &recordingBridgeClient{
+		attachResult: &protocol.AttachResult{Channel: 17, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-restore": {
+				TerminalID: "term-restore",
+				Size:       protocol.Size{Cols: 80, Rows: 24},
+				Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "k", Width: 1}}}},
+			},
+		},
+	}
+	model := setupModel(t, modelOpts{
+		client: client,
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{{
+					ID:           "tab-1",
+					Name:         "tab 1",
+					ActivePaneID: "pane-1",
+					Panes: map[string]*workbench.PaneState{
+						"pane-1": {ID: "pane-1", TerminalID: "term-restore"},
+					},
+					Root: workbench.NewLeaf("pane-1"),
+				}},
+			},
+		},
+	})
+	service := model.terminalAttachService()
+
+	cmd := service.reattachRestoredCmd(bootstrap.PaneReattachHint{
+		TabID:      "tab-1",
+		PaneID:     "pane-1",
+		TerminalID: "term-restore",
+	})
+	if cmd == nil {
+		t.Fatal("expected restore reattach cmd")
+	}
+	msg := cmd()
+	applyTestMsg(t, model, msg, "restore reattach success")
+
+	if len(client.attachCalls) != 1 || client.attachCalls[0].terminalID != "term-restore" {
+		t.Fatalf("expected one successful reattach for term-restore, got %#v", client.attachCalls)
+	}
+	if model.isPaneAttachPending("pane-1") {
+		t.Fatal("expected pending attach cleared after successful restore reattach")
+	}
+	pane := model.workbench.ActivePane()
+	if pane == nil || pane.TerminalID != "term-restore" {
+		t.Fatalf("expected restored pane to stay bound to term-restore, got %#v", pane)
 	}
 }

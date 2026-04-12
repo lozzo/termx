@@ -172,24 +172,18 @@ func (m *Model) reattachRestoredPanesCmd(hints []bootstrap.PaneReattachHint) tea
 	if m == nil || len(hints) == 0 {
 		return nil
 	}
+	service := m.terminalAttachService()
+	if service == nil {
+		return nil
+	}
 	cmds := make([]tea.Cmd, 0, len(hints))
 	for _, hint := range hints {
-		h := hint
-		cmds = append(cmds, func() tea.Msg {
-			cmd := m.attachPaneTerminalCmd(h.TabID, h.PaneID, h.TerminalID)
-			if cmd == nil {
-				return reattachFailedMsg{tabID: h.TabID, paneID: h.PaneID}
-			}
-			msg := cmd()
-			switch msg.(type) {
-			case error, paneAttachFailedMsg:
-				if m.workbench != nil && h.TabID != "" {
-					_ = m.workbench.BindPaneTerminal(h.TabID, h.PaneID, "")
-				}
-				return reattachFailedMsg{tabID: h.TabID, paneID: h.PaneID}
-			}
-			return msg
-		})
+		if cmd := service.reattachRestoredCmd(hint); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	if len(cmds) == 0 {
+		return nil
 	}
 	return tea.Batch(cmds...)
 }

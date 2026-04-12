@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
 )
@@ -101,6 +102,25 @@ func (s *terminalAttachService) createAndAttachCmd(paneID string, target modal.C
 	}
 }
 
+func (s *terminalAttachService) reattachRestoredCmd(hint bootstrap.PaneReattachHint) tea.Cmd {
+	if s == nil || s.model == nil || hint.PaneID == "" || hint.TerminalID == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		msg := s.attachMsg(hint.TabID, hint.PaneID, hint.TerminalID)
+		switch msg.(type) {
+		case nil:
+			s.rollbackRestoredBinding(hint.TabID, hint.PaneID, hint.TerminalID)
+			return reattachFailedMsg{tabID: hint.TabID, paneID: hint.PaneID}
+		case error, paneAttachFailedMsg:
+			s.rollbackRestoredBinding(hint.TabID, hint.PaneID, hint.TerminalID)
+			return reattachFailedMsg{tabID: hint.TabID, paneID: hint.PaneID}
+		default:
+			return msg
+		}
+	}
+}
+
 func (s *terminalAttachService) attachMsg(tabID, paneID, terminalID string) tea.Msg {
 	if s == nil || s.model == nil || s.model.orchestrator == nil || paneID == "" || terminalID == "" {
 		return nil
@@ -135,4 +155,14 @@ func (s *terminalAttachService) primeCreatedTerminal(created *protocol.CreateRes
 	terminal.Tags = cloneStringMap(params.Tags)
 	terminal.Command = append([]string(nil), params.Command...)
 	terminal.State = created.State
+}
+
+func (s *terminalAttachService) rollbackRestoredBinding(tabID, paneID, terminalID string) {
+	if s == nil || s.model == nil {
+		return
+	}
+	s.model.clearPendingPaneAttach(paneID, terminalID)
+	if s.model.workbench != nil && tabID != "" {
+		_ = s.model.workbench.BindPaneTerminal(tabID, paneID, "")
+	}
 }
