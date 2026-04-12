@@ -1,6 +1,7 @@
 package app
 
 import (
+	"os"
 	"testing"
 
 	"github.com/lozzow/termx/protocol"
@@ -119,5 +120,98 @@ func TestFloatingFollowerResizeDoesNotUpdateSharedPTYSize(t *testing.T) {
 
 	if len(client.resizes) != 0 {
 		t.Fatalf("expected shared follower resize to avoid PTY resize, got %#v", client.resizes)
+	}
+}
+
+func TestToggleFloatingAutoFitUpdatesOverviewAndSavesState(t *testing.T) {
+	statePath := t.TempDir() + "/workspace-state.json"
+	client := &recordingBridgeClient{
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-float": {TerminalID: "term-float", Size: protocol.Size{Cols: 48, Rows: 14}},
+		},
+	}
+	model := setupModel(t, modelOpts{client: client, statePath: statePath})
+	tab := model.workbench.CurrentTab()
+
+	if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 10, Y: 5, W: 20, H: 8}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+	if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+		t.Fatalf("bind floating terminal: %v", err)
+	}
+	model.runtime.Registry().GetOrCreate("term-float").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-float",
+		Size:       protocol.Size{Cols: 48, Rows: 14},
+	}
+	binding := model.runtime.BindPane("float-1")
+	binding.Role = runtime.BindingRoleOwner
+	binding.Channel = 7
+	binding.Connected = true
+
+	model.openFloatingOverview()
+	drainCmd(t, model, model.toggleFloatingAutoFit("float-1"), 20)
+
+	floating := model.workbench.FloatingState(tab.ID, "float-1")
+	if floating == nil || floating.FitMode != workbench.FloatingFitAuto {
+		t.Fatalf("expected floating auto-fit enabled, got %#v", floating)
+	}
+	if model.modalHost == nil || model.modalHost.FloatingOverview == nil {
+		t.Fatal("expected floating overview state")
+	}
+	selected := model.modalHost.FloatingOverview.SelectedItem()
+	if selected == nil || selected.PaneID != "float-1" || selected.FitMode != workbench.FloatingFitAuto {
+		t.Fatalf("expected floating overview to refresh fit mode, got %#v", selected)
+	}
+	if _, err := os.Stat(statePath); err != nil {
+		t.Fatalf("expected toggle auto-fit to save state, stat err: %v", err)
+	}
+}
+
+func TestMaybeAutoFitFloatingPanesCmdRefreshesRectAndSavesState(t *testing.T) {
+	statePath := t.TempDir() + "/workspace-state.json"
+	client := &recordingBridgeClient{
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-float": {TerminalID: "term-float", Size: protocol.Size{Cols: 60, Rows: 20}},
+		},
+	}
+	model := setupModel(t, modelOpts{client: client, statePath: statePath})
+	tab := model.workbench.CurrentTab()
+
+	if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 10, Y: 5, W: 20, H: 8}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+	if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+		t.Fatalf("bind floating terminal: %v", err)
+	}
+	floating := model.workbench.FloatingState(tab.ID, "float-1")
+	if floating == nil {
+		t.Fatal("expected floating state")
+	}
+	floating.FitMode = workbench.FloatingFitAuto
+	floating.AutoFitCols = 10
+	floating.AutoFitRows = 5
+	model.runtime.Registry().GetOrCreate("term-float").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-float",
+		Size:       protocol.Size{Cols: 60, Rows: 20},
+	}
+	binding := model.runtime.BindPane("float-1")
+	binding.Role = runtime.BindingRoleOwner
+	binding.Channel = 7
+	binding.Connected = true
+
+	drainCmd(t, model, model.maybeAutoFitFloatingPanesCmd(), 20)
+
+	updated := model.workbench.FloatingState(tab.ID, "float-1")
+	if updated == nil {
+		t.Fatal("expected updated floating state")
+	}
+	if updated.AutoFitCols == 10 && updated.AutoFitRows == 5 {
+		t.Fatalf("expected auto-fit size refreshed, got %#v", updated)
+	}
+	if updated.Rect.W == 20 && updated.Rect.H == 8 {
+		t.Fatalf("expected floating rect adjusted by auto-fit refresh, got %#v", updated.Rect)
+	}
+	if _, err := os.Stat(statePath); err != nil {
+		t.Fatalf("expected maybe-auto-fit to save state, stat err: %v", err)
 	}
 }
