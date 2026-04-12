@@ -10,3 +10,11 @@
 - tree/list/item 的差异优先使用文本颜色、粗细、下划线、前导 marker 表达，不要依赖背景色块来区分不同 item 状态。
 - 同一个 modal/surface 内，主体区域的空白背景应保持一致；不要出现树区是一个底色、未填充预览区又是另一个底色的情况。
 - 如果某块内容要模拟“真实 terminal 预览”，其默认空白应尽量回到宿主终端默认背景，不要额外铺一层人工灰底。
+
+## Architecture / Refactor Rules
+
+- `tuiv2/app` 不要直接把同一个业务事务同时散落写入 `workbench` 与 `runtime`；pane-terminal 绑定、owner handoff、resize 协调必须优先收口到 `orchestrator` 或明确的 service。
+- `Visible*` / `AdaptVisibleState*` / render projection 路径必须保持纯读；禁止在这些路径里做 normalize、补状态、修 cache 或任何隐式 mutation。
+- `render` 层不要直接依赖 `input.DefaultBindingCatalog()` 这类输入绑定文档来拼 modal/footer 文案；render 只消费已经整理好的语义 view-model，快捷键说明放在 status/help。
+- `render/coordinator.go` 不要继续叠加新的业务编排、输入语义分支或状态修复逻辑；新增逻辑优先拆到独立 projection/layout/overlay/hit-testing 模块。
+- 如果宿主终端没有返回 palette，新样式 fallback 也必须先从 host FG/BG 推导；引入固定品牌色作为默认视觉基底需要显式说明理由。
