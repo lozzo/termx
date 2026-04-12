@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
@@ -78,7 +77,6 @@ func buildPickerCardLayout(width, height, itemCount int, hasFooter bool) pickerC
 
 func pickerFooterActionSpecs() []overlayFooterActionSpec {
 	return modeFooterActionSpecs(
-		input.ModePicker,
 		[]input.ActionKind{
 			input.ActionSubmitPrompt,
 			input.ActionPickerAttachSplit,
@@ -98,7 +96,6 @@ func pickerFooterActionSpecs() []overlayFooterActionSpec {
 
 func workspacePickerFooterActionSpecs() []overlayFooterActionSpec {
 	return modeFooterActionSpecs(
-		input.ModeWorkspacePicker,
 		[]input.ActionKind{
 			input.ActionSubmitPrompt,
 			input.ActionCreateWorkspace,
@@ -118,7 +115,6 @@ func workspacePickerFooterActionSpecs() []overlayFooterActionSpec {
 
 func terminalManagerFooterActionSpecs() []overlayFooterActionSpec {
 	return modeFooterActionSpecs(
-		input.ModeTerminalManager,
 		[]input.ActionKind{
 			input.ActionSubmitPrompt,
 			input.ActionAttachTab,
@@ -144,14 +140,13 @@ func promptFooterActionSpecs(prompt *modal.PromptState) []overlayFooterActionSpe
 		paneID = prompt.PaneID
 	}
 	return []overlayFooterActionSpec{
-		{Label: "[Enter] submit", Action: input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID}},
-		{Label: "[Esc] cancel", Action: input.SemanticAction{Kind: input.ActionCancelMode}},
+		{Label: "submit", Action: input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: paneID}},
+		{Label: "cancel", Action: input.SemanticAction{Kind: input.ActionCancelMode}},
 	}
 }
 
 func floatingOverviewFooterActionSpecs() []overlayFooterActionSpec {
 	return modeFooterActionSpecs(
-		input.ModeFloatingOverview,
 		[]input.ActionKind{
 			input.ActionSubmitPrompt,
 			input.ActionExpandAllFloatingPanes,
@@ -169,10 +164,10 @@ func floatingOverviewFooterActionSpecs() []overlayFooterActionSpec {
 	)
 }
 
-func modeFooterActionSpecs(mode input.ModeKind, order []input.ActionKind, fallback map[input.ActionKind]string) []overlayFooterActionSpec {
+func modeFooterActionSpecs(order []input.ActionKind, fallback map[input.ActionKind]string) []overlayFooterActionSpec {
 	specs := make([]overlayFooterActionSpec, 0, len(order))
 	for _, kind := range order {
-		label := modeActionFooterLabel(mode, kind, fallback[kind])
+		label := strings.TrimSpace(fallback[kind])
 		if strings.TrimSpace(label) == "" {
 			continue
 		}
@@ -182,57 +177,6 @@ func modeFooterActionSpecs(mode input.ModeKind, order []input.ActionKind, fallba
 		})
 	}
 	return specs
-}
-
-func modeActionFooterLabel(mode input.ModeKind, action input.ActionKind, fallbackText string) string {
-	doc, ok := bindingDocForModeAction(mode, action)
-	if !ok {
-		if strings.TrimSpace(fallbackText) == "" {
-			return ""
-		}
-		return fallbackText
-	}
-	key := strings.TrimSpace(doc.KeyLabel)
-	if key == "" {
-		key = keyLabelFromBinding(doc.Binding)
-	}
-	text := strings.TrimSpace(doc.FooterText)
-	if text == "" {
-		text = strings.TrimSpace(fallbackText)
-	}
-	if key == "" {
-		return text
-	}
-	if text == "" {
-		return "[" + key + "]"
-	}
-	return "[" + key + "] " + text
-}
-
-func bindingDocForModeAction(mode input.ModeKind, action input.ActionKind) (input.BindingDoc, bool) {
-	for _, doc := range input.DefaultBindingCatalog() {
-		if doc.Mode == mode && doc.Binding.Action == action && strings.TrimSpace(doc.KeyLabel) != "" {
-			return doc, true
-		}
-	}
-	for _, doc := range input.DefaultBindingCatalog() {
-		if doc.Mode == mode && doc.Binding.Action == action {
-			return doc, true
-		}
-	}
-	return input.BindingDoc{}, false
-}
-
-func keyLabelFromBinding(binding input.Binding) string {
-	if binding.Type == tea.KeyRunes {
-		if binding.Rune != 0 {
-			return string(binding.Rune)
-		}
-		if binding.RuneMin != 0 || binding.RuneMax != 0 {
-			return string(binding.RuneMin) + "-" + string(binding.RuneMax)
-		}
-	}
-	return ""
 }
 
 func pickerFooterRowY(layout pickerCardLayout) int {

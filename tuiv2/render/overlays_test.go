@@ -197,7 +197,7 @@ func TestRenderFrameWithHelpOverlay(t *testing.T) {
 func TestRenderTerminalManagerOverlayShowsSelectedTerminalDetails(t *testing.T) {
 	manager := &modal.TerminalManagerState{
 		Title:    "Terminal Manager",
-		Footer:   "[Enter] here  [Ctrl-T] tab  [Ctrl-O] float  [Ctrl-E] edit  [Ctrl-K] kill  [Esc] close",
+		Footer:   "here  tab  float  edit  kill  close",
 		Selected: 0,
 		Items: []modal.PickerItem{{
 			TerminalID:  "term-1",
@@ -215,7 +215,7 @@ func TestRenderTerminalManagerOverlayShowsSelectedTerminalDetails(t *testing.T) 
 			t.Fatalf("terminal manager overlay missing %q:\n%s", want, overlay)
 		}
 	}
-	for _, want := range []string{"[Enter] here", "[Ctrl-T] tab", "[Ctrl-O] float"} {
+	for _, want := range []string{"here", "tab", "float"} {
 		if !strings.Contains(overlay, want) {
 			t.Fatalf("expected terminal manager footer action %q:\n%s", want, overlay)
 		}

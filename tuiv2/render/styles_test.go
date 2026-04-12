@@ -100,8 +100,8 @@ func TestRenderOverlayFooterLineFillsRowWidth(t *testing.T) {
 func TestLayoutOverlayFooterActionsStylesInterActionGap(t *testing.T) {
 	theme := defaultUITheme()
 	line, _ := layoutOverlayFooterActionsWithTheme(theme, []overlayFooterActionSpec{
-		{Label: "[Enter] submit"},
-		{Label: "[Esc] cancel"},
+		{Label: "submit"},
+		{Label: "cancel"},
 	}, workbench.Rect{W: 40, H: 1})
 	wantGap := renderOverlaySpan(overlayFooterPlainStyle(theme), "", overlayFooterActionGap)
 	if !strings.Contains(line, wantGap) {
@@ -145,7 +145,7 @@ func TestTerminalPoolFooterStylesGapAndIndent(t *testing.T) {
 
 func TestRenderOverlaySpanFillsRequestedWidth(t *testing.T) {
 	style := overlayCardFillStyle(defaultUITheme())
-	line := renderOverlaySpan(style, "[Enter] submit", 40)
+	line := renderOverlaySpan(style, "submit", 40)
 	if got := xansi.StringWidth(line); got != 40 {
 		t.Fatalf("overlay span width = %d, want 40", got)
 	}
