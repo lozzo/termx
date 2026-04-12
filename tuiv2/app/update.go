@@ -1,7 +1,6 @@
 package app
 
 import (
-	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -179,49 +178,6 @@ func hostEmojiProbeModeFromReportedColumn(x int) (shared.AmbiguousEmojiVariation
 		return shared.AmbiguousEmojiVariationSelectorRaw, true
 	default:
 		return "", false
-	}
-}
-
-func (m *Model) handleSessionMessage(msg tea.Msg) (tea.Cmd, bool) {
-	switch typed := msg.(type) {
-	case sessionSnapshotMsg:
-		if shouldApplySessionSnapshot(typed.Snapshot) {
-			m.applySessionSnapshot(typed.Snapshot)
-		}
-		if typed.Err != nil {
-			return m.showError(typed.Err), true
-		}
-		return nil, true
-	case sessionEventMsg:
-		switch typed.Event.Type {
-		case protocol.EventSessionDeleted:
-			if typed.Event.SessionID == m.sessionID {
-				return m.showError(fmt.Errorf("session %s was deleted", m.sessionID)), true
-			}
-		case protocol.EventSessionCreated, protocol.EventSessionUpdated:
-			if typed.Event.SessionID == m.sessionID {
-				revision := uint64(0)
-				viewID := ""
-				if typed.Event.Session != nil {
-					revision = typed.Event.Session.Revision
-					viewID = typed.Event.Session.ViewID
-				}
-				if viewID != m.sessionViewID && revision >= m.sessionRevision {
-					return m.pullSessionCmd(), true
-				}
-			}
-		}
-		return nil, true
-	case sessionViewUpdatedMsg:
-		if typed.View != nil && typed.View.ViewID != "" {
-			m.sessionViewID = typed.View.ViewID
-		}
-		if typed.Err != nil {
-			return m.showError(typed.Err), true
-		}
-		return nil, true
-	default:
-		return nil, false
 	}
 }
 
