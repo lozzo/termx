@@ -120,7 +120,7 @@ func (o *Orchestrator) handleFloatingAction(action input.SemanticAction) []Effec
 		if o.runtime != nil {
 			o.runtime.UnbindPane(paneID, terminalID)
 		}
-		return []Effect{InvalidateRenderEffect{}}
+		return []Effect{ClosePaneEffect{PaneID: paneID}}
 	default:
 		return nil
 	}

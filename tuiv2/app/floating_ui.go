@@ -375,28 +375,13 @@ func (m *Model) maybeAutoFitFloatingPanesCmd() tea.Cmd {
 }
 
 func (m *Model) closeFloatingPaneDirect(paneID string) tea.Cmd {
-	if m == nil || m.workbench == nil {
+	if m == nil || m.orchestrator == nil || paneID == "" {
 		return nil
 	}
-	tab := m.workbench.CurrentTab()
-	if tab == nil || paneID == "" {
-		return nil
-	}
-	terminalID, err := m.workbench.ClosePane(tab.ID, paneID)
-	if err != nil {
-		return m.showError(err)
-	}
-	if m.runtime != nil {
-		m.runtime.UnbindPane(paneID, terminalID)
-	}
-	if m.modalHost != nil && m.modalHost.Session != nil && m.modalHost.Session.Kind == input.ModeFloatingOverview {
-		m.refreshFloatingOverview("")
-		if m.modalHost.FloatingOverview != nil && len(m.modalHost.FloatingOverview.Items) == 0 {
-			m.closeFloatingOverview()
-		}
-	}
-	m.render.Invalidate()
-	return m.saveStateCmd()
+	return m.semanticActionEffectsCmd(input.SemanticAction{
+		Kind:   input.ActionCloseFloatingPane,
+		PaneID: paneID,
+	})
 }
 
 func (m *Model) disableFloatingAutoFitForActionPane(paneID string) {

@@ -520,6 +520,35 @@ func TestHandleSemanticActionClosePaneRemovesPaneAndReturnsCloseEffect(t *testin
 	}
 }
 
+func TestHandleSemanticActionCloseFloatingPaneReturnsClosePaneEffect(t *testing.T) {
+	orch, _ := newTestOrchestrator(t)
+	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
+	tab := orch.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if err := orch.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 10, Y: 5, W: 40, H: 20}); err != nil {
+		t.Fatalf("CreateFloatingPane: %v", err)
+	}
+
+	effects := orch.HandleSemanticAction(input.SemanticAction{
+		Kind:   input.ActionCloseFloatingPane,
+		PaneID: "float-1",
+	})
+
+	if len(effects) != 1 {
+		t.Fatalf("expected 1 effect, got %d", len(effects))
+	}
+	if effect, ok := effects[0].(ClosePaneEffect); !ok {
+		t.Fatalf("expected ClosePaneEffect, got %T", effects[0])
+	} else if effect.PaneID != "float-1" {
+		t.Fatalf("expected ClosePaneEffect for float-1, got %#v", effect)
+	}
+	if got := orch.workbench.FloatingState(tab.ID, "float-1"); got != nil {
+		t.Fatalf("expected floating pane removed, got %#v", got)
+	}
+}
+
 func TestHandleSemanticActionSplitPaneCreatesNewPaneAndOpensPicker(t *testing.T) {
 	orch, _ := newTestOrchestrator(t)
 	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")

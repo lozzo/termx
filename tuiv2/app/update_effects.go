@@ -40,6 +40,12 @@ func (m *Model) effectCmd(effect orchestrator.Effect) tea.Cmd {
 		return nil
 	case orchestrator.ClosePaneEffect:
 		m.clampFloatingPanesToViewport()
+		if m.modalHost != nil && m.modalHost.Session != nil && m.modalHost.Session.Kind == input.ModeFloatingOverview {
+			m.refreshFloatingOverview("")
+			if m.modalHost.FloatingOverview != nil && len(m.modalHost.FloatingOverview.Items) == 0 {
+				m.closeFloatingOverview()
+			}
+		}
 		m.render.Invalidate()
 		return tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
 	case orchestrator.CreateTabEffect:

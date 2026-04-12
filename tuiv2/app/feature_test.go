@@ -1353,6 +1353,29 @@ func TestFeatureFloatingOverviewOpensWithItems(t *testing.T) {
 	}
 }
 
+func TestFeatureFloatingOverviewCloseLastItemClosesOverview(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	tab := model.workbench.CurrentTab()
+	if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 10, Y: 5, W: 30, H: 10}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionOpenFloatingOverview})
+	if model.modalHost == nil || model.modalHost.Session == nil || model.modalHost.Session.Kind != input.ModeFloatingOverview {
+		t.Fatalf("expected floating overview modal before close, got %#v", model.modalHost)
+	}
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCloseFloatingPane, PaneID: "float-1"})
+
+	if model.modalHost != nil && model.modalHost.Session != nil && model.modalHost.Session.Kind == input.ModeFloatingOverview {
+		t.Fatalf("expected floating overview to close after last floating pane removed, got %#v", model.modalHost.Session)
+	}
+	tab = model.workbench.CurrentTab()
+	if tab == nil || len(tab.Floating) != 0 {
+		t.Fatalf("expected all floating panes removed, got %#v", tab)
+	}
+}
+
 func TestFeatureSummonCollapsedFloatingPane(t *testing.T) {
 	model := setupModel(t, modelOpts{})
 	tab := model.workbench.CurrentTab()

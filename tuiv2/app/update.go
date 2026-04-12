@@ -419,12 +419,19 @@ func (m *Model) dispatchSemanticActionCmd(action input.SemanticAction, allowLoca
 	if m.blocksSemanticActionForTerminalSizeLock(action) {
 		return batchCmds(m.showNotice(terminalSizeLockedNotice), m.resizePendingPaneResizesCmd(), m.updateSessionViewCmd())
 	}
-	cmd := m.applyEffects(m.enrichEffects(action, m.orchestrator.HandleSemanticAction(action)))
-	cmd = batchCmds(cmd, m.resizeCmdForAction(action), m.saveCmdForAction(action))
+	cmd := m.semanticActionEffectsCmd(action)
 	if m.isStickyMode() {
 		cmd = tea.Batch(cmd, m.rearmPrefixTimeoutCmd())
 	}
 	return batchCmds(cmd, m.resizePendingPaneResizesCmd(), m.updateSessionViewCmd())
+}
+
+func (m *Model) semanticActionEffectsCmd(action input.SemanticAction) tea.Cmd {
+	if m == nil || m.orchestrator == nil {
+		return nil
+	}
+	cmd := m.applyEffects(m.enrichEffects(action, m.orchestrator.HandleSemanticAction(action)))
+	return batchCmds(cmd, m.resizeCmdForAction(action), m.saveCmdForAction(action))
 }
 
 func (m *Model) showError(err error) tea.Cmd {
