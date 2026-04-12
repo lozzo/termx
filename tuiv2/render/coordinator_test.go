@@ -238,6 +238,136 @@ func TestScrollOffsetForViewportTopKeepsScrollbackVisible(t *testing.T) {
 	}
 }
 
+func TestApplyScrollbackOffsetProjectsWindowIntoScreenCells(t *testing.T) {
+	snapshot := &protocol.Snapshot{
+		Size: protocol.Size{Cols: 4, Rows: 2},
+		Scrollback: [][]protocol.Cell{
+			{{Content: "a", Width: 1}},
+			{{Content: "b", Width: 1}},
+			{{Content: "c", Width: 1}},
+		},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			{{Content: "d", Width: 1}},
+			{{Content: "e", Width: 1}},
+		}},
+	}
+
+	window := applyScrollbackOffset(snapshot, 2, 2)
+	if window == snapshot {
+		t.Fatal("expected scrollback offset to clone snapshot window")
+	}
+	if len(window.Screen.Cells) != 2 || window.Screen.Cells[0][0].Content != "b" || window.Screen.Cells[1][0].Content != "c" {
+		t.Fatalf("unexpected projected screen window %#v", window.Screen.Cells)
+	}
+	if len(snapshot.Screen.Cells) != 2 || snapshot.Screen.Cells[0][0].Content != "d" {
+		t.Fatalf("expected original snapshot screen to remain unchanged, got %#v", snapshot.Screen.Cells)
+	}
+}
+
+func TestSnapshotMarkerLabelFormatsRestartTimestamp(t *testing.T) {
+	ts := time.Date(2026, 4, 12, 10, 9, 8, 0, time.UTC)
+	label := snapshotMarkerLabel(protocol.SnapshotRowKindRestart, ts)
+	if !strings.Contains(label, "restarted") {
+		t.Fatalf("expected restart marker label, got %q", label)
+	}
+	if !strings.Contains(label, formatSnapshotRowTimestamp(ts)) {
+		t.Fatalf("expected formatted timestamp in marker label, got %q", label)
+	}
+}
+
+func TestSnapshotExtentHintsViewRaisesVisibleRowCount(t *testing.T) {
+	snapshot := &protocol.Snapshot{Size: protocol.Size{Cols: 4, Rows: 1}}
+	extended := snapshotExtentHintsView(snapshot, 3)
+	if extended == snapshot {
+		t.Fatal("expected extent hints view to clone snapshot when rows increase")
+	}
+	if extended.Size.Rows != 3 {
+		t.Fatalf("expected extent hint rows=3, got %#v", extended.Size)
+	}
+	if snapshot.Size.Rows != 1 {
+		t.Fatalf("expected original snapshot size unchanged, got %#v", snapshot.Size)
+	}
+}
+
+func TestDrawTerminalSourceWithOffsetProjectsScrolledRows(t *testing.T) {
+	canvas := newComposedCanvas(1, 2)
+	snapshot := &protocol.Snapshot{
+		Size: protocol.Size{Cols: 1, Rows: 5},
+		Scrollback: [][]protocol.Cell{
+			{{Content: "a", Width: 1}},
+			{{Content: "b", Width: 1}},
+			{{Content: "c", Width: 1}},
+		},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			{{Content: "d", Width: 1}},
+			{{Content: "e", Width: 1}},
+		}},
+	}
+
+	drawTerminalSourceWithOffset(canvas, workbench.Rect{X: 0, Y: 0, W: 1, H: 2}, renderSource(snapshot, nil), 2, defaultUITheme())
+	if got, want := canvas.rawString(), "b\nc"; got != want {
+		t.Fatalf("unexpected offset projection %q want %q", got, want)
+	}
+}
+
+func TestDrawTerminalSourceRowInRectPrefersMarkerLabel(t *testing.T) {
+	canvas := newComposedCanvas(24, 1)
+	ts := time.Date(2026, 4, 12, 10, 9, 8, 0, time.UTC)
+	snapshot := &protocol.Snapshot{
+		Size:       protocol.Size{Cols: 24, Rows: 1},
+		Scrollback: [][]protocol.Cell{{{Content: "x", Width: 1}}},
+		ScrollbackRowKinds: []string{
+			protocol.SnapshotRowKindRestart,
+		},
+		ScrollbackTimestamps: []time.Time{ts},
+	}
+
+	drawTerminalSourceRowInRect(canvas, workbench.Rect{X: 0, Y: 0, W: 24, H: 1}, renderSource(snapshot, nil), 0, 0, defaultUITheme())
+	if got := xansi.Strip(canvas.rawString()); !strings.Contains(got, "restarted") {
+		t.Fatalf("expected marker row to render restart label, got %q", got)
+	}
+}
+
+func TestDrawTerminalExtentHintsFillsUnusedAreaWithDots(t *testing.T) {
+	canvas := newComposedCanvas(3, 3)
+	snapshot := &protocol.Snapshot{
+		Size: protocol.Size{Cols: 1, Rows: 1},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			{{Content: "x", Width: 1}},
+		}},
+	}
+	rect := workbench.Rect{X: 0, Y: 0, W: 3, H: 3}
+	source := renderSource(snapshot, nil)
+
+	drawTerminalSourceInRect(canvas, rect, source)
+	drawTerminalExtentHints(canvas, rect, source, defaultUITheme())
+
+	if got, want := canvas.rawString(), "x··\n···\n···"; got != want {
+		t.Fatalf("unexpected extent hint fill %q want %q", got, want)
+	}
+}
+
+type fakeTerminalRenderSource struct{}
+
+func (fakeTerminalRenderSource) Size() protocol.Size                        { return protocol.Size{Cols: 1, Rows: 1} }
+func (fakeTerminalRenderSource) Cursor() protocol.CursorState               { return protocol.CursorState{} }
+func (fakeTerminalRenderSource) Modes() protocol.TerminalModes              { return protocol.TerminalModes{} }
+func (fakeTerminalRenderSource) IsAlternateScreen() bool                    { return false }
+func (fakeTerminalRenderSource) ScreenRows() int                            { return 1 }
+func (fakeTerminalRenderSource) ScrollbackRows() int                        { return 0 }
+func (fakeTerminalRenderSource) TotalRows() int                             { return 1 }
+func (fakeTerminalRenderSource) Row(int) []protocol.Cell                    { return []protocol.Cell{{Content: "x", Width: 1}} }
+func (fakeTerminalRenderSource) RowTimestamp(int) time.Time                 { return time.Time{} }
+func (fakeTerminalRenderSource) RowKind(int) string                         { return "" }
+
+func TestTerminalExtentHintsViewLeavesNonSnapshotSourcesUntouched(t *testing.T) {
+	source := fakeTerminalRenderSource{}
+	extended := terminalExtentHintsView(source, 3)
+	if extended != source {
+		t.Fatalf("expected non-snapshot source passthrough, got %#v want %#v", extended, source)
+	}
+}
+
 func TestDrawPaneFrameUsesTieredChromeStylesForActivePane(t *testing.T) {
 	canvas := newComposedCanvas(40, 6)
 	rect := workbench.Rect{X: 0, Y: 0, W: 40, H: 6}
