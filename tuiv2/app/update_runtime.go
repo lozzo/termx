@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -84,73 +83,11 @@ func (m *Model) createFloatingPaneAndBindTerminalCmd(item modal.PickerItem) tea.
 }
 
 func (m *Model) bindTerminalSelectionCmd(tabID, paneID string, item modal.PickerItem) tea.Cmd {
-	if m == nil || m.workbench == nil || paneID == "" || item.TerminalID == "" {
+	service := m.terminalBindingService()
+	if service == nil {
 		return nil
 	}
-	resolvedTabID, oldTerminalID, err := m.resolveTerminalSelectionTarget(tabID, paneID)
-	if err != nil {
-		return func() tea.Msg { return err }
-	}
-	if err := m.workbench.BindPaneTerminal(resolvedTabID, paneID, item.TerminalID); err != nil {
-		return func() tea.Msg { return err }
-	}
-	_ = m.workbench.FocusPane(resolvedTabID, paneID)
-	if name := strings.TrimSpace(item.Name); name != "" {
-		m.workbench.SetPaneTitleByTerminalID(item.TerminalID, name)
-	}
-	if m.runtime != nil {
-		m.runtime.UnbindPane(paneID, oldTerminalID)
-		terminal := m.runtime.Registry().GetOrCreate(item.TerminalID)
-		if terminal != nil {
-			terminal.Name = strings.TrimSpace(item.Name)
-			if len(item.CommandArgs) > 0 {
-				terminal.Command = append([]string(nil), item.CommandArgs...)
-			}
-			terminal.Tags = cloneStringMap(item.Tags)
-			terminal.State = terminalSelectionState(item)
-			terminal.ExitCode = cloneIntPointer(item.ExitCode)
-			terminal.Channel = 0
-			terminal.AttachMode = ""
-			terminal.OwnerPaneID = paneID
-			terminal.ControlPaneID = ""
-			terminal.RequiresExplicitOwner = false
-			terminal.BoundPaneIDs = appendUniqueValue(terminal.BoundPaneIDs, paneID)
-		}
-	}
-	m.resetPaneScrollOffset(resolvedTabID, paneID)
-	m.render.Invalidate()
-	cmds := []tea.Cmd{m.saveStateCmd()}
-	if m.runtime != nil && terminalSelectionState(item) == "exited" {
-		cmds = append(cmds, m.effectCmd(orchestrator.LoadSnapshotEffect{
-			TerminalID: item.TerminalID,
-			Offset:     0,
-			Limit:      defaultTerminalSnapshotScrollbackLimit,
-		}))
-	}
-	return batchCmds(cmds...)
-}
-
-func (m *Model) resolveTerminalSelectionTarget(tabID, paneID string) (string, string, error) {
-	if m == nil || m.workbench == nil || paneID == "" {
-		return "", "", fmt.Errorf("select terminal: target pane is required")
-	}
-	workspace := m.workbench.CurrentWorkspace()
-	if workspace == nil {
-		return "", "", fmt.Errorf("select terminal: no current workspace")
-	}
-	for _, tab := range workspace.Tabs {
-		if tab == nil || tab.Panes[paneID] == nil {
-			continue
-		}
-		if tabID != "" && tab.ID != tabID {
-			continue
-		}
-		return tab.ID, tab.Panes[paneID].TerminalID, nil
-	}
-	if tabID != "" {
-		return "", "", fmt.Errorf("select terminal: pane %s not found in tab %s", paneID, tabID)
-	}
-	return "", "", fmt.Errorf("select terminal: pane %s not found", paneID)
+	return service.bindSelectionCmd(tabID, paneID, item)
 }
 
 func terminalSelectionState(item modal.PickerItem) string {
