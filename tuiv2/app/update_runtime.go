@@ -8,7 +8,6 @@ import (
 	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
-	"github.com/lozzow/termx/tuiv2/orchestrator"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -135,54 +134,19 @@ func (m *Model) attachInitialTerminalCmd(terminalID string) tea.Cmd {
 }
 
 func (m *Model) attachPaneTerminalCmd(tabID, paneID, terminalID string) tea.Cmd {
-	if m == nil || m.orchestrator == nil || paneID == "" || terminalID == "" {
+	service := m.terminalAttachService()
+	if service == nil {
 		return nil
 	}
-	m.markPendingPaneAttach(paneID, terminalID)
-	return func() tea.Msg {
-		msgs, err := m.orchestrator.AttachAndLoadSnapshot(context.Background(), paneID, terminalID, "collaborator", 0, defaultTerminalSnapshotScrollbackLimit)
-		if err != nil {
-			return paneAttachFailure(paneID, terminalID, err)
-		}
-		for index := range msgs {
-			if attached, ok := msgs[index].(orchestrator.TerminalAttachedMsg); ok {
-				attached.TabID = tabID
-				msgs[index] = attached
-			}
-		}
-		cmds := make([]tea.Cmd, 0, len(msgs))
-		for _, msg := range msgs {
-			value := msg
-			cmds = append(cmds, func() tea.Msg { return value })
-		}
-		return tea.Batch(cmds...)()
-	}
+	return service.attachCmd(tabID, paneID, terminalID)
 }
 
 func (m *Model) restartPaneTerminalCmd(paneID, terminalID string) tea.Cmd {
-	if m == nil || m.runtime == nil || m.orchestrator == nil || paneID == "" || terminalID == "" {
+	service := m.terminalAttachService()
+	if service == nil {
 		return nil
 	}
-	m.markPendingPaneAttach(paneID, terminalID)
-	return func() tea.Msg {
-		client := m.runtime.Client()
-		if client == nil {
-			return paneAttachFailure(paneID, terminalID, teaErr("attach terminal: runtime client is nil"))
-		}
-		if err := client.Restart(context.Background(), terminalID); err != nil {
-			return paneAttachFailure(paneID, terminalID, err)
-		}
-		msgs, err := m.orchestrator.AttachAndLoadSnapshot(context.Background(), paneID, terminalID, "collaborator", 0, defaultTerminalSnapshotScrollbackLimit)
-		if err != nil {
-			return paneAttachFailure(paneID, terminalID, err)
-		}
-		cmds := make([]tea.Cmd, 0, len(msgs))
-		for _, msg := range msgs {
-			value := msg
-			cmds = append(cmds, func() tea.Msg { return value })
-		}
-		return tea.Batch(cmds...)()
-	}
+	return service.restartAndAttachCmd(paneID, terminalID)
 }
 
 func (m *Model) finalizeTerminalAttachCmd(tabID, paneID, terminalID string) tea.Cmd {

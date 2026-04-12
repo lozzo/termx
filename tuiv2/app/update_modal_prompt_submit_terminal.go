@@ -171,67 +171,9 @@ func (m *Model) submitCreateTerminal(prompt *modal.PromptState, paneID string, p
 	m.closeModal(input.ModePrompt, requestID, input.ModeState{})
 	m.restorePromptReturnMode(prompt)
 	m.render.Invalidate()
-	if pane != "" {
-		m.markPendingPaneAttach(pane, "")
+	service := m.terminalAttachService()
+	if service == nil {
+		return nil
 	}
-	return func() tea.Msg {
-		client := m.runtime.Client()
-		if client == nil {
-			return paneAttachFailure(pane, "", context.Canceled)
-		}
-		created, err := client.Create(context.Background(), params)
-		if err != nil {
-			return paneAttachFailure(pane, "", err)
-		}
-		if m.runtime != nil && m.runtime.Registry() != nil {
-			terminal := m.runtime.Registry().GetOrCreate(created.TerminalID)
-			if terminal != nil {
-				terminal.Name = params.Name
-				terminal.Tags = cloneStringMap(params.Tags)
-				terminal.Command = append([]string(nil), params.Command...)
-				terminal.State = created.State
-			}
-		}
-		if pane != "" {
-			m.markPendingPaneAttach(pane, created.TerminalID)
-		}
-		switch prompt.CreateTarget {
-		case modal.CreateTargetSplit:
-			if pane != "" {
-				m.clearPendingPaneAttach(pane, created.TerminalID)
-			}
-			if cmd := m.splitPaneAndAttachTerminalCmd(pane, created.TerminalID); cmd != nil {
-				return cmd()
-			}
-			return nil
-		case modal.CreateTargetNewTab:
-			if pane != "" {
-				m.clearPendingPaneAttach(pane, created.TerminalID)
-			}
-			if cmd := m.createTabAndAttachTerminalCmd(created.TerminalID); cmd != nil {
-				return cmd()
-			}
-			return nil
-		case modal.CreateTargetFloating:
-			if pane != "" {
-				m.clearPendingPaneAttach(pane, created.TerminalID)
-			}
-			if cmd := m.createFloatingPaneAndAttachTerminalCmd(created.TerminalID); cmd != nil {
-				return cmd()
-			}
-			return nil
-		default:
-			m.markPendingPaneAttach(pane, created.TerminalID)
-			msgs, err := m.orchestrator.AttachAndLoadSnapshot(context.Background(), pane, created.TerminalID, "collaborator", 0, defaultTerminalSnapshotScrollbackLimit)
-			if err != nil {
-				return paneAttachFailure(pane, created.TerminalID, err)
-			}
-			cmds := make([]tea.Cmd, 0, len(msgs))
-			for _, msg := range msgs {
-				value := msg
-				cmds = append(cmds, func() tea.Msg { return value })
-			}
-			return tea.Batch(cmds...)()
-		}
-	}
+	return service.createAndAttachCmd(pane, prompt.CreateTarget, params)
 }
