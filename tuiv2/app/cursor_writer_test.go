@@ -961,6 +961,120 @@ func TestOutputCursorWriterDebugFaultScrollDropRemainderEveryInjectsStaleScrollF
 	}
 }
 
+func TestDetectVerticalScrollPlanFindsSingleRowScrollUpRegion(t *testing.T) {
+	previous := []string{
+		"hdr-1", "hdr-2", "hdr-3",
+		"row-01", "row-02", "row-03", "row-04", "row-05", "row-06",
+		"ftr-1",
+	}
+	next := []string{
+		"hdr-1", "hdr-2", "hdr-3",
+		"row-02", "row-03", "row-04", "row-05", "row-06", "row-07",
+		"ftr-1",
+	}
+
+	plan, ok := detectVerticalScrollPlan(previous, next)
+	if !ok {
+		t.Fatal("expected vertical scroll plan")
+	}
+	if plan.direction != scrollUp {
+		t.Fatalf("expected scrollUp plan, got %#v", plan)
+	}
+	if plan.shift != 1 || plan.start != 3 || plan.end != 8 {
+		t.Fatalf("unexpected vertical scroll bounds %#v", plan)
+	}
+	if plan.reused != 5 {
+		t.Fatalf("expected five reused rows in scroll plan, got %#v", plan)
+	}
+}
+
+func TestDetectVerticalScrollPlanFindsSingleRowScrollDownRegion(t *testing.T) {
+	previous := []string{
+		"hdr-1", "hdr-2", "hdr-3",
+		"row-02", "row-03", "row-04", "row-05", "row-06", "row-07",
+		"ftr-1",
+	}
+	next := []string{
+		"hdr-1", "hdr-2", "hdr-3",
+		"row-01", "row-02", "row-03", "row-04", "row-05", "row-06",
+		"ftr-1",
+	}
+
+	plan, ok := detectVerticalScrollPlan(previous, next)
+	if !ok {
+		t.Fatal("expected vertical scroll plan")
+	}
+	if plan.direction != scrollDown {
+		t.Fatalf("expected scrollDown plan, got %#v", plan)
+	}
+	if plan.shift != 1 || plan.start != 3 || plan.end != 8 {
+		t.Fatalf("unexpected vertical scroll bounds %#v", plan)
+	}
+	if plan.reused != 5 {
+		t.Fatalf("expected five reused rows in scroll plan, got %#v", plan)
+	}
+}
+
+func TestBetterVerticalScrollPlanPrefersLargerReuseThenSmallerShiftThenEarlierStart(t *testing.T) {
+	current := verticalScrollPlan{direction: scrollDown, start: 4, end: 9, shift: 2, reused: 4}
+	if !betterVerticalScrollPlan(verticalScrollPlan{direction: scrollUp, start: 3, end: 9, shift: 2, reused: 5}, current) {
+		t.Fatal("expected larger reused run to win")
+	}
+	if !betterVerticalScrollPlan(verticalScrollPlan{direction: scrollUp, start: 3, end: 8, shift: 1, reused: 4}, current) {
+		t.Fatal("expected smaller shift to win when reused count ties")
+	}
+	if !betterVerticalScrollPlan(verticalScrollPlan{direction: scrollUp, start: 2, end: 8, shift: 2, reused: 4}, current) {
+		t.Fatal("expected earlier start to win when reused and shift tie")
+	}
+	if !betterVerticalScrollPlan(verticalScrollPlan{direction: scrollUp, start: 4, end: 9, shift: 2, reused: 4}, current) {
+		t.Fatal("expected scrollUp to sort before scrollDown when all else ties")
+	}
+}
+
+func TestApplyVerticalScrollPlanClearsInsertedGap(t *testing.T) {
+	lines := []string{"hdr", "a", "b", "c", "d", "ftr"}
+	plan := verticalScrollPlan{
+		direction: scrollDown,
+		start:     1,
+		end:       4,
+		shift:     1,
+		reused:    3,
+	}
+
+	got := applyVerticalScrollPlan(lines, plan)
+	want := []string{"hdr", "", "a", "b", "c", "ftr"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("unexpected scrolled lines %v want %v", got, want)
+	}
+}
+
+func TestRenderVerticalScrollPlanBuildsExpectedCSISequences(t *testing.T) {
+	tests := []struct {
+		name string
+		plan verticalScrollPlan
+		want string
+	}{
+		{
+			name: "scroll up",
+			plan: verticalScrollPlan{direction: scrollUp, start: 3, end: 8, shift: 1},
+			want: "\x1b[4;9r" + xansi.DECRST(xansi.ModeOrigin) + "\x1b[4;1H" + "\x1b[1S" + "\x1b[r" + xansi.DECRST(xansi.ModeOrigin),
+		},
+		{
+			name: "scroll down",
+			plan: verticalScrollPlan{direction: scrollDown, start: 2, end: 7, shift: 2},
+			want: "\x1b[3;8r" + xansi.DECRST(xansi.ModeOrigin) + "\x1b[3;1H" + "\x1b[2T" + "\x1b[r" + xansi.DECRST(xansi.ModeOrigin),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := renderVerticalScrollPlan(tt.plan, 10); got != tt.want {
+				t.Fatalf("unexpected vertical scroll CSI %q want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestTruncateFrameToWidthClipsEachRenderedLine(t *testing.T) {
 	frame := "123456\nabcdef"
 	if got, want := truncateFrameToWidth(frame, 4), "1234\nabcd"; got != want {
