@@ -63,6 +63,7 @@ type statusBarCacheKey struct {
 	Theme             uiTheme
 	Width             int
 	InputMode         string
+	StatusHintsSig    string
 	WorkspaceName     string
 	WorkspaceCount    int
 	TabCount          int
@@ -651,10 +652,11 @@ func (k *tabBarCacheKey) capture(state VisibleRenderState, theme uiTheme) {
 
 func statusBarCacheKeyForState(state VisibleRenderState, theme uiTheme) statusBarCacheKey {
 	key := statusBarCacheKey{
-		Theme:         theme,
-		Width:         state.TermSize.Width,
-		InputMode:     strings.TrimSpace(state.InputMode),
-		WorkspaceName: "",
+		Theme:          theme,
+		Width:          state.TermSize.Width,
+		InputMode:      strings.TrimSpace(state.InputMode),
+		StatusHintsSig: strings.Join(state.StatusHints, "\x1f"),
+		WorkspaceName:  "",
 	}
 	if state.Workbench != nil {
 		key.WorkspaceName = state.Workbench.WorkspaceName
@@ -688,15 +690,59 @@ func statusBarCacheKeyForState(state VisibleRenderState, theme uiTheme) statusBa
 		key.TerminalCount = len(state.Runtime.Terminals)
 	}
 	if key.ActivePaneID != "" {
-		ctx := buildStatusHintContext(state)
-		key.ActivePaneRole = ctx.activeRole
-		key.ActivePaneExited = ctx.activePaneExited()
-		key.ActiveIsFloating = ctx.activeIsFloating
+		role, exited, floating := statusBarActivePaneState(state)
+		key.ActivePaneRole = role
+		key.ActivePaneExited = exited
+		key.ActiveIsFloating = floating
 	}
 	if state.Overlay.Kind == VisibleOverlayWorkspacePicker && state.Overlay.WorkspacePicker != nil {
 		key.SelectedTreeSig = statusBarSelectedTreeSignature(state.Overlay.WorkspacePicker.SelectedItem())
 	}
 	return key
+}
+
+func statusBarActivePaneState(state VisibleRenderState) (role string, exited bool, floating bool) {
+	if state.Workbench == nil || state.Workbench.ActiveTab < 0 || state.Workbench.ActiveTab >= len(state.Workbench.Tabs) {
+		return "", false, false
+	}
+	tab := state.Workbench.Tabs[state.Workbench.ActiveTab]
+	activePaneID := strings.TrimSpace(tab.ActivePaneID)
+	if activePaneID == "" {
+		return "", false, false
+	}
+	var terminalID string
+	for i := range state.Workbench.FloatingPanes {
+		if state.Workbench.FloatingPanes[i].ID == activePaneID {
+			floating = true
+			terminalID = state.Workbench.FloatingPanes[i].TerminalID
+			break
+		}
+	}
+	if terminalID == "" {
+		for i := range tab.Panes {
+			if tab.Panes[i].ID == activePaneID {
+				terminalID = tab.Panes[i].TerminalID
+				break
+			}
+		}
+	}
+	if state.Runtime != nil {
+		for _, binding := range state.Runtime.Bindings {
+			if binding.PaneID == activePaneID {
+				role = binding.Role
+				break
+			}
+		}
+		if terminalID != "" {
+			for _, terminal := range state.Runtime.Terminals {
+				if terminal.TerminalID == terminalID {
+					exited = terminal.State == "exited"
+					break
+				}
+			}
+		}
+	}
+	return role, exited, floating
 }
 
 func statusBarSelectedTreeSignature(item *modal.WorkspacePickerItem) string {

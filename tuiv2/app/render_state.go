@@ -29,7 +29,8 @@ func (m *Model) visibleRenderState() render.VisibleRenderState {
 		state = render.WithCopyModeSnapshot(state, m.copyMode.Snapshot)
 	}
 	state = render.AttachTerminalPool(state, m.terminalPage)
-	return render.AttachModalHost(state, m.modalHost)
+	state = render.AttachModalHost(state, m.modalHost)
+	return render.WithStatusHints(state, m.buildStatusHints(state))
 }
 
 func (m *Model) visibleInputMode() string {

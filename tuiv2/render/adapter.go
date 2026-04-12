@@ -17,6 +17,7 @@ type VisibleRenderState struct {
 	Notice                     string
 	Error                      string
 	InputMode                  string
+	StatusHints                []string
 	OwnerConfirmPaneID         string
 	EmptyPaneSelectionPaneID   string
 	EmptyPaneSelectionIndex    int
@@ -196,6 +197,15 @@ func WithStatus(state VisibleRenderState, notice, errText, inputMode string) Vis
 	state.Notice = notice
 	state.Error = errText
 	state.InputMode = inputMode
+	return state
+}
+
+func WithStatusHints(state VisibleRenderState, hints []string) VisibleRenderState {
+	if len(hints) == 0 {
+		state.StatusHints = nil
+		return state
+	}
+	state.StatusHints = append([]string(nil), hints...)
 	return state
 }
 

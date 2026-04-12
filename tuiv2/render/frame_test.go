@@ -31,6 +31,7 @@ func TestRenderStatusBarHidesUnavailablePaneActionsForUnconnectedPane(t *testing
 
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), 80, 18), 80, 20)
 	state = WithStatus(state, "", "", string(input.ModePane))
+	state = WithStatusHints(state, []string{"r RECONNECT", "z ZOOM"})
 
 	line := xansi.Strip(renderStatusBar(state))
 	if strings.Contains(line, "[d] DETACH") || strings.Contains(line, "[a] OWNER") || strings.Contains(line, "[X] CLOSE+KILL") {
@@ -76,6 +77,7 @@ func TestRenderStatusBarShowsOwnerActionForSharedFollower(t *testing.T) {
 
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 120, 18), 120, 20)
 	state = WithStatus(state, "", "", string(input.ModePane))
+	state = WithStatusHints(state, []string{"a OWNER", "d DETACH"})
 
 	line := xansi.Strip(renderStatusBar(state))
 	if !strings.Contains(line, "[a] OWNER") || !strings.Contains(line, "[d] DETACH") {
@@ -101,6 +103,7 @@ func TestRenderStatusBarFloatingModeShowsOnlyActiveFloatingActions(t *testing.T)
 
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, runtime.New(nil), 80, 18), 80, 20)
 	state = WithStatus(state, "", "", string(input.ModeFloating))
+	state = WithStatusHints(state, []string{"N NEW FLOAT"})
 
 	line := xansi.Strip(renderStatusBar(state))
 	if !strings.Contains(line, "[N] NEW FLOAT") {
@@ -234,6 +237,7 @@ func TestWorkspacePickerStatusHintsFollowSelectedItemKind(t *testing.T) {
 	}
 
 	state.Overlay.WorkspacePicker.Selected = 0
+	state = WithStatusHints(state, []string{"Ctrl-R RENAME", "Ctrl-X REMOVE"})
 	line := xansi.Strip(renderStatusBar(state))
 	if !strings.Contains(line, "[Ctrl-R] RENAME") || !strings.Contains(line, "[Ctrl-X] REMOVE") {
 		t.Fatalf("expected workspace actions in status bar:\n%s", line)
@@ -243,6 +247,7 @@ func TestWorkspacePickerStatusHintsFollowSelectedItemKind(t *testing.T) {
 	}
 
 	state.Overlay.WorkspacePicker.Selected = 2
+	state = WithStatusHints(state, []string{"Ctrl-X REMOVE", "Ctrl-D DETACH", "Ctrl-Z ZOOM"})
 	line = xansi.Strip(renderStatusBar(state))
 	for _, want := range []string{"[Ctrl-X] REMOVE", "[Ctrl-D] DETACH", "[Ctrl-Z] ZOOM"} {
 		if !strings.Contains(line, want) {

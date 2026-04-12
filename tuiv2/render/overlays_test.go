@@ -112,6 +112,7 @@ func TestRenderFrameWithPickerOverlay(t *testing.T) {
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 100, 28), 100, 30)
 	state = WithStatus(state, "", "", string(input.ModePicker))
 	state = AttachPicker(state, &modal.PickerState{Title: "Terminal Picker", Items: []modal.PickerItem{{TerminalID: "term-1", Name: "shell", State: "running"}}})
+	state = WithStatusHints(state, []string{"UP/DOWN MOVE", "Enter HERE"})
 	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
 	for _, want := range []string{"main", "tab 1", "Terminal Picker"} {
 		if !strings.Contains(frame, want) {
@@ -149,6 +150,7 @@ func TestRenderFrameWithWorkspacePickerOverlay(t *testing.T) {
 		Title: "Workspaces",
 		Items: []modal.WorkspacePickerItem{{Name: "main"}, {Name: "dev"}},
 	})
+	state = WithStatusHints(state, []string{"UP/DOWN MOVE", "TYPE FILTER", "Enter OPEN", "Ctrl-N NEW"})
 	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
 	for _, want := range []string{"main", "tab 1", "Workspaces", "dev"} {
 		if !strings.Contains(frame, want) {
@@ -183,6 +185,7 @@ func TestRenderFrameWithHelpOverlay(t *testing.T) {
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 100, 28), 100, 30)
 	state = WithStatus(state, "", "", string(input.ModeHelp))
 	state = AttachHelp(state, modal.DefaultHelp())
+	state = WithStatusHints(state, []string{"Esc BACK"})
 	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
 	for _, want := range []string{"main", "tab 1", "Help", "Ctrl-P", "Ctrl-F", "Most Used"} {
 		if !strings.Contains(frame, want) {
