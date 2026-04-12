@@ -64,20 +64,33 @@ Do not summarize first. List findings by severity with file references.
 - [ ] 1.1 盘点当前 `app` 里直接双写 `workbench` / `runtime` 的路径
   - 重点看 terminal attach、bind、detach、owner handoff、restart、resize、session sync
   - 输出一个清单，标出每条路径的当前入口和目标归属
+  - 盘点结果单独落文档：`tuiv2/docs/refactor-phase1-inventory.md`
   - 完成标准：列出必须收口到 orchestrator/service 的调用面
 
-- [ ] 1.2 引入统一的 pane-terminal transaction service
-  - 首批覆盖：attach / bind existing / detach / close / restart / owner promote
+- [ ] 1.2 先抽出共享的 target resolution / ownership / lease / resize policy
+  - 首批收口：
+  - `syncTerminalInteraction`
+  - `prepareTerminalInput`
+  - `ensurePaneTerminalSize`
+  - `resizeVisiblePanes`
+  - `syncZoomViewportCmd`
+  - `acquireSessionLeaseAndResizeCmd`
+  - 目标不是先改完所有入口，而是先把 B1 这组策略从 `app` 里抽成可复用边界
+  - 完成标准：target resolution、ownership policy、lease policy、resize policy 不再散落在多个 `app` 文件里
+
+- [ ] 1.3 引入统一的 pane-terminal transaction service
+  - 在 1.2 的共享策略之上收口事务
+  - 首批覆盖：attach / bind existing / detach / close / restart / owner promote / session lease resize
   - service 内统一更新 `workbench`、`runtime`、pending state 和后续 effects
   - `app` 只发请求，不再自己手工拼双写事务
   - 完成标准：`app` 相关调用点改为单入口，重复状态同步逻辑消失
 
-- [ ] 1.3 把 resize 协调并入事务边界
+- [ ] 1.4 把 shared terminal owner/resize flaky 直接压掉
   - owner 切换后谁负责 resize、何时 resize、失败如何回退，要在 service 内说清
   - 修复 shared terminal owner handoff 后尺寸不更新的问题
   - 完成标准：`TestE2ETabSwitchSharedTerminalPromotesOwnerResizesAndShowsCursor` 稳定通过
 
-- [ ] 1.4 清理 `app` 内部遗留的事务性 side effects
+- [ ] 1.5 清理 `app` 内部遗留的事务性 side effects
   - 清掉 attach/bind/restart 这类流程里重复的 `render.Invalidate()`、`saveStateCmd()`、pending map 操作
   - 保留必要的 UI reaction，但不再承担领域事务协调
   - 完成标准：`update_runtime.go` / `session_sync.go` / attach 相关文件职责明显收窄
@@ -97,9 +110,15 @@ Do not summarize first. List findings by severity with file references.
 - [ ] 2.3 补 projection invariants 测试
   - 针对 `VisibleWithSize`、floating visibility、zoom projection、workspace projection 增加纯读断言
   - 测试方法先定死：
-  - 对 `Workbench` / `Runtime` 记录 `version`，调用 projection 前后版本不能变化
-  - 对关键结构做快照比对：workspace/tab/pane/floating 的导出字段前后一致
-  - 必要时补只读测试 helper，避免靠人工肉眼检查
+  - 给 `Workbench` / `Runtime` 暴露只读 `Version()` getter，测试里直接比 projection 前后的版本值
+  - 补测试 helper，对 workspace/tab/pane/floating/visible binding 做结构快照后再跑 `Visible*`
+  - helper 必须能比较：
+  - `WorkspaceState`
+  - `TabState`
+  - `PaneState`
+  - `FloatingState`
+  - `Runtime` 的 bindings / host state / terminal metadata
+  - 必要时允许加 test-only snapshot helper，但不要靠人工肉眼检查
   - 完成标准：调用 projection 前后版本不变，关键 state 快照一致
 
 ## Phase 3: 先拆掉 render 对 input 文案的反向依赖
