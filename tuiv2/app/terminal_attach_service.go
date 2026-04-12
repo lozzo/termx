@@ -21,6 +21,33 @@ func (m *Model) terminalAttachService() *terminalAttachService {
 	return &terminalAttachService{model: m}
 }
 
+func (s *terminalAttachService) splitAndAttachCmd(paneID, terminalID string) tea.Cmd {
+	if s == nil || s.model == nil || s.model.orchestrator == nil || paneID == "" || terminalID == "" {
+		return nil
+	}
+	return s.prepareAndAttachCmd(terminalID, func() (string, string, error) {
+		return s.model.orchestrator.PrepareSplitAttachTarget(paneID)
+	})
+}
+
+func (s *terminalAttachService) createTabAndAttachCmd(terminalID string) tea.Cmd {
+	if s == nil || s.model == nil || s.model.orchestrator == nil || terminalID == "" {
+		return nil
+	}
+	return s.prepareAndAttachCmd(terminalID, func() (string, string, error) {
+		return s.model.orchestrator.PrepareTabAttachTarget()
+	})
+}
+
+func (s *terminalAttachService) createFloatingAndAttachCmd(terminalID string) tea.Cmd {
+	if s == nil || s.model == nil || s.model.orchestrator == nil || terminalID == "" {
+		return nil
+	}
+	return s.prepareAndAttachCmd(terminalID, func() (string, string, error) {
+		return s.model.orchestrator.PrepareFloatingAttachTarget()
+	})
+}
+
 func (s *terminalAttachService) attachCmd(tabID, paneID, terminalID string) tea.Cmd {
 	if s == nil || s.model == nil || s.model.orchestrator == nil || paneID == "" || terminalID == "" {
 		return nil
@@ -29,6 +56,18 @@ func (s *terminalAttachService) attachCmd(tabID, paneID, terminalID string) tea.
 	return func() tea.Msg {
 		return s.attachMsg(tabID, paneID, terminalID)
 	}
+}
+
+func (s *terminalAttachService) prepareAndAttachCmd(terminalID string, prepare func() (string, string, error)) tea.Cmd {
+	if s == nil || s.model == nil || prepare == nil || terminalID == "" {
+		return nil
+	}
+	tabID, paneID, err := prepare()
+	if err != nil {
+		return func() tea.Msg { return err }
+	}
+	s.model.render.Invalidate()
+	return batchCmds(s.attachCmd(tabID, paneID, terminalID), s.model.saveStateCmd())
 }
 
 func (s *terminalAttachService) restartAndAttachCmd(paneID, terminalID string) tea.Cmd {

@@ -13,72 +13,51 @@ import (
 )
 
 func (m *Model) splitPaneAndAttachTerminalCmd(paneID, terminalID string) tea.Cmd {
-	if m == nil || m.orchestrator == nil || paneID == "" || terminalID == "" {
+	service := m.terminalAttachService()
+	if service == nil {
 		return nil
 	}
-	tabID, newPaneID, err := m.orchestrator.PrepareSplitAttachTarget(paneID)
-	if err != nil {
-		return func() tea.Msg { return err }
-	}
-	m.render.Invalidate()
-	return tea.Batch(m.attachPaneTerminalCmd(tabID, newPaneID, terminalID), m.saveStateCmd())
+	return service.splitAndAttachCmd(paneID, terminalID)
 }
 
 func (m *Model) createTabAndAttachTerminalCmd(terminalID string) tea.Cmd {
-	if m == nil || m.orchestrator == nil || terminalID == "" {
+	service := m.terminalAttachService()
+	if service == nil {
 		return nil
 	}
-	tabID, paneID, err := m.orchestrator.PrepareTabAttachTarget()
-	if err != nil {
-		return func() tea.Msg { return err }
-	}
-	m.render.Invalidate()
-	return tea.Batch(m.attachPaneTerminalCmd(tabID, paneID, terminalID), m.saveStateCmd())
+	return service.createTabAndAttachCmd(terminalID)
 }
 
 func (m *Model) createFloatingPaneAndAttachTerminalCmd(terminalID string) tea.Cmd {
-	if m == nil || m.orchestrator == nil || terminalID == "" {
+	service := m.terminalAttachService()
+	if service == nil {
 		return nil
 	}
-	tabID, paneID, err := m.orchestrator.PrepareFloatingAttachTarget()
-	if err != nil {
-		return func() tea.Msg { return err }
-	}
-	m.render.Invalidate()
-	return tea.Batch(m.attachPaneTerminalCmd(tabID, paneID, terminalID), m.saveStateCmd())
+	return service.createFloatingAndAttachCmd(terminalID)
 }
 
 func (m *Model) splitPaneAndBindTerminalCmd(paneID string, item modal.PickerItem) tea.Cmd {
-	if m == nil || m.orchestrator == nil || paneID == "" || item.TerminalID == "" {
+	service := m.terminalBindingService()
+	if service == nil {
 		return nil
 	}
-	tabID, newPaneID, err := m.orchestrator.PrepareSplitAttachTarget(paneID)
-	if err != nil {
-		return func() tea.Msg { return err }
-	}
-	return m.bindTerminalSelectionCmd(tabID, newPaneID, item)
+	return service.splitAndBindCmd(paneID, item)
 }
 
 func (m *Model) createTabAndBindTerminalCmd(item modal.PickerItem) tea.Cmd {
-	if m == nil || m.orchestrator == nil || item.TerminalID == "" {
+	service := m.terminalBindingService()
+	if service == nil {
 		return nil
 	}
-	tabID, paneID, err := m.orchestrator.PrepareTabAttachTarget()
-	if err != nil {
-		return func() tea.Msg { return err }
-	}
-	return m.bindTerminalSelectionCmd(tabID, paneID, item)
+	return service.createTabAndBindCmd(item)
 }
 
 func (m *Model) createFloatingPaneAndBindTerminalCmd(item modal.PickerItem) tea.Cmd {
-	if m == nil || m.orchestrator == nil || item.TerminalID == "" {
+	service := m.terminalBindingService()
+	if service == nil {
 		return nil
 	}
-	tabID, paneID, err := m.orchestrator.PrepareFloatingAttachTarget()
-	if err != nil {
-		return func() tea.Msg { return err }
-	}
-	return m.bindTerminalSelectionCmd(tabID, paneID, item)
+	return service.createFloatingAndBindCmd(item)
 }
 
 func (m *Model) bindTerminalSelectionCmd(tabID, paneID string, item modal.PickerItem) tea.Cmd {
