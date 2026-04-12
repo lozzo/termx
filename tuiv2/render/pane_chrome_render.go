@@ -136,6 +136,110 @@ func drawPaneOverflowMarkers(canvas *composedCanvas, rect workbench.Rect, theme 
 	}
 }
 
+const (
+	borderConnUp = 1 << iota
+	borderConnDown
+	borderConnLeft
+	borderConnRight
+)
+
+var borderGlyphConnections = map[string]uint8{
+	"│": borderConnUp | borderConnDown,
+	"─": borderConnLeft | borderConnRight,
+	"┌": borderConnDown | borderConnRight,
+	"┐": borderConnDown | borderConnLeft,
+	"└": borderConnUp | borderConnRight,
+	"┘": borderConnUp | borderConnLeft,
+	"├": borderConnUp | borderConnDown | borderConnRight,
+	"┤": borderConnUp | borderConnDown | borderConnLeft,
+	"┬": borderConnDown | borderConnLeft | borderConnRight,
+	"┴": borderConnUp | borderConnLeft | borderConnRight,
+	"┼": borderConnUp | borderConnDown | borderConnLeft | borderConnRight,
+}
+
+var borderConnectionGlyph = map[uint8]string{
+	borderConnUp | borderConnDown:                                    "│",
+	borderConnLeft | borderConnRight:                                 "─",
+	borderConnDown | borderConnRight:                                 "┌",
+	borderConnDown | borderConnLeft:                                  "┐",
+	borderConnUp | borderConnRight:                                   "└",
+	borderConnUp | borderConnLeft:                                    "┘",
+	borderConnUp | borderConnDown | borderConnRight:                  "├",
+	borderConnUp | borderConnDown | borderConnLeft:                   "┤",
+	borderConnDown | borderConnLeft | borderConnRight:                "┬",
+	borderConnUp | borderConnLeft | borderConnRight:                  "┴",
+	borderConnUp | borderConnDown | borderConnLeft | borderConnRight: "┼",
+}
+
+func drawHorizontalBorder(canvas *composedCanvas, startX, endX, y int, style drawStyle, sharedStart bool, downAtEnd bool, upAtEnd bool) {
+	if canvas == nil || startX > endX {
+		return
+	}
+	for x := startX; x <= endX; x++ {
+		connections := uint8(0)
+		if x == startX {
+			if sharedStart {
+				connections |= borderConnRight
+			} else if upAtEnd {
+				connections |= borderConnRight | borderConnUp
+			} else {
+				connections |= borderConnRight | borderConnDown
+			}
+		} else if x == endX {
+			if upAtEnd {
+				connections |= borderConnLeft | borderConnUp
+			} else if downAtEnd {
+				connections |= borderConnLeft | borderConnDown
+			} else {
+				connections |= borderConnLeft
+			}
+		} else {
+			connections |= borderConnLeft | borderConnRight
+		}
+		mergeBorderCell(canvas, x, y, connections, style)
+	}
+}
+
+func drawVerticalBorder(canvas *composedCanvas, x, startY, endY int, style drawStyle, sharedStart bool) {
+	if canvas == nil || startY > endY {
+		return
+	}
+	for y := startY; y <= endY; y++ {
+		connections := uint8(0)
+		if y == startY {
+			if sharedStart {
+				connections |= borderConnDown
+			} else {
+				connections |= borderConnUp | borderConnDown
+			}
+		} else {
+			connections |= borderConnUp | borderConnDown
+		}
+		mergeBorderCell(canvas, x, y, connections, style)
+	}
+}
+
+func verticalBorderStart(y int, sharedTop bool) int {
+	if sharedTop {
+		return y - 1
+	}
+	return y + 1
+}
+
+func mergeBorderCell(canvas *composedCanvas, x, y int, connections uint8, style drawStyle) {
+	if canvas == nil || x < 0 || y < 0 || x >= canvas.width || y >= canvas.height {
+		return
+	}
+	if existing, ok := borderGlyphConnections[canvas.cells[y][x].Content]; ok {
+		connections |= existing
+	}
+	glyph, ok := borderConnectionGlyph[connections]
+	if !ok {
+		return
+	}
+	canvas.set(x, y, drawCell{Content: glyph, Width: 1, Style: style})
+}
+
 type paneChromeDrawStyles struct {
 	Title         drawStyle
 	Meta          drawStyle
@@ -401,4 +505,39 @@ func drawBorderLabel(canvas *composedCanvas, x, y int, text string, style drawSt
 		return
 	}
 	canvas.drawText(x, y, text, style)
+}
+
+func PaneOwnerButtonRect(pane workbench.VisiblePane, runtimeState *VisibleRuntimeStateProxy, confirmPaneID string) (workbench.Rect, bool) {
+	lookup := newRuntimeLookup(runtimeState)
+	title := displayPaneTitleWithLookup(pane, lookup)
+	border := paneBorderInfoWithLookup(pane, lookup, confirmPaneID)
+	layout, ok := paneTopBorderLabelsLayout(
+		pane.Rect,
+		title,
+		border,
+		paneChromeActionTokensForPane(pane, title, border),
+	)
+	if !ok || layout.roleLabel == "" {
+		return workbench.Rect{}, false
+	}
+	actionLabel := paneOwnerActionLabel(pane, lookup, confirmPaneID)
+	if actionLabel == "" {
+		return workbench.Rect{}, false
+	}
+	return workbench.Rect{
+		X: layout.roleX,
+		Y: pane.Rect.Y,
+		W: xansi.StringWidth(layout.roleLabel),
+		H: 1,
+	}, true
+}
+
+func paneOwnerActionLabel(pane workbench.VisiblePane, lookup runtimeLookup, confirmPaneID string) string {
+	if pane.TerminalID == "" || lookup.paneRole(pane.ID) != "follower" {
+		return ""
+	}
+	if confirmPaneID == pane.ID {
+		return ownerConfirmLabel
+	}
+	return "follow"
 }
