@@ -252,7 +252,7 @@ func (m *Model) switchTabByIndexMouse(index int) tea.Cmd {
 		return m.showError(err)
 	}
 	m.render.Invalidate()
-	return batchCmds(m.resizeVisiblePanesCmd(), m.resizePendingPaneResizesCmd(), m.syncActivePaneInteractiveOwnershipCmd(), m.saveStateCmd())
+	return batchCmds(m.syncActivePaneTabSwitchTakeoverCmd(), m.resizeVisiblePanesCmd(), m.resizePendingPaneResizesCmd(), m.syncActivePaneInteractiveOwnershipCmd(), m.saveStateCmd())
 }
 
 func (m *Model) switchCurrentTabByOffsetMouse(offset int) tea.Cmd {
@@ -260,5 +260,5 @@ func (m *Model) switchCurrentTabByOffsetMouse(offset int) tea.Cmd {
 		return m.showError(err)
 	}
 	m.render.Invalidate()
-	return batchCmds(m.resizeVisiblePanesCmd(), m.resizePendingPaneResizesCmd(), m.syncActivePaneInteractiveOwnershipCmd(), m.saveStateCmd())
+	return batchCmds(m.syncActivePaneTabSwitchTakeoverCmd(), m.resizeVisiblePanesCmd(), m.resizePendingPaneResizesCmd(), m.syncActivePaneInteractiveOwnershipCmd(), m.saveStateCmd())
 }

@@ -133,6 +133,7 @@ func (m *Model) resizePendingPaneResizesCmd() tea.Cmd {
 	for _, resize := range pending {
 		pane, rect, ok := m.paneResizeTarget(resize.TabID, resize.PaneID)
 		if !ok || pane == nil {
+			m.clearPendingPaneResize(resize.PaneID, resize.TerminalID)
 			continue
 		}
 		if pane.TerminalID == "" || pane.TerminalID != resize.TerminalID {
@@ -145,9 +146,24 @@ func (m *Model) resizePendingPaneResizesCmd() tea.Cmd {
 			if err := m.ensurePaneTerminalSize(context.Background(), target.PaneID, target.TerminalID, targetRect); err != nil {
 				return err
 			}
-			m.clearPendingPaneResize(target.PaneID, target.TerminalID)
+			if m.pendingPaneResizeSatisfied(target.PaneID, target.TerminalID, targetRect) {
+				m.clearPendingPaneResize(target.PaneID, target.TerminalID)
+			}
 			return nil
 		})
 	}
 	return batchCmds(cmds...)
+}
+
+func (m *Model) pendingPaneResizeSatisfied(paneID, terminalID string, rect workbench.Rect) bool {
+	if m == nil || terminalID == "" {
+		return false
+	}
+	viewportRect, ok := m.terminalViewportRect(paneID, rect)
+	if !ok {
+		return false
+	}
+	cols := uint16(maxInt(2, viewportRect.W))
+	rows := uint16(maxInt(2, viewportRect.H))
+	return m.terminalAlreadySized(terminalID, cols, rows)
 }

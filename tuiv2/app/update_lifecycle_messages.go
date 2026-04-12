@@ -14,7 +14,7 @@ func (m *Model) handleLifecycleMessage(msg tea.Msg) (tea.Cmd, bool) {
 		if m.invalidateDeferred.Swap(false) {
 			m.queueInvalidate()
 		}
-		return m.maybeAutoFitFloatingPanesCmd(), true
+		return batchCmds(m.resizePendingPaneResizesCmd(), m.maybeAutoFitFloatingPanesCmd()), true
 	case RenderTickMsg:
 		if m.render != nil {
 			m.render.AdvanceCursorBlink()

@@ -301,3 +301,47 @@ func (m *Model) syncActivePaneInteractiveOwnershipCmd() tea.Cmd {
 func (m *Model) syncActivePaneOwnershipAndResizeCmd() tea.Cmd {
 	return m.syncTerminalInteractionCmd(terminalInteractionRequest{ResizeIfNeeded: true})
 }
+
+func (m *Model) syncActivePaneTabSwitchTakeoverCmd() tea.Cmd {
+	if !m.localActivePaneNeedsOwnershipForResize() {
+		return nil
+	}
+	req := terminalInteractionRequest{
+		ResizeIfNeeded:   true,
+		ExplicitTakeover: true,
+	}
+	target, ok := m.resolveTerminalInteractionTarget(req)
+	if !ok {
+		return nil
+	}
+	return func() tea.Msg {
+		if err := m.syncTerminalInteraction(context.Background(), req, target); err != nil {
+			return err
+		}
+		if !m.pendingPaneResizeSatisfied(target.paneID, target.terminalID, target.rect) {
+			m.markPendingPaneResize("", target.paneID, target.terminalID)
+		}
+		return nil
+	}
+}
+
+func (m *Model) localActivePaneNeedsOwnershipForResize() bool {
+	if m == nil || m.sessionID != "" || m.workbench == nil || m.runtime == nil {
+		return false
+	}
+	pane, _, ok := m.visiblePaneForInput("")
+	if !ok || pane == nil || pane.TerminalID == "" {
+		return false
+	}
+	terminal := m.runtime.Registry().Get(pane.TerminalID)
+	if terminal == nil {
+		return false
+	}
+	if strings.TrimSpace(terminal.OwnerPaneID) == pane.ID {
+		return false
+	}
+	if len(terminal.BoundPaneIDs) < 2 {
+		return false
+	}
+	return true
+}

@@ -795,7 +795,7 @@ func TestFeaturePaneCloseAndKill(t *testing.T) {
 	}
 }
 
-func TestFeatureTabSwitchKeepsSharedTerminalOwnerStable(t *testing.T) {
+func TestFeatureTabSwitchPromotesSharedTerminalOwnerOnLocalTabSwitch(t *testing.T) {
 	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
 	model := setupModel(t, modelOpts{
 		client: client,
@@ -819,7 +819,101 @@ func TestFeatureTabSwitchKeepsSharedTerminalOwnerStable(t *testing.T) {
 						ActivePaneID: "pane-2",
 						Panes: map[string]*workbench.PaneState{
 							"pane-2": {ID: "pane-2", Title: "shared", TerminalID: "term-1"},
-							"pane-3": {ID: "pane-3", Title: "empty"},
+						},
+						Root: workbench.NewLeaf("pane-2"),
+					},
+				},
+			},
+		},
+	})
+
+	terminal := model.runtime.Registry().GetOrCreate("term-1")
+	terminal.Name = "shared"
+	terminal.State = "running"
+	terminal.Channel = 1
+	terminal.OwnerPaneID = "pane-1"
+	terminal.BoundPaneIDs = []string{"pane-1", "pane-2"}
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 118, Rows: 36},
+	}
+
+	ownerBinding := model.runtime.BindPane("pane-1")
+	ownerBinding.Channel = 1
+	ownerBinding.Connected = true
+	ownerBinding.Role = runtime.BindingRoleOwner
+
+	followerBinding := model.runtime.BindPane("pane-2")
+	followerBinding.Channel = 2
+	followerBinding.Connected = true
+	followerBinding.Role = runtime.BindingRoleFollower
+
+	cmd := model.switchTabByIndexMouse(1)
+	drainCmd(t, model, cmd, 20)
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil || tab.ID != "tab-2" {
+		t.Fatalf("expected tab-2 active after switch, got %#v", tab)
+	}
+	if terminal.OwnerPaneID != "pane-2" {
+		t.Fatalf("expected pane-2 promoted to owner on local tab switch, got %q", terminal.OwnerPaneID)
+	}
+	if ownerBinding.Role != runtime.BindingRoleFollower {
+		t.Fatalf("expected pane-1 demoted after tab switch, got %q", ownerBinding.Role)
+	}
+	if followerBinding.Role != runtime.BindingRoleOwner {
+		t.Fatalf("expected pane-2 promoted after tab switch, got %q", followerBinding.Role)
+	}
+
+	visible := model.workbench.VisibleWithSize(model.bodyRect())
+	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
+		t.Fatalf("expected visible active tab after switch, got %#v", visible)
+	}
+	var target *workbench.VisiblePane
+	for i := range visible.Tabs[visible.ActiveTab].Panes {
+		pane := &visible.Tabs[visible.ActiveTab].Panes[i]
+		if pane.ID == "pane-2" {
+			target = pane
+			break
+		}
+	}
+	if target == nil {
+		t.Fatalf("expected visible pane-2 after switch, got %#v", visible.Tabs[visible.ActiveTab].Panes)
+	}
+	if len(client.resizes) == 0 {
+		t.Fatalf("expected shared local tab switch to issue a resize, got %#v", client.resizes)
+	}
+	last := client.resizes[len(client.resizes)-1]
+	if last.channel != 2 {
+		t.Fatalf("expected tab switch resize on pane-2 channel, got %#v", last)
+	}
+}
+
+func TestFeatureTabSwitchPromotesSharedTerminalOwnerWhenGeometryDiffers(t *testing.T) {
+	client := &recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}}
+	model := setupModel(t, modelOpts{
+		client: client,
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{
+					{
+						ID:           "tab-1",
+						Name:         "tab 1",
+						ActivePaneID: "pane-1",
+						Panes: map[string]*workbench.PaneState{
+							"pane-1": {ID: "pane-1", Title: "owner", TerminalID: "term-1"},
+						},
+						Root: workbench.NewLeaf("pane-1"),
+					},
+					{
+						ID:           "tab-2",
+						Name:         "tab 2",
+						ActivePaneID: "pane-2",
+						Panes: map[string]*workbench.PaneState{
+							"pane-2": {ID: "pane-2", Title: "shared", TerminalID: "term-1"},
+							"pane-3": {ID: "pane-3", Title: "side"},
 						},
 						Root: &workbench.LayoutNode{
 							Direction: workbench.SplitVertical,
@@ -861,33 +955,18 @@ func TestFeatureTabSwitchKeepsSharedTerminalOwnerStable(t *testing.T) {
 	if tab == nil || tab.ID != "tab-2" {
 		t.Fatalf("expected tab-2 active after switch, got %#v", tab)
 	}
-	if terminal.OwnerPaneID != "pane-1" {
-		t.Fatalf("expected pane-1 to stay owner on tab switch, got %q", terminal.OwnerPaneID)
+	if terminal.OwnerPaneID != "pane-2" {
+		t.Fatalf("expected pane-2 promoted to owner after geometry-changing tab switch, got %q", terminal.OwnerPaneID)
 	}
-	if ownerBinding.Role != runtime.BindingRoleOwner {
-		t.Fatalf("expected pane-1 to stay owner after tab switch, got %q", ownerBinding.Role)
+	if ownerBinding.Role != runtime.BindingRoleFollower || followerBinding.Role != runtime.BindingRoleOwner {
+		t.Fatalf("expected roles swapped after tab switch, owner=%#v follower=%#v", ownerBinding, followerBinding)
 	}
-	if followerBinding.Role != runtime.BindingRoleFollower {
-		t.Fatalf("expected pane-2 to stay follower after tab switch, got %q", followerBinding.Role)
+	if len(client.resizes) == 0 {
+		t.Fatal("expected resize after owner promotion on tab switch")
 	}
-
-	visible := model.workbench.VisibleWithSize(model.bodyRect())
-	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
-		t.Fatalf("expected visible active tab after switch, got %#v", visible)
-	}
-	var target *workbench.VisiblePane
-	for i := range visible.Tabs[visible.ActiveTab].Panes {
-		pane := &visible.Tabs[visible.ActiveTab].Panes[i]
-		if pane.ID == "pane-2" {
-			target = pane
-			break
-		}
-	}
-	if target == nil {
-		t.Fatalf("expected visible pane-2 after switch, got %#v", visible.Tabs[visible.ActiveTab].Panes)
-	}
-	if len(client.resizes) != 0 {
-		t.Fatalf("expected hidden follower tab switch not to resize PTY, got %#v", client.resizes)
+	last := client.resizes[len(client.resizes)-1]
+	if last.channel != 2 || last.cols >= 118 {
+		t.Fatalf("expected resized pane-2 geometry on follower channel, got %#v", last)
 	}
 }
 
