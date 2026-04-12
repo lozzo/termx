@@ -205,6 +205,39 @@ func TestRenderFrameShowsCopyModeTimestampForBlankRow(t *testing.T) {
 	}
 }
 
+func TestClampCopyPointSkipsWideContinuationCells(t *testing.T) {
+	snapshot := &protocol.Snapshot{
+		Size: protocol.Size{Cols: 2, Rows: 1},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{
+			{Content: "界", Width: 2},
+			{Content: "", Width: 0},
+		}}},
+	}
+
+	row, col := clampCopyPoint(snapshot, 0, 1)
+	if row != 0 || col != 0 {
+		t.Fatalf("expected continuation column to clamp back to lead cell, got row=%d col=%d", row, col)
+	}
+}
+
+func TestScrollOffsetForViewportTopKeepsScrollbackVisible(t *testing.T) {
+	snapshot := &protocol.Snapshot{
+		Size:       protocol.Size{Cols: 8, Rows: 2},
+		Scrollback: [][]protocol.Cell{{{Content: "a", Width: 1}}, {{Content: "b", Width: 1}}, {{Content: "c", Width: 1}}},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			{{Content: "d", Width: 1}},
+			{{Content: "e", Width: 1}},
+		}},
+	}
+
+	if got := scrollOffsetForViewportTop(snapshot, 2, 1); got != 2 {
+		t.Fatalf("expected viewport in scrollback to keep offset 2, got %d", got)
+	}
+	if got := scrollOffsetForViewportTop(snapshot, 2, 99); got != 0 {
+		t.Fatalf("expected out-of-range view top to clamp to live tail, got %d", got)
+	}
+}
+
 func TestDrawPaneFrameUsesTieredChromeStylesForActivePane(t *testing.T) {
 	canvas := newComposedCanvas(40, 6)
 	rect := workbench.Rect{X: 0, Y: 0, W: 40, H: 6}
