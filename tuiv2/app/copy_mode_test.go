@@ -451,6 +451,129 @@ func TestCopyModeEnteringScrollbackForcesViewportScroll(t *testing.T) {
 	}
 }
 
+func TestCopyModeBufferNormalizeColSkipsContinuationCells(t *testing.T) {
+	buffer := copyModeBuffer{
+		snapshot: &protocol.Snapshot{
+			Size: protocol.Size{Cols: 2, Rows: 1},
+			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{
+				{Content: "界", Width: 2},
+				{Content: "", Width: 0},
+			}}},
+		},
+		height: 1,
+	}
+
+	if got := buffer.normalizeCol(0, 1); got != 0 {
+		t.Fatalf("expected continuation column to normalize back to cell start, got %d", got)
+	}
+	point := buffer.clampPoint(copyModePoint{Row: 0, Col: 1})
+	if point.Col != 0 {
+		t.Fatalf("expected clamped point to avoid continuation column, got %#v", point)
+	}
+}
+
+func TestCopyModeBufferViewportRangeUsesScrollbackBoundary(t *testing.T) {
+	buffer := copyModeBuffer{
+		snapshot: copyModeTestSnapshot([]string{"hist0", "hist1", "hist2"}, []string{"live0", "live1"}),
+		height:   2,
+	}
+
+	if got := buffer.viewportStart(0); got != 3 {
+		t.Fatalf("expected live viewport to start at scrollback boundary, got %d", got)
+	}
+	if got := buffer.viewportEnd(0); got != 5 {
+		t.Fatalf("expected live viewport to end at total rows, got %d", got)
+	}
+	if got := buffer.viewportStart(2); got != 1 {
+		t.Fatalf("expected scrolled viewport start to move into scrollback, got %d", got)
+	}
+	if got := buffer.viewportEnd(2); got != 3 {
+		t.Fatalf("expected scrolled viewport end to stop before live tail, got %d", got)
+	}
+}
+
+func TestActiveLiveCopyModeBufferRefreshesStaleVTermSnapshot(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"hist-a"}, []string{"old-live"})
+
+	if _, err := model.runtime.LoadSnapshot(context.Background(), "term-1", 0, 0); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	terminal := model.runtime.Registry().Get("term-1")
+	if terminal == nil || terminal.VTerm == nil || terminal.Snapshot == nil {
+		t.Fatalf("expected live terminal snapshot cache, got %#v", terminal)
+	}
+	if _, err := terminal.VTerm.Write([]byte("\x1b[2J\x1b[Hfresh-live")); err != nil {
+		t.Fatalf("write live vterm update: %v", err)
+	}
+	terminal.SurfaceVersion++
+
+	buffer, ok := model.activeLiveCopyModeBuffer()
+	if !ok {
+		t.Fatal("expected live copy-mode buffer")
+	}
+	if buffer.snapshot == nil {
+		t.Fatal("expected refreshed snapshot")
+	}
+	var snapshotText strings.Builder
+	for _, row := range buffer.snapshot.Scrollback {
+		for _, cell := range row {
+			snapshotText.WriteString(cell.Content)
+		}
+		snapshotText.WriteByte('\n')
+	}
+	for _, row := range buffer.snapshot.Screen.Cells {
+		for _, cell := range row {
+			snapshotText.WriteString(cell.Content)
+		}
+		snapshotText.WriteByte('\n')
+	}
+	if !strings.Contains(snapshotText.String(), "fresh") {
+		t.Fatalf("expected refreshed buffer snapshot to include live vterm content, got %#v", buffer.snapshot)
+	}
+	if terminal.SnapshotVersion != terminal.SurfaceVersion {
+		t.Fatalf("expected activeLiveCopyModeBuffer to refresh snapshot version, snapshot=%d surface=%d", terminal.SnapshotVersion, terminal.SurfaceVersion)
+	}
+	contentRect, ok := model.activePaneContentRect()
+	if !ok {
+		t.Fatal("expected active pane content rect")
+	}
+	if buffer.height != maxInt(1, contentRect.H) {
+		t.Fatalf("expected buffer height to follow content rect, got %d want %d", buffer.height, maxInt(1, contentRect.H))
+	}
+}
+
+func TestSyncCopyModeViewportClampsAndUpdatesScrollOffset(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"hist0", "hist1", "hist2"}, []string{"live0", "live1"})
+
+	buffer, ok := model.activeLiveCopyModeBuffer()
+	if !ok {
+		t.Fatal("expected live copy-mode buffer")
+	}
+	model.copyMode.ViewTopRow = 999
+	model.syncCopyModeViewport(buffer, copyModePoint{Row: buffer.totalRows() - 1, Col: 0})
+	if got, want := model.copyMode.ViewTopRow, buffer.maxViewTopRow(); got != want {
+		t.Fatalf("expected viewport to clamp to max top row, got %d want %d", got, want)
+	}
+
+	model.copyMode.ViewTopRow = 999
+	model.syncCopyModeViewport(buffer, copyModePoint{Row: 1, Col: 0})
+	if got := model.copyMode.ViewTopRow; got != 1 {
+		t.Fatalf("expected viewport to shift upward for selected row, got %d", got)
+	}
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if got, want := tab.ScrollOffset, model.copyModeRenderOffset(buffer); got != want {
+		t.Fatalf("expected syncCopyModeViewport to keep tab scroll offset aligned, got %d want %d", got, want)
+	}
+	if tab.ScrollOffset <= 0 {
+		t.Fatalf("expected syncCopyModeViewport to move viewport into scrollback, got %d", tab.ScrollOffset)
+	}
+}
+
 func TestPasteBufferActionSendsPasteToActiveTerminal(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 80, height: 12})
 	seedCopyModeSnapshot(t, model, []string{"hist0"}, []string{"live0"})
