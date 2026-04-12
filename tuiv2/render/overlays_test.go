@@ -305,6 +305,20 @@ func TestWorkspacePickerFooterActionSpecsOrderStable(t *testing.T) {
 	}
 }
 
+func TestPromptFooterActionSpecsCarryPromptPaneID(t *testing.T) {
+	prompt := &modal.PromptState{PaneID: "pane-7"}
+	specs := promptFooterActionSpecs(prompt)
+	if len(specs) != 2 {
+		t.Fatalf("expected submit+cancel footer actions, got %#v", specs)
+	}
+	if specs[0].Action.Kind != input.ActionSubmitPrompt || specs[0].Action.PaneID != "pane-7" {
+		t.Fatalf("expected submit action to carry prompt pane id, got %#v", specs[0])
+	}
+	if specs[1].Action.Kind != input.ActionCancelMode {
+		t.Fatalf("expected cancel action second, got %#v", specs[1])
+	}
+}
+
 func TestPickerQueryRowRectTracksEditableFieldAfterSearchPrefix(t *testing.T) {
 	layout := buildPickerCardLayout(100, 28, 4, true)
 	rect := pickerQueryRowRect(layout)
