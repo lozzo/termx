@@ -443,7 +443,7 @@ func TestTerminalPoolHitRegionsIncludeQueryInput(t *testing.T) {
 
 func TestTerminalPoolHitRegionsClipsFooterActionsWhenWidthIsTight(t *testing.T) {
 	state := VisibleRenderState{
-		TermSize: TermSize{Width: 30, Height: 20},
+		TermSize: TermSize{Width: 15, Height: 20},
 		Surface: VisibleSurface{
 			Kind: VisibleSurfaceTerminalPool,
 			TerminalPool: &modal.TerminalManagerState{
