@@ -298,52 +298,6 @@ func (m *Model) syncActivePaneInteractiveOwnershipCmd() tea.Cmd {
 	})
 }
 
-func (m *Model) resizeCmdForAction(action input.SemanticAction) tea.Cmd {
-	switch action.Kind {
-	case input.ActionSplitPane,
-		input.ActionSplitPaneHorizontal,
-		input.ActionZoomPane,
-		input.ActionResizePaneLeft,
-		input.ActionResizePaneRight,
-		input.ActionResizePaneUp,
-		input.ActionResizePaneDown,
-		input.ActionResizePaneLargeLeft,
-		input.ActionResizePaneLargeRight,
-		input.ActionResizePaneLargeUp,
-		input.ActionResizePaneLargeDown,
-		input.ActionBalancePanes,
-		input.ActionCycleLayout:
-		return m.resizeVisiblePanesCmd()
-	case input.ActionResizeFloatingLeft,
-		input.ActionResizeFloatingRight,
-		input.ActionResizeFloatingUp,
-		input.ActionResizeFloatingDown:
-		return m.resizePaneIfNeededCmd(action.PaneID)
-	default:
-		return nil
-	}
-}
-
-func (m *Model) saveCmdForAction(action input.SemanticAction) tea.Cmd {
-	switch action.Kind {
-	case input.ActionSplitPane,
-		input.ActionSplitPaneHorizontal,
-		input.ActionResizePaneLeft,
-		input.ActionResizePaneRight,
-		input.ActionResizePaneUp,
-		input.ActionResizePaneDown,
-		input.ActionResizePaneLargeLeft,
-		input.ActionResizePaneLargeRight,
-		input.ActionResizePaneLargeUp,
-		input.ActionResizePaneLargeDown,
-		input.ActionBalancePanes,
-		input.ActionCycleLayout:
-		return m.saveStateCmd()
-	default:
-		return nil
-	}
-}
-
 func (m *Model) syncActivePaneOwnershipAndResizeCmd() tea.Cmd {
 	return m.syncTerminalInteractionCmd(terminalInteractionRequest{ResizeIfNeeded: true})
 }

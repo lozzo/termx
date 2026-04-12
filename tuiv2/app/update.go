@@ -428,7 +428,10 @@ func (m *Model) semanticActionEffectsCmd(action input.SemanticAction) tea.Cmd {
 		return nil
 	}
 	cmd := m.applyEffects(m.enrichEffects(action, m.orchestrator.HandleSemanticAction(action)))
-	return batchCmds(cmd, m.resizeCmdForAction(action), m.saveCmdForAction(action))
+	if policy := m.semanticActionPolicy(); policy != nil {
+		return policy.postEffectsCmd(action, cmd)
+	}
+	return cmd
 }
 
 func (m *Model) showError(err error) tea.Cmd {
