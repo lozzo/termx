@@ -26,7 +26,7 @@ func (m *Model) openCreateWorkspaceNamePromptWithValue(returnMode input.ModeKind
 	m.modalHost.Prompt = &modal.PromptState{
 		Kind:            "rename-workspace",
 		Title:           "create workspace",
-		Hint:            "[Enter] create  [Esc] cancel",
+		Hint:            "enter a workspace name",
 		Value:           initialValue,
 		Cursor:          len([]rune(initialValue)),
 		AllowEmpty:      false,

@@ -40,7 +40,7 @@ func (m *Model) openEditTerminalPrompt(item *modal.PickerItem) {
 	m.modalHost.Prompt = &modal.PromptState{
 		Kind:            "edit-terminal-name",
 		Title:           "Edit Terminal",
-		Hint:            "[Enter] continue  [Esc] cancel",
+		Hint:            "update the terminal name before continuing",
 		Value:           name,
 		Cursor:          len([]rune(name)),
 		Original:        name,
@@ -106,7 +106,7 @@ func (m *Model) openRenameWorkspacePromptFor(name string) {
 	m.modalHost.Prompt = &modal.PromptState{
 		Kind:            "rename-workspace",
 		Title:           "rename workspace",
-		Hint:            "[Enter] save  [Esc] cancel",
+		Hint:            "enter a new workspace name",
 		Value:           workspace.Name,
 		Cursor:          len([]rune(workspace.Name)),
 		Original:        workspace.Name,
@@ -145,7 +145,7 @@ func (m *Model) openRenameTabPromptFor(workspaceName, tabID, name string) {
 	m.modalHost.Prompt = &modal.PromptState{
 		Kind:            "rename-tab",
 		Title:           "rename tab",
-		Hint:            "[Enter] save  [Esc] cancel",
+		Hint:            "enter a new tab name",
 		WorkspaceName:   workspaceName,
 		Value:           name,
 		Cursor:          len([]rune(name)),

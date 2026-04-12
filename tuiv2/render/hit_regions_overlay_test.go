@@ -104,7 +104,7 @@ func TestOverlayHitRegionsPromptAndHelpExposeCardAndDismiss(t *testing.T) {
 			Prompt: &modal.PromptState{
 				Kind:  "create-terminal-name",
 				Value: "shell",
-				Hint:  "[Enter] continue  [Esc] cancel",
+				Hint:  "update the terminal name before continuing",
 			},
 		},
 	}

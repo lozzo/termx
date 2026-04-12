@@ -241,6 +241,27 @@ func TestPromptValueWithCursorKeepsRawValueForHostCursorProjection(t *testing.T)
 	}
 }
 
+func TestRenderPromptOverlayUsesSemanticHintTextOnly(t *testing.T) {
+	prompt := &modal.PromptState{
+		Kind:  "create-terminal-form",
+		Title: "Create Terminal",
+		Hint:  "name is required; command is optional",
+		Fields: []modal.PromptField{
+			{Key: "name", Label: "name", Value: "shell", Required: true},
+			{Key: "command", Label: "command", Value: "/bin/sh"},
+		},
+	}
+	overlay := xansi.Strip(renderPromptOverlay(prompt, TermSize{Width: 100, Height: 30}))
+	if !strings.Contains(overlay, "name is required; command is optional") {
+		t.Fatalf("expected semantic prompt hint in overlay:\n%s", overlay)
+	}
+	for _, forbidden := range []string{"[Enter]", "[Esc]", "[Ctrl-"} {
+		if strings.Contains(overlay, forbidden) {
+			t.Fatalf("prompt overlay should not render shortcut hint %q:\n%s", forbidden, overlay)
+		}
+	}
+}
+
 func TestLayoutOverlayFooterActionsClipKeepsStablePrefixOrder(t *testing.T) {
 	specs := pickerFooterActionSpecs()
 	if len(specs) < 3 {

@@ -52,7 +52,7 @@ func (m *Model) submitCreateTerminalNamePrompt(prompt *modal.PromptState) tea.Cm
 	}
 	prompt.Kind = "create-terminal-tags"
 	prompt.Title = "Create Terminal"
-	prompt.Hint = "[Enter] create  [Esc] cancel"
+	prompt.Hint = "tags are optional"
 	prompt.AllowEmpty = true
 	prompt.Name = name
 	prompt.Value = ""
@@ -74,7 +74,7 @@ func (m *Model) submitEditTerminalNamePrompt(prompt *modal.PromptState) tea.Cmd 
 	}
 	prompt.Kind = "edit-terminal-tags"
 	prompt.Title = "Edit Terminal"
-	prompt.Hint = "[Enter] save  [Esc] cancel"
+	prompt.Hint = "update tags if needed"
 	prompt.AllowEmpty = true
 	prompt.Name = name
 	prompt.Value = formatPromptTags(prompt.Tags)
