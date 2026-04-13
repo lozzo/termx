@@ -18,43 +18,43 @@ const (
 	HitRegionFloatingOverviewCard HitRegionKind = "floating-overview-card"
 )
 
-func OverlayHitRegions(state VisibleRenderState) []HitRegion {
-	if state.TermSize.Width <= 0 || state.TermSize.Height <= 0 {
+func OverlayHitRegions(vm RenderVM) []HitRegion {
+	if vm.TermSize.Width <= 0 || vm.TermSize.Height <= 0 {
 		return nil
 	}
 	overlaySize := TermSize{
-		Width:  state.TermSize.Width,
-		Height: FrameBodyHeight(state.TermSize.Height),
+		Width:  vm.TermSize.Width,
+		Height: FrameBodyHeight(vm.TermSize.Height),
 	}
 	width, height := overlayViewport(overlaySize)
-	switch state.Overlay.Kind {
+	switch vm.Overlay.Kind {
 	case VisibleOverlayPicker:
-		return pickerOverlayHitRegions(state.Overlay.Picker, width, height)
+		return pickerOverlayHitRegions(vm.Overlay.Picker, width, height)
 	case VisibleOverlayWorkspacePicker:
-		return workspacePickerOverlayHitRegions(state.Overlay.WorkspacePicker, width, height)
+		return workspacePickerOverlayHitRegions(vm.Overlay.WorkspacePicker, width, height)
 	case VisibleOverlayHelp:
-		return helpOverlayHitRegions(state.Overlay.Help, width, height)
+		return helpOverlayHitRegions(vm.Overlay.Help, width, height)
 	case VisibleOverlayPrompt:
-		return promptOverlayHitRegions(state.Overlay.Prompt, width, height)
+		return promptOverlayHitRegions(vm.Overlay.Prompt, width, height)
 	case VisibleOverlayTerminalManager:
-		return terminalManagerOverlayHitRegions(state.Overlay.TerminalManager, width, height)
+		return terminalManagerOverlayHitRegions(vm.Overlay.TerminalManager, width, height)
 	case VisibleOverlayFloatingOverview:
-		return floatingOverviewOverlayHitRegions(state.Overlay.FloatingOverview, width, height)
+		return floatingOverviewOverlayHitRegions(vm.Overlay.FloatingOverview, width, height)
 	default:
 		return nil
 	}
 }
 
-func TerminalPoolHitRegions(state VisibleRenderState) []HitRegion {
-	if state.Surface.Kind != VisibleSurfaceTerminalPool || state.Surface.TerminalPool == nil {
+func TerminalPoolHitRegions(vm RenderVM) []HitRegion {
+	if vm.Surface.Kind != VisibleSurfaceTerminalPool || vm.Surface.TerminalPool == nil {
 		return nil
 	}
-	if state.TermSize.Width <= 0 || state.TermSize.Height <= 0 {
+	if vm.TermSize.Width <= 0 || vm.TermSize.Height <= 0 {
 		return nil
 	}
-	width := maxInt(1, state.TermSize.Width)
-	height := FrameBodyHeight(state.TermSize.Height)
-	layout := buildTerminalPoolPageLayout(state.Surface.TerminalPool, width, height)
+	width := maxInt(1, vm.TermSize.Width)
+	height := FrameBodyHeight(vm.TermSize.Height)
+	layout := buildTerminalPoolPageLayout(vm.Surface.TerminalPool, width, height)
 	if len(layout.itemRows) == 0 && len(layout.footerActions) == 0 {
 		return nil
 	}

@@ -27,10 +27,10 @@ func TestBuildStatusHintsHidesUnavailablePaneActionsForUnconnectedPane(t *testin
 		}},
 	})
 	model := New(shared.Config{}, wb, runtime.New(nil))
-	state := render.WithTermSize(render.AdaptVisibleStateWithSize(wb, model.runtime, 80, 18), 80, 20)
-	state = render.WithStatus(state, "", "", string(input.ModePane))
+	vm := render.WithRenderTermSize(render.AdaptRenderVMWithSize(wb, model.runtime, 80, 18), 80, 20)
+	vm = render.WithRenderStatus(vm, "", "", string(input.ModePane))
 
-	hints := model.buildStatusHints(state)
+	hints := model.buildStatusHints(vm)
 	assertHintsContain(t, hints, "r RECONNECT", "z ZOOM")
 	assertHintsOmit(t, hints, "d DETACH", "a OWNER", "X CLOSE+KILL")
 }
@@ -69,20 +69,22 @@ func TestBuildStatusHintsShowsOwnerActionForSharedFollower(t *testing.T) {
 	followerBinding.Connected = true
 
 	model := New(shared.Config{}, wb, rt)
-	state := render.WithTermSize(render.AdaptVisibleStateWithSize(wb, rt, 120, 18), 120, 20)
-	state = render.WithStatus(state, "", "", string(input.ModePane))
+	vm := render.WithRenderTermSize(render.AdaptRenderVMWithSize(wb, rt, 120, 18), 120, 20)
+	vm = render.WithRenderStatus(vm, "", "", string(input.ModePane))
 
-	hints := model.buildStatusHints(state)
+	hints := model.buildStatusHints(vm)
 	assertHintsContain(t, hints, "a OWNER", "d DETACH")
 }
 
 func TestBuildStatusHintsWorkspacePickerFollowSelectedItemKind(t *testing.T) {
 	model := New(shared.Config{}, workbench.NewWorkbench(), runtime.New(nil))
-	state := render.VisibleRenderState{
-		TermSize:  render.TermSize{Width: 180, Height: 20},
-		InputMode: string(input.ModeWorkspacePicker),
+	vm := render.RenderVM{
+		TermSize: render.TermSize{Width: 180, Height: 20},
+		Status: render.RenderStatusVM{
+			InputMode: string(input.ModeWorkspacePicker),
+		},
 		Workbench: &workbench.VisibleWorkbench{WorkspaceName: "main"},
-		Overlay: render.VisibleOverlay{
+		Overlay: render.RenderOverlayVM{
 			Kind: render.VisibleOverlayWorkspacePicker,
 			WorkspacePicker: &modal.WorkspacePickerState{
 				Items: []modal.WorkspacePickerItem{
@@ -99,13 +101,13 @@ func TestBuildStatusHintsWorkspacePickerFollowSelectedItemKind(t *testing.T) {
 		},
 	}
 
-	state.Overlay.WorkspacePicker.Selected = 0
-	hints := model.buildStatusHints(state)
+	vm.Overlay.WorkspacePicker.Selected = 0
+	hints := model.buildStatusHints(vm)
 	assertHintsContain(t, hints, "Ctrl-R RENAME", "Ctrl-X REMOVE")
 	assertHintsOmit(t, hints, "Ctrl-D DETACH", "Ctrl-Z ZOOM")
 
-	state.Overlay.WorkspacePicker.Selected = 2
-	hints = model.buildStatusHints(state)
+	vm.Overlay.WorkspacePicker.Selected = 2
+	hints = model.buildStatusHints(vm)
 	assertHintsContain(t, hints, "Ctrl-X REMOVE", "Ctrl-D DETACH", "Ctrl-Z ZOOM")
 	assertHintsOmit(t, hints, "Ctrl-R RENAME", "Ctrl-N NEW")
 }
@@ -126,10 +128,10 @@ func TestBuildStatusHintsFloatingModeShowsOnlyCreateWithoutActiveFloatingPane(t 
 		}},
 	})
 	model := New(shared.Config{}, wb, runtime.New(nil))
-	state := render.WithTermSize(render.AdaptVisibleStateWithSize(wb, model.runtime, 80, 18), 80, 20)
-	state = render.WithStatus(state, "", "", string(input.ModeFloating))
+	vm := render.WithRenderTermSize(render.AdaptRenderVMWithSize(wb, model.runtime, 80, 18), 80, 20)
+	vm = render.WithRenderStatus(vm, "", "", string(input.ModeFloating))
 
-	hints := model.buildStatusHints(state)
+	hints := model.buildStatusHints(vm)
 	assertHintsContain(t, hints, "N NEW FLOAT")
 	assertHintsOmit(t, hints, "h/j/k/l MOVE", "H/J/K/L RESIZE", "x CLOSE", "v TOGGLE", "a OWNER")
 }

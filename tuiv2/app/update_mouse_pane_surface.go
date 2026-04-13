@@ -55,8 +55,7 @@ func (m *Model) handleExitedPaneClick(pane workbench.VisiblePane, x, contentY in
 	if m == nil || m.runtime == nil {
 		return nil
 	}
-	state := m.visibleRenderState()
-	region, ok := render.HitRegionAt(render.ExitedPaneRecoveryRegions(pane, state.Runtime), x, contentY)
+	region, ok := render.HitRegionAt(render.ExitedPaneRecoveryRegions(pane, m.runtime.Visible()), x, contentY)
 	if !ok {
 		return nil
 	}

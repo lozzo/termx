@@ -1,9 +1,13 @@
 package app
 
 import (
+	"context"
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/tuiv2/input"
+	localvterm "github.com/lozzow/termx/vterm"
 )
 
 func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
@@ -37,13 +41,90 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 		if typed.err != nil {
 			return tea.Batch(m.showError(typed.err), next), true
 		}
+		if next == nil {
+			m.scheduleSharedTerminalSnapshotResync(typed.paneID, typed.terminalID)
+			return func() tea.Msg { return InvalidateMsg{} }, true
+		}
 		return next, true
+	case sharedTerminalSnapshotResyncMsg:
+		if typed.seq != m.terminalResyncSeq {
+			return nil, true
+		}
+		if m.terminalInputSending || len(m.pendingTerminalInputs) > 0 {
+			return nil, true
+		}
+		return m.sharedTerminalSnapshotResyncCmd(typed.terminalID), true
 	case sequenceMsg:
 		return m.nextSequenceCmd(typed), true
 	case copyModeAutoScrollMsg:
 		return m.handleCopyModeAutoScroll(typed.seq), true
 	default:
 		return nil, false
+	}
+}
+
+func (m *Model) scheduleSharedTerminalSnapshotResync(paneID, terminalID string) {
+	if !m.shouldResyncSharedTerminalSnapshot(paneID, terminalID) {
+		return
+	}
+	m.terminalResyncSeq++
+	seq := m.terminalResyncSeq
+	msg := sharedTerminalSnapshotResyncMsg{
+		seq:        seq,
+		paneID:     paneID,
+		terminalID: terminalID,
+	}
+	if sharedTerminalSnapshotResyncDelay <= 0 {
+		m.sendAsync(msg)
+		return
+	}
+	time.AfterFunc(sharedTerminalSnapshotResyncDelay, func() {
+		if m == nil {
+			return
+		}
+		m.sendAsync(msg)
+	})
+}
+
+func (m *Model) shouldResyncSharedTerminalSnapshot(paneID, terminalID string) bool {
+	if m == nil || m.runtime == nil || m.runtime.Client() == nil || terminalID == "" {
+		return false
+	}
+	terminal := m.runtime.Registry().Get(terminalID)
+	if terminal == nil || len(terminal.BoundPaneIDs) < 2 {
+		return false
+	}
+	modes := localvterm.TerminalModes{}
+	switch {
+	case terminal.VTerm != nil:
+		modes = terminal.VTerm.Modes()
+	case terminal.Snapshot != nil:
+		modes = localvterm.TerminalModes{
+			AlternateScreen: terminal.Snapshot.Modes.AlternateScreen,
+			MouseTracking:   terminal.Snapshot.Modes.MouseTracking,
+			BracketedPaste:  terminal.Snapshot.Modes.BracketedPaste,
+		}
+	}
+	if !modes.AlternateScreen && !modes.MouseTracking {
+		return false
+	}
+	if paneID != "" {
+		if pane, _, ok := m.visiblePaneForInput(paneID); !ok || pane == nil || pane.TerminalID != terminalID {
+			return false
+		}
+	}
+	return true
+}
+
+func (m *Model) sharedTerminalSnapshotResyncCmd(terminalID string) tea.Cmd {
+	if m == nil || m.runtime == nil || m.runtime.Client() == nil || terminalID == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		if _, err := m.runtime.LoadSnapshot(context.Background(), terminalID, 0, defaultTerminalSnapshotScrollbackLimit); err != nil {
+			return err
+		}
+		return InvalidateMsg{}
 	}
 }
 

@@ -820,8 +820,8 @@ func TestMouseClickTabSwitchesActiveTab(t *testing.T) {
 		},
 	})
 
-	state := m.visibleRenderState()
-	regions := render.TabBarHitRegions(state)
+	vm := m.renderVM()
+	regions := render.TabBarHitRegions(vm)
 	var target render.HitRegion
 	found := false
 	for _, region := range regions {
@@ -962,8 +962,8 @@ func TestMouseClickFloatingPaneChromeCloseDoesNotStartDrag(t *testing.T) {
 
 func TestMouseClickWorkspaceLabelOpensWorkspacePicker(t *testing.T) {
 	m := setupModel(t, modelOpts{})
-	state := m.visibleRenderState()
-	regions := render.TabBarHitRegions(state)
+	vm := m.renderVM()
+	regions := render.TabBarHitRegions(vm)
 	var target render.HitRegion
 	found := false
 	for _, region := range regions {
@@ -987,8 +987,8 @@ func TestMouseClickWorkspaceLabelOpensWorkspacePicker(t *testing.T) {
 
 func TestMouseClickTabCreateOpensPickerForNewTab(t *testing.T) {
 	m := setupModel(t, modelOpts{})
-	state := m.visibleRenderState()
-	regions := render.TabBarHitRegions(state)
+	vm := m.renderVM()
+	regions := render.TabBarHitRegions(vm)
 	var target render.HitRegion
 	found := false
 	for _, region := range regions {
@@ -1018,8 +1018,8 @@ func TestMouseClickTabCloseClosesActiveTab(t *testing.T) {
 	m := setupModel(t, modelOpts{})
 	createSecondTab(t, m)
 
-	state := m.visibleRenderState()
-	regions := render.TabBarHitRegions(state)
+	vm := m.renderVM()
+	regions := render.TabBarHitRegions(vm)
 	var target render.HitRegion
 	found := false
 	for _, region := range regions {
@@ -1044,7 +1044,7 @@ func TestMouseClickTabCloseClosesActiveTab(t *testing.T) {
 
 func TestMouseTopChromeDoesNotExposeTabManagementActions(t *testing.T) {
 	m := setupModel(t, modelOpts{width: 180})
-	state := m.visibleRenderState()
+	vm := m.renderVM()
 	for _, kind := range []render.HitRegionKind{
 		render.HitRegionTabRename,
 		render.HitRegionTabKill,
@@ -1054,7 +1054,7 @@ func TestMouseTopChromeDoesNotExposeTabManagementActions(t *testing.T) {
 		render.HitRegionWorkspaceRename,
 		render.HitRegionWorkspaceDelete,
 	} {
-		for _, region := range render.TabBarHitRegions(state) {
+		for _, region := range render.TabBarHitRegions(vm) {
 			if region.Kind == kind {
 				t.Fatalf("expected top chrome management region %q to be omitted, got %#v", kind, region)
 			}
@@ -1256,8 +1256,8 @@ func TestMouseClickPickerItemAttachesSelectedTerminal(t *testing.T) {
 	m.modalHost.MarkReady(input.ModePicker, "pane-1")
 	m.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: "pane-1"})
 
-	state := m.visibleRenderState()
-	regions := render.OverlayHitRegions(state)
+	vm := m.renderVM()
+	regions := render.OverlayHitRegions(vm)
 	var target render.HitRegion
 	found := false
 	for _, region := range regions {
@@ -1293,8 +1293,8 @@ func TestMouseClickOverlayDismissClosesPicker(t *testing.T) {
 	m.modalHost.MarkReady(input.ModePicker, "pane-1")
 	m.input.SetMode(input.ModeState{Kind: input.ModePicker, RequestID: "pane-1"})
 
-	state := m.visibleRenderState()
-	regions := render.OverlayHitRegions(state)
+	vm := m.renderVM()
+	regions := render.OverlayHitRegions(vm)
 	var dismiss render.HitRegion
 	found := false
 	for _, region := range regions {
@@ -1334,8 +1334,8 @@ func TestMouseClickTerminalPoolRowSelectsItem(t *testing.T) {
 	m.terminalPage.ApplyFilter()
 	m.input.SetMode(input.ModeState{Kind: input.ModeTerminalManager, RequestID: terminalPoolPageModeToken})
 
-	state := m.visibleRenderState()
-	regions := render.TerminalPoolHitRegions(state)
+	vm := m.renderVM()
+	regions := render.TerminalPoolHitRegions(vm)
 	var target render.HitRegion
 	found := false
 	for _, region := range regions {
@@ -1378,8 +1378,8 @@ func TestMouseClickTerminalPoolFooterAttachHereDispatchesModalAction(t *testing.
 	m.terminalPage.ApplyFilter()
 	m.input.SetMode(input.ModeState{Kind: input.ModeTerminalManager, RequestID: terminalPoolPageModeToken})
 
-	state := m.visibleRenderState()
-	regions := render.TerminalPoolHitRegions(state)
+	vm := m.renderVM()
+	regions := render.TerminalPoolHitRegions(vm)
 	var target render.HitRegion
 	found := false
 	for _, region := range regions {
@@ -1537,8 +1537,8 @@ func TestMouseClickTerminalPoolQueryMovesCursorAndEditsAtPoint(t *testing.T) {
 	m.terminalPage.ApplyFilter()
 	m.input.SetMode(input.ModeState{Kind: input.ModeTerminalManager, RequestID: terminalPoolPageModeToken})
 
-	state := m.visibleRenderState()
-	regions := render.TerminalPoolHitRegions(state)
+	vm := m.renderVM()
+	regions := render.TerminalPoolHitRegions(vm)
 	var query render.HitRegion
 	found := false
 	for _, region := range regions {
@@ -1975,8 +1975,8 @@ func TestMouseForwardsZoomedTerminalTopRowsWithoutFrameOffset(t *testing.T) {
 	}
 	_, cmd := m.Update(topMsg)
 	if cmd == nil {
-		state := m.visibleRenderState()
-		t.Fatalf("expected zoomed top-row click to produce terminal input command, surface=%q overlay=%q mode=%q", state.Surface.Kind, state.Overlay.Kind, m.mode().Kind)
+		vm := m.renderVM()
+		t.Fatalf("expected zoomed top-row click to produce terminal input command, surface=%q overlay=%q mode=%q", vm.Surface.Kind, vm.Overlay.Kind, m.mode().Kind)
 	}
 	drainCmd(t, m, cmd, 20)
 
@@ -2137,8 +2137,8 @@ func screenYForBodyY(m *Model, bodyY int) int {
 
 func terminalPoolFooterActionRegion(t *testing.T, m *Model, kind input.ActionKind) render.HitRegion {
 	t.Helper()
-	state := m.visibleRenderState()
-	regions := render.TerminalPoolHitRegions(state)
+	vm := m.renderVM()
+	regions := render.TerminalPoolHitRegions(vm)
 	for _, region := range regions {
 		if region.Kind == render.HitRegionTerminalPoolAction && region.Action.Kind == kind {
 			return region
@@ -2150,8 +2150,8 @@ func terminalPoolFooterActionRegion(t *testing.T, m *Model, kind input.ActionKin
 
 func tabBarRegionByKind(t *testing.T, m *Model, kind render.HitRegionKind) render.HitRegion {
 	t.Helper()
-	state := m.visibleRenderState()
-	regions := render.TabBarHitRegions(state)
+	vm := m.renderVM()
+	regions := render.TabBarHitRegions(vm)
 	for _, region := range regions {
 		if region.Kind == kind {
 			return region
@@ -2211,8 +2211,8 @@ func findVisiblePaneChromeRegion(m *Model, paneID string, kind render.HitRegionK
 
 func overlayRegionByKind(t *testing.T, m *Model, kind render.HitRegionKind) render.HitRegion {
 	t.Helper()
-	state := m.visibleRenderState()
-	regions := render.OverlayHitRegions(state)
+	vm := m.renderVM()
+	regions := render.OverlayHitRegions(vm)
 	for _, region := range regions {
 		if region.Kind == kind {
 			return region
@@ -2224,8 +2224,8 @@ func overlayRegionByKind(t *testing.T, m *Model, kind render.HitRegionKind) rend
 
 func overlayFooterActionRegion(t *testing.T, m *Model, kind input.ActionKind) render.HitRegion {
 	t.Helper()
-	state := m.visibleRenderState()
-	regions := render.OverlayHitRegions(state)
+	vm := m.renderVM()
+	regions := render.OverlayHitRegions(vm)
 	for _, region := range regions {
 		if region.Kind == render.HitRegionOverlayFooterAction && region.Action.Kind == kind {
 			return region
@@ -2237,8 +2237,8 @@ func overlayFooterActionRegion(t *testing.T, m *Model, kind input.ActionKind) re
 
 func overlayWorkspaceItemRegion(t *testing.T, m *Model, index int) render.HitRegion {
 	t.Helper()
-	state := m.visibleRenderState()
-	regions := render.OverlayHitRegions(state)
+	vm := m.renderVM()
+	regions := render.OverlayHitRegions(vm)
 	for _, region := range regions {
 		if region.Kind == render.HitRegionWorkspaceItem && region.ItemIndex == index {
 			return region

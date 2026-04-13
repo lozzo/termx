@@ -38,7 +38,15 @@ type mouseWheelBurstMsg struct {
 }
 
 type terminalInputSentMsg struct {
-	err error
+	err        error
+	paneID     string
+	terminalID string
+}
+
+type sharedTerminalSnapshotResyncMsg struct {
+	seq        uint64
+	paneID     string
+	terminalID string
 }
 
 type terminalAttachReadyMsg struct {

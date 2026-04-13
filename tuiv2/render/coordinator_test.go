@@ -71,7 +71,7 @@ func assertReplayScreenEqual(t *testing.T, got, want localvterm.ScreenData) {
 	}
 }
 
-func makeTestState() VisibleRenderState {
+func makeTestVM() RenderVM {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -89,7 +89,11 @@ func makeTestState() VisibleRenderState {
 	rt := runtime.New(nil)
 	rt.Registry().GetOrCreate("term-1").Name = "demo"
 	rt.Registry().Get("term-1").State = "running"
-	return WithTermSize(AdaptVisibleStateWithSize(wb, rt, 100, 28), 100, 30)
+	return WithRenderTermSize(AdaptRenderVMWithSize(wb, rt, 100, 28), 100, 30)
+}
+
+func makeTestState() VisibleRenderState {
+	return VisibleStateFromRenderVM(makeTestVM())
 }
 
 func TestRenderFrameNonEmpty(t *testing.T) {
@@ -114,6 +118,100 @@ func TestRenderFrameLinesMatchRenderFrame(t *testing.T) {
 	}
 }
 
+func TestCachedFrameMissesWhenStatusHintsChange(t *testing.T) {
+	vm := WithRenderStatus(makeTestVM(), "", "", string(input.ModePane))
+	vm = WithRenderStatusHints(vm, []string{"a FIRST"})
+	current := vm
+
+	coordinator := NewCoordinatorWithVM(func() RenderVM { return current })
+	first := xansi.Strip(coordinator.RenderFrame())
+	if !strings.Contains(first, "FIRST") {
+		t.Fatalf("expected initial frame to include FIRST hint:\n%s", first)
+	}
+	if _, _, ok := coordinator.CachedFrameAndCursor(); !ok {
+		t.Fatal("expected cached frame after initial render")
+	}
+
+	current = WithRenderStatusHints(current, []string{"b SECOND"})
+	if _, _, ok := coordinator.CachedFrameAndCursor(); ok {
+		t.Fatal("expected cache miss after status hint change")
+	}
+
+	second := xansi.Strip(coordinator.RenderFrame())
+	if !strings.Contains(second, "SECOND") {
+		t.Fatalf("expected updated frame to include SECOND hint:\n%s", second)
+	}
+	if strings.Contains(second, "FIRST") {
+		t.Fatalf("expected updated frame to drop FIRST hint:\n%s", second)
+	}
+}
+
+func TestCachedRenderResultTracksCurrentVMKey(t *testing.T) {
+	vm := WithRenderStatus(makeTestVM(), "", "", string(input.ModePane))
+	vm = WithRenderStatusHints(vm, []string{"a FIRST"})
+	current := vm
+
+	coordinator := NewCoordinatorWithVM(func() RenderVM { return current })
+	result := coordinator.Render()
+	if got := xansi.Strip(result.Frame()); !strings.Contains(got, "FIRST") {
+		t.Fatalf("expected Render() frame to include FIRST hint:\n%s", got)
+	}
+
+	cached, ok := coordinator.CachedRenderResult()
+	if !ok {
+		t.Fatal("expected cached render result after Render()")
+	}
+	if got, want := cached.Frame(), result.Frame(); got != want {
+		t.Fatalf("cached render result frame mismatch:\n got=%q\nwant=%q", got, want)
+	}
+	if got, want := cached.CursorSequence(), result.CursorSequence(); got != want {
+		t.Fatalf("cached render result cursor mismatch: got %q want %q", got, want)
+	}
+
+	current = WithRenderStatusHints(current, []string{"b SECOND"})
+	if _, ok := coordinator.CachedRenderResult(); ok {
+		t.Fatal("expected CachedRenderResult miss after VM key change")
+	}
+}
+
+func TestRenderFrameMissesWhenStatusRightTokensChange(t *testing.T) {
+	vm := makeTestVM()
+	vm = WithRenderStatusRightTokens(vm, []RenderStatusToken{{Label: "ONE"}})
+	current := vm
+
+	coordinator := NewCoordinatorWithVM(func() RenderVM { return current })
+	first := xansi.Strip(coordinator.RenderFrame())
+	if !strings.Contains(first, "ONE") {
+		t.Fatalf("expected initial frame to include ONE right token:\n%s", first)
+	}
+	if _, _, ok := coordinator.CachedFrameAndCursor(); !ok {
+		t.Fatal("expected cached frame after initial render")
+	}
+
+	current = WithRenderStatusRightTokens(current, []RenderStatusToken{{Label: "TWO"}})
+	if _, _, ok := coordinator.CachedFrameAndCursor(); ok {
+		t.Fatal("expected cache miss after right token change")
+	}
+
+	second := xansi.Strip(coordinator.RenderFrame())
+	if !strings.Contains(second, "TWO") {
+		t.Fatalf("expected updated frame to include TWO right token:\n%s", second)
+	}
+	if strings.Contains(second, "ONE") {
+		t.Fatalf("expected updated frame to drop ONE right token:\n%s", second)
+	}
+}
+
+func TestLegacyCoordinatorPreservesStatusRightTokens(t *testing.T) {
+	state := makeTestState()
+	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
+	for _, want := range []string{"ws:main", "terminals:1"} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("expected legacy coordinator frame to include %q:\n%s", want, frame)
+		}
+	}
+}
+
 func TestRenderFrameContainsWorkspaceName(t *testing.T) {
 	state := makeTestState()
 	c := NewCoordinator(func() VisibleRenderState { return state })
@@ -129,6 +227,69 @@ func TestRenderFrameContainsTabInfo(t *testing.T) {
 	frame := xansi.Strip(c.RenderFrame())
 	if !strings.Contains(frame, "tab 1") {
 		t.Fatalf("frame missing tab info:\n%s", frame)
+	}
+}
+
+func TestOverlayFastPathRestoresLatestBodyAfterHiddenRuntimeChange(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	makeVM := func(bodyText string, withOverlay bool) RenderVM {
+		vm := WithRenderTermSize(AdaptRenderVMWithSize(wb, runtime.New(nil), 32, 6), 32, 8)
+		vm.Runtime = &VisibleRuntimeStateProxy{Terminals: []runtime.VisibleTerminal{{
+			TerminalID: "term-1",
+			Name:       "demo",
+			State:      "running",
+			Snapshot: &protocol.Snapshot{
+				TerminalID: "term-1",
+				Size:       protocol.Size{Cols: 32, Rows: 1},
+				Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+					protocolStyledWideRowFromText(bodyText, 32, protocol.CellStyle{}),
+				}},
+				Cursor: protocol.CursorState{Visible: false},
+				Modes:  protocol.TerminalModes{AutoWrap: true},
+			},
+		}}}
+		if withOverlay {
+			vm = AttachRenderPicker(vm, &modal.PickerState{
+				Items: []modal.PickerItem{{TerminalID: "term-1", Name: "demo"}},
+				Query: "demo",
+			})
+		}
+		return vm
+	}
+
+	current := makeVM("OLD-BODY", false)
+	coordinator := NewCoordinatorWithVM(func() RenderVM { return current })
+	if frame := xansi.Strip(coordinator.RenderFrame()); !strings.Contains(frame, "OLD-BODY") {
+		t.Fatalf("expected initial body render to include OLD-BODY:\n%s", frame)
+	}
+
+	current = makeVM("OLD-BODY", true)
+	_ = coordinator.RenderFrame()
+
+	current = makeVM("NEW-BODY", true)
+	_ = coordinator.RenderFrame()
+
+	current = makeVM("NEW-BODY", false)
+	frame := xansi.Strip(coordinator.RenderFrame())
+	if !strings.Contains(frame, "NEW-BODY") {
+		t.Fatalf("expected body after overlay close to include NEW-BODY:\n%s", frame)
+	}
+	if strings.Contains(frame, "OLD-BODY") {
+		t.Fatalf("expected body after overlay close to drop OLD-BODY:\n%s", frame)
 	}
 }
 
@@ -349,16 +510,18 @@ func TestDrawTerminalExtentHintsFillsUnusedAreaWithDots(t *testing.T) {
 
 type fakeTerminalRenderSource struct{}
 
-func (fakeTerminalRenderSource) Size() protocol.Size                        { return protocol.Size{Cols: 1, Rows: 1} }
-func (fakeTerminalRenderSource) Cursor() protocol.CursorState               { return protocol.CursorState{} }
-func (fakeTerminalRenderSource) Modes() protocol.TerminalModes              { return protocol.TerminalModes{} }
-func (fakeTerminalRenderSource) IsAlternateScreen() bool                    { return false }
-func (fakeTerminalRenderSource) ScreenRows() int                            { return 1 }
-func (fakeTerminalRenderSource) ScrollbackRows() int                        { return 0 }
-func (fakeTerminalRenderSource) TotalRows() int                             { return 1 }
-func (fakeTerminalRenderSource) Row(int) []protocol.Cell                    { return []protocol.Cell{{Content: "x", Width: 1}} }
-func (fakeTerminalRenderSource) RowTimestamp(int) time.Time                 { return time.Time{} }
-func (fakeTerminalRenderSource) RowKind(int) string                         { return "" }
+func (fakeTerminalRenderSource) Size() protocol.Size           { return protocol.Size{Cols: 1, Rows: 1} }
+func (fakeTerminalRenderSource) Cursor() protocol.CursorState  { return protocol.CursorState{} }
+func (fakeTerminalRenderSource) Modes() protocol.TerminalModes { return protocol.TerminalModes{} }
+func (fakeTerminalRenderSource) IsAlternateScreen() bool       { return false }
+func (fakeTerminalRenderSource) ScreenRows() int               { return 1 }
+func (fakeTerminalRenderSource) ScrollbackRows() int           { return 0 }
+func (fakeTerminalRenderSource) TotalRows() int                { return 1 }
+func (fakeTerminalRenderSource) Row(int) []protocol.Cell {
+	return []protocol.Cell{{Content: "x", Width: 1}}
+}
+func (fakeTerminalRenderSource) RowTimestamp(int) time.Time { return time.Time{} }
+func (fakeTerminalRenderSource) RowKind(int) string         { return "" }
 
 func TestTerminalExtentHintsViewLeavesNonSnapshotSourcesUntouched(t *testing.T) {
 	source := fakeTerminalRenderSource{}
@@ -1425,9 +1588,10 @@ func TestInactivePaneRightBorderOnFE0FRowsCachedSwitch(t *testing.T) {
 	entries2 := paneEntriesForTab(
 		state2.Workbench.Tabs[state2.Workbench.ActiveTab], state2.Workbench.FloatingPanes,
 		bodyWidth, bodyHeight, newRuntimeLookup(state2.Runtime),
-		"", "", -1, "", -1, true, state2, uiThemeForRuntime(state2.Runtime),
+		bodyProjectionOptionsForVM(RenderVMFromVisibleState(state2), true),
+		uiThemeForRuntime(state2.Runtime),
 	)
-	canvas2 := renderBodyCanvas(coordinator, state2, entries2, bodyWidth, bodyHeight)
+	canvas2 := renderBodyCanvas(coordinator, state2.Runtime, immersiveZoomActive(state2), entries2, bodyWidth, bodyHeight)
 	for y := rightPane.Rect.Y + 1; y <= rightPane.Rect.Y+rightPane.Rect.H-2; y++ {
 		if got := canvas2.cells[y][rightBorderX].Style.FG; got != theme.panelBorder2 {
 			t.Fatalf("row %d: expected inactive border FG %q, got %q", y, theme.panelBorder2, got)
@@ -1495,7 +1659,7 @@ func TestPaneEntriesForTabMarksViewportClippedPaneOverflow(t *testing.T) {
 		}},
 	}
 
-	entries := paneEntriesForTab(tab, nil, 12, 6, runtimeLookup{}, "", "", -1, "", -1, true, VisibleRenderState{}, defaultUITheme())
+	entries := paneEntriesForTab(tab, nil, 12, 6, runtimeLookup{}, bodyProjectionOptions{}, defaultUITheme())
 	if len(entries) != 1 {
 		t.Fatalf("expected one visible pane entry, got %d", len(entries))
 	}

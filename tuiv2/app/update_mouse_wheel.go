@@ -27,11 +27,11 @@ func (m *Model) handleMouseWheelRepeated(msg tea.MouseMsg, repeat int) tea.Cmd {
 	}
 	repeat = maxInt(1, repeat)
 	delta := step * repeat
-	state := m.visibleRenderState()
-	if handled, cmd := m.handleOverlayMouseWheel(state, delta); handled {
+	vm := m.renderVM()
+	if handled, cmd := m.handleOverlayMouseWheel(vm, delta); handled {
 		return cmd
 	}
-	if handled, cmd := m.handleTerminalPoolMouseWheel(state, delta); handled {
+	if handled, cmd := m.handleTerminalPoolMouseWheel(vm, delta); handled {
 		return cmd
 	}
 	if m.mode().Kind == input.ModeDisplay {
@@ -98,8 +98,8 @@ func (m *Model) terminalWheelInputForMouseMsg(msg tea.MouseMsg, delta, repeat in
 	if m.mode().Kind == input.ModeDisplay {
 		return input.TerminalInput{}, false
 	}
-	state := m.visibleRenderState()
-	if state.Overlay.Kind != render.VisibleOverlayNone || state.Surface.Kind == render.VisibleSurfaceTerminalPool {
+	vm := m.renderVM()
+	if vm.Overlay.Kind != render.VisibleOverlayNone || vm.Surface.Kind == render.VisibleSurfaceTerminalPool {
 		return input.TerminalInput{}, false
 	}
 	targetPaneID, contentRect, ok := m.activeContentMouseTarget(msg.X, msg.Y)

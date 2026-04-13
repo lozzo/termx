@@ -171,18 +171,22 @@ func (m *Model) dequeueTerminalInputCmd() tea.Cmd {
 		return nil
 	}
 	m.terminalInputSending = true
+	target, _ := m.resolveTerminalInteractionTarget(terminalInteractionRequest{PaneID: next.PaneID})
+	terminalID := target.terminalID
 	return func() tea.Msg {
 		prepareFinish := perftrace.Measure("app.input.prepare")
 		err := m.prepareTerminalInput(context.Background(), next.PaneID)
 		prepareFinish(len(next.Data))
 		if err != nil {
-			return terminalInputSentMsg{err: err}
+			return terminalInputSentMsg{err: err, paneID: next.PaneID, terminalID: terminalID}
 		}
 		sendFinish := perftrace.Measure("app.input.send")
 		err = m.runtime.SendInput(context.Background(), next.PaneID, next.Data)
 		sendFinish(len(next.Data))
 		return terminalInputSentMsg{
-			err: err,
+			err:        err,
+			paneID:     next.PaneID,
+			terminalID: terminalID,
 		}
 	}
 }

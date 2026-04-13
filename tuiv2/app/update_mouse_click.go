@@ -43,8 +43,8 @@ func (m *Model) forwardTerminalMouseInputCmd(msg tea.MouseMsg) tea.Cmd {
 	if m.mode().Kind == input.ModeDisplay {
 		return nil
 	}
-	state := m.visibleRenderState()
-	if state.Overlay.Kind != render.VisibleOverlayNone || state.Surface.Kind == render.VisibleSurfaceTerminalPool {
+	vm := m.renderVM()
+	if vm.Overlay.Kind != render.VisibleOverlayNone || vm.Surface.Kind == render.VisibleSurfaceTerminalPool {
 		return nil
 	}
 	targetPaneID, contentRect, ok := m.activeContentMouseTarget(msg.X, msg.Y)

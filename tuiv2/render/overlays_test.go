@@ -109,11 +109,11 @@ func TestRenderFrameWithPickerOverlay(t *testing.T) {
 	rt := runtime.New(nil)
 	rt.Registry().GetOrCreate("term-1").Name = "demo"
 	rt.Registry().Get("term-1").State = "running"
-	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 100, 28), 100, 30)
-	state = WithStatus(state, "", "", string(input.ModePicker))
-	state = AttachPicker(state, &modal.PickerState{Title: "Terminal Picker", Items: []modal.PickerItem{{TerminalID: "term-1", Name: "shell", State: "running"}}})
-	state = WithStatusHints(state, []string{"UP/DOWN MOVE", "Enter HERE"})
-	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
+	vm := WithRenderTermSize(AdaptRenderVMWithSize(wb, rt, 100, 28), 100, 30)
+	vm = WithRenderStatus(vm, "", "", string(input.ModePicker))
+	vm = AttachRenderPicker(vm, &modal.PickerState{Title: "Terminal Picker", Items: []modal.PickerItem{{TerminalID: "term-1", Name: "shell", State: "running"}}})
+	vm = WithRenderStatusHints(vm, []string{"UP/DOWN MOVE", "Enter HERE"})
+	frame := xansi.Strip(NewCoordinatorWithVM(func() RenderVM { return vm }).RenderFrame())
 	for _, want := range []string{"main", "tab 1", "Terminal Picker"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("frame missing %q:\n%s", want, frame)
@@ -144,14 +144,14 @@ func TestRenderFrameWithWorkspacePickerOverlay(t *testing.T) {
 	rt := runtime.New(nil)
 	rt.Registry().GetOrCreate("term-1").Name = "demo"
 	rt.Registry().Get("term-1").State = "running"
-	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 100, 28), 100, 30)
-	state = WithStatus(state, "", "", string(input.ModeWorkspacePicker))
-	state = AttachWorkspacePicker(state, &modal.WorkspacePickerState{
+	vm := WithRenderTermSize(AdaptRenderVMWithSize(wb, rt, 100, 28), 100, 30)
+	vm = WithRenderStatus(vm, "", "", string(input.ModeWorkspacePicker))
+	vm = AttachRenderWorkspacePicker(vm, &modal.WorkspacePickerState{
 		Title: "Workspaces",
 		Items: []modal.WorkspacePickerItem{{Name: "main"}, {Name: "dev"}},
 	})
-	state = WithStatusHints(state, []string{"UP/DOWN MOVE", "TYPE FILTER", "Enter OPEN", "Ctrl-N NEW"})
-	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
+	vm = WithRenderStatusHints(vm, []string{"UP/DOWN MOVE", "TYPE FILTER", "Enter OPEN", "Ctrl-N NEW"})
+	frame := xansi.Strip(NewCoordinatorWithVM(func() RenderVM { return vm }).RenderFrame())
 	for _, want := range []string{"main", "tab 1", "Workspaces", "dev"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("frame missing %q:\n%s", want, frame)
@@ -182,11 +182,11 @@ func TestRenderFrameWithHelpOverlay(t *testing.T) {
 	rt := runtime.New(nil)
 	rt.Registry().GetOrCreate("term-1").Name = "demo"
 	rt.Registry().Get("term-1").State = "running"
-	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 100, 28), 100, 30)
-	state = WithStatus(state, "", "", string(input.ModeHelp))
-	state = AttachHelp(state, modal.DefaultHelp())
-	state = WithStatusHints(state, []string{"Esc BACK"})
-	frame := xansi.Strip(NewCoordinator(func() VisibleRenderState { return state }).RenderFrame())
+	vm := WithRenderTermSize(AdaptRenderVMWithSize(wb, rt, 100, 28), 100, 30)
+	vm = WithRenderStatus(vm, "", "", string(input.ModeHelp))
+	vm = AttachRenderHelp(vm, modal.DefaultHelp())
+	vm = WithRenderStatusHints(vm, []string{"Esc BACK"})
+	frame := xansi.Strip(NewCoordinatorWithVM(func() RenderVM { return vm }).RenderFrame())
 	for _, want := range []string{"main", "tab 1", "Help", "Ctrl-P", "Ctrl-F", "Most Used"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("frame missing %q:\n%s", want, frame)

@@ -61,10 +61,10 @@ type renderTerminalMetrics struct {
 	Rows int
 }
 
-func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePane, width, height int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, exitedPaneSelectionPaneID string, exitedPaneSelectionIndex int, exitedPaneSelectionPulse bool, state VisibleRenderState, theme uiTheme) []paneRenderEntry {
+func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePane, width, height int, lookup runtimeLookup, options bodyProjectionOptions, theme uiTheme) []paneRenderEntry {
 	entries := make([]paneRenderEntry, 0, len(tab.Panes)+len(floating))
 	zoomedPaneID := tab.ZoomedPaneID
-	immersiveZoom := immersiveZoomActive(state)
+	immersiveZoom := options.ImmersiveZoom
 	for _, pane := range tab.Panes {
 		originalRect := pane.Rect
 		rect := originalRect
@@ -81,7 +81,7 @@ func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePan
 		if !ok {
 			continue
 		}
-		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, frameless, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, state.PaneSnapshotOverridePaneID, state.PaneSnapshotOverride, state.CopyModePaneID, state.CopyModeCursorRow, state.CopyModeCursorCol, state.CopyModeViewTopRow, state.CopyModeMarkSet, state.CopyModeMarkRow, state.CopyModeMarkCol, state.CopyModeSnapshot, theme))
+		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, frameless, tab.ActivePaneID, tab.ScrollOffset, lookup, options, theme))
 	}
 	for _, pane := range floating {
 		originalRect := pane.Rect
@@ -89,7 +89,7 @@ func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePan
 		if !ok {
 			continue
 		}
-		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, false, tab.ActivePaneID, tab.ScrollOffset, lookup, confirmPaneID, emptyPaneSelectionPaneID, emptyPaneSelectionIndex, exitedPaneSelectionPaneID, exitedPaneSelectionIndex, exitedPaneSelectionPulse, state.PaneSnapshotOverridePaneID, state.PaneSnapshotOverride, state.CopyModePaneID, state.CopyModeCursorRow, state.CopyModeCursorCol, state.CopyModeViewTopRow, state.CopyModeMarkSet, state.CopyModeMarkRow, state.CopyModeMarkCol, state.CopyModeSnapshot, theme))
+		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, false, tab.ActivePaneID, tab.ScrollOffset, lookup, options, theme))
 	}
 	return entries
 }
@@ -108,13 +108,13 @@ func clipRectToViewport(rect workbench.Rect, width, height int) (workbench.Rect,
 	return workbench.Rect{X: x1, Y: y1, W: x2 - x1, H: y2 - y1}, true
 }
 
-func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workbench.Rect, frameless bool, activePaneID string, scrollOffset int, lookup runtimeLookup, confirmPaneID, emptyPaneSelectionPaneID string, emptyPaneSelectionIndex int, exitedPaneSelectionPaneID string, exitedPaneSelectionIndex int, exitedPaneSelectionPulse bool, paneSnapshotOverridePaneID string, paneSnapshotOverride *protocol.Snapshot, copyModePaneID string, copyModeCursorRow, copyModeCursorCol, copyModeViewTopRow int, copyModeMarkSet bool, copyModeMarkRow, copyModeMarkCol int, copyModeSnapshot *protocol.Snapshot, theme uiTheme) paneRenderEntry {
+func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workbench.Rect, frameless bool, activePaneID string, scrollOffset int, lookup runtimeLookup, options bodyProjectionOptions, theme uiTheme) paneRenderEntry {
 	active := pane.ID == activePaneID
 	title := displayPaneTitleWithLookup(pane, lookup)
-	border := paneBorderInfoWithLookup(pane, lookup, confirmPaneID)
+	border := paneBorderInfoWithLookup(pane, lookup, options.ConfirmPaneID)
 	terminal := lookup.terminal(pane.TerminalID)
 	overflow := paneOverflowHintsForRender(originalRect, rect, nil, nil)
-	copyModeActive := pane.ID == copyModePaneID
+	copyModeActive := pane.ID == options.CopyMode.PaneID
 	snapshot := (*protocol.Snapshot)(nil)
 	surface := runtime.TerminalSurface(nil)
 	surfaceVersion := uint64(0)
@@ -123,28 +123,28 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		surface = terminal.Surface
 		surfaceVersion = terminal.SurfaceVersion
 	}
-	if pane.ID == paneSnapshotOverridePaneID && paneSnapshotOverride != nil {
-		snapshot = paneSnapshotOverride
+	if pane.ID == options.SnapshotOverride.PaneID && options.SnapshotOverride.Snapshot != nil {
+		snapshot = options.SnapshotOverride.Snapshot
 		surface = nil
 		surfaceVersion = 0
 	}
-	if copyModeActive && copyModeSnapshot != nil {
-		snapshot = copyModeSnapshot
+	if copyModeActive && options.CopyMode.Snapshot != nil {
+		snapshot = options.CopyMode.Snapshot
 		surface = nil
 		surfaceVersion = 0
 	}
 	if copyModeActive {
-		border.CopyTimeLabel = copyModeTimestampLabel(snapshot, copyModeCursorRow)
-		border.CopyRowLabel = copyModeRowPositionLabel(snapshot, copyModeCursorRow)
+		border.CopyTimeLabel = copyModeTimestampLabel(snapshot, options.CopyMode.CursorRow)
+		border.CopyRowLabel = copyModeRowPositionLabel(snapshot, options.CopyMode.CursorRow)
 	}
 	emptyActionSelected := -1
-	if pane.TerminalID == "" && pane.ID == emptyPaneSelectionPaneID {
-		emptyActionSelected = emptyPaneSelectionIndex
+	if pane.TerminalID == "" && pane.ID == options.EmptySelection.PaneID {
+		emptyActionSelected = options.EmptySelection.Index
 	}
 	exitedActionSelected := -1
-	if pane.TerminalID != "" && pane.ID == exitedPaneSelectionPaneID {
+	if pane.TerminalID != "" && pane.ID == options.ExitedSelection.PaneID {
 		if terminal := lookup.terminal(pane.TerminalID); terminal != nil && terminal.State == "exited" {
-			exitedActionSelected = exitedPaneSelectionIndex
+			exitedActionSelected = options.ExitedSelection.Index
 		}
 	}
 	contentKey := paneContentKey{
@@ -156,14 +156,14 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		ScrollOffset:         scrollOffset,
 		EmptyActionSelected:  emptyActionSelected,
 		ExitedActionSelected: exitedActionSelected,
-		ExitedActionPulse:    exitedPaneSelectionPulse,
+		ExitedActionPulse:    options.ExitedSelectionPulse,
 		CopyModeActive:       copyModeActive,
-		CopyModeCursorRow:    copyModeCursorRow,
-		CopyModeCursorCol:    copyModeCursorCol,
-		CopyModeViewTopRow:   copyModeViewTopRow,
-		CopyModeMarkSet:      copyModeMarkSet,
-		CopyModeMarkRow:      copyModeMarkRow,
-		CopyModeMarkCol:      copyModeMarkCol,
+		CopyModeCursorRow:    options.CopyMode.CursorRow,
+		CopyModeCursorCol:    options.CopyMode.CursorCol,
+		CopyModeViewTopRow:   options.CopyMode.ViewTopRow,
+		CopyModeMarkSet:      options.CopyMode.MarkSet,
+		CopyModeMarkRow:      options.CopyMode.MarkRow,
+		CopyModeMarkCol:      options.CopyMode.MarkCol,
 	}
 	if terminal != nil {
 		if snapshot != nil && surface == nil {
@@ -207,14 +207,14 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		Floating:             pane.Floating,
 		EmptyActionSelected:  emptyActionSelected,
 		ExitedActionSelected: exitedActionSelected,
-		ExitedActionPulse:    exitedPaneSelectionPulse,
+		ExitedActionPulse:    options.ExitedSelectionPulse,
 		CopyModeActive:       copyModeActive,
-		CopyModeCursorRow:    copyModeCursorRow,
-		CopyModeCursorCol:    copyModeCursorCol,
-		CopyModeViewTopRow:   copyModeViewTopRow,
-		CopyModeMarkSet:      copyModeMarkSet,
-		CopyModeMarkRow:      copyModeMarkRow,
-		CopyModeMarkCol:      copyModeMarkCol,
+		CopyModeCursorRow:    options.CopyMode.CursorRow,
+		CopyModeCursorCol:    options.CopyMode.CursorCol,
+		CopyModeViewTopRow:   options.CopyMode.ViewTopRow,
+		CopyModeMarkSet:      options.CopyMode.MarkSet,
+		CopyModeMarkRow:      options.CopyMode.MarkRow,
+		CopyModeMarkCol:      options.CopyMode.MarkCol,
 	}
 }
 

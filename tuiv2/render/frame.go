@@ -20,10 +20,52 @@ func FrameBodyHeight(totalHeight int) int {
 	return maxInt(1, totalHeight-TopChromeRows-BottomChromeRows)
 }
 
+func renderTabBarVM(vm RenderVM) string {
+	theme := uiThemeForRuntime(vm.Runtime)
+	layout := buildTabBarLayoutVM(vm)
+	return fillLine(renderTabBarLeft(layout), layout.rightText, vm.TermSize.Width, theme.tabActiveBG)
+}
+
 func renderTabBar(state VisibleRenderState) string {
 	theme := uiThemeForState(state)
 	layout := buildTabBarLayout(state)
 	return fillLine(renderTabBarLeft(layout), layout.rightText, state.TermSize.Width, theme.tabActiveBG)
+}
+
+func renderStatusBarVM(vm RenderVM) string {
+	theme := uiThemeForRuntime(vm.Runtime)
+	width := vm.TermSize.Width
+	labels := currentStatusTextsVM(vm)
+
+	var leftParts []string
+	if !suppressStatusHintsVM(vm) {
+		mode := strings.TrimSpace(vm.Status.InputMode)
+		if mode == "" || mode == "normal" {
+			leftParts = append(leftParts, renderDesktopHint(theme, "Ctrl", theme.hintKeyFG))
+			rootColors := rootStatusHintColors(theme)
+			for i, label := range labels {
+				if i >= len(rootColors) {
+					break
+				}
+				leftParts = append(leftParts, renderStatusSep(theme))
+				leftParts = append(leftParts, renderDesktopHint(theme, label, rootColors[i]))
+			}
+		} else {
+			badge := renderModeBadge(theme, mode)
+			if badge != "" {
+				leftParts = append(leftParts, badge)
+			}
+			leftParts = append(leftParts, renderModeHints(theme, mode, labels)...)
+		}
+	}
+	left := strings.Join(leftParts, "")
+
+	right := renderStatusBarRight(theme, statusBarRightTokensVM(vm))
+	if right != "" && xansi.StringWidth(left)+1+xansi.StringWidth(right) > width {
+		right = ""
+	}
+
+	return fillLine(left, right, width, theme.chromeBG)
 }
 
 func renderStatusBar(state VisibleRenderState) string {
@@ -62,21 +104,15 @@ func renderStatusBar(state VisibleRenderState) string {
 	return fillLine(left, right, width, theme.chromeBG)
 }
 
-type statusBarToken struct {
-	Kind   HitRegionKind
-	Label  string
-	Action input.SemanticAction
-}
-
-func statusBarRightTokens(state VisibleRenderState) []statusBarToken {
-	tokens := make([]statusBarToken, 0, 8)
+func statusBarRightTokens(state VisibleRenderState) []RenderStatusToken {
+	tokens := make([]RenderStatusToken, 0, 8)
 	if state.Overlay.Kind == VisibleOverlayWorkspacePicker && state.Overlay.WorkspacePicker != nil {
 		tokens = append(tokens, workspacePickerStatusBarRightTokens(state.Overlay.WorkspacePicker.SelectedItem())...)
 	}
 	if state.Workbench != nil {
-		tokens = append(tokens, statusBarToken{Label: "ws:" + state.Workbench.WorkspaceName})
+		tokens = append(tokens, RenderStatusToken{Label: "ws:" + state.Workbench.WorkspaceName})
 		if label := floatingSummaryLabel(state.Workbench); label != "" {
-			tokens = append(tokens, statusBarToken{
+			tokens = append(tokens, RenderStatusToken{
 				Kind:   HitRegionFloatingOverview,
 				Label:  label,
 				Action: input.SemanticAction{Kind: input.ActionOpenFloatingOverview},
@@ -84,12 +120,19 @@ func statusBarRightTokens(state VisibleRenderState) []statusBarToken {
 		}
 	}
 	if state.Runtime != nil {
-		tokens = append(tokens, statusBarToken{Label: fmt.Sprintf("terminals:%d", len(state.Runtime.Terminals))})
+		tokens = append(tokens, RenderStatusToken{Label: fmt.Sprintf("terminals:%d", len(state.Runtime.Terminals))})
 	}
 	return tokens
 }
 
-func workspacePickerStatusBarRightTokens(item *modal.WorkspacePickerItem) []statusBarToken {
+func statusBarRightTokensVM(vm RenderVM) []RenderStatusToken {
+	if len(vm.Status.RightTokens) == 0 {
+		return nil
+	}
+	return append([]RenderStatusToken(nil), vm.Status.RightTokens...)
+}
+
+func workspacePickerStatusBarRightTokens(item *modal.WorkspacePickerItem) []RenderStatusToken {
 	if item == nil {
 		return nil
 	}
@@ -99,44 +142,44 @@ func workspacePickerStatusBarRightTokens(item *modal.WorkspacePickerItem) []stat
 		if name := strings.TrimSpace(item.CreateName); name != "" {
 			label = "sel:new:" + name
 		}
-		return []statusBarToken{{Label: label}}
+		return []RenderStatusToken{{Label: label}}
 	case strings.TrimSpace(item.PaneID) != "":
-		tokens := []statusBarToken{{Label: "sel:pane:" + strings.TrimSpace(item.Name)}}
+		tokens := []RenderStatusToken{{Label: "sel:pane:" + strings.TrimSpace(item.Name)}}
 		if state := strings.TrimSpace(item.State); state != "" {
-			tokens = append(tokens, statusBarToken{Label: state})
+			tokens = append(tokens, RenderStatusToken{Label: state})
 		}
 		if role := strings.TrimSpace(item.Role); role != "" {
-			tokens = append(tokens, statusBarToken{Label: role})
+			tokens = append(tokens, RenderStatusToken{Label: role})
 		}
 		if item.Floating {
-			tokens = append(tokens, statusBarToken{Label: "floating"})
+			tokens = append(tokens, RenderStatusToken{Label: "floating"})
 		}
 		return tokens
 	case strings.TrimSpace(item.TabID) != "":
-		tokens := []statusBarToken{{Label: "sel:tab:" + strings.TrimSpace(item.Name)}}
+		tokens := []RenderStatusToken{{Label: "sel:tab:" + strings.TrimSpace(item.Name)}}
 		if item.PaneCount > 0 {
-			tokens = append(tokens, statusBarToken{Label: fmt.Sprintf("panes:%d", item.PaneCount)})
+			tokens = append(tokens, RenderStatusToken{Label: fmt.Sprintf("panes:%d", item.PaneCount)})
 		}
 		if item.FloatingCount > 0 {
-			tokens = append(tokens, statusBarToken{Label: fmt.Sprintf("float:%d", item.FloatingCount)})
+			tokens = append(tokens, RenderStatusToken{Label: fmt.Sprintf("float:%d", item.FloatingCount)})
 		}
 		return tokens
 	default:
-		tokens := []statusBarToken{{Label: "sel:ws:" + strings.TrimSpace(item.Name)}}
+		tokens := []RenderStatusToken{{Label: "sel:ws:" + strings.TrimSpace(item.Name)}}
 		if item.TabCount > 0 {
-			tokens = append(tokens, statusBarToken{Label: fmt.Sprintf("tabs:%d", item.TabCount)})
+			tokens = append(tokens, RenderStatusToken{Label: fmt.Sprintf("tabs:%d", item.TabCount)})
 		}
 		if item.PaneCount > 0 {
-			tokens = append(tokens, statusBarToken{Label: fmt.Sprintf("panes:%d", item.PaneCount)})
+			tokens = append(tokens, RenderStatusToken{Label: fmt.Sprintf("panes:%d", item.PaneCount)})
 		}
 		if item.FloatingCount > 0 {
-			tokens = append(tokens, statusBarToken{Label: fmt.Sprintf("float:%d", item.FloatingCount)})
+			tokens = append(tokens, RenderStatusToken{Label: fmt.Sprintf("float:%d", item.FloatingCount)})
 		}
 		return tokens
 	}
 }
 
-func renderStatusBarRight(theme uiTheme, tokens []statusBarToken) string {
+func renderStatusBarRight(theme uiTheme, tokens []RenderStatusToken) string {
 	if len(tokens) == 0 {
 		return ""
 	}
@@ -167,6 +210,10 @@ func floatingSummaryLabel(visible *workbench.VisibleWorkbench) string {
 }
 
 func suppressStatusHints(state VisibleRenderState) bool {
+	return false
+}
+
+func suppressStatusHintsVM(vm RenderVM) bool {
 	return false
 }
 
@@ -281,6 +328,30 @@ func rootStatusHintColors(theme uiTheme) []string {
 
 func currentStatusTexts(state VisibleRenderState) []string {
 	return append([]string(nil), state.StatusHints...)
+}
+
+func currentStatusTextsVM(vm RenderVM) []string {
+	return append([]string(nil), vm.Status.Hints...)
+}
+
+func statusBarRightTokenSignature(tokens []RenderStatusToken) string {
+	if len(tokens) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		if strings.TrimSpace(token.Label) == "" {
+			continue
+		}
+		part := string(token.Kind) + "|" + token.Label + "|" + string(token.Action.Kind)
+		if token.Action.Kind == "" {
+			part += "|plain"
+		} else {
+			part += "|action"
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, "\x1f")
 }
 
 func fillLine(left, right string, width int, bg string) string {

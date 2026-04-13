@@ -1,9 +1,11 @@
 package app
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/lozzow/termx/tuiv2/input"
+	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/render"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -17,15 +19,15 @@ type statusHintContext struct {
 	hasFloating      bool
 	activeIsFloating bool
 	selectedTreeKind string
-	state            *render.VisibleRenderState
+	runtime          *render.VisibleRuntimeStateProxy
 }
 
-func (m *Model) buildStatusHints(state render.VisibleRenderState) []string {
-	mode := input.ModeKind(strings.TrimSpace(state.InputMode))
+func (m *Model) buildStatusHints(vm render.RenderVM) []string {
+	mode := input.ModeKind(strings.TrimSpace(vm.Status.InputMode))
 	if mode == "" {
 		mode = input.ModeNormal
 	}
-	ctx := buildStatusHintContext(state)
+	ctx := buildStatusHintContext(vm)
 	out := make([]string, 0, 8)
 	seen := make(map[string]struct{})
 	for _, doc := range input.DefaultBindingCatalog() {
@@ -44,10 +46,31 @@ func (m *Model) buildStatusHints(state render.VisibleRenderState) []string {
 	return out
 }
 
-func buildStatusHintContext(state render.VisibleRenderState) statusHintContext {
-	ctx := statusHintContext{state: &state}
-	if state.Overlay.Kind == render.VisibleOverlayWorkspacePicker && state.Overlay.WorkspacePicker != nil {
-		if selected := state.Overlay.WorkspacePicker.SelectedItem(); selected != nil {
+func (m *Model) buildStatusBarRightTokens(vm render.RenderVM) []render.RenderStatusToken {
+	tokens := make([]render.RenderStatusToken, 0, 8)
+	if vm.Overlay.Kind == render.VisibleOverlayWorkspacePicker && vm.Overlay.WorkspacePicker != nil {
+		tokens = append(tokens, workspacePickerStatusBarRightTokens(vm.Overlay.WorkspacePicker.SelectedItem())...)
+	}
+	if vm.Workbench != nil {
+		tokens = append(tokens, render.RenderStatusToken{Label: "ws:" + vm.Workbench.WorkspaceName})
+		if label := floatingSummaryLabel(vm.Workbench); label != "" {
+			tokens = append(tokens, render.RenderStatusToken{
+				Kind:   render.HitRegionFloatingOverview,
+				Label:  label,
+				Action: input.SemanticAction{Kind: input.ActionOpenFloatingOverview},
+			})
+		}
+	}
+	if vm.Runtime != nil {
+		tokens = append(tokens, render.RenderStatusToken{Label: "terminals:" + strconv.Itoa(len(vm.Runtime.Terminals))})
+	}
+	return tokens
+}
+
+func buildStatusHintContext(vm render.RenderVM) statusHintContext {
+	ctx := statusHintContext{runtime: vm.Runtime}
+	if vm.Overlay.Kind == render.VisibleOverlayWorkspacePicker && vm.Overlay.WorkspacePicker != nil {
+		if selected := vm.Overlay.WorkspacePicker.SelectedItem(); selected != nil {
 			switch {
 			case selected.CreateNew:
 				ctx.selectedTreeKind = "create"
@@ -60,37 +83,37 @@ func buildStatusHintContext(state render.VisibleRenderState) statusHintContext {
 			}
 		}
 	}
-	if state.Workbench == nil {
+	if vm.Workbench == nil {
 		return ctx
 	}
-	ctx.tabCount = len(state.Workbench.Tabs)
-	ctx.workspaceCount = state.Workbench.WorkspaceCount
-	ctx.hasFloating = len(state.Workbench.FloatingPanes) > 0
-	if state.Workbench.ActiveTab < 0 || state.Workbench.ActiveTab >= len(state.Workbench.Tabs) {
+	ctx.tabCount = len(vm.Workbench.Tabs)
+	ctx.workspaceCount = vm.Workbench.WorkspaceCount
+	ctx.hasFloating = len(vm.Workbench.FloatingPanes) > 0
+	if vm.Workbench.ActiveTab < 0 || vm.Workbench.ActiveTab >= len(vm.Workbench.Tabs) {
 		return ctx
 	}
-	ctx.activeTab = &state.Workbench.Tabs[state.Workbench.ActiveTab]
+	ctx.activeTab = &vm.Workbench.Tabs[vm.Workbench.ActiveTab]
 	activePaneID := strings.TrimSpace(ctx.activeTab.ActivePaneID)
 	if activePaneID == "" {
 		return ctx
 	}
-	for i := range state.Workbench.FloatingPanes {
-		if state.Workbench.FloatingPanes[i].ID == activePaneID {
-			ctx.activePane = &state.Workbench.FloatingPanes[i]
+	for i := range vm.Workbench.FloatingPanes {
+		if vm.Workbench.FloatingPanes[i].ID == activePaneID {
+			ctx.activePane = &vm.Workbench.FloatingPanes[i]
 			ctx.activeIsFloating = true
 			break
 		}
 	}
 	if ctx.activePane == nil {
 		for i := range ctx.activeTab.Panes {
-			if state.Workbench.Tabs[state.Workbench.ActiveTab].Panes[i].ID == activePaneID {
+			if vm.Workbench.Tabs[vm.Workbench.ActiveTab].Panes[i].ID == activePaneID {
 				ctx.activePane = &ctx.activeTab.Panes[i]
 				break
 			}
 		}
 	}
 	if ctx.activePane != nil {
-		ctx.activeRole = paneRoleInVisibleRuntime(state.Runtime, ctx.activePane.ID)
+		ctx.activeRole = paneRoleInVisibleRuntime(vm.Runtime, ctx.activePane.ID)
 	}
 	return ctx
 }
@@ -187,10 +210,10 @@ func (c statusHintContext) activePaneConnected() bool {
 }
 
 func (c statusHintContext) activePaneExited() bool {
-	if !c.activePaneConnected() || c.state == nil || c.state.Runtime == nil {
+	if !c.activePaneConnected() || c.runtime == nil {
 		return false
 	}
-	for _, terminal := range c.state.Runtime.Terminals {
+	for _, terminal := range c.runtime.Terminals {
 		if terminal.TerminalID == c.activePane.TerminalID {
 			return terminal.State == "exited"
 		}
@@ -212,4 +235,67 @@ func paneRoleInVisibleRuntime(runtimeState *render.VisibleRuntimeStateProxy, pan
 		}
 	}
 	return ""
+}
+
+func workspacePickerStatusBarRightTokens(item *modal.WorkspacePickerItem) []render.RenderStatusToken {
+	if item == nil {
+		return nil
+	}
+	switch {
+	case item.CreateNew:
+		label := "sel:new-workspace"
+		if name := strings.TrimSpace(item.CreateName); name != "" {
+			label = "sel:new:" + name
+		}
+		return []render.RenderStatusToken{{Label: label}}
+	case strings.TrimSpace(item.PaneID) != "":
+		tokens := []render.RenderStatusToken{{Label: "sel:pane:" + strings.TrimSpace(item.Name)}}
+		if state := strings.TrimSpace(item.State); state != "" {
+			tokens = append(tokens, render.RenderStatusToken{Label: state})
+		}
+		if role := strings.TrimSpace(item.Role); role != "" {
+			tokens = append(tokens, render.RenderStatusToken{Label: role})
+		}
+		if item.Floating {
+			tokens = append(tokens, render.RenderStatusToken{Label: "floating"})
+		}
+		return tokens
+	case strings.TrimSpace(item.TabID) != "":
+		tokens := []render.RenderStatusToken{{Label: "sel:tab:" + strings.TrimSpace(item.Name)}}
+		if item.PaneCount > 0 {
+			tokens = append(tokens, render.RenderStatusToken{Label: "panes:" + strconv.Itoa(item.PaneCount)})
+		}
+		if item.FloatingCount > 0 {
+			tokens = append(tokens, render.RenderStatusToken{Label: "float:" + strconv.Itoa(item.FloatingCount)})
+		}
+		return tokens
+	default:
+		tokens := []render.RenderStatusToken{{Label: "sel:ws:" + strings.TrimSpace(item.Name)}}
+		if item.TabCount > 0 {
+			tokens = append(tokens, render.RenderStatusToken{Label: "tabs:" + strconv.Itoa(item.TabCount)})
+		}
+		if item.PaneCount > 0 {
+			tokens = append(tokens, render.RenderStatusToken{Label: "panes:" + strconv.Itoa(item.PaneCount)})
+		}
+		if item.FloatingCount > 0 {
+			tokens = append(tokens, render.RenderStatusToken{Label: "float:" + strconv.Itoa(item.FloatingCount)})
+		}
+		return tokens
+	}
+}
+
+func floatingSummaryLabel(visible *workbench.VisibleWorkbench) string {
+	if visible == nil || visible.FloatingTotal == 0 {
+		return ""
+	}
+	if visible.FloatingCollapsed > 0 {
+		if visible.FloatingHidden > 0 {
+			return "float:" + strconv.Itoa(visible.FloatingTotal) + " collapsed:" + strconv.Itoa(visible.FloatingCollapsed) + " hidden:" + strconv.Itoa(visible.FloatingHidden)
+		}
+		return "float:" + strconv.Itoa(visible.FloatingTotal) + " collapsed:" + strconv.Itoa(visible.FloatingCollapsed)
+	}
+	if visible.FloatingHidden > 0 {
+		return "float:" + strconv.Itoa(visible.FloatingTotal) + " hidden:" + strconv.Itoa(visible.FloatingHidden)
+	}
+	return "float:" + strconv.Itoa(visible.FloatingTotal)
 }

@@ -18,6 +18,59 @@ func collectRegionsByKind(regions []HitRegion, kind HitRegionKind) []HitRegion {
 	return out
 }
 
+func vmFromState(state VisibleRenderState) RenderVM {
+	return RenderVM{
+		Workbench: state.Workbench,
+		Runtime:   state.Runtime,
+		Surface: RenderSurfaceVM{
+			Kind:         state.Surface.Kind,
+			TerminalPool: state.Surface.TerminalPool,
+		},
+		Overlay: RenderOverlayVM{
+			Kind:             state.Overlay.Kind,
+			Prompt:           state.Overlay.Prompt,
+			Picker:           state.Overlay.Picker,
+			WorkspacePicker:  state.Overlay.WorkspacePicker,
+			TerminalManager:  state.Overlay.TerminalManager,
+			Help:             state.Overlay.Help,
+			FloatingOverview: state.Overlay.FloatingOverview,
+		},
+		TermSize: state.TermSize,
+		Status: RenderStatusVM{
+			Notice:      state.Notice,
+			Error:       state.Error,
+			InputMode:   state.InputMode,
+			Hints:       append([]string(nil), state.StatusHints...),
+			RightTokens: append([]RenderStatusToken(nil), statusBarRightTokens(state)...),
+		},
+		Body: RenderBodyVM{
+			OwnerConfirmPaneID: state.OwnerConfirmPaneID,
+			EmptySelection: RenderPaneSelectionVM{
+				PaneID: state.EmptyPaneSelectionPaneID,
+				Index:  state.EmptyPaneSelectionIndex,
+			},
+			ExitedSelection: RenderPaneSelectionVM{
+				PaneID: state.ExitedPaneSelectionPaneID,
+				Index:  state.ExitedPaneSelectionIndex,
+			},
+			SnapshotOverride: RenderSnapshotOverrideVM{
+				PaneID:   state.PaneSnapshotOverridePaneID,
+				Snapshot: state.PaneSnapshotOverride,
+			},
+			CopyMode: RenderCopyModeVM{
+				PaneID:     state.CopyModePaneID,
+				CursorRow:  state.CopyModeCursorRow,
+				CursorCol:  state.CopyModeCursorCol,
+				ViewTopRow: state.CopyModeViewTopRow,
+				MarkSet:    state.CopyModeMarkSet,
+				MarkRow:    state.CopyModeMarkRow,
+				MarkCol:    state.CopyModeMarkCol,
+				Snapshot:   state.CopyModeSnapshot,
+			},
+		},
+	}
+}
+
 func TestOverlayHitRegionsPickerRowsAndDismissUseCardLayout(t *testing.T) {
 	state := VisibleRenderState{
 		TermSize: TermSize{Width: 100, Height: 30},
@@ -33,7 +86,7 @@ func TestOverlayHitRegionsPickerRowsAndDismissUseCardLayout(t *testing.T) {
 		},
 	}
 
-	regions := OverlayHitRegions(state)
+	regions := OverlayHitRegions(vmFromState(state))
 	itemRegions := collectRegionsByKind(regions, HitRegionPickerItem)
 	if len(itemRegions) != 3 {
 		t.Fatalf("expected 3 picker item regions, got %#v", itemRegions)
@@ -84,7 +137,7 @@ func TestOverlayHitRegionsWorkspacePickerItemRows(t *testing.T) {
 		},
 	}
 
-	regions := OverlayHitRegions(state)
+	regions := OverlayHitRegions(vmFromState(state))
 	itemRegions := collectRegionsByKind(regions, HitRegionWorkspaceItem)
 	if len(itemRegions) != 3 {
 		t.Fatalf("expected 3 workspace item regions including create row, got %#v", itemRegions)
@@ -108,7 +161,7 @@ func TestOverlayHitRegionsPromptAndHelpExposeCardAndDismiss(t *testing.T) {
 			},
 		},
 	}
-	promptRegions := OverlayHitRegions(promptState)
+	promptRegions := OverlayHitRegions(vmFromState(promptState))
 	if cards := collectRegionsByKind(promptRegions, HitRegionPromptCard); len(cards) != 1 {
 		t.Fatalf("expected one prompt card region, got %#v", cards)
 	}
@@ -147,7 +200,7 @@ func TestOverlayHitRegionsPromptAndHelpExposeCardAndDismiss(t *testing.T) {
 			},
 		},
 	}
-	helpRegions := OverlayHitRegions(helpState)
+	helpRegions := OverlayHitRegions(vmFromState(helpState))
 	if cards := collectRegionsByKind(helpRegions, HitRegionHelpCard); len(cards) != 1 {
 		t.Fatalf("expected one help card region, got %#v", cards)
 	}
@@ -166,7 +219,7 @@ func TestOverlayHitRegionsWorkspacePickerQueryInputUsesEditableFieldRect(t *test
 			},
 		},
 	}
-	regions := OverlayHitRegions(state)
+	regions := OverlayHitRegions(vmFromState(state))
 	queryRegions := collectRegionsByKind(regions, HitRegionOverlayQueryInput)
 	if len(queryRegions) != 1 {
 		t.Fatalf("expected one workspace query region, got %#v", queryRegions)
@@ -189,7 +242,7 @@ func TestOverlayHitRegionsPromptFooterKindMappingTracksClippedPrefix(t *testing.
 			Prompt: prompt,
 		},
 	}
-	regions := OverlayHitRegions(state)
+	regions := OverlayHitRegions(vmFromState(state))
 	lines, _ := promptOverlayContent(prompt)
 	footerSpecs := promptFooterActionSpecs(prompt)
 	width, height := overlayViewport(TermSize{Width: 60, Height: FrameBodyHeight(24)})
@@ -245,7 +298,7 @@ func TestOverlayHitRegionsPickerRowLimitMatchesRenderedListHeight(t *testing.T) 
 			Picker: &modal.PickerState{Items: items},
 		},
 	}
-	regions := OverlayHitRegions(state)
+	regions := OverlayHitRegions(vmFromState(state))
 	itemRegions := collectRegionsByKind(regions, HitRegionPickerItem)
 	layout := buildPickerCardLayout(100, FrameBodyHeight(28), len(items), false)
 	if len(itemRegions) != layout.listHeight {
@@ -265,7 +318,7 @@ func TestOverlayHitRegionsPickerHasNoFooterActionRegions(t *testing.T) {
 			},
 		},
 	}
-	regions := OverlayHitRegions(state)
+	regions := OverlayHitRegions(vmFromState(state))
 	actionRegions := collectRegionsByKind(regions, HitRegionOverlayFooterAction)
 	if len(actionRegions) != 0 {
 		t.Fatalf("expected picker overlay footer actions to be hidden, got %#v", actionRegions)
@@ -285,7 +338,7 @@ func TestOverlayHitRegionsWorkspacePickerFooterActionsExposeActionOrder(t *testi
 			},
 		},
 	}
-	regions := OverlayHitRegions(state)
+	regions := OverlayHitRegions(vmFromState(state))
 	actionRegions := collectRegionsByKind(regions, HitRegionOverlayFooterAction)
 	layout := buildWorkbenchTreeCardLayout(140, FrameBodyHeight(30), 3, 0)
 	_, expected := layoutOverlayFooterActions(workbenchTreeActionSpecs(state.Overlay.WorkspacePicker.SelectedItem()), workbench.Rect{
@@ -319,7 +372,7 @@ func TestOverlayHitRegionsTerminalManagerFooterActionsExposeActionOrder(t *testi
 			},
 		},
 	}
-	regions := OverlayHitRegions(state)
+	regions := OverlayHitRegions(vmFromState(state))
 	actionRegions := collectRegionsByKind(regions, HitRegionOverlayFooterAction)
 	fullActions := []input.ActionKind{
 		input.ActionSubmitPrompt,
@@ -357,7 +410,7 @@ func TestTerminalPoolHitRegionsRowsFollowGroupedListLayout(t *testing.T) {
 		},
 	}
 
-	regions := TerminalPoolHitRegions(state)
+	regions := TerminalPoolHitRegions(vmFromState(state))
 	itemRegions := collectRegionsByKind(regions, HitRegionTerminalPoolItem)
 	if len(itemRegions) != 3 {
 		t.Fatalf("expected 3 terminal pool item regions, got %#v", itemRegions)
@@ -385,7 +438,7 @@ func TestTerminalPoolHitRegionsIncludeFooterActions(t *testing.T) {
 		},
 	}
 
-	regions := TerminalPoolHitRegions(state)
+	regions := TerminalPoolHitRegions(vmFromState(state))
 	footerRegions := collectRegionsByKind(regions, HitRegionTerminalPoolAction)
 	wantActions := []input.ActionKind{
 		input.ActionSubmitPrompt,
@@ -429,7 +482,7 @@ func TestTerminalPoolHitRegionsIncludeQueryInput(t *testing.T) {
 		},
 	}
 
-	regions := TerminalPoolHitRegions(state)
+	regions := TerminalPoolHitRegions(vmFromState(state))
 	queryRegions := collectRegionsByKind(regions, HitRegionOverlayQueryInput)
 	if len(queryRegions) != 1 {
 		t.Fatalf("expected one terminal pool query region, got %#v", queryRegions)
@@ -452,7 +505,7 @@ func TestTerminalPoolHitRegionsClipsFooterActionsWhenWidthIsTight(t *testing.T) 
 		},
 	}
 
-	regions := TerminalPoolHitRegions(state)
+	regions := TerminalPoolHitRegions(vmFromState(state))
 	footerRegions := collectRegionsByKind(regions, HitRegionTerminalPoolAction)
 	if len(footerRegions) != 2 {
 		t.Fatalf("expected first 2 footer actions to fit, got %#v", footerRegions)

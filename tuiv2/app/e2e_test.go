@@ -1223,7 +1223,7 @@ func TestE2EMouseTopChromeOmitsManagementActions(t *testing.T) {
 		render.HitRegionWorkspaceRename,
 		render.HitRegionWorkspaceDelete,
 	} {
-		for _, region := range render.TabBarHitRegions(model.visibleRenderState()) {
+		for _, region := range render.TabBarHitRegions(model.renderVM()) {
 			if region.Kind == kind {
 				t.Fatalf("expected management region %q to be omitted, got %#v", kind, region)
 			}
@@ -2181,8 +2181,8 @@ func e2eMouseClickAtImmediate(t *testing.T, m *Model, x, y int) {
 
 func e2eDismissActiveOverlayIfAny(t *testing.T, m *Model) {
 	t.Helper()
-	state := m.visibleRenderState()
-	if state.Overlay.Kind == render.VisibleOverlayNone {
+	vm := m.renderVM()
+	if vm.Overlay.Kind == render.VisibleOverlayNone {
 		return
 	}
 	dismiss := e2eOverlayRegionByKind(t, m, render.HitRegionOverlayDismiss)
@@ -2203,8 +2203,8 @@ func e2eTypeText(t *testing.T, m *Model, text string) {
 
 func e2eTabBarRegionByKind(t *testing.T, m *Model, kind render.HitRegionKind) render.HitRegion {
 	t.Helper()
-	state := m.visibleRenderState()
-	regions := render.TabBarHitRegions(state)
+	vm := m.renderVM()
+	regions := render.TabBarHitRegions(vm)
 	for _, region := range regions {
 		if region.Kind == kind {
 			return region
@@ -2216,8 +2216,8 @@ func e2eTabBarRegionByKind(t *testing.T, m *Model, kind render.HitRegionKind) re
 
 func e2eOverlayRegionByKind(t *testing.T, m *Model, kind render.HitRegionKind) render.HitRegion {
 	t.Helper()
-	state := m.visibleRenderState()
-	regions := render.OverlayHitRegions(state)
+	vm := m.renderVM()
+	regions := render.OverlayHitRegions(vm)
 	for _, region := range regions {
 		if region.Kind == kind {
 			return region
@@ -2229,8 +2229,8 @@ func e2eOverlayRegionByKind(t *testing.T, m *Model, kind render.HitRegionKind) r
 
 func e2eOverlayFooterActionRegion(t *testing.T, m *Model, kind input.ActionKind) render.HitRegion {
 	t.Helper()
-	state := m.visibleRenderState()
-	regions := render.OverlayHitRegions(state)
+	vm := m.renderVM()
+	regions := render.OverlayHitRegions(vm)
 	for _, region := range regions {
 		if region.Kind == render.HitRegionOverlayFooterAction && region.Action.Kind == kind {
 			return region
@@ -2242,8 +2242,8 @@ func e2eOverlayFooterActionRegion(t *testing.T, m *Model, kind input.ActionKind)
 
 func e2eOverlayWorkspaceItemRegion(t *testing.T, m *Model, index int) render.HitRegion {
 	t.Helper()
-	state := m.visibleRenderState()
-	regions := render.OverlayHitRegions(state)
+	vm := m.renderVM()
+	regions := render.OverlayHitRegions(vm)
 	for _, region := range regions {
 		if region.Kind == render.HitRegionWorkspaceItem && region.ItemIndex == index {
 			return region
@@ -2276,8 +2276,8 @@ func setCreateTerminalFormField(prompt *modal.PromptState, key, value string) {
 
 func overlayPickerItemRegion(t *testing.T, m *Model, index int) render.HitRegion {
 	t.Helper()
-	state := m.visibleRenderState()
-	regions := render.OverlayHitRegions(state)
+	vm := m.renderVM()
+	regions := render.OverlayHitRegions(vm)
 	for _, region := range regions {
 		if region.Kind == render.HitRegionPickerItem && region.ItemIndex == index {
 			return region

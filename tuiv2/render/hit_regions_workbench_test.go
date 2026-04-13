@@ -27,6 +27,24 @@ func makeTabBarState(width int, tabs []string) VisibleRenderState {
 	}
 }
 
+func makeTabBarVM(width int, tabs []string) RenderVM {
+	visibleTabs := make([]workbench.VisibleTab, 0, len(tabs))
+	for index, name := range tabs {
+		visibleTabs = append(visibleTabs, workbench.VisibleTab{
+			ID:   fmt.Sprintf("tab-%d", index+1),
+			Name: name,
+		})
+	}
+	return RenderVM{
+		Workbench: &workbench.VisibleWorkbench{
+			WorkspaceName: "main",
+			ActiveTab:     0,
+			Tabs:          visibleTabs,
+		},
+		TermSize: TermSize{Width: width, Height: 20},
+	}
+}
+
 func TestRenderTabBarIncludesCloseAndCreateAffordances(t *testing.T) {
 	state := makeTabBarState(120, []string{"build", "logs"})
 
@@ -43,8 +61,7 @@ func TestRenderTabBarIncludesCloseAndCreateAffordances(t *testing.T) {
 }
 
 func TestTabBarHitRegionsExposeStableTopBarTargets(t *testing.T) {
-	state := makeTabBarState(120, []string{"build", "logs"})
-	regions := TabBarHitRegions(state)
+	regions := TabBarHitRegions(makeTabBarVM(120, []string{"build", "logs"}))
 	if len(regions) == 0 {
 		t.Fatal("expected tab bar hit regions")
 	}
@@ -78,7 +95,7 @@ func TestTabBarHitRegionsExposeStableTopBarTargets(t *testing.T) {
 
 func TestTabBarHitRegionsDropCreateWhenWidthIsTight(t *testing.T) {
 	state := makeTabBarState(21, []string{"a"})
-	regions := TabBarHitRegions(state)
+	regions := TabBarHitRegions(makeTabBarVM(21, []string{"a"}))
 	line := xansi.Strip(renderTabBar(state))
 
 	for _, region := range regions {
@@ -105,7 +122,7 @@ func TestTabBarRetainsWorkspaceAndCreateAffordanceWhenWorkspaceHasNoTabs(t *test
 		t.Fatalf("expected empty workspace tab bar to keep create affordance, got %q", line)
 	}
 
-	regions := TabBarHitRegions(state)
+	regions := TabBarHitRegions(makeTabBarVM(120, nil))
 	counts := map[HitRegionKind]int{}
 	for _, region := range regions {
 		counts[region.Kind]++
@@ -120,7 +137,7 @@ func TestTabBarRetainsWorkspaceAndCreateAffordanceWhenWorkspaceHasNoTabs(t *test
 
 func TestTabBarOmitsWorkspaceAndTabManagementActions(t *testing.T) {
 	state := makeTabBarState(200, []string{"build", "logs"})
-	regions := TabBarHitRegions(state)
+	regions := TabBarHitRegions(makeTabBarVM(200, []string{"build", "logs"}))
 	line := xansi.Strip(renderTabBar(state))
 
 	disallowedKinds := []HitRegionKind{
@@ -147,8 +164,7 @@ func TestTabBarOmitsWorkspaceAndTabManagementActions(t *testing.T) {
 }
 
 func TestTabBarHitRegionsKeepOnlyCoreNavigation(t *testing.T) {
-	wide := makeTabBarState(120, []string{"a"})
-	wideRegions := TabBarHitRegions(wide)
+	wideRegions := TabBarHitRegions(makeTabBarVM(120, []string{"a"}))
 	wideHasCreate := false
 	for _, region := range wideRegions {
 		if region.Kind == HitRegionTabCreate {
@@ -159,8 +175,7 @@ func TestTabBarHitRegionsKeepOnlyCoreNavigation(t *testing.T) {
 		t.Fatalf("expected baseline width to contain create action, got %#v", wideRegions)
 	}
 
-	tight := makeTabBarState(26, []string{"a"})
-	tightRegions := TabBarHitRegions(tight)
+	tightRegions := TabBarHitRegions(makeTabBarVM(26, []string{"a"}))
 	coreCounts := map[HitRegionKind]int{}
 	for _, region := range tightRegions {
 		coreCounts[region.Kind]++

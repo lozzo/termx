@@ -16,6 +16,7 @@ import (
 
 var errorClearDelay = 3 * time.Second
 var ownerConfirmDelay = 400 * time.Millisecond
+var sharedTerminalSnapshotResyncDelay = 120 * time.Millisecond
 
 const (
 	defaultTerminalSnapshotScrollbackLimit = 500
@@ -70,15 +71,15 @@ func (m *Model) allowVerticalScrollOptimization() bool {
 	if m == nil || m.workbench == nil {
 		return false
 	}
-	state := m.visibleRenderState()
-	if state.Surface.Kind != render.VisibleSurfaceWorkbench || state.Overlay.Kind != render.VisibleOverlayNone || state.Workbench == nil {
+	vm := m.renderVM()
+	if vm.Surface.Kind != render.VisibleSurfaceWorkbench || vm.Overlay.Kind != render.VisibleOverlayNone || vm.Workbench == nil {
 		return false
 	}
-	activeTab := state.Workbench.ActiveTab
-	if activeTab < 0 || activeTab >= len(state.Workbench.Tabs) {
+	activeTab := vm.Workbench.ActiveTab
+	if activeTab < 0 || activeTab >= len(vm.Workbench.Tabs) {
 		return false
 	}
-	visiblePaneCount := len(state.Workbench.Tabs[activeTab].Panes) + len(state.Workbench.FloatingPanes)
+	visiblePaneCount := len(vm.Workbench.Tabs[activeTab].Panes) + len(vm.Workbench.FloatingPanes)
 	return visiblePaneCount <= 1
 }
 

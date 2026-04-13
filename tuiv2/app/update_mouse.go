@@ -118,17 +118,17 @@ func (m *Model) handleMouseClickNonFloating(x, y int) tea.Cmd {
 func (m *Model) handleMouseClick(msg tea.MouseMsg) tea.Cmd {
 	x := msg.X
 	y := msg.Y
-	state := m.visibleRenderState()
-	if handled, cmd := m.handleOverlayMouseClick(state, x, y); handled {
+	vm := m.renderVM()
+	if handled, cmd := m.handleOverlayMouseClick(vm, x, y); handled {
 		return cmd
 	}
-	if handled, cmd := m.handleTerminalPoolMouseClick(state, x, y); handled {
+	if handled, cmd := m.handleTerminalPoolMouseClick(vm, x, y); handled {
 		return cmd
 	}
-	if handled, cmd := m.handleTopChromeMouseClick(state, x, y); handled {
+	if handled, cmd := m.handleTopChromeMouseClick(vm, x, y); handled {
 		return cmd
 	}
-	if handled, cmd := m.handleBottomChromeMouseClick(state, x, y); handled {
+	if handled, cmd := m.handleBottomChromeMouseClick(vm, x, y); handled {
 		return cmd
 	}
 	if m.mode().Kind == input.ModeDisplay && m.startMouseCopySelection(x, y) {

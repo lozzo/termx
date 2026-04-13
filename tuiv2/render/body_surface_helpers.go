@@ -8,9 +8,13 @@ import (
 )
 
 func renderEmptyWorkbenchBody(state VisibleRenderState, width, height int, kind emptyWorkbenchKind) renderedBody {
+	return renderEmptyWorkbenchBodyVM(RenderVMFromVisibleState(state), width, height, kind)
+}
+
+func renderEmptyWorkbenchBodyVM(vm RenderVM, width, height int, kind emptyWorkbenchKind) renderedBody {
 	canvas := newComposedCanvas(width, height)
-	canvas.hostEmojiVS16Mode = emojiVariationSelectorModeForRuntime(state.Runtime)
-	theme := uiThemeForState(state)
+	canvas.hostEmojiVS16Mode = emojiVariationSelectorModeForRuntime(vm.Runtime)
+	theme := uiThemeForRuntime(vm.Runtime)
 
 	headline := "No tabs in this workspace"
 	details := []string{
@@ -84,12 +88,16 @@ func renderPageWithPinnedFooter(headerLines, contentLines []string, footerLine s
 }
 
 func immersiveZoomActive(state VisibleRenderState) bool {
-	if state.Surface.Kind != VisibleSurfaceWorkbench || state.Workbench == nil {
+	return immersiveZoomActiveVM(RenderVMFromVisibleState(state))
+}
+
+func immersiveZoomActiveVM(vm RenderVM) bool {
+	if vm.Surface.Kind != VisibleSurfaceWorkbench || vm.Workbench == nil {
 		return false
 	}
-	activeTab := state.Workbench.ActiveTab
-	if activeTab < 0 || activeTab >= len(state.Workbench.Tabs) {
+	activeTab := vm.Workbench.ActiveTab
+	if activeTab < 0 || activeTab >= len(vm.Workbench.Tabs) {
 		return false
 	}
-	return strings.TrimSpace(state.Workbench.Tabs[activeTab].ZoomedPaneID) != ""
+	return strings.TrimSpace(vm.Workbench.Tabs[activeTab].ZoomedPaneID) != ""
 }

@@ -656,7 +656,8 @@ func TestRenderFrameProjectsHostCursorForLeftSplitPane(t *testing.T) {
 		state.Workbench.FloatingPanes,
 		40, 4,
 		newRuntimeLookup(state.Runtime),
-		"", "", -1, "", -1, true, state, uiThemeForRuntime(state.Runtime),
+		bodyProjectionOptionsForVM(RenderVMFromVisibleState(state), true),
+		uiThemeForRuntime(state.Runtime),
 	)
 	target, ok := activeEntryCursorRenderTarget(entries, state.Runtime)
 	if !ok {
@@ -726,7 +727,8 @@ func TestRenderFrameKeepsHostCursorForRightmostSplitPane(t *testing.T) {
 		state.Workbench.FloatingPanes,
 		40, 4,
 		newRuntimeLookup(state.Runtime),
-		"", "", -1, "", -1, true, state, uiThemeForRuntime(state.Runtime),
+		bodyProjectionOptionsForVM(RenderVMFromVisibleState(state), true),
+		uiThemeForRuntime(state.Runtime),
 	)
 	target, ok := activeEntryCursorRenderTarget(entries, state.Runtime)
 	if !ok {
@@ -800,7 +802,8 @@ func TestRenderFrameRestoresSplitPaneHostCursorAfterOverlayBlinkOff(t *testing.T
 		base.Workbench.FloatingPanes,
 		40, 4,
 		newRuntimeLookup(base.Runtime),
-		"", "", -1, "", -1, true, base, uiThemeForRuntime(base.Runtime),
+		bodyProjectionOptionsForVM(RenderVMFromVisibleState(base), true),
+		uiThemeForRuntime(base.Runtime),
 	)
 	target, ok := activeEntryCursorRenderTarget(entries, base.Runtime)
 	if !ok {

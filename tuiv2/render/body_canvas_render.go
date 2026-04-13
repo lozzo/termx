@@ -7,11 +7,10 @@ import (
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
-func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entries []paneRenderEntry, width, height int) *composedCanvas {
+func renderBodyCanvas(coordinator *Coordinator, runtimeState *VisibleRuntimeStateProxy, immersiveZoom bool, entries []paneRenderEntry, width, height int) *composedCanvas {
 	finish := perftrace.Measure("render.body.canvas")
 	defer finish(0)
-	immersiveZoom := immersiveZoomActive(state)
-	hostEmojiMode := emojiVariationSelectorModeForRuntime(state.Runtime)
+	hostEmojiMode := emojiVariationSelectorModeForRuntime(runtimeState)
 	cursorOffsetY := TopChromeRows
 	if immersiveZoom {
 		cursorOffsetY = 0
@@ -24,15 +23,15 @@ func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entrie
 			if !entry.Frameless {
 				drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
 			}
-			drawPaneContentWithKey(canvas, entry.Rect, entry, state.Runtime)
+			drawPaneContentWithKey(canvas, entry.Rect, entry, runtimeState)
 		}
-		projectActiveEntryCursor(canvas, entries, state.Runtime)
+		projectActiveEntryCursor(canvas, entries, runtimeState)
 		return canvas
 	}
 	cache := coordinator.bodyCache
 	overlap := entriesOverlap(entries)
 	if cache == nil || !cache.matches(entries, width, height, hostEmojiMode) {
-		canvas := rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, coordinator.syntheticCursorVisible, state.Runtime)
+		canvas := rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, coordinator.syntheticCursorVisible, runtimeState)
 		coordinator.bodyCache = newBodyRenderCache(cache, canvas, entries, width, height)
 		return canvas
 	}
@@ -44,7 +43,7 @@ func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entrie
 	// styled content, prototype a damaged-rect path for non-overlapping floating
 	// moves before doing more ANSI micro-optimizations. Re-profile first.
 	if overlap {
-		canvas := rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, coordinator.syntheticCursorVisible, state.Runtime)
+		canvas := rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, coordinator.syntheticCursorVisible, runtimeState)
 		cache.canvas = canvas
 		cache.reset(entries, width, height)
 		return canvas
@@ -65,17 +64,17 @@ func renderBodyCanvas(coordinator *Coordinator, state VisibleRenderState, entrie
 				changed = true
 			}
 			if frameChanged || cache.contentKeys[entry.PaneID] != entry.ContentKey {
-				drawPaneContentFromCache(cache.canvas, cache, entry, state.Runtime, true)
+				drawPaneContentFromCache(cache.canvas, cache, entry, runtimeState, true)
 				changed = true
 			}
 		}
-		restoreActiveEntryContent(cache.canvas, entries, state.Runtime)
+		restoreActiveEntryContent(cache.canvas, entries, runtimeState)
 		if changed {
-			projectActiveEntryCursor(cache.canvas, entries, state.Runtime)
+			projectActiveEntryCursor(cache.canvas, entries, runtimeState)
 			cache.reset(entries, width, height)
 			return cache.canvas
 		}
-		projectActiveEntryCursor(cache.canvas, entries, state.Runtime)
+		projectActiveEntryCursor(cache.canvas, entries, runtimeState)
 		return cache.canvas
 	}
 

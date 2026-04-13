@@ -81,6 +81,95 @@ type tabBarPalette struct {
 	actionOnBG  string
 }
 
+func buildTabBarLayoutVM(vm RenderVM) tabBarLayout {
+	layout := tabBarLayout{
+		fallbackLabel: "[tuiv2]",
+		rightText:     tabBarRightTextVM(vm),
+		palette:       tabBarPaletteForVM(vm),
+	}
+	if vm.Workbench == nil {
+		return layout
+	}
+
+	layout.fallbackLabel = ""
+	workspaceName := strings.TrimSpace(vm.Workbench.WorkspaceName)
+	if workspaceName == "" {
+		workspaceName = "workspace"
+	}
+	layout.workspaceLabel = workspaceName
+	layout.createLabel = "+"
+
+	maxLeftWidth := vm.TermSize.Width - xansi.StringWidth(layout.rightText)
+	if maxLeftWidth < 0 {
+		maxLeftWidth = 0
+	}
+
+	workspaceWidth := xansi.StringWidth(renderWorkspaceToken(layout.workspaceLabel, layout.palette))
+	if workspaceWidth > maxLeftWidth {
+		return layout
+	}
+	layout.workspaceRect = workbench.Rect{X: 0, Y: 0, W: workspaceWidth, H: 1}
+
+	x := workspaceWidth
+	sepWidth := xansi.StringWidth(renderTabSeparator())
+	layout.tabs = make([]tabBarItemLayout, 0, len(vm.Workbench.Tabs))
+	for i, tab := range vm.Workbench.Tabs {
+		name := strings.TrimSpace(tab.Name)
+		if name == "" {
+			name = fmt.Sprintf("tab %d", i+1)
+		}
+		active := i == vm.Workbench.ActiveTab
+		switchWidth := xansi.StringWidth(renderTabSwitchToken(i+1, name, active, layout.palette))
+		closeWidth := xansi.StringWidth(renderTabCloseToken(active, layout.palette))
+		totalWidth := sepWidth + switchWidth + closeWidth
+		if x+totalWidth > maxLeftWidth {
+			break
+		}
+
+		x += sepWidth
+		item := tabBarItemLayout{
+			Label:    name,
+			Rect:     workbench.Rect{X: x, Y: 0, W: switchWidth, H: 1},
+			Active:   active,
+			TabIndex: i,
+			TabID:    tab.ID,
+		}
+		x += switchWidth
+		item.CloseRect = workbench.Rect{X: x, Y: 0, W: closeWidth, H: 1}
+		x += closeWidth
+		layout.tabs = append(layout.tabs, item)
+	}
+
+	createWidth := xansi.StringWidth(renderTabCreateToken(layout.createLabel, layout.palette))
+	if x+sepWidth+createWidth <= maxLeftWidth-tabBarCreateReserve {
+		layout.createRect = workbench.Rect{
+			X: x + sepWidth,
+			Y: 0,
+			W: createWidth,
+			H: 1,
+		}
+		x = layout.createRect.X + createWidth
+	}
+
+	layout.actions = make([]tabBarActionLayout, 0, 8)
+	for _, spec := range tabBarActionSpecsVM(vm) {
+		slotWidth := xansi.StringWidth(renderTopBarActionToken(spec.Label, spec.Active))
+		if x+sepWidth+slotWidth > maxLeftWidth-tabBarActionReserve {
+			break
+		}
+		rect := workbench.Rect{X: x + sepWidth, Y: 0, W: slotWidth, H: 1}
+		layout.actions = append(layout.actions, tabBarActionLayout{
+			Kind:   spec.Kind,
+			Label:  spec.Label,
+			Rect:   rect,
+			Action: spec.Action,
+			Active: spec.Active,
+		})
+		x = rect.X + rect.W
+	}
+	return layout
+}
+
 func buildTabBarLayout(state VisibleRenderState) tabBarLayout {
 	layout := tabBarLayout{
 		fallbackLabel: "[tuiv2]",
@@ -174,8 +263,12 @@ func tabBarActionSpecs(state VisibleRenderState) []tabBarActionSpec {
 	return nil
 }
 
-func TabBarHitRegions(state VisibleRenderState) []HitRegion {
-	layout := buildTabBarLayout(state)
+func tabBarActionSpecsVM(vm RenderVM) []tabBarActionSpec {
+	return nil
+}
+
+func TabBarHitRegions(vm RenderVM) []HitRegion {
+	layout := buildTabBarLayoutVM(vm)
 	regions := make([]HitRegion, 0, len(layout.tabs)*2+2+len(layout.actions))
 	if layout.workspaceRect.W > 0 {
 		regions = append(regions, HitRegion{
@@ -224,11 +317,11 @@ func TabBarHitRegions(state VisibleRenderState) []HitRegion {
 	return regions
 }
 
-func StatusBarHitRegions(state VisibleRenderState) []HitRegion {
-	if state.TermSize.Width <= 0 || state.TermSize.Height <= 0 {
+func StatusBarHitRegions(vm RenderVM) []HitRegion {
+	if vm.TermSize.Width <= 0 || vm.TermSize.Height <= 0 {
 		return nil
 	}
-	tokens := statusBarRightTokens(state)
+	tokens := statusBarRightTokensVM(vm)
 	if len(tokens) == 0 {
 		return nil
 	}
@@ -246,7 +339,7 @@ func StatusBarHitRegions(state VisibleRenderState) []HitRegion {
 		return nil
 	}
 	totalWidth += maxInt(0, len(labelWidths)-1)
-	x := maxInt(0, state.TermSize.Width-totalWidth)
+	x := maxInt(0, vm.TermSize.Width-totalWidth)
 	regions := make([]HitRegion, 0, len(tokens))
 	widthIndex := 0
 	for _, token := range tokens {
@@ -258,7 +351,7 @@ func StatusBarHitRegions(state VisibleRenderState) []HitRegion {
 		if token.Action.Kind != "" {
 			regions = append(regions, HitRegion{
 				Kind:   token.Kind,
-				Rect:   workbench.Rect{X: x, Y: state.TermSize.Height - 1, W: w, H: 1},
+				Rect:   workbench.Rect{X: x, Y: vm.TermSize.Height - 1, W: w, H: 1},
 				Action: token.Action,
 			})
 		}
@@ -300,6 +393,17 @@ func tabBarRightText(state VisibleRenderState) string {
 		rightParts = append(rightParts, statusPartErrorStyle(theme).Render(state.Error))
 	} else if state.Notice != "" {
 		rightParts = append(rightParts, statusPartNoticeStyle(theme).Render(state.Notice))
+	}
+	return strings.Join(rightParts, "  ")
+}
+
+func tabBarRightTextVM(vm RenderVM) string {
+	theme := uiThemeForRuntime(vm.Runtime)
+	var rightParts []string
+	if vm.Status.Error != "" {
+		rightParts = append(rightParts, statusPartErrorStyle(theme).Render(vm.Status.Error))
+	} else if vm.Status.Notice != "" {
+		rightParts = append(rightParts, statusPartNoticeStyle(theme).Render(vm.Status.Notice))
 	}
 	return strings.Join(rightParts, "  ")
 }
@@ -404,6 +508,27 @@ func renderTopBarActionTokenWithPalette(label string, active bool, palette tabBa
 
 func tabBarPaletteForState(state VisibleRenderState) tabBarPalette {
 	theme := uiThemeForState(state)
+	return tabBarPalette{
+		barBG:       theme.chromeBG,
+		workspaceFG: theme.tabWorkspaceFG,
+		workspaceBG: theme.tabWorkspaceBG,
+		activeFG:    theme.tabActiveFG,
+		activeBG:    theme.tabActiveBG,
+		inactiveFG:  theme.tabInactiveFG,
+		inactiveBG:  theme.tabInactiveBG,
+		createFG:    theme.tabCreateFG,
+		createBG:    theme.tabCreateBG,
+		accent:      theme.chromeAccent,
+		danger:      theme.danger,
+		actionFG:    theme.tabActionFG,
+		actionBG:    theme.tabActionBG,
+		actionOnFG:  theme.tabActionOnFG,
+		actionOnBG:  theme.tabActionOnBG,
+	}
+}
+
+func tabBarPaletteForVM(vm RenderVM) tabBarPalette {
+	theme := uiThemeForRuntime(vm.Runtime)
 	return tabBarPalette{
 		barBG:       theme.chromeBG,
 		workspaceFG: theme.tabWorkspaceFG,

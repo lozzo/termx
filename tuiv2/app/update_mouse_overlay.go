@@ -6,19 +6,19 @@ import (
 	"github.com/lozzow/termx/tuiv2/render"
 )
 
-func (m *Model) handleOverlayMouseClick(state render.VisibleRenderState, x, y int) (bool, tea.Cmd) {
-	if state.Overlay.Kind == render.VisibleOverlayNone {
+func (m *Model) handleOverlayMouseClick(vm render.RenderVM, x, y int) (bool, tea.Cmd) {
+	if vm.Overlay.Kind == render.VisibleOverlayNone {
 		return false, nil
 	}
 	bodyY := y - m.contentOriginY()
 	if bodyY < 0 {
 		return true, nil
 	}
-	region, ok := render.HitRegionAt(render.OverlayHitRegions(state), x, bodyY)
+	region, ok := render.HitRegionAt(render.OverlayHitRegions(vm), x, bodyY)
 	if !ok {
 		return true, nil
 	}
-	switch state.Overlay.Kind {
+	switch vm.Overlay.Kind {
 	case render.VisibleOverlayPicker:
 		if m.modalHost == nil || m.modalHost.Picker == nil {
 			return true, nil
@@ -74,10 +74,10 @@ func (m *Model) handleOverlayMouseClick(state render.VisibleRenderState, x, y in
 		if region.Kind == render.HitRegionOverlayDismiss {
 			return true, m.cancelActiveModal()
 		}
-		if state.Overlay.Kind == render.VisibleOverlayPrompt && region.Kind == render.HitRegionPromptInput {
+		if vm.Overlay.Kind == render.VisibleOverlayPrompt && region.Kind == render.HitRegionPromptInput {
 			return true, m.handlePromptInputMouseClick(region, x)
 		}
-		if state.Overlay.Kind == render.VisibleOverlayTerminalManager && region.Kind == render.HitRegionOverlayQueryInput {
+		if vm.Overlay.Kind == render.VisibleOverlayTerminalManager && region.Kind == render.HitRegionOverlayQueryInput {
 			return true, m.handleOverlayQueryInputMouseClick(region, overlayQueryTerminalManager, x)
 		}
 		return true, m.dispatchOverlayRegionAction(region.Action)
@@ -86,8 +86,8 @@ func (m *Model) handleOverlayMouseClick(state render.VisibleRenderState, x, y in
 	}
 }
 
-func (m *Model) handleOverlayMouseWheel(state render.VisibleRenderState, delta int) (bool, tea.Cmd) {
-	switch state.Overlay.Kind {
+func (m *Model) handleOverlayMouseWheel(vm render.RenderVM, delta int) (bool, tea.Cmd) {
+	switch vm.Overlay.Kind {
 	case render.VisibleOverlayPicker:
 		if m.modalHost != nil && m.modalHost.Picker != nil {
 			m.modalHost.Picker.Move(-delta)
@@ -161,7 +161,7 @@ func (m *Model) handleOverlayQueryInputMouseClick(region render.HitRegion, targe
 	return nil
 }
 
-func (m *Model) handleTerminalPoolMouseClick(state render.VisibleRenderState, x, y int) (bool, tea.Cmd) {
+func (m *Model) handleTerminalPoolMouseClick(vm render.RenderVM, x, y int) (bool, tea.Cmd) {
 	if m.terminalPage == nil {
 		return false, nil
 	}
@@ -169,7 +169,7 @@ func (m *Model) handleTerminalPoolMouseClick(state render.VisibleRenderState, x,
 	if bodyY < 0 {
 		return true, nil
 	}
-	region, ok := render.HitRegionAt(render.TerminalPoolHitRegions(state), x, bodyY)
+	region, ok := render.HitRegionAt(render.TerminalPoolHitRegions(vm), x, bodyY)
 	if !ok {
 		return true, nil
 	}
@@ -192,7 +192,7 @@ func (m *Model) handleTerminalPoolMouseClick(state render.VisibleRenderState, x,
 	}
 }
 
-func (m *Model) handleTerminalPoolMouseWheel(state render.VisibleRenderState, delta int) (bool, tea.Cmd) {
+func (m *Model) handleTerminalPoolMouseWheel(vm render.RenderVM, delta int) (bool, tea.Cmd) {
 	if m.terminalPage == nil {
 		return false, nil
 	}
@@ -201,14 +201,14 @@ func (m *Model) handleTerminalPoolMouseWheel(state render.VisibleRenderState, de
 	return true, nil
 }
 
-func (m *Model) handleTopChromeMouseClick(state render.VisibleRenderState, x, y int) (bool, tea.Cmd) {
+func (m *Model) handleTopChromeMouseClick(vm render.RenderVM, x, y int) (bool, tea.Cmd) {
 	if m != nil && m.immersiveZoomActive() {
 		return false, nil
 	}
 	if y != 0 {
 		return false, nil
 	}
-	region, ok := render.HitRegionAt(render.TabBarHitRegions(state), x, y)
+	region, ok := render.HitRegionAt(render.TabBarHitRegions(vm), x, y)
 	if !ok {
 		return false, nil
 	}
@@ -223,14 +223,14 @@ func (m *Model) handleTopChromeMouseClick(state render.VisibleRenderState, x, y 
 	}
 }
 
-func (m *Model) handleBottomChromeMouseClick(state render.VisibleRenderState, x, y int) (bool, tea.Cmd) {
+func (m *Model) handleBottomChromeMouseClick(vm render.RenderVM, x, y int) (bool, tea.Cmd) {
 	if m != nil && m.immersiveZoomActive() {
 		return false, nil
 	}
 	if m == nil || y != m.height-1 {
 		return false, nil
 	}
-	region, ok := render.HitRegionAt(render.StatusBarHitRegions(state), x, y)
+	region, ok := render.HitRegionAt(render.StatusBarHitRegions(vm), x, y)
 	if !ok {
 		return false, nil
 	}

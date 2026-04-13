@@ -24,19 +24,20 @@ import (
 )
 
 type Model struct {
-	cfg              shared.Config
-	statePath        string
-	width            int
-	height           int
-	quitting         bool
-	err              error
-	errorSeq         uint64
-	ownerSeq         uint64
-	notice           string
-	noticeSeq        uint64
-	yankBuffer       string
-	clipboardHistory []clipboardHistoryEntry
-	clipboardSeq     uint64
+	cfg               shared.Config
+	statePath         string
+	width             int
+	height            int
+	quitting          bool
+	err               error
+	errorSeq          uint64
+	ownerSeq          uint64
+	notice            string
+	noticeSeq         uint64
+	terminalResyncSeq uint64
+	yankBuffer        string
+	clipboardHistory  []clipboardHistoryEntry
+	clipboardSeq      uint64
 
 	sessionID        string
 	sessionViewID    string
@@ -129,7 +130,7 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 		pendingPaneResizes:  make(map[string]pendingPaneResize),
 	}
 	model.orchestrator = orchestrator.New(model.workbench, model.runtime)
-	model.render = render.NewCoordinator(func() render.VisibleRenderState { return model.visibleRenderState() })
+	model.render = render.NewCoordinatorWithVM(func() render.RenderVM { return model.renderVM() })
 	// Default invalidate: no-op until SetSendFunc is called by run.go.
 	if model.runtime != nil {
 		model.runtime.SetInvalidate(func() { model.queueInvalidate() })
