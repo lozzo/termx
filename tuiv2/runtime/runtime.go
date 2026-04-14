@@ -3,10 +3,13 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"image/color"
 	"maps"
+	"os"
 	"slices"
 	"sort"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -37,7 +40,13 @@ type Runtime struct {
 	inputBypassArmed atomic.Bool
 }
 
+type debugTraceLabelSetter interface {
+	SetDebugTraceLabel(label string)
+}
+
 const interactiveLatencyWindow = 24 * time.Millisecond
+
+var runtimeDebugTracePath = strings.TrimSpace(os.Getenv("TERMX_DEBUG_TRACE"))
 
 func New(client bridge.Client, opts ...Option) *Runtime {
 	r := &Runtime{
@@ -118,6 +127,7 @@ func (r *Runtime) clearPaneFromTerminal(terminal *TerminalRuntime, paneID string
 	if terminal == nil || paneID == "" {
 		return
 	}
+	appendSharedTerminalTrace("runtime.unbind.begin", terminal, "pane=%s", paneID)
 	terminal.BoundPaneIDs = removeBoundPaneID(terminal.BoundPaneIDs, paneID)
 	if terminal.OwnerPaneID == paneID {
 		terminal.OwnerPaneID = ""
@@ -127,6 +137,7 @@ func (r *Runtime) clearPaneFromTerminal(terminal *TerminalRuntime, paneID string
 		terminal.ControlPaneID = ""
 	}
 	r.syncTerminalOwnership(terminal)
+	appendSharedTerminalTrace("runtime.unbind.end", terminal, "pane=%s", paneID)
 }
 
 func (r *Runtime) touch() {
@@ -172,7 +183,16 @@ func (r *Runtime) ensureVTerm(terminal *TerminalRuntime) VTermLike {
 		r.applyHostColorsToVTerm(terminal.VTerm)
 		if terminal.Snapshot != nil {
 			loadSnapshotIntoVTerm(terminal.VTerm, terminal.Snapshot)
+			terminal.Surface = materializeSurfaceFromVTerm(terminal.VTerm)
+			if terminal.Surface != nil && terminal.SurfaceVersion == 0 {
+				terminal.SurfaceVersion = 1
+				terminal.PublishedGeneration = 1
+				terminal.PublishGeneration = 1
+			}
 		}
+	}
+	if setter, ok := terminal.VTerm.(debugTraceLabelSetter); ok {
+		setter.SetDebugTraceLabel("client:" + terminal.TerminalID)
 	}
 	terminal.VTerm.SetTitleHandler(func(title string) {
 		terminal.Title = title
@@ -370,5 +390,66 @@ func (r *Runtime) Visible() *VisibleRuntime {
 	}
 	r.visibleCache = visible
 	r.visibleVersion = r.version
+	r.appendDebugTrace(visible)
 	return visible
+}
+
+func (r *Runtime) appendDebugTrace(visible *VisibleRuntime) {
+	if r == nil || runtimeDebugTracePath == "" || visible == nil {
+		return
+	}
+	var b strings.Builder
+	b.WriteString(time.Now().Format(time.RFC3339Nano))
+	b.WriteString(" runtime.visible")
+	for _, term := range visible.Terminals {
+		b.WriteString(" term=")
+		b.WriteString(term.TerminalID)
+		b.WriteString(" surfVer=")
+		b.WriteString(fmt.Sprintf("%d", term.SurfaceVersion))
+		b.WriteString(" snapVer=")
+		b.WriteString(fmt.Sprintf("%d", term.SnapshotVersion))
+		if term.Surface != nil {
+			size := term.Surface.Size()
+			cursor := term.Surface.Cursor()
+			b.WriteString(" size=")
+			b.WriteString(fmt.Sprintf("%dx%d", size.Cols, size.Rows))
+			b.WriteString(" cursor=")
+			b.WriteString(fmt.Sprintf("%d,%d", cursor.Row, cursor.Col))
+			b.WriteString(" hash=")
+			b.WriteString(surfaceDigest(term.Surface))
+		}
+	}
+	b.WriteByte('\n')
+	appendRuntimeTraceLine(b.String())
+}
+
+func appendRuntimeTraceLine(line string) {
+	if runtimeDebugTracePath == "" || line == "" {
+		return
+	}
+	f, err := os.OpenFile(runtimeDebugTracePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.WriteString(line)
+}
+
+func surfaceDigest(surface TerminalSurface) string {
+	if surface == nil {
+		return "nil"
+	}
+	h := fnv.New64a()
+	size := surface.Size()
+	_, _ = h.Write([]byte(fmt.Sprintf("%d:%d|", size.Cols, size.Rows)))
+	for i := 0; i < surface.TotalRows(); i++ {
+		row := surface.Row(i)
+		for _, cell := range row {
+			_, _ = h.Write([]byte(cell.Content))
+			_, _ = h.Write([]byte{0})
+			_, _ = h.Write([]byte(fmt.Sprintf("%d|%s|%s|%t|%t|%t|%t|", cell.Width, cell.Style.FG, cell.Style.BG, cell.Style.Bold, cell.Style.Italic, cell.Style.Underline, cell.Style.Reverse)))
+		}
+		_, _ = h.Write([]byte{'\n'})
+	}
+	return fmt.Sprintf("%016x", h.Sum64())
 }

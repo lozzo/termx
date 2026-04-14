@@ -122,10 +122,12 @@ func (r *Runtime) AcquireTerminalOwnership(paneID, terminalID string) error {
 	if terminal.OwnerPaneID == paneID {
 		return nil
 	}
+	appendSharedTerminalTrace("runtime.owner.acquire.begin", terminal, "pane=%s", paneID)
 	terminal.OwnerPaneID = paneID
 	terminal.ControlPaneID = paneID
 	terminal.RequiresExplicitOwner = false
 	terminal.PendingOwnerResize = true
 	r.syncTerminalOwnership(terminal)
+	appendSharedTerminalTrace("runtime.owner.acquire.end", terminal, "pane=%s", paneID)
 	return nil
 }

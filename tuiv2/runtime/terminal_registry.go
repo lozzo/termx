@@ -29,6 +29,7 @@ type TerminalRuntime struct {
 	Snapshot        *bridge.SnapshotRef
 	SnapshotVersion uint64
 	SurfaceVersion  uint64
+	Surface         TerminalSurface
 	VTerm           VTermLike
 
 	ScrollbackLoadedLimit  int
@@ -47,8 +48,12 @@ type TerminalRuntime struct {
 	Stream   StreamState
 	Recovery RecoveryState
 
-	BootstrapPending bool
+	BootstrapPending       bool
+	PublishGeneration      uint64
+	PublishedGeneration    uint64
+	PublishScheduled       bool
 }
+
 
 func NewTerminalRegistry() *TerminalRegistry {
 	return &TerminalRegistry{terminals: make(map[string]*TerminalRuntime)}

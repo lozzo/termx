@@ -13,6 +13,7 @@ type StreamState struct {
 	Active     bool
 	Stop       func()
 	RetryCount int
+	Generation uint64
 
 	synchronizedOutputActive bool
 	synchronizedOutputTail   string
@@ -36,6 +37,7 @@ type VTermLike interface {
 	SetDefaultColors(fg, bg string)
 	SetIndexedColor(index int, value string)
 	SetTitleHandler(handler localvterm.TitleHandler)
+	SnapshotRenderState() localvterm.RenderState
 }
 
 type Option func(*Runtime)

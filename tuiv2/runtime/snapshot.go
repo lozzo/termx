@@ -49,9 +49,9 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 		}
 		r.ensureVTerm(terminal)
 		loadSnapshotIntoVTerm(terminal.VTerm, snapshot)
-		r.bumpSurfaceVersion(terminal)
-		terminal.SnapshotVersion = terminal.SurfaceVersion
 		terminal.ScrollbackLoadingLimit = 0
+		r.publishSurface(terminal)
+		terminal.SnapshotVersion = terminal.SurfaceVersion
 		r.touch()
 	}
 	return snapshot, nil
@@ -74,8 +74,10 @@ func (r *Runtime) refreshSnapshot(terminalID string) {
 		if terminal.ScrollbackLoadingLimit > 0 && len(terminal.Snapshot.Scrollback) >= terminal.ScrollbackLoadingLimit {
 			terminal.ScrollbackLoadingLimit = 0
 		}
+		if terminal.SnapshotVersion > terminal.SurfaceVersion {
+			terminal.SnapshotVersion = terminal.SurfaceVersion
+		}
 	}
-	r.invalidate()
 }
 
 func (r *Runtime) RefreshSnapshotFromVTerm(terminalID string) bool {

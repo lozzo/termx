@@ -1439,6 +1439,60 @@ func TestRuntimeStartStreamReconnectsAfterChannelClose(t *testing.T) {
 	}
 }
 
+func TestRuntimeReattachIgnoresLateFramesFromPreviousStreamGeneration(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+	client.listResult = &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
+		ID:    "term-1",
+		Name:  "shared",
+		State: "running",
+	}}}
+	rt := New(client)
+
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if err := rt.StartStream(ctx, "term-1"); err != nil {
+		t.Fatalf("start initial stream: %v", err)
+	}
+
+	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("seed")})
+	waitFor(t, func() bool {
+		stored := rt.Registry().Get("term-1")
+		return stored != nil && vtermContains(stored.VTerm, "seed")
+	})
+
+	client.attachResult = &protocol.AttachResult{Channel: 10, Mode: "collaborator"}
+	if _, err := rt.AttachTerminal(ctx, "pane-2", "term-1", "collaborator"); err != nil {
+		t.Fatalf("reattach terminal: %v", err)
+	}
+	if err := rt.StartStream(ctx, "term-1"); err != nil {
+		t.Fatalf("start replacement stream: %v", err)
+	}
+
+	waitFor(t, func() bool { return client.stopCount(9) > 0 })
+	waitFor(t, func() bool { return client.subscriptionCount(10) > 0 })
+
+	client.sendFrame(9, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("stale")})
+	client.sendFrame(10, protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("fresh")})
+
+	waitFor(t, func() bool {
+		stored := rt.Registry().Get("term-1")
+		return stored != nil && vtermContains(stored.VTerm, "fresh")
+	})
+
+	stored := rt.Registry().Get("term-1")
+	if stored == nil {
+		t.Fatal("expected terminal runtime after reattach")
+	}
+	if vtermContains(stored.VTerm, "stale") {
+		t.Fatalf("expected stale frame from previous stream generation to be ignored, got %#v", stored.VTerm.ScreenContent())
+	}
+}
+
 func TestRuntimeStreamResizeFrameRefreshesSnapshotGeometryDuringBootstrap(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

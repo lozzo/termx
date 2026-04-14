@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
@@ -54,6 +55,8 @@ type composedCanvas struct {
 	syntheticCursorBlink     bool
 	syntheticCursorVisibleFn func(protocol.CursorState) bool
 }
+
+var forceEmbeddedCompositorLines = os.Getenv("TERMX_FORCE_EMBEDDED_COMPOSITOR_LINES") == "1"
 
 func blankDrawCell() drawCell {
 	return drawCell{Content: " ", Width: 1}
@@ -431,6 +434,9 @@ func (c *composedCanvas) contentString() string {
 func (c *composedCanvas) contentLines() []string {
 	if c == nil {
 		return nil
+	}
+	if forceEmbeddedCompositorLines {
+		return c.embeddedContentLines()
 	}
 	c.ensureRowCache()
 	lines := make([]string, len(c.rowCache))

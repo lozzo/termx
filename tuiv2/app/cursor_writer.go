@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"hash/fnv"
 	"io"
 	"os"
 	"strconv"
@@ -58,6 +59,7 @@ type outputCursorWriter struct {
 	lastDirectCursor      string
 	lastFlushAt           time.Time
 	frameDumpPath         string
+	debugTracePath        string
 	disableVerticalScroll bool
 	drainHook             func()
 	interactiveFlushHint  func() bool
@@ -80,6 +82,7 @@ type framePresenter struct {
 	reclaim                            [][]presentedCell
 	ready                              bool
 	allowVerticalScroll                bool
+	disableRowDiff                     bool
 	fullWidthLines                     bool
 	debugFaultScrollDropRemainderEvery int
 	verticalScrollCount                int
@@ -138,6 +141,7 @@ func (p *framePresenter) Reset() {
 	p.reclaim = nil
 	p.ready = false
 	p.allowVerticalScroll = true
+	p.disableRowDiff = false
 	p.fullWidthLines = false
 	p.verticalScrollCount = 0
 }
@@ -295,7 +299,7 @@ func (p *framePresenter) renderChangedRows(next []string) (string, int, []presen
 		if len(prevRow.cells) > 0 {
 			reclaim = append(reclaim, prevRow.cells)
 		}
-		if !renderChangedRowDiff(&out, prevRow, nextRow, row, p.fullWidthLines) {
+		if p.disableRowDiff || !renderChangedRowDiff(&out, prevRow, nextRow, row, p.fullWidthLines) {
 			writeCUP(&out, 1, row+1)
 			out.WriteString(next[row])
 		}
@@ -460,6 +464,7 @@ func (w *outputCursorWriter) enterDirectTerminal() error {
 	w.pending = pendingDirectFrame{}
 	w.presenter.Reset()
 	w.presenter.allowVerticalScroll = !w.disableVerticalScroll
+	w.presenter.disableRowDiff = os.Getenv("TERMX_DISABLE_ROW_DIFF") == "1"
 	w.lastTTYWidth = 0
 	w.lastDirectCursor = ""
 	return nil
@@ -651,10 +656,6 @@ func (w *outputCursorWriter) shouldFlushDirectFrameImmediatelyLocked() bool {
 	if w == nil {
 		return false
 	}
-	if w.interactiveFlushHint != nil && w.interactiveFlushHint() {
-		perftrace.Count("cursor_writer.direct_flush.interactive_bypass", 0)
-		return true
-	}
 	if directFrameIdleThreshold <= 0 {
 		return true
 	}
@@ -712,6 +713,7 @@ func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite [
 	ioFinish(writtenBytes)
 	if err == nil {
 		w.appendFrameDumpLocked("direct_frame", output)
+		w.appendDebugTraceLocked("frame", payload, output, cursor)
 		w.lastDirectCursor = cursor
 	}
 	return err
@@ -763,6 +765,7 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, cursor string
 	ioFinish(writtenBytes)
 	if err == nil {
 		w.appendFrameDumpLocked("direct_frame", output)
+		w.appendDebugTraceLocked("frame", payload, output, cursor)
 		w.lastDirectCursor = cursor
 	}
 	return err
@@ -775,9 +778,11 @@ func newOutputCursorWriter(out io.Writer) *outputCursorWriter {
 	writer := &outputCursorWriter{
 		out:                   out,
 		frameDumpPath:         os.Getenv("TERMX_FRAME_DUMP"),
+		debugTracePath:        strings.TrimSpace(os.Getenv("TERMX_DEBUG_TRACE")),
 		disableVerticalScroll: os.Getenv("TERMX_DISABLE_VERTICAL_SCROLL") == "1",
 	}
 	writer.presenter.allowVerticalScroll = !writer.disableVerticalScroll
+	writer.presenter.disableRowDiff = os.Getenv("TERMX_DISABLE_ROW_DIFF") == "1"
 	writer.presenter.debugFaultScrollDropRemainderEvery = parsePositiveIntEnv("TERMX_DEBUG_FAULT_SCROLL_DROP_REMAINDER_EVERY")
 	if tty, ok := out.(xterm.File); ok {
 		writer.tty = tty
@@ -867,6 +872,24 @@ func (w *outputCursorWriter) appendFrameDumpLocked(kind, payload string) {
 	_, _ = io.WriteString(f, header)
 	_, _ = io.WriteString(f, payload)
 	_, _ = io.WriteString(f, "\n")
+}
+
+func (w *outputCursorWriter) appendDebugTraceLocked(kind, payload, output, cursor string) {
+	if w == nil || w.debugTracePath == "" {
+		return
+	}
+	f, err := os.OpenFile(w.debugTracePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = io.WriteString(f, fmt.Sprintf("%s writer.%s payloadHash=%016x outputHash=%016x cursorHash=%016x payloadLen=%d outputLen=%d\n", time.Now().Format(time.RFC3339Nano), kind, hashString64(payload), hashString64(output), hashString64(cursor), len(payload), len(output)))
+}
+
+func hashString64(s string) uint64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(s))
+	return h.Sum64()
 }
 
 func (w *outputCursorWriter) Write(p []byte) (int, error) {

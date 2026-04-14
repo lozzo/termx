@@ -186,6 +186,12 @@ func (m *Model) leaveCopyMode() {
 			tab.ScrollOffset = 0
 		}
 	}
+	if m.runtime != nil && m.workbench != nil {
+		if pane := m.workbench.ActivePane(); pane != nil && pane.TerminalID != "" {
+			m.runtime.RefreshSnapshotFromVTerm(pane.TerminalID)
+			m.runtime.PublishSurfaceForTesting(pane.TerminalID)
+		}
+	}
 	m.resetCopyMode()
 	m.render.Invalidate()
 }
