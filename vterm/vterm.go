@@ -1155,11 +1155,11 @@ func (v *VTerm) captureResizeTailFillLocked(oldCols, oldRows, newCols, newRows i
 	bg := make([]string, count)
 	hasAny := false
 	for y := 0; y < count; y++ {
-		cell := v.convertCell(v.emu.CellAt(oldCols-1, y))
-		if cell.Style.BG == "" {
+		fill := v.screenRowTailBackgroundLocked(y, oldCols)
+		if fill == "" {
 			continue
 		}
-		bg[y] = cell.Style.BG
+		bg[y] = fill
 		hasAny = true
 	}
 	if !hasAny {
@@ -1167,6 +1167,23 @@ func (v *VTerm) captureResizeTailFillLocked(oldCols, oldRows, newCols, newRows i
 	}
 	v.resizeTailStartCol = oldCols
 	v.resizeTailBG = bg
+}
+
+func (v *VTerm) screenRowTailBackgroundLocked(y, width int) string {
+	if v == nil || v.emu == nil || y < 0 || y >= v.emu.Height() || width <= 0 {
+		return ""
+	}
+	if width > v.emu.Width() {
+		width = v.emu.Width()
+	}
+	for x := width - 1; x >= 0; x-- {
+		cell := v.convertCell(v.emu.CellAt(x, y))
+		if cell.Style.BG == "" {
+			continue
+		}
+		return cell.Style.BG
+	}
+	return ""
 }
 
 func (v *VTerm) applyResizeTailFillLocked(y int, row []Cell) {

@@ -132,6 +132,39 @@ func TestVTermResizeRoundTripPreservesBackgroundStyleAcrossExpandedTail(t *testi
 	}
 }
 
+func TestVTermResizeRoundTripUsesNearestTrailingBackgroundWhenEdgeCellHasNoBG(t *testing.T) {
+	vt := New(4, 2, 100, nil)
+	bg := CellStyle{BG: "#444444"}
+	screen := [][]Cell{
+		{
+			{Content: "f", Width: 1, Style: bg},
+			{Content: "o", Width: 1, Style: bg},
+			{Content: "o", Width: 1, Style: bg},
+			{Content: " ", Width: 1},
+		},
+		{
+			{Content: " ", Width: 1},
+			{Content: " ", Width: 1},
+			{Content: " ", Width: 1},
+			{Content: " ", Width: 1},
+		},
+	}
+	vt.LoadSnapshot(ScreenData{Cells: screen}, CursorState{Row: 0, Col: 0, Visible: true}, TerminalModes{AlternateScreen: true, MouseTracking: true})
+
+	vt.Resize(8, 2)
+
+	restored := vt.ScreenContent()
+	if len(restored.Cells) == 0 || len(restored.Cells[0]) < 8 {
+		t.Fatalf("unexpected restored screen dimensions: %#v", restored.Cells)
+	}
+	if got := restored.Cells[0][6].Style.BG; got != bg.BG {
+		t.Fatalf("expected expanded tail to use nearest trailing background %q, got %#v", bg.BG, restored.Cells[0][6])
+	}
+	if got := restored.Cells[1][6].Style.BG; got != "" {
+		t.Fatalf("expected row without any trailing background to stay unfilled, got %#v", restored.Cells[1][6])
+	}
+}
+
 func TestLoadSnapshotWithTimestampsRestoresRowTimes(t *testing.T) {
 	vt := New(6, 3, 100, nil)
 	scrollbackTS := []time.Time{time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC)}
