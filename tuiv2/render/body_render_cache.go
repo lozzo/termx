@@ -1,8 +1,6 @@
 package render
 
 import (
-	"os"
-
 	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -31,8 +29,6 @@ type paneContentSpriteCacheEntry struct {
 	key    paneContentSpriteKey
 	canvas *composedCanvas
 }
-
-var disablePaneContentSpriteCache = os.Getenv("TERMX_DISABLE_PANE_CONTENT_SPRITE_CACHE") == "1"
 
 func (c *bodyRenderCache) contentSprite(entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) *composedCanvas {
 	if c == nil {

@@ -12,7 +12,6 @@ func (r *Runtime) AttachTerminal(ctx context.Context, paneID, terminalID, mode s
 	if r == nil || r.client == nil {
 		return nil, shared.UserVisibleError{Op: "attach terminal", Err: fmt.Errorf("runtime client is nil")}
 	}
-	appendSharedTerminalTrace("runtime.attach.begin", r.registry.Get(terminalID), "pane=%s mode=%s", paneID, mode)
 	attached, err := r.client.Attach(ctx, terminalID, mode)
 	if err != nil {
 		return nil, shared.UserVisibleError{Op: "attach terminal", Err: err}
@@ -32,7 +31,6 @@ func (r *Runtime) AttachTerminal(ctx context.Context, paneID, terminalID, mode s
 	if terminal.VTerm != nil && terminal.Snapshot != nil {
 		r.bumpSurfaceVersion(terminal)
 	}
-	appendSharedTerminalTrace("runtime.attach.pre_unbind", terminal, "pane=%s channel=%d mode=%s", paneID, attached.Channel, attached.Mode)
 	r.unbindPaneFromTerminalCache(paneID, "")
 	binding := r.BindPane(paneID)
 	if binding != nil {
@@ -47,7 +45,6 @@ func (r *Runtime) AttachTerminal(ctx context.Context, paneID, terminalID, mode s
 	}
 	r.syncTerminalOwnership(terminal)
 	r.touch()
-	appendSharedTerminalTrace("runtime.attach.end", terminal, "pane=%s channel=%d mode=%s", paneID, attached.Channel, attached.Mode)
 	return terminal, nil
 }
 

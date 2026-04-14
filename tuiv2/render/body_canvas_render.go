@@ -1,15 +1,11 @@
 package render
 
 import (
-	"os"
-
 	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
-
-var disableBodyCache = os.Getenv("TERMX_DISABLE_BODY_CACHE") == "1"
 
 func renderBodyCanvas(coordinator *Coordinator, runtimeState *VisibleRuntimeStateProxy, immersiveZoom bool, entries []paneRenderEntry, width, height int) *composedCanvas {
 	finish := perftrace.Measure("render.body.canvas")
@@ -34,7 +30,7 @@ func renderBodyCanvas(coordinator *Coordinator, runtimeState *VisibleRuntimeStat
 	}
 	cache := coordinator.bodyCache
 	overlap := entriesOverlap(entries)
-	if disableBodyCache || cache == nil || !cache.matches(entries, width, height, hostEmojiMode) {
+	if cache == nil || !cache.matches(entries, width, height, hostEmojiMode) {
 		canvas := rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, coordinator.syntheticCursorVisible, runtimeState)
 		coordinator.bodyCache = newBodyRenderCache(cache, canvas, entries, width, height)
 		return canvas
@@ -113,7 +109,7 @@ func drawPaneContentFromCache(canvas *composedCanvas, cache *bodyRenderCache, en
 	if canvas == nil {
 		return
 	}
-	if cache == nil || disablePaneContentSpriteCache {
+	if cache == nil {
 		drawPaneContentWithKey(canvas, entry.Rect, entry, runtimeState)
 		return
 	}

@@ -1,9 +1,6 @@
 package render
 
 import (
-	"fmt"
-	"hash/fnv"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -33,8 +30,6 @@ type Coordinator struct {
 }
 
 const CursorBlinkInterval = 600 * time.Millisecond
-
-var renderDebugTracePath = strings.TrimSpace(os.Getenv("TERMX_DEBUG_TRACE"))
 
 type VisibleStateFn func() VisibleRenderState
 type RenderVMFn func() RenderVM
@@ -332,7 +327,6 @@ func (c *Coordinator) renderResult() (RenderResult, bool) {
 	}
 	c.mu.Unlock()
 	result := renderResultWithCoordinator(c, vm)
-	appendRenderTrace(vm, result)
 	c.mu.Lock()
 	c.lastResult = cloneRenderResult(result)
 	c.lastFrame = ""
@@ -363,49 +357,6 @@ func (c *Coordinator) frameFromResult(result RenderResult) string {
 		return frame
 	}
 	return result.Frame()
-}
-
-func appendRenderTrace(vm RenderVM, result RenderResult) {
-	if renderDebugTracePath == "" {
-		return
-	}
-	var b strings.Builder
-	b.WriteString(time.Now().Format(time.RFC3339Nano))
-	b.WriteString(" render.result")
-	b.WriteString(" lines=")
-	b.WriteString(fmt.Sprintf("%d", len(result.Lines)))
-	b.WriteString(" frameHash=")
-	b.WriteString(renderDigest(result.Frame()))
-	b.WriteString(" cursorHash=")
-	b.WriteString(renderDigest(result.Cursor))
-	if vm.Runtime != nil {
-		for _, term := range vm.Runtime.Terminals {
-			b.WriteString(" term=")
-			b.WriteString(term.TerminalID)
-			b.WriteString(":")
-			b.WriteString(fmt.Sprintf("%d/%d", term.SurfaceVersion, term.SnapshotVersion))
-		}
-	}
-	b.WriteByte('\n')
-	appendRenderTraceLine(b.String())
-}
-
-func appendRenderTraceLine(line string) {
-	if renderDebugTracePath == "" || line == "" {
-		return
-	}
-	f, err := os.OpenFile(renderDebugTracePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	_, _ = f.WriteString(line)
-}
-
-func renderDigest(s string) string {
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(s))
-	return fmt.Sprintf("%016x", h.Sum64())
 }
 
 func (c *Coordinator) renderTabBarCached(vm RenderVM) string {

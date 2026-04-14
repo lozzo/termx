@@ -3,9 +3,7 @@ package vterm
 import (
 	"bytes"
 	"fmt"
-	"hash/fnv"
 	"image/color"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,13 +19,6 @@ import (
 
 var safeEmulatorWrite = func(emu *charmvt.SafeEmulator, data []byte) (int, error) {
 	return emu.Write(data)
-}
-
-var vtermDebugTracePath = strings.TrimSpace(os.Getenv("TERMX_DEBUG_TRACE_VTERM"))
-var vtermTraceMu sync.Mutex
-
-func conservativeScreenRowsEnabled() bool {
-	return strings.TrimSpace(os.Getenv("TERMX_VTERM_CONSERVATIVE_SCREEN_ROWS")) == "1"
 }
 
 type Cell struct {
@@ -82,19 +73,6 @@ type ScreenData struct {
 	IsAlternateScreen bool
 }
 
-type RenderState struct {
-	Cols                 int
-	Rows                 int
-	Screen               ScreenData
-	Scrollback           [][]Cell
-	Cursor               CursorState
-	Modes                TerminalModes
-	ScreenTimestamps     []time.Time
-	ScrollbackTimestamps []time.Time
-	ScreenRowKinds       []string
-	ScrollbackRowKinds   []string
-}
-
 // ResponseHandler is called when the emulator produces a response (e.g. DSR
 // cursor position report). The data should be written to the PTY's stdin so
 // the child process receives it.
@@ -106,27 +84,25 @@ type TitleHandler func(title string)
 type VTerm struct {
 	emu *charmvt.SafeEmulator
 
-	mu              sync.RWMutex
-	cursor          CursorState
-	modes           TerminalModes
-	mouseMode       mouseModeState
-	resp            ResponseHandler
-	onTitle         TitleHandler
-	sbSize          int
-	defaultFG       string
-	defaultBG       string
-	palette         map[int]string
-	debugTraceLabel string
+	mu        sync.RWMutex
+	cursor    CursorState
+	modes     TerminalModes
+	mouseMode mouseModeState
+	resp      ResponseHandler
+	onTitle   TitleHandler
+	sbSize    int
+	defaultFG string
+	defaultBG string
+	palette   map[int]string
 
-	scrollbackTimestamps       []time.Time
-	screenTimestamps           []time.Time
-	scrollbackRowKinds         []string
-	screenRowKinds             []string
-	screenRowCache             [][]Cell
-	screenRowCacheConservative bool
-	scrollbackRowCache         [][]Cell
-	resizeTailStartCol         int
-	resizeTailBG               []string
+	scrollbackTimestamps []time.Time
+	screenTimestamps     []time.Time
+	scrollbackRowKinds   []string
+	screenRowKinds       []string
+	screenRowCache       [][]Cell
+	scrollbackRowCache   [][]Cell
+	resizeTailStartCol   int
+	resizeTailBG         []string
 
 	done chan struct{} // closed when drain goroutine exits
 }
@@ -256,7 +232,6 @@ func (v *VTerm) Write(data []byte) (n int, err error) {
 			err = fmt.Errorf("vterm write panic: %v", r)
 		}
 	}()
-	v.appendWriteTrace("before", data)
 	normalized := normalizeRenderableUTF8(data)
 	emulatorFinish := perftrace.Measure("vterm.write.emulator")
 	n, err = safeEmulatorWrite(v.emu, normalized)
@@ -270,94 +245,7 @@ func (v *VTerm) Write(data []byte) (n int, err error) {
 	reconcileFinish(0)
 	v.clearResizeTailFillLocked()
 	v.invalidateRowCachesLocked()
-	v.appendWriteTrace("after", normalized)
 	return n, err
-}
-
-func (v *VTerm) appendWriteTrace(phase string, payload []byte) {
-	if v == nil || vtermDebugTracePath == "" {
-		return
-	}
-	vtermTraceMu.Lock()
-	defer vtermTraceMu.Unlock()
-	f, err := os.OpenFile(vtermDebugTracePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	h := fnv.New64a()
-	_, _ = h.Write(payload)
-	cols, rows := 0, 0
-	if v.emu != nil {
-		cols, rows = v.emu.Width(), v.emu.Height()
-	}
-	_, _ = fmt.Fprintf(
-		f,
-		"%s vterm.%s label=%q len=%d hash=%016x size=%dx%d cursor=%d,%d\n",
-		time.Now().Format(time.RFC3339Nano),
-		phase,
-		v.debugTraceLabel,
-		len(payload),
-		h.Sum64(),
-		cols,
-		rows,
-		v.cursor.Row,
-		v.cursor.Col,
-	)
-	maxRows := 6
-	screen := v.screenRowsLocked()
-	if len(screen) < maxRows {
-		maxRows = len(screen)
-	}
-	for i := 0; i < maxRows; i++ {
-		line := debugPlainRow(screen[i], cols)
-		_, _ = fmt.Fprintf(f, "  row[%d] hash=%016x text=%q\n", i, hashDebugString(line), line)
-	}
-	if v.emu != nil {
-		rendered := v.emu.Render()
-		renderLines := strings.Split(rendered, "\n")
-		if len(renderLines) < maxRows {
-			maxRows = len(renderLines)
-		}
-		for i := 0; i < maxRows; i++ {
-			line := renderLines[i]
-			_, _ = fmt.Fprintf(f, "  emu[%d] hash=%016x text=%q\n", i, hashDebugString(line), line)
-		}
-	}
-}
-
-func debugPlainRow(row []Cell, width int) string {
-	if width <= 0 {
-		width = len(row)
-	}
-	var b strings.Builder
-	col := 0
-	for i := 0; i < len(row) && col < width; i++ {
-		cell := row[i]
-		if cell.Content == "" && cell.Width == 0 {
-			continue
-		}
-		content := cell.Content
-		if content == "" {
-			content = " "
-		}
-		w := cell.Width
-		if w <= 0 {
-			w = 1
-		}
-		if col+w > width {
-			break
-		}
-		b.WriteString(content)
-		col += w
-	}
-	return b.String()
-}
-
-func hashDebugString(s string) uint64 {
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(s))
-	return h.Sum64()
 }
 
 func (v *VTerm) Close() error {
@@ -482,40 +370,6 @@ func (v *VTerm) CellAt(x, y int) Cell {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	return v.convertCell(v.emu.CellAt(x, y))
-}
-
-func (v *VTerm) SnapshotRenderState() RenderState {
-	v.mu.RLock()
-	defer v.mu.RUnlock()
-	cols, rows := 0, 0
-	if v.emu != nil {
-		cols, rows = v.emu.Width(), v.emu.Height()
-	}
-	screenRows := v.screenRowsLocked()
-	outScreen := make([][]Cell, len(screenRows))
-	for i, row := range screenRows {
-		outScreen[i] = cloneCellSlice(row)
-	}
-	scrollbackRows := v.scrollbackRowsLocked()
-	outScrollback := make([][]Cell, len(scrollbackRows))
-	for i, row := range scrollbackRows {
-		outScrollback[i] = cloneCellSlice(row)
-	}
-	return RenderState{
-		Cols: cols,
-		Rows: rows,
-		Screen: ScreenData{
-			Cells:             outScreen,
-			IsAlternateScreen: v.emu != nil && v.emu.IsAltScreen(),
-		},
-		Scrollback:           outScrollback,
-		Cursor:               v.cursor,
-		Modes:                v.modes,
-		ScreenTimestamps:     cloneTimeSlice(v.screenTimestamps),
-		ScrollbackTimestamps: cloneTimeSlice(v.scrollbackTimestamps),
-		ScreenRowKinds:       cloneStringSlice(v.screenRowKinds),
-		ScrollbackRowKinds:   cloneStringSlice(v.scrollbackRowKinds),
-	}
 }
 
 func (v *VTerm) ScreenContent() ScreenData {
@@ -1065,12 +919,6 @@ func (v *VTerm) SetTitleHandler(handler TitleHandler) {
 	v.onTitle = handler
 }
 
-func (v *VTerm) SetDebugTraceLabel(label string) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	v.debugTraceLabel = strings.TrimSpace(label)
-}
-
 func (v *VTerm) SetDefaultColors(fg, bg string) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -1235,12 +1083,6 @@ func (v *VTerm) screenRowViewLocked(y int) []Cell {
 	if v.emu == nil || y < 0 || y >= v.emu.Height() {
 		return nil
 	}
-	if conservativeScreenRowsEnabled() {
-		v.ensureScreenRowCacheModeLocked(true)
-		v.ensureConservativeScreenRowsLocked()
-		return v.screenRowCache[y]
-	}
-	v.ensureScreenRowCacheModeLocked(false)
 	if cached := v.screenRowCache[y]; cached != nil {
 		return cached
 	}
@@ -1252,51 +1094,6 @@ func (v *VTerm) screenRowViewLocked(y int) []Cell {
 	v.applyResizeTailFillLocked(y, row)
 	v.screenRowCache[y] = row
 	return row
-}
-
-func (v *VTerm) ensureScreenRowCacheModeLocked(conservative bool) {
-	if v == nil || v.emu == nil || v.screenRowCacheConservative == conservative {
-		return
-	}
-	clear(v.screenRowCache)
-	v.screenRowCacheConservative = conservative
-}
-
-func (v *VTerm) ensureConservativeScreenRowsLocked() {
-	if v == nil || v.emu == nil {
-		return
-	}
-	if len(v.screenRowCache) != v.emu.Height() {
-		v.invalidateRowCachesLocked()
-		v.screenRowCacheConservative = true
-	}
-	ready := true
-	for y := 0; y < len(v.screenRowCache); y++ {
-		if v.screenRowCache[y] == nil {
-			ready = false
-			break
-		}
-	}
-	if ready {
-		return
-	}
-
-	width := v.emu.Width()
-	height := v.emu.Height()
-	screen := uv.NewScreen(width, height)
-	if method := v.emu.WidthMethod(); method != nil {
-		screen.SetWidthMethod(method)
-	}
-	uv.NewStyledString(v.emu.Render()).Draw(screen, screen.Bounds())
-	for y := 0; y < height; y++ {
-		line := screen.Line(y)
-		row := make([]Cell, width)
-		for x := 0; x < width; x++ {
-			row[x] = v.convertCell(line.At(x))
-		}
-		v.applyResizeTailFillLocked(y, row)
-		v.screenRowCache[y] = row
-	}
 }
 
 func (v *VTerm) scrollbackRowLocked(y int) []Cell {
@@ -1328,7 +1125,6 @@ func (v *VTerm) scrollbackRowViewLocked(y int) []Cell {
 func (v *VTerm) invalidateRowCachesLocked() {
 	if v.emu == nil {
 		v.screenRowCache = nil
-		v.screenRowCacheConservative = false
 		v.scrollbackRowCache = nil
 		return
 	}
@@ -1339,7 +1135,6 @@ func (v *VTerm) invalidateRowCachesLocked() {
 	} else {
 		v.screenRowCache = make([][]Cell, height)
 	}
-	v.screenRowCacheConservative = false
 	v.scrollbackRowCache = nil
 }
 

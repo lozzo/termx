@@ -36,17 +36,6 @@ func (s *terminalInteractionService) sync(ctx context.Context, req terminalInter
 	if s == nil || s.model == nil || s.model.runtime == nil {
 		return nil
 	}
-	appendSharedTerminalTrace(
-		"app.term.sync",
-		"pane=%s term=%s rect=%s resize=%t explicit=%t implicit_owner=%t implicit_lease=%t",
-		target.paneID,
-		target.terminalID,
-		traceRect(target.rect),
-		req.ResizeIfNeeded,
-		req.ExplicitTakeover,
-		req.ImplicitInteractiveOwner,
-		req.ImplicitSessionLease,
-	)
 	if s.shouldAcquireSessionLease(req, target) {
 		if err := s.acquireSessionLease(ctx, target.paneID, target.terminalID); err != nil {
 			return err
@@ -157,23 +146,11 @@ func (s *terminalInteractionService) resizeIfNeeded(ctx context.Context, target 
 	}
 	viewportRect, ok := s.model.terminalViewportRect(target.paneID, target.rect)
 	if !ok {
-		appendSharedTerminalTrace("app.term.resize.skip", "pane=%s term=%s reason=no_viewport rect=%s", target.paneID, target.terminalID, traceRect(target.rect))
 		return nil
 	}
 	targetCols := uint16(maxInt(2, viewportRect.W))
 	targetRows := uint16(maxInt(2, viewportRect.H))
-	appendSharedTerminalTrace(
-		"app.term.resize.target",
-		"pane=%s term=%s pane_rect=%s viewport=%s cols=%d rows=%d",
-		target.paneID,
-		target.terminalID,
-		traceRect(target.rect),
-		traceRect(viewportRect),
-		targetCols,
-		targetRows,
-	)
 	if !s.shouldForceResize(target.terminalID) && s.model.terminalAlreadySized(target.terminalID, targetCols, targetRows) {
-		appendSharedTerminalTrace("app.term.resize.skip", "pane=%s term=%s reason=already_sized cols=%d rows=%d", target.paneID, target.terminalID, targetCols, targetRows)
 		return nil
 	}
 	return s.model.runtime.ResizeTerminal(ctx, target.paneID, target.terminalID, targetCols, targetRows)

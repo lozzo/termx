@@ -1,7 +1,6 @@
 package render
 
 import (
-	"os"
 	"time"
 
 	xansi "github.com/charmbracelet/x/ansi"
@@ -31,12 +30,8 @@ type surfaceRenderSource struct {
 	surface runtime.TerminalSurface
 }
 
-var forceSnapshotSource = os.Getenv("TERMX_FORCE_SNAPSHOT_SOURCE") == "1"
-
 func renderSource(snapshot *protocol.Snapshot, surface runtime.TerminalSurface) terminalRenderSource {
 	switch {
-	case forceSnapshotSource && snapshot != nil:
-		return snapshotRenderSource{snapshot: snapshot}
 	case surface != nil:
 		return surfaceRenderSource{surface: surface}
 	case snapshot != nil:

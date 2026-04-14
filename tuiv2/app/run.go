@@ -2,7 +2,6 @@ package app
 
 import (
 	"io"
-	"os"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -32,7 +31,6 @@ var (
 	// then keep retrying on a timer if the host doesn't answer.
 	hostEmojiProbeRetryDelay  = 120 * time.Millisecond
 	hostEmojiProbeMaxAttempts = 6
-	disableDirectWriter       = os.Getenv("TERMX_DISABLE_DIRECT_WRITER") == "1"
 )
 
 // Run creates a new Model with the given Config and starts the bubbletea
@@ -49,9 +47,6 @@ func RunWithClient(cfg shared.Config, client bridge.Client, stdin io.Reader, std
 func configureProgramOutput(model *Model, stdout io.Writer) (io.Writer, bool) {
 	if stdout == nil {
 		return nil, false
-	}
-	if disableDirectWriter {
-		return stdout, false
 	}
 	writer := newOutputCursorWriter(stdout)
 	if writer == nil || writer.tty == nil {

@@ -37,7 +37,6 @@ type VTermLike interface {
 	SetDefaultColors(fg, bg string)
 	SetIndexedColor(index int, value string)
 	SetTitleHandler(handler localvterm.TitleHandler)
-	SnapshotRenderState() localvterm.RenderState
 }
 
 type Option func(*Runtime)

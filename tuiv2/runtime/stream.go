@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -26,18 +25,6 @@ const (
 	// a protocol guarantee.
 	synchronizedOutputWaitBudget = 5 * time.Millisecond
 )
-
-var surfacePublishDebounce = func() time.Duration {
-	raw := strings.TrimSpace(os.Getenv("TERMX_SURFACE_PUBLISH_DEBOUNCE_MS"))
-	if raw == "" {
-		return 0
-	}
-	value, err := time.ParseDuration(raw + "ms")
-	if err != nil || value < 0 {
-		return 0
-	}
-	return value
-}()
 
 func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 	if r == nil || r.client == nil {
@@ -259,23 +246,17 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 			return
 		}
 		terminal.BootstrapPending = false
-		if strings.Contains(string(frame.Payload), synchronizedOutputEnd) {
-			r.publishSurface(terminal)
-		} else if surfacePublishDebounce > 0 {
-			r.scheduleSurfacePublish(terminal)
-		} else {
-			r.publishSurface(terminal)
-		}
+		r.bumpSurfaceVersion(terminal)
 		if terminal.Snapshot == nil {
 			r.refreshSnapshot(terminalID)
 			return
 		}
+		r.invalidate()
 	case protocol.TypeResize:
 		cols, rows, err := protocol.DecodeResizePayload(frame.Payload)
 		if err != nil || cols == 0 || rows == 0 {
 			return
 		}
-		appendSharedTerminalTrace("runtime.stream.resize.begin", terminal, "cols=%d rows=%d", cols, rows)
 		vt := r.ensureVTerm(terminal)
 		if vt == nil {
 			return
@@ -289,22 +270,19 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 				// provisional snapshot geometry aligned with the live surface so
 				// follower views don't stay pinned to stale dimensions while the
 				// initial replay is still in-flight.
-				r.publishSurface(terminal)
+				r.bumpSurfaceVersion(terminal)
 				r.refreshSnapshot(terminalID)
 				return
 			}
-			r.publishSurface(terminal)
+			r.bumpSurfaceVersion(terminal)
 			r.refreshSnapshot(terminalID)
-			appendSharedTerminalTrace("runtime.stream.resize.applied", terminal, "prev=%dx%d cols=%d rows=%d", currentCols, currentRows, cols, rows)
-		} else {
-			appendSharedTerminalTrace("runtime.stream.resize.skip", terminal, "reason=already_sized cols=%d rows=%d", cols, rows)
 		}
 	case protocol.TypeBootstrapDone:
 		if !terminal.BootstrapPending {
 			return
 		}
 		terminal.BootstrapPending = false
-		r.publishSurface(terminal)
+		r.bumpSurfaceVersion(terminal)
 		r.refreshSnapshot(terminalID)
 	case protocol.TypeSyncLost:
 		terminal.BootstrapPending = false
@@ -325,7 +303,8 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 			terminal.ExitCode = &exitCode
 		}
 		terminal.State = "exited"
-		r.publishSurface(terminal)
+		syncSurfaceScrollbackState(terminal)
+		r.invalidate()
 	}
 }
 

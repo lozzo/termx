@@ -1,19 +1,11 @@
 package render
 
 import (
-	"fmt"
-	"hash/fnv"
-	"os"
 	"strings"
-	"sync"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
-
-var renderRowTracePath = strings.TrimSpace(os.Getenv("TERMX_DEBUG_TRACE_ROWS"))
-var renderRowTraceMu sync.Mutex
 
 // drawPaneContent fills the interior of a pane with terminal snapshot content.
 func drawPaneContent(canvas *composedCanvas, rect workbench.Rect, pane workbench.VisiblePane, lookup runtimeLookup, scrollOffset int, active bool) {
@@ -90,95 +82,12 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 		renderOffset = scrollOffsetForViewportTop(snapshot, contentRect.H, entry.CopyModeViewTopRow)
 	}
 	drawTerminalSourceWithOffset(canvas, contentRect, source, renderOffset, entry.Theme)
-	if entry.Active {
-		appendActivePaneRowTrace(entry, source, renderOffset, contentRect)
-	}
 	if entry.CopyModeActive {
 		drawCopyModeOverlay(canvas, contentRect, snapshot, entry.Theme, entry.CopyModeCursorRow, entry.CopyModeCursorCol, entry.CopyModeViewTopRow, entry.CopyModeMarkSet, entry.CopyModeMarkRow, entry.CopyModeMarkCol)
 	}
 	if terminal.State == "exited" {
 		drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
 	}
-}
-
-func appendActivePaneRowTrace(entry paneRenderEntry, source terminalRenderSource, renderOffset int, rect workbench.Rect) {
-	if renderRowTracePath == "" || source == nil || !entry.Active {
-		return
-	}
-	renderRowTraceMu.Lock()
-	defer renderRowTraceMu.Unlock()
-	f, err := os.OpenFile(renderRowTracePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	start, end := visibleSourceWindow(source, renderOffset, rect.H)
-	_, _ = fmt.Fprintf(f, "%s render.rows pane=%s term=%s surfVer=%d offset=%d window=%d:%d rect=%dx%d\n", nowTraceStamp(), entry.PaneID, entry.TerminalID, entry.SurfaceVersion, renderOffset, start, end, rect.W, rect.H)
-	maxRows := minInt(6, maxInt(0, end-start))
-	for i := 0; i < maxRows; i++ {
-		rowIndex := start + i
-		line := protocolRowPlainText(source.Row(rowIndex), rect.W)
-		_, _ = fmt.Fprintf(f, "  row[%d] hash=%016x text=%q\n", rowIndex, hashTraceString(line), line)
-	}
-}
-
-func visibleSourceWindow(source terminalRenderSource, offset, height int) (int, int) {
-	if source == nil || height <= 0 {
-		return 0, 0
-	}
-	if offset <= 0 {
-		base := source.ScrollbackRows()
-		end := minInt(base+height, source.TotalRows())
-		return base, end
-	}
-	totalRows := source.TotalRows()
-	end := totalRows - offset
-	if end < 0 {
-		end = 0
-	}
-	start := end - height
-	if start < 0 {
-		start = 0
-	}
-	return start, end
-}
-
-func protocolRowPlainText(row []protocol.Cell, width int) string {
-	if width <= 0 {
-		width = len(row)
-	}
-	var b strings.Builder
-	col := 0
-	for i := 0; i < len(row) && col < width; i++ {
-		cell := row[i]
-		if cell.Content == "" && cell.Width == 0 {
-			continue
-		}
-		content := cell.Content
-		if content == "" {
-			content = " "
-		}
-		w := cell.Width
-		if w <= 0 {
-			w = maxInt(1, xansi.StringWidth(content))
-		}
-		if col+w > width {
-			break
-		}
-		b.WriteString(content)
-		col += w
-	}
-	return b.String()
-}
-
-func hashTraceString(s string) uint64 {
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(s))
-	return h.Sum64()
-}
-
-func nowTraceStamp() string {
-	return fmt.Sprintf("%d", os.Getpid())
 }
 
 func contentRectForPane(rect workbench.Rect) workbench.Rect {

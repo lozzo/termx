@@ -143,7 +143,6 @@ func spawnTerminalProcess(cfg terminalConfig) (*ptymgr.PTY, *vterm.VTerm, error)
 		// so the child process receives them.
 		_, _ = p.Write(data)
 	})
-	vt.SetDebugTraceLabel("server:" + cfg.ID)
 	return p, vt, nil
 }
 

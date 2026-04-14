@@ -568,11 +568,11 @@ func TestOutputCursorWriterFlushesImmediatelyAfterIdle(t *testing.T) {
 	}
 }
 
-func TestOutputCursorWriterInteractiveInputStillBatchesWhenRecentlyFlushed(t *testing.T) {
+func TestOutputCursorWriterFlushesImmediatelyAfterInteractiveInput(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	originalIdleThreshold := directFrameIdleThreshold
 	directFrameBatchDelay = 20 * time.Millisecond
-	directFrameIdleThreshold = 10 * time.Second
+	directFrameIdleThreshold = time.Hour
 	defer func() {
 		directFrameBatchDelay = originalDelay
 		directFrameIdleThreshold = originalIdleThreshold
@@ -582,21 +582,14 @@ func TestOutputCursorWriterInteractiveInputStillBatchesWhenRecentlyFlushed(t *te
 	writer := newOutputCursorWriter(sink)
 	writer.SetInteractiveFlushHint(func() bool { return true })
 
-	if err := writer.WriteFrame("seed", "<CURSOR-SEED>"); err != nil {
-		t.Fatalf("write seed frame: %v", err)
-	}
-	sink.mu.Lock()
-	sink.writes = nil
-	sink.mu.Unlock()
-
 	if err := writer.WriteFrame("frame-a", "<CURSOR-A>"); err != nil {
 		t.Fatalf("write frame a: %v", err)
 	}
 
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
-	if len(sink.writes) != 0 {
-		t.Fatalf("expected interactive direct frame to remain batched, got %#v", sink.writes)
+	if len(sink.writes) != 1 {
+		t.Fatalf("expected interactive direct frame to flush immediately, got %#v", sink.writes)
 	}
 }
 

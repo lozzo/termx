@@ -1,12 +1,6 @@
 package app
 
-import (
-	"os"
-
-	"github.com/lozzow/termx/perftrace"
-)
-
-var forceFullFrame = os.Getenv("TERMX_FORCE_FULL_FRAME") == "1"
+import "github.com/lozzow/termx/perftrace"
 
 func (m *Model) View() string {
 	finish := perftrace.Measure("app.view")
@@ -18,24 +12,22 @@ func (m *Model) View() string {
 		return ""
 	}
 	m.reconcileCopyModeContext()
-	if !forceFullFrame {
-		if rowsWriter, ok := m.frameOut.(frameLinesWriter); ok {
-			if directWriter, ok := rowsWriter.(*outputCursorWriter); ok {
-				directWriter.SetVerticalScrollEnabled(m.allowVerticalScrollOptimization())
-			}
-			if lines, cursor, ok := m.render.CachedFrameLinesAndCursor(); ok {
-				viewBytes = joinedLinesLen(lines) + len(cursor)
-				m.lastViewFrame = ""
-				m.lastViewCursor = cursor
-				return ""
-			}
-			lines, cursor := m.render.RenderFrameLines()
+	if rowsWriter, ok := m.frameOut.(frameLinesWriter); ok {
+		if directWriter, ok := rowsWriter.(*outputCursorWriter); ok {
+			directWriter.SetVerticalScrollEnabled(m.allowVerticalScrollOptimization())
+		}
+		if lines, cursor, ok := m.render.CachedFrameLinesAndCursor(); ok {
 			viewBytes = joinedLinesLen(lines) + len(cursor)
-			_ = rowsWriter.WriteFrameLines(lines, cursor)
 			m.lastViewFrame = ""
 			m.lastViewCursor = cursor
 			return ""
 		}
+		lines, cursor := m.render.RenderFrameLines()
+		viewBytes = joinedLinesLen(lines) + len(cursor)
+		_ = rowsWriter.WriteFrameLines(lines, cursor)
+		m.lastViewFrame = ""
+		m.lastViewCursor = cursor
+		return ""
 	}
 	if frame, cursor, ok := m.render.CachedFrameAndCursor(); ok {
 		perftrace.Count("app.view.reuse", len(frame)+len(cursor))
