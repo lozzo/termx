@@ -14,6 +14,7 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 	if m.workbench == nil || m.mouseDragMode == mouseDragNone {
 		return nil
 	}
+	appendMouseDebugLog("mouse_drag_apply", "mode", m.mouseDragMode, "pane", m.mouseDragPaneID, "x", x, "y", y)
 
 	tab := m.workbench.CurrentTab()
 	if tab == nil {
@@ -76,6 +77,7 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 }
 
 func (m *Model) handleMouseRelease() tea.Cmd {
+	appendMouseDebugLog("mouse_drag_release", "mode", m.mouseDragMode, "pane", m.mouseDragPaneID, "dirty", m.mouseDragDirty)
 	cmd := tea.Cmd(nil)
 	switch m.mouseDragMode {
 	case mouseDragResize:

@@ -65,6 +65,29 @@ func stripTrailingEraseLineRight(lines []string) []string {
 	return out
 }
 
+func stripLeadingCHA1(lines []string) []string {
+	if len(lines) == 0 {
+		return nil
+	}
+	var out []string
+	for i := range lines {
+		line := lines[i]
+		stripped := strings.TrimPrefix(line, xansi.CHA(1))
+		stripped = strings.TrimPrefix(stripped, "\x1b[G")
+		if stripped == line {
+			continue
+		}
+		if out == nil {
+			out = append([]string(nil), lines...)
+		}
+		out[i] = stripped
+	}
+	if out == nil {
+		return lines
+	}
+	return out
+}
+
 func truncateFrameToWidth(frame string, width int) string {
 	if frame == "" || width <= 0 {
 		return frame

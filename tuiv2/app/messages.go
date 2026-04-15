@@ -2,6 +2,7 @@ package app
 
 import (
 	"image/color"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
@@ -38,6 +39,15 @@ type mouseWheelBurstMsg struct {
 	Msg    tea.MouseMsg
 	Repeat int
 }
+
+type queuedMouseMsg struct {
+	Seq      uint64
+	Kind     string
+	QueuedAt time.Time
+	Msg      tea.MouseMsg
+}
+
+type mouseMotionFlushMsg struct{}
 
 type terminalInputSentMsg struct {
 	err        error
@@ -108,6 +118,8 @@ type hostPaletteColorMsg struct {
 	Index int
 	Color color.Color
 }
+
+type hostThemeFlushMsg struct{}
 
 type hostCursorPositionMsg struct {
 	X int

@@ -6,12 +6,15 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 var appDebugLogMu sync.Mutex
+var mouseDebugSeq atomic.Uint64
+var latestQueuedMouseMotionSeq atomic.Uint64
 
 func (m *Model) debugLog(event string, kv ...any) {
 	if m == nil || strings.TrimSpace(m.cfg.LogFilePath) == "" {
@@ -48,6 +51,34 @@ func appendDebugLogLine(path, event string, kv ...any) {
 	}
 	b.WriteByte('\n')
 	_, _ = file.WriteString(b.String())
+}
+
+func mouseDebugEnabled() bool {
+	return strings.TrimSpace(os.Getenv("TERMX_DEBUG_MOUSE_LOG")) != ""
+}
+
+func mouseDebugLogPath() string {
+	return strings.TrimSpace(os.Getenv("TERMX_DEBUG_MOUSE_LOG"))
+}
+
+func appendMouseDebugLog(event string, kv ...any) {
+	path := mouseDebugLogPath()
+	if path == "" {
+		return
+	}
+	appendDebugLogLine(path, event, kv...)
+}
+
+func nextMouseDebugSeq() uint64 {
+	return mouseDebugSeq.Add(1)
+}
+
+func noteQueuedMouseMotion(seq uint64) {
+	latestQueuedMouseMotionSeq.Store(seq)
+}
+
+func latestQueuedMotionSeq() uint64 {
+	return latestQueuedMouseMotionSeq.Load()
 }
 
 func sanitizeDebugKey(key string) string {

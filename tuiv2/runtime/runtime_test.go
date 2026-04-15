@@ -389,6 +389,10 @@ func TestCoalesceClientOutputFramesPreservesNonOutputBoundary(t *testing.T) {
 }
 
 func TestRuntimeClientOutputBatchDelayBypassesAfterRecentInput(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_LATENCY", "0")
+	t.Setenv("TERMX_CLIENT_OUTPUT_BATCH_DELAY", "")
+	t.Setenv("TERMX_INTERACTIVE_OUTPUT_BATCH_DELAY", "")
+
 	rt := New(nil)
 	if got := rt.clientOutputBatchDelay(); got != clientOutputBatchDelay {
 		t.Fatalf("expected default client output batch delay %v, got %v", clientOutputBatchDelay, got)
@@ -400,6 +404,22 @@ func TestRuntimeClientOutputBatchDelayBypassesAfterRecentInput(t *testing.T) {
 	}
 	if got := rt.clientOutputBatchDelay(); got != clientOutputBatchDelay {
 		t.Fatalf("expected interactive bypass to be one-shot, got %v", got)
+	}
+}
+
+func TestRuntimeClientOutputBatchDelayUsesRemoteProfile(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_LATENCY", "1")
+	t.Setenv("TERMX_CLIENT_OUTPUT_BATCH_DELAY", "")
+	t.Setenv("TERMX_INTERACTIVE_OUTPUT_BATCH_DELAY", "")
+
+	rt := New(nil)
+	if got := rt.clientOutputBatchDelay(); got != remoteClientOutputBatchDelay {
+		t.Fatalf("expected remote client output batch delay %v, got %v", remoteClientOutputBatchDelay, got)
+	}
+
+	rt.noteLocalInput()
+	if got := rt.clientOutputBatchDelay(); got != remoteInteractiveOutputBatchDelay {
+		t.Fatalf("expected remote interactive output batch delay %v, got %v", remoteInteractiveOutputBatchDelay, got)
 	}
 }
 
@@ -644,6 +664,63 @@ func TestRuntimeSetHostPaletteColorRefreshesVisibleState(t *testing.T) {
 	}
 	if invalidateCount.Load() == 0 {
 		t.Fatal("expected host palette update to invalidate rendering")
+	}
+}
+
+func TestRuntimeApplyHostThemeInvalidatesOnceForBatchedTheme(t *testing.T) {
+	var invalidateCount atomic.Int32
+	rt := New(nil, WithInvalidate(func() {
+		invalidateCount.Add(1)
+	}))
+
+	rt.ApplyHostTheme(
+		color.RGBA{R: 0xaa, G: 0xbb, B: 0xcc, A: 0xff},
+		color.RGBA{R: 0x11, G: 0x22, B: 0x33, A: 0xff},
+		map[int]color.Color{
+			1: color.RGBA{R: 0x44, G: 0x88, B: 0xcc, A: 0xff},
+			2: color.RGBA{R: 0x55, G: 0x99, B: 0xdd, A: 0xff},
+		},
+	)
+
+	if got := invalidateCount.Load(); got != 1 {
+		t.Fatalf("expected batched host theme apply to invalidate once, got %d", got)
+	}
+	visible := rt.Visible()
+	if visible == nil {
+		t.Fatal("expected visible runtime")
+	}
+	if visible.HostDefaultFG != "#aabbcc" || visible.HostDefaultBG != "#112233" {
+		t.Fatalf("unexpected host default colors %#v", visible)
+	}
+	if visible.HostPalette[1] != "#4488cc" || visible.HostPalette[2] != "#5599dd" {
+		t.Fatalf("unexpected host palette %#v", visible.HostPalette)
+	}
+}
+
+func TestRuntimeApplyHostThemeSilentlyRefreshesVisibleStateWithoutInvalidation(t *testing.T) {
+	var invalidateCount atomic.Int32
+	rt := New(nil, WithInvalidate(func() {
+		invalidateCount.Add(1)
+	}))
+
+	rt.ApplyHostThemeSilently(
+		color.RGBA{R: 0xaa, G: 0xbb, B: 0xcc, A: 0xff},
+		color.RGBA{R: 0x11, G: 0x22, B: 0x33, A: 0xff},
+		map[int]color.Color{5: color.RGBA{R: 0x44, G: 0x88, B: 0xcc, A: 0xff}},
+	)
+
+	if got := invalidateCount.Load(); got != 0 {
+		t.Fatalf("expected silent host theme apply not to invalidate, got %d", got)
+	}
+	visible := rt.Visible()
+	if visible == nil {
+		t.Fatal("expected visible runtime")
+	}
+	if visible.HostDefaultFG != "#aabbcc" || visible.HostDefaultBG != "#112233" {
+		t.Fatalf("unexpected host default colors %#v", visible)
+	}
+	if visible.HostPalette[5] != "#4488cc" {
+		t.Fatalf("unexpected host palette %#v", visible.HostPalette)
 	}
 }
 

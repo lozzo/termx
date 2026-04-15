@@ -75,12 +75,46 @@ func (m *Model) allowVerticalScrollOptimization() bool {
 	if vm.Surface.Kind != render.VisibleSurfaceWorkbench || vm.Overlay.Kind != render.VisibleOverlayNone || vm.Workbench == nil {
 		return false
 	}
+	if len(vm.Workbench.FloatingPanes) > 0 {
+		return false
+	}
 	activeTab := vm.Workbench.ActiveTab
 	if activeTab < 0 || activeTab >= len(vm.Workbench.Tabs) {
 		return false
 	}
-	visiblePaneCount := len(vm.Workbench.Tabs[activeTab].Panes) + len(vm.Workbench.FloatingPanes)
-	return visiblePaneCount <= 1
+	panes := vm.Workbench.Tabs[activeTab].Panes
+	if len(panes) == 0 {
+		return false
+	}
+	if len(panes) == 1 {
+		return true
+	}
+	body := m.bodyRect()
+	if body.W <= 0 || body.H <= 0 {
+		return false
+	}
+	rowOwners := make([]int, body.H)
+	for _, pane := range panes {
+		contentRect, ok := paneContentRectForVisible(pane)
+		if !ok || contentRect.W <= 0 || contentRect.H <= 0 {
+			return false
+		}
+		// The frame presenter scrolls whole terminal rows inside a scroll region.
+		// Keep it to layouts where each affected row belongs to one full-width
+		// pane, so a scroll in the top pane cannot drag a side-by-side neighbor.
+		if pane.Rect.X != 0 || pane.Rect.W != body.W {
+			return false
+		}
+		start := maxInt(0, contentRect.Y)
+		end := minInt(body.H, contentRect.Y+contentRect.H)
+		for row := start; row < end; row++ {
+			rowOwners[row]++
+			if rowOwners[row] > 1 {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (m *Model) immersiveZoomActive() bool {
@@ -223,6 +257,13 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 
 func maxInt(a, b int) int {
 	if a > b {
+		return a
+	}
+	return b
+}
+
+func minInt(a, b int) int {
+	if a < b {
 		return a
 	}
 	return b

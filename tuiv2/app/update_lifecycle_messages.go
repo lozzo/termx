@@ -21,7 +21,7 @@ func (m *Model) handleLifecycleMessage(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		return nil, true
 	case renderRefreshMsg:
-		m.forceFullRedraw()
+		m.refreshRenderCaches()
 		return nil, true
 	case tea.WindowSizeMsg:
 		oldBodyRect := m.bodyRect()

@@ -89,6 +89,15 @@ func (w *backlogProbeFrameWriter) Drain() {
 	}
 }
 
+type resetProbeFrameWriter struct {
+	recordingFrameWriter
+	resetCalls int
+}
+
+func (w *resetProbeFrameWriter) ResetFrameState() {
+	w.resetCalls++
+}
+
 func TestModelViewShowsProjectedState(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
@@ -1668,6 +1677,25 @@ func TestQueueInvalidateWaitsForFrameWriterDrainBeforeSending(t *testing.T) {
 		}
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("timed out waiting for invalidate after frame-writer drain")
+	}
+}
+
+func TestRenderRefreshMsgDoesNotResetFrameWriterState(t *testing.T) {
+	model := New(shared.Config{}, nil, runtime.New(nil))
+	writer := &resetProbeFrameWriter{}
+	model.SetFrameWriter(writer)
+	model.width = 80
+	model.height = 24
+
+	cmd, handled := model.handleLifecycleMessage(renderRefreshMsg{})
+	if !handled {
+		t.Fatal("expected renderRefreshMsg to be handled")
+	}
+	if cmd != nil {
+		t.Fatalf("expected no follow-up command, got %#v", cmd)
+	}
+	if writer.resetCalls != 0 {
+		t.Fatalf("expected renderRefreshMsg not to reset frame writer state, got %d", writer.resetCalls)
 	}
 }
 

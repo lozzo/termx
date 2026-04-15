@@ -186,9 +186,22 @@ func (r *Runtime) ensureVTerm(terminal *TerminalRuntime) VTermLike {
 }
 
 func (r *Runtime) SetHostDefaultColors(fg, bg color.Color) {
+	r.applyHostTheme(fg, bg, nil, true)
+}
+
+func (r *Runtime) ApplyHostTheme(fg, bg color.Color, palette map[int]color.Color) {
+	r.applyHostTheme(fg, bg, palette, true)
+}
+
+func (r *Runtime) ApplyHostThemeSilently(fg, bg color.Color, palette map[int]color.Color) {
+	r.applyHostTheme(fg, bg, palette, false)
+}
+
+func (r *Runtime) applyHostTheme(fg, bg color.Color, palette map[int]color.Color, invalidate bool) {
 	if r == nil {
 		return
 	}
+	changed := false
 	nextFG := r.hostDefaultFG
 	nextBG := r.hostDefaultBG
 	if fg != nil {
@@ -197,41 +210,57 @@ func (r *Runtime) SetHostDefaultColors(fg, bg color.Color) {
 	if bg != nil {
 		nextBG = colorToHex(bg)
 	}
-	if nextFG == r.hostDefaultFG && nextBG == r.hostDefaultBG {
+	if nextFG != r.hostDefaultFG || nextBG != r.hostDefaultBG {
+		r.hostDefaultFG = nextFG
+		r.hostDefaultBG = nextBG
+		changed = true
+	}
+	var changedPalette map[int]string
+	if len(palette) > 0 {
+		if r.hostPalette == nil {
+			r.hostPalette = make(map[int]string)
+		}
+		for index, c := range palette {
+			if c == nil || index < 0 || index > 255 {
+				continue
+			}
+			value := colorToHex(c)
+			if r.hostPalette[index] == value {
+				continue
+			}
+			r.hostPalette[index] = value
+			if changedPalette == nil {
+				changedPalette = make(map[int]string)
+			}
+			changedPalette[index] = value
+			changed = true
+		}
+	}
+	if !changed {
 		return
 	}
-	r.hostDefaultFG = nextFG
-	r.hostDefaultBG = nextBG
 	for _, terminalID := range r.registry.IDs() {
 		terminal := r.registry.Get(terminalID)
 		if terminal == nil || terminal.VTerm == nil {
 			continue
 		}
-		terminal.VTerm.SetDefaultColors(nextFG, nextBG)
+		terminal.VTerm.SetDefaultColors(r.hostDefaultFG, r.hostDefaultBG)
+		for index, value := range changedPalette {
+			terminal.VTerm.SetIndexedColor(index, value)
+		}
 	}
-	r.invalidate()
+	if invalidate {
+		r.invalidate()
+		return
+	}
+	r.touch()
 }
 
 func (r *Runtime) SetHostPaletteColor(index int, c color.Color) {
 	if r == nil || c == nil || index < 0 || index > 255 {
 		return
 	}
-	if r.hostPalette == nil {
-		r.hostPalette = make(map[int]string)
-	}
-	value := colorToHex(c)
-	if r.hostPalette[index] == value {
-		return
-	}
-	r.hostPalette[index] = value
-	for _, terminalID := range r.registry.IDs() {
-		terminal := r.registry.Get(terminalID)
-		if terminal == nil || terminal.VTerm == nil {
-			continue
-		}
-		terminal.VTerm.SetIndexedColor(index, value)
-	}
-	r.invalidate()
+	r.applyHostTheme(nil, nil, map[int]color.Color{index: c}, true)
 }
 
 func (r *Runtime) SetHostAmbiguousEmojiVariationSelectorMode(mode shared.AmbiguousEmojiVariationSelectorMode) {

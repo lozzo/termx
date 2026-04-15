@@ -18,6 +18,33 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 		return m.handleMouseWheelBurstMsg(typed), true
 	case keyBurstMsg:
 		return m.handleKeyBurstMsg(typed), true
+	case queuedMouseMsg:
+		queueDelay := time.Since(typed.QueuedAt)
+		appendMouseDebugLog(
+			"mouse_process",
+			"seq", typed.Seq,
+			"kind", typed.Kind,
+			"action", typed.Msg.Action,
+			"button", typed.Msg.Button,
+			"x", typed.Msg.X,
+			"y", typed.Msg.Y,
+			"queued_at", typed.QueuedAt.UTC().Format(time.RFC3339Nano),
+			"queue_ms", queueDelay.Milliseconds(),
+		)
+		if typed.Kind == "motion" && (m.mouseDragMode != mouseDragNone || m.copyMode.MouseSelecting) {
+			return m.enqueueMouseMotionFlush(typed), true
+		}
+		if typed.Kind == "motion" && typed.Seq < latestQueuedMotionSeq() {
+			appendMouseDebugLog("mouse_drop_stale", "seq", typed.Seq, "latest_seq", latestQueuedMotionSeq(), "x", typed.Msg.X, "y", typed.Msg.Y)
+			return nil, true
+		}
+		if typed.Kind == "motion" && queueDelay > staleMouseMotionThreshold {
+			appendMouseDebugLog("mouse_drop_lagged", "seq", typed.Seq, "queue_ms", queueDelay.Milliseconds(), "x", typed.Msg.X, "y", typed.Msg.Y)
+			return nil, true
+		}
+		return m.handleMouseMsg(typed.Msg), true
+	case mouseMotionFlushMsg:
+		return m.handleMouseMotionFlush(), true
 	case tea.MouseMsg:
 		return m.handleMouseMsg(typed), true
 	case tea.KeyMsg:
@@ -153,4 +180,47 @@ func (m *Model) handleInteractionBatch(messages []tea.Msg) tea.Cmd {
 		}
 	}
 	return batchCmds(cmds...)
+}
+
+func (m *Model) enqueueMouseMotionFlush(msg queuedMouseMsg) tea.Cmd {
+	if m == nil {
+		return nil
+	}
+	copyMsg := msg
+	m.pendingMouseMotion = &copyMsg
+	if m.mouseMotionFlushPending {
+		appendMouseDebugLog("mouse_motion_coalesce", "seq", msg.Seq, "x", msg.Msg.X, "y", msg.Msg.Y)
+		return nil
+	}
+	m.mouseMotionFlushPending = true
+	return func() tea.Msg { return mouseMotionFlushMsg{} }
+}
+
+func (m *Model) handleMouseMotionFlush() tea.Cmd {
+	if m == nil {
+		return nil
+	}
+	msg := m.pendingMouseMotion
+	m.pendingMouseMotion = nil
+	m.mouseMotionFlushPending = false
+	if msg == nil {
+		return nil
+	}
+	queueDelay := time.Since(msg.QueuedAt)
+	appendMouseDebugLog(
+		"mouse_motion_flush",
+		"seq", msg.Seq,
+		"x", msg.Msg.X,
+		"y", msg.Msg.Y,
+		"queue_ms", queueDelay.Milliseconds(),
+	)
+	if msg.Seq < latestQueuedMotionSeq() {
+		appendMouseDebugLog("mouse_drop_stale", "seq", msg.Seq, "latest_seq", latestQueuedMotionSeq(), "x", msg.Msg.X, "y", msg.Msg.Y)
+		return nil
+	}
+	if queueDelay > staleMouseMotionThreshold {
+		appendMouseDebugLog("mouse_drop_lagged", "seq", msg.Seq, "queue_ms", queueDelay.Milliseconds(), "x", msg.Msg.X, "y", msg.Msg.Y)
+		return nil
+	}
+	return m.handleMouseMsg(msg.Msg)
 }

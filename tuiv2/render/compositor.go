@@ -497,6 +497,20 @@ func (c *composedCanvas) ensureRowCache() {
 			if cell.Continuation {
 				continue
 			}
+			if blankRun := c.compressibleBlankRun(y, x); blankRun >= 5 {
+				if needsReanchor {
+					writeCHAANSI(&row, x+1)
+					needsReanchor = false
+				}
+				if current != cell.Style {
+					row.WriteString(styleDiffANSI(current, cell.Style))
+					current = cell.Style
+				}
+				writeECHANSI(&row, blankRun)
+				needsReanchor = true
+				x += blankRun - 1
+				continue
+			}
 			content := cell.Content
 			if content == "" {
 				content = " "
@@ -548,6 +562,34 @@ func (c *composedCanvas) ensureRowCache() {
 		c.rowCache[y] = row.String()
 		c.rowDirty[y] = false
 	}
+}
+
+func (c *composedCanvas) compressibleBlankRun(y, startX int) int {
+	if c == nil || y < 0 || y >= c.height || startX < 0 || startX >= c.width {
+		return 0
+	}
+	first := c.cells[y][startX]
+	if first.Continuation || first.AmbiguousCompensation || first.Width != 1 {
+		return 0
+	}
+	if first.Content != "" && first.Content != " " {
+		return 0
+	}
+	run := 0
+	for x := startX; x < c.width; x++ {
+		cell := c.cells[y][x]
+		if cell.Continuation || cell.AmbiguousCompensation || cell.Width != 1 {
+			break
+		}
+		if cell.Style != first.Style {
+			break
+		}
+		if cell.Content != "" && cell.Content != " " {
+			break
+		}
+		run++
+	}
+	return run
 }
 
 func (c *composedCanvas) cursorANSI() string {

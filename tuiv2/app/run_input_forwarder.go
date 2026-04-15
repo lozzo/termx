@@ -12,11 +12,16 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	uv "github.com/charmbracelet/ultraviolet"
 	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/muesli/cancelreader"
 	xterm "golang.org/x/term"
 )
 
 var inputBurstBatchDelay = 2 * time.Millisecond
+var remoteInputBurstBatchDelay = 500 * time.Microsecond
+var mouseMotionBatchDelay = 4 * time.Millisecond
+var remoteMouseMotionBatchDelay = 2 * time.Millisecond
+var staleMouseMotionThreshold = 40 * time.Millisecond
 
 func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() error, error) {
 	if input == nil {
@@ -44,13 +49,17 @@ func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() 
 	done := make(chan struct{})
 	eventc := make(chan uv.Event, 128)
 	terminalReader := uv.NewTerminalReader(reader, os.Getenv("TERM"))
+	burstDelay := effectiveInputBurstBatchDelay()
 	go func() {
 		defer close(done)
 		var (
-			burst      inputBurstState
-			pending    []tea.Msg
-			burstTimer *time.Timer
-			burstTick  <-chan time.Time
+			burst       inputBurstState
+			pending     []tea.Msg
+			burstTimer  *time.Timer
+			burstTick   <-chan time.Time
+			motion      tea.Msg
+			motionTimer *time.Timer
+			motionTick  <-chan time.Time
 		)
 		stopBurstTimer := func() {
 			if burstTimer == nil {
@@ -73,20 +82,55 @@ func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() 
 			pending = append(pending, msg)
 		}
 		startBurstTimer := func() {
-			if inputBurstBatchDelay <= 0 {
+			if burstDelay <= 0 {
 				return
 			}
 			if burstTimer == nil {
-				burstTimer = time.NewTimer(inputBurstBatchDelay)
+				burstTimer = time.NewTimer(burstDelay)
 			} else {
 				stopBurstTimer()
-				burstTimer.Reset(inputBurstBatchDelay)
+				burstTimer.Reset(burstDelay)
 			}
 			burstTick = burstTimer.C
 		}
+		stopMotionTimer := func() {
+			if motionTimer == nil {
+				motionTick = nil
+				return
+			}
+			if !motionTimer.Stop() {
+				select {
+				case <-motionTimer.C:
+				default:
+				}
+			}
+			motionTick = nil
+		}
+		flushMotionToPending := func() {
+			if motion == nil {
+				return
+			}
+			pending = append(pending, motion)
+			motion = nil
+		}
+		startMotionTimer := func() {
+			delay := effectiveMouseMotionBatchDelay()
+			if delay <= 0 {
+				return
+			}
+			if motionTimer == nil {
+				motionTimer = time.NewTimer(delay)
+			} else {
+				stopMotionTimer()
+				motionTimer.Reset(delay)
+			}
+			motionTick = motionTimer.C
+		}
 		flushPending := func() {
 			flushBurstToPending()
+			flushMotionToPending()
 			stopBurstTimer()
+			stopMotionTimer()
 			if len(pending) == 0 {
 				return
 			}
@@ -103,6 +147,7 @@ func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() 
 			program.Send(msg)
 		}
 		queueKeyBurst := func(msg tea.KeyMsg) {
+			flushMotionToPending()
 			if !burst.PushKey(msg) {
 				flushBurstToPending()
 				_ = burst.PushKey(msg)
@@ -110,11 +155,34 @@ func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() 
 			startBurstTimer()
 		}
 		queueWheelBurst := func(msg tea.MouseMsg) {
+			flushMotionToPending()
 			if !burst.PushMouseWheel(msg) {
 				flushBurstToPending()
 				_ = burst.PushMouseWheel(msg)
 			}
 			startBurstTimer()
+		}
+		queueMotion := func(msg tea.MouseMsg) {
+			queued := queuedMouseMsg{
+				Seq:      nextMouseDebugSeq(),
+				Kind:     "motion",
+				QueuedAt: time.Now().UTC(),
+				Msg:      msg,
+			}
+			noteQueuedMouseMotion(queued.Seq)
+			appendMouseDebugLog("mouse_recv", "seq", queued.Seq, "kind", queued.Kind, "action", queued.Msg.Action, "button", queued.Msg.Button, "x", queued.Msg.X, "y", queued.Msg.Y)
+			motion = queued
+			startMotionTimer()
+		}
+		sendMouseImmediate := func(kind string, msg tea.MouseMsg) {
+			queued := queuedMouseMsg{
+				Seq:      nextMouseDebugSeq(),
+				Kind:     kind,
+				QueuedAt: time.Now().UTC(),
+				Msg:      msg,
+			}
+			appendMouseDebugLog("mouse_recv", "seq", queued.Seq, "kind", queued.Kind, "action", queued.Msg.Action, "button", queued.Msg.Button, "x", queued.Msg.X, "y", queued.Msg.Y)
+			sendImmediate(queued)
 		}
 		streamDone := make(chan struct{})
 		go func() {
@@ -129,6 +197,8 @@ func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() 
 				<-streamDone
 				return
 			case <-burstTick:
+				flushPending()
+			case <-motionTick:
 				flushPending()
 			case event, ok := <-eventc:
 				if !ok {
@@ -155,15 +225,15 @@ func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() 
 					}
 				case uv.MouseClickEvent:
 					if msg, ok := uvMouseEventToTeaMouseMsg(event, tea.MouseActionPress); ok {
-						sendImmediate(msg)
+						sendMouseImmediate("press", msg)
 					}
 				case uv.MouseReleaseEvent:
 					if msg, ok := uvMouseEventToTeaMouseMsg(event, tea.MouseActionRelease); ok {
-						sendImmediate(msg)
+						sendMouseImmediate("release", msg)
 					}
 				case uv.MouseMotionEvent:
 					if msg, ok := uvMouseEventToTeaMouseMsg(event, tea.MouseActionMotion); ok {
-						sendImmediate(msg)
+						queueMotion(msg)
 					}
 				case uv.MouseWheelEvent:
 					if msg, ok := uvMouseEventToTeaMouseMsg(event, tea.MouseActionPress); ok {
@@ -186,6 +256,22 @@ func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() 
 	}
 
 	return stop, restore, nil
+}
+
+func effectiveInputBurstBatchDelay() time.Duration {
+	delay := inputBurstBatchDelay
+	if shared.RemoteLatencyProfileEnabled() && (delay <= 0 || delay > remoteInputBurstBatchDelay) {
+		delay = remoteInputBurstBatchDelay
+	}
+	return shared.DurationOverride("TERMX_INPUT_BURST_BATCH_DELAY", delay)
+}
+
+func effectiveMouseMotionBatchDelay() time.Duration {
+	delay := mouseMotionBatchDelay
+	if shared.RemoteLatencyProfileEnabled() && (delay <= 0 || delay > remoteMouseMotionBatchDelay) {
+		delay = remoteMouseMotionBatchDelay
+	}
+	return shared.DurationOverride("TERMX_MOUSE_MOTION_BATCH_DELAY", delay)
 }
 
 func requestTerminalPaletteQueries() string {

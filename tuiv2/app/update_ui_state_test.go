@@ -1,6 +1,7 @@
 package app
 
 import (
+	"image/color"
 	"testing"
 
 	"github.com/lozzow/termx/protocol"
@@ -99,5 +100,46 @@ func TestHandleUIStateMessageHostCursorPositionAppliesProbeMode(t *testing.T) {
 	}
 	if got := model.runtime.Visible(); got == nil || got.HostEmojiVS16Mode == "" {
 		t.Fatalf("expected runtime visible state updated, got %#v", got)
+	}
+}
+
+func TestHandleUIStateMessageHostThemeUpdatesAreBufferedUntilFlush(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+
+	cmd, handled := model.handleUIStateMessage(hostDefaultColorsMsg{
+		FG: color.RGBA{R: 0xaa, G: 0xbb, B: 0xcc, A: 0xff},
+		BG: color.RGBA{R: 0x11, G: 0x22, B: 0x33, A: 0xff},
+	})
+	if !handled || cmd == nil {
+		t.Fatalf("expected hostDefaultColorsMsg to schedule buffered flush, got handled=%v cmd=%#v", handled, cmd)
+	}
+	if got := model.runtime.Visible(); got == nil || got.HostDefaultFG != "" || got.HostDefaultBG != "" {
+		t.Fatalf("expected runtime host colors to remain unchanged until flush, got %#v", got)
+	}
+
+	cmd, handled = model.handleUIStateMessage(hostPaletteColorMsg{
+		Index: 5,
+		Color: color.RGBA{R: 0x44, G: 0x88, B: 0xcc, A: 0xff},
+	})
+	if !handled {
+		t.Fatal("expected hostPaletteColorMsg to be handled")
+	}
+	if cmd != nil {
+		t.Fatalf("expected palette update to reuse pending flush timer, got %#v", cmd)
+	}
+	if got := model.runtime.Visible(); got == nil || len(got.HostPalette) != 0 {
+		t.Fatalf("expected runtime palette to remain unchanged until flush, got %#v", got)
+	}
+
+	cmd, handled = model.handleUIStateMessage(hostThemeFlushMsg{})
+	if !handled || cmd != nil {
+		t.Fatalf("expected hostThemeFlushMsg handled synchronously, got handled=%v cmd=%#v", handled, cmd)
+	}
+	got := model.runtime.Visible()
+	if got == nil || got.HostDefaultFG != "#aabbcc" || got.HostDefaultBG != "#112233" {
+		t.Fatalf("expected flushed host default colors, got %#v", got)
+	}
+	if got.HostPalette[5] != "#4488cc" {
+		t.Fatalf("expected flushed host palette color, got %#v", got.HostPalette)
 	}
 }

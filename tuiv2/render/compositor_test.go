@@ -325,6 +325,36 @@ func TestWriteSimpleCSIEmitsExpectedSequence(t *testing.T) {
 	}
 }
 
+func TestStyleDiffANSIResetsWhenReturningToDefault(t *testing.T) {
+	if got, want := styleDiffANSI(drawStyle{FG: "#ffffff", BG: "#000000", Bold: true}, drawStyle{}), "\x1b[0m"; got != want {
+		t.Fatalf("unexpected reset diff %q want %q", got, want)
+	}
+}
+
+func TestStyleDiffANSIUsesMinimalTransition(t *testing.T) {
+	got := styleDiffANSI(drawStyle{FG: "#ffffff", BG: "#000000", Bold: true}, drawStyle{FG: "#ff0000", BG: "#000000", Bold: true})
+	if strings.HasPrefix(got, "\x1b[0;") {
+		t.Fatalf("expected minimal style diff instead of full reset, got %q", got)
+	}
+	if !strings.Contains(got, "38;2;255;0;0") {
+		t.Fatalf("expected foreground transition in diff, got %q", got)
+	}
+}
+
+func TestContentLinesCompressLongBlankRunsWithECH(t *testing.T) {
+	canvas := newComposedCanvas(12, 1)
+	for x := 0; x < 12; x++ {
+		canvas.set(x, 0, drawCell{Content: " ", Width: 1, Style: drawStyle{BG: "#111111"}})
+	}
+	lines := canvas.contentLines()
+	if len(lines) != 1 {
+		t.Fatalf("expected one line, got %#v", lines)
+	}
+	if !strings.Contains(lines[0], "\x1b[12X") {
+		t.Fatalf("expected long blank run to use ECH compression, got %q", lines[0])
+	}
+}
+
 func TestWriteFGColorAndBGColorSupportAnsiIdxAndRGB(t *testing.T) {
 	tests := []struct {
 		name string

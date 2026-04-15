@@ -12,18 +12,22 @@ import (
 )
 
 const (
-	synchronizedOutputBegin     = "\x1b[?2026h"
-	synchronizedOutputEnd       = "\x1b[?2026l"
-	clientOutputBatchDelay      = 2 * time.Millisecond
-	interactiveOutputBatchDelay = 500 * time.Microsecond
+	synchronizedOutputBegin           = "\x1b[?2026h"
+	synchronizedOutputEnd             = "\x1b[?2026l"
+	clientOutputBatchDelay            = 2 * time.Millisecond
+	interactiveOutputBatchDelay       = 500 * time.Microsecond
+	remoteClientOutputBatchDelay      = 1 * time.Millisecond
+	remoteInteractiveOutputBatchDelay = 250 * time.Microsecond
 	// If a synchronized-output group is still open when the normal batch timer
 	// fires, wait in small increments for the trailing sync-end chunk so we can
 	// keep the whole redraw in one local VTerm.Write()/render pass.
-	synchronizedOutputWaitStep = 500 * time.Microsecond
+	synchronizedOutputWaitStep       = 500 * time.Microsecond
+	remoteSynchronizedOutputWaitStep = 250 * time.Microsecond
 	// Cap the extra wait so an incomplete or delayed sync group cannot stall the
 	// first visible frame indefinitely. This is a pragmatic latency ceiling, not
 	// a protocol guarantee.
-	synchronizedOutputWaitBudget = 5 * time.Millisecond
+	synchronizedOutputWaitBudget       = 5 * time.Millisecond
+	remoteSynchronizedOutputWaitBudget = 1500 * time.Microsecond
 )
 
 func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
@@ -138,14 +142,15 @@ func nextClientStreamFrame(ctx context.Context, stream <-chan protocol.StreamFra
 }
 
 func (r *Runtime) clientOutputBatchDelay() time.Duration {
-	if clientOutputBatchDelay <= 0 {
+	delay := effectiveClientOutputBatchDelay()
+	if delay <= 0 {
 		return 0
 	}
 	if r != nil && r.consumeInteractiveBypass() {
 		perftrace.Count("runtime.stream.output.interactive_bypass", 0)
-		return interactiveOutputBatchDelay
+		return effectiveInteractiveOutputBatchDelay()
 	}
-	return clientOutputBatchDelay
+	return delay
 }
 
 func coalesceClientOutputFrames(first protocol.StreamFrame, stream <-chan protocol.StreamFrame, batchDelay time.Duration, syncState StreamState) (protocol.StreamFrame, protocol.StreamFrame, bool, bool) {
@@ -186,6 +191,8 @@ func coalesceClientOutputFrames(first protocol.StreamFrame, stream <-chan protoc
 	}
 	timer := time.NewTimer(batchDelay)
 	defer timer.Stop()
+	waitBudget := effectiveSynchronizedOutputWaitBudget()
+	waitStep := effectiveSynchronizedOutputWaitStep()
 	waitedForSync := time.Duration(0)
 	for {
 		select {
@@ -200,19 +207,55 @@ func coalesceClientOutputFrames(first protocol.StreamFrame, stream <-chan protoc
 				return merged, protocol.StreamFrame{}, false, true
 			}
 		case <-timer.C:
-			if syncState.synchronizedOutputActive && synchronizedOutputWaitBudget > waitedForSync {
-				waitStep := synchronizedOutputWaitStep
-				if remaining := synchronizedOutputWaitBudget - waitedForSync; waitStep > remaining {
-					waitStep = remaining
+			if syncState.synchronizedOutputActive && waitBudget > waitedForSync {
+				nextWait := waitStep
+				if remaining := waitBudget - waitedForSync; nextWait > remaining {
+					nextWait = remaining
 				}
-				waitedForSync += waitStep
-				timer.Reset(waitStep)
+				if nextWait <= 0 {
+					pending, hasPending, ok := drainReady()
+					return merged, pending, hasPending, ok
+				}
+				waitedForSync += nextWait
+				timer.Reset(nextWait)
 				continue
 			}
 			pending, hasPending, ok := drainReady()
 			return merged, pending, hasPending, ok
 		}
 	}
+}
+
+func effectiveClientOutputBatchDelay() time.Duration {
+	delay := clientOutputBatchDelay
+	if shared.RemoteLatencyProfileEnabled() && (delay <= 0 || delay > remoteClientOutputBatchDelay) {
+		delay = remoteClientOutputBatchDelay
+	}
+	return shared.DurationOverride("TERMX_CLIENT_OUTPUT_BATCH_DELAY", delay)
+}
+
+func effectiveInteractiveOutputBatchDelay() time.Duration {
+	delay := interactiveOutputBatchDelay
+	if shared.RemoteLatencyProfileEnabled() && (delay <= 0 || delay > remoteInteractiveOutputBatchDelay) {
+		delay = remoteInteractiveOutputBatchDelay
+	}
+	return shared.DurationOverride("TERMX_INTERACTIVE_OUTPUT_BATCH_DELAY", delay)
+}
+
+func effectiveSynchronizedOutputWaitStep() time.Duration {
+	delay := synchronizedOutputWaitStep
+	if shared.RemoteLatencyProfileEnabled() && (delay <= 0 || delay > remoteSynchronizedOutputWaitStep) {
+		delay = remoteSynchronizedOutputWaitStep
+	}
+	return shared.DurationOverride("TERMX_SYNC_OUTPUT_WAIT_STEP", delay)
+}
+
+func effectiveSynchronizedOutputWaitBudget() time.Duration {
+	delay := synchronizedOutputWaitBudget
+	if shared.RemoteLatencyProfileEnabled() && (delay <= 0 || delay > remoteSynchronizedOutputWaitBudget) {
+		delay = remoteSynchronizedOutputWaitBudget
+	}
+	return shared.DurationOverride("TERMX_SYNC_OUTPUT_WAIT_BUDGET", delay)
 }
 
 func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFrame) {

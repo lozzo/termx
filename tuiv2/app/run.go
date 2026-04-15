@@ -54,12 +54,14 @@ func configureProgramOutput(model *Model, stdout io.Writer) (io.Writer, bool) {
 		return stdout, false
 	}
 	if model != nil {
-		// 中文说明：TTY 上默认走 termx 自己的整帧输出路径，不再把最终帧交给
-		// Bubble Tea 的 standardRenderer。后者会额外做逐行 diff / truncate /
-		// clear / cursor move，这会和 termx 自己的 full-frame compositor 冲突，
-		// 之前已经实测会重新引入 host cursor/IME 背景串行渲染问题。
-		model.SetFrameWriter(writer)
 		model.SetCursorWriter(writer)
+		if !shared.BubbleTeaRendererEnabled() {
+			// 中文说明：TTY 上默认走 termx 自己的整帧输出路径，不再把最终帧交给
+			// Bubble Tea 的 standardRenderer。后者会额外做逐行 diff / truncate /
+			// clear / cursor move，这会和 termx 自己的 full-frame compositor 冲突，
+			// 之前已经实测会重新引入 host cursor/IME 背景串行渲染问题。
+			model.SetFrameWriter(writer)
+		}
 		if model.runtime != nil {
 			writer.SetInteractiveFlushHint(model.runtime.RecentLocalInput)
 		}
@@ -94,7 +96,7 @@ func runWithClientOptions(cfg shared.Config, client bridge.Client, stdin io.Read
 		tea.WithInput(nil),
 		tea.WithOutput(output),
 	}
-	if directWriter != nil {
+	if directWriter != nil && !shared.BubbleTeaRendererEnabled() {
 		opts = append(opts, tea.WithoutRenderer())
 	} else {
 		opts = append(opts, tea.WithAltScreen(), tea.WithMouseCellMotion())
@@ -117,9 +119,16 @@ func runWithClientOptions(cfg shared.Config, client bridge.Client, stdin io.Read
 	defer stopInput()
 
 	if output != nil {
-		_, _ = io.WriteString(output, xansi.RequestForegroundColor+xansi.RequestBackgroundColor+requestTerminalPaletteQueries())
+		themeQueries := xansi.RequestForegroundColor + xansi.RequestBackgroundColor
+		expectedPalette := 0
+		if shared.HostPaletteProbeEnabled() {
+			expectedPalette = 16
+			themeQueries += requestTerminalPaletteQueries()
+		}
+		model.beginHostThemeBootstrap(expectedPalette)
+		_, _ = io.WriteString(output, themeQueries)
 	}
-	if directWriter != nil {
+	if directWriter != nil && !shared.BubbleTeaRendererEnabled() {
 		if err := directWriter.enterDirectTerminal(); err != nil {
 			return err
 		}

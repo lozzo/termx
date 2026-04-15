@@ -292,10 +292,13 @@ func (p *framePresenter) renderChangedRows(next []string) (string, int, []presen
 		if next[row] == p.lines[row] {
 			continue
 		}
-		changed++
 		prevRow := p.presentedRow(row)
 		nextRow := parsePresentedRow(next[row])
 		nextParsed[row] = nextRow
+		if presentedRowsEquivalent(prevRow, nextRow, p.fullWidthLines) {
+			continue
+		}
+		changed++
 		if len(prevRow.cells) > 0 {
 			reclaim = append(reclaim, prevRow.cells)
 		}
@@ -305,6 +308,21 @@ func (p *framePresenter) renderChangedRows(next []string) (string, int, []presen
 		}
 	}
 	return out.String(), changed, nextParsed, reclaim
+}
+
+func presentedRowsEquivalent(previous, next presentedRow, fullWidthLines bool) bool {
+	if len(previous.cells) != len(next.cells) {
+		return false
+	}
+	for i := range next.cells {
+		if previous.cells[i] != next.cells[i] {
+			return false
+		}
+	}
+	if fullWidthLines {
+		return true
+	}
+	return rowOwnsLineEnd(previous) == rowOwnsLineEnd(next)
 }
 
 func ensurePresentedRows(rows []presentedRow, size int) []presentedRow {
@@ -344,12 +362,12 @@ func renderChangedRowDiff(out *strings.Builder, previous, next presentedRow, row
 	if previous.raw == next.raw {
 		return true
 	}
-	if previous.hasErase || previous.hasWide || next.hasErase || next.hasWide {
-		return false
-	}
 	prevCells := previous.cells
 	nextCells := next.cells
-	if !previous.hasStyled && !next.hasStyled && len(prevCells) == len(nextCells) {
+	if !fullWidthLines && (previous.hasErase || next.hasErase) {
+		return false
+	}
+	if !previous.hasWide && !next.hasWide && len(prevCells) == len(nextCells) {
 		if renderChangedRowRuns(out, prevCells, nextCells, row, fullWidthLines, rowOwnsLineEnd(next)) {
 			return true
 		}
@@ -569,7 +587,7 @@ func (w *outputCursorWriter) WriteFrameLines(lines []string, cursor string) erro
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.pending.frame = ""
-	w.pending.lines = w.fitLinesToTTY(lines)
+	w.pending.lines = w.fitLinesToTTY(stripLeadingCHA1(lines))
 	w.pending.cursor = cursor
 	w.pending.afterWrite = append(w.pending.afterWrite, w.afterWrite...)
 	w.afterWrite = nil

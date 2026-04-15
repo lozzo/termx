@@ -15,6 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
 	creackpty "github.com/creack/pty"
+	"github.com/lozzow/termx/frameaudit"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/runtime"
@@ -646,6 +647,51 @@ func TestOutputCursorWriterDiffsLaterRowsAtCorrectAbsoluteRow(t *testing.T) {
 	}
 }
 
+func TestOutputCursorWriterStyledRowUsesRunDiffInsteadOfLongSuffixRewrite(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+
+	styleRow := func(left, middle, right string) string {
+		return "\x1b[31m" + left + "\x1b[32m" + middle + "\x1b[34m" + right + "\x1b[0m"
+	}
+	frame1 := strings.Join([]string{
+		styleRow(strings.Repeat("A", 20), strings.Repeat("B", 20), strings.Repeat("C", 20)),
+		styleRow(strings.Repeat("D", 20), strings.Repeat("E", 20), strings.Repeat("F", 20)),
+		styleRow(strings.Repeat("G", 20), strings.Repeat("H", 20), strings.Repeat("I", 20)),
+	}, "\n")
+	frame2 := strings.Join([]string{
+		styleRow(strings.Repeat("A", 20), "BBBBBBBBBBZBBBBBBBBB", strings.Repeat("C", 20)),
+		styleRow(strings.Repeat("D", 20), strings.Repeat("E", 20), "FFFFFFFFFFYFFFFFFFFF"),
+		styleRow(strings.Repeat("G", 20), strings.Repeat("H", 20), strings.Repeat("I", 20)),
+	}, "\n")
+
+	if err := writer.WriteFrame(frame1, ""); err != nil {
+		t.Fatalf("write initial styled frame: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrame(frame2, ""); err != nil {
+		t.Fatalf("write updated styled frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if len(got) == 0 {
+		t.Fatal("expected styled diff payload")
+	}
+	if len(got) >= len(frame2) {
+		t.Fatalf("expected styled run diff payload smaller than full frame, got len=%d full=%d", len(got), len(frame2))
+	}
+}
+
 func TestOutputCursorWriterDiffsChangedSpanAtCorrectAbsoluteColumn(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
@@ -738,11 +784,78 @@ func TestOutputCursorWriterFallsBackToFullRowForUnsafeEmojiRow(t *testing.T) {
 	got := strings.Join(sink.writes, "")
 	sink.mu.Unlock()
 
-	if !strings.Contains(got, "\x1b[1;1H") {
-		t.Fatalf("expected unsafe row fallback to target absolute column 1, got %q", got)
+	if len(got) == 0 {
+		t.Fatal("expected unsafe emoji row to produce a diff payload")
 	}
-	if !strings.Contains(got, frame2) {
-		t.Fatalf("expected unsafe row fallback to rewrite the full row, got %q", got)
+	screen := replayCursorWriterScreen(t, 16, 2, []string{frame1, frame2})
+	want := replayCursorWriterScreen(t, 16, 2, []string{frame2})
+	assertScreenEqual(t, screen, want)
+}
+
+func TestOutputCursorWriterWideStyledRowUsesDiffWhenNoEraseIsPresent(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+
+	frame1 := "\x1b[31mLEFT\x1b[0m \x1b[32m界面\x1b[0m \x1b[34mRIGHT\x1b[0m"
+	frame2 := "\x1b[31mLEFT\x1b[0m \x1b[32m界面\x1b[0m \x1b[34mRIGHZ\x1b[0m"
+	if err := writer.WriteFrame(frame1, ""); err != nil {
+		t.Fatalf("write initial wide frame: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrame(frame2, ""); err != nil {
+		t.Fatalf("write updated wide frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if len(got) == 0 {
+		t.Fatal("expected wide diff payload")
+	}
+	if strings.Contains(got, frame2) {
+		t.Fatalf("expected wide row diff not to rewrite the full target row, got %q", got)
+	}
+
+	screen := replayCursorWriterScreen(t, 40, 4, []string{frame1, frame2})
+	want := replayCursorWriterScreen(t, 40, 4, []string{frame2})
+	assertScreenEqual(t, screen, want)
+}
+
+func TestOutputCursorWriterSkipsSemanticallyEquivalentStyledFrame(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+
+	frame1 := "\x1b[31mA\x1b[0mB"
+	frame2 := "\x1b[31mA\x1b[mB"
+	if err := writer.WriteFrame(frame1, ""); err != nil {
+		t.Fatalf("write initial styled frame: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrame(frame2, ""); err != nil {
+		t.Fatalf("write semantically equivalent styled frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := append([]string(nil), sink.writes...)
+	sink.mu.Unlock()
+
+	if len(got) != 0 {
+		t.Fatalf("expected semantically equivalent styled frame to be skipped, got %#v", got)
 	}
 }
 
@@ -1172,6 +1285,15 @@ func TestStripTrailingEraseLineRightDropsTerminalResetOnlyOnLastLine(t *testing.
 	lines := []string{"a\x1b[0m\x1b[K", "b\x1b[0m\x1b[K"}
 	got := stripTrailingEraseLineRight(lines)
 	want := []string{"a\x1b[0m", "b\x1b[0m"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("unexpected stripped lines %q want %q", got, want)
+	}
+}
+
+func TestStripLeadingCHA1DropsRedundantLineAnchors(t *testing.T) {
+	lines := []string{xansi.CHA(1) + "abc", "\x1b[Gdef", "ghi"}
+	got := stripLeadingCHA1(lines)
+	want := []string{"abc", "def", "ghi"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("unexpected stripped lines %q want %q", got, want)
 	}
@@ -1986,6 +2108,108 @@ func TestOutputCursorWriterFrameLinesPathFocusSwitchFromBottomTextPanePreservesT
 	got := captureScreen(buildModel("pane-2"), "pane-1")
 	want := captureScreen(buildModel("pane-1"), "")
 	assertScreenEqual(t, got, want)
+}
+
+func TestOutputCursorWriterFrameLinesPathStackedPanesUseVerticalScrollOptimization(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+	dumpPath := filepath.Join(t.TempDir(), "stacked-scroll.dump")
+	t.Setenv("TERMX_FRAME_DUMP", dumpPath)
+
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "top", TerminalID: "term-top"},
+				"pane-2": {ID: "pane-2", Title: "bottom", TerminalID: "term-bottom"},
+			},
+			Root: &workbench.LayoutNode{
+				Direction: workbench.SplitHorizontal,
+				Ratio:     0.5,
+				First:     workbench.NewLeaf("pane-1"),
+				Second:    workbench.NewLeaf("pane-2"),
+			},
+		}},
+	})
+
+	rt := runtime.New(&recordingBridgeClient{
+		attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{},
+	})
+	topTerm := rt.Registry().GetOrCreate("term-top")
+	topTerm.Name = "top"
+	topTerm.State = "running"
+	topTerm.Channel = 1
+	topTerm.Snapshot = cursorWriterDenseTextSnapshot("term-top", 118, 14, 1)
+	topBinding := rt.BindPane("pane-1")
+	topBinding.Channel = 1
+	topBinding.Connected = true
+
+	bottomTerm := rt.Registry().GetOrCreate("term-bottom")
+	bottomTerm.Name = "bottom"
+	bottomTerm.State = "running"
+	bottomTerm.Channel = 2
+	bottomTerm.Snapshot = cursorWriterDenseTextSnapshot("term-bottom", 118, 14, 101)
+	bottomBinding := rt.BindPane("pane-2")
+	bottomBinding.Channel = 2
+	bottomBinding.Connected = true
+
+	model := New(shared.Config{}, wb, rt)
+	model.width = 120
+	model.height = 36
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	model.SetFrameWriter(writer)
+	model.SetCursorWriter(writer)
+
+	model.render.Invalidate()
+	_ = model.View()
+
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	topTerm.Snapshot = cursorWriterDenseTextSnapshot("term-top", 118, 14, 2)
+	touchRuntimeVisibleStateForTest(model.runtime, 1)
+	model.render.Invalidate()
+	_ = model.View()
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if !strings.Contains(got, "\x1b[1S") {
+		t.Fatalf("expected stacked panes to keep vertical scroll optimization active, got %q", got)
+	}
+
+	dumpData, err := os.ReadFile(dumpPath)
+	if err != nil {
+		t.Fatalf("read frame dump: %v", err)
+	}
+	entries, err := frameaudit.ParseDump(dumpData)
+	if err != nil {
+		t.Fatalf("parse frame dump: %v", err)
+	}
+	report, err := frameaudit.AuditEntries(entries, 120, 36)
+	if err != nil {
+		t.Fatalf("audit frame dump: %v", err)
+	}
+	if report.Summary.Noops != 0 {
+		t.Fatalf("expected no noop frames in stacked scroll audit, got %#v", report.Summary)
+	}
+	if len(report.Entries) != 2 {
+		t.Fatalf("expected exactly 2 dumped frames, got %#v", report.Entries)
+	}
+	if report.Entries[1].Bytes >= 1024 {
+		t.Fatalf("expected stacked scroll delta frame to stay below 1KiB, got %#v", report.Entries[1])
+	}
 }
 
 func TestOutputCursorWriterBatchedFocusSwitchAfterTextScrollPreservesTopNvimBackground(t *testing.T) {

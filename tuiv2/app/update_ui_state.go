@@ -1,11 +1,17 @@
 package app
 
 import (
+	"image/color"
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
+
+var hostThemeFlushDelay = 12 * time.Millisecond
+var hostThemeBootstrapFlushDelay = 90 * time.Millisecond
 
 func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 	switch typed := msg.(type) {
@@ -56,14 +62,11 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		m.render.Invalidate()
 		return m.maybeAutoFitFloatingPanesCmd(), true
 	case hostDefaultColorsMsg:
-		if m.runtime != nil {
-			m.runtime.SetHostDefaultColors(typed.FG, typed.BG)
-		}
-		return nil, true
+		return m.enqueueHostThemeUpdate(typed.FG, typed.BG, nil), true
 	case hostPaletteColorMsg:
-		if m.runtime != nil {
-			m.runtime.SetHostPaletteColor(typed.Index, typed.Color)
-		}
+		return m.enqueueHostThemeUpdate(nil, nil, map[int]color.Color{typed.Index: typed.Color}), true
+	case hostThemeFlushMsg:
+		m.flushPendingHostTheme()
 		return nil, true
 	case hostEmojiProbeMsg:
 		if m.runtime == nil || !m.hostEmojiProbePending || m.cursorOut == nil || typed.Attempt <= 0 {
@@ -104,5 +107,77 @@ func (m *Model) handleUIStateMessage(msg tea.Msg) (tea.Cmd, bool) {
 		return nil, true
 	default:
 		return nil, false
+	}
+}
+
+func (m *Model) enqueueHostThemeUpdate(fg, bg color.Color, palette map[int]color.Color) tea.Cmd {
+	if m == nil || m.runtime == nil {
+		return nil
+	}
+	if fg != nil {
+		m.pendingHostDefaultFG = fg
+		m.hostThemeBootstrapSeenFG = true
+	}
+	if bg != nil {
+		m.pendingHostDefaultBG = bg
+		m.hostThemeBootstrapSeenBG = true
+	}
+	if len(palette) > 0 {
+		if m.pendingHostPalette == nil {
+			m.pendingHostPalette = make(map[int]color.Color)
+		}
+		if m.hostThemeBootstrapPalette == nil {
+			m.hostThemeBootstrapPalette = make(map[int]struct{})
+		}
+		for index, c := range palette {
+			if c == nil {
+				continue
+			}
+			m.pendingHostPalette[index] = c
+			m.hostThemeBootstrapPalette[index] = struct{}{}
+		}
+	}
+	if m.hostThemeBootstrapPending &&
+		m.hostThemeBootstrapSeenFG &&
+		m.hostThemeBootstrapSeenBG &&
+		len(m.hostThemeBootstrapPalette) >= m.hostThemeBootstrapPaletteN {
+		m.flushPendingHostTheme()
+		return nil
+	}
+	if m.hostThemeFlushPending {
+		return nil
+	}
+	m.hostThemeFlushPending = true
+	delay := hostThemeFlushDelay
+	if m.hostThemeBootstrapPending {
+		delay = hostThemeBootstrapFlushDelay
+	}
+	return tea.Tick(delay, func(time.Time) tea.Msg {
+		return hostThemeFlushMsg{}
+	})
+}
+
+func (m *Model) flushPendingHostTheme() {
+	if m == nil || m.runtime == nil {
+		return
+	}
+	bootstrap := m.hostThemeBootstrapPending
+	m.hostThemeFlushPending = false
+	if bootstrap {
+		m.runtime.ApplyHostThemeSilently(m.pendingHostDefaultFG, m.pendingHostDefaultBG, m.pendingHostPalette)
+	} else {
+		m.runtime.ApplyHostTheme(m.pendingHostDefaultFG, m.pendingHostDefaultBG, m.pendingHostPalette)
+	}
+	m.pendingHostDefaultFG = nil
+	m.pendingHostDefaultBG = nil
+	if m.pendingHostPalette != nil {
+		clear(m.pendingHostPalette)
+	}
+	m.hostThemeBootstrapPending = false
+	m.hostThemeBootstrapPaletteN = 0
+	m.hostThemeBootstrapSeenFG = false
+	m.hostThemeBootstrapSeenBG = false
+	if m.hostThemeBootstrapPalette != nil {
+		clear(m.hostThemeBootstrapPalette)
 	}
 }

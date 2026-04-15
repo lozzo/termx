@@ -7,12 +7,54 @@ import (
 )
 
 var styleANSICache sync.Map
+var styleDiffANSICache sync.Map
 
 func styleDiffANSI(from, to drawStyle) string {
 	if from == to {
 		return ""
 	}
-	return styleANSI(to)
+	type key struct {
+		from drawStyle
+		to   drawStyle
+	}
+	cacheKey := key{from: from, to: to}
+	if cached, ok := styleDiffANSICache.Load(cacheKey); ok {
+		return cached.(string)
+	}
+	var b strings.Builder
+	if to == (drawStyle{}) {
+		b.WriteString("\x1b[0m")
+		ansi := b.String()
+		styleDiffANSICache.Store(cacheKey, ansi)
+		return ansi
+	}
+	b.WriteString("\x1b[")
+	first := true
+	appendStyleToggle(&b, &first, from.Bold, to.Bold, "1", "22")
+	appendStyleToggle(&b, &first, from.Italic, to.Italic, "3", "23")
+	appendStyleToggle(&b, &first, from.Underline, to.Underline, "4", "24")
+	appendStyleToggle(&b, &first, from.Reverse, to.Reverse, "7", "27")
+	if from.FG != to.FG {
+		if to.FG == "" {
+			appendStyleCode(&b, &first, "39")
+		} else {
+			appendStyleCode(&b, &first, styleColorCode(true, to.FG))
+		}
+	}
+	if from.BG != to.BG {
+		if to.BG == "" {
+			appendStyleCode(&b, &first, "49")
+		} else {
+			appendStyleCode(&b, &first, styleColorCode(false, to.BG))
+		}
+	}
+	if first {
+		return ""
+	}
+	b.WriteByte('m')
+	ansi := b.String()
+	styleDiffANSICache.Store(cacheKey, ansi)
+	return ansi
 }
 
 func writeCHAANSI(out *strings.Builder, col int) {
@@ -76,6 +118,75 @@ func styleANSI(s drawStyle) string {
 	ansi := b.String()
 	styleANSICache.Store(s, ansi)
 	return ansi
+}
+
+func appendStyleToggle(b *strings.Builder, first *bool, from, to bool, onCode, offCode string) {
+	if from == to {
+		return
+	}
+	if to {
+		appendStyleCode(b, first, onCode)
+	} else {
+		appendStyleCode(b, first, offCode)
+	}
+}
+
+func appendStyleCode(b *strings.Builder, first *bool, code string) {
+	if b == nil || first == nil || code == "" {
+		return
+	}
+	if !*first {
+		b.WriteByte(';')
+	}
+	b.WriteString(code)
+	*first = false
+}
+
+func styleColorCode(fg bool, c string) string {
+	var b strings.Builder
+	if n, ok := parseAnsiColor(c); ok {
+		if fg {
+			if n <= 7 {
+				b.WriteString("3")
+				b.WriteString(itoa(n))
+			} else {
+				b.WriteString("9")
+				b.WriteString(itoa(n - 8))
+			}
+		} else {
+			if n <= 7 {
+				b.WriteString("4")
+				b.WriteString(itoa(n))
+			} else {
+				b.WriteString("10")
+				b.WriteString(itoa(n - 8))
+			}
+		}
+		return b.String()
+	}
+	if n, ok := parseIdxColor(c); ok {
+		if fg {
+			b.WriteString("38;5;")
+		} else {
+			b.WriteString("48;5;")
+		}
+		b.WriteString(itoa(n))
+		return b.String()
+	}
+	if rgb, ok := hexToRGB(c); ok {
+		if fg {
+			b.WriteString("38;2;")
+		} else {
+			b.WriteString("48;2;")
+		}
+		b.WriteString(itoa(rgb[0]))
+		b.WriteByte(';')
+		b.WriteString(itoa(rgb[1]))
+		b.WriteByte(';')
+		b.WriteString(itoa(rgb[2]))
+		return b.String()
+	}
+	return ""
 }
 
 // writeFGColor appends the ANSI foreground color sequence for the given color

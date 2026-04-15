@@ -297,6 +297,28 @@ func TestConfigureProgramOutputUsesCursorWriterForTTY(t *testing.T) {
 	}
 }
 
+func TestConfigureProgramOutputCanKeepBubbleTeaRendererForTTY(t *testing.T) {
+	t.Setenv("TERMX_USE_BUBBLETEA_RENDERER", "1")
+	model := New(shared.Config{}, nil, nil)
+	tty := &cursorWriterProbeTTY{}
+
+	output, probeSupported := configureProgramOutput(model, tty)
+
+	writer, ok := output.(*outputCursorWriter)
+	if !ok || writer == nil {
+		t.Fatalf("expected tty output to use outputCursorWriter, got %#v", output)
+	}
+	if !probeSupported {
+		t.Fatal("expected tty output to enable host emoji probe")
+	}
+	if model.cursorOut != writer {
+		t.Fatalf("expected model cursor writer configured for Bubble Tea path, got %#v want %#v", model.cursorOut, writer)
+	}
+	if model.frameOut != nil {
+		t.Fatalf("expected Bubble Tea renderer experiment not to configure direct frame writer, got %#v", model.frameOut)
+	}
+}
+
 func TestE2ERunWithClientRetriesHostEmojiProbeWhenFirstCPRIsDropped(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e: requires a real PTY, skipped with -short")

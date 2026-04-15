@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"image/color"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -77,6 +78,17 @@ type Model struct {
 	invalidateScheduled         atomic.Bool
 	invalidateBlockedByFrameOut atomic.Bool
 	hostEmojiProbePending       bool
+	hostThemeFlushPending       bool
+	hostThemeBootstrapPending   bool
+	hostThemeBootstrapPaletteN  int
+	hostThemeBootstrapSeenFG    bool
+	hostThemeBootstrapSeenBG    bool
+	pendingHostDefaultFG        color.Color
+	pendingHostDefaultBG        color.Color
+	pendingHostPalette          map[int]color.Color
+	hostThemeBootstrapPalette   map[int]struct{}
+	pendingMouseMotion          *queuedMouseMsg
+	mouseMotionFlushPending     bool
 
 	// 鼠标拖动状态
 	mouseDragPaneID  string
