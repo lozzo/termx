@@ -51,7 +51,7 @@ func surfaceFromVTerm(vt VTermLike) TerminalSurface {
 }
 
 func visibleSurface(terminal *TerminalRuntime) TerminalSurface {
-	if terminal == nil || terminal.SurfaceVersion == 0 {
+	if terminal == nil || terminal.SurfaceVersion == 0 || terminal.PreferSnapshot {
 		return nil
 	}
 	return surfaceFromVTerm(terminal.VTerm)

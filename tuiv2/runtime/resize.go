@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/terminalmeta"
@@ -60,9 +61,26 @@ func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, col
 		}
 		terminal.PendingOwnerResize = false
 		if vt := r.ensureVTerm(terminal); vt != nil {
+			provisionalSnapshot := (*protocol.Snapshot)(nil)
+			if shouldPreferSnapshotDuringLocalShrink(oldCols, oldRows, int(cols), int(rows)) {
+				source := prevSnapshot
+				if source == nil {
+					source = snapshotFromVTerm(terminalID, vt)
+				}
+				provisionalSnapshot = provisionalSnapshotForLocalShrink(source, cols, rows)
+			}
 			vt.Resize(int(cols), int(rows))
 			seedResizeFillFromSnapshot(vt, prevSnapshot, oldCols, oldRows, int(cols), int(rows))
+			if provisionalSnapshot != nil {
+				terminal.PreferSnapshot = true
+				terminal.Snapshot = provisionalSnapshot
+				r.bumpSurfaceVersion(terminal)
+				terminal.SnapshotVersion = terminal.SurfaceVersion
+				r.invalidate()
+				return nil
+			}
 		}
+		terminal.PreferSnapshot = false
 		if terminal.BootstrapPending {
 			// Keep the local surface snapshot geometry in sync even before the
 			// first bootstrap replay completes, otherwise owner handoff resizes
@@ -75,6 +93,50 @@ func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, col
 		r.refreshSnapshot(terminalID)
 	}
 	return nil
+}
+
+func shouldPreferSnapshotDuringLocalShrink(oldCols, oldRows, newCols, newRows int) bool {
+	if oldCols <= 0 || oldRows <= 0 || newCols <= 0 || newRows <= 0 {
+		return false
+	}
+	if newCols > oldCols || newRows > oldRows {
+		return false
+	}
+	return newCols < oldCols || newRows < oldRows
+}
+
+func provisionalSnapshotForLocalShrink(snapshot *protocol.Snapshot, cols, rows uint16) *protocol.Snapshot {
+	if snapshot == nil || cols == 0 || rows == 0 {
+		return nil
+	}
+	cloned := *snapshot
+	cloned.Size = protocol.Size{Cols: cols, Rows: rows}
+	cloned.Screen = protocol.ScreenData{
+		Cells:             cloneProtocolCells2D(snapshot.Screen.Cells),
+		IsAlternateScreen: snapshot.Screen.IsAlternateScreen,
+	}
+	cloned.Scrollback = cloneProtocolCells2D(snapshot.Scrollback)
+	cloned.ScreenTimestamps = append([]time.Time(nil), snapshot.ScreenTimestamps...)
+	cloned.ScrollbackTimestamps = append([]time.Time(nil), snapshot.ScrollbackTimestamps...)
+	cloned.ScreenRowKinds = append([]string(nil), snapshot.ScreenRowKinds...)
+	cloned.ScrollbackRowKinds = append([]string(nil), snapshot.ScrollbackRowKinds...)
+	if cloned.Cursor.Row >= int(rows) || cloned.Cursor.Col >= int(cols) {
+		cloned.Cursor.Visible = false
+		cloned.Cursor.Row = runtimeMinInt(cloned.Cursor.Row, int(rows)-1)
+		cloned.Cursor.Col = runtimeMinInt(cloned.Cursor.Col, int(cols)-1)
+	}
+	return &cloned
+}
+
+func cloneProtocolCells2D(rows [][]protocol.Cell) [][]protocol.Cell {
+	if len(rows) == 0 {
+		return nil
+	}
+	cloned := make([][]protocol.Cell, len(rows))
+	for i, row := range rows {
+		cloned[i] = append([]protocol.Cell(nil), row...)
+	}
+	return cloned
 }
 
 func terminalAlreadySized(terminal *TerminalRuntime, cols, rows uint16) bool {

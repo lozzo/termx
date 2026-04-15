@@ -43,6 +43,10 @@ type TerminalRuntime struct {
 	// Owner handoff should force the next resize from the new owner even if the
 	// local snapshot cache still happens to match the requested geometry.
 	PendingOwnerResize bool
+	// Local shrink previews keep the VTerm resized for subsequent output
+	// parsing, but render should stay on a clipped snapshot until the terminal
+	// emits a real redraw. This avoids exposing emulator-only mid-states.
+	PreferSnapshot bool
 
 	Stream   StreamState
 	Recovery RecoveryState

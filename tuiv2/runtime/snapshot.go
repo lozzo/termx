@@ -39,6 +39,7 @@ func (r *Runtime) LoadSnapshot(ctx context.Context, terminalID string, offset, l
 	terminal := r.registry.GetOrCreate(terminalID)
 	if terminal != nil {
 		terminal.Snapshot = snapshot
+		terminal.PreferSnapshot = false
 		if offset == 0 && snapshot != nil {
 			if loaded := len(snapshot.Scrollback); loaded > terminal.ScrollbackLoadedLimit {
 				terminal.ScrollbackLoadedLimit = loaded
@@ -66,6 +67,7 @@ func (r *Runtime) refreshSnapshot(terminalID string) {
 		return
 	}
 	terminal.Snapshot = snapshotFromVTerm(terminalID, terminal.VTerm)
+	terminal.PreferSnapshot = false
 	terminal.SnapshotVersion = terminal.SurfaceVersion
 	if terminal.Snapshot != nil {
 		if loaded := len(terminal.Snapshot.Scrollback); loaded > terminal.ScrollbackLoadedLimit {

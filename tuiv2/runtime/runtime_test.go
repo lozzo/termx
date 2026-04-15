@@ -806,6 +806,91 @@ func TestRuntimeResizePaneRefreshesSnapshotWhileBootstrapPending(t *testing.T) {
 	}
 }
 
+func TestRuntimeResizePaneShrinkKeepsRenderOnSnapshotUntilOutput(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 80, 24, []string{"top", "middle", "bottom"})
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.Snapshot == nil || terminal.VTerm == nil {
+		t.Fatalf("expected hydrated terminal runtime, got %#v", terminal)
+	}
+
+	if err := rt.ResizePane(ctx, "pane-1", "term-1", 57, 20); err != nil {
+		t.Fatalf("resize pane shrink: %v", err)
+	}
+
+	if !terminal.PreferSnapshot {
+		t.Fatalf("expected shrink preview to prefer snapshot, got %#v", terminal)
+	}
+	if terminal.Snapshot == nil || terminal.Snapshot.Size.Cols != 57 || terminal.Snapshot.Size.Rows != 20 {
+		t.Fatalf("expected provisional shrink snapshot size 57x20, got %#v", terminal.Snapshot)
+	}
+	if cols, rows := terminal.VTerm.Size(); cols != 57 || rows != 20 {
+		t.Fatalf("expected live vterm resized to 57x20, got %dx%d", cols, rows)
+	}
+	visible := rt.Visible()
+	if len(visible.Terminals) != 1 || visible.Terminals[0].Surface != nil {
+		t.Fatalf("expected visible runtime to hide live surface during shrink preview, got %#v", visible.Terminals)
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("x")})
+
+	if terminal.PreferSnapshot {
+		t.Fatalf("expected first post-resize output to clear shrink preview flag, got %#v", terminal)
+	}
+	visible = rt.Visible()
+	if len(visible.Terminals) != 1 || visible.Terminals[0].Surface == nil {
+		t.Fatalf("expected visible runtime to restore live surface after output, got %#v", visible.Terminals)
+	}
+	if terminal.Snapshot == nil || terminal.Snapshot.Size.Cols != 57 || terminal.Snapshot.Size.Rows != 20 {
+		t.Fatalf("expected refreshed snapshot to keep resized geometry, got %#v", terminal.Snapshot)
+	}
+}
+
+func TestRuntimeResizeFrameDoesNotExposeLocalShrinkMidStateBeforeOutput(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 80, 24, []string{"top", "middle", "bottom"})
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil {
+		t.Fatal("expected terminal runtime")
+	}
+
+	if err := rt.ResizePane(ctx, "pane-1", "term-1", 57, 20); err != nil {
+		t.Fatalf("resize pane shrink: %v", err)
+	}
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{
+		Type:    protocol.TypeResize,
+		Payload: protocol.EncodeResizePayload(57, 20),
+	})
+
+	if !terminal.PreferSnapshot {
+		t.Fatalf("expected resize frame alone to keep shrink preview on snapshot, got %#v", terminal)
+	}
+	visible := rt.Visible()
+	if len(visible.Terminals) != 1 || visible.Terminals[0].Surface != nil {
+		t.Fatalf("expected resize echo not to expose provisional shrink surface, got %#v", visible.Terminals)
+	}
+}
+
 func TestRuntimeUnbindOwnerLeavesTerminalWithoutOwner(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()

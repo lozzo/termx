@@ -247,7 +247,7 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 		}
 		terminal.BootstrapPending = false
 		r.bumpSurfaceVersion(terminal)
-		if terminal.Snapshot == nil {
+		if terminal.PreferSnapshot || terminal.Snapshot == nil {
 			r.refreshSnapshot(terminalID)
 			return
 		}
@@ -265,6 +265,15 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 		if currentCols != int(cols) || currentRows != int(rows) {
 			vt.Resize(int(cols), int(rows))
 			resetSynchronizedOutputState(&terminal.Stream)
+			if terminal.PreferSnapshot {
+				r.bumpSurfaceVersion(terminal)
+				if terminal.Snapshot == nil {
+					r.refreshSnapshot(terminalID)
+					return
+				}
+				r.invalidate()
+				return
+			}
 			if terminal.BootstrapPending {
 				// Mirror local resize behavior during bootstrap: keep the
 				// provisional snapshot geometry aligned with the live surface so
