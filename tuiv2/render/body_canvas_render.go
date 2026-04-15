@@ -95,14 +95,14 @@ func rebuildBodyCanvas(cache *bodyRenderCache, entries []paneRenderEntry, width,
 		canvas.cursorOffsetY = cursorOffsetY
 		canvas.syntheticCursorVisibleFn = cursorVisibleFn
 	}
-	for _, entry := range entries {
-		if !entry.Frameless {
-			drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+		for _, entry := range entries {
+			if !entry.Frameless {
+				drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+			}
+			drawPaneContentFromCache(canvas, cache, entry, runtimeState, false)
 		}
-		drawPaneContentFromCache(canvas, cache, entry, runtimeState, false)
-	}
-	projectActiveEntryCursor(canvas, entries, runtimeState)
-	return canvas
+		projectActiveEntryCursor(canvas, entries, runtimeState)
+		return canvas
 }
 
 func drawPaneContentFromCache(canvas *composedCanvas, cache *bodyRenderCache, entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy, clearInterior bool) {

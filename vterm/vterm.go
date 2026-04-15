@@ -103,6 +103,8 @@ type VTerm struct {
 	scrollbackRowCache   [][]Cell
 	resizeTailStartCol   int
 	resizeTailBG         []string
+	resizeBottomFillBG   string
+	resizeBottomFillRow  int
 
 	done chan struct{} // closed when drain goroutine exits
 }
@@ -243,7 +245,7 @@ func (v *VTerm) Write(data []byte) (n int, err error) {
 	reconcileFinish := perftrace.Measure("vterm.write.reconcile")
 	v.reconcileRowMetadataLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, time.Now().UTC())
 	reconcileFinish(0)
-	v.clearResizeTailFillLocked()
+	v.pruneResizeTailFillLocked()
 	v.invalidateRowCachesLocked()
 	return n, err
 }
@@ -1092,6 +1094,7 @@ func (v *VTerm) screenRowViewLocked(y int) []Cell {
 		row[x] = v.convertCell(v.emu.CellAt(x, y))
 	}
 	v.applyResizeTailFillLocked(y, row)
+	v.applyResizeBottomFillLocked(y, row)
 	v.screenRowCache[y] = row
 	return row
 }
@@ -1141,32 +1144,70 @@ func (v *VTerm) invalidateRowCachesLocked() {
 func (v *VTerm) clearResizeTailFillLocked() {
 	v.resizeTailStartCol = 0
 	v.resizeTailBG = nil
+	v.resizeBottomFillBG = ""
+	v.resizeBottomFillRow = 0
+}
+
+func (v *VTerm) pruneResizeTailFillLocked() {
+	if v == nil || v.emu == nil || v.resizeTailStartCol <= 0 || len(v.resizeTailBG) == 0 {
+		v.resizeTailStartCol = 0
+		v.resizeTailBG = nil
+	} else {
+		if v.resizeTailStartCol >= v.emu.Width() {
+			v.resizeTailStartCol = 0
+			v.resizeTailBG = nil
+		} else {
+			height := minInt(len(v.resizeTailBG), v.emu.Height())
+			if height <= 0 {
+				v.resizeTailStartCol = 0
+				v.resizeTailBG = nil
+			} else {
+				v.resizeTailBG = v.resizeTailBG[:height]
+			}
+		}
+	}
+	if v.resizeBottomFillBG != "" && (v.resizeBottomFillRow < 0 || v.resizeBottomFillRow >= v.emu.Height()) {
+		v.resizeBottomFillBG = ""
+		v.resizeBottomFillRow = 0
+	}
 }
 
 func (v *VTerm) captureResizeTailFillLocked(oldCols, oldRows, newCols, newRows int) {
 	v.clearResizeTailFillLocked()
-	if v.emu == nil || oldCols <= 0 || newCols <= oldCols || oldRows <= 0 || !v.emu.IsAltScreen() {
+	if v.emu == nil || oldCols <= 0 || oldRows <= 0 || !v.emu.IsAltScreen() {
 		return
 	}
-	count := minInt(oldRows, maxInt(newRows, 0))
-	if count <= 0 {
-		return
-	}
-	bg := make([]string, count)
-	hasAny := false
-	for y := 0; y < count; y++ {
-		fill := v.screenRowTailBackgroundLocked(y, oldCols)
-		if fill == "" {
-			continue
+	if newCols > oldCols {
+		count := minInt(oldRows, maxInt(newRows, 0))
+		if count > 0 {
+			bg := make([]string, count)
+			hasAny := false
+			for y := 0; y < count; y++ {
+				fill := v.screenRowTailBackgroundLocked(y, oldCols)
+				if fill == "" {
+					continue
+				}
+				bg[y] = fill
+				hasAny = true
+			}
+			if hasAny {
+				v.resizeTailStartCol = maxInt(0, oldCols-1)
+				v.resizeTailBG = bg
+			}
 		}
-		bg[y] = fill
-		hasAny = true
 	}
-	if !hasAny {
-		return
+	if newRows > oldRows {
+		scanCols := maxInt(1, minInt(oldCols, newCols))
+		for scanY := oldRows - 1; scanY >= 0; scanY-- {
+			fill := v.screenRowTailBackgroundLocked(scanY, scanCols)
+			if fill == "" {
+				continue
+			}
+			v.resizeBottomFillBG = fill
+			v.resizeBottomFillRow = oldRows
+			break
+		}
 	}
-	v.resizeTailStartCol = oldCols
-	v.resizeTailBG = bg
 }
 
 func (v *VTerm) screenRowTailBackgroundLocked(y, width int) string {
@@ -1186,6 +1227,23 @@ func (v *VTerm) screenRowTailBackgroundLocked(y, width int) string {
 	return ""
 }
 
+func (v *VTerm) rowNeedsResizeTailFillLocked(y int) bool {
+	if v == nil || v.emu == nil || y < 0 || y >= v.emu.Height() || v.resizeTailStartCol <= 0 {
+		return false
+	}
+	width := v.emu.Width()
+	if v.resizeTailStartCol >= width {
+		return false
+	}
+	for x := v.resizeTailStartCol; x < width; x++ {
+		cell := v.convertCell(v.emu.CellAt(x, y))
+		if cellNeedsResizeFill(cell) {
+			return true
+		}
+	}
+	return false
+}
+
 func (v *VTerm) applyResizeTailFillLocked(y int, row []Cell) {
 	if v == nil || y < 0 || y >= len(v.resizeTailBG) || v.resizeTailStartCol <= 0 || v.resizeTailStartCol >= len(row) {
 		return
@@ -1195,13 +1253,58 @@ func (v *VTerm) applyResizeTailFillLocked(y int, row []Cell) {
 		return
 	}
 	for x := v.resizeTailStartCol; x < len(row); x++ {
-		if row[x].Content != " " || row[x].Width != 1 {
-			continue
-		}
-		if row[x].Style.BG != "" {
+		if !cellNeedsResizeFill(row[x]) {
 			continue
 		}
 		row[x].Style.BG = bg
+	}
+}
+
+func (v *VTerm) applyResizeBottomFillLocked(y int, row []Cell) {
+	if v == nil || v.resizeBottomFillBG == "" || y < v.resizeBottomFillRow {
+		return
+	}
+	bg := v.resizeBottomFillBG
+	for x := 0; x < len(row); x++ {
+		if !cellNeedsResizeFill(row[x]) {
+			continue
+		}
+		row[x].Style.BG = bg
+	}
+}
+
+func cellNeedsResizeFill(cell Cell) bool {
+	if cell.Style.BG != "" {
+		return false
+	}
+	if cell.Width > 1 {
+		return false
+	}
+	return strings.TrimSpace(cell.Content) == ""
+}
+
+func (v *VTerm) SeedResizeFillState(tailStartCol int, tailBG []CellStyle, bottomBG string, bottomStartRow int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if tailStartCol > 0 && len(tailBG) > 0 {
+		if v.resizeTailStartCol == 0 || tailStartCol < v.resizeTailStartCol {
+			v.resizeTailStartCol = tailStartCol
+		}
+		if len(v.resizeTailBG) < len(tailBG) {
+			next := make([]string, len(tailBG))
+			copy(next, v.resizeTailBG)
+			v.resizeTailBG = next
+		}
+		for i := range tailBG {
+			if tailBG[i].BG == "" {
+				continue
+			}
+			v.resizeTailBG[i] = tailBG[i].BG
+		}
+	}
+	if bottomBG != "" && bottomStartRow >= 0 {
+		v.resizeBottomFillBG = bottomBG
+		v.resizeBottomFillRow = bottomStartRow
 	}
 }
 

@@ -10,13 +10,21 @@ import (
 	"github.com/lozzow/termx/tuiv2/orchestrator"
 )
 
+type effectApplyOptions struct {
+	deferInvalidate bool
+}
+
 func (m *Model) applyEffects(effects []orchestrator.Effect) tea.Cmd {
+	return m.applyEffectsWithOptions(effects, effectApplyOptions{})
+}
+
+func (m *Model) applyEffectsWithOptions(effects []orchestrator.Effect, options effectApplyOptions) tea.Cmd {
 	if len(effects) == 0 {
 		return nil
 	}
 	cmds := make([]tea.Cmd, 0, len(effects))
 	for _, effect := range effects {
-		if cmd := m.effectCmd(effect); cmd != nil {
+		if cmd := m.effectCmdWithOptions(effect, options); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	}
@@ -31,10 +39,16 @@ func (m *Model) clampFloatingPanesToViewport() {
 }
 
 func (m *Model) effectCmd(effect orchestrator.Effect) tea.Cmd {
+	return m.effectCmdWithOptions(effect, effectApplyOptions{})
+}
+
+func (m *Model) effectCmdWithOptions(effect orchestrator.Effect, options effectApplyOptions) tea.Cmd {
 	switch typed := effect.(type) {
 	case orchestrator.InvalidateRenderEffect:
 		m.clampFloatingPanesToViewport()
-		m.render.Invalidate()
+		if !options.deferInvalidate {
+			m.render.Invalidate()
+		}
 		return nil
 	case orchestrator.ClosePaneEffect:
 		m.clampFloatingPanesToViewport()

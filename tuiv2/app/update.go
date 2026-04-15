@@ -110,8 +110,13 @@ func (m *Model) semanticActionEffectsCmd(action input.SemanticAction) tea.Cmd {
 	if m == nil || m.orchestrator == nil {
 		return nil
 	}
-	cmd := m.applyEffects(m.enrichEffects(action, m.orchestrator.HandleSemanticAction(action)))
-	if policy := m.semanticActionPolicy(); policy != nil {
+	policy := m.semanticActionPolicy()
+	options := effectApplyOptions{}
+	if policy != nil {
+		options.deferInvalidate = policy.deferInvalidate(action)
+	}
+	cmd := m.applyEffectsWithOptions(m.enrichEffects(action, m.orchestrator.HandleSemanticAction(action)), options)
+	if policy != nil {
 		return policy.postEffectsCmd(action, cmd)
 	}
 	return cmd

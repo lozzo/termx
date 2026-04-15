@@ -38,6 +38,10 @@ type frameBackpressureWriter interface {
 	SetDrainHook(func())
 }
 
+type frameResetWriter interface {
+	ResetFrameState()
+}
+
 type outputCursorWriter struct {
 	out io.Writer
 	tty xterm.File
@@ -850,6 +854,21 @@ func (w *outputCursorWriter) SetDrainHook(hook func()) {
 	}
 	w.mu.Lock()
 	w.drainHook = hook
+	w.mu.Unlock()
+}
+
+func (w *outputCursorWriter) ResetFrameState() {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	w.presenter.Reset()
+	w.presenter.allowVerticalScroll = !w.disableVerticalScroll
+	w.lastDirectCursor = ""
+	w.lastTTYWidth = 0
+	w.pending = pendingDirectFrame{}
+	w.afterWrite = nil
+	w.backlogActive.Store(false)
 	w.mu.Unlock()
 }
 

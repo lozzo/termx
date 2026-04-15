@@ -149,7 +149,7 @@ func (m *Model) resizePendingPaneResizesCmd() tea.Cmd {
 			if m.pendingPaneResizeSatisfied(target.PaneID, target.TerminalID, targetRect) {
 				m.clearPendingPaneResize(target.PaneID, target.TerminalID)
 			}
-			return nil
+			return renderRefreshMsg{}
 		})
 	}
 	return batchCmds(cmds...)

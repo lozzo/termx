@@ -15,6 +15,8 @@ type RenderTickMsg struct{}
 // InvalidateMsg is sent by the runtime stream goroutine to trigger a View() redraw.
 type InvalidateMsg struct{}
 
+type renderRefreshMsg struct{}
+
 type SemanticActionMsg struct {
 	Action input.SemanticAction
 }

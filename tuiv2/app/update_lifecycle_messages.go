@@ -20,6 +20,9 @@ func (m *Model) handleLifecycleMessage(msg tea.Msg) (tea.Cmd, bool) {
 			m.render.AdvanceCursorBlink()
 		}
 		return nil, true
+	case renderRefreshMsg:
+		m.forceFullRedraw()
+		return nil, true
 	case tea.WindowSizeMsg:
 		oldBodyRect := m.bodyRect()
 		newBodyRect := workbench.Rect{W: maxInt(1, typed.Width), H: render.FrameBodyHeight(typed.Height)}

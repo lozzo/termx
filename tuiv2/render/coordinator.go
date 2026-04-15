@@ -149,6 +149,24 @@ func (c *Coordinator) Invalidate() {
 	c.mu.Unlock()
 }
 
+func (c *Coordinator) ResetCaches() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.dirty = true
+	c.lastFrame = ""
+	c.lastResult = RenderResult{}
+	c.hasLastResult = false
+	c.lastKey = renderVMKey{}
+	c.bodyCache = nil
+	c.tabBarValue = ""
+	c.statusValue = ""
+	c.tabBarKey = tabBarCacheKey{}
+	c.statusKey = statusBarCacheKey{}
+	c.mu.Unlock()
+}
+
 func (c *Coordinator) RevealCursorBlink() {
 	if c == nil {
 		return

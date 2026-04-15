@@ -165,6 +165,42 @@ func TestVTermResizeRoundTripUsesNearestTrailingBackgroundWhenEdgeCellHasNoBG(t 
 	}
 }
 
+func TestVTermWidthGrowFillPersistsThroughPartialWrite(t *testing.T) {
+	const termBG = "#1e1e2e"
+	vt := New(4, 2, 100, nil)
+	bg := CellStyle{BG: termBG}
+	screen := make([][]Cell, 2)
+	for y := range screen {
+		screen[y] = make([]Cell, 4)
+		for x := range screen[y] {
+			screen[y][x] = Cell{Content: " ", Width: 1, Style: bg}
+		}
+	}
+	vt.LoadSnapshot(ScreenData{Cells: screen}, CursorState{Row: 0, Col: 0, Visible: true}, TerminalModes{AlternateScreen: true, MouseTracking: true})
+
+	vt.Resize(8, 2)
+
+	partialRedraw := "\x1b[?1049h" +
+		"\x1b[1;1H\x1b[48;2;30;30;46mABCD" +
+		"\x1b[2;1H\x1b[48;2;30;30;46mWXYZ"
+	if _, err := vt.Write([]byte(partialRedraw)); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	restored := vt.ScreenContent()
+	for _, point := range []struct {
+		row int
+		col int
+	}{
+		{row: 0, col: 6},
+		{row: 1, col: 6},
+	} {
+		if got := restored.Cells[point.row][point.col].Style.BG; got != termBG {
+			t.Fatalf("expected tail fill at row=%d col=%d to keep background %q, got %#v", point.row, point.col, termBG, restored.Cells[point.row][point.col])
+		}
+	}
+}
+
 func TestLoadSnapshotWithTimestampsRestoresRowTimes(t *testing.T) {
 	vt := New(6, 3, 100, nil)
 	scrollbackTS := []time.Time{time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC)}

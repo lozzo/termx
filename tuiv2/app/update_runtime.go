@@ -166,7 +166,7 @@ func (m *Model) resizeVisiblePanesCmd() tea.Cmd {
 		if err := m.resizeVisiblePanes(context.Background()); err != nil {
 			return err
 		}
-		return nil
+		return renderRefreshMsg{}
 	}
 }
 
@@ -230,12 +230,13 @@ func (m *Model) syncZoomViewportCmd(paneID string, explicitTakeover bool) tea.Cm
 		if err := m.resizeVisiblePanes(ctx); err != nil {
 			return err
 		}
+		refresh := tea.Cmd(func() tea.Msg { return renderRefreshMsg{} })
 		if m.sessionID == "" {
 			if cmd := m.saveStateCmd(); cmd != nil {
-				return cmd()
+				return tea.Batch(cmd, refresh)()
 			}
 		}
-		return nil
+		return refresh()
 	}
 }
 
@@ -283,7 +284,7 @@ func (m *Model) resizePaneIfNeededCmd(paneID string) tea.Cmd {
 		if err := m.ensurePaneTerminalSize(context.Background(), pane.ID, pane.TerminalID, rect); err != nil {
 			return err
 		}
-		return nil
+		return renderRefreshMsg{}
 	}
 }
 
