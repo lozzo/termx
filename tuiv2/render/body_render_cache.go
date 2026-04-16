@@ -10,6 +10,7 @@ type bodyRenderCache struct {
 	width             int
 	height            int
 	order             []string
+	keepSprites       map[string]struct{}
 	rects             map[string]workbench.Rect
 	frameKeys         map[string]paneFrameKey
 	contentKeys       map[string]paneContentKey
@@ -201,17 +202,23 @@ func (c *bodyRenderCache) reset(entries []paneRenderEntry, width, height int) {
 			delete(c.contentKeys, key)
 		}
 	}
-	keepSprites := make(map[string]struct{}, len(entries))
+	if c.keepSprites == nil {
+		c.keepSprites = make(map[string]struct{}, len(entries))
+	} else {
+		for key := range c.keepSprites {
+			delete(c.keepSprites, key)
+		}
+	}
 	for _, entry := range entries {
 		c.order = append(c.order, entry.PaneID)
 		c.rects[entry.PaneID] = entry.Rect
 		c.frameKeys[entry.PaneID] = entry.FrameKey
 		c.contentKeys[entry.PaneID] = entry.ContentKey
-		keepSprites[entry.PaneID] = struct{}{}
+		c.keepSprites[entry.PaneID] = struct{}{}
 	}
 	if c.contentSprites != nil {
 		for paneID := range c.contentSprites {
-			if _, ok := keepSprites[paneID]; !ok {
+			if _, ok := c.keepSprites[paneID]; !ok {
 				delete(c.contentSprites, paneID)
 			}
 		}

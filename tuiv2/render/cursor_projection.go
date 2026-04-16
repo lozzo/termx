@@ -43,19 +43,25 @@ type cursorRenderTarget struct {
 }
 
 func activeEntryCursorRenderTarget(entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) (cursorRenderTarget, bool) {
-	lookup := newRuntimeLookup(runtimeState)
+	var lookup runtimeLookup
+	lookupReady := false
 	for i, entry := range entries {
 		if !entry.Active {
 			continue
 		}
-		terminal := findVisibleTerminalWithLookup(lookup, entry.TerminalID)
 		snapshot := entry.Snapshot
 		surface := entry.Surface
-		if snapshot == nil && surface == nil && terminal != nil {
-			surface = terminal.Surface
-		}
-		if snapshot == nil && surface == nil && terminal != nil {
-			snapshot = terminal.Snapshot
+		if snapshot == nil && surface == nil && runtimeState != nil {
+			if !lookupReady {
+				lookup = newRuntimeLookup(runtimeState)
+				lookupReady = true
+			}
+			if terminal := findVisibleTerminalWithLookup(lookup, entry.TerminalID); terminal != nil {
+				surface = terminal.Surface
+				if surface == nil {
+					snapshot = terminal.Snapshot
+				}
+			}
 		}
 		source := renderSource(snapshot, surface)
 		if source == nil {

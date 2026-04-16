@@ -87,20 +87,23 @@ func paneChromeContextForPane(pane workbench.VisiblePane, title string, border p
 
 func paneChromeActionTokensForContext(ctx paneChromeContext) []paneChromeActionToken {
 	if ctx.Floating {
-		return []paneChromeActionToken{
-			{Kind: HitRegionPaneCenterFloating, Label: "[" + paneCenterFloatingIcon() + "]", Action: input.ActionCenterFloatingPane},
-			{Kind: HitRegionPaneCollapseFloating, Label: "[" + paneCollapseFloatingIcon() + "]", Action: input.ActionCollapseFloatingPane},
-			{Kind: HitRegionPaneZoom, Label: "[" + paneZoomIcon() + "]", Action: input.ActionZoomPane},
-			{Kind: HitRegionPaneClose, Label: "[" + paneCloseIcon() + "]", Action: input.ActionClosePane},
-		}
+		return floatingPaneChromeActionTokens
 	}
-	tokens := []paneChromeActionToken{
-		{Kind: HitRegionPaneZoom, Label: "[" + paneZoomIcon() + "]", Action: input.ActionZoomPane},
-		{Kind: HitRegionPaneSplitV, Label: "[" + paneSplitVerticalIcon() + "]", Action: input.ActionSplitPane},
-		{Kind: HitRegionPaneSplitH, Label: "[" + paneSplitHorizontalIcon() + "]", Action: input.ActionSplitPaneHorizontal},
-		{Kind: HitRegionPaneClose, Label: "[" + paneCloseIcon() + "]", Action: input.ActionClosePane},
-	}
-	return tokens
+	return tiledPaneChromeActionTokens
+}
+
+var floatingPaneChromeActionTokens = []paneChromeActionToken{
+	{Kind: HitRegionPaneCenterFloating, Label: "[" + paneCenterFloatingIcon() + "]", Action: input.ActionCenterFloatingPane},
+	{Kind: HitRegionPaneCollapseFloating, Label: "[" + paneCollapseFloatingIcon() + "]", Action: input.ActionCollapseFloatingPane},
+	{Kind: HitRegionPaneZoom, Label: "[" + paneZoomIcon() + "]", Action: input.ActionZoomPane},
+	{Kind: HitRegionPaneClose, Label: "[" + paneCloseIcon() + "]", Action: input.ActionClosePane},
+}
+
+var tiledPaneChromeActionTokens = []paneChromeActionToken{
+	{Kind: HitRegionPaneZoom, Label: "[" + paneZoomIcon() + "]", Action: input.ActionZoomPane},
+	{Kind: HitRegionPaneSplitV, Label: "[" + paneSplitVerticalIcon() + "]", Action: input.ActionSplitPane},
+	{Kind: HitRegionPaneSplitH, Label: "[" + paneSplitHorizontalIcon() + "]", Action: input.ActionSplitPaneHorizontal},
+	{Kind: HitRegionPaneClose, Label: "[" + paneCloseIcon() + "]", Action: input.ActionClosePane},
 }
 
 func paneChromeActionTokensForFrame(rect workbench.Rect, title string, border paneBorderInfo, floating bool) []paneChromeActionToken {
@@ -112,13 +115,24 @@ func paneChromeActionTokensForPane(pane workbench.VisiblePane, title string, bor
 }
 
 func paneChromeActionSignatureForFrame(rect workbench.Rect, title string, border paneBorderInfo, floating bool) string {
-	tokens := paneChromeActionTokensForFrame(rect, title, border, floating)
-	parts := make([]string, 0, len(tokens))
-	for _, token := range tokens {
-		parts = append(parts, string(token.Kind))
+	_ = rect
+	_ = title
+	_ = border
+	if floating {
+		return floatingPaneChromeActionSignature
 	}
-	return strings.Join(parts, "|")
+	return tiledPaneChromeActionSignature
 }
+
+const floatingPaneChromeActionSignature = string(HitRegionPaneCenterFloating) + "|" +
+	string(HitRegionPaneCollapseFloating) + "|" +
+	string(HitRegionPaneZoom) + "|" +
+	string(HitRegionPaneClose)
+
+const tiledPaneChromeActionSignature = string(HitRegionPaneZoom) + "|" +
+	string(HitRegionPaneSplitV) + "|" +
+	string(HitRegionPaneSplitH) + "|" +
+	string(HitRegionPaneClose)
 
 func paneChromeActionSlotsWidth(tokens []paneChromeActionToken, count int) int {
 	if count <= 0 {

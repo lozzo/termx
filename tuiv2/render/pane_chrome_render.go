@@ -8,7 +8,7 @@ import (
 )
 
 func resolvePaneTitle(pane workbench.VisiblePane, runtimeState *VisibleRuntimeStateProxy) string {
-	return resolvePaneTitleWithLookup(pane, newRuntimeLookup(runtimeState))
+	return resolvePaneTitleWithLookup(pane, runtimeLookupForState(runtimeState))
 }
 
 func resolvePaneTitleWithLookup(pane workbench.VisiblePane, lookup runtimeLookup) string {
@@ -508,7 +508,7 @@ func drawBorderLabel(canvas *composedCanvas, x, y int, text string, style drawSt
 }
 
 func PaneOwnerButtonRect(pane workbench.VisiblePane, runtimeState *VisibleRuntimeStateProxy, confirmPaneID string) (workbench.Rect, bool) {
-	lookup := newRuntimeLookup(runtimeState)
+	lookup := runtimeLookupForState(runtimeState)
 	title := displayPaneTitleWithLookup(pane, lookup)
 	border := paneBorderInfoWithLookup(pane, lookup, confirmPaneID)
 	layout, ok := paneTopBorderLabelsLayout(

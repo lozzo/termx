@@ -338,20 +338,41 @@ func statusBarRightTokenSignature(tokens []RenderStatusToken) string {
 	if len(tokens) == 0 {
 		return ""
 	}
-	parts := make([]string, 0, len(tokens))
+	est := 0
+	valid := 0
 	for _, token := range tokens {
 		if strings.TrimSpace(token.Label) == "" {
 			continue
 		}
-		part := string(token.Kind) + "|" + token.Label + "|" + string(token.Action.Kind)
-		if token.Action.Kind == "" {
-			part += "|plain"
-		} else {
-			part += "|action"
-		}
-		parts = append(parts, part)
+		valid++
+		est += len(token.Label) + len(token.Kind) + len(token.Action.Kind) + 16
 	}
-	return strings.Join(parts, "\x1f")
+	if valid == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(est)
+	first := true
+	for _, token := range tokens {
+		if strings.TrimSpace(token.Label) == "" {
+			continue
+		}
+		if !first {
+			b.WriteByte('\x1f')
+		}
+		first = false
+		b.WriteString(string(token.Kind))
+		b.WriteByte('|')
+		b.WriteString(token.Label)
+		b.WriteByte('|')
+		b.WriteString(string(token.Action.Kind))
+		if token.Action.Kind == "" {
+			b.WriteString("|plain")
+		} else {
+			b.WriteString("|action")
+		}
+	}
+	return b.String()
 }
 
 func fillLine(left, right string, width int, bg string) string {

@@ -187,12 +187,13 @@ func activeExitedPaneHasRecoverySelectionVM(vm RenderVM) bool {
 	if tab.ActivePaneID == "" || tab.ActivePaneID != vm.Body.ExitedSelection.PaneID {
 		return false
 	}
+	lookup := newRuntimeLookup(vm.Runtime)
 	for i := range tab.Panes {
 		pane := &tab.Panes[i]
 		if pane.ID != tab.ActivePaneID || pane.TerminalID == "" {
 			continue
 		}
-		terminal := findVisibleTerminal(vm.Runtime, pane.TerminalID)
+		terminal := findVisibleTerminalWithLookup(lookup, pane.TerminalID)
 		return terminal != nil && terminal.State == "exited"
 	}
 	return false

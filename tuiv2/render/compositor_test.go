@@ -242,22 +242,34 @@ func TestComposedCanvasDirtyIntervalRebuildsOnlyTouchedChunks(t *testing.T) {
 	canvas.drawText(0, 0, strings.Repeat("a", 96), drawStyle{FG: "#ffffff"})
 	_ = canvas.contentString()
 
-	// After a full-row fast-path render, rowChunks are cleared/nil — chunks are
-	// only populated on demand when a partial update occurs.
+	// Full-row renders now populate chunk cache too, so later partial updates
+	// can keep using the same chunk-stitched row representation.
 	if len(canvas.rowChunks) == 0 {
 		t.Fatalf("expected rowChunks slice to exist, got %#v", canvas.rowChunks)
 	}
-	if canvas.rowChunks[0] != nil && len(canvas.rowChunks[0]) > 0 && canvas.rowChunks[0][0] != "" {
-		t.Fatalf("expected chunk cache to be empty after full-row fast path, got %#v", canvas.rowChunks[0])
+	if canvas.rowChunks[0] == nil || len(canvas.rowChunks[0]) < 3 {
+		t.Fatalf("expected chunk cache to be populated after full-row fast path, got %#v", canvas.rowChunks[0])
 	}
 
 	// First partial update: touch only chunk 1 (x=40 falls in [32,63]).
-	// This causes all chunks to be allocated and populated for the first time.
+	// Chunk 0 and chunk 2 must be reused; chunk 1 must be rebuilt.
+	chunk0Before := canvas.rowChunks[0][0]
+	chunk1Before := canvas.rowChunks[0][1]
+	chunk2Before := canvas.rowChunks[0][2]
 	canvas.set(40, 0, drawCell{Content: "Z", Width: 1, Style: drawStyle{FG: "#ff0000"}})
 	_ = canvas.contentString()
 
 	if len(canvas.rowChunks[0]) < 3 {
 		t.Fatalf("expected chunk cache to be populated after partial update, got %#v", canvas.rowChunks[0])
+	}
+	if got := canvas.rowChunks[0][0]; got != chunk0Before {
+		t.Fatalf("expected untouched chunk[0] to be reused after first partial update")
+	}
+	if got := canvas.rowChunks[0][1]; got == chunk1Before {
+		t.Fatalf("expected dirty chunk[1] to be rebuilt after first partial update")
+	}
+	if got := canvas.rowChunks[0][2]; got != chunk2Before {
+		t.Fatalf("expected untouched chunk[2] to be reused after first partial update")
 	}
 	chunk0After1 := canvas.rowChunks[0][0]
 	chunk1After1 := canvas.rowChunks[0][1]

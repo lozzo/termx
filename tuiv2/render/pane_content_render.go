@@ -244,8 +244,22 @@ func resolvePaneContent(entry paneRenderEntry, runtimeState *VisibleRuntimeState
 func terminalSourceWindowSignature(source terminalRenderSource, height, offset int) uint64 {
 	finish := perftrace.Measure("render.window_signature")
 	defer finish(height)
-	state := buildTerminalSourceWindowState(source, height, offset)
-	return state.contentHash
+	if source == nil || height <= 0 {
+		return 0
+	}
+	perftrace.Count("render.window_signature.rows", height)
+	hash := fnvOffset64
+	hash = fnvMixUint64(hash, uint64(source.Size().Cols))
+	hash = fnvMixUint64(hash, uint64(source.Size().Rows))
+	hash = fnvMixUint64(hash, uint64(source.ScreenRows()))
+	hash = fnvMixUint64(hash, uint64(source.ScrollbackRows()))
+	hash = fnvMixUint64(hash, uint64(source.TotalRows()))
+	hash = fnvMixUint64(hash, uint64(offset))
+	for line := 0; line < height; line++ {
+		rowIndex := terminalSourceWindowRowIndex(source, height, offset, line)
+		hash = fnvMixUint64(hash, terminalSourceRowHash(source, rowIndex))
+	}
+	return hash
 }
 
 func buildTerminalSourceWindowState(source terminalRenderSource, height, offset int) terminalSourceWindowState {
@@ -257,27 +271,8 @@ func buildTerminalSourceWindowState(source terminalRenderSource, height, offset 
 	for i := range rowIndices {
 		rowIndices[i] = -1
 	}
-	if offset <= 0 {
-		base := source.ScrollbackRows()
-		limit := minInt(height, source.ScreenRows())
-		for line := 0; line < limit; line++ {
-			rowIndices[line] = base + line
-		}
-	} else {
-		totalRows := source.TotalRows()
-		end := totalRows - offset
-		if end < 0 {
-			end = 0
-		}
-		start := end - height
-		if start < 0 {
-			start = 0
-		}
-		line := 0
-		for rowIndex := start; rowIndex < end && line < height; rowIndex++ {
-			rowIndices[line] = rowIndex
-			line++
-		}
+	for line := 0; line < height; line++ {
+		rowIndices[line] = terminalSourceWindowRowIndex(source, height, offset, line)
 	}
 
 	rowHashes := make([]uint64, height)
@@ -298,6 +293,34 @@ func buildTerminalSourceWindowState(source terminalRenderSource, height, offset 
 		rowHashes:   rowHashes,
 		contentHash: hash,
 	}
+}
+
+func terminalSourceWindowRowIndex(source terminalRenderSource, height, offset, line int) int {
+	if source == nil || height <= 0 || line < 0 || line >= height {
+		return -1
+	}
+	if offset <= 0 {
+		base := source.ScrollbackRows()
+		limit := minInt(height, source.ScreenRows())
+		if line >= limit {
+			return -1
+		}
+		return base + line
+	}
+	totalRows := source.TotalRows()
+	end := totalRows - offset
+	if end < 0 {
+		end = 0
+	}
+	start := end - height
+	if start < 0 {
+		start = 0
+	}
+	rowIndex := start + line
+	if rowIndex >= end {
+		return -1
+	}
+	return rowIndex
 }
 
 func terminalSourceExtentHash(source terminalRenderSource, rect workbench.Rect, theme uiTheme) uint64 {

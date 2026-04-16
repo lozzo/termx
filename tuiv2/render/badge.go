@@ -27,7 +27,7 @@ type paneBorderInfo struct {
 
 // paneMeta generates the badge/meta string for a pane based on terminal state.
 func paneMeta(pane workbench.VisiblePane, runtimeState *VisibleRuntimeStateProxy) string {
-	return paneMetaWithLookup(pane, newRuntimeLookup(runtimeState), "")
+	return paneMetaWithLookup(pane, runtimeLookupForState(runtimeState), "")
 }
 
 func paneMetaWithLookup(pane workbench.VisiblePane, lookup runtimeLookup, confirmPaneID string) string {
@@ -155,9 +155,13 @@ func paneBorderStateTone(state string) string {
 }
 
 func findVisibleTerminal(runtimeState *VisibleRuntimeStateProxy, terminalID string) *runtime.VisibleTerminal {
-	return newRuntimeLookup(runtimeState).terminal(terminalID)
+	return runtimeLookupForState(runtimeState).terminal(terminalID)
 }
 
 func paneBindingRole(runtimeState *VisibleRuntimeStateProxy, paneID string) string {
-	return newRuntimeLookup(runtimeState).paneRole(paneID)
+	return runtimeLookupForState(runtimeState).paneRole(paneID)
+}
+
+func runtimeLookupForState(runtimeState *VisibleRuntimeStateProxy) runtimeLookup {
+	return newRuntimeLookup(runtimeState)
 }
