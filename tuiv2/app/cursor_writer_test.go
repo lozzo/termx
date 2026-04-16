@@ -834,6 +834,39 @@ func TestOutputCursorWriterFallsBackToFullRowForUnsafeEmojiRow(t *testing.T) {
 	assertScreenEqual(t, screen, want)
 }
 
+func TestOutputCursorWriterFrameLinesFallsBackToFullRowForUnsafeEmojiRow(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+
+	line1 := xansi.CHA(1) + "AAA❄️" + xansi.ECH(1) + xansi.CHA(6) + "BB" + "\x1b[0m\x1b[K"
+	line2 := xansi.CHA(1) + "AAA❄️" + xansi.ECH(1) + xansi.CHA(6) + "BC" + "\x1b[0m\x1b[K"
+	if err := writer.WriteFrameLines([]string{line1}, ""); err != nil {
+		t.Fatalf("write initial unsafe line frame: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrameLines([]string{line2}, ""); err != nil {
+		t.Fatalf("write unsafe line diff frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if len(got) == 0 {
+		t.Fatal("expected unsafe emoji line row to produce a diff payload")
+	}
+	screen := replayCursorWriterLineScreen(t, 16, 2, [][]string{{line1}, {line2}})
+	want := replayCursorWriterLineScreen(t, 16, 2, [][]string{{line2}})
+	assertScreenEqual(t, screen, want)
+}
+
 func TestOutputCursorWriterWideStyledRowUsesDiffWhenNoEraseIsPresent(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
@@ -2867,6 +2900,25 @@ func replayCursorWriterScreen(t *testing.T, width, height int, frames []string) 
 	for _, frame := range frames {
 		if err := writer.WriteFrame(frame, ""); err != nil {
 			t.Fatalf("write frame: %v", err)
+		}
+	}
+	sink.mu.Lock()
+	stream := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	vt := localvterm.New(width, height, 0, nil)
+	if _, err := vt.Write([]byte(stream)); err != nil {
+		t.Fatalf("replay stream into host vterm: %v", err)
+	}
+	return vt.ScreenContent()
+}
+
+func replayCursorWriterLineScreen(t *testing.T, width, height int, frames [][]string) localvterm.ScreenData {
+	t.Helper()
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	for _, frame := range frames {
+		if err := writer.WriteFrameLines(frame, ""); err != nil {
+			t.Fatalf("write frame lines: %v", err)
 		}
 	}
 	sink.mu.Lock()

@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/lozzow/termx/tuiv2/shared"
 )
 
 func rowOwnsLineEnd(row presentedRow) bool {
@@ -110,6 +111,9 @@ func parsePresentedRowGeneric(row string) presentedRow {
 	hasStyled := false
 	hasWide := false
 	hasErase := false
+	hasHiddenEmojiCompensation := false
+	lastVisibleToken := ""
+	lastVisibleWidth := 0
 	for len(rest) > 0 {
 		seq, width, n, nextState := xansi.DecodeSequence(rest, state, parser)
 		if n <= 0 {
@@ -124,6 +128,8 @@ func parsePresentedRowGeneric(row string) presentedRow {
 				hasWide = true
 			}
 			cells = append(cells, presentedCell{Content: token, Width: width, Style: style})
+			lastVisibleToken = token
+			lastVisibleWidth = width
 		} else if len(token) > 0 && token[0] == '\x1b' {
 			switch xansi.Cmd(parser.Command()).Final() {
 			case 'm':
@@ -132,6 +138,9 @@ func parsePresentedRowGeneric(row string) presentedRow {
 				count, ok := parser.Param(0, 1)
 				if !ok || count <= 0 {
 					count = 1
+				}
+				if count == 1 && shared.IsAmbiguousEmojiVariationSelectorCluster(lastVisibleToken, lastVisibleWidth) {
+					hasHiddenEmojiCompensation = true
 				}
 				hasErase = true
 				if style != (presentedStyle{}) {
@@ -145,7 +154,14 @@ func parsePresentedRowGeneric(row string) presentedRow {
 		state = nextState
 		rest = rest[n:]
 	}
-	return presentedRow{raw: row, cells: cells, hasStyled: hasStyled, hasWide: hasWide, hasErase: hasErase}
+	return presentedRow{
+		raw:                        row,
+		cells:                      cells,
+		hasStyled:                  hasStyled,
+		hasWide:                    hasWide,
+		hasErase:                   hasErase,
+		hasHiddenEmojiCompensation: hasHiddenEmojiCompensation,
+	}
 }
 
 func acquirePresentedCells(capHint int) []presentedCell {

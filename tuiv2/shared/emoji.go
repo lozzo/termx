@@ -1,5 +1,11 @@
 package shared
 
+import (
+	"strings"
+
+	xansi "github.com/charmbracelet/x/ansi"
+)
+
 // AmbiguousEmojiVariationSelectorMode controls how termx serializes grapheme
 // clusters like U+267B U+FE0F ("♻️") when drawing to the host terminal.
 //
@@ -25,3 +31,14 @@ const (
 	// terminal behavior is unknown.
 	AmbiguousEmojiVariationSelectorStrip AmbiguousEmojiVariationSelectorMode = "strip"
 )
+
+func IsAmbiguousEmojiVariationSelectorCluster(content string, width int) bool {
+	if width != 2 || !strings.ContainsRune(content, '\uFE0F') {
+		return false
+	}
+	if strings.ContainsRune(content, '\u200D') || strings.ContainsRune(content, '\u20E3') {
+		return false
+	}
+	stripped := strings.ReplaceAll(content, "\uFE0F", "")
+	return stripped != "" && xansi.StringWidth(stripped) > 0 && xansi.StringWidth(stripped) <= width
+}

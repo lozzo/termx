@@ -354,14 +354,7 @@ func drawCellFromProtocolCell(cell protocol.Cell) drawCell {
 }
 
 func isAmbiguousEmojiVariationSelectorCluster(content string, width int) bool {
-	if width != 2 || !strings.ContainsRune(content, '\uFE0F') {
-		return false
-	}
-	if strings.ContainsRune(content, '\u200D') || strings.ContainsRune(content, '\u20E3') {
-		return false
-	}
-	stripped := strings.ReplaceAll(content, "\uFE0F", "")
-	return stripped != "" && xansi.StringWidth(stripped) > 0 && xansi.StringWidth(stripped) <= width
+	return shared.IsAmbiguousEmojiVariationSelectorCluster(content, width)
 }
 
 // 中文说明：这里只保留“原样输出 cell 内容”这个最小职责。FE0F 歧义 emoji
