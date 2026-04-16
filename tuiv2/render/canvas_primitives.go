@@ -21,8 +21,7 @@ func fillRect(canvas *composedCanvas, rect workbench.Rect, cell drawCell) {
 				clearBlankFillBoundaryFootprint(canvas, rect.X+rect.W-1, y)
 			}
 			copy(canvas.cells[y][rect.X:rect.X+rect.W], blankRow)
-			canvas.rowDirty[y] = true
-			canvas.fullDirty = true
+			canvas.markRowDirtyRange(y, rect.X, rect.X+rect.W-1)
 		}
 		return
 	}

@@ -2,6 +2,7 @@ package render
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/lozzow/termx/protocol"
@@ -10,6 +11,21 @@ import (
 )
 
 var benchmarkFrameSink string
+
+func BenchmarkComposedCanvasSmallEdit(b *testing.B) {
+	canvas := newComposedCanvas(200, 2)
+	canvas.drawText(0, 0, strings.Repeat("x", 200), drawStyle{FG: "#cccccc"})
+	canvas.drawText(0, 1, strings.Repeat("y", 200), drawStyle{FG: "#cccccc"})
+	benchmarkFrameSink = canvas.contentString()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		x := 80 + (i % 20)
+		canvas.set(x, 0, drawCell{Content: "Z", Width: 1, Style: drawStyle{FG: "#ff0000"}})
+		benchmarkFrameSink = canvas.contentString()
+	}
+}
 
 func BenchmarkCoordinatorRenderFrameFourPanesCached(b *testing.B) {
 	coordinator := benchmarkCoordinator(b, 4, 160, 48)

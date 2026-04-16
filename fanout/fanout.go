@@ -14,11 +14,13 @@ const (
 	StreamClosed
 	StreamResize
 	StreamBootstrapDone
+	StreamScreenUpdate
 )
 
 type StreamMessage struct {
 	Type         StreamMessageType
 	Output       []byte
+	Payload      []byte
 	DroppedBytes uint64
 	ExitCode     *int
 	Cols         uint16
@@ -64,8 +66,15 @@ func (f *Fanout) Subscribe(ctx context.Context) <-chan StreamMessage {
 	return sub.ch
 }
 
+// Broadcast shares the provided payload with every subscriber. Callers must
+// treat data as immutable after broadcasting.
 func (f *Fanout) Broadcast(data []byte) {
-	msg := append([]byte(nil), data...)
+	f.BroadcastMessage(StreamMessage{Type: StreamOutput, Output: data})
+}
+
+// BroadcastMessage shares the provided message with every subscriber. Callers
+// must treat payload buffers as immutable after broadcasting.
+func (f *Fanout) BroadcastMessage(msg StreamMessage) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	for sub := range f.subs {
@@ -78,22 +87,18 @@ func (f *Fanout) Broadcast(data []byte) {
 		}
 
 		select {
-		case sub.ch <- StreamMessage{Type: StreamOutput, Output: msg}:
+		case sub.ch <- msg:
 		default:
-			sub.droppedBytes.Add(uint64(len(msg)))
+			if isPriorityMessage(msg) && enqueuePriorityMessage(sub, msg) {
+				continue
+			}
+			sub.droppedBytes.Add(uint64(messagePayloadLen(msg)))
 		}
 	}
 }
 
 func (f *Fanout) BroadcastResize(cols, rows uint16) {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-	for sub := range f.subs {
-		select {
-		case sub.ch <- StreamMessage{Type: StreamResize, Cols: cols, Rows: rows}:
-		default:
-		}
-	}
+	f.BroadcastMessage(StreamMessage{Type: StreamResize, Cols: cols, Rows: rows})
 }
 
 func (f *Fanout) Close(exitCode *int) {
@@ -119,4 +124,62 @@ func copyIntPtr(v *int) *int {
 	}
 	n := *v
 	return &n
+}
+
+func messagePayloadLen(msg StreamMessage) int {
+	switch msg.Type {
+	case StreamOutput:
+		return len(msg.Output)
+	case StreamScreenUpdate:
+		return len(msg.Payload)
+	default:
+		return 0
+	}
+}
+
+func isPriorityMessage(msg StreamMessage) bool {
+	switch msg.Type {
+	case StreamResize, StreamBootstrapDone, StreamClosed, StreamScreenUpdate:
+		return true
+	default:
+		return false
+	}
+}
+
+func isDroppableBufferedMessage(msg StreamMessage) bool {
+	switch msg.Type {
+	case StreamOutput, StreamSyncLost, StreamScreenUpdate:
+		return true
+	default:
+		return false
+	}
+}
+
+func enqueuePriorityMessage(sub *subscriber, msg StreamMessage) bool {
+	if sub == nil {
+		return false
+	}
+	select {
+	case displaced := <-sub.ch:
+		if !isDroppableBufferedMessage(displaced) {
+			select {
+			case sub.ch <- displaced:
+			default:
+			}
+			return false
+		}
+		if displaced.Type == StreamSyncLost {
+			sub.droppedBytes.Add(displaced.DroppedBytes)
+		} else {
+			sub.droppedBytes.Add(uint64(messagePayloadLen(displaced)))
+		}
+	default:
+		return false
+	}
+	select {
+	case sub.ch <- msg:
+		return true
+	default:
+		return false
+	}
 }

@@ -1419,7 +1419,7 @@ func TestE2EMouseFollowClickShowsConfirmAcrossTiledLayouts(t *testing.T) {
 			if terminal.OwnerPaneID != ownerPaneID {
 				t.Fatalf("expected owner unchanged after first click, got %q", terminal.OwnerPaneID)
 			}
-			if !strings.Contains(model.View(), "◆ owner?") {
+			if !strings.Contains(xansi.Strip(model.View()), "◆ owner?") {
 				t.Fatalf("expected owner confirm rendered after first click:\n%s", model.View())
 			}
 

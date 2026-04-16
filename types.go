@@ -23,11 +23,13 @@ const (
 	StreamClosed
 	StreamResize
 	StreamBootstrapDone
+	StreamScreenUpdate
 )
 
 type StreamMessage struct {
 	Type         StreamMessageType
 	Output       []byte
+	Payload      []byte
 	DroppedBytes uint64
 	ExitCode     *int
 	Cols         uint16

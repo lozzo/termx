@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -1108,7 +1109,7 @@ func TestMouseClickOwnerButtonPromotesPaneAndResizesTerminal(t *testing.T) {
 	if model.ownerConfirmPaneID != "pane-2" {
 		t.Fatalf("expected first click to arm owner confirmation for pane-2, got %q", model.ownerConfirmPaneID)
 	}
-	if !strings.Contains(model.View(), "◆ owner?") {
+	if !strings.Contains(xansi.Strip(model.View()), "◆ owner?") {
 		t.Fatalf("expected armed owner confirmation in view:\n%s", model.View())
 	}
 	if len(client.resizes) != 0 {

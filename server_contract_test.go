@@ -1831,7 +1831,7 @@ func expectStreamContains(t *testing.T, ch <-chan StreamMessage, needle string) 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		msg := <-ch
-		if msg.Type == StreamOutput && strings.Contains(string(msg.Output), needle) {
+		if streamMessageContainsText(msg, 80, 24, needle) {
 			return
 		}
 	}

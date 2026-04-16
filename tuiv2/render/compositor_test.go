@@ -237,6 +237,51 @@ func TestComposedCanvasSetClearsWideCellLeadWhenContinuationOverwritten(t *testi
 	}
 }
 
+func TestComposedCanvasDirtyIntervalRebuildsOnlyTouchedChunks(t *testing.T) {
+	canvas := newComposedCanvas(96, 1)
+	canvas.drawText(0, 0, strings.Repeat("a", 96), drawStyle{FG: "#ffffff"})
+	_ = canvas.contentString()
+
+	if len(canvas.rowChunks) == 0 || len(canvas.rowChunks[0]) < 3 {
+		t.Fatalf("expected row chunk cache to be initialized, got %#v", canvas.rowChunks)
+	}
+	chunk0Before := canvas.rowChunks[0][0]
+	chunk1Before := canvas.rowChunks[0][1]
+	chunk2Before := canvas.rowChunks[0][2]
+
+	canvas.set(40, 0, drawCell{Content: "Z", Width: 1, Style: drawStyle{FG: "#ff0000"}})
+	_ = canvas.contentString()
+
+	if got := canvas.rowChunks[0][0]; got != chunk0Before {
+		t.Fatalf("expected untouched chunk[0] to be reused")
+	}
+	if got := canvas.rowChunks[0][1]; got == chunk1Before {
+		t.Fatalf("expected dirty chunk[1] to be rebuilt")
+	}
+	if got := canvas.rowChunks[0][2]; got != chunk2Before {
+		t.Fatalf("expected untouched chunk[2] to be reused")
+	}
+	if canvas.rowDirty[0] || canvas.rowDirtyMin[0] != -1 || canvas.rowDirtyMax[0] != -1 {
+		t.Fatalf("expected dirty interval to be cleared after ensureRowCache, got rowDirty=%v min=%d max=%d", canvas.rowDirty[0], canvas.rowDirtyMin[0], canvas.rowDirtyMax[0])
+	}
+}
+
+func TestComposedCanvasChunkBoundaryRealignsAfterContinuation(t *testing.T) {
+	width := rowDirtyChunkWidth + 2
+	canvas := newComposedCanvas(width, 1)
+	canvas.set(rowDirtyChunkWidth-1, 0, drawCell{Content: "界", Width: 2})
+	canvas.set(rowDirtyChunkWidth+1, 0, drawCell{Content: "X", Width: 1})
+
+	_ = canvas.contentString()
+	line := strings.Split(canvas.rawString(), "\n")[0]
+	if got := xansi.StringWidth(line); got != width {
+		t.Fatalf("expected rendered row width %d, got %d: %q", width, got, line)
+	}
+	if !strings.Contains(line, "界") || !strings.Contains(line, "X") {
+		t.Fatalf("expected chunk boundary row to preserve both wide glyph and trailing cell, got %q", line)
+	}
+}
+
 func TestFillRectBlankClearsWideCellFootprintsCrossingClearBoundary(t *testing.T) {
 	canvas := newComposedCanvas(5, 1)
 	canvas.set(1, 0, drawCell{Content: "♻️", Width: 2})
@@ -423,7 +468,7 @@ func TestRenderFrameProjectsHostCursorForActiveShellPane(t *testing.T) {
 	if got, want := coordinator.CursorSequence(), hostHiddenCursorANSI(1, 2, "", false); got != want {
 		t.Fatalf("expected shell pane to keep a hidden host cursor parked in-pane, got frame=%q cursor=%q want=%q", frame, got, want)
 	}
-	if !strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+"h") {
+	if !frameContainsSyntheticCursorHighlight(frame, "h") {
 		t.Fatalf("expected shell pane content to show a synthetic cursor highlight, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
 	}
 }
@@ -498,7 +543,7 @@ func TestRenderFrameProjectsHostCursorForAlternateScreenPane(t *testing.T) {
 	if got, want := coordinator.CursorSequence(), hostHiddenCursorANSI(1, 2, "", false); got != want {
 		t.Fatalf("expected alternate-screen pane to keep a hidden host cursor parked in-pane, got frame=%q cursor=%q want=%q", frame, got, want)
 	}
-	if !strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+"h") {
+	if !frameContainsSyntheticCursorHighlight(frame, "h") {
 		t.Fatalf("expected alternate-screen pane content to show a synthetic cursor highlight, got frame=%q cursor=%q", frame, coordinator.CursorSequence())
 	}
 }
@@ -891,9 +936,15 @@ func TestRenderFrameProjectsHostCursorOntoTextCellWithDefaultColors(t *testing.T
 	if got, want := coordinator.CursorSequence(), hostHiddenCursorANSI(1, 2, "block", false); got != want {
 		t.Fatalf("expected text cursor to keep a hidden host cursor on the text cell, got frame=%q cursor=%q want=%q", frame, got, want)
 	}
-	if !strings.Contains(frame, styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"})+"h") {
+	if !frameContainsSyntheticCursorHighlight(frame, "h") {
 		t.Fatalf("expected text cursor to render a synthetic highlight, got %q", frame)
 	}
+}
+
+func frameContainsSyntheticCursorHighlight(frame, glyph string) bool {
+	full := styleANSI(drawStyle{FG: "#000000", BG: "#ffffff"}) + glyph
+	minimal := "\x1b[38;2;0;0;0;48;2;255;255;255m" + glyph
+	return strings.Contains(frame, full) || strings.Contains(frame, minimal)
 }
 
 func TestProjectPaneCursorUsesVisibleBarCursorStyleOnTextCell(t *testing.T) {

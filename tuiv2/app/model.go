@@ -78,6 +78,10 @@ type Model struct {
 	invalidateDeferred          atomic.Bool
 	invalidateScheduled         atomic.Bool
 	invalidateBlockedByFrameOut atomic.Bool
+	invalidateBacklogBlockedAt  atomic.Int64
+	invalidateAdaptiveLevel     atomic.Uint32
+	invalidateDrainSlowStreak   atomic.Uint32
+	invalidateDrainFastStreak   atomic.Uint32
 	hostEmojiProbePending       bool
 	hostThemeFlushPending       bool
 	hostThemeBootstrapPending   bool
@@ -116,6 +120,15 @@ type Model struct {
 type mouseDragMode int
 
 var invalidateBatchDelay = 4 * time.Millisecond
+
+const (
+	invalidateDrainSlowThreshold  = 16 * time.Millisecond
+	invalidateDrainFastThreshold  = 4 * time.Millisecond
+	invalidateAdaptiveMaxDelay    = 50 * time.Millisecond
+	invalidateAdaptiveMaxLevel    = 4
+	invalidateAdaptiveSlowSamples = 3
+	invalidateAdaptiveFastSamples = 6
+)
 
 const (
 	mouseDragNone mouseDragMode = iota
@@ -211,14 +224,18 @@ func (m *Model) queueInvalidate() {
 	if m.frameWriterHasBacklog() {
 		perftrace.Count("app.invalidate.backlog_blocked", 0)
 		m.invalidateBlockedByFrameOut.Store(true)
+		now := time.Now().UnixNano()
+		m.invalidateBacklogBlockedAt.CompareAndSwap(0, now)
 		return
 	}
+	m.invalidateBacklogBlockedAt.Store(0)
 	if m.runtime != nil && m.runtime.RecentLocalInput() {
 		perftrace.Count("app.invalidate.interactive_bypass", 0)
 		m.queueInvalidateImmediate()
 		return
 	}
-	if invalidateBatchDelay <= 0 {
+	delay := m.effectiveInvalidateBatchDelay()
+	if delay <= 0 {
 		m.queueInvalidateImmediate()
 		return
 	}
@@ -228,7 +245,7 @@ func (m *Model) queueInvalidate() {
 		return
 	}
 	perftrace.Count("app.invalidate.timer_scheduled", 0)
-	time.AfterFunc(invalidateBatchDelay, func() {
+	time.AfterFunc(delay, func() {
 		if m == nil {
 			return
 		}
@@ -262,11 +279,78 @@ func (m *Model) onFrameWriterDrained() {
 	if m == nil || m.send == nil {
 		return
 	}
+	if blockedAt := m.invalidateBacklogBlockedAt.Swap(0); blockedAt > 0 {
+		m.observeFrameWriterDrainDuration(time.Since(time.Unix(0, blockedAt)))
+	}
 	if !m.invalidateBlockedByFrameOut.Swap(false) {
 		return
 	}
 	perftrace.Count("app.invalidate.frame_writer_drained", 0)
 	m.queueInvalidateImmediate()
+}
+
+func (m *Model) effectiveInvalidateBatchDelay() time.Duration {
+	base := invalidateBatchDelay
+	if m == nil || base <= 0 {
+		return base
+	}
+	delay := base
+	level := int(m.invalidateAdaptiveLevel.Load())
+	for i := 0; i < level; i++ {
+		if delay >= invalidateAdaptiveMaxDelay {
+			return invalidateAdaptiveMaxDelay
+		}
+		delay *= 2
+	}
+	if delay > invalidateAdaptiveMaxDelay {
+		return invalidateAdaptiveMaxDelay
+	}
+	return delay
+}
+
+func (m *Model) observeFrameWriterDrainDuration(drain time.Duration) {
+	if m == nil || drain <= 0 {
+		return
+	}
+	switch {
+	case drain >= invalidateDrainSlowThreshold:
+		slow := m.invalidateDrainSlowStreak.Add(1)
+		m.invalidateDrainFastStreak.Store(0)
+		if slow < invalidateAdaptiveSlowSamples {
+			return
+		}
+		m.invalidateDrainSlowStreak.Store(0)
+		for {
+			level := m.invalidateAdaptiveLevel.Load()
+			if level >= invalidateAdaptiveMaxLevel {
+				return
+			}
+			if m.invalidateAdaptiveLevel.CompareAndSwap(level, level+1) {
+				perftrace.Count("app.invalidate.batch_delay.increase", 0)
+				return
+			}
+		}
+	case drain <= invalidateDrainFastThreshold:
+		fast := m.invalidateDrainFastStreak.Add(1)
+		m.invalidateDrainSlowStreak.Store(0)
+		if fast < invalidateAdaptiveFastSamples {
+			return
+		}
+		m.invalidateDrainFastStreak.Store(0)
+		for {
+			level := m.invalidateAdaptiveLevel.Load()
+			if level == 0 {
+				return
+			}
+			if m.invalidateAdaptiveLevel.CompareAndSwap(level, level-1) {
+				perftrace.Count("app.invalidate.batch_delay.decrease", 0)
+				return
+			}
+		}
+	default:
+		m.invalidateDrainSlowStreak.Store(0)
+		m.invalidateDrainFastStreak.Store(0)
+	}
 }
 
 func (m *Model) sendAsync(msg tea.Msg) {

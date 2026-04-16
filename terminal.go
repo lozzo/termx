@@ -53,6 +53,7 @@ type Terminal struct {
 	state          TerminalState
 	createdAt      time.Time
 	exitCode       *int
+	title          string
 	keepAfterExit  time.Duration
 	removeFunc     func(string, string)
 	updateFunc     func()
@@ -73,15 +74,18 @@ type Terminal struct {
 	attachMu    sync.Mutex
 	attachments map[string]AttachInfo
 
-	pendingVTermEpoch  uint64
-	pendingVTermOutput []byte
+	pendingVTermEpoch      uint64
+	pendingVTermOutput     []byte
+	pendingVTermFlushTimer *time.Timer
 
 	done     chan struct{}
 	readDone chan struct{}
 }
 
-const attachReplayScrollbackLimit = 500
+const attachReplayScrollbackLimit = 0
 const serverVTermFlushThreshold = 256 * 1024
+
+var serverVTermFlushIdleDelay = 2 * time.Millisecond
 
 func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Terminal, error) {
 	p, vt, err := spawnTerminalProcess(cfg)
@@ -111,6 +115,7 @@ func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Te
 		readDone:       make(chan struct{}),
 		processEpoch:   1,
 	}
+	t.installVTermHandlers()
 
 	t.events.Publish(Event{
 		Type:       EventTerminalCreated,
@@ -144,6 +149,20 @@ func spawnTerminalProcess(cfg terminalConfig) (*ptymgr.PTY, *vterm.VTerm, error)
 		_, _ = p.Write(data)
 	})
 	return p, vt, nil
+}
+
+func (t *Terminal) installVTermHandlers() {
+	if t == nil || t.vterm == nil {
+		return
+	}
+	t.vterm.SetTitleHandler(func(title string) {
+		t.mu.Lock()
+		t.title = title
+		t.mu.Unlock()
+		if t.updateFunc != nil {
+			t.updateFunc()
+		}
+	})
 }
 
 func (t *Terminal) ID() string {
@@ -209,7 +228,7 @@ func (t *Terminal) Subscribe(ctx context.Context) <-chan StreamMessage {
 			case dst <- cloneTerminalStreamMessage(msg):
 			}
 		}
-		forwardLiveStreamMessages(ctx, src, dst)
+		t.forwardTerminalStreamMessages(ctx, src, dst)
 	}()
 	return dst
 }
@@ -250,6 +269,43 @@ func forwardLiveStreamMessages(ctx context.Context, src <-chan fanout.StreamMess
 	}
 }
 
+func (t *Terminal) forwardTerminalStreamMessages(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage) {
+	var (
+		pending    fanout.StreamMessage
+		hasPending bool
+	)
+	for {
+		msg, ok := nextLiveStreamMessage(src, &pending, &hasPending)
+		if !ok {
+			return
+		}
+		if msg.Type != fanout.StreamOutput && msg.Type != fanout.StreamSyncLost {
+			select {
+			case <-ctx.Done():
+				return
+			case dst <- cloneFanoutStreamMessage(msg):
+			}
+			continue
+		}
+		batch, next, nextOK := coalesceLiveStreamMessages(msg, src)
+		for _, out := range batch {
+			if out.Type == StreamSyncLost {
+				out = t.screenSnapshotFallbackMessage()
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case dst <- out:
+			}
+		}
+		if !nextOK {
+			return
+		}
+		pending = next
+		hasPending = true
+	}
+}
+
 func nextLiveStreamMessage(src <-chan fanout.StreamMessage, pending *fanout.StreamMessage, hasPending *bool) (fanout.StreamMessage, bool) {
 	if hasPending != nil && *hasPending {
 		*hasPending = false
@@ -262,8 +318,9 @@ func nextLiveStreamMessage(src <-chan fanout.StreamMessage, pending *fanout.Stre
 func coalesceLiveStreamMessages(first fanout.StreamMessage, src <-chan fanout.StreamMessage) ([]StreamMessage, fanout.StreamMessage, bool) {
 	batch := make([]StreamMessage, 0, 4)
 	var (
-		output  []byte
-		dropped uint64
+		output       []byte
+		outputShared bool
+		dropped      uint64
 	)
 	flushOutput := func() {
 		if len(output) == 0 {
@@ -271,6 +328,7 @@ func coalesceLiveStreamMessages(first fanout.StreamMessage, src <-chan fanout.St
 		}
 		batch = append(batch, StreamMessage{Type: StreamOutput, Output: output})
 		output = nil
+		outputShared = false
 	}
 	flushDropped := func() {
 		if dropped == 0 {
@@ -287,6 +345,19 @@ func coalesceLiveStreamMessages(first fanout.StreamMessage, src <-chan fanout.St
 			}
 			if len(output) > 0 && len(output)+len(msg.Output) > maxMergedLiveOutputBytes {
 				flushOutput()
+			}
+			if len(output) == 0 {
+				output = msg.Output
+				outputShared = true
+				return fanout.StreamMessage{}, false, true
+			}
+			if outputShared {
+				merged := make([]byte, 0, len(output)+len(msg.Output))
+				merged = append(merged, output...)
+				merged = append(merged, msg.Output...)
+				output = merged
+				outputShared = false
+				return fanout.StreamMessage{}, false, true
 			}
 			output = append(output, msg.Output...)
 			return fanout.StreamMessage{}, false, true
@@ -437,6 +508,7 @@ func (t *Terminal) Restart() error {
 	t.processEpoch++
 	t.invalidateProtocolInfoCacheLocked()
 	t.mu.Unlock()
+	t.installVTermHandlers()
 
 	if t.updateFunc != nil {
 		t.updateFunc()
@@ -673,6 +745,16 @@ func (t *Terminal) queuePendingVTermOutputLocked(epoch uint64, chunk []byte) {
 	}
 }
 
+func (t *Terminal) armPendingVTermFlushLocked(epoch uint64) {
+	if t == nil || len(t.pendingVTermOutput) == 0 || serverVTermFlushIdleDelay <= 0 {
+		return
+	}
+	t.stopPendingVTermFlushTimerLocked()
+	t.pendingVTermFlushTimer = time.AfterFunc(serverVTermFlushIdleDelay, func() {
+		t.flushPendingVTermOutput(epoch)
+	})
+}
+
 func (t *Terminal) flushPendingVTermOutput(epoch uint64) {
 	if t == nil {
 		return
@@ -689,13 +771,21 @@ func (t *Terminal) flushPendingVTermOutputLocked() {
 	if t == nil {
 		return
 	}
+	t.stopPendingVTermFlushTimerLocked()
 	if len(t.pendingVTermOutput) == 0 {
+		t.pendingVTermEpoch = 0
 		return
 	}
 	output := append([]byte(nil), t.pendingVTermOutput...)
 	t.pendingVTermOutput = t.pendingVTermOutput[:0]
+	t.pendingVTermEpoch = 0
 	if t.vterm != nil {
-		_, _ = t.vterm.Write(output)
+		_, _, damage := t.vterm.WriteWithDamage(output)
+		if t.stream != nil {
+			if payload, ok := t.screenUpdatePayloadFromDamageLocked(damage); ok {
+				t.stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Payload: payload})
+			}
+		}
 	}
 }
 
@@ -703,8 +793,17 @@ func (t *Terminal) clearPendingVTermOutputLocked() {
 	if t == nil {
 		return
 	}
+	t.stopPendingVTermFlushTimerLocked()
 	t.pendingVTermOutput = nil
 	t.pendingVTermEpoch = 0
+}
+
+func (t *Terminal) stopPendingVTermFlushTimerLocked() {
+	if t == nil || t.pendingVTermFlushTimer == nil {
+		return
+	}
+	t.pendingVTermFlushTimer.Stop()
+	t.pendingVTermFlushTimer = nil
 }
 
 func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, readDone chan struct{}) {
@@ -716,7 +815,7 @@ func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, 
 			chunk := append([]byte(nil), buf[:n]...)
 			t.streamMu.Lock()
 			t.queuePendingVTermOutputLocked(epoch, chunk)
-			stream.Broadcast(chunk)
+			t.armPendingVTermFlushLocked(epoch)
 			t.streamMu.Unlock()
 		}
 		if err != nil {
@@ -916,19 +1015,99 @@ func (t *Terminal) bootstrapMessagesLocked(scrollbackLimit int) []StreamMessage 
 	if size.Cols > 0 && size.Rows > 0 {
 		msgs = append(msgs, StreamMessage{Type: StreamResize, Cols: size.Cols, Rows: size.Rows})
 	}
-	if t.vterm != nil {
-		if replay := t.vterm.EncodeReplay(scrollbackLimit); len(replay) > 0 {
-			msgs = append(msgs, StreamMessage{Type: StreamOutput, Output: replay})
-		}
+	if payload, ok := t.screenSnapshotPayloadLocked(scrollbackLimit == 0); ok {
+		msgs = append(msgs, StreamMessage{Type: StreamScreenUpdate, Payload: payload})
 	}
 	msgs = append(msgs, StreamMessage{Type: StreamBootstrapDone})
 	return msgs
+}
+
+func (t *Terminal) screenSnapshotFallbackMessage() StreamMessage {
+	if t == nil {
+		return StreamMessage{Type: StreamSyncLost}
+	}
+	t.streamMu.Lock()
+	defer t.streamMu.Unlock()
+	payload, ok := t.screenSnapshotPayloadLocked(true)
+	if !ok {
+		return StreamMessage{Type: StreamSyncLost}
+	}
+	return StreamMessage{Type: StreamScreenUpdate, Payload: payload}
+}
+
+func (t *Terminal) screenSnapshotPayloadLocked(resetScrollback bool) ([]byte, bool) {
+	if t == nil || t.vterm == nil {
+		return nil, false
+	}
+	screen := t.vterm.ScreenContent()
+	cols, rows := t.vterm.Size()
+	update := protocol.ScreenUpdate{
+		FullReplace:      true,
+		ResetScrollback:  resetScrollback,
+		Size:             protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
+		Title:            t.currentTitleLocked(),
+		Screen:           protocolScreenDataFromVTerm(screen),
+		ScreenTimestamps: cloneTimeSlice(t.vterm.ScreenTimestamps()),
+		ScreenRowKinds:   cloneStringSlice(t.vterm.ScreenRowKinds()),
+		Cursor:           protocolCursorStateFromVTerm(t.vterm.CursorState()),
+		Modes:            protocolModesFromVTerm(t.vterm.Modes()),
+	}
+	payload, err := protocol.EncodeScreenUpdatePayload(update)
+	if err != nil {
+		return nil, false
+	}
+	return payload, true
+}
+
+func (t *Terminal) screenUpdatePayloadFromDamageLocked(damage vterm.WriteDamage) ([]byte, bool) {
+	if t == nil || t.vterm == nil {
+		return nil, false
+	}
+	update := protocol.ScreenUpdate{
+		Size:             protocol.Size{Cols: uint16(damage.SizeCols), Rows: uint16(damage.SizeRows)},
+		Title:            t.currentTitleLocked(),
+		ChangedRows:      make([]protocol.ScreenRowUpdate, 0, len(damage.ChangedScreenRows)),
+		ScrollbackTrim:   damage.ScrollbackTrim,
+		ScrollbackAppend: make([]protocol.ScrollbackRowAppend, 0, len(damage.ScrollbackAppend)),
+		Cursor:           protocolCursorStateFromVTerm(damage.Cursor),
+		Modes:            protocolModesFromVTerm(damage.Modes),
+	}
+	for _, row := range damage.ChangedScreenRows {
+		update.ChangedRows = append(update.ChangedRows, protocol.ScreenRowUpdate{
+			Row:       row.Row,
+			Cells:     protocolCellsFromVTermRow(row.Cells),
+			Timestamp: row.Timestamp,
+			RowKind:   row.RowKind,
+		})
+	}
+	for _, row := range damage.ScrollbackAppend {
+		update.ScrollbackAppend = append(update.ScrollbackAppend, protocol.ScrollbackRowAppend{
+			Cells:     protocolCellsFromVTermRow(row.Cells),
+			Timestamp: row.Timestamp,
+			RowKind:   row.RowKind,
+		})
+	}
+	payload, err := protocol.EncodeScreenUpdatePayload(update)
+	if err != nil {
+		return nil, false
+	}
+	return payload, true
+}
+
+func (t *Terminal) currentTitleLocked() string {
+	if t == nil {
+		return ""
+	}
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.title
 }
 
 func cloneTerminalStreamMessage(msg StreamMessage) StreamMessage {
 	return StreamMessage{
 		Type:         msg.Type,
 		Output:       append([]byte(nil), msg.Output...),
+		Payload:      append([]byte(nil), msg.Payload...),
 		DroppedBytes: msg.DroppedBytes,
 		ExitCode:     copyIntPtr(msg.ExitCode),
 		Cols:         msg.Cols,
@@ -940,6 +1119,7 @@ func cloneFanoutStreamMessage(msg fanout.StreamMessage) StreamMessage {
 	return StreamMessage{
 		Type:         StreamMessageType(msg.Type),
 		Output:       append([]byte(nil), msg.Output...),
+		Payload:      append([]byte(nil), msg.Payload...),
 		DroppedBytes: msg.DroppedBytes,
 		ExitCode:     copyIntPtr(msg.ExitCode),
 		Cols:         msg.Cols,
@@ -1159,6 +1339,69 @@ func convertCursorState(in vterm.CursorState) CursorState {
 func convertModes(in vterm.TerminalModes) TerminalModes {
 	return TerminalModes{
 		AlternateScreen:   in.AlternateScreen,
+		MouseTracking:     in.MouseTracking,
+		BracketedPaste:    in.BracketedPaste,
+		ApplicationCursor: in.ApplicationCursor,
+		AutoWrap:          in.AutoWrap,
+	}
+}
+
+func protocolScreenDataFromVTerm(in vterm.ScreenData) protocol.ScreenData {
+	return protocol.ScreenData{
+		Cells:             protocolRowsFromVTerm(in.Cells),
+		IsAlternateScreen: in.IsAlternateScreen,
+	}
+}
+
+func protocolRowsFromVTerm(rows [][]vterm.Cell) [][]protocol.Cell {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([][]protocol.Cell, len(rows))
+	for i, row := range rows {
+		out[i] = protocolCellsFromVTermRow(row)
+	}
+	return out
+}
+
+func protocolCellsFromVTermRow(row []vterm.Cell) []protocol.Cell {
+	if len(row) == 0 {
+		return nil
+	}
+	out := make([]protocol.Cell, len(row))
+	for i, cell := range row {
+		out[i] = protocol.Cell{
+			Content: cell.Content,
+			Width:   cell.Width,
+			Style: protocol.CellStyle{
+				FG:            cell.Style.FG,
+				BG:            cell.Style.BG,
+				Bold:          cell.Style.Bold,
+				Italic:        cell.Style.Italic,
+				Underline:     cell.Style.Underline,
+				Blink:         cell.Style.Blink,
+				Reverse:       cell.Style.Reverse,
+				Strikethrough: cell.Style.Strikethrough,
+			},
+		}
+	}
+	return out
+}
+
+func protocolCursorStateFromVTerm(in vterm.CursorState) protocol.CursorState {
+	return protocol.CursorState{
+		Row:     in.Row,
+		Col:     in.Col,
+		Visible: in.Visible,
+		Shape:   string(in.Shape),
+		Blink:   in.Blink,
+	}
+}
+
+func protocolModesFromVTerm(in vterm.TerminalModes) protocol.TerminalModes {
+	return protocol.TerminalModes{
+		AlternateScreen:   in.AlternateScreen,
+		AlternateScroll:   in.AlternateScroll,
 		MouseTracking:     in.MouseTracking,
 		BracketedPaste:    in.BracketedPaste,
 		ApplicationCursor: in.ApplicationCursor,

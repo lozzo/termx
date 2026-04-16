@@ -594,6 +594,48 @@ func TestOutputCursorWriterFlushesImmediatelyAfterInteractiveInput(t *testing.T)
 	}
 }
 
+func TestOutputCursorWriterAdaptiveBatchDelayIncreasesAfterSlowFlushCost(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 4 * time.Millisecond
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	writer := newOutputCursorWriter(&cursorWriterProbeSink{})
+	writer.mu.Lock()
+	base := writer.effectiveDirectFrameBatchDelayLocked()
+	for i := 0; i < directFrameAdaptiveSlowSamples; i++ {
+		writer.observeDirectFlushCostLocked(directFrameDrainSlowThreshold + time.Millisecond)
+	}
+	got := writer.effectiveDirectFrameBatchDelayLocked()
+	writer.mu.Unlock()
+	if got <= base {
+		t.Fatalf("expected adaptive direct-frame delay to increase, base=%v got=%v", base, got)
+	}
+}
+
+func TestOutputCursorWriterAdaptiveBatchDelayRecoversAfterFastFlushCost(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 4 * time.Millisecond
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	writer := newOutputCursorWriter(&cursorWriterProbeSink{})
+	writer.mu.Lock()
+	for i := 0; i < directFrameAdaptiveSlowSamples*2; i++ {
+		writer.observeDirectFlushCostLocked(directFrameDrainSlowThreshold + time.Millisecond)
+	}
+	raised := writer.effectiveDirectFrameBatchDelayLocked()
+	for i := 0; i < directFrameAdaptiveFastSamples*3; i++ {
+		writer.observeDirectFlushCostLocked(directFrameDrainFastThreshold / 2)
+	}
+	recovered := writer.effectiveDirectFrameBatchDelayLocked()
+	writer.mu.Unlock()
+	if recovered >= raised {
+		t.Fatalf("expected adaptive direct-frame delay to recover, raised=%v recovered=%v", raised, recovered)
+	}
+	if recovered != directFrameBatchDelay {
+		t.Fatalf("expected adaptive direct-frame delay to recover to base, base=%v recovered=%v", directFrameBatchDelay, recovered)
+	}
+}
+
 func TestOutputCursorWriterSkipsRedundantCursorOnlyDirectFrame(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0

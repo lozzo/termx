@@ -137,6 +137,16 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		border.CopyTimeLabel = copyModeTimestampLabel(snapshot, options.CopyMode.CursorRow)
 		border.CopyRowLabel = copyModeRowPositionLabel(snapshot, options.CopyMode.CursorRow)
 	}
+	contentRect := contentRectForPaneEdges(rect, pane.SharedLeft, pane.SharedTop)
+	renderOffset := scrollOffset
+	if copyModeActive {
+		renderOffset = scrollOffsetForViewportTop(snapshot, contentRect.H, options.CopyMode.ViewTopRow)
+	}
+	contentVersion := uint64(0)
+	source := renderSource(snapshot, surface)
+	if source != nil && contentRect.H > 0 {
+		contentVersion = terminalSourceWindowSignature(source, contentRect.H, renderOffset)
+	}
 	emptyActionSelected := -1
 	if pane.TerminalID == "" && pane.ID == options.EmptySelection.PaneID {
 		emptyActionSelected = options.EmptySelection.Index
@@ -153,7 +163,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		TerminalKnown:        terminal != nil,
 		SharedLeft:           pane.SharedLeft,
 		SharedTop:            pane.SharedTop,
-		ScrollOffset:         scrollOffset,
+		ScrollOffset:         renderOffset,
 		EmptyActionSelected:  emptyActionSelected,
 		ExitedActionSelected: exitedActionSelected,
 		ExitedActionPulse:    options.ExitedSelectionPulse,
@@ -169,7 +179,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		if snapshot != nil && surface == nil {
 			contentKey.Snapshot = snapshot
 		}
-		contentKey.SurfaceVersion = surfaceVersion
+		contentKey.SurfaceVersion = contentVersion
 		contentKey.Name = terminal.Name
 		contentKey.State = terminal.State
 		overflow = paneOverflowHintsForRender(originalRect, rect, snapshot, surface)
@@ -202,7 +212,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		Snapshot:             snapshot,
 		Surface:              surface,
 		SurfaceVersion:       surfaceVersion,
-		ScrollOffset:         scrollOffset,
+		ScrollOffset:         renderOffset,
 		Active:               active,
 		Floating:             pane.Floating,
 		EmptyActionSelected:  emptyActionSelected,

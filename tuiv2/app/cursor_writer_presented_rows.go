@@ -294,8 +294,11 @@ func writeBuilderInt(out *strings.Builder, value int) {
 }
 
 func (s presentedStyle) ansi() string {
-	if cached, ok := presentedStyleCache.Load(s); ok {
-		return cached.(string)
+	presentedStyleCache.mu.RLock()
+	cached, ok := presentedStyleCache.m[s]
+	presentedStyleCache.mu.RUnlock()
+	if ok {
+		return cached
 	}
 	var b strings.Builder
 	b.WriteString("\x1b[0")
@@ -327,7 +330,9 @@ func (s presentedStyle) ansi() string {
 	}
 	b.WriteByte('m')
 	ansi := b.String()
-	presentedStyleCache.Store(s, ansi)
+	presentedStyleCache.mu.Lock()
+	presentedStyleCache.m[s] = ansi
+	presentedStyleCache.mu.Unlock()
 	return ansi
 }
 
@@ -341,11 +346,16 @@ func presentedStyleDiffANSI(from, to presentedStyle) string {
 		return ""
 	}
 	key := presentedStyleTransitionKey{From: from, To: to}
-	if cached, ok := presentedStyleDiffCache.Load(key); ok {
-		return cached.(string)
+	presentedStyleDiffCache.mu.RLock()
+	cached, ok := presentedStyleDiffCache.m[key]
+	presentedStyleDiffCache.mu.RUnlock()
+	if ok {
+		return cached
 	}
 	ansi := buildPresentedStyleDiffANSI(from, to)
-	presentedStyleDiffCache.Store(key, ansi)
+	presentedStyleDiffCache.mu.Lock()
+	presentedStyleDiffCache.m[key] = ansi
+	presentedStyleDiffCache.mu.Unlock()
 	return ansi
 }
 

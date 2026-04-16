@@ -12,6 +12,7 @@ require (
 	github.com/charmbracelet/x/vt v0.0.0-20260316093931-f2fb44ab3145
 	github.com/creack/pty v1.1.24
 	github.com/gorilla/websocket v1.5.3
+	github.com/klauspost/compress v1.18.5
 	github.com/muesli/cancelreader v0.2.2
 	github.com/rivo/uniseg v0.4.7
 	github.com/spf13/cobra v1.10.2

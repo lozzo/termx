@@ -1,6 +1,7 @@
 package vterm
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -258,6 +259,111 @@ func TestVTermWriteAssignsRowTimestamps(t *testing.T) {
 	screenTS := vt.ScreenTimestamps()
 	if len(screenTS) == 0 || screenTS[0].IsZero() {
 		t.Fatalf("expected screen timestamps for visible rows, got %#v", screenTS)
+	}
+}
+
+func TestVTermWriteSelectivelyInvalidatesOnlyChangedScreenRows(t *testing.T) {
+	vt := New(6, 2, 100, nil)
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{
+			{
+				{Content: "t", Width: 1},
+				{Content: "o", Width: 1},
+				{Content: "p", Width: 1},
+			},
+			{
+				{Content: "b", Width: 1},
+				{Content: "o", Width: 1},
+				{Content: "t", Width: 1},
+			},
+		},
+	}, CursorState{Row: 1, Col: 0, Visible: true}, TerminalModes{AutoWrap: true})
+
+	topBefore := vt.ScreenRowView(0)
+	bottomBefore := vt.ScreenRowView(1)
+	if len(topBefore) == 0 || len(bottomBefore) == 0 {
+		t.Fatalf("expected cached rows, got top=%#v bottom=%#v", topBefore, bottomBefore)
+	}
+
+	if _, err := vt.Write([]byte("\x1b[2;1Hnew")); err != nil {
+		t.Fatalf("write updated row: %v", err)
+	}
+
+	topAfter := vt.ScreenRowView(0)
+	bottomAfter := vt.ScreenRowView(1)
+	if strings.TrimSpace(rowToString(topAfter)) != "top" {
+		t.Fatalf("expected unchanged top row preserved, got %q", rowToString(topAfter))
+	}
+	if strings.TrimSpace(rowToString(bottomAfter)) != "new" {
+		t.Fatalf("expected updated bottom row, got %q", rowToString(bottomAfter))
+	}
+	if &topAfter[0] != &topBefore[0] {
+		t.Fatal("expected unchanged screen row cache to be reused")
+	}
+	if &bottomAfter[0] == &bottomBefore[0] {
+		t.Fatal("expected changed screen row cache to be invalidated")
+	}
+}
+
+func TestVTermWriteReusesScrolledCachesAcrossScreenAndScrollback(t *testing.T) {
+	vt := New(6, 2, 100, nil)
+	vt.LoadSnapshotWithScrollback([][]Cell{
+		{
+			{Content: "h", Width: 1},
+			{Content: "i", Width: 1},
+			{Content: "s", Width: 1},
+			{Content: "t", Width: 1},
+		},
+	}, ScreenData{
+		Cells: [][]Cell{
+			{
+				{Content: "t", Width: 1},
+				{Content: "o", Width: 1},
+				{Content: "p", Width: 1},
+			},
+			{
+				{Content: "b", Width: 1},
+				{Content: "o", Width: 1},
+				{Content: "t", Width: 1},
+			},
+		},
+	}, CursorState{Row: 1, Col: 0, Visible: true}, TerminalModes{AutoWrap: true})
+
+	scrollbackBefore := vt.ScrollbackRowView(0)
+	topBefore := vt.ScreenRowView(0)
+	bottomBefore := vt.ScreenRowView(1)
+	if len(scrollbackBefore) == 0 || len(topBefore) == 0 || len(bottomBefore) == 0 {
+		t.Fatalf("expected primed caches, got scrollback=%#v top=%#v bottom=%#v", scrollbackBefore, topBefore, bottomBefore)
+	}
+
+	if _, err := vt.Write([]byte("\n")); err != nil {
+		t.Fatalf("scroll write: %v", err)
+	}
+
+	scrollbackAfter0 := vt.ScrollbackRowView(0)
+	scrollbackAfter1 := vt.ScrollbackRowView(1)
+	screenAfter0 := vt.ScreenRowView(0)
+	screenAfter1 := vt.ScreenRowView(1)
+	if strings.TrimSpace(rowToString(scrollbackAfter0)) == "" {
+		t.Fatalf("expected existing scrollback row preserved, got %q", rowToString(scrollbackAfter0))
+	}
+	if strings.TrimSpace(rowToString(scrollbackAfter1)) != "top" {
+		t.Fatalf("expected scrolled-off top row in scrollback, got %q", rowToString(scrollbackAfter1))
+	}
+	if strings.TrimSpace(rowToString(screenAfter0)) != "bot" {
+		t.Fatalf("expected bottom row to move into first screen row, got %q", rowToString(screenAfter0))
+	}
+	if &scrollbackAfter0[0] != &scrollbackBefore[0] {
+		t.Fatal("expected retained scrollback cache to be reused")
+	}
+	if &scrollbackAfter1[0] != &topBefore[0] {
+		t.Fatal("expected scrolled-off screen row cache to move into scrollback cache")
+	}
+	if &screenAfter0[0] != &bottomBefore[0] {
+		t.Fatal("expected shifted screen row cache to be reused")
+	}
+	if len(screenAfter1) == 0 || &screenAfter1[0] == &topBefore[0] {
+		t.Fatal("expected newly blank screen row to allocate a fresh cache")
 	}
 }
 

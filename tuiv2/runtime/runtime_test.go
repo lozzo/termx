@@ -253,6 +253,70 @@ func TestRuntimeStartStreamUpdatesSurfaceAndInvalidates(t *testing.T) {
 	}
 }
 
+func TestSnapshotFromVTermPrefersRowViewsOverWholeContentCopies(t *testing.T) {
+	vt := &countingSnapshotVTerm{VTerm: localvterm.New(8, 2, 16, nil)}
+	if _, err := vt.Write([]byte("hello\r\nworld")); err != nil {
+		t.Fatalf("seed vterm: %v", err)
+	}
+
+	snapshot := snapshotFromVTerm("term-1", vt)
+	if snapshot == nil {
+		t.Fatal("expected snapshot")
+	}
+	if got := vt.screenContentCalls.Load(); got != 0 {
+		t.Fatalf("expected snapshotFromVTerm to avoid ScreenContent copies, got %d calls", got)
+	}
+	if got := vt.scrollbackContentCalls.Load(); got != 0 {
+		t.Fatalf("expected snapshotFromVTerm to avoid ScrollbackContent copies, got %d calls", got)
+	}
+	if !snapshotContains(snapshot, "hello") || !snapshotContains(snapshot, "world") {
+		t.Fatalf("expected row-view snapshot content, got %#v", snapshot)
+	}
+}
+
+func TestRuntimeScreenUpdateAlsoRefreshesLocalVTermSurface(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+
+	rt := New(client)
+	terminal, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator")
+	if err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if terminal == nil {
+		t.Fatal("expected terminal")
+	}
+
+	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		FullReplace: true,
+		Size:        protocol.Size{Cols: 6, Rows: 2},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "k", Width: 1}}},
+		},
+		Cursor: protocol.CursorState{Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode update: %v", err)
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+
+	if terminal.PreferSnapshot {
+		t.Fatalf("expected structured screen update to refresh local vterm surface, got %#v", terminal)
+	}
+	if terminal.SurfaceVersion == 0 {
+		t.Fatalf("expected structured screen update to bump surface version, got %#v", terminal)
+	}
+	if terminal.VTerm == nil || !vtermContains(terminal.VTerm, "ok") {
+		t.Fatalf("expected local vterm to receive structured screen update, got %#v", terminal.VTerm)
+	}
+	if terminal.Snapshot == nil || !snapshotContains(terminal.Snapshot, "ok") {
+		t.Fatalf("expected snapshot to stay synchronized with structured update, got %#v", terminal.Snapshot)
+	}
+}
+
 func TestRuntimeStartStreamCoalescesBurstOutputFrames(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1295,6 +1359,22 @@ func (v *countingVTerm) Write(data []byte) (int, error) {
 	}
 	v.writeCalls.Add(1)
 	return v.VTermLike.Write(data)
+}
+
+type countingSnapshotVTerm struct {
+	*localvterm.VTerm
+	screenContentCalls     atomic.Int32
+	scrollbackContentCalls atomic.Int32
+}
+
+func (v *countingSnapshotVTerm) ScreenContent() localvterm.ScreenData {
+	v.screenContentCalls.Add(1)
+	return v.VTerm.ScreenContent()
+}
+
+func (v *countingSnapshotVTerm) ScrollbackContent() [][]localvterm.Cell {
+	v.scrollbackContentCalls.Add(1)
+	return v.VTerm.ScrollbackContent()
 }
 
 type inputCall struct {

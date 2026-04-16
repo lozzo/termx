@@ -289,15 +289,55 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 			return
 		}
 		terminal.BootstrapPending = false
+		if terminal.PreferSnapshot {
+			terminal.PreferSnapshot = false
+		}
 		r.bumpSurfaceVersion(terminal)
 		if terminal.PreferSnapshot || terminal.Snapshot == nil {
 			r.refreshSnapshot(terminalID)
 			return
 		}
 		r.invalidate()
+	case protocol.TypeScreenUpdate:
+		update, err := protocol.DecodeScreenUpdatePayload(frame.Payload)
+		if err != nil {
+			return
+		}
+		if update.Title != "" && update.Title != terminal.Title {
+			terminal.Title = update.Title
+			r.touch()
+			if r.onTitleChange != nil {
+				r.onTitleChange(terminal.TerminalID, update.Title)
+			}
+		}
+		if terminal.BootstrapPending && terminal.Snapshot != nil && screenUpdateSeemsBlank(update) {
+			r.invalidate()
+			return
+		}
+		terminal.Snapshot = applyScreenUpdateSnapshot(terminal.Snapshot, terminalID, update)
+		vt := r.ensureVTerm(terminal)
+		if vt != nil && terminal.Snapshot != nil {
+			loadSnapshotIntoVTerm(vt, terminal.Snapshot)
+			terminal.PreferSnapshot = false
+			r.bumpSurfaceVersion(terminal)
+			terminal.SnapshotVersion = terminal.SurfaceVersion
+		} else {
+			terminal.PreferSnapshot = true
+			terminal.SnapshotVersion++
+		}
+		terminal.BootstrapPending = false
+		terminal.Recovery = RecoveryState{}
+		r.invalidate()
 	case protocol.TypeResize:
 		cols, rows, err := protocol.DecodeResizePayload(frame.Payload)
 		if err != nil || cols == 0 || rows == 0 {
+			return
+		}
+		if terminal.PreferSnapshot && terminal.Snapshot != nil {
+			terminal.Snapshot.Size = protocol.Size{Cols: cols, Rows: rows}
+			terminal.Snapshot.Timestamp = time.Now()
+			terminal.SnapshotVersion++
+			r.invalidate()
 			return
 		}
 		vt := r.ensureVTerm(terminal)
@@ -334,9 +374,22 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 			return
 		}
 		terminal.BootstrapPending = false
+		if terminal.PreferSnapshot && terminal.Snapshot != nil {
+			terminal.SnapshotVersion++
+			r.invalidate()
+			return
+		}
 		r.bumpSurfaceVersion(terminal)
 		r.refreshSnapshot(terminalID)
 	case protocol.TypeSyncLost:
+		if terminal.PreferSnapshot && terminal.Snapshot != nil {
+			terminal.BootstrapPending = false
+			resetSynchronizedOutputState(&terminal.Stream)
+			terminal.Recovery = RecoveryState{}
+			terminal.SnapshotVersion++
+			r.invalidate()
+			return
+		}
 		terminal.BootstrapPending = false
 		resetSynchronizedOutputState(&terminal.Stream)
 		terminal.Recovery.SyncLost = true
@@ -366,6 +419,8 @@ func streamFrameMetric(frameType uint8) string {
 		return "runtime.stream.output"
 	case protocol.TypeResize:
 		return "runtime.stream.resize"
+	case protocol.TypeScreenUpdate:
+		return "runtime.stream.screen_update"
 	case protocol.TypeBootstrapDone:
 		return "runtime.stream.bootstrap_done"
 	case protocol.TypeSyncLost:
@@ -425,4 +480,18 @@ func resetSynchronizedOutputState(state *StreamState) {
 	}
 	state.synchronizedOutputActive = false
 	state.synchronizedOutputTail = ""
+}
+
+func screenUpdateSeemsBlank(update protocol.ScreenUpdate) bool {
+	if !update.FullReplace || len(update.ChangedRows) > 0 || len(update.ScrollbackAppend) > 0 {
+		return false
+	}
+	for _, row := range update.Screen.Cells {
+		for _, cell := range row {
+			if strings.TrimSpace(cell.Content) != "" {
+				return false
+			}
+		}
+	}
+	return true
 }

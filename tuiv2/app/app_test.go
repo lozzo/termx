@@ -1761,6 +1761,44 @@ func TestQueueInvalidateWaitsForFrameWriterDrainBeforeSending(t *testing.T) {
 	}
 }
 
+func TestQueueInvalidateAdaptiveDelayIncreasesAfterSlowDrainPressure(t *testing.T) {
+	originalDelay := invalidateBatchDelay
+	invalidateBatchDelay = 4 * time.Millisecond
+	defer func() { invalidateBatchDelay = originalDelay }()
+
+	model := New(shared.Config{}, nil, runtime.New(nil))
+	base := model.effectiveInvalidateBatchDelay()
+	for i := 0; i < invalidateAdaptiveSlowSamples; i++ {
+		model.observeFrameWriterDrainDuration(invalidateDrainSlowThreshold + time.Millisecond)
+	}
+	got := model.effectiveInvalidateBatchDelay()
+	if got <= base {
+		t.Fatalf("expected adaptive invalidate delay to increase after sustained slow drain, base=%v got=%v", base, got)
+	}
+}
+
+func TestQueueInvalidateAdaptiveDelayRecoversAfterFastDrainPressure(t *testing.T) {
+	originalDelay := invalidateBatchDelay
+	invalidateBatchDelay = 4 * time.Millisecond
+	defer func() { invalidateBatchDelay = originalDelay }()
+
+	model := New(shared.Config{}, nil, runtime.New(nil))
+	for i := 0; i < invalidateAdaptiveSlowSamples*2; i++ {
+		model.observeFrameWriterDrainDuration(invalidateDrainSlowThreshold + time.Millisecond)
+	}
+	raised := model.effectiveInvalidateBatchDelay()
+	for i := 0; i < invalidateAdaptiveFastSamples*3; i++ {
+		model.observeFrameWriterDrainDuration(invalidateDrainFastThreshold / 2)
+	}
+	recovered := model.effectiveInvalidateBatchDelay()
+	if recovered >= raised {
+		t.Fatalf("expected adaptive invalidate delay to recover after sustained fast drain, raised=%v recovered=%v", raised, recovered)
+	}
+	if recovered != invalidateBatchDelay {
+		t.Fatalf("expected adaptive invalidate delay to recover to base, base=%v recovered=%v", invalidateBatchDelay, recovered)
+	}
+}
+
 func TestRenderRefreshMsgDoesNotResetFrameWriterState(t *testing.T) {
 	model := New(shared.Config{}, nil, runtime.New(nil))
 	writer := &resetProbeFrameWriter{}

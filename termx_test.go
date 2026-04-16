@@ -62,7 +62,7 @@ func TestServerCreateListTagsSubscribeSnapshotAndRemoval(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		msg := <-stream
-		if msg.Type == StreamOutput && strings.Contains(string(msg.Output), "integration") {
+		if streamMessageContainsText(msg, 80, 24, "integration") {
 			break
 		}
 	}

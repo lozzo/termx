@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lozzow/termx/fanout"
+	"github.com/lozzow/termx/protocol"
 	localvterm "github.com/lozzow/termx/vterm"
 )
 
@@ -42,7 +43,7 @@ func TestTerminalLifecycleAndSnapshot(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		msg := <-stream
-		if msg.Type == StreamOutput && strings.Contains(string(msg.Output), "hello-termx") {
+		if streamMessageContainsText(msg, 80, 24, "hello-termx") {
 			break
 		}
 	}
@@ -151,7 +152,7 @@ func TestSubscribeAfterExitReplaysSnapshotAndClosed(t *testing.T) {
 		if !ok {
 			t.Fatal("expected replay output frame")
 		}
-		if msg.Type != StreamOutput || !replayContainsText(msg.Output, 80, 24, "replay-me") {
+		if !streamMessageContainsText(msg, 80, 24, "replay-me") {
 			t.Fatalf("expected replay output, got %#v", msg)
 		}
 	case <-time.After(5 * time.Second):
@@ -215,7 +216,7 @@ func TestSubscribeRunningTerminalBootstrapsResizeReplayThenLiveOutput(t *testing
 
 	select {
 	case msg := <-stream:
-		if msg.Type != StreamOutput || !replayContainsText(msg.Output, 6, 2, "hello") || !replayContainsText(msg.Output, 6, 2, "world") {
+		if !streamMessageContainsText(msg, 6, 2, "hello") || !streamMessageContainsText(msg, 6, 2, "world") {
 			t.Fatalf("expected replay bootstrap output, got %#v", msg)
 		}
 	case <-time.After(time.Second):
@@ -235,7 +236,7 @@ func TestSubscribeRunningTerminalBootstrapsResizeReplayThenLiveOutput(t *testing
 
 	select {
 	case msg := <-stream:
-		if msg.Type != StreamOutput || string(msg.Output) != "later" {
+		if !streamMessageContainsText(msg, 6, 2, "later") {
 			t.Fatalf("expected live output after bootstrap, got %#v", msg)
 		}
 	case <-time.After(time.Second):
@@ -296,12 +297,41 @@ func TestSubscribeFlushesPendingVTermOutputBeforeBootstrap(t *testing.T) {
 
 	select {
 	case msg := <-stream:
-		if msg.Type != StreamOutput || !replayContainsText(msg.Output, 8, 2, "hello") {
+		if !streamMessageContainsText(msg, 8, 2, "hello") {
 			t.Fatalf("expected replay bootstrap output with pending bytes, got %#v", msg)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for replay bootstrap")
 	}
+}
+
+func TestTerminalIdleFlushesPendingVTermOutput(t *testing.T) {
+	originalDelay := serverVTermFlushIdleDelay
+	serverVTermFlushIdleDelay = 2 * time.Millisecond
+	defer func() { serverVTermFlushIdleDelay = originalDelay }()
+
+	vt := localvterm.New(8, 2, 16, nil)
+	term := &Terminal{
+		id:           "idle-flush",
+		size:         Size{Cols: 8, Rows: 2},
+		state:        StateRunning,
+		vterm:        vt,
+		processEpoch: 1,
+	}
+
+	term.streamMu.Lock()
+	term.queuePendingVTermOutputLocked(1, []byte("hello"))
+	term.armPendingVTermFlushLocked(1)
+	term.streamMu.Unlock()
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if replayContainsText(vt.EncodeReplay(16), 8, 2, "hello") {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("expected idle flush to apply pending output to the server vterm")
 }
 
 func TestForwardLiveStreamMessagesCoalescesBurstOutput(t *testing.T) {
@@ -329,6 +359,36 @@ func TestForwardLiveStreamMessagesCoalescesBurstOutput(t *testing.T) {
 	}
 	if received[0].Type != StreamOutput || string(received[0].Output) != "abc" {
 		t.Fatalf("expected merged output %q, got %#v", "abc", received[0])
+	}
+}
+
+func TestForwardLiveStreamMessagesPreservesSingleOutputBuffer(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	src := make(chan fanout.StreamMessage, 2)
+	dst := make(chan StreamMessage, 2)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		forwardLiveStreamMessages(ctx, src, dst)
+		close(dst)
+	}()
+
+	payload := []byte("solo")
+	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: payload}
+	close(src)
+
+	received := collectStreamMessages(t, dst)
+	<-done
+	if len(received) != 1 {
+		t.Fatalf("expected one output frame, got %#v", received)
+	}
+	if received[0].Type != StreamOutput || string(received[0].Output) != "solo" {
+		t.Fatalf("unexpected output %#v", received[0])
+	}
+	if len(received[0].Output) == 0 || &received[0].Output[0] != &payload[0] {
+		t.Fatal("expected single-message coalescing path to preserve the original buffer")
 	}
 }
 
@@ -504,8 +564,8 @@ func TestTerminalDeliversTrailingOutputBeforeClosedFrame(t *testing.T) {
 			break
 		}
 		switch msg.Type {
-		case StreamOutput:
-			if strings.Contains(string(msg.Output), "A^I^[B$") {
+		case StreamOutput, StreamScreenUpdate:
+			if streamMessageContainsText(msg, 80, 24, "A^I^[B$") {
 				sawOutput = true
 			}
 		case StreamClosed:
@@ -600,6 +660,53 @@ func replayContainsText(payload []byte, cols, rows int, needle string) bool {
 		}
 	}
 	return false
+}
+
+func streamMessageContainsText(msg StreamMessage, cols, rows int, needle string) bool {
+	switch msg.Type {
+	case StreamOutput:
+		if cols > 0 && rows > 0 {
+			return replayContainsText(msg.Output, cols, rows, needle)
+		}
+		return strings.Contains(string(msg.Output), needle)
+	case StreamScreenUpdate:
+		update, err := protocol.DecodeScreenUpdatePayload(msg.Payload)
+		if err != nil {
+			return false
+		}
+		return screenUpdateContainsText(update, needle)
+	default:
+		return false
+	}
+}
+
+func screenUpdateContainsText(update protocol.ScreenUpdate, needle string) bool {
+	if update.FullReplace {
+		for _, row := range update.Screen.Cells {
+			if strings.Contains(protocolRowToString(row), needle) {
+				return true
+			}
+		}
+	}
+	for _, row := range update.ChangedRows {
+		if strings.Contains(protocolRowToString(row.Cells), needle) {
+			return true
+		}
+	}
+	for _, row := range update.ScrollbackAppend {
+		if strings.Contains(protocolRowToString(row.Cells), needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func protocolRowToString(row []protocol.Cell) string {
+	var b strings.Builder
+	for _, cell := range row {
+		b.WriteString(cell.Content)
+	}
+	return strings.TrimRight(b.String(), " ")
 }
 
 func snapshotTimestampForRowKind(s *Snapshot, kind string) (time.Time, bool) {

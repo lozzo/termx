@@ -11,6 +11,8 @@ import (
 	"github.com/rivo/uniseg"
 )
 
+const rowDirtyChunkWidth = 32
+
 type drawStyle struct {
 	FG        string
 	BG        string
@@ -32,13 +34,16 @@ type drawCell struct {
 }
 
 type composedCanvas struct {
-	width     int
-	height    int
-	cells     [][]drawCell
-	rowCache  []string
-	rowDirty  []bool
-	fullCache string
-	fullDirty bool
+	width       int
+	height      int
+	cells       [][]drawCell
+	rowCache    []string
+	rowDirty    []bool
+	rowDirtyMin []int
+	rowDirtyMax []int
+	rowChunks   [][]string
+	fullCache   string
+	fullDirty   bool
 
 	hostEmojiVS16Mode shared.AmbiguousEmojiVariationSelectorMode
 
@@ -72,15 +77,20 @@ func newComposedCanvas(width, height int) *composedCanvas {
 		cells:             make([][]drawCell, height),
 		rowCache:          make([]string, height),
 		rowDirty:          make([]bool, height),
+		rowDirtyMin:       make([]int, height),
+		rowDirtyMax:       make([]int, height),
+		rowChunks:         make([][]string, height),
 		fullDirty:         true,
 		hostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
 	}
+	chunkCount := c.rowChunkCount()
 	blankRow := cachedBlankFillRow(width)
 	for y := 0; y < height; y++ {
 		row := make([]drawCell, width)
 		copy(row, blankRow)
 		c.cells[y] = row
-		c.rowDirty[y] = true
+		c.rowChunks[y] = make([]string, chunkCount)
+		c.markRowDirtyRange(y, 0, width-1)
 	}
 	return c
 }
@@ -93,7 +103,8 @@ func (c *composedCanvas) resetToBlank() {
 	for y := 0; y < c.height; y++ {
 		copy(c.cells[y], blankRow)
 		c.rowCache[y] = ""
-		c.rowDirty[y] = true
+		clear(c.rowChunks[y])
+		c.markRowDirtyRange(y, 0, c.width-1)
 	}
 	c.fullCache = ""
 	c.fullDirty = true
@@ -125,7 +136,7 @@ func (c *composedCanvas) blit(src *composedCanvas, dstX, dstY int) {
 			width = c.width - startX
 		}
 		copy(c.cells[targetY][startX:startX+width], src.cells[y][srcStartX:srcStartX+width])
-		c.rowDirty[targetY] = true
+		c.markRowDirtyRange(targetY, startX, startX+width-1)
 	}
 	c.fullDirty = true
 }
@@ -211,8 +222,7 @@ func (c *composedCanvas) writeCell(x, y int, cell drawCell) {
 		return
 	}
 	c.cells[y][x] = cell
-	c.rowDirty[y] = true
-	c.fullDirty = true
+	c.markRowDirtyRange(y, x, x)
 }
 
 func (c *composedCanvas) drawText(x, y int, text string, style drawStyle) {
@@ -432,9 +442,10 @@ func (c *composedCanvas) contentLines() []string {
 	if c == nil {
 		return nil
 	}
-	c.ensureRowCache()
-	lines := make([]string, len(c.rowCache))
-	copy(lines, c.rowCache)
+	lines := make([]string, c.height)
+	for y := 0; y < c.height; y++ {
+		lines[y] = c.serializeRowRangeCompressed(y, 0, c.width-1)
+	}
 	return lines
 }
 
@@ -477,96 +488,43 @@ func (c *composedCanvas) ensureRowCache() {
 		return
 	}
 	for y := 0; y < c.height; y++ {
-		if !c.rowDirty[y] && c.rowCache[y] != "" {
+		dirtyStart, dirtyEnd, dirty := c.rowDirtyRange(y)
+		if !dirty && c.rowCache[y] != "" {
 			continue
 		}
-		var row strings.Builder
-		rowHint := len(c.rowCache[y])
-		if rowHint <= 0 {
-			rowHint = c.width + 16
+		if !dirty {
+			dirtyStart = 0
+			dirtyEnd = c.width - 1
 		}
-		row.Grow(rowHint)
-		current := drawStyle{}
-		needsReanchor := false
-		// Each serialized row re-anchors itself at column 1 so any per-cell CHA
-		// adjustments stay relative to the row grid rather than the host cursor's
-		// previous position.
-		writeCHAANSI(&row, 1)
-		for x := 0; x < c.width; x++ {
-			cell := c.cells[y][x]
-			if cell.Continuation {
-				continue
-			}
-			if blankRun := c.compressibleBlankRun(y, x); blankRun >= 5 {
-				if needsReanchor {
-					writeCHAANSI(&row, x+1)
-					needsReanchor = false
-				}
-				if current != cell.Style {
-					row.WriteString(styleDiffANSI(current, cell.Style))
-					current = cell.Style
-				}
-				writeECHANSI(&row, blankRun)
-				needsReanchor = true
-				x += blankRun - 1
-				continue
-			}
-			content := cell.Content
-			if content == "" {
-				content = " "
-			}
-			isCompensationSpace := c.isRawAmbiguousContinuationSpace(x, y)
-			if isCompensationSpace {
-				// 中文说明：紧跟在 FE0F 歧义宽度 emoji 后的补偿列。
-				// 不能把它当成可打印空格吐出去——那会让这一行的 display width
-				// 比 c.width 多 1 列，ansi.Truncate 会把最右侧的边框截掉。
-				// 但如果只是单纯跳过（老做法），advance-1 的宿主（只把 emoji
-				// 前进 1 列）会让补偿列永远没有机会被新帧覆盖，pane 移走后
-				// 就会看到旧帧残留。
-				//
-				// 这里在 emoji 刚吐完、光标还停在宿主实际前进到的位置时，
-				// 直接发一个 ECH(1) 原地擦除一个 cell：
-				//   * 在 advance-1 宿主上，光标在补偿列上，ECH 正好清掉
-				//     可能残留的旧字符；
-				//   * 在 advance-2 宿主上，光标已经越过 emoji 到达下一列，
-				//     ECH 擦掉的是下一个真实 cell 的位置——而紧接着 CHA 会
-				//     把它重新写回去，不会破坏 emoji 本身的字形；
-				//   * ECH 是 CSI 序列，ansi.Truncate 视之为 0 宽，因此不会
-				//     顶掉最右侧的边框字符。
-				// 接着设置 needsReanchor，循环到下一个真实 cell 时再用绝对
-				// CHA 重锚，和宿主对 FE0F 宽度的判断脱钩。
-				//
-				// 行为参考：tmux screen-write.c 在 variation-selector-always-wide
-				// 下绘制 force_wide cell 之后调用 tty_invalidate(tty) 让
-				// 光标缓存作废，下一 cell 会用绝对定位重放——语义与这里的
-				// ECH + 延迟 CHA 等价。
-				writeECHANSI(&row, 1)
-				needsReanchor = true
-				continue
-			}
-			if needsReanchor {
-				writeCHAANSI(&row, x+1)
-				needsReanchor = false
-			}
-			if current != cell.Style {
-				row.WriteString(styleDiffANSI(current, cell.Style))
-				current = cell.Style
-			}
-			nextCol := 0
-			if x+cell.Width < c.width {
-				nextCol = x + cell.Width + 1
-			}
-			row.WriteString(serializeCellContentForDisplay(content, cell.Width, c.hostEmojiVS16Mode, nextCol))
+		startChunk := dirtyStart / rowDirtyChunkWidth
+		endChunk := dirtyEnd / rowDirtyChunkWidth
+		if c.rowChunks[y] == nil {
+			c.rowChunks[y] = make([]string, c.rowChunkCount())
+			startChunk = 0
+			endChunk = len(c.rowChunks[y]) - 1
 		}
-		row.WriteString("\x1b[0m\x1b[K")
-		c.rowCache[y] = row.String()
-		c.rowDirty[y] = false
+		for chunk := startChunk; chunk <= endChunk; chunk++ {
+			startX, endX := c.rowChunkBounds(chunk)
+			c.rowChunks[y][chunk] = c.serializeRowRange(y, startX, endX)
+		}
+		c.rowCache[y] = c.buildRowFromChunks(y)
+		c.clearRowDirty(y)
 	}
 }
 
 func (c *composedCanvas) compressibleBlankRun(y, startX int) int {
+	return c.compressibleBlankRunInRange(y, startX, c.width-1)
+}
+
+func (c *composedCanvas) compressibleBlankRunInRange(y, startX, endX int) int {
 	if c == nil || y < 0 || y >= c.height || startX < 0 || startX >= c.width {
 		return 0
+	}
+	if endX < startX {
+		return 0
+	}
+	if endX >= c.width {
+		endX = c.width - 1
 	}
 	first := c.cells[y][startX]
 	if first.Continuation || first.AmbiguousCompensation || first.Width != 1 {
@@ -576,7 +534,7 @@ func (c *composedCanvas) compressibleBlankRun(y, startX int) int {
 		return 0
 	}
 	run := 0
-	for x := startX; x < c.width; x++ {
+	for x := startX; x <= endX; x++ {
 		cell := c.cells[y][x]
 		if cell.Continuation || cell.AmbiguousCompensation || cell.Width != 1 {
 			break
@@ -590,6 +548,164 @@ func (c *composedCanvas) compressibleBlankRun(y, startX int) int {
 		run++
 	}
 	return run
+}
+
+func (c *composedCanvas) markRowDirtyRange(y, startX, endX int) {
+	if c == nil || y < 0 || y >= c.height || c.width <= 0 {
+		return
+	}
+	if startX > endX {
+		startX, endX = endX, startX
+	}
+	if endX < 0 || startX >= c.width {
+		return
+	}
+	if startX < 0 {
+		startX = 0
+	}
+	if endX >= c.width {
+		endX = c.width - 1
+	}
+	c.rowDirty[y] = true
+	if c.rowDirtyMin[y] < 0 || startX < c.rowDirtyMin[y] {
+		c.rowDirtyMin[y] = startX
+	}
+	if c.rowDirtyMax[y] < 0 || endX > c.rowDirtyMax[y] {
+		c.rowDirtyMax[y] = endX
+	}
+	c.fullDirty = true
+}
+
+func (c *composedCanvas) rowDirtyRange(y int) (int, int, bool) {
+	if c == nil || y < 0 || y >= c.height {
+		return 0, 0, false
+	}
+	start := c.rowDirtyMin[y]
+	end := c.rowDirtyMax[y]
+	if !c.rowDirty[y] || start < 0 || end < start {
+		return 0, 0, false
+	}
+	return start, end, true
+}
+
+func (c *composedCanvas) clearRowDirty(y int) {
+	if c == nil || y < 0 || y >= c.height {
+		return
+	}
+	c.rowDirty[y] = false
+	c.rowDirtyMin[y] = -1
+	c.rowDirtyMax[y] = -1
+}
+
+func (c *composedCanvas) rowChunkCount() int {
+	if c == nil || c.width <= 0 {
+		return 0
+	}
+	return (c.width + rowDirtyChunkWidth - 1) / rowDirtyChunkWidth
+}
+
+func (c *composedCanvas) rowChunkBounds(chunk int) (int, int) {
+	start := chunk * rowDirtyChunkWidth
+	end := minInt(c.width-1, start+rowDirtyChunkWidth-1)
+	return start, end
+}
+
+func (c *composedCanvas) buildRowFromChunks(y int) string {
+	if c == nil || y < 0 || y >= c.height {
+		return ""
+	}
+	var row strings.Builder
+	rowHint := len(c.rowCache[y])
+	if rowHint <= 0 {
+		rowHint = c.width + 16
+	}
+	row.Grow(rowHint)
+	for _, chunk := range c.rowChunks[y] {
+		row.WriteString(chunk)
+	}
+	row.WriteString("\x1b[0m\x1b[K")
+	return row.String()
+}
+
+func (c *composedCanvas) serializeRowRange(y, startX, endX int) string {
+	return c.serializeRowRangeWithBlankMode(y, startX, endX, false)
+}
+
+func (c *composedCanvas) serializeRowRangeCompressed(y, startX, endX int) string {
+	return c.serializeRowRangeWithBlankMode(y, startX, endX, true)
+}
+
+func (c *composedCanvas) serializeRowRangeWithBlankMode(y, startX, endX int, compressBlanks bool) string {
+	if c == nil || y < 0 || y >= c.height || startX < 0 || endX < startX || startX >= c.width {
+		return ""
+	}
+	if endX >= c.width {
+		endX = c.width - 1
+	}
+	var row strings.Builder
+	rowHint := (endX - startX + 1) * 8
+	if rowHint < 32 {
+		rowHint = 32
+	}
+	row.Grow(rowHint)
+	current := drawStyle{}
+	needsReanchor := true
+	for x := startX; x <= endX; x++ {
+		cell := c.cells[y][x]
+		if cell.Continuation {
+			continue
+		}
+		if blankRun := c.compressibleBlankRunInRange(y, x, endX); blankRun >= 5 {
+			if needsReanchor {
+				writeCHAANSI(&row, x+1)
+				needsReanchor = false
+			}
+			if current != cell.Style {
+				row.WriteString(styleDiffANSI(current, cell.Style))
+				current = cell.Style
+			}
+			if compressBlanks {
+				writeECHANSI(&row, blankRun)
+				needsReanchor = true
+			} else {
+				row.WriteString(cachedBlankString(blankRun))
+			}
+			x += blankRun - 1
+			continue
+		}
+		content := cell.Content
+		if content == "" {
+			content = " "
+		}
+		if c.isRawAmbiguousContinuationSpace(x, y) {
+			// Keep FE0F compensation cells explicitly erasable across hosts with
+			// different ambiguous-width behavior.
+			if needsReanchor {
+				writeCHAANSI(&row, x+1)
+				needsReanchor = false
+			}
+			writeECHANSI(&row, 1)
+			needsReanchor = true
+			continue
+		}
+		if needsReanchor {
+			writeCHAANSI(&row, x+1)
+			needsReanchor = false
+		}
+		if current != cell.Style {
+			row.WriteString(styleDiffANSI(current, cell.Style))
+			current = cell.Style
+		}
+		nextCol := 0
+		if x+cell.Width <= endX {
+			nextCol = x + cell.Width + 1
+		}
+		row.WriteString(serializeCellContentForDisplay(content, cell.Width, c.hostEmojiVS16Mode, nextCol))
+	}
+	if current != (drawStyle{}) {
+		row.WriteString(styleANSI(drawStyle{}))
+	}
+	return row.String()
 }
 
 func (c *composedCanvas) cursorANSI() string {

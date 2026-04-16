@@ -178,8 +178,300 @@ type SnapshotParams struct {
 	ScrollbackLimit  int    `json:"scrollback_limit,omitempty"`
 }
 
+type ScreenRowUpdate struct {
+	Row       int       `json:"row"`
+	Cells     []Cell    `json:"cells,omitempty"`
+	Timestamp time.Time `json:"timestamp,omitempty"`
+	RowKind   string    `json:"row_kind,omitempty"`
+}
+
+type ScrollbackRowAppend struct {
+	Cells     []Cell    `json:"cells,omitempty"`
+	Timestamp time.Time `json:"timestamp,omitempty"`
+	RowKind   string    `json:"row_kind,omitempty"`
+}
+
+type ScreenUpdate struct {
+	FullReplace      bool                  `json:"full_replace,omitempty"`
+	ResetScrollback  bool                  `json:"reset_scrollback,omitempty"`
+	Size             Size                  `json:"size,omitempty"`
+	Title            string                `json:"title,omitempty"`
+	Screen           ScreenData            `json:"screen,omitempty"`
+	ScreenTimestamps []time.Time           `json:"screen_timestamps,omitempty"`
+	ScreenRowKinds   []string              `json:"screen_row_kinds,omitempty"`
+	ChangedRows      []ScreenRowUpdate     `json:"changed_rows,omitempty"`
+	ScrollbackTrim   int                   `json:"scrollback_trim,omitempty"`
+	ScrollbackAppend []ScrollbackRowAppend `json:"scrollback_append,omitempty"`
+	Cursor           CursorState           `json:"cursor"`
+	Modes            TerminalModes         `json:"modes"`
+}
+
 type ListResult struct {
 	Terminals []TerminalInfo `json:"terminals"`
+}
+
+func EncodeScreenUpdatePayload(update ScreenUpdate) ([]byte, error) {
+	type jsonStyle struct {
+		FG            string `json:"fg,omitempty"`
+		BG            string `json:"bg,omitempty"`
+		Bold          bool   `json:"b,omitempty"`
+		Italic        bool   `json:"i,omitempty"`
+		Underline     bool   `json:"u,omitempty"`
+		Blink         bool   `json:"k,omitempty"`
+		Reverse       bool   `json:"rv,omitempty"`
+		Strikethrough bool   `json:"st,omitempty"`
+	}
+	type jsonCell struct {
+		Content string     `json:"r,omitempty"`
+		Width   int        `json:"w,omitempty"`
+		Style   *jsonStyle `json:"s,omitempty"`
+	}
+	type jsonRow struct {
+		Cells []jsonCell `json:"cells,omitempty"`
+	}
+	type jsonScreen struct {
+		IsAlternate bool      `json:"is_alternate"`
+		Rows        []jsonRow `json:"rows"`
+	}
+	type jsonScreenRowUpdate struct {
+		Row       int        `json:"row"`
+		Cells     []jsonCell `json:"cells,omitempty"`
+		Timestamp time.Time  `json:"timestamp,omitempty"`
+		RowKind   string     `json:"row_kind,omitempty"`
+	}
+	type jsonScrollbackRowAppend struct {
+		Cells     []jsonCell `json:"cells,omitempty"`
+		Timestamp time.Time  `json:"timestamp,omitempty"`
+		RowKind   string     `json:"row_kind,omitempty"`
+	}
+	type jsonScreenUpdate struct {
+		FullReplace      bool                      `json:"full_replace,omitempty"`
+		ResetScrollback  bool                      `json:"reset_scrollback,omitempty"`
+		Size             Size                      `json:"size,omitempty"`
+		Title            string                    `json:"title,omitempty"`
+		Screen           jsonScreen                `json:"screen,omitempty"`
+		ScreenTimestamps []string                  `json:"screen_timestamps,omitempty"`
+		ScreenRowKinds   []string                  `json:"screen_row_kinds,omitempty"`
+		ChangedRows      []jsonScreenRowUpdate     `json:"changed_rows,omitempty"`
+		ScrollbackTrim   int                       `json:"scrollback_trim,omitempty"`
+		ScrollbackAppend []jsonScrollbackRowAppend `json:"scrollback_append,omitempty"`
+		Cursor           CursorState               `json:"cursor"`
+		Modes            TerminalModes             `json:"modes"`
+	}
+	encodeRows := func(rows [][]Cell) []jsonRow {
+		if len(rows) == 0 {
+			return nil
+		}
+		out := make([]jsonRow, len(rows))
+		for i, row := range rows {
+			cells := make([]jsonCell, len(row))
+			for j, cell := range row {
+				cells[j] = jsonCell{Content: cell.Content, Width: cell.Width}
+				if cell.Style != (CellStyle{}) {
+					cells[j].Style = &jsonStyle{
+						FG:            cell.Style.FG,
+						BG:            cell.Style.BG,
+						Bold:          cell.Style.Bold,
+						Italic:        cell.Style.Italic,
+						Underline:     cell.Style.Underline,
+						Blink:         cell.Style.Blink,
+						Reverse:       cell.Style.Reverse,
+						Strikethrough: cell.Style.Strikethrough,
+					}
+				}
+			}
+			out[i] = jsonRow{Cells: cells}
+		}
+		return out
+	}
+	encodeCells := func(row []Cell) []jsonCell {
+		rows := encodeRows([][]Cell{row})
+		if len(rows) == 0 {
+			return nil
+		}
+		return rows[0].Cells
+	}
+	encodeRowTimestamps := func(values []time.Time) []string {
+		if len(values) == 0 {
+			return nil
+		}
+		out := make([]string, len(values))
+		for i, value := range values {
+			if value.IsZero() {
+				continue
+			}
+			out[i] = value.UTC().Format(time.RFC3339Nano)
+		}
+		return out
+	}
+	raw := jsonScreenUpdate{
+		FullReplace:      update.FullReplace,
+		ResetScrollback:  update.ResetScrollback,
+		Size:             update.Size,
+		Title:            update.Title,
+		Screen:           jsonScreen{IsAlternate: update.Screen.IsAlternateScreen, Rows: encodeRows(update.Screen.Cells)},
+		ScreenTimestamps: encodeRowTimestamps(update.ScreenTimestamps),
+		ScreenRowKinds:   append([]string(nil), update.ScreenRowKinds...),
+		ChangedRows:      make([]jsonScreenRowUpdate, 0, len(update.ChangedRows)),
+		ScrollbackTrim:   update.ScrollbackTrim,
+		ScrollbackAppend: make([]jsonScrollbackRowAppend, 0, len(update.ScrollbackAppend)),
+		Cursor:           update.Cursor,
+		Modes:            update.Modes,
+	}
+	for _, row := range update.ChangedRows {
+		raw.ChangedRows = append(raw.ChangedRows, jsonScreenRowUpdate{
+			Row:       row.Row,
+			Cells:     encodeCells(row.Cells),
+			Timestamp: row.Timestamp,
+			RowKind:   row.RowKind,
+		})
+	}
+	for _, row := range update.ScrollbackAppend {
+		raw.ScrollbackAppend = append(raw.ScrollbackAppend, jsonScrollbackRowAppend{
+			Cells:     encodeCells(row.Cells),
+			Timestamp: row.Timestamp,
+			RowKind:   row.RowKind,
+		})
+	}
+	return json.Marshal(raw)
+}
+
+func DecodeScreenUpdatePayload(payload []byte) (ScreenUpdate, error) {
+	type jsonStyle struct {
+		FG            string `json:"fg,omitempty"`
+		BG            string `json:"bg,omitempty"`
+		Bold          bool   `json:"b,omitempty"`
+		Italic        bool   `json:"i,omitempty"`
+		Underline     bool   `json:"u,omitempty"`
+		Blink         bool   `json:"k,omitempty"`
+		Reverse       bool   `json:"rv,omitempty"`
+		Strikethrough bool   `json:"st,omitempty"`
+	}
+	type jsonCell struct {
+		Content string     `json:"r,omitempty"`
+		Width   int        `json:"w,omitempty"`
+		Style   *jsonStyle `json:"s,omitempty"`
+	}
+	type jsonRow struct {
+		Cells []jsonCell `json:"cells,omitempty"`
+	}
+	type jsonScreen struct {
+		IsAlternate bool      `json:"is_alternate"`
+		Rows        []jsonRow `json:"rows"`
+	}
+	type jsonScreenRowUpdate struct {
+		Row       int        `json:"row"`
+		Cells     []jsonCell `json:"cells,omitempty"`
+		Timestamp time.Time  `json:"timestamp,omitempty"`
+		RowKind   string     `json:"row_kind,omitempty"`
+	}
+	type jsonScrollbackRowAppend struct {
+		Cells     []jsonCell `json:"cells,omitempty"`
+		Timestamp time.Time  `json:"timestamp,omitempty"`
+		RowKind   string     `json:"row_kind,omitempty"`
+	}
+	type jsonScreenUpdate struct {
+		FullReplace      bool                      `json:"full_replace,omitempty"`
+		ResetScrollback  bool                      `json:"reset_scrollback,omitempty"`
+		Size             Size                      `json:"size,omitempty"`
+		Title            string                    `json:"title,omitempty"`
+		Screen           jsonScreen                `json:"screen,omitempty"`
+		ScreenTimestamps []string                  `json:"screen_timestamps,omitempty"`
+		ScreenRowKinds   []string                  `json:"screen_row_kinds,omitempty"`
+		ChangedRows      []jsonScreenRowUpdate     `json:"changed_rows,omitempty"`
+		ScrollbackTrim   int                       `json:"scrollback_trim,omitempty"`
+		ScrollbackAppend []jsonScrollbackRowAppend `json:"scrollback_append,omitempty"`
+		Cursor           CursorState               `json:"cursor"`
+		Modes            TerminalModes             `json:"modes"`
+	}
+	var update ScreenUpdate
+	if len(payload) == 0 {
+		return update, nil
+	}
+	var raw jsonScreenUpdate
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return update, err
+	}
+	convertCells := func(cells []jsonCell) []Cell {
+		if len(cells) == 0 {
+			return nil
+		}
+		out := make([]Cell, len(cells))
+		for i, cell := range cells {
+			out[i] = Cell{Content: cell.Content, Width: cell.Width}
+			if cell.Style != nil {
+				out[i].Style = CellStyle{
+					FG:            cell.Style.FG,
+					BG:            cell.Style.BG,
+					Bold:          cell.Style.Bold,
+					Italic:        cell.Style.Italic,
+					Underline:     cell.Style.Underline,
+					Blink:         cell.Style.Blink,
+					Reverse:       cell.Style.Reverse,
+					Strikethrough: cell.Style.Strikethrough,
+				}
+			}
+		}
+		return out
+	}
+	convertRows := func(rows []jsonRow) [][]Cell {
+		if len(rows) == 0 {
+			return nil
+		}
+		out := make([][]Cell, len(rows))
+		for i, row := range rows {
+			out[i] = convertCells(row.Cells)
+		}
+		return out
+	}
+	decodeRowTimestamps := func(rawValues []string) []time.Time {
+		if len(rawValues) == 0 {
+			return nil
+		}
+		out := make([]time.Time, len(rawValues))
+		for i, value := range rawValues {
+			value = strings.TrimSpace(value)
+			if value == "" {
+				continue
+			}
+			parsed, err := time.Parse(time.RFC3339Nano, value)
+			if err != nil {
+				continue
+			}
+			out[i] = parsed
+		}
+		return out
+	}
+	update = ScreenUpdate{
+		FullReplace:      raw.FullReplace,
+		ResetScrollback:  raw.ResetScrollback,
+		Size:             raw.Size,
+		Title:            raw.Title,
+		Screen:           ScreenData{Cells: convertRows(raw.Screen.Rows), IsAlternateScreen: raw.Screen.IsAlternate},
+		ScreenTimestamps: decodeRowTimestamps(raw.ScreenTimestamps),
+		ScreenRowKinds:   append([]string(nil), raw.ScreenRowKinds...),
+		ChangedRows:      make([]ScreenRowUpdate, 0, len(raw.ChangedRows)),
+		ScrollbackTrim:   raw.ScrollbackTrim,
+		ScrollbackAppend: make([]ScrollbackRowAppend, 0, len(raw.ScrollbackAppend)),
+		Cursor:           raw.Cursor,
+		Modes:            raw.Modes,
+	}
+	for _, row := range raw.ChangedRows {
+		update.ChangedRows = append(update.ChangedRows, ScreenRowUpdate{
+			Row:       row.Row,
+			Cells:     convertCells(row.Cells),
+			Timestamp: row.Timestamp,
+			RowKind:   row.RowKind,
+		})
+	}
+	for _, row := range raw.ScrollbackAppend {
+		update.ScrollbackAppend = append(update.ScrollbackAppend, ScrollbackRowAppend{
+			Cells:     convertCells(row.Cells),
+			Timestamp: row.Timestamp,
+			RowKind:   row.RowKind,
+		})
+	}
+	return update, nil
 }
 
 type Cell struct {

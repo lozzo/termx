@@ -13,6 +13,9 @@ func styleDiffANSI(from, to drawStyle) string {
 	if from == to {
 		return ""
 	}
+	if from == (drawStyle{}) && to != (drawStyle{}) {
+		return styleANSI(to)
+	}
 	type key struct {
 		from drawStyle
 		to   drawStyle
@@ -38,14 +41,14 @@ func styleDiffANSI(from, to drawStyle) string {
 		if to.FG == "" {
 			appendStyleCode(&b, &first, "39")
 		} else {
-			appendStyleCode(&b, &first, styleColorCode(true, to.FG))
+			appendStyleColorCode(&b, &first, true, to.FG)
 		}
 	}
 	if from.BG != to.BG {
 		if to.BG == "" {
 			appendStyleCode(&b, &first, "49")
 		} else {
-			appendStyleCode(&b, &first, styleColorCode(false, to.BG))
+			appendStyleColorCode(&b, &first, false, to.BG)
 		}
 	}
 	if first {
@@ -142,27 +145,33 @@ func appendStyleCode(b *strings.Builder, first *bool, code string) {
 	*first = false
 }
 
-func styleColorCode(fg bool, c string) string {
-	var b strings.Builder
+func appendStyleColorCode(b *strings.Builder, first *bool, fg bool, c string) {
+	if b == nil || first == nil {
+		return
+	}
+	if !*first {
+		b.WriteByte(';')
+	}
+	*first = false
 	if n, ok := parseAnsiColor(c); ok {
 		if fg {
 			if n <= 7 {
-				b.WriteString("3")
-				b.WriteString(itoa(n))
+				b.WriteByte('3')
+				writeANSIInt(b, n)
 			} else {
-				b.WriteString("9")
-				b.WriteString(itoa(n - 8))
+				b.WriteByte('9')
+				writeANSIInt(b, n-8)
 			}
 		} else {
 			if n <= 7 {
-				b.WriteString("4")
-				b.WriteString(itoa(n))
+				b.WriteByte('4')
+				writeANSIInt(b, n)
 			} else {
 				b.WriteString("10")
-				b.WriteString(itoa(n - 8))
+				writeANSIInt(b, n-8)
 			}
 		}
-		return b.String()
+		return
 	}
 	if n, ok := parseIdxColor(c); ok {
 		if fg {
@@ -170,8 +179,8 @@ func styleColorCode(fg bool, c string) string {
 		} else {
 			b.WriteString("48;5;")
 		}
-		b.WriteString(itoa(n))
-		return b.String()
+		writeANSIInt(b, n)
+		return
 	}
 	if rgb, ok := hexToRGB(c); ok {
 		if fg {
@@ -179,14 +188,15 @@ func styleColorCode(fg bool, c string) string {
 		} else {
 			b.WriteString("48;2;")
 		}
-		b.WriteString(itoa(rgb[0]))
+		writeANSIInt(b, rgb[0])
 		b.WriteByte(';')
-		b.WriteString(itoa(rgb[1]))
+		writeANSIInt(b, rgb[1])
 		b.WriteByte(';')
-		b.WriteString(itoa(rgb[2]))
-		return b.String()
+		writeANSIInt(b, rgb[2])
+		return
 	}
-	return ""
+	// Fall back to default color if parsing fails.
+	b.WriteString("39")
 }
 
 // writeFGColor appends the ANSI foreground color sequence for the given color
@@ -196,25 +206,25 @@ func writeFGColor(b *strings.Builder, c string) {
 	if n, ok := parseAnsiColor(c); ok {
 		if n <= 7 {
 			b.WriteString(";3")
-			b.WriteString(itoa(n))
+			writeANSIInt(b, n)
 		} else {
 			b.WriteString(";9")
-			b.WriteString(itoa(n - 8))
+			writeANSIInt(b, n-8)
 		}
 		return
 	}
 	if n, ok := parseIdxColor(c); ok {
 		b.WriteString(";38;5;")
-		b.WriteString(itoa(n))
+		writeANSIInt(b, n)
 		return
 	}
 	if rgb, ok := hexToRGB(c); ok {
 		b.WriteString(";38;2;")
-		b.WriteString(itoa(rgb[0]))
+		writeANSIInt(b, rgb[0])
 		b.WriteByte(';')
-		b.WriteString(itoa(rgb[1]))
+		writeANSIInt(b, rgb[1])
 		b.WriteByte(';')
-		b.WriteString(itoa(rgb[2]))
+		writeANSIInt(b, rgb[2])
 	}
 }
 
@@ -223,45 +233,55 @@ func writeBGColor(b *strings.Builder, c string) {
 	if n, ok := parseAnsiColor(c); ok {
 		if n <= 7 {
 			b.WriteString(";4")
-			b.WriteString(itoa(n))
+			writeANSIInt(b, n)
 		} else {
 			b.WriteString(";10")
-			b.WriteString(itoa(n - 8))
+			writeANSIInt(b, n-8)
 		}
 		return
 	}
 	if n, ok := parseIdxColor(c); ok {
 		b.WriteString(";48;5;")
-		b.WriteString(itoa(n))
+		writeANSIInt(b, n)
 		return
 	}
 	if rgb, ok := hexToRGB(c); ok {
 		b.WriteString(";48;2;")
-		b.WriteString(itoa(rgb[0]))
+		writeANSIInt(b, rgb[0])
 		b.WriteByte(';')
-		b.WriteString(itoa(rgb[1]))
+		writeANSIInt(b, rgb[1])
 		b.WriteByte(';')
-		b.WriteString(itoa(rgb[2]))
+		writeANSIInt(b, rgb[2])
 	}
 }
 
 func parseAnsiColor(c string) (int, bool) {
-	if !strings.HasPrefix(c, "ansi:") {
-		return 0, false
-	}
-	n, err := strconv.Atoi(strings.TrimPrefix(c, "ansi:"))
-	if err != nil || n < 0 || n > 15 {
-		return 0, false
-	}
-	return n, true
+	return parsePrefixedInt(c, "ansi:", 0, 15)
 }
 
 func parseIdxColor(c string) (int, bool) {
-	if !strings.HasPrefix(c, "idx:") {
+	return parsePrefixedInt(c, "idx:", 0, 255)
+}
+
+func parsePrefixedInt(value, prefix string, min, max int) (int, bool) {
+	if !strings.HasPrefix(value, prefix) {
 		return 0, false
 	}
-	n, err := strconv.Atoi(strings.TrimPrefix(c, "idx:"))
-	if err != nil || n < 0 || n > 255 {
+	if len(value) <= len(prefix) {
+		return 0, false
+	}
+	n := 0
+	for i := len(prefix); i < len(value); i++ {
+		ch := value[i]
+		if ch < '0' || ch > '9' {
+			return 0, false
+		}
+		n = n*10 + int(ch-'0')
+		if n > max {
+			return 0, false
+		}
+	}
+	if n < min {
 		return 0, false
 	}
 	return n, true

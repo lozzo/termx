@@ -116,7 +116,7 @@ func waitStreamContains(t *testing.T, stream <-chan protocol.StreamFrame, needle
 			if !ok {
 				t.Fatalf("stream closed while waiting for %q", needle)
 			}
-			if msg.Type == protocol.TypeOutput && strings.Contains(string(msg.Payload), needle) {
+			if streamFrameContainsText(msg, needle) {
 				return
 			}
 		}
@@ -140,6 +140,42 @@ func waitStreamClosed(t *testing.T, stream <-chan protocol.StreamFrame, timeout 
 			}
 		}
 	}
+}
+
+func streamFrameContainsText(frame protocol.StreamFrame, needle string) bool {
+	switch frame.Type {
+	case protocol.TypeOutput:
+		return strings.Contains(string(frame.Payload), needle)
+	case protocol.TypeScreenUpdate:
+		update, err := protocol.DecodeScreenUpdatePayload(frame.Payload)
+		if err != nil {
+			return false
+		}
+		for _, row := range update.Screen.Cells {
+			if strings.Contains(protocolCellsText(row), needle) {
+				return true
+			}
+		}
+		for _, row := range update.ChangedRows {
+			if strings.Contains(protocolCellsText(row.Cells), needle) {
+				return true
+			}
+		}
+		for _, row := range update.ScrollbackAppend {
+			if strings.Contains(protocolCellsText(row.Cells), needle) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func protocolCellsText(row []protocol.Cell) string {
+	var b strings.Builder
+	for _, cell := range row {
+		b.WriteString(cell.Content)
+	}
+	return strings.TrimRight(b.String(), " ")
 }
 
 // doRawRequest sends a raw JSON-RPC request to the server via the protocol client.
@@ -754,12 +790,9 @@ func TestE2E_ConcurrentIO(t *testing.T) {
 		case <-timeout:
 			t.Fatalf("timed out: only saw %v of %v", seen, markers)
 		case msg := <-stream:
-			if msg.Type == protocol.TypeOutput {
-				payload := string(msg.Payload)
-				for _, m := range markers {
-					if strings.Contains(payload, m) {
-						seen[m] = true
-					}
+			for _, m := range markers {
+				if streamFrameContainsText(msg, m) {
+					seen[m] = true
 				}
 			}
 		}

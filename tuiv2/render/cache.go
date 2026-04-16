@@ -57,6 +57,13 @@ var blankFillRowCache = struct {
 	rows: make(map[int][]drawCell),
 }
 
+var blankStringCache = struct {
+	mu   sync.RWMutex
+	rows map[int]string
+}{
+	rows: make(map[int]string),
+}
+
 func cachedBlankFillRow(width int) []drawCell {
 	if width <= 0 {
 		return nil
@@ -79,5 +86,30 @@ func cachedBlankFillRow(width int) []drawCell {
 		blankFillRowCache.rows[width] = row
 	}
 	blankFillRowCache.mu.Unlock()
+	return row
+}
+
+func cachedBlankString(width int) string {
+	if width <= 0 {
+		return ""
+	}
+	blankStringCache.mu.RLock()
+	row := blankStringCache.rows[width]
+	blankStringCache.mu.RUnlock()
+	if row != "" {
+		return row
+	}
+	bytes := make([]byte, width)
+	for i := range bytes {
+		bytes[i] = ' '
+	}
+	row = string(bytes)
+	blankStringCache.mu.Lock()
+	if cached := blankStringCache.rows[width]; cached != "" {
+		row = cached
+	} else {
+		blankStringCache.rows[width] = row
+	}
+	blankStringCache.mu.Unlock()
 	return row
 }

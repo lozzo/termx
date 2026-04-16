@@ -66,6 +66,9 @@ type outputCursorWriter struct {
 	drainHook             func()
 	interactiveFlushHint  func() bool
 	backlogActive         atomic.Bool
+	adaptiveBatchLevel    uint8
+	adaptiveSlowStreak    uint8
+	adaptiveFastStreak    uint8
 }
 
 type pendingDirectFrame struct {
@@ -118,10 +121,22 @@ type presentedStyle struct {
 var (
 	synchronizedOutputBegin = xansi.DECSET(xansi.ModeSynchronizedOutput)
 	synchronizedOutputEnd   = xansi.DECRST(xansi.ModeSynchronizedOutput)
-	presentedStyleCache     sync.Map
-	presentedStyleDiffCache sync.Map
 	presentedCellPool       sync.Pool
 )
+
+var presentedStyleCache = struct {
+	mu sync.RWMutex
+	m  map[presentedStyle]string
+}{
+	m: make(map[presentedStyle]string),
+}
+
+var presentedStyleDiffCache = struct {
+	mu sync.RWMutex
+	m  map[presentedStyleTransitionKey]string
+}{
+	m: make(map[presentedStyleTransitionKey]string),
+}
 
 const hideHostCursorSequence = "\x1b[?25l"
 const presentedResetStyleSequence = "\x1b[0m"
@@ -129,6 +144,15 @@ const maxPooledPresentedCellCapacity = 2048
 
 var directFrameBatchDelay = 4 * time.Millisecond
 var directFrameIdleThreshold = 12 * time.Millisecond
+
+const (
+	directFrameDrainSlowThreshold  = 16 * time.Millisecond
+	directFrameDrainFastThreshold  = 4 * time.Millisecond
+	directFrameAdaptiveMaxDelay    = 50 * time.Millisecond
+	directFrameAdaptiveMaxLevel    = 4
+	directFrameAdaptiveSlowSamples = 3
+	directFrameAdaptiveFastSamples = 6
+)
 
 func (p *framePresenter) Reset() {
 	if p == nil {
@@ -547,7 +571,8 @@ func (w *outputCursorWriter) WriteFrame(frame, cursor string) error {
 	w.pending.afterWrite = append(w.pending.afterWrite, w.afterWrite...)
 	w.afterWrite = nil
 	w.backlogActive.Store(true)
-	if directFrameBatchDelay <= 0 {
+	delay := w.effectiveDirectFrameBatchDelayLocked()
+	if delay <= 0 {
 		hook, err := w.flushPendingFrameLocked()
 		w.mu.Unlock()
 		if hook != nil {
@@ -569,7 +594,7 @@ func (w *outputCursorWriter) WriteFrame(frame, cursor string) error {
 		return nil
 	}
 	w.pending.scheduled = true
-	time.AfterFunc(directFrameBatchDelay, func() {
+	time.AfterFunc(delay, func() {
 		w.flushPendingFrame()
 	})
 	return nil
@@ -592,7 +617,8 @@ func (w *outputCursorWriter) WriteFrameLines(lines []string, cursor string) erro
 	w.pending.afterWrite = append(w.pending.afterWrite, w.afterWrite...)
 	w.afterWrite = nil
 	w.backlogActive.Store(true)
-	if directFrameBatchDelay <= 0 {
+	delay := w.effectiveDirectFrameBatchDelayLocked()
+	if delay <= 0 {
 		hook, err := w.flushPendingFrameLocked()
 		w.mu.Unlock()
 		if hook != nil {
@@ -614,7 +640,7 @@ func (w *outputCursorWriter) WriteFrameLines(lines []string, cursor string) erro
 		return nil
 	}
 	w.pending.scheduled = true
-	time.AfterFunc(directFrameBatchDelay, func() {
+	time.AfterFunc(delay, func() {
 		w.flushPendingFrame()
 	})
 	return nil
@@ -647,6 +673,7 @@ func (w *outputCursorWriter) flushPendingFrameLocked() (func(), error) {
 		return w.drainHook, nil
 	}
 	err := error(nil)
+	flushStart := time.Now()
 	if len(lines) > 0 {
 		err = w.writeFrameLinesLocked(lines, cursor, afterWrite)
 	} else {
@@ -655,6 +682,7 @@ func (w *outputCursorWriter) flushPendingFrameLocked() (func(), error) {
 	if err != nil {
 		return nil, err
 	}
+	w.observeDirectFlushCostLocked(time.Since(flushStart))
 	w.backlogActive.Store(false)
 	w.lastFlushAt = time.Now()
 	return w.drainHook, nil
@@ -684,6 +712,57 @@ func (w *outputCursorWriter) shouldFlushDirectFrameImmediatelyLocked() bool {
 		return true
 	}
 	return time.Since(w.lastFlushAt) >= directFrameIdleThreshold
+}
+
+func (w *outputCursorWriter) effectiveDirectFrameBatchDelayLocked() time.Duration {
+	base := directFrameBatchDelay
+	if w == nil || base <= 0 {
+		return base
+	}
+	delay := base
+	for i := 0; i < int(w.adaptiveBatchLevel); i++ {
+		if delay >= directFrameAdaptiveMaxDelay {
+			return directFrameAdaptiveMaxDelay
+		}
+		delay *= 2
+	}
+	if delay > directFrameAdaptiveMaxDelay {
+		return directFrameAdaptiveMaxDelay
+	}
+	return delay
+}
+
+func (w *outputCursorWriter) observeDirectFlushCostLocked(cost time.Duration) {
+	if w == nil || cost <= 0 {
+		return
+	}
+	switch {
+	case cost >= directFrameDrainSlowThreshold:
+		w.adaptiveSlowStreak++
+		w.adaptiveFastStreak = 0
+		if w.adaptiveSlowStreak < directFrameAdaptiveSlowSamples {
+			return
+		}
+		w.adaptiveSlowStreak = 0
+		if w.adaptiveBatchLevel < directFrameAdaptiveMaxLevel {
+			w.adaptiveBatchLevel++
+			perftrace.Count("cursor_writer.batch_delay.increase", 0)
+		}
+	case cost <= directFrameDrainFastThreshold:
+		w.adaptiveFastStreak++
+		w.adaptiveSlowStreak = 0
+		if w.adaptiveFastStreak < directFrameAdaptiveFastSamples {
+			return
+		}
+		w.adaptiveFastStreak = 0
+		if w.adaptiveBatchLevel > 0 {
+			w.adaptiveBatchLevel--
+			perftrace.Count("cursor_writer.batch_delay.decrease", 0)
+		}
+	default:
+		w.adaptiveSlowStreak = 0
+		w.adaptiveFastStreak = 0
+	}
 }
 
 func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite []string) error {

@@ -56,9 +56,12 @@ func (o *Orchestrator) HandleSemanticAction(action input.SemanticAction) []Effec
 	}
 }
 
-func (o *Orchestrator) AttachAndLoadSnapshot(ctx context.Context, paneID, terminalID, mode string, _ int, _ int) ([]any, error) {
+func (o *Orchestrator) AttachAndLoadSnapshot(ctx context.Context, paneID, terminalID, mode string, offset int, limit int) ([]any, error) {
 	terminal, err := o.runtime.AttachTerminal(ctx, paneID, terminalID, mode)
 	if err != nil {
+		return nil, err
+	}
+	if _, err := o.runtime.LoadSnapshot(ctx, terminalID, offset, limit); err != nil {
 		return nil, err
 	}
 	o.bindWorkbenchPaneTerminal(paneID, terminalID)
