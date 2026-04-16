@@ -9,16 +9,20 @@ import (
 )
 
 func renderPromptOverlay(prompt *modal.PromptState, termSize TermSize) string {
-	return renderPromptOverlayWithThemeAndCursor(prompt, termSize, defaultUITheme(), true)
+	return strings.Join(renderPromptOverlayLinesWithThemeAndCursor(prompt, termSize, defaultUITheme(), true), "\n")
 }
 
 func renderPromptOverlayWithTheme(prompt *modal.PromptState, termSize TermSize, theme uiTheme) string {
-	return renderPromptOverlayWithThemeAndCursor(prompt, termSize, theme, true)
+	return strings.Join(renderPromptOverlayLinesWithThemeAndCursor(prompt, termSize, theme, true), "\n")
 }
 
 func renderPromptOverlayWithThemeAndCursor(prompt *modal.PromptState, termSize TermSize, theme uiTheme, cursorVisible bool) string {
+	return strings.Join(renderPromptOverlayLinesWithThemeAndCursor(prompt, termSize, theme, cursorVisible), "\n")
+}
+
+func renderPromptOverlayLinesWithThemeAndCursor(prompt *modal.PromptState, termSize TermSize, theme uiTheme, cursorVisible bool) []string {
 	if prompt == nil {
-		return ""
+		return nil
 	}
 	width, height := overlayViewport(termSize)
 	lines, inputLines := promptOverlayContent(prompt)
@@ -47,7 +51,7 @@ func renderPromptOverlayWithThemeAndCursor(prompt *modal.PromptState, termSize T
 	if strings.TrimSpace(footer) == "" {
 		footer = prompt.Hint
 	}
-	return renderPickerCardWithTheme(theme, coalesce(prompt.Title, "Prompt"), "", lines, footer, width, height)
+	return renderPickerCardLinesWithTheme(theme, coalesce(prompt.Title, "Prompt"), "", lines, footer, width, height)
 }
 
 func promptOverlayContent(prompt *modal.PromptState) ([]string, []int) {

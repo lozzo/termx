@@ -1818,6 +1818,37 @@ func TestRenderRefreshMsgDoesNotResetFrameWriterState(t *testing.T) {
 	}
 }
 
+func TestViewForcesOneFullRedrawAfterActivePaneLeavesAltScreen(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 24})
+	writer := &resetProbeFrameWriter{}
+	model.SetFrameWriter(writer)
+	model.width = 80
+	model.height = 24
+
+	setActivePaneTerminalModes(t, model, protocol.TerminalModes{
+		AlternateScreen: true,
+		AutoWrap:        true,
+	})
+	_ = model.View()
+	if writer.resetCalls != 0 {
+		t.Fatalf("expected no redraw reset while alt screen remains active, got %d", writer.resetCalls)
+	}
+
+	setActivePaneTerminalModes(t, model, protocol.TerminalModes{
+		AlternateScreen: false,
+		AutoWrap:        true,
+	})
+	_ = model.View()
+	if writer.resetCalls != 1 {
+		t.Fatalf("expected one redraw reset after alt-screen exit, got %d", writer.resetCalls)
+	}
+
+	_ = model.View()
+	if writer.resetCalls != 1 {
+		t.Fatalf("expected alt-screen exit redraw reset to fire once, got %d", writer.resetCalls)
+	}
+}
+
 func TestPendingAttachBuffersTerminalInputUntilAttachCompletes(t *testing.T) {
 	client := &recordingBridgeClient{}
 	wb := workbench.NewWorkbench()

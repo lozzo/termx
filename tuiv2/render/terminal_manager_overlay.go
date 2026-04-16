@@ -8,16 +8,20 @@ import (
 )
 
 func renderTerminalManagerOverlay(manager *modal.TerminalManagerState, termSize TermSize) string {
-	return renderTerminalManagerOverlayWithThemeAndCursor(manager, termSize, defaultUITheme(), true)
+	return strings.Join(renderTerminalManagerOverlayLinesWithThemeAndCursor(manager, termSize, defaultUITheme(), true), "\n")
 }
 
 func renderTerminalManagerOverlayWithTheme(manager *modal.TerminalManagerState, termSize TermSize, theme uiTheme) string {
-	return renderTerminalManagerOverlayWithThemeAndCursor(manager, termSize, theme, true)
+	return strings.Join(renderTerminalManagerOverlayLinesWithThemeAndCursor(manager, termSize, theme, true), "\n")
 }
 
 func renderTerminalManagerOverlayWithThemeAndCursor(manager *modal.TerminalManagerState, termSize TermSize, theme uiTheme, cursorVisible bool) string {
+	return strings.Join(renderTerminalManagerOverlayLinesWithThemeAndCursor(manager, termSize, theme, cursorVisible), "\n")
+}
+
+func renderTerminalManagerOverlayLinesWithThemeAndCursor(manager *modal.TerminalManagerState, termSize TermSize, theme uiTheme, cursorVisible bool) []string {
 	if manager == nil {
-		return ""
+		return nil
 	}
 	width, height := overlayViewport(termSize)
 	innerWidth := pickerInnerWidth(width)
@@ -32,7 +36,7 @@ func renderTerminalManagerOverlayWithThemeAndCursor(manager *modal.TerminalManag
 		itemLines = append(itemLines, detailLines...)
 	}
 	footerLine, _ := layoutOverlayFooterActionsWithTheme(theme, terminalManagerFooterActionSpecs(), workbench.Rect{W: innerWidth, H: 1})
-	return renderPickerCardWithTheme(
+	return renderPickerCardLinesWithTheme(
 		theme,
 		coalesce(manager.Title, "Terminal Manager"),
 		renderOverlaySearchLineWithCursor(theme, manager.Query, manager.Cursor, manager.CursorSet, innerWidth, cursorVisible),

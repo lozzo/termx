@@ -11,6 +11,15 @@ func (m *Model) View() string {
 	if m == nil || m.render == nil {
 		return ""
 	}
+	activeAltScreen := m.activePaneAlternateScreen()
+	if m.activePaneAltScreenSet && m.lastActivePaneAltScreen && !activeAltScreen {
+		// Full-screen terminal apps can leave stale host-side paint behind on
+		// exit. Reset the presenter once on alt-screen exit so the next frame is
+		// emitted as a full repaint.
+		m.forceFullRedraw()
+	}
+	m.lastActivePaneAltScreen = activeAltScreen
+	m.activePaneAltScreenSet = true
 	m.reconcileCopyModeContext()
 	if rowsWriter, ok := m.frameOut.(frameLinesWriter); ok {
 		if directWriter, ok := rowsWriter.(*outputCursorWriter); ok {

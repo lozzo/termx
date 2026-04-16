@@ -125,6 +125,17 @@ func (m *Model) immersiveZoomActive() bool {
 	return tab != nil && tab.ZoomedPaneID != ""
 }
 
+func (m *Model) activePaneAlternateScreen() bool {
+	if m == nil || m.workbench == nil {
+		return false
+	}
+	pane := m.workbench.ActivePane()
+	if pane == nil || pane.TerminalID == "" {
+		return false
+	}
+	return m.terminalModesForPane(pane).AlternateScreen
+}
+
 func (m *Model) paneUsesImmersiveViewport(paneID string) bool {
 	if m == nil || m.workbench == nil || strings.TrimSpace(paneID) == "" {
 		return false

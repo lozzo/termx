@@ -46,12 +46,12 @@ func renderResultWithCoordinator(coordinator *Coordinator, vm RenderVM) RenderRe
 	}
 
 	body := renderedBody{cursor: hideCursorANSI()}
-	if overlay := renderActiveOverlayVMWithCursor(vm, overlaySize, bodyCursorOffsetY, overlayCursorVisible); overlay.content != "" && overlayIsOpaque(vm.Overlay) {
+	if overlay := renderActiveOverlayVMWithCursor(vm, overlaySize, bodyCursorOffsetY, overlayCursorVisible); overlay.Content() != "" && overlayIsOpaque(vm.Overlay) {
 		body = overlay
 	} else {
 		body = renderBodyFrameWithCoordinatorVM(coordinator, vm, vm.TermSize.Width, bodyHeight)
-		if overlay.content != "" {
-			body.content = compositeOverlay(body.Content(), overlay.content, overlaySize)
+		if overlay.Content() != "" {
+			body.content = compositeOverlay(body.Content(), overlay.Content(), overlaySize)
 			body.lines = nil
 			body.cursor = overlay.cursor
 			body.blink = overlay.blink

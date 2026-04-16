@@ -127,6 +127,10 @@ func renderPickerCard(title, query string, items []string, footer string, width,
 }
 
 func renderPickerCardWithTheme(theme uiTheme, title, header string, items []string, footer string, width, height int) string {
+	return strings.Join(renderPickerCardLinesWithTheme(theme, title, header, items, footer, width, height), "\n")
+}
+
+func renderPickerCardLinesWithTheme(theme uiTheme, title, header string, items []string, footer string, width, height int) []string {
 	layout := buildPickerCardLayout(width, height, len(items), strings.TrimSpace(footer) != "")
 
 	lines := make([]string, 0, layout.cardHeight-2)
@@ -150,17 +154,31 @@ func renderPickerCardWithTheme(theme uiTheme, title, header string, items []stri
 		cardLines = append(cardLines, renderModalFramedRow(theme, line, layout.innerWidth))
 	}
 	cardLines = append(cardLines, renderModalBottomBorder(theme, layout.innerWidth))
-	card := strings.Join(cardLines, "\n")
-	body := lipgloss.Place(
-		layout.width,
-		layout.contentHeight,
-		lipgloss.Center,
-		lipgloss.Center,
-		card,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceStyle(backgroundStyle(theme.hostBG)),
-	)
-	return terminalPickerBodyStyle(theme).Render(forceHeight(body, layout.contentHeight))
+	return placeOverlayCardLines(theme, layout.width, layout.contentHeight, layout.cardX, layout.cardY, layout.cardWidth, cardLines)
+}
+
+func placeOverlayCardLines(theme uiTheme, width, height, cardX, cardY, cardWidth int, cardLines []string) []string {
+	if height <= 0 || width <= 0 {
+		return nil
+	}
+	bodyStyle := terminalPickerBodyStyle(theme)
+	out := make([]string, height)
+	blank := bodyStyle.Render(strings.Repeat(" ", width))
+	for i := range out {
+		out[i] = blank
+	}
+	leftPad := strings.Repeat(" ", maxInt(0, cardX))
+	rightWidth := maxInt(0, width-cardX-cardWidth)
+	rightPad := strings.Repeat(" ", rightWidth)
+	for i, line := range cardLines {
+		y := cardY + i
+		if y < 0 || y >= height {
+			continue
+		}
+		row := leftPad + line + rightPad
+		out[y] = bodyStyle.Render(forceWidthANSIOverlay(row, width))
+	}
+	return out
 }
 
 func renderModalTopBorder(theme uiTheme, title string, innerWidth int) string {

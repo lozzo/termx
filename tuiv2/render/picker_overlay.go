@@ -1,18 +1,24 @@
 package render
 
+import "strings"
+
 import "github.com/lozzow/termx/tuiv2/modal"
 
 func renderPickerOverlay(picker *modal.PickerState, termSize TermSize) string {
-	return renderPickerOverlayWithThemeAndCursor(picker, termSize, defaultUITheme(), true)
+	return strings.Join(renderPickerOverlayLinesWithThemeAndCursor(picker, termSize, defaultUITheme(), true), "\n")
 }
 
 func renderPickerOverlayWithTheme(picker *modal.PickerState, termSize TermSize, theme uiTheme) string {
-	return renderPickerOverlayWithThemeAndCursor(picker, termSize, theme, true)
+	return strings.Join(renderPickerOverlayLinesWithThemeAndCursor(picker, termSize, theme, true), "\n")
 }
 
 func renderPickerOverlayWithThemeAndCursor(picker *modal.PickerState, termSize TermSize, theme uiTheme, cursorVisible bool) string {
+	return strings.Join(renderPickerOverlayLinesWithThemeAndCursor(picker, termSize, theme, cursorVisible), "\n")
+}
+
+func renderPickerOverlayLinesWithThemeAndCursor(picker *modal.PickerState, termSize TermSize, theme uiTheme, cursorVisible bool) []string {
 	if picker == nil {
-		return ""
+		return nil
 	}
 	width, height := overlayViewport(termSize)
 	innerWidth := pickerInnerWidth(width)
@@ -23,5 +29,5 @@ func renderPickerOverlayWithThemeAndCursor(picker *modal.PickerState, termSize T
 		itemLines = append(itemLines, item.RenderLineWithPrefix(innerWidth, index == picker.Selected, "  ", "▸ ", pickerLineStyle(theme), pickerSelectedLineStyle(theme), pickerCreateRowStyle(theme)))
 	}
 	header := renderOverlaySearchLineWithCursor(theme, picker.Query, picker.Cursor, picker.CursorSet, innerWidth, cursorVisible)
-	return renderPickerCardWithTheme(theme, coalesce(picker.Title, "Terminal Picker"), header, itemLines, "", width, height)
+	return renderPickerCardLinesWithTheme(theme, coalesce(picker.Title, "Terminal Picker"), header, itemLines, "", width, height)
 }

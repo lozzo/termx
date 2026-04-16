@@ -10,22 +10,30 @@ import (
 )
 
 func renderHelpOverlay(help *modal.HelpState, termSize TermSize) string {
-	return renderHelpOverlayWithTheme(help, termSize, defaultUITheme())
+	return strings.Join(renderHelpOverlayLinesWithTheme(help, termSize, defaultUITheme()), "\n")
 }
 
 func renderHelpOverlayWithTheme(help *modal.HelpState, termSize TermSize, theme uiTheme) string {
+	return strings.Join(renderHelpOverlayLinesWithTheme(help, termSize, theme), "\n")
+}
+
+func renderHelpOverlayLinesWithTheme(help *modal.HelpState, termSize TermSize, theme uiTheme) []string {
 	if help == nil {
-		return ""
+		return nil
 	}
 	width, height := overlayViewport(termSize)
 	innerWidth := pickerInnerWidth(width)
 	lines := helpOverlayLines(theme, help, innerWidth)
-	return renderPickerCardWithTheme(theme, "Help", "", lines, "", width, height)
+	return renderPickerCardLinesWithTheme(theme, "Help", "", lines, "", width, height)
 }
 
 func renderFloatingOverviewOverlayWithTheme(overview *modal.FloatingOverviewState, termSize TermSize, theme uiTheme) string {
+	return strings.Join(renderFloatingOverviewOverlayLinesWithTheme(overview, termSize, theme), "\n")
+}
+
+func renderFloatingOverviewOverlayLinesWithTheme(overview *modal.FloatingOverviewState, termSize TermSize, theme uiTheme) []string {
 	if overview == nil {
-		return ""
+		return nil
 	}
 	width, height := overlayViewport(termSize)
 	innerWidth := pickerInnerWidth(width)
@@ -34,7 +42,7 @@ func renderFloatingOverviewOverlayWithTheme(overview *modal.FloatingOverviewStat
 		itemLines = append(itemLines, renderFloatingOverviewItemLine(overview.Items[index], index == overview.Selected, innerWidth, theme))
 	}
 	footerLine, _ := layoutOverlayFooterActionsWithTheme(theme, floatingOverviewFooterActionSpecs(), workbench.Rect{W: innerWidth, H: 1})
-	return renderPickerCardWithTheme(
+	return renderPickerCardLinesWithTheme(
 		theme,
 		"Floating Windows",
 		"Restore, collapse, close, or summon floating panes",

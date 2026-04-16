@@ -12,16 +12,20 @@ import (
 )
 
 func renderWorkspacePickerOverlay(picker *modal.WorkspacePickerState, termSize TermSize) string {
-	return renderWorkspacePickerOverlayWithThemeAndCursor(picker, nil, termSize, defaultUITheme(), true)
+	return strings.Join(renderWorkspacePickerOverlayLinesWithThemeAndCursor(picker, nil, termSize, defaultUITheme(), true), "\n")
 }
 
 func renderWorkspacePickerOverlayWithTheme(picker *modal.WorkspacePickerState, termSize TermSize, theme uiTheme) string {
-	return renderWorkspacePickerOverlayWithThemeAndCursor(picker, nil, termSize, theme, true)
+	return strings.Join(renderWorkspacePickerOverlayLinesWithThemeAndCursor(picker, nil, termSize, theme, true), "\n")
 }
 
 func renderWorkspacePickerOverlayWithThemeAndCursor(picker *modal.WorkspacePickerState, runtimeState *VisibleRuntimeStateProxy, termSize TermSize, theme uiTheme, cursorVisible bool) string {
+	return strings.Join(renderWorkspacePickerOverlayLinesWithThemeAndCursor(picker, runtimeState, termSize, theme, cursorVisible), "\n")
+}
+
+func renderWorkspacePickerOverlayLinesWithThemeAndCursor(picker *modal.WorkspacePickerState, runtimeState *VisibleRuntimeStateProxy, termSize TermSize, theme uiTheme, cursorVisible bool) []string {
 	if picker == nil {
-		return ""
+		return nil
 	}
 	width, height := overlayViewport(termSize)
 	items := picker.VisibleItems()
@@ -54,17 +58,7 @@ func renderWorkspacePickerOverlayWithThemeAndCursor(picker *modal.WorkspacePicke
 		cardLines = append(cardLines, renderModalFramedRow(theme, line, layout.innerWidth))
 	}
 	cardLines = append(cardLines, renderModalBottomBorder(theme, layout.innerWidth))
-	card := strings.Join(cardLines, "\n")
-	body := lipgloss.Place(
-		layout.width,
-		layout.contentHeight,
-		lipgloss.Center,
-		lipgloss.Center,
-		card,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceStyle(backgroundStyle(theme.hostBG)),
-	)
-	return terminalPickerBodyStyle(theme).Render(forceHeight(body, layout.contentHeight))
+	return placeOverlayCardLines(theme, layout.width, layout.contentHeight, layout.cardX, layout.cardY, layout.cardWidth, cardLines)
 }
 
 type workbenchTreeCardLayout struct {
