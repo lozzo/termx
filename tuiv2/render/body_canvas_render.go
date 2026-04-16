@@ -68,7 +68,7 @@ func renderBodyCanvas(coordinator *Coordinator, runtimeState *VisibleRuntimeStat
 				changed = true
 			}
 		}
-		restoreActiveEntryContent(cache.canvas, entries, runtimeState)
+		restoreActiveEntryContent(cache.canvas, cache, entries, runtimeState)
 		if changed {
 			projectActiveEntryCursor(cache.canvas, entries, runtimeState)
 			cache.reset(entries, width, height)
@@ -175,7 +175,7 @@ func drawPaneContentSprite(canvas *composedCanvas, entry paneRenderEntry, runtim
 	}
 }
 
-func restoreActiveEntryContent(canvas *composedCanvas, entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) {
+func restoreActiveEntryContent(canvas *composedCanvas, cache *bodyRenderCache, entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) {
 	if canvas == nil {
 		return
 	}
@@ -183,9 +183,8 @@ func restoreActiveEntryContent(canvas *composedCanvas, entries []paneRenderEntry
 		if !entry.Active {
 			continue
 		}
-		base := entry
-		base.Active = false
-		drawPaneContentWithKey(canvas, entry.Rect, base, runtimeState)
+		// Use sprite cache to restore content cheaply instead of full redraw
+		drawPaneContentFromCache(canvas, cache, entry, runtimeState, true)
 		return
 	}
 }

@@ -47,34 +47,66 @@ func (c *bodyRenderCache) contentSprite(entry paneRenderEntry, runtimeState *Vis
 		Width:      interior.W,
 		Height:     interior.H,
 	}
-	resolved := resolvePaneContent(entry, runtimeState, true)
-	window := buildTerminalSourceWindowState(resolved.source, resolved.contentRect.H, resolved.renderOffset)
-	extentHash := terminalSourceExtentHash(resolved.source, resolved.contentRect, entry.Theme)
+
 	if c.contentSprites == nil {
 		c.contentSprites = make(map[string]*paneContentSpriteCacheEntry)
 	}
+
+	// Fast path: check basic key match BEFORE computing expensive hashes
 	if cached := c.contentSprites[entry.PaneID]; cached != nil && cached.key == key && cached.canvas != nil {
 		perftrace.Count("render.pane_content_sprite.hit", interior.W*interior.H)
 		return cached.canvas
 	}
-	if cached := c.contentSprites[entry.PaneID]; cached != nil && cached.canvas != nil && canIncrementalPaneSpriteUpdate(cached, key, resolved, window, extentHash) {
-		changedRows := applyIncrementalPaneSpriteRows(cached.canvas, resolved, entry.Theme, cached.window, window)
-		cached.key = key
-		cached.window = window
-		cached.contentRect = resolved.contentRect
-		cached.extentHash = extentHash
-		perftrace.Count("render.pane_content_sprite.incremental", changedRows*maxInt(1, resolved.contentRect.W))
+
+	// Only compute expensive hashes when we have a potential incremental update candidate
+	cached := c.contentSprites[entry.PaneID]
+	if cached != nil && cached.canvas != nil && cached.key.Width == key.Width && cached.key.Height == key.Height && cached.key.Theme == key.Theme {
+		resolved := resolvePaneContent(entry, runtimeState, true)
+		window := buildTerminalSourceWindowState(resolved.source, resolved.contentRect.H, resolved.renderOffset)
+		extentHash := terminalSourceExtentHash(resolved.source, resolved.contentRect, entry.Theme)
+
+		if canIncrementalPaneSpriteUpdate(cached, key, resolved, window, extentHash) {
+			changedRows := applyIncrementalPaneSpriteRows(cached.canvas, resolved, entry.Theme, cached.window, window)
+			cached.key = key
+			cached.window = window
+			cached.contentRect = resolved.contentRect
+			cached.extentHash = extentHash
+			perftrace.Count("render.pane_content_sprite.incremental", changedRows*maxInt(1, resolved.contentRect.W))
+			perftrace.Count("render.pane_content_sprite.miss", interior.W*interior.H)
+			return cached.canvas
+		}
+
+		// Full miss with same dimensions: reuse canvas allocation.
+		// Reuse already-computed resolved/window/extentHash from the incremental check above.
+		sprite := cached.canvas
+		sprite.resetToBlank()
+		drawPaneContentSprite(sprite, entry, runtimeState)
+		c.contentSprites[entry.PaneID] = &paneContentSpriteCacheEntry{
+			key:         key,
+			canvas:      sprite,
+			window:      window,
+			contentRect: resolved.contentRect,
+			extentHash:  extentHash,
+		}
 		perftrace.Count("render.pane_content_sprite.miss", interior.W*interior.H)
-		return cached.canvas
+		return sprite
 	}
+
+	// Full miss: rebuild sprite from scratch
 	var sprite *composedCanvas
-	if cached := c.contentSprites[entry.PaneID]; cached != nil && cached.canvas != nil && cached.key.Width == key.Width && cached.key.Height == key.Height {
+	if cached != nil && cached.canvas != nil && cached.key.Width == key.Width && cached.key.Height == key.Height {
 		sprite = cached.canvas
 		sprite.resetToBlank()
 	} else {
 		sprite = newComposedCanvas(interior.W, interior.H)
 	}
 	drawPaneContentSprite(sprite, entry, runtimeState)
+
+	// Compute window state for future incremental updates
+	resolved := resolvePaneContent(entry, runtimeState, true)
+	window := buildTerminalSourceWindowState(resolved.source, resolved.contentRect.H, resolved.renderOffset)
+	extentHash := terminalSourceExtentHash(resolved.source, resolved.contentRect, entry.Theme)
+
 	c.contentSprites[entry.PaneID] = &paneContentSpriteCacheEntry{
 		key:         key,
 		canvas:      sprite,

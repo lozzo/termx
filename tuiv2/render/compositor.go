@@ -83,13 +83,11 @@ func newComposedCanvas(width, height int) *composedCanvas {
 		fullDirty:         true,
 		hostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
 	}
-	chunkCount := c.rowChunkCount()
 	blankRow := cachedBlankFillRow(width)
 	for y := 0; y < height; y++ {
 		row := make([]drawCell, width)
 		copy(row, blankRow)
 		c.cells[y] = row
-		c.rowChunks[y] = make([]string, chunkCount)
 		c.markRowDirtyRange(y, 0, width-1)
 	}
 	return c
@@ -103,8 +101,12 @@ func (c *composedCanvas) resetToBlank() {
 	for y := 0; y < c.height; y++ {
 		copy(c.cells[y], blankRow)
 		c.rowCache[y] = ""
-		clear(c.rowChunks[y])
-		c.markRowDirtyRange(y, 0, c.width-1)
+		if c.rowChunks[y] != nil {
+			clear(c.rowChunks[y])
+		}
+		c.rowDirty[y] = true
+		c.rowDirtyMin[y] = 0
+		c.rowDirtyMax[y] = c.width - 1
 	}
 	c.fullCache = ""
 	c.fullDirty = true
@@ -496,6 +498,19 @@ func (c *composedCanvas) ensureRowCache() {
 			dirtyStart = 0
 			dirtyEnd = c.width - 1
 		}
+
+		// Fast path: entire row is dirty — serialize in one pass, skip chunk overhead.
+		if dirtyStart == 0 && dirtyEnd >= c.width-1 {
+			c.rowCache[y] = c.serializeRowRange(y, 0, c.width-1) + "\x1b[0m\x1b[K"
+			// Invalidate any stale chunk strings so partial updates work correctly later.
+			if c.rowChunks[y] != nil {
+				clear(c.rowChunks[y])
+			}
+			c.clearRowDirty(y)
+			continue
+		}
+
+		// Partial dirty: use chunk system.
 		startChunk := dirtyStart / rowDirtyChunkWidth
 		endChunk := dirtyEnd / rowDirtyChunkWidth
 		if c.rowChunks[y] == nil {

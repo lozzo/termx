@@ -242,24 +242,40 @@ func TestComposedCanvasDirtyIntervalRebuildsOnlyTouchedChunks(t *testing.T) {
 	canvas.drawText(0, 0, strings.Repeat("a", 96), drawStyle{FG: "#ffffff"})
 	_ = canvas.contentString()
 
-	if len(canvas.rowChunks) == 0 || len(canvas.rowChunks[0]) < 3 {
-		t.Fatalf("expected row chunk cache to be initialized, got %#v", canvas.rowChunks)
+	// After a full-row fast-path render, rowChunks are cleared/nil — chunks are
+	// only populated on demand when a partial update occurs.
+	if len(canvas.rowChunks) == 0 {
+		t.Fatalf("expected rowChunks slice to exist, got %#v", canvas.rowChunks)
 	}
-	chunk0Before := canvas.rowChunks[0][0]
-	chunk1Before := canvas.rowChunks[0][1]
-	chunk2Before := canvas.rowChunks[0][2]
+	if canvas.rowChunks[0] != nil && len(canvas.rowChunks[0]) > 0 && canvas.rowChunks[0][0] != "" {
+		t.Fatalf("expected chunk cache to be empty after full-row fast path, got %#v", canvas.rowChunks[0])
+	}
 
+	// First partial update: touch only chunk 1 (x=40 falls in [32,63]).
+	// This causes all chunks to be allocated and populated for the first time.
 	canvas.set(40, 0, drawCell{Content: "Z", Width: 1, Style: drawStyle{FG: "#ff0000"}})
 	_ = canvas.contentString()
 
-	if got := canvas.rowChunks[0][0]; got != chunk0Before {
-		t.Fatalf("expected untouched chunk[0] to be reused")
+	if len(canvas.rowChunks[0]) < 3 {
+		t.Fatalf("expected chunk cache to be populated after partial update, got %#v", canvas.rowChunks[0])
 	}
-	if got := canvas.rowChunks[0][1]; got == chunk1Before {
-		t.Fatalf("expected dirty chunk[1] to be rebuilt")
+	chunk0After1 := canvas.rowChunks[0][0]
+	chunk1After1 := canvas.rowChunks[0][1]
+	chunk2After1 := canvas.rowChunks[0][2]
+
+	// Second partial update: touch only chunk 2 (x=70 falls in [64,95]).
+	// Chunk 0 and chunk 1 must be reused; chunk 2 must be rebuilt.
+	canvas.set(70, 0, drawCell{Content: "W", Width: 1, Style: drawStyle{FG: "#00ff00"}})
+	_ = canvas.contentString()
+
+	if got := canvas.rowChunks[0][0]; got != chunk0After1 {
+		t.Fatalf("expected untouched chunk[0] to be reused after second partial update")
 	}
-	if got := canvas.rowChunks[0][2]; got != chunk2Before {
-		t.Fatalf("expected untouched chunk[2] to be reused")
+	if got := canvas.rowChunks[0][1]; got != chunk1After1 {
+		t.Fatalf("expected untouched chunk[1] to be reused after second partial update")
+	}
+	if got := canvas.rowChunks[0][2]; got == chunk2After1 {
+		t.Fatalf("expected dirty chunk[2] to be rebuilt after second partial update")
 	}
 	if canvas.rowDirty[0] || canvas.rowDirtyMin[0] != -1 || canvas.rowDirtyMax[0] != -1 {
 		t.Fatalf("expected dirty interval to be cleared after ensureRowCache, got rowDirty=%v min=%d max=%d", canvas.rowDirty[0], canvas.rowDirtyMin[0], canvas.rowDirtyMax[0])
