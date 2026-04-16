@@ -68,9 +68,10 @@ type Model struct {
 	lastViewFrame  string
 	lastViewCursor string
 
-	pendingTerminalInputs       []input.TerminalInput
+	terminalInputs              terminalInputDispatchQueue
 	terminalInputSending        bool
 	interactionBatchActive      bool
+	interactionBoundaryEpoch    uint64
 	pendingPaneAttaches         map[string]string
 	pendingPaneResizes          map[string]pendingPaneResize
 	invalidatePending           atomic.Bool
@@ -89,6 +90,7 @@ type Model struct {
 	hostThemeBootstrapPalette   map[int]struct{}
 	pendingMouseMotion          *queuedMouseMsg
 	mouseMotionFlushPending     bool
+	copyModeMouseActivitySeq    uint64
 
 	// 鼠标拖动状态
 	mouseDragPaneID  string

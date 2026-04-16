@@ -311,6 +311,57 @@ func TestCopyModeMouseAutoScrollExtendsSelection(t *testing.T) {
 	if model.copyMode.MouseSelecting {
 		t.Fatal("expected mouse copy selection to stop on release")
 	}
+	afterReleaseRow := model.copyMode.Cursor.Row
+	_, cmd = model.Update(copyModeAutoScrollMsg{seq: seq})
+	drainCmd(t, model, cmd, 20)
+	if model.copyMode.Cursor.Row != afterReleaseRow {
+		t.Fatalf("expected stale auto-scroll tick to stop after release, before=%d after=%d", afterReleaseRow, model.copyMode.Cursor.Row)
+	}
+}
+
+func TestCopyModeAutoScrollStopsAfterMouseActivitySeqChanges(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"s0", "s1", "s2", "s3", "s4", "s5"}, []string{"n0", "n1", "n2", "n3"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	x, y := activePaneContentScreenOrigin(t, model)
+
+	_, cmd := model.Update(tea.MouseMsg{X: x, Y: y + 3, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	drainCmd(t, model, cmd, 20)
+	_, cmd = model.Update(tea.MouseMsg{X: x, Y: y - 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion})
+	drainCmd(t, model, cmd, 20)
+
+	seq := model.copyMode.AutoScrollSeq
+	before := model.copyMode.Cursor.Row
+	model.noteCopyModeMouseActivity()
+	_, cmd = model.Update(copyModeAutoScrollMsg{seq: seq})
+	drainCmd(t, model, cmd, 20)
+	if model.copyMode.Cursor.Row != before {
+		t.Fatalf("expected stale auto-scroll tick canceled after activity seq change, before=%d after=%d", before, model.copyMode.Cursor.Row)
+	}
+}
+
+func TestCopyModeAutoScrollStopsAfterBoundaryCancelKey(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 40, height: 8})
+	seedCopyModeSnapshot(t, model, []string{"s0", "s1", "s2", "s3", "s4", "s5"}, []string{"n0", "n1", "n2", "n3"})
+
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
+	x, y := activePaneContentScreenOrigin(t, model)
+
+	_, cmd := model.Update(tea.MouseMsg{X: x, Y: y + 3, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	drainCmd(t, model, cmd, 20)
+	_, cmd = model.Update(tea.MouseMsg{X: x, Y: y - 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion})
+	drainCmd(t, model, cmd, 20)
+
+	seq := model.copyMode.AutoScrollSeq
+	dispatchKey(t, model, tea.KeyMsg{Type: tea.KeyCtrlG})
+	if model.copyMode.PaneID != "" {
+		t.Fatalf("expected cancel key to leave copy mode, got %#v", model.copyMode)
+	}
+
+	if cmd := model.handleCopyModeAutoScroll(seq); cmd != nil {
+		t.Fatalf("expected stale auto-scroll tick canceled after boundary cancel key, got %#v", cmd)
+	}
 }
 
 func TestCopyModeFreezesCursorAndSelectionWhenScrollbackExpands(t *testing.T) {

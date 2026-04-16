@@ -1297,8 +1297,8 @@ func TestHandleTerminalInputQueuesWhileSendInFlight(t *testing.T) {
 	if !model.terminalInputSending {
 		t.Fatal("expected input queue to remain marked as sending")
 	}
-	if len(model.pendingTerminalInputs) != 1 || string(model.pendingTerminalInputs[0].Data) != "b" {
-		t.Fatalf("expected second input to remain queued, got %#v", model.pendingTerminalInputs)
+	if len(model.terminalInputs.boundaryQueue) != 1 || string(model.terminalInputs.boundaryQueue[0].Data) != "b" {
+		t.Fatalf("expected second input to remain queued, got %#v", model.terminalInputs)
 	}
 
 	close(release)
@@ -1376,11 +1376,11 @@ func TestHandleTerminalWheelInputMergesMatchingPendingTail(t *testing.T) {
 			t.Fatalf("expected queued wheel input %d to stay buffered, got cmd %#v", i, cmd)
 		}
 	}
-	if len(model.pendingTerminalInputs) != 1 {
-		t.Fatalf("expected one merged pending wheel input, got %#v", model.pendingTerminalInputs)
+	if model.terminalInputs.wheel == nil {
+		t.Fatalf("expected one merged pending wheel input, got %#v", model.terminalInputs)
 	}
-	if got := model.pendingTerminalInputs[0].Repeat; got != 2 {
-		t.Fatalf("expected merged wheel repeat=2, got %#v", model.pendingTerminalInputs)
+	if got := model.terminalInputs.wheel.Repeat; got != 2 {
+		t.Fatalf("expected merged wheel repeat=2, got %#v", model.terminalInputs.wheel)
 	}
 
 	close(release)
@@ -1503,10 +1503,10 @@ func TestHandleTerminalWheelInputCancelsOppositePendingTail(t *testing.T) {
 			t.Fatalf("expected pending down wheel %d to stay buffered, got cmd %#v", i, cmd)
 		}
 	}
-	if len(model.pendingTerminalInputs) != 1 {
-		t.Fatalf("expected pending queue to collapse to one down wheel, got %#v", model.pendingTerminalInputs)
+	if model.terminalInputs.wheel == nil {
+		t.Fatalf("expected pending queue to collapse to one down wheel, got %#v", model.terminalInputs)
 	}
-	pending := model.pendingTerminalInputs[0]
+	pending := *model.terminalInputs.wheel
 	if got := string(pending.Data); got != "down" || pending.WheelDirection != -1 || pending.Repeat != 1 {
 		t.Fatalf("unexpected collapsed pending wheel %#v", pending)
 	}
@@ -1524,6 +1524,87 @@ func TestHandleTerminalWheelInputCancelsOppositePendingTail(t *testing.T) {
 	}
 	if got := string(client.inputCalls[1].data); got != "down" {
 		t.Fatalf("expected collapsed opposite wheel payload \"down\", got %q", got)
+	}
+}
+
+func TestHandleTerminalWheelInputBoundaryKeyInvalidatesPendingTail(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	started := make(chan inputCall, 1)
+	release := make(chan struct{})
+	client := &recordingBridgeClient{inputStarted: started, inputBlock: release}
+	rt := runtime.New(client)
+	binding := rt.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+	model := New(shared.Config{}, wb, rt)
+
+	firstCmd := model.handleTerminalInput(input.TerminalInput{
+		Kind:           input.TerminalInputWheel,
+		PaneID:         "pane-1",
+		Data:           []byte("up"),
+		WheelDirection: 1,
+	})
+	if firstCmd == nil {
+		t.Fatal("expected first wheel input command")
+	}
+	done := make(chan tea.Msg, 1)
+	go func() {
+		done <- firstCmd()
+	}()
+	select {
+	case <-started:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for first wheel send to start")
+	}
+
+	if cmd := model.handleTerminalInput(input.TerminalInput{
+		Kind:           input.TerminalInputWheel,
+		PaneID:         "pane-1",
+		Data:           []byte("up"),
+		WheelDirection: 1,
+	}); cmd != nil {
+		t.Fatalf("expected pending wheel tail to stay buffered, got cmd %#v", cmd)
+	}
+	_, keyCmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if keyCmd != nil {
+		t.Fatalf("expected key boundary to queue behind in-flight send, got cmd %#v", keyCmd)
+	}
+	if model.terminalInputs.wheel != nil {
+		t.Fatalf("expected boundary key to invalidate pending wheel tail, got %#v", model.terminalInputs.wheel)
+	}
+	if len(model.terminalInputs.boundaryQueue) != 1 || string(model.terminalInputs.boundaryQueue[0].Data) != "a" {
+		t.Fatalf("expected queued key boundary after invalidation, got %#v", model.terminalInputs)
+	}
+
+	close(release)
+	firstMsg := <-done
+	_, nextCmd := model.Update(firstMsg)
+	if nextCmd == nil {
+		t.Fatal("expected queued key input command after wheel send completed")
+	}
+	drainCmd(t, model, nextCmd, 10)
+
+	if len(client.inputCalls) != 2 {
+		t.Fatalf("expected one wheel send followed by one key send, got %#v", client.inputCalls)
+	}
+	if got := string(client.inputCalls[0].data); got != "up" {
+		t.Fatalf("expected first input call to send \"up\", got %q", got)
+	}
+	if got := string(client.inputCalls[1].data); got != "a" {
+		t.Fatalf("expected stale wheel tail dropped so second input is key \"a\", got %q", got)
 	}
 }
 
@@ -1727,7 +1808,7 @@ func TestPendingAttachBuffersTerminalInputUntilAttachCompletes(t *testing.T) {
 			t.Fatalf("expected input %q to stay buffered while attach is pending, got cmd %#v", string(ch), cmd)
 		}
 	}
-	if got := len(model.pendingTerminalInputs); got != 4 {
+	if got := len(model.terminalInputs.boundaryQueue); got != 4 {
 		t.Fatalf("expected four buffered inputs, got %d", got)
 	}
 	if model.modalHost.Session != nil {

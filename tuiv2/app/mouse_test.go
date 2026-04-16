@@ -6,7 +6,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -15,6 +14,11 @@ import (
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
+
+func resetMouseQueueState() {
+	mouseDebugSeq.Store(0)
+	latestQueuedMouseMotionSeq.Store(0)
+}
 
 func TestMouseDragFloatingPane(t *testing.T) {
 	// 创建一个带有浮动窗口的 workbench
@@ -175,6 +179,7 @@ func TestMouseMotionWithNoButtonClearsStaleDragState(t *testing.T) {
 }
 
 func TestStaleQueuedMouseMotionIsDroppedDuringDrag(t *testing.T) {
+	resetMouseQueueState()
 	m := setupModel(t, modelOpts{})
 	tab := m.workbench.CurrentTab()
 	if tab == nil {
@@ -201,17 +206,20 @@ func TestStaleQueuedMouseMotionIsDroppedDuringDrag(t *testing.T) {
 			Action: tea.MouseActionMotion,
 		},
 	})
-	if !handled || cmd == nil {
-		t.Fatalf("expected stale queued motion to schedule flush, got handled=%v cmd=%#v", handled, cmd)
+	if !handled {
+		t.Fatal("expected stale queued motion handled")
 	}
-	_, _ = m.handleInteractionMessage(mouseMotionFlushMsg{})
+	if cmd != nil {
+		t.Fatalf("expected stale queued motion to drop before scheduling flush, got cmd=%#v", cmd)
+	}
 	after := m.workbench.FloatingState(tab.ID, "float-1").Rect
 	if after != before {
 		t.Fatalf("expected stale queued motion not to move floating pane, before=%#v after=%#v", before, after)
 	}
 }
 
-func TestLaggedQueuedMouseMotionIsDroppedDuringDrag(t *testing.T) {
+func TestLaggedQueuedMouseMotionIsDroppedBeforeDragCoalescing(t *testing.T) {
+	resetMouseQueueState()
 	m := setupModel(t, modelOpts{})
 	tab := m.workbench.CurrentTab()
 	if tab == nil {
@@ -238,17 +246,26 @@ func TestLaggedQueuedMouseMotionIsDroppedDuringDrag(t *testing.T) {
 			Action: tea.MouseActionMotion,
 		},
 	})
-	if !handled || cmd == nil {
-		t.Fatalf("expected lagged queued motion to schedule flush, got handled=%v cmd=%#v", handled, cmd)
+	if !handled {
+		t.Fatal("expected lagged queued motion handled")
 	}
-	_, _ = m.handleInteractionMessage(mouseMotionFlushMsg{})
+	if cmd != nil {
+		t.Fatalf("expected lagged queued motion to drop before scheduling flush, got cmd=%#v", cmd)
+	}
+	if m.pendingMouseMotion != nil {
+		t.Fatalf("expected no pending mouse motion after lagged drop, got %#v", m.pendingMouseMotion)
+	}
+	if m.mouseMotionFlushPending {
+		t.Fatal("expected no pending mouse motion flush after lagged drop")
+	}
 	after := m.workbench.FloatingState(tab.ID, "float-1").Rect
 	if after != before {
 		t.Fatalf("expected lagged queued motion not to move floating pane, before=%#v after=%#v", before, after)
 	}
 }
 
-func TestMouseReleaseAppliesFinalFloatingPosition(t *testing.T) {
+func TestLatestQueuedMouseMotionDropsLaggedOlderDragBeforeFlush(t *testing.T) {
+	resetMouseQueueState()
 	m := setupModel(t, modelOpts{})
 	tab := m.workbench.CurrentTab()
 	if tab == nil {
@@ -262,28 +279,61 @@ func TestMouseReleaseAppliesFinalFloatingPosition(t *testing.T) {
 	m.mouseDragMode = mouseDragMove
 	m.mouseDragOffsetX = 5
 	m.mouseDragOffsetY = 0
+	noteQueuedMouseMotion(2)
 
-	model, _ := m.Update(tea.MouseMsg{
-		X:      35,
-		Y:      screenYForBodyY(m, 12),
-		Button: tea.MouseButtonLeft,
-		Action: tea.MouseActionRelease,
-	})
-	m = model.(*Model)
+	oldMsg := queuedMouseMsg{
+		Seq:      1,
+		Kind:     "motion",
+		QueuedAt: time.Now().Add(-staleMouseMotionThreshold - 10*time.Millisecond),
+		Msg: tea.MouseMsg{
+			X:      25,
+			Y:      screenYForBodyY(m, 10),
+			Button: tea.MouseButtonLeft,
+			Action: tea.MouseActionMotion,
+		},
+	}
+	latestMsg := queuedMouseMsg{
+		Seq:      2,
+		Kind:     "motion",
+		QueuedAt: time.Now(),
+		Msg: tea.MouseMsg{
+			X:      35,
+			Y:      screenYForBodyY(m, 12),
+			Button: tea.MouseButtonLeft,
+			Action: tea.MouseActionMotion,
+		},
+	}
+
+	cmd, handled := m.handleInteractionMessage(oldMsg)
+	if !handled {
+		t.Fatal("expected old queued motion handled")
+	}
+	if cmd != nil {
+		t.Fatalf("expected stale old motion to drop immediately, got cmd=%#v", cmd)
+	}
+	cmd, handled = m.handleInteractionMessage(latestMsg)
+	if !handled || cmd == nil {
+		t.Fatalf("expected latest queued motion to schedule flush, got handled=%v cmd=%#v", handled, cmd)
+	}
+	cmd, handled = m.handleInteractionMessage(mouseMotionFlushMsg{})
+	if !handled {
+		t.Fatal("expected mouseMotionFlushMsg handled")
+	}
+	if cmd != nil {
+		drainCmd(t, m, cmd, 10)
+	}
 
 	floating := m.workbench.FloatingState(tab.ID, "float-1")
 	if floating == nil {
 		t.Fatal("expected floating pane")
 	}
 	if floating.Rect.X != 30 || floating.Rect.Y != 12 {
-		t.Fatalf("expected release to snap final floating position, got %#v", floating.Rect)
-	}
-	if m.mouseDragMode != mouseDragNone {
-		t.Fatalf("expected drag state cleared, got %v", m.mouseDragMode)
+		t.Fatalf("expected latest drag position applied, got %#v", floating.Rect)
 	}
 }
 
 func TestQueuedMouseMotionFlushAppliesOnlyLatestDragPosition(t *testing.T) {
+	resetMouseQueueState()
 	m := setupModel(t, modelOpts{})
 	tab := m.workbench.CurrentTab()
 	if tab == nil {
@@ -297,6 +347,7 @@ func TestQueuedMouseMotionFlushAppliesOnlyLatestDragPosition(t *testing.T) {
 	m.mouseDragMode = mouseDragMove
 	m.mouseDragOffsetX = 5
 	m.mouseDragOffsetY = 0
+	noteQueuedMouseMotion(2)
 
 	msg1 := queuedMouseMsg{
 		Seq:      1,
@@ -322,12 +373,15 @@ func TestQueuedMouseMotionFlushAppliesOnlyLatestDragPosition(t *testing.T) {
 	}
 
 	cmd, handled := m.handleInteractionMessage(msg1)
-	if !handled || cmd == nil {
-		t.Fatalf("expected first queued motion to schedule flush, got handled=%v cmd=%#v", handled, cmd)
+	if !handled {
+		t.Fatal("expected first queued motion handled")
+	}
+	if cmd != nil {
+		t.Fatalf("expected first non-latest motion to drop before flush, got cmd=%#v", cmd)
 	}
 	cmd2, handled := m.handleInteractionMessage(msg2)
-	if !handled || cmd2 != nil {
-		t.Fatalf("expected second queued motion to coalesce into existing flush, got handled=%v cmd=%#v", handled, cmd2)
+	if !handled || cmd2 == nil {
+		t.Fatalf("expected latest queued motion to schedule flush, got handled=%v cmd=%#v", handled, cmd2)
 	}
 	cmd3, handled := m.handleInteractionMessage(mouseMotionFlushMsg{})
 	if !handled {
@@ -346,7 +400,8 @@ func TestQueuedMouseMotionFlushAppliesOnlyLatestDragPosition(t *testing.T) {
 	}
 }
 
-func TestMouseDragFloatingPaneNoOpSkipsInvalidate(t *testing.T) {
+func TestMouseMotionFlushLeavesNoTailAfterLatestMotionApplied(t *testing.T) {
+	resetMouseQueueState()
 	m := setupModel(t, modelOpts{})
 	tab := m.workbench.CurrentTab()
 	if tab == nil {
@@ -360,37 +415,114 @@ func TestMouseDragFloatingPaneNoOpSkipsInvalidate(t *testing.T) {
 	m.mouseDragMode = mouseDragMove
 	m.mouseDragOffsetX = 5
 	m.mouseDragOffsetY = 0
+	noteQueuedMouseMotion(1)
 
-	_ = m.render.RenderFrame()
+	cmd, handled := m.handleInteractionMessage(queuedMouseMsg{
+		Seq:      1,
+		Kind:     "motion",
+		QueuedAt: time.Now(),
+		Msg:      tea.MouseMsg{X: 35, Y: screenYForBodyY(m, 12), Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion},
+	})
+	if !handled || cmd == nil {
+		t.Fatalf("expected drag motion to schedule flush, got handled=%v cmd=%#v", handled, cmd)
+	}
+	cmd, handled = m.handleInteractionMessage(mouseMotionFlushMsg{})
+	if !handled {
+		t.Fatal("expected mouseMotionFlushMsg handled")
+	}
+	if cmd != nil {
+		drainCmd(t, m, cmd, 10)
+	}
+	if m.pendingMouseMotion != nil {
+		t.Fatalf("expected no pending mouse motion after flush, got %#v", m.pendingMouseMotion)
+	}
+	if m.mouseMotionFlushPending {
+		t.Fatal("expected no pending mouse motion flush after latest motion applied")
+	}
 
-	recorder := perftrace.Enable()
-	defer perftrace.Disable()
-	recorder.Reset()
+	before := m.workbench.FloatingState(tab.ID, "float-1").Rect
+	cmd, handled = m.handleInteractionMessage(mouseMotionFlushMsg{})
+	if !handled {
+		t.Fatal("expected extra mouseMotionFlushMsg handled")
+	}
+	if cmd != nil {
+		drainCmd(t, m, cmd, 10)
+	}
+	after := m.workbench.FloatingState(tab.ID, "float-1").Rect
+	if after != before {
+		t.Fatalf("expected no tail movement after drag queue drained, before=%#v after=%#v", before, after)
+	}
+}
 
-	before := findFloating(tab, "float-1")
-	if before == nil {
-		t.Fatal("expected floating pane before noop drag")
+func TestMouseMotionFlushCanceledByReleaseBoundary(t *testing.T) {
+	resetMouseQueueState()
+	m := setupModel(t, modelOpts{})
+	tab := m.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
 	}
-	beforeRect := before.Rect
-	m.handleMouseDrag(15, screenYForBodyY(m, 5))
-	_ = m.render.RenderFrame()
+	if err := m.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 10, Y: 5, W: 40, H: 20}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
 
-	snapshot := perftrace.SnapshotCurrent()
-	if event, ok := snapshot.Event("app.mouse.drag.move.noop"); !ok || event.Count != 1 {
-		t.Fatalf("expected one noop drag event, got %+v", event)
+	m.mouseDragPaneID = "float-1"
+	m.mouseDragMode = mouseDragMove
+	m.mouseDragOffsetX = 5
+	m.mouseDragOffsetY = 0
+	noteQueuedMouseMotion(1)
+
+	before := m.workbench.FloatingState(tab.ID, "float-1").Rect
+	cmd, handled := m.handleInteractionMessage(queuedMouseMsg{
+		Seq:      1,
+		Kind:     "motion",
+		QueuedAt: time.Now(),
+		Msg: tea.MouseMsg{
+			X:      35,
+			Y:      screenYForBodyY(m, 12),
+			Button: tea.MouseButtonLeft,
+			Action: tea.MouseActionMotion,
+		},
+	})
+	if !handled || cmd == nil {
+		t.Fatalf("expected drag motion to schedule flush, got handled=%v cmd=%#v", handled, cmd)
 	}
-	if event, ok := snapshot.Event("app.mouse.drag.move.changed"); ok && event.Count != 0 {
-		t.Fatalf("expected no changed drag events, got %+v", event)
+	flushMsg, ok := cmd().(mouseMotionFlushMsg)
+	if !ok {
+		t.Fatalf("expected mouseMotionFlushMsg, got %#v", cmd())
 	}
-	if event, ok := snapshot.Event("render.frame.cache_hit"); !ok || event.Count != 1 {
-		t.Fatalf("expected cached frame after noop drag, got %+v", event)
+
+	cmd, handled = m.handleInteractionMessage(queuedMouseMsg{
+		Seq:      2,
+		Kind:     "release",
+		QueuedAt: time.Now(),
+		Msg: tea.MouseMsg{
+			X:      15,
+			Y:      screenYForBodyY(m, 5),
+			Button: tea.MouseButtonLeft,
+			Action: tea.MouseActionRelease,
+		},
+	})
+	if !handled {
+		t.Fatal("expected release boundary handled")
 	}
-	after := findFloating(tab, "float-1")
-	if after == nil {
-		t.Fatal("expected floating pane after noop drag")
+	if cmd != nil {
+		drainCmd(t, m, cmd, 10)
 	}
-	if after.Rect != beforeRect {
-		t.Fatalf("expected floating rect unchanged after noop drag, got %#v", after.Rect)
+	if m.mouseDragMode != mouseDragNone {
+		t.Fatalf("expected release to clear drag state, got %v", m.mouseDragMode)
+	}
+
+	cmd, handled = m.handleInteractionMessage(flushMsg)
+	if !handled {
+		t.Fatal("expected stale mouseMotionFlushMsg handled")
+	}
+	if cmd != nil {
+		drainCmd(t, m, cmd, 10)
+	}
+
+	after := m.workbench.FloatingState(tab.ID, "float-1").Rect
+	if after != before {
+		t.Fatalf("expected release boundary to invalidate pending drag tail, before=%#v after=%#v", before, after)
 	}
 }
 

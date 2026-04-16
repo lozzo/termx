@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"time"
 
@@ -109,39 +108,7 @@ func (m *Model) enqueueTerminalInput(in input.TerminalInput) {
 	if m == nil {
 		return
 	}
-	in.Repeat = maxInt(1, in.Repeat)
-	if in.Kind != input.TerminalInputWheel || in.PaneID == "" || in.WheelDirection == 0 {
-		m.pendingTerminalInputs = append(m.pendingTerminalInputs, in)
-		return
-	}
-	for len(m.pendingTerminalInputs) > 0 {
-		lastIdx := len(m.pendingTerminalInputs) - 1
-		last := &m.pendingTerminalInputs[lastIdx]
-		if last.Kind != input.TerminalInputWheel || last.PaneID != in.PaneID || last.WheelDirection == 0 {
-			break
-		}
-		lastRepeat := maxInt(1, last.Repeat)
-		inRepeat := maxInt(1, in.Repeat)
-		if last.WheelDirection == in.WheelDirection && bytes.Equal(last.Data, in.Data) {
-			last.Repeat = lastRepeat + inRepeat
-			return
-		}
-		if last.WheelDirection != -in.WheelDirection {
-			break
-		}
-		switch {
-		case lastRepeat > inRepeat:
-			last.Repeat = lastRepeat - inRepeat
-			return
-		case lastRepeat == inRepeat:
-			m.pendingTerminalInputs = m.pendingTerminalInputs[:lastIdx]
-			return
-		default:
-			m.pendingTerminalInputs = m.pendingTerminalInputs[:lastIdx]
-			in.Repeat = inRepeat - lastRepeat
-		}
-	}
-	m.pendingTerminalInputs = append(m.pendingTerminalInputs, in)
+	m.terminalInputs.Enqueue(in)
 }
 
 func (m *Model) openPickerIfUnattached(paneID string) tea.Cmd {
@@ -192,34 +159,10 @@ func (m *Model) dequeueTerminalInputCmd() tea.Cmd {
 }
 
 func (m *Model) dequeueTerminalInputBatch() (input.TerminalInput, bool) {
-	if m == nil || len(m.pendingTerminalInputs) == 0 {
+	if m == nil {
 		return input.TerminalInput{}, false
 	}
-	first := m.pendingTerminalInputs[0]
-	if m.isPaneAttachPending(first.PaneID) {
-		return input.TerminalInput{}, false
-	}
-	batch := input.TerminalInput{
-		Kind:   first.Kind,
-		PaneID: first.PaneID,
-	}
-	data := make([]byte, 0, len(first.Data))
-	consumed := 0
-	for consumed < len(m.pendingTerminalInputs) {
-		next := m.pendingTerminalInputs[consumed]
-		if next.PaneID != batch.PaneID {
-			break
-		}
-		if next.Repeat > 1 {
-			data = append(data, bytes.Repeat(next.Data, next.Repeat)...)
-		} else {
-			data = append(data, next.Data...)
-		}
-		consumed++
-	}
-	m.pendingTerminalInputs = m.pendingTerminalInputs[consumed:]
-	batch.Data = data
-	return batch, true
+	return m.terminalInputs.Dequeue(m.isPaneAttachPending)
 }
 
 func (m *Model) prepareTerminalInput(ctx context.Context, paneID string) error {
@@ -258,100 +201,4 @@ func (m *Model) implicitSessionLeaseNeedsAcquire(terminalID, paneID string) bool
 		return false
 	}
 	return lease.PaneID == paneID && lease.ViewID != "" && lease.ViewID != m.sessionViewID
-}
-
-func (m *Model) terminalAlreadySized(terminalID string, cols, rows uint16) bool {
-	if m == nil || m.runtime == nil || terminalID == "" || cols == 0 || rows == 0 {
-		return false
-	}
-	terminal := m.runtime.Registry().Get(terminalID)
-	if terminal == nil {
-		return false
-	}
-	if terminal.Snapshot != nil && terminal.Snapshot.Size.Cols == cols && terminal.Snapshot.Size.Rows == rows {
-		return true
-	}
-	if terminal.VTerm == nil {
-		return false
-	}
-	currentCols, currentRows := terminal.VTerm.Size()
-	return currentCols == int(cols) && currentRows == int(rows)
-}
-
-func (m *Model) visiblePaneForInput(paneID string) (*workbench.PaneState, workbench.Rect, bool) {
-	if m == nil || m.workbench == nil {
-		return nil, workbench.Rect{}, false
-	}
-	tabState := m.workbench.CurrentTab()
-	if tabState == nil {
-		return nil, workbench.Rect{}, false
-	}
-	if paneID == "" {
-		if pane := m.workbench.ActivePane(); pane != nil {
-			paneID = pane.ID
-		}
-	}
-	if paneID == "" {
-		return nil, workbench.Rect{}, false
-	}
-	pane := tabState.Panes[paneID]
-	if pane == nil {
-		return nil, workbench.Rect{}, false
-	}
-	visible := m.workbench.VisibleWithSize(m.bodyRect())
-	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
-		return nil, workbench.Rect{}, false
-	}
-	tab := visible.Tabs[visible.ActiveTab]
-	for i := range visible.FloatingPanes {
-		if visible.FloatingPanes[i].ID == paneID {
-			return pane, visible.FloatingPanes[i].Rect, true
-		}
-	}
-	for i := range tab.Panes {
-		if tab.Panes[i].ID == paneID {
-			return pane, tab.Panes[i].Rect, true
-		}
-	}
-	return nil, workbench.Rect{}, false
-}
-
-func sharedInputLeaseUnsupportedError() error {
-	return teaErr("connected termx daemon is too old for shared resize control; restart the daemon and reconnect")
-}
-
-type teaErr string
-
-func (e teaErr) Error() string { return string(e) }
-
-func (m *Model) markPendingPaneAttach(paneID, terminalID string) {
-	if m == nil || paneID == "" {
-		return
-	}
-	if m.pendingPaneAttaches == nil {
-		m.pendingPaneAttaches = make(map[string]string)
-	}
-	m.pendingPaneAttaches[paneID] = terminalID
-}
-
-func (m *Model) clearPendingPaneAttach(paneID, terminalID string) {
-	if m == nil || len(m.pendingPaneAttaches) == 0 || paneID == "" {
-		return
-	}
-	current, ok := m.pendingPaneAttaches[paneID]
-	if !ok {
-		return
-	}
-	if terminalID != "" && current != "" && current != terminalID {
-		return
-	}
-	delete(m.pendingPaneAttaches, paneID)
-}
-
-func (m *Model) isPaneAttachPending(paneID string) bool {
-	if m == nil || paneID == "" || len(m.pendingPaneAttaches) == 0 {
-		return false
-	}
-	_, ok := m.pendingPaneAttaches[paneID]
-	return ok
 }

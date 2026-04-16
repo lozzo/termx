@@ -47,7 +47,9 @@ type queuedMouseMsg struct {
 	Msg      tea.MouseMsg
 }
 
-type mouseMotionFlushMsg struct{}
+type mouseMotionFlushMsg struct {
+	epoch uint64
+}
 
 type terminalInputSentMsg struct {
 	err        error

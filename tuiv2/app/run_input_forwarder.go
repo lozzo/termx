@@ -23,7 +23,15 @@ var mouseMotionBatchDelay = 4 * time.Millisecond
 var remoteMouseMotionBatchDelay = 2 * time.Millisecond
 var staleMouseMotionThreshold = 40 * time.Millisecond
 
+type inputForwarderSink interface {
+	Send(tea.Msg)
+}
+
 func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() error, error) {
+	return startInputForwarderWithSink(program, input)
+}
+
+func startInputForwarderWithSink(sink inputForwarderSink, input io.Reader) (func(), func() error, error) {
 	if input == nil {
 		return func() {}, func() error { return nil }, nil
 	}
@@ -57,7 +65,7 @@ func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() 
 			pending     []tea.Msg
 			burstTimer  *time.Timer
 			burstTick   <-chan time.Time
-			motion      tea.Msg
+			mouseAccum  highFrequencyMouseAccumulator
 			motionTimer *time.Timer
 			motionTick  <-chan time.Time
 		)
@@ -106,12 +114,16 @@ func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() 
 			}
 			motionTick = nil
 		}
-		flushMotionToPending := func() {
-			if motion == nil {
+		flushHighFrequencyMouseToPending := func() {
+			msgs := mouseAccum.Flush()
+			if len(msgs) == 0 {
 				return
 			}
-			pending = append(pending, motion)
-			motion = nil
+			pending = append(pending, msgs...)
+		}
+		dropHighFrequencyMouse := func() {
+			mouseAccum.Reset()
+			stopMotionTimer()
 		}
 		startMotionTimer := func() {
 			delay := effectiveMouseMotionBatchDelay()
@@ -128,7 +140,7 @@ func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() 
 		}
 		flushPending := func() {
 			flushBurstToPending()
-			flushMotionToPending()
+			flushHighFrequencyMouseToPending()
 			stopBurstTimer()
 			stopMotionTimer()
 			if len(pending) == 0 {
@@ -137,28 +149,30 @@ func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() 
 			msgs := append([]tea.Msg(nil), pending...)
 			pending = pending[:0]
 			if len(msgs) == 1 {
-				program.Send(msgs[0])
+				sink.Send(msgs[0])
 				return
 			}
-			program.Send(interactionBatchMsg{Messages: msgs})
+			sink.Send(interactionBatchMsg{Messages: msgs})
 		}
-		sendImmediate := func(msg tea.Msg) {
-			flushPending()
-			program.Send(msg)
+		sendBoundaryImmediate := func(msg tea.Msg) {
+			flushBurstToPending()
+			dropHighFrequencyMouse()
+			if len(pending) > 0 {
+				msgs := append([]tea.Msg(nil), pending...)
+				pending = pending[:0]
+				if len(msgs) == 1 {
+					sink.Send(msgs[0])
+				} else {
+					sink.Send(interactionBatchMsg{Messages: msgs})
+				}
+			}
+			sink.Send(msg)
 		}
 		queueKeyBurst := func(msg tea.KeyMsg) {
-			flushMotionToPending()
+			dropHighFrequencyMouse()
 			if !burst.PushKey(msg) {
 				flushBurstToPending()
 				_ = burst.PushKey(msg)
-			}
-			startBurstTimer()
-		}
-		queueWheelBurst := func(msg tea.MouseMsg) {
-			flushMotionToPending()
-			if !burst.PushMouseWheel(msg) {
-				flushBurstToPending()
-				_ = burst.PushMouseWheel(msg)
 			}
 			startBurstTimer()
 		}
@@ -171,7 +185,11 @@ func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() 
 			}
 			noteQueuedMouseMotion(queued.Seq)
 			appendMouseDebugLog("mouse_recv", "seq", queued.Seq, "kind", queued.Kind, "action", queued.Msg.Action, "button", queued.Msg.Button, "x", queued.Msg.X, "y", queued.Msg.Y)
-			motion = queued
+			mouseAccum.QueueMotion(queued)
+			startMotionTimer()
+		}
+		queueWheel := func(msg tea.MouseMsg) {
+			mouseAccum.QueueWheel(msg)
 			startMotionTimer()
 		}
 		sendMouseImmediate := func(kind string, msg tea.MouseMsg) {
@@ -182,7 +200,7 @@ func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() 
 				Msg:      msg,
 			}
 			appendMouseDebugLog("mouse_recv", "seq", queued.Seq, "kind", queued.Kind, "action", queued.Msg.Action, "button", queued.Msg.Button, "x", queued.Msg.X, "y", queued.Msg.Y)
-			sendImmediate(queued)
+			sendBoundaryImmediate(queued)
 		}
 		streamDone := make(chan struct{})
 		go func() {
@@ -208,17 +226,17 @@ func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() 
 				}
 				switch event := event.(type) {
 				case uv.ForegroundColorEvent:
-					sendImmediate(hostDefaultColorsMsg{FG: event.Color})
+					sendBoundaryImmediate(hostDefaultColorsMsg{FG: event.Color})
 				case uv.BackgroundColorEvent:
-					sendImmediate(hostDefaultColorsMsg{BG: event.Color})
+					sendBoundaryImmediate(hostDefaultColorsMsg{BG: event.Color})
 				case uv.CursorPositionEvent:
-					sendImmediate(hostCursorPositionMsg{X: event.X, Y: event.Y})
+					sendBoundaryImmediate(hostCursorPositionMsg{X: event.X, Y: event.Y})
 				case uv.UnknownOscEvent:
 					if index, c, ok := parsePaletteColorEvent(string(event)); ok {
-						sendImmediate(hostPaletteColorMsg{Index: index, Color: c})
+						sendBoundaryImmediate(hostPaletteColorMsg{Index: index, Color: c})
 					}
 				case uv.PasteEvent:
-					sendImmediate(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(event.Content), Paste: true})
+					sendBoundaryImmediate(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(event.Content), Paste: true})
 				case uv.KeyPressEvent:
 					if msg, ok := uvKeyToTeaKeyMsg(event); ok {
 						queueKeyBurst(msg)
@@ -237,7 +255,7 @@ func startInputForwarder(program *tea.Program, input io.Reader) (func(), func() 
 					}
 				case uv.MouseWheelEvent:
 					if msg, ok := uvMouseEventToTeaMouseMsg(event, tea.MouseActionPress); ok {
-						queueWheelBurst(msg)
+						queueWheel(msg)
 					}
 				}
 			}

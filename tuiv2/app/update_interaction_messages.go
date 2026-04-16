@@ -17,6 +17,7 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 	case mouseWheelBurstMsg:
 		return m.handleMouseWheelBurstMsg(typed), true
 	case keyBurstMsg:
+		m.beginBoundaryInteraction()
 		return m.handleKeyBurstMsg(typed), true
 	case queuedMouseMsg:
 		queueDelay := time.Since(typed.QueuedAt)
@@ -31,9 +32,6 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 			"queued_at", typed.QueuedAt.UTC().Format(time.RFC3339Nano),
 			"queue_ms", queueDelay.Milliseconds(),
 		)
-		if typed.Kind == "motion" && (m.mouseDragMode != mouseDragNone || m.copyMode.MouseSelecting) {
-			return m.enqueueMouseMotionFlush(typed), true
-		}
 		if typed.Kind == "motion" && typed.Seq < latestQueuedMotionSeq() {
 			appendMouseDebugLog("mouse_drop_stale", "seq", typed.Seq, "latest_seq", latestQueuedMotionSeq(), "x", typed.Msg.X, "y", typed.Msg.Y)
 			return nil, true
@@ -42,12 +40,26 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 			appendMouseDebugLog("mouse_drop_lagged", "seq", typed.Seq, "queue_ms", queueDelay.Milliseconds(), "x", typed.Msg.X, "y", typed.Msg.Y)
 			return nil, true
 		}
+		if typed.Kind == "motion" && typed.Msg.Button == tea.MouseButtonNone && (m.mouseDragMode != mouseDragNone || m.copyMode.MouseSelecting) {
+			m.beginBoundaryInteraction()
+			return m.handleMouseMsg(typed.Msg), true
+		}
+		if typed.Kind != "motion" {
+			m.beginBoundaryInteraction()
+		}
+		if typed.Kind == "motion" && (m.mouseDragMode != mouseDragNone || m.copyMode.MouseSelecting) {
+			return m.enqueueMouseMotionFlush(typed), true
+		}
 		return m.handleMouseMsg(typed.Msg), true
 	case mouseMotionFlushMsg:
-		return m.handleMouseMotionFlush(), true
+		return m.handleMouseMotionFlush(typed), true
 	case tea.MouseMsg:
+		if m.isBoundaryMouseMsg(typed) {
+			m.beginBoundaryInteraction()
+		}
 		return m.handleMouseMsg(typed), true
 	case tea.KeyMsg:
+		m.beginBoundaryInteraction()
 		return m.handleKeyMsg(typed), true
 	case prefixTimeoutMsg:
 		if typed.seq == m.prefixSeq && m.isStickyMode() {
@@ -56,12 +68,20 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		return nil, true
 	case SemanticActionMsg:
+		m.beginBoundaryInteraction()
 		return m.dispatchSemanticActionCmd(typed.Action, true), true
 	case input.SemanticAction:
+		m.beginBoundaryInteraction()
 		return m.dispatchSemanticActionCmd(typed, true), true
 	case TerminalInputMsg:
+		if !isContinuousTerminalInput(typed.Input) {
+			m.beginBoundaryInteraction()
+		}
 		return m.handleTerminalInput(typed.Input), true
 	case input.TerminalInput:
+		if !isContinuousTerminalInput(typed) {
+			m.beginBoundaryInteraction()
+		}
 		return m.handleTerminalInput(typed), true
 	case terminalInputSentMsg:
 		next := m.dequeueTerminalInputCmd()
@@ -77,7 +97,7 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 		if typed.seq != m.terminalResyncSeq {
 			return nil, true
 		}
-		if m.terminalInputSending || len(m.pendingTerminalInputs) > 0 {
+		if m.terminalInputSending || m.terminalInputs.HasPending() {
 			return nil, true
 		}
 		return m.sharedTerminalSnapshotResyncCmd(typed.terminalID), true
@@ -159,6 +179,7 @@ func (m *Model) handleInteractionBatch(messages []tea.Msg) tea.Cmd {
 	if len(messages) == 0 {
 		return nil
 	}
+	messages = compactInteractionMessages(messages)
 	perftrace.Count("app.interaction.batch", len(messages))
 	wasSending := m.terminalInputSending
 	prevBatchState := m.interactionBatchActive
@@ -182,22 +203,43 @@ func (m *Model) handleInteractionBatch(messages []tea.Msg) tea.Cmd {
 	return batchCmds(cmds...)
 }
 
+func compactInteractionMessages(messages []tea.Msg) []tea.Msg {
+	if len(messages) <= 1 {
+		return messages
+	}
+	compacted := make([]tea.Msg, 0, len(messages))
+	var continuous interactionContinuousAccumulator
+	for _, msg := range messages {
+		if continuous.Queue(msg) {
+			continue
+		}
+		continuous.Reset()
+		compacted = append(compacted, msg)
+	}
+	compacted = append(compacted, continuous.Flush()...)
+	return compacted
+}
+
 func (m *Model) enqueueMouseMotionFlush(msg queuedMouseMsg) tea.Cmd {
 	if m == nil {
 		return nil
 	}
 	copyMsg := msg
 	m.pendingMouseMotion = &copyMsg
+	epoch := m.interactionBoundaryEpoch
 	if m.mouseMotionFlushPending {
 		appendMouseDebugLog("mouse_motion_coalesce", "seq", msg.Seq, "x", msg.Msg.X, "y", msg.Msg.Y)
 		return nil
 	}
 	m.mouseMotionFlushPending = true
-	return func() tea.Msg { return mouseMotionFlushMsg{} }
+	return func() tea.Msg { return mouseMotionFlushMsg{epoch: epoch} }
 }
 
-func (m *Model) handleMouseMotionFlush() tea.Cmd {
+func (m *Model) handleMouseMotionFlush(flush mouseMotionFlushMsg) tea.Cmd {
 	if m == nil {
+		return nil
+	}
+	if flush.epoch != m.interactionBoundaryEpoch {
 		return nil
 	}
 	msg := m.pendingMouseMotion
@@ -223,4 +265,22 @@ func (m *Model) handleMouseMotionFlush() tea.Cmd {
 		return nil
 	}
 	return m.handleMouseMsg(msg.Msg)
+}
+
+func isRawMouseWheelContinuous(msg tea.MouseMsg) bool {
+	return msg.Action == tea.MouseActionPress && mouseWheelButtonStep(msg.Button) != 0
+}
+
+func (m *Model) isBoundaryMouseMsg(msg tea.MouseMsg) bool {
+	if isRawMouseWheelContinuous(msg) {
+		return false
+	}
+	switch msg.Action {
+	case tea.MouseActionPress, tea.MouseActionRelease:
+		return true
+	case tea.MouseActionMotion:
+		return msg.Button == tea.MouseButtonNone && (m.mouseDragMode != mouseDragNone || m.copyMode.MouseSelecting)
+	default:
+		return false
+	}
 }
