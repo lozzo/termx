@@ -4,18 +4,21 @@ import (
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 type resolvedPaneContent struct {
-	terminal     *runtime.VisibleTerminal
-	snapshot     *protocol.Snapshot
-	surface      runtime.TerminalSurface
-	source       terminalRenderSource
-	contentRect  workbench.Rect
-	renderOffset int
+	terminalKnown bool
+	terminalName  string
+	terminalState string
+	snapshot      *protocol.Snapshot
+	surface       runtime.TerminalSurface
+	source        terminalRenderSource
+	contentRect   workbench.Rect
+	renderOffset  int
 }
 
 type terminalSourceWindowState struct {
@@ -74,13 +77,13 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID, entry.Theme, entry.EmptyActionSelected)
 		return
 	}
-	if resolved.terminal == nil {
+	if !resolved.terminalKnown {
 		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID, entry.Theme, -1)
 		return
 	}
 	if resolved.source == nil || resolved.source.ScreenRows() == 0 {
-		canvas.drawText(contentRect.X, contentRect.Y, resolved.terminal.Name+" ["+resolved.terminal.State+"]", drawStyle{FG: entry.Theme.panelMuted})
-		if resolved.terminal.State == "exited" {
+		canvas.drawText(contentRect.X, contentRect.Y, resolved.terminalName+" ["+resolved.terminalState+"]", drawStyle{FG: entry.Theme.panelMuted})
+		if resolved.terminalState == "exited" {
 			drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
 		}
 		return
@@ -89,7 +92,7 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 	if entry.CopyModeActive {
 		drawCopyModeOverlay(canvas, contentRect, resolved.snapshot, entry.Theme, entry.CopyModeCursorRow, entry.CopyModeCursorCol, entry.CopyModeViewTopRow, entry.CopyModeMarkSet, entry.CopyModeMarkRow, entry.CopyModeMarkCol)
 	}
-	if resolved.terminal.State == "exited" {
+	if resolved.terminalState == "exited" {
 		drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
 	}
 }
@@ -206,17 +209,29 @@ func resolvePaneContent(entry paneRenderEntry, runtimeState *VisibleRuntimeState
 	if entry.TerminalID == "" {
 		return resolved
 	}
-	resolved.terminal = findVisibleTerminal(runtimeState, entry.TerminalID)
-	if resolved.terminal == nil {
+	resolved.terminalKnown = entry.ContentKey.TerminalKnown
+	if !resolved.terminalKnown {
 		return resolved
 	}
+	resolved.terminalName = entry.ContentKey.Name
+	resolved.terminalState = entry.ContentKey.State
 	resolved.snapshot = entry.Snapshot
 	resolved.surface = entry.Surface
-	if resolved.snapshot == nil && resolved.surface == nil {
-		resolved.surface = resolved.terminal.Surface
-	}
-	if resolved.snapshot == nil && resolved.surface == nil {
-		resolved.snapshot = resolved.terminal.Snapshot
+	if resolved.terminalKnown && (resolved.snapshot == nil && resolved.surface == nil || resolved.terminalName == "" || resolved.terminalState == "") {
+		if terminal := findVisibleTerminal(runtimeState, entry.TerminalID); terminal != nil {
+			if resolved.snapshot == nil && resolved.surface == nil {
+				resolved.surface = terminal.Surface
+				if resolved.surface == nil {
+					resolved.snapshot = terminal.Snapshot
+				}
+			}
+			if resolved.terminalName == "" {
+				resolved.terminalName = terminal.Name
+			}
+			if resolved.terminalState == "" {
+				resolved.terminalState = terminal.State
+			}
+		}
 	}
 	resolved.source = renderSource(resolved.snapshot, resolved.surface)
 	resolved.renderOffset = entry.ScrollOffset
@@ -227,6 +242,8 @@ func resolvePaneContent(entry paneRenderEntry, runtimeState *VisibleRuntimeState
 }
 
 func terminalSourceWindowSignature(source terminalRenderSource, height, offset int) uint64 {
+	finish := perftrace.Measure("render.window_signature")
+	defer finish(height)
 	state := buildTerminalSourceWindowState(source, height, offset)
 	return state.contentHash
 }
@@ -235,6 +252,7 @@ func buildTerminalSourceWindowState(source terminalRenderSource, height, offset 
 	if source == nil || height <= 0 {
 		return terminalSourceWindowState{}
 	}
+	perftrace.Count("render.window_signature.rows", height)
 	rowIndices := make([]int, height)
 	for i := range rowIndices {
 		rowIndices[i] = -1
@@ -297,6 +315,7 @@ func terminalSourceExtentHash(source terminalRenderSource, rect workbench.Rect, 
 }
 
 func terminalSourceRowHash(source terminalRenderSource, rowIndex int) uint64 {
+	perftrace.Count("render.row_hash", 1)
 	hash := fnvOffset64
 	hash = fnvMixUint64(hash, uint64(rowIndex+1))
 	if source == nil || rowIndex < 0 {

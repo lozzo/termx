@@ -26,6 +26,7 @@ func renderTerminalPoolPageWithCursor(pool *modal.TerminalManagerState, runtimeS
 	headerLines = append(headerLines, overlayCardFillStyle(theme).Width(width).Render(""))
 
 	contentLines := make([]string, 0, height)
+	lookup := newRuntimeLookup(runtimeState)
 
 	items := pool.VisibleItems()
 	for _, row := range terminalPoolListRows(items) {
@@ -36,7 +37,7 @@ func renderTerminalPoolPageWithCursor(pool *modal.TerminalManagerState, runtimeS
 		line := items[row.itemIndex].RenderLine(innerWidth, row.itemIndex == pool.Selected, pickerLineStyle(theme), pickerSelectedLineStyle(theme), pickerCreateRowStyle(theme))
 		contentLines = append(contentLines, renderOverlaySpan(overlayCardFillStyle(theme), "  "+line, width))
 	}
-	if detailLines := renderTerminalPoolDetails(pool.SelectedItem(), runtimeState, innerWidth); len(detailLines) > 0 {
+	if detailLines := renderTerminalPoolDetailsWithLookup(pool.SelectedItem(), lookup, innerWidth); len(detailLines) > 0 {
 		contentLines = append(contentLines, overlayCardFillStyle(theme).Width(width).Render(""))
 		for _, line := range detailLines {
 			contentLines = append(contentLines, renderOverlaySpan(overlayCardFillStyle(theme), "  "+line, width))
@@ -45,8 +46,8 @@ func renderTerminalPoolPageWithCursor(pool *modal.TerminalManagerState, runtimeS
 
 	footerLine, _ := layoutTerminalPoolFooterActionsWithTheme(theme, width, height)
 	result := renderedBody{
-		content: renderPageWithPinnedFooter(headerLines, contentLines, footerLine, width, height),
-		cursor:  hideCursorANSI(),
+		lines:  renderPageLinesWithPinnedFooter(headerLines, contentLines, footerLine, width, height),
+		cursor: hideCursorANSI(),
 	}
 	if cursorVisible {
 		cursorX := layout.queryRect.X + valueCursorCellOffset(pool.Query, queryCursorIndex(pool.Query, pool.Cursor, pool.CursorSet), layout.queryRect.W)
@@ -56,10 +57,13 @@ func renderTerminalPoolPageWithCursor(pool *modal.TerminalManagerState, runtimeS
 }
 
 func renderTerminalPoolDetails(item *modal.PickerItem, runtimeState *VisibleRuntimeStateProxy, innerWidth int) []string {
+	return renderTerminalPoolDetailsWithLookup(item, newRuntimeLookup(runtimeState), innerWidth)
+}
+
+func renderTerminalPoolDetailsWithLookup(item *modal.PickerItem, lookup runtimeLookup, innerWidth int) []string {
 	if item == nil {
 		return nil
 	}
-	lookup := newRuntimeLookup(runtimeState)
 	lines := []string{forceWidthANSIOverlay("PREVIEW", innerWidth)}
 	if terminal := lookup.terminal(item.TerminalID); terminal != nil {
 		lines = append(lines, terminalPoolPreviewLines(terminal.Snapshot, terminal.Surface, innerWidth, 4)...)

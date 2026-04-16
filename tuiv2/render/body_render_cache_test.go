@@ -88,7 +88,7 @@ func protocolRowFromText(text string) []protocol.Cell {
 	return row
 }
 
-func TestBuildPaneRenderEntryContentVersionIgnoresCursorOnlySurfaceChanges(t *testing.T) {
+func TestBuildPaneRenderEntryUsesLiveSurfaceVersionAndKeepsCursorOnlySpriteReuse(t *testing.T) {
 	now := time.Date(2026, 4, 16, 12, 0, 0, 0, time.UTC)
 	surface := &spriteTestSurface{
 		size: protocol.Size{Cols: 6, Rows: 2},
@@ -117,11 +117,24 @@ func TestBuildPaneRenderEntryContentVersionIgnoresCursorOnlySurfaceChanges(t *te
 	}
 
 	entryBefore := buildPaneRenderEntry(pane, pane.Rect, pane.Rect, true, pane.ID, 0, lookup, bodyProjectionOptions{}, defaultUITheme())
+	runtimeState := &VisibleRuntimeStateProxy{
+		Terminals: []runtimestate.VisibleTerminal{*lookup.terminals["term-1"]},
+	}
+	cache := &bodyRenderCache{}
+	spriteBefore := cache.contentSprite(entryBefore, runtimeState)
+	if spriteBefore == nil {
+		t.Fatal("expected initial sprite")
+	}
 	surface.cursor = protocol.CursorState{Row: 1, Col: 2, Visible: true}
 	lookup.terminals["term-1"].SurfaceVersion = 2
+	runtimeState.Terminals[0].SurfaceVersion = 2
 	entryCursorOnly := buildPaneRenderEntry(pane, pane.Rect, pane.Rect, true, pane.ID, 0, lookup, bodyProjectionOptions{}, defaultUITheme())
-	if entryBefore.ContentKey.SurfaceVersion != entryCursorOnly.ContentKey.SurfaceVersion {
-		t.Fatalf("expected cursor-only surface changes to keep content version stable, got before=%d after=%d", entryBefore.ContentKey.SurfaceVersion, entryCursorOnly.ContentKey.SurfaceVersion)
+	if entryBefore.ContentKey.SurfaceVersion == entryCursorOnly.ContentKey.SurfaceVersion {
+		t.Fatalf("expected live surfaces to use cheap surfaceVersion invalidation, got before=%d after=%d", entryBefore.ContentKey.SurfaceVersion, entryCursorOnly.ContentKey.SurfaceVersion)
+	}
+	spriteCursorOnly := cache.contentSprite(entryCursorOnly, runtimeState)
+	if spriteCursorOnly != spriteBefore {
+		t.Fatal("expected cursor-only surface changes to reuse the cached sprite canvas")
 	}
 
 	surface.screen[1] = protocolRowFromText("brawn")
@@ -165,7 +178,7 @@ func TestContentSpriteIncrementallyUpdatesChangedRowsForSameDimensions(t *testin
 			TerminalKnown: true,
 		},
 	}
-	entry.ContentKey.SurfaceVersion = terminalSourceWindowSignature(renderSource(nil, surface), 2, 0)
+	entry.ContentKey.SurfaceVersion = runtimeState.Terminals[0].SurfaceVersion
 
 	cache := &bodyRenderCache{}
 	sprite := cache.contentSprite(entry, runtimeState)
@@ -179,7 +192,7 @@ func TestContentSpriteIncrementallyUpdatesChangedRowsForSameDimensions(t *testin
 	surface.screen[1] = protocolRowFromText("there")
 	surface.screenTimestamps[1] = now.Add(time.Second)
 	runtimeState.Terminals[0].SurfaceVersion = 2
-	entry.ContentKey.SurfaceVersion = terminalSourceWindowSignature(renderSource(nil, surface), 2, 0)
+	entry.ContentKey.SurfaceVersion = runtimeState.Terminals[0].SurfaceVersion
 
 	perftrace.Enable()
 	perftrace.Reset()

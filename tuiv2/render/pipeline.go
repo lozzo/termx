@@ -51,17 +51,22 @@ func renderResultWithCoordinator(coordinator *Coordinator, vm RenderVM) RenderRe
 	} else {
 		body = renderBodyFrameWithCoordinatorVM(coordinator, vm, vm.TermSize.Width, bodyHeight)
 		if overlay.content != "" {
-			body.content = compositeOverlay(body.content, overlay.content, overlaySize)
+			body.content = compositeOverlay(body.Content(), overlay.content, overlaySize)
+			body.lines = nil
 			body.cursor = overlay.cursor
 			body.blink = overlay.blink
 		}
 	}
 
-	lines := make([]string, 0, len(body.Lines())+2)
+	bodyLines := body.lines
+	if len(bodyLines) == 0 {
+		bodyLines = body.Lines()
+	}
+	lines := make([]string, 0, len(bodyLines)+2)
 	if !immersiveZoom {
 		lines = append(lines, tabBar)
 	}
-	lines = append(lines, body.Lines()...)
+	lines = append(lines, bodyLines...)
 	if !immersiveZoom {
 		lines = append(lines, statusBar)
 	}
@@ -119,9 +124,9 @@ func renderBodyFrameWithCoordinatorVM(coordinator *Coordinator, vm RenderVM, wid
 	entries := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, width, height, lookup, bodyProjectionOptionsForVM(vm, exitedSelectionPulse), uiThemeForRuntime(vm.Runtime))
 	canvas := renderBodyCanvas(coordinator, vm.Runtime, immersiveZoomActiveVM(vm), entries, width, height)
 	return renderedBody{
-		content: canvas.contentString(),
-		cursor:  canvas.cursorANSI(),
-		blink:   canvas.syntheticCursorBlink,
+		lines:  canvas.cachedContentLines(),
+		cursor: canvas.cursorANSI(),
+		blink:  canvas.syntheticCursorBlink,
 	}
 }
 
@@ -203,6 +208,11 @@ func overlayIsOpaque(overlay RenderOverlayVM) bool {
 }
 
 func (b renderedBody) Lines() []string {
+	if len(b.lines) > 0 {
+		out := make([]string, len(b.lines))
+		copy(out, b.lines)
+		return out
+	}
 	if b.content == "" {
 		return []string{""}
 	}

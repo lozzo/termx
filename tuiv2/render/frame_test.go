@@ -326,10 +326,10 @@ func TestStatusBarCacheKeyChangesWithWorkspacePickerSelection(t *testing.T) {
 	}
 }
 
-func TestFillLineStartsWithCHAAnchor(t *testing.T) {
+func TestFillLineOmitsRedundantCHAAnchor(t *testing.T) {
 	line := fillLine("left", "right", 40, "#000000")
-	if !strings.HasPrefix(line, "\x1b[1G") {
-		t.Fatalf("expected fillLine to start with CHA(1), got prefix %q", line[:minInt(10, len(line))])
+	if strings.HasPrefix(line, "\x1b[1G") {
+		t.Fatalf("expected fillLine to omit redundant CHA(1), got prefix %q", line[:minInt(10, len(line))])
 	}
 }
 

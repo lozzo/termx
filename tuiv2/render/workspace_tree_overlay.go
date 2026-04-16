@@ -413,7 +413,7 @@ func renderWorkbenchTreePreviewRows(picker *modal.WorkspacePickerState, item *mo
 	}
 	rows = append(rows, renderOverlaySpan(lipgloss.NewStyle().Foreground(lipgloss.Color(theme.warning)).Bold(true), sectionTitle, width))
 
-	previewLines := workbenchTreePreviewLines(picker, item, runtimeState, width, maxInt(1, height-4), theme)
+	previewLines := workbenchTreePreviewLines(picker, item, newRuntimeLookup(runtimeState), runtimeState, width, maxInt(1, height-4), theme)
 	rows = append(rows, previewLines...)
 	for len(rows) < height-1 {
 		rows = append(rows, "")
@@ -496,7 +496,7 @@ func workbenchTreeActionSpecs(item *modal.WorkspacePickerItem) []overlayFooterAc
 	}
 }
 
-func workbenchTreePreviewLines(picker *modal.WorkspacePickerState, item *modal.WorkspacePickerItem, runtimeState *VisibleRuntimeStateProxy, width, maxLines int, theme uiTheme) []string {
+func workbenchTreePreviewLines(picker *modal.WorkspacePickerState, item *modal.WorkspacePickerItem, lookup runtimeLookup, runtimeState *VisibleRuntimeStateProxy, width, maxLines int, theme uiTheme) []string {
 	if item == nil || maxLines <= 0 {
 		return nil
 	}
@@ -504,9 +504,8 @@ func workbenchTreePreviewLines(picker *modal.WorkspacePickerState, item *modal.W
 	case modal.WorkspacePickerItemWorkspace:
 		return workbenchTreeWorkspaceSummaryLines(picker, item, width, maxLines)
 	case modal.WorkspacePickerItemTab:
-		return workbenchTreeTabPreviewLines(picker, item, runtimeState, width, maxLines, theme)
+		return workbenchTreeTabPreviewLines(picker, item, lookup, runtimeState, width, maxLines, theme)
 	}
-	lookup := newRuntimeLookup(runtimeState)
 	if terminal := lookup.terminal(item.TerminalID); terminal != nil {
 		return terminalPreviewLinesANSI(terminal.Snapshot, terminal.Surface, runtimeState, width, maxLines)
 	}
@@ -555,7 +554,7 @@ func workbenchTreeWorkspaceSummaryLines(picker *modal.WorkspacePickerState, item
 	return lines
 }
 
-func workbenchTreeTabPreviewLines(picker *modal.WorkspacePickerState, item *modal.WorkspacePickerItem, runtimeState *VisibleRuntimeStateProxy, width, maxLines int, theme uiTheme) []string {
+func workbenchTreeTabPreviewLines(picker *modal.WorkspacePickerState, item *modal.WorkspacePickerItem, lookup runtimeLookup, runtimeState *VisibleRuntimeStateProxy, width, maxLines int, theme uiTheme) []string {
 	if item == nil || width <= 0 || maxLines <= 0 {
 		return nil
 	}
@@ -563,7 +562,6 @@ func workbenchTreeTabPreviewLines(picker *modal.WorkspacePickerState, item *moda
 	if len(panes) == 0 {
 		return []string{forceWidthANSIOverlay("(no pane previews)", width)}
 	}
-	lookup := newRuntimeLookup(runtimeState)
 	lines := make([]string, 0, maxLines)
 	separatorCount := maxInt(0, len(panes)-1)
 	usable := maxInt(len(panes), maxLines-separatorCount)

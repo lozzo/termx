@@ -45,8 +45,8 @@ func renderEmptyWorkbenchBodyVM(vm RenderVM, width, height int, kind emptyWorkbe
 	}
 
 	return renderedBody{
-		content: canvas.contentString(),
-		cursor:  hideCursorANSI(),
+		lines:  canvas.cachedContentLines(),
+		cursor: hideCursorANSI(),
 	}
 }
 
@@ -67,11 +67,15 @@ func emojiVariationSelectorModeForRuntime(runtimeState *VisibleRuntimeStateProxy
 }
 
 func renderPageWithPinnedFooter(headerLines, contentLines []string, footerLine string, width, height int) string {
+	return strings.Join(renderPageLinesWithPinnedFooter(headerLines, contentLines, footerLine, width, height), "\n")
+}
+
+func renderPageLinesWithPinnedFooter(headerLines, contentLines []string, footerLine string, width, height int) []string {
 	if height <= 0 {
-		return ""
+		return nil
 	}
 	if height == 1 {
-		return forceWidthANSIOverlay(footerLine, width)
+		return []string{forceWidthANSIOverlay(footerLine, width)}
 	}
 
 	lines := make([]string, 0, height)
@@ -84,7 +88,7 @@ func renderPageWithPinnedFooter(headerLines, contentLines []string, footerLine s
 		lines = append(lines, forceWidthANSIOverlay("", width))
 	}
 	lines = append(lines, forceWidthANSIOverlay(footerLine, width))
-	return strings.Join(lines, "\n")
+	return lines
 }
 
 func immersiveZoomActive(state VisibleRenderState) bool {

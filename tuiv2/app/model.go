@@ -173,6 +173,9 @@ func (m *Model) SetCursorWriter(writer cursorSequenceWriter) {
 		return
 	}
 	m.cursorOut = writer
+	if aware, ok := writer.(*outputCursorWriter); ok {
+		aware.SetTTYWidth(m.width)
+	}
 }
 
 func (m *Model) SetFrameWriter(writer frameSequenceWriter) {
@@ -183,6 +186,9 @@ func (m *Model) SetFrameWriter(writer frameSequenceWriter) {
 		current.SetDrainHook(nil)
 	}
 	m.frameOut = writer
+	if aware, ok := writer.(*outputCursorWriter); ok {
+		aware.SetTTYWidth(m.width)
+	}
 	if aware, ok := writer.(frameBackpressureWriter); ok {
 		aware.SetDrainHook(func() {
 			m.onFrameWriterDrained()

@@ -16,13 +16,13 @@ func (m *Model) View() string {
 		if directWriter, ok := rowsWriter.(*outputCursorWriter); ok {
 			directWriter.SetVerticalScrollEnabled(m.allowVerticalScrollOptimization())
 		}
-		if lines, cursor, ok := m.render.CachedFrameLinesAndCursor(); ok {
+		if lines, cursor, ok := m.render.CachedFrameLinesAndCursorRef(); ok {
 			viewBytes = joinedLinesLen(lines) + len(cursor)
 			m.lastViewFrame = ""
 			m.lastViewCursor = cursor
 			return ""
 		}
-		lines, cursor := m.render.RenderFrameLines()
+		lines, cursor := m.render.RenderFrameLinesRef()
 		viewBytes = joinedLinesLen(lines) + len(cursor)
 		_ = rowsWriter.WriteFrameLines(lines, cursor)
 		m.lastViewFrame = ""

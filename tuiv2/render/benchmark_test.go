@@ -11,6 +11,7 @@ import (
 )
 
 var benchmarkFrameSink string
+var benchmarkLinesSink []string
 
 func BenchmarkComposedCanvasSmallEdit(b *testing.B) {
 	canvas := newComposedCanvas(200, 2)
@@ -24,6 +25,23 @@ func BenchmarkComposedCanvasSmallEdit(b *testing.B) {
 		x := 80 + (i % 20)
 		canvas.set(x, 0, drawCell{Content: "Z", Width: 1, Style: drawStyle{FG: "#ff0000"}})
 		benchmarkFrameSink = canvas.contentString()
+	}
+}
+
+func BenchmarkComposedCanvasCachedContentLinesDirtyRow(b *testing.B) {
+	canvas := newComposedCanvas(200, 24)
+	for y := 0; y < 24; y++ {
+		canvas.drawText(0, y, strings.Repeat(string(rune('a'+(y%26))), 200), drawStyle{FG: "#cccccc"})
+	}
+	benchmarkLinesSink = canvas.cachedContentLines()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		row := i % 24
+		x := 48 + (i % 32)
+		canvas.set(x, row, drawCell{Content: "Z", Width: 1, Style: drawStyle{FG: "#ff0000"}})
+		benchmarkLinesSink = canvas.cachedContentLines()
 	}
 }
 

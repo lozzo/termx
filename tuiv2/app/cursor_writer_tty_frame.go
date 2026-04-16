@@ -5,15 +5,24 @@ import (
 
 	xansi "github.com/charmbracelet/x/ansi"
 	xterm "github.com/charmbracelet/x/term"
+	"github.com/lozzow/termx/perftrace"
 )
 
 func (w *outputCursorWriter) fitFrameToTTY(frame string) string {
-	if w == nil || w.tty == nil || frame == "" {
+	if w == nil || frame == "" {
 		return frame
 	}
-	width, _, err := xterm.GetSize(w.tty.Fd())
-	if err != nil || width <= 0 {
-		return frame
+	width := w.ttyWidth
+	if width <= 0 {
+		if w.tty == nil {
+			return frame
+		}
+		perftrace.Count("cursor_writer.fit_tty_width_syscall", 0)
+		measured, _, err := xterm.GetSize(w.tty.Fd())
+		if err != nil || measured <= 0 {
+			return frame
+		}
+		width = measured
 	}
 	// 如果宽度未变（coordinator 已经按该宽度渲染），跳过逐行截断
 	if width == w.lastTTYWidth {
@@ -27,12 +36,20 @@ func (w *outputCursorWriter) fitLinesToTTY(lines []string) []string {
 	if len(lines) == 0 {
 		return nil
 	}
-	if w == nil || w.tty == nil {
+	if w == nil {
 		return lines
 	}
-	width, _, err := xterm.GetSize(w.tty.Fd())
-	if err != nil || width <= 0 {
-		return lines
+	width := w.ttyWidth
+	if width <= 0 {
+		if w.tty == nil {
+			return lines
+		}
+		perftrace.Count("cursor_writer.fit_tty_width_syscall", 0)
+		measured, _, err := xterm.GetSize(w.tty.Fd())
+		if err != nil || measured <= 0 {
+			return lines
+		}
+		width = measured
 	}
 	if width == w.lastTTYWidth {
 		return lines
@@ -72,8 +89,16 @@ func stripLeadingCHA1(lines []string) []string {
 	var out []string
 	for i := range lines {
 		line := lines[i]
-		stripped := strings.TrimPrefix(line, xansi.CHA(1))
-		stripped = strings.TrimPrefix(stripped, "\x1b[G")
+		if len(line) < 3 || line[0] != '\x1b' || line[1] != '[' {
+			continue
+		}
+		stripped := line
+		switch {
+		case strings.HasPrefix(line, "\x1b[1G"):
+			stripped = line[len("\x1b[1G"):]
+		case strings.HasPrefix(line, "\x1b[G"):
+			stripped = line[len("\x1b[G"):]
+		}
 		if stripped == line {
 			continue
 		}

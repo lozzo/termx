@@ -35,6 +35,12 @@ func (m *Model) handleLifecycleMessage(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		m.width = typed.Width
 		m.height = typed.Height
+		if writer, ok := m.frameOut.(*outputCursorWriter); ok {
+			writer.SetTTYWidth(typed.Width)
+		}
+		if writer, ok := m.cursorOut.(*outputCursorWriter); ok {
+			writer.SetTTYWidth(typed.Width)
+		}
 		m.render.Invalidate()
 		return batchCmds(m.resizeVisiblePanesCmd(), m.resizePendingPaneResizesCmd(), m.maybeAutoFitFloatingPanesCmd(), m.updateSessionViewCmd()), true
 	case reattachFailedMsg:

@@ -36,6 +36,10 @@ func newRuntimeLookup(runtimeState *VisibleRuntimeStateProxy) runtimeLookup {
 	return lookup
 }
 
+func findVisibleTerminalWithLookup(lookup runtimeLookup, terminalID string) *runtime.VisibleTerminal {
+	return lookup.terminal(terminalID)
+}
+
 func (l runtimeLookup) terminal(terminalID string) *runtime.VisibleTerminal {
 	if terminalID == "" || len(l.terminals) == 0 {
 		return nil

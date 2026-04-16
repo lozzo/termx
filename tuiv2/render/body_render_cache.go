@@ -80,7 +80,7 @@ func (c *bodyRenderCache) contentSprite(entry paneRenderEntry, runtimeState *Vis
 		// Reuse already-computed resolved/window/extentHash from the incremental check above.
 		sprite := cached.canvas
 		sprite.resetToBlank()
-		drawPaneContentSprite(sprite, entry, runtimeState)
+		drawResolvedPaneContentSprite(sprite, entry, resolved)
 		c.contentSprites[entry.PaneID] = &paneContentSpriteCacheEntry{
 			key:         key,
 			canvas:      sprite,
@@ -100,10 +100,10 @@ func (c *bodyRenderCache) contentSprite(entry paneRenderEntry, runtimeState *Vis
 	} else {
 		sprite = newComposedCanvas(interior.W, interior.H)
 	}
-	drawPaneContentSprite(sprite, entry, runtimeState)
+	resolved := resolvePaneContent(entry, runtimeState, true)
+	drawResolvedPaneContentSprite(sprite, entry, resolved)
 
 	// Compute window state for future incremental updates
-	resolved := resolvePaneContent(entry, runtimeState, true)
 	window := buildTerminalSourceWindowState(resolved.source, resolved.contentRect.H, resolved.renderOffset)
 	extentHash := terminalSourceExtentHash(resolved.source, resolved.contentRect, entry.Theme)
 
@@ -219,11 +219,23 @@ func (c *bodyRenderCache) reset(entries []paneRenderEntry, width, height int) {
 }
 
 func (c *bodyRenderCache) matches(entries []paneRenderEntry, width, height int, hostEmojiMode shared.AmbiguousEmojiVariationSelectorMode) bool {
-	if c == nil || c.canvas == nil || c.width != width || c.height != height || c.hostEmojiVS16Mode != hostEmojiMode || len(c.order) != len(entries) {
+	if !c.compatible(entries, width, height, hostEmojiMode) {
 		return false
 	}
 	for i, entry := range entries {
 		if c.order[i] != entry.PaneID || c.rects[entry.PaneID] != entry.Rect {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *bodyRenderCache) compatible(entries []paneRenderEntry, width, height int, hostEmojiMode shared.AmbiguousEmojiVariationSelectorMode) bool {
+	if c == nil || c.canvas == nil || c.width != width || c.height != height || c.hostEmojiVS16Mode != hostEmojiMode || len(c.order) != len(entries) {
+		return false
+	}
+	for i, entry := range entries {
+		if c.order[i] != entry.PaneID {
 			return false
 		}
 	}

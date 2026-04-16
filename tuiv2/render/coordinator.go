@@ -36,6 +36,7 @@ type RenderVMFn func() RenderVM
 
 type renderedBody struct {
 	content string
+	lines   []string
 	cursor  string
 	blink   bool
 }
@@ -208,6 +209,14 @@ func (c *Coordinator) RenderFrameLines() ([]string, string) {
 	return append([]string(nil), result.Lines...), result.CursorSequence()
 }
 
+func (c *Coordinator) RenderFrameLinesRef() ([]string, string) {
+	if c == nil || c.vmFn == nil {
+		return nil, hideCursorANSI()
+	}
+	result, _ := c.renderResult()
+	return result.Lines, result.CursorSequence()
+}
+
 func (c *Coordinator) CursorSequence() string {
 	if c == nil {
 		return hideCursorANSI()
@@ -246,6 +255,20 @@ func (c *Coordinator) CachedFrameLinesAndCursor() ([]string, string, bool) {
 		return nil, "", false
 	}
 	return append([]string(nil), c.lastResult.Lines...), c.lastResult.CursorSequence(), true
+}
+
+func (c *Coordinator) CachedFrameLinesAndCursorRef() ([]string, string, bool) {
+	if c == nil || c.vmFn == nil {
+		return nil, hideCursorANSI(), false
+	}
+	vm := c.vmFn()
+	key := renderVMKeyForVM(vm)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.dirty || !c.hasLastResult || c.lastKey != key {
+		return nil, "", false
+	}
+	return c.lastResult.Lines, c.lastResult.CursorSequence(), true
 }
 
 func (c *Coordinator) CachedRenderResult() (RenderResult, bool) {
@@ -484,7 +507,14 @@ func statusBarCacheKeyForState(state VisibleRenderState, theme uiTheme) statusBa
 }
 
 func renderBody(state VisibleRenderState, width, height int) string {
-	return renderBodyFrameWithCoordinator(nil, state, width, height).content
+	return renderBodyFrameWithCoordinator(nil, state, width, height).Content()
+}
+
+func (b renderedBody) Content() string {
+	if b.content != "" || len(b.lines) == 0 {
+		return b.content
+	}
+	return strings.Join(b.lines, "\n")
 }
 
 func splitRenderedLines(frame string, dst []string) []string {

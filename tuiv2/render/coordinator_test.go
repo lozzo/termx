@@ -7,6 +7,7 @@ import (
 	"time"
 
 	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/terminalmeta"
 	"github.com/lozzow/termx/tuiv2/input"
@@ -1830,14 +1831,14 @@ func TestRenderBodyCacheAlwaysRedrawsActivePaneContent(t *testing.T) {
 	}}}
 
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
-	first := xansi.Strip(renderBodyFrameWithCoordinator(coordinator, state, 24, 8).content)
+	first := xansi.Strip(renderBodyFrameWithCoordinator(coordinator, state, 24, 8).Content())
 	if !strings.Contains(first, "AAAA") {
 		t.Fatalf("expected first render to contain original content, got %q", first)
 	}
 
 	snapshot.Screen.Cells[0][0].Content = "Z"
 
-	second := xansi.Strip(renderBodyFrameWithCoordinator(coordinator, state, 24, 8).content)
+	second := xansi.Strip(renderBodyFrameWithCoordinator(coordinator, state, 24, 8).Content())
 	if !strings.Contains(second, "ZAAA") {
 		t.Fatalf("expected cached render path to repaint active pane content, got %q", second)
 	}
@@ -1964,7 +1965,7 @@ func TestRenderBodyCachedOverlapDoesNotPaintActivePaneOverFloating(t *testing.T)
 	}}
 
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
-	body := xansi.Strip(renderBodyFrameWithCoordinator(coordinator, state, 40, 14).content)
+	body := xansi.Strip(renderBodyFrameWithCoordinator(coordinator, state, 40, 14).Content())
 	lines := strings.Split(body, "\n")
 	if got := string([]rune(lines[6])[12]); got != " " {
 		t.Fatalf("expected floating interior blank on first render, got %q in %q", got, lines[6])
@@ -1972,7 +1973,7 @@ func TestRenderBodyCachedOverlapDoesNotPaintActivePaneOverFloating(t *testing.T)
 
 	snapshot.Screen.Cells[0][0].Content = "Z"
 
-	body = xansi.Strip(renderBodyFrameWithCoordinator(coordinator, state, 40, 14).content)
+	body = xansi.Strip(renderBodyFrameWithCoordinator(coordinator, state, 40, 14).Content())
 	lines = strings.Split(body, "\n")
 	if got := string([]rune(lines[6])[12]); got != " " {
 		t.Fatalf("expected cached overlap render to preserve floating interior, got %q in %q", got, lines[6])
@@ -2020,7 +2021,7 @@ func TestRenderBodyMovingFloatingPaneRestoresPreviouslyCoveredTiledContent(t *te
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 40, 14), 40, 16)
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
 
-	body := xansi.Strip(renderBodyFrameWithCoordinator(coordinator, state, 40, 14).content)
+	body := xansi.Strip(renderBodyFrameWithCoordinator(coordinator, state, 40, 14).Content())
 	lines := strings.Split(body, "\n")
 	if got := string([]rune(lines[6])[12]); got != " " {
 		t.Fatalf("expected first render to cover tiled content under floating pane, got %q in %q", got, lines[6])
@@ -2031,10 +2032,133 @@ func TestRenderBodyMovingFloatingPaneRestoresPreviouslyCoveredTiledContent(t *te
 	}
 	state = WithTermSize(AdaptVisibleStateWithSize(wb, rt, 40, 14), 40, 16)
 
-	body = xansi.Strip(renderBodyFrameWithCoordinator(coordinator, state, 40, 14).content)
+	body = xansi.Strip(renderBodyFrameWithCoordinator(coordinator, state, 40, 14).Content())
 	lines = strings.Split(body, "\n")
 	if got := string([]rune(lines[6])[12]); got != "X" {
 		t.Fatalf("expected moving floating pane to restore tiled content in previously covered area, got %q in %q", got, lines[6])
+	}
+}
+
+func TestRenderBodyMovingFloatingPaneUsesDamagedRectPath(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:              "tab-1",
+			Name:            "tab 1",
+			ActivePaneID:    "pane-1",
+			FloatingVisible: true,
+			Panes: map[string]*workbench.PaneState{
+				"pane-1":  {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+				"float-1": {ID: "float-1", Title: "float", TerminalID: "term-2"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+			Floating: []*workbench.FloatingState{{
+				PaneID: "float-1",
+				Rect:   workbench.Rect{X: 10, Y: 4, W: 14, H: 6},
+				Z:      0,
+			}},
+		}},
+	})
+
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+		}},
+	}
+	rt.Registry().GetOrCreate("term-2").Name = "float"
+	rt.Registry().Get("term-2").State = "running"
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 40, 14), 40, 16)
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+	_ = renderBodyFrameWithCoordinator(coordinator, state, 40, 14)
+
+	if !wb.MoveFloatingPane("tab-1", "float-1", 22, 4) {
+		t.Fatal("expected floating pane move to succeed")
+	}
+	state = WithTermSize(AdaptVisibleStateWithSize(wb, rt, 40, 14), 40, 16)
+
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+	_ = renderBodyFrameWithCoordinator(coordinator, state, 40, 14)
+
+	snapshot := perftrace.SnapshotCurrent()
+	event, ok := snapshot.Event("render.body.canvas.damaged_rect")
+	if !ok || event.Count == 0 {
+		t.Fatalf("expected damaged-rect path on floating move, got events=%#v", snapshot.Events)
+	}
+}
+
+func TestRenderBodyMultipleFloatingChangesUseDamagedRectPathWhenDirtyUnionIsSmall(t *testing.T) {
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:              "tab-1",
+			Name:            "tab 1",
+			ActivePaneID:    "pane-1",
+			FloatingVisible: true,
+			Panes: map[string]*workbench.PaneState{
+				"pane-1":  {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+				"float-1": {ID: "float-1", Title: "float-1", TerminalID: "term-2"},
+				"float-2": {ID: "float-2", Title: "float-2", TerminalID: "term-3"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+			Floating: []*workbench.FloatingState{
+				{PaneID: "float-1", Rect: workbench.Rect{X: 8, Y: 4, W: 14, H: 6}, Z: 0},
+				{PaneID: "float-2", Rect: workbench.Rect{X: 14, Y: 6, W: 14, H: 6}, Z: 1},
+			},
+		}},
+	})
+
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+			repeatCells("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"),
+		}},
+	}
+	rt.Registry().GetOrCreate("term-2").Name = "float-1"
+	rt.Registry().Get("term-2").State = "running"
+	rt.Registry().GetOrCreate("term-3").Name = "float-2"
+	rt.Registry().Get("term-3").State = "running"
+
+	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 40, 14), 40, 16)
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+	_ = renderBodyFrameWithCoordinator(coordinator, state, 40, 14)
+
+	if !wb.MoveFloatingPane("tab-1", "float-1", 10, 4) {
+		t.Fatal("expected first floating pane move to succeed")
+	}
+	if !wb.MoveFloatingPane("tab-1", "float-2", 16, 6) {
+		t.Fatal("expected second floating pane move to succeed")
+	}
+	state = WithTermSize(AdaptVisibleStateWithSize(wb, rt, 40, 14), 40, 16)
+
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+	_ = renderBodyFrameWithCoordinator(coordinator, state, 40, 14)
+
+	snapshot := perftrace.SnapshotCurrent()
+	event, ok := snapshot.Event("render.body.canvas.damaged_rect")
+	if !ok || event.Count == 0 {
+		t.Fatalf("expected damaged-rect path on multiple floating changes, got events=%#v", snapshot.Events)
 	}
 }
 
@@ -2094,12 +2218,12 @@ func TestRenderBodyMovingFloatingPaneRoundTripPreservesStyles(t *testing.T) {
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 40, 14), 40, 16)
 	coordinator := NewCoordinator(func() VisibleRenderState { return state })
 
-	first := renderBodyFrameWithCoordinator(coordinator, state, 40, 14).content
+	first := renderBodyFrameWithCoordinator(coordinator, state, 40, 14).Content()
 	if !wb.MoveFloatingPane("tab-1", "float-1", 22, 4) {
 		t.Fatal("expected floating pane move to succeed")
 	}
 	state = WithTermSize(AdaptVisibleStateWithSize(wb, rt, 40, 14), 40, 16)
-	second := renderBodyFrameWithCoordinator(coordinator, state, 40, 14).content
+	second := renderBodyFrameWithCoordinator(coordinator, state, 40, 14).Content()
 
 	got := replayRenderedBodySequence(t, 40, 14, []string{first, second})
 	want := replayRenderedBodySequence(t, 40, 14, []string{second})

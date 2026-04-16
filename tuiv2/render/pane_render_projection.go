@@ -144,7 +144,13 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 	}
 	contentVersion := uint64(0)
 	source := renderSource(snapshot, surface)
-	if source != nil && contentRect.H > 0 {
+	switch {
+	case surface != nil:
+		// Live surfaces already publish a monotonically increasing version.
+		// Use that cheap invalidation signal here and leave visible-window row
+		// hashing to contentSprite()'s incremental path.
+		contentVersion = surfaceVersion
+	case source != nil && contentRect.H > 0:
 		contentVersion = terminalSourceWindowSignature(source, contentRect.H, renderOffset)
 	}
 	emptyActionSelected := -1

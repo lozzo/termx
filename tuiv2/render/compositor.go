@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -440,6 +441,24 @@ func (c *composedCanvas) contentString() string {
 	return c.fullCache
 }
 
+func (c *composedCanvas) cachedContentLines() []string {
+	if c == nil {
+		return nil
+	}
+	finish := perftrace.Measure("render.body.lines_export")
+	defer func() {
+		total := 0
+		for _, line := range c.rowCache {
+			total += len(line)
+		}
+		finish(total)
+	}()
+	c.ensureRowCache()
+	lines := make([]string, c.height)
+	copy(lines, c.rowCache)
+	return lines
+}
+
 func (c *composedCanvas) contentLines() []string {
 	if c == nil {
 		return nil
@@ -501,11 +520,18 @@ func (c *composedCanvas) ensureRowCache() {
 
 		// Fast path: entire row is dirty — serialize in one pass, skip chunk overhead.
 		if dirtyStart == 0 && dirtyEnd >= c.width-1 {
-			c.rowCache[y] = c.serializeRowRange(y, 0, c.width-1) + "\x1b[0m\x1b[K"
-			// Invalidate any stale chunk strings so partial updates work correctly later.
-			if c.rowChunks[y] != nil {
-				clear(c.rowChunks[y])
+			if c.rowChunks[y] == nil {
+				c.rowChunks[y] = make([]string, c.rowChunkCount())
 			}
+			for chunk := range c.rowChunks[y] {
+				startX, endX := c.rowChunkBounds(chunk)
+				c.rowChunks[y][chunk] = c.serializeRowRange(y, startX, endX)
+			}
+			// Keep the exported row representation stable across both initial full
+			// paints and later partial updates. Mixing full-row strings with
+			// chunk-stitched strings caused scroll diff misses; mixing them also
+			// forced partial updates to reserialize whole rows.
+			c.rowCache[y] = c.buildRowFromChunks(y)
 			c.clearRowDirty(y)
 			continue
 		}
@@ -522,6 +548,9 @@ func (c *composedCanvas) ensureRowCache() {
 			startX, endX := c.rowChunkBounds(chunk)
 			c.rowChunks[y][chunk] = c.serializeRowRange(y, startX, endX)
 		}
+		// Keep full-row and partial-row exports on the same chunk-stitched
+		// representation. Mixing full-row strings with chunk-built strings broke
+		// vertical scroll detection even when the visible rows matched exactly.
 		c.rowCache[y] = c.buildRowFromChunks(y)
 		c.clearRowDirty(y)
 	}
@@ -672,7 +701,11 @@ func (c *composedCanvas) serializeRowRangeWithBlankMode(y, startX, endX int, com
 		}
 		if blankRun := c.compressibleBlankRunInRange(y, x, endX); blankRun >= 5 {
 			if needsReanchor {
-				writeCHAANSI(&row, x+1)
+				// Full rows already restart at column 1 after CRLF. Skip CHA(1)
+				// so the writer does not have to strip it again later.
+				if x > 0 {
+					writeCHAANSI(&row, x+1)
+				}
 				needsReanchor = false
 			}
 			if current != cell.Style {
@@ -696,7 +729,9 @@ func (c *composedCanvas) serializeRowRangeWithBlankMode(y, startX, endX int, com
 			// Keep FE0F compensation cells explicitly erasable across hosts with
 			// different ambiguous-width behavior.
 			if needsReanchor {
-				writeCHAANSI(&row, x+1)
+				if x > 0 {
+					writeCHAANSI(&row, x+1)
+				}
 				needsReanchor = false
 			}
 			writeECHANSI(&row, 1)
@@ -704,7 +739,9 @@ func (c *composedCanvas) serializeRowRangeWithBlankMode(y, startX, endX int, com
 			continue
 		}
 		if needsReanchor {
-			writeCHAANSI(&row, x+1)
+			if x > 0 {
+				writeCHAANSI(&row, x+1)
+			}
 			needsReanchor = false
 		}
 		if current != cell.Style {

@@ -9,6 +9,8 @@ type cursorWriterBenchmarkSink struct {
 	bytes int
 }
 
+var benchmarkCursorWriterOutputSink string
+
 func (s *cursorWriterBenchmarkSink) Write(p []byte) (int, error) {
 	s.bytes += len(p)
 	return len(p), nil
@@ -99,6 +101,88 @@ func BenchmarkOutputCursorWriterWriteFrameFixedDamageContentComplexity(b *testin
 			}
 			b.StopTimer()
 			b.ReportMetric(float64(sink.bytes)/float64(maxInt(1, b.N)), "bytes/op")
+		})
+	}
+}
+
+func BenchmarkOutputCursorWriterWriteFrameLinesDamageProfile(b *testing.B) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	cases := []struct {
+		name string
+		next []string
+	}{
+		{
+			name: "partial_damage",
+			next: strings.Split(benchmarkCursorWriterFrame(220, 36, 19, 7, 54, 16, true), "\n"),
+		},
+		{
+			name: "full_damage",
+			next: strings.Split(benchmarkCursorWriterFrame(220, 36, 0, 0, 220, 36, true), "\n"),
+		},
+	}
+
+	base := strings.Split(benchmarkCursorWriterFrame(220, 36, 18, 7, 54, 16, true), "\n")
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			sink := &cursorWriterBenchmarkSink{}
+			writer := newOutputCursorWriter(sink)
+
+			if err := writer.WriteFrameLines(base, ""); err != nil {
+				b.Fatalf("prime lines frame: %v", err)
+			}
+			sink.Reset()
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				lines := tc.next
+				if i%2 != 0 {
+					lines = base
+				}
+				if err := writer.WriteFrameLines(lines, ""); err != nil {
+					b.Fatalf("write lines frame: %v", err)
+				}
+			}
+			b.StopTimer()
+			b.ReportMetric(float64(sink.bytes)/float64(maxInt(1, b.N)), "bytes/op")
+		})
+	}
+}
+
+func BenchmarkFramePresenterPresentLinesDamageProfile(b *testing.B) {
+	cases := []struct {
+		name string
+		next []string
+	}{
+		{
+			name: "partial_damage",
+			next: stripTrailingEraseLineRight(strings.Split(benchmarkCursorWriterFrame(220, 36, 19, 7, 54, 16, true), "\n")),
+		},
+		{
+			name: "full_damage",
+			next: stripTrailingEraseLineRight(strings.Split(benchmarkCursorWriterFrame(220, 36, 0, 0, 220, 36, true), "\n")),
+		},
+	}
+
+	base := stripTrailingEraseLineRight(strings.Split(benchmarkCursorWriterFrame(220, 36, 18, 7, 54, 16, true), "\n"))
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			var presenter framePresenter
+			presenter.fullWidthLines = true
+			benchmarkCursorWriterOutputSink = presenter.PresentLines(base)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				lines := tc.next
+				if i%2 != 0 {
+					lines = base
+				}
+				benchmarkCursorWriterOutputSink = presenter.PresentLines(lines)
+			}
 		})
 	}
 }

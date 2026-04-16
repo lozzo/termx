@@ -58,6 +58,7 @@ type outputCursorWriter struct {
 	directAltScreen       bool
 	directMouseCell       bool
 	directBracketedPaste  bool
+	ttyWidth              int
 	lastTTYWidth          int
 	lastDirectCursor      string
 	lastFlushAt           time.Time
@@ -69,6 +70,8 @@ type outputCursorWriter struct {
 	adaptiveBatchLevel    uint8
 	adaptiveSlowStreak    uint8
 	adaptiveFastStreak    uint8
+	flushTimer            *time.Timer
+	flushTimerArmed       bool
 }
 
 type pendingDirectFrame struct {
@@ -83,8 +86,8 @@ type framePresenter struct {
 	lines                              []string
 	parsed                             []presentedRow
 	scratchLines                       []string
-	scratchParsed                      []presentedRow
 	reclaim                            [][]presentedCell
+	updates                            []presentedRowUpdate
 	ready                              bool
 	allowVerticalScroll                bool
 	fullWidthLines                     bool
@@ -98,6 +101,11 @@ type presentedRow struct {
 	hasStyled bool
 	hasWide   bool
 	hasErase  bool
+}
+
+type presentedRowUpdate struct {
+	row    int
+	parsed presentedRow
 }
 
 type presentedCell struct {
@@ -162,8 +170,8 @@ func (p *framePresenter) Reset() {
 	p.lines = nil
 	p.parsed = nil
 	p.scratchLines = nil
-	p.scratchParsed = nil
 	p.reclaim = nil
+	p.updates = nil
 	p.ready = false
 	p.allowVerticalScroll = true
 	p.fullWidthLines = false
@@ -203,14 +211,24 @@ func (p *framePresenter) presentLines(lines []string) string {
 			return payload
 		}
 	}
-	payload, changedCount, nextParsed, reclaim := p.renderChangedRows(lines)
+	payload, changedCount, updatedCount, updates, reclaim := p.renderChangedRows(lines)
+	if updatedCount == 0 {
+		return ""
+	}
+	previousLines := p.lines
+	p.lines = lines
+	p.scratchLines = previousLines[:0]
+	for _, update := range updates {
+		p.parsed[update.row] = update.parsed
+	}
+	p.updates = updates[:0]
+	releasePresentedCellSlices(reclaim)
 	if changedCount == 0 {
 		return ""
 	}
-	p.setLines(lines, false)
-	copy(p.parsed, nextParsed)
-	releasePresentedCellSlices(reclaim)
-	if len(lines) > 6 && len(payload) >= joinedLinesLen(lines) {
+	fullLen := joinedLinesLen(lines)
+	if len(lines) > 6 && fullLen > 0 && len(payload)*100 >= fullLen*80 {
+		perftrace.Count("cursor_writer.diff_full_repaint_fallback", fullLen)
 		return xansi.EraseEntireDisplay + strings.Join(lines, "\n")
 	}
 	return payload
@@ -234,13 +252,11 @@ func (p *framePresenter) setLines(lines []string, resetParsed bool) {
 	previousLines := p.lines
 	p.lines = lines
 	p.scratchLines = previousLines[:0]
-	previousParsed := p.parsed
-	if cap(p.scratchParsed) < len(lines) {
+	if cap(p.parsed) < len(lines) {
 		p.parsed = make([]presentedRow, len(lines))
 	} else {
-		p.parsed = p.scratchParsed[:len(lines)]
+		p.parsed = p.parsed[:len(lines)]
 	}
-	p.scratchParsed = previousParsed[:0]
 	if resetParsed {
 		clear(p.parsed)
 	}
@@ -302,13 +318,13 @@ func renderChangedRows(previous, next []string) (string, int) {
 	return out.String(), len(changed)
 }
 
-func (p *framePresenter) renderChangedRows(next []string) (string, int, []presentedRow, [][]presentedCell) {
+func (p *framePresenter) renderChangedRows(next []string) (string, int, int, []presentedRowUpdate, [][]presentedCell) {
 	if p == nil || len(next) != len(p.lines) {
-		return "", 0, nil, nil
+		return "", 0, 0, nil, nil
 	}
-	nextParsed := ensurePresentedRows(p.scratchParsed, len(next))
-	copy(nextParsed, p.parsed)
+	updates := p.updates[:0]
 	changed := 0
+	updated := 0
 	reclaim := p.reclaim[:0]
 	var out strings.Builder
 	out.Grow(len(next) * 16)
@@ -318,20 +334,25 @@ func (p *framePresenter) renderChangedRows(next []string) (string, int, []presen
 		}
 		prevRow := p.presentedRow(row)
 		nextRow := parsePresentedRow(next[row])
-		nextParsed[row] = nextRow
 		if presentedRowsEquivalent(prevRow, nextRow, p.fullWidthLines) {
+			updated++
+			releasePresentedCells(nextRow.cells)
+			prevRow.raw = next[row]
+			updates = append(updates, presentedRowUpdate{row: row, parsed: prevRow})
 			continue
 		}
+		updated++
 		changed++
 		if len(prevRow.cells) > 0 {
 			reclaim = append(reclaim, prevRow.cells)
 		}
+		updates = append(updates, presentedRowUpdate{row: row, parsed: nextRow})
 		if !renderChangedRowDiff(&out, prevRow, nextRow, row, p.fullWidthLines) {
 			writeCUP(&out, 1, row+1)
 			out.WriteString(next[row])
 		}
 	}
-	return out.String(), changed, nextParsed, reclaim
+	return out.String(), changed, updated, updates, reclaim
 }
 
 func presentedRowsEquivalent(previous, next presentedRow, fullWidthLines bool) bool {
@@ -347,15 +368,6 @@ func presentedRowsEquivalent(previous, next presentedRow, fullWidthLines bool) b
 		return true
 	}
 	return rowOwnsLineEnd(previous) == rowOwnsLineEnd(next)
-}
-
-func ensurePresentedRows(rows []presentedRow, size int) []presentedRow {
-	if cap(rows) < size {
-		return make([]presentedRow, size)
-	}
-	rows = rows[:size]
-	clear(rows)
-	return rows
 }
 
 func splitFrameLines(frame string, dst []string) []string {
@@ -508,6 +520,7 @@ func (w *outputCursorWriter) enterDirectTerminal() error {
 	w.presenter.allowVerticalScroll = !w.disableVerticalScroll
 	w.lastTTYWidth = 0
 	w.lastDirectCursor = ""
+	w.stopFlushTimerLocked()
 	return nil
 }
 
@@ -548,6 +561,7 @@ func (w *outputCursorWriter) exitDirectTerminal() error {
 	}
 	w.presenter.Reset()
 	w.lastDirectCursor = ""
+	w.stopFlushTimerLocked()
 	w.mu.Unlock()
 	if hook != nil {
 		hook()
@@ -594,9 +608,7 @@ func (w *outputCursorWriter) WriteFrame(frame, cursor string) error {
 		return nil
 	}
 	w.pending.scheduled = true
-	time.AfterFunc(delay, func() {
-		w.flushPendingFrame()
-	})
+	w.scheduleFlushLocked(delay)
 	return nil
 }
 
@@ -640,9 +652,7 @@ func (w *outputCursorWriter) WriteFrameLines(lines []string, cursor string) erro
 		return nil
 	}
 	w.pending.scheduled = true
-	time.AfterFunc(delay, func() {
-		w.flushPendingFrame()
-	})
+	w.scheduleFlushLocked(delay)
 	return nil
 }
 
@@ -651,6 +661,7 @@ func (w *outputCursorWriter) flushPendingFrame() {
 		return
 	}
 	w.mu.Lock()
+	w.flushTimerArmed = false
 	hook, _ := w.flushPendingFrameLocked()
 	w.mu.Unlock()
 	if hook != nil {
@@ -694,6 +705,18 @@ func (w *outputCursorWriter) SetInteractiveFlushHint(hint func() bool) {
 	}
 	w.mu.Lock()
 	w.interactiveFlushHint = hint
+	w.mu.Unlock()
+}
+
+func (w *outputCursorWriter) SetTTYWidth(width int) {
+	if w == nil || width <= 0 {
+		return
+	}
+	w.mu.Lock()
+	w.ttyWidth = width
+	// Frames are rendered against the current WindowSizeMsg width, so matching
+	// that width here lets the writer skip redundant truncate passes/syscalls.
+	w.lastTTYWidth = width
 	w.mu.Unlock()
 }
 
@@ -763,6 +786,31 @@ func (w *outputCursorWriter) observeDirectFlushCostLocked(cost time.Duration) {
 		w.adaptiveSlowStreak = 0
 		w.adaptiveFastStreak = 0
 	}
+}
+
+func (w *outputCursorWriter) scheduleFlushLocked(delay time.Duration) {
+	if w == nil || delay <= 0 {
+		return
+	}
+	perftrace.Count("cursor_writer.schedule_timer", 0)
+	if w.flushTimer == nil {
+		w.flushTimer = time.AfterFunc(delay, w.flushPendingFrame)
+		w.flushTimerArmed = true
+		return
+	}
+	if w.flushTimerArmed {
+		w.flushTimer.Stop()
+	}
+	w.flushTimer.Reset(delay)
+	w.flushTimerArmed = true
+}
+
+func (w *outputCursorWriter) stopFlushTimerLocked() {
+	if w == nil || w.flushTimer == nil {
+		return
+	}
+	w.flushTimer.Stop()
+	w.flushTimerArmed = false
 }
 
 func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite []string) error {
@@ -966,6 +1014,7 @@ func (w *outputCursorWriter) ResetFrameState() {
 	w.pending = pendingDirectFrame{}
 	w.afterWrite = nil
 	w.backlogActive.Store(false)
+	w.stopFlushTimerLocked()
 	w.mu.Unlock()
 }
 
@@ -1084,10 +1133,17 @@ func (w *outputCursorWriter) Read(p []byte) (int, error) {
 }
 
 func (w *outputCursorWriter) Close() error {
-	if w == nil || w.tty == nil {
+	if w == nil {
 		return nil
 	}
-	return w.tty.Close()
+	w.mu.Lock()
+	w.stopFlushTimerLocked()
+	tty := w.tty
+	w.mu.Unlock()
+	if tty == nil {
+		return nil
+	}
+	return tty.Close()
 }
 
 func (w *outputCursorWriter) Fd() uintptr {

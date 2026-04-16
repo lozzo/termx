@@ -365,7 +365,7 @@ func fillLine(left, right string, width int, bg string) string {
 		gap = 1
 	}
 	if rightW >= width {
-		return xansi.CHA(1) + forceWidthANSIOverlay(right, width)
+		return forceWidthANSIOverlay(right, width)
 	}
 	maxLeftW := maxInt(0, width-rightW-gap)
 	if leftW > maxLeftW {
@@ -378,7 +378,6 @@ func fillLine(left, right string, width int, bg string) string {
 	// lipgloss reset/re-set artifacts that can eat background colors
 	// on some terminals.
 	var b strings.Builder
-	b.WriteString(xansi.CHA(1))
 	b.WriteString(left)
 	if fillW+gap > 0 {
 		b.WriteString(styleANSI(drawStyle{BG: bg}))
@@ -386,8 +385,8 @@ func fillLine(left, right string, width int, bg string) string {
 		b.WriteString("\x1b[0m")
 	}
 	b.WriteString(right)
-	// Erase to end of line to prevent stale characters from previous
-	// wider renders lingering on the right.
+	// Status/tab rows may still truncate styled segments in ways that leave the
+	// host one column short, so keep the erase-right even though CHA(1) is gone.
 	b.WriteString("\x1b[K")
 	return b.String()
 }
