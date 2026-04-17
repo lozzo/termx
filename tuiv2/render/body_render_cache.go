@@ -34,6 +34,19 @@ type paneContentSpriteCacheEntry struct {
 	extentHash  uint64
 }
 
+type terminalWindowScrollDirection uint8
+
+const (
+	terminalWindowScrollNone terminalWindowScrollDirection = iota
+	terminalWindowScrollUp
+	terminalWindowScrollDown
+)
+
+type terminalWindowScrollPlan struct {
+	direction terminalWindowScrollDirection
+	shift     int
+}
+
 func (c *bodyRenderCache) contentSprite(entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) *composedCanvas {
 	if c == nil {
 		return nil
@@ -133,6 +146,8 @@ func canIncrementalPaneSpriteUpdate(cached *paneContentSpriteCacheEntry, nextKey
 	nextStatic := nextKey.ContentKey
 	previousStatic.SurfaceVersion = 0
 	nextStatic.SurfaceVersion = 0
+	previousStatic.ScrollOffset = 0
+	nextStatic.ScrollOffset = 0
 	if previousStatic != nextStatic {
 		return false
 	}
@@ -145,6 +160,32 @@ func canIncrementalPaneSpriteUpdate(cached *paneContentSpriteCacheEntry, nextKey
 func applyIncrementalPaneSpriteRows(canvas *composedCanvas, resolved resolvedPaneContent, theme uiTheme, previous, next terminalSourceWindowState) int {
 	if canvas == nil || resolved.source == nil || resolved.contentRect.W <= 0 || resolved.contentRect.H <= 0 {
 		return 0
+	}
+	if plan, ok := detectTerminalWindowScroll(previous, next); ok {
+		switch plan.direction {
+		case terminalWindowScrollUp:
+			canvas.shiftRowsUp(plan.shift)
+			for line := len(next.rowHashes) - plan.shift; line < len(next.rowHashes); line++ {
+				targetY := resolved.contentRect.Y + line
+				rowIndex := -1
+				if line < len(next.rowIndices) {
+					rowIndex = next.rowIndices[line]
+				}
+				drawPaneContentSpriteRow(canvas, resolved.contentRect, resolved.source, rowIndex, targetY, theme)
+			}
+			return plan.shift
+		case terminalWindowScrollDown:
+			canvas.shiftRowsDown(plan.shift)
+			for line := 0; line < plan.shift; line++ {
+				targetY := resolved.contentRect.Y + line
+				rowIndex := -1
+				if line < len(next.rowIndices) {
+					rowIndex = next.rowIndices[line]
+				}
+				drawPaneContentSpriteRow(canvas, resolved.contentRect, resolved.source, rowIndex, targetY, theme)
+			}
+			return plan.shift
+		}
 	}
 	changedRows := 0
 	for line := range next.rowHashes {
@@ -160,6 +201,36 @@ func applyIncrementalPaneSpriteRows(canvas *composedCanvas, resolved resolvedPan
 		changedRows++
 	}
 	return changedRows
+}
+
+func detectTerminalWindowScroll(previous, next terminalSourceWindowState) (terminalWindowScrollPlan, bool) {
+	if len(previous.rowHashes) == 0 || len(previous.rowHashes) != len(next.rowHashes) || len(previous.rowIndices) != len(next.rowIndices) {
+		return terminalWindowScrollPlan{}, false
+	}
+	height := len(next.rowHashes)
+	for shift := 1; shift < height; shift++ {
+		scrollUp := true
+		for line := 0; line+shift < height; line++ {
+			if previous.rowIndices[line+shift] != next.rowIndices[line] || previous.rowHashes[line+shift] != next.rowHashes[line] {
+				scrollUp = false
+				break
+			}
+		}
+		if scrollUp {
+			return terminalWindowScrollPlan{direction: terminalWindowScrollUp, shift: shift}, true
+		}
+		scrollDown := true
+		for line := 0; line+shift < height; line++ {
+			if previous.rowIndices[line] != next.rowIndices[line+shift] || previous.rowHashes[line] != next.rowHashes[line+shift] {
+				scrollDown = false
+				break
+			}
+		}
+		if scrollDown {
+			return terminalWindowScrollPlan{direction: terminalWindowScrollDown, shift: shift}, true
+		}
+	}
+	return terminalWindowScrollPlan{}, false
 }
 
 func newBodyRenderCache(previous *bodyRenderCache, canvas *composedCanvas, entries []paneRenderEntry, width, height int) *bodyRenderCache {

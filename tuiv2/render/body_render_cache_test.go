@@ -266,3 +266,70 @@ func TestContentSpriteIncrementalRowUpdatePreservesExtentHints(t *testing.T) {
 		t.Fatalf("expected incremental row redraw to preserve extent hints, got %q", got)
 	}
 }
+
+func TestContentSpriteReusesSpriteForScrollOffsetShift(t *testing.T) {
+	now := time.Date(2026, 4, 17, 10, 0, 0, 0, time.UTC)
+	surface := &spriteTestSurface{
+		size: protocol.Size{Cols: 5, Rows: 2},
+		scrollback: [][]protocol.Cell{
+			protocolRowFromText("hist1"),
+			protocolRowFromText("hist2"),
+		},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("live1"),
+			protocolRowFromText("live2"),
+		},
+		scrollTimestamps: []time.Time{now, now},
+		screenTimestamps: []time.Time{now, now},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-1",
+			Name:           "shell",
+			State:          "running",
+			Surface:        surface,
+			SurfaceVersion: 1,
+		}},
+	}
+	entry := paneRenderEntry{
+		PaneID:     "pane-1",
+		Rect:       workbench.Rect{X: 0, Y: 0, W: 5, H: 2},
+		Frameless:  true,
+		TerminalID: "term-1",
+		Theme:      defaultUITheme(),
+		ContentKey: paneContentKey{
+			TerminalID:    "term-1",
+			TerminalKnown: true,
+			ScrollOffset:  0,
+		},
+		ScrollOffset: 0,
+	}
+
+	cache := &bodyRenderCache{}
+	sprite := cache.contentSprite(entry, runtimeState)
+	if sprite == nil {
+		t.Fatal("expected initial sprite")
+	}
+	if got := sprite.rawString(); got != "live1\nlive2" {
+		t.Fatalf("expected initial visible rows, got %q", got)
+	}
+
+	entry.ContentKey.ScrollOffset = 1
+	entry.ScrollOffset = 1
+
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+	nextSprite := cache.contentSprite(entry, runtimeState)
+	snapshot := perftrace.SnapshotCurrent()
+	event, ok := snapshot.Event("render.pane_content_sprite.incremental")
+	if !ok || event.Count == 0 {
+		t.Fatalf("expected scroll offset change to use incremental sprite update, got events=%#v", snapshot.Events)
+	}
+	if nextSprite != sprite {
+		t.Fatal("expected scroll offset change to reuse sprite canvas")
+	}
+	if got := nextSprite.rawString(); got != "hist2\nlive1" {
+		t.Fatalf("expected scroll offset shift to reuse moved rows and redraw edge row, got %q", got)
+	}
+}

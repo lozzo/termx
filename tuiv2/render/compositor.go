@@ -63,6 +63,84 @@ type composedCanvas struct {
 	syntheticCursorVisibleFn func(protocol.CursorState) bool
 }
 
+func (c *composedCanvas) shiftRowsUp(shift int) {
+	if c == nil || shift <= 0 || shift >= c.height {
+		return
+	}
+	droppedCells := append([][]drawCell(nil), c.cells[:shift]...)
+	droppedCache := append([]string(nil), c.rowCache[:shift]...)
+	droppedDirty := append([]bool(nil), c.rowDirty[:shift]...)
+	droppedMin := append([]int(nil), c.rowDirtyMin[:shift]...)
+	droppedMax := append([]int(nil), c.rowDirtyMax[:shift]...)
+	droppedChunks := append([][]string(nil), c.rowChunks[:shift]...)
+
+	copy(c.cells, c.cells[shift:])
+	copy(c.rowCache, c.rowCache[shift:])
+	copy(c.rowDirty, c.rowDirty[shift:])
+	copy(c.rowDirtyMin, c.rowDirtyMin[shift:])
+	copy(c.rowDirtyMax, c.rowDirtyMax[shift:])
+	copy(c.rowChunks, c.rowChunks[shift:])
+
+	for i := 0; i < shift; i++ {
+		target := c.height - shift + i
+		c.cells[target] = droppedCells[i]
+		c.rowCache[target] = droppedCache[i]
+		c.rowDirty[target] = droppedDirty[i]
+		c.rowDirtyMin[target] = droppedMin[i]
+		c.rowDirtyMax[target] = droppedMax[i]
+		c.rowChunks[target] = droppedChunks[i]
+		c.resetRowToBlank(target)
+	}
+	c.fullCache = ""
+	c.fullDirty = true
+}
+
+func (c *composedCanvas) shiftRowsDown(shift int) {
+	if c == nil || shift <= 0 || shift >= c.height {
+		return
+	}
+	droppedCells := append([][]drawCell(nil), c.cells[c.height-shift:]...)
+	droppedCache := append([]string(nil), c.rowCache[c.height-shift:]...)
+	droppedDirty := append([]bool(nil), c.rowDirty[c.height-shift:]...)
+	droppedMin := append([]int(nil), c.rowDirtyMin[c.height-shift:]...)
+	droppedMax := append([]int(nil), c.rowDirtyMax[c.height-shift:]...)
+	droppedChunks := append([][]string(nil), c.rowChunks[c.height-shift:]...)
+
+	copy(c.cells[shift:], c.cells[:c.height-shift])
+	copy(c.rowCache[shift:], c.rowCache[:c.height-shift])
+	copy(c.rowDirty[shift:], c.rowDirty[:c.height-shift])
+	copy(c.rowDirtyMin[shift:], c.rowDirtyMin[:c.height-shift])
+	copy(c.rowDirtyMax[shift:], c.rowDirtyMax[:c.height-shift])
+	copy(c.rowChunks[shift:], c.rowChunks[:c.height-shift])
+
+	for i := 0; i < shift; i++ {
+		c.cells[i] = droppedCells[i]
+		c.rowCache[i] = droppedCache[i]
+		c.rowDirty[i] = droppedDirty[i]
+		c.rowDirtyMin[i] = droppedMin[i]
+		c.rowDirtyMax[i] = droppedMax[i]
+		c.rowChunks[i] = droppedChunks[i]
+		c.resetRowToBlank(i)
+	}
+	c.fullCache = ""
+	c.fullDirty = true
+}
+
+func (c *composedCanvas) resetRowToBlank(y int) {
+	if c == nil || y < 0 || y >= c.height {
+		return
+	}
+	blankRow := cachedBlankFillRow(c.width)
+	copy(c.cells[y], blankRow)
+	c.rowCache[y] = ""
+	if c.rowChunks[y] != nil {
+		clear(c.rowChunks[y])
+	}
+	c.rowDirty[y] = true
+	c.rowDirtyMin[y] = 0
+	c.rowDirtyMax[y] = c.width - 1
+}
+
 func blankDrawCell() drawCell {
 	return drawCell{Content: " ", Width: 1}
 }
