@@ -43,6 +43,24 @@ func TestEffectiveMouseMotionBatchDelayHonorsEnvOverride(t *testing.T) {
 	}
 }
 
+func TestEffectiveMouseWheelBatchDelayUsesRemoteProfile(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_LATENCY", "1")
+	t.Setenv("TERMX_MOUSE_WHEEL_BATCH_DELAY", "")
+
+	if got := effectiveMouseWheelBatchDelay(); got != remoteMouseWheelBatchDelay {
+		t.Fatalf("expected remote mouse wheel delay %v, got %v", remoteMouseWheelBatchDelay, got)
+	}
+}
+
+func TestEffectiveMouseWheelBatchDelayHonorsEnvOverride(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_LATENCY", "1")
+	t.Setenv("TERMX_MOUSE_WHEEL_BATCH_DELAY", "750us")
+
+	if got := effectiveMouseWheelBatchDelay(); got != 750*time.Microsecond {
+		t.Fatalf("expected env override delay %v, got %v", 750*time.Microsecond, got)
+	}
+}
+
 func TestHighFrequencyMouseAccumulatorKeepsOnlyLatestMotion(t *testing.T) {
 	var accum highFrequencyMouseAccumulator
 	accum.QueueMotion(queuedMouseMsg{Seq: 1, Kind: "motion", Msg: tea.MouseMsg{X: 10, Y: 5, Action: tea.MouseActionMotion}})

@@ -21,6 +21,8 @@ var inputBurstBatchDelay = 2 * time.Millisecond
 var remoteInputBurstBatchDelay = 500 * time.Microsecond
 var mouseMotionBatchDelay = 4 * time.Millisecond
 var remoteMouseMotionBatchDelay = 2 * time.Millisecond
+var mouseWheelBatchDelay = 1 * time.Millisecond
+var remoteMouseWheelBatchDelay time.Duration
 var staleMouseMotionThreshold = 40 * time.Millisecond
 
 type inputForwarderSink interface {
@@ -125,8 +127,7 @@ func startInputForwarderWithSink(sink inputForwarderSink, input io.Reader) (func
 			mouseAccum.Reset()
 			stopMotionTimer()
 		}
-		startMotionTimer := func() {
-			delay := effectiveMouseMotionBatchDelay()
+		startHighFrequencyMouseTimer := func(delay time.Duration) {
 			if delay <= 0 {
 				return
 			}
@@ -186,11 +187,16 @@ func startInputForwarderWithSink(sink inputForwarderSink, input io.Reader) (func
 			noteQueuedMouseMotion(queued.Seq)
 			appendMouseDebugLog("mouse_recv", "seq", queued.Seq, "kind", queued.Kind, "action", queued.Msg.Action, "button", queued.Msg.Button, "x", queued.Msg.X, "y", queued.Msg.Y)
 			mouseAccum.QueueMotion(queued)
-			startMotionTimer()
+			startHighFrequencyMouseTimer(effectiveMouseMotionBatchDelay())
 		}
 		queueWheel := func(msg tea.MouseMsg) {
 			mouseAccum.QueueWheel(msg)
-			startMotionTimer()
+			delay := effectiveMouseWheelBatchDelay()
+			if delay <= 0 {
+				flushPending()
+				return
+			}
+			startHighFrequencyMouseTimer(delay)
 		}
 		sendMouseImmediate := func(kind string, msg tea.MouseMsg) {
 			queued := queuedMouseMsg{
@@ -290,6 +296,14 @@ func effectiveMouseMotionBatchDelay() time.Duration {
 		delay = remoteMouseMotionBatchDelay
 	}
 	return shared.DurationOverride("TERMX_MOUSE_MOTION_BATCH_DELAY", delay)
+}
+
+func effectiveMouseWheelBatchDelay() time.Duration {
+	delay := mouseWheelBatchDelay
+	if shared.RemoteLatencyProfileEnabled() && (delay < 0 || delay > remoteMouseWheelBatchDelay) {
+		delay = remoteMouseWheelBatchDelay
+	}
+	return shared.DurationOverride("TERMX_MOUSE_WHEEL_BATCH_DELAY", delay)
 }
 
 func requestTerminalPaletteQueries() string {
