@@ -43,6 +43,7 @@ type perfProfileContext struct {
 	FloatingCount          int    `json:"floating_count"`
 	LayoutKind             string `json:"layout_kind"`
 	VerticalScrollAllowed  bool   `json:"vertical_scroll_allowed"`
+	VerticalScrollMode     string `json:"vertical_scroll_mode"`
 	VerticalScrollDecision string `json:"vertical_scroll_decision"`
 }
 
@@ -236,7 +237,10 @@ func (m *Model) currentPerfProfileContext(viewBytes int) perfProfileContext {
 		ctx.VisiblePaneCount = len(visible.Tabs[visible.ActiveTab].Panes)
 	}
 	ctx.LayoutKind = perfProfileLayoutKind(visible)
-	ctx.VerticalScrollAllowed, ctx.VerticalScrollDecision = m.verticalScrollOptimizationDecision()
+	mode, reason := m.verticalScrollOptimizationMode()
+	ctx.VerticalScrollAllowed = mode != verticalScrollModeNone
+	ctx.VerticalScrollMode = mode.String()
+	ctx.VerticalScrollDecision = reason
 	return ctx
 }
 
@@ -257,25 +261,33 @@ func perfProfileLayoutKind(visible *workbench.VisibleWorkbench) string {
 	case 1:
 		return "single"
 	}
-	fullWidth := true
 	sharedRows := false
+	sharedCols := false
 	for i := range panes {
 		pane := panes[i]
-		if pane.Rect.X != 0 {
-			fullWidth = false
-		}
 		for j := i + 1; j < len(panes); j++ {
 			other := panes[j]
-			if pane.Rect.X == other.Rect.X {
+			if rowRangesOverlap(pane.Rect.Y, pane.Rect.Y+pane.Rect.H, other.Rect.Y, other.Rect.Y+other.Rect.H) {
 				sharedRows = true
+			}
+			if colRangesOverlap(pane.Rect.X, pane.Rect.X+pane.Rect.W, other.Rect.X, other.Rect.X+other.Rect.W) {
+				sharedCols = true
 			}
 		}
 	}
-	if fullWidth {
+	if !sharedRows && sharedCols {
 		return "stacked"
 	}
-	if sharedRows {
+	if sharedRows && !sharedCols {
 		return "side-by-side"
 	}
 	return "mixed"
+}
+
+func rowRangesOverlap(a0, a1, b0, b1 int) bool {
+	return a0 < b1 && b0 < a1
+}
+
+func colRangesOverlap(a0, a1, b0, b1 int) bool {
+	return a0 < b1 && b0 < a1
 }
