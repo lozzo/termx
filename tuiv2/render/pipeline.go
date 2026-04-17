@@ -122,6 +122,9 @@ func renderBodyFrameWithCoordinatorVM(coordinator *Coordinator, vm RenderVM, wid
 		coordinator.mu.Unlock()
 	}
 	entries := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, width, height, lookup, bodyProjectionOptionsForVM(vm, exitedSelectionPulse), uiThemeForRuntime(vm.Runtime))
+	if body, ok := renderAltScreenFastPathVM(vm, entries, cursorOffsetY); ok {
+		return body
+	}
 	canvas := renderBodyCanvas(coordinator, vm.Runtime, immersiveZoomActiveVM(vm), entries, width, height)
 	return renderedBody{
 		lines:  canvas.cachedContentLines(),
