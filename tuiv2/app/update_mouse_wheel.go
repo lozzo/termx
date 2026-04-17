@@ -47,10 +47,10 @@ func (m *Model) handleMouseWheelRepeated(msg tea.MouseMsg, repeat int) tea.Cmd {
 		return m.switchCurrentTabByOffsetMouse(localRepeat)
 	}
 	if in, ok := m.terminalWheelInputForMouseMsg(msg, step, repeat); ok {
-		return m.handleTerminalInput(in)
+		return m.handleForwardedTerminalWheelInput(in)
 	}
 	if in, ok := m.alternateScreenWheelInputForMouseMsg(msg, step, repeat); ok {
-		return m.handleTerminalInput(in)
+		return m.handleForwardedTerminalWheelInput(in)
 	}
 
 	contentY := y - m.contentOriginY()
@@ -74,6 +74,24 @@ func (m *Model) handleMouseWheelRepeated(msg tea.MouseMsg, repeat int) tea.Cmd {
 		return nil
 	}
 	return nil
+}
+
+func (m *Model) handleForwardedTerminalWheelInput(in input.TerminalInput) tea.Cmd {
+	if m == nil {
+		return nil
+	}
+	if len(in.Data) == 0 {
+		return nil
+	}
+	if m.isPaneAttachPending(in.PaneID) {
+		return m.handleTerminalInput(in)
+	}
+	if m.workbench != nil {
+		if pane := m.workbench.ActivePane(); pane != nil && pane.TerminalID == "" {
+			return m.openPickerIfUnattached(pane.ID)
+		}
+	}
+	return m.terminalInputSendCmd(in)
 }
 
 func (m *Model) localScrollbackWheelCmd(tabID string, delta int) tea.Cmd {

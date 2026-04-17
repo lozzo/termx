@@ -172,6 +172,13 @@ func (m *Model) dequeueTerminalInputCmd() tea.Cmd {
 		return nil
 	}
 	m.terminalInputSending = true
+	return m.terminalInputSendCmd(next)
+}
+
+func (m *Model) terminalInputSendCmd(next input.TerminalInput) tea.Cmd {
+	if m == nil {
+		return nil
+	}
 	target, _ := m.resolveTerminalInteractionTarget(terminalInteractionRequest{PaneID: next.PaneID})
 	terminalID := target.terminalID
 	return func() tea.Msg {

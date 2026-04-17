@@ -2311,6 +2311,25 @@ func TestMouseWheelForwardsToTerminalWhenTrackingEnabled(t *testing.T) {
 	}
 }
 
+func TestMouseWheelForwardedPathBypassesWheelDispatchQueue(t *testing.T) {
+	originalDelay := terminalWheelDispatchDelay
+	terminalWheelDispatchDelay = time.Second
+	defer func() { terminalWheelDispatchDelay = originalDelay }()
+
+	m := setupModel(t, modelOpts{})
+	setActivePaneMouseTracking(t, m, true)
+	x, y := activePaneContentScreenOrigin(t, m)
+
+	_, cmd := m.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	if cmd == nil {
+		t.Fatal("expected wheel-forward command")
+	}
+	msg := cmd()
+	if _, ok := msg.(terminalWheelDispatchMsg); ok {
+		t.Fatalf("expected forwarded wheel to bypass dispatch queue, got %#v", msg)
+	}
+}
+
 func TestMouseForwardsZoomedTerminalTopRowsWithoutFrameOffset(t *testing.T) {
 	m := setupModel(t, modelOpts{})
 	client, ok := m.runtime.Client().(*recordingBridgeClient)
