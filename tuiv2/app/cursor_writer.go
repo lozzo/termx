@@ -73,6 +73,7 @@ type outputCursorWriter struct {
 	adaptiveFastStreak    uint8
 	flushTimer            *time.Timer
 	flushTimerArmed       bool
+	perfSampleHook        func(string)
 }
 
 type pendingDirectFrame struct {
@@ -201,11 +202,13 @@ func (p *framePresenter) PresentLines(lines []string) string {
 
 func (p *framePresenter) presentLines(lines []string) string {
 	if !p.ready {
+		perftrace.Count("cursor_writer.present.mode.initial_full", len(lines))
 		p.setLines(lines, true)
 		p.ready = true
 		return strings.Join(lines, "\n")
 	}
 	if len(lines) != len(p.lines) {
+		perftrace.Count("cursor_writer.present.mode.full_repaint_resize", len(lines))
 		releasePresentedRows(p.parsed)
 		p.setLines(lines, true)
 		return xansi.EraseEntireDisplay + strings.Join(lines, "\n")
@@ -230,13 +233,16 @@ func (p *framePresenter) presentLines(lines []string) string {
 	p.updates = updates[:0]
 	releasePresentedCellSlices(reclaim)
 	if changedCount == 0 {
+		perftrace.Count("cursor_writer.present.mode.no_change", 0)
 		return ""
 	}
 	fullLen := joinedLinesLen(lines)
 	if len(lines) > 6 && fullLen > 0 && len(payload)*100 >= fullLen*80 {
 		perftrace.Count("cursor_writer.diff_full_repaint_fallback", fullLen)
+		perftrace.Count("cursor_writer.present.mode.full_repaint_threshold", fullLen)
 		return xansi.EraseEntireDisplay + strings.Join(lines, "\n")
 	}
+	perftrace.Count("cursor_writer.present.mode.diff", changedCount)
 	return payload
 }
 
@@ -279,6 +285,7 @@ func (p *framePresenter) presentVerticalScroll(lines []string) string {
 		if changedCount < plan.reused {
 			var out strings.Builder
 			out.WriteString(renderVerticalScrollPlan(plan, len(lines)))
+			perftrace.Count("cursor_writer.present.mode.vertical_scroll_rows", plan.reused)
 			p.verticalScrollCount++
 			if p.debugFaultScrollDropRemainderEvery > 0 && p.verticalScrollCount%p.debugFaultScrollDropRemainderEvery == 0 {
 				return out.String()
@@ -305,6 +312,7 @@ func (p *framePresenter) presentVerticalScroll(lines []string) string {
 				if changedCount < rectPlan.reused {
 					var out strings.Builder
 					out.WriteString(renderVerticalScrollRectPlan(rectPlan, len(lines)))
+					perftrace.Count("cursor_writer.present.mode.vertical_scroll_rect", rectPlan.reused*(rectPlan.right-rectPlan.left+1))
 					out.WriteString(remainder)
 					return out.String()
 				}
@@ -916,6 +924,9 @@ func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite [
 	if err == nil {
 		w.appendFrameDumpLocked("direct_frame", output)
 		w.lastDirectCursor = cursor
+		if w.perfSampleHook != nil {
+			w.perfSampleHook("writer_flush")
+		}
 	}
 	return err
 }
@@ -967,6 +978,9 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, cursor string
 	if err == nil {
 		w.appendFrameDumpLocked("direct_frame", output)
 		w.lastDirectCursor = cursor
+		if w.perfSampleHook != nil {
+			w.perfSampleHook("writer_flush")
+		}
 	}
 	return err
 }
@@ -994,6 +1008,15 @@ func (w *outputCursorWriter) SetVerticalScrollEnabled(enabled bool) {
 	}
 	w.mu.Lock()
 	w.presenter.allowVerticalScroll = enabled && !w.disableVerticalScroll
+	w.mu.Unlock()
+}
+
+func (w *outputCursorWriter) SetPerfSampleHook(hook func(string)) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	w.perfSampleHook = hook
 	w.mu.Unlock()
 }
 

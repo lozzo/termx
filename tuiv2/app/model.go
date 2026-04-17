@@ -58,6 +58,7 @@ type Model struct {
 	modalHost    *modal.ModalHost            // compatibility alias; UIState owns modal state
 	terminalPage *modal.TerminalManagerState // compatibility alias; UIState owns surface state
 	orchestrator *orchestrator.Orchestrator
+	perfProfile  *perfProfile
 
 	// 只读引用，仅用于将 visible state 注入 render 层。
 	// 业务编排走 orchestrator，不直接通过这两个字段。

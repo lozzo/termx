@@ -68,53 +68,64 @@ func (m *Model) bodyRect() workbench.Rect {
 }
 
 func (m *Model) allowVerticalScrollOptimization() bool {
+	allowed, _ := m.verticalScrollOptimizationDecision()
+	return allowed
+}
+
+func (m *Model) verticalScrollOptimizationDecision() (bool, string) {
 	if m == nil || m.workbench == nil {
-		return false
+		return false, "model_unavailable"
 	}
 	vm := m.renderVM()
 	if vm.Surface.Kind != render.VisibleSurfaceWorkbench || vm.Overlay.Kind != render.VisibleOverlayNone || vm.Workbench == nil {
-		return false
+		if vm.Surface.Kind != render.VisibleSurfaceWorkbench {
+			return false, "non_workbench_surface"
+		}
+		if vm.Overlay.Kind != render.VisibleOverlayNone {
+			return false, "overlay_active"
+		}
+		return false, "workbench_unavailable"
 	}
 	if len(vm.Workbench.FloatingPanes) > 0 {
-		return false
+		return false, "floating_visible"
 	}
 	activeTab := vm.Workbench.ActiveTab
 	if activeTab < 0 || activeTab >= len(vm.Workbench.Tabs) {
-		return false
+		return false, "no_active_tab"
 	}
 	panes := vm.Workbench.Tabs[activeTab].Panes
 	if len(panes) == 0 {
-		return false
+		return false, "no_panes"
 	}
 	if len(panes) == 1 {
-		return true
+		return true, "single_pane"
 	}
 	body := m.bodyRect()
 	if body.W <= 0 || body.H <= 0 {
-		return false
+		return false, "invalid_body_rect"
 	}
 	rowOwners := make([]int, body.H)
 	for _, pane := range panes {
 		contentRect, ok := paneContentRectForVisible(pane)
 		if !ok || contentRect.W <= 0 || contentRect.H <= 0 {
-			return false
+			return false, "invalid_content_rect"
 		}
 		// The frame presenter scrolls whole terminal rows inside a scroll region.
 		// Keep it to layouts where each affected row belongs to one full-width
 		// pane, so a scroll in the top pane cannot drag a side-by-side neighbor.
 		if pane.Rect.X != 0 || pane.Rect.W != body.W {
-			return false
+			return false, "side_by_side_or_partial_width"
 		}
 		start := maxInt(0, contentRect.Y)
 		end := minInt(body.H, contentRect.Y+contentRect.H)
 		for row := start; row < end; row++ {
 			rowOwners[row]++
 			if rowOwners[row] > 1 {
-				return false
+				return false, "row_overlap"
 			}
 		}
 	}
-	return true
+	return true, "stacked_full_width"
 }
 
 func (m *Model) immersiveZoomActive() bool {

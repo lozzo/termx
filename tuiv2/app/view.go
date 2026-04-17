@@ -7,6 +7,10 @@ func (m *Model) View() string {
 	viewBytes := 0
 	defer func() {
 		finish(viewBytes)
+		if m != nil && m.perfProfile != nil {
+			m.perfProfile.SetContext(m.currentPerfProfileContext(viewBytes))
+			m.perfProfile.Sample("view")
+		}
 	}()
 	if m == nil || m.render == nil {
 		return ""

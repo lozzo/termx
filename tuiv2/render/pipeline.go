@@ -47,6 +47,7 @@ func renderResultWithCoordinator(coordinator *Coordinator, vm RenderVM) RenderRe
 
 	body := renderedBody{cursor: hideCursorANSI()}
 	if overlay := renderActiveOverlayVMWithCursor(vm, overlaySize, bodyCursorOffsetY, overlayCursorVisible); overlay.Content() != "" && overlayIsOpaque(vm.Overlay) {
+		perftrace.Count("render.body.path.overlay_opaque", 0)
 		body = overlay
 	} else {
 		body = renderBodyFrameWithCoordinatorVM(coordinator, vm, vm.TermSize.Width, bodyHeight)
@@ -95,6 +96,7 @@ func renderBodyFrameWithCoordinatorVM(coordinator *Coordinator, vm RenderVM, wid
 		cursorOffsetY = 0
 	}
 	if vm.Surface.Kind == VisibleSurfaceTerminalPool && vm.Surface.TerminalPool != nil {
+		perftrace.Count("render.body.path.terminal_pool", 0)
 		cursorVisible := true
 		if coordinator != nil {
 			coordinator.mu.Lock()
@@ -104,14 +106,17 @@ func renderBodyFrameWithCoordinatorVM(coordinator *Coordinator, vm RenderVM, wid
 		return renderTerminalPoolPageWithCursor(vm.Surface.TerminalPool, vm.Runtime, TermSize{Width: width, Height: height}, cursorOffsetY, cursorVisible)
 	}
 	if vm.Workbench == nil {
+		perftrace.Count("render.body.path.empty_workbench", 0)
 		return renderedBody{content: strings.Repeat("\n", maxInt(0, height-1))}
 	}
 	activeTabIdx := vm.Workbench.ActiveTab
 	if activeTabIdx < 0 || activeTabIdx >= len(vm.Workbench.Tabs) {
+		perftrace.Count("render.body.path.empty_no_tabs", 0)
 		return renderEmptyWorkbenchBodyVM(vm, width, height, emptyWorkbenchNoTabs)
 	}
 	tab := vm.Workbench.Tabs[activeTabIdx]
 	if len(tab.Panes) == 0 {
+		perftrace.Count("render.body.path.empty_no_panes", 0)
 		return renderEmptyWorkbenchBodyVM(vm, width, height, emptyWorkbenchNoPanes)
 	}
 	lookup := newRuntimeLookup(vm.Runtime)
@@ -123,8 +128,10 @@ func renderBodyFrameWithCoordinatorVM(coordinator *Coordinator, vm RenderVM, wid
 	}
 	entries := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, width, height, lookup, bodyProjectionOptionsForVM(vm, exitedSelectionPulse), uiThemeForRuntime(vm.Runtime))
 	if body, ok := renderAltScreenFastPathVM(vm, entries, cursorOffsetY); ok {
+		perftrace.Count("render.body.path.alt_screen_fast_path", 0)
 		return body
 	}
+	perftrace.Count("render.body.path.canvas", 0)
 	canvas := renderBodyCanvas(coordinator, vm.Runtime, immersiveZoomActiveVM(vm), entries, width, height)
 	return renderedBody{
 		lines:  canvas.cachedContentLines(),

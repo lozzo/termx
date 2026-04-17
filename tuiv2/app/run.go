@@ -71,10 +71,19 @@ func configureProgramOutput(model *Model, stdout io.Writer) (io.Writer, bool) {
 
 func runWithClientOptions(cfg shared.Config, client bridge.Client, stdin io.Reader, stdout io.Writer, extraOpts ...tea.ProgramOption) error {
 	model := New(cfg, nil, runtime.New(client))
+	model.perfProfile = newPerfProfileFromEnv()
+	defer func() {
+		if model.perfProfile != nil {
+			model.perfProfile.Close()
+		}
+	}()
 	output, probeSupported := configureProgramOutput(model, stdout)
 	var directWriter *outputCursorWriter
 	if writer, ok := output.(*outputCursorWriter); ok && writer.tty != nil {
 		directWriter = writer
+		if model.perfProfile != nil {
+			directWriter.SetPerfSampleHook(model.perfProfile.Sample)
+		}
 	}
 	if model.runtime != nil {
 		if probeSupported {
