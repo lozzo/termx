@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"time"
 
@@ -175,10 +176,20 @@ func (m *Model) dequeueTerminalInputCmd() tea.Cmd {
 	return m.terminalInputSendCmd(next)
 }
 
+func (m *Model) terminalInputExpanded(in input.TerminalInput) input.TerminalInput {
+	in.Repeat = maxInt(1, in.Repeat)
+	if in.Repeat > 1 && len(in.Data) > 0 {
+		in.Data = bytes.Repeat(in.Data, in.Repeat)
+		in.Repeat = 1
+	}
+	return in
+}
+
 func (m *Model) terminalInputSendCmd(next input.TerminalInput) tea.Cmd {
 	if m == nil {
 		return nil
 	}
+	next = m.terminalInputExpanded(next)
 	target, _ := m.resolveTerminalInteractionTarget(terminalInteractionRequest{PaneID: next.PaneID})
 	terminalID := target.terminalID
 	return func() tea.Msg {
@@ -190,6 +201,25 @@ func (m *Model) terminalInputSendCmd(next input.TerminalInput) tea.Cmd {
 		}
 		sendFinish := perftrace.Measure("app.input.send")
 		err = m.runtime.SendInput(context.Background(), next.PaneID, next.Data)
+		sendFinish(len(next.Data))
+		return terminalInputSentMsg{
+			err:        err,
+			paneID:     next.PaneID,
+			terminalID: terminalID,
+		}
+	}
+}
+
+func (m *Model) terminalInputDirectSendCmd(next input.TerminalInput) tea.Cmd {
+	if m == nil {
+		return nil
+	}
+	next = m.terminalInputExpanded(next)
+	target, _ := m.resolveTerminalInteractionTarget(terminalInteractionRequest{PaneID: next.PaneID})
+	terminalID := target.terminalID
+	return func() tea.Msg {
+		sendFinish := perftrace.Measure("app.input.send")
+		err := m.runtime.SendInput(context.Background(), next.PaneID, next.Data)
 		sendFinish(len(next.Data))
 		return terminalInputSentMsg{
 			err:        err,

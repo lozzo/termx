@@ -91,7 +91,41 @@ func (m *Model) handleForwardedTerminalWheelInput(in input.TerminalInput) tea.Cm
 			return m.openPickerIfUnattached(pane.ID)
 		}
 	}
+	if m.terminalInputSending || m.interactionBatchActive {
+		m.enqueueTerminalInput(in)
+		return nil
+	}
+	if m.canDirectSendForwardedWheelInput(in) {
+		return m.terminalInputDirectSendCmd(in)
+	}
 	return m.terminalInputSendCmd(in)
+}
+
+func (m *Model) canDirectSendForwardedWheelInput(in input.TerminalInput) bool {
+	if m == nil || m.runtime == nil || m.sessionID != "" || in.PaneID == "" {
+		return false
+	}
+	target, ok := m.resolveTerminalInteractionTarget(terminalInteractionRequest{PaneID: in.PaneID})
+	if !ok || target.terminalID == "" {
+		return false
+	}
+	viewportRect, ok := m.terminalViewportRect(target.paneID, target.rect)
+	if !ok {
+		return false
+	}
+	cols := uint16(maxInt(2, viewportRect.W))
+	rows := uint16(maxInt(2, viewportRect.H))
+	if !m.terminalAlreadySized(target.terminalID, cols, rows) {
+		return false
+	}
+	terminal := m.runtime.Registry().Get(target.terminalID)
+	if terminal == nil || terminal.PendingOwnerResize {
+		return false
+	}
+	if len(terminal.BoundPaneIDs) > 1 && terminal.OwnerPaneID != target.paneID {
+		return false
+	}
+	return true
 }
 
 func (m *Model) localScrollbackWheelCmd(tabID string, delta int) tea.Cmd {

@@ -2330,6 +2330,32 @@ func TestMouseWheelForwardedPathBypassesWheelDispatchQueue(t *testing.T) {
 	}
 }
 
+func TestForwardedWheelDirectPathExpandsRepeat(t *testing.T) {
+	m := setupModel(t, modelOpts{})
+	client, ok := m.runtime.Client().(*recordingBridgeClient)
+	if !ok {
+		t.Fatal("expected recording bridge client")
+	}
+	setActivePaneMouseTracking(t, m, true)
+	cmd := m.handleForwardedTerminalWheelInput(input.TerminalInput{
+		Kind:           input.TerminalInputWheel,
+		PaneID:         "pane-1",
+		Data:           []byte("\x1b[<64;1;1M"),
+		Repeat:         3,
+		WheelDirection: 1,
+	})
+	if cmd == nil {
+		t.Fatal("expected direct forwarded wheel command")
+	}
+	drainCmd(t, m, cmd, 20)
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected one direct send, got %#v", client.inputCalls)
+	}
+	if got := string(client.inputCalls[0].data); got != "\x1b[<64;1;1M\x1b[<64;1;1M\x1b[<64;1;1M" {
+		t.Fatalf("expected repeated forwarded wheel payloads, got %q", got)
+	}
+}
+
 func TestMouseForwardsZoomedTerminalTopRowsWithoutFrameOffset(t *testing.T) {
 	m := setupModel(t, modelOpts{})
 	client, ok := m.runtime.Client().(*recordingBridgeClient)
