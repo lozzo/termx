@@ -771,12 +771,13 @@ func (w *outputCursorWriter) shouldFlushDirectFrameImmediatelyLocked() bool {
 		return false
 	}
 	remoteProfile := shared.RemoteLatencyProfileEnabled()
-	if !remoteProfile && w.interactiveFlushHint != nil && w.interactiveFlushHint() {
-		perftrace.Count("cursor_writer.direct_flush.interactive_bypass", 0)
+	if w.interactiveFlushHint != nil && w.interactiveFlushHint() {
+		if remoteProfile {
+			perftrace.Count("cursor_writer.direct_flush.remote_interactive_bypass", 0)
+		} else {
+			perftrace.Count("cursor_writer.direct_flush.interactive_bypass", 0)
+		}
 		return true
-	}
-	if remoteProfile && w.interactiveFlushHint != nil && w.interactiveFlushHint() {
-		perftrace.Count("cursor_writer.direct_flush.remote_interactive_defer", 0)
 	}
 	threshold := w.effectiveDirectFrameIdleThresholdLocked()
 	if threshold <= 0 {

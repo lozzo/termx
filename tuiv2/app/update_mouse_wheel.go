@@ -104,7 +104,7 @@ func (m *Model) handleForwardedTerminalWheelInput(in input.TerminalInput) tea.Cm
 }
 
 func (m *Model) canDirectSendForwardedWheelInput(in input.TerminalInput) bool {
-	if m == nil || m.runtime == nil || m.sessionID != "" || in.PaneID == "" {
+	if m == nil || m.runtime == nil || m.sessionID != "" || in.Kind != input.TerminalInputWheel || in.PaneID == "" || len(in.Data) == 0 || in.WheelDirection == 0 {
 		return false
 	}
 	target, ok := m.resolveTerminalInteractionTarget(terminalInteractionRequest{PaneID: in.PaneID})

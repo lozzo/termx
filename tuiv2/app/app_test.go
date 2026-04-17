@@ -1834,6 +1834,41 @@ func TestQueueInvalidateWaitsForFrameWriterDrainBeforeSending(t *testing.T) {
 	}
 }
 
+func TestQueueInvalidateBypassesFrameWriterDrainAfterRecentInput(t *testing.T) {
+	originalDelay := invalidateBatchDelay
+	invalidateBatchDelay = 0
+	defer func() { invalidateBatchDelay = originalDelay }()
+
+	client := &recordingBridgeClient{}
+	rt := runtime.New(client)
+	binding := rt.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+	if err := rt.SendInput(context.Background(), "pane-1", []byte("a")); err != nil {
+		t.Fatalf("note recent input: %v", err)
+	}
+
+	model := New(shared.Config{}, nil, rt)
+	writer := &backlogProbeFrameWriter{}
+	writer.pending.Store(true)
+	model.SetFrameWriter(writer)
+	sent := make(chan tea.Msg, 4)
+	model.SetSendFunc(func(msg tea.Msg) {
+		sent <- msg
+	})
+
+	model.queueInvalidate()
+
+	select {
+	case msg := <-sent:
+		if _, ok := msg.(InvalidateMsg); !ok {
+			t.Fatalf("expected interactive invalidate to bypass frame-writer backlog, got %#v", msg)
+		}
+	case <-time.After(50 * time.Millisecond):
+		t.Fatal("expected recent input to bypass frame-writer drain wait")
+	}
+}
+
 func TestQueueInvalidateAdaptiveDelayIncreasesAfterSlowDrainPressure(t *testing.T) {
 	originalDelay := invalidateBatchDelay
 	invalidateBatchDelay = 4 * time.Millisecond

@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -2341,6 +2342,67 @@ func TestForwardedWheelDirectPathExpandsRepeat(t *testing.T) {
 	}
 	if got := string(client.inputCalls[0].data); got != "\x1b[<64;1;1M\x1b[<64;1;1M\x1b[<64;1;1M" {
 		t.Fatalf("expected repeated forwarded wheel payloads, got %q", got)
+	}
+}
+
+func TestQueuedForwardedWheelUsesDirectSendWhenDequeuedEligible(t *testing.T) {
+	started := make(chan inputCall, 1)
+	release := make(chan struct{})
+	client := &recordingBridgeClient{
+		attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{},
+		inputStarted:       started,
+		inputBlock:         release,
+	}
+	m := setupModel(t, modelOpts{client: client})
+	setActivePaneMouseTracking(t, m, true)
+
+	firstCmd := m.handleKeyMsg(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if firstCmd == nil {
+		t.Fatal("expected initial terminal input command")
+	}
+	done := make(chan tea.Msg, 1)
+	go func() {
+		done <- firstCmd()
+	}()
+	select {
+	case <-started:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for initial input send to start")
+	}
+
+	wheelCmd := m.handleForwardedTerminalWheelInput(input.TerminalInput{
+		Kind:           input.TerminalInputWheel,
+		PaneID:         "pane-1",
+		Data:           []byte("\x1b[<64;1;1M"),
+		Repeat:         2,
+		WheelDirection: 1,
+	})
+	if wheelCmd != nil {
+		t.Fatalf("expected in-flight input to queue forwarded wheel, got cmd %#v", wheelCmd)
+	}
+
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+
+	close(release)
+	firstMsg := <-done
+	_, nextCmd := m.Update(firstMsg)
+	if nextCmd == nil {
+		t.Fatal("expected queued forwarded wheel command after first send completed")
+	}
+	drainCmd(t, m, nextCmd, 20)
+
+	if len(client.inputCalls) != 2 {
+		t.Fatalf("expected initial input and queued wheel send, got %#v", client.inputCalls)
+	}
+	if got := string(client.inputCalls[1].data); got != "\x1b[<64;1;1M\x1b[<64;1;1M" {
+		t.Fatalf("expected queued forwarded wheel payload to expand repeat, got %q", got)
+	}
+	snapshot := perftrace.SnapshotCurrent()
+	if event, ok := snapshot.Event("app.input.wheel.direct_dequeue"); !ok || event.Count == 0 {
+		t.Fatalf("expected queued forwarded wheel to use direct-dequeue path, got %#v", snapshot.Events)
 	}
 }
 

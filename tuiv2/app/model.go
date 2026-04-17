@@ -234,7 +234,14 @@ func (m *Model) queueInvalidate() {
 		m.invalidateDeferred.Store(true)
 		return
 	}
+	interactiveInput := m.runtime != nil && m.runtime.RecentLocalInput()
 	if m.frameWriterHasBacklog() {
+		if interactiveInput {
+			perftrace.Count("app.invalidate.interactive_backlog_bypass", 0)
+			m.invalidateBacklogBlockedAt.Store(0)
+			m.queueInvalidateImmediate()
+			return
+		}
 		perftrace.Count("app.invalidate.backlog_blocked", 0)
 		m.invalidateBlockedByFrameOut.Store(true)
 		now := time.Now().UnixNano()
@@ -242,7 +249,7 @@ func (m *Model) queueInvalidate() {
 		return
 	}
 	m.invalidateBacklogBlockedAt.Store(0)
-	if m.runtime != nil && m.runtime.RecentLocalInput() {
+	if interactiveInput {
 		perftrace.Count("app.invalidate.interactive_bypass", 0)
 		m.queueInvalidateImmediate()
 		return

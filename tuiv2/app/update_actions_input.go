@@ -173,6 +173,10 @@ func (m *Model) dequeueTerminalInputCmd() tea.Cmd {
 		return nil
 	}
 	m.terminalInputSending = true
+	if m.canDirectSendForwardedWheelInput(next) {
+		perftrace.Count("app.input.wheel.direct_dequeue", len(next.Data))
+		return m.terminalInputDirectSendCmd(next)
+	}
 	return m.terminalInputSendCmd(next)
 }
 
