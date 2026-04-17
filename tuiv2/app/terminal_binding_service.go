@@ -67,7 +67,7 @@ func (s *terminalBindingService) bindSelectionCmd(tabID, paneID string, item mod
 	if err != nil {
 		return func() tea.Msg { return err }
 	}
-	s.model.resetPaneScrollOffset(result.tabID, result.paneID)
+	s.model.resetPaneViewport(result.paneID)
 	s.model.render.Invalidate()
 	cmds := []tea.Cmd{s.model.saveStateCmd()}
 	if result.loadSnapshotAfter {

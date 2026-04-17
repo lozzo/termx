@@ -5,13 +5,13 @@ type localViewProjection struct {
 	ActiveTabID     string
 	FocusedPaneID   string
 	ZoomedPaneByTab map[string]string
-	ScrollByTab     map[string]int
+	ViewportByPane  map[string]int
 }
 
 func (m *Model) captureLocalViewProjection() localViewProjection {
 	proj := localViewProjection{
 		ZoomedPaneByTab: make(map[string]string),
-		ScrollByTab:     make(map[string]int),
+		ViewportByPane:  make(map[string]int),
 	}
 	if m == nil || m.workbench == nil {
 		return proj
@@ -33,7 +33,16 @@ func (m *Model) captureLocalViewProjection() localViewProjection {
 				continue
 			}
 			proj.ZoomedPaneByTab[tab.ID] = tab.ZoomedPaneID
-			proj.ScrollByTab[tab.ID] = tab.ScrollOffset
+			for paneID := range tab.Panes {
+				if offset, ok := m.paneViewportBindingOffset(paneID); ok {
+					proj.ViewportByPane[paneID] = offset
+				}
+			}
+			if tab.ActivePaneID != "" {
+				if _, ok := proj.ViewportByPane[tab.ActivePaneID]; !ok {
+					proj.ViewportByPane[tab.ActivePaneID] = m.effectiveTabViewportOffset(tab)
+				}
+			}
 		}
 	}
 	return proj
@@ -55,8 +64,12 @@ func (m *Model) applyLocalViewProjection(proj localViewProjection) {
 			if zoomed, ok := proj.ZoomedPaneByTab[tab.ID]; ok && (zoomed == "" || tab.Panes[zoomed] != nil) {
 				tab.ZoomedPaneID = zoomed
 			}
-			if scroll, ok := proj.ScrollByTab[tab.ID]; ok {
-				_ = m.workbench.SetTabScrollOffset(tab.ID, scroll)
+			for paneID := range tab.Panes {
+				scroll, ok := proj.ViewportByPane[paneID]
+				if !ok {
+					continue
+				}
+				_ = m.setPaneViewportOffset(paneID, scroll)
 			}
 		}
 	}

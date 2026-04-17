@@ -2186,18 +2186,14 @@ func TestMouseWheelFallsBackWhenTrackingDisabled(t *testing.T) {
 	_, cmd := m.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
 	drainCmd(t, m, cmd, 20)
 
-	tab := m.workbench.CurrentTab()
-	if tab == nil {
-		t.Fatal("expected current tab")
-	}
 	if got := m.mode().Kind; got != input.ModeDisplay {
 		t.Fatalf("expected wheel fallback to enter display mode, got %q", got)
 	}
 	if m.copyMode.PaneID != "pane-1" {
 		t.Fatalf("expected wheel fallback copy mode on pane-1, got %#v", m.copyMode)
 	}
-	if tab.ScrollOffset <= 0 {
-		t.Fatalf("expected wheel fallback to move into local scrollback, got %d", tab.ScrollOffset)
+	if got := m.runtime.PaneViewportOffset("pane-1"); got <= 0 {
+		t.Fatalf("expected wheel fallback to move into local scrollback, got %d", got)
 	}
 	if len(client.inputCalls) != 0 {
 		t.Fatalf("expected no forwarded mouse wheel with tracking off, got %#v", client.inputCalls)
@@ -2226,12 +2222,8 @@ func TestMouseWheelAlternateScreenFallsBackToCursorKeysWhenTrackingDisabled(t *t
 	if got := string(client.inputCalls[0].data); got != "\x1b[A" {
 		t.Fatalf("unexpected alternate-screen wheel fallback payload %q", got)
 	}
-	tab := m.workbench.CurrentTab()
-	if tab == nil {
-		t.Fatal("expected current tab")
-	}
-	if tab.ScrollOffset != 0 {
-		t.Fatalf("expected no scrollback fallback in alternate screen, got %d", tab.ScrollOffset)
+	if got := m.runtime.PaneViewportOffset("pane-1"); got != 0 {
+		t.Fatalf("expected no scrollback fallback in alternate screen, got %d", got)
 	}
 }
 
@@ -2302,12 +2294,8 @@ func TestMouseWheelForwardsToTerminalWhenTrackingEnabled(t *testing.T) {
 	if got := string(client.inputCalls[0].data); got != "\x1b[<64;1;1M" {
 		t.Fatalf("unexpected wheel payload %q", got)
 	}
-	tab := m.workbench.CurrentTab()
-	if tab == nil {
-		t.Fatal("expected current tab")
-	}
-	if tab.ScrollOffset != 0 {
-		t.Fatalf("expected no fallback scrolling when wheel forwarded, got %d", tab.ScrollOffset)
+	if got := m.runtime.PaneViewportOffset("pane-1"); got != 0 {
+		t.Fatalf("expected no fallback scrolling when wheel forwarded, got %d", got)
 	}
 }
 

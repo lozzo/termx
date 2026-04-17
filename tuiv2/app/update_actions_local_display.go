@@ -62,15 +62,15 @@ func (m *Model) handleDisplayAndViewportLocalAction(action input.SemanticAction)
 		}
 		return true, nil
 	case input.ActionScrollUp:
-		if tab := m.workbench.CurrentTab(); tab != nil {
-			if _, changed := m.workbench.AdjustTabScrollOffset(tab.ID, 1); changed {
+		if pane := m.workbench.ActivePane(); pane != nil {
+			if _, changed := m.adjustPaneViewportOffset(pane.ID, 1); changed {
 				m.render.Invalidate()
 			}
 		}
 		return true, m.ensureActivePaneScrollbackCmd()
 	case input.ActionScrollDown:
-		if tab := m.workbench.CurrentTab(); tab != nil {
-			if _, changed := m.workbench.AdjustTabScrollOffset(tab.ID, -1); changed {
+		if pane := m.workbench.ActivePane(); pane != nil {
+			if _, changed := m.adjustPaneViewportOffset(pane.ID, -1); changed {
 				m.render.Invalidate()
 			}
 		}

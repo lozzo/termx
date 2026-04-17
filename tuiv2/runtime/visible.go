@@ -31,7 +31,8 @@ type VisibleTerminal struct {
 }
 
 type VisiblePaneBinding struct {
-	PaneID    string
-	Role      string
-	Connected bool
+	PaneID         string
+	Role           string
+	Connected      bool
+	ViewportOffset int
 }

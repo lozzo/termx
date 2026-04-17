@@ -392,9 +392,10 @@ func (r *Runtime) Visible() *VisibleRuntime {
 			continue
 		}
 		visible.Bindings = append(visible.Bindings, VisiblePaneBinding{
-			PaneID:    binding.PaneID,
-			Role:      string(binding.Role),
-			Connected: binding.Connected,
+			PaneID:         binding.PaneID,
+			Role:           string(binding.Role),
+			Connected:      binding.Connected,
+			ViewportOffset: binding.Viewport.Offset,
 		})
 	}
 	r.visibleCache = visible

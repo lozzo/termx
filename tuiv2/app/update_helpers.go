@@ -218,9 +218,12 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 	if m == nil || m.workbench == nil || m.runtime == nil {
 		return nil
 	}
-	tab := m.workbench.CurrentTab()
 	pane := m.workbench.ActivePane()
-	if tab == nil || pane == nil || pane.TerminalID == "" || tab.ScrollOffset <= 0 {
+	if pane == nil || pane.TerminalID == "" {
+		return nil
+	}
+	viewportOffset := m.paneViewportOffset(pane.ID)
+	if viewportOffset <= 0 {
 		return nil
 	}
 	contentRect, ok := m.activePaneContentRect()
@@ -241,7 +244,7 @@ func (m *Model) ensureActivePaneScrollbackCmd() tea.Cmd {
 	if terminal.Snapshot != nil && len(terminal.Snapshot.Scrollback) > loaded {
 		loaded = len(terminal.Snapshot.Scrollback)
 	}
-	want := tab.ScrollOffset + contentRect.H + terminalScrollbackPrefetchMargin
+	want := viewportOffset + contentRect.H + terminalScrollbackPrefetchMargin
 	if want <= loaded {
 		return nil
 	}
@@ -343,33 +346,6 @@ func (m *Model) openPickerForPaneCmd(paneID string) tea.Cmd {
 	m.startLoadingModal(input.ModePicker, paneID)
 	m.render.Invalidate()
 	return m.effectCmd(orchestrator.LoadPickerItemsEffect{})
-}
-
-func (m *Model) resetPaneScrollOffset(tabID, paneID string) {
-	if m == nil || m.workbench == nil || paneID == "" {
-		return
-	}
-	workspace := m.workbench.CurrentWorkspace()
-	if workspace == nil {
-		return
-	}
-	for _, tab := range workspace.Tabs {
-		if tab == nil {
-			continue
-		}
-		if tabID != "" && tab.ID != tabID {
-			continue
-		}
-		if tab.Panes[paneID] == nil {
-			continue
-		}
-		if tab.ScrollOffset != 0 {
-			if m.workbench.SetTabScrollOffset(tab.ID, 0) {
-				m.render.Invalidate()
-			}
-		}
-		return
-	}
 }
 
 func (m *Model) openTerminalManagerCmd() tea.Cmd {

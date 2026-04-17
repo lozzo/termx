@@ -166,7 +166,7 @@ func (s *terminalAttachService) handleAttachedMsg(attached orchestrator.Terminal
 		return nil
 	}
 	s.model.clearPendingPaneAttach(attached.PaneID, attached.TerminalID)
-	s.model.resetPaneScrollOffset(attached.TabID, attached.PaneID)
+	s.model.resetPaneViewport(attached.PaneID)
 	if s.model.modalHost != nil && s.model.modalHost.Session != nil && s.model.modalHost.Session.Kind == input.ModePicker {
 		s.model.closeModal(input.ModePicker, s.model.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
 	}

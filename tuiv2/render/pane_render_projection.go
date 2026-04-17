@@ -108,7 +108,7 @@ func clipRectToViewport(rect workbench.Rect, width, height int) (workbench.Rect,
 	return workbench.Rect{X: x1, Y: y1, W: x2 - x1, H: y2 - y1}, true
 }
 
-func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workbench.Rect, frameless bool, activePaneID string, scrollOffset int, lookup runtimeLookup, options bodyProjectionOptions, theme uiTheme) paneRenderEntry {
+func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workbench.Rect, frameless bool, activePaneID string, legacyScrollOffset int, lookup runtimeLookup, options bodyProjectionOptions, theme uiTheme) paneRenderEntry {
 	active := pane.ID == activePaneID
 	title := displayPaneTitleWithLookup(pane, lookup)
 	border := paneBorderInfoWithLookup(pane, lookup, options.ConfirmPaneID)
@@ -138,7 +138,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		border.CopyRowLabel = copyModeRowPositionLabel(snapshot, options.CopyMode.CursorRow)
 	}
 	contentRect := contentRectForPaneEdges(rect, pane.SharedLeft, pane.SharedTop)
-	renderOffset := scrollOffset
+	renderOffset := lookup.paneViewportOffset(pane.ID, legacyScrollOffset)
 	if copyModeActive {
 		renderOffset = scrollOffsetForViewportTop(snapshot, contentRect.H, options.CopyMode.ViewTopRow)
 	}

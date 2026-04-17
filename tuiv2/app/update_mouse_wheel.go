@@ -62,13 +62,15 @@ func (m *Model) handleMouseWheelRepeated(msg tea.MouseMsg, repeat int) tea.Cmd {
 		if tab == nil {
 			return nil
 		}
+		targetPaneID := tab.ActivePaneID
 		if floating != nil {
 			if tab.ActivePaneID != floating.ID {
 				_ = m.workbench.FocusPane(tab.ID, floating.ID)
 				m.workbench.ReorderFloatingPane(tab.ID, floating.ID, true)
 			}
+			targetPaneID = floating.ID
 		}
-		if cmd := m.localScrollbackWheelCmd(tab.ID, delta); cmd != nil {
+		if cmd := m.localScrollbackWheelCmd(targetPaneID, delta); cmd != nil {
 			return cmd
 		}
 		return nil
@@ -128,8 +130,8 @@ func (m *Model) canDirectSendForwardedWheelInput(in input.TerminalInput) bool {
 	return true
 }
 
-func (m *Model) localScrollbackWheelCmd(tabID string, delta int) tea.Cmd {
-	if m == nil || m.workbench == nil || delta == 0 {
+func (m *Model) localScrollbackWheelCmd(paneID string, delta int) tea.Cmd {
+	if m == nil || m.workbench == nil || paneID == "" || delta == 0 {
 		return nil
 	}
 	if m.mode().Kind == input.ModeDisplay {
@@ -142,7 +144,7 @@ func (m *Model) localScrollbackWheelCmd(tabID string, delta int) tea.Cmd {
 		m.render.Invalidate()
 		return m.moveCopyCursorVertical(-delta)
 	}
-	if _, changed := m.workbench.AdjustTabScrollOffset(tabID, delta); changed {
+	if _, changed := m.adjustPaneViewportOffset(paneID, delta); changed {
 		m.render.Invalidate()
 		return m.ensureActivePaneScrollbackCmd()
 	}

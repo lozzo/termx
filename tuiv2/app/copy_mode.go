@@ -110,9 +110,7 @@ func (m *Model) reconcileCopyModeContext() {
 	if pane != nil && pane.ID == m.copyMode.PaneID {
 		return
 	}
-	if tab := m.workbench.CurrentTab(); tab != nil {
-		_ = m.workbench.SetTabScrollOffset(tab.ID, 0)
-	}
+	m.resetPaneViewport(m.copyMode.PaneID)
 	m.clearCopySelection()
 	m.resetCopyMode()
 	m.copyModeResume = copyModeResumeState{}
@@ -181,11 +179,7 @@ func (m *Model) leaveCopyMode() {
 	if m == nil {
 		return
 	}
-	if m.workbench != nil {
-		if tab := m.workbench.CurrentTab(); tab != nil {
-			_ = m.workbench.SetTabScrollOffset(tab.ID, 0)
-		}
-	}
+	m.resetPaneViewport(m.copyMode.PaneID)
 	m.resetCopyMode()
 	m.render.Invalidate()
 }

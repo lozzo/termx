@@ -173,8 +173,8 @@ func TestCopyModeKeyboardSelectionCopiesOSC52(t *testing.T) {
 	if got := model.input.Mode().Kind; got != input.ModeNormal {
 		t.Fatalf("expected copy+exit to return to normal mode, got %q", got)
 	}
-	if got := model.workbench.CurrentTab().ScrollOffset; got != 0 {
-		t.Fatalf("expected copy+exit to reset scroll offset, got %d", got)
+	if got := model.runtime.PaneViewportOffset("pane-1"); got != 0 {
+		t.Fatalf("expected copy+exit to reset pane viewport, got %d", got)
 	}
 }
 
@@ -292,15 +292,14 @@ func TestCopyModeMouseAutoScrollExtendsSelection(t *testing.T) {
 		t.Fatalf("expected auto-scroll dir -1, got %d", model.copyMode.AutoScrollDir)
 	}
 
-	tab := model.workbench.CurrentTab()
-	beforeOffset := tab.ScrollOffset
+	beforeOffset := model.runtime.PaneViewportOffset(model.copyMode.PaneID)
 	beforeRow := model.copyMode.Cursor.Row
 
 	_, cmd = model.Update(copyModeAutoScrollMsg{seq: seq})
 	drainCmd(t, model, cmd, 20)
 
-	if tab.ScrollOffset <= beforeOffset {
-		t.Fatalf("expected scroll offset to increase after auto-scroll, before=%d after=%d", beforeOffset, tab.ScrollOffset)
+	if got := model.runtime.PaneViewportOffset(model.copyMode.PaneID); got <= beforeOffset {
+		t.Fatalf("expected pane viewport to increase after auto-scroll, before=%d after=%d", beforeOffset, got)
 	}
 	if model.copyMode.Cursor.Row >= beforeRow {
 		t.Fatalf("expected copy cursor to move upward during auto-scroll, before=%d after=%d", beforeRow, model.copyMode.Cursor.Row)
@@ -493,12 +492,12 @@ func TestCopyModeEnteringScrollbackForcesViewportScroll(t *testing.T) {
 	seedCopyModeSnapshot(t, model, []string{"hist0", "hist1", "hist2"}, []string{"live0", "live1"})
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionEnterDisplayMode})
-	before := model.workbench.CurrentTab().ScrollOffset
+	before := model.runtime.PaneViewportOffset("pane-1")
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCopyModeTop})
 
-	if got := model.workbench.CurrentTab().ScrollOffset; got < before || got <= 0 {
-		t.Fatalf("expected viewport to enter or remain in scrollback when cursor moves above screen, before=%d after=%d", before, got)
+	if got := model.runtime.PaneViewportOffset("pane-1"); got < before || got <= 0 {
+		t.Fatalf("expected pane viewport to enter or remain in scrollback when cursor moves above screen, before=%d after=%d", before, got)
 	}
 }
 
@@ -655,9 +654,10 @@ func TestActiveLiveCopyModeBufferRefreshesStaleVTermSnapshot(t *testing.T) {
 	}
 }
 
-func TestSyncCopyModeViewportClampsAndUpdatesScrollOffset(t *testing.T) {
+func TestSyncCopyModeViewportClampsAndUpdatesPaneViewport(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 40, height: 8})
 	seedCopyModeSnapshot(t, model, []string{"hist0", "hist1", "hist2"}, []string{"live0", "live1"})
+	model.copyMode.PaneID = "pane-1"
 
 	buffer, ok := model.activeLiveCopyModeBuffer()
 	if !ok {
@@ -674,15 +674,11 @@ func TestSyncCopyModeViewportClampsAndUpdatesScrollOffset(t *testing.T) {
 	if got := model.copyMode.ViewTopRow; got != 1 {
 		t.Fatalf("expected viewport to shift upward for selected row, got %d", got)
 	}
-	tab := model.workbench.CurrentTab()
-	if tab == nil {
-		t.Fatal("expected current tab")
+	if got, want := model.runtime.PaneViewportOffset("pane-1"), model.copyModeRenderOffset(buffer); got != want {
+		t.Fatalf("expected syncCopyModeViewport to keep pane viewport aligned, got %d want %d", got, want)
 	}
-	if got, want := tab.ScrollOffset, model.copyModeRenderOffset(buffer); got != want {
-		t.Fatalf("expected syncCopyModeViewport to keep tab scroll offset aligned, got %d want %d", got, want)
-	}
-	if tab.ScrollOffset <= 0 {
-		t.Fatalf("expected syncCopyModeViewport to move viewport into scrollback, got %d", tab.ScrollOffset)
+	if got := model.runtime.PaneViewportOffset("pane-1"); got <= 0 {
+		t.Fatalf("expected syncCopyModeViewport to move viewport into scrollback, got %d", got)
 	}
 }
 

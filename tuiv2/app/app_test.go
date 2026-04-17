@@ -859,18 +859,14 @@ func TestModelUpdateExitedPaneKeyboardNavigationDownEnterOpensPicker(t *testing.
 	}
 }
 
-func TestTerminalAttachedResetsTabScrollOffset(t *testing.T) {
+func TestTerminalAttachedResetsPaneViewport(t *testing.T) {
 	model := setupModel(t, modelOpts{})
-	tab := model.workbench.CurrentTab()
-	if tab == nil {
-		t.Fatal("expected current tab")
-	}
-	_ = model.workbench.SetTabScrollOffset(tab.ID, 3)
+	_ = model.runtime.SetPaneViewportOffset("pane-1", 3)
 
 	_, _ = model.Update(orchestrator.TerminalAttachedMsg{PaneID: "pane-1", TerminalID: "term-1", Channel: 7})
 
-	if got := tab.ScrollOffset; got != 0 {
-		t.Fatalf("expected attach to reset scroll offset, got %d", got)
+	if got := model.runtime.PaneViewportOffset("pane-1"); got != 0 {
+		t.Fatalf("expected attach to reset pane viewport, got %d", got)
 	}
 }
 
@@ -2984,8 +2980,8 @@ func TestModelLocalScrollActionsAndQuit(t *testing.T) {
 			t.Fatalf("expected no async msg from scroll up, got %#v", msg)
 		}
 	}
-	if got := model.workbench.CurrentTab().ScrollOffset; got != 1 {
-		t.Fatalf("expected scroll offset 1 after scroll up, got %d", got)
+	if got := model.runtime.PaneViewportOffset("pane-1"); got != 1 {
+		t.Fatalf("expected pane viewport 1 after scroll up, got %d", got)
 	}
 
 	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionScrollDown})
@@ -2994,8 +2990,8 @@ func TestModelLocalScrollActionsAndQuit(t *testing.T) {
 			t.Fatalf("expected no async msg from scroll down, got %#v", msg)
 		}
 	}
-	if got := model.workbench.CurrentTab().ScrollOffset; got != 0 {
-		t.Fatalf("expected scroll offset 0 after scroll down, got %d", got)
+	if got := model.runtime.PaneViewportOffset("pane-1"); got != 0 {
+		t.Fatalf("expected pane viewport 0 after scroll down, got %d", got)
 	}
 
 	_, cmd = model.Update(input.SemanticAction{Kind: input.ActionEnterGlobalMode})

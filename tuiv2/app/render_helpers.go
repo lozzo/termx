@@ -68,11 +68,15 @@ func (m *Model) visibleLayoutSignature() (string, bool) {
 	hasAltScreen := false
 	if visible.ActiveTab >= 0 && visible.ActiveTab < len(visible.Tabs) {
 		tab := visible.Tabs[visible.ActiveTab]
+		tabViewportOffset := tab.ScrollOffset
+		if currentTab := m.workbench.CurrentTab(); currentTab != nil && currentTab.ID == tab.ID {
+			tabViewportOffset = m.effectiveTabViewportOffset(currentTab)
+		}
 		builder.WriteString(tab.ID)
 		builder.WriteByte('|')
 		builder.WriteString(tab.ZoomedPaneID)
 		builder.WriteByte('|')
-		builder.WriteString(strconv.Itoa(tab.ScrollOffset))
+		builder.WriteString(strconv.Itoa(tabViewportOffset))
 		builder.WriteByte('|')
 		for _, pane := range tab.Panes {
 			appendVisiblePaneGeometry(&builder, pane)

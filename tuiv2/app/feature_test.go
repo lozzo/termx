@@ -1690,15 +1690,13 @@ func TestFeatureScrollUpDown(t *testing.T) {
 	model := setupModel(t, modelOpts{})
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionScrollUp})
-	tab := model.workbench.CurrentTab()
-	if tab.ScrollOffset != 1 {
-		t.Fatalf("expected scroll offset 1, got %d", tab.ScrollOffset)
+	if got := model.runtime.PaneViewportOffset("pane-1"); got != 1 {
+		t.Fatalf("expected pane viewport 1, got %d", got)
 	}
 
 	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionScrollDown})
-	tab = model.workbench.CurrentTab()
-	if tab.ScrollOffset != 0 {
-		t.Fatalf("expected scroll offset 0, got %d", tab.ScrollOffset)
+	if got := model.runtime.PaneViewportOffset("pane-1"); got != 0 {
+		t.Fatalf("expected pane viewport 0, got %d", got)
 	}
 }
 

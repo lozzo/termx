@@ -7,8 +7,8 @@ import (
 )
 
 type runtimeLookup struct {
-	terminals map[string]*runtime.VisibleTerminal
-	paneRoles map[string]string
+	terminals    map[string]*runtime.VisibleTerminal
+	paneBindings map[string]runtime.VisiblePaneBinding
 }
 
 func newRuntimeLookup(runtimeState *VisibleRuntimeStateProxy) runtimeLookup {
@@ -24,13 +24,13 @@ func newRuntimeLookup(runtimeState *VisibleRuntimeStateProxy) runtimeLookup {
 		}
 	}
 	if len(runtimeState.Bindings) > 0 {
-		lookup.paneRoles = make(map[string]string, len(runtimeState.Bindings))
+		lookup.paneBindings = make(map[string]runtime.VisiblePaneBinding, len(runtimeState.Bindings))
 		for i := range runtimeState.Bindings {
 			binding := runtimeState.Bindings[i]
-			if binding.PaneID == "" || binding.Role == "" {
+			if binding.PaneID == "" {
 				continue
 			}
-			lookup.paneRoles[binding.PaneID] = binding.Role
+			lookup.paneBindings[binding.PaneID] = binding
 		}
 	}
 	return lookup
@@ -48,10 +48,24 @@ func (l runtimeLookup) terminal(terminalID string) *runtime.VisibleTerminal {
 }
 
 func (l runtimeLookup) paneRole(paneID string) string {
-	if paneID == "" || len(l.paneRoles) == 0 {
+	if paneID == "" || len(l.paneBindings) == 0 {
 		return ""
 	}
-	return l.paneRoles[paneID]
+	return l.paneBindings[paneID].Role
+}
+
+func (l runtimeLookup) paneViewportOffset(paneID string, fallback int) int {
+	if paneID == "" || len(l.paneBindings) == 0 {
+		return fallback
+	}
+	binding, ok := l.paneBindings[paneID]
+	if !ok {
+		return fallback
+	}
+	if binding.ViewportOffset < 0 {
+		return 0
+	}
+	return binding.ViewportOffset
 }
 
 var blankFillRowCache = struct {

@@ -230,10 +230,8 @@ func (m *Model) syncCopyModeViewport(buffer copyModeBuffer, point copyModePoint)
 	if m.copyMode.ViewTopRow > maxTop {
 		m.copyMode.ViewTopRow = maxTop
 	}
-	if m.workbench != nil {
-		if tab := m.workbench.CurrentTab(); tab != nil {
-			_ = m.workbench.SetTabScrollOffset(tab.ID, m.copyModeRenderOffset(buffer))
-		}
+	if m.copyMode.PaneID != "" {
+		_ = m.setPaneViewportOffset(m.copyMode.PaneID, m.copyModeRenderOffset(buffer))
 	}
 }
 
