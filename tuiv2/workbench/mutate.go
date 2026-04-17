@@ -163,6 +163,45 @@ func (w *Workbench) FocusPane(tabID, paneID string) error {
 	return nil
 }
 
+func (w *Workbench) SetTabScrollOffset(tabID string, offset int) bool {
+	if w == nil {
+		return false
+	}
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return false
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if tab.ScrollOffset == offset {
+		return false
+	}
+	tab.ScrollOffset = offset
+	w.touch()
+	return true
+}
+
+func (w *Workbench) AdjustTabScrollOffset(tabID string, delta int) (int, bool) {
+	if w == nil {
+		return 0, false
+	}
+	_, tab, err := w.findTab(tabID)
+	if err != nil || tab == nil {
+		return 0, false
+	}
+	next := tab.ScrollOffset + delta
+	if next < 0 {
+		next = 0
+	}
+	if tab.ScrollOffset == next {
+		return next, false
+	}
+	tab.ScrollOffset = next
+	w.touch()
+	return next, true
+}
+
 // ClosePane removes a pane from the tab layout and returns the detached
 // terminal binding, if any.
 func (w *Workbench) ClosePane(tabID, paneID string) (string, error) {

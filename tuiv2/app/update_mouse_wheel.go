@@ -68,11 +68,9 @@ func (m *Model) handleMouseWheelRepeated(msg tea.MouseMsg, repeat int) tea.Cmd {
 				m.workbench.ReorderFloatingPane(tab.ID, floating.ID, true)
 			}
 		}
-		tab.ScrollOffset += delta
-		if tab.ScrollOffset < 0 {
-			tab.ScrollOffset = 0
+		if _, changed := m.workbench.AdjustTabScrollOffset(tab.ID, delta); changed {
+			m.render.Invalidate()
 		}
-		m.render.Invalidate()
 		return m.ensureActivePaneScrollbackCmd()
 	}
 	return nil

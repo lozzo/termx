@@ -672,7 +672,7 @@ func TestE2EAttachAfterExitedPaneRestoresCursorHighlight(t *testing.T) {
 	if tab == nil {
 		t.Fatal("expected current tab")
 	}
-	tab.ScrollOffset = 4
+	_ = model.workbench.SetTabScrollOffset(tab.ID, 4)
 
 	second, err := pc.Create(ctx, protocol.CreateParams{
 		Command: []string{"sh", "-c", "printf '\\033[8;20H@\\033[8;20H'; cat"},

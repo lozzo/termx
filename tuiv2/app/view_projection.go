@@ -56,7 +56,7 @@ func (m *Model) applyLocalViewProjection(proj localViewProjection) {
 				tab.ZoomedPaneID = zoomed
 			}
 			if scroll, ok := proj.ScrollByTab[tab.ID]; ok {
-				tab.ScrollOffset = scroll
+				_ = m.workbench.SetTabScrollOffset(tab.ID, scroll)
 			}
 		}
 	}

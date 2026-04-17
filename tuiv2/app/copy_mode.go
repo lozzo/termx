@@ -111,7 +111,7 @@ func (m *Model) reconcileCopyModeContext() {
 		return
 	}
 	if tab := m.workbench.CurrentTab(); tab != nil {
-		tab.ScrollOffset = 0
+		_ = m.workbench.SetTabScrollOffset(tab.ID, 0)
 	}
 	m.clearCopySelection()
 	m.resetCopyMode()
@@ -183,7 +183,7 @@ func (m *Model) leaveCopyMode() {
 	}
 	if m.workbench != nil {
 		if tab := m.workbench.CurrentTab(); tab != nil {
-			tab.ScrollOffset = 0
+			_ = m.workbench.SetTabScrollOffset(tab.ID, 0)
 		}
 	}
 	m.resetCopyMode()

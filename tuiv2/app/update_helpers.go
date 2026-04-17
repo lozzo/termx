@@ -364,8 +364,9 @@ func (m *Model) resetPaneScrollOffset(tabID, paneID string) {
 			continue
 		}
 		if tab.ScrollOffset != 0 {
-			tab.ScrollOffset = 0
-			m.render.Invalidate()
+			if m.workbench.SetTabScrollOffset(tab.ID, 0) {
+				m.render.Invalidate()
+			}
 		}
 		return
 	}

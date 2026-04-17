@@ -63,16 +63,16 @@ func (m *Model) handleDisplayAndViewportLocalAction(action input.SemanticAction)
 		return true, nil
 	case input.ActionScrollUp:
 		if tab := m.workbench.CurrentTab(); tab != nil {
-			tab.ScrollOffset += 1
-			m.render.Invalidate()
+			if _, changed := m.workbench.AdjustTabScrollOffset(tab.ID, 1); changed {
+				m.render.Invalidate()
+			}
 		}
 		return true, m.ensureActivePaneScrollbackCmd()
 	case input.ActionScrollDown:
 		if tab := m.workbench.CurrentTab(); tab != nil {
-			if tab.ScrollOffset > 0 {
-				tab.ScrollOffset -= 1
+			if _, changed := m.workbench.AdjustTabScrollOffset(tab.ID, -1); changed {
+				m.render.Invalidate()
 			}
-			m.render.Invalidate()
 		}
 		return true, m.ensureActivePaneScrollbackCmd()
 	default:

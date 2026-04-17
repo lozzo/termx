@@ -179,7 +179,7 @@ func (m *Model) exportSessionWorkbench() *workbenchdoc.Doc {
 			}
 			tab.ActivePaneID = baseTab.ActivePaneID
 			tab.ZoomedPaneID = baseTab.ZoomedPaneID
-			tab.ScrollOffset = baseTab.ScrollOffset
+			_ = m.workbench.SetTabScrollOffset(tab.ID, baseTab.ScrollOffset)
 		}
 	}
 	return doc

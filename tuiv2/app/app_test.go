@@ -865,7 +865,7 @@ func TestTerminalAttachedResetsTabScrollOffset(t *testing.T) {
 	if tab == nil {
 		t.Fatal("expected current tab")
 	}
-	tab.ScrollOffset = 3
+	_ = model.workbench.SetTabScrollOffset(tab.ID, 3)
 
 	_, _ = model.Update(orchestrator.TerminalAttachedMsg{PaneID: "pane-1", TerminalID: "term-1", Channel: 7})
 

@@ -1600,7 +1600,7 @@ func TestOutputCursorWriterCopyModeRoundTripRepaintsScrollbackViewBackToLive(t *
 	if tab == nil {
 		t.Fatal("expected current tab")
 	}
-	tab.ScrollOffset = 1
+	_ = model.workbench.SetTabScrollOffset(tab.ID, 1)
 	model.render.Invalidate()
 	frame1 := model.View()
 
@@ -2409,6 +2409,134 @@ func TestOutputCursorWriterFrameLinesPathStackedPanesUseVerticalScrollOptimizati
 	if report.Entries[1].Bytes >= 1024 {
 		t.Fatalf("expected stacked scroll delta frame to stay below 1KiB, got %#v", report.Entries[1])
 	}
+}
+
+func TestDebugOutputCursorWriterLocalScrollbackAudit(t *testing.T) {
+	if os.Getenv("TERMX_RUN_SCROLL_AUDIT") != "1" {
+		t.Skip("set TERMX_RUN_SCROLL_AUDIT=1 to run local scrollback frame audit")
+	}
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	makeSnapshot := func(terminalID string, cols, rows int) *protocol.Snapshot {
+		scrollback := make([][]protocol.Cell, 0, rows)
+		screen := make([][]protocol.Cell, 0, rows)
+		for i := 0; i < rows; i++ {
+			scrollback = append(scrollback, repeatProtocolCells(fmt.Sprintf("hist %03d %s", i, strings.Repeat("x", maxInt(0, cols-10))), cols))
+			screen = append(screen, repeatProtocolCells(fmt.Sprintf("live %03d %s", i, strings.Repeat("y", maxInt(0, cols-10))), cols))
+		}
+		return &protocol.Snapshot{
+			TerminalID: terminalID,
+			Size:       protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
+			Scrollback: scrollback,
+			Screen:     protocol.ScreenData{Cells: screen},
+			Cursor:     protocol.CursorState{Row: rows - 1, Col: 0, Visible: true},
+			Modes:      protocol.TerminalModes{AutoWrap: true},
+		}
+	}
+
+	runAudit := func(name string, wb *workbench.Workbench, rt *runtime.Runtime) {
+		t.Helper()
+		model := New(shared.Config{}, wb, rt)
+		model.width = 120
+		model.height = 36
+		sink := &cursorWriterProbeTTY{}
+		writer := newOutputCursorWriter(sink)
+		model.SetFrameWriter(writer)
+		model.SetCursorWriter(writer)
+
+		model.render.Invalidate()
+		scrollBeforeLines, _ := model.render.RenderFrameLinesRef()
+		_ = model.View()
+
+		sink.mu.Lock()
+		sink.writes = nil
+		sink.mu.Unlock()
+
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		_ = model.workbench.SetTabScrollOffset(tab.ID, localMouseWheelScrollLines)
+		model.render.Invalidate()
+		scrollAfterLines, _ := model.render.RenderFrameLinesRef()
+		_ = model.View()
+
+		sink.mu.Lock()
+		stream := strings.Join(sink.writes, "")
+		sink.mu.Unlock()
+		plan, ok := detectVerticalScrollPlan(scrollBeforeLines, scrollAfterLines)
+		t.Logf("%s detect_plan=%v plan=%#v has_SU=%v has_SD=%v bytes=%d", name, ok, plan, strings.Contains(stream, "\x1b[1S") || strings.Contains(stream, "\x1b[3S"), strings.Contains(stream, "\x1b[1T") || strings.Contains(stream, "\x1b[3T"), len(stream))
+	}
+
+	t.Run("single-pane", func(t *testing.T) {
+		wb := workbench.NewWorkbench()
+		wb.AddWorkspace("main", &workbench.WorkspaceState{
+			Name:      "main",
+			ActiveTab: 0,
+			Tabs: []*workbench.TabState{{
+				ID:           "tab-1",
+				Name:         "tab 1",
+				ActivePaneID: "pane-1",
+				Panes: map[string]*workbench.PaneState{
+					"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+				},
+				Root: workbench.NewLeaf("pane-1"),
+			}},
+		})
+		rt := runtime.New(&recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}})
+		term := rt.Registry().GetOrCreate("term-1")
+		term.Name = "shell"
+		term.State = "running"
+		term.Channel = 1
+		term.Snapshot = makeSnapshot("term-1", 118, 30)
+		binding := rt.BindPane("pane-1")
+		binding.Channel = 1
+		binding.Connected = true
+		runAudit("single-pane", wb, rt)
+	})
+
+	t.Run("split-pane", func(t *testing.T) {
+		wb := workbench.NewWorkbench()
+		wb.AddWorkspace("main", &workbench.WorkspaceState{
+			Name:      "main",
+			ActiveTab: 0,
+			Tabs: []*workbench.TabState{{
+				ID:           "tab-1",
+				Name:         "tab 1",
+				ActivePaneID: "pane-1",
+				Panes: map[string]*workbench.PaneState{
+					"pane-1": {ID: "pane-1", Title: "left", TerminalID: "term-1"},
+					"pane-2": {ID: "pane-2", Title: "right", TerminalID: "term-2"},
+				},
+				Root: &workbench.LayoutNode{
+					Direction: workbench.SplitVertical,
+					Ratio:     0.5,
+					First:     workbench.NewLeaf("pane-1"),
+					Second:    workbench.NewLeaf("pane-2"),
+				},
+			}},
+		})
+		rt := runtime.New(&recordingBridgeClient{snapshotByTerminal: map[string]*protocol.Snapshot{}})
+		left := rt.Registry().GetOrCreate("term-1")
+		left.Name = "left"
+		left.State = "running"
+		left.Channel = 1
+		left.Snapshot = makeSnapshot("term-1", 57, 30)
+		right := rt.Registry().GetOrCreate("term-2")
+		right.Name = "right"
+		right.State = "running"
+		right.Channel = 2
+		right.Snapshot = makeSnapshot("term-2", 57, 30)
+		leftBinding := rt.BindPane("pane-1")
+		leftBinding.Channel = 1
+		leftBinding.Connected = true
+		rightBinding := rt.BindPane("pane-2")
+		rightBinding.Channel = 2
+		rightBinding.Connected = true
+		runAudit("split-pane", wb, rt)
+	})
 }
 
 func TestOutputCursorWriterBatchedFocusSwitchAfterTextScrollPreservesTopNvimBackground(t *testing.T) {

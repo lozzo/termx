@@ -232,7 +232,7 @@ func (m *Model) syncCopyModeViewport(buffer copyModeBuffer, point copyModePoint)
 	}
 	if m.workbench != nil {
 		if tab := m.workbench.CurrentTab(); tab != nil {
-			tab.ScrollOffset = m.copyModeRenderOffset(buffer)
+			_ = m.workbench.SetTabScrollOffset(tab.ID, m.copyModeRenderOffset(buffer))
 		}
 	}
 }
