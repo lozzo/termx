@@ -1234,10 +1234,7 @@ type fakeHostFrame struct {
 }
 
 func fakeHostUsesAmbiguousWidth(content string, width int) bool {
-	if shared.IsAmbiguousEmojiVariationSelectorCluster(content, width) {
-		return true
-	}
-	if !shared.IsEastAsianAmbiguousWidthCluster(content) {
+	if !shared.IsHostWidthAmbiguousCluster(content, width) {
 		return false
 	}
 	if shared.IsStableNarrowTerminalSymbol(content) {
@@ -1292,10 +1289,11 @@ func (f *fakeHostFrame) apply(frame string, ambiguousWidth int) {
 				cluster.Width = xansi.StringWidth(cluster.Content)
 			}
 			width := cluster.Width
-			if fakeHostUsesAmbiguousWidth(cluster.Content, cluster.Width) {
+			ambiguous := fakeHostUsesAmbiguousWidth(cluster.Content, cluster.Width)
+			if ambiguous {
 				width = ambiguousWidth
 			}
-			if width <= 0 {
+			if !ambiguous && width <= 0 {
 				width = maxInt(1, xansi.StringWidth(cluster.Content))
 			}
 			f.put(row, col, cluster.Content)
@@ -1391,7 +1389,7 @@ func TestComposedCanvasKeepsRightBorderStableForAmbiguousWidthTextOnWideHost(t *
 	for _, content := range []string{"é", "§", "…"} {
 		t.Run(content, func(t *testing.T) {
 			canvas := newComposedCanvas(6, 1)
-			canvas.set(0, 0, drawCell{Content: content, Width: 1, TerminalContent: true})
+			canvas.set(0, 0, drawCell{Content: content, Width: 1, TerminalContent: true, HostWidthStabilizer: true})
 			canvas.set(1, 0, drawCell{Content: "X", Width: 1})
 			canvas.set(5, 0, drawCell{Content: "│", Width: 1})
 
@@ -1405,6 +1403,20 @@ func TestComposedCanvasKeepsRightBorderStableForAmbiguousWidthTextOnWideHost(t *
 				t.Fatalf("expected right border to survive after %q on wide host, got %q in %q", content, got, host.lines()[0])
 			}
 		})
+	}
+}
+
+func TestComposedCanvasKeepsFollowingCellStableForPrintableZeroWidthTextOnZeroWidthHost(t *testing.T) {
+	canvas := newComposedCanvas(4, 1)
+	canvas.drawProtocolRowInRect(workbench.Rect{X: 0, Y: 0, W: 4, H: 1}, 0, []protocol.Cell{
+		{Content: "\u00ad", Width: 0},
+		{Content: "X", Width: 1},
+	})
+
+	host := newFakeHostFrame(4, 1)
+	host.apply(canvas.contentString(), 0)
+	if got := host.cells[0][1]; got != "X" {
+		t.Fatalf("expected printable zero-width host-ambiguous cell to keep the following cell anchored, got %q in %q", got, host.lines()[0])
 	}
 }
 

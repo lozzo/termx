@@ -928,6 +928,33 @@ func TestOutputCursorWriterWriteFrameLinesKeepsAmbiguousWidthRowAlignedOnWideHos
 	}
 }
 
+func TestOutputCursorWriterWriteFrameKeepsPrintableZeroWidthRowAlignedOnZeroWidthHost(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+
+	frame1 := "\u00ad" + xansi.CHA(2) + "X" + "\x1b[0m\x1b[K"
+	frame2 := "\u00ad" + xansi.CHA(2) + "Y" + "\x1b[0m\x1b[K"
+	if err := writer.WriteFrame(frame1, ""); err != nil {
+		t.Fatalf("write initial printable-zero-width frame: %v", err)
+	}
+	if err := writer.WriteFrame(frame2, ""); err != nil {
+		t.Fatalf("write updated printable-zero-width frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	writes := append([]string(nil), sink.writes...)
+	sink.mu.Unlock()
+
+	host := replayCursorWriterFakeHost(t, 4, 1, writes, 0)
+	if got := host.cells[0][1]; got != "Y" {
+		t.Fatalf("expected printable-zero-width row update to keep the next cell anchored, got %q in %q", got, host.lines()[0])
+	}
+}
+
 func TestOutputCursorWriterWideStyledRowUsesDiffWhenNoEraseIsPresent(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
@@ -3045,10 +3072,7 @@ func newCursorWriterFakeHost(width, height int) *cursorWriterFakeHost {
 }
 
 func cursorWriterFakeHostUsesAmbiguousWidth(content string, width int) bool {
-	if shared.IsAmbiguousEmojiVariationSelectorCluster(content, width) {
-		return true
-	}
-	if !shared.IsEastAsianAmbiguousWidthCluster(content) {
+	if !shared.IsHostWidthAmbiguousCluster(content, width) {
 		return false
 	}
 	if shared.IsStableNarrowTerminalSymbol(content) {
@@ -3129,10 +3153,11 @@ func (h *cursorWriterFakeHost) apply(frame string, ambiguousWidth int) {
 				cluster.Width = xansi.StringWidth(cluster.Content)
 			}
 			width := cluster.Width
-			if cursorWriterFakeHostUsesAmbiguousWidth(cluster.Content, cluster.Width) {
+			ambiguous := cursorWriterFakeHostUsesAmbiguousWidth(cluster.Content, cluster.Width)
+			if ambiguous {
 				width = ambiguousWidth
 			}
-			if width <= 0 {
+			if !ambiguous && width <= 0 {
 				width = maxInt(1, xansi.StringWidth(cluster.Content))
 			}
 			h.put(row, col, cluster.Content)

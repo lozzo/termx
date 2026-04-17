@@ -4,6 +4,7 @@ import (
 	"strings"
 	"sync"
 
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/clipperhouse/displaywidth"
 )
 
@@ -37,6 +38,15 @@ func IsStableNarrowTerminalSymbol(content string) bool {
 	}
 }
 
+func IsPrintableZeroWidthCluster(content string) bool {
+	if content == "" || strings.IndexByte(content, '\x1b') >= 0 {
+		return false
+	}
+	return xansi.StringWidth(content) == 0
+}
+
 func IsHostWidthAmbiguousCluster(content string, width int) bool {
-	return IsAmbiguousEmojiVariationSelectorCluster(content, width) || IsEastAsianAmbiguousWidthCluster(content)
+	return IsAmbiguousEmojiVariationSelectorCluster(content, width) ||
+		IsEastAsianAmbiguousWidthCluster(content) ||
+		IsPrintableZeroWidthCluster(content)
 }

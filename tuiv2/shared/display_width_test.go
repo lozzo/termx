@@ -22,3 +22,12 @@ func TestIsHostWidthAmbiguousCluster(t *testing.T) {
 		t.Fatal("expected ordinary ASCII text not to be treated as host-width ambiguous")
 	}
 }
+
+func TestIsPrintableZeroWidthCluster(t *testing.T) {
+	if !IsPrintableZeroWidthCluster("\u00ad") {
+		t.Fatal("expected soft hyphen to be treated as a printable zero-width cluster")
+	}
+	if IsPrintableZeroWidthCluster("A") {
+		t.Fatal("expected ASCII not to be treated as a printable zero-width cluster")
+	}
+}

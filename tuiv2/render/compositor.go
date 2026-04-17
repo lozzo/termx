@@ -24,11 +24,12 @@ type drawStyle struct {
 }
 
 type drawCell struct {
-	Content         string
-	Width           int
-	Style           drawStyle
-	Continuation    bool
-	TerminalContent bool
+	Content             string
+	Width               int
+	Style               drawStyle
+	Continuation        bool
+	TerminalContent     bool
+	HostWidthStabilizer bool
 	// Marks the synthetic second column we materialize for FE0F ambiguous emoji.
 	// It participates in overlap clearing like a wide-cell continuation, but it
 	// still serializes through the raw+ECH path instead of being skipped.
@@ -338,6 +339,8 @@ func cellStyleFromSnapshot(cell protocol.Cell) drawStyle {
 }
 
 func drawCellFromProtocolCell(cell protocol.Cell) drawCell {
+	hostWidthStabilizer := cell.Content != "" &&
+		(cell.Width == 0 || (cell.Width == 1 && shared.IsEastAsianAmbiguousWidthCluster(cell.Content) && !shared.IsStableNarrowTerminalSymbol(cell.Content)))
 	width := cell.Width
 	continuation := cell.Content == "" && width == 0
 	if width <= 0 {
@@ -347,11 +350,12 @@ func drawCellFromProtocolCell(cell protocol.Cell) drawCell {
 		width = 1
 	}
 	return drawCell{
-		Content:         cell.Content,
-		Width:           width,
-		Style:           cellStyleFromSnapshot(cell),
-		Continuation:    continuation,
-		TerminalContent: true,
+		Content:             cell.Content,
+		Width:               width,
+		Style:               cellStyleFromSnapshot(cell),
+		Continuation:        continuation,
+		TerminalContent:     true,
+		HostWidthStabilizer: hostWidthStabilizer,
 	}
 }
 
@@ -360,10 +364,7 @@ func isAmbiguousEmojiVariationSelectorCluster(content string, width int) bool {
 }
 
 func shouldReanchorAfterTerminalAmbiguousWidthCell(cell drawCell) bool {
-	return cell.TerminalContent &&
-		cell.Width == 1 &&
-		shared.IsEastAsianAmbiguousWidthCluster(cell.Content) &&
-		!shared.IsStableNarrowTerminalSymbol(cell.Content)
+	return cell.TerminalContent && cell.HostWidthStabilizer
 }
 
 // 中文说明：这里只保留“原样输出 cell 内容”这个最小职责。FE0F 歧义 emoji

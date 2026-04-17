@@ -133,12 +133,15 @@ func parsePresentedRowGeneric(row string) presentedRow {
 			lastVisibleToken = token
 			lastVisibleWidth = width
 			pendingReanchor = false
+		} else if len(token) > 0 && token[0] != '\x1b' {
+			lastVisibleToken = token
+			lastVisibleWidth = width
 		} else if len(token) > 0 && token[0] == '\x1b' {
 			switch xansi.Cmd(parser.Command()).Final() {
 			case 'm':
 				style = style.withSGR(parser.Params())
 			case 'G':
-				if shared.IsEastAsianAmbiguousWidthCluster(lastVisibleToken) && lastVisibleWidth == 1 {
+				if shared.IsHostWidthAmbiguousCluster(lastVisibleToken, lastVisibleWidth) && !shared.IsStableNarrowTerminalSymbol(lastVisibleToken) {
 					hasHostWidthStabilizer = true
 				}
 				pendingReanchor = true
