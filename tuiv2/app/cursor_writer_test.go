@@ -1427,6 +1427,134 @@ func TestRenderVerticalScrollPlanBuildsExpectedCSISequences(t *testing.T) {
 	}
 }
 
+func TestDetectVerticalScrollRectPlanFindsSideBySideScrollUpRegion(t *testing.T) {
+	previousLines := []string{
+		"hdr0AAAA",
+		"aaaa1111",
+		"bbbb2222",
+		"cccc3333",
+		"dddd4444",
+		"eeee5555",
+		"ffff6666",
+		"ftr7ZZZZ",
+	}
+	nextLines := []string{
+		"hdr0AAAA",
+		"bbbb1111",
+		"cccc2222",
+		"dddd3333",
+		"eeee4444",
+		"ffff5555",
+		"gggg6666",
+		"ftr7ZZZZ",
+	}
+	previous := make([]presentedRow, len(previousLines))
+	next := make([]presentedRow, len(nextLines))
+	for i := range previousLines {
+		previous[i] = parsePresentedRow(previousLines[i])
+		next[i] = parsePresentedRow(nextLines[i])
+	}
+	defer releasePresentedRows(previous)
+	defer releasePresentedRows(next)
+
+	plan, ok := detectVerticalScrollRectPlan(previous, next)
+	if !ok {
+		t.Fatal("expected vertical scroll rect plan")
+	}
+	if plan.direction != scrollUp {
+		t.Fatalf("expected scrollUp rect plan, got %#v", plan)
+	}
+	if plan.shift != 1 || plan.start != 1 || plan.end != 6 {
+		t.Fatalf("unexpected rect scroll row bounds %#v", plan)
+	}
+	if plan.left != 0 || plan.right != 3 {
+		t.Fatalf("unexpected rect scroll columns %#v", plan)
+	}
+	if plan.reused != 5 {
+		t.Fatalf("expected five reused rows in rect scroll plan, got %#v", plan)
+	}
+}
+
+func TestRenderVerticalScrollRectPlanBuildsExpectedCSISequences(t *testing.T) {
+	plan := verticalScrollRectPlan{
+		direction: scrollUp,
+		start:     1,
+		end:       6,
+		shift:     1,
+		reused:    5,
+		left:      0,
+		right:     3,
+	}
+	want := xansi.SetModeLeftRightMargin +
+		xansi.DECSLRM(1, 4) +
+		"\x1b[2;7r" +
+		xansi.DECRST(xansi.ModeOrigin) +
+		"\x1b[2;1H" +
+		"\x1b[1S" +
+		"\x1b[r" +
+		xansi.ResetModeLeftRightMargin +
+		xansi.DECRST(xansi.ModeOrigin)
+	if got := renderVerticalScrollRectPlan(plan, 8); got != want {
+		t.Fatalf("unexpected rect vertical scroll CSI %q want %q", got, want)
+	}
+}
+
+func TestOutputCursorWriterUsesRectScrollOptimizationForSideBySidePaneScroll(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	previous := []string{
+		"hdr0AAAA",
+		"aaaa1111",
+		"bbbb2222",
+		"cccc3333",
+		"dddd4444",
+		"eeee5555",
+		"ffff6666",
+		"ftr7ZZZZ",
+	}
+	next := []string{
+		"hdr0AAAA",
+		"bbbb1111",
+		"cccc2222",
+		"dddd3333",
+		"eeee4444",
+		"ffff5555",
+		"gggg6666",
+		"ftr7ZZZZ",
+	}
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetVerticalScrollEnabled(true)
+
+	if err := writer.WriteFrameLines(previous, ""); err != nil {
+		t.Fatalf("write initial frame: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrameLines(next, ""); err != nil {
+		t.Fatalf("write scrolled frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if !strings.Contains(got, xansi.SetModeLeftRightMargin) {
+		t.Fatalf("expected rect scroll optimization to enable left/right margins, got %q", got)
+	}
+	if !strings.Contains(got, "\x1b[1;4s") {
+		t.Fatalf("expected rect scroll optimization to set pane column margins, got %q", got)
+	}
+	if !strings.Contains(got, "\x1b[1S") {
+		t.Fatalf("expected rect scroll optimization to emit SU, got %q", got)
+	}
+}
+
 func TestTruncateFrameToWidthClipsEachRenderedLine(t *testing.T) {
 	frame := "123456\nabcdef"
 	if got, want := truncateFrameToWidth(frame, 4), "1234\nabcd"; got != want {

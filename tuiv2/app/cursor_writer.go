@@ -273,22 +273,45 @@ func (p *framePresenter) presentVerticalScroll(lines []string) string {
 		return ""
 	}
 	plan, ok := detectVerticalScrollPlan(p.lines, lines)
-	if !ok {
-		return ""
+	if ok {
+		afterScroll := applyVerticalScrollPlan(p.lines, plan)
+		remainder, changedCount := renderChangedRows(afterScroll, lines)
+		if changedCount < plan.reused {
+			var out strings.Builder
+			out.WriteString(renderVerticalScrollPlan(plan, len(lines)))
+			p.verticalScrollCount++
+			if p.debugFaultScrollDropRemainderEvery > 0 && p.verticalScrollCount%p.debugFaultScrollDropRemainderEvery == 0 {
+				return out.String()
+			}
+			out.WriteString(remainder)
+			return out.String()
+		}
 	}
-	afterScroll := applyVerticalScrollPlan(p.lines, plan)
-	remainder, changedCount := renderChangedRows(afterScroll, lines)
-	if changedCount >= plan.reused {
-		return ""
+	if p.fullWidthLines {
+		nextRows := make([]presentedRow, len(lines))
+		for i := range lines {
+			nextRows[i] = parsePresentedRow(lines[i])
+		}
+		defer releasePresentedRows(nextRows)
+		previousRows := make([]presentedRow, len(p.lines))
+		for i := range p.lines {
+			previousRows[i] = p.presentedRow(i)
+		}
+		rectPlan, ok := detectVerticalScrollRectPlan(previousRows, nextRows)
+		if ok {
+			afterScroll := applyVerticalScrollRectPlan(previousRows, rectPlan)
+			if len(afterScroll) == len(lines) {
+				remainder, changedCount := renderChangedRows(afterScroll, lines)
+				if changedCount < rectPlan.reused {
+					var out strings.Builder
+					out.WriteString(renderVerticalScrollRectPlan(rectPlan, len(lines)))
+					out.WriteString(remainder)
+					return out.String()
+				}
+			}
+		}
 	}
-	var out strings.Builder
-	out.WriteString(renderVerticalScrollPlan(plan, len(lines)))
-	p.verticalScrollCount++
-	if p.debugFaultScrollDropRemainderEvery > 0 && p.verticalScrollCount%p.debugFaultScrollDropRemainderEvery == 0 {
-		return out.String()
-	}
-	out.WriteString(remainder)
-	return out.String()
+	return ""
 }
 
 func renderChangedRows(previous, next []string) (string, int) {
