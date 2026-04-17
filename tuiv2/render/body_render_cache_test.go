@@ -211,3 +211,58 @@ func TestContentSpriteIncrementallyUpdatesChangedRowsForSameDimensions(t *testin
 		t.Fatalf("expected sprite rows to preserve unchanged row and update changed row, got %q", got)
 	}
 }
+
+func TestContentSpriteIncrementalRowUpdatePreservesExtentHints(t *testing.T) {
+	now := time.Date(2026, 4, 16, 13, 0, 0, 0, time.UTC)
+	surface := &spriteTestSurface{
+		size: protocol.Size{Cols: 4, Rows: 2},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("ab"),
+			protocolRowFromText("cd"),
+		},
+		screenTimestamps: []time.Time{now, now},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-1",
+			Name:           "shell",
+			State:          "running",
+			Surface:        surface,
+			SurfaceVersion: 1,
+		}},
+	}
+	entry := paneRenderEntry{
+		PaneID:     "pane-1",
+		Rect:       workbench.Rect{X: 0, Y: 0, W: 6, H: 2},
+		Frameless:  true,
+		TerminalID: "term-1",
+		Theme:      defaultUITheme(),
+		ContentKey: paneContentKey{
+			TerminalID:    "term-1",
+			TerminalKnown: true,
+		},
+	}
+	entry.ContentKey.SurfaceVersion = runtimeState.Terminals[0].SurfaceVersion
+
+	cache := &bodyRenderCache{}
+	sprite := cache.contentSprite(entry, runtimeState)
+	if sprite == nil {
+		t.Fatal("expected initial sprite")
+	}
+	if got := sprite.rawString(); got != "ab····\ncd····" {
+		t.Fatalf("expected initial extent hints, got %q", got)
+	}
+
+	surface.screen[1] = protocolRowFromText("xy")
+	surface.screenTimestamps[1] = now.Add(time.Second)
+	runtimeState.Terminals[0].SurfaceVersion = 2
+	entry.ContentKey.SurfaceVersion = runtimeState.Terminals[0].SurfaceVersion
+
+	nextSprite := cache.contentSprite(entry, runtimeState)
+	if nextSprite != sprite {
+		t.Fatal("expected incremental path to reuse sprite")
+	}
+	if got := nextSprite.rawString(); got != "ab····\nxy····" {
+		t.Fatalf("expected incremental row redraw to preserve extent hints, got %q", got)
+	}
+}

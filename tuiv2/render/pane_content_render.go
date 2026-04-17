@@ -404,10 +404,13 @@ func drawPaneContentSpriteRow(canvas *composedCanvas, rect workbench.Rect, sourc
 		return
 	}
 	fillRect(canvas, workbench.Rect{X: rect.X, Y: targetY, W: rect.W, H: 1}, blankDrawCell())
-	if source == nil || rowIndex < 0 {
+	if source == nil {
 		return
 	}
-	drawTerminalSourceRowInRect(canvas, rect, source, rowIndex, targetY, theme)
+	if rowIndex >= 0 {
+		drawTerminalSourceRowInRect(canvas, rect, source, rowIndex, targetY, theme)
+	}
+	drawTerminalExtentHintsRow(canvas, rect, source, targetY, theme)
 }
 
 func exitedPaneActionDrawStyle(theme uiTheme, kind HitRegionKind, selected bool) drawStyle {

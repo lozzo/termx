@@ -111,15 +111,18 @@ func terminalMetricsForSource(source terminalRenderSource) renderTerminalMetrics
 		Cols: int(source.Size().Cols),
 		Rows: int(source.Size().Rows),
 	}
-	if metrics.Rows <= 0 {
-		metrics.Rows = source.ScreenRows()
+	renderedRows := source.ScreenRows()
+	if renderedRows > 0 && (metrics.Rows <= 0 || renderedRows < metrics.Rows) {
+		metrics.Rows = renderedRows
 	}
-	if metrics.Cols <= 0 {
-		for row := source.ScrollbackRows(); row < source.TotalRows(); row++ {
-			if rowW := protocolRowDisplayWidth(source.Row(row)); rowW > metrics.Cols {
-				metrics.Cols = rowW
-			}
+	renderedCols := 0
+	for row := source.ScrollbackRows(); row < source.TotalRows(); row++ {
+		if rowW := protocolRowDisplayWidth(source.Row(row)); rowW > renderedCols {
+			renderedCols = rowW
 		}
+	}
+	if renderedCols > 0 && (metrics.Cols <= 0 || renderedCols < metrics.Cols) {
+		metrics.Cols = renderedCols
 	}
 	return metrics
 }

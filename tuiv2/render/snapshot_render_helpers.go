@@ -99,6 +99,36 @@ func drawTerminalSourceRowInRect(canvas *composedCanvas, rect workbench.Rect, so
 	canvas.drawProtocolRowInRect(rect, targetY, source.Row(rowIndex))
 }
 
+func drawTerminalExtentHintsRow(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, targetY int, theme uiTheme) {
+	if canvas == nil || source == nil || rect.W <= 0 || rect.H <= 0 {
+		return
+	}
+	if targetY < rect.Y || targetY >= rect.Y+rect.H {
+		return
+	}
+	metrics := terminalMetricsForSource(source)
+	if metrics.Cols <= 0 || metrics.Rows <= 0 {
+		return
+	}
+
+	dotStyle := drawStyle{FG: theme.panelBorder}
+	visibleCols := minInt(rect.W, metrics.Cols)
+	visibleRows := minInt(rect.H, metrics.Rows)
+
+	if targetY >= rect.Y+visibleRows {
+		for x := rect.X; x < rect.X+rect.W; x++ {
+			canvas.set(x, targetY, drawCell{Content: "·", Width: 1, Style: dotStyle})
+		}
+		return
+	}
+	if metrics.Cols >= rect.W {
+		return
+	}
+	for x := rect.X + visibleCols; x < rect.X+rect.W; x++ {
+		canvas.set(x, targetY, drawCell{Content: "·", Width: 1, Style: dotStyle})
+	}
+}
+
 func drawSnapshotMarkerRow(canvas *composedCanvas, rect workbench.Rect, targetY int, kind string, ts time.Time, theme uiTheme) bool {
 	if canvas == nil || rect.W <= 0 {
 		return false

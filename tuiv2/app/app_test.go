@@ -1849,6 +1849,101 @@ func TestViewForcesOneFullRedrawAfterActivePaneLeavesAltScreen(t *testing.T) {
 	}
 }
 
+func TestViewForcesFullRedrawAfterWindowResizeWithVisibleAltScreen(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 24})
+	writer := &resetProbeFrameWriter{}
+	model.SetFrameWriter(writer)
+	model.width = 80
+	model.height = 24
+
+	setActivePaneTerminalModes(t, model, protocol.TerminalModes{
+		AlternateScreen: true,
+		AutoWrap:        true,
+	})
+	_ = model.View()
+	if writer.resetCalls != 0 {
+		t.Fatalf("expected baseline alt-screen view not to reset, got %d", writer.resetCalls)
+	}
+
+	cmd, handled := model.handleLifecycleMessage(tea.WindowSizeMsg{Width: 100, Height: 30})
+	if !handled {
+		t.Fatal("expected window size message handled")
+	}
+	if cmd == nil {
+		t.Fatal("expected window size message to schedule follow-up work")
+	}
+	_ = model.View()
+	if writer.resetCalls != 1 {
+		t.Fatalf("expected one redraw reset after alt-screen resize, got %d", writer.resetCalls)
+	}
+
+	_ = model.View()
+	if writer.resetCalls != 1 {
+		t.Fatalf("expected resize redraw reset to fire once, got %d", writer.resetCalls)
+	}
+}
+
+func TestViewForcesFullRedrawAfterFloatingMoveOverVisibleAltScreen(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 120, height: 36})
+	writer := &resetProbeFrameWriter{}
+	model.SetFrameWriter(writer)
+
+	base := model.runtime.Registry().Get("term-1")
+	if base == nil {
+		t.Fatal("expected base terminal")
+	}
+	base.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 118, Rows: 30},
+		Modes:      protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+	}
+
+	tab := model.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 18, Y: 7, W: 36, H: 10}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+	if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+		t.Fatalf("bind floating terminal: %v", err)
+	}
+	floatTerminal := model.runtime.Registry().GetOrCreate("term-float")
+	floatTerminal.Name = "float"
+	floatTerminal.State = "running"
+	floatTerminal.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-float",
+		Size:       protocol.Size{Cols: 34, Rows: 8},
+		Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "f", Width: 1}}}},
+		Modes:      protocol.TerminalModes{AutoWrap: true},
+	}
+	floatBinding := model.runtime.BindPane("float-1")
+	floatBinding.Channel = 2
+	floatBinding.Connected = true
+	if err := model.workbench.FocusPane(tab.ID, "float-1"); err != nil {
+		t.Fatalf("focus floating pane: %v", err)
+	}
+
+	_ = model.View()
+	if writer.resetCalls != 0 {
+		t.Fatalf("expected baseline floating view not to reset, got %d", writer.resetCalls)
+	}
+
+	if !model.workbench.MoveFloatingPane(tab.ID, "float-1", 26, 7) {
+		t.Fatal("expected floating move to change pane geometry")
+	}
+	model.render.Invalidate()
+	_ = model.View()
+	if writer.resetCalls != 1 {
+		t.Fatalf("expected one redraw reset after floating move over visible alt-screen, got %d", writer.resetCalls)
+	}
+
+	_ = model.View()
+	if writer.resetCalls != 1 {
+		t.Fatalf("expected floating-move redraw reset to fire once, got %d", writer.resetCalls)
+	}
+}
+
 func TestPendingAttachBuffersTerminalInputUntilAttachCompletes(t *testing.T) {
 	client := &recordingBridgeClient{}
 	wb := workbench.NewWorkbench()

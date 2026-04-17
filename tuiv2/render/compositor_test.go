@@ -1166,7 +1166,12 @@ func TestDrawSnapshotWithOffsetUsesSnapshotHeightWhenRenderedRowsLagAfterShrink(
 		Size: protocol.Size{Cols: 4, Rows: 1},
 		Screen: protocol.ScreenData{
 			Cells: [][]protocol.Cell{
-				{{Content: "a", Width: 1}},
+				{
+					{Content: "a", Width: 1},
+					{Content: "b", Width: 1},
+					{Content: "c", Width: 1},
+					{Content: "d", Width: 1},
+				},
 				{{Content: "b", Width: 1}},
 				{{Content: "c", Width: 1}},
 			},
@@ -1176,7 +1181,7 @@ func TestDrawSnapshotWithOffsetUsesSnapshotHeightWhenRenderedRowsLagAfterShrink(
 	fillRect(canvas, rect, blankDrawCell())
 	drawSnapshotWithOffset(canvas, rect, snapshot, 0, defaultUITheme())
 
-	if got := canvas.rawString(); got != "a\n····\n····" {
+	if got := canvas.rawString(); got != "abcd\n····\n····" {
 		t.Fatalf("expected resized terminal height to blank stale lower rows with dots, got %q", got)
 	}
 }
@@ -1200,6 +1205,47 @@ func TestDrawSnapshotWithOffsetUsesSnapshotWidthWhenRenderedColsLagAfterShrink(t
 
 	if got := canvas.rawString(); got != "a···" {
 		t.Fatalf("expected resized terminal width to blank stale right-side cells with dots, got %q", got)
+	}
+}
+
+func TestDrawSnapshotWithOffsetUsesRenderedHeightWhenSnapshotOmitsTrailingBlankRows(t *testing.T) {
+	canvas := newComposedCanvas(4, 4)
+	rect := workbench.Rect{X: 0, Y: 0, W: 4, H: 4}
+	snapshot := &protocol.Snapshot{
+		Size: protocol.Size{Cols: 4, Rows: 4},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{
+				{{Content: "a", Width: 1}},
+			},
+		},
+	}
+
+	fillRect(canvas, rect, blankDrawCell())
+	drawSnapshotWithOffset(canvas, rect, snapshot, 0, defaultUITheme())
+
+	if got := canvas.rawString(); got != "a···\n····\n····\n····" {
+		t.Fatalf("expected omitted trailing blank rows to fall back to dots, got %q", got)
+	}
+}
+
+func TestDrawSnapshotWithOffsetUsesRenderedWidthWhenSnapshotOmitsTrailingBlankCols(t *testing.T) {
+	canvas := newComposedCanvas(4, 2)
+	rect := workbench.Rect{X: 0, Y: 0, W: 4, H: 2}
+	snapshot := &protocol.Snapshot{
+		Size: protocol.Size{Cols: 4, Rows: 2},
+		Screen: protocol.ScreenData{
+			Cells: [][]protocol.Cell{
+				{{Content: "a", Width: 1}},
+				{{Content: "b", Width: 1}},
+			},
+		},
+	}
+
+	fillRect(canvas, rect, blankDrawCell())
+	drawSnapshotWithOffset(canvas, rect, snapshot, 0, defaultUITheme())
+
+	if got := canvas.rawString(); got != "a···\nb···" {
+		t.Fatalf("expected omitted trailing blank cols to fall back to dots, got %q", got)
 	}
 }
 

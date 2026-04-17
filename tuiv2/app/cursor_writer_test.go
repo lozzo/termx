@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"image/color"
 	"io"
@@ -2595,6 +2596,394 @@ func TestOutputCursorWriterFrameLinesPathMovingFloatingPanePreservesUnderlyingNv
 	assertScreenEqual(t, got, want)
 }
 
+func TestOutputCursorWriterFrameLinesPathMovingFloatingPanePreservesUnderlyingExtentHints(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	baseSnapshot := func(terminalID string) *protocol.Snapshot {
+		return &protocol.Snapshot{
+			TerminalID: terminalID,
+			Size:       protocol.Size{Cols: 18, Rows: 4},
+			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+				repeatProtocolCells("top line", 18),
+				repeatProtocolCells("mid", 18),
+				repeatProtocolCells("bot", 18),
+				repeatProtocolCells("$", 18),
+			}},
+			Cursor: protocol.CursorState{Row: 3, Col: 1, Visible: true},
+			Modes:  protocol.TerminalModes{AutoWrap: true},
+		}
+	}
+
+	buildModel := func(rect workbench.Rect) *Model {
+		t.Helper()
+		model := setupModel(t, modelOpts{width: 120, height: 36})
+		base := model.runtime.Registry().GetOrCreate("term-1")
+		base.Name = "base"
+		base.State = "running"
+		base.Snapshot = baseSnapshot("term-1")
+
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", rect); err != nil {
+			t.Fatalf("create floating pane: %v", err)
+		}
+		if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+			t.Fatalf("bind floating pane terminal: %v", err)
+		}
+		floatTerminal := model.runtime.Registry().GetOrCreate("term-float")
+		floatTerminal.Name = "float"
+		floatTerminal.State = "running"
+		floatTerminal.Snapshot = cursorWriterStyledSnapshot("term-float", 51, 14)
+		model.runtime.BindPane("float-1").Connected = true
+		return model
+	}
+
+	captureScreen := func(model *Model, positions []workbench.Rect) localvterm.ScreenData {
+		t.Helper()
+		sink := &cursorWriterProbeTTY{}
+		writer := newOutputCursorWriter(sink)
+		model.SetFrameWriter(writer)
+		model.SetCursorWriter(writer)
+
+		model.render.Invalidate()
+		_ = model.View()
+
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		for _, rect := range positions {
+			if !model.workbench.MoveFloatingPane(tab.ID, "float-1", rect.X, rect.Y) {
+				t.Fatalf("expected move to %v to change pane", rect)
+			}
+			model.render.Invalidate()
+			_ = model.View()
+		}
+
+		sink.mu.Lock()
+		stream := strings.Join(sink.writes, "")
+		sink.mu.Unlock()
+		vt := localvterm.New(120, 36, 0, nil)
+		if _, err := vt.Write([]byte(stream)); err != nil {
+			t.Fatalf("replay stream into host vterm: %v", err)
+		}
+		return vt.ScreenContent()
+	}
+
+	start := workbench.Rect{X: 18, Y: 7, W: 54, H: 16}
+	path := []workbench.Rect{
+		{X: 24, Y: 7, W: 54, H: 16},
+		{X: 30, Y: 7, W: 54, H: 16},
+		{X: 36, Y: 7, W: 54, H: 16},
+	}
+
+	got := captureScreen(buildModel(start), path)
+	want := captureScreen(buildModel(path[len(path)-1]), nil)
+	assertScreenEqual(t, got, want)
+}
+
+func TestOutputCursorWriterFrameLinesPathMovingSharedFloatingFollowerPreservesExtentHints(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	sharedSnapshot := func(terminalID string) *protocol.Snapshot {
+		return &protocol.Snapshot{
+			TerminalID: terminalID,
+			Size:       protocol.Size{Cols: 18, Rows: 4},
+			Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+				repeatProtocolCells("nvim 1.png", 18),
+				repeatProtocolCells("nvim 1.png", 18),
+				repeatProtocolCells("lozzow@host", 18),
+				repeatProtocolCells("$", 18),
+			}},
+			Cursor: protocol.CursorState{Row: 3, Col: 1, Visible: true},
+			Modes:  protocol.TerminalModes{AutoWrap: true},
+		}
+	}
+
+	buildModel := func(rect workbench.Rect) *Model {
+		t.Helper()
+		model := setupModel(t, modelOpts{width: 120, height: 36})
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		if err := model.workbench.BindPaneTerminal(tab.ID, "pane-1", "term-shared"); err != nil {
+			t.Fatalf("bind shared terminal to pane-1: %v", err)
+		}
+		if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", rect); err != nil {
+			t.Fatalf("create floating pane: %v", err)
+		}
+		if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-shared"); err != nil {
+			t.Fatalf("bind shared floating terminal: %v", err)
+		}
+
+		terminal := model.runtime.Registry().GetOrCreate("term-shared")
+		terminal.Name = "shared"
+		terminal.State = "running"
+		terminal.Channel = 1
+		terminal.OwnerPaneID = "pane-1"
+		terminal.BoundPaneIDs = []string{"pane-1", "float-1"}
+		terminal.Snapshot = sharedSnapshot("term-shared")
+
+		ownerBinding := model.runtime.BindPane("pane-1")
+		ownerBinding.Channel = 1
+		ownerBinding.Connected = true
+		ownerBinding.Role = runtime.BindingRoleOwner
+
+		followerBinding := model.runtime.BindPane("float-1")
+		followerBinding.Channel = 2
+		followerBinding.Connected = true
+		followerBinding.Role = runtime.BindingRoleFollower
+		return model
+	}
+
+	captureScreen := func(model *Model, positions []workbench.Rect) localvterm.ScreenData {
+		t.Helper()
+		sink := &cursorWriterProbeTTY{}
+		writer := newOutputCursorWriter(sink)
+		model.SetFrameWriter(writer)
+		model.SetCursorWriter(writer)
+
+		model.render.Invalidate()
+		_ = model.View()
+
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		for _, rect := range positions {
+			if !model.workbench.MoveFloatingPane(tab.ID, "float-1", rect.X, rect.Y) {
+				t.Fatalf("expected move to %v to change pane", rect)
+			}
+			model.render.Invalidate()
+			_ = model.View()
+		}
+
+		sink.mu.Lock()
+		stream := strings.Join(sink.writes, "")
+		sink.mu.Unlock()
+		vt := localvterm.New(120, 36, 0, nil)
+		if _, err := vt.Write([]byte(stream)); err != nil {
+			t.Fatalf("replay stream into host vterm: %v", err)
+		}
+		return vt.ScreenContent()
+	}
+
+	start := workbench.Rect{X: 18, Y: 12, W: 34, H: 10}
+	path := []workbench.Rect{
+		{X: 26, Y: 12, W: 34, H: 10},
+		{X: 34, Y: 12, W: 34, H: 10},
+		{X: 42, Y: 12, W: 34, H: 10},
+	}
+
+	got := captureScreen(buildModel(start), path)
+	want := captureScreen(buildModel(path[len(path)-1]), nil)
+	assertScreenEqual(t, got, want)
+}
+
+func TestOutputCursorWriterFrameLinesPathSharedFollowerPreservesExtentHintsAfterAltScreenExit(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	nvimSnapshot := cursorWriterNvimLikeSnapshot("term-shared", 18, 10, "#444444")
+	shellSnapshot := &protocol.Snapshot{
+		TerminalID: "term-shared",
+		Size:       protocol.Size{Cols: 18, Rows: 10},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			repeatProtocolCells("nvim 1.png", 18),
+			repeatProtocolCells("nvim 1.png", 18),
+			repeatProtocolCells("lozzow@host", 18),
+			repeatProtocolCells("$", 18),
+		}},
+		Cursor: protocol.CursorState{Row: 3, Col: 1, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	}
+
+	buildModel := func(snapshot *protocol.Snapshot) *Model {
+		t.Helper()
+		model := setupModel(t, modelOpts{width: 120, height: 36})
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		if err := model.workbench.BindPaneTerminal(tab.ID, "pane-1", "term-shared"); err != nil {
+			t.Fatalf("bind shared terminal to pane-1: %v", err)
+		}
+		if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 18, Y: 12, W: 34, H: 10}); err != nil {
+			t.Fatalf("create floating pane: %v", err)
+		}
+		if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-shared"); err != nil {
+			t.Fatalf("bind shared floating terminal: %v", err)
+		}
+
+		terminal := model.runtime.Registry().GetOrCreate("term-shared")
+		terminal.Name = "shared"
+		terminal.State = "running"
+		terminal.Channel = 1
+		terminal.OwnerPaneID = "float-1"
+		terminal.BoundPaneIDs = []string{"pane-1", "float-1"}
+		terminal.Snapshot = snapshot
+
+		followerBinding := model.runtime.BindPane("pane-1")
+		followerBinding.Channel = 1
+		followerBinding.Connected = true
+		followerBinding.Role = runtime.BindingRoleFollower
+
+		ownerBinding := model.runtime.BindPane("float-1")
+		ownerBinding.Channel = 2
+		ownerBinding.Connected = true
+		ownerBinding.Role = runtime.BindingRoleOwner
+		return model
+	}
+
+	captureScreen := func(model *Model, nextSnapshot *protocol.Snapshot) localvterm.ScreenData {
+		t.Helper()
+		sink := &cursorWriterProbeTTY{}
+		writer := newOutputCursorWriter(sink)
+		model.SetFrameWriter(writer)
+		model.SetCursorWriter(writer)
+
+		model.render.Invalidate()
+		_ = model.View()
+
+		if nextSnapshot != nil {
+			terminal := model.runtime.Registry().Get("term-shared")
+			if terminal == nil {
+				t.Fatal("expected shared terminal")
+			}
+			terminal.Snapshot = nextSnapshot
+			touchRuntimeVisibleStateForTest(model.runtime, 7)
+			model.render.Invalidate()
+			_ = model.View()
+		}
+
+		sink.mu.Lock()
+		stream := strings.Join(sink.writes, "")
+		sink.mu.Unlock()
+		vt := localvterm.New(120, 36, 0, nil)
+		if _, err := vt.Write([]byte(stream)); err != nil {
+			t.Fatalf("replay stream into host vterm: %v", err)
+		}
+		return vt.ScreenContent()
+	}
+
+	got := captureScreen(buildModel(nvimSnapshot), shellSnapshot)
+	want := captureScreen(buildModel(shellSnapshot), nil)
+	assertScreenEqual(t, got, want)
+}
+
+func TestOutputCursorWriterFrameLinesPathSharedFollowerPreservesExtentHintsAfterVTermAltScreenExit(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	const exitPayload = "\x1b[?1049l\x1b[?25h\x1b[?1002l\x1b[Hnvim 1.png\r\nnvim 1.png\r\nlozzow@host\r\n$ "
+
+	buildModel := func(applyExit bool) *Model {
+		t.Helper()
+		client := &recordingBridgeClient{
+			snapshotByTerminal: map[string]*protocol.Snapshot{
+				"term-shared": cursorWriterNvimLikeSnapshot("term-shared", 18, 10, "#444444"),
+			},
+		}
+		model := setupModel(t, modelOpts{client: client, width: 120, height: 36})
+		tab := model.workbench.CurrentTab()
+		if tab == nil {
+			t.Fatal("expected current tab")
+		}
+		if err := model.workbench.BindPaneTerminal(tab.ID, "pane-1", "term-shared"); err != nil {
+			t.Fatalf("bind shared terminal to pane-1: %v", err)
+		}
+		if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 18, Y: 12, W: 34, H: 10}); err != nil {
+			t.Fatalf("create floating pane: %v", err)
+		}
+		if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-shared"); err != nil {
+			t.Fatalf("bind shared floating terminal: %v", err)
+		}
+
+		terminal := model.runtime.Registry().GetOrCreate("term-shared")
+		terminal.Name = "shared"
+		terminal.State = "running"
+		terminal.Channel = 1
+		terminal.OwnerPaneID = "float-1"
+		terminal.BoundPaneIDs = []string{"pane-1", "float-1"}
+
+		followerBinding := model.runtime.BindPane("pane-1")
+		followerBinding.Channel = 1
+		followerBinding.Connected = true
+		followerBinding.Role = runtime.BindingRoleFollower
+
+		ownerBinding := model.runtime.BindPane("float-1")
+		ownerBinding.Channel = 2
+		ownerBinding.Connected = true
+		ownerBinding.Role = runtime.BindingRoleOwner
+
+		if _, err := model.runtime.LoadSnapshot(context.Background(), "term-shared", 0, 10); err != nil {
+			t.Fatalf("load snapshot: %v", err)
+		}
+		if applyExit {
+			if terminal.VTerm == nil {
+				t.Fatal("expected hydrated vterm")
+			}
+			if _, err := terminal.VTerm.Write([]byte(exitPayload)); err != nil {
+				t.Fatalf("apply alt-screen exit payload: %v", err)
+			}
+			if !model.runtime.RefreshSnapshotFromVTerm("term-shared") {
+				t.Fatal("expected refresh snapshot from vterm")
+			}
+			touchRuntimeVisibleStateForTest(model.runtime, 9)
+		}
+		return model
+	}
+
+	captureScreen := func(model *Model, applyExitAfterFirstView bool) localvterm.ScreenData {
+		t.Helper()
+		sink := &cursorWriterProbeTTY{}
+		writer := newOutputCursorWriter(sink)
+		model.SetFrameWriter(writer)
+		model.SetCursorWriter(writer)
+
+		model.render.Invalidate()
+		_ = model.View()
+
+		if applyExitAfterFirstView {
+			terminal := model.runtime.Registry().Get("term-shared")
+			if terminal == nil || terminal.VTerm == nil {
+				t.Fatal("expected shared terminal with vterm")
+			}
+			if _, err := terminal.VTerm.Write([]byte(exitPayload)); err != nil {
+				t.Fatalf("apply alt-screen exit payload: %v", err)
+			}
+			if !model.runtime.RefreshSnapshotFromVTerm("term-shared") {
+				t.Fatal("expected refresh snapshot from vterm")
+			}
+			touchRuntimeVisibleStateForTest(model.runtime, 10)
+			model.render.Invalidate()
+			_ = model.View()
+		}
+
+		sink.mu.Lock()
+		stream := strings.Join(sink.writes, "")
+		sink.mu.Unlock()
+		vt := localvterm.New(120, 36, 0, nil)
+		if _, err := vt.Write([]byte(stream)); err != nil {
+			t.Fatalf("replay stream into host vterm: %v", err)
+		}
+		return vt.ScreenContent()
+	}
+
+	got := captureScreen(buildModel(false), true)
+	want := captureScreen(buildModel(true), false)
+	assertScreenEqual(t, got, want)
+}
+
 func TestOutputCursorWriterFrameLinesPathStreamingFloatingPanePreservesUnderlyingNvimBackground(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
@@ -2764,6 +3153,21 @@ func cursorWriterStyledSnapshot(terminalID string, cols, rows int) *protocol.Sna
 		Cursor:     protocol.CursorState{Row: 0, Col: 0, Visible: true},
 		Modes:      protocol.TerminalModes{AutoWrap: true},
 	}
+}
+
+func repeatProtocolCells(text string, cols int) []protocol.Cell {
+	if cols <= 0 {
+		return nil
+	}
+	row := make([]protocol.Cell, 0, cols)
+	for i := 0; i < cols; i++ {
+		cell := protocol.Cell{Content: " ", Width: 1}
+		if i < len(text) {
+			cell.Content = string(text[i])
+		}
+		row = append(row, cell)
+	}
+	return row
 }
 
 func cursorWriterNvimLikeSnapshot(terminalID string, cols, rows int, bg string) *protocol.Snapshot {

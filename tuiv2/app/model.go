@@ -67,8 +67,10 @@ type Model struct {
 	frameOut                frameSequenceWriter
 	lastViewFrame           string
 	lastViewCursor          string
+	lastVisibleLayoutSig    string
 	lastActivePaneAltScreen bool
 	activePaneAltScreenSet  bool
+	visibleLayoutSigSet     bool
 
 	terminalInputs              terminalInputDispatchQueue
 	terminalInputSending        bool

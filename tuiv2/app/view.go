@@ -11,6 +11,9 @@ func (m *Model) View() string {
 	if m == nil || m.render == nil {
 		return ""
 	}
+	if m.visibleAltScreenGeometryChanged() {
+		m.forceFullRedraw()
+	}
 	activeAltScreen := m.activePaneAlternateScreen()
 	if m.activePaneAltScreenSet && m.lastActivePaneAltScreen && !activeAltScreen {
 		// Full-screen terminal apps can leave stale host-side paint behind on
