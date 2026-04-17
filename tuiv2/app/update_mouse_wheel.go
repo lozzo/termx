@@ -68,9 +68,30 @@ func (m *Model) handleMouseWheelRepeated(msg tea.MouseMsg, repeat int) tea.Cmd {
 				m.workbench.ReorderFloatingPane(tab.ID, floating.ID, true)
 			}
 		}
-		if _, changed := m.workbench.AdjustTabScrollOffset(tab.ID, delta); changed {
-			m.render.Invalidate()
+		if cmd := m.localScrollbackWheelCmd(tab.ID, delta); cmd != nil {
+			return cmd
 		}
+		return nil
+	}
+	return nil
+}
+
+func (m *Model) localScrollbackWheelCmd(tabID string, delta int) tea.Cmd {
+	if m == nil || m.workbench == nil || delta == 0 {
+		return nil
+	}
+	if m.mode().Kind == input.ModeDisplay {
+		return m.moveCopyCursorVertical(-delta)
+	}
+	// Align local wheel scroll behavior with tmux/zellij: first upward wheel
+	// enters a local scroll/copy mode instead of staying on the live pane path.
+	if delta > 0 && m.ensureCopyMode() {
+		m.setMode(input.ModeState{Kind: input.ModeDisplay})
+		m.render.Invalidate()
+		return m.moveCopyCursorVertical(-delta)
+	}
+	if _, changed := m.workbench.AdjustTabScrollOffset(tabID, delta); changed {
+		m.render.Invalidate()
 		return m.ensureActivePaneScrollbackCmd()
 	}
 	return nil

@@ -2179,6 +2179,7 @@ func TestMouseWheelFallsBackWhenTrackingDisabled(t *testing.T) {
 	if !ok {
 		t.Fatal("expected recording bridge client")
 	}
+	seedCopyModeSnapshot(t, m, []string{"hist-a", "hist-b", "hist-c"}, []string{"live-a", "live-b", "live-c"})
 	setActivePaneMouseTracking(t, m, false)
 	x, y := activePaneContentScreenOrigin(t, m)
 
@@ -2189,8 +2190,14 @@ func TestMouseWheelFallsBackWhenTrackingDisabled(t *testing.T) {
 	if tab == nil {
 		t.Fatal("expected current tab")
 	}
-	if tab.ScrollOffset != localMouseWheelScrollLines {
-		t.Fatalf("expected wheel fallback scroll offset=%d, got %d", localMouseWheelScrollLines, tab.ScrollOffset)
+	if got := m.mode().Kind; got != input.ModeDisplay {
+		t.Fatalf("expected wheel fallback to enter display mode, got %q", got)
+	}
+	if m.copyMode.PaneID != "pane-1" {
+		t.Fatalf("expected wheel fallback copy mode on pane-1, got %#v", m.copyMode)
+	}
+	if tab.ScrollOffset <= 0 {
+		t.Fatalf("expected wheel fallback to move into local scrollback, got %d", tab.ScrollOffset)
 	}
 	if len(client.inputCalls) != 0 {
 		t.Fatalf("expected no forwarded mouse wheel with tracking off, got %#v", client.inputCalls)
