@@ -68,64 +68,86 @@ func (m *Model) bodyRect() workbench.Rect {
 }
 
 func (m *Model) allowVerticalScrollOptimization() bool {
-	allowed, _ := m.verticalScrollOptimizationDecision()
-	return allowed
+	mode, _ := m.verticalScrollOptimizationMode()
+	return mode != verticalScrollModeNone
 }
 
 func (m *Model) verticalScrollOptimizationDecision() (bool, string) {
+	mode, reason := m.verticalScrollOptimizationMode()
+	return mode != verticalScrollModeNone, reason
+}
+
+func (m *Model) verticalScrollOptimizationMode() (verticalScrollMode, string) {
 	if m == nil || m.workbench == nil {
-		return false, "model_unavailable"
+		return verticalScrollModeNone, "model_unavailable"
 	}
 	vm := m.renderVM()
-	if vm.Surface.Kind != render.VisibleSurfaceWorkbench || vm.Overlay.Kind != render.VisibleOverlayNone || vm.Workbench == nil {
-		if vm.Surface.Kind != render.VisibleSurfaceWorkbench {
-			return false, "non_workbench_surface"
+	return verticalScrollOptimizationModeForVisible(m.bodyRect(), vm.Surface.Kind, vm.Overlay.Kind, vm.Workbench)
+}
+
+func verticalScrollOptimizationModeForVisible(body workbench.Rect, surfaceKind render.VisibleSurfaceKind, overlayKind render.VisibleOverlayKind, visible *workbench.VisibleWorkbench) (verticalScrollMode, string) {
+	if surfaceKind != render.VisibleSurfaceWorkbench || overlayKind != render.VisibleOverlayNone || visible == nil {
+		if surfaceKind != render.VisibleSurfaceWorkbench {
+			return verticalScrollModeNone, "non_workbench_surface"
 		}
-		if vm.Overlay.Kind != render.VisibleOverlayNone {
-			return false, "overlay_active"
+		if overlayKind != render.VisibleOverlayNone {
+			return verticalScrollModeNone, "overlay_active"
 		}
-		return false, "workbench_unavailable"
+		return verticalScrollModeNone, "workbench_unavailable"
 	}
-	if len(vm.Workbench.FloatingPanes) > 0 {
-		return false, "floating_visible"
+	if len(visible.FloatingPanes) > 0 {
+		return verticalScrollModeNone, "floating_visible"
 	}
-	activeTab := vm.Workbench.ActiveTab
-	if activeTab < 0 || activeTab >= len(vm.Workbench.Tabs) {
-		return false, "no_active_tab"
+	activeTab := visible.ActiveTab
+	if activeTab < 0 || activeTab >= len(visible.Tabs) {
+		return verticalScrollModeNone, "no_active_tab"
 	}
-	panes := vm.Workbench.Tabs[activeTab].Panes
+	panes := visible.Tabs[activeTab].Panes
 	if len(panes) == 0 {
-		return false, "no_panes"
+		return verticalScrollModeNone, "no_panes"
 	}
 	if len(panes) == 1 {
-		return true, "single_pane"
+		return verticalScrollModeRowsAndRects, "single_pane"
 	}
-	body := m.bodyRect()
 	if body.W <= 0 || body.H <= 0 {
-		return false, "invalid_body_rect"
+		return verticalScrollModeNone, "invalid_body_rect"
 	}
+	contentRects := make([]workbench.Rect, 0, len(panes))
+	fullWidthStacked := true
 	rowOwners := make([]int, body.H)
 	for _, pane := range panes {
 		contentRect, ok := paneContentRectForVisible(pane)
 		if !ok || contentRect.W <= 0 || contentRect.H <= 0 {
-			return false, "invalid_content_rect"
+			return verticalScrollModeNone, "invalid_content_rect"
 		}
-		// The frame presenter scrolls whole terminal rows inside a scroll region.
-		// Keep it to layouts where each affected row belongs to one full-width
-		// pane, so a scroll in the top pane cannot drag a side-by-side neighbor.
+		if contentRect.X < 0 || contentRect.Y < 0 || contentRect.X+contentRect.W > body.W || contentRect.Y+contentRect.H > body.H {
+			return verticalScrollModeNone, "content_out_of_bounds"
+		}
 		if pane.Rect.X != 0 || pane.Rect.W != body.W {
-			return false, "side_by_side_or_partial_width"
+			fullWidthStacked = false
+		}
+		for _, prev := range contentRects {
+			if rectsOverlap(prev, contentRect) {
+				return verticalScrollModeNone, "content_overlap"
+			}
+		}
+		contentRects = append(contentRects, contentRect)
+		if !fullWidthStacked {
+			continue
 		}
 		start := maxInt(0, contentRect.Y)
 		end := minInt(body.H, contentRect.Y+contentRect.H)
 		for row := start; row < end; row++ {
 			rowOwners[row]++
 			if rowOwners[row] > 1 {
-				return false, "row_overlap"
+				return verticalScrollModeNone, "row_overlap"
 			}
 		}
 	}
-	return true, "stacked_full_width"
+	if fullWidthStacked {
+		return verticalScrollModeRowsAndRects, "stacked_full_width"
+	}
+	return verticalScrollModeRectsOnly, "tiled_partial_width"
 }
 
 func (m *Model) immersiveZoomActive() bool {
@@ -292,6 +314,16 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func rectsOverlap(a, b workbench.Rect) bool {
+	if a.W <= 0 || a.H <= 0 || b.W <= 0 || b.H <= 0 {
+		return false
+	}
+	return a.X < b.X+b.W &&
+		b.X < a.X+a.W &&
+		a.Y < b.Y+b.H &&
+		b.Y < a.Y+a.H
 }
 
 func paneAttachFailure(paneID, terminalID string, err error) tea.Msg {

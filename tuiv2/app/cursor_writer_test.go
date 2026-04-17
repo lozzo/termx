@@ -17,6 +17,7 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 	creackpty "github.com/creack/pty"
 	"github.com/lozzow/termx/frameaudit"
+	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/runtime"
@@ -1503,6 +1504,9 @@ func TestOutputCursorWriterUsesRectScrollOptimizationForSideBySidePaneScroll(t *
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
 	defer func() { directFrameBatchDelay = originalDelay }()
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
 
 	previous := []string{
 		"hdr0AAAA",
@@ -1527,7 +1531,7 @@ func TestOutputCursorWriterUsesRectScrollOptimizationForSideBySidePaneScroll(t *
 
 	sink := &cursorWriterProbeTTY{}
 	writer := newOutputCursorWriter(sink)
-	writer.SetVerticalScrollEnabled(true)
+	writer.SetVerticalScrollMode(verticalScrollModeRectsOnly)
 
 	if err := writer.WriteFrameLines(previous, ""); err != nil {
 		t.Fatalf("write initial frame: %v", err)
@@ -1535,6 +1539,7 @@ func TestOutputCursorWriterUsesRectScrollOptimizationForSideBySidePaneScroll(t *
 	sink.mu.Lock()
 	sink.writes = nil
 	sink.mu.Unlock()
+	perftrace.Reset()
 
 	if err := writer.WriteFrameLines(next, ""); err != nil {
 		t.Fatalf("write scrolled frame: %v", err)
@@ -1552,6 +1557,77 @@ func TestOutputCursorWriterUsesRectScrollOptimizationForSideBySidePaneScroll(t *
 	}
 	if !strings.Contains(got, "\x1b[1S") {
 		t.Fatalf("expected rect scroll optimization to emit SU, got %q", got)
+	}
+	snapshot := perftrace.SnapshotCurrent()
+	if event, ok := snapshot.Event("cursor_writer.present.mode.vertical_scroll_rect"); !ok || event.Count == 0 {
+		t.Fatalf("expected rect scroll perf event, got %#v", snapshot.Events)
+	}
+	if event, ok := snapshot.Event("cursor_writer.present.mode.vertical_scroll_rows"); ok && event.Count > 0 {
+		t.Fatalf("expected rows scroll path to stay idle in rects_only mode, got %#v", snapshot.Events)
+	}
+}
+
+func TestOutputCursorWriterPrefersRowScrollWhenRowsAreAllowed(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+
+	previous := []string{
+		"hdr0AAAA",
+		"aaaa1111",
+		"bbbb2222",
+		"cccc3333",
+		"dddd4444",
+		"eeee5555",
+		"ffff6666",
+		"ftr7ZZZZ",
+	}
+	next := []string{
+		"hdr0AAAA",
+		"bbbb2222",
+		"cccc3333",
+		"dddd4444",
+		"eeee5555",
+		"ffff6666",
+		"gggg7777",
+		"ftr7ZZZZ",
+	}
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetVerticalScrollMode(verticalScrollModeRowsAndRects)
+
+	if err := writer.WriteFrameLines(previous, ""); err != nil {
+		t.Fatalf("write initial frame: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+	perftrace.Reset()
+
+	if err := writer.WriteFrameLines(next, ""); err != nil {
+		t.Fatalf("write scrolled frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if strings.Contains(got, xansi.SetModeLeftRightMargin) {
+		t.Fatalf("expected full-width scroll to avoid rect-scroll margin mode, got %q", got)
+	}
+	if !strings.Contains(got, "\x1b[1S") {
+		t.Fatalf("expected row scroll optimization to emit SU, got %q", got)
+	}
+	snapshot := perftrace.SnapshotCurrent()
+	if event, ok := snapshot.Event("cursor_writer.present.mode.vertical_scroll_rows"); !ok || event.Count == 0 {
+		t.Fatalf("expected rows scroll perf event, got %#v", snapshot.Events)
+	}
+	if event, ok := snapshot.Event("cursor_writer.present.mode.vertical_scroll_rect"); ok && event.Count > 0 {
+		t.Fatalf("expected rect scroll path to stay idle when row scroll already matched, got %#v", snapshot.Events)
 	}
 }
 

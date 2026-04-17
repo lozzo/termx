@@ -65,6 +65,7 @@ type outputCursorWriter struct {
 	lastFlushAt           time.Time
 	frameDumpPath         string
 	disableVerticalScroll bool
+	verticalScrollMode    verticalScrollMode
 	drainHook             func()
 	interactiveFlushHint  func() bool
 	backlogActive         atomic.Bool
@@ -91,7 +92,7 @@ type framePresenter struct {
 	reclaim                            [][]presentedCell
 	updates                            []presentedRowUpdate
 	ready                              bool
-	allowVerticalScroll                bool
+	verticalScrollMode                 verticalScrollMode
 	fullWidthLines                     bool
 	debugFaultScrollDropRemainderEvery int
 	verticalScrollCount                int
@@ -180,7 +181,7 @@ func (p *framePresenter) Reset() {
 	p.reclaim = nil
 	p.updates = nil
 	p.ready = false
-	p.allowVerticalScroll = true
+	p.verticalScrollMode = verticalScrollModeRowsAndRects
 	p.fullWidthLines = false
 	p.verticalScrollCount = 0
 }
@@ -213,7 +214,7 @@ func (p *framePresenter) presentLines(lines []string) string {
 		p.setLines(lines, true)
 		return xansi.EraseEntireDisplay + strings.Join(lines, "\n")
 	}
-	if p.allowVerticalScroll {
+	if p.verticalScrollMode.Enabled() {
 		if payload := p.presentVerticalScroll(lines); payload != "" {
 			releasePresentedRows(p.parsed)
 			p.setLines(lines, true)
@@ -278,23 +279,25 @@ func (p *framePresenter) presentVerticalScroll(lines []string) string {
 	if len(lines) < 6 || len(lines) != len(p.lines) {
 		return ""
 	}
-	plan, ok := detectVerticalScrollPlan(p.lines, lines)
-	if ok {
-		afterScroll := applyVerticalScrollPlan(p.lines, plan)
-		remainder, changedCount := renderChangedRows(afterScroll, lines)
-		if changedCount < plan.reused {
-			var out strings.Builder
-			out.WriteString(renderVerticalScrollPlan(plan, len(lines)))
-			perftrace.Count("cursor_writer.present.mode.vertical_scroll_rows", plan.reused)
-			p.verticalScrollCount++
-			if p.debugFaultScrollDropRemainderEvery > 0 && p.verticalScrollCount%p.debugFaultScrollDropRemainderEvery == 0 {
+	if p.verticalScrollMode.RowsAllowed() {
+		plan, ok := detectVerticalScrollPlan(p.lines, lines)
+		if ok {
+			afterScroll := applyVerticalScrollPlan(p.lines, plan)
+			remainder, changedCount := renderChangedRows(afterScroll, lines)
+			if changedCount < plan.reused {
+				var out strings.Builder
+				out.WriteString(renderVerticalScrollPlan(plan, len(lines)))
+				perftrace.Count("cursor_writer.present.mode.vertical_scroll_rows", plan.reused)
+				p.verticalScrollCount++
+				if p.debugFaultScrollDropRemainderEvery > 0 && p.verticalScrollCount%p.debugFaultScrollDropRemainderEvery == 0 {
+					return out.String()
+				}
+				out.WriteString(remainder)
 				return out.String()
 			}
-			out.WriteString(remainder)
-			return out.String()
 		}
 	}
-	if p.fullWidthLines {
+	if p.verticalScrollMode.RectsAllowed() && p.fullWidthLines {
 		nextRows := make([]presentedRow, len(lines))
 		for i := range lines {
 			nextRows[i] = parsePresentedRow(lines[i])
@@ -560,7 +563,7 @@ func (w *outputCursorWriter) enterDirectTerminal() error {
 	w.directBracketedPaste = true
 	w.pending = pendingDirectFrame{}
 	w.presenter.Reset()
-	w.presenter.allowVerticalScroll = !w.disableVerticalScroll
+	w.presenter.verticalScrollMode = w.effectiveVerticalScrollModeLocked()
 	w.lastTTYWidth = 0
 	w.lastDirectCursor = ""
 	w.stopFlushTimerLocked()
@@ -993,8 +996,9 @@ func newOutputCursorWriter(out io.Writer) *outputCursorWriter {
 		out:                   out,
 		frameDumpPath:         os.Getenv("TERMX_FRAME_DUMP"),
 		disableVerticalScroll: os.Getenv("TERMX_DISABLE_VERTICAL_SCROLL") == "1",
+		verticalScrollMode:    verticalScrollModeRowsAndRects,
 	}
-	writer.presenter.allowVerticalScroll = !writer.disableVerticalScroll
+	writer.presenter.verticalScrollMode = writer.effectiveVerticalScrollModeLocked()
 	writer.presenter.debugFaultScrollDropRemainderEvery = parsePositiveIntEnv("TERMX_DEBUG_FAULT_SCROLL_DROP_REMAINDER_EVERY")
 	if tty, ok := out.(xterm.File); ok {
 		writer.tty = tty
@@ -1003,12 +1007,28 @@ func newOutputCursorWriter(out io.Writer) *outputCursorWriter {
 }
 
 func (w *outputCursorWriter) SetVerticalScrollEnabled(enabled bool) {
+	if !enabled {
+		w.SetVerticalScrollMode(verticalScrollModeNone)
+		return
+	}
+	w.SetVerticalScrollMode(verticalScrollModeRowsAndRects)
+}
+
+func (w *outputCursorWriter) SetVerticalScrollMode(mode verticalScrollMode) {
 	if w == nil {
 		return
 	}
 	w.mu.Lock()
-	w.presenter.allowVerticalScroll = enabled && !w.disableVerticalScroll
+	w.verticalScrollMode = mode
+	w.presenter.verticalScrollMode = w.effectiveVerticalScrollModeLocked()
 	w.mu.Unlock()
+}
+
+func (w *outputCursorWriter) effectiveVerticalScrollModeLocked() verticalScrollMode {
+	if w == nil || w.disableVerticalScroll {
+		return verticalScrollModeNone
+	}
+	return w.verticalScrollMode
 }
 
 func (w *outputCursorWriter) SetPerfSampleHook(hook func(string)) {
@@ -1085,7 +1105,7 @@ func (w *outputCursorWriter) ResetFrameState() {
 	}
 	w.mu.Lock()
 	w.presenter.Reset()
-	w.presenter.allowVerticalScroll = !w.disableVerticalScroll
+	w.presenter.verticalScrollMode = w.effectiveVerticalScrollModeLocked()
 	w.lastDirectCursor = ""
 	w.lastTTYWidth = 0
 	w.pending = pendingDirectFrame{}

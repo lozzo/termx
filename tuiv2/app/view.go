@@ -30,7 +30,8 @@ func (m *Model) View() string {
 	m.reconcileCopyModeContext()
 	if rowsWriter, ok := m.frameOut.(frameLinesWriter); ok {
 		if directWriter, ok := rowsWriter.(*outputCursorWriter); ok {
-			directWriter.SetVerticalScrollEnabled(m.allowVerticalScrollOptimization())
+			mode, _ := m.verticalScrollOptimizationMode()
+			directWriter.SetVerticalScrollMode(mode)
 		}
 		if lines, cursor, ok := m.render.CachedFrameLinesAndCursorRef(); ok {
 			viewBytes = joinedLinesLen(lines) + len(cursor)
