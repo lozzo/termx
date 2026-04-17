@@ -112,8 +112,10 @@ func parsePresentedRowGeneric(row string) presentedRow {
 	hasWide := false
 	hasErase := false
 	hasHiddenEmojiCompensation := false
+	hasHostWidthStabilizer := false
 	lastVisibleToken := ""
 	lastVisibleWidth := 0
+	pendingReanchor := false
 	for len(rest) > 0 {
 		seq, width, n, nextState := xansi.DecodeSequence(rest, state, parser)
 		if n <= 0 {
@@ -127,13 +129,19 @@ func parsePresentedRowGeneric(row string) presentedRow {
 			if width != 1 {
 				hasWide = true
 			}
-			cells = append(cells, presentedCell{Content: token, Width: width, Style: style})
+			cells = append(cells, presentedCell{Content: token, Width: width, Style: style, ReanchorBefore: pendingReanchor})
 			lastVisibleToken = token
 			lastVisibleWidth = width
+			pendingReanchor = false
 		} else if len(token) > 0 && token[0] == '\x1b' {
 			switch xansi.Cmd(parser.Command()).Final() {
 			case 'm':
 				style = style.withSGR(parser.Params())
+			case 'G':
+				if shared.IsEastAsianAmbiguousWidthCluster(lastVisibleToken) && lastVisibleWidth == 1 {
+					hasHostWidthStabilizer = true
+				}
+				pendingReanchor = true
 			case 'X':
 				count, ok := parser.Param(0, 1)
 				if !ok || count <= 0 {
@@ -147,8 +155,9 @@ func parsePresentedRowGeneric(row string) presentedRow {
 					hasStyled = true
 				}
 				for i := 0; i < count; i++ {
-					cells = append(cells, presentedCell{Content: " ", Width: 1, Style: style, Erase: true})
+					cells = append(cells, presentedCell{Content: " ", Width: 1, Style: style, Erase: true, ReanchorBefore: pendingReanchor && i == 0})
 				}
+				pendingReanchor = false
 			}
 		}
 		state = nextState
@@ -161,6 +170,7 @@ func parsePresentedRowGeneric(row string) presentedRow {
 		hasWide:                    hasWide,
 		hasErase:                   hasErase,
 		hasHiddenEmojiCompensation: hasHiddenEmojiCompensation,
+		hasHostWidthStabilizer:     hasHostWidthStabilizer,
 	}
 }
 
@@ -249,7 +259,7 @@ func writePresentedCells(out *strings.Builder, cells []presentedCell, startCol i
 	cursorCol := maxInt(1, startCol)
 	needsReanchor := false
 	for _, cell := range cells {
-		if needsReanchor {
+		if needsReanchor || cell.ReanchorBefore {
 			writeCHA(out, cursorCol)
 			needsReanchor = false
 		}

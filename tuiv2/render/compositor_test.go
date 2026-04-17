@@ -203,6 +203,17 @@ func TestComposedCanvasRawModeAmbiguousEmojiClearsWhenLaterBorderOverwritesLeadC
 	}
 }
 
+func TestComposedCanvasTerminalAmbiguousWidthCellReanchorsNextCell(t *testing.T) {
+	canvas := newComposedCanvas(4, 1)
+	canvas.set(0, 0, drawCell{Content: "é", Width: 1, TerminalContent: true})
+	canvas.set(1, 0, drawCell{Content: "X", Width: 1})
+
+	rendered := canvas.contentString()
+	if !strings.Contains(rendered, "é"+xansi.CHA(2)+"X") {
+		t.Fatalf("expected ambiguous-width terminal cell to re-anchor the following cell, got %q", rendered)
+	}
+}
+
 func TestComposedCanvasSetClearsWideCellContinuationWhenLeadOverwritten(t *testing.T) {
 	canvas := newComposedCanvas(4, 1)
 	canvas.set(0, 0, drawCell{Content: "♻️", Width: 2})

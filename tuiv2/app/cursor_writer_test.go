@@ -22,6 +22,7 @@ import (
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 	localvterm "github.com/lozzow/termx/vterm"
+	"github.com/rivo/uniseg"
 )
 
 type cursorWriterProbeModel struct {
@@ -867,6 +868,66 @@ func TestOutputCursorWriterFrameLinesFallsBackToFullRowForUnsafeEmojiRow(t *test
 	assertScreenEqual(t, screen, want)
 }
 
+func TestOutputCursorWriterWriteFrameKeepsAmbiguousWidthRowAlignedOnWideHost(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+
+	frame1 := "é" + xansi.CHA(2) + "X" + xansi.CHA(6) + "│" + "\x1b[0m\x1b[K"
+	frame2 := "è" + xansi.CHA(2) + "X" + xansi.CHA(6) + "│" + "\x1b[0m\x1b[K"
+	if err := writer.WriteFrame(frame1, ""); err != nil {
+		t.Fatalf("write initial ambiguous-width frame: %v", err)
+	}
+	if err := writer.WriteFrame(frame2, ""); err != nil {
+		t.Fatalf("write updated ambiguous-width frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	writes := append([]string(nil), sink.writes...)
+	sink.mu.Unlock()
+
+	host := replayCursorWriterFakeHost(t, 6, 1, writes, 2)
+	if got := host.cells[0][1]; got != "X" {
+		t.Fatalf("expected ambiguous-width row update to keep the next cell anchored, got %q in %q", got, host.lines()[0])
+	}
+	if got := host.cells[0][5]; got != "│" {
+		t.Fatalf("expected ambiguous-width row update to keep the right border anchored, got %q in %q", got, host.lines()[0])
+	}
+}
+
+func TestOutputCursorWriterWriteFrameLinesKeepsAmbiguousWidthRowAlignedOnWideHost(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+
+	line1 := "é" + xansi.CHA(2) + "X" + xansi.CHA(6) + "│" + "\x1b[0m\x1b[K"
+	line2 := "è" + xansi.CHA(2) + "X" + xansi.CHA(6) + "│" + "\x1b[0m\x1b[K"
+	if err := writer.WriteFrameLines([]string{line1}, ""); err != nil {
+		t.Fatalf("write initial ambiguous-width line frame: %v", err)
+	}
+	if err := writer.WriteFrameLines([]string{line2}, ""); err != nil {
+		t.Fatalf("write updated ambiguous-width line frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	writes := append([]string(nil), sink.writes...)
+	sink.mu.Unlock()
+
+	host := replayCursorWriterFakeHost(t, 6, 1, writes, 2)
+	if got := host.cells[0][1]; got != "X" {
+		t.Fatalf("expected ambiguous-width line update to keep the next cell anchored, got %q in %q", got, host.lines()[0])
+	}
+	if got := host.cells[0][5]; got != "│" {
+		t.Fatalf("expected ambiguous-width line update to keep the right border anchored, got %q in %q", got, host.lines()[0])
+	}
+}
+
 func TestOutputCursorWriterWideStyledRowUsesDiffWhenNoEraseIsPresent(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
@@ -1428,6 +1489,29 @@ func TestParsePresentedRowGenericMarksWideCells(t *testing.T) {
 	}
 }
 
+func TestParsePresentedRowGenericCapturesReanchorBeforeNextCell(t *testing.T) {
+	row := parsePresentedRow("é" + xansi.CHA(2) + "X")
+	if len(row.cells) != 2 {
+		t.Fatalf("expected two cells, got %#v", row.cells)
+	}
+	if !row.hasHostWidthStabilizer {
+		t.Fatalf("expected ambiguous-width row to be marked as host-width-stabilized, got %#v", row)
+	}
+	if row.cells[0].ReanchorBefore {
+		t.Fatalf("expected first cell not to carry a re-anchor flag, got %#v", row.cells[0])
+	}
+	if !row.cells[1].ReanchorBefore {
+		t.Fatalf("expected second cell to preserve the compositor's explicit re-anchor, got %#v", row.cells[1])
+	}
+}
+
+func TestParsePresentedRowGenericDoesNotOvermarkOrdinaryReanchor(t *testing.T) {
+	row := parsePresentedRow("A" + xansi.CHA(2) + "B")
+	if row.hasHostWidthStabilizer {
+		t.Fatalf("expected ordinary row re-anchor not to be treated as a host-width stabilizer, got %#v", row)
+	}
+}
+
 func TestRowOwnsLineEndDetectsEraseLineSuffix(t *testing.T) {
 	if !rowOwnsLineEnd(presentedRow{raw: "body\x1b[K"}) {
 		t.Fatal("expected erase-line suffix to claim line end")
@@ -1460,6 +1544,18 @@ func TestWritePresentedCellsEmitsStyledEraseAndReset(t *testing.T) {
 	}
 	want := presentedStyleDiffANSI(presentedStyle{}, style) + "A" + "\x1b[1X" + presentedResetStyleSequence
 	if got := out.String(); got != want {
+		t.Fatalf("unexpected presented cell payload %q want %q", got, want)
+	}
+}
+
+func TestWritePresentedCellsPreservesExplicitReanchorBeforeFollowingCell(t *testing.T) {
+	var out strings.Builder
+	cells := []presentedCell{
+		{Content: "é", Width: 1},
+		{Content: "X", Width: 1, ReanchorBefore: true},
+	}
+	writePresentedCells(&out, cells, 1)
+	if got, want := out.String(), "é"+xansi.CHA(2)+"X"; got != want {
 		t.Fatalf("unexpected presented cell payload %q want %q", got, want)
 	}
 }
@@ -2929,6 +3025,203 @@ func replayCursorWriterLineScreen(t *testing.T, width, height int, frames [][]st
 		t.Fatalf("replay stream into host vterm: %v", err)
 	}
 	return vt.ScreenContent()
+}
+
+type cursorWriterFakeHost struct {
+	width  int
+	height int
+	cells  [][]string
+}
+
+func newCursorWriterFakeHost(width, height int) *cursorWriterFakeHost {
+	cells := make([][]string, height)
+	for y := 0; y < height; y++ {
+		cells[y] = make([]string, width)
+		for x := 0; x < width; x++ {
+			cells[y][x] = " "
+		}
+	}
+	return &cursorWriterFakeHost{width: width, height: height, cells: cells}
+}
+
+func cursorWriterFakeHostUsesAmbiguousWidth(content string, width int) bool {
+	if shared.IsAmbiguousEmojiVariationSelectorCluster(content, width) {
+		return true
+	}
+	if !shared.IsEastAsianAmbiguousWidthCluster(content) {
+		return false
+	}
+	if shared.IsStableNarrowTerminalSymbol(content) {
+		return false
+	}
+	return true
+}
+
+func replayCursorWriterFakeHost(t *testing.T, width, height int, writes []string, ambiguousWidth int) *cursorWriterFakeHost {
+	t.Helper()
+	host := newCursorWriterFakeHost(width, height)
+	for _, write := range writes {
+		host.apply(write, ambiguousWidth)
+	}
+	return host
+}
+
+type cursorWriterTextCluster struct {
+	Content string
+	Width   int
+}
+
+func cursorWriterSplitTextClusters(s string) []cursorWriterTextCluster {
+	graphemes := uniseg.NewGraphemes(s)
+	out := make([]cursorWriterTextCluster, 0, len(s))
+	lastBase := -1
+	for graphemes.Next() {
+		cluster := graphemes.Str()
+		width := xansi.StringWidth(cluster)
+		if width <= 0 {
+			if lastBase >= 0 {
+				out[lastBase].Content += cluster
+				continue
+			}
+			width = 1
+		}
+		out = append(out, cursorWriterTextCluster{Content: cluster, Width: width})
+		lastBase = len(out) - 1
+	}
+	return out
+}
+
+func (h *cursorWriterFakeHost) apply(frame string, ambiguousWidth int) {
+	if h == nil {
+		return
+	}
+	row, col := 0, 0
+	for i := 0; i < len(frame); {
+		switch frame[i] {
+		case '\x1b':
+			consumed, nextRow, nextCol := cursorWriterConsumeFakeHostEscape(h, frame[i:], row, col)
+			if consumed <= 0 {
+				i++
+				continue
+			}
+			i += consumed
+			row, col = nextRow, nextCol
+		case '\r':
+			col = 0
+			i++
+		case '\n':
+			row++
+			col = 0
+			i++
+		default:
+			clusters := cursorWriterSplitTextClusters(frame[i:])
+			if len(clusters) == 0 {
+				i++
+				continue
+			}
+			cluster := clusters[0]
+			if esc := strings.IndexByte(cluster.Content, '\x1b'); esc >= 0 {
+				if esc == 0 {
+					i++
+					continue
+				}
+				cluster.Content = cluster.Content[:esc]
+				cluster.Width = xansi.StringWidth(cluster.Content)
+			}
+			width := cluster.Width
+			if cursorWriterFakeHostUsesAmbiguousWidth(cluster.Content, cluster.Width) {
+				width = ambiguousWidth
+			}
+			if width <= 0 {
+				width = maxInt(1, xansi.StringWidth(cluster.Content))
+			}
+			h.put(row, col, cluster.Content)
+			for step := 1; step < width; step++ {
+				h.put(row, col+step, "")
+			}
+			col += width
+			i += len(cluster.Content)
+		}
+	}
+}
+
+func cursorWriterConsumeFakeHostEscape(host *cursorWriterFakeHost, src string, row, col int) (int, int, int) {
+	if len(src) < 2 || src[0] != '\x1b' || src[1] != '[' {
+		return 0, row, col
+	}
+	i := 2
+	for i < len(src) {
+		b := src[i]
+		if b >= 0x40 && b <= 0x7e {
+			params := src[2:i]
+			switch b {
+			case 'C':
+				col += cursorWriterFakeHostFirstParam(params, 1)
+			case 'G':
+				col = maxInt(0, cursorWriterFakeHostFirstParam(params, 1)-1)
+			case 'H':
+				parts := strings.Split(strings.TrimPrefix(params, "?"), ";")
+				if len(parts) >= 1 {
+					row = maxInt(0, cursorWriterFakeHostParseParam(parts[0], 1)-1)
+				}
+				if len(parts) >= 2 {
+					col = maxInt(0, cursorWriterFakeHostParseParam(parts[1], 1)-1)
+				}
+			case 'X':
+				count := cursorWriterFakeHostFirstParam(params, 1)
+				for step := 0; step < count; step++ {
+					host.put(row, col+step, " ")
+				}
+			}
+			return i + 1, row, col
+		}
+		i++
+	}
+	return 0, row, col
+}
+
+func cursorWriterFakeHostFirstParam(params string, fallback int) int {
+	params = strings.TrimPrefix(params, "?")
+	if params == "" {
+		return fallback
+	}
+	if idx := strings.IndexByte(params, ';'); idx >= 0 {
+		params = params[:idx]
+	}
+	return cursorWriterFakeHostParseParam(params, fallback)
+}
+
+func cursorWriterFakeHostParseParam(raw string, fallback int) int {
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+func (h *cursorWriterFakeHost) put(row, col int, content string) {
+	if h == nil || row < 0 || row >= h.height || col < 0 || col >= h.width {
+		return
+	}
+	h.cells[row][col] = content
+}
+
+func (h *cursorWriterFakeHost) lines() []string {
+	if h == nil {
+		return nil
+	}
+	lines := make([]string, 0, h.height)
+	for _, row := range h.cells {
+		var b strings.Builder
+		for _, cell := range row {
+			if cell == "" {
+				cell = " "
+			}
+			b.WriteString(cell)
+		}
+		lines = append(lines, b.String())
+	}
+	return lines
 }
 
 func assertScreenEqual(t *testing.T, got, want localvterm.ScreenData) {

@@ -1233,6 +1233,19 @@ type fakeHostFrame struct {
 	cells  [][]string
 }
 
+func fakeHostUsesAmbiguousWidth(content string, width int) bool {
+	if shared.IsAmbiguousEmojiVariationSelectorCluster(content, width) {
+		return true
+	}
+	if !shared.IsEastAsianAmbiguousWidthCluster(content) {
+		return false
+	}
+	if shared.IsStableNarrowTerminalSymbol(content) {
+		return false
+	}
+	return true
+}
+
 func newFakeHostFrame(width, height int) *fakeHostFrame {
 	cells := make([][]string, height)
 	for y := 0; y < height; y++ {
@@ -1252,7 +1265,7 @@ func (f *fakeHostFrame) apply(frame string, ambiguousWidth int) {
 	for i := 0; i < len(frame); {
 		switch frame[i] {
 		case '\x1b':
-			consumed, nextRow, nextCol := consumeFakeHostEscape(frame[i:], row, col)
+			consumed, nextRow, nextCol := consumeFakeHostEscape(f, frame[i:], row, col)
 			if consumed <= 0 {
 				i++
 				continue
@@ -1279,20 +1292,23 @@ func (f *fakeHostFrame) apply(frame string, ambiguousWidth int) {
 				cluster.Width = xansi.StringWidth(cluster.Content)
 			}
 			width := cluster.Width
-			if isAmbiguousEmojiVariationSelectorCluster(cluster.Content, cluster.Width) {
+			if fakeHostUsesAmbiguousWidth(cluster.Content, cluster.Width) {
 				width = ambiguousWidth
 			}
 			if width <= 0 {
 				width = maxInt(1, xansi.StringWidth(cluster.Content))
 			}
 			f.put(row, col, cluster.Content)
+			for step := 1; step < width; step++ {
+				f.put(row, col+step, "")
+			}
 			col += width
 			i += len(cluster.Content)
 		}
 	}
 }
 
-func consumeFakeHostEscape(src string, row, col int) (int, int, int) {
+func consumeFakeHostEscape(host *fakeHostFrame, src string, row, col int) (int, int, int) {
 	if len(src) < 2 || src[0] != '\x1b' || src[1] != '[' {
 		return 0, row, col
 	}
@@ -1313,6 +1329,11 @@ func consumeFakeHostEscape(src string, row, col int) (int, int, int) {
 				}
 				if len(parts) >= 2 {
 					col = maxInt(0, fakeHostParseParam(parts[1], 1)-1)
+				}
+			case 'X':
+				count := fakeHostFirstParam(params, 1)
+				for step := 0; step < count; step++ {
+					host.put(row, col+step, " ")
 				}
 			}
 			return i + 1, row, col
@@ -1364,6 +1385,27 @@ func (f *fakeHostFrame) lines() []string {
 		lines = append(lines, b.String())
 	}
 	return lines
+}
+
+func TestComposedCanvasKeepsRightBorderStableForAmbiguousWidthTextOnWideHost(t *testing.T) {
+	for _, content := range []string{"é", "§", "…"} {
+		t.Run(content, func(t *testing.T) {
+			canvas := newComposedCanvas(6, 1)
+			canvas.set(0, 0, drawCell{Content: content, Width: 1, TerminalContent: true})
+			canvas.set(1, 0, drawCell{Content: "X", Width: 1})
+			canvas.set(5, 0, drawCell{Content: "│", Width: 1})
+
+			host := newFakeHostFrame(6, 1)
+			host.apply(canvas.contentString(), 2)
+
+			if got := host.cells[0][1]; got != "X" {
+				t.Fatalf("expected trailing cell to stay anchored after %q on wide host, got %q in %q", content, got, host.lines()[0])
+			}
+			if got := host.cells[0][5]; got != "│" {
+				t.Fatalf("expected right border to survive after %q on wide host, got %q in %q", content, got, host.lines()[0])
+			}
+		})
+	}
 }
 
 func TestRenderFrameKeepsSplitBoundaryStableAcrossRepeatedEmojiVariationUpdates(t *testing.T) {
@@ -1465,138 +1507,137 @@ func TestRenderFrameKeepsSplitBoundaryStableAcrossRepeatedEmojiVariationUpdates(
 // position on rows containing FE0F emoji after the pane switches from active
 // to inactive.  The test exercises the Coordinator's cached canvas path.
 func TestInactivePaneRightBorderOnFE0FRowsCachedSwitch(t *testing.T) {
-	theme := defaultUITheme()
+	for _, tc := range []struct {
+		name string
+		cell string
+	}{
+		{name: "recycle", cell: "♻\uFE0F"},
+		{name: "airplane", cell: "✈\uFE0F"},
+		{name: "coffee", cell: "☕\uFE0F"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			theme := defaultUITheme()
 
-	mkWorkbench := func(activePaneID string) *workbench.Workbench {
-		wb := workbench.NewWorkbench()
-		wb.AddWorkspace("main", &workbench.WorkspaceState{
-			Name: "main", ActiveTab: 0,
-			Tabs: []*workbench.TabState{{
-				ID: "tab-1", Name: "tab 1", ActivePaneID: activePaneID,
-				Panes: map[string]*workbench.PaneState{
-					"pane-1": {ID: "pane-1", Title: "left", TerminalID: "term-1"},
-					"pane-2": {ID: "pane-2", Title: "right", TerminalID: "term-2"},
+			mkWorkbench := func(activePaneID string) *workbench.Workbench {
+				wb := workbench.NewWorkbench()
+				wb.AddWorkspace("main", &workbench.WorkspaceState{
+					Name: "main", ActiveTab: 0,
+					Tabs: []*workbench.TabState{{
+						ID: "tab-1", Name: "tab 1", ActivePaneID: activePaneID,
+						Panes: map[string]*workbench.PaneState{
+							"pane-1": {ID: "pane-1", Title: "left", TerminalID: "term-1"},
+							"pane-2": {ID: "pane-2", Title: "right", TerminalID: "term-2"},
+						},
+						Root: &workbench.LayoutNode{
+							Direction: workbench.SplitVertical, Ratio: 0.5,
+							First: workbench.NewLeaf("pane-1"), Second: workbench.NewLeaf("pane-2"),
+						},
+					}},
+				})
+				return wb
+			}
+
+			bodyWidth, bodyHeight := 80, 8
+			state1 := WithTermSize(AdaptVisibleStateWithSize(mkWorkbench("pane-2"), runtime.New(nil), bodyWidth, bodyHeight), bodyWidth, bodyHeight+2)
+			var rightPane workbench.VisiblePane
+			for _, pane := range state1.Workbench.Tabs[state1.Workbench.ActiveTab].Panes {
+				if pane.ID == "pane-2" {
+					rightPane = pane
+					break
+				}
+			}
+			contentRect, ok := workbench.FramedPaneContentRect(rightPane.Rect, rightPane.SharedLeft, rightPane.SharedTop)
+			if !ok {
+				t.Fatal("expected right pane content rect")
+			}
+			rows := make([][]protocol.Cell, contentRect.H)
+			for y := range rows {
+				row := make([]protocol.Cell, contentRect.W)
+				for x := range row {
+					row[x] = protocol.Cell{Content: " ", Width: 1}
+				}
+				if y == 0 {
+					row[0] = protocol.Cell{Content: tc.cell, Width: 2}
+					row[1] = protocol.Cell{Content: "", Width: 0}
+					row[2] = protocol.Cell{Content: ":", Width: 1}
+				}
+				rows[y] = row
+			}
+			runtimeState := &VisibleRuntimeStateProxy{
+				HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
+				Terminals: []runtime.VisibleTerminal{
+					{TerminalID: "term-1", Snapshot: &protocol.Snapshot{
+						TerminalID: "term-1", Size: protocol.Size{Cols: 8, Rows: 2},
+						Screen: protocol.ScreenData{Cells: [][]protocol.Cell{repeatCells("left")}},
+						Cursor: protocol.CursorState{Visible: false}, Modes: protocol.TerminalModes{AutoWrap: true},
+					}},
+					{TerminalID: "term-2", Snapshot: &protocol.Snapshot{
+						TerminalID: "term-2", Size: protocol.Size{Cols: uint16(contentRect.W), Rows: uint16(contentRect.H)},
+						Screen: protocol.ScreenData{Cells: rows}, Cursor: protocol.CursorState{Visible: false},
+						Modes: protocol.TerminalModes{AutoWrap: true},
+					}},
 				},
-				Root: &workbench.LayoutNode{
-					Direction: workbench.SplitVertical, Ratio: 0.5,
-					First: workbench.NewLeaf("pane-1"), Second: workbench.NewLeaf("pane-2"),
-				},
-			}},
+			}
+			state1.Runtime = runtimeState
+
+			sharedWB := mkWorkbench("pane-2")
+			visibleState := func() VisibleRenderState {
+				s := WithTermSize(AdaptVisibleStateWithSize(sharedWB, runtime.New(nil), bodyWidth, bodyHeight), bodyWidth, bodyHeight+2)
+				s.Runtime = runtimeState
+				return s
+			}
+
+			coordinator := NewCoordinator(visibleState)
+			coordinator.Invalidate()
+			frame1 := coordinator.RenderFrame()
+
+			if err := sharedWB.FocusPane("tab-1", "pane-1"); err != nil {
+				t.Fatalf("FocusPane: %v", err)
+			}
+			coordinator.Invalidate()
+			frame2 := coordinator.RenderFrame()
+
+			frame1Lines := strings.Split(frame1, "\n")
+			frameLines := strings.Split(frame2, "\n")
+			fe0fRow := 1 + rightPane.Rect.Y + 1
+			for i := 0; i < len(frameLines) && i < len(frame1Lines); i++ {
+				if frame1Lines[i] == frameLines[i] {
+					isBodyRow := i >= 1 && i <= bodyHeight
+					isBorderRow := isBodyRow && i >= 1+rightPane.Rect.Y+1 && i <= 1+rightPane.Rect.Y+rightPane.Rect.H-2
+					if isBorderRow {
+						t.Errorf("line %d (body row %d) is IDENTICAL between active/inactive frames — Bubble Tea will skip redraw! fe0f=%v",
+							i, i-1, i == fe0fRow)
+					}
+				}
+			}
+			state2 := visibleState()
+
+			rightBorderX := rightPane.Rect.X + rightPane.Rect.W - 1
+			bodyContent := strings.Join(frameLines[1:1+bodyHeight], "\n")
+			for _, ambiguousWidth := range []int{1, 2} {
+				host := newFakeHostFrame(bodyWidth, bodyHeight)
+				host.apply(bodyContent, ambiguousWidth)
+				for y := rightPane.Rect.Y + 1; y <= rightPane.Rect.Y+rightPane.Rect.H-2; y++ {
+					if host.cells[y][rightBorderX] != "│" {
+						t.Fatalf("emoji=%q ambiguousWidth=%d row %d: expected border │ at col %d, got %q",
+							tc.cell, ambiguousWidth, y, rightBorderX, host.cells[y][rightBorderX])
+					}
+				}
+			}
+
+			entries2 := paneEntriesForTab(
+				state2.Workbench.Tabs[state2.Workbench.ActiveTab], state2.Workbench.FloatingPanes,
+				bodyWidth, bodyHeight, newRuntimeLookup(state2.Runtime),
+				bodyProjectionOptionsForVM(RenderVMFromVisibleState(state2), true),
+				uiThemeForRuntime(state2.Runtime),
+			)
+			canvas2 := renderBodyCanvas(coordinator, state2.Runtime, immersiveZoomActive(state2), entries2, bodyWidth, bodyHeight)
+			for y := rightPane.Rect.Y + 1; y <= rightPane.Rect.Y+rightPane.Rect.H-2; y++ {
+				if got := canvas2.cells[y][rightBorderX].Style.FG; got != theme.panelBorder2 {
+					t.Fatalf("row %d: expected inactive border FG %q, got %q", y, theme.panelBorder2, got)
+				}
+			}
 		})
-		return wb
-	}
-
-	bodyWidth, bodyHeight := 80, 8
-	state1 := WithTermSize(AdaptVisibleStateWithSize(mkWorkbench("pane-2"), runtime.New(nil), bodyWidth, bodyHeight), bodyWidth, bodyHeight+2)
-	var rightPane workbench.VisiblePane
-	for _, pane := range state1.Workbench.Tabs[state1.Workbench.ActiveTab].Panes {
-		if pane.ID == "pane-2" {
-			rightPane = pane
-			break
-		}
-	}
-	contentRect, ok := workbench.FramedPaneContentRect(rightPane.Rect, rightPane.SharedLeft, rightPane.SharedTop)
-	if !ok {
-		t.Fatal("expected right pane content rect")
-	}
-	rows := make([][]protocol.Cell, contentRect.H)
-	for y := range rows {
-		row := make([]protocol.Cell, contentRect.W)
-		for x := range row {
-			row[x] = protocol.Cell{Content: " ", Width: 1}
-		}
-		if y == 0 {
-			row[0] = protocol.Cell{Content: "♻\uFE0F", Width: 2}
-			row[1] = protocol.Cell{Content: "", Width: 0}
-			row[2] = protocol.Cell{Content: ":", Width: 1}
-		}
-		rows[y] = row
-	}
-	runtimeState := &VisibleRuntimeStateProxy{
-		HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
-		Terminals: []runtime.VisibleTerminal{
-			{TerminalID: "term-1", Snapshot: &protocol.Snapshot{
-				TerminalID: "term-1", Size: protocol.Size{Cols: 8, Rows: 2},
-				Screen: protocol.ScreenData{Cells: [][]protocol.Cell{repeatCells("left")}},
-				Cursor: protocol.CursorState{Visible: false}, Modes: protocol.TerminalModes{AutoWrap: true},
-			}},
-			{TerminalID: "term-2", Snapshot: &protocol.Snapshot{
-				TerminalID: "term-2", Size: protocol.Size{Cols: uint16(contentRect.W), Rows: uint16(contentRect.H)},
-				Screen: protocol.ScreenData{Cells: rows}, Cursor: protocol.CursorState{Visible: false},
-				Modes: protocol.TerminalModes{AutoWrap: true},
-			}},
-		},
-	}
-	state1.Runtime = runtimeState
-
-	// Use a SINGLE workbench and FocusPane() to mimic the real app flow.
-	sharedWB := mkWorkbench("pane-2")
-
-	// Build the closure-based visible state so the coordinator always sees
-	// the latest workbench visible snapshot when visibleFn is called.
-	visibleState := func() VisibleRenderState {
-		s := WithTermSize(AdaptVisibleStateWithSize(sharedWB, runtime.New(nil), bodyWidth, bodyHeight), bodyWidth, bodyHeight+2)
-		s.Runtime = runtimeState
-		return s
-	}
-
-	// Frame 1: right pane active.
-	coordinator := NewCoordinator(visibleState)
-	coordinator.Invalidate()
-	frame1 := coordinator.RenderFrame()
-
-	// Frame 2: switch focus to left pane using FocusPane on the same workbench.
-	if err := sharedWB.FocusPane("tab-1", "pane-1"); err != nil {
-		t.Fatalf("FocusPane: %v", err)
-	}
-	coordinator.Invalidate()
-	frame2 := coordinator.RenderFrame()
-
-	// Simulate Bubble Tea's line-level diff: any line that is identical
-	// between frame1 and frame2 would NOT be redrawn by Bubble Tea.
-	frame1Lines := strings.Split(frame1, "\n")
-	frameLines := strings.Split(frame2, "\n")
-	fe0fRow := 1 + rightPane.Rect.Y + 1 // tab bar + pane top border + first content row
-	for i := 0; i < len(frameLines) && i < len(frame1Lines); i++ {
-		if frame1Lines[i] == frameLines[i] {
-			isBodyRow := i >= 1 && i <= bodyHeight
-			isBorderRow := isBodyRow && i >= 1+rightPane.Rect.Y+1 && i <= 1+rightPane.Rect.Y+rightPane.Rect.H-2
-			if isBorderRow {
-				t.Errorf("line %d (body row %d) is IDENTICAL between active/inactive frames — Bubble Tea will skip redraw! fe0f=%v",
-					i, i-1, i == fe0fRow)
-			}
-		}
-	}
-	state2 := visibleState()
-
-	rightBorderX := rightPane.Rect.X + rightPane.Rect.W - 1
-
-	// The border must land at the correct column on hosts that render
-	// FE0F emoji as either 1 or 2 columns wide.
-	bodyContent := strings.Join(frameLines[1:1+bodyHeight], "\n")
-	for _, ambiguousWidth := range []int{1, 2} {
-		host := newFakeHostFrame(bodyWidth, bodyHeight)
-		host.apply(bodyContent, ambiguousWidth)
-		for y := rightPane.Rect.Y + 1; y <= rightPane.Rect.Y+rightPane.Rect.H-2; y++ {
-			if host.cells[y][rightBorderX] != "│" {
-				t.Fatalf("ambiguousWidth=%d row %d: expected border │ at col %d, got %q",
-					ambiguousWidth, y, rightBorderX, host.cells[y][rightBorderX])
-			}
-		}
-	}
-
-	// Canvas cells must carry the inactive border FG on every row.
-	entries2 := paneEntriesForTab(
-		state2.Workbench.Tabs[state2.Workbench.ActiveTab], state2.Workbench.FloatingPanes,
-		bodyWidth, bodyHeight, newRuntimeLookup(state2.Runtime),
-		bodyProjectionOptionsForVM(RenderVMFromVisibleState(state2), true),
-		uiThemeForRuntime(state2.Runtime),
-	)
-	canvas2 := renderBodyCanvas(coordinator, state2.Runtime, immersiveZoomActive(state2), entries2, bodyWidth, bodyHeight)
-	for y := rightPane.Rect.Y + 1; y <= rightPane.Rect.Y+rightPane.Rect.H-2; y++ {
-		if got := canvas2.cells[y][rightBorderX].Style.FG; got != theme.panelBorder2 {
-			t.Fatalf("row %d: expected inactive border FG %q, got %q", y, theme.panelBorder2, got)
-		}
 	}
 }
 

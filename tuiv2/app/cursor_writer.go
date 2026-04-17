@@ -102,6 +102,7 @@ type presentedRow struct {
 	hasWide                    bool
 	hasErase                   bool
 	hasHiddenEmojiCompensation bool
+	hasHostWidthStabilizer     bool
 }
 
 type presentedRowUpdate struct {
@@ -110,10 +111,11 @@ type presentedRowUpdate struct {
 }
 
 type presentedCell struct {
-	Content string
-	Width   int
-	Style   presentedStyle
-	Erase   bool
+	Content        string
+	Width          int
+	Style          presentedStyle
+	Erase          bool
+	ReanchorBefore bool
 }
 
 type presentedStyle struct {
@@ -357,7 +359,7 @@ func (p *framePresenter) renderChangedRows(next []string) (string, int, int, []p
 }
 
 func presentedRowsEquivalent(previous, next presentedRow, fullWidthLines bool) bool {
-	if previous.hasHiddenEmojiCompensation || next.hasHiddenEmojiCompensation {
+	if previous.hasHiddenEmojiCompensation || next.hasHiddenEmojiCompensation || previous.hasHostWidthStabilizer || next.hasHostWidthStabilizer {
 		return previous.raw == next.raw
 	}
 	if len(previous.cells) != len(next.cells) {
@@ -402,7 +404,7 @@ func renderChangedRowDiff(out *strings.Builder, previous, next presentedRow, row
 	if previous.raw == next.raw {
 		return true
 	}
-	if previous.hasHiddenEmojiCompensation || next.hasHiddenEmojiCompensation {
+	if previous.hasHiddenEmojiCompensation || next.hasHiddenEmojiCompensation || previous.hasHostWidthStabilizer || next.hasHostWidthStabilizer {
 		return false
 	}
 	prevCells := previous.cells
