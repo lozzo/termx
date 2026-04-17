@@ -2,8 +2,10 @@ package app
 
 import (
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 )
 
@@ -135,5 +137,64 @@ func TestCompactInteractionMessagesDropsContinuousBeforeBoundaryKey(t *testing.T
 	}
 	if key, ok := got[0].(tea.KeyMsg); !ok || key.Type != tea.KeyCtrlG {
 		t.Fatalf("expected surviving boundary key, got %#v", got[0])
+	}
+}
+
+func TestHandleInteractionMessageTerminalInputSentWithoutPendingDoesNotForceInvalidate(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+
+	cmd, handled := model.handleInteractionMessage(terminalInputSentMsg{
+		paneID:     "pane-1",
+		terminalID: "term-1",
+	})
+	if !handled {
+		t.Fatal("expected terminalInputSentMsg handled")
+	}
+	if cmd != nil {
+		t.Fatalf("expected no follow-up invalidate when queue is empty, got %#v", cmd)
+	}
+}
+
+func TestHandleInteractionMessageTerminalInputSentStillSchedulesSharedResync(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	terminal := model.runtime.Registry().Get("term-1")
+	if terminal == nil {
+		t.Fatal("expected runtime terminal")
+	}
+	terminal.BoundPaneIDs = []string{"pane-1", "pane-2"}
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 80, Rows: 24},
+		Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "x", Width: 1}}}},
+		Modes:      protocol.TerminalModes{AlternateScreen: true},
+	}
+
+	originalDelay := sharedTerminalSnapshotResyncDelay
+	sharedTerminalSnapshotResyncDelay = 0
+	defer func() { sharedTerminalSnapshotResyncDelay = originalDelay }()
+
+	sent := make(chan tea.Msg, 1)
+	model.send = func(msg tea.Msg) {
+		sent <- msg
+	}
+
+	cmd, handled := model.handleInteractionMessage(terminalInputSentMsg{
+		paneID:     "pane-1",
+		terminalID: "term-1",
+	})
+	if !handled {
+		t.Fatal("expected terminalInputSentMsg handled")
+	}
+	if cmd != nil {
+		t.Fatalf("expected shared resync to be scheduled asynchronously without immediate invalidate, got %#v", cmd)
+	}
+
+	select {
+	case msg := <-sent:
+		if _, ok := msg.(sharedTerminalSnapshotResyncMsg); !ok {
+			t.Fatalf("expected sharedTerminalSnapshotResyncMsg, got %T", msg)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("timed out waiting for shared terminal resync scheduling")
 	}
 }

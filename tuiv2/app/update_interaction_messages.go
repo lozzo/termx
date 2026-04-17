@@ -90,7 +90,10 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		if next == nil {
 			m.scheduleSharedTerminalSnapshotResync(typed.paneID, typed.terminalID)
-			return func() tea.Msg { return InvalidateMsg{} }, true
+			// Bubble Tea already renders once after handling terminalInputSentMsg.
+			// Scheduling an extra InvalidateMsg here forces a second repaint before
+			// any new PTY output arrives, which is pure churn on interactive scroll.
+			return nil, true
 		}
 		return next, true
 	case sharedTerminalSnapshotResyncMsg:
