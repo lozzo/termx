@@ -258,6 +258,53 @@ func (c *composedCanvas) blit(src *composedCanvas, dstX, dstY int) {
 	c.fullDirty = true
 }
 
+func (c *composedCanvas) blitRectFrom(src *composedCanvas, srcRect workbench.Rect, dstX, dstY int) {
+	if c == nil || src == nil || srcRect.W <= 0 || srcRect.H <= 0 {
+		return
+	}
+	for y := 0; y < srcRect.H; y++ {
+		sourceY := srcRect.Y + y
+		targetY := dstY + y
+		if sourceY < 0 || sourceY >= src.height || targetY < 0 || targetY >= c.height {
+			continue
+		}
+		sourceStartX := srcRect.X
+		targetX := dstX
+		width := srcRect.W
+		if sourceStartX < 0 {
+			delta := -sourceStartX
+			sourceStartX = 0
+			targetX += delta
+			width -= delta
+		}
+		if targetX < 0 {
+			delta := -targetX
+			targetX = 0
+			sourceStartX += delta
+			width -= delta
+		}
+		if width <= 0 || sourceStartX >= src.width || targetX >= c.width {
+			continue
+		}
+		if sourceStartX+width > src.width {
+			width = src.width - sourceStartX
+		}
+		if targetX+width > c.width {
+			width = c.width - targetX
+		}
+		if width <= 0 {
+			continue
+		}
+		copy(c.cells[targetY][targetX:targetX+width], src.cells[sourceY][sourceStartX:sourceStartX+width])
+		c.markRowDirtyRange(targetY, targetX, targetX+width-1)
+	}
+	c.fullDirty = true
+}
+
+func (c *composedCanvas) blitRowFrom(src *composedCanvas, srcY int, dstX, dstY, width int) {
+	c.blitRectFrom(src, workbench.Rect{Y: srcY, W: width, H: 1}, dstX, dstY)
+}
+
 func (c *composedCanvas) set(x, y int, cell drawCell) {
 	if x < 0 || y < 0 || x >= c.width || y >= c.height {
 		return

@@ -153,18 +153,27 @@ func drawPaneContentFromCache(canvas *composedCanvas, cache *bodyRenderCache, en
 	if interior.W <= 0 || interior.H <= 0 {
 		return
 	}
+	contentSpriteFinish := perftrace.Measure("render.body.canvas.content_sprite")
 	sprite := cache.contentSprite(entry, runtimeState)
+	contentSpriteFinish(maxInt(1, interior.W*interior.H))
 	if sprite == nil {
 		drawPaneContentWithKey(canvas, entry.Rect, entry, runtimeState)
 		return
 	}
-	if clearInterior && cache.applySpriteDeltaToCanvas(canvas, entry, runtimeState) {
-		return
+	if clearInterior {
+		deltaFinish := perftrace.Measure("render.body.canvas.apply_sprite_delta")
+		applied := cache.applySpriteDeltaToCanvas(canvas, entry)
+		deltaFinish(maxInt(1, interior.W*interior.H))
+		if applied {
+			return
+		}
 	}
+	fullBlitFinish := perftrace.Measure("render.body.canvas.full_sprite_blit")
 	if clearInterior {
 		fillRect(canvas, interior, blankDrawCell())
 	}
 	canvas.blit(sprite, interior.X, interior.Y)
+	fullBlitFinish(maxInt(1, interior.W*interior.H))
 }
 
 func drawPaneContentSprite(canvas *composedCanvas, entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) {

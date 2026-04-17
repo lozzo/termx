@@ -83,12 +83,16 @@ func (c *bodyRenderCache) contentSprite(entry paneRenderEntry, runtimeState *Vis
 	// Only compute expensive hashes when we have a potential incremental update candidate
 	cached := c.contentSprites[entry.PaneID]
 	if cached != nil && cached.canvas != nil && cached.key.Width == key.Width && cached.key.Height == key.Height && cached.key.Theme == key.Theme {
+		resolveFinish := perftrace.Measure("render.pane_content_sprite.resolve")
 		resolved := resolvePaneContent(entry, runtimeState, true)
+		resolveFinish(maxInt(1, interior.W*interior.H))
 		window := buildTerminalSourceWindowState(resolved.source, resolved.contentRect.H, resolved.renderOffset)
 		extentHash := terminalSourceExtentHash(resolved.source, resolved.contentRect, entry.Theme)
 
 		if canIncrementalPaneSpriteUpdate(cached, key, resolved, window, extentHash) {
+			incrementalFinish := perftrace.Measure("render.pane_content_sprite.incremental_apply")
 			delta := applyIncrementalPaneSpriteRows(cached.canvas, resolved, entry.Theme, cached.window, window)
+			incrementalFinish(maxInt(1, delta.changedRowCount()) * maxInt(1, resolved.contentRect.W))
 			cached.key = key
 			cached.window = window
 			cached.contentRect = resolved.contentRect
@@ -102,8 +106,10 @@ func (c *bodyRenderCache) contentSprite(entry paneRenderEntry, runtimeState *Vis
 		// Full miss with same dimensions: reuse canvas allocation.
 		// Reuse already-computed resolved/window/extentHash from the incremental check above.
 		sprite := cached.canvas
+		fullFinish := perftrace.Measure("render.pane_content_sprite.full_redraw")
 		sprite.resetToBlank()
 		drawResolvedPaneContentSprite(sprite, entry, resolved)
+		fullFinish(maxInt(1, interior.W*interior.H))
 		c.contentSprites[entry.PaneID] = &paneContentSpriteCacheEntry{
 			key:         key,
 			canvas:      sprite,
@@ -120,12 +126,34 @@ func (c *bodyRenderCache) contentSprite(entry paneRenderEntry, runtimeState *Vis
 	var sprite *composedCanvas
 	if cached != nil && cached.canvas != nil && cached.key.Width == key.Width && cached.key.Height == key.Height {
 		sprite = cached.canvas
+		fullFinish := perftrace.Measure("render.pane_content_sprite.full_redraw")
 		sprite.resetToBlank()
+		resolveFinish := perftrace.Measure("render.pane_content_sprite.resolve")
+		resolved := resolvePaneContent(entry, runtimeState, true)
+		resolveFinish(maxInt(1, interior.W*interior.H))
+		drawResolvedPaneContentSprite(sprite, entry, resolved)
+		fullFinish(maxInt(1, interior.W*interior.H))
+		window := buildTerminalSourceWindowState(resolved.source, resolved.contentRect.H, resolved.renderOffset)
+		extentHash := terminalSourceExtentHash(resolved.source, resolved.contentRect, entry.Theme)
+		c.contentSprites[entry.PaneID] = &paneContentSpriteCacheEntry{
+			key:         key,
+			canvas:      sprite,
+			window:      window,
+			contentRect: resolved.contentRect,
+			extentHash:  extentHash,
+			delta:       paneContentSpriteDelta{full: true},
+		}
+		perftrace.Count("render.pane_content_sprite.miss", interior.W*interior.H)
+		return sprite
 	} else {
 		sprite = newComposedCanvas(interior.W, interior.H)
 	}
+	resolveFinish := perftrace.Measure("render.pane_content_sprite.resolve")
 	resolved := resolvePaneContent(entry, runtimeState, true)
+	resolveFinish(maxInt(1, interior.W*interior.H))
+	fullFinish := perftrace.Measure("render.pane_content_sprite.full_redraw")
 	drawResolvedPaneContentSprite(sprite, entry, resolved)
+	fullFinish(maxInt(1, interior.W*interior.H))
 
 	// Compute window state for future incremental updates
 	window := buildTerminalSourceWindowState(resolved.source, resolved.contentRect.H, resolved.renderOffset)
@@ -253,54 +281,52 @@ func (d paneContentSpriteDelta) changedRowCount() int {
 	}
 }
 
-func (c *bodyRenderCache) applySpriteDeltaToCanvas(canvas *composedCanvas, entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) bool {
+func (c *bodyRenderCache) applySpriteDeltaToCanvas(canvas *composedCanvas, entry paneRenderEntry) bool {
 	if c == nil || canvas == nil || entry.CopyModeActive || entry.TerminalID == "" || entry.ContentKey.State == "exited" {
 		return false
 	}
 	cached := c.contentSprites[entry.PaneID]
-	if cached == nil || cached.delta.full {
+	if cached == nil || cached.canvas == nil || cached.delta.full {
 		return false
 	}
 	if cached.delta.scrollPlan.direction == terminalWindowScrollNone && len(cached.delta.changedRows) == 0 {
 		return false
 	}
-	resolved := resolvePaneContent(entry, runtimeState, false)
-	if resolved.source == nil || resolved.contentRect.W <= 0 || resolved.contentRect.H <= 0 {
+	interior := interiorRectForEntry(entry)
+	if interior.W <= 0 || interior.H <= 0 {
 		return false
 	}
 	switch cached.delta.scrollPlan.direction {
 	case terminalWindowScrollUp:
-		canvas.shiftRectRowsUp(resolved.contentRect, cached.delta.scrollPlan.shift)
-		for line := resolved.contentRect.H - cached.delta.scrollPlan.shift; line < resolved.contentRect.H; line++ {
-			targetY := resolved.contentRect.Y + line
-			rowIndex := -1
-			if line < len(cached.window.rowIndices) {
-				rowIndex = cached.window.rowIndices[line]
-			}
-			drawPaneContentSpriteRow(canvas, resolved.contentRect, resolved.source, rowIndex, targetY, entry.Theme)
+		shift := cached.delta.scrollPlan.shift
+		if shift <= 0 || shift >= interior.H {
+			return false
+		}
+		canvas.shiftRectRowsUp(interior, shift)
+		for line := interior.H - shift; line < interior.H; line++ {
+			canvas.blitRowFrom(cached.canvas, line, interior.X, interior.Y+line, interior.W)
 		}
 		return true
 	case terminalWindowScrollDown:
-		canvas.shiftRectRowsDown(resolved.contentRect, cached.delta.scrollPlan.shift)
-		for line := 0; line < cached.delta.scrollPlan.shift; line++ {
-			targetY := resolved.contentRect.Y + line
-			rowIndex := -1
-			if line < len(cached.window.rowIndices) {
-				rowIndex = cached.window.rowIndices[line]
-			}
-			drawPaneContentSpriteRow(canvas, resolved.contentRect, resolved.source, rowIndex, targetY, entry.Theme)
+		shift := cached.delta.scrollPlan.shift
+		if shift <= 0 || shift >= interior.H {
+			return false
+		}
+		canvas.shiftRectRowsDown(interior, shift)
+		for line := 0; line < shift; line++ {
+			canvas.blitRowFrom(cached.canvas, line, interior.X, interior.Y+line, interior.W)
 		}
 		return true
 	default:
+		applied := false
 		for _, line := range cached.delta.changedRows {
-			targetY := resolved.contentRect.Y + line
-			rowIndex := -1
-			if line < len(cached.window.rowIndices) {
-				rowIndex = cached.window.rowIndices[line]
+			if line < 0 || line >= interior.H {
+				continue
 			}
-			drawPaneContentSpriteRow(canvas, resolved.contentRect, resolved.source, rowIndex, targetY, entry.Theme)
+			canvas.blitRowFrom(cached.canvas, line, interior.X, interior.Y+line, interior.W)
+			applied = true
 		}
-		return true
+		return applied
 	}
 }
 

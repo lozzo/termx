@@ -386,10 +386,176 @@ func TestApplySpriteDeltaToCanvasReusesRowsForScrollOffsetShift(t *testing.T) {
 	entry.ContentKey.ScrollOffset = 1
 	entry.ScrollOffset = 1
 	_ = cache.contentSprite(entry, runtimeState)
-	if !cache.applySpriteDeltaToCanvas(body, entry, runtimeState) {
+	if !cache.applySpriteDeltaToCanvas(body, entry) {
 		t.Fatal("expected body canvas to accept sprite delta")
 	}
 	if got := body.rawString(); got != "\n hist\n live\n" {
 		t.Fatalf("expected body canvas to shift pane rows locally, got %q", got)
 	}
+}
+
+func TestApplySpriteDeltaToCanvasMatchesFullBlitForScrollUp(t *testing.T) {
+	now := time.Date(2026, 4, 17, 11, 30, 0, 0, time.UTC)
+	surface := &spriteTestSurface{
+		size: protocol.Size{Cols: 5, Rows: 2},
+		scrollback: [][]protocol.Cell{
+			protocolRowFromText("hist1"),
+			protocolRowFromText("hist2"),
+		},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("live1"),
+			protocolRowFromText("live2"),
+		},
+		scrollTimestamps: []time.Time{now, now},
+		screenTimestamps: []time.Time{now, now},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-1",
+			Name:           "shell",
+			State:          "running",
+			Surface:        surface,
+			SurfaceVersion: 1,
+		}},
+	}
+	entry := paneRenderEntry{
+		PaneID:     "pane-1",
+		Rect:       workbench.Rect{X: 0, Y: 0, W: 7, H: 4},
+		TerminalID: "term-1",
+		Theme:      defaultUITheme(),
+		ContentKey: paneContentKey{
+			TerminalID:    "term-1",
+			TerminalKnown: true,
+			ScrollOffset:  1,
+			State:         "running",
+		},
+		ScrollOffset: 1,
+	}
+
+	cache := &bodyRenderCache{}
+	assertBodyDeltaMatchesFullBlit(t, cache, entry, runtimeState, func(next *paneRenderEntry) {
+		next.ContentKey.ScrollOffset = 0
+		next.ScrollOffset = 0
+	})
+}
+
+func TestApplySpriteDeltaToCanvasMatchesFullBlitForScrollDown(t *testing.T) {
+	now := time.Date(2026, 4, 17, 12, 0, 0, 0, time.UTC)
+	surface := &spriteTestSurface{
+		size: protocol.Size{Cols: 5, Rows: 2},
+		scrollback: [][]protocol.Cell{
+			protocolRowFromText("hist1"),
+			protocolRowFromText("hist2"),
+		},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("live1"),
+			protocolRowFromText("live2"),
+		},
+		scrollTimestamps: []time.Time{now, now},
+		screenTimestamps: []time.Time{now, now},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-1",
+			Name:           "shell",
+			State:          "running",
+			Surface:        surface,
+			SurfaceVersion: 1,
+		}},
+	}
+	entry := paneRenderEntry{
+		PaneID:     "pane-1",
+		Rect:       workbench.Rect{X: 0, Y: 0, W: 7, H: 4},
+		TerminalID: "term-1",
+		Theme:      defaultUITheme(),
+		ContentKey: paneContentKey{
+			TerminalID:    "term-1",
+			TerminalKnown: true,
+			ScrollOffset:  0,
+			State:         "running",
+		},
+		ScrollOffset: 0,
+	}
+
+	cache := &bodyRenderCache{}
+	assertBodyDeltaMatchesFullBlit(t, cache, entry, runtimeState, func(next *paneRenderEntry) {
+		next.ContentKey.ScrollOffset = 1
+		next.ScrollOffset = 1
+	})
+}
+
+func TestApplySpriteDeltaToCanvasMatchesFullBlitForChangedRows(t *testing.T) {
+	now := time.Date(2026, 4, 17, 12, 30, 0, 0, time.UTC)
+	surface := &spriteTestSurface{
+		size: protocol.Size{Cols: 5, Rows: 2},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("hello"),
+			protocolRowFromText("world"),
+		},
+		screenTimestamps: []time.Time{now, now},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-1",
+			Name:           "shell",
+			State:          "running",
+			Surface:        surface,
+			SurfaceVersion: 1,
+		}},
+	}
+	entry := paneRenderEntry{
+		PaneID:     "pane-1",
+		Rect:       workbench.Rect{X: 0, Y: 0, W: 7, H: 4},
+		TerminalID: "term-1",
+		Theme:      defaultUITheme(),
+		ContentKey: paneContentKey{
+			TerminalID:     "term-1",
+			TerminalKnown:  true,
+			SurfaceVersion: 1,
+			State:          "running",
+		},
+	}
+
+	cache := &bodyRenderCache{}
+	assertBodyDeltaMatchesFullBlit(t, cache, entry, runtimeState, func(next *paneRenderEntry) {
+		surface.screen[1] = protocolRowFromText("there")
+		surface.screenTimestamps[1] = now.Add(time.Second)
+		runtimeState.Terminals[0].SurfaceVersion = 2
+		next.ContentKey.SurfaceVersion = 2
+	})
+}
+
+func assertBodyDeltaMatchesFullBlit(t *testing.T, cache *bodyRenderCache, entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy, mutate func(next *paneRenderEntry)) {
+	t.Helper()
+
+	sprite := cache.contentSprite(entry, runtimeState)
+	if sprite == nil {
+		t.Fatal("expected initial sprite")
+	}
+	body := newBodyCanvasFromSprite(entry, sprite)
+
+	next := entry
+	mutate(&next)
+	nextSprite := cache.contentSprite(next, runtimeState)
+	if nextSprite == nil {
+		t.Fatal("expected updated sprite")
+	}
+	if !cache.applySpriteDeltaToCanvas(body, next) {
+		t.Fatal("expected body canvas to accept sprite delta")
+	}
+
+	want := newBodyCanvasFromSprite(next, nextSprite)
+	if got := body.rawString(); got != want.rawString() {
+		t.Fatalf("expected body delta apply to match full blit, got %q want %q", got, want.rawString())
+	}
+}
+
+func newBodyCanvasFromSprite(entry paneRenderEntry, sprite *composedCanvas) *composedCanvas {
+	body := newComposedCanvas(entry.Rect.W, entry.Rect.H)
+	interior := interiorRectForEntry(entry)
+	if interior.W > 0 && interior.H > 0 {
+		fillRect(body, interior, blankDrawCell())
+	}
+	body.blit(sprite, interior.X, interior.Y)
+	return body
 }
