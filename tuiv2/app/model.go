@@ -72,33 +72,35 @@ type Model struct {
 	activePaneAltScreenSet  bool
 	visibleLayoutSigSet     bool
 
-	terminalInputs              terminalInputDispatchQueue
-	terminalInputSending        bool
-	interactionBatchActive      bool
-	interactionBoundaryEpoch    uint64
-	pendingPaneAttaches         map[string]string
-	pendingPaneResizes          map[string]pendingPaneResize
-	invalidatePending           atomic.Bool
-	invalidateDeferred          atomic.Bool
-	invalidateScheduled         atomic.Bool
-	invalidateBlockedByFrameOut atomic.Bool
-	invalidateBacklogBlockedAt  atomic.Int64
-	invalidateAdaptiveLevel     atomic.Uint32
-	invalidateDrainSlowStreak   atomic.Uint32
-	invalidateDrainFastStreak   atomic.Uint32
-	hostEmojiProbePending       bool
-	hostThemeFlushPending       bool
-	hostThemeBootstrapPending   bool
-	hostThemeBootstrapPaletteN  int
-	hostThemeBootstrapSeenFG    bool
-	hostThemeBootstrapSeenBG    bool
-	pendingHostDefaultFG        color.Color
-	pendingHostDefaultBG        color.Color
-	pendingHostPalette          map[int]color.Color
-	hostThemeBootstrapPalette   map[int]struct{}
-	pendingMouseMotion          *queuedMouseMsg
-	mouseMotionFlushPending     bool
-	copyModeMouseActivitySeq    uint64
+	terminalInputs               terminalInputDispatchQueue
+	terminalInputSending         bool
+	terminalWheelDispatchSeq     uint64
+	terminalWheelDispatchPending bool
+	interactionBatchActive       bool
+	interactionBoundaryEpoch     uint64
+	pendingPaneAttaches          map[string]string
+	pendingPaneResizes           map[string]pendingPaneResize
+	invalidatePending            atomic.Bool
+	invalidateDeferred           atomic.Bool
+	invalidateScheduled          atomic.Bool
+	invalidateBlockedByFrameOut  atomic.Bool
+	invalidateBacklogBlockedAt   atomic.Int64
+	invalidateAdaptiveLevel      atomic.Uint32
+	invalidateDrainSlowStreak    atomic.Uint32
+	invalidateDrainFastStreak    atomic.Uint32
+	hostEmojiProbePending        bool
+	hostThemeFlushPending        bool
+	hostThemeBootstrapPending    bool
+	hostThemeBootstrapPaletteN   int
+	hostThemeBootstrapSeenFG     bool
+	hostThemeBootstrapSeenBG     bool
+	pendingHostDefaultFG         color.Color
+	pendingHostDefaultBG         color.Color
+	pendingHostPalette           map[int]color.Color
+	hostThemeBootstrapPalette    map[int]struct{}
+	pendingMouseMotion           *queuedMouseMsg
+	mouseMotionFlushPending      bool
+	copyModeMouseActivitySeq     uint64
 
 	// 鼠标拖动状态
 	mouseDragPaneID  string

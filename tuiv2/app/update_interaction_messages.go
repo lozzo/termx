@@ -96,6 +96,15 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 			return nil, true
 		}
 		return next, true
+	case terminalWheelDispatchMsg:
+		if typed.seq != m.terminalWheelDispatchSeq {
+			return nil, true
+		}
+		m.terminalWheelDispatchPending = false
+		if m.terminalInputSending {
+			return nil, true
+		}
+		return m.dequeueTerminalInputCmd(), true
 	case sharedTerminalSnapshotResyncMsg:
 		if typed.seq != m.terminalResyncSeq {
 			return nil, true

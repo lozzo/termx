@@ -8,8 +8,12 @@ import (
 	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
+	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
+
+var terminalWheelDispatchDelay = 2 * time.Millisecond
+var remoteTerminalWheelDispatchDelay = 1 * time.Millisecond
 
 func (m *Model) isStickyMode() bool {
 	kind := m.mode().Kind
@@ -51,7 +55,37 @@ func (m *Model) handleTerminalInput(in input.TerminalInput) tea.Cmd {
 	if m.terminalInputSending {
 		return nil
 	}
+	if isContinuousTerminalInput(in) {
+		return m.scheduleTerminalWheelDispatchCmd()
+	}
 	return m.dequeueTerminalInputCmd()
+}
+
+func (m *Model) scheduleTerminalWheelDispatchCmd() tea.Cmd {
+	if m == nil {
+		return nil
+	}
+	if m.terminalWheelDispatchPending {
+		return nil
+	}
+	delay := effectiveTerminalWheelDispatchDelay()
+	if delay <= 0 {
+		return m.dequeueTerminalInputCmd()
+	}
+	m.terminalWheelDispatchSeq++
+	seq := m.terminalWheelDispatchSeq
+	m.terminalWheelDispatchPending = true
+	return tea.Tick(delay, func(time.Time) tea.Msg {
+		return terminalWheelDispatchMsg{seq: seq}
+	})
+}
+
+func effectiveTerminalWheelDispatchDelay() time.Duration {
+	delay := terminalWheelDispatchDelay
+	if shared.RemoteLatencyProfileEnabled() && (delay <= 0 || delay > remoteTerminalWheelDispatchDelay) {
+		delay = remoteTerminalWheelDispatchDelay
+	}
+	return shared.DurationOverride("TERMX_TERMINAL_WHEEL_DISPATCH_DELAY", delay)
 }
 
 func (m *Model) handleKeyBurstMsg(msg keyBurstMsg) tea.Cmd {

@@ -57,6 +57,10 @@ type terminalInputSentMsg struct {
 	terminalID string
 }
 
+type terminalWheelDispatchMsg struct {
+	seq uint64
+}
+
 type sharedTerminalSnapshotResyncMsg struct {
 	seq        uint64
 	paneID     string

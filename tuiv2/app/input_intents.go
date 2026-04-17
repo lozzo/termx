@@ -249,6 +249,7 @@ func (m *Model) beginBoundaryInteraction() {
 		return
 	}
 	m.interactionBoundaryEpoch++
+	m.terminalWheelDispatchPending = false
 	m.pendingMouseMotion = nil
 	m.mouseMotionFlushPending = false
 	m.terminalInputs.ResetContinuous()

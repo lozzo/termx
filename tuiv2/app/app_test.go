@@ -1321,6 +1321,10 @@ func TestHandleTerminalInputQueuesWhileSendInFlight(t *testing.T) {
 }
 
 func TestHandleTerminalWheelInputMergesMatchingPendingTail(t *testing.T) {
+	originalDelay := terminalWheelDispatchDelay
+	terminalWheelDispatchDelay = 0
+	defer func() { terminalWheelDispatchDelay = originalDelay }()
+
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -1441,6 +1445,10 @@ func TestInteractionBatchCombinesMixedTerminalInputIntoOneSend(t *testing.T) {
 }
 
 func TestHandleTerminalWheelInputCancelsOppositePendingTail(t *testing.T) {
+	originalDelay := terminalWheelDispatchDelay
+	terminalWheelDispatchDelay = 0
+	defer func() { terminalWheelDispatchDelay = originalDelay }()
+
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -1528,6 +1536,10 @@ func TestHandleTerminalWheelInputCancelsOppositePendingTail(t *testing.T) {
 }
 
 func TestHandleTerminalWheelInputBoundaryKeyInvalidatesPendingTail(t *testing.T) {
+	originalDelay := terminalWheelDispatchDelay
+	terminalWheelDispatchDelay = 0
+	defer func() { terminalWheelDispatchDelay = originalDelay }()
+
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -1605,6 +1617,71 @@ func TestHandleTerminalWheelInputBoundaryKeyInvalidatesPendingTail(t *testing.T)
 	}
 	if got := string(client.inputCalls[1].data); got != "a" {
 		t.Fatalf("expected stale wheel tail dropped so second input is key \"a\", got %q", got)
+	}
+}
+
+func TestHandleTerminalWheelInputBatchesBeforeFirstSend(t *testing.T) {
+	originalDelay := terminalWheelDispatchDelay
+	terminalWheelDispatchDelay = 5 * time.Millisecond
+	defer func() { terminalWheelDispatchDelay = originalDelay }()
+
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	client := &recordingBridgeClient{}
+	rt := runtime.New(client)
+	binding := rt.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+	model := New(shared.Config{}, wb, rt)
+
+	firstCmd := model.handleTerminalInput(input.TerminalInput{
+		Kind:           input.TerminalInputWheel,
+		PaneID:         "pane-1",
+		Data:           []byte("up"),
+		WheelDirection: 1,
+	})
+	if firstCmd == nil {
+		t.Fatal("expected deferred wheel dispatch command")
+	}
+	if len(client.inputCalls) != 0 {
+		t.Fatalf("expected no immediate wheel send before dispatch tick, got %#v", client.inputCalls)
+	}
+	if model.terminalInputs.wheel == nil || model.terminalWheelDispatchSeq == 0 || !model.terminalWheelDispatchPending {
+		t.Fatalf("expected pending wheel dispatch state, got queue=%#v seq=%d pending=%v", model.terminalInputs, model.terminalWheelDispatchSeq, model.terminalWheelDispatchPending)
+	}
+
+	if cmd := model.handleTerminalInput(input.TerminalInput{
+		Kind:           input.TerminalInputWheel,
+		PaneID:         "pane-1",
+		Data:           []byte("up"),
+		WheelDirection: 1,
+	}); cmd != nil {
+		t.Fatalf("expected second wheel to stay queued behind deferred dispatch, got %#v", cmd)
+	}
+
+	_, dispatchCmd := model.Update(terminalWheelDispatchMsg{seq: model.terminalWheelDispatchSeq})
+	if dispatchCmd == nil {
+		t.Fatal("expected dispatch tick to produce send command")
+	}
+	drainCmd(t, model, dispatchCmd, 20)
+
+	if len(client.inputCalls) != 1 {
+		t.Fatalf("expected one merged wheel send after dispatch tick, got %#v", client.inputCalls)
+	}
+	if got := string(client.inputCalls[0].data); got != "upup" {
+		t.Fatalf("expected merged deferred wheel payload \"upup\", got %q", got)
 	}
 }
 
