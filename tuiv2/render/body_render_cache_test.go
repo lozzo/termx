@@ -333,3 +333,63 @@ func TestContentSpriteReusesSpriteForScrollOffsetShift(t *testing.T) {
 		t.Fatalf("expected scroll offset shift to reuse moved rows and redraw edge row, got %q", got)
 	}
 }
+
+func TestApplySpriteDeltaToCanvasReusesRowsForScrollOffsetShift(t *testing.T) {
+	now := time.Date(2026, 4, 17, 11, 0, 0, 0, time.UTC)
+	surface := &spriteTestSurface{
+		size: protocol.Size{Cols: 5, Rows: 2},
+		scrollback: [][]protocol.Cell{
+			protocolRowFromText("hist1"),
+			protocolRowFromText("hist2"),
+		},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("live1"),
+			protocolRowFromText("live2"),
+		},
+		scrollTimestamps: []time.Time{now, now},
+		screenTimestamps: []time.Time{now, now},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-1",
+			Name:           "shell",
+			State:          "running",
+			Surface:        surface,
+			SurfaceVersion: 1,
+		}},
+	}
+	entry := paneRenderEntry{
+		PaneID:     "pane-1",
+		Rect:       workbench.Rect{X: 0, Y: 0, W: 7, H: 4},
+		TerminalID: "term-1",
+		Theme:      defaultUITheme(),
+		ContentKey: paneContentKey{
+			TerminalID:    "term-1",
+			TerminalKnown: true,
+			ScrollOffset:  0,
+			State:         "running",
+		},
+		ScrollOffset: 0,
+	}
+
+	cache := &bodyRenderCache{}
+	body := newComposedCanvas(7, 4)
+	sprite := cache.contentSprite(entry, runtimeState)
+	if sprite == nil {
+		t.Fatal("expected initial sprite")
+	}
+	body.blit(sprite, 1, 1)
+	if got := body.rawString(); got != "\n live\n live\n" {
+		t.Fatalf("expected initial body content, got %q", got)
+	}
+
+	entry.ContentKey.ScrollOffset = 1
+	entry.ScrollOffset = 1
+	_ = cache.contentSprite(entry, runtimeState)
+	if !cache.applySpriteDeltaToCanvas(body, entry, runtimeState) {
+		t.Fatal("expected body canvas to accept sprite delta")
+	}
+	if got := body.rawString(); got != "\n hist\n live\n" {
+		t.Fatalf("expected body canvas to shift pane rows locally, got %q", got)
+	}
+}

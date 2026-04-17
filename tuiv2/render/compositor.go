@@ -126,6 +126,40 @@ func (c *composedCanvas) shiftRowsDown(shift int) {
 	c.fullDirty = true
 }
 
+func (c *composedCanvas) shiftRectRowsUp(rect workbench.Rect, shift int) {
+	if c == nil || shift <= 0 {
+		return
+	}
+	rect, ok := clipRectToViewport(rect, c.width, c.height)
+	if !ok || shift >= rect.H {
+		return
+	}
+	for y := rect.Y; y < rect.Y+rect.H-shift; y++ {
+		copy(c.cells[y][rect.X:rect.X+rect.W], c.cells[y+shift][rect.X:rect.X+rect.W])
+		c.markRowDirtyRange(y, rect.X, rect.X+rect.W-1)
+	}
+	fillRect(c, workbench.Rect{X: rect.X, Y: rect.Y + rect.H - shift, W: rect.W, H: shift}, blankDrawCell())
+	c.fullCache = ""
+	c.fullDirty = true
+}
+
+func (c *composedCanvas) shiftRectRowsDown(rect workbench.Rect, shift int) {
+	if c == nil || shift <= 0 {
+		return
+	}
+	rect, ok := clipRectToViewport(rect, c.width, c.height)
+	if !ok || shift >= rect.H {
+		return
+	}
+	for y := rect.Y + rect.H - 1; y >= rect.Y+shift; y-- {
+		copy(c.cells[y][rect.X:rect.X+rect.W], c.cells[y-shift][rect.X:rect.X+rect.W])
+		c.markRowDirtyRange(y, rect.X, rect.X+rect.W-1)
+	}
+	fillRect(c, workbench.Rect{X: rect.X, Y: rect.Y, W: rect.W, H: shift}, blankDrawCell())
+	c.fullCache = ""
+	c.fullDirty = true
+}
+
 func (c *composedCanvas) resetRowToBlank(y int) {
 	if c == nil || y < 0 || y >= c.height {
 		return

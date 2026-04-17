@@ -81,6 +81,7 @@ func renderBodyCanvas(coordinator *Coordinator, runtimeState *VisibleRuntimeStat
 
 	if !overlap {
 		changed := false
+		activeContentRedrawn := false
 		cache.canvas.clearCursor()
 		for _, entry := range entries {
 			frameChanged := false
@@ -95,10 +96,15 @@ func renderBodyCanvas(coordinator *Coordinator, runtimeState *VisibleRuntimeStat
 			}
 			if frameChanged || cache.contentKeys[entry.PaneID] != entry.ContentKey {
 				drawPaneContentFromCache(cache.canvas, cache, entry, runtimeState, true)
+				if entry.Active {
+					activeContentRedrawn = true
+				}
 				changed = true
 			}
 		}
-		restoreActiveEntryContent(cache.canvas, cache, entries, runtimeState)
+		if !activeContentRedrawn {
+			restoreActiveEntryContent(cache.canvas, cache, entries, runtimeState)
+		}
 		if changed {
 			projectActiveEntryCursor(cache.canvas, entries, runtimeState)
 			cache.reset(entries, width, height)
@@ -150,6 +156,9 @@ func drawPaneContentFromCache(canvas *composedCanvas, cache *bodyRenderCache, en
 	sprite := cache.contentSprite(entry, runtimeState)
 	if sprite == nil {
 		drawPaneContentWithKey(canvas, entry.Rect, entry, runtimeState)
+		return
+	}
+	if clearInterior && cache.applySpriteDeltaToCanvas(canvas, entry, runtimeState) {
 		return
 	}
 	if clearInterior {
