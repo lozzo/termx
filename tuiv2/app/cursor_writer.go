@@ -13,6 +13,7 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/lozzow/termx/perftrace"
+	"github.com/lozzow/termx/tuiv2/shared"
 )
 
 type cursorSequenceWriter interface {
@@ -155,6 +156,8 @@ const maxPooledPresentedCellCapacity = 2048
 
 var directFrameBatchDelay = 4 * time.Millisecond
 var directFrameIdleThreshold = 12 * time.Millisecond
+var remoteDirectFrameBatchDelay = 8 * time.Millisecond
+var remoteDirectFrameIdleThreshold = 20 * time.Millisecond
 
 const (
 	directFrameDrainSlowThreshold  = 16 * time.Millisecond
@@ -733,23 +736,31 @@ func (w *outputCursorWriter) shouldFlushDirectFrameImmediatelyLocked() bool {
 	if w == nil {
 		return false
 	}
-	if w.interactiveFlushHint != nil && w.interactiveFlushHint() {
+	remoteProfile := shared.RemoteLatencyProfileEnabled()
+	if !remoteProfile && w.interactiveFlushHint != nil && w.interactiveFlushHint() {
 		perftrace.Count("cursor_writer.direct_flush.interactive_bypass", 0)
 		return true
 	}
-	if directFrameIdleThreshold <= 0 {
+	if remoteProfile && w.interactiveFlushHint != nil && w.interactiveFlushHint() {
+		perftrace.Count("cursor_writer.direct_flush.remote_interactive_defer", 0)
+	}
+	threshold := w.effectiveDirectFrameIdleThresholdLocked()
+	if threshold <= 0 {
 		return true
 	}
 	if w.lastFlushAt.IsZero() {
 		return true
 	}
-	return time.Since(w.lastFlushAt) >= directFrameIdleThreshold
+	return time.Since(w.lastFlushAt) >= threshold
 }
 
 func (w *outputCursorWriter) effectiveDirectFrameBatchDelayLocked() time.Duration {
 	base := directFrameBatchDelay
 	if w == nil || base <= 0 {
 		return base
+	}
+	if shared.RemoteLatencyProfileEnabled() && base < remoteDirectFrameBatchDelay {
+		base = remoteDirectFrameBatchDelay
 	}
 	delay := base
 	for i := 0; i < int(w.adaptiveBatchLevel); i++ {
@@ -762,6 +773,17 @@ func (w *outputCursorWriter) effectiveDirectFrameBatchDelayLocked() time.Duratio
 		return directFrameAdaptiveMaxDelay
 	}
 	return delay
+}
+
+func (w *outputCursorWriter) effectiveDirectFrameIdleThresholdLocked() time.Duration {
+	threshold := directFrameIdleThreshold
+	if w == nil || threshold <= 0 {
+		return threshold
+	}
+	if shared.RemoteLatencyProfileEnabled() && threshold < remoteDirectFrameIdleThreshold {
+		threshold = remoteDirectFrameIdleThreshold
+	}
+	return threshold
 }
 
 func (w *outputCursorWriter) observeDirectFlushCostLocked(cost time.Duration) {

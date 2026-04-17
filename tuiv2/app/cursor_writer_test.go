@@ -584,6 +584,9 @@ func TestOutputCursorWriterFlushesImmediatelyAfterInteractiveInput(t *testing.T)
 	sink := &cursorWriterProbeTTY{}
 	writer := newOutputCursorWriter(sink)
 	writer.SetInteractiveFlushHint(func() bool { return true })
+	writer.mu.Lock()
+	writer.lastFlushAt = time.Now()
+	writer.mu.Unlock()
 
 	if err := writer.WriteFrame("frame-a", "<CURSOR-A>"); err != nil {
 		t.Fatalf("write frame a: %v", err)
@@ -593,6 +596,77 @@ func TestOutputCursorWriterFlushesImmediatelyAfterInteractiveInput(t *testing.T)
 	defer sink.mu.Unlock()
 	if len(sink.writes) != 1 {
 		t.Fatalf("expected interactive direct frame to flush immediately, got %#v", sink.writes)
+	}
+}
+
+func TestOutputCursorWriterRemoteProfileDefersInteractiveImmediateFlush(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_LATENCY", "1")
+	originalDelay := directFrameBatchDelay
+	originalIdleThreshold := directFrameIdleThreshold
+	originalRemoteDelay := remoteDirectFrameBatchDelay
+	originalRemoteIdle := remoteDirectFrameIdleThreshold
+	directFrameBatchDelay = 4 * time.Millisecond
+	directFrameIdleThreshold = time.Hour
+	remoteDirectFrameBatchDelay = 8 * time.Millisecond
+	remoteDirectFrameIdleThreshold = 20 * time.Millisecond
+	defer func() {
+		directFrameBatchDelay = originalDelay
+		directFrameIdleThreshold = originalIdleThreshold
+		remoteDirectFrameBatchDelay = originalRemoteDelay
+		remoteDirectFrameIdleThreshold = originalRemoteIdle
+	}()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetInteractiveFlushHint(func() bool { return true })
+	if !shared.RemoteLatencyProfileEnabled() {
+		t.Fatal("expected remote latency profile enabled")
+	}
+	writer.mu.Lock()
+	writer.lastFlushAt = time.Now()
+	if writer.shouldFlushDirectFrameImmediatelyLocked() {
+		writer.mu.Unlock()
+		t.Fatal("expected remote profile to avoid immediate interactive flush")
+	}
+	writer.mu.Unlock()
+
+	if err := writer.WriteFrame("frame-a", "<CURSOR-A>"); err != nil {
+		t.Fatalf("write frame a: %v", err)
+	}
+
+	sink.mu.Lock()
+	if len(sink.writes) != 0 {
+		sink.mu.Unlock()
+		t.Fatalf("expected remote profile to defer interactive flush, got %#v", sink.writes)
+	}
+	sink.mu.Unlock()
+	if !writer.HasPendingFrame() {
+		t.Fatal("expected deferred remote frame to remain pending")
+	}
+
+	writer.mu.Lock()
+	writer.stopFlushTimerLocked()
+	writer.mu.Unlock()
+}
+
+func TestOutputCursorWriterRemoteProfileRaisesBaseBatchDelay(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_LATENCY", "1")
+	originalDelay := directFrameBatchDelay
+	originalRemoteDelay := remoteDirectFrameBatchDelay
+	directFrameBatchDelay = 4 * time.Millisecond
+	remoteDirectFrameBatchDelay = 8 * time.Millisecond
+	defer func() {
+		directFrameBatchDelay = originalDelay
+		remoteDirectFrameBatchDelay = originalRemoteDelay
+	}()
+
+	writer := newOutputCursorWriter(&cursorWriterProbeSink{})
+	writer.mu.Lock()
+	got := writer.effectiveDirectFrameBatchDelayLocked()
+	writer.mu.Unlock()
+
+	if got != remoteDirectFrameBatchDelay {
+		t.Fatalf("expected remote direct-frame batch delay %v, got %v", remoteDirectFrameBatchDelay, got)
 	}
 }
 
