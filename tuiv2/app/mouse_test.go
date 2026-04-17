@@ -2189,8 +2189,8 @@ func TestMouseWheelFallsBackWhenTrackingDisabled(t *testing.T) {
 	if tab == nil {
 		t.Fatal("expected current tab")
 	}
-	if tab.ScrollOffset != 1 {
-		t.Fatalf("expected wheel fallback scroll offset=1, got %d", tab.ScrollOffset)
+	if tab.ScrollOffset != localMouseWheelScrollLines {
+		t.Fatalf("expected wheel fallback scroll offset=%d, got %d", localMouseWheelScrollLines, tab.ScrollOffset)
 	}
 	if len(client.inputCalls) != 0 {
 		t.Fatalf("expected no forwarded mouse wheel with tracking off, got %#v", client.inputCalls)

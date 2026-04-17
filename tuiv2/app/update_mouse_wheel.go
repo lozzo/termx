@@ -6,6 +6,8 @@ import (
 	"github.com/lozzow/termx/tuiv2/render"
 )
 
+const localMouseWheelScrollLines = 3
+
 func (m *Model) handleMouseWheel(msg tea.MouseMsg) tea.Cmd {
 	return m.handleMouseWheelRepeated(msg, 1)
 }
@@ -26,7 +28,8 @@ func (m *Model) handleMouseWheelRepeated(msg tea.MouseMsg, repeat int) tea.Cmd {
 		step = 1
 	}
 	repeat = maxInt(1, repeat)
-	delta := step * repeat
+	localRepeat := repeat * localMouseWheelScrollLines
+	delta := step * localRepeat
 	vm := m.renderVM()
 	if handled, cmd := m.handleOverlayMouseWheel(vm, delta); handled {
 		return cmd
@@ -39,9 +42,9 @@ func (m *Model) handleMouseWheelRepeated(msg tea.MouseMsg, repeat int) tea.Cmd {
 	}
 	if y < m.contentOriginY() {
 		if delta > 0 {
-			return m.switchCurrentTabByOffsetMouse(-repeat)
+			return m.switchCurrentTabByOffsetMouse(-localRepeat)
 		}
-		return m.switchCurrentTabByOffsetMouse(repeat)
+		return m.switchCurrentTabByOffsetMouse(localRepeat)
 	}
 	if in, ok := m.terminalWheelInputForMouseMsg(msg, step, repeat); ok {
 		return m.handleTerminalInput(in)
