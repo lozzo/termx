@@ -129,6 +129,7 @@ type rowCacheReconcilePlan struct {
 	preservedFromBefore       int
 	requiredScrollbackAppends int
 	beforeScrollbackLen       int
+	screenScrollShift         int
 }
 
 type DamageRow struct {
@@ -1707,11 +1708,18 @@ func (v *VTerm) reconcileRowMetadataLocked(beforeScreen []rowFingerprint, before
 		v.scrollbackRowKinds = append(v.scrollbackRowKinds, "")
 	}
 	v.alignScrollbackMetadataLocked()
+	screenScrollShift := 0
+	if preservedFromBefore == 0 && afterScrollbackLen == beforeScrollbackLen {
+		screenScrollShift = scrollShift
+	}
 
 	nextScreenTimestamps := make([]time.Time, len(afterScreen))
 	nextScreenRowKinds := make([]string, len(afterScreen))
 	for row := range afterScreen {
 		mappedRow := row + preservedFromBefore
+		if screenScrollShift > 0 {
+			mappedRow = row + screenScrollShift
+		}
 		if mappedRow < len(beforeScreen) && mappedRow < len(beforeScreenTimestamps) && rowFingerprintsEqual(beforeScreen[mappedRow], afterScreen[row]) {
 			nextScreenTimestamps[row] = beforeScreenTimestamps[mappedRow]
 			nextScreenRowKinds[row] = stringAt(beforeScreenRowKinds, mappedRow)
@@ -1727,6 +1735,7 @@ func (v *VTerm) reconcileRowMetadataLocked(beforeScreen []rowFingerprint, before
 		preservedFromBefore:       preservedFromBefore,
 		requiredScrollbackAppends: requiredAppends,
 		beforeScrollbackLen:       beforeScrollbackLen,
+		screenScrollShift:         screenScrollShift,
 	}
 }
 
@@ -1746,6 +1755,9 @@ func (v *VTerm) reconcileRowCachesLocked(beforeScreen []rowFingerprint, plan row
 	nextScreenCache := make([][]Cell, len(plan.afterScreen))
 	for row := range plan.afterScreen {
 		mappedRow := row + plan.preservedFromBefore
+		if plan.screenScrollShift > 0 {
+			mappedRow = row + plan.screenScrollShift
+		}
 		if mappedRow >= len(beforeScreen) || mappedRow >= len(oldScreenCache) {
 			continue
 		}
@@ -1808,6 +1820,9 @@ func (v *VTerm) writeDamageLocked(beforeScreen []rowFingerprint, plan rowCacheRe
 	}
 	for row := range plan.afterScreen {
 		mappedRow := row + plan.preservedFromBefore
+		if plan.screenScrollShift > 0 {
+			mappedRow = row + plan.screenScrollShift
+		}
 		if mappedRow < len(beforeScreen) && rowFingerprintsEqual(beforeScreen[mappedRow], plan.afterScreen[row]) {
 			continue
 		}

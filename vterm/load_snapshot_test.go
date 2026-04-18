@@ -382,6 +382,30 @@ func TestVTermWriteAssignsTimestampsToBlankRows(t *testing.T) {
 	}
 }
 
+func TestVTermWriteAltScreenScrollDoesNotInvalidateWholeScreen(t *testing.T) {
+	vt := New(5, 4, 100, nil)
+	vt.LoadSnapshot(ScreenData{
+		IsAlternateScreen: true,
+		Cells: [][]Cell{
+			{{Content: "1", Width: 1}},
+			{{Content: "2", Width: 1}},
+			{{Content: "3", Width: 1}},
+			{{Content: "4", Width: 1}},
+		},
+	}, CursorState{Row: 3, Col: 0, Visible: true}, TerminalModes{AlternateScreen: true, AutoWrap: true})
+
+	_, err, damage := vt.WriteWithDamage([]byte("\n"))
+	if err != nil {
+		t.Fatalf("alt-screen scroll write: %v", err)
+	}
+	if len(damage.ChangedScreenRows) >= 4 {
+		t.Fatalf("expected alt-screen scroll to avoid full-screen invalidation, got %#v", damage.ChangedScreenRows)
+	}
+	if len(damage.ChangedScreenRows) == 0 {
+		t.Fatal("expected at least the edge row to be redrawn after alt-screen scroll")
+	}
+}
+
 func TestVTermTracksMouseModesFromEscapeSequences(t *testing.T) {
 	vt := New(20, 5, 100, nil)
 
