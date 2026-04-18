@@ -200,6 +200,8 @@ func applyIncrementalPaneSpriteRows(canvas *composedCanvas, resolved resolvedPan
 	if canvas == nil || resolved.source == nil || resolved.contentRect.W <= 0 || resolved.contentRect.H <= 0 {
 		return paneContentSpriteDelta{}
 	}
+	rowScratch := newComposedCanvas(resolved.contentRect.W, 1)
+	rowScratch.hostEmojiVS16Mode = canvas.hostEmojiVS16Mode
 	if plan, ok := detectTerminalWindowScroll(previous, next); ok {
 		perftrace.Count("render.pane_content_sprite.incremental.scroll_hit", 1)
 		perftrace.Count("render.pane_content_sprite.incremental.scroll_shift", plan.shift)
@@ -212,7 +214,7 @@ func applyIncrementalPaneSpriteRows(canvas *composedCanvas, resolved resolvedPan
 				if line < len(next.rowIndices) {
 					rowIndex = next.rowIndices[line]
 				}
-				drawPaneContentSpriteRow(canvas, resolved.contentRect, resolved.source, rowIndex, targetY, theme)
+				drawPaneContentSpriteRowDiff(canvas, rowScratch, resolved.contentRect, resolved.source, rowIndex, targetY, theme)
 			}
 			return paneContentSpriteDelta{scrollPlan: plan}
 		case terminalWindowScrollDown:
@@ -223,7 +225,7 @@ func applyIncrementalPaneSpriteRows(canvas *composedCanvas, resolved resolvedPan
 				if line < len(next.rowIndices) {
 					rowIndex = next.rowIndices[line]
 				}
-				drawPaneContentSpriteRow(canvas, resolved.contentRect, resolved.source, rowIndex, targetY, theme)
+				drawPaneContentSpriteRowDiff(canvas, rowScratch, resolved.contentRect, resolved.source, rowIndex, targetY, theme)
 			}
 			return paneContentSpriteDelta{scrollPlan: plan}
 		}
@@ -238,7 +240,7 @@ func applyIncrementalPaneSpriteRows(canvas *composedCanvas, resolved resolvedPan
 		if line < len(next.rowIndices) {
 			rowIndex = next.rowIndices[line]
 		}
-		drawPaneContentSpriteRow(canvas, resolved.contentRect, resolved.source, rowIndex, targetY, theme)
+		drawPaneContentSpriteRowDiff(canvas, rowScratch, resolved.contentRect, resolved.source, rowIndex, targetY, theme)
 		delta.changedRows = append(delta.changedRows, line)
 	}
 	if len(delta.changedRows) > 0 {

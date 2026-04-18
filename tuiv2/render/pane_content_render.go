@@ -446,6 +446,40 @@ func drawPaneContentSpriteRow(canvas *composedCanvas, rect workbench.Rect, sourc
 	drawTerminalExtentHintsRow(canvas, rect, source, targetY, theme)
 }
 
+func drawPaneContentSpriteRowDiff(canvas, scratch *composedCanvas, rect workbench.Rect, source terminalRenderSource, rowIndex int, targetY int, theme uiTheme) {
+	if canvas == nil || scratch == nil || rect.W <= 0 || targetY < rect.Y || targetY >= rect.Y+rect.H {
+		return
+	}
+	scratch.resetToBlank()
+	scratchRect := workbench.Rect{X: 0, Y: 0, W: rect.W, H: 1}
+	if source != nil && rowIndex >= 0 {
+		drawTerminalSourceRowInRectCleared(scratch, scratchRect, source, rowIndex, 0, theme)
+	}
+	drawTerminalExtentHintsRow(scratch, scratchRect, source, 0, theme)
+
+	dstRow := canvas.cells[targetY]
+	srcRow := scratch.cells[0]
+	start := -1
+	flush := func(end int) {
+		if start < 0 || end < start {
+			return
+		}
+		copy(dstRow[rect.X+start:rect.X+end+1], srcRow[start:end+1])
+		canvas.markRowDirtyRange(targetY, rect.X+start, rect.X+end)
+		start = -1
+	}
+	for x := 0; x < rect.W; x++ {
+		if dstRow[rect.X+x] == srcRow[x] {
+			flush(x - 1)
+			continue
+		}
+		if start < 0 {
+			start = x
+		}
+	}
+	flush(rect.W - 1)
+}
+
 func exitedPaneActionDrawStyle(theme uiTheme, kind HitRegionKind, selected bool) drawStyle {
 	accent := theme.panelText
 	switch kind {
