@@ -143,6 +143,7 @@ type WriteDamage struct {
 	ChangedScreenRows []DamageRow
 	ScrollbackAppend  []DamageRow
 	ScrollbackTrim    int
+	ScreenScroll      int
 	Cursor            CursorState
 	Modes             TerminalModes
 	SizeCols          int
@@ -403,6 +404,7 @@ func (v *VTerm) applyScreenUpdateLocked(update protocol.ScreenUpdate) bool {
 	if !v.applyScreenUpdateScrollbackLocked(update) {
 		return false
 	}
+	v.applyScreenScrollLocked(update.ScreenScroll)
 
 	var b strings.Builder
 	for _, row := range update.ChangedRows {
@@ -443,6 +445,71 @@ func (v *VTerm) applyScreenUpdateLocked(update protocol.ScreenUpdate) bool {
 	v.loadMouseModesLocked(modes)
 	v.invalidateRowCachesLocked()
 	return true
+}
+
+func (v *VTerm) applyScreenScrollLocked(delta int) {
+	if v == nil || v.emu == nil || delta == 0 {
+		return
+	}
+	height := v.emu.Height()
+	width := v.emu.Width()
+	if height <= 0 || width <= 0 {
+		return
+	}
+	if delta >= height || delta <= -height {
+		for y := 0; y < height; y++ {
+			for x := 0; x < width; x++ {
+				v.emu.Emulator.SetCell(x, y, uvBlankCell())
+			}
+		}
+		zeroTime := make([]time.Time, height)
+		zeroKinds := make([]string, height)
+		v.screenTimestamps = zeroTime
+		v.screenRowKinds = zeroKinds
+		return
+	}
+	screen := make([][]Cell, height)
+	for y := 0; y < height; y++ {
+		screen[y] = cloneCellSlice(v.screenRowViewLocked(y))
+	}
+	nextTimes := normalizeTimeSlice(v.screenTimestamps, height)
+	nextKinds := normalizeStringSlice(v.screenRowKinds, height)
+	if delta > 0 {
+		for y := 0; y < height-delta; y++ {
+			screen[y] = screen[y+delta]
+			nextTimes[y] = nextTimes[y+delta]
+			nextKinds[y] = nextKinds[y+delta]
+		}
+		for y := height - delta; y < height; y++ {
+			screen[y] = nil
+			nextTimes[y] = time.Time{}
+			nextKinds[y] = ""
+		}
+	} else {
+		shift := -delta
+		for y := height - 1; y >= shift; y-- {
+			screen[y] = screen[y-shift]
+			nextTimes[y] = nextTimes[y-shift]
+			nextKinds[y] = nextKinds[y-shift]
+		}
+		for y := 0; y < shift; y++ {
+			screen[y] = nil
+			nextTimes[y] = time.Time{}
+			nextKinds[y] = ""
+		}
+	}
+	for y := 0; y < height; y++ {
+		row := screen[y]
+		for x := 0; x < width; x++ {
+			if x < len(row) {
+				v.emu.Emulator.SetCell(x, y, uvCell(row[x]))
+				continue
+			}
+			v.emu.Emulator.SetCell(x, y, uvBlankCell())
+		}
+	}
+	v.screenTimestamps = nextTimes
+	v.screenRowKinds = nextKinds
 }
 
 func (v *VTerm) canApplyScreenUpdateLocked(update protocol.ScreenUpdate) bool {
@@ -873,6 +940,10 @@ func uvCellFromProtocol(cell protocol.Cell) *uv.Cell {
 		Width:   cell.Width,
 		Style:   cellStyleFromProtocol(cell.Style),
 	})
+}
+
+func uvBlankCell() *uv.Cell {
+	return &uv.Cell{Content: " ", Width: 1}
 }
 
 func encodeScreenSnapshot(rows [][]Cell) []byte {
@@ -1799,10 +1870,11 @@ func (v *VTerm) reconcileRowCachesLocked(beforeScreen []rowFingerprint, plan row
 
 func (v *VTerm) writeDamageLocked(beforeScreen []rowFingerprint, plan rowCacheReconcilePlan) WriteDamage {
 	damage := WriteDamage{
-		Cursor:   v.cursor,
-		Modes:    v.modes,
-		SizeCols: 0,
-		SizeRows: len(plan.afterScreen),
+		Cursor:       v.cursor,
+		Modes:        v.modes,
+		SizeCols:     0,
+		SizeRows:     len(plan.afterScreen),
+		ScreenScroll: plan.screenScrollShift,
 	}
 	if v == nil || v.emu == nil {
 		return damage

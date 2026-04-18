@@ -197,6 +197,7 @@ type ScreenUpdate struct {
 	FullReplace      bool                  `json:"full_replace,omitempty"`
 	ResetScrollback  bool                  `json:"reset_scrollback,omitempty"`
 	Size             Size                  `json:"size,omitempty"`
+	ScreenScroll     int                   `json:"screen_scroll,omitempty"`
 	Title            string                `json:"title,omitempty"`
 	Screen           ScreenData            `json:"screen,omitempty"`
 	ScreenTimestamps []time.Time           `json:"screen_timestamps,omitempty"`
@@ -278,6 +279,7 @@ const (
 	screenUpdateFlagFullReplace uint8 = 1 << iota
 	screenUpdateFlagResetScrollback
 	screenUpdateFlagHasTitle
+	screenUpdateFlagHasScreenScroll
 )
 
 type screenUpdateEncoder struct {
@@ -298,9 +300,15 @@ func encodeScreenUpdatePayloadBinary(update ScreenUpdate) ([]byte, error) {
 	if update.Title != "" {
 		flags |= screenUpdateFlagHasTitle
 	}
+	if update.ScreenScroll != 0 {
+		flags |= screenUpdateFlagHasScreenScroll
+	}
 	enc.appendByte(flags)
 	enc.appendUint16(update.Size.Cols)
 	enc.appendUint16(update.Size.Rows)
+	if flags&screenUpdateFlagHasScreenScroll != 0 {
+		enc.appendInt32(int32(update.ScreenScroll))
+	}
 	if flags&screenUpdateFlagHasTitle != 0 {
 		enc.appendString(update.Title)
 	}
@@ -382,6 +390,13 @@ func decodeScreenUpdatePayloadBinary(payload []byte) (ScreenUpdate, error) {
 		FullReplace:     flags&screenUpdateFlagFullReplace != 0,
 		ResetScrollback: flags&screenUpdateFlagResetScrollback != 0,
 		Size:            Size{Cols: cols, Rows: rows},
+	}
+	if flags&screenUpdateFlagHasScreenScroll != 0 {
+		scroll, err := dec.readInt32()
+		if err != nil {
+			return ScreenUpdate{}, err
+		}
+		update.ScreenScroll = int(scroll)
 	}
 	if flags&screenUpdateFlagHasTitle != 0 {
 		update.Title, err = dec.readString()

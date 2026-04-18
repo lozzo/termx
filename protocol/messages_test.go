@@ -138,7 +138,8 @@ func TestScreenUpdatePayloadTrimsTrailingBlankCellsButKeepsWideContinuation(t *t
 
 func TestScreenUpdatePayloadKeepsStyledTrailingBlankCell(t *testing.T) {
 	update := ScreenUpdate{
-		Size: protocolSize(4, 1),
+		Size:         protocolSize(4, 1),
+		ScreenScroll: 1,
 		ChangedRows: []ScreenRowUpdate{{
 			Row: 0,
 			Cells: []Cell{
@@ -165,6 +166,9 @@ func TestScreenUpdatePayloadKeepsStyledTrailingBlankCell(t *testing.T) {
 	}
 	if got := row[1].Style.BG; got != "#112233" {
 		t.Fatalf("expected styled trailing blank cell preserved, got %#v", row[1])
+	}
+	if decoded.ScreenScroll != 1 {
+		t.Fatalf("expected screen scroll round-trip, got %#v", decoded)
 	}
 }
 

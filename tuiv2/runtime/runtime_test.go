@@ -368,6 +368,50 @@ func TestRuntimeScreenUpdateUsesIncrementalVTermApplyWhenSupported(t *testing.T)
 	}
 }
 
+func TestRuntimeScreenUpdateAppliesScreenScrollShiftToLocalVTerm(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+
+	rt := New(client)
+	terminal, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator")
+	if err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if terminal == nil {
+		t.Fatal("expected terminal")
+	}
+
+	terminal.Snapshot = snapshotWithLines("term-1", 4, 3, []string{"row1", "row2", "row3"})
+	loadSnapshotIntoVTerm(terminal.VTerm, terminal.Snapshot)
+
+	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		Size:         protocol.Size{Cols: 4, Rows: 3},
+		ScreenScroll: 1,
+		ChangedRows: []protocol.ScreenRowUpdate{{
+			Row:   2,
+			Cells: []protocol.Cell{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}, {Content: "4", Width: 1}},
+		}},
+		Cursor: protocol.CursorState{Row: 2, Col: 0, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode update: %v", err)
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+
+	screen := terminal.VTerm.ScreenContent()
+	got := []string{
+		screen.Cells[0][0].Content + screen.Cells[0][1].Content + screen.Cells[0][2].Content + screen.Cells[0][3].Content,
+		screen.Cells[1][0].Content + screen.Cells[1][1].Content + screen.Cells[1][2].Content + screen.Cells[1][3].Content,
+		screen.Cells[2][0].Content + screen.Cells[2][1].Content + screen.Cells[2][2].Content + screen.Cells[2][3].Content,
+	}
+	if !reflect.DeepEqual(got, []string{"row2", "row3", "row4"}) {
+		t.Fatalf("expected local vterm screen scroll shift applied, got %#v", got)
+	}
+}
+
 func TestRuntimeStartStreamCoalescesBurstOutputFrames(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

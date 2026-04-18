@@ -342,6 +342,9 @@ func applyScreenUpdateSnapshot(current *protocol.Snapshot, terminalID string, up
 	if requiredRows > len(snapshot.Screen.Cells) {
 		ensureSnapshotScreenRowsCOW(snapshot, requiredRows, &screenCellsOwned, &screenTimestampsOwned, &screenRowKindsOwned)
 	}
+	if update.ScreenScroll != 0 {
+		shiftSnapshotScreenRows(snapshot, update.ScreenScroll, &screenCellsOwned, &screenTimestampsOwned, &screenRowKindsOwned)
+	}
 	if update.ScrollbackTrim > 0 {
 		trimSnapshotScrollbackFront(snapshot, update.ScrollbackTrim)
 		scrollbackOwned = true
@@ -481,6 +484,52 @@ func ensureSnapshotScreenRowsCOW(snapshot *protocol.Snapshot, rows int, screenCe
 	snapshot.ScreenRowKinds = cowStringSlice(snapshot.ScreenRowKinds, rows, screenRowKindsOwned)
 	if snapshot.Size.Rows < uint16(rows) {
 		snapshot.Size.Rows = uint16(rows)
+	}
+}
+
+func shiftSnapshotScreenRows(snapshot *protocol.Snapshot, delta int, screenCellsOwned, screenTimestampsOwned, screenRowKindsOwned *bool) {
+	if snapshot == nil || delta == 0 {
+		return
+	}
+	rows := len(snapshot.Screen.Cells)
+	if rows == 0 {
+		return
+	}
+	if delta >= rows || delta <= -rows {
+		snapshot.Screen.Cells = cowProtocolRows(snapshot.Screen.Cells, rows, screenCellsOwned)
+		snapshot.ScreenTimestamps = cowTimeSlice(snapshot.ScreenTimestamps, rows, screenTimestampsOwned)
+		snapshot.ScreenRowKinds = cowStringSlice(snapshot.ScreenRowKinds, rows, screenRowKindsOwned)
+		clear(snapshot.Screen.Cells)
+		clear(snapshot.ScreenTimestamps)
+		clear(snapshot.ScreenRowKinds)
+		return
+	}
+	snapshot.Screen.Cells = cowProtocolRows(snapshot.Screen.Cells, rows, screenCellsOwned)
+	snapshot.ScreenTimestamps = cowTimeSlice(snapshot.ScreenTimestamps, rows, screenTimestampsOwned)
+	snapshot.ScreenRowKinds = cowStringSlice(snapshot.ScreenRowKinds, rows, screenRowKindsOwned)
+	if delta > 0 {
+		for row := 0; row < rows-delta; row++ {
+			snapshot.Screen.Cells[row] = snapshot.Screen.Cells[row+delta]
+			snapshot.ScreenTimestamps[row] = snapshot.ScreenTimestamps[row+delta]
+			snapshot.ScreenRowKinds[row] = snapshot.ScreenRowKinds[row+delta]
+		}
+		for row := rows - delta; row < rows; row++ {
+			snapshot.Screen.Cells[row] = nil
+			snapshot.ScreenTimestamps[row] = time.Time{}
+			snapshot.ScreenRowKinds[row] = ""
+		}
+		return
+	}
+	shift := -delta
+	for row := rows - 1; row >= shift; row-- {
+		snapshot.Screen.Cells[row] = snapshot.Screen.Cells[row-shift]
+		snapshot.ScreenTimestamps[row] = snapshot.ScreenTimestamps[row-shift]
+		snapshot.ScreenRowKinds[row] = snapshot.ScreenRowKinds[row-shift]
+	}
+	for row := 0; row < shift; row++ {
+		snapshot.Screen.Cells[row] = nil
+		snapshot.ScreenTimestamps[row] = time.Time{}
+		snapshot.ScreenRowKinds[row] = ""
 	}
 }
 

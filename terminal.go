@@ -1065,6 +1065,7 @@ func (t *Terminal) screenUpdatePayloadFromDamageLocked(damage vterm.WriteDamage)
 	}
 	update := protocol.ScreenUpdate{
 		Size:             protocol.Size{Cols: uint16(damage.SizeCols), Rows: uint16(damage.SizeRows)},
+		ScreenScroll:     damage.ScreenScroll,
 		Title:            t.currentTitleLocked(),
 		ChangedRows:      make([]protocol.ScreenRowUpdate, 0, len(damage.ChangedScreenRows)),
 		ScrollbackTrim:   damage.ScrollbackTrim,

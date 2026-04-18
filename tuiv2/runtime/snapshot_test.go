@@ -153,6 +153,48 @@ func TestApplyScreenUpdateSnapshotFullReplaceBehaviorUnchanged(t *testing.T) {
 	}
 }
 
+func TestApplyScreenUpdateSnapshotScreenScrollShiftPreservesPreviousSnapshot(t *testing.T) {
+	now := time.Date(2026, 4, 18, 13, 0, 0, 0, time.UTC)
+	current := &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 4, Rows: 3},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			snapshotTestRow("row1"),
+			snapshotTestRow("row2"),
+			snapshotTestRow("row3"),
+		}},
+		ScreenTimestamps: []time.Time{now, now.Add(time.Second), now.Add(2 * time.Second)},
+		ScreenRowKinds:   []string{"a", "b", "c"},
+		Cursor:           protocol.CursorState{Visible: true},
+		Modes:            protocol.TerminalModes{AutoWrap: true},
+	}
+	previous := cloneProtocolSnapshot(current)
+
+	next := applyScreenUpdateSnapshot(current, "term-1", protocol.ScreenUpdate{
+		ScreenScroll: 1,
+		ChangedRows: []protocol.ScreenRowUpdate{{
+			Row:       2,
+			Cells:     snapshotTestRow("row4"),
+			Timestamp: now.Add(3 * time.Second),
+			RowKind:   "d",
+		}},
+		Cursor: protocol.CursorState{Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+
+	if !reflect.DeepEqual(current, previous) {
+		t.Fatalf("expected previous snapshot to remain unchanged, got %#v want %#v", current, previous)
+	}
+	got := []string{
+		rowToString(next.Screen.Cells[0]),
+		rowToString(next.Screen.Cells[1]),
+		rowToString(next.Screen.Cells[2]),
+	}
+	if !reflect.DeepEqual(got, []string{"row2", "row3", "row4"}) {
+		t.Fatalf("unexpected shifted screen rows: %#v", got)
+	}
+}
+
 func snapshotTestRow(text string) []protocol.Cell {
 	row := make([]protocol.Cell, 0, len(text))
 	for _, r := range text {
