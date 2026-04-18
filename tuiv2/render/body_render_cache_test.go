@@ -212,6 +212,64 @@ func TestContentSpriteIncrementallyUpdatesChangedRowsForSameDimensions(t *testin
 	}
 }
 
+func TestContentSpriteIgnoresTimestampOnlySurfaceChanges(t *testing.T) {
+	now := time.Date(2026, 4, 16, 12, 45, 0, 0, time.UTC)
+	surface := &spriteTestSurface{
+		size: protocol.Size{Cols: 5, Rows: 2},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("hello"),
+			protocolRowFromText("world"),
+		},
+		screenTimestamps: []time.Time{now, now},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-1",
+			Name:           "shell",
+			State:          "running",
+			Surface:        surface,
+			SurfaceVersion: 1,
+		}},
+	}
+	entry := paneRenderEntry{
+		PaneID:     "pane-1",
+		Rect:       workbench.Rect{X: 0, Y: 0, W: 5, H: 2},
+		Frameless:  true,
+		TerminalID: "term-1",
+		Theme:      defaultUITheme(),
+		ContentKey: paneContentKey{
+			TerminalID:    "term-1",
+			TerminalKnown: true,
+		},
+	}
+	entry.ContentKey.SurfaceVersion = 1
+
+	cache := &bodyRenderCache{}
+	sprite := cache.contentSprite(entry, runtimeState)
+	if sprite == nil {
+		t.Fatal("expected initial sprite")
+	}
+
+	surface.screenTimestamps = []time.Time{now.Add(time.Second), now.Add(2 * time.Second)}
+	runtimeState.Terminals[0].SurfaceVersion = 2
+	entry.ContentKey.SurfaceVersion = 2
+
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+	nextSprite := cache.contentSprite(entry, runtimeState)
+	snapshot := perftrace.SnapshotCurrent()
+	if event, ok := snapshot.Event("render.pane_content_sprite.incremental.row_redraw_rows"); ok && event.Bytes > 0 {
+		t.Fatalf("expected timestamp-only change to avoid row redraws, got events=%#v", snapshot.Events)
+	}
+	if nextSprite != sprite {
+		t.Fatal("expected timestamp-only change to reuse sprite canvas")
+	}
+	if got := nextSprite.rawString(); got != "hello\nworld" {
+		t.Fatalf("expected sprite content to remain unchanged, got %q", got)
+	}
+}
+
 func TestContentSpriteIncrementalRowUpdatePreservesExtentHints(t *testing.T) {
 	now := time.Date(2026, 4, 16, 13, 0, 0, 0, time.UTC)
 	surface := &spriteTestSurface{

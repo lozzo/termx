@@ -98,9 +98,9 @@ func (s snapshotRenderSource) RowHash(rowIndex int) uint64 {
 	}
 	kind := snapshotRowKind(s.snapshot, rowIndex)
 	hash = fnvMixString(hash, kind)
-	ts := snapshotRowTimestamp(s.snapshot, rowIndex)
-	hash = fnvMixInt64(hash, ts.UnixNano())
-	if kind != "" || !ts.IsZero() {
+	if kind != "" {
+		ts := snapshotRowTimestamp(s.snapshot, rowIndex)
+		hash = fnvMixInt64(hash, ts.UnixNano())
 		return hash
 	}
 	row := snapshotRow(s.snapshot, rowIndex)
@@ -153,9 +153,9 @@ func (s surfaceRenderSource) RowHash(rowIndex int) uint64 {
 	}
 	kind := s.surface.RowKind(rowIndex)
 	hash = fnvMixString(hash, kind)
-	ts := s.surface.RowTimestamp(rowIndex)
-	hash = fnvMixInt64(hash, ts.UnixNano())
-	if kind != "" || !ts.IsZero() {
+	if kind != "" {
+		ts := s.surface.RowTimestamp(rowIndex)
+		hash = fnvMixInt64(hash, ts.UnixNano())
 		return hash
 	}
 	row := s.surface.Row(rowIndex)

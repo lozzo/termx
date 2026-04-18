@@ -150,9 +150,9 @@ func (s vtermSurface) RowHash(rowIndex int) uint64 {
 	}
 	kind := s.RowKind(rowIndex)
 	hash = surfaceRowHashMixString(hash, kind)
-	ts := s.RowTimestamp(rowIndex)
-	hash = surfaceRowHashMixInt64(hash, ts.UnixNano())
-	if kind != "" || !ts.IsZero() {
+	if kind != "" {
+		ts := s.RowTimestamp(rowIndex)
+		hash = surfaceRowHashMixInt64(hash, ts.UnixNano())
 		return hash
 	}
 	var row []localvterm.Cell
