@@ -1,8 +1,10 @@
 package protocol
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -211,6 +213,10 @@ type ListResult struct {
 }
 
 func EncodeScreenUpdatePayload(update ScreenUpdate) ([]byte, error) {
+	return encodeScreenUpdatePayloadBinary(update)
+}
+
+func encodeScreenUpdatePayloadJSON(update ScreenUpdate) ([]byte, error) {
 	type jsonStyle struct {
 		FG            string `json:"fg,omitempty"`
 		BG            string `json:"bg,omitempty"`
@@ -384,6 +390,13 @@ func maxInt(a, b int) int {
 }
 
 func DecodeScreenUpdatePayload(payload []byte) (ScreenUpdate, error) {
+	if len(payload) >= len(screenUpdatePayloadMagic) && string(payload[:len(screenUpdatePayloadMagic)]) == screenUpdatePayloadMagic {
+		return decodeScreenUpdatePayloadBinary(payload)
+	}
+	return decodeScreenUpdatePayloadJSON(payload)
+}
+
+func decodeScreenUpdatePayloadJSON(payload []byte) (ScreenUpdate, error) {
 	type jsonCell struct {
 		Cells []Cell `json:"cells,omitempty"`
 	}
@@ -482,6 +495,636 @@ func DecodeScreenUpdatePayload(payload []byte) (ScreenUpdate, error) {
 		})
 	}
 	return update, nil
+}
+
+const screenUpdatePayloadMagic = "TSU2"
+
+const (
+	screenUpdateFlagFullReplace uint8 = 1 << iota
+	screenUpdateFlagResetScrollback
+	screenUpdateFlagHasTitle
+)
+
+type screenUpdateEncoder struct {
+	buf []byte
+}
+
+func encodeScreenUpdatePayloadBinary(update ScreenUpdate) ([]byte, error) {
+	styles, styleIndex := collectScreenUpdateStyles(update)
+	enc := screenUpdateEncoder{buf: make([]byte, 0, 256)}
+	enc.appendBytes([]byte(screenUpdatePayloadMagic))
+	flags := uint8(0)
+	if update.FullReplace {
+		flags |= screenUpdateFlagFullReplace
+	}
+	if update.ResetScrollback {
+		flags |= screenUpdateFlagResetScrollback
+	}
+	if update.Title != "" {
+		flags |= screenUpdateFlagHasTitle
+	}
+	enc.appendByte(flags)
+	enc.appendUint16(update.Size.Cols)
+	enc.appendUint16(update.Size.Rows)
+	if flags&screenUpdateFlagHasTitle != 0 {
+		enc.appendString(update.Title)
+	}
+	enc.appendUint16(encodeTerminalModesMask(update.Modes))
+	enc.appendInt32(int32(update.Cursor.Row))
+	enc.appendInt32(int32(update.Cursor.Col))
+	enc.appendByte(boolByte(update.Cursor.Visible))
+	enc.appendByte(encodeCursorShape(update.Cursor.Shape))
+	enc.appendByte(boolByte(update.Cursor.Blink))
+	enc.appendUvarint(uint64(maxInt(0, len(styles)-1)))
+	for _, style := range styles[1:] {
+		enc.appendCellStyle(style)
+	}
+	if update.FullReplace {
+		enc.appendByte(boolByte(update.Screen.IsAlternateScreen))
+		enc.appendRows(update.Screen.Cells, styleIndex)
+		enc.appendTimeSlice(update.ScreenTimestamps)
+		enc.appendStringSlice(update.ScreenRowKinds)
+	}
+	enc.appendUvarint(uint64(len(update.ChangedRows)))
+	for _, row := range update.ChangedRows {
+		enc.appendUvarint(uint64(row.Row))
+		enc.appendTime(row.Timestamp)
+		enc.appendString(row.RowKind)
+		enc.appendRow(row.Cells, styleIndex)
+	}
+	enc.appendUvarint(uint64(maxInt(0, update.ScrollbackTrim)))
+	enc.appendUvarint(uint64(len(update.ScrollbackAppend)))
+	for _, row := range update.ScrollbackAppend {
+		enc.appendTime(row.Timestamp)
+		enc.appendString(row.RowKind)
+		enc.appendRow(row.Cells, styleIndex)
+	}
+	return enc.buf, nil
+}
+
+func collectScreenUpdateStyles(update ScreenUpdate) ([]CellStyle, map[CellStyle]uint64) {
+	styles := []CellStyle{{}}
+	index := map[CellStyle]uint64{{}: 0}
+	addRow := func(row []Cell) {
+		for _, cell := range trimCellsForScreenUpdateWire(row) {
+			if _, ok := index[cell.Style]; ok {
+				continue
+			}
+			index[cell.Style] = uint64(len(styles))
+			styles = append(styles, cell.Style)
+		}
+	}
+	for _, row := range update.Screen.Cells {
+		addRow(row)
+	}
+	for _, row := range update.ChangedRows {
+		addRow(row.Cells)
+	}
+	for _, row := range update.ScrollbackAppend {
+		addRow(row.Cells)
+	}
+	return styles, index
+}
+
+func decodeScreenUpdatePayloadBinary(payload []byte) (ScreenUpdate, error) {
+	dec := screenUpdateDecoder{data: payload}
+	if !dec.consumeMagic(screenUpdatePayloadMagic) {
+		return ScreenUpdate{}, fmt.Errorf("invalid screen update payload magic")
+	}
+	flags, err := dec.readByte()
+	if err != nil {
+		return ScreenUpdate{}, err
+	}
+	cols, err := dec.readUint16()
+	if err != nil {
+		return ScreenUpdate{}, err
+	}
+	rows, err := dec.readUint16()
+	if err != nil {
+		return ScreenUpdate{}, err
+	}
+	update := ScreenUpdate{
+		FullReplace:     flags&screenUpdateFlagFullReplace != 0,
+		ResetScrollback: flags&screenUpdateFlagResetScrollback != 0,
+		Size:            Size{Cols: cols, Rows: rows},
+	}
+	if flags&screenUpdateFlagHasTitle != 0 {
+		update.Title, err = dec.readString()
+		if err != nil {
+			return ScreenUpdate{}, err
+		}
+	}
+	modeMask, err := dec.readUint16()
+	if err != nil {
+		return ScreenUpdate{}, err
+	}
+	cursorRow, err := dec.readInt32()
+	if err != nil {
+		return ScreenUpdate{}, err
+	}
+	cursorCol, err := dec.readInt32()
+	if err != nil {
+		return ScreenUpdate{}, err
+	}
+	cursorVisible, err := dec.readByte()
+	if err != nil {
+		return ScreenUpdate{}, err
+	}
+	cursorShape, err := dec.readByte()
+	if err != nil {
+		return ScreenUpdate{}, err
+	}
+	cursorBlink, err := dec.readByte()
+	if err != nil {
+		return ScreenUpdate{}, err
+	}
+	update.Modes = decodeTerminalModesMask(modeMask)
+	update.Cursor = CursorState{
+		Row:     int(cursorRow),
+		Col:     int(cursorCol),
+		Visible: cursorVisible != 0,
+		Shape:   decodeCursorShape(cursorShape),
+		Blink:   cursorBlink != 0,
+	}
+	styleCount, err := dec.readUvarint()
+	if err != nil {
+		return ScreenUpdate{}, err
+	}
+	styles := make([]CellStyle, 1, int(styleCount)+1)
+	styles[0] = CellStyle{}
+	for i := uint64(0); i < styleCount; i++ {
+		style, err := dec.readCellStyle()
+		if err != nil {
+			return ScreenUpdate{}, err
+		}
+		styles = append(styles, style)
+	}
+	if update.FullReplace {
+		screenAlt, err := dec.readByte()
+		if err != nil {
+			return ScreenUpdate{}, err
+		}
+		update.Screen.IsAlternateScreen = screenAlt != 0
+		update.Screen.Cells, err = dec.readRows(styles)
+		if err != nil {
+			return ScreenUpdate{}, err
+		}
+		update.ScreenTimestamps, err = dec.readTimeSlice()
+		if err != nil {
+			return ScreenUpdate{}, err
+		}
+		update.ScreenRowKinds, err = dec.readStringSlice()
+		if err != nil {
+			return ScreenUpdate{}, err
+		}
+	}
+	changedCount, err := dec.readUvarint()
+	if err != nil {
+		return ScreenUpdate{}, err
+	}
+	update.ChangedRows = make([]ScreenRowUpdate, 0, int(changedCount))
+	for i := uint64(0); i < changedCount; i++ {
+		rowIndex, err := dec.readUvarint()
+		if err != nil {
+			return ScreenUpdate{}, err
+		}
+		ts, err := dec.readTime()
+		if err != nil {
+			return ScreenUpdate{}, err
+		}
+		kind, err := dec.readString()
+		if err != nil {
+			return ScreenUpdate{}, err
+		}
+		cells, err := dec.readRow(styles)
+		if err != nil {
+			return ScreenUpdate{}, err
+		}
+		update.ChangedRows = append(update.ChangedRows, ScreenRowUpdate{
+			Row:       int(rowIndex),
+			Cells:     cells,
+			Timestamp: ts,
+			RowKind:   kind,
+		})
+	}
+	scrollbackTrim, err := dec.readUvarint()
+	if err != nil {
+		return ScreenUpdate{}, err
+	}
+	update.ScrollbackTrim = int(scrollbackTrim)
+	appendCount, err := dec.readUvarint()
+	if err != nil {
+		return ScreenUpdate{}, err
+	}
+	update.ScrollbackAppend = make([]ScrollbackRowAppend, 0, int(appendCount))
+	for i := uint64(0); i < appendCount; i++ {
+		ts, err := dec.readTime()
+		if err != nil {
+			return ScreenUpdate{}, err
+		}
+		kind, err := dec.readString()
+		if err != nil {
+			return ScreenUpdate{}, err
+		}
+		cells, err := dec.readRow(styles)
+		if err != nil {
+			return ScreenUpdate{}, err
+		}
+		update.ScrollbackAppend = append(update.ScrollbackAppend, ScrollbackRowAppend{
+			Cells:     cells,
+			Timestamp: ts,
+			RowKind:   kind,
+		})
+	}
+	if dec.off != len(dec.data) {
+		return ScreenUpdate{}, fmt.Errorf("trailing bytes in screen update payload")
+	}
+	if !update.FullReplace {
+		update.Screen.IsAlternateScreen = update.Modes.AlternateScreen
+	}
+	return update, nil
+}
+
+type screenUpdateDecoder struct {
+	data []byte
+	off  int
+}
+
+func (e *screenUpdateEncoder) appendBytes(value []byte) {
+	e.buf = append(e.buf, value...)
+}
+
+func (e *screenUpdateEncoder) appendByte(value byte) {
+	e.buf = append(e.buf, value)
+}
+
+func (e *screenUpdateEncoder) appendUint16(value uint16) {
+	var raw [2]byte
+	binary.LittleEndian.PutUint16(raw[:], value)
+	e.appendBytes(raw[:])
+}
+
+func (e *screenUpdateEncoder) appendInt32(value int32) {
+	var raw [4]byte
+	binary.LittleEndian.PutUint32(raw[:], uint32(value))
+	e.appendBytes(raw[:])
+}
+
+func (e *screenUpdateEncoder) appendInt64(value int64) {
+	var raw [8]byte
+	binary.LittleEndian.PutUint64(raw[:], uint64(value))
+	e.appendBytes(raw[:])
+}
+
+func (e *screenUpdateEncoder) appendUvarint(value uint64) {
+	var raw [binary.MaxVarintLen64]byte
+	n := binary.PutUvarint(raw[:], value)
+	e.appendBytes(raw[:n])
+}
+
+func (e *screenUpdateEncoder) appendString(value string) {
+	e.appendUvarint(uint64(len(value)))
+	e.appendBytes([]byte(value))
+}
+
+func (e *screenUpdateEncoder) appendTime(value time.Time) {
+	if value.IsZero() {
+		e.appendInt64(0)
+		return
+	}
+	e.appendInt64(value.UTC().UnixNano())
+}
+
+func (e *screenUpdateEncoder) appendTimeSlice(values []time.Time) {
+	e.appendUvarint(uint64(len(values)))
+	for _, value := range values {
+		e.appendTime(value)
+	}
+}
+
+func (e *screenUpdateEncoder) appendStringSlice(values []string) {
+	e.appendUvarint(uint64(len(values)))
+	for _, value := range values {
+		e.appendString(value)
+	}
+}
+
+func (e *screenUpdateEncoder) appendCellStyle(style CellStyle) {
+	e.appendString(style.FG)
+	e.appendString(style.BG)
+	mask := uint8(0)
+	if style.Bold {
+		mask |= 1 << 0
+	}
+	if style.Italic {
+		mask |= 1 << 1
+	}
+	if style.Underline {
+		mask |= 1 << 2
+	}
+	if style.Blink {
+		mask |= 1 << 3
+	}
+	if style.Reverse {
+		mask |= 1 << 4
+	}
+	if style.Strikethrough {
+		mask |= 1 << 5
+	}
+	e.appendByte(mask)
+}
+
+func (e *screenUpdateEncoder) appendRows(rows [][]Cell, styleIndex map[CellStyle]uint64) {
+	e.appendUvarint(uint64(len(rows)))
+	for _, row := range rows {
+		e.appendRow(row, styleIndex)
+	}
+}
+
+func (e *screenUpdateEncoder) appendRow(row []Cell, styleIndex map[CellStyle]uint64) {
+	trimmed := trimCellsForScreenUpdateWire(row)
+	e.appendUvarint(uint64(len(trimmed)))
+	for _, cell := range trimmed {
+		e.appendUvarint(styleIndex[cell.Style])
+		e.appendUvarint(uint64(cell.Width))
+		e.appendString(cell.Content)
+	}
+}
+
+func (d *screenUpdateDecoder) consumeMagic(magic string) bool {
+	if len(d.data)-d.off < len(magic) {
+		return false
+	}
+	if string(d.data[d.off:d.off+len(magic)]) != magic {
+		return false
+	}
+	d.off += len(magic)
+	return true
+}
+
+func (d *screenUpdateDecoder) readByte() (byte, error) {
+	if d.off >= len(d.data) {
+		return 0, fmt.Errorf("unexpected EOF")
+	}
+	value := d.data[d.off]
+	d.off++
+	return value, nil
+}
+
+func (d *screenUpdateDecoder) readUint16() (uint16, error) {
+	if len(d.data)-d.off < 2 {
+		return 0, fmt.Errorf("unexpected EOF")
+	}
+	value := binary.LittleEndian.Uint16(d.data[d.off : d.off+2])
+	d.off += 2
+	return value, nil
+}
+
+func (d *screenUpdateDecoder) readInt32() (int32, error) {
+	if len(d.data)-d.off < 4 {
+		return 0, fmt.Errorf("unexpected EOF")
+	}
+	value := int32(binary.LittleEndian.Uint32(d.data[d.off : d.off+4]))
+	d.off += 4
+	return value, nil
+}
+
+func (d *screenUpdateDecoder) readInt64() (int64, error) {
+	if len(d.data)-d.off < 8 {
+		return 0, fmt.Errorf("unexpected EOF")
+	}
+	value := int64(binary.LittleEndian.Uint64(d.data[d.off : d.off+8]))
+	d.off += 8
+	return value, nil
+}
+
+func (d *screenUpdateDecoder) readUvarint() (uint64, error) {
+	value, n := binary.Uvarint(d.data[d.off:])
+	if n <= 0 {
+		return 0, fmt.Errorf("invalid varint")
+	}
+	d.off += n
+	return value, nil
+}
+
+func (d *screenUpdateDecoder) readString() (string, error) {
+	size, err := d.readUvarint()
+	if err != nil {
+		return "", err
+	}
+	if uint64(len(d.data)-d.off) < size {
+		return "", fmt.Errorf("unexpected EOF")
+	}
+	value := string(d.data[d.off : d.off+int(size)])
+	d.off += int(size)
+	return value, nil
+}
+
+func (d *screenUpdateDecoder) readTime() (time.Time, error) {
+	raw, err := d.readInt64()
+	if err != nil {
+		return time.Time{}, err
+	}
+	if raw == 0 {
+		return time.Time{}, nil
+	}
+	return time.Unix(0, raw).UTC(), nil
+}
+
+func (d *screenUpdateDecoder) readTimeSlice() ([]time.Time, error) {
+	count, err := d.readUvarint()
+	if err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		return nil, nil
+	}
+	out := make([]time.Time, count)
+	for i := range out {
+		out[i], err = d.readTime()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func (d *screenUpdateDecoder) readStringSlice() ([]string, error) {
+	count, err := d.readUvarint()
+	if err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		return nil, nil
+	}
+	out := make([]string, count)
+	for i := range out {
+		out[i], err = d.readString()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func (d *screenUpdateDecoder) readCellStyle() (CellStyle, error) {
+	fg, err := d.readString()
+	if err != nil {
+		return CellStyle{}, err
+	}
+	bg, err := d.readString()
+	if err != nil {
+		return CellStyle{}, err
+	}
+	mask, err := d.readByte()
+	if err != nil {
+		return CellStyle{}, err
+	}
+	return CellStyle{
+		FG:            fg,
+		BG:            bg,
+		Bold:          mask&(1<<0) != 0,
+		Italic:        mask&(1<<1) != 0,
+		Underline:     mask&(1<<2) != 0,
+		Blink:         mask&(1<<3) != 0,
+		Reverse:       mask&(1<<4) != 0,
+		Strikethrough: mask&(1<<5) != 0,
+	}, nil
+}
+
+func (d *screenUpdateDecoder) readRows(styles []CellStyle) ([][]Cell, error) {
+	count, err := d.readUvarint()
+	if err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		return nil, nil
+	}
+	out := make([][]Cell, count)
+	for i := range out {
+		out[i], err = d.readRow(styles)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func (d *screenUpdateDecoder) readRow(styles []CellStyle) ([]Cell, error) {
+	count, err := d.readUvarint()
+	if err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		return nil, nil
+	}
+	out := make([]Cell, count)
+	for i := range out {
+		styleID, err := d.readUvarint()
+		if err != nil {
+			return nil, err
+		}
+		if styleID >= uint64(len(styles)) {
+			return nil, fmt.Errorf("invalid style id %d", styleID)
+		}
+		width, err := d.readUvarint()
+		if err != nil {
+			return nil, err
+		}
+		content, err := d.readString()
+		if err != nil {
+			return nil, err
+		}
+		out[i] = Cell{
+			Content: content,
+			Width:   int(width),
+			Style:   styles[styleID],
+		}
+	}
+	return out, nil
+}
+
+func encodeTerminalModesMask(modes TerminalModes) uint16 {
+	var mask uint16
+	if modes.AlternateScreen {
+		mask |= 1 << 0
+	}
+	if modes.AlternateScroll {
+		mask |= 1 << 1
+	}
+	if modes.MouseTracking {
+		mask |= 1 << 2
+	}
+	if modes.MouseX10 {
+		mask |= 1 << 3
+	}
+	if modes.MouseNormal {
+		mask |= 1 << 4
+	}
+	if modes.MouseButtonEvent {
+		mask |= 1 << 5
+	}
+	if modes.MouseAnyEvent {
+		mask |= 1 << 6
+	}
+	if modes.MouseSGR {
+		mask |= 1 << 7
+	}
+	if modes.BracketedPaste {
+		mask |= 1 << 8
+	}
+	if modes.ApplicationCursor {
+		mask |= 1 << 9
+	}
+	if modes.AutoWrap {
+		mask |= 1 << 10
+	}
+	return mask
+}
+
+func decodeTerminalModesMask(mask uint16) TerminalModes {
+	return TerminalModes{
+		AlternateScreen:   mask&(1<<0) != 0,
+		AlternateScroll:   mask&(1<<1) != 0,
+		MouseTracking:     mask&(1<<2) != 0,
+		MouseX10:          mask&(1<<3) != 0,
+		MouseNormal:       mask&(1<<4) != 0,
+		MouseButtonEvent:  mask&(1<<5) != 0,
+		MouseAnyEvent:     mask&(1<<6) != 0,
+		MouseSGR:          mask&(1<<7) != 0,
+		BracketedPaste:    mask&(1<<8) != 0,
+		ApplicationCursor: mask&(1<<9) != 0,
+		AutoWrap:          mask&(1<<10) != 0,
+	}
+}
+
+func encodeCursorShape(shape string) byte {
+	switch shape {
+	case "underline":
+		return 1
+	case "bar":
+		return 2
+	default:
+		return 0
+	}
+}
+
+func decodeCursorShape(shape byte) string {
+	switch shape {
+	case 1:
+		return "underline"
+	case 2:
+		return "bar"
+	default:
+		return "block"
+	}
+}
+
+func boolByte(value bool) byte {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 type Cell struct {

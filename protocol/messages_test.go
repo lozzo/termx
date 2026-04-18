@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 	"time"
@@ -113,6 +114,9 @@ func TestScreenUpdatePayloadTrimsTrailingBlankCellsButKeepsWideContinuation(t *t
 	if err != nil {
 		t.Fatalf("encode payload: %v", err)
 	}
+	if !bytes.HasPrefix(payload, []byte(screenUpdatePayloadMagic)) {
+		t.Fatalf("expected binary screen update magic, got prefix %q", payload[:minInt(len(payload), 8)])
+	}
 	decoded, err := DecodeScreenUpdatePayload(payload)
 	if err != nil {
 		t.Fatalf("decode payload: %v", err)
@@ -161,6 +165,34 @@ func TestScreenUpdatePayloadKeepsStyledTrailingBlankCell(t *testing.T) {
 	}
 	if got := row[1].Style.BG; got != "#112233" {
 		t.Fatalf("expected styled trailing blank cell preserved, got %#v", row[1])
+	}
+}
+
+func TestDecodeScreenUpdatePayloadAcceptsLegacyJSON(t *testing.T) {
+	raw := []byte(`{
+		"size": {"cols": 4, "rows": 1},
+		"changed_rows": [{
+			"row": 0,
+			"cells": [{"r":"o","w":1},{"r":"k","w":1}],
+			"timestamp": "2026-04-18T00:00:01Z",
+			"row_kind": "legacy"
+		}],
+		"cursor": {"row": 0, "col": 2, "visible": true, "shape": "block"},
+		"modes": {"alternate_screen": false, "mouse_tracking": false, "bracketed_paste": false, "application_cursor": false, "auto_wrap": true}
+	}`)
+
+	update, err := DecodeScreenUpdatePayload(raw)
+	if err != nil {
+		t.Fatalf("decode legacy json payload: %v", err)
+	}
+	if len(update.ChangedRows) != 1 {
+		t.Fatalf("expected one changed row, got %#v", update.ChangedRows)
+	}
+	if got := update.ChangedRows[0].Cells[0].Content + update.ChangedRows[0].Cells[1].Content; got != "ok" {
+		t.Fatalf("expected legacy json row content ok, got %q", got)
+	}
+	if update.ChangedRows[0].RowKind != "legacy" {
+		t.Fatalf("expected legacy row kind preserved, got %#v", update.ChangedRows[0])
 	}
 }
 
