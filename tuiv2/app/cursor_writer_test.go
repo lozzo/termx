@@ -841,6 +841,173 @@ func TestOutputCursorWriterDiffsChangedSpanAtCorrectAbsoluteColumn(t *testing.T)
 	}
 }
 
+func TestOutputCursorWriterFrameLinesUsesDCHForShiftDelete(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	previous := []string{"abcdefghijkl"}
+	next := []string{"abdefghijklZ"}
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	if err := writer.WriteFrameLines(previous, ""); err != nil {
+		t.Fatalf("write initial frame lines: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrameLines(next, ""); err != nil {
+		t.Fatalf("write diff frame lines: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if !strings.Contains(got, "\x1b[1P") {
+		t.Fatalf("expected DCH-based row delta, got %q", got)
+	}
+	screen := replayCursorWriterLineScreen(t, 12, 1, [][]string{previous, next})
+	want := replayCursorWriterLineScreen(t, 12, 1, [][]string{next})
+	assertScreenEqual(t, screen, want)
+}
+
+func TestOutputCursorWriterFrameLinesUsesICHForShiftInsert(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	previous := []string{"abdefghijklZ"}
+	next := []string{"abcdefghijkl"}
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	if err := writer.WriteFrameLines(previous, ""); err != nil {
+		t.Fatalf("write initial frame lines: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrameLines(next, ""); err != nil {
+		t.Fatalf("write diff frame lines: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if !strings.Contains(got, "\x1b[1@") {
+		t.Fatalf("expected ICH-based row delta, got %q", got)
+	}
+	screen := replayCursorWriterLineScreen(t, 12, 1, [][]string{previous, next})
+	want := replayCursorWriterLineScreen(t, 12, 1, [][]string{next})
+	assertScreenEqual(t, screen, want)
+}
+
+func TestOutputCursorWriterFrameLinesUsesECHForInteriorErase(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	previous := []string{"abcWXYZdef"}
+	next := []string{"abc    def"}
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	if err := writer.WriteFrameLines(previous, ""); err != nil {
+		t.Fatalf("write initial frame lines: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrameLines(next, ""); err != nil {
+		t.Fatalf("write diff frame lines: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if !strings.Contains(got, xansi.ECH(4)) {
+		t.Fatalf("expected ECH-based row delta, got %q", got)
+	}
+	screen := replayCursorWriterLineScreen(t, 10, 1, [][]string{previous, next})
+	want := replayCursorWriterLineScreen(t, 10, 1, [][]string{next})
+	assertScreenEqual(t, screen, want)
+}
+
+func TestOutputCursorWriterFrameLinesUsesELForTrailingErase(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	previous := []string{"abcXYZdef0"}
+	next := []string{"abc       "}
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	if err := writer.WriteFrameLines(previous, ""); err != nil {
+		t.Fatalf("write initial frame lines: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrameLines(next, ""); err != nil {
+		t.Fatalf("write diff frame lines: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if !strings.Contains(got, "\x1b[0K") {
+		t.Fatalf("expected EL-based row delta, got %q", got)
+	}
+	screen := replayCursorWriterLineScreen(t, 10, 1, [][]string{previous, next})
+	want := replayCursorWriterLineScreen(t, 10, 1, [][]string{next})
+	assertScreenEqual(t, screen, want)
+}
+
+func TestOutputCursorWriterFrameLinesWideRowSkipsIntralineEditSequences(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	previous := []string{"ab界defghi "}
+	next := []string{"ab甲defghi "}
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	if err := writer.WriteFrameLines(previous, ""); err != nil {
+		t.Fatalf("write initial wide frame lines: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrameLines(next, ""); err != nil {
+		t.Fatalf("write diff wide frame lines: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	for _, seq := range []string{xansi.DCH(1), xansi.ICH(1), xansi.ECH(1), xansi.EL(0)} {
+		if strings.Contains(got, seq) {
+			t.Fatalf("expected wide row to stay on conservative fallback, got %q", got)
+		}
+	}
+	screen := replayCursorWriterLineScreen(t, 11, 1, [][]string{previous, next})
+	want := replayCursorWriterLineScreen(t, 11, 1, [][]string{next})
+	assertScreenEqual(t, screen, want)
+}
+
 func TestOutputCursorWriterDiffOnCompositorOwnedRowSkipsExtraEraseLineRight(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
@@ -1482,7 +1649,8 @@ func TestRenderVerticalScrollRectPlanBuildsExpectedCSISequences(t *testing.T) {
 		left:      0,
 		right:     3,
 	}
-	want := xansi.SetModeLeftRightMargin +
+	want := xansi.SaveCursor +
+		xansi.SetModeLeftRightMargin +
 		xansi.DECSLRM(1, 4) +
 		"\x1b[2;7r" +
 		xansi.DECRST(xansi.ModeOrigin) +
@@ -1490,13 +1658,15 @@ func TestRenderVerticalScrollRectPlanBuildsExpectedCSISequences(t *testing.T) {
 		"\x1b[1S" +
 		"\x1b[r" +
 		xansi.ResetModeLeftRightMargin +
-		xansi.DECRST(xansi.ModeOrigin)
+		xansi.DECRST(xansi.ModeOrigin) +
+		xansi.RestoreCursor
 	if got := renderVerticalScrollRectPlan(plan, 8); got != want {
 		t.Fatalf("unexpected rect vertical scroll CSI %q want %q", got, want)
 	}
 }
 
 func TestOutputCursorWriterUsesRectScrollOptimizationForSideBySidePaneScroll(t *testing.T) {
+	t.Setenv("TERMX_EXPERIMENTAL_LR_SCROLL", "1")
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
 	defer func() { directFrameBatchDelay = originalDelay }()
@@ -1561,6 +1731,65 @@ func TestOutputCursorWriterUsesRectScrollOptimizationForSideBySidePaneScroll(t *
 	if event, ok := snapshot.Event("cursor_writer.present.mode.vertical_scroll_rows"); ok && event.Count > 0 {
 		t.Fatalf("expected rows scroll path to stay idle in rects_only mode, got %#v", snapshot.Events)
 	}
+}
+
+func TestOutputCursorWriterSideBySideScrollFallsBackWithoutLRMarginGate(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	previous := []string{
+		"hdr0|RIGHT|",
+		"aaaa|RIGHT|",
+		"bbbb|RIGHT|",
+		"cccc|RIGHT|",
+		"dddd|RIGHT|",
+		"eeee|RIGHT|",
+		"ffff|RIGHT|",
+		"ftr7|RIGHT|",
+	}
+	next := []string{
+		"hdr0|RIGHT|",
+		"bbbb|RIGHT|",
+		"cccc|RIGHT|",
+		"dddd|RIGHT|",
+		"eeee|RIGHT|",
+		"ffff|RIGHT|",
+		"gggg|RIGHT|",
+		"ftr7|RIGHT|",
+	}
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetVerticalScrollMode(verticalScrollModeRectsOnly)
+
+	if err := writer.WriteFrameLines(previous, ""); err != nil {
+		t.Fatalf("write initial frame: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrameLines(next, ""); err != nil {
+		t.Fatalf("write scrolled frame: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if strings.Contains(got, xansi.SetModeLeftRightMargin) {
+		t.Fatalf("expected LR-margin scroll gate to stay off by default, got %q", got)
+	}
+	if strings.Contains(got, xansi.EraseEntireDisplay) {
+		t.Fatalf("expected safe fallback to stay incremental, got %q", got)
+	}
+	if strings.Contains(got, "|RIGHT|") {
+		t.Fatalf("expected fallback row diff not to rewrite the unchanged right pane, got %q", got)
+	}
+	screen := replayCursorWriterLineScreen(t, 11, 8, [][]string{previous, next})
+	want := replayCursorWriterLineScreen(t, 11, 8, [][]string{next})
+	assertScreenEqual(t, screen, want)
 }
 
 func TestOutputCursorWriterPrefersRowScrollWhenRowsAreAllowed(t *testing.T) {
@@ -1749,6 +1978,15 @@ func TestStripEmbeddedCursorSequenceKeepsTrailingRestoreCursorSuffix(t *testing.
 	payload := "body" + cursor + "\r\x1b[?25h"
 	if got := stripEmbeddedCursorSequence(payload, cursor); got != payload {
 		t.Fatalf("expected trailing restore suffix to remain untouched, got %q want %q", got, payload)
+	}
+}
+
+func TestShouldFallbackToFullRepaintRequiresNearFullAndBroadDamage(t *testing.T) {
+	if shouldFallbackToFullRepaint(strings.Repeat("x", 90), 100, 20, 2) {
+		t.Fatal("expected sparse damage to avoid full repaint fallback")
+	}
+	if !shouldFallbackToFullRepaint(strings.Repeat("x", 96), 100, 20, 16) {
+		t.Fatal("expected near-full broad damage to fall back to full repaint")
 	}
 }
 

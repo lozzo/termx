@@ -238,10 +238,13 @@ func (p *framePresenter) presentLines(lines []string) string {
 		return ""
 	}
 	fullLen := joinedLinesLen(lines)
-	if len(lines) > 6 && fullLen > 0 && len(payload)*100 >= fullLen*80 {
+	if shouldFallbackToFullRepaint(payload, fullLen, len(lines), changedCount) {
 		perftrace.Count("cursor_writer.diff_full_repaint_fallback", fullLen)
 		perftrace.Count("cursor_writer.present.mode.full_repaint_threshold", fullLen)
 		return xansi.EraseEntireDisplay + strings.Join(lines, "\n")
+	}
+	if shouldCountFullRepaintAvoided(payload, fullLen, len(lines)) {
+		perftrace.Count("cursor_writer.present.mode.full_repaint_avoided", fullLen)
 	}
 	perftrace.Count("cursor_writer.present.mode.diff", changedCount)
 	return payload
@@ -288,6 +291,7 @@ func (p *framePresenter) presentVerticalScroll(lines []string) string {
 				var out strings.Builder
 				out.WriteString(renderVerticalScrollPlan(plan, len(lines)))
 				perftrace.Count("cursor_writer.present.mode.vertical_scroll_rows", plan.reused)
+				perftrace.Count("cursor_writer.present.mode.delta_rect_scroll_fullwidth", plan.reused)
 				p.verticalScrollCount++
 				if p.debugFaultScrollDropRemainderEvery > 0 && p.verticalScrollCount%p.debugFaultScrollDropRemainderEvery == 0 {
 					return out.String()
@@ -297,7 +301,7 @@ func (p *framePresenter) presentVerticalScroll(lines []string) string {
 			}
 		}
 	}
-	if p.verticalScrollMode.RectsAllowed() && p.fullWidthLines {
+	if p.verticalScrollMode.RectsAllowed() && p.fullWidthLines && shared.ExperimentalLRScrollEnabled() {
 		nextRows := make([]presentedRow, len(lines))
 		for i := range lines {
 			nextRows[i] = parsePresentedRow(lines[i])
@@ -316,6 +320,7 @@ func (p *framePresenter) presentVerticalScroll(lines []string) string {
 					var out strings.Builder
 					out.WriteString(renderVerticalScrollRectPlan(rectPlan, len(lines)))
 					perftrace.Count("cursor_writer.present.mode.vertical_scroll_rect", rectPlan.reused*(rectPlan.right-rectPlan.left+1))
+					perftrace.Count("cursor_writer.present.mode.delta_rect_scroll_lr_margin", rectPlan.reused*(rectPlan.right-rectPlan.left+1))
 					out.WriteString(remainder)
 					return out.String()
 				}
@@ -446,15 +451,19 @@ func renderChangedRowDiff(out *strings.Builder, previous, next presentedRow, row
 	}
 	prevCells := previous.cells
 	nextCells := next.cells
+	ownsLineEnd := rowOwnsLineEnd(next)
 	if !fullWidthLines && (previous.hasErase || next.hasErase) {
 		return false
 	}
+	if renderChangedRowIntralineEdit(out, previous, next, row, fullWidthLines, ownsLineEnd) {
+		return true
+	}
 	if !previous.hasWide && !next.hasWide && len(prevCells) == len(nextCells) {
-		if renderChangedRowRuns(out, prevCells, nextCells, row, fullWidthLines, rowOwnsLineEnd(next)) {
+		if renderChangedRowRuns(out, prevCells, nextCells, row, fullWidthLines, ownsLineEnd) {
 			return true
 		}
 	}
-	return renderChangedRowSuffix(out, previous, next, row, fullWidthLines, rowOwnsLineEnd(next))
+	return renderChangedRowSuffix(out, previous, next, row, fullWidthLines, ownsLineEnd)
 }
 
 func renderChangedRowRuns(out *strings.Builder, previous, next []presentedCell, row int, fullWidthLines bool, ownsLineEnd bool) bool {

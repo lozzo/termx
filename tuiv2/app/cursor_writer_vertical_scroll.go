@@ -433,6 +433,7 @@ func renderVerticalScrollRectPlan(plan verticalScrollRectPlan, totalLines int) s
 		return ""
 	}
 	var out strings.Builder
+	out.WriteString(xansi.SaveCursor)
 	out.WriteString(xansi.SetModeLeftRightMargin)
 	out.WriteString(xansi.DECSLRM(plan.left+1, plan.right+1))
 	writeCSI(&out, 'r', plan.start+1, plan.end+1)
@@ -447,5 +448,6 @@ func renderVerticalScrollRectPlan(plan verticalScrollRectPlan, totalLines int) s
 	out.WriteString("\x1b[r")
 	out.WriteString(xansi.ResetModeLeftRightMargin)
 	out.WriteString(xansi.DECRST(xansi.ModeOrigin))
+	out.WriteString(xansi.RestoreCursor)
 	return out.String()
 }

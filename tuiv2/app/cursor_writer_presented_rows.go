@@ -298,6 +298,18 @@ func writeECH(out *strings.Builder, count int) {
 	writeCSI(out, 'X', count)
 }
 
+func writeICH(out *strings.Builder, count int) {
+	writeCSI(out, '@', count)
+}
+
+func writeDCH(out *strings.Builder, count int) {
+	writeCSI(out, 'P', count)
+}
+
+func writeEL(out *strings.Builder, mode int) {
+	writeCSI(out, 'K', mode)
+}
+
 func writeCSI(out *strings.Builder, final byte, params ...int) {
 	if out == nil {
 		return

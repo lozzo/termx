@@ -64,6 +64,21 @@ func BubbleTeaRendererEnabled() bool {
 	}
 }
 
+// ExperimentalLRScrollEnabled reports whether termx may use left/right margins
+// plus SU/SD to encode narrow host-rect scroll deltas.
+//
+// TERMX_EXPERIMENTAL_LR_SCROLL accepts:
+// - "1", "true", "yes", "on": enable
+// - all other values: disable
+func ExperimentalLRScrollEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("TERMX_EXPERIMENTAL_LR_SCROLL"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
 // DurationOverride returns the duration from env when present and valid.
 // Invalid or negative values fall back to the provided default.
 func DurationOverride(name string, fallback time.Duration) time.Duration {

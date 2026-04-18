@@ -32,16 +32,20 @@ type nvimScrollPerfReport struct {
 }
 
 type nvimScrollPerfAction struct {
-	Label       string             `json:"label"`
-	InputBytes  int                `json:"input_bytes"`
-	OutputBytes int                `json:"output_bytes"`
-	SyncFrames  int                `json:"sync_frames"`
-	OriginCount int                `json:"origin_count"`
-	ClearCount  int                `json:"clear_count"`
-	FirstOutput float64            `json:"first_output_ms"`
-	SettleMs    float64            `json:"settle_ms"`
-	Sample      string             `json:"sample"`
-	Metrics     perftrace.Snapshot `json:"metrics"`
+	Label               string             `json:"label"`
+	InputBytes          int                `json:"input_bytes"`
+	OutputBytes         int                `json:"output_bytes"`
+	SyncFrames          int                `json:"sync_frames"`
+	OriginCount         int                `json:"origin_count"`
+	ClearCount          int                `json:"clear_count"`
+	FullRepaintCount    uint64             `json:"full_repaint_count"`
+	RectScrollCount     uint64             `json:"rect_scroll_count"`
+	LRMarginScrollCount uint64             `json:"lr_margin_scroll_count"`
+	IntralineEditCount  uint64             `json:"intraline_edit_count"`
+	FirstOutput         float64            `json:"first_output_ms"`
+	SettleMs            float64            `json:"settle_ms"`
+	Sample              string             `json:"sample"`
+	Metrics             perftrace.Snapshot `json:"metrics"`
 }
 
 type nvimPerfHarness struct {
@@ -263,18 +267,31 @@ func (h *nvimPerfHarness) runAction(t *testing.T, label string, seq []byte, reco
 	}
 	waitForPTYQuiet(t, h.ctx, h.recorder, 250*time.Millisecond)
 	delta := h.recorder.Text()[before:]
+	snapshot := recorder.Snapshot()
 	return nvimScrollPerfAction{
-		Label:       label,
-		InputBytes:  len(seq),
-		OutputBytes: len(delta),
-		SyncFrames:  strings.Count(delta, synchronizedOutputBegin),
-		OriginCount: strings.Count(delta, xansi.MoveCursorOrigin),
-		ClearCount:  strings.Count(delta, xansi.EraseEntireDisplay),
-		FirstOutput: firstOutputMs,
-		SettleMs:    float64(time.Since(start)) / float64(time.Millisecond),
-		Sample:      debugEscape(delta, 220),
-		Metrics:     recorder.Snapshot(),
+		Label:               label,
+		InputBytes:          len(seq),
+		OutputBytes:         len(delta),
+		SyncFrames:          strings.Count(delta, synchronizedOutputBegin),
+		OriginCount:         strings.Count(delta, xansi.MoveCursorOrigin),
+		ClearCount:          strings.Count(delta, xansi.EraseEntireDisplay),
+		FullRepaintCount:    perfEventCount(snapshot, "cursor_writer.present.mode.full_repaint_threshold"),
+		RectScrollCount:     perfEventCount(snapshot, "cursor_writer.present.mode.delta_rect_scroll_fullwidth"),
+		LRMarginScrollCount: perfEventCount(snapshot, "cursor_writer.present.mode.delta_rect_scroll_lr_margin"),
+		IntralineEditCount:  perfEventCount(snapshot, "cursor_writer.present.mode.delta_intraline_dch") + perfEventCount(snapshot, "cursor_writer.present.mode.delta_intraline_ich") + perfEventCount(snapshot, "cursor_writer.present.mode.delta_intraline_ech") + perfEventCount(snapshot, "cursor_writer.present.mode.delta_intraline_el"),
+		FirstOutput:         firstOutputMs,
+		SettleMs:            float64(time.Since(start)) / float64(time.Millisecond),
+		Sample:              debugEscape(delta, 220),
+		Metrics:             snapshot,
 	}
+}
+
+func perfEventCount(snapshot perftrace.Snapshot, name string) uint64 {
+	event, ok := snapshot.Event(name)
+	if !ok {
+		return 0
+	}
+	return event.Count
 }
 
 func (h *nvimPerfHarness) moveToMiddle(t *testing.T) {
