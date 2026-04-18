@@ -7,6 +7,7 @@ import (
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
+	localvterm "github.com/lozzow/termx/vterm"
 )
 
 type terminalRenderSource interface {
@@ -24,6 +25,10 @@ type terminalRenderSource interface {
 
 type terminalRowHashSource interface {
 	RowHash(rowIndex int) uint64
+}
+
+type terminalCellRowSource interface {
+	RowView(rowIndex int) []localvterm.Cell
 }
 
 type snapshotRenderSource struct {
@@ -168,6 +173,13 @@ func (s surfaceRenderSource) RowHash(rowIndex int) uint64 {
 		hash = fnvMixBool(hash, cell.Style.Strikethrough)
 	}
 	return hash
+}
+
+func (s surfaceRenderSource) RowView(rowIndex int) []localvterm.Cell {
+	if source, ok := s.surface.(interface{ RowView(int) []localvterm.Cell }); ok {
+		return source.RowView(rowIndex)
+	}
+	return nil
 }
 
 func terminalMetricsForSource(source terminalRenderSource) renderTerminalMetrics {

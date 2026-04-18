@@ -82,6 +82,16 @@ func drawTerminalSourceInRect(canvas *composedCanvas, rect workbench.Rect, sourc
 		return
 	}
 	base := source.ScrollbackRows()
+	if cellSource, ok := source.(terminalCellRowSource); ok {
+		for y := 0; y < rect.H && y < source.ScreenRows(); y++ {
+			if row := cellSource.RowView(base + y); row != nil {
+				canvas.drawVTermRowInRectCleared(rect, rect.Y+y, row)
+				continue
+			}
+			canvas.drawProtocolRowInRectCleared(rect, rect.Y+y, source.Row(base+y))
+		}
+		return
+	}
 	for y := 0; y < rect.H && y < source.ScreenRows(); y++ {
 		canvas.drawProtocolRowInRectCleared(rect, rect.Y+y, source.Row(base+y))
 	}
@@ -105,6 +115,12 @@ func drawTerminalSourceRowInRectCleared(canvas *composedCanvas, rect workbench.R
 	}
 	if kind := source.RowKind(rowIndex); kind != "" {
 		if drawSnapshotMarkerRow(canvas, rect, targetY, kind, source.RowTimestamp(rowIndex), theme) {
+			return
+		}
+	}
+	if cellSource, ok := source.(terminalCellRowSource); ok {
+		if row := cellSource.RowView(rowIndex); row != nil {
+			canvas.drawVTermRowInRectCleared(rect, targetY, row)
 			return
 		}
 	}

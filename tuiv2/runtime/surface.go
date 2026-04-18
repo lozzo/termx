@@ -100,6 +100,20 @@ func (s vtermSurface) Row(rowIndex int) []protocol.Cell {
 	return protocolCellsFromVTermRow(s.source.ScreenRowView(rowIndex))
 }
 
+func (s vtermSurface) RowView(rowIndex int) []localvterm.Cell {
+	if rowIndex < 0 {
+		return nil
+	}
+	if rowIndex < s.ScrollbackRows() {
+		return s.source.ScrollbackRowView(rowIndex)
+	}
+	rowIndex -= s.ScrollbackRows()
+	if rowIndex < 0 || rowIndex >= s.ScreenRows() {
+		return nil
+	}
+	return s.source.ScreenRowView(rowIndex)
+}
+
 func (s vtermSurface) RowTimestamp(rowIndex int) time.Time {
 	if rowIndex < 0 {
 		return time.Time{}
