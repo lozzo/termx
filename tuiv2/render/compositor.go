@@ -28,6 +28,7 @@ type drawCell struct {
 	Content             string
 	Width               int
 	Style               drawStyle
+	Owner               uint32
 	Continuation        bool
 	TerminalContent     bool
 	HostWidthStabilizer bool
@@ -62,6 +63,8 @@ type composedCanvas struct {
 
 	syntheticCursorBlink     bool
 	syntheticCursorVisibleFn func(protocol.CursorState) bool
+
+	currentOwner uint32
 }
 
 func (c *composedCanvas) shiftRowsUp(shift int) {
@@ -358,11 +361,14 @@ func (c *composedCanvas) set(x, y int, cell drawCell) {
 		cell.Content = " "
 		cell.Width = 1
 	}
+	if c.currentOwner != 0 {
+		cell.Owner = c.currentOwner
+	}
 	cell.Continuation = false
 	c.clearOverlappingCellFootprints(x, y, cell.Width)
 	c.writeCell(x, y, cell)
 	for i := 1; i < cell.Width && x+i < c.width; i++ {
-		c.writeCell(x+i, y, drawCell{Continuation: true})
+		c.writeCell(x+i, y, drawCell{Owner: cell.Owner, Continuation: true})
 	}
 }
 
@@ -396,7 +402,7 @@ func (c *composedCanvas) clearOverlappingCellFootprints(x, y, width int) {
 		}
 	}
 	for i := start; i < end; i++ {
-		c.writeCell(i, y, blankDrawCell())
+		c.writeCell(i, y, c.blankCell())
 	}
 }
 
@@ -447,6 +453,39 @@ func (c *composedCanvas) drawText(x, y int, text string, style drawStyle) {
 		c.materializeRawAmbiguousContinuation(cursorX, y, cell)
 		cursorX += width
 	}
+}
+
+func (c *composedCanvas) withOwner(owner uint32, fn func()) {
+	if c == nil || fn == nil {
+		return
+	}
+	previous := c.currentOwner
+	c.currentOwner = owner
+	fn()
+	c.currentOwner = previous
+}
+
+func (c *composedCanvas) blankCell() drawCell {
+	cell := blankDrawCell()
+	cell.Owner = c.currentOwner
+	return cell
+}
+
+func (c *composedCanvas) primaryOwner() uint32 {
+	if c == nil {
+		return 0
+	}
+	if c.currentOwner != 0 {
+		return c.currentOwner
+	}
+	for y := 0; y < c.height; y++ {
+		for x := 0; x < c.width; x++ {
+			if owner := c.cells[y][x].Owner; owner != 0 {
+				return owner
+			}
+		}
+	}
+	return 0
 }
 
 type textCluster struct {
@@ -531,15 +570,19 @@ func (c *composedCanvas) drawProtocolRowInRectCleared(rect workbench.Rect, targe
 		if targetX < 0 || targetX >= c.width {
 			continue
 		}
+		if c.currentOwner != 0 {
+			cell.Owner = c.currentOwner
+		}
 		rowCells[targetX] = cell
 		for i := 1; i < cell.Width && targetX+i < c.width; i++ {
-			rowCells[targetX+i] = drawCell{Continuation: true}
+			rowCells[targetX+i] = drawCell{Owner: cell.Owner, Continuation: true}
 		}
 		if isAmbiguousEmojiVariationSelectorCluster(cell.Content, cell.Width) && targetX+1 < c.width {
 			rowCells[targetX+1] = drawCell{
 				Content:               " ",
 				Width:                 1,
 				Style:                 cell.Style,
+				Owner:                 cell.Owner,
 				AmbiguousCompensation: true,
 			}
 		}
@@ -568,15 +611,19 @@ func (c *composedCanvas) drawVTermRowInRectCleared(rect workbench.Rect, targetY 
 		if targetX < 0 || targetX >= c.width {
 			continue
 		}
+		if c.currentOwner != 0 {
+			cell.Owner = c.currentOwner
+		}
 		rowCells[targetX] = cell
 		for i := 1; i < cell.Width && targetX+i < c.width; i++ {
-			rowCells[targetX+i] = drawCell{Continuation: true}
+			rowCells[targetX+i] = drawCell{Owner: cell.Owner, Continuation: true}
 		}
 		if isAmbiguousEmojiVariationSelectorCluster(cell.Content, cell.Width) && targetX+1 < c.width {
 			rowCells[targetX+1] = drawCell{
 				Content:               " ",
 				Width:                 1,
 				Style:                 cell.Style,
+				Owner:                 cell.Owner,
 				AmbiguousCompensation: true,
 			}
 		}
@@ -598,6 +645,7 @@ func (c *composedCanvas) materializeRawAmbiguousContinuation(x, y int, cell draw
 		Content:               " ",
 		Width:                 1,
 		Style:                 cell.Style,
+		Owner:                 cell.Owner,
 		AmbiguousCompensation: true,
 	})
 }
@@ -628,6 +676,7 @@ func drawCellFromProtocolCell(cell protocol.Cell) drawCell {
 		Content:             cell.Content,
 		Width:               width,
 		Style:               cellStyleFromSnapshot(cell),
+		Owner:               0,
 		Continuation:        continuation,
 		TerminalContent:     true,
 		HostWidthStabilizer: hostWidthStabilizer,
@@ -656,6 +705,7 @@ func drawCellFromVTermCell(cell localvterm.Cell) drawCell {
 			Underline: cell.Style.Underline,
 			Reverse:   cell.Style.Reverse,
 		},
+		Owner:               0,
 		Continuation:        continuation,
 		TerminalContent:     true,
 		HostWidthStabilizer: hostWidthStabilizer,
@@ -763,6 +813,20 @@ func (c *composedCanvas) cachedContentLines() []string {
 	lines := make([]string, c.height)
 	copy(lines, c.rowCache)
 	return lines
+}
+
+func (c *composedCanvas) ownerMap() [][]uint32 {
+	if c == nil {
+		return nil
+	}
+	out := make([][]uint32, c.height)
+	for y := 0; y < c.height; y++ {
+		out[y] = make([]uint32, c.width)
+		for x := 0; x < c.width; x++ {
+			out[y][x] = c.cells[y][x].Owner
+		}
+	}
+	return out
 }
 
 func (c *composedCanvas) contentLines() []string {

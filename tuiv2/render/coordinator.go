@@ -39,6 +39,7 @@ type renderedBody struct {
 	lines   []string
 	cursor  string
 	blink   bool
+	meta    *PresentMetadata
 }
 
 type tabBarCacheKey struct {

@@ -32,6 +32,20 @@ func (m *Model) View() string {
 		if directWriter, ok := rowsWriter.(*outputCursorWriter); ok {
 			mode, _ := m.verticalScrollOptimizationMode()
 			directWriter.SetVerticalScrollMode(mode)
+			if result, ok := m.render.CachedRenderResult(); ok {
+				cursor := result.CursorSequence()
+				viewBytes = joinedLinesLen(result.Lines) + len(cursor)
+				m.lastViewFrame = ""
+				m.lastViewCursor = cursor
+				return ""
+			}
+			result := m.render.Render()
+			cursor := result.CursorSequence()
+			viewBytes = joinedLinesLen(result.Lines) + len(cursor)
+			_ = directWriter.WriteFrameLinesWithMeta(result.Lines, cursor, presentMetaFromRender(result.Meta))
+			m.lastViewFrame = ""
+			m.lastViewCursor = cursor
+			return ""
 		}
 		if lines, cursor, ok := m.render.CachedFrameLinesAndCursorRef(); ok {
 			viewBytes = joinedLinesLen(lines) + len(cursor)

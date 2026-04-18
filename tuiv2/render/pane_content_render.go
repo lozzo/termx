@@ -496,12 +496,14 @@ func drawPaneContentSpriteRowDiff(canvas, scratch *composedCanvas, rect workbenc
 		return
 	}
 	metrics := terminalMetricsForSource(source)
-	scratch.resetToBlank()
-	scratchRect := workbench.Rect{X: 0, Y: 0, W: rect.W, H: 1}
-	if source != nil && rowIndex >= 0 {
-		drawTerminalSourceRowInRectCleared(scratch, scratchRect, source, rowIndex, 0, theme)
-	}
-	drawTerminalExtentHintsRowWithMetrics(scratch, scratchRect, source, 0, theme, metrics)
+	scratch.withOwner(canvas.primaryOwner(), func() {
+		scratch.resetToBlank()
+		scratchRect := workbench.Rect{X: 0, Y: 0, W: rect.W, H: 1}
+		if source != nil && rowIndex >= 0 {
+			drawTerminalSourceRowInRectCleared(scratch, scratchRect, source, rowIndex, 0, theme)
+		}
+		drawTerminalExtentHintsRowWithMetrics(scratch, scratchRect, source, 0, theme, metrics)
+	})
 
 	dstRow := canvas.cells[targetY]
 	srcRow := scratch.cells[0]

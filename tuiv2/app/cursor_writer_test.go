@@ -1008,6 +1008,186 @@ func TestOutputCursorWriterFrameLinesWideRowSkipsIntralineEditSequences(t *testi
 	assertScreenEqual(t, screen, want)
 }
 
+func TestOutputCursorWriterOwnerAwareDiffOnlyRewritesLeftPaneSegment(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	previous := []string{
+		"TOP-ROW-0",
+		"aaaa RRRR",
+		"bbbb RRRR",
+		"BOT-ROW-0",
+	}
+	next := []string{
+		"TOP-ROW-0",
+		"aaZZ RRRR",
+		"bbYY RRRR",
+		"BOT-ROW-0",
+	}
+	meta := ownerAwareTestMeta(
+		[]hostOwnerID{1, 1, 1, 1, 1, 1, 1, 1, 1},
+		[]hostOwnerID{10, 10, 10, 10, 0, 20, 20, 20, 20},
+		[]hostOwnerID{10, 10, 10, 10, 0, 20, 20, 20, 20},
+		[]hostOwnerID{2, 2, 2, 2, 2, 2, 2, 2, 2},
+	)
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	if err := writer.WriteFrameLinesWithMeta(previous, "", meta); err != nil {
+		t.Fatalf("write initial frame lines: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrameLinesWithMeta(next, "", meta); err != nil {
+		t.Fatalf("write owner-aware diff frame lines: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if strings.Contains(got, "RRRR") {
+		t.Fatalf("expected owner-aware diff to avoid rewriting unchanged right pane, got %q", got)
+	}
+	screen := replayCursorWriterLineScreenWithMeta(t, 9, 4, [][]string{previous, next}, []*presentMeta{meta, meta})
+	want := replayCursorWriterLineScreenWithMeta(t, 9, 4, [][]string{next}, []*presentMeta{meta})
+	assertScreenEqual(t, screen, want)
+}
+
+func TestOutputCursorWriterOwnerAwareFloatCutoutStaysLocalWhenLRScrollDisabled(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	previous := []string{
+		"TOP-ROW-000",
+		"lefta FLOAT ",
+		"leftb FLOAT ",
+		"leftc right ",
+		"BOT-ROW-000",
+	}
+	next := []string{
+		"TOP-ROW-000",
+		"leftZ FLOAT ",
+		"leftY FLOAT ",
+		"leftX right ",
+		"BOT-ROW-000",
+	}
+	meta := ownerAwareTestMeta(
+		[]hostOwnerID{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+		[]hostOwnerID{10, 10, 10, 10, 10, 0, 30, 30, 30, 30, 30, 0},
+		[]hostOwnerID{10, 10, 10, 10, 10, 0, 30, 30, 30, 30, 30, 0},
+		[]hostOwnerID{10, 10, 10, 10, 10, 0, 20, 20, 20, 20, 20, 0},
+		[]hostOwnerID{2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2},
+	)
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	if err := writer.WriteFrameLinesWithMeta(previous, "", meta); err != nil {
+		t.Fatalf("write initial owner-aware frame lines: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	if err := writer.WriteFrameLinesWithMeta(next, "", meta); err != nil {
+		t.Fatalf("write float-cutout owner-aware frame lines: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if strings.Contains(got, xansi.SetModeLeftRightMargin) {
+		t.Fatalf("expected LR-margin scroll to stay disabled by default, got %q", got)
+	}
+	if strings.Contains(got, "right") || strings.Contains(got, "FLOAT") {
+		t.Fatalf("expected owner-aware diff to stay local to changed visible left-pane segments, got %q", got)
+	}
+	screen := replayCursorWriterLineScreenWithMeta(t, 12, 5, [][]string{previous, next}, []*presentMeta{meta, meta})
+	want := replayCursorWriterLineScreenWithMeta(t, 12, 5, [][]string{next}, []*presentMeta{meta})
+	assertScreenEqual(t, screen, want)
+}
+
+func TestOutputCursorWriterOwnerAwareRectScrollUsesLRMarginsWhenEnabled(t *testing.T) {
+	t.Setenv("TERMX_EXPERIMENTAL_LR_SCROLL", "1")
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	previous := []string{
+		"TOP-ROW-0",
+		"aaaa RRRR",
+		"bbbb RRRR",
+		"cccc RRRR",
+		"dddd RRRR",
+		"eeee RRRR",
+		"ffff RRRR",
+		"BOT-ROW-0",
+	}
+	next := []string{
+		"TOP-ROW-0",
+		"bbbb RRRR",
+		"cccc RRRR",
+		"dddd RRRR",
+		"eeee RRRR",
+		"ffff RRRR",
+		"gggg RRRR",
+		"BOT-ROW-0",
+	}
+	meta := ownerAwareTestMeta(
+		[]hostOwnerID{1, 1, 1, 1, 1, 1, 1, 1, 1},
+		[]hostOwnerID{10, 10, 10, 10, 0, 20, 20, 20, 20},
+		[]hostOwnerID{10, 10, 10, 10, 0, 20, 20, 20, 20},
+		[]hostOwnerID{10, 10, 10, 10, 0, 20, 20, 20, 20},
+		[]hostOwnerID{10, 10, 10, 10, 0, 20, 20, 20, 20},
+		[]hostOwnerID{10, 10, 10, 10, 0, 20, 20, 20, 20},
+		[]hostOwnerID{10, 10, 10, 10, 0, 20, 20, 20, 20},
+		[]hostOwnerID{2, 2, 2, 2, 2, 2, 2, 2, 2},
+	)
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	writer.SetVerticalScrollMode(verticalScrollModeRectsOnly)
+	if err := writer.WriteFrameLinesWithMeta(previous, "", meta); err != nil {
+		t.Fatalf("write initial owner-aware frame lines: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+
+	if err := writer.WriteFrameLinesWithMeta(next, "", meta); err != nil {
+		t.Fatalf("write owner-aware scroll frame lines: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if !strings.Contains(got, xansi.SetModeLeftRightMargin) {
+		t.Fatalf("expected owner-aware narrow scroll to enable LR margins, got %q", got)
+	}
+	if !strings.Contains(got, "\x1b[1;4s") {
+		t.Fatalf("expected owner-aware narrow scroll to set pane column margins, got %q", got)
+	}
+	if !strings.Contains(got, "\x1b[1S") {
+		t.Fatalf("expected owner-aware narrow scroll to emit SU, got %q", got)
+	}
+	snapshot := perftrace.SnapshotCurrent()
+	if event, ok := snapshot.Event("cursor_writer.present.mode.delta_rect_scroll_lr_margin"); !ok || event.Count == 0 {
+		t.Fatalf("expected owner-aware LR-margin scroll perf event, got %#v", snapshot.Events)
+	}
+	screen := replayCursorWriterLineScreenWithMeta(t, 9, 8, [][]string{previous, next}, []*presentMeta{meta, meta})
+	want := replayCursorWriterLineScreenWithMeta(t, 9, 8, [][]string{next}, []*presentMeta{meta})
+	assertScreenEqual(t, screen, want)
+}
+
 func TestOutputCursorWriterDiffOnCompositorOwnedRowSkipsExtraEraseLineRight(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
@@ -4096,6 +4276,39 @@ func replayCursorWriterLineScreen(t *testing.T, width, height int, frames [][]st
 		t.Fatalf("replay stream into host vterm: %v", err)
 	}
 	return vt.ScreenContent()
+}
+
+func replayCursorWriterLineScreenWithMeta(t *testing.T, width, height int, frames [][]string, metas []*presentMeta) localvterm.ScreenData {
+	t.Helper()
+	if len(frames) != len(metas) {
+		t.Fatalf("frames/meta length mismatch: %d vs %d", len(frames), len(metas))
+	}
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	for i, frame := range frames {
+		if err := writer.WriteFrameLinesWithMeta(frame, "", metas[i]); err != nil {
+			t.Fatalf("write frame lines with meta: %v", err)
+		}
+	}
+	sink.mu.Lock()
+	stream := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	vt := localvterm.New(width, height, 0, nil)
+	if _, err := vt.Write([]byte(stream)); err != nil {
+		t.Fatalf("replay stream into host vterm: %v", err)
+	}
+	return vt.ScreenContent()
+}
+
+func ownerAwareTestMeta(rows ...[]hostOwnerID) *presentMeta {
+	meta := &presentMeta{
+		OwnerMap: make([][]hostOwnerID, len(rows)),
+	}
+	for y := range rows {
+		meta.OwnerMap[y] = append([]hostOwnerID(nil), rows[y]...)
+	}
+	meta.VisibleRects = visibleRectsFromOwnerMap(meta.OwnerMap)
+	return meta
 }
 
 type cursorWriterFakeHost struct {

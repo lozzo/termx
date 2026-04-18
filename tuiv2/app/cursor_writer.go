@@ -81,12 +81,14 @@ type pendingDirectFrame struct {
 	scheduled  bool
 	frame      string
 	lines      []string
+	meta       *presentMeta
 	cursor     string
 	afterWrite []string
 }
 
 type framePresenter struct {
 	lines                              []string
+	meta                               *presentMeta
 	parsed                             []presentedRow
 	scratchLines                       []string
 	reclaim                            [][]presentedCell
@@ -184,6 +186,7 @@ func (p *framePresenter) Reset() {
 	p.verticalScrollMode = verticalScrollModeRowsAndRects
 	p.fullWidthLines = false
 	p.verticalScrollCount = 0
+	p.meta = nil
 }
 
 func (p *framePresenter) Present(frame string) string {
@@ -191,38 +194,57 @@ func (p *framePresenter) Present(frame string) string {
 		return frame
 	}
 	lines := splitFrameLines(frame, p.scratchLines[:0])
-	return p.presentLines(lines)
+	return p.presentLines(lines, nil)
 }
 
 func (p *framePresenter) PresentLines(lines []string) string {
 	if p == nil {
 		return strings.Join(lines, "\n")
 	}
-	return p.presentLines(lines)
+	return p.presentLines(lines, nil)
 }
 
-func (p *framePresenter) presentLines(lines []string) string {
+func (p *framePresenter) PresentLinesWithMeta(lines []string, meta *presentMeta) string {
+	if p == nil {
+		return strings.Join(lines, "\n")
+	}
+	return p.presentLines(lines, meta)
+}
+
+func (p *framePresenter) presentLines(lines []string, meta *presentMeta) string {
 	if !p.ready {
 		perftrace.Count("cursor_writer.present.mode.initial_full", len(lines))
 		p.setLines(lines, true)
 		p.ready = true
+		p.meta = clonePresentMeta(meta)
 		return strings.Join(lines, "\n")
 	}
 	if len(lines) != len(p.lines) {
 		perftrace.Count("cursor_writer.present.mode.full_repaint_resize", len(lines))
 		releasePresentedRows(p.parsed)
 		p.setLines(lines, true)
+		p.meta = clonePresentMeta(meta)
 		return xansi.EraseEntireDisplay + strings.Join(lines, "\n")
+	}
+	if p.fullWidthLines && meta != nil && p.meta != nil && (len(meta.VisibleRects) > 3 || len(p.meta.VisibleRects) > 3) {
+		if payload := p.presentOwnerAwareDelta(lines, meta); payload != "" {
+			releasePresentedRows(p.parsed)
+			p.setLines(lines, true)
+			p.meta = clonePresentMeta(meta)
+			return payload
+		}
 	}
 	if p.verticalScrollMode.Enabled() {
 		if payload := p.presentVerticalScroll(lines); payload != "" {
 			releasePresentedRows(p.parsed)
 			p.setLines(lines, true)
+			p.meta = clonePresentMeta(meta)
 			return payload
 		}
 	}
 	payload, changedCount, updatedCount, updates, reclaim := p.renderChangedRows(lines)
 	if updatedCount == 0 {
+		p.meta = clonePresentMeta(meta)
 		return ""
 	}
 	previousLines := p.lines
@@ -235,17 +257,20 @@ func (p *framePresenter) presentLines(lines []string) string {
 	releasePresentedCellSlices(reclaim)
 	if changedCount == 0 {
 		perftrace.Count("cursor_writer.present.mode.no_change", 0)
+		p.meta = clonePresentMeta(meta)
 		return ""
 	}
 	fullLen := joinedLinesLen(lines)
 	if shouldFallbackToFullRepaint(payload, fullLen, len(lines), changedCount) {
 		perftrace.Count("cursor_writer.diff_full_repaint_fallback", fullLen)
 		perftrace.Count("cursor_writer.present.mode.full_repaint_threshold", fullLen)
+		p.meta = clonePresentMeta(meta)
 		return xansi.EraseEntireDisplay + strings.Join(lines, "\n")
 	}
 	if shouldCountFullRepaintAvoided(payload, fullLen, len(lines)) {
 		perftrace.Count("cursor_writer.present.mode.full_repaint_avoided", fullLen)
 	}
+	p.meta = clonePresentMeta(meta)
 	perftrace.Count("cursor_writer.present.mode.diff", changedCount)
 	return payload
 }
@@ -636,6 +661,7 @@ func (w *outputCursorWriter) WriteFrame(frame, cursor string) error {
 	defer w.mu.Unlock()
 	w.pending.frame = w.fitFrameToTTY(frame)
 	w.pending.lines = nil
+	w.pending.meta = nil
 	w.pending.cursor = cursor
 	w.pending.afterWrite = append(w.pending.afterWrite, w.afterWrite...)
 	w.afterWrite = nil
@@ -668,6 +694,10 @@ func (w *outputCursorWriter) WriteFrame(frame, cursor string) error {
 }
 
 func (w *outputCursorWriter) WriteFrameLines(lines []string, cursor string) error {
+	return w.WriteFrameLinesWithMeta(lines, cursor, nil)
+}
+
+func (w *outputCursorWriter) WriteFrameLinesWithMeta(lines []string, cursor string, meta *presentMeta) error {
 	finish := perftrace.Measure("cursor_writer.write_frame")
 	lineBytes := joinedLinesLen(lines) + len(cursor)
 	defer func() {
@@ -680,6 +710,7 @@ func (w *outputCursorWriter) WriteFrameLines(lines []string, cursor string) erro
 	defer w.mu.Unlock()
 	w.pending.frame = ""
 	w.pending.lines = w.fitLinesToTTY(stripLeadingCHA1(lines))
+	w.pending.meta = clonePresentMeta(meta)
 	w.pending.cursor = cursor
 	w.pending.afterWrite = append(w.pending.afterWrite, w.afterWrite...)
 	w.afterWrite = nil
@@ -730,6 +761,7 @@ func (w *outputCursorWriter) flushPendingFrameLocked() (func(), error) {
 	}
 	frame := w.pending.frame
 	lines := w.pending.lines
+	meta := w.pending.meta
 	cursor := w.pending.cursor
 	afterWrite := append([]string(nil), w.pending.afterWrite...)
 	w.pending = pendingDirectFrame{}
@@ -741,7 +773,7 @@ func (w *outputCursorWriter) flushPendingFrameLocked() (func(), error) {
 	err := error(nil)
 	flushStart := time.Now()
 	if len(lines) > 0 {
-		err = w.writeFrameLinesLocked(lines, cursor, afterWrite)
+		err = w.writeFrameLinesLocked(lines, meta, cursor, afterWrite)
 	} else {
 		err = w.writeFrameLocked(frame, cursor, afterWrite)
 	}
@@ -944,7 +976,7 @@ func (w *outputCursorWriter) writeFrameLocked(frame, cursor string, afterWrite [
 	return err
 }
 
-func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, cursor string, afterWrite []string) error {
+func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, meta *presentMeta, cursor string, afterWrite []string) error {
 	finish := perftrace.Measure("cursor_writer.direct_flush")
 	writtenBytes := 0
 	defer func() {
@@ -952,7 +984,7 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, cursor string
 	}()
 	presentFinish := perftrace.Measure("cursor_writer.present")
 	w.presenter.fullWidthLines = true
-	payload := w.presenter.PresentLines(stripTrailingEraseLineRight(lines))
+	payload := w.presenter.PresentLinesWithMeta(stripTrailingEraseLineRight(lines), meta)
 	presentFinish(len(payload))
 	syncOutput := w.tty != nil
 	if cursor == "" {

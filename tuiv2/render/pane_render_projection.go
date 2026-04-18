@@ -1,6 +1,8 @@
 package render
 
 import (
+	"hash/fnv"
+
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -8,6 +10,7 @@ import (
 
 type paneRenderEntry struct {
 	PaneID               string
+	OwnerID              uint32
 	Rect                 workbench.Rect
 	Frameless            bool
 	SharedLeft           bool
@@ -192,6 +195,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 	}
 	return paneRenderEntry{
 		PaneID:     pane.ID,
+		OwnerID:    paneOwnerID(pane.ID),
 		Rect:       rect,
 		Frameless:  frameless,
 		SharedLeft: pane.SharedLeft,
@@ -232,6 +236,16 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		CopyModeMarkRow:      options.CopyMode.MarkRow,
 		CopyModeMarkCol:      options.CopyMode.MarkCol,
 	}
+}
+
+func paneOwnerID(paneID string) uint32 {
+	if paneID == "" {
+		return 0
+	}
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte("pane:"))
+	_, _ = hasher.Write([]byte(paneID))
+	return 0x100 + hasher.Sum32()
 }
 
 func paneOverflowHintsForRender(originalRect, clippedRect workbench.Rect, snapshot *protocol.Snapshot, surface runtime.TerminalSurface) paneOverflowHints {

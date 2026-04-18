@@ -21,9 +21,13 @@ func renderBodyCanvas(coordinator *Coordinator, runtimeState *VisibleRuntimeStat
 		canvas.cursorOffsetY = cursorOffsetY
 		for _, entry := range entries {
 			if !entry.Frameless {
-				drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+				canvas.withOwner(entry.OwnerID, func() {
+					drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+				})
 			}
-			drawPaneContentWithKey(canvas, entry.Rect, entry, runtimeState)
+			canvas.withOwner(entry.OwnerID, func() {
+				drawPaneContentWithKey(canvas, entry.Rect, entry, runtimeState)
+			})
 		}
 		projectActiveEntryCursor(canvas, entries, runtimeState)
 		return canvas
@@ -91,15 +95,21 @@ func renderBodyCanvas(coordinator *Coordinator, runtimeState *VisibleRuntimeStat
 			frameChanged := false
 			if cache.frameKeys[entry.PaneID] != entry.FrameKey {
 				if entry.Frameless {
-					fillRect(cache.canvas, entry.Rect, blankDrawCell())
+					cache.canvas.withOwner(entry.OwnerID, func() {
+						fillRect(cache.canvas, entry.Rect, blankDrawCell())
+					})
 				} else {
-					drawPaneFrame(cache.canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+					cache.canvas.withOwner(entry.OwnerID, func() {
+						drawPaneFrame(cache.canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+					})
 				}
 				frameChanged = true
 				changed = true
 			}
 			if frameChanged || cache.contentKeys[entry.PaneID] != entry.ContentKey {
-				drawPaneContentFromCache(cache.canvas, cache, entry, runtimeState, true)
+				cache.canvas.withOwner(entry.OwnerID, func() {
+					drawPaneContentFromCache(cache.canvas, cache, entry, runtimeState, true)
+				})
 				if entry.Active {
 					activeContentRedrawn = true
 				}
@@ -137,9 +147,13 @@ func rebuildBodyCanvas(cache *bodyRenderCache, entries []paneRenderEntry, width,
 	}
 	for _, entry := range entries {
 		if !entry.Frameless {
-			drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+			canvas.withOwner(entry.OwnerID, func() {
+				drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+			})
 		}
-		drawPaneContentFromCache(canvas, cache, entry, runtimeState, false)
+		canvas.withOwner(entry.OwnerID, func() {
+			drawPaneContentFromCache(canvas, cache, entry, runtimeState, false)
+		})
 	}
 	projectActiveEntryCursor(canvas, entries, runtimeState)
 	return canvas
@@ -214,33 +228,35 @@ func drawResolvedPaneContentSprite(canvas *composedCanvas, entry paneRenderEntry
 	if canvas == nil {
 		return
 	}
-	fillRect(canvas, workbench.Rect{W: canvas.width, H: canvas.height}, blankDrawCell())
-	contentRect := resolved.contentRect
-	if contentRect.W <= 0 || contentRect.H <= 0 {
-		return
-	}
-	if entry.TerminalID == "" {
-		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID, entry.Theme, entry.EmptyActionSelected)
-		return
-	}
-	if !resolved.terminalKnown {
-		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID, entry.Theme, -1)
-		return
-	}
-	if resolved.source == nil || resolved.source.ScreenRows() == 0 {
-		canvas.drawText(contentRect.X, contentRect.Y, resolved.terminalName+" ["+resolved.terminalState+"]", drawStyle{FG: entry.Theme.panelMuted})
+	canvas.withOwner(entry.OwnerID, func() {
+		fillRect(canvas, workbench.Rect{W: canvas.width, H: canvas.height}, blankDrawCell())
+		contentRect := resolved.contentRect
+		if contentRect.W <= 0 || contentRect.H <= 0 {
+			return
+		}
+		if entry.TerminalID == "" {
+			drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID, entry.Theme, entry.EmptyActionSelected)
+			return
+		}
+		if !resolved.terminalKnown {
+			drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID, entry.Theme, -1)
+			return
+		}
+		if resolved.source == nil || resolved.source.ScreenRows() == 0 {
+			canvas.drawText(contentRect.X, contentRect.Y, resolved.terminalName+" ["+resolved.terminalState+"]", drawStyle{FG: entry.Theme.panelMuted})
+			if resolved.terminalState == "exited" {
+				drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
+			}
+			return
+		}
+		drawTerminalSourceWithOffset(canvas, contentRect, resolved.source, resolved.renderOffset, entry.Theme)
+		if entry.CopyModeActive {
+			drawCopyModeOverlay(canvas, contentRect, resolved.snapshot, entry.Theme, entry.CopyModeCursorRow, entry.CopyModeCursorCol, entry.CopyModeViewTopRow, entry.CopyModeMarkSet, entry.CopyModeMarkRow, entry.CopyModeMarkCol)
+		}
 		if resolved.terminalState == "exited" {
 			drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
 		}
-		return
-	}
-	drawTerminalSourceWithOffset(canvas, contentRect, resolved.source, resolved.renderOffset, entry.Theme)
-	if entry.CopyModeActive {
-		drawCopyModeOverlay(canvas, contentRect, resolved.snapshot, entry.Theme, entry.CopyModeCursorRow, entry.CopyModeCursorCol, entry.CopyModeViewTopRow, entry.CopyModeMarkSet, entry.CopyModeMarkRow, entry.CopyModeMarkCol)
-	}
-	if resolved.terminalState == "exited" {
-		drawExitedPaneRecoveryHints(canvas, contentRect, entry.Theme, entry.ExitedActionSelected, entry.ExitedActionPulse)
-	}
+	})
 }
 
 func restoreActiveEntryContent(canvas *composedCanvas, cache *bodyRenderCache, entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) {
@@ -252,7 +268,9 @@ func restoreActiveEntryContent(canvas *composedCanvas, cache *bodyRenderCache, e
 			continue
 		}
 		// Use sprite cache to restore content cheaply instead of full redraw
-		drawPaneContentFromCache(canvas, cache, entry, runtimeState, true)
+		canvas.withOwner(entry.OwnerID, func() {
+			drawPaneContentFromCache(canvas, cache, entry, runtimeState, true)
+		})
 		return
 	}
 }
@@ -268,7 +286,9 @@ func redrawDamagedRect(canvas *composedCanvas, cache *bodyRenderCache, entries [
 			continue
 		}
 		if !entry.Frameless {
-			drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+			canvas.withOwner(entry.OwnerID, func() {
+				drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+			})
 		}
 		startRow, endRow, ok := dirtyInteriorRows(entry, dirty)
 		if !ok {
@@ -278,7 +298,9 @@ func redrawDamagedRect(canvas *composedCanvas, cache *bodyRenderCache, entries [
 		// X clipping. Cutting through wide cells, continuation footprints, or
 		// FE0F compensation columns at arbitrary horizontal offsets is much
 		// riskier than repainting the affected interior rows end-to-end.
-		drawPaneContentFromCacheRows(canvas, cache, entry, runtimeState, startRow, endRow, false)
+		canvas.withOwner(entry.OwnerID, func() {
+			drawPaneContentFromCacheRows(canvas, cache, entry, runtimeState, startRow, endRow, false)
+		})
 	}
 	projectActiveEntryCursor(canvas, entries, runtimeState)
 }
@@ -305,9 +327,13 @@ func applyOverlapIncrementalComposite(canvas *composedCanvas, cache *bodyRenderC
 		contentChanged := cache.contentKeys[entry.PaneID] != entry.ContentKey
 		if frameChanged {
 			if entry.Frameless {
-				fillRect(canvas, entry.Rect, blankDrawCell())
+				canvas.withOwner(entry.OwnerID, func() {
+					fillRect(canvas, entry.Rect, blankDrawCell())
+				})
 			} else {
-				drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+				canvas.withOwner(entry.OwnerID, func() {
+					drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+				})
 			}
 		}
 		if frameChanged || contentChanged {
@@ -315,7 +341,9 @@ func applyOverlapIncrementalComposite(canvas *composedCanvas, cache *bodyRenderC
 			// need a full rebuild if the changed pane can update itself
 			// incrementally. Repaint the changed pane first, then redraw only the
 			// later overlapping panes to restore correct z-order.
-			drawPaneContentFromCache(canvas, cache, entry, runtimeState, true)
+			canvas.withOwner(entry.OwnerID, func() {
+				drawPaneContentFromCache(canvas, cache, entry, runtimeState, true)
+			})
 		}
 		for upper := idx + 1; upper < len(entries); upper++ {
 			overlay := entries[upper]
@@ -323,9 +351,13 @@ func applyOverlapIncrementalComposite(canvas *composedCanvas, cache *bodyRenderC
 				continue
 			}
 			if !overlay.Frameless {
-				drawPaneFrame(canvas, overlay.Rect, overlay.SharedLeft, overlay.SharedTop, overlay.Title, overlay.Border, overlay.Theme, overlay.Overflow, overlay.Active, overlay.Floating)
+				canvas.withOwner(overlay.OwnerID, func() {
+					drawPaneFrame(canvas, overlay.Rect, overlay.SharedLeft, overlay.SharedTop, overlay.Title, overlay.Border, overlay.Theme, overlay.Overflow, overlay.Active, overlay.Floating)
+				})
 			}
-			drawPaneContentFromCache(canvas, cache, overlay, runtimeState, false)
+			canvas.withOwner(overlay.OwnerID, func() {
+				drawPaneContentFromCache(canvas, cache, overlay, runtimeState, false)
+			})
 		}
 	}
 	projectActiveEntryCursor(canvas, entries, runtimeState)

@@ -82,6 +82,7 @@ func renderResultWithCoordinator(coordinator *Coordinator, vm RenderVM) RenderRe
 		Lines:  lines,
 		Cursor: body.cursor,
 		Blink:  body.blink,
+		Meta:   composeRenderMetadata(vm.TermSize.Width, len(lines), immersiveZoom, body.meta),
 	}
 }
 
@@ -137,7 +138,41 @@ func renderBodyFrameWithCoordinatorVM(coordinator *Coordinator, vm RenderVM, wid
 		lines:  canvas.cachedContentLines(),
 		cursor: canvas.cursorANSI(),
 		blink:  canvas.syntheticCursorBlink,
+		meta:   &PresentMetadata{OwnerMap: canvas.ownerMap()},
 	}
+}
+
+const (
+	renderOwnerTopChrome    uint32 = 1
+	renderOwnerBottomChrome uint32 = 2
+)
+
+func composeRenderMetadata(width, height int, immersiveZoom bool, bodyMeta *PresentMetadata) *PresentMetadata {
+	if bodyMeta == nil || len(bodyMeta.OwnerMap) == 0 || width <= 0 || height <= 0 {
+		return nil
+	}
+	meta := &PresentMetadata{
+		OwnerMap: make([][]uint32, height),
+	}
+	for y := 0; y < height; y++ {
+		meta.OwnerMap[y] = make([]uint32, width)
+	}
+	offsetY := 0
+	if !immersiveZoom {
+		offsetY = 1
+		for x := 0; x < width; x++ {
+			meta.OwnerMap[0][x] = renderOwnerTopChrome
+			meta.OwnerMap[height-1][x] = renderOwnerBottomChrome
+		}
+	}
+	for y := range bodyMeta.OwnerMap {
+		targetY := offsetY + y
+		if targetY < 0 || targetY >= height {
+			continue
+		}
+		copy(meta.OwnerMap[targetY], bodyMeta.OwnerMap[y])
+	}
+	return meta
 }
 
 func renderVMNeedsCursorBlink(vm RenderVM) bool {

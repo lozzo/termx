@@ -15,6 +15,12 @@ func fillRect(canvas *composedCanvas, rect workbench.Rect, cell drawCell) {
 	}
 	if cell == blankDrawCell() {
 		blankRow := cachedBlankFillRow(rect.W)
+		if canvas.currentOwner != 0 {
+			blankRow = make([]drawCell, rect.W)
+			for i := range blankRow {
+				blankRow[i] = canvas.blankCell()
+			}
+		}
 		for y := rect.Y; y < rect.Y+rect.H; y++ {
 			clearBlankFillBoundaryFootprint(canvas, rect.X, y)
 			if rect.W > 1 {
