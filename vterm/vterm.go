@@ -395,6 +395,10 @@ func (v *VTerm) applyScreenUpdateLocked(update protocol.ScreenUpdate) bool {
 	if !v.canApplyScreenUpdateLocked(update) {
 		return false
 	}
+	targetCols, targetRows := v.screenUpdateTargetSizeLocked(update)
+	if targetCols != v.emu.Width() || targetRows != v.emu.Height() {
+		v.resizeLocked(targetCols, targetRows)
+	}
 
 	var b strings.Builder
 	for _, row := range update.ChangedRows {
@@ -444,27 +448,45 @@ func (v *VTerm) canApplyScreenUpdateLocked(update protocol.ScreenUpdate) bool {
 	if update.ResetScrollback || update.ScrollbackTrim > 0 || len(update.ScrollbackAppend) > 0 {
 		return false
 	}
-	width, height := v.emu.Width(), v.emu.Height()
-	if update.Size.Cols > 0 && int(update.Size.Cols) != width {
-		return false
-	}
-	if update.Size.Rows > 0 && int(update.Size.Rows) != height {
+	targetCols, targetRows := v.screenUpdateTargetSizeLocked(update)
+	if targetCols <= 0 || targetRows <= 0 {
 		return false
 	}
 	if v.emu.IsAltScreen() != update.Modes.AlternateScreen {
 		return false
 	}
 	for _, row := range update.ChangedRows {
-		if row.Row < 0 || row.Row >= height {
+		if row.Row < 0 || row.Row >= targetRows {
 			return false
 		}
 	}
 	return true
 }
 
+func (v *VTerm) screenUpdateTargetSizeLocked(update protocol.ScreenUpdate) (cols, rows int) {
+	if v == nil || v.emu == nil {
+		return 0, 0
+	}
+	cols, rows = v.emu.Width(), v.emu.Height()
+	if update.Size.Cols > 0 {
+		cols = int(update.Size.Cols)
+	}
+	if update.Size.Rows > 0 {
+		rows = int(update.Size.Rows)
+	}
+	return cols, rows
+}
+
 func (v *VTerm) Resize(cols, rows int) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	v.resizeLocked(cols, rows)
+}
+
+func (v *VTerm) resizeLocked(cols, rows int) {
+	if v == nil || v.emu == nil {
+		return
+	}
 	oldCols, oldRows := v.emu.Width(), v.emu.Height()
 	v.captureResizeTailFillLocked(oldCols, oldRows, cols, rows)
 	beforeScreen := v.screenRowFingerprintsLocked()

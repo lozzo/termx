@@ -550,3 +550,55 @@ func TestApplyScreenUpdateRejectsUnsupportedScrollbackMutation(t *testing.T) {
 		t.Fatal("expected rejected partial apply to leave emulator untouched")
 	}
 }
+
+func TestApplyScreenUpdateAllowsSafeResizeWithoutRecreatingEmulator(t *testing.T) {
+	vt := New(4, 2, 100, nil)
+	now := time.Date(2026, 4, 18, 8, 30, 0, 0, time.UTC)
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{
+			{
+				{Content: "a", Width: 1},
+				{Content: "b", Width: 1},
+				{Content: "c", Width: 1},
+				{Content: "d", Width: 1},
+			},
+			{
+				{Content: "1", Width: 1},
+				{Content: "2", Width: 1},
+				{Content: "3", Width: 1},
+				{Content: "4", Width: 1},
+			},
+		},
+		IsAlternateScreen: true,
+	}, CursorState{Row: 1, Col: 3, Visible: true}, TerminalModes{AlternateScreen: true, AutoWrap: true})
+
+	oldEmu := vt.emu
+	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 6, Rows: 3},
+		ChangedRows: []protocol.ScreenRowUpdate{{
+			Row: 2,
+			Cells: []protocol.Cell{
+				{Content: "x", Width: 1},
+				{Content: "y", Width: 1},
+			},
+			Timestamp: now,
+		}},
+		Cursor: protocol.CursorState{Row: 2, Col: 2, Visible: true},
+		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+	}) {
+		t.Fatal("expected resize + changed rows update to apply incrementally")
+	}
+	if vt.emu != oldEmu {
+		t.Fatal("expected resize path to keep the existing emulator instance")
+	}
+	if cols, rows := vt.Size(); cols != 6 || rows != 3 {
+		t.Fatalf("expected resized terminal 6x3, got %dx%d", cols, rows)
+	}
+	screen := vt.ScreenContent()
+	if got := screen.Cells[2][0].Content + screen.Cells[2][1].Content; got != "xy" {
+		t.Fatalf("expected appended resized row content, got %q", got)
+	}
+	if cursor := vt.CursorState(); cursor.Row != 2 || cursor.Col != 2 {
+		t.Fatalf("expected cursor moved after resize update, got %#v", cursor)
+	}
+}
