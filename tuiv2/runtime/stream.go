@@ -299,9 +299,23 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 		}
 		r.invalidate()
 	case protocol.TypeScreenUpdate:
+		decodeFinish := perftrace.Measure("runtime.stream.screen_update.decode")
 		update, err := protocol.DecodeScreenUpdatePayload(frame.Payload)
+		decodeFinish(len(frame.Payload))
 		if err != nil {
 			return
+		}
+		if update.FullReplace {
+			perftrace.Count("runtime.stream.screen_update.full_replace", 1)
+		}
+		if changedRows := len(update.ChangedRows); changedRows > 0 {
+			perftrace.Count("runtime.stream.screen_update.changed_rows", changedRows)
+		}
+		if update.ScrollbackTrim > 0 {
+			perftrace.Count("runtime.stream.screen_update.scrollback_trim_rows", update.ScrollbackTrim)
+		}
+		if appendedRows := len(update.ScrollbackAppend); appendedRows > 0 {
+			perftrace.Count("runtime.stream.screen_update.scrollback_append_rows", appendedRows)
 		}
 		if update.Title != "" && update.Title != terminal.Title {
 			terminal.Title = update.Title
@@ -311,23 +325,36 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 			}
 		}
 		if terminal.BootstrapPending && terminal.Snapshot != nil && screenUpdateSeemsBlank(update) {
+			invalidateFinish := perftrace.Measure("runtime.stream.screen_update.invalidate")
 			r.invalidate()
+			invalidateFinish(0)
 			return
 		}
+		snapshotApplyFinish := perftrace.Measure("runtime.stream.screen_update.snapshot_apply")
 		terminal.Snapshot = applyScreenUpdateSnapshot(terminal.Snapshot, terminalID, update)
+		snapshotApplyFinish(0)
 		vt := r.ensureVTerm(terminal)
 		if vt != nil && terminal.Snapshot != nil {
+			loadFinish := perftrace.Measure("runtime.stream.screen_update.load_vterm_full")
 			loadSnapshotIntoVTerm(vt, terminal.Snapshot)
+			loadFinish(0)
 			terminal.PreferSnapshot = false
+			invalidateFinish := perftrace.Measure("runtime.stream.screen_update.invalidate")
 			r.bumpSurfaceVersion(terminal)
 			terminal.SnapshotVersion = terminal.SurfaceVersion
+			terminal.BootstrapPending = false
+			terminal.Recovery = RecoveryState{}
+			r.invalidate()
+			invalidateFinish(0)
 		} else {
+			invalidateFinish := perftrace.Measure("runtime.stream.screen_update.invalidate")
 			terminal.PreferSnapshot = true
 			terminal.SnapshotVersion++
+			terminal.BootstrapPending = false
+			terminal.Recovery = RecoveryState{}
+			r.invalidate()
+			invalidateFinish(0)
 		}
-		terminal.BootstrapPending = false
-		terminal.Recovery = RecoveryState{}
-		r.invalidate()
 	case protocol.TypeResize:
 		cols, rows, err := protocol.DecodeResizePayload(frame.Payload)
 		if err != nil || cols == 0 || rows == 0 {

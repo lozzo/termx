@@ -305,6 +305,15 @@ func (c *composedCanvas) blitRowFrom(src *composedCanvas, srcY int, dstX, dstY, 
 	c.blitRectFrom(src, workbench.Rect{Y: srcY, W: width, H: 1}, dstX, dstY)
 }
 
+func (c *composedCanvas) blitRowsFrom(src *composedCanvas, srcStartY int, dstX, dstY, width, rows int) {
+	if c == nil || src == nil || rows <= 0 {
+		return
+	}
+	for offset := 0; offset < rows; offset++ {
+		c.blitRowFrom(src, srcStartY+offset, dstX, dstY+offset, width)
+	}
+}
+
 func (c *composedCanvas) set(x, y int, cell drawCell) {
 	if x < 0 || y < 0 || x >= c.width || y >= c.height {
 		return

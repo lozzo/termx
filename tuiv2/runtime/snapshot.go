@@ -285,9 +285,38 @@ func protocolCellFromVTermCell(cell localvterm.Cell) protocol.Cell {
 }
 
 func applyScreenUpdateSnapshot(current *protocol.Snapshot, terminalID string, update protocol.ScreenUpdate) *protocol.Snapshot {
-	snapshot := cloneProtocolSnapshot(current)
-	if snapshot == nil || update.FullReplace {
-		snapshot = &protocol.Snapshot{TerminalID: terminalID}
+	if update.FullReplace {
+		snapshot := &protocol.Snapshot{TerminalID: terminalID}
+		if snapshot.TerminalID == "" {
+			snapshot.TerminalID = terminalID
+		}
+		if update.Size.Cols > 0 || update.Size.Rows > 0 {
+			snapshot.Size = update.Size
+		}
+		if update.ResetScrollback {
+			snapshot.Scrollback = nil
+			snapshot.ScrollbackTimestamps = nil
+			snapshot.ScrollbackRowKinds = nil
+		}
+		snapshot.Screen = cloneProtocolScreenData(update.Screen)
+		snapshot.ScreenTimestamps = append([]time.Time(nil), update.ScreenTimestamps...)
+		snapshot.ScreenRowKinds = append([]string(nil), update.ScreenRowKinds...)
+		for _, row := range update.ScrollbackAppend {
+			snapshot.Scrollback = append(snapshot.Scrollback, cloneProtocolCellRow(row.Cells))
+			snapshot.ScrollbackTimestamps = append(snapshot.ScrollbackTimestamps, row.Timestamp)
+			snapshot.ScrollbackRowKinds = append(snapshot.ScrollbackRowKinds, row.RowKind)
+		}
+		snapshot.Screen.IsAlternateScreen = update.Modes.AlternateScreen
+		snapshot.Cursor = update.Cursor
+		snapshot.Modes = update.Modes
+		snapshot.Timestamp = time.Now()
+		return snapshot
+	}
+
+	snapshot := &protocol.Snapshot{TerminalID: terminalID}
+	if current != nil {
+		cloned := *current
+		snapshot = &cloned
 	}
 	if snapshot.TerminalID == "" {
 		snapshot.TerminalID = terminalID
@@ -295,36 +324,50 @@ func applyScreenUpdateSnapshot(current *protocol.Snapshot, terminalID string, up
 	if update.Size.Cols > 0 || update.Size.Rows > 0 {
 		snapshot.Size = update.Size
 	}
+	screenCellsOwned := false
+	screenTimestampsOwned := false
+	screenRowKindsOwned := false
+	scrollbackOwned := false
+	scrollbackTimestampsOwned := false
+	scrollbackRowKindsOwned := false
 	if update.ResetScrollback {
 		snapshot.Scrollback = nil
 		snapshot.ScrollbackTimestamps = nil
 		snapshot.ScrollbackRowKinds = nil
+		scrollbackOwned = true
+		scrollbackTimestampsOwned = true
+		scrollbackRowKindsOwned = true
 	}
-	if update.FullReplace {
-		snapshot.Screen = cloneProtocolScreenData(update.Screen)
-		snapshot.ScreenTimestamps = append([]time.Time(nil), update.ScreenTimestamps...)
-		snapshot.ScreenRowKinds = append([]string(nil), update.ScreenRowKinds...)
-	} else {
-		ensureSnapshotScreenRows(snapshot, int(maxUint16(snapshot.Size.Rows, uint16(maxChangedScreenRow(update)+1))))
-		if update.ScrollbackTrim > 0 {
-			trimSnapshotScrollbackFront(snapshot, update.ScrollbackTrim)
-		}
-		for _, row := range update.ChangedRows {
-			if row.Row < 0 {
-				continue
-			}
-			ensureSnapshotScreenRows(snapshot, row.Row+1)
-			snapshot.Screen.Cells[row.Row] = cloneProtocolCellRow(row.Cells)
-			ensureTimeSliceLen(&snapshot.ScreenTimestamps, row.Row+1)
-			ensureStringSliceLen(&snapshot.ScreenRowKinds, row.Row+1)
-			snapshot.ScreenTimestamps[row.Row] = row.Timestamp
-			snapshot.ScreenRowKinds[row.Row] = row.RowKind
-		}
+	requiredRows := int(maxUint16(snapshot.Size.Rows, uint16(maxChangedScreenRow(update)+1)))
+	if requiredRows > len(snapshot.Screen.Cells) {
+		ensureSnapshotScreenRowsCOW(snapshot, requiredRows, &screenCellsOwned, &screenTimestampsOwned, &screenRowKindsOwned)
 	}
-	for _, row := range update.ScrollbackAppend {
-		snapshot.Scrollback = append(snapshot.Scrollback, cloneProtocolCellRow(row.Cells))
-		snapshot.ScrollbackTimestamps = append(snapshot.ScrollbackTimestamps, row.Timestamp)
-		snapshot.ScrollbackRowKinds = append(snapshot.ScrollbackRowKinds, row.RowKind)
+	if update.ScrollbackTrim > 0 {
+		trimSnapshotScrollbackFront(snapshot, update.ScrollbackTrim)
+		scrollbackOwned = true
+		scrollbackTimestampsOwned = true
+		scrollbackRowKindsOwned = true
+	}
+	for _, row := range update.ChangedRows {
+		if row.Row < 0 {
+			continue
+		}
+		ensureSnapshotScreenRowsCOW(snapshot, row.Row+1, &screenCellsOwned, &screenTimestampsOwned, &screenRowKindsOwned)
+		snapshot.Screen.Cells[row.Row] = cloneProtocolCellRow(row.Cells)
+		snapshot.ScreenTimestamps[row.Row] = row.Timestamp
+		snapshot.ScreenRowKinds[row.Row] = row.RowKind
+	}
+	if appendCount := len(update.ScrollbackAppend); appendCount > 0 {
+		baseRows := len(snapshot.Scrollback)
+		snapshot.Scrollback = cowProtocolRows(snapshot.Scrollback, baseRows+appendCount, &scrollbackOwned)
+		snapshot.ScrollbackTimestamps = cowTimeSlice(snapshot.ScrollbackTimestamps, baseRows+appendCount, &scrollbackTimestampsOwned)
+		snapshot.ScrollbackRowKinds = cowStringSlice(snapshot.ScrollbackRowKinds, baseRows+appendCount, &scrollbackRowKindsOwned)
+		for i, row := range update.ScrollbackAppend {
+			index := baseRows + i
+			snapshot.Scrollback[index] = cloneProtocolCellRow(row.Cells)
+			snapshot.ScrollbackTimestamps[index] = row.Timestamp
+			snapshot.ScrollbackRowKinds[index] = row.RowKind
+		}
 	}
 	snapshot.Screen.IsAlternateScreen = update.Modes.AlternateScreen
 	snapshot.Cursor = update.Cursor
@@ -372,6 +415,75 @@ func cloneProtocolCellRow(row []protocol.Cell) []protocol.Cell {
 	return append([]protocol.Cell(nil), row...)
 }
 
+func cowProtocolRows(rows [][]protocol.Cell, size int, owned *bool) [][]protocol.Cell {
+	size = maxInt(size, len(rows))
+	if size <= 0 {
+		return nil
+	}
+	if owned != nil && *owned {
+		if len(rows) >= size {
+			return rows
+		}
+		return append(rows, make([][]protocol.Cell, size-len(rows))...)
+	}
+	out := make([][]protocol.Cell, size)
+	copy(out, rows)
+	if owned != nil {
+		*owned = true
+	}
+	return out
+}
+
+func cowTimeSlice(values []time.Time, size int, owned *bool) []time.Time {
+	size = maxInt(size, len(values))
+	if size <= 0 {
+		return nil
+	}
+	if owned != nil && *owned {
+		if len(values) >= size {
+			return values
+		}
+		return append(values, make([]time.Time, size-len(values))...)
+	}
+	out := make([]time.Time, size)
+	copy(out, values)
+	if owned != nil {
+		*owned = true
+	}
+	return out
+}
+
+func cowStringSlice(values []string, size int, owned *bool) []string {
+	size = maxInt(size, len(values))
+	if size <= 0 {
+		return nil
+	}
+	if owned != nil && *owned {
+		if len(values) >= size {
+			return values
+		}
+		return append(values, make([]string, size-len(values))...)
+	}
+	out := make([]string, size)
+	copy(out, values)
+	if owned != nil {
+		*owned = true
+	}
+	return out
+}
+
+func ensureSnapshotScreenRowsCOW(snapshot *protocol.Snapshot, rows int, screenCellsOwned, screenTimestampsOwned, screenRowKindsOwned *bool) {
+	if snapshot == nil || rows <= 0 {
+		return
+	}
+	snapshot.Screen.Cells = cowProtocolRows(snapshot.Screen.Cells, rows, screenCellsOwned)
+	snapshot.ScreenTimestamps = cowTimeSlice(snapshot.ScreenTimestamps, rows, screenTimestampsOwned)
+	snapshot.ScreenRowKinds = cowStringSlice(snapshot.ScreenRowKinds, rows, screenRowKindsOwned)
+	if snapshot.Size.Rows < uint16(rows) {
+		snapshot.Size.Rows = uint16(rows)
+	}
+}
+
 func ensureSnapshotScreenRows(snapshot *protocol.Snapshot, rows int) {
 	if snapshot == nil || rows <= 0 {
 		return
@@ -414,9 +526,19 @@ func trimSnapshotScrollbackFront(snapshot *protocol.Snapshot, trim int) {
 		snapshot.ScrollbackRowKinds = nil
 		return
 	}
-	snapshot.Scrollback = cloneProtocolRows(snapshot.Scrollback[trim:])
+	snapshot.Scrollback = cloneProtocolRowsWindow(snapshot.Scrollback, trim)
 	snapshot.ScrollbackTimestamps = append([]time.Time(nil), snapshot.ScrollbackTimestamps[minInt(trim, len(snapshot.ScrollbackTimestamps)):]...)
 	snapshot.ScrollbackRowKinds = append([]string(nil), snapshot.ScrollbackRowKinds[minInt(trim, len(snapshot.ScrollbackRowKinds)):]...)
+}
+
+func cloneProtocolRowsWindow(rows [][]protocol.Cell, start int) [][]protocol.Cell {
+	start = minInt(maxInt(start, 0), len(rows))
+	if start >= len(rows) {
+		return nil
+	}
+	out := make([][]protocol.Cell, len(rows)-start)
+	copy(out, rows[start:])
+	return out
 }
 
 func maxChangedScreenRow(update protocol.ScreenUpdate) int {
@@ -441,6 +563,13 @@ func maxUint16(a, b uint16) uint16 {
 
 func minInt(a, b int) int {
 	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxInt(a, b int) int {
+	if a > b {
 		return a
 	}
 	return b

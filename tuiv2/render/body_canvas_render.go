@@ -35,37 +35,15 @@ func renderBodyCanvas(coordinator *Coordinator, runtimeState *VisibleRuntimeStat
 		return canvas
 	}
 	overlap := entriesOverlap(entries)
-	if overlap && !cache.matches(entries, width, height, hostEmojiMode) {
-		if dirty, ok := overlapDamagedRect(cache, entries, width, height); ok {
-			redrawDamagedRect(cache.canvas, cache, entries, runtimeState, dirty)
-			cache.reset(entries, width, height)
-			perftrace.Count("render.body.canvas.damaged_rect", dirty.W*dirty.H)
-			return cache.canvas
-		}
-		canvas := rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, coordinator.syntheticCursorVisible, runtimeState)
-		cache.canvas = canvas
-		cache.reset(entries, width, height)
-		return canvas
-	}
-	if !cache.matches(entries, width, height, hostEmojiMode) {
-		canvas := rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, coordinator.syntheticCursorVisible, runtimeState)
-		cache.canvas = canvas
-		cache.reset(entries, width, height)
-		return canvas
-	}
-
-	// Overlapping panes need a full rebuild. The cached active-pane refresh path
-	// redraws the active pane content to clear the old cursor, which is correct
-	// for tiled layouts but will paint over floating panes layered above it.
-	// TODO(perf): If floating-window drag is still not smooth enough under heavy
-	// styled content, prototype a damaged-rect path for non-overlapping floating
-	// moves before doing more ANSI micro-optimizations. Re-profile first.
+	matches := cache.matches(entries, width, height, hostEmojiMode)
 	if overlap {
-		changed := false
-		for _, entry := range entries {
-			if cache.frameKeys[entry.PaneID] != entry.FrameKey || cache.contentKeys[entry.PaneID] != entry.ContentKey {
-				changed = true
-				break
+		changed := !matches
+		if !changed {
+			for _, entry := range entries {
+				if cache.frameKeys[entry.PaneID] != entry.FrameKey || cache.contentKeys[entry.PaneID] != entry.ContentKey {
+					changed = true
+					break
+				}
 			}
 		}
 		cache.canvas.clearCursor()
@@ -73,6 +51,27 @@ func renderBodyCanvas(coordinator *Coordinator, runtimeState *VisibleRuntimeStat
 			projectActiveEntryCursor(cache.canvas, entries, runtimeState)
 			return cache.canvas
 		}
+		// Same-rect overlap updates still have a bounded damage region. Rebuilds
+		// here throw away earlier projection/pipeline wins even though only a
+		// small stacked slice actually changed, so try the damaged-rect path
+		// before falling back to a full body recompose.
+		if dirty, ok := overlapDamagedRect(cache, entries, width, height); ok {
+			redrawDamagedRect(cache.canvas, cache, entries, runtimeState, dirty)
+			cache.reset(entries, width, height)
+			perftrace.Count("render.body.canvas.damaged_rect", dirty.W*dirty.H)
+			perftrace.Count("render.body.canvas.path.overlap_damaged_rect", 0)
+			if matches {
+				perftrace.Count("render.body.canvas.path.overlap_same_rect_dirty", 0)
+			}
+			return cache.canvas
+		}
+		perftrace.Count("render.body.canvas.path.overlap_full_rebuild", 0)
+		canvas := rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, coordinator.syntheticCursorVisible, runtimeState)
+		cache.canvas = canvas
+		cache.reset(entries, width, height)
+		return canvas
+	}
+	if !matches {
 		canvas := rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, coordinator.syntheticCursorVisible, runtimeState)
 		cache.canvas = canvas
 		cache.reset(entries, width, height)
@@ -145,6 +144,17 @@ func drawPaneContentFromCache(canvas *composedCanvas, cache *bodyRenderCache, en
 	if canvas == nil {
 		return
 	}
+	interior := interiorRectForEntry(entry)
+	if interior.W <= 0 || interior.H <= 0 {
+		return
+	}
+	drawPaneContentFromCacheRows(canvas, cache, entry, runtimeState, 0, interior.H-1, clearInterior)
+}
+
+func drawPaneContentFromCacheRows(canvas *composedCanvas, cache *bodyRenderCache, entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy, startRow, endRow int, clearRows bool) {
+	if canvas == nil {
+		return
+	}
 	if cache == nil {
 		drawPaneContentWithKey(canvas, entry.Rect, entry, runtimeState)
 		return
@@ -153,27 +163,42 @@ func drawPaneContentFromCache(canvas *composedCanvas, cache *bodyRenderCache, en
 	if interior.W <= 0 || interior.H <= 0 {
 		return
 	}
+	if startRow < 0 {
+		startRow = 0
+	}
+	if endRow >= interior.H {
+		endRow = interior.H - 1
+	}
+	if startRow > endRow {
+		return
+	}
+	rowCount := endRow - startRow + 1
 	contentSpriteFinish := perftrace.Measure("render.body.canvas.content_sprite")
 	sprite := cache.contentSprite(entry, runtimeState)
-	contentSpriteFinish(maxInt(1, interior.W*interior.H))
+	contentSpriteFinish(maxInt(1, interior.W*rowCount))
 	if sprite == nil {
 		drawPaneContentWithKey(canvas, entry.Rect, entry, runtimeState)
 		return
 	}
-	if clearInterior {
+	if clearRows && startRow == 0 && endRow == interior.H-1 {
 		deltaFinish := perftrace.Measure("render.body.canvas.apply_sprite_delta")
-		applied := cache.applySpriteDeltaToCanvas(canvas, entry)
-		deltaFinish(maxInt(1, interior.W*interior.H))
+		applied := cache.applySpriteDeltaToCanvasRows(canvas, entry, startRow, endRow)
+		deltaFinish(maxInt(1, interior.W*rowCount))
 		if applied {
 			return
 		}
 	}
 	fullBlitFinish := perftrace.Measure("render.body.canvas.full_sprite_blit")
-	if clearInterior {
-		fillRect(canvas, interior, blankDrawCell())
+	if clearRows {
+		fillRect(canvas, workbench.Rect{
+			X: interior.X,
+			Y: interior.Y + startRow,
+			W: interior.W,
+			H: rowCount,
+		}, blankDrawCell())
 	}
-	canvas.blit(sprite, interior.X, interior.Y)
-	fullBlitFinish(maxInt(1, interior.W*interior.H))
+	canvas.blitRowsFrom(sprite, startRow, interior.X, interior.Y+startRow, interior.W, rowCount)
+	fullBlitFinish(maxInt(1, interior.W*rowCount))
 }
 
 func drawPaneContentSprite(canvas *composedCanvas, entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) {
@@ -240,7 +265,15 @@ func redrawDamagedRect(canvas *composedCanvas, cache *bodyRenderCache, entries [
 		if !entry.Frameless {
 			drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
 		}
-		drawPaneContentFromCache(canvas, cache, entry, runtimeState, false)
+		startRow, endRow, ok := dirtyInteriorRows(entry, dirty)
+		if !ok {
+			continue
+		}
+		// Row-band redraw keeps the damaged-rect path cheap without arbitrary
+		// X clipping. Cutting through wide cells, continuation footprints, or
+		// FE0F compensation columns at arbitrary horizontal offsets is much
+		// riskier than repainting the affected interior rows end-to-end.
+		drawPaneContentFromCacheRows(canvas, cache, entry, runtimeState, startRow, endRow, false)
 	}
 	projectActiveEntryCursor(canvas, entries, runtimeState)
 }
@@ -255,6 +288,7 @@ func overlapDamagedRect(cache *bodyRenderCache, entries []paneRenderEntry, width
 	for _, entry := range entries {
 		oldRect, ok := cache.rects[entry.PaneID]
 		if !ok {
+			perftrace.Count("render.body.canvas.overlap_dirty.miss.invalid_rect", 0)
 			return workbench.Rect{}, false
 		}
 		frameChanged := cache.frameKeys[entry.PaneID] != entry.FrameKey
@@ -265,26 +299,65 @@ func overlapDamagedRect(cache *bodyRenderCache, entries []paneRenderEntry, width
 		}
 		changed++
 		if changed > 4 {
+			perftrace.Count("render.body.canvas.overlap.changed_entries", changed)
+			perftrace.Count("render.body.canvas.overlap_dirty.miss.too_many_changed", 0)
 			return workbench.Rect{}, false
 		}
 		if rectChanged {
 			dirty = unionRects(dirty, oldRect)
 			dirty = unionRects(dirty, entry.Rect)
-		} else {
+		} else if frameChanged {
 			dirty = unionRects(dirty, entry.Rect)
+		} else if entry.Frameless {
+			dirty = unionRects(dirty, entry.Rect)
+		} else {
+			dirty = unionRects(dirty, interiorRectForEntry(entry))
 		}
 		if !entry.Floating && dirty.W*dirty.H >= canvasArea*7/10 {
+			perftrace.Count("render.body.canvas.overlap.changed_entries", changed)
+			perftrace.Count("render.body.canvas.overlap.changed_area", dirty.W*dirty.H)
+			perftrace.Count("render.body.canvas.overlap_dirty.miss.area_too_large", 0)
 			return workbench.Rect{}, false
 		}
 	}
+	if changed == 0 {
+		return workbench.Rect{}, false
+	}
 	dirty, ok := clipRectToViewport(dirty, width, height)
 	if !ok {
+		perftrace.Count("render.body.canvas.overlap.changed_entries", changed)
+		perftrace.Count("render.body.canvas.overlap_dirty.miss.invalid_rect", 0)
 		return workbench.Rect{}, false
 	}
+	perftrace.Count("render.body.canvas.overlap.changed_entries", changed)
+	perftrace.Count("render.body.canvas.overlap.changed_area", dirty.W*dirty.H)
 	if dirty.W*dirty.H >= canvasArea*9/10 {
+		perftrace.Count("render.body.canvas.overlap_dirty.miss.area_too_large", 0)
 		return workbench.Rect{}, false
 	}
-	return dirty, changed > 0
+	return dirty, true
+}
+
+func dirtyInteriorRows(entry paneRenderEntry, dirty workbench.Rect) (int, int, bool) {
+	interior := interiorRectForEntry(entry)
+	intersection, ok := intersectRects(interior, dirty)
+	if !ok {
+		return 0, 0, false
+	}
+	startRow := intersection.Y - interior.Y
+	endRow := startRow + intersection.H - 1
+	return startRow, endRow, true
+}
+
+func intersectRects(a, b workbench.Rect) (workbench.Rect, bool) {
+	x1 := maxInt(a.X, b.X)
+	y1 := maxInt(a.Y, b.Y)
+	x2 := minInt(a.X+a.W, b.X+b.W)
+	y2 := minInt(a.Y+a.H, b.Y+b.H)
+	if x1 >= x2 || y1 >= y2 {
+		return workbench.Rect{}, false
+	}
+	return workbench.Rect{X: x1, Y: y1, W: x2 - x1, H: y2 - y1}, true
 }
 
 func unionRects(a, b workbench.Rect) workbench.Rect {

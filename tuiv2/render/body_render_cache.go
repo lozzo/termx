@@ -201,6 +201,8 @@ func applyIncrementalPaneSpriteRows(canvas *composedCanvas, resolved resolvedPan
 		return paneContentSpriteDelta{}
 	}
 	if plan, ok := detectTerminalWindowScroll(previous, next); ok {
+		perftrace.Count("render.pane_content_sprite.incremental.scroll_hit", 1)
+		perftrace.Count("render.pane_content_sprite.incremental.scroll_shift", plan.shift)
 		switch plan.direction {
 		case terminalWindowScrollUp:
 			canvas.shiftRowsUp(plan.shift)
@@ -238,6 +240,9 @@ func applyIncrementalPaneSpriteRows(canvas *composedCanvas, resolved resolvedPan
 		}
 		drawPaneContentSpriteRow(canvas, resolved.contentRect, resolved.source, rowIndex, targetY, theme)
 		delta.changedRows = append(delta.changedRows, line)
+	}
+	if len(delta.changedRows) > 0 {
+		perftrace.Count("render.pane_content_sprite.incremental.row_redraw_rows", len(delta.changedRows))
 	}
 	return delta
 }
@@ -321,6 +326,46 @@ func (c *bodyRenderCache) applySpriteDeltaToCanvas(canvas *composedCanvas, entry
 		applied := false
 		for _, line := range cached.delta.changedRows {
 			if line < 0 || line >= interior.H {
+				continue
+			}
+			canvas.blitRowFrom(cached.canvas, line, interior.X, interior.Y+line, interior.W)
+			applied = true
+		}
+		return applied
+	}
+}
+
+func (c *bodyRenderCache) applySpriteDeltaToCanvasRows(canvas *composedCanvas, entry paneRenderEntry, startRow, endRow int) bool {
+	if c == nil || canvas == nil || entry.CopyModeActive || entry.TerminalID == "" || entry.ContentKey.State == "exited" {
+		return false
+	}
+	cached := c.contentSprites[entry.PaneID]
+	if cached == nil || cached.canvas == nil || cached.delta.full {
+		return false
+	}
+	interior := interiorRectForEntry(entry)
+	if interior.W <= 0 || interior.H <= 0 {
+		return false
+	}
+	if startRow < 0 {
+		startRow = 0
+	}
+	if endRow >= interior.H {
+		endRow = interior.H - 1
+	}
+	if startRow > endRow {
+		return false
+	}
+	switch cached.delta.scrollPlan.direction {
+	case terminalWindowScrollUp, terminalWindowScrollDown:
+		if startRow != 0 || endRow != interior.H-1 {
+			return false
+		}
+		return c.applySpriteDeltaToCanvas(canvas, entry)
+	default:
+		applied := false
+		for _, line := range cached.delta.changedRows {
+			if line < startRow || line > endRow {
 				continue
 			}
 			canvas.blitRowFrom(cached.canvas, line, interior.X, interior.Y+line, interior.W)
