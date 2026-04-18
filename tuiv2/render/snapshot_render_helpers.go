@@ -128,13 +128,16 @@ func drawTerminalSourceRowInRectCleared(canvas *composedCanvas, rect workbench.R
 }
 
 func drawTerminalExtentHintsRow(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, targetY int, theme uiTheme) {
+	drawTerminalExtentHintsRowWithMetrics(canvas, rect, source, targetY, theme, terminalMetricsForSource(source))
+}
+
+func drawTerminalExtentHintsRowWithMetrics(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, targetY int, theme uiTheme, metrics renderTerminalMetrics) {
 	if canvas == nil || source == nil || rect.W <= 0 || rect.H <= 0 {
 		return
 	}
 	if targetY < rect.Y || targetY >= rect.Y+rect.H {
 		return
 	}
-	metrics := terminalMetricsForSource(source)
 	if metrics.Cols <= 0 || metrics.Rows <= 0 {
 		return
 	}

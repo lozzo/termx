@@ -433,6 +433,10 @@ func fnvMixString(hash uint64, value string) uint64 {
 }
 
 func drawPaneContentSpriteRow(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, rowIndex int, targetY int, theme uiTheme) {
+	drawPaneContentSpriteRowWithMetrics(canvas, nil, rect, source, rowIndex, targetY, theme, terminalMetricsForSource(source))
+}
+
+func drawPaneContentSpriteRowWithMetrics(canvas, scratch *composedCanvas, rect workbench.Rect, source terminalRenderSource, rowIndex int, targetY int, theme uiTheme, metrics renderTerminalMetrics) {
 	if canvas == nil || rect.W <= 0 || targetY < rect.Y || targetY >= rect.Y+rect.H {
 		return
 	}
@@ -443,19 +447,20 @@ func drawPaneContentSpriteRow(canvas *composedCanvas, rect workbench.Rect, sourc
 	if rowIndex >= 0 {
 		drawTerminalSourceRowInRectCleared(canvas, rect, source, rowIndex, targetY, theme)
 	}
-	drawTerminalExtentHintsRow(canvas, rect, source, targetY, theme)
+	drawTerminalExtentHintsRowWithMetrics(canvas, rect, source, targetY, theme, metrics)
 }
 
 func drawPaneContentSpriteRowDiff(canvas, scratch *composedCanvas, rect workbench.Rect, source terminalRenderSource, rowIndex int, targetY int, theme uiTheme) {
 	if canvas == nil || scratch == nil || rect.W <= 0 || targetY < rect.Y || targetY >= rect.Y+rect.H {
 		return
 	}
+	metrics := terminalMetricsForSource(source)
 	scratch.resetToBlank()
 	scratchRect := workbench.Rect{X: 0, Y: 0, W: rect.W, H: 1}
 	if source != nil && rowIndex >= 0 {
 		drawTerminalSourceRowInRectCleared(scratch, scratchRect, source, rowIndex, 0, theme)
 	}
-	drawTerminalExtentHintsRow(scratch, scratchRect, source, 0, theme)
+	drawTerminalExtentHintsRowWithMetrics(scratch, scratchRect, source, 0, theme, metrics)
 
 	dstRow := canvas.cells[targetY]
 	srcRow := scratch.cells[0]
