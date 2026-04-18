@@ -339,6 +339,9 @@ func terminalSourceExtentHash(source terminalRenderSource, rect workbench.Rect, 
 
 func terminalSourceRowHash(source terminalRenderSource, rowIndex int) uint64 {
 	perftrace.Count("render.row_hash", 1)
+	if hashSource, ok := source.(terminalRowHashSource); ok {
+		return hashSource.RowHash(rowIndex)
+	}
 	hash := fnvOffset64
 	hash = fnvMixUint64(hash, uint64(rowIndex+1))
 	if source == nil || rowIndex < 0 {

@@ -22,6 +22,10 @@ type terminalRenderSource interface {
 	RowKind(rowIndex int) string
 }
 
+type terminalRowHashSource interface {
+	RowHash(rowIndex int) uint64
+}
+
 type snapshotRenderSource struct {
 	snapshot *protocol.Snapshot
 }
@@ -81,6 +85,36 @@ func (s snapshotRenderSource) RowKind(rowIndex int) string {
 	return snapshotRowKind(s.snapshot, rowIndex)
 }
 
+func (s snapshotRenderSource) RowHash(rowIndex int) uint64 {
+	hash := fnvOffset64
+	hash = fnvMixUint64(hash, uint64(rowIndex+1))
+	if s.snapshot == nil || rowIndex < 0 {
+		return fnvMixUint64(hash, 0)
+	}
+	kind := snapshotRowKind(s.snapshot, rowIndex)
+	hash = fnvMixString(hash, kind)
+	ts := snapshotRowTimestamp(s.snapshot, rowIndex)
+	hash = fnvMixInt64(hash, ts.UnixNano())
+	if kind != "" || !ts.IsZero() {
+		return hash
+	}
+	row := snapshotRow(s.snapshot, rowIndex)
+	hash = fnvMixUint64(hash, uint64(len(row)))
+	for _, cell := range row {
+		hash = fnvMixString(hash, cell.Content)
+		hash = fnvMixInt64(hash, int64(cell.Width))
+		hash = fnvMixString(hash, cell.Style.FG)
+		hash = fnvMixString(hash, cell.Style.BG)
+		hash = fnvMixBool(hash, cell.Style.Bold)
+		hash = fnvMixBool(hash, cell.Style.Italic)
+		hash = fnvMixBool(hash, cell.Style.Underline)
+		hash = fnvMixBool(hash, cell.Style.Blink)
+		hash = fnvMixBool(hash, cell.Style.Reverse)
+		hash = fnvMixBool(hash, cell.Style.Strikethrough)
+	}
+	return hash
+}
+
 func (s surfaceRenderSource) Size() protocol.Size { return s.surface.Size() }
 
 func (s surfaceRenderSource) Cursor() protocol.CursorState { return s.surface.Cursor() }
@@ -102,6 +136,39 @@ func (s surfaceRenderSource) RowTimestamp(rowIndex int) time.Time {
 }
 
 func (s surfaceRenderSource) RowKind(rowIndex int) string { return s.surface.RowKind(rowIndex) }
+
+func (s surfaceRenderSource) RowHash(rowIndex int) uint64 {
+	if source, ok := s.surface.(interface{ RowHash(int) uint64 }); ok {
+		return source.RowHash(rowIndex)
+	}
+	hash := fnvOffset64
+	hash = fnvMixUint64(hash, uint64(rowIndex+1))
+	if s.surface == nil || rowIndex < 0 {
+		return fnvMixUint64(hash, 0)
+	}
+	kind := s.surface.RowKind(rowIndex)
+	hash = fnvMixString(hash, kind)
+	ts := s.surface.RowTimestamp(rowIndex)
+	hash = fnvMixInt64(hash, ts.UnixNano())
+	if kind != "" || !ts.IsZero() {
+		return hash
+	}
+	row := s.surface.Row(rowIndex)
+	hash = fnvMixUint64(hash, uint64(len(row)))
+	for _, cell := range row {
+		hash = fnvMixString(hash, cell.Content)
+		hash = fnvMixInt64(hash, int64(cell.Width))
+		hash = fnvMixString(hash, cell.Style.FG)
+		hash = fnvMixString(hash, cell.Style.BG)
+		hash = fnvMixBool(hash, cell.Style.Bold)
+		hash = fnvMixBool(hash, cell.Style.Italic)
+		hash = fnvMixBool(hash, cell.Style.Underline)
+		hash = fnvMixBool(hash, cell.Style.Blink)
+		hash = fnvMixBool(hash, cell.Style.Reverse)
+		hash = fnvMixBool(hash, cell.Style.Strikethrough)
+	}
+	return hash
+}
 
 func terminalMetricsForSource(source terminalRenderSource) renderTerminalMetrics {
 	if source == nil {

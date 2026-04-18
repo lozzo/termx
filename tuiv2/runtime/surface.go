@@ -128,6 +128,46 @@ func (s vtermSurface) RowKind(rowIndex int) string {
 	return s.source.ScreenRowKindAt(rowIndex)
 }
 
+func (s vtermSurface) RowHash(rowIndex int) uint64 {
+	hash := surfaceRowHashOffset64
+	hash = surfaceRowHashMixUint64(hash, uint64(rowIndex+1))
+	if rowIndex < 0 {
+		return hash
+	}
+	kind := s.RowKind(rowIndex)
+	hash = surfaceRowHashMixString(hash, kind)
+	ts := s.RowTimestamp(rowIndex)
+	hash = surfaceRowHashMixInt64(hash, ts.UnixNano())
+	if kind != "" || !ts.IsZero() {
+		return hash
+	}
+	var row []localvterm.Cell
+	switch {
+	case rowIndex < s.ScrollbackRows():
+		row = s.source.ScrollbackRowView(rowIndex)
+	default:
+		rowIndex -= s.ScrollbackRows()
+		if rowIndex < 0 || rowIndex >= s.ScreenRows() {
+			return hash
+		}
+		row = s.source.ScreenRowView(rowIndex)
+	}
+	hash = surfaceRowHashMixUint64(hash, uint64(len(row)))
+	for _, cell := range row {
+		hash = surfaceRowHashMixString(hash, cell.Content)
+		hash = surfaceRowHashMixInt64(hash, int64(cell.Width))
+		hash = surfaceRowHashMixString(hash, cell.Style.FG)
+		hash = surfaceRowHashMixString(hash, cell.Style.BG)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Bold)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Italic)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Underline)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Blink)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Reverse)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Strikethrough)
+	}
+	return hash
+}
+
 func protocolCellsFromVTermRow(row []localvterm.Cell) []protocol.Cell {
 	if len(row) == 0 {
 		return nil
@@ -137,6 +177,37 @@ func protocolCellsFromVTermRow(row []localvterm.Cell) []protocol.Cell {
 		out[i] = protocolCellFromVTermCell(cell)
 	}
 	return out
+}
+
+const (
+	surfaceRowHashOffset64 = uint64(14695981039346656037)
+	surfaceRowHashPrime64  = uint64(1099511628211)
+)
+
+func surfaceRowHashMixUint64(hash uint64, value uint64) uint64 {
+	hash ^= value
+	hash *= surfaceRowHashPrime64
+	return hash
+}
+
+func surfaceRowHashMixInt64(hash uint64, value int64) uint64 {
+	return surfaceRowHashMixUint64(hash, uint64(value))
+}
+
+func surfaceRowHashMixBool(hash uint64, value bool) uint64 {
+	if value {
+		return surfaceRowHashMixUint64(hash, 1)
+	}
+	return surfaceRowHashMixUint64(hash, 0)
+}
+
+func surfaceRowHashMixString(hash uint64, value string) uint64 {
+	hash = surfaceRowHashMixUint64(hash, uint64(len(value)))
+	for i := 0; i < len(value); i++ {
+		hash ^= uint64(value[i])
+		hash *= surfaceRowHashPrime64
+	}
+	return hash
 }
 
 func syncSurfaceScrollbackState(terminal *TerminalRuntime) {
