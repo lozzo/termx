@@ -317,6 +317,57 @@ func TestRuntimeScreenUpdateAlsoRefreshesLocalVTermSurface(t *testing.T) {
 	}
 }
 
+func TestRuntimeScreenUpdateUsesIncrementalVTermApplyWhenSupported(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+
+	var counted *incrementalCountingVTerm
+	rt := New(client, WithVTermFactory(func(channel uint16) VTermLike {
+		counted = &incrementalCountingVTerm{VTerm: localvterm.New(80, 24, 10000, nil)}
+		return counted
+	}))
+	terminal, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator")
+	if err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if terminal == nil {
+		t.Fatal("expected terminal")
+	}
+	if counted == nil {
+		t.Fatal("expected incremental counting vterm")
+	}
+
+	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 80, Rows: 24},
+		ChangedRows: []protocol.ScreenRowUpdate{{
+			Row: 0,
+			Cells: []protocol.Cell{
+				{Content: "o", Width: 1},
+				{Content: "k", Width: 1},
+			},
+			Timestamp: time.Date(2026, 4, 18, 9, 0, 0, 0, time.UTC),
+		}},
+		Cursor: protocol.CursorState{Row: 0, Col: 2, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode update: %v", err)
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+
+	if got := counted.partialCalls.Load(); got == 0 {
+		t.Fatalf("expected incremental apply path, got partialCalls=%d", got)
+	}
+	if got := counted.fullLoadCalls.Load(); got != 0 {
+		t.Fatalf("expected incremental apply to avoid full snapshot reload, got fullLoadCalls=%d", got)
+	}
+	if terminal.VTerm == nil || !vtermContains(terminal.VTerm, "ok") {
+		t.Fatalf("expected local vterm to receive incremental structured update, got %#v", terminal.VTerm)
+	}
+}
+
 func TestRuntimeStartStreamCoalescesBurstOutputFrames(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1359,6 +1410,28 @@ func (v *countingVTerm) Write(data []byte) (int, error) {
 	}
 	v.writeCalls.Add(1)
 	return v.VTermLike.Write(data)
+}
+
+type incrementalCountingVTerm struct {
+	*localvterm.VTerm
+	partialCalls  atomic.Int32
+	fullLoadCalls atomic.Int32
+}
+
+func (v *incrementalCountingVTerm) ApplyScreenUpdate(update protocol.ScreenUpdate) bool {
+	if v == nil || v.VTerm == nil {
+		return false
+	}
+	v.partialCalls.Add(1)
+	return v.VTerm.ApplyScreenUpdate(update)
+}
+
+func (v *incrementalCountingVTerm) LoadSnapshotWithMetadata(scrollback [][]localvterm.Cell, scrollbackTimestamps []time.Time, scrollbackRowKinds []string, screen localvterm.ScreenData, screenTimestamps []time.Time, screenRowKinds []string, cursor localvterm.CursorState, modes localvterm.TerminalModes) {
+	if v == nil || v.VTerm == nil {
+		return
+	}
+	v.fullLoadCalls.Add(1)
+	v.VTerm.LoadSnapshotWithMetadata(scrollback, scrollbackTimestamps, scrollbackRowKinds, screen, screenTimestamps, screenRowKinds, cursor, modes)
 }
 
 type countingSnapshotVTerm struct {

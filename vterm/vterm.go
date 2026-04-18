@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	charmvt "github.com/charmbracelet/x/vt"
 	"github.com/lozzow/termx/perftrace"
+	"github.com/lozzow/termx/protocol"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -382,6 +383,83 @@ func (v *VTerm) LoadSnapshotWithMetadata(scrollback [][]Cell, scrollbackTimestam
 		_, _ = v.emu.Write([]byte(fmt.Sprintf("\x1b[%d;%dH", cursor.Row+1, cursor.Col+1)))
 	}
 	v.invalidateRowCachesLocked()
+}
+
+func (v *VTerm) ApplyScreenUpdate(update protocol.ScreenUpdate) bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.applyScreenUpdateLocked(update)
+}
+
+func (v *VTerm) applyScreenUpdateLocked(update protocol.ScreenUpdate) bool {
+	if !v.canApplyScreenUpdateLocked(update) {
+		return false
+	}
+
+	var b strings.Builder
+	for _, row := range update.ChangedRows {
+		writeAbsoluteProtocolRowSnapshot(&b, row.Row, row.Cells)
+	}
+
+	modes := terminalModesFromProtocol(update.Modes)
+	cursor := cursorStateFromProtocol(update.Cursor)
+	writeTerminalModesANSI(&b, modes)
+	writeCursorShapeANSI(&b, cursor)
+	if cursor.Row >= 0 && cursor.Col >= 0 {
+		fmt.Fprintf(&b, "\x1b[%d;%dH", cursor.Row+1, cursor.Col+1)
+	}
+	if cursor.Visible {
+		b.WriteString("\x1b[?25h")
+	} else {
+		b.WriteString("\x1b[?25l")
+	}
+
+	if b.Len() > 0 {
+		if _, err := safeEmulatorWrite(v.emu, []byte(b.String())); err != nil {
+			return false
+		}
+	}
+
+	height := v.emu.Height()
+	v.screenTimestamps = normalizeTimeSlice(v.screenTimestamps, height)
+	v.screenRowKinds = normalizeStringSlice(v.screenRowKinds, height)
+	for _, row := range update.ChangedRows {
+		if row.Row < 0 || row.Row >= height {
+			continue
+		}
+		v.screenTimestamps[row.Row] = row.Timestamp
+		v.screenRowKinds[row.Row] = row.RowKind
+	}
+	v.cursor = cursor
+	v.modes = modes
+	v.loadMouseModesLocked(modes)
+	v.invalidateRowCachesLocked()
+	return true
+}
+
+func (v *VTerm) canApplyScreenUpdateLocked(update protocol.ScreenUpdate) bool {
+	if v == nil || v.emu == nil || update.FullReplace {
+		return false
+	}
+	if update.ResetScrollback || update.ScrollbackTrim > 0 || len(update.ScrollbackAppend) > 0 {
+		return false
+	}
+	width, height := v.emu.Width(), v.emu.Height()
+	if update.Size.Cols > 0 && int(update.Size.Cols) != width {
+		return false
+	}
+	if update.Size.Rows > 0 && int(update.Size.Rows) != height {
+		return false
+	}
+	if v.emu.IsAltScreen() != update.Modes.AlternateScreen {
+		return false
+	}
+	for _, row := range update.ChangedRows {
+		if row.Row < 0 || row.Row >= height {
+			return false
+		}
+	}
+	return true
 }
 
 func (v *VTerm) Resize(cols, rows int) {
@@ -811,6 +889,26 @@ func writeSequentialRow(b *strings.Builder, row []Cell) {
 	b.WriteString("\x1b[0m")
 }
 
+func writeAbsoluteProtocolRowSnapshot(b *strings.Builder, y int, row []protocol.Cell) {
+	if b == nil || y < 0 {
+		return
+	}
+	fmt.Fprintf(b, "\x1b[%d;1H\x1b[2K", y+1)
+	for x, cell := range row {
+		if cell.Content == "" && cell.Width == 0 {
+			continue
+		}
+		content := cell.Content
+		if content == "" {
+			content = " "
+		}
+		fmt.Fprintf(b, "\x1b[%d;%dH", y+1, x+1)
+		b.WriteString(cellStyleANSI(cellStyleFromProtocol(cell.Style)))
+		b.WriteString(content)
+	}
+	b.WriteString("\x1b[0m")
+}
+
 func writeTerminalModesANSI(b *strings.Builder, modes TerminalModes) {
 	if b == nil {
 		return
@@ -1067,6 +1165,45 @@ func colorToString(c color.Color) string {
 	}
 	r, g, b, _ := c.RGBA()
 	return fmt.Sprintf("#%02x%02x%02x", uint8(r>>8), uint8(g>>8), uint8(b>>8))
+}
+
+func cursorStateFromProtocol(cursor protocol.CursorState) CursorState {
+	return CursorState{
+		Row:     cursor.Row,
+		Col:     cursor.Col,
+		Visible: cursor.Visible,
+		Shape:   CursorShape(cursor.Shape),
+		Blink:   cursor.Blink,
+	}
+}
+
+func terminalModesFromProtocol(modes protocol.TerminalModes) TerminalModes {
+	return TerminalModes{
+		AlternateScreen:   modes.AlternateScreen,
+		AlternateScroll:   modes.AlternateScroll,
+		MouseTracking:     modes.MouseTracking,
+		MouseX10:          modes.MouseX10,
+		MouseNormal:       modes.MouseNormal,
+		MouseButtonEvent:  modes.MouseButtonEvent,
+		MouseAnyEvent:     modes.MouseAnyEvent,
+		MouseSGR:          modes.MouseSGR,
+		BracketedPaste:    modes.BracketedPaste,
+		ApplicationCursor: modes.ApplicationCursor,
+		AutoWrap:          modes.AutoWrap,
+	}
+}
+
+func cellStyleFromProtocol(style protocol.CellStyle) CellStyle {
+	return CellStyle{
+		FG:            style.FG,
+		BG:            style.BG,
+		Bold:          style.Bold,
+		Italic:        style.Italic,
+		Underline:     style.Underline,
+		Blink:         style.Blink,
+		Reverse:       style.Reverse,
+		Strikethrough: style.Strikethrough,
+	}
 }
 
 func normalizeColorString(value string) string {

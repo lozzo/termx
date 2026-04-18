@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/lozzow/termx/protocol"
 )
 
 func TestLoadSnapshotRestoresScreenAndCursor(t *testing.T) {
@@ -465,5 +467,86 @@ func TestLoadSnapshotRestoresAlternateScrollMode(t *testing.T) {
 
 	if !vt.Modes().AlternateScroll {
 		t.Fatal("expected snapshot restore to preserve alternate scroll")
+	}
+}
+
+func TestApplyScreenUpdateUpdatesChangedRowsInPlace(t *testing.T) {
+	vt := New(6, 3, 100, nil)
+	now := time.Date(2026, 4, 18, 8, 0, 0, 0, time.UTC)
+	vt.LoadSnapshotWithMetadata(nil, nil, nil, ScreenData{
+		Cells: [][]Cell{
+			{
+				{Content: "o", Width: 1},
+				{Content: "l", Width: 1},
+				{Content: "d", Width: 1},
+				{Content: " ", Width: 1},
+			},
+			{
+				{Content: "r", Width: 1},
+				{Content: "o", Width: 1},
+				{Content: "w", Width: 1},
+				{Content: " ", Width: 1},
+			},
+		},
+		IsAlternateScreen: true,
+	}, []time.Time{now, now}, []string{"old-0", "old-1"}, CursorState{Row: 1, Col: 3, Visible: true}, TerminalModes{AlternateScreen: true, AutoWrap: true})
+
+	oldEmu := vt.emu
+	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 4, Rows: 2},
+		ChangedRows: []protocol.ScreenRowUpdate{{
+			Row: 1,
+			Cells: []protocol.Cell{
+				{Content: "n", Width: 1},
+				{Content: "e", Width: 1},
+				{Content: "w", Width: 1},
+				{Content: "!", Width: 1},
+			},
+			Timestamp: now.Add(time.Second),
+			RowKind:   "new-1",
+		}},
+		Cursor: protocol.CursorState{Row: 1, Col: 4, Visible: true, Shape: "bar"},
+		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+	}) {
+		t.Fatal("expected incremental screen update to apply")
+	}
+
+	if vt.emu != oldEmu {
+		t.Fatal("expected incremental apply to keep the existing emulator instance")
+	}
+	screen := vt.ScreenContent()
+	if got := screen.Cells[1][0].Content + screen.Cells[1][1].Content + screen.Cells[1][2].Content + screen.Cells[1][3].Content; got != "new!" {
+		t.Fatalf("expected updated row content, got %q", got)
+	}
+	if got := vt.ScreenRowTimestampAt(1); !got.Equal(now.Add(time.Second)) {
+		t.Fatalf("expected updated row timestamp, got %v", got)
+	}
+	if got := vt.ScreenRowKindAt(1); got != "new-1" {
+		t.Fatalf("expected updated row kind, got %q", got)
+	}
+	if cursor := vt.CursorState(); cursor.Row != 1 || cursor.Col != 4 || cursor.Shape != CursorBar {
+		t.Fatalf("expected updated cursor, got %#v", cursor)
+	}
+}
+
+func TestApplyScreenUpdateRejectsUnsupportedScrollbackMutation(t *testing.T) {
+	vt := New(6, 3, 100, nil)
+	vt.LoadSnapshotWithScrollback([][]Cell{{{Content: "o", Width: 1}}}, ScreenData{
+		Cells: [][]Cell{{
+			{Content: "n", Width: 1},
+		}},
+	}, CursorState{Row: 0, Col: 1, Visible: true}, TerminalModes{AutoWrap: true})
+
+	oldEmu := vt.emu
+	if vt.ApplyScreenUpdate(protocol.ScreenUpdate{
+		Size:           protocol.Size{Cols: 1, Rows: 1},
+		ScrollbackTrim: 1,
+		Cursor:         protocol.CursorState{Row: 0, Col: 1, Visible: true},
+		Modes:          protocol.TerminalModes{AutoWrap: true},
+	}) {
+		t.Fatal("expected scrollback mutation to fall back instead of partial apply")
+	}
+	if vt.emu != oldEmu {
+		t.Fatal("expected rejected partial apply to leave emulator untouched")
 	}
 }

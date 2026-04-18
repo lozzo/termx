@@ -30,6 +30,10 @@ const (
 	remoteSynchronizedOutputWaitBudget = 1500 * time.Microsecond
 )
 
+type screenUpdateApplier interface {
+	ApplyScreenUpdate(update protocol.ScreenUpdate) bool
+}
+
 func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 	if r == nil || r.client == nil {
 		return shared.UserVisibleError{Op: "start terminal stream", Err: fmt.Errorf("runtime client is nil")}
@@ -335,9 +339,19 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 		snapshotApplyFinish(0)
 		vt := r.ensureVTerm(terminal)
 		if vt != nil && terminal.Snapshot != nil {
-			loadFinish := perftrace.Measure("runtime.stream.screen_update.load_vterm_full")
-			loadSnapshotIntoVTerm(vt, terminal.Snapshot)
-			loadFinish(0)
+			appliedPartial := false
+			if !update.FullReplace {
+				if applier, ok := vt.(screenUpdateApplier); ok {
+					loadFinish := perftrace.Measure("runtime.stream.screen_update.load_vterm_partial")
+					appliedPartial = applier.ApplyScreenUpdate(update)
+					loadFinish(0)
+				}
+			}
+			if !appliedPartial {
+				loadFinish := perftrace.Measure("runtime.stream.screen_update.load_vterm_full")
+				loadSnapshotIntoVTerm(vt, terminal.Snapshot)
+				loadFinish(0)
+			}
 			terminal.PreferSnapshot = false
 			invalidateFinish := perftrace.Measure("runtime.stream.screen_update.invalidate")
 			r.bumpSurfaceVersion(terminal)
