@@ -476,6 +476,43 @@ func (c *composedCanvas) drawProtocolRowInRect(rect workbench.Rect, targetY int,
 	}
 }
 
+func (c *composedCanvas) drawProtocolRowInRectCleared(rect workbench.Rect, targetY int, row []protocol.Cell) {
+	if c == nil || rect.W <= 0 || targetY < 0 || targetY >= c.height || rect.X < 0 || rect.X >= c.width {
+		return
+	}
+	limit := minInt(rect.W, len(row))
+	rowCells := c.cells[targetY]
+	for x := 0; x < limit; x++ {
+		cell := drawCellFromProtocolCell(row[x])
+		if cell.Continuation {
+			continue
+		}
+		if x+cell.Width > rect.W {
+			continue
+		}
+		if cell.Content == "" {
+			cell.Content = " "
+			cell.Width = 1
+		}
+		targetX := rect.X + x
+		if targetX < 0 || targetX >= c.width {
+			continue
+		}
+		rowCells[targetX] = cell
+		for i := 1; i < cell.Width && targetX+i < c.width; i++ {
+			rowCells[targetX+i] = drawCell{Continuation: true}
+		}
+		if isAmbiguousEmojiVariationSelectorCluster(cell.Content, cell.Width) && targetX+1 < c.width {
+			rowCells[targetX+1] = drawCell{
+				Content:               " ",
+				Width:                 1,
+				Style:                 cell.Style,
+				AmbiguousCompensation: true,
+			}
+		}
+	}
+}
+
 func (c *composedCanvas) materializeRawAmbiguousContinuation(x, y int, cell drawCell) {
 	if c == nil {
 		return

@@ -411,7 +411,7 @@ func drawPaneContentSpriteRow(canvas *composedCanvas, rect workbench.Rect, sourc
 		return
 	}
 	if rowIndex >= 0 {
-		drawTerminalSourceRowInRect(canvas, rect, source, rowIndex, targetY, theme)
+		drawTerminalSourceRowInRectCleared(canvas, rect, source, rowIndex, targetY, theme)
 	}
 	drawTerminalExtentHintsRow(canvas, rect, source, targetY, theme)
 }

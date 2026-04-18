@@ -83,7 +83,7 @@ func drawTerminalSourceInRect(canvas *composedCanvas, rect workbench.Rect, sourc
 	}
 	base := source.ScrollbackRows()
 	for y := 0; y < rect.H && y < source.ScreenRows(); y++ {
-		canvas.drawProtocolRowInRect(rect, rect.Y+y, source.Row(base+y))
+		canvas.drawProtocolRowInRectCleared(rect, rect.Y+y, source.Row(base+y))
 	}
 }
 
@@ -97,6 +97,18 @@ func drawTerminalSourceRowInRect(canvas *composedCanvas, rect workbench.Rect, so
 		}
 	}
 	canvas.drawProtocolRowInRect(rect, targetY, source.Row(rowIndex))
+}
+
+func drawTerminalSourceRowInRectCleared(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, rowIndex int, targetY int, theme uiTheme) {
+	if source == nil {
+		return
+	}
+	if kind := source.RowKind(rowIndex); kind != "" {
+		if drawSnapshotMarkerRow(canvas, rect, targetY, kind, source.RowTimestamp(rowIndex), theme) {
+			return
+		}
+	}
+	canvas.drawProtocolRowInRectCleared(rect, targetY, source.Row(rowIndex))
 }
 
 func drawTerminalExtentHintsRow(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, targetY int, theme uiTheme) {
