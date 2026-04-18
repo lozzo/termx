@@ -253,28 +253,60 @@ func detectTerminalWindowScroll(previous, next terminalSourceWindowState) (termi
 	}
 	height := len(next.rowHashes)
 	for shift := 1; shift < height; shift++ {
-		scrollUp := true
-		for line := 0; line+shift < height; line++ {
-			if previous.rowIndices[line+shift] != next.rowIndices[line] || previous.rowHashes[line+shift] != next.rowHashes[line] {
-				scrollUp = false
-				break
-			}
-		}
-		if scrollUp {
+		if terminalWindowMatchesScrollUp(previous, next, shift) {
 			return terminalWindowScrollPlan{direction: terminalWindowScrollUp, shift: shift}, true
 		}
-		scrollDown := true
-		for line := 0; line+shift < height; line++ {
-			if previous.rowIndices[line] != next.rowIndices[line+shift] || previous.rowHashes[line] != next.rowHashes[line+shift] {
-				scrollDown = false
-				break
-			}
-		}
-		if scrollDown {
+		if terminalWindowMatchesScrollDown(previous, next, shift) {
 			return terminalWindowScrollPlan{direction: terminalWindowScrollDown, shift: shift}, true
 		}
 	}
 	return terminalWindowScrollPlan{}, false
+}
+
+func terminalWindowMatchesScrollUp(previous, next terminalSourceWindowState, shift int) bool {
+	height := len(next.rowHashes)
+	scrollUp := true
+	for line := 0; line+shift < height; line++ {
+		if previous.rowIndices[line+shift] != next.rowIndices[line] || previous.rowHashes[line+shift] != next.rowHashes[line] {
+			scrollUp = false
+			break
+		}
+	}
+	if scrollUp {
+		return true
+	}
+	if !previous.screenWindow || !next.screenWindow {
+		return false
+	}
+	for line := 0; line+shift < height; line++ {
+		if previous.rowScrollHashes[line+shift] != next.rowScrollHashes[line] {
+			return false
+		}
+	}
+	return true
+}
+
+func terminalWindowMatchesScrollDown(previous, next terminalSourceWindowState, shift int) bool {
+	height := len(next.rowHashes)
+	scrollDown := true
+	for line := 0; line+shift < height; line++ {
+		if previous.rowIndices[line] != next.rowIndices[line+shift] || previous.rowHashes[line] != next.rowHashes[line+shift] {
+			scrollDown = false
+			break
+		}
+	}
+	if scrollDown {
+		return true
+	}
+	if !previous.screenWindow || !next.screenWindow {
+		return false
+	}
+	for line := 0; line+shift < height; line++ {
+		if previous.rowScrollHashes[line] != next.rowScrollHashes[line+shift] {
+			return false
+		}
+	}
+	return true
 }
 
 func (d paneContentSpriteDelta) changedRowCount() int {

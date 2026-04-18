@@ -22,9 +22,11 @@ type resolvedPaneContent struct {
 }
 
 type terminalSourceWindowState struct {
-	rowIndices  []int
-	rowHashes   []uint64
-	contentHash uint64
+	rowIndices      []int
+	rowHashes       []uint64
+	rowScrollHashes []uint64
+	contentHash     uint64
+	screenWindow    bool
 }
 
 // drawPaneContent fills the interior of a pane with terminal snapshot content.
@@ -276,6 +278,7 @@ func buildTerminalSourceWindowState(source terminalRenderSource, height, offset 
 	}
 
 	rowHashes := make([]uint64, height)
+	rowScrollHashes := make([]uint64, height)
 	hash := fnvOffset64
 	hash = fnvMixUint64(hash, uint64(source.Size().Cols))
 	hash = fnvMixUint64(hash, uint64(source.Size().Rows))
@@ -286,12 +289,15 @@ func buildTerminalSourceWindowState(source terminalRenderSource, height, offset 
 	for i, rowIndex := range rowIndices {
 		rowHash := terminalSourceRowHash(source, rowIndex)
 		rowHashes[i] = rowHash
+		rowScrollHashes[i] = terminalSourceRowScrollHash(source, rowIndex)
 		hash = fnvMixUint64(hash, rowHash)
 	}
 	return terminalSourceWindowState{
-		rowIndices:  rowIndices,
-		rowHashes:   rowHashes,
-		contentHash: hash,
+		rowIndices:      rowIndices,
+		rowHashes:       rowHashes,
+		rowScrollHashes: rowScrollHashes,
+		contentHash:     hash,
+		screenWindow:    offset <= 0,
 	}
 }
 
@@ -354,6 +360,30 @@ func terminalSourceRowHash(source terminalRenderSource, rowIndex int) uint64 {
 	if kind != "" || !ts.IsZero() {
 		return hash
 	}
+	row := source.Row(rowIndex)
+	hash = fnvMixUint64(hash, uint64(len(row)))
+	for _, cell := range row {
+		hash = fnvMixString(hash, cell.Content)
+		hash = fnvMixInt64(hash, int64(cell.Width))
+		hash = fnvMixString(hash, cell.Style.FG)
+		hash = fnvMixString(hash, cell.Style.BG)
+		hash = fnvMixBool(hash, cell.Style.Bold)
+		hash = fnvMixBool(hash, cell.Style.Italic)
+		hash = fnvMixBool(hash, cell.Style.Underline)
+		hash = fnvMixBool(hash, cell.Style.Blink)
+		hash = fnvMixBool(hash, cell.Style.Reverse)
+		hash = fnvMixBool(hash, cell.Style.Strikethrough)
+	}
+	return hash
+}
+
+func terminalSourceRowScrollHash(source terminalRenderSource, rowIndex int) uint64 {
+	hash := fnvOffset64
+	if source == nil || rowIndex < 0 {
+		return fnvMixUint64(hash, 0)
+	}
+	kind := source.RowKind(rowIndex)
+	hash = fnvMixString(hash, kind)
 	row := source.Row(rowIndex)
 	hash = fnvMixUint64(hash, uint64(len(row)))
 	for _, cell := range row {

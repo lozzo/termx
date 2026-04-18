@@ -334,6 +334,78 @@ func TestContentSpriteReusesSpriteForScrollOffsetShift(t *testing.T) {
 	}
 }
 
+func TestContentSpriteReusesSpriteForPhysicalScreenScroll(t *testing.T) {
+	now := time.Date(2026, 4, 18, 9, 0, 0, 0, time.UTC)
+	surface := &spriteTestSurface{
+		size: protocol.Size{Cols: 5, Rows: 4},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("row01"),
+			protocolRowFromText("row02"),
+			protocolRowFromText("row03"),
+			protocolRowFromText("row04"),
+		},
+		screenTimestamps: []time.Time{now, now, now, now},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-1",
+			Name:           "shell",
+			State:          "running",
+			Surface:        surface,
+			SurfaceVersion: 1,
+		}},
+	}
+	entry := paneRenderEntry{
+		PaneID:     "pane-1",
+		Rect:       workbench.Rect{X: 0, Y: 0, W: 5, H: 4},
+		Frameless:  true,
+		TerminalID: "term-1",
+		Theme:      defaultUITheme(),
+		ContentKey: paneContentKey{
+			TerminalID:    "term-1",
+			TerminalKnown: true,
+		},
+	}
+	entry.ContentKey.SurfaceVersion = runtimeState.Terminals[0].SurfaceVersion
+
+	cache := &bodyRenderCache{}
+	sprite := cache.contentSprite(entry, runtimeState)
+	if sprite == nil {
+		t.Fatal("expected initial sprite")
+	}
+
+	surface.screen = [][]protocol.Cell{
+		protocolRowFromText("row02"),
+		protocolRowFromText("row03"),
+		protocolRowFromText("row04"),
+		protocolRowFromText("row05"),
+	}
+	surface.screenTimestamps = []time.Time{
+		now.Add(time.Second),
+		now.Add(2 * time.Second),
+		now.Add(3 * time.Second),
+		now.Add(4 * time.Second),
+	}
+	runtimeState.Terminals[0].SurfaceVersion = 2
+	entry.ContentKey.SurfaceVersion = 2
+
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+	nextSprite := cache.contentSprite(entry, runtimeState)
+	snapshot := perftrace.SnapshotCurrent()
+	event, ok := snapshot.Event("render.pane_content_sprite.incremental.scroll_hit")
+	if !ok || event.Count == 0 {
+		t.Fatalf("expected physical screen scroll to use scroll-hit incremental path, got events=%#v", snapshot.Events)
+	}
+	if nextSprite != sprite {
+		t.Fatal("expected physical screen scroll to reuse sprite canvas")
+	}
+	if got := nextSprite.rawString(); got != "row02\nrow03\nrow04\nrow05" {
+		t.Fatalf("expected screen scroll to shift visible rows and redraw edge row, got %q", got)
+	}
+}
+
 func TestApplySpriteDeltaToCanvasReusesRowsForScrollOffsetShift(t *testing.T) {
 	now := time.Date(2026, 4, 17, 11, 0, 0, 0, time.UTC)
 	surface := &spriteTestSurface{
