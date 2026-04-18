@@ -249,10 +249,20 @@ func TestContentSpriteIgnoresTimestampOnlySurfaceChanges(t *testing.T) {
 	if sprite == nil {
 		t.Fatal("expected initial sprite")
 	}
+	previousWindow := cache.contentSprites[entry.PaneID].window
 
 	surface.screenTimestamps = []time.Time{now.Add(time.Second), now.Add(2 * time.Second)}
 	runtimeState.Terminals[0].SurfaceVersion = 2
 	entry.ContentKey.SurfaceVersion = 2
+
+	resolved := resolvePaneContent(entry, runtimeState, true)
+	nextWindow := buildTerminalSourceWindowState(resolved.source, resolved.contentRect.H, resolved.renderOffset)
+	baseChangedRows := terminalWindowChangedRows(previousWindow, nextWindow, terminalWindowScrollPlan{})
+	if plan, ok := detectTerminalWindowPartialScroll(previousWindow, nextWindow, len(baseChangedRows)); !ok {
+		t.Fatalf("expected planner to find partial scroll plan, baseChanged=%#v prevIdentity=%#v nextIdentity=%#v prevExact=%#v nextExact=%#v", baseChangedRows, previousWindow.rowIdentityHashes, nextWindow.rowIdentityHashes, previousWindow.exactRowHashes, nextWindow.exactRowHashes)
+	} else if plan.direction != terminalWindowScrollUp {
+		t.Fatalf("expected planner to choose scroll up, got %#v", plan)
+	}
 
 	perftrace.Enable()
 	perftrace.Reset()
@@ -521,6 +531,7 @@ func TestContentSpriteReusesSpriteForPartialScrollBand(t *testing.T) {
 	if sprite == nil {
 		t.Fatal("expected initial sprite")
 	}
+	previousWindow := cache.contentSprites[entry.PaneID].window
 
 	surface.screen = [][]protocol.Cell{
 		protocolRowFromText("hdr"),
@@ -544,6 +555,15 @@ func TestContentSpriteReusesSpriteForPartialScrollBand(t *testing.T) {
 	}
 	runtimeState.Terminals[0].SurfaceVersion = 2
 	entry.ContentKey.SurfaceVersion = 2
+
+	resolved := resolvePaneContent(entry, runtimeState, true)
+	nextWindow := buildTerminalSourceWindowState(resolved.source, resolved.contentRect.H, resolved.renderOffset)
+	baseChangedRows := terminalWindowChangedRows(previousWindow, nextWindow, terminalWindowScrollPlan{})
+	if plan, ok := detectTerminalWindowPartialScroll(previousWindow, nextWindow, len(baseChangedRows)); !ok {
+		t.Fatalf("expected planner to find partial scroll plan, baseChanged=%#v prevIdentity=%#v nextIdentity=%#v prevExact=%#v nextExact=%#v", baseChangedRows, previousWindow.rowIdentityHashes, nextWindow.rowIdentityHashes, previousWindow.exactRowHashes, nextWindow.exactRowHashes)
+	} else if plan.direction != terminalWindowScrollUp {
+		t.Fatalf("expected planner to choose scroll up, got %#v", plan)
+	}
 
 	perftrace.Enable()
 	perftrace.Reset()
@@ -584,6 +604,128 @@ func TestContentSpriteReusesSpriteForPartialScrollBand(t *testing.T) {
 	}
 	if got, want := nextSprite.rawString(), fullSprite.rawString(); got != want {
 		t.Fatalf("expected partial-scroll sprite to match full redraw, got %q want %q", got, want)
+	}
+}
+
+func TestContentSpritePartialScrollBandRedrawsReusedRowsWhenExactHashChanges(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 15, 0, 0, time.UTC)
+	surface := &spriteTestSurface{
+		size: protocol.Size{Cols: 3, Rows: 8},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("hdr"),
+			protocolRowFromText("a00"),
+			protocolRowFromText("b00"),
+			protocolRowFromText("c00"),
+			protocolRowFromText("d00"),
+			protocolRowFromText("e00"),
+			protocolRowFromText("f00"),
+			protocolRowFromText("ftr"),
+		},
+		screenTimestamps: []time.Time{
+			now,
+			now.Add(1 * time.Second),
+			now.Add(2 * time.Second),
+			now.Add(3 * time.Second),
+			now.Add(4 * time.Second),
+			now.Add(5 * time.Second),
+			now.Add(6 * time.Second),
+			now.Add(7 * time.Second),
+		},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-1",
+			Name:           "shell",
+			State:          "running",
+			Surface:        surface,
+			SurfaceVersion: 1,
+		}},
+	}
+	entry := paneRenderEntry{
+		PaneID:     "pane-1",
+		Rect:       workbench.Rect{X: 0, Y: 0, W: 3, H: 8},
+		Frameless:  true,
+		TerminalID: "term-1",
+		Theme:      defaultUITheme(),
+		ContentKey: paneContentKey{
+			TerminalID:    "term-1",
+			TerminalKnown: true,
+		},
+	}
+	entry.ContentKey.SurfaceVersion = 1
+
+	cache := &bodyRenderCache{}
+	sprite := cache.contentSprite(entry, runtimeState)
+	if sprite == nil {
+		t.Fatal("expected initial sprite")
+	}
+	previousWindow := cache.contentSprites[entry.PaneID].window
+
+	surface.screen = [][]protocol.Cell{
+		protocolRowFromText("hdr"),
+		protocolRowFromText("b01"),
+		protocolRowFromText("c00"),
+		protocolRowFromText("d00"),
+		protocolRowFromText("e00"),
+		protocolRowFromText("f00"),
+		protocolRowFromText("g00"),
+		protocolRowFromText("ftr"),
+	}
+	surface.screenTimestamps = []time.Time{
+		now,
+		now.Add(2 * time.Second),
+		now.Add(3 * time.Second),
+		now.Add(4 * time.Second),
+		now.Add(5 * time.Second),
+		now.Add(6 * time.Second),
+		now.Add(8 * time.Second),
+		now.Add(7 * time.Second),
+	}
+	runtimeState.Terminals[0].SurfaceVersion = 2
+	entry.ContentKey.SurfaceVersion = 2
+
+	resolved := resolvePaneContent(entry, runtimeState, true)
+	nextWindow := buildTerminalSourceWindowState(resolved.source, resolved.contentRect.H, resolved.renderOffset)
+	baseChangedRows := terminalWindowChangedRows(previousWindow, nextWindow, terminalWindowScrollPlan{})
+	if plan, ok := detectTerminalWindowPartialScroll(previousWindow, nextWindow, len(baseChangedRows)); !ok {
+		t.Fatalf("expected planner to find metadata-driven partial scroll plan, baseChanged=%#v prevIdentity=%#v nextIdentity=%#v prevExact=%#v nextExact=%#v", baseChangedRows, previousWindow.rowIdentityHashes, nextWindow.rowIdentityHashes, previousWindow.exactRowHashes, nextWindow.exactRowHashes)
+	} else if plan.direction != terminalWindowScrollUp {
+		t.Fatalf("expected planner to choose metadata-driven scroll up, got %#v", plan)
+	}
+
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+
+	nextSprite := cache.contentSprite(entry, runtimeState)
+	if nextSprite != sprite {
+		t.Fatal("expected partial scroll band update to reuse the sprite canvas")
+	}
+	cached := cache.contentSprites[entry.PaneID]
+	if cached == nil {
+		t.Fatal("expected cached sprite entry")
+	}
+	if cached.delta.scrollPlan.direction != terminalWindowScrollUp || cached.delta.scrollPlan.wholeWindow(8) {
+		t.Fatalf("expected metadata-driven partial scroll plan, got %#v", cached.delta.scrollPlan)
+	}
+	if got := cached.delta.changedRows; len(got) != 2 || got[0] != 1 || got[1] != 6 {
+		t.Fatalf("expected reused row with exact hash change plus gap row to redraw, got %#v", got)
+	}
+	snapshot := perftrace.SnapshotCurrent()
+	if event, ok := snapshot.Event("render.pane_content_sprite.incremental.partial_scroll_hit"); !ok || event.Count == 0 {
+		t.Fatalf("expected partial scroll perf hit, got events=%#v", snapshot.Events)
+	}
+	if got := nextSprite.rawString(); got != "hdr\nb01\nc00\nd00\ne00\nf00\ng00\nftr" {
+		t.Fatalf("unexpected partial-scroll sprite content: %q", got)
+	}
+
+	fullCache := &bodyRenderCache{}
+	fullSprite := fullCache.contentSprite(entry, runtimeState)
+	if fullSprite == nil {
+		t.Fatal("expected full redraw sprite")
+	}
+	if got, want := nextSprite.rawString(), fullSprite.rawString(); got != want {
+		t.Fatalf("expected metadata-driven partial scroll sprite to match full redraw, got %q want %q", got, want)
 	}
 }
 

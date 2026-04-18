@@ -261,7 +261,7 @@ func applyIncrementalPaneSpriteScrollPlan(canvas, rowScratch *composedCanvas, re
 		perftrace.Count("render.pane_content_sprite.incremental.partial_scroll_hit", 1)
 		perftrace.Count("render.pane_content_sprite.incremental.partial_scroll_shift", plan.shift)
 		perftrace.Count("render.pane_content_sprite.incremental.partial_scroll_reused_rows", plan.reused)
-		perftrace.Count("render.pane_content_sprite.incremental.partial_scroll_residual_redraw_rows", maxInt(0, len(changedRows)-plan.shift))
+		perftrace.Count("render.pane_content_sprite.incremental.partial_scroll_residual_redraw_rows", len(changedRows))
 	}
 
 	return paneContentSpriteDelta{
@@ -308,7 +308,7 @@ func detectTerminalWindowPartialScroll(previous, next terminalSourceWindowState,
 		scanTerminalWindowScrollRuns(previous, next, shift, terminalWindowScrollUp, &best)
 		scanTerminalWindowScrollRuns(previous, next, shift, terminalWindowScrollDown, &best)
 	}
-	if !partialTerminalWindowScrollWorthIt(best, totalChangedRows) {
+	if !partialTerminalWindowScrollWorthIt(previous, next, best, totalChangedRows) {
 		return terminalWindowScrollPlan{}, false
 	}
 	return best, true
@@ -317,6 +317,7 @@ func detectTerminalWindowPartialScroll(previous, next terminalSourceWindowState,
 func compatibleTerminalWindowStates(previous, next terminalSourceWindowState) bool {
 	return len(previous.exactRowHashes) > 0 &&
 		len(previous.exactRowHashes) == len(next.exactRowHashes) &&
+		len(previous.rowContentHashes) == len(next.rowContentHashes) &&
 		len(previous.rowIndices) == len(next.rowIndices) &&
 		len(previous.rowIdentityHashes) == len(next.rowIdentityHashes)
 }
@@ -439,15 +440,15 @@ func betterTerminalWindowScrollPlan(candidate, current terminalWindowScrollPlan)
 	return candidate.direction < current.direction
 }
 
-func partialTerminalWindowScrollWorthIt(plan terminalWindowScrollPlan, totalChangedRows int) bool {
+func partialTerminalWindowScrollWorthIt(previous, next terminalSourceWindowState, plan terminalWindowScrollPlan, totalChangedRows int) bool {
 	if plan.direction == terminalWindowScrollNone || plan.reused < 4 || totalChangedRows <= 0 {
 		return false
 	}
-	residualRedrawRows := totalChangedRows - plan.reused
+	residualRedrawRows := len(terminalWindowChangedRows(previous, next, plan))
 	if residualRedrawRows <= 0 || residualRedrawRows >= totalChangedRows {
 		return false
 	}
-	return residualRedrawRows < plan.reused
+	return totalChangedRows-residualRedrawRows >= 2
 }
 
 func terminalWindowChangedRows(previous, next terminalSourceWindowState, plan terminalWindowScrollPlan) []int {
@@ -456,10 +457,14 @@ func terminalWindowChangedRows(previous, next terminalSourceWindowState, plan te
 	}
 	changedRows := make([]int, 0, len(next.exactRowHashes))
 	for line := range next.exactRowHashes {
-		if previous.exactRowHashes[line] == next.exactRowHashes[line] {
+		if sourceLine, ok := plan.sourceLineFor(line); ok {
+			if sourceLine >= 0 && sourceLine < len(previous.rowContentHashes) && previous.rowContentHashes[sourceLine] == next.rowContentHashes[line] {
+				continue
+			}
+			changedRows = append(changedRows, line)
 			continue
 		}
-		if plan.reusesLine(line) {
+		if previous.exactRowHashes[line] == next.exactRowHashes[line] {
 			continue
 		}
 		changedRows = append(changedRows, line)
@@ -496,6 +501,26 @@ func (p terminalWindowScrollPlan) reusesLine(line int) bool {
 		return line >= p.start+p.shift && line <= p.end
 	default:
 		return false
+	}
+}
+
+func (p terminalWindowScrollPlan) sourceLineFor(line int) (int, bool) {
+	if p.direction == terminalWindowScrollNone || line < 0 {
+		return 0, false
+	}
+	switch p.direction {
+	case terminalWindowScrollUp:
+		if line < p.start || line > p.end-p.shift {
+			return 0, false
+		}
+		return line + p.shift, true
+	case terminalWindowScrollDown:
+		if line < p.start+p.shift || line > p.end {
+			return 0, false
+		}
+		return line - p.shift, true
+	default:
+		return 0, false
 	}
 }
 
