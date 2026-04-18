@@ -91,3 +91,79 @@ func TestChannelAllocatorReuseAndExhaustion(t *testing.T) {
 		t.Fatal("expected allocator exhaustion error")
 	}
 }
+
+func TestScreenUpdatePayloadTrimsTrailingBlankCellsButKeepsWideContinuation(t *testing.T) {
+	update := ScreenUpdate{
+		Size: protocolSize(10, 2),
+		ChangedRows: []ScreenRowUpdate{{
+			Row: 0,
+			Cells: []Cell{
+				{Content: "A", Width: 1},
+				{Content: "界", Width: 2},
+				{Content: "", Width: 0},
+				{Content: " ", Width: 1},
+				{Content: " ", Width: 1},
+			},
+		}},
+		Cursor: CursorState{Row: 0, Col: 0, Visible: true},
+		Modes:  TerminalModes{AutoWrap: true},
+	}
+
+	payload, err := EncodeScreenUpdatePayload(update)
+	if err != nil {
+		t.Fatalf("encode payload: %v", err)
+	}
+	decoded, err := DecodeScreenUpdatePayload(payload)
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if len(decoded.ChangedRows) != 1 {
+		t.Fatalf("expected one changed row, got %#v", decoded.ChangedRows)
+	}
+	row := decoded.ChangedRows[0].Cells
+	if len(row) != 3 {
+		t.Fatalf("expected trailing plain blanks to be trimmed while keeping wide continuation, got %#v", row)
+	}
+	if row[1].Content != "界" || row[1].Width != 2 {
+		t.Fatalf("expected wide lead preserved, got %#v", row[1])
+	}
+	if row[2].Content != "" || row[2].Width != 0 {
+		t.Fatalf("expected wide continuation preserved, got %#v", row[2])
+	}
+}
+
+func TestScreenUpdatePayloadKeepsStyledTrailingBlankCell(t *testing.T) {
+	update := ScreenUpdate{
+		Size: protocolSize(4, 1),
+		ChangedRows: []ScreenRowUpdate{{
+			Row: 0,
+			Cells: []Cell{
+				{Content: "X", Width: 1},
+				{Content: " ", Width: 1, Style: CellStyle{BG: "#112233"}},
+				{Content: " ", Width: 1},
+			},
+		}},
+		Cursor: CursorState{Row: 0, Col: 0, Visible: true},
+		Modes:  TerminalModes{AutoWrap: true},
+	}
+
+	payload, err := EncodeScreenUpdatePayload(update)
+	if err != nil {
+		t.Fatalf("encode payload: %v", err)
+	}
+	decoded, err := DecodeScreenUpdatePayload(payload)
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	row := decoded.ChangedRows[0].Cells
+	if len(row) != 2 {
+		t.Fatalf("expected styled trailing blank to remain on the wire, got %#v", row)
+	}
+	if got := row[1].Style.BG; got != "#112233" {
+		t.Fatalf("expected styled trailing blank cell preserved, got %#v", row[1])
+	}
+}
+
+func protocolSize(cols, rows uint16) Size {
+	return Size{Cols: cols, Rows: rows}
+}

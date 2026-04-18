@@ -264,8 +264,9 @@ func EncodeScreenUpdatePayload(update ScreenUpdate) ([]byte, error) {
 		}
 		out := make([]jsonRow, len(rows))
 		for i, row := range rows {
-			cells := make([]jsonCell, len(row))
-			for j, cell := range row {
+			trimmed := trimCellsForScreenUpdateWire(row)
+			cells := make([]jsonCell, len(trimmed))
+			for j, cell := range trimmed {
 				cells[j] = jsonCell{Content: cell.Content, Width: cell.Width}
 				if cell.Style != (CellStyle{}) {
 					cells[j].Style = &jsonStyle{
@@ -336,39 +337,70 @@ func EncodeScreenUpdatePayload(update ScreenUpdate) ([]byte, error) {
 	return json.Marshal(raw)
 }
 
+func trimCellsForScreenUpdateWire(row []Cell) []Cell {
+	if len(row) == 0 {
+		return nil
+	}
+	last := -1
+	for i, cell := range row {
+		if cellNeedsWireEncoding(cell) {
+			last = i
+			if cell.Width > 1 {
+				last = maxInt(last, minInt(len(row)-1, i+cell.Width-1))
+			}
+		}
+	}
+	if last < 0 {
+		return nil
+	}
+	return row[:last+1]
+}
+
+func cellNeedsWireEncoding(cell Cell) bool {
+	if cell.Style != (CellStyle{}) {
+		return true
+	}
+	if cell.Width > 1 {
+		return true
+	}
+	if cell.Content == "" {
+		return false
+	}
+	return strings.TrimSpace(cell.Content) != ""
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func DecodeScreenUpdatePayload(payload []byte) (ScreenUpdate, error) {
-	type jsonStyle struct {
-		FG            string `json:"fg,omitempty"`
-		BG            string `json:"bg,omitempty"`
-		Bold          bool   `json:"b,omitempty"`
-		Italic        bool   `json:"i,omitempty"`
-		Underline     bool   `json:"u,omitempty"`
-		Blink         bool   `json:"k,omitempty"`
-		Reverse       bool   `json:"rv,omitempty"`
-		Strikethrough bool   `json:"st,omitempty"`
-	}
 	type jsonCell struct {
-		Content string     `json:"r,omitempty"`
-		Width   int        `json:"w,omitempty"`
-		Style   *jsonStyle `json:"s,omitempty"`
-	}
-	type jsonRow struct {
-		Cells []jsonCell `json:"cells,omitempty"`
+		Cells []Cell `json:"cells,omitempty"`
 	}
 	type jsonScreen struct {
-		IsAlternate bool      `json:"is_alternate"`
-		Rows        []jsonRow `json:"rows"`
+		IsAlternate bool       `json:"is_alternate"`
+		Rows        []jsonCell `json:"rows"`
 	}
 	type jsonScreenRowUpdate struct {
-		Row       int        `json:"row"`
-		Cells     []jsonCell `json:"cells,omitempty"`
-		Timestamp time.Time  `json:"timestamp,omitempty"`
-		RowKind   string     `json:"row_kind,omitempty"`
+		Row       int       `json:"row"`
+		Cells     []Cell    `json:"cells,omitempty"`
+		Timestamp time.Time `json:"timestamp,omitempty"`
+		RowKind   string    `json:"row_kind,omitempty"`
 	}
 	type jsonScrollbackRowAppend struct {
-		Cells     []jsonCell `json:"cells,omitempty"`
-		Timestamp time.Time  `json:"timestamp,omitempty"`
-		RowKind   string     `json:"row_kind,omitempty"`
+		Cells     []Cell    `json:"cells,omitempty"`
+		Timestamp time.Time `json:"timestamp,omitempty"`
+		RowKind   string    `json:"row_kind,omitempty"`
 	}
 	type jsonScreenUpdate struct {
 		FullReplace      bool                      `json:"full_replace,omitempty"`
@@ -392,35 +424,13 @@ func DecodeScreenUpdatePayload(payload []byte) (ScreenUpdate, error) {
 	if err := json.Unmarshal(payload, &raw); err != nil {
 		return update, err
 	}
-	convertCells := func(cells []jsonCell) []Cell {
-		if len(cells) == 0 {
-			return nil
-		}
-		out := make([]Cell, len(cells))
-		for i, cell := range cells {
-			out[i] = Cell{Content: cell.Content, Width: cell.Width}
-			if cell.Style != nil {
-				out[i].Style = CellStyle{
-					FG:            cell.Style.FG,
-					BG:            cell.Style.BG,
-					Bold:          cell.Style.Bold,
-					Italic:        cell.Style.Italic,
-					Underline:     cell.Style.Underline,
-					Blink:         cell.Style.Blink,
-					Reverse:       cell.Style.Reverse,
-					Strikethrough: cell.Style.Strikethrough,
-				}
-			}
-		}
-		return out
-	}
-	convertRows := func(rows []jsonRow) [][]Cell {
+	convertRows := func(rows []jsonCell) [][]Cell {
 		if len(rows) == 0 {
 			return nil
 		}
 		out := make([][]Cell, len(rows))
 		for i, row := range rows {
-			out[i] = convertCells(row.Cells)
+			out[i] = row.Cells
 		}
 		return out
 	}
@@ -459,14 +469,14 @@ func DecodeScreenUpdatePayload(payload []byte) (ScreenUpdate, error) {
 	for _, row := range raw.ChangedRows {
 		update.ChangedRows = append(update.ChangedRows, ScreenRowUpdate{
 			Row:       row.Row,
-			Cells:     convertCells(row.Cells),
+			Cells:     row.Cells,
 			Timestamp: row.Timestamp,
 			RowKind:   row.RowKind,
 		})
 	}
 	for _, row := range raw.ScrollbackAppend {
 		update.ScrollbackAppend = append(update.ScrollbackAppend, ScrollbackRowAppend{
-			Cells:     convertCells(row.Cells),
+			Cells:     row.Cells,
 			Timestamp: row.Timestamp,
 			RowKind:   row.RowKind,
 		})
