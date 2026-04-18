@@ -978,7 +978,12 @@ func writeAbsoluteProtocolRowSnapshot(b *strings.Builder, y int, row []protocol.
 		return
 	}
 	fmt.Fprintf(b, "\x1b[%d;1H\x1b[2K", y+1)
-	for x, cell := range row {
+	last := lastSignificantProtocolCell(row)
+	if last < 0 {
+		return
+	}
+	currentStyle := protocol.CellStyle{}
+	for x, cell := range row[:last+1] {
 		if cell.Content == "" && cell.Width == 0 {
 			continue
 		}
@@ -986,11 +991,40 @@ func writeAbsoluteProtocolRowSnapshot(b *strings.Builder, y int, row []protocol.
 		if content == "" {
 			content = " "
 		}
-		fmt.Fprintf(b, "\x1b[%d;%dH", y+1, x+1)
-		b.WriteString(cellStyleANSI(cellStyleFromProtocol(cell.Style)))
+		if x == 0 {
+			fmt.Fprintf(b, "\x1b[%d;1H", y+1)
+		}
+		if cell.Style != currentStyle {
+			b.WriteString(cellStyleANSI(cellStyleFromProtocol(cell.Style)))
+			currentStyle = cell.Style
+		}
 		b.WriteString(content)
 	}
 	b.WriteString("\x1b[0m")
+}
+
+func lastSignificantProtocolCell(row []protocol.Cell) int {
+	last := len(row) - 1
+	for last >= 0 {
+		if protocolCellNeedsWrite(row[last]) {
+			return last
+		}
+		last--
+	}
+	return -1
+}
+
+func protocolCellNeedsWrite(cell protocol.Cell) bool {
+	if cell.Style != (protocol.CellStyle{}) {
+		return true
+	}
+	if cell.Width > 1 {
+		return true
+	}
+	if cell.Content == "" {
+		return false
+	}
+	return strings.TrimSpace(cell.Content) != ""
 }
 
 func writeTerminalModesANSI(b *strings.Builder, modes TerminalModes) {

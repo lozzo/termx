@@ -65,6 +65,11 @@ func renderBodyCanvas(coordinator *Coordinator, runtimeState *VisibleRuntimeStat
 			}
 			return cache.canvas
 		}
+		if matches && applyOverlapIncrementalComposite(cache.canvas, cache, entries, runtimeState) {
+			cache.reset(entries, width, height)
+			perftrace.Count("render.body.canvas.path.overlap_incremental_composite", 0)
+			return cache.canvas
+		}
 		perftrace.Count("render.body.canvas.path.overlap_full_rebuild", 0)
 		canvas := rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, coordinator.syntheticCursorVisible, runtimeState)
 		cache.canvas = canvas
@@ -276,6 +281,55 @@ func redrawDamagedRect(canvas *composedCanvas, cache *bodyRenderCache, entries [
 		drawPaneContentFromCacheRows(canvas, cache, entry, runtimeState, startRow, endRow, false)
 	}
 	projectActiveEntryCursor(canvas, entries, runtimeState)
+}
+
+func applyOverlapIncrementalComposite(canvas *composedCanvas, cache *bodyRenderCache, entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) bool {
+	if canvas == nil || cache == nil {
+		return false
+	}
+	changed := make([]int, 0, len(entries))
+	for i, entry := range entries {
+		if cache.frameKeys[entry.PaneID] == entry.FrameKey && cache.contentKeys[entry.PaneID] == entry.ContentKey {
+			continue
+		}
+		changed = append(changed, i)
+	}
+	if len(changed) == 0 || len(changed) > 4 {
+		return false
+	}
+
+	canvas.clearCursor()
+	for _, idx := range changed {
+		entry := entries[idx]
+		frameChanged := cache.frameKeys[entry.PaneID] != entry.FrameKey
+		contentChanged := cache.contentKeys[entry.PaneID] != entry.ContentKey
+		if frameChanged {
+			if entry.Frameless {
+				fillRect(canvas, entry.Rect, blankDrawCell())
+			} else {
+				drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+			}
+		}
+		if frameChanged || contentChanged {
+			// When overlap dirty union grows to the full viewport, we still don't
+			// need a full rebuild if the changed pane can update itself
+			// incrementally. Repaint the changed pane first, then redraw only the
+			// later overlapping panes to restore correct z-order.
+			drawPaneContentFromCache(canvas, cache, entry, runtimeState, true)
+		}
+		for upper := idx + 1; upper < len(entries); upper++ {
+			overlay := entries[upper]
+			if !rectsOverlap(entry.Rect, overlay.Rect) {
+				continue
+			}
+			if !overlay.Frameless {
+				drawPaneFrame(canvas, overlay.Rect, overlay.SharedLeft, overlay.SharedTop, overlay.Title, overlay.Border, overlay.Theme, overlay.Overflow, overlay.Active, overlay.Floating)
+			}
+			drawPaneContentFromCache(canvas, cache, overlay, runtimeState, false)
+		}
+	}
+	projectActiveEntryCursor(canvas, entries, runtimeState)
+	return true
 }
 
 func overlapDamagedRect(cache *bodyRenderCache, entries []paneRenderEntry, width, height int) (workbench.Rect, bool) {
