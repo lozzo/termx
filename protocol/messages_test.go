@@ -168,7 +168,7 @@ func TestScreenUpdatePayloadKeepsStyledTrailingBlankCell(t *testing.T) {
 	}
 }
 
-func TestDecodeScreenUpdatePayloadAcceptsLegacyJSON(t *testing.T) {
+func TestDecodeScreenUpdatePayloadRejectsLegacyJSON(t *testing.T) {
 	raw := []byte(`{
 		"size": {"cols": 4, "rows": 1},
 		"changed_rows": [{
@@ -181,18 +181,8 @@ func TestDecodeScreenUpdatePayloadAcceptsLegacyJSON(t *testing.T) {
 		"modes": {"alternate_screen": false, "mouse_tracking": false, "bracketed_paste": false, "application_cursor": false, "auto_wrap": true}
 	}`)
 
-	update, err := DecodeScreenUpdatePayload(raw)
-	if err != nil {
-		t.Fatalf("decode legacy json payload: %v", err)
-	}
-	if len(update.ChangedRows) != 1 {
-		t.Fatalf("expected one changed row, got %#v", update.ChangedRows)
-	}
-	if got := update.ChangedRows[0].Cells[0].Content + update.ChangedRows[0].Cells[1].Content; got != "ok" {
-		t.Fatalf("expected legacy json row content ok, got %q", got)
-	}
-	if update.ChangedRows[0].RowKind != "legacy" {
-		t.Fatalf("expected legacy row kind preserved, got %#v", update.ChangedRows[0])
+	if _, err := DecodeScreenUpdatePayload(raw); err == nil {
+		t.Fatal("expected legacy json screen update payload to be rejected")
 	}
 }
 
