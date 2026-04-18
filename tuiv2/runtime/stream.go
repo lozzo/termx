@@ -34,6 +34,26 @@ type screenUpdateApplier interface {
 	ApplyScreenUpdate(update protocol.ScreenUpdate) bool
 }
 
+func visibleScreenUpdateSummary(update protocol.ScreenUpdate) VisibleScreenUpdateSummary {
+	summary := VisibleScreenUpdateSummary{
+		FullReplace:  update.FullReplace,
+		ScreenScroll: update.ScreenScroll,
+	}
+	if len(update.ChangedRows) == 0 {
+		return summary
+	}
+	summary.ChangedRows = make([]int, 0, len(update.ChangedRows))
+	seen := make(map[int]struct{}, len(update.ChangedRows))
+	for _, row := range update.ChangedRows {
+		if _, ok := seen[row.Row]; ok {
+			continue
+		}
+		seen[row.Row] = struct{}{}
+		summary.ChangedRows = append(summary.ChangedRows, row.Row)
+	}
+	return summary
+}
+
 func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
 	if r == nil || r.client == nil {
 		return shared.UserVisibleError{Op: "start terminal stream", Err: fmt.Errorf("runtime client is nil")}
@@ -334,6 +354,7 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 			invalidateFinish(0)
 			return
 		}
+		screenUpdateSummary := visibleScreenUpdateSummary(update)
 		snapshotApplyFinish := perftrace.Measure("runtime.stream.screen_update.snapshot_apply")
 		terminal.Snapshot = applyScreenUpdateSnapshot(terminal.Snapshot, terminalID, update)
 		snapshotApplyFinish(0)
@@ -355,6 +376,8 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 			terminal.PreferSnapshot = false
 			invalidateFinish := perftrace.Measure("runtime.stream.screen_update.invalidate")
 			r.bumpSurfaceVersion(terminal)
+			screenUpdateSummary.SurfaceVersion = terminal.SurfaceVersion
+			terminal.ScreenUpdate = screenUpdateSummary
 			terminal.SnapshotVersion = terminal.SurfaceVersion
 			terminal.BootstrapPending = false
 			terminal.Recovery = RecoveryState{}
@@ -364,6 +387,8 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 			invalidateFinish := perftrace.Measure("runtime.stream.screen_update.invalidate")
 			terminal.PreferSnapshot = true
 			terminal.SnapshotVersion++
+			screenUpdateSummary.SurfaceVersion = terminal.SurfaceVersion
+			terminal.ScreenUpdate = screenUpdateSummary
 			terminal.BootstrapPending = false
 			terminal.Recovery = RecoveryState{}
 			r.invalidate()

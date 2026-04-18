@@ -377,6 +377,12 @@ func (r *Runtime) Visible() *VisibleRuntime {
 			Surface:         visibleSurface(terminal),
 			SurfaceVersion:  terminal.SurfaceVersion,
 			SnapshotVersion: terminal.SnapshotVersion,
+			ScreenUpdate: VisibleScreenUpdateSummary{
+				SurfaceVersion: terminal.ScreenUpdate.SurfaceVersion,
+				FullReplace:    terminal.ScreenUpdate.FullReplace,
+				ScreenScroll:   terminal.ScreenUpdate.ScreenScroll,
+				ChangedRows:    slices.Clone(terminal.ScreenUpdate.ChangedRows),
+			},
 		})
 	}
 	paneIDs := make([]string, 0, len(r.bindings))

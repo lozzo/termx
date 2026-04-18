@@ -29,6 +29,7 @@ type TerminalRuntime struct {
 	Snapshot        *bridge.SnapshotRef
 	SnapshotVersion uint64
 	SurfaceVersion  uint64
+	ScreenUpdate    VisibleScreenUpdateSummary
 	VTerm           VTermLike
 
 	ScrollbackLoadedLimit  int

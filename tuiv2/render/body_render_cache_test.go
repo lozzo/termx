@@ -280,6 +280,98 @@ func TestContentSpriteIgnoresTimestampOnlySurfaceChanges(t *testing.T) {
 	}
 }
 
+func TestContentSpriteUsesExplicitChangedRowsHintWhenRowMetadataChurns(t *testing.T) {
+	now := time.Date(2026, 4, 18, 12, 0, 0, 0, time.UTC)
+	surface := &spriteTestSurface{
+		size: protocol.Size{Cols: 5, Rows: 3},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("row00"),
+			protocolRowFromText("row01"),
+			protocolRowFromText("row02"),
+		},
+		screenTimestamps: []time.Time{
+			now,
+			now.Add(1 * time.Second),
+			now.Add(2 * time.Second),
+		},
+		screenKinds: []string{"data", "data", "data"},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-1",
+			Name:           "shell",
+			State:          "running",
+			Surface:        surface,
+			SurfaceVersion: 1,
+		}},
+	}
+	entry := paneRenderEntry{
+		PaneID:     "pane-1",
+		Rect:       workbench.Rect{X: 0, Y: 0, W: 5, H: 3},
+		Frameless:  true,
+		TerminalID: "term-1",
+		Theme:      defaultUITheme(),
+		ContentKey: paneContentKey{
+			TerminalID:    "term-1",
+			TerminalKnown: true,
+		},
+		SurfaceVersion: 1,
+	}
+	entry.ContentKey.SurfaceVersion = 1
+
+	cache := &bodyRenderCache{}
+	sprite := cache.contentSprite(entry, runtimeState)
+	if sprite == nil {
+		t.Fatal("expected initial sprite")
+	}
+
+	surface.screen[1] = protocolRowFromText("rowXX")
+	surface.screenTimestamps = []time.Time{
+		now.Add(3 * time.Second),
+		now.Add(4 * time.Second),
+		now.Add(5 * time.Second),
+	}
+	runtimeState.Terminals[0].SurfaceVersion = 2
+	runtimeState.Terminals[0].ScreenUpdate = runtimestate.VisibleScreenUpdateSummary{
+		SurfaceVersion: 2,
+		ChangedRows:    []int{1},
+	}
+	entry.SurfaceVersion = 2
+	entry.ContentKey.SurfaceVersion = 2
+
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+
+	nextSprite := cache.contentSprite(entry, runtimeState)
+	if nextSprite != sprite {
+		t.Fatal("expected incremental path to reuse sprite")
+	}
+	cached := cache.contentSprites[entry.PaneID]
+	if cached == nil {
+		t.Fatal("expected cached sprite entry")
+	}
+	if got := cached.delta.changedRows; len(got) != 1 || got[0] != 1 {
+		t.Fatalf("expected explicit changed row hint to limit redraw to row 1, got %#v", got)
+	}
+	snapshot := perftrace.SnapshotCurrent()
+	if event, ok := snapshot.Event("render.pane_content_sprite.incremental.explicit_changed_rows_hit"); !ok || event.Count == 0 {
+		t.Fatalf("expected explicit changed rows hint hit, got events=%#v", snapshot.Events)
+	}
+	if got := nextSprite.rawString(); got != "row00\nrowXX\nrow02" {
+		t.Fatalf("expected explicit changed rows hint to preserve untouched rows, got %q", got)
+	}
+
+	fullCache := &bodyRenderCache{}
+	fullSprite := fullCache.contentSprite(entry, runtimeState)
+	if fullSprite == nil {
+		t.Fatal("expected full redraw sprite")
+	}
+	if got, want := nextSprite.rawString(), fullSprite.rawString(); got != want {
+		t.Fatalf("expected explicit changed rows hint to match full redraw, got %q want %q", got, want)
+	}
+}
+
 func TestContentSpriteIncrementalRowUpdatePreservesExtentHints(t *testing.T) {
 	now := time.Date(2026, 4, 16, 13, 0, 0, 0, time.UTC)
 	surface := &spriteTestSurface{

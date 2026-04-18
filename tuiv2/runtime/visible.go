@@ -14,6 +14,13 @@ type VisibleRuntime struct {
 	HostEmojiVS16Mode shared.AmbiguousEmojiVariationSelectorMode
 }
 
+type VisibleScreenUpdateSummary struct {
+	SurfaceVersion uint64
+	FullReplace    bool
+	ScreenScroll   int
+	ChangedRows    []int
+}
+
 type VisibleTerminal struct {
 	TerminalID      string
 	Name            string
@@ -28,6 +35,7 @@ type VisibleTerminal struct {
 	Surface         TerminalSurface
 	SurfaceVersion  uint64
 	SnapshotVersion uint64
+	ScreenUpdate    VisibleScreenUpdateSummary
 }
 
 type VisiblePaneBinding struct {

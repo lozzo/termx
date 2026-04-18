@@ -1,6 +1,8 @@
 package render
 
 import (
+	"sort"
+
 	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -105,8 +107,12 @@ func (c *bodyRenderCache) contentSprite(entry paneRenderEntry, runtimeState *Vis
 				return cached.canvas
 			}
 
+			hint := resolved.screenUpdate
+			if resolved.surface == nil || hint.SurfaceVersion != entry.SurfaceVersion {
+				hint = terminalScreenUpdateHint{}
+			}
 			incrementalFinish := perftrace.Measure("render.pane_content_sprite.incremental_apply")
-			delta := applyIncrementalPaneSpriteRows(cached.canvas, resolved, entry.Theme, cached.window, window)
+			delta := applyIncrementalPaneSpriteRows(cached.canvas, resolved, entry.Theme, cached.window, window, hint)
 			incrementalFinish(maxInt(1, delta.changedRowCount()) * maxInt(1, resolved.contentRect.W))
 			cached.key = key
 			cached.window = window
@@ -204,7 +210,7 @@ func canIncrementalPaneSpriteUpdate(cached *paneContentSpriteCacheEntry, nextKey
 	return compatibleTerminalWindowStates(cached.window, nextWindow)
 }
 
-func applyIncrementalPaneSpriteRows(canvas *composedCanvas, resolved resolvedPaneContent, theme uiTheme, previous, next terminalSourceWindowState) paneContentSpriteDelta {
+func applyIncrementalPaneSpriteRows(canvas *composedCanvas, resolved resolvedPaneContent, theme uiTheme, previous, next terminalSourceWindowState, hint terminalScreenUpdateHint) paneContentSpriteDelta {
 	if canvas == nil || resolved.source == nil || resolved.contentRect.W <= 0 || resolved.contentRect.H <= 0 {
 		return paneContentSpriteDelta{}
 	}
@@ -222,6 +228,21 @@ func applyIncrementalPaneSpriteRows(canvas *composedCanvas, resolved resolvedPan
 	if plan, ok := detectTerminalWindowPartialScroll(previous, next, len(baseChangedRows)); ok {
 		return applyIncrementalPaneSpriteScrollPlan(canvas, rowScratch, resolved, theme, previous, next, plan)
 	}
+	if hintedRows, ok := explicitTerminalWindowChangedRowsHint(previous, next, hint); ok && len(hintedRows) > 0 && len(hintedRows) < len(baseChangedRows) {
+		delta := paneContentSpriteDelta{changedRows: append([]int(nil), hintedRows...)}
+		for _, line := range delta.changedRows {
+			targetY := resolved.contentRect.Y + line
+			rowIndex := -1
+			if line < len(next.rowIndices) {
+				rowIndex = next.rowIndices[line]
+			}
+			drawPaneContentSpriteRowDiff(canvas, rowScratch, resolved.contentRect, resolved.source, rowIndex, targetY, theme)
+		}
+		perftrace.Count("render.pane_content_sprite.incremental.explicit_changed_rows_hit", 1)
+		perftrace.Count("render.pane_content_sprite.incremental.explicit_changed_rows", len(delta.changedRows))
+		perftrace.Count("render.pane_content_sprite.incremental.row_redraw_rows", len(delta.changedRows))
+		return delta
+	}
 
 	delta := paneContentSpriteDelta{changedRows: append([]int(nil), baseChangedRows...)}
 	for _, line := range baseChangedRows {
@@ -234,6 +255,33 @@ func applyIncrementalPaneSpriteRows(canvas *composedCanvas, resolved resolvedPan
 	}
 	perftrace.Count("render.pane_content_sprite.incremental.row_redraw_rows", len(delta.changedRows))
 	return delta
+}
+
+func explicitTerminalWindowChangedRowsHint(previous, next terminalSourceWindowState, hint terminalScreenUpdateHint) ([]int, bool) {
+	if !compatibleTerminalWindowStates(previous, next) || !previous.screenWindow || !next.screenWindow {
+		return nil, false
+	}
+	if hint.FullReplace || hint.ScreenScroll != 0 || len(hint.ChangedRows) == 0 {
+		return nil, false
+	}
+	height := len(next.exactRowHashes)
+	changedRows := make([]int, 0, len(hint.ChangedRows))
+	seen := make(map[int]struct{}, len(hint.ChangedRows))
+	for _, line := range hint.ChangedRows {
+		if line < 0 || line >= height {
+			return nil, false
+		}
+		if _, ok := seen[line]; ok {
+			continue
+		}
+		seen[line] = struct{}{}
+		changedRows = append(changedRows, line)
+	}
+	if len(changedRows) == 0 {
+		return nil, false
+	}
+	sort.Ints(changedRows)
+	return changedRows, true
 }
 
 func applyIncrementalPaneSpriteScrollPlan(canvas, rowScratch *composedCanvas, resolved resolvedPaneContent, theme uiTheme, previous, next terminalSourceWindowState, plan terminalWindowScrollPlan) paneContentSpriteDelta {
