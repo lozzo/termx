@@ -399,6 +399,9 @@ func (v *VTerm) applyScreenUpdateLocked(update protocol.ScreenUpdate) bool {
 	if targetCols != v.emu.Width() || targetRows != v.emu.Height() {
 		v.resizeLocked(targetCols, targetRows)
 	}
+	if !v.applyScreenUpdateScrollbackLocked(update) {
+		return false
+	}
 
 	var b strings.Builder
 	for _, row := range update.ChangedRows {
@@ -445,7 +448,7 @@ func (v *VTerm) canApplyScreenUpdateLocked(update protocol.ScreenUpdate) bool {
 	if v == nil || v.emu == nil || update.FullReplace {
 		return false
 	}
-	if update.ResetScrollback || update.ScrollbackTrim > 0 || len(update.ScrollbackAppend) > 0 {
+	if update.ResetScrollback {
 		return false
 	}
 	targetCols, targetRows := v.screenUpdateTargetSizeLocked(update)
@@ -460,6 +463,49 @@ func (v *VTerm) canApplyScreenUpdateLocked(update protocol.ScreenUpdate) bool {
 			return false
 		}
 	}
+	return true
+}
+
+func (v *VTerm) applyScreenUpdateScrollbackLocked(update protocol.ScreenUpdate) bool {
+	if v == nil || v.emu == nil {
+		return false
+	}
+	if update.ScrollbackTrim <= 0 && len(update.ScrollbackAppend) == 0 {
+		return true
+	}
+
+	sb := v.emu.Emulator.Scrollback()
+	currentLines := sb.Lines()
+	trim := update.ScrollbackTrim
+	if trim < 0 {
+		trim = 0
+	}
+	if trim > len(currentLines) {
+		trim = len(currentLines)
+	}
+
+	nextLines := make([]uv.Line, 0, len(currentLines)-trim+len(update.ScrollbackAppend))
+	for i := trim; i < len(currentLines); i++ {
+		nextLines = append(nextLines, cloneUVLine(currentLines[i]))
+	}
+	for _, row := range update.ScrollbackAppend {
+		nextLines = append(nextLines, uvLineFromProtocol(row.Cells))
+	}
+
+	nextTimestamps := append([]time.Time(nil), tailTimeSlice(v.scrollbackTimestamps, trim)...)
+	nextKinds := append([]string(nil), tailStringSlice(v.scrollbackRowKinds, trim)...)
+	for _, row := range update.ScrollbackAppend {
+		nextTimestamps = append(nextTimestamps, row.Timestamp)
+		nextKinds = append(nextKinds, row.RowKind)
+	}
+
+	sb.Clear()
+	for _, line := range nextLines {
+		sb.Push(line)
+	}
+	v.scrollbackTimestamps = normalizeTimeSlice(nextTimestamps, len(nextLines))
+	v.scrollbackRowKinds = normalizeStringSlice(nextKinds, len(nextLines))
+	v.alignScrollbackMetadataLocked()
 	return true
 }
 
@@ -810,6 +856,22 @@ func uvLine(row []Cell) uv.Line {
 		line = append(line, *uvCell(cell))
 	}
 	return line
+}
+
+func uvLineFromProtocol(row []protocol.Cell) uv.Line {
+	line := make(uv.Line, 0, len(row))
+	for _, cell := range row {
+		line = append(line, *uvCellFromProtocol(cell))
+	}
+	return line
+}
+
+func uvCellFromProtocol(cell protocol.Cell) *uv.Cell {
+	return uvCell(Cell{
+		Content: cell.Content,
+		Width:   cell.Width,
+		Style:   cellStyleFromProtocol(cell.Style),
+	})
 }
 
 func encodeScreenSnapshot(rows [][]Cell) []byte {
@@ -1913,6 +1975,13 @@ func cloneCellSlice(values []Cell) []Cell {
 	return append([]Cell(nil), values...)
 }
 
+func cloneUVLine(values uv.Line) uv.Line {
+	if len(values) == 0 {
+		return nil
+	}
+	return append(uv.Line(nil), values...)
+}
+
 func normalizeTimeSlice(values []time.Time, count int) []time.Time {
 	if count <= 0 {
 		return nil
@@ -1943,6 +2012,26 @@ func timeAt(values []time.Time, idx int) time.Time {
 		return time.Time{}
 	}
 	return values[idx]
+}
+
+func tailTimeSlice(values []time.Time, trim int) []time.Time {
+	if trim <= 0 {
+		return values
+	}
+	if trim >= len(values) {
+		return nil
+	}
+	return values[trim:]
+}
+
+func tailStringSlice(values []string, trim int) []string {
+	if trim <= 0 {
+		return values
+	}
+	if trim >= len(values) {
+		return nil
+	}
+	return values[trim:]
 }
 
 func shouldAssignTimestampToScreenRow(row []Cell, rowIndex, cursorRow int) bool {

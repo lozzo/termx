@@ -529,7 +529,7 @@ func TestApplyScreenUpdateUpdatesChangedRowsInPlace(t *testing.T) {
 	}
 }
 
-func TestApplyScreenUpdateRejectsUnsupportedScrollbackMutation(t *testing.T) {
+func TestApplyScreenUpdateRejectsUnsupportedResetScrollback(t *testing.T) {
 	vt := New(6, 3, 100, nil)
 	vt.LoadSnapshotWithScrollback([][]Cell{{{Content: "o", Width: 1}}}, ScreenData{
 		Cells: [][]Cell{{
@@ -539,12 +539,12 @@ func TestApplyScreenUpdateRejectsUnsupportedScrollbackMutation(t *testing.T) {
 
 	oldEmu := vt.emu
 	if vt.ApplyScreenUpdate(protocol.ScreenUpdate{
-		Size:           protocol.Size{Cols: 1, Rows: 1},
-		ScrollbackTrim: 1,
-		Cursor:         protocol.CursorState{Row: 0, Col: 1, Visible: true},
-		Modes:          protocol.TerminalModes{AutoWrap: true},
+		Size:            protocol.Size{Cols: 1, Rows: 1},
+		ResetScrollback: true,
+		Cursor:          protocol.CursorState{Row: 0, Col: 1, Visible: true},
+		Modes:           protocol.TerminalModes{AutoWrap: true},
 	}) {
-		t.Fatal("expected scrollback mutation to fall back instead of partial apply")
+		t.Fatal("expected reset scrollback to fall back instead of partial apply")
 	}
 	if vt.emu != oldEmu {
 		t.Fatal("expected rejected partial apply to leave emulator untouched")
@@ -600,5 +600,53 @@ func TestApplyScreenUpdateAllowsSafeResizeWithoutRecreatingEmulator(t *testing.T
 	}
 	if cursor := vt.CursorState(); cursor.Row != 2 || cursor.Col != 2 {
 		t.Fatalf("expected cursor moved after resize update, got %#v", cursor)
+	}
+}
+
+func TestApplyScreenUpdateUpdatesScrollbackWithoutRecreatingEmulator(t *testing.T) {
+	vt := New(4, 2, 100, nil)
+	now := time.Date(2026, 4, 18, 9, 0, 0, 0, time.UTC)
+	vt.LoadSnapshotWithMetadata([][]Cell{
+		{{Content: "a", Width: 1}},
+		{{Content: "b", Width: 1}},
+		{{Content: "c", Width: 1}},
+	}, []time.Time{now, now.Add(time.Second), now.Add(2 * time.Second)}, []string{"a", "b", "c"}, ScreenData{
+		Cells: [][]Cell{
+			{
+				{Content: "x", Width: 1},
+				{Content: "y", Width: 1},
+			},
+		},
+	}, []time.Time{now}, []string{"screen"}, CursorState{Row: 0, Col: 2, Visible: true}, TerminalModes{AutoWrap: true})
+
+	oldEmu := vt.emu
+	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
+		Size:           protocol.Size{Cols: 2, Rows: 1},
+		ScrollbackTrim: 1,
+		ScrollbackAppend: []protocol.ScrollbackRowAppend{{
+			Cells:     []protocol.Cell{{Content: "d", Width: 1}},
+			Timestamp: now.Add(3 * time.Second),
+			RowKind:   "d",
+		}},
+		Cursor: protocol.CursorState{Row: 0, Col: 2, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	}) {
+		t.Fatal("expected scrollback update to apply incrementally")
+	}
+	if vt.emu != oldEmu {
+		t.Fatal("expected scrollback update to keep the existing emulator instance")
+	}
+	scrollback := vt.ScrollbackContent()
+	if len(scrollback) != 3 {
+		t.Fatalf("expected trimmed+appended scrollback length 3, got %d", len(scrollback))
+	}
+	if got := scrollback[0][0].Content + scrollback[1][0].Content + scrollback[2][0].Content; got != "bcd" {
+		t.Fatalf("expected scrollback to become bcd, got %q", got)
+	}
+	if got := vt.ScrollbackRowTimestampAt(0); !got.Equal(now.Add(time.Second)) {
+		t.Fatalf("expected retained timestamp after trim, got %v", got)
+	}
+	if got := vt.ScrollbackRowKindAt(2); got != "d" {
+		t.Fatalf("expected appended row kind, got %q", got)
 	}
 }
