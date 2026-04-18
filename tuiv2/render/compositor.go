@@ -161,6 +161,38 @@ func (c *composedCanvas) shiftRectRowsDown(rect workbench.Rect, shift int) {
 	c.fullDirty = true
 }
 
+func (c *composedCanvas) shiftRowBand(startRow, endRow, shift int, direction terminalWindowScrollDirection) bool {
+	if c == nil {
+		return false
+	}
+	return c.shiftRectRowBand(workbench.Rect{W: c.width, H: c.height}, startRow, endRow, shift, direction)
+}
+
+func (c *composedCanvas) shiftRectRowBand(rect workbench.Rect, startRow, endRow, shift int, direction terminalWindowScrollDirection) bool {
+	if c == nil || shift <= 0 || startRow < 0 || endRow < startRow {
+		return false
+	}
+	band := workbench.Rect{
+		X: rect.X,
+		Y: rect.Y + startRow,
+		W: rect.W,
+		H: endRow - startRow + 1,
+	}
+	if band.H <= shift {
+		return false
+	}
+	switch direction {
+	case terminalWindowScrollUp:
+		c.shiftRectRowsUp(band, shift)
+		return true
+	case terminalWindowScrollDown:
+		c.shiftRectRowsDown(band, shift)
+		return true
+	default:
+		return false
+	}
+}
+
 func (c *composedCanvas) resetRowToBlank(y int) {
 	if c == nil || y < 0 || y >= c.height {
 		return

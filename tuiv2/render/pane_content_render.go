@@ -22,11 +22,11 @@ type resolvedPaneContent struct {
 }
 
 type terminalSourceWindowState struct {
-	rowIndices      []int
-	rowHashes       []uint64
-	rowScrollHashes []uint64
-	contentHash     uint64
-	screenWindow    bool
+	rowIndices        []int
+	exactRowHashes    []uint64
+	rowIdentityHashes []uint64
+	contentHash       uint64
+	screenWindow      bool
 }
 
 // drawPaneContent fills the interior of a pane with terminal snapshot content.
@@ -278,7 +278,7 @@ func buildTerminalSourceWindowState(source terminalRenderSource, height, offset 
 	}
 
 	rowHashes := make([]uint64, height)
-	rowScrollHashes := make([]uint64, height)
+	rowIdentityHashes := make([]uint64, height)
 	hash := fnvOffset64
 	hash = fnvMixUint64(hash, uint64(source.Size().Cols))
 	hash = fnvMixUint64(hash, uint64(source.Size().Rows))
@@ -289,15 +289,15 @@ func buildTerminalSourceWindowState(source terminalRenderSource, height, offset 
 	for i, rowIndex := range rowIndices {
 		rowHash := terminalSourceRowHash(source, rowIndex)
 		rowHashes[i] = rowHash
-		rowScrollHashes[i] = terminalSourceRowScrollHash(source, rowIndex)
+		rowIdentityHashes[i] = terminalSourceRowIdentityHash(source, rowIndex)
 		hash = fnvMixUint64(hash, rowHash)
 	}
 	return terminalSourceWindowState{
-		rowIndices:      rowIndices,
-		rowHashes:       rowHashes,
-		rowScrollHashes: rowScrollHashes,
-		contentHash:     hash,
-		screenWindow:    offset <= 0,
+		rowIndices:        rowIndices,
+		exactRowHashes:    rowHashes,
+		rowIdentityHashes: rowIdentityHashes,
+		contentHash:       hash,
+		screenWindow:      offset <= 0,
 	}
 }
 
@@ -377,13 +377,15 @@ func terminalSourceRowHash(source terminalRenderSource, rowIndex int) uint64 {
 	return hash
 }
 
-func terminalSourceRowScrollHash(source terminalRenderSource, rowIndex int) uint64 {
+func terminalSourceRowIdentityHash(source terminalRenderSource, rowIndex int) uint64 {
 	hash := fnvOffset64
 	if source == nil || rowIndex < 0 {
 		return fnvMixUint64(hash, 0)
 	}
 	kind := source.RowKind(rowIndex)
 	hash = fnvMixString(hash, kind)
+	ts := source.RowTimestamp(rowIndex)
+	hash = fnvMixInt64(hash, ts.UnixNano())
 	row := source.Row(rowIndex)
 	hash = fnvMixUint64(hash, uint64(len(row)))
 	for _, cell := range row {

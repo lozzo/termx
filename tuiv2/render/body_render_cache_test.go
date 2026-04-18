@@ -402,7 +402,12 @@ func TestContentSpriteReusesSpriteForPhysicalScreenScroll(t *testing.T) {
 			protocolRowFromText("row03"),
 			protocolRowFromText("row04"),
 		},
-		screenTimestamps: []time.Time{now, now, now, now},
+		screenTimestamps: []time.Time{
+			now,
+			now.Add(1 * time.Second),
+			now.Add(2 * time.Second),
+			now.Add(3 * time.Second),
+		},
 	}
 	runtimeState := &VisibleRuntimeStateProxy{
 		Terminals: []runtimestate.VisibleTerminal{{
@@ -439,7 +444,7 @@ func TestContentSpriteReusesSpriteForPhysicalScreenScroll(t *testing.T) {
 		protocolRowFromText("row05"),
 	}
 	surface.screenTimestamps = []time.Time{
-		now.Add(time.Second),
+		now.Add(1 * time.Second),
 		now.Add(2 * time.Second),
 		now.Add(3 * time.Second),
 		now.Add(4 * time.Second),
@@ -461,6 +466,124 @@ func TestContentSpriteReusesSpriteForPhysicalScreenScroll(t *testing.T) {
 	}
 	if got := nextSprite.rawString(); got != "row02\nrow03\nrow04\nrow05" {
 		t.Fatalf("expected screen scroll to shift visible rows and redraw edge row, got %q", got)
+	}
+}
+
+func TestContentSpriteReusesSpriteForPartialScrollBand(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 0, 0, 0, time.UTC)
+	surface := &spriteTestSurface{
+		size: protocol.Size{Cols: 3, Rows: 8},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("hdr"),
+			protocolRowFromText("aaa"),
+			protocolRowFromText("bbb"),
+			protocolRowFromText("ccc"),
+			protocolRowFromText("ddd"),
+			protocolRowFromText("eee"),
+			protocolRowFromText("fff"),
+			protocolRowFromText("ftr"),
+		},
+		screenTimestamps: []time.Time{
+			now,
+			now.Add(1 * time.Second),
+			now.Add(2 * time.Second),
+			now.Add(3 * time.Second),
+			now.Add(4 * time.Second),
+			now.Add(5 * time.Second),
+			now.Add(6 * time.Second),
+			now.Add(7 * time.Second),
+		},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-1",
+			Name:           "shell",
+			State:          "running",
+			Surface:        surface,
+			SurfaceVersion: 1,
+		}},
+	}
+	entry := paneRenderEntry{
+		PaneID:     "pane-1",
+		Rect:       workbench.Rect{X: 0, Y: 0, W: 3, H: 8},
+		Frameless:  true,
+		TerminalID: "term-1",
+		Theme:      defaultUITheme(),
+		ContentKey: paneContentKey{
+			TerminalID:    "term-1",
+			TerminalKnown: true,
+		},
+	}
+	entry.ContentKey.SurfaceVersion = 1
+
+	cache := &bodyRenderCache{}
+	sprite := cache.contentSprite(entry, runtimeState)
+	if sprite == nil {
+		t.Fatal("expected initial sprite")
+	}
+
+	surface.screen = [][]protocol.Cell{
+		protocolRowFromText("hdr"),
+		protocolRowFromText("bbb"),
+		protocolRowFromText("ccc"),
+		protocolRowFromText("ddd"),
+		protocolRowFromText("eee"),
+		protocolRowFromText("fff"),
+		protocolRowFromText("ggg"),
+		protocolRowFromText("ftr"),
+	}
+	surface.screenTimestamps = []time.Time{
+		now,
+		now.Add(2 * time.Second),
+		now.Add(3 * time.Second),
+		now.Add(4 * time.Second),
+		now.Add(5 * time.Second),
+		now.Add(6 * time.Second),
+		now.Add(8 * time.Second),
+		now.Add(7 * time.Second),
+	}
+	runtimeState.Terminals[0].SurfaceVersion = 2
+	entry.ContentKey.SurfaceVersion = 2
+
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+
+	nextSprite := cache.contentSprite(entry, runtimeState)
+	if nextSprite != sprite {
+		t.Fatal("expected partial scroll band update to reuse the sprite canvas")
+	}
+	cached := cache.contentSprites[entry.PaneID]
+	if cached == nil {
+		t.Fatal("expected cached sprite entry")
+	}
+	if cached.delta.scrollPlan.direction != terminalWindowScrollUp {
+		t.Fatalf("expected partial scroll band to scroll up, got %#v", cached.delta.scrollPlan)
+	}
+	if cached.delta.scrollPlan.wholeWindow(8) {
+		t.Fatalf("expected partial band instead of whole-window scroll, got %#v", cached.delta.scrollPlan)
+	}
+	if cached.delta.scrollPlan.start != 1 || cached.delta.scrollPlan.end != 6 || cached.delta.scrollPlan.shift != 1 || cached.delta.scrollPlan.reused != 5 {
+		t.Fatalf("unexpected partial scroll plan: %#v", cached.delta.scrollPlan)
+	}
+	if got := cached.delta.changedRows; len(got) != 1 || got[0] != 6 {
+		t.Fatalf("expected only the inserted gap row to redraw, got %#v", got)
+	}
+	snapshot := perftrace.SnapshotCurrent()
+	if event, ok := snapshot.Event("render.pane_content_sprite.incremental.partial_scroll_hit"); !ok || event.Count == 0 {
+		t.Fatalf("expected partial scroll perf hit, got events=%#v", snapshot.Events)
+	}
+	if got := nextSprite.rawString(); got != "hdr\nbbb\nccc\nddd\neee\nfff\nggg\nftr" {
+		t.Fatalf("unexpected partial-scroll sprite content: %q", got)
+	}
+
+	fullCache := &bodyRenderCache{}
+	fullSprite := fullCache.contentSprite(entry, runtimeState)
+	if fullSprite == nil {
+		t.Fatal("expected full redraw sprite")
+	}
+	if got, want := nextSprite.rawString(), fullSprite.rawString(); got != want {
+		t.Fatalf("expected partial-scroll sprite to match full redraw, got %q want %q", got, want)
 	}
 }
 
@@ -653,6 +776,97 @@ func TestApplySpriteDeltaToCanvasMatchesFullBlitForChangedRows(t *testing.T) {
 		runtimeState.Terminals[0].SurfaceVersion = 2
 		next.ContentKey.SurfaceVersion = 2
 	})
+}
+
+func TestApplySpriteDeltaToCanvasMatchesFullBlitForPartialScrollBand(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 30, 0, 0, time.UTC)
+	surface := &spriteTestSurface{
+		size: protocol.Size{Cols: 3, Rows: 8},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("hdr"),
+			protocolRowFromText("aaa"),
+			protocolRowFromText("bbb"),
+			protocolRowFromText("ccc"),
+			protocolRowFromText("ddd"),
+			protocolRowFromText("eee"),
+			protocolRowFromText("fff"),
+			protocolRowFromText("ftr"),
+		},
+		screenTimestamps: []time.Time{
+			now,
+			now.Add(1 * time.Second),
+			now.Add(2 * time.Second),
+			now.Add(3 * time.Second),
+			now.Add(4 * time.Second),
+			now.Add(5 * time.Second),
+			now.Add(6 * time.Second),
+			now.Add(7 * time.Second),
+		},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-1",
+			Name:           "shell",
+			State:          "running",
+			Surface:        surface,
+			SurfaceVersion: 1,
+		}},
+	}
+	entry := paneRenderEntry{
+		PaneID:     "pane-1",
+		Rect:       workbench.Rect{X: 0, Y: 0, W: 5, H: 10},
+		TerminalID: "term-1",
+		Theme:      defaultUITheme(),
+		ContentKey: paneContentKey{
+			TerminalID:    "term-1",
+			TerminalKnown: true,
+			State:         "running",
+		},
+	}
+	entry.ContentKey.SurfaceVersion = 1
+
+	cache := &bodyRenderCache{}
+	sprite := cache.contentSprite(entry, runtimeState)
+	if sprite == nil {
+		t.Fatal("expected initial sprite")
+	}
+	body := newBodyCanvasFromSprite(entry, sprite)
+
+	surface.screen = [][]protocol.Cell{
+		protocolRowFromText("hdr"),
+		protocolRowFromText("bbb"),
+		protocolRowFromText("ccc"),
+		protocolRowFromText("ddd"),
+		protocolRowFromText("eee"),
+		protocolRowFromText("fff"),
+		protocolRowFromText("ggg"),
+		protocolRowFromText("ftr"),
+	}
+	surface.screenTimestamps = []time.Time{
+		now,
+		now.Add(2 * time.Second),
+		now.Add(3 * time.Second),
+		now.Add(4 * time.Second),
+		now.Add(5 * time.Second),
+		now.Add(6 * time.Second),
+		now.Add(8 * time.Second),
+		now.Add(7 * time.Second),
+	}
+	runtimeState.Terminals[0].SurfaceVersion = 2
+	entry.ContentKey.SurfaceVersion = 2
+
+	nextSprite := cache.contentSprite(entry, runtimeState)
+	if nextSprite == nil {
+		t.Fatal("expected updated sprite")
+	}
+	if !cache.applySpriteDeltaToCanvas(body, entry) {
+		t.Fatal("expected body canvas to accept partial scroll delta")
+	}
+
+	want := newBodyCanvasFromSprite(entry, nextSprite)
+	if got := body.rawString(); got != want.rawString() {
+		t.Fatalf("expected partial scroll delta apply to match full blit, got %q want %q", got, want.rawString())
+	}
 }
 
 func assertBodyDeltaMatchesFullBlit(t *testing.T, cache *bodyRenderCache, entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy, mutate func(next *paneRenderEntry)) {
