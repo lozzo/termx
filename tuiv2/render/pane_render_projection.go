@@ -256,7 +256,7 @@ func paneOverflowHintsForRender(originalRect, clippedRect workbench.Rect, snapsh
 		Right:  originalRect.X+originalRect.W > clippedRect.X+clippedRect.W,
 		Bottom: originalRect.Y+originalRect.H > clippedRect.Y+clippedRect.H,
 	}
-	metrics := terminalMetricsForSource(renderSource(snapshot, surface))
+	metrics := terminalOverflowMetricsForSource(renderSource(snapshot, surface))
 	contentRect := contentRectForPane(clippedRect)
 	if metrics.Cols > 0 && contentRect.W > 0 && metrics.Cols > contentRect.W {
 		overflow.Right = true

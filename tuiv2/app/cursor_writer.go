@@ -226,7 +226,7 @@ func (p *framePresenter) presentLines(lines []string, meta *presentMeta) string 
 		p.meta = clonePresentMeta(meta)
 		return xansi.EraseEntireDisplay + strings.Join(lines, "\n")
 	}
-	if p.fullWidthLines && meta != nil && p.meta != nil && (len(meta.VisibleRects) > 3 || len(p.meta.VisibleRects) > 3) {
+	if p.fullWidthLines && meta != nil && p.meta != nil && (shouldUseOwnerAwareDelta(meta) || shouldUseOwnerAwareDelta(p.meta)) {
 		if payload := p.presentOwnerAwareDelta(lines, meta); payload != "" {
 			releasePresentedRows(p.parsed)
 			p.setLines(lines, true)
@@ -247,9 +247,10 @@ func (p *framePresenter) presentLines(lines []string, meta *presentMeta) string 
 		p.meta = clonePresentMeta(meta)
 		return ""
 	}
-	previousLines := p.lines
-	p.lines = lines
-	p.scratchLines = previousLines[:0]
+	p.lines = append(p.lines[:0], lines...)
+	if p.scratchLines != nil {
+		p.scratchLines = p.scratchLines[:0]
+	}
 	for _, update := range updates {
 		p.parsed[update.row] = update.parsed
 	}
@@ -286,13 +287,40 @@ func joinedLinesLen(lines []string) int {
 	return total
 }
 
+func shouldUseOwnerAwareDelta(meta *presentMeta) bool {
+	if meta == nil || len(meta.VisibleRects) == 0 || len(meta.OwnerMap) == 0 {
+		return false
+	}
+	width := 0
+	for _, row := range meta.OwnerMap {
+		if len(row) > width {
+			width = len(row)
+		}
+	}
+	if width <= 0 {
+		return false
+	}
+	for _, rects := range meta.VisibleRects {
+		if len(rects) > 1 {
+			return true
+		}
+		for _, r := range rects {
+			if r.Left > 0 || r.Right < width-1 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (p *framePresenter) setLines(lines []string, resetParsed bool) {
 	if p == nil {
 		return
 	}
-	previousLines := p.lines
-	p.lines = lines
-	p.scratchLines = previousLines[:0]
+	p.lines = append(p.lines[:0], lines...)
+	if p.scratchLines != nil {
+		p.scratchLines = p.scratchLines[:0]
+	}
 	if cap(p.parsed) < len(lines) {
 		p.parsed = make([]presentedRow, len(lines))
 	} else {
@@ -984,7 +1012,12 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, meta *present
 	}()
 	presentFinish := perftrace.Measure("cursor_writer.present")
 	w.presenter.fullWidthLines = true
+	previousVerticalScrollMode := w.presenter.verticalScrollMode
+	if cursor != "" && w.lastDirectCursor != "" && cursor != w.lastDirectCursor {
+		w.presenter.verticalScrollMode = verticalScrollModeNone
+	}
 	payload := w.presenter.PresentLinesWithMeta(stripTrailingEraseLineRight(lines), meta)
+	w.presenter.verticalScrollMode = previousVerticalScrollMode
 	presentFinish(len(payload))
 	syncOutput := w.tty != nil
 	if cursor == "" {

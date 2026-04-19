@@ -117,7 +117,25 @@ func (m *Model) resetPaneViewport(paneID string) {
 	if m == nil || paneID == "" {
 		return
 	}
-	if m.setPaneViewportOffset(paneID, 0) {
+	invalidated := m.setPaneViewportOffset(paneID, 0)
+	if m.workbench != nil {
+		for _, wsName := range m.workbench.ListWorkspaces() {
+			ws := m.workbench.WorkspaceByName(wsName)
+			if ws == nil {
+				continue
+			}
+			for _, tab := range ws.Tabs {
+				if tab == nil || tab.Panes[paneID] == nil {
+					continue
+				}
+				if m.workbench.SetTabScrollOffset(tab.ID, 0) {
+					invalidated = true
+				}
+				break
+			}
+		}
+	}
+	if invalidated {
 		m.render.Invalidate()
 	}
 }

@@ -206,6 +206,21 @@ func terminalMetricsForSource(source terminalRenderSource) renderTerminalMetrics
 	return metrics
 }
 
+func terminalOverflowMetricsForSource(source terminalRenderSource) renderTerminalMetrics {
+	metrics := terminalMetricsForSource(source)
+	if source == nil {
+		return metrics
+	}
+	size := source.Size()
+	if cols := int(size.Cols); cols > metrics.Cols {
+		metrics.Cols = cols
+	}
+	if rows := int(size.Rows); rows > metrics.Rows {
+		metrics.Rows = rows
+	}
+	return metrics
+}
+
 func renderSourceRowMaxCol(source terminalRenderSource, rowIndex int) int {
 	row := source.Row(rowIndex)
 	if len(row) > 0 {

@@ -84,7 +84,7 @@ func drawSyntheticCursor(canvas *composedCanvas, x, y int, cursor protocol.Curso
 	if cell.Continuation {
 		cell = blankDrawCell()
 	}
-	if cell.Content == "" {
+	if cell.Content == "" || !cell.TerminalContent {
 		cell = blankDrawCell()
 	}
 	style := cell.Style
