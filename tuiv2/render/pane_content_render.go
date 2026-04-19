@@ -7,6 +7,7 @@ import (
 	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -208,6 +209,39 @@ func resolvePaneContent(entry paneRenderEntry, runtimeState *VisibleRuntimeState
 		resolved.renderOffset = scrollOffsetForViewportTop(resolved.snapshot, resolved.contentRect.H, entry.CopyModeViewTopRow)
 	}
 	return resolved
+}
+
+func resolvedPaneContentNeedsConservativeRedraw(entry paneRenderEntry, resolved resolvedPaneContent) bool {
+	if entry.ConservativeRedraw {
+		return true
+	}
+	return terminalSourceWindowHasWidthSafety(resolved.source, resolved.contentRect.H, resolved.renderOffset)
+}
+
+func terminalSourceWindowHasWidthSafety(source terminalRenderSource, height, offset int) bool {
+	if source == nil || height <= 0 {
+		return false
+	}
+	for line := 0; line < height; line++ {
+		rowIndex := terminalSourceWindowRowIndex(source, height, offset, line)
+		if rowIndex < 0 {
+			continue
+		}
+		if terminalSourceRowHasWidthSafety(source.Row(rowIndex)) {
+			return true
+		}
+	}
+	return false
+}
+
+func terminalSourceRowHasWidthSafety(row []protocol.Cell) bool {
+	for _, cell := range row {
+		decision := shared.WidthSafetyForTerminalCell(cell.Content, cell.Width)
+		if decision.AmbiguousCompensation || decision.HostWidthStabilizer {
+			return true
+		}
+	}
+	return false
 }
 
 func terminalSourceWindowSignature(source terminalRenderSource, height, offset int) uint64 {

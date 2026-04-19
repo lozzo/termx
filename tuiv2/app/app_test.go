@@ -1957,6 +1957,25 @@ func TestViewForcesOneFullRedrawAfterActivePaneLeavesAltScreen(t *testing.T) {
 	}
 }
 
+func TestViewDisablesVerticalScrollOptimizationForSinglePaneAltScreen(t *testing.T) {
+	model := setupModel(t, modelOpts{width: 80, height: 24})
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	model.SetFrameWriter(writer)
+	model.SetCursorWriter(writer)
+
+	setActivePaneTerminalModes(t, model, protocol.TerminalModes{
+		AlternateScreen: true,
+		AutoWrap:        true,
+	})
+
+	_ = model.View()
+
+	if writer.verticalScrollMode != verticalScrollModeNone {
+		t.Fatalf("expected single-pane alt-screen view to disable vertical scroll optimization, got %q", writer.verticalScrollMode.String())
+	}
+}
+
 func TestViewForcesFullRedrawAfterWindowResizeWithVisibleAltScreen(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 80, height: 24})
 	writer := &resetProbeFrameWriter{}

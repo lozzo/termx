@@ -66,6 +66,7 @@ type outputCursorWriter struct {
 	frameDumpPath          string
 	disableVerticalScroll  bool
 	disableOwnerAwareDelta bool
+	forceFullFrameLines    bool
 	verticalScrollMode     verticalScrollMode
 	drainHook              func()
 	interactiveFlushHint   func() bool
@@ -1011,11 +1012,20 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, meta *present
 	presentFinish := perftrace.Measure("cursor_writer.present")
 	w.presenter.fullWidthLines = true
 	previousVerticalScrollMode := w.presenter.verticalScrollMode
+	previousOwnerAwareDeltaEnabled := w.presenter.ownerAwareDeltaEnabled
 	if cursor != "" && w.lastDirectCursor != "" && cursor != w.lastDirectCursor {
 		w.presenter.verticalScrollMode = verticalScrollModeNone
 	}
+	if w.forceFullFrameLines {
+		w.presenter.Reset()
+		w.presenter.verticalScrollMode = previousVerticalScrollMode
+		w.presenter.ownerAwareDeltaEnabled = previousOwnerAwareDeltaEnabled
+		w.presenter.fullWidthLines = true
+		perftrace.Count("cursor_writer.present.mode.full_repaint_forced", len(lines))
+	}
 	payload := w.presenter.PresentLinesWithMeta(stripTrailingEraseLineRight(lines), meta)
 	w.presenter.verticalScrollMode = previousVerticalScrollMode
+	w.presenter.ownerAwareDeltaEnabled = previousOwnerAwareDeltaEnabled
 	presentFinish(len(payload))
 	syncOutput := w.tty != nil
 	if cursor == "" {
@@ -1105,6 +1115,15 @@ func (w *outputCursorWriter) SetOwnerAwareDeltaEnabled(enabled bool) {
 	w.mu.Lock()
 	w.disableOwnerAwareDelta = !enabled
 	w.presenter.ownerAwareDeltaEnabled = w.ownerAwareDeltaEnabledLocked()
+	w.mu.Unlock()
+}
+
+func (w *outputCursorWriter) SetForceFullFrameLines(enabled bool) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	w.forceFullFrameLines = enabled
 	w.mu.Unlock()
 }
 

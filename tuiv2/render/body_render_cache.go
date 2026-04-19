@@ -74,8 +74,9 @@ func (c *bodyRenderCache) contentSprite(entry paneRenderEntry, runtimeState *Vis
 		resolveFinish(maxInt(1, interior.W*interior.H))
 		window := buildTerminalSourceWindowState(resolved.source, resolved.contentRect.H, resolved.renderOffset)
 		extentHash := terminalSourceExtentHashWithMetrics(resolved.source, resolved.contentRect, entry.Theme, resolved.metrics)
+		forceFull := resolvedPaneContentNeedsConservativeRedraw(entry, resolved)
 
-		if canIncrementalPaneSpriteUpdate(cached, key, resolved, window, extentHash) {
+		if !forceFull && canIncrementalPaneSpriteUpdate(cached, key, resolved, window, extentHash) {
 			// SurfaceVersion can change without touching the visible rows. When
 			// the exact window content hash still matches, preserve both sprite
 			// and body canvas without even entering the row-diff path.

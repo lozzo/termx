@@ -32,11 +32,12 @@ func (m *Model) View() string {
 		if directWriter, ok := rowsWriter.(*outputCursorWriter); ok {
 			conservativeDiff := m.conservativeAltScreenDiffRequired()
 			mode, _ := m.verticalScrollOptimizationMode()
-			if conservativeDiff {
+			if activeAltScreen || conservativeDiff {
 				mode = verticalScrollModeNone
 			}
 			directWriter.SetVerticalScrollMode(mode)
 			directWriter.SetOwnerAwareDeltaEnabled(!conservativeDiff)
+			directWriter.SetForceFullFrameLines(conservativeDiff)
 			if result, ok := m.render.CachedRenderResult(); ok {
 				cursor := result.CursorSequence()
 				viewBytes = joinedLinesLen(result.Lines) + len(cursor)

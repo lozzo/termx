@@ -13,6 +13,7 @@ type paneRenderEntry struct {
 	OwnerID              uint32
 	Rect                 workbench.Rect
 	Frameless            bool
+	ConservativeRedraw   bool
 	SharedLeft           bool
 	SharedTop            bool
 	Title                string
@@ -95,7 +96,24 @@ func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePan
 		}
 		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, false, tab.ActivePaneID, tab.ScrollOffset, lookup, options, theme))
 	}
+	totalVisiblePanes := len(entries)
+	if totalVisiblePanes > 1 {
+		for i := range entries {
+			if paneEntryUsesAlternateScreen(entries[i]) {
+				entries[i].ConservativeRedraw = true
+			}
+		}
+	}
 	return entries
+}
+
+func paneEntryUsesAlternateScreen(entry paneRenderEntry) bool {
+	source := renderSource(entry.Snapshot, entry.Surface)
+	if source == nil {
+		return false
+	}
+	modes := source.Modes()
+	return source.IsAlternateScreen() || modes.AlternateScreen
 }
 
 func clipRectToViewport(rect workbench.Rect, width, height int) (workbench.Rect, bool) {

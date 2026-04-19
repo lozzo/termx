@@ -20,6 +20,9 @@ func renderAltScreenFastPathVM(vm RenderVM, entries []paneRenderEntry, cursorOff
 	if !entry.Active || entry.TerminalID == "" || entry.Floating || entry.CopyModeActive || entry.ScrollOffset > 0 {
 		return renderedBody{}, false
 	}
+	if !entry.Frameless {
+		return renderedBody{}, false
+	}
 	if entry.EmptyActionSelected >= 0 || entry.ExitedActionSelected >= 0 {
 		return renderedBody{}, false
 	}

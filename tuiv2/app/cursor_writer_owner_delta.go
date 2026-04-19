@@ -55,6 +55,9 @@ func (p *framePresenter) presentOwnerAwareDelta(lines []string, meta *presentMet
 		nextRows[i] = parsePresentedRow(lines[i])
 	}
 	defer releasePresentedRows(nextRows)
+	if presentedRowsHaveWidthSafety(previousRows) || presentedRowsHaveWidthSafety(nextRows) {
+		return ""
+	}
 
 	previous, ok := buildHostFrame(previousRows, p.meta)
 	if !ok {
@@ -97,6 +100,15 @@ func (p *framePresenter) presentOwnerAwareDelta(lines []string, meta *presentMet
 	}
 	perftrace.Count("cursor_writer.present.mode.owner_aware_rects", len(rects))
 	return payload
+}
+
+func presentedRowsHaveWidthSafety(rows []presentedRow) bool {
+	for _, row := range rows {
+		if presentedRowHasWidthSafetyState(row) {
+			return true
+		}
+	}
+	return false
 }
 
 func buildHostFrame(rows []presentedRow, meta *presentMeta) (hostFrame, bool) {

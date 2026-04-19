@@ -212,6 +212,79 @@ func TestContentSpriteIncrementallyUpdatesChangedRowsForSameDimensions(t *testin
 	}
 }
 
+func TestContentSpriteFallsBackToFullRedrawForWidthUnsafeRows(t *testing.T) {
+	now := time.Date(2026, 4, 16, 12, 35, 0, 0, time.UTC)
+	surface := &spriteTestSurface{
+		size: protocol.Size{Cols: 4, Rows: 1},
+		screen: [][]protocol.Cell{{
+			{Content: "é", Width: 1},
+			{Content: "X", Width: 1},
+			{Content: "Y", Width: 1},
+			{Content: "Z", Width: 1},
+		}},
+		screenTimestamps: []time.Time{now},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-1",
+			Name:           "shell",
+			State:          "running",
+			Surface:        surface,
+			SurfaceVersion: 1,
+		}},
+	}
+	entry := paneRenderEntry{
+		PaneID:     "pane-1",
+		Rect:       workbench.Rect{X: 0, Y: 0, W: 4, H: 1},
+		Frameless:  true,
+		TerminalID: "term-1",
+		Theme:      defaultUITheme(),
+		ContentKey: paneContentKey{
+			TerminalID:    "term-1",
+			TerminalKnown: true,
+		},
+	}
+	entry.ContentKey.SurfaceVersion = 1
+
+	cache := &bodyRenderCache{}
+	sprite := cache.contentSprite(entry, runtimeState)
+	if sprite == nil {
+		t.Fatal("expected initial sprite")
+	}
+
+	surface.screen[0] = []protocol.Cell{
+		{Content: "è", Width: 1},
+		{Content: "X", Width: 1},
+		{Content: "Q", Width: 1},
+		{Content: "Z", Width: 1},
+	}
+	surface.screenTimestamps[0] = now.Add(time.Second)
+	runtimeState.Terminals[0].SurfaceVersion = 2
+	entry.ContentKey.SurfaceVersion = 2
+
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+
+	nextSprite := cache.contentSprite(entry, runtimeState)
+	if nextSprite == nil {
+		t.Fatal("expected updated sprite")
+	}
+	snapshot := perftrace.SnapshotCurrent()
+	if _, ok := snapshot.Event("render.pane_content_sprite.incremental"); ok {
+		t.Fatalf("expected width-unsafe row to bypass incremental sprite updates, got events=%#v", snapshot.Events)
+	}
+	if event, ok := snapshot.Event("render.pane_content_sprite.full_redraw"); !ok || event.Count == 0 {
+		t.Fatalf("expected width-unsafe row to force full sprite redraw, got events=%#v", snapshot.Events)
+	}
+	if cached := cache.contentSprites["pane-1"]; cached == nil || !cached.delta.full {
+		t.Fatalf("expected width-unsafe row to leave a full-redraw delta marker, got %#v", cached)
+	}
+	if got := strings.TrimSpace(nextSprite.rawString()); got != "èXQZ" {
+		t.Fatalf("expected full redraw to materialize updated width-unsafe row, got %q", got)
+	}
+}
+
 func TestContentSpriteIgnoresTimestampOnlySurfaceChanges(t *testing.T) {
 	now := time.Date(2026, 4, 16, 12, 45, 0, 0, time.UTC)
 	surface := &spriteTestSurface{

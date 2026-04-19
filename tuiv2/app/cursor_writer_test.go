@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1186,6 +1187,25 @@ func TestOutputCursorWriterOwnerAwareRectScrollUsesLRMarginsWhenEnabled(t *testi
 	screen := replayCursorWriterLineScreenWithMeta(t, 9, 8, [][]string{previous, next}, []*presentMeta{meta, meta})
 	want := replayCursorWriterLineScreenWithMeta(t, 9, 8, [][]string{next}, []*presentMeta{meta})
 	assertScreenEqual(t, screen, want)
+}
+
+func TestFramePresenterOwnerAwareDeltaFallsBackForHostWidthSafetyRows(t *testing.T) {
+	previous := []string{
+		"é" + xansi.CHA(2) + "X" + xansi.CHA(6) + "│",
+	}
+	next := []string{
+		"è" + xansi.CHA(2) + "Y" + xansi.CHA(6) + "│",
+	}
+	meta := ownerAwareTestMeta([]hostOwnerID{10, 10, 10, 10, 10, 20})
+
+	var presenter framePresenter
+	presenter.fullWidthLines = true
+	presenter.setLines(previous, true)
+	presenter.meta = clonePresentMeta(meta)
+
+	if payload := presenter.presentOwnerAwareDelta(next, meta); payload != "" {
+		t.Fatalf("expected owner-aware delta to bail out on width-unsafe rows, got %q", payload)
+	}
 }
 
 func TestOutputCursorWriterDiffOnCompositorOwnedRowSkipsExtraEraseLineRight(t *testing.T) {
@@ -4017,6 +4037,382 @@ func TestOutputCursorWriterFrameLinesPathSideBySideNvimScrollMatchesFinalScreen(
 		t.Fatalf("expected one final frame, got %d", len(wantFrames))
 	}
 	assertScreenEqual(t, got, want)
+}
+
+func TestOutputCursorWriterForceFullFrameLinesBypassesRowDiff(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+
+	initial := []string{"alpha", "bravo"}
+	next := []string{"alpHZ", "bravo"}
+	if err := writer.WriteFrameLinesWithMeta(initial, "", nil); err != nil {
+		t.Fatalf("write initial frame lines: %v", err)
+	}
+	sink.mu.Lock()
+	sink.writes = nil
+	sink.mu.Unlock()
+
+	writer.SetForceFullFrameLines(true)
+	if err := writer.WriteFrameLinesWithMeta(next, "", nil); err != nil {
+		t.Fatalf("write conservative full frame lines: %v", err)
+	}
+
+	sink.mu.Lock()
+	got := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+
+	if !strings.Contains(got, "alpHZ") || !strings.Contains(got, "bravo") {
+		t.Fatalf("expected forced conservative repaint to include full frame rows, got %q", got)
+	}
+	screen := replayCursorWriterLineScreen(t, 5, 2, [][]string{initial, next})
+	want := replayCursorWriterLineScreen(t, 5, 2, [][]string{next})
+	assertScreenEqual(t, screen, want)
+}
+
+func TestOutputCursorWriterFrameLinesPathSideBySideNvimScrollMatchesEachTmuxStep(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+	if testing.Short() {
+		t.Skip("tmux-backed writer parity is skipped with -short")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not installed")
+	}
+
+	buildModel := func(start int) *Model {
+		t.Helper()
+		wb := workbench.NewWorkbench()
+		wb.AddWorkspace("main", &workbench.WorkspaceState{
+			Name:      "main",
+			ActiveTab: 0,
+			Tabs: []*workbench.TabState{{
+				ID:           "tab-1",
+				Name:         "tab 1",
+				ActivePaneID: "pane-1",
+				Panes: map[string]*workbench.PaneState{
+					"pane-1": {ID: "pane-1", Title: "nvim", TerminalID: "term-nvim"},
+					"pane-2": {ID: "pane-2", Title: "notes", TerminalID: "term-notes"},
+				},
+				Root: &workbench.LayoutNode{
+					Direction: workbench.SplitVertical,
+					Ratio:     0.5,
+					First:     workbench.NewLeaf("pane-1"),
+					Second:    workbench.NewLeaf("pane-2"),
+				},
+			}},
+		})
+
+		rt := runtime.New(&recordingBridgeClient{
+			attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+			snapshotByTerminal: map[string]*protocol.Snapshot{},
+		})
+		nvimTerm := rt.Registry().GetOrCreate("term-nvim")
+		nvimTerm.Name = "nvim"
+		nvimTerm.State = "running"
+		nvimTerm.Channel = 1
+		nvimTerm.Snapshot = cursorWriterNvimScrollingSnapshot("term-nvim", 58, 30, start, "#444444")
+		nvimBinding := rt.BindPane("pane-1")
+		nvimBinding.Channel = 1
+		nvimBinding.Connected = true
+
+		notesTerm := rt.Registry().GetOrCreate("term-notes")
+		notesTerm.Name = "notes"
+		notesTerm.State = "running"
+		notesTerm.Channel = 2
+		notesTerm.Snapshot = cursorWriterDenseTextSnapshot("term-notes", 58, 30, 91)
+		notesBinding := rt.BindPane("pane-2")
+		notesBinding.Channel = 2
+		notesBinding.Connected = true
+
+		model := New(shared.Config{}, wb, rt)
+		model.width = 120
+		model.height = 36
+		return model
+	}
+
+	frames := func(model *Model, starts []int) []renderFrameLines {
+		t.Helper()
+		out := make([]renderFrameLines, 0, len(starts)+1)
+		out = append(out, captureRenderFrameLines(t, model))
+		terminal := model.runtime.Registry().Get("term-nvim")
+		if terminal == nil {
+			t.Fatal("expected nvim terminal")
+		}
+		for _, start := range starts {
+			terminal.Snapshot = cursorWriterNvimScrollingSnapshot("term-nvim", 58, 30, start, "#444444")
+			touchRuntimeVisibleStateForTest(model.runtime, uint8(start))
+			out = append(out, captureRenderFrameLines(t, model))
+		}
+		return out
+	}
+
+	actualFrames := frames(buildModel(0), []int{1, 2, 3, 4, 5, 6, 7, 8})
+	actualSink := &cursorWriterProbeTTY{}
+	actualWriter := newOutputCursorWriter(actualSink)
+	actualTmux := startTmuxReplayHarness(t, 120, 36)
+
+	lastWrite := 0
+	for i, frame := range actualFrames {
+		if err := actualWriter.WriteFrameLinesWithMeta(frame.lines, "", frame.meta); err != nil {
+			t.Fatalf("write actual frame %d: %v", i, err)
+		}
+		actualSink.mu.Lock()
+		stream := strings.Join(actualSink.writes[lastWrite:], "")
+		lastWrite = len(actualSink.writes)
+		actualSink.mu.Unlock()
+		actualTmux.Append(t, stream)
+		got := actualTmux.Capture(t)
+
+		expectedSink := &cursorWriterProbeTTY{}
+		expectedWriter := newOutputCursorWriter(expectedSink)
+		if err := expectedWriter.WriteFrameLinesWithMeta(frame.lines, "", frame.meta); err != nil {
+			t.Fatalf("write expected frame %d: %v", i, err)
+		}
+		expectedSink.mu.Lock()
+		expectedStream := strings.Join(expectedSink.writes, "")
+		expectedSink.mu.Unlock()
+		expectedTmux := startTmuxReplayHarness(t, 120, 36)
+		expectedTmux.Append(t, expectedStream)
+		want := expectedTmux.Capture(t)
+		expectedTmux.Close()
+
+		if len(got) != len(want) {
+			t.Fatalf("frame %d: tmux height mismatch got=%d want=%d", i, len(got), len(want))
+		}
+		for row := range want {
+			if got[row] == want[row] {
+				continue
+			}
+			t.Fatalf("frame %d row %d diverged\nactual=%q\nexpect=%q\nstream=%q",
+				i, row+1, got[row], want[row], debugEscape(stream, 320))
+		}
+	}
+}
+
+func TestModelViewSideBySideNvimScrollMatchesEachTmuxStep(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+	if testing.Short() {
+		t.Skip("tmux-backed writer parity is skipped with -short")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not installed")
+	}
+
+	buildModel := func(start int) *Model {
+		t.Helper()
+		wb := workbench.NewWorkbench()
+		wb.AddWorkspace("main", &workbench.WorkspaceState{
+			Name:      "main",
+			ActiveTab: 0,
+			Tabs: []*workbench.TabState{{
+				ID:           "tab-1",
+				Name:         "tab 1",
+				ActivePaneID: "pane-1",
+				Panes: map[string]*workbench.PaneState{
+					"pane-1": {ID: "pane-1", Title: "nvim", TerminalID: "term-nvim"},
+					"pane-2": {ID: "pane-2", Title: "notes", TerminalID: "term-notes"},
+				},
+				Root: &workbench.LayoutNode{
+					Direction: workbench.SplitVertical,
+					Ratio:     0.5,
+					First:     workbench.NewLeaf("pane-1"),
+					Second:    workbench.NewLeaf("pane-2"),
+				},
+			}},
+		})
+
+		rt := runtime.New(&recordingBridgeClient{
+			attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+			snapshotByTerminal: map[string]*protocol.Snapshot{},
+		})
+		nvimTerm := rt.Registry().GetOrCreate("term-nvim")
+		nvimTerm.Name = "nvim"
+		nvimTerm.State = "running"
+		nvimTerm.Channel = 1
+		nvimTerm.Snapshot = cursorWriterNvimScrollingSnapshot("term-nvim", 58, 30, start, "#444444")
+		nvimBinding := rt.BindPane("pane-1")
+		nvimBinding.Channel = 1
+		nvimBinding.Connected = true
+
+		notesTerm := rt.Registry().GetOrCreate("term-notes")
+		notesTerm.Name = "notes"
+		notesTerm.State = "running"
+		notesTerm.Channel = 2
+		notesTerm.Snapshot = cursorWriterDenseTextSnapshot("term-notes", 58, 30, 91)
+		notesBinding := rt.BindPane("pane-2")
+		notesBinding.Channel = 2
+		notesBinding.Connected = true
+
+		model := New(shared.Config{}, wb, rt)
+		model.width = 120
+		model.height = 36
+		return model
+	}
+
+	actualSink := &cursorWriterProbeTTY{}
+	actualWriter := newOutputCursorWriter(actualSink)
+	actualModel := buildModel(0)
+	actualModel.SetFrameWriter(actualWriter)
+	actualModel.SetCursorWriter(actualWriter)
+	actualTmux := startTmuxReplayHarness(t, 120, 36)
+
+	steps := []int{0, 1, 2, 3, 4, 5, 6, 7, 8}
+	lastWrite := 0
+	for i, start := range steps {
+		if i > 0 {
+			terminal := actualModel.runtime.Registry().Get("term-nvim")
+			if terminal == nil {
+				t.Fatal("expected nvim terminal")
+			}
+			terminal.Snapshot = cursorWriterNvimScrollingSnapshot("term-nvim", 58, 30, start, "#444444")
+			touchRuntimeVisibleStateForTest(actualModel.runtime, uint8(start))
+		}
+		actualModel.render.Invalidate()
+		_ = actualModel.View()
+
+		actualSink.mu.Lock()
+		stream := strings.Join(actualSink.writes[lastWrite:], "")
+		lastWrite = len(actualSink.writes)
+		actualSink.mu.Unlock()
+		actualTmux.Append(t, stream)
+		got := actualTmux.Capture(t)
+
+		expectedSink := &cursorWriterProbeTTY{}
+		expectedWriter := newOutputCursorWriter(expectedSink)
+		expectedModel := buildModel(start)
+		expectedModel.SetFrameWriter(expectedWriter)
+		expectedModel.SetCursorWriter(expectedWriter)
+		expectedModel.render.Invalidate()
+		_ = expectedModel.View()
+		expectedSink.mu.Lock()
+		expectedStream := strings.Join(expectedSink.writes, "")
+		expectedSink.mu.Unlock()
+		expectedTmux := startTmuxReplayHarness(t, 120, 36)
+		expectedTmux.Append(t, expectedStream)
+		want := expectedTmux.Capture(t)
+		expectedTmux.Close()
+
+		if len(got) != len(want) {
+			t.Fatalf("frame %d: tmux height mismatch got=%d want=%d", i, len(got), len(want))
+		}
+		for row := range want {
+			if got[row] == want[row] {
+				continue
+			}
+			t.Fatalf("frame %d row %d diverged\nactual=%q\nexpect=%q\nstream=%q",
+				i, row+1, got[row], want[row], debugEscape(stream, 320))
+		}
+	}
+}
+
+func TestModelViewSinglePaneNvimScrollMatchesEachTmuxStep(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+	if testing.Short() {
+		t.Skip("tmux-backed writer parity is skipped with -short")
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not installed")
+	}
+
+	buildModel := func(start int) *Model {
+		t.Helper()
+		wb := workbench.NewWorkbench()
+		wb.AddWorkspace("main", &workbench.WorkspaceState{
+			Name:      "main",
+			ActiveTab: 0,
+			Tabs: []*workbench.TabState{{
+				ID:           "tab-1",
+				Name:         "tab 1",
+				ActivePaneID: "pane-1",
+				Panes: map[string]*workbench.PaneState{
+					"pane-1": {ID: "pane-1", Title: "nvim", TerminalID: "term-nvim"},
+				},
+				Root: workbench.NewLeaf("pane-1"),
+			}},
+		})
+
+		rt := runtime.New(&recordingBridgeClient{
+			attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+			snapshotByTerminal: map[string]*protocol.Snapshot{},
+		})
+		nvimTerm := rt.Registry().GetOrCreate("term-nvim")
+		nvimTerm.Name = "nvim"
+		nvimTerm.State = "running"
+		nvimTerm.Channel = 1
+		nvimTerm.Snapshot = cursorWriterNvimScrollingSnapshot("term-nvim", 117, 30, start, "#444444")
+		nvimBinding := rt.BindPane("pane-1")
+		nvimBinding.Channel = 1
+		nvimBinding.Connected = true
+
+		model := New(shared.Config{}, wb, rt)
+		model.width = 120
+		model.height = 36
+		return model
+	}
+
+	actualSink := &cursorWriterProbeTTY{}
+	actualWriter := newOutputCursorWriter(actualSink)
+	actualModel := buildModel(0)
+	actualModel.SetFrameWriter(actualWriter)
+	actualModel.SetCursorWriter(actualWriter)
+	actualTmux := startTmuxReplayHarness(t, 120, 36)
+
+	steps := []int{0, 1, 2, 3, 4, 5, 6, 7, 8}
+	lastWrite := 0
+	for i, start := range steps {
+		if i > 0 {
+			terminal := actualModel.runtime.Registry().Get("term-nvim")
+			if terminal == nil {
+				t.Fatal("expected nvim terminal")
+			}
+			terminal.Snapshot = cursorWriterNvimScrollingSnapshot("term-nvim", 117, 30, start, "#444444")
+			touchRuntimeVisibleStateForTest(actualModel.runtime, uint8(start))
+		}
+		actualModel.render.Invalidate()
+		_ = actualModel.View()
+
+		actualSink.mu.Lock()
+		stream := strings.Join(actualSink.writes[lastWrite:], "")
+		lastWrite = len(actualSink.writes)
+		actualSink.mu.Unlock()
+		actualTmux.Append(t, stream)
+		got := actualTmux.Capture(t)
+
+		expectedSink := &cursorWriterProbeTTY{}
+		expectedWriter := newOutputCursorWriter(expectedSink)
+		expectedModel := buildModel(start)
+		expectedModel.SetFrameWriter(expectedWriter)
+		expectedModel.SetCursorWriter(expectedWriter)
+		expectedModel.render.Invalidate()
+		_ = expectedModel.View()
+		expectedSink.mu.Lock()
+		expectedStream := strings.Join(expectedSink.writes, "")
+		expectedSink.mu.Unlock()
+		expectedTmux := startTmuxReplayHarness(t, 120, 36)
+		expectedTmux.Append(t, expectedStream)
+		want := expectedTmux.Capture(t)
+		expectedTmux.Close()
+
+		if len(got) != len(want) {
+			t.Fatalf("frame %d: tmux height mismatch got=%d want=%d", i, len(got), len(want))
+		}
+		for row := range want {
+			if got[row] == want[row] {
+				continue
+			}
+			t.Fatalf("frame %d row %d diverged\nactual=%q\nexpect=%q\nstream=%q",
+				i, row+1, got[row], want[row], debugEscape(stream, 320))
+		}
+	}
 }
 
 func TestOutputCursorWriterFrameLinesPathSharedFloatingNvimScrollMatchesFinalScreen(t *testing.T) {
