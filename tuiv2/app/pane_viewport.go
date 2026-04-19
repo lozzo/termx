@@ -117,7 +117,13 @@ func (m *Model) resetPaneViewport(paneID string) {
 	if m == nil || paneID == "" {
 		return
 	}
-	if m.setPaneViewportOffset(paneID, 0) {
+	invalidated := m.setPaneViewportOffset(paneID, 0)
+	if m.workbench != nil {
+		if tabID, err := m.workbench.ResolvePaneTab("", paneID); err == nil && m.workbench.SetTabScrollOffset(tabID, 0) {
+			invalidated = true
+		}
+	}
+	if invalidated {
 		m.render.Invalidate()
 	}
 }

@@ -120,11 +120,11 @@ func (m *Model) canDirectSendForwardedWheelInput(in input.TerminalInput) bool {
 	if !m.terminalAlreadySized(target.terminalID, cols, rows) {
 		return false
 	}
-	terminal := m.runtime.Registry().Get(target.terminalID)
-	if terminal == nil || terminal.PendingOwnerResize {
+	control := m.runtime.TerminalControlStatus(target.terminalID)
+	if control.TerminalID == "" || control.PendingOwnerResize {
 		return false
 	}
-	if len(terminal.BoundPaneIDs) > 1 && terminal.OwnerPaneID != target.paneID {
+	if len(control.BoundPaneIDs) > 1 && control.OwnerPaneID != target.paneID {
 		return false
 	}
 	return true

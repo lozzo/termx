@@ -92,12 +92,7 @@ func uiThemeForRuntime(runtimeState *VisibleRuntimeStateProxy) uiTheme {
 }
 
 func uiThemeFromHostColors(hostBG, hostFG string, hostPalette map[int]string) uiTheme {
-	if !isHexColor(strings.TrimSpace(hostBG)) {
-		hostBG = "#000000"
-	}
-	if !isHexColor(strings.TrimSpace(hostFG)) {
-		hostFG = contrastTextColor(hostBG)
-	}
+	hostBG, hostFG = normalizeHostColors(hostBG, hostFG)
 
 	chromeBG := hostBG
 	chromeAltBG := mixHex(hostBG, hostFG, 0.08)
@@ -105,17 +100,19 @@ func uiThemeFromHostColors(hostBG, hostFG string, hostPalette map[int]string) ui
 	panelAltBG := mixHex(hostBG, hostFG, 0.06)
 	panelStrong := mixHex(hostBG, hostFG, 0.11)
 	panelText := hostFG
-	// Use colorful hardcoded fallbacks so status-bar chips have visible hue
-	// even when the host terminal does not report a palette via OSC queries.
-	// The old approach mixed hostBG/hostFG which are achromatic, producing
-	// indistinguishable gray chips on black or white terminals.
-	accentFallback := ensureContrast("#818cf8", hostBG, 3.2) // indigo
-	accent := resolveSemanticColor(hostBG, hostPalette, []int{12, 13, 14, 6, 5, 4}, accentFallback, 3.2)
+	accent := resolveSemanticColor(
+		hostBG,
+		hostPalette,
+		[]int{12, 13, 14, 6, 5, 4},
+		hostDerivedToken(hostBG, hostFG, 0.74, 3.2),
+		ensureContrast("#818cf8", hostBG, 3.2),
+		3.2,
+	)
 	panelMuted := ensureContrast(mixHex(hostBG, hostFG, 0.46), panelBG, 2.0)
-	success := resolveSemanticColor(hostBG, hostPalette, []int{10, 2}, ensureContrast("#34d399", hostBG, 2.8), 2.8)
-	warning := resolveSemanticColor(hostBG, hostPalette, []int{11, 3}, ensureContrast("#fbbf24", hostBG, 2.8), 2.8)
-	danger := resolveSemanticColor(hostBG, hostPalette, []int{9, 1}, ensureContrast("#f87171", hostBG, 2.8), 2.8)
-	info := resolveSemanticColor(hostBG, hostPalette, []int{14, 6}, ensureContrast("#60a5fa", hostBG, 2.8), 2.8)
+	success := resolveSemanticColor(hostBG, hostPalette, []int{10, 2}, hostDerivedToken(hostBG, hostFG, 0.66, 2.8), ensureContrast("#34d399", hostBG, 2.8), 2.8)
+	warning := resolveSemanticColor(hostBG, hostPalette, []int{11, 3}, hostDerivedToken(hostBG, hostFG, 0.58, 2.8), ensureContrast("#fbbf24", hostBG, 2.8), 2.8)
+	danger := resolveSemanticColor(hostBG, hostPalette, []int{9, 1}, hostDerivedToken(hostBG, hostFG, 0.82, 2.8), ensureContrast("#f87171", hostBG, 2.8), 2.8)
+	info := resolveSemanticColor(hostBG, hostPalette, []int{14, 6}, hostDerivedToken(hostBG, hostFG, 0.50, 2.8), ensureContrast("#60a5fa", hostBG, 2.8), 2.8)
 	panelBorder := ensureContrast(mixHex(hostBG, hostFG, 0.26), panelBG, 1.24)
 	panelBorder2 := ensureContrast(mixHex(hostBG, hostFG, 0.42), panelBG, 1.6)
 	fieldBG := mixHex(panelAltBG, accent, 0.08)
@@ -468,6 +465,29 @@ func overlayFooterPlainStyle(theme uiTheme) lipgloss.Style {
 		Background(lipgloss.Color(theme.footerPlainBG))
 }
 
+func normalizeHostColors(hostBG, hostFG string) (string, string) {
+	hostBG = strings.TrimSpace(hostBG)
+	hostFG = strings.TrimSpace(hostFG)
+	bgValid := isHexColor(hostBG)
+	fgValid := isHexColor(hostFG)
+	switch {
+	case bgValid && fgValid:
+		return hostBG, hostFG
+	case bgValid:
+		return hostBG, contrastTextColor(hostBG)
+	case fgValid:
+		derivedBG := mixHex(hostFG, chromeTextColor(hostFG), 0.92)
+		return derivedBG, ensureContrast(hostFG, derivedBG, 4.5)
+	default:
+		hostBG = "#000000"
+		return hostBG, contrastTextColor(hostBG)
+	}
+}
+
+func hostDerivedToken(bg, fg string, ratio, minContrast float64) string {
+	return ensureContrast(mixHex(bg, fg, ratio), bg, minContrast)
+}
+
 func isHexColor(value string) bool {
 	if len(value) != 7 || value[0] != '#' {
 		return false
@@ -521,11 +541,14 @@ func mixHex(a, b string, ratio float64) string {
 	return fmt.Sprintf("#%02x%02x%02x", mix(ar, br), mix(ag, bg), mix(ab, bb))
 }
 
-func resolveSemanticColor(bg string, palette map[int]string, indexes []int, fallback string, minContrast float64) string {
+func resolveSemanticColor(bg string, palette map[int]string, indexes []int, derived string, fallback string, minContrast float64) string {
 	for _, index := range indexes {
 		if candidate, ok := palette[index]; ok && isHexColor(strings.TrimSpace(candidate)) {
 			return ensureContrast(candidate, bg, minContrast)
 		}
+	}
+	if isHexColor(strings.TrimSpace(derived)) {
+		return ensureContrast(derived, bg, minContrast)
 	}
 	return ensureContrast(fallback, bg, minContrast)
 }

@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -96,27 +97,11 @@ func (s *terminalInteractionService) shouldAcquireLocalOwnership(req terminalInt
 	if s == nil || s.model == nil || s.model.sessionID != "" || s.model.runtime == nil {
 		return false
 	}
-	terminal := s.model.runtime.Registry().Get(target.terminalID)
-	if terminal == nil {
-		return false
-	}
-	if req.ExplicitTakeover {
-		return terminal.OwnerPaneID != target.paneID
-	}
-	if !req.ImplicitInteractiveOwner {
-		return false
-	}
-	cursorVisible := false
-	switch {
-	case terminal.VTerm != nil:
-		cursorVisible = terminal.VTerm.CursorState().Visible
-	case terminal.Snapshot != nil:
-		cursorVisible = terminal.Snapshot.Cursor.Visible
-	}
-	if len(terminal.BoundPaneIDs) < 2 || !cursorVisible {
-		return false
-	}
-	return terminal.OwnerPaneID != target.paneID
+	return s.model.runtime.ShouldAcquireTerminalOwnership(target.terminalID, runtime.TerminalOwnershipRequest{
+		PaneID:                   target.paneID,
+		ExplicitTakeover:         req.ExplicitTakeover,
+		ImplicitInteractiveOwner: req.ImplicitInteractiveOwner,
+	})
 }
 
 func (s *terminalInteractionService) acquireSessionLease(ctx context.Context, paneID, terminalID string) error {
@@ -150,18 +135,11 @@ func (s *terminalInteractionService) resizeIfNeeded(ctx context.Context, target 
 	}
 	targetCols := uint16(maxInt(2, viewportRect.W))
 	targetRows := uint16(maxInt(2, viewportRect.H))
-	if !s.shouldForceResize(target.terminalID) && s.model.terminalAlreadySized(target.terminalID, targetCols, targetRows) {
+	decision := s.model.runtime.ResizeDecision(target.paneID, target.terminalID)
+	if !decision.Force && s.model.terminalAlreadySized(target.terminalID, targetCols, targetRows) {
 		return nil
 	}
 	return s.model.runtime.ResizeTerminal(ctx, target.paneID, target.terminalID, targetCols, targetRows)
-}
-
-func (s *terminalInteractionService) shouldForceResize(terminalID string) bool {
-	if s == nil || s.model == nil || s.model.runtime == nil || terminalID == "" {
-		return false
-	}
-	terminal := s.model.runtime.Registry().Get(terminalID)
-	return terminal != nil && terminal.PendingOwnerResize
 }
 
 func acquireSessionLeaseParams(sessionID, viewID, paneID, terminalID string) protocol.AcquireSessionLeaseParams {

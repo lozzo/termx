@@ -52,13 +52,22 @@ func (m *Model) handleWorkspacePickerModalAction(action input.SemanticAction) (b
 		selected := m.selectedWorkspacePickerItem()
 		if selected == nil || selected.CreateNew || selectedWorkspaceTreeItemKind(*selected) != modal.WorkspacePickerItemWorkspace {
 			if selected != nil && selectedWorkspaceTreeItemKind(*selected) == modal.WorkspacePickerItemTab {
-				if err := m.workbench.CloseTab(selected.TabID); err != nil {
-					return true, m.showError(err)
+				if service := m.tabLifecycleService(); service != nil {
+					tabID := selected.TabID
+					return true, func() tea.Msg {
+						bindings, terminalIDs := service.snapshotTabBindings(tabID)
+						if err := service.close(tabID, bindings, terminalIDs, false); err != nil {
+							return err
+						}
+						m.modalHost.WorkspacePicker.Items = m.workspacePickerItems()
+						m.modalHost.WorkspacePicker.ApplyFilter()
+						normalizeModalSelection(&m.modalHost.WorkspacePicker.Selected, len(m.modalHost.WorkspacePicker.VisibleItems()))
+						if cmd := m.saveStateCmd(); cmd != nil {
+							return cmd()
+						}
+						return nil
+					}
 				}
-				m.modalHost.WorkspacePicker.Items = m.workspacePickerItems()
-				m.modalHost.WorkspacePicker.ApplyFilter()
-				normalizeModalSelection(&m.modalHost.WorkspacePicker.Selected, len(m.modalHost.WorkspacePicker.VisibleItems()))
-				m.render.Invalidate()
 				return true, nil
 			}
 			if selected != nil && selectedWorkspaceTreeItemKind(*selected) == modal.WorkspacePickerItemPane {
@@ -103,13 +112,22 @@ func (m *Model) handleWorkspacePickerModalAction(action input.SemanticAction) (b
 		if selected == nil || selectedWorkspaceTreeItemKind(*selected) != modal.WorkspacePickerItemTab {
 			return true, nil
 		}
-		if err := m.workbench.CloseTab(selected.TabID); err != nil {
-			return true, m.showError(err)
+		if service := m.tabLifecycleService(); service != nil {
+			tabID := selected.TabID
+			return true, func() tea.Msg {
+				bindings, terminalIDs := service.snapshotTabBindings(tabID)
+				if err := service.close(tabID, bindings, terminalIDs, false); err != nil {
+					return err
+				}
+				m.modalHost.WorkspacePicker.Items = m.workspacePickerItems()
+				m.modalHost.WorkspacePicker.ApplyFilter()
+				normalizeModalSelection(&m.modalHost.WorkspacePicker.Selected, len(m.modalHost.WorkspacePicker.VisibleItems()))
+				if cmd := m.saveStateCmd(); cmd != nil {
+					return cmd()
+				}
+				return nil
+			}
 		}
-		m.modalHost.WorkspacePicker.Items = m.workspacePickerItems()
-		m.modalHost.WorkspacePicker.ApplyFilter()
-		normalizeModalSelection(&m.modalHost.WorkspacePicker.Selected, len(m.modalHost.WorkspacePicker.VisibleItems()))
-		m.render.Invalidate()
 		return true, nil
 	case input.ActionDetachPane:
 		return true, m.runWorkspaceTreePaneAction(input.ActionDetachPane)
@@ -124,7 +142,7 @@ func (m *Model) handleWorkspacePickerModalAction(action input.SemanticAction) (b
 		}
 		m.closeModal(input.ModeWorkspacePicker, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
-		return true, m.saveStateCmd()
+		return true, m.postViewActivationCmd()
 	case input.ActionNextWorkspace:
 		if m.workbench == nil {
 			return true, nil
@@ -134,7 +152,7 @@ func (m *Model) handleWorkspacePickerModalAction(action input.SemanticAction) (b
 		}
 		m.closeModal(input.ModeWorkspacePicker, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
-		return true, m.saveStateCmd()
+		return true, m.postViewActivationCmd()
 	default:
 		return false, nil
 	}

@@ -62,7 +62,7 @@ func (m *Model) handleWorkspaceAndTabLocalAction(action input.SemanticAction) (b
 		}
 		m.setMode(input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
-		return true, m.saveStateCmd()
+		return true, m.postViewActivationCmd()
 	case input.ActionNextWorkspace:
 		if m.mode().Kind != input.ModeWorkspace || m.workbench == nil {
 			return false, nil
@@ -72,7 +72,7 @@ func (m *Model) handleWorkspaceAndTabLocalAction(action input.SemanticAction) (b
 		}
 		m.setMode(input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
-		return true, m.saveStateCmd()
+		return true, m.postViewActivationCmd()
 	case input.ActionRenameTab:
 		if m.mode().Kind != input.ModeTab {
 			return false, nil
@@ -96,7 +96,7 @@ func (m *Model) handleWorkspaceAndTabLocalAction(action input.SemanticAction) (b
 		}
 		m.setMode(input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
-		return true, m.saveStateCmd()
+		return true, m.postViewActivationCmd()
 	case input.ActionPrevTab:
 		if m.mode().Kind != input.ModeTab || m.workbench == nil {
 			return false, nil
@@ -106,7 +106,7 @@ func (m *Model) handleWorkspaceAndTabLocalAction(action input.SemanticAction) (b
 		}
 		m.setMode(input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
-		return true, m.saveStateCmd()
+		return true, m.postViewActivationCmd()
 	case input.ActionNextTab:
 		if m.mode().Kind != input.ModeTab || m.workbench == nil {
 			return false, nil
@@ -116,7 +116,7 @@ func (m *Model) handleWorkspaceAndTabLocalAction(action input.SemanticAction) (b
 		}
 		m.setMode(input.ModeState{Kind: input.ModeNormal})
 		m.render.Invalidate()
-		return true, m.saveStateCmd()
+		return true, m.postViewActivationCmd()
 	case input.ActionKillTab:
 		if m.mode().Kind != input.ModeTab {
 			return false, nil

@@ -108,7 +108,7 @@ func renderBodyCanvas(coordinator *Coordinator, runtimeState *VisibleRuntimeStat
 			}
 			if frameChanged || cache.contentKeys[entry.PaneID] != entry.ContentKey {
 				cache.canvas.withOwner(entry.OwnerID, func() {
-					drawPaneContentFromCache(cache.canvas, cache, entry, runtimeState, true)
+					drawPaneContentFromCacheRows(cache.canvas, cache, entry, runtimeState, 0, interiorRectForEntry(entry).H-1, true, !frameChanged)
 				})
 				if entry.Active {
 					activeContentRedrawn = true
@@ -167,10 +167,10 @@ func drawPaneContentFromCache(canvas *composedCanvas, cache *bodyRenderCache, en
 	if interior.W <= 0 || interior.H <= 0 {
 		return
 	}
-	drawPaneContentFromCacheRows(canvas, cache, entry, runtimeState, 0, interior.H-1, clearInterior)
+	drawPaneContentFromCacheRows(canvas, cache, entry, runtimeState, 0, interior.H-1, clearInterior, true)
 }
 
-func drawPaneContentFromCacheRows(canvas *composedCanvas, cache *bodyRenderCache, entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy, startRow, endRow int, clearRows bool) {
+func drawPaneContentFromCacheRows(canvas *composedCanvas, cache *bodyRenderCache, entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy, startRow, endRow int, clearRows bool, allowDelta bool) {
 	if canvas == nil {
 		return
 	}
@@ -199,7 +199,7 @@ func drawPaneContentFromCacheRows(canvas *composedCanvas, cache *bodyRenderCache
 		drawPaneContentWithKey(canvas, entry.Rect, entry, runtimeState)
 		return
 	}
-	if clearRows && startRow == 0 && endRow == interior.H-1 {
+	if allowDelta && clearRows && startRow == 0 && endRow == interior.H-1 {
 		deltaFinish := perftrace.Measure("render.body.canvas.apply_sprite_delta")
 		applied := cache.applySpriteDeltaToCanvasRows(canvas, entry, startRow, endRow)
 		deltaFinish(maxInt(1, interior.W*rowCount))
@@ -249,7 +249,7 @@ func drawResolvedPaneContentSprite(canvas *composedCanvas, entry paneRenderEntry
 			}
 			return
 		}
-		drawTerminalSourceWithOffset(canvas, contentRect, resolved.source, resolved.renderOffset, entry.Theme)
+		drawTerminalSourceWithOffsetAndMetrics(canvas, contentRect, resolved.source, resolved.renderOffset, entry.Theme, resolved.metrics)
 		if entry.CopyModeActive {
 			drawCopyModeOverlay(canvas, contentRect, resolved.snapshot, entry.Theme, entry.CopyModeCursorRow, entry.CopyModeCursorCol, entry.CopyModeViewTopRow, entry.CopyModeMarkSet, entry.CopyModeMarkRow, entry.CopyModeMarkCol)
 		}
@@ -299,7 +299,7 @@ func redrawDamagedRect(canvas *composedCanvas, cache *bodyRenderCache, entries [
 		// FE0F compensation columns at arbitrary horizontal offsets is much
 		// riskier than repainting the affected interior rows end-to-end.
 		canvas.withOwner(entry.OwnerID, func() {
-			drawPaneContentFromCacheRows(canvas, cache, entry, runtimeState, startRow, endRow, false)
+			drawPaneContentFromCacheRows(canvas, cache, entry, runtimeState, startRow, endRow, false, false)
 		})
 	}
 	projectActiveEntryCursor(canvas, entries, runtimeState)
@@ -342,7 +342,7 @@ func applyOverlapIncrementalComposite(canvas *composedCanvas, cache *bodyRenderC
 			// incrementally. Repaint the changed pane first, then redraw only the
 			// later overlapping panes to restore correct z-order.
 			canvas.withOwner(entry.OwnerID, func() {
-				drawPaneContentFromCache(canvas, cache, entry, runtimeState, true)
+				drawPaneContentFromCacheRows(canvas, cache, entry, runtimeState, 0, interiorRectForEntry(entry).H-1, true, !frameChanged)
 			})
 		}
 		for upper := idx + 1; upper < len(entries); upper++ {
@@ -356,7 +356,7 @@ func applyOverlapIncrementalComposite(canvas *composedCanvas, cache *bodyRenderC
 				})
 			}
 			canvas.withOwner(overlay.OwnerID, func() {
-				drawPaneContentFromCache(canvas, cache, overlay, runtimeState, false)
+				drawPaneContentFromCacheRows(canvas, cache, overlay, runtimeState, 0, interiorRectForEntry(overlay).H-1, false, false)
 			})
 		}
 	}

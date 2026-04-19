@@ -34,15 +34,12 @@ func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, col
 		if terminalmeta.SizeLocked(terminal.Tags) {
 			return nil
 		}
-		ownerPaneID := r.syncTerminalOwnership(terminal)
-		if ownerPaneID == "" {
-			if terminal.RequiresExplicitOwner {
-				return nil
-			}
-		} else if ownerPaneID != paneID {
+		decision := r.ResizeDecision(paneID, terminalID)
+		r.syncTerminalOwnership(terminal)
+		if !decision.Allowed {
 			return nil
 		}
-		forceResize := terminal.PendingOwnerResize
+		forceResize := decision.Force
 		if !forceResize && terminalAlreadySized(terminal, cols, rows) {
 			return nil
 		}

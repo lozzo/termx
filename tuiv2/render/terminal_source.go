@@ -182,30 +182,6 @@ func (s surfaceRenderSource) RowView(rowIndex int) []localvterm.Cell {
 	return nil
 }
 
-func terminalMetricsForSource(source terminalRenderSource) renderTerminalMetrics {
-	if source == nil {
-		return renderTerminalMetrics{}
-	}
-	metrics := renderTerminalMetrics{
-		Cols: int(source.Size().Cols),
-		Rows: int(source.Size().Rows),
-	}
-	renderedRows := source.ScreenRows()
-	if renderedRows > 0 && (metrics.Rows <= 0 || renderedRows < metrics.Rows) {
-		metrics.Rows = renderedRows
-	}
-	renderedCols := 0
-	for row := source.ScrollbackRows(); row < source.TotalRows(); row++ {
-		if rowW := protocolRowDisplayWidth(source.Row(row)); rowW > renderedCols {
-			renderedCols = rowW
-		}
-	}
-	if renderedCols > 0 && (metrics.Cols <= 0 || renderedCols < metrics.Cols) {
-		metrics.Cols = renderedCols
-	}
-	return metrics
-}
-
 func renderSourceRowMaxCol(source terminalRenderSource, rowIndex int) int {
 	row := source.Row(rowIndex)
 	if len(row) > 0 {

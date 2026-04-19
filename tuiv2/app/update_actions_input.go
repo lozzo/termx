@@ -255,16 +255,11 @@ func (m *Model) prepareTerminalInput(ctx context.Context, paneID string) error {
 }
 
 func (m *Model) ensurePaneTerminalSize(ctx context.Context, paneID, terminalID string, rect workbench.Rect) error {
-	return m.syncTerminalInteraction(ctx, terminalInteractionRequest{
-		PaneID:         paneID,
-		TerminalID:     terminalID,
-		Rect:           rect,
-		ResizeIfNeeded: true,
-	}, terminalInteractionTarget{
-		paneID:     paneID,
-		terminalID: terminalID,
-		rect:       rect,
-	})
+	service := m.layoutResizeService()
+	if service == nil {
+		return nil
+	}
+	return service.ensurePaneTerminalSize(ctx, paneID, terminalID, rect)
 }
 
 func (m *Model) implicitSessionLeaseNeedsAcquire(terminalID, paneID string) bool {

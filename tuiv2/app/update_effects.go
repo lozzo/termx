@@ -51,6 +51,11 @@ func (m *Model) effectCmdWithOptions(effect orchestrator.Effect, options effectA
 		}
 		return nil
 	case orchestrator.ClosePaneEffect:
+		if service := m.paneBindingLifecycleService(); service != nil {
+			if _, err := service.close(typed.PaneID); err != nil {
+				return m.showError(err)
+			}
+		}
 		m.clampFloatingPanesToViewport()
 		if m.modalHost != nil && m.modalHost.Session != nil && m.modalHost.Session.Kind == input.ModeFloatingOverview {
 			m.refreshFloatingOverview("")
@@ -60,6 +65,58 @@ func (m *Model) effectCmdWithOptions(effect orchestrator.Effect, options effectA
 		}
 		m.render.Invalidate()
 		return tea.Batch(m.resizeVisiblePanesCmd(), m.saveStateCmd())
+	case orchestrator.DetachPaneEffect:
+		if service := m.paneBindingLifecycleService(); service != nil {
+			if _, err := service.detach(typed.PaneID); err != nil {
+				return m.showError(err)
+			}
+		}
+		m.render.Invalidate()
+		return nil
+	case orchestrator.ReconnectPaneEffect:
+		if service := m.paneBindingLifecycleService(); service != nil {
+			if _, err := service.reconnect(typed.PaneID); err != nil {
+				return m.showError(err)
+			}
+		}
+		m.render.Invalidate()
+		return nil
+	case orchestrator.ResizePaneLayoutEffect:
+		if service := m.layoutResizeService(); service != nil {
+			_, cmd := service.adjustPaneRatioAction(input.SemanticAction{Kind: typed.Kind, PaneID: typed.PaneID}, typed.Delta)
+			return cmd
+		}
+		return nil
+	case orchestrator.BalancePanesEffect:
+		if service := m.layoutResizeService(); service != nil {
+			_, cmd := service.balancePanesAction()
+			return cmd
+		}
+		return nil
+	case orchestrator.CycleLayoutEffect:
+		if service := m.layoutResizeService(); service != nil {
+			_, cmd := service.cycleLayoutAction()
+			return cmd
+		}
+		return nil
+	case orchestrator.MoveFloatingPaneEffect:
+		if service := m.layoutResizeService(); service != nil {
+			_, cmd := service.moveFloatingAction(input.SemanticAction{Kind: typed.Kind, PaneID: typed.PaneID})
+			return cmd
+		}
+		return nil
+	case orchestrator.ResizeFloatingPaneEffect:
+		if service := m.layoutResizeService(); service != nil {
+			_, cmd := service.resizeFloatingAction(input.SemanticAction{Kind: typed.Kind, PaneID: typed.PaneID})
+			return cmd
+		}
+		return nil
+	case orchestrator.CenterFloatingPaneEffect:
+		if service := m.layoutResizeService(); service != nil {
+			_, cmd := service.centerFloatingAction(input.SemanticAction{Kind: input.ActionCenterFloatingPane, PaneID: typed.PaneID})
+			return cmd
+		}
+		return nil
 	case orchestrator.CreateTabEffect:
 		m.clampFloatingPanesToViewport()
 		m.render.Invalidate()
@@ -69,9 +126,10 @@ func (m *Model) effectCmdWithOptions(effect orchestrator.Effect, options effectA
 		m.render.Invalidate()
 		return nil
 	case orchestrator.CloseTabEffect:
-		m.clampFloatingPanesToViewport()
-		m.render.Invalidate()
-		return m.saveStateCmd()
+		if service := m.tabLifecycleService(); service != nil {
+			return service.closeAndSaveCmd(typed.TabID, false)
+		}
+		return nil
 	case orchestrator.KillTerminalEffect:
 		return func() tea.Msg {
 			client := m.runtime.Client()
@@ -148,26 +206,15 @@ func (m *Model) effectCmdWithOptions(effect orchestrator.Effect, options effectA
 			return nil
 		}
 	case orchestrator.LoadSnapshotEffect:
-		return func() tea.Msg {
-			snapshot, err := m.runtime.LoadSnapshot(context.Background(), typed.TerminalID, typed.Offset, typed.Limit)
-			if err != nil {
-				return err
-			}
-			return orchestrator.SnapshotLoadedMsg{TerminalID: typed.TerminalID, Snapshot: snapshot}
+		if service := m.terminalBindingService(); service != nil {
+			return service.loadSnapshotCmd(typed.TerminalID, typed.Offset, typed.Limit)
 		}
+		return nil
 	case orchestrator.AttachTerminalEffect:
-		return func() tea.Msg {
-			msgs, err := m.orchestrator.AttachAndLoadSnapshot(context.Background(), typed.PaneID, typed.TerminalID, typed.Mode, 0, defaultTerminalSnapshotScrollbackLimit)
-			if err != nil {
-				return err
-			}
-			cmds := make([]tea.Cmd, 0, len(msgs))
-			for _, msg := range msgs {
-				value := msg
-				cmds = append(cmds, func() tea.Msg { return value })
-			}
-			return tea.Batch(cmds...)()
+		if service := m.terminalAttachService(); service != nil {
+			return service.attachWithModeCmd("", typed.PaneID, typed.TerminalID, typed.Mode)
 		}
+		return nil
 	default:
 		return nil
 	}

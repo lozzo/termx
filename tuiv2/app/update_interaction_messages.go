@@ -149,8 +149,12 @@ func (m *Model) shouldResyncSharedTerminalSnapshot(paneID, terminalID string) bo
 	if m == nil || m.runtime == nil || m.runtime.Client() == nil || terminalID == "" {
 		return false
 	}
+	control := m.runtime.TerminalControlStatus(terminalID)
+	if control.TerminalID == "" || len(control.BoundPaneIDs) < 2 {
+		return false
+	}
 	terminal := m.runtime.Registry().Get(terminalID)
-	if terminal == nil || len(terminal.BoundPaneIDs) < 2 {
+	if terminal == nil {
 		return false
 	}
 	modes := localvterm.TerminalModes{}

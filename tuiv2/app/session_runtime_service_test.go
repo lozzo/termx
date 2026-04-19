@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -64,6 +66,9 @@ func TestSessionRuntimeServiceReconcileRuntimeUnbindsRemovedAndAttachesNewBindin
 	}
 	if len(client.attachCalls) != 1 || client.attachCalls[0].terminalID != "term-new" {
 		t.Fatalf("expected attach for new binding, got %#v", client.attachCalls)
+	}
+	if len(client.snapshotCalls) != 1 || client.snapshotCalls[0] != "term-new" {
+		t.Fatalf("expected reconcile attach to bootstrap snapshot for term-new, got %#v", client.snapshotCalls)
 	}
 	if binding := model.runtime.Binding("pane-2"); binding == nil || !binding.Connected {
 		t.Fatalf("expected pane-2 attached and connected, got %#v", binding)
@@ -146,7 +151,42 @@ func TestSessionRuntimeServiceReconcileRuntimeReattachesDisconnectedBinding(t *t
 	if len(client.attachCalls) != 1 || client.attachCalls[0].terminalID != "term-1" {
 		t.Fatalf("expected disconnected binding to reattach term-1, got %#v", client.attachCalls)
 	}
+	if len(client.snapshotCalls) != 1 || client.snapshotCalls[0] != "term-1" {
+		t.Fatalf("expected disconnected reconcile to reload snapshot, got %#v", client.snapshotCalls)
+	}
 	if got := model.runtime.Binding("pane-1"); got == nil || !got.Connected {
 		t.Fatalf("expected pane-1 binding reconnected after reconcile, got %#v", got)
+	}
+}
+
+func TestSessionRuntimeServiceAttachAndBootstrapRollsBackOnSnapshotFailure(t *testing.T) {
+	client := &recordingBridgeClient{
+		attachResult: &protocol.AttachResult{Channel: 7, Mode: "collaborator"},
+		snapshotErr:  errors.New("snapshot failed"),
+	}
+	model := setupModel(t, modelOpts{client: client})
+	terminal := model.runtime.Registry().GetOrCreate("term-old")
+	terminal.OwnerPaneID = "pane-1"
+	terminal.ControlPaneID = "pane-1"
+	terminal.BoundPaneIDs = []string{"pane-1"}
+	binding := model.runtime.BindPane("pane-1")
+	binding.Channel = 3
+	binding.Connected = false
+	binding.Role = runtime.BindingRoleOwner
+
+	service := model.sessionRuntimeService()
+	service.reconcileRuntime(context.Background(),
+		map[string]string{"pane-1": "term-old"},
+		map[string]string{"pane-1": "term-new"},
+	)
+
+	if got := model.runtime.Binding("pane-1"); got != nil {
+		t.Fatalf("expected failed reconcile attach not to leave a runtime binding behind, got %#v", got)
+	}
+	if len(terminal.BoundPaneIDs) != 0 || terminal.OwnerPaneID != "" || terminal.ControlPaneID != "" {
+		t.Fatalf("expected old terminal to stay detached after failed reconcile replacement, got %#v", terminal)
+	}
+	if target := model.runtime.Registry().Get("term-new"); target != nil && len(target.BoundPaneIDs) != 0 {
+		t.Fatalf("expected failed target terminal to release pane binding, got %#v", target)
 	}
 }

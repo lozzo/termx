@@ -407,7 +407,7 @@ func rectHasUnsafeCells(frame hostFrame, bounds rect) bool {
 	for y := bounds.Top; y <= bounds.Bottom; y++ {
 		for x := bounds.Left; x <= bounds.Right; x++ {
 			cell := frame.Cells[y][x]
-			if cell.Wide || cell.Continuation || cell.HiddenEmojiCompensation || cell.HostWidthStabilizer || cell.Erase {
+			if hostCellHasWidthSafetyState(cell) || cell.Erase {
 				return true
 			}
 		}
@@ -499,7 +499,7 @@ func expandUnsafeSegment(row []hostCell, left, right int) (int, int) {
 
 func segmentUnsafe(cells []hostCell) bool {
 	for _, cell := range cells {
-		if cell.Wide || cell.Continuation || cell.HiddenEmojiCompensation || cell.HostWidthStabilizer {
+		if hostCellHasWidthSafetyState(cell) {
 			return true
 		}
 	}

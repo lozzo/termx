@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/lozzow/termx/tuiv2/shared"
@@ -132,6 +133,40 @@ func (w *Workbench) ListWorkspaces() []string {
 	return append([]string(nil), w.order...)
 }
 
+// ResolvePaneTab validates a pane target and returns the owning tab ID.
+// When tabID is empty, it searches all workspaces for the first matching pane.
+func (w *Workbench) ResolvePaneTab(tabID, paneID string) (string, error) {
+	if w == nil {
+		return "", fmt.Errorf("workbench: nil workbench")
+	}
+	if paneID == "" {
+		return "", fmt.Errorf("workbench: pane id must not be empty")
+	}
+	if tabID != "" {
+		_, tab, err := w.findTab(tabID)
+		if err != nil {
+			return "", err
+		}
+		if tab == nil || tab.Panes[paneID] == nil {
+			return "", fmt.Errorf("workbench: pane %q not found in tab %q", paneID, tabID)
+		}
+		return tabID, nil
+	}
+	for _, wsName := range w.order {
+		ws := w.store[wsName]
+		if ws == nil {
+			continue
+		}
+		for _, tab := range ws.Tabs {
+			if tab == nil || tab.Panes[paneID] == nil {
+				continue
+			}
+			return tab.ID, nil
+		}
+	}
+	return "", fmt.Errorf("workbench: pane %q not found", paneID)
+}
+
 func (w *Workbench) SetPaneTitleByTerminalID(terminalID, title string) {
 	if w == nil || terminalID == "" || title == "" {
 		return
@@ -157,6 +192,26 @@ func (w *Workbench) SetPaneTitleByTerminalID(terminalID, title string) {
 	if changed {
 		w.touch()
 	}
+}
+
+func (w *Workbench) SetPaneTitle(tabID, paneID, title string) error {
+	if w == nil {
+		return fmt.Errorf("workbench: nil workbench")
+	}
+	_, tab, err := w.findTab(tabID)
+	if err != nil {
+		return err
+	}
+	pane := tab.Panes[paneID]
+	if pane == nil {
+		return fmt.Errorf("workbench: pane %q not found in tab %q", paneID, tabID)
+	}
+	if pane.Title == title {
+		return nil
+	}
+	pane.Title = title
+	w.touch()
+	return nil
 }
 
 func (w *Workbench) Visible() *VisibleWorkbench {

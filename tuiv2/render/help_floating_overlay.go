@@ -66,11 +66,7 @@ func renderFloatingOverviewItemLine(item modal.FloatingOverviewItem, selected bo
 	if item.FitMode == workbench.FloatingFitAuto {
 		fit = "auto"
 	}
-	slot := " "
-	if item.ShortcutSlot > 0 {
-		slot = fmt.Sprintf("%d", item.ShortcutSlot)
-	}
-	body := fmt.Sprintf("[%s] %s  %s  %s  %dx%d", slot, title, display, fit, item.Rect.W, item.Rect.H)
+	body := fmt.Sprintf("%s  %s  %s  %dx%d", title, display, fit, item.Rect.W, item.Rect.H)
 	style := pickerLineStyle(theme)
 	if selected {
 		style = pickerSelectedLineStyle(theme)

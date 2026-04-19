@@ -146,34 +146,7 @@ func TestHandleSemanticActionZoomPaneTogglesCurrentPane(t *testing.T) {
 	}
 }
 
-func TestAttachAndLoadSnapshot(t *testing.T) {
-	orch, ctx := newTestOrchestrator(t)
-
-	created, err := orch.runtime.Registry(), error(nil)
-	_ = created
-	result, err := orch.runtime.ListTerminals(ctx)
-	if err != nil {
-		t.Fatalf("list terminals: %v", err)
-	}
-	if len(result) != 0 {
-		t.Fatalf("expected empty terminal list, got %d", len(result))
-	}
-
-	createdTerm, err := orch.runtimeClientCreate(ctx, []string{"sh"}, "demo")
-	if err != nil {
-		t.Fatalf("create terminal: %v", err)
-	}
-
-	msgs, err := orch.AttachAndLoadSnapshot(ctx, "pane-1", createdTerm.TerminalID, "collaborator", 0, 10)
-	if err != nil {
-		t.Fatalf("attach and load snapshot: %v", err)
-	}
-	if len(msgs) != 1 {
-		t.Fatalf("expected 1 msg, got %d", len(msgs))
-	}
-}
-
-func TestAttachAndLoadSnapshotWritesWorkbenchStructuralBinding(t *testing.T) {
+func TestPlanAttachTerminalResolvesTargetWithoutMutation(t *testing.T) {
 	orch, ctx := newTestOrchestrator(t)
 	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
 
@@ -182,13 +155,16 @@ func TestAttachAndLoadSnapshotWritesWorkbenchStructuralBinding(t *testing.T) {
 		t.Fatalf("create terminal: %v", err)
 	}
 
-	if _, err := orch.AttachAndLoadSnapshot(ctx, "pane-1", createdTerm.TerminalID, "collaborator", 0, 10); err != nil {
-		t.Fatalf("attach and load snapshot: %v", err)
+	plan, err := orch.PlanAttachTerminal("", "pane-1", createdTerm.TerminalID, "collaborator")
+	if err != nil {
+		t.Fatalf("plan attach terminal: %v", err)
 	}
-
+	if plan.TabID != "tab-1" || plan.PaneID != "pane-1" || plan.TerminalID != createdTerm.TerminalID || plan.Mode != "collaborator" {
+		t.Fatalf("unexpected attach plan: %#v", plan)
+	}
 	pane := orch.workbench.ActivePane()
-	if pane == nil || pane.TerminalID != createdTerm.TerminalID {
-		t.Fatalf("expected orchestrator attach to write structural binding, got %#v", pane)
+	if pane == nil || pane.TerminalID != "" {
+		t.Fatalf("expected attach planning to stay read-only, got %#v", pane)
 	}
 }
 
@@ -488,7 +464,7 @@ func TestHandleSemanticActionFocusPaneMovesToNeighbor(t *testing.T) {
 	})
 }
 
-func TestHandleSemanticActionClosePaneRemovesPaneAndReturnsCloseEffect(t *testing.T) {
+func TestHandleSemanticActionClosePaneReturnsReadOnlyCloseEffect(t *testing.T) {
 	orch, _ := newTestOrchestrator(t)
 	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
 	if err := orch.workbench.SplitPane("tab-1", "pane-1", "pane-2", workbench.SplitVertical); err != nil {
@@ -512,15 +488,15 @@ func TestHandleSemanticActionClosePaneRemovesPaneAndReturnsCloseEffect(t *testin
 	if tab == nil {
 		t.Fatal("expected current tab to remain")
 	}
-	if len(tab.Panes) != 1 {
-		t.Fatalf("expected 1 pane after close, got %d", len(tab.Panes))
+	if len(tab.Panes) != 2 {
+		t.Fatalf("expected close-pane planning to stay read-only, got %#v", tab.Panes)
 	}
-	if got := tab.ActivePaneID; got != "pane-1" {
-		t.Fatalf("expected active pane pane-1 after close, got %q", got)
+	if tab.Panes["pane-2"] == nil {
+		t.Fatalf("expected pane-2 to remain present before effect application, got %#v", tab.Panes)
 	}
 }
 
-func TestHandleSemanticActionCloseFloatingPaneReturnsClosePaneEffect(t *testing.T) {
+func TestHandleSemanticActionCloseFloatingPaneReturnsReadOnlyClosePaneEffect(t *testing.T) {
 	orch, _ := newTestOrchestrator(t)
 	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
 	tab := orch.workbench.CurrentTab()
@@ -544,8 +520,163 @@ func TestHandleSemanticActionCloseFloatingPaneReturnsClosePaneEffect(t *testing.
 	} else if effect.PaneID != "float-1" {
 		t.Fatalf("expected ClosePaneEffect for float-1, got %#v", effect)
 	}
-	if got := orch.workbench.FloatingState(tab.ID, "float-1"); got != nil {
-		t.Fatalf("expected floating pane removed, got %#v", got)
+	if got := orch.workbench.FloatingState(tab.ID, "float-1"); got == nil {
+		t.Fatalf("expected close-floating planning to stay read-only, got %#v", tab.Floating)
+	}
+}
+
+func TestHandleSemanticActionDetachPaneReturnsReadOnlyDetachEffect(t *testing.T) {
+	orch, _ := newTestOrchestrator(t)
+	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
+	if err := orch.workbench.BindPaneTerminal("tab-1", "pane-1", "term-1"); err != nil {
+		t.Fatalf("BindPaneTerminal: %v", err)
+	}
+
+	effects := orch.HandleSemanticAction(input.SemanticAction{
+		Kind:   input.ActionDetachPane,
+		PaneID: "pane-1",
+	})
+
+	if len(effects) != 1 {
+		t.Fatalf("expected 1 effect, got %d", len(effects))
+	}
+	effect, ok := effects[0].(DetachPaneEffect)
+	if !ok {
+		t.Fatalf("expected DetachPaneEffect, got %T", effects[0])
+	}
+	if effect.PaneID != "pane-1" {
+		t.Fatalf("expected detach effect for pane-1, got %#v", effect)
+	}
+	pane := orch.workbench.CurrentTab().Panes["pane-1"]
+	if pane == nil || pane.TerminalID != "term-1" {
+		t.Fatalf("expected detach planning to keep binding intact, got %#v", pane)
+	}
+}
+
+func TestHandleSemanticActionReconnectPaneReturnsLifecycleAndPickerEffectsReadOnly(t *testing.T) {
+	orch, _ := newTestOrchestrator(t)
+	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
+	if err := orch.workbench.BindPaneTerminal("tab-1", "pane-1", "term-1"); err != nil {
+		t.Fatalf("BindPaneTerminal: %v", err)
+	}
+
+	effects := orch.HandleSemanticAction(input.SemanticAction{
+		Kind:   input.ActionReconnectPane,
+		PaneID: "pane-1",
+	})
+
+	if len(effects) != 3 {
+		t.Fatalf("expected reconnect lifecycle plus picker effects, got %d", len(effects))
+	}
+	if effect, ok := effects[0].(ReconnectPaneEffect); !ok {
+		t.Fatalf("expected ReconnectPaneEffect, got %T", effects[0])
+	} else if effect.PaneID != "pane-1" {
+		t.Fatalf("expected reconnect effect for pane-1, got %#v", effect)
+	}
+	if _, ok := effects[1].(OpenPickerEffect); !ok {
+		t.Fatalf("expected OpenPickerEffect, got %T", effects[1])
+	}
+	if _, ok := effects[2].(SetInputModeEffect); !ok {
+		t.Fatalf("expected SetInputModeEffect, got %T", effects[2])
+	}
+	pane := orch.workbench.CurrentTab().Panes["pane-1"]
+	if pane == nil || pane.TerminalID != "term-1" {
+		t.Fatalf("expected reconnect planning to keep current binding intact, got %#v", pane)
+	}
+}
+
+func TestHandleSemanticActionResizePaneReturnsReadOnlyResizeEffect(t *testing.T) {
+	orch, _ := newTestOrchestrator(t)
+	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
+	if err := orch.workbench.SplitPane("tab-1", "pane-1", "pane-2", workbench.SplitVertical); err != nil {
+		t.Fatalf("SplitPane: %v", err)
+	}
+	tab := orch.workbench.CurrentTab()
+	if tab == nil || tab.Root == nil {
+		t.Fatal("expected split tab")
+	}
+	before := tab.Root.Ratio
+
+	effects := orch.HandleSemanticAction(input.SemanticAction{
+		Kind:   input.ActionResizePaneRight,
+		PaneID: "pane-1",
+	})
+
+	if len(effects) != 1 {
+		t.Fatalf("expected 1 effect, got %d", len(effects))
+	}
+	effect, ok := effects[0].(ResizePaneLayoutEffect)
+	if !ok {
+		t.Fatalf("expected ResizePaneLayoutEffect, got %T", effects[0])
+	}
+	if effect.PaneID != "pane-1" || effect.Kind != input.ActionResizePaneRight || effect.Delta != 0.05 {
+		t.Fatalf("unexpected resize effect %#v", effect)
+	}
+	if got := tab.Root.Ratio; got != before {
+		t.Fatalf("expected resize planning to stay read-only, ratio changed from %f to %f", before, got)
+	}
+}
+
+func TestHandleSemanticActionMoveFloatingReturnsReadOnlyMoveEffect(t *testing.T) {
+	orch, _ := newTestOrchestrator(t)
+	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
+	tab := orch.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if err := orch.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 10, Y: 5, W: 40, H: 20}); err != nil {
+		t.Fatalf("CreateFloatingPane: %v", err)
+	}
+	before := orch.workbench.FloatingState(tab.ID, "float-1").Rect
+
+	effects := orch.HandleSemanticAction(input.SemanticAction{
+		Kind:   input.ActionMoveFloatingRight,
+		PaneID: "float-1",
+	})
+
+	if len(effects) != 1 {
+		t.Fatalf("expected 1 effect, got %d", len(effects))
+	}
+	effect, ok := effects[0].(MoveFloatingPaneEffect)
+	if !ok {
+		t.Fatalf("expected MoveFloatingPaneEffect, got %T", effects[0])
+	}
+	if effect.PaneID != "float-1" || effect.Kind != input.ActionMoveFloatingRight {
+		t.Fatalf("unexpected floating move effect %#v", effect)
+	}
+	if got := orch.workbench.FloatingState(tab.ID, "float-1").Rect; got != before {
+		t.Fatalf("expected floating move planning to stay read-only, got %#v want %#v", got, before)
+	}
+}
+
+func TestHandleSemanticActionClosePaneKillReturnsReadOnlyCloseAndKillEffects(t *testing.T) {
+	orch, _ := newTestOrchestrator(t)
+	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
+	if err := orch.workbench.BindPaneTerminal("tab-1", "pane-1", "term-1"); err != nil {
+		t.Fatalf("BindPaneTerminal: %v", err)
+	}
+
+	effects := orch.HandleSemanticAction(input.SemanticAction{
+		Kind:   input.ActionClosePaneKill,
+		PaneID: "pane-1",
+	})
+
+	if len(effects) != 2 {
+		t.Fatalf("expected close and kill effects, got %d", len(effects))
+	}
+	if effect, ok := effects[0].(ClosePaneEffect); !ok {
+		t.Fatalf("expected ClosePaneEffect, got %T", effects[0])
+	} else if effect.PaneID != "pane-1" {
+		t.Fatalf("expected close effect for pane-1, got %#v", effect)
+	}
+	if effect, ok := effects[1].(KillTerminalEffect); !ok {
+		t.Fatalf("expected KillTerminalEffect, got %T", effects[1])
+	} else if effect.TerminalID != "term-1" {
+		t.Fatalf("expected kill effect for term-1, got %#v", effect)
+	}
+	pane := orch.workbench.CurrentTab().Panes["pane-1"]
+	if pane == nil || pane.TerminalID != "term-1" {
+		t.Fatalf("expected close+kill planning to stay read-only, got %#v", pane)
 	}
 }
 
@@ -760,11 +891,11 @@ func TestHandleSemanticActionCloseTabProducesCloseEffect(t *testing.T) {
 		t.Fatalf("expected CloseTabEffect for tab-2, got %#v", effect)
 	}
 	ws := orch.workbench.CurrentWorkspace()
-	if ws == nil || len(ws.Tabs) != 1 {
-		t.Fatalf("expected 1 tab remaining, got %#v", ws)
+	if ws == nil || len(ws.Tabs) != 2 {
+		t.Fatalf("expected orchestrator close-tab path to stay read-only until effect application, got %#v", ws)
 	}
-	if got := ws.Tabs[0].ID; got != "tab-1" {
-		t.Fatalf("expected remaining tab tab-1, got %q", got)
+	if got := ws.Tabs[1].ID; got != "tab-2" {
+		t.Fatalf("expected tab-2 to remain present before effect application, got %#v", ws.Tabs)
 	}
 }
 

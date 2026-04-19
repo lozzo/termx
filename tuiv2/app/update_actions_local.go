@@ -21,6 +21,11 @@ func (m *Model) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {
 	if handled, cmd := m.handleCopyModeLocalAction(action); handled {
 		return true, cmd
 	}
+	if service := m.layoutResizeService(); service != nil {
+		if handled, cmd := service.handleLocalAction(action); handled {
+			return true, cmd
+		}
+	}
 	switch action.Kind {
 	case input.ActionBecomeOwner:
 		if m.runtime == nil || m.workbench == nil {

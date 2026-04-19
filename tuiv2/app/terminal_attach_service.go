@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
@@ -9,10 +10,47 @@ import (
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
+	"github.com/lozzow/termx/tuiv2/runtime"
 )
 
 type terminalAttachService struct {
 	model *Model
+}
+
+type terminalAttachRequest struct {
+	tabID                 string
+	paneID                string
+	terminalID            string
+	mode                  string
+	offset                int
+	limit                 int
+	cleanupPreparedTarget bool
+	previousWorkspaceName string
+	previousActiveTabID   string
+	previousFocusedPaneID string
+}
+
+type terminalAttachRollback struct {
+	previousPaneTerminalID string
+	previousPaneTitle      string
+	previousWorkspaceName  string
+	previousActiveTabID    string
+	previousFocusedPaneID  string
+	targetTabActivePaneID  string
+	cleanupPreparedTarget  bool
+	targetPaneTitles       map[workbenchPaneRef]string
+	plan                   orchestrator.TerminalAttachPlan
+	previousBinding        *runtime.PaneBinding
+	previousControl        runtime.TerminalControlStatus
+	previousLiveState      runtime.TerminalLiveStateSnapshot
+	targetControl          runtime.TerminalControlStatus
+	targetAttachment       runtime.TerminalAttachmentSnapshot
+	targetLiveState        runtime.TerminalLiveStateSnapshot
+}
+
+type workbenchPaneRef struct {
+	tabID  string
+	paneID string
 }
 
 func (m *Model) terminalAttachService() *terminalAttachService {
@@ -50,12 +88,28 @@ func (s *terminalAttachService) createFloatingAndAttachCmd(terminalID string) te
 }
 
 func (s *terminalAttachService) attachCmd(tabID, paneID, terminalID string) tea.Cmd {
+	return s.attachWithModeCmd(tabID, paneID, terminalID, "collaborator")
+}
+
+func (s *terminalAttachService) attachWithModeCmd(tabID, paneID, terminalID, mode string) tea.Cmd {
 	if s == nil || s.model == nil || s.model.orchestrator == nil || paneID == "" || terminalID == "" {
 		return nil
 	}
 	s.model.markPendingPaneAttach(paneID, terminalID)
+	previousWorkspaceName, previousActiveTabID, previousFocusedPaneID := s.currentWorkbenchSelection()
+	req := terminalAttachRequest{
+		tabID:                 tabID,
+		paneID:                paneID,
+		terminalID:            terminalID,
+		mode:                  mode,
+		offset:                0,
+		limit:                 defaultTerminalSnapshotScrollbackLimit,
+		previousWorkspaceName: previousWorkspaceName,
+		previousActiveTabID:   previousActiveTabID,
+		previousFocusedPaneID: previousFocusedPaneID,
+	}
 	return func() tea.Msg {
-		return s.attachMsg(tabID, paneID, terminalID)
+		return s.attachMsg(req)
 	}
 }
 
@@ -63,12 +117,26 @@ func (s *terminalAttachService) prepareAndAttachCmd(terminalID string, prepare f
 	if s == nil || s.model == nil || prepare == nil || terminalID == "" {
 		return nil
 	}
+	prevWorkspaceName, prevActiveTabID, prevFocusedPaneID := s.currentWorkbenchSelection()
 	tabID, paneID, err := prepare()
 	if err != nil {
 		return func() tea.Msg { return err }
 	}
 	s.model.render.Invalidate()
-	return batchCmds(s.attachCmd(tabID, paneID, terminalID), s.model.saveStateCmd())
+	s.model.markPendingPaneAttach(paneID, terminalID)
+	req := terminalAttachRequest{
+		tabID:                 tabID,
+		paneID:                paneID,
+		terminalID:            terminalID,
+		mode:                  "collaborator",
+		offset:                0,
+		limit:                 defaultTerminalSnapshotScrollbackLimit,
+		cleanupPreparedTarget: true,
+		previousWorkspaceName: prevWorkspaceName,
+		previousActiveTabID:   prevActiveTabID,
+		previousFocusedPaneID: prevFocusedPaneID,
+	}
+	return func() tea.Msg { return s.attachMsg(req) }
 }
 
 func (s *terminalAttachService) restartAndAttachCmd(paneID, terminalID string) tea.Cmd {
@@ -84,7 +152,13 @@ func (s *terminalAttachService) restartAndAttachCmd(paneID, terminalID string) t
 		if err := client.Restart(context.Background(), terminalID); err != nil {
 			return paneAttachFailure(paneID, terminalID, err)
 		}
-		return s.attachMsg("", paneID, terminalID)
+		return s.attachMsg(terminalAttachRequest{
+			paneID:     paneID,
+			terminalID: terminalID,
+			mode:       "collaborator",
+			offset:     0,
+			limit:      defaultTerminalSnapshotScrollbackLimit,
+		})
 	}
 }
 
@@ -147,7 +221,14 @@ func (s *terminalAttachService) reattachRestoredCmd(hint bootstrap.PaneReattachH
 		return nil
 	}
 	return func() tea.Msg {
-		msg := s.attachMsg(hint.TabID, hint.PaneID, hint.TerminalID)
+		msg := s.attachMsg(terminalAttachRequest{
+			tabID:      hint.TabID,
+			paneID:     hint.PaneID,
+			terminalID: hint.TerminalID,
+			mode:       "collaborator",
+			offset:     0,
+			limit:      defaultTerminalSnapshotScrollbackLimit,
+		})
 		switch msg.(type) {
 		case nil:
 			s.rollbackRestoredBinding(hint.TabID, hint.PaneID, hint.TerminalID)
@@ -174,26 +255,274 @@ func (s *terminalAttachService) handleAttachedMsg(attached orchestrator.Terminal
 	return batchCmds(s.model.saveStateCmd(), s.finalizeAttachCmd(attached.TabID, attached.PaneID, attached.TerminalID))
 }
 
-func (s *terminalAttachService) attachMsg(tabID, paneID, terminalID string) tea.Msg {
-	if s == nil || s.model == nil || s.model.orchestrator == nil || paneID == "" || terminalID == "" {
+func (s *terminalAttachService) attachMsg(req terminalAttachRequest) tea.Msg {
+	if s == nil || s.model == nil || s.model.orchestrator == nil || req.paneID == "" || req.terminalID == "" {
 		return nil
 	}
-	msgs, err := s.model.orchestrator.AttachAndLoadSnapshot(context.Background(), paneID, terminalID, "collaborator", 0, defaultTerminalSnapshotScrollbackLimit)
+	attached, err := s.executeAttach(context.Background(), req)
 	if err != nil {
-		return paneAttachFailure(paneID, terminalID, err)
+		return paneAttachFailure(req.paneID, req.terminalID, err)
 	}
-	for index := range msgs {
-		if attached, ok := msgs[index].(orchestrator.TerminalAttachedMsg); ok {
-			attached.TabID = tabID
-			msgs[index] = attached
+	return attached
+}
+
+func (s *terminalAttachService) executeAttach(ctx context.Context, req terminalAttachRequest) (orchestrator.TerminalAttachedMsg, error) {
+	if s == nil || s.model == nil || s.model.runtime == nil || s.model.workbench == nil || s.model.orchestrator == nil {
+		return orchestrator.TerminalAttachedMsg{}, teaErr("attach terminal: service unavailable")
+	}
+	plan, err := s.model.orchestrator.PlanAttachTerminal(req.tabID, req.paneID, req.terminalID, defaultAttachMode(req.mode))
+	if err != nil {
+		return orchestrator.TerminalAttachedMsg{}, err
+	}
+	rollback := s.captureAttachRollback(req, plan)
+	terminal, err := s.model.runtime.AttachTerminal(ctx, plan.PaneID, plan.TerminalID, plan.Mode)
+	if err != nil {
+		return orchestrator.TerminalAttachedMsg{}, err
+	}
+	if _, err := s.model.runtime.LoadSnapshot(ctx, plan.TerminalID, req.offset, req.limit); err != nil {
+		s.rollbackAttachExecution(rollback)
+		return orchestrator.TerminalAttachedMsg{}, err
+	}
+	if err := s.bindWorkbenchPaneTerminal(plan.TabID, plan.PaneID, plan.TerminalID); err != nil {
+		s.rollbackAttachExecution(rollback)
+		return orchestrator.TerminalAttachedMsg{}, err
+	}
+	s.syncWorkbenchPaneTitle(plan.TerminalID, terminal)
+	if err := s.model.runtime.StartStream(ctx, plan.TerminalID); err != nil {
+		s.rollbackAttachExecution(rollback)
+		return orchestrator.TerminalAttachedMsg{}, err
+	}
+	return orchestrator.TerminalAttachedMsg{
+		TabID:      plan.TabID,
+		PaneID:     plan.PaneID,
+		TerminalID: plan.TerminalID,
+		Channel:    terminal.Channel,
+	}, nil
+}
+
+func defaultAttachMode(mode string) string {
+	if trimmed := strings.TrimSpace(mode); trimmed != "" {
+		return trimmed
+	}
+	return "collaborator"
+}
+
+func (s *terminalAttachService) captureAttachRollback(req terminalAttachRequest, plan orchestrator.TerminalAttachPlan) terminalAttachRollback {
+	rollback := terminalAttachRollback{
+		plan:                  plan,
+		cleanupPreparedTarget: req.cleanupPreparedTarget,
+		previousWorkspaceName: req.previousWorkspaceName,
+		previousActiveTabID:   req.previousActiveTabID,
+		previousFocusedPaneID: req.previousFocusedPaneID,
+	}
+	if s == nil || s.model == nil || s.model.runtime == nil {
+		return rollback
+	}
+	rollback.previousBinding = runtime.ClonePaneBinding(s.model.runtime.Binding(plan.PaneID))
+	rollback.previousPaneTerminalID = s.paneTerminalID(plan.TabID, plan.PaneID)
+	rollback.previousPaneTitle = s.paneTitle(plan.TabID, plan.PaneID)
+	rollback.targetTabActivePaneID = s.activePaneID(plan.TabID)
+	rollback.targetPaneTitles = s.paneTitlesByTerminal(plan.TerminalID)
+	if rollback.previousPaneTerminalID != "" {
+		rollback.previousControl = s.model.runtime.TerminalControlStatus(rollback.previousPaneTerminalID)
+		rollback.previousLiveState = s.model.runtime.TerminalLiveStateSnapshot(rollback.previousPaneTerminalID)
+	}
+	rollback.targetControl = s.model.runtime.TerminalControlStatus(plan.TerminalID)
+	rollback.targetAttachment = s.model.runtime.TerminalAttachmentSnapshot(plan.TerminalID)
+	rollback.targetLiveState = s.model.runtime.TerminalLiveStateSnapshot(plan.TerminalID)
+	return rollback
+}
+
+func (s *terminalAttachService) rollbackAttachExecution(rollback terminalAttachRollback) {
+	if s == nil || s.model == nil || s.model.runtime == nil {
+		return
+	}
+	s.model.runtime.UnbindPane(rollback.plan.PaneID, rollback.plan.TerminalID)
+	if rollback.previousLiveState.TerminalID != "" {
+		s.model.runtime.RestoreTerminalLiveState(rollback.previousLiveState.TerminalID, rollback.previousLiveState)
+	}
+	if rollback.targetLiveState.TerminalID != "" && rollback.targetLiveState.TerminalID != rollback.previousLiveState.TerminalID {
+		s.model.runtime.RestoreTerminalLiveState(rollback.targetLiveState.TerminalID, rollback.targetLiveState)
+	}
+	s.model.runtime.RestorePaneBinding(rollback.plan.PaneID, rollback.previousBinding)
+	if rollback.previousControl.TerminalID != "" {
+		s.model.runtime.RestoreTerminalControlStatus(rollback.previousControl)
+	}
+	if rollback.targetControl.TerminalID != "" && rollback.targetControl.TerminalID != rollback.previousControl.TerminalID {
+		s.model.runtime.RestoreTerminalControlStatus(rollback.targetControl)
+	}
+	s.model.runtime.RestoreTerminalAttachmentSnapshot(rollback.plan.TerminalID, rollback.targetAttachment)
+	if s.model.workbench != nil {
+		if rollback.cleanupPreparedTarget && rollback.plan.TabID != "" && rollback.plan.PaneID != "" {
+			_, _ = s.model.workbench.ClosePane(rollback.plan.TabID, rollback.plan.PaneID)
+		}
+		if !rollback.cleanupPreparedTarget {
+			_ = s.model.workbench.BindPaneTerminal(rollback.plan.TabID, rollback.plan.PaneID, rollback.previousPaneTerminalID)
+			_ = s.model.workbench.SetPaneTitle(rollback.plan.TabID, rollback.plan.PaneID, rollback.previousPaneTitle)
+			if rollback.targetTabActivePaneID != "" {
+				_ = s.model.workbench.FocusPane(rollback.plan.TabID, rollback.targetTabActivePaneID)
+			}
+		}
+		for ref, title := range rollback.targetPaneTitles {
+			_ = s.model.workbench.SetPaneTitle(ref.tabID, ref.paneID, title)
+		}
+		s.restoreWorkbenchSelection(rollback.previousWorkspaceName, rollback.previousActiveTabID, rollback.previousFocusedPaneID)
+	}
+}
+
+func (s *terminalAttachService) activePaneID(tabID string) string {
+	if s == nil || s.model == nil || s.model.workbench == nil || tabID == "" {
+		return ""
+	}
+	for _, wsName := range s.model.workbench.ListWorkspaces() {
+		ws := s.model.workbench.WorkspaceByName(wsName)
+		if ws == nil {
+			continue
+		}
+		for _, tab := range ws.Tabs {
+			if tab != nil && tab.ID == tabID {
+				return tab.ActivePaneID
+			}
 		}
 	}
-	cmds := make([]tea.Cmd, 0, len(msgs))
-	for _, msg := range msgs {
-		value := msg
-		cmds = append(cmds, func() tea.Msg { return value })
+	return ""
+}
+
+func (s *terminalAttachService) paneTerminalID(tabID, paneID string) string {
+	if s == nil || s.model == nil || s.model.workbench == nil || tabID == "" || paneID == "" {
+		return ""
 	}
-	return tea.Batch(cmds...)()
+	for _, wsName := range s.model.workbench.ListWorkspaces() {
+		ws := s.model.workbench.WorkspaceByName(wsName)
+		if ws == nil {
+			continue
+		}
+		for _, tab := range ws.Tabs {
+			if tab == nil || tab.ID != tabID {
+				continue
+			}
+			if pane := tab.Panes[paneID]; pane != nil {
+				return pane.TerminalID
+			}
+			return ""
+		}
+	}
+	return ""
+}
+
+func (s *terminalAttachService) paneTitle(tabID, paneID string) string {
+	if s == nil || s.model == nil || s.model.workbench == nil || tabID == "" || paneID == "" {
+		return ""
+	}
+	for _, wsName := range s.model.workbench.ListWorkspaces() {
+		ws := s.model.workbench.WorkspaceByName(wsName)
+		if ws == nil {
+			continue
+		}
+		for _, tab := range ws.Tabs {
+			if tab == nil || tab.ID != tabID {
+				continue
+			}
+			if pane := tab.Panes[paneID]; pane != nil {
+				return pane.Title
+			}
+			return ""
+		}
+	}
+	return ""
+}
+
+func (s *terminalAttachService) paneTitlesByTerminal(terminalID string) map[workbenchPaneRef]string {
+	if s == nil || s.model == nil || s.model.workbench == nil || terminalID == "" {
+		return nil
+	}
+	titles := make(map[workbenchPaneRef]string)
+	for _, wsName := range s.model.workbench.ListWorkspaces() {
+		ws := s.model.workbench.WorkspaceByName(wsName)
+		if ws == nil {
+			continue
+		}
+		for _, tab := range ws.Tabs {
+			if tab == nil {
+				continue
+			}
+			for paneID, pane := range tab.Panes {
+				if pane == nil || pane.TerminalID != terminalID {
+					continue
+				}
+				titles[workbenchPaneRef{tabID: tab.ID, paneID: paneID}] = pane.Title
+			}
+		}
+	}
+	if len(titles) == 0 {
+		return nil
+	}
+	return titles
+}
+
+func (s *terminalAttachService) currentWorkbenchSelection() (string, string, string) {
+	if s == nil || s.model == nil || s.model.workbench == nil {
+		return "", "", ""
+	}
+	workspaceName := ""
+	activeTabID := ""
+	focusedPaneID := ""
+	if ws := s.model.workbench.CurrentWorkspace(); ws != nil {
+		workspaceName = ws.Name
+	}
+	if tab := s.model.workbench.CurrentTab(); tab != nil {
+		activeTabID = tab.ID
+		focusedPaneID = tab.ActivePaneID
+	}
+	return workspaceName, activeTabID, focusedPaneID
+}
+
+func (s *terminalAttachService) restoreWorkbenchSelection(workspaceName, activeTabID, focusedPaneID string) {
+	if s == nil || s.model == nil || s.model.workbench == nil {
+		return
+	}
+	if workspaceName != "" {
+		_ = s.model.workbench.SwitchWorkspace(workspaceName)
+	}
+	if activeTabID != "" {
+		for _, wsName := range s.model.workbench.ListWorkspaces() {
+			ws := s.model.workbench.WorkspaceByName(wsName)
+			if ws == nil {
+				continue
+			}
+			for index, tab := range ws.Tabs {
+				if tab == nil || tab.ID != activeTabID {
+					continue
+				}
+				_ = s.model.workbench.SwitchWorkspace(wsName)
+				_ = s.model.workbench.SwitchTab(wsName, index)
+				break
+			}
+		}
+	}
+	if activeTabID != "" && focusedPaneID != "" {
+		_ = s.model.workbench.FocusPane(activeTabID, focusedPaneID)
+	}
+}
+
+func (s *terminalAttachService) bindWorkbenchPaneTerminal(tabID, paneID, terminalID string) error {
+	if s == nil || s.model == nil || s.model.workbench == nil {
+		return teaErr("attach terminal: workbench unavailable")
+	}
+	if err := s.model.workbench.BindPaneTerminal(tabID, paneID, terminalID); err != nil {
+		return err
+	}
+	if err := s.model.workbench.FocusPane(tabID, paneID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *terminalAttachService) syncWorkbenchPaneTitle(terminalID string, terminal *runtime.TerminalRuntime) {
+	if s == nil || s.model == nil || s.model.workbench == nil || terminalID == "" || terminal == nil || terminal.Name == "" {
+		return
+	}
+	s.model.workbench.SetPaneTitleByTerminalID(terminalID, terminal.Name)
 }
 
 func (s *terminalAttachService) primeCreatedTerminal(created *protocol.CreateResult, params protocol.CreateParams) {

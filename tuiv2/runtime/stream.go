@@ -34,24 +34,19 @@ type screenUpdateApplier interface {
 	ApplyScreenUpdate(update protocol.ScreenUpdate) bool
 }
 
-func visibleScreenUpdateSummary(update protocol.ScreenUpdate) VisibleScreenUpdateSummary {
-	summary := VisibleScreenUpdateSummary{
-		FullReplace:  update.FullReplace,
-		ScreenScroll: update.ScreenScroll,
+func recordScreenUpdateMetrics(update protocol.ScreenUpdate) {
+	if update.FullReplace {
+		perftrace.Count("runtime.stream.screen_update.full_replace", 1)
 	}
-	if len(update.ChangedRows) == 0 {
-		return summary
+	if changedRows := len(update.ChangedRows); changedRows > 0 {
+		perftrace.Count("runtime.stream.screen_update.changed_rows", changedRows)
 	}
-	summary.ChangedRows = make([]int, 0, len(update.ChangedRows))
-	seen := make(map[int]struct{}, len(update.ChangedRows))
-	for _, row := range update.ChangedRows {
-		if _, ok := seen[row.Row]; ok {
-			continue
-		}
-		seen[row.Row] = struct{}{}
-		summary.ChangedRows = append(summary.ChangedRows, row.Row)
+	if update.ScrollbackTrim > 0 {
+		perftrace.Count("runtime.stream.screen_update.scrollback_trim_rows", update.ScrollbackTrim)
 	}
-	return summary
+	if appendedRows := len(update.ScrollbackAppend); appendedRows > 0 {
+		perftrace.Count("runtime.stream.screen_update.scrollback_append_rows", appendedRows)
+	}
 }
 
 func (r *Runtime) StartStream(ctx context.Context, terminalID string) error {
@@ -293,190 +288,146 @@ func (r *Runtime) handleStreamFrame(terminalID string, frame protocol.StreamFram
 	}
 	switch frame.Type {
 	case protocol.TypeOutput:
-		vt := r.ensureVTerm(terminal)
-		if vt == nil {
-			return
-		}
-		n, err := vt.Write(frame.Payload)
-		if err != nil || n != len(frame.Payload) {
-			terminal.Recovery.SyncLost = true
-			if dropped := len(frame.Payload) - max(0, n); dropped > 0 {
-				terminal.Recovery.DroppedBytes += uint64(dropped)
-			}
-			resetSynchronizedOutputState(&terminal.Stream)
-			r.recoverSnapshot(terminalID)
-			return
-		}
-		syncActive := updateSynchronizedOutputState(&terminal.Stream, frame.Payload)
-		terminal.Recovery = RecoveryState{}
-		if syncActive {
-			return
-		}
-		terminal.BootstrapPending = false
-		if terminal.PreferSnapshot {
-			terminal.PreferSnapshot = false
-		}
-		r.bumpSurfaceVersion(terminal)
-		if terminal.PreferSnapshot || terminal.Snapshot == nil {
-			r.refreshSnapshot(terminalID)
-			return
-		}
-		r.invalidate()
+		r.handleOutputFrame(terminal, terminalID, frame)
 	case protocol.TypeScreenUpdate:
-		decodeFinish := perftrace.Measure("runtime.stream.screen_update.decode")
-		update, err := protocol.DecodeScreenUpdatePayload(frame.Payload)
-		decodeFinish(len(frame.Payload))
-		if err != nil {
-			return
-		}
-		if update.FullReplace {
-			perftrace.Count("runtime.stream.screen_update.full_replace", 1)
-		}
-		if changedRows := len(update.ChangedRows); changedRows > 0 {
-			perftrace.Count("runtime.stream.screen_update.changed_rows", changedRows)
-		}
-		if update.ScrollbackTrim > 0 {
-			perftrace.Count("runtime.stream.screen_update.scrollback_trim_rows", update.ScrollbackTrim)
-		}
-		if appendedRows := len(update.ScrollbackAppend); appendedRows > 0 {
-			perftrace.Count("runtime.stream.screen_update.scrollback_append_rows", appendedRows)
-		}
-		if update.Title != "" && update.Title != terminal.Title {
-			terminal.Title = update.Title
-			r.touch()
-			if r.onTitleChange != nil {
-				r.onTitleChange(terminal.TerminalID, update.Title)
-			}
-		}
-		if terminal.BootstrapPending && terminal.Snapshot != nil && screenUpdateSeemsBlank(update) {
-			invalidateFinish := perftrace.Measure("runtime.stream.screen_update.invalidate")
-			r.invalidate()
-			invalidateFinish(0)
-			return
-		}
-		screenUpdateSummary := visibleScreenUpdateSummary(update)
-		snapshotApplyFinish := perftrace.Measure("runtime.stream.screen_update.snapshot_apply")
-		terminal.Snapshot = applyScreenUpdateSnapshot(terminal.Snapshot, terminalID, update)
-		snapshotApplyFinish(0)
-		vt := r.ensureVTerm(terminal)
-		if vt != nil && terminal.Snapshot != nil {
-			appliedPartial := false
-			if !update.FullReplace {
-				if applier, ok := vt.(screenUpdateApplier); ok {
-					loadFinish := perftrace.Measure("runtime.stream.screen_update.load_vterm_partial")
-					appliedPartial = applier.ApplyScreenUpdate(update)
-					loadFinish(0)
-				}
-			}
-			if !appliedPartial {
-				loadFinish := perftrace.Measure("runtime.stream.screen_update.load_vterm_full")
-				loadSnapshotIntoVTerm(vt, terminal.Snapshot)
-				loadFinish(0)
-			}
-			terminal.PreferSnapshot = false
-			invalidateFinish := perftrace.Measure("runtime.stream.screen_update.invalidate")
-			r.bumpSurfaceVersion(terminal)
-			screenUpdateSummary.SurfaceVersion = terminal.SurfaceVersion
-			terminal.ScreenUpdate = screenUpdateSummary
-			terminal.SnapshotVersion = terminal.SurfaceVersion
-			terminal.BootstrapPending = false
-			terminal.Recovery = RecoveryState{}
-			r.invalidate()
-			invalidateFinish(0)
-		} else {
-			invalidateFinish := perftrace.Measure("runtime.stream.screen_update.invalidate")
-			terminal.PreferSnapshot = true
-			terminal.SnapshotVersion++
-			screenUpdateSummary.SurfaceVersion = terminal.SurfaceVersion
-			terminal.ScreenUpdate = screenUpdateSummary
-			terminal.BootstrapPending = false
-			terminal.Recovery = RecoveryState{}
-			r.invalidate()
-			invalidateFinish(0)
-		}
+		r.handleStructuredScreenUpdateFrame(terminal, terminalID, frame)
 	case protocol.TypeResize:
-		cols, rows, err := protocol.DecodeResizePayload(frame.Payload)
-		if err != nil || cols == 0 || rows == 0 {
-			return
+		r.handleResizeFrame(terminal, terminalID, frame)
+	case protocol.TypeBootstrapDone:
+		r.handleBootstrapDoneFrame(terminal, terminalID)
+	case protocol.TypeSyncLost:
+		r.handleSyncLostFrame(terminal, terminalID, frame)
+	case protocol.TypeClosed:
+		r.handleClosedFrame(terminal, frame)
+	}
+}
+
+func (r *Runtime) handleOutputFrame(terminal *TerminalRuntime, terminalID string, frame protocol.StreamFrame) {
+	vt := r.ensureVTerm(terminal)
+	if vt == nil {
+		return
+	}
+	n, err := vt.Write(frame.Payload)
+	if err != nil || n != len(frame.Payload) {
+		terminal.Recovery.SyncLost = true
+		if dropped := len(frame.Payload) - max(0, n); dropped > 0 {
+			terminal.Recovery.DroppedBytes += uint64(dropped)
 		}
-		if terminal.PreferSnapshot && terminal.Snapshot != nil {
-			terminal.Snapshot.Size = protocol.Size{Cols: cols, Rows: rows}
-			terminal.Snapshot.Timestamp = time.Now()
-			terminal.SnapshotVersion++
-			r.invalidate()
-			return
-		}
-		vt := r.ensureVTerm(terminal)
-		if vt == nil {
-			return
-		}
-		currentCols, currentRows := vt.Size()
-		if currentCols != int(cols) || currentRows != int(rows) {
-			vt.Resize(int(cols), int(rows))
-			resetSynchronizedOutputState(&terminal.Stream)
-			if terminal.PreferSnapshot {
-				r.bumpSurfaceVersion(terminal)
-				if terminal.Snapshot == nil {
-					r.refreshSnapshot(terminalID)
-					return
-				}
-				r.invalidate()
-				return
-			}
-			if terminal.BootstrapPending {
-				// Mirror local resize behavior during bootstrap: keep the
-				// provisional snapshot geometry aligned with the live surface so
-				// follower views don't stay pinned to stale dimensions while the
-				// initial replay is still in-flight.
-				r.bumpSurfaceVersion(terminal)
+		resetSynchronizedOutputState(&terminal.Stream)
+		r.recoverSnapshot(terminalID)
+		return
+	}
+	syncActive := updateSynchronizedOutputState(&terminal.Stream, frame.Payload)
+	terminal.Recovery = RecoveryState{}
+	if syncActive {
+		return
+	}
+	terminal.BootstrapPending = false
+	if terminal.PreferSnapshot {
+		terminal.PreferSnapshot = false
+	}
+	r.bumpSurfaceVersion(terminal)
+	if terminal.PreferSnapshot || terminal.Snapshot == nil {
+		r.refreshSnapshot(terminalID)
+		return
+	}
+	r.invalidate()
+}
+
+func (r *Runtime) handleStructuredScreenUpdateFrame(terminal *TerminalRuntime, terminalID string, frame protocol.StreamFrame) {
+	decodeFinish := perftrace.Measure("runtime.stream.screen_update.decode")
+	contract, err := DecodeScreenUpdateContractPayload(frame.Payload)
+	decodeFinish(len(frame.Payload))
+	if err != nil {
+		return
+	}
+	r.applyDecodedScreenUpdateContract(terminal, terminalID, contract)
+}
+
+func (r *Runtime) handleResizeFrame(terminal *TerminalRuntime, terminalID string, frame protocol.StreamFrame) {
+	cols, rows, err := protocol.DecodeResizePayload(frame.Payload)
+	if err != nil || cols == 0 || rows == 0 {
+		return
+	}
+	if terminal.PreferSnapshot && terminal.Snapshot != nil {
+		terminal.Snapshot.Size = protocol.Size{Cols: cols, Rows: rows}
+		terminal.Snapshot.Timestamp = time.Now()
+		terminal.SnapshotVersion++
+		r.invalidate()
+		return
+	}
+	vt := r.ensureVTerm(terminal)
+	if vt == nil {
+		return
+	}
+	currentCols, currentRows := vt.Size()
+	if currentCols != int(cols) || currentRows != int(rows) {
+		vt.Resize(int(cols), int(rows))
+		resetSynchronizedOutputState(&terminal.Stream)
+		if terminal.PreferSnapshot {
+			r.bumpSurfaceVersion(terminal)
+			if terminal.Snapshot == nil {
 				r.refreshSnapshot(terminalID)
 				return
 			}
-			r.bumpSurfaceVersion(terminal)
-			r.refreshSnapshot(terminalID)
-		}
-	case protocol.TypeBootstrapDone:
-		if !terminal.BootstrapPending {
+			r.invalidate()
 			return
 		}
-		terminal.BootstrapPending = false
-		if terminal.PreferSnapshot && terminal.Snapshot != nil {
-			terminal.SnapshotVersion++
-			r.invalidate()
+		if terminal.BootstrapPending {
+			r.bumpSurfaceVersion(terminal)
+			r.refreshSnapshot(terminalID)
 			return
 		}
 		r.bumpSurfaceVersion(terminal)
 		r.refreshSnapshot(terminalID)
-	case protocol.TypeSyncLost:
-		if terminal.PreferSnapshot && terminal.Snapshot != nil {
-			terminal.BootstrapPending = false
-			resetSynchronizedOutputState(&terminal.Stream)
-			terminal.Recovery = RecoveryState{}
-			terminal.SnapshotVersion++
-			r.invalidate()
-			return
-		}
-		terminal.BootstrapPending = false
-		resetSynchronizedOutputState(&terminal.Stream)
-		terminal.Recovery.SyncLost = true
-		dropped, err := protocol.DecodeSyncLostPayload(frame.Payload)
-		if err == nil {
-			terminal.Recovery.DroppedBytes += dropped
-		}
-		r.recoverSnapshot(terminalID)
-	case protocol.TypeClosed:
-		terminal.Stream.Active = false
-		terminal.BootstrapPending = false
-		resetSynchronizedOutputState(&terminal.Stream)
-		code, err := protocol.DecodeClosedPayload(frame.Payload)
-		if err == nil {
-			exitCode := int(code)
-			terminal.ExitCode = &exitCode
-		}
-		terminal.State = "exited"
-		syncSurfaceScrollbackState(terminal)
-		r.invalidate()
 	}
+}
+
+func (r *Runtime) handleBootstrapDoneFrame(terminal *TerminalRuntime, terminalID string) {
+	if !terminal.BootstrapPending {
+		return
+	}
+	terminal.BootstrapPending = false
+	if terminal.PreferSnapshot && terminal.Snapshot != nil {
+		terminal.SnapshotVersion++
+		r.invalidate()
+		return
+	}
+	r.bumpSurfaceVersion(terminal)
+	r.refreshSnapshot(terminalID)
+}
+
+func (r *Runtime) handleSyncLostFrame(terminal *TerminalRuntime, terminalID string, frame protocol.StreamFrame) {
+	if terminal.PreferSnapshot && terminal.Snapshot != nil {
+		terminal.BootstrapPending = false
+		resetSynchronizedOutputState(&terminal.Stream)
+		terminal.Recovery = RecoveryState{}
+		terminal.SnapshotVersion++
+		r.invalidate()
+		return
+	}
+	terminal.BootstrapPending = false
+	resetSynchronizedOutputState(&terminal.Stream)
+	terminal.Recovery.SyncLost = true
+	dropped, err := protocol.DecodeSyncLostPayload(frame.Payload)
+	if err == nil {
+		terminal.Recovery.DroppedBytes += dropped
+	}
+	r.recoverSnapshot(terminalID)
+}
+
+func (r *Runtime) handleClosedFrame(terminal *TerminalRuntime, frame protocol.StreamFrame) {
+	terminal.Stream.Active = false
+	terminal.BootstrapPending = false
+	resetSynchronizedOutputState(&terminal.Stream)
+	code, err := protocol.DecodeClosedPayload(frame.Payload)
+	if err == nil {
+		exitCode := int(code)
+		terminal.ExitCode = &exitCode
+	}
+	terminal.State = "exited"
+	syncSurfaceScrollbackState(terminal)
+	r.invalidate()
 }
 
 func streamFrameMetric(frameType uint8) string {
@@ -546,18 +497,4 @@ func resetSynchronizedOutputState(state *StreamState) {
 	}
 	state.synchronizedOutputActive = false
 	state.synchronizedOutputTail = ""
-}
-
-func screenUpdateSeemsBlank(update protocol.ScreenUpdate) bool {
-	if !update.FullReplace || len(update.ChangedRows) > 0 || len(update.ScrollbackAppend) > 0 {
-		return false
-	}
-	for _, row := range update.Screen.Cells {
-		for _, cell := range row {
-			if strings.TrimSpace(cell.Content) != "" {
-				return false
-			}
-		}
-	}
-	return true
 }

@@ -98,6 +98,42 @@ func TestWorkbenchCurrentTabAndActivePaneClampStaleState(t *testing.T) {
 	}
 }
 
+func TestWorkbenchResolvePaneTabFindsPaneAcrossWorkspaces(t *testing.T) {
+	wb := NewWorkbench()
+	wb.AddWorkspace("main", &WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*TabState{{
+			ID:           "tab-main",
+			ActivePaneID: "pane-main",
+			Panes: map[string]*PaneState{
+				"pane-main": {ID: "pane-main"},
+			},
+			Root: NewLeaf("pane-main"),
+		}},
+	})
+	wb.AddWorkspace("ops", &WorkspaceState{
+		Name:      "ops",
+		ActiveTab: 0,
+		Tabs: []*TabState{{
+			ID:           "tab-ops",
+			ActivePaneID: "pane-ops",
+			Panes: map[string]*PaneState{
+				"pane-ops": {ID: "pane-ops"},
+			},
+			Root: NewLeaf("pane-ops"),
+		}},
+	})
+
+	tabID, err := wb.ResolvePaneTab("", "pane-ops")
+	if err != nil {
+		t.Fatalf("resolve pane tab: %v", err)
+	}
+	if tabID != "tab-ops" {
+		t.Fatalf("expected pane-ops to resolve to tab-ops, got %q", tabID)
+	}
+}
+
 func TestVisibleWithSizeProjectsFloatingPanes(t *testing.T) {
 	wb := NewWorkbench()
 	wb.AddWorkspace("main", &WorkspaceState{

@@ -10,32 +10,20 @@ func (r *Runtime) syncTerminalOwnership(terminal *TerminalRuntime) string {
 	if r == nil || terminal == nil {
 		return ""
 	}
-	ownerPaneID := terminal.OwnerPaneID
-	controlPaneID := terminal.ControlPaneID
-	if controlPaneID == "" {
-		controlPaneID = r.inferControlPaneID(terminal, ownerPaneID)
-	}
-	if controlPaneID != "" {
-		if controlPaneID != ownerPaneID || !containsPaneID(terminal.BoundPaneIDs, controlPaneID) || r.bindings[controlPaneID] == nil {
-			controlPaneID = ""
-		}
-	}
-	changed := terminal.OwnerPaneID != ownerPaneID || terminal.ControlPaneID != controlPaneID
-	if terminal.OwnerPaneID != "" && ownerPaneID == "" {
-		terminal.RequiresExplicitOwner = true
-	}
-	if controlPaneID != "" {
-		terminal.RequiresExplicitOwner = false
-	}
-	terminal.OwnerPaneID = ownerPaneID
-	terminal.ControlPaneID = controlPaneID
+	status := r.terminalControlStatus(terminal)
+	changed := terminal.OwnerPaneID != status.OwnerPaneID ||
+		terminal.ControlPaneID != status.ControlPaneID ||
+		terminal.RequiresExplicitOwner != status.RequiresExplicitOwner
+	terminal.OwnerPaneID = status.OwnerPaneID
+	terminal.ControlPaneID = status.ControlPaneID
+	terminal.RequiresExplicitOwner = status.RequiresExplicitOwner
 	if r.syncBindingRolesForTerminal(terminal) {
 		changed = true
 	}
 	if changed {
 		r.touch()
 	}
-	return controlPaneID
+	return status.ControlPaneID
 }
 
 func (r *Runtime) inferControlPaneID(terminal *TerminalRuntime, ownerPaneID string) string {
@@ -119,13 +107,13 @@ func (r *Runtime) AcquireTerminalOwnership(paneID, terminalID string) error {
 	if !containsPaneID(terminal.BoundPaneIDs, paneID) {
 		return shared.UserVisibleError{Op: "take terminal ownership", Err: fmt.Errorf("pane %s is not locally bound to terminal %s", paneID, terminalID)}
 	}
-	if terminal.OwnerPaneID == paneID {
+	if !r.ShouldAcquireTerminalOwnership(terminalID, TerminalOwnershipRequest{
+		PaneID:           paneID,
+		ExplicitTakeover: true,
+	}) {
 		return nil
 	}
-	terminal.OwnerPaneID = paneID
-	terminal.ControlPaneID = paneID
-	terminal.RequiresExplicitOwner = false
-	terminal.PendingOwnerResize = true
+	r.promoteTerminalControlPane(terminal, paneID, true)
 	r.syncTerminalOwnership(terminal)
 	return nil
 }

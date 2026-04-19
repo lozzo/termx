@@ -577,7 +577,7 @@ func (c *composedCanvas) drawProtocolRowInRectCleared(rect workbench.Rect, targe
 		for i := 1; i < cell.Width && targetX+i < c.width; i++ {
 			rowCells[targetX+i] = drawCell{Owner: cell.Owner, Continuation: true}
 		}
-		if isAmbiguousEmojiVariationSelectorCluster(cell.Content, cell.Width) && targetX+1 < c.width {
+		if shared.WidthSafetyForTerminalCell(cell.Content, cell.Width).AmbiguousCompensation && targetX+1 < c.width {
 			rowCells[targetX+1] = drawCell{
 				Content:               " ",
 				Width:                 1,
@@ -618,7 +618,7 @@ func (c *composedCanvas) drawVTermRowInRectCleared(rect workbench.Rect, targetY 
 		for i := 1; i < cell.Width && targetX+i < c.width; i++ {
 			rowCells[targetX+i] = drawCell{Owner: cell.Owner, Continuation: true}
 		}
-		if isAmbiguousEmojiVariationSelectorCluster(cell.Content, cell.Width) && targetX+1 < c.width {
+		if shared.WidthSafetyForTerminalCell(cell.Content, cell.Width).AmbiguousCompensation && targetX+1 < c.width {
 			rowCells[targetX+1] = drawCell{
 				Content:               " ",
 				Width:                 1,
@@ -634,7 +634,7 @@ func (c *composedCanvas) materializeRawAmbiguousContinuation(x, y int, cell draw
 	if c == nil {
 		return
 	}
-	if !isAmbiguousEmojiVariationSelectorCluster(cell.Content, cell.Width) {
+	if !shared.WidthSafetyForTerminalCell(cell.Content, cell.Width).AmbiguousCompensation {
 		return
 	}
 	contX := x + 1
@@ -662,8 +662,7 @@ func cellStyleFromSnapshot(cell protocol.Cell) drawStyle {
 }
 
 func drawCellFromProtocolCell(cell protocol.Cell) drawCell {
-	hostWidthStabilizer := cell.Content != "" &&
-		(cell.Width == 0 || (cell.Width == 1 && shared.IsEastAsianAmbiguousWidthCluster(cell.Content) && !shared.IsStableNarrowTerminalSymbol(cell.Content)))
+	widthSafety := shared.WidthSafetyForTerminalCell(cell.Content, cell.Width)
 	width := cell.Width
 	continuation := cell.Content == "" && width == 0
 	if width <= 0 {
@@ -679,13 +678,12 @@ func drawCellFromProtocolCell(cell protocol.Cell) drawCell {
 		Owner:               0,
 		Continuation:        continuation,
 		TerminalContent:     true,
-		HostWidthStabilizer: hostWidthStabilizer,
+		HostWidthStabilizer: widthSafety.HostWidthStabilizer,
 	}
 }
 
 func drawCellFromVTermCell(cell localvterm.Cell) drawCell {
-	hostWidthStabilizer := cell.Content != "" &&
-		(cell.Width == 0 || (cell.Width == 1 && shared.IsEastAsianAmbiguousWidthCluster(cell.Content) && !shared.IsStableNarrowTerminalSymbol(cell.Content)))
+	widthSafety := shared.WidthSafetyForTerminalCell(cell.Content, cell.Width)
 	width := cell.Width
 	continuation := cell.Content == "" && width == 0
 	if width <= 0 {
@@ -708,12 +706,8 @@ func drawCellFromVTermCell(cell localvterm.Cell) drawCell {
 		Owner:               0,
 		Continuation:        continuation,
 		TerminalContent:     true,
-		HostWidthStabilizer: hostWidthStabilizer,
+		HostWidthStabilizer: widthSafety.HostWidthStabilizer,
 	}
-}
-
-func isAmbiguousEmojiVariationSelectorCluster(content string, width int) bool {
-	return shared.IsAmbiguousEmojiVariationSelectorCluster(content, width)
 }
 
 func shouldReanchorAfterTerminalAmbiguousWidthCell(cell drawCell) bool {
@@ -749,7 +743,7 @@ func (c *composedCanvas) isRawAmbiguousContinuationSpace(x, y int) bool {
 	if prev.Continuation {
 		return false
 	}
-	return isAmbiguousEmojiVariationSelectorCluster(prev.Content, prev.Width)
+	return shared.WidthSafetyForTerminalCell(prev.Content, prev.Width).AmbiguousCompensation
 }
 
 // drawSnapshot draws a snapshot starting at (0,0).

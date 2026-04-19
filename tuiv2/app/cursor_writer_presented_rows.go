@@ -113,9 +113,7 @@ func parsePresentedRowGeneric(row string) presentedRow {
 	hasErase := false
 	hasHiddenEmojiCompensation := false
 	hasHostWidthStabilizer := false
-	lastVisibleToken := ""
-	lastVisibleWidth := 0
-	pendingReanchor := false
+	widthSafety := shared.WidthSafetyTracker{}
 	for len(rest) > 0 {
 		seq, width, n, nextState := xansi.DecodeSequence(rest, state, parser)
 		if n <= 0 {
@@ -123,34 +121,32 @@ func parsePresentedRowGeneric(row string) presentedRow {
 		}
 		token := string(seq)
 		if width > 0 {
+			transition := widthSafety.ObserveDisplayedCluster(token, width)
 			if style != (presentedStyle{}) {
 				hasStyled = true
 			}
 			if width != 1 {
 				hasWide = true
 			}
-			cells = append(cells, presentedCell{Content: token, Width: width, Style: style, ReanchorBefore: pendingReanchor})
-			lastVisibleToken = token
-			lastVisibleWidth = width
-			pendingReanchor = false
+			cells = append(cells, presentedCell{Content: token, Width: width, Style: style, ReanchorBefore: transition.ReanchorBefore})
 		} else if len(token) > 0 && token[0] != '\x1b' {
-			lastVisibleToken = token
-			lastVisibleWidth = width
+			widthSafety.ObserveNonPrintingCluster(token, width)
 		} else if len(token) > 0 && token[0] == '\x1b' {
 			switch xansi.Cmd(parser.Command()).Final() {
 			case 'm':
 				style = style.withSGR(parser.Params())
 			case 'G':
-				if shared.IsHostWidthAmbiguousCluster(lastVisibleToken, lastVisibleWidth) && !shared.IsStableNarrowTerminalSymbol(lastVisibleToken) {
+				transition := widthSafety.ObserveReanchorBeforeNextCluster()
+				if transition.HostWidthStabilizer {
 					hasHostWidthStabilizer = true
 				}
-				pendingReanchor = true
 			case 'X':
 				count, ok := parser.Param(0, 1)
 				if !ok || count <= 0 {
 					count = 1
 				}
-				if count == 1 && shared.IsAmbiguousEmojiVariationSelectorCluster(lastVisibleToken, lastVisibleWidth) {
+				transition := widthSafety.ObserveErase(count)
+				if transition.HiddenCompensation {
 					hasHiddenEmojiCompensation = true
 				}
 				hasErase = true
@@ -158,9 +154,8 @@ func parsePresentedRowGeneric(row string) presentedRow {
 					hasStyled = true
 				}
 				for i := 0; i < count; i++ {
-					cells = append(cells, presentedCell{Content: " ", Width: 1, Style: style, Erase: true, ReanchorBefore: pendingReanchor && i == 0})
+					cells = append(cells, presentedCell{Content: " ", Width: 1, Style: style, Erase: true, ReanchorBefore: transition.ReanchorBefore && i == 0})
 				}
-				pendingReanchor = false
 			}
 		}
 		state = nextState

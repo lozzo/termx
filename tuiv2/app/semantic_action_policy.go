@@ -1,8 +1,6 @@
 package app
 
 import (
-	"context"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/input"
 )
@@ -60,33 +58,12 @@ func (p *semanticActionPolicy) syncResizeNow(action input.SemanticAction) error 
 	if p == nil || p.model == nil {
 		return nil
 	}
-	switch action.Kind {
-	case input.ActionResizePaneLeft,
-		input.ActionResizePaneRight,
-		input.ActionResizePaneUp,
-		input.ActionResizePaneDown,
-		input.ActionResizePaneLargeLeft,
-		input.ActionResizePaneLargeRight,
-		input.ActionResizePaneLargeUp,
-		input.ActionResizePaneLargeDown,
-		input.ActionBalancePanes,
-		input.ActionCycleLayout:
-		if err := p.model.resizeVisiblePanes(context.Background()); err != nil {
-			return err
-		}
-	case input.ActionResizeFloatingLeft,
-		input.ActionResizeFloatingRight,
-		input.ActionResizeFloatingUp,
-		input.ActionResizeFloatingDown:
-		pane, rect, ok := p.model.visiblePaneForInput(action.PaneID)
-		if !ok || pane == nil || pane.TerminalID == "" {
-			return nil
-		}
-		if err := p.model.ensurePaneTerminalSize(context.Background(), pane.ID, pane.TerminalID, rect); err != nil {
-			return err
-		}
-	default:
+	service := p.model.layoutResizeService()
+	if service == nil {
 		return nil
+	}
+	if err := service.syncActionNow(action); err != nil {
+		return err
 	}
 	if p.model.render != nil {
 		p.model.render.Invalidate()
@@ -98,29 +75,11 @@ func (p *semanticActionPolicy) resizeCmd(action input.SemanticAction) tea.Cmd {
 	if p == nil || p.model == nil {
 		return nil
 	}
-	switch action.Kind {
-	case input.ActionSplitPane,
-		input.ActionSplitPaneHorizontal,
-		input.ActionZoomPane,
-		input.ActionResizePaneLeft,
-		input.ActionResizePaneRight,
-		input.ActionResizePaneUp,
-		input.ActionResizePaneDown,
-		input.ActionResizePaneLargeLeft,
-		input.ActionResizePaneLargeRight,
-		input.ActionResizePaneLargeUp,
-		input.ActionResizePaneLargeDown,
-		input.ActionBalancePanes,
-		input.ActionCycleLayout:
-		return p.model.resizeVisiblePanesCmd()
-	case input.ActionResizeFloatingLeft,
-		input.ActionResizeFloatingRight,
-		input.ActionResizeFloatingUp,
-		input.ActionResizeFloatingDown:
-		return p.model.resizePaneIfNeededCmd(action.PaneID)
-	default:
+	service := p.model.layoutResizeService()
+	if service == nil {
 		return nil
 	}
+	return service.resizeCmdForAction(action)
 }
 
 func (p *semanticActionPolicy) saveCmd(action input.SemanticAction) tea.Cmd {

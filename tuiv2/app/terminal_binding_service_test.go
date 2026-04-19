@@ -127,4 +127,26 @@ func TestTerminalBindingServiceBindSelectionCmdLoadsSnapshotForExitedTerminal(t 
 	}
 }
 
+func TestTerminalBindingServiceBindSelectionPreservesExistingCommandWhenPickerItemIsSparse(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	terminal := model.runtime.Registry().GetOrCreate("term-keep")
+	terminal.Command = []string{"bash", "-lc", "htop"}
+
+	service := model.terminalBindingService()
+	_, err := service.bindSelection("", "pane-1", modal.PickerItem{
+		TerminalID:    "term-keep",
+		Name:          "parked-shell",
+		State:         "parked",
+		TerminalState: "parked",
+		CommandArgs:   nil,
+	})
+	if err != nil {
+		t.Fatalf("bind selection: %v", err)
+	}
+
+	if len(terminal.Command) != 3 || terminal.Command[2] != "htop" {
+		t.Fatalf("expected sparse picker item to preserve existing command metadata, got %#v", terminal.Command)
+	}
+}
+
 func intPtr(v int) *int { return &v }

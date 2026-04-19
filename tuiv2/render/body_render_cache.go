@@ -1,8 +1,6 @@
 package render
 
 import (
-	"sort"
-
 	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -43,22 +41,6 @@ type paneContentSpriteDelta struct {
 	changedRows []int
 }
 
-type terminalWindowScrollDirection uint8
-
-const (
-	terminalWindowScrollNone terminalWindowScrollDirection = iota
-	terminalWindowScrollUp
-	terminalWindowScrollDown
-)
-
-type terminalWindowScrollPlan struct {
-	direction terminalWindowScrollDirection
-	start     int
-	end       int
-	shift     int
-	reused    int
-}
-
 func (c *bodyRenderCache) contentSprite(entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) *composedCanvas {
 	if c == nil {
 		return nil
@@ -91,7 +73,7 @@ func (c *bodyRenderCache) contentSprite(entry paneRenderEntry, runtimeState *Vis
 		resolved := resolvePaneContent(entry, runtimeState, true)
 		resolveFinish(maxInt(1, interior.W*interior.H))
 		window := buildTerminalSourceWindowState(resolved.source, resolved.contentRect.H, resolved.renderOffset)
-		extentHash := terminalSourceExtentHash(resolved.source, resolved.contentRect, entry.Theme)
+		extentHash := terminalSourceExtentHashWithMetrics(resolved.source, resolved.contentRect, entry.Theme, resolved.metrics)
 
 		if canIncrementalPaneSpriteUpdate(cached, key, resolved, window, extentHash) {
 			// SurfaceVersion can change without touching the visible rows. When
@@ -107,10 +89,7 @@ func (c *bodyRenderCache) contentSprite(entry paneRenderEntry, runtimeState *Vis
 				return cached.canvas
 			}
 
-			hint := resolved.screenUpdate
-			if resolved.surface == nil || hint.SurfaceVersion != entry.SurfaceVersion {
-				hint = terminalScreenUpdateHint{}
-			}
+			hint := effectiveTerminalScreenUpdateHint(resolved.screenUpdate, resolved.surface != nil, entry.SurfaceVersion)
 			incrementalFinish := perftrace.Measure("render.pane_content_sprite.incremental_apply")
 			delta := applyIncrementalPaneSpriteRows(cached.canvas, resolved, entry.Theme, cached.window, window, hint)
 			incrementalFinish(maxInt(1, delta.changedRowCount()) * maxInt(1, resolved.contentRect.W))
@@ -153,7 +132,7 @@ func (c *bodyRenderCache) contentSprite(entry paneRenderEntry, runtimeState *Vis
 		drawResolvedPaneContentSprite(sprite, entry, resolved)
 		fullFinish(maxInt(1, interior.W*interior.H))
 		window := buildTerminalSourceWindowState(resolved.source, resolved.contentRect.H, resolved.renderOffset)
-		extentHash := terminalSourceExtentHash(resolved.source, resolved.contentRect, entry.Theme)
+		extentHash := terminalSourceExtentHashWithMetrics(resolved.source, resolved.contentRect, entry.Theme, resolved.metrics)
 		c.contentSprites[entry.PaneID] = &paneContentSpriteCacheEntry{
 			key:         key,
 			canvas:      sprite,
@@ -175,7 +154,7 @@ func (c *bodyRenderCache) contentSprite(entry paneRenderEntry, runtimeState *Vis
 	fullFinish(maxInt(1, interior.W*interior.H))
 
 	window := buildTerminalSourceWindowState(resolved.source, resolved.contentRect.H, resolved.renderOffset)
-	extentHash := terminalSourceExtentHash(resolved.source, resolved.contentRect, entry.Theme)
+	extentHash := terminalSourceExtentHashWithMetrics(resolved.source, resolved.contentRect, entry.Theme, resolved.metrics)
 	c.contentSprites[entry.PaneID] = &paneContentSpriteCacheEntry{
 		key:         key,
 		canvas:      sprite,
@@ -217,359 +196,71 @@ func applyIncrementalPaneSpriteRows(canvas *composedCanvas, resolved resolvedPan
 	rowScratch := newComposedCanvas(resolved.contentRect.W, 1)
 	rowScratch.hostEmojiVS16Mode = canvas.hostEmojiVS16Mode
 
-	if plan, ok := detectTerminalWindowScroll(previous, next); ok {
-		return applyIncrementalPaneSpriteScrollPlan(canvas, rowScratch, resolved, theme, previous, next, plan)
-	}
-
-	baseChangedRows := terminalWindowChangedRows(previous, next, terminalWindowScrollPlan{})
-	if len(baseChangedRows) == 0 {
+	deltaPlan := planTerminalWindowDelta(previous, next, hint)
+	if len(deltaPlan.changedRows) == 0 && !deltaPlan.usesScroll() {
 		return paneContentSpriteDelta{}
 	}
-	if plan, ok := detectTerminalWindowPartialScroll(previous, next, len(baseChangedRows)); ok {
-		return applyIncrementalPaneSpriteScrollPlan(canvas, rowScratch, resolved, theme, previous, next, plan)
-	}
-	if hintedRows, ok := explicitTerminalWindowChangedRowsHint(previous, next, hint); ok && len(hintedRows) > 0 && len(hintedRows) < len(baseChangedRows) {
-		delta := paneContentSpriteDelta{changedRows: append([]int(nil), hintedRows...)}
-		for _, line := range delta.changedRows {
-			targetY := resolved.contentRect.Y + line
-			rowIndex := -1
-			if line < len(next.rowIndices) {
-				rowIndex = next.rowIndices[line]
-			}
-			drawPaneContentSpriteRowDiff(canvas, rowScratch, resolved.contentRect, resolved.source, rowIndex, targetY, theme)
-		}
-		perftrace.Count("render.pane_content_sprite.incremental.explicit_changed_rows_hit", 1)
-		perftrace.Count("render.pane_content_sprite.incremental.explicit_changed_rows", len(delta.changedRows))
-		perftrace.Count("render.pane_content_sprite.incremental.row_redraw_rows", len(delta.changedRows))
-		return delta
+	if deltaPlan.usesScroll() {
+		return applyIncrementalPaneSpriteScrollPlan(canvas, rowScratch, resolved, theme, next, deltaPlan)
 	}
 
-	delta := paneContentSpriteDelta{changedRows: append([]int(nil), baseChangedRows...)}
-	for _, line := range baseChangedRows {
+	delta := paneContentSpriteDelta{changedRows: append([]int(nil), deltaPlan.changedRows...)}
+	for _, line := range delta.changedRows {
 		targetY := resolved.contentRect.Y + line
 		rowIndex := -1
 		if line < len(next.rowIndices) {
 			rowIndex = next.rowIndices[line]
 		}
-		drawPaneContentSpriteRowDiff(canvas, rowScratch, resolved.contentRect, resolved.source, rowIndex, targetY, theme)
+		drawPaneContentSpriteRowDiffWithMetrics(canvas, rowScratch, resolved.contentRect, resolved.source, rowIndex, targetY, theme, resolved.metrics)
+	}
+	if deltaPlan.explicitHint {
+		perftrace.Count("render.pane_content_sprite.incremental.explicit_changed_rows_hit", 1)
+		perftrace.Count("render.pane_content_sprite.incremental.explicit_changed_rows", len(delta.changedRows))
 	}
 	perftrace.Count("render.pane_content_sprite.incremental.row_redraw_rows", len(delta.changedRows))
 	return delta
 }
 
-func explicitTerminalWindowChangedRowsHint(previous, next terminalSourceWindowState, hint terminalScreenUpdateHint) ([]int, bool) {
-	if !compatibleTerminalWindowStates(previous, next) || !previous.screenWindow || !next.screenWindow {
-		return nil, false
-	}
-	if hint.FullReplace || hint.ScreenScroll != 0 || len(hint.ChangedRows) == 0 {
-		return nil, false
-	}
-	height := len(next.exactRowHashes)
-	changedRows := make([]int, 0, len(hint.ChangedRows))
-	seen := make(map[int]struct{}, len(hint.ChangedRows))
-	for _, line := range hint.ChangedRows {
-		if line < 0 || line >= height {
-			return nil, false
-		}
-		if _, ok := seen[line]; ok {
-			continue
-		}
-		seen[line] = struct{}{}
-		changedRows = append(changedRows, line)
-	}
-	if len(changedRows) == 0 {
-		return nil, false
-	}
-	sort.Ints(changedRows)
-	return changedRows, true
+func (p terminalWindowDeltaPlan) usesScroll() bool {
+	return p.scrollPlan.direction != terminalWindowScrollNone && p.scrollPlan.shift > 0
 }
 
-func applyIncrementalPaneSpriteScrollPlan(canvas, rowScratch *composedCanvas, resolved resolvedPaneContent, theme uiTheme, previous, next terminalSourceWindowState, plan terminalWindowScrollPlan) paneContentSpriteDelta {
-	if canvas == nil || rowScratch == nil || !plan.valid(len(next.exactRowHashes)) {
+func applyIncrementalPaneSpriteScrollPlan(canvas, rowScratch *composedCanvas, resolved resolvedPaneContent, theme uiTheme, next terminalSourceWindowState, plan terminalWindowDeltaPlan) paneContentSpriteDelta {
+	if canvas == nil || rowScratch == nil || !plan.scrollPlan.valid(len(next.exactRowHashes)) {
 		return paneContentSpriteDelta{}
 	}
-	if !canvas.shiftRowBand(plan.start, plan.end, plan.shift, plan.direction) {
+	if !canvas.shiftRowBand(plan.scrollPlan.start, plan.scrollPlan.end, plan.scrollPlan.shift, plan.scrollPlan.direction) {
 		return paneContentSpriteDelta{}
 	}
 
-	changedRows := terminalWindowChangedRows(previous, next, plan)
+	changedRows := append([]int(nil), plan.changedRows...)
 	for _, line := range changedRows {
 		targetY := resolved.contentRect.Y + line
 		rowIndex := -1
 		if line < len(next.rowIndices) {
 			rowIndex = next.rowIndices[line]
 		}
-		drawPaneContentSpriteRowDiff(canvas, rowScratch, resolved.contentRect, resolved.source, rowIndex, targetY, theme)
+		drawPaneContentSpriteRowDiffWithMetrics(canvas, rowScratch, resolved.contentRect, resolved.source, rowIndex, targetY, theme, resolved.metrics)
 	}
 
-	if plan.wholeWindow(len(next.exactRowHashes)) {
+	if plan.scrollPlan.wholeWindow(len(next.exactRowHashes)) {
 		perftrace.Count("render.pane_content_sprite.incremental.scroll_hit", 1)
-		perftrace.Count("render.pane_content_sprite.incremental.scroll_shift", plan.shift)
+		perftrace.Count("render.pane_content_sprite.incremental.scroll_shift", plan.scrollPlan.shift)
 	} else {
 		perftrace.Count("render.pane_content_sprite.incremental.partial_scroll_hit", 1)
-		perftrace.Count("render.pane_content_sprite.incremental.partial_scroll_shift", plan.shift)
-		perftrace.Count("render.pane_content_sprite.incremental.partial_scroll_reused_rows", plan.reused)
+		perftrace.Count("render.pane_content_sprite.incremental.partial_scroll_shift", plan.scrollPlan.shift)
+		perftrace.Count("render.pane_content_sprite.incremental.partial_scroll_reused_rows", plan.scrollPlan.reused)
 		perftrace.Count("render.pane_content_sprite.incremental.partial_scroll_residual_redraw_rows", len(changedRows))
 	}
 
 	return paneContentSpriteDelta{
-		scrollPlan:  plan,
+		scrollPlan:  plan.scrollPlan,
 		changedRows: changedRows,
 	}
 }
 
-func detectTerminalWindowScroll(previous, next terminalSourceWindowState) (terminalWindowScrollPlan, bool) {
-	if !compatibleTerminalWindowStates(previous, next) {
-		return terminalWindowScrollPlan{}, false
-	}
-	height := len(next.exactRowHashes)
-	for shift := 1; shift < height; shift++ {
-		if terminalWindowMatchesScrollUp(previous, next, shift) {
-			return terminalWindowScrollPlan{
-				direction: terminalWindowScrollUp,
-				start:     0,
-				end:       height - 1,
-				shift:     shift,
-				reused:    height - shift,
-			}, true
-		}
-		if terminalWindowMatchesScrollDown(previous, next, shift) {
-			return terminalWindowScrollPlan{
-				direction: terminalWindowScrollDown,
-				start:     0,
-				end:       height - 1,
-				shift:     shift,
-				reused:    height - shift,
-			}, true
-		}
-	}
-	return terminalWindowScrollPlan{}, false
-}
-
-func detectTerminalWindowPartialScroll(previous, next terminalSourceWindowState, totalChangedRows int) (terminalWindowScrollPlan, bool) {
-	if !compatibleTerminalWindowStates(previous, next) || !previous.screenWindow || !next.screenWindow {
-		return terminalWindowScrollPlan{}, false
-	}
-	best := terminalWindowScrollPlan{}
-	height := len(next.exactRowHashes)
-	for shift := 1; shift < height; shift++ {
-		scanTerminalWindowScrollRuns(previous, next, shift, terminalWindowScrollUp, &best)
-		scanTerminalWindowScrollRuns(previous, next, shift, terminalWindowScrollDown, &best)
-	}
-	if !partialTerminalWindowScrollWorthIt(previous, next, best, totalChangedRows) {
-		return terminalWindowScrollPlan{}, false
-	}
-	return best, true
-}
-
-func compatibleTerminalWindowStates(previous, next terminalSourceWindowState) bool {
-	return len(previous.exactRowHashes) > 0 &&
-		len(previous.exactRowHashes) == len(next.exactRowHashes) &&
-		len(previous.rowContentHashes) == len(next.rowContentHashes) &&
-		len(previous.rowIndices) == len(next.rowIndices) &&
-		len(previous.rowIdentityHashes) == len(next.rowIdentityHashes)
-}
-
-func terminalWindowMatchesScrollUp(previous, next terminalSourceWindowState, shift int) bool {
-	height := len(next.exactRowHashes)
-	scrollUp := true
-	for line := 0; line+shift < height; line++ {
-		if previous.rowIndices[line+shift] != next.rowIndices[line] || previous.exactRowHashes[line+shift] != next.exactRowHashes[line] {
-			scrollUp = false
-			break
-		}
-	}
-	if scrollUp {
-		return true
-	}
-	if !previous.screenWindow || !next.screenWindow {
-		return false
-	}
-	for line := 0; line+shift < height; line++ {
-		if previous.rowIndices[line+shift] < 0 || next.rowIndices[line] < 0 || previous.rowIdentityHashes[line+shift] != next.rowIdentityHashes[line] {
-			return false
-		}
-	}
-	return true
-}
-
-func terminalWindowMatchesScrollDown(previous, next terminalSourceWindowState, shift int) bool {
-	height := len(next.exactRowHashes)
-	scrollDown := true
-	for line := 0; line+shift < height; line++ {
-		if previous.rowIndices[line] != next.rowIndices[line+shift] || previous.exactRowHashes[line] != next.exactRowHashes[line+shift] {
-			scrollDown = false
-			break
-		}
-	}
-	if scrollDown {
-		return true
-	}
-	if !previous.screenWindow || !next.screenWindow {
-		return false
-	}
-	for line := 0; line+shift < height; line++ {
-		if previous.rowIndices[line] < 0 || next.rowIndices[line+shift] < 0 || previous.rowIdentityHashes[line] != next.rowIdentityHashes[line+shift] {
-			return false
-		}
-	}
-	return true
-}
-
-func scanTerminalWindowScrollRuns(previous, next terminalSourceWindowState, shift int, direction terminalWindowScrollDirection, best *terminalWindowScrollPlan) {
-	if best == nil {
-		return
-	}
-	runStart := -1
-	runLength := 0
-	flush := func(endExclusive int) {
-		if runLength == 0 {
-			return
-		}
-		candidate := terminalWindowScrollPlan{
-			direction: direction,
-			start:     runStart,
-			end:       endExclusive + shift - 1,
-			shift:     shift,
-			reused:    runLength,
-		}
-		if betterTerminalWindowScrollPlan(candidate, *best) {
-			*best = candidate
-		}
-		runStart = -1
-		runLength = 0
-	}
-
-	limit := len(previous.rowIdentityHashes) - shift
-	for i := 0; i < limit; i++ {
-		var previousLine int
-		var nextLine int
-		switch direction {
-		case terminalWindowScrollUp:
-			previousLine = i + shift
-			nextLine = i
-		case terminalWindowScrollDown:
-			previousLine = i
-			nextLine = i + shift
-		default:
-			return
-		}
-		matches := previous.rowIndices[previousLine] >= 0 &&
-			next.rowIndices[nextLine] >= 0 &&
-			previous.rowIdentityHashes[previousLine] == next.rowIdentityHashes[nextLine]
-		if matches {
-			if runLength == 0 {
-				runStart = i
-			}
-			runLength++
-			continue
-		}
-		flush(i)
-	}
-	flush(limit)
-}
-
-func betterTerminalWindowScrollPlan(candidate, current terminalWindowScrollPlan) bool {
-	if candidate.reused == 0 {
-		return false
-	}
-	if current.reused == 0 {
-		return true
-	}
-	if candidate.reused != current.reused {
-		return candidate.reused > current.reused
-	}
-	if candidate.shift != current.shift {
-		return candidate.shift < current.shift
-	}
-	if candidate.start != current.start {
-		return candidate.start < current.start
-	}
-	return candidate.direction < current.direction
-}
-
-func partialTerminalWindowScrollWorthIt(previous, next terminalSourceWindowState, plan terminalWindowScrollPlan, totalChangedRows int) bool {
-	if plan.direction == terminalWindowScrollNone || plan.reused < 4 || totalChangedRows <= 0 {
-		return false
-	}
-	residualRedrawRows := len(terminalWindowChangedRows(previous, next, plan))
-	if residualRedrawRows <= 0 || residualRedrawRows >= totalChangedRows {
-		return false
-	}
-	return totalChangedRows-residualRedrawRows >= 2
-}
-
-func terminalWindowChangedRows(previous, next terminalSourceWindowState, plan terminalWindowScrollPlan) []int {
-	if !compatibleTerminalWindowStates(previous, next) {
-		return nil
-	}
-	changedRows := make([]int, 0, len(next.exactRowHashes))
-	for line := range next.exactRowHashes {
-		if sourceLine, ok := plan.sourceLineFor(line); ok {
-			if sourceLine >= 0 && sourceLine < len(previous.rowContentHashes) && previous.rowContentHashes[sourceLine] == next.rowContentHashes[line] {
-				continue
-			}
-			changedRows = append(changedRows, line)
-			continue
-		}
-		if previous.exactRowHashes[line] == next.exactRowHashes[line] {
-			continue
-		}
-		changedRows = append(changedRows, line)
-	}
-	return changedRows
-}
-
 func (d paneContentSpriteDelta) changedRowCount() int {
 	return len(d.changedRows)
-}
-
-func (p terminalWindowScrollPlan) valid(height int) bool {
-	if p.direction == terminalWindowScrollNone || p.shift <= 0 || p.reused <= 0 || height <= 0 {
-		return false
-	}
-	if p.start < 0 || p.end < p.start || p.end >= height {
-		return false
-	}
-	return p.end-p.start+1 > p.shift
-}
-
-func (p terminalWindowScrollPlan) wholeWindow(height int) bool {
-	return p.valid(height) && p.start == 0 && p.end == height-1
-}
-
-func (p terminalWindowScrollPlan) reusesLine(line int) bool {
-	if p.direction == terminalWindowScrollNone || line < 0 {
-		return false
-	}
-	switch p.direction {
-	case terminalWindowScrollUp:
-		return line >= p.start && line <= p.end-p.shift
-	case terminalWindowScrollDown:
-		return line >= p.start+p.shift && line <= p.end
-	default:
-		return false
-	}
-}
-
-func (p terminalWindowScrollPlan) sourceLineFor(line int) (int, bool) {
-	if p.direction == terminalWindowScrollNone || line < 0 {
-		return 0, false
-	}
-	switch p.direction {
-	case terminalWindowScrollUp:
-		if line < p.start || line > p.end-p.shift {
-			return 0, false
-		}
-		return line + p.shift, true
-	case terminalWindowScrollDown:
-		if line < p.start+p.shift || line > p.end {
-			return 0, false
-		}
-		return line - p.shift, true
-	default:
-		return 0, false
-	}
 }
 
 func (c *bodyRenderCache) applySpriteDeltaToCanvas(canvas *composedCanvas, entry paneRenderEntry) bool {

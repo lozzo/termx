@@ -34,69 +34,23 @@ func (o *Orchestrator) handleFloatingAction(action input.SemanticAction) []Effec
 		o.workbench.ReorderFloatingPane(tab.ID, paneID, true)
 		return []Effect{InvalidateRenderEffect{}}
 	case input.ActionMoveFloatingLeft, input.ActionMoveFloatingRight, input.ActionMoveFloatingUp, input.ActionMoveFloatingDown:
-		tab := o.workbench.CurrentTab()
-		if tab == nil {
+		target, ok := o.currentFloatingPaneTarget(action.PaneID)
+		if !ok {
 			return nil
 		}
-		paneID := activeFloatingPaneID(tab, action.PaneID)
-		if paneID == "" {
-			return nil
-		}
-		dx, dy := 0, 0
-		switch action.Kind {
-		case input.ActionMoveFloatingLeft:
-			dx = -floatingMoveStep
-		case input.ActionMoveFloatingRight:
-			dx = floatingMoveStep
-		case input.ActionMoveFloatingUp:
-			dy = -floatingMoveStep
-		case input.ActionMoveFloatingDown:
-			dy = floatingMoveStep
-		}
-		if !o.workbench.MoveFloatingPaneBy(tab.ID, paneID, dx, dy) {
-			return nil
-		}
-		o.workbench.ReorderFloatingPane(tab.ID, paneID, true)
-		return []Effect{InvalidateRenderEffect{}}
+		return []Effect{MoveFloatingPaneEffect{PaneID: target.PaneID, Kind: action.Kind}}
 	case input.ActionResizeFloatingLeft, input.ActionResizeFloatingRight, input.ActionResizeFloatingUp, input.ActionResizeFloatingDown:
-		tab := o.workbench.CurrentTab()
-		if tab == nil {
+		target, ok := o.currentFloatingPaneTarget(action.PaneID)
+		if !ok {
 			return nil
 		}
-		paneID := activeFloatingPaneID(tab, action.PaneID)
-		if paneID == "" {
-			return nil
-		}
-		dw, dh := 0, 0
-		switch action.Kind {
-		case input.ActionResizeFloatingLeft:
-			dw = -floatingResizeStep
-		case input.ActionResizeFloatingRight:
-			dw = floatingResizeStep
-		case input.ActionResizeFloatingUp:
-			dh = -floatingResizeStep
-		case input.ActionResizeFloatingDown:
-			dh = floatingResizeStep
-		}
-		if !o.workbench.ResizeFloatingPaneBy(tab.ID, paneID, dw, dh) {
-			return nil
-		}
-		o.workbench.ReorderFloatingPane(tab.ID, paneID, true)
-		return []Effect{InvalidateRenderEffect{}}
+		return []Effect{ResizeFloatingPaneEffect{PaneID: target.PaneID, Kind: action.Kind}}
 	case input.ActionCenterFloatingPane:
-		tab := o.workbench.CurrentTab()
-		if tab == nil {
+		target, ok := o.currentFloatingPaneTarget(action.PaneID)
+		if !ok {
 			return nil
 		}
-		paneID := activeFloatingPaneID(tab, action.PaneID)
-		if paneID == "" {
-			return nil
-		}
-		if !o.workbench.CenterFloatingPane(tab.ID, paneID, workbench.Rect{W: floatingBoundsW, H: floatingBoundsH}) {
-			return nil
-		}
-		o.workbench.ReorderFloatingPane(tab.ID, paneID, true)
-		return []Effect{InvalidateRenderEffect{}}
+		return []Effect{CenterFloatingPaneEffect{PaneID: target.PaneID}}
 	case input.ActionToggleFloatingVisibility:
 		tab := o.workbench.CurrentTab()
 		if tab == nil {
@@ -105,25 +59,37 @@ func (o *Orchestrator) handleFloatingAction(action input.SemanticAction) []Effec
 		tab.FloatingVisible = !tab.FloatingVisible
 		return []Effect{InvalidateRenderEffect{}}
 	case input.ActionCloseFloatingPane:
-		tab := o.workbench.CurrentTab()
-		if tab == nil {
+		target, ok := o.currentFloatingPaneTarget(action.PaneID)
+		if !ok {
 			return nil
 		}
-		paneID := activeFloatingPaneID(tab, action.PaneID)
-		if paneID == "" {
-			return nil
-		}
-		terminalID, err := o.workbench.ClosePane(tab.ID, paneID)
-		if err != nil {
-			return nil
-		}
-		if o.runtime != nil {
-			o.runtime.UnbindPane(paneID, terminalID)
-		}
-		return []Effect{ClosePaneEffect{PaneID: paneID}}
+		return []Effect{ClosePaneEffect{PaneID: target.PaneID}}
 	default:
 		return nil
 	}
+}
+
+func (o *Orchestrator) currentFloatingPaneTarget(paneID string) (paneActionTarget, bool) {
+	if o == nil || o.workbench == nil {
+		return paneActionTarget{}, false
+	}
+	tab := o.workbench.CurrentTab()
+	if tab == nil {
+		return paneActionTarget{}, false
+	}
+	targetPaneID := activeFloatingPaneID(tab, paneID)
+	if targetPaneID == "" {
+		return paneActionTarget{}, false
+	}
+	pane := tab.Panes[targetPaneID]
+	if pane == nil {
+		return paneActionTarget{}, false
+	}
+	return paneActionTarget{
+		TabID:      tab.ID,
+		PaneID:     targetPaneID,
+		TerminalID: pane.TerminalID,
+	}, true
 }
 
 func activeFloatingPaneID(tab *workbench.TabState, paneID string) string {

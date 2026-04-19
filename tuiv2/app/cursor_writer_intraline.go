@@ -68,23 +68,11 @@ func renderChangedRowIntralineEdit(out *strings.Builder, previous, next presente
 }
 
 func safeForIntralineEdits(previous, next presentedRow, fullWidthLines bool, ownsLineEnd bool) bool {
-	if previous.hasWide || next.hasWide ||
-		previous.hasErase || next.hasErase ||
-		previous.hasHiddenEmojiCompensation || next.hasHiddenEmojiCompensation ||
-		previous.hasHostWidthStabilizer || next.hasHostWidthStabilizer {
+	if !presentedRowSafeForLinearOps(previous) || !presentedRowSafeForLinearOps(next) {
 		return false
 	}
 	if !fullWidthLines && !ownsLineEnd && !rowOwnsLineEnd(previous) {
 		return false
-	}
-	return singleWidthStablePresentedCells(previous.cells) && singleWidthStablePresentedCells(next.cells)
-}
-
-func singleWidthStablePresentedCells(cells []presentedCell) bool {
-	for _, cell := range cells {
-		if cell.Width != 1 || cell.ReanchorBefore || cell.Erase {
-			return false
-		}
 	}
 	return true
 }

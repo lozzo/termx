@@ -185,10 +185,10 @@ func (m *Model) exportSessionWorkbench() *workbenchdoc.Doc {
 	return doc
 }
 
-func (m *Model) reconcileSessionRuntime(ctx context.Context, oldBindings, nextBindings map[string]string) {
+func (m *Model) reconcileSessionRuntime(ctx context.Context, oldBindings, nextBindings map[string]string) sessionRuntimeApplyResult {
 	service := m.sessionRuntimeService()
 	if service == nil {
-		return
+		return sessionRuntimeApplyResult{}
 	}
-	service.reconcileRuntime(ctx, oldBindings, nextBindings)
+	return service.reconcileRuntime(ctx, oldBindings, nextBindings)
 }

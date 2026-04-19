@@ -25,6 +25,7 @@ type paneRenderEntry struct {
 	Snapshot             *protocol.Snapshot
 	Surface              runtime.TerminalSurface
 	SurfaceVersion       uint64
+	Metrics              renderTerminalMetrics
 	ScrollOffset         int
 	Active               bool
 	Floating             bool
@@ -147,6 +148,8 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 	}
 	contentVersion := uint64(0)
 	source := renderSource(snapshot, surface)
+	extent := terminalExtentProfileCached(snapshot, surface, surfaceVersion)
+	metrics := extent.Metrics
 	switch {
 	case surface != nil:
 		// Live surfaces already publish a monotonically increasing version.
@@ -191,7 +194,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		contentKey.SurfaceVersion = contentVersion
 		contentKey.Name = terminal.Name
 		contentKey.State = terminal.State
-		overflow = paneOverflowHintsForRender(originalRect, rect, snapshot, surface)
+		overflow = paneOverflowHintsForRenderWithMetrics(originalRect, rect, extent.Overflow)
 	}
 	return paneRenderEntry{
 		PaneID:     pane.ID,
@@ -222,6 +225,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		Snapshot:             snapshot,
 		Surface:              surface,
 		SurfaceVersion:       surfaceVersion,
+		Metrics:              metrics,
 		ScrollOffset:         renderOffset,
 		Active:               active,
 		Floating:             pane.Floating,
@@ -249,6 +253,10 @@ func paneOwnerID(paneID string) uint32 {
 }
 
 func paneOverflowHintsForRender(originalRect, clippedRect workbench.Rect, snapshot *protocol.Snapshot, surface runtime.TerminalSurface) paneOverflowHints {
+	return paneOverflowHintsForRenderWithMetrics(originalRect, clippedRect, terminalOverflowMetricsForSource(renderSource(snapshot, surface)))
+}
+
+func paneOverflowHintsForRenderWithMetrics(originalRect, clippedRect workbench.Rect, metrics renderTerminalMetrics) paneOverflowHints {
 	if originalRect.W <= 0 || originalRect.H <= 0 || clippedRect.W <= 0 || clippedRect.H <= 0 {
 		return paneOverflowHints{}
 	}
@@ -256,12 +264,10 @@ func paneOverflowHintsForRender(originalRect, clippedRect workbench.Rect, snapsh
 		Right:  originalRect.X+originalRect.W > clippedRect.X+clippedRect.W,
 		Bottom: originalRect.Y+originalRect.H > clippedRect.Y+clippedRect.H,
 	}
-	metrics := terminalMetricsForSource(renderSource(snapshot, surface))
-	contentRect := contentRectForPane(clippedRect)
-	if metrics.Cols > 0 && contentRect.W > 0 && metrics.Cols > contentRect.W {
+	if metrics.Cols > 0 && clippedRect.W > 0 && metrics.Cols > clippedRect.W {
 		overflow.Right = true
 	}
-	if metrics.Rows > 0 && contentRect.H > 0 && metrics.Rows > contentRect.H {
+	if metrics.Rows > 0 && clippedRect.H > 0 && metrics.Rows > clippedRect.H {
 		overflow.Bottom = true
 	}
 	return overflow

@@ -3833,6 +3833,8 @@ type recordingBridgeClient struct {
 	attachErr          error
 	listResult         *protocol.ListResult
 	snapshotByTerminal map[string]*protocol.Snapshot
+	snapshotCalls      []string
+	snapshotErr        error
 	createCalls        []createCall
 	attachCalls        []attachCall
 	setTagsCalls       []setTagsCall
@@ -3930,6 +3932,10 @@ func (c *recordingBridgeClient) Attach(_ context.Context, terminalID, mode strin
 }
 
 func (c *recordingBridgeClient) Snapshot(_ context.Context, terminalID string, _ int, _ int) (*protocol.Snapshot, error) {
+	c.snapshotCalls = append(c.snapshotCalls, terminalID)
+	if c.snapshotErr != nil {
+		return nil, c.snapshotErr
+	}
 	if c.snapshotByTerminal == nil {
 		return nil, nil
 	}

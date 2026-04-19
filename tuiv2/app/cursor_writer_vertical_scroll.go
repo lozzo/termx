@@ -196,14 +196,11 @@ func flattenPresentedRowsForRectScroll(rows []presentedRow) ([][]presentedCell, 
 }
 
 func flattenPresentedRowForRectScroll(row presentedRow) ([]presentedCell, bool) {
-	if row.hasWide || row.hasErase || row.hasHiddenEmojiCompensation || row.hasHostWidthStabilizer {
+	if !presentedRowSafeForLinearOps(row) {
 		return nil, false
 	}
 	flat := make([]presentedCell, 0, len(row.cells))
 	for _, cell := range row.cells {
-		if cell.Width != 1 || cell.ReanchorBefore || cell.Erase {
-			return nil, false
-		}
 		flat = append(flat, cell)
 	}
 	return flat, true

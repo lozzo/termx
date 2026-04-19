@@ -6,6 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/tuiv2/sessionstate"
+	"github.com/lozzow/termx/tuiv2/workbench"
 	"github.com/lozzow/termx/workbenchdoc"
 )
 
@@ -101,5 +103,44 @@ func TestHandleSessionMessageUnknownMessageFallsThrough(t *testing.T) {
 	cmd, handled := model.handleSessionMessage(tea.WindowSizeMsg{Width: 80, Height: 24})
 	if handled || cmd != nil {
 		t.Fatalf("expected unrelated msg to fall through, got handled=%v cmd=%#v", handled, cmd)
+	}
+}
+
+func TestHandleSessionMessageSnapshotDowngradesFailedRuntimeBindings(t *testing.T) {
+	client := &recordingBridgeClient{
+		attachResult: &protocol.AttachResult{Channel: 7, Mode: "collaborator"},
+		snapshotErr:  errors.New("snapshot failed"),
+	}
+	model := setupModel(t, modelOpts{client: client})
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", TerminalID: "term-new"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	snapshot := &protocol.SessionSnapshot{
+		Session:   protocol.SessionInfo{ID: "session-main", Revision: 7},
+		View:      &protocol.ViewInfo{ViewID: "view-1", ActiveWorkspaceName: "main", ActiveTabID: "tab-1", FocusedPaneID: "pane-1"},
+		Workbench: sessionstate.ExportWorkbench(wb),
+	}
+
+	cmd, handled := model.handleSessionMessage(sessionSnapshotMsg{Snapshot: snapshot})
+	if !handled || cmd == nil {
+		t.Fatalf("expected failed runtime snapshot apply to surface an error, got handled=%v cmd=%#v", handled, cmd)
+	}
+	tab := model.workbench.CurrentTab()
+	if tab == nil || tab.Panes["pane-1"] == nil || tab.Panes["pane-1"].TerminalID != "" {
+		t.Fatalf("expected failed runtime binding to be downgraded in workbench, got %#v", tab)
+	}
+	if msg := cmd(); msg == nil {
+		t.Fatal("expected showError follow-up for failed runtime binding apply")
 	}
 }

@@ -18,11 +18,10 @@ type resolvedPaneContent struct {
 	surface       runtime.TerminalSurface
 	screenUpdate  terminalScreenUpdateHint
 	source        terminalRenderSource
+	metrics       renderTerminalMetrics
 	contentRect   workbench.Rect
 	renderOffset  int
 }
-
-type terminalScreenUpdateHint = runtime.VisibleScreenUpdateSummary
 
 type terminalSourceWindowState struct {
 	rowIndices        []int
@@ -94,7 +93,7 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 		}
 		return
 	}
-	drawTerminalSourceWithOffset(canvas, contentRect, resolved.source, resolved.renderOffset, entry.Theme)
+	drawTerminalSourceWithOffsetAndMetrics(canvas, contentRect, resolved.source, resolved.renderOffset, entry.Theme, resolved.metrics)
 	if entry.CopyModeActive {
 		drawCopyModeOverlay(canvas, contentRect, resolved.snapshot, entry.Theme, entry.CopyModeCursorRow, entry.CopyModeCursorCol, entry.CopyModeViewTopRow, entry.CopyModeMarkSet, entry.CopyModeMarkRow, entry.CopyModeMarkCol)
 	}
@@ -224,7 +223,7 @@ func resolvePaneContent(entry paneRenderEntry, runtimeState *VisibleRuntimeState
 	resolved.snapshot = entry.Snapshot
 	resolved.surface = entry.Surface
 	if terminal := findVisibleTerminal(runtimeState, entry.TerminalID); terminal != nil {
-		resolved.screenUpdate = terminal.ScreenUpdate
+		resolved.screenUpdate = terminalScreenUpdateHintFromVisible(terminal.ScreenUpdate)
 	}
 	if resolved.terminalKnown && (resolved.snapshot == nil && resolved.surface == nil || resolved.terminalName == "" || resolved.terminalState == "") {
 		if terminal := findVisibleTerminal(runtimeState, entry.TerminalID); terminal != nil {
@@ -243,6 +242,10 @@ func resolvePaneContent(entry paneRenderEntry, runtimeState *VisibleRuntimeState
 		}
 	}
 	resolved.source = renderSource(resolved.snapshot, resolved.surface)
+	resolved.metrics = entry.Metrics
+	if resolved.metrics == (renderTerminalMetrics{}) || resolved.snapshot != entry.Snapshot || resolved.surface != entry.Surface {
+		resolved.metrics = terminalExtentProfileCached(resolved.snapshot, resolved.surface, entry.SurfaceVersion).Metrics
+	}
 	resolved.renderOffset = entry.ScrollOffset
 	if entry.CopyModeActive {
 		resolved.renderOffset = scrollOffsetForViewportTop(resolved.snapshot, resolved.contentRect.H, entry.CopyModeViewTopRow)
@@ -340,10 +343,13 @@ func terminalSourceWindowRowIndex(source terminalRenderSource, height, offset, l
 }
 
 func terminalSourceExtentHash(source terminalRenderSource, rect workbench.Rect, theme uiTheme) uint64 {
+	return terminalSourceExtentHashWithMetrics(source, rect, theme, terminalVisibleMetricsForSource(source))
+}
+
+func terminalSourceExtentHashWithMetrics(source terminalRenderSource, rect workbench.Rect, theme uiTheme, metrics renderTerminalMetrics) uint64 {
 	if source == nil || rect.W <= 0 || rect.H <= 0 {
 		return 0
 	}
-	metrics := terminalMetricsForSource(source)
 	hash := fnvOffset64
 	hash = fnvMixUint64(hash, uint64(rect.W))
 	hash = fnvMixUint64(hash, uint64(rect.H))
@@ -474,7 +480,7 @@ func fnvMixString(hash uint64, value string) uint64 {
 }
 
 func drawPaneContentSpriteRow(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, rowIndex int, targetY int, theme uiTheme) {
-	drawPaneContentSpriteRowWithMetrics(canvas, nil, rect, source, rowIndex, targetY, theme, terminalMetricsForSource(source))
+	drawPaneContentSpriteRowWithMetrics(canvas, nil, rect, source, rowIndex, targetY, theme, terminalVisibleMetricsForSource(source))
 }
 
 func drawPaneContentSpriteRowWithMetrics(canvas, scratch *composedCanvas, rect workbench.Rect, source terminalRenderSource, rowIndex int, targetY int, theme uiTheme, metrics renderTerminalMetrics) {
@@ -492,10 +498,13 @@ func drawPaneContentSpriteRowWithMetrics(canvas, scratch *composedCanvas, rect w
 }
 
 func drawPaneContentSpriteRowDiff(canvas, scratch *composedCanvas, rect workbench.Rect, source terminalRenderSource, rowIndex int, targetY int, theme uiTheme) {
+	drawPaneContentSpriteRowDiffWithMetrics(canvas, scratch, rect, source, rowIndex, targetY, theme, terminalVisibleMetricsForSource(source))
+}
+
+func drawPaneContentSpriteRowDiffWithMetrics(canvas, scratch *composedCanvas, rect workbench.Rect, source terminalRenderSource, rowIndex int, targetY int, theme uiTheme, metrics renderTerminalMetrics) {
 	if canvas == nil || scratch == nil || rect.W <= 0 || targetY < rect.Y || targetY >= rect.Y+rect.H {
 		return
 	}
-	metrics := terminalMetricsForSource(source)
 	scratch.withOwner(canvas.primaryOwner(), func() {
 		scratch.resetToBlank()
 		scratchRect := workbench.Rect{X: 0, Y: 0, W: rect.W, H: 1}

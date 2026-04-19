@@ -10,11 +10,17 @@ import (
 func (m *Model) handleSessionMessage(msg tea.Msg) (tea.Cmd, bool) {
 	switch typed := msg.(type) {
 	case sessionSnapshotMsg:
+		var applyErr error
 		if shouldApplySessionSnapshot(typed.Snapshot) {
-			m.applySessionSnapshot(typed.Snapshot)
+			applyErr = m.applySessionSnapshot(typed.Snapshot)
 		}
-		if typed.Err != nil {
+		switch {
+		case typed.Err != nil && applyErr != nil:
+			return batchCmds(m.showError(typed.Err), m.showError(applyErr)), true
+		case typed.Err != nil:
 			return m.showError(typed.Err), true
+		case applyErr != nil:
+			return m.showError(applyErr), true
 		}
 		return nil, true
 	case sessionEventMsg:

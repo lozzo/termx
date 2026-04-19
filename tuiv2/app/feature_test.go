@@ -1153,6 +1153,54 @@ func TestFeatureTabClose(t *testing.T) {
 	assertTabCount(t, model, 1)
 }
 
+func TestFeatureTabCloseUnbindsRuntimePaneBindings(t *testing.T) {
+	model := setupModel(t, modelOpts{
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 1,
+				Tabs: []*workbench.TabState{
+					{
+						ID:           "tab-1",
+						Name:         "tab 1",
+						ActivePaneID: "pane-1",
+						Panes: map[string]*workbench.PaneState{
+							"pane-1": {ID: "pane-1", TerminalID: "term-1"},
+						},
+						Root: workbench.NewLeaf("pane-1"),
+					},
+					{
+						ID:           "tab-2",
+						Name:         "tab 2",
+						ActivePaneID: "pane-2",
+						Panes: map[string]*workbench.PaneState{
+							"pane-2": {ID: "pane-2", TerminalID: "term-2"},
+						},
+						Root: workbench.NewLeaf("pane-2"),
+					},
+				},
+			},
+		},
+	})
+	terminal := model.runtime.Registry().GetOrCreate("term-2")
+	terminal.OwnerPaneID = "pane-2"
+	terminal.ControlPaneID = "pane-2"
+	terminal.BoundPaneIDs = []string{"pane-2"}
+	binding := model.runtime.BindPane("pane-2")
+	binding.Channel = 2
+	binding.Connected = true
+
+	model.input.SetMode(input.ModeState{Kind: input.ModeTab})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionCloseTab})
+
+	if got := model.runtime.Binding("pane-2"); got != nil {
+		t.Fatalf("expected closed tab binding removed from runtime, got %#v", got)
+	}
+	if terminal.OwnerPaneID != "" || terminal.ControlPaneID != "" || len(terminal.BoundPaneIDs) != 0 {
+		t.Fatalf("expected closed tab terminal detached from runtime state, got %#v", terminal)
+	}
+}
+
 func TestFeatureTabSwitchNextPrev(t *testing.T) {
 	model := setupModel(t, modelOpts{})
 	createSecondTab(t, model)
@@ -1229,6 +1277,54 @@ func TestFeatureTabKill(t *testing.T) {
 	client := model.runtime.Client().(*recordingBridgeClient)
 	if len(client.killCalls) != 1 || client.killCalls[0] != "term-1" {
 		t.Fatalf("expected kill call for pane's terminal, got %v", client.killCalls)
+	}
+}
+
+func TestFeatureTabKillUnbindsRuntimePaneBindings(t *testing.T) {
+	model := setupModel(t, modelOpts{
+		workspaces: map[string]*workbench.WorkspaceState{
+			"main": {
+				Name:      "main",
+				ActiveTab: 0,
+				Tabs: []*workbench.TabState{
+					{
+						ID:           "tab-1",
+						Name:         "tab 1",
+						ActivePaneID: "pane-1",
+						Panes: map[string]*workbench.PaneState{
+							"pane-1": {ID: "pane-1", TerminalID: "term-1"},
+						},
+						Root: workbench.NewLeaf("pane-1"),
+					},
+					{
+						ID:           "tab-2",
+						Name:         "tab 2",
+						ActivePaneID: "pane-2",
+						Panes: map[string]*workbench.PaneState{
+							"pane-2": {ID: "pane-2", TerminalID: "term-2"},
+						},
+						Root: workbench.NewLeaf("pane-2"),
+					},
+				},
+			},
+		},
+	})
+	term := model.runtime.Registry().GetOrCreate("term-1")
+	term.OwnerPaneID = "pane-1"
+	term.ControlPaneID = "pane-1"
+	term.BoundPaneIDs = []string{"pane-1"}
+	binding := model.runtime.BindPane("pane-1")
+	binding.Channel = 1
+	binding.Connected = true
+
+	model.input.SetMode(input.ModeState{Kind: input.ModeTab})
+	dispatchAction(t, model, input.SemanticAction{Kind: input.ActionKillTab})
+
+	if got := model.runtime.Binding("pane-1"); got != nil {
+		t.Fatalf("expected killed tab binding removed from runtime, got %#v", got)
+	}
+	if term.OwnerPaneID != "" || term.ControlPaneID != "" || len(term.BoundPaneIDs) != 0 {
+		t.Fatalf("expected killed tab terminal detached from runtime state, got %#v", term)
 	}
 }
 

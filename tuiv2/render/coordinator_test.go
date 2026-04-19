@@ -509,6 +509,20 @@ func TestDrawTerminalExtentHintsFillsUnusedAreaWithDots(t *testing.T) {
 	}
 }
 
+func TestTerminalOverflowMetricsKeepDeclaredTerminalSizeAsLowerBound(t *testing.T) {
+	snapshot := &protocol.Snapshot{
+		Size: protocol.Size{Cols: 40, Rows: 10},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			{{Content: "h", Width: 1}, {Content: "i", Width: 1}},
+		}},
+	}
+
+	metrics := terminalOverflowMetricsForSource(renderSource(snapshot, nil))
+	if metrics.Cols != 40 || metrics.Rows != 10 {
+		t.Fatalf("expected declared terminal size to remain the lower bound, got %#v", metrics)
+	}
+}
+
 type fakeTerminalRenderSource struct{}
 
 func (fakeTerminalRenderSource) Size() protocol.Size           { return protocol.Size{Cols: 1, Rows: 1} }

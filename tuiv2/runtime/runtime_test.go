@@ -412,6 +412,138 @@ func TestRuntimeScreenUpdateAppliesScreenScrollShiftToLocalVTerm(t *testing.T) {
 	}
 }
 
+func TestRuntimeScreenUpdateTitleOnlyKeepsBootstrapPending(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+
+	rt := New(client)
+	terminal, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator")
+	if err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if terminal == nil || terminal.VTerm == nil {
+		t.Fatalf("expected hydrated terminal runtime, got %#v", terminal)
+	}
+	terminal.Snapshot = snapshotWithLines("term-1", 6, 2, []string{"seed"})
+	loadSnapshotIntoVTerm(terminal.VTerm, terminal.Snapshot)
+	terminal.BootstrapPending = true
+
+	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		Title:  "renamed",
+		Cursor: protocol.CursorState{Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode update: %v", err)
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+
+	if !terminal.BootstrapPending {
+		t.Fatalf("expected title-only screen update to keep bootstrap pending, got %#v", terminal)
+	}
+	if terminal.Title != "renamed" {
+		t.Fatalf("expected title-only screen update to update title, got %#v", terminal)
+	}
+	if terminal.Snapshot == nil || !snapshotContains(terminal.Snapshot, "seed") {
+		t.Fatalf("expected title-only screen update to preserve existing snapshot content, got %#v", terminal.Snapshot)
+	}
+}
+
+func TestRuntimeScreenUpdateTitleOnlyKeepsRecoveryState(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+
+	rt := New(client)
+	terminal, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator")
+	if err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if terminal == nil || terminal.VTerm == nil {
+		t.Fatalf("expected hydrated terminal runtime, got %#v", terminal)
+	}
+	terminal.Snapshot = snapshotWithLines("term-1", 6, 2, []string{"seed"})
+	loadSnapshotIntoVTerm(terminal.VTerm, terminal.Snapshot)
+	terminal.Recovery = RecoveryState{SyncLost: true, DroppedBytes: 9}
+
+	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		Title:  "renamed",
+		Cursor: protocol.CursorState{Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode update: %v", err)
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+
+	if terminal.Recovery != (RecoveryState{SyncLost: true, DroppedBytes: 9}) {
+		t.Fatalf("expected title-only screen update to preserve recovery state, got %#v", terminal.Recovery)
+	}
+	if terminal.Title != "renamed" {
+		t.Fatalf("expected title-only screen update to update title, got %#v", terminal)
+	}
+}
+
+func TestRuntimeScreenUpdateFullReplaceClearsRecoveryState(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+
+	rt := New(client)
+	terminal, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator")
+	if err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if terminal == nil || terminal.VTerm == nil {
+		t.Fatalf("expected hydrated terminal runtime, got %#v", terminal)
+	}
+	terminal.Snapshot = snapshotWithLines("term-1", 6, 2, []string{"seed"})
+	loadSnapshotIntoVTerm(terminal.VTerm, terminal.Snapshot)
+	terminal.Recovery = RecoveryState{SyncLost: true, DroppedBytes: 9}
+
+	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		FullReplace: true,
+		Size:        protocol.Size{Cols: 6, Rows: 2},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			{{Content: "o", Width: 1}, {Content: "k", Width: 1}},
+		}},
+		Cursor: protocol.CursorState{Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode update: %v", err)
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+
+	if terminal.Recovery != (RecoveryState{}) {
+		t.Fatalf("expected full-replace screen update to clear recovery, got %#v", terminal.Recovery)
+	}
+	if terminal.Snapshot == nil || !snapshotContains(terminal.Snapshot, "ok") {
+		t.Fatalf("expected full-replace screen update to refresh snapshot content, got %#v", terminal.Snapshot)
+	}
+	if !terminal.ScreenUpdate.FullReplace {
+		t.Fatalf("expected full-replace screen update summary, got %#v", terminal.ScreenUpdate)
+	}
+}
+
+func TestNewScreenUpdateContractDeduplicatesChangedRows(t *testing.T) {
+	contract := NewScreenUpdateContract(protocol.ScreenUpdate{
+		ChangedRows: []protocol.ScreenRowUpdate{
+			{Row: 4},
+			{Row: 4},
+			{Row: 1},
+		},
+	})
+
+	if !reflect.DeepEqual(contract.Summary.ChangedRows, []int{4, 1}) {
+		t.Fatalf("expected changed row summary to deduplicate in wire order, got %#v", contract.Summary.ChangedRows)
+	}
+}
+
 func TestRuntimeStartStreamCoalescesBurstOutputFrames(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1298,6 +1430,62 @@ func TestRuntimeApplySessionLeasesDemotesForeignLeaseAndPromotesLocalLease(t *te
 	}
 }
 
+func TestRuntimeApplySessionLeasesDemotesLocalPaneWhenForeignLeaseReusesSamePaneID(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach owner: %v", err)
+	}
+
+	rt.ApplySessionLeases("view-local", []protocol.LeaseInfo{{
+		TerminalID: "term-1",
+		ViewID:     "view-remote",
+		PaneID:     "pane-1",
+	}})
+
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.OwnerPaneID != "pane-1" || terminal.ControlPaneID != "" || !terminal.RequiresExplicitOwner {
+		t.Fatalf("expected foreign lease on same pane id to demote local control, got %#v", terminal)
+	}
+	if binding := rt.Binding("pane-1"); binding == nil || binding.Role != BindingRoleFollower {
+		t.Fatalf("expected pane-1 demoted to follower under foreign lease, got %#v", binding)
+	}
+}
+
+func TestRuntimeApplySessionLeasesRefreshesVisibleOwnerWhenForeignLeaseOwnerChanges(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach owner: %v", err)
+	}
+
+	rt.ApplySessionLeases("view-local", []protocol.LeaseInfo{{
+		TerminalID: "term-1",
+		ViewID:     "view-remote",
+		PaneID:     "pane-9",
+	}})
+	visible := rt.Visible()
+	if len(visible.Terminals) == 0 || visible.Terminals[0].OwnerPaneID != "pane-9" {
+		t.Fatalf("expected visible runtime owner pane-9 after first foreign lease, got %#v", visible.Terminals)
+	}
+
+	rt.ApplySessionLeases("view-local", []protocol.LeaseInfo{{
+		TerminalID: "term-1",
+		ViewID:     "view-remote",
+		PaneID:     "pane-10",
+	}})
+	visible = rt.Visible()
+	if len(visible.Terminals) == 0 || visible.Terminals[0].OwnerPaneID != "pane-10" {
+		t.Fatalf("expected visible runtime owner pane-10 after foreign lease owner change, got %#v", visible.Terminals)
+	}
+}
+
 func TestRuntimeApplySessionLeasesPreservesFirstLocalOwnerWithoutLease(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
@@ -1322,6 +1510,55 @@ func TestRuntimeApplySessionLeasesPreservesFirstLocalOwnerWithoutLease(t *testin
 	}
 	if binding := rt.Binding("pane-1"); binding == nil || binding.Role != BindingRoleOwner {
 		t.Fatalf("expected pane-1 to remain owner, got %#v", binding)
+	}
+}
+
+func TestRuntimeShouldAcquireTerminalOwnershipRequiresExplicitTakeoverAfterOwnerRelease(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach owner: %v", err)
+	}
+	client.attachResult = &protocol.AttachResult{Channel: 12, Mode: "collaborator"}
+	if _, err := rt.AttachTerminal(ctx, "pane-2", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach follower: %v", err)
+	}
+
+	rt.UnbindPane("pane-1", "term-1")
+
+	if !rt.ShouldAcquireTerminalOwnership("term-1", TerminalOwnershipRequest{
+		PaneID:           "pane-2",
+		ExplicitTakeover: true,
+	}) {
+		t.Fatalf("expected explicit control reclaim to require ownership acquire, got %#v", rt.TerminalControlStatus("term-1"))
+	}
+}
+
+func TestRuntimeResizeDecisionRequiresExplicitOwnerAfterOwnerRelease(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach owner: %v", err)
+	}
+	client.attachResult = &protocol.AttachResult{Channel: 12, Mode: "collaborator"}
+	if _, err := rt.AttachTerminal(ctx, "pane-2", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach follower: %v", err)
+	}
+
+	rt.UnbindPane("pane-1", "term-1")
+
+	decision := rt.ResizeDecision("pane-2", "term-1")
+	if decision.Allowed {
+		t.Fatalf("expected resize decision to deny pane-2 without explicit owner, got %#v", decision)
+	}
+	if !decision.Status.RequiresExplicitOwner {
+		t.Fatalf("expected resize decision to surface explicit-owner requirement, got %#v", decision)
 	}
 }
 

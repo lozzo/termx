@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -32,30 +31,17 @@ func (m *Model) killCurrentTabCmd() tea.Cmd {
 	if tab == nil {
 		return nil
 	}
-	terminalIDs := make([]string, 0, len(tab.Panes))
-	seen := make(map[string]struct{}, len(tab.Panes))
-	for _, pane := range tab.Panes {
-		if pane == nil || pane.TerminalID == "" {
-			continue
-		}
-		if _, exists := seen[pane.TerminalID]; exists {
-			continue
-		}
-		seen[pane.TerminalID] = struct{}{}
-		terminalIDs = append(terminalIDs, pane.TerminalID)
+	service := m.tabLifecycleService()
+	if service == nil {
+		return nil
 	}
 	tabID := tab.ID
+	bindings, terminalIDs := service.snapshotTabBindings(tabID)
 	return func() tea.Msg {
-		if err := m.workbench.CloseTab(tabID); err != nil {
+		if err := service.close(tabID, bindings, terminalIDs, true); err != nil {
 			return err
 		}
-		if m.runtime != nil && m.runtime.Client() != nil {
-			for _, terminalID := range terminalIDs {
-				_ = m.runtime.Client().Kill(context.Background(), terminalID)
-			}
-		}
 		m.setMode(input.ModeState{Kind: input.ModeNormal})
-		m.render.Invalidate()
 		if cmd := m.saveStateCmd(); cmd != nil {
 			return cmd()
 		}

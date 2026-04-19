@@ -33,9 +33,8 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 		}
 		newX := x - m.mouseDragOffsetX
 		newY := contentY - m.mouseDragOffsetY
-		moved := m.workbench.MoveFloatingPane(tab.ID, m.mouseDragPaneID, newX, newY)
-		clamped := m.workbench.ClampFloatingPanesToBounds(m.bodyRect())
-		if !moved && !clamped {
+		service := m.layoutResizeService()
+		if service == nil || !service.moveFloatingPane(tab.ID, m.mouseDragPaneID, newX, newY) {
 			perftrace.Count("app.mouse.drag.move.noop", 0)
 			return nil
 		}
@@ -49,12 +48,11 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 			if floating != nil && floating.PaneID == m.mouseDragPaneID {
 				newW := x - floating.Rect.X + 1
 				newH := contentY - floating.Rect.Y + 1
-				resized := m.workbench.ResizeFloatingPane(tab.ID, m.mouseDragPaneID, newW, newH)
-				if !resized {
+				service := m.layoutResizeService()
+				if service == nil || !service.resizeFloatingPane(tab.ID, m.mouseDragPaneID, newW, newH) {
 					perftrace.Count("app.mouse.drag.resize.noop", 0)
 					return nil
 				}
-				m.workbench.ClampFloatingPanesToBounds(m.bodyRect())
 				m.mouseDragDirty = true
 				perftrace.Count("app.mouse.drag.resize.changed", 0)
 				m.render.Invalidate()
@@ -65,7 +63,8 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 		if m.mouseDragSplit == nil {
 			return nil
 		}
-		if !m.workbench.ResizeSplit(tab.ID, m.mouseDragSplit, m.mouseDragBounds, x, contentY, m.mouseDragOffsetX, m.mouseDragOffsetY) {
+		service := m.layoutResizeService()
+		if service == nil || !service.resizeSplit(tab.ID, m.mouseDragSplit, m.mouseDragBounds, x, contentY, m.mouseDragOffsetX, m.mouseDragOffsetY) {
 			return nil
 		}
 		m.mouseDragDirty = true

@@ -2,8 +2,6 @@ package app
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/tuiv2/render"
-	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 func (m *Model) handleLifecycleMessage(msg tea.Msg) (tea.Cmd, bool) {
@@ -24,25 +22,10 @@ func (m *Model) handleLifecycleMessage(msg tea.Msg) (tea.Cmd, bool) {
 		m.refreshRenderCaches()
 		return nil, true
 	case tea.WindowSizeMsg:
-		oldBodyRect := m.bodyRect()
-		newBodyRect := workbench.Rect{W: maxInt(1, typed.Width), H: render.FrameBodyHeight(typed.Height)}
-		if m.workbench != nil {
-			if m.width > 0 && m.height > 0 {
-				m.workbench.ReflowFloatingPanes(oldBodyRect, newBodyRect)
-			} else {
-				m.workbench.ClampFloatingPanesToBounds(newBodyRect)
-			}
+		if service := m.layoutResizeService(); service != nil {
+			return service.applyWindowSizeMsg(typed), true
 		}
-		m.width = typed.Width
-		m.height = typed.Height
-		if writer, ok := m.frameOut.(*outputCursorWriter); ok {
-			writer.SetTTYWidth(typed.Width)
-		}
-		if writer, ok := m.cursorOut.(*outputCursorWriter); ok {
-			writer.SetTTYWidth(typed.Width)
-		}
-		m.render.Invalidate()
-		return batchCmds(m.resizeVisiblePanesCmd(), m.resizePendingPaneResizesCmd(), m.maybeAutoFitFloatingPanesCmd(), m.updateSessionViewCmd()), true
+		return nil, true
 	case reattachFailedMsg:
 		return m.openPickerIfUnattached(typed.paneID), true
 	case clearErrorMsg:

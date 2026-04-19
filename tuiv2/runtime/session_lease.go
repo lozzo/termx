@@ -19,41 +19,22 @@ func (r *Runtime) ApplySessionLeases(viewID string, leases []protocol.LeaseInfo)
 		if terminal == nil {
 			continue
 		}
-		prevOwner := terminal.OwnerPaneID
-		prevControl := terminal.ControlPaneID
+		prev := r.terminalControlStatus(terminal)
 		lease, ok := index[terminalID]
 		switch {
 		case !ok:
-			if localOwnerPaneID := r.localConnectedOwnerPaneID(terminal); localOwnerPaneID != "" {
-				terminal.OwnerPaneID = localOwnerPaneID
-				terminal.ControlPaneID = localOwnerPaneID
-				terminal.RequiresExplicitOwner = false
-			} else {
-				terminal.OwnerPaneID = ""
-				terminal.ControlPaneID = ""
-				terminal.RequiresExplicitOwner = len(terminal.BoundPaneIDs) > 0
-			}
+			r.restoreLocalTerminalControl(terminal)
 		case lease.ViewID != "":
-			terminal.OwnerPaneID = lease.PaneID
-			if lease.ViewID == viewID && containsPaneID(terminal.BoundPaneIDs, lease.PaneID) && r.bindings[lease.PaneID] != nil {
-				terminal.ControlPaneID = lease.PaneID
-				terminal.RequiresExplicitOwner = false
+			if lease.ViewID == viewID && containsPaneID(terminal.BoundPaneIDs, lease.PaneID) && r.connectedLocalBinding(lease.PaneID) != nil {
+				r.promoteTerminalControlPane(terminal, lease.PaneID, true)
 			} else {
-				terminal.ControlPaneID = ""
-				terminal.RequiresExplicitOwner = len(terminal.BoundPaneIDs) > 0
-			}
-			if prevControl != terminal.ControlPaneID && terminal.ControlPaneID != "" {
-				terminal.PendingOwnerResize = true
+				r.clearTerminalLocalControl(terminal, lease.PaneID, len(terminal.BoundPaneIDs) > 0)
 			}
 		default:
-			terminal.OwnerPaneID = ""
-			terminal.ControlPaneID = ""
-			terminal.RequiresExplicitOwner = len(terminal.BoundPaneIDs) > 0
+			r.clearTerminalLocalControl(terminal, "", len(terminal.BoundPaneIDs) > 0)
 		}
-		if r.syncBindingRolesForTerminal(terminal) {
-			changed = true
-		}
-		if prevOwner != terminal.OwnerPaneID || prevControl != terminal.ControlPaneID {
+		r.syncTerminalOwnership(terminal)
+		if next := r.terminalControlStatus(terminal); prev.OwnerPaneID != next.OwnerPaneID || prev.ControlPaneID != next.ControlPaneID || prev.RequiresExplicitOwner != next.RequiresExplicitOwner || prev.PendingOwnerResize != next.PendingOwnerResize {
 			changed = true
 		}
 	}

@@ -257,11 +257,8 @@ func TestContentSpriteIgnoresTimestampOnlySurfaceChanges(t *testing.T) {
 
 	resolved := resolvePaneContent(entry, runtimeState, true)
 	nextWindow := buildTerminalSourceWindowState(resolved.source, resolved.contentRect.H, resolved.renderOffset)
-	baseChangedRows := terminalWindowChangedRows(previousWindow, nextWindow, terminalWindowScrollPlan{})
-	if plan, ok := detectTerminalWindowPartialScroll(previousWindow, nextWindow, len(baseChangedRows)); !ok {
-		t.Fatalf("expected planner to find partial scroll plan, baseChanged=%#v prevIdentity=%#v nextIdentity=%#v prevExact=%#v nextExact=%#v", baseChangedRows, previousWindow.rowIdentityHashes, nextWindow.rowIdentityHashes, previousWindow.exactRowHashes, nextWindow.exactRowHashes)
-	} else if plan.direction != terminalWindowScrollUp {
-		t.Fatalf("expected planner to choose scroll up, got %#v", plan)
+	if deltaPlan := planTerminalWindowDelta(previousWindow, nextWindow, terminalScreenUpdateHint{}); len(deltaPlan.changedRows) != 0 || deltaPlan.usesScroll() {
+		t.Fatalf("expected timestamp-only change to remain a no-op plan, got %#v", deltaPlan)
 	}
 
 	perftrace.Enable()

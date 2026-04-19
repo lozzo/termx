@@ -787,4 +787,9 @@ func TestClipboardHistoryPickerShowsEmptyState(t *testing.T) {
 			t.Fatalf("expected empty clipboard history overlay to contain %q:\n%s", want, view)
 		}
 	}
+	for _, forbidden := range []string{"Space to mark", "Space or y"} {
+		if strings.Contains(view, forbidden) {
+			t.Fatalf("clipboard history empty state should not leak shortcut text %q:\n%s", forbidden, view)
+		}
+	}
 }

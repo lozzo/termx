@@ -69,6 +69,14 @@ func TestTerminalInteractionServiceShouldAcquireLocalOwnershipRequiresSharedVisi
 		Size:       protocol.Size{Cols: 80, Rows: 24},
 		Cursor:     protocol.CursorState{Visible: true},
 	}
+	ownerBinding := model.runtime.BindPane("pane-1")
+	ownerBinding.Channel = 1
+	ownerBinding.Connected = true
+	ownerBinding.Role = runtime.BindingRoleOwner
+	followerBinding := model.runtime.BindPane("pane-2")
+	followerBinding.Channel = 2
+	followerBinding.Connected = true
+	followerBinding.Role = runtime.BindingRoleFollower
 
 	target := terminalInteractionTarget{
 		paneID:     "pane-2",

@@ -7,6 +7,32 @@ import (
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
+type TerminalAttachPlan struct {
+	TabID      string
+	PaneID     string
+	TerminalID string
+	Mode       string
+}
+
+func (o *Orchestrator) PlanAttachTerminal(tabID, paneID, terminalID, mode string) (TerminalAttachPlan, error) {
+	if o == nil || o.workbench == nil {
+		return TerminalAttachPlan{}, fmt.Errorf("orchestrator: attach target requires an active workbench")
+	}
+	if paneID == "" || terminalID == "" {
+		return TerminalAttachPlan{}, fmt.Errorf("orchestrator: attach target requires pane and terminal ids")
+	}
+	resolvedTabID, err := o.workbench.ResolvePaneTab(tabID, paneID)
+	if err != nil {
+		return TerminalAttachPlan{}, err
+	}
+	return TerminalAttachPlan{
+		TabID:      resolvedTabID,
+		PaneID:     paneID,
+		TerminalID: terminalID,
+		Mode:       mode,
+	}, nil
+}
+
 func (o *Orchestrator) PrepareSplitAttachTarget(sourcePaneID string) (tabID, paneID string, err error) {
 	if o == nil || o.workbench == nil || sourcePaneID == "" {
 		return "", "", fmt.Errorf("orchestrator: split attach target requires an active workbench and source pane")

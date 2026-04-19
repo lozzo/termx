@@ -85,73 +85,16 @@ func terminalPreviewSummaryLinesANSI(snapshot *protocol.Snapshot, surface runtim
 }
 
 func protocolPreviewRowANSI(row []protocol.Cell, width int, emojiMode shared.AmbiguousEmojiVariationSelectorMode) string {
-	if width <= 0 {
-		return ""
-	}
-	var builder strings.Builder
-	current := drawStyle{}
-	cols := 0
-	for index := 0; index < len(row) && cols < width; index++ {
-		cell := drawCellFromProtocolCell(row[index])
-		if cell.Continuation {
-			continue
-		}
-		content := cell.Content
-		if content == "" {
-			content = " "
-		}
-		if current != cell.Style {
-			builder.WriteString(styleDiffANSI(current, cell.Style))
-			current = cell.Style
-		}
-		nextCol := 0
-		if cols+cell.Width < width {
-			nextCol = cols + cell.Width + 1
-		}
-		builder.WriteString(serializeCellContentForDisplay(content, cell.Width, emojiMode, nextCol))
-		cols += cell.Width
-	}
-	if current != (drawStyle{}) {
-		builder.WriteString(styleANSI(drawStyle{}))
-	}
-	return forceWidthANSIOverlay(builder.String(), width)
+	return protocolRowANSIWithOptions(row, width, protocolRowANSIOptions{
+		emojiMode: emojiMode,
+	})
 }
 
 func protocolPreviewRowANSITight(row []protocol.Cell, width int, emojiMode shared.AmbiguousEmojiVariationSelectorMode) string {
-	if width <= 0 {
-		return ""
-	}
-	trimmed := trimProtocolRowTrailingBlankCells(row)
-	if len(trimmed) == 0 {
-		return ""
-	}
-	var builder strings.Builder
-	current := drawStyle{}
-	cols := 0
-	for index := 0; index < len(trimmed) && cols < width; index++ {
-		cell := drawCellFromProtocolCell(trimmed[index])
-		if cell.Continuation {
-			continue
-		}
-		content := cell.Content
-		if content == "" {
-			content = " "
-		}
-		if current != cell.Style {
-			builder.WriteString(styleDiffANSI(current, cell.Style))
-			current = cell.Style
-		}
-		nextCol := 0
-		if cols+cell.Width < width {
-			nextCol = cols + cell.Width + 1
-		}
-		builder.WriteString(serializeCellContentForDisplay(content, cell.Width, emojiMode, nextCol))
-		cols += cell.Width
-	}
-	if current != (drawStyle{}) {
-		builder.WriteString(styleANSI(drawStyle{}))
-	}
-	return builder.String()
+	return protocolRowANSIWithOptions(row, width, protocolRowANSIOptions{
+		tight:     true,
+		emojiMode: emojiMode,
+	})
 }
 
 func trimProtocolRowTrailingBlankCells(row []protocol.Cell) []protocol.Cell {

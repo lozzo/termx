@@ -70,6 +70,54 @@ type ClosePaneEffect struct {
 
 func (ClosePaneEffect) effectTag() {}
 
+type DetachPaneEffect struct {
+	PaneID string
+}
+
+func (DetachPaneEffect) effectTag() {}
+
+type ReconnectPaneEffect struct {
+	PaneID string
+}
+
+func (ReconnectPaneEffect) effectTag() {}
+
+type ResizePaneLayoutEffect struct {
+	PaneID string
+	Kind   input.ActionKind
+	Delta  float64
+}
+
+func (ResizePaneLayoutEffect) effectTag() {}
+
+type BalancePanesEffect struct{}
+
+func (BalancePanesEffect) effectTag() {}
+
+type CycleLayoutEffect struct{}
+
+func (CycleLayoutEffect) effectTag() {}
+
+type MoveFloatingPaneEffect struct {
+	PaneID string
+	Kind   input.ActionKind
+}
+
+func (MoveFloatingPaneEffect) effectTag() {}
+
+type ResizeFloatingPaneEffect struct {
+	PaneID string
+	Kind   input.ActionKind
+}
+
+func (ResizeFloatingPaneEffect) effectTag() {}
+
+type CenterFloatingPaneEffect struct {
+	PaneID string
+}
+
+func (CenterFloatingPaneEffect) effectTag() {}
+
 type CreateTabEffect struct{}
 
 func (CreateTabEffect) effectTag() {}

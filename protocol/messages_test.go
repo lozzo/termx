@@ -190,6 +190,75 @@ func TestDecodeScreenUpdatePayloadRejectsLegacyJSON(t *testing.T) {
 	}
 }
 
+func TestNormalizeScreenUpdateDeduplicatesChangedRowsAndAlignsMetadata(t *testing.T) {
+	now := time.Now().UTC()
+	later := now.Add(time.Second)
+	update := NormalizeScreenUpdate(ScreenUpdate{
+		FullReplace: true,
+		Screen: ScreenData{Cells: [][]Cell{
+			{{Content: "a", Width: 1}},
+			{{Content: "b", Width: 1}},
+		}},
+		ScreenTimestamps: []time.Time{now},
+		ScreenRowKinds:   []string{"restart", "stale", "overflow"},
+		ChangedRows: []ScreenRowUpdate{
+			{Row: 1, Cells: []Cell{{Content: "old", Width: 1}}, Timestamp: now},
+			{Row: 1, Cells: []Cell{{Content: "new", Width: 1}}, Timestamp: later},
+		},
+	})
+
+	if len(update.ScreenTimestamps) != 2 {
+		t.Fatalf("expected screen timestamps normalized to screen height, got %#v", update.ScreenTimestamps)
+	}
+	if len(update.ScreenRowKinds) != 2 {
+		t.Fatalf("expected screen row kinds normalized to screen height, got %#v", update.ScreenRowKinds)
+	}
+	if len(update.ChangedRows) != 1 {
+		t.Fatalf("expected duplicate changed rows collapsed, got %#v", update.ChangedRows)
+	}
+	if got := update.ChangedRows[0].Cells[0].Content; got != "new" {
+		t.Fatalf("expected last changed row to win, got %#v", update.ChangedRows[0])
+	}
+}
+
+func TestClassifyScreenUpdateDetectsBlankFullReplace(t *testing.T) {
+	classification := ClassifyScreenUpdate(ScreenUpdate{
+		FullReplace: true,
+		Screen: ScreenData{Cells: [][]Cell{
+			{{Content: " ", Width: 1}},
+			{{Content: "", Width: 0}},
+		}},
+	})
+
+	if !classification.BlankFullReplace || !classification.FullReplace {
+		t.Fatalf("expected blank full replace classification, got %#v", classification)
+	}
+	if !classification.HasContentChange {
+		t.Fatalf("expected blank full replace to still count as content change, got %#v", classification)
+	}
+	if classification.HasChangedRows || classification.HasScrollbackChange {
+		t.Fatalf("expected blank full replace to stay delta-free, got %#v", classification)
+	}
+}
+
+func TestClassifyScreenUpdateTreatsTitleOnlyUpdateAsNonContentChange(t *testing.T) {
+	classification := ClassifyScreenUpdate(ScreenUpdate{
+		Title:  "demo",
+		Cursor: CursorState{Visible: true},
+		Modes:  TerminalModes{AutoWrap: true},
+	})
+
+	if classification.HasContentChange {
+		t.Fatalf("expected title-only update to avoid content-change boundary, got %#v", classification)
+	}
+	if !classification.HasTitle {
+		t.Fatalf("expected title-only update to keep title bit, got %#v", classification)
+	}
+	if classification.FullReplace || classification.HasChangedRows || classification.HasScreenScroll || classification.HasScrollbackChange {
+		t.Fatalf("expected title-only update to stay non-buffer-mutating, got %#v", classification)
+	}
+}
+
 func protocolSize(cols, rows uint16) Size {
 	return Size{Cols: cols, Rows: rows}
 }

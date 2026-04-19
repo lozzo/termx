@@ -9,7 +9,6 @@ import (
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/runtime"
-	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 func (m *Model) splitPaneAndAttachTerminalCmd(paneID, terminalID string) tea.Cmd {
@@ -159,54 +158,19 @@ func (m *Model) reattachRestoredPanesCmd(hints []bootstrap.PaneReattachHint) tea
 type sequenceMsg []any
 
 func (m *Model) resizeVisiblePanesCmd() tea.Cmd {
-	if m == nil || m.runtime == nil || m.workbench == nil {
+	service := m.layoutResizeService()
+	if service == nil {
 		return nil
 	}
-	return func() tea.Msg {
-		if err := m.resizeVisiblePanes(context.Background()); err != nil {
-			return err
-		}
-		return renderRefreshMsg{}
-	}
+	return service.resizeVisibleCmd()
 }
 
 func (m *Model) resizeVisiblePanes(ctx context.Context) error {
-	if m == nil || m.runtime == nil || m.workbench == nil {
+	service := m.layoutResizeService()
+	if service == nil {
 		return nil
 	}
-	bodyRect := m.bodyRect()
-	visible := m.workbench.VisibleWithSize(bodyRect)
-	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
-		return nil
-	}
-	tab := visible.Tabs[visible.ActiveTab]
-	panes := make([]workbench.VisiblePane, 0, len(tab.Panes)+len(visible.FloatingPanes))
-	panes = append(panes, tab.Panes...)
-	panes = append(panes, visible.FloatingPanes...)
-
-	for _, pane := range panes {
-		if pane.ID == "" || pane.TerminalID == "" {
-			continue
-		}
-		target := terminalInteractionTarget{
-			paneID:     pane.ID,
-			terminalID: pane.TerminalID,
-			rect:       pane.Rect,
-		}
-		req := terminalInteractionRequest{
-			PaneID:         pane.ID,
-			TerminalID:     pane.TerminalID,
-			Rect:           pane.Rect,
-			ResizeIfNeeded: true,
-		}
-		if m.sessionID != "" && pane.ID == tab.ActivePaneID {
-			req.ImplicitSessionLease = true
-		}
-		if err := m.syncTerminalInteraction(ctx, req, target); err != nil {
-			return err
-		}
-	}
-	return nil
+	return service.resizeVisible(ctx)
 }
 
 func (m *Model) syncZoomViewportCmd(paneID string, explicitTakeover bool) tea.Cmd {
@@ -255,11 +219,11 @@ func (m *Model) zoomShouldTakeOwnership(paneID string) bool {
 	if m.sessionID != "" {
 		return true
 	}
-	terminal := m.runtime.Registry().Get(pane.TerminalID)
-	if terminal == nil {
+	control := m.runtime.TerminalControlStatus(pane.TerminalID)
+	if control.TerminalID == "" {
 		return false
 	}
-	if len(terminal.BoundPaneIDs) > 1 || strings.TrimSpace(terminal.OwnerPaneID) != "" {
+	if len(control.BoundPaneIDs) > 1 || strings.TrimSpace(control.OwnerPaneID) != "" {
 		return true
 	}
 	if binding := m.runtime.Binding(paneID); binding != nil && binding.Role == runtime.BindingRoleFollower {
@@ -269,23 +233,11 @@ func (m *Model) zoomShouldTakeOwnership(paneID string) bool {
 }
 
 func (m *Model) resizePaneIfNeededCmd(paneID string) tea.Cmd {
-	if m == nil || m.runtime == nil || m.workbench == nil {
+	service := m.layoutResizeService()
+	if service == nil {
 		return nil
 	}
-	target := m.currentOrActionPaneID(paneID)
-	if target == "" {
-		return nil
-	}
-	pane, rect, ok := m.visiblePaneForInput(target)
-	if !ok || pane == nil || pane.TerminalID == "" {
-		return nil
-	}
-	return func() tea.Msg {
-		if err := m.ensurePaneTerminalSize(context.Background(), pane.ID, pane.TerminalID, rect); err != nil {
-			return err
-		}
-		return renderRefreshMsg{}
-	}
+	return service.resizePaneIfNeededCmd(paneID)
 }
 
 func (m *Model) resizeActivePaneIfNeededCmd() tea.Cmd {
@@ -304,26 +256,11 @@ func (m *Model) syncActivePaneOwnershipAndResizeCmd() tea.Cmd {
 }
 
 func (m *Model) syncActivePaneTabSwitchTakeoverCmd() tea.Cmd {
-	if !m.localActivePaneNeedsOwnershipForResize() {
+	service := m.layoutResizeService()
+	if service == nil {
 		return nil
 	}
-	req := terminalInteractionRequest{
-		ResizeIfNeeded:   true,
-		ExplicitTakeover: true,
-	}
-	target, ok := m.resolveTerminalInteractionTarget(req)
-	if !ok {
-		return nil
-	}
-	return func() tea.Msg {
-		if err := m.syncTerminalInteraction(context.Background(), req, target); err != nil {
-			return err
-		}
-		if !m.pendingPaneResizeSatisfied(target.paneID, target.terminalID, target.rect) {
-			m.markPendingPaneResize("", target.paneID, target.terminalID)
-		}
-		return nil
-	}
+	return service.syncActivePaneTabSwitchTakeoverCmd()
 }
 
 func (m *Model) localActivePaneNeedsOwnershipForResize() bool {
@@ -334,14 +271,14 @@ func (m *Model) localActivePaneNeedsOwnershipForResize() bool {
 	if !ok || pane == nil || pane.TerminalID == "" {
 		return false
 	}
-	terminal := m.runtime.Registry().Get(pane.TerminalID)
-	if terminal == nil {
+	control := m.runtime.TerminalControlStatus(pane.TerminalID)
+	if control.TerminalID == "" {
 		return false
 	}
-	if strings.TrimSpace(terminal.OwnerPaneID) == pane.ID {
+	if strings.TrimSpace(control.OwnerPaneID) == pane.ID {
 		return false
 	}
-	if len(terminal.BoundPaneIDs) < 2 {
+	if len(control.BoundPaneIDs) < 2 {
 		return false
 	}
 	return true

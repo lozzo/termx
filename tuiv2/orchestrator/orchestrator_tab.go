@@ -44,7 +44,6 @@ func (o *Orchestrator) handleTabAction(action input.SemanticAction) []Effect {
 			}
 			tabID = tab.ID
 		}
-		_ = o.workbench.CloseTab(tabID)
 		return []Effect{CloseTabEffect{TabID: tabID}}
 	default:
 		return nil

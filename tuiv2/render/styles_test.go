@@ -151,7 +151,7 @@ func TestRenderOverlaySpanFillsRequestedWidth(t *testing.T) {
 	}
 }
 
-func TestDarkThemeAccentTokensStayColorfulWithoutHostPalette(t *testing.T) {
+func TestDarkThemeAccentTokensStayHostDerivedWithoutHostPalette(t *testing.T) {
 	theme := uiThemeFromHostColors("#080b14", "#e5e7eb", nil)
 
 	if theme.chromeBG != "#080b14" || theme.panelBG != "#080b14" {
@@ -159,6 +159,9 @@ func TestDarkThemeAccentTokensStayColorfulWithoutHostPalette(t *testing.T) {
 	}
 	if got := contrastRatio(theme.chromeAccent, theme.chromeBG); got < 3.0 {
 		t.Fatalf("accent contrast = %.2f, want >= 3.00", got)
+	}
+	if theme.chromeAccent == ensureContrast("#818cf8", theme.chromeBG, 3.2) {
+		t.Fatalf("expected chrome accent fallback to derive from host colors before using the fixed accent fallback, got %q", theme.chromeAccent)
 	}
 	if got := contrastRatio(theme.panelBorder2, theme.panelBG); got < 1.05 {
 		t.Fatalf("muted border contrast = %.2f, want >= 1.05", got)
@@ -168,7 +171,14 @@ func TestDarkThemeAccentTokensStayColorfulWithoutHostPalette(t *testing.T) {
 	}
 }
 
-func TestSemanticColorsHaveVisibleHueWithoutHostPalette(t *testing.T) {
+func TestSemanticColorsStayLegibleWithoutHostPalette(t *testing.T) {
+	fixedFallback := map[string]func(string) string{
+		"success":      func(bg string) string { return ensureContrast("#34d399", bg, 2.8) },
+		"danger":       func(bg string) string { return ensureContrast("#f87171", bg, 2.8) },
+		"warning":      func(bg string) string { return ensureContrast("#fbbf24", bg, 2.8) },
+		"info":         func(bg string) string { return ensureContrast("#60a5fa", bg, 2.8) },
+		"chromeAccent": func(bg string) string { return ensureContrast("#818cf8", bg, 3.2) },
+	}
 	for _, bg := range []string{"#000000", "#080b14", "#ffffff", "#f5f5f5"} {
 		theme := uiThemeFromHostColors(bg, "", nil)
 		for _, tc := range []struct {
@@ -181,12 +191,11 @@ func TestSemanticColorsHaveVisibleHueWithoutHostPalette(t *testing.T) {
 			{"info", theme.info},
 			{"chromeAccent", theme.chromeAccent},
 		} {
-			spread := colorChannelSpread(tc.color)
-			if spread < 20 {
-				t.Errorf("bg=%s %s=%q channel spread %d < 20, looks gray", bg, tc.name, tc.color, spread)
-			}
 			if cr := contrastRatio(tc.color, bg); cr < 2.5 {
 				t.Errorf("bg=%s %s=%q contrast %.2f < 2.5, invisible", bg, tc.name, tc.color, cr)
+			}
+			if tc.color == fixedFallback[tc.name](bg) {
+				t.Errorf("bg=%s %s=%q unexpectedly fell back to fixed semantic color", bg, tc.name, tc.color)
 			}
 		}
 	}
@@ -248,14 +257,4 @@ func sameColor(a, b interface {
 	ar, ag, ab, aa := a.RGBA()
 	br, bg, bb, ba := b.RGBA()
 	return ar == br && ag == bg && ab == bb && aa == ba
-}
-
-func colorChannelSpread(value string) int {
-	r, g, b, ok := parseHexColor(value)
-	if !ok {
-		return 0
-	}
-	maxv := maxInt(int(r), maxInt(int(g), int(b)))
-	minv := minInt(int(r), minInt(int(g), int(b)))
-	return maxv - minv
 }

@@ -43,89 +43,35 @@ func (o *Orchestrator) handlePaneAction(action input.SemanticAction) []Effect {
 		}
 		return []Effect{InvalidateRenderEffect{}}
 	case input.ActionClosePane:
-		tab := o.workbench.CurrentTab()
-		if tab == nil {
+		target, ok := o.currentPaneTarget(action.PaneID)
+		if !ok {
 			return nil
 		}
-		paneID := action.PaneID
-		if paneID == "" {
-			paneID = tab.ActivePaneID
-		}
-		terminalID, _ := o.workbench.ClosePane(tab.ID, paneID)
-		if o.runtime != nil {
-			o.runtime.UnbindPane(paneID, terminalID)
-		}
-		if current := o.workbench.CurrentTab(); current != nil && current.ID == tab.ID && current.ActivePaneID != "" {
-			_ = o.workbench.FocusPane(tab.ID, current.ActivePaneID)
-		}
-		return []Effect{ClosePaneEffect{PaneID: paneID}}
+		return []Effect{ClosePaneEffect{PaneID: target.PaneID}}
 	case input.ActionDetachPane:
-		tab := o.workbench.CurrentTab()
-		if tab == nil {
+		target, ok := o.currentPaneTarget(action.PaneID)
+		if !ok {
 			return nil
 		}
-		paneID := action.PaneID
-		if paneID == "" {
-			paneID = tab.ActivePaneID
-		}
-		pane := tab.Panes[paneID]
-		if pane == nil {
-			return nil
-		}
-		terminalID := pane.TerminalID
-		_ = o.workbench.BindPaneTerminal(tab.ID, paneID, "")
-		if o.runtime != nil {
-			o.runtime.UnbindPane(paneID, terminalID)
-		}
-		return []Effect{InvalidateRenderEffect{}}
+		return []Effect{DetachPaneEffect{PaneID: target.PaneID}}
 	case input.ActionReconnectPane:
-		tab := o.workbench.CurrentTab()
-		if tab == nil {
+		target, ok := o.currentPaneTarget(action.PaneID)
+		if !ok {
 			return nil
-		}
-		paneID := action.PaneID
-		if paneID == "" {
-			paneID = tab.ActivePaneID
-		}
-		pane := tab.Panes[paneID]
-		if pane == nil {
-			return nil
-		}
-		terminalID := pane.TerminalID
-		if terminalID != "" && o.runtime != nil {
-			if terminal := o.runtime.Registry().Get(terminalID); terminal != nil && terminal.State == "exited" {
-				return []Effect{
-					InvalidateRenderEffect{},
-					OpenPickerEffect{RequestID: paneID},
-					SetInputModeEffect{Mode: input.ModeState{Kind: input.ModePicker, RequestID: paneID}},
-				}
-			}
-		}
-		_ = o.workbench.BindPaneTerminal(tab.ID, paneID, "")
-		if o.runtime != nil {
-			o.runtime.UnbindPane(paneID, terminalID)
 		}
 		return []Effect{
-			InvalidateRenderEffect{},
-			OpenPickerEffect{RequestID: paneID},
-			SetInputModeEffect{Mode: input.ModeState{Kind: input.ModePicker, RequestID: paneID}},
+			ReconnectPaneEffect{PaneID: target.PaneID},
+			OpenPickerEffect{RequestID: target.PaneID},
+			SetInputModeEffect{Mode: input.ModeState{Kind: input.ModePicker, RequestID: target.PaneID}},
 		}
 	case input.ActionClosePaneKill:
-		tab := o.workbench.CurrentTab()
-		if tab == nil {
+		target, ok := o.currentPaneTarget(action.PaneID)
+		if !ok {
 			return nil
 		}
-		paneID := action.PaneID
-		if paneID == "" {
-			paneID = tab.ActivePaneID
-		}
-		terminalID, _ := o.workbench.ClosePane(tab.ID, paneID)
-		if o.runtime != nil {
-			o.runtime.UnbindPane(paneID, terminalID)
-		}
-		effects := []Effect{ClosePaneEffect{PaneID: paneID}}
-		if terminalID != "" {
-			effects = append(effects, KillTerminalEffect{TerminalID: terminalID})
+		effects := []Effect{ClosePaneEffect{PaneID: target.PaneID}}
+		if target.TerminalID != "" {
+			effects = append(effects, KillTerminalEffect{TerminalID: target.TerminalID})
 		}
 		return effects
 	case input.ActionZoomPane:
@@ -144,66 +90,62 @@ func (o *Orchestrator) handlePaneAction(action input.SemanticAction) []Effect {
 		}
 		return []Effect{InvalidateRenderEffect{}}
 	case input.ActionResizePaneLeft, input.ActionResizePaneRight, input.ActionResizePaneUp, input.ActionResizePaneDown:
-		tab := o.workbench.CurrentTab()
-		if tab == nil {
+		target, ok := o.currentPaneTarget(action.PaneID)
+		if !ok {
 			return nil
 		}
-		paneID := action.PaneID
-		if paneID == "" {
-			paneID = tab.ActivePaneID
-		}
-		var dir workbench.Direction
-		switch action.Kind {
-		case input.ActionResizePaneLeft:
-			dir = workbench.DirectionLeft
-		case input.ActionResizePaneRight:
-			dir = workbench.DirectionRight
-		case input.ActionResizePaneUp:
-			dir = workbench.DirectionUp
-		default:
-			dir = workbench.DirectionDown
-		}
-		_ = o.workbench.AdjustPaneRatio(tab.ID, paneID, dir, 0.05)
-		return []Effect{InvalidateRenderEffect{}}
+		return []Effect{ResizePaneLayoutEffect{PaneID: target.PaneID, Kind: action.Kind, Delta: 0.05}}
 	case input.ActionResizePaneLargeLeft, input.ActionResizePaneLargeRight, input.ActionResizePaneLargeUp, input.ActionResizePaneLargeDown:
-		tab := o.workbench.CurrentTab()
-		if tab == nil {
+		target, ok := o.currentPaneTarget(action.PaneID)
+		if !ok {
 			return nil
 		}
-		paneID := action.PaneID
-		if paneID == "" {
-			paneID = tab.ActivePaneID
-		}
-		var dir workbench.Direction
-		switch action.Kind {
-		case input.ActionResizePaneLargeLeft:
-			dir = workbench.DirectionLeft
-		case input.ActionResizePaneLargeRight:
-			dir = workbench.DirectionRight
-		case input.ActionResizePaneLargeUp:
-			dir = workbench.DirectionUp
-		default:
-			dir = workbench.DirectionDown
-		}
-		_ = o.workbench.AdjustPaneRatio(tab.ID, paneID, dir, 0.15)
-		return []Effect{InvalidateRenderEffect{}}
+		return []Effect{ResizePaneLayoutEffect{PaneID: target.PaneID, Kind: action.Kind, Delta: 0.15}}
 	case input.ActionBalancePanes:
-		tab := o.workbench.CurrentTab()
-		if tab == nil {
+		if o.workbench.CurrentTab() == nil {
 			return nil
 		}
-		o.workbench.BalancePanes(tab.ID)
-		return []Effect{InvalidateRenderEffect{}}
+		return []Effect{BalancePanesEffect{}}
 	case input.ActionCycleLayout:
-		tab := o.workbench.CurrentTab()
-		if tab == nil {
+		if o.workbench.CurrentTab() == nil {
 			return nil
 		}
-		o.workbench.CycleLayout(tab.ID)
-		return []Effect{InvalidateRenderEffect{}}
+		return []Effect{CycleLayoutEffect{}}
 	default:
 		return nil
 	}
+}
+
+type paneActionTarget struct {
+	TabID      string
+	PaneID     string
+	TerminalID string
+}
+
+func (o *Orchestrator) currentPaneTarget(paneID string) (paneActionTarget, bool) {
+	if o == nil || o.workbench == nil {
+		return paneActionTarget{}, false
+	}
+	tab := o.workbench.CurrentTab()
+	if tab == nil {
+		return paneActionTarget{}, false
+	}
+	targetPaneID := paneID
+	if targetPaneID == "" {
+		targetPaneID = tab.ActivePaneID
+	}
+	if targetPaneID == "" {
+		return paneActionTarget{}, false
+	}
+	pane := tab.Panes[targetPaneID]
+	if pane == nil {
+		return paneActionTarget{}, false
+	}
+	return paneActionTarget{
+		TabID:      tab.ID,
+		PaneID:     targetPaneID,
+		TerminalID: pane.TerminalID,
+	}, true
 }
 
 func findNeighborPane(rects map[string]workbench.Rect, paneID string, kind input.ActionKind) string {

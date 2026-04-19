@@ -1,11 +1,12 @@
 package app
 
 import (
-	"strings"
+	"context"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
+	"github.com/lozzow/termx/tuiv2/runtime"
 )
 
 type terminalBindingService struct {
@@ -80,67 +81,46 @@ func (s *terminalBindingService) bindSelectionCmd(tabID, paneID string, item mod
 	return batchCmds(cmds...)
 }
 
+func (s *terminalBindingService) loadSnapshotCmd(terminalID string, offset, limit int) tea.Cmd {
+	if s == nil || s.model == nil || s.model.runtime == nil || terminalID == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		snapshot, err := s.model.runtime.LoadSnapshot(context.Background(), terminalID, offset, limit)
+		if err != nil {
+			return err
+		}
+		return orchestrator.SnapshotLoadedMsg{TerminalID: terminalID, Snapshot: snapshot}
+	}
+}
+
 func (s *terminalBindingService) bindSelection(tabID, paneID string, item modal.PickerItem) (bindTerminalSelectionResult, error) {
 	if s == nil || s.model == nil || s.model.workbench == nil || paneID == "" || item.TerminalID == "" {
 		return bindTerminalSelectionResult{}, nil
 	}
-	resolvedTabID, oldTerminalID, err := s.resolveTarget(tabID, paneID)
+	service := s.model.paneBindingLifecycleService()
+	if service == nil {
+		return bindTerminalSelectionResult{}, nil
+	}
+	result, err := service.bindDetachedTerminal(bindDetachedTerminalRequest{
+		TabID:      tabID,
+		PaneID:     paneID,
+		TerminalID: item.TerminalID,
+		Binding: runtime.DetachedTerminalBinding{
+			Name:     item.Name,
+			Command:  append([]string(nil), item.CommandArgs...),
+			Tags:     cloneStringMap(item.Tags),
+			State:    terminalSelectionState(item),
+			ExitCode: cloneIntPointer(item.ExitCode),
+		},
+	})
 	if err != nil {
 		return bindTerminalSelectionResult{}, err
 	}
-	if err := s.model.workbench.BindPaneTerminal(resolvedTabID, paneID, item.TerminalID); err != nil {
-		return bindTerminalSelectionResult{}, err
-	}
-	_ = s.model.workbench.FocusPane(resolvedTabID, paneID)
-	if name := strings.TrimSpace(item.Name); name != "" {
-		s.model.workbench.SetPaneTitleByTerminalID(item.TerminalID, name)
-	}
-	if s.model.runtime != nil {
-		s.model.runtime.UnbindPane(paneID, oldTerminalID)
-		terminal := s.model.runtime.Registry().GetOrCreate(item.TerminalID)
-		if terminal != nil {
-			terminal.Name = strings.TrimSpace(item.Name)
-			if len(item.CommandArgs) > 0 {
-				terminal.Command = append([]string(nil), item.CommandArgs...)
-			}
-			terminal.Tags = cloneStringMap(item.Tags)
-			terminal.State = terminalSelectionState(item)
-			terminal.ExitCode = cloneIntPointer(item.ExitCode)
-			terminal.Channel = 0
-			terminal.AttachMode = ""
-			terminal.OwnerPaneID = paneID
-			terminal.ControlPaneID = ""
-			terminal.RequiresExplicitOwner = false
-			terminal.BoundPaneIDs = appendUniqueValue(terminal.BoundPaneIDs, paneID)
-		}
-	}
 	return bindTerminalSelectionResult{
-		tabID:             resolvedTabID,
-		paneID:            paneID,
-		terminalID:        item.TerminalID,
-		loadSnapshotAfter: s.model.runtime != nil && terminalSelectionState(item) == "exited",
+		tabID:             result.Target.TabID,
+		paneID:            result.Target.PaneID,
+		terminalID:        result.Target.TerminalID,
+		loadSnapshotAfter: result.LoadSnapshotAfter,
 	}, nil
-}
-
-func (s *terminalBindingService) resolveTarget(tabID, paneID string) (string, string, error) {
-	if s == nil || s.model == nil || s.model.workbench == nil || paneID == "" {
-		return "", "", nil
-	}
-	workspace := s.model.workbench.CurrentWorkspace()
-	if workspace == nil {
-		return "", "", teaErr("select terminal: no current workspace")
-	}
-	for _, tab := range workspace.Tabs {
-		if tab == nil || tab.Panes[paneID] == nil {
-			continue
-		}
-		if tabID != "" && tab.ID != tabID {
-			continue
-		}
-		return tab.ID, tab.Panes[paneID].TerminalID, nil
-	}
-	if tabID != "" {
-		return "", "", teaErr("select terminal: pane " + paneID + " not found in tab " + tabID)
-	}
-	return "", "", teaErr("select terminal: pane " + paneID + " not found")
 }

@@ -18,7 +18,6 @@ import (
 	"github.com/lozzow/termx/tuiv2/persist"
 	"github.com/lozzow/termx/tuiv2/render"
 	"github.com/lozzow/termx/tuiv2/runtime"
-	"github.com/lozzow/termx/tuiv2/sessionstate"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 	"github.com/lozzow/termx/workbenchdoc"
@@ -468,51 +467,12 @@ func (m *Model) saveStateCmd() tea.Cmd {
 	}
 }
 
-func (m *Model) applySessionSnapshot(snapshot *protocol.SessionSnapshot) {
-	if m == nil || snapshot == nil {
-		return
+func (m *Model) applySessionSnapshot(snapshot *protocol.SessionSnapshot) error {
+	service := m.sessionSnapshotApplyService()
+	if service == nil {
+		return nil
 	}
-	projection := m.captureLocalViewProjection()
-	currentViewID := m.sessionViewID
-	if snapshot.Session.ID != "" {
-		m.sessionID = snapshot.Session.ID
-	}
-	if snapshot.View != nil {
-		m.sessionViewID = snapshot.View.ViewID
-		if shouldAdoptSnapshotViewProjection(currentViewID, snapshot.View.ViewID, projection) {
-			projection.WorkspaceName = snapshot.View.ActiveWorkspaceName
-			projection.ActiveTabID = snapshot.View.ActiveTabID
-			projection.FocusedPaneID = snapshot.View.FocusedPaneID
-		}
-	}
-	m.sessionRevision = snapshot.Session.Revision
-	if snapshot.Workbench != nil {
-		m.sessionSharedDoc = snapshot.Workbench.Clone()
-	}
-	if len(snapshot.Leases) > 0 {
-		m.sessionLeases = make(map[string]protocol.LeaseInfo, len(snapshot.Leases))
-		for _, lease := range snapshot.Leases {
-			if lease.TerminalID != "" {
-				m.sessionLeases[lease.TerminalID] = lease
-			}
-		}
-	} else {
-		m.sessionLeases = nil
-	}
-
-	oldBindings := sessionstate.PaneTerminalBindings(sessionstate.ExportWorkbench(m.workbench))
-	m.workbench = sessionstate.ImportDoc(snapshot.Workbench)
-	m.applyLocalViewProjection(projection)
-	m.orchestrator = orchestrator.New(m.workbench, m.runtime)
-
-	if m.runtime != nil {
-		nextBindings := sessionstate.PaneTerminalBindings(snapshot.Workbench)
-		m.reconcileSessionRuntime(context.Background(), oldBindings, nextBindings)
-		if service := m.sessionRuntimeService(); service != nil {
-			service.applyCurrentLeases()
-		}
-	}
-	m.render.Invalidate()
+	return service.apply(snapshot)
 }
 
 func shouldAdoptSnapshotViewProjection(currentViewID, snapshotViewID string, projection localViewProjection) bool {

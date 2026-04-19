@@ -197,6 +197,27 @@ func TestRenderFrameWithHelpOverlay(t *testing.T) {
 	}
 }
 
+func TestRenderFloatingOverviewOverlayOmitsShortcutSlots(t *testing.T) {
+	overview := &modal.FloatingOverviewState{
+		Selected: 0,
+		Items: []modal.FloatingOverviewItem{{
+			PaneID:       "float-1",
+			Title:        "Logs",
+			Display:      workbench.FloatingDisplayExpanded,
+			FitMode:      workbench.FloatingFitAuto,
+			Rect:         workbench.Rect{W: 40, H: 12},
+			ShortcutSlot: 1,
+		}},
+	}
+	overlay := xansi.Strip(renderFloatingOverviewOverlayWithTheme(overview, TermSize{Width: 100, Height: 30}, defaultUITheme()))
+	if !strings.Contains(overlay, "Logs") {
+		t.Fatalf("expected floating overview overlay to contain item title:\n%s", overlay)
+	}
+	if strings.Contains(overlay, "[1]") {
+		t.Fatalf("floating overview should keep shortcut slots out of the modal body:\n%s", overlay)
+	}
+}
+
 func TestRenderTerminalManagerOverlayShowsSelectedTerminalDetails(t *testing.T) {
 	manager := &modal.TerminalManagerState{
 		Title:    "Terminal Manager",

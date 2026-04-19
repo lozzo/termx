@@ -209,6 +209,117 @@ type ScreenUpdate struct {
 	Modes            TerminalModes         `json:"modes"`
 }
 
+type ScreenUpdateClassification struct {
+	FullReplace         bool
+	BlankFullReplace    bool
+	HasContentChange    bool
+	HasChangedRows      bool
+	HasScreenScroll     bool
+	HasScrollbackChange bool
+	HasTitle            bool
+}
+
+func NormalizeScreenUpdate(update ScreenUpdate) ScreenUpdate {
+	normalized := update
+	if normalized.ScrollbackTrim < 0 {
+		normalized.ScrollbackTrim = 0
+	}
+	if normalized.FullReplace {
+		normalized.ScreenTimestamps = normalizeScreenUpdateTimeSlice(normalized.ScreenTimestamps, len(normalized.Screen.Cells))
+		normalized.ScreenRowKinds = normalizeScreenUpdateStringSlice(normalized.ScreenRowKinds, len(normalized.Screen.Cells))
+	} else {
+		normalized.Screen.IsAlternateScreen = normalized.Modes.AlternateScreen
+	}
+	normalized.ChangedRows = normalizeChangedScreenRows(normalized.ChangedRows)
+	return normalized
+}
+
+func ClassifyScreenUpdate(update ScreenUpdate) ScreenUpdateClassification {
+	return ScreenUpdateClassification{
+		FullReplace:         update.FullReplace,
+		BlankFullReplace:    isBlankFullReplaceScreenUpdate(update),
+		HasContentChange:    screenUpdateHasContentChange(update),
+		HasChangedRows:      len(update.ChangedRows) > 0,
+		HasScreenScroll:     update.ScreenScroll != 0,
+		HasScrollbackChange: update.ResetScrollback || update.ScrollbackTrim > 0 || len(update.ScrollbackAppend) > 0,
+		HasTitle:            update.Title != "",
+	}
+}
+
+func normalizeChangedScreenRows(rows []ScreenRowUpdate) []ScreenRowUpdate {
+	if len(rows) <= 1 {
+		return rows
+	}
+	lastIndex := make(map[int]int, len(rows))
+	for index, row := range rows {
+		lastIndex[row.Row] = index
+	}
+	normalized := make([]ScreenRowUpdate, 0, len(lastIndex))
+	for index, row := range rows {
+		if lastIndex[row.Row] != index {
+			continue
+		}
+		normalized = append(normalized, row)
+	}
+	if len(normalized) == len(rows) {
+		return rows
+	}
+	return normalized
+}
+
+func normalizeScreenUpdateTimeSlice(values []time.Time, size int) []time.Time {
+	switch {
+	case size <= 0:
+		return nil
+	case len(values) == size:
+		return values
+	case len(values) > size:
+		return values[:size]
+	default:
+		normalized := make([]time.Time, size)
+		copy(normalized, values)
+		return normalized
+	}
+}
+
+func normalizeScreenUpdateStringSlice(values []string, size int) []string {
+	switch {
+	case size <= 0:
+		return nil
+	case len(values) == size:
+		return values
+	case len(values) > size:
+		return values[:size]
+	default:
+		normalized := make([]string, size)
+		copy(normalized, values)
+		return normalized
+	}
+}
+
+func isBlankFullReplaceScreenUpdate(update ScreenUpdate) bool {
+	if !update.FullReplace || len(update.ChangedRows) > 0 || len(update.ScrollbackAppend) > 0 {
+		return false
+	}
+	for _, row := range update.Screen.Cells {
+		for _, cell := range row {
+			if strings.TrimSpace(cell.Content) != "" {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func screenUpdateHasContentChange(update ScreenUpdate) bool {
+	return update.FullReplace ||
+		len(update.ChangedRows) > 0 ||
+		update.ScreenScroll != 0 ||
+		update.ResetScrollback ||
+		update.ScrollbackTrim > 0 ||
+		len(update.ScrollbackAppend) > 0
+}
+
 type ListResult struct {
 	Terminals []TerminalInfo `json:"terminals"`
 }
@@ -270,7 +381,11 @@ func DecodeScreenUpdatePayload(payload []byte) (ScreenUpdate, error) {
 	if len(payload) < len(screenUpdatePayloadMagic) || string(payload[:len(screenUpdatePayloadMagic)]) != screenUpdatePayloadMagic {
 		return ScreenUpdate{}, fmt.Errorf("invalid screen update payload magic")
 	}
-	return decodeScreenUpdatePayloadBinary(payload)
+	update, err := decodeScreenUpdatePayloadBinary(payload)
+	if err != nil {
+		return ScreenUpdate{}, err
+	}
+	return NormalizeScreenUpdate(update), nil
 }
 
 const screenUpdatePayloadMagic = "TSU2"

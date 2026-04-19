@@ -195,64 +195,12 @@ func renderAltScreenBorderedContentLine(entry paneRenderEntry, content string) s
 }
 
 func protocolViewportRowANSI(row []protocol.Cell, width int, emojiMode shared.AmbiguousEmojiVariationSelectorMode, cursorCol int, cursorVisible bool, cursorShape string) string {
-	if width <= 0 {
-		return ""
-	}
-	var builder strings.Builder
-	builder.Grow(width * 8)
-	current := drawStyle{}
-	cols := 0
-	cursorWritten := !cursorVisible || cursorCol < 0
-	for index := 0; cols < width; {
-		var cell drawCell
-		if index < len(row) {
-			cell = drawCellFromProtocolCell(row[index])
-			index++
-			if cell.Continuation {
-				continue
-			}
-		} else {
-			cell = blankDrawCell()
-		}
-		if cols+cell.Width > width {
-			break
-		}
-		if !cursorWritten && cursorCol >= cols && cursorCol < cols+cell.Width {
-			cell.Style = syntheticCursorDrawStyle(cell.Style, cursorShape)
-			cursorWritten = true
-		}
-		content := cell.Content
-		if content == "" {
-			content = " "
-		}
-		if current != cell.Style {
-			builder.WriteString(styleDiffANSI(current, cell.Style))
-			current = cell.Style
-		}
-		nextCol := 0
-		if cols+cell.Width < width {
-			nextCol = cols + cell.Width + 1
-		}
-		builder.WriteString(serializeCellContentForDisplay(content, cell.Width, emojiMode, nextCol))
-		cols += cell.Width
-	}
-	for cols < width {
-		cellStyle := drawStyle{}
-		if !cursorWritten && cursorCol == cols {
-			cellStyle = syntheticCursorDrawStyle(drawStyle{}, cursorShape)
-			cursorWritten = true
-		}
-		if current != cellStyle {
-			builder.WriteString(styleDiffANSI(current, cellStyle))
-			current = cellStyle
-		}
-		builder.WriteByte(' ')
-		cols++
-	}
-	if current != (drawStyle{}) {
-		builder.WriteString(styleANSI(drawStyle{}))
-	}
-	return builder.String()
+	return protocolRowANSIWithOptions(row, width, protocolRowANSIOptions{
+		emojiMode:     emojiMode,
+		cursorCol:     cursorCol,
+		cursorVisible: cursorVisible,
+		cursorShape:   cursorShape,
+	})
 }
 
 func syntheticCursorDrawStyle(style drawStyle, shape string) drawStyle {

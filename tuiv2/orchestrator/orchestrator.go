@@ -1,8 +1,6 @@
 package orchestrator
 
 import (
-	"context"
-
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
@@ -54,48 +52,4 @@ func (o *Orchestrator) HandleSemanticAction(action input.SemanticAction) []Effec
 	default:
 		return nil
 	}
-}
-
-func (o *Orchestrator) AttachAndLoadSnapshot(ctx context.Context, paneID, terminalID, mode string, offset int, limit int) ([]any, error) {
-	terminal, err := o.runtime.AttachTerminal(ctx, paneID, terminalID, mode)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := o.runtime.LoadSnapshot(ctx, terminalID, offset, limit); err != nil {
-		return nil, err
-	}
-	o.bindWorkbenchPaneTerminal(paneID, terminalID)
-	o.syncWorkbenchPaneTitle(terminalID, terminal)
-	if err := o.runtime.StartStream(ctx, terminalID); err != nil {
-		return nil, err
-	}
-	msgs := []any{
-		TerminalAttachedMsg{PaneID: paneID, TerminalID: terminalID, Channel: terminal.Channel},
-	}
-	return msgs, nil
-}
-
-func (o *Orchestrator) bindWorkbenchPaneTerminal(paneID, terminalID string) {
-	if o == nil || o.workbench == nil || paneID == "" || terminalID == "" {
-		return
-	}
-	workspace := o.workbench.CurrentWorkspace()
-	if workspace == nil {
-		return
-	}
-	for _, tab := range workspace.Tabs {
-		if tab == nil || tab.Panes[paneID] == nil {
-			continue
-		}
-		_ = o.workbench.BindPaneTerminal(tab.ID, paneID, terminalID)
-		_ = o.workbench.FocusPane(tab.ID, paneID)
-		return
-	}
-}
-
-func (o *Orchestrator) syncWorkbenchPaneTitle(terminalID string, terminal *runtime.TerminalRuntime) {
-	if o == nil || o.workbench == nil || terminalID == "" || terminal == nil || terminal.Name == "" {
-		return
-	}
-	o.workbench.SetPaneTitleByTerminalID(terminalID, terminal.Name)
 }

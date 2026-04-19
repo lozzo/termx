@@ -121,7 +121,7 @@ func (m *Model) openSelectedWorkspaceTreeItem() tea.Cmd {
 	}
 	m.closeModal(input.ModeWorkspacePicker, m.modalHost.Session.RequestID, input.ModeState{Kind: input.ModeNormal})
 	m.render.Invalidate()
-	return nil
+	return m.postViewActivationCmd()
 }
 
 func selectedWorkspaceTreeItemKind(item modal.WorkspacePickerItem) modal.WorkspacePickerItemKind {

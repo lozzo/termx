@@ -240,6 +240,42 @@ func TestEffectCmdLoadPickerItemsIgnoresRegistryOnlyMetadataWhenListSucceeds(t *
 	}
 }
 
+func TestEffectCmdAttachTerminalDelegatesToAttachService(t *testing.T) {
+	client := &recordingBridgeClient{
+		attachResult: &protocol.AttachResult{Channel: 7, Mode: "viewer"},
+		listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{{
+			ID:    "term-1",
+			Name:  "shell",
+			State: "running",
+		}}},
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-1": {
+				TerminalID: "term-1",
+				Size:       protocol.Size{Cols: 80, Rows: 24},
+				Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "x", Width: 1}}}},
+			},
+		},
+	}
+	model := setupModel(t, modelOpts{client: client})
+
+	cmd := model.effectCmd(orchestrator.AttachTerminalEffect{PaneID: "pane-1", TerminalID: "term-1", Mode: "viewer"})
+	if cmd == nil {
+		t.Fatal("expected attach effect command")
+	}
+	drainCmd(t, model, cmd, 20)
+
+	if len(client.attachCalls) != 1 {
+		t.Fatalf("expected one attach call, got %#v", client.attachCalls)
+	}
+	if client.attachCalls[0].terminalID != "term-1" || client.attachCalls[0].mode != "viewer" {
+		t.Fatalf("expected attach effect to preserve request mode, got %#v", client.attachCalls[0])
+	}
+	pane := model.workbench.ActivePane()
+	if pane == nil || pane.TerminalID != "term-1" {
+		t.Fatalf("expected attach effect to bind pane, got %#v", pane)
+	}
+}
+
 func TestEffectCmdLoadWorkspaceItemsPopulatesWorkspacePicker(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{Name: "main"})

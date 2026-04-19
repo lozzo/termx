@@ -44,17 +44,21 @@ func drawSnapshotWithOffset(canvas *composedCanvas, rect workbench.Rect, snapsho
 }
 
 func drawTerminalSourceWithOffset(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, offset int, theme uiTheme) {
+	drawTerminalSourceWithOffsetAndMetrics(canvas, rect, source, offset, theme, terminalVisibleMetricsForSource(source))
+}
+
+func drawTerminalSourceWithOffsetAndMetrics(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, offset int, theme uiTheme, metrics renderTerminalMetrics) {
 	if canvas == nil || source == nil || rect.W <= 0 || rect.H <= 0 {
 		return
 	}
 	if offset <= 0 {
 		drawTerminalSourceInRect(canvas, rect, source)
-		drawTerminalExtentHints(canvas, rect, source, theme)
+		drawTerminalExtentHintsWithMetrics(canvas, rect, source, theme, metrics)
 		return
 	}
 	totalRows := source.TotalRows()
 	if totalRows == 0 {
-		drawTerminalExtentHints(canvas, rect, source, theme)
+		drawTerminalExtentHintsWithMetrics(canvas, rect, source, theme, metrics)
 		return
 	}
 	end := totalRows - offset
@@ -70,7 +74,14 @@ func drawTerminalSourceWithOffset(canvas *composedCanvas, rect workbench.Rect, s
 		drawTerminalSourceRowInRect(canvas, rect, source, rowIndex, targetY, theme)
 		targetY++
 	}
-	drawTerminalExtentHints(canvas, rect, terminalExtentHintsView(source, totalRows), theme)
+	hintMetrics := metrics
+	if drawnRows := targetY - rect.Y; drawnRows > hintMetrics.Rows {
+		hintMetrics.Rows = drawnRows
+	}
+	if rect.W > hintMetrics.Cols {
+		hintMetrics.Cols = rect.W
+	}
+	drawTerminalExtentHintsWithMetrics(canvas, rect, terminalExtentHintsView(source, totalRows), theme, hintMetrics)
 }
 
 func drawSnapshotRowInRect(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, rowIndex int, targetY int, theme uiTheme) {
@@ -128,7 +139,7 @@ func drawTerminalSourceRowInRectCleared(canvas *composedCanvas, rect workbench.R
 }
 
 func drawTerminalExtentHintsRow(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, targetY int, theme uiTheme) {
-	drawTerminalExtentHintsRowWithMetrics(canvas, rect, source, targetY, theme, terminalMetricsForSource(source))
+	drawTerminalExtentHintsRowWithMetrics(canvas, rect, source, targetY, theme, terminalVisibleMetricsForSource(source))
 }
 
 func drawTerminalExtentHintsRowWithMetrics(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, targetY int, theme uiTheme, metrics renderTerminalMetrics) {
@@ -220,10 +231,13 @@ func drawSnapshotExtentHints(canvas *composedCanvas, rect workbench.Rect, snapsh
 }
 
 func drawTerminalExtentHints(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, theme uiTheme) {
+	drawTerminalExtentHintsWithMetrics(canvas, rect, source, theme, terminalVisibleMetricsForSource(source))
+}
+
+func drawTerminalExtentHintsWithMetrics(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, theme uiTheme, metrics renderTerminalMetrics) {
 	if canvas == nil || source == nil || rect.W <= 0 || rect.H <= 0 {
 		return
 	}
-	metrics := terminalMetricsForSource(source)
 	if metrics.Cols <= 0 || metrics.Rows <= 0 {
 		return
 	}
@@ -254,5 +268,5 @@ func drawTerminalExtentHints(canvas *composedCanvas, rect workbench.Rect, source
 }
 
 func renderTerminalMetricsForSnapshot(snapshot *protocol.Snapshot) renderTerminalMetrics {
-	return terminalMetricsForSource(renderSource(snapshot, nil))
+	return terminalVisibleMetricsForSource(renderSource(snapshot, nil))
 }
