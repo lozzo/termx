@@ -15,29 +15,17 @@ func (m *Model) View() string {
 	if m == nil || m.render == nil {
 		return ""
 	}
-	if m.visibleAltScreenGeometryChanged() {
-		m.forceFullRedraw()
-	}
 	activeAltScreen := m.activePaneAlternateScreen()
-	if m.activePaneAltScreenSet && m.lastActivePaneAltScreen && !activeAltScreen {
-		// Full-screen terminal apps can leave stale host-side paint behind on
-		// exit. Reset the presenter once on alt-screen exit so the next frame is
-		// emitted as a full repaint.
-		m.forceFullRedraw()
-	}
-	m.lastActivePaneAltScreen = activeAltScreen
-	m.activePaneAltScreenSet = true
 	m.reconcileCopyModeContext()
 	if rowsWriter, ok := m.frameOut.(frameLinesWriter); ok {
 		if directWriter, ok := rowsWriter.(*outputCursorWriter); ok {
-			conservativeDiff := m.conservativeAltScreenDiffRequired()
 			mode, _ := m.verticalScrollOptimizationMode()
-			if activeAltScreen || conservativeDiff {
+			if activeAltScreen {
 				mode = verticalScrollModeNone
 			}
 			directWriter.SetVerticalScrollMode(mode)
-			directWriter.SetOwnerAwareDeltaEnabled(!conservativeDiff)
-			directWriter.SetForceFullFrameLines(conservativeDiff)
+			directWriter.SetOwnerAwareDeltaEnabled(true)
+			directWriter.SetForceFullFrameLines(false)
 			if result, ok := m.render.CachedRenderResult(); ok {
 				cursor := result.CursorSequence()
 				viewBytes = joinedLinesLen(result.Lines) + len(cursor)

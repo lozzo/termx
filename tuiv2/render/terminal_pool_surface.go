@@ -48,6 +48,7 @@ func renderTerminalPoolPageWithCursor(pool *modal.TerminalManagerState, runtimeS
 	result := renderedBody{
 		lines:  renderPageLinesWithPinnedFooter(headerLines, contentLines, footerLine, width, height),
 		cursor: hideCursorANSI(),
+		meta:   solidPresentMetadata(width, height, renderOwnerTerminalPool),
 	}
 	if cursorVisible {
 		cursorX := layout.queryRect.X + valueCursorCellOffset(pool.Query, queryCursorIndex(pool.Query, pool.Cursor, pool.CursorSet), layout.queryRect.W)

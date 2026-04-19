@@ -13,7 +13,7 @@ import (
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
-func TestRenderBodyCanvasOverlapSameRectContentChangeUsesDamagedRectPath(t *testing.T) {
+func TestRenderBodyCanvasOverlapSameRectContentChangeUsesFullComposePath(t *testing.T) {
 	now := time.Date(2026, 4, 18, 14, 0, 0, 0, time.UTC)
 	baseSurface := &spriteTestSurface{
 		size: protocol.Size{Cols: 14, Rows: 5},
@@ -79,24 +79,18 @@ func TestRenderBodyCanvasOverlapSameRectContentChangeUsesDamagedRectPath(t *test
 	want := rebuildBodyCanvas(nil, entries2, 20, 10, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
 
 	snapshot := perftrace.SnapshotCurrent()
-	if event, ok := snapshot.Event("render.body.canvas.path.overlap_damaged_rect"); !ok || event.Count == 0 {
-		t.Fatalf("expected overlap damaged-rect path, got events=%#v", snapshot.Events)
-	}
-	if event, ok := snapshot.Event("render.body.canvas.path.overlap_same_rect_dirty"); !ok || event.Count == 0 {
-		t.Fatalf("expected same-rect overlap dirty path, got events=%#v", snapshot.Events)
-	}
-	if event, ok := snapshot.Event("render.body.canvas.path.overlap_full_rebuild"); ok && event.Count > 0 {
-		t.Fatalf("expected overlap same-rect content change to avoid full rebuild, got events=%#v", snapshot.Events)
+	if event, ok := snapshot.Event("render.body.canvas.path.full_compose"); !ok || event.Count == 0 {
+		t.Fatalf("expected full-compose body path, got events=%#v", snapshot.Events)
 	}
 	if gotRaw, wantRaw := strings.TrimRight(got.rawString(), "\n"), strings.TrimRight(want.rawString(), "\n"); gotRaw != wantRaw {
-		t.Fatalf("expected damaged-rect canvas to match full rebuild raw output,\n got: %q\nwant: %q", gotRaw, wantRaw)
+		t.Fatalf("expected full-compose canvas to match full rebuild raw output,\n got: %q\nwant: %q", gotRaw, wantRaw)
 	}
 	if gotANSI, wantANSI := got.String(), want.String(); gotANSI != wantANSI {
-		t.Fatalf("expected damaged-rect canvas to match full rebuild styled output")
+		t.Fatalf("expected full-compose canvas to match full rebuild styled output")
 	}
 }
 
-func TestRenderBodyCanvasOverlapLargeSameRectScrollUsesIncrementalComposite(t *testing.T) {
+func TestRenderBodyCanvasOverlapLargeSameRectScrollUsesFullComposePath(t *testing.T) {
 	now := time.Date(2026, 4, 18, 16, 0, 0, 0, time.UTC)
 	baseRows := 38
 	baseScreen := make([][]protocol.Cell, 0, baseRows)
@@ -173,17 +167,14 @@ func TestRenderBodyCanvasOverlapLargeSameRectScrollUsesIncrementalComposite(t *t
 	want := rebuildBodyCanvas(nil, entries2, 100, 40, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
 
 	snapshot := perftrace.SnapshotCurrent()
-	if event, ok := snapshot.Event("render.body.canvas.path.overlap_incremental_composite"); !ok || event.Count == 0 {
-		t.Fatalf("expected overlap incremental composite path, got events=%#v", snapshot.Events)
-	}
-	if event, ok := snapshot.Event("render.body.canvas.path.overlap_full_rebuild"); ok && event.Count > 0 {
-		t.Fatalf("expected overlap large same-rect scroll to avoid full rebuild, got events=%#v", snapshot.Events)
+	if event, ok := snapshot.Event("render.body.canvas.path.full_compose"); !ok || event.Count == 0 {
+		t.Fatalf("expected full-compose body path, got events=%#v", snapshot.Events)
 	}
 	if gotRaw, wantRaw := got.rawString(), want.rawString(); gotRaw != wantRaw {
-		t.Fatalf("expected overlap incremental composite to match full rebuild raw output,\n got: %q\nwant: %q", gotRaw, wantRaw)
+		t.Fatalf("expected full-compose canvas to match full rebuild raw output,\n got: %q\nwant: %q", gotRaw, wantRaw)
 	}
 	if gotANSI, wantANSI := got.String(), want.String(); gotANSI != wantANSI {
-		t.Fatalf("expected overlap incremental composite to match full rebuild styled output")
+		t.Fatalf("expected full-compose canvas to match full rebuild styled output")
 	}
 }
 

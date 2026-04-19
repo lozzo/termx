@@ -164,21 +164,6 @@ func (m *Model) activePaneAlternateScreen() bool {
 	return m.terminalModesForPane(pane).AlternateScreen
 }
 
-func (m *Model) conservativeAltScreenDiffRequired() bool {
-	if m == nil || m.workbench == nil || !m.activePaneAlternateScreen() {
-		return false
-	}
-	visible := m.workbench.VisibleWithSize(m.bodyRect())
-	if visible == nil {
-		return false
-	}
-	visiblePanes := len(visible.FloatingPanes)
-	if visible.ActiveTab >= 0 && visible.ActiveTab < len(visible.Tabs) {
-		visiblePanes += len(visible.Tabs[visible.ActiveTab].Panes)
-	}
-	return visiblePanes > 1
-}
-
 func (m *Model) paneUsesImmersiveViewport(paneID string) bool {
 	if m == nil || m.workbench == nil || strings.TrimSpace(paneID) == "" {
 		return false

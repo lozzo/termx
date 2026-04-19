@@ -43,6 +43,7 @@ func renderEmptyWorkbenchBodyVM(vm RenderVM, width, height int, kind emptyWorkbe
 	return renderedBody{
 		lines:  canvas.cachedContentLines(),
 		cursor: hideCursorANSI(),
+		meta:   solidPresentMetadata(width, height, renderOwnerEmptyWorkbench),
 	}
 }
 

@@ -15,120 +15,22 @@ func renderBodyCanvas(coordinator *Coordinator, runtimeState *VisibleRuntimeStat
 	if immersiveZoom {
 		cursorOffsetY = 0
 	}
-	if coordinator == nil {
-		canvas := newComposedCanvas(width, height)
-		canvas.hostEmojiVS16Mode = hostEmojiMode
-		canvas.cursorOffsetY = cursorOffsetY
-		for _, entry := range entries {
-			if !entry.Frameless {
-				canvas.withOwner(entry.OwnerID, func() {
-					drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
-				})
-			}
-			canvas.withOwner(entry.OwnerID, func() {
-				drawPaneContentWithKey(canvas, entry.Rect, entry, runtimeState)
-			})
-		}
-		projectActiveEntryCursor(canvas, entries, runtimeState)
-		return canvas
+	var (
+		cache           *bodyRenderCache
+		cursorVisibleFn func(protocol.CursorState) bool
+	)
+	if coordinator != nil {
+		cache = coordinator.bodyCache
+		cursorVisibleFn = coordinator.syntheticCursorVisible
 	}
-	cache := coordinator.bodyCache
-	if cache == nil || !cache.compatible(entries, width, height, hostEmojiMode) {
-		canvas := rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, coordinator.syntheticCursorVisible, runtimeState)
+	// Render fully composes the final framebuffer every time. The only
+	// production incremental output engine now lives at the presenter boundary.
+	canvas := rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, cursorVisibleFn, runtimeState)
+	if coordinator != nil {
 		coordinator.bodyCache = newBodyRenderCache(cache, canvas, entries, width, height)
-		return canvas
 	}
-	overlap := entriesOverlap(entries)
-	matches := cache.matches(entries, width, height, hostEmojiMode)
-	if overlap {
-		changed := !matches
-		if !changed {
-			for _, entry := range entries {
-				if cache.frameKeys[entry.PaneID] != entry.FrameKey || cache.contentKeys[entry.PaneID] != entry.ContentKey {
-					changed = true
-					break
-				}
-			}
-		}
-		cache.canvas.clearCursor()
-		if !changed {
-			projectActiveEntryCursor(cache.canvas, entries, runtimeState)
-			return cache.canvas
-		}
-		// Same-rect overlap updates still have a bounded damage region. Rebuilds
-		// here throw away earlier projection/pipeline wins even though only a
-		// small stacked slice actually changed, so try the damaged-rect path
-		// before falling back to a full body recompose.
-		if dirty, ok := overlapDamagedRect(cache, entries, width, height); ok {
-			redrawDamagedRect(cache.canvas, cache, entries, runtimeState, dirty)
-			cache.reset(entries, width, height)
-			perftrace.Count("render.body.canvas.damaged_rect", dirty.W*dirty.H)
-			perftrace.Count("render.body.canvas.path.overlap_damaged_rect", 0)
-			if matches {
-				perftrace.Count("render.body.canvas.path.overlap_same_rect_dirty", 0)
-			}
-			return cache.canvas
-		}
-		if matches && applyOverlapIncrementalComposite(cache.canvas, cache, entries, runtimeState) {
-			cache.reset(entries, width, height)
-			perftrace.Count("render.body.canvas.path.overlap_incremental_composite", 0)
-			return cache.canvas
-		}
-		perftrace.Count("render.body.canvas.path.overlap_full_rebuild", 0)
-		canvas := rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, coordinator.syntheticCursorVisible, runtimeState)
-		cache.canvas = canvas
-		cache.reset(entries, width, height)
-		return canvas
-	}
-	if !matches {
-		canvas := rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, coordinator.syntheticCursorVisible, runtimeState)
-		cache.canvas = canvas
-		cache.reset(entries, width, height)
-		return canvas
-	}
-
-	if !overlap {
-		changed := false
-		activeContentRedrawn := false
-		cache.canvas.clearCursor()
-		for _, entry := range entries {
-			frameChanged := false
-			if cache.frameKeys[entry.PaneID] != entry.FrameKey {
-				if entry.Frameless {
-					cache.canvas.withOwner(entry.OwnerID, func() {
-						fillRect(cache.canvas, entry.Rect, blankDrawCell())
-					})
-				} else {
-					cache.canvas.withOwner(entry.OwnerID, func() {
-						drawPaneFrame(cache.canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
-					})
-				}
-				frameChanged = true
-				changed = true
-			}
-			if frameChanged || cache.contentKeys[entry.PaneID] != entry.ContentKey {
-				cache.canvas.withOwner(entry.OwnerID, func() {
-					drawPaneContentFromCacheRows(cache.canvas, cache, entry, runtimeState, 0, interiorRectForEntry(entry).H-1, true, !frameChanged)
-				})
-				if entry.Active {
-					activeContentRedrawn = true
-				}
-				changed = true
-			}
-		}
-		if !activeContentRedrawn {
-			restoreActiveEntryContent(cache.canvas, cache, entries, runtimeState)
-		}
-		if changed {
-			projectActiveEntryCursor(cache.canvas, entries, runtimeState)
-			cache.reset(entries, width, height)
-			return cache.canvas
-		}
-		projectActiveEntryCursor(cache.canvas, entries, runtimeState)
-		return cache.canvas
-	}
-
-	return cache.canvas
+	perftrace.Count("render.body.canvas.path.full_compose", maxInt(1, width*height))
+	return canvas
 }
 
 func rebuildBodyCanvas(cache *bodyRenderCache, entries []paneRenderEntry, width, height int, hostEmojiMode shared.AmbiguousEmojiVariationSelectorMode, cursorOffsetY int, cursorVisibleFn func(protocol.CursorState) bool, runtimeState *VisibleRuntimeStateProxy) *composedCanvas {
@@ -152,7 +54,7 @@ func rebuildBodyCanvas(cache *bodyRenderCache, entries []paneRenderEntry, width,
 			})
 		}
 		canvas.withOwner(entry.OwnerID, func() {
-			drawPaneContentFromCache(canvas, cache, entry, runtimeState, false)
+			drawPaneContentWithKey(canvas, entry.Rect, entry, runtimeState)
 		})
 	}
 	projectActiveEntryCursor(canvas, entries, runtimeState)

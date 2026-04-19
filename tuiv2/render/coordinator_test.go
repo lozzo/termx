@@ -2106,7 +2106,7 @@ func TestRenderBodyMovingFloatingPaneRestoresPreviouslyCoveredTiledContent(t *te
 	}
 }
 
-func TestRenderBodyMovingFloatingPaneUsesDamagedRectPath(t *testing.T) {
+func TestRenderBodyMovingFloatingPaneUsesFullComposePath(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -2159,13 +2159,13 @@ func TestRenderBodyMovingFloatingPaneUsesDamagedRectPath(t *testing.T) {
 	_ = renderBodyFrameWithCoordinator(coordinator, state, 40, 14)
 
 	snapshot := perftrace.SnapshotCurrent()
-	event, ok := snapshot.Event("render.body.canvas.damaged_rect")
+	event, ok := snapshot.Event("render.body.canvas.path.full_compose")
 	if !ok || event.Count == 0 {
-		t.Fatalf("expected damaged-rect path on floating move, got events=%#v", snapshot.Events)
+		t.Fatalf("expected full-compose path on floating move, got events=%#v", snapshot.Events)
 	}
 }
 
-func TestRenderBodyMultipleFloatingChangesUseDamagedRectPathWhenDirtyUnionIsSmall(t *testing.T) {
+func TestRenderBodyMultipleFloatingChangesUseFullComposePathWhenDirtyUnionIsSmall(t *testing.T) {
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
 		Name:      "main",
@@ -2223,9 +2223,9 @@ func TestRenderBodyMultipleFloatingChangesUseDamagedRectPathWhenDirtyUnionIsSmal
 	_ = renderBodyFrameWithCoordinator(coordinator, state, 40, 14)
 
 	snapshot := perftrace.SnapshotCurrent()
-	event, ok := snapshot.Event("render.body.canvas.damaged_rect")
+	event, ok := snapshot.Event("render.body.canvas.path.full_compose")
 	if !ok || event.Count == 0 {
-		t.Fatalf("expected damaged-rect path on multiple floating changes, got events=%#v", snapshot.Events)
+		t.Fatalf("expected full-compose path on multiple floating changes, got events=%#v", snapshot.Events)
 	}
 }
 

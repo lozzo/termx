@@ -18,3 +18,4 @@
 - `render` 层不要直接依赖 `input.DefaultBindingCatalog()` 这类输入绑定文档来拼 modal/footer 文案；render 只消费已经整理好的语义 view-model，快捷键说明放在 status/help。
 - `render/coordinator.go` 不要继续叠加新的业务编排、输入语义分支或状态修复逻辑；新增逻辑优先拆到独立 projection/layout/overlay/hit-testing 模块。
 - 如果宿主终端没有返回 palette，新样式 fallback 也必须先从 host FG/BG 推导；引入固定品牌色作为默认视觉基底需要显式说明理由。
+- 提交代码时，commit message 必须尽可能详细，准确写清动机、范围、关键实现与行为变化；不要用过于简短或模糊的提交说明。

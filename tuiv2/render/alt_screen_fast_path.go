@@ -83,6 +83,7 @@ func renderAltScreenEntryFastPath(entry paneRenderEntry, resolved resolvedPaneCo
 	return renderedBody{
 		lines:  lines,
 		cursor: cursor,
+		meta:   solidPresentMetadata(entry.Rect.W, len(lines), entry.OwnerID),
 	}
 }
 

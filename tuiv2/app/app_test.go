@@ -1926,7 +1926,7 @@ func TestRenderRefreshMsgDoesNotResetFrameWriterState(t *testing.T) {
 	}
 }
 
-func TestViewForcesOneFullRedrawAfterActivePaneLeavesAltScreen(t *testing.T) {
+func TestViewKeepsGlobalDiffActiveAfterActivePaneLeavesAltScreen(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 80, height: 24})
 	writer := &resetProbeFrameWriter{}
 	model.SetFrameWriter(writer)
@@ -1947,13 +1947,13 @@ func TestViewForcesOneFullRedrawAfterActivePaneLeavesAltScreen(t *testing.T) {
 		AutoWrap:        true,
 	})
 	_ = model.View()
-	if writer.resetCalls != 1 {
-		t.Fatalf("expected one redraw reset after alt-screen exit, got %d", writer.resetCalls)
+	if writer.resetCalls != 0 {
+		t.Fatalf("expected alt-screen exit to keep using presenter diff without reset, got %d", writer.resetCalls)
 	}
 
 	_ = model.View()
-	if writer.resetCalls != 1 {
-		t.Fatalf("expected alt-screen exit redraw reset to fire once, got %d", writer.resetCalls)
+	if writer.resetCalls != 0 {
+		t.Fatalf("expected alt-screen exit to avoid redraw reset on subsequent frame, got %d", writer.resetCalls)
 	}
 }
 
@@ -1976,7 +1976,7 @@ func TestViewDisablesVerticalScrollOptimizationForSinglePaneAltScreen(t *testing
 	}
 }
 
-func TestViewForcesFullRedrawAfterWindowResizeWithVisibleAltScreen(t *testing.T) {
+func TestViewDoesNotForceResetAfterWindowResizeWithVisibleAltScreen(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 80, height: 24})
 	writer := &resetProbeFrameWriter{}
 	model.SetFrameWriter(writer)
@@ -2000,17 +2000,17 @@ func TestViewForcesFullRedrawAfterWindowResizeWithVisibleAltScreen(t *testing.T)
 		t.Fatal("expected window size message to schedule follow-up work")
 	}
 	_ = model.View()
-	if writer.resetCalls != 1 {
-		t.Fatalf("expected one redraw reset after alt-screen resize, got %d", writer.resetCalls)
+	if writer.resetCalls != 0 {
+		t.Fatalf("expected resize to rely on presenter resize repaint without explicit reset, got %d", writer.resetCalls)
 	}
 
 	_ = model.View()
-	if writer.resetCalls != 1 {
-		t.Fatalf("expected resize redraw reset to fire once, got %d", writer.resetCalls)
+	if writer.resetCalls != 0 {
+		t.Fatalf("expected resize to avoid redraw reset on subsequent frame, got %d", writer.resetCalls)
 	}
 }
 
-func TestViewForcesFullRedrawAfterFloatingMoveOverVisibleAltScreen(t *testing.T) {
+func TestViewKeepsGlobalDiffActiveAfterFloatingMoveOverVisibleAltScreen(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 120, height: 36})
 	writer := &resetProbeFrameWriter{}
 	model.SetFrameWriter(writer)
@@ -2061,13 +2061,13 @@ func TestViewForcesFullRedrawAfterFloatingMoveOverVisibleAltScreen(t *testing.T)
 	}
 	model.render.Invalidate()
 	_ = model.View()
-	if writer.resetCalls != 1 {
-		t.Fatalf("expected one redraw reset after floating move over visible alt-screen, got %d", writer.resetCalls)
+	if writer.resetCalls != 0 {
+		t.Fatalf("expected floating move over visible alt-screen to keep using presenter diff, got %d", writer.resetCalls)
 	}
 
 	_ = model.View()
-	if writer.resetCalls != 1 {
-		t.Fatalf("expected floating-move redraw reset to fire once, got %d", writer.resetCalls)
+	if writer.resetCalls != 0 {
+		t.Fatalf("expected floating move over visible alt-screen to avoid redraw reset on subsequent frame, got %d", writer.resetCalls)
 	}
 }
 

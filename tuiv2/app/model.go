@@ -61,16 +61,12 @@ type Model struct {
 
 	// 只读引用，仅用于将 visible state 注入 render 层。
 	// 业务编排走 orchestrator，不直接通过这两个字段。
-	workbench               *workbench.Workbench
-	runtime                 *runtime.Runtime
-	cursorOut               cursorSequenceWriter
-	frameOut                frameSequenceWriter
-	lastViewFrame           string
-	lastViewCursor          string
-	lastVisibleLayoutSig    string
-	lastActivePaneAltScreen bool
-	activePaneAltScreenSet  bool
-	visibleLayoutSigSet     bool
+	workbench      *workbench.Workbench
+	runtime        *runtime.Runtime
+	cursorOut      cursorSequenceWriter
+	frameOut       frameSequenceWriter
+	lastViewFrame  string
+	lastViewCursor string
 
 	terminalInputs               terminalInputDispatchQueue
 	terminalInputSending         bool

@@ -7,6 +7,7 @@ func renderActiveOverlayVMWithCursor(vm RenderVM, termSize TermSize, cursorOffse
 		result.lines = lines
 		result.content = ""
 		result.blink = blink
+		result.meta = solidPresentMetadata(termSize.Width, len(lines), renderOwnerOpaqueOverlay)
 	}
 	switch vm.Overlay.Kind {
 	case VisibleOverlayPrompt:

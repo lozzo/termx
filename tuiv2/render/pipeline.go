@@ -108,7 +108,10 @@ func renderBodyFrameWithCoordinatorVM(coordinator *Coordinator, vm RenderVM, wid
 	}
 	if vm.Workbench == nil {
 		perftrace.Count("render.body.path.empty_workbench", 0)
-		return renderedBody{content: strings.Repeat("\n", maxInt(0, height-1))}
+		return renderedBody{
+			content: strings.Repeat("\n", maxInt(0, height-1)),
+			meta:    solidPresentMetadata(width, height, renderOwnerEmptyWorkbench),
+		}
 	}
 	activeTabIdx := vm.Workbench.ActiveTab
 	if activeTabIdx < 0 || activeTabIdx >= len(vm.Workbench.Tabs) {
@@ -141,11 +144,6 @@ func renderBodyFrameWithCoordinatorVM(coordinator *Coordinator, vm RenderVM, wid
 		meta:   &PresentMetadata{OwnerMap: canvas.ownerMap()},
 	}
 }
-
-const (
-	renderOwnerTopChrome    uint32 = 1
-	renderOwnerBottomChrome uint32 = 2
-)
 
 func composeRenderMetadata(width, height int, immersiveZoom bool, bodyMeta *PresentMetadata) *PresentMetadata {
 	if bodyMeta == nil || len(bodyMeta.OwnerMap) == 0 || width <= 0 || height <= 0 {

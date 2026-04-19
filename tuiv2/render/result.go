@@ -2,6 +2,14 @@ package render
 
 import "strings"
 
+const (
+	renderOwnerTopChrome      uint32 = 1
+	renderOwnerBottomChrome   uint32 = 2
+	renderOwnerOpaqueOverlay  uint32 = 3
+	renderOwnerTerminalPool   uint32 = 4
+	renderOwnerEmptyWorkbench uint32 = 5
+)
+
 type PresentMetadata struct {
 	OwnerMap [][]uint32
 }
@@ -44,4 +52,21 @@ func clonePresentMetadata(meta *PresentMetadata) *PresentMetadata {
 		clone.OwnerMap[y] = append([]uint32(nil), meta.OwnerMap[y]...)
 	}
 	return clone
+}
+
+func solidPresentMetadata(width, height int, owner uint32) *PresentMetadata {
+	if width <= 0 || height <= 0 || owner == 0 {
+		return nil
+	}
+	meta := &PresentMetadata{
+		OwnerMap: make([][]uint32, height),
+	}
+	for y := 0; y < height; y++ {
+		row := make([]uint32, width)
+		for x := range row {
+			row[x] = owner
+		}
+		meta.OwnerMap[y] = row
+	}
+	return meta
 }
