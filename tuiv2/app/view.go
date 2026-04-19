@@ -15,14 +15,10 @@ func (m *Model) View() string {
 	if m == nil || m.render == nil {
 		return ""
 	}
-	activeAltScreen := m.activePaneAlternateScreen()
 	m.reconcileCopyModeContext()
 	if rowsWriter, ok := m.frameOut.(frameLinesWriter); ok {
 		if directWriter, ok := rowsWriter.(*outputCursorWriter); ok {
 			mode, _ := m.verticalScrollOptimizationMode()
-			if activeAltScreen {
-				mode = verticalScrollModeNone
-			}
 			directWriter.SetVerticalScrollMode(mode)
 			directWriter.SetOwnerAwareDeltaEnabled(true)
 			directWriter.SetForceFullFrameLines(false)

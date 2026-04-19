@@ -68,14 +68,19 @@ func BubbleTeaRendererEnabled() bool {
 // plus SU/SD to encode narrow host-rect scroll deltas.
 //
 // TERMX_EXPERIMENTAL_LR_SCROLL accepts:
+// - "", "auto": enable in remote-latency mode, disable otherwise
 // - "1", "true", "yes", "on": enable
-// - all other values: disable
+// - "0", "false", "no", "off": disable
 func ExperimentalLRScrollEnabled() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("TERMX_EXPERIMENTAL_LR_SCROLL"))) {
+	case "", "auto":
+		return RemoteLatencyProfileEnabled()
 	case "1", "true", "yes", "on":
 		return true
-	default:
+	case "0", "false", "no", "off":
 		return false
+	default:
+		return RemoteLatencyProfileEnabled()
 	}
 }
 

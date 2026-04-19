@@ -1013,9 +1013,6 @@ func (w *outputCursorWriter) writeFrameLinesLocked(lines []string, meta *present
 	w.presenter.fullWidthLines = true
 	previousVerticalScrollMode := w.presenter.verticalScrollMode
 	previousOwnerAwareDeltaEnabled := w.presenter.ownerAwareDeltaEnabled
-	if cursor != "" && w.lastDirectCursor != "" && cursor != w.lastDirectCursor {
-		w.presenter.verticalScrollMode = verticalScrollModeNone
-	}
 	if w.forceFullFrameLines {
 		w.presenter.Reset()
 		w.presenter.verticalScrollMode = previousVerticalScrollMode

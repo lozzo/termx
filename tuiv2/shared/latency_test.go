@@ -28,3 +28,27 @@ func TestBubbleTeaRendererEnabledFollowsEnv(t *testing.T) {
 		t.Fatal("expected Bubble Tea renderer flag disabled")
 	}
 }
+
+func TestExperimentalLRScrollEnabledDefaultsOnInRemoteLatencyMode(t *testing.T) {
+	t.Setenv("TERMX_EXPERIMENTAL_LR_SCROLL", "")
+	t.Setenv("TERMX_REMOTE_LATENCY", "1")
+	if !ExperimentalLRScrollEnabled() {
+		t.Fatal("expected LR scroll enabled in remote latency mode")
+	}
+}
+
+func TestExperimentalLRScrollEnabledDefaultsOffInLocalLatencyMode(t *testing.T) {
+	t.Setenv("TERMX_EXPERIMENTAL_LR_SCROLL", "")
+	t.Setenv("TERMX_REMOTE_LATENCY", "0")
+	if ExperimentalLRScrollEnabled() {
+		t.Fatal("expected LR scroll disabled in local latency mode")
+	}
+}
+
+func TestExperimentalLRScrollEnabledCanBeForcedOffRemotely(t *testing.T) {
+	t.Setenv("TERMX_EXPERIMENTAL_LR_SCROLL", "0")
+	t.Setenv("TERMX_REMOTE_LATENCY", "1")
+	if ExperimentalLRScrollEnabled() {
+		t.Fatal("expected LR scroll forced off")
+	}
+}

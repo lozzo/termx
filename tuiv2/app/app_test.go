@@ -1957,7 +1957,7 @@ func TestViewKeepsGlobalDiffActiveAfterActivePaneLeavesAltScreen(t *testing.T) {
 	}
 }
 
-func TestViewDisablesVerticalScrollOptimizationForSinglePaneAltScreen(t *testing.T) {
+func TestViewKeepsVerticalScrollOptimizationForSinglePaneAltScreen(t *testing.T) {
 	model := setupModel(t, modelOpts{width: 80, height: 24})
 	sink := &cursorWriterProbeTTY{}
 	writer := newOutputCursorWriter(sink)
@@ -1971,8 +1971,8 @@ func TestViewDisablesVerticalScrollOptimizationForSinglePaneAltScreen(t *testing
 
 	_ = model.View()
 
-	if writer.verticalScrollMode != verticalScrollModeNone {
-		t.Fatalf("expected single-pane alt-screen view to disable vertical scroll optimization, got %q", writer.verticalScrollMode.String())
+	if writer.verticalScrollMode != verticalScrollModeRowsAndRects {
+		t.Fatalf("expected single-pane alt-screen view to keep vertical scroll optimization, got %q", writer.verticalScrollMode.String())
 	}
 }
 
