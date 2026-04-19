@@ -15,14 +15,6 @@ func renderWorkspacePickerOverlay(picker *modal.WorkspacePickerState, termSize T
 	return strings.Join(renderWorkspacePickerOverlayLinesWithThemeAndCursor(picker, nil, termSize, defaultUITheme(), true), "\n")
 }
 
-func renderWorkspacePickerOverlayWithTheme(picker *modal.WorkspacePickerState, termSize TermSize, theme uiTheme) string {
-	return strings.Join(renderWorkspacePickerOverlayLinesWithThemeAndCursor(picker, nil, termSize, theme, true), "\n")
-}
-
-func renderWorkspacePickerOverlayWithThemeAndCursor(picker *modal.WorkspacePickerState, runtimeState *VisibleRuntimeStateProxy, termSize TermSize, theme uiTheme, cursorVisible bool) string {
-	return strings.Join(renderWorkspacePickerOverlayLinesWithThemeAndCursor(picker, runtimeState, termSize, theme, cursorVisible), "\n")
-}
-
 func renderWorkspacePickerOverlayLinesWithThemeAndCursor(picker *modal.WorkspacePickerState, runtimeState *VisibleRuntimeStateProxy, termSize TermSize, theme uiTheme, cursorVisible bool) []string {
 	if picker == nil {
 		return nil

@@ -8,14 +8,6 @@ func renderPickerOverlay(picker *modal.PickerState, termSize TermSize) string {
 	return strings.Join(renderPickerOverlayLinesWithThemeAndCursor(picker, termSize, defaultUITheme(), true), "\n")
 }
 
-func renderPickerOverlayWithTheme(picker *modal.PickerState, termSize TermSize, theme uiTheme) string {
-	return strings.Join(renderPickerOverlayLinesWithThemeAndCursor(picker, termSize, theme, true), "\n")
-}
-
-func renderPickerOverlayWithThemeAndCursor(picker *modal.PickerState, termSize TermSize, theme uiTheme, cursorVisible bool) string {
-	return strings.Join(renderPickerOverlayLinesWithThemeAndCursor(picker, termSize, theme, cursorVisible), "\n")
-}
-
 func renderPickerOverlayLinesWithThemeAndCursor(picker *modal.PickerState, termSize TermSize, theme uiTheme, cursorVisible bool) []string {
 	if picker == nil {
 		return nil

@@ -247,11 +247,3 @@ func (r *Runtime) bumpSurfaceVersion(terminal *TerminalRuntime) {
 	terminal.SurfaceVersion++
 	syncSurfaceScrollbackState(terminal)
 }
-
-func (r *Runtime) markSurfaceChanged(terminal *TerminalRuntime) {
-	if r == nil || terminal == nil {
-		return
-	}
-	r.bumpSurfaceVersion(terminal)
-	r.invalidate()
-}

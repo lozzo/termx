@@ -533,38 +533,6 @@ func shiftSnapshotScreenRows(snapshot *protocol.Snapshot, delta int, screenCells
 	}
 }
 
-func ensureSnapshotScreenRows(snapshot *protocol.Snapshot, rows int) {
-	if snapshot == nil || rows <= 0 {
-		return
-	}
-	if len(snapshot.Screen.Cells) < rows {
-		snapshot.Screen.Cells = append(snapshot.Screen.Cells, make([][]protocol.Cell, rows-len(snapshot.Screen.Cells))...)
-	}
-	ensureTimeSliceLen(&snapshot.ScreenTimestamps, rows)
-	ensureStringSliceLen(&snapshot.ScreenRowKinds, rows)
-	if snapshot.Size.Rows < uint16(rows) {
-		snapshot.Size.Rows = uint16(rows)
-	}
-}
-
-func ensureTimeSliceLen(values *[]time.Time, size int) {
-	if values == nil || size <= 0 {
-		return
-	}
-	if len(*values) < size {
-		*values = append(*values, make([]time.Time, size-len(*values))...)
-	}
-}
-
-func ensureStringSliceLen(values *[]string, size int) {
-	if values == nil || size <= 0 {
-		return
-	}
-	if len(*values) < size {
-		*values = append(*values, make([]string, size-len(*values))...)
-	}
-}
-
 func trimSnapshotScrollbackFront(snapshot *protocol.Snapshot, trim int) {
 	if snapshot == nil || trim <= 0 {
 		return

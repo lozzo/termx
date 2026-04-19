@@ -902,20 +902,6 @@ func (t *Terminal) waitLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, 
 	t.removeIfEpoch(epoch, "expired")
 }
 
-func (t *Terminal) remove(reason string) {
-	t.mu.Lock()
-	if t.removed {
-		t.mu.Unlock()
-		return
-	}
-	t.removed = true
-	t.mu.Unlock()
-
-	if t.removeFunc != nil {
-		t.removeFunc(t.id, reason)
-	}
-}
-
 func (t *Terminal) removeIfEpoch(epoch uint64, reason string) {
 	t.mu.Lock()
 	if t.removed || t.processEpoch != epoch || t.state != StateExited {
@@ -981,27 +967,6 @@ func copyIntPtr(v *int) *int {
 	}
 	n := *v
 	return &n
-}
-
-func snapshotReplayPayload(s *Snapshot) []byte {
-	if s == nil {
-		return nil
-	}
-	lines := make([]string, 0, len(s.Scrollback)+len(s.Screen.Cells))
-	for _, row := range s.Scrollback {
-		if line := snapshotRowString(row); line != "" {
-			lines = append(lines, line)
-		}
-	}
-	for _, row := range s.Screen.Cells {
-		if line := snapshotRowString(row); line != "" {
-			lines = append(lines, line)
-		}
-	}
-	if len(lines) == 0 {
-		return nil
-	}
-	return []byte(strings.Join(lines, "\n") + "\n")
 }
 
 func (t *Terminal) bootstrapMessagesLocked(scrollbackLimit int) []StreamMessage {

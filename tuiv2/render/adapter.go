@@ -56,7 +56,6 @@ const (
 	VisibleOverlayPrompt
 	VisibleOverlayPicker
 	VisibleOverlayWorkspacePicker
-	VisibleOverlayTerminalManager
 	VisibleOverlayHelp
 	VisibleOverlayFloatingOverview
 )
@@ -66,7 +65,6 @@ type VisibleOverlay struct {
 	Prompt           *modal.PromptState
 	Picker           *modal.PickerState
 	WorkspacePicker  *modal.WorkspacePickerState
-	TerminalManager  *modal.TerminalManagerState
 	Help             *modal.HelpState
 	FloatingOverview *modal.FloatingOverviewState
 }
@@ -104,14 +102,6 @@ func AttachPicker(state VisibleRenderState, picker *modal.PickerState) VisibleRe
 
 func AttachWorkspacePicker(state VisibleRenderState, picker *modal.WorkspacePickerState) VisibleRenderState {
 	return WithOverlayWorkspacePicker(state, picker)
-}
-
-func AttachTerminalManager(state VisibleRenderState, manager *modal.TerminalManagerState) VisibleRenderState {
-	state.Overlay = VisibleOverlay{
-		Kind:            VisibleOverlayTerminalManager,
-		TerminalManager: manager,
-	}
-	return state
 }
 
 func AttachTerminalPool(state VisibleRenderState, pool *modal.TerminalManagerState) VisibleRenderState {
@@ -235,10 +225,5 @@ func WithCopyMode(state VisibleRenderState, paneID string, cursorRow, cursorCol 
 	state.CopyModeMarkSet = markSet
 	state.CopyModeMarkRow = markRow
 	state.CopyModeMarkCol = markCol
-	return state
-}
-
-func WithCopyModeSnapshot(state VisibleRenderState, snapshot *protocol.Snapshot) VisibleRenderState {
-	state.CopyModeSnapshot = snapshot
 	return state
 }

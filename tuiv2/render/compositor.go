@@ -67,69 +67,6 @@ type composedCanvas struct {
 	currentOwner uint32
 }
 
-func (c *composedCanvas) shiftRowsUp(shift int) {
-	if c == nil || shift <= 0 || shift >= c.height {
-		return
-	}
-	droppedCells := append([][]drawCell(nil), c.cells[:shift]...)
-	droppedCache := append([]string(nil), c.rowCache[:shift]...)
-	droppedDirty := append([]bool(nil), c.rowDirty[:shift]...)
-	droppedMin := append([]int(nil), c.rowDirtyMin[:shift]...)
-	droppedMax := append([]int(nil), c.rowDirtyMax[:shift]...)
-	droppedChunks := append([][]string(nil), c.rowChunks[:shift]...)
-
-	copy(c.cells, c.cells[shift:])
-	copy(c.rowCache, c.rowCache[shift:])
-	copy(c.rowDirty, c.rowDirty[shift:])
-	copy(c.rowDirtyMin, c.rowDirtyMin[shift:])
-	copy(c.rowDirtyMax, c.rowDirtyMax[shift:])
-	copy(c.rowChunks, c.rowChunks[shift:])
-
-	for i := 0; i < shift; i++ {
-		target := c.height - shift + i
-		c.cells[target] = droppedCells[i]
-		c.rowCache[target] = droppedCache[i]
-		c.rowDirty[target] = droppedDirty[i]
-		c.rowDirtyMin[target] = droppedMin[i]
-		c.rowDirtyMax[target] = droppedMax[i]
-		c.rowChunks[target] = droppedChunks[i]
-		c.resetRowToBlank(target)
-	}
-	c.fullCache = ""
-	c.fullDirty = true
-}
-
-func (c *composedCanvas) shiftRowsDown(shift int) {
-	if c == nil || shift <= 0 || shift >= c.height {
-		return
-	}
-	droppedCells := append([][]drawCell(nil), c.cells[c.height-shift:]...)
-	droppedCache := append([]string(nil), c.rowCache[c.height-shift:]...)
-	droppedDirty := append([]bool(nil), c.rowDirty[c.height-shift:]...)
-	droppedMin := append([]int(nil), c.rowDirtyMin[c.height-shift:]...)
-	droppedMax := append([]int(nil), c.rowDirtyMax[c.height-shift:]...)
-	droppedChunks := append([][]string(nil), c.rowChunks[c.height-shift:]...)
-
-	copy(c.cells[shift:], c.cells[:c.height-shift])
-	copy(c.rowCache[shift:], c.rowCache[:c.height-shift])
-	copy(c.rowDirty[shift:], c.rowDirty[:c.height-shift])
-	copy(c.rowDirtyMin[shift:], c.rowDirtyMin[:c.height-shift])
-	copy(c.rowDirtyMax[shift:], c.rowDirtyMax[:c.height-shift])
-	copy(c.rowChunks[shift:], c.rowChunks[:c.height-shift])
-
-	for i := 0; i < shift; i++ {
-		c.cells[i] = droppedCells[i]
-		c.rowCache[i] = droppedCache[i]
-		c.rowDirty[i] = droppedDirty[i]
-		c.rowDirtyMin[i] = droppedMin[i]
-		c.rowDirtyMax[i] = droppedMax[i]
-		c.rowChunks[i] = droppedChunks[i]
-		c.resetRowToBlank(i)
-	}
-	c.fullCache = ""
-	c.fullDirty = true
-}
-
 func (c *composedCanvas) shiftRectRowsUp(rect workbench.Rect, shift int) {
 	if c == nil || shift <= 0 {
 		return
@@ -194,21 +131,6 @@ func (c *composedCanvas) shiftRectRowBand(rect workbench.Rect, startRow, endRow,
 	default:
 		return false
 	}
-}
-
-func (c *composedCanvas) resetRowToBlank(y int) {
-	if c == nil || y < 0 || y >= c.height {
-		return
-	}
-	blankRow := cachedBlankFillRow(c.width)
-	copy(c.cells[y], blankRow)
-	c.rowCache[y] = ""
-	if c.rowChunks[y] != nil {
-		clear(c.rowChunks[y])
-	}
-	c.rowDirty[y] = true
-	c.rowDirtyMin[y] = 0
-	c.rowDirtyMax[y] = c.width - 1
 }
 
 func blankDrawCell() drawCell {
@@ -754,11 +676,6 @@ func (c *composedCanvas) drawSnapshot(snapshot *protocol.Snapshot) {
 	c.drawSnapshotInRect(workbench.Rect{X: 0, Y: 0, W: c.width, H: c.height}, snapshot)
 }
 
-// drawSnapshotRect draws a snapshot within a specific rect (legacy compat).
-func (c *composedCanvas) drawSnapshotRect(rect workbench.Rect, snapshot *protocol.Snapshot) {
-	c.drawSnapshotInRect(rect, snapshot)
-}
-
 func (c *composedCanvas) String() string {
 	if c == nil {
 		return ""
@@ -918,10 +835,6 @@ func (c *composedCanvas) ensureRowCache() {
 		c.rowCache[y] = c.buildRowFromChunks(y)
 		c.clearRowDirty(y)
 	}
-}
-
-func (c *composedCanvas) compressibleBlankRun(y, startX int) int {
-	return c.compressibleBlankRunInRange(y, startX, c.width-1)
 }
 
 func (c *composedCanvas) compressibleBlankRunInRange(y, startX, endX int) int {
@@ -1184,19 +1097,6 @@ func cursorShapeANSI(shape string, blink bool) string {
 		}
 	}
 	return fmt.Sprintf("\x1b[%d q", code)
-}
-
-func (c *composedCanvas) setCursor(x, y int, shape string, blink bool) {
-	if c == nil || x < 0 || y < 0 || x >= c.width || y >= c.height {
-		c.clearCursor()
-		return
-	}
-	c.cursorPlaced = true
-	c.cursorVisible = true
-	c.cursorX = x
-	c.cursorY = y
-	c.cursorShape = shape
-	c.cursorBlink = blink
 }
 
 func (c *composedCanvas) setHiddenCursor(x, y int, shape string, blink bool) {

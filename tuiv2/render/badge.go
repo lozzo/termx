@@ -158,10 +158,6 @@ func findVisibleTerminal(runtimeState *VisibleRuntimeStateProxy, terminalID stri
 	return runtimeLookupForState(runtimeState).terminal(terminalID)
 }
 
-func paneBindingRole(runtimeState *VisibleRuntimeStateProxy, paneID string) string {
-	return runtimeLookupForState(runtimeState).paneRole(paneID)
-}
-
 func runtimeLookupForState(runtimeState *VisibleRuntimeStateProxy) runtimeLookup {
 	return newRuntimeLookup(runtimeState)
 }

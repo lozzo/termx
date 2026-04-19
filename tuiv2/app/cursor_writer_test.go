@@ -3936,6 +3936,166 @@ func TestOutputCursorWriterFrameLinesPathStreamingWideFloatingPaneMatchesFinalSc
 	assertScreenEqual(t, got, want)
 }
 
+func TestOutputCursorWriterFrameLinesPathSideBySideNvimScrollMatchesFinalScreen(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	buildModel := func(start int) *Model {
+		t.Helper()
+		wb := workbench.NewWorkbench()
+		wb.AddWorkspace("main", &workbench.WorkspaceState{
+			Name:      "main",
+			ActiveTab: 0,
+			Tabs: []*workbench.TabState{{
+				ID:           "tab-1",
+				Name:         "tab 1",
+				ActivePaneID: "pane-1",
+				Panes: map[string]*workbench.PaneState{
+					"pane-1": {ID: "pane-1", Title: "nvim", TerminalID: "term-nvim"},
+					"pane-2": {ID: "pane-2", Title: "notes", TerminalID: "term-notes"},
+				},
+				Root: &workbench.LayoutNode{
+					Direction: workbench.SplitVertical,
+					Ratio:     0.5,
+					First:     workbench.NewLeaf("pane-1"),
+					Second:    workbench.NewLeaf("pane-2"),
+				},
+			}},
+		})
+
+		rt := runtime.New(&recordingBridgeClient{
+			attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+			snapshotByTerminal: map[string]*protocol.Snapshot{},
+		})
+		nvimTerm := rt.Registry().GetOrCreate("term-nvim")
+		nvimTerm.Name = "nvim"
+		nvimTerm.State = "running"
+		nvimTerm.Channel = 1
+		nvimTerm.Snapshot = cursorWriterNvimScrollingSnapshot("term-nvim", 58, 30, start, "#444444")
+		nvimBinding := rt.BindPane("pane-1")
+		nvimBinding.Channel = 1
+		nvimBinding.Connected = true
+
+		notesTerm := rt.Registry().GetOrCreate("term-notes")
+		notesTerm.Name = "notes"
+		notesTerm.State = "running"
+		notesTerm.Channel = 2
+		notesTerm.Snapshot = cursorWriterDenseTextSnapshot("term-notes", 58, 30, 91)
+		notesBinding := rt.BindPane("pane-2")
+		notesBinding.Channel = 2
+		notesBinding.Connected = true
+
+		model := New(shared.Config{}, wb, rt)
+		model.width = 120
+		model.height = 36
+		return model
+	}
+
+	captureFrames := func(model *Model, starts []int) ([]renderFrameLines, localvterm.ScreenData) {
+		t.Helper()
+		frames := make([]renderFrameLines, 0, len(starts)+1)
+		frames = append(frames, captureRenderFrameLines(t, model))
+		terminal := model.runtime.Registry().Get("term-nvim")
+		if terminal == nil {
+			t.Fatal("expected nvim terminal")
+		}
+		for _, start := range starts {
+			terminal.Snapshot = cursorWriterNvimScrollingSnapshot("term-nvim", 58, 30, start, "#444444")
+			touchRuntimeVisibleStateForTest(model.runtime, uint8(start))
+			frames = append(frames, captureRenderFrameLines(t, model))
+		}
+		return frames, replayCursorWriterRenderFrames(t, 120, 36, frames)
+	}
+
+	gotFrames, got := captureFrames(buildModel(0), []int{1, 2, 3, 4, 5, 6, 7, 8})
+	if len(gotFrames) == 0 {
+		t.Fatal("expected captured frames")
+	}
+	wantFrames, want := captureFrames(buildModel(8), nil)
+	if len(wantFrames) != 1 {
+		t.Fatalf("expected one final frame, got %d", len(wantFrames))
+	}
+	assertScreenEqual(t, got, want)
+}
+
+func TestOutputCursorWriterFrameLinesPathSharedFloatingNvimScrollMatchesFinalScreen(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	for _, ownerPaneID := range []string{"pane-1", "float-1"} {
+		t.Run(ownerPaneID, func(t *testing.T) {
+			buildModel := func(start int) *Model {
+				t.Helper()
+				model := setupModel(t, modelOpts{width: 120, height: 36})
+				tab := model.workbench.CurrentTab()
+				if tab == nil {
+					t.Fatal("expected current tab")
+				}
+				if err := model.workbench.BindPaneTerminal(tab.ID, "pane-1", "term-shared"); err != nil {
+					t.Fatalf("bind shared terminal to pane-1: %v", err)
+				}
+				if err := model.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 18, Y: 12, W: 34, H: 10}); err != nil {
+					t.Fatalf("create floating pane: %v", err)
+				}
+				if err := model.workbench.BindPaneTerminal(tab.ID, "float-1", "term-shared"); err != nil {
+					t.Fatalf("bind shared floating terminal: %v", err)
+				}
+
+				terminal := model.runtime.Registry().GetOrCreate("term-shared")
+				terminal.Name = "shared"
+				terminal.State = "running"
+				terminal.Channel = 1
+				terminal.OwnerPaneID = ownerPaneID
+				terminal.BoundPaneIDs = []string{"pane-1", "float-1"}
+				terminal.Snapshot = cursorWriterNvimScrollingSnapshot("term-shared", 18, 10, start, "#444444")
+
+				ownerBinding := model.runtime.BindPane(ownerPaneID)
+				ownerBinding.Channel = 1
+				ownerBinding.Connected = true
+				ownerBinding.Role = runtime.BindingRoleOwner
+
+				followerID := "pane-1"
+				if ownerPaneID == "pane-1" {
+					followerID = "float-1"
+				}
+				followerBinding := model.runtime.BindPane(followerID)
+				followerBinding.Channel = 2
+				followerBinding.Connected = true
+				followerBinding.Role = runtime.BindingRoleFollower
+				return model
+			}
+
+			captureFrames := func(model *Model, starts []int) ([]renderFrameLines, localvterm.ScreenData) {
+				t.Helper()
+				frames := make([]renderFrameLines, 0, len(starts)+1)
+				frames = append(frames, captureRenderFrameLines(t, model))
+				terminal := model.runtime.Registry().Get("term-shared")
+				if terminal == nil {
+					t.Fatal("expected shared terminal")
+				}
+				for _, start := range starts {
+					terminal.Snapshot = cursorWriterNvimScrollingSnapshot("term-shared", 18, 10, start, "#444444")
+					touchRuntimeVisibleStateForTest(model.runtime, uint8(start))
+					frames = append(frames, captureRenderFrameLines(t, model))
+				}
+				return frames, replayCursorWriterRenderFrames(t, 120, 36, frames)
+			}
+
+			gotFrames, got := captureFrames(buildModel(0), []int{1, 2, 3, 4, 5, 6, 7, 8})
+			if len(gotFrames) == 0 {
+				t.Fatal("expected captured frames")
+			}
+			wantFrames, want := captureFrames(buildModel(8), nil)
+			if len(wantFrames) != 1 {
+				t.Fatalf("expected one final frame, got %d", len(wantFrames))
+			}
+			assertScreenEqual(t, got, want)
+		})
+	}
+}
+
 func cursorWriterStyledSnapshot(terminalID string, cols, rows int) *protocol.Snapshot {
 	if cols <= 0 {
 		cols = 1
@@ -4024,6 +4184,47 @@ func cursorWriterNvimLikeSnapshot(terminalID string, cols, rows int, bg string) 
 		Size:       protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
 		Screen:     protocol.ScreenData{Cells: screen},
 		Cursor:     protocol.CursorState{Row: 0, Col: 0, Visible: true},
+		Modes:      protocol.TerminalModes{AlternateScreen: true, MouseTracking: true, BracketedPaste: true},
+	}
+}
+
+func cursorWriterNvimScrollingSnapshot(terminalID string, cols, rows, start int, bg string) *protocol.Snapshot {
+	if cols <= 0 {
+		cols = 1
+	}
+	if rows <= 0 {
+		rows = 1
+	}
+	screen := make([][]protocol.Cell, 0, rows)
+	for y := 0; y < rows; y++ {
+		label := "line " + strconv.Itoa(start+y+1)
+		row := make([]protocol.Cell, 0, cols)
+		for x := 0; x < cols; x++ {
+			cell := protocol.Cell{
+				Content: " ",
+				Width:   1,
+				Style:   protocol.CellStyle{BG: bg},
+			}
+			switch {
+			case y == 0 && x < len(label):
+				cell.Content = string(label[x])
+				cell.Style.FG = "#ffffff"
+			case y > 0 && x == 0:
+				cell.Content = "~"
+				cell.Style.FG = "#4f5258"
+			case y == rows-1 && x > cols-12 && x < cols-3:
+				cell.Content = string("SCROLL"[minInt(5, x-(cols-11))])
+				cell.Style.FG = "#94a3b8"
+			}
+			row = append(row, cell)
+		}
+		screen = append(screen, row)
+	}
+	return &protocol.Snapshot{
+		TerminalID: terminalID,
+		Size:       protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
+		Screen:     protocol.ScreenData{Cells: screen},
+		Cursor:     protocol.CursorState{Row: minInt(rows-1, 1), Col: minInt(cols-1, 8), Visible: true},
 		Modes:      protocol.TerminalModes{AlternateScreen: true, MouseTracking: true, BracketedPaste: true},
 	}
 }
@@ -4296,6 +4497,40 @@ func replayCursorWriterLineScreenWithMeta(t *testing.T, width, height int, frame
 	vt := localvterm.New(width, height, 0, nil)
 	if _, err := vt.Write([]byte(stream)); err != nil {
 		t.Fatalf("replay stream into host vterm: %v", err)
+	}
+	return vt.ScreenContent()
+}
+
+type renderFrameLines struct {
+	lines []string
+	meta  *presentMeta
+}
+
+func captureRenderFrameLines(t *testing.T, model *Model) renderFrameLines {
+	t.Helper()
+	model.render.Invalidate()
+	result := model.render.Render()
+	return renderFrameLines{
+		lines: append([]string(nil), result.Lines...),
+		meta:  presentMetaFromRender(result.Meta),
+	}
+}
+
+func replayCursorWriterRenderFrames(t *testing.T, width, height int, frames []renderFrameLines) localvterm.ScreenData {
+	t.Helper()
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	for _, frame := range frames {
+		if err := writer.WriteFrameLinesWithMeta(frame.lines, "", frame.meta); err != nil {
+			t.Fatalf("write render frame lines with meta: %v", err)
+		}
+	}
+	sink.mu.Lock()
+	stream := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	vt := localvterm.New(width, height, 0, nil)
+	if _, err := vt.Write([]byte(stream)); err != nil {
+		t.Fatalf("replay render frame stream: %v", err)
 	}
 	return vt.ScreenContent()
 }

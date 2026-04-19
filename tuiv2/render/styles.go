@@ -215,10 +215,6 @@ func uiThemeFromHostColors(hostBG, hostFG string, hostPalette map[int]string) ui
 	}
 }
 
-func backgroundStyle(bg string) lipgloss.Style {
-	return lipgloss.NewStyle().Background(lipgloss.Color(bg))
-}
-
 func workspaceLabelStyle(theme uiTheme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Bold(true).
@@ -270,13 +266,6 @@ func tabCloseStyle(theme uiTheme, active bool) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(fg)).
 		Background(lipgloss.Color(bg))
-}
-
-func statusChipStyle(theme uiTheme) lipgloss.Style {
-	return lipgloss.NewStyle().
-		Bold(true).
-		Padding(0, 1).
-		Background(lipgloss.Color(theme.chromeBG))
 }
 
 func statusHintKeyStyle(theme uiTheme) lipgloss.Style {

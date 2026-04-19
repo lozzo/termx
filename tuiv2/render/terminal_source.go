@@ -182,17 +182,6 @@ func (s surfaceRenderSource) RowView(rowIndex int) []localvterm.Cell {
 	return nil
 }
 
-func renderSourceRowMaxCol(source terminalRenderSource, rowIndex int) int {
-	row := source.Row(rowIndex)
-	if len(row) > 0 {
-		return len(row) - 1
-	}
-	if source == nil || source.Size().Cols == 0 {
-		return 0
-	}
-	return int(source.Size().Cols) - 1
-}
-
 func renderSourceCursorProjectionTarget(rect workbench.Rect, source terminalRenderSource) (cursorProjectionTarget, bool) {
 	if source == nil {
 		return cursorProjectionTarget{}, false

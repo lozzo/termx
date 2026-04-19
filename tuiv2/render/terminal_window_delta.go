@@ -294,20 +294,6 @@ func (p terminalWindowScrollPlan) wholeWindow(height int) bool {
 	return p.valid(height) && p.start == 0 && p.end == height-1
 }
 
-func (p terminalWindowScrollPlan) reusesLine(line int) bool {
-	if p.direction == terminalWindowScrollNone || line < 0 {
-		return false
-	}
-	switch p.direction {
-	case terminalWindowScrollUp:
-		return line >= p.start && line <= p.end-p.shift
-	case terminalWindowScrollDown:
-		return line >= p.start+p.shift && line <= p.end
-	default:
-		return false
-	}
-}
-
 func (p terminalWindowScrollPlan) sourceLineFor(line int) (int, bool) {
 	if p.direction == terminalWindowScrollNone || line < 0 {
 		return 0, false

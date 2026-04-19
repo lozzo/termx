@@ -209,7 +209,7 @@ func renderVMNeedsCursorBlink(vm RenderVM) bool {
 
 func overlayVMNeedsCursorBlink(overlay RenderOverlayVM) bool {
 	switch overlay.Kind {
-	case VisibleOverlayPrompt, VisibleOverlayPicker, VisibleOverlayWorkspacePicker, VisibleOverlayTerminalManager:
+	case VisibleOverlayPrompt, VisibleOverlayPicker, VisibleOverlayWorkspacePicker:
 		return true
 	default:
 		return false
@@ -246,7 +246,7 @@ func activeExitedPaneHasRecoverySelectionVM(vm RenderVM) bool {
 
 func overlayIsOpaque(overlay RenderOverlayVM) bool {
 	switch overlay.Kind {
-	case VisibleOverlayPrompt, VisibleOverlayPicker, VisibleOverlayWorkspacePicker, VisibleOverlayTerminalManager, VisibleOverlayHelp, VisibleOverlayFloatingOverview:
+	case VisibleOverlayPrompt, VisibleOverlayPicker, VisibleOverlayWorkspacePicker, VisibleOverlayHelp, VisibleOverlayFloatingOverview:
 		return true
 	default:
 		return false

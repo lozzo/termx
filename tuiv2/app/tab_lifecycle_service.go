@@ -22,19 +22,6 @@ func (m *Model) tabLifecycleService() *tabLifecycleService {
 	return &tabLifecycleService{model: m}
 }
 
-func (s *tabLifecycleService) closeCmd(tabID string, kill bool) tea.Cmd {
-	if s == nil || s.model == nil || s.model.workbench == nil || tabID == "" {
-		return nil
-	}
-	bindings, terminalIDs := s.snapshotTabBindings(tabID)
-	return func() tea.Msg {
-		if err := s.close(tabID, bindings, terminalIDs, kill); err != nil {
-			return err
-		}
-		return nil
-	}
-}
-
 func (s *tabLifecycleService) closeAndSaveCmd(tabID string, kill bool) tea.Cmd {
 	if s == nil || s.model == nil || s.model.workbench == nil || tabID == "" {
 		return nil

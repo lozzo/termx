@@ -95,16 +95,6 @@ func newRootCmd() *cobra.Command {
 	return cmd
 }
 
-func envBoolEnabled(key string) bool {
-	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
-	switch value {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
-}
-
 func daemonCommand(socket *string) *cobra.Command {
 	return &cobra.Command{
 		Use: "daemon",

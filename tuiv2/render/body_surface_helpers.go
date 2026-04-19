@@ -7,10 +7,6 @@ import (
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
-func renderEmptyWorkbenchBody(state VisibleRenderState, width, height int, kind emptyWorkbenchKind) renderedBody {
-	return renderEmptyWorkbenchBodyVM(RenderVMFromVisibleState(state), width, height, kind)
-}
-
 func renderEmptyWorkbenchBodyVM(vm RenderVM, width, height int, kind emptyWorkbenchKind) renderedBody {
 	canvas := newComposedCanvas(width, height)
 	canvas.hostEmojiVS16Mode = emojiVariationSelectorModeForRuntime(vm.Runtime)
@@ -64,10 +60,6 @@ func emojiVariationSelectorModeForRuntime(runtimeState *VisibleRuntimeStateProxy
 	default:
 		return shared.AmbiguousEmojiVariationSelectorStrip
 	}
-}
-
-func renderPageWithPinnedFooter(headerLines, contentLines []string, footerLine string, width, height int) string {
-	return strings.Join(renderPageLinesWithPinnedFooter(headerLines, contentLines, footerLine, width, height), "\n")
 }
 
 func renderPageLinesWithPinnedFooter(headerLines, contentLines []string, footerLine string, width, height int) []string {

@@ -31,7 +31,6 @@ func vmFromState(state VisibleRenderState) RenderVM {
 			Prompt:           state.Overlay.Prompt,
 			Picker:           state.Overlay.Picker,
 			WorkspacePicker:  state.Overlay.WorkspacePicker,
-			TerminalManager:  state.Overlay.TerminalManager,
 			Help:             state.Overlay.Help,
 			FloatingOverview: state.Overlay.FloatingOverview,
 		},
@@ -356,41 +355,6 @@ func TestOverlayHitRegionsWorkspacePickerFooterActionsExposeActionOrder(t *testi
 		}
 		if actionRegions[i].Rect != want.Rect {
 			t.Fatalf("expected workspace footer rect[%d]=%#v, got %#v", i, want.Rect, actionRegions[i].Rect)
-		}
-	}
-}
-
-func TestOverlayHitRegionsTerminalManagerFooterActionsExposeActionOrder(t *testing.T) {
-	state := VisibleRenderState{
-		TermSize: TermSize{Width: 140, Height: 30},
-		Overlay: VisibleOverlay{
-			Kind: VisibleOverlayTerminalManager,
-			TerminalManager: &modal.TerminalManagerState{
-				Items: []modal.PickerItem{
-					{TerminalID: "term-1", State: "running"},
-				},
-			},
-		},
-	}
-	regions := OverlayHitRegions(vmFromState(state))
-	actionRegions := collectRegionsByKind(regions, HitRegionOverlayFooterAction)
-	fullActions := []input.ActionKind{
-		input.ActionSubmitPrompt,
-		input.ActionAttachTab,
-		input.ActionAttachFloating,
-		input.ActionEditTerminal,
-		input.ActionKillTerminal,
-		input.ActionCancelMode,
-	}
-	layout := buildPickerCardLayout(140, FrameBodyHeight(30), 1, true)
-	_, expected := layoutOverlayFooterActions(terminalManagerFooterActionSpecs(), workbench.Rect{W: layout.innerWidth, H: 1})
-	wantActions := fullActions[:len(expected)]
-	if len(actionRegions) != len(wantActions) {
-		t.Fatalf("expected clipped terminal manager footer prefix of %d actions, got %#v", len(wantActions), actionRegions)
-	}
-	for index, region := range actionRegions {
-		if region.Action.Kind != wantActions[index] {
-			t.Fatalf("terminal manager footer action[%d]=%q, want %q", index, region.Action.Kind, wantActions[index])
 		}
 	}
 }

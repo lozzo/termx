@@ -84,10 +84,6 @@ func drawTerminalSourceWithOffsetAndMetrics(canvas *composedCanvas, rect workben
 	drawTerminalExtentHintsWithMetrics(canvas, rect, terminalExtentHintsView(source, totalRows), theme, hintMetrics)
 }
 
-func drawSnapshotRowInRect(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, rowIndex int, targetY int, theme uiTheme) {
-	drawTerminalSourceRowInRect(canvas, rect, renderSource(snapshot, nil), rowIndex, targetY, theme)
-}
-
 func drawTerminalSourceInRect(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource) {
 	if canvas == nil || source == nil || rect.W <= 0 || rect.H <= 0 {
 		return
@@ -136,10 +132,6 @@ func drawTerminalSourceRowInRectCleared(canvas *composedCanvas, rect workbench.R
 		}
 	}
 	canvas.drawProtocolRowInRectCleared(rect, targetY, source.Row(rowIndex))
-}
-
-func drawTerminalExtentHintsRow(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, targetY int, theme uiTheme) {
-	drawTerminalExtentHintsRowWithMetrics(canvas, rect, source, targetY, theme, terminalVisibleMetricsForSource(source))
 }
 
 func drawTerminalExtentHintsRowWithMetrics(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, targetY int, theme uiTheme, metrics renderTerminalMetrics) {
@@ -226,10 +218,6 @@ func terminalExtentHintsView(source terminalRenderSource, rows int) terminalRend
 	}
 }
 
-func drawSnapshotExtentHints(canvas *composedCanvas, rect workbench.Rect, snapshot *protocol.Snapshot, theme uiTheme) {
-	drawTerminalExtentHints(canvas, rect, renderSource(snapshot, nil), theme)
-}
-
 func drawTerminalExtentHints(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, theme uiTheme) {
 	drawTerminalExtentHintsWithMetrics(canvas, rect, source, theme, terminalVisibleMetricsForSource(source))
 }
@@ -265,8 +253,4 @@ func drawTerminalExtentHintsWithMetrics(canvas *composedCanvas, rect workbench.R
 			}
 		}
 	}
-}
-
-func renderTerminalMetricsForSnapshot(snapshot *protocol.Snapshot) renderTerminalMetrics {
-	return terminalVisibleMetricsForSource(renderSource(snapshot, nil))
 }

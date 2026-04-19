@@ -60,27 +60,6 @@ func workspacePickerFooterActionSpecs() []overlayFooterActionSpec {
 	)
 }
 
-func terminalManagerFooterActionSpecs() []overlayFooterActionSpec {
-	return modeFooterActionSpecs(
-		[]input.ActionKind{
-			input.ActionSubmitPrompt,
-			input.ActionAttachTab,
-			input.ActionAttachFloating,
-			input.ActionEditTerminal,
-			input.ActionKillTerminal,
-			input.ActionCancelMode,
-		},
-		map[input.ActionKind]string{
-			input.ActionSubmitPrompt:   "here",
-			input.ActionAttachTab:      "tab",
-			input.ActionAttachFloating: "float",
-			input.ActionEditTerminal:   "edit",
-			input.ActionKillTerminal:   "kill",
-			input.ActionCancelMode:     "close",
-		},
-	)
-}
-
 func promptFooterActionSpecs(prompt *modal.PromptState) []overlayFooterActionSpec {
 	paneID := ""
 	if prompt != nil {

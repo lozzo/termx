@@ -18,10 +18,6 @@ type interactionContinuousAccumulator struct {
 // tests, but the behavior is now shared with interaction batch compaction.
 type highFrequencyMouseAccumulator = interactionContinuousAccumulator
 
-func (a *interactionContinuousAccumulator) Empty() bool {
-	return a == nil || (a.latestMotion == nil && a.wheel == nil)
-}
-
 func (a *interactionContinuousAccumulator) Reset() {
 	if a == nil {
 		return

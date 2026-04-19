@@ -32,45 +32,6 @@ type terminalSourceWindowState struct {
 	screenWindow      bool
 }
 
-// drawPaneContent fills the interior of a pane with terminal snapshot content.
-func drawPaneContent(canvas *composedCanvas, rect workbench.Rect, pane workbench.VisiblePane, lookup runtimeLookup, scrollOffset int, active bool) {
-	if rect.W < 3 || rect.H < 3 {
-		return
-	}
-	contentRect := contentRectForPaneEdges(rect, pane.SharedLeft, pane.SharedTop)
-	// Clear the full framed interior, not just the terminal content rect. The
-	// reserved right gutter intentionally sits outside contentRect so that pane
-	// borders stay visually stable; if we only clear contentRect, stale border
-	// glyphs can survive in that gutter and reappear as duplicate right edges.
-	fillRect(canvas, interiorRectForPaneEdges(rect, pane.SharedLeft, pane.SharedTop), blankDrawCell())
-
-	if pane.TerminalID == "" {
-		drawEmptyPaneContent(canvas, contentRect, pane.ID, pane.TerminalID, defaultUITheme(), -1)
-		return
-	}
-
-	terminal := lookup.terminal(pane.TerminalID)
-	if terminal == nil {
-		drawEmptyPaneContent(canvas, contentRect, pane.ID, pane.TerminalID, defaultUITheme(), -1)
-		return
-	}
-	source := renderSource(terminal.Snapshot, terminal.Surface)
-	if source == nil || source.ScreenRows() == 0 {
-		canvas.drawText(contentRect.X, contentRect.Y, terminal.Name+" ["+terminal.State+"]", drawStyle{FG: defaultUITheme().panelMuted})
-		if terminal.State == "exited" {
-			drawExitedPaneRecoveryHints(canvas, contentRect, defaultUITheme(), -1, true)
-		}
-		return
-	}
-	drawTerminalSourceWithOffset(canvas, contentRect, source, scrollOffset, defaultUITheme())
-	if active {
-		projectPaneCursorSource(canvas, contentRect, source, scrollOffset)
-	}
-	if terminal.State == "exited" {
-		drawExitedPaneRecoveryHints(canvas, contentRect, defaultUITheme(), -1, true)
-	}
-}
-
 func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) {
 	resolved := resolvePaneContent(entry, runtimeState, false)
 	contentRect := resolved.contentRect
@@ -105,10 +66,6 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 func contentRectForPane(rect workbench.Rect) workbench.Rect {
 	content, _ := workbench.FramedPaneContentRect(rect, false, false)
 	return content
-}
-
-func interiorRectForPane(rect workbench.Rect) workbench.Rect {
-	return interiorRectForPaneEdges(rect, false, false)
 }
 
 func interiorRectForPaneEdges(rect workbench.Rect, sharedLeft, sharedTop bool) workbench.Rect {
@@ -342,10 +299,6 @@ func terminalSourceWindowRowIndex(source terminalRenderSource, height, offset, l
 	return rowIndex
 }
 
-func terminalSourceExtentHash(source terminalRenderSource, rect workbench.Rect, theme uiTheme) uint64 {
-	return terminalSourceExtentHashWithMetrics(source, rect, theme, terminalVisibleMetricsForSource(source))
-}
-
 func terminalSourceExtentHashWithMetrics(source terminalRenderSource, rect workbench.Rect, theme uiTheme, metrics renderTerminalMetrics) uint64 {
 	if source == nil || rect.W <= 0 || rect.H <= 0 {
 		return 0
@@ -477,28 +430,6 @@ func fnvMixString(hash uint64, value string) uint64 {
 		hash *= fnvPrime64
 	}
 	return hash
-}
-
-func drawPaneContentSpriteRow(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, rowIndex int, targetY int, theme uiTheme) {
-	drawPaneContentSpriteRowWithMetrics(canvas, nil, rect, source, rowIndex, targetY, theme, terminalVisibleMetricsForSource(source))
-}
-
-func drawPaneContentSpriteRowWithMetrics(canvas, scratch *composedCanvas, rect workbench.Rect, source terminalRenderSource, rowIndex int, targetY int, theme uiTheme, metrics renderTerminalMetrics) {
-	if canvas == nil || rect.W <= 0 || targetY < rect.Y || targetY >= rect.Y+rect.H {
-		return
-	}
-	fillRect(canvas, workbench.Rect{X: rect.X, Y: targetY, W: rect.W, H: 1}, blankDrawCell())
-	if source == nil {
-		return
-	}
-	if rowIndex >= 0 {
-		drawTerminalSourceRowInRectCleared(canvas, rect, source, rowIndex, targetY, theme)
-	}
-	drawTerminalExtentHintsRowWithMetrics(canvas, rect, source, targetY, theme, metrics)
-}
-
-func drawPaneContentSpriteRowDiff(canvas, scratch *composedCanvas, rect workbench.Rect, source terminalRenderSource, rowIndex int, targetY int, theme uiTheme) {
-	drawPaneContentSpriteRowDiffWithMetrics(canvas, scratch, rect, source, rowIndex, targetY, theme, terminalVisibleMetricsForSource(source))
 }
 
 func drawPaneContentSpriteRowDiffWithMetrics(canvas, scratch *composedCanvas, rect workbench.Rect, source terminalRenderSource, rowIndex int, targetY int, theme uiTheme, metrics renderTerminalMetrics) {

@@ -30,8 +30,13 @@ func (m *Model) View() string {
 	m.reconcileCopyModeContext()
 	if rowsWriter, ok := m.frameOut.(frameLinesWriter); ok {
 		if directWriter, ok := rowsWriter.(*outputCursorWriter); ok {
+			conservativeDiff := m.conservativeAltScreenDiffRequired()
 			mode, _ := m.verticalScrollOptimizationMode()
+			if conservativeDiff {
+				mode = verticalScrollModeNone
+			}
 			directWriter.SetVerticalScrollMode(mode)
+			directWriter.SetOwnerAwareDeltaEnabled(!conservativeDiff)
 			if result, ok := m.render.CachedRenderResult(); ok {
 				cursor := result.CursorSequence()
 				viewBytes = joinedLinesLen(result.Lines) + len(cursor)

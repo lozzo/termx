@@ -220,10 +220,6 @@ func drawPaneContentFromCacheRows(canvas *composedCanvas, cache *bodyRenderCache
 	fullBlitFinish(maxInt(1, interior.W*rowCount))
 }
 
-func drawPaneContentSprite(canvas *composedCanvas, entry paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) {
-	drawResolvedPaneContentSprite(canvas, entry, resolvePaneContent(entry, runtimeState, true))
-}
-
 func drawResolvedPaneContentSprite(canvas *composedCanvas, entry paneRenderEntry, resolved resolvedPaneContent) {
 	if canvas == nil {
 		return

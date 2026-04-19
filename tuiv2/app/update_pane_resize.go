@@ -46,11 +46,3 @@ func (m *Model) resizePendingPaneResizesCmd() tea.Cmd {
 	}
 	return service.resizePendingCmd()
 }
-
-func (m *Model) pendingPaneResizeSatisfied(paneID, terminalID string, rect workbench.Rect) bool {
-	service := m.layoutResizeService()
-	if service == nil {
-		return false
-	}
-	return service.pendingPaneResizeSatisfied(paneID, terminalID, rect)
-}

@@ -6,7 +6,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/render"
-	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -404,23 +403,6 @@ func (s *layoutResizeService) resizeCmdForAction(action input.SemanticAction) te
 	default:
 		return nil
 	}
-}
-
-func (s *layoutResizeService) bindingRole(paneID string) string {
-	if s == nil || s.model == nil || s.model.runtime == nil || paneID == "" {
-		return ""
-	}
-	if binding := s.model.runtime.Binding(paneID); binding != nil {
-		return string(binding.Role)
-	}
-	return ""
-}
-
-func (s *layoutResizeService) terminalControlStatus(terminalID string) runtime.TerminalControlStatus {
-	if s == nil || s.model == nil || s.model.runtime == nil || terminalID == "" {
-		return runtime.TerminalControlStatus{}
-	}
-	return s.model.runtime.TerminalControlStatus(terminalID)
 }
 
 func (s *layoutResizeService) handleLocalAction(action input.SemanticAction) (bool, tea.Cmd) {

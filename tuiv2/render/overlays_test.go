@@ -218,33 +218,6 @@ func TestRenderFloatingOverviewOverlayOmitsShortcutSlots(t *testing.T) {
 	}
 }
 
-func TestRenderTerminalManagerOverlayShowsSelectedTerminalDetails(t *testing.T) {
-	manager := &modal.TerminalManagerState{
-		Title:    "Terminal Manager",
-		Selected: 0,
-		Items: []modal.PickerItem{{
-			TerminalID:  "term-1",
-			Name:        "shell",
-			State:       "visible",
-			Command:     "bash -lc htop",
-			Location:    "main/tab 1/pane-1",
-			Observed:    true,
-			Description: "running · 1 pane bound",
-		}},
-	}
-	overlay := xansi.Strip(renderTerminalManagerOverlay(manager, TermSize{Width: 100, Height: 30}))
-	for _, want := range []string{"Terminal Manager", "term-1", "bash -lc htop", "main/tab 1/pane-1"} {
-		if !strings.Contains(overlay, want) {
-			t.Fatalf("terminal manager overlay missing %q:\n%s", want, overlay)
-		}
-	}
-	for _, want := range []string{"here", "tab", "float"} {
-		if !strings.Contains(overlay, want) {
-			t.Fatalf("expected terminal manager footer action %q:\n%s", want, overlay)
-		}
-	}
-}
-
 func TestPromptValueWithCursorKeepsRawValueForHostCursorProjection(t *testing.T) {
 	prompt := &modal.PromptState{Value: "shell"}
 	prompt.Cursor = 0

@@ -9,14 +9,6 @@ import (
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
-func renderHelpOverlay(help *modal.HelpState, termSize TermSize) string {
-	return strings.Join(renderHelpOverlayLinesWithTheme(help, termSize, defaultUITheme()), "\n")
-}
-
-func renderHelpOverlayWithTheme(help *modal.HelpState, termSize TermSize, theme uiTheme) string {
-	return strings.Join(renderHelpOverlayLinesWithTheme(help, termSize, theme), "\n")
-}
-
 func renderHelpOverlayLinesWithTheme(help *modal.HelpState, termSize TermSize, theme uiTheme) []string {
 	if help == nil {
 		return nil

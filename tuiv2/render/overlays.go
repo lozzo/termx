@@ -122,14 +122,6 @@ func compositeOverlay(body string, overlay string, _ TermSize) string {
 	return overlay
 }
 
-func renderPickerCard(title, query string, items []string, footer string, width, height int) string {
-	return renderPickerCardWithTheme(defaultUITheme(), title, query, items, footer, width, height)
-}
-
-func renderPickerCardWithTheme(theme uiTheme, title, header string, items []string, footer string, width, height int) string {
-	return strings.Join(renderPickerCardLinesWithTheme(theme, title, header, items, footer, width, height), "\n")
-}
-
 func renderPickerCardLinesWithTheme(theme uiTheme, title, header string, items []string, footer string, width, height int) []string {
 	layout := buildPickerCardLayout(width, height, len(items), strings.TrimSpace(footer) != "")
 
@@ -211,13 +203,6 @@ func pickerInnerWidth(termWidth int) int {
 	return maxInt(24, modalWidth-2)
 }
 
-func renderCardTitleRow(theme uiTheme, title string, innerWidth int) string {
-	return terminalPickerTitleStyle(theme).
-		Width(innerWidth).
-		MaxWidth(innerWidth).
-		Render(forceWidthANSIOverlay(title, innerWidth))
-}
-
 func renderCardHeaderRow(theme uiTheme, header string, innerWidth int) string {
 	if strings.TrimSpace(header) == "" {
 		return renderOverlaySpan(overlayCardFillStyle(theme), "", innerWidth)
@@ -251,10 +236,6 @@ func renderOverlaySearchLineWithCursor(theme uiTheme, query string, cursor int, 
 	return renderOverlaySpan(overlayCardFillStyle(theme), row, innerWidth)
 }
 
-func queryValueWithCursor(query string, cursor int, cursorSet bool) string {
-	return queryValueWithCursorVisible(query, cursor, cursorSet, true)
-}
-
 func queryValueWithCursorVisible(query string, cursor int, cursorSet bool, cursorVisible bool) string {
 	_ = cursor
 	_ = cursorSet
@@ -264,10 +245,6 @@ func queryValueWithCursorVisible(query string, cursor int, cursorSet bool, curso
 
 func renderOverlayFooterLine(theme uiTheme, footer string, innerWidth int) string {
 	return renderOverlaySpan(pickerFooterStyle(theme), footer, innerWidth)
-}
-
-func renderOverlayPromptField(theme uiTheme, prompt *modal.PromptState, innerWidth int) string {
-	return renderOverlayPromptFieldWithCursor(theme, prompt, innerWidth, true)
 }
 
 func renderOverlayPromptFieldWithCursor(theme uiTheme, prompt *modal.PromptState, innerWidth int, cursorVisible bool) string {
@@ -282,10 +259,6 @@ func renderOverlayPromptFieldWithCursor(theme uiTheme, prompt *modal.PromptState
 	return promptFieldMarkerStyle(theme, false).Render("  ") +
 		promptFieldLabelStyle(theme, true).Render(label) +
 		renderOverlayPromptValue(promptFieldValueStyle(theme, true), value, valueWidth)
-}
-
-func renderOverlayPromptFormField(theme uiTheme, prompt *modal.PromptState, fieldIndex int, innerWidth int) string {
-	return renderOverlayPromptFormFieldWithCursor(theme, prompt, fieldIndex, innerWidth, true)
 }
 
 func renderOverlayPromptFormFieldWithCursor(theme uiTheme, prompt *modal.PromptState, fieldIndex int, innerWidth int, cursorVisible bool) string {
@@ -393,16 +366,6 @@ func workspacePickerOverlayCursorTarget(picker *modal.WorkspacePickerState, term
 	return rect.X + valueCursorCellOffset(picker.Query, queryCursorIndex(picker.Query, picker.Cursor, picker.CursorSet), rect.W), rect.Y, true
 }
 
-func terminalManagerOverlayCursorTarget(manager *modal.TerminalManagerState, termSize TermSize) (int, int, bool) {
-	if manager == nil {
-		return 0, 0, false
-	}
-	width, height := overlayViewport(termSize)
-	layout := buildPickerCardLayout(width, height, len(manager.VisibleItems()), len(terminalManagerFooterActionSpecs()) > 0)
-	rect := pickerQueryRowRect(layout)
-	return rect.X + valueCursorCellOffset(manager.Query, queryCursorIndex(manager.Query, manager.Cursor, manager.CursorSet), rect.W), rect.Y, true
-}
-
 func renderOverlaySpan(style lipgloss.Style, value string, width int) string {
 	if width <= 0 {
 		return ""
@@ -434,48 +397,6 @@ func centerText(s string, width int) string {
 	left := (width - textWidth) / 2
 	right := width - textWidth - left
 	return strings.Repeat(" ", left) + s + strings.Repeat(" ", right)
-}
-
-func forceHeight(s string, height int) string {
-	lines := strings.Split(s, "\n")
-	if len(lines) >= height {
-		return strings.Join(lines[:height], "\n")
-	}
-	for len(lines) < height {
-		lines = append(lines, "")
-	}
-	return strings.Join(lines, "\n")
-}
-
-func padOverlayRight(text string, width int) string {
-	if lipgloss.Width(text) >= width {
-		return text
-	}
-	return text + strings.Repeat(" ", width-lipgloss.Width(text))
-}
-
-func padLines(lines []string, width int, height int) []string {
-	out := make([]string, 0, height)
-	for _, line := range lines {
-		out = append(out, padOverlayRight(line, width))
-	}
-	for len(out) < height {
-		out = append(out, strings.Repeat(" ", width))
-	}
-	if len(out) > height {
-		out = out[:height]
-	}
-	return out
-}
-
-func maxLineWidth(s string) int {
-	width := 0
-	for _, line := range strings.Split(s, "\n") {
-		if current := lipgloss.Width(line); current > width {
-			width = current
-		}
-	}
-	return width
 }
 
 func minInt(a, b int) int {

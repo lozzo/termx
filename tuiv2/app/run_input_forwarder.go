@@ -371,24 +371,6 @@ func (b *inputBurstState) PushKey(msg tea.KeyMsg) bool {
 	return true
 }
 
-func (b *inputBurstState) PushMouseWheel(msg tea.MouseMsg) bool {
-	if b == nil {
-		return false
-	}
-	if b.repeat == 0 {
-		mouse := msg
-		b.mouse = &mouse
-		b.key = nil
-		b.repeat = 1
-		return true
-	}
-	if b.mouse == nil || !sameTeaMouseMsg(*b.mouse, msg) {
-		return false
-	}
-	b.repeat++
-	return true
-}
-
 func (b *inputBurstState) Flush() (tea.Msg, bool) {
 	if b == nil || b.repeat == 0 {
 		return nil, false
@@ -425,14 +407,4 @@ func sameTeaKeyMsg(left, right tea.KeyMsg) bool {
 		}
 	}
 	return true
-}
-
-func sameTeaMouseMsg(left, right tea.MouseMsg) bool {
-	return left.X == right.X &&
-		left.Y == right.Y &&
-		left.Button == right.Button &&
-		left.Action == right.Action &&
-		left.Alt == right.Alt &&
-		left.Ctrl == right.Ctrl &&
-		left.Shift == right.Shift
 }

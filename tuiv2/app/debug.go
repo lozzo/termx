@@ -53,10 +53,6 @@ func appendDebugLogLine(path, event string, kv ...any) {
 	_, _ = file.WriteString(b.String())
 }
 
-func mouseDebugEnabled() bool {
-	return strings.TrimSpace(os.Getenv("TERMX_DEBUG_MOUSE_LOG")) != ""
-}
-
 func mouseDebugLogPath() string {
 	return strings.TrimSpace(os.Getenv("TERMX_DEBUG_MOUSE_LOG"))
 }

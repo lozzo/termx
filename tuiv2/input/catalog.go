@@ -240,36 +240,6 @@ func HelpSections() []HelpSectionDoc {
 	return sections
 }
 
-func StatusTextsForMode(mode ModeKind) []string {
-	out := make([]string, 0, 8)
-	seen := make(map[string]struct{})
-	for _, doc := range DefaultBindingCatalog() {
-		if doc.Mode != mode || strings.TrimSpace(doc.StatusText) == "" {
-			continue
-		}
-		if _, ok := seen[doc.StatusText]; ok {
-			continue
-		}
-		seen[doc.StatusText] = struct{}{}
-		out = append(out, doc.StatusText)
-	}
-	return out
-}
-
-func FooterForMode(mode ModeKind, includeFilter bool) string {
-	parts := make([]string, 0, 8)
-	if includeFilter {
-		parts = append(parts, "[type] filter")
-	}
-	for _, doc := range DefaultBindingCatalog() {
-		if doc.Mode != mode || strings.TrimSpace(doc.FooterText) == "" || strings.TrimSpace(doc.KeyLabel) == "" {
-			continue
-		}
-		parts = append(parts, "["+doc.KeyLabel+"] "+doc.FooterText)
-	}
-	return strings.Join(parts, "  ")
-}
-
 func helpBindingsForGroup(group string) []HelpBindingDoc {
 	out := make([]HelpBindingDoc, 0, 8)
 	seen := make(map[string]struct{})

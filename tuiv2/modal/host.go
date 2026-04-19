@@ -5,7 +5,6 @@ import "github.com/lozzow/termx/tuiv2/input"
 type ModalHost struct {
 	Session          *ModalSession
 	Picker           *PickerState
-	TerminalManager  *TerminalManagerState
 	Prompt           *PromptState
 	Help             *HelpState
 	WorkspacePicker  *WorkspacePickerState

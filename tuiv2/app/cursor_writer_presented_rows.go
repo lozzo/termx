@@ -329,49 +329,6 @@ func writeBuilderInt(out *strings.Builder, value int) {
 	_, _ = out.Write(buf)
 }
 
-func (s presentedStyle) ansi() string {
-	presentedStyleCache.mu.RLock()
-	cached, ok := presentedStyleCache.m[s]
-	presentedStyleCache.mu.RUnlock()
-	if ok {
-		return cached
-	}
-	var b strings.Builder
-	b.WriteString("\x1b[0")
-	if s.FGCode != "" {
-		b.WriteByte(';')
-		b.WriteString(s.FGCode)
-	}
-	if s.BGCode != "" {
-		b.WriteByte(';')
-		b.WriteString(s.BGCode)
-	}
-	if s.Bold {
-		b.WriteString(";1")
-	}
-	if s.Italic {
-		b.WriteString(";3")
-	}
-	if s.Underline {
-		b.WriteString(";4")
-	}
-	if s.Blink {
-		b.WriteString(";5")
-	}
-	if s.Reverse {
-		b.WriteString(";7")
-	}
-	if s.Strikethrough {
-		b.WriteString(";9")
-	}
-	b.WriteByte('m')
-	ansi := b.String()
-	presentedStyleCache.mu.Lock()
-	presentedStyleCache.m[s] = ansi
-	presentedStyleCache.mu.Unlock()
-	return ansi
-}
-
 type presentedStyleTransitionKey struct {
 	From presentedStyle
 	To   presentedStyle

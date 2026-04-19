@@ -1,8 +1,6 @@
 package app
 
 import (
-	"unicode/utf8"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -205,19 +203,6 @@ func (m *Model) handleTerminalManagerQueryKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd)
 	normalizeModalSelection(&m.terminalPage.Selected, len(m.terminalPage.VisibleItems()))
 	m.revealCursorAndInvalidate()
 	return true, nil
-}
-
-func deleteLastRune(value *string) bool {
-	if value == nil || *value == "" {
-		return false
-	}
-	_, size := utf8.DecodeLastRuneInString(*value)
-	if size > 0 {
-		*value = (*value)[:len(*value)-size]
-	} else {
-		*value = ""
-	}
-	return true
 }
 
 func queryCursor(value *string, cursor *int, cursorSet *bool) int {

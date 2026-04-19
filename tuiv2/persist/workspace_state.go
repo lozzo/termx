@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"sort"
 
 	"github.com/lozzow/termx/tuiv2/shared"
@@ -213,20 +212,4 @@ func exportLayout(node *workbench.LayoutNode) *LayoutNodeEntry {
 		entry.Direction = string(node.Direction)
 	}
 	return entry
-}
-
-func cloneStrings(values []string) []string {
-	if len(values) == 0 {
-		return nil
-	}
-	return append([]string(nil), values...)
-}
-
-func cloneStringMap(values map[string]string) map[string]string {
-	if len(values) == 0 {
-		return nil
-	}
-	cloned := make(map[string]string, len(values))
-	maps.Copy(cloned, values)
-	return cloned
 }

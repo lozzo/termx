@@ -34,10 +34,6 @@ func DefaultPaneChromeGlyphs() PaneChromeGlyphs {
 	return defaultPaneChromeGlyphs
 }
 
-func ActivePaneChromeGlyphs() PaneChromeGlyphs {
-	return paneChromeGlyphs
-}
-
 func SetPaneChromeGlyphs(glyphs PaneChromeGlyphs) {
 	next := defaultPaneChromeGlyphs
 	if glyphs.Zoom != "" {

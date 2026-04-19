@@ -28,7 +28,6 @@ type RenderOverlayVM struct {
 	Prompt           *modal.PromptState
 	Picker           *modal.PickerState
 	WorkspacePicker  *modal.WorkspacePickerState
-	TerminalManager  *modal.TerminalManagerState
 	Help             *modal.HelpState
 	FloatingOverview *modal.FloatingOverviewState
 }
@@ -74,10 +73,6 @@ type RenderCopyModeVM struct {
 	MarkRow    int
 	MarkCol    int
 	Snapshot   *protocol.Snapshot
-}
-
-func AdaptRenderVM(wb *workbench.Workbench, rt *runtime.Runtime) RenderVM {
-	return AdaptRenderVMWithSize(wb, rt, 0, 0)
 }
 
 func AdaptRenderVMWithSize(wb *workbench.Workbench, rt *runtime.Runtime, bodyWidth, bodyHeight int) RenderVM {
@@ -198,14 +193,6 @@ func AttachRenderWorkspacePicker(vm RenderVM, picker *modal.WorkspacePickerState
 	return vm
 }
 
-func AttachRenderTerminalManager(vm RenderVM, manager *modal.TerminalManagerState) RenderVM {
-	vm.Overlay = RenderOverlayVM{
-		Kind:            VisibleOverlayTerminalManager,
-		TerminalManager: manager,
-	}
-	return vm
-}
-
 func AttachRenderHelp(vm RenderVM, help *modal.HelpState) RenderVM {
 	vm.Overlay = RenderOverlayVM{
 		Kind: VisibleOverlayHelp,
@@ -243,7 +230,6 @@ func RenderVMFromVisibleState(state VisibleRenderState) RenderVM {
 			Prompt:           state.Overlay.Prompt,
 			Picker:           state.Overlay.Picker,
 			WorkspacePicker:  state.Overlay.WorkspacePicker,
-			TerminalManager:  state.Overlay.TerminalManager,
 			Help:             state.Overlay.Help,
 			FloatingOverview: state.Overlay.FloatingOverview,
 		},
@@ -297,7 +283,6 @@ func VisibleStateFromRenderVM(vm RenderVM) VisibleRenderState {
 			Prompt:           vm.Overlay.Prompt,
 			Picker:           vm.Overlay.Picker,
 			WorkspacePicker:  vm.Overlay.WorkspacePicker,
-			TerminalManager:  vm.Overlay.TerminalManager,
 			Help:             vm.Overlay.Help,
 			FloatingOverview: vm.Overlay.FloatingOverview,
 		},

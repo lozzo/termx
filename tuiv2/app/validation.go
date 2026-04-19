@@ -71,10 +71,6 @@ func (m *Model) terminalValidationSnapshot() ([]protocol.TerminalInfo, error) {
 	return snapshot, nil
 }
 
-func (m *Model) validateUniqueCurrentWorkspaceTabName(tabID, name string) error {
-	return m.validateUniqueWorkspaceTabName(m.workbench.CurrentWorkspaceName(), tabID, name)
-}
-
 func (m *Model) validateUniqueWorkspaceTabName(workspaceName, tabID, name string) error {
 	if m == nil || m.workbench == nil {
 		return nil

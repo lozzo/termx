@@ -10,8 +10,6 @@ import (
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
-const floatingOverviewModalID = "floating-overview"
-
 func (m *Model) openFloatingOverview() tea.Cmd {
 	if m == nil || m.modalHost == nil || m.workbench == nil {
 		return nil
@@ -171,11 +169,4 @@ func (m *Model) summonFloatingPaneByPaneID(paneID string) tea.Cmd {
 		return m.saveStateCmd()
 	}
 	return nil
-}
-
-func (m *Model) refreshFloatingOverviewAfterAction(paneID string) {
-	if m == nil || m.modalHost == nil || m.modalHost.Session == nil || m.modalHost.Session.Kind != input.ModeFloatingOverview {
-		return
-	}
-	m.refreshFloatingOverview(paneID)
 }

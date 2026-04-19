@@ -12,14 +12,6 @@ func renderPromptOverlay(prompt *modal.PromptState, termSize TermSize) string {
 	return strings.Join(renderPromptOverlayLinesWithThemeAndCursor(prompt, termSize, defaultUITheme(), true), "\n")
 }
 
-func renderPromptOverlayWithTheme(prompt *modal.PromptState, termSize TermSize, theme uiTheme) string {
-	return strings.Join(renderPromptOverlayLinesWithThemeAndCursor(prompt, termSize, theme, true), "\n")
-}
-
-func renderPromptOverlayWithThemeAndCursor(prompt *modal.PromptState, termSize TermSize, theme uiTheme, cursorVisible bool) string {
-	return strings.Join(renderPromptOverlayLinesWithThemeAndCursor(prompt, termSize, theme, cursorVisible), "\n")
-}
-
 func renderPromptOverlayLinesWithThemeAndCursor(prompt *modal.PromptState, termSize TermSize, theme uiTheme, cursorVisible bool) []string {
 	if prompt == nil {
 		return nil

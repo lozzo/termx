@@ -818,11 +818,6 @@ func (v *VTerm) setMode(mode ansi.Mode, enabled bool) {
 	}
 }
 
-func (v *VTerm) setMouseTrackingAggregateLocked(enabled bool) {
-	v.mouseMode = mouseModeState{normal: enabled}
-	v.syncMouseModesLocked()
-}
-
 func (v *VTerm) updateMouseTrackingLocked() {
 	v.syncMouseModesLocked()
 }
@@ -1437,10 +1432,6 @@ func (v *VTerm) scrollbackRowCountLocked() int {
 	return v.emu.ScrollbackLen()
 }
 
-func (v *VTerm) screenRowLocked(y int) []Cell {
-	return cloneCellSlice(v.screenRowViewLocked(y))
-}
-
 func (v *VTerm) screenRowViewLocked(y int) []Cell {
 	if v.emu == nil || y < 0 || y >= v.emu.Height() {
 		return nil
@@ -1457,10 +1448,6 @@ func (v *VTerm) screenRowViewLocked(y int) []Cell {
 	v.applyResizeBottomFillLocked(y, row)
 	v.screenRowCache[y] = row
 	return row
-}
-
-func (v *VTerm) scrollbackRowLocked(y int) []Cell {
-	return cloneCellSlice(v.scrollbackRowViewLocked(y))
 }
 
 func (v *VTerm) scrollbackRowViewLocked(y int) []Cell {
@@ -1585,23 +1572,6 @@ func (v *VTerm) screenRowTailBackgroundLocked(y, width int) string {
 		return cell.Style.BG
 	}
 	return ""
-}
-
-func (v *VTerm) rowNeedsResizeTailFillLocked(y int) bool {
-	if v == nil || v.emu == nil || y < 0 || y >= v.emu.Height() || v.resizeTailStartCol <= 0 {
-		return false
-	}
-	width := v.emu.Width()
-	if v.resizeTailStartCol >= width {
-		return false
-	}
-	for x := v.resizeTailStartCol; x < width; x++ {
-		cell := v.convertCell(v.emu.CellAt(x, y))
-		if cellNeedsResizeFill(cell) {
-			return true
-		}
-	}
-	return false
 }
 
 func (v *VTerm) applyResizeTailFillLocked(y int, row []Cell) {
@@ -1964,18 +1934,6 @@ func rowFingerprintIsBlank(row rowFingerprint) bool {
 	return row.blank
 }
 
-func rowsEqual(left, right []Cell) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for i := range left {
-		if left[i] != right[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func hashCellFingerprint(hash *uint64, cell *uv.Cell) bool {
 	content := ""
 	width := 0
@@ -2063,18 +2021,6 @@ func hashUint64(hash *uint64, value uint64) {
 	*hash *= rowFingerprintPrime64
 }
 
-func isBlankRow(row []Cell) bool {
-	for _, cell := range row {
-		if strings.TrimSpace(cell.Content) != "" {
-			return false
-		}
-		if cell.Style != (CellStyle{}) {
-			return false
-		}
-	}
-	return true
-}
-
 func cloneTimeSlice(values []time.Time) []time.Time {
 	if len(values) == 0 {
 		return nil
@@ -2153,13 +2099,6 @@ func tailStringSlice(values []string, trim int) []string {
 		return nil
 	}
 	return values[trim:]
-}
-
-func shouldAssignTimestampToScreenRow(row []Cell, rowIndex, cursorRow int) bool {
-	if !isBlankRow(row) {
-		return true
-	}
-	return rowIndex >= 0 && rowIndex <= cursorRow
 }
 
 func shouldAssignTimestampToRowFingerprint(row rowFingerprint, rowIndex, cursorRow int) bool {

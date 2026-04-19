@@ -3,7 +3,6 @@ package render
 import (
 	"strings"
 
-	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
@@ -57,42 +56,8 @@ func terminalPreviewLinesANSI(snapshot *protocol.Snapshot, surface runtime.Termi
 	return lines
 }
 
-func terminalPreviewSummaryLinesANSI(snapshot *protocol.Snapshot, surface runtime.TerminalSurface, runtimeState *VisibleRuntimeStateProxy, width, maxLines int) []string {
-	source := renderSource(snapshot, surface)
-	if source == nil || width <= 0 || maxLines <= 0 || source.ScreenRows() == 0 {
-		return []string{forceWidthANSIOverlay("(no live preview)", width)}
-	}
-	emojiMode := shared.AmbiguousEmojiVariationSelectorRaw
-	if runtimeState != nil {
-		emojiMode = runtimeState.HostEmojiVS16Mode
-	}
-	base := source.ScrollbackRows()
-	rows := make([]string, 0, source.ScreenRows())
-	for rowIndex := 0; rowIndex < source.ScreenRows(); rowIndex++ {
-		line := protocolPreviewRowANSITight(source.Row(base+rowIndex), width, emojiMode)
-		if strings.TrimSpace(xansi.Strip(line)) == "" {
-			continue
-		}
-		rows = append(rows, line)
-	}
-	if len(rows) == 0 {
-		return []string{forceWidthANSIOverlay("(no live preview)", width)}
-	}
-	if len(rows) > maxLines {
-		rows = rows[len(rows)-maxLines:]
-	}
-	return rows
-}
-
 func protocolPreviewRowANSI(row []protocol.Cell, width int, emojiMode shared.AmbiguousEmojiVariationSelectorMode) string {
 	return protocolRowANSIWithOptions(row, width, protocolRowANSIOptions{
-		emojiMode: emojiMode,
-	})
-}
-
-func protocolPreviewRowANSITight(row []protocol.Cell, width int, emojiMode shared.AmbiguousEmojiVariationSelectorMode) string {
-	return protocolRowANSIWithOptions(row, width, protocolRowANSIOptions{
-		tight:     true,
 		emojiMode: emojiMode,
 	})
 }

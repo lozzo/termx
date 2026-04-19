@@ -217,13 +217,6 @@ func suppressStatusHintsVM(vm RenderVM) bool {
 	return false
 }
 
-func renderStatusChip(theme uiTheme, label, bg, fg string) string {
-	return statusChipStyle(theme).
-		Foreground(lipgloss.Color(fg)).
-		Background(lipgloss.Color(bg)).
-		Render(label)
-}
-
 func renderStatusSep(theme uiTheme) string {
 	return statusSeparatorStyle(theme).Render(" • ")
 }

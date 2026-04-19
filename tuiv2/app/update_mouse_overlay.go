@@ -70,15 +70,12 @@ func (m *Model) handleOverlayMouseClick(vm render.RenderVM, x, y int) (bool, tea
 		default:
 			return true, m.dispatchOverlayRegionAction(region.Action)
 		}
-	case render.VisibleOverlayPrompt, render.VisibleOverlayHelp, render.VisibleOverlayTerminalManager:
+	case render.VisibleOverlayPrompt, render.VisibleOverlayHelp:
 		if region.Kind == render.HitRegionOverlayDismiss {
 			return true, m.cancelActiveModal()
 		}
 		if vm.Overlay.Kind == render.VisibleOverlayPrompt && region.Kind == render.HitRegionPromptInput {
 			return true, m.handlePromptInputMouseClick(region, x)
-		}
-		if vm.Overlay.Kind == render.VisibleOverlayTerminalManager && region.Kind == render.HitRegionOverlayQueryInput {
-			return true, m.handleOverlayQueryInputMouseClick(region, overlayQueryTerminalManager, x)
 		}
 		return true, m.dispatchOverlayRegionAction(region.Action)
 	default:
@@ -103,12 +100,6 @@ func (m *Model) handleOverlayMouseWheel(vm render.RenderVM, delta int) (bool, te
 	case render.VisibleOverlayFloatingOverview:
 		if m.modalHost != nil && m.modalHost.FloatingOverview != nil {
 			m.modalHost.FloatingOverview.Move(-delta)
-			m.render.Invalidate()
-		}
-		return true, nil
-	case render.VisibleOverlayTerminalManager:
-		if m.terminalPage != nil {
-			m.terminalPage.Move(-delta)
 			m.render.Invalidate()
 		}
 		return true, nil

@@ -75,18 +75,6 @@ func terminalSelectionState(item modal.PickerItem) string {
 	return strings.TrimSpace(item.State)
 }
 
-func appendUniqueValue(values []string, value string) []string {
-	if value == "" {
-		return values
-	}
-	for _, existing := range values {
-		if existing == value {
-			return values
-		}
-	}
-	return append(values, value)
-}
-
 func (m *Model) nextSequenceCmd(seq sequenceMsg) tea.Cmd {
 	if len(seq) == 0 {
 		return nil
@@ -125,14 +113,6 @@ func (m *Model) restartPaneTerminalCmd(paneID, terminalID string) tea.Cmd {
 		return nil
 	}
 	return service.restartAndAttachCmd(paneID, terminalID)
-}
-
-func (m *Model) finalizeTerminalAttachCmd(tabID, paneID, terminalID string) tea.Cmd {
-	service := m.terminalAttachService()
-	if service == nil {
-		return nil
-	}
-	return service.finalizeAttachCmd(tabID, paneID, terminalID)
 }
 
 func (m *Model) reattachRestoredPanesCmd(hints []bootstrap.PaneReattachHint) tea.Cmd {
@@ -238,21 +218,6 @@ func (m *Model) resizePaneIfNeededCmd(paneID string) tea.Cmd {
 		return nil
 	}
 	return service.resizePaneIfNeededCmd(paneID)
-}
-
-func (m *Model) resizeActivePaneIfNeededCmd() tea.Cmd {
-	return m.resizePaneIfNeededCmd("")
-}
-
-func (m *Model) syncActivePaneInteractiveOwnershipCmd() tea.Cmd {
-	return m.syncTerminalInteractionCmd(terminalInteractionRequest{
-		ResizeIfNeeded:           true,
-		ImplicitInteractiveOwner: true,
-	})
-}
-
-func (m *Model) syncActivePaneOwnershipAndResizeCmd() tea.Cmd {
-	return m.syncTerminalInteractionCmd(terminalInteractionRequest{ResizeIfNeeded: true})
 }
 
 func (m *Model) syncActivePaneTabSwitchTakeoverCmd() tea.Cmd {

@@ -36,8 +36,6 @@ func OverlayHitRegions(vm RenderVM) []HitRegion {
 		return helpOverlayHitRegions(vm.Overlay.Help, width, height)
 	case VisibleOverlayPrompt:
 		return promptOverlayHitRegions(vm.Overlay.Prompt, width, height)
-	case VisibleOverlayTerminalManager:
-		return terminalManagerOverlayHitRegions(vm.Overlay.TerminalManager, width, height)
 	case VisibleOverlayFloatingOverview:
 		return floatingOverviewOverlayHitRegions(vm.Overlay.FloatingOverview, width, height)
 	default:
@@ -137,51 +135,6 @@ func workspacePickerOverlayHitRegions(picker *modal.WorkspacePickerState, width,
 	}
 	if selected := picker.SelectedItem(); selected != nil {
 		_, actions := layoutOverlayFooterActions(workbenchTreeActionSpecs(selected), layout.actionRowRect)
-		for _, action := range actions {
-			regions = append(regions, HitRegion{
-				Kind:   HitRegionOverlayFooterAction,
-				Rect:   action.Rect,
-				Action: action.Action,
-			})
-		}
-	}
-	return regions
-}
-
-func terminalManagerOverlayHitRegions(manager *modal.TerminalManagerState, width, height int) []HitRegion {
-	if manager == nil {
-		return nil
-	}
-	items := manager.VisibleItems()
-	footerSpecs := terminalManagerFooterActionSpecs()
-	layout := buildPickerCardLayout(width, height, len(items), len(footerSpecs) > 0)
-	card := pickerCardRect(layout)
-	regions := make([]HitRegion, 0, len(items)+len(footerSpecs)+5)
-	regions = append(regions, dismissRegions(card, width, layout.contentHeight)...)
-	regions = append(regions, HitRegion{
-		Kind: HitRegionOverlayQueryInput,
-		Rect: pickerQueryRowRect(layout),
-	})
-	rows := minInt(layout.listHeight, len(items))
-	for i := 0; i < rows; i++ {
-		regions = append(regions, HitRegion{
-			Kind:      HitRegionPickerItem,
-			ItemIndex: i,
-			Rect: workbench.Rect{
-				X: card.X + 1,
-				Y: layout.firstItemY + i,
-				W: layout.innerWidth,
-				H: 1,
-			},
-		})
-	}
-	if len(footerSpecs) > 0 {
-		_, actions := layoutOverlayFooterActions(footerSpecs, workbench.Rect{
-			X: card.X + 1,
-			Y: pickerFooterRowY(layout),
-			W: layout.innerWidth,
-			H: 1,
-		})
 		for _, action := range actions {
 			regions = append(regions, HitRegion{
 				Kind:   HitRegionOverlayFooterAction,

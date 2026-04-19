@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -183,50 +182,6 @@ func floatingContentExtent(snapshot *protocol.Snapshot) (int, int) {
 		}
 	}
 	return maxInt(2, cols), maxInt(2, rows)
-}
-
-func (m *Model) loadFloatingPaneSnapshot(paneID string) *protocol.Snapshot {
-	if m == nil || m.workbench == nil || m.runtime == nil {
-		return nil
-	}
-	tab := m.workbench.CurrentTab()
-	if tab == nil {
-		return nil
-	}
-	pane := tab.Panes[paneID]
-	if pane == nil || pane.TerminalID == "" {
-		return nil
-	}
-	terminal := m.runtime.Registry().Get(pane.TerminalID)
-	if terminal == nil {
-		return nil
-	}
-	if terminal.VTerm != nil && terminal.SnapshotVersion != terminal.SurfaceVersion {
-		m.runtime.RefreshSnapshotFromVTerm(pane.TerminalID)
-		terminal = m.runtime.Registry().Get(pane.TerminalID)
-	}
-	if terminal == nil {
-		return nil
-	}
-	return terminal.Snapshot
-}
-
-func (m *Model) refreshFloatingSnapshotForAutoFit(paneID string) tea.Cmd {
-	if m == nil || m.workbench == nil || m.runtime == nil {
-		return nil
-	}
-	tab := m.workbench.CurrentTab()
-	if tab == nil || paneID == "" {
-		return nil
-	}
-	pane := tab.Panes[paneID]
-	if pane == nil || pane.TerminalID == "" {
-		return nil
-	}
-	return func() tea.Msg {
-		_, _ = m.runtime.LoadSnapshot(context.Background(), pane.TerminalID, 0, defaultTerminalSnapshotScrollbackLimit)
-		return nil
-	}
 }
 
 func (m *Model) disableFloatingAutoFitForActionPane(paneID string) {

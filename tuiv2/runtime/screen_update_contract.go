@@ -121,10 +121,6 @@ func (r *Runtime) applyScreenUpdateContract(terminal *TerminalRuntime, terminalI
 	invalidateFinish(0)
 }
 
-func (r *Runtime) applyDecodedScreenUpdate(terminal *TerminalRuntime, terminalID string, update protocol.ScreenUpdate) {
-	r.applyDecodedScreenUpdateContract(terminal, terminalID, NewScreenUpdateContract(update))
-}
-
 func (r *Runtime) applyDecodedScreenUpdateContract(terminal *TerminalRuntime, terminalID string, contract ScreenUpdateContract) {
 	if r == nil || terminal == nil {
 		return

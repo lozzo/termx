@@ -518,19 +518,6 @@ func (b renderedBody) Content() string {
 	return strings.Join(b.lines, "\n")
 }
 
-func splitRenderedLines(frame string, dst []string) []string {
-	dst = dst[:0]
-	start := 0
-	for i := 0; i < len(frame); i++ {
-		if frame[i] != '\n' {
-			continue
-		}
-		dst = append(dst, frame[start:i])
-		start = i + 1
-	}
-	return append(dst, frame[start:])
-}
-
 func renderBodyFrameWithCoordinator(coordinator *Coordinator, state VisibleRenderState, width, height int) renderedBody {
 	return renderBodyFrameWithCoordinatorVM(coordinator, RenderVMFromVisibleState(state), width, height)
 }
@@ -548,15 +535,6 @@ func entriesOverlap(entries []paneRenderEntry) bool {
 			if rectsOverlap(entries[i].Rect, entries[j].Rect) {
 				return true
 			}
-		}
-	}
-	return false
-}
-
-func overlapsAnyRect(rect workbench.Rect, others []workbench.Rect) bool {
-	for _, other := range others {
-		if rectsOverlap(rect, other) {
-			return true
 		}
 	}
 	return false

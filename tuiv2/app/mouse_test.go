@@ -2612,19 +2612,6 @@ func terminalPoolFooterActionRegion(t *testing.T, m *Model, kind input.ActionKin
 	return render.HitRegion{}
 }
 
-func tabBarRegionByKind(t *testing.T, m *Model, kind render.HitRegionKind) render.HitRegion {
-	t.Helper()
-	vm := m.renderVM()
-	regions := render.TabBarHitRegions(vm)
-	for _, region := range regions {
-		if region.Kind == kind {
-			return region
-		}
-	}
-	t.Fatalf("expected tab bar region %q, got %#v", kind, regions)
-	return render.HitRegion{}
-}
-
 func visiblePaneChromeRegion(t *testing.T, m *Model, paneID string, kind render.HitRegionKind) render.HitRegion {
 	t.Helper()
 	region, ok := findVisiblePaneChromeRegion(m, paneID, kind)

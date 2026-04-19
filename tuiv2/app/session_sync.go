@@ -98,14 +98,6 @@ func (m *Model) acquireSessionLeaseAndResizeCmd(paneID, terminalID string) tea.C
 	})
 }
 
-func (m *Model) releaseSessionLeaseCmd(terminalID string) tea.Cmd {
-	service := m.sessionRuntimeService()
-	if service == nil {
-		return nil
-	}
-	return service.releaseLeaseCmd(terminalID)
-}
-
 func (m *Model) currentSessionLeases() []protocol.LeaseInfo {
 	if m == nil || len(m.sessionLeases) == 0 {
 		return nil

@@ -56,10 +56,6 @@ func renderTerminalPoolPageWithCursor(pool *modal.TerminalManagerState, runtimeS
 	return result
 }
 
-func renderTerminalPoolDetails(item *modal.PickerItem, runtimeState *VisibleRuntimeStateProxy, innerWidth int) []string {
-	return renderTerminalPoolDetailsWithLookup(item, runtimeLookupForState(runtimeState), innerWidth)
-}
-
 func renderTerminalPoolDetailsWithLookup(item *modal.PickerItem, lookup runtimeLookup, innerWidth int) []string {
 	if item == nil {
 		return nil

@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
@@ -859,30 +858,6 @@ func formatComparableLines(lines []string) string {
 
 func strconvQuoteInt(value int64) string {
 	return fmt.Sprintf("%d", value)
-}
-
-func cutDisplayColumns(text string, width int) string {
-	if width <= 0 || text == "" {
-		return ""
-	}
-	if utf8.ValidString(text) {
-		var b strings.Builder
-		used := 0
-		for _, r := range text {
-			cluster := string(r)
-			w := xansi.StringWidth(cluster)
-			if w <= 0 {
-				continue
-			}
-			if used+w > width {
-				break
-			}
-			b.WriteString(cluster)
-			used += w
-		}
-		return b.String()
-	}
-	return text
 }
 
 func sanitizeReplayStream(stream string) string {

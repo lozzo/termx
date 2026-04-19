@@ -151,22 +151,6 @@ func (m *Model) localScrollbackWheelCmd(paneID string, delta int) tea.Cmd {
 	return nil
 }
 
-func (m *Model) forwardTerminalWheelInputCmd(msg tea.MouseMsg, delta int) tea.Cmd {
-	in, ok := m.terminalWheelInputForMouseMsg(msg, delta, 1)
-	if !ok {
-		return nil
-	}
-	return terminalWheelInputCmd(in)
-}
-
-func (m *Model) forwardAlternateScreenWheelCmd(msg tea.MouseMsg, delta int) tea.Cmd {
-	in, ok := m.alternateScreenWheelInputForMouseMsg(msg, delta, 1)
-	if !ok {
-		return nil
-	}
-	return terminalWheelInputCmd(in)
-}
-
 func (m *Model) terminalWheelInputForMouseMsg(msg tea.MouseMsg, delta, repeat int) (input.TerminalInput, bool) {
 	if m == nil || m.workbench == nil {
 		return input.TerminalInput{}, false
@@ -224,14 +208,4 @@ func (m *Model) alternateScreenWheelInputForMouseMsg(msg tea.MouseMsg, delta, re
 		Repeat:         maxInt(1, repeat),
 		WheelDirection: delta,
 	}, true
-}
-
-func terminalWheelInputCmd(in input.TerminalInput) tea.Cmd {
-	if in.PaneID == "" || len(in.Data) == 0 || in.WheelDirection == 0 {
-		return nil
-	}
-	return func() tea.Msg {
-		in.Repeat = maxInt(1, in.Repeat)
-		return in
-	}
 }

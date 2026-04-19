@@ -56,25 +56,26 @@ type outputCursorWriter struct {
 	bubbleTeaRestore string
 	cursorProjected  bool
 
-	directAltScreen       bool
-	directMouseCell       bool
-	directBracketedPaste  bool
-	ttyWidth              int
-	lastTTYWidth          int
-	lastDirectCursor      string
-	lastFlushAt           time.Time
-	frameDumpPath         string
-	disableVerticalScroll bool
-	verticalScrollMode    verticalScrollMode
-	drainHook             func()
-	interactiveFlushHint  func() bool
-	backlogActive         atomic.Bool
-	adaptiveBatchLevel    uint8
-	adaptiveSlowStreak    uint8
-	adaptiveFastStreak    uint8
-	flushTimer            *time.Timer
-	flushTimerArmed       bool
-	perfSampleHook        func(string)
+	directAltScreen        bool
+	directMouseCell        bool
+	directBracketedPaste   bool
+	ttyWidth               int
+	lastTTYWidth           int
+	lastDirectCursor       string
+	lastFlushAt            time.Time
+	frameDumpPath          string
+	disableVerticalScroll  bool
+	disableOwnerAwareDelta bool
+	verticalScrollMode     verticalScrollMode
+	drainHook              func()
+	interactiveFlushHint   func() bool
+	backlogActive          atomic.Bool
+	adaptiveBatchLevel     uint8
+	adaptiveSlowStreak     uint8
+	adaptiveFastStreak     uint8
+	flushTimer             *time.Timer
+	flushTimerArmed        bool
+	perfSampleHook         func(string)
 }
 
 type pendingDirectFrame struct {
@@ -95,6 +96,7 @@ type framePresenter struct {
 	updates                            []presentedRowUpdate
 	ready                              bool
 	verticalScrollMode                 verticalScrollMode
+	ownerAwareDeltaEnabled             bool
 	fullWidthLines                     bool
 	debugFaultScrollDropRemainderEvery int
 	verticalScrollCount                int
@@ -140,13 +142,6 @@ var (
 	presentedCellPool       sync.Pool
 )
 
-var presentedStyleCache = struct {
-	mu sync.RWMutex
-	m  map[presentedStyle]string
-}{
-	m: make(map[presentedStyle]string),
-}
-
 var presentedStyleDiffCache = struct {
 	mu sync.RWMutex
 	m  map[presentedStyleTransitionKey]string
@@ -184,6 +179,7 @@ func (p *framePresenter) Reset() {
 	p.updates = nil
 	p.ready = false
 	p.verticalScrollMode = verticalScrollModeRowsAndRects
+	p.ownerAwareDeltaEnabled = true
 	p.fullWidthLines = false
 	p.verticalScrollCount = 0
 	p.meta = nil
@@ -226,7 +222,7 @@ func (p *framePresenter) presentLines(lines []string, meta *presentMeta) string 
 		p.meta = clonePresentMeta(meta)
 		return xansi.EraseEntireDisplay + strings.Join(lines, "\n")
 	}
-	if p.fullWidthLines && meta != nil && p.meta != nil && (shouldUseOwnerAwareDelta(meta) || shouldUseOwnerAwareDelta(p.meta)) {
+	if p.ownerAwareDeltaEnabled && p.fullWidthLines && meta != nil && p.meta != nil && (shouldUseOwnerAwareDelta(meta) || shouldUseOwnerAwareDelta(p.meta)) {
 		if payload := p.presentOwnerAwareDelta(lines, meta); payload != "" {
 			releasePresentedRows(p.parsed)
 			p.setLines(lines, true)
@@ -626,6 +622,7 @@ func (w *outputCursorWriter) enterDirectTerminal() error {
 	w.pending = pendingDirectFrame{}
 	w.presenter.Reset()
 	w.presenter.verticalScrollMode = w.effectiveVerticalScrollModeLocked()
+	w.presenter.ownerAwareDeltaEnabled = w.ownerAwareDeltaEnabledLocked()
 	w.lastTTYWidth = 0
 	w.lastDirectCursor = ""
 	w.stopFlushTimerLocked()
@@ -668,6 +665,7 @@ func (w *outputCursorWriter) exitDirectTerminal() error {
 		w.directAltScreen = false
 	}
 	w.presenter.Reset()
+	w.presenter.ownerAwareDeltaEnabled = w.ownerAwareDeltaEnabledLocked()
 	w.lastDirectCursor = ""
 	w.stopFlushTimerLocked()
 	w.mu.Unlock()
@@ -1074,6 +1072,7 @@ func newOutputCursorWriter(out io.Writer) *outputCursorWriter {
 		verticalScrollMode:    verticalScrollModeRowsAndRects,
 	}
 	writer.presenter.verticalScrollMode = writer.effectiveVerticalScrollModeLocked()
+	writer.presenter.ownerAwareDeltaEnabled = true
 	writer.presenter.debugFaultScrollDropRemainderEvery = parsePositiveIntEnv("TERMX_DEBUG_FAULT_SCROLL_DROP_REMAINDER_EVERY")
 	if tty, ok := out.(xterm.File); ok {
 		writer.tty = tty
@@ -1099,11 +1098,25 @@ func (w *outputCursorWriter) SetVerticalScrollMode(mode verticalScrollMode) {
 	w.mu.Unlock()
 }
 
+func (w *outputCursorWriter) SetOwnerAwareDeltaEnabled(enabled bool) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	w.disableOwnerAwareDelta = !enabled
+	w.presenter.ownerAwareDeltaEnabled = w.ownerAwareDeltaEnabledLocked()
+	w.mu.Unlock()
+}
+
 func (w *outputCursorWriter) effectiveVerticalScrollModeLocked() verticalScrollMode {
 	if w == nil || w.disableVerticalScroll {
 		return verticalScrollModeNone
 	}
 	return w.verticalScrollMode
+}
+
+func (w *outputCursorWriter) ownerAwareDeltaEnabledLocked() bool {
+	return w != nil && !w.disableOwnerAwareDelta
 }
 
 func (w *outputCursorWriter) SetPerfSampleHook(hook func(string)) {
@@ -1181,6 +1194,7 @@ func (w *outputCursorWriter) ResetFrameState() {
 	w.mu.Lock()
 	w.presenter.Reset()
 	w.presenter.verticalScrollMode = w.effectiveVerticalScrollModeLocked()
+	w.presenter.ownerAwareDeltaEnabled = w.ownerAwareDeltaEnabledLocked()
 	w.lastDirectCursor = ""
 	w.lastTTYWidth = 0
 	w.pending = pendingDirectFrame{}

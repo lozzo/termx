@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -48,8 +47,4 @@ func openLogFileLogger(explicit string) (*slog.Logger, func() error, string, err
 		return file.Close()
 	}
 	return logger, closeFn, path, nil
-}
-
-func discardLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
