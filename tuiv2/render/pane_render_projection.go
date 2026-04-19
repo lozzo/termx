@@ -171,8 +171,8 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 	switch {
 	case surface != nil:
 		// Live surfaces already publish a monotonically increasing version.
-		// Use that cheap invalidation signal here and leave visible-window row
-		// hashing to contentSprite()'s incremental path.
+		// Use that cheap invalidation signal as the content invalidation key for
+		// the next full final-frame compose.
 		contentVersion = surfaceVersion
 	case source != nil && contentRect.H > 0:
 		contentVersion = terminalSourceWindowSignature(source, contentRect.H, renderOffset)
