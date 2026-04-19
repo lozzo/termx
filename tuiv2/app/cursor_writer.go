@@ -114,8 +114,9 @@ type presentedRow struct {
 }
 
 type presentedRowUpdate struct {
-	row    int
-	parsed presentedRow
+	row     int
+	parsed  presentedRow
+	replace bool
 }
 
 type presentedCell struct {
@@ -223,54 +224,50 @@ func (p *framePresenter) presentLines(lines []string, meta *presentMeta) string 
 		p.meta = clonePresentMeta(meta)
 		return xansi.EraseEntireDisplay + strings.Join(lines, "\n")
 	}
-	if p.ownerAwareDeltaEnabled && p.fullWidthLines && meta != nil && p.meta != nil && (shouldUseOwnerAwareDelta(meta) || shouldUseOwnerAwareDelta(p.meta)) {
-		if payload := p.presentOwnerAwareDelta(lines, meta); payload != "" {
-			releasePresentedRows(p.parsed)
-			p.setLines(lines, true)
-			p.meta = clonePresentMeta(meta)
-			return payload
-		}
-	}
-	if p.verticalScrollMode.Enabled() {
-		if payload := p.presentVerticalScroll(lines); payload != "" {
-			releasePresentedRows(p.parsed)
-			p.setLines(lines, true)
-			p.meta = clonePresentMeta(meta)
-			return payload
-		}
-	}
-	payload, changedCount, updatedCount, updates, reclaim := p.renderChangedRows(lines)
-	if updatedCount == 0 {
+	plan := p.planFramePatch(lines, meta)
+	if plan.updatedCount == 0 {
+		p.updates = plan.updates[:0]
+		p.reclaim = plan.reclaim[:0]
 		p.meta = clonePresentMeta(meta)
 		return ""
+	}
+	if plan.mode != framePatchCandidateDiff {
+		releaseDiscardedPresentedRowUpdates(plan.baselineUpdates)
+		p.updates = plan.baselineUpdates[:0]
+		p.reclaim = plan.baselineReclaim[:0]
+		selectedPayload := p.selectedFramePatchPayload(plan)
+		fullLen := normalizedFrameLen(strings.Join(lines, "\n"))
+		if shouldCountFullRepaintAvoided(selectedPayload, fullLen, len(lines)) {
+			perftrace.Count("cursor_writer.present.mode.full_repaint_avoided", fullLen)
+		}
+		emitFramePatchMetrics(plan.metrics)
+		releasePresentedRows(p.parsed)
+		p.setLines(lines, true)
+		p.meta = clonePresentMeta(meta)
+		return selectedPayload
 	}
 	p.lines = append(p.lines[:0], lines...)
 	if p.scratchLines != nil {
 		p.scratchLines = p.scratchLines[:0]
 	}
-	for _, update := range updates {
+	for _, update := range plan.updates {
 		p.parsed[update.row] = update.parsed
 	}
-	p.updates = updates[:0]
-	releasePresentedCellSlices(reclaim)
-	if changedCount == 0 {
+	p.updates = plan.updates[:0]
+	p.reclaim = plan.reclaim[:0]
+	releasePresentedCellSlices(plan.reclaim)
+	if plan.changedCount == 0 {
 		perftrace.Count("cursor_writer.present.mode.no_change", 0)
 		p.meta = clonePresentMeta(meta)
 		return ""
 	}
-	fullLen := joinedLinesLen(lines)
-	if shouldFallbackToFullRepaint(payload, fullLen, len(lines), changedCount) {
-		perftrace.Count("cursor_writer.diff_full_repaint_fallback", fullLen)
-		perftrace.Count("cursor_writer.present.mode.full_repaint_threshold", fullLen)
-		p.meta = clonePresentMeta(meta)
-		return xansi.EraseEntireDisplay + strings.Join(lines, "\n")
-	}
-	if shouldCountFullRepaintAvoided(payload, fullLen, len(lines)) {
+	fullLen := normalizedFrameLen(strings.Join(lines, "\n"))
+	if shouldCountFullRepaintAvoided(plan.payload, fullLen, len(lines)) {
 		perftrace.Count("cursor_writer.present.mode.full_repaint_avoided", fullLen)
 	}
 	p.meta = clonePresentMeta(meta)
-	perftrace.Count("cursor_writer.present.mode.diff", changedCount)
-	return payload
+	perftrace.Count("cursor_writer.present.mode.diff", plan.changedCount)
+	return plan.payload
 }
 
 func joinedLinesLen(lines []string) int {
@@ -329,25 +326,30 @@ func (p *framePresenter) setLines(lines []string, resetParsed bool) {
 }
 
 func (p *framePresenter) presentVerticalScroll(lines []string) string {
+	return p.selectedFramePatchPayload(p.verticalScrollCandidate(lines))
+}
+
+func (p *framePresenter) verticalScrollCandidate(lines []string) framePatchCandidate {
 	if len(lines) < 6 || len(lines) != len(p.lines) {
-		return ""
+		return framePatchCandidate{}
 	}
+	best := framePatchCandidate{}
 	if p.verticalScrollMode.RowsAllowed() {
 		plan, ok := detectVerticalScrollPlan(p.lines, lines)
 		if ok {
 			afterScroll := applyVerticalScrollPlan(p.lines, plan)
-			remainder, changedCount := renderChangedRows(afterScroll, lines)
-			if changedCount < plan.reused {
-				var out strings.Builder
-				out.WriteString(renderVerticalScrollPlan(plan, len(lines)))
-				perftrace.Count("cursor_writer.present.mode.vertical_scroll_rows", plan.reused)
-				perftrace.Count("cursor_writer.present.mode.delta_rect_scroll_fullwidth", plan.reused)
-				p.verticalScrollCount++
-				if p.debugFaultScrollDropRemainderEvery > 0 && p.verticalScrollCount%p.debugFaultScrollDropRemainderEvery == 0 {
-					return out.String()
+			remainder, _ := renderChangedRows(afterScroll, lines)
+			prefix := renderVerticalScrollPlan(plan, len(lines))
+			if prefix != "" {
+				best = framePatchCandidate{
+					mode:         framePatchCandidateVerticalScrollRows,
+					payload:      prefix + remainder,
+					faultPayload: prefix,
+					metrics: []framePatchMetric{
+						{name: "cursor_writer.present.mode.vertical_scroll_rows", count: plan.reused},
+						{name: "cursor_writer.present.mode.delta_rect_scroll_fullwidth", count: plan.reused},
+					},
 				}
-				out.WriteString(remainder)
-				return out.String()
 			}
 		}
 	}
@@ -365,19 +367,25 @@ func (p *framePresenter) presentVerticalScroll(lines []string) string {
 		if ok {
 			afterScroll := applyVerticalScrollRectPlan(previousRows, rectPlan)
 			if len(afterScroll) == len(lines) {
-				remainder, changedCount := renderChangedRows(afterScroll, lines)
-				if changedCount < rectPlan.reused {
-					var out strings.Builder
-					out.WriteString(renderVerticalScrollRectPlan(rectPlan, len(lines)))
-					perftrace.Count("cursor_writer.present.mode.vertical_scroll_rect", rectPlan.reused*(rectPlan.right-rectPlan.left+1))
-					perftrace.Count("cursor_writer.present.mode.delta_rect_scroll_lr_margin", rectPlan.reused*(rectPlan.right-rectPlan.left+1))
-					out.WriteString(remainder)
-					return out.String()
+				remainder, _ := renderChangedRows(afterScroll, lines)
+				prefix := renderVerticalScrollRectPlan(rectPlan, len(lines))
+				if prefix != "" {
+					candidate := framePatchCandidate{
+						mode:    framePatchCandidateVerticalScrollRect,
+						payload: prefix + remainder,
+						metrics: []framePatchMetric{
+							{name: "cursor_writer.present.mode.vertical_scroll_rect", count: rectPlan.reused * (rectPlan.right - rectPlan.left + 1)},
+							{name: "cursor_writer.present.mode.delta_rect_scroll_lr_margin", count: rectPlan.reused * (rectPlan.right - rectPlan.left + 1)},
+						},
+					}
+					if betterFramePatchCandidate(candidate, best) {
+						best = candidate
+					}
 				}
 			}
 		}
 	}
-	return ""
+	return best
 }
 
 func renderChangedRows(previous, next []string) (string, int) {
@@ -441,7 +449,7 @@ func (p *framePresenter) renderChangedRows(next []string) (string, int, int, []p
 		if len(prevRow.cells) > 0 {
 			reclaim = append(reclaim, prevRow.cells)
 		}
-		updates = append(updates, presentedRowUpdate{row: row, parsed: nextRow})
+		updates = append(updates, presentedRowUpdate{row: row, parsed: nextRow, replace: true})
 		if !renderChangedRowDiff(&out, prevRow, nextRow, row, p.fullWidthLines) {
 			writeCUP(&out, 1, row+1)
 			out.WriteString(next[row])

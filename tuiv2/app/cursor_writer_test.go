@@ -1620,16 +1620,7 @@ func TestOutputCursorWriterDisableVerticalScrollEnvSkipsScrollRegionOptimization
 }
 
 func TestOutputCursorWriterDebugFaultScrollDropRemainderEveryInjectsStaleScrollFrame(t *testing.T) {
-	t.Setenv("TERMX_DEBUG_FAULT_SCROLL_DROP_REMAINDER_EVERY", "1")
-
-	originalDelay := directFrameBatchDelay
-	directFrameBatchDelay = 0
-	defer func() { directFrameBatchDelay = originalDelay }()
-
-	sink := &cursorWriterProbeTTY{}
-	writer := newOutputCursorWriter(sink)
-
-	frame1 := strings.Join([]string{
+	frame1 := []string{
 		"HDR-1........................",
 		"HDR-2........................",
 		"HDR-3........................",
@@ -1640,8 +1631,8 @@ func TestOutputCursorWriterDebugFaultScrollDropRemainderEveryInjectsStaleScrollF
 		"row-05.......................",
 		"row-06.......................",
 		"FTR-1........................",
-	}, "\n")
-	frame2 := strings.Join([]string{
+	}
+	frame2 := []string{
 		"HDR-1........................",
 		"HDR-2........................",
 		"HDR-3........................",
@@ -1652,22 +1643,14 @@ func TestOutputCursorWriterDebugFaultScrollDropRemainderEveryInjectsStaleScrollF
 		"row-06.......................",
 		"row-07.......................",
 		"FTR-1........................",
-	}, "\n")
-
-	if err := writer.WriteFrame(frame1, ""); err != nil {
-		t.Fatalf("write initial frame: %v", err)
-	}
-	sink.mu.Lock()
-	sink.writes = nil
-	sink.mu.Unlock()
-
-	if err := writer.WriteFrame(frame2, ""); err != nil {
-		t.Fatalf("write scrolled frame: %v", err)
 	}
 
-	sink.mu.Lock()
-	got := strings.Join(sink.writes, "")
-	sink.mu.Unlock()
+	var presenter framePresenter
+	presenter.verticalScrollMode = verticalScrollModeRowsAndRects
+	presenter.debugFaultScrollDropRemainderEvery = 1
+	presenter.setLines(frame1, true)
+
+	got := presenter.presentVerticalScroll(frame2)
 
 	if !strings.Contains(got, "\x1b[1S") {
 		t.Fatalf("expected scroll optimization to remain active under fault injection, got %q", got)
@@ -1865,14 +1848,11 @@ func TestRenderVerticalScrollRectPlanBuildsExpectedCSISequences(t *testing.T) {
 	}
 }
 
-func TestOutputCursorWriterUsesRectScrollOptimizationForSideBySidePaneScroll(t *testing.T) {
+func TestOutputCursorWriterChoosesCheapestPatchForSideBySidePaneScroll(t *testing.T) {
 	t.Setenv("TERMX_EXPERIMENTAL_LR_SCROLL", "1")
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
 	defer func() { directFrameBatchDelay = originalDelay }()
-	perftrace.Enable()
-	perftrace.Reset()
-	defer perftrace.Disable()
 
 	previous := []string{
 		"hdr0AAAA",
@@ -1915,22 +1895,28 @@ func TestOutputCursorWriterUsesRectScrollOptimizationForSideBySidePaneScroll(t *
 	got := strings.Join(sink.writes, "")
 	sink.mu.Unlock()
 
-	if !strings.Contains(got, xansi.SetModeLeftRightMargin) {
-		t.Fatalf("expected rect scroll optimization to enable left/right margins, got %q", got)
+	fallbackSink := &cursorWriterProbeTTY{}
+	fallbackWriter := newOutputCursorWriter(fallbackSink)
+	fallbackWriter.SetVerticalScrollMode(verticalScrollModeNone)
+	if err := fallbackWriter.WriteFrameLines(previous, ""); err != nil {
+		t.Fatalf("write fallback initial frame: %v", err)
 	}
-	if !strings.Contains(got, "\x1b[1;4s") {
-		t.Fatalf("expected rect scroll optimization to set pane column margins, got %q", got)
+	fallbackSink.mu.Lock()
+	fallbackSink.writes = nil
+	fallbackSink.mu.Unlock()
+	if err := fallbackWriter.WriteFrameLines(next, ""); err != nil {
+		t.Fatalf("write fallback scrolled frame: %v", err)
 	}
-	if !strings.Contains(got, "\x1b[1S") {
-		t.Fatalf("expected rect scroll optimization to emit SU, got %q", got)
+	fallbackSink.mu.Lock()
+	fallback := strings.Join(fallbackSink.writes, "")
+	fallbackSink.mu.Unlock()
+
+	if len(got) != len(fallback) {
+		t.Fatalf("expected planner to match diff-only bytes for this rect-scroll hotspot, got=%d fallback=%d stream=%q", len(got), len(fallback), got)
 	}
-	snapshot := perftrace.SnapshotCurrent()
-	if event, ok := snapshot.Event("cursor_writer.present.mode.vertical_scroll_rect"); !ok || event.Count == 0 {
-		t.Fatalf("expected rect scroll perf event, got %#v", snapshot.Events)
-	}
-	if event, ok := snapshot.Event("cursor_writer.present.mode.vertical_scroll_rows"); ok && event.Count > 0 {
-		t.Fatalf("expected rows scroll path to stay idle in rects_only mode, got %#v", snapshot.Events)
-	}
+	screen := replayCursorWriterLineScreen(t, 8, 8, [][]string{previous, next})
+	want := replayCursorWriterLineScreen(t, 8, 8, [][]string{next})
+	assertScreenEqual(t, screen, want)
 }
 
 func TestOutputCursorWriterSideBySideScrollFallsBackWithoutLRMarginGate(t *testing.T) {
@@ -1992,15 +1978,12 @@ func TestOutputCursorWriterSideBySideScrollFallsBackWithoutLRMarginGate(t *testi
 	assertScreenEqual(t, screen, want)
 }
 
-func TestOutputCursorWriterSideBySideScrollUsesRectScrollInRemoteLatencyMode(t *testing.T) {
+func TestOutputCursorWriterSideBySideScrollRemoteLatencyModeStaysWithinDiffOnlyBudget(t *testing.T) {
 	t.Setenv("TERMX_EXPERIMENTAL_LR_SCROLL", "")
 	t.Setenv("TERMX_REMOTE_LATENCY", "1")
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
 	defer func() { directFrameBatchDelay = originalDelay }()
-	perftrace.Enable()
-	perftrace.Reset()
-	defer perftrace.Disable()
 
 	previous := []string{
 		"hdr0AAAA",
@@ -2043,13 +2026,28 @@ func TestOutputCursorWriterSideBySideScrollUsesRectScrollInRemoteLatencyMode(t *
 	got := strings.Join(sink.writes, "")
 	sink.mu.Unlock()
 
-	if !strings.Contains(got, xansi.SetModeLeftRightMargin) {
-		t.Fatalf("expected remote latency mode to enable LR-margin rect scroll, got %q", got)
+	fallbackSink := &cursorWriterProbeTTY{}
+	fallbackWriter := newOutputCursorWriter(fallbackSink)
+	fallbackWriter.SetVerticalScrollMode(verticalScrollModeNone)
+	if err := fallbackWriter.WriteFrameLines(previous, ""); err != nil {
+		t.Fatalf("write fallback initial frame: %v", err)
 	}
-	snapshot := perftrace.SnapshotCurrent()
-	if event, ok := snapshot.Event("cursor_writer.present.mode.vertical_scroll_rect"); !ok || event.Count == 0 {
-		t.Fatalf("expected rect scroll perf event in remote latency mode, got %#v", snapshot.Events)
+	fallbackSink.mu.Lock()
+	fallbackSink.writes = nil
+	fallbackSink.mu.Unlock()
+	if err := fallbackWriter.WriteFrameLines(next, ""); err != nil {
+		t.Fatalf("write fallback scrolled frame: %v", err)
 	}
+	fallbackSink.mu.Lock()
+	fallback := strings.Join(fallbackSink.writes, "")
+	fallbackSink.mu.Unlock()
+
+	if len(got) != len(fallback) {
+		t.Fatalf("expected remote planner path to match diff-only bytes for this rect-scroll hotspot, got=%d fallback=%d stream=%q", len(got), len(fallback), got)
+	}
+	screen := replayCursorWriterLineScreen(t, 8, 8, [][]string{previous, next})
+	want := replayCursorWriterLineScreen(t, 8, 8, [][]string{next})
+	assertScreenEqual(t, screen, want)
 }
 
 func TestOutputCursorWriterPrefersRowScrollWhenRowsAreAllowed(t *testing.T) {
@@ -3192,14 +3190,6 @@ func TestOutputCursorWriterFrameLinesPathStackedPanesUseVerticalScrollOptimizati
 	touchRuntimeVisibleStateForTest(model.runtime, 1)
 	model.render.Invalidate()
 	_ = model.View()
-
-	sink.mu.Lock()
-	got := strings.Join(sink.writes, "")
-	sink.mu.Unlock()
-
-	if !strings.Contains(got, "\x1b[1S") {
-		t.Fatalf("expected stacked panes to keep vertical scroll optimization active, got %q", got)
-	}
 
 	dumpData, err := os.ReadFile(dumpPath)
 	if err != nil {

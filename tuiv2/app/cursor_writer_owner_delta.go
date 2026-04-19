@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
@@ -43,8 +42,17 @@ type rectScrollPlan struct {
 }
 
 func (p *framePresenter) presentOwnerAwareDelta(lines []string, meta *presentMeta) string {
-	if p == nil || !p.fullWidthLines || meta == nil || p.meta == nil {
+	candidate := p.ownerAwareDeltaCandidate(lines, meta)
+	if !candidate.valid() {
 		return ""
+	}
+	emitFramePatchMetrics(candidate.metrics)
+	return candidate.payload
+}
+
+func (p *framePresenter) ownerAwareDeltaCandidate(lines []string, meta *presentMeta) framePatchCandidate {
+	if p == nil || !p.fullWidthLines || meta == nil || p.meta == nil {
+		return framePatchCandidate{}
 	}
 	previousRows := make([]presentedRow, len(p.lines))
 	nextRows := make([]presentedRow, len(lines))
@@ -56,34 +64,35 @@ func (p *framePresenter) presentOwnerAwareDelta(lines []string, meta *presentMet
 	}
 	defer releasePresentedRows(nextRows)
 	if presentedRowsHaveWidthSafety(previousRows) || presentedRowsHaveWidthSafety(nextRows) {
-		return ""
+		return framePatchCandidate{}
 	}
 
 	previous, ok := buildHostFrame(previousRows, p.meta)
 	if !ok {
-		return ""
+		return framePatchCandidate{}
 	}
 	next, ok := buildHostFrame(nextRows, meta)
 	if !ok {
-		return ""
+		return framePatchCandidate{}
 	}
 	rects := collectOwnerAwareDamageRects(previous, next, p.meta, meta)
 	if len(rects) == 0 {
-		return ""
+		return framePatchCandidate{}
 	}
 	var out strings.Builder
 	usedScroll := false
+	metrics := make([]framePatchMetric, 0, len(rects)+1)
 	for _, damage := range rects {
 		if plan, ok := detectRectScroll(previous, next, damage); ok && canUseRectScroll(previous, next, damage, plan) {
 			if damage.FullWidth {
 				emitFullWidthRectScroll(&out, next, plan)
-				perftrace.Count("cursor_writer.present.mode.delta_rect_scroll_fullwidth", plan.ReusedArea)
+				metrics = append(metrics, framePatchMetric{name: "cursor_writer.present.mode.delta_rect_scroll_fullwidth", count: plan.ReusedArea})
 				usedScroll = true
 				continue
 			}
 			if shared.ExperimentalLRScrollEnabled() {
 				emitLRMarginRectScroll(&out, next, plan)
-				perftrace.Count("cursor_writer.present.mode.delta_rect_scroll_lr_margin", plan.ReusedArea)
+				metrics = append(metrics, framePatchMetric{name: "cursor_writer.present.mode.delta_rect_scroll_lr_margin", count: plan.ReusedArea})
 				usedScroll = true
 				continue
 			}
@@ -92,14 +101,18 @@ func (p *framePresenter) presentOwnerAwareDelta(lines []string, meta *presentMet
 	}
 	payload := out.String()
 	if payload == "" {
-		return ""
+		return framePatchCandidate{}
 	}
-	fullLen := joinedLinesLen(lines)
-	if !usedScroll && fullLen > 0 && len(payload)*100 >= fullLen*95 {
-		return ""
+	fullLen := normalizedFrameLen(strings.Join(lines, "\n"))
+	if !usedScroll && fullLen > 0 && normalizedFrameLen(payload)*100 >= fullLen*95 {
+		return framePatchCandidate{}
 	}
-	perftrace.Count("cursor_writer.present.mode.owner_aware_rects", len(rects))
-	return payload
+	metrics = append(metrics, framePatchMetric{name: "cursor_writer.present.mode.owner_aware_rects", count: len(rects)})
+	return framePatchCandidate{
+		mode:    framePatchCandidateOwnerAware,
+		payload: payload,
+		metrics: metrics,
+	}
 }
 
 func presentedRowsHaveWidthSafety(rows []presentedRow) bool {
