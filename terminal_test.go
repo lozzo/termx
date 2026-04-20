@@ -698,7 +698,57 @@ func screenUpdateContainsText(update protocol.ScreenUpdate, needle string) bool 
 			return true
 		}
 	}
+	for _, op := range update.Ops {
+		if op.Code != protocol.ScreenOpWriteSpan {
+			continue
+		}
+		if strings.Contains(protocolRowToString(op.Cells), needle) {
+			return true
+		}
+	}
 	return false
+}
+
+func TestScreenUpdatePayloadFromDamageOmitsRedundantControlOps(t *testing.T) {
+	vt := localvterm.New(8, 2, 32, nil)
+	term := &Terminal{
+		vterm: vt,
+		title: "demo",
+	}
+	payload, ok := term.screenUpdatePayloadFromDamageLocked(localvterm.WriteDamage{
+		SizeCols: 8,
+		SizeRows: 2,
+		Ops: []localvterm.DamageOp{{
+			Code: protocol.ScreenOpWriteSpan,
+			Row:  0,
+			Col:  0,
+			Cells: []localvterm.Cell{
+				{Content: "o", Width: 1},
+				{Content: "k", Width: 1},
+			},
+		}},
+		Cursor: localvterm.CursorState{Row: 0, Col: 2, Visible: true},
+		Modes:  localvterm.TerminalModes{AutoWrap: true},
+	})
+	if !ok {
+		t.Fatal("expected payload")
+	}
+	update, err := protocol.DecodeScreenUpdatePayload(payload)
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if got := update.Title; got != "demo" {
+		t.Fatalf("expected title in top-level header, got %q", got)
+	}
+	for _, op := range update.Ops {
+		switch op.Code {
+		case protocol.ScreenOpCursor, protocol.ScreenOpModes, protocol.ScreenOpTitle:
+			t.Fatalf("expected server payload to omit redundant control op, got %#v", op)
+		}
+	}
+	if len(update.Ops) != 1 || update.Ops[0].Code != protocol.ScreenOpWriteSpan {
+		t.Fatalf("expected only content op to remain, got %#v", update.Ops)
+	}
 }
 
 func protocolRowToString(row []protocol.Cell) string {

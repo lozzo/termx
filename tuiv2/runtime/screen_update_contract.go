@@ -58,17 +58,58 @@ func screenUpdateSummaryFromProtocol(update protocol.ScreenUpdate) VisibleScreen
 		FullReplace:  update.FullReplace,
 		ScreenScroll: update.ScreenScroll,
 	}
-	if len(update.ChangedSpans) == 0 {
-		return summary
-	}
-	summary.ChangedRows = make([]int, 0, len(update.ChangedSpans))
-	seen := make(map[int]struct{}, len(update.ChangedSpans))
-	for _, span := range update.ChangedSpans {
-		if _, ok := seen[span.Row]; ok {
-			continue
+	if summary.ScreenScroll == 0 {
+		for _, op := range update.Ops {
+			if op.Code == protocol.ScreenOpScrollRect && op.Dx == 0 && op.Rect.X == 0 && int(update.Size.Cols) > 0 && op.Rect.Width >= int(update.Size.Cols) {
+				summary.ScreenScroll = -op.Dy
+				break
+			}
 		}
-		seen[span.Row] = struct{}{}
-		summary.ChangedRows = append(summary.ChangedRows, span.Row)
+	}
+	switch {
+	case len(update.ChangedSpans) > 0:
+		summary.ChangedRows = make([]int, 0, len(update.ChangedSpans))
+		seen := make(map[int]struct{}, len(update.ChangedSpans))
+		for _, span := range update.ChangedSpans {
+			if _, ok := seen[span.Row]; ok {
+				continue
+			}
+			seen[span.Row] = struct{}{}
+			summary.ChangedRows = append(summary.ChangedRows, span.Row)
+		}
+	case len(update.Ops) > 0:
+		rows := make([]int, 0, len(update.Ops))
+		seen := make(map[int]struct{}, len(update.Ops))
+		addRow := func(row int) {
+			if row < 0 {
+				return
+			}
+			if _, ok := seen[row]; ok {
+				return
+			}
+			seen[row] = struct{}{}
+			rows = append(rows, row)
+		}
+		addRange := func(start, end int) {
+			for row := start; row < end; row++ {
+				addRow(row)
+			}
+		}
+		for _, op := range update.Ops {
+			switch op.Code {
+			case protocol.ScreenOpWriteSpan, protocol.ScreenOpClearToEOL:
+				addRow(op.Row)
+			case protocol.ScreenOpScrollRect, protocol.ScreenOpClearRect:
+				addRange(op.Rect.Y, op.Rect.Y+op.Rect.Height)
+			case protocol.ScreenOpCopyRect:
+				addRange(op.DstY, op.DstY+op.Src.Height)
+			case protocol.ScreenOpResize:
+				addRange(0, int(op.Size.Rows))
+			}
+		}
+		if len(rows) > 0 {
+			summary.ChangedRows = rows
+		}
 	}
 	return summary
 }

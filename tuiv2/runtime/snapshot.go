@@ -344,7 +344,7 @@ func applyScreenUpdateSnapshot(current *protocol.Snapshot, terminalID string, up
 	if requiredRows > len(snapshot.Screen.Cells) {
 		ensureSnapshotScreenRowsCOW(snapshot, requiredRows, &screenCellsOwned, &screenTimestampsOwned, &screenRowKindsOwned)
 	}
-	if update.ScreenScroll != 0 {
+	if len(update.Ops) == 0 && update.ScreenScroll != 0 {
 		shiftSnapshotScreenRows(snapshot, update.ScreenScroll, &screenCellsOwned, &screenTimestampsOwned, &screenRowKindsOwned)
 	}
 	if update.ScrollbackTrim > 0 {
@@ -354,22 +354,26 @@ func applyScreenUpdateSnapshot(current *protocol.Snapshot, terminalID string, up
 		scrollbackRowKindsOwned = true
 	}
 	screenRowCellsOwned := make(map[int]bool)
-	for _, span := range update.ChangedSpans {
-		if span.Row < 0 {
-			continue
+	if len(update.Ops) > 0 {
+		applySnapshotScreenOps(snapshot, update, &screenCellsOwned, &screenTimestampsOwned, &screenRowKindsOwned, screenRowCellsOwned)
+	} else {
+		for _, span := range update.ChangedSpans {
+			if span.Row < 0 {
+				continue
+			}
+			ensureSnapshotScreenRowsCOW(snapshot, span.Row+1, &screenCellsOwned, &screenTimestampsOwned, &screenRowKindsOwned)
+			ensureSnapshotScreenRowCellsCOW(snapshot, span.Row, &screenCellsOwned, screenRowCellsOwned)
+			switch span.Op {
+			case protocol.ScreenSpanOpClearToEOL:
+				snapshot.Screen.Cells[span.Row] = clearProtocolCellRowFrom(snapshot.Screen.Cells[span.Row], span.ColStart)
+			case protocol.ScreenSpanOpReplaceRow:
+				snapshot.Screen.Cells[span.Row] = trimProtocolCellRow(cloneProtocolCellRow(span.Cells))
+			default:
+				snapshot.Screen.Cells[span.Row] = applyProtocolCellSpan(snapshot.Screen.Cells[span.Row], span.ColStart, span.Cells)
+			}
+			snapshot.ScreenTimestamps[span.Row] = span.Timestamp
+			snapshot.ScreenRowKinds[span.Row] = span.RowKind
 		}
-		ensureSnapshotScreenRowsCOW(snapshot, span.Row+1, &screenCellsOwned, &screenTimestampsOwned, &screenRowKindsOwned)
-		ensureSnapshotScreenRowCellsCOW(snapshot, span.Row, &screenCellsOwned, screenRowCellsOwned)
-		switch span.Op {
-		case protocol.ScreenSpanOpClearToEOL:
-			snapshot.Screen.Cells[span.Row] = clearProtocolCellRowFrom(snapshot.Screen.Cells[span.Row], span.ColStart)
-		case protocol.ScreenSpanOpReplaceRow:
-			snapshot.Screen.Cells[span.Row] = trimProtocolCellRow(cloneProtocolCellRow(span.Cells))
-		default:
-			snapshot.Screen.Cells[span.Row] = applyProtocolCellSpan(snapshot.Screen.Cells[span.Row], span.ColStart, span.Cells)
-		}
-		snapshot.ScreenTimestamps[span.Row] = span.Timestamp
-		snapshot.ScreenRowKinds[span.Row] = span.RowKind
 	}
 	if appendCount := len(update.ScrollbackAppend); appendCount > 0 {
 		baseRows := len(snapshot.Scrollback)
@@ -465,6 +469,172 @@ func clearProtocolCellRowFrom(row []protocol.Cell, colStart int) []protocol.Cell
 	return trimProtocolCellRow(cloneProtocolCellRow(row[:colStart]))
 }
 
+func applySnapshotScreenOps(snapshot *protocol.Snapshot, update protocol.ScreenUpdate, screenCellsOwned, screenTimestampsOwned, screenRowKindsOwned *bool, screenRowCellsOwned map[int]bool) {
+	if snapshot == nil {
+		return
+	}
+	for _, op := range update.Ops {
+		switch op.Code {
+		case protocol.ScreenOpWriteSpan:
+			if op.Row < 0 {
+				continue
+			}
+			ensureSnapshotScreenRowsCOW(snapshot, op.Row+1, screenCellsOwned, screenTimestampsOwned, screenRowKindsOwned)
+			ensureSnapshotScreenRowCellsCOW(snapshot, op.Row, screenCellsOwned, screenRowCellsOwned)
+			snapshot.Screen.Cells[op.Row] = applyProtocolCellSpan(snapshot.Screen.Cells[op.Row], op.Col, op.Cells)
+			snapshot.ScreenTimestamps[op.Row] = op.Timestamp
+			snapshot.ScreenRowKinds[op.Row] = op.RowKind
+		case protocol.ScreenOpClearToEOL:
+			if op.Row < 0 {
+				continue
+			}
+			ensureSnapshotScreenRowsCOW(snapshot, op.Row+1, screenCellsOwned, screenTimestampsOwned, screenRowKindsOwned)
+			ensureSnapshotScreenRowCellsCOW(snapshot, op.Row, screenCellsOwned, screenRowCellsOwned)
+			snapshot.Screen.Cells[op.Row] = clearProtocolCellRowFrom(snapshot.Screen.Cells[op.Row], op.Col)
+			snapshot.ScreenTimestamps[op.Row] = op.Timestamp
+			snapshot.ScreenRowKinds[op.Row] = op.RowKind
+		case protocol.ScreenOpClearRect:
+			applySnapshotClearRect(snapshot, op, screenCellsOwned, screenTimestampsOwned, screenRowKindsOwned, screenRowCellsOwned)
+		case protocol.ScreenOpScrollRect:
+			applySnapshotScrollRect(snapshot, op, screenCellsOwned, screenTimestampsOwned, screenRowKindsOwned, screenRowCellsOwned)
+		case protocol.ScreenOpCopyRect:
+			applySnapshotCopyRect(snapshot, op, screenCellsOwned, screenTimestampsOwned, screenRowKindsOwned, screenRowCellsOwned)
+		case protocol.ScreenOpResize:
+			rows := int(op.Size.Rows)
+			if rows > 0 {
+				ensureSnapshotScreenRowsCOW(snapshot, rows, screenCellsOwned, screenTimestampsOwned, screenRowKindsOwned)
+			}
+			if op.Size.Cols > 0 {
+				snapshot.Size.Cols = op.Size.Cols
+			}
+			if op.Size.Rows > 0 {
+				snapshot.Size.Rows = op.Size.Rows
+			}
+		}
+	}
+}
+
+func applySnapshotClearRect(snapshot *protocol.Snapshot, op protocol.ScreenOp, screenCellsOwned, screenTimestampsOwned, screenRowKindsOwned *bool, screenRowCellsOwned map[int]bool) {
+	rect := op.Rect
+	if snapshot == nil || rect.Width <= 0 || rect.Height <= 0 || rect.Y < 0 {
+		return
+	}
+	ensureSnapshotScreenRowsCOW(snapshot, rect.Y+rect.Height, screenCellsOwned, screenTimestampsOwned, screenRowKindsOwned)
+	cols := snapshotScreenWidth(snapshot, rect.X+rect.Width)
+	for row := rect.Y; row < rect.Y+rect.Height; row++ {
+		ensureSnapshotScreenRowCellsCOW(snapshot, row, screenCellsOwned, screenRowCellsOwned)
+		dense := padProtocolCellRow(snapshot.Screen.Cells[row], cols)
+		for col := maxInt(rect.X, 0); col < minInt(rect.X+rect.Width, cols); col++ {
+			dense[col] = protocolBlankCell()
+		}
+		snapshot.Screen.Cells[row] = trimProtocolCellRow(dense)
+		snapshot.ScreenTimestamps[row] = op.Timestamp
+		snapshot.ScreenRowKinds[row] = op.RowKind
+	}
+}
+
+func applySnapshotScrollRect(snapshot *protocol.Snapshot, op protocol.ScreenOp, screenCellsOwned, screenTimestampsOwned, screenRowKindsOwned *bool, screenRowCellsOwned map[int]bool) {
+	rect := op.Rect
+	if snapshot == nil || rect.Width <= 0 || rect.Height <= 0 || rect.Y < 0 {
+		return
+	}
+	ensureSnapshotScreenRowsCOW(snapshot, rect.Y+rect.Height, screenCellsOwned, screenTimestampsOwned, screenRowKindsOwned)
+	cols := snapshotScreenWidth(snapshot, rect.X+rect.Width)
+	fullWidth := op.Dx == 0 && rect.X == 0 && rect.Width >= cols
+	if fullWidth {
+		beforeRows := cloneProtocolRowsRect(snapshot.Screen.Cells, rect.Y, rect.Height)
+		beforeTimes := append([]time.Time(nil), snapshot.ScreenTimestamps[rect.Y:rect.Y+rect.Height]...)
+		beforeKinds := append([]string(nil), snapshot.ScreenRowKinds[rect.Y:rect.Y+rect.Height]...)
+		for row := rect.Y; row < rect.Y+rect.Height; row++ {
+			srcY := row - op.Dy
+			if srcY >= rect.Y && srcY < rect.Y+rect.Height {
+				snapshot.Screen.Cells[row] = beforeRows[srcY-rect.Y]
+				snapshot.ScreenTimestamps[row] = beforeTimes[srcY-rect.Y]
+				snapshot.ScreenRowKinds[row] = beforeKinds[srcY-rect.Y]
+				markSnapshotScreenRowOwned(screenRowCellsOwned, row)
+				continue
+			}
+			snapshot.Screen.Cells[row] = nil
+			snapshot.ScreenTimestamps[row] = time.Time{}
+			snapshot.ScreenRowKinds[row] = ""
+			markSnapshotScreenRowOwned(screenRowCellsOwned, row)
+		}
+		return
+	}
+	beforeRows := cloneAndPadProtocolRowsRect(snapshot.Screen.Cells, rect.Y, rect.Height, cols)
+	beforeTimes := append([]time.Time(nil), snapshot.ScreenTimestamps[rect.Y:rect.Y+rect.Height]...)
+	beforeKinds := append([]string(nil), snapshot.ScreenRowKinds[rect.Y:rect.Y+rect.Height]...)
+	for row := rect.Y; row < rect.Y+rect.Height; row++ {
+		ensureSnapshotScreenRowCellsCOW(snapshot, row, screenCellsOwned, screenRowCellsOwned)
+		dense := padProtocolCellRow(snapshot.Screen.Cells[row], cols)
+		for col := maxInt(rect.X, 0); col < minInt(rect.X+rect.Width, cols); col++ {
+			srcX := col - op.Dx
+			srcY := row - op.Dy
+			if srcX >= rect.X && srcX < rect.X+rect.Width && srcY >= rect.Y && srcY < rect.Y+rect.Height {
+				dense[col] = beforeRows[srcY-rect.Y][srcX]
+				continue
+			}
+			dense[col] = protocolBlankCell()
+		}
+		snapshot.Screen.Cells[row] = trimProtocolCellRow(dense)
+	}
+	for row := rect.Y; row < rect.Y+rect.Height; row++ {
+		srcY := row - op.Dy
+		if srcY >= rect.Y && srcY < rect.Y+rect.Height {
+			snapshot.ScreenTimestamps[row] = beforeTimes[srcY-rect.Y]
+			snapshot.ScreenRowKinds[row] = beforeKinds[srcY-rect.Y]
+			continue
+		}
+		snapshot.ScreenTimestamps[row] = time.Time{}
+		snapshot.ScreenRowKinds[row] = ""
+	}
+}
+
+func applySnapshotCopyRect(snapshot *protocol.Snapshot, op protocol.ScreenOp, screenCellsOwned, screenTimestampsOwned, screenRowKindsOwned *bool, screenRowCellsOwned map[int]bool) {
+	src := op.Src
+	if snapshot == nil || src.Width <= 0 || src.Height <= 0 || src.Y < 0 || op.DstY < 0 {
+		return
+	}
+	rowsNeeded := maxInt(src.Y+src.Height, op.DstY+src.Height)
+	ensureSnapshotScreenRowsCOW(snapshot, rowsNeeded, screenCellsOwned, screenTimestampsOwned, screenRowKindsOwned)
+	cols := snapshotScreenWidth(snapshot, maxInt(src.X+src.Width, op.DstX+src.Width))
+	fullWidth := src.X == 0 && op.DstX == 0 && src.Width >= cols
+	if fullWidth {
+		beforeRows := cloneProtocolRowsRect(snapshot.Screen.Cells, src.Y, src.Height)
+		beforeTimes := append([]time.Time(nil), snapshot.ScreenTimestamps[src.Y:src.Y+src.Height]...)
+		beforeKinds := append([]string(nil), snapshot.ScreenRowKinds[src.Y:src.Y+src.Height]...)
+		for row := 0; row < src.Height; row++ {
+			dstRow := op.DstY + row
+			if dstRow < 0 || dstRow >= len(snapshot.Screen.Cells) {
+				continue
+			}
+			snapshot.Screen.Cells[dstRow] = beforeRows[row]
+			snapshot.ScreenTimestamps[dstRow] = beforeTimes[row]
+			snapshot.ScreenRowKinds[dstRow] = beforeKinds[row]
+			markSnapshotScreenRowOwned(screenRowCellsOwned, dstRow)
+		}
+		return
+	}
+	beforeRows := cloneAndPadProtocolRowsRect(snapshot.Screen.Cells, src.Y, src.Height, cols)
+	for row := 0; row < src.Height; row++ {
+		dstRow := op.DstY + row
+		if dstRow < 0 || dstRow >= len(snapshot.Screen.Cells) {
+			continue
+		}
+		ensureSnapshotScreenRowCellsCOW(snapshot, dstRow, screenCellsOwned, screenRowCellsOwned)
+		dense := padProtocolCellRow(snapshot.Screen.Cells[dstRow], cols)
+		for col := 0; col < src.Width; col++ {
+			dstCol := op.DstX + col
+			srcCol := src.X + col
+			if dstCol < 0 || dstCol >= cols || srcCol < 0 || srcCol >= cols || row >= len(beforeRows) {
+				continue
+			}
+			dense[dstCol] = beforeRows[row][srcCol]
+		}
+		snapshot.Screen.Cells[dstRow] = trimProtocolCellRow(dense)
+	}
+}
+
 func padProtocolCellRow(row []protocol.Cell, cols int) []protocol.Cell {
 	if cols <= len(row) {
 		return row
@@ -512,6 +682,65 @@ func protocolCellNeedsSnapshotRow(cell protocol.Cell) bool {
 
 func protocolBlankCell() protocol.Cell {
 	return protocol.Cell{Content: " ", Width: 1}
+}
+
+func cloneProtocolRowsRect(rows [][]protocol.Cell, start, height int) [][]protocol.Cell {
+	if height <= 0 {
+		return nil
+	}
+	out := make([][]protocol.Cell, height)
+	for i := 0; i < height; i++ {
+		row := start + i
+		if row < 0 || row >= len(rows) {
+			continue
+		}
+		out[i] = cloneProtocolCellRow(rows[row])
+	}
+	return out
+}
+
+func cloneAndPadProtocolRowsRect(rows [][]protocol.Cell, start, height, cols int) [][]protocol.Cell {
+	if height <= 0 {
+		return nil
+	}
+	out := make([][]protocol.Cell, height)
+	for i := 0; i < height; i++ {
+		row := start + i
+		if row < 0 || row >= len(rows) {
+			out[i] = make([]protocol.Cell, cols)
+			for j := range out[i] {
+				out[i][j] = protocolBlankCell()
+			}
+			continue
+		}
+		out[i] = padProtocolCellRow(cloneProtocolCellRow(rows[row]), cols)
+	}
+	return out
+}
+
+func markSnapshotScreenRowOwned(ownedRows map[int]bool, row int) {
+	if ownedRows == nil {
+		return
+	}
+	ownedRows[row] = true
+}
+
+func snapshotScreenWidth(snapshot *protocol.Snapshot, minWidth int) int {
+	width := minWidth
+	if snapshot != nil && int(snapshot.Size.Cols) > width {
+		width = int(snapshot.Size.Cols)
+	}
+	if snapshot != nil {
+		for _, row := range snapshot.Screen.Cells {
+			if len(row) > width {
+				width = len(row)
+			}
+		}
+	}
+	if width < 1 {
+		return 1
+	}
+	return width
 }
 
 func cowProtocolRows(rows [][]protocol.Cell, size int, owned *bool) [][]protocol.Cell {
@@ -664,6 +893,26 @@ func maxChangedScreenRow(update protocol.ScreenUpdate) int {
 	for _, row := range update.ChangedRows {
 		if row.Row > maxRow {
 			maxRow = row.Row
+		}
+	}
+	for _, op := range update.Ops {
+		switch op.Code {
+		case protocol.ScreenOpWriteSpan, protocol.ScreenOpClearToEOL:
+			if op.Row > maxRow {
+				maxRow = op.Row
+			}
+		case protocol.ScreenOpScrollRect, protocol.ScreenOpClearRect:
+			if row := op.Rect.Y + op.Rect.Height - 1; row > maxRow {
+				maxRow = row
+			}
+		case protocol.ScreenOpCopyRect:
+			if row := op.DstY + op.Src.Height - 1; row > maxRow {
+				maxRow = row
+			}
+		case protocol.ScreenOpResize:
+			if row := int(op.Size.Rows) - 1; row > maxRow {
+				maxRow = row
+			}
 		}
 	}
 	if update.FullReplace && len(update.Screen.Cells) > 0 {

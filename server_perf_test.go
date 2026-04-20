@@ -373,6 +373,7 @@ func benchmarkEncodeDamagePayload(damage vterm.WriteDamage) ([]byte, error) {
 		Size:             protocol.Size{Cols: uint16(damage.SizeCols), Rows: uint16(damage.SizeRows)},
 		ScreenScroll:     damage.ScreenScroll,
 		ChangedSpans:     make([]protocol.ScreenSpanUpdate, 0, len(damage.ChangedScreenSpans)),
+		Ops:              make([]protocol.ScreenOp, 0, len(damage.Ops)+2),
 		ScrollbackTrim:   damage.ScrollbackTrim,
 		ScrollbackAppend: make([]protocol.ScrollbackRowAppend, 0, len(damage.ScrollbackAppend)),
 		Cursor:           protocolCursorStateFromVTerm(damage.Cursor),
@@ -386,6 +387,22 @@ func benchmarkEncodeDamagePayload(damage vterm.WriteDamage) ([]byte, error) {
 			Op:        span.Op,
 			Timestamp: span.Timestamp,
 			RowKind:   span.RowKind,
+		})
+	}
+	for _, op := range damage.Ops {
+		update.Ops = append(update.Ops, protocol.ScreenOp{
+			Code:      op.Code,
+			Rect:      protocol.ScreenRect{X: op.Rect.X, Y: op.Rect.Y, Width: op.Rect.Width, Height: op.Rect.Height},
+			Src:       protocol.ScreenRect{X: op.Src.X, Y: op.Src.Y, Width: op.Src.Width, Height: op.Src.Height},
+			DstX:      op.DstX,
+			DstY:      op.DstY,
+			Dx:        op.Dx,
+			Dy:        op.Dy,
+			Row:       op.Row,
+			Col:       op.Col,
+			Cells:     protocolCellsFromVTermRow(op.Cells),
+			Timestamp: op.Timestamp,
+			RowKind:   op.RowKind,
 		})
 	}
 	for _, row := range damage.ScrollbackAppend {

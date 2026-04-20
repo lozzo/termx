@@ -412,6 +412,53 @@ func TestRuntimeScreenUpdateAppliesScreenScrollShiftToLocalVTerm(t *testing.T) {
 	}
 }
 
+func TestRuntimeScreenUpdateAppliesOpcodeScrollRectToLocalVTerm(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 9, Mode: "collaborator"}
+
+	rt := New(client)
+	terminal, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator")
+	if err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if terminal == nil {
+		t.Fatal("expected terminal")
+	}
+
+	terminal.Snapshot = snapshotWithLines("term-1", 4, 4, []string{"row1", "row2", "row3", "row4"})
+	loadSnapshotIntoVTerm(terminal.VTerm, terminal.Snapshot)
+
+	updatePayload, err := protocol.EncodeScreenUpdatePayload(protocol.ScreenUpdate{
+		Size:         protocol.Size{Cols: 4, Rows: 4},
+		ScreenScroll: 1,
+		Ops: []protocol.ScreenOp{
+			{Code: protocol.ScreenOpScrollRect, Rect: protocol.ScreenRect{X: 0, Y: 0, Width: 4, Height: 4}, Dy: -1},
+			{Code: protocol.ScreenOpWriteSpan, Row: 3, Col: 0, Cells: []protocol.Cell{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}, {Content: "5", Width: 1}}},
+			{Code: protocol.ScreenOpCursor, Cursor: protocol.CursorState{Row: 3, Col: 0, Visible: true}},
+			{Code: protocol.ScreenOpModes, Modes: protocol.TerminalModes{AutoWrap: true}},
+		},
+		Cursor: protocol.CursorState{Row: 3, Col: 0, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+	if err != nil {
+		t.Fatalf("encode update: %v", err)
+	}
+
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeScreenUpdate, Payload: updatePayload})
+
+	screen := terminal.VTerm.ScreenContent()
+	got := []string{
+		screen.Cells[0][0].Content + screen.Cells[0][1].Content + screen.Cells[0][2].Content + screen.Cells[0][3].Content,
+		screen.Cells[1][0].Content + screen.Cells[1][1].Content + screen.Cells[1][2].Content + screen.Cells[1][3].Content,
+		screen.Cells[2][0].Content + screen.Cells[2][1].Content + screen.Cells[2][2].Content + screen.Cells[2][3].Content,
+		screen.Cells[3][0].Content + screen.Cells[3][1].Content + screen.Cells[3][2].Content + screen.Cells[3][3].Content,
+	}
+	if !reflect.DeepEqual(got, []string{"row2", "row3", "row4", "row5"}) {
+		t.Fatalf("expected local vterm opcode scrollrect applied, got %#v", got)
+	}
+}
+
 func TestRuntimeScreenUpdateTitleOnlyKeepsBootstrapPending(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()

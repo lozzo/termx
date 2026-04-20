@@ -121,11 +121,16 @@ func TestVTermWriteRecoversFromEmulatorPanic(t *testing.T) {
 	vt := New(20, 5, 10, nil)
 
 	prev := safeEmulatorWrite
+	prevWithDamage := safeEmulatorWriteWithDamage
 	safeEmulatorWrite = func(_ *charmvt.SafeEmulator, _ []byte) (int, error) {
+		panic("boom")
+	}
+	safeEmulatorWriteWithDamage = func(_ *charmvt.SafeEmulator, _ []byte) (int, error, []charmvt.Damage, bool) {
 		panic("boom")
 	}
 	t.Cleanup(func() {
 		safeEmulatorWrite = prev
+		safeEmulatorWriteWithDamage = prevWithDamage
 	})
 
 	if _, err := vt.Write([]byte("hello")); err == nil {

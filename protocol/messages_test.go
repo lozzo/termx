@@ -3,6 +3,7 @@ package protocol
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -259,6 +260,26 @@ func TestClassifyScreenUpdateTreatsTitleOnlyUpdateAsNonContentChange(t *testing.
 	}
 }
 
+func TestClassifyScreenUpdateTreatsOpcodeControlOnlyUpdateAsNonContentChange(t *testing.T) {
+	classification := ClassifyScreenUpdate(ScreenUpdate{
+		Title:  "demo",
+		Cursor: CursorState{Row: 1, Col: 2, Visible: true},
+		Modes:  TerminalModes{AutoWrap: true},
+		Ops: []ScreenOp{
+			{Code: ScreenOpCursor, Cursor: CursorState{Row: 1, Col: 2, Visible: true}},
+			{Code: ScreenOpModes, Modes: TerminalModes{AutoWrap: true}},
+			{Code: ScreenOpTitle, Title: "demo"},
+		},
+	})
+
+	if classification.HasContentChange {
+		t.Fatalf("expected control-only opcode update to avoid content-change boundary, got %#v", classification)
+	}
+	if classification.HasChangedRows || classification.HasScreenScroll || classification.HasScrollbackChange || !classification.HasTitle {
+		t.Fatalf("unexpected opcode classification bits: %#v", classification)
+	}
+}
+
 func TestDecodeScreenUpdatePayloadKeepsTSU2Compatibility(t *testing.T) {
 	update := ScreenUpdate{
 		Size: protocolSize(12, 2),
@@ -291,6 +312,154 @@ func TestDecodeScreenUpdatePayloadKeepsTSU2Compatibility(t *testing.T) {
 	}
 	if decoded.ChangedSpans[0].Op != ScreenSpanOpReplaceRow || decoded.ChangedSpans[0].Row != 1 {
 		t.Fatalf("unexpected synthesized replace-row span: %#v", decoded.ChangedSpans[0])
+	}
+}
+
+func TestScreenUpdatePayloadTSU4RoundTrip(t *testing.T) {
+	update := ScreenUpdate{
+		Size:         protocolSize(10, 4),
+		ScreenScroll: 1,
+		Title:        "ops-demo",
+		Ops: []ScreenOp{
+			{Code: ScreenOpScrollRect, Rect: ScreenRect{X: 0, Y: 0, Width: 10, Height: 4}, Dy: -1},
+			{Code: ScreenOpWriteSpan, Row: 3, Col: 0, Cells: []Cell{{Content: "n", Width: 1}, {Content: "e", Width: 1}, {Content: "w", Width: 1}}, Timestamp: time.Date(2026, 4, 20, 2, 0, 0, 0, time.UTC), RowKind: "tail"},
+			{Code: ScreenOpCopyRect, Src: ScreenRect{X: 0, Y: 0, Width: 4, Height: 1}, DstX: 5, DstY: 1},
+			{Code: ScreenOpClearRect, Rect: ScreenRect{X: 7, Y: 0, Width: 3, Height: 2}, Timestamp: time.Date(2026, 4, 20, 2, 0, 1, 0, time.UTC), RowKind: "clear"},
+			{Code: ScreenOpClearToEOL, Row: 2, Col: 4, Timestamp: time.Date(2026, 4, 20, 2, 0, 2, 0, time.UTC), RowKind: "eol"},
+			{Code: ScreenOpCursor, Cursor: CursorState{Row: 3, Col: 3, Visible: true, Shape: "bar"}},
+			{Code: ScreenOpModes, Modes: TerminalModes{AlternateScreen: true, AutoWrap: true, MouseTracking: true}},
+			{Code: ScreenOpResize, Size: Size{Cols: 10, Rows: 4}},
+			{Code: ScreenOpTitle, Title: "ops-demo"},
+		},
+		Cursor: CursorState{Row: 3, Col: 3, Visible: true, Shape: "bar"},
+		Modes:  TerminalModes{AlternateScreen: true, AutoWrap: true, MouseTracking: true},
+	}
+
+	payload, err := encodeScreenUpdatePayloadBinaryV4(update)
+	if err != nil {
+		t.Fatalf("encode tsu4 payload: %v", err)
+	}
+	if !bytes.HasPrefix(payload, []byte(screenUpdatePayloadMagicV4)) {
+		t.Fatalf("expected tsu4 magic prefix, got %q", payload[:minInt(len(payload), 8)])
+	}
+	decoded, err := DecodeScreenUpdatePayload(payload)
+	if err != nil {
+		t.Fatalf("decode tsu4 payload: %v", err)
+	}
+	if decoded.Title != update.Title || decoded.ScreenScroll != update.ScreenScroll {
+		t.Fatalf("unexpected tsu4 header round-trip: %#v", decoded)
+	}
+	if len(decoded.Ops) != len(update.Ops) {
+		t.Fatalf("expected %d decoded ops, got %#v", len(update.Ops), decoded.Ops)
+	}
+	if decoded.Ops[0].Code != ScreenOpScrollRect || decoded.Ops[0].Dy != -1 {
+		t.Fatalf("unexpected scrollrect op: %#v", decoded.Ops[0])
+	}
+	if decoded.Ops[2].Code != ScreenOpCopyRect || decoded.Ops[2].DstX != 5 || decoded.Ops[2].DstY != 1 {
+		t.Fatalf("unexpected copyrect op: %#v", decoded.Ops[2])
+	}
+	if decoded.Ops[5].Cursor.Shape != "bar" || !decoded.Ops[6].Modes.MouseTracking {
+		t.Fatalf("unexpected control op round-trip: %#v %#v", decoded.Ops[5], decoded.Ops[6])
+	}
+}
+
+func TestEncodeScreenUpdatePayloadPrefersTSU3WhenSmaller(t *testing.T) {
+	update := ScreenUpdate{
+		Size:         protocolSize(80, 24),
+		ScreenScroll: 1,
+		ChangedSpans: []ScreenSpanUpdate{{
+			Row:      23,
+			ColStart: 0,
+			Cells: []Cell{
+				{Content: "l", Width: 1},
+				{Content: "e", Width: 1},
+				{Content: "s", Width: 1},
+				{Content: "s", Width: 1},
+				{Content: "-", Width: 1},
+				{Content: "2", Width: 1},
+				{Content: "4", Width: 1},
+			},
+			Op: ScreenSpanOpWrite,
+		}},
+		Ops: []ScreenOp{{
+			Code: ScreenOpScrollRect,
+			Rect: ScreenRect{X: 0, Y: 0, Width: 80, Height: 24},
+			Dy:   -1,
+		}, {
+			Code: ScreenOpWriteSpan,
+			Row:  23,
+			Col:  0,
+			Cells: []Cell{
+				{Content: "l", Width: 1},
+				{Content: "e", Width: 1},
+				{Content: "s", Width: 1},
+				{Content: "s", Width: 1},
+				{Content: "-", Width: 1},
+				{Content: "2", Width: 1},
+				{Content: "4", Width: 1},
+			},
+		}},
+		Cursor: CursorState{Row: 23, Col: 0, Visible: true},
+		Modes:  TerminalModes{AutoWrap: true},
+	}
+
+	payload, err := EncodeScreenUpdatePayload(update)
+	if err != nil {
+		t.Fatalf("encode payload: %v", err)
+	}
+	if !bytes.HasPrefix(payload, []byte(screenUpdatePayloadMagicV3)) {
+		t.Fatalf("expected TSU3 fallback for smaller payload, got prefix %q", payload[:minInt(len(payload), 8)])
+	}
+}
+
+func TestEncodeScreenUpdatePayloadPrefersTSU4WhenSmaller(t *testing.T) {
+	rows := make([]ScreenRowUpdate, 0, 10)
+	for i := 0; i < 10; i++ {
+		rows = append(rows, ScreenRowUpdate{
+			Row:   20 + i,
+			Cells: rowWithTextAt(120, 0, strings.Repeat(string(rune('A'+i)), 120)),
+		})
+	}
+	update := ScreenUpdate{
+		Size:        protocolSize(120, 40),
+		ChangedRows: rows,
+		Ops: []ScreenOp{{
+			Code: ScreenOpCopyRect,
+			Src:  ScreenRect{X: 0, Y: 5, Width: 120, Height: 10},
+			DstX: 0,
+			DstY: 20,
+		}},
+		Cursor: CursorState{Row: 20, Col: 0, Visible: true},
+		Modes:  TerminalModes{AlternateScreen: true, AutoWrap: true},
+	}
+
+	payload, err := EncodeScreenUpdatePayload(update)
+	if err != nil {
+		t.Fatalf("encode payload: %v", err)
+	}
+	if !bytes.HasPrefix(payload, []byte(screenUpdatePayloadMagicV4)) {
+		t.Fatalf("expected TSU4 when opcode payload is smaller, got prefix %q", payload[:minInt(len(payload), 8)])
+	}
+}
+
+func TestEncodeScreenUpdatePayloadKeepsTSU4WhenV3WouldDropOpcodeOnlyContent(t *testing.T) {
+	update := ScreenUpdate{
+		Size:         protocolSize(80, 24),
+		ScreenScroll: 1,
+		Ops: []ScreenOp{
+			{Code: ScreenOpScrollRect, Rect: ScreenRect{X: 0, Y: 0, Width: 80, Height: 24}, Dy: -1},
+			{Code: ScreenOpWriteSpan, Row: 23, Col: 0, Cells: []Cell{{Content: "x", Width: 1}}},
+		},
+		Cursor: CursorState{Row: 23, Col: 1, Visible: true},
+		Modes:  TerminalModes{AutoWrap: true},
+	}
+
+	payload, err := EncodeScreenUpdatePayload(update)
+	if err != nil {
+		t.Fatalf("encode payload: %v", err)
+	}
+	if !bytes.HasPrefix(payload, []byte(screenUpdatePayloadMagicV4)) {
+		t.Fatalf("expected TSU4 to preserve opcode-only content, got prefix %q", payload[:minInt(len(payload), 8)])
 	}
 }
 

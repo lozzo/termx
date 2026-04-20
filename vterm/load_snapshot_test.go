@@ -1,6 +1,7 @@
 package vterm
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -556,6 +557,39 @@ func TestVTermWriteAltScreenScrollDoesNotInvalidateWholeScreen(t *testing.T) {
 	if len(damage.ChangedScreenRows) == 0 {
 		t.Fatal("expected at least the edge row to be redrawn after alt-screen scroll")
 	}
+	cols, rows := vt.Size()
+	foundScroll := false
+	for _, op := range damage.Ops {
+		if op.Code != protocol.ScreenOpScrollRect {
+			continue
+		}
+		foundScroll = true
+		if op.Rect.Width != cols || op.Rect.Height != rows || op.Dy != -1 {
+			t.Fatalf("unexpected direct scroll op: %#v", op)
+		}
+	}
+	if !foundScroll {
+		t.Fatalf("expected direct scroll op from local x/vt damage stream, got %#v", damage.Ops)
+	}
+}
+
+func TestVTermWriteWithDamageUsesDirectSpanOps(t *testing.T) {
+	vt := New(8, 2, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("abc"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if len(damage.Ops) == 0 {
+		t.Fatalf("expected direct span ops, got %#v", damage)
+	}
+	span := damage.Ops[0]
+	if span.Code != protocol.ScreenOpWriteSpan || span.Row != 0 || span.Col != 0 {
+		t.Fatalf("unexpected first direct op: %#v", span)
+	}
+	if got := span.Cells[0].Content + span.Cells[1].Content + span.Cells[2].Content; got != "abc" {
+		t.Fatalf("unexpected direct span contents: %#v", span.Cells)
+	}
 }
 
 func TestVTermWriteAltScreenSwitchKeepsDamageCorrect(t *testing.T) {
@@ -860,6 +894,90 @@ func TestApplyScreenUpdateAppliesWideCharBoundarySpan(t *testing.T) {
 	}
 	if got := row[1]; got.Content != "" || got.Width != 0 {
 		t.Fatalf("expected wide continuation preserved, got %#v", got)
+	}
+}
+
+func TestApplyScreenUpdateAppliesOpcodeScrollRect(t *testing.T) {
+	vt := New(4, 4, 100, nil)
+	now := time.Date(2026, 4, 18, 8, 0, 4, 0, time.UTC)
+	vt.LoadSnapshotWithMetadata(nil, nil, nil, ScreenData{
+		Cells: [][]Cell{
+			{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}, {Content: "1", Width: 1}},
+			{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}, {Content: "2", Width: 1}},
+			{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}, {Content: "3", Width: 1}},
+			{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}, {Content: "4", Width: 1}},
+		},
+		IsAlternateScreen: true,
+	}, []time.Time{now, now.Add(time.Second), now.Add(2 * time.Second), now.Add(3 * time.Second)}, []string{"a", "b", "c", "d"}, CursorState{Row: 3, Col: 0, Visible: true}, TerminalModes{AlternateScreen: true, AutoWrap: true})
+
+	oldEmu := vt.emu
+	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
+		Size:         protocol.Size{Cols: 4, Rows: 4},
+		ScreenScroll: 1,
+		Ops: []protocol.ScreenOp{
+			{Code: protocol.ScreenOpScrollRect, Rect: protocol.ScreenRect{X: 0, Y: 0, Width: 4, Height: 4}, Dy: -1},
+			{Code: protocol.ScreenOpWriteSpan, Row: 3, Col: 0, Cells: []protocol.Cell{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}, {Content: "5", Width: 1}}, Timestamp: now.Add(4 * time.Second), RowKind: "e"},
+		},
+		Cursor: protocol.CursorState{Row: 3, Col: 0, Visible: true},
+		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+	}) {
+		t.Fatal("expected opcode scrollrect update to apply incrementally")
+	}
+	if vt.emu != oldEmu {
+		t.Fatal("expected opcode incremental apply to keep emulator instance")
+	}
+	screen := vt.ScreenContent()
+	got := []string{
+		rowToString(screen.Cells[0]),
+		rowToString(screen.Cells[1]),
+		rowToString(screen.Cells[2]),
+		rowToString(screen.Cells[3]),
+	}
+	if !reflect.DeepEqual(got, []string{"row2", "row3", "row4", "row5"}) {
+		t.Fatalf("unexpected opcode scrollrect rows: %#v", got)
+	}
+	if rowKind := vt.ScreenRowKindAt(0); rowKind != "b" {
+		t.Fatalf("expected shifted row kind on row 0, got %q", rowKind)
+	}
+	if rowKind := vt.ScreenRowKindAt(3); rowKind != "e" {
+		t.Fatalf("expected tail write row kind on row 3, got %q", rowKind)
+	}
+}
+
+func TestApplyScreenUpdateAppliesOpcodeCopyRect(t *testing.T) {
+	vt := New(4, 3, 100, nil)
+	now := time.Date(2026, 4, 18, 8, 0, 5, 0, time.UTC)
+	vt.LoadSnapshotWithMetadata(nil, nil, nil, ScreenData{
+		Cells: [][]Cell{
+			{{Content: "A", Width: 1}, {Content: "B", Width: 1}, {Content: "C", Width: 1}, {Content: "D", Width: 1}},
+			{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}, {Content: "2", Width: 1}},
+			{{Content: "r", Width: 1}, {Content: "o", Width: 1}, {Content: "w", Width: 1}, {Content: "3", Width: 1}},
+		},
+		IsAlternateScreen: true,
+	}, []time.Time{now, now.Add(time.Second), now.Add(2 * time.Second)}, []string{"a", "b", "c"}, CursorState{Row: 2, Col: 0, Visible: true}, TerminalModes{AlternateScreen: true, AutoWrap: true})
+
+	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 4, Rows: 3},
+		Ops: []protocol.ScreenOp{
+			{Code: protocol.ScreenOpCopyRect, Src: protocol.ScreenRect{X: 0, Y: 0, Width: 4, Height: 1}, DstX: 0, DstY: 2},
+		},
+		Cursor: protocol.CursorState{Row: 2, Col: 0, Visible: true},
+		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+	}) {
+		t.Fatal("expected opcode copyrect update to apply incrementally")
+	}
+
+	screen := vt.ScreenContent()
+	got := []string{
+		rowToString(screen.Cells[0]),
+		rowToString(screen.Cells[1]),
+		rowToString(screen.Cells[2]),
+	}
+	if !reflect.DeepEqual(got, []string{"ABCD", "row2", "ABCD"}) {
+		t.Fatalf("unexpected opcode copyrect rows: %#v", got)
+	}
+	if rowKind := vt.ScreenRowKindAt(2); rowKind != "a" {
+		t.Fatalf("expected copied row kind on destination row, got %q", rowKind)
 	}
 }
 

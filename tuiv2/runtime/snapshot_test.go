@@ -280,6 +280,174 @@ func TestApplyScreenUpdateSnapshotScreenScrollShiftPreservesPreviousSnapshot(t *
 	}
 }
 
+func TestApplyScreenUpdateSnapshotOpcodeScrollRectAndWriteSpan(t *testing.T) {
+	now := time.Date(2026, 4, 18, 13, 30, 0, 0, time.UTC)
+	current := &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 4, Rows: 4},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			snapshotTestRow("row1"),
+			snapshotTestRow("row2"),
+			snapshotTestRow("row3"),
+			snapshotTestRow("row4"),
+		}},
+		ScreenTimestamps: []time.Time{now, now.Add(time.Second), now.Add(2 * time.Second), now.Add(3 * time.Second)},
+		ScreenRowKinds:   []string{"a", "b", "c", "d"},
+		Cursor:           protocol.CursorState{Visible: true},
+		Modes:            protocol.TerminalModes{AutoWrap: true},
+	}
+
+	next := applyScreenUpdateSnapshot(current, "term-1", protocol.ScreenUpdate{
+		Size:         protocol.Size{Cols: 4, Rows: 4},
+		ScreenScroll: 1,
+		Ops: []protocol.ScreenOp{
+			{Code: protocol.ScreenOpScrollRect, Rect: protocol.ScreenRect{X: 0, Y: 0, Width: 4, Height: 4}, Dy: -1},
+			{Code: protocol.ScreenOpWriteSpan, Row: 3, Col: 0, Cells: snapshotTestRow("row5"), Timestamp: now.Add(4 * time.Second), RowKind: "e"},
+		},
+		Cursor: protocol.CursorState{Row: 3, Col: 0, Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+
+	got := []string{
+		rowToString(next.Screen.Cells[0]),
+		rowToString(next.Screen.Cells[1]),
+		rowToString(next.Screen.Cells[2]),
+		rowToString(next.Screen.Cells[3]),
+	}
+	if !reflect.DeepEqual(got, []string{"row2", "row3", "row4", "row5"}) {
+		t.Fatalf("unexpected opcode scrollrect rows: %#v", got)
+	}
+	if !next.ScreenTimestamps[0].Equal(now.Add(time.Second)) || next.ScreenRowKinds[0] != "b" {
+		t.Fatalf("expected scrollrect metadata to shift with rows, got ts=%v kind=%q", next.ScreenTimestamps[0], next.ScreenRowKinds[0])
+	}
+	if !next.ScreenTimestamps[3].Equal(now.Add(4*time.Second)) || next.ScreenRowKinds[3] != "e" {
+		t.Fatalf("expected write span metadata on tail row, got ts=%v kind=%q", next.ScreenTimestamps[3], next.ScreenRowKinds[3])
+	}
+}
+
+func TestApplyScreenUpdateSnapshotOpcodeCopyRect(t *testing.T) {
+	now := time.Date(2026, 4, 18, 14, 0, 0, 0, time.UTC)
+	current := &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 4, Rows: 3},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			snapshotTestRow("ABCD"),
+			snapshotTestRow("row2"),
+			snapshotTestRow("row3"),
+		}},
+		ScreenTimestamps: []time.Time{now, now.Add(time.Second), now.Add(2 * time.Second)},
+		ScreenRowKinds:   []string{"a", "b", "c"},
+		Cursor:           protocol.CursorState{Visible: true},
+		Modes:            protocol.TerminalModes{AutoWrap: true},
+	}
+
+	next := applyScreenUpdateSnapshot(current, "term-1", protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 4, Rows: 3},
+		Ops: []protocol.ScreenOp{
+			{Code: protocol.ScreenOpCopyRect, Src: protocol.ScreenRect{X: 0, Y: 0, Width: 4, Height: 1}, DstX: 0, DstY: 2},
+		},
+		Cursor: protocol.CursorState{Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+
+	got := []string{
+		rowToString(next.Screen.Cells[0]),
+		rowToString(next.Screen.Cells[1]),
+		rowToString(next.Screen.Cells[2]),
+	}
+	if !reflect.DeepEqual(got, []string{"ABCD", "row2", "ABCD"}) {
+		t.Fatalf("unexpected opcode copyrect rows: %#v", got)
+	}
+	if !next.ScreenTimestamps[2].Equal(now) || next.ScreenRowKinds[2] != "a" {
+		t.Fatalf("expected copyrect metadata copied from source row, got ts=%v kind=%q", next.ScreenTimestamps[2], next.ScreenRowKinds[2])
+	}
+}
+
+func TestApplyScreenUpdateSnapshotOpcodeCopyRectFullWidthOverlap(t *testing.T) {
+	now := time.Date(2026, 4, 18, 14, 10, 0, 0, time.UTC)
+	current := &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 4, Rows: 4},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			snapshotTestRow("row0"),
+			snapshotTestRow("row1"),
+			snapshotTestRow("row2"),
+			snapshotTestRow("row3"),
+		}},
+		ScreenTimestamps: []time.Time{now, now.Add(time.Second), now.Add(2 * time.Second), now.Add(3 * time.Second)},
+		ScreenRowKinds:   []string{"a", "b", "c", "d"},
+		Cursor:           protocol.CursorState{Visible: true},
+		Modes:            protocol.TerminalModes{AutoWrap: true},
+	}
+
+	next := applyScreenUpdateSnapshot(current, "term-1", protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 4, Rows: 4},
+		Ops: []protocol.ScreenOp{
+			{Code: protocol.ScreenOpCopyRect, Src: protocol.ScreenRect{X: 0, Y: 0, Width: 4, Height: 3}, DstX: 0, DstY: 1},
+		},
+		Cursor: protocol.CursorState{Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+
+	got := []string{
+		rowToString(next.Screen.Cells[0]),
+		rowToString(next.Screen.Cells[1]),
+		rowToString(next.Screen.Cells[2]),
+		rowToString(next.Screen.Cells[3]),
+	}
+	if !reflect.DeepEqual(got, []string{"row0", "row0", "row1", "row2"}) {
+		t.Fatalf("unexpected overlapping copyrect rows: %#v", got)
+	}
+	if !next.ScreenTimestamps[3].Equal(now.Add(2*time.Second)) || next.ScreenRowKinds[3] != "c" {
+		t.Fatalf("expected overlapping copyrect metadata copied from source row, got ts=%v kind=%q", next.ScreenTimestamps[3], next.ScreenRowKinds[3])
+	}
+}
+
+func TestApplyScreenUpdateSnapshotOpcodeScrollRectPartialRegion(t *testing.T) {
+	now := time.Date(2026, 4, 18, 14, 20, 0, 0, time.UTC)
+	current := &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 4, Rows: 5},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			snapshotTestRow("row0"),
+			snapshotTestRow("row1"),
+			snapshotTestRow("row2"),
+			snapshotTestRow("row3"),
+			snapshotTestRow("row4"),
+		}},
+		ScreenTimestamps: []time.Time{now, now.Add(time.Second), now.Add(2 * time.Second), now.Add(3 * time.Second), now.Add(4 * time.Second)},
+		ScreenRowKinds:   []string{"a", "b", "c", "d", "e"},
+		Cursor:           protocol.CursorState{Visible: true},
+		Modes:            protocol.TerminalModes{AutoWrap: true},
+	}
+
+	next := applyScreenUpdateSnapshot(current, "term-1", protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 4, Rows: 5},
+		Ops: []protocol.ScreenOp{
+			{Code: protocol.ScreenOpScrollRect, Rect: protocol.ScreenRect{X: 0, Y: 1, Width: 4, Height: 3}, Dy: -1},
+		},
+		Cursor: protocol.CursorState{Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+
+	got := []string{
+		rowToString(next.Screen.Cells[0]),
+		rowToString(next.Screen.Cells[1]),
+		rowToString(next.Screen.Cells[2]),
+		rowToString(next.Screen.Cells[3]),
+		rowToString(next.Screen.Cells[4]),
+	}
+	if !reflect.DeepEqual(got, []string{"row0", "row2", "row3", "", "row4"}) {
+		t.Fatalf("unexpected partial scrollrect rows: %#v", got)
+	}
+	if !next.ScreenTimestamps[1].Equal(now.Add(2*time.Second)) || next.ScreenRowKinds[1] != "c" {
+		t.Fatalf("expected partial scrollrect metadata shift on row 1, got ts=%v kind=%q", next.ScreenTimestamps[1], next.ScreenRowKinds[1])
+	}
+	if !next.ScreenTimestamps[4].Equal(now.Add(4*time.Second)) || next.ScreenRowKinds[4] != "e" {
+		t.Fatalf("expected outside row metadata untouched, got ts=%v kind=%q", next.ScreenTimestamps[4], next.ScreenRowKinds[4])
+	}
+}
+
 func snapshotTestRow(text string) []protocol.Cell {
 	row := make([]protocol.Cell, 0, len(text))
 	for _, r := range text {
