@@ -292,11 +292,15 @@ func (v *VTerm) drainResponses(emu *charmvt.SafeEmulator, handler ResponseHandle
 }
 
 func (v *VTerm) Write(data []byte) (n int, err error) {
-	n, err, _ = v.WriteWithDamage(data)
+	n, err, _ = v.write(data, false)
 	return n, err
 }
 
 func (v *VTerm) WriteWithDamage(data []byte) (n int, err error, damage WriteDamage) {
+	return v.write(data, true)
+}
+
+func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage WriteDamage) {
 	finish := perftrace.Measure("vterm.write")
 	defer func() {
 		finish(len(data))
@@ -314,7 +318,10 @@ func (v *VTerm) WriteWithDamage(data []byte) (n int, err error, damage WriteDama
 	}
 	snapshotFinish := perftrace.Measure("vterm.write.before_snapshot")
 	beforeScreen := append([]rowFingerprint(nil), v.screenFingerprintCache...)
-	beforeScreenRows := cloneCellRows(v.screenRowsLocked())
+	var beforeScreenRows [][]Cell
+	if collectDamage {
+		beforeScreenRows = cloneCellRows(v.screenRowsLocked())
+	}
 	beforeScrollbackLen := v.scrollbackRowCountLocked()
 	beforeScreenTimestamps := cloneTimeSlice(v.screenTimestamps)
 	beforeScreenRowKinds := cloneStringSlice(v.screenRowKinds)
@@ -333,7 +340,11 @@ func (v *VTerm) WriteWithDamage(data []byte) (n int, err error, damage WriteDama
 		directDamages   []charmvt.Damage
 		hasDirectDamage bool
 	)
-	n, err, directDamages, hasDirectDamage = safeEmulatorWriteWithDamage(v.emu, normalized)
+	if collectDamage {
+		n, err, directDamages, hasDirectDamage = safeEmulatorWriteWithDamage(v.emu, normalized)
+	} else {
+		n, err = safeEmulatorWrite(v.emu, normalized)
+	}
 	emulatorFinish(len(normalized))
 	pos := v.emu.CursorPosition()
 	v.cursor.Row = pos.Y
@@ -351,25 +362,40 @@ func (v *VTerm) WriteWithDamage(data []byte) (n int, err error, damage WriteDama
 	}
 	dirtyRows, dirtyReliable := v.consumeTouchedRowsLocked()
 	now := time.Now().UTC()
+	var afterScreen []rowFingerprint
 	switch {
 	case !dirtyReliable,
 		beforeWidth != afterWidth,
 		beforeHeight != afterHeight,
 		beforeAltScreen != afterAltScreen:
-		damage = v.writeDamageFullCompareLocked(beforeScreenRows, beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, now)
+		afterScreen = v.screenRowFingerprintsLocked()
+		v.screenFingerprintCache = afterScreen
 	default:
-		damage = v.writeDamageDirtyRowsLocked(beforeScreenRows, beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, dirtyRows, now)
-	}
-	if hasDirectDamage && beforeWidth == afterWidth && beforeHeight == afterHeight && beforeAltScreen == afterAltScreen {
-		if directOps := v.damageOpsFromCharmVTDamages(directDamages, afterWidth, v.screenTimestamps, v.screenRowKinds); directOps != nil {
-			damage.Ops = directOps
+		v.ensureScreenFingerprintCacheLocked()
+		for _, row := range dirtyRows {
+			if row < 0 || row >= len(v.screenFingerprintCache) {
+				continue
+			}
+			v.screenFingerprintCache[row] = v.screenRowFingerprintLocked(row)
 		}
+		afterScreen = v.screenFingerprintCache
 	}
-	damage.DiffCPUNanos = time.Since(diffStart).Nanoseconds()
+	cachePlan := v.reconcileRowMetadataLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, afterScreen, now)
+	v.pruneResizeTailFillLocked()
+	v.reconcileRowCachesLocked(beforeScreen, cachePlan)
+	if collectDamage {
+		damage = v.writeDamageLocked(beforeScreenRows, beforeScreen, cachePlan)
+		if hasDirectDamage && beforeWidth == afterWidth && beforeHeight == afterHeight && beforeAltScreen == afterAltScreen {
+			if directOps := v.damageOpsFromCharmVTDamages(directDamages, afterWidth, v.screenTimestamps, v.screenRowKinds); directOps != nil {
+				damage.Ops = directOps
+			}
+		}
+		damage.DiffCPUNanos = time.Since(diffStart).Nanoseconds()
+		perftrace.Count("vterm.write.changed_rows", damageChangedRowCount(damage))
+		perftrace.Count("vterm.write.changed_cells", damageChangedCellCount(damage))
+		perftrace.Count("vterm.write.diff_cpu_ns", int(damage.DiffCPUNanos))
+	}
 	reconcileFinish(0)
-	perftrace.Count("vterm.write.changed_rows", damageChangedRowCount(damage))
-	perftrace.Count("vterm.write.changed_cells", damageChangedCellCount(damage))
-	perftrace.Count("vterm.write.diff_cpu_ns", int(damage.DiffCPUNanos))
 	return n, err, damage
 }
 

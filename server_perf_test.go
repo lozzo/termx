@@ -96,6 +96,62 @@ func BenchmarkServerListParallel(b *testing.B) {
 	})
 }
 
+func BenchmarkTerminalScreenUpdatePayloadFromDamageLocked(b *testing.B) {
+	scenarios := []struct {
+		name  string
+		build func(*testing.B) (*Terminal, vterm.WriteDamage)
+	}{
+		{
+			name: "scroll_output",
+			build: func(b *testing.B) (*Terminal, vterm.WriteDamage) {
+				vt := vterm.New(80, 24, 4096, nil)
+				vt.LoadSnapshot(
+					benchmarkFilledScreen(80, 24, "log"),
+					vterm.CursorState{Row: 23, Col: 0, Visible: true},
+					vterm.TerminalModes{AutoWrap: true},
+				)
+				_, err, damage := vt.WriteWithDamage([]byte("scroll-a\n"))
+				if err != nil {
+					b.Fatalf("WriteWithDamage failed: %v", err)
+				}
+				return &Terminal{vterm: vt, title: "bench"}, damage
+			},
+		},
+		{
+			name: "fullscreen_alt",
+			build: func(b *testing.B) (*Terminal, vterm.WriteDamage) {
+				vt := vterm.New(100, 30, 4096, nil)
+				vt.LoadSnapshot(
+					benchmarkFilledScreen(100, 30, "tui"),
+					vterm.CursorState{Row: 0, Col: 0, Visible: true},
+					vterm.TerminalModes{AlternateScreen: true, AutoWrap: true},
+				)
+				_, err, damage := vt.WriteWithDamage(benchmarkFullScreenPayload(100, 30, 'X'))
+				if err != nil {
+					b.Fatalf("WriteWithDamage failed: %v", err)
+				}
+				return &Terminal{vterm: vt, title: "bench"}, damage
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		b.Run(scenario.name, func(b *testing.B) {
+			term, damage := scenario.build(b)
+			totalBytes := 0
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				payload, ok := term.screenUpdatePayloadFromDamageLocked(damage)
+				if !ok {
+					b.Fatal("expected payload")
+				}
+				totalBytes += len(payload)
+			}
+			b.ReportMetric(float64(totalBytes)/float64(b.N), "payload_bytes")
+		})
+	}
+}
+
 type writeDamageBenchmarkCase struct {
 	vt         *vterm.VTerm
 	beforeEach func(int)

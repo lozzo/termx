@@ -90,19 +90,73 @@ func encodeMergedScreenStatePayload(before, after *streamScreenState, resetScrol
 	return payload, true
 }
 
+func recordEncodedScreenUpdatePayload(mode screenUpdateEncodeMode, payload []byte) {
+	if len(payload) == 0 {
+		return
+	}
+	perftrace.Count("terminal.screen_update.encoded_bytes", len(payload))
+	perftrace.Count("terminal.screen_update.encode_mode."+string(mode), len(payload))
+}
+
+// Delta-heavy live output almost always favors incremental payloads, so avoid
+// paying for a full-replace encode comparison on obvious delta cases.
+func screenUpdateShouldEncodeDeltaOnly(damage protocol.ScreenUpdate, preferAggressiveFullReplace bool) bool {
+	if damage.FullReplace {
+		return false
+	}
+	hasScrollOpcode := screenUpdateHasScrollOpcode(damage)
+	hasScrollbackChange := damage.ResetScrollback || damage.ScrollbackTrim > 0 || len(damage.ScrollbackAppend) > 0
+	if hasScrollOpcode || hasScrollbackChange {
+		return true
+	}
+	damageChangedRows := screenUpdateChangedRowCount(damage)
+	damageChangedCells := screenUpdateChangedCellCount(damage)
+	if damageChangedRows == 0 && damageChangedCells == 0 {
+		return true
+	}
+	if preferAggressiveFullReplace {
+		return false
+	}
+	rowCount := int(damage.Size.Rows)
+	if rowCount <= 0 {
+		rowCount = damageChangedRows
+	}
+	totalCells := screenUpdateTotalCells(damage)
+	changedRatio := 0.0
+	if totalCells > 0 {
+		changedRatio = float64(damageChangedCells) / float64(totalCells)
+	}
+	if changedRatio >= 0.60 {
+		return false
+	}
+	if damageChangedRows >= maxInt(1, rowCount*3/4) {
+		return false
+	}
+	return true
+}
+
 func encodeScreenUpdatePayloadByStrategy(damage protocol.ScreenUpdate, full protocol.ScreenUpdate, preferAggressiveFullReplace bool) ([]byte, screenUpdateEncodeMode, bool) {
-	damagePayload, damageErr := protocol.EncodeScreenUpdatePayload(damage)
+	damagePayload := []byte(nil)
+	damageErr := error(nil)
+	if screenUpdateShouldEncodeDeltaOnly(damage, preferAggressiveFullReplace) {
+		damagePayload, damageErr = protocol.EncodeScreenUpdatePayload(damage)
+		if damageErr == nil {
+			recordEncodedScreenUpdatePayload(screenUpdateEncodeModeDelta, damagePayload)
+			return damagePayload, screenUpdateEncodeModeDelta, true
+		}
+	}
+	if damagePayload == nil && damageErr == nil {
+		damagePayload, damageErr = protocol.EncodeScreenUpdatePayload(damage)
+	}
 	fullPayload, fullErr := protocol.EncodeScreenUpdatePayload(full)
 	switch {
 	case damageErr != nil && fullErr != nil:
 		return nil, "", false
 	case damageErr != nil:
-		perftrace.Count("terminal.screen_update.encoded_bytes", len(fullPayload))
-		perftrace.Count("terminal.screen_update.encode_mode.full_replace", len(fullPayload))
+		recordEncodedScreenUpdatePayload(screenUpdateEncodeModeFullReplace, fullPayload)
 		return fullPayload, screenUpdateEncodeModeFullReplace, true
 	case fullErr != nil:
-		perftrace.Count("terminal.screen_update.encoded_bytes", len(damagePayload))
-		perftrace.Count("terminal.screen_update.encode_mode.delta", len(damagePayload))
+		recordEncodedScreenUpdatePayload(screenUpdateEncodeModeDelta, damagePayload)
 		return damagePayload, screenUpdateEncodeModeDelta, true
 	}
 
@@ -131,12 +185,10 @@ func encodeScreenUpdatePayloadByStrategy(damage protocol.ScreenUpdate, full prot
 	}
 
 	if chooseFull {
-		perftrace.Count("terminal.screen_update.encoded_bytes", len(fullPayload))
-		perftrace.Count("terminal.screen_update.encode_mode.full_replace", len(fullPayload))
+		recordEncodedScreenUpdatePayload(screenUpdateEncodeModeFullReplace, fullPayload)
 		return fullPayload, screenUpdateEncodeModeFullReplace, true
 	}
-	perftrace.Count("terminal.screen_update.encoded_bytes", len(damagePayload))
-	perftrace.Count("terminal.screen_update.encode_mode.delta", len(damagePayload))
+	recordEncodedScreenUpdatePayload(screenUpdateEncodeModeDelta, damagePayload)
 	return damagePayload, screenUpdateEncodeModeDelta, true
 }
 
@@ -169,7 +221,7 @@ func fullReplaceUpdateForStateDelta(before, after *streamScreenState, resetScrol
 	return update
 }
 
-func screenUpdateFromDamageState(damage localvterm.WriteDamage, after *streamScreenState) protocol.ScreenUpdate {
+func screenUpdateFromDamageState(damage localvterm.WriteDamage, title string) protocol.ScreenUpdate {
 	update := protocol.ScreenUpdate{
 		Size:             protocol.Size{Cols: uint16(damage.SizeCols), Rows: uint16(damage.SizeRows)},
 		ScreenScroll:     damage.ScreenScroll,
@@ -179,9 +231,7 @@ func screenUpdateFromDamageState(damage localvterm.WriteDamage, after *streamScr
 		ScrollbackAppend: make([]protocol.ScrollbackRowAppend, 0, len(damage.ScrollbackAppend)),
 		Cursor:           protocolCursorStateFromVTerm(damage.Cursor),
 		Modes:            protocolModesFromVTerm(damage.Modes),
-	}
-	if after != nil {
-		update.Title = after.title
+		Title:            title,
 	}
 	for _, span := range damage.ChangedScreenSpans {
 		update.ChangedSpans = append(update.ChangedSpans, protocol.ScreenSpanUpdate{

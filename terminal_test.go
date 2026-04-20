@@ -693,6 +693,11 @@ func screenUpdateContainsText(update protocol.ScreenUpdate, needle string) bool 
 			return true
 		}
 	}
+	for _, span := range update.ChangedSpans {
+		if strings.Contains(protocolRowToString(span.Cells), needle) {
+			return true
+		}
+	}
 	for _, row := range update.ScrollbackAppend {
 		if strings.Contains(protocolRowToString(row.Cells), needle) {
 			return true
@@ -715,21 +720,11 @@ func TestScreenUpdatePayloadFromDamageOmitsRedundantControlOps(t *testing.T) {
 		vterm: vt,
 		title: "demo",
 	}
-	payload, ok := term.screenUpdatePayloadFromDamageLocked(localvterm.WriteDamage{
-		SizeCols: 8,
-		SizeRows: 2,
-		Ops: []localvterm.DamageOp{{
-			Code: protocol.ScreenOpWriteSpan,
-			Row:  0,
-			Col:  0,
-			Cells: []localvterm.Cell{
-				{Content: "o", Width: 1},
-				{Content: "k", Width: 1},
-			},
-		}},
-		Cursor: localvterm.CursorState{Row: 0, Col: 2, Visible: true},
-		Modes:  localvterm.TerminalModes{AutoWrap: true},
-	})
+	_, err, damage := vt.WriteWithDamage([]byte("ok"))
+	if err != nil {
+		t.Fatalf("WriteWithDamage failed: %v", err)
+	}
+	payload, ok := term.screenUpdatePayloadFromDamageLocked(damage)
 	if !ok {
 		t.Fatal("expected payload")
 	}
@@ -746,8 +741,117 @@ func TestScreenUpdatePayloadFromDamageOmitsRedundantControlOps(t *testing.T) {
 			t.Fatalf("expected server payload to omit redundant control op, got %#v", op)
 		}
 	}
-	if len(update.Ops) != 1 || update.Ops[0].Code != protocol.ScreenOpWriteSpan {
-		t.Fatalf("expected only content op to remain, got %#v", update.Ops)
+	if !screenUpdateContainsText(update, "ok") {
+		t.Fatalf("expected payload to preserve content op, got %#v", update)
+	}
+}
+
+func TestScreenUpdateShouldEncodeDeltaOnly(t *testing.T) {
+	fullRows := make([]protocol.ScreenOp, 0, 24)
+	for row := 0; row < 24; row++ {
+		fullRows = append(fullRows, protocol.ScreenOp{
+			Code: protocol.ScreenOpWriteSpan,
+			Row:  row,
+			Col:  0,
+			Cells: []protocol.Cell{
+				{Content: strings.Repeat("x", 1), Width: 1},
+			},
+		})
+		fullRows[row].Cells = make([]protocol.Cell, 80)
+		for col := range fullRows[row].Cells {
+			fullRows[row].Cells[col] = protocol.Cell{Content: "x", Width: 1}
+		}
+	}
+	tests := []struct {
+		name                    string
+		update                  protocol.ScreenUpdate
+		preferAggressiveFullRep bool
+		want                    bool
+	}{
+		{
+			name: "screen_scroll",
+			update: protocol.ScreenUpdate{
+				Size:         protocol.Size{Cols: 80, Rows: 24},
+				ScreenScroll: 1,
+			},
+			want: true,
+		},
+		{
+			name: "scrollback_append",
+			update: protocol.ScreenUpdate{
+				Size: protocol.Size{Cols: 80, Rows: 24},
+				ScrollbackAppend: []protocol.ScrollbackRowAppend{{
+					Cells: []protocol.Cell{{Content: "log", Width: 1}},
+				}},
+			},
+			want: true,
+		},
+		{
+			name: "small_partial_damage",
+			update: protocol.ScreenUpdate{
+				Size: protocol.Size{Cols: 80, Rows: 24},
+				Ops: []protocol.ScreenOp{{
+					Code: protocol.ScreenOpWriteSpan,
+					Row:  0,
+					Col:  0,
+					Cells: []protocol.Cell{
+						{Content: "o", Width: 1},
+						{Content: "k", Width: 1},
+					},
+				}},
+			},
+			want: true,
+		},
+		{
+			name: "alt_screen_full_damage",
+			update: protocol.ScreenUpdate{
+				Size: protocol.Size{Cols: 80, Rows: 24},
+				Ops:  fullRows,
+			},
+			preferAggressiveFullRep: true,
+			want:                    false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := screenUpdateShouldEncodeDeltaOnly(tt.update, tt.preferAggressiveFullRep); got != tt.want {
+				t.Fatalf("screenUpdateShouldEncodeDeltaOnly() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestScreenUpdatePayloadFromDamageScrollUsesDeltaPayload(t *testing.T) {
+	vt := localvterm.New(80, 24, 128, nil)
+	vt.LoadSnapshot(
+		benchmarkFilledScreen(80, 24, "log"),
+		localvterm.CursorState{Row: 23, Col: 0, Visible: true},
+		localvterm.TerminalModes{AutoWrap: true},
+	)
+	_, err, damage := vt.WriteWithDamage([]byte("scroll-a\n"))
+	if err != nil {
+		t.Fatalf("WriteWithDamage failed: %v", err)
+	}
+	term := &Terminal{
+		vterm: vt,
+		title: "demo",
+	}
+	payload, ok := term.screenUpdatePayloadFromDamageLocked(damage)
+	if !ok {
+		t.Fatal("expected payload")
+	}
+	update, err := protocol.DecodeScreenUpdatePayload(payload)
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if update.FullReplace {
+		t.Fatalf("expected delta payload for scroll update, got full replace %#v", update)
+	}
+	if update.Title != "demo" {
+		t.Fatalf("expected title propagated, got %q", update.Title)
+	}
+	if update.ScreenScroll == 0 && len(update.Ops) == 0 && len(update.ScrollbackAppend) == 0 {
+		t.Fatalf("expected scroll delta operations, got %#v", update)
 	}
 }
 

@@ -83,9 +83,9 @@ type Terminal struct {
 }
 
 const attachReplayScrollbackLimit = 0
-const serverVTermFlushThreshold = 256 * 1024
+const serverVTermFlushThreshold = 512 * 1024
 
-var serverVTermFlushIdleDelay = 2 * time.Millisecond
+var serverVTermFlushIdleDelay = 8 * time.Millisecond
 
 func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Terminal, error) {
 	p, vt, err := spawnTerminalProcess(cfg)
@@ -776,16 +776,14 @@ func (t *Terminal) flushPendingVTermOutputLocked() {
 		t.pendingVTermEpoch = 0
 		return
 	}
-	output := append([]byte(nil), t.pendingVTermOutput...)
-	t.pendingVTermOutput = t.pendingVTermOutput[:0]
+	output := t.pendingVTermOutput
+	t.pendingVTermOutput = nil
 	t.pendingVTermEpoch = 0
 	if t.vterm != nil {
-		_, _, damage := t.vterm.WriteWithDamage(output)
-		if t.stream != nil {
-			if payload, ok := t.screenUpdatePayloadFromDamageLocked(damage); ok {
-				t.stream.BroadcastMessage(fanout.StreamMessage{Type: fanout.StreamScreenUpdate, Payload: payload})
-			}
-		}
+		_, _ = t.vterm.Write(output)
+	}
+	if cap(output) <= maxInt(serverVTermFlushThreshold, protocol.MaxFrameSize) {
+		t.pendingVTermOutput = output[:0]
 	}
 }
 
@@ -814,6 +812,9 @@ func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, 
 		if n > 0 {
 			chunk := append([]byte(nil), buf[:n]...)
 			t.streamMu.Lock()
+			if stream != nil {
+				stream.Broadcast(chunk)
+			}
 			t.queuePendingVTermOutputLocked(epoch, chunk)
 			t.armPendingVTermFlushLocked(epoch)
 			t.streamMu.Unlock()
@@ -1021,11 +1022,18 @@ func (t *Terminal) screenUpdatePayloadFromDamageLocked(damage vterm.WriteDamage)
 	if t == nil || t.vterm == nil {
 		return nil, false
 	}
+	deltaUpdate := screenUpdateFromDamageState(damage, t.currentTitleLocked())
+	if screenUpdateShouldEncodeDeltaOnly(deltaUpdate, damage.Modes.AlternateScreen) {
+		payload, err := protocol.EncodeScreenUpdatePayload(deltaUpdate)
+		if err == nil {
+			recordEncodedScreenUpdatePayload(screenUpdateEncodeModeDelta, payload)
+			return payload, true
+		}
+	}
 	state := t.currentStreamScreenStateLocked()
 	if state == nil || state.snapshot == nil {
 		return nil, false
 	}
-	deltaUpdate := screenUpdateFromDamageState(damage, state)
 	fullUpdate := fullReplaceUpdateForStateDelta(nil, state, !state.snapshot.Modes.AlternateScreen)
 	if state.snapshot.Modes.AlternateScreen {
 		fullUpdate.ResetScrollback = false
