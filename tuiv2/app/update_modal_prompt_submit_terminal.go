@@ -164,6 +164,7 @@ func (m *Model) submitCreateTerminal(prompt *modal.PromptState, paneID string, p
 	if pane == "" {
 		pane = prompt.PaneID
 	}
+	params = m.applyCreateTerminalPaneSize(pane, params)
 	requestID := ""
 	if m.modalHost.Session != nil {
 		requestID = m.modalHost.Session.RequestID
@@ -176,4 +177,23 @@ func (m *Model) submitCreateTerminal(prompt *modal.PromptState, paneID string, p
 		return nil
 	}
 	return service.createAndAttachCmd(pane, prompt.CreateTarget, params)
+}
+
+func (m *Model) applyCreateTerminalPaneSize(paneID string, params protocol.CreateParams) protocol.CreateParams {
+	if m == nil || strings.TrimSpace(paneID) == "" {
+		return params
+	}
+	pane, rect, ok := m.visiblePaneForInput(paneID)
+	if !ok || pane == nil {
+		return params
+	}
+	viewportRect, ok := m.terminalViewportRect(pane.ID, rect)
+	if !ok || viewportRect.W <= 0 || viewportRect.H <= 0 {
+		return params
+	}
+	params.Size = protocol.Size{
+		Cols: uint16(maxInt(2, viewportRect.W)),
+		Rows: uint16(maxInt(2, viewportRect.H)),
+	}
+	return params
 }

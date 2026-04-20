@@ -2711,6 +2711,8 @@ func TestModelPromptSubmitCreatesAndAttachesTerminal(t *testing.T) {
 		}},
 	})
 	model := New(shared.Config{}, wb, rt)
+	model.width = 120
+	model.height = 40
 	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: "prompt-1"}
 	model.modalHost.Prompt = &modal.PromptState{
 		Kind:        "create-terminal-form",
@@ -2727,6 +2729,14 @@ func TestModelPromptSubmitCreatesAndAttachesTerminal(t *testing.T) {
 		ActiveField: 3,
 	}
 	model.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: "prompt-1"})
+	sourcePane, rect, ok := model.visiblePaneForInput("pane-1")
+	if !ok || sourcePane == nil {
+		t.Fatal("expected source pane viewport before create")
+	}
+	viewportRect, ok := model.terminalViewportRect(sourcePane.ID, rect)
+	if !ok {
+		t.Fatal("expected source pane terminal viewport before create")
+	}
 
 	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: "pane-1"})
 	if cmd == nil {
@@ -2743,6 +2753,9 @@ func TestModelPromptSubmitCreatesAndAttachesTerminal(t *testing.T) {
 	if got := client.createCalls[0].params.Dir; got != "/tmp/demo" {
 		t.Fatalf("expected create dir /tmp/demo, got %q", got)
 	}
+	if got := client.createCalls[0].params.Size; got.Cols != uint16(viewportRect.W) || got.Rows != uint16(viewportRect.H) {
+		t.Fatalf("expected create size %dx%d from pane viewport, got %dx%d", viewportRect.W, viewportRect.H, got.Cols, got.Rows)
+	}
 	if got := client.createCalls[0].params.Tags["role"]; got != "dev" || client.createCalls[0].params.Tags["env"] != "test" {
 		t.Fatalf("unexpected create tags: %#v", client.createCalls[0].params.Tags)
 	}
@@ -2752,6 +2765,63 @@ func TestModelPromptSubmitCreatesAndAttachesTerminal(t *testing.T) {
 	}
 	if model.modalHost.Session != nil {
 		t.Fatalf("expected prompt session closed after create, got %#v", model.modalHost.Session)
+	}
+}
+
+func TestModelPromptSubmitSplitCreateUsesSourcePaneViewportSize(t *testing.T) {
+	client := &recordingBridgeClient{
+		createResult: &protocol.CreateResult{TerminalID: "term-new"},
+		attachResult: &protocol.AttachResult{Channel: 13, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-new": {
+				TerminalID: "term-new",
+				Size:       protocol.Size{Cols: 80, Rows: 24},
+				Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "k", Width: 1}}}},
+			},
+		},
+	}
+	model := setupModel(t, modelOpts{client: client})
+	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: "prompt-1"}
+	model.modalHost.Prompt = &modal.PromptState{
+		Kind:         "create-terminal-form",
+		Title:        "Create Terminal",
+		DefaultName:  "shell",
+		PaneID:       "pane-1",
+		CreateTarget: modal.CreateTargetSplit,
+		Command:      []string{"/bin/sh"},
+		Fields: []modal.PromptField{
+			{Key: "name", Label: "name", Value: "demo", Cursor: 4, Required: true},
+			{Key: "command", Label: "command"},
+			{Key: "workdir", Label: "workdir"},
+			{Key: "tags", Label: "tags"},
+		},
+	}
+	model.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: "prompt-1"})
+
+	sourcePane, rect, ok := model.visiblePaneForInput("pane-1")
+	if !ok || sourcePane == nil {
+		t.Fatal("expected source pane viewport before split create")
+	}
+	viewportRect, ok := model.terminalViewportRect(sourcePane.ID, rect)
+	if !ok {
+		t.Fatal("expected source pane terminal viewport before split create")
+	}
+
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: "pane-1"})
+	if cmd == nil {
+		t.Fatal("expected async split create command")
+	}
+	applyTestMsg(t, model, cmd(), "split create terminal submit")
+
+	if len(client.createCalls) != 1 {
+		t.Fatalf("expected one create call, got %d", len(client.createCalls))
+	}
+	if got := client.createCalls[0].params.Size; got.Cols != uint16(viewportRect.W) || got.Rows != uint16(viewportRect.H) {
+		t.Fatalf("expected split create size %dx%d from source pane viewport, got %dx%d", viewportRect.W, viewportRect.H, got.Cols, got.Rows)
+	}
+	tab := model.workbench.CurrentTab()
+	if tab == nil || len(tab.Panes) != 2 {
+		t.Fatalf("expected split create to add a pane, got %#v", tab)
 	}
 }
 
