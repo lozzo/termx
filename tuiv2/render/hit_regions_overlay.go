@@ -12,6 +12,7 @@ const (
 	HitRegionOverlayFooterAction  HitRegionKind = "overlay-footer-action"
 	HitRegionOverlayQueryInput    HitRegionKind = "overlay-query-input"
 	HitRegionPromptInput          HitRegionKind = "prompt-input"
+	HitRegionPromptSuggestionItem HitRegionKind = "prompt-suggestion-item"
 	HitRegionPromptSubmit         HitRegionKind = "prompt-submit"
 	HitRegionPromptCancel         HitRegionKind = "prompt-cancel"
 	HitRegionFloatingOverviewItem HitRegionKind = "floating-overview-item"
@@ -174,9 +175,34 @@ func promptOverlayHitRegions(prompt *modal.PromptState, width, height int) []Hit
 	}
 	lineCount := len(lines)
 	hasFooter := len(footerSpecs) > 0 || strings.TrimSpace(footer) != ""
+	var popup promptSuggestionPopupLayout
+	if prompt.IsForm() {
+		activeField := prompt.ActiveField
+		if activeField < 0 {
+			activeField = 0
+		}
+		if activeField < len(inputLines) && activeField < len(prompt.Fields) {
+			popup = buildPromptSuggestionPopupLayout(defaultUITheme(), prompt.Fields[activeField], prompt.PromptSuggestionSelected, inputLines[activeField], pickerInnerWidth(width))
+		}
+	}
 	layout := buildPickerCardLayout(width, height, lineCount, hasFooter)
 	card := pickerCardRect(layout)
 	regions := make([]HitRegion, 0, 8)
+	if popup.visible && popup.itemCount > 0 {
+		popupTopY := promptSuggestionPopupTopY(layout, popup)
+		for index := 0; index < popup.itemCount; index++ {
+			regions = append(regions, HitRegion{
+				Kind:      HitRegionPromptSuggestionItem,
+				ItemIndex: index,
+				Rect: workbench.Rect{
+					X: card.X + 1 + popup.leftWidth,
+					Y: popupTopY + popup.itemStart + index,
+					W: popup.popupWidth,
+					H: 1,
+				},
+			})
+		}
+	}
 	regions = append(regions, dismissRegions(card, width, layout.contentHeight)...)
 	for fieldIndex, inputLine := range inputLines {
 		if inputLine < 0 || inputLine >= layout.listHeight {

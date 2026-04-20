@@ -208,6 +208,66 @@ func TestOverlayHitRegionsPromptAndHelpExposeCardAndDismiss(t *testing.T) {
 	}
 }
 
+func TestOverlayHitRegionsPromptSuggestionPopupOverflowsWithoutGrowingCard(t *testing.T) {
+	prompt := &modal.PromptState{
+		Kind:        "create-terminal-form",
+		Title:       "Create Terminal",
+		Hint:        "name is required; command, workdir, tags are optional",
+		ActiveField: 2,
+		Fields: []modal.PromptField{
+			{Key: "name", Label: "name", Value: "shell", Required: true},
+			{Key: "command", Label: "command", Value: "/bin/sh"},
+			{
+				Key:             "workdir",
+				Label:           "workdir",
+				Value:           "/tmp/de",
+				SuggestionTitle: "path: /tmp",
+				SuggestionItems: []string{"/tmp/demo/", "/tmp/dev/", "/tmp/deploy/", "/tmp/design/", "/tmp/debug/", "/tmp/delta/"},
+			},
+			{Key: "tags", Label: "tags", Value: "role=dev"},
+		},
+	}
+	state := VisibleRenderState{
+		TermSize: TermSize{Width: 100, Height: 30},
+		Overlay: VisibleOverlay{
+			Kind:   VisibleOverlayPrompt,
+			Prompt: prompt,
+		},
+	}
+
+	regions := OverlayHitRegions(vmFromState(state))
+	cardRegions := collectRegionsByKind(regions, HitRegionPromptCard)
+	if len(cardRegions) != 1 {
+		t.Fatalf("expected one prompt card region, got %#v", cardRegions)
+	}
+	suggestionRegions := collectRegionsByKind(regions, HitRegionPromptSuggestionItem)
+	if len(suggestionRegions) != len(prompt.Fields[2].SuggestionItems) {
+		t.Fatalf("expected %d suggestion regions, got %#v", len(prompt.Fields[2].SuggestionItems), suggestionRegions)
+	}
+
+	lines, inputLines := promptOverlayContent(prompt)
+	width, height := overlayViewport(TermSize{Width: 100, Height: FrameBodyHeight(30)})
+	hasFooter := len(promptFooterActionSpecs(prompt)) > 0
+	layout := buildPickerCardLayout(width, height, len(lines), hasFooter)
+	if got, want := cardRegions[0].Rect, pickerCardRect(layout); got != want {
+		t.Fatalf("expected prompt card rect %#v, got %#v", want, got)
+	}
+
+	popup := buildPromptSuggestionPopupLayout(defaultUITheme(), prompt.Fields[prompt.ActiveField], prompt.PromptSuggestionSelected, inputLines[prompt.ActiveField], pickerInnerWidth(width))
+	last := suggestionRegions[len(suggestionRegions)-1]
+	popupTopY := promptSuggestionPopupTopY(layout, popup)
+	expectedLastY := popupTopY + popup.itemStart + len(prompt.Fields[2].SuggestionItems) - 1
+	if got := last.Rect.Y; got != expectedLastY {
+		t.Fatalf("expected last suggestion row y=%d, got %#v", expectedLastY, last.Rect)
+	}
+	if cardBottom := cardRegions[0].Rect.Y + cardRegions[0].Rect.H - 1; last.Rect.Y <= cardBottom {
+		t.Fatalf("expected last suggestion row to overflow card bottom %d, got %#v", cardBottom, last.Rect)
+	}
+	if region, ok := HitRegionAt(regions, last.Rect.X+1, last.Rect.Y); !ok || region.Kind != HitRegionPromptSuggestionItem || region.ItemIndex != len(suggestionRegions)-1 {
+		t.Fatalf("expected overflow point to hit last suggestion region, got ok=%v region=%#v", ok, region)
+	}
+}
+
 func TestOverlayHitRegionsWorkspacePickerQueryInputUsesEditableFieldRect(t *testing.T) {
 	state := VisibleRenderState{
 		TermSize: TermSize{Width: 100, Height: 30},
