@@ -33,9 +33,19 @@ func IsStableNarrowTerminalSymbol(content string) bool {
 	switch content {
 	case "─", "│", "┌", "┐", "└", "┘", "├", "┤", "┬", "┴", "┼", "●", "◆":
 		return true
-	default:
-		return false
 	}
+	// NerdFont-patched fonts render Private Use Area icons as single-column wide.
+	// Treat any single BMP PUA codepoint as stable narrow so that pane chrome
+	// action buttons (zoom, split, close, …) are not second-guessed by the
+	// ambiguous-width compensation logic.
+	runes := []rune(content)
+	if len(runes) == 1 {
+		r := runes[0]
+		if r >= 0xE000 && r <= 0xF8FF {
+			return true
+		}
+	}
+	return false
 }
 
 func IsPrintableZeroWidthCluster(content string) bool {

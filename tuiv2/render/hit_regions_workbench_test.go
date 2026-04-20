@@ -55,7 +55,7 @@ func TestRenderTabBarIncludesCloseAndCreateAffordances(t *testing.T) {
 	if strings.Count(line, paneCloseIcon()) < 2 {
 		t.Fatalf("expected close affordance for each tab, got %q", line)
 	}
-	if !strings.Contains(line, "[+]") {
+	if !strings.Contains(line, " \uf067 ") {
 		t.Fatalf("expected create-tab affordance, got %q", line)
 	}
 }
@@ -106,7 +106,7 @@ func TestTabBarHitRegionsDropCreateWhenWidthIsTight(t *testing.T) {
 			t.Fatalf("expected create region to be omitted in tight width, got %#v", region)
 		}
 	}
-	if strings.Contains(line, "[+]") {
+	if strings.Contains(line, " \uf067 ") {
 		t.Fatalf("expected create affordance omitted in tight width, got %q", line)
 	}
 }
@@ -118,7 +118,7 @@ func TestTabBarRetainsWorkspaceAndCreateAffordanceWhenWorkspaceHasNoTabs(t *test
 	if !strings.Contains(line, "main") {
 		t.Fatalf("expected empty workspace tab bar to keep workspace label, got %q", line)
 	}
-	if !strings.Contains(line, "[+]") {
+	if !strings.Contains(line, " \uf067 ") {
 		t.Fatalf("expected empty workspace tab bar to keep create affordance, got %q", line)
 	}
 
@@ -175,7 +175,7 @@ func TestTabBarHitRegionsKeepOnlyCoreNavigation(t *testing.T) {
 		t.Fatalf("expected baseline width to contain create action, got %#v", wideRegions)
 	}
 
-	tightRegions := TabBarHitRegions(makeTabBarVM(26, []string{"a"}))
+	tightRegions := TabBarHitRegions(makeTabBarVM(28, []string{"a"}))
 	coreCounts := map[HitRegionKind]int{}
 	for _, region := range tightRegions {
 		coreCounts[region.Kind]++

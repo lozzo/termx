@@ -264,13 +264,39 @@ func renderModeHints(theme uiTheme, mode string, labels []string) []string {
 		if i > 0 {
 			out = append(out, renderStatusSep(theme))
 		}
-		fg := color
-		if label == "Esc BACK" {
-			fg = theme.panelMuted
-		}
-		out = append(out, renderDesktopHint(theme, label, fg))
+		out = append(out, renderDesktopHint(theme, label, hintSemanticColor(theme, label, color)))
 	}
 	return out
+}
+
+// hintSemanticColor assigns a per-hint color based on the action keyword in the
+// label, giving submode shortcuts the same semantic coloring as the root bar.
+func hintSemanticColor(theme uiTheme, label, fallback string) string {
+	upper := strings.ToUpper(label)
+	if strings.Contains(upper, "BACK") {
+		return theme.panelMuted
+	}
+	for _, kw := range []string{"CLOSE", "KILL"} {
+		if strings.Contains(upper, kw) {
+			return theme.danger
+		}
+	}
+	for _, kw := range []string{"LOCK", "OWNER", "RENAME", "DETACH"} {
+		if strings.Contains(upper, kw) {
+			return theme.warning
+		}
+	}
+	for _, kw := range []string{"SPLIT", "ZOOM", "RESIZE", "LAYOUT", "BALANCE"} {
+		if strings.Contains(upper, kw) {
+			return theme.info
+		}
+	}
+	for _, kw := range []string{"NEW", "CREATE", "RESTART", "RECONNECT", "FOCUS"} {
+		if strings.Contains(upper, kw) {
+			return theme.success
+		}
+	}
+	return fallback
 }
 
 func modeAccentColor(theme uiTheme, mode input.ModeKind) string {
@@ -303,19 +329,19 @@ func modeAccentColor(theme uiTheme, mode input.ModeKind) string {
 }
 
 func rootStatusHintColors(theme uiTheme) []string {
-	// Display/global are the only root shortcuts that fan into the most
-	// saturated info accent. On Terminal.app that accent is the most prone to
-	// looking like footer shimmer during redraws, so keep those roots on the
-	// base hint accent while preserving the other semantic group colors.
+	// Semantic color mapping for root shortcuts (order matches DefaultBindingCatalog normal-mode entries):
+	// P=PANE (accent/purple), R=RESIZE (warning/amber), T=TAB (info/cyan),
+	// W=WORKSPACE (warning/amber), O=FLOAT (success/green), V=COPY (info/cyan),
+	// F=PICKER (success/green), G=GLOBAL (danger/red — contains quit).
 	return []string{
-		theme.success,
-		theme.danger,
-		theme.chromeAccent,
-		theme.warning,
-		theme.warning,
-		theme.hintKeyFG,
-		theme.success,
-		theme.hintKeyFG,
+		theme.chromeAccent, // P PANE
+		theme.warning,      // R RESIZE
+		theme.info,         // T TAB
+		theme.warning,      // W WORKSPACE
+		theme.success,      // O FLOAT
+		theme.info,         // V COPY
+		theme.success,      // F PICKER
+		theme.danger,       // G GLOBAL
 	}
 }
 

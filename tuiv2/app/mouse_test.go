@@ -978,7 +978,7 @@ func TestMouseClickNonFloatingKeepsFloatingTerminalPanesVisibleWithExtentHints(t
 	}
 
 	before := m.View()
-	if strings.Count(before, "[_]") < 2 {
+	if strings.Count(before, "[\uf068]") < 2 {
 		t.Fatalf("expected floating terminal panes visible before click:\n%s", before)
 	}
 
@@ -991,7 +991,7 @@ func TestMouseClickNonFloatingKeepsFloatingTerminalPanesVisibleWithExtentHints(t
 	m = model.(*Model)
 
 	after := m.View()
-	if strings.Count(after, "[_]") < 2 {
+	if strings.Count(after, "[\uf068]") < 2 {
 		t.Fatalf("expected floating terminal panes to remain visible after tiled click:\n%s", after)
 	}
 }
@@ -2700,5 +2700,8 @@ func overlayWorkspaceItemRegion(t *testing.T, m *Model, index int) render.HitReg
 }
 
 func countFloatingPaneMarkers(view string) int {
-	return maxInt(strings.Count(view, "[_]"), maxInt(strings.Count(view, "unconnected"), strings.Count(view, "No terminal attach")))
+	// Check for floating-pane collapse button in both old ASCII and new NerdFont forms.
+	byIcon := maxInt(strings.Count(view, "[_]"), strings.Count(view, "[\uf068]"))
+	byContent := maxInt(strings.Count(view, "unconnected"), strings.Count(view, "No terminal attach"))
+	return maxInt(byIcon, byContent)
 }

@@ -136,6 +136,172 @@ func TestVTermResizeRoundTripPreservesBackgroundStyleAcrossExpandedTail(t *testi
 	}
 }
 
+func TestVTermResizeShrinkKeepsVisibleTailBackgroundStyle(t *testing.T) {
+	vt := New(8, 2, 100, nil)
+	bg := CellStyle{BG: "#444444"}
+	screen := make([][]Cell, 2)
+	for y := range screen {
+		screen[y] = make([]Cell, 8)
+		for x := range screen[y] {
+			screen[y][x] = Cell{Content: " ", Width: 1, Style: bg}
+		}
+		screen[y][0].Content = "~"
+	}
+	vt.LoadSnapshot(ScreenData{Cells: screen}, CursorState{Row: 0, Col: 0, Visible: true}, TerminalModes{AlternateScreen: true, MouseTracking: true})
+
+	vt.Resize(4, 2)
+
+	restored := vt.ScreenContent()
+	if len(restored.Cells) < 2 || len(restored.Cells[1]) < 4 {
+		t.Fatalf("unexpected restored screen dimensions after shrink: %#v", restored.Cells)
+	}
+	for _, point := range []struct {
+		row int
+		col int
+	}{
+		{row: 0, col: 3},
+		{row: 1, col: 3},
+	} {
+		if got := restored.Cells[point.row][point.col].Style.BG; got != bg.BG {
+			t.Fatalf("expected visible shrunken tail at row=%d col=%d to keep bg %q, got %#v", point.row, point.col, bg.BG, restored.Cells[point.row][point.col])
+		}
+	}
+}
+
+func TestVTermResizeShrinkKeepsVisibleTailBackgroundStyleOnTextRows(t *testing.T) {
+	const cols = 120
+	const rows = 4
+	vt := New(cols, rows, 100, nil)
+	bg := CellStyle{BG: "#000000"}
+	fg := CellStyle{FG: "#ffffff", BG: "#000000"}
+	screen := make([][]Cell, rows)
+	for y := range screen {
+		screen[y] = make([]Cell, cols)
+		label := "line 001 some content"
+		for x := 0; x < cols; x++ {
+			cell := Cell{Content: " ", Width: 1, Style: bg}
+			if y == 1 && x < len(label) {
+				cell.Content = string(label[x])
+				cell.Style = fg
+			}
+			screen[y][x] = cell
+		}
+	}
+	vt.LoadSnapshot(ScreenData{Cells: screen}, CursorState{Row: 1, Col: len("line 001 some content"), Visible: true}, TerminalModes{AlternateScreen: true, MouseTracking: true})
+
+	vt.Resize(96, rows)
+
+	restored := vt.ScreenContent()
+	if len(restored.Cells) <= 1 || len(restored.Cells[1]) < 61 {
+		t.Fatalf("unexpected restored dimensions after text-row shrink: %#v", restored.Cells)
+	}
+	if got := restored.Cells[1][60].Style.BG; got != bg.BG {
+		t.Fatalf("expected visible text-row tail at col=60 to keep bg %q, got %#v", bg.BG, restored.Cells[1][60])
+	}
+}
+
+func TestVTermResizePreservesCurrentBackgroundForSubsequentErase(t *testing.T) {
+	const bg = "#000000"
+	vt := New(120, 4, 100, nil)
+
+	seed := "\x1b[?1049h" +
+		"\x1b[48;2;0;0;0m" +
+		"\x1b[2;1Hline 001 some content" +
+		"\x1b[K"
+	if _, err := vt.Write([]byte(seed)); err != nil {
+		t.Fatalf("seed write: %v", err)
+	}
+	if got := vt.ScreenRowView(1)[60].Style.BG; got != bg {
+		t.Fatalf("expected seeded tail bg %q before resize, got %#v", bg, vt.ScreenRowView(1)[60])
+	}
+
+	vt.Resize(96, 4)
+
+	if _, err := vt.Write([]byte("\x1b[2;1Hline 001 some content\x1b[K")); err != nil {
+		t.Fatalf("post-resize erase write: %v", err)
+	}
+
+	screen := vt.ScreenContent()
+	if len(screen.Cells) <= 1 || len(screen.Cells[1]) < 61 {
+		t.Fatalf("unexpected screen dimensions after resize+erase: %#v", screen.Cells)
+	}
+	if got := screen.Cells[1][60].Style.BG; got != bg {
+		t.Fatalf("expected erase after resize to keep bg %q, got %#v", bg, screen.Cells[1][60])
+	}
+}
+
+func TestVTermResizeShrinkPreservesVisibleTailBackgroundAcrossResetRedraw(t *testing.T) {
+	const bg = "#000000"
+	vt := New(120, 4, 100, nil)
+
+	screen := make([][]Cell, 4)
+	for y := range screen {
+		screen[y] = make([]Cell, 120)
+		label := "line 001 some content"
+		for x := 0; x < 120; x++ {
+			cell := Cell{Content: " ", Width: 1, Style: CellStyle{BG: bg}}
+			if y == 1 && x < len(label) {
+				cell.Content = string(label[x])
+				cell.Style.FG = "#ffffff"
+			}
+			screen[y][x] = cell
+		}
+	}
+	vt.LoadSnapshot(ScreenData{Cells: screen}, CursorState{Row: 1, Col: len("line 001 some content"), Visible: true}, TerminalModes{AlternateScreen: true, MouseTracking: true})
+
+	vt.Resize(96, 4)
+	if got := vt.ScreenRowView(1)[60].Style.BG; got != bg {
+		t.Fatalf("expected seeded tail bg %q after shrink, got %#v", bg, vt.ScreenRowView(1)[60])
+	}
+
+	redraw := "\x1b[0m" +
+		"\x1b[2;1Hline 001 some content" +
+		"\x1b[K"
+	if _, err := vt.Write([]byte(redraw)); err != nil {
+		t.Fatalf("post-shrink redraw: %v", err)
+	}
+
+	row := vt.ScreenRowView(1)
+	if got := row[60].Style.BG; got != bg {
+		t.Fatalf("expected visible tail bg %q to survive reset+EL redraw after shrink, got %#v", bg, row[60])
+	}
+}
+
+func TestVTermResizeShrinkGrowPreservesVisibleTailBackgroundAcrossResetRedraw(t *testing.T) {
+	const bg = "#000000"
+	vt := New(120, 4, 100, nil)
+
+	screen := make([][]Cell, 4)
+	for y := range screen {
+		screen[y] = make([]Cell, 120)
+		label := "line 001 some content"
+		for x := 0; x < 120; x++ {
+			cell := Cell{Content: " ", Width: 1, Style: CellStyle{BG: bg}}
+			if y == 1 && x < len(label) {
+				cell.Content = string(label[x])
+				cell.Style.FG = "#ffffff"
+			}
+			screen[y][x] = cell
+		}
+	}
+	vt.LoadSnapshot(ScreenData{Cells: screen}, CursorState{Row: 1, Col: len("line 001 some content"), Visible: true}, TerminalModes{AlternateScreen: true, MouseTracking: true})
+
+	vt.Resize(96, 4)
+	if _, err := vt.Write([]byte("\x1b[0m\x1b[2;1Hline 001 some content\x1b[K")); err != nil {
+		t.Fatalf("post-shrink redraw: %v", err)
+	}
+
+	vt.Resize(120, 4)
+	if _, err := vt.Write([]byte("\x1b[0m\x1b[2;1Hline 001 some content\x1b[K")); err != nil {
+		t.Fatalf("post-grow redraw: %v", err)
+	}
+
+	row := vt.ScreenRowView(1)
+	if got := row[80].Style.BG; got != bg {
+		t.Fatalf("expected previously visible tail bg %q to survive shrink+grow redraws, got %#v", bg, row[80])
+	}
+}
+
 func TestVTermResizeRoundTripUsesNearestTrailingBackgroundWhenEdgeCellHasNoBG(t *testing.T) {
 	vt := New(4, 2, 100, nil)
 	bg := CellStyle{BG: "#444444"}

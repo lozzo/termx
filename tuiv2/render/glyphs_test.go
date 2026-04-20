@@ -21,3 +21,14 @@ func TestSetPaneChromeGlyphsOverridesSubset(t *testing.T) {
 		t.Fatalf("paneCloseIcon() = %q, want default %q", got, DefaultPaneChromeGlyphs().Close)
 	}
 }
+
+func TestDefaultPaneChromeSplitGlyphsMatchSplitDirections(t *testing.T) {
+	glyphs := DefaultPaneChromeGlyphs()
+
+	if got := glyphs.SplitVertical; got != "\ueb71" {
+		t.Fatalf("SplitVertical = %q, want %q", got, "\ueb71")
+	}
+	if got := glyphs.SplitHorizontal; got != "\ueb6f" {
+		t.Fatalf("SplitHorizontal = %q, want %q", got, "\ueb6f")
+	}
+}

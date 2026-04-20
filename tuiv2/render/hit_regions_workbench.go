@@ -97,7 +97,7 @@ func buildTabBarLayoutVM(vm RenderVM) tabBarLayout {
 		workspaceName = "workspace"
 	}
 	layout.workspaceLabel = workspaceName
-	layout.createLabel = "+"
+	layout.createLabel = "\uf067" // nf-fa-plus
 
 	maxLeftWidth := vm.TermSize.Width - xansi.StringWidth(layout.rightText)
 	if maxLeftWidth < 0 {
@@ -186,7 +186,7 @@ func buildTabBarLayout(state VisibleRenderState) tabBarLayout {
 		workspaceName = "workspace"
 	}
 	layout.workspaceLabel = workspaceName
-	layout.createLabel = "+"
+	layout.createLabel = "\uf067" // nf-fa-plus
 
 	maxLeftWidth := state.TermSize.Width - xansi.StringWidth(layout.rightText)
 	if maxLeftWidth < 0 {
@@ -412,7 +412,7 @@ func renderWorkspaceToken(label string, palette tabBarPalette) string {
 	return workspaceLabelStyle(defaultUITheme()).
 		Foreground(lipgloss.Color(palette.workspaceFG)).
 		Background(lipgloss.Color(palette.workspaceBG)).
-		Render(label)
+		Render("\uf120 " + label) // nf-fa-terminal icon prefix
 }
 
 func renderTabSeparator() string {
@@ -472,7 +472,7 @@ func renderTabCreateToken(label string, palette tabBarPalette) string {
 	return tabCreateStyle(defaultUITheme()).
 		Foreground(lipgloss.Color(palette.createFG)).
 		Background(lipgloss.Color(palette.createBG)).
-		Render("[" + label + "]")
+		Render(" " + label + " ")
 }
 
 func renderTopBarActionToken(label string, active bool) string {

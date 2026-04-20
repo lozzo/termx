@@ -103,9 +103,9 @@ func uiThemeFromHostColors(hostBG, hostFG string, hostPalette map[int]string) ui
 	accent := resolveSemanticColor(
 		hostBG,
 		hostPalette,
-		[]int{12, 13, 14, 6, 5, 4},
+		[]int{13, 5, 12, 14, 6, 4},
 		hostDerivedToken(hostBG, hostFG, 0.74, 3.2),
-		ensureContrast("#818cf8", hostBG, 3.2),
+		ensureContrast("#c084fc", hostBG, 3.2),
 		3.2,
 	)
 	panelMuted := ensureContrast(mixHex(hostBG, hostFG, 0.46), panelBG, 2.0)
@@ -129,16 +129,16 @@ func uiThemeFromHostColors(hostBG, hostFG string, hostPalette map[int]string) ui
 	noticeBG := hostBG
 	noticeFG := info
 	hintKeyBG := chromeBG
-	hintKeyFG := ensureContrast(accent, chromeBG, 3.6)
+	hintKeyFG := ensureContrast(accent, chromeBG, 4.0)
 	hintTextBG := chromeBG
 	hintTextFG := panelMuted
 	footerKeyBG := mixHex(panelAltBG, accent, 0.18)
 	footerKeyFG := ensureContrast(contrastTextColor(footerKeyBG), footerKeyBG, 4.0)
 	footerTextBG := panelStrong
 	footerTextFG := ensureContrast(panelMuted, footerTextBG, 2.4)
-	tabWorkspaceBG := chromeAltBG
-	tabWorkspaceFG := ensureContrast(mixHex(panelText, accent, 0.12), tabWorkspaceBG, 3.0)
-	tabActiveBG := panelStrong
+	tabWorkspaceBG := mixHex(chromeAltBG, accent, 0.24)
+	tabWorkspaceFG := ensureContrast(mixHex(panelText, accent, 0.30), tabWorkspaceBG, 3.5)
+	tabActiveBG := mixHex(panelAltBG, accent, 0.14)
 	tabActiveFG := ensureContrast(panelText, tabActiveBG, 4.0)
 	tabInactiveBG := chromeBG
 	tabInactiveFG := panelMuted

@@ -117,6 +117,7 @@ type VTerm struct {
 	screenFingerprintCache []rowFingerprint
 	resizeTailStartCol     int
 	resizeTailBG           []string
+	resizeVisibleBlankBG   [][]string
 	resizeBottomFillBG     string
 	resizeBottomFillRow    int
 
@@ -1807,6 +1808,7 @@ func (v *VTerm) screenRowViewLocked(y int) []Cell {
 		row[x] = v.convertCell(v.emu.CellAt(x, y))
 	}
 	v.applyResizeTailFillLocked(y, row)
+	v.applyResizeVisibleBlankFillLocked(y, row)
 	v.applyResizeBottomFillLocked(y, row)
 	v.screenRowCache[y] = row
 	return row
@@ -1899,10 +1901,19 @@ func (v *VTerm) consumeTouchedRowsLocked() ([]int, bool) {
 }
 
 func (v *VTerm) clearResizeTailFillLocked() {
+	v.clearResizeTransientFillLocked()
+	v.clearResizeVisibleBlankFillLocked()
+}
+
+func (v *VTerm) clearResizeTransientFillLocked() {
 	v.resizeTailStartCol = 0
 	v.resizeTailBG = nil
 	v.resizeBottomFillBG = ""
 	v.resizeBottomFillRow = 0
+}
+
+func (v *VTerm) clearResizeVisibleBlankFillLocked() {
+	v.resizeVisibleBlankBG = nil
 }
 
 func (v *VTerm) pruneResizeTailFillLocked() {
@@ -1927,10 +1938,23 @@ func (v *VTerm) pruneResizeTailFillLocked() {
 		v.resizeBottomFillBG = ""
 		v.resizeBottomFillRow = 0
 	}
+	if len(v.resizeVisibleBlankBG) > 0 {
+		height := minInt(len(v.resizeVisibleBlankBG), v.emu.Height())
+		if height <= 0 {
+			v.resizeVisibleBlankBG = nil
+		} else {
+			v.resizeVisibleBlankBG = v.resizeVisibleBlankBG[:height]
+			for y := range v.resizeVisibleBlankBG {
+				if len(v.resizeVisibleBlankBG[y]) > v.emu.Width() {
+					v.resizeVisibleBlankBG[y] = v.resizeVisibleBlankBG[y][:v.emu.Width()]
+				}
+			}
+		}
+	}
 }
 
 func (v *VTerm) captureResizeTailFillLocked(oldCols, oldRows, newCols, newRows int) {
-	v.clearResizeTailFillLocked()
+	v.clearResizeTransientFillLocked()
 	if v.emu == nil || oldCols <= 0 || oldRows <= 0 || !v.emu.IsAltScreen() {
 		return
 	}
@@ -1950,6 +1974,33 @@ func (v *VTerm) captureResizeTailFillLocked(oldCols, oldRows, newCols, newRows i
 			if hasAny {
 				v.resizeTailStartCol = maxInt(0, oldCols-1)
 				v.resizeTailBG = bg
+			}
+		}
+	}
+	if newCols < oldCols {
+		v.clearResizeVisibleBlankFillLocked()
+		count := minInt(oldRows, maxInt(newRows, 0))
+		if count > 0 && newCols > 0 {
+			fill := make([][]string, count)
+			hasAny := false
+			for y := 0; y < count; y++ {
+				rowFill := make([]string, newCols)
+				rowHasAny := false
+				for x := 0; x < newCols; x++ {
+					cell := v.convertCell(v.emu.CellAt(x, y))
+					if !cellNeedsPersistentResizeFill(cell) {
+						continue
+					}
+					rowFill[x] = cell.Style.BG
+					rowHasAny = true
+					hasAny = true
+				}
+				if rowHasAny {
+					fill[y] = rowFill
+				}
+			}
+			if hasAny {
+				v.resizeVisibleBlankBG = fill
 			}
 		}
 	}
@@ -2014,6 +2065,23 @@ func (v *VTerm) applyResizeTailFillLocked(y int, row []Cell) {
 	}
 }
 
+func (v *VTerm) applyResizeVisibleBlankFillLocked(y int, row []Cell) {
+	if v == nil || y < 0 || y >= len(v.resizeVisibleBlankBG) {
+		return
+	}
+	fill := v.resizeVisibleBlankBG[y]
+	if len(fill) == 0 {
+		return
+	}
+	limit := minInt(len(fill), len(row))
+	for x := 0; x < limit; x++ {
+		if fill[x] == "" || !cellNeedsResizeFill(row[x]) {
+			continue
+		}
+		row[x].Style.BG = fill[x]
+	}
+}
+
 func (v *VTerm) applyResizeBottomFillLocked(y int, row []Cell) {
 	if v == nil || v.resizeBottomFillBG == "" || y < v.resizeBottomFillRow {
 		return
@@ -2029,6 +2097,16 @@ func (v *VTerm) applyResizeBottomFillLocked(y int, row []Cell) {
 
 func cellNeedsResizeFill(cell Cell) bool {
 	if cell.Style.BG != "" {
+		return false
+	}
+	if cell.Width > 1 {
+		return false
+	}
+	return strings.TrimSpace(cell.Content) == ""
+}
+
+func cellNeedsPersistentResizeFill(cell Cell) bool {
+	if cell.Style.BG == "" {
 		return false
 	}
 	if cell.Width > 1 {
@@ -2348,7 +2426,7 @@ func (v *VTerm) hasResizeFillCacheHazardLocked() bool {
 	if v == nil {
 		return false
 	}
-	return (v.resizeTailStartCol > 0 && len(v.resizeTailBG) > 0) || v.resizeBottomFillBG != ""
+	return (v.resizeTailStartCol > 0 && len(v.resizeTailBG) > 0) || len(v.resizeVisibleBlankBG) > 0 || v.resizeBottomFillBG != ""
 }
 
 func detectScreenScrollShift(before, after []rowFingerprint) int {
