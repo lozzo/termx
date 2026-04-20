@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -594,8 +593,23 @@ func parseNumericString(raw string) (uint64, bool) {
 	if value == "" {
 		return 0, false
 	}
-	n, err := strconv.ParseUint(value, 10, 64)
-	if err != nil || n == 0 {
+	const maxUint64 = ^uint64(0)
+	const maxBeforeMul10 = maxUint64 / 10
+	const maxLastDigit = maxUint64 % 10
+
+	var n uint64
+	for i := 0; i < len(value); i++ {
+		ch := value[i]
+		if ch < '0' || ch > '9' {
+			return 0, false
+		}
+		digit := uint64(ch - '0')
+		if n > maxBeforeMul10 || (n == maxBeforeMul10 && digit > maxLastDigit) {
+			return 0, false
+		}
+		n = n*10 + digit
+	}
+	if n == 0 {
 		return 0, false
 	}
 	return n, true

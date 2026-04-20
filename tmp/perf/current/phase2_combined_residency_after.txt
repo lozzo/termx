@@ -1,0 +1,6 @@
+=== RUN   TestPerfResidencyCombined
+    perf_residency_test.go:205: combined_idle_attached rss_kb=18192 heap_alloc=68403392 heap_objects=1892 num_gc=5 goroutines=25
+    perf_residency_test.go:218: combined_after_burst rss_kb=71248 heap_alloc=73680048 heap_objects=5792 num_gc=7 goroutines=25
+--- PASS: TestPerfResidencyCombined (0.20s)
+PASS
+ok  	github.com/lozzow/termx/tuiv2/app	0.495s

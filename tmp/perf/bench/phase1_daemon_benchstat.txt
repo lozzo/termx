@@ -1,0 +1,35 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/lozzow/termx
+cpu: Apple M2
+                               │ tmp/perf/bench/phase1_daemon_before.txt │
+                               │                 sec/op                  │
+ServerList-8                                                153.9µ ± ∞ ¹
+ServerGet-8                                                 34.23n ± ∞ ¹
+EventBusPublish64Subscribers-8                              787.5n ± ∞ ¹
+ServerHandleRequestList-8                                   11.33n ± ∞ ¹
+ServerListParallel-8                                        48.04µ ± ∞ ¹
+geomean                                                     1.177µ
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                               │ tmp/perf/bench/phase1_daemon_before.txt │
+                               │                  B/op                   │
+ServerList-8                                               254.5Ki ± ∞ ¹
+ServerGet-8                                                  128.0 ± ∞ ¹
+EventBusPublish64Subscribers-8                               0.000 ± ∞ ¹
+ServerHandleRequestList-8                                    0.000 ± ∞ ¹
+ServerListParallel-8                                       128.1Ki ± ∞ ¹
+geomean                                                                ²
+¹ need >= 6 samples for confidence interval at level 0.95
+² summaries must be >0 to compute geomean
+
+                               │ tmp/perf/bench/phase1_daemon_before.txt │
+                               │                allocs/op                │
+ServerList-8                                                4.048k ± ∞ ¹
+ServerGet-8                                                  1.000 ± ∞ ¹
+EventBusPublish64Subscribers-8                               0.000 ± ∞ ¹
+ServerHandleRequestList-8                                    0.000 ± ∞ ¹
+ServerListParallel-8                                         4.000 ± ∞ ¹
+geomean                                                                ²
+¹ need >= 6 samples for confidence interval at level 0.95
+² summaries must be >0 to compute geomean

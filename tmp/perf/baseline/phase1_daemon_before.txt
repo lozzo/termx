@@ -1,0 +1,31 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/lozzow/termx
+cpu: Apple M2
+BenchmarkServerList-8                     	    7722	    153896 ns/op	  260599 B/op	    4048 allocs/op
+BenchmarkServerList-8                     	    7873	    153325 ns/op	  260598 B/op	    4048 allocs/op
+BenchmarkServerList-8                     	    7723	    152195 ns/op	  260599 B/op	    4048 allocs/op
+BenchmarkServerList-8                     	    7702	    159104 ns/op	  260600 B/op	    4048 allocs/op
+BenchmarkServerList-8                     	    7656	    154633 ns/op	  260600 B/op	    4048 allocs/op
+BenchmarkServerGet-8                      	35897109	        33.37 ns/op	     128 B/op	       1 allocs/op
+BenchmarkServerGet-8                      	35698436	        35.44 ns/op	     128 B/op	       1 allocs/op
+BenchmarkServerGet-8                      	35501251	        33.52 ns/op	     128 B/op	       1 allocs/op
+BenchmarkServerGet-8                      	34935387	        34.43 ns/op	     128 B/op	       1 allocs/op
+BenchmarkServerGet-8                      	36022197	        34.23 ns/op	     128 B/op	       1 allocs/op
+BenchmarkEventBusPublish64Subscribers-8   	 1495615	       812.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkEventBusPublish64Subscribers-8   	 1516417	       787.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkEventBusPublish64Subscribers-8   	 1544244	       739.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkEventBusPublish64Subscribers-8   	 1536271	       774.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkEventBusPublish64Subscribers-8   	 1504491	       814.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServerHandleRequestList-8        	97693020	        11.31 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServerHandleRequestList-8        	97730143	        11.26 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServerHandleRequestList-8        	99156483	        11.33 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServerHandleRequestList-8        	98862732	        11.37 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServerHandleRequestList-8        	96743313	        11.52 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServerListParallel-8             	   25924	     47501 ns/op	  131146 B/op	       4 allocs/op
+BenchmarkServerListParallel-8             	   23990	     49247 ns/op	  131150 B/op	       4 allocs/op
+BenchmarkServerListParallel-8             	   24175	     47106 ns/op	  131148 B/op	       4 allocs/op
+BenchmarkServerListParallel-8             	   23568	     48038 ns/op	  131149 B/op	       4 allocs/op
+BenchmarkServerListParallel-8             	   26458	     48972 ns/op	  131146 B/op	       4 allocs/op
+PASS
+ok  	github.com/lozzow/termx	38.185s

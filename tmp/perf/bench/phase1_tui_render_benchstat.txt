@@ -1,0 +1,54 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/lozzow/termx/tuiv2/render
+cpu: Apple M2
+                                                                   │ tmp/perf/bench/phase1_tui_render_before.txt │
+                                                                   │                   sec/op                    │
+CoordinatorRenderFrameFourPanesCached-8                                                             3.998µ ± ∞ ¹
+CoordinatorRenderFrameFourPanesInvalidated-8                                                        712.4µ ± ∞ ¹
+CoordinatorRenderFrameOverlapInvalidated/tiled_only-8                                               573.0µ ± ∞ ¹
+CoordinatorRenderFrameOverlapInvalidated/one_floating-8                                             652.2µ ± ∞ ¹
+CoordinatorRenderFrameOverlapInvalidated/two_floating_overlap-8                                     731.6µ ± ∞ ¹
+CoordinatorRenderFrameFloatingDrag/one_floating-8                                                   653.7µ ± ∞ ¹
+CoordinatorRenderFrameFloatingDrag/two_floating_overlap-8                                           729.8µ ± ∞ ¹
+CoordinatorRenderFrameFloatingDragSize/small-8                                                      610.0µ ± ∞ ¹
+CoordinatorRenderFrameFloatingDragSize/medium-8                                                     656.4µ ± ∞ ¹
+CoordinatorRenderFrameFloatingDragSize/large-8                                                      758.0µ ± ∞ ¹
+CoordinatorRenderFrameFloatingDragContentComplexity/plain_shell-8                                   644.5µ ± ∞ ¹
+CoordinatorRenderFrameFloatingDragContentComplexity/styled_codex-8                                  793.0µ ± ∞ ¹
+geomean                                                                                             443.3µ
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                                                                   │ tmp/perf/bench/phase1_tui_render_before.txt │
+                                                                   │                    B/op                     │
+CoordinatorRenderFrameFourPanesCached-8                                                            33.61Ki ± ∞ ¹
+CoordinatorRenderFrameFourPanesInvalidated-8                                                       238.3Ki ± ∞ ¹
+CoordinatorRenderFrameOverlapInvalidated/tiled_only-8                                              243.9Ki ± ∞ ¹
+CoordinatorRenderFrameOverlapInvalidated/one_floating-8                                            252.8Ki ± ∞ ¹
+CoordinatorRenderFrameOverlapInvalidated/two_floating_overlap-8                                    260.9Ki ± ∞ ¹
+CoordinatorRenderFrameFloatingDrag/one_floating-8                                                  253.2Ki ± ∞ ¹
+CoordinatorRenderFrameFloatingDrag/two_floating_overlap-8                                          261.3Ki ± ∞ ¹
+CoordinatorRenderFrameFloatingDragSize/small-8                                                     250.0Ki ± ∞ ¹
+CoordinatorRenderFrameFloatingDragSize/medium-8                                                    253.4Ki ± ∞ ¹
+CoordinatorRenderFrameFloatingDragSize/large-8                                                     256.7Ki ± ∞ ¹
+CoordinatorRenderFrameFloatingDragContentComplexity/plain_shell-8                                  253.4Ki ± ∞ ¹
+CoordinatorRenderFrameFloatingDragContentComplexity/styled_codex-8                                 405.7Ki ± ∞ ¹
+geomean                                                                                            221.9Ki
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                                                                   │ tmp/perf/bench/phase1_tui_render_before.txt │
+                                                                   │                  allocs/op                  │
+CoordinatorRenderFrameFourPanesCached-8                                                              56.00 ± ∞ ¹
+CoordinatorRenderFrameFourPanesInvalidated-8                                                         630.0 ± ∞ ¹
+CoordinatorRenderFrameOverlapInvalidated/tiled_only-8                                                625.0 ± ∞ ¹
+CoordinatorRenderFrameOverlapInvalidated/one_floating-8                                              642.0 ± ∞ ¹
+CoordinatorRenderFrameOverlapInvalidated/two_floating_overlap-8                                      657.0 ± ∞ ¹
+CoordinatorRenderFrameFloatingDrag/one_floating-8                                                    642.0 ± ∞ ¹
+CoordinatorRenderFrameFloatingDrag/two_floating_overlap-8                                            657.0 ± ∞ ¹
+CoordinatorRenderFrameFloatingDragSize/small-8                                                       643.0 ± ∞ ¹
+CoordinatorRenderFrameFloatingDragSize/medium-8                                                      642.0 ± ∞ ¹
+CoordinatorRenderFrameFloatingDragSize/large-8                                                       642.0 ± ∞ ¹
+CoordinatorRenderFrameFloatingDragContentComplexity/plain_shell-8                                    641.0 ± ∞ ¹
+CoordinatorRenderFrameFloatingDragContentComplexity/styled_codex-8                                   725.0 ± ∞ ¹
+geomean                                                                                              529.3
+¹ need >= 6 samples for confidence interval at level 0.95

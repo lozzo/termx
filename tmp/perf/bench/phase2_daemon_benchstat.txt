@@ -1,0 +1,37 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/lozzow/termx
+cpu: Apple M2
+                               │ tmp/perf/bench/phase2_daemon_before.txt │ tmp/perf/bench/phase2_daemon_after.txt │
+                               │                 sec/op                  │     sec/op       vs base               │
+ServerList-8                                               153.90µ ± ∞ ¹      81.94µ ± ∞ ¹  -46.76% (p=0.008 n=5)
+ServerGet-8                                                 34.23n ± ∞ ¹      33.52n ± ∞ ¹        ~ (p=0.341 n=5)
+EventBusPublish64Subscribers-8                              787.5n ± ∞ ¹      803.7n ± ∞ ¹        ~ (p=0.421 n=5)
+ServerHandleRequestList-8                                   11.33n ± ∞ ¹      11.28n ± ∞ ¹        ~ (p=0.333 n=5)
+ServerListParallel-8                                        48.04µ ± ∞ ¹      45.47µ ± ∞ ¹   -5.34% (p=0.008 n=5)
+geomean                                                     1.177µ            1.025µ        -12.89%
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                               │ tmp/perf/bench/phase2_daemon_before.txt │ tmp/perf/bench/phase2_daemon_after.txt │
+                               │                  B/op                   │     B/op       vs base                 │
+ServerList-8                                               254.5Ki ± ∞ ¹   128.1Ki ± ∞ ¹  -49.67% (p=0.008 n=5)
+ServerGet-8                                                  128.0 ± ∞ ¹     128.0 ± ∞ ¹        ~ (p=1.000 n=5) ²
+EventBusPublish64Subscribers-8                               0.000 ± ∞ ¹     0.000 ± ∞ ¹        ~ (p=1.000 n=5) ²
+ServerHandleRequestList-8                                    0.000 ± ∞ ¹     0.000 ± ∞ ¹        ~ (p=1.000 n=5) ²
+ServerListParallel-8                                       128.1Ki ± ∞ ¹   128.1Ki ± ∞ ¹        ~ (p=0.286 n=5)
+geomean                                                                ³                  -12.83%               ³
+¹ need >= 6 samples for confidence interval at level 0.95
+² all samples are equal
+³ summaries must be >0 to compute geomean
+
+                               │ tmp/perf/bench/phase2_daemon_before.txt │ tmp/perf/bench/phase2_daemon_after.txt │
+                               │                allocs/op                │   allocs/op    vs base                 │
+ServerList-8                                              4048.000 ± ∞ ¹     4.000 ± ∞ ¹  -99.90% (p=0.008 n=5)
+ServerGet-8                                                  1.000 ± ∞ ¹     1.000 ± ∞ ¹        ~ (p=1.000 n=5) ²
+EventBusPublish64Subscribers-8                               0.000 ± ∞ ¹     0.000 ± ∞ ¹        ~ (p=1.000 n=5) ²
+ServerHandleRequestList-8                                    0.000 ± ∞ ¹     0.000 ± ∞ ¹        ~ (p=1.000 n=5) ²
+ServerListParallel-8                                         4.000 ± ∞ ¹     4.000 ± ∞ ¹        ~ (p=1.000 n=5) ²
+geomean                                                                ³                  -74.94%               ³
+¹ need >= 6 samples for confidence interval at level 0.95
+² all samples are equal
+³ summaries must be >0 to compute geomean

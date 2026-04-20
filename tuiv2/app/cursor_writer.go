@@ -236,7 +236,7 @@ func (p *framePresenter) presentLines(lines []string, meta *presentMeta) string 
 		p.updates = plan.baselineUpdates[:0]
 		p.reclaim = plan.baselineReclaim[:0]
 		selectedPayload := p.selectedFramePatchPayload(plan)
-		fullLen := normalizedFrameLen(strings.Join(lines, "\n"))
+		fullLen := normalizedJoinedLinesWireLen(lines)
 		if shouldCountFullRepaintAvoided(selectedPayload, fullLen, len(lines)) {
 			perftrace.Count("cursor_writer.present.mode.full_repaint_avoided", fullLen)
 		}
@@ -261,7 +261,7 @@ func (p *framePresenter) presentLines(lines []string, meta *presentMeta) string 
 		p.meta = clonePresentMeta(meta)
 		return ""
 	}
-	fullLen := normalizedFrameLen(strings.Join(lines, "\n"))
+	fullLen := normalizedJoinedLinesWireLen(lines)
 	if shouldCountFullRepaintAvoided(plan.payload, fullLen, len(lines)) {
 		perftrace.Count("cursor_writer.present.mode.full_repaint_avoided", fullLen)
 	}

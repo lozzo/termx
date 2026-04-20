@@ -1,0 +1,36 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/lozzow/termx/tuiv2/app
+cpu: Apple M2
+BenchmarkOutputCursorWriterWriteFrameLinesDamageProfile/partial_damage-8  	    9523	    126169 ns/op	      2205 bytes/op	   53105 B/op	      49 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesDamageProfile/partial_damage-8  	    9307	    124293 ns/op	      2205 bytes/op	   53025 B/op	      49 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesDamageProfile/partial_damage-8  	    9616	    124574 ns/op	      2206 bytes/op	   53013 B/op	      49 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesDamageProfile/partial_damage-8  	    9656	    123291 ns/op	      2206 bytes/op	   52996 B/op	      49 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesDamageProfile/partial_damage-8  	    9742	    122986 ns/op	      2206 bytes/op	   53012 B/op	      49 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesDamageProfile/full_damage-8     	    3597	    328642 ns/op	     15007 bytes/op	  108174 B/op	      56 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesDamageProfile/full_damage-8     	    3613	    334027 ns/op	     15007 bytes/op	  108248 B/op	      56 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesDamageProfile/full_damage-8     	    3597	    329381 ns/op	     15007 bytes/op	  107897 B/op	      56 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesDamageProfile/full_damage-8     	    3586	    332013 ns/op	     15005 bytes/op	  107998 B/op	      56 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesDamageProfile/full_damage-8     	    3609	    331188 ns/op	     15007 bytes/op	  107946 B/op	      56 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesRectScrollBytesByGate/lr_scroll_disabled-8         	   33086	     36614 ns/op	       318.0 bytes/op	    2657 B/op	      16 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesRectScrollBytesByGate/lr_scroll_disabled-8         	   31305	     36467 ns/op	       318.0 bytes/op	    2656 B/op	      16 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesRectScrollBytesByGate/lr_scroll_disabled-8         	   33050	     36348 ns/op	       318.0 bytes/op	    2656 B/op	      16 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesRectScrollBytesByGate/lr_scroll_disabled-8         	   33043	     36762 ns/op	       318.0 bytes/op	    2656 B/op	      16 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesRectScrollBytesByGate/lr_scroll_disabled-8         	   32869	     36380 ns/op	       318.0 bytes/op	    2659 B/op	      16 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesRectScrollBytesByGate/lr_scroll_remote_auto-8      	   10000	    115493 ns/op	       318.0 bytes/op	  314523 B/op	     121 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesRectScrollBytesByGate/lr_scroll_remote_auto-8      	   10000	    116033 ns/op	       318.0 bytes/op	  314499 B/op	     121 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesRectScrollBytesByGate/lr_scroll_remote_auto-8      	   10000	    116662 ns/op	       318.0 bytes/op	  314508 B/op	     121 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesRectScrollBytesByGate/lr_scroll_remote_auto-8      	   10000	    119701 ns/op	       318.0 bytes/op	  314488 B/op	     121 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesRectScrollBytesByGate/lr_scroll_remote_auto-8      	   10000	    115645 ns/op	       318.0 bytes/op	  314494 B/op	     121 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesScrollBytesWithCursorMotion/scroll_disabled-8      	    6000	    191493 ns/op	      4874 bytes/op	   39677 B/op	      50 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesScrollBytesWithCursorMotion/scroll_disabled-8      	    6400	    189078 ns/op	      4874 bytes/op	   39665 B/op	      50 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesScrollBytesWithCursorMotion/scroll_disabled-8      	    6379	    190082 ns/op	      4874 bytes/op	   39661 B/op	      50 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesScrollBytesWithCursorMotion/scroll_disabled-8      	    6355	    198621 ns/op	      4874 bytes/op	   39664 B/op	      50 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesScrollBytesWithCursorMotion/scroll_disabled-8      	    6110	    188841 ns/op	      4874 bytes/op	   39677 B/op	      50 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesScrollBytesWithCursorMotion/scroll_rows_enabled-8  	    5316	    226681 ns/op	       176.5 bytes/op	   36842 B/op	     101 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesScrollBytesWithCursorMotion/scroll_rows_enabled-8  	    5318	    227495 ns/op	       176.5 bytes/op	   36820 B/op	     101 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesScrollBytesWithCursorMotion/scroll_rows_enabled-8  	    5361	    229107 ns/op	       176.5 bytes/op	   36818 B/op	     101 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesScrollBytesWithCursorMotion/scroll_rows_enabled-8  	    5036	    225999 ns/op	       176.5 bytes/op	   36833 B/op	     101 allocs/op
+BenchmarkOutputCursorWriterWriteFrameLinesScrollBytesWithCursorMotion/scroll_rows_enabled-8  	    5343	    226109 ns/op	       176.5 bytes/op	   36846 B/op	     101 allocs/op
+PASS
+ok  	github.com/lozzow/termx/tuiv2/app	38.822s

@@ -1,0 +1,13 @@
+=== RUN   TestPerfResidencyTUI
+=== RUN   TestPerfResidencyTUI/single_pane_idle
+    perf_residency_test.go:123: single_pane_idle rss_kb=16512 heap_alloc=517488 heap_objects=1173 num_gc=28 goroutines=3
+=== RUN   TestPerfResidencyTUI/side_by_side
+    perf_residency_test.go:123: side_by_side rss_kb=16800 heap_alloc=694408 heap_objects=1704 num_gc=63 goroutines=3
+=== RUN   TestPerfResidencyTUI/floating_overlay
+    perf_residency_test.go:123: floating_overlay rss_kb=17520 heap_alloc=897768 heap_objects=2205 num_gc=103 goroutines=3
+--- PASS: TestPerfResidencyTUI (0.52s)
+    --- PASS: TestPerfResidencyTUI/single_pane_idle (0.19s)
+    --- PASS: TestPerfResidencyTUI/side_by_side (0.16s)
+    --- PASS: TestPerfResidencyTUI/floating_overlay (0.17s)
+PASS
+ok  	github.com/lozzow/termx/tuiv2/app	0.776s

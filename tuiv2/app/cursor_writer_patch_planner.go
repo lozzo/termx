@@ -109,12 +109,11 @@ func (p *framePresenter) planFramePatch(lines []string, meta *presentMeta) frame
 		return diff
 	}
 	best := diff
-	fullFrame := strings.Join(lines, "\n")
-	fullWireLen := normalizedFrameLen(fullFrame)
+	fullWireLen := normalizedJoinedLinesWireLen(lines)
 	if shouldFallbackToFullRepaint(diff.payload, fullWireLen, len(lines), diff.changedCount) {
 		full := framePatchCandidate{
 			mode:         framePatchCandidateFullRepaint,
-			payload:      xansi.EraseEntireDisplay + fullFrame,
+			payload:      xansi.EraseEntireDisplay + strings.Join(lines, "\n"),
 			updatedCount: diff.updatedCount,
 			metrics: []framePatchMetric{
 				{name: "cursor_writer.diff_full_repaint_fallback", count: fullWireLen},

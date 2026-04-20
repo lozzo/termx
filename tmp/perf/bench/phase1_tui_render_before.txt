@@ -1,0 +1,66 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/lozzow/termx/tuiv2/render
+cpu: Apple M2
+BenchmarkCoordinatorRenderFrameFourPanesCached-8                 	  282160	      3963 ns/op	   34422 B/op	      56 allocs/op
+BenchmarkCoordinatorRenderFrameFourPanesCached-8                 	  298995	      4149 ns/op	   34420 B/op	      56 allocs/op
+BenchmarkCoordinatorRenderFrameFourPanesCached-8                 	  302037	      3998 ns/op	   34419 B/op	      56 allocs/op
+BenchmarkCoordinatorRenderFrameFourPanesCached-8                 	  298206	      4141 ns/op	   34418 B/op	      56 allocs/op
+BenchmarkCoordinatorRenderFrameFourPanesCached-8                 	  261642	      3990 ns/op	   34418 B/op	      56 allocs/op
+BenchmarkCoordinatorRenderFrameFourPanesInvalidated-8            	    1672	    709652 ns/op	  244008 B/op	     630 allocs/op
+BenchmarkCoordinatorRenderFrameFourPanesInvalidated-8            	    1610	    712374 ns/op	  244005 B/op	     630 allocs/op
+BenchmarkCoordinatorRenderFrameFourPanesInvalidated-8            	    1657	    739343 ns/op	  244005 B/op	     630 allocs/op
+BenchmarkCoordinatorRenderFrameFourPanesInvalidated-8            	    1683	    712808 ns/op	  244003 B/op	     630 allocs/op
+BenchmarkCoordinatorRenderFrameFourPanesInvalidated-8            	    1681	    710235 ns/op	  244002 B/op	     630 allocs/op
+BenchmarkCoordinatorRenderFrameOverlapInvalidated/tiled_only-8   	    2079	    572210 ns/op	  249786 B/op	     625 allocs/op
+BenchmarkCoordinatorRenderFrameOverlapInvalidated/tiled_only-8   	    2040	    572990 ns/op	  249785 B/op	     625 allocs/op
+BenchmarkCoordinatorRenderFrameOverlapInvalidated/tiled_only-8   	    2088	    574773 ns/op	  249785 B/op	     625 allocs/op
+BenchmarkCoordinatorRenderFrameOverlapInvalidated/tiled_only-8   	    2048	    571663 ns/op	  249786 B/op	     625 allocs/op
+BenchmarkCoordinatorRenderFrameOverlapInvalidated/tiled_only-8   	    2089	    578453 ns/op	  249785 B/op	     625 allocs/op
+BenchmarkCoordinatorRenderFrameOverlapInvalidated/one_floating-8 	    1765	    652237 ns/op	  258906 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameOverlapInvalidated/one_floating-8 	    1832	    662917 ns/op	  258905 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameOverlapInvalidated/one_floating-8 	    1827	    649133 ns/op	  258905 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameOverlapInvalidated/one_floating-8 	    1762	    646879 ns/op	  258903 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameOverlapInvalidated/one_floating-8 	    1854	    653243 ns/op	  258904 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameOverlapInvalidated/two_floating_overlap-8         	    1650	    751841 ns/op	  267208 B/op	     657 allocs/op
+BenchmarkCoordinatorRenderFrameOverlapInvalidated/two_floating_overlap-8         	    1484	    737289 ns/op	  267208 B/op	     657 allocs/op
+BenchmarkCoordinatorRenderFrameOverlapInvalidated/two_floating_overlap-8         	    1647	    721340 ns/op	  267206 B/op	     657 allocs/op
+BenchmarkCoordinatorRenderFrameOverlapInvalidated/two_floating_overlap-8         	    1664	    731644 ns/op	  267206 B/op	     657 allocs/op
+BenchmarkCoordinatorRenderFrameOverlapInvalidated/two_floating_overlap-8         	    1652	    726242 ns/op	  267207 B/op	     657 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDrag/one_floating-8                       	    1808	    664095 ns/op	  259249 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDrag/one_floating-8                       	    1834	    650204 ns/op	  259249 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDrag/one_floating-8                       	    1762	    680294 ns/op	  259248 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDrag/one_floating-8                       	    1864	    650633 ns/op	  259249 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDrag/one_floating-8                       	    1768	    653716 ns/op	  259248 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDrag/two_floating_overlap-8               	    1652	    730851 ns/op	  267571 B/op	     657 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDrag/two_floating_overlap-8               	    1622	    723942 ns/op	  267570 B/op	     657 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDrag/two_floating_overlap-8               	    1671	    735346 ns/op	  267569 B/op	     657 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDrag/two_floating_overlap-8               	    1672	    727191 ns/op	  267569 B/op	     657 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDrag/two_floating_overlap-8               	    1651	    729844 ns/op	  267570 B/op	     657 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragSize/small-8                          	    1964	    607533 ns/op	  256029 B/op	     643 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragSize/small-8                          	    1971	    611131 ns/op	  256028 B/op	     643 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragSize/small-8                          	    1950	    627202 ns/op	  256029 B/op	     643 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragSize/small-8                          	    2013	    609546 ns/op	  256028 B/op	     643 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragSize/small-8                          	    1988	    610048 ns/op	  256028 B/op	     643 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragSize/medium-8                         	    1868	    654513 ns/op	  259468 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragSize/medium-8                         	    1795	    661052 ns/op	  259468 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragSize/medium-8                         	    1864	    653086 ns/op	  259468 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragSize/medium-8                         	    1867	    658472 ns/op	  259468 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragSize/medium-8                         	    1665	    656402 ns/op	  259468 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragSize/large-8                          	    1562	    759155 ns/op	  262891 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragSize/large-8                          	    1587	    758938 ns/op	  262891 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragSize/large-8                          	    1590	    757955 ns/op	  262891 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragSize/large-8                          	    1580	    757631 ns/op	  262891 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragSize/large-8                          	    1591	    756334 ns/op	  262891 B/op	     642 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragContentComplexity/plain_shell-8       	    1878	    667387 ns/op	  259460 B/op	     641 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragContentComplexity/plain_shell-8       	    1833	    641361 ns/op	  259459 B/op	     641 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragContentComplexity/plain_shell-8       	    1705	    643973 ns/op	  259459 B/op	     641 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragContentComplexity/plain_shell-8       	    1881	    644528 ns/op	  259459 B/op	     641 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragContentComplexity/plain_shell-8       	    1886	    646666 ns/op	  259459 B/op	     641 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragContentComplexity/styled_codex-8      	    1504	    790354 ns/op	  415430 B/op	     725 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragContentComplexity/styled_codex-8      	    1474	    792964 ns/op	  415431 B/op	     725 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragContentComplexity/styled_codex-8      	    1477	    814241 ns/op	  415430 B/op	     725 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragContentComplexity/styled_codex-8      	    1449	    790464 ns/op	  415430 B/op	     725 allocs/op
+BenchmarkCoordinatorRenderFrameFloatingDragContentComplexity/styled_codex-8      	    1515	    795101 ns/op	  415431 B/op	     725 allocs/op
+PASS
+ok  	github.com/lozzow/termx/tuiv2/render	77.653s

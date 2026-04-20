@@ -1,0 +1,6 @@
+=== RUN   TestPerfResidencyDaemon
+    perf_residency_test.go:39: daemon_idle_startup rss_kb=7408 heap_alloc=238688 heap_objects=475 num_gc=2 goroutines=2
+    perf_residency_test.go:90: daemon_one_terminal_one_session rss_kb=9872 heap_alloc=5222000 heap_objects=893 num_gc=5 goroutines=8
+--- PASS: TestPerfResidencyDaemon (0.25s)
+PASS
+ok  	github.com/lozzow/termx	0.483s

@@ -1,0 +1,48 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/lozzow/termx/tuiv2/app
+cpu: Apple M2
+                                                                                   │ tmp/perf/bench/phase2_tui_writer_before.txt │ tmp/perf/bench/phase2_tui_writer_after.txt │
+                                                                                   │                   sec/op                    │        sec/op         vs base              │
+OutputCursorWriterWriteFrameLinesDamageProfile/partial_damage-8                                                     125.6µ ± ∞ ¹           124.3µ ± ∞ ¹       ~ (p=0.095 n=5)
+OutputCursorWriterWriteFrameLinesDamageProfile/full_damage-8                                                        335.6µ ± ∞ ¹           331.2µ ± ∞ ¹  -1.31% (p=0.008 n=5)
+OutputCursorWriterWriteFrameLinesRectScrollBytesByGate/lr_scroll_disabled-8                                         36.80µ ± ∞ ¹           36.47µ ± ∞ ¹  -0.92% (p=0.032 n=5)
+OutputCursorWriterWriteFrameLinesRectScrollBytesByGate/lr_scroll_remote_auto-8                                      116.2µ ± ∞ ¹           116.0µ ± ∞ ¹       ~ (p=1.000 n=5)
+OutputCursorWriterWriteFrameLinesScrollBytesWithCursorMotion/scroll_disabled-8                                      190.0µ ± ∞ ¹           190.1µ ± ∞ ¹       ~ (p=1.000 n=5)
+OutputCursorWriterWriteFrameLinesScrollBytesWithCursorMotion/scroll_rows_enabled-8                                  227.4µ ± ∞ ¹           226.7µ ± ∞ ¹       ~ (p=0.548 n=5)
+geomean                                                                                                             140.8µ                 139.9µ        -0.62%
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                                                                                   │ tmp/perf/bench/phase2_tui_writer_before.txt │ tmp/perf/bench/phase2_tui_writer_after.txt │
+                                                                                   │                  bytes/op                   │      bytes/op       vs base                │
+OutputCursorWriterWriteFrameLinesDamageProfile/partial_damage-8                                                    2.153Ki ± ∞ ¹        2.154Ki ± ∞ ¹       ~ (p=1.000 n=5)
+OutputCursorWriterWriteFrameLinesDamageProfile/full_damage-8                                                       14.65Ki ± ∞ ¹        14.66Ki ± ∞ ¹       ~ (p=0.206 n=5)
+OutputCursorWriterWriteFrameLinesRectScrollBytesByGate/lr_scroll_disabled-8                                          318.0 ± ∞ ¹          318.0 ± ∞ ¹       ~ (p=1.000 n=5) ²
+OutputCursorWriterWriteFrameLinesRectScrollBytesByGate/lr_scroll_remote_auto-8                                       318.0 ± ∞ ¹          318.0 ± ∞ ¹       ~ (p=1.000 n=5) ²
+OutputCursorWriterWriteFrameLinesScrollBytesWithCursorMotion/scroll_disabled-8                                     4.760Ki ± ∞ ¹        4.760Ki ± ∞ ¹       ~ (p=1.000 n=5) ²
+OutputCursorWriterWriteFrameLinesScrollBytesWithCursorMotion/scroll_rows_enabled-8                                   176.5 ± ∞ ¹          176.5 ± ∞ ¹       ~ (p=1.000 n=5) ²
+geomean                                                                                                            1.165Ki              1.165Ki        +0.01%
+¹ need >= 6 samples for confidence interval at level 0.95
+² all samples are equal
+
+                                                                                   │ tmp/perf/bench/phase2_tui_writer_before.txt │ tmp/perf/bench/phase2_tui_writer_after.txt │
+                                                                                   │                    B/op                     │        B/op          vs base               │
+OutputCursorWriterWriteFrameLinesDamageProfile/partial_damage-8                                                    71.83Ki ± ∞ ¹         51.77Ki ± ∞ ¹  -27.93% (p=0.008 n=5)
+OutputCursorWriterWriteFrameLinesDamageProfile/full_damage-8                                                       138.0Ki ± ∞ ¹         105.5Ki ± ∞ ¹  -23.55% (p=0.008 n=5)
+OutputCursorWriterWriteFrameLinesRectScrollBytesByGate/lr_scroll_disabled-8                                        4.596Ki ± ∞ ¹         2.594Ki ± ∞ ¹  -43.56% (p=0.008 n=5)
+OutputCursorWriterWriteFrameLinesRectScrollBytesByGate/lr_scroll_remote_auto-8                                     309.1Ki ± ∞ ¹         307.1Ki ± ∞ ¹   -0.63% (p=0.008 n=5)
+OutputCursorWriterWriteFrameLinesScrollBytesWithCursorMotion/scroll_disabled-8                                     43.52Ki ± ∞ ¹         38.74Ki ± ∞ ¹  -11.00% (p=0.008 n=5)
+OutputCursorWriterWriteFrameLinesScrollBytesWithCursorMotion/scroll_rows_enabled-8                                 40.78Ki ± ∞ ¹         35.97Ki ± ∞ ¹  -11.80% (p=0.008 n=5)
+geomean                                                                                                            54.07Ki               42.70Ki        -21.03%
+¹ need >= 6 samples for confidence interval at level 0.95
+
+                                                                                   │ tmp/perf/bench/phase2_tui_writer_before.txt │ tmp/perf/bench/phase2_tui_writer_after.txt │
+                                                                                   │                  allocs/op                  │      allocs/op       vs base               │
+OutputCursorWriterWriteFrameLinesDamageProfile/partial_damage-8                                                      51.00 ± ∞ ¹           49.00 ± ∞ ¹   -3.92% (p=0.008 n=5)
+OutputCursorWriterWriteFrameLinesDamageProfile/full_damage-8                                                         58.00 ± ∞ ¹           56.00 ± ∞ ¹   -3.45% (p=0.008 n=5)
+OutputCursorWriterWriteFrameLinesRectScrollBytesByGate/lr_scroll_disabled-8                                          18.00 ± ∞ ¹           16.00 ± ∞ ¹  -11.11% (p=0.008 n=5)
+OutputCursorWriterWriteFrameLinesRectScrollBytesByGate/lr_scroll_remote_auto-8                                       123.0 ± ∞ ¹           121.0 ± ∞ ¹   -1.63% (p=0.008 n=5)
+OutputCursorWriterWriteFrameLinesScrollBytesWithCursorMotion/scroll_disabled-8                                       51.00 ± ∞ ¹           50.00 ± ∞ ¹   -1.96% (p=0.008 n=5)
+OutputCursorWriterWriteFrameLinesScrollBytesWithCursorMotion/scroll_rows_enabled-8                                   102.0 ± ∞ ¹           101.0 ± ∞ ¹   -0.98% (p=0.008 n=5)
+geomean                                                                                                              56.94                 54.71         -3.90%
+¹ need >= 6 samples for confidence interval at level 0.95

@@ -103,7 +103,7 @@ func (p *framePresenter) ownerAwareDeltaCandidate(lines []string, meta *presentM
 	if payload == "" {
 		return framePatchCandidate{}
 	}
-	fullLen := normalizedFrameLen(strings.Join(lines, "\n"))
+	fullLen := normalizedJoinedLinesWireLen(lines)
 	if !usedScroll && fullLen > 0 && normalizedFrameLen(payload)*100 >= fullLen*95 {
 		return framePatchCandidate{}
 	}

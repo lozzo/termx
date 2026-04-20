@@ -1,0 +1,10 @@
+=== RUN   TestPerfNvimScrollReport
+    perf_nvim_scroll_test.go:110: down_single first_output_ms=16.20 settle_ms=268.38 out=392 sync=1 update_calls=3 update_ms=0.04 render_calls=0 render_ms=0.00 visible_calls=7 visible_ms=0.01 vterm_calls=1 vterm_ms=0.94 direct_flush_calls=1 direct_flush_ms=1.03
+    perf_nvim_scroll_test.go:110: up_single first_output_ms=23.10 settle_ms=275.26 out=6044 sync=1 update_calls=3 update_ms=0.04 render_calls=0 render_ms=0.00 visible_calls=8 visible_ms=0.02 vterm_calls=1 vterm_ms=3.78 direct_flush_calls=1 direct_flush_ms=2.34
+    perf_nvim_scroll_test.go:110: down_burst_8 first_output_ms=17.71 settle_ms=269.56 out=2604 sync=1 update_calls=3 update_ms=0.02 render_calls=0 render_ms=0.00 visible_calls=7 visible_ms=0.01 vterm_calls=1 vterm_ms=1.34 direct_flush_calls=1 direct_flush_ms=1.23
+    perf_nvim_scroll_test.go:110: up_burst_8 first_output_ms=25.33 settle_ms=276.52 out=2806 sync=1 update_calls=3 update_ms=0.02 render_calls=0 render_ms=0.00 visible_calls=7 visible_ms=0.05 vterm_calls=1 vterm_ms=7.39 direct_flush_calls=1 direct_flush_ms=1.70
+    perf_nvim_scroll_test.go:110: alternating_16 first_output_ms=0.00 settle_ms=1027.28 out=0 sync=0 update_calls=3 update_ms=0.05 render_calls=0 render_ms=0.00 visible_calls=9 visible_ms=0.02 vterm_calls=1 vterm_ms=5.86 direct_flush_calls=1 direct_flush_ms=0.03
+    perf_nvim_scroll_test.go:138: perf report written to /Users/lozzow/Documents/workdir/termx/tmp/perf/current/phase1_combined_nvim_before/nvim-scroll.json
+--- PASS: TestPerfNvimScrollReport (3.50s)
+PASS
+ok  	github.com/lozzow/termx/tuiv2/app	3.748s

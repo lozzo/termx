@@ -149,6 +149,17 @@ func normalizedLinesLen(lines []string) int {
 	return total
 }
 
+func normalizedJoinedLinesWireLen(lines []string) int {
+	if len(lines) == 0 {
+		return 0
+	}
+	total := normalizedLinesLen(lines) + (len(lines) - 1)
+	for _, line := range lines {
+		total += strings.Count(line, "\n")
+	}
+	return total
+}
+
 func writeNormalizedFrame(out *strings.Builder, frame string) {
 	if out == nil || frame == "" {
 		return

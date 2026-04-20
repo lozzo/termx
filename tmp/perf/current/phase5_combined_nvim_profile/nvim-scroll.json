@@ -1,0 +1,1582 @@
+{
+  "scenario": "nvim_scroll_bursts",
+  "generated_at": "2026-04-19T18:11:54.00126Z",
+  "initial_output_bytes": 19950,
+  "initial_sync_frames": 7,
+  "actions": [
+    {
+      "label": "down_single",
+      "input_bytes": 1,
+      "output_bytes": 392,
+      "sync_frames": 1,
+      "origin_count": 1,
+      "clear_count": 0,
+      "full_repaint_count": 0,
+      "rect_scroll_count": 1,
+      "lr_margin_scroll_count": 0,
+      "intraline_edit_count": 0,
+      "first_output_ms": 15.93375,
+      "settle_ms": 266.657666,
+      "sample": "\\x1b[?2026h\\x1b[?25l\\x1b[1;1H\\x1b[3;38r\\x1b[?6l\\x1b[3;1H\\x1b[1S\\x1b[r\\x1b[?6l\\x1b[38;1H\\x1b[0;38;2;183;185;186m│\\x1b[38;2;224;226;234;48;2;20;22;27mline 051 xxxxxxxxxxxxxxxxxxxxxx\\x1b[0m\\x1b[33G\\x1b[0;38;2;224;226;234;48;2;20;22;27mxxxxxxxxxxxxxxxxxx\\x1b[39m        ",
+      "metrics": {
+        "started_at": "2026-04-19T18:11:54.001285Z",
+        "collected_at": "2026-04-19T18:11:54.267953Z",
+        "elapsed_ms": 266.668,
+        "events": [
+          {
+            "name": "app.input.prepare",
+            "count": 1,
+            "bytes": 1,
+            "total_ms": 0.029708,
+            "average_ms": 0.029708,
+            "max_ms": 0.029708
+          },
+          {
+            "name": "app.input.send",
+            "count": 1,
+            "bytes": 1,
+            "total_ms": 1.291666,
+            "average_ms": 1.291666,
+            "max_ms": 1.291666
+          },
+          {
+            "name": "app.invalidate.interactive_bypass",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "app.invalidate.request",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "app.invalidate.sent",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "app.update",
+            "count": 3,
+            "bytes": 0,
+            "total_ms": 0.032375,
+            "average_ms": 0.010791666666666666,
+            "max_ms": 0.023417
+          },
+          {
+            "name": "app.view",
+            "count": 3,
+            "bytes": 42339,
+            "total_ms": 5.435292,
+            "average_ms": 1.811764,
+            "max_ms": 5.26725
+          },
+          {
+            "name": "cursor_writer.direct_flush",
+            "count": 1,
+            "bytes": 392,
+            "total_ms": 1.324333,
+            "average_ms": 1.324333,
+            "max_ms": 1.324333
+          },
+          {
+            "name": "cursor_writer.direct_flush.interactive_bypass",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "cursor_writer.io_write",
+            "count": 1,
+            "bytes": 392,
+            "total_ms": 0.018042,
+            "average_ms": 0.018042,
+            "max_ms": 0.018042
+          },
+          {
+            "name": "cursor_writer.present",
+            "count": 1,
+            "bytes": 351,
+            "total_ms": 1.296041,
+            "average_ms": 1.296041,
+            "max_ms": 1.296041
+          },
+          {
+            "name": "cursor_writer.present.mode.delta_rect_scroll_fullwidth",
+            "count": 1,
+            "bytes": 35,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "cursor_writer.present.mode.vertical_scroll_rows",
+            "count": 1,
+            "bytes": 35,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "cursor_writer.write_frame",
+            "count": 1,
+            "bytes": 14113,
+            "total_ms": 1.355875,
+            "average_ms": 1.355875,
+            "max_ms": 1.355875
+          },
+          {
+            "name": "protocol.input.send",
+            "count": 1,
+            "bytes": 1,
+            "total_ms": 1.284542,
+            "average_ms": 1.284542,
+            "max_ms": 1.284542
+          },
+          {
+            "name": "render.body",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 3.657458,
+            "average_ms": 3.657458,
+            "max_ms": 3.657458
+          },
+          {
+            "name": "render.body.canvas",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 1.258417,
+            "average_ms": 1.258417,
+            "max_ms": 1.258417
+          },
+          {
+            "name": "render.body.canvas.path.full_compose",
+            "count": 1,
+            "bytes": 4560,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "render.body.lines_export",
+            "count": 1,
+            "bytes": 12617,
+            "total_ms": 0.31925,
+            "average_ms": 0.31925,
+            "max_ms": 0.31925
+          },
+          {
+            "name": "render.body.path.canvas",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.input.send",
+            "count": 1,
+            "bytes": 1,
+            "total_ms": 1.290166,
+            "average_ms": 1.290166,
+            "max_ms": 1.290166
+          },
+          {
+            "name": "runtime.invalidate",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.stream.screen_update",
+            "count": 1,
+            "bytes": 536,
+            "total_ms": 1.700834,
+            "average_ms": 1.700834,
+            "max_ms": 1.700834
+          },
+          {
+            "name": "runtime.stream.screen_update.changed_rows",
+            "count": 1,
+            "bytes": 1,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.stream.screen_update.decode",
+            "count": 1,
+            "bytes": 536,
+            "total_ms": 0.022042,
+            "average_ms": 0.022042,
+            "max_ms": 0.022042
+          },
+          {
+            "name": "runtime.stream.screen_update.invalidate",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.015167,
+            "average_ms": 0.015167,
+            "max_ms": 0.015167
+          },
+          {
+            "name": "runtime.stream.screen_update.load_vterm_partial",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 1.640125,
+            "average_ms": 1.640125,
+            "max_ms": 1.640125
+          },
+          {
+            "name": "runtime.stream.screen_update.scrollback_trim_rows",
+            "count": 1,
+            "bytes": 1,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.stream.screen_update.snapshot_apply",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.008875,
+            "average_ms": 0.008875,
+            "max_ms": 0.008875
+          },
+          {
+            "name": "runtime.visible",
+            "count": 7,
+            "bytes": 0,
+            "total_ms": 0.023165,
+            "average_ms": 0.0033092857142857147,
+            "max_ms": 0.01175
+          },
+          {
+            "name": "runtime.visible.cache_hit",
+            "count": 6,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.visible.cache_miss",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "server.input.write",
+            "count": 1,
+            "bytes": 1,
+            "total_ms": 0.03325,
+            "average_ms": 0.03325,
+            "max_ms": 0.03325
+          },
+          {
+            "name": "terminal.input.write",
+            "count": 1,
+            "bytes": 1,
+            "total_ms": 0.0235,
+            "average_ms": 0.0235,
+            "max_ms": 0.0235
+          },
+          {
+            "name": "vterm.write",
+            "count": 1,
+            "bytes": 79,
+            "total_ms": 0.674584,
+            "average_ms": 0.674584,
+            "max_ms": 0.674584
+          },
+          {
+            "name": "vterm.write.before_snapshot",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.245916,
+            "average_ms": 0.245916,
+            "max_ms": 0.245916
+          },
+          {
+            "name": "vterm.write.emulator",
+            "count": 1,
+            "bytes": 79,
+            "total_ms": 0.098458,
+            "average_ms": 0.098458,
+            "max_ms": 0.098458
+          },
+          {
+            "name": "vterm.write.reconcile",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.243458,
+            "average_ms": 0.243458,
+            "max_ms": 0.243458
+          }
+        ]
+      }
+    },
+    {
+      "label": "up_single",
+      "input_bytes": 1,
+      "output_bytes": 6044,
+      "sync_frames": 1,
+      "origin_count": 1,
+      "clear_count": 0,
+      "full_repaint_count": 0,
+      "rect_scroll_count": 0,
+      "lr_margin_scroll_count": 0,
+      "intraline_edit_count": 0,
+      "first_output_ms": 24.137167,
+      "settle_ms": 276.475958,
+      "sample": "\\x1b[?2026h\\x1b[?25l\\x1b[1;1H\\x1b[3;9H\\x1b[38;2;224;226;234;48;2;20;22;27m5\\x1b[0m\\x1b[4;9H\\x1b[38;2;224;226;234;48;2;20;22;27m6\\x1b[0m\\x1b[4;51H\\x1b[38;2;224;226;234;48;2;20;22;27m              \\x1b[65G                                \\x1b[97G                ",
+      "metrics": {
+        "started_at": "2026-04-19T18:11:54.267973Z",
+        "collected_at": "2026-04-19T18:11:54.544444Z",
+        "elapsed_ms": 276.471,
+        "events": [
+          {
+            "name": "app.input.prepare",
+            "count": 1,
+            "bytes": 1,
+            "total_ms": 0.038541,
+            "average_ms": 0.038541,
+            "max_ms": 0.038541
+          },
+          {
+            "name": "app.input.send",
+            "count": 1,
+            "bytes": 1,
+            "total_ms": 1.410875,
+            "average_ms": 1.410875,
+            "max_ms": 1.410875
+          },
+          {
+            "name": "app.invalidate.interactive_bypass",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "app.invalidate.request",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "app.invalidate.sent",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "app.update",
+            "count": 3,
+            "bytes": 0,
+            "total_ms": 0.036083,
+            "average_ms": 0.012027666666666666,
+            "max_ms": 0.026625
+          },
+          {
+            "name": "app.view",
+            "count": 3,
+            "bytes": 43354,
+            "total_ms": 7.937208,
+            "average_ms": 2.645736,
+            "max_ms": 7.777375
+          },
+          {
+            "name": "cursor_writer.direct_flush",
+            "count": 1,
+            "bytes": 6044,
+            "total_ms": 2.654041,
+            "average_ms": 2.654041,
+            "max_ms": 2.654041
+          },
+          {
+            "name": "cursor_writer.direct_flush.interactive_bypass",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "cursor_writer.io_write",
+            "count": 1,
+            "bytes": 6044,
+            "total_ms": 0.317208,
+            "average_ms": 0.317208,
+            "max_ms": 0.317208
+          },
+          {
+            "name": "cursor_writer.present",
+            "count": 1,
+            "bytes": 6003,
+            "total_ms": 2.320083,
+            "average_ms": 2.320083,
+            "max_ms": 2.320083
+          },
+          {
+            "name": "cursor_writer.present.mode.diff",
+            "count": 1,
+            "bytes": 36,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "cursor_writer.write_frame",
+            "count": 1,
+            "bytes": 15128,
+            "total_ms": 2.681917,
+            "average_ms": 2.681917,
+            "max_ms": 2.681917
+          },
+          {
+            "name": "protocol.input.send",
+            "count": 1,
+            "bytes": 1,
+            "total_ms": 1.405125,
+            "average_ms": 1.405125,
+            "max_ms": 1.405125
+          },
+          {
+            "name": "render.body",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 4.841709,
+            "average_ms": 4.841709,
+            "max_ms": 4.841709
+          },
+          {
+            "name": "render.body.canvas",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 1.499042,
+            "average_ms": 1.499042,
+            "max_ms": 1.499042
+          },
+          {
+            "name": "render.body.canvas.path.full_compose",
+            "count": 1,
+            "bytes": 4560,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "render.body.lines_export",
+            "count": 1,
+            "bytes": 13632,
+            "total_ms": 0.36,
+            "average_ms": 0.36,
+            "max_ms": 0.36
+          },
+          {
+            "name": "render.body.path.canvas",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.input.send",
+            "count": 1,
+            "bytes": 1,
+            "total_ms": 1.409208,
+            "average_ms": 1.409208,
+            "max_ms": 1.409208
+          },
+          {
+            "name": "runtime.invalidate",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.stream.screen_update",
+            "count": 1,
+            "bytes": 17297,
+            "total_ms": 1.259833,
+            "average_ms": 1.259833,
+            "max_ms": 1.259833
+          },
+          {
+            "name": "runtime.stream.screen_update.changed_rows",
+            "count": 1,
+            "bytes": 36,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.stream.screen_update.decode",
+            "count": 1,
+            "bytes": 17297,
+            "total_ms": 0.264208,
+            "average_ms": 0.264208,
+            "max_ms": 0.264208
+          },
+          {
+            "name": "runtime.stream.screen_update.invalidate",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.01675,
+            "average_ms": 0.01675,
+            "max_ms": 0.01675
+          },
+          {
+            "name": "runtime.stream.screen_update.load_vterm_partial",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.84825,
+            "average_ms": 0.84825,
+            "max_ms": 0.84825
+          },
+          {
+            "name": "runtime.stream.screen_update.snapshot_apply",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.111084,
+            "average_ms": 0.111084,
+            "max_ms": 0.111084
+          },
+          {
+            "name": "runtime.visible",
+            "count": 8,
+            "bytes": 0,
+            "total_ms": 0.017543,
+            "average_ms": 0.002192875,
+            "max_ms": 0.009292
+          },
+          {
+            "name": "runtime.visible.cache_hit",
+            "count": 7,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.visible.cache_miss",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "server.input.write",
+            "count": 1,
+            "bytes": 1,
+            "total_ms": 0.127167,
+            "average_ms": 0.127167,
+            "max_ms": 0.127167
+          },
+          {
+            "name": "terminal.input.write",
+            "count": 1,
+            "bytes": 1,
+            "total_ms": 0.121166,
+            "average_ms": 0.121166,
+            "max_ms": 0.121166
+          },
+          {
+            "name": "vterm.write",
+            "count": 1,
+            "bytes": 4241,
+            "total_ms": 3.769625,
+            "average_ms": 3.769625,
+            "max_ms": 3.769625
+          },
+          {
+            "name": "vterm.write.before_snapshot",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.281875,
+            "average_ms": 0.281875,
+            "max_ms": 0.281875
+          },
+          {
+            "name": "vterm.write.emulator",
+            "count": 1,
+            "bytes": 4241,
+            "total_ms": 0.699709,
+            "average_ms": 0.699709,
+            "max_ms": 0.699709
+          },
+          {
+            "name": "vterm.write.reconcile",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.256041,
+            "average_ms": 0.256041,
+            "max_ms": 0.256041
+          }
+        ]
+      }
+    },
+    {
+      "label": "down_burst_8",
+      "input_bytes": 8,
+      "output_bytes": 2604,
+      "sync_frames": 1,
+      "origin_count": 1,
+      "clear_count": 0,
+      "full_repaint_count": 0,
+      "rect_scroll_count": 1,
+      "lr_margin_scroll_count": 0,
+      "intraline_edit_count": 0,
+      "first_output_ms": 18.409375,
+      "settle_ms": 269.291583,
+      "sample": "\\x1b[?2026h\\x1b[?25l\\x1b[1;1H\\x1b[3;38r\\x1b[?6l\\x1b[3;1H\\x1b[8S\\x1b[r\\x1b[?6l\\x1b[31;1H\\x1b[0;38;2;183;185;186m│\\x1b[38;2;224;226;234;48;2;20;22;27mline 051 xxxxxxxxxxxxxxxxxxxxxx\\x1b[0m\\x1b[33G\\x1b[0;38;2;224;226;234;48;2;20;22;27mxxxxxxxxxxxxxxxxxx\\x1b[39m        ",
+      "metrics": {
+        "started_at": "2026-04-19T18:11:54.544513Z",
+        "collected_at": "2026-04-19T18:11:54.813804Z",
+        "elapsed_ms": 269.292,
+        "events": [
+          {
+            "name": "app.input.prepare",
+            "count": 1,
+            "bytes": 8,
+            "total_ms": 0.035417,
+            "average_ms": 0.035417,
+            "max_ms": 0.035417
+          },
+          {
+            "name": "app.input.send",
+            "count": 1,
+            "bytes": 8,
+            "total_ms": 1.361959,
+            "average_ms": 1.361959,
+            "max_ms": 1.361959
+          },
+          {
+            "name": "app.invalidate.interactive_bypass",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "app.invalidate.request",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "app.invalidate.sent",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "app.update",
+            "count": 3,
+            "bytes": 0,
+            "total_ms": 0.030708,
+            "average_ms": 0.010236,
+            "max_ms": 0.021958
+          },
+          {
+            "name": "app.view",
+            "count": 3,
+            "bytes": 45181,
+            "total_ms": 5.706958,
+            "average_ms": 1.9023193333333335,
+            "max_ms": 5.54825
+          },
+          {
+            "name": "cursor_writer.direct_flush",
+            "count": 1,
+            "bytes": 2604,
+            "total_ms": 1.230875,
+            "average_ms": 1.230875,
+            "max_ms": 1.230875
+          },
+          {
+            "name": "cursor_writer.direct_flush.interactive_bypass",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "cursor_writer.io_write",
+            "count": 1,
+            "bytes": 2604,
+            "total_ms": 0.076125,
+            "average_ms": 0.076125,
+            "max_ms": 0.076125
+          },
+          {
+            "name": "cursor_writer.present",
+            "count": 1,
+            "bytes": 2556,
+            "total_ms": 1.14375,
+            "average_ms": 1.14375,
+            "max_ms": 1.14375
+          },
+          {
+            "name": "cursor_writer.present.mode.delta_rect_scroll_fullwidth",
+            "count": 1,
+            "bytes": 28,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "cursor_writer.present.mode.vertical_scroll_rows",
+            "count": 1,
+            "bytes": 28,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "cursor_writer.write_frame",
+            "count": 1,
+            "bytes": 14925,
+            "total_ms": 1.259417,
+            "average_ms": 1.259417,
+            "max_ms": 1.259417
+          },
+          {
+            "name": "protocol.input.send",
+            "count": 1,
+            "bytes": 8,
+            "total_ms": 1.357167,
+            "average_ms": 1.357167,
+            "max_ms": 1.357167
+          },
+          {
+            "name": "render.body",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 4.03375,
+            "average_ms": 4.03375,
+            "max_ms": 4.03375
+          },
+          {
+            "name": "render.body.canvas",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 1.1095,
+            "average_ms": 1.1095,
+            "max_ms": 1.1095
+          },
+          {
+            "name": "render.body.canvas.path.full_compose",
+            "count": 1,
+            "bytes": 4560,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "render.body.lines_export",
+            "count": 1,
+            "bytes": 13429,
+            "total_ms": 0.377541,
+            "average_ms": 0.377541,
+            "max_ms": 0.377541
+          },
+          {
+            "name": "render.body.path.canvas",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.input.send",
+            "count": 1,
+            "bytes": 8,
+            "total_ms": 1.361167,
+            "average_ms": 1.361167,
+            "max_ms": 1.361167
+          },
+          {
+            "name": "runtime.invalidate",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.stream.screen_update",
+            "count": 1,
+            "bytes": 3889,
+            "total_ms": 2.026292,
+            "average_ms": 2.026292,
+            "max_ms": 2.026292
+          },
+          {
+            "name": "runtime.stream.screen_update.changed_rows",
+            "count": 1,
+            "bytes": 8,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.stream.screen_update.decode",
+            "count": 1,
+            "bytes": 3889,
+            "total_ms": 0.076625,
+            "average_ms": 0.076625,
+            "max_ms": 0.076625
+          },
+          {
+            "name": "runtime.stream.screen_update.invalidate",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.0205,
+            "average_ms": 0.0205,
+            "max_ms": 0.0205
+          },
+          {
+            "name": "runtime.stream.screen_update.load_vterm_partial",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 1.872958,
+            "average_ms": 1.872958,
+            "max_ms": 1.872958
+          },
+          {
+            "name": "runtime.stream.screen_update.scrollback_trim_rows",
+            "count": 1,
+            "bytes": 8,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.stream.screen_update.snapshot_apply",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.039417,
+            "average_ms": 0.039417,
+            "max_ms": 0.039417
+          },
+          {
+            "name": "runtime.visible",
+            "count": 7,
+            "bytes": 0,
+            "total_ms": 0.010458,
+            "average_ms": 0.001494,
+            "max_ms": 0.00775
+          },
+          {
+            "name": "runtime.visible.cache_hit",
+            "count": 6,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.visible.cache_miss",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "server.input.write",
+            "count": 1,
+            "bytes": 8,
+            "total_ms": 0.025625,
+            "average_ms": 0.025625,
+            "max_ms": 0.025625
+          },
+          {
+            "name": "terminal.input.write",
+            "count": 1,
+            "bytes": 8,
+            "total_ms": 0.019792,
+            "average_ms": 0.019792,
+            "max_ms": 0.019792
+          },
+          {
+            "name": "vterm.write",
+            "count": 1,
+            "bytes": 538,
+            "total_ms": 1.524208,
+            "average_ms": 1.524208,
+            "max_ms": 1.524208
+          },
+          {
+            "name": "vterm.write.before_snapshot",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.269625,
+            "average_ms": 0.269625,
+            "max_ms": 0.269625
+          },
+          {
+            "name": "vterm.write.emulator",
+            "count": 1,
+            "bytes": 538,
+            "total_ms": 0.401042,
+            "average_ms": 0.401042,
+            "max_ms": 0.401042
+          },
+          {
+            "name": "vterm.write.reconcile",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.254583,
+            "average_ms": 0.254583,
+            "max_ms": 0.254583
+          }
+        ]
+      }
+    },
+    {
+      "label": "up_burst_8",
+      "input_bytes": 8,
+      "output_bytes": 2806,
+      "sync_frames": 1,
+      "origin_count": 1,
+      "clear_count": 0,
+      "full_repaint_count": 0,
+      "rect_scroll_count": 1,
+      "lr_margin_scroll_count": 0,
+      "intraline_edit_count": 0,
+      "first_output_ms": 31.35625,
+      "settle_ms": 283.569167,
+      "sample": "\\x1b[?2026h\\x1b[?25l\\x1b[1;1H\\x1b[3;38r\\x1b[?6l\\x1b[3;1H\\x1b[8T\\x1b[r\\x1b[?6l\\x1b[3;1H\\x1b[0;38;2;183;185;186m│\\x1b[38;2;224;226;234;48;2;20;22;27mline 015 xxxxxxxxxxxxxxxxxxxxxx\\x1b[0m\\x1b[33G\\x1b[0;38;2;224;226;234;48;2;20;22;27mxxxxxxxxxxxxxxxxxx\\x1b[39m         ",
+      "metrics": {
+        "started_at": "2026-04-19T18:11:54.813837Z",
+        "collected_at": "2026-04-19T18:11:55.097409Z",
+        "elapsed_ms": 283.573,
+        "events": [
+          {
+            "name": "app.input.prepare",
+            "count": 1,
+            "bytes": 8,
+            "total_ms": 0.042791,
+            "average_ms": 0.042791,
+            "max_ms": 0.042791
+          },
+          {
+            "name": "app.input.send",
+            "count": 1,
+            "bytes": 8,
+            "total_ms": 1.212875,
+            "average_ms": 1.212875,
+            "max_ms": 1.212875
+          },
+          {
+            "name": "app.invalidate.interactive_bypass",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "app.invalidate.request",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "app.invalidate.sent",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "app.update",
+            "count": 3,
+            "bytes": 0,
+            "total_ms": 0.039749,
+            "average_ms": 0.013249666666666667,
+            "max_ms": 0.029541
+          },
+          {
+            "name": "app.view",
+            "count": 3,
+            "bytes": 44978,
+            "total_ms": 7.791667,
+            "average_ms": 2.5972223333333333,
+            "max_ms": 7.516042
+          },
+          {
+            "name": "cursor_writer.direct_flush",
+            "count": 1,
+            "bytes": 2806,
+            "total_ms": 2.297375,
+            "average_ms": 2.297375,
+            "max_ms": 2.297375
+          },
+          {
+            "name": "cursor_writer.io_write",
+            "count": 1,
+            "bytes": 2806,
+            "total_ms": 0.093834,
+            "average_ms": 0.093834,
+            "max_ms": 0.093834
+          },
+          {
+            "name": "cursor_writer.present",
+            "count": 1,
+            "bytes": 2758,
+            "total_ms": 2.193333,
+            "average_ms": 2.193333,
+            "max_ms": 2.193333
+          },
+          {
+            "name": "cursor_writer.present.mode.delta_rect_scroll_fullwidth",
+            "count": 1,
+            "bytes": 28,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "cursor_writer.present.mode.vertical_scroll_rows",
+            "count": 1,
+            "bytes": 28,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "cursor_writer.write_frame",
+            "count": 1,
+            "bytes": 15128,
+            "total_ms": 2.326375,
+            "average_ms": 2.326375,
+            "max_ms": 2.326375
+          },
+          {
+            "name": "protocol.input.send",
+            "count": 1,
+            "bytes": 8,
+            "total_ms": 1.206833,
+            "average_ms": 1.206833,
+            "max_ms": 1.206833
+          },
+          {
+            "name": "render.body",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 4.677834,
+            "average_ms": 4.677834,
+            "max_ms": 4.677834
+          },
+          {
+            "name": "render.body.canvas",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 1.114625,
+            "average_ms": 1.114625,
+            "max_ms": 1.114625
+          },
+          {
+            "name": "render.body.canvas.path.full_compose",
+            "count": 1,
+            "bytes": 4560,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "render.body.lines_export",
+            "count": 1,
+            "bytes": 13632,
+            "total_ms": 0.334833,
+            "average_ms": 0.334833,
+            "max_ms": 0.334833
+          },
+          {
+            "name": "render.body.path.canvas",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.input.send",
+            "count": 1,
+            "bytes": 8,
+            "total_ms": 1.211458,
+            "average_ms": 1.211458,
+            "max_ms": 1.211458
+          },
+          {
+            "name": "runtime.invalidate",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.stream.screen_update",
+            "count": 1,
+            "bytes": 17297,
+            "total_ms": 2.107583,
+            "average_ms": 2.107583,
+            "max_ms": 2.107583
+          },
+          {
+            "name": "runtime.stream.screen_update.changed_rows",
+            "count": 1,
+            "bytes": 36,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.stream.screen_update.decode",
+            "count": 1,
+            "bytes": 17297,
+            "total_ms": 0.68125,
+            "average_ms": 0.68125,
+            "max_ms": 0.68125
+          },
+          {
+            "name": "runtime.stream.screen_update.invalidate",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.045875,
+            "average_ms": 0.045875,
+            "max_ms": 0.045875
+          },
+          {
+            "name": "runtime.stream.screen_update.load_vterm_partial",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 1.197541,
+            "average_ms": 1.197541,
+            "max_ms": 1.197541
+          },
+          {
+            "name": "runtime.stream.screen_update.snapshot_apply",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.160875,
+            "average_ms": 0.160875,
+            "max_ms": 0.160875
+          },
+          {
+            "name": "runtime.visible",
+            "count": 7,
+            "bytes": 0,
+            "total_ms": 0.016541,
+            "average_ms": 0.002363,
+            "max_ms": 0.011917
+          },
+          {
+            "name": "runtime.visible.cache_hit",
+            "count": 6,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.visible.cache_miss",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "server.input.write",
+            "count": 1,
+            "bytes": 8,
+            "total_ms": 0.045875,
+            "average_ms": 0.045875,
+            "max_ms": 0.045875
+          },
+          {
+            "name": "terminal.input.write",
+            "count": 1,
+            "bytes": 8,
+            "total_ms": 0.035333,
+            "average_ms": 0.035333,
+            "max_ms": 0.035333
+          },
+          {
+            "name": "vterm.write",
+            "count": 1,
+            "bytes": 33802,
+            "total_ms": 8.909792,
+            "average_ms": 8.909792,
+            "max_ms": 8.909792
+          },
+          {
+            "name": "vterm.write.before_snapshot",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.317667,
+            "average_ms": 0.317667,
+            "max_ms": 0.317667
+          },
+          {
+            "name": "vterm.write.emulator",
+            "count": 1,
+            "bytes": 33802,
+            "total_ms": 5.20475,
+            "average_ms": 5.20475,
+            "max_ms": 5.20475
+          },
+          {
+            "name": "vterm.write.reconcile",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.480417,
+            "average_ms": 0.480417,
+            "max_ms": 0.480417
+          }
+        ]
+      }
+    },
+    {
+      "label": "alternating_16",
+      "input_bytes": 16,
+      "output_bytes": 0,
+      "sync_frames": 0,
+      "origin_count": 0,
+      "clear_count": 0,
+      "full_repaint_count": 0,
+      "rect_scroll_count": 0,
+      "lr_margin_scroll_count": 0,
+      "intraline_edit_count": 0,
+      "first_output_ms": 0,
+      "settle_ms": 1025.506792,
+      "sample": "",
+      "metrics": {
+        "started_at": "2026-04-19T18:11:55.097457Z",
+        "collected_at": "2026-04-19T18:11:56.123004Z",
+        "elapsed_ms": 1025.548,
+        "events": [
+          {
+            "name": "app.input.prepare",
+            "count": 1,
+            "bytes": 16,
+            "total_ms": 0.028458,
+            "average_ms": 0.028458,
+            "max_ms": 0.028458
+          },
+          {
+            "name": "app.input.send",
+            "count": 1,
+            "bytes": 16,
+            "total_ms": 1.386292,
+            "average_ms": 1.386292,
+            "max_ms": 1.386292
+          },
+          {
+            "name": "app.interaction.batch",
+            "count": 1,
+            "bytes": 16,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "app.invalidate.interactive_bypass",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "app.invalidate.request",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "app.invalidate.sent",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "app.update",
+            "count": 3,
+            "bytes": 0,
+            "total_ms": 0.109334,
+            "average_ms": 0.03644466666666667,
+            "max_ms": 0.095375
+          },
+          {
+            "name": "app.view",
+            "count": 3,
+            "bytes": 45384,
+            "total_ms": 6.150041,
+            "average_ms": 2.0500136666666666,
+            "max_ms": 5.959458
+          },
+          {
+            "name": "cursor_writer.direct_flush",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.025292,
+            "average_ms": 0.025292,
+            "max_ms": 0.025292
+          },
+          {
+            "name": "cursor_writer.direct_flush.interactive_bypass",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "cursor_writer.direct_skip",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "cursor_writer.present",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.019875,
+            "average_ms": 0.019875,
+            "max_ms": 0.019875
+          },
+          {
+            "name": "cursor_writer.write_frame",
+            "count": 1,
+            "bytes": 15128,
+            "total_ms": 0.048625,
+            "average_ms": 0.048625,
+            "max_ms": 0.048625
+          },
+          {
+            "name": "protocol.input.send",
+            "count": 1,
+            "bytes": 16,
+            "total_ms": 1.376667,
+            "average_ms": 1.376667,
+            "max_ms": 1.376667
+          },
+          {
+            "name": "render.body",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 5.644375,
+            "average_ms": 5.644375,
+            "max_ms": 5.644375
+          },
+          {
+            "name": "render.body.canvas",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 1.839208,
+            "average_ms": 1.839208,
+            "max_ms": 1.839208
+          },
+          {
+            "name": "render.body.canvas.path.full_compose",
+            "count": 1,
+            "bytes": 4560,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "render.body.lines_export",
+            "count": 1,
+            "bytes": 13632,
+            "total_ms": 0.3525,
+            "average_ms": 0.3525,
+            "max_ms": 0.3525
+          },
+          {
+            "name": "render.body.path.canvas",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.input.send",
+            "count": 1,
+            "bytes": 16,
+            "total_ms": 1.384917,
+            "average_ms": 1.384917,
+            "max_ms": 1.384917
+          },
+          {
+            "name": "runtime.invalidate",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.stream.screen_update",
+            "count": 1,
+            "bytes": 26,
+            "total_ms": 0.119292,
+            "average_ms": 0.119292,
+            "max_ms": 0.119292
+          },
+          {
+            "name": "runtime.stream.screen_update.decode",
+            "count": 1,
+            "bytes": 26,
+            "total_ms": 0.007042,
+            "average_ms": 0.007042,
+            "max_ms": 0.007042
+          },
+          {
+            "name": "runtime.stream.screen_update.invalidate",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.021833,
+            "average_ms": 0.021833,
+            "max_ms": 0.021833
+          },
+          {
+            "name": "runtime.stream.screen_update.load_vterm_partial",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.063708,
+            "average_ms": 0.063708,
+            "max_ms": 0.063708
+          },
+          {
+            "name": "runtime.stream.screen_update.snapshot_apply",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.0035,
+            "average_ms": 0.0035,
+            "max_ms": 0.0035
+          },
+          {
+            "name": "runtime.visible",
+            "count": 9,
+            "bytes": 0,
+            "total_ms": 0.017168,
+            "average_ms": 0.0019075555555555556,
+            "max_ms": 0.00825
+          },
+          {
+            "name": "runtime.visible.cache_hit",
+            "count": 8,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "runtime.visible.cache_miss",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0,
+            "average_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "name": "server.input.write",
+            "count": 1,
+            "bytes": 16,
+            "total_ms": 0.021459,
+            "average_ms": 0.021459,
+            "max_ms": 0.021459
+          },
+          {
+            "name": "terminal.input.write",
+            "count": 1,
+            "bytes": 16,
+            "total_ms": 0.018083,
+            "average_ms": 0.018083,
+            "max_ms": 0.018083
+          },
+          {
+            "name": "vterm.write",
+            "count": 1,
+            "bytes": 34329,
+            "total_ms": 5.953042,
+            "average_ms": 5.953042,
+            "max_ms": 5.953042
+          },
+          {
+            "name": "vterm.write.before_snapshot",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.262541,
+            "average_ms": 0.262541,
+            "max_ms": 0.262541
+          },
+          {
+            "name": "vterm.write.emulator",
+            "count": 1,
+            "bytes": 34329,
+            "total_ms": 5.3735,
+            "average_ms": 5.3735,
+            "max_ms": 5.3735
+          },
+          {
+            "name": "vterm.write.reconcile",
+            "count": 1,
+            "bytes": 0,
+            "total_ms": 0.301667,
+            "average_ms": 0.301667,
+            "max_ms": 0.301667
+          }
+        ]
+      }
+    }
+  ]
+}
