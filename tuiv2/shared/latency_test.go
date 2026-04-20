@@ -2,11 +2,11 @@ package shared
 
 import "testing"
 
-func TestHostPaletteProbeEnabledDefaultsOffInRemoteLatencyMode(t *testing.T) {
+func TestHostPaletteProbeEnabledDefaultsOnInRemoteLatencyMode(t *testing.T) {
 	t.Setenv("TERMX_HOST_PALETTE_PROBE", "")
 	t.Setenv("TERMX_REMOTE_LATENCY", "1")
-	if HostPaletteProbeEnabled() {
-		t.Fatal("expected host palette probe disabled in remote latency mode")
+	if !HostPaletteProbeEnabled() {
+		t.Fatal("expected host palette probe enabled in remote latency mode")
 	}
 }
 
@@ -15,6 +15,14 @@ func TestHostPaletteProbeEnabledCanBeForcedOn(t *testing.T) {
 	t.Setenv("TERMX_REMOTE_LATENCY", "1")
 	if !HostPaletteProbeEnabled() {
 		t.Fatal("expected host palette probe forced on")
+	}
+}
+
+func TestHostPaletteProbeEnabledCanBeForcedOff(t *testing.T) {
+	t.Setenv("TERMX_HOST_PALETTE_PROBE", "never")
+	t.Setenv("TERMX_REMOTE_LATENCY", "1")
+	if HostPaletteProbeEnabled() {
+		t.Fatal("expected host palette probe forced off")
 	}
 }
 

@@ -38,17 +38,22 @@ func likelySSHSession() bool {
 // TERMX_HOST_PALETTE_PROBE accepts:
 // - "1", "true", "yes", "on", "always": force probe
 // - "0", "false", "no", "off", "never": disable probe
-// - "", "auto": disable in remote-latency mode, enable otherwise
+// - "", "auto": enable by default for both local and remote sessions
+//
+// Palette probing is a one-shot startup cost and drives the semantic accent
+// tokens used by tuiv2 chrome. Tying it to the SSH/remote latency profile
+// made remote sessions fall back to achromatic host FG/BG-derived accents,
+// which regressed pane border and status colors.
 func HostPaletteProbeEnabled() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("TERMX_HOST_PALETTE_PROBE"))) {
 	case "", "auto":
-		return !RemoteLatencyProfileEnabled()
+		return true
 	case "1", "true", "yes", "on", "always":
 		return true
 	case "0", "false", "no", "off", "never":
 		return false
 	default:
-		return !RemoteLatencyProfileEnabled()
+		return true
 	}
 }
 
