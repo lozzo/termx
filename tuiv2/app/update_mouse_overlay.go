@@ -4,6 +4,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/render"
+	"github.com/lozzow/termx/tuiv2/uiinput"
 )
 
 func (m *Model) handleOverlayMouseClick(vm render.RenderVM, x, y int) (bool, tea.Cmd) {
@@ -74,8 +75,13 @@ func (m *Model) handleOverlayMouseClick(vm render.RenderVM, x, y int) (bool, tea
 		if region.Kind == render.HitRegionOverlayDismiss {
 			return true, m.cancelActiveModal()
 		}
-		if vm.Overlay.Kind == render.VisibleOverlayPrompt && region.Kind == render.HitRegionPromptInput {
-			return true, m.handlePromptInputMouseClick(region, x)
+		if vm.Overlay.Kind == render.VisibleOverlayPrompt {
+			switch region.Kind {
+			case render.HitRegionPromptSuggestionItem:
+				return true, m.handlePromptSuggestionMouseClick(region.ItemIndex)
+			case render.HitRegionPromptInput:
+				return true, m.handlePromptInputMouseClick(region, x)
+			}
 		}
 		return true, m.dispatchOverlayRegionAction(region.Action)
 	default:
@@ -131,21 +137,27 @@ func (m *Model) handleOverlayQueryInputMouseClick(region render.HitRegion, targe
 		if m.modalHost == nil || m.modalHost.Picker == nil {
 			return nil
 		}
-		if setQueryCursor(&m.modalHost.Picker.Query, &m.modalHost.Picker.Cursor, &m.modalHost.Picker.CursorSet, cursor) {
+		editor := m.modalHost.Picker.QueryEditor()
+		if editor != nil && editor.SetCursorByCell(cursor, uiinput.RenderConfig{Width: region.Rect.W}) {
+			m.modalHost.Picker.SyncQueryLegacy()
 			m.revealCursorAndInvalidate()
 		}
 	case overlayQueryWorkspace:
 		if m.modalHost == nil || m.modalHost.WorkspacePicker == nil {
 			return nil
 		}
-		if setQueryCursor(&m.modalHost.WorkspacePicker.Query, &m.modalHost.WorkspacePicker.Cursor, &m.modalHost.WorkspacePicker.CursorSet, cursor) {
+		editor := m.modalHost.WorkspacePicker.QueryEditor()
+		if editor != nil && editor.SetCursorByCell(cursor, uiinput.RenderConfig{Width: region.Rect.W}) {
+			m.modalHost.WorkspacePicker.SyncQueryLegacy()
 			m.revealCursorAndInvalidate()
 		}
 	case overlayQueryTerminalManager:
 		if m.terminalPage == nil {
 			return nil
 		}
-		if setQueryCursor(&m.terminalPage.Query, &m.terminalPage.Cursor, &m.terminalPage.CursorSet, cursor) {
+		editor := m.terminalPage.QueryEditor()
+		if editor != nil && editor.SetCursorByCell(cursor, uiinput.RenderConfig{Width: region.Rect.W}) {
+			m.terminalPage.SyncQueryLegacy()
 			m.revealCursorAndInvalidate()
 		}
 	}

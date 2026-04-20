@@ -32,10 +32,15 @@ func renderPromptOverlayLinesWithThemeAndCursor(prompt *modal.PromptState, termS
 			activeField = len(prompt.Fields) - 1
 		}
 		if activeField >= 0 && activeField < len(inputLines) && activeField < len(prompt.Fields) {
+			for fieldIndex, inputLine := range inputLines {
+				if inputLine < 0 || inputLine >= len(lines) || fieldIndex >= len(prompt.Fields) {
+					continue
+				}
+				lines[inputLine] = renderOverlayPromptFormFieldWithCursor(theme, prompt, fieldIndex, innerWidth, cursorVisible)
+			}
 			inputLine := inputLines[activeField]
 			if inputLine >= 0 && inputLine < len(lines) {
-				lines[inputLine] = renderOverlayPromptFormFieldWithCursor(theme, prompt, activeField, innerWidth, cursorVisible)
-				popup := buildPromptSuggestionPopupLayout(theme, prompt.Fields[activeField], prompt.PromptSuggestionSelected, inputLine, innerWidth)
+				popup := buildPromptSuggestionPopupLayout(theme, prompt.Fields[activeField], prompt.PromptSuggestionSelected, inputLine, innerWidth, prompt.PromptSuggestionFocused)
 				if popup.visible {
 					floatingPopup = popup
 				}
@@ -210,7 +215,7 @@ func promptSuggestionPopupTopY(layout pickerCardLayout, popup promptSuggestionPo
 	return layout.firstItemY + popup.startRow
 }
 
-func buildPromptSuggestionPopupLayout(theme uiTheme, field modal.PromptField, selected, inputLine, innerWidth int) promptSuggestionPopupLayout {
+func buildPromptSuggestionPopupLayout(theme uiTheme, field modal.PromptField, selected, inputLine, innerWidth int, focused bool) promptSuggestionPopupLayout {
 	if !promptFieldSuggestionVisible(field) || innerWidth <= 0 {
 		return promptSuggestionPopupLayout{}
 	}
@@ -220,7 +225,7 @@ func buildPromptSuggestionPopupLayout(theme uiTheme, field modal.PromptField, se
 	}
 	popupX := uiinput.PromptWidth(overlayPromptString(label))
 	popupWidth := promptSuggestionPopupWidth(innerWidth, popupX)
-	rows := renderPromptFieldSuggestionPopup(theme, field, selected, popupWidth)
+	rows := renderPromptFieldSuggestionPopup(theme, field, selected, popupWidth, focused)
 	if len(rows) == 0 {
 		return promptSuggestionPopupLayout{}
 	}
@@ -236,7 +241,7 @@ func buildPromptSuggestionPopupLayout(theme uiTheme, field modal.PromptField, se
 	}
 }
 
-func renderPromptFieldSuggestionPopup(theme uiTheme, field modal.PromptField, selected int, popupWidth int) []string {
+func renderPromptFieldSuggestionPopup(theme uiTheme, field modal.PromptField, selected int, popupWidth int, focused bool) []string {
 	if !promptFieldSuggestionVisible(field) || popupWidth <= 0 {
 		return nil
 	}
@@ -253,16 +258,16 @@ func renderPromptFieldSuggestionPopup(theme uiTheme, field modal.PromptField, se
 	pathDisplayW := xansi.StringWidth(pathText)
 	topFillLen := maxInt(0, itemWidth-1-pathDisplayW)
 	topBorder :=
-		promptSuggestionBorderStyle(theme).Render("╭─") +
-			promptSuggestionPathStyle(theme).Render(pathText) +
-			promptSuggestionBorderStyle(theme).Render(strings.Repeat("─", topFillLen)+"╮")
+		promptSuggestionBorderStyle(theme, focused).Render("╭─") +
+			promptSuggestionPathStyle(theme, focused).Render(pathText) +
+			promptSuggestionBorderStyle(theme, focused).Render(strings.Repeat("─", topFillLen)+"╮")
 	rows = append(rows, topBorder)
 
 	if itemCount == 0 {
 		emptyRow :=
-			promptSuggestionBorderStyle(theme).Render("│") +
-				renderOverlaySpan(promptSuggestionFillStyle(theme), truncateANSI(field.SuggestionEmpty, itemWidth), itemWidth) +
-				promptSuggestionBorderStyle(theme).Render("│")
+			promptSuggestionBorderStyle(theme, focused).Render("│") +
+				renderOverlaySpan(promptSuggestionFillStyle(theme, focused), truncateANSI(field.SuggestionEmpty, itemWidth), itemWidth) +
+				promptSuggestionBorderStyle(theme, focused).Render("│")
 		rows = append(rows, emptyRow)
 	} else {
 		if selected < 0 {
@@ -277,22 +282,22 @@ func renderPromptFieldSuggestionPopup(theme uiTheme, field modal.PromptField, se
 			if index == selected {
 				line = "▸ " + name
 			}
-			fill := promptSuggestionFillStyle(theme)
-			style := promptSuggestionTextStyle(theme, false)
+			fill := promptSuggestionFillStyle(theme, focused)
+			style := promptSuggestionTextStyle(theme, focused)
 			if index == selected {
-				fill = promptSuggestionSelectedFillStyle(theme)
-				style = promptSuggestionSelectedTextStyle(theme)
+				fill = promptSuggestionSelectedFillStyle(theme, focused)
+				style = promptSuggestionSelectedTextStyle(theme, focused)
 			}
 			itemRow :=
-				promptSuggestionBorderStyle(theme).Render("│") +
+				promptSuggestionBorderStyle(theme, focused).Render("│") +
 					renderOverlaySpan(fill, style.Render(truncateANSI(line, itemWidth)), itemWidth) +
-					promptSuggestionBorderStyle(theme).Render("│")
+					promptSuggestionBorderStyle(theme, focused).Render("│")
 			rows = append(rows, itemRow)
 		}
 	}
 
 	// Bottom border: ╰{─*itemWidth}╯
-	bottomBorder := promptSuggestionBorderStyle(theme).Render("╰" + strings.Repeat("─", itemWidth) + "╯")
+	bottomBorder := promptSuggestionBorderStyle(theme, focused).Render("╰" + strings.Repeat("─", itemWidth) + "╯")
 	rows = append(rows, bottomBorder)
 
 	return rows
@@ -315,45 +320,57 @@ func promptSuggestionPopupWidth(innerWidth, popupX int) int {
 	return preferred
 }
 
-func promptSuggestionBorderStyle(theme uiTheme) lipgloss.Style {
-	bg := promptSuggestionBG(theme)
+func promptSuggestionBorderStyle(theme uiTheme, focused bool) lipgloss.Style {
+	bg := promptSuggestionBG(theme, focused)
+	fg := ensureContrast(mixHex(theme.panelStrong, theme.chromeAccent, 0.4), bg, 2.8)
+	if focused {
+		fg = ensureContrast(mixHex(theme.chromeAccent, theme.panelText, 0.3), bg, 3.4)
+	}
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(ensureContrast(mixHex(theme.panelStrong, theme.chromeAccent, 0.4), bg, 2.8))).
+		Foreground(lipgloss.Color(fg)).
 		Background(lipgloss.Color(bg))
 }
 
-func promptSuggestionFillStyle(theme uiTheme) lipgloss.Style {
-	bg := promptSuggestionBG(theme)
+func promptSuggestionFillStyle(theme uiTheme, focused bool) lipgloss.Style {
+	bg := promptSuggestionBG(theme, focused)
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.panelText)).
 		Background(lipgloss.Color(bg))
 }
 
-func promptSuggestionSelectedFillStyle(theme uiTheme) lipgloss.Style {
+func promptSuggestionSelectedFillStyle(theme uiTheme, focused bool) lipgloss.Style {
+	bg := promptSuggestionSelectedBG(theme, focused)
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.selectedText)).
-		Background(lipgloss.Color(theme.selectedBG))
+		Background(lipgloss.Color(bg))
 }
 
-func promptSuggestionPathStyle(theme uiTheme) lipgloss.Style {
+func promptSuggestionPathStyle(theme uiTheme, focused bool) lipgloss.Style {
+	fg := theme.panelMuted
+	if focused {
+		fg = ensureContrast(mixHex(theme.panelMuted, theme.chromeAccent, 0.35), promptSuggestionBG(theme, focused), 2.8)
+	}
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(theme.panelMuted)).
-		Background(lipgloss.Color(promptSuggestionBG(theme)))
+		Foreground(lipgloss.Color(fg)).
+		Background(lipgloss.Color(promptSuggestionBG(theme, focused)))
 }
 
-func promptSuggestionSelectedTextStyle(theme uiTheme) lipgloss.Style {
-	return lipgloss.NewStyle().
-		Bold(true).
+func promptSuggestionSelectedTextStyle(theme uiTheme, focused bool) lipgloss.Style {
+	style := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.selectedText)).
-		Background(lipgloss.Color(theme.selectedBG))
+		Background(lipgloss.Color(promptSuggestionSelectedBG(theme, focused)))
+	if focused {
+		style = style.Bold(true)
+	}
+	return style
 }
 
-func promptSuggestionTextStyle(theme uiTheme, active bool) lipgloss.Style {
+func promptSuggestionTextStyle(theme uiTheme, focused bool) lipgloss.Style {
 	style := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.panelText)).
-		Background(lipgloss.Color(promptSuggestionBG(theme)))
-	if active {
-		style = style.Bold(true).Foreground(lipgloss.Color(ensureContrast(theme.chromeAccent, promptSuggestionBG(theme), 3.8)))
+		Background(lipgloss.Color(promptSuggestionBG(theme, focused)))
+	if focused {
+		style = style.Foreground(lipgloss.Color(ensureContrast(mixHex(theme.panelText, theme.chromeAccent, 0.18), promptSuggestionBG(theme, focused), 3.8)))
 	}
 	return style
 }
@@ -361,15 +378,27 @@ func promptSuggestionTextStyle(theme uiTheme, active bool) lipgloss.Style {
 func promptSuggestionEmptyStyle(theme uiTheme, value string) lipgloss.Style {
 	style := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(theme.panelMuted)).
-		Background(lipgloss.Color(promptSuggestionBG(theme)))
+		Background(lipgloss.Color(promptSuggestionBG(theme, false)))
 	if strings.Contains(strings.ToLower(value), "not found") {
 		style = style.Foreground(lipgloss.Color(theme.danger)).Bold(true)
 	}
 	return style
 }
 
-func promptSuggestionBG(theme uiTheme) string {
-	return mixHex(theme.fieldBG, theme.panelStrong, 0.58)
+func promptSuggestionBG(theme uiTheme, focused bool) string {
+	bg := mixHex(theme.fieldBG, theme.panelStrong, 0.58)
+	if focused {
+		return mixHex(bg, theme.chromeAccent, 0.08)
+	}
+	return bg
+}
+
+func promptSuggestionSelectedBG(theme uiTheme, focused bool) string {
+	bg := mixHex(theme.selectedBG, promptSuggestionBG(theme, focused), 0.18)
+	if focused {
+		return mixHex(theme.selectedBG, theme.chromeAccent, 0.14)
+	}
+	return bg
 }
 
 func buildFloatingPopupRow(baseRow string, layout pickerCardLayout, popup promptSuggestionPopupLayout, popupRow string, totalWidth int) string {

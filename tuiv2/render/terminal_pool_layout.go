@@ -6,6 +6,7 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
+	"github.com/lozzow/termx/tuiv2/uiinput"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -50,9 +51,9 @@ func buildTerminalPoolPageLayout(pool *modal.TerminalManagerState, width, height
 	layout := terminalPoolPageLayout{
 		innerWidth: maxInt(24, width-4),
 		queryRect: workbench.Rect{
-			X: 2 + xansi.StringWidth("search: "),
+			X: 2 + uiinput.PromptWidth(overlaySearchPrompt()),
 			Y: 1,
-			W: maxInt(1, width-2-xansi.StringWidth("search: ")),
+			W: maxInt(1, width-2-uiinput.PromptWidth(overlaySearchPrompt())),
 			H: 1,
 		},
 	}

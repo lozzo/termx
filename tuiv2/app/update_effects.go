@@ -290,4 +290,5 @@ func (m *Model) resetPickerState() {
 	m.modalHost.Picker.Query = ""
 	m.modalHost.Picker.Cursor = 0
 	m.modalHost.Picker.CursorSet = false
+	m.modalHost.Picker.QueryInput.Clear()
 }

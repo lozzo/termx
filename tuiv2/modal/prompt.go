@@ -1,6 +1,9 @@
 package modal
 
-import "github.com/lozzow/termx/tuiv2/input"
+import (
+	"github.com/lozzow/termx/tuiv2/input"
+	"github.com/lozzow/termx/tuiv2/uiinput"
+)
 
 type CreateTargetKind string
 
@@ -12,36 +15,43 @@ const (
 )
 
 type PromptState struct {
-	Kind            string
-	Title           string
-	Hint            string
-	WorkspaceName   string
-	Value           string
-	Cursor          int
-	AllowEmpty      bool
-	Original        string
-	TabID           string
-	PaneID          string
-	TerminalID      string
-	Command         []string
-	Workdir         string
-	DefaultName     string
-	Name            string
-	Tags            map[string]string
-	CreateTarget    CreateTargetKind
-	ReturnMode      input.ModeKind
-	ReturnRequestID string
-	Fields          []PromptField
-	ActiveField     int
+	Kind                     string
+	Title                    string
+	Hint                     string
+	WorkspaceName            string
+	Value                    string
+	Cursor                   int
+	Input                    uiinput.State
+	AllowEmpty               bool
+	Original                 string
+	TabID                    string
+	PaneID                   string
+	TerminalID               string
+	Command                  []string
+	Workdir                  string
+	DefaultName              string
+	Name                     string
+	Tags                     map[string]string
+	CreateTarget             CreateTargetKind
+	ReturnMode               input.ModeKind
+	ReturnRequestID          string
+	Fields                   []PromptField
+	ActiveField              int
+	PromptSuggestionFocused  bool
+	PromptSuggestionSelected int
 }
 
 type PromptField struct {
-	Key         string
-	Label       string
-	Value       string
-	Cursor      int
-	Required    bool
-	Placeholder string
+	Key             string
+	Label           string
+	Value           string
+	Cursor          int
+	Input           uiinput.State
+	Required        bool
+	Placeholder     string
+	SuggestionTitle string
+	SuggestionItems []string
+	SuggestionEmpty string
 }
 
 func (p *PromptState) IsForm() bool {

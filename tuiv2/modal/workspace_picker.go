@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/lozzow/termx/tuiv2/uiinput"
 )
 
 type WorkspacePickerItemKind string
@@ -52,6 +53,7 @@ type WorkspacePickerState struct {
 	Query       string
 	Cursor      int
 	CursorSet   bool
+	QueryInput  uiinput.State
 	Items       []WorkspacePickerItem
 	Filtered    []WorkspacePickerItem
 	Selected    int
@@ -85,7 +87,7 @@ func (p *WorkspacePickerState) ApplyFilter() {
 	if p == nil {
 		return
 	}
-	p.Filtered = workspacePickerVisibleItems(p.Items, p.Query)
+	p.Filtered = workspacePickerVisibleItems(p.Items, p.QueryValue())
 	if p.Selected >= len(p.Filtered) {
 		p.Selected = 0
 	}
@@ -95,7 +97,7 @@ func (p *WorkspacePickerState) VisibleItems() []WorkspacePickerItem {
 	if p == nil {
 		return nil
 	}
-	if len(p.Filtered) > 0 || strings.TrimSpace(p.Query) != "" {
+	if len(p.Filtered) > 0 || strings.TrimSpace(p.QueryValue()) != "" {
 		return p.Filtered
 	}
 	return workspacePickerVisibleItems(p.Items, "")

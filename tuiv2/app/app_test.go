@@ -2257,6 +2257,23 @@ func TestModelSubmitCreateNewPickerSelectionOpensPrompt(t *testing.T) {
 	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-terminal-form" {
 		t.Fatalf("expected create-terminal-form prompt, got %#v", model.modalHost.Prompt)
 	}
+	workdir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if got := model.modalHost.Prompt.Workdir; got != workdir {
+		t.Fatalf("expected inherited prompt workdir %q, got %q", workdir, got)
+	}
+	workdirField := model.modalHost.Prompt.Field("workdir")
+	if workdirField == nil {
+		t.Fatal("expected workdir field on create-terminal form")
+	}
+	if got := workdirField.Value; got != workdir {
+		t.Fatalf("expected workdir field value %q, got %q", workdir, got)
+	}
+	if got := workdirField.Cursor; got != len([]rune(workdir)) {
+		t.Fatalf("expected workdir cursor %d, got %d", len([]rune(workdir)), got)
+	}
 	if model.input.Mode().Kind != input.ModePrompt {
 		t.Fatalf("expected input mode prompt, got %q", model.input.Mode().Kind)
 	}
@@ -2288,6 +2305,69 @@ func TestModelPromptSubmitCreateTerminalFormRequiresName(t *testing.T) {
 	}
 	if model.modalHost.Prompt == nil || model.modalHost.Prompt.Kind != "create-terminal-form" {
 		t.Fatalf("expected create-terminal-form prompt to stay open, got %#v", model.modalHost.Prompt)
+	}
+}
+
+func TestModelPromptSubmitCreateTerminalFormFallsBackToInheritedWorkdir(t *testing.T) {
+	client := &recordingBridgeClient{
+		createResult: &protocol.CreateResult{TerminalID: "term-new"},
+		attachResult: &protocol.AttachResult{Channel: 13, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-new": {
+				TerminalID: "term-new",
+				Size:       protocol.Size{Cols: 80, Rows: 24},
+				Screen: protocol.ScreenData{
+					Cells: [][]protocol.Cell{{{Content: "o", Width: 1}, {Content: "k", Width: 1}}},
+				},
+			},
+		},
+	}
+	rt := runtime.New(client)
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "shell"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+	model := New(shared.Config{}, wb, rt)
+	model.width = 120
+	model.height = 40
+	model.modalHost.Session = &modal.ModalSession{Kind: input.ModePrompt, Phase: modal.ModalPhaseReady, RequestID: "prompt-1"}
+	model.modalHost.Prompt = &modal.PromptState{
+		Kind:        "create-terminal-form",
+		Title:       "Create Terminal",
+		DefaultName: "shell",
+		PaneID:      "pane-1",
+		Command:     []string{"/bin/sh"},
+		Workdir:     "/tmp/inherited",
+		Fields: []modal.PromptField{
+			{Key: "name", Label: "name", Value: "demo", Cursor: 4, Required: true},
+			{Key: "command", Label: "command"},
+			{Key: "workdir", Label: "workdir", Value: "/tmp/inherited", Cursor: len([]rune("/tmp/inherited"))},
+			{Key: "tags", Label: "tags"},
+		},
+	}
+	model.input.SetMode(input.ModeState{Kind: input.ModePrompt, RequestID: "prompt-1"})
+
+	_, cmd := model.Update(input.SemanticAction{Kind: input.ActionSubmitPrompt, PaneID: "pane-1"})
+	if cmd == nil {
+		t.Fatal("expected async create command")
+	}
+	msg := cmd()
+	applyTestMsg(t, model, msg, "attach terminal submit with inherited workdir")
+	if len(client.createCalls) != 1 {
+		t.Fatalf("expected one create call, got %d", len(client.createCalls))
+	}
+	if got := client.createCalls[0].params.Dir; got != "/tmp/inherited" {
+		t.Fatalf("expected inherited create dir /tmp/inherited, got %q", got)
 	}
 }
 

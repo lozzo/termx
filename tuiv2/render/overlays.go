@@ -6,6 +6,7 @@ import (
 	"charm.land/lipgloss/v2"
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/tuiv2/modal"
+	"github.com/lozzow/termx/tuiv2/uiinput"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -62,7 +63,7 @@ func pickerFooterRowY(layout pickerCardLayout) int {
 }
 
 func pickerQueryRowRect(layout pickerCardLayout) workbench.Rect {
-	return overlayQueryInputRect(layout, xansi.StringWidth("search: "))
+	return overlayQueryInputRect(layout, uiinput.PromptWidth(overlaySearchPrompt()))
 }
 
 func overlayQueryInputRect(layout pickerCardLayout, prefixWidth int) workbench.Rect {
@@ -81,7 +82,7 @@ func promptInputRect(layout pickerCardLayout, prompt *modal.PromptState, inputLi
 }
 
 func promptInputRectForLabel(layout pickerCardLayout, label string, inputLine int) workbench.Rect {
-	prefixWidth := xansi.StringWidth(strings.TrimSpace(label) + ": ")
+	prefixWidth := uiinput.PromptWidth(overlayPromptString(strings.TrimSpace(label)))
 	editableX := layout.cardX + 1 + maxInt(0, prefixWidth)
 	editableW := maxInt(1, layout.innerWidth-maxInt(0, prefixWidth))
 	return workbench.Rect{
@@ -100,7 +101,7 @@ func promptFormInputRect(layout pickerCardLayout, prompt *modal.PromptState, inp
 	if prompt.Fields[fieldIndex].Required {
 		label += "*"
 	}
-	prefixWidth := xansi.StringWidth("  " + strings.TrimSpace(label) + ": ")
+	prefixWidth := uiinput.PromptWidth(overlayPromptFormString(strings.TrimSpace(label), fieldIndex == prompt.ActiveField))
 	editableX := layout.cardX + 1 + maxInt(0, prefixWidth)
 	editableW := maxInt(1, layout.innerWidth-maxInt(0, prefixWidth))
 	return workbench.Rect{
@@ -226,14 +227,7 @@ func renderOverlaySearchLine(theme uiTheme, query string, cursor int, cursorSet 
 
 func renderOverlaySearchLineWithCursor(theme uiTheme, query string, cursor int, cursorSet bool, innerWidth int, cursorVisible bool) string {
 	_ = cursorVisible
-	value := queryValueWithCursorVisible(query, cursor, cursorSet, cursorVisible)
-	label := "search: "
-	prefix := "  " + label
-	valueWidth := maxInt(0, innerWidth-xansi.StringWidth(prefix))
-	row := promptFieldMarkerStyle(theme, false).Render("  ") +
-		promptFieldLabelStyle(theme, true).Render(label) +
-		renderOverlayPromptValue(promptFieldValueStyle(theme, true), value, valueWidth)
-	return renderOverlaySpan(overlayCardFillStyle(theme), row, innerWidth)
+	return renderOverlaySearchInput(theme, uiinput.FromLegacy(query, cursor, cursorSet, ""), innerWidth)
 }
 
 func queryValueWithCursorVisible(query string, cursor int, cursorSet bool, cursorVisible bool) string {
@@ -252,13 +246,8 @@ func renderOverlayPromptFieldWithCursor(theme uiTheme, prompt *modal.PromptState
 	if prompt == nil {
 		return ""
 	}
-	value := promptValueWithCursorVisible(prompt, cursorVisible)
-	label := promptFieldLabel(prompt.Kind) + ": "
-	prefix := "  " + label
-	valueWidth := maxInt(0, innerWidth-xansi.StringWidth(prefix))
-	return promptFieldMarkerStyle(theme, false).Render("  ") +
-		promptFieldLabelStyle(theme, true).Render(label) +
-		renderOverlayPromptValue(promptFieldValueStyle(theme, true), value, valueWidth)
+	label := promptFieldLabel(prompt.Kind)
+	return renderOverlayTextInput(theme, prompt.ValueState(), promptInputRenderConfig(theme, overlayPromptString(label), true, innerWidth))
 }
 
 func renderOverlayPromptFormFieldWithCursor(theme uiTheme, prompt *modal.PromptState, fieldIndex int, innerWidth int, cursorVisible bool) string {
@@ -268,22 +257,11 @@ func renderOverlayPromptFormFieldWithCursor(theme uiTheme, prompt *modal.PromptS
 	}
 	field := prompt.Fields[fieldIndex]
 	active := fieldIndex == prompt.ActiveField
-	valueStyle := promptFieldValueStyle(theme, active)
-	value := field.Value
-	if !active && value == "" && strings.TrimSpace(field.Placeholder) != "" {
-		value = field.Placeholder
-		valueStyle = valueStyle.Foreground(lipgloss.Color(theme.panelMuted))
-	}
 	label := field.Label
 	if field.Required {
 		label += "*"
 	}
-	label += ": "
-	prefix := "  " + label
-	valueWidth := maxInt(0, innerWidth-xansi.StringWidth(prefix))
-	return promptFieldMarkerStyle(theme, false).Render("  ") +
-		promptFieldLabelStyle(theme, active).Render(label) +
-		renderOverlayPromptValue(valueStyle, value, valueWidth)
+	return renderOverlayTextInput(theme, field.ValueState(), promptFormInputRenderConfig(theme, overlayPromptFormString(label, active), active, innerWidth))
 }
 
 func renderOverlayPromptValue(style lipgloss.Style, value string, width int) string {
@@ -294,24 +272,11 @@ func promptCursorIndex(prompt *modal.PromptState) int {
 	if prompt == nil {
 		return 0
 	}
-	runes := []rune(prompt.Value)
-	cursor := prompt.Cursor
-	if cursor < 0 || cursor > len(runes) {
-		return len(runes)
-	}
-	return cursor
+	return prompt.ValueState().Position()
 }
 
 func promptFieldCursorIndex(field modal.PromptField) int {
-	runes := []rune(field.Value)
-	cursor := field.Cursor
-	if cursor < 0 {
-		return 0
-	}
-	if cursor > len(runes) {
-		return len(runes)
-	}
-	return cursor
+	return field.ValueState().Position()
 }
 
 func queryCursorIndex(query string, cursor int, cursorSet bool) int {
@@ -353,7 +318,7 @@ func pickerOverlayCursorTarget(picker *modal.PickerState, termSize TermSize) (in
 	width, height := overlayViewport(termSize)
 	layout := buildPickerCardLayout(width, height, len(picker.VisibleItems()), false)
 	rect := pickerQueryRowRect(layout)
-	return rect.X + valueCursorCellOffset(picker.Query, queryCursorIndex(picker.Query, picker.Cursor, picker.CursorSet), rect.W), rect.Y, true
+	return rect.X + picker.QueryState().CursorCellOffset(uiinput.RenderConfig{Width: rect.W}), rect.Y, true
 }
 
 func workspacePickerOverlayCursorTarget(picker *modal.WorkspacePickerState, termSize TermSize) (int, int, bool) {
@@ -363,7 +328,69 @@ func workspacePickerOverlayCursorTarget(picker *modal.WorkspacePickerState, term
 	width, height := overlayViewport(termSize)
 	layout := buildWorkbenchTreeCardLayout(width, height, len(picker.VisibleItems()), picker.Selected)
 	rect := layout.queryRect
-	return rect.X + valueCursorCellOffset(picker.Query, queryCursorIndex(picker.Query, picker.Cursor, picker.CursorSet), rect.W), rect.Y, true
+	return rect.X + picker.QueryState().CursorCellOffset(uiinput.RenderConfig{Width: rect.W}), rect.Y, true
+}
+
+func overlaySearchPrompt() string {
+	return "  search: "
+}
+
+func overlayPromptString(label string) string {
+	return "  " + strings.TrimSpace(label) + ": "
+}
+
+const overlayPromptActiveIcon = " "
+
+func overlayPromptFormString(label string, active bool) string {
+	prefix := strings.Repeat(" ", xansi.StringWidth(overlayPromptActiveIcon))
+	if active {
+		prefix = overlayPromptActiveIcon
+	}
+	return prefix + strings.TrimSpace(label) + ": "
+}
+
+func renderOverlaySearchInput(theme uiTheme, state uiinput.State, innerWidth int) string {
+	return renderOverlayTextInput(theme, state, promptInputRenderConfig(theme, overlaySearchPrompt(), true, innerWidth))
+}
+
+func renderOverlayTextInput(theme uiTheme, state uiinput.State, cfg uiinput.RenderConfig) string {
+	return renderOverlaySpan(overlayCardFillStyle(theme), state.Render(cfg), maxInt(0, uiinput.PromptWidth(cfg.Prompt)+cfg.Width))
+}
+
+func promptInputRenderConfig(theme uiTheme, prompt string, active bool, innerWidth int) uiinput.RenderConfig {
+	return promptInputRenderConfigWithBackground(theme, prompt, active, innerWidth, theme.fieldBG)
+}
+
+func promptFormInputRenderConfig(theme uiTheme, prompt string, active bool, innerWidth int) uiinput.RenderConfig {
+	return promptInputRenderConfigWithBackground(theme, prompt, active, innerWidth, overlayCardBG(theme))
+}
+
+func promptInputRenderConfigWithBackground(theme uiTheme, prompt string, active bool, innerWidth int, background string) uiinput.RenderConfig {
+	textFG := theme.fieldText
+	promptFG := theme.panelMuted
+	if active {
+		promptFG = theme.fieldAccent
+	}
+	return uiinput.RenderConfig{
+		Prompt: prompt,
+		Width:  maxInt(1, uiinput.ValueWidth(innerWidth, prompt)),
+		PromptStyle: uiinput.Style{
+			Foreground: promptFG,
+			Background: background,
+		},
+		TextStyle: uiinput.Style{
+			Foreground: textFG,
+			Background: background,
+		},
+		PlaceholderStyle: uiinput.Style{
+			Foreground: theme.panelMuted,
+			Background: background,
+		},
+		CompletionStyle: uiinput.Style{
+			Foreground: theme.panelMuted,
+			Background: background,
+		},
+	}
 }
 
 func renderOverlaySpan(style lipgloss.Style, value string, width int) string {

@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
+	"github.com/lozzow/termx/tuiv2/uiinput"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -16,6 +16,7 @@ func renderWorkspacePickerOverlay(picker *modal.WorkspacePickerState, termSize T
 }
 
 func renderWorkspacePickerOverlayLinesWithThemeAndCursor(picker *modal.WorkspacePickerState, runtimeState *VisibleRuntimeStateProxy, termSize TermSize, theme uiTheme, cursorVisible bool) []string {
+	_ = cursorVisible
 	if picker == nil {
 		return nil
 	}
@@ -41,7 +42,7 @@ func renderWorkspacePickerOverlayLinesWithThemeAndCursor(picker *modal.Workspace
 	_ = visibleStart
 
 	lines := make([]string, 0, len(bodyLines)+1)
-	lines = append(lines, renderOverlaySearchLineWithCursor(theme, picker.Query, picker.Cursor, picker.CursorSet, layout.innerWidth, cursorVisible))
+	lines = append(lines, renderOverlaySearchInput(theme, picker.QueryState(), layout.innerWidth))
 	lines = append(lines, bodyLines...)
 
 	cardLines := make([]string, 0, len(lines)+2)
@@ -97,9 +98,9 @@ func buildWorkbenchTreeCardLayout(width, height, itemCount, selected int) workbe
 		leftRect:      workbench.Rect{X: cardX + 1, Y: bodyY + 1, W: leftWidth, H: treeRows},
 		rightRect:     workbench.Rect{X: cardX + 1 + leftWidth + 1, Y: bodyY + 1, W: rightWidth, H: treeRows},
 		queryRect: workbench.Rect{
-			X: cardX + 1 + xansi.StringWidth("search: "),
+			X: cardX + 1 + uiinput.PromptWidth(overlaySearchPrompt()),
 			Y: cardY + 1,
-			W: maxInt(1, innerWidth-xansi.StringWidth("search: ")),
+			W: maxInt(1, innerWidth-uiinput.PromptWidth(overlaySearchPrompt())),
 			H: 1,
 		},
 		treeRows:      treeRows,
@@ -181,8 +182,10 @@ func renderWorkbenchTreeRows(picker *modal.WorkspacePickerState, rows, width int
 
 func renderWorkbenchTreeItemLine(item modal.WorkspacePickerItem, selected bool, width int, theme uiTheme) string {
 	kind := workbenchTreeItemKind(item)
-	indent := workbenchTreeGap(theme, 2*maxInt(0, item.Depth))
-	marker := workbenchTreeMarker(theme, kind, selected, item.Active || item.Current)
+	active := item.Active || item.Current
+	lead := workbenchTreeLead(theme, selected, active)
+	branch := workbenchTreeBranch(theme, item.Depth, selected)
+	icon := workbenchTreeNodeStyle(theme, kind, selected, active).Render(workbenchTreeNodeGlyph(kind))
 	switch {
 	case item.CreateNew || kind == modal.WorkspacePickerItemCreate:
 		label := strings.TrimSpace(item.Name)
@@ -191,11 +194,13 @@ func renderWorkbenchTreeItemLine(item modal.WorkspacePickerItem, selected bool, 
 		}
 		body := lipgloss.JoinHorizontal(
 			lipgloss.Left,
-			marker,
-			indent,
-			workbenchTreeTitleStyle(theme, kind, selected, item.Active || item.Current).Render("+ "+label),
+			lead,
+			branch,
+			icon,
+			" ",
+			workbenchTreeTitleStyle(theme, kind, selected, active).Render(label),
 			workbenchTreeGap(theme, 2),
-			workbenchTreeTagStyle(theme, "new", theme.success, selected).Render("new"),
+			workbenchTreeToken(theme, "new", theme.success, selected),
 		)
 		return workbenchTreeLineStyle(theme, selected, body)
 	case kind == modal.WorkspacePickerItemWorkspace:
@@ -205,18 +210,18 @@ func renderWorkbenchTreeItemLine(item modal.WorkspacePickerItem, selected bool, 
 		}
 		metaParts := make([]string, 0, 4)
 		if item.Current {
-			metaParts = append(metaParts, workbenchTreeTagStyle(theme, "current", theme.warning, selected).Render("current"))
+			metaParts = append(metaParts, workbenchTreeToken(theme, "current", theme.warning, selected))
 		}
 		if item.TabCount > 0 {
-			metaParts = append(metaParts, workbenchTreeTagStyle(theme, "tabs", theme.info, selected).Render(fmt.Sprintf("%d tab", item.TabCount)))
+			metaParts = append(metaParts, workbenchTreeToken(theme, fmt.Sprintf("%d tabs", item.TabCount), theme.info, selected))
 		}
 		if item.PaneCount > 0 {
-			metaParts = append(metaParts, workbenchTreeTagStyle(theme, "panes", theme.chromeAccent, selected).Render(fmt.Sprintf("%d pane", item.PaneCount)))
+			metaParts = append(metaParts, workbenchTreeToken(theme, fmt.Sprintf("%d panes", item.PaneCount), theme.chromeAccent, selected))
 		}
 		if item.FloatingCount > 0 {
-			metaParts = append(metaParts, workbenchTreeTagStyle(theme, "float", theme.warning, selected).Render(fmt.Sprintf("%d float", item.FloatingCount)))
+			metaParts = append(metaParts, workbenchTreeToken(theme, fmt.Sprintf("%d float", item.FloatingCount), theme.warning, selected))
 		}
-		line := lipgloss.JoinHorizontal(lipgloss.Left, marker, indent, workbenchTreeTitleStyle(theme, kind, selected, item.Current).Render("▾ "+title))
+		line := lipgloss.JoinHorizontal(lipgloss.Left, lead, branch, icon, " ", workbenchTreeTitleStyle(theme, kind, selected, item.Current).Render(title))
 		if len(metaParts) > 0 {
 			line = lipgloss.JoinHorizontal(lipgloss.Left, line, workbenchTreeGap(theme, 2), strings.Join(metaParts, workbenchTreeGap(theme, 1)))
 		}
@@ -234,9 +239,9 @@ func renderWorkbenchTreeItemLine(item modal.WorkspacePickerItem, selected bool, 
 			metaParts = append(metaParts, workbenchTreeRoleTag(theme, item.Role, selected))
 		}
 		if item.Floating {
-			metaParts = append(metaParts, workbenchTreeTagStyle(theme, "floating", theme.warning, selected).Render("floating"))
+			metaParts = append(metaParts, workbenchTreeToken(theme, "floating", theme.warning, selected))
 		}
-		line := lipgloss.JoinHorizontal(lipgloss.Left, marker, indent, workbenchTreeTitleStyle(theme, kind, selected, item.Active).Render("• "+title))
+		line := lipgloss.JoinHorizontal(lipgloss.Left, lead, branch, icon, " ", workbenchTreeTitleStyle(theme, kind, selected, item.Active).Render(title))
 		if len(metaParts) > 0 {
 			line = lipgloss.JoinHorizontal(lipgloss.Left, line, workbenchTreeGap(theme, 2), strings.Join(metaParts, workbenchTreeGap(theme, 1)))
 		}
@@ -247,14 +252,14 @@ func renderWorkbenchTreeItemLine(item modal.WorkspacePickerItem, selected bool, 
 			title = fmt.Sprintf("tab %d", item.TabIndex+1)
 		}
 		metaParts := make([]string, 0, 3)
-		metaParts = append(metaParts, workbenchTreeTagStyle(theme, "index", theme.chromeAccent, selected).Render(fmt.Sprintf("%d", item.TabIndex+1)))
+		metaParts = append(metaParts, workbenchTreeToken(theme, fmt.Sprintf("tab %d", item.TabIndex+1), theme.chromeAccent, selected))
 		if item.Active {
-			metaParts = append(metaParts, workbenchTreeTagStyle(theme, "active", theme.chromeAccent, selected).Render("active"))
+			metaParts = append(metaParts, workbenchTreeToken(theme, "active", theme.chromeAccent, selected))
 		}
 		if item.PaneCount > 0 {
-			metaParts = append(metaParts, workbenchTreeTagStyle(theme, "panes", theme.info, selected).Render(fmt.Sprintf("%d pane", item.PaneCount)))
+			metaParts = append(metaParts, workbenchTreeToken(theme, fmt.Sprintf("%d panes", item.PaneCount), theme.info, selected))
 		}
-		line := lipgloss.JoinHorizontal(lipgloss.Left, marker, indent, workbenchTreeTitleStyle(theme, kind, selected, item.Active).Render("└ "+title))
+		line := lipgloss.JoinHorizontal(lipgloss.Left, lead, branch, icon, " ", workbenchTreeTitleStyle(theme, kind, selected, item.Active).Render(title))
 		if len(metaParts) > 0 {
 			line = lipgloss.JoinHorizontal(lipgloss.Left, line, workbenchTreeGap(theme, 2), strings.Join(metaParts, workbenchTreeGap(theme, 1)))
 		}
@@ -262,30 +267,82 @@ func renderWorkbenchTreeItemLine(item modal.WorkspacePickerItem, selected bool, 
 	}
 }
 
-func workbenchTreeMarker(theme uiTheme, kind modal.WorkspacePickerItemKind, selected bool, active bool) string {
-	marker := " "
+func workbenchTreeKindAccent(theme uiTheme, kind modal.WorkspacePickerItemKind) string {
 	color := theme.panelBorder2
 	switch kind {
 	case modal.WorkspacePickerItemWorkspace:
-		marker = "▍"
 		color = theme.warning
 	case modal.WorkspacePickerItemTab:
-		marker = "▍"
 		color = theme.chromeAccent
 	case modal.WorkspacePickerItemPane:
-		marker = "▍"
 		color = theme.info
 	case modal.WorkspacePickerItemCreate:
-		marker = "▍"
 		color = theme.success
 	}
-	if active && !selected {
-		color = ensureContrast(color, overlayCardBG(theme), 3.4)
+	return color
+}
+
+func workbenchTreeNodeGlyph(kind modal.WorkspacePickerItemKind) string {
+	switch kind {
+	case modal.WorkspacePickerItemWorkspace:
+		return "󰙅"
+	case modal.WorkspacePickerItemTab:
+		return "󰓩"
+	case modal.WorkspacePickerItemPane:
+		return ""
+	case modal.WorkspacePickerItemCreate:
+		return "󰐕"
+	default:
+		return "•"
+	}
+}
+
+func workbenchTreeNodeStyle(theme uiTheme, kind modal.WorkspacePickerItemKind, selected bool, active bool) lipgloss.Style {
+	fg := ensureContrast(workbenchTreeKindAccent(theme, kind), overlayCardBG(theme), 3.4)
+	if selected {
+		fg = ensureContrast(mixHex(fg, theme.panelText, 0.28), overlayCardBG(theme), 4.0)
+	}
+	style := lipgloss.NewStyle().
+		Bold(selected || active).
+		Foreground(lipgloss.Color(fg))
+	if selected {
+		style = style.Underline(true)
+	}
+	return style
+}
+
+func workbenchTreeLead(theme uiTheme, selected bool, active bool) string {
+	content := "  "
+	fg := theme.panelBorder2
+	switch {
+	case selected:
+		content = "▸ "
+		fg = theme.chromeAccent
+	case active:
+		content = "• "
+		fg = theme.panelMuted
 	}
 	return lipgloss.NewStyle().
 		Bold(selected || active).
-		Foreground(lipgloss.Color(ensureContrast(color, overlayCardBG(theme), 3.4))).
-		Render(marker)
+		Foreground(lipgloss.Color(ensureContrast(fg, overlayCardBG(theme), 3.0))).
+		Render(content)
+}
+
+func workbenchTreeBranch(theme uiTheme, depth int, selected bool) string {
+	if depth <= 0 {
+		return ""
+	}
+	guideFG := theme.panelBorder2
+	if selected {
+		guideFG = ensureContrast(mixHex(theme.panelBorder2, theme.chromeAccent, 0.35), overlayCardBG(theme), 2.4)
+	}
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color(ensureContrast(guideFG, overlayCardBG(theme), 2.2)))
+	var builder strings.Builder
+	for i := 0; i < depth-1; i++ {
+		builder.WriteString(style.Render("│ "))
+	}
+	builder.WriteString(style.Render("├─"))
+	return builder.String()
 }
 
 func workbenchTreeTitleStyle(theme uiTheme, kind modal.WorkspacePickerItemKind, selected bool, active bool) lipgloss.Style {
@@ -312,24 +369,25 @@ func workbenchTreeTitleStyle(theme uiTheme, kind modal.WorkspacePickerItemKind, 
 	return style
 }
 
-func workbenchTreeTagStyle(theme uiTheme, _ string, accent string, selected bool) lipgloss.Style {
+func workbenchTreeToken(theme uiTheme, label string, accent string, selected bool) string {
 	fg := ensureContrast(accent, overlayCardBG(theme), 3.2)
+	border := ensureContrast(theme.panelBorder2, overlayCardBG(theme), 2.2)
 	if selected {
 		fg = ensureContrast(mixHex(theme.panelText, accent, 0.42), overlayCardBG(theme), 4.0)
+		border = ensureContrast(mixHex(theme.panelBorder2, theme.chromeAccent, 0.35), overlayCardBG(theme), 2.4)
 	}
-	return lipgloss.NewStyle().
+	borderStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(border))
+	textStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color(fg))
+	return borderStyle.Render("[") + textStyle.Render(label) + borderStyle.Render("]")
 }
 
 func workbenchTreeLineStyle(theme uiTheme, selected bool, content string) string {
-	if !selected {
-		return content
-	}
-	return lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color(ensureContrast(mixHex(theme.panelText, theme.chromeAccent, 0.2), overlayCardBG(theme), 4.0))).
-		Render(content)
+	_ = theme
+	_ = selected
+	return content
 }
 
 func workbenchTreeGap(theme uiTheme, width int) string {
@@ -343,17 +401,21 @@ func workbenchTreeGap(theme uiTheme, width int) string {
 
 func workbenchTreeStateTag(theme uiTheme, state string, selected bool) string {
 	accent := theme.panelMuted
+	icon := "󰈸"
 	switch strings.TrimSpace(strings.ToLower(state)) {
 	case "running", "attached":
 		accent = theme.success
+		icon = ""
 	case "exited", "dead":
 		accent = theme.danger
+		icon = ""
 	case "unconnected":
 		accent = theme.warning
+		icon = "󰔟"
 	default:
 		accent = theme.info
 	}
-	return workbenchTreeTagStyle(theme, "state", accent, selected).Render(state)
+	return workbenchTreeToken(theme, icon+" "+state, accent, selected)
 }
 
 func workbenchTreeRoleTag(theme uiTheme, role string, selected bool) string {
@@ -364,7 +426,7 @@ func workbenchTreeRoleTag(theme uiTheme, role string, selected bool) string {
 	case "follower":
 		accent = theme.warning
 	}
-	return workbenchTreeTagStyle(theme, "role", accent, selected).Render(role)
+	return workbenchTreeToken(theme, role, accent, selected)
 }
 
 func renderWorkbenchTreePreviewRows(picker *modal.WorkspacePickerState, item *modal.WorkspacePickerItem, runtimeState *VisibleRuntimeStateProxy, width, height int, theme uiTheme) []string {

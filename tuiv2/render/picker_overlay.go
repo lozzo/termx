@@ -9,6 +9,7 @@ func renderPickerOverlay(picker *modal.PickerState, termSize TermSize) string {
 }
 
 func renderPickerOverlayLinesWithThemeAndCursor(picker *modal.PickerState, termSize TermSize, theme uiTheme, cursorVisible bool) []string {
+	_ = cursorVisible
 	if picker == nil {
 		return nil
 	}
@@ -20,6 +21,6 @@ func renderPickerOverlayLinesWithThemeAndCursor(picker *modal.PickerState, termS
 		item := items[index]
 		itemLines = append(itemLines, item.RenderLineWithPrefix(innerWidth, index == picker.Selected, "  ", "▸ ", pickerLineStyle(theme), pickerSelectedLineStyle(theme), pickerCreateRowStyle(theme)))
 	}
-	header := renderOverlaySearchLineWithCursor(theme, picker.Query, picker.Cursor, picker.CursorSet, innerWidth, cursorVisible)
+	header := renderOverlaySearchInput(theme, picker.QueryState(), innerWidth)
 	return renderPickerCardLinesWithTheme(theme, coalesce(picker.Title, "Terminal Picker"), header, itemLines, "", width, height)
 }

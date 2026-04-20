@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
@@ -35,7 +36,7 @@ func TestRenderWorkspacePickerOverlayUsesSameSelectionPrefixAsTerminalPicker(t *
 		Items:    []modal.WorkspacePickerItem{{Name: "main", Description: "1 tab(s), 1 pane(s)"}},
 	}
 	overlay := xansi.Strip(renderWorkspacePickerOverlay(picker, TermSize{Width: 140, Height: 30}))
-	for _, want := range []string{"TREE", "WORKSPACE", "▍▾ main", "SUMMARY", "Open  Rename  Delete"} {
+	for _, want := range []string{"TREE", "WORKSPACE", "▸ 󰙅 main", "SUMMARY", "Open  Rename  Delete"} {
 		if !strings.Contains(overlay, want) {
 			t.Fatalf("workspace picker should render %q:\n%s", want, overlay)
 		}
@@ -58,7 +59,7 @@ func TestRenderWorkspacePickerOverlayShowsPaneNodesAndPaneActions(t *testing.T) 
 		},
 	}
 	overlay := xansi.Strip(renderWorkspacePickerOverlay(picker, TermSize{Width: 140, Height: 30}))
-	for _, want := range []string{"PANE", "• server-logs", "running", "owner", "Open"} {
+	for _, want := range []string{"PANE", " server-logs", "[ running]", "[owner]", "Open"} {
 		if !strings.Contains(overlay, want) {
 			t.Fatalf("workspace picker should render %q:\n%s", want, overlay)
 		}
@@ -255,6 +256,71 @@ func TestRenderPromptOverlayUsesSemanticHintTextOnly(t *testing.T) {
 	}
 }
 
+func TestRenderPromptOverlayShowsWorkdirSuggestionPopup(t *testing.T) {
+	prompt := &modal.PromptState{
+		Kind:                     "create-terminal-form",
+		Title:                    "Create Terminal",
+		ActiveField:              2,
+		PromptSuggestionSelected: 1,
+		Fields: []modal.PromptField{
+			{Key: "name", Label: "name", Value: "shell", Required: true},
+			{Key: "command", Label: "command", Value: "/bin/sh"},
+			{Key: "workdir", Label: "workdir", Value: "/tmp/de", SuggestionTitle: "path: /tmp", SuggestionItems: []string{"/tmp/demo/", "/tmp/dev/"}},
+			{Key: "tags", Label: "tags", Value: "role=dev"},
+		},
+	}
+	overlay := xansi.Strip(renderPromptOverlay(prompt, TermSize{Width: 100, Height: 30}))
+	for _, want := range []string{"path: /tmp", "  demo/", "▸ dev/"} {
+		if !strings.Contains(overlay, want) {
+			t.Fatalf("expected prompt overlay to render %q:\n%s", want, overlay)
+		}
+	}
+	if strings.Contains(overlay, "Directories") {
+		t.Fatalf("prompt overlay should not render redundant Directories header:\n%s", overlay)
+	}
+	if strings.Contains(overlay, "/tmp/dev/") {
+		t.Fatalf("suggestion item should show basename only, not full path:\n%s", overlay)
+	}
+}
+
+func TestRenderPromptOverlayActiveFormLabelKeepsStableColumn(t *testing.T) {
+	prompt := &modal.PromptState{
+		Kind:        "create-terminal-form",
+		Title:       "Create Terminal",
+		ActiveField: 1,
+		Fields: []modal.PromptField{
+			{Key: "name", Label: "name", Value: "shell", Required: true},
+			{Key: "command", Label: "command", Value: "/bin/sh"},
+			{Key: "workdir", Label: "workdir", Value: "/tmp/demo"},
+		},
+	}
+	overlay := xansi.Strip(renderPromptOverlay(prompt, TermSize{Width: 100, Height: 30}))
+	lines := strings.Split(overlay, "\n")
+	var commandLine, workdirLine string
+	for _, line := range lines {
+		if strings.Contains(line, "command:") {
+			commandLine = line
+		}
+		if strings.Contains(line, "workdir:") {
+			workdirLine = line
+		}
+	}
+	if commandLine == "" || workdirLine == "" {
+		t.Fatalf("expected command/workdir lines in overlay:\n%s", overlay)
+	}
+	commandIndex := strings.Index(commandLine, "command:")
+	workdirIndex := strings.Index(workdirLine, "workdir:")
+	if commandIndex < 0 || workdirIndex < 0 {
+		t.Fatalf("expected command/workdir labels in overlay:\n%s", overlay)
+	}
+	if got, want := xansi.StringWidth(commandLine[:commandIndex]), xansi.StringWidth(workdirLine[:workdirIndex]); got != want {
+		t.Fatalf("expected active/inactive form labels to share the same display column, got command=%d workdir=%d\n%s", got, want, overlay)
+	}
+	if !strings.Contains(commandLine, " ") {
+		t.Fatalf("expected active form line to render a leading icon:\n%s", overlay)
+	}
+}
+
 func TestLayoutOverlayFooterActionsClipKeepsStablePrefixOrder(t *testing.T) {
 	specs := pickerFooterActionSpecs()
 	if len(specs) < 3 {
@@ -316,7 +382,7 @@ func TestPromptFooterActionSpecsCarryPromptPaneID(t *testing.T) {
 func TestPickerQueryRowRectTracksEditableFieldAfterSearchPrefix(t *testing.T) {
 	layout := buildPickerCardLayout(100, 28, 4, true)
 	rect := pickerQueryRowRect(layout)
-	prefixW := xansi.StringWidth("search: ")
+	prefixW := xansi.StringWidth(overlaySearchPrompt())
 	want := workbench.Rect{
 		X: layout.cardX + 1 + prefixW,
 		Y: layout.cardY + 2,
@@ -333,7 +399,7 @@ func TestPromptInputRectTracksEditableFieldAfterPromptPrefix(t *testing.T) {
 	prompt := &modal.PromptState{Kind: "create-terminal-tags"}
 	inputLine := 3
 	rect := promptInputRect(layout, prompt, inputLine)
-	prefixW := xansi.StringWidth(promptFieldLabel(prompt.Kind) + ": ")
+	prefixW := xansi.StringWidth(overlayPromptString(promptFieldLabel(prompt.Kind)))
 	want := workbench.Rect{
 		X: layout.cardX + 1 + prefixW,
 		Y: layout.firstItemY + inputLine,
@@ -342,5 +408,24 @@ func TestPromptInputRectTracksEditableFieldAfterPromptPrefix(t *testing.T) {
 	}
 	if rect != want {
 		t.Fatalf("prompt input rect=%#v, want %#v", rect, want)
+	}
+}
+
+func TestPromptFormInputRenderConfigUsesOverlayCardBackground(t *testing.T) {
+	theme := defaultUITheme()
+	cfg := promptFormInputRenderConfig(theme, overlayPromptFormString("workdir", true), true, 40)
+	want := lipgloss.Color(overlayCardBG(theme))
+	for _, tc := range []struct {
+		name string
+		got  string
+	}{
+		{name: "prompt", got: cfg.PromptStyle.Background},
+		{name: "text", got: cfg.TextStyle.Background},
+		{name: "placeholder", got: cfg.PlaceholderStyle.Background},
+		{name: "completion", got: cfg.CompletionStyle.Background},
+	} {
+		if !sameColor(lipgloss.Color(tc.got), want) {
+			t.Fatalf("%s background = %q, want %q", tc.name, tc.got, overlayCardBG(theme))
+		}
 	}
 }

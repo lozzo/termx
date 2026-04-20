@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/render"
+	"github.com/lozzow/termx/tuiv2/uiinput"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -126,14 +127,45 @@ func (m *Model) handlePromptInputMouseClick(region render.HitRegion, screenX int
 	if m == nil || m.modalHost == nil || m.modalHost.Prompt == nil {
 		return nil
 	}
+	m.modalHost.Prompt.PromptSuggestionFocused = false
+	fieldChanged := false
 	if m.modalHost.Prompt.IsForm() && region.ItemIndex >= 0 && region.ItemIndex < len(m.modalHost.Prompt.Fields) {
+		fieldChanged = m.modalHost.Prompt.ActiveField != region.ItemIndex
 		m.modalHost.Prompt.ActiveField = region.ItemIndex
+		m.refreshPromptCompletions()
 	}
 	cursor := screenX - region.Rect.X
 	if cursor < 0 {
 		cursor = 0
 	}
-	if setPromptCursor(m.modalHost.Prompt, cursor) {
+	if field := promptEditableField(m.modalHost.Prompt); field != nil {
+		editor := field.ValueEditor()
+		if editor != nil && editor.SetCursorByCell(cursor, uiinput.RenderConfig{Width: region.Rect.W}) {
+			field.SyncValueLegacy()
+			m.refreshPromptCompletions()
+			m.revealCursorAndInvalidate()
+		} else if fieldChanged {
+			m.revealCursorAndInvalidate()
+		}
+		return nil
+	}
+	editor := m.modalHost.Prompt.ValueEditor()
+	if editor != nil && editor.SetCursorByCell(cursor, uiinput.RenderConfig{Width: region.Rect.W}) {
+		m.modalHost.Prompt.SyncValueLegacy()
+		m.refreshPromptCompletions()
+		m.revealCursorAndInvalidate()
+	} else if fieldChanged {
+		m.revealCursorAndInvalidate()
+	}
+	return nil
+}
+
+func (m *Model) handlePromptSuggestionMouseClick(index int) tea.Cmd {
+	if m == nil || m.modalHost == nil || m.modalHost.Prompt == nil {
+		return nil
+	}
+	m.modalHost.Prompt.PromptSuggestionSelected = index
+	if m.acceptPromptSuggestionSelection() {
 		m.revealCursorAndInvalidate()
 	}
 	return nil

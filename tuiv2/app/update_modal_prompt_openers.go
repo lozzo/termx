@@ -63,6 +63,10 @@ func (m *Model) openCreateTerminalPrompt(paneID string, target modal.CreateTarge
 	if shell == "" {
 		shell = "/bin/sh"
 	}
+	workdir, err := os.Getwd()
+	if err != nil {
+		workdir = ""
+	}
 	requestID := "create-terminal:" + paneID
 	m.openModal(input.ModePrompt, requestID)
 	m.markModalReady(input.ModePrompt, requestID)
@@ -72,15 +76,17 @@ func (m *Model) openCreateTerminalPrompt(paneID string, target modal.CreateTarge
 		Hint:         "name is required; command, workdir, tags are optional",
 		PaneID:       paneID,
 		Command:      []string{shell},
+		Workdir:      workdir,
 		DefaultName:  filepath.Base(shell),
 		CreateTarget: target,
 		Fields: []modal.PromptField{
 			{Key: "name", Label: "name", Required: true},
 			{Key: "command", Label: "command", Placeholder: shell},
-			{Key: "workdir", Label: "workdir"},
+			{Key: "workdir", Label: "workdir", Value: workdir, Cursor: len([]rune(workdir))},
 			{Key: "tags", Label: "tags", Placeholder: "role=dev env=test"},
 		},
 	}
+	m.refreshPromptCompletions()
 	m.render.Invalidate()
 }
 

@@ -15,7 +15,7 @@ func (m *Model) submitRenameTabPrompt(prompt *modal.PromptState) tea.Cmd {
 	if m == nil || prompt == nil || m.modalHost == nil {
 		return nil
 	}
-	name := strings.TrimSpace(prompt.Value)
+	name := strings.TrimSpace(prompt.ValueState().Value())
 	if name == "" {
 		name = strings.TrimSpace(prompt.Original)
 	}
@@ -55,7 +55,7 @@ func (m *Model) submitRenameWorkspacePrompt(prompt *modal.PromptState) tea.Cmd {
 		return nil
 	}
 	original := strings.TrimSpace(prompt.Original)
-	name := strings.TrimSpace(prompt.Value)
+	name := strings.TrimSpace(prompt.ValueState().Value())
 	if m.workbench == nil {
 		return func() tea.Msg { return context.Canceled }
 	}

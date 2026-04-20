@@ -182,7 +182,7 @@ func promptOverlayHitRegions(prompt *modal.PromptState, width, height int) []Hit
 			activeField = 0
 		}
 		if activeField < len(inputLines) && activeField < len(prompt.Fields) {
-			popup = buildPromptSuggestionPopupLayout(defaultUITheme(), prompt.Fields[activeField], prompt.PromptSuggestionSelected, inputLines[activeField], pickerInnerWidth(width))
+			popup = buildPromptSuggestionPopupLayout(defaultUITheme(), prompt.Fields[activeField], prompt.PromptSuggestionSelected, inputLines[activeField], pickerInnerWidth(width), prompt.PromptSuggestionFocused)
 		}
 	}
 	layout := buildPickerCardLayout(width, height, lineCount, hasFooter)

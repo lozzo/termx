@@ -46,7 +46,7 @@ func (m *Model) submitCreateTerminalNamePrompt(prompt *modal.PromptState) tea.Cm
 	if m == nil || prompt == nil {
 		return nil
 	}
-	name := strings.TrimSpace(prompt.Value)
+	name := strings.TrimSpace(prompt.ValueState().Value())
 	if name == "" {
 		name = strings.TrimSpace(prompt.Original)
 	}
@@ -57,6 +57,7 @@ func (m *Model) submitCreateTerminalNamePrompt(prompt *modal.PromptState) tea.Cm
 	prompt.Name = name
 	prompt.Value = ""
 	prompt.Cursor = 0
+	prompt.Input.ResetFromLegacy(prompt.Value, prompt.Cursor, true, "")
 	m.render.Invalidate()
 	return nil
 }
@@ -65,7 +66,7 @@ func (m *Model) submitEditTerminalNamePrompt(prompt *modal.PromptState) tea.Cmd 
 	if m == nil || prompt == nil {
 		return nil
 	}
-	name := strings.TrimSpace(prompt.Value)
+	name := strings.TrimSpace(prompt.ValueState().Value())
 	if name == "" {
 		name = strings.TrimSpace(prompt.Original)
 	}
@@ -79,6 +80,7 @@ func (m *Model) submitEditTerminalNamePrompt(prompt *modal.PromptState) tea.Cmd 
 	prompt.Name = name
 	prompt.Value = formatPromptTags(prompt.Tags)
 	prompt.Cursor = len([]rune(prompt.Value))
+	prompt.Input.ResetFromLegacy(prompt.Value, prompt.Cursor, true, "")
 	m.render.Invalidate()
 	return nil
 }
@@ -95,7 +97,8 @@ func (m *Model) submitEditTerminalTagsPrompt(prompt *modal.PromptState) tea.Cmd 
 	if err := m.validateUniqueTerminalName(name, terminalID); err != nil {
 		return func() tea.Msg { return err }
 	}
-	tags, err := parsePromptTags(prompt.Value)
+	tagsText := prompt.ValueState().Value()
+	tags, err := parsePromptTags(tagsText)
 	if err != nil {
 		return func() tea.Msg { return err }
 	}
@@ -136,7 +139,8 @@ func (m *Model) submitCreateTerminalTagsPrompt(prompt *modal.PromptState, paneID
 	if err := m.validateUniqueTerminalName(name, ""); err != nil {
 		return func() tea.Msg { return err }
 	}
-	tags, err := parsePromptTags(prompt.Value)
+	tagsText := prompt.ValueState().Value()
+	tags, err := parsePromptTags(tagsText)
 	if err != nil {
 		return func() tea.Msg { return err }
 	}

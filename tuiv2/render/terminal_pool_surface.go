@@ -7,6 +7,7 @@ import (
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/modal"
 	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/uiinput"
 )
 
 func renderTerminalPoolPageWithCursor(pool *modal.TerminalManagerState, runtimeState *VisibleRuntimeStateProxy, termSize TermSize, cursorOffsetY int, cursorVisible bool) renderedBody {
@@ -22,7 +23,7 @@ func renderTerminalPoolPageWithCursor(pool *modal.TerminalManagerState, runtimeS
 
 	title := terminalPickerTitleStyle(theme).Width(width).Render(forceWidthANSIOverlay(coalesce(strings.TrimSpace(pool.Title), "Terminal Pool"), width))
 	headerLines = append(headerLines, title)
-	headerLines = append(headerLines, forceWidthANSIOverlay(renderOverlaySearchLineWithCursor(theme, pool.Query, pool.Cursor, pool.CursorSet, width, cursorVisible), width))
+	headerLines = append(headerLines, forceWidthANSIOverlay(renderOverlaySearchInput(theme, pool.QueryState(), width), width))
 	headerLines = append(headerLines, overlayCardFillStyle(theme).Width(width).Render(""))
 
 	contentLines := make([]string, 0, height)
@@ -51,7 +52,7 @@ func renderTerminalPoolPageWithCursor(pool *modal.TerminalManagerState, runtimeS
 		meta:   solidPresentMetadata(width, height, renderOwnerTerminalPool),
 	}
 	if cursorVisible {
-		cursorX := layout.queryRect.X + valueCursorCellOffset(pool.Query, queryCursorIndex(pool.Query, pool.Cursor, pool.CursorSet), layout.queryRect.W)
+		cursorX := layout.queryRect.X + pool.QueryState().CursorCellOffset(uiinput.RenderConfig{Width: layout.queryRect.W})
 		result.cursor = hostCursorANSI(cursorX, layout.queryRect.Y+cursorOffsetY, "bar", false)
 	}
 	return result

@@ -6,6 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/lozzow/termx/terminalmeta"
+	"github.com/lozzow/termx/tuiv2/uiinput"
 )
 
 // PickerItem 是 picker 列表中的一条终端记录。
@@ -33,13 +34,14 @@ type PickerItem struct {
 
 // PickerState 保存 picker modal 的全部 UI 状态。
 type PickerState struct {
-	Title     string
-	Items     []PickerItem
-	Filtered  []PickerItem
-	Selected  int
-	Query     string
-	Cursor    int
-	CursorSet bool
+	Title      string
+	Items      []PickerItem
+	Filtered   []PickerItem
+	Selected   int
+	Query      string
+	Cursor     int
+	CursorSet  bool
+	QueryInput uiinput.State
 }
 
 func (p *PickerState) SelectedItem() *PickerItem {
@@ -69,7 +71,7 @@ func (p *PickerState) ApplyFilter() {
 	if p == nil {
 		return
 	}
-	query := strings.ToLower(strings.TrimSpace(p.Query))
+	query := strings.ToLower(strings.TrimSpace(p.QueryValue()))
 	if query == "" {
 		p.Filtered = pickerItemsCreateFirst(append([]PickerItem(nil), p.Items...))
 		if p.Selected >= len(p.Filtered) {
@@ -94,7 +96,7 @@ func (p *PickerState) VisibleItems() []PickerItem {
 	if p == nil {
 		return nil
 	}
-	if len(p.Filtered) > 0 || strings.TrimSpace(p.Query) != "" {
+	if len(p.Filtered) > 0 || strings.TrimSpace(p.QueryValue()) != "" {
 		return p.Filtered
 	}
 	return pickerItemsCreateFirst(p.Items)

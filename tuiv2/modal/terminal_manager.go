@@ -1,16 +1,21 @@
 package modal
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/lozzow/termx/tuiv2/uiinput"
+)
 
 // TerminalManagerState 保存 terminal manager modal 的 UI 状态。
 type TerminalManagerState struct {
-	Title     string
-	Items     []PickerItem
-	Filtered  []PickerItem
-	Selected  int
-	Query     string
-	Cursor    int
-	CursorSet bool
+	Title      string
+	Items      []PickerItem
+	Filtered   []PickerItem
+	Selected   int
+	Query      string
+	Cursor     int
+	CursorSet  bool
+	QueryInput uiinput.State
 }
 
 func (m *TerminalManagerState) SelectedItem() *PickerItem {
@@ -40,7 +45,7 @@ func (m *TerminalManagerState) ApplyFilter() {
 	if m == nil {
 		return
 	}
-	query := strings.ToLower(strings.TrimSpace(m.Query))
+	query := strings.ToLower(strings.TrimSpace(m.QueryValue()))
 	if query == "" {
 		m.Filtered = append([]PickerItem(nil), m.Items...)
 		if m.Selected >= len(m.Filtered) {
@@ -65,7 +70,7 @@ func (m *TerminalManagerState) VisibleItems() []PickerItem {
 	if m == nil {
 		return nil
 	}
-	if len(m.Filtered) > 0 || strings.TrimSpace(m.Query) != "" {
+	if len(m.Filtered) > 0 || strings.TrimSpace(m.QueryValue()) != "" {
 		return m.Filtered
 	}
 	return m.Items

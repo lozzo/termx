@@ -4,6 +4,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
+	"github.com/lozzow/termx/tuiv2/uiinput"
 )
 
 func (m *Model) handleModalKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd) {
@@ -21,50 +22,87 @@ func (m *Model) handleModalKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd) {
 		if m.modalHost.Prompt == nil {
 			return false, nil
 		}
+		if m.modalHost.Prompt.PromptSuggestionFocused {
+			switch msg.Type {
+			case tea.KeyUp:
+				if m.movePromptSuggestionSelection(-1) {
+					m.revealCursorAndInvalidate()
+				}
+				return true, nil
+			case tea.KeyDown:
+				if m.movePromptSuggestionSelection(1) {
+					m.revealCursorAndInvalidate()
+				}
+				return true, nil
+			case tea.KeyEnter:
+				if m.acceptPromptSuggestionSelection() {
+					m.revealCursorAndInvalidate()
+				}
+				return true, nil
+			case tea.KeyTab:
+				if m.acceptPromptSuggestionSelection() {
+					m.revealCursorAndInvalidate()
+				}
+				if movePromptFormField(m.modalHost.Prompt, 1) {
+					m.refreshPromptCompletions()
+				}
+				m.revealCursorAndInvalidate()
+				return true, nil
+			case tea.KeyShiftTab:
+				m.modalHost.Prompt.PromptSuggestionFocused = false
+				m.refreshPromptCompletions()
+				m.revealCursorAndInvalidate()
+				return true, nil
+			case tea.KeyEsc:
+				m.modalHost.Prompt.PromptSuggestionFocused = false
+				m.refreshPromptCompletions()
+				m.revealCursorAndInvalidate()
+				return true, nil
+			default:
+				if uiinput.HandlesKey(msg) {
+					m.modalHost.Prompt.PromptSuggestionFocused = false
+					if m.handlePromptEditableKeyMsg(msg) {
+						m.refreshPromptCompletions()
+						m.revealCursorAndInvalidate()
+					}
+				}
+				return true, nil
+			}
+		}
 		switch msg.Type {
 		case tea.KeyUp:
 			if movePromptFormField(m.modalHost.Prompt, -1) {
+				m.refreshPromptCompletions()
 				m.revealCursorAndInvalidate()
 			}
 			return true, nil
-		case tea.KeyDown, tea.KeyTab:
+		case tea.KeyDown:
 			if movePromptFormField(m.modalHost.Prompt, 1) {
+				m.refreshPromptCompletions()
+				m.revealCursorAndInvalidate()
+			}
+			return true, nil
+		case tea.KeyTab:
+			if promptHasSuggestionItems(m.modalHost.Prompt) {
+				m.modalHost.Prompt.PromptSuggestionFocused = true
+				m.revealCursorAndInvalidate()
+				return true, nil
+			}
+			if movePromptFormField(m.modalHost.Prompt, 1) {
+				m.refreshPromptCompletions()
 				m.revealCursorAndInvalidate()
 			}
 			return true, nil
 		case tea.KeyShiftTab:
 			if movePromptFormField(m.modalHost.Prompt, -1) {
-				m.revealCursorAndInvalidate()
-			}
-			return true, nil
-		case tea.KeyRunes:
-			if len(msg.Runes) > 0 {
-				insertPromptRunes(m.modalHost.Prompt, msg.Runes)
-				m.revealCursorAndInvalidate()
-			}
-			return true, nil
-		case tea.KeyBackspace:
-			if deletePromptRuneBeforeCursor(m.modalHost.Prompt) {
+				m.modalHost.Prompt.PromptSuggestionFocused = false
+				m.refreshPromptCompletions()
 				m.revealCursorAndInvalidate()
 			}
 			return true, nil
 		case tea.KeyLeft:
 			if movePromptCursor(m.modalHost.Prompt, -1) {
-				m.revealCursorAndInvalidate()
-			}
-			return true, nil
-		case tea.KeyRight:
-			if movePromptCursor(m.modalHost.Prompt, 1) {
-				m.revealCursorAndInvalidate()
-			}
-			return true, nil
-		case tea.KeyHome:
-			if setPromptCursor(m.modalHost.Prompt, 0) {
-				m.revealCursorAndInvalidate()
-			}
-			return true, nil
-		case tea.KeyEnd:
-			if setPromptCursor(m.modalHost.Prompt, len([]rune(m.modalHost.Prompt.Value))) {
+				m.refreshPromptCompletions()
 				m.revealCursorAndInvalidate()
 			}
 			return true, nil
@@ -75,7 +113,15 @@ func (m *Model) handleModalKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd) {
 		case tea.KeyEsc:
 			return true, func() tea.Msg { return input.SemanticAction{Kind: input.ActionCancelMode} }
 		default:
-			return false, nil
+			if !uiinput.HandlesKey(msg) {
+				return false, nil
+			}
+			if m.handlePromptEditableKeyMsg(msg) {
+				m.modalHost.Prompt.PromptSuggestionFocused = false
+				m.refreshPromptCompletions()
+				m.revealCursorAndInvalidate()
+			}
+			return true, nil
 		}
 	case input.ModePicker:
 		return m.handlePickerQueryKeyMsg(msg)
@@ -92,35 +138,15 @@ func (m *Model) handlePickerQueryKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd) {
 	if m.modalHost == nil || m.modalHost.Picker == nil {
 		return false, nil
 	}
-	switch msg.Type {
-	case tea.KeyRunes:
-		if len(msg.Runes) == 0 {
-			return true, nil
-		}
-		insertQueryRunes(&m.modalHost.Picker.Query, &m.modalHost.Picker.Cursor, &m.modalHost.Picker.CursorSet, msg.Runes)
-	case tea.KeyBackspace:
-		if !deleteQueryRuneBeforeCursor(&m.modalHost.Picker.Query, &m.modalHost.Picker.Cursor, &m.modalHost.Picker.CursorSet) {
-			return true, nil
-		}
-	case tea.KeyLeft:
-		if !moveQueryCursor(&m.modalHost.Picker.Query, &m.modalHost.Picker.Cursor, &m.modalHost.Picker.CursorSet, -1) {
-			return true, nil
-		}
-	case tea.KeyRight:
-		if !moveQueryCursor(&m.modalHost.Picker.Query, &m.modalHost.Picker.Cursor, &m.modalHost.Picker.CursorSet, 1) {
-			return true, nil
-		}
-	case tea.KeyHome:
-		if !setQueryCursor(&m.modalHost.Picker.Query, &m.modalHost.Picker.Cursor, &m.modalHost.Picker.CursorSet, 0) {
-			return true, nil
-		}
-	case tea.KeyEnd:
-		if !setQueryCursor(&m.modalHost.Picker.Query, &m.modalHost.Picker.Cursor, &m.modalHost.Picker.CursorSet, len([]rune(m.modalHost.Picker.Query))) {
-			return true, nil
-		}
-	default:
+	if !uiinput.HandlesKey(msg) {
 		return false, nil
 	}
+	editor := m.modalHost.Picker.QueryEditor()
+	if editor == nil {
+		return false, nil
+	}
+	editor.HandleKey(msg)
+	m.modalHost.Picker.SyncQueryLegacy()
 	m.modalHost.Picker.ApplyFilter()
 	normalizeModalSelection(&m.modalHost.Picker.Selected, len(m.modalHost.Picker.VisibleItems()))
 	m.revealCursorAndInvalidate()
@@ -131,35 +157,15 @@ func (m *Model) handleWorkspacePickerQueryKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd)
 	if m.modalHost == nil || m.modalHost.WorkspacePicker == nil {
 		return false, nil
 	}
-	switch msg.Type {
-	case tea.KeyRunes:
-		if len(msg.Runes) == 0 {
-			return true, nil
-		}
-		insertQueryRunes(&m.modalHost.WorkspacePicker.Query, &m.modalHost.WorkspacePicker.Cursor, &m.modalHost.WorkspacePicker.CursorSet, msg.Runes)
-	case tea.KeyBackspace:
-		if !deleteQueryRuneBeforeCursor(&m.modalHost.WorkspacePicker.Query, &m.modalHost.WorkspacePicker.Cursor, &m.modalHost.WorkspacePicker.CursorSet) {
-			return true, nil
-		}
-	case tea.KeyLeft:
-		if !moveQueryCursor(&m.modalHost.WorkspacePicker.Query, &m.modalHost.WorkspacePicker.Cursor, &m.modalHost.WorkspacePicker.CursorSet, -1) {
-			return true, nil
-		}
-	case tea.KeyRight:
-		if !moveQueryCursor(&m.modalHost.WorkspacePicker.Query, &m.modalHost.WorkspacePicker.Cursor, &m.modalHost.WorkspacePicker.CursorSet, 1) {
-			return true, nil
-		}
-	case tea.KeyHome:
-		if !setQueryCursor(&m.modalHost.WorkspacePicker.Query, &m.modalHost.WorkspacePicker.Cursor, &m.modalHost.WorkspacePicker.CursorSet, 0) {
-			return true, nil
-		}
-	case tea.KeyEnd:
-		if !setQueryCursor(&m.modalHost.WorkspacePicker.Query, &m.modalHost.WorkspacePicker.Cursor, &m.modalHost.WorkspacePicker.CursorSet, len([]rune(m.modalHost.WorkspacePicker.Query))) {
-			return true, nil
-		}
-	default:
+	if !uiinput.HandlesKey(msg) {
 		return false, nil
 	}
+	editor := m.modalHost.WorkspacePicker.QueryEditor()
+	if editor == nil {
+		return false, nil
+	}
+	editor.HandleKey(msg)
+	m.modalHost.WorkspacePicker.SyncQueryLegacy()
 	m.modalHost.WorkspacePicker.ApplyFilter()
 	normalizeModalSelection(&m.modalHost.WorkspacePicker.Selected, len(m.modalHost.WorkspacePicker.VisibleItems()))
 	m.revealCursorAndInvalidate()
@@ -170,39 +176,41 @@ func (m *Model) handleTerminalManagerQueryKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd)
 	if m.terminalPage == nil {
 		return false, nil
 	}
-	switch msg.Type {
-	case tea.KeyRunes:
-		if len(msg.Runes) == 0 {
-			return true, nil
-		}
-		insertQueryRunes(&m.terminalPage.Query, &m.terminalPage.Cursor, &m.terminalPage.CursorSet, msg.Runes)
-	case tea.KeyBackspace:
-		if !deleteQueryRuneBeforeCursor(&m.terminalPage.Query, &m.terminalPage.Cursor, &m.terminalPage.CursorSet) {
-			return true, nil
-		}
-	case tea.KeyLeft:
-		if !moveQueryCursor(&m.terminalPage.Query, &m.terminalPage.Cursor, &m.terminalPage.CursorSet, -1) {
-			return true, nil
-		}
-	case tea.KeyRight:
-		if !moveQueryCursor(&m.terminalPage.Query, &m.terminalPage.Cursor, &m.terminalPage.CursorSet, 1) {
-			return true, nil
-		}
-	case tea.KeyHome:
-		if !setQueryCursor(&m.terminalPage.Query, &m.terminalPage.Cursor, &m.terminalPage.CursorSet, 0) {
-			return true, nil
-		}
-	case tea.KeyEnd:
-		if !setQueryCursor(&m.terminalPage.Query, &m.terminalPage.Cursor, &m.terminalPage.CursorSet, len([]rune(m.terminalPage.Query))) {
-			return true, nil
-		}
-	default:
+	if !uiinput.HandlesKey(msg) {
 		return false, nil
 	}
+	editor := m.terminalPage.QueryEditor()
+	if editor == nil {
+		return false, nil
+	}
+	editor.HandleKey(msg)
+	m.terminalPage.SyncQueryLegacy()
 	m.terminalPage.ApplyFilter()
 	normalizeModalSelection(&m.terminalPage.Selected, len(m.terminalPage.VisibleItems()))
 	m.revealCursorAndInvalidate()
 	return true, nil
+}
+
+func (m *Model) handlePromptEditableKeyMsg(msg tea.KeyMsg) bool {
+	if m == nil || m.modalHost == nil || m.modalHost.Prompt == nil {
+		return false
+	}
+	if field := promptEditableField(m.modalHost.Prompt); field != nil {
+		editor := field.ValueEditor()
+		if editor == nil {
+			return false
+		}
+		editor.HandleKey(msg)
+		field.SyncValueLegacy()
+		return true
+	}
+	editor := m.modalHost.Prompt.ValueEditor()
+	if editor == nil {
+		return false
+	}
+	editor.HandleKey(msg)
+	m.modalHost.Prompt.SyncValueLegacy()
+	return true
 }
 
 func queryCursor(value *string, cursor *int, cursorSet *bool) int {

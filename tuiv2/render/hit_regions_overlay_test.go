@@ -253,7 +253,7 @@ func TestOverlayHitRegionsPromptSuggestionPopupOverflowsWithoutGrowingCard(t *te
 		t.Fatalf("expected prompt card rect %#v, got %#v", want, got)
 	}
 
-	popup := buildPromptSuggestionPopupLayout(defaultUITheme(), prompt.Fields[prompt.ActiveField], prompt.PromptSuggestionSelected, inputLines[prompt.ActiveField], pickerInnerWidth(width))
+	popup := buildPromptSuggestionPopupLayout(defaultUITheme(), prompt.Fields[prompt.ActiveField], prompt.PromptSuggestionSelected, inputLines[prompt.ActiveField], pickerInnerWidth(width), prompt.PromptSuggestionFocused)
 	last := suggestionRegions[len(suggestionRegions)-1]
 	popupTopY := promptSuggestionPopupTopY(layout, popup)
 	expectedLastY := popupTopY + popup.itemStart + len(prompt.Fields[2].SuggestionItems) - 1

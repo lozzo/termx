@@ -9,55 +9,51 @@ import (
 
 func promptEditableValue(prompt *modal.PromptState) string {
 	if field := promptEditableField(prompt); field != nil {
-		return field.Value
+		return field.ValueState().Value()
 	}
 	if prompt == nil {
 		return ""
 	}
-	return prompt.Value
+	return prompt.ValueState().Value()
 }
 
 func promptEditableCursor(prompt *modal.PromptState) int {
 	if field := promptEditableField(prompt); field != nil {
-		return field.Cursor
+		return field.ValueState().Position()
 	}
 	if prompt == nil {
 		return 0
 	}
-	return prompt.Cursor
+	return prompt.ValueState().Position()
 }
 
 func setPromptEditableCursor(prompt *modal.PromptState, cursor int) bool {
 	if field := promptEditableField(prompt); field != nil {
-		clamped := cursor
-		maxCursor := len([]rune(field.Value))
-		if clamped < 0 {
-			clamped = 0
-		}
-		if clamped > maxCursor {
-			clamped = maxCursor
-		}
-		if field.Cursor == clamped {
+		editor := field.ValueEditor()
+		if editor == nil {
 			return false
 		}
-		field.Cursor = clamped
+		before := editor.Position()
+		editor.SetCursor(cursor)
+		if before == editor.Position() {
+			return false
+		}
+		field.SyncValueLegacy()
 		return true
 	}
 	if prompt == nil {
 		return false
 	}
-	clamped := cursor
-	maxCursor := len([]rune(prompt.Value))
-	if clamped < 0 {
-		clamped = 0
-	}
-	if clamped > maxCursor {
-		clamped = maxCursor
-	}
-	if prompt.Cursor == clamped {
+	editor := prompt.ValueEditor()
+	if editor == nil {
 		return false
 	}
-	prompt.Cursor = clamped
+	before := editor.Position()
+	editor.SetCursor(cursor)
+	if before == editor.Position() {
+		return false
+	}
+	prompt.SyncValueLegacy()
 	return true
 }
 
@@ -94,7 +90,7 @@ func promptFieldValue(prompt *modal.PromptState, key string) string {
 	if field == nil {
 		return ""
 	}
-	return strings.TrimSpace(field.Value)
+	return strings.TrimSpace(field.ValueState().Value())
 }
 
 func promptCommandFromField(prompt *modal.PromptState) ([]string, error) {
