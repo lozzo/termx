@@ -20,13 +20,14 @@ const (
 )
 
 type StreamMessage struct {
-	Type         StreamMessageType
-	Output       []byte
-	Payload      []byte
-	DroppedBytes uint64
-	ExitCode     *int
-	Cols         uint16
-	Rows         uint16
+	Type              StreamMessageType
+	Output            []byte
+	OutputRateLimited bool
+	Payload           []byte
+	DroppedBytes      uint64
+	ExitCode          *int
+	Cols              uint16
+	Rows              uint16
 }
 
 type Fanout struct {

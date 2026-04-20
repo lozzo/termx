@@ -78,6 +78,9 @@ type Terminal struct {
 	pendingVTermEpoch       uint64
 	pendingVTermOutput      []byte
 	pendingVTermFlushTimer  *time.Timer
+	pendingLiveOutputEpoch  uint64
+	pendingLiveOutput       []byte
+	pendingLiveOutputTimer  *time.Timer
 	liveOutputThrottle      liveOutputThrottleConfig
 	liveOutputRecentInputAt atomic.Int64
 	liveOutputBypassArmed   atomic.Bool
@@ -195,6 +198,7 @@ func (t *Terminal) Done() <-chan struct{} {
 func (t *Terminal) Subscribe(ctx context.Context) <-chan StreamMessage {
 	t.streamMu.Lock()
 	t.flushPendingVTermOutputLocked()
+	t.flushPendingLiveOutputLocked(t.stream)
 	bootstrap := t.bootstrapMessagesLocked(attachReplayScrollbackLimit)
 	t.mu.RLock()
 	state := t.state
@@ -275,11 +279,11 @@ func forwardLiveStreamMessages(ctx context.Context, src <-chan fanout.StreamMess
 }
 
 func (t *Terminal) forwardTerminalStreamMessages(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage) {
-	if t == nil || !t.liveOutputThrottle.enabled() {
+	if t == nil {
 		forwardTerminalStreamMessagesImmediate(ctx, src, dst, nil)
 		return
 	}
-	t.forwardTerminalStreamMessagesRateLimited(ctx, src, dst)
+	forwardTerminalStreamMessagesImmediate(ctx, src, dst, t.screenSnapshotFallbackMessage)
 }
 
 func forwardTerminalStreamMessagesImmediate(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage, fallback func() StreamMessage) {
@@ -316,139 +320,6 @@ func forwardTerminalStreamMessagesImmediate(ctx context.Context, src <-chan fano
 		}
 		pending = next
 		hasPending = nextHasPending
-	}
-}
-
-func (t *Terminal) forwardTerminalStreamMessagesRateLimited(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage) {
-	var (
-		timer         *time.Timer
-		timerCh       <-chan time.Time
-		timerDueAt    time.Time
-		pending       []byte
-		pendingShared bool
-	)
-	stopTimer := func() {
-		if timer == nil {
-			timerCh = nil
-			timerDueAt = time.Time{}
-			return
-		}
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
-			}
-		}
-		timerCh = nil
-		timerDueAt = time.Time{}
-	}
-	send := func(msg StreamMessage) bool {
-		select {
-		case <-ctx.Done():
-			return false
-		case dst <- msg:
-			return true
-		}
-	}
-	flushPending := func() bool {
-		if len(pending) == 0 {
-			stopTimer()
-			return true
-		}
-		output := pending
-		pending = nil
-		pendingShared = false
-		stopTimer()
-		return send(StreamMessage{Type: StreamOutput, Output: output})
-	}
-	armTimer := func(delay time.Duration) {
-		if delay <= 0 {
-			return
-		}
-		if timer == nil {
-			timer = time.NewTimer(delay)
-		} else {
-			stopTimer()
-			timer.Reset(delay)
-		}
-		timerCh = timer.C
-		timerDueAt = time.Now().Add(delay)
-	}
-	ensureFlushDelay := func() bool {
-		delay := t.liveOutputFrameInterval()
-		if delay <= 0 {
-			return flushPending()
-		}
-		if timerCh == nil {
-			armTimer(delay)
-			return true
-		}
-		if remaining := time.Until(timerDueAt); remaining > delay {
-			armTimer(delay)
-		}
-		return true
-	}
-	appendOutput := func(chunk []byte) bool {
-		if len(chunk) == 0 {
-			return true
-		}
-		if len(pending) > 0 && len(pending)+len(chunk) > maxMergedLiveOutputBytes {
-			if !flushPending() {
-				return false
-			}
-		}
-		if len(pending) == 0 {
-			pending = chunk
-			pendingShared = true
-			return ensureFlushDelay()
-		}
-		if pendingShared {
-			merged := make([]byte, 0, len(pending)+len(chunk))
-			merged = append(merged, pending...)
-			merged = append(merged, chunk...)
-			pending = merged
-			pendingShared = false
-		} else {
-			pending = append(pending, chunk...)
-		}
-		return ensureFlushDelay()
-	}
-
-	defer stopTimer()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timerCh:
-			if !flushPending() {
-				return
-			}
-		case msg, ok := <-src:
-			if !ok {
-				_ = flushPending()
-				return
-			}
-			switch msg.Type {
-			case fanout.StreamOutput:
-				if !appendOutput(msg.Output) {
-					return
-				}
-			case fanout.StreamSyncLost:
-				if !flushPending() {
-					return
-				}
-				if !send(t.screenSnapshotFallbackMessage()) {
-					return
-				}
-			default:
-				if !flushPending() {
-					return
-				}
-				if !send(cloneFanoutStreamMessage(msg)) {
-					return
-				}
-			}
-		}
 	}
 }
 
@@ -567,6 +438,12 @@ func (t *Terminal) noteLiveOutputInput() {
 	}
 	t.liveOutputRecentInputAt.Store(time.Now().UnixNano())
 	t.liveOutputBypassArmed.Store(true)
+	if t.stream == nil {
+		return
+	}
+	t.streamMu.Lock()
+	t.flushPendingLiveOutputLocked(t.stream)
+	t.streamMu.Unlock()
 }
 
 func (t *Terminal) recentLiveOutputInput() bool {
@@ -631,7 +508,7 @@ func (t *Terminal) Resize(cols, rows uint16) error {
 	}
 	t.flushPendingVTermOutputLocked()
 	t.vterm.Resize(int(cols), int(rows))
-	t.stream.BroadcastResize(cols, rows)
+	t.broadcastResizeLocked(t.stream, cols, rows)
 	t.streamMu.Unlock()
 	t.events.Publish(Event{
 		Type:       EventTerminalResized,
@@ -655,6 +532,7 @@ func (t *Terminal) Close() error {
 
 func (t *Terminal) Restart() error {
 	t.flushPendingVTermOutput(0)
+	t.flushPendingLiveOutput(0, t.stream)
 	t.mu.Lock()
 	if t.state != StateExited {
 		t.mu.Unlock()
@@ -937,6 +815,31 @@ func (t *Terminal) queuePendingVTermOutputLocked(epoch uint64, chunk []byte) {
 	}
 }
 
+func (t *Terminal) queuePendingLiveOutputLocked(epoch uint64, stream *fanout.Fanout, chunk []byte) {
+	if t == nil || len(chunk) == 0 || stream == nil {
+		return
+	}
+	if !t.liveOutputThrottle.enabled() {
+		stream.Broadcast(chunk)
+		return
+	}
+	if t.pendingLiveOutputEpoch != epoch {
+		t.clearPendingLiveOutputLocked()
+		t.pendingLiveOutputEpoch = epoch
+	}
+	t.pendingLiveOutput = append(t.pendingLiveOutput, chunk...)
+	if len(t.pendingLiveOutput) >= maxMergedLiveOutputBytes {
+		t.flushPendingLiveOutputLocked(stream)
+		return
+	}
+	delay := t.liveOutputFrameInterval()
+	if delay <= 0 {
+		t.flushPendingLiveOutputLocked(stream)
+		return
+	}
+	t.armPendingLiveOutputFlushLocked(epoch, stream, delay)
+}
+
 func (t *Terminal) armPendingVTermFlushLocked(epoch uint64) {
 	if t == nil || len(t.pendingVTermOutput) == 0 || serverVTermFlushIdleDelay <= 0 {
 		return
@@ -944,6 +847,18 @@ func (t *Terminal) armPendingVTermFlushLocked(epoch uint64) {
 	t.stopPendingVTermFlushTimerLocked()
 	t.pendingVTermFlushTimer = time.AfterFunc(serverVTermFlushIdleDelay, func() {
 		t.flushPendingVTermOutput(epoch)
+	})
+}
+
+func (t *Terminal) armPendingLiveOutputFlushLocked(epoch uint64, stream *fanout.Fanout, delay time.Duration) {
+	if t == nil || stream == nil || len(t.pendingLiveOutput) == 0 || delay <= 0 {
+		return
+	}
+	if t.pendingLiveOutputTimer != nil {
+		return
+	}
+	t.pendingLiveOutputTimer = time.AfterFunc(delay, func() {
+		t.flushPendingLiveOutput(epoch, stream)
 	})
 }
 
@@ -957,6 +872,18 @@ func (t *Terminal) flushPendingVTermOutput(epoch uint64) {
 		return
 	}
 	t.flushPendingVTermOutputLocked()
+}
+
+func (t *Terminal) flushPendingLiveOutput(epoch uint64, stream *fanout.Fanout) {
+	if t == nil || stream == nil {
+		return
+	}
+	t.streamMu.Lock()
+	defer t.streamMu.Unlock()
+	if epoch != 0 && t.pendingLiveOutputEpoch != 0 && t.pendingLiveOutputEpoch != epoch {
+		return
+	}
+	t.flushPendingLiveOutputLocked(stream)
 }
 
 func (t *Terminal) flushPendingVTermOutputLocked() {
@@ -979,6 +906,28 @@ func (t *Terminal) flushPendingVTermOutputLocked() {
 	}
 }
 
+func (t *Terminal) flushPendingLiveOutputLocked(stream *fanout.Fanout) {
+	if t == nil || stream == nil {
+		return
+	}
+	t.stopPendingLiveOutputFlushTimerLocked()
+	if len(t.pendingLiveOutput) == 0 {
+		t.pendingLiveOutputEpoch = 0
+		return
+	}
+	output := t.pendingLiveOutput
+	t.pendingLiveOutput = nil
+	t.pendingLiveOutputEpoch = 0
+	stream.BroadcastMessage(fanout.StreamMessage{
+		Type:              fanout.StreamOutput,
+		Output:            output,
+		OutputRateLimited: true,
+	})
+	if cap(output) <= maxMergedLiveOutputBytes {
+		t.pendingLiveOutput = output[:0]
+	}
+}
+
 func (t *Terminal) clearPendingVTermOutputLocked() {
 	if t == nil {
 		return
@@ -986,6 +935,15 @@ func (t *Terminal) clearPendingVTermOutputLocked() {
 	t.stopPendingVTermFlushTimerLocked()
 	t.pendingVTermOutput = nil
 	t.pendingVTermEpoch = 0
+}
+
+func (t *Terminal) clearPendingLiveOutputLocked() {
+	if t == nil {
+		return
+	}
+	t.stopPendingLiveOutputFlushTimerLocked()
+	t.pendingLiveOutput = nil
+	t.pendingLiveOutputEpoch = 0
 }
 
 func (t *Terminal) stopPendingVTermFlushTimerLocked() {
@@ -996,6 +954,30 @@ func (t *Terminal) stopPendingVTermFlushTimerLocked() {
 	t.pendingVTermFlushTimer = nil
 }
 
+func (t *Terminal) stopPendingLiveOutputFlushTimerLocked() {
+	if t == nil || t.pendingLiveOutputTimer == nil {
+		return
+	}
+	t.pendingLiveOutputTimer.Stop()
+	t.pendingLiveOutputTimer = nil
+}
+
+func (t *Terminal) broadcastResizeLocked(stream *fanout.Fanout, cols, rows uint16) {
+	if t == nil || stream == nil {
+		return
+	}
+	t.flushPendingLiveOutputLocked(stream)
+	stream.BroadcastResize(cols, rows)
+}
+
+func (t *Terminal) closeStreamLocked(stream *fanout.Fanout, exitCode *int) {
+	if t == nil || stream == nil {
+		return
+	}
+	t.flushPendingLiveOutputLocked(stream)
+	stream.Close(exitCode)
+}
+
 func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, readDone chan struct{}) {
 	defer close(readDone)
 	buf := make([]byte, 32*1024)
@@ -1004,9 +986,7 @@ func (t *Terminal) readLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, 
 		if n > 0 {
 			chunk := append([]byte(nil), buf[:n]...)
 			t.streamMu.Lock()
-			if stream != nil {
-				stream.Broadcast(chunk)
-			}
+			t.queuePendingLiveOutputLocked(epoch, stream, chunk)
 			t.queuePendingVTermOutputLocked(epoch, chunk)
 			t.armPendingVTermFlushLocked(epoch)
 			t.streamMu.Unlock()
@@ -1065,7 +1045,7 @@ func (t *Terminal) waitLoop(epoch uint64, p *ptymgr.PTY, stream *fanout.Fanout, 
 
 	t.streamMu.Lock()
 	t.flushPendingVTermOutputLocked()
-	stream.Close(&code)
+	t.closeStreamLocked(stream, &code)
 	t.streamMu.Unlock()
 	if !removed {
 		t.events.Publish(Event{

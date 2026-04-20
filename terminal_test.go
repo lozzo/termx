@@ -453,79 +453,7 @@ func TestDefaultLiveOutputThrottleConfigHonorsEnv(t *testing.T) {
 	})
 }
 
-func TestTerminalForwardTerminalStreamMessagesRateLimitsBurstOutput(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	src := make(chan fanout.StreamMessage, 8)
-	dst := make(chan StreamMessage, 8)
-	done := make(chan struct{})
-	term := &Terminal{
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
-	}
-	go func() {
-		defer close(done)
-		term.forwardTerminalStreamMessages(ctx, src, dst)
-		close(dst)
-	}()
-
-	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("a")}
-	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("b")}
-	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("c")}
-
-	select {
-	case msg := <-dst:
-		t.Fatalf("expected burst output to stay pending until frame window ends, got %#v", msg)
-	case <-time.After(20 * time.Millisecond):
-	}
-
-	select {
-	case msg := <-dst:
-		if msg.Type != StreamOutput || string(msg.Output) != "abc" {
-			t.Fatalf("expected one coalesced output frame, got %#v", msg)
-		}
-	case <-time.After(250 * time.Millisecond):
-		t.Fatal("timed out waiting for throttled live output flush")
-	}
-
-	close(src)
-	<-done
-}
-
-func TestTerminalForwardTerminalStreamMessagesDisablesRateLimitAtZeroFPS(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	src := make(chan fanout.StreamMessage, 8)
-	dst := make(chan StreamMessage, 8)
-	done := make(chan struct{})
-	term := &Terminal{
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 0},
-	}
-	go func() {
-		defer close(done)
-		term.forwardTerminalStreamMessages(ctx, src, dst)
-		close(dst)
-	}()
-
-	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("a")}
-	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("b")}
-	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("c")}
-	close(src)
-
-	select {
-	case msg := <-dst:
-		if msg.Type != StreamOutput || string(msg.Output) != "abc" {
-			t.Fatalf("expected disabled throttling to keep immediate merged output, got %#v", msg)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timed out waiting for unthrottled live output")
-	}
-
-	<-done
-}
-
-func TestTerminalForwardTerminalStreamMessagesFlushesPriorityFramesImmediately(t *testing.T) {
+func TestTerminalForwardTerminalStreamMessagesPreservesResizeBoundary(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -566,7 +494,7 @@ func TestTerminalForwardTerminalStreamMessagesFlushesPriorityFramesImmediately(t
 	<-done
 }
 
-func TestTerminalForwardTerminalStreamMessagesFlushesClosedImmediately(t *testing.T) {
+func TestTerminalForwardTerminalStreamMessagesPreservesClosedBoundary(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -608,14 +536,22 @@ func TestTerminalForwardTerminalStreamMessagesFlushesClosedImmediately(t *testin
 	<-done
 }
 
-func TestTerminalForwardTerminalStreamMessagesFlushesSyncLostImmediately(t *testing.T) {
+func TestTerminalForwardTerminalStreamMessagesRecoversSyncLostWithSnapshotFallback(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	src := make(chan fanout.StreamMessage, 8)
+	vt := localvterm.New(8, 2, 16, nil)
+	if _, err := vt.Write([]byte("hello")); err != nil {
+		t.Fatalf("seed vterm: %v", err)
+	}
+
+	src := make(chan fanout.StreamMessage, 4)
 	dst := make(chan StreamMessage, 8)
 	done := make(chan struct{})
 	term := &Terminal{
+		size:               Size{Cols: 8, Rows: 2},
+		state:              StateRunning,
+		vterm:              vt,
 		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
 	}
 	go func() {
@@ -624,23 +560,13 @@ func TestTerminalForwardTerminalStreamMessagesFlushesSyncLostImmediately(t *test
 		close(dst)
 	}()
 
-	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("out")}
 	src <- fanout.StreamMessage{Type: fanout.StreamSyncLost, DroppedBytes: 9}
 	close(src)
 
 	select {
 	case msg := <-dst:
-		if msg.Type != StreamOutput || string(msg.Output) != "out" {
-			t.Fatalf("expected pending output to flush before sync-lost, got %#v", msg)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timed out waiting for output before sync-lost")
-	}
-
-	select {
-	case msg := <-dst:
-		if msg.Type != StreamSyncLost || msg.DroppedBytes != 0 {
-			t.Fatalf("expected sync-lost boundary without delay, got %#v", msg)
+		if msg.Type != StreamScreenUpdate || !streamMessageContainsText(msg, 8, 2, "hello") {
+			t.Fatalf("expected snapshot fallback on sync-lost, got %#v", msg)
 		}
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("timed out waiting for sync-lost frame")
@@ -649,15 +575,23 @@ func TestTerminalForwardTerminalStreamMessagesFlushesSyncLostImmediately(t *test
 	<-done
 }
 
-func TestTerminalForwardTerminalStreamMessagesBypassesRateLimitAfterInput(t *testing.T) {
+func TestTerminalForwardTerminalStreamMessagesKeepsSnapshotFallbackWhenThrottleDisabled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	src := make(chan fanout.StreamMessage, 8)
+	vt := localvterm.New(8, 2, 16, nil)
+	if _, err := vt.Write([]byte("hello")); err != nil {
+		t.Fatalf("seed vterm: %v", err)
+	}
+
+	src := make(chan fanout.StreamMessage, 4)
 	dst := make(chan StreamMessage, 8)
 	done := make(chan struct{})
 	term := &Terminal{
-		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
+		size:               Size{Cols: 8, Rows: 2},
+		state:              StateRunning,
+		vterm:              vt,
+		liveOutputThrottle: liveOutputThrottleConfig{FPS: 0},
 	}
 	go func() {
 		defer close(done)
@@ -665,23 +599,22 @@ func TestTerminalForwardTerminalStreamMessagesBypassesRateLimitAfterInput(t *tes
 		close(dst)
 	}()
 
-	term.noteLiveOutputInput()
-	src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("prompt")}
+	src <- fanout.StreamMessage{Type: fanout.StreamSyncLost, DroppedBytes: 11}
 	close(src)
 
 	select {
 	case msg := <-dst:
-		if msg.Type != StreamOutput || string(msg.Output) != "prompt" {
-			t.Fatalf("expected interactive bypass to flush prompt immediately, got %#v", msg)
+		if msg.Type != StreamScreenUpdate || !streamMessageContainsText(msg, 8, 2, "hello") {
+			t.Fatalf("expected disabled throttle to keep snapshot fallback semantics, got %#v", msg)
 		}
 	case <-time.After(20 * time.Millisecond):
-		t.Fatal("expected recent input to bypass the 20fps live output cap")
+		t.Fatal("expected sync-lost fallback even when throttle is disabled")
 	}
 
 	<-done
 }
 
-func TestSubscribeKeepsBootstrapImmediateWhileLiveOutputIsRateLimited(t *testing.T) {
+func TestSubscribeKeepsBootstrapImmediateWhileSharedLiveOutputIsRateLimited(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -696,6 +629,7 @@ func TestSubscribeKeepsBootstrapImmediateWhileLiveOutputIsRateLimited(t *testing
 		vterm:              vt,
 		stream:             fanout.New(),
 		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
+		processEpoch:       1,
 	}
 
 	stream := term.Subscribe(ctx)
@@ -727,7 +661,9 @@ func TestSubscribeKeepsBootstrapImmediateWhileLiveOutputIsRateLimited(t *testing
 		t.Fatal("timed out waiting for bootstrap-done")
 	}
 
-	term.stream.Broadcast([]byte("later"))
+	term.streamMu.Lock()
+	term.queuePendingLiveOutputLocked(1, term.stream, []byte("later"))
+	term.streamMu.Unlock()
 
 	select {
 	case msg := <-stream:
@@ -745,59 +681,296 @@ func TestSubscribeKeepsBootstrapImmediateWhileLiveOutputIsRateLimited(t *testing
 	}
 }
 
-func TestTerminalForwardTerminalStreamMessagesSustainedOutputCoalescesAcrossWindows(t *testing.T) {
-	const chunkCount = 120
-	received, elapsed := runSustainedLiveOutputHarness(t, 20, chunkCount, time.Millisecond)
+func TestTerminalSharedLiveOutputThrottleRateLimitsBroadcastBurst(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	totalBytes := 0
-	outputFrames := 0
-	for _, msg := range received {
-		if msg.Type != StreamOutput {
-			t.Fatalf("expected only output frames in sustained output test, got %#v", received)
+	term := &Terminal{
+		stream:             fanout.New(),
+		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
+		processEpoch:       1,
+	}
+	stream := term.stream.Subscribe(ctx)
+
+	term.streamMu.Lock()
+	term.queuePendingLiveOutputLocked(1, term.stream, []byte("a"))
+	term.queuePendingLiveOutputLocked(1, term.stream, []byte("b"))
+	term.queuePendingLiveOutputLocked(1, term.stream, []byte("c"))
+	term.streamMu.Unlock()
+
+	select {
+	case msg := <-stream:
+		t.Fatalf("expected shared throttle to keep burst output pending, got %#v", msg)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	select {
+	case msg := <-stream:
+		if msg.Type != fanout.StreamOutput || string(msg.Output) != "abc" {
+			t.Fatalf("expected one coalesced broadcast frame, got %#v", msg)
 		}
-		outputFrames++
-		totalBytes += len(msg.Output)
+		if !msg.OutputRateLimited {
+			t.Fatalf("expected shared throttled output to be tagged, got %#v", msg)
+		}
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("timed out waiting for shared throttled output flush")
 	}
-
-	if totalBytes != chunkCount {
-		t.Fatalf("expected %d output bytes after coalescing, got %d via %#v", chunkCount, totalBytes, received)
-	}
-	if outputFrames >= chunkCount {
-		t.Fatalf("expected sustained output to collapse frame count below %d, got %d", chunkCount, outputFrames)
-	}
-	if outputFrames > 4 {
-		t.Fatalf("expected 20fps cap over ~120ms to flush at most 4 output frames, got %d", outputFrames)
-	}
-	if elapsed < 100*time.Millisecond {
-		t.Fatalf("expected sustained test to span multiple frame windows, got %v", elapsed)
-	}
-	t.Logf("sustained_output fps=20 frames=%d bytes=%d elapsed=%v", outputFrames, totalBytes, elapsed)
 }
 
-func TestTerminalForwardTerminalStreamMessagesSustainedOutputWithoutRateLimitKeepsHighFrameCount(t *testing.T) {
+func TestTerminalSharedLiveOutputThrottleDisabledBroadcastsImmediately(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	term := &Terminal{
+		stream:             fanout.New(),
+		liveOutputThrottle: liveOutputThrottleConfig{FPS: 0},
+		processEpoch:       1,
+	}
+	stream := term.stream.Subscribe(ctx)
+
+	term.streamMu.Lock()
+	term.queuePendingLiveOutputLocked(1, term.stream, []byte("abc"))
+	term.streamMu.Unlock()
+
+	select {
+	case msg := <-stream:
+		if msg.Type != fanout.StreamOutput || string(msg.Output) != "abc" {
+			t.Fatalf("expected immediate broadcast without shared throttling, got %#v", msg)
+		}
+		if msg.OutputRateLimited {
+			t.Fatalf("expected immediate output not to be tagged as throttled, got %#v", msg)
+		}
+	case <-time.After(20 * time.Millisecond):
+		t.Fatal("timed out waiting for immediate shared output flush")
+	}
+}
+
+func TestTerminalSharedLiveOutputThrottleFlushesPendingBeforeResize(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	term := &Terminal{
+		stream:             fanout.New(),
+		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
+		processEpoch:       1,
+	}
+	stream := term.stream.Subscribe(ctx)
+
+	term.streamMu.Lock()
+	term.queuePendingLiveOutputLocked(1, term.stream, []byte("ab"))
+	term.broadcastResizeLocked(term.stream, 120, 40)
+	term.streamMu.Unlock()
+
+	select {
+	case msg := <-stream:
+		if msg.Type != fanout.StreamOutput || string(msg.Output) != "ab" {
+			t.Fatalf("expected pending output before resize, got %#v", msg)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("timed out waiting for flushed output before resize")
+	}
+
+	select {
+	case msg := <-stream:
+		if msg.Type != fanout.StreamResize || msg.Cols != 120 || msg.Rows != 40 {
+			t.Fatalf("expected resize boundary after flushed output, got %#v", msg)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("timed out waiting for resize boundary")
+	}
+}
+
+func TestTerminalSharedLiveOutputThrottleFlushesPendingBeforeClose(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	term := &Terminal{
+		stream:             fanout.New(),
+		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
+		processEpoch:       1,
+	}
+	stream := term.stream.Subscribe(ctx)
+	exitCode := 7
+
+	term.streamMu.Lock()
+	term.queuePendingLiveOutputLocked(1, term.stream, []byte("bye"))
+	term.closeStreamLocked(term.stream, &exitCode)
+	term.streamMu.Unlock()
+
+	select {
+	case msg := <-stream:
+		if msg.Type != fanout.StreamOutput || string(msg.Output) != "bye" {
+			t.Fatalf("expected pending output before close, got %#v", msg)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("timed out waiting for flushed output before close")
+	}
+
+	select {
+	case msg := <-stream:
+		if msg.Type != fanout.StreamClosed || msg.ExitCode == nil || *msg.ExitCode != exitCode {
+			t.Fatalf("expected close after flushed output, got %#v", msg)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("timed out waiting for close boundary")
+	}
+}
+
+func TestTerminalSharedLiveOutputThrottleBypassesAfterInput(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	term := &Terminal{
+		stream:             fanout.New(),
+		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
+		processEpoch:       1,
+	}
+	stream := term.stream.Subscribe(ctx)
+
+	term.noteLiveOutputInput()
+	term.streamMu.Lock()
+	term.queuePendingLiveOutputLocked(1, term.stream, []byte("prompt"))
+	term.streamMu.Unlock()
+
+	select {
+	case msg := <-stream:
+		if msg.Type != fanout.StreamOutput || string(msg.Output) != "prompt" {
+			t.Fatalf("expected input bypass to flush shared output immediately, got %#v", msg)
+		}
+		if !msg.OutputRateLimited {
+			t.Fatalf("expected bypassed shared output to remain tagged for subscriber fast-path, got %#v", msg)
+		}
+	case <-time.After(20 * time.Millisecond):
+		t.Fatal("expected recent input to bypass shared live output delay")
+	}
+}
+
+func TestTerminalSharedLiveOutputThrottleBypassesAfterInputForAllSubscribers(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	term := &Terminal{
+		stream:             fanout.New(),
+		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
+		processEpoch:       1,
+	}
+	streamA := term.stream.Subscribe(ctx)
+	streamB := term.stream.Subscribe(ctx)
+
+	term.noteLiveOutputInput()
+	term.streamMu.Lock()
+	term.queuePendingLiveOutputLocked(1, term.stream, []byte("prompt"))
+	term.streamMu.Unlock()
+
+	for i, stream := range []<-chan fanout.StreamMessage{streamA, streamB} {
+		select {
+		case msg := <-stream:
+			if msg.Type != fanout.StreamOutput || string(msg.Output) != "prompt" {
+				t.Fatalf("subscriber %d expected immediate shared output after input, got %#v", i+1, msg)
+			}
+		case <-time.After(20 * time.Millisecond):
+			t.Fatalf("subscriber %d did not receive immediate shared output after input", i+1)
+		}
+	}
+}
+
+func TestSubscribeDoesNotApplySecondRateLimitToSharedThrottledOutput(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	vt := localvterm.New(6, 2, 16, nil)
+	term := &Terminal{
+		size:               Size{Cols: 6, Rows: 2},
+		state:              StateRunning,
+		vterm:              vt,
+		stream:             fanout.New(),
+		liveOutputThrottle: liveOutputThrottleConfig{FPS: 20},
+		processEpoch:       1,
+	}
+	stream := term.Subscribe(ctx)
+	consumeBootstrapMessages(t, stream, 3)
+
+	start := time.Now()
+	term.streamMu.Lock()
+	term.queuePendingLiveOutputLocked(1, term.stream, []byte("later"))
+	term.streamMu.Unlock()
+
+	select {
+	case msg := <-stream:
+		t.Fatalf("expected shared throttle to keep live output pending initially, got %#v", msg)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	select {
+	case msg := <-stream:
+		if msg.Type != StreamOutput || string(msg.Output) != "later" {
+			t.Fatalf("expected shared throttled live output to arrive without a second cap, got %#v", msg)
+		}
+	case <-time.After(80 * time.Millisecond):
+		t.Fatal("timed out waiting for shared throttled live output")
+	}
+
+	if elapsed := time.Since(start); elapsed > 95*time.Millisecond {
+		t.Fatalf("expected only one 20fps frame window, got %v", elapsed)
+	}
+}
+
+func TestTerminalSharedLiveOutputThrottleSustainedOutputCoalescesAcrossWindows(t *testing.T) {
 	const chunkCount = 120
-	received, elapsed := runSustainedLiveOutputHarness(t, 0, chunkCount, time.Millisecond)
+	received, elapsed := runSustainedSharedLiveOutputHarness(t, 20, chunkCount, time.Millisecond)
 
 	totalBytes := 0
 	outputFrames := 0
 	for _, msg := range received {
-		if msg.Type != StreamOutput {
-			t.Fatalf("expected only output frames without rate limit, got %#v", received)
+		if msg.Type != fanout.StreamOutput {
+			t.Fatalf("expected only output frames in sustained shared output test, got %#v", received)
 		}
 		outputFrames++
 		totalBytes += len(msg.Output)
 	}
 
 	if totalBytes != chunkCount {
-		t.Fatalf("expected %d output bytes without rate limit, got %d via %#v", chunkCount, totalBytes, received)
+		t.Fatalf("expected %d output bytes after shared coalescing, got %d via %#v", chunkCount, totalBytes, received)
 	}
-	if outputFrames <= 20 {
-		t.Fatalf("expected disabled rate limit to keep a high frame count, got %d", outputFrames)
+	if outputFrames >= chunkCount {
+		t.Fatalf("expected shared throttling to collapse frame count below %d, got %d", chunkCount, outputFrames)
+	}
+	if outputFrames < 2 {
+		t.Fatalf("expected sustained shared throttling to flush more than one frame window, got %d", outputFrames)
+	}
+	if outputFrames > 4 {
+		t.Fatalf("expected 20fps shared cap over ~120ms to flush at most 4 output frames, got %d", outputFrames)
 	}
 	if elapsed < 100*time.Millisecond {
-		t.Fatalf("expected sustained unthrottled test to span multiple ticks, got %v", elapsed)
+		t.Fatalf("expected sustained shared test to span multiple frame windows, got %v", elapsed)
 	}
-	t.Logf("sustained_output fps=off frames=%d bytes=%d elapsed=%v", outputFrames, totalBytes, elapsed)
+	t.Logf("shared_sustained_output fps=20 frames=%d bytes=%d elapsed=%v", outputFrames, totalBytes, elapsed)
+}
+
+func TestTerminalSharedLiveOutputThrottleDisabledKeepsHighFrameCount(t *testing.T) {
+	const chunkCount = 120
+	received, elapsed := runSustainedSharedLiveOutputHarness(t, 0, chunkCount, time.Millisecond)
+
+	totalBytes := 0
+	outputFrames := 0
+	for _, msg := range received {
+		if msg.Type != fanout.StreamOutput {
+			t.Fatalf("expected only output frames without shared throttling, got %#v", received)
+		}
+		outputFrames++
+		totalBytes += len(msg.Output)
+	}
+
+	if totalBytes != chunkCount {
+		t.Fatalf("expected %d output bytes without shared throttling, got %d via %#v", chunkCount, totalBytes, received)
+	}
+	if outputFrames <= 20 {
+		t.Fatalf("expected disabled shared throttling to keep a high frame count, got %d", outputFrames)
+	}
+	if elapsed < 100*time.Millisecond {
+		t.Fatalf("expected sustained unthrottled shared test to span multiple ticks, got %v", elapsed)
+	}
+	t.Logf("shared_sustained_output fps=off frames=%d bytes=%d elapsed=%v", outputFrames, totalBytes, elapsed)
 }
 
 func TestTerminalSnapshotReturnsNewestScrollbackWindow(t *testing.T) {
@@ -982,37 +1155,81 @@ func collectStreamMessages(t *testing.T, ch <-chan StreamMessage) []StreamMessag
 	}
 }
 
-func runSustainedLiveOutputHarness(t *testing.T, fps int, chunkCount int, interval time.Duration) ([]StreamMessage, time.Duration) {
+func collectFanoutMessages(t *testing.T, ch <-chan fanout.StreamMessage, maxCount int) []fanout.StreamMessage {
+	t.Helper()
+	out := make([]fanout.StreamMessage, 0, min(4, maxCount))
+	timeout := time.After(3 * time.Second)
+	idleDelay := 120 * time.Millisecond
+	idle := time.NewTimer(idleDelay)
+	defer idle.Stop()
+	for {
+		select {
+		case msg, ok := <-ch:
+			if !ok {
+				return out
+			}
+			out = append(out, msg)
+			if len(out) >= maxCount {
+				return out
+			}
+			if !idle.Stop() {
+				select {
+				case <-idle.C:
+				default:
+				}
+			}
+			idle.Reset(idleDelay)
+		case <-idle.C:
+			return out
+		case <-timeout:
+			t.Fatalf("timed out collecting fanout messages: %#v", out)
+		}
+	}
+}
+
+func consumeBootstrapMessages(t *testing.T, ch <-chan StreamMessage, count int) {
+	t.Helper()
+	for i := 0; i < count; i++ {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				t.Fatalf("stream closed while consuming bootstrap message %d/%d", i+1, count)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out consuming bootstrap message %d/%d", i+1, count)
+		}
+	}
+}
+
+func runSustainedSharedLiveOutputHarness(t *testing.T, fps int, chunkCount int, interval time.Duration) ([]fanout.StreamMessage, time.Duration) {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	src := make(chan fanout.StreamMessage, 256)
-	dst := make(chan StreamMessage, 64)
-	done := make(chan struct{})
 	term := &Terminal{
+		stream:             fanout.New(),
 		liveOutputThrottle: liveOutputThrottleConfig{FPS: fps},
+		processEpoch:       1,
 	}
-	go func() {
-		defer close(done)
-		term.forwardTerminalStreamMessages(ctx, src, dst)
-		close(dst)
-	}()
+	stream := term.stream.Subscribe(ctx)
 
 	go func() {
-		defer close(src)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for i := 0; i < chunkCount; i++ {
 			<-ticker.C
-			src <- fanout.StreamMessage{Type: fanout.StreamOutput, Output: []byte("x")}
+			term.streamMu.Lock()
+			term.queuePendingLiveOutputLocked(1, term.stream, []byte("x"))
+			term.streamMu.Unlock()
 		}
+		term.streamMu.Lock()
+		term.flushPendingLiveOutputLocked(term.stream)
+		term.streamMu.Unlock()
 	}()
 
 	start := time.Now()
-	received := collectStreamMessages(t, dst)
-	<-done
+	received := collectFanoutMessages(t, stream, chunkCount)
 	return received, time.Since(start)
 }
 
