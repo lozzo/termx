@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 	"sync/atomic"
+
+	"github.com/lozzow/termx/perftrace"
 )
 
 type StreamMessageType int
@@ -78,6 +80,9 @@ func (f *Fanout) BroadcastMessage(msg StreamMessage) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	for sub := range f.subs {
+		if buffered := len(sub.ch); buffered > 0 {
+			perftrace.Count("fanout.subscriber.backlog.frames", buffered)
+		}
 		if dropped := sub.droppedBytes.Load(); dropped > 0 {
 			select {
 			case sub.ch <- StreamMessage{Type: StreamSyncLost, DroppedBytes: dropped}:

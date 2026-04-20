@@ -679,6 +679,10 @@ func (s *Server) handleTransport(ctx context.Context, t transport.Transport, rem
 		}
 		sendMu.Lock()
 		defer sendMu.Unlock()
+		perftrace.Count("transport.bytes_over_wire", len(frame))
+		if channel != 0 {
+			perftrace.Count("transport.stream.bytes_over_wire", len(frame))
+		}
 		return t.Send(frame)
 	}
 
@@ -971,61 +975,8 @@ func (s *Server) handleRequest(
 		stream := term.Subscribe(subCtx)
 		go func() {
 			defer attachment.cleanup()
-			for msg := range stream {
-				var err error
-				switch msg.Type {
-				case StreamOutput:
-					frame, encodeErr := protocol.EncodeFrame(ch, protocol.TypeOutput, msg.Output)
-					if encodeErr != nil {
-						cancel()
-						return
-					}
-					err = sendRawFrame(sendFrame, frame)
-				case StreamSyncLost:
-					frame, encodeErr := protocol.EncodeFrame(ch, protocol.TypeSyncLost, protocol.EncodeSyncLostPayload(msg.DroppedBytes))
-					if encodeErr != nil {
-						cancel()
-						return
-					}
-					err = sendRawFrame(sendFrame, frame)
-				case StreamResize:
-					frame, encodeErr := protocol.EncodeFrame(ch, protocol.TypeResize, protocol.EncodeResizePayload(msg.Cols, msg.Rows))
-					if encodeErr != nil {
-						cancel()
-						return
-					}
-					err = sendRawFrame(sendFrame, frame)
-				case StreamBootstrapDone:
-					frame, encodeErr := protocol.EncodeFrame(ch, protocol.TypeBootstrapDone, nil)
-					if encodeErr != nil {
-						cancel()
-						return
-					}
-					err = sendRawFrame(sendFrame, frame)
-				case StreamScreenUpdate:
-					frame, encodeErr := protocol.EncodeFrame(ch, protocol.TypeScreenUpdate, msg.Payload)
-					if encodeErr != nil {
-						cancel()
-						return
-					}
-					err = sendRawFrame(sendFrame, frame)
-				case StreamClosed:
-					code := 0
-					if msg.ExitCode != nil {
-						code = *msg.ExitCode
-					}
-					frame, encodeErr := protocol.EncodeFrame(ch, protocol.TypeClosed, protocol.EncodeClosedPayload(code))
-					if encodeErr != nil {
-						cancel()
-						return
-					}
-					err = sendRawFrame(sendFrame, frame)
-				}
-				if err != nil {
-					cancel()
-					return
-				}
-			}
+			pump := newAttachmentStreamPump(subCtx, cancel, params.TerminalID, ch, stream, sendFrame)
+			pump.run()
 		}()
 		result, _ := json.Marshal(protocol.AttachResult{Mode: params.Mode, Channel: ch})
 		return result, 0, nil

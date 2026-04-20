@@ -1004,19 +1004,11 @@ func (t *Terminal) screenSnapshotPayloadLocked(resetScrollback bool) ([]byte, bo
 	if t == nil || t.vterm == nil {
 		return nil, false
 	}
-	screen := t.vterm.ScreenContent()
-	cols, rows := t.vterm.Size()
-	update := protocol.ScreenUpdate{
-		FullReplace:      true,
-		ResetScrollback:  resetScrollback,
-		Size:             protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
-		Title:            t.currentTitleLocked(),
-		Screen:           protocolScreenDataFromVTerm(screen),
-		ScreenTimestamps: cloneTimeSlice(t.vterm.ScreenTimestamps()),
-		ScreenRowKinds:   cloneStringSlice(t.vterm.ScreenRowKinds()),
-		Cursor:           protocolCursorStateFromVTerm(t.vterm.CursorState()),
-		Modes:            protocolModesFromVTerm(t.vterm.Modes()),
+	state := t.currentStreamScreenStateLocked()
+	if state == nil || state.snapshot == nil {
+		return nil, false
 	}
+	update := fullReplaceUpdateForStateDelta(nil, state, resetScrollback)
 	payload, err := protocol.EncodeScreenUpdatePayload(update)
 	if err != nil {
 		return nil, false
@@ -1029,56 +1021,32 @@ func (t *Terminal) screenUpdatePayloadFromDamageLocked(damage vterm.WriteDamage)
 	if t == nil || t.vterm == nil {
 		return nil, false
 	}
-	update := protocol.ScreenUpdate{
-		Size:             protocol.Size{Cols: uint16(damage.SizeCols), Rows: uint16(damage.SizeRows)},
-		ScreenScroll:     damage.ScreenScroll,
-		Title:            t.currentTitleLocked(),
-		ChangedSpans:     make([]protocol.ScreenSpanUpdate, 0, len(damage.ChangedScreenSpans)),
-		Ops:              make([]protocol.ScreenOp, 0, len(damage.Ops)+3),
-		ScrollbackTrim:   damage.ScrollbackTrim,
-		ScrollbackAppend: make([]protocol.ScrollbackRowAppend, 0, len(damage.ScrollbackAppend)),
-		Cursor:           protocolCursorStateFromVTerm(damage.Cursor),
-		Modes:            protocolModesFromVTerm(damage.Modes),
-	}
-	for _, span := range damage.ChangedScreenSpans {
-		update.ChangedSpans = append(update.ChangedSpans, protocol.ScreenSpanUpdate{
-			Row:       span.Row,
-			ColStart:  span.ColStart,
-			Cells:     protocolCellsFromVTermRow(span.Cells),
-			Op:        span.Op,
-			Timestamp: span.Timestamp,
-			RowKind:   span.RowKind,
-		})
-	}
-	for _, op := range damage.Ops {
-		update.Ops = append(update.Ops, protocol.ScreenOp{
-			Code:      op.Code,
-			Rect:      protocol.ScreenRect{X: op.Rect.X, Y: op.Rect.Y, Width: op.Rect.Width, Height: op.Rect.Height},
-			Src:       protocol.ScreenRect{X: op.Src.X, Y: op.Src.Y, Width: op.Src.Width, Height: op.Src.Height},
-			DstX:      op.DstX,
-			DstY:      op.DstY,
-			Dx:        op.Dx,
-			Dy:        op.Dy,
-			Row:       op.Row,
-			Col:       op.Col,
-			Cells:     protocolCellsFromVTermRow(op.Cells),
-			Timestamp: op.Timestamp,
-			RowKind:   op.RowKind,
-		})
-	}
-	for _, row := range damage.ScrollbackAppend {
-		update.ScrollbackAppend = append(update.ScrollbackAppend, protocol.ScrollbackRowAppend{
-			Cells:     protocolCellsFromVTermRow(row.Cells),
-			Timestamp: row.Timestamp,
-			RowKind:   row.RowKind,
-		})
-	}
-	payload, err := protocol.EncodeScreenUpdatePayload(update)
-	if err != nil {
+	state := t.currentStreamScreenStateLocked()
+	if state == nil || state.snapshot == nil {
 		return nil, false
 	}
-	perftrace.Count("terminal.screen_update.encoded_bytes", len(payload))
+	deltaUpdate := screenUpdateFromDamageState(damage, state)
+	fullUpdate := fullReplaceUpdateForStateDelta(nil, state, !state.snapshot.Modes.AlternateScreen)
+	if state.snapshot.Modes.AlternateScreen {
+		fullUpdate.ResetScrollback = false
+		fullUpdate.ScrollbackTrim = deltaUpdate.ScrollbackTrim
+		fullUpdate.ScrollbackAppend = append([]protocol.ScrollbackRowAppend(nil), deltaUpdate.ScrollbackAppend...)
+	}
+	payload, _, ok := encodeScreenUpdatePayloadByStrategy(deltaUpdate, fullUpdate, state.snapshot.Modes.AlternateScreen)
+	if !ok {
+		return nil, false
+	}
 	return payload, true
+}
+
+func (t *Terminal) currentStreamScreenStateLocked() *streamScreenState {
+	if t == nil || t.vterm == nil {
+		return nil
+	}
+	return &streamScreenState{
+		snapshot: snapshotFromVTerm(t.vterm),
+		title:    t.currentTitleLocked(),
+	}
 }
 
 func (t *Terminal) currentTitleLocked() string {
