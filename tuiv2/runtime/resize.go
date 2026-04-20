@@ -257,13 +257,26 @@ func snapshotBottomFillBackground(snapshot *protocol.Snapshot, oldRows, width in
 	if snapshot == nil || oldRows <= 0 {
 		return ""
 	}
-	limitRows := runtimeMinInt(oldRows, len(snapshot.Screen.Cells))
-	for rowIndex := limitRows - 1; rowIndex >= 0; rowIndex-- {
-		if bg := snapshotRowTailBackground(snapshot, rowIndex, width); bg != "" {
-			return bg
+	rowIndex := runtimeMinInt(oldRows, len(snapshot.Screen.Cells)) - 1
+	if rowIndex < 0 || !snapshotRowBlankForBottomFill(snapshot.Screen.Cells[rowIndex], width) {
+		return ""
+	}
+	return snapshotRowTailBackground(snapshot, rowIndex, width)
+}
+
+func snapshotRowBlankForBottomFill(row []protocol.Cell, width int) bool {
+	if width <= 0 {
+		return false
+	}
+	if width > len(row) {
+		width = len(row)
+	}
+	for x := 0; x < width; x++ {
+		if strings.TrimSpace(row[x].Content) != "" {
+			return false
 		}
 	}
-	return ""
+	return true
 }
 
 func backgroundANSI(hex string) string {

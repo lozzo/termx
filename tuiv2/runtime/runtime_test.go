@@ -1271,6 +1271,83 @@ func TestRuntimeResizePaneShrinkKeepsRenderOnSnapshotUntilOutput(t *testing.T) {
 	}
 }
 
+func TestRuntimeResizePaneHeightGrowDoesNotExtendNonBlankBottomRowBackground(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+	const statusBG = "#0055aa"
+	client.snapshotByTerminal["term-1"] = &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 4, Rows: 2},
+		Screen: protocol.ScreenData{
+			IsAlternateScreen: true,
+			Cells: [][]protocol.Cell{
+				{
+					{Content: " ", Width: 1},
+					{Content: " ", Width: 1},
+					{Content: " ", Width: 1},
+					{Content: " ", Width: 1},
+				},
+				{
+					{Content: "S", Width: 1, Style: protocol.CellStyle{BG: statusBG}},
+					{Content: "T", Width: 1, Style: protocol.CellStyle{BG: statusBG}},
+					{Content: "A", Width: 1, Style: protocol.CellStyle{BG: statusBG}},
+					{Content: "T", Width: 1, Style: protocol.CellStyle{BG: statusBG}},
+				},
+			},
+		},
+		Cursor:    protocol.CursorState{Row: 1, Col: 4, Visible: true},
+		Modes:     protocol.TerminalModes{AutoWrap: true, AlternateScreen: true, MouseTracking: true},
+		Timestamp: time.Now(),
+	}
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.VTerm == nil {
+		t.Fatalf("expected hydrated terminal runtime, got %#v", terminal)
+	}
+
+	if err := rt.ResizePane(ctx, "pane-1", "term-1", 4, 4); err != nil {
+		t.Fatalf("resize pane grow: %v", err)
+	}
+
+	if len(client.resizeCalls) != 1 {
+		t.Fatalf("expected one resize call, got %#v", client.resizeCalls)
+	}
+	screen := terminal.VTerm.ScreenContent()
+	if len(screen.Cells) < 4 {
+		t.Fatalf("expected resized vterm height, got %#v", screen.Cells)
+	}
+	if got := screen.Cells[1][0].Style.BG; got != statusBG {
+		t.Fatalf("expected status row to keep background %q, got %#v", statusBG, screen.Cells[1][0])
+	}
+	for _, point := range []struct {
+		row int
+		col int
+	}{
+		{row: 2, col: 0},
+		{row: 2, col: 3},
+		{row: 3, col: 0},
+		{row: 3, col: 3},
+	} {
+		if got := screen.Cells[point.row][point.col].Style.BG; got != "" {
+			t.Fatalf("expected grown row %d col %d to stay unfilled, got %#v", point.row, point.col, screen.Cells[point.row][point.col])
+		}
+	}
+	if terminal.Snapshot == nil || terminal.Snapshot.Size.Rows != 4 {
+		t.Fatalf("expected snapshot size refreshed to height 4, got %#v", terminal.Snapshot)
+	}
+	if got := terminal.Snapshot.Screen.Cells[2][0].Style.BG; got != "" {
+		t.Fatalf("expected refreshed snapshot not to extend status background, got %#v", terminal.Snapshot.Screen.Cells[2][0])
+	}
+}
+
 func TestRuntimeResizeFrameDoesNotExposeLocalShrinkMidStateBeforeOutput(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()

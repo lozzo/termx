@@ -1929,16 +1929,30 @@ func (v *VTerm) captureResizeTailFillLocked(oldCols, oldRows, newCols, newRows i
 	}
 	if newRows > oldRows {
 		scanCols := maxInt(1, minInt(oldCols, newCols))
-		for scanY := oldRows - 1; scanY >= 0; scanY-- {
-			fill := v.screenRowTailBackgroundLocked(scanY, scanCols)
-			if fill == "" {
-				continue
+		bottomRow := minInt(oldRows, v.emu.Height()) - 1
+		if bottomRow >= 0 && v.screenRowBlankForBottomFillLocked(bottomRow, scanCols) {
+			if fill := v.screenRowTailBackgroundLocked(bottomRow, scanCols); fill != "" {
+				v.resizeBottomFillBG = fill
+				v.resizeBottomFillRow = oldRows
 			}
-			v.resizeBottomFillBG = fill
-			v.resizeBottomFillRow = oldRows
-			break
 		}
 	}
+}
+
+func (v *VTerm) screenRowBlankForBottomFillLocked(y, width int) bool {
+	if v == nil || v.emu == nil || y < 0 || y >= v.emu.Height() || width <= 0 {
+		return false
+	}
+	if width > v.emu.Width() {
+		width = v.emu.Width()
+	}
+	for x := 0; x < width; x++ {
+		cell := v.convertCell(v.emu.CellAt(x, y))
+		if strings.TrimSpace(cell.Content) != "" {
+			return false
+		}
+	}
+	return true
 }
 
 func (v *VTerm) screenRowTailBackgroundLocked(y, width int) string {

@@ -205,6 +205,51 @@ func TestVTermWidthGrowFillPersistsThroughPartialWrite(t *testing.T) {
 	}
 }
 
+func TestVTermHeightGrowDoesNotExtendNonBlankBottomRowBackground(t *testing.T) {
+	const statusBG = "#0055aa"
+	vt := New(4, 2, 100, nil)
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{
+			{
+				{Content: " ", Width: 1},
+				{Content: " ", Width: 1},
+				{Content: " ", Width: 1},
+				{Content: " ", Width: 1},
+			},
+			{
+				{Content: "S", Width: 1, Style: CellStyle{BG: statusBG}},
+				{Content: "T", Width: 1, Style: CellStyle{BG: statusBG}},
+				{Content: "A", Width: 1, Style: CellStyle{BG: statusBG}},
+				{Content: "T", Width: 1, Style: CellStyle{BG: statusBG}},
+			},
+		},
+		IsAlternateScreen: true,
+	}, CursorState{Row: 1, Col: 4, Visible: true}, TerminalModes{AlternateScreen: true, MouseTracking: true})
+
+	vt.Resize(4, 4)
+
+	restored := vt.ScreenContent()
+	if len(restored.Cells) < 4 {
+		t.Fatalf("unexpected restored screen dimensions: %#v", restored.Cells)
+	}
+	if got := restored.Cells[1][0].Style.BG; got != statusBG {
+		t.Fatalf("expected status row to keep background %q, got %#v", statusBG, restored.Cells[1][0])
+	}
+	for _, point := range []struct {
+		row int
+		col int
+	}{
+		{row: 2, col: 0},
+		{row: 2, col: 3},
+		{row: 3, col: 0},
+		{row: 3, col: 3},
+	} {
+		if got := restored.Cells[point.row][point.col].Style.BG; got != "" {
+			t.Fatalf("expected grown row %d col %d to stay unfilled, got %#v", point.row, point.col, restored.Cells[point.row][point.col])
+		}
+	}
+}
+
 func TestLoadSnapshotWithTimestampsRestoresRowTimes(t *testing.T) {
 	vt := New(6, 3, 100, nil)
 	scrollbackTS := []time.Time{time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC)}
