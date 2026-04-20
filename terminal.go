@@ -22,17 +22,18 @@ import (
 var terminalIDCounter atomic.Uint64
 
 type terminalConfig struct {
-	ID             string
-	Name           string
-	Command        []string
-	Tags           map[string]string
-	Size           Size
-	Dir            string
-	Env            []string
-	ScrollbackSize int
-	KeepAfterExit  time.Duration
-	RemoveFunc     func(string, string)
-	UpdateFunc     func()
+	ID                 string
+	Name               string
+	Command            []string
+	Tags               map[string]string
+	Size               Size
+	Dir                string
+	Env                []string
+	ScrollbackSize     int
+	KeepAfterExit      time.Duration
+	LiveOutputThrottle liveOutputThrottleConfig
+	RemoveFunc         func(string, string)
+	UpdateFunc         func()
 }
 
 type Terminal struct {
@@ -74,9 +75,12 @@ type Terminal struct {
 	attachMu    sync.Mutex
 	attachments map[string]AttachInfo
 
-	pendingVTermEpoch      uint64
-	pendingVTermOutput     []byte
-	pendingVTermFlushTimer *time.Timer
+	pendingVTermEpoch       uint64
+	pendingVTermOutput      []byte
+	pendingVTermFlushTimer  *time.Timer
+	liveOutputThrottle      liveOutputThrottleConfig
+	liveOutputRecentInputAt atomic.Int64
+	liveOutputBypassArmed   atomic.Bool
 
 	done     chan struct{}
 	readDone chan struct{}
@@ -93,27 +97,28 @@ func newTerminal(ctx context.Context, events *EventBus, cfg terminalConfig) (*Te
 		return nil, err
 	}
 	t := &Terminal{
-		events:         events,
-		pty:            p,
-		vterm:          vt,
-		stream:         fanout.New(),
-		id:             cfg.ID,
-		name:           cfg.Name,
-		command:        append([]string(nil), cfg.Command...),
-		tags:           copyTags(cfg.Tags),
-		size:           cfg.Size,
-		dir:            cfg.Dir,
-		env:            append([]string(nil), cfg.Env...),
-		scrollbackSize: cfg.ScrollbackSize,
-		state:          StateRunning,
-		createdAt:      time.Now().UTC(),
-		keepAfterExit:  cfg.KeepAfterExit,
-		removeFunc:     cfg.RemoveFunc,
-		updateFunc:     cfg.UpdateFunc,
-		attachments:    make(map[string]AttachInfo),
-		done:           make(chan struct{}),
-		readDone:       make(chan struct{}),
-		processEpoch:   1,
+		events:             events,
+		pty:                p,
+		vterm:              vt,
+		stream:             fanout.New(),
+		id:                 cfg.ID,
+		name:               cfg.Name,
+		command:            append([]string(nil), cfg.Command...),
+		tags:               copyTags(cfg.Tags),
+		size:               cfg.Size,
+		dir:                cfg.Dir,
+		env:                append([]string(nil), cfg.Env...),
+		scrollbackSize:     cfg.ScrollbackSize,
+		state:              StateRunning,
+		createdAt:          time.Now().UTC(),
+		keepAfterExit:      cfg.KeepAfterExit,
+		liveOutputThrottle: sanitizeLiveOutputThrottleConfig(cfg.LiveOutputThrottle),
+		removeFunc:         cfg.RemoveFunc,
+		updateFunc:         cfg.UpdateFunc,
+		attachments:        make(map[string]AttachInfo),
+		done:               make(chan struct{}),
+		readDone:           make(chan struct{}),
+		processEpoch:       1,
 	}
 	t.installVTermHandlers()
 
@@ -253,7 +258,7 @@ func forwardLiveStreamMessages(ctx context.Context, src <-chan fanout.StreamMess
 			}
 			continue
 		}
-		batch, next, nextOK := coalesceLiveStreamMessages(msg, src)
+		batch, next, nextHasPending, nextOK := coalesceLiveStreamMessages(msg, src)
 		for _, out := range batch {
 			select {
 			case <-ctx.Done():
@@ -265,11 +270,19 @@ func forwardLiveStreamMessages(ctx context.Context, src <-chan fanout.StreamMess
 			return
 		}
 		pending = next
-		hasPending = true
+		hasPending = nextHasPending
 	}
 }
 
 func (t *Terminal) forwardTerminalStreamMessages(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage) {
+	if t == nil || !t.liveOutputThrottle.enabled() {
+		forwardTerminalStreamMessagesImmediate(ctx, src, dst, nil)
+		return
+	}
+	t.forwardTerminalStreamMessagesRateLimited(ctx, src, dst)
+}
+
+func forwardTerminalStreamMessagesImmediate(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage, fallback func() StreamMessage) {
 	var (
 		pending    fanout.StreamMessage
 		hasPending bool
@@ -287,10 +300,10 @@ func (t *Terminal) forwardTerminalStreamMessages(ctx context.Context, src <-chan
 			}
 			continue
 		}
-		batch, next, nextOK := coalesceLiveStreamMessages(msg, src)
+		batch, next, nextHasPending, nextOK := coalesceLiveStreamMessages(msg, src)
 		for _, out := range batch {
-			if out.Type == StreamSyncLost {
-				out = t.screenSnapshotFallbackMessage()
+			if out.Type == StreamSyncLost && fallback != nil {
+				out = fallback()
 			}
 			select {
 			case <-ctx.Done():
@@ -302,7 +315,140 @@ func (t *Terminal) forwardTerminalStreamMessages(ctx context.Context, src <-chan
 			return
 		}
 		pending = next
-		hasPending = true
+		hasPending = nextHasPending
+	}
+}
+
+func (t *Terminal) forwardTerminalStreamMessagesRateLimited(ctx context.Context, src <-chan fanout.StreamMessage, dst chan<- StreamMessage) {
+	var (
+		timer         *time.Timer
+		timerCh       <-chan time.Time
+		timerDueAt    time.Time
+		pending       []byte
+		pendingShared bool
+	)
+	stopTimer := func() {
+		if timer == nil {
+			timerCh = nil
+			timerDueAt = time.Time{}
+			return
+		}
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timerCh = nil
+		timerDueAt = time.Time{}
+	}
+	send := func(msg StreamMessage) bool {
+		select {
+		case <-ctx.Done():
+			return false
+		case dst <- msg:
+			return true
+		}
+	}
+	flushPending := func() bool {
+		if len(pending) == 0 {
+			stopTimer()
+			return true
+		}
+		output := pending
+		pending = nil
+		pendingShared = false
+		stopTimer()
+		return send(StreamMessage{Type: StreamOutput, Output: output})
+	}
+	armTimer := func(delay time.Duration) {
+		if delay <= 0 {
+			return
+		}
+		if timer == nil {
+			timer = time.NewTimer(delay)
+		} else {
+			stopTimer()
+			timer.Reset(delay)
+		}
+		timerCh = timer.C
+		timerDueAt = time.Now().Add(delay)
+	}
+	ensureFlushDelay := func() bool {
+		delay := t.liveOutputFrameInterval()
+		if delay <= 0 {
+			return flushPending()
+		}
+		if timerCh == nil {
+			armTimer(delay)
+			return true
+		}
+		if remaining := time.Until(timerDueAt); remaining > delay {
+			armTimer(delay)
+		}
+		return true
+	}
+	appendOutput := func(chunk []byte) bool {
+		if len(chunk) == 0 {
+			return true
+		}
+		if len(pending) > 0 && len(pending)+len(chunk) > maxMergedLiveOutputBytes {
+			if !flushPending() {
+				return false
+			}
+		}
+		if len(pending) == 0 {
+			pending = chunk
+			pendingShared = true
+			return ensureFlushDelay()
+		}
+		if pendingShared {
+			merged := make([]byte, 0, len(pending)+len(chunk))
+			merged = append(merged, pending...)
+			merged = append(merged, chunk...)
+			pending = merged
+			pendingShared = false
+		} else {
+			pending = append(pending, chunk...)
+		}
+		return ensureFlushDelay()
+	}
+
+	defer stopTimer()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timerCh:
+			if !flushPending() {
+				return
+			}
+		case msg, ok := <-src:
+			if !ok {
+				_ = flushPending()
+				return
+			}
+			switch msg.Type {
+			case fanout.StreamOutput:
+				if !appendOutput(msg.Output) {
+					return
+				}
+			case fanout.StreamSyncLost:
+				if !flushPending() {
+					return
+				}
+				if !send(t.screenSnapshotFallbackMessage()) {
+					return
+				}
+			default:
+				if !flushPending() {
+					return
+				}
+				if !send(cloneFanoutStreamMessage(msg)) {
+					return
+				}
+			}
+		}
 	}
 }
 
@@ -315,7 +461,7 @@ func nextLiveStreamMessage(src <-chan fanout.StreamMessage, pending *fanout.Stre
 	return msg, ok
 }
 
-func coalesceLiveStreamMessages(first fanout.StreamMessage, src <-chan fanout.StreamMessage) ([]StreamMessage, fanout.StreamMessage, bool) {
+func coalesceLiveStreamMessages(first fanout.StreamMessage, src <-chan fanout.StreamMessage) ([]StreamMessage, fanout.StreamMessage, bool, bool) {
 	batch := make([]StreamMessage, 0, 4)
 	var (
 		output       []byte
@@ -373,9 +519,9 @@ func coalesceLiveStreamMessages(first fanout.StreamMessage, src <-chan fanout.St
 	}
 	if pending, hasPending, ok := handle(first); hasPending || !ok {
 		if !ok {
-			return batch, fanout.StreamMessage{}, false
+			return batch, fanout.StreamMessage{}, false, false
 		}
-		return batch, pending, true
+		return batch, pending, true, true
 	}
 	for {
 		select {
@@ -383,18 +529,18 @@ func coalesceLiveStreamMessages(first fanout.StreamMessage, src <-chan fanout.St
 			if !ok {
 				flushOutput()
 				flushDropped()
-				return batch, fanout.StreamMessage{}, false
+				return batch, fanout.StreamMessage{}, false, false
 			}
 			if pending, hasPending, ok := handle(msg); hasPending || !ok {
 				if !ok {
-					return batch, fanout.StreamMessage{}, false
+					return batch, fanout.StreamMessage{}, false, false
 				}
-				return batch, pending, true
+				return batch, pending, true, true
 			}
 		default:
 			flushOutput()
 			flushDropped()
-			return batch, fanout.StreamMessage{}, true
+			return batch, fanout.StreamMessage{}, false, true
 		}
 	}
 }
@@ -410,8 +556,54 @@ func (t *Terminal) WriteInput(data []byte) error {
 		return ErrTerminalExited
 	}
 	t.mu.RUnlock()
+	t.noteLiveOutputInput()
 	_, err := t.pty.Write(data)
 	return err
+}
+
+func (t *Terminal) noteLiveOutputInput() {
+	if t == nil {
+		return
+	}
+	t.liveOutputRecentInputAt.Store(time.Now().UnixNano())
+	t.liveOutputBypassArmed.Store(true)
+}
+
+func (t *Terminal) recentLiveOutputInput() bool {
+	if t == nil {
+		return false
+	}
+	at := t.liveOutputRecentInputAt.Load()
+	if at == 0 {
+		return false
+	}
+	return time.Since(time.Unix(0, at)) <= liveOutputInteractiveWindow
+}
+
+func (t *Terminal) consumeLiveOutputBypass() bool {
+	if t == nil || !t.recentLiveOutputInput() {
+		return false
+	}
+	return t.liveOutputBypassArmed.Swap(false)
+}
+
+func (t *Terminal) liveOutputFrameInterval() time.Duration {
+	if t == nil {
+		return 0
+	}
+	if t.consumeLiveOutputBypass() {
+		return 0
+	}
+	delay := t.liveOutputThrottle.frameInterval()
+	if delay <= 0 {
+		return 0
+	}
+	if t.recentLiveOutputInput() {
+		if interactive := t.liveOutputThrottle.interactiveFrameInterval(); interactive > 0 && interactive < delay {
+			return interactive
+		}
+	}
+	return delay
 }
 
 func (t *Terminal) Resize(cols, rows uint16) error {

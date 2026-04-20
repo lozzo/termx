@@ -30,6 +30,7 @@ type serverConfig struct {
 	defaultSize          Size
 	defaultScrollback    int
 	defaultKeepAfterExit time.Duration
+	liveOutputThrottle   liveOutputThrottleConfig
 	logger               *slog.Logger
 }
 
@@ -54,6 +55,7 @@ func NewServer(opts ...ServerOption) *Server {
 		defaultSize:          Size{Cols: 80, Rows: 24},
 		defaultScrollback:    10000,
 		defaultKeepAfterExit: 5 * time.Minute,
+		liveOutputThrottle:   defaultLiveOutputThrottleConfig(),
 		logger:               slog.New(slog.NewTextHandler(discardWriter{}, nil)),
 	}
 	for _, opt := range opts {
@@ -104,6 +106,12 @@ func WithLogger(logger *slog.Logger) ServerOption {
 		if logger != nil {
 			cfg.logger = logger
 		}
+	}
+}
+
+func WithLiveOutputFPS(fps int) ServerOption {
+	return func(cfg *serverConfig) {
+		cfg.liveOutputThrottle = sanitizeLiveOutputThrottleConfig(liveOutputThrottleConfig{FPS: fps})
 	}
 }
 
@@ -158,17 +166,18 @@ func (s *Server) Create(ctx context.Context, opts CreateOptions) (*TerminalInfo,
 	s.mu.Unlock()
 
 	term, err := newTerminal(context.Background(), s.events, terminalConfig{
-		ID:             id,
-		Name:           name,
-		Command:        append([]string(nil), opts.Command...),
-		Tags:           copyTags(opts.Tags),
-		Size:           size,
-		Dir:            opts.Dir,
-		Env:            opts.Env,
-		ScrollbackSize: scrollback,
-		KeepAfterExit:  keepAfterExit,
-		RemoveFunc:     s.removeTerminal,
-		UpdateFunc:     s.invalidateProtocolListCache,
+		ID:                 id,
+		Name:               name,
+		Command:            append([]string(nil), opts.Command...),
+		Tags:               copyTags(opts.Tags),
+		Size:               size,
+		Dir:                opts.Dir,
+		Env:                opts.Env,
+		ScrollbackSize:     scrollback,
+		KeepAfterExit:      keepAfterExit,
+		LiveOutputThrottle: s.cfg.liveOutputThrottle,
+		RemoveFunc:         s.removeTerminal,
+		UpdateFunc:         s.invalidateProtocolListCache,
 	})
 	if err != nil {
 		return nil, err
