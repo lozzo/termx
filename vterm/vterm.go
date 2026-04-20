@@ -140,16 +140,26 @@ type DamageRow struct {
 	RowKind   string
 }
 
+type DamageSpan struct {
+	Row       int
+	ColStart  int
+	Cells     []Cell
+	Op        protocol.ScreenSpanOp
+	Timestamp time.Time
+	RowKind   string
+}
+
 type WriteDamage struct {
-	ChangedScreenRows []DamageRow
-	ScrollbackAppend  []DamageRow
-	ScrollbackTrim    int
-	ScreenScroll      int
-	Cursor            CursorState
-	Modes             TerminalModes
-	SizeCols          int
-	SizeRows          int
-	DiffCPUNanos      int64
+	ChangedScreenSpans []DamageSpan
+	ChangedScreenRows  []DamageRow
+	ScrollbackAppend   []DamageRow
+	ScrollbackTrim     int
+	ScreenScroll       int
+	Cursor             CursorState
+	Modes              TerminalModes
+	SizeCols           int
+	SizeRows           int
+	DiffCPUNanos       int64
 }
 
 const modeAlternateScroll ansi.DECMode = 1007
@@ -269,6 +279,7 @@ func (v *VTerm) WriteWithDamage(data []byte) (n int, err error, damage WriteDama
 	}
 	snapshotFinish := perftrace.Measure("vterm.write.before_snapshot")
 	beforeScreen := append([]rowFingerprint(nil), v.screenFingerprintCache...)
+	beforeScreenRows := cloneCellRows(v.screenRowsLocked())
 	beforeScrollbackLen := v.scrollbackRowCountLocked()
 	beforeScreenTimestamps := cloneTimeSlice(v.screenTimestamps)
 	beforeScreenRowKinds := cloneStringSlice(v.screenRowKinds)
@@ -306,9 +317,9 @@ func (v *VTerm) WriteWithDamage(data []byte) (n int, err error, damage WriteDama
 		beforeWidth != afterWidth,
 		beforeHeight != afterHeight,
 		beforeAltScreen != afterAltScreen:
-		damage = v.writeDamageFullCompareLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, now)
+		damage = v.writeDamageFullCompareLocked(beforeScreenRows, beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, now)
 	default:
-		damage = v.writeDamageDirtyRowsLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, dirtyRows, now)
+		damage = v.writeDamageDirtyRowsLocked(beforeScreenRows, beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, dirtyRows, now)
 	}
 	damage.DiffCPUNanos = time.Since(diffStart).Nanoseconds()
 	reconcileFinish(0)
@@ -425,7 +436,7 @@ func (v *VTerm) LoadSnapshotWithMetadata(scrollback [][]Cell, scrollbackTimestam
 func (v *VTerm) ApplyScreenUpdate(update protocol.ScreenUpdate) bool {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	return v.applyScreenUpdateLocked(update)
+	return v.applyScreenUpdateLocked(protocol.NormalizeScreenUpdate(update))
 }
 
 func (v *VTerm) applyScreenUpdateLocked(update protocol.ScreenUpdate) bool {
@@ -442,8 +453,15 @@ func (v *VTerm) applyScreenUpdateLocked(update protocol.ScreenUpdate) bool {
 	v.applyScreenScrollLocked(update.ScreenScroll)
 
 	var b strings.Builder
-	for _, row := range update.ChangedRows {
-		writeAbsoluteProtocolRowSnapshot(&b, row.Row, row.Cells)
+	for _, span := range update.ChangedSpans {
+		switch span.Op {
+		case protocol.ScreenSpanOpClearToEOL:
+			writeProtocolClearToEOL(&b, span.Row, span.ColStart)
+		case protocol.ScreenSpanOpReplaceRow:
+			writeAbsoluteProtocolRowSnapshot(&b, span.Row, span.Cells)
+		default:
+			writeProtocolSpanSnapshot(&b, span.Row, span.ColStart, span.Cells)
+		}
 	}
 
 	modes := terminalModesFromProtocol(update.Modes)
@@ -468,12 +486,12 @@ func (v *VTerm) applyScreenUpdateLocked(update protocol.ScreenUpdate) bool {
 	height := v.emu.Height()
 	v.screenTimestamps = normalizeTimeSlice(v.screenTimestamps, height)
 	v.screenRowKinds = normalizeStringSlice(v.screenRowKinds, height)
-	for _, row := range update.ChangedRows {
-		if row.Row < 0 || row.Row >= height {
+	for _, span := range update.ChangedSpans {
+		if span.Row < 0 || span.Row >= height {
 			continue
 		}
-		v.screenTimestamps[row.Row] = row.Timestamp
-		v.screenRowKinds[row.Row] = row.RowKind
+		v.screenTimestamps[span.Row] = span.Timestamp
+		v.screenRowKinds[span.Row] = span.RowKind
 	}
 	v.cursor = cursor
 	v.modes = modes
@@ -562,8 +580,11 @@ func (v *VTerm) canApplyScreenUpdateLocked(update protocol.ScreenUpdate) bool {
 	if v.emu.IsAltScreen() != update.Modes.AlternateScreen {
 		return false
 	}
-	for _, row := range update.ChangedRows {
-		if row.Row < 0 || row.Row >= targetRows {
+	for _, span := range update.ChangedSpans {
+		if span.Row < 0 || span.Row >= targetRows {
+			return false
+		}
+		if span.ColStart < 0 || span.ColStart > targetCols {
 			return false
 		}
 	}
@@ -1107,6 +1128,36 @@ func writeAbsoluteProtocolRowSnapshot(b *strings.Builder, y int, row []protocol.
 		b.WriteString(content)
 	}
 	b.WriteString("\x1b[0m")
+}
+
+func writeProtocolSpanSnapshot(b *strings.Builder, y int, colStart int, cells []protocol.Cell) {
+	if b == nil || y < 0 || colStart < 0 || len(cells) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\x1b[%d;%dH\x1b[0m", y+1, colStart+1)
+	currentStyle := protocol.CellStyle{}
+	for _, cell := range cells {
+		if cell.Content == "" && cell.Width == 0 {
+			continue
+		}
+		content := cell.Content
+		if content == "" {
+			content = " "
+		}
+		if cell.Style != currentStyle {
+			b.WriteString(cellStyleANSI(cellStyleFromProtocol(cell.Style)))
+			currentStyle = cell.Style
+		}
+		b.WriteString(content)
+	}
+	b.WriteString("\x1b[0m")
+}
+
+func writeProtocolClearToEOL(b *strings.Builder, y int, colStart int) {
+	if b == nil || y < 0 || colStart < 0 {
+		return
+	}
+	fmt.Fprintf(b, "\x1b[%d;%dH\x1b[0m\x1b[K", y+1, colStart+1)
 }
 
 func lastSignificantProtocolCell(row []protocol.Cell) int {
@@ -1797,7 +1848,7 @@ func (v *VTerm) rowFingerprintLocked(width int, cellAt func(int) *uv.Cell) rowFi
 	return fingerprint
 }
 
-func (v *VTerm) writeDamageDirtyRowsLocked(beforeScreen []rowFingerprint, beforeScreenTimestamps []time.Time, beforeScreenRowKinds []string, beforeScrollbackLen int, dirtyRows []int, now time.Time) WriteDamage {
+func (v *VTerm) writeDamageDirtyRowsLocked(beforeScreenRows [][]Cell, beforeScreen []rowFingerprint, beforeScreenTimestamps []time.Time, beforeScreenRowKinds []string, beforeScrollbackLen int, dirtyRows []int, now time.Time) WriteDamage {
 	if v == nil || v.emu == nil {
 		return WriteDamage{}
 	}
@@ -1808,20 +1859,20 @@ func (v *VTerm) writeDamageDirtyRowsLocked(beforeScreen []rowFingerprint, before
 		}
 		v.screenFingerprintCache[row] = v.screenRowFingerprintLocked(row)
 	}
-	return v.writeDamageFromFingerprintsLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, v.screenFingerprintCache, now)
+	return v.writeDamageFromFingerprintsLocked(beforeScreenRows, beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, v.screenFingerprintCache, now)
 }
 
-func (v *VTerm) writeDamageFullCompareLocked(beforeScreen []rowFingerprint, beforeScreenTimestamps []time.Time, beforeScreenRowKinds []string, beforeScrollbackLen int, now time.Time) WriteDamage {
+func (v *VTerm) writeDamageFullCompareLocked(beforeScreenRows [][]Cell, beforeScreen []rowFingerprint, beforeScreenTimestamps []time.Time, beforeScreenRowKinds []string, beforeScrollbackLen int, now time.Time) WriteDamage {
 	afterScreen := v.screenRowFingerprintsLocked()
 	v.screenFingerprintCache = afterScreen
-	return v.writeDamageFromFingerprintsLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, afterScreen, now)
+	return v.writeDamageFromFingerprintsLocked(beforeScreenRows, beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, afterScreen, now)
 }
 
-func (v *VTerm) writeDamageFromFingerprintsLocked(beforeScreen []rowFingerprint, beforeScreenTimestamps []time.Time, beforeScreenRowKinds []string, beforeScrollbackLen int, afterScreen []rowFingerprint, now time.Time) WriteDamage {
+func (v *VTerm) writeDamageFromFingerprintsLocked(beforeScreenRows [][]Cell, beforeScreen []rowFingerprint, beforeScreenTimestamps []time.Time, beforeScreenRowKinds []string, beforeScrollbackLen int, afterScreen []rowFingerprint, now time.Time) WriteDamage {
 	cachePlan := v.reconcileRowMetadataLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, afterScreen, now)
 	v.pruneResizeTailFillLocked()
 	v.reconcileRowCachesLocked(beforeScreen, cachePlan)
-	return v.writeDamageLocked(beforeScreen, cachePlan)
+	return v.writeDamageLocked(beforeScreenRows, beforeScreen, cachePlan)
 }
 
 func (v *VTerm) reconcileRowMetadataLocked(beforeScreen []rowFingerprint, beforeScreenTimestamps []time.Time, beforeScreenRowKinds []string, beforeScrollbackLen int, afterScreen []rowFingerprint, now time.Time) rowCacheReconcilePlan {
@@ -1951,7 +2002,7 @@ func (v *VTerm) reconcileRowCachesLocked(beforeScreen []rowFingerprint, plan row
 	v.scrollbackRowCache = nextScrollbackCache
 }
 
-func (v *VTerm) writeDamageLocked(beforeScreen []rowFingerprint, plan rowCacheReconcilePlan) WriteDamage {
+func (v *VTerm) writeDamageLocked(beforeScreenRows [][]Cell, beforeScreen []rowFingerprint, plan rowCacheReconcilePlan) WriteDamage {
 	damage := WriteDamage{
 		Cursor:       v.cursor,
 		Modes:        v.modes,
@@ -1981,12 +2032,15 @@ func (v *VTerm) writeDamageLocked(beforeScreen []rowFingerprint, plan rowCacheRe
 		if mappedRow < len(beforeScreen) && rowFingerprintsEqual(beforeScreen[mappedRow], plan.afterScreen[row]) {
 			continue
 		}
+		beforeRow := cellRowAt(beforeScreenRows, mappedRow)
+		afterRow := cloneCellSlice(v.screenRowViewLocked(row))
 		damage.ChangedScreenRows = append(damage.ChangedScreenRows, DamageRow{
 			Row:       row,
-			Cells:     cloneCellSlice(v.screenRowViewLocked(row)),
+			Cells:     cloneCellSlice(afterRow),
 			Timestamp: timeAt(v.screenTimestamps, row),
 			RowKind:   stringAt(v.screenRowKinds, row),
 		})
+		damage.ChangedScreenSpans = append(damage.ChangedScreenSpans, buildDamageSpansForRow(beforeRow, afterRow, row, timeAt(v.screenTimestamps, row), stringAt(v.screenRowKinds, row))...)
 	}
 	for row := retainedFromOldScrollback; row < afterScrollbackLen; row++ {
 		damage.ScrollbackAppend = append(damage.ScrollbackAppend, DamageRow{
@@ -2048,18 +2102,189 @@ func rowFingerprintIsBlank(row rowFingerprint) bool {
 }
 
 func damageChangedRowCount(damage WriteDamage) int {
-	return len(damage.ChangedScreenRows) + len(damage.ScrollbackAppend)
+	seen := make(map[int]struct{}, len(damage.ChangedScreenSpans))
+	for _, span := range damage.ChangedScreenSpans {
+		seen[span.Row] = struct{}{}
+	}
+	return len(seen) + len(damage.ScrollbackAppend)
 }
 
 func damageChangedCellCount(damage WriteDamage) int {
 	count := 0
-	for _, row := range damage.ChangedScreenRows {
-		count += trimmedDamageCellCount(row.Cells)
+	for _, span := range damage.ChangedScreenSpans {
+		switch span.Op {
+		case protocol.ScreenSpanOpClearToEOL:
+			continue
+		case protocol.ScreenSpanOpReplaceRow:
+			count += trimmedDamageCellCount(span.Cells)
+		default:
+			count += len(span.Cells)
+		}
 	}
 	for _, row := range damage.ScrollbackAppend {
 		count += trimmedDamageCellCount(row.Cells)
 	}
 	return count
+}
+
+func buildDamageSpansForRow(beforeRow, afterRow []Cell, row int, ts time.Time, rowKind string) []DamageSpan {
+	width := maxInt(len(beforeRow), len(afterRow))
+	if width == 0 {
+		return nil
+	}
+	prefix := longestCommonCellPrefix(beforeRow, afterRow, width)
+	if prefix >= width {
+		return nil
+	}
+	prefix = adjustSpanStartBoundary(beforeRow, afterRow, prefix)
+	if clearFrom, ok := clearToEOLStart(beforeRow, afterRow, prefix, width); ok {
+		spans := make([]DamageSpan, 0, 2)
+		if clearFrom > prefix {
+			spans = append(spans, DamageSpan{
+				Row:       row,
+				ColStart:  prefix,
+				Cells:     cloneCellSlice(cellRowWindow(afterRow, prefix, clearFrom)),
+				Op:        protocol.ScreenSpanOpWrite,
+				Timestamp: ts,
+				RowKind:   rowKind,
+			})
+		}
+		spans = append(spans, DamageSpan{
+			Row:       row,
+			ColStart:  clearFrom,
+			Op:        protocol.ScreenSpanOpClearToEOL,
+			Timestamp: ts,
+			RowKind:   rowKind,
+		})
+		return spans
+	}
+	suffix := longestCommonCellSuffix(beforeRow, afterRow, prefix, width)
+	end := width - suffix
+	end = adjustSpanEndBoundary(afterRow, end)
+	if end <= prefix {
+		return nil
+	}
+	return []DamageSpan{{
+		Row:       row,
+		ColStart:  prefix,
+		Cells:     cloneCellSlice(cellRowWindow(afterRow, prefix, end)),
+		Op:        protocol.ScreenSpanOpWrite,
+		Timestamp: ts,
+		RowKind:   rowKind,
+	}}
+}
+
+func longestCommonCellPrefix(beforeRow, afterRow []Cell, width int) int {
+	prefix := 0
+	for prefix < width && cellAt(beforeRow, prefix) == cellAt(afterRow, prefix) {
+		prefix++
+	}
+	return prefix
+}
+
+func longestCommonCellSuffix(beforeRow, afterRow []Cell, prefix, width int) int {
+	suffix := 0
+	for suffix < width-prefix {
+		beforeIndex := width - 1 - suffix
+		afterIndex := width - 1 - suffix
+		if cellAt(beforeRow, beforeIndex) != cellAt(afterRow, afterIndex) {
+			break
+		}
+		suffix++
+	}
+	return suffix
+}
+
+func clearToEOLStart(beforeRow, afterRow []Cell, prefix, width int) (int, bool) {
+	for col := prefix; col <= width; col++ {
+		if !rowTailIsClearEquivalent(afterRow, col, width) {
+			continue
+		}
+		if rowsEqualFrom(beforeRow, afterRow, col, width) {
+			continue
+		}
+		col = adjustSpanStartBoundary(beforeRow, afterRow, col)
+		if rowTailIsClearEquivalent(afterRow, col, width) {
+			return col, true
+		}
+	}
+	return 0, false
+}
+
+func adjustSpanStartBoundary(beforeRow, afterRow []Cell, col int) int {
+	for col > 0 {
+		if !isWideContinuationCell(cellAt(beforeRow, col)) && !isWideContinuationCell(cellAt(afterRow, col)) {
+			break
+		}
+		col--
+	}
+	return col
+}
+
+func adjustSpanEndBoundary(afterRow []Cell, end int) int {
+	for end < len(afterRow) && isWideContinuationCell(afterRow[end]) {
+		end++
+	}
+	return end
+}
+
+func rowTailIsClearEquivalent(row []Cell, start, width int) bool {
+	for col := start; col < width; col++ {
+		if !isClearEquivalentCell(cellAt(row, col)) {
+			return false
+		}
+	}
+	return true
+}
+
+func rowsEqualFrom(beforeRow, afterRow []Cell, start, width int) bool {
+	for col := start; col < width; col++ {
+		if cellAt(beforeRow, col) != cellAt(afterRow, col) {
+			return false
+		}
+	}
+	return true
+}
+
+func cellRowWindow(row []Cell, start, end int) []Cell {
+	if start < 0 {
+		start = 0
+	}
+	if end < start {
+		end = start
+	}
+	if end > len(row) {
+		end = len(row)
+	}
+	return row[start:end]
+}
+
+func cellRowAt(rows [][]Cell, row int) []Cell {
+	if row < 0 || row >= len(rows) {
+		return nil
+	}
+	return rows[row]
+}
+
+func cellAt(row []Cell, col int) Cell {
+	if col < 0 || col >= len(row) {
+		return Cell{Content: " ", Width: 1}
+	}
+	return row[col]
+}
+
+func isWideContinuationCell(cell Cell) bool {
+	return cell.Content == "" && cell.Width == 0
+}
+
+func isClearEquivalentCell(cell Cell) bool {
+	if cell.Style != (CellStyle{}) {
+		return false
+	}
+	if cell.Width != 1 {
+		return false
+	}
+	return strings.TrimSpace(cell.Content) == ""
 }
 
 func trimmedDamageCellCount(row []Cell) int {
@@ -2192,6 +2417,17 @@ func cloneCellSlice(values []Cell) []Cell {
 		return nil
 	}
 	return append([]Cell(nil), values...)
+}
+
+func cloneCellRows(rows [][]Cell) [][]Cell {
+	if len(rows) == 0 {
+		return nil
+	}
+	out := make([][]Cell, len(rows))
+	for i, row := range rows {
+		out[i] = cloneCellSlice(row)
+	}
+	return out
 }
 
 func cloneUVLine(values uv.Line) uv.Line {

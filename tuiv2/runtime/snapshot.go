@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lozzow/termx/protocol"
@@ -285,6 +286,7 @@ func protocolCellFromVTermCell(cell localvterm.Cell) protocol.Cell {
 }
 
 func applyScreenUpdateSnapshot(current *protocol.Snapshot, terminalID string, update protocol.ScreenUpdate) *protocol.Snapshot {
+	update = protocol.NormalizeScreenUpdate(update)
 	if update.FullReplace {
 		snapshot := &protocol.Snapshot{TerminalID: terminalID}
 		if snapshot.TerminalID == "" {
@@ -351,14 +353,23 @@ func applyScreenUpdateSnapshot(current *protocol.Snapshot, terminalID string, up
 		scrollbackTimestampsOwned = true
 		scrollbackRowKindsOwned = true
 	}
-	for _, row := range update.ChangedRows {
-		if row.Row < 0 {
+	screenRowCellsOwned := make(map[int]bool)
+	for _, span := range update.ChangedSpans {
+		if span.Row < 0 {
 			continue
 		}
-		ensureSnapshotScreenRowsCOW(snapshot, row.Row+1, &screenCellsOwned, &screenTimestampsOwned, &screenRowKindsOwned)
-		snapshot.Screen.Cells[row.Row] = cloneProtocolCellRow(row.Cells)
-		snapshot.ScreenTimestamps[row.Row] = row.Timestamp
-		snapshot.ScreenRowKinds[row.Row] = row.RowKind
+		ensureSnapshotScreenRowsCOW(snapshot, span.Row+1, &screenCellsOwned, &screenTimestampsOwned, &screenRowKindsOwned)
+		ensureSnapshotScreenRowCellsCOW(snapshot, span.Row, &screenCellsOwned, screenRowCellsOwned)
+		switch span.Op {
+		case protocol.ScreenSpanOpClearToEOL:
+			snapshot.Screen.Cells[span.Row] = clearProtocolCellRowFrom(snapshot.Screen.Cells[span.Row], span.ColStart)
+		case protocol.ScreenSpanOpReplaceRow:
+			snapshot.Screen.Cells[span.Row] = trimProtocolCellRow(cloneProtocolCellRow(span.Cells))
+		default:
+			snapshot.Screen.Cells[span.Row] = applyProtocolCellSpan(snapshot.Screen.Cells[span.Row], span.ColStart, span.Cells)
+		}
+		snapshot.ScreenTimestamps[span.Row] = span.Timestamp
+		snapshot.ScreenRowKinds[span.Row] = span.RowKind
 	}
 	if appendCount := len(update.ScrollbackAppend); appendCount > 0 {
 		baseRows := len(snapshot.Scrollback)
@@ -416,6 +427,91 @@ func cloneProtocolCellRow(row []protocol.Cell) []protocol.Cell {
 		return nil
 	}
 	return append([]protocol.Cell(nil), row...)
+}
+
+func ensureSnapshotScreenRowCellsCOW(snapshot *protocol.Snapshot, row int, screenCellsOwned *bool, ownedRows map[int]bool) {
+	if snapshot == nil || row < 0 {
+		return
+	}
+	snapshot.Screen.Cells = cowProtocolRows(snapshot.Screen.Cells, row+1, screenCellsOwned)
+	if ownedRows != nil {
+		if ownedRows[row] {
+			return
+		}
+		ownedRows[row] = true
+	}
+	snapshot.Screen.Cells[row] = cloneProtocolCellRow(snapshot.Screen.Cells[row])
+}
+
+func applyProtocolCellSpan(row []protocol.Cell, colStart int, cells []protocol.Cell) []protocol.Cell {
+	if colStart < 0 {
+		colStart = 0
+	}
+	if len(cells) == 0 {
+		return trimProtocolCellRow(row)
+	}
+	row = padProtocolCellRow(row, colStart+len(cells))
+	copy(row[colStart:], cells)
+	return trimProtocolCellRow(row)
+}
+
+func clearProtocolCellRowFrom(row []protocol.Cell, colStart int) []protocol.Cell {
+	if colStart <= 0 {
+		return nil
+	}
+	if colStart >= len(row) {
+		return trimProtocolCellRow(row)
+	}
+	return trimProtocolCellRow(cloneProtocolCellRow(row[:colStart]))
+}
+
+func padProtocolCellRow(row []protocol.Cell, cols int) []protocol.Cell {
+	if cols <= len(row) {
+		return row
+	}
+	if row == nil {
+		row = make([]protocol.Cell, 0, cols)
+	}
+	for len(row) < cols {
+		row = append(row, protocolBlankCell())
+	}
+	return row
+}
+
+func trimProtocolCellRow(row []protocol.Cell) []protocol.Cell {
+	if len(row) == 0 {
+		return nil
+	}
+	last := -1
+	for i, cell := range row {
+		if protocolCellNeedsSnapshotRow(cell) {
+			last = i
+			if cell.Width > 1 {
+				last = maxInt(last, minInt(len(row)-1, i+cell.Width-1))
+			}
+		}
+	}
+	if last < 0 {
+		return nil
+	}
+	return cloneProtocolCellRow(row[:last+1])
+}
+
+func protocolCellNeedsSnapshotRow(cell protocol.Cell) bool {
+	if cell.Style != (protocol.CellStyle{}) {
+		return true
+	}
+	if cell.Width > 1 {
+		return true
+	}
+	if cell.Content == "" {
+		return false
+	}
+	return strings.TrimSpace(cell.Content) != ""
+}
+
+func protocolBlankCell() protocol.Cell {
+	return protocol.Cell{Content: " ", Width: 1}
 }
 
 func cowProtocolRows(rows [][]protocol.Cell, size int, owned *bool) [][]protocol.Cell {
@@ -560,6 +656,11 @@ func cloneProtocolRowsWindow(rows [][]protocol.Cell, start int) [][]protocol.Cel
 
 func maxChangedScreenRow(update protocol.ScreenUpdate) int {
 	maxRow := -1
+	for _, span := range update.ChangedSpans {
+		if span.Row > maxRow {
+			maxRow = span.Row
+		}
+	}
 	for _, row := range update.ChangedRows {
 		if row.Row > maxRow {
 			maxRow = row.Row

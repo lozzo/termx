@@ -259,6 +259,262 @@ func TestClassifyScreenUpdateTreatsTitleOnlyUpdateAsNonContentChange(t *testing.
 	}
 }
 
+func TestDecodeScreenUpdatePayloadKeepsTSU2Compatibility(t *testing.T) {
+	update := ScreenUpdate{
+		Size: protocolSize(12, 2),
+		ChangedRows: []ScreenRowUpdate{{
+			Row: 1,
+			Cells: []Cell{
+				{Content: "o", Width: 1},
+				{Content: "k", Width: 1},
+			},
+			Timestamp: time.Date(2026, 4, 20, 1, 0, 0, 0, time.UTC),
+			RowKind:   "legacy-row",
+		}},
+		Cursor: CursorState{Row: 1, Col: 2, Visible: true},
+		Modes:  TerminalModes{AutoWrap: true},
+	}
+
+	payload, err := encodeScreenUpdatePayloadBinaryV2(update)
+	if err != nil {
+		t.Fatalf("encode tsu2 payload: %v", err)
+	}
+	decoded, err := DecodeScreenUpdatePayload(payload)
+	if err != nil {
+		t.Fatalf("decode tsu2 payload: %v", err)
+	}
+	if len(decoded.ChangedRows) != 1 {
+		t.Fatalf("expected legacy changed rows preserved, got %#v", decoded.ChangedRows)
+	}
+	if len(decoded.ChangedSpans) != 1 {
+		t.Fatalf("expected tsu2 decode to synthesize one replace-row span, got %#v", decoded.ChangedSpans)
+	}
+	if decoded.ChangedSpans[0].Op != ScreenSpanOpReplaceRow || decoded.ChangedSpans[0].Row != 1 {
+		t.Fatalf("unexpected synthesized replace-row span: %#v", decoded.ChangedSpans[0])
+	}
+}
+
+func TestScreenUpdatePayloadTSU3WireCases(t *testing.T) {
+	type wireCase struct {
+		name     string
+		legacy   ScreenUpdate
+		modern   ScreenUpdate
+		wantTSU2 int
+		wantTSU3 int
+	}
+
+	styleOnlyRow := filledRow(32)
+	writeText(styleOnlyRow, 0, "plain-text")
+	styleOnlyRow[5] = Cell{Content: "x", Width: 1, Style: CellStyle{FG: "#112233", Bold: true}}
+
+	wideRow := filledRow(24)
+	writeText(wideRow, 0, "A")
+	writeWideCell(wideRow, 1, Cell{Content: "界", Width: 2})
+	writeText(wideRow, 3, "B")
+
+	resizeRow := filledRow(96)
+	writeText(resizeRow, 72, "ok")
+
+	cases := []wireCase{
+		{
+			name: "high_col_single_char_change",
+			legacy: ScreenUpdate{
+				Size: protocolSize(160, 1),
+				ChangedRows: []ScreenRowUpdate{{
+					Row:   0,
+					Cells: rowWithTextAt(160, 137, "Z"),
+				}},
+				Cursor: CursorState{Row: 0, Col: 138, Visible: true},
+				Modes:  TerminalModes{AutoWrap: true},
+			},
+			modern: ScreenUpdate{
+				Size: protocolSize(160, 1),
+				ChangedSpans: []ScreenSpanUpdate{{
+					Row:      0,
+					ColStart: 137,
+					Cells:    []Cell{{Content: "Z", Width: 1}},
+					Op:       ScreenSpanOpWrite,
+				}},
+				Cursor: CursorState{Row: 0, Col: 138, Visible: true},
+				Modes:  TerminalModes{AutoWrap: true},
+			},
+			wantTSU2: 590,
+			wantTSU3: 44,
+		},
+		{
+			name: "clear_to_eol",
+			legacy: ScreenUpdate{
+				Size: protocolSize(120, 1),
+				ChangedRows: []ScreenRowUpdate{{
+					Row:   0,
+					Cells: rowWithTextAt(120, 0, "prefix"),
+				}},
+				Cursor: CursorState{Row: 0, Col: 6, Visible: true},
+				Modes:  TerminalModes{AutoWrap: true},
+			},
+			modern: ScreenUpdate{
+				Size: protocolSize(120, 1),
+				ChangedSpans: []ScreenSpanUpdate{{
+					Row:      0,
+					ColStart: 6,
+					Op:       ScreenSpanOpClearToEOL,
+				}},
+				Cursor: CursorState{Row: 0, Col: 6, Visible: true},
+				Modes:  TerminalModes{AutoWrap: true},
+			},
+			wantTSU2: 61,
+			wantTSU3: 38,
+		},
+		{
+			name: "mid_row_style_change",
+			legacy: ScreenUpdate{
+				Size: protocolSize(32, 1),
+				ChangedRows: []ScreenRowUpdate{{
+					Row:   0,
+					Cells: styleOnlyRow,
+				}},
+				Cursor: CursorState{Row: 0, Col: 6, Visible: true},
+				Modes:  TerminalModes{AutoWrap: true},
+			},
+			modern: ScreenUpdate{
+				Size: protocolSize(32, 1),
+				ChangedSpans: []ScreenSpanUpdate{{
+					Row:      0,
+					ColStart: 5,
+					Cells:    []Cell{{Content: "x", Width: 1, Style: CellStyle{FG: "#112233", Bold: true}}},
+					Op:       ScreenSpanOpWrite,
+				}},
+				Cursor: CursorState{Row: 0, Col: 6, Visible: true},
+				Modes:  TerminalModes{AutoWrap: true},
+			},
+			wantTSU2: 87,
+			wantTSU3: 53,
+		},
+		{
+			name: "wide_char_boundary",
+			legacy: ScreenUpdate{
+				Size: protocolSize(24, 1),
+				ChangedRows: []ScreenRowUpdate{{
+					Row:   0,
+					Cells: wideRow,
+				}},
+				Cursor: CursorState{Row: 0, Col: 4, Visible: true},
+				Modes:  TerminalModes{AutoWrap: true},
+			},
+			modern: ScreenUpdate{
+				Size: protocolSize(24, 1),
+				ChangedSpans: []ScreenSpanUpdate{{
+					Row:      0,
+					ColStart: 1,
+					Cells: []Cell{
+						{Content: "界", Width: 2},
+						{Content: "", Width: 0},
+					},
+					Op: ScreenSpanOpWrite,
+				}},
+				Cursor: CursorState{Row: 0, Col: 4, Visible: true},
+				Modes:  TerminalModes{AutoWrap: true},
+			},
+			wantTSU2: 54,
+			wantTSU3: 48,
+		},
+		{
+			name: "resize_then_incremental_span",
+			legacy: ScreenUpdate{
+				Size: protocolSize(96, 4),
+				ChangedRows: []ScreenRowUpdate{{
+					Row:   3,
+					Cells: resizeRow,
+				}},
+				Cursor: CursorState{Row: 3, Col: 74, Visible: true},
+				Modes:  TerminalModes{AlternateScreen: true, AutoWrap: true},
+			},
+			modern: ScreenUpdate{
+				Size: protocolSize(96, 4),
+				ChangedSpans: []ScreenSpanUpdate{{
+					Row:      3,
+					ColStart: 72,
+					Cells: []Cell{
+						{Content: "o", Width: 1},
+						{Content: "k", Width: 1},
+					},
+					Op: ScreenSpanOpWrite,
+				}},
+				Cursor: CursorState{Row: 3, Col: 74, Visible: true},
+				Modes:  TerminalModes{AlternateScreen: true, AutoWrap: true},
+			},
+			wantTSU2: 333,
+			wantTSU3: 47,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			v2Payload, err := encodeScreenUpdatePayloadBinaryV2(tc.legacy)
+			if err != nil {
+				t.Fatalf("encode tsu2 payload: %v", err)
+			}
+			v3Payload, err := EncodeScreenUpdatePayload(tc.modern)
+			if err != nil {
+				t.Fatalf("encode tsu3 payload: %v", err)
+			}
+			if len(v2Payload) != tc.wantTSU2 {
+				t.Fatalf("unexpected tsu2 payload size: got %d want %d", len(v2Payload), tc.wantTSU2)
+			}
+			if len(v3Payload) != tc.wantTSU3 {
+				t.Fatalf("unexpected tsu3 payload size: got %d want %d", len(v3Payload), tc.wantTSU3)
+			}
+			decoded, err := DecodeScreenUpdatePayload(v3Payload)
+			if err != nil {
+				t.Fatalf("decode tsu3 payload: %v", err)
+			}
+			if len(decoded.ChangedSpans) != len(NormalizeScreenUpdate(tc.modern).ChangedSpans) {
+				t.Fatalf("unexpected decoded spans: %#v", decoded.ChangedSpans)
+			}
+			if !bytes.HasPrefix(v3Payload, []byte(screenUpdatePayloadMagicV3)) {
+				t.Fatalf("expected tsu3 magic prefix, got %q", v3Payload[:minInt(len(v3Payload), 8)])
+			}
+			if len(v3Payload) >= len(v2Payload) {
+				t.Fatalf("expected tsu3 payload smaller than tsu2 for %s, got tsu3=%d tsu2=%d", tc.name, len(v3Payload), len(v2Payload))
+			}
+		})
+	}
+}
+
 func protocolSize(cols, rows uint16) Size {
 	return Size{Cols: cols, Rows: rows}
+}
+
+func filledRow(width int) []Cell {
+	row := make([]Cell, width)
+	for i := range row {
+		row[i] = Cell{Content: " ", Width: 1}
+	}
+	return row
+}
+
+func rowWithTextAt(width, col int, text string) []Cell {
+	row := filledRow(width)
+	writeText(row, col, text)
+	return row
+}
+
+func writeText(row []Cell, col int, text string) {
+	for _, r := range text {
+		if col >= len(row) {
+			return
+		}
+		row[col] = Cell{Content: string(r), Width: 1}
+		col++
+	}
+}
+
+func writeWideCell(row []Cell, col int, cell Cell) {
+	if col < 0 || col >= len(row) {
+		return
+	}
+	row[col] = cell
+	for offset := 1; offset < cell.Width && col+offset < len(row); offset++ {
+		row[col+offset] = Cell{Content: "", Width: 0, Style: cell.Style}
+	}
 }

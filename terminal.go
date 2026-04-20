@@ -1033,18 +1033,20 @@ func (t *Terminal) screenUpdatePayloadFromDamageLocked(damage vterm.WriteDamage)
 		Size:             protocol.Size{Cols: uint16(damage.SizeCols), Rows: uint16(damage.SizeRows)},
 		ScreenScroll:     damage.ScreenScroll,
 		Title:            t.currentTitleLocked(),
-		ChangedRows:      make([]protocol.ScreenRowUpdate, 0, len(damage.ChangedScreenRows)),
+		ChangedSpans:     make([]protocol.ScreenSpanUpdate, 0, len(damage.ChangedScreenSpans)),
 		ScrollbackTrim:   damage.ScrollbackTrim,
 		ScrollbackAppend: make([]protocol.ScrollbackRowAppend, 0, len(damage.ScrollbackAppend)),
 		Cursor:           protocolCursorStateFromVTerm(damage.Cursor),
 		Modes:            protocolModesFromVTerm(damage.Modes),
 	}
-	for _, row := range damage.ChangedScreenRows {
-		update.ChangedRows = append(update.ChangedRows, protocol.ScreenRowUpdate{
-			Row:       row.Row,
-			Cells:     protocolCellsFromVTermRow(row.Cells),
-			Timestamp: row.Timestamp,
-			RowKind:   row.RowKind,
+	for _, span := range damage.ChangedScreenSpans {
+		update.ChangedSpans = append(update.ChangedSpans, protocol.ScreenSpanUpdate{
+			Row:       span.Row,
+			ColStart:  span.ColStart,
+			Cells:     protocolCellsFromVTermRow(span.Cells),
+			Op:        span.Op,
+			Timestamp: span.Timestamp,
+			RowKind:   span.RowKind,
 		})
 	}
 	for _, row := range damage.ScrollbackAppend {

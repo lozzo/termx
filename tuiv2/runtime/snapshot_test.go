@@ -100,6 +100,91 @@ func TestApplyScreenUpdateSnapshotScrollbackTrimAppendDoesNotMutatePreviousSnaps
 	}
 }
 
+func TestApplyScreenUpdateSnapshotChangedSpansDoesNotMutatePreviousSnapshot(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 30, 0, 0, time.UTC)
+	current := &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 8, Rows: 1},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			snapshotTestRow("prefixXY"),
+		}},
+		ScreenTimestamps: []time.Time{now},
+		ScreenRowKinds:   []string{"row"},
+		Cursor:           protocol.CursorState{Visible: true},
+		Modes:            protocol.TerminalModes{AutoWrap: true},
+		Timestamp:        now,
+	}
+	previous := cloneProtocolSnapshot(current)
+
+	next := applyScreenUpdateSnapshot(current, "term-1", protocol.ScreenUpdate{
+		ChangedSpans: []protocol.ScreenSpanUpdate{
+			{
+				Row:      0,
+				ColStart: 2,
+				Cells: []protocol.Cell{
+					{Content: "Q", Width: 1},
+				},
+				Op: protocol.ScreenSpanOpWrite,
+			},
+			{
+				Row:      0,
+				ColStart: 6,
+				Op:       protocol.ScreenSpanOpClearToEOL,
+			},
+		},
+		Cursor: protocol.CursorState{Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+
+	if !reflect.DeepEqual(current, previous) {
+		t.Fatalf("expected previous snapshot to remain unchanged, got %#v want %#v", current, previous)
+	}
+	if got := rowToString(next.Screen.Cells[0]); got != "prQfix" {
+		t.Fatalf("expected span-updated row in next snapshot, got %q", got)
+	}
+	if got := rowToString(current.Screen.Cells[0]); got != "prefixXY" {
+		t.Fatalf("expected previous snapshot row to remain unchanged, got %q", got)
+	}
+}
+
+func TestApplyScreenUpdateSnapshotWideSpanPreservesContinuation(t *testing.T) {
+	now := time.Date(2026, 4, 18, 10, 45, 0, 0, time.UTC)
+	current := &protocol.Snapshot{
+		TerminalID: "term-1",
+		Size:       protocol.Size{Cols: 4, Rows: 1},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{
+			{Content: "你", Width: 2},
+			{Content: "", Width: 0},
+			{Content: "a", Width: 1},
+		}}},
+		ScreenTimestamps: []time.Time{now},
+		ScreenRowKinds:   []string{"wide"},
+		Cursor:           protocol.CursorState{Visible: true},
+		Modes:            protocol.TerminalModes{AutoWrap: true},
+	}
+
+	next := applyScreenUpdateSnapshot(current, "term-1", protocol.ScreenUpdate{
+		ChangedSpans: []protocol.ScreenSpanUpdate{{
+			Row:      0,
+			ColStart: 0,
+			Cells: []protocol.Cell{
+				{Content: "界", Width: 2},
+				{Content: "", Width: 0},
+			},
+			Op: protocol.ScreenSpanOpWrite,
+		}},
+		Cursor: protocol.CursorState{Visible: true},
+		Modes:  protocol.TerminalModes{AutoWrap: true},
+	})
+
+	if got := next.Screen.Cells[0][0]; got.Content != "界" || got.Width != 2 {
+		t.Fatalf("expected updated wide anchor, got %#v", got)
+	}
+	if got := next.Screen.Cells[0][1]; got.Content != "" || got.Width != 0 {
+		t.Fatalf("expected wide continuation preserved, got %#v", got)
+	}
+}
+
 func TestApplyScreenUpdateSnapshotFullReplaceBehaviorUnchanged(t *testing.T) {
 	now := time.Date(2026, 4, 18, 12, 0, 0, 0, time.UTC)
 	current := &protocol.Snapshot{

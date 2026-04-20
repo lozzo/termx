@@ -309,6 +309,113 @@ func TestVTermWriteWithDamageNormalizesCombiningRuneClusters(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamageProducesSingleHighColumnSpan(t *testing.T) {
+	vt := New(160, 1, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[1;138HZ"))
+	if err != nil {
+		t.Fatalf("write high-column edit: %v", err)
+	}
+	if len(damage.ChangedScreenSpans) != 1 {
+		t.Fatalf("expected one changed span, got %#v", damage.ChangedScreenSpans)
+	}
+	span := damage.ChangedScreenSpans[0]
+	if span.Row != 0 || span.ColStart != 137 || span.Op != protocol.ScreenSpanOpWrite {
+		t.Fatalf("unexpected high-column span metadata: %#v", span)
+	}
+	if len(span.Cells) != 1 || span.Cells[0].Content != "Z" {
+		t.Fatalf("expected single-cell sparse span, got %#v", span.Cells)
+	}
+}
+
+func TestVTermWriteWithDamageUsesClearToEOLForTailClear(t *testing.T) {
+	vt := New(24, 1, 100, nil)
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{{
+			{Content: "p", Width: 1},
+			{Content: "r", Width: 1},
+			{Content: "e", Width: 1},
+			{Content: "f", Width: 1},
+			{Content: "i", Width: 1},
+			{Content: "x", Width: 1},
+			{Content: "X", Width: 1},
+			{Content: "Y", Width: 1},
+			{Content: "Z", Width: 1},
+		}},
+	}, CursorState{Row: 0, Col: 9, Visible: true}, TerminalModes{AutoWrap: true})
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[1;7H\x1b[K"))
+	if err != nil {
+		t.Fatalf("clear to eol: %v", err)
+	}
+	if len(damage.ChangedScreenSpans) != 1 {
+		t.Fatalf("expected one clear-to-eol span, got %#v", damage.ChangedScreenSpans)
+	}
+	span := damage.ChangedScreenSpans[0]
+	if span.Op != protocol.ScreenSpanOpClearToEOL || span.ColStart != 6 {
+		t.Fatalf("unexpected clear-to-eol span: %#v", span)
+	}
+}
+
+func TestVTermWriteWithDamageCapturesMidRowStyleOnlySpan(t *testing.T) {
+	vt := New(24, 1, 100, nil)
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{{
+			{Content: "p", Width: 1},
+			{Content: "l", Width: 1},
+			{Content: "a", Width: 1},
+			{Content: "i", Width: 1},
+			{Content: "n", Width: 1},
+			{Content: "x", Width: 1},
+			{Content: "t", Width: 1},
+		}},
+	}, CursorState{Row: 0, Col: 7, Visible: true}, TerminalModes{AutoWrap: true})
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[1;6H\x1b[1mx\x1b[0m"))
+	if err != nil {
+		t.Fatalf("style-only write: %v", err)
+	}
+	if len(damage.ChangedScreenSpans) != 1 {
+		t.Fatalf("expected one style-only span, got %#v", damage.ChangedScreenSpans)
+	}
+	span := damage.ChangedScreenSpans[0]
+	if span.ColStart != 5 || len(span.Cells) != 1 {
+		t.Fatalf("unexpected style-only span window: %#v", span)
+	}
+	if got := span.Cells[0]; got.Content != "x" || !got.Style.Bold {
+		t.Fatalf("expected bold style-only cell, got %#v", got)
+	}
+}
+
+func TestVTermWriteWithDamageKeepsWideCharSpanBoundaryStable(t *testing.T) {
+	vt := New(8, 1, 100, nil)
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{{
+			{Content: "你", Width: 2},
+			{Content: "", Width: 0},
+			{Content: "a", Width: 1},
+		}},
+	}, CursorState{Row: 0, Col: 3, Visible: true}, TerminalModes{AutoWrap: true})
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[1;1H界"))
+	if err != nil {
+		t.Fatalf("wide-boundary write: %v", err)
+	}
+	if len(damage.ChangedScreenSpans) != 1 {
+		t.Fatalf("expected one wide-boundary span, got %#v", damage.ChangedScreenSpans)
+	}
+	span := damage.ChangedScreenSpans[0]
+	if span.ColStart != 0 || len(span.Cells) != 2 {
+		t.Fatalf("expected span expanded to include wide continuation, got %#v", span)
+	}
+	if got := span.Cells[0]; got.Content != "界" || got.Width != 2 {
+		t.Fatalf("expected wide anchor cell, got %#v", got)
+	}
+	if got := span.Cells[1]; got.Content != "" || got.Width != 0 {
+		t.Fatalf("expected continuation placeholder preserved, got %#v", got)
+	}
+}
+
 func TestVTermWriteSelectivelyInvalidatesOnlyChangedScreenRows(t *testing.T) {
 	vt := New(6, 2, 100, nil)
 	vt.LoadSnapshot(ScreenData{
@@ -638,6 +745,161 @@ func TestApplyScreenUpdateUpdatesChangedRowsInPlace(t *testing.T) {
 	}
 	if cursor := vt.CursorState(); cursor.Row != 1 || cursor.Col != 4 || cursor.Shape != CursorBar {
 		t.Fatalf("expected updated cursor, got %#v", cursor)
+	}
+}
+
+func TestApplyScreenUpdateAppliesClearToEOLSpan(t *testing.T) {
+	vt := New(8, 1, 100, nil)
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{{
+			{Content: "p", Width: 1},
+			{Content: "r", Width: 1},
+			{Content: "e", Width: 1},
+			{Content: "f", Width: 1},
+			{Content: "i", Width: 1},
+			{Content: "x", Width: 1},
+			{Content: "X", Width: 1},
+			{Content: "Y", Width: 1},
+		}},
+		IsAlternateScreen: true,
+	}, CursorState{Row: 0, Col: 8, Visible: true}, TerminalModes{AlternateScreen: true, AutoWrap: true})
+
+	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 8, Rows: 1},
+		ChangedSpans: []protocol.ScreenSpanUpdate{{
+			Row:      0,
+			ColStart: 6,
+			Op:       protocol.ScreenSpanOpClearToEOL,
+		}},
+		Cursor: protocol.CursorState{Row: 0, Col: 6, Visible: true},
+		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+	}) {
+		t.Fatal("expected clear-to-eol span to apply incrementally")
+	}
+
+	row := vt.ScreenRowView(0)
+	if got := strings.TrimRight(rowToString(row), " "); got != "prefix" {
+		t.Fatalf("expected row tail cleared, got %q", rowToString(row))
+	}
+}
+
+func TestApplyScreenUpdateAppliesStyleOnlySpan(t *testing.T) {
+	vt := New(8, 1, 100, nil)
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{{
+			{Content: "p", Width: 1},
+			{Content: "l", Width: 1},
+			{Content: "a", Width: 1},
+			{Content: "i", Width: 1},
+			{Content: "n", Width: 1},
+			{Content: "x", Width: 1},
+		}},
+		IsAlternateScreen: true,
+	}, CursorState{Row: 0, Col: 6, Visible: true}, TerminalModes{AlternateScreen: true, AutoWrap: true})
+
+	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 8, Rows: 1},
+		ChangedSpans: []protocol.ScreenSpanUpdate{{
+			Row:      0,
+			ColStart: 5,
+			Cells: []protocol.Cell{{
+				Content: "x",
+				Width:   1,
+				Style:   protocol.CellStyle{Bold: true},
+			}},
+			Op:        protocol.ScreenSpanOpWrite,
+			Timestamp: time.Date(2026, 4, 18, 8, 0, 2, 0, time.UTC),
+			RowKind:   "style-only",
+		}},
+		Cursor: protocol.CursorState{Row: 0, Col: 6, Visible: true},
+		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+	}) {
+		t.Fatal("expected style-only span to apply incrementally")
+	}
+
+	cell := vt.ScreenRowView(0)[5]
+	if cell.Content != "x" || !cell.Style.Bold {
+		t.Fatalf("expected bold cell after style-only span, got %#v", cell)
+	}
+	if got := vt.ScreenRowKindAt(0); got != "style-only" {
+		t.Fatalf("expected row kind updated by style-only span, got %q", got)
+	}
+}
+
+func TestApplyScreenUpdateAppliesWideCharBoundarySpan(t *testing.T) {
+	vt := New(8, 1, 100, nil)
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{{
+			{Content: "你", Width: 2},
+			{Content: "", Width: 0},
+			{Content: "a", Width: 1},
+		}},
+		IsAlternateScreen: true,
+	}, CursorState{Row: 0, Col: 3, Visible: true}, TerminalModes{AlternateScreen: true, AutoWrap: true})
+
+	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 8, Rows: 1},
+		ChangedSpans: []protocol.ScreenSpanUpdate{{
+			Row:      0,
+			ColStart: 0,
+			Cells: []protocol.Cell{
+				{Content: "界", Width: 2},
+				{Content: "", Width: 0},
+			},
+			Op: protocol.ScreenSpanOpWrite,
+		}},
+		Cursor: protocol.CursorState{Row: 0, Col: 3, Visible: true},
+		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+	}) {
+		t.Fatal("expected wide-boundary span to apply incrementally")
+	}
+
+	row := vt.ScreenRowView(0)
+	if got := row[0]; got.Content != "界" || got.Width != 2 {
+		t.Fatalf("expected wide anchor updated, got %#v", got)
+	}
+	if got := row[1]; got.Content != "" || got.Width != 0 {
+		t.Fatalf("expected wide continuation preserved, got %#v", got)
+	}
+}
+
+func TestApplyScreenUpdateAppliesResizeThenSparseSpan(t *testing.T) {
+	vt := New(4, 2, 100, nil)
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{
+			{
+				{Content: "a", Width: 1},
+				{Content: "b", Width: 1},
+				{Content: "c", Width: 1},
+				{Content: "d", Width: 1},
+			},
+		},
+		IsAlternateScreen: true,
+	}, CursorState{Row: 0, Col: 4, Visible: true}, TerminalModes{AlternateScreen: true, AutoWrap: true})
+
+	if !vt.ApplyScreenUpdate(protocol.ScreenUpdate{
+		Size: protocol.Size{Cols: 8, Rows: 3},
+		ChangedSpans: []protocol.ScreenSpanUpdate{{
+			Row:      2,
+			ColStart: 5,
+			Cells: []protocol.Cell{
+				{Content: "o", Width: 1},
+				{Content: "k", Width: 1},
+			},
+			Op: protocol.ScreenSpanOpWrite,
+		}},
+		Cursor: protocol.CursorState{Row: 2, Col: 7, Visible: true},
+		Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+	}) {
+		t.Fatal("expected resize + sparse span update to apply incrementally")
+	}
+
+	if cols, rows := vt.Size(); cols != 8 || rows != 3 {
+		t.Fatalf("expected resized terminal 8x3, got %dx%d", cols, rows)
+	}
+	row := vt.ScreenRowView(2)
+	if got := row[5].Content + row[6].Content; got != "ok" {
+		t.Fatalf("expected sparse span applied after resize, got %#v", row)
 	}
 }
 

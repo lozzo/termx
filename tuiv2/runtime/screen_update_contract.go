@@ -58,17 +58,17 @@ func screenUpdateSummaryFromProtocol(update protocol.ScreenUpdate) VisibleScreen
 		FullReplace:  update.FullReplace,
 		ScreenScroll: update.ScreenScroll,
 	}
-	if len(update.ChangedRows) == 0 {
+	if len(update.ChangedSpans) == 0 {
 		return summary
 	}
-	summary.ChangedRows = make([]int, 0, len(update.ChangedRows))
-	seen := make(map[int]struct{}, len(update.ChangedRows))
-	for _, row := range update.ChangedRows {
-		if _, ok := seen[row.Row]; ok {
+	summary.ChangedRows = make([]int, 0, len(update.ChangedSpans))
+	seen := make(map[int]struct{}, len(update.ChangedSpans))
+	for _, span := range update.ChangedSpans {
+		if _, ok := seen[span.Row]; ok {
 			continue
 		}
-		seen[row.Row] = struct{}{}
-		summary.ChangedRows = append(summary.ChangedRows, row.Row)
+		seen[span.Row] = struct{}{}
+		summary.ChangedRows = append(summary.ChangedRows, span.Row)
 	}
 	return summary
 }
