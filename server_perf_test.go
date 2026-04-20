@@ -3,11 +3,15 @@ package termx
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/vterm"
 )
 
 func BenchmarkEventBusPublish64Subscribers(b *testing.B) {
@@ -90,4 +94,346 @@ func BenchmarkServerListParallel(b *testing.B) {
 			}
 		}
 	})
+}
+
+type writeDamageBenchmarkCase struct {
+	vt         *vterm.VTerm
+	beforeEach func(int)
+	payload    func(int) []byte
+}
+
+func BenchmarkVTermWriteWithDamageScenarios(b *testing.B) {
+	scenarios := []struct {
+		name    string
+		newCase func() *writeDamageBenchmarkCase
+	}{
+		{
+			name: "single_char_churn",
+			newCase: func() *writeDamageBenchmarkCase {
+				vt := vterm.New(120, 40, 4096, nil)
+				vt.LoadSnapshot(benchmarkFilledScreen(120, 40, "seed"), vterm.CursorState{Row: 20, Col: 60, Visible: true}, vterm.TerminalModes{AutoWrap: true})
+				payloads := [][]byte{
+					[]byte("\x1b[21;61HX"),
+					[]byte("\x1b[21;61HY"),
+				}
+				return &writeDamageBenchmarkCase{
+					vt:      vt,
+					payload: func(i int) []byte { return payloads[i&1] },
+				}
+			},
+		},
+		{
+			name: "scroll_output",
+			newCase: func() *writeDamageBenchmarkCase {
+				vt := vterm.New(80, 24, 4096, nil)
+				vt.LoadSnapshot(benchmarkFilledScreen(80, 24, "log"), vterm.CursorState{Row: 23, Col: 0, Visible: true}, vterm.TerminalModes{AutoWrap: true})
+				payloads := [][]byte{
+					[]byte("scroll-a\n"),
+					[]byte("scroll-b\n"),
+				}
+				return &writeDamageBenchmarkCase{
+					vt:      vt,
+					payload: func(i int) []byte { return payloads[i&1] },
+				}
+			},
+		},
+		{
+			name: "fullscreen_tui_update",
+			newCase: func() *writeDamageBenchmarkCase {
+				vt := vterm.New(100, 30, 4096, nil)
+				vt.LoadSnapshot(benchmarkFilledScreen(100, 30, "tui"), vterm.CursorState{Row: 0, Col: 0, Visible: true}, vterm.TerminalModes{AlternateScreen: true, AutoWrap: true})
+				payloads := [][]byte{
+					benchmarkFullScreenPayload(100, 30, 'X'),
+					benchmarkFullScreenPayload(100, 30, 'Y'),
+				}
+				return &writeDamageBenchmarkCase{
+					vt:      vt,
+					payload: func(i int) []byte { return payloads[i&1] },
+				}
+			},
+		},
+		{
+			name: "resize",
+			newCase: func() *writeDamageBenchmarkCase {
+				vt := vterm.New(100, 30, 4096, nil)
+				vt.LoadSnapshot(benchmarkFilledScreen(100, 30, "resize"), vterm.CursorState{Row: 0, Col: 0, Visible: true}, vterm.TerminalModes{AlternateScreen: true, AutoWrap: true})
+				payloads := [][]byte{
+					benchmarkFullScreenPayload(120, 40, 'R'),
+					benchmarkFullScreenPayload(100, 30, 'S'),
+				}
+				return &writeDamageBenchmarkCase{
+					vt: vt,
+					beforeEach: func(i int) {
+						if i&1 == 0 {
+							vt.Resize(120, 40)
+							return
+						}
+						vt.Resize(100, 30)
+					},
+					payload: func(i int) []byte { return payloads[i&1] },
+				}
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		b.Run(scenario.name, func(b *testing.B) {
+			caseData := scenario.newCase()
+			var (
+				totalChangedRows  int64
+				totalChangedCells int64
+				totalEncodedBytes int64
+				totalDiffCPUNs    int64
+			)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if caseData.beforeEach != nil {
+					b.StopTimer()
+					caseData.beforeEach(i)
+					b.StartTimer()
+				}
+				b.StopTimer()
+				before := caseData.vt.ScreenContent()
+				b.StartTimer()
+				_, err, damage := caseData.vt.WriteWithDamage(caseData.payload(i))
+				if err != nil {
+					b.Fatalf("WriteWithDamage failed: %v", err)
+				}
+				b.StopTimer()
+				after := caseData.vt.ScreenContent()
+				changedRows, changedCells := benchmarkScreenDiff(before, after)
+				totalChangedRows += int64(changedRows)
+				totalChangedCells += int64(changedCells)
+				totalEncodedBytes += int64(benchmarkEncodedDamageBytes(b, damage))
+				totalDiffCPUNs += damage.DiffCPUNanos
+				b.StartTimer()
+			}
+			b.ReportMetric(float64(totalChangedRows)/float64(b.N), "changed_rows")
+			b.ReportMetric(float64(totalChangedCells)/float64(b.N), "changed_cells")
+			b.ReportMetric(float64(totalEncodedBytes)/float64(b.N), "encoded_bytes")
+			b.ReportMetric(float64(totalDiffCPUNs)/float64(b.N), "diff_cpu_ns")
+		})
+	}
+}
+
+func TestPerfVTermWriteWithDamageScenarios(t *testing.T) {
+	if os.Getenv("TERMX_RUN_VTERM_WRITE_PERF") != "1" {
+		t.Skip("set TERMX_RUN_VTERM_WRITE_PERF=1 to run vterm write perf scenarios")
+	}
+
+	scenarios := []struct {
+		name    string
+		newCase func() *writeDamageBenchmarkCase
+	}{
+		{
+			name: "single_char_churn",
+			newCase: func() *writeDamageBenchmarkCase {
+				vt := vterm.New(120, 40, 4096, nil)
+				vt.LoadSnapshot(benchmarkFilledScreen(120, 40, "seed"), vterm.CursorState{Row: 20, Col: 60, Visible: true}, vterm.TerminalModes{AutoWrap: true})
+				payloads := [][]byte{
+					[]byte("\x1b[21;61HX"),
+					[]byte("\x1b[21;61HY"),
+				}
+				return &writeDamageBenchmarkCase{vt: vt, payload: func(i int) []byte { return payloads[i&1] }}
+			},
+		},
+		{
+			name: "scroll_output",
+			newCase: func() *writeDamageBenchmarkCase {
+				vt := vterm.New(80, 24, 4096, nil)
+				vt.LoadSnapshot(benchmarkFilledScreen(80, 24, "log"), vterm.CursorState{Row: 23, Col: 0, Visible: true}, vterm.TerminalModes{AutoWrap: true})
+				payloads := [][]byte{
+					[]byte("scroll-a\n"),
+					[]byte("scroll-b\n"),
+				}
+				return &writeDamageBenchmarkCase{vt: vt, payload: func(i int) []byte { return payloads[i&1] }}
+			},
+		},
+		{
+			name: "fullscreen_tui_update",
+			newCase: func() *writeDamageBenchmarkCase {
+				vt := vterm.New(100, 30, 4096, nil)
+				vt.LoadSnapshot(benchmarkFilledScreen(100, 30, "tui"), vterm.CursorState{Row: 0, Col: 0, Visible: true}, vterm.TerminalModes{AlternateScreen: true, AutoWrap: true})
+				payloads := [][]byte{
+					benchmarkFullScreenPayload(100, 30, 'X'),
+					benchmarkFullScreenPayload(100, 30, 'Y'),
+				}
+				return &writeDamageBenchmarkCase{vt: vt, payload: func(i int) []byte { return payloads[i&1] }}
+			},
+		},
+		{
+			name: "resize",
+			newCase: func() *writeDamageBenchmarkCase {
+				vt := vterm.New(100, 30, 4096, nil)
+				vt.LoadSnapshot(benchmarkFilledScreen(100, 30, "resize"), vterm.CursorState{Row: 0, Col: 0, Visible: true}, vterm.TerminalModes{AlternateScreen: true, AutoWrap: true})
+				payloads := [][]byte{
+					benchmarkFullScreenPayload(120, 40, 'R'),
+					benchmarkFullScreenPayload(100, 30, 'S'),
+				}
+				return &writeDamageBenchmarkCase{
+					vt: vt,
+					beforeEach: func(i int) {
+						if i&1 == 0 {
+							vt.Resize(120, 40)
+							return
+						}
+						vt.Resize(100, 30)
+					},
+					payload: func(i int) []byte { return payloads[i&1] },
+				}
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			caseData := scenario.newCase()
+			const iterations = 2000
+			var (
+				totalChangedRows  int64
+				totalChangedCells int64
+				totalEncodedBytes int64
+				totalDiffCPUNs    int64
+			)
+			for i := 0; i < iterations; i++ {
+				if caseData.beforeEach != nil {
+					caseData.beforeEach(i)
+				}
+				before := caseData.vt.ScreenContent()
+				_, err, damage := caseData.vt.WriteWithDamage(caseData.payload(i))
+				if err != nil {
+					t.Fatalf("WriteWithDamage failed: %v", err)
+				}
+				after := caseData.vt.ScreenContent()
+				changedRows, changedCells := benchmarkScreenDiff(before, after)
+				totalChangedRows += int64(changedRows)
+				totalChangedCells += int64(changedCells)
+				totalEncodedBytes += int64(benchmarkEncodedDamageBytesT(t, damage))
+				totalDiffCPUNs += damage.DiffCPUNanos
+			}
+			t.Logf("%s changed_rows=%.2f changed_cells=%.2f encoded_bytes=%.2f diff_cpu_ns=%.0f",
+				scenario.name,
+				float64(totalChangedRows)/iterations,
+				float64(totalChangedCells)/iterations,
+				float64(totalEncodedBytes)/iterations,
+				float64(totalDiffCPUNs)/iterations,
+			)
+		})
+	}
+}
+
+func benchmarkFilledScreen(cols, rows int, label string) vterm.ScreenData {
+	screen := make([][]vterm.Cell, rows)
+	for y := 0; y < rows; y++ {
+		rowText := fmt.Sprintf("%s-%02d", label, y)
+		row := make([]vterm.Cell, cols)
+		for x := 0; x < cols; x++ {
+			content := " "
+			if x < len(rowText) {
+				content = string(rowText[x])
+			}
+			row[x] = vterm.Cell{Content: content, Width: 1}
+		}
+		screen[y] = row
+	}
+	return vterm.ScreenData{Cells: screen}
+}
+
+func benchmarkFullScreenPayload(cols, rows int, fill byte) []byte {
+	var b strings.Builder
+	for row := 0; row < rows; row++ {
+		fmt.Fprintf(&b, "\x1b[%d;1H", row+1)
+		for col := 0; col < cols; col++ {
+			b.WriteByte(fill)
+		}
+	}
+	return []byte(b.String())
+}
+
+func benchmarkEncodedDamageBytes(b *testing.B, damage vterm.WriteDamage) int {
+	b.Helper()
+	payload, err := benchmarkEncodeDamagePayload(damage)
+	if err != nil {
+		b.Fatalf("encode damage payload: %v", err)
+	}
+	return len(payload)
+}
+
+func benchmarkEncodedDamageBytesT(t *testing.T, damage vterm.WriteDamage) int {
+	t.Helper()
+	payload, err := benchmarkEncodeDamagePayload(damage)
+	if err != nil {
+		t.Fatalf("encode damage payload: %v", err)
+	}
+	return len(payload)
+}
+
+func benchmarkEncodeDamagePayload(damage vterm.WriteDamage) ([]byte, error) {
+	update := protocol.ScreenUpdate{
+		Size:             protocol.Size{Cols: uint16(damage.SizeCols), Rows: uint16(damage.SizeRows)},
+		ScreenScroll:     damage.ScreenScroll,
+		ChangedRows:      make([]protocol.ScreenRowUpdate, 0, len(damage.ChangedScreenRows)),
+		ScrollbackTrim:   damage.ScrollbackTrim,
+		ScrollbackAppend: make([]protocol.ScrollbackRowAppend, 0, len(damage.ScrollbackAppend)),
+		Cursor:           protocolCursorStateFromVTerm(damage.Cursor),
+		Modes:            protocolModesFromVTerm(damage.Modes),
+	}
+	for _, row := range damage.ChangedScreenRows {
+		update.ChangedRows = append(update.ChangedRows, protocol.ScreenRowUpdate{
+			Row:       row.Row,
+			Cells:     protocolCellsFromVTermRow(row.Cells),
+			Timestamp: row.Timestamp,
+			RowKind:   row.RowKind,
+		})
+	}
+	for _, row := range damage.ScrollbackAppend {
+		update.ScrollbackAppend = append(update.ScrollbackAppend, protocol.ScrollbackRowAppend{
+			Cells:     protocolCellsFromVTermRow(row.Cells),
+			Timestamp: row.Timestamp,
+			RowKind:   row.RowKind,
+		})
+	}
+	return protocol.EncodeScreenUpdatePayload(update)
+}
+
+func benchmarkScreenDiff(before, after vterm.ScreenData) (int, int) {
+	maxRows := len(before.Cells)
+	if len(after.Cells) > maxRows {
+		maxRows = len(after.Cells)
+	}
+	changedRows := 0
+	changedCells := 0
+	for row := 0; row < maxRows; row++ {
+		beforeRow := benchmarkScreenRow(before, row)
+		afterRow := benchmarkScreenRow(after, row)
+		maxCols := len(beforeRow)
+		if len(afterRow) > maxCols {
+			maxCols = len(afterRow)
+		}
+		rowChanged := false
+		for col := 0; col < maxCols; col++ {
+			if benchmarkScreenCell(beforeRow, col) != benchmarkScreenCell(afterRow, col) {
+				rowChanged = true
+				changedCells++
+			}
+		}
+		if rowChanged {
+			changedRows++
+		}
+	}
+	return changedRows, changedCells
+}
+
+func benchmarkScreenRow(screen vterm.ScreenData, row int) []vterm.Cell {
+	if row < 0 || row >= len(screen.Cells) {
+		return nil
+	}
+	return screen.Cells[row]
+}
+
+func benchmarkScreenCell(row []vterm.Cell, col int) vterm.Cell {
+	if col < 0 || col >= len(row) {
+		return vterm.Cell{}
+	}
+	return row[col]
 }

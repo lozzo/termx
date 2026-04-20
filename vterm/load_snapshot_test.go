@@ -264,6 +264,51 @@ func TestVTermWriteAssignsRowTimestamps(t *testing.T) {
 	}
 }
 
+func TestVTermWriteWithDamagePreservesWideRuneContinuations(t *testing.T) {
+	vt := New(8, 2, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("你a"))
+	if err != nil {
+		t.Fatalf("write wide rune: %v", err)
+	}
+	if len(damage.ChangedScreenRows) != 1 {
+		t.Fatalf("expected one changed row, got %#v", damage.ChangedScreenRows)
+	}
+	row := damage.ChangedScreenRows[0]
+	if row.Row != 0 {
+		t.Fatalf("expected first row damage, got row=%d", row.Row)
+	}
+	if got := row.Cells[0]; got.Content != "你" || got.Width != 2 {
+		t.Fatalf("expected wide rune anchor cell, got %#v", got)
+	}
+	if got := row.Cells[1]; got.Content != "" || got.Width != 0 {
+		t.Fatalf("expected wide rune continuation placeholder, got %#v", got)
+	}
+	if got := row.Cells[2]; got.Content != "a" || got.Width != 1 {
+		t.Fatalf("expected trailing ascii cell, got %#v", got)
+	}
+}
+
+func TestVTermWriteWithDamageNormalizesCombiningRuneClusters(t *testing.T) {
+	vt := New(8, 2, 100, nil)
+
+	_, err, damage := vt.WriteWithDamage([]byte("e\u0301"))
+	if err != nil {
+		t.Fatalf("write combining rune: %v", err)
+	}
+	if len(damage.ChangedScreenRows) != 1 {
+		t.Fatalf("expected one changed row, got %#v", damage.ChangedScreenRows)
+	}
+	row := damage.ChangedScreenRows[0]
+	if got := row.Cells[0]; got.Content != "é" || got.Width != 1 {
+		t.Fatalf("expected normalized grapheme cell, got %#v", got)
+	}
+	screen := vt.ScreenContent()
+	if got := screen.Cells[0][0]; got.Content != "é" || got.Width != 1 {
+		t.Fatalf("expected screen to keep normalized grapheme cell, got %#v", got)
+	}
+}
+
 func TestVTermWriteSelectivelyInvalidatesOnlyChangedScreenRows(t *testing.T) {
 	vt := New(6, 2, 100, nil)
 	vt.LoadSnapshot(ScreenData{
@@ -403,6 +448,49 @@ func TestVTermWriteAltScreenScrollDoesNotInvalidateWholeScreen(t *testing.T) {
 	}
 	if len(damage.ChangedScreenRows) == 0 {
 		t.Fatal("expected at least the edge row to be redrawn after alt-screen scroll")
+	}
+}
+
+func TestVTermWriteAltScreenSwitchKeepsDamageCorrect(t *testing.T) {
+	vt := New(5, 3, 100, nil)
+	vt.LoadSnapshot(ScreenData{
+		Cells: [][]Cell{
+			{{Content: "a", Width: 1}},
+			{{Content: "b", Width: 1}},
+			{{Content: "c", Width: 1}},
+		},
+	}, CursorState{Row: 2, Col: 1, Visible: true}, TerminalModes{AutoWrap: true})
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[?1049h"))
+	if err != nil {
+		t.Fatalf("enter alt-screen: %v", err)
+	}
+	if !vt.IsAltScreen() {
+		t.Fatal("expected alt-screen to be enabled")
+	}
+	if len(damage.ChangedScreenRows) != 3 {
+		t.Fatalf("expected full-screen damage on alt-screen switch, got %#v", damage.ChangedScreenRows)
+	}
+	screen := vt.ScreenContent()
+	for row := range screen.Cells {
+		if strings.TrimSpace(rowToString(screen.Cells[row])) != "" {
+			t.Fatalf("expected blank alt-screen row %d, got %q", row, rowToString(screen.Cells[row]))
+		}
+	}
+
+	_, err, damage = vt.WriteWithDamage([]byte("\x1b[?1049l"))
+	if err != nil {
+		t.Fatalf("leave alt-screen: %v", err)
+	}
+	if vt.IsAltScreen() {
+		t.Fatal("expected alt-screen to be disabled")
+	}
+	if len(damage.ChangedScreenRows) != 3 {
+		t.Fatalf("expected full-screen damage when restoring main screen, got %#v", damage.ChangedScreenRows)
+	}
+	screen = vt.ScreenContent()
+	if got := strings.TrimSpace(rowToString(screen.Cells[0])) + strings.TrimSpace(rowToString(screen.Cells[1])) + strings.TrimSpace(rowToString(screen.Cells[2])); got != "abc" {
+		t.Fatalf("expected main-screen content restored, got %q", got)
 	}
 }
 

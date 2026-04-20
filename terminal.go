@@ -1021,6 +1021,7 @@ func (t *Terminal) screenSnapshotPayloadLocked(resetScrollback bool) ([]byte, bo
 	if err != nil {
 		return nil, false
 	}
+	perftrace.Count("terminal.screen_update.encoded_bytes", len(payload))
 	return payload, true
 }
 
@@ -1057,6 +1058,7 @@ func (t *Terminal) screenUpdatePayloadFromDamageLocked(damage vterm.WriteDamage)
 	if err != nil {
 		return nil, false
 	}
+	perftrace.Count("terminal.screen_update.encoded_bytes", len(payload))
 	return payload, true
 }
 
