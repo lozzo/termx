@@ -19,7 +19,7 @@ func (m *Model) handleLifecycleMessage(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		return nil, true
 	case renderRefreshMsg:
-		m.refreshRenderCaches()
+		m.forceFullRedraw()
 		return nil, true
 	case tea.WindowSizeMsg:
 		if service := m.layoutResizeService(); service != nil {

@@ -15,6 +15,9 @@ func (m *Model) View() string {
 	if m == nil || m.render == nil {
 		return ""
 	}
+	if m.visibleAltScreenGeometryChanged() {
+		m.forceFullRedraw()
+	}
 	m.reconcileCopyModeContext()
 	if rowsWriter, ok := m.frameOut.(frameLinesWriter); ok {
 		if directWriter, ok := rowsWriter.(*outputCursorWriter); ok {

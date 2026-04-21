@@ -386,7 +386,11 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 	v.reconcileRowCachesLocked(beforeScreen, cachePlan)
 	if collectDamage {
 		damage = v.writeDamageLocked(beforeScreenRows, beforeScreen, cachePlan)
-		if hasDirectDamage && beforeWidth == afterWidth && beforeHeight == afterHeight && beforeAltScreen == afterAltScreen {
+		if hasDirectDamage &&
+			beforeWidth == afterWidth &&
+			beforeHeight == afterHeight &&
+			beforeAltScreen == afterAltScreen &&
+			!v.hasResizeFillCacheHazardLocked() {
 			if directOps := v.damageOpsFromCharmVTDamages(directDamages, afterWidth, v.screenTimestamps, v.screenRowKinds); directOps != nil {
 				damage.Ops = directOps
 			}
@@ -1799,6 +1803,9 @@ func (v *VTerm) screenRowViewLocked(y int) []Cell {
 	if v.emu == nil || y < 0 || y >= v.emu.Height() {
 		return nil
 	}
+	if len(v.screenRowCache) != v.emu.Height() {
+		v.invalidateRowCachesLocked()
+	}
 	if cached := v.screenRowCache[y]; cached != nil {
 		return cached
 	}
@@ -2168,9 +2175,15 @@ func (v *VTerm) screenRowFingerprintLocked(y int) rowFingerprint {
 	if v.emu == nil || y < 0 || y >= v.emu.Height() {
 		return rowFingerprint{}
 	}
-	return v.rowFingerprintLocked(v.emu.Width(), func(x int) *uv.Cell {
-		return v.emu.CellAt(x, y)
-	})
+	width := v.emu.Width()
+	row := make([]Cell, width)
+	for x := 0; x < width; x++ {
+		row[x] = v.convertCell(v.emu.CellAt(x, y))
+	}
+	v.applyResizeTailFillLocked(y, row)
+	v.applyResizeVisibleBlankFillLocked(y, row)
+	v.applyResizeBottomFillLocked(y, row)
+	return rowFingerprintForCells(row, width)
 }
 
 func (v *VTerm) scrollbackTailRowFingerprintsLocked(count int) []rowFingerprint {
@@ -2193,9 +2206,44 @@ func (v *VTerm) scrollbackRowFingerprintLocked(y int) rowFingerprint {
 	if v.emu == nil || y < 0 || y >= v.emu.ScrollbackLen() {
 		return rowFingerprint{}
 	}
-	return v.rowFingerprintLocked(v.emu.Width(), func(x int) *uv.Cell {
-		return v.emu.ScrollbackCellAt(x, y)
-	})
+	width := v.emu.Width()
+	row := make([]Cell, 0, width)
+	for x := 0; x < width; x++ {
+		cell := v.emu.ScrollbackCellAt(x, y)
+		if cell == nil && x >= len(row) {
+			row = append(row, Cell{})
+			continue
+		}
+		row = append(row, v.convertCell(cell))
+	}
+	return rowFingerprintForCells(row, width)
+}
+
+func rowFingerprintForCells(row []Cell, width int) rowFingerprint {
+	fingerprint := rowFingerprint{
+		hash:  rowFingerprintOffset64,
+		blank: true,
+	}
+	hashUint64(&fingerprint.hash, uint64(width))
+	for x := 0; x < width; x++ {
+		cell := cellAt(row, x)
+		hashString(&fingerprint.hash, cell.Content)
+		hashUint64(&fingerprint.hash, uint64(cell.Width))
+		hashString(&fingerprint.hash, cell.Style.FG)
+		hashString(&fingerprint.hash, cell.Style.BG)
+		hashBool(&fingerprint.hash, cell.Style.Bold)
+		hashBool(&fingerprint.hash, cell.Style.Italic)
+		hashBool(&fingerprint.hash, cell.Style.Underline)
+		hashBool(&fingerprint.hash, cell.Style.Blink)
+		hashBool(&fingerprint.hash, cell.Style.Reverse)
+		hashBool(&fingerprint.hash, cell.Style.Strikethrough)
+		if !(strings.TrimSpace(cell.Content) == "" &&
+			cell.Style == (CellStyle{}) &&
+			cell.Width <= 1) {
+			fingerprint.blank = false
+		}
+	}
+	return fingerprint
 }
 
 func (v *VTerm) rowFingerprintLocked(width int, cellAt func(int) *uv.Cell) rowFingerprint {

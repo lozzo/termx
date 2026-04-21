@@ -64,6 +64,7 @@ type outputCursorWriter struct {
 	lastDirectCursor       string
 	lastFlushAt            time.Time
 	frameDumpPath          string
+	forceImmediateNextFrame bool
 	disableVerticalScroll  bool
 	disableOwnerAwareDelta bool
 	forceFullFrameLines    bool
@@ -701,6 +702,20 @@ func (w *outputCursorWriter) WriteFrame(frame, cursor string) error {
 	w.pending.afterWrite = append(w.pending.afterWrite, w.afterWrite...)
 	w.afterWrite = nil
 	w.backlogActive.Store(true)
+	if w.forceImmediateNextFrame {
+		w.forceImmediateNextFrame = false
+		// Full redraws after ResetFrameState() must reach the host immediately.
+		// If they sit in the batch window, a later resize/drag frame can replace
+		// the pending repaint and leave the host baseline stuck on the stale
+		// pre-resize contents that the next diff assumes were already repaired.
+		hook, err := w.flushPendingFrameLocked()
+		w.mu.Unlock()
+		if hook != nil {
+			hook()
+		}
+		w.mu.Lock()
+		return err
+	}
 	delay := w.effectiveDirectFrameBatchDelayLocked()
 	if delay <= 0 {
 		hook, err := w.flushPendingFrameLocked()
@@ -750,6 +765,20 @@ func (w *outputCursorWriter) WriteFrameLinesWithMeta(lines []string, cursor stri
 	w.pending.afterWrite = append(w.pending.afterWrite, w.afterWrite...)
 	w.afterWrite = nil
 	w.backlogActive.Store(true)
+	if w.forceImmediateNextFrame {
+		w.forceImmediateNextFrame = false
+		// ResetFrameState() clears the presenter baseline. The next frame must
+		// reach the host immediately so geometry-change redraws cannot be
+		// coalesced away behind a later diff frame that assumes the baseline was
+		// already rebuilt on screen.
+		hook, err := w.flushPendingFrameLocked()
+		w.mu.Unlock()
+		if hook != nil {
+			hook()
+		}
+		w.mu.Lock()
+		return err
+	}
 	delay := w.effectiveDirectFrameBatchDelayLocked()
 	if delay <= 0 {
 		hook, err := w.flushPendingFrameLocked()
@@ -1224,6 +1253,7 @@ func (w *outputCursorWriter) ResetFrameState() {
 	w.pending = pendingDirectFrame{}
 	w.afterWrite = nil
 	w.backlogActive.Store(false)
+	w.forceImmediateNextFrame = true
 	w.stopFlushTimerLocked()
 	w.mu.Unlock()
 }

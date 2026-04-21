@@ -57,6 +57,17 @@ func visibleSurface(terminal *TerminalRuntime) TerminalSurface {
 	return surfaceFromVTerm(terminal.VTerm)
 }
 
+func (r *Runtime) LiveSurface(terminalID string) TerminalSurface {
+	if r == nil || r.registry == nil || terminalID == "" {
+		return nil
+	}
+	terminal := r.registry.Get(terminalID)
+	if terminal == nil || terminal.SurfaceVersion == 0 || terminal.VTerm == nil {
+		return nil
+	}
+	return surfaceFromVTerm(terminal.VTerm)
+}
+
 func (s vtermSurface) Size() protocol.Size {
 	cols, rows := s.source.Size()
 	return protocol.Size{Cols: uint16(cols), Rows: uint16(rows)}

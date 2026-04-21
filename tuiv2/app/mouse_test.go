@@ -15,6 +15,7 @@ import (
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
+	localvterm "github.com/lozzow/termx/vterm"
 )
 
 func resetMouseQueueState() {
@@ -608,6 +609,219 @@ func TestMouseDragSplitDividerResizesTiledPanes(t *testing.T) {
 	}
 	if m.mouseDragMode != mouseDragNone || m.mouseDragSplit != nil {
 		t.Fatalf("expected split drag state cleared, mode=%v split=%#v", m.mouseDragMode, m.mouseDragSplit)
+	}
+}
+
+func TestMouseDragSplitDividerResetsAltScreenBaselineDuringPreviewAndRelease(t *testing.T) {
+	m := setupTwoPaneModel(t)
+	base := m.runtime.Registry().Get("term-1")
+	if base == nil {
+		t.Fatal("expected base terminal")
+	}
+	base.Snapshot = cursorWriterNvimLikeSnapshot("term-1", 58, 30, "#444444")
+
+	writer := &resetProbeFrameWriter{}
+	m.SetFrameWriter(writer)
+	m.width = 120
+	m.height = 36
+
+	_ = m.View()
+	if writer.resetCalls != 0 {
+		t.Fatalf("expected baseline alt-screen view not to reset, got %d", writer.resetCalls)
+	}
+
+	model, _ := m.Update(tea.MouseMsg{
+		X:      59,
+		Y:      screenYForBodyY(m, 10),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	m = model.(*Model)
+
+	model, cmd := m.Update(tea.MouseMsg{
+		X:      49,
+		Y:      screenYForBodyY(m, 10),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionMotion,
+	})
+	m = model.(*Model)
+	drainCmd(t, m, cmd, 20)
+
+	_ = m.View()
+	if writer.resetCalls != 1 {
+		t.Fatalf("expected split drag preview over visible alt-screen to reset baseline once, got %d", writer.resetCalls)
+	}
+
+	model, cmd = m.Update(tea.MouseMsg{
+		X:      49,
+		Y:      screenYForBodyY(m, 10),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionRelease,
+	})
+	m = model.(*Model)
+	drainCmd(t, m, cmd, 20)
+	if writer.resetCalls != 2 {
+		t.Fatalf("expected split drag release resize to reset baseline again, got %d", writer.resetCalls)
+	}
+}
+
+func TestMouseDragSplitDividerPreviewRenderVMUsesLiveSurfaceWhenSnapshotLocked(t *testing.T) {
+	m := setupTwoPaneModel(t)
+	terminal := m.runtime.Registry().Get("term-1")
+	if terminal == nil {
+		t.Fatal("expected primary terminal")
+	}
+	screen := localvterm.ScreenData{
+		IsAlternateScreen: true,
+		Cells:             make([][]localvterm.Cell, 30),
+	}
+	for y := range screen.Cells {
+		screen.Cells[y] = make([]localvterm.Cell, 58)
+		for x := range screen.Cells[y] {
+			cell := localvterm.Cell{Content: " ", Width: 1}
+			if y == 10 {
+				cell.Style.BG = "#3a3a3a"
+			}
+			screen.Cells[y][x] = cell
+		}
+	}
+	vt := localvterm.New(58, 30, 100, nil)
+	vt.LoadSnapshot(screen, localvterm.CursorState{Row: 10, Col: 4, Visible: true}, localvterm.TerminalModes{AlternateScreen: true, MouseTracking: true})
+	terminal.VTerm = vt
+	terminal.SurfaceVersion = 1
+	terminal.PreferSnapshot = true
+	terminal.Snapshot = cursorWriterNvimLikeSnapshot("term-1", 58, 30, "#111111")
+
+	model, _ := m.Update(tea.MouseMsg{
+		X:      59,
+		Y:      screenYForBodyY(m, 10),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	m = model.(*Model)
+	model, cmd := m.Update(tea.MouseMsg{
+		X:      49,
+		Y:      screenYForBodyY(m, 10),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionMotion,
+	})
+	m = model.(*Model)
+	drainCmd(t, m, cmd, 20)
+
+	vm := m.renderVM()
+	if vm.Runtime == nil {
+		t.Fatal("expected runtime in render vm")
+	}
+	for _, visibleTerminal := range vm.Runtime.Terminals {
+		if visibleTerminal.TerminalID != "term-1" {
+			continue
+		}
+		if visibleTerminal.Surface == nil {
+			t.Fatal("expected split drag preview to restore live surface into render vm")
+		}
+		return
+	}
+	t.Fatal("expected visible term-1 in render vm")
+}
+
+func TestMouseDragSplitDividerPreviewRenderUsesLiveSurfaceWhenSnapshotLocked(t *testing.T) {
+	m := setupTwoPaneModel(t)
+	terminal := m.runtime.Registry().Get("term-1")
+	if terminal == nil {
+		t.Fatal("expected primary terminal")
+	}
+	screen := localvterm.ScreenData{
+		IsAlternateScreen: true,
+		Cells:             make([][]localvterm.Cell, 30),
+	}
+	for y := range screen.Cells {
+		screen.Cells[y] = make([]localvterm.Cell, 58)
+		for x := range screen.Cells[y] {
+			cell := localvterm.Cell{Content: " ", Width: 1}
+			if y == 10 {
+				cell.Style.BG = "#3a3a3a"
+			}
+			screen.Cells[y][x] = cell
+		}
+	}
+	vt := localvterm.New(58, 30, 100, nil)
+	vt.LoadSnapshot(screen, localvterm.CursorState{Row: 10, Col: 4, Visible: true}, localvterm.TerminalModes{AlternateScreen: true, MouseTracking: true})
+	terminal.VTerm = vt
+	terminal.SurfaceVersion = 1
+	terminal.PreferSnapshot = true
+	terminal.Snapshot = cursorWriterNvimLikeSnapshot("term-1", 58, 30, "#111111")
+
+	model, _ := m.Update(tea.MouseMsg{
+		X:      59,
+		Y:      screenYForBodyY(m, 10),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+	})
+	m = model.(*Model)
+	model, cmd := m.Update(tea.MouseMsg{
+		X:      49,
+		Y:      screenYForBodyY(m, 10),
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionMotion,
+	})
+	m = model.(*Model)
+	drainCmd(t, m, cmd, 20)
+
+	frame := captureRenderFrameLines(t, m)
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	if err := writer.WriteFrameLinesWithMeta(frame.lines, "", frame.meta); err != nil {
+		t.Fatalf("write preview frame lines: %v", err)
+	}
+	sink.mu.Lock()
+	stream := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	host := localvterm.New(120, 36, 0, nil)
+	if _, err := host.Write([]byte(stream)); err != nil {
+		t.Fatalf("replay preview frame into host vterm: %v", err)
+	}
+
+	visible := m.workbench.VisibleWithSize(m.bodyRect())
+	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
+		t.Fatalf("expected visible workbench, got %#v", visible)
+	}
+	var pane workbench.VisiblePane
+	found := false
+	for _, candidate := range visible.Tabs[visible.ActiveTab].Panes {
+		if candidate.ID == "pane-1" {
+			pane = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected visible pane-1 after split drag preview")
+	}
+	contentRect, ok := paneContentRectForVisible(pane)
+	if !ok {
+		t.Fatalf("expected content rect for pane-1, got %#v", pane)
+	}
+	hostScreen := host.ScreenContent()
+	expectedCount := 0
+	for x := 0; x < minInt(contentRect.W, len(screen.Cells[10])); x++ {
+		if screen.Cells[10][x].Style.BG == "#3a3a3a" {
+			expectedCount++
+		}
+	}
+	maxCount := 0
+	for y := contentRect.Y; y < contentRect.Y+contentRect.H && y < len(hostScreen.Cells); y++ {
+		count := 0
+		for x := contentRect.X; x < contentRect.X+contentRect.W && x < len(hostScreen.Cells[y]); x++ {
+			if hostScreen.Cells[y][x].Style.BG == "#3a3a3a" {
+				count++
+			}
+		}
+		if count > maxCount {
+			maxCount = count
+		}
+	}
+	if maxCount < expectedCount/2 {
+		t.Fatalf("expected preview render to preserve live surface bg cells, expected about %d got max %d", expectedCount, maxCount)
 	}
 }
 

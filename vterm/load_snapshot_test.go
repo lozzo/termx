@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	charmvt "github.com/charmbracelet/x/vt"
 	"github.com/lozzow/termx/protocol"
 )
 
@@ -264,6 +265,72 @@ func TestVTermResizeShrinkPreservesVisibleTailBackgroundAcrossResetRedraw(t *tes
 	row := vt.ScreenRowView(1)
 	if got := row[60].Style.BG; got != bg {
 		t.Fatalf("expected visible tail bg %q to survive reset+EL redraw after shrink, got %#v", bg, row[60])
+	}
+}
+
+func TestVTermScreenRowFingerprintIncludesResizeVisibleBlankFill(t *testing.T) {
+	vt := New(8, 2, 100, nil)
+	vt.LoadSnapshot(ScreenData{
+		IsAlternateScreen: true,
+		Cells: [][]Cell{
+			{
+				{Content: "t", Width: 1},
+				{Content: "a", Width: 1},
+				{Content: "i", Width: 1},
+				{Content: "l", Width: 1},
+			},
+		},
+	}, CursorState{Row: 0, Col: 4, Visible: true}, TerminalModes{AlternateScreen: true, MouseTracking: true})
+
+	vt.mu.Lock()
+	before := vt.screenRowFingerprintLocked(0)
+	fill := make([][]string, 2)
+	fill[0] = []string{"", "", "", "", "#3a3a3a", "#3a3a3a", "#3a3a3a", "#3a3a3a"}
+	vt.resizeVisibleBlankBG = fill
+	vt.invalidateRowCachesLocked()
+	after := vt.screenRowFingerprintLocked(0)
+	vt.mu.Unlock()
+
+	if rowFingerprintsEqual(before, after) {
+		t.Fatalf("expected resize visible blank fill to change row fingerprint, before=%#v after=%#v", before, after)
+	}
+}
+
+func TestVTermWriteWithDamageSkipsDirectDamageOverrideWhenResizeFillHazardPresent(t *testing.T) {
+	vt := New(8, 2, 100, nil)
+	vt.LoadSnapshot(ScreenData{
+		IsAlternateScreen: true,
+		Cells: [][]Cell{
+			{
+				{Content: "t", Width: 1},
+				{Content: "a", Width: 1},
+				{Content: "i", Width: 1},
+				{Content: "l", Width: 1},
+			},
+		},
+	}, CursorState{Row: 0, Col: 4, Visible: true}, TerminalModes{AlternateScreen: true, MouseTracking: true})
+
+	vt.mu.Lock()
+	fill := make([][]string, 2)
+	fill[0] = []string{"", "", "", "", "#3a3a3a", "#3a3a3a", "#3a3a3a", "#3a3a3a"}
+	vt.resizeVisibleBlankBG = fill
+	vt.invalidateRowCachesLocked()
+	vt.mu.Unlock()
+
+	prevWithDamage := safeEmulatorWriteWithDamage
+	safeEmulatorWriteWithDamage = func(_ *charmvt.SafeEmulator, data []byte) (int, error, []charmvt.Damage, bool) {
+		return len(data), nil, []charmvt.Damage{charmvt.CellDamage{X: 0, Y: 0}}, true
+	}
+	t.Cleanup(func() {
+		safeEmulatorWriteWithDamage = prevWithDamage
+	})
+
+	_, err, damage := vt.WriteWithDamage([]byte("\x1b[1;1H"))
+	if err != nil {
+		t.Fatalf("write with damage: %v", err)
+	}
+	if len(damage.Ops) != 0 {
+		t.Fatalf("expected resize fill hazard to suppress direct damage override, got %#v", damage.Ops)
 	}
 }
 

@@ -601,6 +601,68 @@ func TestOutputCursorWriterFlushesImmediatelyAfterInteractiveInput(t *testing.T)
 	}
 }
 
+func TestOutputCursorWriterFlushesImmediatelyAfterResetFrameState(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	originalIdleThreshold := directFrameIdleThreshold
+	directFrameBatchDelay = 20 * time.Millisecond
+	directFrameIdleThreshold = time.Hour
+	defer func() {
+		directFrameBatchDelay = originalDelay
+		directFrameIdleThreshold = originalIdleThreshold
+	}()
+
+	sink := &cursorWriterProbeSink{}
+	writer := newOutputCursorWriter(sink)
+	writer.mu.Lock()
+	writer.lastFlushAt = time.Now()
+	writer.mu.Unlock()
+
+	if err := writer.WriteFrameLines([]string{"frame-a"}, ""); err != nil {
+		t.Fatalf("write initial frame lines: %v", err)
+	}
+	writer.ResetFrameState()
+	if err := writer.WriteFrameLines([]string{"frame-b"}, ""); err != nil {
+		t.Fatalf("write post-reset frame lines: %v", err)
+	}
+	if writer.HasPendingFrame() {
+		t.Fatal("expected no pending frame after post-reset immediate flush")
+	}
+}
+
+func TestOutputCursorWriterResetFrameStateOnlyForcesOneImmediateFlush(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	originalIdleThreshold := directFrameIdleThreshold
+	directFrameBatchDelay = 20 * time.Millisecond
+	directFrameIdleThreshold = time.Hour
+	defer func() {
+		directFrameBatchDelay = originalDelay
+		directFrameIdleThreshold = originalIdleThreshold
+	}()
+
+	sink := &cursorWriterProbeSink{}
+	writer := newOutputCursorWriter(sink)
+	writer.mu.Lock()
+	writer.lastFlushAt = time.Now()
+	writer.mu.Unlock()
+
+	if err := writer.WriteFrameLines([]string{"frame-a"}, ""); err != nil {
+		t.Fatalf("write initial frame lines: %v", err)
+	}
+	writer.ResetFrameState()
+	if err := writer.WriteFrameLines([]string{"frame-b"}, ""); err != nil {
+		t.Fatalf("write post-reset frame lines: %v", err)
+	}
+	if writer.HasPendingFrame() {
+		t.Fatal("expected reset-triggered frame to flush immediately")
+	}
+	if err := writer.WriteFrameLines([]string{"frame-c"}, ""); err != nil {
+		t.Fatalf("write subsequent frame lines: %v", err)
+	}
+	if !writer.HasPendingFrame() {
+		t.Fatal("expected batching to resume after the first post-reset frame")
+	}
+}
+
 func TestOutputCursorWriterRemoteProfileFlushesInteractiveFramesImmediately(t *testing.T) {
 	t.Setenv("TERMX_REMOTE_LATENCY", "1")
 	originalDelay := directFrameBatchDelay
@@ -3527,6 +3589,550 @@ func TestOutputCursorWriterFrameLinesPathMovingFloatingPanePreservesUnderlyingNv
 	assertScreenEqual(t, got, want)
 }
 
+func TestOutputCursorWriterFrameLinesPathSplitDragShrinkThenGrowPreservesAltScreenBlankTail(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	buildModel := func() *Model {
+		t.Helper()
+		wb := workbench.NewWorkbench()
+		wb.AddWorkspace("main", &workbench.WorkspaceState{
+			Name:      "main",
+			ActiveTab: 0,
+			Tabs: []*workbench.TabState{{
+				ID:           "tab-1",
+				Name:         "tab 1",
+				ActivePaneID: "pane-2",
+				Panes: map[string]*workbench.PaneState{
+					"pane-1": {ID: "pane-1", Title: "nvim", TerminalID: "term-nvim"},
+					"pane-2": {ID: "pane-2", Title: "codex", TerminalID: "term-codex"},
+				},
+				Root: &workbench.LayoutNode{
+					Direction: workbench.SplitVertical,
+					Ratio:     0.5,
+					First:     workbench.NewLeaf("pane-1"),
+					Second:    workbench.NewLeaf("pane-2"),
+				},
+			}},
+		})
+
+		rt := runtime.New(&recordingBridgeClient{
+			attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+			snapshotByTerminal: map[string]*protocol.Snapshot{},
+		})
+		nvimTerm := rt.Registry().GetOrCreate("term-nvim")
+		nvimTerm.Name = "nvim"
+		nvimTerm.State = "running"
+		nvimTerm.Channel = 1
+		nvimTerm.Snapshot = cursorWriterNvimLikeSnapshot("term-nvim", 58, 30, "#444444")
+		nvimBinding := rt.BindPane("pane-1")
+		nvimBinding.Channel = 1
+		nvimBinding.Connected = true
+
+		codexTerm := rt.Registry().GetOrCreate("term-codex")
+		codexTerm.Name = "codex"
+		codexTerm.State = "running"
+		codexTerm.Channel = 2
+		codexTerm.Snapshot = cursorWriterDenseTextSnapshot("term-codex", 58, 30, 91)
+		codexBinding := rt.BindPane("pane-2")
+		codexBinding.Channel = 2
+		codexBinding.Connected = true
+
+		model := New(shared.Config{}, wb, rt)
+		model.width = 120
+		model.height = 36
+		return model
+	}
+
+	captureHostScreen := func(stream string) localvterm.ScreenData {
+		t.Helper()
+		vt := localvterm.New(120, 36, 0, nil)
+		if _, err := vt.Write([]byte(stream)); err != nil {
+			t.Fatalf("replay stream into host vterm: %v", err)
+		}
+		return vt.ScreenContent()
+	}
+
+	captureDragScreen := func(model *Model) (localvterm.ScreenData, renderFrameLines) {
+		t.Helper()
+		sink := &cursorWriterProbeTTY{}
+		writer := newOutputCursorWriter(sink)
+		model.SetFrameWriter(writer)
+		model.SetCursorWriter(writer)
+
+		model.render.Invalidate()
+		_ = model.View()
+
+		events := []tea.MouseMsg{
+			{
+				X:      59,
+				Y:      screenYForBodyY(model, 10),
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionPress,
+			},
+			{
+				X:      49,
+				Y:      screenYForBodyY(model, 10),
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionMotion,
+			},
+			{
+				X:      59,
+				Y:      screenYForBodyY(model, 10),
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionMotion,
+			},
+			{
+				X:      59,
+				Y:      screenYForBodyY(model, 10),
+				Button: tea.MouseButtonLeft,
+				Action: tea.MouseActionRelease,
+			},
+		}
+		for _, event := range events {
+			next, cmd := model.Update(event)
+			model = next.(*Model)
+			drainCmd(t, model, cmd, 20)
+			model.render.Invalidate()
+			_ = model.View()
+		}
+
+		sink.mu.Lock()
+		stream := strings.Join(sink.writes, "")
+		sink.mu.Unlock()
+		return captureHostScreen(stream), captureRenderFrameLines(t, model)
+	}
+
+	captureStaticScreen := func(frame renderFrameLines) localvterm.ScreenData {
+		t.Helper()
+		sink := &cursorWriterProbeTTY{}
+		writer := newOutputCursorWriter(sink)
+		if err := writer.WriteFrameLinesWithMeta(frame.lines, "", frame.meta); err != nil {
+			t.Fatalf("write final frame lines: %v", err)
+		}
+		sink.mu.Lock()
+		stream := strings.Join(sink.writes, "")
+		sink.mu.Unlock()
+		return captureHostScreen(stream)
+	}
+
+	got, finalFrame := captureDragScreen(buildModel())
+	want := captureStaticScreen(finalFrame)
+	assertScreenEqual(t, got, want)
+}
+
+func TestOutputCursorWriterFrameLinesPathSplitDragShrinkPreviewPreservesAltScreenBlankTail(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	buildModel := func() *Model {
+		t.Helper()
+		wb := workbench.NewWorkbench()
+		wb.AddWorkspace("main", &workbench.WorkspaceState{
+			Name:      "main",
+			ActiveTab: 0,
+			Tabs: []*workbench.TabState{{
+				ID:           "tab-1",
+				Name:         "tab 1",
+				ActivePaneID: "pane-2",
+				Panes: map[string]*workbench.PaneState{
+					"pane-1": {ID: "pane-1", Title: "nvim", TerminalID: "term-nvim"},
+					"pane-2": {ID: "pane-2", Title: "codex", TerminalID: "term-codex"},
+				},
+				Root: &workbench.LayoutNode{
+					Direction: workbench.SplitVertical,
+					Ratio:     0.5,
+					First:     workbench.NewLeaf("pane-1"),
+					Second:    workbench.NewLeaf("pane-2"),
+				},
+			}},
+		})
+
+		rt := runtime.New(&recordingBridgeClient{
+			attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+			snapshotByTerminal: map[string]*protocol.Snapshot{},
+		})
+		nvimTerm := rt.Registry().GetOrCreate("term-nvim")
+		nvimTerm.Name = "nvim"
+		nvimTerm.State = "running"
+		nvimTerm.Channel = 1
+		nvimTerm.Snapshot = cursorWriterNvimLikeSnapshot("term-nvim", 58, 30, "#444444")
+		nvimBinding := rt.BindPane("pane-1")
+		nvimBinding.Channel = 1
+		nvimBinding.Connected = true
+
+		codexTerm := rt.Registry().GetOrCreate("term-codex")
+		codexTerm.Name = "codex"
+		codexTerm.State = "running"
+		codexTerm.Channel = 2
+		codexTerm.Snapshot = cursorWriterDenseTextSnapshot("term-codex", 58, 30, 91)
+		codexBinding := rt.BindPane("pane-2")
+		codexBinding.Channel = 2
+		codexBinding.Connected = true
+
+		model := New(shared.Config{}, wb, rt)
+		model.width = 120
+		model.height = 36
+		return model
+	}
+
+	captureHostScreen := func(stream string) localvterm.ScreenData {
+		t.Helper()
+		vt := localvterm.New(120, 36, 0, nil)
+		if _, err := vt.Write([]byte(stream)); err != nil {
+			t.Fatalf("replay stream into host vterm: %v", err)
+		}
+		return vt.ScreenContent()
+	}
+
+	model := buildModel()
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	model.SetFrameWriter(writer)
+	model.SetCursorWriter(writer)
+
+	model.render.Invalidate()
+	_ = model.View()
+
+	events := []tea.MouseMsg{
+		{
+			X:      59,
+			Y:      screenYForBodyY(model, 10),
+			Button: tea.MouseButtonLeft,
+			Action: tea.MouseActionPress,
+		},
+		{
+			X:      49,
+			Y:      screenYForBodyY(model, 10),
+			Button: tea.MouseButtonLeft,
+			Action: tea.MouseActionMotion,
+		},
+	}
+	for _, event := range events {
+		next, cmd := model.Update(event)
+		model = next.(*Model)
+		drainCmd(t, model, cmd, 20)
+		model.render.Invalidate()
+		_ = model.View()
+	}
+
+	sink.mu.Lock()
+	stream := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	got := captureHostScreen(stream)
+	finalFrame := captureRenderFrameLines(t, model)
+	sink = &cursorWriterProbeTTY{}
+	writer = newOutputCursorWriter(sink)
+	if err := writer.WriteFrameLinesWithMeta(finalFrame.lines, "", finalFrame.meta); err != nil {
+		t.Fatalf("write final shrink frame lines: %v", err)
+	}
+	sink.mu.Lock()
+	wantStream := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	want := captureHostScreen(wantStream)
+	assertScreenEqual(t, got, want)
+}
+
+func TestOutputCursorWriterFrameLinesPathLiveSplitDragHighlightedBlankTailPreservesBackground(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	buildHighlightedScreen := func(cols, rows int) localvterm.ScreenData {
+		screen := make([][]localvterm.Cell, rows)
+		for y := 0; y < rows; y++ {
+			screen[y] = make([]localvterm.Cell, cols)
+			lineBG := ""
+			if y == 10 {
+				lineBG = "#3a3a3a"
+			}
+			label := ""
+			if y == 10 {
+				label = "cursor line"
+			} else if y == 0 {
+				label = "header"
+			}
+			for x := 0; x < cols; x++ {
+				cell := localvterm.Cell{Content: " ", Width: 1, Style: localvterm.CellStyle{BG: lineBG}}
+				if x < len(label) {
+					cell.Content = string(label[x])
+					cell.Style.FG = "#ffffff"
+				}
+				screen[y][x] = cell
+			}
+		}
+		return localvterm.ScreenData{
+			Cells:             screen,
+			IsAlternateScreen: true,
+		}
+	}
+
+	buildModel := func() *Model {
+		t.Helper()
+		wb := workbench.NewWorkbench()
+		wb.AddWorkspace("main", &workbench.WorkspaceState{
+			Name:      "main",
+			ActiveTab: 0,
+			Tabs: []*workbench.TabState{{
+				ID:           "tab-1",
+				Name:         "tab 1",
+				ActivePaneID: "pane-2",
+				Panes: map[string]*workbench.PaneState{
+					"pane-1": {ID: "pane-1", Title: "nvim", TerminalID: "term-nvim"},
+					"pane-2": {ID: "pane-2", Title: "codex", TerminalID: "term-codex"},
+				},
+				Root: &workbench.LayoutNode{
+					Direction: workbench.SplitVertical,
+					Ratio:     0.5,
+					First:     workbench.NewLeaf("pane-1"),
+					Second:    workbench.NewLeaf("pane-2"),
+				},
+			}},
+		})
+
+		rt := runtime.New(&recordingBridgeClient{
+			attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+			snapshotByTerminal: map[string]*protocol.Snapshot{},
+		})
+		nvimTerm := rt.Registry().GetOrCreate("term-nvim")
+		nvimTerm.Name = "nvim"
+		nvimTerm.State = "running"
+		nvimTerm.Channel = 1
+		vt := localvterm.New(58, 30, 100, nil)
+		vt.LoadSnapshot(
+			buildHighlightedScreen(58, 30),
+			localvterm.CursorState{Row: 10, Col: len("cursor line"), Visible: true},
+			localvterm.TerminalModes{AlternateScreen: true, MouseTracking: true, BracketedPaste: true},
+		)
+		nvimTerm.VTerm = vt
+		nvimTerm.SurfaceVersion = 1
+		nvimTerm.Snapshot = snapshotFromScreenData("term-nvim", buildHighlightedScreen(58, 30), localvterm.CursorState{Row: 10, Col: len("cursor line"), Visible: true})
+		nvimBinding := rt.BindPane("pane-1")
+		nvimBinding.Channel = 1
+		nvimBinding.Connected = true
+
+		codexTerm := rt.Registry().GetOrCreate("term-codex")
+		codexTerm.Name = "codex"
+		codexTerm.State = "running"
+		codexTerm.Channel = 2
+		codexTerm.Snapshot = cursorWriterDenseTextSnapshot("term-codex", 58, 30, 91)
+		codexBinding := rt.BindPane("pane-2")
+		codexBinding.Channel = 2
+		codexBinding.Connected = true
+
+		model := New(shared.Config{}, wb, rt)
+		model.width = 120
+		model.height = 36
+		return model
+	}
+
+	captureHostScreen := func(stream string) localvterm.ScreenData {
+		t.Helper()
+		vt := localvterm.New(120, 36, 0, nil)
+		if _, err := vt.Write([]byte(stream)); err != nil {
+			t.Fatalf("replay stream into host vterm: %v", err)
+		}
+		return vt.ScreenContent()
+	}
+
+	captureDragScreen := func(model *Model) (localvterm.ScreenData, renderFrameLines) {
+		t.Helper()
+		sink := &cursorWriterProbeTTY{}
+		writer := newOutputCursorWriter(sink)
+		model.SetFrameWriter(writer)
+		model.SetCursorWriter(writer)
+
+		model.render.Invalidate()
+		_ = model.View()
+
+		events := []tea.MouseMsg{
+			{X: 59, Y: screenYForBodyY(model, 10), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress},
+			{X: 49, Y: screenYForBodyY(model, 10), Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion},
+			{X: 59, Y: screenYForBodyY(model, 10), Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion},
+			{X: 59, Y: screenYForBodyY(model, 10), Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease},
+		}
+		for _, event := range events {
+			next, cmd := model.Update(event)
+			model = next.(*Model)
+			drainCmd(t, model, cmd, 20)
+			model.render.Invalidate()
+			_ = model.View()
+		}
+
+		sink.mu.Lock()
+		stream := strings.Join(sink.writes, "")
+		sink.mu.Unlock()
+		return captureHostScreen(stream), captureRenderFrameLines(t, model)
+	}
+
+	got, finalFrame := captureDragScreen(buildModel())
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	if err := writer.WriteFrameLinesWithMeta(finalFrame.lines, "", finalFrame.meta); err != nil {
+		t.Fatalf("write final live frame lines: %v", err)
+	}
+	sink.mu.Lock()
+	wantStream := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	want := captureHostScreen(wantStream)
+	assertScreenEqual(t, got, want)
+}
+
+func TestOutputCursorWriterFrameLinesPathLiveSplitDragHighlightedBlankTailKeepsPreviewEdgeBackground(t *testing.T) {
+	originalDelay := directFrameBatchDelay
+	directFrameBatchDelay = 0
+	defer func() { directFrameBatchDelay = originalDelay }()
+
+	buildHighlightedScreen := func(cols, rows int) localvterm.ScreenData {
+		screen := make([][]localvterm.Cell, rows)
+		for y := 0; y < rows; y++ {
+			screen[y] = make([]localvterm.Cell, cols)
+			lineBG := ""
+			if y == 10 {
+				lineBG = "#3a3a3a"
+			}
+			label := ""
+			if y == 10 {
+				label = "cursor line"
+			} else if y == 0 {
+				label = "header"
+			}
+			for x := 0; x < cols; x++ {
+				cell := localvterm.Cell{Content: " ", Width: 1, Style: localvterm.CellStyle{BG: lineBG}}
+				if x < len(label) {
+					cell.Content = string(label[x])
+					cell.Style.FG = "#ffffff"
+				}
+				screen[y][x] = cell
+			}
+		}
+		return localvterm.ScreenData{
+			Cells:             screen,
+			IsAlternateScreen: true,
+		}
+	}
+
+	buildModel := func() *Model {
+		t.Helper()
+		wb := workbench.NewWorkbench()
+		wb.AddWorkspace("main", &workbench.WorkspaceState{
+			Name:      "main",
+			ActiveTab: 0,
+			Tabs: []*workbench.TabState{{
+				ID:           "tab-1",
+				Name:         "tab 1",
+				ActivePaneID: "pane-2",
+				Panes: map[string]*workbench.PaneState{
+					"pane-1": {ID: "pane-1", Title: "nvim", TerminalID: "term-nvim"},
+					"pane-2": {ID: "pane-2", Title: "codex", TerminalID: "term-codex"},
+				},
+				Root: &workbench.LayoutNode{
+					Direction: workbench.SplitVertical,
+					Ratio:     0.5,
+					First:     workbench.NewLeaf("pane-1"),
+					Second:    workbench.NewLeaf("pane-2"),
+				},
+			}},
+		})
+
+		rt := runtime.New(&recordingBridgeClient{
+			attachResult:       &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+			snapshotByTerminal: map[string]*protocol.Snapshot{},
+		})
+		nvimTerm := rt.Registry().GetOrCreate("term-nvim")
+		nvimTerm.Name = "nvim"
+		nvimTerm.State = "running"
+		nvimTerm.Channel = 1
+		vt := localvterm.New(58, 30, 100, nil)
+		vt.LoadSnapshot(
+			buildHighlightedScreen(58, 30),
+			localvterm.CursorState{Row: 10, Col: len("cursor line"), Visible: true},
+			localvterm.TerminalModes{AlternateScreen: true, MouseTracking: true, BracketedPaste: true},
+		)
+		nvimTerm.VTerm = vt
+		nvimTerm.SurfaceVersion = 1
+		nvimTerm.Snapshot = snapshotFromScreenData("term-nvim", buildHighlightedScreen(58, 30), localvterm.CursorState{Row: 10, Col: len("cursor line"), Visible: true})
+		nvimBinding := rt.BindPane("pane-1")
+		nvimBinding.Channel = 1
+		nvimBinding.Connected = true
+
+		codexTerm := rt.Registry().GetOrCreate("term-codex")
+		codexTerm.Name = "codex"
+		codexTerm.State = "running"
+		codexTerm.Channel = 2
+		codexTerm.Snapshot = cursorWriterDenseTextSnapshot("term-codex", 58, 30, 91)
+		codexBinding := rt.BindPane("pane-2")
+		codexBinding.Channel = 2
+		codexBinding.Connected = true
+
+		model := New(shared.Config{}, wb, rt)
+		model.width = 120
+		model.height = 36
+		return model
+	}
+
+	model := buildModel()
+	sink := &cursorWriterProbeTTY{}
+	writer := newOutputCursorWriter(sink)
+	model.SetFrameWriter(writer)
+	model.SetCursorWriter(writer)
+
+	model.render.Invalidate()
+	_ = model.View()
+
+	events := []tea.MouseMsg{
+		{X: 59, Y: screenYForBodyY(model, 10), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress},
+		{X: 49, Y: screenYForBodyY(model, 10), Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion},
+	}
+	for _, event := range events {
+		next, cmd := model.Update(event)
+		model = next.(*Model)
+		drainCmd(t, model, cmd, 20)
+		model.render.Invalidate()
+		_ = model.View()
+	}
+
+	sink.mu.Lock()
+	stream := strings.Join(sink.writes, "")
+	sink.mu.Unlock()
+	host := localvterm.New(120, 36, 0, nil)
+	if _, err := host.Write([]byte(stream)); err != nil {
+		t.Fatalf("replay preview frame into host vterm: %v", err)
+	}
+
+	visible := model.workbench.VisibleWithSize(model.bodyRect())
+	if visible == nil || visible.ActiveTab < 0 || visible.ActiveTab >= len(visible.Tabs) {
+		t.Fatalf("expected visible workbench, got %#v", visible)
+	}
+	var pane workbench.VisiblePane
+	found := false
+	for _, candidate := range visible.Tabs[visible.ActiveTab].Panes {
+		if candidate.ID == "pane-1" {
+			pane = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected visible pane-1 after split drag preview")
+	}
+	contentRect, ok := paneContentRectForVisible(pane)
+	if !ok {
+		t.Fatalf("expected content rect for pane-1, got %#v", pane)
+	}
+	targetX := contentRect.X + maxInt(0, contentRect.W-2)
+	targetY := screenYForBodyY(model, contentRect.Y+10)
+	screen := host.ScreenContent()
+	if targetY < 0 || targetY >= len(screen.Cells) || targetX < 0 || targetX >= len(screen.Cells[targetY]) {
+		t.Fatalf("target cell out of bounds x=%d y=%d", targetX, targetY)
+	}
+	if got := screen.Cells[targetY][targetX].Style.BG; got != "#3a3a3a" {
+		t.Fatalf("expected preview edge cell to keep highlighted bg, got %#v at x=%d y=%d", screen.Cells[targetY][targetX], targetX, targetY)
+	}
+}
+
 func TestOutputCursorWriterFrameLinesPathMovingFloatingPanePreservesUnderlyingExtentHints(t *testing.T) {
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 0
@@ -4839,6 +5445,54 @@ func vtermCodexInputScreen(cols, rows int, input string) localvterm.ScreenData {
 		}
 	}
 	return localvterm.ScreenData{Cells: screen}
+}
+
+func snapshotFromScreenData(terminalID string, screen localvterm.ScreenData, cursor localvterm.CursorState) *protocol.Snapshot {
+	rows := len(screen.Cells)
+	cols := 0
+	if rows > 0 {
+		cols = len(screen.Cells[0])
+	}
+	protocolRows := make([][]protocol.Cell, rows)
+	for y := range screen.Cells {
+		protocolRows[y] = make([]protocol.Cell, len(screen.Cells[y]))
+		for x, cell := range screen.Cells[y] {
+			protocolRows[y][x] = protocol.Cell{
+				Content: cell.Content,
+				Width:   cell.Width,
+				Style: protocol.CellStyle{
+					FG:            cell.Style.FG,
+					BG:            cell.Style.BG,
+					Bold:          cell.Style.Bold,
+					Italic:        cell.Style.Italic,
+					Underline:     cell.Style.Underline,
+					Blink:         cell.Style.Blink,
+					Reverse:       cell.Style.Reverse,
+					Strikethrough: cell.Style.Strikethrough,
+				},
+			}
+		}
+	}
+	return &protocol.Snapshot{
+		TerminalID: terminalID,
+		Size:       protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
+		Screen: protocol.ScreenData{
+			Cells:             protocolRows,
+			IsAlternateScreen: screen.IsAlternateScreen,
+		},
+		Cursor: protocol.CursorState{
+			Row:     cursor.Row,
+			Col:     cursor.Col,
+			Visible: cursor.Visible,
+			Shape:   string(cursor.Shape),
+			Blink:   cursor.Blink,
+		},
+		Modes: protocol.TerminalModes{
+			AlternateScreen: screen.IsAlternateScreen,
+			MouseTracking:   true,
+			BracketedPaste:  true,
+		},
+	}
 }
 
 func cursorWriterScrollingSnapshot(terminalID string, cols, rows, start int) *protocol.Snapshot {
