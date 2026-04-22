@@ -19,6 +19,7 @@ type paneRenderEntry struct {
 	Title                string
 	Border               paneBorderInfo
 	Theme                uiTheme
+	Chrome               UIChromeConfig
 	Overflow             paneOverflowHints
 	ContentKey           paneContentKey
 	FrameKey             paneFrameKey
@@ -134,6 +135,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 	active := pane.ID == activePaneID
 	title := displayPaneTitleWithLookup(pane, lookup)
 	border := paneBorderInfoWithLookup(pane, lookup, options.ConfirmPaneID)
+	chrome := normalizeUIChromeConfig(options.Chrome)
 	terminal := lookup.terminal(pane.TerminalID)
 	overflow := paneOverflowHintsForRender(originalRect, rect, nil, nil)
 	copyModeActive := pane.ID == options.CopyMode.PaneID
@@ -224,6 +226,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 		Title:      title,
 		Border:     border,
 		Theme:      theme,
+		Chrome:     chrome,
 		Overflow:   overflow,
 		ContentKey: contentKey,
 		FrameKey: paneFrameKey{
@@ -237,7 +240,7 @@ func buildPaneRenderEntry(pane workbench.VisiblePane, originalRect, rect workben
 			Overflow:        overflow,
 			Active:          active,
 			Floating:        pane.Floating,
-			ChromeSignature: paneChromeActionSignatureForFrame(rect, title, border, pane.Floating),
+			ChromeSignature: paneChromeLayoutSignature(rect, title, border, pane.Floating, chrome),
 		},
 		TerminalID:           pane.TerminalID,
 		Snapshot:             snapshot,

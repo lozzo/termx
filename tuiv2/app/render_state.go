@@ -10,6 +10,8 @@ func (m *Model) renderVM() render.RenderVM {
 	vm := render.AdaptRenderVMWithSize(m.workbench, m.runtime, m.width, bodyHeight)
 	vm = m.withLiveSurfaceForSplitDragPreview(vm)
 	vm = render.WithRenderTermSize(vm, m.width, m.height)
+	vm = render.WithRenderChromeConfig(vm, m.chromeConfig())
+	vm = render.WithRenderThemeConfig(vm, m.theme)
 	vm = render.WithRenderStatus(vm, m.notice, renderErrorText(m.err), string(m.visibleInputMode()))
 	vm.Body.OwnerConfirmPaneID = m.ownerConfirmPaneID
 	if paneID, selected, ok := m.currentEmptyPaneSelection(); ok {

@@ -14,6 +14,8 @@ type RenderVM struct {
 	Surface   RenderSurfaceVM
 	Overlay   RenderOverlayVM
 	TermSize  TermSize
+	Chrome    UIChromeConfig
+	Theme     UIThemeConfig
 	Status    RenderStatusVM
 	Body      RenderBodyVM
 }
@@ -79,6 +81,7 @@ func AdaptRenderVMWithSize(wb *workbench.Workbench, rt *runtime.Runtime, bodyWid
 	vm := RenderVM{
 		Surface: RenderSurfaceVM{Kind: VisibleSurfaceWorkbench},
 		Overlay: RenderOverlayVM{Kind: VisibleOverlayNone},
+		Chrome:  DefaultUIChromeConfig(),
 	}
 	if wb != nil {
 		if bodyWidth > 0 && bodyHeight > 0 {
@@ -95,6 +98,16 @@ func AdaptRenderVMWithSize(wb *workbench.Workbench, rt *runtime.Runtime, bodyWid
 
 func WithRenderTermSize(vm RenderVM, width, height int) RenderVM {
 	vm.TermSize = TermSize{Width: width, Height: height}
+	return vm
+}
+
+func WithRenderChromeConfig(vm RenderVM, cfg UIChromeConfig) RenderVM {
+	vm.Chrome = normalizeUIChromeConfig(cfg)
+	return vm
+}
+
+func WithRenderThemeConfig(vm RenderVM, cfg UIThemeConfig) RenderVM {
+	vm.Theme = cfg
 	return vm
 }
 
@@ -234,6 +247,8 @@ func RenderVMFromVisibleState(state VisibleRenderState) RenderVM {
 			FloatingOverview: state.Overlay.FloatingOverview,
 		},
 		TermSize: state.TermSize,
+		Chrome:   normalizeUIChromeConfig(state.Chrome),
+		Theme:    state.Theme,
 		Status: RenderStatusVM{
 			Notice:      state.Notice,
 			Error:       state.Error,
@@ -287,6 +302,8 @@ func VisibleStateFromRenderVM(vm RenderVM) VisibleRenderState {
 			FloatingOverview: vm.Overlay.FloatingOverview,
 		},
 		TermSize:                   vm.TermSize,
+		Chrome:                     normalizeUIChromeConfig(vm.Chrome),
+		Theme:                      vm.Theme,
 		Notice:                     vm.Status.Notice,
 		Error:                      vm.Status.Error,
 		InputMode:                  vm.Status.InputMode,

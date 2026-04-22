@@ -1,7 +1,7 @@
 package render
 
 func renderActiveOverlayVMWithCursor(vm RenderVM, termSize TermSize, cursorOffsetY int, cursorVisible bool) renderedBody {
-	theme := uiThemeForRuntime(vm.Runtime)
+	theme := uiThemeForVM(vm)
 	result := renderedBody{cursor: hideCursorANSI()}
 	setLines := func(lines []string, blink bool) {
 		result.lines = lines

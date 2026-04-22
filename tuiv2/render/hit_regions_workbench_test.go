@@ -163,6 +163,27 @@ func TestTabBarOmitsWorkspaceAndTabManagementActions(t *testing.T) {
 	}
 }
 
+func TestRenderTabBarHonorsSlotConfig(t *testing.T) {
+	state := makeTabBarState(120, []string{"build", "logs"})
+	state = WithChromeConfig(state, UIChromeConfig{TabBar: TabBarConfig{Left: []ChromeSlotID{SlotTabWorkspace, SlotTabTabs}}})
+
+	line := xansi.Strip(renderTabBar(state))
+	if strings.Contains(line, " \uf067 ") {
+		t.Fatalf("expected create affordance hidden by slot config, got %q", line)
+	}
+}
+
+func TestTabBarHitRegionsOmitCreateWhenSlotHidden(t *testing.T) {
+	vm := makeTabBarVM(120, []string{"build", "logs"})
+	vm = WithRenderChromeConfig(vm, UIChromeConfig{TabBar: TabBarConfig{Left: []ChromeSlotID{SlotTabWorkspace, SlotTabTabs}}})
+	regions := TabBarHitRegions(vm)
+	for _, region := range regions {
+		if region.Kind == HitRegionTabCreate {
+			t.Fatalf("expected create region omitted when slot hidden, got %#v", regions)
+		}
+	}
+}
+
 func TestTabBarHitRegionsKeepOnlyCoreNavigation(t *testing.T) {
 	wideRegions := TabBarHitRegions(makeTabBarVM(120, []string{"a"}))
 	wideHasCreate := false

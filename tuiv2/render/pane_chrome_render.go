@@ -37,7 +37,7 @@ func displayPaneTitleWithLookup(pane workbench.VisiblePane, lookup runtimeLookup
 }
 
 // drawPaneFrame draws the border box with a title on the left and stable chrome slots on the right.
-func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, sharedLeft, sharedTop bool, title string, border paneBorderInfo, theme uiTheme, overflow paneOverflowHints, active bool, floating bool) {
+func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, sharedLeft, sharedTop bool, title string, border paneBorderInfo, theme uiTheme, overflow paneOverflowHints, active bool, floating bool, cfg UIChromeConfig) {
 	_ = sharedLeft
 	_ = sharedTop
 	if rect.W < 2 || rect.H < 2 {
@@ -80,7 +80,7 @@ func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, sharedLeft, shar
 		// Overwrite the floating frame directly so its corners stay real corners.
 		drawDirectPaneBorder(canvas, rect, borderStyle)
 		drawPaneOverflowMarkers(canvas, rect, theme, overflow, active)
-		drawPaneTopBorderLabels(canvas, rect, chromeStyles, title, border, floating)
+		drawPaneTopBorderLabels(canvas, rect, chromeStyles, title, border, floating, cfg)
 		return
 	}
 	// Framed split panes intentionally keep their own left/top borders instead
@@ -93,7 +93,7 @@ func drawPaneFrame(canvas *composedCanvas, rect workbench.Rect, sharedLeft, shar
 	drawVerticalBorder(canvas, rect.X+rect.W-1, verticalBorderStart(rect.Y, false), rect.Y+rect.H-2, borderStyle, false)
 
 	drawPaneOverflowMarkers(canvas, rect, theme, overflow, active)
-	drawPaneTopBorderLabels(canvas, rect, chromeStyles, title, border, floating)
+	drawPaneTopBorderLabels(canvas, rect, chromeStyles, title, border, floating, cfg)
 }
 
 func drawDirectPaneBorder(canvas *composedCanvas, rect workbench.Rect, style drawStyle) {
@@ -248,8 +248,72 @@ type paneChromeDrawStyles struct {
 	EmphasizeRole bool
 }
 
-func drawPaneTopBorderLabels(canvas *composedCanvas, rect workbench.Rect, styles paneChromeDrawStyles, title string, border paneBorderInfo, floating bool) {
-	layout, ok := paneTopBorderLabelsLayout(rect, title, border, paneChromeActionTokensForFrame(rect, title, border, floating))
+type paneBorderLabelsLayout struct {
+	actionSlots   []paneChromeActionSlot
+	titleX        int
+	titleLabel    string
+	stateX        int
+	stateLabel    string
+	shareX        int
+	shareLabel    string
+	roleX         int
+	roleLabel     string
+	copyTimeX     int
+	copyTimeLabel string
+	copyRowX      int
+	copyRowLabel  string
+}
+
+type paneBorderSlot struct {
+	label string
+	kind  string
+}
+
+type paneChromeResolved struct {
+	Title   string
+	Slots   []paneBorderSlot
+	Actions []paneChromeActionToken
+}
+
+func resolvePaneChromeConfig(cfg UIChromeConfig, title string, border paneBorderInfo, actions []paneChromeActionToken) paneChromeResolved {
+	cfg = normalizeUIChromeConfig(cfg)
+	resolved := paneChromeResolved{Title: title}
+	if chromeSlotEnabled(cfg.PaneChrome.Top, SlotPaneState) {
+		if label := padPaneBorderSlot(border.StateLabel, paneBorderStateSlotWidth); label != "" {
+			resolved.Slots = append(resolved.Slots, paneBorderSlot{kind: "state", label: label})
+		}
+	}
+	if chromeSlotEnabled(cfg.PaneChrome.Top, SlotPaneShare) {
+		if label := padPaneBorderSlot(border.ShareLabel, paneBorderShareSlotWidth); label != "" {
+			resolved.Slots = append(resolved.Slots, paneBorderSlot{kind: "share", label: label})
+		}
+	}
+	if chromeSlotEnabled(cfg.PaneChrome.Top, SlotPaneRole) {
+		if label := paneBorderRoleSlot(border.RoleLabel); label != "" {
+			resolved.Slots = append(resolved.Slots, paneBorderSlot{kind: "role", label: label})
+		}
+	}
+	if chromeSlotEnabled(cfg.PaneChrome.Top, SlotPaneCopyTime) {
+		if label := normalizePaneBorderLabel(border.CopyTimeLabel); label != "" {
+			resolved.Slots = append(resolved.Slots, paneBorderSlot{kind: "copy-time", label: label})
+		}
+	}
+	if chromeSlotEnabled(cfg.PaneChrome.Top, SlotPaneCopyRow) {
+		if label := normalizePaneBorderLabel(border.CopyRowLabel); label != "" {
+			resolved.Slots = append(resolved.Slots, paneBorderSlot{kind: "copy-row", label: label})
+		}
+	}
+	if chromeSlotEnabled(cfg.PaneChrome.Top, SlotPaneActions) {
+		resolved.Actions = append(resolved.Actions, actions...)
+	}
+	if !chromeSlotEnabled(cfg.PaneChrome.Top, SlotPaneTitle) {
+		resolved.Title = ""
+	}
+	return resolved
+}
+
+func drawPaneTopBorderLabels(canvas *composedCanvas, rect workbench.Rect, styles paneChromeDrawStyles, title string, border paneBorderInfo, floating bool, cfg UIChromeConfig) {
+	layout, ok := paneTopBorderLabelsLayout(rect, resolvePaneChromeConfig(cfg, title, border, paneChromeActionTokensForFrame(rect, title, border, floating)))
 	if canvas == nil || !ok {
 		return
 	}
@@ -280,28 +344,7 @@ func drawPaneTopBorderLabels(canvas *composedCanvas, rect workbench.Rect, styles
 	}
 }
 
-type paneBorderLabelsLayout struct {
-	actionSlots   []paneChromeActionSlot
-	titleX        int
-	titleLabel    string
-	stateX        int
-	stateLabel    string
-	shareX        int
-	shareLabel    string
-	roleX         int
-	roleLabel     string
-	copyTimeX     int
-	copyTimeLabel string
-	copyRowX      int
-	copyRowLabel  string
-}
-
-type paneBorderSlot struct {
-	label string
-	kind  string
-}
-
-func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBorderInfo, actionTokens []paneChromeActionToken) (paneBorderLabelsLayout, bool) {
+func paneTopBorderLabelsLayout(rect workbench.Rect, chrome paneChromeResolved) (paneBorderLabelsLayout, bool) {
 	if rect.W <= 4 {
 		return paneBorderLabelsLayout{}, false
 	}
@@ -311,34 +354,19 @@ func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBor
 		return paneBorderLabelsLayout{}, false
 	}
 
-	fullTitleLabel := normalizePaneBorderLabel(title)
-	allSlots := make([]paneBorderSlot, 0, 5)
-	if label := padPaneBorderSlot(border.StateLabel, paneBorderStateSlotWidth); label != "" {
-		allSlots = append(allSlots, paneBorderSlot{kind: "state", label: label})
-	}
-	if label := padPaneBorderSlot(border.ShareLabel, paneBorderShareSlotWidth); label != "" {
-		allSlots = append(allSlots, paneBorderSlot{kind: "share", label: label})
-	}
-	if label := paneBorderRoleSlot(border.RoleLabel); label != "" {
-		allSlots = append(allSlots, paneBorderSlot{kind: "role", label: label})
-	}
-	if label := normalizePaneBorderLabel(border.CopyTimeLabel); label != "" {
-		allSlots = append(allSlots, paneBorderSlot{kind: "copy-time", label: label})
-	}
-	if label := normalizePaneBorderLabel(border.CopyRowLabel); label != "" {
-		allSlots = append(allSlots, paneBorderSlot{kind: "copy-row", label: label})
-	}
+	fullTitleLabel := normalizePaneBorderLabel(chrome.Title)
+	allSlots := append([]paneBorderSlot(nil), chrome.Slots...)
 	titleFullWidth := xansi.StringWidth(fullTitleLabel)
 	active := paneBorderSlotsForWidth(allSlots, maxInt(0, innerW-titleFullWidth))
-	if fullTitleLabel == "" && len(active) == 0 {
+	if fullTitleLabel == "" && len(active) == 0 && len(chrome.Actions) == 0 {
 		return paneBorderLabelsLayout{}, false
 	}
 
-	actionCount := len(actionTokens)
+	actionCount := len(chrome.Actions)
 	reservedStatuses := paneBorderSlotsWidth(active)
-	preferActionCluster := len(actionTokens) > 0 && actionTokens[0].Kind == HitRegionPaneCenterFloating
+	preferActionCluster := len(chrome.Actions) > 0 && chrome.Actions[0].Kind == HitRegionPaneCenterFloating
 	for {
-		reservedRight := reservedStatuses + visiblePaneChromeActionClusterWidth(actionTokens, actionCount, preferActionCluster)
+		reservedRight := reservedStatuses + visiblePaneChromeActionClusterWidth(chrome.Actions, actionCount, preferActionCluster)
 		titleBudget := innerW - reservedRight
 		titleFits := titleFullWidth <= titleBudget
 		if preferActionCluster {
@@ -359,17 +387,13 @@ func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBor
 		}
 		break
 	}
-	titleLabel := xansi.Truncate(fullTitleLabel, maxInt(0, innerW-reservedStatuses-visiblePaneChromeActionClusterWidth(actionTokens, actionCount, preferActionCluster)), "")
+	titleLabel := xansi.Truncate(fullTitleLabel, maxInt(0, innerW-reservedStatuses-visiblePaneChromeActionClusterWidth(chrome.Actions, actionCount, preferActionCluster)), "")
 	if titleLabel == "" && len(active) == 0 && actionCount == 0 {
 		return paneBorderLabelsLayout{}, false
 	}
 
-	layout := paneBorderLabelsLayout{
-		actionSlots: make([]paneChromeActionSlot, actionCount),
-		titleX:      innerX,
-		titleLabel:  titleLabel,
-	}
-	visibleActionTokens := visiblePaneChromeActionTokens(actionTokens, actionCount, preferActionCluster)
+	layout := paneBorderLabelsLayout{actionSlots: make([]paneChromeActionSlot, actionCount), titleX: innerX, titleLabel: titleLabel}
+	visibleActionTokens := visiblePaneChromeActionTokens(chrome.Actions, actionCount, preferActionCluster)
 	right := innerX + innerW
 	actionXs := make([]int, actionCount)
 	for i := actionCount - 1; i >= 0; i-- {
@@ -408,13 +432,21 @@ func paneTopBorderLabelsLayout(rect workbench.Rect, title string, border paneBor
 	}
 	for i := 0; i < actionCount; i++ {
 		token := visibleActionTokens[i]
-		layout.actionSlots[i] = paneChromeActionSlot{
-			Kind:  token.Kind,
-			Label: token.Label,
-			X:     actionXs[i],
-		}
+		layout.actionSlots[i] = paneChromeActionSlot{Kind: token.Kind, Label: token.Label, X: actionXs[i]}
 	}
 	return layout, true
+}
+
+func paneChromeLayoutSignature(rect workbench.Rect, title string, border paneBorderInfo, floating bool, cfg UIChromeConfig) string {
+	resolved := resolvePaneChromeConfig(cfg, title, border, paneChromeActionTokensForFrame(rect, title, border, floating))
+	parts := []string{normalizePaneBorderLabel(resolved.Title)}
+	for _, slot := range resolved.Slots {
+		parts = append(parts, slot.kind+"="+slot.label)
+	}
+	for _, action := range resolved.Actions {
+		parts = append(parts, string(action.Kind)+"="+action.Label)
+	}
+	return strings.Join(parts, "|")
 }
 
 func visiblePaneChromeActionTokens(tokens []paneChromeActionToken, count int, preferSuffix bool) []paneChromeActionToken {
@@ -507,16 +539,11 @@ func drawBorderLabel(canvas *composedCanvas, x, y int, text string, style drawSt
 	canvas.drawText(x, y, text, style)
 }
 
-func PaneOwnerButtonRect(pane workbench.VisiblePane, runtimeState *VisibleRuntimeStateProxy, confirmPaneID string) (workbench.Rect, bool) {
+func PaneOwnerButtonRect(pane workbench.VisiblePane, runtimeState *VisibleRuntimeStateProxy, confirmPaneID string, cfg UIChromeConfig) (workbench.Rect, bool) {
 	lookup := runtimeLookupForState(runtimeState)
 	title := displayPaneTitleWithLookup(pane, lookup)
 	border := paneBorderInfoWithLookup(pane, lookup, confirmPaneID)
-	layout, ok := paneTopBorderLabelsLayout(
-		pane.Rect,
-		title,
-		border,
-		paneChromeActionTokensForPane(pane, title, border),
-	)
+	layout, ok := paneTopBorderLabelsLayout(pane.Rect, resolvePaneChromeConfig(cfg, title, border, paneChromeActionTokensForPane(pane, title, border)))
 	if !ok || layout.roleLabel == "" {
 		return workbench.Rect{}, false
 	}
@@ -524,12 +551,7 @@ func PaneOwnerButtonRect(pane workbench.VisiblePane, runtimeState *VisibleRuntim
 	if actionLabel == "" {
 		return workbench.Rect{}, false
 	}
-	return workbench.Rect{
-		X: layout.roleX,
-		Y: pane.Rect.Y,
-		W: xansi.StringWidth(layout.roleLabel),
-		H: 1,
-	}, true
+	return workbench.Rect{X: layout.roleX, Y: pane.Rect.Y, W: xansi.StringWidth(layout.roleLabel), H: 1}, true
 }
 
 func paneOwnerActionLabel(pane workbench.VisiblePane, lookup runtimeLookup, confirmPaneID string) string {

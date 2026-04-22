@@ -25,10 +25,10 @@ func TestSetPaneChromeGlyphsOverridesSubset(t *testing.T) {
 func TestDefaultPaneChromeSplitGlyphsMatchSplitDirections(t *testing.T) {
 	glyphs := DefaultPaneChromeGlyphs()
 
-	if got := glyphs.SplitVertical; got != "\ueb71" {
-		t.Fatalf("SplitVertical = %q, want %q", got, "\ueb71")
+	if got := glyphs.SplitVertical; got != "\ueb56" {
+		t.Fatalf("SplitVertical = %q, want %q", got, "\ueb56")
 	}
-	if got := glyphs.SplitHorizontal; got != "\ueb6f" {
-		t.Fatalf("SplitHorizontal = %q, want %q", got, "\ueb6f")
+	if got := glyphs.SplitHorizontal; got != "\ueb57" {
+		t.Fatalf("SplitHorizontal = %q, want %q", got, "\ueb57")
 	}
 }

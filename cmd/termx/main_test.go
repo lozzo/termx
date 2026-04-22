@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -20,7 +21,9 @@ func TestRootCmdRoutesToTUIv2ByDefault(t *testing.T) {
 
 	isInteractiveTerminal = func() bool { return true }
 	stateHome := t.TempDir()
+	configHome := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateHome)
+	t.Setenv("XDG_CONFIG_HOME", configHome)
 
 	var gotCfg shared.Config
 	called := false
@@ -53,6 +56,12 @@ func TestRootCmdRoutesToTUIv2ByDefault(t *testing.T) {
 	}
 	if want := filepath.Join(stateHome, "termx", "workspace-state.json"); gotCfg.WorkspaceStatePath != want {
 		t.Fatalf("expected workspace state path %q, got %q", want, gotCfg.WorkspaceStatePath)
+	}
+	if want := filepath.Join(configHome, "termx", "termx.yaml"); gotCfg.ConfigPath != want {
+		t.Fatalf("expected config path %q, got %q", want, gotCfg.ConfigPath)
+	}
+	if _, err := os.Stat(gotCfg.ConfigPath); err != nil {
+		t.Fatalf("expected default config file to be created: %v", err)
 	}
 }
 
@@ -91,6 +100,9 @@ func TestAttachCmdRoutesToTUIv2WithAttachID(t *testing.T) {
 		runTUIv2 = oldRunv2
 	})
 
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+
 	var gotCfg shared.Config
 	called := false
 	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
@@ -119,6 +131,9 @@ func TestAttachCmdRoutesToTUIv2WithAttachID(t *testing.T) {
 	}
 	if gotCfg.WorkspaceStatePath != "" {
 		t.Fatalf("expected attach command to avoid workspace persistence path, got %q", gotCfg.WorkspaceStatePath)
+	}
+	if want := filepath.Join(configHome, "termx", "termx.yaml"); gotCfg.ConfigPath != want {
+		t.Fatalf("expected config path %q, got %q", want, gotCfg.ConfigPath)
 	}
 }
 
@@ -174,5 +189,36 @@ func TestAttachCmdBlocksNestedTUIByDefault(t *testing.T) {
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "refusing to start termx TUI inside a termx-managed terminal") {
 		t.Fatalf("expected nested attach rejection, got %v", err)
+	}
+}
+
+func TestRootCmdUsesExplicitConfigPath(t *testing.T) {
+	oldInteractive := isInteractiveTerminal
+	oldRunv2 := runTUIv2
+	t.Cleanup(func() {
+		isInteractiveTerminal = oldInteractive
+		runTUIv2 = oldRunv2
+	})
+
+	isInteractiveTerminal = func() bool { return true }
+	configPath := filepath.Join(t.TempDir(), "custom-termx.yaml")
+
+	var gotCfg shared.Config
+	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
+		gotCfg = cfg
+		return nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"--config", configPath})
+	cmd.SetIn(bytes.NewBuffer(nil))
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if gotCfg.ConfigPath != configPath {
+		t.Fatalf("expected explicit config path %q, got %q", configPath, gotCfg.ConfigPath)
 	}
 }

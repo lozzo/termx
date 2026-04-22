@@ -160,7 +160,7 @@ func TestDarkThemeAccentTokensStayHostDerivedWithoutHostPalette(t *testing.T) {
 	if got := contrastRatio(theme.chromeAccent, theme.chromeBG); got < 3.0 {
 		t.Fatalf("accent contrast = %.2f, want >= 3.00", got)
 	}
-	if theme.chromeAccent == ensureContrast("#818cf8", theme.chromeBG, 3.2) {
+	if theme.chromeAccent == ensureContrast("#8b5cf6", theme.chromeBG, 3.2) {
 		t.Fatalf("expected chrome accent fallback to derive from host colors before using the fixed accent fallback, got %q", theme.chromeAccent)
 	}
 	if got := contrastRatio(theme.panelBorder2, theme.panelBG); got < 1.05 {
@@ -177,7 +177,7 @@ func TestSemanticColorsStayLegibleWithoutHostPalette(t *testing.T) {
 		"danger":       func(bg string) string { return ensureContrast("#f87171", bg, 2.8) },
 		"warning":      func(bg string) string { return ensureContrast("#fbbf24", bg, 2.8) },
 		"info":         func(bg string) string { return ensureContrast("#60a5fa", bg, 2.8) },
-		"chromeAccent": func(bg string) string { return ensureContrast("#818cf8", bg, 3.2) },
+		"chromeAccent": func(bg string) string { return ensureContrast("#8b5cf6", bg, 3.2) },
 	}
 	for _, bg := range []string{"#000000", "#080b14", "#ffffff", "#f5f5f5"} {
 		theme := uiThemeFromHostColors(bg, "", nil)

@@ -10,11 +10,10 @@ import (
 	"github.com/lozzow/termx/tuiv2/uiinput"
 )
 
-func renderTerminalPoolPageWithCursor(pool *modal.TerminalManagerState, runtimeState *VisibleRuntimeStateProxy, termSize TermSize, cursorOffsetY int, cursorVisible bool) renderedBody {
+func renderTerminalPoolPageWithCursor(pool *modal.TerminalManagerState, runtimeState *VisibleRuntimeStateProxy, theme uiTheme, termSize TermSize, cursorOffsetY int, cursorVisible bool) renderedBody {
 	if pool == nil {
 		return renderedBody{}
 	}
-	theme := uiThemeForRuntime(runtimeState)
 	width := maxInt(1, termSize.Width)
 	height := maxInt(1, termSize.Height)
 	layout := buildTerminalPoolPageLayout(pool, width, height)

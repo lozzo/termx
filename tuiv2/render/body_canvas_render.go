@@ -49,7 +49,7 @@ func rebuildBodyCanvas(cache *bodyRenderCache, entries []paneRenderEntry, width,
 	for _, entry := range entries {
 		if !entry.Frameless {
 			canvas.withOwner(entry.OwnerID, func() {
-				drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating)
+				drawPaneFrame(canvas, entry.Rect, entry.SharedLeft, entry.SharedTop, entry.Title, entry.Border, entry.Theme, entry.Overflow, entry.Active, entry.Floating, entry.Chrome)
 			})
 		}
 		canvas.withOwner(entry.OwnerID, func() {

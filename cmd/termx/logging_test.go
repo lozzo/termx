@@ -3,8 +3,11 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/lozzow/termx/tuiv2/shared"
 )
 
 func TestResolveLogFilePathPrefersExplicitValue(t *testing.T) {
@@ -68,5 +71,55 @@ func TestOpenLogFileLoggerCreatesFileAndWrites(t *testing.T) {
 	text := string(data)
 	if !strings.Contains(text, "hello-log") || !strings.Contains(text, "component=test") {
 		t.Fatalf("expected log file to contain structured record, got:\n%s", text)
+	}
+}
+
+func TestTUISharedConfigCreatesDefaultTermxYAML(t *testing.T) {
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+
+	cfg, err := tuiSharedConfig("main", "main", "", "", "/tmp/termx.log", "/tmp/workspace-state.json", "")
+	if err != nil {
+		t.Fatalf("tuiSharedConfig returned error: %v", err)
+	}
+	wantPath := filepath.Join(configHome, "termx", "termx.yaml")
+	if cfg.ConfigPath != wantPath {
+		t.Fatalf("expected config path %q, got %q", wantPath, cfg.ConfigPath)
+	}
+	data, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatalf("expected default termx.yaml to exist: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "chrome:") || !strings.Contains(text, "paneTop:") {
+		t.Fatalf("expected default termx.yaml content, got:\n%s", text)
+	}
+}
+
+func TestTUISharedConfigLoadsChromeSlotsFromTermxYAML(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "termx.yaml")
+	content := `# test config
+chrome:
+  paneTop: [pane.title, pane.actions]
+  statusLeft: [status.hints]
+  statusRight: []
+  tabLeft: [tab.workspace, tab.tabs]
+`
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	cfg, err := tuiSharedConfig("main", "main", "", "", "/tmp/termx.log", "/tmp/workspace-state.json", configPath)
+	if err != nil {
+		t.Fatalf("tuiSharedConfig returned error: %v", err)
+	}
+	wantChrome := shared.ChromeConfig{
+		PaneTop:     []string{"pane.title", "pane.actions"},
+		StatusLeft:  []string{"status.hints"},
+		StatusRight: []string{},
+		TabLeft:     []string{"tab.workspace", "tab.tabs"},
+	}
+	if !reflect.DeepEqual(cfg.Chrome, wantChrome) {
+		t.Fatalf("unexpected chrome config: %#v", cfg.Chrome)
 	}
 }

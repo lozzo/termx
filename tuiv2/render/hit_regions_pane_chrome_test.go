@@ -14,7 +14,7 @@ func TestPaneChromeHitRegionsExposeStableTiledActions(t *testing.T) {
 		Rect: workbench.Rect{X: 2, Y: 1, W: 64, H: 12},
 	}
 
-	regions := PaneChromeHitRegions(pane, nil, "")
+	regions := PaneChromeHitRegions(pane, nil, "", DefaultUIChromeConfig())
 	if len(regions) != 4 {
 		t.Fatalf("expected 4 tiled pane chrome regions, got %#v", regions)
 	}
@@ -57,7 +57,7 @@ func TestPaneChromeHitRegionsHideSplitActionsForFloatingPanes(t *testing.T) {
 		Floating: true,
 	}
 
-	regions := PaneChromeHitRegions(pane, nil, "")
+	regions := PaneChromeHitRegions(pane, nil, "", DefaultUIChromeConfig())
 	if len(regions) != 4 {
 		t.Fatalf("expected 4 floating pane chrome regions, got %#v", regions)
 	}
@@ -81,7 +81,7 @@ func TestPaneChromeHitRegionsKeepAttachedAndLayoutActionsHidden(t *testing.T) {
 		Rect:       workbench.Rect{X: 0, Y: 0, W: 96, H: 20},
 	}
 
-	regions := PaneChromeHitRegions(pane, nil, "")
+	regions := PaneChromeHitRegions(pane, nil, "", DefaultUIChromeConfig())
 	wantKinds := []HitRegionKind{
 		HitRegionPaneZoom,
 		HitRegionPaneSplitV,
@@ -112,7 +112,7 @@ func TestPaneChromeHitRegionsExposeSizeLockButtonWhenRuntimeKnowsTerminal(t *tes
 		}},
 	}
 
-	regions := PaneChromeHitRegions(pane, runtimeState, "")
+	regions := PaneChromeHitRegions(pane, runtimeState, "", DefaultUIChromeConfig())
 	found := false
 	for _, region := range regions {
 		if region.Kind != HitRegionPaneSizeLock {
@@ -139,7 +139,7 @@ func TestPaneChromeHitRegionsDoNotRepeatLayoutActionsOnNonClusterPane(t *testing
 		Rect:       workbench.Rect{X: 20, Y: 6, W: 96, H: 20},
 	}
 
-	regions := PaneChromeHitRegions(pane, nil, "")
+	regions := PaneChromeHitRegions(pane, nil, "", DefaultUIChromeConfig())
 	for _, region := range regions {
 		if region.Kind == HitRegionPaneBalancePanes || region.Kind == HitRegionPaneCycleLayout {
 			t.Fatalf("expected non-cluster pane to hide layout actions, got %#v", regions)
@@ -153,7 +153,7 @@ func TestPaneChromeHitRegionsClipByStableActionPrefix(t *testing.T) {
 		TerminalID: "term-1",
 		Rect:       workbench.Rect{X: 0, Y: 0, W: 34, H: 8},
 	}
-	regions := PaneChromeHitRegions(pane, nil, "")
+	regions := PaneChromeHitRegions(pane, nil, "", DefaultUIChromeConfig())
 	if len(regions) == 0 {
 		t.Fatalf("expected at least one clipped action region, got %#v", regions)
 	}
@@ -182,7 +182,7 @@ func TestPaneChromeHitRegionsOmitFramelessPane(t *testing.T) {
 		Frameless:  true,
 	}
 
-	regions := PaneChromeHitRegions(pane, nil, "")
+	regions := PaneChromeHitRegions(pane, nil, "", DefaultUIChromeConfig())
 	if len(regions) != 0 {
 		t.Fatalf("expected frameless pane to omit chrome hit regions, got %#v", regions)
 	}
@@ -193,7 +193,7 @@ func TestPaneTopBorderLabelsLayoutKeepsRoleSlotInNarrowPane(t *testing.T) {
 	title := " shell "
 	border := paneBorderInfo{StateLabel: "●", ShareLabel: "⇄2", RoleLabel: "◇ follow"}
 	tokens := paneChromeActionTokensForFrame(rect, title, border, false)
-	layout, ok := paneTopBorderLabelsLayout(rect, title, border, tokens)
+	layout, ok := paneTopBorderLabelsLayout(rect, resolvePaneChromeConfig(DefaultUIChromeConfig(), title, border, tokens))
 	if !ok {
 		t.Fatal("expected valid narrow pane border layout")
 	}

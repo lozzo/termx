@@ -193,7 +193,7 @@ func paneChromeActionSlotForKind(kind HitRegionKind, paneID string) (input.Seman
 	return input.SemanticAction{}, false
 }
 
-func PaneChromeHitRegions(pane workbench.VisiblePane, runtimeState *VisibleRuntimeStateProxy, confirmPaneID string) []HitRegion {
+func PaneChromeHitRegions(pane workbench.VisiblePane, runtimeState *VisibleRuntimeStateProxy, confirmPaneID string, cfg UIChromeConfig) []HitRegion {
 	if strings.TrimSpace(pane.ID) == "" || pane.Frameless {
 		return nil
 	}
@@ -205,9 +205,7 @@ func PaneChromeHitRegions(pane workbench.VisiblePane, runtimeState *VisibleRunti
 	}
 	layout, ok := paneTopBorderLabelsLayout(
 		pane.Rect,
-		title,
-		border,
-		paneChromeActionTokensForPane(pane, title, border),
+		resolvePaneChromeConfig(cfg, title, border, paneChromeActionTokensForPane(pane, title, border)),
 	)
 	if !ok {
 		return nil
@@ -223,28 +221,15 @@ func PaneChromeHitRegions(pane workbench.VisiblePane, runtimeState *VisibleRunti
 			Kind:   slot.Kind,
 			PaneID: pane.ID,
 			Action: action,
-			Rect: workbench.Rect{
-				X: slot.X,
-				Y: pane.Rect.Y,
-				W: xansi.StringWidth(slot.Label),
-				H: 1,
-			},
+			Rect:   workbench.Rect{X: slot.X, Y: pane.Rect.Y, W: xansi.StringWidth(slot.Label), H: 1},
 		})
 	}
 	if buttonLabel := paneSizeLockButtonLabel(pane, lookup); buttonLabel != "" && strings.HasPrefix(strings.TrimSpace(layout.titleLabel), buttonLabel) {
 		regions = append(regions, HitRegion{
 			Kind:   HitRegionPaneSizeLock,
 			PaneID: pane.ID,
-			Action: input.SemanticAction{
-				Kind:   input.ActionToggleTerminalSizeLock,
-				PaneID: pane.ID,
-			},
-			Rect: workbench.Rect{
-				X: layout.titleX + 1,
-				Y: pane.Rect.Y,
-				W: xansi.StringWidth(buttonLabel),
-				H: 1,
-			},
+			Action: input.SemanticAction{Kind: input.ActionToggleTerminalSizeLock, PaneID: pane.ID},
+			Rect:   workbench.Rect{X: layout.titleX + 1, Y: pane.Rect.Y, W: xansi.StringWidth(buttonLabel), H: 1},
 		})
 	}
 
@@ -252,17 +237,10 @@ func PaneChromeHitRegions(pane workbench.VisiblePane, runtimeState *VisibleRunti
 		regions = append(regions, HitRegion{
 			Kind:   HitRegionPaneOwner,
 			PaneID: pane.ID,
-			Action: input.SemanticAction{
-				Kind:   input.ActionBecomeOwner,
-				PaneID: pane.ID,
-			},
-			Rect: workbench.Rect{
-				X: layout.roleX,
-				Y: pane.Rect.Y,
-				W: xansi.StringWidth(layout.roleLabel),
-				H: 1,
-			},
+			Action: input.SemanticAction{Kind: input.ActionBecomeOwner, PaneID: pane.ID},
+			Rect:   workbench.Rect{X: layout.roleX, Y: pane.Rect.Y, W: xansi.StringWidth(layout.roleLabel), H: 1},
 		})
 	}
 	return regions
 }
+

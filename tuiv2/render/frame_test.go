@@ -326,6 +326,29 @@ func TestStatusBarCacheKeyChangesWithWorkspacePickerSelection(t *testing.T) {
 	}
 }
 
+func TestStatusBarCacheKeyChangesWithChromeConfig(t *testing.T) {
+	state := VisibleRenderState{
+		TermSize:    TermSize{Width: 120, Height: 20},
+		InputMode:   string(input.ModeWorkspacePicker),
+		Chrome:      DefaultUIChromeConfig(),
+		StatusHints: []string{"Ctrl-R RENAME"},
+		Overlay: VisibleOverlay{
+			Kind: VisibleOverlayWorkspacePicker,
+			WorkspacePicker: &modal.WorkspacePickerState{
+				Items:    []modal.WorkspacePickerItem{{Kind: modal.WorkspacePickerItemWorkspace, Name: "main", WorkspaceName: "main"}},
+				Filtered: []modal.WorkspacePickerItem{{Kind: modal.WorkspacePickerItemWorkspace, Name: "main", WorkspaceName: "main"}},
+			},
+		},
+	}
+	theme := defaultUITheme()
+	key1 := statusBarCacheKeyForState(state, theme)
+	state = WithChromeConfig(state, UIChromeConfig{StatusBar: StatusBarConfig{Left: []ChromeSlotID{SlotStatusHints}, Right: []ChromeSlotID{}}})
+	key2 := statusBarCacheKeyForState(state, theme)
+	if key1 == key2 {
+		t.Fatalf("expected status bar cache key to change with chrome config, got %#v", key1)
+	}
+}
+
 func TestFillLineOmitsRedundantCHAAnchor(t *testing.T) {
 	line := fillLine("left", "right", 40, "#000000")
 	if strings.HasPrefix(line, "\x1b[1G") {

@@ -59,6 +59,7 @@ func main() {
 func newRootCmd() *cobra.Command {
 	var socket string
 	var logFile string
+	var configPath string
 	cmd := &cobra.Command{
 		Use: "termx",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -75,24 +76,44 @@ func newRootCmd() *cobra.Command {
 				logger.Warn("blocked nested tui launch")
 				return err
 			}
-			return runTUIv2(shared.Config{
-				Workspace:          "main",
-				SessionID:          "main",
-				SocketPath:         socket,
-				LogFilePath:        logPath,
-				WorkspaceStatePath: resolveWorkspaceStatePath(),
-			}, os.Stdin, os.Stdout)
+			cfg, err := tuiSharedConfig("main", "main", "", socket, logPath, resolveWorkspaceStatePath(), configPath)
+			if err != nil {
+				return err
+			}
+			return runTUIv2(cfg, os.Stdin, os.Stdout)
 		},
 	}
 	cmd.PersistentFlags().StringVar(&socket, "socket", "", "socket path")
 	cmd.PersistentFlags().StringVar(&logFile, "log-file", "", "log file path (default: $TERMX_LOG_FILE or XDG state dir)")
+	cmd.PersistentFlags().StringVar(&configPath, "config", "", "termx config path (default: XDG config dir termx.yaml)")
 	cmd.AddCommand(daemonCommand(&socket))
 	cmd.AddCommand(newCommand(&socket, &logFile))
 	cmd.AddCommand(lsCommand(&socket, &logFile))
 	cmd.AddCommand(killCommand(&socket, &logFile))
-	cmd.AddCommand(attachCommand(&socket, &logFile))
+	cmd.AddCommand(attachCommand(&socket, &logFile, &configPath))
 	cmd.AddCommand(webCommand(&socket, &logFile))
 	return cmd
+}
+
+func tuiSharedConfig(workspace, sessionID, attachID, socket, logPath, workspaceStatePath, configPath string) (shared.Config, error) {
+	if configPath == "" {
+		configPath = shared.DefaultConfigPath()
+	}
+	if err := shared.EnsureDefaultConfigFile(configPath); err != nil {
+		return shared.Config{}, err
+	}
+	fileCfg, err := shared.LoadConfig(configPath)
+	if err != nil {
+		return shared.Config{}, err
+	}
+	fileCfg.Workspace = workspace
+	fileCfg.SessionID = sessionID
+	fileCfg.AttachID = attachID
+	fileCfg.SocketPath = socket
+	fileCfg.LogFilePath = logPath
+	fileCfg.WorkspaceStatePath = workspaceStatePath
+	fileCfg.ConfigPath = configPath
+	return fileCfg, nil
 }
 
 func daemonCommand(socket *string) *cobra.Command {
@@ -220,7 +241,7 @@ func killCommand(socket *string, logFile *string) *cobra.Command {
 	}
 }
 
-func attachCommand(socket *string, logFile *string) *cobra.Command {
+func attachCommand(socket *string, logFile *string, configPath *string) *cobra.Command {
 	return &cobra.Command{
 		Use:  "attach <id>",
 		Args: cobra.ExactArgs(1),
@@ -235,13 +256,11 @@ func attachCommand(socket *string, logFile *string) *cobra.Command {
 				logger.Warn("blocked nested attach tui", "terminal_id", args[0])
 				return err
 			}
-			return runTUIv2(shared.Config{
-				Workspace:   "main",
-				SessionID:   "main",
-				AttachID:    args[0],
-				SocketPath:  *socket,
-				LogFilePath: logPath,
-			}, os.Stdin, os.Stdout)
+			cfg, err := tuiSharedConfig("main", "main", args[0], *socket, logPath, "", *configPath)
+			if err != nil {
+				return err
+			}
+			return runTUIv2(cfg, os.Stdin, os.Stdout)
 		},
 	}
 }

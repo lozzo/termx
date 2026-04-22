@@ -354,8 +354,8 @@ func TestDrawPaneFrameKeepsDistinctVerticalDividerColumns(t *testing.T) {
 	canvas := newComposedCanvas(40, 8)
 	theme := uiTheme{}
 
-	drawPaneFrame(canvas, workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, false, "left", paneBorderInfo{}, theme, paneOverflowHints{}, true, false)
-	drawPaneFrame(canvas, workbench.Rect{X: 20, Y: 0, W: 20, H: 8}, true, false, "right", paneBorderInfo{}, theme, paneOverflowHints{}, false, false)
+	drawPaneFrame(canvas, workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, false, "left", paneBorderInfo{}, theme, paneOverflowHints{}, true, false, DefaultUIChromeConfig())
+	drawPaneFrame(canvas, workbench.Rect{X: 20, Y: 0, W: 20, H: 8}, true, false, "right", paneBorderInfo{}, theme, paneOverflowHints{}, false, false, DefaultUIChromeConfig())
 
 	frame := canvas.rawString()
 	if !strings.Contains(frame, "││") {
@@ -370,8 +370,8 @@ func TestDrawPaneFrameFloatingPaneOverwritesUnderlyingBorderIntersections(t *tes
 	canvas := newComposedCanvas(20, 10)
 	theme := defaultUITheme()
 
-	drawPaneFrame(canvas, workbench.Rect{X: 0, Y: 0, W: 20, H: 10}, false, false, "base", paneBorderInfo{}, theme, paneOverflowHints{}, false, false)
-	drawPaneFrame(canvas, workbench.Rect{X: 0, Y: 3, W: 10, H: 5}, false, false, "float", paneBorderInfo{}, theme, paneOverflowHints{}, true, true)
+	drawPaneFrame(canvas, workbench.Rect{X: 0, Y: 0, W: 20, H: 10}, false, false, "base", paneBorderInfo{}, theme, paneOverflowHints{}, false, false, DefaultUIChromeConfig())
+	drawPaneFrame(canvas, workbench.Rect{X: 0, Y: 3, W: 10, H: 5}, false, false, "float", paneBorderInfo{}, theme, paneOverflowHints{}, true, true, DefaultUIChromeConfig())
 
 	if got := canvas.cells[3][0].Content; got != "┌" {
 		t.Fatalf("expected floating top-left corner to overwrite the inactive border instead of merging, got %q", got)
@@ -1426,7 +1426,7 @@ func TestDrawPaneFrameMarksOverflowWithStableCornerIndicators(t *testing.T) {
 	canvas := newComposedCanvas(6, 4)
 	rect := workbench.Rect{X: 0, Y: 0, W: 6, H: 4}
 
-	drawPaneFrame(canvas, rect, false, false, "", paneBorderInfo{}, defaultUITheme(), paneOverflowHints{Right: true, Bottom: true}, false, false)
+	drawPaneFrame(canvas, rect, false, false, "", paneBorderInfo{}, defaultUITheme(), paneOverflowHints{Right: true, Bottom: true}, false, false, DefaultUIChromeConfig())
 
 	lines := strings.Split(canvas.rawString(), "\n")
 	if len(lines) != 4 {
@@ -1451,7 +1451,7 @@ func TestDrawPaneFrameHighlightsOverflowMarkersForActivePane(t *testing.T) {
 	rect := workbench.Rect{X: 0, Y: 0, W: 8, H: 5}
 	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
 
-	drawPaneFrame(canvas, rect, false, false, "", paneBorderInfo{}, theme, paneOverflowHints{Right: true, Bottom: true}, true, false)
+	drawPaneFrame(canvas, rect, false, false, "", paneBorderInfo{}, theme, paneOverflowHints{Right: true, Bottom: true}, true, false, DefaultUIChromeConfig())
 
 	rightMarker := canvas.cells[rect.Y+rect.H-2][rect.X+rect.W-1]
 	bottomMarker := canvas.cells[rect.Y+rect.H-1][rect.X+rect.W-2]

@@ -18,7 +18,7 @@ func (m *Model) mousePaneChromeRegion(pane workbench.VisiblePane, x, contentY in
 	if m.runtime != nil {
 		runtimeState = m.runtime.Visible()
 	}
-	return render.HitRegionAt(render.PaneChromeHitRegions(pane, runtimeState, m.ownerConfirmPaneID), x, contentY)
+	return render.HitRegionAt(render.PaneChromeHitRegions(pane, runtimeState, m.ownerConfirmPaneID, m.chromeConfig()), x, contentY)
 }
 
 func (m *Model) handlePaneChromeRegion(region render.HitRegion) tea.Cmd {

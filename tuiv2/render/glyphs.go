@@ -16,16 +16,16 @@ type PaneChromeGlyphs struct {
 }
 
 var defaultPaneChromeGlyphs = PaneChromeGlyphs{
-	Zoom:             "\uf065", // nf-fa-expand
-	SplitVertical:    "\ueb71", // nf-cod-split-vertical   (left/right panes)
-	SplitHorizontal:  "\ueb6f", // nf-cod-split-horizontal (top/bottom panes)
-	Close:            "\uf00d", // nf-fa-times
-	CenterFloating:   "\uf05b", // nf-fa-crosshairs
-	CollapseFloating: "\uf068", // nf-fa-minus
-	Running:          "●",
-	Waiting:          "○",
-	Exited:           "✕", // U+2715, 1-column multiplication x
-	Killed:           "✕", // U+2715
+	Zoom:             "\ueb01", // nf-cod-screen_full
+	SplitVertical:    "\ueb56", // nf-cod-split_vertical
+	SplitHorizontal:  "\ueb57", // nf-cod-split_horizontal
+	Close:            "\uea76", // nf-cod-close
+	CenterFloating:   "\uebb4", // nf-cod-target
+	CollapseFloating: "\ueab6", // nf-cod-chevron_up
+	Running:          "\uea71", // nf-cod-debug_start
+	Waiting:          "\ueb32", // nf-cod-circle_large_outline
+	Exited:           "\uea87", // nf-cod-error
+	Killed:           "\uea87", // nf-cod-error
 }
 
 var paneChromeGlyphs = defaultPaneChromeGlyphs

@@ -2,6 +2,7 @@ package render
 
 type bodyProjectionOptions struct {
 	ConfirmPaneID        string
+	Chrome               UIChromeConfig
 	EmptySelection       RenderPaneSelectionVM
 	ExitedSelection      RenderPaneSelectionVM
 	ExitedSelectionPulse bool
@@ -13,6 +14,7 @@ type bodyProjectionOptions struct {
 func bodyProjectionOptionsForVM(vm RenderVM, exitedSelectionPulse bool) bodyProjectionOptions {
 	return bodyProjectionOptions{
 		ConfirmPaneID:        vm.Body.OwnerConfirmPaneID,
+		Chrome:               normalizeUIChromeConfig(vm.Chrome),
 		EmptySelection:       vm.Body.EmptySelection,
 		ExitedSelection:      vm.Body.ExitedSelection,
 		ExitedSelectionPulse: exitedSelectionPulse,

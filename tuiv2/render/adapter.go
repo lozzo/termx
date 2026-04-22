@@ -14,6 +14,8 @@ type VisibleRenderState struct {
 	Surface                    VisibleSurface
 	Overlay                    VisibleOverlay
 	TermSize                   TermSize
+	Chrome                     UIChromeConfig
+	Theme                      UIThemeConfig
 	Notice                     string
 	Error                      string
 	InputMode                  string
@@ -82,6 +84,7 @@ func AdaptVisibleStateWithSize(wb *workbench.Workbench, rt *runtime.Runtime, bod
 	state := VisibleRenderState{
 		Surface: VisibleSurface{Kind: VisibleSurfaceWorkbench},
 		Overlay: VisibleOverlay{Kind: VisibleOverlayNone},
+		Chrome:  DefaultUIChromeConfig(),
 	}
 	if wb != nil {
 		if bodyWidth > 0 && bodyHeight > 0 {
@@ -180,6 +183,16 @@ func WithOverlayWorkspacePicker(state VisibleRenderState, picker *modal.Workspac
 
 func WithTermSize(state VisibleRenderState, width, height int) VisibleRenderState {
 	state.TermSize = TermSize{Width: width, Height: height}
+	return state
+}
+
+func WithChromeConfig(state VisibleRenderState, cfg UIChromeConfig) VisibleRenderState {
+	state.Chrome = normalizeUIChromeConfig(cfg)
+	return state
+}
+
+func WithThemeConfig(state VisibleRenderState, cfg UIThemeConfig) VisibleRenderState {
+	state.Theme = cfg
 	return state
 }
 

@@ -135,7 +135,7 @@ func renderAltScreenTopBorderLine(entry paneRenderEntry) string {
 		canvas.set(x, 0, drawCell{Content: glyph, Width: 1, Style: borderStyle})
 	}
 	localRect := workbench.Rect{X: 0, Y: 0, W: entry.Rect.W, H: entry.Rect.H}
-	layout, ok := paneTopBorderLabelsLayout(localRect, entry.Title, entry.Border, paneChromeActionTokensForFrame(localRect, entry.Title, entry.Border, entry.Floating))
+	layout, ok := paneTopBorderLabelsLayout(localRect, resolvePaneChromeConfig(entry.Chrome, entry.Title, entry.Border, paneChromeActionTokensForFrame(localRect, entry.Title, entry.Border, entry.Floating)))
 	if ok {
 		for _, slot := range layout.actionSlots {
 			drawBorderLabel(canvas, slot.X, 0, slot.Label, chromeStyles.Action)

@@ -10,7 +10,7 @@ import (
 func renderEmptyWorkbenchBodyVM(vm RenderVM, width, height int, kind emptyWorkbenchKind) renderedBody {
 	canvas := newComposedCanvas(width, height)
 	canvas.hostEmojiVS16Mode = emojiVariationSelectorModeForRuntime(vm.Runtime)
-	theme := uiThemeForRuntime(vm.Runtime)
+	theme := uiThemeForVM(vm)
 
 	headline := "No tabs in this workspace"
 	details := []string{

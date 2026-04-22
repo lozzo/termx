@@ -45,6 +45,7 @@ type renderedBody struct {
 type tabBarCacheKey struct {
 	Theme         uiTheme
 	Width         int
+	ChromeSig     string
 	WorkspaceName string
 	ActiveTab     int
 	Error         string
@@ -60,6 +61,7 @@ type tabBarCacheTab struct {
 type statusBarCacheKey struct {
 	Theme          uiTheme
 	Width          int
+	ChromeSig      string
 	InputMode      string
 	StatusHintsSig string
 	RightTokensSig string
@@ -71,11 +73,14 @@ type renderVMKey struct {
 	Surface   RenderSurfaceVM
 	Overlay   RenderOverlayVM
 	TermSize  TermSize
+	Theme     UIThemeConfig
+	ChromeSig string
 	Status    renderStatusKey
 	Body      renderBodyKey
 }
 
 type renderStatusKey struct {
+	ChromeSig      string
 	Notice         string
 	Error          string
 	InputMode      string
@@ -323,13 +328,17 @@ func (c *Coordinator) syntheticCursorVisible(_ protocol.CursorState) bool {
 }
 
 func renderVMKeyForVM(vm RenderVM) renderVMKey {
+	chromeSig := normalizeUIChromeConfig(vm.Chrome).signature()
 	return renderVMKey{
 		Workbench: vm.Workbench,
 		Runtime:   vm.Runtime,
 		Surface:   vm.Surface,
 		Overlay:   vm.Overlay,
 		TermSize:  vm.TermSize,
+		Theme:     vm.Theme,
+		ChromeSig: chromeSig,
 		Status: renderStatusKey{
+			ChromeSig:      chromeSig,
 			Notice:         vm.Status.Notice,
 			Error:          vm.Status.Error,
 			InputMode:      vm.Status.InputMode,
@@ -402,7 +411,7 @@ func (c *Coordinator) frameFromResult(result RenderResult) string {
 }
 
 func (c *Coordinator) renderTabBarCached(vm RenderVM) string {
-	theme := uiThemeForRuntime(vm.Runtime)
+	theme := uiThemeForVM(vm)
 	c.mu.Lock()
 	if c.tabBarKey.matchesVM(vm, theme) {
 		value := c.tabBarValue
@@ -422,7 +431,7 @@ func (c *Coordinator) renderTabBarCached(vm RenderVM) string {
 }
 
 func (c *Coordinator) renderStatusBarCached(vm RenderVM) string {
-	theme := uiThemeForRuntime(vm.Runtime)
+	theme := uiThemeForVM(vm)
 	key := statusBarCacheKeyForVM(vm, theme)
 	c.mu.Lock()
 	if c.statusKey == key {
@@ -443,7 +452,8 @@ func (c *Coordinator) renderStatusBarCached(vm RenderVM) string {
 }
 
 func (k tabBarCacheKey) matchesVM(vm RenderVM, theme uiTheme) bool {
-	if k.Theme != theme || k.Width != vm.TermSize.Width || k.Error != vm.Status.Error || k.Notice != vm.Status.Notice {
+	chromeSig := normalizeUIChromeConfig(vm.Chrome).signature()
+	if k.Theme != theme || k.Width != vm.TermSize.Width || k.ChromeSig != chromeSig || k.Error != vm.Status.Error || k.Notice != vm.Status.Notice {
 		return false
 	}
 	if vm.Workbench == nil {
@@ -467,6 +477,7 @@ func (k *tabBarCacheKey) captureVM(vm RenderVM, theme uiTheme) {
 	}
 	k.Theme = theme
 	k.Width = vm.TermSize.Width
+	k.ChromeSig = normalizeUIChromeConfig(vm.Chrome).signature()
 	k.Error = vm.Status.Error
 	k.Notice = vm.Status.Notice
 	k.WorkspaceName = ""
@@ -491,6 +502,7 @@ func statusBarCacheKeyForVM(vm RenderVM, theme uiTheme) statusBarCacheKey {
 	return statusBarCacheKey{
 		Theme:          theme,
 		Width:          vm.TermSize.Width,
+		ChromeSig:      normalizeUIChromeConfig(vm.Chrome).signature(),
 		InputMode:      strings.TrimSpace(vm.Status.InputMode),
 		StatusHintsSig: strings.Join(vm.Status.Hints, "\x1f"),
 		RightTokensSig: statusBarRightTokenSignature(vm.Status.RightTokens),
@@ -501,6 +513,7 @@ func statusBarCacheKeyForState(state VisibleRenderState, theme uiTheme) statusBa
 	return statusBarCacheKey{
 		Theme:          theme,
 		Width:          state.TermSize.Width,
+		ChromeSig:      normalizeUIChromeConfig(state.Chrome).signature(),
 		InputMode:      strings.TrimSpace(state.InputMode),
 		StatusHintsSig: strings.Join(state.StatusHints, "\x1f"),
 		RightTokensSig: statusBarRightTokenSignature(statusBarRightTokens(state)),

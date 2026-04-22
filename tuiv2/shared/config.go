@@ -8,4 +8,30 @@ type Config struct {
 	SocketPath         string
 	LogFilePath        string
 	WorkspaceStatePath string
+	ConfigPath         string
+	Chrome             ChromeConfig
+	Theme              ThemeConfig
+}
+
+type ChromeConfig struct {
+	PaneTop     []string
+	StatusLeft  []string
+	StatusRight []string
+	TabLeft     []string
+}
+
+type ThemeConfig struct {
+	Accent        string
+	Success       string
+	Warning       string
+	Danger        string
+	Info          string
+	PanelBorder   string
+	PanelBorder2  string
+	TabActiveBG   string
+	TabActiveFG   string
+	TabInactiveBG string
+	TabInactiveFG string
+	TabCreateBG   string
+	TabCreateFG   string
 }

@@ -1139,9 +1139,8 @@ func TestMouseClickNonFloatingKeepsFloatingPanesVisible(t *testing.T) {
 	if err := m.workbench.CreateFloatingPane(tab.ID, "float-2", workbench.Rect{X: 40, Y: 8, W: 20, H: 8}); err != nil {
 		t.Fatalf("create floating pane: %v", err)
 	}
-	before := m.View()
-	if countFloatingPaneMarkers(before) < 2 {
-		t.Fatalf("expected floating panes visible before click:\n%s", before)
+	if got := visibleFloatingPaneCount(m); got < 2 {
+		t.Fatalf("expected floating panes visible before click, got %d", got)
 	}
 
 	model, _ := m.Update(tea.MouseMsg{
@@ -1152,9 +1151,8 @@ func TestMouseClickNonFloatingKeepsFloatingPanesVisible(t *testing.T) {
 	})
 	m = model.(*Model)
 
-	after := m.View()
-	if countFloatingPaneMarkers(after) < 2 {
-		t.Fatalf("expected floating panes to remain visible after tiled click:\n%s", after)
+	if got := visibleFloatingPaneCount(m); got < 2 {
+		t.Fatalf("expected floating panes to remain visible after tiled click, got %d", got)
 	}
 }
 
@@ -1191,9 +1189,8 @@ func TestMouseClickNonFloatingKeepsFloatingTerminalPanesVisibleWithExtentHints(t
 		}
 	}
 
-	before := m.View()
-	if strings.Count(before, "[\uf068]") < 2 {
-		t.Fatalf("expected floating terminal panes visible before click:\n%s", before)
+	if got := visibleFloatingPaneCount(m); got < 2 {
+		t.Fatalf("expected floating terminal panes visible before click, got %d", got)
 	}
 
 	model, _ := m.Update(tea.MouseMsg{
@@ -1204,9 +1201,8 @@ func TestMouseClickNonFloatingKeepsFloatingTerminalPanesVisibleWithExtentHints(t
 	})
 	m = model.(*Model)
 
-	after := m.View()
-	if strings.Count(after, "[\uf068]") < 2 {
-		t.Fatalf("expected floating terminal panes to remain visible after tiled click:\n%s", after)
+	if got := visibleFloatingPaneCount(m); got < 2 {
+		t.Fatalf("expected floating terminal panes to remain visible after tiled click, got %d", got)
 	}
 }
 
@@ -1228,9 +1224,8 @@ func TestMouseClickSplitPaneKeepsFloatingPanesVisible(t *testing.T) {
 		}
 	}
 
-	before := m.View()
-	if countFloatingPaneMarkers(before) < 2 {
-		t.Fatalf("expected floating panes visible before split-pane click:\n%s", before)
+	if got := visibleFloatingPaneCount(m); got < 2 {
+		t.Fatalf("expected floating panes visible before split-pane click, got %d", got)
 	}
 
 	model, _ := m.Update(tea.MouseMsg{
@@ -1241,9 +1236,8 @@ func TestMouseClickSplitPaneKeepsFloatingPanesVisible(t *testing.T) {
 	})
 	m = model.(*Model)
 
-	after := m.View()
-	if countFloatingPaneMarkers(after) < 2 {
-		t.Fatalf("expected floating panes to remain visible after split-pane click:\n%s", after)
+	if got := visibleFloatingPaneCount(m); got < 2 {
+		t.Fatalf("expected floating panes to remain visible after split-pane click, got %d", got)
 	}
 }
 
@@ -1298,7 +1292,7 @@ func TestMouseClickOwnerButtonPromotesPaneAndResizesTerminal(t *testing.T) {
 		t.Fatal("expected visible split panes")
 	}
 	pane := visible.Tabs[visible.ActiveTab].Panes[1]
-	buttonRect, ok := render.PaneOwnerButtonRect(pane, model.runtime.Visible(), "")
+	buttonRect, ok := render.PaneOwnerButtonRect(pane, model.runtime.Visible(), "", model.chromeConfig())
 	if !ok {
 		t.Fatal("expected owner action hit box")
 	}
@@ -1333,7 +1327,7 @@ func TestMouseClickOwnerButtonPromotesPaneAndResizesTerminal(t *testing.T) {
 
 	visible = model.workbench.VisibleWithSize(bodyRect)
 	pane = visible.Tabs[visible.ActiveTab].Panes[1]
-	buttonRect, ok = render.PaneOwnerButtonRect(pane, model.runtime.Visible(), model.ownerConfirmPaneID)
+	buttonRect, ok = render.PaneOwnerButtonRect(pane, model.runtime.Visible(), model.ownerConfirmPaneID, model.chromeConfig())
 	if !ok {
 		t.Fatal("expected confirm owner action hit box")
 	}
@@ -1428,7 +1422,7 @@ func TestMouseClickPaneChromeZoomTogglesTargetPane(t *testing.T) {
 		t.Fatal("expected visible split panes")
 	}
 	pane := visible.Tabs[visible.ActiveTab].Panes[1]
-	regions := render.PaneChromeHitRegions(pane, m.runtime.Visible(), "")
+	regions := render.PaneChromeHitRegions(pane, m.runtime.Visible(), "", m.chromeConfig())
 
 	var target render.HitRegion
 	found := false
@@ -1503,7 +1497,7 @@ func TestMouseClickFloatingPaneChromeCloseDoesNotStartDrag(t *testing.T) {
 		t.Fatal("expected visible floating pane")
 	}
 	pane := visible.FloatingPanes[0]
-	regions := render.PaneChromeHitRegions(pane, m.runtime.Visible(), "")
+	regions := render.PaneChromeHitRegions(pane, m.runtime.Visible(), "", m.chromeConfig())
 
 	var target render.HitRegion
 	found := false
@@ -1685,7 +1679,7 @@ func TestMouseClickPaneChromeSplitVerticalCreatesPaneAndOpensPicker(t *testing.T
 		t.Fatal("expected visible pane")
 	}
 	pane := visible.Tabs[visible.ActiveTab].Panes[0]
-	regions := render.PaneChromeHitRegions(pane, m.runtime.Visible(), "")
+	regions := render.PaneChromeHitRegions(pane, m.runtime.Visible(), "", m.chromeConfig())
 
 	var target render.HitRegion
 	found := false
@@ -2851,7 +2845,7 @@ func findVisiblePaneChromeRegion(m *Model, paneID string, kind render.HitRegionK
 		if pane.ID != paneID {
 			continue
 		}
-		regions := render.PaneChromeHitRegions(pane, m.runtime.Visible(), m.ownerConfirmPaneID)
+		regions := render.PaneChromeHitRegions(pane, m.runtime.Visible(), m.ownerConfirmPaneID, m.chromeConfig())
 		for _, region := range regions {
 			if region.Kind == kind {
 				return region, true
@@ -2863,7 +2857,7 @@ func findVisiblePaneChromeRegion(m *Model, paneID string, kind render.HitRegionK
 			if pane.ID != paneID {
 				continue
 			}
-			regions := render.PaneChromeHitRegions(pane, m.runtime.Visible(), m.ownerConfirmPaneID)
+			regions := render.PaneChromeHitRegions(pane, m.runtime.Visible(), m.ownerConfirmPaneID, m.chromeConfig())
 			for _, region := range regions {
 				if region.Kind == kind {
 					return region, true
@@ -2918,4 +2912,15 @@ func countFloatingPaneMarkers(view string) int {
 	byIcon := maxInt(strings.Count(view, "[_]"), strings.Count(view, "[\uf068]"))
 	byContent := maxInt(strings.Count(view, "unconnected"), strings.Count(view, "No terminal attach"))
 	return maxInt(byIcon, byContent)
+}
+
+func visibleFloatingPaneCount(m *Model) int {
+	if m == nil || m.workbench == nil {
+		return 0
+	}
+	visible := m.workbench.VisibleWithSize(m.bodyRect())
+	if visible == nil {
+		return 0
+	}
+	return len(visible.FloatingPanes)
 }

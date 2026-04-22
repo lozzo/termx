@@ -175,6 +175,20 @@ func TestCachedRenderResultTracksCurrentVMKey(t *testing.T) {
 	}
 }
 
+func TestCachedFrameMissesWhenChromeConfigChanges(t *testing.T) {
+	vm := makeTestVM()
+	current := vm
+	coordinator := NewCoordinatorWithVM(func() RenderVM { return current })
+	_ = coordinator.RenderFrame()
+	if _, _, ok := coordinator.CachedFrameAndCursor(); !ok {
+		t.Fatal("expected cached frame after initial render")
+	}
+	current = WithRenderChromeConfig(current, UIChromeConfig{TabBar: TabBarConfig{Left: []ChromeSlotID{SlotTabWorkspace, SlotTabTabs}}, StatusBar: StatusBarConfig{Left: []ChromeSlotID{SlotStatusHints}, Right: []ChromeSlotID{}}})
+	if _, _, ok := coordinator.CachedFrameAndCursor(); ok {
+		t.Fatal("expected cache miss after chrome config change")
+	}
+}
+
 func TestRenderFrameMissesWhenStatusRightTokensChange(t *testing.T) {
 	vm := makeTestVM()
 	vm = WithRenderStatusRightTokens(vm, []RenderStatusToken{{Label: "ONE"}})
@@ -552,8 +566,8 @@ func TestDrawPaneFrameUsesTieredChromeStylesForActivePane(t *testing.T) {
 	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
 	border := paneBorderInfo{StateLabel: "●", ShareLabel: "⇄2", RoleLabel: "◆ owner"}
 
-	drawPaneFrame(canvas, rect, false, false, "demo", border, theme, paneOverflowHints{}, true, false)
-	layout, ok := paneTopBorderLabelsLayout(rect, "demo", border, paneChromeActionTokensForFrame(rect, "demo", border, false))
+	drawPaneFrame(canvas, rect, false, false, "demo", border, theme, paneOverflowHints{}, true, false, DefaultUIChromeConfig())
+	layout, ok := paneTopBorderLabelsLayout(rect, resolvePaneChromeConfig(DefaultUIChromeConfig(), "demo", border, paneChromeActionTokensForFrame(rect, "demo", border, false)))
 	if !ok {
 		t.Fatal("expected pane chrome layout")
 	}
@@ -582,7 +596,7 @@ func TestDrawPaneFrameKeepsTopRightCornerAlignedWithWideBorderLabels(t *testing.
 	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
 	border := paneBorderInfo{StateLabel: paneRunningIcon(), RoleLabel: "◆ owner"}
 
-	drawPaneFrame(canvas, rect, false, false, "demo界", border, theme, paneOverflowHints{}, true, false)
+	drawPaneFrame(canvas, rect, false, false, "demo界", border, theme, paneOverflowHints{}, true, false, DefaultUIChromeConfig())
 
 	lines := strings.Split(xansi.Strip(canvas.String()), "\n")
 	if len(lines) < 2 {
@@ -609,7 +623,7 @@ func TestDrawPaneFrameKeepsTopRightCornerAlignedWithEmojiVariationTitle(t *testi
 	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
 	border := paneBorderInfo{StateLabel: paneRunningIcon(), RoleLabel: "◆ owner"}
 
-	drawPaneFrame(canvas, rect, false, false, "RedmiBook♻️", border, theme, paneOverflowHints{}, true, false)
+	drawPaneFrame(canvas, rect, false, false, "RedmiBook♻️", border, theme, paneOverflowHints{}, true, false, DefaultUIChromeConfig())
 
 	lines := strings.Split(xansi.Strip(canvas.String()), "\n")
 	if len(lines) < 2 {
@@ -636,7 +650,7 @@ func TestDrawPaneFrameKeepsTopRightCornerAlignedWithEmojiVariationTitleAcrossHos
 	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
 	border := paneBorderInfo{StateLabel: paneRunningIcon(), RoleLabel: "◆ owner"}
 
-	drawPaneFrame(canvas, rect, false, false, "RedmiBook♻️", border, theme, paneOverflowHints{}, true, false)
+	drawPaneFrame(canvas, rect, false, false, "RedmiBook♻️", border, theme, paneOverflowHints{}, true, false, DefaultUIChromeConfig())
 
 	for _, ambiguousWidth := range []int{1, 2} {
 		host := newFakeHostFrame(rect.W, rect.H)
@@ -661,7 +675,7 @@ func TestDrawPaneFrameKeepsTopRightCornerAlignedWithOtherEmojiVariationTitleAcro
 	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
 	border := paneBorderInfo{StateLabel: paneRunningIcon(), RoleLabel: "◆ owner"}
 
-	drawPaneFrame(canvas, rect, false, false, "RedmiBook✈️", border, theme, paneOverflowHints{}, true, false)
+	drawPaneFrame(canvas, rect, false, false, "RedmiBook✈️", border, theme, paneOverflowHints{}, true, false, DefaultUIChromeConfig())
 
 	for _, ambiguousWidth := range []int{1, 2} {
 		host := newFakeHostFrame(rect.W, rect.H)
@@ -686,7 +700,7 @@ func TestDrawPaneFrameKeepsTopRightCornerAlignedWithWideBaseEmojiVariationTitleA
 	theme := uiThemeFromHostColors("#0b1020", "#dbeafe", nil)
 	border := paneBorderInfo{StateLabel: paneRunningIcon(), RoleLabel: "◆ owner"}
 
-	drawPaneFrame(canvas, rect, false, false, "RedmiBook☕️", border, theme, paneOverflowHints{}, true, false)
+	drawPaneFrame(canvas, rect, false, false, "RedmiBook☕️", border, theme, paneOverflowHints{}, true, false, DefaultUIChromeConfig())
 
 	for _, ambiguousWidth := range []int{1, 2} {
 		host := newFakeHostFrame(rect.W, rect.H)

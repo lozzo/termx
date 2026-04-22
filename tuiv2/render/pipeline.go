@@ -104,7 +104,7 @@ func renderBodyFrameWithCoordinatorVM(coordinator *Coordinator, vm RenderVM, wid
 			cursorVisible = coordinator.cursorBlinkVisible
 			coordinator.mu.Unlock()
 		}
-		return renderTerminalPoolPageWithCursor(vm.Surface.TerminalPool, vm.Runtime, TermSize{Width: width, Height: height}, cursorOffsetY, cursorVisible)
+		return renderTerminalPoolPageWithCursor(vm.Surface.TerminalPool, vm.Runtime, uiThemeForVM(vm), TermSize{Width: width, Height: height}, cursorOffsetY, cursorVisible)
 	}
 	if vm.Workbench == nil {
 		perftrace.Count("render.body.path.empty_workbench", 0)
@@ -130,7 +130,7 @@ func renderBodyFrameWithCoordinatorVM(coordinator *Coordinator, vm RenderVM, wid
 		exitedSelectionPulse = coordinator.cursorBlinkVisible
 		coordinator.mu.Unlock()
 	}
-	entries := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, width, height, lookup, bodyProjectionOptionsForVM(vm, exitedSelectionPulse), uiThemeForRuntime(vm.Runtime))
+	entries := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, width, height, lookup, bodyProjectionOptionsForVM(vm, exitedSelectionPulse), uiThemeForVM(vm))
 	if body, ok := renderAltScreenFastPathVM(vm, entries, cursorOffsetY); ok {
 		perftrace.Count("render.body.path.alt_screen_fast_path", 0)
 		return body

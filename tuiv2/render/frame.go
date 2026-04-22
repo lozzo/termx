@@ -21,7 +21,7 @@ func FrameBodyHeight(totalHeight int) int {
 }
 
 func renderTabBarVM(vm RenderVM) string {
-	theme := uiThemeForRuntime(vm.Runtime)
+	theme := uiThemeForVM(vm)
 	layout := buildTabBarLayoutVM(vm)
 	return fillLine(renderTabBarLeft(layout), layout.rightText, vm.TermSize.Width, theme.tabActiveBG)
 }
@@ -33,75 +33,15 @@ func renderTabBar(state VisibleRenderState) string {
 }
 
 func renderStatusBarVM(vm RenderVM) string {
-	theme := uiThemeForRuntime(vm.Runtime)
-	width := vm.TermSize.Width
-	labels := currentStatusTextsVM(vm)
-
-	var leftParts []string
-	if !suppressStatusHintsVM(vm) {
-		mode := strings.TrimSpace(vm.Status.InputMode)
-		if mode == "" || mode == "normal" {
-			leftParts = append(leftParts, renderDesktopHint(theme, "Ctrl", theme.hintKeyFG))
-			rootColors := rootStatusHintColors(theme)
-			for i, label := range labels {
-				if i >= len(rootColors) {
-					break
-				}
-				leftParts = append(leftParts, renderStatusSep(theme))
-				leftParts = append(leftParts, renderDesktopHint(theme, label, rootColors[i]))
-			}
-		} else {
-			badge := renderModeBadge(theme, mode)
-			if badge != "" {
-				leftParts = append(leftParts, badge)
-			}
-			leftParts = append(leftParts, renderModeHints(theme, mode, labels)...)
-		}
-	}
-	left := strings.Join(leftParts, "")
-
-	right := renderStatusBarRight(theme, statusBarRightTokensVM(vm))
-	if right != "" && xansi.StringWidth(left)+1+xansi.StringWidth(right) > width {
-		right = ""
-	}
-
-	return fillLine(left, right, width, theme.chromeBG)
+	theme := uiThemeForVM(vm)
+	layout := buildStatusBarLayoutVM(vm)
+	return fillLine(layout.LeftText, layout.RightText, vm.TermSize.Width, theme.chromeBG)
 }
 
 func renderStatusBar(state VisibleRenderState) string {
 	theme := uiThemeForState(state)
-	width := state.TermSize.Width
-	labels := currentStatusTexts(state)
-
-	var leftParts []string
-	if !suppressStatusHints(state) {
-		mode := strings.TrimSpace(state.InputMode)
-		if mode == "" || mode == "normal" {
-			leftParts = append(leftParts, renderDesktopHint(theme, "Ctrl", theme.hintKeyFG))
-			rootColors := rootStatusHintColors(theme)
-			for i, label := range labels {
-				if i >= len(rootColors) {
-					break
-				}
-				leftParts = append(leftParts, renderStatusSep(theme))
-				leftParts = append(leftParts, renderDesktopHint(theme, label, rootColors[i]))
-			}
-		} else {
-			badge := renderModeBadge(theme, mode)
-			if badge != "" {
-				leftParts = append(leftParts, badge)
-			}
-			leftParts = append(leftParts, renderModeHints(theme, mode, labels)...)
-		}
-	}
-	left := strings.Join(leftParts, "")
-
-	right := renderStatusBarRight(theme, statusBarRightTokens(state))
-	if right != "" && xansi.StringWidth(left)+1+xansi.StringWidth(right) > width {
-		right = ""
-	}
-
-	return fillLine(left, right, width, theme.chromeBG)
+	layout := buildStatusBarLayout(state)
+	return fillLine(layout.LeftText, layout.RightText, state.TermSize.Width, theme.chromeBG)
 }
 
 func statusBarRightTokens(state VisibleRenderState) []RenderStatusToken {
@@ -232,9 +172,6 @@ func renderDesktopHint(theme uiTheme, label, color string) string {
 	if len(parts) > 1 {
 		text = parts[1]
 	}
-	// Use foreground-only coloring (no background chip). Colored backgrounds
-	// are especially noticeable during full-frame redraws triggered by cursor
-	// position changes, making the status bar appear to flash.
 	keyStyle := statusHintKeyStyle(theme).
 		Foreground(lipgloss.Color(color))
 	if text == "" {

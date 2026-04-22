@@ -78,17 +78,66 @@ func defaultUITheme() uiTheme {
 }
 
 func uiThemeForState(state VisibleRenderState) uiTheme {
-	if state.Runtime == nil {
-		return defaultUITheme()
-	}
-	return uiThemeFromHostColors(state.Runtime.HostDefaultBG, state.Runtime.HostDefaultFG, state.Runtime.HostPalette)
+	return uiThemeForRuntimeWithConfig(state.Runtime, state.Theme)
+}
+
+func uiThemeForVM(vm RenderVM) uiTheme {
+	return uiThemeForRuntimeWithConfig(vm.Runtime, vm.Theme)
 }
 
 func uiThemeForRuntime(runtimeState *VisibleRuntimeStateProxy) uiTheme {
+	return uiThemeForRuntimeWithConfig(runtimeState, UIThemeConfig{})
+}
+
+func uiThemeForRuntimeWithConfig(runtimeState *VisibleRuntimeStateProxy, cfg UIThemeConfig) uiTheme {
 	if runtimeState == nil {
-		return defaultUITheme()
+		return applyThemeConfig(defaultUITheme(), cfg)
 	}
-	return uiThemeFromHostColors(runtimeState.HostDefaultBG, runtimeState.HostDefaultFG, runtimeState.HostPalette)
+	base := uiThemeFromHostColors(runtimeState.HostDefaultBG, runtimeState.HostDefaultFG, runtimeState.HostPalette)
+	return applyThemeConfig(base, cfg)
+}
+
+func applyThemeConfig(theme uiTheme, cfg UIThemeConfig) uiTheme {
+	if strings.TrimSpace(cfg.Accent) != "" {
+		theme.chromeAccent = cfg.Accent
+	}
+	if strings.TrimSpace(cfg.Success) != "" {
+		theme.success = cfg.Success
+	}
+	if strings.TrimSpace(cfg.Warning) != "" {
+		theme.warning = cfg.Warning
+	}
+	if strings.TrimSpace(cfg.Danger) != "" {
+		theme.danger = cfg.Danger
+	}
+	if strings.TrimSpace(cfg.Info) != "" {
+		theme.info = cfg.Info
+	}
+	if strings.TrimSpace(cfg.PanelBorder) != "" {
+		theme.panelBorder = cfg.PanelBorder
+	}
+	if strings.TrimSpace(cfg.PanelBorder2) != "" {
+		theme.panelBorder2 = cfg.PanelBorder2
+	}
+	if strings.TrimSpace(cfg.TabActiveBG) != "" {
+		theme.tabActiveBG = cfg.TabActiveBG
+	}
+	if strings.TrimSpace(cfg.TabActiveFG) != "" {
+		theme.tabActiveFG = cfg.TabActiveFG
+	}
+	if strings.TrimSpace(cfg.TabInactiveBG) != "" {
+		theme.tabInactiveBG = cfg.TabInactiveBG
+	}
+	if strings.TrimSpace(cfg.TabInactiveFG) != "" {
+		theme.tabInactiveFG = cfg.TabInactiveFG
+	}
+	if strings.TrimSpace(cfg.TabCreateBG) != "" {
+		theme.tabCreateBG = cfg.TabCreateBG
+	}
+	if strings.TrimSpace(cfg.TabCreateFG) != "" {
+		theme.tabCreateFG = cfg.TabCreateFG
+	}
+	return theme
 }
 
 func uiThemeFromHostColors(hostBG, hostFG string, hostPalette map[int]string) uiTheme {
@@ -105,7 +154,7 @@ func uiThemeFromHostColors(hostBG, hostFG string, hostPalette map[int]string) ui
 		hostPalette,
 		[]int{13, 5, 12, 14, 6, 4},
 		hostDerivedToken(hostBG, hostFG, 0.74, 3.2),
-		ensureContrast("#c084fc", hostBG, 3.2),
+		ensureContrast("#8b5cf6", hostBG, 3.2),
 		3.2,
 	)
 	panelMuted := ensureContrast(mixHex(hostBG, hostFG, 0.46), panelBG, 2.0)
