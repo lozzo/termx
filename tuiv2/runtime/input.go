@@ -44,7 +44,7 @@ func (r *Runtime) RecentLocalInput() bool {
 	if at == 0 {
 		return false
 	}
-	return time.Since(time.Unix(0, at)) <= interactiveLatencyWindow
+	return time.Since(time.Unix(0, at)) <= effectiveInteractiveLatencyWindow()
 }
 
 func (r *Runtime) consumeInteractiveBypass() bool {
@@ -52,4 +52,12 @@ func (r *Runtime) consumeInteractiveBypass() bool {
 		return false
 	}
 	return r.inputBypassArmed.Swap(false)
+}
+
+func effectiveInteractiveLatencyWindow() time.Duration {
+	window := interactiveLatencyWindow
+	if shared.RemoteLatencyProfileEnabled() && (window <= 0 || window < remoteInteractiveLatencyWindow) {
+		window = remoteInteractiveLatencyWindow
+	}
+	return shared.DurationOverride("TERMX_INTERACTIVE_LATENCY_WINDOW", window)
 }

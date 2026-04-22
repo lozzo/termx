@@ -22,13 +22,27 @@ func renderBodyCanvas(coordinator *Coordinator, runtimeState *VisibleRuntimeStat
 		cache = coordinator.bodyCache
 		cursorVisibleFn = coordinator.syntheticCursorVisible
 	}
-	// Render fully composes the final framebuffer every time. The only
-	// production incremental output engine now lives at the presenter boundary.
-	canvas := rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, cursorVisibleFn, runtimeState)
-	if coordinator != nil {
-		coordinator.bodyCache = newBodyRenderCache(cache, canvas, entries, width, height)
+	var (
+		canvas   *composedCanvas
+		captured []capturedBodyRenderCacheEntry
+	)
+	if canIncrementallyUpdateBodyCanvas(cache, entries, width, height) {
+		captured = captureBodyRenderCacheEntries(entries, runtimeState)
+		if next, ok := updateBodyCanvasIncrementally(cache, entries, captured, runtimeState, hostEmojiMode, cursorOffsetY, cursorVisibleFn); ok {
+			canvas = next
+			perftrace.Count("render.body.canvas.path.incremental", maxInt(1, width*height))
+		}
 	}
-	perftrace.Count("render.body.canvas.path.full_compose", maxInt(1, width*height))
+	if canvas == nil {
+		canvas = rebuildBodyCanvas(cache, entries, width, height, hostEmojiMode, cursorOffsetY, cursorVisibleFn, runtimeState)
+		perftrace.Count("render.body.canvas.path.full_compose", maxInt(1, width*height))
+	}
+	if coordinator != nil {
+		if captured == nil {
+			captured = captureBodyRenderCacheEntries(entries, runtimeState)
+		}
+		coordinator.bodyCache = newBodyRenderCache(canvas, captured, entries, runtimeState, width, height)
+	}
 	return canvas
 }
 

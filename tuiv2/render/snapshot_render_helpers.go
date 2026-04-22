@@ -84,6 +84,50 @@ func drawTerminalSourceWithOffsetAndMetrics(canvas *composedCanvas, rect workben
 	drawTerminalExtentHintsWithMetrics(canvas, rect, terminalExtentHintsView(source, totalRows), theme, hintMetrics)
 }
 
+func drawTerminalSourceWindowRowsWithMetrics(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource, offset int, theme uiTheme, metrics renderTerminalMetrics, lines []int) {
+	if canvas == nil || source == nil || rect.W <= 0 || rect.H <= 0 || len(lines) == 0 {
+		return
+	}
+	hintMetrics := terminalWindowHintMetrics(source, rect, offset, metrics)
+	for _, line := range lines {
+		if line < 0 || line >= rect.H {
+			continue
+		}
+		targetY := rect.Y + line
+		fillRect(canvas, workbench.Rect{X: rect.X, Y: targetY, W: rect.W, H: 1}, blankDrawCell())
+		if rowIndex := terminalSourceWindowRowIndex(source, rect.H, offset, line); rowIndex >= 0 {
+			drawTerminalSourceRowInRectCleared(canvas, rect, source, rowIndex, targetY, theme)
+		}
+		drawTerminalExtentHintsRowWithMetrics(canvas, rect, source, targetY, theme, hintMetrics)
+	}
+}
+
+func terminalWindowHintMetrics(source terminalRenderSource, rect workbench.Rect, offset int, metrics renderTerminalMetrics) renderTerminalMetrics {
+	if source == nil {
+		return metrics
+	}
+	if offset <= 0 {
+		return metrics
+	}
+	totalRows := source.TotalRows()
+	end := totalRows - offset
+	if end < 0 {
+		end = 0
+	}
+	start := end - rect.H
+	if start < 0 {
+		start = 0
+	}
+	drawnRows := end - start
+	if drawnRows > metrics.Rows {
+		metrics.Rows = drawnRows
+	}
+	if rect.W > metrics.Cols {
+		metrics.Cols = rect.W
+	}
+	return metrics
+}
+
 func drawTerminalSourceInRect(canvas *composedCanvas, rect workbench.Rect, source terminalRenderSource) {
 	if canvas == nil || source == nil || rect.W <= 0 || rect.H <= 0 {
 		return

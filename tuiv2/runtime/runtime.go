@@ -38,6 +38,7 @@ type Runtime struct {
 }
 
 const interactiveLatencyWindow = 24 * time.Millisecond
+const remoteInteractiveLatencyWindow = 150 * time.Millisecond
 
 func New(client bridge.Client, opts ...Option) *Runtime {
 	r := &Runtime{

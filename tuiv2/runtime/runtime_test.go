@@ -761,6 +761,14 @@ func TestRuntimeClientOutputBatchDelayUsesRemoteProfile(t *testing.T) {
 	}
 }
 
+func TestEffectiveInteractiveLatencyWindowUsesRemoteProfile(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_LATENCY", "1")
+	t.Setenv("TERMX_INTERACTIVE_LATENCY_WINDOW", "")
+	if got := effectiveInteractiveLatencyWindow(); got != remoteInteractiveLatencyWindow {
+		t.Fatalf("expected remote interactive latency window %v, got %v", remoteInteractiveLatencyWindow, got)
+	}
+}
+
 func TestCoalesceClientOutputFramesWaitsForSynchronizedOutputEnd(t *testing.T) {
 	stream := make(chan protocol.StreamFrame, 1)
 	go func() {

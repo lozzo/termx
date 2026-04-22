@@ -126,6 +126,7 @@ type Model struct {
 type mouseDragMode int
 
 var invalidateBatchDelay = 4 * time.Millisecond
+var remoteInvalidateBatchDelay = time.Millisecond
 
 const (
 	invalidateDrainSlowThreshold  = 16 * time.Millisecond
@@ -315,6 +316,10 @@ func (m *Model) effectiveInvalidateBatchDelay() time.Duration {
 	if m == nil || base <= 0 {
 		return base
 	}
+	if shared.RemoteLatencyProfileEnabled() && (base <= 0 || base > remoteInvalidateBatchDelay) {
+		base = remoteInvalidateBatchDelay
+	}
+	base = shared.DurationOverride("TERMX_INVALIDATE_BATCH_DELAY", base)
 	delay := base
 	level := int(m.invalidateAdaptiveLevel.Load())
 	for i := 0; i < level; i++ {

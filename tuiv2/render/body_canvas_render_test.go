@@ -178,6 +178,182 @@ func TestRenderBodyCanvasOverlapLargeSameRectScrollUsesFullComposePath(t *testin
 	}
 }
 
+func TestRenderBodyCanvasNonOverlappingContentChangeUsesIncrementalPath(t *testing.T) {
+	now := time.Date(2026, 4, 22, 12, 0, 0, 0, time.UTC)
+	leftSurface := &spriteTestSurface{
+		size: protocol.Size{Cols: 18, Rows: 6},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("left-row-01........"),
+			protocolRowFromText("left-row-02........"),
+			protocolRowFromText("left-row-03........"),
+			protocolRowFromText("left-row-04........"),
+			protocolRowFromText("left-row-05........"),
+			protocolRowFromText("left-row-06........"),
+		},
+		screenTimestamps: []time.Time{now, now, now, now, now, now},
+	}
+	rightSurface := &spriteTestSurface{
+		size: protocol.Size{Cols: 18, Rows: 6},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("right-row-01......."),
+			protocolRowFromText("right-row-02......."),
+			protocolRowFromText("right-row-03......."),
+			protocolRowFromText("right-row-04......."),
+			protocolRowFromText("right-row-05......."),
+			protocolRowFromText("right-row-06......."),
+		},
+		screenTimestamps: []time.Time{now, now, now, now, now, now},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
+		Terminals: []runtimestate.VisibleTerminal{
+			{
+				TerminalID:     "term-left",
+				Name:           "left",
+				State:          "running",
+				Surface:        leftSurface,
+				SurfaceVersion: 1,
+			},
+			{
+				TerminalID:     "term-right",
+				Name:           "right",
+				State:          "running",
+				Surface:        rightSurface,
+				SurfaceVersion: 1,
+			},
+		},
+	}
+	theme := defaultUITheme()
+	entries1 := []paneRenderEntry{
+		testPaneRenderEntry("pane-left", "term-left", workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, true, theme, 1),
+		testPaneRenderEntry("pane-right", "term-right", workbench.Rect{X: 20, Y: 0, W: 20, H: 8}, false, false, theme, 1),
+	}
+
+	coordinator := &Coordinator{}
+	_ = renderBodyCanvas(coordinator, runtimeState, false, entries1, 40, 8)
+
+	leftSurface.screen[2] = protocolRowFromText("left-row-03--delta--")
+	leftSurface.screenTimestamps[2] = now.Add(time.Second)
+	runtimeState.Terminals[0].SurfaceVersion = 2
+	runtimeState.Terminals[0].ScreenUpdate = runtimestate.VisibleScreenUpdateSummary{
+		SurfaceVersion: 2,
+		ChangedRows:    []int{2},
+	}
+	entries2 := []paneRenderEntry{
+		testPaneRenderEntry("pane-left", "term-left", workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, true, theme, 2),
+		testPaneRenderEntry("pane-right", "term-right", workbench.Rect{X: 20, Y: 0, W: 20, H: 8}, false, false, theme, 1),
+	}
+
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+
+	got := renderBodyCanvas(coordinator, runtimeState, false, entries2, 40, 8)
+	want := rebuildBodyCanvas(nil, entries2, 40, 8, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
+
+	snapshot := perftrace.SnapshotCurrent()
+	if event, ok := snapshot.Event("render.body.canvas.path.incremental"); !ok || event.Count == 0 {
+		t.Fatalf("expected incremental body path, got events=%#v", snapshot.Events)
+	}
+	if event, ok := snapshot.Event("render.body.canvas.path.full_compose"); ok && event.Count > 0 {
+		t.Fatalf("expected incremental path to avoid full compose, got events=%#v", snapshot.Events)
+	}
+	if gotRaw, wantRaw := strings.TrimRight(got.rawString(), "\n"), strings.TrimRight(want.rawString(), "\n"); gotRaw != wantRaw {
+		t.Fatalf("expected incremental canvas to match full rebuild raw output,\n got: %q\nwant: %q\nevents=%#v", gotRaw, wantRaw, snapshot.Events)
+	}
+	if gotANSI, wantANSI := got.String(), want.String(); gotANSI != wantANSI {
+		t.Fatalf("expected incremental canvas to match full rebuild styled output")
+	}
+}
+
+func TestRenderBodyCanvasNonOverlappingScrollUsesIncrementalPath(t *testing.T) {
+	now := time.Date(2026, 4, 22, 13, 0, 0, 0, time.UTC)
+	leftSurface := &spriteTestSurface{
+		size: protocol.Size{Cols: 18, Rows: 6},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("left-row-01........"),
+			protocolRowFromText("left-row-02........"),
+			protocolRowFromText("left-row-03........"),
+			protocolRowFromText("left-row-04........"),
+			protocolRowFromText("left-row-05........"),
+			protocolRowFromText("left-row-06........"),
+		},
+		screenTimestamps: []time.Time{now, now, now, now, now, now},
+	}
+	rightSurface := &spriteTestSurface{
+		size: protocol.Size{Cols: 18, Rows: 6},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("right-row-01......."),
+			protocolRowFromText("right-row-02......."),
+			protocolRowFromText("right-row-03......."),
+			protocolRowFromText("right-row-04......."),
+			protocolRowFromText("right-row-05......."),
+			protocolRowFromText("right-row-06......."),
+		},
+		screenTimestamps: []time.Time{now, now, now, now, now, now},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
+		Terminals: []runtimestate.VisibleTerminal{
+			{
+				TerminalID:     "term-left",
+				Name:           "left",
+				State:          "running",
+				Surface:        leftSurface,
+				SurfaceVersion: 1,
+			},
+			{
+				TerminalID:     "term-right",
+				Name:           "right",
+				State:          "running",
+				Surface:        rightSurface,
+				SurfaceVersion: 1,
+			},
+		},
+	}
+	theme := defaultUITheme()
+	entries1 := []paneRenderEntry{
+		testPaneRenderEntry("pane-left", "term-left", workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, true, theme, 1),
+		testPaneRenderEntry("pane-right", "term-right", workbench.Rect{X: 20, Y: 0, W: 20, H: 8}, false, false, theme, 1),
+	}
+
+	coordinator := &Coordinator{}
+	_ = renderBodyCanvas(coordinator, runtimeState, false, entries1, 40, 8)
+
+	leftSurface.screen = append(leftSurface.screen[1:], protocolRowFromText("left-row-07........"))
+	leftSurface.screenTimestamps = append(leftSurface.screenTimestamps[1:], now.Add(time.Second))
+	runtimeState.Terminals[0].SurfaceVersion = 2
+	runtimeState.Terminals[0].ScreenUpdate = runtimestate.VisibleScreenUpdateSummary{
+		SurfaceVersion: 2,
+		ScreenScroll:   1,
+	}
+	entries2 := []paneRenderEntry{
+		testPaneRenderEntry("pane-left", "term-left", workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, true, theme, 2),
+		testPaneRenderEntry("pane-right", "term-right", workbench.Rect{X: 20, Y: 0, W: 20, H: 8}, false, false, theme, 1),
+	}
+
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+
+	got := renderBodyCanvas(coordinator, runtimeState, false, entries2, 40, 8)
+	want := rebuildBodyCanvas(nil, entries2, 40, 8, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
+
+	snapshot := perftrace.SnapshotCurrent()
+	if event, ok := snapshot.Event("render.body.canvas.path.incremental"); !ok || event.Count == 0 {
+		t.Fatalf("expected incremental body path for scroll, got events=%#v", snapshot.Events)
+	}
+	if event, ok := snapshot.Event("render.body.canvas.path.full_compose"); ok && event.Count > 0 {
+		t.Fatalf("expected incremental scroll path to avoid full compose, got events=%#v", snapshot.Events)
+	}
+	if gotRaw, wantRaw := strings.TrimRight(got.rawString(), "\n"), strings.TrimRight(want.rawString(), "\n"); gotRaw != wantRaw {
+		t.Fatalf("expected incremental scroll canvas to match full rebuild raw output,\n got: %q\nwant: %q\nevents=%#v", gotRaw, wantRaw, snapshot.Events)
+	}
+	if gotANSI, wantANSI := got.String(), want.String(); gotANSI != wantANSI {
+		t.Fatalf("expected incremental scroll canvas to match full rebuild styled output")
+	}
+}
+
 func testPaneRenderEntry(paneID, terminalID string, rect workbench.Rect, floating, active bool, theme uiTheme, surfaceVersion uint64) paneRenderEntry {
 	entry := paneRenderEntry{
 		PaneID:     paneID,

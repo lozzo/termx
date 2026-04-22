@@ -709,12 +709,12 @@ func TestOutputCursorWriterRemoteProfileFlushesInteractiveFramesImmediately(t *t
 	}
 }
 
-func TestOutputCursorWriterRemoteProfileRaisesBaseBatchDelay(t *testing.T) {
+func TestOutputCursorWriterRemoteProfileLowersBaseBatchDelay(t *testing.T) {
 	t.Setenv("TERMX_REMOTE_LATENCY", "1")
 	originalDelay := directFrameBatchDelay
 	originalRemoteDelay := remoteDirectFrameBatchDelay
 	directFrameBatchDelay = 4 * time.Millisecond
-	remoteDirectFrameBatchDelay = 8 * time.Millisecond
+	remoteDirectFrameBatchDelay = 1500 * time.Microsecond
 	defer func() {
 		directFrameBatchDelay = originalDelay
 		remoteDirectFrameBatchDelay = originalRemoteDelay
@@ -2214,6 +2214,9 @@ func TestOutputCursorWriterKeepsRowScrollOptimizationWhenCursorMoves(t *testing.
 	snapshot := perftrace.SnapshotCurrent()
 	if event, ok := snapshot.Event("cursor_writer.present.mode.vertical_scroll_rows"); !ok || event.Count == 0 {
 		t.Fatalf("expected rows scroll perf event when cursor moves, got %#v", snapshot.Events)
+	}
+	if event, ok := snapshot.Event("cursor_writer.present.mode.fast_scroll_candidate"); !ok || event.Count == 0 {
+		t.Fatalf("expected fast scroll candidate event when cursor moves, got %#v", snapshot.Events)
 	}
 }
 

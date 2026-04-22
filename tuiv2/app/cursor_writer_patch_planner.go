@@ -103,7 +103,39 @@ func (p *framePresenter) diffPatchCandidate(lines []string) framePatchCandidate 
 	}
 }
 
+func (p *framePresenter) quickFramePatchCandidate(lines []string) framePatchCandidate {
+	if p == nil || len(lines) != len(p.lines) {
+		return framePatchCandidate{}
+	}
+	rowDiffPayload, rowChanged := renderChangedRows(p.lines, lines)
+	if rowChanged == 0 {
+		return framePatchCandidate{
+			mode: framePatchCandidateDiff,
+		}
+	}
+	if !p.verticalScrollMode.Enabled() {
+		return framePatchCandidate{}
+	}
+	candidate := p.verticalScrollCandidate(lines)
+	if !candidate.valid() {
+		return framePatchCandidate{}
+	}
+	rowDiffBytes := normalizedFrameLen(rowDiffPayload)
+	if rowDiffBytes <= 0 || candidate.byteCost()*2 > rowDiffBytes {
+		return framePatchCandidate{}
+	}
+	candidate.updatedCount = rowChanged
+	candidate.metrics = append(candidate.metrics, framePatchMetric{
+		name:  "cursor_writer.present.mode.fast_scroll_candidate",
+		count: rowChanged,
+	})
+	return candidate
+}
+
 func (p *framePresenter) planFramePatch(lines []string, meta *presentMeta) framePatchCandidate {
+	if fast := p.quickFramePatchCandidate(lines); fast.valid() {
+		return fast
+	}
 	diff := p.diffPatchCandidate(lines)
 	if diff.updatedCount == 0 {
 		return diff

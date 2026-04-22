@@ -94,12 +94,15 @@ func (m *Model) handleForwardedTerminalWheelInput(in input.TerminalInput) tea.Cm
 			return m.openPickerIfUnattached(pane.ID)
 		}
 	}
-	// Remote sessions benefit more from a tiny wheel dispatch window than from
-	// raw immediate sends. It lets opposing wheel bursts collapse before the
-	// bytes hit the PTY, which shortens the "post-release inertia" users feel
-	// over SSH when they stop scrolling.
 	if shared.RemoteLatencyProfileEnabled() {
-		return m.handleTerminalInput(in)
+		if m.terminalInputSending || m.interactionBatchActive || m.terminalInputs.HasPending() {
+			return m.handleTerminalInput(in)
+		}
+		m.terminalInputSending = true
+		if m.canDirectSendForwardedWheelInput(in) {
+			return m.terminalInputDirectSendCmd(in)
+		}
+		return m.terminalInputSendCmd(in)
 	}
 	if m.terminalInputSending || m.interactionBatchActive {
 		m.enqueueTerminalInput(in)

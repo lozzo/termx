@@ -56,28 +56,28 @@ type outputCursorWriter struct {
 	bubbleTeaRestore string
 	cursorProjected  bool
 
-	directAltScreen        bool
-	directMouseCell        bool
-	directBracketedPaste   bool
-	ttyWidth               int
-	lastTTYWidth           int
-	lastDirectCursor       string
-	lastFlushAt            time.Time
-	frameDumpPath          string
+	directAltScreen         bool
+	directMouseCell         bool
+	directBracketedPaste    bool
+	ttyWidth                int
+	lastTTYWidth            int
+	lastDirectCursor        string
+	lastFlushAt             time.Time
+	frameDumpPath           string
 	forceImmediateNextFrame bool
-	disableVerticalScroll  bool
-	disableOwnerAwareDelta bool
-	forceFullFrameLines    bool
-	verticalScrollMode     verticalScrollMode
-	drainHook              func()
-	interactiveFlushHint   func() bool
-	backlogActive          atomic.Bool
-	adaptiveBatchLevel     uint8
-	adaptiveSlowStreak     uint8
-	adaptiveFastStreak     uint8
-	flushTimer             *time.Timer
-	flushTimerArmed        bool
-	perfSampleHook         func(string)
+	disableVerticalScroll   bool
+	disableOwnerAwareDelta  bool
+	forceFullFrameLines     bool
+	verticalScrollMode      verticalScrollMode
+	drainHook               func()
+	interactiveFlushHint    func() bool
+	backlogActive           atomic.Bool
+	adaptiveBatchLevel      uint8
+	adaptiveSlowStreak      uint8
+	adaptiveFastStreak      uint8
+	flushTimer              *time.Timer
+	flushTimerArmed         bool
+	perfSampleHook          func(string)
 }
 
 type pendingDirectFrame struct {
@@ -158,8 +158,8 @@ const maxPooledPresentedCellCapacity = 2048
 
 var directFrameBatchDelay = 4 * time.Millisecond
 var directFrameIdleThreshold = 12 * time.Millisecond
-var remoteDirectFrameBatchDelay = 8 * time.Millisecond
-var remoteDirectFrameIdleThreshold = 20 * time.Millisecond
+var remoteDirectFrameBatchDelay = 1500 * time.Microsecond
+var remoteDirectFrameIdleThreshold = 6 * time.Millisecond
 
 const (
 	directFrameDrainSlowThreshold  = 16 * time.Millisecond
@@ -353,6 +353,9 @@ func (p *framePresenter) verticalScrollCandidate(lines []string) framePatchCandi
 				}
 			}
 		}
+	}
+	if best.mode == framePatchCandidateVerticalScrollRows {
+		return best
 	}
 	if p.verticalScrollMode.RectsAllowed() && p.fullWidthLines && shared.ExperimentalLRScrollEnabled() {
 		nextRows := make([]presentedRow, len(lines))
@@ -899,9 +902,10 @@ func (w *outputCursorWriter) effectiveDirectFrameBatchDelayLocked() time.Duratio
 	if w == nil || base <= 0 {
 		return base
 	}
-	if shared.RemoteLatencyProfileEnabled() && base < remoteDirectFrameBatchDelay {
+	if shared.RemoteLatencyProfileEnabled() && (base <= 0 || base > remoteDirectFrameBatchDelay) {
 		base = remoteDirectFrameBatchDelay
 	}
+	base = shared.DurationOverride("TERMX_DIRECT_FRAME_BATCH_DELAY", base)
 	delay := base
 	for i := 0; i < int(w.adaptiveBatchLevel); i++ {
 		if delay >= directFrameAdaptiveMaxDelay {
@@ -920,9 +924,10 @@ func (w *outputCursorWriter) effectiveDirectFrameIdleThresholdLocked() time.Dura
 	if w == nil || threshold <= 0 {
 		return threshold
 	}
-	if shared.RemoteLatencyProfileEnabled() && threshold < remoteDirectFrameIdleThreshold {
+	if shared.RemoteLatencyProfileEnabled() && (threshold <= 0 || threshold > remoteDirectFrameIdleThreshold) {
 		threshold = remoteDirectFrameIdleThreshold
 	}
+	threshold = shared.DurationOverride("TERMX_DIRECT_FRAME_IDLE_THRESHOLD", threshold)
 	return threshold
 }
 

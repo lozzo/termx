@@ -116,6 +116,65 @@ func BenchmarkCoordinatorRenderFrameOverlapInvalidated(b *testing.B) {
 	}
 }
 
+func BenchmarkCoordinatorRenderFrameTwoPaneScrollIncremental(b *testing.B) {
+	state := benchmarkState(b, 2, 160, 48)
+	activeTab := state.Workbench.Tabs[state.Workbench.ActiveTab]
+	if len(activeTab.Panes) != 2 {
+		b.Fatalf("expected two panes, got %#v", activeTab.Panes)
+	}
+	leftContent, ok := workbench.FramedPaneContentRect(activeTab.Panes[0].Rect, activeTab.Panes[0].SharedLeft, activeTab.Panes[0].SharedTop)
+	if !ok {
+		b.Fatalf("expected left content rect from %#v", activeTab.Panes[0].Rect)
+	}
+	rightContent, ok := workbench.FramedPaneContentRect(activeTab.Panes[1].Rect, activeTab.Panes[1].SharedLeft, activeTab.Panes[1].SharedTop)
+	if !ok {
+		b.Fatalf("expected right content rect from %#v", activeTab.Panes[1].Rect)
+	}
+
+	leftA := benchmarkScrollSurface("left", leftContent.W, leftContent.H, 1)
+	leftB := benchmarkScrollSurface("left", leftContent.W, leftContent.H, 2)
+	right := benchmarkScrollSurface("right", rightContent.W, rightContent.H, 200)
+
+	for i := range state.Runtime.Terminals {
+		switch state.Runtime.Terminals[i].TerminalID {
+		case "term-1":
+			state.Runtime.Terminals[i].Snapshot = nil
+			state.Runtime.Terminals[i].Surface = leftA
+			state.Runtime.Terminals[i].SurfaceVersion = 1
+			state.Runtime.Terminals[i].ScreenUpdate = runtime.VisibleScreenUpdateSummary{SurfaceVersion: 1}
+		case "term-2":
+			state.Runtime.Terminals[i].Snapshot = nil
+			state.Runtime.Terminals[i].Surface = right
+			state.Runtime.Terminals[i].SurfaceVersion = 1
+			state.Runtime.Terminals[i].ScreenUpdate = runtime.VisibleScreenUpdateSummary{SurfaceVersion: 1}
+		}
+	}
+
+	coordinator := NewCoordinator(func() VisibleRenderState { return state })
+	benchmarkFrameSink = coordinator.RenderFrame()
+
+	version := uint64(1)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		version++
+		surface := leftB
+		scroll := 1
+		if i%2 != 0 {
+			surface = leftA
+			scroll = -1
+		}
+		state.Runtime.Terminals[0].Surface = surface
+		state.Runtime.Terminals[0].SurfaceVersion = version
+		state.Runtime.Terminals[0].ScreenUpdate = runtime.VisibleScreenUpdateSummary{
+			SurfaceVersion: version,
+			ScreenScroll:   scroll,
+		}
+		coordinator.Invalidate()
+		benchmarkFrameSink = coordinator.RenderFrame()
+	}
+}
+
 func BenchmarkCoordinatorRenderFrameFloatingDrag(b *testing.B) {
 	cases := []struct {
 		name       string
@@ -243,6 +302,24 @@ func benchmarkCoordinator(tb testing.TB, paneCount, width, height int) *Coordina
 	tb.Helper()
 	state := benchmarkState(tb, paneCount, width, height)
 	return NewCoordinator(func() VisibleRenderState { return state })
+}
+
+func benchmarkScrollSurface(prefix string, cols, rows, start int) *spriteTestSurface {
+	cols = maxInt(1, cols)
+	rows = maxInt(1, rows)
+	screen := make([][]protocol.Cell, 0, rows)
+	for y := 0; y < rows; y++ {
+		line := fmt.Sprintf("%s-%03d %s", prefix, start+y, strings.Repeat("x", cols))
+		screen = append(screen, protocolRowFromText(line[:cols]))
+	}
+	cursorRow := maxInt(0, rows-2)
+	cursorCol := minInt(cols-1, 12)
+	return &spriteTestSurface{
+		size:   protocol.Size{Cols: uint16(cols), Rows: uint16(rows)},
+		screen: screen,
+		cursor: protocol.CursorState{Row: cursorRow, Col: cursorCol, Visible: true},
+		modes:  protocol.TerminalModes{AlternateScreen: true},
+	}
 }
 
 func benchmarkState(tb testing.TB, paneCount, width, height int) VisibleRenderState {

@@ -1860,6 +1860,25 @@ func TestQueueInvalidateBypassesBatchDelayAfterRecentInput(t *testing.T) {
 	}
 }
 
+func TestQueueInvalidateUsesRemoteBatchDelay(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_LATENCY", "1")
+	t.Setenv("TERMX_INVALIDATE_BATCH_DELAY", "")
+
+	originalDelay := invalidateBatchDelay
+	originalRemoteDelay := remoteInvalidateBatchDelay
+	invalidateBatchDelay = 4 * time.Millisecond
+	remoteInvalidateBatchDelay = time.Millisecond
+	defer func() {
+		invalidateBatchDelay = originalDelay
+		remoteInvalidateBatchDelay = originalRemoteDelay
+	}()
+
+	model := New(shared.Config{}, nil, runtime.New(nil))
+	if got := model.effectiveInvalidateBatchDelay(); got != remoteInvalidateBatchDelay {
+		t.Fatalf("expected remote invalidate batch delay %v, got %v", remoteInvalidateBatchDelay, got)
+	}
+}
+
 func TestQueueInvalidateDoesNotBlockOnSend(t *testing.T) {
 	model := New(shared.Config{}, nil, runtime.New(nil))
 	release := make(chan struct{})

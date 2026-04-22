@@ -2527,7 +2527,7 @@ func TestMouseWheelForwardedPathBypassesWheelDispatchQueue(t *testing.T) {
 	}
 }
 
-func TestMouseWheelForwardedPathUsesWheelDispatchQueueOnRemoteProfile(t *testing.T) {
+func TestMouseWheelForwardedPathSendsFirstWheelImmediatelyOnRemoteProfile(t *testing.T) {
 	t.Setenv("TERMX_REMOTE_LATENCY", "1")
 
 	originalDelay := terminalWheelDispatchDelay
@@ -2548,8 +2548,8 @@ func TestMouseWheelForwardedPathUsesWheelDispatchQueueOnRemoteProfile(t *testing
 		t.Fatal("expected wheel-forward command")
 	}
 	msg := cmd()
-	if _, ok := msg.(terminalWheelDispatchMsg); !ok {
-		t.Fatalf("expected remote forwarded wheel to use dispatch queue, got %#v", msg)
+	if _, ok := msg.(terminalWheelDispatchMsg); ok {
+		t.Fatalf("expected remote forwarded wheel to skip initial dispatch queue, got %#v", msg)
 	}
 }
 
