@@ -190,6 +190,50 @@ func TestHandleInteractionMessageTerminalInputSentContinuousReschedulesWheelTail
 	}
 }
 
+func TestHandleInteractionMessageDropsSupersededWheelBurst(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+	noteQueuedMouseWheel(2)
+
+	cmd, handled := model.handleInteractionMessage(mouseWheelBurstMsg{
+		Seq:      1,
+		QueuedAt: time.Now(),
+		Msg:      tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress, X: 4, Y: 4},
+		Repeat:   1,
+	})
+	if !handled {
+		t.Fatal("expected mouseWheelBurstMsg handled")
+	}
+	if cmd != nil {
+		t.Fatalf("expected superseded wheel burst dropped, got cmd %#v", cmd)
+	}
+}
+
+func TestHandleInteractionMessageDropsLaggedWheelBurst(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+
+	originalThreshold := staleMouseWheelThreshold
+	originalRemoteThreshold := remoteStaleMouseWheelThreshold
+	staleMouseWheelThreshold = 10 * time.Millisecond
+	remoteStaleMouseWheelThreshold = 10 * time.Millisecond
+	defer func() {
+		staleMouseWheelThreshold = originalThreshold
+		remoteStaleMouseWheelThreshold = originalRemoteThreshold
+	}()
+
+	cmd, handled := model.handleInteractionMessage(mouseWheelBurstMsg{
+		Seq:      1,
+		QueuedAt: time.Now().Add(-50 * time.Millisecond),
+		Msg:      tea.MouseMsg{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress, X: 4, Y: 4},
+		Repeat:   1,
+	})
+	if !handled {
+		t.Fatal("expected mouseWheelBurstMsg handled")
+	}
+	if cmd != nil {
+		t.Fatalf("expected lagged wheel burst dropped, got cmd %#v", cmd)
+	}
+}
+
 func TestHandleInteractionMessageTerminalInputSentStillSchedulesSharedResync(t *testing.T) {
 	model := setupModel(t, modelOpts{})
 	terminal := model.runtime.Registry().Get("term-1")

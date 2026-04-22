@@ -15,6 +15,26 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 	case interactionBatchMsg:
 		return m.handleInteractionBatch(typed.Messages), true
 	case mouseWheelBurstMsg:
+		queueDelay := time.Since(typed.QueuedAt)
+		appendMouseDebugLog(
+			"mouse_process",
+			"seq", typed.Seq,
+			"kind", "wheel",
+			"action", typed.Msg.Action,
+			"button", typed.Msg.Button,
+			"x", typed.Msg.X,
+			"y", typed.Msg.Y,
+			"queued_at", typed.QueuedAt.UTC().Format(time.RFC3339Nano),
+			"queue_ms", queueDelay.Milliseconds(),
+		)
+		if typed.Seq > 0 && typed.Seq < latestQueuedWheelSeq() {
+			appendMouseDebugLog("mouse_drop_stale", "seq", typed.Seq, "latest_seq", latestQueuedWheelSeq(), "kind", "wheel", "x", typed.Msg.X, "y", typed.Msg.Y)
+			return nil, true
+		}
+		if !typed.QueuedAt.IsZero() && queueDelay > effectiveMouseWheelStaleThreshold() {
+			appendMouseDebugLog("mouse_drop_lagged", "seq", typed.Seq, "queue_ms", queueDelay.Milliseconds(), "kind", "wheel", "x", typed.Msg.X, "y", typed.Msg.Y)
+			return nil, true
+		}
 		return m.handleMouseWheelBurstMsg(typed), true
 	case keyBurstMsg:
 		m.beginBoundaryInteraction()

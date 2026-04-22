@@ -36,6 +36,8 @@ type keyBurstMsg struct {
 }
 
 type mouseWheelBurstMsg struct {
+	Seq      uint64
+	QueuedAt time.Time
 	Msg    tea.MouseMsg
 	Repeat int
 }

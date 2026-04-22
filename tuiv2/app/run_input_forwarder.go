@@ -24,6 +24,8 @@ var remoteMouseMotionBatchDelay = 2 * time.Millisecond
 var mouseWheelBatchDelay = 1 * time.Millisecond
 var remoteMouseWheelBatchDelay time.Duration
 var staleMouseMotionThreshold = 40 * time.Millisecond
+var staleMouseWheelThreshold = 24 * time.Millisecond
+var remoteStaleMouseWheelThreshold = 16 * time.Millisecond
 
 type inputForwarderSink interface {
 	Send(tea.Msg)
@@ -190,7 +192,15 @@ func startInputForwarderWithSink(sink inputForwarderSink, input io.Reader) (func
 			startHighFrequencyMouseTimer(effectiveMouseMotionBatchDelay())
 		}
 		queueWheel := func(msg tea.MouseMsg) {
-			mouseAccum.QueueWheel(msg)
+			queued := mouseWheelBurstMsg{
+				Seq:      nextMouseDebugSeq(),
+				QueuedAt: time.Now().UTC(),
+				Msg:      msg,
+				Repeat:   1,
+			}
+			noteQueuedMouseWheel(queued.Seq)
+			appendMouseDebugLog("mouse_recv", "seq", queued.Seq, "kind", "wheel", "action", queued.Msg.Action, "button", queued.Msg.Button, "x", queued.Msg.X, "y", queued.Msg.Y)
+			mouseAccum.QueueWheelBurst(queued)
 			delay := effectiveMouseWheelBatchDelay()
 			if delay <= 0 {
 				flushPending()
@@ -304,6 +314,14 @@ func effectiveMouseWheelBatchDelay() time.Duration {
 		delay = remoteMouseWheelBatchDelay
 	}
 	return shared.DurationOverride("TERMX_MOUSE_WHEEL_BATCH_DELAY", delay)
+}
+
+func effectiveMouseWheelStaleThreshold() time.Duration {
+	delay := staleMouseWheelThreshold
+	if shared.RemoteLatencyProfileEnabled() && (delay <= 0 || delay > remoteStaleMouseWheelThreshold) {
+		delay = remoteStaleMouseWheelThreshold
+	}
+	return shared.DurationOverride("TERMX_MOUSE_WHEEL_STALE_THRESHOLD", delay)
 }
 
 func requestTerminalPaletteQueries() string {
