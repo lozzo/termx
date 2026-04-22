@@ -2580,6 +2580,10 @@ func TestForwardedWheelDirectPathExpandsRepeat(t *testing.T) {
 }
 
 func TestQueuedForwardedWheelUsesDirectSendWhenDequeuedEligible(t *testing.T) {
+	originalTailDelay := terminalWheelTailDispatchDelay
+	terminalWheelTailDispatchDelay = 0
+	defer func() { terminalWheelTailDispatchDelay = originalTailDelay }()
+
 	started := make(chan inputCall, 1)
 	release := make(chan struct{})
 	client := &recordingBridgeClient{

@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/input"
@@ -127,9 +128,10 @@ func mouseWheelButtonStep(button tea.MouseButton) int {
 type terminalInputDispatchQueue struct {
 	boundaryQueue []input.TerminalInput
 	wheel         *input.TerminalInput
+	wheelQueuedAt time.Time
 }
 
-var maxContinuousWheelDispatchRepeat = 3
+var maxContinuousWheelDispatchRepeat = 2
 
 func (q *terminalInputDispatchQueue) HasPending() bool {
 	return q != nil && (len(q.boundaryQueue) > 0 || q.wheel != nil)
@@ -140,6 +142,7 @@ func (q *terminalInputDispatchQueue) ResetContinuous() {
 		return
 	}
 	q.wheel = nil
+	q.wheelQueuedAt = time.Time{}
 }
 
 func (q *terminalInputDispatchQueue) Enqueue(in input.TerminalInput) {
@@ -153,6 +156,7 @@ func (q *terminalInputDispatchQueue) Enqueue(in input.TerminalInput) {
 	}
 	q.boundaryQueue = append(q.boundaryQueue, in)
 	q.wheel = nil
+	q.wheelQueuedAt = time.Time{}
 }
 
 func (q *terminalInputDispatchQueue) enqueueWheel(in input.TerminalInput) {
@@ -162,6 +166,7 @@ func (q *terminalInputDispatchQueue) enqueueWheel(in input.TerminalInput) {
 	if q.wheel == nil {
 		copyIn := in
 		q.wheel = &copyIn
+		q.wheelQueuedAt = time.Now()
 		return
 	}
 	current := *q.wheel
@@ -188,9 +193,10 @@ func (q *terminalInputDispatchQueue) enqueueWheel(in input.TerminalInput) {
 		copyIn := in
 		q.wheel = &copyIn
 	}
+	q.wheelQueuedAt = time.Now()
 }
 
-func (q *terminalInputDispatchQueue) Dequeue(isPaneAttachPending func(string) bool) (input.TerminalInput, bool) {
+func (q *terminalInputDispatchQueue) Dequeue(isPaneAttachPending func(string) bool, now time.Time, staleThreshold time.Duration) (input.TerminalInput, bool) {
 	if q == nil {
 		return input.TerminalInput{}, false
 	}
@@ -225,6 +231,11 @@ func (q *terminalInputDispatchQueue) Dequeue(isPaneAttachPending func(string) bo
 	if isPaneAttachPending != nil && isPaneAttachPending(wheel.PaneID) {
 		return input.TerminalInput{}, false
 	}
+	if !q.wheelQueuedAt.IsZero() && staleThreshold > 0 && !now.IsZero() && now.Sub(q.wheelQueuedAt) >= staleThreshold {
+		q.wheel = nil
+		q.wheelQueuedAt = time.Time{}
+		return input.TerminalInput{}, false
+	}
 	repeat := maxInt(1, wheel.Repeat)
 	chunkRepeat := repeat
 	if limit := maxInt(1, maxContinuousWheelDispatchRepeat); chunkRepeat > limit {
@@ -234,6 +245,7 @@ func (q *terminalInputDispatchQueue) Dequeue(isPaneAttachPending func(string) bo
 		q.wheel = &remaining
 	} else {
 		q.wheel = nil
+		q.wheelQueuedAt = time.Time{}
 	}
 	wheel.Repeat = chunkRepeat
 	if wheel.Repeat > 1 {

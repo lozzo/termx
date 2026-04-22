@@ -155,6 +155,41 @@ func TestHandleInteractionMessageTerminalInputSentWithoutPendingDoesNotForceInva
 	}
 }
 
+func TestHandleInteractionMessageTerminalInputSentContinuousReschedulesWheelTail(t *testing.T) {
+	model := setupModel(t, modelOpts{})
+
+	originalTailDelay := terminalWheelTailDispatchDelay
+	terminalWheelTailDispatchDelay = time.Millisecond
+	defer func() { terminalWheelTailDispatchDelay = originalTailDelay }()
+
+	model.terminalInputs.Enqueue(input.TerminalInput{
+		Kind:           input.TerminalInputWheel,
+		PaneID:         "pane-1",
+		Data:           []byte("up"),
+		WheelDirection: 1,
+	})
+	model.terminalInputSending = true
+
+	cmd, handled := model.handleInteractionMessage(terminalInputSentMsg{
+		paneID:     "pane-1",
+		terminalID: "term-1",
+		continuous: true,
+	})
+	if !handled {
+		t.Fatal("expected terminalInputSentMsg handled")
+	}
+	if cmd == nil {
+		t.Fatal("expected wheel tail dispatch command")
+	}
+	if model.terminalInputSending {
+		t.Fatal("expected wheel tail pacing to release sending flag before next tick")
+	}
+	msg := cmd()
+	if _, ok := msg.(terminalWheelDispatchMsg); !ok {
+		t.Fatalf("expected wheel tail dispatch tick, got %T", msg)
+	}
+}
+
 func TestHandleInteractionMessageTerminalInputSentStillSchedulesSharedResync(t *testing.T) {
 	model := setupModel(t, modelOpts{})
 	terminal := model.runtime.Registry().Get("term-1")

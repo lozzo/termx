@@ -1318,8 +1318,13 @@ func TestHandleTerminalInputQueuesWhileSendInFlight(t *testing.T) {
 
 func TestHandleTerminalWheelInputMergesMatchingPendingTail(t *testing.T) {
 	originalDelay := terminalWheelDispatchDelay
+	originalTailDelay := terminalWheelTailDispatchDelay
 	terminalWheelDispatchDelay = 0
-	defer func() { terminalWheelDispatchDelay = originalDelay }()
+	terminalWheelTailDispatchDelay = 0
+	defer func() {
+		terminalWheelDispatchDelay = originalDelay
+		terminalWheelTailDispatchDelay = originalTailDelay
+	}()
 
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
@@ -1442,8 +1447,13 @@ func TestInteractionBatchCombinesMixedTerminalInputIntoOneSend(t *testing.T) {
 
 func TestHandleTerminalWheelInputCancelsOppositePendingTail(t *testing.T) {
 	originalDelay := terminalWheelDispatchDelay
+	originalTailDelay := terminalWheelTailDispatchDelay
 	terminalWheelDispatchDelay = 0
-	defer func() { terminalWheelDispatchDelay = originalDelay }()
+	terminalWheelTailDispatchDelay = 0
+	defer func() {
+		terminalWheelDispatchDelay = originalDelay
+		terminalWheelTailDispatchDelay = originalTailDelay
+	}()
 
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
@@ -1533,8 +1543,13 @@ func TestHandleTerminalWheelInputCancelsOppositePendingTail(t *testing.T) {
 
 func TestHandleTerminalWheelInputBoundaryKeyInvalidatesPendingTail(t *testing.T) {
 	originalDelay := terminalWheelDispatchDelay
+	originalTailDelay := terminalWheelTailDispatchDelay
 	terminalWheelDispatchDelay = 0
-	defer func() { terminalWheelDispatchDelay = originalDelay }()
+	terminalWheelTailDispatchDelay = 0
+	defer func() {
+		terminalWheelDispatchDelay = originalDelay
+		terminalWheelTailDispatchDelay = originalTailDelay
+	}()
 
 	wb := workbench.NewWorkbench()
 	wb.AddWorkspace("main", &workbench.WorkspaceState{
@@ -1683,7 +1698,7 @@ func TestHandleTerminalWheelInputBatchesBeforeFirstSend(t *testing.T) {
 
 func TestTerminalInputDispatchQueueChunksContinuousWheelTail(t *testing.T) {
 	originalLimit := maxContinuousWheelDispatchRepeat
-	maxContinuousWheelDispatchRepeat = 3
+	maxContinuousWheelDispatchRepeat = 2
 	defer func() { maxContinuousWheelDispatchRepeat = originalLimit }()
 
 	queue := &terminalInputDispatchQueue{}
@@ -1696,26 +1711,55 @@ func TestTerminalInputDispatchQueueChunksContinuousWheelTail(t *testing.T) {
 		})
 	}
 
-	first, ok := queue.Dequeue(nil)
+	first, ok := queue.Dequeue(nil, time.Now(), time.Second)
 	if !ok {
 		t.Fatal("expected first wheel chunk")
 	}
-	if got := string(first.Data); got != "upupup" {
-		t.Fatalf("expected first chunk \"upupup\", got %q", got)
+	if got := string(first.Data); got != "upup" {
+		t.Fatalf("expected first chunk \"upup\", got %q", got)
 	}
-	if queue.wheel == nil || queue.wheel.Repeat != 2 {
-		t.Fatalf("expected remaining wheel repeat=2, got %#v", queue.wheel)
+	if queue.wheel == nil || queue.wheel.Repeat != 3 {
+		t.Fatalf("expected remaining wheel repeat=3, got %#v", queue.wheel)
 	}
 
-	second, ok := queue.Dequeue(nil)
+	second, ok := queue.Dequeue(nil, time.Now(), time.Second)
 	if !ok {
 		t.Fatal("expected second wheel chunk")
 	}
 	if got := string(second.Data); got != "upup" {
 		t.Fatalf("expected second chunk \"upup\", got %q", got)
 	}
+	if queue.wheel == nil || queue.wheel.Repeat != 1 {
+		t.Fatalf("expected one wheel repeat left, got %#v", queue.wheel)
+	}
+
+	third, ok := queue.Dequeue(nil, time.Now(), time.Second)
+	if !ok {
+		t.Fatal("expected third wheel chunk")
+	}
+	if got := string(third.Data); got != "up" {
+		t.Fatalf("expected third chunk \"up\", got %q", got)
+	}
 	if queue.wheel != nil {
 		t.Fatalf("expected wheel tail drained, got %#v", queue.wheel)
+	}
+}
+
+func TestTerminalInputDispatchQueueDropsStaleContinuousWheelTail(t *testing.T) {
+	queue := &terminalInputDispatchQueue{}
+	queue.Enqueue(input.TerminalInput{
+		Kind:           input.TerminalInputWheel,
+		PaneID:         "pane-1",
+		Data:           []byte("up"),
+		WheelDirection: 1,
+	})
+
+	_, ok := queue.Dequeue(nil, time.Now().Add(50*time.Millisecond), 10*time.Millisecond)
+	if ok {
+		t.Fatal("expected stale wheel tail to be dropped")
+	}
+	if queue.wheel != nil {
+		t.Fatalf("expected stale wheel tail cleared, got %#v", queue.wheel)
 	}
 }
 

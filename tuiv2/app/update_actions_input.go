@@ -15,6 +15,10 @@ import (
 
 var terminalWheelDispatchDelay = 2 * time.Millisecond
 var remoteTerminalWheelDispatchDelay = 1 * time.Millisecond
+var terminalWheelTailDispatchDelay = 8 * time.Millisecond
+var remoteTerminalWheelTailDispatchDelay = 6 * time.Millisecond
+var continuousWheelStaleThreshold = 20 * time.Millisecond
+var remoteContinuousWheelStaleThreshold = 12 * time.Millisecond
 
 func (m *Model) isStickyMode() bool {
 	kind := m.mode().Kind
@@ -63,13 +67,20 @@ func (m *Model) handleTerminalInput(in input.TerminalInput) tea.Cmd {
 }
 
 func (m *Model) scheduleTerminalWheelDispatchCmd() tea.Cmd {
+	return m.scheduleTerminalWheelDispatchCmdWithDelay(effectiveTerminalWheelDispatchDelay())
+}
+
+func (m *Model) scheduleTerminalWheelContinuationDispatchCmd() tea.Cmd {
+	return m.scheduleTerminalWheelDispatchCmdWithDelay(effectiveTerminalWheelTailDispatchDelay())
+}
+
+func (m *Model) scheduleTerminalWheelDispatchCmdWithDelay(delay time.Duration) tea.Cmd {
 	if m == nil {
 		return nil
 	}
 	if m.terminalWheelDispatchPending {
 		return nil
 	}
-	delay := effectiveTerminalWheelDispatchDelay()
 	if delay <= 0 {
 		return m.dequeueTerminalInputCmd()
 	}
@@ -87,6 +98,22 @@ func effectiveTerminalWheelDispatchDelay() time.Duration {
 		delay = remoteTerminalWheelDispatchDelay
 	}
 	return shared.DurationOverride("TERMX_TERMINAL_WHEEL_DISPATCH_DELAY", delay)
+}
+
+func effectiveTerminalWheelTailDispatchDelay() time.Duration {
+	delay := terminalWheelTailDispatchDelay
+	if shared.RemoteLatencyProfileEnabled() && (delay <= 0 || delay > remoteTerminalWheelTailDispatchDelay) {
+		delay = remoteTerminalWheelTailDispatchDelay
+	}
+	return shared.DurationOverride("TERMX_TERMINAL_WHEEL_TAIL_DISPATCH_DELAY", delay)
+}
+
+func effectiveContinuousWheelStaleThreshold() time.Duration {
+	delay := continuousWheelStaleThreshold
+	if shared.RemoteLatencyProfileEnabled() && (delay <= 0 || delay > remoteContinuousWheelStaleThreshold) {
+		delay = remoteContinuousWheelStaleThreshold
+	}
+	return shared.DurationOverride("TERMX_CONTINUOUS_WHEEL_STALE_THRESHOLD", delay)
 }
 
 func (m *Model) handleKeyBurstMsg(msg keyBurstMsg) tea.Cmd {
@@ -193,6 +220,7 @@ func (m *Model) terminalInputSendCmd(next input.TerminalInput) tea.Cmd {
 	if m == nil {
 		return nil
 	}
+	continuous := isContinuousTerminalInput(next)
 	next = m.terminalInputExpanded(next)
 	target, _ := m.resolveTerminalInteractionTarget(terminalInteractionRequest{PaneID: next.PaneID})
 	terminalID := target.terminalID
@@ -201,7 +229,7 @@ func (m *Model) terminalInputSendCmd(next input.TerminalInput) tea.Cmd {
 		err := m.prepareTerminalInput(context.Background(), next.PaneID)
 		prepareFinish(len(next.Data))
 		if err != nil {
-			return terminalInputSentMsg{err: err, paneID: next.PaneID, terminalID: terminalID}
+			return terminalInputSentMsg{err: err, paneID: next.PaneID, terminalID: terminalID, continuous: continuous}
 		}
 		sendFinish := perftrace.Measure("app.input.send")
 		err = m.runtime.SendInput(context.Background(), next.PaneID, next.Data)
@@ -210,6 +238,7 @@ func (m *Model) terminalInputSendCmd(next input.TerminalInput) tea.Cmd {
 			err:        err,
 			paneID:     next.PaneID,
 			terminalID: terminalID,
+			continuous: continuous,
 		}
 	}
 }
@@ -218,6 +247,7 @@ func (m *Model) terminalInputDirectSendCmd(next input.TerminalInput) tea.Cmd {
 	if m == nil {
 		return nil
 	}
+	continuous := isContinuousTerminalInput(next)
 	next = m.terminalInputExpanded(next)
 	target, _ := m.resolveTerminalInteractionTarget(terminalInteractionRequest{PaneID: next.PaneID})
 	terminalID := target.terminalID
@@ -229,6 +259,7 @@ func (m *Model) terminalInputDirectSendCmd(next input.TerminalInput) tea.Cmd {
 			err:        err,
 			paneID:     next.PaneID,
 			terminalID: terminalID,
+			continuous: continuous,
 		}
 	}
 }
@@ -237,7 +268,7 @@ func (m *Model) dequeueTerminalInputBatch() (input.TerminalInput, bool) {
 	if m == nil {
 		return input.TerminalInput{}, false
 	}
-	return m.terminalInputs.Dequeue(m.isPaneAttachPending)
+	return m.terminalInputs.Dequeue(m.isPaneAttachPending, time.Now(), effectiveContinuousWheelStaleThreshold())
 }
 
 func (m *Model) prepareTerminalInput(ctx context.Context, paneID string) error {

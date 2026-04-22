@@ -84,7 +84,13 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		return m.handleTerminalInput(typed), true
 	case terminalInputSentMsg:
-		next := m.dequeueTerminalInputCmd()
+		next := tea.Cmd(nil)
+		if typed.continuous && len(m.terminalInputs.boundaryQueue) == 0 && m.terminalInputs.wheel != nil {
+			m.terminalInputSending = false
+			next = m.scheduleTerminalWheelContinuationDispatchCmd()
+		} else {
+			next = m.dequeueTerminalInputCmd()
+		}
 		if typed.err != nil {
 			return tea.Batch(m.showError(typed.err), next), true
 		}

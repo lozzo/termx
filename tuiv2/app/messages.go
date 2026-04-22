@@ -55,6 +55,7 @@ type terminalInputSentMsg struct {
 	err        error
 	paneID     string
 	terminalID string
+	continuous bool
 }
 
 type terminalWheelDispatchMsg struct {
