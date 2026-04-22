@@ -717,6 +717,54 @@ func TestTerminalSharedLiveOutputThrottleRateLimitsBroadcastBurst(t *testing.T) 
 	}
 }
 
+func TestTerminalSharedLiveOutputThrottleDefersInteractiveSynchronizedOutputUntilGroupEnd(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	prevStep := serverLiveOutputSyncWaitStep
+	prevBudget := serverLiveOutputSyncWaitBudget
+	serverLiveOutputSyncWaitStep = time.Millisecond
+	serverLiveOutputSyncWaitBudget = 6 * time.Millisecond
+	t.Cleanup(func() {
+		serverLiveOutputSyncWaitStep = prevStep
+		serverLiveOutputSyncWaitBudget = prevBudget
+	})
+
+	term := &Terminal{
+		stream:             fanout.New(),
+		liveOutputThrottle: liveOutputThrottleConfig{FPS: 60},
+		processEpoch:       1,
+	}
+	stream := term.stream.Subscribe(ctx)
+
+	term.noteLiveOutputInput()
+	term.streamMu.Lock()
+	term.queuePendingLiveOutputLocked(1, term.stream, []byte(liveOutputSynchronizedOutputBegin))
+	term.streamMu.Unlock()
+
+	select {
+	case msg := <-stream:
+		t.Fatalf("expected synchronized-output prologue to stay buffered during interactive bypass, got %#v", msg)
+	case <-time.After(2 * time.Millisecond):
+	}
+
+	term.streamMu.Lock()
+	term.queuePendingLiveOutputLocked(1, term.stream, []byte("body"+liveOutputSynchronizedOutputEnd))
+	term.streamMu.Unlock()
+
+	select {
+	case msg := <-stream:
+		if msg.Type != fanout.StreamOutput || string(msg.Output) != liveOutputSynchronizedOutputBegin+"body"+liveOutputSynchronizedOutputEnd {
+			t.Fatalf("expected synchronized-output group to flush as one merged broadcast, got %#v", msg)
+		}
+		if !msg.OutputRateLimited {
+			t.Fatalf("expected deferred synchronized output to stay tagged as rate-limited, got %#v", msg)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("timed out waiting for synchronized-output flush")
+	}
+}
+
 func TestTerminalSharedLiveOutputThrottleDisabledBroadcastsImmediately(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

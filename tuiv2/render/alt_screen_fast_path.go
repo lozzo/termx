@@ -111,10 +111,10 @@ func renderAltScreenEntryFastPath(coordinator *Coordinator, entry paneRenderEntr
 
 		var content string
 		if !isCursorRow && cache != nil && row < screenRows {
-			// For non-cursor rows, try to reuse a cached ANSI string. The hash
-			// is content-based so rows that scrolled to a new position are still
-			// found in the map from the previous frame.
-			rowHash := terminalSourceRowHash(resolved.source, rowIndex)
+			// For non-cursor rows, try to reuse a cached ANSI string. Use the
+			// row content hash instead of the positional row hash so a row that
+			// scrolled to a new viewport position still hits the cache.
+			rowHash := terminalSourceRowContentHash(resolved.source, rowIndex)
 			if cached, ok := cache.byHash[rowHash]; ok {
 				content = cached
 				perftrace.Count("render.body.alt_screen_row_cache.hit", 1)

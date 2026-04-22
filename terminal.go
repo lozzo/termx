@@ -81,6 +81,7 @@ type Terminal struct {
 	pendingLiveOutputEpoch  uint64
 	pendingLiveOutput       []byte
 	pendingLiveOutputTimer  *time.Timer
+	pendingLiveOutputSync   liveOutputSyncState
 	liveOutputThrottle      liveOutputThrottleConfig
 	liveOutputRecentInputAt atomic.Int64
 	liveOutputBypassArmed   atomic.Bool
@@ -469,7 +470,14 @@ func (t *Terminal) liveOutputFrameInterval() time.Duration {
 		return 0
 	}
 	if t.consumeLiveOutputBypass() {
-		return 0
+		delay := liveOutputInteractiveBypassDelay
+		if delay <= 0 {
+			return 0
+		}
+		if interactive := t.liveOutputThrottle.interactiveFrameInterval(); interactive > 0 && interactive < delay {
+			return interactive
+		}
+		return delay
 	}
 	delay := t.liveOutputThrottle.frameInterval()
 	if delay <= 0 {
@@ -828,11 +836,17 @@ func (t *Terminal) queuePendingLiveOutputLocked(epoch uint64, stream *fanout.Fan
 		t.pendingLiveOutputEpoch = epoch
 	}
 	t.pendingLiveOutput = append(t.pendingLiveOutput, chunk...)
+	syncActive := updateLiveOutputSyncState(&t.pendingLiveOutputSync, chunk)
 	if len(t.pendingLiveOutput) >= maxMergedLiveOutputBytes {
 		t.flushPendingLiveOutputLocked(stream)
 		return
 	}
 	delay := t.liveOutputFrameInterval()
+	if syncActive {
+		if step := serverLiveOutputSyncWaitStep; step > 0 && (delay <= 0 || step < delay) {
+			delay = step
+		}
+	}
 	if delay <= 0 {
 		t.flushPendingLiveOutputLocked(stream)
 		return
@@ -913,11 +927,29 @@ func (t *Terminal) flushPendingLiveOutputLocked(stream *fanout.Fanout) {
 	t.stopPendingLiveOutputFlushTimerLocked()
 	if len(t.pendingLiveOutput) == 0 {
 		t.pendingLiveOutputEpoch = 0
+		resetLiveOutputSyncState(&t.pendingLiveOutputSync)
+		return
+	}
+	if t.pendingLiveOutputSync.synchronizedOutputActive && serverLiveOutputSyncWaitBudget > t.pendingLiveOutputSync.waited {
+		wait := serverLiveOutputSyncWaitStep
+		if remaining := serverLiveOutputSyncWaitBudget - t.pendingLiveOutputSync.waited; wait > remaining {
+			wait = remaining
+		}
+		if wait > 0 {
+			t.pendingLiveOutputSync.waited += wait
+			t.armPendingLiveOutputFlushLocked(t.pendingLiveOutputEpoch, stream, wait)
+			return
+		}
+	}
+	if len(t.pendingLiveOutput) == 0 {
+		t.pendingLiveOutputEpoch = 0
+		resetLiveOutputSyncState(&t.pendingLiveOutputSync)
 		return
 	}
 	output := t.pendingLiveOutput
 	t.pendingLiveOutput = nil
 	t.pendingLiveOutputEpoch = 0
+	resetLiveOutputSyncState(&t.pendingLiveOutputSync)
 	stream.BroadcastMessage(fanout.StreamMessage{
 		Type:              fanout.StreamOutput,
 		Output:            output,
@@ -944,6 +976,7 @@ func (t *Terminal) clearPendingLiveOutputLocked() {
 	t.stopPendingLiveOutputFlushTimerLocked()
 	t.pendingLiveOutput = nil
 	t.pendingLiveOutputEpoch = 0
+	resetLiveOutputSyncState(&t.pendingLiveOutputSync)
 }
 
 func (t *Terminal) stopPendingVTermFlushTimerLocked() {

@@ -237,6 +237,76 @@ func TestRenderBodyAltScreenFastPathStaysDisabledForSplitPanes(t *testing.T) {
 	}
 }
 
+func TestRenderBodyAltScreenFastPathReusesRowCacheAcrossScrollShift(t *testing.T) {
+	recorder := perftrace.Enable()
+	defer perftrace.Disable()
+
+	wb := workbench.NewWorkbench()
+	wb.AddWorkspace("main", &workbench.WorkspaceState{
+		Name:      "main",
+		ActiveTab: 0,
+		Tabs: []*workbench.TabState{{
+			ID:           "tab-1",
+			Name:         "tab 1",
+			ActivePaneID: "pane-1",
+			Panes: map[string]*workbench.PaneState{
+				"pane-1": {ID: "pane-1", Title: "vim", TerminalID: "term-1"},
+			},
+			Root: workbench.NewLeaf("pane-1"),
+		}},
+	})
+
+	rt := runtime.New(nil)
+	rt.Registry().GetOrCreate("term-1").Name = "vim"
+	rt.Registry().Get("term-1").State = "running"
+
+	buildSnapshot := func(rows ...string) *protocol.Snapshot {
+		screen := make([][]protocol.Cell, len(rows))
+		for i, row := range rows {
+			screen[i] = repeatCells(row)
+		}
+		return &protocol.Snapshot{
+			TerminalID: "term-1",
+			Size:       protocol.Size{Cols: 20, Rows: uint16(len(rows))},
+			Screen: protocol.ScreenData{
+				IsAlternateScreen: true,
+				Cells:             screen,
+			},
+			Cursor: protocol.CursorState{Visible: false},
+			Modes:  protocol.TerminalModes{AlternateScreen: true},
+		}
+	}
+
+	coordinator := NewCoordinatorWithVM(nil)
+	renderOnce := func(snapshot *protocol.Snapshot) {
+		rt.Registry().Get("term-1").Snapshot = snapshot
+		state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 22, 8), 22, 10)
+		vm := RenderVMFromVisibleState(state)
+		lookup := newRuntimeLookup(vm.Runtime)
+		tab := vm.Workbench.Tabs[vm.Workbench.ActiveTab]
+		entries := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, 22, 8, lookup, bodyProjectionOptionsForVM(vm, true), uiThemeForRuntime(vm.Runtime))
+		if len(entries) != 1 {
+			t.Fatalf("expected one render entry, got %#v", entries)
+		}
+		if _, ok := renderAltScreenFastPathVM(coordinator, vm, entries, TopChromeRows); !ok {
+			t.Fatalf("expected alt-screen fast path to activate, entries=%#v", entries)
+		}
+	}
+
+	renderOnce(buildSnapshot("row-1", "row-2", "row-3", "row-4", "row-5", "row-6"))
+	recorder.Reset()
+	renderOnce(buildSnapshot("row-2", "row-3", "row-4", "row-5", "row-6", "row-7"))
+
+	snapshot := recorder.Snapshot()
+	hit, ok := snapshot.Event("render.body.alt_screen_row_cache.hit")
+	if !ok || hit.Count < 5 {
+		t.Fatalf("expected scrolled rows to hit the row cache, got %#v", snapshot.Events)
+	}
+	if miss, ok := snapshot.Event("render.body.alt_screen_row_cache.miss"); ok && miss.Count > 1 {
+		t.Fatalf("expected scroll-shift reuse to avoid a full-window row-cache miss, got %#v", snapshot.Events)
+	}
+}
+
 // BenchmarkAltScreenFastPathWithRowCache measures the row-ANSI cache benefit
 // for a single-pane alt-screen render where only the last row changes (typical
 // 1-line nvim scroll). The coordinator accumulates the cache across iterations.

@@ -1923,11 +1923,9 @@ func (v *VTerm) screenRowFingerprintLocked(y int) rowFingerprint {
 		return rowFingerprint{}
 	}
 	width := v.emu.Width()
-	row := make([]Cell, width)
-	for x := 0; x < width; x++ {
-		row[x] = v.convertCell(v.emu.CellAt(x, y))
-	}
-	return rowFingerprintForCells(row, width)
+	return v.rowFingerprintLocked(width, func(x int) *uv.Cell {
+		return v.emu.CellAt(x, y)
+	})
 }
 
 func (v *VTerm) scrollbackTailRowFingerprintsLocked(count int) []rowFingerprint {
@@ -1951,16 +1949,9 @@ func (v *VTerm) scrollbackRowFingerprintLocked(y int) rowFingerprint {
 		return rowFingerprint{}
 	}
 	width := v.emu.Width()
-	row := make([]Cell, 0, width)
-	for x := 0; x < width; x++ {
-		cell := v.emu.ScrollbackCellAt(x, y)
-		if cell == nil && x >= len(row) {
-			row = append(row, Cell{})
-			continue
-		}
-		row = append(row, v.convertCell(cell))
-	}
-	return rowFingerprintForCells(row, width)
+	return v.rowFingerprintLocked(width, func(x int) *uv.Cell {
+		return v.emu.ScrollbackCellAt(x, y)
+	})
 }
 
 func rowFingerprintForCells(row []Cell, width int) rowFingerprint {
@@ -1970,20 +1961,7 @@ func rowFingerprintForCells(row []Cell, width int) rowFingerprint {
 	}
 	hashUint64(&fingerprint.hash, uint64(width))
 	for x := 0; x < width; x++ {
-		cell := cellAt(row, x)
-		hashString(&fingerprint.hash, cell.Content)
-		hashUint64(&fingerprint.hash, uint64(cell.Width))
-		hashString(&fingerprint.hash, cell.Style.FG)
-		hashString(&fingerprint.hash, cell.Style.BG)
-		hashBool(&fingerprint.hash, cell.Style.Bold)
-		hashBool(&fingerprint.hash, cell.Style.Italic)
-		hashBool(&fingerprint.hash, cell.Style.Underline)
-		hashBool(&fingerprint.hash, cell.Style.Blink)
-		hashBool(&fingerprint.hash, cell.Style.Reverse)
-		hashBool(&fingerprint.hash, cell.Style.Strikethrough)
-		if !(strings.TrimSpace(cell.Content) == "" &&
-			cell.Style == (CellStyle{}) &&
-			cell.Width <= 1) {
+		if !hashVTermCellFingerprint(&fingerprint.hash, cellAt(row, x)) {
 			fingerprint.blank = false
 		}
 	}
@@ -2002,6 +1980,23 @@ func (v *VTerm) rowFingerprintLocked(width int, cellAt func(int) *uv.Cell) rowFi
 		}
 	}
 	return fingerprint
+}
+
+func hashVTermCellFingerprint(hash *uint64, cell Cell) bool {
+	hashString(hash, cell.Content)
+	hashUint64(hash, uint64(cell.Width))
+	hashString(hash, cell.Style.FG)
+	hashString(hash, cell.Style.BG)
+	hashBool(hash, cell.Style.Bold)
+	hashBool(hash, cell.Style.Italic)
+	hashBool(hash, cell.Style.Underline)
+	hashBool(hash, cell.Style.Blink)
+	hashBool(hash, cell.Style.Reverse)
+	hashBool(hash, cell.Style.Strikethrough)
+
+	return strings.TrimSpace(cell.Content) == "" &&
+		cell.Style == (CellStyle{}) &&
+		cell.Width <= 1
 }
 
 func (v *VTerm) writeDamageDirtyRowsLocked(beforeScreenRows [][]Cell, beforeScreen []rowFingerprint, beforeScreenTimestamps []time.Time, beforeScreenRowKinds []string, beforeScrollbackLen int, dirtyRows []int, now time.Time) WriteDamage {
