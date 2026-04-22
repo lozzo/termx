@@ -120,7 +120,7 @@ func TestRenderBodyAltScreenFastPathActivatesForSingleFramedPane(t *testing.T) {
 	rt.Registry().Get("term-1").State = "running"
 	rt.Registry().Get("term-1").Snapshot = &protocol.Snapshot{
 		TerminalID: "term-1",
-		Size:       protocol.Size{Cols: 17, Rows: 4},
+		Size:       protocol.Size{Cols: 18, Rows: 4},
 		Screen: protocol.ScreenData{
 			IsAlternateScreen: true,
 			Cells: [][]protocol.Cell{
@@ -167,6 +167,12 @@ func TestRenderBodyAltScreenFastPathActivatesForSingleFramedPane(t *testing.T) {
 	}
 	if got := strings.Count(lines[1], "│"); got != 2 {
 		t.Fatalf("expected framed single-pane content row to keep one left/right border pair, got %d in %q", got, lines[1])
+	}
+	if got := xansi.StringWidth(lines[1]); got != entries[0].Rect.W {
+		t.Fatalf("expected framed single-pane content row width %d, got %d in %q", entries[0].Rect.W, got, lines[1])
+	}
+	if rightBorder := []rune(lines[1])[len([]rune(lines[1]))-1]; rightBorder != '│' {
+		t.Fatalf("expected framed single-pane right border in final column, got %q in %q", string(rightBorder), lines[1])
 	}
 }
 

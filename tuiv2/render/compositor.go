@@ -971,13 +971,15 @@ func (c *composedCanvas) serializeRowRangeWithBlankMode(y, startX, endX int, com
 	row.Grow(rowHint)
 	current := drawStyle{}
 	needsReanchor := true
+	pendingNonTerminalAnchor := false
 	for x := startX; x <= endX; x++ {
 		cell := c.cells[y][x]
 		if cell.Continuation {
 			continue
 		}
+		anchorBeforeCell := needsReanchor || (pendingNonTerminalAnchor && !cell.TerminalContent && !cell.AmbiguousCompensation)
 		if blankRun := c.compressibleBlankRunInRange(y, x, endX); blankRun >= 5 {
-			if needsReanchor {
+			if anchorBeforeCell {
 				// Full rows already restart at column 1 after CRLF. Skip CHA(1)
 				// so the writer does not have to strip it again later.
 				if x > 0 {
@@ -995,6 +997,11 @@ func (c *composedCanvas) serializeRowRangeWithBlankMode(y, startX, endX int, com
 			} else {
 				row.WriteString(cachedBlankString(blankRun))
 			}
+			if cell.TerminalContent {
+				pendingNonTerminalAnchor = true
+			} else if !cell.AmbiguousCompensation {
+				pendingNonTerminalAnchor = false
+			}
 			x += blankRun - 1
 			continue
 		}
@@ -1005,7 +1012,7 @@ func (c *composedCanvas) serializeRowRangeWithBlankMode(y, startX, endX int, com
 		if c.isRawAmbiguousContinuationSpace(x, y) {
 			// Keep FE0F compensation cells explicitly erasable across hosts with
 			// different ambiguous-width behavior.
-			if needsReanchor {
+			if anchorBeforeCell {
 				if x > 0 {
 					writeCHAANSI(&row, x+1)
 				}
@@ -1015,7 +1022,7 @@ func (c *composedCanvas) serializeRowRangeWithBlankMode(y, startX, endX int, com
 			needsReanchor = true
 			continue
 		}
-		if needsReanchor {
+		if anchorBeforeCell {
 			if x > 0 {
 				writeCHAANSI(&row, x+1)
 			}
@@ -1030,6 +1037,11 @@ func (c *composedCanvas) serializeRowRangeWithBlankMode(y, startX, endX int, com
 			nextCol = x + cell.Width + 1
 		}
 		row.WriteString(serializeCellContentForDisplay(content, cell.Width, c.hostEmojiVS16Mode, nextCol))
+		if cell.TerminalContent {
+			pendingNonTerminalAnchor = true
+		} else if !cell.AmbiguousCompensation {
+			pendingNonTerminalAnchor = false
+		}
 		if shouldReanchorAfterTerminalAmbiguousWidthCell(cell) {
 			needsReanchor = true
 		}

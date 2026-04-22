@@ -821,7 +821,7 @@ func TestRenderBodyKeepsWidthStableForPromptWithEmojiVariationHostAcrossWidths(t
 					}},
 				})
 
-				contentWidth := bodyWidth - 3
+				contentWidth := bodyWidth - 2
 				vt := localvterm.New(contentWidth, 3, 10, nil)
 				if _, err := vt.Write([]byte(promptCase.prompt)); err != nil {
 					t.Fatalf("write prompt into vterm: %v", err)
@@ -880,7 +880,7 @@ func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiAdvanceModeWhenHostAdv
 
 	bodyWidth := 120
 	bodyHeight := 6
-	contentWidth := bodyWidth - 3
+	contentWidth := bodyWidth - 2
 	prompt := "# lozzow@RedmiBook♻️: ~/Documents/workdir/termx <>                                                                                             (23:17:15)"
 
 	vt := localvterm.New(contentWidth, 3, 10, nil)
@@ -946,7 +946,7 @@ func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiRawModeWhenHostAdvance
 
 	bodyWidth := 120
 	bodyHeight := 6
-	contentWidth := bodyWidth - 3
+	contentWidth := bodyWidth - 2
 	prompt := "# lozzow@RedmiBook♻️: ~/Documents/workdir/termx <>                                                                                             (23:17:15)"
 
 	vt := localvterm.New(contentWidth, 3, 10, nil)
@@ -1008,7 +1008,7 @@ func TestRenderBodyKeepsSingleRightBorderForAmbiguousEmojiRawModeWhenHostAdvance
 
 	bodyWidth := 120
 	bodyHeight := 6
-	contentWidth := bodyWidth - 3
+	contentWidth := bodyWidth - 2
 	prompt := "# lozzow@RedmiBook♻️: ~/Documents/workdir/termx <>                                                                                             (23:17:15)"
 
 	vt := localvterm.New(contentWidth, 3, 10, nil)
@@ -1070,7 +1070,7 @@ func TestRenderBodyKeepsSingleRightBorderForOtherAmbiguousEmojiRawModeWhenHostAd
 
 	bodyWidth := 120
 	bodyHeight := 6
-	contentWidth := bodyWidth - 3
+	contentWidth := bodyWidth - 2
 	prompt := "# lozzow@RedmiBook✈️: ~/Documents/workdir/termx <>                                                                                             (23:17:15)"
 
 	vt := localvterm.New(contentWidth, 3, 10, nil)
@@ -1132,7 +1132,7 @@ func TestRenderBodyKeepsSingleRightBorderForWideBaseEmojiVariationRawModeWhenHos
 
 	bodyWidth := 120
 	bodyHeight := 6
-	contentWidth := bodyWidth - 3
+	contentWidth := bodyWidth - 2
 	prompt := "# lozzow@RedmiBook☕️: ~/Documents/workdir/termx <>                                                                                             (23:17:15)"
 
 	vt := localvterm.New(contentWidth, 3, 10, nil)
@@ -1681,21 +1681,29 @@ func TestInactivePaneRightBorderOnFE0FRowsCachedSwitch(t *testing.T) {
 	}
 }
 
-func TestDrawPaneContentWithKeyClearsReservedRightGutterGhosts(t *testing.T) {
+func TestDrawPaneContentWithKeyClearsTrailingInteriorGhosts(t *testing.T) {
 	canvas := newComposedCanvas(16, 6)
 	entry := paneRenderEntry{
 		PaneID:     "pane-1",
 		TerminalID: "term-1",
 		Rect:       workbench.Rect{X: 0, Y: 0, W: 16, H: 6},
 		Theme:      defaultUITheme(),
+		ContentKey: paneContentKey{
+			TerminalKnown: true,
+			Name:          "term-1",
+			State:         "running",
+		},
+		Metrics: renderTerminalMetrics{Cols: 14, Rows: 4},
 	}
 	contentRect := contentRectForEntry(entry)
-	gutterX := entry.Rect.X + entry.Rect.W - 2
-	gutterY := contentRect.Y
-	canvas.set(gutterX, gutterY, drawCell{Content: "│", Width: 1})
+	trailingX := entry.Rect.X + entry.Rect.W - 2
+	trailingY := contentRect.Y
+	canvas.set(trailingX, trailingY, drawCell{Content: "│", Width: 1})
 
 	runtimeState := &VisibleRuntimeStateProxy{Terminals: []runtime.VisibleTerminal{{
 		TerminalID: "term-1",
+		Name:       "term-1",
+		State:      "running",
 		Snapshot: &protocol.Snapshot{
 			TerminalID: "term-1",
 			Size:       protocol.Size{Cols: uint16(contentRect.W), Rows: uint16(contentRect.H)},
@@ -1712,8 +1720,8 @@ func TestDrawPaneContentWithKeyClearsReservedRightGutterGhosts(t *testing.T) {
 
 	drawPaneContentWithKey(canvas, entry.Rect, entry, runtimeState)
 
-	if got := canvas.cells[gutterY][gutterX]; got.Content != " " || got.Continuation {
-		t.Fatalf("expected reserved right gutter to be cleared during content redraw, got %#v", got)
+	if got := canvas.cells[trailingY][trailingX]; got.Content == "│" || got.Continuation {
+		t.Fatalf("expected trailing interior column ghost to be overwritten during content redraw, got %#v", got)
 	}
 }
 

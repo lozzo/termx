@@ -258,11 +258,14 @@ func renderAltScreenBottomBorderLine(entry paneRenderEntry) string {
 func renderAltScreenBorderedContentLine(entry paneRenderEntry, content string) string {
 	borderStyle, _ := paneChromeStylesForEntry(entry)
 	var line strings.Builder
-	line.Grow(len(content) + 32)
+	line.Grow(len(content) + 48)
 	line.WriteString(styleANSI(borderStyle))
 	line.WriteString("│")
 	line.WriteString("\x1b[0m")
 	line.WriteString(content)
+	// Re-anchor the right border to the final pane column so width-unsafe
+	// content stays aligned with the regular compositor path.
+	writeCHAANSI(&line, entry.Rect.W)
 	line.WriteString(styleANSI(borderStyle))
 	line.WriteString("│")
 	return wrapRenderedRowANSI(line.String())

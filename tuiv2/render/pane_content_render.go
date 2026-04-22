@@ -37,8 +37,7 @@ func drawPaneContentWithKey(canvas *composedCanvas, rect workbench.Rect, entry p
 	resolved := resolvePaneContent(entry, runtimeState, false)
 	contentRect := resolved.contentRect
 	// Keep the cached redraw path on the same invariant as drawPaneContent():
-	// every content repaint owns the whole framed interior, including the
-	// reserved gutter column.
+	// every content repaint owns the whole framed interior.
 	fillRect(canvas, interiorRectForEntry(entry), blankDrawCell())
 	if entry.TerminalID == "" {
 		drawEmptyPaneContent(canvas, contentRect, entry.PaneID, entry.TerminalID, entry.Theme, entry.EmptyActionSelected)
