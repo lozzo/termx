@@ -129,6 +129,8 @@ type terminalInputDispatchQueue struct {
 	wheel         *input.TerminalInput
 }
 
+var maxContinuousWheelDispatchRepeat = 3
+
 func (q *terminalInputDispatchQueue) HasPending() bool {
 	return q != nil && (len(q.boundaryQueue) > 0 || q.wheel != nil)
 }
@@ -223,7 +225,17 @@ func (q *terminalInputDispatchQueue) Dequeue(isPaneAttachPending func(string) bo
 	if isPaneAttachPending != nil && isPaneAttachPending(wheel.PaneID) {
 		return input.TerminalInput{}, false
 	}
-	q.wheel = nil
+	repeat := maxInt(1, wheel.Repeat)
+	chunkRepeat := repeat
+	if limit := maxInt(1, maxContinuousWheelDispatchRepeat); chunkRepeat > limit {
+		chunkRepeat = limit
+		remaining := wheel
+		remaining.Repeat = repeat - chunkRepeat
+		q.wheel = &remaining
+	} else {
+		q.wheel = nil
+	}
+	wheel.Repeat = chunkRepeat
 	if wheel.Repeat > 1 {
 		wheel.Data = bytes.Repeat(wheel.Data, wheel.Repeat)
 	}

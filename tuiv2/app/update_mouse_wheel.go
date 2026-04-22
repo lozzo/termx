@@ -4,6 +4,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/render"
+	"github.com/lozzow/termx/tuiv2/shared"
 )
 
 const localMouseWheelScrollLines = 3
@@ -92,6 +93,13 @@ func (m *Model) handleForwardedTerminalWheelInput(in input.TerminalInput) tea.Cm
 		if pane := m.workbench.ActivePane(); pane != nil && pane.TerminalID == "" {
 			return m.openPickerIfUnattached(pane.ID)
 		}
+	}
+	// Remote sessions benefit more from a tiny wheel dispatch window than from
+	// raw immediate sends. It lets opposing wheel bursts collapse before the
+	// bytes hit the PTY, which shortens the "post-release inertia" users feel
+	// over SSH when they stop scrolling.
+	if shared.RemoteLatencyProfileEnabled() {
+		return m.handleTerminalInput(in)
 	}
 	if m.terminalInputSending || m.interactionBatchActive {
 		m.enqueueTerminalInput(in)

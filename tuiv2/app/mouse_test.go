@@ -2527,6 +2527,32 @@ func TestMouseWheelForwardedPathBypassesWheelDispatchQueue(t *testing.T) {
 	}
 }
 
+func TestMouseWheelForwardedPathUsesWheelDispatchQueueOnRemoteProfile(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_LATENCY", "1")
+
+	originalDelay := terminalWheelDispatchDelay
+	originalRemoteDelay := remoteTerminalWheelDispatchDelay
+	terminalWheelDispatchDelay = time.Second
+	remoteTerminalWheelDispatchDelay = time.Millisecond
+	defer func() {
+		terminalWheelDispatchDelay = originalDelay
+		remoteTerminalWheelDispatchDelay = originalRemoteDelay
+	}()
+
+	m := setupModel(t, modelOpts{})
+	setActivePaneMouseTracking(t, m, true)
+	x, y := activePaneContentScreenOrigin(t, m)
+
+	_, cmd := m.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	if cmd == nil {
+		t.Fatal("expected wheel-forward command")
+	}
+	msg := cmd()
+	if _, ok := msg.(terminalWheelDispatchMsg); !ok {
+		t.Fatalf("expected remote forwarded wheel to use dispatch queue, got %#v", msg)
+	}
+}
+
 func TestForwardedWheelDirectPathExpandsRepeat(t *testing.T) {
 	m := setupModel(t, modelOpts{})
 	client, ok := m.runtime.Client().(*recordingBridgeClient)

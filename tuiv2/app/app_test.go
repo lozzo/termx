@@ -1681,6 +1681,44 @@ func TestHandleTerminalWheelInputBatchesBeforeFirstSend(t *testing.T) {
 	}
 }
 
+func TestTerminalInputDispatchQueueChunksContinuousWheelTail(t *testing.T) {
+	originalLimit := maxContinuousWheelDispatchRepeat
+	maxContinuousWheelDispatchRepeat = 3
+	defer func() { maxContinuousWheelDispatchRepeat = originalLimit }()
+
+	queue := &terminalInputDispatchQueue{}
+	for i := 0; i < 5; i++ {
+		queue.Enqueue(input.TerminalInput{
+			Kind:           input.TerminalInputWheel,
+			PaneID:         "pane-1",
+			Data:           []byte("up"),
+			WheelDirection: 1,
+		})
+	}
+
+	first, ok := queue.Dequeue(nil)
+	if !ok {
+		t.Fatal("expected first wheel chunk")
+	}
+	if got := string(first.Data); got != "upupup" {
+		t.Fatalf("expected first chunk \"upupup\", got %q", got)
+	}
+	if queue.wheel == nil || queue.wheel.Repeat != 2 {
+		t.Fatalf("expected remaining wheel repeat=2, got %#v", queue.wheel)
+	}
+
+	second, ok := queue.Dequeue(nil)
+	if !ok {
+		t.Fatal("expected second wheel chunk")
+	}
+	if got := string(second.Data); got != "upup" {
+		t.Fatalf("expected second chunk \"upup\", got %q", got)
+	}
+	if queue.wheel != nil {
+		t.Fatalf("expected wheel tail drained, got %#v", queue.wheel)
+	}
+}
+
 func TestQueueInvalidateCoalescesPendingRedraws(t *testing.T) {
 	model := New(shared.Config{}, nil, runtime.New(nil))
 	sent := make(chan tea.Msg, 4)
