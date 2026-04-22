@@ -9,7 +9,25 @@ import (
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
-func renderAltScreenFastPathVM(vm RenderVM, entries []paneRenderEntry, cursorOffsetY int) (renderedBody, bool) {
+// altScreenRowCache caches serialized ANSI strings for alt-screen rows keyed
+// by row content hash. The cache is identity-based (hash → string) so it
+// remains valid across scroll operations: a row that scrolled up by one
+// position still has the same content hash and can be reused without
+// re-serializing.
+type altScreenRowCache struct {
+	terminalID string
+	width      int
+	emojiMode  shared.AmbiguousEmojiVariationSelectorMode
+	// byHash maps row content hash → serialized ANSI (without cursor). The map
+	// is rebuilt from scratch each frame so stale entries cannot accumulate.
+	byHash map[uint64]string
+}
+
+func (c *altScreenRowCache) valid(terminalID string, width int, emojiMode shared.AmbiguousEmojiVariationSelectorMode) bool {
+	return c != nil && c.terminalID == terminalID && c.width == width && c.emojiMode == emojiMode
+}
+
+func renderAltScreenFastPathVM(coordinator *Coordinator, vm RenderVM, entries []paneRenderEntry, cursorOffsetY int) (renderedBody, bool) {
 	if vm.Surface.Kind != VisibleSurfaceWorkbench || vm.Workbench == nil || vm.Runtime == nil {
 		return renderedBody{}, false
 	}
@@ -18,9 +36,6 @@ func renderAltScreenFastPathVM(vm RenderVM, entries []paneRenderEntry, cursorOff
 	}
 	entry := entries[0]
 	if !entry.Active || entry.TerminalID == "" || entry.Floating || entry.CopyModeActive || entry.ScrollOffset > 0 {
-		return renderedBody{}, false
-	}
-	if !entry.Frameless {
 		return renderedBody{}, false
 	}
 	if entry.EmptyActionSelected >= 0 || entry.ExitedActionSelected >= 0 {
@@ -38,10 +53,10 @@ func renderAltScreenFastPathVM(vm RenderVM, entries []paneRenderEntry, cursorOff
 	}
 
 	perftrace.Count("render.body.alt_screen_fast_path", entry.Rect.W*entry.Rect.H)
-	return renderAltScreenEntryFastPath(entry, resolved, vm.Runtime, cursorOffsetY), true
+	return renderAltScreenEntryFastPath(coordinator, entry, resolved, vm.Runtime, cursorOffsetY), true
 }
 
-func renderAltScreenEntryFastPath(entry paneRenderEntry, resolved resolvedPaneContent, runtimeState *VisibleRuntimeStateProxy, cursorOffsetY int) renderedBody {
+func renderAltScreenEntryFastPath(coordinator *Coordinator, entry paneRenderEntry, resolved resolvedPaneContent, runtimeState *VisibleRuntimeStateProxy, cursorOffsetY int) renderedBody {
 	lines := make([]string, 0, entry.Rect.H)
 	if !entry.Frameless {
 		lines = append(lines, renderAltScreenTopBorderLine(entry))
@@ -62,18 +77,73 @@ func renderAltScreenEntryFastPath(entry paneRenderEntry, resolved resolvedPaneCo
 	}
 
 	emojiMode := emojiVariationSelectorModeForRuntime(runtimeState)
-	base := resolved.source.ScrollbackRows()
-	for row := 0; row < resolved.contentRect.H; row++ {
-		var cells []protocol.Cell
-		if row < resolved.source.ScreenRows() {
-			cells = resolved.source.Row(base + row)
+	contentW := resolved.contentRect.W
+
+	// Look up the row cache from the coordinator. Invalidate if terminal, width,
+	// or emoji mode changed (e.g. after resize or terminal switch).
+	var cache *altScreenRowCache
+	if coordinator != nil {
+		if coordinator.altScreenCache.valid(entry.TerminalID, contentW, emojiMode) {
+			cache = coordinator.altScreenCache
+		} else {
+			coordinator.altScreenCache = &altScreenRowCache{
+				terminalID: entry.TerminalID,
+				width:      contentW,
+				emojiMode:  emojiMode,
+				byHash:     make(map[uint64]string, resolved.contentRect.H),
+			}
+			cache = coordinator.altScreenCache
 		}
-		content := protocolViewportRowANSI(cells, resolved.contentRect.W, emojiMode, cursorCol, row == cursorRow, cursorShape)
+	}
+
+	// Build the new cache for this frame. The identity-based lookup allows rows
+	// that shifted position due to a scroll to still be found by content.
+	var newByHash map[uint64]string
+	if cache != nil {
+		newByHash = make(map[uint64]string, resolved.contentRect.H)
+	}
+
+	base := resolved.source.ScrollbackRows()
+	screenRows := resolved.source.ScreenRows()
+	for row := 0; row < resolved.contentRect.H; row++ {
+		rowIndex := base + row
+		isCursorRow := row == cursorRow
+
+		var content string
+		if !isCursorRow && cache != nil && row < screenRows {
+			// For non-cursor rows, try to reuse a cached ANSI string. The hash
+			// is content-based so rows that scrolled to a new position are still
+			// found in the map from the previous frame.
+			rowHash := terminalSourceRowHash(resolved.source, rowIndex)
+			if cached, ok := cache.byHash[rowHash]; ok {
+				content = cached
+				perftrace.Count("render.body.alt_screen_row_cache.hit", 1)
+			} else {
+				cells := resolved.source.Row(rowIndex)
+				content = protocolViewportRowANSI(cells, contentW, emojiMode, -1, false, "")
+				perftrace.Count("render.body.alt_screen_row_cache.miss", 1)
+			}
+			newByHash[rowHash] = content
+		} else {
+			// Cursor row, out-of-bounds row, or no cache: always re-serialize.
+			var cells []protocol.Cell
+			if row < screenRows {
+				cells = resolved.source.Row(rowIndex)
+			}
+			content = protocolViewportRowANSI(cells, contentW, emojiMode, cursorCol, isCursorRow, cursorShape)
+		}
+
 		if entry.Frameless {
 			lines = append(lines, wrapRenderedRowANSI(content))
-			continue
+		} else {
+			lines = append(lines, renderAltScreenBorderedContentLine(entry, content))
 		}
-		lines = append(lines, renderAltScreenBorderedContentLine(entry, content))
+	}
+
+	// Replace the coordinator's cache map with the current frame's entries.
+	// This purges stale entries from rows that are no longer visible.
+	if cache != nil {
+		cache.byHash = newByHash
 	}
 
 	if !entry.Frameless {

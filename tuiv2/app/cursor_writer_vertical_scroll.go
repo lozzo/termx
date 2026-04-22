@@ -41,6 +41,11 @@ func detectVerticalScrollPlan(previous, next []string) (verticalScrollPlan, bool
 	for shift := 1; shift <= maxShift; shift++ {
 		scanVerticalScrollRuns(previous, next, shift, scrollUp, &best)
 		scanVerticalScrollRuns(previous, next, shift, scrollDown, &best)
+		// Full-window scroll at this shift is optimal: max reuse for the
+		// smallest possible shift. No larger shift can produce a better plan.
+		if best.reused+best.shift == len(previous) {
+			break
+		}
 	}
 	if best.direction == scrollNone || best.reused < 4 {
 		return verticalScrollPlan{}, false

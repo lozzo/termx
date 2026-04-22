@@ -13,18 +13,19 @@ import (
 // Coordinator 负责 render invalidation / schedule / flush / ticker。
 // 它通过 RenderVMFn 拉取当前稳定的 render view-model。
 type Coordinator struct {
-	vmFn          RenderVMFn
-	mu            sync.Mutex
-	dirty         bool
-	lastFrame     string
-	lastResult    RenderResult
-	hasLastResult bool
-	lastKey       renderVMKey
-	bodyCache     *bodyRenderCache
-	tabBarValue   string
-	statusValue   string
-	tabBarKey     tabBarCacheKey
-	statusKey     statusBarCacheKey
+	vmFn           RenderVMFn
+	mu             sync.Mutex
+	dirty          bool
+	lastFrame      string
+	lastResult     RenderResult
+	hasLastResult  bool
+	lastKey        renderVMKey
+	bodyCache      *bodyRenderCache
+	altScreenCache *altScreenRowCache
+	tabBarValue    string
+	statusValue    string
+	tabBarKey      tabBarCacheKey
+	statusKey      statusBarCacheKey
 
 	cursorBlinkVisible bool
 }
@@ -167,6 +168,7 @@ func (c *Coordinator) ResetCaches() {
 	c.hasLastResult = false
 	c.lastKey = renderVMKey{}
 	c.bodyCache = nil
+	c.altScreenCache = nil
 	c.tabBarValue = ""
 	c.statusValue = ""
 	c.tabBarKey = tabBarCacheKey{}

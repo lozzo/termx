@@ -131,7 +131,7 @@ func renderBodyFrameWithCoordinatorVM(coordinator *Coordinator, vm RenderVM, wid
 		coordinator.mu.Unlock()
 	}
 	entries := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, width, height, lookup, bodyProjectionOptionsForVM(vm, exitedSelectionPulse), uiThemeForVM(vm))
-	if body, ok := renderAltScreenFastPathVM(vm, entries, cursorOffsetY); ok {
+	if body, ok := renderAltScreenFastPathVM(coordinator, vm, entries, cursorOffsetY); ok {
 		perftrace.Count("render.body.path.alt_screen_fast_path", 0)
 		return body
 	}
