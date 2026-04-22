@@ -98,8 +98,10 @@ func (s *Screen) Clear() {
 
 // ClearWithScrollback saves all non-empty lines to scrollback before clearing.
 // This is used for operations like ED 2 (erase screen) where content should
-// be preserved in history.
-func (s *Screen) ClearWithScrollback() {
+// be preserved in history. The blank cell is used to fill the cleared area;
+// pass nil to clear to empty cells, or blankCell() to preserve the current
+// pen background color.
+func (s *Screen) ClearWithScrollback(blank *uv.Cell) {
 	if s.scrollback != nil {
 		// Save all lines that have content before clearing
 		for y := 0; y < s.buf.Height(); y++ {
@@ -109,7 +111,7 @@ func (s *Screen) ClearWithScrollback() {
 			}
 		}
 	}
-	s.Clear()
+	s.FillArea(blank, s.Bounds())
 }
 
 // isLineEmpty returns true if the line contains only empty/space cells.

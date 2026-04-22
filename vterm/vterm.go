@@ -115,12 +115,6 @@ type VTerm struct {
 	screenRowCache         [][]Cell
 	scrollbackRowCache     [][]Cell
 	screenFingerprintCache []rowFingerprint
-	resizeTailStartCol     int
-	resizeTailBG           []string
-	resizeVisibleBlankBG      [][]string
-	resizeVisibleBlankRowBG  []string // per-row fallback BG for visible blank fill
-	resizeBottomFillBG       string
-	resizeBottomFillRow    int
 
 	done chan struct{} // closed when drain goroutine exits
 }
@@ -383,15 +377,13 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 		afterScreen = v.screenFingerprintCache
 	}
 	cachePlan := v.reconcileRowMetadataLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, afterScreen, now)
-	v.pruneResizeTailFillLocked()
 	v.reconcileRowCachesLocked(beforeScreen, cachePlan)
 	if collectDamage {
 		damage = v.writeDamageLocked(beforeScreenRows, beforeScreen, cachePlan)
 		if hasDirectDamage &&
 			beforeWidth == afterWidth &&
 			beforeHeight == afterHeight &&
-			beforeAltScreen == afterAltScreen &&
-			!v.hasResizeFillCacheHazardLocked() {
+			beforeAltScreen == afterAltScreen {
 			if directOps := v.damageOpsFromCharmVTDamages(directDamages, afterWidth, v.screenTimestamps, v.screenRowKinds); directOps != nil {
 				damage.Ops = directOps
 			}
@@ -475,7 +467,6 @@ func (v *VTerm) LoadSnapshotWithMetadata(scrollback [][]Cell, scrollbackTimestam
 		}
 	}
 	v.alignScrollbackMetadataLocked()
-	v.clearResizeTailFillLocked()
 	if modes.AlternateScreen {
 		_, _ = v.emu.Write([]byte("\x1b[?1049h"))
 	}
@@ -910,8 +901,6 @@ func (v *VTerm) resizeLocked(cols, rows int) {
 	if v == nil || v.emu == nil {
 		return
 	}
-	oldCols, oldRows := v.emu.Width(), v.emu.Height()
-	v.captureResizeTailFillLocked(oldCols, oldRows, cols, rows)
 	v.ensureScreenFingerprintCacheLocked()
 	beforeScreen := append([]rowFingerprint(nil), v.screenFingerprintCache...)
 	beforeScrollbackLen := v.scrollbackRowCountLocked()
@@ -1815,9 +1804,6 @@ func (v *VTerm) screenRowViewLocked(y int) []Cell {
 	for x := 0; x < width; x++ {
 		row[x] = v.convertCell(v.emu.CellAt(x, y))
 	}
-	v.applyResizeTailFillLocked(y, row)
-	v.applyResizeVisibleBlankFillLocked(y, row)
-	v.applyResizeBottomFillLocked(y, row)
 	v.screenRowCache[y] = row
 	return row
 }
@@ -1908,310 +1894,6 @@ func (v *VTerm) consumeTouchedRowsLocked() ([]int, bool) {
 	return rows, true
 }
 
-func (v *VTerm) clearResizeTailFillLocked() {
-	v.clearResizeTransientFillLocked()
-	v.clearResizeVisibleBlankFillLocked()
-}
-
-func (v *VTerm) clearResizeTransientFillLocked() {
-	v.resizeTailStartCol = 0
-	v.resizeTailBG = nil
-	v.resizeBottomFillBG = ""
-	v.resizeBottomFillRow = 0
-}
-
-func (v *VTerm) clearResizeVisibleBlankFillLocked() {
-	v.resizeVisibleBlankBG = nil
-	v.resizeVisibleBlankRowBG = nil
-}
-
-func (v *VTerm) pruneResizeTailFillLocked() {
-	if v == nil || v.emu == nil || v.resizeTailStartCol <= 0 || len(v.resizeTailBG) == 0 {
-		v.resizeTailStartCol = 0
-		v.resizeTailBG = nil
-	} else {
-		if v.resizeTailStartCol >= v.emu.Width() {
-			v.resizeTailStartCol = 0
-			v.resizeTailBG = nil
-		} else {
-			height := minInt(len(v.resizeTailBG), v.emu.Height())
-			if height <= 0 {
-				v.resizeTailStartCol = 0
-				v.resizeTailBG = nil
-			} else {
-				v.resizeTailBG = v.resizeTailBG[:height]
-			}
-		}
-	}
-	if v.resizeBottomFillBG != "" && (v.resizeBottomFillRow < 0 || v.resizeBottomFillRow >= v.emu.Height()) {
-		v.resizeBottomFillBG = ""
-		v.resizeBottomFillRow = 0
-	}
-	if len(v.resizeVisibleBlankBG) > 0 {
-		height := minInt(len(v.resizeVisibleBlankBG), v.emu.Height())
-		if height <= 0 {
-			v.resizeVisibleBlankBG = nil
-		} else {
-			v.resizeVisibleBlankBG = v.resizeVisibleBlankBG[:height]
-			for y := range v.resizeVisibleBlankBG {
-				if len(v.resizeVisibleBlankBG[y]) > v.emu.Width() {
-					v.resizeVisibleBlankBG[y] = v.resizeVisibleBlankBG[y][:v.emu.Width()]
-				}
-			}
-		}
-	}
-	if len(v.resizeVisibleBlankRowBG) > 0 {
-		height := minInt(len(v.resizeVisibleBlankRowBG), v.emu.Height())
-		if height <= 0 {
-			v.resizeVisibleBlankRowBG = nil
-		} else {
-			v.resizeVisibleBlankRowBG = v.resizeVisibleBlankRowBG[:height]
-		}
-	}
-}
-
-func (v *VTerm) captureResizeTailFillLocked(oldCols, oldRows, newCols, newRows int) {
-	if v.emu == nil || oldCols <= 0 || oldRows <= 0 || !v.emu.IsAltScreen() {
-		v.clearResizeTransientFillLocked()
-		v.clearResizeVisibleBlankFillLocked()
-		return
-	}
-
-	// Read rows WITH previous resize fills applied BEFORE clearing.
-	// After a previous resize + app redraw, the emulator may have lost BG
-	// on blank cells, but the visible blank fill restored them in the row
-	// view. We must capture those restored BGs for the new resize.
-	rowCount := minInt(oldRows, v.emu.Height())
-	rows := make([][]Cell, rowCount)
-	for y := 0; y < rowCount; y++ {
-		rows[y] = v.screenRowViewLocked(y)
-	}
-
-	// Now clear old fills.
-	v.clearResizeTransientFillLocked()
-	v.clearResizeVisibleBlankFillLocked()
-
-	// Tail fill: for widening, capture per-row trailing BG for new columns.
-	if newCols > oldCols {
-		count := minInt(rowCount, maxInt(newRows, 0))
-		if count > 0 {
-			bg := make([]string, count)
-			hasAny := false
-			for y := 0; y < count; y++ {
-				fill := rowTailBackground(rows[y], oldCols)
-				if fill == "" {
-					continue
-				}
-				bg[y] = fill
-				hasAny = true
-			}
-			if hasAny {
-				v.resizeTailStartCol = maxInt(0, oldCols-1)
-				v.resizeTailBG = bg
-			}
-		}
-	}
-
-	// Capture visible blank BG for ALL resize cases.
-	// When an application (e.g. neovim) redraws after SIGWINCH, it may
-	// clear the screen (ED) which removes BG from all cells, then only
-	// redraw text cells with BG, leaving blank cells after text without BG.
-	// By capturing BG of blank cells before resize, we can restore them
-	// after the application's redraw.
-	//
-	// We capture two things:
-	// 1. Per-cell BG for blank cells that already have BG (precise fill)
-	// 2. Per-row dominant BG (fallback for cells that were text before
-	//    resize but became blank after app redraw, e.g. empty lines in
-	//    neovim where the layout changed)
-	{
-		count := minInt(rowCount, maxInt(newRows, 0))
-		captureWidth := oldCols
-		if count > 0 && captureWidth > 0 {
-			fill := make([][]string, count)
-			rowBG := make([]string, count)
-			hasAny := false
-			hasRowBG := false
-			for y := 0; y < count; y++ {
-				row := rows[y]
-				rowFill := make([]string, captureWidth)
-				rowHasAny := false
-				limit := minInt(captureWidth, len(row))
-				for x := 0; x < limit; x++ {
-					cell := row[x]
-					if !cellNeedsPersistentResizeFill(cell) {
-						continue
-					}
-					rowFill[x] = cell.Style.BG
-					rowHasAny = true
-					hasAny = true
-				}
-				if rowHasAny {
-					fill[y] = rowFill
-				}
-				// Capture per-row dominant BG from any cell with BG.
-				if bg := rowTailBackground(row, limit); bg != "" {
-					rowBG[y] = bg
-					hasRowBG = true
-				}
-			}
-			if hasAny {
-				v.resizeVisibleBlankBG = fill
-			}
-			if hasRowBG {
-				v.resizeVisibleBlankRowBG = rowBG
-			}
-		}
-	}
-
-	// Bottom fill: for height growing, fill new rows below old bottom.
-	if newRows > oldRows {
-		scanCols := maxInt(1, minInt(oldCols, newCols))
-		bottomRow := rowCount - 1
-		if bottomRow >= 0 {
-			row := rows[bottomRow]
-			if isRowBlankForBottomFill(row, scanCols) {
-				if fill := rowTailBackground(row, scanCols); fill != "" {
-					v.resizeBottomFillBG = fill
-					v.resizeBottomFillRow = oldRows
-				}
-			}
-		}
-	}
-}
-
-// rowTailBackground scans a row right-to-left for the first cell with a BG.
-func rowTailBackground(row []Cell, width int) string {
-	limit := width
-	if limit > len(row) {
-		limit = len(row)
-	}
-	for x := limit - 1; x >= 0; x-- {
-		if row[x].Style.BG != "" {
-			return row[x].Style.BG
-		}
-	}
-	return ""
-}
-
-// isRowBlankForBottomFill returns true if all cells in the row are blank.
-func isRowBlankForBottomFill(row []Cell, width int) bool {
-	limit := width
-	if limit > len(row) {
-		limit = len(row)
-	}
-	for x := 0; x < limit; x++ {
-		if strings.TrimSpace(row[x].Content) != "" {
-			return false
-		}
-	}
-	return true
-}
-
-func (v *VTerm) applyResizeTailFillLocked(y int, row []Cell) {
-	if v == nil || y < 0 || y >= len(v.resizeTailBG) || v.resizeTailStartCol <= 0 || v.resizeTailStartCol >= len(row) {
-		return
-	}
-	bg := v.resizeTailBG[y]
-	if bg == "" {
-		return
-	}
-	for x := v.resizeTailStartCol; x < len(row); x++ {
-		if !cellNeedsResizeFill(row[x]) {
-			continue
-		}
-		row[x].Style.BG = bg
-	}
-}
-
-func (v *VTerm) applyResizeVisibleBlankFillLocked(y int, row []Cell) {
-	if v == nil {
-		return
-	}
-	// Per-cell fill from captured blank cell BGs.
-	var fill []string
-	if y >= 0 && y < len(v.resizeVisibleBlankBG) {
-		fill = v.resizeVisibleBlankBG[y]
-	}
-	// Per-row fallback BG: used when per-cell fill has no data for a cell
-	// (e.g., cell was text before resize but became blank after app redraw).
-	var fallbackBG string
-	if y >= 0 && y < len(v.resizeVisibleBlankRowBG) {
-		fallbackBG = v.resizeVisibleBlankRowBG[y]
-	}
-	if len(fill) == 0 && fallbackBG == "" {
-		return
-	}
-	for x := 0; x < len(row); x++ {
-		if !cellNeedsResizeFill(row[x]) {
-			continue
-		}
-		if x < len(fill) && fill[x] != "" {
-			row[x].Style.BG = fill[x]
-		} else if fallbackBG != "" {
-			row[x].Style.BG = fallbackBG
-		}
-	}
-}
-
-func (v *VTerm) applyResizeBottomFillLocked(y int, row []Cell) {
-	if v == nil || v.resizeBottomFillBG == "" || y < v.resizeBottomFillRow {
-		return
-	}
-	bg := v.resizeBottomFillBG
-	for x := 0; x < len(row); x++ {
-		if !cellNeedsResizeFill(row[x]) {
-			continue
-		}
-		row[x].Style.BG = bg
-	}
-}
-
-func cellNeedsResizeFill(cell Cell) bool {
-	if cell.Style.BG != "" {
-		return false
-	}
-	if cell.Width > 1 {
-		return false
-	}
-	return strings.TrimSpace(cell.Content) == ""
-}
-
-func cellNeedsPersistentResizeFill(cell Cell) bool {
-	if cell.Style.BG == "" {
-		return false
-	}
-	if cell.Width > 1 {
-		return false
-	}
-	return strings.TrimSpace(cell.Content) == ""
-}
-
-func (v *VTerm) SeedResizeFillState(tailStartCol int, tailBG []CellStyle, bottomBG string, bottomStartRow int) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	if tailStartCol > 0 && len(tailBG) > 0 {
-		if v.resizeTailStartCol == 0 || tailStartCol < v.resizeTailStartCol {
-			v.resizeTailStartCol = tailStartCol
-		}
-		if len(v.resizeTailBG) < len(tailBG) {
-			next := make([]string, len(tailBG))
-			copy(next, v.resizeTailBG)
-			v.resizeTailBG = next
-		}
-		for i := range tailBG {
-			if tailBG[i].BG == "" {
-				continue
-			}
-			v.resizeTailBG[i] = tailBG[i].BG
-		}
-	}
-	if bottomBG != "" && bottomStartRow >= 0 {
-		v.resizeBottomFillBG = bottomBG
-		v.resizeBottomFillRow = bottomStartRow
-	}
-}
-
 func (v *VTerm) ensureScrollbackRowCacheLocked(count int) {
 	switch {
 	case count <= 0:
@@ -2245,9 +1927,6 @@ func (v *VTerm) screenRowFingerprintLocked(y int) rowFingerprint {
 	for x := 0; x < width; x++ {
 		row[x] = v.convertCell(v.emu.CellAt(x, y))
 	}
-	v.applyResizeTailFillLocked(y, row)
-	v.applyResizeVisibleBlankFillLocked(y, row)
-	v.applyResizeBottomFillLocked(y, row)
 	return rowFingerprintForCells(row, width)
 }
 
@@ -2347,7 +2026,6 @@ func (v *VTerm) writeDamageFullCompareLocked(beforeScreenRows [][]Cell, beforeSc
 
 func (v *VTerm) writeDamageFromFingerprintsLocked(beforeScreenRows [][]Cell, beforeScreen []rowFingerprint, beforeScreenTimestamps []time.Time, beforeScreenRowKinds []string, beforeScrollbackLen int, afterScreen []rowFingerprint, now time.Time) WriteDamage {
 	cachePlan := v.reconcileRowMetadataLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, afterScreen, now)
-	v.pruneResizeTailFillLocked()
 	v.reconcileRowCachesLocked(beforeScreen, cachePlan)
 	return v.writeDamageLocked(beforeScreenRows, beforeScreen, cachePlan)
 }
@@ -2427,11 +2105,6 @@ func (v *VTerm) reconcileRowCachesLocked(beforeScreen []rowFingerprint, plan row
 		v.scrollbackRowCache = nil
 		return
 	}
-	if v.hasResizeFillCacheHazardLocked() {
-		v.invalidateRowCachesLocked()
-		return
-	}
-
 	oldScreenCache := v.screenRowCache
 	oldScrollbackCache := v.scrollbackRowCache
 	nextScreenCache := make([][]Cell, len(plan.afterScreen))
@@ -2533,13 +2206,6 @@ func (v *VTerm) writeDamageLocked(beforeScreenRows [][]Cell, beforeScreen []rowF
 		})
 	}
 	return damage
-}
-
-func (v *VTerm) hasResizeFillCacheHazardLocked() bool {
-	if v == nil {
-		return false
-	}
-	return (v.resizeTailStartCol > 0 && len(v.resizeTailBG) > 0) || len(v.resizeVisibleBlankBG) > 0 || len(v.resizeVisibleBlankRowBG) > 0 || v.resizeBottomFillBG != ""
 }
 
 func detectScreenScrollShift(before, after []rowFingerprint) int {

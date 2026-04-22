@@ -555,12 +555,15 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 			rect := uv.Rect(0, 0, width, y+1)
 			e.scr.FillArea(e.scr.blankCell(), rect)
 		case 2: // erase screen
-			// Save screen content to scrollback before clearing
-			e.scr.ClearWithScrollback()
+			// Save screen content to scrollback before clearing.
+			// Use blankCell() to preserve the current pen BG color,
+			// matching case 0/1 behavior and real terminals (xterm, kitty).
+			e.scr.ClearWithScrollback(e.scr.blankCell())
 		case 3: // erase display (including scrollback in some terminals)
 			// For ED 3, we clear the screen but also clear scrollback
-			// This matches xterm behavior where ESC[3J clears scrollback
-			e.scr.Clear()
+			// This matches xterm behavior where ESC[3J clears scrollback.
+			// Use blankCell() to preserve the current pen BG color.
+			e.scr.FillArea(e.scr.blankCell(), e.scr.Bounds())
 			if sb := e.scr.Scrollback(); sb != nil {
 				sb.Clear()
 			}

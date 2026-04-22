@@ -3,19 +3,12 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/terminalmeta"
 	"github.com/lozzow/termx/tuiv2/shared"
-	localvterm "github.com/lozzow/termx/vterm"
 )
-
-type resizeFillStateSeeder interface {
-	SeedResizeFillState(tailStartCol int, tailBG []localvterm.CellStyle, bottomBG string, bottomStartRow int)
-}
 
 func (r *Runtime) ResizeTerminal(ctx context.Context, paneID, terminalID string, cols, rows uint16) error {
 	return r.ResizePane(ctx, paneID, terminalID, cols, rows)
@@ -67,7 +60,6 @@ func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, col
 				provisionalSnapshot = provisionalSnapshotForLocalShrink(source, cols, rows)
 			}
 			vt.Resize(int(cols), int(rows))
-			seedResizeFillFromSnapshot(vt, prevSnapshot, oldCols, oldRows, int(cols), int(rows))
 			if provisionalSnapshot != nil {
 				terminal.PreferSnapshot = true
 				terminal.Snapshot = provisionalSnapshot
@@ -148,148 +140,6 @@ func terminalAlreadySized(terminal *TerminalRuntime, cols, rows uint16) bool {
 	}
 	currentCols, currentRows := terminal.VTerm.Size()
 	return currentCols == int(cols) && currentRows == int(rows)
-}
-
-func seedResizeFillFromSnapshot(vt VTermLike, snapshot *protocol.Snapshot, oldCols, oldRows, newCols, newRows int) {
-	if vt == nil || snapshot == nil || oldCols <= 0 || oldRows <= 0 || (newCols <= oldCols && newRows <= oldRows) {
-		return
-	}
-	screen := vt.ScreenContent()
-	if len(screen.Cells) == 0 {
-		return
-	}
-	var payload strings.Builder
-	tailStartCol := runtimeMaxInt(0, oldCols-1)
-	tailBG := make([]localvterm.CellStyle, runtimeMinInt(oldRows, newRows))
-	bottomBG := ""
-	bottomStartRow := 0
-	if newCols > oldCols {
-		limitRows := runtimeMinInt(len(tailBG), len(screen.Cells))
-		for y := 0; y < limitRows; y++ {
-			bg := snapshotRowTailBackground(snapshot, y, oldCols)
-			if bg == "" {
-				continue
-			}
-			tailBG[y].BG = bg
-			appendResizeFillSegmentsANSI(&payload, screen.Cells[y], y, tailStartCol, newCols, bg)
-		}
-	}
-	if newRows > oldRows {
-		bottomBG = snapshotBottomFillBackground(snapshot, oldRows, runtimeMaxInt(1, runtimeMinInt(oldCols, newCols)))
-		bottomStartRow = runtimeMaxInt(0, oldRows)
-		if bottomBG != "" {
-			for y := runtimeMaxInt(0, oldRows); y < runtimeMinInt(newRows, len(screen.Cells)); y++ {
-				appendResizeFillSegmentsANSI(&payload, screen.Cells[y], y, 0, newCols, bottomBG)
-			}
-		}
-	}
-	if payload.Len() == 0 {
-		if seeder, ok := vt.(resizeFillStateSeeder); ok {
-			seeder.SeedResizeFillState(tailStartCol, tailBG, bottomBG, bottomStartRow)
-		}
-		return
-	}
-	payload.WriteString("\x1b[0m")
-	_, _ = vt.Write([]byte(payload.String()))
-	if seeder, ok := vt.(resizeFillStateSeeder); ok {
-		seeder.SeedResizeFillState(tailStartCol, tailBG, bottomBG, bottomStartRow)
-	}
-}
-
-func appendResizeFillSegmentsANSI(out *strings.Builder, row []localvterm.Cell, rowIndex, startCol, endCol int, bg string) {
-	if out == nil || rowIndex < 0 || startCol >= endCol || bg == "" {
-		return
-	}
-	start := -1
-	flush := func(col int) {
-		if start < 0 || col <= start {
-			start = -1
-			return
-		}
-		out.WriteString(fmt.Sprintf("\x1b[%d;%dH", rowIndex+1, start+1))
-		out.WriteString(backgroundANSI(bg))
-		out.WriteString(strings.Repeat(" ", col-start))
-		start = -1
-	}
-	for col := runtimeMaxInt(0, startCol); col < endCol; col++ {
-		fillable := true
-		if col < len(row) {
-			fillable = runtimeCellNeedsResizeFill(row[col])
-		}
-		if fillable {
-			if start < 0 {
-				start = col
-			}
-			continue
-		}
-		flush(col)
-	}
-	flush(endCol)
-}
-
-func runtimeCellNeedsResizeFill(cell localvterm.Cell) bool {
-	if cell.Style.BG != "" {
-		return false
-	}
-	if cell.Width > 1 {
-		return false
-	}
-	return strings.TrimSpace(cell.Content) == ""
-}
-
-func snapshotRowTailBackground(snapshot *protocol.Snapshot, rowIndex, width int) string {
-	if snapshot == nil || rowIndex < 0 || rowIndex >= len(snapshot.Screen.Cells) || width <= 0 {
-		return ""
-	}
-	row := snapshot.Screen.Cells[rowIndex]
-	if width > len(row) {
-		width = len(row)
-	}
-	for x := width - 1; x >= 0; x-- {
-		if row[x].Style.BG != "" {
-			return row[x].Style.BG
-		}
-	}
-	return ""
-}
-
-func snapshotBottomFillBackground(snapshot *protocol.Snapshot, oldRows, width int) string {
-	if snapshot == nil || oldRows <= 0 {
-		return ""
-	}
-	rowIndex := runtimeMinInt(oldRows, len(snapshot.Screen.Cells)) - 1
-	if rowIndex < 0 || !snapshotRowBlankForBottomFill(snapshot.Screen.Cells[rowIndex], width) {
-		return ""
-	}
-	return snapshotRowTailBackground(snapshot, rowIndex, width)
-}
-
-func snapshotRowBlankForBottomFill(row []protocol.Cell, width int) bool {
-	if width <= 0 {
-		return false
-	}
-	if width > len(row) {
-		width = len(row)
-	}
-	for x := 0; x < width; x++ {
-		if strings.TrimSpace(row[x].Content) != "" {
-			return false
-		}
-	}
-	return true
-}
-
-func backgroundANSI(hex string) string {
-	if len(hex) != 7 || hex[0] != '#' {
-		return ""
-	}
-	r, errR := strconv.ParseUint(hex[1:3], 16, 8)
-	g, errG := strconv.ParseUint(hex[3:5], 16, 8)
-	b, errB := strconv.ParseUint(hex[5:7], 16, 8)
-	if errR != nil || errG != nil || errB != nil {
-		return ""
-	}
-	return fmt.Sprintf("\x1b[0;48;2;%d;%d;%dm", r, g, b)
 }
 
 func runtimeMinInt(a, b int) int {
