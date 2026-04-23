@@ -737,11 +737,12 @@ func TestRuntimeClientOutputBatchDelayBypassesAfterRecentInput(t *testing.T) {
 	}
 
 	rt.noteLocalInput()
+	// Interactive bypass reduces delay for all batches during the latency window.
 	if got := rt.clientOutputBatchDelay(); got != interactiveOutputBatchDelay {
 		t.Fatalf("expected recent local input to shrink output batch delay to %v, got %v", interactiveOutputBatchDelay, got)
 	}
-	if got := rt.clientOutputBatchDelay(); got != clientOutputBatchDelay {
-		t.Fatalf("expected interactive bypass to be one-shot, got %v", got)
+	if got := rt.clientOutputBatchDelay(); got != interactiveOutputBatchDelay {
+		t.Fatalf("expected interactive bypass to remain active during window, got %v", got)
 	}
 }
 
@@ -756,8 +757,12 @@ func TestRuntimeClientOutputBatchDelayUsesRemoteProfile(t *testing.T) {
 	}
 
 	rt.noteLocalInput()
+	// Remote interactive bypass applies to all batches during the latency window.
 	if got := rt.clientOutputBatchDelay(); got != remoteInteractiveOutputBatchDelay {
 		t.Fatalf("expected remote interactive output batch delay %v, got %v", remoteInteractiveOutputBatchDelay, got)
+	}
+	if got := rt.clientOutputBatchDelay(); got != remoteInteractiveOutputBatchDelay {
+		t.Fatalf("expected remote interactive bypass to remain active during window, got %v", got)
 	}
 }
 
@@ -769,29 +774,65 @@ func TestEffectiveInteractiveLatencyWindowUsesRemoteProfile(t *testing.T) {
 	}
 }
 
-func TestCoalesceClientOutputFramesWaitsForSynchronizedOutputEnd(t *testing.T) {
-	stream := make(chan protocol.StreamFrame, 1)
+func TestCoalesceClientOutputFramesExitsEarlyOnSynchronizedOutputEnd(t *testing.T) {
+	// Sync begin in first frame, sync end arrives mid-batch-window. The coalesce
+	// function should merge both frames and return as soon as the group closes,
+	// without waiting for the full batch timer to expire.
+	stream := make(chan protocol.StreamFrame, 8)
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		time.Sleep(2 * time.Millisecond)
 		stream <- protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("body\x1b[?2026l")}
-		close(stream)
 	}()
 
-	merged, pending, hasPending, ok := coalesceClientOutputFrames(
+	start := time.Now()
+	merged, pending, hasPending, _ := coalesceClientOutputFrames(
 		protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("\x1b[?2026h")},
 		stream,
-		500*time.Microsecond,
+		10*time.Millisecond, // long batch window — early exit must fire before this
 		StreamState{},
 	)
+	elapsed := time.Since(start)
 
+	<-done
 	if merged.Type != protocol.TypeOutput || string(merged.Payload) != "\x1b[?2026hbody\x1b[?2026l" {
 		t.Fatalf("expected synchronized output burst to merge, got %#v", merged)
 	}
 	if hasPending {
 		t.Fatalf("expected no pending frame, got %#v", pending)
 	}
-	if ok {
-		t.Fatal("expected closed source stream after synchronized output merge")
+	// Early exit should fire within a few ms of the sync end arriving, well
+	// before the 10ms batch timer would expire.
+	if elapsed > 6*time.Millisecond {
+		t.Fatalf("expected early exit within ~3ms of sync end, took %v", elapsed)
+	}
+}
+
+func TestCoalesceClientOutputFramesEarlyExitOnCompleteGroupInFirstFrame(t *testing.T) {
+	// Complete sync group (begin + content + end) in the first frame:
+	// must return immediately without starting the batch timer.
+	stream := make(chan protocol.StreamFrame)
+	start := time.Now()
+	merged, pending, hasPending, ok := coalesceClientOutputFrames(
+		protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("\x1b[?2026hcontent\x1b[?2026l")},
+		stream,
+		10*time.Millisecond,
+		StreamState{},
+	)
+	elapsed := time.Since(start)
+
+	if string(merged.Payload) != "\x1b[?2026hcontent\x1b[?2026l" {
+		t.Fatalf("expected complete sync group, got %#v", merged)
+	}
+	if hasPending {
+		t.Fatalf("unexpected pending: %#v", pending)
+	}
+	if !ok {
+		t.Fatal("expected stream still open after early exit")
+	}
+	if elapsed > 2*time.Millisecond {
+		t.Fatalf("expected immediate return for complete sync group, took %v", elapsed)
 	}
 }
 

@@ -33,7 +33,14 @@ func (r *Runtime) noteLocalInput() {
 		return
 	}
 	r.recentInputAt.Store(time.Now().UnixNano())
-	r.inputBypassArmed.Store(true)
+}
+
+// NoteLocalInteraction marks the current moment as a user-driven UI interaction
+// (e.g. mouse drag). This makes the cursor writer's interactive-bypass fire so
+// drag frames reach the host without waiting for the batch timer, which matters
+// over SSH where the adaptive batch delay can grow to 50 ms.
+func (r *Runtime) NoteLocalInteraction() {
+	r.noteLocalInput()
 }
 
 func (r *Runtime) RecentLocalInput() bool {
@@ -48,10 +55,7 @@ func (r *Runtime) RecentLocalInput() bool {
 }
 
 func (r *Runtime) consumeInteractiveBypass() bool {
-	if r == nil || !r.RecentLocalInput() {
-		return false
-	}
-	return r.inputBypassArmed.Swap(false)
+	return r != nil && r.RecentLocalInput()
 }
 
 func effectiveInteractiveLatencyWindow() time.Duration {

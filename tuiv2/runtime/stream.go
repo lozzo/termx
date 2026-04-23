@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -177,6 +178,7 @@ func coalesceClientOutputFrames(first protocol.StreamFrame, stream <-chan protoc
 		Type:    protocol.TypeOutput,
 		Payload: append([]byte(nil), first.Payload...),
 	}
+	prevSyncActive := syncState.synchronizedOutputActive
 	_ = updateSynchronizedOutputState(&syncState, first.Payload)
 	handle := func(frame protocol.StreamFrame) (protocol.StreamFrame, bool, bool) {
 		if frame.Type != protocol.TypeOutput {
@@ -204,6 +206,15 @@ func coalesceClientOutputFrames(first protocol.StreamFrame, stream <-chan protoc
 			}
 		}
 	}
+	// Early exit: if a synchronized output group completed in the first payload,
+	// deliver immediately without starting the batch timer. This covers both
+	// the common case (begin + content + end in one frame) and carry-over from
+	// a previous partial batch (prevActive=true, now closed).
+	if !syncState.synchronizedOutputActive &&
+		(prevSyncActive || bytes.Contains(first.Payload, []byte(synchronizedOutputEnd))) {
+		pending, hasPending, ok := drainReady()
+		return merged, pending, hasPending, ok
+	}
 	if batchDelay <= 0 || len(merged.Payload) >= protocol.MaxFrameSize {
 		pending, hasPending, ok := drainReady()
 		return merged, pending, hasPending, ok
@@ -219,11 +230,18 @@ func coalesceClientOutputFrames(first protocol.StreamFrame, stream <-chan protoc
 			if !ok {
 				return merged, protocol.StreamFrame{}, false, false
 			}
+			loopPrevSyncActive := syncState.synchronizedOutputActive
 			if pending, hasPending, ok := handle(frame); hasPending || !ok {
 				return merged, pending, hasPending, ok
 			}
 			if len(merged.Payload) >= protocol.MaxFrameSize {
 				return merged, protocol.StreamFrame{}, false, true
+			}
+			// Early exit: sync group just completed in this frame
+			if loopPrevSyncActive && !syncState.synchronizedOutputActive {
+				timer.Stop()
+				pending, hasPending, ok := drainReady()
+				return merged, pending, hasPending, ok
 			}
 		case <-timer.C:
 			if syncState.synchronizedOutputActive && waitBudget > waitedForSync {

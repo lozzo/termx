@@ -33,8 +33,7 @@ type Runtime struct {
 	version          uint64
 	visibleVersion   uint64
 	visibleCache     *VisibleRuntime
-	recentInputAt    atomic.Int64
-	inputBypassArmed atomic.Bool
+	recentInputAt atomic.Int64
 }
 
 const interactiveLatencyWindow = 24 * time.Millisecond
