@@ -136,6 +136,8 @@ func screenUpdateShouldEncodeDeltaOnly(damage protocol.ScreenUpdate, preferAggre
 }
 
 func encodeScreenUpdatePayloadByStrategy(damage protocol.ScreenUpdate, full protocol.ScreenUpdate, preferAggressiveFullReplace bool) ([]byte, screenUpdateEncodeMode, bool) {
+	finish := perftrace.Measure("terminal.screen_update.encode")
+	defer finish(0)
 	damagePayload := []byte(nil)
 	damageErr := error(nil)
 	if screenUpdateShouldEncodeDeltaOnly(damage, preferAggressiveFullReplace) {
@@ -160,6 +162,7 @@ func encodeScreenUpdatePayloadByStrategy(damage protocol.ScreenUpdate, full prot
 		return damagePayload, screenUpdateEncodeModeDelta, true
 	}
 
+	compareFinish := perftrace.Measure("terminal.screen_update.strategy_compare")
 	damageChangedRows := screenUpdateChangedRowCount(damage)
 	damageChangedCells := screenUpdateChangedCellCount(damage)
 	totalCells := screenUpdateTotalCells(full)
@@ -183,6 +186,7 @@ func encodeScreenUpdatePayloadByStrategy(damage protocol.ScreenUpdate, full prot
 	if hasScrollOpcode && len(damagePayload) <= len(fullPayload)+(len(fullPayload)/8) {
 		chooseFull = false
 	}
+	compareFinish(0)
 
 	if chooseFull {
 		recordEncodedScreenUpdatePayload(screenUpdateEncodeModeFullReplace, fullPayload)
@@ -222,6 +226,8 @@ func fullReplaceUpdateForStateDelta(before, after *streamScreenState, resetScrol
 }
 
 func screenUpdateFromDamageState(damage localvterm.WriteDamage, title string) protocol.ScreenUpdate {
+	finish := perftrace.Measure("terminal.screen_update.from_damage_state")
+	defer finish(0)
 	update := protocol.ScreenUpdate{
 		Size:             protocol.Size{Cols: uint16(damage.SizeCols), Rows: uint16(damage.SizeRows)},
 		ScreenScroll:     damage.ScreenScroll,

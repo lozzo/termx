@@ -38,6 +38,9 @@ func terminalVisibleMetricsForSource(source terminalRenderSource) renderTerminal
 	if renderedRows > 0 && (metrics.Rows <= 0 || renderedRows < metrics.Rows) {
 		metrics.Rows = renderedRows
 	}
+	if (source.IsAlternateScreen() || source.Modes().AlternateScreen) && metrics.Cols > 0 {
+		return metrics
+	}
 	renderedCols := 0
 	for row := source.ScrollbackRows(); row < source.TotalRows(); row++ {
 		if rowW := protocolRowDisplayWidth(source.Row(row)); rowW > renderedCols {

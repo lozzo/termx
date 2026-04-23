@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/protocol"
+	localvterm "github.com/lozzow/termx/vterm"
 )
 
 func BenchmarkScreenUpdateOpcodeScenarios(b *testing.B) {
@@ -16,12 +18,25 @@ func BenchmarkScreenUpdateOpcodeScenarios(b *testing.B) {
 		}{
 			{name: "legacy", update: scenario.legacy},
 			{name: "opcode", update: scenario.opcode},
+			{name: "full_replace", update: opcodeBenchFullReplaceUpdate(scenario.base, scenario.opcode)},
 		} {
-			b.Run(fmt.Sprintf("%s/%s", scenario.name, variant.name), func(b *testing.B) {
-				payload, err := protocol.EncodeScreenUpdatePayload(variant.update)
-				if err != nil {
-					b.Fatalf("encode payload: %v", err)
+			payload, err := protocol.EncodeScreenUpdatePayload(variant.update)
+			if err != nil {
+				b.Fatalf("%s/%s encode payload: %v", scenario.name, variant.name, err)
+			}
+			b.Run(fmt.Sprintf("%s/%s/decode_only", scenario.name, variant.name), func(b *testing.B) {
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					decoded, err := protocol.DecodeScreenUpdatePayload(payload)
+					if err != nil {
+						b.Fatalf("decode payload: %v", err)
+					}
+					if decoded.Size != variant.update.Size {
+						b.Fatalf("unexpected decoded size: %#v", decoded.Size)
+					}
 				}
+			})
+			b.Run(fmt.Sprintf("%s/%s/decode_snapshot_apply", scenario.name, variant.name), func(b *testing.B) {
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					decoded, err := protocol.DecodeScreenUpdatePayload(payload)
@@ -31,6 +46,49 @@ func BenchmarkScreenUpdateOpcodeScenarios(b *testing.B) {
 					next := applyScreenUpdateSnapshot(scenario.base, "term-1", decoded)
 					if next == nil {
 						b.Fatal("expected snapshot update result")
+					}
+				}
+			})
+			if variant.update.FullReplace {
+				b.Run(fmt.Sprintf("%s/%s/decode_contract_full", scenario.name, variant.name), func(b *testing.B) {
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						b.StopTimer()
+						vt := opcodeBenchVTerm(scenario.base)
+						b.StartTimer()
+						decoded, err := protocol.DecodeScreenUpdatePayload(payload)
+						if err != nil {
+							b.Fatalf("decode payload: %v", err)
+						}
+						next := applyScreenUpdateSnapshot(scenario.base, "term-1", decoded)
+						if next == nil {
+							b.Fatal("expected snapshot update result")
+						}
+						loadSnapshotIntoVTerm(vt, next)
+					}
+				})
+				continue
+			}
+			b.Run(fmt.Sprintf("%s/%s/decode_contract_partial", scenario.name, variant.name), func(b *testing.B) {
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					b.StopTimer()
+					vt := opcodeBenchVTerm(scenario.base)
+					applier, ok := any(vt).(screenUpdateApplier)
+					if !ok {
+						b.Fatal("expected vterm screen update applier")
+					}
+					b.StartTimer()
+					decoded, err := protocol.DecodeScreenUpdatePayload(payload)
+					if err != nil {
+						b.Fatalf("decode payload: %v", err)
+					}
+					next := applyScreenUpdateSnapshot(scenario.base, "term-1", decoded)
+					if next == nil {
+						b.Fatal("expected snapshot update result")
+					}
+					if !applier.ApplyScreenUpdate(decoded) {
+						b.Fatal("expected partial apply success")
 					}
 				}
 			})
@@ -94,7 +152,7 @@ func opcodeBenchScenarios() []struct {
 		},
 		{
 			name: "vim_scroll_region",
-			base: opcodeBenchSnapshot("vim", 120, 40),
+			base: opcodeBenchSnapshotWithModes("vim", 120, 40, protocol.TerminalModes{AlternateScreen: true, AutoWrap: true}),
 			legacy: protocol.ScreenUpdate{
 				Size: protocol.Size{Cols: 120, Rows: 40},
 				ChangedRows: opcodeBenchChangedRowsFromLines(5, []string{
@@ -157,6 +215,36 @@ func opcodeBenchScenarios() []struct {
 			},
 		},
 		{
+			name: "nvim_alt_fullwidth_scroll_3_rows",
+			base: opcodeBenchSnapshotWithModes("nvim", 120, 40, protocol.TerminalModes{AlternateScreen: true, AutoWrap: true}),
+			legacy: protocol.ScreenUpdate{
+				Size: protocol.Size{Cols: 120, Rows: 40},
+				ChangedRows: opcodeBenchChangedRowsFromLines(37, []string{
+					benchLine("nvim", 137, 120),
+					benchLine("nvim", 138, 120),
+					benchLine("nvim", 139, 120),
+				}),
+				Cursor: protocol.CursorState{Row: 39, Col: 8, Visible: true},
+				Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+			},
+			opcode: protocol.ScreenUpdate{
+				Size: protocol.Size{Cols: 120, Rows: 40},
+				ChangedRows: opcodeBenchChangedRowsFromLines(37, []string{
+					benchLine("nvim", 137, 120),
+					benchLine("nvim", 138, 120),
+					benchLine("nvim", 139, 120),
+				}),
+				Ops: []protocol.ScreenOp{
+					{Code: protocol.ScreenOpScrollRect, Rect: protocol.ScreenRect{X: 0, Y: 0, Width: 120, Height: 40}, Dy: -3},
+					{Code: protocol.ScreenOpWriteSpan, Row: 37, Col: 0, Cells: opcodeBenchRow(120, benchLine("nvim", 137, 120))},
+					{Code: protocol.ScreenOpWriteSpan, Row: 38, Col: 0, Cells: opcodeBenchRow(120, benchLine("nvim", 138, 120))},
+					{Code: protocol.ScreenOpWriteSpan, Row: 39, Col: 0, Cells: opcodeBenchRow(120, benchLine("nvim", 139, 120))},
+				},
+				Cursor: protocol.CursorState{Row: 39, Col: 8, Visible: true},
+				Modes:  protocol.TerminalModes{AlternateScreen: true, AutoWrap: true},
+			},
+		},
+		{
 			name: "top_scroll",
 			base: opcodeBenchSnapshot("top", 80, 24),
 			legacy: protocol.ScreenUpdate{
@@ -190,7 +278,7 @@ func opcodeBenchScenarios() []struct {
 		},
 		{
 			name: "block_move",
-			base: opcodeBenchSnapshot("move", 120, 40),
+			base: opcodeBenchSnapshotWithModes("move", 120, 40, protocol.TerminalModes{AlternateScreen: true, AutoWrap: true}),
 			legacy: protocol.ScreenUpdate{
 				Size: protocol.Size{Cols: 120, Rows: 40},
 				ChangedRows: opcodeBenchChangedRowsFromLines(20, []string{
@@ -262,11 +350,20 @@ func opcodeBenchScenarios() []struct {
 }
 
 func opcodeBenchSnapshot(prefix string, cols, rows int) *protocol.Snapshot {
+	return opcodeBenchSnapshotWithModes(prefix, cols, rows, protocol.TerminalModes{})
+}
+
+func opcodeBenchSnapshotWithModes(prefix string, cols, rows int, modes protocol.TerminalModes) *protocol.Snapshot {
 	lines := make([]string, rows)
 	for row := 0; row < rows; row++ {
 		lines[row] = benchLine(prefix, row, cols)
 	}
-	return snapshotWithLines("term-1", uint16(cols), uint16(rows), lines)
+	snapshot := snapshotWithLines("term-1", uint16(cols), uint16(rows), lines)
+	if snapshot != nil {
+		snapshot.Modes = modes
+		snapshot.Screen.IsAlternateScreen = modes.AlternateScreen
+	}
+	return snapshot
 }
 
 func opcodeBenchRow(cols int, text string) []protocol.Cell {
@@ -297,4 +394,41 @@ func benchLine(prefix string, row, cols int) string {
 		return base[:cols]
 	}
 	return base + strings.Repeat(".", cols-len(base))
+}
+
+func opcodeBenchVTerm(base *protocol.Snapshot) VTermLike {
+	cols := 80
+	rows := 24
+	if base != nil {
+		if base.Size.Cols > 0 {
+			cols = int(base.Size.Cols)
+		}
+		if base.Size.Rows > 0 {
+			rows = int(base.Size.Rows)
+		}
+	}
+	vt := localvterm.New(cols, rows, 1024, nil)
+	loadSnapshotIntoVTerm(vt, base)
+	return vt
+}
+
+func opcodeBenchFullReplaceUpdate(base *protocol.Snapshot, update protocol.ScreenUpdate) protocol.ScreenUpdate {
+	next := applyScreenUpdateSnapshot(base, "term-1", update)
+	if next == nil {
+		return protocol.ScreenUpdate{}
+	}
+	full := protocol.ScreenUpdate{
+		FullReplace:      true,
+		ResetScrollback:  !next.Modes.AlternateScreen,
+		Size:             next.Size,
+		Screen:           cloneProtocolScreenData(next.Screen),
+		ScreenTimestamps: append([]time.Time(nil), next.ScreenTimestamps...),
+		ScreenRowKinds:   append([]string(nil), next.ScreenRowKinds...),
+		Cursor:           next.Cursor,
+		Modes:            next.Modes,
+	}
+	if next.Modes.AlternateScreen {
+		full.ResetScrollback = false
+	}
+	return full
 }

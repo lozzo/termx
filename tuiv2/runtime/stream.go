@@ -325,7 +325,9 @@ func (r *Runtime) handleOutputFrame(terminal *TerminalRuntime, terminalID string
 	if vt == nil {
 		return
 	}
+	loadFinish := perftrace.Measure("runtime.stream.output.load_vterm")
 	n, err := vt.Write(frame.Payload)
+	loadFinish(len(frame.Payload))
 	if err != nil || n != len(frame.Payload) {
 		terminal.Recovery.SyncLost = true
 		if dropped := len(frame.Payload) - max(0, n); dropped > 0 {

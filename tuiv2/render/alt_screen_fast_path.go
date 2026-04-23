@@ -7,6 +7,7 @@ import (
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
+	localvterm "github.com/lozzow/termx/vterm"
 )
 
 // altScreenRowCache caches serialized ANSI strings for alt-screen rows keyed
@@ -18,9 +19,16 @@ type altScreenRowCache struct {
 	terminalID string
 	width      int
 	emojiMode  shared.AmbiguousEmojiVariationSelectorMode
+	frameKey   paneFrameKey
+	framed     bool
 	// byHash maps row content hash → serialized ANSI (without cursor). The map
 	// is rebuilt from scratch each frame so stale entries cannot accumulate.
 	byHash map[uint64]string
+	// lineByHash caches fully wrapped row lines for non-cursor rows when the
+	// frame chrome is unchanged.
+	lineByHash   map[uint64]string
+	topBorder    string
+	bottomBorder string
 }
 
 func (c *altScreenRowCache) valid(terminalID string, width int, emojiMode shared.AmbiguousEmojiVariationSelectorMode) bool {
@@ -58,9 +66,6 @@ func renderAltScreenFastPathVM(coordinator *Coordinator, vm RenderVM, entries []
 
 func renderAltScreenEntryFastPath(coordinator *Coordinator, entry paneRenderEntry, resolved resolvedPaneContent, runtimeState *VisibleRuntimeStateProxy, cursorOffsetY int) renderedBody {
 	lines := make([]string, 0, entry.Rect.H)
-	if !entry.Frameless {
-		lines = append(lines, renderAltScreenTopBorderLine(entry))
-	}
 
 	cursor := hideCursorANSI()
 	cursorTarget, cursorOK := entryCursorRenderTarget(resolved.contentRect, resolved.source)
@@ -91,16 +96,43 @@ func renderAltScreenEntryFastPath(coordinator *Coordinator, entry paneRenderEntr
 				width:      contentW,
 				emojiMode:  emojiMode,
 				byHash:     make(map[uint64]string, resolved.contentRect.H),
+				lineByHash: make(map[uint64]string, resolved.contentRect.H),
 			}
 			cache = coordinator.altScreenCache
+		}
+	}
+	if cache != nil {
+		framed := !entry.Frameless
+		if cache.frameKey != entry.FrameKey || cache.framed != framed {
+			cache.frameKey = entry.FrameKey
+			cache.framed = framed
+			cache.lineByHash = make(map[uint64]string, resolved.contentRect.H)
+			cache.topBorder = ""
+			cache.bottomBorder = ""
+		}
+	}
+
+	if !entry.Frameless {
+		if cache != nil && cache.topBorder != "" {
+			lines = append(lines, cache.topBorder)
+		} else {
+			top := renderAltScreenTopBorderLine(entry)
+			lines = append(lines, top)
+			if cache != nil {
+				cache.topBorder = top
+			}
 		}
 	}
 
 	// Build the new cache for this frame. The identity-based lookup allows rows
 	// that shifted position due to a scroll to still be found by content.
 	var newByHash map[uint64]string
+	var newLineByHash map[uint64]string
 	if cache != nil {
 		newByHash = make(map[uint64]string, resolved.contentRect.H)
+		if !entry.Frameless {
+			newLineByHash = make(map[uint64]string, resolved.contentRect.H)
+		}
 	}
 
 	base := resolved.source.ScrollbackRows()
@@ -114,29 +146,40 @@ func renderAltScreenEntryFastPath(coordinator *Coordinator, entry paneRenderEntr
 			// For non-cursor rows, try to reuse a cached ANSI string. Use the
 			// row content hash instead of the positional row hash so a row that
 			// scrolled to a new viewport position still hits the cache.
-			rowHash := terminalSourceRowContentHash(resolved.source, rowIndex)
+			rowHash := terminalSourceRowVisualHash(resolved.source, rowIndex)
+			if !entry.Frameless {
+				if cached, ok := cache.lineByHash[rowHash]; ok {
+					lines = append(lines, cached)
+					newLineByHash[rowHash] = cached
+					if content, ok := cache.byHash[rowHash]; ok {
+						newByHash[rowHash] = content
+					}
+					perftrace.Count("render.body.alt_screen_row_cache.hit", 1)
+					continue
+				}
+			}
 			if cached, ok := cache.byHash[rowHash]; ok {
 				content = cached
 				perftrace.Count("render.body.alt_screen_row_cache.hit", 1)
 			} else {
-				cells := resolved.source.Row(rowIndex)
-				content = protocolViewportRowANSI(cells, contentW, emojiMode, -1, false, "")
+				content = terminalSourceViewportRowANSI(resolved.source, rowIndex, contentW, emojiMode, -1, false, "")
 				perftrace.Count("render.body.alt_screen_row_cache.miss", 1)
 			}
 			newByHash[rowHash] = content
 		} else {
 			// Cursor row, out-of-bounds row, or no cache: always re-serialize.
-			var cells []protocol.Cell
-			if row < screenRows {
-				cells = resolved.source.Row(rowIndex)
-			}
-			content = protocolViewportRowANSI(cells, contentW, emojiMode, cursorCol, isCursorRow, cursorShape)
+			content = terminalSourceViewportRowANSI(resolved.source, rowIndex, contentW, emojiMode, cursorCol, isCursorRow, cursorShape)
 		}
 
 		if entry.Frameless {
 			lines = append(lines, wrapRenderedRowANSI(content))
 		} else {
-			lines = append(lines, renderAltScreenBorderedContentLine(entry, content))
+			line := renderAltScreenBorderedContentLine(entry, content)
+			lines = append(lines, line)
+			if !isCursorRow && newLineByHash != nil && row < screenRows {
+				rowHash := terminalSourceRowVisualHash(resolved.source, rowIndex)
+				newLineByHash[rowHash] = line
+			}
 		}
 	}
 
@@ -144,10 +187,23 @@ func renderAltScreenEntryFastPath(coordinator *Coordinator, entry paneRenderEntr
 	// This purges stale entries from rows that are no longer visible.
 	if cache != nil {
 		cache.byHash = newByHash
+		if newLineByHash != nil {
+			cache.lineByHash = newLineByHash
+		} else {
+			cache.lineByHash = nil
+		}
 	}
 
 	if !entry.Frameless {
-		lines = append(lines, renderAltScreenBottomBorderLine(entry))
+		if cache != nil && cache.bottomBorder != "" {
+			lines = append(lines, cache.bottomBorder)
+		} else {
+			bottom := renderAltScreenBottomBorderLine(entry)
+			lines = append(lines, bottom)
+			if cache != nil {
+				cache.bottomBorder = bottom
+			}
+		}
 	}
 
 	return renderedBody{
@@ -278,6 +334,42 @@ func protocolViewportRowANSI(row []protocol.Cell, width int, emojiMode shared.Am
 		cursorVisible: cursorVisible,
 		cursorShape:   cursorShape,
 	})
+}
+
+func terminalSourceViewportRowANSI(source terminalRenderSource, rowIndex, width int, emojiMode shared.AmbiguousEmojiVariationSelectorMode, cursorCol int, cursorVisible bool, cursorShape string) string {
+	if source == nil || rowIndex < 0 {
+		return protocolViewportRowANSI(nil, width, emojiMode, cursorCol, cursorVisible, cursorShape)
+	}
+	if rowSource, ok := source.(terminalCellRowSource); ok {
+		if row := rowSource.RowView(rowIndex); row != nil {
+			return vtermViewportRowANSI(row, width, emojiMode, cursorCol, cursorVisible, cursorShape)
+		}
+	}
+	return protocolViewportRowANSI(source.Row(rowIndex), width, emojiMode, cursorCol, cursorVisible, cursorShape)
+}
+
+func vtermViewportRowANSI(row []localvterm.Cell, width int, emojiMode shared.AmbiguousEmojiVariationSelectorMode, cursorCol int, cursorVisible bool, cursorShape string) string {
+	return vtermRowANSIWithOptions(row, width, protocolRowANSIOptions{
+		emojiMode:     emojiMode,
+		cursorCol:     cursorCol,
+		cursorVisible: cursorVisible,
+		cursorShape:   cursorShape,
+	})
+}
+
+func terminalSourceRowVisualHash(source terminalRenderSource, rowIndex int) uint64 {
+	if source == nil || rowIndex < 0 {
+		return fnvMixUint64(fnvOffset64, 0)
+	}
+	if hashSource, ok := source.(terminalRowVisualHashSource); ok {
+		return hashSource.RowVisualHash(rowIndex)
+	}
+	if rowSource, ok := source.(terminalCellRowSource); ok {
+		if row := rowSource.RowView(rowIndex); row != nil {
+			return hashVTermRow(fnvOffset64, row)
+		}
+	}
+	return hashProtocolRow(fnvOffset64, source.Row(rowIndex))
 }
 
 func syntheticCursorDrawStyle(style drawStyle, shape string) drawStyle {

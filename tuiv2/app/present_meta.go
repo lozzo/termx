@@ -13,15 +13,22 @@ type rect struct {
 
 type presentMeta struct {
 	OwnerMap     [][]hostOwnerID
+	RowOwners    []hostOwnerID
+	Width        int
 	VisibleRects map[hostOwnerID][]rect
 }
 
 func presentMetaFromRender(meta *render.PresentMetadata) *presentMeta {
-	if meta == nil || len(meta.OwnerMap) == 0 {
+	if meta == nil {
+		return nil
+	}
+	if len(meta.OwnerMap) == 0 && len(meta.RowOwners) == 0 {
 		return nil
 	}
 	out := &presentMeta{
-		OwnerMap: make([][]hostOwnerID, len(meta.OwnerMap)),
+		OwnerMap:  make([][]hostOwnerID, len(meta.OwnerMap)),
+		RowOwners: make([]hostOwnerID, len(meta.RowOwners)),
+		Width:     meta.Width,
 	}
 	for y := range meta.OwnerMap {
 		if len(meta.OwnerMap[y]) == 0 {
@@ -32,7 +39,14 @@ func presentMetaFromRender(meta *render.PresentMetadata) *presentMeta {
 			out.OwnerMap[y][x] = hostOwnerID(meta.OwnerMap[y][x])
 		}
 	}
-	out.VisibleRects = visibleRectsFromOwnerMap(out.OwnerMap)
+	for y, owner := range meta.RowOwners {
+		out.RowOwners[y] = hostOwnerID(owner)
+	}
+	if len(out.OwnerMap) > 0 {
+		out.VisibleRects = visibleRectsFromOwnerMap(out.OwnerMap)
+	} else {
+		out.VisibleRects = visibleRectsFromRowOwners(out.RowOwners, out.Width)
+	}
 	return out
 }
 
@@ -42,6 +56,8 @@ func clonePresentMeta(meta *presentMeta) *presentMeta {
 	}
 	out := &presentMeta{
 		OwnerMap:     make([][]hostOwnerID, len(meta.OwnerMap)),
+		RowOwners:    append([]hostOwnerID(nil), meta.RowOwners...),
+		Width:        meta.Width,
 		VisibleRects: make(map[hostOwnerID][]rect, len(meta.VisibleRects)),
 	}
 	for y := range meta.OwnerMap {
@@ -54,6 +70,34 @@ func clonePresentMeta(meta *presentMeta) *presentMeta {
 		out.VisibleRects[owner] = append([]rect(nil), rects...)
 	}
 	return out
+}
+
+func visibleRectsFromRowOwners(rowOwners []hostOwnerID, width int) map[hostOwnerID][]rect {
+	if len(rowOwners) == 0 || width <= 0 {
+		return nil
+	}
+	result := make(map[hostOwnerID][]rect)
+	start := 0
+	for start < len(rowOwners) {
+		owner := rowOwners[start]
+		end := start
+		for end+1 < len(rowOwners) && rowOwners[end+1] == owner {
+			end++
+		}
+		if owner != 0 {
+			result[owner] = append(result[owner], rect{
+				Left:   0,
+				Top:    start,
+				Right:  width - 1,
+				Bottom: end,
+			})
+		}
+		start = end + 1
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func visibleRectsFromOwnerMap(ownerMap [][]hostOwnerID) map[hostOwnerID][]rect {

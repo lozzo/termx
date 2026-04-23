@@ -380,6 +380,9 @@ func terminalSourceRowHash(source terminalRenderSource, rowIndex int) uint64 {
 }
 
 func terminalSourceRowIdentityHash(source terminalRenderSource, rowIndex int) uint64 {
+	if hashSource, ok := source.(terminalRowIdentityHashSource); ok {
+		return hashSource.RowIdentityHash(rowIndex)
+	}
 	hash := fnvOffset64
 	if source == nil || rowIndex < 0 {
 		return fnvMixUint64(hash, 0)
@@ -409,6 +412,9 @@ func terminalSourceRowIdentityHash(source terminalRenderSource, rowIndex int) ui
 }
 
 func terminalSourceRowContentHash(source terminalRenderSource, rowIndex int) uint64 {
+	if hashSource, ok := source.(terminalRowContentHashSource); ok {
+		return hashSource.RowContentHash(rowIndex)
+	}
 	hash := fnvOffset64
 	if source == nil || rowIndex < 0 {
 		return fnvMixUint64(hash, 0)

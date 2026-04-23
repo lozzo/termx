@@ -44,8 +44,75 @@ type nvimScrollPerfAction struct {
 	IntralineEditCount  uint64             `json:"intraline_edit_count"`
 	FirstOutput         float64            `json:"first_output_ms"`
 	SettleMs            float64            `json:"settle_ms"`
+	TraceElapsedMs      float64            `json:"trace_elapsed_ms"`
 	Sample              string             `json:"sample"`
+	Phases              []nvimScrollPhase  `json:"phases"`
+	Counters            []nvimScrollMetric `json:"counters"`
 	Metrics             perftrace.Snapshot `json:"metrics"`
+}
+
+type nvimScrollPhase struct {
+	Name          string  `json:"name"`
+	Event         string  `json:"event"`
+	Count         uint64  `json:"count"`
+	Bytes         uint64  `json:"bytes"`
+	TotalMs       float64 `json:"total_ms"`
+	ShareOfSettle float64 `json:"share_of_settle"`
+	ShareOfTrace  float64 `json:"share_of_trace"`
+}
+
+type nvimScrollMetric struct {
+	Name  string `json:"name"`
+	Event string `json:"event"`
+	Count uint64 `json:"count"`
+	Value uint64 `json:"value"`
+	Unit  string `json:"unit,omitempty"`
+}
+
+type nvimPerfEventSpec struct {
+	Name  string
+	Event string
+	Unit  string
+}
+
+var nvimPerfPhaseSpecs = []nvimPerfEventSpec{
+	{Name: "app_update", Event: "app.update"},
+	{Name: "app_view", Event: "app.view"},
+	{Name: "server_vterm_total", Event: "vterm.write"},
+	{Name: "server_vterm_flush_write", Event: "terminal.pending_vterm_flush.write"},
+	{Name: "server_vterm_before_snapshot", Event: "vterm.write.before_snapshot"},
+	{Name: "server_vterm_emulator", Event: "vterm.write.emulator"},
+	{Name: "server_vterm_reconcile", Event: "vterm.write.reconcile"},
+	{Name: "server_encode_total", Event: "terminal.screen_update.from_damage"},
+	{Name: "server_encode_damage_state", Event: "terminal.screen_update.from_damage_state"},
+	{Name: "server_encode_full_snapshot", Event: "terminal.screen_update.full_snapshot"},
+	{Name: "server_encode_payload", Event: "terminal.screen_update.encode"},
+	{Name: "server_encode_compare", Event: "terminal.screen_update.strategy_compare"},
+	{Name: "runtime_snapshot_apply", Event: "runtime.stream.screen_update.snapshot_apply"},
+	{Name: "runtime_load_partial", Event: "runtime.stream.screen_update.load_vterm_partial"},
+	{Name: "runtime_load_full", Event: "runtime.stream.screen_update.load_vterm_full"},
+	{Name: "runtime_invalidate", Event: "runtime.stream.screen_update.invalidate"},
+	{Name: "runtime_visible", Event: "runtime.visible"},
+	{Name: "runtime_output_load_vterm", Event: "runtime.stream.output.load_vterm"},
+	{Name: "render_body", Event: "render.body"},
+	{Name: "render_frame", Event: "render.frame"},
+	{Name: "cursor_present", Event: "cursor_writer.present"},
+	{Name: "cursor_write_frame", Event: "cursor_writer.write_frame"},
+	{Name: "cursor_direct_flush", Event: "cursor_writer.direct_flush"},
+}
+
+var nvimPerfCounterSpecs = []nvimPerfEventSpec{
+	{Name: "server_encoded_bytes", Event: "terminal.screen_update.encoded_bytes", Unit: "bytes"},
+	{Name: "server_delta_payloads", Event: "terminal.screen_update.encode_mode.delta", Unit: "bytes"},
+	{Name: "server_full_replace_payloads", Event: "terminal.screen_update.encode_mode.full_replace", Unit: "bytes"},
+	{Name: "server_delta_only_shortcut", Event: "terminal.screen_update.delta_only_shortcut"},
+	{Name: "server_full_snapshot_required", Event: "terminal.screen_update.requires_full_snapshot"},
+	{Name: "runtime_full_replace_apply", Event: "runtime.stream.screen_update.full_replace"},
+	{Name: "render_alt_screen_fast_path", Event: "render.body.alt_screen_fast_path", Unit: "cells"},
+	{Name: "render_alt_screen_row_cache_hit", Event: "render.body.alt_screen_row_cache.hit", Unit: "rows"},
+	{Name: "render_alt_screen_row_cache_miss", Event: "render.body.alt_screen_row_cache.miss", Unit: "rows"},
+	{Name: "render_incremental_rows", Event: "render.body.canvas.incremental.rows", Unit: "cells"},
+	{Name: "render_full_pane", Event: "render.body.canvas.incremental.full_pane", Unit: "cells"},
 }
 
 type nvimPerfHarness struct {
@@ -103,25 +170,52 @@ func TestPerfNvimScrollReport(t *testing.T) {
 
 	for _, action := range report.Actions {
 		update, _ := action.Metrics.Event("app.update")
+		appView, _ := action.Metrics.Event("app.view")
 		renderFrame, _ := action.Metrics.Event("render.frame")
+		renderBody, _ := action.Metrics.Event("render.body")
 		runtimeVisible, _ := action.Metrics.Event("runtime.visible")
 		vtermWrite, _ := action.Metrics.Event("vterm.write")
+		serverEncode, _ := action.Metrics.Event("terminal.screen_update.from_damage")
+		serverFullSnapshot, _ := action.Metrics.Event("terminal.screen_update.full_snapshot")
+		serverDelta, _ := action.Metrics.Event("terminal.screen_update.encode_mode.delta")
+		serverFullReplace, _ := action.Metrics.Event("terminal.screen_update.encode_mode.full_replace")
+		cursorPresent, _ := action.Metrics.Event("cursor_writer.present")
+		renderIncrementalRows, _ := action.Metrics.Event("render.body.canvas.incremental.rows")
+		renderFullPane, _ := action.Metrics.Event("render.body.canvas.incremental.full_pane")
 		directFlush, _ := action.Metrics.Event("cursor_writer.direct_flush")
 		t.Logf(
-			"%s first_output_ms=%.2f settle_ms=%.2f out=%d sync=%d update_calls=%d update_ms=%.2f render_calls=%d render_ms=%.2f visible_calls=%d visible_ms=%.2f vterm_calls=%d vterm_ms=%.2f direct_flush_calls=%d direct_flush_ms=%.2f",
+			"%s first_output_ms=%.2f settle_ms=%.2f trace_ms=%.2f out=%d sync=%d update_calls=%d update_ms=%.2f app_view_calls=%d app_view_ms=%.2f server_encode_calls=%d server_encode_ms=%.2f server_full_snapshot_calls=%d delta_payloads=%d(%dB) full_replace_payloads=%d(%dB) render_body_calls=%d render_body_ms=%.2f render_frame_calls=%d render_frame_ms=%.2f visible_calls=%d visible_ms=%.2f vterm_calls=%d vterm_ms=%.2f cursor_present_calls=%d cursor_present_ms=%.2f incremental_rows=%d(%d) full_pane=%d(%d) direct_flush_calls=%d direct_flush_ms=%.2f",
 			action.Label,
 			action.FirstOutput,
 			action.SettleMs,
+			action.TraceElapsedMs,
 			action.OutputBytes,
 			action.SyncFrames,
 			update.Count,
 			update.TotalMs,
+			appView.Count,
+			appView.TotalMs,
+			serverEncode.Count,
+			serverEncode.TotalMs,
+			serverFullSnapshot.Count,
+			serverDelta.Count,
+			serverDelta.Bytes,
+			serverFullReplace.Count,
+			serverFullReplace.Bytes,
+			renderBody.Count,
+			renderBody.TotalMs,
 			renderFrame.Count,
 			renderFrame.TotalMs,
 			runtimeVisible.Count,
 			runtimeVisible.TotalMs,
 			vtermWrite.Count,
 			vtermWrite.TotalMs,
+			cursorPresent.Count,
+			cursorPresent.TotalMs,
+			renderIncrementalRows.Count,
+			renderIncrementalRows.Bytes,
+			renderFullPane.Count,
+			renderFullPane.Bytes,
 			directFlush.Count,
 			directFlush.TotalMs,
 		)
@@ -268,6 +362,7 @@ func (h *nvimPerfHarness) runAction(t *testing.T, label string, seq []byte, reco
 	waitForPTYQuiet(t, h.ctx, h.recorder, 250*time.Millisecond)
 	delta := h.recorder.Text()[before:]
 	snapshot := recorder.Snapshot()
+	settleMs := float64(time.Since(start)) / float64(time.Millisecond)
 	return nvimScrollPerfAction{
 		Label:               label,
 		InputBytes:          len(seq),
@@ -280,8 +375,11 @@ func (h *nvimPerfHarness) runAction(t *testing.T, label string, seq []byte, reco
 		LRMarginScrollCount: perfEventCount(snapshot, "cursor_writer.present.mode.delta_rect_scroll_lr_margin"),
 		IntralineEditCount:  perfEventCount(snapshot, "cursor_writer.present.mode.delta_intraline_dch") + perfEventCount(snapshot, "cursor_writer.present.mode.delta_intraline_ich") + perfEventCount(snapshot, "cursor_writer.present.mode.delta_intraline_ech") + perfEventCount(snapshot, "cursor_writer.present.mode.delta_intraline_el"),
 		FirstOutput:         firstOutputMs,
-		SettleMs:            float64(time.Since(start)) / float64(time.Millisecond),
+		SettleMs:            settleMs,
+		TraceElapsedMs:      snapshot.ElapsedMs,
 		Sample:              debugEscape(delta, 220),
+		Phases:              summarizeNvimPerfPhases(snapshot, settleMs),
+		Counters:            summarizeNvimPerfMetrics(snapshot),
 		Metrics:             snapshot,
 	}
 }
@@ -292,6 +390,49 @@ func perfEventCount(snapshot perftrace.Snapshot, name string) uint64 {
 		return 0
 	}
 	return event.Count
+}
+
+func summarizeNvimPerfPhases(snapshot perftrace.Snapshot, settleMs float64) []nvimScrollPhase {
+	phases := make([]nvimScrollPhase, 0, len(nvimPerfPhaseSpecs))
+	for _, spec := range nvimPerfPhaseSpecs {
+		event, ok := snapshot.Event(spec.Event)
+		if !ok {
+			continue
+		}
+		phase := nvimScrollPhase{
+			Name:    spec.Name,
+			Event:   spec.Event,
+			Count:   event.Count,
+			Bytes:   event.Bytes,
+			TotalMs: event.TotalMs,
+		}
+		if settleMs > 0 {
+			phase.ShareOfSettle = event.TotalMs / settleMs
+		}
+		if snapshot.ElapsedMs > 0 {
+			phase.ShareOfTrace = event.TotalMs / snapshot.ElapsedMs
+		}
+		phases = append(phases, phase)
+	}
+	return phases
+}
+
+func summarizeNvimPerfMetrics(snapshot perftrace.Snapshot) []nvimScrollMetric {
+	metrics := make([]nvimScrollMetric, 0, len(nvimPerfCounterSpecs))
+	for _, spec := range nvimPerfCounterSpecs {
+		event, ok := snapshot.Event(spec.Event)
+		if !ok {
+			continue
+		}
+		metrics = append(metrics, nvimScrollMetric{
+			Name:  spec.Name,
+			Event: spec.Event,
+			Count: event.Count,
+			Value: event.Bytes,
+			Unit:  spec.Unit,
+		})
+	}
+	return metrics
 }
 
 func (h *nvimPerfHarness) moveToMiddle(t *testing.T) {

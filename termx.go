@@ -748,7 +748,7 @@ func (s *Server) handleTransport(ctx context.Context, t transport.Transport, rem
 				if req.Method == "events" {
 					result, code, err = s.handleEventsRequest(sessionCtx, req, cancel, &eventsCancelMu, &eventsCancel, sendFrame)
 				} else {
-					result, code, err = s.handleRequest(sessionCtx, remote, allocator, attachments, &attachmentsMu, req, sendFrame)
+					result, code, err = s.handleRequest(sessionCtx, remote, nil, allocator, attachments, &attachmentsMu, req, sendFrame)
 				}
 				if err != nil {
 					if err := sendProtocolError(sendFrame, req.ID, 0, code, err.Error()); err != nil {
@@ -800,6 +800,7 @@ func (s *Server) handleTransport(ctx context.Context, t transport.Transport, rem
 func (s *Server) handleRequest(
 	ctx context.Context,
 	remote string,
+	sessionCapabilities []string,
 	allocator *protocol.ChannelAllocator,
 	attachments map[uint16]*sessionAttachment,
 	attachmentsMu *sync.RWMutex,

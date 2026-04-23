@@ -767,8 +767,13 @@ func (t *Terminal) AttachmentMode(id string) (AttachMode, bool) {
 
 func (t *Terminal) RemoveAttachment(id string) {
 	t.attachMu.Lock()
-	defer t.attachMu.Unlock()
+	info, had := t.attachments[id]
 	delete(t.attachments, id)
+	shouldFlush := had && info.Mode == string(ModeCollaborator) && !t.hasCollaboratorAttachmentLocked()
+	t.attachMu.Unlock()
+	if shouldFlush {
+		t.flushPendingVTermOutput(0)
+	}
 }
 
 func (t *Terminal) Attached() []AttachInfo {
@@ -795,6 +800,15 @@ func (t *Terminal) RevokeCollaborators() int {
 		revoked++
 	}
 	return revoked
+}
+
+func (t *Terminal) hasCollaboratorAttachmentLocked() bool {
+	for _, info := range t.attachments {
+		if info.Mode == string(ModeCollaborator) {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *Terminal) startProcessLoops() {
@@ -858,6 +872,9 @@ func (t *Terminal) armPendingVTermFlushLocked(epoch uint64) {
 	if t == nil || len(t.pendingVTermOutput) == 0 || serverVTermFlushIdleDelay <= 0 {
 		return
 	}
+	if t.hasCollaboratorAttachmentLocked() {
+		return
+	}
 	t.stopPendingVTermFlushTimerLocked()
 	t.pendingVTermFlushTimer = time.AfterFunc(serverVTermFlushIdleDelay, func() {
 		t.flushPendingVTermOutput(epoch)
@@ -913,7 +930,9 @@ func (t *Terminal) flushPendingVTermOutputLocked() {
 	t.pendingVTermOutput = nil
 	t.pendingVTermEpoch = 0
 	if t.vterm != nil {
-		_, _ = t.vterm.Write(output)
+		writeFinish := perftrace.Measure("terminal.pending_vterm_flush.write")
+		_, _ = t.vterm.WriteMirror(output)
+		writeFinish(len(output))
 	}
 	if cap(output) <= maxInt(serverVTermFlushThreshold, protocol.MaxFrameSize) {
 		t.pendingVTermOutput = output[:0]
@@ -1199,6 +1218,7 @@ func (t *Terminal) screenSnapshotFallbackMessage() StreamMessage {
 	}
 	t.streamMu.Lock()
 	defer t.streamMu.Unlock()
+	t.flushPendingVTermOutputLocked()
 	payload, ok := t.screenSnapshotPayloadLocked(true)
 	if !ok {
 		return StreamMessage{Type: StreamSyncLost}
@@ -1207,6 +1227,8 @@ func (t *Terminal) screenSnapshotFallbackMessage() StreamMessage {
 }
 
 func (t *Terminal) screenSnapshotPayloadLocked(resetScrollback bool) ([]byte, bool) {
+	finish := perftrace.Measure("terminal.screen_update.snapshot_payload")
+	defer finish(0)
 	if t == nil || t.vterm == nil {
 		return nil, false
 	}
@@ -1215,26 +1237,35 @@ func (t *Terminal) screenSnapshotPayloadLocked(resetScrollback bool) ([]byte, bo
 		return nil, false
 	}
 	update := fullReplaceUpdateForStateDelta(nil, state, resetScrollback)
+	encodeFinish := perftrace.Measure("terminal.screen_update.encode")
 	payload, err := protocol.EncodeScreenUpdatePayload(update)
+	encodeFinish(len(payload))
 	if err != nil {
 		return nil, false
 	}
-	perftrace.Count("terminal.screen_update.encoded_bytes", len(payload))
+	recordEncodedScreenUpdatePayload(screenUpdateEncodeModeFullReplace, payload)
 	return payload, true
 }
 
 func (t *Terminal) screenUpdatePayloadFromDamageLocked(damage vterm.WriteDamage) ([]byte, bool) {
+	finish := perftrace.Measure("terminal.screen_update.from_damage")
+	defer finish(0)
 	if t == nil || t.vterm == nil {
 		return nil, false
 	}
 	deltaUpdate := screenUpdateFromDamageState(damage, t.currentTitleLocked())
 	if screenUpdateShouldEncodeDeltaOnly(deltaUpdate, damage.Modes.AlternateScreen) {
+		perftrace.Count("terminal.screen_update.delta_only_shortcut", 0)
+		encodeFinish := perftrace.Measure("terminal.screen_update.encode")
 		payload, err := protocol.EncodeScreenUpdatePayload(deltaUpdate)
+		encodeFinish(len(payload))
 		if err == nil {
 			recordEncodedScreenUpdatePayload(screenUpdateEncodeModeDelta, payload)
 			return payload, true
 		}
+		perftrace.Count("terminal.screen_update.delta_only_encode_error", 0)
 	}
+	perftrace.Count("terminal.screen_update.requires_full_snapshot", 0)
 	state := t.currentStreamScreenStateLocked()
 	if state == nil || state.snapshot == nil {
 		return nil, false
@@ -1253,6 +1284,8 @@ func (t *Terminal) screenUpdatePayloadFromDamageLocked(damage vterm.WriteDamage)
 }
 
 func (t *Terminal) currentStreamScreenStateLocked() *streamScreenState {
+	finish := perftrace.Measure("terminal.screen_update.full_snapshot")
+	defer finish(0)
 	if t == nil || t.vterm == nil {
 		return nil
 	}

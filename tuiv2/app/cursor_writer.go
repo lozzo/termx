@@ -283,7 +283,7 @@ func joinedLinesLen(lines []string) int {
 }
 
 func shouldUseOwnerAwareDelta(meta *presentMeta) bool {
-	if meta == nil || len(meta.VisibleRects) == 0 || len(meta.OwnerMap) == 0 {
+	if meta == nil || len(meta.VisibleRects) == 0 {
 		return false
 	}
 	width := 0
@@ -291,6 +291,9 @@ func shouldUseOwnerAwareDelta(meta *presentMeta) bool {
 		if len(row) > width {
 			width = len(row)
 		}
+	}
+	if width == 0 {
+		width = meta.Width
 	}
 	if width <= 0 {
 		return false

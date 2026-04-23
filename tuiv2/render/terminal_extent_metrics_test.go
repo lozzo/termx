@@ -40,3 +40,24 @@ func TestTerminalExtentProfileCachedUsesSnapshotPath(t *testing.T) {
 		t.Fatalf("expected cached overflow metrics to preserve declared size, got %#v", profile.Overflow)
 	}
 }
+
+func TestTerminalExtentProfileForAlternateScreenUsesDeclaredSize(t *testing.T) {
+	snapshot := &protocol.Snapshot{
+		Size: protocol.Size{Cols: 80, Rows: 24},
+		Screen: protocol.ScreenData{
+			IsAlternateScreen: true,
+			Cells: [][]protocol.Cell{
+				{{Content: "x", Width: 1}},
+			},
+		},
+		Modes: protocol.TerminalModes{AlternateScreen: true},
+	}
+
+	profile := terminalExtentProfileForSource(renderSource(snapshot, nil))
+	if profile.Metrics.Cols != 80 || profile.Metrics.Rows != 1 {
+		t.Fatalf("expected alternate-screen metrics to keep declared width and visible rows, got %#v", profile.Metrics)
+	}
+	if profile.Overflow.Cols != 80 || profile.Overflow.Rows != 24 {
+		t.Fatalf("expected alternate-screen overflow metrics to preserve declared size, got %#v", profile.Overflow)
+	}
+}

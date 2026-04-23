@@ -108,13 +108,16 @@ type VTerm struct {
 	defaultBG string
 	palette   map[int]string
 
-	scrollbackTimestamps   []time.Time
-	screenTimestamps       []time.Time
-	scrollbackRowKinds     []string
-	screenRowKinds         []string
-	screenRowCache         [][]Cell
-	scrollbackRowCache     [][]Cell
-	screenFingerprintCache []rowFingerprint
+	scrollbackTimestamps     []time.Time
+	screenTimestamps         []time.Time
+	scrollbackRowKinds       []string
+	screenRowKinds           []string
+	screenRowCache           [][]Cell
+	scrollbackRowCache       [][]Cell
+	screenFingerprintCache   []rowFingerprint
+	screenTimestampsScratch  []time.Time
+	screenRowKindsScratch    []string
+	screenFingerprintScratch []rowFingerprint
 
 	done chan struct{} // closed when drain goroutine exits
 }
@@ -292,6 +295,87 @@ func (v *VTerm) Write(data []byte) (n int, err error) {
 	return n, err
 }
 
+func (v *VTerm) WriteMirror(data []byte) (n int, err error) {
+	finish := perftrace.Measure("vterm.write")
+	defer func() {
+		finish(len(data))
+	}()
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	defer func() {
+		if r := recover(); r != nil {
+			n = 0
+			err = fmt.Errorf("vterm write panic: %v", r)
+		}
+	}()
+	beforeHeight := 0
+	beforeAltScreen := false
+	beforeScrollbackLen := 0
+	if v.emu != nil {
+		beforeHeight = v.emu.Height()
+		beforeAltScreen = v.emu.IsAltScreen()
+		beforeScrollbackLen = v.emu.ScrollbackLen()
+	}
+	normalized := normalizeRenderableUTF8(data)
+	v.clearTouchedRowsLocked()
+	emulatorFinish := perftrace.Measure("vterm.write.emulator")
+	n, err = safeEmulatorWrite(v.emu, normalized)
+	emulatorFinish(len(normalized))
+	pos := v.emu.CursorPosition()
+	v.cursor.Row = pos.Y
+	v.cursor.Col = pos.X
+	v.modes.AlternateScreen = v.emu.IsAltScreen()
+	reconcileFinish := perftrace.Measure("vterm.write.reconcile")
+	afterHeight := 0
+	afterAltScreen := false
+	afterScrollbackLen := 0
+	if v.emu != nil {
+		afterHeight = v.emu.Height()
+		afterAltScreen = v.emu.IsAltScreen()
+		afterScrollbackLen = v.emu.ScrollbackLen()
+	}
+	now := time.Now().UTC()
+	dirtyRows, dirtyReliable := v.consumeTouchedRowsLocked()
+	switch {
+	case !dirtyReliable || beforeHeight != afterHeight || beforeAltScreen != afterAltScreen:
+		v.screenTimestamps = normalizeTimeSlice(v.screenTimestamps, afterHeight)
+		v.screenRowKinds = normalizeStringSlice(v.screenRowKinds, afterHeight)
+		for row := 0; row < afterHeight; row++ {
+			v.screenTimestamps[row] = now
+			v.screenRowKinds[row] = ""
+		}
+	default:
+		v.screenTimestamps = normalizeTimeSlice(v.screenTimestamps, afterHeight)
+		v.screenRowKinds = normalizeStringSlice(v.screenRowKinds, afterHeight)
+		for _, row := range dirtyRows {
+			if row < 0 || row >= afterHeight {
+				continue
+			}
+			v.screenTimestamps[row] = now
+			v.screenRowKinds[row] = ""
+		}
+	}
+	switch {
+	case afterScrollbackLen <= 0:
+		v.scrollbackTimestamps = nil
+		v.scrollbackRowKinds = nil
+	case afterScrollbackLen > beforeScrollbackLen:
+		added := afterScrollbackLen - beforeScrollbackLen
+		v.scrollbackTimestamps = append(v.scrollbackTimestamps, make([]time.Time, added)...)
+		v.scrollbackRowKinds = append(v.scrollbackRowKinds, make([]string, added)...)
+		for i := afterScrollbackLen - added; i < afterScrollbackLen; i++ {
+			v.scrollbackTimestamps[i] = now
+			v.scrollbackRowKinds[i] = ""
+		}
+	default:
+		v.alignScrollbackMetadataLocked()
+	}
+	v.invalidateRowCachesLocked()
+	v.invalidateFingerprintCacheLocked()
+	reconcileFinish(0)
+	return n, err
+}
+
 func (v *VTerm) WriteWithDamage(data []byte) (n int, err error, damage WriteDamage) {
 	return v.write(data, true)
 }
@@ -313,14 +397,15 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 		beforeAltScreen = v.emu.IsAltScreen()
 	}
 	snapshotFinish := perftrace.Measure("vterm.write.before_snapshot")
-	beforeScreen := append([]rowFingerprint(nil), v.screenFingerprintCache...)
+	beforeScreen := reuseRowFingerprintSlice(v.screenFingerprintScratch, v.screenFingerprintCache)
+	v.screenFingerprintScratch = beforeScreen
 	var beforeScreenRows [][]Cell
 	if collectDamage {
 		beforeScreenRows = cloneCellRows(v.screenRowsLocked())
 	}
 	beforeScrollbackLen := v.scrollbackRowCountLocked()
-	beforeScreenTimestamps := cloneTimeSlice(v.screenTimestamps)
-	beforeScreenRowKinds := cloneStringSlice(v.screenRowKinds)
+	beforeScreenTimestamps := v.screenTimestamps
+	beforeScreenRowKinds := v.screenRowKinds
 	snapshotFinish(0)
 	defer func() {
 		if r := recover(); r != nil {
@@ -902,10 +987,11 @@ func (v *VTerm) resizeLocked(cols, rows int) {
 		return
 	}
 	v.ensureScreenFingerprintCacheLocked()
-	beforeScreen := append([]rowFingerprint(nil), v.screenFingerprintCache...)
+	beforeScreen := reuseRowFingerprintSlice(v.screenFingerprintScratch, v.screenFingerprintCache)
+	v.screenFingerprintScratch = beforeScreen
 	beforeScrollbackLen := v.scrollbackRowCountLocked()
-	beforeScreenTimestamps := cloneTimeSlice(v.screenTimestamps)
-	beforeScreenRowKinds := cloneStringSlice(v.screenRowKinds)
+	beforeScreenTimestamps := v.screenTimestamps
+	beforeScreenRowKinds := v.screenRowKinds
 	v.emu.Resize(cols, rows)
 	pos := v.emu.CursorPosition()
 	v.cursor.Row = pos.Y
@@ -1054,6 +1140,26 @@ func (v *VTerm) ScrollbackRowKindAt(y int) string {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	return stringAt(v.scrollbackRowKinds, y)
+}
+
+func (v *VTerm) RowVisualHash(rowIndex int) uint64 {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	if v.emu == nil || rowIndex < 0 {
+		return 0
+	}
+	scrollbackRows := v.emu.ScrollbackLen()
+	if rowIndex < scrollbackRows {
+		return rowFingerprintVisualHash(v.scrollbackRowFingerprintLocked(rowIndex))
+	}
+	rowIndex -= scrollbackRows
+	if rowIndex < 0 || rowIndex >= v.emu.Height() {
+		return 0
+	}
+	if len(v.screenFingerprintCache) == v.emu.Height() {
+		return rowFingerprintVisualHash(v.screenFingerprintCache[rowIndex])
+	}
+	return rowFingerprintVisualHash(v.screenRowFingerprintLocked(rowIndex))
 }
 
 func (v *VTerm) CursorState() CursorState {
@@ -2068,8 +2174,12 @@ func (v *VTerm) reconcileRowMetadataLocked(beforeScreen []rowFingerprint, before
 		screenScrollShift = scrollShift
 	}
 
-	nextScreenTimestamps := make([]time.Time, len(afterScreen))
-	nextScreenRowKinds := make([]string, len(afterScreen))
+	oldScreenTimestamps := v.screenTimestamps
+	oldScreenRowKinds := v.screenRowKinds
+	nextScreenTimestamps := reuseTimeSlice(v.screenTimestampsScratch, len(afterScreen))
+	clear(nextScreenTimestamps)
+	nextScreenRowKinds := reuseStringSlice(v.screenRowKindsScratch, len(afterScreen))
+	clear(nextScreenRowKinds)
 	for row := range afterScreen {
 		mappedRow := row + preservedFromBefore
 		if screenScrollShift > 0 {
@@ -2085,6 +2195,16 @@ func (v *VTerm) reconcileRowMetadataLocked(beforeScreen []rowFingerprint, before
 	}
 	v.screenTimestamps = nextScreenTimestamps
 	v.screenRowKinds = nextScreenRowKinds
+	if oldScreenTimestamps == nil {
+		v.screenTimestampsScratch = nil
+	} else {
+		v.screenTimestampsScratch = oldScreenTimestamps[:0]
+	}
+	if oldScreenRowKinds == nil {
+		v.screenRowKindsScratch = nil
+	} else {
+		v.screenRowKindsScratch = oldScreenRowKinds[:0]
+	}
 	return rowCacheReconcilePlan{
 		afterScreen:               afterScreen,
 		preservedFromBefore:       preservedFromBefore,
@@ -2102,19 +2222,32 @@ func (v *VTerm) reconcileRowCachesLocked(beforeScreen []rowFingerprint, plan row
 	}
 	oldScreenCache := v.screenRowCache
 	oldScrollbackCache := v.scrollbackRowCache
-	nextScreenCache := make([][]Cell, len(plan.afterScreen))
-	for row := range plan.afterScreen {
-		mappedRow := row + plan.preservedFromBefore
-		if plan.screenScrollShift > 0 {
-			mappedRow = row + plan.screenScrollShift
+	var nextScreenCache [][]Cell
+	if plan.preservedFromBefore == 0 &&
+		plan.screenScrollShift == 0 &&
+		len(oldScreenCache) == len(plan.afterScreen) &&
+		len(beforeScreen) == len(plan.afterScreen) {
+		nextScreenCache = oldScreenCache
+		for row := range plan.afterScreen {
+			if !rowFingerprintsEqual(beforeScreen[row], plan.afterScreen[row]) {
+				nextScreenCache[row] = nil
+			}
 		}
-		if mappedRow >= len(beforeScreen) || mappedRow >= len(oldScreenCache) {
-			continue
+	} else {
+		nextScreenCache = make([][]Cell, len(plan.afterScreen))
+		for row := range plan.afterScreen {
+			mappedRow := row + plan.preservedFromBefore
+			if plan.screenScrollShift > 0 {
+				mappedRow = row + plan.screenScrollShift
+			}
+			if mappedRow >= len(beforeScreen) || mappedRow >= len(oldScreenCache) {
+				continue
+			}
+			if !rowFingerprintsEqual(beforeScreen[mappedRow], plan.afterScreen[row]) {
+				continue
+			}
+			nextScreenCache[row] = oldScreenCache[mappedRow]
 		}
-		if !rowFingerprintsEqual(beforeScreen[mappedRow], plan.afterScreen[row]) {
-			continue
-		}
-		nextScreenCache[row] = oldScreenCache[mappedRow]
 	}
 	v.screenRowCache = nextScreenCache
 
@@ -2211,10 +2344,16 @@ func detectScreenScrollShift(before, after []rowFingerprint) int {
 	bestShift := 0
 	bestScore := rowAlignmentScore(before, after, 0)
 	for shift := 1; shift < limit; shift++ {
+		if limit-shift < bestScore {
+			break
+		}
 		score := rowAlignmentScore(before, after, shift)
 		if score > bestScore {
 			bestScore = score
 			bestShift = shift
+			if score == limit-shift {
+				break
+			}
 		}
 	}
 	if bestShift == 0 {
@@ -2242,6 +2381,14 @@ func rowFingerprintsEqual(left, right rowFingerprint) bool {
 
 func rowFingerprintIsBlank(row rowFingerprint) bool {
 	return row.blank
+}
+
+func rowFingerprintVisualHash(row rowFingerprint) uint64 {
+	hash := row.hash
+	if row.blank {
+		hash ^= 1
+	}
+	return hash
 }
 
 func damageChangedRowCount(damage WriteDamage) int {
@@ -2956,11 +3103,44 @@ func cloneTimeSlice(values []time.Time) []time.Time {
 	return append([]time.Time(nil), values...)
 }
 
+func reuseTimeSlice(dst []time.Time, size int) []time.Time {
+	if size <= 0 {
+		return nil
+	}
+	if cap(dst) < size {
+		return make([]time.Time, size)
+	}
+	return dst[:size]
+}
+
 func cloneStringSlice(values []string) []string {
 	if len(values) == 0 {
 		return nil
 	}
 	return append([]string(nil), values...)
+}
+
+func reuseStringSlice(dst []string, size int) []string {
+	if size <= 0 {
+		return nil
+	}
+	if cap(dst) < size {
+		return make([]string, size)
+	}
+	return dst[:size]
+}
+
+func reuseRowFingerprintSlice(dst, src []rowFingerprint) []rowFingerprint {
+	if len(src) == 0 {
+		return nil
+	}
+	if cap(dst) < len(src) {
+		dst = make([]rowFingerprint, len(src))
+	} else {
+		dst = dst[:len(src)]
+	}
+	copy(dst, src)
+	return dst
 }
 
 func cloneCellSlice(values []Cell) []Cell {

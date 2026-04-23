@@ -69,7 +69,7 @@ func TestHandleRequestSessionCreateListGetDelete(t *testing.T) {
 		Params: mustJSONRaw(t, protocol.GetSessionParams{SessionID: "main"}),
 	}, sendFrame)
 
-	if _, code, err := srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+	if _, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
 		ID:     5,
 		Method: "session.get",
 		Params: mustJSONRaw(t, protocol.GetSessionParams{SessionID: "main"}),
@@ -232,7 +232,7 @@ func mustHandleSessionRequest(
 	sendFrame func(uint16, uint8, []byte) error,
 ) json.RawMessage {
 	t.Helper()
-	result, code, err := srv.handleRequest(ctx, "memory", allocator, attachments, attachmentsMu, req, sendFrame)
+	result, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, attachmentsMu, req, sendFrame)
 	if err != nil {
 		t.Fatalf("handleRequest %s failed: code=%d err=%v", req.Method, code, err)
 	}

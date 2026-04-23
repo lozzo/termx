@@ -146,8 +146,31 @@ func renderBodyFrameWithCoordinatorVM(coordinator *Coordinator, vm RenderVM, wid
 }
 
 func composeRenderMetadata(width, height int, immersiveZoom bool, bodyMeta *PresentMetadata) *PresentMetadata {
-	if bodyMeta == nil || len(bodyMeta.OwnerMap) == 0 || width <= 0 || height <= 0 {
+	if bodyMeta == nil || width <= 0 || height <= 0 {
 		return nil
+	}
+	if len(bodyMeta.OwnerMap) == 0 && len(bodyMeta.RowOwners) == 0 {
+		return nil
+	}
+	if len(bodyMeta.OwnerMap) == 0 && bodyMeta.Width == width {
+		meta := &PresentMetadata{
+			RowOwners: make([]uint32, height),
+			Width:     width,
+		}
+		offsetY := 0
+		if !immersiveZoom {
+			offsetY = 1
+			meta.RowOwners[0] = renderOwnerTopChrome
+			meta.RowOwners[height-1] = renderOwnerBottomChrome
+		}
+		for y, owner := range bodyMeta.RowOwners {
+			targetY := offsetY + y
+			if targetY < 0 || targetY >= height {
+				continue
+			}
+			meta.RowOwners[targetY] = owner
+		}
+		return meta
 	}
 	meta := &PresentMetadata{
 		OwnerMap: make([][]uint32, height),

@@ -636,7 +636,7 @@ func TestHandleRequestDetachReleasesChannelOnce(t *testing.T) {
 		t.Fatalf("unexpected attachments: %#v", attached)
 	}
 
-	if _, _, err := srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+	if _, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
 		ID:     2,
 		Method: "detach",
 		Params: json.RawMessage(`{"terminal_id":"attach01"}`),
@@ -820,7 +820,7 @@ func TestHandleRequestKillDeniedForObserverAttachment(t *testing.T) {
 
 	mustAttachChannel(t, srv, ctx, "memory", allocator, attachments, &attachmentsMu, info.ID, string(ModeObserver), sendFrame)
 
-	_, code, err := srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
 		ID:     1,
 		Method: "kill",
 		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
@@ -855,7 +855,7 @@ func TestHandleRequestKillAllowedForCollaboratorAttachment(t *testing.T) {
 
 	mustAttachChannel(t, srv, ctx, "memory", allocator, attachments, &attachmentsMu, info.ID, string(ModeCollaborator), sendFrame)
 
-	_, code, err := srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
 		ID:     1,
 		Method: "kill",
 		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
@@ -1055,7 +1055,7 @@ func TestServerRemoveCleansAttachmentsAndClosesTerminal(t *testing.T) {
 		t.Fatal("expected attachment channel")
 	}
 
-	_, code, err := srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
 		ID:     1,
 		Method: "remove",
 		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
@@ -1112,7 +1112,7 @@ func TestServerRemovePublishesSingleRemovedEventWithoutExitedPollution(t *testin
 	sendFrame := func(uint16, uint8, []byte) error { return nil }
 	mustAttachChannel(t, srv, ctx, "memory", allocator, attachments, &attachmentsMu, info.ID, string(ModeCollaborator), sendFrame)
 
-	_, code, err := srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
 		ID:     1,
 		Method: "remove",
 		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
@@ -1368,7 +1368,7 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 	var attachmentsMu sync.RWMutex
 	sendFrame := func(uint16, uint8, []byte) error { return nil }
 
-	result, _, err := srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+	result, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
 		ID:     1,
 		Method: "get",
 		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
@@ -1384,7 +1384,7 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 		t.Fatalf("unexpected get result: %#v", got)
 	}
 
-	if _, _, err := srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+	if _, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
 		ID:     2,
 		Method: "resize",
 		Params: mustJSON(t, protocol.ResizeParams{TerminalID: info.ID, Cols: 100, Rows: 40}),
@@ -1392,7 +1392,7 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 		t.Fatalf("resize request failed: %v", err)
 	}
 
-	if _, _, err := srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+	if _, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
 		ID:     3,
 		Method: "set_tags",
 		Params: mustJSON(t, protocol.SetTagsParams{TerminalID: info.ID, Tags: map[string]string{"status": "idle"}}),
@@ -1400,7 +1400,7 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 		t.Fatalf("set_tags request failed: %v", err)
 	}
 
-	if _, _, err := srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+	if _, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
 		ID:     4,
 		Method: "set_metadata",
 		Params: mustJSON(t, protocol.SetMetadataParams{TerminalID: info.ID, Name: "dev-shell", Tags: map[string]string{"status": "idle", "team": "infra"}}),
@@ -1408,7 +1408,7 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 		t.Fatalf("set_metadata request failed: %v", err)
 	}
 
-	result, _, err = srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+	result, _, err = srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
 		ID:     30,
 		Method: "get",
 		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
@@ -1429,7 +1429,7 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 	}
 	waitForSnapshotContains(t, srv, info.ID, "request-path")
 
-	result, _, err = srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+	result, _, err = srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
 		ID:     4,
 		Method: "snapshot",
 		Params: mustJSON(t, protocol.SnapshotParams{TerminalID: info.ID, ScrollbackLimit: 50}),
@@ -1471,7 +1471,7 @@ func TestHandleRequestListCacheInvalidatesOnSetTags(t *testing.T) {
 	var attachmentsMu sync.RWMutex
 	sendFrame := func(uint16, uint8, []byte) error { return nil }
 
-	result, _, err := srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+	result, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
 		ID:     1,
 		Method: "list",
 		Params: mustJSON(t, struct{}{}),
@@ -1492,7 +1492,7 @@ func TestHandleRequestListCacheInvalidatesOnSetTags(t *testing.T) {
 		t.Fatalf("set tags failed: %v", err)
 	}
 
-	result, _, err = srv.handleRequest(ctx, "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+	result, _, err = srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
 		ID:     2,
 		Method: "list",
 		Params: mustJSON(t, struct{}{}),
@@ -1554,7 +1554,7 @@ func TestHandleRequestRejectsMalformedParams(t *testing.T) {
 	methods := []string{"create", "get", "kill", "resize", "set_tags", "set_metadata", "snapshot", "attach", "detach"}
 	for _, method := range methods {
 		t.Run(method, func(t *testing.T) {
-			_, code, err := srv.handleRequest(context.Background(), "memory", allocator, attachments, &attachmentsMu, protocol.Request{
+			_, code, err := srv.handleRequest(context.Background(), "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
 				ID:     1,
 				Method: method,
 				Params: json.RawMessage(`{`),
@@ -1790,7 +1790,7 @@ func mustAttachChannel(
 	sendFrame func(uint16, uint8, []byte) error,
 ) uint16 {
 	t.Helper()
-	result, _, err := srv.handleRequest(ctx, remote, allocator, attachments, attachmentsMu, protocol.Request{
+	result, _, err := srv.handleRequest(ctx, remote, nil, allocator, attachments, attachmentsMu, protocol.Request{
 		ID:     1,
 		Method: "attach",
 		Params: mustJSON(t, protocol.AttachParams{TerminalID: terminalID, Mode: mode}),

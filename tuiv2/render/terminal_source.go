@@ -27,6 +27,18 @@ type terminalRowHashSource interface {
 	RowHash(rowIndex int) uint64
 }
 
+type terminalRowContentHashSource interface {
+	RowContentHash(rowIndex int) uint64
+}
+
+type terminalRowIdentityHashSource interface {
+	RowIdentityHash(rowIndex int) uint64
+}
+
+type terminalRowVisualHashSource interface {
+	RowVisualHash(rowIndex int) uint64
+}
+
 type terminalCellRowSource interface {
 	RowView(rowIndex int) []localvterm.Cell
 }
@@ -120,6 +132,29 @@ func (s snapshotRenderSource) RowHash(rowIndex int) uint64 {
 	return hash
 }
 
+func (s snapshotRenderSource) RowContentHash(rowIndex int) uint64 {
+	hash := fnvOffset64
+	if s.snapshot == nil || rowIndex < 0 {
+		return fnvMixUint64(hash, 0)
+	}
+	kind := snapshotRowKind(s.snapshot, rowIndex)
+	hash = fnvMixString(hash, kind)
+	ts := snapshotRowTimestamp(s.snapshot, rowIndex)
+	hash = fnvMixInt64(hash, ts.UnixNano())
+	return hashProtocolRow(hash, snapshotRow(s.snapshot, rowIndex))
+}
+
+func (s snapshotRenderSource) RowIdentityHash(rowIndex int) uint64 {
+	return s.RowContentHash(rowIndex)
+}
+
+func (s snapshotRenderSource) RowVisualHash(rowIndex int) uint64 {
+	if s.snapshot == nil || rowIndex < 0 {
+		return fnvMixUint64(fnvOffset64, 0)
+	}
+	return hashProtocolRow(fnvOffset64, snapshotRow(s.snapshot, rowIndex))
+}
+
 func (s surfaceRenderSource) Size() protocol.Size { return s.surface.Size() }
 
 func (s surfaceRenderSource) Cursor() protocol.CursorState { return s.surface.Cursor() }
@@ -175,11 +210,80 @@ func (s surfaceRenderSource) RowHash(rowIndex int) uint64 {
 	return hash
 }
 
+func (s surfaceRenderSource) RowContentHash(rowIndex int) uint64 {
+	if source, ok := s.surface.(interface{ RowContentHash(int) uint64 }); ok {
+		return source.RowContentHash(rowIndex)
+	}
+	hash := fnvOffset64
+	if s.surface == nil || rowIndex < 0 {
+		return fnvMixUint64(hash, 0)
+	}
+	kind := s.surface.RowKind(rowIndex)
+	hash = fnvMixString(hash, kind)
+	ts := s.surface.RowTimestamp(rowIndex)
+	hash = fnvMixInt64(hash, ts.UnixNano())
+	if rowSource, ok := s.surface.(interface{ RowView(int) []localvterm.Cell }); ok {
+		return hashVTermRow(hash, rowSource.RowView(rowIndex))
+	}
+	return hashProtocolRow(hash, s.surface.Row(rowIndex))
+}
+
+func (s surfaceRenderSource) RowIdentityHash(rowIndex int) uint64 {
+	if source, ok := s.surface.(interface{ RowIdentityHash(int) uint64 }); ok {
+		return source.RowIdentityHash(rowIndex)
+	}
+	return s.RowContentHash(rowIndex)
+}
+
+func (s surfaceRenderSource) RowVisualHash(rowIndex int) uint64 {
+	if source, ok := s.surface.(interface{ RowVisualHash(int) uint64 }); ok {
+		return source.RowVisualHash(rowIndex)
+	}
+	if rowSource, ok := s.surface.(interface{ RowView(int) []localvterm.Cell }); ok {
+		return hashVTermRow(fnvOffset64, rowSource.RowView(rowIndex))
+	}
+	return hashProtocolRow(fnvOffset64, s.surface.Row(rowIndex))
+}
+
 func (s surfaceRenderSource) RowView(rowIndex int) []localvterm.Cell {
 	if source, ok := s.surface.(interface{ RowView(int) []localvterm.Cell }); ok {
 		return source.RowView(rowIndex)
 	}
 	return nil
+}
+
+func hashProtocolRow(hash uint64, row []protocol.Cell) uint64 {
+	hash = fnvMixUint64(hash, uint64(len(row)))
+	for _, cell := range row {
+		hash = fnvMixString(hash, cell.Content)
+		hash = fnvMixInt64(hash, int64(cell.Width))
+		hash = fnvMixString(hash, cell.Style.FG)
+		hash = fnvMixString(hash, cell.Style.BG)
+		hash = fnvMixBool(hash, cell.Style.Bold)
+		hash = fnvMixBool(hash, cell.Style.Italic)
+		hash = fnvMixBool(hash, cell.Style.Underline)
+		hash = fnvMixBool(hash, cell.Style.Blink)
+		hash = fnvMixBool(hash, cell.Style.Reverse)
+		hash = fnvMixBool(hash, cell.Style.Strikethrough)
+	}
+	return hash
+}
+
+func hashVTermRow(hash uint64, row []localvterm.Cell) uint64 {
+	hash = fnvMixUint64(hash, uint64(len(row)))
+	for _, cell := range row {
+		hash = fnvMixString(hash, cell.Content)
+		hash = fnvMixInt64(hash, int64(cell.Width))
+		hash = fnvMixString(hash, cell.Style.FG)
+		hash = fnvMixString(hash, cell.Style.BG)
+		hash = fnvMixBool(hash, cell.Style.Bold)
+		hash = fnvMixBool(hash, cell.Style.Italic)
+		hash = fnvMixBool(hash, cell.Style.Underline)
+		hash = fnvMixBool(hash, cell.Style.Blink)
+		hash = fnvMixBool(hash, cell.Style.Reverse)
+		hash = fnvMixBool(hash, cell.Style.Strikethrough)
+	}
+	return hash
 }
 
 func renderSourceCursorProjectionTarget(rect workbench.Rect, source terminalRenderSource) (cursorProjectionTarget, bool) {

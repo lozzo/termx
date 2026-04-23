@@ -58,7 +58,7 @@ func BenchmarkServerHandleRequestList(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, _, err := srv.handleRequest(context.Background(), "bench", allocator, attachments, &attachmentsMu, req, sendFrame); err != nil {
+		if _, _, err := srv.handleRequest(context.Background(), "bench", nil, allocator, attachments, &attachmentsMu, req, sendFrame); err != nil {
 			b.Fatalf("handle request failed: %v", err)
 		}
 	}
@@ -102,36 +102,16 @@ func BenchmarkTerminalScreenUpdatePayloadFromDamageLocked(b *testing.B) {
 		build func(*testing.B) (*Terminal, vterm.WriteDamage)
 	}{
 		{
-			name: "scroll_output",
-			build: func(b *testing.B) (*Terminal, vterm.WriteDamage) {
-				vt := vterm.New(80, 24, 4096, nil)
-				vt.LoadSnapshot(
-					benchmarkFilledScreen(80, 24, "log"),
-					vterm.CursorState{Row: 23, Col: 0, Visible: true},
-					vterm.TerminalModes{AutoWrap: true},
-				)
-				_, err, damage := vt.WriteWithDamage([]byte("scroll-a\n"))
-				if err != nil {
-					b.Fatalf("WriteWithDamage failed: %v", err)
-				}
-				return &Terminal{vterm: vt, title: "bench"}, damage
-			},
+			name:  "scroll_output",
+			build: benchmarkTerminalDamageScrollOutput,
 		},
 		{
-			name: "fullscreen_alt",
-			build: func(b *testing.B) (*Terminal, vterm.WriteDamage) {
-				vt := vterm.New(100, 30, 4096, nil)
-				vt.LoadSnapshot(
-					benchmarkFilledScreen(100, 30, "tui"),
-					vterm.CursorState{Row: 0, Col: 0, Visible: true},
-					vterm.TerminalModes{AlternateScreen: true, AutoWrap: true},
-				)
-				_, err, damage := vt.WriteWithDamage(benchmarkFullScreenPayload(100, 30, 'X'))
-				if err != nil {
-					b.Fatalf("WriteWithDamage failed: %v", err)
-				}
-				return &Terminal{vterm: vt, title: "bench"}, damage
-			},
+			name:  "fullscreen_alt",
+			build: benchmarkTerminalDamageFullscreenAlt,
+		},
+		{
+			name:  "nvim_alt_scroll_3_rows",
+			build: benchmarkTerminalDamageNvimAltScroll,
 		},
 	}
 
@@ -152,10 +132,143 @@ func BenchmarkTerminalScreenUpdatePayloadFromDamageLocked(b *testing.B) {
 	}
 }
 
+func BenchmarkScreenUpdateEncodeStages(b *testing.B) {
+	scenarios := []struct {
+		name  string
+		build func(*testing.B) (*Terminal, vterm.WriteDamage)
+	}{
+		{name: "scroll_output", build: benchmarkTerminalDamageScrollOutput},
+		{name: "fullscreen_alt", build: benchmarkTerminalDamageFullscreenAlt},
+		{name: "nvim_alt_scroll_3_rows", build: benchmarkTerminalDamageNvimAltScroll},
+	}
+
+	for _, scenario := range scenarios {
+		term, damage := scenario.build(b)
+		title := term.title
+		deltaUpdate := screenUpdateFromDamageState(damage, title)
+		state := term.currentStreamScreenStateLocked()
+		if state == nil || state.snapshot == nil {
+			b.Fatalf("%s: expected stream screen state", scenario.name)
+		}
+		fullUpdate := fullReplaceUpdateForStateDelta(nil, state, !state.snapshot.Modes.AlternateScreen)
+		if state.snapshot.Modes.AlternateScreen {
+			fullUpdate.ResetScrollback = false
+			fullUpdate.ScrollbackTrim = deltaUpdate.ScrollbackTrim
+			fullUpdate.ScrollbackAppend = append([]protocol.ScrollbackRowAppend(nil), deltaUpdate.ScrollbackAppend...)
+		}
+
+		b.Run(fmt.Sprintf("%s/from_damage_state", scenario.name), func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				update := screenUpdateFromDamageState(damage, title)
+				if update.Size != deltaUpdate.Size {
+					b.Fatalf("unexpected update size: %#v", update.Size)
+				}
+			}
+		})
+
+		b.Run(fmt.Sprintf("%s/full_snapshot", scenario.name), func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				next := term.currentStreamScreenStateLocked()
+				if next == nil || next.snapshot == nil {
+					b.Fatal("expected stream snapshot")
+				}
+			}
+		})
+
+		b.Run(fmt.Sprintf("%s/encode_strategy", scenario.name), func(b *testing.B) {
+			totalBytes := 0
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				payload, mode, ok := encodeScreenUpdatePayloadByStrategy(deltaUpdate, fullUpdate, state.snapshot.Modes.AlternateScreen)
+				if !ok {
+					b.Fatal("expected encoded payload")
+				}
+				if mode == "" {
+					b.Fatal("expected encode mode")
+				}
+				totalBytes += len(payload)
+			}
+			b.ReportMetric(float64(totalBytes)/float64(b.N), "payload_bytes")
+		})
+	}
+}
+
 type writeDamageBenchmarkCase struct {
 	vt         *vterm.VTerm
 	beforeEach func(int)
 	payload    func(int) []byte
+}
+
+func BenchmarkVTermWriteScenarios(b *testing.B) {
+	scenarios := []struct {
+		name    string
+		newCase func() *writeDamageBenchmarkCase
+	}{
+		{
+			name: "single_char_churn",
+			newCase: func() *writeDamageBenchmarkCase {
+				vt := vterm.New(120, 40, 4096, nil)
+				vt.LoadSnapshot(benchmarkFilledScreen(120, 40, "seed"), vterm.CursorState{Row: 20, Col: 60, Visible: true}, vterm.TerminalModes{AutoWrap: true})
+				payloads := [][]byte{
+					[]byte("\x1b[21;61HX"),
+					[]byte("\x1b[21;61HY"),
+				}
+				return &writeDamageBenchmarkCase{
+					vt:      vt,
+					payload: func(i int) []byte { return payloads[i&1] },
+				}
+			},
+		},
+		{
+			name: "scroll_output",
+			newCase: func() *writeDamageBenchmarkCase {
+				vt := vterm.New(80, 24, 4096, nil)
+				vt.LoadSnapshot(benchmarkFilledScreen(80, 24, "log"), vterm.CursorState{Row: 23, Col: 0, Visible: true}, vterm.TerminalModes{AutoWrap: true})
+				payloads := [][]byte{
+					[]byte("scroll-a\n"),
+					[]byte("scroll-b\n"),
+				}
+				return &writeDamageBenchmarkCase{
+					vt:      vt,
+					payload: func(i int) []byte { return payloads[i&1] },
+				}
+			},
+		},
+		{
+			name: "nvim_alt_scroll_3_rows",
+			newCase: func() *writeDamageBenchmarkCase {
+				vt := vterm.New(120, 40, 4096, nil)
+				vt.LoadSnapshot(benchmarkFilledScreen(120, 40, "nvim"), vterm.CursorState{Row: 39, Col: 0, Visible: true}, vterm.TerminalModes{AlternateScreen: true, AutoWrap: true})
+				payloads := [][]byte{
+					[]byte("nvim-137\nnvim-138\nnvim-139\n"),
+					[]byte("nvim-140\nnvim-141\nnvim-142\n"),
+				}
+				return &writeDamageBenchmarkCase{
+					vt:      vt,
+					payload: func(i int) []byte { return payloads[i&1] },
+				}
+			},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		b.Run(scenario.name, func(b *testing.B) {
+			caseData := scenario.newCase()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if caseData.beforeEach != nil {
+					b.StopTimer()
+					caseData.beforeEach(i)
+					b.StartTimer()
+				}
+				if _, err := caseData.vt.Write(caseData.payload(i)); err != nil {
+					b.Fatalf("Write failed: %v", err)
+				}
+			}
+		})
+	}
 }
 
 func BenchmarkVTermWriteWithDamageScenarios(b *testing.B) {
@@ -511,4 +624,49 @@ func benchmarkScreenCell(row []vterm.Cell, col int) vterm.Cell {
 		return vterm.Cell{}
 	}
 	return row[col]
+}
+
+func benchmarkTerminalDamageScrollOutput(b *testing.B) (*Terminal, vterm.WriteDamage) {
+	b.Helper()
+	vt := vterm.New(80, 24, 4096, nil)
+	vt.LoadSnapshot(
+		benchmarkFilledScreen(80, 24, "log"),
+		vterm.CursorState{Row: 23, Col: 0, Visible: true},
+		vterm.TerminalModes{AutoWrap: true},
+	)
+	_, err, damage := vt.WriteWithDamage([]byte("scroll-a\n"))
+	if err != nil {
+		b.Fatalf("WriteWithDamage failed: %v", err)
+	}
+	return &Terminal{vterm: vt, title: "bench"}, damage
+}
+
+func benchmarkTerminalDamageFullscreenAlt(b *testing.B) (*Terminal, vterm.WriteDamage) {
+	b.Helper()
+	vt := vterm.New(100, 30, 4096, nil)
+	vt.LoadSnapshot(
+		benchmarkFilledScreen(100, 30, "tui"),
+		vterm.CursorState{Row: 0, Col: 0, Visible: true},
+		vterm.TerminalModes{AlternateScreen: true, AutoWrap: true},
+	)
+	_, err, damage := vt.WriteWithDamage(benchmarkFullScreenPayload(100, 30, 'X'))
+	if err != nil {
+		b.Fatalf("WriteWithDamage failed: %v", err)
+	}
+	return &Terminal{vterm: vt, title: "bench"}, damage
+}
+
+func benchmarkTerminalDamageNvimAltScroll(b *testing.B) (*Terminal, vterm.WriteDamage) {
+	b.Helper()
+	vt := vterm.New(120, 40, 4096, nil)
+	vt.LoadSnapshot(
+		benchmarkFilledScreen(120, 40, "nvim"),
+		vterm.CursorState{Row: 39, Col: 0, Visible: true},
+		vterm.TerminalModes{AlternateScreen: true, AutoWrap: true},
+	)
+	_, err, damage := vt.WriteWithDamage([]byte("nvim-137\nnvim-138\nnvim-139\n"))
+	if err != nil {
+		b.Fatalf("WriteWithDamage failed: %v", err)
+	}
+	return &Terminal{vterm: vt, title: "bench"}, damage
 }

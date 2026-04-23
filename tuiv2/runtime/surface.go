@@ -193,6 +193,80 @@ func (s vtermSurface) RowHash(rowIndex int) uint64 {
 	return hash
 }
 
+func (s vtermSurface) RowContentHash(rowIndex int) uint64 {
+	hash := surfaceRowHashOffset64
+	if rowIndex < 0 {
+		return surfaceRowHashMixUint64(hash, 0)
+	}
+	kind := s.RowKind(rowIndex)
+	hash = surfaceRowHashMixString(hash, kind)
+	ts := s.RowTimestamp(rowIndex)
+	hash = surfaceRowHashMixInt64(hash, ts.UnixNano())
+	var row []localvterm.Cell
+	switch {
+	case rowIndex < s.ScrollbackRows():
+		row = s.source.ScrollbackRowView(rowIndex)
+	default:
+		rowIndex -= s.ScrollbackRows()
+		if rowIndex < 0 || rowIndex >= s.ScreenRows() {
+			return hash
+		}
+		row = s.source.ScreenRowView(rowIndex)
+	}
+	hash = surfaceRowHashMixUint64(hash, uint64(len(row)))
+	for _, cell := range row {
+		hash = surfaceRowHashMixString(hash, cell.Content)
+		hash = surfaceRowHashMixInt64(hash, int64(cell.Width))
+		hash = surfaceRowHashMixString(hash, cell.Style.FG)
+		hash = surfaceRowHashMixString(hash, cell.Style.BG)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Bold)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Italic)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Underline)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Blink)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Reverse)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Strikethrough)
+	}
+	return hash
+}
+
+func (s vtermSurface) RowIdentityHash(rowIndex int) uint64 {
+	return s.RowContentHash(rowIndex)
+}
+
+func (s vtermSurface) RowVisualHash(rowIndex int) uint64 {
+	if source, ok := s.source.(interface{ RowVisualHash(int) uint64 }); ok {
+		return source.RowVisualHash(rowIndex)
+	}
+	var row []localvterm.Cell
+	switch {
+	case rowIndex < 0:
+		return surfaceRowHashMixUint64(surfaceRowHashOffset64, 0)
+	case rowIndex < s.ScrollbackRows():
+		row = s.source.ScrollbackRowView(rowIndex)
+	default:
+		rowIndex -= s.ScrollbackRows()
+		if rowIndex < 0 || rowIndex >= s.ScreenRows() {
+			return surfaceRowHashOffset64
+		}
+		row = s.source.ScreenRowView(rowIndex)
+	}
+	hash := surfaceRowHashOffset64
+	hash = surfaceRowHashMixUint64(hash, uint64(len(row)))
+	for _, cell := range row {
+		hash = surfaceRowHashMixString(hash, cell.Content)
+		hash = surfaceRowHashMixInt64(hash, int64(cell.Width))
+		hash = surfaceRowHashMixString(hash, cell.Style.FG)
+		hash = surfaceRowHashMixString(hash, cell.Style.BG)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Bold)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Italic)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Underline)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Blink)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Reverse)
+		hash = surfaceRowHashMixBool(hash, cell.Style.Strikethrough)
+	}
+	return hash
+}
+
 func protocolCellsFromVTermRow(row []localvterm.Cell) []protocol.Cell {
 	if len(row) == 0 {
 		return nil

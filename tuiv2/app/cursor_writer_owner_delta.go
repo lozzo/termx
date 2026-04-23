@@ -125,14 +125,25 @@ func presentedRowsHaveWidthSafety(rows []presentedRow) bool {
 }
 
 func buildHostFrame(rows []presentedRow, meta *presentMeta) (hostFrame, bool) {
-	if meta == nil || len(rows) == 0 || len(rows) != len(meta.OwnerMap) {
+	if meta == nil || len(rows) == 0 {
 		return hostFrame{}, false
 	}
 	width := 0
-	for _, row := range meta.OwnerMap {
-		if len(row) > width {
-			width = len(row)
+	switch {
+	case len(meta.OwnerMap) > 0:
+		if len(rows) != len(meta.OwnerMap) {
+			return hostFrame{}, false
 		}
+		for _, row := range meta.OwnerMap {
+			if len(row) > width {
+				width = len(row)
+			}
+		}
+	case len(meta.RowOwners) > 0:
+		if len(rows) != len(meta.RowOwners) {
+			return hostFrame{}, false
+		}
+		width = meta.Width
 	}
 	if width <= 0 {
 		return hostFrame{}, false
@@ -143,7 +154,15 @@ func buildHostFrame(rows []presentedRow, meta *presentMeta) (hostFrame, bool) {
 		Cells:  make([][]hostCell, len(rows)),
 	}
 	for y := range rows {
-		cells, ok := flattenPresentedRowToHostCells(rows[y], width, meta.OwnerMap[y])
+		var (
+			cells []hostCell
+			ok    bool
+		)
+		if len(meta.OwnerMap) > 0 {
+			cells, ok = flattenPresentedRowToHostCells(rows[y], width, meta.OwnerMap[y])
+		} else {
+			cells, ok = flattenPresentedRowToHostCellsWithRowOwner(rows[y], width, meta.RowOwners[y])
+		}
 		if !ok {
 			return hostFrame{}, false
 		}
@@ -204,6 +223,55 @@ func flattenPresentedRowToHostCells(row presentedRow, width int, owners []hostOw
 	return out, true
 }
 
+func flattenPresentedRowToHostCellsWithRowOwner(row presentedRow, width int, owner hostOwnerID) ([]hostCell, bool) {
+	out := make([]hostCell, width)
+	for x := 0; x < width; x++ {
+		out[x] = hostCell{
+			Content:                 " ",
+			Width:                   1,
+			Owner:                   owner,
+			HiddenEmojiCompensation: row.hasHiddenEmojiCompensation,
+			HostWidthStabilizer:     row.hasHostWidthStabilizer,
+		}
+	}
+	col := 0
+	for _, cell := range row.cells {
+		w := maxInt(1, cell.Width)
+		if col >= width {
+			break
+		}
+		if col+w > width {
+			return nil, false
+		}
+		out[col] = hostCell{
+			Content:                 cell.Content,
+			Width:                   w,
+			Style:                   cell.Style,
+			Erase:                   cell.Erase,
+			Wide:                    w > 1,
+			Owner:                   owner,
+			HiddenEmojiCompensation: row.hasHiddenEmojiCompensation,
+			HostWidthStabilizer:     row.hasHostWidthStabilizer || cell.ReanchorBefore,
+		}
+		if out[col].Content == "" {
+			out[col].Content = " "
+		}
+		for i := 1; i < w; i++ {
+			out[col+i] = hostCell{
+				Content:                 " ",
+				Width:                   1,
+				Style:                   cell.Style,
+				Owner:                   owner,
+				Continuation:            true,
+				HiddenEmojiCompensation: row.hasHiddenEmojiCompensation,
+				HostWidthStabilizer:     row.hasHostWidthStabilizer || cell.ReanchorBefore,
+			}
+		}
+		col += w
+	}
+	return out, true
+}
+
 func collectOwnerAwareDamageRects(previous, next hostFrame, previousMeta, nextMeta *presentMeta) []damageRect {
 	if previous.Width != next.Width || previous.Height != next.Height || previousMeta == nil || nextMeta == nil {
 		return nil
@@ -252,7 +320,7 @@ func collectOwnerAwareDamageRects(previous, next hostFrame, previousMeta, nextMe
 	rects := make([]damageRect, 0, len(seeds))
 	for _, seed := range seeds {
 		for _, current := range dirtyMaskToRectsInBounds(dirtyMask, seed.rect) {
-			stable := rectStableForOwner(previousMeta.OwnerMap, nextMeta.OwnerMap, seed.owner, current)
+			stable := rectStableForPresentMeta(previousMeta, nextMeta, seed.owner, current)
 			rects = append(rects, damageRect{
 				rect:        current,
 				OwnerKnown:  true,
@@ -343,12 +411,29 @@ func dedupeDamageRects(rects []damageRect) []damageRect {
 	return out
 }
 
-func rectStableForOwner(previous, next [][]hostOwnerID, owner hostOwnerID, bounds rect) bool {
-	for y := bounds.Top; y <= bounds.Bottom; y++ {
-		for x := bounds.Left; x <= bounds.Right; x++ {
-			if previous[y][x] != owner || next[y][x] != owner {
-				return false
+func rectStableForPresentMeta(previous, next *presentMeta, owner hostOwnerID, bounds rect) bool {
+	if previous == nil || next == nil {
+		return false
+	}
+	if len(previous.OwnerMap) > 0 && len(next.OwnerMap) > 0 {
+		for y := bounds.Top; y <= bounds.Bottom; y++ {
+			for x := bounds.Left; x <= bounds.Right; x++ {
+				if previous.OwnerMap[y][x] != owner || next.OwnerMap[y][x] != owner {
+					return false
+				}
 			}
+		}
+		return true
+	}
+	if len(previous.RowOwners) == 0 || len(next.RowOwners) == 0 {
+		return false
+	}
+	for y := bounds.Top; y <= bounds.Bottom; y++ {
+		if y < 0 || y >= len(previous.RowOwners) || y >= len(next.RowOwners) {
+			return false
+		}
+		if previous.RowOwners[y] != owner || next.RowOwners[y] != owner {
+			return false
 		}
 	}
 	return true

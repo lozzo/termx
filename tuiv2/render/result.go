@@ -11,7 +11,9 @@ const (
 )
 
 type PresentMetadata struct {
-	OwnerMap [][]uint32
+	OwnerMap  [][]uint32
+	RowOwners []uint32
+	Width     int
 }
 
 type RenderResult struct {
@@ -43,7 +45,9 @@ func clonePresentMetadata(meta *PresentMetadata) *PresentMetadata {
 		return nil
 	}
 	clone := &PresentMetadata{
-		OwnerMap: make([][]uint32, len(meta.OwnerMap)),
+		OwnerMap:  make([][]uint32, len(meta.OwnerMap)),
+		RowOwners: append([]uint32(nil), meta.RowOwners...),
+		Width:     meta.Width,
 	}
 	for y := range meta.OwnerMap {
 		if len(meta.OwnerMap[y]) == 0 {
@@ -59,14 +63,11 @@ func solidPresentMetadata(width, height int, owner uint32) *PresentMetadata {
 		return nil
 	}
 	meta := &PresentMetadata{
-		OwnerMap: make([][]uint32, height),
+		RowOwners: make([]uint32, height),
+		Width:     width,
 	}
-	for y := 0; y < height; y++ {
-		row := make([]uint32, width)
-		for x := range row {
-			row[x] = owner
-		}
-		meta.OwnerMap[y] = row
+	for y := range meta.RowOwners {
+		meta.RowOwners[y] = owner
 	}
 	return meta
 }

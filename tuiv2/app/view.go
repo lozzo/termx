@@ -25,9 +25,8 @@ func (m *Model) View() string {
 			directWriter.SetVerticalScrollMode(mode)
 			directWriter.SetOwnerAwareDeltaEnabled(true)
 			directWriter.SetForceFullFrameLines(false)
-			if result, ok := m.render.CachedRenderResult(); ok {
-				cursor := result.CursorSequence()
-				viewBytes = joinedLinesLen(result.Lines) + len(cursor)
+			if lines, cursor, ok := m.render.CachedFrameLinesAndCursorRef(); ok {
+				viewBytes = joinedLinesLen(lines) + len(cursor)
 				m.lastViewFrame = ""
 				m.lastViewCursor = cursor
 				return ""

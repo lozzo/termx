@@ -166,6 +166,11 @@ func streamFrameContainsText(frame protocol.StreamFrame, needle string) bool {
 				return true
 			}
 		}
+		for _, op := range update.Ops {
+			if strings.Contains(protocolCellsText(op.Cells), needle) {
+				return true
+			}
+		}
 	}
 	return false
 }
