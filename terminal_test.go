@@ -334,6 +334,64 @@ func TestTerminalIdleFlushesPendingVTermOutput(t *testing.T) {
 	t.Fatal("expected idle flush to apply pending output to the server vterm")
 }
 
+func TestTerminalIdleFlushSkipsWhileCollaboratorAttached(t *testing.T) {
+	originalDelay := serverVTermFlushIdleDelay
+	serverVTermFlushIdleDelay = 2 * time.Millisecond
+	defer func() { serverVTermFlushIdleDelay = originalDelay }()
+
+	vt := localvterm.New(8, 2, 16, nil)
+	term := &Terminal{
+		id:           "idle-skip",
+		size:         Size{Cols: 8, Rows: 2},
+		state:        StateRunning,
+		vterm:        vt,
+		processEpoch: 1,
+		attachments: map[string]AttachInfo{
+			"a": {Mode: string(ModeCollaborator)},
+		},
+	}
+
+	term.streamMu.Lock()
+	term.queuePendingVTermOutputLocked(1, []byte("hello"))
+	term.armPendingVTermFlushLocked(1)
+	term.streamMu.Unlock()
+
+	time.Sleep(20 * time.Millisecond)
+	if replayContainsText(vt.EncodeReplay(16), 8, 2, "hello") {
+		t.Fatal("expected collaborator attach to defer idle vterm flush")
+	}
+
+	term.RemoveAttachment("a")
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if replayContainsText(vt.EncodeReplay(16), 8, 2, "hello") {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("expected pending output to flush after collaborator detaches")
+}
+
+func TestScreenSnapshotFallbackFlushesPendingVTermOutput(t *testing.T) {
+	vt := localvterm.New(8, 2, 16, nil)
+	term := &Terminal{
+		id:           "fallback-flush",
+		size:         Size{Cols: 8, Rows: 2},
+		state:        StateRunning,
+		vterm:        vt,
+		processEpoch: 1,
+	}
+
+	term.streamMu.Lock()
+	term.queuePendingVTermOutputLocked(1, []byte("hello"))
+	term.streamMu.Unlock()
+
+	msg := term.screenSnapshotFallbackMessage()
+	if msg.Type != StreamScreenUpdate || !streamMessageContainsText(msg, 8, 2, "hello") {
+		t.Fatalf("expected fallback snapshot to include pending vterm output, got %#v", msg)
+	}
+}
+
 func TestForwardLiveStreamMessagesCoalescesBurstOutput(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
