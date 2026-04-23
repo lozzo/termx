@@ -25,6 +25,12 @@ type capturedBodyRenderCacheEntry struct {
 	resolved resolvedPaneContent
 }
 
+type bodyRenderCachePreview struct {
+	entry  bodyRenderCacheEntry
+	sprite *composedCanvas
+	valid  bool
+}
+
 type bodyRenderCache struct {
 	width           int
 	height          int
@@ -33,6 +39,7 @@ type bodyRenderCache struct {
 	activeCursor    bodyRenderCacheCursor
 	hasActiveCursor bool
 	overlap         bool
+	preview         bodyRenderCachePreview
 }
 
 func captureBodyRenderCacheEntries(entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) []capturedBodyRenderCacheEntry {
@@ -101,5 +108,6 @@ func newBodyRenderCache(canvas *composedCanvas, captured []capturedBodyRenderCac
 		activeCursor:    activeCursor,
 		hasActiveCursor: hasActiveCursor,
 		overlap:         entriesOverlap(entries),
+		preview:         bodyRenderCachePreview{},
 	}
 }

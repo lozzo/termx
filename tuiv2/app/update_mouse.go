@@ -219,6 +219,7 @@ func (m *Model) handleMouseClick(msg tea.MouseMsg) tea.Cmd {
 			m.mouseDragMode = mouseDragMove
 			m.mouseDragOffsetX = x - rect.X
 			m.mouseDragOffsetY = contentY - rect.Y
+			m.beginFloatingDragPreview(paneID, rect)
 		} else {
 			m.mouseDragPaneID = ""
 			m.mouseDragMode = mouseDragNone

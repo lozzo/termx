@@ -9,6 +9,7 @@ func (m *Model) renderVM() render.RenderVM {
 	bodyHeight := m.bodyHeight()
 	vm := render.AdaptRenderVMWithSize(m.workbench, m.runtime, m.width, bodyHeight)
 	vm = m.withLiveSurfaceForSplitDragPreview(vm)
+	vm = m.withFloatingDragPreview(vm)
 	vm = render.WithRenderTermSize(vm, m.width, m.height)
 	vm = render.WithRenderChromeConfig(vm, m.chromeConfig())
 	vm = render.WithRenderThemeConfig(vm, m.theme)
@@ -97,4 +98,11 @@ func (m *Model) withLiveSurfaceForSplitDragPreview(vm render.RenderVM) render.Re
 		vm.Runtime = &runtimeCopy
 	}
 	return vm
+}
+
+func (m *Model) withFloatingDragPreview(vm render.RenderVM) render.RenderVM {
+	if m == nil || !m.floatingDragPreview.Active || m.floatingDragPreview.PaneID == "" || m.floatingDragPreview.Snapshot == nil {
+		return vm
+	}
+	return render.WithRenderFloatingDragPreview(vm, m.floatingDragPreview.PaneID, m.floatingDragPreview.Rect, m.floatingDragPreview.Snapshot)
 }

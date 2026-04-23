@@ -30,7 +30,7 @@ func TestPaneEntriesForTabPreferRuntimePaneViewport(t *testing.T) {
 		}},
 	}
 
-	entries := paneEntriesForTab(tab, nil, 20, 8, newRuntimeLookup(runtimeState), bodyProjectionOptions{}, defaultUITheme())
+	entries, _ := paneEntriesForTab(tab, nil, 20, 8, newRuntimeLookup(runtimeState), bodyProjectionOptions{}, defaultUITheme())
 	if len(entries) != 1 {
 		t.Fatalf("expected one pane render entry, got %#v", entries)
 	}
@@ -89,7 +89,7 @@ func TestPaneEntriesForTabMarksAlternateScreenEntriesConservativeOnlyInMultiPane
 		},
 	}
 
-	entries := paneEntriesForTab(tab, nil, 20, 8, newRuntimeLookup(runtimeState), bodyProjectionOptions{}, defaultUITheme())
+	entries, _ := paneEntriesForTab(tab, nil, 20, 8, newRuntimeLookup(runtimeState), bodyProjectionOptions{}, defaultUITheme())
 	if len(entries) != 2 {
 		t.Fatalf("expected two pane render entries, got %#v", entries)
 	}
@@ -102,7 +102,7 @@ func TestPaneEntriesForTabMarksAlternateScreenEntriesConservativeOnlyInMultiPane
 
 	singlePaneTab := tab
 	singlePaneTab.Panes = append([]workbench.VisiblePane(nil), tab.Panes[:1]...)
-	entries = paneEntriesForTab(singlePaneTab, nil, 20, 8, newRuntimeLookup(runtimeState), bodyProjectionOptions{}, defaultUITheme())
+	entries, _ = paneEntriesForTab(singlePaneTab, nil, 20, 8, newRuntimeLookup(runtimeState), bodyProjectionOptions{}, defaultUITheme())
 	if len(entries) != 1 {
 		t.Fatalf("expected single pane render entry, got %#v", entries)
 	}

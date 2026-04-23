@@ -67,7 +67,15 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 		if typed.Kind != "motion" {
 			m.beginBoundaryInteraction()
 		}
-		if typed.Kind == "motion" && (m.mouseDragMode != mouseDragNone || m.copyMode.MouseSelecting) {
+		// Drag motions are already coalesced by the input forwarder's motion timer
+		// (only the latest position per batch reaches here). The enqueueMouseMotionFlush
+		// goroutine hop adds an extra event-loop iteration without benefit and makes
+		// drag feel laggy over SSH. Process drag motions directly so the frame is
+		// written in the same Update→View cycle as the input event.
+		if typed.Kind == "motion" && m.mouseDragMode != mouseDragNone {
+			return m.handleMouseMsg(typed.Msg), true
+		}
+		if typed.Kind == "motion" && m.copyMode.MouseSelecting {
 			return m.enqueueMouseMotionFlush(typed), true
 		}
 		return m.handleMouseMsg(typed.Msg), true

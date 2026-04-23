@@ -130,13 +130,13 @@ func renderBodyFrameWithCoordinatorVM(coordinator *Coordinator, vm RenderVM, wid
 		exitedSelectionPulse = coordinator.cursorBlinkVisible
 		coordinator.mu.Unlock()
 	}
-	entries := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, width, height, lookup, bodyProjectionOptionsForVM(vm, exitedSelectionPulse), uiThemeForVM(vm))
+	entries, preview := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, width, height, lookup, bodyProjectionOptionsForVM(vm, exitedSelectionPulse), uiThemeForVM(vm))
 	if body, ok := renderAltScreenFastPathVM(coordinator, vm, entries, cursorOffsetY); ok {
 		perftrace.Count("render.body.path.alt_screen_fast_path", 0)
 		return body
 	}
 	perftrace.Count("render.body.path.canvas", 0)
-	canvas := renderBodyCanvas(coordinator, vm.Runtime, immersiveZoomActiveVM(vm), entries, width, height)
+	canvas := renderBodyCanvas(coordinator, vm.Runtime, immersiveZoomActiveVM(vm), entries, preview, width, height)
 	return renderedBody{
 		lines:  canvas.cachedContentLines(),
 		cursor: canvas.cursorANSI(),

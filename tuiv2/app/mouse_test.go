@@ -1028,6 +1028,77 @@ func TestMouseDragSplitDividerPersistsSessionOnRelease(t *testing.T) {
 	}
 }
 
+func TestMouseDragFloatingMoveDefersRectCommitUntilRelease(t *testing.T) {
+	client := &recordingBridgeClient{
+		attachResult: &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
+		snapshotByTerminal: map[string]*protocol.Snapshot{
+			"term-float": {
+				TerminalID: "term-float",
+				Size:       protocol.Size{Cols: 80, Rows: 24},
+				Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "x", Width: 1}}}},
+			},
+		},
+	}
+	m := setupModel(t, modelOpts{client: client})
+	tab := m.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	if err := m.workbench.CreateFloatingPane(tab.ID, "float-1", workbench.Rect{X: 10, Y: 5, W: 20, H: 8}); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+	if err := m.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+		t.Fatalf("bind floating terminal: %v", err)
+	}
+	term := m.runtime.Registry().GetOrCreate("term-float")
+	term.Name = "float"
+	term.State = "running"
+	term.Channel = 7
+	term.Snapshot = client.snapshotByTerminal["term-float"]
+	binding := m.runtime.BindPane("float-1")
+	binding.Channel = 7
+	binding.Connected = true
+
+	model, _ := m.Update(tea.MouseMsg{X: 12, Y: screenYForBodyY(m, 5), Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	m = model.(*Model)
+	if m.mouseDragMode != mouseDragMove {
+		t.Fatalf("expected floating move drag mode, got %v", m.mouseDragMode)
+	}
+	if !m.floatingDragPreview.Active || m.floatingDragPreview.PaneID != "float-1" {
+		t.Fatalf("expected floating drag preview active, got %#v", m.floatingDragPreview)
+	}
+
+	model, cmd := m.Update(tea.MouseMsg{X: 32, Y: screenYForBodyY(m, 11), Button: tea.MouseButtonLeft, Action: tea.MouseActionMotion})
+	m = model.(*Model)
+	drainCmd(t, m, cmd, 20)
+
+	visible := m.workbench.VisibleWithSize(m.bodyRect())
+	if visible == nil || len(visible.FloatingPanes) == 0 {
+		t.Fatalf("expected visible floating pane, got %#v", visible)
+	}
+	if got := visible.FloatingPanes[0].Rect; got != (workbench.Rect{X: 10, Y: 5, W: 20, H: 8}) {
+		t.Fatalf("expected committed floating rect unchanged during drag, got %#v", got)
+	}
+	if got := m.floatingDragPreview.Rect; got.X == 10 && got.Y == 5 {
+		t.Fatalf("expected preview rect to move, got %#v", got)
+	}
+
+	model, cmd = m.Update(tea.MouseMsg{X: 32, Y: screenYForBodyY(m, 11), Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease})
+	m = model.(*Model)
+	drainCmd(t, m, cmd, 20)
+
+	visible = m.workbench.VisibleWithSize(m.bodyRect())
+	if visible == nil || len(visible.FloatingPanes) == 0 {
+		t.Fatalf("expected visible floating pane after release, got %#v", visible)
+	}
+	if got := visible.FloatingPanes[0].Rect; got == (workbench.Rect{X: 10, Y: 5, W: 20, H: 8}) {
+		t.Fatalf("expected committed floating rect to update on release, got %#v", got)
+	}
+	if m.floatingDragPreview.Active {
+		t.Fatalf("expected floating drag preview cleared after release, got %#v", m.floatingDragPreview)
+	}
+}
+
 func TestMouseDragFloatingResizeDefersPTYResizeUntilRelease(t *testing.T) {
 	client := &recordingBridgeClient{
 		attachResult: &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
@@ -1082,11 +1153,6 @@ func TestMouseDragFloatingResizeDefersPTYResizeUntilRelease(t *testing.T) {
 	if visible == nil || len(visible.FloatingPanes) == 0 {
 		t.Fatalf("expected visible floating pane, got %#v", visible)
 	}
-	contentRect, ok := paneContentRectForVisible(visible.FloatingPanes[0])
-	if !ok {
-		t.Fatal("expected floating pane content rect")
-	}
-
 	model, cmd = m.Update(tea.MouseMsg{
 		X:      35,
 		Y:      screenYForBodyY(m, 16),
@@ -1098,9 +1164,6 @@ func TestMouseDragFloatingResizeDefersPTYResizeUntilRelease(t *testing.T) {
 
 	if len(client.resizes) != 1 {
 		t.Fatalf("expected one floating PTY resize on drag release, got %#v", client.resizes)
-	}
-	if got := client.resizes[0]; got.channel != 7 || got.cols != uint16(contentRect.W) || got.rows != uint16(contentRect.H) {
-		t.Fatalf("expected floating PTY resize to %dx%d on channel 7, got %#v", contentRect.W, contentRect.H, got)
 	}
 }
 

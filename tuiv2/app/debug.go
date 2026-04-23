@@ -16,6 +16,7 @@ var appDebugLogMu sync.Mutex
 var mouseDebugSeq atomic.Uint64
 var latestQueuedMouseMotionSeq atomic.Uint64
 var latestQueuedMouseWheelSeq atomic.Uint64
+var latestMouseBoundaryAt atomic.Int64
 
 func (m *Model) debugLog(event string, kv ...any) {
 	if m == nil || strings.TrimSpace(m.cfg.LogFilePath) == "" {
@@ -84,6 +85,21 @@ func noteQueuedMouseWheel(seq uint64) {
 
 func latestQueuedWheelSeq() uint64 {
 	return latestQueuedMouseWheelSeq.Load()
+}
+
+func noteMouseBoundaryQueued(at time.Time) {
+	if at.IsZero() {
+		return
+	}
+	latestMouseBoundaryAt.Store(at.UnixNano())
+}
+
+func latestMouseBoundaryQueuedAt() time.Time {
+	at := latestMouseBoundaryAt.Load()
+	if at == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, at).UTC()
 }
 
 func sanitizeDebugKey(key string) string {

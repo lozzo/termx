@@ -103,13 +103,14 @@ type Model struct {
 	copyModeMouseActivitySeq     uint64
 
 	// 鼠标拖动状态
-	mouseDragPaneID  string
-	mouseDragOffsetX int
-	mouseDragOffsetY int
-	mouseDragMode    mouseDragMode
-	mouseDragSplit   *workbench.LayoutNode
-	mouseDragBounds  workbench.Rect
-	mouseDragDirty   bool
+	mouseDragPaneID        string
+	mouseDragOffsetX       int
+	mouseDragOffsetY       int
+	mouseDragMode          mouseDragMode
+	mouseDragSplit         *workbench.LayoutNode
+	mouseDragBounds        workbench.Rect
+	mouseDragDirty         bool
+	floatingDragPreview    floatingDragPreviewState
 
 	ownerConfirmPaneID string
 
@@ -124,6 +125,13 @@ type Model struct {
 }
 
 type mouseDragMode int
+
+type floatingDragPreviewState struct {
+	Active    bool
+	PaneID    string
+	Rect      workbench.Rect
+	Snapshot  *protocol.Snapshot
+}
 
 var invalidateBatchDelay = 4 * time.Millisecond
 var remoteInvalidateBatchDelay = time.Millisecond

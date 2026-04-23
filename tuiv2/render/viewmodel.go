@@ -54,6 +54,7 @@ type RenderBodyVM struct {
 	ExitedSelection    RenderPaneSelectionVM
 	SnapshotOverride   RenderSnapshotOverrideVM
 	CopyMode           RenderCopyModeVM
+	FloatingDragPreview RenderFloatingDragPreviewVM
 }
 
 type RenderPaneSelectionVM struct {
@@ -75,6 +76,12 @@ type RenderCopyModeVM struct {
 	MarkRow    int
 	MarkCol    int
 	Snapshot   *protocol.Snapshot
+}
+
+type RenderFloatingDragPreviewVM struct {
+	PaneID   string
+	Rect     workbench.Rect
+	Snapshot *protocol.Snapshot
 }
 
 func AdaptRenderVMWithSize(wb *workbench.Workbench, rt *runtime.Runtime, bodyWidth, bodyHeight int) RenderVM {
@@ -153,6 +160,11 @@ func WithRenderPaneSnapshotOverride(vm RenderVM, paneID string, snapshot *protoc
 
 func WithRenderCopyMode(vm RenderVM, copyMode RenderCopyModeVM) RenderVM {
 	vm.Body.CopyMode = copyMode
+	return vm
+}
+
+func WithRenderFloatingDragPreview(vm RenderVM, paneID string, rect workbench.Rect, snapshot *protocol.Snapshot) RenderVM {
+	vm.Body.FloatingDragPreview = RenderFloatingDragPreviewVM{PaneID: paneID, Rect: rect, Snapshot: snapshot}
 	return vm
 }
 

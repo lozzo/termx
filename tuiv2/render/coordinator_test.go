@@ -1665,13 +1665,13 @@ func TestInactivePaneRightBorderOnFE0FRowsCachedSwitch(t *testing.T) {
 				}
 			}
 
-			entries2 := paneEntriesForTab(
+			entries2, _ := paneEntriesForTab(
 				state2.Workbench.Tabs[state2.Workbench.ActiveTab], state2.Workbench.FloatingPanes,
 				bodyWidth, bodyHeight, newRuntimeLookup(state2.Runtime),
 				bodyProjectionOptionsForVM(RenderVMFromVisibleState(state2), true),
 				uiThemeForRuntime(state2.Runtime),
 			)
-			canvas2 := renderBodyCanvas(coordinator, state2.Runtime, immersiveZoomActive(state2), entries2, bodyWidth, bodyHeight)
+			canvas2 := renderBodyCanvas(coordinator, state2.Runtime, immersiveZoomActive(state2), entries2, nil, bodyWidth, bodyHeight)
 			for y := rightPane.Rect.Y + 1; y <= rightPane.Rect.Y+rightPane.Rect.H-2; y++ {
 				if got := canvas2.cells[y][rightBorderX].Style.FG; got != theme.panelBorder2 {
 					t.Fatalf("row %d: expected inactive border FG %q, got %q", y, theme.panelBorder2, got)
@@ -1749,7 +1749,7 @@ func TestPaneEntriesForTabMarksViewportClippedPaneOverflow(t *testing.T) {
 		}},
 	}
 
-	entries := paneEntriesForTab(tab, nil, 12, 6, runtimeLookup{}, bodyProjectionOptions{}, defaultUITheme())
+	entries, _ := paneEntriesForTab(tab, nil, 12, 6, runtimeLookup{}, bodyProjectionOptions{}, defaultUITheme())
 	if len(entries) != 1 {
 		t.Fatalf("expected one visible pane entry, got %d", len(entries))
 	}

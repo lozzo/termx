@@ -33,12 +33,14 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 		}
 		newX := x - m.mouseDragOffsetX
 		newY := contentY - m.mouseDragOffsetY
-		service := m.layoutResizeService()
-		if service == nil || !service.moveFloatingPane(tab.ID, m.mouseDragPaneID, newX, newY) {
+		if !m.updateFloatingDragPreviewRect(newX, newY) {
 			perftrace.Count("app.mouse.drag.move.noop", 0)
 			return nil
 		}
 		perftrace.Count("app.mouse.drag.move.changed", 0)
+		if m.runtime != nil {
+			m.runtime.NoteLocalInteraction()
+		}
 		m.render.Invalidate()
 	case mouseDragResize:
 		if m.mouseDragPaneID == "" {
@@ -55,6 +57,9 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 				}
 				m.mouseDragDirty = true
 				perftrace.Count("app.mouse.drag.resize.changed", 0)
+				if m.runtime != nil {
+					m.runtime.NoteLocalInteraction()
+				}
 				m.render.Invalidate()
 				return nil
 			}
@@ -68,6 +73,9 @@ func (m *Model) handleMouseDrag(x, y int) tea.Cmd {
 			return nil
 		}
 		m.mouseDragDirty = true
+		if m.runtime != nil {
+			m.runtime.NoteLocalInteraction()
+		}
 		m.render.Invalidate()
 		return nil
 	}
@@ -79,6 +87,8 @@ func (m *Model) handleMouseRelease() tea.Cmd {
 	appendMouseDebugLog("mouse_drag_release", "mode", m.mouseDragMode, "pane", m.mouseDragPaneID, "dirty", m.mouseDragDirty)
 	cmd := tea.Cmd(nil)
 	switch m.mouseDragMode {
+	case mouseDragMove:
+		cmd = m.commitFloatingDragPreviewCmd()
 	case mouseDragResize:
 		if m.mouseDragDirty {
 			cmd = batchCmds(m.resizePaneIfNeededCmd(m.mouseDragPaneID), m.saveStateCmd())
@@ -95,7 +105,53 @@ func (m *Model) handleMouseRelease() tea.Cmd {
 	m.mouseDragSplit = nil
 	m.mouseDragBounds = workbench.Rect{}
 	m.mouseDragDirty = false
+	m.floatingDragPreview = floatingDragPreviewState{}
 	return cmd
+}
+
+func (m *Model) beginFloatingDragPreview(paneID string, rect workbench.Rect) {
+	if m == nil || paneID == "" {
+		return
+	}
+	preview := floatingDragPreviewState{Active: true, PaneID: paneID, Rect: rect}
+	if pane, _, ok := m.visiblePaneForInput(paneID); ok && pane != nil && pane.TerminalID != "" && m.runtime != nil {
+		_ = m.runtime.RefreshSnapshotFromVTerm(pane.TerminalID)
+		if terminal := m.runtime.Registry().Get(pane.TerminalID); terminal != nil && terminal.Snapshot != nil {
+			preview.Snapshot = terminal.Snapshot
+		}
+	}
+	m.floatingDragPreview = preview
+}
+
+func (m *Model) updateFloatingDragPreviewRect(x, y int) bool {
+	if m == nil || !m.floatingDragPreview.Active {
+		return false
+	}
+	next := m.floatingDragPreview.Rect
+	next.X = maxInt(0, x)
+	next.Y = maxInt(0, y)
+	if next == m.floatingDragPreview.Rect {
+		return false
+	}
+	m.floatingDragPreview.Rect = next
+	m.mouseDragDirty = true
+	return true
+}
+
+func (m *Model) commitFloatingDragPreviewCmd() tea.Cmd {
+	if m == nil || !m.floatingDragPreview.Active || m.floatingDragPreview.PaneID == "" {
+		return nil
+	}
+	tab := m.workbench.CurrentTab()
+	service := m.layoutResizeService()
+	if tab == nil || service == nil {
+		return nil
+	}
+	preview := m.floatingDragPreview
+	if !service.moveFloatingPane(tab.ID, preview.PaneID, preview.Rect.X, preview.Rect.Y) {
+		return nil
+	}
+	return m.saveStateCmd()
 }
 
 func (m *Model) findFloatingPaneAt(tab *workbench.TabState, x, y int) (string, workbench.Rect, bool) {

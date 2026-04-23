@@ -776,7 +776,7 @@ func TestRenderFrameProjectsHostCursorForLeftSplitPane(t *testing.T) {
 	}
 
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 40, 4), 40, 6)
-	entries := paneEntriesForTab(
+	entries, _ := paneEntriesForTab(
 		state.Workbench.Tabs[state.Workbench.ActiveTab],
 		state.Workbench.FloatingPanes,
 		40, 4,
@@ -847,7 +847,7 @@ func TestRenderFrameKeepsHostCursorForRightmostSplitPane(t *testing.T) {
 	}
 
 	state := WithTermSize(AdaptVisibleStateWithSize(wb, rt, 40, 4), 40, 6)
-	entries := paneEntriesForTab(
+	entries, _ := paneEntriesForTab(
 		state.Workbench.Tabs[state.Workbench.ActiveTab],
 		state.Workbench.FloatingPanes,
 		40, 4,
@@ -922,7 +922,7 @@ func TestRenderFrameRestoresSplitPaneHostCursorAfterOverlayBlinkOff(t *testing.T
 		CursorSet: true,
 	})
 
-	entries := paneEntriesForTab(
+	entries, _ := paneEntriesForTab(
 		base.Workbench.Tabs[base.Workbench.ActiveTab],
 		base.Workbench.FloatingPanes,
 		40, 4,

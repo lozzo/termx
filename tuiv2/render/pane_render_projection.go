@@ -67,7 +67,7 @@ type renderTerminalMetrics struct {
 	Rows int
 }
 
-func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePane, width, height int, lookup runtimeLookup, options bodyProjectionOptions, theme uiTheme) []paneRenderEntry {
+func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePane, width, height int, lookup runtimeLookup, options bodyProjectionOptions, theme uiTheme) ([]paneRenderEntry, *paneRenderEntry) {
 	entries := make([]paneRenderEntry, 0, len(tab.Panes)+len(floating))
 	zoomedPaneID := tab.ZoomedPaneID
 	immersiveZoom := options.ImmersiveZoom
@@ -89,7 +89,12 @@ func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePan
 		}
 		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, frameless, tab.ActivePaneID, tab.ScrollOffset, lookup, options, theme))
 	}
+	var preview *paneRenderEntry
 	for _, pane := range floating {
+		if options.FloatingDragPreview.PaneID != "" && pane.ID == options.FloatingDragPreview.PaneID {
+			preview = buildFloatingDragPreviewEntry(pane, width, height, tab.ActivePaneID, tab.ScrollOffset, lookup, options, theme)
+			continue
+		}
 		originalRect := pane.Rect
 		rect, ok := clipRectToViewport(originalRect, width, height)
 		if !ok {
@@ -98,15 +103,43 @@ func paneEntriesForTab(tab workbench.VisibleTab, floating []workbench.VisiblePan
 		entries = append(entries, buildPaneRenderEntry(pane, originalRect, rect, false, tab.ActivePaneID, tab.ScrollOffset, lookup, options, theme))
 	}
 	totalVisiblePanes := len(entries)
+	if preview != nil {
+		totalVisiblePanes++
+	}
 	if totalVisiblePanes > 1 {
 		for i := range entries {
 			if paneEntryUsesAlternateScreen(entries[i]) {
 				entries[i].ConservativeRedraw = true
 			}
 		}
+		if preview != nil && paneEntryUsesAlternateScreen(*preview) {
+			preview.ConservativeRedraw = true
+		}
 	}
-	return entries
+	return entries, preview
 }
+
+func buildFloatingDragPreviewEntry(pane workbench.VisiblePane, width, height int, activePaneID string, legacyScrollOffset int, lookup runtimeLookup, options bodyProjectionOptions, theme uiTheme) *paneRenderEntry {
+	if options.FloatingDragPreview.PaneID == "" || options.FloatingDragPreview.Snapshot == nil || pane.ID != options.FloatingDragPreview.PaneID {
+		return nil
+	}
+	originalRect := options.FloatingDragPreview.Rect
+	rect, ok := clipRectToViewport(originalRect, width, height)
+	if !ok {
+		return nil
+	}
+	entry := buildPaneRenderEntry(pane, originalRect, rect, false, activePaneID, legacyScrollOffset, lookup, options, theme)
+	entry.Snapshot = options.FloatingDragPreview.Snapshot
+	entry.Surface = nil
+	entry.SurfaceVersion = 0
+	entry.ContentKey.SurfaceVersion = 0
+	entry.ContentKey.Snapshot = options.FloatingDragPreview.Snapshot
+	entry.FrameKey.Rect = rect
+	entry.Rect = rect
+	entry.Floating = true
+	return &entry
+}
+
 
 func paneEntryUsesAlternateScreen(entry paneRenderEntry) bool {
 	source := renderSource(entry.Snapshot, entry.Surface)

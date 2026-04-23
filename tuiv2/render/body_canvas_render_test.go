@@ -61,7 +61,7 @@ func TestRenderBodyCanvasOverlapSameRectContentChangeUsesFullComposePath(t *test
 	}
 
 	coordinator := &Coordinator{}
-	_ = renderBodyCanvas(coordinator, runtimeState, false, entries1, 20, 10)
+	_ = renderBodyCanvas(coordinator, runtimeState, false, entries1, nil, 20, 10)
 
 	baseSurface.screen[1] = protocolRowFromText("under layer ZZ")
 	baseSurface.screenTimestamps[1] = now.Add(time.Second)
@@ -75,7 +75,7 @@ func TestRenderBodyCanvasOverlapSameRectContentChangeUsesFullComposePath(t *test
 	perftrace.Reset()
 	defer perftrace.Disable()
 
-	got := renderBodyCanvas(coordinator, runtimeState, false, entries2, 20, 10)
+	got := renderBodyCanvas(coordinator, runtimeState, false, entries2, nil, 20, 10)
 	want := rebuildBodyCanvas(nil, entries2, 20, 10, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
 
 	snapshot := perftrace.SnapshotCurrent()
@@ -144,7 +144,7 @@ func TestRenderBodyCanvasOverlapLargeSameRectScrollUsesFullComposePath(t *testin
 	}
 
 	coordinator := &Coordinator{}
-	_ = renderBodyCanvas(coordinator, runtimeState, false, entries1, 100, 40)
+	_ = renderBodyCanvas(coordinator, runtimeState, false, entries1, nil, 100, 40)
 
 	// Simulate a scroll-up frame: one row moves into scrollback and the visible
 	// screen shifts, which would otherwise force a whole-body rebuild in overlap
@@ -163,7 +163,7 @@ func TestRenderBodyCanvasOverlapLargeSameRectScrollUsesFullComposePath(t *testin
 	perftrace.Reset()
 	defer perftrace.Disable()
 
-	got := renderBodyCanvas(coordinator, runtimeState, false, entries2, 100, 40)
+	got := renderBodyCanvas(coordinator, runtimeState, false, entries2, nil, 100, 40)
 	want := rebuildBodyCanvas(nil, entries2, 100, 40, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
 
 	snapshot := perftrace.SnapshotCurrent()
@@ -230,7 +230,7 @@ func TestRenderBodyCanvasNonOverlappingContentChangeUsesIncrementalPath(t *testi
 	}
 
 	coordinator := &Coordinator{}
-	_ = renderBodyCanvas(coordinator, runtimeState, false, entries1, 40, 8)
+	_ = renderBodyCanvas(coordinator, runtimeState, false, entries1, nil, 40, 8)
 
 	leftSurface.screen[2] = protocolRowFromText("left-row-03--delta--")
 	leftSurface.screenTimestamps[2] = now.Add(time.Second)
@@ -248,7 +248,7 @@ func TestRenderBodyCanvasNonOverlappingContentChangeUsesIncrementalPath(t *testi
 	perftrace.Reset()
 	defer perftrace.Disable()
 
-	got := renderBodyCanvas(coordinator, runtimeState, false, entries2, 40, 8)
+	got := renderBodyCanvas(coordinator, runtimeState, false, entries2, nil, 40, 8)
 	want := rebuildBodyCanvas(nil, entries2, 40, 8, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
 
 	snapshot := perftrace.SnapshotCurrent()
@@ -318,7 +318,7 @@ func TestRenderBodyCanvasNonOverlappingScrollUsesIncrementalPath(t *testing.T) {
 	}
 
 	coordinator := &Coordinator{}
-	_ = renderBodyCanvas(coordinator, runtimeState, false, entries1, 40, 8)
+	_ = renderBodyCanvas(coordinator, runtimeState, false, entries1, nil, 40, 8)
 
 	leftSurface.screen = append(leftSurface.screen[1:], protocolRowFromText("left-row-07........"))
 	leftSurface.screenTimestamps = append(leftSurface.screenTimestamps[1:], now.Add(time.Second))
@@ -336,7 +336,7 @@ func TestRenderBodyCanvasNonOverlappingScrollUsesIncrementalPath(t *testing.T) {
 	perftrace.Reset()
 	defer perftrace.Disable()
 
-	got := renderBodyCanvas(coordinator, runtimeState, false, entries2, 40, 8)
+	got := renderBodyCanvas(coordinator, runtimeState, false, entries2, nil, 40, 8)
 	want := rebuildBodyCanvas(nil, entries2, 40, 8, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
 
 	snapshot := perftrace.SnapshotCurrent()
@@ -351,6 +351,77 @@ func TestRenderBodyCanvasNonOverlappingScrollUsesIncrementalPath(t *testing.T) {
 	}
 	if gotANSI, wantANSI := got.String(), want.String(); gotANSI != wantANSI {
 		t.Fatalf("expected incremental scroll canvas to match full rebuild styled output")
+	}
+}
+
+func TestRenderBodyCanvasFloatingPreviewOverlayKeepsIncrementalStaticBody(t *testing.T) {
+	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	baseSurface := &spriteTestSurface{
+		size: protocol.Size{Cols: 18, Rows: 6},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("base-row-01......."),
+			protocolRowFromText("base-row-02......."),
+			protocolRowFromText("base-row-03......."),
+			protocolRowFromText("base-row-04......."),
+			protocolRowFromText("base-row-05......."),
+			protocolRowFromText("base-row-06......."),
+		},
+		screenTimestamps: []time.Time{now, now, now, now, now, now},
+	}
+	floatSnapshot := &protocol.Snapshot{
+		TerminalID: "term-float",
+		Size:       protocol.Size{Cols: 8, Rows: 3},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			protocolRowFromText("FLOAT-1"),
+			protocolRowFromText("FLOAT-2"),
+			protocolRowFromText("FLOAT-3"),
+		}},
+		Cursor:    protocol.CursorState{Visible: false},
+		Modes:     protocol.TerminalModes{AutoWrap: true},
+		Timestamp: now,
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-base",
+			Name:           "base",
+			State:          "running",
+			Surface:        baseSurface,
+			SurfaceVersion: 1,
+		}},
+	}
+	coordinator := &Coordinator{}
+	theme := defaultUITheme()
+	entries1 := []paneRenderEntry{testPaneRenderEntry("pane-base", "term-base", workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, true, theme, 1)}
+	_ = renderBodyCanvas(coordinator, runtimeState, false, entries1, nil, 40, 8)
+
+	baseSurface.screen[2] = protocolRowFromText("base-row-03--delta")
+	baseSurface.screenTimestamps[2] = now.Add(time.Second)
+	runtimeState.Terminals[0].SurfaceVersion = 2
+	runtimeState.Terminals[0].ScreenUpdate = runtimestate.VisibleScreenUpdateSummary{SurfaceVersion: 2, ChangedRows: []int{2}}
+	entries2 := []paneRenderEntry{testPaneRenderEntry("pane-base", "term-base", workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, true, theme, 2)}
+	preview := testPaneRenderEntry("pane-float", "term-float", workbench.Rect{X: 10, Y: 2, W: 10, H: 5}, true, false, theme, 0)
+	preview.Snapshot = floatSnapshot
+	preview.ContentKey.Snapshot = floatSnapshot
+	preview.Surface = nil
+	preview.TerminalID = "term-float"
+
+	perftrace.Enable()
+	perftrace.Reset()
+	defer perftrace.Disable()
+
+	got := renderBodyCanvas(coordinator, runtimeState, false, entries2, &preview, 40, 8)
+	want := rebuildBodyCanvas(nil, append(append([]paneRenderEntry(nil), entries2...), preview), 40, 8, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
+
+	snapshot := perftrace.SnapshotCurrent()
+	if event, ok := snapshot.Event("render.body.canvas.path.incremental"); !ok || event.Count == 0 {
+		t.Fatalf("expected incremental static body path, got events=%#v", snapshot.Events)
+	}
+	if event, ok := snapshot.Event("render.body.canvas.path.preview_overlay"); !ok || event.Count == 0 {
+		t.Fatalf("expected preview overlay path, got events=%#v", snapshot.Events)
+	}
+	if gotRaw, wantRaw := strings.TrimRight(got.rawString(), "\n"), strings.TrimRight(want.rawString(), "\n"); gotRaw != wantRaw {
+		t.Fatalf("expected preview overlay canvas to match full rebuild raw output,\n got: %q\nwant: %q\nevents=%#v", gotRaw, wantRaw, snapshot.Events)
 	}
 }
 

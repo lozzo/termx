@@ -56,7 +56,7 @@ func TestRenderBodyAltScreenFastPathBypassesCanvasForSingleFramelessPane(t *test
 	vm := RenderVMFromVisibleState(state)
 	lookup := newRuntimeLookup(vm.Runtime)
 	tab := vm.Workbench.Tabs[vm.Workbench.ActiveTab]
-	entries := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, 20, 6, lookup, bodyProjectionOptionsForVM(vm, true), uiThemeForRuntime(vm.Runtime))
+	entries, _ := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, 20, 6, lookup, bodyProjectionOptionsForVM(vm, true), uiThemeForRuntime(vm.Runtime))
 	if len(entries) != 1 {
 		t.Fatalf("expected one render entry, got %#v", entries)
 	}
@@ -138,7 +138,7 @@ func TestRenderBodyAltScreenFastPathActivatesForSingleFramedPane(t *testing.T) {
 	vm := RenderVMFromVisibleState(state)
 	lookup := newRuntimeLookup(vm.Runtime)
 	tab := vm.Workbench.Tabs[vm.Workbench.ActiveTab]
-	entries := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, 20, 6, lookup, bodyProjectionOptionsForVM(vm, true), uiThemeForRuntime(vm.Runtime))
+	entries, _ := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, 20, 6, lookup, bodyProjectionOptionsForVM(vm, true), uiThemeForRuntime(vm.Runtime))
 	if len(entries) != 1 {
 		t.Fatalf("expected one render entry, got %#v", entries)
 	}
@@ -284,7 +284,7 @@ func TestRenderBodyAltScreenFastPathReusesRowCacheAcrossScrollShift(t *testing.T
 		vm := RenderVMFromVisibleState(state)
 		lookup := newRuntimeLookup(vm.Runtime)
 		tab := vm.Workbench.Tabs[vm.Workbench.ActiveTab]
-		entries := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, 22, 8, lookup, bodyProjectionOptionsForVM(vm, true), uiThemeForRuntime(vm.Runtime))
+		entries, _ := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, 22, 8, lookup, bodyProjectionOptionsForVM(vm, true), uiThemeForRuntime(vm.Runtime))
 		if len(entries) != 1 {
 			t.Fatalf("expected one render entry, got %#v", entries)
 		}
@@ -377,7 +377,7 @@ func BenchmarkAltScreenFastPathWithRowCache(b *testing.B) {
 		vm := RenderVMFromVisibleState(state)
 		lookup := newRuntimeLookup(vm.Runtime)
 		tab := vm.Workbench.Tabs[vm.Workbench.ActiveTab]
-		entries := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, termW+2, termH+2, lookup, bodyProjectionOptionsForVM(vm, true), uiThemeForRuntime(vm.Runtime))
+		entries, _ := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, termW+2, termH+2, lookup, bodyProjectionOptionsForVM(vm, true), uiThemeForRuntime(vm.Runtime))
 		if len(entries) == 1 {
 			renderAltScreenFastPathVM(coordinator, vm, entries, TopChromeRows)
 		}
@@ -449,7 +449,7 @@ func BenchmarkAltScreenFastPathWithoutRowCache(b *testing.B) {
 		vm := RenderVMFromVisibleState(state)
 		lookup := newRuntimeLookup(vm.Runtime)
 		tab := vm.Workbench.Tabs[vm.Workbench.ActiveTab]
-		entries := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, termW+2, termH+2, lookup, bodyProjectionOptionsForVM(vm, true), uiThemeForRuntime(vm.Runtime))
+		entries, _ := paneEntriesForTab(tab, vm.Workbench.FloatingPanes, termW+2, termH+2, lookup, bodyProjectionOptionsForVM(vm, true), uiThemeForRuntime(vm.Runtime))
 		if len(entries) == 1 {
 			renderAltScreenFastPathVM(nil, vm, entries, TopChromeRows) // nil coordinator = no cache
 		}

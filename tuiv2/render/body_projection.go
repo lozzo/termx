@@ -8,6 +8,7 @@ type bodyProjectionOptions struct {
 	ExitedSelectionPulse bool
 	SnapshotOverride     RenderSnapshotOverrideVM
 	CopyMode             RenderCopyModeVM
+	FloatingDragPreview  RenderFloatingDragPreviewVM
 	ImmersiveZoom        bool
 }
 
@@ -20,6 +21,7 @@ func bodyProjectionOptionsForVM(vm RenderVM, exitedSelectionPulse bool) bodyProj
 		ExitedSelectionPulse: exitedSelectionPulse,
 		SnapshotOverride:     vm.Body.SnapshotOverride,
 		CopyMode:             vm.Body.CopyMode,
+		FloatingDragPreview:  vm.Body.FloatingDragPreview,
 		ImmersiveZoom:        immersiveZoomActiveVM(vm),
 	}
 }
