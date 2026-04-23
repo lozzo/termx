@@ -65,6 +65,18 @@ func (s *Screen) CellAt(x int, y int) *uv.Cell {
 
 // SetCell sets the cell at the given x, y position.
 func (s *Screen) SetCell(x, y int, c *uv.Cell) {
+	// On the common write path we only need row-level dirtiness. Bypass the
+	// RenderBuffer equality check so high-volume redraws don't pay a
+	// cell-by-cell compare before every mutation.
+	if s.damage == nil {
+		width := 1
+		if c != nil && c.Width > 1 {
+			width = c.Width
+		}
+		s.buf.TouchLine(x, y, width)
+		s.buf.Buffer.SetCell(x, y, c)
+		return
+	}
 	s.buf.SetCell(x, y, c)
 	s.recordCellDamage(x, y, c)
 }

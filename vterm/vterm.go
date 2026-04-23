@@ -414,8 +414,12 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 			damage = WriteDamage{}
 		}
 	}()
+	normalizeFinish := perftrace.Measure("vterm.write.normalize")
 	normalized := normalizeRenderableUTF8(data)
+	normalizeFinish(len(normalized))
+	clearTouchedFinish := perftrace.Measure("vterm.write.clear_touched")
 	v.clearTouchedRowsLocked()
+	clearTouchedFinish(0)
 	emulatorFinish := perftrace.Measure("vterm.write.emulator")
 	var (
 		directDamages   []charmvt.Damage
@@ -444,6 +448,7 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 	dirtyRows, dirtyReliable := v.consumeTouchedRowsLocked()
 	now := time.Now().UTC()
 	var afterScreen []rowFingerprint
+	fingerprintFinish := perftrace.Measure("vterm.write.reconcile.fingerprint")
 	switch {
 	case !dirtyReliable,
 		beforeWidth != afterWidth,
@@ -461,8 +466,13 @@ func (v *VTerm) write(data []byte, collectDamage bool) (n int, err error, damage
 		}
 		afterScreen = v.screenFingerprintCache
 	}
+	fingerprintFinish(0)
+	metadataFinish := perftrace.Measure("vterm.write.reconcile.metadata")
 	cachePlan := v.reconcileRowMetadataLocked(beforeScreen, beforeScreenTimestamps, beforeScreenRowKinds, beforeScrollbackLen, afterScreen, now)
+	metadataFinish(0)
+	rowCacheFinish := perftrace.Measure("vterm.write.reconcile.row_cache")
 	v.reconcileRowCachesLocked(beforeScreen, cachePlan)
+	rowCacheFinish(0)
 	if collectDamage {
 		damage = v.writeDamageLocked(beforeScreenRows, beforeScreen, cachePlan)
 		if hasDirectDamage &&

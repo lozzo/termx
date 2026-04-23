@@ -1826,3 +1826,16 @@ func termText(term *Emulator) []string {
 	}
 	return lines
 }
+
+func TestPrintableASCIIFastPathPreservesCharsetAndRepeat(t *testing.T) {
+	term := newTestTerminal(t, 8, 1)
+	if _, err := term.Write([]byte("\x1b(0q\x1b[3b")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if got := termText(term)[0]; got != "────    " {
+		t.Fatalf("unexpected line drawing repeat output: %q", got)
+	}
+	if pos := term.CursorPosition(); pos != uv.Pos(4, 0) {
+		t.Fatalf("unexpected cursor position: %v", pos)
+	}
+}

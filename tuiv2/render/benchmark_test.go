@@ -409,6 +409,67 @@ func BenchmarkCoordinatorRenderFrameFloatingDragContentComplexity(b *testing.B) 
 	}
 }
 
+func BenchmarkRenderBodyFrameFloatingDragPreview(b *testing.B) {
+	cases := []struct {
+		name       string
+		floatRects []workbench.Rect
+		positions  []workbench.Rect
+	}{
+		{
+			name:       "base_only",
+			floatRects: []workbench.Rect{{X: 10, Y: 4, W: 56, H: 16}},
+			positions: []workbench.Rect{
+				{X: 10, Y: 4, W: 56, H: 16},
+				{X: 11, Y: 4, W: 56, H: 16},
+				{X: 12, Y: 4, W: 56, H: 16},
+				{X: 13, Y: 4, W: 56, H: 16},
+				{X: 14, Y: 4, W: 56, H: 16},
+			},
+		},
+		{
+			name: "overlap_with_second_float",
+			floatRects: []workbench.Rect{
+				{X: 8, Y: 4, W: 56, H: 16},
+				{X: 24, Y: 6, W: 56, H: 16},
+			},
+			positions: []workbench.Rect{
+				{X: 8, Y: 4, W: 56, H: 16},
+				{X: 9, Y: 4, W: 56, H: 16},
+				{X: 10, Y: 4, W: 56, H: 16},
+				{X: 11, Y: 4, W: 56, H: 16},
+				{X: 12, Y: 4, W: 56, H: 16},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			state, _ := benchmarkFloatingState(b, 160, 48, tc.floatRects)
+			var previewSnapshot *protocol.Snapshot
+			for i := range state.Runtime.Terminals {
+				if state.Runtime.Terminals[i].TerminalID == "term-2" {
+					previewSnapshot = state.Runtime.Terminals[i].Snapshot
+					break
+				}
+			}
+			if previewSnapshot == nil {
+				b.Fatal("expected preview snapshot for term-2")
+			}
+
+			coordinator := &Coordinator{}
+			vm := WithRenderFloatingDragPreview(RenderVMFromVisibleState(state), "float-1", tc.positions[0], previewSnapshot)
+			benchmarkFrameSink = renderBodyFrameWithCoordinatorVM(coordinator, vm, state.TermSize.Width, FrameBodyHeight(state.TermSize.Height)).Content()
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				vm := WithRenderFloatingDragPreview(RenderVMFromVisibleState(state), "float-1", tc.positions[i%len(tc.positions)], previewSnapshot)
+				benchmarkFrameSink = renderBodyFrameWithCoordinatorVM(coordinator, vm, state.TermSize.Width, FrameBodyHeight(state.TermSize.Height)).Content()
+			}
+		})
+	}
+}
+
 func benchmarkCoordinator(tb testing.TB, paneCount, width, height int) *Coordinator {
 	tb.Helper()
 	state := benchmarkState(tb, paneCount, width, height)

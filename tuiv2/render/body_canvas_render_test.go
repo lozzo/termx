@@ -425,6 +425,70 @@ func TestRenderBodyCanvasFloatingPreviewOverlayKeepsIncrementalStaticBody(t *tes
 	}
 }
 
+func TestRenderBodyCanvasMovingFloatingPreviewOverlayClearsPreviousPreviewFootprint(t *testing.T) {
+	now := time.Date(2026, 4, 23, 12, 30, 0, 0, time.UTC)
+	baseSurface := &spriteTestSurface{
+		size: protocol.Size{Cols: 18, Rows: 6},
+		screen: [][]protocol.Cell{
+			protocolRowFromText("base-row-01......."),
+			protocolRowFromText("base-row-02......."),
+			protocolRowFromText("base-row-03......."),
+			protocolRowFromText("base-row-04......."),
+			protocolRowFromText("base-row-05......."),
+			protocolRowFromText("base-row-06......."),
+		},
+		screenTimestamps: []time.Time{now, now, now, now, now, now},
+	}
+	floatSnapshot := &protocol.Snapshot{
+		TerminalID: "term-float",
+		Size:       protocol.Size{Cols: 8, Rows: 3},
+		Screen: protocol.ScreenData{Cells: [][]protocol.Cell{
+			protocolRowFromText("FLOAT-1"),
+			protocolRowFromText("FLOAT-2"),
+			protocolRowFromText("FLOAT-3"),
+		}},
+		Cursor:    protocol.CursorState{Visible: false},
+		Modes:     protocol.TerminalModes{AutoWrap: true},
+		Timestamp: now,
+	}
+	runtimeState := &VisibleRuntimeStateProxy{
+		HostEmojiVS16Mode: shared.AmbiguousEmojiVariationSelectorRaw,
+		Terminals: []runtimestate.VisibleTerminal{{
+			TerminalID:     "term-base",
+			Name:           "base",
+			State:          "running",
+			Surface:        baseSurface,
+			SurfaceVersion: 1,
+		}},
+	}
+	coordinator := &Coordinator{}
+	theme := defaultUITheme()
+	entries := []paneRenderEntry{testPaneRenderEntry("pane-base", "term-base", workbench.Rect{X: 0, Y: 0, W: 20, H: 8}, false, true, theme, 1)}
+
+	previewAt := func(x int) paneRenderEntry {
+		preview := testPaneRenderEntry("pane-float", "term-float", workbench.Rect{X: x, Y: 2, W: 10, H: 5}, true, false, theme, 0)
+		preview.Snapshot = floatSnapshot
+		preview.ContentKey.Snapshot = floatSnapshot
+		preview.Surface = nil
+		preview.TerminalID = "term-float"
+		return preview
+	}
+
+	firstPreview := previewAt(10)
+	_ = renderBodyCanvas(coordinator, runtimeState, false, entries, &firstPreview, 40, 8)
+
+	secondPreview := previewAt(14)
+	got := renderBodyCanvas(coordinator, runtimeState, false, entries, &secondPreview, 40, 8)
+	want := rebuildBodyCanvas(nil, append(append([]paneRenderEntry(nil), entries...), secondPreview), 40, 8, emojiVariationSelectorModeForRuntime(runtimeState), TopChromeRows, nil, runtimeState)
+
+	if gotRaw, wantRaw := strings.TrimRight(got.rawString(), "\n"), strings.TrimRight(want.rawString(), "\n"); gotRaw != wantRaw {
+		t.Fatalf("expected moving preview overlay canvas to match full rebuild raw output,\n got: %q\nwant: %q", gotRaw, wantRaw)
+	}
+	if gotANSI, wantANSI := got.String(), want.String(); gotANSI != wantANSI {
+		t.Fatalf("expected moving preview overlay canvas to match full rebuild styled output")
+	}
+}
+
 func testPaneRenderEntry(paneID, terminalID string, rect workbench.Rect, floating, active bool, theme uiTheme, surfaceVersion uint64) paneRenderEntry {
 	entry := paneRenderEntry{
 		PaneID:     paneID,

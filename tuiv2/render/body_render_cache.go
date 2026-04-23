@@ -40,6 +40,7 @@ type bodyRenderCache struct {
 	hasActiveCursor bool
 	overlap         bool
 	preview         bodyRenderCachePreview
+	previewCanvas   *composedCanvas
 }
 
 func captureBodyRenderCacheEntries(entries []paneRenderEntry, runtimeState *VisibleRuntimeStateProxy) []capturedBodyRenderCacheEntry {
