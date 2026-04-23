@@ -135,16 +135,7 @@ func (m *Model) showError(err error) tea.Cmd {
 func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 	if m != nil && m.input != nil {
 		if result := m.input.TryRepeatedPassthrough(msg); result.TerminalInput != nil {
-			inputMsg := *result.TerminalInput
-			if inputMsg.PaneID == "" && m.workbench != nil {
-				if pane := m.workbench.ActivePane(); pane != nil {
-					inputMsg.PaneID = pane.ID
-				}
-			}
-			if encoded := m.encodeActiveTerminalInput(msg, inputMsg.PaneID); len(encoded) > 0 {
-				inputMsg.Data = encoded
-			}
-			return m.handleTerminalInput(inputMsg)
+			return m.terminalInputCmdForKeyMsg(msg, *result.TerminalInput)
 		}
 	}
 	if handled, cmd := m.handleModalKeyMsg(msg); handled {
@@ -175,19 +166,11 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		return func() tea.Msg { return action }
 	}
 	if result.TerminalInput != nil {
-		inputMsg := *result.TerminalInput
-		if inputMsg.PaneID == "" && m.workbench != nil {
-			if pane := m.workbench.ActivePane(); pane != nil {
-				inputMsg.PaneID = pane.ID
-			}
-		}
-		if encoded := m.encodeActiveTerminalInput(msg, inputMsg.PaneID); len(encoded) > 0 {
-			inputMsg.Data = encoded
-		}
-		return m.handleTerminalInput(inputMsg)
+		return m.terminalInputCmdForKeyMsg(msg, *result.TerminalInput)
 	}
 	return nil
 }
+
 
 func (m *Model) restartActionForKeyMsg(msg tea.KeyMsg) (input.SemanticAction, bool) {
 	if m == nil || m.input == nil || m.mode().Kind != input.ModeNormal {

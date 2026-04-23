@@ -749,6 +749,7 @@ func TestOutputCursorWriterAdaptiveBatchDelayIncreasesAfterSlowFlushCost(t *test
 }
 
 func TestOutputCursorWriterAdaptiveBatchDelayRecoversAfterFastFlushCost(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_LATENCY", "0")
 	originalDelay := directFrameBatchDelay
 	directFrameBatchDelay = 4 * time.Millisecond
 	defer func() { directFrameBatchDelay = originalDelay }()

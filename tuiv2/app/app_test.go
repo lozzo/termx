@@ -1317,6 +1317,7 @@ func TestHandleTerminalInputQueuesWhileSendInFlight(t *testing.T) {
 }
 
 func TestHandleTerminalWheelInputMergesMatchingPendingTail(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_LATENCY", "0")
 	originalDelay := terminalWheelDispatchDelay
 	originalTailDelay := terminalWheelTailDispatchDelay
 	terminalWheelDispatchDelay = 0
@@ -1446,6 +1447,7 @@ func TestInteractionBatchCombinesMixedTerminalInputIntoOneSend(t *testing.T) {
 }
 
 func TestHandleTerminalWheelInputCancelsOppositePendingTail(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_LATENCY", "0")
 	originalDelay := terminalWheelDispatchDelay
 	originalTailDelay := terminalWheelTailDispatchDelay
 	terminalWheelDispatchDelay = 0
@@ -1542,6 +1544,7 @@ func TestHandleTerminalWheelInputCancelsOppositePendingTail(t *testing.T) {
 }
 
 func TestHandleTerminalWheelInputBoundaryKeyInvalidatesPendingTail(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_LATENCY", "0")
 	originalDelay := terminalWheelDispatchDelay
 	originalTailDelay := terminalWheelTailDispatchDelay
 	terminalWheelDispatchDelay = 0
@@ -1799,6 +1802,7 @@ func TestQueueInvalidateCoalescesPendingRedraws(t *testing.T) {
 }
 
 func TestQueueInvalidateBatchesBurstBeforeSending(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_LATENCY", "0")
 	originalDelay := invalidateBatchDelay
 	invalidateBatchDelay = 40 * time.Millisecond
 	defer func() { invalidateBatchDelay = originalDelay }()
@@ -1987,6 +1991,7 @@ func TestQueueInvalidateAdaptiveDelayIncreasesAfterSlowDrainPressure(t *testing.
 }
 
 func TestQueueInvalidateAdaptiveDelayRecoversAfterFastDrainPressure(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_LATENCY", "0")
 	originalDelay := invalidateBatchDelay
 	invalidateBatchDelay = 4 * time.Millisecond
 	defer func() { invalidateBatchDelay = originalDelay }()

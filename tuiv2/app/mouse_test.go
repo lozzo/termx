@@ -80,7 +80,7 @@ func TestMouseDragFloatingPane(t *testing.T) {
 	model, _ = m.Update(dragMsg)
 	m = model.(*Model)
 
-	// 验证浮动窗口位置已更新
+	// 验证拖拽预览位置已更新，但 committed rect 仍保持不变
 	tab := wb.CurrentTab()
 	if tab == nil {
 		t.Fatal("tab is nil")
@@ -97,12 +97,18 @@ func TestMouseDragFloatingPane(t *testing.T) {
 	if floating == nil {
 		t.Fatal("floating pane not found")
 	}
+	if floating.Rect != rect {
+		t.Fatalf("expected committed rect unchanged during drag, got %#v", floating.Rect)
+	}
 
 	expectedX := 20 // 25 - (15 - 10) = 20
-	expectedY := 8  // bounded by content height: 28 - pane height 20 = 8
-	if floating.Rect.X != expectedX || floating.Rect.Y != expectedY {
-		t.Errorf("expected position (%d, %d), got (%d, %d)",
-			expectedX, expectedY, floating.Rect.X, floating.Rect.Y)
+	expectedPreviewY := 10 // drag preview follows pointer during motion; bounds clamp happens on commit
+	if !m.floatingDragPreview.Active {
+		t.Fatalf("expected floating drag preview active, got %#v", m.floatingDragPreview)
+	}
+	if got := m.floatingDragPreview.Rect; got.X != expectedX || got.Y != expectedPreviewY {
+		t.Errorf("expected preview position (%d, %d), got (%d, %d)",
+			expectedX, expectedPreviewY, got.X, got.Y)
 	}
 
 	// 模拟鼠标释放
@@ -113,8 +119,15 @@ func TestMouseDragFloatingPane(t *testing.T) {
 		Action: tea.MouseActionRelease,
 	}
 
-	model, _ = m.Update(releaseMsg)
+	model, cmd := m.Update(releaseMsg)
 	m = model.(*Model)
+	drainCmd(t, m, cmd, 20)
+
+	expectedCommittedY := 8
+	if floating.Rect.X != expectedX || floating.Rect.Y != expectedCommittedY {
+		t.Errorf("expected committed position (%d, %d), got (%d, %d)",
+			expectedX, expectedCommittedY, floating.Rect.X, floating.Rect.Y)
+	}
 
 	// 验证拖动状态已清除
 	if m.mouseDragPaneID != "" {
@@ -196,6 +209,7 @@ func TestStaleQueuedMouseMotionIsDroppedDuringDrag(t *testing.T) {
 	m.mouseDragMode = mouseDragMove
 	m.mouseDragOffsetX = 5
 	m.mouseDragOffsetY = 0
+	m.floatingDragPreview = floatingDragPreviewState{Active: true, PaneID: "float-1", Rect: workbench.Rect{X: 10, Y: 5, W: 40, H: 20}}
 	noteQueuedMouseMotion(2)
 
 	before := m.workbench.FloatingState(tab.ID, "float-1").Rect
@@ -282,6 +296,7 @@ func TestLatestQueuedMouseMotionDropsLaggedOlderDragBeforeFlush(t *testing.T) {
 	m.mouseDragMode = mouseDragMove
 	m.mouseDragOffsetX = 5
 	m.mouseDragOffsetY = 0
+	m.floatingDragPreview = floatingDragPreviewState{Active: true, PaneID: "float-1", Rect: workbench.Rect{X: 10, Y: 5, W: 40, H: 20}}
 	noteQueuedMouseMotion(2)
 
 	oldMsg := queuedMouseMsg{
@@ -326,12 +341,11 @@ func TestLatestQueuedMouseMotionDropsLaggedOlderDragBeforeFlush(t *testing.T) {
 		drainCmd(t, m, cmd, 10)
 	}
 
-	floating := m.workbench.FloatingState(tab.ID, "float-1")
-	if floating == nil {
-		t.Fatal("expected floating pane")
+	if !m.floatingDragPreview.Active {
+		t.Fatalf("expected floating drag preview active after flush, got %#v", m.floatingDragPreview)
 	}
-	if floating.Rect.X != 30 || floating.Rect.Y != 12 {
-		t.Fatalf("expected latest drag position applied, got %#v", floating.Rect)
+	if got := m.floatingDragPreview.Rect; got.X != 30 || got.Y != 12 {
+		t.Fatalf("expected latest preview drag position applied, got %#v", got)
 	}
 }
 
@@ -350,6 +364,7 @@ func TestQueuedMouseMotionFlushAppliesOnlyLatestDragPosition(t *testing.T) {
 	m.mouseDragMode = mouseDragMove
 	m.mouseDragOffsetX = 5
 	m.mouseDragOffsetY = 0
+	m.floatingDragPreview = floatingDragPreviewState{Active: true, PaneID: "float-1", Rect: workbench.Rect{X: 10, Y: 5, W: 40, H: 20}}
 	noteQueuedMouseMotion(2)
 
 	msg1 := queuedMouseMsg{
@@ -394,12 +409,11 @@ func TestQueuedMouseMotionFlushAppliesOnlyLatestDragPosition(t *testing.T) {
 		drainCmd(t, m, cmd3, 10)
 	}
 
-	floating := m.workbench.FloatingState(tab.ID, "float-1")
-	if floating == nil {
-		t.Fatal("expected floating pane")
+	if !m.floatingDragPreview.Active {
+		t.Fatalf("expected drag preview active after flush, got %#v", m.floatingDragPreview)
 	}
-	if floating.Rect.X != 30 || floating.Rect.Y != 12 {
-		t.Fatalf("expected flush to apply latest queued drag position, got %#v", floating.Rect)
+	if got := m.floatingDragPreview.Rect; got.X != 30 || got.Y != 12 {
+		t.Fatalf("expected flush to apply latest preview drag position, got %#v", got)
 	}
 }
 

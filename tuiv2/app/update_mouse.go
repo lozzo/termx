@@ -8,47 +8,12 @@ import (
 )
 
 func (m *Model) handleMouseMsg(msg tea.MouseMsg) tea.Cmd {
-	switch msg.Action {
-	case tea.MouseActionPress:
-		if msg.Button == tea.MouseButtonLeft {
-			return m.handleMouseClick(msg)
-		}
-		if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
-			return m.handleMouseWheel(msg)
-		}
-		return m.forwardTerminalMouseInputCmd(msg)
-	case tea.MouseActionMotion:
-		if msg.Button == tea.MouseButtonLeft && m.copyMode.MouseSelecting {
-			return m.updateMouseCopySelection(msg.X, msg.Y)
-		}
-		if msg.Button == tea.MouseButtonNone && m.copyMode.MouseSelecting {
-			m.stopMouseCopySelection()
-			return nil
-		}
-		if msg.Button == tea.MouseButtonLeft && m.mouseDragMode != mouseDragNone {
-			perftrace.Count("app.mouse.drag.motion", 0)
-			return m.handleMouseDrag(msg.X, msg.Y)
-		}
-		if msg.Button == tea.MouseButtonNone && m.mouseDragMode != mouseDragNone {
-			return m.handleMouseRelease()
-		}
-		return m.forwardTerminalMouseInputCmd(msg)
-	case tea.MouseActionRelease:
-		if (msg.Button == tea.MouseButtonLeft || msg.Button == tea.MouseButtonNone) && m.copyMode.MouseSelecting {
-			_ = m.updateMouseCopySelection(msg.X, msg.Y)
-			m.stopMouseCopySelection()
-			return nil
-		}
-		if (msg.Button == tea.MouseButtonLeft || msg.Button == tea.MouseButtonNone) && m.mouseDragMode != mouseDragNone {
-			cmd := tea.Cmd(nil)
-			if dragCmd := m.handleMouseDrag(msg.X, msg.Y); dragCmd != nil {
-				cmd = dragCmd
-			}
-			return batchCmds(cmd, m.handleMouseRelease())
-		}
-		return m.forwardTerminalMouseInputCmd(msg)
+	decision := m.routeMouseInteraction(msg)
+	switch decision.Kind {
+	case interactionDecisionMouseDrag:
+		perftrace.Count("app.mouse.drag.motion", 0)
 	}
-	return nil
+	return m.dispatchMouseInteraction(decision)
 }
 
 func (m *Model) handleMouseClickNonFloating(x, y int) tea.Cmd {

@@ -36,22 +36,10 @@ func (m *Model) rearmPrefixTimeoutCmd() tea.Cmd {
 }
 
 func (m *Model) handleTerminalInput(in input.TerminalInput) tea.Cmd {
-	if len(in.Data) == 0 && in.Kind == input.TerminalInputPaste && in.Text != "" {
-		if encoded := m.encodeActiveTerminalPaste(in.Text, in.PaneID); len(encoded) > 0 {
-			in.Data = encoded
-		}
-	}
-	if len(in.Data) == 0 {
-		return nil
-	}
-	if m.isPaneAttachPending(in.PaneID) {
-		m.enqueueTerminalInput(in)
-		return nil
-	}
-	if m.workbench != nil {
-		if pane := m.workbench.ActivePane(); pane != nil && pane.TerminalID == "" {
-			return m.openPickerIfUnattached(pane.ID)
-		}
+	if normalized, cmd, ok := m.resolveTerminalInputDispatch(in); !ok {
+		return cmd
+	} else {
+		in = normalized
 	}
 	m.enqueueTerminalInput(in)
 	if m.interactionBatchActive {
@@ -61,7 +49,13 @@ func (m *Model) handleTerminalInput(in input.TerminalInput) tea.Cmd {
 		return nil
 	}
 	if isContinuousTerminalInput(in) {
-		return m.scheduleTerminalWheelDispatchCmd()
+		if m.terminalWheelDispatchPending {
+			return nil
+		}
+		if delay := effectiveTerminalWheelDispatchDelay(); delay > 0 {
+			return m.scheduleTerminalWheelDispatchCmdWithDelay(delay)
+		}
+		return m.dequeueTerminalInputCmd()
 	}
 	return m.dequeueTerminalInputCmd()
 }

@@ -67,15 +67,7 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 		if typed.Kind != "motion" {
 			m.beginBoundaryInteraction()
 		}
-		// Drag motions are already coalesced by the input forwarder's motion timer
-		// (only the latest position per batch reaches here). The enqueueMouseMotionFlush
-		// goroutine hop adds an extra event-loop iteration without benefit and makes
-		// drag feel laggy over SSH. Process drag motions directly so the frame is
-		// written in the same Update→View cycle as the input event.
-		if typed.Kind == "motion" && m.mouseDragMode != mouseDragNone {
-			return m.handleMouseMsg(typed.Msg), true
-		}
-		if typed.Kind == "motion" && m.copyMode.MouseSelecting {
+		if typed.Kind == "motion" && (m.mouseDragMode != mouseDragNone || m.copyMode.MouseSelecting) {
 			return m.enqueueMouseMotionFlush(typed), true
 		}
 		return m.handleMouseMsg(typed.Msg), true
@@ -124,9 +116,6 @@ func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		if next == nil {
 			m.scheduleSharedTerminalSnapshotResync(typed.paneID, typed.terminalID)
-			// Bubble Tea already renders once after handling terminalInputSentMsg.
-			// Scheduling an extra InvalidateMsg here forces a second repaint before
-			// any new PTY output arrives, which is pure churn on interactive scroll.
 			return nil, true
 		}
 		return next, true
@@ -278,43 +267,45 @@ func (m *Model) enqueueMouseMotionFlush(msg queuedMouseMsg) tea.Cmd {
 	m.pendingMouseMotion = &copyMsg
 	epoch := m.interactionBoundaryEpoch
 	if m.mouseMotionFlushPending {
-		appendMouseDebugLog("mouse_motion_coalesce", "seq", msg.Seq, "x", msg.Msg.X, "y", msg.Msg.Y)
 		return nil
 	}
 	m.mouseMotionFlushPending = true
-	return func() tea.Msg { return mouseMotionFlushMsg{epoch: epoch} }
+	return func() tea.Msg {
+		return mouseMotionFlushMsg{epoch: epoch}
+	}
 }
 
-func (m *Model) handleMouseMotionFlush(flush mouseMotionFlushMsg) tea.Cmd {
+func (m *Model) handleMouseMotionFlush(msg mouseMotionFlushMsg) tea.Cmd {
 	if m == nil {
 		return nil
 	}
-	if flush.epoch != m.interactionBoundaryEpoch {
-		return nil
-	}
-	msg := m.pendingMouseMotion
-	m.pendingMouseMotion = nil
 	m.mouseMotionFlushPending = false
-	if msg == nil {
+	if msg.epoch != m.interactionBoundaryEpoch {
+		m.pendingMouseMotion = nil
 		return nil
 	}
-	queueDelay := time.Since(msg.QueuedAt)
+	if m.pendingMouseMotion == nil {
+		return nil
+	}
+	pending := *m.pendingMouseMotion
+	m.pendingMouseMotion = nil
+	queueDelay := time.Since(pending.QueuedAt)
 	appendMouseDebugLog(
 		"mouse_motion_flush",
-		"seq", msg.Seq,
-		"x", msg.Msg.X,
-		"y", msg.Msg.Y,
+		"seq", pending.Seq,
+		"x", pending.Msg.X,
+		"y", pending.Msg.Y,
 		"queue_ms", queueDelay.Milliseconds(),
 	)
-	if msg.Seq < latestQueuedMotionSeq() {
-		appendMouseDebugLog("mouse_drop_stale", "seq", msg.Seq, "latest_seq", latestQueuedMotionSeq(), "x", msg.Msg.X, "y", msg.Msg.Y)
+	if pending.Seq < latestQueuedMotionSeq() {
+		appendMouseDebugLog("mouse_drop_stale", "seq", pending.Seq, "latest_seq", latestQueuedMotionSeq(), "x", pending.Msg.X, "y", pending.Msg.Y)
 		return nil
 	}
 	if queueDelay > staleMouseMotionThreshold {
-		appendMouseDebugLog("mouse_drop_lagged", "seq", msg.Seq, "queue_ms", queueDelay.Milliseconds(), "x", msg.Msg.X, "y", msg.Msg.Y)
+		appendMouseDebugLog("mouse_drop_lagged", "seq", pending.Seq, "queue_ms", queueDelay.Milliseconds(), "x", pending.Msg.X, "y", pending.Msg.Y)
 		return nil
 	}
-	return m.handleMouseMsg(msg.Msg)
+	return m.handleMouseMsg(pending.Msg)
 }
 
 func isRawMouseWheelContinuous(msg tea.MouseMsg) bool {

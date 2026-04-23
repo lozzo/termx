@@ -18,65 +18,7 @@ func (m *Model) handleMouseWheelBurstMsg(msg mouseWheelBurstMsg) tea.Cmd {
 }
 
 func (m *Model) handleMouseWheelRepeated(msg tea.MouseMsg, repeat int) tea.Cmd {
-	if m == nil || m.workbench == nil {
-		return nil
-	}
-	x := msg.X
-	y := msg.Y
-	button := msg.Button
-	step := -1
-	if button == tea.MouseButtonWheelUp {
-		step = 1
-	}
-	repeat = maxInt(1, repeat)
-	localRepeat := repeat * localMouseWheelScrollLines
-	delta := step * localRepeat
-	vm := m.renderVM()
-	if handled, cmd := m.handleOverlayMouseWheel(vm, delta); handled {
-		return cmd
-	}
-	if handled, cmd := m.handleTerminalPoolMouseWheel(vm, delta); handled {
-		return cmd
-	}
-	if m.mode().Kind == input.ModeDisplay {
-		return m.moveCopyCursorVertical(-delta)
-	}
-	if y < m.contentOriginY() {
-		if delta > 0 {
-			return m.switchCurrentTabByOffsetMouse(-localRepeat)
-		}
-		return m.switchCurrentTabByOffsetMouse(localRepeat)
-	}
-	if in, ok := m.terminalWheelInputForMouseMsg(msg, step, repeat); ok {
-		return m.handleForwardedTerminalWheelInput(in)
-	}
-	if in, ok := m.alternateScreenWheelInputForMouseMsg(msg, step, repeat); ok {
-		return m.handleForwardedTerminalWheelInput(in)
-	}
-
-	contentY := y - m.contentOriginY()
-	if contentY < 0 {
-		return nil
-	}
-	if _, floating, ok := m.visiblePaneAt(x, contentY); ok {
-		tab := m.workbench.CurrentTab()
-		if tab == nil {
-			return nil
-		}
-		targetPaneID := tab.ActivePaneID
-		if floating != nil {
-			if tab.ActivePaneID != floating.ID {
-				_ = m.workbench.FocusPane(tab.ID, floating.ID)
-				m.workbench.ReorderFloatingPane(tab.ID, floating.ID, true)
-			}
-			targetPaneID = floating.ID
-		}
-		if cmd := m.localScrollbackWheelCmd(targetPaneID, delta); cmd != nil {
-			return cmd
-		}
-		return nil
-	}
-	return nil
+	return m.dispatchResolvedMouseWheel(m.resolveMouseWheelPolicy(msg, repeat))
 }
 
 func (m *Model) handleForwardedTerminalWheelInput(in input.TerminalInput) tea.Cmd {
@@ -86,13 +28,10 @@ func (m *Model) handleForwardedTerminalWheelInput(in input.TerminalInput) tea.Cm
 	if len(in.Data) == 0 {
 		return nil
 	}
-	if m.isPaneAttachPending(in.PaneID) {
-		return m.handleTerminalInput(in)
-	}
-	if m.workbench != nil {
-		if pane := m.workbench.ActivePane(); pane != nil && pane.TerminalID == "" {
-			return m.openPickerIfUnattached(pane.ID)
-		}
+	if normalized, cmd, ok := m.resolveTerminalInputDispatch(in); !ok {
+		return cmd
+	} else {
+		in = normalized
 	}
 	if shared.RemoteLatencyProfileEnabled() {
 		if m.terminalInputSending || m.interactionBatchActive || m.terminalInputs.HasPending() {
@@ -148,8 +87,6 @@ func (m *Model) localScrollbackWheelCmd(paneID string, delta int) tea.Cmd {
 	if m.mode().Kind == input.ModeDisplay {
 		return m.moveCopyCursorVertical(-delta)
 	}
-	// Align local wheel scroll behavior with tmux/zellij: first upward wheel
-	// enters a local scroll/copy mode instead of staying on the live pane path.
 	if delta > 0 && m.ensureCopyMode() {
 		m.setMode(input.ModeState{Kind: input.ModeDisplay})
 		m.render.Invalidate()
