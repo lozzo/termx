@@ -441,6 +441,19 @@ func maxInt(a, b int) int {
 	return b
 }
 
+func clampInt(value, low, high int) int {
+	if high < low {
+		return low
+	}
+	if value < low {
+		return low
+	}
+	if value > high {
+		return high
+	}
+	return value
+}
+
 func coalesce(value string, fallback string) string {
 	if strings.TrimSpace(value) != "" {
 		return value

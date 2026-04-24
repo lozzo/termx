@@ -101,7 +101,7 @@ func TestMouseDragFloatingPane(t *testing.T) {
 		t.Fatalf("expected committed rect unchanged during drag, got %#v", floating.Rect)
 	}
 
-	expectedX := 20 // 25 - (15 - 10) = 20
+	expectedX := 20        // 25 - (15 - 10) = 20
 	expectedPreviewY := 10 // drag preview follows pointer during motion; bounds clamp happens on commit
 	if !m.floatingDragPreview.Active {
 		t.Fatalf("expected floating drag preview active, got %#v", m.floatingDragPreview)
@@ -1049,7 +1049,7 @@ func TestMouseDragFloatingMoveDefersRectCommitUntilRelease(t *testing.T) {
 			"term-float": {
 				TerminalID: "term-float",
 				Size:       protocol.Size{Cols: 80, Rows: 24},
-				Screen: protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "x", Width: 1}}}},
+				Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "x", Width: 1}}}},
 			},
 		},
 	}
@@ -2142,8 +2142,11 @@ func TestMouseClickTerminalPoolFooterEditOpensPrompt(t *testing.T) {
 	}
 }
 
-func TestMouseClickTerminalPoolFooterKillRemovesItemAndInvokesBridgeClient(t *testing.T) {
-	client := &recordingBridgeClient{}
+func TestMouseClickTerminalPoolFooterKillRefreshesItemAndInvokesBridgeClient(t *testing.T) {
+	client := &recordingBridgeClient{listResult: &protocol.ListResult{Terminals: []protocol.TerminalInfo{
+		{ID: "term-1", Name: "shell", State: "running"},
+		{ID: "term-2", Name: "logs", State: "exited"},
+	}}}
 	m := setupModel(t, modelOpts{client: client})
 	m.terminalPage = &modal.TerminalManagerState{
 		Title: "Terminal Pool",
@@ -2165,8 +2168,12 @@ func TestMouseClickTerminalPoolFooterKillRemovesItemAndInvokesBridgeClient(t *te
 	})
 	drainCmd(t, m, cmd, 20)
 
-	if m.terminalPage == nil || len(m.terminalPage.Items) != 1 || m.terminalPage.Items[0].TerminalID != "term-1" {
-		t.Fatalf("expected selected terminal removed after footer kill, got %#v", m.terminalPage)
+	if m.terminalPage == nil || len(m.terminalPage.Items) != 2 {
+		t.Fatalf("expected terminal pool refreshed after footer kill, got %#v", m.terminalPage)
+	}
+	exitedIndex := terminalManagerVisibleIndexByTerminalID(m.terminalPage.VisibleItems(), "term-2")
+	if exitedIndex < 0 || m.terminalPage.VisibleItems()[exitedIndex].State != "exited" {
+		t.Fatalf("expected killed terminal to remain in exited group after footer kill, got %#v", m.terminalPage.VisibleItems())
 	}
 	if len(client.killCalls) != 1 || client.killCalls[0] != "term-2" {
 		t.Fatalf("expected kill call for term-2, got %#v", client.killCalls)

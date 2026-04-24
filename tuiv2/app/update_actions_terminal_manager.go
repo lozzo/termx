@@ -65,6 +65,11 @@ func (m *Model) buildTerminalManagerItems(terminals []protocol.TerminalInfo) []m
 			CreatedAt:     terminal.CreatedAt,
 		})
 	}
+	sortTerminalManagerItems(items)
+	return items
+}
+
+func sortTerminalManagerItems(items []modal.PickerItem) {
 	sort.SliceStable(items, func(i, j int) bool {
 		leftGroup := terminalManagerGroupOrder(items[i].State)
 		rightGroup := terminalManagerGroupOrder(items[j].State)
@@ -84,7 +89,6 @@ func (m *Model) buildTerminalManagerItems(terminals []protocol.TerminalInfo) []m
 		}
 		return leftName < rightName
 	})
-	return items
 }
 
 func terminalManagerGroupOrder(state string) int {

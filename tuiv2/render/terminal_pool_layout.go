@@ -12,12 +12,22 @@ import (
 
 const (
 	terminalPoolListLeftX       = 2
-	terminalPoolListStartY      = 3
 	terminalPoolFooterActionGap = 2
 )
 
 type terminalPoolPageLayout struct {
+	width         int
+	height        int
+	contentHeight int
+	cardX         int
+	cardY         int
+	cardWidth     int
+	cardHeight    int
 	innerWidth    int
+	bodyRect      workbench.Rect
+	listRect      workbench.Rect
+	previewRect   workbench.Rect
+	paneRect      workbench.Rect
 	queryRect     workbench.Rect
 	itemRows      []terminalPoolItemRowLayout
 	footerLine    string
@@ -48,32 +58,53 @@ type terminalPoolFooterActionSpec struct {
 func buildTerminalPoolPageLayout(pool *modal.TerminalManagerState, width, height int) terminalPoolPageLayout {
 	width = maxInt(1, width)
 	height = maxInt(1, height)
+	contentHeight := maxInt(1, height)
+	cardWidth := minInt(maxInt(96, width-8), maxInt(12, width-2))
+	cardHeight := minInt(maxInt(20, height-4), maxInt(14, height-1))
+	innerWidth := maxInt(10, cardWidth-2)
+	cardX := maxInt(0, (width-cardWidth)/2)
+	cardY := maxInt(0, (contentHeight-cardHeight)/2)
+	bodyY := cardY + 2
+	bodyHeight := maxInt(6, cardHeight-4)
+	leftWidth := maxInt(26, minInt((innerWidth*38)/100, innerWidth-34))
+	rightWidth := maxInt(24, innerWidth-leftWidth-1)
+	rows := maxInt(1, bodyHeight-1)
 	layout := terminalPoolPageLayout{
-		innerWidth: maxInt(24, width-4),
+		width:         width,
+		height:        height,
+		contentHeight: contentHeight,
+		cardX:         cardX,
+		cardY:         cardY,
+		cardWidth:     cardWidth,
+		cardHeight:    cardHeight,
+		innerWidth:    innerWidth,
+		bodyRect:      workbench.Rect{X: cardX + 1, Y: bodyY, W: innerWidth, H: bodyHeight},
+		listRect:      workbench.Rect{X: cardX + 1, Y: bodyY + 1, W: leftWidth, H: rows},
+		previewRect:   workbench.Rect{X: cardX + 1 + leftWidth + 1, Y: bodyY + 1, W: rightWidth, H: rows},
 		queryRect: workbench.Rect{
-			X: 2 + uiinput.PromptWidth(overlaySearchPrompt()),
-			Y: 1,
-			W: maxInt(1, width-2-uiinput.PromptWidth(overlaySearchPrompt())),
+			X: cardX + 1 + uiinput.PromptWidth(overlaySearchPrompt()),
+			Y: cardY + 1,
+			W: maxInt(1, innerWidth-uiinput.PromptWidth(overlaySearchPrompt())),
 			H: 1,
 		},
 	}
+	layout.paneRect = terminalPoolPaneRect(layout.previewRect, 1)
 
 	if pool != nil {
-		rows := terminalPoolListRows(pool.VisibleItems())
-		maxRows := maxInt(0, height-1) // last row is reserved for footer actions.
-		layout.itemRows = make([]terminalPoolItemRowLayout, 0, len(rows))
-		y := terminalPoolListStartY
-		for _, row := range rows {
-			if y >= maxRows {
+		visibleRows := terminalPoolListRows(pool.VisibleItems())
+		layout.itemRows = make([]terminalPoolItemRowLayout, 0, len(visibleRows))
+		y := layout.listRect.Y
+		for _, row := range visibleRows {
+			if y >= layout.listRect.Y+layout.listRect.H {
 				break
 			}
 			if row.itemIndex >= 0 {
 				layout.itemRows = append(layout.itemRows, terminalPoolItemRowLayout{
 					itemIndex: row.itemIndex,
 					rect: workbench.Rect{
-						X: terminalPoolListLeftX,
+						X: layout.listRect.X,
 						Y: y,
-						W: layout.innerWidth,
+						W: layout.listRect.W,
 						H: 1,
 					},
 				})
@@ -82,8 +113,28 @@ func buildTerminalPoolPageLayout(pool *modal.TerminalManagerState, width, height
 		}
 	}
 
-	layout.footerLine, layout.footerActions = layoutTerminalPoolFooterActions(width, height)
+	layout.footerLine, layout.footerActions = layoutTerminalPoolFooterActionsWithTheme(defaultUITheme(), layout.innerWidth, cardY+cardHeight-2)
+	for index := range layout.footerActions {
+		layout.footerActions[index].rect.X += cardX + 1 + terminalPoolListLeftX
+	}
 	return layout
+}
+
+func terminalPoolPaneRect(previewRect workbench.Rect, detailRows int) workbench.Rect {
+	if detailRows < 0 {
+		detailRows = 0
+	}
+	detailBlockRows := 0
+	if detailRows > 0 {
+		detailBlockRows = minInt(detailRows+1, maxInt(1, previewRect.H-4))
+	}
+	y := previewRect.Y + detailBlockRows
+	height := maxInt(3, previewRect.H-detailBlockRows)
+	return workbench.Rect{X: previewRect.X, Y: y, W: previewRect.W, H: height}
+}
+
+func terminalPoolWindow(total, selected, rows int) (int, int) {
+	return workbenchTreeWindow(total, selected, rows)
 }
 
 func terminalPoolListRows(items []modal.PickerItem) []terminalPoolListRow {
@@ -146,14 +197,11 @@ func layoutTerminalPoolFooterActionsWithTheme(theme uiTheme, width, height int) 
 		x += labelW + terminalPoolFooterActionGap
 	}
 	line := ""
-	if len(parts) > 0 {
-		line = renderOverlaySpan(overlayFooterPlainStyle(theme), "", terminalPoolListLeftX)
-		for index, part := range parts {
-			if index > 0 {
-				line += renderOverlaySpan(overlayFooterPlainStyle(theme), "", terminalPoolFooterActionGap)
-			}
-			line += part
+	for index, part := range parts {
+		if index > 0 {
+			line += renderOverlaySpan(overlayFooterPlainStyle(theme), "", terminalPoolFooterActionGap)
 		}
+		line += part
 	}
 	return renderOverlaySpan(pickerFooterStyle(theme), line, width), slots
 }
