@@ -5,8 +5,10 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/modal"
+	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/uiinput"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
@@ -555,7 +557,7 @@ func workbenchTreePreviewLines(picker *modal.WorkspacePickerState, item *modal.W
 		return workbenchTreeTabPreviewLines(picker, item, lookup, runtimeState, width, maxLines, theme)
 	}
 	if terminal := lookup.terminal(item.TerminalID); terminal != nil {
-		return terminalPreviewPaneContentLinesANSI(terminal.Snapshot, terminal.Surface, runtimeState, width, maxLines, theme)
+		return workbenchTreePanePreviewFrameLines(*item, terminal, runtimeState, width, maxLines, theme)
 	}
 	out := []string{forceWidthANSIOverlay("(no live preview)", width)}
 	if workbenchTreeItemKind(*item) == modal.WorkspacePickerItemPane {
@@ -611,69 +613,167 @@ func workbenchTreeTabPreviewLines(picker *modal.WorkspacePickerState, item *moda
 		return []string{forceWidthANSIOverlay("(no pane previews)", width)}
 	}
 	lines := make([]string, 0, maxLines)
-	separatorCount := maxInt(0, len(panes)-1)
-	usable := maxInt(len(panes), maxLines-separatorCount)
+	usable := maxInt(len(panes), maxLines)
 	baseBlock := usable / maxInt(1, len(panes))
 	remainder := usable % maxInt(1, len(panes))
 	for paneIndex, pane := range panes {
 		if len(lines) >= maxLines {
 			break
 		}
-		if paneIndex > 0 {
-			lines = append(lines, lipgloss.NewStyle().Foreground(lipgloss.Color(theme.panelBorder)).Render(strings.Repeat("─", maxInt(1, width))))
-			if len(lines) >= maxLines {
-				break
-			}
-		}
 		blockLines := baseBlock
 		if paneIndex < remainder {
 			blockLines++
 		}
-		blockLines = maxInt(2, blockLines)
-		title := strings.TrimSpace(pane.Name)
-		if title == "" {
-			title = pane.PaneID
-		}
-		blockUsed := 0
-		header := workbenchTreeTitleStyle(theme, modal.WorkspacePickerItemPane, false, pane.Active).Render(title)
-		meta := make([]string, 0, 3)
-		if pane.State != "" {
-			meta = append(meta, pane.State)
-		}
-		if pane.Role != "" {
-			meta = append(meta, pane.Role)
-		}
-		if pane.Floating {
-			meta = append(meta, "floating")
-		}
-		line := header
-		if len(meta) > 0 {
-			line += "  " + lipgloss.NewStyle().Foreground(lipgloss.Color(theme.panelMuted)).Render(strings.Join(meta, "  "))
-		}
-		lines = append(lines, forceWidthANSIOverlay(line, width))
-		blockUsed++
-		if terminal := lookup.terminal(pane.TerminalID); terminal != nil {
-			preview := terminalPreviewPaneContentLinesANSI(terminal.Snapshot, terminal.Surface, runtimeState, maxInt(1, width-2), minInt(maxInt(1, blockLines-1), maxLines-len(lines)), theme)
-			for _, previewLine := range preview {
-				if len(lines) >= maxLines {
-					break
-				}
-				lines = append(lines, forceWidthANSIOverlay("  "+offsetCHAANSI(previewLine, 2), width))
-				blockUsed++
+		blockLines = maxInt(3, blockLines)
+		terminal := lookup.terminal(pane.TerminalID)
+		frame := workbenchTreePanePreviewFrameLines(pane, terminal, runtimeState, width, minInt(blockLines, maxLines-len(lines)), theme)
+		for _, frameLine := range frame {
+			if len(lines) >= maxLines {
+				break
 			}
-		} else if len(lines) < maxLines {
-			lines = append(lines, forceWidthANSIOverlay("  (no live preview)", width))
-			blockUsed++
-		}
-		for blockUsed < blockLines && len(lines) < maxLines {
-			lines = append(lines, "")
-			blockUsed++
+			lines = append(lines, frameLine)
 		}
 	}
 	if len(lines) > maxLines {
 		lines = lines[:maxLines]
 	}
 	return lines
+}
+
+func workbenchTreePanePreviewFrameLines(pane modal.WorkspacePickerItem, terminal *runtime.VisibleTerminal, runtimeState *VisibleRuntimeStateProxy, width, height int, theme uiTheme) []string {
+	if width <= 0 || height <= 0 {
+		return nil
+	}
+	entry := workbenchTreePanePreviewRenderEntry(pane, terminal, width, height, theme)
+	if entry == nil {
+		return nil
+	}
+	canvas := buildPreviewSprite(*entry, runtimeState)
+	if canvas == nil {
+		return nil
+	}
+	lines := make([]string, height)
+	for row := 0; row < height; row++ {
+		lines[row] = canvas.serializeRowRange(row, 0, width-1)
+	}
+	return lines
+}
+
+func workbenchTreePanePreviewRenderEntry(pane modal.WorkspacePickerItem, terminal *runtime.VisibleTerminal, width, height int, theme uiTheme) *paneRenderEntry {
+	if width <= 0 || height <= 0 {
+		return nil
+	}
+	paneID := strings.TrimSpace(pane.PaneID)
+	if paneID == "" {
+		paneID = strings.TrimSpace(pane.Name)
+	}
+	if paneID == "" {
+		paneID = "preview"
+	}
+	title := strings.TrimSpace(pane.Name)
+	if title == "" {
+		title = paneID
+	}
+	terminalID := strings.TrimSpace(pane.TerminalID)
+	rect := workbench.Rect{W: width, H: height}
+	border := workbenchTreePanePreviewBorderInfo(pane, terminal)
+	snapshot := (*protocol.Snapshot)(nil)
+	surface := runtime.TerminalSurface(nil)
+	surfaceVersion := uint64(0)
+	metrics := renderTerminalMetrics{}
+	overflow := paneOverflowHints{}
+	terminalKnown := terminal != nil
+	terminalName := ""
+	terminalState := ""
+	if terminal != nil {
+		terminalID = terminal.TerminalID
+		terminalName = terminal.Name
+		terminalState = terminal.State
+		snapshot = terminal.Snapshot
+		surface = terminal.Surface
+		surfaceVersion = terminal.SurfaceVersion
+		extent := terminalExtentProfileCached(snapshot, surface, surfaceVersion)
+		metrics = extent.Metrics
+		overflow = paneOverflowHintsForRenderWithMetrics(rect, rect, extent.Overflow)
+	} else if terminalID == "" {
+		terminalID = paneID
+	}
+	chrome := UIChromeConfig{PaneChrome: PaneChromeConfig{Top: []ChromeSlotID{SlotPaneTitle, SlotPaneState, SlotPaneShare, SlotPaneRole}}}
+	contentKey := paneContentKey{
+		TerminalID:     terminalID,
+		Snapshot:       snapshot,
+		SurfaceVersion: surfaceVersion,
+		Name:           terminalName,
+		State:          terminalState,
+		ThemeBG:        theme.panelBG,
+		TerminalKnown:  terminalKnown,
+	}
+	return &paneRenderEntry{
+		PaneID:     paneID,
+		OwnerID:    paneOwnerID("workbench-navigator-preview:" + paneID),
+		Rect:       rect,
+		Title:      title,
+		Border:     border,
+		Theme:      theme,
+		Chrome:     chrome,
+		Overflow:   overflow,
+		ContentKey: contentKey,
+		FrameKey: paneFrameKey{
+			Rect:            rect,
+			Title:           title,
+			Border:          border,
+			ThemeBG:         theme.panelBG,
+			Overflow:        overflow,
+			Active:          pane.Active,
+			Floating:        pane.Floating,
+			ChromeSignature: paneChromeLayoutSignature(rect, title, border, pane.Floating, chrome),
+		},
+		TerminalID:           terminalID,
+		Snapshot:             snapshot,
+		Surface:              surface,
+		SurfaceVersion:       surfaceVersion,
+		Metrics:              metrics,
+		Active:               pane.Active,
+		Floating:             pane.Floating,
+		ScrollOffset:         0,
+		EmptyActionSelected:  -1,
+		ExitedActionSelected: -1,
+	}
+}
+
+func workbenchTreePanePreviewBorderInfo(pane modal.WorkspacePickerItem, terminal *runtime.VisibleTerminal) paneBorderInfo {
+	if terminal != nil {
+		info := paneBorderInfo{
+			StateLabel: paneBorderStateLabel(terminal.State, terminal.ExitCode),
+			StateTone:  paneBorderStateTone(terminal.State),
+		}
+		switch strings.TrimSpace(strings.ToLower(pane.Role)) {
+		case "owner":
+			info.RoleLabel = "◆ owner"
+		case "follower":
+			info.RoleLabel = "◇ follow"
+		}
+		if len(terminal.BoundPaneIDs) > 1 {
+			info.ShareLabel = fmt.Sprintf("⇄%d", len(terminal.BoundPaneIDs))
+		}
+		return info
+	}
+	return paneBorderInfo{
+		StateLabel: paneBorderStateLabel(pane.State, nil),
+		StateTone:  paneBorderStateTone(pane.State),
+		RoleLabel:  workbenchTreePanePreviewRoleLabel(pane.Role),
+	}
+}
+
+func workbenchTreePanePreviewRoleLabel(role string) string {
+	switch strings.TrimSpace(strings.ToLower(role)) {
+	case "owner":
+		return "◆ owner"
+	case "follower":
+		return "◇ follow"
+	default:
+		return ""
+	}
 }
 
 func workbenchTreeTabTitlesForWorkspace(picker *modal.WorkspacePickerState, workspaceName string, limit int) []string {

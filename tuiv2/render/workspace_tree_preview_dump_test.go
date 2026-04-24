@@ -111,7 +111,7 @@ func assertRightGutterClear(t *testing.T, frame string, startY, endY int) {
 			start = 0
 		}
 		tail := string(runes[start : last+1])
-		if strings.TrimSpace(tail) != "│" {
+		if !strings.HasSuffix(strings.TrimSpace(tail), "│") {
 			t.Fatalf("preview right gutter contains terminal border-like content at row %d: %q", y, tail)
 		}
 	}

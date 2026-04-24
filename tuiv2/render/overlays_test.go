@@ -66,7 +66,7 @@ func TestRenderWorkspacePickerOverlayShowsPaneNodesAndPaneActions(t *testing.T) 
 	}
 }
 
-func TestRenderWorkspacePickerOverlayShowsTabPaneSeparators(t *testing.T) {
+func TestRenderWorkspacePickerOverlayShowsTabPaneFrames(t *testing.T) {
 	picker := &modal.WorkspacePickerState{
 		Title:    "Workspaces",
 		Selected: 1,
@@ -78,8 +78,10 @@ func TestRenderWorkspacePickerOverlayShowsTabPaneSeparators(t *testing.T) {
 		},
 	}
 	overlay := xansi.Strip(renderWorkspacePickerOverlay(picker, TermSize{Width: 140, Height: 30}))
-	if !strings.Contains(overlay, "PANES") || !strings.Contains(overlay, "──") {
-		t.Fatalf("workspace picker tab preview should show pane separators:\n%s", overlay)
+	for _, want := range []string{"PANES", "┌─ vim", "┌─ codex", "└"} {
+		if !strings.Contains(overlay, want) {
+			t.Fatalf("workspace picker tab preview should show pane frame %q:\n%s", want, overlay)
+		}
 	}
 }
 
