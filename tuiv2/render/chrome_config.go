@@ -9,6 +9,7 @@ const (
 	SlotPaneState    ChromeSlotID = "pane.state"
 	SlotPaneShare    ChromeSlotID = "pane.share"
 	SlotPaneRole     ChromeSlotID = "pane.role"
+	SlotPaneSize     ChromeSlotID = "pane.size"
 	SlotPaneCopyTime ChromeSlotID = "pane.copy_time"
 	SlotPaneCopyRow  ChromeSlotID = "pane.copy_row"
 	SlotPaneActions  ChromeSlotID = "pane.actions"

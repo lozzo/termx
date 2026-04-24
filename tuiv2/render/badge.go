@@ -21,6 +21,7 @@ type paneBorderInfo struct {
 	StateTone     string
 	ShareLabel    string
 	RoleLabel     string
+	SizeLabel     string
 	CopyTimeLabel string
 	CopyRowLabel  string
 }

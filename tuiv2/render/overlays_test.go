@@ -85,6 +85,24 @@ func TestRenderWorkspacePickerOverlayShowsTabPaneFrames(t *testing.T) {
 	}
 }
 
+func TestRenderWorkspacePickerOverlayPaneFramesShowTerminalSize(t *testing.T) {
+	picker := &modal.WorkspacePickerState{
+		Title:    "Workspaces",
+		Selected: 1,
+		Items: []modal.WorkspacePickerItem{
+			{Kind: modal.WorkspacePickerItemWorkspace, Name: "main", WorkspaceName: "main"},
+			{Kind: modal.WorkspacePickerItemTab, Name: "backend", WorkspaceName: "main", TabID: "tab-1", TabIndex: 0, Depth: 1, Active: true},
+			{Kind: modal.WorkspacePickerItemPane, Name: "vim", WorkspaceName: "main", TabID: "tab-1", TabName: "backend", PaneID: "pane-1", TerminalID: "term-1", Depth: 2, State: "running", Role: "owner"},
+		},
+	}
+	runtimeState := &VisibleRuntimeStateProxy{Terminals: []runtime.VisibleTerminal{{TerminalID: "term-1", State: "running", Snapshot: snapshotWithRightEdgeMarks("term-1", 104, 40)}}}
+	lines := renderWorkspacePickerOverlayLinesWithThemeAndCursor(picker, runtimeState, TermSize{Width: 140, Height: 30}, defaultUITheme(), true)
+	overlay := xansi.Strip(strings.Join(lines, "\n"))
+	if !strings.Contains(overlay, "104x40") {
+		t.Fatalf("workspace picker tab pane frame should show terminal size:\n%s", overlay)
+	}
+}
+
 func TestCompositeOverlayOverlaysCenteredCard(t *testing.T) {
 	body := strings.Join([]string{"aaaa", "aaaa", "aaaa", "aaaa"}, "\n")
 	overlay := strings.Join([]string{"    xx", "    yy"}, "\n")

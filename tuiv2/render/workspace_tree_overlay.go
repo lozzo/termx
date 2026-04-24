@@ -698,7 +698,7 @@ func workbenchTreePanePreviewRenderEntry(pane modal.WorkspacePickerItem, termina
 	} else if terminalID == "" {
 		terminalID = paneID
 	}
-	chrome := UIChromeConfig{PaneChrome: PaneChromeConfig{Top: []ChromeSlotID{SlotPaneTitle, SlotPaneState, SlotPaneShare, SlotPaneRole}}}
+	chrome := UIChromeConfig{PaneChrome: PaneChromeConfig{Top: []ChromeSlotID{SlotPaneTitle, SlotPaneState, SlotPaneShare, SlotPaneSize, SlotPaneRole}}}
 	contentKey := paneContentKey{
 		TerminalID:     terminalID,
 		Snapshot:       snapshot,
@@ -756,6 +756,9 @@ func workbenchTreePanePreviewBorderInfo(pane modal.WorkspacePickerItem, terminal
 		if len(terminal.BoundPaneIDs) > 1 {
 			info.ShareLabel = fmt.Sprintf("⇄%d", len(terminal.BoundPaneIDs))
 		}
+		if sizeLabel := workbenchTreeTerminalSizeLabel(terminal); sizeLabel != "" {
+			info.SizeLabel = sizeLabel
+		}
 		return info
 	}
 	return paneBorderInfo{
@@ -763,6 +766,21 @@ func workbenchTreePanePreviewBorderInfo(pane modal.WorkspacePickerItem, terminal
 		StateTone:  paneBorderStateTone(pane.State),
 		RoleLabel:  workbenchTreePanePreviewRoleLabel(pane.Role),
 	}
+}
+
+func workbenchTreeTerminalSizeLabel(terminal *runtime.VisibleTerminal) string {
+	if terminal == nil {
+		return ""
+	}
+	source := renderSource(terminal.Snapshot, terminal.Surface)
+	if source == nil {
+		return ""
+	}
+	size := source.Size()
+	if size.Cols == 0 || size.Rows == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%dx%d", size.Cols, size.Rows)
 }
 
 func workbenchTreePanePreviewRoleLabel(role string) string {

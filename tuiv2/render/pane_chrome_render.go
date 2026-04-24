@@ -258,6 +258,8 @@ type paneBorderLabelsLayout struct {
 	shareLabel    string
 	roleX         int
 	roleLabel     string
+	sizeX         int
+	sizeLabel     string
 	copyTimeX     int
 	copyTimeLabel string
 	copyRowX      int
@@ -291,6 +293,11 @@ func resolvePaneChromeConfig(cfg UIChromeConfig, title string, border paneBorder
 	if chromeSlotEnabled(cfg.PaneChrome.Top, SlotPaneRole) {
 		if label := paneBorderRoleSlot(border.RoleLabel); label != "" {
 			resolved.Slots = append(resolved.Slots, paneBorderSlot{kind: "role", label: label})
+		}
+	}
+	if chromeSlotEnabled(cfg.PaneChrome.Top, SlotPaneSize) {
+		if label := normalizePaneBorderLabel(border.SizeLabel); label != "" {
+			resolved.Slots = append(resolved.Slots, paneBorderSlot{kind: "size", label: label})
 		}
 	}
 	if chromeSlotEnabled(cfg.PaneChrome.Top, SlotPaneCopyTime) {
@@ -335,6 +342,9 @@ func drawPaneTopBorderLabels(canvas *composedCanvas, rect workbench.Rect, styles
 			roleStyle = styles.Action
 		}
 		drawBorderLabel(canvas, layout.roleX, rect.Y, layout.roleLabel, roleStyle)
+	}
+	if layout.sizeLabel != "" {
+		drawBorderLabel(canvas, layout.sizeX, rect.Y, layout.sizeLabel, styles.Meta)
 	}
 	if layout.copyTimeLabel != "" {
 		drawBorderLabel(canvas, layout.copyTimeX, rect.Y, layout.copyTimeLabel, styles.Meta)
@@ -421,6 +431,9 @@ func paneTopBorderLabelsLayout(rect workbench.Rect, chrome paneChromeResolved) (
 		case "role":
 			layout.roleX = x
 			layout.roleLabel = slot.label
+		case "size":
+			layout.sizeX = x
+			layout.sizeLabel = slot.label
 		case "copy-time":
 			layout.copyTimeX = x
 			layout.copyTimeLabel = slot.label
@@ -485,7 +498,7 @@ func paneBorderSlotsForWidth(slots []paneBorderSlot, width int) []paneBorderSlot
 }
 
 func paneBorderSlotRemovalIndex(slots []paneBorderSlot) int {
-	for _, kind := range []string{"share", "state", "role", "copy-time", "copy-row"} {
+	for _, kind := range []string{"share", "state", "size", "role", "copy-time", "copy-row"} {
 		for i := len(slots) - 1; i >= 0; i-- {
 			if slots[i].kind == kind {
 				return i
