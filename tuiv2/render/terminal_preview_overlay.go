@@ -36,6 +36,47 @@ func terminalPreviewBlockLinesANSI(snapshot *protocol.Snapshot, surface runtime.
 	return lines
 }
 
+func terminalPreviewPaneContentLinesANSI(snapshot *protocol.Snapshot, surface runtime.TerminalSurface, runtimeState *VisibleRuntimeStateProxy, width, height int, theme uiTheme) []string {
+	if width <= 0 || height <= 0 {
+		return nil
+	}
+	if width < 3 {
+		return terminalPreviewBlockLinesANSI(snapshot, surface, runtimeState, width, height, theme)
+	}
+	source := renderSource(snapshot, surface)
+	if source == nil {
+		lines := []string{forceWidthANSIOverlay("(no live preview)", width)}
+		for len(lines) < height {
+			lines = append(lines, forceWidthANSIOverlay("", width))
+		}
+		return lines
+	}
+	contentWidth := width - 2
+	if sourceCols := int(source.Size().Cols); sourceCols > 0 {
+		contentWidth = minInt(contentWidth, sourceCols)
+	}
+	canvas := newComposedCanvas(contentWidth, height)
+	if runtimeState != nil {
+		canvas.hostEmojiVS16Mode = runtimeState.HostEmojiVS16Mode
+	}
+	drawTerminalSourceInRect(canvas, workbench.Rect{X: 0, Y: 0, W: contentWidth, H: height}, source)
+	contentLines := make([]string, height)
+	for row := 0; row < height; row++ {
+		contentLines[row] = canvas.serializeRowRange(row, 0, contentWidth-1)
+	}
+	lines := make([]string, 0, len(contentLines))
+	for _, line := range contentLines {
+		lines = append(lines, forceWidthANSIOverlay(" "+offsetCHAANSI(line, 1), width))
+	}
+	for len(lines) < height {
+		lines = append(lines, forceWidthANSIOverlay("", width))
+	}
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	return lines
+}
+
 func terminalPreviewLinesANSI(snapshot *protocol.Snapshot, surface runtime.TerminalSurface, runtimeState *VisibleRuntimeStateProxy, width, maxLines int) []string {
 	source := renderSource(snapshot, surface)
 	if source == nil || width <= 0 || maxLines <= 0 || source.ScreenRows() == 0 {

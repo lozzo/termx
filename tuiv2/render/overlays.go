@@ -168,6 +168,7 @@ func placeOverlayCardLines(theme uiTheme, width, height, cardX, cardY, cardWidth
 		if y < 0 || y >= height {
 			continue
 		}
+		line = offsetCHAANSI(line, cardX)
 		row := leftPad + line + rightPad
 		out[y] = bodyStyle.Render(forceWidthANSIOverlay(row, width))
 	}
@@ -195,7 +196,7 @@ func renderModalBottomBorder(theme uiTheme, innerWidth int) string {
 
 func renderModalFramedRow(theme uiTheme, content string, innerWidth int) string {
 	border := pickerBorderStyle(theme)
-	return border.Render("│") + forceWidthANSIOverlay(content, innerWidth) + border.Render("│")
+	return border.Render("│") + forceWidthANSIOverlay(offsetCHAANSI(content, 1), innerWidth) + border.Render("│")
 }
 
 func pickerInnerWidth(termWidth int) int {

@@ -164,7 +164,7 @@ func renderWorkbenchTreeBodyHeader(theme uiTheme, leftWidth, rightWidth int, sel
 func renderWorkbenchTreeBodyRow(theme uiTheme, left, right string, leftWidth, rightWidth int) string {
 	return forceWidthANSIOverlay(left, leftWidth) +
 		pickerBorderStyle(theme).Render("│") +
-		forceWidthANSIOverlay(right, rightWidth)
+		forceWidthANSIOverlay(offsetCHAANSI(right, leftWidth+1), rightWidth)
 }
 
 func renderWorkbenchTreeRows(picker *modal.WorkspacePickerState, rows, width int, theme uiTheme) ([]string, int) {
@@ -555,7 +555,7 @@ func workbenchTreePreviewLines(picker *modal.WorkspacePickerState, item *modal.W
 		return workbenchTreeTabPreviewLines(picker, item, lookup, runtimeState, width, maxLines, theme)
 	}
 	if terminal := lookup.terminal(item.TerminalID); terminal != nil {
-		return terminalPreviewLinesANSI(terminal.Snapshot, terminal.Surface, runtimeState, width, maxLines)
+		return terminalPreviewPaneContentLinesANSI(terminal.Snapshot, terminal.Surface, runtimeState, width, maxLines, theme)
 	}
 	out := []string{forceWidthANSIOverlay("(no live preview)", width)}
 	if workbenchTreeItemKind(*item) == modal.WorkspacePickerItemPane {
@@ -653,12 +653,12 @@ func workbenchTreeTabPreviewLines(picker *modal.WorkspacePickerState, item *moda
 		lines = append(lines, forceWidthANSIOverlay(line, width))
 		blockUsed++
 		if terminal := lookup.terminal(pane.TerminalID); terminal != nil {
-			preview := terminalPreviewBlockLinesANSI(terminal.Snapshot, terminal.Surface, runtimeState, maxInt(1, width-2), minInt(maxInt(1, blockLines-1), maxLines-len(lines)), theme)
+			preview := terminalPreviewPaneContentLinesANSI(terminal.Snapshot, terminal.Surface, runtimeState, maxInt(1, width-2), minInt(maxInt(1, blockLines-1), maxLines-len(lines)), theme)
 			for _, previewLine := range preview {
 				if len(lines) >= maxLines {
 					break
 				}
-				lines = append(lines, forceWidthANSIOverlay("  "+previewLine, width))
+				lines = append(lines, forceWidthANSIOverlay("  "+offsetCHAANSI(previewLine, 2), width))
 				blockUsed++
 			}
 		} else if len(lines) < maxLines {
