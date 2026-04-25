@@ -56,7 +56,7 @@ func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, col
 			if shouldEnterResizePreview(oldCols, oldRows, int(cols), int(rows)) {
 				source := terminal.ResizePreviewSource
 				if source == nil {
-					source = captureResizePreviewSource(terminalID, prevSnapshot, vt)
+					source = captureResizePreviewSource(terminalID, terminal, prevSnapshot, vt)
 					terminal.ResizePreviewSource = source
 				}
 				provisionalSnapshot = provisionalSnapshotForResizePreview(source, cols, rows)
@@ -108,7 +108,10 @@ func provisionalSnapshotForLocalShrink(snapshot *protocol.Snapshot, cols, rows u
 	return provisionalSnapshotForResizePreview(snapshot, cols, rows)
 }
 
-func captureResizePreviewSource(terminalID string, snapshot *protocol.Snapshot, vt VTermLike) *protocol.Snapshot {
+func captureResizePreviewSource(terminalID string, terminal *TerminalRuntime, snapshot *protocol.Snapshot, vt VTermLike) *protocol.Snapshot {
+	if terminal != nil && !terminal.PreferSnapshot && terminal.SurfaceVersion > terminal.SnapshotVersion {
+		return cloneProtocolSnapshot(snapshotFromVTerm(terminalID, vt))
+	}
 	if snapshot != nil {
 		return cloneProtocolSnapshot(snapshot)
 	}

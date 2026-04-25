@@ -309,6 +309,28 @@ Commit:
 
 - Pending blank-tail correction commit.
 
+### Runtime preview source freshness correction
+
+Commands:
+
+```sh
+apply_patch # prefer live vterm when surface version is newer than snapshot version
+gofmt -w tuiv2/runtime/resize.go
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime -run 'TestResizePreview'
+```
+
+Results:
+
+- Tmux validation still showed expand restoring a stale clipped snapshot after shell output.
+- Root cause: `captureResizePreviewSource` preferred `terminal.Snapshot` even when real output had advanced the live surface without refreshing the snapshot.
+- Fixed by capturing from live vterm when `SurfaceVersion > SnapshotVersion` and `PreferSnapshot` is false.
+- Targeted runtime tests passed:
+  - `ok github.com/lozzow/termx/tuiv2/runtime 0.328s`
+
+Commit:
+
+- Pending source freshness correction commit.
+
 ## Test and Validation Notes
 
 ### 10. Add render tests
@@ -356,7 +378,7 @@ Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
 - Last completed TODO: `10. Add render tests`
-- Last commit: pending blank-tail correction commit
+- Last commit: pending source freshness correction commit
 - Next step: run tmux validation captures against the implemented binary.
 
 Important artifacts:
