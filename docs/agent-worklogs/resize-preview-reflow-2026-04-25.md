@@ -34,7 +34,7 @@ Expected behavior:
 - [x] 10. Add render tests
 - [x] 11. Validate with tmux capture
 - [x] 12. Run final tests/build
-- [ ] 13. Write final summary
+- [x] 13. Write final summary
 
 ## Phase Log
 
@@ -488,15 +488,59 @@ Commit:
 - Implement alt-screen crop/restore from original preview source.
 - Ensure real output exits preview while resize echo/noop does not.
 
+## Final Summary
+
+Completed pane resize preview reflow for `termx` `tuiv2` on branch `feature/tuiv2-resize-preview-reflow`.
+
+Implemented behavior:
+
+- Runtime captures `ResizePreviewSource` when entering local resize preview.
+- Continuous resize regenerates provisional preview snapshots from the original source rather than the previous provisional snapshot.
+- Non-alt-screen previews reflow rows to the requested width, trim trailing blank source rows, and prefer whitespace boundaries so hard-column tokens remain visible.
+- Alt-screen previews crop/restore the captured 2D grid and do not text-reflow fullscreen layout rows.
+- Real output frames and contentful screen updates clear `ResizePreviewSource` and release `PreferSnapshot` so real terminal state is shown.
+- Resize echo/noop screen updates keep preview active and regenerate from the source when applicable.
+- Render/projection paths remain pure consumers; no mutation was added to render/Visible/projection.
+- Screen update/snapshot/bootstrap transport remains unchanged and binary protocol code was not modified.
+
+Validation summary:
+
+- Runtime tests cover non-alt shrink reflow, shrink→expand restore, real output clearing, noop update retention, content update clearing, and alt crop/restore.
+- Render tests cover visible render pipeline consumption of non-alt reflow, expanded restore, and alt cropped grid snapshots.
+- Final tmux capture validation proves hard-column shrink shows `COL_A`, `COL_B`, and `COL_C`; expand restores the original row; real output shows `AFTER_REAL_OUTPUT`.
+- Final required commands passed:
+  - `GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime ./tuiv2/render`
+  - `GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx`
+
+Key commits:
+
+- `c630104` Document resize preview reflow requirements and staged workflow
+- `7fa7c38` Record resize pipeline and tmux reflow investigation
+- `49c7271` Record tmux reproduction of missing resize preview reflow
+- `a84d0d9` Document resize preview source lifecycle design
+- `0fdf4ef` Add runtime resize preview source lifecycle
+- `249f30a` Add runtime tests for resize preview reflow lifecycle
+- `6944ef5` Add render tests for resize preview snapshots
+- `fb10dfe` Keep non-alt resize preview content above trailing blanks
+- `eabd631` Capture fresh live surface for resize preview source
+- `d236691` Wrap non-alt resize preview at whitespace boundaries
+- `04339c7` Record final tmux resize preview validation
+- `de4dd77` Record final resize preview test and build results
+- Pending final summary commit at time of writing this section.
+
 ## Resume From Here
 
 Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
-- Last completed TODO: `12. Run final tests/build`
-- Last commit: pending final tests/build commit
-- Next step: write final summary and ensure resume instructions point to completion status.
+- Last completed TODO: `13. Write final summary`
+- Last commit: pending final summary commit
+- Next step: review branch or open a PR; no implementation work remains for this task.
 
 Important artifacts:
 
 - `docs/agent-worklogs/resize-preview-reflow-2026-04-25.md`
+- `/tmp/termx-reflow-final-ok-before.txt`
+- `/tmp/termx-reflow-final-ok-shrink.txt`
+- `/tmp/termx-reflow-final-ok-expand.txt`
+- `/tmp/termx-reflow-final-ok-real-output.txt`
