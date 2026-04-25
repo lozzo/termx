@@ -25,7 +25,7 @@ Expected behavior:
 - [x] 1. Create branch and worklog
 - [x] 2. Inspect existing resize pipeline
 - [x] 3. Study tmux / terminal resize behavior
-- [ ] 4. Reproduce current missing capability in tmux
+- [x] 4. Reproduce current missing capability in tmux
 - [ ] 5. Design preview source and lifecycle
 - [ ] 6. Implement non-alt-screen reflow preview
 - [ ] 7. Implement alt-screen crop/restore preview
@@ -125,7 +125,57 @@ Commit:
 
 ## Tmux Reproduction Notes
 
-Pending.
+### 4. Reproduce current missing capability in tmux
+
+Commands:
+
+```sh
+go build -o ./termx ./cmd/termx
+SESSION=termx-resize-reflow
+(tmux kill-session -t "$SESSION" 2>/dev/null || true)
+tmux new-session -d -s "$SESSION" -x 100 -y 30 'cd /Users/lozzow/Documents/workdir/termx && ./termx'
+sleep 2
+tmux capture-pane -t "$SESSION:0.0" -p -S -200 > /tmp/termx-reflow-start.txt
+tmux send-keys -t "$SESSION:0.0" "clear; printf 'COL_A                 COL_B                 COL_C\n'; cat" Enter
+sleep 1
+tmux capture-pane -t "$SESSION:0.0" -p -S -200 > /tmp/termx-reflow-before.txt
+tmux resize-window -t "$SESSION:0" -x 50 -y 20
+sleep 0.5
+tmux capture-pane -t "$SESSION:0.0" -p -S -200 > /tmp/termx-reflow-shrink.txt
+tmux resize-window -t "$SESSION:0" -x 100 -y 30
+sleep 0.5
+tmux capture-pane -t "$SESSION:0.0" -p -S -200 > /tmp/termx-reflow-expand.txt
+rg -n "COL_A|COL_B|COL_C|COL_" /tmp/termx-reflow-before.txt /tmp/termx-reflow-shrink.txt /tmp/termx-reflow-expand.txt
+```
+
+Results:
+
+- Build of current branch binary succeeded before reproduction.
+- `tmux` session: `termx-resize-reflow`.
+- Initial capture showed the termx UI and a terminal pane.
+- Scenario A input reached the inner shell: before capture contains `COL_A                 COL_B                 COL_C`.
+- After shrinking the outer tmux window from `100x30` to `50x20`, capture does not contain `COL_A`, `COL_B`, or `COL_C`; visible pane content is stale earlier directory listing rows with dotted clipped fill. This demonstrates the current preview is not generated from the requested hard-column source in a useful reflow form during this timing window.
+- After expanding back to `100x30`, capture contains `COL_A                 COL_B                 COL_`; `COL_C` is truncated/lost. This demonstrates expand is derived from a lossy intermediate surface or clipped snapshot rather than the original preview source.
+
+Capture files:
+
+- `/tmp/termx-reflow-start.txt`
+- `/tmp/termx-reflow-before.txt`
+- `/tmp/termx-reflow-shrink.txt`
+- `/tmp/termx-reflow-expand.txt`
+
+Observed evidence:
+
+```text
+/tmp/termx-reflow-before.txt: COL_A                 COL_B                 COL_C
+/tmp/termx-reflow-shrink.txt: no COL_A/COL_B/COL_C match
+/tmp/termx-reflow-expand.txt: COL_A                 COL_B                 COL_
+```
+
+Commit:
+
+- Pending tmux reproduction commit.
+
 
 ## Design Notes
 
@@ -145,18 +195,19 @@ Pending.
 
 ## Next Step Suggestions
 
-- Inspect existing resize/runtime/render/vterm code paths.
-- Study tmux source and observed behavior for resize reflow versus alt-screen crop.
-- Build a local `./termx` binary before tmux reproduction if needed.
+- Design runtime-owned preview source lifecycle.
+- Implement non-alt reflow from original preview source.
+- Implement alt-screen crop/restore from original preview source.
+- Ensure real output exits preview while resize echo/noop does not.
 
 ## Resume From Here
 
 Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
-- Last completed TODO: `3. Study tmux / terminal resize behavior`
-- Last commit: pending investigation commit
-- Next step: build/run tmux reproduction and capture current missing behavior.
+- Last completed TODO: `4. Reproduce current missing capability in tmux`
+- Last commit: pending tmux reproduction commit
+- Next step: design preview source lifecycle and implement generation from the original source.
 
 Important artifacts:
 
