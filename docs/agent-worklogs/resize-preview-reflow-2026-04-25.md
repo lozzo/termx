@@ -534,7 +534,7 @@ Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
 - Last completed TODO: `13. Write final summary`
-- Last commit: pending follow-up app already-sized gate fix
+- Last commit: `056dbbb` Fix app resize gate for provisional preview snapshots
 - Next step: review branch or open a PR; no implementation work remains for this task.
 
 Important artifacts:
@@ -577,3 +577,40 @@ Result:
 Commit:
 
 - Pending follow-up fix commit.
+
+
+### Follow-up tmux validation after app gate fix
+
+Commands:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+# tmux session: termx-resize-reflow-userfix
+# isolated paths:
+#   socket: /tmp/termx-resize-reflow-userfix.sock
+#   config: /tmp/termx-reflow-userfix-config
+#   state: /tmp/termx-reflow-userfix-state
+#   log: /tmp/termx-reflow-userfix.log
+# captures:
+#   /tmp/termx-reflow-userfix-before.txt
+#   /tmp/termx-reflow-userfix-shrink.txt
+#   /tmp/termx-reflow-userfix-expand.txt
+#   /tmp/termx-reflow-userfix-real-output.txt
+```
+
+Results:
+
+- Before capture contains original hard-column row:
+  - line 3: `COL_A                 COL_B                 COL_C`
+- Shrink capture now shows all columns via preview reflow:
+  - line 3: `COL_A                 COL_B`
+  - line 4: `COL_C`
+- Expand capture restores original hard-column row:
+  - line 3: `COL_A                 COL_B                 COL_C`
+- Real output capture confirms terminal output continues after preview:
+  - line 7: `AFTER_REAL_OUTPUT`
+
+Conclusion:
+
+- The user-visible no-effect issue was caused by the app-level already-sized gate, not the reflow helper itself.
+- After commit `056dbbb`, real tmux output confirms the feature is visible.
