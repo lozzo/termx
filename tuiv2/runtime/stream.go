@@ -339,6 +339,7 @@ func (r *Runtime) handleOutputFrame(terminal *TerminalRuntime, terminalID string
 	}
 	syncActive := updateSynchronizedOutputState(&terminal.Stream, frame.Payload)
 	terminal.Recovery = RecoveryState{}
+	terminal.ResizePreviewSource = nil
 	if terminal.PreferSnapshot {
 		// Once the terminal emits real output, keep the provisional snapshot lock
 		// only until the current synchronized-output group finishes, not across
@@ -374,7 +375,12 @@ func (r *Runtime) handleResizeFrame(terminal *TerminalRuntime, terminalID string
 		return
 	}
 	if terminal.PreferSnapshot && terminal.Snapshot != nil {
-		terminal.Snapshot.Size = protocol.Size{Cols: cols, Rows: rows}
+		if terminal.ResizePreviewSource != nil {
+			terminal.Snapshot = provisionalSnapshotForResizePreview(terminal.ResizePreviewSource, cols, rows)
+		} else {
+			terminal.Snapshot.Size = protocol.Size{Cols: cols, Rows: rows}
+			terminal.Snapshot.Timestamp = time.Now()
+		}
 		terminal.Snapshot.Timestamp = time.Now()
 		terminal.SnapshotVersion++
 		r.invalidate()

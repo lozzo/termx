@@ -29,7 +29,7 @@ Expected behavior:
 - [x] 5. Design preview source and lifecycle
 - [ ] 6. Implement non-alt-screen reflow preview
 - [ ] 7. Implement alt-screen crop/restore preview
-- [ ] 8. Implement preview exit on real output
+- [x] 8. Implement preview exit on real output
 - [ ] 9. Add runtime tests
 - [ ] 10. Add render tests
 - [ ] 11. Validate with tmux capture
@@ -217,7 +217,38 @@ Commit:
 
 ## Implementation Notes
 
-Pending.
+### 8. Implement preview exit on real output
+
+Commands:
+
+```sh
+apply_patch # update TerminalRuntime, resize, stream, screen update, transaction restore
+gofmt -w tuiv2/runtime/terminal_registry.go tuiv2/runtime/resize.go tuiv2/runtime/stream.go tuiv2/runtime/screen_update_contract.go tuiv2/runtime/transaction_restore.go
+mkdir -p .cache/go-build
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime
+```
+
+Results:
+
+- Added `TerminalRuntime.ResizePreviewSource` as a runtime-owned clone of the first resize preview source.
+- `ResizePane` now captures the source before live vterm resize and regenerates provisional snapshots from that source for any size change, not only local shrink.
+- Real output frames clear `ResizePreviewSource` before invalidating live output.
+- Contentful decoded screen updates (`delta` or `full replace`) clear `ResizePreviewSource`; placeholder/noop updates do not.
+- Resize echo frames regenerate a provisional snapshot from `ResizePreviewSource` when preview is active instead of merely changing snapshot size.
+- `terminalAlreadySized` no longer treats provisional preview snapshot geometry as sufficient to skip live resize.
+- Transaction clone helpers now reuse existing protocol snapshot clone helpers.
+- Validation note: `GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime` reached test execution but failed in pre-existing socket-dependent tests:
+  - `TestRuntimeListTerminalsDoesNotPopulateRegistry`: dial unix `/tmp/termx-bfe9a084198bde98.sock`: no such file or directory
+  - `TestRuntimeAttachSnapshotInputAndResize`: dial unix `/tmp/termx-012593f900a71b78.sock`: no such file or directory
+
+Capture files:
+
+- None in this stage.
+
+Commit:
+
+- Pending runtime lifecycle commit.
+
 
 ## Test and Validation Notes
 
@@ -239,9 +270,9 @@ Pending.
 Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
-- Last completed TODO: `5. Design preview source and lifecycle`
-- Last commit: pending design commit
-- Next step: implement runtime preview source lifecycle and generation helpers in `tuiv2/runtime/resize.go` / stream paths.
+- Last completed TODO: `8. Implement preview exit on real output`
+- Last commit: pending runtime lifecycle commit
+- Next step: add runtime tests for non-alt reflow, alt crop/restore, and lifecycle clearing behavior.
 
 Important artifacts:
 

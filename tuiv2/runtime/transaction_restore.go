@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/bridge"
 )
 
@@ -220,11 +219,8 @@ func cloneRuntimeSnapshot(snapshot *bridge.SnapshotRef) *bridge.SnapshotRef {
 		return nil
 	}
 	cloned := *snapshot
-	cloned.Screen = protocol.ScreenData{
-		Cells:             cloneProtocolCells2D(snapshot.Screen.Cells),
-		IsAlternateScreen: snapshot.Screen.IsAlternateScreen,
-	}
-	cloned.Scrollback = cloneProtocolCells2D(snapshot.Scrollback)
+	cloned.Screen = cloneProtocolScreenData(snapshot.Screen)
+	cloned.Scrollback = cloneProtocolRows(snapshot.Scrollback)
 	cloned.ScreenTimestamps = append([]time.Time(nil), snapshot.ScreenTimestamps...)
 	cloned.ScrollbackTimestamps = append([]time.Time(nil), snapshot.ScrollbackTimestamps...)
 	cloned.ScreenRowKinds = append([]string(nil), snapshot.ScreenRowKinds...)

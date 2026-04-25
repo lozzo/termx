@@ -48,6 +48,10 @@ type TerminalRuntime struct {
 	// parsing, but render should stay on a clipped snapshot until the terminal
 	// emits a real redraw. This avoids exposing emulator-only mid-states.
 	PreferSnapshot bool
+	// ResizePreviewSource is captured when entering local resize preview. Each
+	// provisional resize snapshot is regenerated from this original source so a
+	// shrink/expand sequence does not permanently lose clipped cells.
+	ResizePreviewSource *bridge.SnapshotRef
 
 	Stream   StreamState
 	Recovery RecoveryState
