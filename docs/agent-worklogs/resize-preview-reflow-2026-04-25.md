@@ -534,7 +534,7 @@ Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
 - Last completed TODO: `13. Write final summary`
-- Last commit: `056dbbb` Fix app resize gate for provisional preview snapshots
+- Last commit: pending follow-up final validation commit
 - Next step: review branch or open a PR; no implementation work remains for this task.
 
 Important artifacts:
@@ -614,3 +614,27 @@ Conclusion:
 
 - The user-visible no-effect issue was caused by the app-level already-sized gate, not the reflow helper itself.
 - After commit `056dbbb`, real tmux output confirms the feature is visible.
+
+
+### Follow-up final validation commands
+
+Commands:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime ./tuiv2/render ./tuiv2/app -run 'TestResizePreview|TestRenderPipeline.*ResizePreview|TestTerminalAlreadySizedIgnoresProvisionalPreviewSnapshot'
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+```
+
+Results:
+
+- Targeted runtime/render/app tests passed.
+- Required runtime/render package tests passed:
+  - `ok github.com/lozzow/termx/tuiv2/runtime 0.664s`
+  - `ok github.com/lozzow/termx/tuiv2/render 1.211s`
+- Required build passed:
+  - `go build -o ./termx ./cmd/termx`
+
+Commit:
+
+- Pending follow-up final validation commit.
