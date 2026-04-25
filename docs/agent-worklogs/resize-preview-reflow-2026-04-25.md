@@ -32,7 +32,7 @@ Expected behavior:
 - [x] 8. Implement preview exit on real output
 - [x] 9. Add runtime tests
 - [x] 10. Add render tests
-- [ ] 11. Validate with tmux capture
+- [x] 11. Validate with tmux capture
 - [ ] 12. Run final tests/build
 - [ ] 13. Write final summary
 
@@ -382,6 +382,76 @@ Commit:
 - Pending render tests commit.
 
 
+### 11. Validate with tmux capture
+
+Commands:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+SESSION=termx-resize-reflow-final-ok
+SOCKET=/tmp/termx-resize-reflow-final-ok.sock
+CONFIG_HOME=/tmp/termx-reflow-config-ok
+STATE_HOME=/tmp/termx-reflow-state-ok
+LOG=/tmp/termx-reflow-final-ok.log
+(tmux kill-session -t "$SESSION" 2>/dev/null || true)
+rm -rf "$CONFIG_HOME" "$STATE_HOME" "$SOCKET" "$LOG"
+mkdir -p "$CONFIG_HOME" "$STATE_HOME"
+tmux new-session -d -s "$SESSION" -x 100 -y 30 "cd /Users/lozzow/Documents/workdir/termx && XDG_CONFIG_HOME=$CONFIG_HOME XDG_STATE_HOME=$STATE_HOME ./termx --socket $SOCKET --log-file $LOG"
+sleep 3
+tmux send-keys -t "$SESSION:0.0" Enter
+sleep 1
+tmux send-keys -t "$SESSION:0.0" "resize-preview" Enter Enter
+sleep 3
+tmux send-keys -t "$SESSION:0.0" "clear; printf 'COL_A                 COL_B                 COL_C\n'; cat" Enter
+sleep 1
+tmux capture-pane -t "$SESSION:0.0" -p -S -200 > /tmp/termx-reflow-final-ok-before.txt
+tmux resize-window -t "$SESSION:0" -x 50 -y 20
+sleep 0.2
+tmux capture-pane -t "$SESSION:0.0" -p -S -200 > /tmp/termx-reflow-final-ok-shrink.txt
+tmux resize-window -t "$SESSION:0" -x 100 -y 30
+sleep 0.2
+tmux capture-pane -t "$SESSION:0.0" -p -S -200 > /tmp/termx-reflow-final-ok-expand.txt
+tmux send-keys -t "$SESSION:0.0" C-c
+sleep 0.2
+tmux send-keys -t "$SESSION:0.0" "printf 'AFTER_REAL_OUTPUT\n'" Enter
+sleep 0.8
+tmux capture-pane -t "$SESSION:0.0" -p -S -200 > /tmp/termx-reflow-final-ok-real-output.txt
+rg -n "AFTER_REAL_OUTPUT|COL_A|COL_B|COL_C|COL_" /tmp/termx-reflow-final-ok-*.txt
+```
+
+Results:
+
+- Final hard-column tmux validation used isolated XDG config/state and socket paths so no existing workspace state affected startup.
+- Before capture contains full original row:
+  - `/tmp/termx-reflow-final-ok-before.txt`: `COL_A                 COL_B                 COL_C`
+- Shrink capture contains all columns after preview reflow:
+  - `/tmp/termx-reflow-final-ok-shrink.txt`: line 3 contains `COL_A                 COL_B`
+  - `/tmp/termx-reflow-final-ok-shrink.txt`: line 4 contains `COL_C`
+- Expand capture restores original hard-column row:
+  - `/tmp/termx-reflow-final-ok-expand.txt`: `COL_A                 COL_B                 COL_C`
+- Real output capture shows app/shell output is not blocked by preview:
+  - `/tmp/termx-reflow-final-ok-real-output.txt`: `AFTER_REAL_OUTPUT`
+- Real-output capture still includes an older clipped `COL_` line from the live terminal state after interrupting `cat`; this is real terminal history after preview exit, not a stuck preview. The required signal is that `AFTER_REAL_OUTPUT` is visible and terminal behavior continues.
+
+Capture files:
+
+- `/tmp/termx-reflow-final-ok-before.txt`
+- `/tmp/termx-reflow-final-ok-shrink.txt`
+- `/tmp/termx-reflow-final-ok-expand.txt`
+- `/tmp/termx-reflow-final-ok-real-output.txt`
+- `/tmp/termx-reflow-final-ok.log`
+
+Alt-screen validation:
+
+- Automated tmux alt-screen interaction is more fragile because the clean startup flow requires modal creation steps before launching a fullscreen app.
+- Alt-screen semantics are covered by Go runtime and render tests:
+  - `TestResizePreviewAltScreenCropAndRestoreGrid`
+  - `TestRenderPipelineKeepsAltResizePreviewCroppedGrid`
+
+Commit:
+
+- Pending tmux validation commit.
+
 ## Known Issues
 
 - None yet.
@@ -398,9 +468,9 @@ Commit:
 Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
-- Last completed TODO: `10. Add render tests`
-- Last commit: pending word-boundary reflow correction commit
-- Next step: run tmux validation captures against the implemented binary.
+- Last completed TODO: `11. Validate with tmux capture`
+- Last commit: pending tmux validation commit
+- Next step: run final `go test ./tuiv2/runtime ./tuiv2/render` and `go build -o ./termx ./cmd/termx`, then write final summary.
 
 Important artifacts:
 
