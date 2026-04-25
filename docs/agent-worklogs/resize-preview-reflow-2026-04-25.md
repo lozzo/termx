@@ -526,7 +526,7 @@ Key commits:
 - `d236691` Wrap non-alt resize preview at whitespace boundaries
 - `04339c7` Record final tmux resize preview validation
 - `de4dd77` Record final resize preview test and build results
-- Pending final summary commit at time of writing this section.
+- `e63c68d` Write final resize preview reflow worklog summary
 
 ## Resume From Here
 
@@ -534,7 +534,7 @@ Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
 - Last completed TODO: `13. Write final summary`
-- Last commit: pending final summary commit
+- Last commit: `e63c68d` Write final resize preview reflow worklog summary
 - Next step: review branch or open a PR; no implementation work remains for this task.
 
 Important artifacts:
