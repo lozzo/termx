@@ -31,7 +31,7 @@ Expected behavior:
 - [x] 7. Implement alt-screen crop/restore preview
 - [x] 8. Implement preview exit on real output
 - [x] 9. Add runtime tests
-- [ ] 10. Add render tests
+- [x] 10. Add render tests
 - [ ] 11. Validate with tmux capture
 - [ ] 12. Run final tests/build
 - [ ] 13. Write final summary
@@ -280,7 +280,33 @@ Commit:
 
 ## Test and Validation Notes
 
-Pending.
+### 10. Add render tests
+
+Commands:
+
+```sh
+cat > tuiv2/render/resize_preview_test.go
+gofmt -w tuiv2/render/resize_preview_test.go
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/render -run 'TestRenderPipeline.*ResizePreview'
+```
+
+Results:
+
+- Added render pipeline tests proving a non-alt resize preview snapshot displays reflowed rows (`COL_A`, `COL_B`, `COL_C`).
+- Added render pipeline test proving expanded preview displays restored hard-column content.
+- Added render pipeline test proving alt-screen cropped preview grid is displayed without render-layer text reflow.
+- Targeted render tests passed:
+  - `ok github.com/lozzow/termx/tuiv2/render 0.484s`
+- No render/projection mutation was added; render tests consume prepared snapshots.
+
+Capture files:
+
+- None in this stage.
+
+Commit:
+
+- Pending render tests commit.
+
 
 ## Known Issues
 
@@ -298,9 +324,9 @@ Pending.
 Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
-- Last completed TODO: `9. Add runtime tests`
-- Last commit: pending runtime tests commit
-- Next step: add render pipeline tests proving visible snapshots render reflow and alt crop behavior without render mutations.
+- Last completed TODO: `10. Add render tests`
+- Last commit: pending render tests commit
+- Next step: run tmux validation captures against the implemented binary.
 
 Important artifacts:
 
