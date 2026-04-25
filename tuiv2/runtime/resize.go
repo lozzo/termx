@@ -362,6 +362,13 @@ func terminalAlreadySized(terminal *TerminalRuntime, cols, rows uint16) bool {
 	return currentCols == int(cols) && currentRows == int(rows)
 }
 
+func (r *Runtime) TerminalAlreadySized(terminalID string, cols, rows uint16) bool {
+	if r == nil || r.registry == nil || terminalID == "" {
+		return false
+	}
+	return terminalAlreadySized(r.registry.Get(terminalID), cols, rows)
+}
+
 func runtimeMinInt(a, b int) int {
 	if a < b {
 		return a

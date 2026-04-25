@@ -1,10 +1,13 @@
 package app
 
 import (
+	"context"
 	"testing"
 
+	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/terminalmeta"
 	"github.com/lozzow/termx/tuiv2/workbench"
+	localvterm "github.com/lozzow/termx/vterm"
 )
 
 func TestResizePendingPaneResizesClearsMissingPaneEntries(t *testing.T) {
@@ -62,6 +65,39 @@ func TestResizePendingPaneResizesKeepsPendingUntilSizeSatisfied(t *testing.T) {
 	}
 	if len(client.resizes) == 0 {
 		t.Fatal("expected unlocked retry to issue resize")
+	}
+}
+
+func TestTerminalAlreadySizedIgnoresProvisionalPreviewSnapshot(t *testing.T) {
+	client := &recordingBridgeClient{}
+	model := setupModel(t, modelOpts{client: client, width: 80, height: 24})
+	pane := model.workbench.ActivePane()
+	if pane == nil {
+		t.Fatal("expected active pane")
+	}
+	terminal := model.runtime.Registry().Get(pane.TerminalID)
+	if terminal == nil {
+		t.Fatal("expected terminal runtime")
+	}
+	terminal.VTerm = localvterm.New(98, 28, 100, nil)
+	terminal.Snapshot = &protocol.Snapshot{
+		TerminalID: pane.TerminalID,
+		Size:       protocol.Size{Cols: 78, Rows: 20},
+		Screen:     protocol.ScreenData{Cells: [][]protocol.Cell{{{Content: "p", Width: 1}}}},
+	}
+	terminal.PreferSnapshot = true
+	terminal.ResizePreviewSource = &protocol.Snapshot{TerminalID: pane.TerminalID, Size: protocol.Size{Cols: 98, Rows: 28}}
+
+	if model.terminalAlreadySized(pane.TerminalID, 78, 20) {
+		t.Fatal("expected provisional preview snapshot not to satisfy terminal size")
+	}
+
+	service := model.layoutResizeService()
+	if err := service.ensurePaneTerminalSize(context.Background(), pane.ID, pane.TerminalID, workbench.Rect{W: 80, H: 22}); err != nil {
+		t.Fatalf("ensure pane size: %v", err)
+	}
+	if len(client.resizes) != 1 {
+		t.Fatalf("expected resize despite matching preview snapshot size, got %#v", client.resizes)
 	}
 }
 

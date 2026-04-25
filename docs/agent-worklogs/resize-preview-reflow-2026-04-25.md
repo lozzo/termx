@@ -534,7 +534,7 @@ Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
 - Last completed TODO: `13. Write final summary`
-- Last commit: `e63c68d` Write final resize preview reflow worklog summary
+- Last commit: pending follow-up app already-sized gate fix
 - Next step: review branch or open a PR; no implementation work remains for this task.
 
 Important artifacts:
@@ -544,3 +544,36 @@ Important artifacts:
 - `/tmp/termx-reflow-final-ok-shrink.txt`
 - `/tmp/termx-reflow-final-ok-expand.txt`
 - `/tmp/termx-reflow-final-ok-real-output.txt`
+
+
+## Follow-up: App Already-Sized Gate Fix
+
+User feedback: the previous implementation had no visible effect in actual use.
+
+Root cause found after re-checking the real resize path:
+
+- Outer window resize enters `tuiv2/app/layout_resize_service.go` first.
+- `terminalInteractionService.resizeIfNeeded` called `model.terminalAlreadySized` before invoking `runtime.ResizeTerminal`.
+- `model.terminalAlreadySized` only compared `terminal.Snapshot.Size` with the requested size.
+- During preview, the provisional snapshot is deliberately set to the requested size, while the live vterm/PTY may not have the same size yet.
+- That meant app code could skip the runtime resize/preview path entirely on subsequent resize passes, making the feature appear ineffective.
+
+Fix:
+
+- Added `Runtime.TerminalAlreadySized`, delegating to runtime's preview-aware `terminalAlreadySized` helper.
+- Updated `Model.terminalAlreadySized` to call runtime instead of directly trusting snapshot dimensions.
+- Added `TestTerminalAlreadySizedIgnoresProvisionalPreviewSnapshot` to cover this app-level gate.
+
+Commands:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/app -run 'TestTerminalAlreadySizedIgnoresProvisionalPreviewSnapshot'
+```
+
+Result:
+
+- `ok github.com/lozzow/termx/tuiv2/app 0.549s`
+
+Commit:
+
+- Pending follow-up fix commit.

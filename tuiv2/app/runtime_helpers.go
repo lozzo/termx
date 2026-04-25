@@ -87,9 +87,5 @@ func (m *Model) terminalAlreadySized(terminalID string, cols, rows uint16) bool 
 	if m == nil || m.runtime == nil || terminalID == "" {
 		return false
 	}
-	terminal := m.runtime.Registry().Get(terminalID)
-	if terminal == nil || terminal.Snapshot == nil {
-		return false
-	}
-	return terminal.Snapshot.Size.Cols == cols && terminal.Snapshot.Size.Rows == rows
+	return m.runtime.TerminalAlreadySized(terminalID, cols, rows)
 }
