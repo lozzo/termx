@@ -534,7 +534,7 @@ Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
 - Last completed TODO: `13. Write final summary`
-- Last commit: pending follow-up final validation commit
+- Last commit: `f26d6ba` Record follow-up final validation after resize gate fix
 - Next step: review branch or open a PR; no implementation work remains for this task.
 
 Important artifacts:
@@ -637,4 +637,4 @@ Results:
 
 Commit:
 
-- Pending follow-up final validation commit.
+- `f26d6ba` Record follow-up final validation after resize gate fix
