@@ -26,7 +26,7 @@ Expected behavior:
 - [x] 2. Inspect existing resize pipeline
 - [x] 3. Study tmux / terminal resize behavior
 - [x] 4. Reproduce current missing capability in tmux
-- [ ] 5. Design preview source and lifecycle
+- [x] 5. Design preview source and lifecycle
 - [ ] 6. Implement non-alt-screen reflow preview
 - [ ] 7. Implement alt-screen crop/restore preview
 - [ ] 8. Implement preview exit on real output
@@ -179,7 +179,41 @@ Commit:
 
 ## Design Notes
 
-Pending.
+### 5. Design preview source and lifecycle
+
+Design decision after code and tmux investigation:
+
+- Keep preview lifecycle in `tuiv2/runtime`; do not mutate render, Visible, or projection paths.
+- Extend `TerminalRuntime` with a runtime-only preview source field that stores a cloned `protocol.Snapshot` captured when entering resize preview.
+- Capture preview source before resizing the live vterm. Prefer current `terminal.Snapshot` if available because it is the last renderable authoritative surface; otherwise use `snapshotFromVTerm`.
+- While preview is active, every resize regenerates `terminal.Snapshot` from the same saved source and sets `PreferSnapshot = true`; it must not use the previous provisional snapshot as the new source.
+- Non-alt-screen generation should reflow captured rows to the requested cols and visible rows. Initial implementation can use cell-preserving row wrapping with blank trimming, preserving styles per cell and wide-cell width boundaries as far as current `protocol.Cell.Width` allows.
+- Alt-screen generation should not text-reflow; it should clone/crop the original 2D screen grid into the requested size so expand can restore cells from the source.
+- Apply real decoded content updates through existing `applyScreenUpdateContract`, then clear resize preview source and set `PreferSnapshot = false`.
+- Noop/placeholder screen updates should not clear preview; this follows the existing classification path because `screenUpdateLifecycleNoop` still applies state but has no content change and placeholder returns before apply.
+- Stream PTY output that produces local vterm writes should clear preview when actual bytes arrive before refresh/invalidate; this prevents a stuck old preview over real shell/app output.
+- `terminalAlreadySized` must not treat a provisional preview snapshot as proof that the live terminal is already sized; otherwise expand after shrink can skip resize and preserve truncation.
+
+Commands:
+
+```sh
+# Design based on previous rg/sed investigation and tmux captures.
+```
+
+Results:
+
+- Chosen model uses runtime-owned `ResizePreviewSource` plus snapshot generation functions.
+- Render remains a pure consumer of `terminal.Snapshot` / `PreferSnapshot` state.
+- Transport remains unchanged.
+
+Capture files:
+
+- Design uses prior `/tmp/termx-reflow-*.txt` artifacts.
+
+Commit:
+
+- Pending design commit.
+
 
 ## Implementation Notes
 
@@ -205,9 +239,9 @@ Pending.
 Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
-- Last completed TODO: `4. Reproduce current missing capability in tmux`
-- Last commit: pending tmux reproduction commit
-- Next step: design preview source lifecycle and implement generation from the original source.
+- Last completed TODO: `5. Design preview source and lifecycle`
+- Last commit: pending design commit
+- Next step: implement runtime preview source lifecycle and generation helpers in `tuiv2/runtime/resize.go` / stream paths.
 
 Important artifacts:
 
