@@ -33,7 +33,7 @@ Expected behavior:
 - [x] 9. Add runtime tests
 - [x] 10. Add render tests
 - [x] 11. Validate with tmux capture
-- [ ] 12. Run final tests/build
+- [x] 12. Run final tests/build
 - [ ] 13. Write final summary
 
 ## Phase Log
@@ -452,6 +452,31 @@ Commit:
 
 - Pending tmux validation commit.
 
+### 12. Run final tests/build
+
+Commands:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+```
+
+Results:
+
+- Final required package tests passed:
+  - `ok github.com/lozzow/termx/tuiv2/runtime 0.846s`
+  - `ok github.com/lozzow/termx/tuiv2/render 1.179s`
+- Final required build passed:
+  - `go build -o ./termx ./cmd/termx`
+
+Capture files:
+
+- No new capture files in this stage.
+
+Commit:
+
+- Pending final tests/build commit.
+
 ## Known Issues
 
 - None yet.
@@ -468,9 +493,9 @@ Commit:
 Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
-- Last completed TODO: `11. Validate with tmux capture`
-- Last commit: pending tmux validation commit
-- Next step: run final `go test ./tuiv2/runtime ./tuiv2/render` and `go build -o ./termx ./cmd/termx`, then write final summary.
+- Last completed TODO: `12. Run final tests/build`
+- Last commit: pending final tests/build commit
+- Next step: write final summary and ensure resume instructions point to completion status.
 
 Important artifacts:
 
