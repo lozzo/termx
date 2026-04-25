@@ -27,10 +27,10 @@ Expected behavior:
 - [x] 3. Study tmux / terminal resize behavior
 - [x] 4. Reproduce current missing capability in tmux
 - [x] 5. Design preview source and lifecycle
-- [ ] 6. Implement non-alt-screen reflow preview
-- [ ] 7. Implement alt-screen crop/restore preview
+- [x] 6. Implement non-alt-screen reflow preview
+- [x] 7. Implement alt-screen crop/restore preview
 - [x] 8. Implement preview exit on real output
-- [ ] 9. Add runtime tests
+- [x] 9. Add runtime tests
 - [ ] 10. Add render tests
 - [ ] 11. Validate with tmux capture
 - [ ] 12. Run final tests/build
@@ -250,6 +250,34 @@ Commit:
 - Pending runtime lifecycle commit.
 
 
+### 6-7, 9. Implement preview generation and runtime tests
+
+Commands:
+
+```sh
+cat > tuiv2/runtime/resize_preview_test.go
+gofmt -w tuiv2/runtime/resize_preview_test.go
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime -run 'TestResizePreview|TestRuntimeResizePaneShrinkKeepsRenderOnSnapshotUntilOutput'
+```
+
+Results:
+
+- Added runtime tests for non-alt-screen hard-column shrink reflow.
+- Added runtime test for shrink→expand restoration from the original source.
+- Added runtime test for alt-screen crop on shrink and source-grid restore on expand.
+- Added lifecycle tests proving real output and content screen updates clear `ResizePreviewSource`.
+- Added lifecycle test proving noop screen updates do not clear `ResizePreviewSource`.
+- Targeted runtime test command passed:
+  - `ok github.com/lozzow/termx/tuiv2/runtime 0.462s`
+
+Capture files:
+
+- None in this stage.
+
+Commit:
+
+- Pending runtime tests commit.
+
 ## Test and Validation Notes
 
 Pending.
@@ -270,9 +298,9 @@ Pending.
 Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
-- Last completed TODO: `8. Implement preview exit on real output`
-- Last commit: pending runtime lifecycle commit
-- Next step: add runtime tests for non-alt reflow, alt crop/restore, and lifecycle clearing behavior.
+- Last completed TODO: `9. Add runtime tests`
+- Last commit: pending runtime tests commit
+- Next step: add render pipeline tests proving visible snapshots render reflow and alt crop behavior without render mutations.
 
 Important artifacts:
 
