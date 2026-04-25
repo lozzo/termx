@@ -173,6 +173,7 @@ func reflowSnapshotRowsForPreview(snapshot *protocol.Snapshot, cols int) ([][]pr
 	sourceTimes = append(sourceTimes, snapshot.ScreenTimestamps...)
 	sourceKinds := append([]string(nil), snapshot.ScrollbackRowKinds...)
 	sourceKinds = append(sourceKinds, snapshot.ScreenRowKinds...)
+	sourceRows, sourceTimes, sourceKinds = trimTrailingBlankPreviewRows(sourceRows, sourceTimes, sourceKinds)
 	var rows [][]protocol.Cell
 	var times []time.Time
 	var kinds []string
@@ -214,6 +215,24 @@ func reflowSnapshotRowsForPreview(snapshot *protocol.Snapshot, cols int) ([][]pr
 			kinds = append(kinds, previewSliceStringAt(sourceKinds, i))
 			trimmed = trimmed[cut:]
 		}
+	}
+	return rows, times, kinds
+}
+
+func trimTrailingBlankPreviewRows(rows [][]protocol.Cell, times []time.Time, kinds []string) ([][]protocol.Cell, []time.Time, []string) {
+	last := len(rows) - 1
+	for last >= 0 && len(trimProtocolCellRow(rows[last])) == 0 {
+		last--
+	}
+	if last < 0 {
+		return nil, nil, nil
+	}
+	rows = rows[:last+1]
+	if len(times) > len(rows) {
+		times = times[:len(rows)]
+	}
+	if len(kinds) > len(rows) {
+		kinds = kinds[:len(rows)]
 	}
 	return rows, times, kinds
 }

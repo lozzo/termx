@@ -9,7 +9,7 @@ import (
 )
 
 func TestResizePreviewNonAltShrinkReflowsHardColumns(t *testing.T) {
-	source := snapshotWithLines("term-1", 64, 3, []string{"COL_A                 COL_B                 COL_C"})
+	source := snapshotWithLines("term-1", 64, 20, []string{"COL_A                 COL_B                 COL_C"})
 
 	preview := provisionalSnapshotForResizePreview(source, 20, 6)
 

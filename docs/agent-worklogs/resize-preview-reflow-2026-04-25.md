@@ -278,6 +278,37 @@ Commit:
 
 - Pending runtime tests commit.
 
+### Runtime preview blank-tail correction
+
+Commands:
+
+```sh
+apply_patch # trim trailing blank source rows before non-alt preview reflow
+gofmt -w tuiv2/runtime/resize.go tuiv2/runtime/resize_preview_test.go
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime -run 'TestResizePreview'
+```
+
+Results:
+
+- Tmux validation showed the first implementation could render blank shrink/expand previews when the source screen had many blank rows below the command output.
+- Root cause: non-alt preview reflow used all screen rows then selected the last viewport-height rows; trailing blank rows pushed meaningful command output into provisional scrollback.
+- Fixed by trimming trailing blank preview source rows before reflow/screen-window selection.
+- Added runtime test coverage where the source has many trailing blank screen rows.
+- Targeted runtime tests passed:
+  - `ok github.com/lozzow/termx/tuiv2/runtime 0.542s`
+
+Capture files:
+
+- Failed intermediate validation artifacts:
+  - `/tmp/termx-reflow-final-before.txt`
+  - `/tmp/termx-reflow-final-shrink.txt`
+  - `/tmp/termx-reflow-final-expand.txt`
+  - `/tmp/termx-reflow-final-real-output.txt`
+
+Commit:
+
+- Pending blank-tail correction commit.
+
 ## Test and Validation Notes
 
 ### 10. Add render tests
@@ -325,7 +356,7 @@ Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
 - Last completed TODO: `10. Add render tests`
-- Last commit: pending render tests commit
+- Last commit: pending blank-tail correction commit
 - Next step: run tmux validation captures against the implemented binary.
 
 Important artifacts:
