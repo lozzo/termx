@@ -189,37 +189,75 @@ func reflowSnapshotRowsForPreview(snapshot *protocol.Snapshot, cols int) ([][]pr
 			continue
 		}
 		for len(trimmed) > 0 {
-			width := 0
-			cut := 0
-			for cut < len(trimmed) {
-				cellWidth := trimmed[cut].Width
-				if cellWidth <= 0 {
-					cellWidth = 1
-				}
-				if width > 0 && width+cellWidth > cols {
-					break
-				}
-				if width == 0 && cellWidth > cols {
-					cut++
-					width = cols
-					break
-				}
-				width += cellWidth
-				cut++
-				if width >= cols {
-					break
-				}
+			cut := previewReflowCut(trimmed, cols)
+			segment := cloneProtocolCellRow(trimmed[:cut])
+			segment = trimTrailingPreviewSpaces(segment)
+			if len(segment) > 0 {
+				rows = append(rows, segment)
+				times = append(times, previewSliceTimeAt(sourceTimes, i))
+				kinds = append(kinds, previewSliceStringAt(sourceKinds, i))
 			}
-			if cut <= 0 {
-				cut = 1
-			}
-			rows = append(rows, cloneProtocolCellRow(trimmed[:cut]))
-			times = append(times, previewSliceTimeAt(sourceTimes, i))
-			kinds = append(kinds, previewSliceStringAt(sourceKinds, i))
-			trimmed = trimmed[cut:]
+			trimmed = trimLeadingPreviewSpaces(trimmed[cut:])
 		}
 	}
 	return rows, times, kinds
+}
+
+func previewReflowCut(row []protocol.Cell, cols int) int {
+	if len(row) == 0 || cols <= 0 {
+		return 0
+	}
+	width := 0
+	cut := 0
+	lastSpaceCut := -1
+	for cut < len(row) {
+		cellWidth := row[cut].Width
+		if cellWidth <= 0 {
+			cellWidth = 1
+		}
+		if width > 0 && width+cellWidth > cols {
+			break
+		}
+		if width == 0 && cellWidth > cols {
+			return cut + 1
+		}
+		width += cellWidth
+		cut++
+		if isPreviewSpaceCell(row[cut-1]) {
+			lastSpaceCut = cut
+		}
+		if width >= cols {
+			break
+		}
+	}
+	if cut >= len(row) {
+		return cut
+	}
+	if lastSpaceCut > 0 {
+		return lastSpaceCut
+	}
+	if cut <= 0 {
+		return 1
+	}
+	return cut
+}
+
+func trimLeadingPreviewSpaces(row []protocol.Cell) []protocol.Cell {
+	for len(row) > 0 && isPreviewSpaceCell(row[0]) {
+		row = row[1:]
+	}
+	return row
+}
+
+func trimTrailingPreviewSpaces(row []protocol.Cell) []protocol.Cell {
+	for len(row) > 0 && isPreviewSpaceCell(row[len(row)-1]) {
+		row = row[:len(row)-1]
+	}
+	return row
+}
+
+func isPreviewSpaceCell(cell protocol.Cell) bool {
+	return cell.Width <= 1 && cell.Style == (protocol.CellStyle{}) && strings.TrimSpace(cell.Content) == ""
 }
 
 func trimTrailingBlankPreviewRows(rows [][]protocol.Cell, times []time.Time, kinds []string) ([][]protocol.Cell, []time.Time, []string) {

@@ -331,6 +331,27 @@ Commit:
 
 - Pending source freshness correction commit.
 
+### Runtime preview word-boundary reflow correction
+
+Commands:
+
+```sh
+apply_patch # prefer whitespace cut points for non-alt preview reflow
+gofmt -w tuiv2/runtime/resize.go
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime -run 'TestResizePreview'
+```
+
+Results:
+
+- Tmux validation after source freshness fix showed shrink preview contained `COL_A`/`COL_B` but clipped `COL_C` to `COL_` at the pane edge.
+- Fixed non-alt preview wrapping to prefer whitespace cut points and trim leading/trailing segment spaces, preserving hard-column tokens during shrink.
+- Targeted runtime tests passed:
+  - `ok github.com/lozzow/termx/tuiv2/runtime 0.527s`
+
+Commit:
+
+- Pending word-boundary reflow correction commit.
+
 ## Test and Validation Notes
 
 ### 10. Add render tests
@@ -378,7 +399,7 @@ Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
 - Last completed TODO: `10. Add render tests`
-- Last commit: pending source freshness correction commit
+- Last commit: pending word-boundary reflow correction commit
 - Next step: run tmux validation captures against the implemented binary.
 
 Important artifacts:
