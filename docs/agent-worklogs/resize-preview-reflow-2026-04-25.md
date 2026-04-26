@@ -534,7 +534,7 @@ Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
 - Last completed TODO: `13. Write final summary`
-- Last commit: `f26d6ba` Record follow-up final validation after resize gate fix
+- Last commit: pending real ls reflow fix commit
 - Next step: review branch or open a PR; no implementation work remains for this task.
 
 Important artifacts:
@@ -638,3 +638,50 @@ Results:
 Commit:
 
 - `f26d6ba` Record follow-up final validation after resize gate fix
+
+
+## Follow-up: Real `ls` Output Reflow
+
+User feedback: hard-column `printf` validation worked, but real `ls` output did not reorder/reflow.
+
+Reproduction:
+
+- tmux session: `termx-resize-real-ls`
+- command inside termx shell: `clear; command ls`
+- initial size: `120x32`
+- shrink size: `55x20`
+- captures:
+  - `/tmp/termx-real-ls-before.txt`
+  - `/tmp/termx-real-ls-shrink.txt`
+  - `/tmp/termx-real-ls-expand.txt`
+
+Observed before fix:
+
+- Before capture showed real `ls` rows with right-side columns such as `server_contract_test.go`, `termx_test.go`, `third_party`, `transport`, `tuiv2`, and `vterm`.
+- Shrink capture showed right-side entries clipped to prefixes like `serve`, `snaps`, `strea`, and `termi`.
+- The synthetic `printf` ls-like case passed because `cat` kept preview visible; real `ls` returned to shell and prompt output caused preview to exit quickly, exposing the live vterm resized/cropped state.
+
+Fix:
+
+- During resize preview, after generating the provisional reflow/crop snapshot, load that snapshot back into the local vterm via `loadSnapshotIntoVTerm` instead of calling raw `vt.Resize`.
+- This makes the reflowed non-alt preview become the local vterm base for subsequent real shell/prompt output, so preview exit no longer reveals a cropped live vterm.
+- Alt-screen behavior still uses crop/restore snapshot semantics and loads the cropped grid as the local base until real app redraw arrives.
+
+Validation after fix:
+
+- tmux session: `termx-resize-real-ls3`
+- captures:
+  - `/tmp/termx-real-ls3-before.txt`
+  - `/tmp/termx-real-ls3-shrink.txt`
+  - `/tmp/termx-real-ls3-expand.txt`
+- Shrink capture no longer shows the old clipped prefixes in the same way; it shows reflowed entries as whole tokens, for example:
+  - `transport_slow_consumer_test.go`
+  - `terminal.go                      tuiv2`
+  - `terminalmeta                     vterm`
+- Targeted tests/build after the fix passed:
+  - `GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime ./tuiv2/render ./tuiv2/app -run 'TestResizePreview|TestRuntimeResizePane|TestRenderPipeline.*ResizePreview|TestTerminalAlreadySizedIgnoresProvisionalPreviewSnapshot'`
+  - `GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx`
+
+Commit:
+
+- Pending real ls reflow fix commit.

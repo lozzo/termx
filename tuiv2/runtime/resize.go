@@ -24,6 +24,10 @@ func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, col
 		return shared.UserVisibleError{Op: "resize terminal", Err: fmt.Errorf("pane %s is not attached", paneID)}
 	}
 	terminal := r.registry.Get(terminalID)
+	prevSnapshot := (*protocol.Snapshot)(nil)
+	oldCols, oldRows := 0, 0
+	previewSource := (*protocol.Snapshot)(nil)
+	previewActiveBeforeResize := false
 	if terminal != nil {
 		if terminalmeta.SizeLocked(terminal.Tags) {
 			return nil
@@ -37,32 +41,40 @@ func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, col
 		if !forceResize && terminalAlreadySized(terminal, cols, rows) {
 			return nil
 		}
-	}
-	if err := r.client.Resize(ctx, binding.Channel, cols, rows); err != nil {
-		return shared.UserVisibleError{Op: "resize terminal", Err: err}
-	}
-	if terminal != nil {
-		prevSnapshot := terminal.Snapshot
-		oldCols, oldRows := 0, 0
-		if terminal.VTerm != nil {
-			oldCols, oldRows = terminal.VTerm.Size()
+		prevSnapshot = terminal.Snapshot
+		if vt := r.ensureVTerm(terminal); vt != nil {
+			oldCols, oldRows = vt.Size()
+			if shouldEnterResizePreview(oldCols, oldRows, int(cols), int(rows)) {
+				previewActiveBeforeResize = true
+				previewSource = terminal.ResizePreviewSource
+				if previewSource == nil {
+					previewSource = captureResizePreviewSource(terminalID, terminal, prevSnapshot, vt)
+					terminal.ResizePreviewSource = previewSource
+				}
+			}
 		} else if prevSnapshot != nil {
 			oldCols = int(prevSnapshot.Size.Cols)
 			oldRows = int(prevSnapshot.Size.Rows)
 		}
+	}
+	if err := r.client.Resize(ctx, binding.Channel, cols, rows); err != nil {
+		if terminal != nil && previewActiveBeforeResize && terminal.ResizePreviewSource == previewSource {
+			terminal.ResizePreviewSource = nil
+		}
+		return shared.UserVisibleError{Op: "resize terminal", Err: err}
+	}
+	if terminal != nil {
 		terminal.PendingOwnerResize = false
 		if vt := r.ensureVTerm(terminal); vt != nil {
 			provisionalSnapshot := (*protocol.Snapshot)(nil)
-			if shouldEnterResizePreview(oldCols, oldRows, int(cols), int(rows)) {
-				source := terminal.ResizePreviewSource
-				if source == nil {
-					source = captureResizePreviewSource(terminalID, terminal, prevSnapshot, vt)
-					terminal.ResizePreviewSource = source
+			if previewActiveBeforeResize {
+				if previewSource == nil {
+					previewSource = terminal.ResizePreviewSource
 				}
-				provisionalSnapshot = provisionalSnapshotForResizePreview(source, cols, rows)
+				provisionalSnapshot = provisionalSnapshotForResizePreview(previewSource, cols, rows)
 			}
-			vt.Resize(int(cols), int(rows))
 			if provisionalSnapshot != nil {
+				loadSnapshotIntoVTerm(vt, provisionalSnapshot)
 				terminal.PreferSnapshot = true
 				terminal.Snapshot = provisionalSnapshot
 				r.bumpSurfaceVersion(terminal)
@@ -70,6 +82,7 @@ func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, col
 				r.invalidate()
 				return nil
 			}
+			vt.Resize(int(cols), int(rows))
 		}
 		terminal.PreferSnapshot = false
 		terminal.ResizePreviewSource = nil
