@@ -1466,3 +1466,100 @@ Resume From Here:
 Commit:
 
 - Pending width-shrink cursor anchor commit.
+
+## Follow-up: tmux Validation for `ls` Then `123123123` Marker
+
+Goal:
+
+- Validate the user-reported workflow directly in tmux:
+  - open `termx` inside tmux,
+  - run `ls` to create resize content,
+  - type marker text `123123123`,
+  - shrink/expand and verify the marker remains capturable from tmux.
+
+Important note:
+
+- This phase is validation-only. I did not commit a code change because the exact tested flows below did not reproduce marker loss on the current branch head.
+- If the user still sees the problem, the next step needs the exact outer tmux size, pane geometry, whether `123123123` is submitted or pending input, and the captured files from the failing run.
+
+Validation setup:
+
+- Built local binary first:
+  - `GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx`
+  - `rm -rf .cache`
+- Each tmux run used an isolated socket/state/config/log directory under `/tmp`.
+
+Scenario A: submitted marker after `ls`
+
+- Session: `termx-resize-ls-marker1`.
+- Steps:
+  - launch isolated `termx attach` in tmux at `120x34`.
+  - run `clear; command ls`.
+  - run `123123123` and press Enter.
+  - shrink to `58x22`, then expand to `120x34`.
+- Captures:
+  - `/tmp/termx-resize-ls-marker1-before.txt`
+  - `/tmp/termx-resize-ls-marker1-shrink.txt`
+  - `/tmp/termx-resize-ls-marker1-expand.txt`
+- Result:
+  - before capture contains `RedmiBook% 123123123`, `zsh: command not found: 123123123`, and the next prompt.
+  - shrink capture contains all three marker lines at lines 18-20.
+  - expand capture contains all three marker lines at lines 30-32.
+
+Scenario B: pending input marker after `ls`
+
+- Session: `termx-resize-ls-marker2`.
+- Steps:
+  - run `clear; command ls`.
+  - type `123123123` without pressing Enter.
+  - shrink to `58x22`, then expand to `120x34`.
+- Captures:
+  - `/tmp/termx-resize-ls-marker2-before.txt`
+  - `/tmp/termx-resize-ls-marker2-shrink.txt`
+  - `/tmp/termx-resize-ls-marker2-expand.txt`
+- Result:
+  - before capture line 33 contains `RedmiBook% 123123123`.
+  - shrink capture line 20 contains `RedmiBook% 123123123`.
+  - expand capture line 32 contains `RedmiBook% 123123123`.
+
+Scenario C: pending marker with narrower/shorter shrink
+
+- Session: `termx-resize-ls-marker3`.
+- Steps:
+  - run `clear; command ls`.
+  - type `123123123` without pressing Enter.
+  - shrink to `40x14`, then expand to `120x34`.
+- Captures:
+  - `/tmp/termx-resize-ls-marker3-before.txt`
+  - `/tmp/termx-resize-ls-marker3-shrink.txt`
+  - `/tmp/termx-resize-ls-marker3-expand.txt`
+- Result:
+  - shrink capture line 12 contains `RedmiBook% 123123123`.
+  - expand capture line 32 contains `RedmiBook% 123123123`.
+
+Scenario D: repeated shrink/expand with pending marker
+
+- Session: `termx-resize-ls-marker4`.
+- Steps:
+  - run `clear; command ls`.
+  - type `123123123` without pressing Enter.
+  - resize sequence: `120x34 -> 58x22 -> 120x34 -> 40x14 -> 120x34`.
+- Captures:
+  - `/tmp/termx-resize-ls-marker4-shrink1.txt`
+  - `/tmp/termx-resize-ls-marker4-expand1.txt`
+  - `/tmp/termx-resize-ls-marker4-shrink2.txt`
+  - `/tmp/termx-resize-ls-marker4-expand2.txt`
+- Result:
+  - shrink1 line 20 contains `RedmiBook% 123123123`.
+  - expand1 line 32 contains `RedmiBook% 123123123`.
+  - shrink2 line 12 contains `RedmiBook% 123123123`.
+  - expand2 line 32 contains `RedmiBook% 123123123`.
+
+Resume From Here:
+
+- Current validation did not reproduce marker loss for the requested `ls` then `123123123` workflow.
+- If marker loss still occurs, capture the exact failing outer tmux size sequence and whether `123123123` was pending input or submitted. Then add a failing TDD case matching that geometry before changing code.
+
+Commit:
+
+- Pending validation-only worklog commit.
