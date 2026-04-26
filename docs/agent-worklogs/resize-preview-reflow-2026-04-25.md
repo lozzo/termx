@@ -1563,3 +1563,88 @@ Resume From Here:
 Commit:
 
 - Pending validation-only worklog commit.
+
+## Follow-up: tmux Validation for `cat terminal.go` Then `123123123` Marker
+
+Goal:
+
+- Re-run the marker visibility validation with a much larger real output source, replacing `ls` with `cat terminal.go` as requested.
+- Verify whether shrink/expand loses the final marker/prompt text after long output.
+
+Important note:
+
+- This phase is validation-only. The tested `cat terminal.go` flows below did not reproduce marker loss on the current branch head, so no code was changed.
+- Because this is a user-visible concern, all capture paths are recorded for follow-up comparison.
+
+Validation setup:
+
+- Built local binary first:
+  - `GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx`
+  - `rm -rf .cache`
+- Each tmux run used an isolated socket/state/config/log directory under `/tmp`.
+
+Scenario A: submitted marker after `cat terminal.go`
+
+- Session: `termx-resize-cat-marker1`.
+- Steps:
+  - launch isolated `termx attach` in tmux at `120x34`.
+  - run `clear; cat terminal.go`.
+  - run `123123123` and press Enter.
+  - shrink to `58x22`, then expand to `120x34`.
+- Captures:
+  - `/tmp/termx-resize-cat-marker1-before.txt`
+  - `/tmp/termx-resize-cat-marker1-shrink.txt`
+  - `/tmp/termx-resize-cat-marker1-expand.txt`
+- Result:
+  - before capture contains `RedmiBook% 123123123`, `zsh: command not found: 123123123`, and the next prompt.
+  - shrink capture contains all marker lines at lines 18-20.
+  - expand capture contains all marker lines at lines 30-32.
+
+Scenario B: pending marker after `cat terminal.go`
+
+- Session: `termx-resize-cat-marker2`.
+- Steps:
+  - run `clear; cat terminal.go`.
+  - type `123123123` without pressing Enter.
+  - shrink to `58x22`, then narrower `40x14`, then expand to `120x34`.
+- Captures:
+  - `/tmp/termx-resize-cat-marker2-before.txt`
+  - `/tmp/termx-resize-cat-marker2-shrink.txt`
+  - `/tmp/termx-resize-cat-marker2-narrow.txt`
+  - `/tmp/termx-resize-cat-marker2-expand.txt`
+- Result:
+  - before capture line 33 contains `RedmiBook% 123123123`.
+  - shrink capture line 20 contains `RedmiBook% 123123123`.
+  - narrow capture line 12 contains `RedmiBook% 123123123`.
+  - expand capture line 32 contains `RedmiBook% 123123123`.
+
+Scenario C: repeated resize with pending marker after `cat terminal.go`
+
+- First attempt session: `termx-resize-cat-marker3`.
+- The shell loop used zsh array splitting incorrectly, causing `tmux resize-window` to receive invalid width arguments. This produced only `/tmp/termx-resize-cat-marker3-.txt` and was discarded as an invalid validation run.
+- Corrected session: `termx-resize-cat-marker3b`.
+- Steps:
+  - run `clear; cat terminal.go`.
+  - type `123123123` without pressing Enter.
+  - resize sequence: `120x34 -> 58x22 -> 120x34 -> 40x14 -> 120x34 -> 70x18`.
+- Captures:
+  - `/tmp/termx-resize-cat-marker3b-shrink1.txt`
+  - `/tmp/termx-resize-cat-marker3b-expand1.txt`
+  - `/tmp/termx-resize-cat-marker3b-shrink2.txt`
+  - `/tmp/termx-resize-cat-marker3b-expand2.txt`
+  - `/tmp/termx-resize-cat-marker3b-shrink3.txt`
+- Result:
+  - shrink1 line 20 contains `RedmiBook% 123123123`.
+  - expand1 line 32 contains `RedmiBook% 123123123`.
+  - shrink2 line 12 contains `RedmiBook% 123123123`.
+  - expand2 line 32 contains `RedmiBook% 123123123`.
+  - shrink3 line 16 contains `RedmiBook% 123123123`.
+
+Resume From Here:
+
+- Current branch did not reproduce marker loss for `cat terminal.go` followed by submitted or pending `123123123` in the tested geometries.
+- If the issue persists outside these geometries, capture the failing outer tmux sizes and capture file. The next change should start with a failing TDD case matching that exact geometry/content shape before code changes.
+
+Commit:
+
+- Pending validation-only worklog commit.
