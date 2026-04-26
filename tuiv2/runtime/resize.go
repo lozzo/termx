@@ -163,7 +163,7 @@ func provisionalNonAltSnapshotForResizePreview(snapshot *protocol.Snapshot, cols
 	cloned.Size = protocol.Size{Cols: cols, Rows: rows}
 	reflowedRows, reflowedTimes, reflowedKinds := reflowSnapshotRowsForPreview(snapshot, int(cols))
 	screenRows := int(rows)
-	screenStart := runtimeMaxInt(0, len(reflowedRows)-screenRows)
+	screenStart := previewScreenStartForNonAltResize(snapshot, reflowedRows, screenRows)
 	cloned.Scrollback = cloneProtocolRows(reflowedRows[:screenStart])
 	cloned.ScrollbackTimestamps = append([]time.Time(nil), reflowedTimes[:screenStart]...)
 	cloned.ScrollbackRowKinds = append([]string(nil), reflowedKinds[:screenStart]...)
@@ -176,6 +176,13 @@ func provisionalNonAltSnapshotForResizePreview(snapshot *protocol.Snapshot, cols
 	cloned.Timestamp = time.Now()
 	clampSnapshotCursorToSize(cloned, cols, rows)
 	return cloned
+}
+
+func previewScreenStartForNonAltResize(snapshot *protocol.Snapshot, reflowedRows [][]protocol.Cell, screenRows int) int {
+	if screenRows <= 0 || len(reflowedRows) <= screenRows {
+		return 0
+	}
+	return 0
 }
 
 func reflowSnapshotRowsForPreview(snapshot *protocol.Snapshot, cols int) ([][]protocol.Cell, []time.Time, []string) {

@@ -21,6 +21,11 @@ func (r *Runtime) SendInput(ctx context.Context, paneID string, data []byte) err
 	if binding == nil || binding.Channel == 0 {
 		return shared.UserVisibleError{Op: "send terminal input", Err: fmt.Errorf("pane %s is not attached", paneID)}
 	}
+	if terminal := r.terminalBoundToPane(paneID); terminal != nil {
+		terminal.ResizePreviewSource = nil
+		terminal.PreferSnapshot = false
+		r.invalidate()
+	}
 	r.noteLocalInput()
 	if err := r.client.Input(ctx, binding.Channel, data); err != nil {
 		return shared.UserVisibleError{Op: "send terminal input", Err: err}

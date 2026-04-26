@@ -1308,12 +1308,19 @@ func TestRuntimeResizePaneShrinkKeepsRenderOnSnapshotUntilOutput(t *testing.T) {
 
 	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("x")})
 
-	if terminal.PreferSnapshot {
-		t.Fatalf("expected first post-resize output to clear shrink preview flag, got %#v", terminal)
+	if !terminal.PreferSnapshot {
+		t.Fatalf("expected post-resize output to keep shrink preview during resize burst, got %#v", terminal)
+	}
+	visible = rt.Visible()
+	if len(visible.Terminals) != 1 || visible.Terminals[0].Surface != nil {
+		t.Fatalf("expected visible runtime to keep live surface hidden during resize burst, got %#v", visible.Terminals)
+	}
+	if err := rt.SendInput(ctx, "pane-1", []byte("q")); err != nil {
+		t.Fatalf("send input: %v", err)
 	}
 	visible = rt.Visible()
 	if len(visible.Terminals) != 1 || visible.Terminals[0].Surface == nil {
-		t.Fatalf("expected visible runtime to restore live surface after output, got %#v", visible.Terminals)
+		t.Fatalf("expected visible runtime to restore live surface after input clears resize source, got %#v", visible.Terminals)
 	}
 	if terminal.Snapshot == nil || terminal.Snapshot.Size.Cols != 57 || terminal.Snapshot.Size.Rows != 20 {
 		t.Fatalf("expected refreshed snapshot to keep resized geometry, got %#v", terminal.Snapshot)

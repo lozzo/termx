@@ -534,7 +534,7 @@ Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
 - Last completed TODO: `13. Write final summary`
-- Last commit: pending real ls reflow fix commit
+- Last commit: pending real ls shrink/expand restore fix commit
 - Next step: review branch or open a PR; no implementation work remains for this task.
 
 Important artifacts:
@@ -685,3 +685,51 @@ Validation after fix:
 Commit:
 
 - Pending real ls reflow fix commit.
+
+
+## Follow-up: Real `ls` Shrink Content and Expand Restore
+
+User feedback: real `ls` shrink content was still insufficient, and shrink→expand did not fully restore.
+
+Reproduction after previous fix:
+
+- `/tmp/termx-real-ls3-shrink.txt` showed only the tail of the reflowed listing, starting around `transport_slow_consumer_test.go`.
+- `/tmp/termx-real-ls3-expand.txt` did not fully restore the original wide layout until later lifecycle changes.
+
+Root causes:
+
+- `handleOutputFrame` and content screen updates cleared `ResizePreviewSource` immediately. Real shell prompt output after `ls` arrived during the resize burst and destroyed the original wide `ls` source before expand.
+- Releasing `PreferSnapshot` during that output let prompt output reveal the local vterm state and scroll the reflowed preview toward the tail.
+- The non-alt preview viewport selection took the bottom of reflowed rows, which hid the top of the listing during shrink.
+
+Fixes:
+
+- Keep `ResizePreviewSource` across real output/screen updates during a resize burst.
+- Keep `PreferSnapshot` while `ResizePreviewSource` is active, so resize echo/prompt output does not immediately displace the preview.
+- Clear `ResizePreviewSource` and release `PreferSnapshot` on the next real user input via `SendInput`, then invalidate runtime visible cache.
+- For non-alt reflow preview, select the beginning of the reflowed rows rather than the bottom when the reflowed content exceeds viewport height.
+
+Validation:
+
+- tmux session: `termx-resize-real-ls6`
+- captures:
+  - `/tmp/termx-real-ls6-before.txt`
+  - `/tmp/termx-real-ls6-shrink.txt`
+  - `/tmp/termx-real-ls6-expand.txt`
+- Shrink capture now starts with the top of the listing and includes right-side entries as later rows:
+  - `AGENTS.md             fanout`
+  - `server_contract_test.go          termx_test.go`
+  - `CLAUDE.md             frameaudit`
+  - `server_perf_test.go              third_party`
+  - `transport_integration_test.go`
+  - `transport_slow_consumer_test.go`
+  - `terminal.go                      tuiv2`
+- Expand capture restores the original wide multi-column `ls` layout.
+- Tests/build passed:
+  - `GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime ./tuiv2/render ./tuiv2/app -run 'TestResizePreview|TestRuntimeResizePaneShrinkKeepsRenderOnSnapshotUntilOutput|TestRenderPipeline.*ResizePreview|TestTerminalAlreadySizedIgnoresProvisionalPreviewSnapshot'`
+  - `GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime ./tuiv2/render`
+  - `GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx`
+
+Commit:
+
+- Pending real ls shrink/expand restore fix commit.

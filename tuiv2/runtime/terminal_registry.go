@@ -82,6 +82,19 @@ func (r *TerminalRegistry) GetOrCreate(id string) *TerminalRuntime {
 	return terminal
 }
 
+func (r *Runtime) terminalBoundToPane(paneID string) *TerminalRuntime {
+	if r == nil || r.registry == nil || paneID == "" {
+		return nil
+	}
+	for _, terminalID := range r.registry.IDs() {
+		terminal := r.registry.Get(terminalID)
+		if terminal != nil && containsPaneID(terminal.BoundPaneIDs, paneID) {
+			return terminal
+		}
+	}
+	return nil
+}
+
 func (r *TerminalRegistry) IDs() []string {
 	if r == nil {
 		return nil

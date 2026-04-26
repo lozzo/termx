@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -65,7 +66,7 @@ func TestResizePreviewAltScreenCropAndRestoreGrid(t *testing.T) {
 	}
 }
 
-func TestResizePreviewOutputClearsPreviewSource(t *testing.T) {
+func TestResizePreviewOutputExitsPreviewButKeepsSourceForResizeBurst(t *testing.T) {
 	terminal := &TerminalRuntime{
 		TerminalID:            "term-1",
 		Snapshot:              snapshotWithLines("term-1", 20, 3, []string{"before"}),
@@ -82,11 +83,11 @@ func TestResizePreviewOutputClearsPreviewSource(t *testing.T) {
 
 	rt.handleOutputFrame(terminal, "term-1", protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("AFTER_REAL_OUTPUT")})
 
-	if terminal.ResizePreviewSource != nil {
-		t.Fatal("expected real output to clear resize preview source")
+	if terminal.ResizePreviewSource == nil {
+		t.Fatal("expected real output to keep resize source for shrink-expand burst")
 	}
-	if terminal.PreferSnapshot {
-		t.Fatal("expected real output to release snapshot preference")
+	if !terminal.PreferSnapshot {
+		t.Fatal("expected resize burst output to keep snapshot preference")
 	}
 	if terminal.BootstrapPending {
 		t.Fatal("expected real output to clear bootstrap pending")
@@ -115,7 +116,7 @@ func TestResizePreviewNoopScreenUpdateDoesNotClearPreviewSource(t *testing.T) {
 	}
 }
 
-func TestResizePreviewContentScreenUpdateClearsPreviewSource(t *testing.T) {
+func TestResizePreviewContentScreenUpdateExitsPreviewButKeepsSourceForResizeBurst(t *testing.T) {
 	terminal := &TerminalRuntime{
 		TerminalID:          "term-1",
 		Snapshot:            snapshotWithLines("term-1", 20, 3, []string{"before"}),
@@ -137,8 +138,28 @@ func TestResizePreviewContentScreenUpdateClearsPreviewSource(t *testing.T) {
 
 	rt.applyDecodedScreenUpdateContract(terminal, "term-1", contract)
 
+	if terminal.ResizePreviewSource == nil {
+		t.Fatal("expected content screen update to keep resize source for shrink-expand burst")
+	}
+}
+
+func TestResizePreviewNextUserInputClearsPreviewSource(t *testing.T) {
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 7, Mode: "collaborator"}
+	rt := New(client)
+	terminal := rt.Registry().GetOrCreate("term-1")
+	terminal.Channel = 7
+	terminal.BoundPaneIDs = []string{"pane-1"}
+	terminal.ResizePreviewSource = snapshotWithLines("term-1", 40, 3, []string{"before source"})
+	binding := rt.BindPane("pane-1")
+	binding.Channel = 7
+	binding.Connected = true
+
+	if err := rt.SendInput(context.Background(), "pane-1", []byte("x")); err != nil {
+		t.Fatalf("send input: %v", err)
+	}
 	if terminal.ResizePreviewSource != nil {
-		t.Fatal("expected content screen update to clear resize preview source")
+		t.Fatal("expected user input to clear resize preview source")
 	}
 }
 

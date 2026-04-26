@@ -182,9 +182,6 @@ func (r *Runtime) applyDecodedScreenUpdateContract(terminal *TerminalRuntime, te
 		invalidateFinish(0)
 		return
 	}
-	if classified.Lifecycle == screenUpdateLifecycleDelta || classified.Lifecycle == screenUpdateLifecycleFullReplace {
-		terminal.ResizePreviewSource = nil
-	}
 	r.applyScreenUpdateContract(terminal, terminalID, classified)
 }
 

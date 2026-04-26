@@ -339,13 +339,14 @@ func (r *Runtime) handleOutputFrame(terminal *TerminalRuntime, terminalID string
 	}
 	syncActive := updateSynchronizedOutputState(&terminal.Stream, frame.Payload)
 	terminal.Recovery = RecoveryState{}
-	terminal.ResizePreviewSource = nil
 	if terminal.PreferSnapshot {
 		// Once the terminal emits real output, keep the provisional snapshot lock
 		// only until the current synchronized-output group finishes, not across
 		// subsequent render cycles. Otherwise live surfaces can stay hidden long
 		// after a resize/bootstrap preview has been superseded by actual redraws.
-		terminal.PreferSnapshot = false
+		if terminal.ResizePreviewSource == nil {
+			terminal.PreferSnapshot = false
+		}
 	}
 	if syncActive {
 		return
