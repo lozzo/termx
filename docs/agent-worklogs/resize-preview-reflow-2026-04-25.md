@@ -1208,3 +1208,58 @@ Resume From Here:
 Commit:
 
 - Pending captured visible-top viewport anchor commit.
+
+## Follow-up: TDD Cursor Reflow Mapping
+
+Goal:
+
+- Fix cursor position during non-alt resize preview reflow.
+- Previous implementation only clamped the original cursor row/col to the new viewport. When content reflowed, this could hide the cursor or leave it on the wrong physical row.
+
+Tests added first:
+
+- `TestResizePreviewNonAltMapsCursorThroughReflow`
+  - Source row: `terminalmeta` at width `12`.
+  - Source cursor: row `0`, col `8`.
+  - Shrink preview width: `3`.
+  - Expected cursor: reflowed row `2`, col `2`.
+  - Initial failure: cursor was clamped to col `2` on row `0` and marked invisible.
+
+Implementation:
+
+- Added `previewCursorForNonAltResize` in `tuiv2/runtime/resize.go`.
+- It maps the source cursor through the same logical-row grouping used for wrapped rows, then through cell-width split segments.
+- It subtracts `screenStart` so cursor row is relative to the selected preview viewport.
+- It hides the cursor only if the mapped cursor lands outside the preview screen window.
+- Added display-width helpers for preview cursor offset calculations.
+- Alt-screen behavior still uses the existing grid crop/restore + clamp path.
+- No render / Visible / projection mutation was added.
+- No screen update / snapshot / bootstrap binary protocol change was made.
+
+Validation:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime -run 'TestResizePreviewNonAltMapsCursorThroughReflow|TestResizePreviewNonAltAnchorsToCapturedVisibleTopAfterHistory|TestResizePreviewNonAltWrappedLinesJoinOnExpand'
+GOCACHE=$PWD/.cache/go-build go test ./vterm ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+rm -rf .cache
+```
+
+Results:
+
+- Targeted cursor/reflow tests passed.
+- Broader validation passed:
+  - `ok github.com/lozzow/termx/vterm 0.435s`
+  - `ok github.com/lozzow/termx/tuiv2/runtime 1.090s`
+  - `ok github.com/lozzow/termx/tuiv2/render 1.179s`
+- Required build passed.
+- `.cache` removed after validation.
+
+Resume From Here:
+
+- Cursor now maps through non-alt preview reflow in unit tests.
+- Recommended next real validation: run the tmux shrink/expand captures again and visually check cursor position after prompt/output in hard columns, real `ls`, repeated history, and real output exit.
+
+Commit:
+
+- Pending cursor reflow mapping commit.

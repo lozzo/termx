@@ -139,6 +139,23 @@ func TestResizePreviewNonAltAnchorsToCapturedVisibleTopAfterHistory(t *testing.T
 	}
 }
 
+func TestResizePreviewNonAltMapsCursorThroughReflow(t *testing.T) {
+	source := snapshotWithLines("term-1", 12, 4, []string{"terminalmeta"})
+	source.Cursor = protocol.CursorState{Row: 0, Col: 8, Visible: true}
+
+	preview := provisionalSnapshotForResizePreview(source, 3, 6)
+
+	if preview == nil {
+		t.Fatal("expected preview snapshot")
+	}
+	if !preview.Cursor.Visible {
+		t.Fatalf("expected cursor to remain visible, got %#v", preview.Cursor)
+	}
+	if preview.Cursor.Row != 2 || preview.Cursor.Col != 2 {
+		t.Fatalf("expected cursor at reflowed row=2 col=2, got %#v in rows %q", preview.Cursor, snapshotRowsText(preview))
+	}
+}
+
 func TestResizePreviewNonAltShrinkExpandRestoresFromOriginalSource(t *testing.T) {
 	source := snapshotWithLines("term-1", 64, 3, []string{"COL_A                 COL_B                 COL_C"})
 	shrink := provisionalSnapshotForResizePreview(source, 20, 6)

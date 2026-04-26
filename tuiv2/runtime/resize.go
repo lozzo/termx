@@ -173,9 +173,66 @@ func provisionalNonAltSnapshotForResizePreview(snapshot *protocol.Snapshot, cols
 	}
 	cloned.ScreenTimestamps = resizeTimeSlice(reflowedTimes[screenStart:], screenRows)
 	cloned.ScreenRowKinds = resizeStringSlice(reflowedKinds[screenStart:], screenRows)
+	cloned.Cursor = previewCursorForNonAltResize(snapshot, int(cols), screenStart, screenRows)
 	cloned.Timestamp = time.Now()
 	clampSnapshotCursorToSize(cloned, cols, rows)
 	return cloned
+}
+
+func previewCursorForNonAltResize(snapshot *protocol.Snapshot, cols, screenStart, screenRows int) protocol.CursorState {
+	cursor := snapshot.Cursor
+	if snapshot == nil || !snapshot.Cursor.Visible || cols <= 0 || screenRows <= 0 {
+		cursor.Visible = false
+		return cursor
+	}
+	cursorSourceRow := len(snapshot.Scrollback) + snapshot.Cursor.Row
+	sourceRows := make([][]protocol.Cell, 0, len(snapshot.Scrollback)+len(snapshot.Screen.Cells))
+	sourceRows = append(sourceRows, snapshot.Scrollback...)
+	sourceRows = append(sourceRows, snapshot.Screen.Cells...)
+	sourceKinds := append([]string(nil), snapshot.ScrollbackRowKinds...)
+	sourceKinds = append(sourceKinds, snapshot.ScreenRowKinds...)
+	sourceRows, _, sourceKinds = trimTrailingBlankPreviewRows(sourceRows, nil, sourceKinds)
+	reflowedRow := 0
+	for i := 0; i < len(sourceRows); i++ {
+		logicalRow := trimPreviewSourceRow(sourceRows[i])
+		cursorOffset := -1
+		if cursorSourceRow == i {
+			cursorOffset = previewRowCellOffset(sourceRows[i], snapshot.Cursor.Col)
+		}
+		for i+1 < len(sourceRows) && previewSliceStringAt(sourceKinds, i+1) == protocol.SnapshotRowKindWrapped {
+			i++
+			if cursorSourceRow == i {
+				cursorOffset = previewRowCellUsed(logicalRow) + previewRowCellOffset(sourceRows[i], snapshot.Cursor.Col)
+			}
+			logicalRow = append(logicalRow, trimPreviewSourceRow(sourceRows[i])...)
+		}
+		if len(logicalRow) == 0 {
+			if cursorOffset >= 0 {
+				cursor.Row = reflowedRow - screenStart
+				cursor.Col = 0
+				cursor.Visible = cursor.Row >= 0 && cursor.Row < screenRows
+				return cursor
+			}
+			reflowedRow++
+			continue
+		}
+		logicalOffset := 0
+		for len(logicalRow) > 0 {
+			cut := previewReflowCut(logicalRow, cols)
+			segmentWidth := previewRowCellUsed(logicalRow[:cut])
+			if cursorOffset >= logicalOffset && cursorOffset <= logicalOffset+segmentWidth {
+				cursor.Row = reflowedRow - screenStart
+				cursor.Col = runtimeMinInt(cursorOffset-logicalOffset, cols-1)
+				cursor.Visible = cursor.Row >= 0 && cursor.Row < screenRows && cursor.Col >= 0 && cursor.Col < cols
+				return cursor
+			}
+			logicalOffset += segmentWidth
+			reflowedRow++
+			logicalRow = logicalRow[cut:]
+		}
+	}
+	cursor.Visible = false
+	return cursor
 }
 
 func previewScreenStartForNonAltResize(snapshot *protocol.Snapshot, reflowedRows [][]protocol.Cell, screenRows int, visibleTopRow int) int {
@@ -277,6 +334,31 @@ func previewReflowCut(row []protocol.Cell, cols int) int {
 		return 1
 	}
 	return cut
+}
+
+func previewRowCellOffset(row []protocol.Cell, col int) int {
+	if col <= 0 {
+		return 0
+	}
+	if col > len(row) {
+		col = len(row)
+	}
+	return previewRowCellUsed(row[:col])
+}
+
+func previewRowCellUsed(row []protocol.Cell) int {
+	used := 0
+	for _, cell := range row {
+		cellWidth := cell.Width
+		if cellWidth < 0 {
+			cellWidth = 0
+		}
+		if cellWidth == 0 && cell.Content != "" {
+			cellWidth = 1
+		}
+		used += cellWidth
+	}
+	return used
 }
 
 func isPreviewSpaceCell(cell protocol.Cell) bool {
