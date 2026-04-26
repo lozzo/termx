@@ -1730,3 +1730,99 @@ Resume From Here:
 Commit:
 
 - Pending fresh vterm preview source commit.
+
+## Follow-up: TDD Retire Stale Preview Source After User-Driven Output
+
+Goal:
+
+- Fix the live reproduced issue where an old resize preview snapshot/source continued to cover the live vterm tail. The preview showed a middle section until the user typed a space, at which point the live tail became visible.
+
+Live repro from user pane:
+
+- User-provided tmux pane: `6:0.0`.
+- Captures:
+  - `/tmp/termx-go-run-repro-before-space.txt`
+  - `/tmp/termx-go-run-repro-after-space.txt`
+- Before pressing space:
+  - Capture line 33 showed `go.mod                terminal.go                      workbenchops`.
+  - The prompt/input tail `termx ... fanout-check` was not visible.
+- After pressing one space:
+  - The same line changed to `termx ... fanout-check`.
+- Interpretation:
+  - Local vterm had fresher tail content, but render was still preferring an old provisional snapshot/source.
+  - The stale `ResizePreviewSource` was not retired after user-driven real output, so the next resize could keep reusing old middle rows.
+
+Tmux source comparison:
+
+- `_tmux-src/screen.c:screen_resize_cursor` keeps an absolute cursor row `cy = hsize + s->cy` before height changes.
+- `_tmux-src/screen.c:screen_resize_y` shrinks height by deleting bottom empty lines only until the cursor, then pushes top rows into history. This means cursor/tail content drives the visible window during row shrink.
+- `_tmux-src/screen.c:screen_reflow` wraps cursor position with `grid_wrap_position`, calls `grid_reflow`, then restores cursor with `grid_unwrap_position`.
+- `_tmux-src/grid.c:grid_reflow` still performs cell-width split/join over grid rows; it does not re-tokenize command output.
+- Termx implication: preview source lifecycle must not leave an older provisional snapshot covering newer user-driven output. Reflow math can be correct while the wrong source still makes the visible rows wrong.
+
+Tests added first:
+
+- `TestResizePreviewDoesNotReuseSourceAfterRealOutputSupersedesSnapshot`
+  - Starts with a stale `ResizePreviewSource` and `PreferSnapshot=true`.
+  - Simulates recent local input followed by real output containing `fresh tail` and `prompt 123123123`.
+  - Initial failure: `ResizePreviewSource` survived and next resize reused stale preview rows.
+  - Expected: user-driven real output retires the old resize preview source, so the next resize captures fresh vterm rows.
+- `TestResizePreviewAfterInputUsesFreshVTermRowsInsteadOfOldPreview`
+  - Confirms explicit `SendInput` clears old preview source before the next resize.
+
+Implementation:
+
+- `handleOutputFrame` now retires `ResizePreviewSource` and releases `PreferSnapshot` only when real output arrives within the recent-local-input window.
+- Resize echo / prompt noise without recent local input continues to preserve preview source for the active resize burst, keeping prior shrink/expand behavior intact.
+- This is intentionally lifecycle-scoped; render / Visible / projection paths remain read-only.
+- Screen update / snapshot / bootstrap transport remains binary and unchanged.
+
+Validation:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime -run 'TestResizePreviewDoesNotReuseSourceAfterRealOutputSupersedesSnapshot|TestResizePreviewOutputExitsPreviewButKeepsSourceForResizeBurst|TestRuntimeResizePaneShrinkKeepsRenderOnSnapshotUntilOutput'
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime -run 'TestCoalesceClientOutputFramesExitsEarlyOnSynchronizedOutputEnd|TestResizePreviewDoesNotReuseSourceAfterRealOutputSupersedesSnapshot'
+GOCACHE=$PWD/.cache/go-build go test ./vterm ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+rm -rf .cache
+```
+
+Results:
+
+- Targeted lifecycle tests passed.
+- First broad validation hit a timing-sensitive unrelated runtime test once:
+  - `TestCoalesceClientOutputFramesExitsEarlyOnSynchronizedOutputEnd` took `6.333583ms`.
+- Rerunning the targeted timing test plus lifecycle test passed.
+- Broad validation rerun passed:
+  - `ok github.com/lozzow/termx/vterm 0.216s`
+  - `ok github.com/lozzow/termx/tuiv2/runtime 0.902s`
+  - `ok github.com/lozzow/termx/tuiv2/render 1.052s`
+- Required build passed.
+- `.cache` removed after validation.
+
+Real tmux validation after fix:
+
+- Session: `termx-resize-stale-source-fix1`.
+- Steps:
+  - start fresh isolated `./termx`.
+  - run `clear; cat terminal.go`.
+  - run `ls`.
+  - type pending `fanout-check`.
+  - shrink to `76x35`.
+  - capture before and after pressing one space.
+- Captures:
+  - `/tmp/termx-resize-stale-source-fix1-shrink.txt`
+  - `/tmp/termx-resize-stale-source-fix1-after-space.txt`
+- Result:
+  - Shrink capture line 33 already contains `RedmiBook% fanout-check`.
+  - After-space capture contains the same marker line.
+  - Diff of the tail before/after space is empty, so pressing space no longer swaps middle content for the live tail.
+
+Resume From Here:
+
+- The live user pane `6:0.0` was started via `go run ./cmd/termx`; after this code change, restart that TUI process to load the fix before re-testing the same pane workflow.
+- Next validation should re-run the user's exact manual workflow on a freshly started `go run ./cmd/termx` instance and compare capture before/after pressing space.
+
+Commit:
+
+- Pending stale preview source lifecycle commit.

@@ -448,6 +448,80 @@ func TestCaptureResizePreviewSourcePrefersFreshVTermRowsOverStaleSnapshot(t *tes
 	}
 }
 
+func TestResizePreviewAfterInputUsesFreshVTermRowsInsteadOfOldPreview(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 40, 6, []string{"old middle", "old middle 2", "old middle 3"})
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.VTerm == nil {
+		t.Fatal("expected terminal with vterm")
+	}
+	terminal.ResizePreviewSource = snapshotWithLines("term-1", 40, 6, []string{"stale preview middle", "stale preview tail"})
+	terminal.PreferSnapshot = true
+
+	if err := rt.SendInput(ctx, "pane-1", []byte("x")); err != nil {
+		t.Fatalf("send input: %v", err)
+	}
+	loadSnapshotIntoVTerm(terminal.VTerm, snapshotWithLines("term-1", 40, 6, []string{"fresh tail", "prompt 123123123", ""}))
+
+	if err := rt.ResizePane(ctx, "pane-1", "term-1", 20, 4); err != nil {
+		t.Fatalf("resize pane: %v", err)
+	}
+
+	if terminal.Snapshot == nil || !snapshotContainsAnyRow(terminal.Snapshot, "prompt 123123123") {
+		t.Fatalf("expected resize preview after input to use fresh vterm prompt, got rows %q", snapshotRowsText(terminal.Snapshot))
+	}
+	if snapshotContainsAnyRow(terminal.Snapshot, "stale preview") {
+		t.Fatalf("expected old preview source not to survive input, got rows %q", snapshotRowsText(terminal.Snapshot))
+	}
+}
+
+func TestResizePreviewDoesNotReuseSourceAfterRealOutputSupersedesSnapshot(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 40, 6, []string{"old middle", "old middle 2", "old middle 3"})
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.VTerm == nil {
+		t.Fatal("expected terminal with vterm")
+	}
+	terminal.ResizePreviewSource = snapshotWithLines("term-1", 40, 6, []string{"stale preview middle", "stale preview tail"})
+	terminal.PreferSnapshot = true
+
+	rt.noteLocalInput()
+	rt.handleStreamFrame("term-1", protocol.StreamFrame{Type: protocol.TypeOutput, Payload: []byte("\r\nfresh tail\r\nprompt 123123123")})
+	if terminal.ResizePreviewSource != nil {
+		t.Fatalf("expected real output to retire stale resize preview source, got %#v", terminal.ResizePreviewSource)
+	}
+
+	if err := rt.ResizePane(ctx, "pane-1", "term-1", 20, 4); err != nil {
+		t.Fatalf("resize pane: %v", err)
+	}
+	if terminal.Snapshot == nil || !snapshotContainsAnyRow(terminal.Snapshot, "prompt 123123123") {
+		t.Fatalf("expected next resize preview to use fresh output tail, got rows %q", snapshotRowsText(terminal.Snapshot))
+	}
+	if snapshotContainsAnyRow(terminal.Snapshot, "stale preview") {
+		t.Fatalf("expected next resize preview not to reuse stale source, got rows %q", snapshotRowsText(terminal.Snapshot))
+	}
+}
+
 func snapshotContainsAnyRow(snapshot *protocol.Snapshot, want string) bool {
 	return strings.Contains(snapshotRowsText(snapshot), want)
 }

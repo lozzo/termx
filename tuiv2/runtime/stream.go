@@ -339,6 +339,10 @@ func (r *Runtime) handleOutputFrame(terminal *TerminalRuntime, terminalID string
 	}
 	syncActive := updateSynchronizedOutputState(&terminal.Stream, frame.Payload)
 	terminal.Recovery = RecoveryState{}
+	if terminal.ResizePreviewSource != nil && r.RecentLocalInput() {
+		terminal.ResizePreviewSource = nil
+		terminal.PreferSnapshot = false
+	}
 	if terminal.PreferSnapshot {
 		// Once the terminal emits real output, keep the provisional snapshot lock
 		// only until the current synchronized-output group finishes, not across
