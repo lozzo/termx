@@ -1997,3 +1997,45 @@ Resume From Here:
 Commit:
 
 - Pending cursor-boundary green fix commit.
+
+## Follow-up: Required Tests After Cursor Boundary Fix
+
+Goal:
+
+- Run the required package tests and build after the cursor split-boundary mapping fix.
+
+Commands:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go test ./vterm ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+rm -rf .cache
+```
+
+Results:
+
+- Required runtime/render tests passed:
+  - `ok github.com/lozzow/termx/tuiv2/runtime 0.747s`
+  - `ok github.com/lozzow/termx/tuiv2/render 1.454s`
+- Required vterm/runtime/render tests passed:
+  - `ok github.com/lozzow/termx/vterm 0.398s`
+  - `ok github.com/lozzow/termx/tuiv2/runtime (cached)`
+  - `ok github.com/lozzow/termx/tuiv2/render (cached)`
+- Required build passed:
+  - `go build -o ./termx ./cmd/termx`
+- `.cache` was removed after the run.
+
+Self-review:
+
+- Test/build validation supports the unit-level cursor-boundary fix.
+- This phase does not yet satisfy completion, because the required real tmux `cat terminal.go` + `ls` + pending marker capture is still pending.
+
+Resume From Here:
+
+- Last implementation commit before this validation note: `293258e Map resize preview cursor split boundaries like tmux`.
+- Next phase: run isolated real tmux validation for the exact long-output + `ls` + pending marker + shrink + `Space` workflow, save before/shrink/after-space captures, inspect marker/middle-content/diff, update worklog, and commit.
+
+Commit:
+
+- Pending required-tests validation commit.
