@@ -424,6 +424,30 @@ func TestCaptureResizePreviewSourceUsesFreshVTermCursorOverSnapshot(t *testing.T
 	}
 }
 
+func TestCaptureResizePreviewSourcePrefersFreshVTermRowsOverStaleSnapshot(t *testing.T) {
+	vt := localvterm.New(20, 4, 100, nil)
+	vt.LoadSnapshot(localvterm.ScreenData{Cells: [][]localvterm.Cell{
+		vtermCellsFromString("old middle"),
+		vtermCellsFromString("fresh tail"),
+		vtermCellsFromString("prompt 123123123"),
+		{},
+	}}, localvterm.CursorState{Row: 3, Col: 0, Visible: false}, localvterm.TerminalModes{AutoWrap: true})
+	staleSnapshot := snapshotWithLines("term-1", 20, 4, []string{"old middle", "older middle", "stale only", ""})
+	terminal := &TerminalRuntime{TerminalID: "term-1", VTerm: vt, Snapshot: staleSnapshot}
+
+	source := captureResizePreviewSource("term-1", terminal, staleSnapshot, vt)
+
+	if source == nil {
+		t.Fatal("expected preview source")
+	}
+	if !snapshotContainsAnyRow(source, "prompt 123123123") {
+		t.Fatalf("expected preview source to include fresh vterm prompt row, got rows %q", snapshotRowsText(source))
+	}
+	if snapshotContainsAnyRow(source, "stale only") {
+		t.Fatalf("expected preview source not to use stale snapshot-only row, got rows %q", snapshotRowsText(source))
+	}
+}
+
 func snapshotContainsAnyRow(snapshot *protocol.Snapshot, want string) bool {
 	return strings.Contains(snapshotRowsText(snapshot), want)
 }

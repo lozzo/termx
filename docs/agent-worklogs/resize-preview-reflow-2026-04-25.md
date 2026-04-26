@@ -1648,3 +1648,85 @@ Resume From Here:
 Commit:
 
 - Pending validation-only worklog commit.
+
+## Follow-up: TDD Fresh VTerm Preview Source for Long Output Tail
+
+Goal:
+
+- Fix the user-reproduced issue where shrink preview showed a middle section of `cat terminal.go` output and omitted the final prompt/input line until the user typed a space.
+- User-provided live repro was in attached tmux session `6:0.0`.
+
+Live repro capture before fix:
+
+- Captured current attached pane:
+  - `/tmp/termx-user-repro-before-space.txt`
+  - `/tmp/termx-user-repro-after-space.txt`
+- Before pressing space:
+  - The visible shrink preview showed middle rows around `sendProtocolError` / `protocolErrorCode`.
+  - The final prompt/input line was not visible.
+- After sending one space to pane `6:0.0`:
+  - The bottom line appeared: `termx ... fanout-check`.
+- Conclusion:
+  - Local vterm had fresher tail/prompt content than the resize preview source used for the provisional snapshot.
+  - The previous fix only overlaid fresh cursor/modes onto a cloned snapshot; it could still use stale snapshot rows and therefore anchor/reflow the wrong content region.
+
+Tests added first:
+
+- `TestCaptureResizePreviewSourcePrefersFreshVTermRowsOverStaleSnapshot`
+  - Creates a local vterm containing `fresh tail` and `prompt 123123123`.
+  - Provides a stale snapshot containing `stale only`.
+  - Initial failure: preview source used stale snapshot rows and omitted the fresh prompt row.
+  - Expected behavior: a new resize preview source should use fresh vterm rows when not already in `PreferSnapshot` preview mode.
+
+Implementation:
+
+- `captureResizePreviewSource` now prefers `snapshotFromVTerm` whenever the terminal is not already in snapshot-preview mode and a local vterm exists.
+- This prevents a new resize burst from starting from stale snapshot rows after real shell output/input has updated the local vterm.
+- Existing behavior still preserves the original `ResizePreviewSource` across an active resize burst.
+- Render / Visible / projection paths remain read-only.
+- Screen update / snapshot / bootstrap transport remains binary and unchanged.
+
+Validation:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime -run 'TestCaptureResizePreviewSourcePrefersFreshVTermRowsOverStaleSnapshot|TestCaptureResizePreviewSourceUsesFreshVTermCursorOverSnapshot|TestCaptureResizePreviewSourceCarriesVTermWrappedRows'
+GOCACHE=$PWD/.cache/go-build go test ./vterm ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+rm -rf .cache
+```
+
+Results:
+
+- Targeted fresh-source tests passed.
+- Broader validation passed:
+  - `ok github.com/lozzow/termx/vterm 1.034s`
+  - `ok github.com/lozzow/termx/tuiv2/runtime 1.640s`
+  - `ok github.com/lozzow/termx/tuiv2/render 1.532s`
+- Required build passed.
+- `.cache` removed after validation.
+
+Real tmux validation after fix:
+
+- Session: `termx-resize-cat-marker-fresh1`.
+- Steps:
+  - run `clear; cat terminal.go`.
+  - type pending `123123123`.
+  - shrink to `58x22`.
+  - capture before space and after sending a space.
+- Captures:
+  - `/tmp/termx-resize-cat-marker-fresh1-before.txt`
+  - `/tmp/termx-resize-cat-marker-fresh1-shrink.txt`
+  - `/tmp/termx-resize-cat-marker-fresh1-after-space.txt`
+- Result:
+  - Shrink capture line 20 contains `RedmiBook% 123123123` before any extra space is typed.
+  - After-space capture still contains the same marker line; pressing space no longer changes the preview from middle content to the tail.
+  - The shrink sample shows tail rows around `protocolModesFromVTerm` followed by `RedmiBook% 123123123`, not the earlier middle `sendProtocolError` region.
+
+Resume From Here:
+
+- New resize previews now start from fresh local vterm rows unless an active preview burst is already preserving an existing source.
+- Recommended next validation: rerun the original repeated-history scenario to ensure fresh-source capture does not break burst preservation.
+
+Commit:
+
+- Pending fresh vterm preview source commit.

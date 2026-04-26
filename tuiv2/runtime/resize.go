@@ -122,7 +122,7 @@ func provisionalSnapshotForLocalShrink(snapshot *protocol.Snapshot, cols, rows u
 }
 
 func captureResizePreviewSource(terminalID string, terminal *TerminalRuntime, snapshot *protocol.Snapshot, vt VTermLike) *protocol.Snapshot {
-	if terminal != nil && !terminal.PreferSnapshot && terminal.SurfaceVersion > terminal.SnapshotVersion {
+	if terminal != nil && !terminal.PreferSnapshot && vt != nil {
 		return cloneProtocolSnapshot(snapshotFromVTerm(terminalID, vt))
 	}
 	if snapshot != nil {
