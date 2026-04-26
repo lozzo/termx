@@ -156,6 +156,23 @@ func TestResizePreviewNonAltMapsCursorThroughReflow(t *testing.T) {
 	}
 }
 
+func TestResizePreviewNonAltMapsCursorAtSplitBoundaryToNextRow(t *testing.T) {
+	source := snapshotWithLines("term-1", 12, 4, []string{"abcdef"})
+	source.Cursor = protocol.CursorState{Row: 0, Col: 3, Visible: true}
+
+	preview := provisionalSnapshotForResizePreview(source, 3, 4)
+
+	if preview == nil {
+		t.Fatal("expected preview snapshot")
+	}
+	if !preview.Cursor.Visible {
+		t.Fatalf("expected cursor to remain visible at split boundary, got %#v rows %q", preview.Cursor, snapshotRowsText(preview))
+	}
+	if preview.Cursor.Row != 1 || preview.Cursor.Col != 0 {
+		t.Fatalf("expected cursor at next reflowed row boundary row=1 col=0, got %#v rows %q", preview.Cursor, snapshotRowsText(preview))
+	}
+}
+
 func TestResizePreviewNonAltViewportKeepsCursorVisibleWhenShrinkingRows(t *testing.T) {
 	source := snapshotWithLines("term-1", 20, 6, []string{"top", "middle", "cursor-line", "after-one", "after-two", "after-three"})
 	source.Cursor = protocol.CursorState{Row: 5, Col: 5, Visible: true}

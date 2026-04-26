@@ -1899,3 +1899,60 @@ Resume From Here:
 Commit:
 
 - Pending handoff restart confirmation commit.
+
+## Follow-up: TDD Cursor Boundary Mapping Regression
+
+Goal:
+
+- Add a failing regression test for tmux-style cursor unwrap behavior at a reflow split boundary.
+- This targets a likely cause of the remaining pending-input instability: content can be visible while the cursor is still projected to the wrong physical row/column, so the next typed `Space` may append in the wrong place or force a visible jump.
+
+Tmux semantic reference:
+
+- `_tmux-src/screen.c:screen_reflow()` records the cursor using `grid_wrap_position()` before `grid_reflow()`.
+- `_tmux-src/grid.c:grid_unwrap_position()` walks wrapped rows after reflow.
+- When the logical cursor offset is exactly at the end of a split segment, unwrap advances to the next wrapped row at column `0`; it does not clamp to the previous row's last column.
+
+Test added first:
+
+- `TestResizePreviewNonAltMapsCursorAtSplitBoundaryToNextRow`
+  - Source row: `abcdef`.
+  - Source cursor: row `0`, col `3`.
+  - Shrink width: `3`.
+  - Expected cursor: row `1`, col `0`.
+
+Red result:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime -run 'TestResizePreviewNonAltMapsCursorAtSplitBoundaryToNextRow'
+rm -rf .cache
+```
+
+Failure:
+
+```text
+expected cursor at next reflowed row boundary row=1 col=0,
+got protocol.CursorState{Row:0, Col:2, Visible:true, Shape:"", Blink:false}
+rows "abc\ndef\n\n"
+```
+
+Conclusion:
+
+- Current `previewCursorForNonAltResize` treats `cursorOffset == logicalOffset + segmentWidth` as belonging to the previous segment and clamps the col to `cols-1`.
+- The next implementation phase should change cursor mapping to match tmux unwrap semantics without touching render / Visible / projection paths.
+
+Self-review:
+
+- Only a failing runtime test was added.
+- No implementation logic was changed in this phase.
+- No render / Visible / projection mutation was added.
+- Screen update / snapshot / bootstrap transport was not modified.
+
+Resume From Here:
+
+- Last completed baseline commit before this red test: `33522c5 Record resize preview reflow handoff restart`.
+- Next phase: implement split-boundary cursor mapping, run the new targeted test plus the existing cursor/viewport resize preview tests, update this worklog, then commit the green fix.
+
+Commit:
+
+- Pending red cursor-boundary test commit.
