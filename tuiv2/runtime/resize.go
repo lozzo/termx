@@ -200,21 +200,36 @@ func reflowSnapshotRowsForPreview(snapshot *protocol.Snapshot, cols int) ([][]pr
 	var rows [][]protocol.Cell
 	var times []time.Time
 	var kinds []string
-	for i, row := range sourceRows {
-		trimmed := trimPreviewSourceRow(row)
-		if len(trimmed) == 0 {
+	for i := 0; i < len(sourceRows); i++ {
+		logicalRow := trimPreviewSourceRow(sourceRows[i])
+		rowTime := previewSliceTimeAt(sourceTimes, i)
+		rowKind := previewSliceStringAt(sourceKinds, i)
+		for i+1 < len(sourceRows) && previewSliceStringAt(sourceKinds, i+1) == protocol.SnapshotRowKindWrapped {
+			i++
+			logicalRow = append(logicalRow, trimPreviewSourceRow(sourceRows[i])...)
+			if rowTime.IsZero() {
+				rowTime = previewSliceTimeAt(sourceTimes, i)
+			}
+		}
+		if len(logicalRow) == 0 {
 			rows = append(rows, nil)
-			times = append(times, previewSliceTimeAt(sourceTimes, i))
-			kinds = append(kinds, previewSliceStringAt(sourceKinds, i))
+			times = append(times, rowTime)
+			kinds = append(kinds, rowKind)
 			continue
 		}
-		for len(trimmed) > 0 {
-			cut := previewReflowCut(trimmed, cols)
-			segment := cloneProtocolCellRow(trimmed[:cut])
+		firstSegment := true
+		for len(logicalRow) > 0 {
+			cut := previewReflowCut(logicalRow, cols)
+			segment := cloneProtocolCellRow(logicalRow[:cut])
 			rows = append(rows, segment)
-			times = append(times, previewSliceTimeAt(sourceTimes, i))
-			kinds = append(kinds, previewSliceStringAt(sourceKinds, i))
-			trimmed = trimmed[cut:]
+			times = append(times, rowTime)
+			if firstSegment {
+				kinds = append(kinds, rowKind)
+				firstSegment = false
+			} else {
+				kinds = append(kinds, protocol.SnapshotRowKindWrapped)
+			}
+			logicalRow = logicalRow[cut:]
 		}
 	}
 	return rows, times, kinds

@@ -930,3 +930,64 @@ Resume From Here:
 Commit:
 
 - Pending TDD cell-width split commit.
+
+## Follow-up: TDD Wrapped Row Metadata Preview Reflow Slice
+
+Goal:
+
+- Add the minimal wrapped-row metadata needed for tmux-like logical line recovery during preview generation.
+- Keep the change local to existing snapshot row-kind metadata and avoid changing screen update / snapshot / bootstrap transport encoding.
+
+Tests added first:
+
+- `TestResizePreviewNonAltWrappedLinesJoinOnExpand`
+  - Source rows: `abcde` followed by `fgh`.
+  - The second row is marked `protocol.SnapshotRowKindWrapped`.
+  - Expanding to width `8` should join them into `abcdefgh` and leave the next row blank.
+- `TestResizePreviewNonAltSplitMarksContinuationRowsWrapped`
+  - Source row: `terminalmeta`.
+  - Shrinking to width `3` should mark continuation preview rows as `wrapped`, while leaving the first segment unwrapped.
+
+Red/green notes:
+
+- Initial test run failed to compile because `protocol.SnapshotRowKindWrapped` did not exist.
+- After adding the constant and reworking preview row generation, targeted tests passed.
+
+Implementation:
+
+- Added `protocol.SnapshotRowKindWrapped = "wrapped"`.
+- Updated `tuiv2/runtime/resize.go` non-alt preview generation to build logical rows by joining source rows whose row kind is `wrapped`.
+- Re-splits each logical row by display cell width for the requested preview width.
+- Marks generated continuation rows as `protocol.SnapshotRowKindWrapped`.
+- Preserves hard-line boundaries because only source rows explicitly marked `wrapped` are joined.
+- Keeps alt-screen crop/restore behavior unchanged.
+- Does not mutate render / Visible / projection paths.
+- Does not change binary screen update / snapshot / bootstrap protocols.
+
+Validation:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime -run 'TestResizePreviewNonAltWrappedLinesJoinOnExpand|TestResizePreviewNonAltSplitMarksContinuationRowsWrapped|TestResizePreviewNonAltShrinkPreservesSplitWhitespaceCells|TestResizePreviewNonAltHardLinesDoNotJoinOnExpand'
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+rm -rf .cache
+```
+
+Results:
+
+- Targeted wrapped metadata tests passed.
+- Required runtime/render tests passed:
+  - `ok github.com/lozzow/termx/tuiv2/runtime 0.903s`
+  - `ok github.com/lozzow/termx/tuiv2/render 1.168s`
+- Required build passed.
+- `.cache` removed after validation.
+
+Resume From Here:
+
+- Current implementation can preserve logical wrapped groups if source rows carry `protocol.SnapshotRowKindWrapped`.
+- Next phase must ensure preview source capture can actually infer/carry wrapped state from real terminal output, not just synthetic tests.
+- Real tmux-in-tmux validation is still required for hard columns, real `ls`, repeated history, and real output exit.
+
+Commit:
+
+- Pending wrapped row metadata commit.

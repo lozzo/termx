@@ -2175,6 +2175,7 @@ type ScreenData struct {
 }
 
 const SnapshotRowKindRestart = "restart"
+const SnapshotRowKindWrapped = "wrapped"
 
 type Snapshot struct {
 	TerminalID           string        `json:"terminal_id"`

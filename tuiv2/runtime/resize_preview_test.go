@@ -81,6 +81,41 @@ func TestResizePreviewNonAltHardLinesDoNotJoinOnExpand(t *testing.T) {
 	}
 }
 
+func TestResizePreviewNonAltWrappedLinesJoinOnExpand(t *testing.T) {
+	source := snapshotWithLines("term-1", 5, 4, []string{"abcde", "fgh"})
+	source.ScreenRowKinds = []string{"", protocol.SnapshotRowKindWrapped, "", ""}
+
+	preview := provisionalSnapshotForResizePreview(source, 8, 4)
+
+	if preview == nil {
+		t.Fatal("expected preview snapshot")
+	}
+	if got := rowText(preview.Screen.Cells[0]); got != "abcdefgh" {
+		t.Fatalf("expected wrapped source rows to join on expand, got %q in rows %q", got, snapshotRowsText(preview))
+	}
+	if got := rowText(preview.Screen.Cells[1]); got != "" {
+		t.Fatalf("expected joined continuation row to clear, got %q in rows %q", got, snapshotRowsText(preview))
+	}
+}
+
+func TestResizePreviewNonAltSplitMarksContinuationRowsWrapped(t *testing.T) {
+	source := snapshotWithLines("term-1", 12, 4, []string{"terminalmeta"})
+
+	preview := provisionalSnapshotForResizePreview(source, 3, 6)
+
+	if preview == nil {
+		t.Fatal("expected preview snapshot")
+	}
+	if got := preview.ScreenRowKinds[0]; got == protocol.SnapshotRowKindWrapped {
+		t.Fatalf("expected first split segment not to be marked wrapped, got %#v", preview.ScreenRowKinds)
+	}
+	for row := 1; row < 4; row++ {
+		if got := preview.ScreenRowKinds[row]; got != protocol.SnapshotRowKindWrapped {
+			t.Fatalf("expected continuation row %d to be wrapped, got %#v", row, preview.ScreenRowKinds)
+		}
+	}
+}
+
 func TestResizePreviewNonAltShrinkExpandRestoresFromOriginalSource(t *testing.T) {
 	source := snapshotWithLines("term-1", 64, 3, []string{"COL_A                 COL_B                 COL_C"})
 	shrink := provisionalSnapshotForResizePreview(source, 20, 6)
