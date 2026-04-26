@@ -1130,3 +1130,81 @@ Resume From Here:
 Commit:
 
 - Pending hard-row wrapped inference guard commit.
+
+## Follow-up: TDD Captured Visible-Top Viewport Anchor
+
+Goal:
+
+- Fix repeated-history shrink/expand jumping to the wrong part of combined scrollback + visible content.
+- Keep the anchor based on captured preview source geometry, not prompt text or render-layer mutation.
+
+Real tmux capture that exposed the bug:
+
+- Session: `termx-resize-tdd-repeat`.
+- Reproduction:
+  - create `/tmp/termx-real-ls-shrink.txt` from the real-ls shrink capture.
+  - run three times inside termx: `cat /tmp/termx-real-ls-shrink.txt; command ls`.
+  - shrink `120x34 -> 58x22`, then expand `58x22 -> 120x34`.
+- Captures:
+  - `/tmp/termx-resize-tdd-repeat-before.txt`
+  - `/tmp/termx-resize-tdd-repeat-shrink.txt`
+  - `/tmp/termx-resize-tdd-repeat-expand.txt`
+- Failure:
+  - Shrink anchored too far upward at the command line / beginning of the combined history rather than the captured visible top.
+
+Tests added first:
+
+- `TestResizePreviewNonAltAnchorsToCapturedVisibleTopAfterHistory`
+  - Builds a source snapshot with two scrollback rows plus four visible screen rows.
+  - Resizing to the same screen height should keep `visible-one` at row 0 and `visible-four` at row 3.
+  - Initial failure rendered `history-one` and `history-two` in the visible area.
+
+Implementation:
+
+- `reflowSnapshotRowsForPreview` now returns the reflowed row index corresponding to the captured visible screen top.
+- `previewScreenStartForNonAltResize` uses that visible-top row as the viewport start, clamped to the available reflowed rows.
+- This still regenerates preview from the original source rows and preserves scrollback before the selected screen window.
+- No render / Visible / projection mutation was added.
+- No screen update / snapshot / bootstrap binary protocol change was made.
+
+Validation:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime -run 'TestResizePreviewNonAltAnchorsToCapturedVisibleTopAfterHistory|TestResizePreviewNonAltShrinkReflowsHardColumns|TestResizePreviewNonAltWrappedLinesJoinOnExpand'
+GOCACHE=$PWD/.cache/go-build go test ./vterm ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+rm -rf .cache
+```
+
+Results:
+
+- Targeted viewport-anchor tests passed.
+- Broader validation passed:
+  - `ok github.com/lozzow/termx/vterm 0.923s`
+  - `ok github.com/lozzow/termx/tuiv2/runtime 1.586s`
+  - `ok github.com/lozzow/termx/tuiv2/render 1.919s`
+- Required build passed.
+- `.cache` removed after validation.
+
+Follow-up real tmux validation:
+
+- Session: `termx-resize-tdd-repeat2`.
+- Captures:
+  - `/tmp/termx-resize-tdd-repeat2-before.txt`
+  - `/tmp/termx-resize-tdd-repeat2-shrink.txt`
+  - `/tmp/termx-resize-tdd-repeat2-expand.txt`
+  - `/tmp/termx-resize-tdd-repeat2-real-output.txt`
+- Result:
+  - Shrink/expand stayed in the captured visible region instead of jumping back to the command line.
+  - Expand preserved the repeated-history context and then showed the current real `ls` content below it.
+  - Real output exit check passed: `/tmp/termx-resize-tdd-repeat2-real-output.txt` contains `AFTER_REAL_OUTPUT` after sending `echo AFTER_REAL_OUTPUT`.
+
+Resume From Here:
+
+- Current branch has TDD coverage for cell-width splitting, wrapped logical row join/split, real vterm wrapped-row capture, hard-row guard, and visible-top viewport anchoring.
+- Real tmux captures now cover hard columns, real `ls`, repeated history, and real output exit.
+- If more polish is needed, compare the exact shrink viewport against native tmux cursor wrap/unwrap behavior; avoid prompt-string heuristics and keep changes in runtime/source projection, not render.
+
+Commit:
+
+- Pending captured visible-top viewport anchor commit.

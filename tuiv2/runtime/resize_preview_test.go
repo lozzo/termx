@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/protocol"
 	localvterm "github.com/lozzow/termx/vterm"
@@ -113,6 +114,28 @@ func TestResizePreviewNonAltSplitMarksContinuationRowsWrapped(t *testing.T) {
 		if got := preview.ScreenRowKinds[row]; got != protocol.SnapshotRowKindWrapped {
 			t.Fatalf("expected continuation row %d to be wrapped, got %#v", row, preview.ScreenRowKinds)
 		}
+	}
+}
+
+func TestResizePreviewNonAltAnchorsToCapturedVisibleTopAfterHistory(t *testing.T) {
+	source := snapshotWithLines("term-1", 20, 4, []string{"visible-one", "visible-two", "visible-three", "visible-four"})
+	source.Scrollback = [][]protocol.Cell{
+		testProtocolCellsFromString("history-one", 20),
+		testProtocolCellsFromString("history-two", 20),
+	}
+	source.ScrollbackTimestamps = make([]time.Time, len(source.Scrollback))
+	source.ScrollbackRowKinds = make([]string, len(source.Scrollback))
+
+	preview := provisionalSnapshotForResizePreview(source, 20, 4)
+
+	if preview == nil {
+		t.Fatal("expected preview snapshot")
+	}
+	if got := rowText(preview.Screen.Cells[0]); got != "visible-one" {
+		t.Fatalf("expected viewport to start at captured visible top, got %q in rows %q", got, snapshotRowsText(preview))
+	}
+	if got := rowText(preview.Screen.Cells[3]); got != "visible-four" {
+		t.Fatalf("expected viewport to preserve captured visible rows, got %q in rows %q", got, snapshotRowsText(preview))
 	}
 }
 
@@ -296,4 +319,15 @@ func rowText(row []protocol.Cell) string {
 		builder.WriteString(cell.Content)
 	}
 	return strings.TrimRight(builder.String(), " ")
+}
+
+func testProtocolCellsFromString(value string, cols int) []protocol.Cell {
+	row := make([]protocol.Cell, cols)
+	for col := range row {
+		row[col] = protocol.Cell{Content: " ", Width: 1}
+	}
+	for col := 0; col < len(value) && col < cols; col++ {
+		row[col] = protocol.Cell{Content: string(value[col]), Width: 1}
+	}
+	return row
 }

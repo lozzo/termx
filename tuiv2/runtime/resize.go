@@ -161,9 +161,9 @@ func provisionalNonAltSnapshotForResizePreview(snapshot *protocol.Snapshot, cols
 		return nil
 	}
 	cloned.Size = protocol.Size{Cols: cols, Rows: rows}
-	reflowedRows, reflowedTimes, reflowedKinds := reflowSnapshotRowsForPreview(snapshot, int(cols))
+	reflowedRows, reflowedTimes, reflowedKinds, visibleTopRow := reflowSnapshotRowsForPreview(snapshot, int(cols))
 	screenRows := int(rows)
-	screenStart := previewScreenStartForNonAltResize(snapshot, reflowedRows, screenRows)
+	screenStart := previewScreenStartForNonAltResize(snapshot, reflowedRows, screenRows, visibleTopRow)
 	cloned.Scrollback = cloneProtocolRows(reflowedRows[:screenStart])
 	cloned.ScrollbackTimestamps = append([]time.Time(nil), reflowedTimes[:screenStart]...)
 	cloned.ScrollbackRowKinds = append([]string(nil), reflowedKinds[:screenStart]...)
@@ -178,17 +178,25 @@ func provisionalNonAltSnapshotForResizePreview(snapshot *protocol.Snapshot, cols
 	return cloned
 }
 
-func previewScreenStartForNonAltResize(snapshot *protocol.Snapshot, reflowedRows [][]protocol.Cell, screenRows int) int {
+func previewScreenStartForNonAltResize(snapshot *protocol.Snapshot, reflowedRows [][]protocol.Cell, screenRows int, visibleTopRow int) int {
 	if screenRows <= 0 || len(reflowedRows) <= screenRows {
 		return 0
 	}
-	return 0
+	if visibleTopRow < 0 {
+		return 0
+	}
+	maxStart := len(reflowedRows) - screenRows
+	if visibleTopRow > maxStart {
+		return maxStart
+	}
+	return visibleTopRow
 }
 
-func reflowSnapshotRowsForPreview(snapshot *protocol.Snapshot, cols int) ([][]protocol.Cell, []time.Time, []string) {
+func reflowSnapshotRowsForPreview(snapshot *protocol.Snapshot, cols int) ([][]protocol.Cell, []time.Time, []string, int) {
 	if snapshot == nil || cols <= 0 {
-		return nil, nil, nil
+		return nil, nil, nil, 0
 	}
+	scrollbackRows := len(snapshot.Scrollback)
 	sourceRows := make([][]protocol.Cell, 0, len(snapshot.Scrollback)+len(snapshot.Screen.Cells))
 	sourceRows = append(sourceRows, snapshot.Scrollback...)
 	sourceRows = append(sourceRows, snapshot.Screen.Cells...)
@@ -200,7 +208,11 @@ func reflowSnapshotRowsForPreview(snapshot *protocol.Snapshot, cols int) ([][]pr
 	var rows [][]protocol.Cell
 	var times []time.Time
 	var kinds []string
+	visibleTopRow := 0
 	for i := 0; i < len(sourceRows); i++ {
+		if i == scrollbackRows {
+			visibleTopRow = len(rows)
+		}
 		logicalRow := trimPreviewSourceRow(sourceRows[i])
 		rowTime := previewSliceTimeAt(sourceTimes, i)
 		rowKind := previewSliceStringAt(sourceKinds, i)
@@ -232,7 +244,7 @@ func reflowSnapshotRowsForPreview(snapshot *protocol.Snapshot, cols int) ([][]pr
 			logicalRow = logicalRow[cut:]
 		}
 	}
-	return rows, times, kinds
+	return rows, times, kinds, visibleTopRow
 }
 
 func previewReflowCut(row []protocol.Cell, cols int) int {
