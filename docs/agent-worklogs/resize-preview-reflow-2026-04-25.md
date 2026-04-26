@@ -791,3 +791,83 @@ GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
 Commit:
 
 - Pending repeated cat/ls viewport anchor fix commit.
+
+## Follow-up: Native tmux Reflow Semantics and Current Gaps
+
+User feedback on the current branch:
+
+- Repeated real multi-line command output is still unstable during shrink/expand.
+- Reproduction inside `termx`:
+  - `cat /tmp/termx-real-ls-shrink.txt; command ls`
+  - `cat /tmp/termx-real-ls-shrink.txt; command ls`
+  - `cat /tmp/termx-real-ls-shrink.txt; command ls`
+  - then shrink/expand the pane.
+- Observed failure: content can shift to the wrong paragraph, disappear, or recover inconsistently.
+- Important conclusion: the current non-alt preview reflow implementation is not the correct endpoint. It uses whitespace/token-like wrapping and simple viewport anchoring, which does not match tmux grid reflow semantics.
+
+Native tmux experiment:
+
+- Command in native tmux: `clear; command ls`.
+- Resize path: start at `120x34`, shrink to `58x22`, then expand back to `120x34`.
+- Native tmux shrink does not recompute `ls` as filename/token columns.
+- It splits existing grid cells by display width. For example, the filename `terminalmeta` can become:
+  - `ter`
+  - `minalmeta`
+- Native tmux can expand back to the original wide layout because it maintains wrapped-line semantics, not tokenized command-output semantics.
+
+Relevant tmux source:
+
+- `_tmux-src/grid.c`
+  - `grid_reflow()`
+  - `grid_reflow_split()`
+  - `grid_reflow_join()`
+- `_tmux-src/screen.c`
+  - `screen_reflow()`
+  - `grid_wrap_position()`
+  - `grid_unwrap_position()`
+
+Tmux-like reflow semantics to model:
+
+- Reflow operates over history plus visible grid rows.
+- It uses each row's `cellused` / display width, not shell command structure or filename tokens.
+- When a row is wider than the new width, split by cell display width, not by whitespace or token boundaries.
+- Continuation rows produced by split carry wrapped-line metadata equivalent to tmux `GRID_LINE_WRAPPED`.
+- When a row is narrower than the new width and was originally wrapped, join can pull cells back from following wrapped continuation rows.
+- Hard lines that were not wrapped must not merge with the next hard line.
+- Cursor position is preserved through logical wrapped coordinates using tmux-style wrap/unwrap position handling, not by guessing from prompt text.
+- Alt-screen/fullscreen content should not use ordinary text reflow. It should keep a two-dimensional grid model and crop/restore cells across resize preview.
+
+Current implementation gaps to fix next:
+
+- `tuiv2/runtime/resize.go` still contains `previewReflowCut`, which prefers whitespace boundaries and trims leading/trailing spaces during preview generation. This is incompatible with tmux-style cell-width splitting.
+- The non-alt preview currently builds rows from the already materialized snapshot without explicit wrapped-line metadata, so it cannot reliably distinguish hard line breaks from wrapped continuations.
+- Viewport selection is still heuristic. Recent commits moved between bottom anchoring and visible-top anchoring, but tmux preserves logical grid/cursor position instead of choosing rows by prompt or simple top/bottom rules.
+- Loading the provisional snapshot back into the local vterm helped hide clipped live-vterm states, but it should not be treated as the fundamental solution. Preview generation must be regenerated from a stable preview source, not repeatedly derived from previous provisional output.
+
+Design direction for the next implementation phase:
+
+- Replace whitespace/token-like non-alt preview reflow with a tmux-like preview grid source.
+- Capture preview source with scrollback rows, visible screen rows, row effective width/cellused, wrapped flags, cursor absolute row/col, terminal size, modes/alt-screen, timestamps, row kinds, and styles.
+- Generate non-alt preview by splitting rows on cell display width and marking split continuations as wrapped.
+- Generate expand previews from the original captured source so shrink→expand can restore the original hard-line and wrapped-line structure.
+- Keep alt-screen preview as two-dimensional crop/restore, without ordinary text reflow.
+- Keep preview source alive through resize echo/prompt noise during a resize burst, but clear it on real user input and on true new command output once that lifecycle is clearly distinguished.
+
+Required real validation after redesign:
+
+- Hard columns: `clear; printf 'COL_A                 COL_B                 COL_C\n'; cat`, then shrink/expand. `COL_A`, `COL_B`, and `COL_C` must remain visible on shrink and restore on expand.
+- Real command `ls`: `clear; command ls`, then shrink/expand. Shrink should resemble native tmux cell-split behavior and expand should restore the original multi-column layout.
+- Repeated history: generate `/tmp/termx-real-ls-shrink.txt`, run `cat /tmp/termx-real-ls-shrink.txt; command ls` multiple times, then shrink/expand. Preview must not jump to a wrong paragraph, obviously lose current visible content, or fail to restore the captured visible area on expand.
+- Real output exit: after the next true user input, preview must not remain stuck and real command output must become visible.
+
+Validation commands required after implementation:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+rm -rf .cache
+```
+
+Commit:
+
+- Pending documentation commit.
