@@ -871,3 +871,62 @@ rm -rf .cache
 Commit:
 
 - Pending documentation commit.
+
+## Follow-up: TDD Cell-Width Split Preview Reflow Slice
+
+Goal:
+
+- Start the redesign with TDD and remove the most direct tmux mismatch in non-alt preview reflow: whitespace/token-aware splitting.
+- This is not the full tmux-like preview grid model yet. Snapshot/protocol still lacks explicit wrapped-line metadata, so this commit intentionally limits scope to cell-width splitting and preserving whitespace cells inside split segments.
+
+Tests added first:
+
+- `TestResizePreviewNonAltShrinkSplitsByCellWidthNotWhitespace`
+  - Source row: `terminalmeta`.
+  - Shrink width: `3`.
+  - Expected first segments: `ter`, `min`, `alm`, matching grid-cell splitting rather than filename/token wrapping.
+- `TestResizePreviewNonAltShrinkPreservesSplitWhitespaceCells`
+  - Source row: `ab   cd`.
+  - Shrink width: `4`.
+  - Initial failure showed the old implementation trimmed the leading continuation space and produced `cd` instead of ` cd`.
+- `TestResizePreviewNonAltHardLinesDoNotJoinOnExpand`
+  - Source hard rows: `abc`, `def`.
+  - Expand width: `12`.
+  - Confirms this slice does not merge independent hard rows.
+
+Implementation:
+
+- Updated `tuiv2/runtime/resize.go` non-alt preview row generation to keep split segments exactly as source cells selected by display width.
+- Removed whitespace-preferred split behavior from `previewReflowCut`.
+- Stopped trimming leading continuation spaces and trailing segment spaces during preview generation.
+- Kept alt-screen crop/restore behavior unchanged.
+- Did not modify render/projection paths.
+- Did not modify screen update / snapshot / bootstrap binary protocol.
+
+Validation:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime -run 'TestResizePreviewNonAltShrinkSplitsByCellWidthNotWhitespace|TestResizePreviewNonAltShrinkPreservesSplitWhitespaceCells|TestResizePreviewNonAltHardLinesDoNotJoinOnExpand|TestResizePreviewNonAltShrinkReflowsHardColumns|TestResizePreviewNonAltShrinkExpandRestoresFromOriginalSource'
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+rm -rf .cache
+```
+
+Results:
+
+- Targeted runtime resize preview tests passed.
+- Required runtime/render tests passed:
+  - `ok github.com/lozzow/termx/tuiv2/runtime 0.901s`
+  - `ok github.com/lozzow/termx/tuiv2/render 1.171s`
+- Required build passed after rerun with a non-readonly shell variable name.
+- `.cache` removed after validation.
+
+Resume From Here:
+
+- Current commit should be the TDD cell-width split slice.
+- Next phase should add explicit preview-source row metadata for wrapped continuations, then test shrink→expand recovery from original hard-line/wrapped-line source.
+- Need real tmux-in-tmux validation after the wrapped metadata/lifecycle phase, especially repeated `cat /tmp/termx-real-ls-shrink.txt; command ls`.
+
+Commit:
+
+- Pending TDD cell-width split commit.

@@ -27,6 +27,60 @@ func TestResizePreviewNonAltShrinkReflowsHardColumns(t *testing.T) {
 	}
 }
 
+func TestResizePreviewNonAltShrinkSplitsByCellWidthNotWhitespace(t *testing.T) {
+	source := snapshotWithLines("term-1", 32, 8, []string{"terminalmeta"})
+
+	preview := provisionalSnapshotForResizePreview(source, 3, 8)
+
+	if preview == nil {
+		t.Fatal("expected preview snapshot")
+	}
+	if got := rowText(preview.Screen.Cells[0]); got != "ter" {
+		t.Fatalf("expected first split segment to be %q, got %q in rows %q", "ter", got, snapshotRowsText(preview))
+	}
+	if got := rowText(preview.Screen.Cells[1]); got != "min" {
+		t.Fatalf("expected second split segment to continue by cells, got %q in rows %q", got, snapshotRowsText(preview))
+	}
+	if got := rowText(preview.Screen.Cells[2]); got != "alm" {
+		t.Fatalf("expected third split segment to continue by cells, got %q in rows %q", got, snapshotRowsText(preview))
+	}
+}
+
+func TestResizePreviewNonAltShrinkPreservesSplitWhitespaceCells(t *testing.T) {
+	source := snapshotWithLines("term-1", 8, 4, []string{"ab   cd"})
+
+	preview := provisionalSnapshotForResizePreview(source, 4, 4)
+
+	if preview == nil {
+		t.Fatal("expected preview snapshot")
+	}
+	if got := preview.Screen.Cells[0][2].Content; got != " " {
+		t.Fatalf("expected split to preserve first source space cell at row 0 col 2, got %#v in rows %q", preview.Screen.Cells[0][2], snapshotRowsText(preview))
+	}
+	if got := preview.Screen.Cells[0][3].Content; got != " " {
+		t.Fatalf("expected split to preserve second source space cell at row 0 col 3, got %#v in rows %q", preview.Screen.Cells[0][3], snapshotRowsText(preview))
+	}
+	if got := rowText(preview.Screen.Cells[1]); got != " cd" {
+		t.Fatalf("expected continuation to preserve leading source space, got %q in rows %q", got, snapshotRowsText(preview))
+	}
+}
+
+func TestResizePreviewNonAltHardLinesDoNotJoinOnExpand(t *testing.T) {
+	source := snapshotWithLines("term-1", 6, 4, []string{"abc", "def"})
+
+	preview := provisionalSnapshotForResizePreview(source, 12, 4)
+
+	if preview == nil {
+		t.Fatal("expected preview snapshot")
+	}
+	if got := rowText(preview.Screen.Cells[0]); got != "abc" {
+		t.Fatalf("expected first hard line to stay separate, got %q in rows %q", got, snapshotRowsText(preview))
+	}
+	if got := rowText(preview.Screen.Cells[1]); got != "def" {
+		t.Fatalf("expected second hard line to stay separate, got %q in rows %q", got, snapshotRowsText(preview))
+	}
+}
+
 func TestResizePreviewNonAltShrinkExpandRestoresFromOriginalSource(t *testing.T) {
 	source := snapshotWithLines("term-1", 64, 3, []string{"COL_A                 COL_B                 COL_C"})
 	shrink := provisionalSnapshotForResizePreview(source, 20, 6)
