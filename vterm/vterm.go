@@ -2203,6 +2203,7 @@ func (v *VTerm) reconcileRowMetadataLocked(beforeScreen []rowFingerprint, before
 			nextScreenTimestamps[row] = now
 		}
 	}
+	v.inferWrappedScreenRowKindsLocked(afterScreen, nextScreenRowKinds)
 	v.screenTimestamps = nextScreenTimestamps
 	v.screenRowKinds = nextScreenRowKinds
 	if oldScreenTimestamps == nil {
@@ -2222,6 +2223,61 @@ func (v *VTerm) reconcileRowMetadataLocked(beforeScreen []rowFingerprint, before
 		beforeScrollbackLen:       beforeScrollbackLen,
 		screenScrollShift:         screenScrollShift,
 	}
+}
+
+func (v *VTerm) inferWrappedScreenRowKindsLocked(afterScreen []rowFingerprint, rowKinds []string) {
+	if v == nil || v.emu == nil || len(afterScreen) == 0 || len(rowKinds) == 0 || v.emu.IsAltScreen() {
+		return
+	}
+	width := v.emu.Width()
+	if width <= 0 {
+		return
+	}
+	for row := 1; row < len(afterScreen) && row < len(rowKinds); row++ {
+		if rowKinds[row] != "" || rowFingerprintIsBlank(afterScreen[row]) {
+			continue
+		}
+		if v.screenRowCellUsedLocked(row-1, width) >= width {
+			rowKinds[row] = protocol.SnapshotRowKindWrapped
+		}
+	}
+}
+
+func (v *VTerm) screenRowCellUsedLocked(row, width int) int {
+	if v == nil || v.emu == nil || row < 0 || row >= v.emu.Height() || width <= 0 {
+		return 0
+	}
+	used := 0
+	for col := 0; col < width; col++ {
+		used += vtermCellDisplayWidth(v.convertCell(v.emu.CellAt(col, row)))
+	}
+	return used
+}
+
+func vtermCellDisplayWidth(cell Cell) int {
+	cellWidth := cell.Width
+	if cellWidth < 0 {
+		return 0
+	}
+	if cellWidth == 0 && cell.Content != "" {
+		return 1
+	}
+	return cellWidth
+}
+
+func vtermRowCellUsed(row []Cell) int {
+	used := 0
+	for _, cell := range row {
+		cellWidth := vtermCellDisplayWidth(cell)
+		if strings.TrimSpace(cell.Content) != "" || cell.Style != (CellStyle{}) || cell.Width == 0 && cell.Content != "" {
+			used += cellWidth
+			continue
+		}
+		if used > 0 {
+			used += cellWidth
+		}
+	}
+	return used
 }
 
 func (v *VTerm) reconcileRowCachesLocked(beforeScreen []rowFingerprint, plan rowCacheReconcilePlan) {

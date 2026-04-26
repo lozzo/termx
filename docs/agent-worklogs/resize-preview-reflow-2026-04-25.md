@@ -991,3 +991,64 @@ Resume From Here:
 Commit:
 
 - Pending wrapped row metadata commit.
+
+## Follow-up: TDD Real Auto-Wrap Capture Metadata Slice
+
+Goal:
+
+- Ensure resize preview sources captured from real local `vterm` output can carry wrapped-row metadata, not only synthetic snapshots in tests.
+- This enables the previous wrapped logical-row reflow to apply to real auto-wrapped output.
+
+Tests added first:
+
+- `TestVTermWriteMarksAutoWrappedRows`
+  - Creates a `5x3` local vterm and writes `abcdef`.
+  - Expected row 1 to be marked `protocol.SnapshotRowKindWrapped`.
+  - Initial failure: row kinds were all empty.
+- `TestCaptureResizePreviewSourceCarriesVTermWrappedRows`
+  - Writes auto-wrapped output to a local vterm, captures resize preview source, and asserts the captured snapshot carries the wrapped row kind.
+
+Implementation:
+
+- Added conservative wrapped-row inference during `vterm` row metadata reconciliation.
+- If a non-alt screen row has content and the previous physical row uses the full terminal width, the row is marked `protocol.SnapshotRowKindWrapped` unless it already has a row kind.
+- The inference reads emulator cells directly to avoid disturbing screen row view/cache reconciliation.
+- Added a small display-width helper for vterm cells.
+- Kept render / Visible / projection paths pure.
+- Did not change screen update / snapshot / bootstrap binary protocols.
+
+Validation and fix notes:
+
+- First broader `./vterm` validation exposed a row-cache side effect:
+  - `TestVTermPreservesRowTimestampAcrossScroll` expected `abcd` in scrollback but saw `efgh`.
+- Root cause: wrapped inference used `screenRowViewLocked` while metadata/cache reconciliation was in progress.
+- Fix: read current emulator cells directly via `emu.CellAt` for inference.
+
+Validation:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./vterm -run 'TestVTermWriteMarksAutoWrappedRows|TestVTermPreservesRowTimestampAcrossScroll'
+GOCACHE=$PWD/.cache/go-build go test ./vterm ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+rm -rf .cache
+```
+
+Results:
+
+- Targeted vterm tests passed.
+- Broader validation passed:
+  - `ok github.com/lozzow/termx/vterm 0.369s`
+  - `ok github.com/lozzow/termx/tuiv2/runtime 0.779s`
+  - `ok github.com/lozzow/termx/tuiv2/render 1.163s`
+- Required build passed.
+- `.cache` removed after validation.
+
+Resume From Here:
+
+- Real output can now infer wrapped continuation rows in local vterm metadata and carry them into resize preview source snapshots.
+- Next phase should run tmux-in-tmux captures for hard columns, real `ls`, repeated history, and real output exit.
+- If captures still show paragraph jumps, focus next on viewport/cursor anchoring over the logical reflowed grid rather than additional whitespace/token heuristics.
+
+Commit:
+
+- Pending real auto-wrap capture metadata commit.

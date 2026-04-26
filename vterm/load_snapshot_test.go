@@ -201,6 +201,25 @@ func TestVTermWriteAssignsRowTimestamps(t *testing.T) {
 	}
 }
 
+func TestVTermWriteMarksAutoWrappedRows(t *testing.T) {
+	vt := New(5, 3, 100, nil)
+
+	if _, err := vt.Write([]byte("abcdef")); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	rowKinds := vt.ScreenRowKinds()
+	if len(rowKinds) < 2 {
+		t.Fatalf("expected at least two screen row kinds, got %#v", rowKinds)
+	}
+	if rowKinds[0] == protocol.SnapshotRowKindWrapped {
+		t.Fatalf("expected first physical row not to be wrapped, got %#v", rowKinds)
+	}
+	if rowKinds[1] != protocol.SnapshotRowKindWrapped {
+		t.Fatalf("expected auto-wrap continuation row to be wrapped, got %#v", rowKinds)
+	}
+}
+
 func TestVTermWriteWithDamagePreservesWideRuneContinuations(t *testing.T) {
 	vt := New(8, 2, 100, nil)
 

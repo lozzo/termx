@@ -252,6 +252,26 @@ func TestResizePreviewNextUserInputClearsPreviewSource(t *testing.T) {
 	}
 }
 
+func TestCaptureResizePreviewSourceCarriesVTermWrappedRows(t *testing.T) {
+	vt := localvterm.New(5, 3, 100, nil)
+	if _, err := vt.Write([]byte("abcdef")); err != nil {
+		t.Fatalf("write wrapped output: %v", err)
+	}
+	terminal := &TerminalRuntime{TerminalID: "term-1", VTerm: vt}
+
+	source := captureResizePreviewSource("term-1", terminal, nil, vt)
+
+	if source == nil {
+		t.Fatal("expected resize preview source")
+	}
+	if len(source.ScreenRowKinds) < 2 {
+		t.Fatalf("expected screen row kinds, got %#v", source.ScreenRowKinds)
+	}
+	if source.ScreenRowKinds[1] != protocol.SnapshotRowKindWrapped {
+		t.Fatalf("expected captured continuation row to be wrapped, got %#v", source.ScreenRowKinds)
+	}
+}
+
 func snapshotContainsAnyRow(snapshot *protocol.Snapshot, want string) bool {
 	return strings.Contains(snapshotRowsText(snapshot), want)
 }
