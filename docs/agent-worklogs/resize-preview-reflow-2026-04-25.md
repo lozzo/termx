@@ -2039,3 +2039,84 @@ Resume From Here:
 Commit:
 
 - Pending required-tests validation commit.
+
+## Follow-up: Exact Real tmux Capture for Long Output, `ls`, Pending Marker, and Space
+
+Goal:
+
+- Validate the exact user-reported workflow on a fresh isolated `termx` instance inside tmux after the cursor-boundary fix.
+- Confirm shrink preview keeps the final prompt/pending input visible instead of showing only a middle section of `terminal.go`.
+- Confirm pressing `Space` does not cause a viewport jump and appends at the pending-input tail.
+
+Setup:
+
+- tmux session: `termx-resize-exact1`.
+- Initial tmux size: `163x35`.
+- Shrink size: `76x35`.
+- Isolated paths:
+  - base: `/tmp/termx-resize-exact1`
+  - socket: `/tmp/termx-resize-exact1/termx.sock`
+  - config: `/tmp/termx-resize-exact1/config`
+  - state: `/tmp/termx-resize-exact1/state`
+  - log: `/tmp/termx-resize-exact1/termx.log`
+
+Workflow:
+
+```sh
+tmux new-session -d -s termx-resize-exact1 -x 163 -y 35 \
+  'cd /Users/lozzow/Documents/workdir/termx && XDG_CONFIG_HOME=/tmp/termx-resize-exact1/config XDG_STATE_HOME=/tmp/termx-resize-exact1/state ./termx --socket /tmp/termx-resize-exact1/termx.sock --log-file /tmp/termx-resize-exact1/termx.log'
+tmux send-keys -t termx-resize-exact1:0.0 Enter
+tmux send-keys -t termx-resize-exact1:0.0 "resize-preview" Enter Enter
+tmux send-keys -t termx-resize-exact1:0.0 "clear; cat terminal.go" Enter
+tmux send-keys -t termx-resize-exact1:0.0 "ls" Enter
+tmux send-keys -t termx-resize-exact1:0.0 "fanout-check"
+tmux capture-pane -t termx-resize-exact1:0.0 -p -S -500 > /tmp/termx-resize-exact1/before-shrink.txt
+tmux resize-window -t termx-resize-exact1:0 -x 76 -y 35
+tmux capture-pane -t termx-resize-exact1:0.0 -p -S -500 > /tmp/termx-resize-exact1/shrink.txt
+tmux send-keys -t termx-resize-exact1:0.0 Space
+tmux capture-pane -t termx-resize-exact1:0.0 -p -S -500 > /tmp/termx-resize-exact1/after-space.txt
+diff -u <(tail -n 45 /tmp/termx-resize-exact1/shrink.txt) <(tail -n 45 /tmp/termx-resize-exact1/after-space.txt) > /tmp/termx-resize-exact1/shrink-vs-after-space-tail.diff || true
+```
+
+Capture files:
+
+- `/tmp/termx-resize-exact1/before-shrink.txt`
+- `/tmp/termx-resize-exact1/shrink.txt`
+- `/tmp/termx-resize-exact1/after-space.txt`
+- `/tmp/termx-resize-exact1/shrink-vs-after-space-tail.diff`
+- `/tmp/termx-resize-exact1/after-space-visible-char.txt`
+- `/tmp/termx-resize-exact1/expand-after-visible-char.txt`
+- `/tmp/termx-resize-exact1/termx.log`
+
+Results:
+
+- Before shrink capture line 33 contains pending marker:
+  - `termx ... fanout-check`
+- Shrink capture line 33 contains pending marker before any extra keypress:
+  - `termx ... fanout-check`
+- `rg -n "sendProtocolError|protocolErrorCode"` found no matches in before/shrink/after-space captures.
+- `shrink-vs-after-space-tail.diff` has `0` lines, so pressing `Space` did not cause a viewport jump from middle content to tail content.
+- Because `tmux capture-pane` cannot visually distinguish a typed trailing space from blank row fill, a follow-up visible-character check was run:
+  - After sending `Z` following the `Space`, `/tmp/termx-resize-exact1/after-space-visible-char.txt` line 33 contains `fanout-check Z`.
+  - This proves the `Space` was appended at the pending input tail before `Z`.
+- Expand after the visible-character check kept the marker visible:
+  - `/tmp/termx-resize-exact1/expand-after-visible-char.txt` line 33 contains `fanout-check Z`.
+- The isolated tmux session was killed after captures were saved.
+
+Self-review:
+
+- Real tmux validation covers the exact long-output + later `ls` + pending marker shrink workflow.
+- The capture evidence supports cursor/tail visibility and no before/after-space viewport jump.
+- The added visible-character check is an inference from tmux capture limitations; the direct `after-space` capture itself is stable but cannot render the trailing typed space distinctly.
+- No render / Visible / projection mutation was added.
+- Screen update / snapshot / bootstrap transport was not modified.
+
+Resume From Here:
+
+- Unit/build validation commit before this capture: `7124843 Record resize preview cursor boundary test results`.
+- Current tmux capture directory: `/tmp/termx-resize-exact1`.
+- Next phase: final status check, update worklog summary, and commit this real tmux validation.
+
+Commit:
+
+- Pending exact tmux capture validation commit.
