@@ -2249,7 +2249,11 @@ func (v *VTerm) screenRowCellUsedLocked(row, width int) int {
 	}
 	used := 0
 	for col := 0; col < width; col++ {
-		used += vtermCellDisplayWidth(v.convertCell(v.emu.CellAt(col, row)))
+		cell := v.convertCell(v.emu.CellAt(col, row))
+		if !vtermCellHasContent(cell) {
+			continue
+		}
+		used = col + vtermCellDisplayWidth(cell)
 	}
 	return used
 }
@@ -2267,17 +2271,17 @@ func vtermCellDisplayWidth(cell Cell) int {
 
 func vtermRowCellUsed(row []Cell) int {
 	used := 0
-	for _, cell := range row {
-		cellWidth := vtermCellDisplayWidth(cell)
-		if strings.TrimSpace(cell.Content) != "" || cell.Style != (CellStyle{}) || cell.Width == 0 && cell.Content != "" {
-			used += cellWidth
+	for col, cell := range row {
+		if !vtermCellHasContent(cell) {
 			continue
 		}
-		if used > 0 {
-			used += cellWidth
-		}
+		used = col + vtermCellDisplayWidth(cell)
 	}
 	return used
+}
+
+func vtermCellHasContent(cell Cell) bool {
+	return strings.TrimSpace(cell.Content) != "" || cell.Style != (CellStyle{}) || cell.Width == 0 && cell.Content != ""
 }
 
 func (v *VTerm) reconcileRowCachesLocked(beforeScreen []rowFingerprint, plan rowCacheReconcilePlan) {

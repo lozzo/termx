@@ -1052,3 +1052,81 @@ Resume From Here:
 Commit:
 
 - Pending real auto-wrap capture metadata commit.
+
+## Follow-up: TDD Hard-Row Guard for Wrapped Inference
+
+Goal:
+
+- Fix false-positive wrapped inference found by real tmux `clear; command ls` capture.
+- Keep tmux-like cell splitting for shrink while ensuring CRLF hard rows restore as separate rows on expand.
+
+Real tmux capture that exposed the bug:
+
+- Session: `termx-resize-tdd-ls3`.
+- Isolated paths:
+  - socket: `/tmp/termx-resize-tdd-ls3/termx.sock`
+  - state: `/tmp/termx-resize-tdd-ls3/state`
+  - log: `/tmp/termx-resize-tdd-ls3/termx.log`
+- Captures:
+  - `/tmp/termx-resize-tdd-ls3-before.txt`
+  - `/tmp/termx-resize-tdd-ls3-shrink.txt`
+  - `/tmp/termx-resize-tdd-ls3-expand.txt`
+- Failure:
+  - Shrink split cells, but expand incorrectly joined independent `ls` hard rows, for example `terminalmetaCLAUDE.md` appeared on one row.
+
+Root cause:
+
+- Wrapped inference treated any previous row whose storage width equaled terminal width as full/wrapped.
+- Because row views are dense and padded to terminal width, hard rows with trailing blanks could be misclassified as wrapped.
+
+Tests added:
+
+- `TestVTermWriteDoesNotMarkCRLFHardRowsWrapped`
+  - Writes `alpha     beta\r\ngamma\r\n` to a `20x4` vterm.
+  - Asserts the second hard row is not marked `protocol.SnapshotRowKindWrapped`.
+
+Implementation:
+
+- Changed vterm cell-used inference to use the last nonblank/styled cell position plus display width, rather than counting dense padded blank cells.
+- Kept auto-wrap continuation detection for true full-width rows.
+- Preserved the previous cache-safety fix by reading emulator cells directly during inference.
+
+Validation:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./vterm -run 'TestVTermWriteMarksAutoWrappedRows|TestVTermWriteDoesNotMarkCRLFHardRowsWrapped'
+GOCACHE=$PWD/.cache/go-build go test ./vterm ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+rm -rf .cache
+```
+
+Results:
+
+- Targeted tests passed.
+- Broader validation passed:
+  - `ok github.com/lozzow/termx/vterm 0.243s`
+  - `ok github.com/lozzow/termx/tuiv2/runtime 1.237s`
+  - `ok github.com/lozzow/termx/tuiv2/render 1.830s`
+- Required build passed.
+- `.cache` removed after validation.
+
+Follow-up real tmux validation:
+
+- Session: `termx-resize-tdd-ls4`.
+- Captures:
+  - `/tmp/termx-resize-tdd-ls4-before.txt`
+  - `/tmp/termx-resize-tdd-ls4-shrink.txt`
+  - `/tmp/termx-resize-tdd-ls4-expand.txt`
+- Result:
+  - Shrink shows tmux-like cell splits, for example `terminalmeta` becomes `t` / `erminalmeta` across rows.
+  - Expand restores independent `ls` hard rows instead of joining them.
+  - No `terminalmetaCLAUDE.md`-style false join remained in the sampled expand capture.
+
+Resume From Here:
+
+- Continue real tmux-in-tmux validation for repeated history and real output exit.
+- If repeated history still jumps, next likely area is viewport/cursor anchoring over the reflowed logical grid, not wrapped inference.
+
+Commit:
+
+- Pending hard-row wrapped inference guard commit.

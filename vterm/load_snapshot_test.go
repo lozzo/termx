@@ -220,6 +220,22 @@ func TestVTermWriteMarksAutoWrappedRows(t *testing.T) {
 	}
 }
 
+func TestVTermWriteDoesNotMarkCRLFHardRowsWrapped(t *testing.T) {
+	vt := New(20, 4, 100, nil)
+
+	if _, err := vt.Write([]byte("alpha     beta\r\ngamma\r\n")); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	rowKinds := vt.ScreenRowKinds()
+	if len(rowKinds) < 2 {
+		t.Fatalf("expected row kinds, got %#v", rowKinds)
+	}
+	if rowKinds[1] == protocol.SnapshotRowKindWrapped {
+		t.Fatalf("expected CRLF hard row not to be inferred as wrapped, got %#v", rowKinds)
+	}
+}
+
 func TestVTermWriteWithDamagePreservesWideRuneContinuations(t *testing.T) {
 	vt := New(8, 2, 100, nil)
 
