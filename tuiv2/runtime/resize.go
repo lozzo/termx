@@ -249,7 +249,7 @@ func previewScreenStartForNonAltResize(snapshot *protocol.Snapshot, reflowedRows
 		return 0
 	}
 	maxStart := len(reflowedRows) - screenRows
-	if cursorAnchor && snapshot != nil && screenRows < len(snapshot.Screen.Cells) {
+	if cursorAnchor && cursor.Row >= visibleTopRow+screenRows {
 		cursorStart := cursor.Row - screenRows + 1
 		if cursorStart < 0 {
 			return 0
@@ -258,6 +258,12 @@ func previewScreenStartForNonAltResize(snapshot *protocol.Snapshot, reflowedRows
 			return maxStart
 		}
 		return cursorStart
+	}
+	if cursorAnchor && cursor.Row < visibleTopRow {
+		if cursor.Row < 0 {
+			return 0
+		}
+		return cursor.Row
 	}
 	if snapshot != nil && screenRows < len(snapshot.Screen.Cells) {
 		return maxStart

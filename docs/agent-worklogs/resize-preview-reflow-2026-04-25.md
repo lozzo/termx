@@ -1397,3 +1397,72 @@ Resume From Here:
 Commit:
 
 - Pending cursor/tail row-shrink anchor commit.
+
+## Follow-up: TDD Width-Shrink Cursor Anchor
+
+Goal:
+
+- Fix the actual remaining cursor visibility problem: shrinking width can increase the number of reflowed rows even when pane height stays the same, pushing the cursor/prompt row outside the preview viewport.
+- Previous cursor/tail fix only handled target row count shrink and did not cover width-only reflow expansion.
+
+Tests added first:
+
+- `TestResizePreviewNonAltViewportAnchorsCursorWhenWidthShrinkAddsRows`
+  - Source has wide rows plus a prompt/cursor row.
+  - Target width shrinks from `40` to `10` while target height remains `6`.
+  - Initial failure: viewport stayed at top of reflowed rows and hid the cursor/prompt context.
+
+Implementation:
+
+- `previewScreenStartForNonAltResize` now anchors on the mapped cursor whenever the cursor would fall outside the selected viewport, regardless of whether target height changed.
+- Existing row-shrink bottom/tail fallback remains for cases without a valid cursor anchor.
+- Captured visible top remains the default only when the cursor is already within that viewport.
+- No prompt-string heuristic was added.
+- No render / Visible / projection mutation was added.
+- No screen update / snapshot / bootstrap binary protocol change was made.
+
+Validation:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime -run 'TestResizePreviewNonAltViewportAnchorsCursorWhenWidthShrinkAddsRows|TestResizePreviewNonAltAnchorsToCapturedVisibleTopAfterHistory|TestResizePreviewNonAltViewportAnchorsCursorAtBottomWhenRowsShrink|TestResizePreviewNonAltViewportUsesCursorPositionWhenCursorHidden'
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime -run 'TestCoalesceClientOutputFramesExitsEarlyOnSynchronizedOutputEnd|TestResizePreviewNonAltViewportAnchorsCursorWhenWidthShrinkAddsRows'
+GOCACHE=$PWD/.cache/go-build go test ./vterm ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+rm -rf .cache
+```
+
+Results:
+
+- Targeted width-shrink cursor anchor tests passed.
+- First broad validation hit a timing-sensitive unrelated runtime test once:
+  - `TestCoalesceClientOutputFramesExitsEarlyOnSynchronizedOutputEnd` took `12.87525ms` instead of the expected early-exit window.
+- Rerunning the targeted timing test plus the width-shrink test passed.
+- Broad validation rerun passed:
+  - `ok github.com/lozzow/termx/vterm 0.276s`
+  - `ok github.com/lozzow/termx/tuiv2/runtime 0.917s`
+  - `ok github.com/lozzow/termx/tuiv2/render 1.201s`
+- Required build passed.
+- `.cache` removed after validation.
+
+Real tmux validation:
+
+- Session: `termx-resize-width-cursor1`.
+- Reproduction:
+  - run wide repeated rows ending at a prompt.
+  - shrink width `120 -> 58` while keeping height `34`.
+- Captures:
+  - `/tmp/termx-resize-width-cursor1-before.txt`
+  - `/tmp/termx-resize-width-cursor1-shrink.txt`
+  - `/tmp/termx-resize-width-cursor1-expand.txt`
+- Result:
+  - Width shrink capture keeps the prompt/tail visible.
+  - `/tmp/termx-resize-width-cursor1-shrink.txt` contains `RedmiBook%` at line 23.
+
+Resume From Here:
+
+- Width-shrink reflow expansion now has a regression test and real tmux capture.
+- Next validation should rerun the original repeated `cat /tmp/termx-real-ls-shrink.txt; command ls` scenario after this commit, but do not mark that complete until its capture is checked.
+
+Commit:
+
+- Pending width-shrink cursor anchor commit.

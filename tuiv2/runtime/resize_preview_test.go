@@ -221,6 +221,30 @@ func TestResizePreviewNonAltViewportFallsBackToBottomWhenRowsShrinkWithoutCursor
 	}
 }
 
+func TestResizePreviewNonAltViewportAnchorsCursorWhenWidthShrinkAddsRows(t *testing.T) {
+	source := snapshotWithLines("term-1", 40, 6, []string{
+		"wide-row-0-abcdefghijklmnopqrstuvwxyz",
+		"wide-row-1-abcdefghijklmnopqrstuvwxyz",
+		"wide-row-2-abcdefghijklmnopqrstuvwxyz",
+		"prompt",
+		"",
+		"",
+	})
+	source.Cursor = protocol.CursorState{Row: 4, Col: 0, Visible: true}
+
+	preview := provisionalSnapshotForResizePreview(source, 10, 6)
+
+	if preview == nil {
+		t.Fatal("expected preview snapshot")
+	}
+	if !preview.Cursor.Visible {
+		t.Fatalf("expected cursor to remain visible after width-only shrink reflow, got cursor %#v rows %q", preview.Cursor, snapshotRowsText(preview))
+	}
+	if got := rowText(preview.Screen.Cells[4]); got != "prompt" {
+		t.Fatalf("expected prompt row above cursor after width-only shrink, got row %q rows %q", got, snapshotRowsText(preview))
+	}
+}
+
 func TestResizePreviewNonAltShrinkExpandRestoresFromOriginalSource(t *testing.T) {
 	source := snapshotWithLines("term-1", 64, 3, []string{"COL_A                 COL_B                 COL_C"})
 	shrink := provisionalSnapshotForResizePreview(source, 20, 6)
