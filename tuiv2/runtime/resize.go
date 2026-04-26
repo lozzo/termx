@@ -126,7 +126,13 @@ func captureResizePreviewSource(terminalID string, terminal *TerminalRuntime, sn
 		return cloneProtocolSnapshot(snapshotFromVTerm(terminalID, vt))
 	}
 	if snapshot != nil {
-		return cloneProtocolSnapshot(snapshot)
+		cloned := cloneProtocolSnapshot(snapshot)
+		if vt != nil && cloned != nil {
+			cloned.Cursor = protocolCursorFromVTerm(vt.CursorState())
+			cloned.Modes = protocolModesFromVTerm(vt.Modes())
+			cloned.Screen.IsAlternateScreen = cloned.Modes.AlternateScreen
+		}
+		return cloned
 	}
 	return cloneProtocolSnapshot(snapshotFromVTerm(terminalID, vt))
 }
@@ -163,8 +169,8 @@ func provisionalNonAltSnapshotForResizePreview(snapshot *protocol.Snapshot, cols
 	cloned.Size = protocol.Size{Cols: cols, Rows: rows}
 	reflowedRows, reflowedTimes, reflowedKinds, visibleTopRow := reflowSnapshotRowsForPreview(snapshot, int(cols))
 	screenRows := int(rows)
-	cursor := previewCursorForNonAltResize(snapshot, int(cols), 0, len(reflowedRows))
-	screenStart := previewScreenStartForNonAltResize(snapshot, reflowedRows, screenRows, visibleTopRow, cursor)
+	cursor, cursorAnchor := previewCursorForNonAltResize(snapshot, int(cols), 0, len(reflowedRows))
+	screenStart := previewScreenStartForNonAltResize(snapshot, reflowedRows, screenRows, visibleTopRow, cursor, cursorAnchor)
 	cloned.Scrollback = cloneProtocolRows(reflowedRows[:screenStart])
 	cloned.ScrollbackTimestamps = append([]time.Time(nil), reflowedTimes[:screenStart]...)
 	cloned.ScrollbackRowKinds = append([]string(nil), reflowedKinds[:screenStart]...)
@@ -176,17 +182,17 @@ func provisionalNonAltSnapshotForResizePreview(snapshot *protocol.Snapshot, cols
 	cloned.ScreenRowKinds = resizeStringSlice(reflowedKinds[screenStart:], screenRows)
 	cloned.Cursor = cursor
 	cloned.Cursor.Row -= screenStart
-	cloned.Cursor.Visible = cursor.Visible && cloned.Cursor.Row >= 0 && cloned.Cursor.Row < screenRows && cloned.Cursor.Col >= 0 && cloned.Cursor.Col < int(cols)
+	cloned.Cursor.Visible = snapshot.Cursor.Visible && cursorAnchor && cloned.Cursor.Row >= 0 && cloned.Cursor.Row < screenRows && cloned.Cursor.Col >= 0 && cloned.Cursor.Col < int(cols)
 	cloned.Timestamp = time.Now()
 	clampSnapshotCursorToSize(cloned, cols, rows)
 	return cloned
 }
 
-func previewCursorForNonAltResize(snapshot *protocol.Snapshot, cols, screenStart, screenRows int) protocol.CursorState {
+func previewCursorForNonAltResize(snapshot *protocol.Snapshot, cols, screenStart, screenRows int) (protocol.CursorState, bool) {
 	cursor := snapshot.Cursor
-	if snapshot == nil || !snapshot.Cursor.Visible || cols <= 0 || screenRows <= 0 {
+	if snapshot == nil || cols <= 0 || screenRows <= 0 || snapshot.Cursor.Row < 0 || snapshot.Cursor.Col < 0 {
 		cursor.Visible = false
-		return cursor
+		return cursor, false
 	}
 	cursorSourceRow := len(snapshot.Scrollback) + snapshot.Cursor.Row
 	sourceRows := make([][]protocol.Cell, 0, len(snapshot.Scrollback)+len(snapshot.Screen.Cells))
@@ -194,7 +200,7 @@ func previewCursorForNonAltResize(snapshot *protocol.Snapshot, cols, screenStart
 	sourceRows = append(sourceRows, snapshot.Screen.Cells...)
 	sourceKinds := append([]string(nil), snapshot.ScrollbackRowKinds...)
 	sourceKinds = append(sourceKinds, snapshot.ScreenRowKinds...)
-	sourceRows, _, sourceKinds = trimTrailingBlankPreviewRows(sourceRows, nil, sourceKinds)
+	sourceRows, _, sourceKinds = trimTrailingBlankPreviewRows(sourceRows, nil, sourceKinds, cursorSourceRow)
 	reflowedRow := 0
 	for i := 0; i < len(sourceRows); i++ {
 		logicalRow := trimPreviewSourceRow(sourceRows[i])
@@ -214,7 +220,7 @@ func previewCursorForNonAltResize(snapshot *protocol.Snapshot, cols, screenStart
 				cursor.Row = reflowedRow - screenStart
 				cursor.Col = 0
 				cursor.Visible = cursor.Row >= 0 && cursor.Row < screenRows
-				return cursor
+				return cursor, true
 			}
 			reflowedRow++
 			continue
@@ -227,7 +233,7 @@ func previewCursorForNonAltResize(snapshot *protocol.Snapshot, cols, screenStart
 				cursor.Row = reflowedRow - screenStart
 				cursor.Col = runtimeMinInt(cursorOffset-logicalOffset, cols-1)
 				cursor.Visible = cursor.Row >= 0 && cursor.Row < screenRows && cursor.Col >= 0 && cursor.Col < cols
-				return cursor
+				return cursor, true
 			}
 			logicalOffset += segmentWidth
 			reflowedRow++
@@ -235,34 +241,32 @@ func previewCursorForNonAltResize(snapshot *protocol.Snapshot, cols, screenStart
 		}
 	}
 	cursor.Visible = false
-	return cursor
+	return cursor, false
 }
 
-func previewScreenStartForNonAltResize(snapshot *protocol.Snapshot, reflowedRows [][]protocol.Cell, screenRows int, visibleTopRow int, cursor protocol.CursorState) int {
+func previewScreenStartForNonAltResize(snapshot *protocol.Snapshot, reflowedRows [][]protocol.Cell, screenRows int, visibleTopRow int, cursor protocol.CursorState, cursorAnchor bool) int {
 	if screenRows <= 0 || len(reflowedRows) <= screenRows {
 		return 0
+	}
+	maxStart := len(reflowedRows) - screenRows
+	if cursorAnchor && snapshot != nil && screenRows < len(snapshot.Screen.Cells) {
+		cursorStart := cursor.Row - screenRows + 1
+		if cursorStart < 0 {
+			return 0
+		}
+		if cursorStart > maxStart {
+			return maxStart
+		}
+		return cursorStart
+	}
+	if snapshot != nil && screenRows < len(snapshot.Screen.Cells) {
+		return maxStart
 	}
 	if visibleTopRow < 0 {
 		return 0
 	}
-	maxStart := len(reflowedRows) - screenRows
 	if visibleTopRow > maxStart {
 		return maxStart
-	}
-	if cursor.Visible && cursor.Row >= visibleTopRow+screenRows {
-		cursorStart := cursor.Row - screenRows + 1
-		if cursorStart > maxStart {
-			return maxStart
-		}
-		if cursorStart > visibleTopRow {
-			return cursorStart
-		}
-	}
-	if cursor.Visible && cursor.Row < visibleTopRow {
-		if cursor.Row < 0 {
-			return 0
-		}
-		return cursor.Row
 	}
 	return visibleTopRow
 }
@@ -279,7 +283,12 @@ func reflowSnapshotRowsForPreview(snapshot *protocol.Snapshot, cols int) ([][]pr
 	sourceTimes = append(sourceTimes, snapshot.ScreenTimestamps...)
 	sourceKinds := append([]string(nil), snapshot.ScrollbackRowKinds...)
 	sourceKinds = append(sourceKinds, snapshot.ScreenRowKinds...)
-	sourceRows, sourceTimes, sourceKinds = trimTrailingBlankPreviewRows(sourceRows, sourceTimes, sourceKinds)
+	cursorSourceRow := len(snapshot.Scrollback) + snapshot.Cursor.Row
+	trimLimit := -1
+	if snapshot.Cursor.Row >= 0 && snapshot.Cursor.Col >= 0 {
+		trimLimit = cursorSourceRow
+	}
+	sourceRows, sourceTimes, sourceKinds = trimTrailingBlankPreviewRows(sourceRows, sourceTimes, sourceKinds, trimLimit)
 	var rows [][]protocol.Cell
 	var times []time.Time
 	var kinds []string
@@ -383,9 +392,12 @@ func isPreviewSpaceCell(cell protocol.Cell) bool {
 	return cell.Width <= 1 && cell.Style == (protocol.CellStyle{}) && strings.TrimSpace(cell.Content) == ""
 }
 
-func trimTrailingBlankPreviewRows(rows [][]protocol.Cell, times []time.Time, kinds []string) ([][]protocol.Cell, []time.Time, []string) {
+func trimTrailingBlankPreviewRows(rows [][]protocol.Cell, times []time.Time, kinds []string, keepRow int) ([][]protocol.Cell, []time.Time, []string) {
 	last := len(rows) - 1
 	for last >= 0 && len(trimProtocolCellRow(rows[last])) == 0 {
+		if keepRow >= 0 && last <= keepRow {
+			break
+		}
 		last--
 	}
 	if last < 0 {

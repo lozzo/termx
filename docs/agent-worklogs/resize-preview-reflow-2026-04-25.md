@@ -1314,3 +1314,86 @@ Resume From Here:
 Commit:
 
 - Pending keep cursor row visible commit.
+
+## Follow-up: TDD Cursor/Tail Anchor for Row Shrink
+
+Goal:
+
+- Fix the user-visible issue where shrinking pane height still showed the wrong rows: the cursor/prompt row was outside the preview even after cursor coordinate mapping.
+- Treat the cursor position / terminal tail as the display anchor during row shrink, matching the expectation that the last line / cursor position drives what remains visible.
+
+Real tmux capture before fix:
+
+- Session: `termx-resize-cursor-anchor1` and later `termx-resize-cursor-anchor4`.
+- Reproduction:
+  - Create isolated terminal.
+  - Run `clear; for i in {01..40}; do printf 'ROW_%s abcdefghijklmnopqrstuvwxyz\n' "$i"; done`.
+  - Shrink outer tmux window from `120x34` to `58x14`.
+- Captures:
+  - `/tmp/termx-resize-cursor-anchor1-before.txt`
+  - `/tmp/termx-resize-cursor-anchor1-shrink.txt`
+  - `/tmp/termx-resize-cursor-anchor4-shrink.txt`
+- Failure:
+  - Shrink preview displayed only middle `ROW_...` lines and omitted `RedmiBook%`, so the cursor/prompt context was still not visible.
+
+Tests added first:
+
+- `TestResizePreviewNonAltViewportAnchorsCursorAtBottomWhenRowsShrink`
+  - Cursor row should be placed on the bottom visible row when target height shrinks.
+- `TestResizePreviewNonAltViewportUsesCursorPositionWhenCursorHidden`
+  - Cursor position should still anchor the viewport even when cursor visibility is false; visibility controls drawing, not viewport anchoring.
+- `TestResizePreviewNonAltViewportFallsBackToBottomWhenRowsShrinkWithoutCursorAnchor`
+  - If cursor position is invalid/unavailable during row shrink, preview should fall back to the bottom/tail of the reflowed source instead of captured visible top.
+- `TestCaptureResizePreviewSourceUsesFreshVTermCursorOverSnapshot`
+  - Preview source should merge fresh vterm cursor/modes into cloned snapshot content so stale snapshot cursor does not choose the wrong anchor.
+
+Implementation:
+
+- Split cursor mapping into cursor position validity versus cursor visibility.
+- `previewScreenStartForNonAltResize` now uses cursor anchor as the primary row-shrink anchor when target rows are fewer than captured screen rows.
+- If cursor anchor is unavailable during row shrink, viewport falls back to the reflowed tail.
+- Trimming of trailing blank preview rows preserves the cursor-position row, even when cursor visibility is false.
+- `captureResizePreviewSource` now overlays fresh local vterm cursor and modes onto cloned snapshot content when it has to use the snapshot as the row source.
+- Render / Visible / projection paths remain read-only.
+- Screen update / snapshot / bootstrap transport remains binary and unchanged.
+
+Validation:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime -run 'TestResizePreviewNonAltViewportFallsBackToBottomWhenRowsShrinkWithoutCursorAnchor|TestResizePreviewNonAltViewportUsesCursorPositionWhenCursorHidden|TestResizePreviewNonAltViewportAnchorsCursorAtBottomWhenRowsShrink|TestResizePreviewNonAltAnchorsToCapturedVisibleTopAfterHistory'
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime -run 'TestCaptureResizePreviewSourceUsesFreshVTermCursorOverSnapshot|TestResizePreviewNonAltViewportUsesCursorPositionWhenCursorHidden|TestResizePreviewNonAltViewportAnchorsCursorAtBottomWhenRowsShrink'
+GOCACHE=$PWD/.cache/go-build go test ./vterm ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+rm -rf .cache
+```
+
+Results:
+
+- Targeted cursor/tail anchor tests passed.
+- Broader validation passed:
+  - `ok github.com/lozzow/termx/vterm 0.241s`
+  - `ok github.com/lozzow/termx/tuiv2/runtime 0.922s`
+  - `ok github.com/lozzow/termx/tuiv2/render 2.632s`
+- Required build passed.
+- `.cache` removed after validation.
+
+Real tmux validation after fix:
+
+- Session: `termx-resize-cursor-anchor5`.
+- Captures:
+  - `/tmp/termx-resize-cursor-anchor5-before.txt`
+  - `/tmp/termx-resize-cursor-anchor5-shrink.txt`
+  - `/tmp/termx-resize-cursor-anchor5-expand.txt`
+- Result:
+  - Shrink capture now keeps tail/prompt context visible.
+  - `/tmp/termx-resize-cursor-anchor5-shrink.txt` line 12 contains `RedmiBook%`.
+  - The preview no longer shows only the middle rows after shrinking height.
+
+Resume From Here:
+
+- Cursor/tail anchoring for row shrink is now covered by unit tests and a real tmux capture.
+- Recommended next validation pass: rerun the original repeated `cat /tmp/termx-real-ls-shrink.txt; command ls` scenario after this anchor change to ensure tail anchoring does not regress repeated-history expectations.
+
+Commit:
+
+- Pending cursor/tail row-shrink anchor commit.

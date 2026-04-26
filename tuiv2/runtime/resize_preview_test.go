@@ -173,6 +173,54 @@ func TestResizePreviewNonAltViewportKeepsCursorVisibleWhenShrinkingRows(t *testi
 	}
 }
 
+func TestResizePreviewNonAltViewportAnchorsCursorAtBottomWhenRowsShrink(t *testing.T) {
+	source := snapshotWithLines("term-1", 20, 8, []string{"row-0", "row-1", "row-2", "row-3", "row-4", "row-5", "prompt", ""})
+	source.Cursor = protocol.CursorState{Row: 7, Col: 0, Visible: true}
+
+	preview := provisionalSnapshotForResizePreview(source, 20, 3)
+
+	if preview == nil {
+		t.Fatal("expected preview snapshot")
+	}
+	if !preview.Cursor.Visible || preview.Cursor.Row != 2 {
+		t.Fatalf("expected cursor anchored at bottom visible row, got cursor %#v rows %q", preview.Cursor, snapshotRowsText(preview))
+	}
+	if got := rowText(preview.Screen.Cells[1]); got != "prompt" {
+		t.Fatalf("expected prompt row immediately above cursor row, got %q rows %q", got, snapshotRowsText(preview))
+	}
+}
+
+func TestResizePreviewNonAltViewportUsesCursorPositionWhenCursorHidden(t *testing.T) {
+	source := snapshotWithLines("term-1", 20, 8, []string{"row-0", "row-1", "row-2", "row-3", "row-4", "row-5", "prompt", ""})
+	source.Cursor = protocol.CursorState{Row: 7, Col: 0, Visible: false}
+
+	preview := provisionalSnapshotForResizePreview(source, 20, 3)
+
+	if preview == nil {
+		t.Fatal("expected preview snapshot")
+	}
+	if got := rowText(preview.Screen.Cells[1]); got != "prompt" {
+		t.Fatalf("expected hidden cursor position to anchor prompt row, got %q rows %q", got, snapshotRowsText(preview))
+	}
+	if preview.Cursor.Visible {
+		t.Fatalf("expected cursor visibility flag to stay hidden, got %#v", preview.Cursor)
+	}
+}
+
+func TestResizePreviewNonAltViewportFallsBackToBottomWhenRowsShrinkWithoutCursorAnchor(t *testing.T) {
+	source := snapshotWithLines("term-1", 20, 8, []string{"row-0", "row-1", "row-2", "row-3", "row-4", "row-5", "prompt", ""})
+	source.Cursor = protocol.CursorState{Row: -1, Col: -1, Visible: false}
+
+	preview := provisionalSnapshotForResizePreview(source, 20, 3)
+
+	if preview == nil {
+		t.Fatal("expected preview snapshot")
+	}
+	if got := rowText(preview.Screen.Cells[2]); got != "prompt" {
+		t.Fatalf("expected row shrink fallback to keep bottom prompt context, got %q rows %q", got, snapshotRowsText(preview))
+	}
+}
+
 func TestResizePreviewNonAltShrinkExpandRestoresFromOriginalSource(t *testing.T) {
 	source := snapshotWithLines("term-1", 64, 3, []string{"COL_A                 COL_B                 COL_C"})
 	shrink := provisionalSnapshotForResizePreview(source, 20, 6)
@@ -329,6 +377,29 @@ func TestCaptureResizePreviewSourceCarriesVTermWrappedRows(t *testing.T) {
 	}
 }
 
+func TestCaptureResizePreviewSourceUsesFreshVTermCursorOverSnapshot(t *testing.T) {
+	vt := localvterm.New(20, 8, 100, nil)
+	vt.LoadSnapshot(localvterm.ScreenData{Cells: [][]localvterm.Cell{
+		vtermCellsFromString("row-0"),
+		vtermCellsFromString("row-1"),
+		vtermCellsFromString("row-2"),
+		vtermCellsFromString("row-3"),
+		vtermCellsFromString("row-4"),
+		vtermCellsFromString("row-5"),
+		vtermCellsFromString("prompt"),
+		{},
+	}}, localvterm.CursorState{Row: 7, Col: 0, Visible: false}, localvterm.TerminalModes{AutoWrap: true})
+	staleSnapshot := snapshotWithLines("term-1", 20, 8, []string{"row-0", "row-1", "row-2", "row-3", "row-4", "row-5", "prompt", ""})
+	staleSnapshot.Cursor = protocol.CursorState{Row: 0, Col: 0, Visible: false}
+	terminal := &TerminalRuntime{TerminalID: "term-1", VTerm: vt, Snapshot: staleSnapshot}
+
+	source := captureResizePreviewSource("term-1", terminal, staleSnapshot, vt)
+
+	if source.Cursor.Row != 7 || source.Cursor.Col != 0 {
+		t.Fatalf("expected preview source to use fresh vterm cursor, got %#v", source.Cursor)
+	}
+}
+
 func snapshotContainsAnyRow(snapshot *protocol.Snapshot, want string) bool {
 	return strings.Contains(snapshotRowsText(snapshot), want)
 }
@@ -362,6 +433,14 @@ func testProtocolCellsFromString(value string, cols int) []protocol.Cell {
 	}
 	for col := 0; col < len(value) && col < cols; col++ {
 		row[col] = protocol.Cell{Content: string(value[col]), Width: 1}
+	}
+	return row
+}
+
+func vtermCellsFromString(value string) []localvterm.Cell {
+	row := make([]localvterm.Cell, len(value))
+	for index := range value {
+		row[index] = localvterm.Cell{Content: string(value[index]), Width: 1}
 	}
 	return row
 }
