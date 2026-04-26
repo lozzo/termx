@@ -2120,3 +2120,86 @@ Resume From Here:
 Commit:
 
 - Pending exact tmux capture validation commit.
+
+## Follow-up: Final Handoff Summary After Cursor Boundary Fix
+
+Goal:
+
+- Record final status for this handoff cycle after TDD, implementation, required tests, and real tmux validation.
+
+Final state check:
+
+```sh
+git status --short
+git branch --show-current
+git log --oneline -8
+```
+
+Results:
+
+- `git status --short` produced no output before this final summary, so the worktree was clean.
+- Current branch: `feature/tuiv2-resize-preview-reflow`.
+- Latest validation commit before this final summary: `6d4eb51 Record exact tmux resize preview marker validation`.
+- Recent handoff commits:
+  - `6d4eb51` Record exact tmux resize preview marker validation.
+  - `7124843` Record resize preview cursor boundary test results.
+  - `293258e` Map resize preview cursor split boundaries like tmux.
+  - `f40f530` Add failing resize preview cursor boundary test.
+  - `33522c5` Record resize preview reflow handoff restart.
+
+Implemented change in this handoff:
+
+- Added a red TDD test for cursor mapping at a non-alt preview reflow split boundary.
+- Fixed `previewCursorForNonAltResize` so intermediate split boundaries unwrap to the next row at col `0`, matching tmux `grid_unwrap_position()` behavior.
+
+Validation completed:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go test ./vterm ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+rm -rf .cache
+```
+
+Results:
+
+- Required unit tests passed for `tuiv2/runtime`, `tuiv2/render`, and `vterm`.
+- Required `./termx` build passed.
+- `.cache` was removed.
+- Real tmux capture validation passed for:
+  - `clear; cat terminal.go`
+  - `ls`
+  - pending marker `fanout-check`
+  - shrink to `76x35`
+  - `Space` after shrink
+  - visible-character proof after the space.
+
+Capture directory:
+
+- `/tmp/termx-resize-exact1`
+
+Key capture evidence:
+
+- `/tmp/termx-resize-exact1/shrink.txt` contains `fanout-check` before any extra keypress.
+- `/tmp/termx-resize-exact1/shrink-vs-after-space-tail.diff` has `0` lines.
+- `/tmp/termx-resize-exact1/after-space-visible-char.txt` contains `fanout-check Z`, proving the typed `Space` was appended before `Z` at the pending-input tail.
+- `sendProtocolError` and `protocolErrorCode` did not appear in before/shrink/after-space captures.
+
+Final self-review:
+
+- The code change is restricted to runtime preview cursor mapping.
+- No render / Visible / projection mutation was introduced.
+- No screen update / snapshot / bootstrap binary protocol change was introduced.
+- Existing source/reflow/lifecycle behavior was not broadened in this handoff beyond the cursor-boundary mapping fix.
+
+Resume From Here:
+
+- Branch: `feature/tuiv2-resize-preview-reflow`.
+- Latest implementation commit: `293258e Map resize preview cursor split boundaries like tmux`.
+- Latest validation commit before this summary: `6d4eb51 Record exact tmux resize preview marker validation`.
+- Capture directory to inspect: `/tmp/termx-resize-exact1`.
+- If another failure is reported, start with a new red TDD test for the exact geometry/content shape before changing runtime logic.
+
+Commit:
+
+- Pending final handoff summary commit.
