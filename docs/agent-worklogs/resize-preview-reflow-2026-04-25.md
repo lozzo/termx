@@ -1956,3 +1956,44 @@ Resume From Here:
 Commit:
 
 - Pending red cursor-boundary test commit.
+
+## Follow-up: Fix Cursor Boundary Mapping Through Reflow
+
+Goal:
+
+- Make the red cursor-boundary test pass by matching tmux `grid_unwrap_position()` behavior at split boundaries.
+
+Implementation:
+
+- Updated `previewCursorForNonAltResize` in `tuiv2/runtime/resize.go`.
+- Cursor offsets inside a segment are now matched with a half-open range: `[segmentStart, segmentEnd)`.
+- Only the final segment accepts `cursorOffset == segmentEnd`, preserving the existing end-of-logical-line behavior.
+- A cursor exactly at an intermediate split boundary now advances to the next reflowed row at col `0` instead of being clamped to the previous row's last col.
+
+Validation:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime -run 'TestResizePreviewNonAltMapsCursorAtSplitBoundaryToNextRow|TestResizePreviewNonAltMapsCursorThroughReflow|TestResizePreviewNonAltViewportAnchorsCursorWhenWidthShrinkAddsRows|TestResizePreviewNonAltViewportAnchorsCursorAtBottomWhenRowsShrink'
+rm -rf .cache
+```
+
+Results:
+
+- Targeted cursor/viewport tests passed:
+  - `ok github.com/lozzow/termx/tuiv2/runtime 0.540s`
+
+Self-review:
+
+- The change is localized to runtime preview cursor mapping.
+- No render / Visible / projection mutation was added.
+- Screen update / snapshot / bootstrap transport was not modified.
+- The fix does not alter cell splitting, wrapped-row grouping, preview source capture, or lifecycle policy.
+
+Resume From Here:
+
+- Red test commit: `f40f530 Add failing resize preview cursor boundary test`.
+- Next phase: run broader required tests and then perform the real tmux `cat terminal.go` + `ls` + pending marker + shrink + `Space` capture validation.
+
+Commit:
+
+- Pending cursor-boundary green fix commit.

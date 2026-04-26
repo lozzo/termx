@@ -229,7 +229,13 @@ func previewCursorForNonAltResize(snapshot *protocol.Snapshot, cols, screenStart
 		for len(logicalRow) > 0 {
 			cut := previewReflowCut(logicalRow, cols)
 			segmentWidth := previewRowCellUsed(logicalRow[:cut])
-			if cursorOffset >= logicalOffset && cursorOffset <= logicalOffset+segmentWidth {
+			segmentEnd := logicalOffset + segmentWidth
+			finalSegment := cut >= len(logicalRow)
+			cursorInSegment := cursorOffset >= logicalOffset && cursorOffset < segmentEnd
+			if finalSegment && cursorOffset == segmentEnd {
+				cursorInSegment = true
+			}
+			if cursorInSegment {
 				cursor.Row = reflowedRow - screenStart
 				cursor.Col = runtimeMinInt(cursorOffset-logicalOffset, cols-1)
 				cursor.Visible = cursor.Row >= 0 && cursor.Row < screenRows && cursor.Col >= 0 && cursor.Col < cols
