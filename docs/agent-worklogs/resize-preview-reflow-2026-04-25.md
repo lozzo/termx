@@ -534,7 +534,7 @@ Current status:
 
 - Branch: `feature/tuiv2-resize-preview-reflow`
 - Last completed TODO: `13. Write final summary`
-- Last commit: pending real ls shrink/expand restore fix commit
+- Last commit: pending repeated cat/ls viewport anchor fix commit
 - Next step: review branch or open a PR; no implementation work remains for this task.
 
 Important artifacts:
@@ -733,3 +733,61 @@ Validation:
 Commit:
 
 - Pending real ls shrink/expand restore fix commit.
+
+
+## Follow-up: Repeated `cat /tmp/termx-real-ls-shrink.txt; ls` History Resize
+
+User feedback: with multiple blocks of output, resizing caused content to offset, disappear, or restore to the wrong visible region. Suggested reproduction was repeatedly running `cat /tmp/termx-real-ls-shrink.txt` and `ls`.
+
+Reproduction:
+
+- tmux session: `termx-resize-repeat-cat-ls`
+- generated `/tmp/termx-real-ls-shrink.txt` from a real `command ls` capture
+- ran three rounds of:
+  - `cat /tmp/termx-real-ls-shrink.txt; command ls`
+- captures before the final fix:
+  - `/tmp/termx-repeat-cat-ls-before.txt`
+  - `/tmp/termx-repeat-cat-ls-shrink.txt`
+  - `/tmp/termx-repeat-cat-ls-expand.txt`
+
+Observed issue:
+
+- The current screen contained a mix of previous captured UI text, the latest real `ls`, and shell prompt.
+- Shrink preview could jump to the tail of the reflowed content, hiding the visible top of the latest `ls` block.
+- Expand could appear to restore a different offset because the preview viewport selection was anchored inconsistently.
+
+Fix:
+
+- Removed cursor/prompt-bottom anchoring for non-alt preview viewport selection.
+- Non-alt resize preview now anchors to the top of the captured visible source rows when reflowed content exceeds viewport height.
+- This avoids jumping to the tail of multi-block history during shrink and keeps expand aligned with the same captured visible region.
+
+Validation after fix:
+
+- tmux session: `termx-resize-repeat-cat-ls3`
+- captures:
+  - `/tmp/termx-repeat-cat-ls3-before.txt`
+  - `/tmp/termx-repeat-cat-ls3-shrink.txt`
+  - `/tmp/termx-repeat-cat-ls3-expand.txt`
+- Shrink capture starts with the same visible `ls` block instead of jumping to the tail:
+  - `AGENTS.md             fanout`
+  - `server_contract_test.go          termx_test.go`
+  - `CLAUDE.md             frameaudit`
+  - `server_perf_test.go              third_party`
+  - `transport_integration_test.go`
+  - `transport_slow_consumer_test.go`
+  - `terminal.go                      tuiv2`
+- Expand capture restores the same top visible region from before resize.
+- Note: because the source screen itself contained previous `cat` output of the termx UI below the latest `ls`, expand correctly restores that content too; this is not new data loss but part of the captured visible source.
+
+Validation commands passed:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime ./tuiv2/render ./tuiv2/app -run 'TestResizePreview|TestRuntimeResizePaneShrinkKeepsRenderOnSnapshotUntilOutput|TestRenderPipeline.*ResizePreview|TestTerminalAlreadySizedIgnoresProvisionalPreviewSnapshot'
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+```
+
+Commit:
+
+- Pending repeated cat/ls viewport anchor fix commit.
