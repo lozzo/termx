@@ -1826,3 +1826,76 @@ Resume From Here:
 Commit:
 
 - Pending stale preview source lifecycle commit.
+
+## Follow-up: 2026-04-27 Handoff Restart and State Confirmation
+
+Goal:
+
+- Restart this feature from current repository facts rather than treating the current implementation as the correct endpoint.
+- Re-read the worklog, recent git history, current runtime/render/app/vterm code, and tmux resize/reflow source before adding more fixes.
+
+Required state confirmation commands:
+
+```sh
+git status --short
+git branch --show-current
+git log --oneline -20
+git show --stat --oneline --decorate -5
+```
+
+Results:
+
+- `git status --short` produced no output, so the worktree was clean at handoff start.
+- Current branch: `feature/tuiv2-resize-preview-reflow`.
+- Current HEAD before this handoff note: `ef66579 Retire stale resize preview source after user output`.
+- Recent history confirms the branch has accumulated multiple resize-preview patches:
+  - `ef66579` stale preview source retirement after user-driven output.
+  - `d409ab6` fresh vterm rows for preview source capture.
+  - `b8f1105` width-shrink cursor anchoring.
+  - `dd46632` cursor mapping through preview reflow.
+  - `862205b` captured visible-top viewport anchor.
+
+Files read for restart:
+
+- `docs/agent-worklogs/resize-preview-reflow-2026-04-25.md`
+- `tuiv2/runtime/resize.go`
+- `tuiv2/runtime/stream.go`
+- `tuiv2/runtime/input.go`
+- `tuiv2/runtime/screen_update_contract.go`
+- `tuiv2/runtime/terminal_registry.go`
+- `tuiv2/runtime/resize_preview_test.go`
+- `tuiv2/render/resize_preview_test.go`
+- `tuiv2/app/runtime_helpers.go`
+- `tuiv2/app/update_pane_resize_test.go`
+- `vterm/vterm.go`
+- `_tmux-src/screen.c`
+- `_tmux-src/grid.c`
+
+Restart findings:
+
+- Current non-alt preview reflow is already cell-width based, not whitespace/token based.
+- Current preview source capture prefers fresh local vterm rows unless the terminal is already in snapshot-preview mode.
+- Current lifecycle clears `ResizePreviewSource` on explicit `SendInput`, and also retires it on output that arrives inside the recent-local-input window.
+- Current viewport policy still mixes captured visible-top anchoring with cursor-tail anchoring. This is the most likely remaining risk for the reported long-output + `ls` + pending-input workflow.
+- The existing unit tests cover many slices, but the exact required workflow still needs stronger TDD coverage for `cat terminal.go`-like long output followed by a later `ls` block and pending input, plus before/after-space stability.
+- Tmux source re-check confirms the target semantics remain:
+  - `screen_resize_cursor()` stores absolute cursor row as `hsize + s->cy`.
+  - `screen_resize_y()` protects cursor/tail when height shrinks.
+  - `screen_reflow()` maps cursor through `grid_wrap_position()` / `grid_unwrap_position()`.
+  - `grid_reflow()` splits and joins by cell display width and wrapped flags, not shell tokens.
+
+Self-review:
+
+- No code was changed in this restart phase.
+- Render / Visible / projection paths were not modified.
+- Screen update / snapshot / bootstrap transport was not modified.
+
+Resume From Here:
+
+- Current branch: `feature/tuiv2-resize-preview-reflow`.
+- Current implementation baseline before new TDD work: `ef66579 Retire stale resize preview source after user output`.
+- Next phase: add failing TDD coverage for the exact long-output + later `ls` + pending input shrink/space-stability workflow, then implement only the model change required by that failing test.
+
+Commit:
+
+- Pending handoff restart confirmation commit.
