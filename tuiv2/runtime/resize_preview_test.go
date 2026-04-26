@@ -156,6 +156,23 @@ func TestResizePreviewNonAltMapsCursorThroughReflow(t *testing.T) {
 	}
 }
 
+func TestResizePreviewNonAltViewportKeepsCursorVisibleWhenShrinkingRows(t *testing.T) {
+	source := snapshotWithLines("term-1", 20, 6, []string{"top", "middle", "cursor-line", "after-one", "after-two", "after-three"})
+	source.Cursor = protocol.CursorState{Row: 5, Col: 5, Visible: true}
+
+	preview := provisionalSnapshotForResizePreview(source, 20, 3)
+
+	if preview == nil {
+		t.Fatal("expected preview snapshot")
+	}
+	if !preview.Cursor.Visible {
+		t.Fatalf("expected cursor to stay visible after row shrink, got cursor %#v rows %q", preview.Cursor, snapshotRowsText(preview))
+	}
+	if got := rowText(preview.Screen.Cells[2]); got != "after-three" {
+		t.Fatalf("expected viewport to include cursor row at bottom, got row %q rows %q", got, snapshotRowsText(preview))
+	}
+}
+
 func TestResizePreviewNonAltShrinkExpandRestoresFromOriginalSource(t *testing.T) {
 	source := snapshotWithLines("term-1", 64, 3, []string{"COL_A                 COL_B                 COL_C"})
 	shrink := provisionalSnapshotForResizePreview(source, 20, 6)

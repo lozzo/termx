@@ -163,7 +163,8 @@ func provisionalNonAltSnapshotForResizePreview(snapshot *protocol.Snapshot, cols
 	cloned.Size = protocol.Size{Cols: cols, Rows: rows}
 	reflowedRows, reflowedTimes, reflowedKinds, visibleTopRow := reflowSnapshotRowsForPreview(snapshot, int(cols))
 	screenRows := int(rows)
-	screenStart := previewScreenStartForNonAltResize(snapshot, reflowedRows, screenRows, visibleTopRow)
+	cursor := previewCursorForNonAltResize(snapshot, int(cols), 0, len(reflowedRows))
+	screenStart := previewScreenStartForNonAltResize(snapshot, reflowedRows, screenRows, visibleTopRow, cursor)
 	cloned.Scrollback = cloneProtocolRows(reflowedRows[:screenStart])
 	cloned.ScrollbackTimestamps = append([]time.Time(nil), reflowedTimes[:screenStart]...)
 	cloned.ScrollbackRowKinds = append([]string(nil), reflowedKinds[:screenStart]...)
@@ -173,7 +174,9 @@ func provisionalNonAltSnapshotForResizePreview(snapshot *protocol.Snapshot, cols
 	}
 	cloned.ScreenTimestamps = resizeTimeSlice(reflowedTimes[screenStart:], screenRows)
 	cloned.ScreenRowKinds = resizeStringSlice(reflowedKinds[screenStart:], screenRows)
-	cloned.Cursor = previewCursorForNonAltResize(snapshot, int(cols), screenStart, screenRows)
+	cloned.Cursor = cursor
+	cloned.Cursor.Row -= screenStart
+	cloned.Cursor.Visible = cursor.Visible && cloned.Cursor.Row >= 0 && cloned.Cursor.Row < screenRows && cloned.Cursor.Col >= 0 && cloned.Cursor.Col < int(cols)
 	cloned.Timestamp = time.Now()
 	clampSnapshotCursorToSize(cloned, cols, rows)
 	return cloned
@@ -235,7 +238,7 @@ func previewCursorForNonAltResize(snapshot *protocol.Snapshot, cols, screenStart
 	return cursor
 }
 
-func previewScreenStartForNonAltResize(snapshot *protocol.Snapshot, reflowedRows [][]protocol.Cell, screenRows int, visibleTopRow int) int {
+func previewScreenStartForNonAltResize(snapshot *protocol.Snapshot, reflowedRows [][]protocol.Cell, screenRows int, visibleTopRow int, cursor protocol.CursorState) int {
 	if screenRows <= 0 || len(reflowedRows) <= screenRows {
 		return 0
 	}
@@ -245,6 +248,21 @@ func previewScreenStartForNonAltResize(snapshot *protocol.Snapshot, reflowedRows
 	maxStart := len(reflowedRows) - screenRows
 	if visibleTopRow > maxStart {
 		return maxStart
+	}
+	if cursor.Visible && cursor.Row >= visibleTopRow+screenRows {
+		cursorStart := cursor.Row - screenRows + 1
+		if cursorStart > maxStart {
+			return maxStart
+		}
+		if cursorStart > visibleTopRow {
+			return cursorStart
+		}
+	}
+	if cursor.Visible && cursor.Row < visibleTopRow {
+		if cursor.Row < 0 {
+			return 0
+		}
+		return cursor.Row
 	}
 	return visibleTopRow
 }

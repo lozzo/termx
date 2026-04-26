@@ -1263,3 +1263,54 @@ Resume From Here:
 Commit:
 
 - Pending cursor reflow mapping commit.
+
+## Follow-up: TDD Keep Cursor Row Visible During Row Shrink
+
+Goal:
+
+- Fix the case where cursor mapping is correct logically, but row shrink chooses a viewport that excludes the mapped cursor row, making the user unable to see the cursor.
+
+Tests added first:
+
+- `TestResizePreviewNonAltViewportKeepsCursorVisibleWhenShrinkingRows`
+  - Source screen has six visible rows and cursor on row `5`.
+  - Shrink preview height to `3`.
+  - Expected viewport to shift down enough to include the cursor row.
+  - Initial failure: viewport stayed at captured visible top (`top`, `middle`, `cursor-line`) and cursor was hidden.
+
+Implementation:
+
+- Compute the mapped cursor once in reflowed-row coordinates before choosing `screenStart`.
+- `previewScreenStartForNonAltResize` now prefers captured visible top but shifts the viewport down/up when needed to keep a visible mapped cursor inside the preview screen.
+- After choosing `screenStart`, cursor row is converted to viewport-relative coordinates.
+- This avoids prompt-string heuristics and keeps viewport/cursor policy in runtime preview generation.
+- No render / Visible / projection mutation was added.
+- No screen update / snapshot / bootstrap binary protocol change was made.
+
+Validation:
+
+```sh
+GOCACHE=$PWD/.cache/go-build go test ./tuiv2/runtime -run 'TestResizePreviewNonAltViewportKeepsCursorVisibleWhenShrinkingRows|TestResizePreviewNonAltAnchorsToCapturedVisibleTopAfterHistory|TestResizePreviewNonAltMapsCursorThroughReflow'
+GOCACHE=$PWD/.cache/go-build go test ./vterm ./tuiv2/runtime ./tuiv2/render
+GOCACHE=$PWD/.cache/go-build go build -o ./termx ./cmd/termx
+rm -rf .cache
+```
+
+Results:
+
+- Targeted cursor viewport tests passed.
+- Broader validation passed:
+  - `ok github.com/lozzow/termx/vterm 1.184s`
+  - `ok github.com/lozzow/termx/tuiv2/runtime 0.676s`
+  - `ok github.com/lozzow/termx/tuiv2/render 1.793s`
+- Required build passed.
+- `.cache` removed after validation.
+
+Resume From Here:
+
+- Cursor should now remain visible when shrinking rows, while still using captured visible top when the cursor is already within the viewport.
+- Recommended next step: real tmux capture focused on prompt/cursor after shrinking pane height and width together.
+
+Commit:
+
+- Pending keep cursor row visible commit.
