@@ -191,15 +191,15 @@ The connect endpoint returns:
 
 ### M3. termx-agent minimal bridge
 
-- [ ] add failing tests for DataChannel-to-local-transport proxy behavior
-- [ ] implement minimal `termx-agent`
-- [ ] proxy full `termx` protocol frames over a single DataChannel
-- [ ] verify attach, input, resize, snapshot happy path
-- [ ] commit after tests pass
+- [x] add failing tests for DataChannel-to-local-transport proxy behavior
+- [x] implement minimal `termx-agent`
+- [x] proxy full `termx` protocol frames over a single DataChannel
+- [x] verify attach, input, resize, snapshot happy path
+- [x] commit after tests pass
 
 ### M4. hub, signaling, TURN
 
-- [ ] characterize the smallest reusable hub and TURN slices from `tgent`
+- [x] characterize the smallest reusable hub and TURN slices from `tgent`
 - [ ] migrate minimal registry, auth, rtc config, and offer endpoints
 - [ ] wire TURN startup for local or test runs
 - [ ] add local smoke coverage
@@ -245,13 +245,15 @@ The connect endpoint returns:
 ## Immediate Next Slice
 
 1. add a WebRTC-backed `transport.Transport` adapter with frame fragmentation tests
-2. proxy a single reliable ordered DataChannel to a local daemon Unix transport connection
-3. prove attach, snapshot, input, and resize over the bridge before touching hub signaling
+2. migrate the minimal hub registry and HTTP offer flow on top of the current local-offer bridge
+3. reuse `tgent` TURN startup and ephemeral credential generation without pulling in tmux APIs
+4. add a local or hermetic smoke path from hub offer to `termx-agent`
 
 ## Progress Log
 
 - 2026-04-28: M1 completed. Surveyed `termx` and `tgent`, chose the native `termx` protocol-over-DataChannel architecture, and wrote the milestone plan.
 - 2026-04-28: M2 completed. Added `auth` config support, `termx login/logout/whoami`, a minimal control-plane auth client, docs, and focused tests.
+- 2026-04-28: M3 completed. Added a WebRTC transport adapter with frame fragmentation, a bidirectional frame proxy, a minimal local-offer WebRTC handler, and the first `cmd/termx-agent` direct bridge entrypoint.
 
 ## Risks To Track
 
