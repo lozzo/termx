@@ -91,6 +91,9 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(lsCommand(&socket, &logFile))
 	cmd.AddCommand(killCommand(&socket, &logFile))
 	cmd.AddCommand(attachCommand(&socket, &logFile, &configPath))
+	cmd.AddCommand(loginCommand(&configPath))
+	cmd.AddCommand(logoutCommand(&configPath))
+	cmd.AddCommand(whoamiCommand(&configPath))
 	cmd.AddCommand(webCommand(&socket, &logFile))
 	return cmd
 }

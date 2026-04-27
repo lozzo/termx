@@ -11,6 +11,7 @@ type Config struct {
 	ConfigPath         string
 	Chrome             ChromeConfig
 	Theme              ThemeConfig
+	Auth               AuthConfig
 }
 
 type ChromeConfig struct {
@@ -34,4 +35,12 @@ type ThemeConfig struct {
 	TabInactiveFG string
 	TabCreateBG   string
 	TabCreateFG   string
+}
+
+type AuthConfig struct {
+	ServerURL    string
+	AccessToken  string
+	RefreshToken string
+	UserID       string
+	Username     string
 }

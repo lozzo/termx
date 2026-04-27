@@ -24,6 +24,8 @@ func TestRootCmdRoutesToTUIv2ByDefault(t *testing.T) {
 	configHome := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateHome)
 	t.Setenv("XDG_CONFIG_HOME", configHome)
+	t.Setenv("TERMX", "")
+	t.Setenv("TERMX_ALLOW_NESTED", "")
 
 	var gotCfg shared.Config
 	called := false
@@ -102,6 +104,8 @@ func TestAttachCmdRoutesToTUIv2WithAttachID(t *testing.T) {
 
 	configHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configHome)
+	t.Setenv("TERMX", "")
+	t.Setenv("TERMX_ALLOW_NESTED", "")
 
 	var gotCfg shared.Config
 	called := false
@@ -202,6 +206,8 @@ func TestRootCmdUsesExplicitConfigPath(t *testing.T) {
 
 	isInteractiveTerminal = func() bool { return true }
 	configPath := filepath.Join(t.TempDir(), "custom-termx.yaml")
+	t.Setenv("TERMX", "")
+	t.Setenv("TERMX_ALLOW_NESTED", "")
 
 	var gotCfg shared.Config
 	runTUIv2 = func(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {

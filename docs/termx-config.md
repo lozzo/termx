@@ -9,10 +9,11 @@ $XDG_CONFIG_HOME/termx/termx.yaml
 
 如果文件不存在，启动 TUI 时会自动创建一份带注释的默认配置。
 
-当前配置主要面向 `tuiv2`，支持两类能力：
+当前配置主要面向 `tuiv2`，支持三类能力：
 
 - `chrome`：控制 pane / status / tab 顶栏里展示哪些槽位，以及顺序
 - `theme`：在宿主终端主题推导结果之上做少量 token 覆盖
+- `auth`：保存远程控制面地址与登录 token
 
 ## 设计原则
 
@@ -48,6 +49,13 @@ chrome:
 theme:
   accent: "#8b5cf6"
   panelBorder: "#4b5563"
+
+auth:
+  serverURL: "https://termx.example.com"
+  accessToken: "..."
+  refreshToken: "..."
+  userID: "user-1"
+  username: "alice"
 ```
 
 不建议把 `chrome` 的数组改成多行 `- item` 的 YAML list，因为当前实现并不按完整 YAML 解析器处理。
@@ -220,6 +228,30 @@ theme:
   accent: "#8b5cf6"
 ```
 
+## auth
+
+`auth` 用来保存远程控制面的地址和当前登录态。
+
+当前字段：
+
+- `serverURL`
+- `accessToken`
+- `refreshToken`
+- `userID`
+- `username`
+
+推荐来源：
+
+- 用 `printf 'your-password\n' | termx login --server URL --username USER --password-stdin` 写入
+- 用 `termx logout` 清空本地 token
+- 用 `termx whoami` 校验当前登录态；如果 access token 过期且本地有 `refreshToken`，CLI 会先尝试刷新再查询
+
+说明：
+
+- `serverURL` 会在 `logout` 后保留，方便下次重新登录
+- `accessToken` 和 `refreshToken` 都属于敏感信息；当前保存在 `termx.yaml`
+- 如果你已经从控制面拿到了 token，也可以手动编辑 `auth` 段
+
 ### 3. 让 tab 更深一点
 
 ```yaml
@@ -233,7 +265,7 @@ theme:
 
 当前配置系统还比较小，已知边界包括：
 
-- 只支持 `chrome` 和 `theme` 两段
+- 目前内建写回逻辑会管理 `chrome`、`theme`、`auth` 三段
 - `chrome` 只支持当前列出来的槽位
 - 解析器是轻量实现，不是完整 YAML 语义
 - 更复杂的绑定、插件、行为偏好目前还没有开放到配置文件里

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -77,9 +78,18 @@ func DefaultThemeConfig() ThemeConfig {
 	return ThemeConfig{}
 }
 
+// DefaultAuthConfig returns the built-in auth configuration defaults.
+func DefaultAuthConfig() AuthConfig {
+	return AuthConfig{}
+}
+
 // DefaultConfig returns the built-in termx config.
 func DefaultConfig() Config {
-	return Config{Chrome: DefaultChromeConfig(), Theme: DefaultThemeConfig()}
+	return Config{
+		Chrome: DefaultChromeConfig(),
+		Theme:  DefaultThemeConfig(),
+		Auth:   DefaultAuthConfig(),
+	}
 }
 
 // LoadConfig reads termx.yaml.
@@ -87,7 +97,7 @@ func DefaultConfig() Config {
 // 规则：
 // 1. 文件不存在：返回默认配置，不报错。
 // 2. 文件存在但解析失败：返回错误，避免静默吃掉坏配置。
-// 3. 当前解析 chrome / theme 两段；后续扩展其它段时保持同一个 termx.yaml 即可。
+// 3. 当前解析 chrome / theme / auth 三段；后续扩展其它段时保持同一个 termx.yaml 即可。
 func LoadConfig(path string) (Config, error) {
 	cfg := DefaultConfig()
 	if path == "" {
@@ -119,6 +129,9 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if parsed.Theme != (ThemeConfig{}) {
 		cfg.Theme = parsed.Theme
+	}
+	if parsed.Auth != (AuthConfig{}) {
+		cfg.Auth = parsed.Auth
 	}
 	return cfg, nil
 }
@@ -190,6 +203,20 @@ func parseYAMLConfig(content string) (Config, error) {
 			case "tabCreateFG":
 				cfg.Theme.TabCreateFG = value
 			}
+		case "auth":
+			value = strings.Trim(value, `"'`)
+			switch key {
+			case "serverURL":
+				cfg.Auth.ServerURL = value
+			case "accessToken":
+				cfg.Auth.AccessToken = value
+			case "refreshToken":
+				cfg.Auth.RefreshToken = value
+			case "userID":
+				cfg.Auth.UserID = value
+			case "username":
+				cfg.Auth.Username = value
+			}
 		}
 	}
 	return cfg, nil
@@ -258,6 +285,14 @@ theme:
   # tabInactiveFG: "#9ca3af"
   # tabCreateBG: "#1f2937"
   # tabCreateFG: "#f9fafb"
+
+auth:
+  # 远程控制面地址，例如 https://termx.example.com
+  # serverURL: "https://termx.example.com"
+  # accessToken: ""
+  # refreshToken: ""
+  # userID: ""
+  # username: ""
 `
 }
 
@@ -274,5 +309,227 @@ func EnsureDefaultConfigFile(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(DefaultConfigFileContent()), 0o644)
+	if err := os.WriteFile(path, []byte(DefaultConfigFileContent()), 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
+}
+
+// SaveConfig writes the supported termx.yaml subset back to disk.
+func SaveConfig(path string, cfg Config) error {
+	if path == "" {
+		if cfg.ConfigPath != "" {
+			path = cfg.ConfigPath
+		} else {
+			path = DefaultConfigPath()
+		}
+	}
+	cfg.ConfigPath = path
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	content, err := renderMergedConfig(path, cfg)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
+}
+
+func renderMergedConfig(path string, cfg Config) (string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return renderConfig(cfg), nil
+		}
+		return "", err
+	}
+	return mergeManagedSections(string(content), cfg), nil
+}
+
+func renderConfig(cfg Config) string {
+	effective := DefaultConfig()
+	if cfg.Chrome.PaneTop != nil {
+		effective.Chrome.PaneTop = append([]string{}, cfg.Chrome.PaneTop...)
+	}
+	if cfg.Chrome.StatusLeft != nil {
+		effective.Chrome.StatusLeft = append([]string{}, cfg.Chrome.StatusLeft...)
+	}
+	if cfg.Chrome.StatusRight != nil {
+		effective.Chrome.StatusRight = append([]string{}, cfg.Chrome.StatusRight...)
+	}
+	if cfg.Chrome.TabLeft != nil {
+		effective.Chrome.TabLeft = append([]string{}, cfg.Chrome.TabLeft...)
+	}
+	if cfg.Theme != (ThemeConfig{}) {
+		effective.Theme = cfg.Theme
+	}
+	if cfg.Auth != (AuthConfig{}) {
+		effective.Auth = cfg.Auth
+	}
+
+	sections := []string{
+		renderChromeSection(effective.Chrome),
+		renderThemeSection(effective.Theme),
+		renderAuthSection(effective.Auth),
+	}
+	return strings.Join(sections, "\n\n") + "\n"
+}
+
+func mergeManagedSections(existing string, cfg Config) string {
+	blocks := splitTopLevelBlocks(existing)
+	replacements := map[string]string{
+		"chrome": renderChromeSection(cfg.Chrome),
+		"theme":  renderThemeSection(cfg.Theme),
+		"auth":   renderAuthSection(cfg.Auth),
+	}
+	seen := make(map[string]bool, len(replacements))
+	rendered := make([]string, 0, len(blocks)+len(replacements))
+	for _, block := range blocks {
+		if block.name != "" {
+			if replacement, ok := replacements[block.name]; ok {
+				rendered = append(rendered, replacement)
+				seen[block.name] = true
+				continue
+			}
+		}
+		rendered = append(rendered, block.content)
+	}
+	for _, name := range []string{"chrome", "theme", "auth"} {
+		if seen[name] {
+			continue
+		}
+		rendered = append(rendered, replacements[name])
+	}
+	result := strings.TrimRight(strings.Join(rendered, "\n\n"), "\n")
+	if result == "" {
+		return renderConfig(cfg)
+	}
+	return result + "\n"
+}
+
+type configBlock struct {
+	name    string
+	content string
+}
+
+func splitTopLevelBlocks(content string) []configBlock {
+	lines := strings.Split(content, "\n")
+	blocks := make([]configBlock, 0, 8)
+	current := make([]string, 0, len(lines))
+	currentName := ""
+	hasCurrent := false
+
+	flush := func() {
+		if !hasCurrent {
+			return
+		}
+		blocks = append(blocks, configBlock{
+			name:    currentName,
+			content: strings.TrimRight(strings.Join(current, "\n"), "\n"),
+		})
+		current = nil
+		currentName = ""
+		hasCurrent = false
+	}
+
+	for _, line := range lines {
+		if isTopLevelSectionHeader(line) {
+			flush()
+			currentName = strings.TrimSuffix(strings.TrimSpace(line), ":")
+			current = []string{line}
+			hasCurrent = true
+			continue
+		}
+		if !hasCurrent {
+			current = append(current, line)
+			hasCurrent = true
+			continue
+		}
+		current = append(current, line)
+	}
+	flush()
+	return blocks
+}
+
+func isTopLevelSectionHeader(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return trimmed != "" &&
+		trimmed == line &&
+		!strings.HasPrefix(trimmed, "#") &&
+		strings.HasSuffix(trimmed, ":")
+}
+
+func renderChromeSection(cfg ChromeConfig) string {
+	effective := DefaultChromeConfig()
+	if cfg.PaneTop != nil {
+		effective.PaneTop = append([]string{}, cfg.PaneTop...)
+	}
+	if cfg.StatusLeft != nil {
+		effective.StatusLeft = append([]string{}, cfg.StatusLeft...)
+	}
+	if cfg.StatusRight != nil {
+		effective.StatusRight = append([]string{}, cfg.StatusRight...)
+	}
+	if cfg.TabLeft != nil {
+		effective.TabLeft = append([]string{}, cfg.TabLeft...)
+	}
+
+	var b strings.Builder
+	b.WriteString("chrome:\n")
+	fmt.Fprintf(&b, "  paneTop: %s\n", renderInlineList(effective.PaneTop))
+	fmt.Fprintf(&b, "  statusLeft: %s\n", renderInlineList(effective.StatusLeft))
+	fmt.Fprintf(&b, "  statusRight: %s\n", renderInlineList(effective.StatusRight))
+	fmt.Fprintf(&b, "  tabLeft: %s\n", renderInlineList(effective.TabLeft))
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func renderThemeSection(cfg ThemeConfig) string {
+	var b strings.Builder
+	b.WriteString("theme:\n")
+	writeOptionalString(&b, "accent", cfg.Accent)
+	writeOptionalString(&b, "success", cfg.Success)
+	writeOptionalString(&b, "warning", cfg.Warning)
+	writeOptionalString(&b, "danger", cfg.Danger)
+	writeOptionalString(&b, "info", cfg.Info)
+	writeOptionalString(&b, "panelBorder", cfg.PanelBorder)
+	writeOptionalString(&b, "panelBorder2", cfg.PanelBorder2)
+	writeOptionalString(&b, "tabActiveBG", cfg.TabActiveBG)
+	writeOptionalString(&b, "tabActiveFG", cfg.TabActiveFG)
+	writeOptionalString(&b, "tabInactiveBG", cfg.TabInactiveBG)
+	writeOptionalString(&b, "tabInactiveFG", cfg.TabInactiveFG)
+	writeOptionalString(&b, "tabCreateBG", cfg.TabCreateBG)
+	writeOptionalString(&b, "tabCreateFG", cfg.TabCreateFG)
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func renderAuthSection(cfg AuthConfig) string {
+	var b strings.Builder
+	b.WriteString("auth:\n")
+	writeOptionalString(&b, "serverURL", cfg.ServerURL)
+	writeOptionalString(&b, "accessToken", cfg.AccessToken)
+	writeOptionalString(&b, "refreshToken", cfg.RefreshToken)
+	writeOptionalString(&b, "userID", cfg.UserID)
+	writeOptionalString(&b, "username", cfg.Username)
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func renderInlineList(items []string) string {
+	if len(items) == 0 {
+		return "[]"
+	}
+	trimmed := make([]string, 0, len(items))
+	for _, item := range items {
+		trimmed = append(trimmed, strings.TrimSpace(item))
+	}
+	return "[" + strings.Join(trimmed, ", ") + "]"
+}
+
+func writeOptionalString(b *strings.Builder, key, value string) {
+	if value == "" {
+		return
+	}
+	fmt.Fprintf(b, "  %s: %s\n", key, strconv.Quote(value))
 }

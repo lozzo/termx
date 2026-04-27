@@ -103,10 +103,13 @@ go build -o termx ./cmd/termx
 termx
 termx attach <id>
 termx daemon
+termx login --server URL --username USER --password-stdin
 termx kill <id>
 termx ls
 termx new -- CMD [ARGS...]
+termx logout
 termx web [--id TERMINAL_ID] [-- CMD [ARGS...]]
+termx whoami
 ```
 
 全局参数：
@@ -138,10 +141,11 @@ termx web [--id TERMINAL_ID] [-- CMD [ARGS...]]
 
 完整说明见 [docs/termx-config.md](docs/termx-config.md)。
 
-当前主要支持两类用户偏好配置：
+当前主要支持三类配置段：
 
 - `chrome`：控制 pane / status / tab 的槽位顺序与显隐
 - `theme`：覆盖 host-aware 主题推导出来的 token
+- `auth`：控制远程控制面地址与登录态 token
 
 示例：
 
@@ -156,6 +160,13 @@ theme:
   accent: "#8b5cf6"
   panelBorder: "#4b5563"
   tabActiveBG: "#111827"
+
+auth:
+  serverURL: "https://termx.example.com"
+  accessToken: "..."
+  refreshToken: "..."
+  userID: "user-1"
+  username: "alice"
 ```
 
 说明：
