@@ -44,7 +44,7 @@ func (r *Runtime) ResizePane(ctx context.Context, paneID, terminalID string, col
 		prevSnapshot = terminal.Snapshot
 		if vt := r.ensureVTerm(terminal); vt != nil {
 			oldCols, oldRows = vt.Size()
-			if shouldEnterResizePreview(oldCols, oldRows, int(cols), int(rows)) {
+			if r.RecentLocalInteraction() && shouldPreferSnapshotDuringLocalShrink(oldCols, oldRows, int(cols), int(rows)) {
 				previewActiveBeforeResize = true
 				previewSource = terminal.ResizePreviewSource
 				if previewSource == nil {

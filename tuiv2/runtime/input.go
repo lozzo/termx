@@ -45,7 +45,10 @@ func (r *Runtime) noteLocalInput() {
 // drag frames reach the host without waiting for the batch timer, which matters
 // over SSH where the adaptive batch delay can grow to 50 ms.
 func (r *Runtime) NoteLocalInteraction() {
-	r.noteLocalInput()
+	if r == nil {
+		return
+	}
+	r.recentInteractionAt.Store(time.Now().UnixNano())
 }
 
 func (r *Runtime) RecentLocalInput() bool {
@@ -57,6 +60,21 @@ func (r *Runtime) RecentLocalInput() bool {
 		return false
 	}
 	return time.Since(time.Unix(0, at)) <= effectiveInteractiveLatencyWindow()
+}
+
+func (r *Runtime) RecentLocalInteraction() bool {
+	if r == nil {
+		return false
+	}
+	at := r.recentInteractionAt.Load()
+	if at == 0 {
+		return false
+	}
+	return time.Since(time.Unix(0, at)) <= effectiveInteractiveLatencyWindow()
+}
+
+func (r *Runtime) RecentLocalActivity() bool {
+	return r != nil && (r.RecentLocalInput() || r.RecentLocalInteraction())
 }
 
 func (r *Runtime) consumeInteractiveBypass() bool {

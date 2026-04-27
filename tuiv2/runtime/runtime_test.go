@@ -1288,6 +1288,7 @@ func TestRuntimeResizePaneShrinkKeepsRenderOnSnapshotUntilOutput(t *testing.T) {
 		t.Fatalf("expected hydrated terminal runtime, got %#v", terminal)
 	}
 
+	rt.NoteLocalInteraction()
 	if err := rt.ResizePane(ctx, "pane-1", "term-1", 57, 20); err != nil {
 		t.Fatalf("resize pane shrink: %v", err)
 	}
@@ -1404,6 +1405,40 @@ func TestRuntimeResizePaneHeightGrowDoesNotExtendNonBlankBottomRowBackground(t *
 	}
 }
 
+func TestRuntimeResizePaneShrinkWithoutInteractionRefreshesSnapshotImmediately(t *testing.T) {
+	ctx := context.Background()
+	client := newFakeBridgeClient()
+	client.attachResult = &protocol.AttachResult{Channel: 11, Mode: "collaborator"}
+	client.snapshotByTerminal["term-1"] = snapshotWithLines("term-1", 80, 24, []string{"top", "middle", "bottom"})
+
+	rt := New(client)
+	if _, err := rt.AttachTerminal(ctx, "pane-1", "term-1", "collaborator"); err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if _, err := rt.LoadSnapshot(ctx, "term-1", 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	terminal := rt.Registry().Get("term-1")
+	if terminal == nil || terminal.Snapshot == nil || terminal.VTerm == nil {
+		t.Fatalf("expected hydrated terminal runtime, got %#v", terminal)
+	}
+
+	if err := rt.ResizePane(ctx, "pane-1", "term-1", 57, 20); err != nil {
+		t.Fatalf("resize pane shrink: %v", err)
+	}
+
+	if terminal.PreferSnapshot {
+		t.Fatalf("expected non-interactive shrink to refresh immediately, got %#v", terminal)
+	}
+	if terminal.Snapshot == nil || terminal.Snapshot.Size.Cols != 57 || terminal.Snapshot.Size.Rows != 20 {
+		t.Fatalf("expected refreshed shrink snapshot size 57x20, got %#v", terminal.Snapshot)
+	}
+	visible := rt.Visible()
+	if len(visible.Terminals) != 1 || visible.Terminals[0].Surface == nil {
+		t.Fatalf("expected visible runtime to keep live surface exposed after non-interactive shrink, got %#v", visible.Terminals)
+	}
+}
+
 func TestRuntimeResizeFrameDoesNotExposeLocalShrinkMidStateBeforeOutput(t *testing.T) {
 	ctx := context.Background()
 	client := newFakeBridgeClient()
@@ -1422,6 +1457,7 @@ func TestRuntimeResizeFrameDoesNotExposeLocalShrinkMidStateBeforeOutput(t *testi
 		t.Fatal("expected terminal runtime")
 	}
 
+	rt.NoteLocalInteraction()
 	if err := rt.ResizePane(ctx, "pane-1", "term-1", 57, 20); err != nil {
 		t.Fatalf("resize pane shrink: %v", err)
 	}
@@ -1782,6 +1818,66 @@ func TestRuntimeAttachSnapshotInputAndResize(t *testing.T) {
 	}
 	if err := rt.ResizePane(ctx, "pane-1", created.TerminalID, 100, 40); err != nil {
 		t.Fatalf("resize terminal: %v", err)
+	}
+}
+
+func TestRuntimeInteractiveShellOutputAdvancesSurfaceVersion(t *testing.T) {
+	rt, ctx := newTestRuntime(t)
+
+	created, err := rt.client.Create(ctx, protocol.CreateParams{
+		Command: []string{"bash", "--noprofile", "--norc", "-i"},
+		Name:    "interactive-demo",
+		Env:     []string{"PS1=termx$ "},
+		Size:    protocol.Size{Cols: 120, Rows: 40},
+	})
+	if err != nil {
+		t.Fatalf("create interactive shell: %v", err)
+	}
+
+	terminal, err := rt.AttachTerminal(ctx, "pane-1", created.TerminalID, "collaborator")
+	if err != nil {
+		t.Fatalf("attach terminal: %v", err)
+	}
+	if _, err := rt.LoadSnapshot(ctx, created.TerminalID, 0, 10); err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	if err := rt.StartStream(ctx, created.TerminalID); err != nil {
+		t.Fatalf("start stream: %v", err)
+	}
+
+	beforePrompt := terminal.SurfaceVersion
+	waitFor(t, func() bool {
+		current := rt.Registry().Get(created.TerminalID)
+		return current != nil && current.VTerm != nil && vtermContains(current.VTerm, "termx$")
+	})
+	terminal = rt.Registry().Get(created.TerminalID)
+	if terminal == nil {
+		t.Fatal("expected interactive terminal")
+	}
+	if terminal.Stream.synchronizedOutputActive {
+		t.Fatalf("expected prompt output to leave synchronized output inactive, got %#v", terminal.Stream)
+	}
+	if terminal.SurfaceVersion <= beforePrompt {
+		t.Fatalf("expected prompt output to advance surface version, before=%d after=%d", beforePrompt, terminal.SurfaceVersion)
+	}
+
+	beforeInput := terminal.SurfaceVersion
+	if err := rt.SendInput(ctx, "pane-1", []byte("printf 'runtime_prompt_ok\\n'\n")); err != nil {
+		t.Fatalf("send input: %v", err)
+	}
+	waitFor(t, func() bool {
+		current := rt.Registry().Get(created.TerminalID)
+		return current != nil && current.VTerm != nil && vtermContains(current.VTerm, "runtime_prompt_ok")
+	})
+	terminal = rt.Registry().Get(created.TerminalID)
+	if terminal == nil {
+		t.Fatal("expected interactive terminal after input")
+	}
+	if terminal.Stream.synchronizedOutputActive {
+		t.Fatalf("expected interactive shell output to leave synchronized output inactive, got %#v", terminal.Stream)
+	}
+	if terminal.SurfaceVersion <= beforeInput {
+		t.Fatalf("expected interactive shell input to advance surface version, before=%d after=%d", beforeInput, terminal.SurfaceVersion)
 	}
 }
 

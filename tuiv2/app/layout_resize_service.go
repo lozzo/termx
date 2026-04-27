@@ -310,6 +310,9 @@ func (s *layoutResizeService) applyWindowSizeMsg(typed tea.WindowSizeMsg) tea.Cm
 		writer.SetTTYWidth(typed.Width)
 	}
 	s.model.render.Invalidate()
+	if s.model.runtime != nil {
+		s.model.runtime.NoteLocalInteraction()
+	}
 	return batchCmds(s.resizeVisibleCmd(), s.resizePendingCmd(), s.model.maybeAutoFitFloatingPanesCmd(), s.model.updateSessionViewCmd())
 }
 
@@ -449,6 +452,9 @@ func (s *layoutResizeService) adjustPaneRatioAction(action input.SemanticAction,
 		return true, s.model.showError(err)
 	}
 	s.model.render.Invalidate()
+	if s.model.runtime != nil {
+		s.model.runtime.NoteLocalInteraction()
+	}
 	if err := s.resizeVisible(context.Background()); err != nil {
 		return true, s.model.showError(err)
 	}
@@ -462,6 +468,9 @@ func (s *layoutResizeService) balancePanesAction() (bool, tea.Cmd) {
 	}
 	s.model.workbench.BalancePanes(tab.ID)
 	s.model.render.Invalidate()
+	if s.model.runtime != nil {
+		s.model.runtime.NoteLocalInteraction()
+	}
 	if err := s.resizeVisible(context.Background()); err != nil {
 		return true, s.model.showError(err)
 	}
@@ -475,6 +484,9 @@ func (s *layoutResizeService) cycleLayoutAction() (bool, tea.Cmd) {
 	}
 	s.model.workbench.CycleLayout(tab.ID)
 	s.model.render.Invalidate()
+	if s.model.runtime != nil {
+		s.model.runtime.NoteLocalInteraction()
+	}
 	if err := s.resizeVisible(context.Background()); err != nil {
 		return true, s.model.showError(err)
 	}
@@ -531,6 +543,9 @@ func (s *layoutResizeService) resizeFloatingAction(action input.SemanticAction) 
 	pane, rect, ok := s.model.visiblePaneForInput(paneID)
 	if !ok || pane == nil || pane.TerminalID == "" {
 		return true, nil
+	}
+	if s.model.runtime != nil {
+		s.model.runtime.NoteLocalInteraction()
 	}
 	if err := s.ensurePaneTerminalSize(context.Background(), pane.ID, pane.TerminalID, rect); err != nil {
 		return true, s.model.showError(err)

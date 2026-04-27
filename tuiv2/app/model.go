@@ -103,14 +103,14 @@ type Model struct {
 	copyModeMouseActivitySeq     uint64
 
 	// 鼠标拖动状态
-	mouseDragPaneID        string
-	mouseDragOffsetX       int
-	mouseDragOffsetY       int
-	mouseDragMode          mouseDragMode
-	mouseDragSplit         *workbench.LayoutNode
-	mouseDragBounds        workbench.Rect
-	mouseDragDirty         bool
-	floatingDragPreview    floatingDragPreviewState
+	mouseDragPaneID     string
+	mouseDragOffsetX    int
+	mouseDragOffsetY    int
+	mouseDragMode       mouseDragMode
+	mouseDragSplit      *workbench.LayoutNode
+	mouseDragBounds     workbench.Rect
+	mouseDragDirty      bool
+	floatingDragPreview floatingDragPreviewState
 
 	ownerConfirmPaneID string
 
@@ -127,10 +127,10 @@ type Model struct {
 type mouseDragMode int
 
 type floatingDragPreviewState struct {
-	Active    bool
-	PaneID    string
-	Rect      workbench.Rect
-	Snapshot  *protocol.Snapshot
+	Active   bool
+	PaneID   string
+	Rect     workbench.Rect
+	Snapshot *protocol.Snapshot
 }
 
 var invalidateBatchDelay = 4 * time.Millisecond
@@ -244,7 +244,7 @@ func (m *Model) queueInvalidate() {
 		m.invalidateDeferred.Store(true)
 		return
 	}
-	interactiveInput := m.runtime != nil && m.runtime.RecentLocalInput()
+	interactiveInput := m.runtime != nil && m.runtime.RecentLocalActivity()
 	if m.frameWriterHasBacklog() {
 		if interactiveInput {
 			perftrace.Count("app.invalidate.interactive_backlog_bypass", 0)

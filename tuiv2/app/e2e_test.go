@@ -2359,7 +2359,39 @@ func e2eWaitForText(t *testing.T, ctx context.Context, m *Model, invalidated <-c
 			t.Fatalf("context expired waiting for %q in view", target)
 		}
 	}
-	t.Fatalf("timeout: %q never appeared in view\nfinal view:\n%s\nsnapshot excerpt:\n%s", target, xansi.Strip(m.View()), e2eActiveSnapshotExcerpt(m))
+	t.Fatalf(
+		"timeout: %q never appeared in view\nfinal view:\n%s\nterminal state:\n%s\nsnapshot excerpt:\n%s",
+		target,
+		xansi.Strip(m.View()),
+		e2eActiveTerminalRenderState(m),
+		e2eActiveSnapshotExcerpt(m),
+	)
+}
+
+func e2eActiveTerminalRenderState(m *Model) string {
+	if m == nil || m.workbench == nil || m.runtime == nil {
+		return "<unavailable>"
+	}
+	pane := m.workbench.ActivePane()
+	if pane == nil || pane.TerminalID == "" {
+		return "<no active terminal>"
+	}
+	terminal := m.runtime.Registry().Get(pane.TerminalID)
+	if terminal == nil {
+		return "<no terminal>"
+	}
+	return fmt.Sprintf(
+		"terminal=%s state=%q surfaceVersion=%d snapshotVersion=%d preferSnapshot=%v stream=%#v bound=%v owner=%q control=%q",
+		terminal.TerminalID,
+		terminal.State,
+		terminal.SurfaceVersion,
+		terminal.SnapshotVersion,
+		terminal.PreferSnapshot,
+		terminal.Stream,
+		terminal.BoundPaneIDs,
+		terminal.OwnerPaneID,
+		terminal.ControlPaneID,
+	)
 }
 
 func e2eActiveSnapshotExcerpt(m *Model) string {

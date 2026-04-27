@@ -63,7 +63,7 @@ func configureProgramOutput(model *Model, stdout io.Writer) (io.Writer, bool) {
 			model.SetFrameWriter(writer)
 		}
 		if model.runtime != nil {
-			writer.SetInteractiveFlushHint(model.runtime.RecentLocalInput)
+			writer.SetInteractiveFlushHint(model.runtime.RecentLocalActivity)
 		}
 	}
 	return writer, true

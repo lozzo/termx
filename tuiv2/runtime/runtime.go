@@ -30,10 +30,11 @@ type Runtime struct {
 	hostPalette   map[int]string
 	hostEmojiVS16 shared.AmbiguousEmojiVariationSelectorMode
 
-	version          uint64
-	visibleVersion   uint64
-	visibleCache     *VisibleRuntime
-	recentInputAt atomic.Int64
+	version             uint64
+	visibleVersion      uint64
+	visibleCache        *VisibleRuntime
+	recentInputAt       atomic.Int64
+	recentInteractionAt atomic.Int64
 }
 
 const interactiveLatencyWindow = 24 * time.Millisecond
