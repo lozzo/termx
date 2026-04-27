@@ -115,10 +115,7 @@ func (m *Model) beginFloatingDragPreview(paneID string, rect workbench.Rect) {
 	}
 	preview := floatingDragPreviewState{Active: true, PaneID: paneID, Rect: rect}
 	if pane, _, ok := m.visiblePaneForInput(paneID); ok && pane != nil && pane.TerminalID != "" && m.runtime != nil {
-		_ = m.runtime.RefreshSnapshotFromVTerm(pane.TerminalID)
-		if terminal := m.runtime.Registry().Get(pane.TerminalID); terminal != nil && terminal.Snapshot != nil {
-			preview.Snapshot = terminal.Snapshot
-		}
+		preview.Snapshot = m.floatingDragPreviewSnapshot(paneID, pane.TerminalID, rect)
 	}
 	m.floatingDragPreview = preview
 }

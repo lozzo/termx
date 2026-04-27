@@ -22,8 +22,13 @@ func (m *Model) View() string {
 	if rowsWriter, ok := m.frameOut.(frameLinesWriter); ok {
 		if directWriter, ok := rowsWriter.(*outputCursorWriter); ok {
 			mode, _ := m.verticalScrollOptimizationMode()
+			ownerAwareDelta := true
+			if m.mouseDragMode != mouseDragNone {
+				mode = verticalScrollModeNone
+				ownerAwareDelta = false
+			}
 			directWriter.SetVerticalScrollMode(mode)
-			directWriter.SetOwnerAwareDeltaEnabled(true)
+			directWriter.SetOwnerAwareDeltaEnabled(ownerAwareDelta)
 			directWriter.SetForceFullFrameLines(false)
 			if lines, cursor, ok := m.render.CachedFrameLinesAndCursorRef(); ok {
 				viewBytes = joinedLinesLen(lines) + len(cursor)

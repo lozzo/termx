@@ -132,14 +132,16 @@ func buildFloatingDragPreviewEntry(pane workbench.VisiblePane, width, height int
 	entry.Snapshot = options.FloatingDragPreview.Snapshot
 	entry.Surface = nil
 	entry.SurfaceVersion = 0
+	entry.ScrollOffset = 0
+	entry.Metrics = terminalExtentProfileCached(options.FloatingDragPreview.Snapshot, nil, 0).Metrics
 	entry.ContentKey.SurfaceVersion = 0
 	entry.ContentKey.Snapshot = options.FloatingDragPreview.Snapshot
+	entry.ContentKey.ScrollOffset = 0
 	entry.FrameKey.Rect = rect
 	entry.Rect = rect
 	entry.Floating = true
 	return &entry
 }
-
 
 func paneEntryUsesAlternateScreen(entry paneRenderEntry) bool {
 	source := renderSource(entry.Snapshot, entry.Surface)

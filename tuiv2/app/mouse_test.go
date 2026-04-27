@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -1113,6 +1114,83 @@ func TestMouseDragFloatingMoveDefersRectCommitUntilRelease(t *testing.T) {
 	}
 }
 
+func TestFloatingDragPreviewSnapshotTrimsScrollback(t *testing.T) {
+	m := setupModel(t, modelOpts{})
+	tab := m.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	rect := workbench.Rect{X: 10, Y: 5, W: 20, H: 8}
+	if err := m.workbench.CreateFloatingPane(tab.ID, "float-1", rect); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+	if err := m.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+		t.Fatalf("bind floating terminal: %v", err)
+	}
+	terminal := m.runtime.Registry().GetOrCreate("term-float")
+	terminal.Name = "float"
+	terminal.State = "running"
+	terminal.Snapshot = mousePreviewSnapshot("term-float", 1000, []string{"screen-0", "screen-1", "screen-2", "screen-3"})
+
+	m.beginFloatingDragPreview("float-1", rect)
+
+	snapshot := m.floatingDragPreview.Snapshot
+	if snapshot == nil {
+		t.Fatal("expected drag preview snapshot")
+	}
+	if got := len(snapshot.Scrollback); got != 0 {
+		t.Fatalf("expected preview snapshot to omit full scrollback, got %d rows", got)
+	}
+	if got := len(snapshot.Screen.Cells); got != 4 {
+		t.Fatalf("expected preview snapshot to keep only visible screen rows, got %d", got)
+	}
+	if got := mousePreviewRowText(snapshot.Screen.Cells[0]); got != "screen-0" {
+		t.Fatalf("expected first preview row from screen, got %q", got)
+	}
+}
+
+func TestFloatingDragPreviewSnapshotUsesScrolledWindow(t *testing.T) {
+	m := setupModel(t, modelOpts{})
+	tab := m.workbench.CurrentTab()
+	if tab == nil {
+		t.Fatal("expected current tab")
+	}
+	rect := workbench.Rect{X: 10, Y: 5, W: 20, H: 5}
+	if err := m.workbench.CreateFloatingPane(tab.ID, "float-1", rect); err != nil {
+		t.Fatalf("create floating pane: %v", err)
+	}
+	if err := m.workbench.BindPaneTerminal(tab.ID, "float-1", "term-float"); err != nil {
+		t.Fatalf("bind floating terminal: %v", err)
+	}
+	terminal := m.runtime.Registry().GetOrCreate("term-float")
+	terminal.Name = "float"
+	terminal.State = "running"
+	terminal.Snapshot = mousePreviewSnapshot("term-float", 5, []string{"screen-0", "screen-1"})
+	_ = m.runtime.SetPaneViewportOffset("float-1", 2)
+
+	m.beginFloatingDragPreview("float-1", rect)
+	m.render.Invalidate()
+
+	snapshot := m.floatingDragPreview.Snapshot
+	if snapshot == nil {
+		t.Fatal("expected drag preview snapshot")
+	}
+	if got := len(snapshot.Scrollback); got != 0 {
+		t.Fatalf("expected scrolled preview snapshot to omit backing scrollback, got %d rows", got)
+	}
+	for row, want := range []string{"hist-002", "hist-003", "hist-004"} {
+		if got := mousePreviewRowText(snapshot.Screen.Cells[row]); got != want {
+			t.Fatalf("preview row %d = %q, want %q", row, got, want)
+		}
+	}
+	frame := xansi.Strip(m.render.RenderFrame())
+	for _, want := range []string{"hist-002", "hist-003", "hist-004"} {
+		if !strings.Contains(frame, want) {
+			t.Fatalf("expected rendered drag preview to contain %q:\n%s", want, frame)
+		}
+	}
+}
+
 func TestMouseDragFloatingResizeDefersPTYResizeUntilRelease(t *testing.T) {
 	client := &recordingBridgeClient{
 		attachResult: &protocol.AttachResult{Channel: 1, Mode: "collaborator"},
@@ -1179,6 +1257,40 @@ func TestMouseDragFloatingResizeDefersPTYResizeUntilRelease(t *testing.T) {
 	if len(client.resizes) != 1 {
 		t.Fatalf("expected one floating PTY resize on drag release, got %#v", client.resizes)
 	}
+}
+
+func mousePreviewSnapshot(terminalID string, scrollbackRows int, screenRows []string) *protocol.Snapshot {
+	scrollback := make([][]protocol.Cell, scrollbackRows)
+	for row := range scrollback {
+		scrollback[row] = mousePreviewCells(fmt.Sprintf("hist-%03d", row))
+	}
+	screen := make([][]protocol.Cell, len(screenRows))
+	for row, text := range screenRows {
+		screen[row] = mousePreviewCells(text)
+	}
+	return &protocol.Snapshot{
+		TerminalID: terminalID,
+		Size:       protocol.Size{Cols: 20, Rows: uint16(len(screenRows))},
+		Scrollback: scrollback,
+		Screen:     protocol.ScreenData{Cells: screen},
+		Cursor:     protocol.CursorState{Visible: true},
+	}
+}
+
+func mousePreviewCells(text string) []protocol.Cell {
+	row := make([]protocol.Cell, 0, len(text))
+	for _, ch := range text {
+		row = append(row, protocol.Cell{Content: string(ch), Width: 1})
+	}
+	return row
+}
+
+func mousePreviewRowText(row []protocol.Cell) string {
+	var builder strings.Builder
+	for _, cell := range row {
+		builder.WriteString(cell.Content)
+	}
+	return strings.TrimSpace(builder.String())
 }
 
 func TestMouseClickSelectsFloatingPane(t *testing.T) {
