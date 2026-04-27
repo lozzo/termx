@@ -254,6 +254,7 @@ The connect endpoint returns:
 - 2026-04-28: M1 completed. Surveyed `termx` and `tgent`, chose the native `termx` protocol-over-DataChannel architecture, and wrote the milestone plan.
 - 2026-04-28: M2 completed. Added `auth` config support, `termx login/logout/whoami`, a minimal control-plane auth client, docs, and focused tests.
 - 2026-04-28: M3 completed. Added a WebRTC transport adapter with frame fragmentation, a bidirectional frame proxy, a minimal local-offer WebRTC handler, and the first `cmd/termx-agent` direct bridge entrypoint.
+- 2026-04-28: M4 slice 1 landed in progress. Added a minimal hub core with JWT auth, an in-memory device registry, `rtc/config`, and device-scoped offer forwarding tests; agent registration transport and live TURN server wiring remain next.
 
 ## Risks To Track
 
