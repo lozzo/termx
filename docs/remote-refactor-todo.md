@@ -22,6 +22,7 @@
 
 ## M1. 先做兼容性盘点
 
+- `[x]` 新增仓库内兼容性盘点文档：`docs/tgent-termx-compat-inventory.md`。
 - `[ ]` 盘点 `tgent-web` 中哪些 API 强依赖 tmux/session 模型。
 - `[ ]` 盘点 `tgent-app` 中哪些页面和状态强依赖 session 模型。
 - `[ ]` 盘点 `tgent hub` 中哪些注册/信令/relay 逻辑可直接复用。
@@ -29,6 +30,7 @@
 - `[ ]` 盘点当前 `termx` 仓库哪些目录和包边界会阻碍后续接入。
 - `[ ]` 盘点当前 `tuiv2/runtime` 和 `tuiv2/bridge` 哪些部分应提升为 shell-neutral client runtime。
 - `[ ]` 盘点当前 `workbenchdoc/workbenchsvc` 与 `tuiv2/workbench` 的结构真相重复点。
+- `[ ]` 盘点 `tgent-web` schema / telemetry / internal hub reporting 中哪些 session 模型不能直接沿用。
 - `[ ]` 形成一份“直接复用 / 最小改造 / 必须替换”的清单。
 
 验收标准：
@@ -75,6 +77,7 @@
 
 - `[ ]` 先写失败测试：termx 对接 `tgent-web` 的注册/发现/ticket 契约。
 - `[ ]` 先写失败测试：termx 对接 `tgent hub` 的注册与 signaling 契约。
+- `[ ]` 明确 control-plane 里的 session telemetry 如何映射到 termx 的 terminal / attachment 模型。
 - `[ ]` 尽量复用现有：
   - auth
   - hub discover
