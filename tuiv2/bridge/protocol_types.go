@@ -1,13 +1,13 @@
 package bridge
 
-import "github.com/lozzow/termx/protocol"
+import "github.com/lozzow/termx/internal/clientapi"
 
-type TerminalInfoRef = protocol.TerminalInfo
-type EventRef = protocol.Event
-type EventsParamsRef = protocol.EventsParams
-type SizeRef = protocol.Size
-type SnapshotRef = protocol.Snapshot
-type StreamFrameRef = protocol.StreamFrame
-type SessionSnapshotRef = protocol.SessionSnapshot
-type SessionInfoRef = protocol.SessionInfo
-type ViewInfoRef = protocol.ViewInfo
+type TerminalInfoRef = clientapi.TerminalInfoRef
+type EventRef = clientapi.EventRef
+type EventsParamsRef = clientapi.EventsParamsRef
+type SizeRef = clientapi.SizeRef
+type SnapshotRef = clientapi.SnapshotRef
+type StreamFrameRef = clientapi.StreamFrameRef
+type SessionSnapshotRef = clientapi.SessionSnapshotRef
+type SessionInfoRef = clientapi.SessionInfoRef
+type ViewInfoRef = clientapi.ViewInfoRef

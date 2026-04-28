@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/tuiv2/bridge"
+	"github.com/lozzow/termx/internal/clientapi"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
@@ -40,7 +40,7 @@ func Run(cfg shared.Config, stdin io.Reader, stdout io.Writer) error {
 	return RunWithClient(cfg, nil, stdin, stdout)
 }
 
-func RunWithClient(cfg shared.Config, client bridge.Client, stdin io.Reader, stdout io.Writer) error {
+func RunWithClient(cfg shared.Config, client clientapi.Client, stdin io.Reader, stdout io.Writer) error {
 	return runWithClientOptions(cfg, client, stdin, stdout)
 }
 
@@ -69,7 +69,7 @@ func configureProgramOutput(model *Model, stdout io.Writer) (io.Writer, bool) {
 	return writer, true
 }
 
-func runWithClientOptions(cfg shared.Config, client bridge.Client, stdin io.Reader, stdout io.Writer, extraOpts ...tea.ProgramOption) error {
+func runWithClientOptions(cfg shared.Config, client clientapi.Client, stdin io.Reader, stdout io.Writer, extraOpts ...tea.ProgramOption) error {
 	model := New(cfg, nil, runtime.New(client))
 	model.perfProfile = newPerfProfileFromEnv()
 	defer func() {

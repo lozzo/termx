@@ -10,10 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lozzow/termx/internal/clientapi"
 	"github.com/lozzow/termx/perftrace"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/terminalmeta"
-	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"
 	localvterm "github.com/lozzow/termx/vterm"
 )
@@ -21,7 +21,7 @@ import (
 type Runtime struct {
 	registry      *TerminalRegistry
 	bindings      map[string]*PaneBinding
-	client        bridge.Client
+	client        clientapi.Client
 	onInvalidate  func()
 	onTitleChange func(terminalID, title string)
 	newVTerm      VTermFactory
@@ -30,16 +30,16 @@ type Runtime struct {
 	hostPalette   map[int]string
 	hostEmojiVS16 shared.AmbiguousEmojiVariationSelectorMode
 
-	version          uint64
-	visibleVersion   uint64
-	visibleCache     *VisibleRuntime
-	recentInputAt atomic.Int64
+	version        uint64
+	visibleVersion uint64
+	visibleCache   *VisibleRuntime
+	recentInputAt  atomic.Int64
 }
 
 const interactiveLatencyWindow = 24 * time.Millisecond
 const remoteInteractiveLatencyWindow = 150 * time.Millisecond
 
-func New(client bridge.Client, opts ...Option) *Runtime {
+func New(client clientapi.Client, opts ...Option) *Runtime {
 	r := &Runtime{
 		registry:      NewTerminalRegistry(),
 		bindings:      make(map[string]*PaneBinding),
@@ -57,7 +57,7 @@ func New(client bridge.Client, opts ...Option) *Runtime {
 	return r
 }
 
-func (r *Runtime) Client() bridge.Client {
+func (r *Runtime) Client() clientapi.Client {
 	if r == nil {
 		return nil
 	}

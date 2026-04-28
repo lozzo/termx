@@ -4,12 +4,12 @@ import (
 	"context"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/internal/clientapi"
 	"github.com/lozzow/termx/protocol"
-	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
-func startTerminalEventsForwarder(send func(tea.Msg), cfg shared.Config, fallback bridge.Client) func() {
+func startTerminalEventsForwarder(send func(tea.Msg), cfg shared.Config, fallback clientapi.Client) func() {
 	if send == nil {
 		return func() {}
 	}
@@ -25,7 +25,7 @@ func startTerminalEventsForwarder(send func(tea.Msg), cfg shared.Config, fallbac
 	}
 }
 
-func runTerminalEventsForwarder(ctx context.Context, send func(tea.Msg), cfg shared.Config, fallback bridge.Client) {
+func runTerminalEventsForwarder(ctx context.Context, send func(tea.Msg), cfg shared.Config, fallback clientapi.Client) {
 	if ctx == nil || send == nil {
 		return
 	}
@@ -78,7 +78,7 @@ func runTerminalEventsForwarder(ctx context.Context, send func(tea.Msg), cfg sha
 	}
 }
 
-func runFallbackTerminalEventsForwarder(ctx context.Context, send func(tea.Msg), client bridge.Client) {
+func runFallbackTerminalEventsForwarder(ctx context.Context, send func(tea.Msg), client clientapi.Client) {
 	if ctx == nil || send == nil || client == nil {
 		return
 	}

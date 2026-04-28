@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/lozzow/termx"
+	"github.com/lozzow/termx/internal/clientapi"
 	"github.com/lozzow/termx/protocol"
 	unixtransport "github.com/lozzow/termx/transport/unix"
 	tuiv2app "github.com/lozzow/termx/tuiv2/app"
-	tuiv2bridge "github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared" //nolint:typecheck
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -34,7 +34,7 @@ var (
 			return err
 		}
 		defer client.Close()
-		return tuiv2app.RunWithClient(cfg, tuiv2bridge.NewProtocolClient(client), stdin, stdout)
+		return tuiv2app.RunWithClient(cfg, clientapi.NewProtocolClient(client), stdin, stdout)
 	}
 )
 

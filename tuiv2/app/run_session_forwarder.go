@@ -5,9 +5,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/internal/clientapi"
 	"github.com/lozzow/termx/protocol"
 	unixtransport "github.com/lozzow/termx/transport/unix"
-	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
@@ -32,7 +32,7 @@ var newSessionEventsClient = func(ctx context.Context, socketPath string) (sessi
 	return client, nil
 }
 
-func startSessionEventsForwarder(send func(tea.Msg), cfg shared.Config, fallback bridge.Client) func() {
+func startSessionEventsForwarder(send func(tea.Msg), cfg shared.Config, fallback clientapi.Client) func() {
 	if send == nil || cfg.SessionID == "" {
 		return func() {}
 	}
@@ -48,7 +48,7 @@ func startSessionEventsForwarder(send func(tea.Msg), cfg shared.Config, fallback
 	}
 }
 
-func runSessionEventsForwarder(ctx context.Context, send func(tea.Msg), cfg shared.Config, fallback bridge.Client) {
+func runSessionEventsForwarder(ctx context.Context, send func(tea.Msg), cfg shared.Config, fallback clientapi.Client) {
 	if ctx == nil || send == nil || cfg.SessionID == "" {
 		return
 	}
@@ -110,7 +110,7 @@ func runSessionEventsForwarder(ctx context.Context, send func(tea.Msg), cfg shar
 	}
 }
 
-func runFallbackSessionEventsForwarder(ctx context.Context, send func(tea.Msg), sessionID string, client bridge.Client) {
+func runFallbackSessionEventsForwarder(ctx context.Context, send func(tea.Msg), sessionID string, client clientapi.Client) {
 	if ctx == nil || send == nil || sessionID == "" || client == nil {
 		return
 	}
