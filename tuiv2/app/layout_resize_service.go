@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/render"
+	"github.com/lozzow/termx/tuiv2/terminalresize"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -27,6 +28,13 @@ func (m *Model) layoutResizeService() *layoutResizeService {
 	return &layoutResizeService{model: m}
 }
 
+func (s *layoutResizeService) manager() *terminalresize.Manager {
+	if s == nil || s.model == nil {
+		return nil
+	}
+	return terminalresize.NewManager(s.model.runtime, s.model.terminalControlManager(), s.model.terminalViewportRect)
+}
+
 func (s *layoutResizeService) resizeVisibleCmd() tea.Cmd {
 	if s == nil || s.model == nil || s.model.runtime == nil || s.model.workbench == nil {
 		return nil
@@ -40,7 +48,8 @@ func (s *layoutResizeService) resizeVisibleCmd() tea.Cmd {
 }
 
 func (s *layoutResizeService) resizeVisible(ctx context.Context) error {
-	if s == nil || s.model == nil || s.model.runtime == nil || s.model.workbench == nil {
+	manager := s.manager()
+	if s == nil || s.model == nil || s.model.workbench == nil || manager == nil {
 		return nil
 	}
 	bodyRect := s.model.bodyRect()
@@ -52,45 +61,33 @@ func (s *layoutResizeService) resizeVisible(ctx context.Context) error {
 	panes := make([]workbench.VisiblePane, 0, len(tab.Panes)+len(visible.FloatingPanes))
 	panes = append(panes, tab.Panes...)
 	panes = append(panes, visible.FloatingPanes...)
-
+	targets := make([]terminalresize.Target, 0, len(panes))
 	for _, pane := range panes {
 		if pane.ID == "" || pane.TerminalID == "" {
 			continue
 		}
-		target := terminalInteractionTarget{
-			paneID:     pane.ID,
-			terminalID: pane.TerminalID,
-			rect:       pane.Rect,
-		}
-		req := terminalInteractionRequest{
-			PaneID:         pane.ID,
-			TerminalID:     pane.TerminalID,
-			Rect:           pane.Rect,
-			ResizeIfNeeded: true,
+		target := terminalresize.Target{
+			PaneID:     pane.ID,
+			TerminalID: pane.TerminalID,
+			Rect:       pane.Rect,
 		}
 		if s.model.sessionID != "" && pane.ID == tab.ActivePaneID {
-			req.ImplicitSessionLease = true
+			target.ImplicitSessionLease = true
 		}
-		if err := s.model.syncTerminalInteraction(ctx, req, target); err != nil {
-			return err
-		}
+		targets = append(targets, target)
 	}
-	return nil
+	return manager.ResizeVisible(ctx, targets)
 }
 
 func (s *layoutResizeService) ensurePaneTerminalSize(ctx context.Context, paneID, terminalID string, rect workbench.Rect) error {
-	if s == nil || s.model == nil {
+	manager := s.manager()
+	if manager == nil {
 		return nil
 	}
-	return s.model.syncTerminalInteraction(ctx, terminalInteractionRequest{
-		PaneID:         paneID,
-		TerminalID:     terminalID,
-		Rect:           rect,
-		ResizeIfNeeded: true,
-	}, terminalInteractionTarget{
-		paneID:     paneID,
-		terminalID: terminalID,
-		rect:       rect,
+	return manager.EnsureSized(ctx, terminalresize.Target{
+		PaneID:     paneID,
+		TerminalID: terminalID,
+		Rect:       rect,
 	})
 }
 
@@ -118,19 +115,25 @@ func (s *layoutResizeService) syncActivePaneTabSwitchTakeoverCmd() tea.Cmd {
 	if s == nil || s.model == nil || !s.model.localActivePaneNeedsOwnershipForResize() {
 		return nil
 	}
-	req := terminalInteractionRequest{
-		ResizeIfNeeded:   true,
-		ExplicitTakeover: true,
-	}
-	target, ok := s.model.resolveTerminalInteractionTarget(req)
+	target, ok := s.model.resolveTerminalInteractionTarget(terminalInteractionRequest{ResizeIfNeeded: true, ExplicitTakeover: true})
 	if !ok {
 		return nil
 	}
+	manager := s.manager()
+	if manager == nil {
+		return nil
+	}
+	resizeTarget := terminalresize.Target{
+		PaneID:           target.paneID,
+		TerminalID:       target.terminalID,
+		Rect:             target.rect,
+		ExplicitTakeover: true,
+	}
 	return func() tea.Msg {
-		if err := s.model.syncTerminalInteraction(context.Background(), req, target); err != nil {
+		if err := manager.EnsureSized(context.Background(), resizeTarget); err != nil {
 			return err
 		}
-		if !s.pendingPaneResizeSatisfied(target.paneID, target.terminalID, target.rect) {
+		if !manager.PendingSatisfied(resizeTarget) {
 			s.markPendingPaneResize("", target.paneID, target.terminalID)
 		}
 		return nil
@@ -276,16 +279,11 @@ func (s *layoutResizeService) resizePendingCmd() tea.Cmd {
 }
 
 func (s *layoutResizeService) pendingPaneResizeSatisfied(paneID, terminalID string, rect workbench.Rect) bool {
-	if s == nil || s.model == nil || terminalID == "" {
+	manager := s.manager()
+	if manager == nil {
 		return false
 	}
-	viewportRect, ok := s.model.terminalViewportRect(paneID, rect)
-	if !ok {
-		return false
-	}
-	cols := uint16(maxInt(2, viewportRect.W))
-	rows := uint16(maxInt(2, viewportRect.H))
-	return s.model.terminalAlreadySized(terminalID, cols, rows)
+	return manager.PendingSatisfied(terminalresize.Target{PaneID: paneID, TerminalID: terminalID, Rect: rect})
 }
 
 func (s *layoutResizeService) applyWindowSizeMsg(typed tea.WindowSizeMsg) tea.Cmd {

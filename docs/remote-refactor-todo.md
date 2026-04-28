@@ -55,6 +55,7 @@
 - `[x]` 为 session snapshot -> runtime reconcile / attach rollback 建立 `tuiv2/sessionruntime` 落点，并让 `tuiv2/app/session_runtime_service.go` 退化为兼容 wrapper。
 - `[x]` 为 attach/bootstrap/stream/rollback 事务建立 `tuiv2/terminalattach` 落点，并让 `tuiv2/app/terminal_attach_service.go` 退化为 command/finalize wrapper。
 - `[x]` 为 lease acquire/release、ownership promotion、resize gating 建立 `tuiv2/terminalcontrol` 落点，并让 `tuiv2/app/terminal_interaction_service.go` 与 session lease release 路径退化为兼容 wrapper。
+- `[x]` 为 visible/pending pane terminal resize orchestration 建立 `tuiv2/terminalresize` 落点，并让 `tuiv2/app/layout_resize_service.go` 退化为 target-resolution/pending-state/local-layout wrapper。
 - `[ ]` 收口根目录过厚的 server internals。
 - `[ ]` 把 workbench/session 能力从未来 remote 主路径中隔离出来。
 - `[ ]` 为 shell-neutral client runtime 建立明确目录落点，并逐步从 `tuiv2` 名下移出。
