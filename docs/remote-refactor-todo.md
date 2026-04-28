@@ -48,6 +48,7 @@
 - `[x]` 抽出 session/workbench RPC handler 落点：`internal/sessionrpc`，让根目录 `Server` 只保留 wiring 与 session event publish。
 - `[x]` 抽出第一版 workbench doc codec 落点：`internal/workbenchcodec`，并让 `tuiv2/sessionstate` 退化为兼容 shim。
 - `[x]` 把 `tuiv2/orchestrator` 收口为 layout/workbench-only 边界，移除未使用的 runtime 注入。
+- `[x]` 把 `termx web` shell 逻辑迁到 `internal/webshell`，让 `cmd/termx` 只保留命令入口 wiring。
 - `[ ]` 收口根目录过厚的 server internals。
 - `[ ]` 把 workbench/session 能力从未来 remote 主路径中隔离出来。
 - `[ ]` 为 shell-neutral client runtime 建立明确目录落点，并逐步从 `tuiv2` 名下移出。
