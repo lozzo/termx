@@ -169,7 +169,7 @@
 - 但要明确它是“本地/工作台侧能力”
 - 不能成为远程 terminal 产品模型的基础
 
-### 第 3 层：shell-neutral client runtime
+### 第 3 层：shell-neutral terminal client runtime
 
 这一层不是设备端远程注册 runtime，而是给多个 shell 复用的客户端运行时层。
 
@@ -178,8 +178,7 @@
 - attach / bootstrap
 - stream 消费
 - 本地 terminal cache / vterm cache
-- ownership / lease 应用
-- resize 协调
+- terminal 级 resize 协调
 - shell-neutral client bridge 抽象
 
 当前最接近这一层的，其实是：
@@ -194,23 +193,32 @@
 - 后续应逐步从 `tuiv2/` 名下移出
 - 成为 shell-neutral 层
 - 供 `tuiv2`、未来的 `web/app` shell 共用
+- 只处理 terminal client 语义，不承载 workbench/session 结构真相
+
+明确不属于这一层的东西：
+
+- `session.*` 文档结构真相
+- workbench 视图树
+- lease / ownership 的工作台级编排
+- modal / viewport / shell-specific UI state
 
 ### 第 4 层：embedded remote runtime
 
 这是新的设备端远程层，负责：
 
-- `termx daemon` 注册到 control plane / hub
-- hub 发现与选择
-- signaling
+- 基于抽象接口驱动设备端远程注册与长连
 - WebRTC bridge
 - terminal list 暴露
 - termx protocol 到远程通道的桥接
+- 设备端远程生命周期管理
 
 要求：
 
 - 放在 `termx` 仓库内
 - 跟 `tuiv2` 解耦
 - 不直接承载产品壳逻辑
+- 不直接知道 `tgent` 的 DTO、HTTP 路径或 hub 私有 wire contract
+- 应依赖 discovery / signaling / control 的抽象接口，而不是依赖某个具体产品面的契约
 
 ### 第 5 层：tgent compatibility adapters
 
@@ -225,6 +233,13 @@
 - 必须集中
 - 不要把 `tgent` 兼容逻辑散落到 `protocol/`、`tuiv2/`、core server 各处
 - 这样以后如果再脱离 `tgent`，爆炸半径是局部的
+- 这是唯一允许理解 `tgent-web` / `tgent hub` 具体 contract、字段名、路径形状、reporting schema 的地方
+
+进一步约束：
+
+- embedded remote runtime 依赖 compat 暴露的抽象接口
+- compat 依赖 `tgent` 具体协议
+- 不反过来让 runtime 直接 import `tgent` contract
 
 ### 第 6 层：product shells
 
@@ -276,13 +291,14 @@ internal/
     rtc/                 WebRTC / DataChannel bridge
     bridge/              termx attach/protocol 到远程 runtime 的桥接
   client/
-    runtime/             shell-neutral attach/bootstrap/stream 客户端运行时
+    runtime/             shell-neutral terminal client runtime
     api/                 shell-neutral client 抽象（当前 tuiv2/bridge 的归宿）
   compat/
     tgent/
       control/           对接 tgent-web 的 API client / contract
       hub/               对接 tgent hub 的契约适配
       model/             session->terminal 等兼容映射模型
+      telemetry/         tgent session telemetry 与 termx terminal/attachment telemetry 的翻译层
 
 tuiv2/                   本地 TUI，只做本地/workbench 客户端
 
@@ -328,7 +344,7 @@ mobile/
 
 要求：
 
-- `workbenchdoc` / `workbenchsvc` 是 session 真相源
+- `workbenchdoc` / `workbenchsvc` 是本地共享 session/workbench 的真相源
 - 远程 terminal 接入不要直接依赖 shell-local workbench 状态
 - `session.*` 继续存在也可以，但要被隔离，而不是继续长进 core server 主路径
 - `tuiv2/workbench` 长期目标应收缩成 shell-local `viewstate`，而不是再维护第二份结构真相
@@ -343,6 +359,7 @@ mobile/
 - `tuiv2`、未来 app/web shell 都应该依赖它
 - 它可以依赖 `protocol/transport` 和共享 session/document types
 - 它不能反向依赖 `tuiv2/*`
+- 它只做 terminal client runtime，不做本地 workbench/session state 编排
 
 ### `internal/remote`
 
@@ -362,6 +379,16 @@ mobile/
 
 - 避免 `tgent` 兼容代码污染 `termx` 原生协议
 - 避免未来改 control plane 时全仓到处改
+
+### `internal/compat/tgent/telemetry`
+
+`tgent-web` 当前的 `sessionBytesIn / sessionBytesOut / sessionStartedAt / relay_traffic(session_id, session_type, duration...)` 本质上是控制面 telemetry schema。
+
+要求：
+
+- 这类 schema/telemetry 翻译必须集中在 compat 层
+- 不把这套 `session_*` telemetry 语义直接扩散到 termx core 或 embedded remote runtime
+- 后续如果要支持“一个设备多个 terminals / attachments”，映射逻辑只在这里改
 
 ### `web/` 和 `mobile/`
 
@@ -431,7 +458,19 @@ mobile/
 - shell 自己只保留 focus、viewport、modal、floating rect、host theme 这类 UI/viewstate
 - 不再让 shell 持有第二份 authoritative workbench 结构
 
-### 压力点 5：shell 逻辑落在 `cmd/`
+### 压力点 5：terminal runtime 与 workbench runtime 混层
+
+当前 `tuiv2/runtime` 里同时带有：
+
+- terminal attach/bootstrap/stream 语义
+- ownership / lease / pane binding 等工作台级语义
+
+这两类东西后续必须继续拆：
+
+- terminal client runtime
+- 本地 workbench/session client orchestration
+
+### 压力点 6：shell 逻辑落在 `cmd/`
 
 当前 `cmd/termx/web.go` 本质上已经是 shell/product 逻辑，而不是单纯 CLI glue。
 
@@ -440,7 +479,18 @@ mobile/
 - `cmd/` 只做二进制入口与 wiring
 - shell/product 代码放到自己的 shell 层
 
-### 压力点 6：product shells 尚未正式收编
+### 压力点 7：tgent session telemetry 与 termx terminal telemetry 未隔离
+
+当前 `tgent-web` 中有一层不是产品 session，也不是 tmux session，而是 relay/client telemetry session。
+
+这层如果不先隔离，后续会出现两种错误：
+
+- 把它误当成 tmux/product session 一起删掉
+- 或者把它错误扩散进 termx runtime 核心模型
+
+所以必须单独建立 compat telemetry 边界。
+
+### 压力点 8：product shells 尚未正式收编
 
 当前分支里 `web/`、`mobile/` 还没有形成清晰受控结构。
 
@@ -531,6 +581,24 @@ mobile/
 - TUI modal / input / render
 - dashboard / settings / billing
 - hub/control-plane 设备端注册
+- workbench/session 文档真相
+- `tgent` 特有 telemetry/schema 翻译
+
+### 6.6 workbench/session client orchestration
+
+这是本地共享工作台侧的客户端编排层。
+
+它负责：
+
+- `session.*` 客户端交互
+- 本地 viewstate 与 canonical workbench 文档之间的同步
+- pane binding / lease / ownership 等工作台级协同
+
+它不负责：
+
+- 设备端远程注册
+- `tgent` compatibility
+- 产品壳逻辑
 
 ## 7. 数据模型如何收口
 
@@ -600,6 +668,10 @@ mobile/
 - 这些不是 tmux 专属逻辑
 - 重写它们只会拖慢 termx 接入
 
+但要加一条边界：
+
+- `tgent-web` 的 session telemetry/reporting schema 属于 compat/telemetry 层，不自动等于 termx 的 terminal 模型
+
 ### 8.2 设备端从 tgent agent 改成 termx native runtime
 
 原本由 `tgent agent` 做的事情，迁入 `termx`：
@@ -611,6 +683,8 @@ mobile/
 - 建立 WebRTC
 - 把 DataChannel 和本地 termx attach/protocol 桥接
 - 返回 terminal 列表
+
+这里的具体 `tgent` discover/register/signaling/ticket contract 不应该直接散进 runtime；应由 compat 适配层实现，再给 runtime 提供抽象接口。
 
 ### 8.3 WebRTC 数据面保持 termx 语义
 
@@ -724,7 +798,8 @@ mobile/
 
 - 盘点 `tgent-web` / `tgent hub` / `tgent-app` 当前哪些接口和页面强依赖 tmux/session 模型
 - 盘点当前 `termx` 仓库哪些目录边界已经会阻碍后续远程接入
-- 明确 core / workbench / client runtime / remote / compat / product shells 的落点
+- 明确 core / workbench / terminal client runtime / remote / compat / product shells 的落点
+- 单独识别 `tgent` session telemetry 和 tmux/product session 的差别
 - 明确哪些地方只需“换数据源”，哪些地方必须“改页面语义”
 
 ### 第二阶段：先做结构性收口
