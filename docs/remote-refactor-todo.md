@@ -45,6 +45,7 @@
 - `[ ]` 先写失败测试或 characterization tests，覆盖计划移动的关键行为边界。
 - `[x]` 抽出第一版 shell-neutral client API 落点：`internal/clientapi`，并让 `tuiv2/bridge` 退化为兼容 shim。
 - `[x]` 通过 characterization tests 锁住 session RPC 基线后，将 `termx.go` 里的 session/workbench 服务端路径抽到独立文件。
+- `[x]` 抽出 session/workbench RPC handler 落点：`internal/sessionrpc`，让根目录 `Server` 只保留 wiring 与 session event publish。
 - `[x]` 抽出第一版 workbench doc codec 落点：`internal/workbenchcodec`，并让 `tuiv2/sessionstate` 退化为兼容 shim。
 - `[ ]` 收口根目录过厚的 server internals。
 - `[ ]` 把 workbench/session 能力从未来 remote 主路径中隔离出来。
@@ -159,5 +160,5 @@
 
 ## 当前说明
 
-- 当前仍停在 spec review。
-- 在你明确确认这版方向之前，不继续实现。
+- 当前已进入 M2 结构收口。
+- 已开始把 root server internals 和 `tuiv2` 内的通用层逐步迁到明确包边界。

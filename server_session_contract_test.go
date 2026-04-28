@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/lozzow/termx/protocol"
 )
@@ -218,6 +219,117 @@ func TestHandleRequestSessionAttachApplyAndViewUpdate(t *testing.T) {
 	}
 	if got := replaced.Workbench.Workspaces["main"].Tabs[0].Name; got != "replaced" {
 		t.Fatalf("expected replaced tab name, got %q", got)
+	}
+}
+
+func TestHandleRequestSessionAttachDefaultsClientIDToRemote(t *testing.T) {
+	ctx := context.Background()
+	srv := NewServer()
+
+	allocator := protocol.NewChannelAllocator()
+	attachments := make(map[uint16]*sessionAttachment)
+	var attachmentsMu sync.RWMutex
+	sendFrame := func(uint16, uint8, []byte) error { return nil }
+
+	mustHandleSessionRequest(t, srv, ctx, allocator, attachments, &attachmentsMu, protocol.Request{
+		ID:     1,
+		Method: "session.create",
+		Params: mustJSONRaw(t, protocol.CreateSessionParams{SessionID: "main"}),
+	}, sendFrame)
+
+	result := mustHandleSessionRequest(t, srv, ctx, allocator, attachments, &attachmentsMu, protocol.Request{
+		ID:     2,
+		Method: "session.attach",
+		Params: mustJSONRaw(t, protocol.AttachSessionParams{SessionID: "main"}),
+	}, sendFrame)
+
+	var attached protocol.SessionSnapshot
+	if err := json.Unmarshal(result, &attached); err != nil {
+		t.Fatalf("unmarshal attach result: %v", err)
+	}
+	if attached.View == nil {
+		t.Fatalf("expected attached view, got %#v", attached)
+	}
+	if attached.View.ClientID != "memory" {
+		t.Fatalf("expected remote client id fallback, got %#v", attached.View)
+	}
+}
+
+func TestHandleRequestSessionMutationsPublishEvents(t *testing.T) {
+	ctx := context.Background()
+	srv := NewServer()
+
+	allocator := protocol.NewChannelAllocator()
+	attachments := make(map[uint16]*sessionAttachment)
+	var attachmentsMu sync.RWMutex
+	sendFrame := func(uint16, uint8, []byte) error { return nil }
+
+	eventsCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	events := srv.Events(eventsCtx, WithSessionFilter("main"))
+
+	result := mustHandleSessionRequest(t, srv, ctx, allocator, attachments, &attachmentsMu, protocol.Request{
+		ID:     1,
+		Method: "session.create",
+		Params: mustJSONRaw(t, protocol.CreateSessionParams{SessionID: "main"}),
+	}, sendFrame)
+	var created protocol.SessionSnapshot
+	if err := json.Unmarshal(result, &created); err != nil {
+		t.Fatalf("unmarshal create result: %v", err)
+	}
+
+	result = mustHandleSessionRequest(t, srv, ctx, allocator, attachments, &attachmentsMu, protocol.Request{
+		ID:     2,
+		Method: "session.attach",
+		Params: mustJSONRaw(t, protocol.AttachSessionParams{SessionID: "main"}),
+	}, sendFrame)
+	var attached protocol.SessionSnapshot
+	if err := json.Unmarshal(result, &attached); err != nil {
+		t.Fatalf("unmarshal attach result: %v", err)
+	}
+
+	result = mustHandleSessionRequest(t, srv, ctx, allocator, attachments, &attachmentsMu, protocol.Request{
+		ID:     3,
+		Method: "session.apply",
+		Params: mustJSONRaw(t, protocol.ApplySessionParams{
+			SessionID:    "main",
+			ViewID:       attached.View.ViewID,
+			BaseRevision: created.Session.Revision,
+			Ops: []protocol.SessionOp{
+				{Kind: "split-pane", TabID: "1", PaneID: "1", NewPaneID: "2", Direction: "vertical"},
+			},
+		}),
+	}, sendFrame)
+	var applied protocol.SessionSnapshot
+	if err := json.Unmarshal(result, &applied); err != nil {
+		t.Fatalf("unmarshal apply result: %v", err)
+	}
+
+	mustHandleSessionRequest(t, srv, ctx, allocator, attachments, &attachmentsMu, protocol.Request{
+		ID:     4,
+		Method: "session.delete",
+		Params: mustJSONRaw(t, protocol.GetSessionParams{SessionID: "main"}),
+	}, sendFrame)
+
+	var collected []Event
+	deadline := time.After(3 * time.Second)
+	for len(collected) < 3 {
+		select {
+		case evt := <-events:
+			collected = append(collected, evt)
+		case <-deadline:
+			t.Fatalf("timed out waiting for session events: %#v", collected)
+		}
+	}
+
+	if collected[0].Type != EventSessionCreated || collected[0].Session == nil || collected[0].Session.Revision != 1 {
+		t.Fatalf("unexpected create event: %#v", collected[0])
+	}
+	if collected[1].Type != EventSessionUpdated || collected[1].Session == nil || collected[1].Session.Revision != applied.Session.Revision || collected[1].Session.ViewID != attached.View.ViewID {
+		t.Fatalf("unexpected update event: %#v", collected[1])
+	}
+	if collected[2].Type != EventSessionDeleted || collected[2].Session == nil || collected[2].Session.Revision != 0 {
+		t.Fatalf("unexpected delete event: %#v", collected[2])
 	}
 }
 

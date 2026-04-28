@@ -35,13 +35,14 @@ type serverConfig struct {
 }
 
 type Server struct {
-	cfg       serverConfig
-	events    *EventBus
-	mu        sync.RWMutex
-	terminals map[string]*Terminal
-	workbench *workbenchsvc.Service
-	closed    atomic.Bool
-	listeners []transport.Listener
+	cfg            serverConfig
+	events         *EventBus
+	mu             sync.RWMutex
+	terminals      map[string]*Terminal
+	workbench      *workbenchsvc.Service
+	sessionHandler sessionRequestHandler
+	closed         atomic.Bool
+	listeners      []transport.Listener
 
 	// protocolListCache stores the marshaled response for the wire-level
 	// unfiltered "list" request. The Go API still returns fresh copies.
@@ -67,6 +68,7 @@ func NewServer(opts ...ServerOption) *Server {
 		workbench: workbenchsvc.New(),
 	}
 	srv.events = NewEventBus(cfg.logger)
+	srv.sessionHandler = newSessionHandler(srv)
 	return srv
 }
 
@@ -1043,13 +1045,21 @@ func (s *Server) handleEventsRequest(
 	}
 
 	subCtx, subCancel := context.WithCancel(ctx)
-	events := s.Events(subCtx, opts...)
+	events, unsubscribe := s.events.subscribe(opts...)
+	cancelEvents := func() {
+		subCancel()
+		unsubscribe()
+	}
+	go func() {
+		<-subCtx.Done()
+		unsubscribe()
+	}()
 
 	eventsCancelMu.Lock()
 	if *eventsCancel != nil {
 		(*eventsCancel)()
 	}
-	*eventsCancel = subCancel
+	*eventsCancel = cancelEvents
 	eventsCancelMu.Unlock()
 
 	go func() {

@@ -109,6 +109,7 @@ type eventSubscriber struct {
 	ch      chan Event
 	cfg     eventsConfig
 	dropped atomic.Int32
+	closeMu sync.Once
 }
 
 func NewEventBus(logger *slog.Logger) *EventBus {
@@ -122,6 +123,15 @@ func NewEventBus(logger *slog.Logger) *EventBus {
 }
 
 func (b *EventBus) Subscribe(ctx context.Context, opts ...EventsOption) <-chan Event {
+	ch, cancel := b.subscribe(opts...)
+	go func() {
+		<-ctx.Done()
+		cancel()
+	}()
+	return ch
+}
+
+func (b *EventBus) subscribe(opts ...EventsOption) (<-chan Event, func()) {
 	cfg := eventsConfig{}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -132,17 +142,19 @@ func (b *EventBus) Subscribe(ctx context.Context, opts ...EventsOption) <-chan E
 	b.subscribers[sub] = struct{}{}
 	b.mu.Unlock()
 
-	go func() {
-		<-ctx.Done()
-		b.mu.Lock()
-		if _, ok := b.subscribers[sub]; ok {
-			delete(b.subscribers, sub)
-			close(sub.ch)
-		}
-		b.mu.Unlock()
-	}()
+	return sub.ch, func() {
+		b.removeSubscriber(sub)
+	}
+}
 
-	return sub.ch
+func (b *EventBus) removeSubscriber(sub *eventSubscriber) {
+	if b == nil || sub == nil {
+		return
+	}
+	b.mu.Lock()
+	delete(b.subscribers, sub)
+	b.mu.Unlock()
+	sub.close()
 }
 
 func (b *EventBus) Publish(evt Event) {
@@ -166,10 +178,14 @@ func (b *EventBus) Publish(evt Event) {
 
 func (b *EventBus) Close() {
 	b.mu.Lock()
-	defer b.mu.Unlock()
+	subs := make([]*eventSubscriber, 0, len(b.subscribers))
 	for sub := range b.subscribers {
+		subs = append(subs, sub)
 		delete(b.subscribers, sub)
-		close(sub.ch)
+	}
+	b.mu.Unlock()
+	for _, sub := range subs {
+		sub.close()
 	}
 }
 
@@ -185,6 +201,15 @@ func (s *eventSubscriber) matches(evt Event) bool {
 	}
 	_, ok := s.cfg.types[evt.Type]
 	return ok
+}
+
+func (s *eventSubscriber) close() {
+	if s == nil {
+		return
+	}
+	s.closeMu.Do(func() {
+		close(s.ch)
+	})
 }
 
 type discardWriter struct{}

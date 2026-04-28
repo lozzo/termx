@@ -397,6 +397,79 @@ func TestHandleTransportEventsSubscriptionDeliversSessionEvents(t *testing.T) {
 	}
 }
 
+func TestHandleTransportEventsSubscriptionReplacesPreviousFilter(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewServer()
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+	defer serverTransport.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.handleTransport(ctx, serverTransport, "memory")
+	}()
+
+	client := protocol.NewClient(clientTransport)
+	defer client.Close()
+
+	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+		t.Fatalf("hello failed: %v", err)
+	}
+
+	events, err := client.Events(ctx, protocol.EventsParams{
+		TerminalID: "term-1",
+		Types:      []protocol.EventType{protocol.EventTerminalRemoved},
+	})
+	if err != nil {
+		t.Fatalf("first events subscribe failed: %v", err)
+	}
+
+	events, err = client.Events(ctx, protocol.EventsParams{
+		TerminalID: "term-2",
+		Types:      []protocol.EventType{protocol.EventTerminalRemoved},
+	})
+	if err != nil {
+		t.Fatalf("second events subscribe failed: %v", err)
+	}
+
+	srv.events.Publish(Event{
+		Type:       EventTerminalRemoved,
+		TerminalID: "term-1",
+		Timestamp:  time.Now().UTC(),
+		Removed:    &TerminalRemovedData{Reason: "stale"},
+	})
+	srv.events.Publish(Event{
+		Type:       EventTerminalRemoved,
+		TerminalID: "term-2",
+		Timestamp:  time.Now().UTC(),
+		Removed:    &TerminalRemovedData{Reason: "active"},
+	})
+
+	select {
+	case evt := <-events:
+		if evt.TerminalID != "term-2" || evt.Type != protocol.EventTerminalRemoved {
+			t.Fatalf("expected only second subscription event, got %#v", evt)
+		}
+		if evt.Removed == nil || evt.Removed.Reason != "active" {
+			t.Fatalf("unexpected removed payload: %#v", evt)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for replacement-filter event")
+	}
+
+	_ = client.Close()
+	select {
+	case err := <-done:
+		if err != nil && !errors.Is(err, io.EOF) {
+			t.Fatalf("handleTransport failed: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for transport shutdown")
+	}
+}
+
 func TestServerShutdownClosesEventsAndRejectsCreate(t *testing.T) {
 	srv := NewServer()
 
