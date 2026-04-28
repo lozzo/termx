@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/lozzow/termx/internal/workbenchcodec"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
-	"github.com/lozzow/termx/tuiv2/sessionstate"
 )
 
 type sessionSnapshotApplyService struct {
@@ -60,9 +60,9 @@ func (s *sessionSnapshotApplyService) apply(snapshot *protocol.SessionSnapshot) 
 		return nil
 	}
 
-	oldBindings := sessionstate.PaneTerminalBindings(sessionstate.ExportWorkbench(m.workbench))
-	nextBindings := sessionstate.PaneTerminalBindings(snapshot.Workbench)
-	nextWorkbench := sessionstate.ImportDoc(snapshot.Workbench)
+	oldBindings := workbenchcodec.PaneTerminalBindings(workbenchcodec.ExportWorkbench(m.workbench))
+	nextBindings := workbenchcodec.PaneTerminalBindings(snapshot.Workbench)
+	nextWorkbench := workbenchcodec.ImportDoc(snapshot.Workbench)
 
 	var applyErr error
 	if m.runtime != nil {

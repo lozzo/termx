@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lozzow/termx/internal/workbenchcodec"
 	"github.com/lozzow/termx/protocol"
 	"github.com/lozzow/termx/tuiv2/orchestrator"
-	"github.com/lozzow/termx/tuiv2/sessionstate"
 	"github.com/lozzow/termx/workbenchdoc"
 )
 
@@ -141,7 +141,7 @@ func isSessionLeaseUnsupported(err error) bool {
 }
 
 func (m *Model) exportSessionWorkbench() *workbenchdoc.Doc {
-	doc := sessionstate.ExportWorkbench(m.workbench)
+	doc := workbenchcodec.ExportWorkbench(m.workbench)
 	if m == nil || doc == nil || m.sessionSharedDoc == nil {
 		return doc
 	}
