@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/lozzow/termx/internal/clientapi"
 	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/tuiv2/bridge"
 )
 
 type TerminalAttachmentSnapshot struct {
@@ -25,7 +25,7 @@ type TerminalLiveStateSnapshot struct {
 	Title                  string
 	Channel                uint16
 	AttachMode             string
-	Snapshot               *clientapi.SnapshotRef
+	Snapshot               *bridge.SnapshotRef
 	SnapshotVersion        uint64
 	SurfaceVersion         uint64
 	ScreenUpdate           VisibleScreenUpdateSummary
@@ -215,7 +215,7 @@ func (r *Runtime) RestoreTerminalLiveState(terminalID string, snapshot TerminalL
 	}
 }
 
-func cloneRuntimeSnapshot(snapshot *clientapi.SnapshotRef) *clientapi.SnapshotRef {
+func cloneRuntimeSnapshot(snapshot *bridge.SnapshotRef) *bridge.SnapshotRef {
 	if snapshot == nil {
 		return nil
 	}

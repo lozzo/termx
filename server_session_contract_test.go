@@ -221,6 +221,50 @@ func TestHandleRequestSessionAttachApplyAndViewUpdate(t *testing.T) {
 	}
 }
 
+func TestHandleRequestSessionUnknownMethodReturns400(t *testing.T) {
+	ctx := context.Background()
+	srv := NewServer()
+
+	allocator := protocol.NewChannelAllocator()
+	attachments := make(map[uint16]*sessionAttachment)
+	var attachmentsMu sync.RWMutex
+	sendFrame := func(uint16, uint8, []byte) error { return nil }
+
+	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+		ID:     1,
+		Method: "session.unknown",
+		Params: json.RawMessage(`{}`),
+	}, sendFrame)
+	if err == nil {
+		t.Fatal("expected unknown session method to fail")
+	}
+	if code != 400 {
+		t.Fatalf("expected code 400, got %d (err=%v)", code, err)
+	}
+}
+
+func TestHandleRequestSessionWithoutWorkbenchReturns500(t *testing.T) {
+	ctx := context.Background()
+	srv := &Server{}
+
+	allocator := protocol.NewChannelAllocator()
+	attachments := make(map[uint16]*sessionAttachment)
+	var attachmentsMu sync.RWMutex
+	sendFrame := func(uint16, uint8, []byte) error { return nil }
+
+	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+		ID:     1,
+		Method: "session.list",
+		Params: json.RawMessage(`{}`),
+	}, sendFrame)
+	if err == nil {
+		t.Fatal("expected missing workbench to fail")
+	}
+	if code != 500 {
+		t.Fatalf("expected code 500, got %d (err=%v)", code, err)
+	}
+}
+
 func mustHandleSessionRequest(
 	t *testing.T,
 	srv *Server,

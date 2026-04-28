@@ -4,7 +4,7 @@ import (
 	"maps"
 	"sort"
 
-	"github.com/lozzow/termx/internal/clientapi"
+	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
@@ -26,7 +26,7 @@ type TerminalRuntime struct {
 
 	Channel         uint16
 	AttachMode      string
-	Snapshot        *clientapi.SnapshotRef
+	Snapshot        *bridge.SnapshotRef
 	SnapshotVersion uint64
 	SurfaceVersion  uint64
 	ScreenUpdate    VisibleScreenUpdateSummary

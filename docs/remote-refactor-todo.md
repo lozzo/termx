@@ -44,6 +44,7 @@
 
 - `[ ]` 先写失败测试或 characterization tests，覆盖计划移动的关键行为边界。
 - `[x]` 抽出第一版 shell-neutral client API 落点：`internal/clientapi`，并让 `tuiv2/bridge` 退化为兼容 shim。
+- `[x]` 通过 characterization tests 锁住 session RPC 基线后，将 `termx.go` 里的 session/workbench 服务端路径抽到独立文件。
 - `[ ]` 收口根目录过厚的 server internals。
 - `[ ]` 把 workbench/session 能力从未来 remote 主路径中隔离出来。
 - `[ ]` 为 shell-neutral client runtime 建立明确目录落点，并逐步从 `tuiv2` 名下移出。
