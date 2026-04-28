@@ -1,523 +1,775 @@
-# termx Remote Architecture Spec
+# termx 对接 tgent 远程体系规格
 
-Status: draft
+状态：方向已确认，进入兼容性与架构盘点阶段
 
-This document defines the target remote-access architecture for `termx` after the reset. It is the spec that future implementation slices must follow.
+## 1. 这次要纠正的方向
 
-## 1. Problem Statement
+上一版规格的思路偏向“围绕 `termx` 新建一套更小的 control plane / mobile app”。
+这不是当前最优路线。
 
-`termx` already has the right core server model: a flat terminal pool with stable `terminal_id`, PTY lifecycle management, attach semantics, snapshot/recovery, and a binary screen-update stream. What it does not have yet is a production-shaped remote architecture for mobile access.
+你刚确认的真实目标是：
 
-The previous `tgent` stack proved several ideas:
+- 不是重写 `tgent` 产品面
+- 而是**直接沿用 `tgent` 的产品路线和基础设施**
+- 把 `tgent` 里原本依赖 `tmux + tgent agent` 的部分，替换成 `termx`
+- 最终不再单独保留一个 `tgent` 常驻二进制，而是让 `termx` 原生持有这套远程能力
 
-- mobile terminal access over WebRTC DataChannel is viable
-- signaling + TURN should be treated as first-class infrastructure
-- hub discovery and heartbeat matter in real networks
+所以这次重构的核心不是“新做一套极简 app”，而是：
 
-But `tgent` also carries product and architecture baggage that `termx` must not inherit:
+> **保留 tgent 的 web / app / dashboard / 登录 / 密码 / 定价 / 订阅 / hub / TURN / signaling 体系，
+> 把底层终端运行时从 tmux 路线切换为 termx 路线。**
 
-- app/session/window/pane business structure in the remote stack
-- standalone long-lived `agent` as the final user-facing process model
-- web-side private-key escrow
-- dashboard/billing/file-manager/pairing flows unrelated to terminal access
+## 2. 总体策略
 
-This spec defines a smaller target:
+最快速的路线应当是：
 
-- `termx` remains a flat terminal server
-- remote access is terminal-only
-- `termx daemon` embeds the remote runtime
-- mobile connects over WebRTC DataChannel only
-- control plane tracks users, devices, hubs, and tickets
-- users keep their own client private keys
+1. **保留 `tgent-web` 的产品壳**
+   - dashboard
+   - 账号密码登录
+   - profile / settings
+   - pricing / subscription / billing
+   - 设备/节点管理
+   - hub / release / admin 等现有能力
 
-## 2. Hard Constraints
+2. **保留 `tgent` 现有的 hub / TURN / signaling / discovery 体系**
+   - 尽量迁移，不重写
+   - 先保持现有接口形状或最小改造
 
-The following are not optional:
+3. **保留 `tgent-app` 的整体壳与导航结构**
+   - 不再另起一个全新 mobile app scaffold
+   - 只对“session 列表 -> terminal 列表”相关页面和数据流做改造
 
-- Server-side entity model remains `terminal` only. No tmux-style remote `session/window/pane` hierarchy is introduced.
-- The remote data plane uses WebRTC DataChannel only.
-- The remote stack reuses existing `termx` terminal semantics: `list`, `attach`, `snapshot`, `input`, `resize`, `events`, `SyncLost`, `Closed`.
-- The terminal stream and recovery chain stay binary. Do not replace `screen_update`, `snapshot/bootstrap`, or related transport payloads with JSON.
-- The app UI remains minimal: `login -> devices -> terminals -> terminal`.
-- The long-term process model is `termx daemon` with embedded remote runtime, not `termx + separate agent`.
-- The web/control plane does not escrow user private keys.
+4. **把 `termx` 变成新的设备端原生 runtime**
+   - `termx daemon` 内嵌原本 `tgent agent` 该负责的远程能力
+   - 设备侧最终只需要 `termx`
 
-## 3. Goals
+## 3. 这次不再追求的事情
 
-- Let a user log into a mobile app, see their devices, list terminals on a device, and enter a live terminal.
-- Keep the server abstraction clean: remote infra must wrap `termx`, not distort its core model.
-- Reuse `tgent` hub/TURN/discovery ideas where they fit, but aggressively drop unrelated product scope.
-- Support multiple hub/TURN nodes so different network environments can choose better relay paths.
-- Make identity closer to SSH:
-  - device private key stays on the device
-  - client private key stays on the client
-  - control plane stores public material and issues short-lived tickets
+为了走最快路线，这一轮**不以“重做产品形态”为目标**。
 
-## 4. Non-Goals
+也就是说，这一轮不优先做：
 
-- No remote session tree, workspace tree, pane graph, or synchronized layout model.
-- No file manager, pairing QR flow, promo/billing/admin product work in the first remote path.
-- No second terminal business protocol parallel to the existing `termx` protocol.
-- No requirement that the first implementation ship full relay optimization or perfect hub scoring on day one.
+- 重新设计一套更极简的 control plane
+- 从头新写一套 mobile app
+- 大规模重构 `tgent-web` 的信息架构
+- 先把 pricing / dashboard / account 相关能力删掉
 
-## 5. Existing termx Anchors To Preserve
+这次的优先级是**兼容现有产品壳、最快打通 termx 替换**。
 
-The remote architecture must build on these existing anchors:
+## 3.1 这次必须顺手处理代码架构
 
-- Core server and daemon entry:
-  - `termx.go`
-  - `cmd/termx/main.go`
-- Config file loading:
-  - `tuiv2/shared/config.go`
-  - `tuiv2/shared/config_file.go`
-- Wire protocol and binary stream message types:
-  - `protocol/frame.go`
-  - `protocol/messages.go`
-- Existing attach stream pump and screen-update coalescing:
-  - `attachment_stream.go`
-  - `stream_screen_state.go`
+虽然产品路线以“尽快接入 `tgent` 现有壳”为主，但当前 `termx` 仓库本身的代码结构也确实需要先收口，否则后面的接入工作只会继续把代码堆脏。
 
-Important consequence:
+当前最明显的问题：
 
-- Remote access should carry existing `termx` frames and binary screen-update payloads over a different transport.
-- The mobile stack is a new transport/runtime wrapper, not a new terminal server.
-- The first embedded-runtime implementation should not assume there is already a public generic server-side transport hook; today the safe seams are the existing client/protocol path and `tuiv2/bridge.Client`-shaped abstractions.
+- 根目录 `package termx` 承担了过多职责：
+  - 对外公开 API
+  - terminal server 实现
+  - transport session loop
+  - attach/bootstrap/stream 编排
+  - 事件和 session 协议处理
+- `termx.go` 里同时处理：
+  - terminal CRUD
+  - attach/input/resize
+  - `session.*`
+  - transport permission checks
+- `tuiv2` 已经非常大，后续不能再把远程对接逻辑也塞进去
+- `mobile/` 和 `web/` 目录现在在这个分支里还不是清晰的受控产品壳落点
+- `workbenchsvc`/`session.*` 是本地共享工作台语义，不该继续和远程 terminal 接入耦合增长
 
-## 6. Target Components
+所以这轮 spec 不只是“决定产品路线”，还必须明确：
+
+- 未来的目录怎么落
+- 哪些包禁止继续长胖
+- `tgent` 兼容层应该放在哪里
+
+## 4. 不可动摇的核心约束
+
+即便沿用 `tgent` 外壳，`termx` 自身的架构原则仍必须守住：
+
+- `termx` 服务端仍然是 **flat terminal pool**
+- 不把 tmux 的 `session/window/pane` 层级灌回 `termx` 服务端
+- 远程终端数据面仍然只走 **WebRTC DataChannel**
+- `termx` 现有 `attach / snapshot / input / resize / events / SyncLost / Closed / screen_update` 语义必须保留
+- `screen_update / snapshot / bootstrap` 这条链继续保持二进制，不回退成 JSON 数据面
+- 最终设备侧常驻进程是 `termx`，不是 `termx + tgent agent`
+
+## 5. 新的目标架构
+
+### 5.1 保留的远端组件
+
+远端大体沿用 `tgent`：
+
+- `tgent-web`
+  - 用户登录
+  - dashboard
+  - pricing / billing / subscription
+  - 设备/节点管理
+  - hub 目录
+  - connect ticket / auth / metadata
+
+- `tgent hub`
+  - agent/device 注册
+  - signaling
+  - TURN / relay
+  - discovery / heartbeat / liveness
+
+- `tgent-app`
+  - 现有 app 壳、路由、登录、设置、Dashboard
+  - 终端页和列表页做最小必要改造
+
+### 5.2 替换的设备端组件
+
+设备端不再保留独立 `tgent` 常驻二进制。
+
+改为：
+
+- `termx daemon`
+  - 本地 terminal pool 真相源
+  - 本地 PTY / attach / snapshot / stream
+  - 内嵌远程注册、signaling、WebRTC bridge
+  - 对接 `tgent-web` / `tgent hub`
+
+可以把它理解成：
+
+> **“用 termx 替掉 tmux + tgent agent 的组合。”**
+
+## 5.3 目标代码架构分层
+
+为避免后续继续糊成一团，代码层次建议收成 5 层：
+
+### 第 1 层：termx core
+
+这是 `termx` 作为终端运行时的核心，负责：
+
+- terminal pool
+- PTY
+- snapshot
+- attach/stream
+- screen update
+- event bus
+
+要求：
+
+- 不依赖 `tgent`
+- 不依赖 dashboard / billing / account
+- 不依赖 mobile/web 壳
+
+### 第 2 层：local client / workbench
+
+这是现有 `tuiv2` 和 `workbench` 相关逻辑，负责：
+
+- 本地 TUI
+- workspace / tab / pane / floating
+- `session.*` 相关共享工作台能力
+
+要求：
+
+- 仍可继续存在
+- 但要明确它是“本地/工作台侧能力”
+- 不能成为远程 terminal 产品模型的基础
+
+### 第 3 层：shell-neutral client runtime
+
+这一层不是设备端远程注册 runtime，而是给多个 shell 复用的客户端运行时层。
+
+它负责：
+
+- attach / bootstrap
+- stream 消费
+- 本地 terminal cache / vterm cache
+- ownership / lease 应用
+- resize 协调
+- shell-neutral client bridge 抽象
+
+当前最接近这一层的，其实是：
+
+- `tuiv2/runtime`
+- `tuiv2/bridge`
+
+这是当前结构里最容易误导后续扩张的地方，因为它们实际上已经不再只是 TUI 私有逻辑。
+
+要求：
+
+- 后续应逐步从 `tuiv2/` 名下移出
+- 成为 shell-neutral 层
+- 供 `tuiv2`、未来的 `web/app` shell 共用
+
+### 第 4 层：embedded remote runtime
+
+这是新的设备端远程层，负责：
+
+- `termx daemon` 注册到 control plane / hub
+- hub 发现与选择
+- signaling
+- WebRTC bridge
+- terminal list 暴露
+- termx protocol 到远程通道的桥接
+
+要求：
+
+- 放在 `termx` 仓库内
+- 跟 `tuiv2` 解耦
+- 不直接承载产品壳逻辑
+
+### 第 5 层：tgent compatibility adapters
+
+这是“termx 对接 tgent 现有体系”的适配层，负责：
+
+- 对接 `tgent-web` 的控制面 API
+- 对接 `tgent hub` 的注册/发现/signaling 契约
+- 把 `termx` 的 terminal 语义映射到 `tgent` 现有产品入口
+
+要求：
+
+- 必须集中
+- 不要把 `tgent` 兼容逻辑散落到 `protocol/`、`tuiv2/`、core server 各处
+- 这样以后如果再脱离 `tgent`，爆炸半径是局部的
+
+### 第 6 层：product shells
+
+这是沿用或迁移来的产品壳：
+
+- `web/control` 对应 `tgent-web`
+- `mobile/app` 对应 `tgent-app`
+
+要求：
+
+- 它们是产品前端/控制面应用
+- 不和 Go runtime 包互相污染
+- 只通过明确定义的 control/hub 接口对接
+
+## 5.2 建议的目标目录结构
+
+这不是一次性全搬迁计划，而是后续重构应逐步收敛到的目录图。
+
+```text
+cmd/
+  termx/                 用户设备侧主二进制
+  termx-hub/             服务器侧 hub / TURN 二进制
+
+docs/
+
+protocol/                termx 原生线协议，只放 termx 自己的协议类型
+transport/               termx 原生 transport 抽象
+pty/
+vterm/
+fanout/
+perftrace/
+
+internal/
+  core/
+    server/              terminal server 实现
+    terminal/            terminal 生命周期、snapshot、attach、stream
+    stream/              bootstrap / screen update / slow-consumer 策略
+    events/              event bus
+  workbench/
+    session/             session.* 服务端实现
+    doc/
+    ops/
+    svc/
+  remote/
+    runtime/             设备端 embedded remote runtime 主协调
+    identity/            设备身份与本地密钥材料
+    discovery/           hub 发现与选择
+    signaling/           signaling client / server 对接
+    rtc/                 WebRTC / DataChannel bridge
+    bridge/              termx attach/protocol 到远程 runtime 的桥接
+  client/
+    runtime/             shell-neutral attach/bootstrap/stream 客户端运行时
+    api/                 shell-neutral client 抽象（当前 tuiv2/bridge 的归宿）
+  compat/
+    tgent/
+      control/           对接 tgent-web 的 API client / contract
+      hub/               对接 tgent hub 的契约适配
+      model/             session->terminal 等兼容映射模型
+
+tuiv2/                   本地 TUI，只做本地/workbench 客户端
+
+web/
+  control/               迁入或改造后的 tgent-web
+
+mobile/
+  app/                   迁入或改造后的 tgent-app
+```
+
+## 5.3 目录边界规则
+
+### root `package termx`
+
+根包后续应该尽量只保留：
+
+- 对外公开类型
+- `NewServer`
+- 少量稳定公开 API façade
+
+不应继续扩张成：
+
+- 远程 runtime 大杂烩
+- `tgent` 兼容层
+- workbench session 实现细节
+
+### `internal/core`
+
+把现在散在根目录的实现逐步收进去，例如：
+
+- `terminal.go`
+- `snapshot.go`
+- `event.go`
+- `attachment_stream.go`
+- `stream_screen_state.go`
+- `live_output.go`
+
+目标是让根目录不再同时堆一批 server internals。
+
+### `internal/workbench`
+
+现在的 `workbenchdoc` / `workbenchops` / `workbenchsvc` 和 `session.*` 处理逻辑，应统一归到“本地工作台能力”边界。
+
+要求：
+
+- `workbenchdoc` / `workbenchsvc` 是 session 真相源
+- 远程 terminal 接入不要直接依赖 shell-local workbench 状态
+- `session.*` 继续存在也可以，但要被隔离，而不是继续长进 core server 主路径
+- `tuiv2/workbench` 长期目标应收缩成 shell-local `viewstate`，而不是再维护第二份结构真相
+
+### `internal/client/runtime`
+
+当前 `tuiv2/runtime` 和 `tuiv2/bridge` 里已经有一层可复用的 shell-neutral 客户端运行时。
+
+要求：
+
+- 这层不能继续挂在 `tuiv2` 名下
+- `tuiv2`、未来 app/web shell 都应该依赖它
+- 它可以依赖 `protocol/transport` 和共享 session/document types
+- 它不能反向依赖 `tuiv2/*`
+
+### `internal/remote`
+
+所有设备端远程能力都收在这里：
+
+- 不放进 `cmd/termx`
+- 不放进 `tuiv2`
+- 不散落在根包
+
+这样后续“termx 原生持有 agent 能力”才会结构清晰。
+
+### `internal/compat/tgent`
+
+所有 `tgent` 特有的契约、字段、接口形状都集中放这里。
+
+目的：
+
+- 避免 `tgent` 兼容代码污染 `termx` 原生协议
+- 避免未来改 control plane 时全仓到处改
+
+### `web/` 和 `mobile/`
+
+这两块如果决定正式迁入本仓，就要明确把它们当作：
+
+- **产品壳工程**
+
+而不是“零散实验目录”。
+
+也就是说：
+
+- `web/control` = 迁入或裁剪后的 `tgent-web`
+- `mobile/app` = 迁入或裁剪后的 `tgent-app`
+
+不能让它们长期保持“目录存在，但边界和归属不清”的状态。
+
+## 5.4 当前代码压力点
+
+下面这些点是这轮重构里应优先收口的：
+
+### 压力点 1：根目录文件过厚
+
+当前根目录还保留着大量 server internals，例如：
+
+- `termx.go`
+- `terminal.go`
+- `snapshot.go`
+- `attachment_stream.go`
+- `stream_screen_state.go`
+
+这会让后续 remote 接入自然地继续往根目录堆。
+
+### 压力点 2：session/workbench 耦合进 server 主路径
+
+当前 `termx.go` 直接承载 `session.*` 请求处理和 `workbenchsvc` 接入。
+
+这对本地共享工作台是可以理解的，但如果不先隔离，后续：
+
+- `termx core`
+- `local workbench`
+- `remote terminal path`
+
+三条线会继续在同一个 server 文件里缠死。
+
+### 压力点 3：tuiv2 过大
+
+`tuiv2` 目前已经是仓库最大体量区域。
+
+规则必须写清楚：
+
+- `tuiv2` 继续只做本地客户端/TUI/workbench
+- 不把 `tgent` 对接逻辑、设备端 remote runtime 逻辑塞进去
+- 其中已经具备通用价值的 `runtime/bridge` 还要逐步从 `tuiv2` 名下抽离
+
+### 压力点 4：session 真相重复
+
+当前 session 相关结构真相至少有两层：
+
+- daemon/workbench 侧的 canonical `workbenchdoc`
+- `tuiv2/workbench` 侧的本地可变结构
+
+如果这个问题不先定边界，后续多 shell 共享时会越来越难收。
+
+原则必须明确：
+
+- 共享结构真相只保留一份
+- shell 自己只保留 focus、viewport、modal、floating rect、host theme 这类 UI/viewstate
+- 不再让 shell 持有第二份 authoritative workbench 结构
+
+### 压力点 5：shell 逻辑落在 `cmd/`
+
+当前 `cmd/termx/web.go` 本质上已经是 shell/product 逻辑，而不是单纯 CLI glue。
+
+这个边界要尽早收正：
+
+- `cmd/` 只做二进制入口与 wiring
+- shell/product 代码放到自己的 shell 层
+
+### 压力点 6：product shells 尚未正式收编
+
+当前分支里 `web/`、`mobile/` 还没有形成清晰受控结构。
+
+如果后面确认要把 `tgent-web` / `tgent-app` 迁进本仓，那就要在目录层面正式承认它们，而不是继续放成半迁移状态。
+
+## 6. 组件职责
 
 ### 6.1 termx daemon
 
-`termx daemon` remains the only long-lived user process on the device.
+`termx daemon` 负责：
 
-It owns:
+- terminal 生命周期
+- PTY 管理
+- 本地 attach / snapshot / stream
+- 本地 Unix socket / CLI 能力
+- 嵌入设备端远程 runtime
+- 向 `tgent` hub 注册
+- 处理来自 hub 的 WebRTC/signaling/connect 请求
 
-- terminal pool
-- PTY lifecycle
-- local Unix socket API
-- embedded remote runtime
-- device identity material
-- remote registration state
+它不负责：
 
-It does not own:
+- dashboard / account / billing
+- hub 目录真相
+- 用户登录态数据库
 
-- account database
-- hub catalog truth
-- global user/device directory
+### 6.2 tgent-web
 
-### 6.2 Embedded Remote Runtime
+`tgent-web` 继续负责：
 
-The embedded runtime is the code currently conceptually called “agent”, but it becomes an internal `termx` subsystem, not a separate required process.
+- 登录 / 注册 / 密码 / session
+- dashboard
+- pricing / subscription / billing
+- agent/device 归属
+- hub 列表与在线态目录
+- connect ticket
+- release / admin / override 等已有管理能力
 
-It owns:
+但它需要做的改造是：
 
-- control-plane bootstrap/login usage
-- hub selection and registration
-- signaling sessions with hubs
-- WebRTC peer setup
-- bridging WebRTC DataChannel frames to the local `termx` server API/protocol
-- device liveness, metadata, and terminal-list reporting
+- 从“tmux/session 视角”调整为“termx/terminal 视角”
+- 至少新增或改造 terminal list / terminal connect 相关 API
 
-### 6.3 Control Plane
+### 6.3 tgent hub
 
-The control plane is a remote web/backend service.
+`tgent hub` 继续负责：
 
-It owns:
+- 设备端注册
+- 在线状态维护
+- offer / answer 转发
+- TURN / relay
+- heartbeat
+- discovery
 
-- user auth and account session tokens
-- device metadata and ownership
-- hub catalog
-- relay catalog
-- public-key registry and fingerprints
-- short-lived connect tickets
+优先原则：
 
-It does not own:
+- 能迁移就迁移
+- 能兼容就兼容
+- 不从零重写 TURN
 
-- terminal state
-- private-key escrow
-- direct terminal I/O
+### 6.4 tgent-app
 
-### 6.4 Hub
+`tgent-app` 继续负责：
 
-A hub is the remote signaling ingress for registered devices.
+- 用户登录
+- 设备列表
+- Dashboard / Settings 等现有产品壳
+- terminal 连接页
 
-It owns:
+主要改造点：
 
-- device registration and liveness for currently connected daemons
-- offer/answer forwarding
-- ICE server config for a connect attempt
-- policy enforcement attached to a short-lived ticket
+- 把原来围绕 `session` 的终端入口，改成围绕 `terminal`
+- session 列表页改为 terminal 列表页
+- terminal 连接数据流改接 `termx`
 
-At minimum, a hub may also run TURN. In larger deployments, TURN may be split into dedicated relay nodes while the hub remains the signaling endpoint.
+### 6.5 shell-neutral client runtime
 
-### 6.5 Relay / TURN Nodes
+这一层是多个 shell 共用的客户端运行时，不是产品壳。
 
-Relay nodes provide ICE fallback and performance options across different network environments.
+它负责：
 
-The architecture must allow:
+- 跟 `termx` protocol 对接
+- attach/bootstrap/stream 生命周期
+- 本地 terminal surface 状态
+- 供 TUI、web、app 复用的 shell-neutral client 能力
 
-- one hub with embedded TURN in dev/minimal deployment
-- multiple relay endpoints in production
-- control-plane managed relay catalogs and ranking metadata
+它不负责：
 
-### 6.6 Mobile App
+- TUI modal / input / render
+- dashboard / settings / billing
+- hub/control-plane 设备端注册
 
-The app owns only the minimum terminal UX:
+## 7. 数据模型如何收口
 
-- control-plane login
-- device list
-- terminal list
-- terminal view
-- reconnect and recovery
+这里是最关键的部分。
 
-The app does not own any server-side terminal organization model.
+### 7.1 termx 服务端内核不变
 
-## 7. Identity and Trust Model
+`termx` 仍然只有：
 
-This architecture separates device identity from client identity.
+- `terminal`
 
-### 7.1 Device Identity
+它没有：
 
-Each `termx daemon` has a long-lived device keypair.
+- tmux session
+- tmux window
+- tmux pane
 
-- Generated locally on first remote enable
-- Private key stored only on the device
-- Public key and fingerprint registered with the control plane
+### 7.2 tgent 产品层允许保留“设备/节点”概念
 
-This key identifies the device/runtime to hubs and control-plane verification endpoints.
+`tgent` 现有的：
 
-Registration rule:
+- agent
+- device
+- dashboard 上的节点概念
 
-- device registration must require proof of possession for the device private key
-- matching `{device_id, public_key}` in a database is not sufficient on its own
+这些都可以保留。
 
-### 7.2 Client Identity
+但它们在 `termx` 语境里应理解为：
 
-Each mobile client uses a user-held client keypair.
+- 一个设备上运行着一个 `termx daemon`
+- 这个 daemon 暴露一个扁平 terminal pool
 
-- Private key generated/imported on the client
-- Private key never uploaded to the control plane
-- Public key or fingerprint is registered for the account
+### 7.3 session 页面改 terminal 页面
 
-Import/export should be explicit and manual, closer to SSH authorized-key workflows than to cloud key escrow.
+原 `tgent` 产品里如果存在“session 列表页”或以 session 为主入口的 terminal 页面，这次的目标是：
 
-### 7.3 User Login Tokens
+- **把 session 列表改成 terminal 列表**
+- 每个 terminal 直接以 `terminal_id` 作为连接目标
 
-The app still logs into the control plane with normal account auth. These account tokens are for:
+也就是说，对外产品主路径从：
 
-- device discovery
-- ticket requests
-- account-scoped metadata APIs
+- `device -> session -> terminal-ish view`
 
-They are not a replacement for client key possession.
+改成：
 
-### 7.4 Connect Tickets
+- `device -> terminal -> terminal view`
 
-The control plane issues short-lived connect tickets bound to:
+### 7.4 本地布局不进入 termx 服务端
 
-- user ID
-- target device ID
-- target terminal ID or allowed terminal scope
-- selected hub ID
-- expiry
-- optional client key fingerprint
+如果未来 app/web 还想保留某些分组、收藏、最近使用、标签等 UI 组织概念，这些都只能是客户端投影，不能重新塞回 `termx` 服务端模型里。
 
-The ticket authorizes the connection attempt. It does not replace proof of client key possession when client keys are enabled.
+## 8. 对接方式
 
-Explicit non-goal:
+### 8.1 优先保留 tgent 的控制面和发现机制
 
-- a database boolean such as `paired=true` is not a trust anchor
-- possession-based proof is the trust anchor
+优先保留：
 
-## 8. Discovery and Node Selection
+- hub discover API
+- heartbeat 上报
+- online/offline agent report
+- connect ticket
+- user/session auth
+- subscription / quota / dashboard 相关逻辑
 
-The system distinguishes two catalogs:
+理由很简单：
 
-- hub catalog: signaling endpoints that devices can register to
-- relay catalog: STUN/TURN endpoints that a connection may use during ICE negotiation
+- 这些不是 tmux 专属逻辑
+- 重写它们只会拖慢 termx 接入
 
-### 8.1 Hub Catalog
+### 8.2 设备端从 tgent agent 改成 termx native runtime
 
-The control plane maintains the online hub catalog from hub heartbeats.
+原本由 `tgent agent` 做的事情，迁入 `termx`：
 
-Each catalog entry includes at least:
+- 登录/注册到 control plane
+- 选择 hub
+- 建立 hub 长连
+- 处理 signaling
+- 建立 WebRTC
+- 把 DataChannel 和本地 termx attach/protocol 桥接
+- 返回 terminal 列表
 
-- hub ID
-- public signaling URL
-- region
-- online status
-- load/capacity hints
-- version/capability hints
+### 8.3 WebRTC 数据面保持 termx 语义
 
-### 8.2 Relay Catalog
+虽然外层沿用 `tgent` 的 signaling / hub / TURN，
+但终端数据面承载的是 `termx` 语义：
 
-The control plane maintains relay inventory, which may be:
+- `attach`
+- `input`
+- `resize`
+- `snapshot`
+- `screen_update`
+- `SyncLost`
+- `Closed`
 
-- co-located with a hub
-- separate relay-only nodes
+不要因为要兼容 `tgent`，就在终端数据面再发明一套 tmux 风格 payload。
 
-Each relay entry includes at least:
+## 9. 协议与接口原则
 
-- relay ID
-- ICE URL set
-- region
-- protocol/transport support
-- capacity/health metadata
+### 9.1 可以兼容 tgent 的控制面接口
 
-### 8.3 Device-Side Registration Selection
+为了最快落地，下面这些可以优先兼容 `tgent` 现有接口形状：
 
-On startup, the embedded remote runtime:
+- 设备注册
+- hub discover
+- connect ticket
+- 登录鉴权
+- hub heartbeat
 
-1. authenticates to the control plane
-2. fetches candidate hubs
-3. probes or scores them locally
-4. chooses a primary hub
-5. registers with that hub
+### 9.2 需要新增或改造 terminal 视角接口
 
-Scoring may use:
+至少需要有一组围绕 `terminal` 的接口，例如：
 
-- reachability
-- observed RTT
-- static region hints
-- load/capacity hints
+- 列出某设备的 terminals
+- 对某 terminal 申请 connect ticket
+- 获取 terminal metadata
 
-The first implementation may start with simpler ranking, but the architecture must not hardcode a single hub.
+如果现有 `tgent` 页面/接口是按 `session` 写的，就在这一层做最小改造，而不是把 `session` 强行映射回 `termx` 服务端。
 
-Important note:
+### 9.3 终端 streaming 语义必须保留
 
-- keep the split between control-plane inventory publication and device-side final selection
-- do not copy `tgent`'s exact hardcoded weighted scoring formula unless `termx` gains trustworthy resource telemetry for it
+必须保留这些现有行为：
 
-### 8.4 Connect-Time Relay Selection
+- `attach` 是 I/O 入口
+- `observer` / `collaborator` 语义保留
+- bootstrap 顺序保留：`Resize -> full ScreenUpdate -> BootstrapDone`
+- 退出后的 `Closed` 保留
+- `SyncLost` 仍然是快照恢复边界
+- remote client 要保住 attach 后 stream 延迟开启时的首批 frame 缓冲/重放语义
 
-For a mobile connect attempt, the ticket response includes:
+## 10. 身份和密钥策略
 
-- the selected signaling hub for the target device
-- an ordered ICE server list
+这部分分“本轮最快落地”和“后续理想方向”两层看。
 
-The ICE list may include multiple TURN nodes so the connection can perform better in different network conditions.
+### 10.1 本轮最快落地原则
 
-## 9. End-to-End Flows
+既然本轮目标是直接沿用 `tgent` 路线，那么：
 
-### 9.1 Device Bootstrap
+- 优先复用现有账号登录体系
+- 优先复用现有 connect ticket / hub token 路线
+- 设备端密钥由 `termx` 原生持有
+- 不再额外需要独立 `tgent` agent 二进制来保管或使用它
 
-1. User logs `termx` into the control plane.
-2. `termx daemon` remote mode is enabled in config.
-3. On first enable, daemon creates a device keypair.
-4. Daemon fetches hub candidates from the control plane.
-5. Daemon selects a hub and registers using device key proof of possession.
-6. Hub reports online device state back to the control plane.
+### 10.2 仍需避免的坏方向
 
-### 9.2 Mobile Login and Device Discovery
+即便为了快，也不应该继续扩大这些坏方向：
 
-1. User logs into the mobile app.
-2. App calls control-plane `devices` API.
-3. Control plane returns devices owned by that account.
-4. App selects a device and requests `terminals`.
-5. Control plane proxies or routes terminal-list requests through the device’s active hub/runtime.
+- 让 `termx` 服务端被迫接受 tmux session tree
+- 让设备端长期依赖独立 `tgent` 常驻进程
+- 在新集成里继续扩散“数据库布尔标记就是信任锚”这种做法
 
-### 9.3 Terminal Connect
+### 10.3 后续可继续优化
 
-1. App requests a connect ticket for `{device_id, terminal_id}`.
-2. Control plane validates ownership and returns:
-   - hub signaling URL
-   - short-lived connect ticket
-   - ICE server list
-   - device key fingerprint
-3. App opens signaling with the selected hub.
-4. Hub forwards the offer to the device’s registered runtime.
-5. Device runtime bridges the WebRTC DataChannel to the local `termx` terminal attach path.
-6. App enters the live terminal using existing `termx` attach semantics.
+你前面提到的“更像 SSH 的用户自持证书”方向仍然是合理的，
+但从实现顺序看，它更适合作为：
 
-### 9.4 Reconnect
+- **termx 接入 tgent 成功后的下一阶段安全重构**
 
-On disconnect:
+而不是当前最快替换路径的前置条件。
 
-1. app reacquires a fresh connect ticket
-2. app reconnects through the selected hub
-3. runtime re-attaches to the terminal
-4. app restores state via binary bootstrap/snapshot and ongoing screen updates
+也就是说：
 
-Recovery must prefer existing `SyncLost` and snapshot semantics over inventing custom app-only recovery behavior.
+- **第一阶段优先完成 termx 替换**
+- **第二阶段再把密钥模型做得更干净**
 
-## 10. Protocol and Transport Rules
+## 11. 这次最重要的产品取舍
 
-### 10.1 Control Plane
+### 保留
 
-Control-plane APIs may remain JSON/HTTP.
+- dashboard
+- 账号密码登录
+- pricing / billing / subscription
+- settings
+- hub / relay / turn 基础设施
+- 现有 app/web 壳
 
-Examples:
+### 改造
 
-- login
-- hub catalog discovery
-- devices list
-- connect ticket issue
+- session 列表页
+- session -> terminal 的连接模型
+- 设备端 runtime
+- 终端桥接与 streaming
 
-Internal service-to-service auth is allowed to be different from user auth, but it should not stop at a single static shared secret in the final design. Replay-resistant hub/control-plane authentication is preferred.
+### 删除或弱化
 
-### 10.2 Data Plane
+- 独立 `tgent` 常驻二进制
+- tmux 作为设备端终端真相源
 
-The WebRTC DataChannel carries existing `termx` protocol frames.
+## 12. 推荐实施顺序
 
-Rules:
+### 第一阶段：代码架构和接口边界盘点
 
-- use a reliable ordered DataChannel for the primary terminal stream
-- preserve frame structure from `protocol/frame.go`
-- preserve message types such as `Output`, `Input`, `Resize`, `ScreenUpdate`, `SyncLost`, `Closed`, `BootstrapDone`
-- do not wrap terminal frames in a second JSON protocol
+- 盘点 `tgent-web` / `tgent hub` / `tgent-app` 当前哪些接口和页面强依赖 tmux/session 模型
+- 盘点当前 `termx` 仓库哪些目录边界已经会阻碍后续远程接入
+- 明确 core / workbench / client runtime / remote / compat / product shells 的落点
+- 明确哪些地方只需“换数据源”，哪些地方必须“改页面语义”
 
-### 10.3 Recovery Chain
+### 第二阶段：先做结构性收口
 
-The remote recovery chain must preserve binary payloads:
+- 先把最容易继续长胖的代码边界收口
+- 至少把 remote runtime 落点、compat 层落点、web/mobile 产品壳落点定下来
+- 避免一边做功能一边继续堆脏
 
-- screen updates stay in existing TSU binary payload form
-- bootstrap/snapshot handoff stays binary on the streaming path
-- no JSON fallback is introduced for production transport
+### 第三阶段：termx 原生持有 agent 能力
 
-### 10.4 Terminal Semantics To Preserve
+- 把原 `tgent agent` 的核心远程能力嵌进 `termx daemon`
+- 先让 `termx` 能原生注册 hub、响应 signaling、返回 terminal list
 
-The remote stack must preserve these existing behaviors:
+### 第四阶段：termx 对接 tgent 控制面
 
-- `list` remains a flat terminal list
-- `attach` remains the I/O entry point
-- `observer` vs `collaborator` attach modes stay meaningful
-- `resize` applies to the attached terminal
-- `SyncLost` triggers snapshot-based recovery
-- `Closed` carries terminal exit state
-- attach bootstrap ordering remains meaningful: initial recovery is `Resize -> full ScreenUpdate -> BootstrapDone`, with `Closed` following for exited terminals
-- clients that open stream consumers after attach still need the current no-loss buffering/replay semantics provided by the existing protocol client path
+- 复用 `tgent-web` 登录、discover、ticket、dashboard 路线
+- 打通设备列表和 terminal 列表
 
-### 10.5 Existing Session APIs
+### 第五阶段：改 app/web 的 session 页面
 
-`termx` already carries `session.*` methods for local/shared-workbench clients.
+- session 列表页改 terminal 列表页
+- connect 流程从 session target 改成 terminal target
 
-Rules:
+### 第六阶段：打通 live terminal
 
-- the new mobile remote product does not build on `session` as a user-facing remote entity model
-- the remote architecture must not introduce a second remote session tree
-- existing `session.*` protocol support may remain for current TUI/local clients and should not be broken accidentally during the remote refactor
+- WebRTC DataChannel
+- termx protocol bridge
+- xterm.js / app terminal view
+- reconnect / bootstrap / SyncLost recovery
 
-## 11. Config and CLI Surface
+## 13. 当前规格结论
 
-The implementation should extend the existing `termx.yaml` and CLI rather than inventing separate config files.
+这轮重构的正确方向应当是：
 
-### 11.1 Config Direction
+> **保留 tgent 的产品壳和远端基础设施，
+> 把设备端从 tmux+tgent agent 替换成 termx 原生 runtime，
+> 并把 session 主入口改造成 terminal 主入口。**
 
-`termx.yaml` should grow dedicated remote sections such as:
+同时，在开始实现前，必须先把当前仓库的代码边界重新梳理清楚，至少明确：
 
-- `control`
-  - control-plane base URL
-  - optional environment/profile name
-- `remote`
-  - enabled
-  - auto-register
-  - preferred regions or pinned hub IDs
-- `identity`
-  - device key path
-  - known client public keys or keyring path
+- `termx core`
+- `workbench / session`
+- `shell-neutral client runtime`
+- `embedded remote runtime`
+- `tgent compatibility`
+- `web/mobile product shells`
 
-The exact field names are implementation details, but the separation of concerns should remain:
-
-- account/login config
-- remote runtime behavior
-- identity material paths
-
-Important note:
-
-- this is a new daemon-facing config surface; the current `termx.yaml` is TUI-oriented and does not yet configure daemon startup
-
-### 11.2 CLI Direction
-
-Minimum CLI additions:
-
-- `termx login`
-- `termx logout`
-- `termx whoami`
-- `termx remote status`
-
-Likely useful follow-ups:
-
-- `termx remote enable`
-- `termx remote disable`
-- `termx remote doctor`
-- `termx keys export-client-pub`
-
-The first code slices should not overbuild CLI surface before the core runtime path exists.
-
-## 12. Migration From tgent
-
-### 12.1 Reuse
-
-The following ideas or implementations are worth migrating or adapting:
-
-- hub heartbeat and catalog reporting
-- multi-hub discovery shape
-- TURN/STUN server implementation
-- signaling flow around offer/answer relay
-- separation between long-lived device enrollment auth and short-lived runtime attach auth
-- terminal-capable mobile shell using Capacitor + React + WebView + xterm.js
-- browser/mobile-side WebRTC frame transport patterns
-
-### 12.2 Drop
-
-The following should not be migrated as-is:
-
-- remote session/tree semantics
-- file management and transfer UI
-- dashboard-heavy information architecture
-- pairing flows as a required happy path
-- any trust model that depends on a DB-side `paired` flag instead of proof of key possession
-- web-side encrypted private-key storage
-- product/admin/billing code unrelated to terminal access
-- REST proxy planes, file/event/session relay features, and other non-terminal remote surfaces
-
-### 12.3 Adapt
-
-The following need adaptation rather than direct copy:
-
-- device registration must become `termx daemon` embedded runtime registration
-- terminal listing must map to `termx list`, not a remote session structure
-- connect flow must target a terminal directly, not a broader workspace/session abstraction
-
-## 13. Deployment Shapes
-
-### 13.1 Minimal Dev Shape
-
-- 1 control-plane service
-- 1 hub service
-- hub may include TURN
-- 1 local `termx daemon`
-- 1 mobile app
-
-### 13.2 Production Shape
-
-- 1 control-plane service or small control-plane cluster
-- multiple hubs across regions
-- multiple relay nodes across regions and network environments
-- each device registered to one active hub at a time, with failover candidates
-
-## 14. First Refactor Direction
-
-The first implementation slices should move in this order:
-
-1. establish config + identity foundations
-2. extract/shape a shared embedded remote runtime inside `termx`
-3. add control-plane discovery and device registration contracts
-4. add hub runtime and signaling path
-5. add minimal mobile terminal-only client
-
-This order is intentional:
-
-- it aligns the process model first
-- it avoids reintroducing a standalone agent as the default architecture
-- it keeps each milestone independently testable
-
-## 15. Open Decisions
-
-These are allowed to remain open for the first implementation slices, but they must be explicit:
-
-- exact on-disk client-key import/export format
-- exact hub-selection scoring algorithm
-- whether relay-only nodes are a separate service type from hubs in the first production rollout
-- how much connect-ticket scope is bound to a single terminal versus a device-level session
-
-None of these open points justify drifting away from the constraints in sections 2 and 10.
+这比“新起一套 termx control/mobile 体系”更贴近你的真实目标，也更快落地。
