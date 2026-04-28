@@ -2,66 +2,20 @@ package orchestrator
 
 import (
 	"context"
-	"path/filepath"
 	"strconv"
 	"testing"
-	"time"
 
-	"github.com/lozzow/termx"
-	"github.com/lozzow/termx/protocol"
-	unixtransport "github.com/lozzow/termx/transport/unix"
-	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/input"
-	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
+func newWorkbenchOnlyOrchestrator() *Orchestrator {
+	return New(workbench.NewWorkbench())
+}
+
 func newTestOrchestrator(t *testing.T) (*Orchestrator, context.Context) {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-
-	socketPath := filepath.Join(t.TempDir(), "termx.sock")
-	srv := termx.NewServer(termx.WithSocketPath(socketPath))
-	done := make(chan error, 1)
-	go func() {
-		done <- srv.ListenAndServe(ctx)
-	}()
-	t.Cleanup(func() {
-		cancel()
-		_ = srv.Shutdown(context.Background())
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-			t.Fatal("server did not stop in time")
-		}
-	})
-
-	var transport *unixtransport.Transport
-	var err error
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		transport, err = unixtransport.Dial(socketPath)
-		if err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("dial: %v", err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	client := protocol.NewClient(transport)
-	t.Cleanup(func() { _ = client.Close() })
-
-	helloCtx, helloCancel := context.WithTimeout(ctx, 2*time.Second)
-	defer helloCancel()
-	if err := client.Hello(helloCtx, protocol.Hello{Version: protocol.Version}); err != nil {
-		t.Fatalf("hello: %v", err)
-	}
-
-	rt := runtime.New(bridge.NewProtocolClient(client))
-	wb := workbench.NewWorkbench()
-	return New(wb, rt), ctx
+	return New(workbench.NewWorkbench()), context.Background()
 }
 
 func TestHandleSemanticActionOpenPicker(t *testing.T) {
@@ -147,24 +101,32 @@ func TestHandleSemanticActionZoomPaneTogglesCurrentPane(t *testing.T) {
 }
 
 func TestPlanAttachTerminalResolvesTargetWithoutMutation(t *testing.T) {
-	orch, ctx := newTestOrchestrator(t)
+	orch, _ := newTestOrchestrator(t)
 	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
 
-	createdTerm, err := orch.runtimeClientCreate(ctx, []string{"sh"}, "demo")
-	if err != nil {
-		t.Fatalf("create terminal: %v", err)
-	}
-
-	plan, err := orch.PlanAttachTerminal("", "pane-1", createdTerm.TerminalID, "collaborator")
+	plan, err := orch.PlanAttachTerminal("", "pane-1", "term-demo", "collaborator")
 	if err != nil {
 		t.Fatalf("plan attach terminal: %v", err)
 	}
-	if plan.TabID != "tab-1" || plan.PaneID != "pane-1" || plan.TerminalID != createdTerm.TerminalID || plan.Mode != "collaborator" {
+	if plan.TabID != "tab-1" || plan.PaneID != "pane-1" || plan.TerminalID != "term-demo" || plan.Mode != "collaborator" {
 		t.Fatalf("unexpected attach plan: %#v", plan)
 	}
 	pane := orch.workbench.ActivePane()
 	if pane == nil || pane.TerminalID != "" {
 		t.Fatalf("expected attach planning to stay read-only, got %#v", pane)
+	}
+}
+
+func TestPlanAttachTerminalDoesNotRequireRuntime(t *testing.T) {
+	orch := newWorkbenchOnlyOrchestrator()
+	seedTabWithSinglePane(orch.workbench, "main", "tab-1", "pane-1")
+
+	plan, err := orch.PlanAttachTerminal("", "pane-1", "term-1", "observer")
+	if err != nil {
+		t.Fatalf("plan attach terminal: %v", err)
+	}
+	if plan.TabID != "tab-1" || plan.PaneID != "pane-1" || plan.TerminalID != "term-1" || plan.Mode != "observer" {
+		t.Fatalf("unexpected attach plan: %#v", plan)
 	}
 }
 
@@ -231,62 +193,6 @@ func TestPrepareFloatingAttachTarget(t *testing.T) {
 	if tab.ActivePaneID != paneID {
 		t.Fatalf("expected floating pane focused, got %q", tab.ActivePaneID)
 	}
-}
-
-func (o *Orchestrator) runtimeClientCreate(ctx context.Context, command []string, name string) (*protocol.CreateResult, error) {
-	return o.runtimeClient().Create(ctx, protocol.CreateParams{
-		Command: command,
-		Name:    name,
-		Size:    protocol.Size{Cols: 80, Rows: 24},
-	})
-}
-
-func (o *Orchestrator) runtimeClient() bridge.Client {
-	return o.runtimeClientUnsafe()
-}
-
-func (o *Orchestrator) runtimeClientUnsafe() bridge.Client {
-	return o.runtimeClientField()
-}
-
-func (o *Orchestrator) runtimeClientField() bridge.Client {
-	return o.runtimeClientFromRuntime()
-}
-
-func (o *Orchestrator) runtimeClientFromRuntime() bridge.Client {
-	return o.runtimeClientAccessor()
-}
-
-func (o *Orchestrator) runtimeClientAccessor() bridge.Client {
-	return o.runtimeBridgeClient()
-}
-
-func (o *Orchestrator) runtimeBridgeClient() bridge.Client {
-	return o.runtimeClientDirect()
-}
-
-func (o *Orchestrator) runtimeClientDirect() bridge.Client {
-	return o.runtimeTestClient()
-}
-
-func (o *Orchestrator) runtimeTestClient() bridge.Client {
-	return o.runtimeClientValue()
-}
-
-func (o *Orchestrator) runtimeClientValue() bridge.Client {
-	return o.runtimeInternalClient()
-}
-
-func (o *Orchestrator) runtimeInternalClient() bridge.Client {
-	return o.runtimeExposeClient()
-}
-
-func (o *Orchestrator) runtimeExposeClient() bridge.Client {
-	return o.runtimeVisibleClient()
-}
-
-func (o *Orchestrator) runtimeVisibleClient() bridge.Client {
-	return o.runtime.Client()
 }
 
 // TestHandleSemanticActionOpenPickerEffects 验证 ActionOpenPicker 产出

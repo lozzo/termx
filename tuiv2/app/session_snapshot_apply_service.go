@@ -78,7 +78,7 @@ func (s *sessionSnapshotApplyService) apply(snapshot *protocol.SessionSnapshot) 
 
 	m.workbench = nextWorkbench
 	m.applyLocalViewProjection(projection)
-	m.orchestrator = orchestrator.New(m.workbench, m.runtime)
+	m.orchestrator = orchestrator.New(m.workbench)
 	m.render.Invalidate()
 	return applyErr
 }

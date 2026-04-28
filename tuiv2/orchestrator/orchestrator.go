@@ -2,13 +2,11 @@ package orchestrator
 
 import (
 	"github.com/lozzow/termx/tuiv2/input"
-	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
 type Orchestrator struct {
 	workbench *workbench.Workbench
-	runtime   *runtime.Runtime
 }
 
 const (
@@ -18,8 +16,8 @@ const (
 	floatingBoundsH    = 50
 )
 
-func New(wb *workbench.Workbench, rt *runtime.Runtime, _ ...any) *Orchestrator {
-	return &Orchestrator{workbench: wb, runtime: rt}
+func New(wb *workbench.Workbench) *Orchestrator {
+	return &Orchestrator{workbench: wb}
 }
 
 func (o *Orchestrator) HandleSemanticAction(action input.SemanticAction) []Effect {

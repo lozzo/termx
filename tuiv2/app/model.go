@@ -103,14 +103,14 @@ type Model struct {
 	copyModeMouseActivitySeq     uint64
 
 	// 鼠标拖动状态
-	mouseDragPaneID        string
-	mouseDragOffsetX       int
-	mouseDragOffsetY       int
-	mouseDragMode          mouseDragMode
-	mouseDragSplit         *workbench.LayoutNode
-	mouseDragBounds        workbench.Rect
-	mouseDragDirty         bool
-	floatingDragPreview    floatingDragPreviewState
+	mouseDragPaneID     string
+	mouseDragOffsetX    int
+	mouseDragOffsetY    int
+	mouseDragMode       mouseDragMode
+	mouseDragSplit      *workbench.LayoutNode
+	mouseDragBounds     workbench.Rect
+	mouseDragDirty      bool
+	floatingDragPreview floatingDragPreviewState
 
 	ownerConfirmPaneID string
 
@@ -127,10 +127,10 @@ type Model struct {
 type mouseDragMode int
 
 type floatingDragPreviewState struct {
-	Active    bool
-	PaneID    string
-	Rect      workbench.Rect
-	Snapshot  *protocol.Snapshot
+	Active   bool
+	PaneID   string
+	Rect     workbench.Rect
+	Snapshot *protocol.Snapshot
 }
 
 var invalidateBatchDelay = 4 * time.Millisecond
@@ -173,7 +173,7 @@ func New(cfg shared.Config, wb *workbench.Workbench, rt *runtime.Runtime) *Model
 		pendingPaneAttaches: make(map[string]string),
 		pendingPaneResizes:  make(map[string]pendingPaneResize),
 	}
-	model.orchestrator = orchestrator.New(model.workbench, model.runtime)
+	model.orchestrator = orchestrator.New(model.workbench)
 	model.render = render.NewCoordinatorWithVM(func() render.RenderVM { return model.renderVM() })
 	// Default invalidate: no-op until SetSendFunc is called by run.go.
 	if model.runtime != nil {
