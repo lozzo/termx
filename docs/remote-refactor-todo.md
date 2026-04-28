@@ -52,6 +52,7 @@
 - `[x]` 为本地 workspace/tab/focus/zoom/viewport projection 建立 `tuiv2/viewstate` 落点，并让 `tuiv2/app` 退化为兼容 wrapper。
 - `[x]` 把 pane viewport 读写策略迁入 `tuiv2/viewstate`，让 `tuiv2/app` 只保留 Model/runtime 适配。
 - `[x]` 为 pane-terminal 绑定生命周期建立 `tuiv2/sessionbind` 落点，并让 `tuiv2/app` 的 pane binding service 退化为兼容 wrapper。
+- `[x]` 为 session snapshot -> runtime reconcile / attach rollback 建立 `tuiv2/sessionruntime` 落点，并让 `tuiv2/app/session_runtime_service.go` 退化为兼容 wrapper。
 - `[ ]` 收口根目录过厚的 server internals。
 - `[ ]` 把 workbench/session 能力从未来 remote 主路径中隔离出来。
 - `[ ]` 为 shell-neutral client runtime 建立明确目录落点，并逐步从 `tuiv2` 名下移出。

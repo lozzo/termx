@@ -67,12 +67,12 @@ func (s *sessionSnapshotApplyService) apply(snapshot *protocol.SessionSnapshot) 
 	var applyErr error
 	if m.runtime != nil {
 		result := m.reconcileSessionRuntime(context.Background(), oldBindings, nextBindings)
-		clearFailedSessionPaneBindings(nextWorkbench, result.failedBindings)
+		clearFailedSessionPaneBindings(nextWorkbench, result.FailedBindings)
 		if service := m.sessionRuntimeService(); service != nil {
 			service.applyCurrentLeases()
 		}
-		if len(result.failedBindings) > 0 {
-			applyErr = fmt.Errorf("session snapshot applied with %d unattached pane(s)", len(result.failedBindings))
+		if len(result.FailedBindings) > 0 {
+			applyErr = fmt.Errorf("session snapshot applied with %d unattached pane(s)", len(result.FailedBindings))
 		}
 	}
 

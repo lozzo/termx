@@ -6,22 +6,27 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
-	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/sessionruntime"
 )
 
 type sessionRuntimeService struct {
 	model *Model
 }
 
-type sessionRuntimeApplyResult struct {
-	failedBindings map[string]error
-}
+type sessionRuntimeApplyResult = sessionruntime.ApplyResult
 
 func (m *Model) sessionRuntimeService() *sessionRuntimeService {
 	if m == nil {
 		return nil
 	}
 	return &sessionRuntimeService{model: m}
+}
+
+func (s *sessionRuntimeService) manager() *sessionruntime.Manager {
+	if s == nil || s.model == nil || s.model.runtime == nil {
+		return nil
+	}
+	return sessionruntime.NewManager(s.model.runtime, defaultTerminalSnapshotScrollbackLimit)
 }
 
 func (s *sessionRuntimeService) releaseLeaseCmd(terminalID string) tea.Cmd {
@@ -57,100 +62,11 @@ func (s *sessionRuntimeService) releaseLease(ctx context.Context, terminalID str
 }
 
 func (s *sessionRuntimeService) reconcileRuntime(ctx context.Context, oldBindings, nextBindings map[string]string) sessionRuntimeApplyResult {
-	if s == nil || s.model == nil || s.model.runtime == nil {
+	manager := s.manager()
+	if manager == nil {
 		return sessionRuntimeApplyResult{}
 	}
-	result := sessionRuntimeApplyResult{failedBindings: make(map[string]error)}
-	for paneID, terminalID := range oldBindings {
-		if nextBindings[paneID] == terminalID {
-			continue
-		}
-		s.model.runtime.UnbindPane(paneID, terminalID)
-	}
-	for paneID, terminalID := range nextBindings {
-		if paneID == "" || terminalID == "" {
-			continue
-		}
-		if oldBindings[paneID] == terminalID {
-			if binding := s.model.runtime.Binding(paneID); binding != nil && binding.Connected {
-				continue
-			}
-		}
-		if err := s.attachAndBootstrap(ctx, paneID, oldBindings[paneID], terminalID); err != nil {
-			result.failedBindings[paneID] = err
-		}
-	}
-	return result
-}
-
-type runtimeAttachRollback struct {
-	paneID            string
-	terminalID        string
-	previousBinding   *runtime.PaneBinding
-	previousControl   runtime.TerminalControlStatus
-	previousLiveState runtime.TerminalLiveStateSnapshot
-	targetControl     runtime.TerminalControlStatus
-	targetAttachment  runtime.TerminalAttachmentSnapshot
-	targetLiveState   runtime.TerminalLiveStateSnapshot
-}
-
-func (s *sessionRuntimeService) attachAndBootstrap(ctx context.Context, paneID, previousTerminalID, terminalID string) error {
-	if s == nil || s.model == nil || s.model.runtime == nil || paneID == "" || terminalID == "" {
-		return nil
-	}
-	rollback := s.captureAttachRollback(paneID, previousTerminalID, terminalID)
-	if _, err := s.model.runtime.AttachTerminal(ctx, paneID, terminalID, "collaborator"); err != nil {
-		return err
-	}
-	if _, err := s.model.runtime.LoadSnapshot(ctx, terminalID, 0, defaultTerminalSnapshotScrollbackLimit); err != nil {
-		s.rollbackAttachBootstrap(rollback)
-		return err
-	}
-	if err := s.model.runtime.StartStream(ctx, terminalID); err != nil {
-		s.rollbackAttachBootstrap(rollback)
-		return err
-	}
-	return nil
-}
-
-func (s *sessionRuntimeService) captureAttachRollback(paneID, previousTerminalID, terminalID string) runtimeAttachRollback {
-	rollback := runtimeAttachRollback{
-		paneID:     paneID,
-		terminalID: terminalID,
-	}
-	if s == nil || s.model == nil || s.model.runtime == nil {
-		return rollback
-	}
-	rollback.previousBinding = runtime.ClonePaneBinding(s.model.runtime.Binding(paneID))
-	if previousTerminalID != "" {
-		rollback.previousControl = s.model.runtime.TerminalControlStatus(previousTerminalID)
-		rollback.previousLiveState = s.model.runtime.TerminalLiveStateSnapshot(previousTerminalID)
-	}
-	rollback.targetControl = s.model.runtime.TerminalControlStatus(terminalID)
-	rollback.targetAttachment = s.model.runtime.TerminalAttachmentSnapshot(terminalID)
-	rollback.targetLiveState = s.model.runtime.TerminalLiveStateSnapshot(terminalID)
-	return rollback
-}
-
-func (s *sessionRuntimeService) rollbackAttachBootstrap(rollback runtimeAttachRollback) {
-	if s == nil || s.model == nil || s.model.runtime == nil {
-		return
-	}
-	s.model.runtime.UnbindPane(rollback.paneID, rollback.terminalID)
-	if rollback.previousLiveState.TerminalID != "" {
-		s.model.runtime.RestoreTerminalLiveState(rollback.previousLiveState.TerminalID, rollback.previousLiveState)
-	}
-	if rollback.targetLiveState.TerminalID != "" && rollback.targetLiveState.TerminalID != rollback.previousLiveState.TerminalID {
-		s.model.runtime.RestoreTerminalLiveState(rollback.targetLiveState.TerminalID, rollback.targetLiveState)
-	}
-	s.model.runtime.RestorePaneBinding(rollback.paneID, rollback.previousBinding)
-	if rollback.previousControl.TerminalID != "" {
-		s.model.runtime.RestoreTerminalControlStatus(rollback.previousControl)
-	}
-	if rollback.targetControl.TerminalID != "" && rollback.targetControl.TerminalID != rollback.previousControl.TerminalID {
-		s.model.runtime.RestoreTerminalControlStatus(rollback.targetControl)
-	}
-	s.model.runtime.RestoreTerminalAttachmentSnapshot(rollback.terminalID, rollback.targetAttachment)
+	return manager.Reconcile(ctx, oldBindings, nextBindings)
 }
 
 func (s *sessionRuntimeService) storeLease(lease protocol.LeaseInfo) {
