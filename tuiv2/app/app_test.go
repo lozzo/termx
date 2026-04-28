@@ -4127,6 +4127,7 @@ type recordingBridgeClient struct {
 	viewUpdateCalls    []protocol.UpdateSessionViewParams
 	acquireLeaseCalls  []protocol.AcquireSessionLeaseParams
 	releaseLeaseCalls  []protocol.ReleaseSessionLeaseParams
+	releaseLeaseErr    error
 }
 
 type resizeCall struct {
@@ -4326,7 +4327,7 @@ func (c *recordingBridgeClient) AcquireSessionLease(_ context.Context, params pr
 
 func (c *recordingBridgeClient) ReleaseSessionLease(_ context.Context, params protocol.ReleaseSessionLeaseParams) error {
 	c.releaseLeaseCalls = append(c.releaseLeaseCalls, params)
-	return nil
+	return c.releaseLeaseErr
 }
 
 func applyTestMsg(t *testing.T, model *Model, msg tea.Msg, label string) {

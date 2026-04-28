@@ -4,8 +4,7 @@ import (
 	"context"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/protocol"
-	"github.com/lozzow/termx/tuiv2/runtime"
+	"github.com/lozzow/termx/tuiv2/terminalcontrol"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )
 
@@ -18,6 +17,13 @@ func (m *Model) terminalInteractionService() *terminalInteractionService {
 		return nil
 	}
 	return &terminalInteractionService{model: m}
+}
+
+func (s *terminalInteractionService) manager() *terminalcontrol.Manager {
+	if s == nil || s.model == nil {
+		return nil
+	}
+	return s.model.terminalControlManager()
 }
 
 func (s *terminalInteractionService) syncCmd(req terminalInteractionRequest) tea.Cmd {
@@ -34,23 +40,11 @@ func (s *terminalInteractionService) syncCmd(req terminalInteractionRequest) tea
 }
 
 func (s *terminalInteractionService) sync(ctx context.Context, req terminalInteractionRequest, target terminalInteractionTarget) error {
-	if s == nil || s.model == nil || s.model.runtime == nil {
+	manager := s.manager()
+	if manager == nil {
 		return nil
 	}
-	if s.shouldAcquireSessionLease(req, target) {
-		if err := s.acquireSessionLease(ctx, target.paneID, target.terminalID); err != nil {
-			return err
-		}
-	}
-	if s.shouldAcquireLocalOwnership(req, target) {
-		if err := s.model.runtime.AcquireTerminalOwnership(target.paneID, target.terminalID); err != nil {
-			return err
-		}
-	}
-	if !req.ResizeIfNeeded {
-		return nil
-	}
-	return s.resizeIfNeeded(ctx, target)
+	return manager.Sync(ctx, s.controlRequest(req, target))
 }
 
 func (s *terminalInteractionService) resolveTarget(req terminalInteractionRequest) (terminalInteractionTarget, bool) {
@@ -79,76 +73,25 @@ func (s *terminalInteractionService) resolveTarget(req terminalInteractionReques
 	return target, true
 }
 
-func (s *terminalInteractionService) shouldAcquireSessionLease(req terminalInteractionRequest, target terminalInteractionTarget) bool {
-	if s == nil || s.model == nil || s.model.sessionID == "" || s.model.sessionViewID == "" || s.model.runtime == nil || s.model.runtime.Client() == nil {
-		return false
-	}
-	switch {
-	case req.ExplicitTakeover:
-		return true
-	case req.ImplicitSessionLease:
-		return s.model.implicitSessionLeaseNeedsAcquire(target.terminalID, target.paneID)
-	default:
-		return false
-	}
-}
-
-func (s *terminalInteractionService) shouldAcquireLocalOwnership(req terminalInteractionRequest, target terminalInteractionTarget) bool {
-	if s == nil || s.model == nil || s.model.sessionID != "" || s.model.runtime == nil {
-		return false
-	}
-	return s.model.runtime.ShouldAcquireTerminalOwnership(target.terminalID, runtime.TerminalOwnershipRequest{
+func (s *terminalInteractionService) controlRequest(req terminalInteractionRequest, target terminalInteractionTarget) terminalcontrol.SyncRequest {
+	controlReq := terminalcontrol.SyncRequest{
 		PaneID:                   target.paneID,
+		TerminalID:               target.terminalID,
+		ResizeIfNeeded:           req.ResizeIfNeeded,
 		ExplicitTakeover:         req.ExplicitTakeover,
 		ImplicitInteractiveOwner: req.ImplicitInteractiveOwner,
-	})
-}
-
-func (s *terminalInteractionService) acquireSessionLease(ctx context.Context, paneID, terminalID string) error {
-	if s == nil || s.model == nil || s.model.runtime == nil || s.model.runtime.Client() == nil || s.model.sessionID == "" || s.model.sessionViewID == "" {
-		return nil
+		ImplicitSessionLease:     req.ImplicitSessionLease,
 	}
-	lease, err := s.model.runtime.Client().AcquireSessionLease(ctx, acquireSessionLeaseParams(s.model.sessionID, s.model.sessionViewID, paneID, terminalID))
-	if err != nil {
-		if isSessionLeaseUnsupported(err) {
-			return sharedInputLeaseUnsupportedError()
-		}
-		return err
-	}
-	sessionRuntime := s.model.sessionRuntimeService()
-	if lease != nil && sessionRuntime != nil {
-		sessionRuntime.storeLease(*lease)
-	}
-	if sessionRuntime != nil {
-		sessionRuntime.applyCurrentLeases()
-	}
-	return nil
-}
-
-func (s *terminalInteractionService) resizeIfNeeded(ctx context.Context, target terminalInteractionTarget) error {
-	if s == nil || s.model == nil || s.model.runtime == nil || s.model.runtime.Client() == nil {
-		return nil
+	if s == nil || s.model == nil || !req.ResizeIfNeeded {
+		return controlReq
 	}
 	viewportRect, ok := s.model.terminalViewportRect(target.paneID, target.rect)
 	if !ok {
-		return nil
+		return controlReq
 	}
-	targetCols := uint16(maxInt(2, viewportRect.W))
-	targetRows := uint16(maxInt(2, viewportRect.H))
-	decision := s.model.runtime.ResizeDecision(target.paneID, target.terminalID)
-	if !decision.Force && s.model.terminalAlreadySized(target.terminalID, targetCols, targetRows) {
-		return nil
-	}
-	return s.model.runtime.ResizeTerminal(ctx, target.paneID, target.terminalID, targetCols, targetRows)
-}
-
-func acquireSessionLeaseParams(sessionID, viewID, paneID, terminalID string) protocol.AcquireSessionLeaseParams {
-	return protocol.AcquireSessionLeaseParams{
-		SessionID:  sessionID,
-		ViewID:     viewID,
-		PaneID:     paneID,
-		TerminalID: terminalID,
-	}
+	controlReq.TargetCols = uint16(maxInt(2, viewportRect.W))
+	controlReq.TargetRows = uint16(maxInt(2, viewportRect.H))
+	return controlReq
 }
 
 type terminalInteractionRequest struct {

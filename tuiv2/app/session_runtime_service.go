@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/protocol"
@@ -42,23 +41,14 @@ func (s *sessionRuntimeService) releaseLeaseCmd(terminalID string) tea.Cmd {
 }
 
 func (s *sessionRuntimeService) releaseLease(ctx context.Context, terminalID string) error {
-	if s == nil || s.model == nil || s.model.sessionID == "" || s.model.sessionViewID == "" || s.model.runtime == nil || s.model.runtime.Client() == nil || terminalID == "" {
+	if s == nil || s.model == nil || terminalID == "" {
 		return nil
 	}
-	params := protocol.ReleaseSessionLeaseParams{
-		SessionID:  s.model.sessionID,
-		ViewID:     s.model.sessionViewID,
-		TerminalID: terminalID,
+	manager := s.model.terminalControlManager()
+	if manager == nil {
+		return nil
 	}
-	if err := s.model.runtime.Client().ReleaseSessionLease(ctx, params); err != nil {
-		if isSessionLeaseUnsupported(err) {
-			return fmt.Errorf("connected termx daemon is too old for shared resize control; restart the daemon and reconnect")
-		}
-		return err
-	}
-	s.removeLease(terminalID)
-	s.applyCurrentLeases()
-	return nil
+	return manager.ReleaseLease(ctx, terminalID)
 }
 
 func (s *sessionRuntimeService) reconcileRuntime(ctx context.Context, oldBindings, nextBindings map[string]string) sessionRuntimeApplyResult {
