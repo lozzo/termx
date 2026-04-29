@@ -4,10 +4,10 @@
 
 对照文档：
 
-- `docs/tui-product-definition-design.md`
-- `docs/tuiv2-keybinding-spec.md`
-- `docs/tuiv2-chrome-layout-spec.md`
-- `docs/tuiv2-current-status.md`
+- `tui-product-definition-design.md`
+- `tuiv2-keybinding-spec.md`
+- `tuiv2-chrome-layout-spec.md`
+- `tuiv2-current-status.md`
 
 ## 1. 设计出入
 

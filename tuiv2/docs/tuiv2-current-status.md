@@ -54,9 +54,9 @@
 当前基线验证通过：
 
 ```bash
-cd /path/to/termx-monorepo/go/termx
-PATH="$PWD/.toolchain/go/bin:$PATH" go test ./tuiv2/...
-PATH="$PWD/.toolchain/go/bin:$PATH" go test ./tuiv2/app -count=1
+cd /path/to/termx-monorepo/tuiv2
+PATH="$PWD/.toolchain/go/bin:$PATH" go test ./...
+PATH="$PWD/.toolchain/go/bin:$PATH" go test ./app -count=1
 ```
 
 ---
@@ -88,7 +88,7 @@ PATH="$PWD/.toolchain/go/bin:$PATH" go test ./tuiv2/app -count=1
 
 具体规范见：
 
-- `docs/tuiv2-keybinding-spec.md`
+- `tuiv2-keybinding-spec.md`
 
 这份文档现在是 **唯一 canonical keybinding 文档**。
 
@@ -166,11 +166,11 @@ PATH="$PWD/.toolchain/go/bin:$PATH" go test ./tuiv2/app -count=1
 
 后续所有实现都应遵守：
 
-1. `docs/tuiv2-keybinding-spec.md` 是快捷键唯一规范
+1. `tuiv2-keybinding-spec.md` 是快捷键唯一规范
 2. 不允许继续无文档地向 normal 模式添加新快捷键
 3. `tuiv2/` 不得重新依赖旧 `tui/`
 4. `workbench.PaneState.TerminalID` 仍是唯一可写绑定真相
-5. 每完成一轮输入系统调整，都必须至少跑 `go test ./tuiv2/...`
+5. 每完成一轮输入系统调整，都必须至少跑 `go test ./...`
 
 ---
 
@@ -186,11 +186,11 @@ PATH="$PWD/.toolchain/go/bin:$PATH" go test ./tuiv2/app -count=1
 
 保留并继续使用：
 
-- `docs/tuiv2-current-status.md`（本文件）
-- `docs/tuiv2-keybinding-spec.md`
-- `docs/tui-v2-migration-architecture-plan.md`
-- `docs/tui-product-definition-design.md`
-- `docs/tuiv2-render-migration-guide.md`
+- `tuiv2-current-status.md`（本文件）
+- `tuiv2-keybinding-spec.md`
+- `tui-v2-migration-architecture-plan.md`
+- `tui-product-definition-design.md`
+- `tuiv2-render-migration-guide.md`
 
 其中：
 

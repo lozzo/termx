@@ -46,7 +46,7 @@ Implementation guardrails:
 **Files:**
 - Modify: `tuiv2/input/actions.go`
 - Modify: `tuiv2/app/feature_test.go`
-- Modify: `docs/tuiv2-current-status.md`
+- Modify: `tuiv2-current-status.md`
 - Test: `tuiv2/app`
 
 - [ ] **Step 1: Inventory compile blockers and classify them as either “planned-but-not-implemented” or “obsolete test references”**
@@ -87,7 +87,7 @@ Expected: PASS
 - [ ] **Step 7: Commit**
 
 ```bash
-git add tuiv2/input/actions.go tuiv2/app/feature_test.go docs/tuiv2-current-status.md
+git add tuiv2/input/actions.go tuiv2/app/feature_test.go tuiv2-current-status.md
 git commit -m "chore: 修正 tuiv2 基线与状态文档"
 ```
 
@@ -476,8 +476,8 @@ git commit -m "feat: 完成 pane 生命周期与连接状态展示"
 - Modify: `tuiv2/render/coordinator.go`
 - Modify: `tuiv2/render/frame.go`
 - Modify: `tuiv2/modal/terminal_manager.go`
-- Modify: `docs/tui-product-definition-design.md`
-- Modify: `docs/tuiv2-current-status.md`
+- Modify: `tui-product-definition-design.md`
+- Modify: `tuiv2-current-status.md`
 - Test: `tuiv2/app/feature_test.go`
 - Test: `tuiv2/render/coordinator_test.go`
 
@@ -513,7 +513,7 @@ Expected: PASS
 - [ ] **Step 6: Commit**
 
 ```bash
-git add tuiv2/input/mode.go tuiv2/input/keymap.go tuiv2/app/model.go tuiv2/app/update.go tuiv2/render/adapter.go tuiv2/render/coordinator.go tuiv2/render/frame.go tuiv2/modal/terminal_manager.go docs/tui-product-definition-design.md docs/tuiv2-current-status.md tuiv2/app/feature_test.go tuiv2/render/coordinator_test.go
+git add tuiv2/input/mode.go tuiv2/input/keymap.go tuiv2/app/model.go tuiv2/app/update.go tuiv2/render/adapter.go tuiv2/render/coordinator.go tuiv2/render/frame.go tuiv2/modal/terminal_manager.go tui-product-definition-design.md tuiv2-current-status.md tuiv2/app/feature_test.go tuiv2/render/coordinator_test.go
 git commit -m "refactor: 将 terminal pool 升级为独立页面"
 ```
 
@@ -528,7 +528,7 @@ git commit -m "refactor: 将 terminal pool 升级为独立页面"
 - Modify: `tuiv2/orchestrator/effects.go`
 - Modify: `tuiv2/orchestrator/orchestrator.go`
 - Modify: `tuiv2/app/update.go`
-- Modify: `docs/tui-v2-migration-architecture-plan.md`
+- Modify: `tui-v2-migration-architecture-plan.md`
 - Test: `tuiv2/runtime/runtime_test.go`
 - Test: `tuiv2/orchestrator/orchestrator_test.go`
 
@@ -565,7 +565,7 @@ Expected: PASS
 - [ ] **Step 6: Commit**
 
 ```bash
-git add tuiv2/runtime/pane_binding.go tuiv2/runtime/create_attach.go tuiv2/runtime/resize.go tuiv2/orchestrator/effects.go tuiv2/orchestrator/orchestrator.go tuiv2/app/update.go docs/tui-v2-migration-architecture-plan.md tuiv2/runtime/runtime_test.go tuiv2/orchestrator/orchestrator_test.go
+git add tuiv2/runtime/pane_binding.go tuiv2/runtime/create_attach.go tuiv2/runtime/resize.go tuiv2/orchestrator/effects.go tuiv2/orchestrator/orchestrator.go tuiv2/app/update.go tui-v2-migration-architecture-plan.md tuiv2/runtime/runtime_test.go tuiv2/orchestrator/orchestrator_test.go
 git commit -m "refactor: 收紧 tuiv2 绑定与编排边界"
 ```
 

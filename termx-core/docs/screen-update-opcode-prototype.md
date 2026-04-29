@@ -124,8 +124,9 @@ It is less compelling for:
 Command:
 
 ```bash
-go test ./tuiv2/runtime -run '^$' -bench BenchmarkScreenUpdateOpcodeScenarios -benchmem -count=1
-go test ./tuiv2/runtime -run TestScreenUpdateOpcodeScenarioWireSizes -v
+cd /path/to/termx-monorepo/tuiv2
+go test ./runtime -run '^$' -bench BenchmarkScreenUpdateOpcodeScenarios -benchmem -count=1
+go test ./runtime -run TestScreenUpdateOpcodeScenarioWireSizes -v
 ```
 
 Environment:

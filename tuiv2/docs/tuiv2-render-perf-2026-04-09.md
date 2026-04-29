@@ -230,7 +230,7 @@ attach 后，client runtime 维护一份本地权威可见状态:
 文件:
 
 - `tuiv2/app/perf_nvim_scroll_test.go`
-- `scripts/nvim-scroll-perf.sh`
+- `tuiv2/scripts/nvim-scroll-perf.sh`
 - `perftrace/perftrace.go`
 
 用途:
@@ -242,16 +242,17 @@ attach 后，client runtime 维护一份本地权威可见状态:
 常用命令:
 
 ```bash
+cd /path/to/termx-monorepo/tuiv2
 TERMX_RUN_NVIM_TRACE=1 TERMX_PERF_OUT=/tmp/termx-perf.json \
-go test ./tuiv2/app -run TestPerfNvimScrollReport -count=1 -v
+go test ./app -run TestPerfNvimScrollReport -count=1 -v
 ```
 
 ### 2. Web/xterm.js compare client
 
 文件:
 
-- `cmd/termx/web.go`
-- `cmd/termx/web/index.html`
+- `termx-cli/cmd/termx/web.go`
+- `termx-cli/internal/webshell/web/index.html`
 
 用途:
 

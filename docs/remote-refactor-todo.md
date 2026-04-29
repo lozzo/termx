@@ -22,7 +22,7 @@
 
 ## M1. 先做兼容性盘点
 
-- `[x]` 新增仓库内兼容性盘点文档：`docs/tgent-termx-compat-inventory.md`。
+- `[x]` 新增仓库内兼容性盘点文档：`tgent-termx-compat-inventory.md`。
 - `[ ]` 盘点 `tgent-web` 中哪些 API 强依赖 tmux/session 模型。
 - `[ ]` 盘点 `tgent-app` 中哪些页面和状态强依赖 session 模型。
 - `[ ]` 盘点 `tgent hub` 中哪些注册/信令/relay 逻辑可直接复用。

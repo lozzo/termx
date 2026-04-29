@@ -70,7 +70,7 @@ Phase 1 明确仍然没有完成：
 
 建议来源：
 
-- 参考当前 [types.go](../tuiv2/workbench/types.go)
+- 参考当前 [types.go](../../tuiv2/workbench/types.go)
 - 但迁到 root-level 公共包
 
 核心结构：
@@ -402,7 +402,7 @@ Phase 1 不求全，只覆盖 TUI 最常用结构路径。
 
 可直接参考：
 
-- [mutate.go](../tuiv2/workbench/mutate.go)
+- [mutate.go](../../tuiv2/workbench/mutate.go)
 
 迁移原则：
 

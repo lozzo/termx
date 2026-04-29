@@ -11,7 +11,7 @@
 > 主要整理自旧版设计与遗留文档：
 > - `deprecated/tui-legacy/docs/interaction-spec.md`
 > - `deprecated/tui-legacy/docs/wireframes-v2.md`
-> - `docs/tui-product-definition-design.md`
+> - `tui-product-definition-design.md`
 
 ---
 
