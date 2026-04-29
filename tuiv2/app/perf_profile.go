@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lozzow/termx/perftrace"
+	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
-	"github.com/lozzow/termx/terminalmeta"
+	"github.com/lozzow/termx/termx-core/terminalmeta"
 	"github.com/lozzow/termx/tuiv2/uiinput"
 )
 

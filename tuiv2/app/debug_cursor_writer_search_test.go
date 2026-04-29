@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	localvterm "github.com/lozzow/termx/vterm"
+	localvterm "github.com/lozzow/termx/termx-core/vterm"
 )
 
 func TestDebugSearchCursorWriterStyledRoundTrip(t *testing.T) {

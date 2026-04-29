@@ -3,7 +3,7 @@ package app
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	localvterm "github.com/lozzow/termx/vterm"
+	localvterm "github.com/lozzow/termx/termx-core/vterm"
 )
 
 type terminalModifiers struct {

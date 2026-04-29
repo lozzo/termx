@@ -5,7 +5,7 @@ import (
 
 	xansi "github.com/charmbracelet/x/ansi"
 	xterm "github.com/charmbracelet/x/term"
-	"github.com/lozzow/termx/perftrace"
+	"github.com/lozzow/termx/termx-core/perftrace"
 )
 
 func (w *outputCursorWriter) fitFrameToTTY(frame string) string {

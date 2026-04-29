@@ -5,9 +5,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/perftrace"
+	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/tuiv2/input"
-	localvterm "github.com/lozzow/termx/vterm"
+	localvterm "github.com/lozzow/termx/termx-core/vterm"
 )
 
 func (m *Model) handleInteractionMessage(msg tea.Msg) (tea.Cmd, bool) {

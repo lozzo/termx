@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx"
-	"github.com/lozzow/termx/protocol"
-	unixtransport "github.com/lozzow/termx/transport/unix"
+	"github.com/lozzow/termx/termx-core"
+	"github.com/lozzow/termx/termx-core/protocol"
+	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
 )
 
 func TestProtocolClientList(t *testing.T) {

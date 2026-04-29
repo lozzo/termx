@@ -1,6 +1,6 @@
 package app
 
-import "github.com/lozzow/termx/perftrace"
+import "github.com/lozzow/termx/termx-core/perftrace"
 
 func (m *Model) View() string {
 	finish := perftrace.Measure("app.view")

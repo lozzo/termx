@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/termx-core/protocol"
 )
 
 func TestFeatureTerminalTitleSyncEndToEnd(t *testing.T) {

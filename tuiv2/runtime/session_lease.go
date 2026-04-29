@@ -1,6 +1,6 @@
 package runtime
 
-import "github.com/lozzow/termx/protocol"
+import "github.com/lozzow/termx/termx-core/protocol"
 
 func (r *Runtime) ApplySessionLeases(viewID string, leases []protocol.LeaseInfo) {
 	if r == nil || r.registry == nil {

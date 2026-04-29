@@ -1,8 +1,8 @@
 package bridge
 
 import (
-	"github.com/lozzow/termx/internal/clientapi"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/termx-core/clientapi"
+	"github.com/lozzow/termx/termx-core/protocol"
 )
 
 type Client = clientapi.Client

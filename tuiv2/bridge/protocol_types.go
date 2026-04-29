@@ -1,6 +1,6 @@
 package bridge
 
-import "github.com/lozzow/termx/internal/clientapi"
+import "github.com/lozzow/termx/termx-core/clientapi"
 
 type TerminalInfoRef = clientapi.TerminalInfoRef
 type EventRef = clientapi.EventRef

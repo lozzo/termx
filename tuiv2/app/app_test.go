@@ -14,8 +14,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/termx-core/perftrace"
+	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/tuiv2/bootstrap"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/input"
@@ -25,7 +25,7 @@ import (
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	"github.com/lozzow/termx/workbenchdoc"
+	"github.com/lozzow/termx/termx-core/workbenchdoc"
 )
 
 type recordingFrameWriter struct {

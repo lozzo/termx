@@ -1,6 +1,6 @@
 package runtime
 
-import localvterm "github.com/lozzow/termx/vterm"
+import localvterm "github.com/lozzow/termx/termx-core/vterm"
 
 type BindingRole string
 

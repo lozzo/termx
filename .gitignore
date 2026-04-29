@@ -5,4 +5,5 @@ cover.out
 .swp
 .toolchain/
 /termx
+/termx-core/termx
 .worktrees/

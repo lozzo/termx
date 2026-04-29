@@ -3,7 +3,7 @@ package runtime
 import (
 	"testing"
 
-	localvterm "github.com/lozzow/termx/vterm"
+	localvterm "github.com/lozzow/termx/termx-core/vterm"
 )
 
 func TestRuntimeTitleUpdateFromOSC2(t *testing.T) {

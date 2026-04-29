@@ -2,7 +2,7 @@ package app
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/perftrace"
+	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )

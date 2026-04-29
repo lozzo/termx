@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/termx-core/protocol"
 )
 
 func (m *Model) validateUniqueTerminalName(name, exceptTerminalID string) error {

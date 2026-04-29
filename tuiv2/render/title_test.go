@@ -3,7 +3,7 @@ package render
 import (
 	"testing"
 
-	"github.com/lozzow/termx/terminalmeta"
+	"github.com/lozzow/termx/termx-core/terminalmeta"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )

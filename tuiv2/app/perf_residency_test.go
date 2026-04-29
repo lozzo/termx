@@ -14,9 +14,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx"
-	"github.com/lozzow/termx/protocol"
-	unixtransport "github.com/lozzow/termx/transport/unix"
+	"github.com/lozzow/termx/termx-core"
+	"github.com/lozzow/termx/termx-core/protocol"
+	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"

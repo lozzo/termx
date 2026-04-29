@@ -5,10 +5,10 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/tuiv2/sessionstate"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	"github.com/lozzow/termx/workbenchdoc"
+	"github.com/lozzow/termx/termx-core/workbenchdoc"
 )
 
 func TestHandleSessionMessageSnapshotAppliesStateAndError(t *testing.T) {

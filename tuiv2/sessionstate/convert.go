@@ -1,9 +1,9 @@
 package sessionstate
 
 import (
-	"github.com/lozzow/termx/internal/workbenchcodec"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	"github.com/lozzow/termx/workbenchdoc"
+	"github.com/lozzow/termx/tuiv2/workbenchcodec"
+	"github.com/lozzow/termx/termx-core/workbenchdoc"
 )
 
 func ExportWorkbench(wb *workbench.Workbench) *workbenchdoc.Doc {

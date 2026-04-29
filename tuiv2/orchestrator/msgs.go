@@ -1,6 +1,6 @@
 package orchestrator
 
-import "github.com/lozzow/termx/protocol"
+import "github.com/lozzow/termx/termx-core/protocol"
 
 type TerminalAttachedMsg struct {
 	TabID      string // optional: specific tab that owns the pane; empty = use current tab

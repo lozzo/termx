@@ -12,7 +12,7 @@ import (
 
 	xansi "github.com/charmbracelet/x/ansi"
 	xterm "github.com/charmbracelet/x/term"
-	"github.com/lozzow/termx/perftrace"
+	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 

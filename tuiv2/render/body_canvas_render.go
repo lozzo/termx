@@ -1,8 +1,8 @@
 package render
 
 import (
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/termx-core/perftrace"
+	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
 )

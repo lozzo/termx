@@ -17,14 +17,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
 	creackpty "github.com/creack/pty"
-	"github.com/lozzow/termx/frameaudit"
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
+	"github.com/lozzow/termx/termx-core/frameaudit"
+	"github.com/lozzow/termx/termx-core/perftrace"
+	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/tuiv2/input"
 	"github.com/lozzow/termx/tuiv2/runtime"
 	"github.com/lozzow/termx/tuiv2/shared"
 	"github.com/lozzow/termx/tuiv2/workbench"
-	localvterm "github.com/lozzow/termx/vterm"
+	localvterm "github.com/lozzow/termx/termx-core/vterm"
 	"github.com/rivo/uniseg"
 )
 

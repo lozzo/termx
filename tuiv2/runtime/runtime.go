@@ -10,12 +10,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lozzow/termx/perftrace"
-	"github.com/lozzow/termx/protocol"
-	"github.com/lozzow/termx/terminalmeta"
+	"github.com/lozzow/termx/termx-core/perftrace"
+	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/lozzow/termx/termx-core/terminalmeta"
 	"github.com/lozzow/termx/tuiv2/bridge"
 	"github.com/lozzow/termx/tuiv2/shared"
-	localvterm "github.com/lozzow/termx/vterm"
+	localvterm "github.com/lozzow/termx/termx-core/vterm"
 )
 
 type Runtime struct {

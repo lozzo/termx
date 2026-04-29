@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lozzow/termx/protocol"
-	localvterm "github.com/lozzow/termx/vterm"
+	"github.com/lozzow/termx/termx-core/protocol"
+	localvterm "github.com/lozzow/termx/termx-core/vterm"
 )
 
 func BenchmarkScreenUpdateOpcodeScenarios(b *testing.B) {
