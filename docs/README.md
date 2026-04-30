@@ -4,9 +4,17 @@
 
 ## Cross-Module / Remote
 
-- [remote-architecture-spec.md](remote-architecture-spec.md)
-- [remote-refactor-todo.md](remote-refactor-todo.md)
-- [tgent-termx-compat-inventory.md](tgent-termx-compat-inventory.md)
+- [remote-rebuild/README.md](remote-rebuild/README.md)
+- [mobile-web-project-plan.md](mobile-web-project-plan.md)
+- [remote-execution-plan.md](remote-execution-plan.md)
+- [remote-system-architecture.md](remote-system-architecture.md)
+- [remote-buildout-status.md](remote-buildout-status.md)
+- [remote-characterization-notes.md](remote-characterization-notes.md)
+- [remote-local-validation.md](remote-local-validation.md)
+- [remote-devstack-runbook.md](remote-devstack-runbook.md)
+- [remote-rollout-checklist.md](remote-rollout-checklist.md)
+- [remote-migration-notes.md](remote-migration-notes.md)
+- [remote-tgent-reference-map.md](remote-tgent-reference-map.md)
 
 ## Related
 
