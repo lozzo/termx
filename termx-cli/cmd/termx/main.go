@@ -37,6 +37,14 @@ var (
 		defer client.Close()
 		return tuiv2app.RunWithClient(cfg, clientapi.NewProtocolClient(client), stdin, stdout)
 	}
+	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params protocol.PairStartParams) (*protocol.PairStartResult, error) {
+		client, err := dialOrStartClient(resolveSocket(socketPath), resolveLogFilePath(logFile), nil)
+		if err != nil {
+			return nil, err
+		}
+		defer client.Close()
+		return client.RemotePairStart(ctx, params)
+	}
 )
 
 func nestedTUIBlocked() bool {
@@ -92,6 +100,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(lsCommand(&socket, &logFile))
 	cmd.AddCommand(killCommand(&socket, &logFile))
 	cmd.AddCommand(attachCommand(&socket, &logFile, &configPath))
+	cmd.AddCommand(pairCommand(&socket, &logFile))
 	cmd.AddCommand(remoteCommand(&socket, &logFile))
 	cmd.AddCommand(webCommand(&socket, &logFile))
 	return cmd
@@ -282,6 +291,48 @@ func remoteCommand(socket *string, logFile *string) *cobra.Command {
 		Use: "remote",
 	}
 	cmd.AddCommand(remoteStatusCommand(socket, logFile))
+	return cmd
+}
+
+func pairCommand(socket *string, logFile *string) *cobra.Command {
+	var outputJSON bool
+	var localURL string
+	var ttl time.Duration
+	cmd := &cobra.Command{
+		Use: "pair",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(localURL) == "" {
+				return fmt.Errorf("local pair URL is required")
+			}
+			if ttl <= 0 {
+				ttl = 5 * time.Minute
+			}
+			result, err := pairStartClient(context.Background(), *socket, *logFile, protocol.PairStartParams{
+				LocalPairURL: localURL,
+				TTLSeconds:   int(ttl.Seconds()),
+			})
+			if err != nil {
+				return err
+			}
+			if outputJSON {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(result)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "type:\t%s\n", result.Type)
+			fmt.Fprintf(cmd.OutOrStdout(), "machine_id:\t%s\n", result.MachineID)
+			fmt.Fprintf(cmd.OutOrStdout(), "machine_name:\t%s\n", result.MachineName)
+			fmt.Fprintf(cmd.OutOrStdout(), "machine_public_key_fingerprint:\t%s\n", result.MachinePublicKeyFingerprint)
+			fmt.Fprintf(cmd.OutOrStdout(), "local_pair_url:\t%s\n", result.LocalPairURL)
+			fmt.Fprintf(cmd.OutOrStdout(), "pair_session_id:\t%s\n", result.PairSessionID)
+			fmt.Fprintf(cmd.OutOrStdout(), "pair_secret:\t%s\n", result.PairSecret)
+			fmt.Fprintf(cmd.OutOrStdout(), "expires_at:\t%s\n", result.ExpiresAt.Format(time.RFC3339))
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&outputJSON, "json", false, "emit JSON")
+	cmd.Flags().StringVar(&localURL, "local-url", "http://127.0.0.1:18888/api/local/pair", "local pair URL")
+	cmd.Flags().DurationVar(&ttl, "ttl", 5*time.Minute, "pair session TTL")
 	return cmd
 }
 

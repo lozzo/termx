@@ -70,6 +70,7 @@ type ClaimResponse struct {
 
 type sessionState struct {
 	session  Session
+	cfg      Config
 	consumed bool
 }
 
@@ -80,17 +81,33 @@ func NewManager(cfg Config) *Manager {
 	}
 }
 
+func (m *Manager) UpdateConfig(cfg Config) error {
+	if m == nil {
+		return errors.New("pairing manager is nil")
+	}
+	if err := validateConfig(cfg); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	m.cfg = cfg
+	m.mu.Unlock()
+	return nil
+}
+
 func (m *Manager) CreateSession(ttl time.Duration) (Session, error) {
 	if m == nil {
 		return Session{}, errors.New("pairing manager is nil")
 	}
-	if err := validateConfig(m.cfg); err != nil {
+	m.mu.Lock()
+	cfg := m.cfg
+	m.mu.Unlock()
+	if err := validateConfig(cfg); err != nil {
 		return Session{}, err
 	}
 	if ttl <= 0 {
 		ttl = defaultSessionTTL
 	}
-	now := m.now()
+	now := nowFromConfig(cfg)
 	sessionID, err := randomToken("pair_", 16)
 	if err != nil {
 		return Session{}, err
@@ -101,10 +118,10 @@ func (m *Manager) CreateSession(ttl time.Duration) (Session, error) {
 	}
 	session := Session{
 		Type:                        "termx_pair_v1",
-		MachineID:                   strings.TrimSpace(m.cfg.MachineID),
-		MachineName:                 strings.TrimSpace(m.cfg.MachineName),
-		MachinePublicKeyFingerprint: identity.MachinePublicKeyFingerprint(m.cfg.MachineKey.PublicKey),
-		LocalPairURL:                strings.TrimSpace(m.cfg.LocalPairURL),
+		MachineID:                   strings.TrimSpace(cfg.MachineID),
+		MachineName:                 strings.TrimSpace(cfg.MachineName),
+		MachinePublicKeyFingerprint: identity.MachinePublicKeyFingerprint(cfg.MachineKey.PublicKey),
+		LocalPairURL:                strings.TrimSpace(cfg.LocalPairURL),
 		PairSessionID:               sessionID,
 		PairSecret:                  secret,
 		ExpiresAt:                   now.Add(ttl).UTC(),
@@ -112,16 +129,13 @@ func (m *Manager) CreateSession(ttl time.Duration) (Session, error) {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.sessions[session.PairSessionID] = &sessionState{session: session}
+	m.sessions[session.PairSessionID] = &sessionState{session: session, cfg: cfg}
 	return session, nil
 }
 
 func (m *Manager) ClaimSession(req ClaimRequest) (ClaimResponse, error) {
 	if m == nil {
 		return ClaimResponse{}, errors.New("pairing manager is nil")
-	}
-	if err := validateConfig(m.cfg); err != nil {
-		return ClaimResponse{}, err
 	}
 	sessionID := strings.TrimSpace(req.PairSessionID)
 	pairSecret := strings.TrimSpace(req.PairSecret)
@@ -142,7 +156,8 @@ func (m *Manager) ClaimSession(req ClaimRequest) (ClaimResponse, error) {
 		m.mu.Unlock()
 		return ClaimResponse{}, errors.New("pair session already consumed")
 	}
-	now := m.now()
+	cfg := state.cfg
+	now := nowFromConfig(cfg)
 	if !now.Before(state.session.ExpiresAt) {
 		delete(m.sessions, sessionID)
 		m.mu.Unlock()
@@ -154,6 +169,9 @@ func (m *Manager) ClaimSession(req ClaimRequest) (ClaimResponse, error) {
 	}
 	session := state.session
 	m.mu.Unlock()
+	if err := validateConfig(cfg); err != nil {
+		return ClaimResponse{}, err
+	}
 
 	certID := ""
 	if req.CertificateIDGenerator != nil {
@@ -177,8 +195,8 @@ func (m *Manager) ClaimSession(req ClaimRequest) (ClaimResponse, error) {
 	payload := cert.AppCertificatePayload{
 		Version:                     1,
 		CertID:                      certID,
-		MachineID:                   strings.TrimSpace(m.cfg.MachineID),
-		MachinePublicKeyFingerprint: identity.MachinePublicKeyFingerprint(m.cfg.MachineKey.PublicKey),
+		MachineID:                   strings.TrimSpace(cfg.MachineID),
+		MachinePublicKeyFingerprint: identity.MachinePublicKeyFingerprint(cfg.MachineKey.PublicKey),
 		AppDeviceID:                 strings.TrimSpace(req.AppDeviceID),
 		AppPublicKey:                strings.TrimSpace(req.AppPublicKey),
 		AppName:                     strings.TrimSpace(req.AppName),
@@ -186,7 +204,7 @@ func (m *Manager) ClaimSession(req ClaimRequest) (ClaimResponse, error) {
 		IssuedAt:                    now.UTC(),
 		ExpiresAt:                   now.Add(certificateTTL).UTC(),
 	}
-	envelope, err := cert.SignAppCertificate(payload, m.cfg.MachineKey)
+	envelope, err := cert.SignAppCertificate(payload, cfg.MachineKey)
 	if err != nil {
 		return ClaimResponse{}, err
 	}
@@ -201,7 +219,7 @@ func (m *Manager) ClaimSession(req ClaimRequest) (ClaimResponse, error) {
 		m.mu.Unlock()
 		return ClaimResponse{}, errors.New("pair session changed")
 	}
-	if !m.now().Before(state.session.ExpiresAt) {
+	if !nowFromConfig(cfg).Before(state.session.ExpiresAt) {
 		delete(m.sessions, sessionID)
 		m.mu.Unlock()
 		return ClaimResponse{}, errors.New("pair session expired")
@@ -212,15 +230,15 @@ func (m *Manager) ClaimSession(req ClaimRequest) (ClaimResponse, error) {
 
 	return ClaimResponse{
 		MachineID:        strings.TrimSpace(m.cfg.MachineID),
-		MachineName:      strings.TrimSpace(m.cfg.MachineName),
-		MachinePublicKey: base64.StdEncoding.EncodeToString(m.cfg.MachineKey.PublicKey),
+		MachineName:      strings.TrimSpace(cfg.MachineName),
+		MachinePublicKey: base64.StdEncoding.EncodeToString(cfg.MachineKey.PublicKey),
 		AppCertificate:   envelope,
 	}, nil
 }
 
-func (m *Manager) now() time.Time {
-	if m != nil && m.cfg.Now != nil {
-		return m.cfg.Now().UTC()
+func nowFromConfig(cfg Config) time.Time {
+	if cfg.Now != nil {
+		return cfg.Now().UTC()
 	}
 	return time.Now().UTC()
 }

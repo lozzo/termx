@@ -2,12 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
 
@@ -259,5 +263,67 @@ func TestRemoteConfigFromEnvAutoEnablesWhenRemoteFieldsExist(t *testing.T) {
 	cfg := remoteConfigFromEnv()
 	if !cfg.Enabled {
 		t.Fatal("expected remote config to auto-enable when remote fields exist")
+	}
+}
+
+func TestRootCmdHasRemoteStatusAndPairCommands(t *testing.T) {
+	cmd := newRootCmd()
+	if _, _, err := cmd.Find([]string{"remote", "status"}); err != nil {
+		t.Fatalf("expected remote status command to exist: %v", err)
+	}
+	if _, _, err := cmd.Find([]string{"pair"}); err != nil {
+		t.Fatalf("expected pair command to exist: %v", err)
+	}
+}
+
+func TestPairCmdEmitsJSONPairSession(t *testing.T) {
+	oldPairStart := pairStartClient
+	t.Cleanup(func() {
+		pairStartClient = oldPairStart
+	})
+
+	var gotParams protocol.PairStartParams
+	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params protocol.PairStartParams) (*protocol.PairStartResult, error) {
+		gotParams = params
+		return &protocol.PairStartResult{
+			Type:                        "termx_pair_v1",
+			MachineID:                   "mach_test",
+			MachineName:                 "MacBook Pro",
+			MachinePublicKeyFingerprint: "sha256:test",
+			LocalPairURL:                params.LocalPairURL,
+			PairSessionID:               "pair_test",
+			PairSecret:                  "secret",
+			ExpiresAt:                   time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		}, nil
+	}
+
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{
+		"--socket", filepath.Join(t.TempDir(), "termx.sock"),
+		"pair",
+		"--local-url", "http://127.0.0.1:18888/api/local/pair",
+		"--ttl", "5m",
+		"--json",
+	})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if gotParams.LocalPairURL != "http://127.0.0.1:18888/api/local/pair" {
+		t.Fatalf("unexpected local pair url param %q", gotParams.LocalPairURL)
+	}
+	if gotParams.TTLSeconds != 300 {
+		t.Fatalf("expected ttl seconds 300, got %d", gotParams.TTLSeconds)
+	}
+
+	var decoded protocol.PairStartResult
+	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+		t.Fatalf("pair output is not JSON: %v\n%s", err, out.String())
+	}
+	if decoded.MachineID != "mach_test" || decoded.PairSessionID != "pair_test" {
+		t.Fatalf("unexpected pair output: %#v", decoded)
 	}
 }

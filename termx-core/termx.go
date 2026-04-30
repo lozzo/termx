@@ -17,6 +17,7 @@ import (
 	"time"
 
 	remoteconfig "github.com/lozzow/termx/termx-core/internal/remote/config"
+	"github.com/lozzow/termx/termx-core/internal/remote/pairing"
 	remoteruntime "github.com/lozzow/termx/termx-core/internal/remote/runtime"
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
@@ -45,6 +46,9 @@ type Server struct {
 	workbench      *workbenchsvc.Service
 	sessionHandler sessionRequestHandler
 	remoteManager  *remoteruntime.Manager
+	remotePairMu   sync.Mutex
+	remotePairing  *pairing.Manager
+	remotePairCfg  pairing.Config
 	closed         atomic.Bool
 	listeners      []transport.Listener
 
@@ -884,6 +888,23 @@ func (s *Server) handleRequest(
 			TerminalCount: status.TerminalCount,
 			UpdatedAt:     status.UpdatedAt,
 		})
+		if err != nil {
+			return nil, 500, err
+		}
+		return result, 0, nil
+	case "remote.pair.start":
+		var params protocol.PairStartParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return nil, 400, err
+		}
+		pair, err := s.RemotePairStart(PairStartOptions{
+			LocalPairURL: params.LocalPairURL,
+			TTL:          time.Duration(params.TTLSeconds) * time.Second,
+		})
+		if err != nil {
+			return nil, protocolErrorCode(err), err
+		}
+		result, err := json.Marshal(pair)
 		if err != nil {
 			return nil, 500, err
 		}

@@ -35,6 +35,74 @@ func TestE2ERemoteStatus(t *testing.T) {
 	}
 }
 
+func TestE2ERemotePairStart(t *testing.T) {
+	_, client, cleanup := newE2EClient(t, WithRemoteConfig(RemoteConfig{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "pair-machine",
+	}))
+	defer cleanup()
+
+	result, err := client.RemotePairStart(context.Background(), protocol.PairStartParams{
+		LocalPairURL: "http://127.0.0.1:18888/api/local/pair",
+		TTLSeconds:   300,
+	})
+	if err != nil {
+		t.Fatalf("RemotePairStart returned error: %v", err)
+	}
+	if result.Type != "termx_pair_v1" {
+		t.Fatalf("expected pair type termx_pair_v1, got %q", result.Type)
+	}
+	if result.MachineID == "" {
+		t.Fatal("expected machine id to be set")
+	}
+	if result.MachineName != "pair-machine" {
+		t.Fatalf("expected machine name pair-machine, got %q", result.MachineName)
+	}
+	if !strings.HasPrefix(result.MachinePublicKeyFingerprint, "sha256:") {
+		t.Fatalf("expected machine public key fingerprint, got %q", result.MachinePublicKeyFingerprint)
+	}
+	if result.LocalPairURL != "http://127.0.0.1:18888/api/local/pair" {
+		t.Fatalf("unexpected local pair url %q", result.LocalPairURL)
+	}
+	if !strings.HasPrefix(result.PairSessionID, "pair_") {
+		t.Fatalf("expected pair session id prefix, got %q", result.PairSessionID)
+	}
+	if result.PairSecret == "" {
+		t.Fatal("expected pair secret to be set")
+	}
+	if result.ExpiresAt.IsZero() {
+		t.Fatal("expected expiry to be set")
+	}
+}
+
+func TestE2ERemotePairStartUsesLatestLocalPairURL(t *testing.T) {
+	_, client, cleanup := newE2EClient(t, WithRemoteConfig(RemoteConfig{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "pair-machine",
+	}))
+	defer cleanup()
+
+	if _, err := client.RemotePairStart(context.Background(), protocol.PairStartParams{
+		LocalPairURL: "http://127.0.0.1:18888/api/local/pair",
+		TTLSeconds:   300,
+	}); err != nil {
+		t.Fatalf("first RemotePairStart returned error: %v", err)
+	}
+
+	result, err := client.RemotePairStart(context.Background(), protocol.PairStartParams{
+		LocalPairURL: "http://192.168.1.23:18888/api/local/pair",
+		TTLSeconds:   300,
+	})
+	if err != nil {
+		t.Fatalf("second RemotePairStart returned error: %v", err)
+	}
+	if result.LocalPairURL != "http://192.168.1.23:18888/api/local/pair" {
+		t.Fatalf("expected latest local pair url, got %q", result.LocalPairURL)
+	}
+}
+
 var _ = protocol.Version
 
 func TestRemoteTriggerSyncRegistersCreatedTerminal(t *testing.T) {

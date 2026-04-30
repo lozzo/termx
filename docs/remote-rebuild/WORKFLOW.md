@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P2 identity and app certificate pairing
-- Active todo: P2-C local pair session primitives
-- Last updated: 2026-05-01T02:36:00+08:00
+- Active todo: P2-D CLI pair skeleton and remote status regression
+- Last updated: 2026-05-01T03:11:00+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -16,8 +16,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 | R0 | workflow | Create and seed `docs/remote-rebuild/WORKFLOW.md` with full todo plan | completed | `8734d00` |
 | P2-A | identity | Implement Ed25519 machine key generation, load, persistence permissions, and fingerprint helpers in `termx-core/internal/remote/identity` | completed | `5aef5b8` |
 | P2-B | cert | Implement canonical app certificate payload, sign/verify helpers, and nonce/timestamp replay helper in `termx-core/internal/remote/cert` | completed | `62d1f70` |
-| P2-C | pairing | Implement local pair session creation, TTL, single-use semantics, and app certificate issuance in `termx-core/internal/remote/pairing` | in_progress | pending |
-| P2-D | CLI | Keep `termx remote status` working and add a conservative `termx pair` CLI skeleton only after core primitives exist | pending |  |
+| P2-C | pairing | Implement local pair session creation, TTL, single-use semantics, and app certificate issuance in `termx-core/internal/remote/pairing` | completed | `12067cb` |
+| P2-D | CLI | Keep `termx remote status` working and add a conservative `termx pair` CLI skeleton only after core primitives exist | in_progress | pending |
 | P3-A | rendezvous | Implement anonymous rendezvous interfaces/contracts with payload limit, TTL, channel secret verification, and no TURN credentials | pending |  |
 
 ## TDD Log
@@ -61,6 +61,18 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Code review regression tests: unsupported requested capabilities initially received machine-signed certificates; `go test ./internal/remote/pairing` failed before capabilities were restricted to `terminal` and `file_manager`.
 - Final focused tests: `cd termx-core && go test ./internal/remote/pairing` passed.
 - Broader tests: `cd termx-core && go test ./internal/remote/...` passed; `cd termx-core && go test ./...` passed; `git diff --check` passed.
+- Result: completed. Commit: `12067cb`.
+
+### P2-D CLI pair skeleton and remote status regression
+
+- Tests written before implementation: `termx-core/protocol/client_test.go`, `termx-core/remote_test.go`, and `termx-cli/cmd/termx/main_test.go`
+- Expected failing test: `go test ./protocol -run TestClientRemotePairStart` fails to build because `PairStartParams`, `PairStartResult`, and `Client.RemotePairStart` do not exist yet.
+- Additional expected failing test: `go test ./cmd/termx -run 'TestRootCmdHasRemoteStatusAndPairCommands|TestPairCmdEmitsJSONPairSession'` fails to build because `pairStartClient` and the top-level `pair` command do not exist yet.
+- Focused tests: failed as expected before implementation at protocol/server/CLI layers.
+- Hardening regression tests: repeated pair starts with a new `--local-url` initially reused the stale URL; `go test . -run TestE2ERemotePairStartUsesLatestLocalPairURL` failed before server pairing config updates were added.
+- Code review regression/fix: review found that replacing the server pairing manager on config changes could invalidate unexpired sessions. Fixed by adding `pairing.Manager.UpdateConfig`, storing session issuer config per session, and updating future-session config without discarding existing sessions.
+- Final focused tests: `cd termx-core && go test ./protocol -run TestClientRemotePairStart` passed; `cd termx-core && go test . -run 'TestE2ERemote(PairStart|Status)'` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRootCmdHasRemoteStatusAndPairCommands|TestPairCmdEmitsJSONPairSession'` passed.
+- Broader tests: `cd termx-core && go test ./...` passed; `cd termx-cli && go test ./...` passed; `git diff --check` passed.
 - Result: implementation complete; pending commit hash.
 
 ## Subagents
@@ -71,12 +83,14 @@ Status file for unattended remote rebuild work. Update this file before starting
 - `Jason` (`019ddf6a-ef0e-7e32-89da-880e1a2590f5`): P2-A follow-up review. Findings: Go formatting could expose unexported private key fields, stale workflow. Result: fixed with redacted `String`/`GoString` and formatting regression tests.
 - `Socrates` (`019ddf76-3981-7193-b7c7-2a9ba59d4941`): P2-B code review. Findings: signer could issue self-inconsistent machine fingerprint, workflow stale. Result: fixed by stamping `MachinePublicKeyFingerprint` from `machineKey.PublicKey` before canonical signing and updating workflow.
 - `Dirac` (`019ddf7d-2bf6-78d0-89d0-e886099b6d01`): P2-C code review. Findings: arbitrary requested capabilities could be machine-signed, local pair request struct lacked snake_case JSON tags, workflow stale. Result: fixed with capability allowlist, JSON tags, and workflow updates.
+- `Averroes` (`019ddf8c-a240-7063-8d97-e582d128011f`): P2-D code review. Findings: changing pair config replaced the manager and invalidated active sessions, workflow stale. Result: fixed with manager config updates that preserve existing sessions and workflow updates.
 
 ## Code Review Log
 
 - P2-A review complete. No remaining findings after implemented fixes; no workspace/tab/pane concepts, anonymous/free TURN relay changes, app machine-private-key exposure, or transport boundary drift introduced.
 - P2-B review complete. No remaining findings after implemented fixes; no workspace/tab/pane concepts, anonymous/free TURN relay changes, app machine-private-key exposure, or transport boundary drift introduced.
 - P2-C review complete. No remaining findings after implemented fixes; no workspace/tab/pane concepts, anonymous/free TURN relay changes, app machine-private-key exposure, or transport boundary drift introduced.
+- P2-D review complete. No remaining findings after implemented fixes; no workspace/tab/pane concepts, anonymous/free TURN relay changes, app machine-private-key exposure, CLI internal-package import, or transport boundary drift introduced.
 
 ## Deferred Human Decisions And Placeholders
 
@@ -90,6 +104,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Commit P2-C.
-2. Update this workflow with the P2-C commit hash.
-3. Start P2-D by writing failing CLI/protocol tests for `termx pair` while keeping `termx remote status` working.
+1. Commit P2-D.
+2. Update this workflow with the P2-D commit hash.
+3. Start P3-A by writing failing anonymous rendezvous interface/contract tests.

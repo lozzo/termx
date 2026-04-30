@@ -2,11 +2,16 @@ package termx
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lozzow/termx/termx-core/internal/remote/bridge"
 	remoteconfig "github.com/lozzow/termx/termx-core/internal/remote/config"
+	"github.com/lozzow/termx/termx-core/internal/remote/identity"
+	"github.com/lozzow/termx/termx-core/internal/remote/pairing"
 	remoteruntime "github.com/lozzow/termx/termx-core/internal/remote/runtime"
+	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-core/transport"
 )
 
@@ -41,10 +46,93 @@ type RemoteStatus struct {
 	UpdatedAt     time.Time          `json:"updated_at"`
 }
 
+type PairStartOptions struct {
+	LocalPairURL string
+	TTL          time.Duration
+}
+
 func WithRemoteConfig(cfg RemoteConfig) ServerOption {
 	return func(sc *serverConfig) {
 		sc.remoteConfig = cfg
 	}
+}
+
+func (s *Server) RemotePairStart(opts PairStartOptions) (protocol.PairStartResult, error) {
+	if s == nil {
+		return protocol.PairStartResult{}, fmt.Errorf("server is nil")
+	}
+	cfg := remoteconfig.Normalize(remoteconfig.Config{
+		Enabled:    s.cfg.remoteConfig.Enabled,
+		DataDir:    s.cfg.remoteConfig.DataDir,
+		DeviceName: s.cfg.remoteConfig.DeviceName,
+	})
+	machineKey, err := identity.LoadOrCreateMachineKey(cfg.DataDir)
+	if err != nil {
+		return protocol.PairStartResult{}, err
+	}
+	machineID := ""
+	machineName := strings.TrimSpace(cfg.DeviceName)
+	if s.remoteManager != nil {
+		status := s.remoteManager.Status()
+		machineID = strings.TrimSpace(status.DeviceID)
+		if machineName == "" {
+			machineName = strings.TrimSpace(status.DeviceName)
+		}
+	}
+	if machineID == "" {
+		ident, err := identity.LoadOrCreate(cfg.DataDir, cfg.DeviceName)
+		if err != nil {
+			return protocol.PairStartResult{}, err
+		}
+		machineID = ident.DeviceID
+		if machineName == "" {
+			machineName = ident.DisplayName
+		}
+	}
+	if strings.TrimSpace(opts.LocalPairURL) == "" {
+		return protocol.PairStartResult{}, fmt.Errorf("local_pair_url is required")
+	}
+	pairCfg := pairing.Config{
+		MachineID:    machineID,
+		MachineName:  machineName,
+		MachineKey:   machineKey,
+		LocalPairURL: opts.LocalPairURL,
+	}
+	s.remotePairMu.Lock()
+	if s.remotePairing == nil {
+		s.remotePairing = pairing.NewManager(pairCfg)
+		s.remotePairCfg = pairCfg
+	} else if pairManagerConfigChanged(s.remotePairCfg, pairCfg) {
+		if err := s.remotePairing.UpdateConfig(pairCfg); err != nil {
+			s.remotePairMu.Unlock()
+			return protocol.PairStartResult{}, err
+		}
+		s.remotePairCfg = pairCfg
+	}
+	manager := s.remotePairing
+	s.remotePairMu.Unlock()
+
+	session, err := manager.CreateSession(opts.TTL)
+	if err != nil {
+		return protocol.PairStartResult{}, err
+	}
+	return protocol.PairStartResult{
+		Type:                        session.Type,
+		MachineID:                   session.MachineID,
+		MachineName:                 session.MachineName,
+		MachinePublicKeyFingerprint: session.MachinePublicKeyFingerprint,
+		LocalPairURL:                session.LocalPairURL,
+		PairSessionID:               session.PairSessionID,
+		PairSecret:                  session.PairSecret,
+		ExpiresAt:                   session.ExpiresAt,
+	}, nil
+}
+
+func pairManagerConfigChanged(a, b pairing.Config) bool {
+	if a.MachineID != b.MachineID || a.MachineName != b.MachineName || a.LocalPairURL != b.LocalPairURL {
+		return true
+	}
+	return !a.MachineKey.PublicKey.Equal(b.MachineKey.PublicKey)
 }
 
 func (s *Server) RemoteStatus() RemoteStatus {

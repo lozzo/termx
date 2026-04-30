@@ -677,6 +677,22 @@ type RemoteStatus struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
+type PairStartParams struct {
+	LocalPairURL string `json:"local_pair_url"`
+	TTLSeconds   int    `json:"ttl_seconds,omitempty"`
+}
+
+type PairStartResult struct {
+	Type                        string    `json:"type"`
+	MachineID                   string    `json:"machine_id"`
+	MachineName                 string    `json:"machine_name"`
+	MachinePublicKeyFingerprint string    `json:"machine_public_key_fingerprint"`
+	LocalPairURL                string    `json:"local_pair_url"`
+	PairSessionID               string    `json:"pair_session_id"`
+	PairSecret                  string    `json:"pair_secret"`
+	ExpiresAt                   time.Time `json:"expires_at"`
+}
+
 func EncodeScreenUpdatePayload(update ScreenUpdate) ([]byte, error) {
 	return encodeScreenUpdatePayloadBinary(NormalizeScreenUpdate(update))
 }

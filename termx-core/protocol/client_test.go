@@ -162,6 +162,72 @@ func TestClientEvents(t *testing.T) {
 	}
 }
 
+func TestClientRemotePairStart(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+	defer serverTransport.Close()
+
+	serverDone := make(chan error, 1)
+	go func() {
+		if err := expectHello(serverTransport); err != nil {
+			serverDone <- err
+			return
+		}
+		if err := respondHello(serverTransport); err != nil {
+			serverDone <- err
+			return
+		}
+		req, err := expectRequest(serverTransport, "remote.pair.start")
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		var params PairStartParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			serverDone <- err
+			return
+		}
+		if params.LocalPairURL != "http://127.0.0.1:18888/api/local/pair" || params.TTLSeconds != 300 {
+			serverDone <- fmt.Errorf("unexpected pair params: %#v", params)
+			return
+		}
+		result, _ := json.Marshal(PairStartResult{
+			Type:                        "termx_pair_v1",
+			MachineID:                   "mach_test",
+			MachineName:                 "MacBook Pro",
+			MachinePublicKeyFingerprint: "sha256:test",
+			LocalPairURL:                params.LocalPairURL,
+			PairSessionID:               "pair_test",
+			PairSecret:                  "secret",
+			ExpiresAt:                   time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		})
+		serverDone <- sendResponse(serverTransport, req.ID, result)
+	}()
+
+	client := NewClient(clientTransport)
+	defer client.Close()
+
+	if err := client.Hello(ctx, Hello{Version: Version, Client: "test"}); err != nil {
+		t.Fatalf("hello failed: %v", err)
+	}
+	result, err := client.RemotePairStart(ctx, PairStartParams{
+		LocalPairURL: "http://127.0.0.1:18888/api/local/pair",
+		TTLSeconds:   300,
+	})
+	if err != nil {
+		t.Fatalf("RemotePairStart returned error: %v", err)
+	}
+	if result.MachineID != "mach_test" || result.PairSessionID != "pair_test" {
+		t.Fatalf("unexpected pair result: %#v", result)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatalf("fake pair server failed: %v", err)
+	}
+}
+
 func TestClientAttachBuffersFramesThatArriveBeforeStreamRegistration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

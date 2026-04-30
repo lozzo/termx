@@ -275,6 +275,14 @@ func (c *Client) RemoteStatus(ctx context.Context) (*RemoteStatus, error) {
 	return &out, nil
 }
 
+func (c *Client) RemotePairStart(ctx context.Context, params PairStartParams) (*PairStartResult, error) {
+	var out PairStartResult
+	if err := c.doRequest(ctx, "remote.pair.start", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *Client) Kill(ctx context.Context, terminalID string) error {
 	return c.doRequest(ctx, "kill", GetParams{TerminalID: terminalID}, nil)
 }
