@@ -18,3 +18,60 @@
 
 - 新增项目优先放到独立顶级目录，不要继续把不同产品壳混塞回 `termx-core/`。
 - 跨项目共享能力，优先先明确边界，再决定是提 shared package、独立服务还是协议层复用。
+
+## Unattended Remote Rebuild Workflow
+
+当任务涉及远程能力重建、`docs/remote-rebuild/`、mobile app、web-control、rendezvous、hub/TURN、remote agent 或相关协议时，默认进入无人值守执行模式，除非用户明确要求只讨论方案。
+
+### Source of Truth
+
+- 先阅读并遵循 `docs/remote-rebuild/README.md`。
+- 远程产品和协议决策以 `docs/remote-rebuild/` 下文档为准。
+- 可复用 `../tgent` 的行为经验，但不能把 workspace/tab/pane 作为 TermX remote 公开模型带回来。
+- 远程公开对象模型必须保持 `machine -> terminal`。
+- 匿名/免费路径只能使用公共 STUN 和轻量 rendezvous signaling，不能给匿名免费用户发 TermX TURN relay credentials。
+- App 只能持有 app private key 和 app certificate，不能下载、解密或保存 machine private key。
+
+### Persistent Workflow File
+
+- 必须创建并持续维护 `docs/remote-rebuild/WORKFLOW.md`。
+- 每个 todo 开始前和完成后都要更新该文件。
+- 文件至少记录：
+  - 当前 phase 和 active todo。
+  - todo 列表与状态。
+  - 每个完成 todo 对应的 commit hash。
+  - TDD 中先写的测试、测试失败原因、最终测试结果。
+  - subagent 分工和 code review 结论。
+  - mock、placeholder、TODO 和需要人类介入的事项。
+  - 当前风险和下一步精确动作。
+
+### Execution Discipline
+
+- 使用 TDD：先写失败测试，再实现，再跑 focused/broader tests。
+- 每完成一个 todo 必须提交一次代码。
+- commit message 要详细说明动机、范围、关键实现、行为变化和测试。
+- 完成每个 todo 后要明确记录“todo 名称 -> commit hash”。
+- 能并行的任务必须使用 subagent 并行处理，拆分时保持文件/模块 ownership 清晰，避免互相覆盖。
+- 每个开发 todo 完成后必须启动 subagent 做 code review。
+- code review 重点检查：
+  - 是否偏离 `docs/remote-rebuild/` 主线。
+  - 是否误引入 workspace/tab/pane remote 模型。
+  - 匿名/免费流程是否错误使用 TermX TURN relay。
+  - app 是否错误接触 machine private key。
+  - Web/native transport 是否仍通过 interface 隔离。
+  - 测试是否覆盖当前 todo 的关键行为。
+
+### Human-Intervention Deferral
+
+- 遇到 DNS、公网部署、证书、支付、应用商店签名、真实账号密钥、人工产品决策等需要人类介入的内容，不要停住等待。
+- 用 mock、placeholder、窄 TODO 或注释先推进主线。
+- 必须把 deferral 写入 `docs/remote-rebuild/WORKFLOW.md`，说明：
+  - 缺少什么人类输入。
+  - 当前 mock/placeholder 在哪里。
+  - 后续如何替换。
+
+### Completion Requirements
+
+- 不要在仍有必要命令运行时结束。
+- 每一轮结束前尽量保持 `git status --short` 干净。
+- 如果确实不能干净，必须在回复和 `WORKFLOW.md` 中说明原因、剩余文件和下一步。
