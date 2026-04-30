@@ -12,6 +12,7 @@ type Client interface {
 	SetTags(ctx context.Context, terminalID string, tags map[string]string) error
 	SetMetadata(ctx context.Context, terminalID string, name string, tags map[string]string) error
 	List(ctx context.Context) (*protocol.ListResult, error)
+	RemoteStatus(ctx context.Context) (*protocol.RemoteStatus, error)
 	Events(ctx context.Context, params protocol.EventsParams) (<-chan protocol.Event, error)
 	Attach(ctx context.Context, terminalID string, mode string) (*protocol.AttachResult, error)
 	Snapshot(ctx context.Context, terminalID string, offset, limit int) (*protocol.Snapshot, error)
@@ -56,6 +57,10 @@ func (c *ProtocolClient) SetMetadata(ctx context.Context, terminalID string, nam
 
 func (c *ProtocolClient) List(ctx context.Context) (*protocol.ListResult, error) {
 	return c.inner.List(ctx)
+}
+
+func (c *ProtocolClient) RemoteStatus(ctx context.Context) (*protocol.RemoteStatus, error) {
+	return c.inner.RemoteStatus(ctx)
 }
 
 func (c *ProtocolClient) Events(ctx context.Context, params protocol.EventsParams) (<-chan protocol.Event, error) {

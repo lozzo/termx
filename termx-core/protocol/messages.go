@@ -665,6 +665,18 @@ type ListResult struct {
 	Terminals []TerminalInfo `json:"terminals"`
 }
 
+type RemoteStatus struct {
+	State         string    `json:"state"`
+	Detail        string    `json:"detail,omitempty"`
+	DeviceID      string    `json:"device_id,omitempty"`
+	DeviceName    string    `json:"device_name,omitempty"`
+	ControlURL    string    `json:"control_url,omitempty"`
+	HubURL        string    `json:"hub_url,omitempty"`
+	DataDir       string    `json:"data_dir,omitempty"`
+	TerminalCount int       `json:"terminal_count"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
 func EncodeScreenUpdatePayload(update ScreenUpdate) ([]byte, error) {
 	return encodeScreenUpdatePayloadBinary(NormalizeScreenUpdate(update))
 }

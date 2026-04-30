@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	remoteconfig "github.com/lozzow/termx/termx-core/internal/remote/config"
+	remoteruntime "github.com/lozzow/termx/termx-core/internal/remote/runtime"
 	"github.com/lozzow/termx/termx-core/perftrace"
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/termx-core/transport"
@@ -32,6 +34,7 @@ type serverConfig struct {
 	defaultKeepAfterExit time.Duration
 	liveOutputThrottle   liveOutputThrottleConfig
 	logger               *slog.Logger
+	remoteConfig         RemoteConfig
 }
 
 type Server struct {
@@ -41,6 +44,7 @@ type Server struct {
 	terminals      map[string]*Terminal
 	workbench      *workbenchsvc.Service
 	sessionHandler sessionRequestHandler
+	remoteManager  *remoteruntime.Manager
 	closed         atomic.Bool
 	listeners      []transport.Listener
 
@@ -69,6 +73,15 @@ func NewServer(opts ...ServerOption) *Server {
 	}
 	srv.events = NewEventBus(cfg.logger)
 	srv.sessionHandler = newSessionHandler(srv)
+	srv.remoteManager = remoteruntime.NewManager(remoteconfig.Normalize(remoteconfig.Config{
+		Enabled:     cfg.remoteConfig.Enabled,
+		ControlURL:  cfg.remoteConfig.ControlURL,
+		HubURL:      cfg.remoteConfig.HubURL,
+		AccessToken: cfg.remoteConfig.AccessToken,
+		DataDir:     cfg.remoteConfig.DataDir,
+		DeviceName:  cfg.remoteConfig.DeviceName,
+	}), remoteInventoryProvider{server: srv}, remoteInventoryProvider{server: srv})
+	_ = srv.remoteManager.Start(context.Background())
 	return srv
 }
 
@@ -186,17 +199,22 @@ func (s *Server) Create(ctx context.Context, opts CreateOptions) (*TerminalInfo,
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if _, exists := s.terminals[id]; exists {
+		s.mu.Unlock()
 		_ = term.Close()
 		return nil, ErrDuplicateID
 	}
 	if s.terminalNameExistsLocked(name, "") {
+		s.mu.Unlock()
 		_ = term.Close()
 		return nil, ErrDuplicateName
 	}
 	s.terminals[id] = term
 	s.invalidateProtocolListCacheLocked()
+	s.mu.Unlock()
+	if s.remoteManager != nil {
+		s.remoteManager.TriggerSync()
+	}
 	s.cfg.logger.Info("server created terminal", "terminal_id", id, "name", name)
 	return term.Info(), nil
 }
@@ -272,9 +290,9 @@ func (s *Server) SetTags(ctx context.Context, id string, tags map[string]string)
 func (s *Server) SetMetadata(ctx context.Context, id string, name string, tags map[string]string) error {
 	_ = ctx
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	term, ok := s.terminals[id]
 	if !ok {
+		s.mu.Unlock()
 		return ErrNotFound
 	}
 	currentName := strings.TrimSpace(term.Name())
@@ -283,10 +301,15 @@ func (s *Server) SetMetadata(ctx context.Context, id string, name string, tags m
 		nextName = currentName
 	}
 	if nextName != currentName && s.terminalNameExistsLocked(nextName, id) {
+		s.mu.Unlock()
 		return ErrDuplicateName
 	}
 	term.SetMetadata(name, tags)
 	s.invalidateProtocolListCacheLocked()
+	s.mu.Unlock()
+	if s.remoteManager != nil {
+		s.remoteManager.TriggerSync()
+	}
 	return nil
 }
 
@@ -451,6 +474,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		_ = term.Close()
 	}
 	s.events.Close()
+	if s.remoteManager != nil {
+		s.remoteManager.Close()
+	}
 	return nil
 }
 
@@ -461,6 +487,9 @@ func (s *Server) removeTerminal(id, reason string) {
 	}
 	s.invalidateProtocolListCacheLocked()
 	s.mu.Unlock()
+	if s.remoteManager != nil {
+		s.remoteManager.TriggerSync()
+	}
 
 	s.events.Publish(Event{
 		Type:       EventTerminalRemoved,
@@ -484,6 +513,9 @@ func (s *Server) invalidateProtocolListCache() {
 	s.mu.Lock()
 	s.invalidateProtocolListCacheLocked()
 	s.mu.Unlock()
+	if s.remoteManager != nil {
+		s.remoteManager.TriggerSync()
+	}
 }
 
 func (s *Server) invalidateProtocolListCacheLocked() {
@@ -835,6 +867,23 @@ func (s *Server) handleRequest(
 		return result, 0, nil
 	case "list":
 		result, err := s.protocolListResponse()
+		if err != nil {
+			return nil, 500, err
+		}
+		return result, 0, nil
+	case "remote.status":
+		status := s.RemoteStatus()
+		result, err := json.Marshal(protocol.RemoteStatus{
+			State:         string(status.State),
+			Detail:        status.Detail,
+			DeviceID:      status.DeviceID,
+			DeviceName:    status.DeviceName,
+			ControlURL:    status.ControlURL,
+			HubURL:        status.HubURL,
+			DataDir:       status.DataDir,
+			TerminalCount: status.TerminalCount,
+			UpdatedAt:     status.UpdatedAt,
+		})
 		if err != nil {
 			return nil, 500, err
 		}

@@ -267,6 +267,14 @@ func (c *Client) List(ctx context.Context) (*ListResult, error) {
 	return &out, nil
 }
 
+func (c *Client) RemoteStatus(ctx context.Context) (*RemoteStatus, error) {
+	var out RemoteStatus
+	if err := c.doRequest(ctx, "remote.status", map[string]any{}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *Client) Kill(ctx context.Context, terminalID string) error {
 	return c.doRequest(ctx, "kill", GetParams{TerminalID: terminalID}, nil)
 }

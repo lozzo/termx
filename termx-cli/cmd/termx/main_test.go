@@ -222,3 +222,42 @@ func TestRootCmdUsesExplicitConfigPath(t *testing.T) {
 		t.Fatalf("expected explicit config path %q, got %q", configPath, gotCfg.ConfigPath)
 	}
 }
+
+func TestRemoteConfigFromEnv(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_ENABLE", "true")
+	t.Setenv("TERMX_REMOTE_CONTROL_URL", "https://control.example.test")
+	t.Setenv("TERMX_REMOTE_HUB_URL", "https://hub.example.test")
+	t.Setenv("TERMX_REMOTE_ACCESS_TOKEN", "secret")
+	t.Setenv("TERMX_REMOTE_DATA_DIR", "/tmp/termx-remote")
+	t.Setenv("TERMX_REMOTE_DEVICE_NAME", "device-a")
+
+	cfg := remoteConfigFromEnv()
+	if !cfg.Enabled {
+		t.Fatal("expected remote config to be enabled")
+	}
+	if cfg.ControlURL != "https://control.example.test" {
+		t.Fatalf("unexpected control url: %q", cfg.ControlURL)
+	}
+	if cfg.HubURL != "https://hub.example.test" {
+		t.Fatalf("unexpected hub url: %q", cfg.HubURL)
+	}
+	if cfg.AccessToken != "secret" {
+		t.Fatalf("unexpected access token: %q", cfg.AccessToken)
+	}
+	if cfg.DataDir != "/tmp/termx-remote" {
+		t.Fatalf("unexpected data dir: %q", cfg.DataDir)
+	}
+	if cfg.DeviceName != "device-a" {
+		t.Fatalf("unexpected device name: %q", cfg.DeviceName)
+	}
+}
+
+func TestRemoteConfigFromEnvAutoEnablesWhenRemoteFieldsExist(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_ENABLE", "")
+	t.Setenv("TERMX_REMOTE_CONTROL_URL", "https://control.example.test")
+
+	cfg := remoteConfigFromEnv()
+	if !cfg.Enabled {
+		t.Fatal("expected remote config to auto-enable when remote fields exist")
+	}
+}

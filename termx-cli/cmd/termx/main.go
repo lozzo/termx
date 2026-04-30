@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lozzow/termx/termx-core/clientapi"
 	"github.com/lozzow/termx/termx-core"
+	"github.com/lozzow/termx/termx-core/clientapi"
 	"github.com/lozzow/termx/termx-core/protocol"
 	unixtransport "github.com/lozzow/termx/termx-core/transport/unix"
 	tuiv2app "github.com/lozzow/termx/tuiv2/app"
@@ -91,6 +92,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(lsCommand(&socket, &logFile))
 	cmd.AddCommand(killCommand(&socket, &logFile))
 	cmd.AddCommand(attachCommand(&socket, &logFile, &configPath))
+	cmd.AddCommand(remoteCommand(&socket, &logFile))
 	cmd.AddCommand(webCommand(&socket, &logFile))
 	return cmd
 }
@@ -129,9 +131,19 @@ func daemonCommand(socket *string) *cobra.Command {
 			logger.Info("starting daemon", "socket", resolveSocket(*socket), "log_file", logPath)
 			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
-			opts := []termx.ServerOption{termx.WithLogger(logger)}
+			remoteCfg := remoteConfigFromEnv()
+			opts := []termx.ServerOption{termx.WithLogger(logger), termx.WithRemoteConfig(remoteCfg)}
 			if *socket != "" {
 				opts = append(opts, termx.WithSocketPath(*socket))
+			}
+			if remoteCfg.Enabled {
+				logger.Info(
+					"remote runtime configured",
+					"control_url", remoteCfg.ControlURL,
+					"hub_url", remoteCfg.HubURL,
+					"data_dir", remoteCfg.DataDir,
+					"device_name", remoteCfg.DeviceName,
+				)
 			}
 			srv := termx.NewServer(opts...)
 			err = srv.ListenAndServe(ctx)
@@ -265,6 +277,59 @@ func attachCommand(socket *string, logFile *string, configPath *string) *cobra.C
 	}
 }
 
+func remoteCommand(socket *string, logFile *string) *cobra.Command {
+	cmd := &cobra.Command{
+		Use: "remote",
+	}
+	cmd.AddCommand(remoteStatusCommand(socket, logFile))
+	return cmd
+}
+
+func remoteStatusCommand(socket *string, logFile *string) *cobra.Command {
+	var outputJSON bool
+	cmd := &cobra.Command{
+		Use: "status",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			logger, closeLogger, _, err := openLogFileLogger(*logFile)
+			if err != nil {
+				return err
+			}
+			defer closeLogger()
+
+			client, err := dialOrStartClient(resolveSocket(*socket), resolveLogFilePath(*logFile), logger)
+			if err != nil {
+				return err
+			}
+			defer client.Close()
+
+			status, err := client.RemoteStatus(context.Background())
+			if err != nil {
+				return err
+			}
+			if outputJSON {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(status)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "state:\t%s\n", status.State)
+			fmt.Fprintf(cmd.OutOrStdout(), "device_id:\t%s\n", status.DeviceID)
+			fmt.Fprintf(cmd.OutOrStdout(), "device_name:\t%s\n", status.DeviceName)
+			fmt.Fprintf(cmd.OutOrStdout(), "control_url:\t%s\n", status.ControlURL)
+			fmt.Fprintf(cmd.OutOrStdout(), "hub_url:\t%s\n", status.HubURL)
+			fmt.Fprintf(cmd.OutOrStdout(), "data_dir:\t%s\n", status.DataDir)
+			fmt.Fprintf(cmd.OutOrStdout(), "terminal_count:\t%d\n", status.TerminalCount)
+			fmt.Fprintf(cmd.OutOrStdout(), "updated_at:\t%s\n", status.UpdatedAt.Format(time.RFC3339))
+			if status.Detail != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "detail:\t%s\n", status.Detail)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&outputJSON, "json", false, "emit JSON")
+	return cmd
+}
+
 func dialClient(path string) (*protocol.Client, error) {
 	conn, err := unixtransport.Dial(path)
 	if err != nil {
@@ -363,4 +428,28 @@ func currentSize() protocol.Size {
 		return protocol.Size{}
 	}
 	return protocol.Size{Cols: uint16(cols), Rows: uint16(rows)}
+}
+
+func remoteConfigFromEnv() termx.RemoteConfig {
+	cfg := termx.RemoteConfig{
+		Enabled:     envBool("TERMX_REMOTE_ENABLE"),
+		ControlURL:  strings.TrimSpace(os.Getenv("TERMX_REMOTE_CONTROL_URL")),
+		HubURL:      strings.TrimSpace(os.Getenv("TERMX_REMOTE_HUB_URL")),
+		AccessToken: strings.TrimSpace(os.Getenv("TERMX_REMOTE_ACCESS_TOKEN")),
+		DataDir:     strings.TrimSpace(os.Getenv("TERMX_REMOTE_DATA_DIR")),
+		DeviceName:  strings.TrimSpace(os.Getenv("TERMX_REMOTE_DEVICE_NAME")),
+	}
+	if !cfg.Enabled && (cfg.ControlURL != "" || cfg.HubURL != "" || cfg.AccessToken != "" || cfg.DataDir != "" || cfg.DeviceName != "") {
+		cfg.Enabled = true
+	}
+	return cfg
+}
+
+func envBool(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
