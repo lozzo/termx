@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 local + anonymous P2P signaling
-- Active todo: P3-A anonymous rendezvous interfaces/contracts
-- Last updated: 2026-05-01T03:34:00+08:00
+- Active todo: P3-B local pair API or anonymous rendezvous HTTP adapter
+- Last updated: 2026-05-01T03:38:00+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -18,7 +18,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P2-B | cert | Implement canonical app certificate payload, sign/verify helpers, and nonce/timestamp replay helper in `termx-core/internal/remote/cert` | completed | `62d1f70` |
 | P2-C | pairing | Implement local pair session creation, TTL, single-use semantics, and app certificate issuance in `termx-core/internal/remote/pairing` | completed | `12067cb` |
 | P2-D | CLI | Keep `termx remote status` working and add a conservative `termx pair` CLI skeleton only after core primitives exist | completed | `4b24258` |
-| P3-A | rendezvous | Implement anonymous rendezvous interfaces/contracts with payload limit, TTL, channel secret verification, and no TURN credentials | in_progress | pending |
+| P3-A | rendezvous | Implement anonymous rendezvous interfaces/contracts with payload limit, TTL, channel secret verification, and no TURN credentials | completed | `4012a1b` |
+| P3-B | local/api | Implement next P3 slice: local `/api/local/pair` or anonymous rendezvous HTTP adapter | pending |  |
 
 ## TDD Log
 
@@ -84,7 +85,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Code review regression tests: excessive TTL, non-JSON or non-signaling payloads, different app public keys after claim, and unbounded per-channel messages initially passed or failed to build; `go test ./internal/remote/rendezvous` failed before max TTL, structured signaling payload validation, app public key binding, and message count limits were added.
 - Final focused tests: `cd termx-core && go test ./internal/remote/rendezvous` passed.
 - Broader tests: `cd termx-core && go test ./internal/remote/...` passed; `cd termx-core && go test ./...` passed; `git diff --check` passed.
-- Result: implementation complete; pending commit hash.
+- Result: completed. Commit: `4012a1b`.
 
 ## Subagents
 
@@ -117,6 +118,5 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Commit P3-A.
-2. Update this workflow with the P3-A commit hash.
-3. Continue P3 with local `/api/local/pair` or anonymous rendezvous HTTP adapter tests, depending on next implementation slice.
+1. Choose next P3 slice based on implementation-plan order.
+2. Update this workflow before writing tests for the next todo.
