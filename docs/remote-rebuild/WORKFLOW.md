@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: choose next slice after P3-F
-- Last updated: 2026-05-01T14:53:50+08:00
+- Active todo: P3-E-C-B-D local WebRTC DataChannel open gating
+- Last updated: 2026-05-01T15:26:00+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -33,6 +33,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-A | local/e2e | Implement browser-local app identity, certificate storage, and offer signing primitives | completed | `7185c8d` |
 | P3-E-C-B-B | local/e2e | Add local pair UI/harness and executable embedded web smoke fallback before mobile migration | completed | `be45093` |
 | P3-E-C-B-C | local/e2e | Run in-app Browser Use click smoke against embedded local web when the required browser Node REPL `js` tool is available | deferred |  |
+| P3-E-C-B-D | local/e2e | Fix browser local WebRTC API/file DataChannel send-before-open race found during manual embedded web test | in_progress |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -164,6 +165,18 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Broader tests after review fix: `cd remote-ui && npm test` passed 77 tests; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
 - Follow-up code review: `Darwin` found no findings after the first-run pairing fix. It confirmed the certificate error stays non-fatal after machine/terminal load, the pair panel remains visible, pair success clears the error and retries transport creation, tests cover the regression, and the scoped files did not introduce workspace/tab/pane/session UI wording, TURN credentials, machine private key exposure, or app private key boundary drift.
 - Result: completed. Commit: `be45093`.
+
+### P3-E-C-B-D local WebRTC DataChannel open gating
+
+- Active slice: fix the manual embedded-web local test failure `Failed to execute 'send' on 'RTCDataChannel': RTCDataChannel.readyState is not 'open'`.
+- Tests written before implementation: `remote-ui/src/localWebRtcTransport.test.ts`.
+- Expected failing tests: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` should fail because the `api` request path sends immediately on a connecting DataChannel and `openFileTransfer()` resolves before the `file:{transfer_id}` DataChannel is open.
+- Actual failing tests before implementation: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` failed as expected. The API test timed out waiting for the request frame after opening the channel because the old request had already failed while `connecting`; the file transfer test observed `openFileTransfer()` resolving before the RTC channel opened.
+- Planned scope: keep the fix inside the browser-local transport adapter, preserving the `PeerTransport`/`JsonRpcChannel`/`BinaryChannel` interfaces for UI/business components. The change must not introduce workspace/tab/pane public concepts, TURN relay credentials, or any machine private key exposure.
+- Implementation notes: `LocalApiChannel` now registers request waiters immediately but waits for the RTC `api` DataChannel to open before sending, so early responses are not dropped and pre-open sends are avoided. `openFileTransfer()` now waits for `file:{transfer_id}` to open before returning a `BinaryChannel` to callers.
+- Focused tests after implementation before code review: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` passed 12 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm test` passed 79 tests; `cd remote-ui && npm run build:localweb` passed; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed.
+- Code review: `Hilbert` found no issues. It confirmed the fix stays inside the browser-local WebRTC adapter, preserves `PeerTransport` / `JsonRpcChannel` / `BinaryChannel` boundaries, keeps RTC primitives out of UI/business components, and does not introduce workspace/tab/pane/session concepts, TURN relay credentials, or machine private key exposure. Residual risk: no automated in-app browser click smoke was available in this Codex session.
+- Final focused tests after review: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` passed 12 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm test` passed 79 tests; `cd remote-ui && npm run build:localweb` passed; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 
@@ -365,6 +378,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - `Plato` (`019de241-ebd8-79a3-8852-385c75a97938`): P3-F read-only explorer for anonymous rendezvous HTTP handler placement, localweb error envelope conventions, endpoint shape, and gotchas around no TURN credentials/channel secret auth. Result: recommended `termx-core/internal/remote/rendezvous/http.go`, localweb-style error envelope, documented endpoints only, events header auth, offer/answer body secret, and deferring candidate endpoint/service shell until adapter needs it.
 - `Mendel` (`019de247-0019-78c1-be99-3d7f5c5a8003`): P3-F code review for docs alignment, secret/auth handling, no TURN credentials, no terminal/file data relay, and test coverage. Findings: medium missing standalone ICE candidate HTTP endpoint. Result: fixed with `/candidate` endpoint and regression coverage.
 - `Anscombe` (`019de24b-23b1-7a72-b8ed-1db7b6f8294f`): P3-F follow-up code review after candidate/envelope changes. Findings: high plaintext channel secret storage, medium `/answer` did not forward `app_certificate`/`signature`, and low `auth-and-pairing.md` omitted `/candidate`. Result: fixed with hashed channel secret verifier storage, answer envelope forwarding, docs update, and regression tests.
+- `Hilbert` (`019de26c-732d-74a3-93d0-54b7b6bbdcb7`): P3-E-C-B-D code review for local WebRTC DataChannel open gating, regenerated embedded localweb static assets, boundary drift, no TURN credentials, no machine private key exposure, and test coverage. Findings: no issues. Residual risk: no automated in-app browser click smoke was available in this Codex session.
 
 ## Code Review Log
 
@@ -386,6 +400,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - P3-E-C-B-A review complete after non-exportable app key storage fix. Browser-local app identity now stores only app metadata and app certificates in string storage, keeps app private keys behind an IndexedDB/WebCrypto key-store boundary, signs local offers with the Go-compatible canonical message, does not expose machine private key material, and does not introduce TURN credentials or workspace/tab/pane public concepts. Residual risk: pair UI/harness and real browser terminal/file smoke remain for P3-E-C-B-B.
 - P3-E-C-B-B review complete after first-run reachability fix and follow-up review. The pair harness remains rendered through `LocalAgentApi` and app identity interfaces, missing-certificate errors no longer hide pairing, successful pairing retries the local transport, executable smoke covers embedded shell/pair markers plus no TURN or machine-private-key asset exposure, and no follow-up findings remain.
 - P3-F review complete after candidate endpoint, envelope-forwarding, hashed-secret, and relay-candidate rejection fixes. Current HTTP adapter reuses the anonymous rendezvous store, forwards only lightweight signaling/certificate/signature envelopes needed by the daemon, stores only hashed channel-secret verifier material, and does not add TURN credentials, terminal/file payload forwarding, app certificate business authorization, machine private key exposure, or workspace/tab/pane public concepts.
+- P3-E-C-B-D review complete. Local browser API requests and file transfers now wait for their RTC DataChannels to open inside the adapter boundary; UI/business components still only see `PeerTransport`, `JsonRpcChannel`, and `BinaryChannel`; no workspace/tab/pane/session public concepts, TURN relay credentials, or machine private key exposure were introduced. Residual risk: real in-app browser click automation remains deferred until the Browser Use Node REPL `js` tool is available.
 
 ## Deferred Human Decisions And Placeholders
 

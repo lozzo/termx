@@ -251,6 +251,79 @@ describe('createLocalWebRtcPeerTransport', () => {
     await expect(terminalPromise).resolves.toMatchObject({ label: 'terminal:terminal-1' })
   })
 
+  it('waits for the api data channel to open before sending requests', async () => {
+    const factory = createMockPeerConnectionFactory({ initialReadyState: 'connecting' })
+    const transport = createLocalWebRtcPeerTransport({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      mode: 'local',
+      peerConnectionFactory: factory,
+      createAnswer: async (offer) => ({ sessionId: offer.sessionId, answer: { type: 'answer', sdp: 'answer-sdp' } }),
+      sessionIdGenerator: () => 'rtc-local-1',
+      appCertificate: '{"payload":{"machine_id":"machine-local"}}',
+      signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
+    })
+    await transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' })
+    const api = await transport.openApi()
+    const apiChannel = factory.channel('api')
+
+    const requestResult = api.request('POST', { path: '/files/list', params: { path: '/' } }).then(
+      (value) => ({ status: 'fulfilled' as const, value }),
+      (error: Error) => ({ status: 'rejected' as const, error }),
+    )
+    await Promise.resolve()
+
+    expect(apiChannel.sentText()).toEqual([])
+    apiChannel.open()
+    const request = JSON.parse(await waitForTextSent(apiChannel, 0))
+    expect(request).toEqual({
+      id: 'req_1',
+      method: 'POST',
+      path: '/files/list',
+      body: { path: '/' },
+    })
+    apiChannel.emitMessage(apiResponseChunk('req_1', {
+      id: 'req_1',
+      status: 200,
+      body: { path: '/', parent: '', total: 0, entries: [] },
+    }))
+
+    await expect(requestResult).resolves.toEqual({
+      status: 'fulfilled',
+      value: { path: '/', parent: '', total: 0, entries: [] },
+    })
+  })
+
+  it('waits for file transfer data channels to open before resolving them', async () => {
+    const factory = createMockPeerConnectionFactory({ initialReadyState: 'connecting' })
+    const transport = createLocalWebRtcPeerTransport({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      mode: 'local',
+      peerConnectionFactory: factory,
+      createAnswer: async (offer) => ({ sessionId: offer.sessionId, answer: { type: 'answer', sdp: 'answer-sdp' } }),
+      sessionIdGenerator: () => 'rtc-local-1',
+      appCertificate: '{"payload":{"machine_id":"machine-local"}}',
+      signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
+    })
+    await transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' })
+    let resolved = false
+    const fileChannelPromise = transport.openFileTransfer('upload-1').then((channel) => {
+      resolved = true
+      return channel
+    })
+    const rtcChannel = factory.channel('file:upload-1')
+    await Promise.resolve()
+
+    expect(resolved).toBe(false)
+    rtcChannel.open()
+    const fileChannel = await fileChannelPromise
+    fileChannel.send(new Uint8Array([1, 2, 3]))
+
+    expect(fileChannel.label).toBe('file:upload-1')
+    expect(rtcChannel.sent[0]).toEqual(new Uint8Array([1, 2, 3]))
+  })
+
   it('creates a fresh terminal channel after raw RTC close before retrying open', async () => {
     const factory = createMockPeerConnectionFactory()
     const transport = createLocalWebRtcPeerTransport({
@@ -389,6 +462,18 @@ async function waitForBinarySentFrame(channel: MockRTCDataChannel, index: number
     }
     if (Date.now() - started > 1000) {
       throw new Error(`missing binary sent frame ${index}`)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+}
+
+async function waitForTextSent(channel: MockRTCDataChannel, index: number): Promise<string> {
+  const started = Date.now()
+  for (;;) {
+    const data = channel.sent[index]
+    if (typeof data === 'string') return data
+    if (Date.now() - started > 1000) {
+      throw new Error(`missing text sent frame ${index}`)
     }
     await new Promise((resolve) => setTimeout(resolve, 0))
   }

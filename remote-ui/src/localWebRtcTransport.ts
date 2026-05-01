@@ -116,6 +116,7 @@ class LocalWebRtcPeerTransport implements PeerTransport, TerminalTransport {
   async openFileTransfer(transferId: string): Promise<BinaryChannel> {
     const channel = this.openRTCChannel(`file:${transferId}`)
     this.fileChannels.set(transferId, channel)
+    await waitChannelOpen(channel)
     return toBinaryChannel(channel)
   }
 
@@ -221,6 +222,7 @@ class LocalWebRtcPeerTransport implements PeerTransport, TerminalTransport {
 
 class LocalApiChannel implements JsonRpcChannel {
   private nextID = 1
+  private readonly openPromise: Promise<void>
   private readonly waiters = new Map<string, {
     chunks: Uint8Array[]
     resolve: (value: unknown) => void
@@ -228,6 +230,7 @@ class LocalApiChannel implements JsonRpcChannel {
   }>()
 
   constructor(private readonly channel: RTCDataChannelLike) {
+    this.openPromise = waitChannelOpen(channel)
     channel.addEventListener('message', (event) => this.handleMessage((event as MessageEvent).data))
   }
 
@@ -240,12 +243,27 @@ class LocalApiChannel implements JsonRpcChannel {
         resolve: (value) => resolve(value as TResponse),
         reject,
       })
-      this.channel.send(JSON.stringify({
-        id,
-        method: payload.method,
-        path: payload.path,
-        body: payload.body,
-      }))
+      const rejectAndDelete = (err: unknown) => {
+        this.waiters.delete(id)
+        reject(err instanceof Error ? err : new Error(String(err)))
+      }
+      const sendRequest = () => {
+        try {
+          this.channel.send(JSON.stringify({
+            id,
+            method: payload.method,
+            path: payload.path,
+            body: payload.body,
+          }))
+        } catch (err) {
+          rejectAndDelete(err)
+        }
+      }
+      if (this.channel.readyState === 'open') {
+        sendRequest()
+        return
+      }
+      void this.openPromise.then(sendRequest, (err: unknown) => rejectAndDelete(err))
     })
   }
 
