@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-F anonymous rendezvous HTTP adapter/service
-- Last updated: 2026-05-01T14:52:16+08:00
+- Active todo: choose next slice after P3-F
+- Last updated: 2026-05-01T14:53:50+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -33,7 +33,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-A | local/e2e | Implement browser-local app identity, certificate storage, and offer signing primitives | completed | `7185c8d` |
 | P3-E-C-B-B | local/e2e | Add local pair UI/harness and executable embedded web smoke fallback before mobile migration | completed | `be45093` |
 | P3-E-C-B-C | local/e2e | Run in-app Browser Use click smoke against embedded local web when the required browser Node REPL `js` tool is available | deferred |  |
-| P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | in_progress |  |
+| P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
 ## TDD Log
@@ -187,7 +187,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Final focused tests after follow-up fixes: `cd termx-core && go test ./internal/remote/rendezvous -run 'TestHTTPAnswerForwardsCertificateAndSignatureEnvelope|TestChannelSecretIsNotStoredInPlaintext|TestHTTP|TestSignalingPayloadMustBeStructured' -count=1` passed; `cd termx-core && go test ./internal/remote/rendezvous -count=1` passed.
 - Final broader tests after follow-up fixes: `cd termx-core && go test ./internal/remote/...` passed; `cd termx-core && go test ./...` passed; `git diff --check` passed.
 - Subagents: `Plato` confirmed placement in `termx-core/internal/remote/rendezvous`, endpoint shapes, localweb error envelope reuse, documented split between header auth for events and body secret for offer/answer, and the candidate endpoint gap. It recommended not adding a standalone `termx-rendezvous/` service shell yet.
-- Result: in progress. Commit: pending.
+- Result: completed. Commit: `a4ab3b2`.
 
 ### P3-D-B shared terminal client and Terminal.tsx boundary
 
@@ -406,6 +406,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Commit P3-F anonymous rendezvous HTTP adapter/service.
-2. Record the P3-F commit hash in this workflow.
-3. Start the next implementation slice after choosing between anonymous rendezvous client adapters and mobile app shell migration.
+1. Choose the next slice: either anonymous rendezvous client adapters around the shared remote UI, or P4-A mobile app shell migration.
+2. Update this workflow before writing the next todo's failing tests.
+3. Keep P3-E-C-B-C deferred until Browser Use exposes the required in-app browser Node REPL `js` tool.
