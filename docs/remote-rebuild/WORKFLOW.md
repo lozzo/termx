@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-D-D shared FileManager boundary
-- Last updated: 2026-05-01T12:09:21+08:00
+- Active todo: P3-E local embedded web terminal/file wiring
+- Last updated: 2026-05-01T12:10:23+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -26,8 +26,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-D-A | remote-ui | Create shared `remote-ui/` TypeScript package with machine/terminal contracts, transport interfaces, connection message reducer, and event queue | completed | `fe9025d` |
 | P3-D-B | remote-ui | Adapt `Terminal.tsx` from `../tgent` into shared remote UI using `terminal_id` instead of pane/session concepts | completed | `e87d37a` |
 | P3-D-C | remote-ui | Adapt terminal list from `../tgent` `SessionList.tsx` into `TerminalList.tsx` with machine -> terminal semantics only | completed | `c423ba3` |
-| P3-D-D | remote-ui | Adapt `FileManager.tsx` and file hooks from `../tgent` behind TermX file transport interfaces | in_progress |  |
-| P3-E | local/e2e | Wire embedded local web to terminal and file manager over local WebRTC DataChannels and validate in browser before mobile migration | pending |  |
+| P3-D-D | remote-ui | Adapt `FileManager.tsx` and file hooks from `../tgent` behind TermX file transport interfaces | completed | `138aba3` |
+| P3-E | local/e2e | Wire embedded local web to terminal and file manager over local WebRTC DataChannels and validate in browser before mobile migration | in_progress |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | pending |  |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -58,7 +58,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Follow-up review regression tests: added coverage requiring `FileManagerProps.terminalId`, and requiring `useFileManager` to reject missing or mismatched transport terminal IDs before `openApi()`. The missing-terminal regression failed before the fix, proving unscoped terminal use was still possible.
 - Follow-up review fix: `FileManagerProps` and `UseFileManagerOptions` now require `terminalId`; `useFileManager` rejects missing or mismatched `ConnectionInfo.terminalId` before opening the file API channel; `remote-ui` typecheck now includes `.tsx` files so component contract tests are enforced.
 - Final follow-up review: `Mencius` found no remaining code findings after terminal scoping fixes. Low finding: workflow text was stale and still described the terminal scoping fix as in progress. This entry is the workflow cleanup for that finding.
-- Result: ready to commit. Commit: pending.
+- Result: completed. Commit: `138aba3`.
 
 ### P3-D-B shared terminal client and Terminal.tsx boundary
 
@@ -256,6 +256,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Rerun final focused and broader P3-D-D tests after workflow cleanup.
-2. Commit P3-D-D and record the commit hash.
-3. Move active workflow state to P3-E local embedded web wiring.
+1. Start P3-E by writing failing tests for the embedded local web browser adapter/data-channel wiring.
+2. Resolve the documented `GET /files/list` / existing Go `POST /files/list` contract mismatch before browser smoke.
+3. Wire shared `Terminal.tsx`, `TerminalList.tsx`, and `FileManager.tsx` into the local termx embedded web shell.
