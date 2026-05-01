@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-E-C-B-G browser-local WebRTC offer ICE gathering readiness
-- Last updated: 2026-05-01T21:29:17+08:00
+- Active todo: choose next slice after P3-E-C-B-G verified local browser smoke
+- Last updated: 2026-05-01T21:30:57+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -36,7 +36,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-D | local/e2e | Fix browser local WebRTC API/file DataChannel send-before-open race found during manual embedded web test | completed | `a1edab3` |
 | P3-E-C-B-E | local/e2e | Fix embedded local file manager hang where `Loading files` remains visible instead of files or an error | completed | `80bbeb1` |
 | P3-E-C-B-F | local/e2e | Require the local WebRTC `api` DataChannel to open during connect so FileManager does not mount on a half-ready transport | completed | `9a51792` |
-| P3-E-C-B-G | local/e2e | Fix real-browser local WebRTC `api` DataChannel timeout by waiting for local ICE candidates before signing/sending the offer | in_progress |  |
+| P3-E-C-B-G | local/e2e | Fix real-browser local WebRTC `api` DataChannel timeout by waiting for local ICE candidates before signing/sending the offer | completed | `9531237` |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -225,6 +225,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Real browser smoke: built `/tmp/termx-local-test`, restarted one local daemon at `http://127.0.0.1:18888` with ICE TCP `127.0.0.1:18889`, created terminal `1`, launched Chrome headless over CDP, filled the pair panel, completed local pairing, opened browser WebRTC, loaded `assets/index-hkl3rMAj.js`, opened the `api` DataChannel, and verified the `FileManager` rendered real root directory entries instead of `Loading files` or `timed out opening data channel api`.
 - Cleanup regressions: added `TestAnswerOfferSessionContextClosesDataChannel` to prove the server/daemon session context still closes the PeerConnection and browser data channel after a session cancellation, and `TestAnswerOfferDefaultSessionContextFollowsCallerContext` to prove non-local/default callers remain tied to their owning context.
 - Code review: `Wegener` found no findings for the ICE-gathering browser adapter change. It confirmed no workspace/tab/pane public concepts, TURN relay credentials, machine private key handling, or transport-boundary leakage in the scoped changes; residual note was to include the generated asset replacement in the final commit. Follow-up review by `Descartes` found a high issue: default `AnswerOffer` had been accidentally detached from the caller context, so non-local remote sessions could outlive their owning runtime. Fixed by making `SessionContext` optional and defaulting to the caller context, while only local web passes the daemon session context; added `DefaultSessionContextFollowsCallerContext` to guard the default cleanup behavior.
+- Result: completed. Commit: `9531237`.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 
@@ -469,7 +470,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Run final focused/broader tests after workflow update.
-2. Commit P3-E-C-B-G with code, tests, workflow, and generated static asset replacement.
-3. Generate a fresh unused Pair ID/secret from the verified local daemon for user testing.
-4. Keep P3-E-C-B-C deferred until Browser Use exposes the required in-app browser Node REPL `js` tool.
+1. Generate a fresh unused Pair ID/secret from the verified local daemon for user testing.
+2. Keep P3-E-C-B-C deferred until Browser Use exposes the required in-app browser Node REPL `js` tool.
+3. Choose the next P3/P4 slice after manual local verification remains stable.
