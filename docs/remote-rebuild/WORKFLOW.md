@@ -38,7 +38,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-F | local/e2e | Require the local WebRTC `api` DataChannel to open during connect so FileManager does not mount on a half-ready transport | completed | `9a51792` |
 | P3-E-C-B-G | local/e2e | Fix real-browser local WebRTC `api` DataChannel timeout by waiting for local ICE candidates before signing/sending the offer | completed | `9531237` |
 | P3-E-C-B-H | local/e2e | Replace the readonly terminal placeholder with a tgent-aligned xterm.js terminal surface that writes output, forwards input, and sends resize through TermX terminal interfaces | completed | `db9c7065` |
-| P3-E-C-B-I | remote-ui | Refactor embedded local web mobile terminal interaction shell with terminal-first navigation, terminal switcher sheet, pair sheet, virtual keybar, and keyboard-aware xterm handle | completed | `92b8308b` |
+| P3-E-C-B-I | remote-ui | Refactor embedded local web mobile terminal interaction shell with terminal-first navigation, terminal switcher sheet, pair sheet, virtual keybar, and keyboard-aware xterm handle | completed | `be748f93` |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -259,7 +259,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Final focused tests after code review fixes: `cd remote-ui && npm test -- --run src/Terminal.test.tsx src/FileManager.test.tsx` passed 12 tests; `cd remote-ui && npm test -- --run src/localWebEntry.test.tsx src/LocalRemoteApp.test.tsx src/Terminal.test.tsx src/mobileTerminalInput.test.ts` passed 20 tests; `cd remote-ui && npm run typecheck` passed.
 - Final broader tests after implementation: `cd remote-ui && npm test` passed 101 tests; `cd remote-ui && npm run build:localweb` passed and regenerated `termx-core/internal/remote/localweb/static/assets/index-D4TtbuV4.js` plus `index-DLJaNUDj.css`; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
 - Real local smoke: rebuilt `/tmp/termx-local-test`, restarted tmux session `termx-local-test` with local web `127.0.0.1:18888` and ICE TCP `127.0.0.1:18889`, confirmed `GET /` references `/assets/index-D4TtbuV4.js` and `/assets/index-DLJaNUDj.css`, and confirmed `/api/local/status` reports machine `device-b9702aff8b30c634` with ICE TCP enabled. The daemon remains running for manual inspection.
-- Result: completed. Commit: `92b8308b`.
+- Result: completed. Commit: `be748f93`.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 
