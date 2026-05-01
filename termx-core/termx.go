@@ -16,7 +16,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lozzow/termx/termx-core/internal/remote/cert"
 	remoteconfig "github.com/lozzow/termx/termx-core/internal/remote/config"
+	"github.com/lozzow/termx/termx-core/internal/remote/fileapi"
 	"github.com/lozzow/termx/termx-core/internal/remote/pairing"
 	remoteruntime "github.com/lozzow/termx/termx-core/internal/remote/runtime"
 	"github.com/lozzow/termx/termx-core/perftrace"
@@ -39,18 +41,21 @@ type serverConfig struct {
 }
 
 type Server struct {
-	cfg            serverConfig
-	events         *EventBus
-	mu             sync.RWMutex
-	terminals      map[string]*Terminal
-	workbench      *workbenchsvc.Service
-	sessionHandler sessionRequestHandler
-	remoteManager  *remoteruntime.Manager
-	remotePairMu   sync.Mutex
-	remotePairing  *pairing.Manager
-	remotePairCfg  pairing.Config
-	closed         atomic.Bool
-	listeners      []transport.Listener
+	cfg             serverConfig
+	events          *EventBus
+	mu              sync.RWMutex
+	terminals       map[string]*Terminal
+	workbench       *workbenchsvc.Service
+	sessionHandler  sessionRequestHandler
+	remoteManager   *remoteruntime.Manager
+	remotePairMu    sync.Mutex
+	remotePairing   *pairing.Manager
+	remotePairCfg   pairing.Config
+	remoteRTCMu     sync.Mutex
+	remoteRTCReplay *cert.ReplayWindow
+	remoteRTCFiles  *fileapi.Manager
+	closed          atomic.Bool
+	listeners       []transport.Listener
 
 	// protocolListCache stores the marshaled response for the wire-level
 	// unfiltered "list" request. The Go API still returns fresh copies.
@@ -481,6 +486,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.remoteManager != nil {
 		s.remoteManager.Close()
 	}
+	if s.remoteRTCFiles != nil {
+		s.remoteRTCFiles.Close()
+	}
 	return nil
 }
 
@@ -688,7 +696,15 @@ type sessionAttachment struct {
 	cleanup      func()
 }
 
+type transportScope struct {
+	TerminalID string
+}
+
 func (s *Server) handleTransport(ctx context.Context, t transport.Transport, remote string) error {
+	return s.handleTransportScoped(ctx, t, remote, transportScope{})
+}
+
+func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transport, remote string, scope transportScope) error {
 	defer t.Close()
 	s.cfg.logger.Info("transport session opened", "remote", remote)
 	defer s.cfg.logger.Info("transport session closed", "remote", remote)
@@ -779,6 +795,12 @@ func (s *Server) handleTransport(ctx context.Context, t transport.Transport, rem
 					continue
 				}
 				s.cfg.logger.Debug("transport request", "remote", remote, "method", req.Method, "id", req.ID)
+				if err := scope.authorizeRequest(req); err != nil {
+					if err := sendProtocolError(sendFrame, req.ID, 0, protocolErrorCode(err), err.Error()); err != nil {
+						return err
+					}
+					continue
+				}
 				var (
 					result json.RawMessage
 					code   int
@@ -833,6 +855,71 @@ func (s *Server) handleTransport(ctx context.Context, t transport.Transport, rem
 			}
 		}
 	}
+}
+
+func (s transportScope) authorizeRequest(req protocol.Request) error {
+	terminalID := strings.TrimSpace(s.TerminalID)
+	if terminalID == "" {
+		return nil
+	}
+	if strings.HasPrefix(req.Method, "session.") {
+		return scopedTransportDenied(req.Method, terminalID)
+	}
+	switch req.Method {
+	case "get":
+		var params protocol.GetParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return err
+		}
+		return authorizeScopedTerminal(req.Method, params.TerminalID, terminalID)
+	case "resize":
+		var params protocol.ResizeParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return err
+		}
+		return authorizeScopedTerminal(req.Method, params.TerminalID, terminalID)
+	case "snapshot":
+		var params protocol.SnapshotParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return err
+		}
+		return authorizeScopedTerminal(req.Method, params.TerminalID, terminalID)
+	case "attach":
+		var params protocol.AttachParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return err
+		}
+		return authorizeScopedTerminal(req.Method, params.TerminalID, terminalID)
+	case "detach":
+		var params protocol.DetachParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return err
+		}
+		return authorizeScopedTerminal(req.Method, params.TerminalID, terminalID)
+	case "events":
+		var params protocol.EventsParams
+		if len(req.Params) > 0 {
+			if err := json.Unmarshal(req.Params, &params); err != nil {
+				return err
+			}
+		}
+		return authorizeScopedTerminal(req.Method, params.TerminalID, terminalID)
+	default:
+		return scopedTransportDenied(req.Method, terminalID)
+	}
+}
+
+func authorizeScopedTerminal(method string, requested string, allowed string) error {
+	requested = strings.TrimSpace(requested)
+	allowed = strings.TrimSpace(allowed)
+	if requested == "" || requested != allowed {
+		return scopedTransportDenied(method, allowed)
+	}
+	return nil
+}
+
+func scopedTransportDenied(method string, terminalID string) error {
+	return fmt.Errorf("%w: method %q is not authorized for terminal %q", ErrPermissionDenied, method, terminalID)
 }
 
 func (s *Server) handleRequest(

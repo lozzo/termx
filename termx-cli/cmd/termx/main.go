@@ -163,8 +163,19 @@ func daemonCommand(socket *string) *cobra.Command {
 			defer func() {
 				_ = srv.Shutdown(context.Background())
 			}()
+			var iceTCPMux *termx.LocalICETCPMux
+			if iceTCPAddr := remoteLocalICETCPAddrFromEnv(); iceTCPAddr != "" {
+				var err error
+				iceTCPMux, err = termx.StartLocalICETCPMux(ctx, iceTCPAddr)
+				if err != nil {
+					return err
+				}
+				defer iceTCPMux.Close()
+				endpoint := iceTCPMux.Endpoint()
+				logger.Info("remote local ICE TCP listening", "host", endpoint.Host, "port", endpoint.Port)
+			}
 			if localWebAddr := remoteLocalWebAddrFromEnv(); localWebAddr != "" {
-				localWebURL, stopLocalWeb, err := startRemoteLocalWeb(ctx, srv, localWebAddr, logger)
+				localWebURL, stopLocalWeb, err := startRemoteLocalWeb(ctx, srv, localWebAddr, iceTCPMux, logger)
 				if err != nil {
 					return err
 				}
@@ -528,7 +539,17 @@ func remoteLocalWebAddrFromEnv() string {
 	return ""
 }
 
-func startRemoteLocalWeb(ctx context.Context, srv *termx.Server, addr string, logger *slog.Logger) (string, func(context.Context) error, error) {
+func remoteLocalICETCPAddrFromEnv() string {
+	if addr := strings.TrimSpace(os.Getenv("TERMX_REMOTE_LOCAL_ICE_TCP_ADDR")); addr != "" {
+		return addr
+	}
+	if envBool("TERMX_REMOTE_LOCAL_ICE_TCP_ENABLE") {
+		return "127.0.0.1:18889"
+	}
+	return ""
+}
+
+func startRemoteLocalWeb(ctx context.Context, srv *termx.Server, addr string, iceTCPMux *termx.LocalICETCPMux, logger *slog.Logger) (string, func(context.Context) error, error) {
 	addr = strings.TrimSpace(addr)
 	if addr == "" {
 		return "", nil, fmt.Errorf("remote local web address is required")
@@ -543,6 +564,7 @@ func startRemoteLocalWeb(ctx context.Context, srv *termx.Server, addr string, lo
 		Handler: srv.LocalWebHandler(termx.LocalWebOptions{
 			HTTPURL:      baseURL,
 			LocalPairURL: baseURL + "/api/local/pair",
+			ICETCPMux:    iceTCPMux,
 		}),
 	}
 	done := make(chan struct{})

@@ -127,6 +127,9 @@ Request:
     "signature": "base64..."
   },
   "offer": {
+    "session_id": "rtc_...",
+    "machine_id": "mach_...",
+    "terminal_id": "term_...",
     "sdp": "...",
     "ice_candidates": []
   },
@@ -148,6 +151,7 @@ Response:
 ```json
 {
   "answer": {
+    "session_id": "rtc_...",
     "sdp": "...",
     "ice_candidates": []
   },

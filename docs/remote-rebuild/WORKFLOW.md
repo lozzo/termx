@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-C local WebRTC signaling and ICE TCP mux
-- Last updated: 2026-05-01T10:18:08+08:00
+- Active todo: P3-C local WebRTC signaling and ICE TCP mux ready to commit
+- Last updated: 2026-05-01T11:10:32+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -22,7 +22,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P2-D | CLI | Keep `termx remote status` working and add a conservative `termx pair` CLI skeleton only after core primitives exist | completed | `4b24258` |
 | P3-A | rendezvous | Implement anonymous rendezvous interfaces/contracts with payload limit, TTL, channel secret verification, and no TURN credentials | completed | `4012a1b` |
 | P3-B | localweb | Implement embedded local web foundation served from `termx` binary with local status, terminal list, and pair API contracts | completed | `6d9048f` |
-| P3-C | rtc | Implement local WebRTC signaling and ICE TCP mux/over-TCP support for browser-to-daemon local connections | pending |  |
+| P3-C | rtc | Implement local WebRTC signaling and ICE TCP mux/over-TCP support for browser-to-daemon local connections | ready_to_commit |  |
 | P3-D | remote-ui | Create shared remote UI package and adapt `Terminal.tsx`, `TerminalList.tsx`, and `FileManager.tsx` from `../tgent` for machine/terminal-only semantics | pending |  |
 | P3-E | local/e2e | Wire embedded local web to terminal and file manager over local WebRTC DataChannels and validate in browser before mobile migration | pending |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | pending |  |
@@ -123,6 +123,27 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Fixes after review: local pair response/docs include `machine_public_key_fingerprint` and `expires_at`; default assets use `go:embed`; CLI TCP listener test covers `/`, `/api/local/status`, `/api/local/terminals`, and `/api/local/pair`; local API errors now use documented `code/message/request_id`; `last_active_at` remains recorded as a placeholder until runtime activity metadata exists.
 - Result: completed. Commit: `6d9048f`.
 
+### P3-C local WebRTC signaling and ICE TCP mux
+
+- Tests written before implementation: `termx-core/internal/remote/localweb/handler_test.go`, `termx-core/internal/remote/rtc/offer_signature_test.go`, `termx-core/internal/remote/rtc/tcp_mux_test.go`, `termx-core/remote_localweb_test.go`, and `termx-cli/cmd/termx/main_test.go`.
+- Expected failing tests: `cd termx-core && go test ./internal/remote/localweb -run TestHandlerLocalRTCOfferAnswersWithLocalContract` failed to build because local RTC DTOs, interface, and route did not exist; `cd termx-core && go test ./internal/remote/rtc -run 'TestOfferSignature|TestLocalICETCPMux'` failed to build because offer signature helpers and local ICE TCP mux did not exist; `cd termx-core && go test . -run TestE2ERemoteLocalWebHandlerAnswersAuthenticatedRTCOffer` failed to build because public `StartLocalICETCPMux`, `LocalWebOptions.ICETCPMux`, and signature helpers did not exist; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocalICETCPAddrFromEnv|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` failed to build because CLI ICE TCP env parsing and local web mux injection did not exist.
+- Focused tests after implementation: `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-core && go test . -run 'TestE2ERemote(LocalWeb|Pair|Status)|TestE2E_WebRTC'` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
+- Broader tests before final code review: `cd termx-core && go test ./internal/remote/...` passed; `cd termx-core && go test ./...` passed; `cd termx-cli && go test ./...` passed.
+- Implementation notes: first P3-C slice uses an independent local ICE TCP listener instead of tgent-style same-port cmux; local offer verification checks machine-signed app certificate, app certificate machine_id against the local machine, app offer signature, nonce replay, requested terminal existence, and both terminal/file_manager capabilities before calling the existing WebRTC answer path.
+- Deferred from this slice: browser smoke and same-port HTTP/ICE TCP cmux remain in later P3 work; current contract exposes the separate ICE TCP endpoint through local status and local RTC answer metadata.
+- Scope constraints: no TermX TURN relay credentials in local responses, no workspace/tab/pane public model, app private key stays app-local, machine private key stays machine-local, and Web/native transport behavior remains behind interfaces.
+- Code review findings before completion: signed local RTC offers verified `terminal_id`, but the accepted WebRTC terminal transport still exposed the full server protocol; data-channel capability checks were too broad in the first implementation; missing negative tests for wrong machine/terminal/capability/stale signature cases; workflow next action was stale.
+- Next fix under TDD: add regression tests proving a local RTC offer signed for one terminal cannot snapshot/attach another terminal, wrong channel labels are denied, file-only/terminal-only certificates are rejected by the full local RTC contract, wrong local machine IDs are rejected, nonexistent terminals fail at the HTTP endpoint, and stale timestamps are rejected.
+- Expected failing regression: `cd termx-core && go test . -run 'TestE2ERemoteLocalWebHandler(AnswersAuthenticatedRTCOffer|RejectsInvalidRTCOfferAuth)'` fails because a local RTC terminal data channel signed for terminal `1` can still snapshot terminal `2`.
+- Fix after failing regression: added terminal-scoped transport enforcement for local RTC terminal data channels, added RTC channel policy to close unauthorized `terminal:*`, `api`, and `file:*` channels, and added negative tests for nonexistent terminals, stale offer signatures, insufficient capabilities, and app certificates signed for the wrong local machine.
+- Final focused tests before review: `cd termx-core && go test . -run 'TestE2ERemoteLocalWebHandler(AnswersAuthenticatedRTCOffer|RejectsInvalidRTCOfferAuth)'` passed; `cd termx-core && go test ./internal/remote/rtc -run 'TestAnswerOfferChannelPolicyRejectsWrongTerminalChannel|TestOfferSignature|TestLocalICETCPMux'` passed.
+- Final review findings: `Cicero` found one high issue where ICE TCP could be reported enabled without a usable loopback TCP candidate, plus stale workflow text. No workspace/tab/pane leakage, local TURN credentials, app machine-private-key exposure, transport-boundary leakage, or separate agent binary was found.
+- Review regression: `cd termx-core && go test ./internal/remote/rtc -run TestLocalICETCPMuxAnswerIncludesLoopbackTCPCandidate` failed before the fix because the answer SDP contained TCP candidates on non-loopback interface IPs but did not contain `127.0.0.1`.
+- Review fix: local ICE TCP mux now enables loopback candidate gathering and filters candidates to the bound listener IP when the listener is bound to a specific address; the answer SDP test now proves a passive loopback TCP host candidate exists.
+- Final focused tests after review fix: `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-core && go test . -run 'TestE2ERemoteLocalWebHandler(AnswersAuthenticatedRTCOffer|RejectsInvalidRTCOfferAuth)|TestE2E_WebRTC'` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
+- Final broader tests after review fix: `cd termx-core && go test ./internal/remote/...` passed; `cd termx-core && go test ./...` passed; `cd termx-cli && go test ./...` passed.
+- Result: ready to commit. Commit: pending.
+
 ## Subagents
 
 - `Galileo` (`019ddf61-2c8a-7cf0-8a00-991250f8b294`): explorer for termx-core P2 identity/runtime integration points. Result: preserve existing `DeviceIdentity` status baseline, add machine-named key/cert/pairing primitives, and avoid exposing machine private key.
@@ -137,6 +158,10 @@ Status file for unattended remote rebuild work. Update this file before starting
 - `Raman` (`019de136-503d-7d10-8738-0d95fcd79bda`): explorer for P3-B core local web/server integration points. Result: use `Server.List`, `Server.RemoteStatus`, and the existing pairing manager through narrow localweb interfaces; avoid importing root `termx` from internal packages; add local status machine-key fingerprint without exposing the machine private key.
 - `Avicenna` (`019de13e-d21e-76c2-98ac-f424e1250e2f`): P3-B code review before CLI daemon wiring. Findings: pair response/docs and embedded asset coverage looked incomplete from the reviewed snapshot, and terminal `last_active_at` currently maps creation time. Result: pair response/docs and embedded default assets are present in local files; CLI daemon serving path and `last_active_at` placeholder documentation remain active work inside P3-B.
 - `Bacon` (`019de14b-634e-7e33-b3e8-231a41bd965a`): final P3-B code review after CLI daemon wiring. Findings: workflow stale, CLI listener test did not cover terminals/pair, `last_active_at` is creation time, and local error responses lacked `code/request_id`. Result: workflow updated, CLI listener coverage expanded, error envelope fixed; `last_active_at` remains a documented placeholder.
+- `Nash` (`019de156-1151-77b3-ad01-5b2e67f253e0`): P3-C explorer for local RTC handler/contract boundaries. Result: keep `localweb` behind a narrow `RTCOfferAnswerer` interface, verify app certificate/signature/nonce/requested terminal before answering, reuse `rtc.AnswerOffer`, and expose `session_id`, `machine_id`, and `terminal_id` in local offer docs.
+- `Linnaeus` (`019de156-272a-7541-8ef0-20fe88d2043f`): P3-C explorer for local WebRTC-over-TCP slice. Result: first slice should add an independent local ICE TCP listener and status metadata instead of same-port cmux; CLI envs are `TERMX_REMOTE_LOCAL_ICE_TCP_ENABLE` and `TERMX_REMOTE_LOCAL_ICE_TCP_ADDR`.
+- `Beauvoir` (`019de165-691d-7d80-86da-dbd140400107`): P3-C code review before commit. Findings: signed local RTC offers did not scope the terminal protocol after data-channel acceptance; capability gating was too coarse; machine identity comparison and negative security tests needed explicit coverage; workflow next action was stale. Result: fixed with terminal-scoped transport, channel policy, machine identity checks, and negative tests.
+- `Cicero` (`019de177-2141-7570-b3c6-30248c4bd521`): P3-C final code review. Findings: ICE TCP could be reported enabled without a usable loopback TCP candidate; workflow stale. Result: fixed with loopback candidate gathering, bound-listener IP filtering, answer SDP regression test, and workflow updates.
 
 ## Code Review Log
 
@@ -148,6 +173,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - R1 planning review: self-checked updated docs for scope drift. Plan now prioritizes embedded local web, shared `remote-ui/` components, and local WebRTC-over-TCP before mobile app migration; no new workspace/tab/pane public model and no anonymous/free TURN relay entitlement were introduced.
 - R2 planning review: self-checked updated docs for scope drift. Plan now requires tgent-aligned page/component structure where practical, plus TermX-owned native-like message reducer/event queue behavior; no new workspace/tab/pane public model and no anonymous/free TURN relay entitlement were introduced.
 - P3-B review complete. No remaining blocker after implemented fixes; no workspace/tab/pane public model, anonymous/free TURN relay credentials, app machine-private-key exposure, or transport boundary leakage introduced. Residual risk is limited to the documented `last_active_at` placeholder and the P3-C absence of local RTC/ICE TCP data plane.
+- P3-C review complete. No remaining blocker after implemented fixes; no workspace/tab/pane public model, anonymous/free/local TURN relay credentials, app machine-private-key exposure, transport boundary leakage, or separate agent binary was introduced. Residual risk: browser smoke with the embedded web UI is still deferred to P3-E because P3-C only proves local signaling, terminal protocol scoping, file/API channels, and server-side ICE TCP candidate generation.
 
 ## Deferred Human Decisions And Placeholders
 
@@ -164,6 +190,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Start P3-C by updating this workflow before writing tests.
-2. Write failing tests for local `/api/local/rtc/offer` and ICE TCP mux adapter contracts.
-3. Implement local WebRTC signaling/TCP mux foundation without adding TURN credentials or workspace/tab/pane concepts.
+1. Commit P3-C local WebRTC signaling and ICE TCP mux.
+2. Update this workflow with the P3-C commit hash.
+3. Start P3-D shared remote UI package using tgent-aligned component structure without importing workspace/tab/pane as public remote concepts.

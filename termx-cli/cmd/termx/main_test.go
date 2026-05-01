@@ -288,6 +288,24 @@ func TestRemoteLocalWebAddrFromEnv(t *testing.T) {
 	}
 }
 
+func TestRemoteLocalICETCPAddrFromEnv(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_LOCAL_ICE_TCP_ENABLE", "")
+	t.Setenv("TERMX_REMOTE_LOCAL_ICE_TCP_ADDR", "")
+	if got := remoteLocalICETCPAddrFromEnv(); got != "" {
+		t.Fatalf("expected local ICE TCP to be disabled by default, got %q", got)
+	}
+
+	t.Setenv("TERMX_REMOTE_LOCAL_ICE_TCP_ENABLE", "true")
+	if got := remoteLocalICETCPAddrFromEnv(); got != "127.0.0.1:18889" {
+		t.Fatalf("expected default ICE TCP addr, got %q", got)
+	}
+
+	t.Setenv("TERMX_REMOTE_LOCAL_ICE_TCP_ADDR", "127.0.0.1:0")
+	if got := remoteLocalICETCPAddrFromEnv(); got != "127.0.0.1:0" {
+		t.Fatalf("expected explicit ICE TCP addr, got %q", got)
+	}
+}
+
 func TestStartRemoteLocalWebServesEmbeddedPageAndStatus(t *testing.T) {
 	srv := termx.NewServer(termx.WithRemoteConfig(termx.RemoteConfig{
 		Enabled:    true,
@@ -299,7 +317,13 @@ func TestStartRemoteLocalWebServesEmbeddedPageAndStatus(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	baseURL, shutdown, err := startRemoteLocalWeb(ctx, srv, "127.0.0.1:0", nil)
+	iceMux, err := termx.StartLocalICETCPMux(ctx, "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("StartLocalICETCPMux returned error: %v", err)
+	}
+	defer iceMux.Close()
+
+	baseURL, shutdown, err := startRemoteLocalWeb(ctx, srv, "127.0.0.1:0", iceMux, nil)
 	if err != nil {
 		t.Fatalf("startRemoteLocalWeb returned error: %v", err)
 	}
@@ -346,6 +370,17 @@ func TestStartRemoteLocalWebServesEmbeddedPageAndStatus(t *testing.T) {
 	}
 	if _, ok := status["device_id"]; ok {
 		t.Fatalf("local status must not expose legacy device_id: %#v", status)
+	}
+	localRTC, ok := status["local_rtc"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected local_rtc status, got %#v", status)
+	}
+	if localRTC["ice_tcp_enabled"] != true || int(localRTC["ice_tcp_port"].(float64)) == 0 {
+		t.Fatalf("expected ICE TCP endpoint in local status, got %#v", localRTC)
+	}
+	rawStatus, _ := json.Marshal(status)
+	if strings.Contains(strings.ToLower(string(rawStatus)), "turn:") || strings.Contains(strings.ToLower(string(rawStatus)), "turns:") {
+		t.Fatalf("local status must not expose TURN credentials: %s", rawStatus)
 	}
 
 	resp, err = client.Get(baseURL + "/api/local/terminals")

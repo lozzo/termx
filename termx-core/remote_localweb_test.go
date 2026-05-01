@@ -11,6 +11,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/lozzow/termx/termx-core/internal/remote/bridge"
+	remotecert "github.com/lozzow/termx/termx-core/internal/remote/cert"
+	remoteidentity "github.com/lozzow/termx/termx-core/internal/remote/identity"
+	remotertc "github.com/lozzow/termx/termx-core/internal/remote/rtc"
+	"github.com/lozzow/termx/termx-core/protocol"
+	"github.com/pion/webrtc/v4"
 )
 
 func TestE2ERemoteLocalWebHandlerStatusTerminalsAndPair(t *testing.T) {
@@ -32,7 +39,6 @@ func TestE2ERemoteLocalWebHandlerStatusTerminalsAndPair(t *testing.T) {
 		}
 		t.Fatalf("Create returned error: %v", err)
 	}
-
 	handler := srv.LocalWebHandler(LocalWebOptions{
 		HTTPURL:       "http://127.0.0.1:7342",
 		LocalPairURL:  "http://127.0.0.1:7342/api/local/pair",
@@ -107,7 +113,379 @@ func TestE2ERemoteLocalWebHandlerStatusTerminalsAndPair(t *testing.T) {
 	}
 }
 
+func TestE2ERemoteLocalWebHandlerAnswersAuthenticatedRTCOffer(t *testing.T) {
+	srv := NewServer(WithRemoteConfig(RemoteConfig{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "local-rtc-machine",
+	}))
+	defer srv.Shutdown(context.Background())
+
+	term, err := srv.Create(context.Background(), CreateOptions{
+		Command: []string{"sh", "-c", "sleep 5"},
+		Name:    "local-rtc-shell",
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("Create returned error: %v", err)
+	}
+	otherTerm, err := srv.Create(context.Background(), CreateOptions{
+		Command: []string{"sh", "-c", "sleep 5"},
+		Name:    "local-rtc-other-shell",
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		t.Fatalf("Create second terminal returned error: %v", err)
+	}
+
+	iceMux, err := StartLocalICETCPMux(context.Background(), "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("StartLocalICETCPMux returned error: %v", err)
+	}
+	defer iceMux.Close()
+	handler := srv.LocalWebHandler(LocalWebOptions{
+		HTTPURL:      "http://127.0.0.1:7342",
+		LocalPairURL: "http://127.0.0.1:7342/api/local/pair",
+		ICETCPMux:    iceMux,
+	})
+
+	session, err := srv.RemotePairStart(PairStartOptions{
+		LocalPairURL: "http://127.0.0.1:7342/api/local/pair",
+		TTL:          time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("RemotePairStart returned error: %v", err)
+	}
+	appPublic, appPrivate, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	pairBody := []byte(`{
+		"pair_session_id":"` + session.PairSessionID + `",
+		"pair_secret":"` + session.PairSecret + `",
+		"app_device_id":"app-local-rtc",
+		"app_name":"Local RTC Test",
+		"app_public_key":"` + base64.StdEncoding.EncodeToString(appPublic) + `",
+		"requested_capabilities":["terminal","file_manager"]
+	}`)
+	var pair struct {
+		AppCertificate remotecert.AppCertificateEnvelope `json:"app_certificate"`
+	}
+	localWebDecode(t, handler, http.MethodPost, "/api/local/pair", pairBody, &pair)
+
+	offerPC, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatalf("NewPeerConnection returned error: %v", err)
+	}
+	defer offerPC.Close()
+	if _, err := offerPC.CreateDataChannel("api", nil); err != nil {
+		t.Fatalf("CreateDataChannel returned error: %v", err)
+	}
+	terminalDC, err := offerPC.CreateDataChannel("terminal:"+term.ID, nil)
+	if err != nil {
+		t.Fatalf("CreateDataChannel terminal returned error: %v", err)
+	}
+	terminalOpen := make(chan struct{})
+	terminalDC.OnOpen(func() {
+		select {
+		case <-terminalOpen:
+		default:
+			close(terminalOpen)
+		}
+	})
+	offer, err := offerPC.CreateOffer(nil)
+	if err != nil {
+		t.Fatalf("CreateOffer returned error: %v", err)
+	}
+	if err := offerPC.SetLocalDescription(offer); err != nil {
+		t.Fatalf("SetLocalDescription returned error: %v", err)
+	}
+	waitPeerICE(t, offerPC, 5*time.Second)
+
+	now := time.Now().UTC()
+	fields := remotertc.OfferSignatureFields{
+		MachineID:  session.MachineID,
+		TerminalID: term.ID,
+		SDP:        offerPC.LocalDescription().SDP,
+		Nonce:      "nonce-local-rtc",
+		Timestamp:  now,
+	}
+	signature := remotertc.OfferSignature{
+		Algorithm: "ed25519",
+		Nonce:     fields.Nonce,
+		Timestamp: fields.Timestamp.Unix(),
+		Value:     base64.StdEncoding.EncodeToString(ed25519.Sign(appPrivate, remotertc.CanonicalOfferSignatureMessage(fields))),
+	}
+	bodyBytes, err := json.Marshal(map[string]any{
+		"app_certificate": pair.AppCertificate,
+		"offer": map[string]any{
+			"session_id":     "rtc-local-1",
+			"machine_id":     session.MachineID,
+			"terminal_id":    term.ID,
+			"sdp":            offerPC.LocalDescription().SDP,
+			"ice_candidates": []string{},
+		},
+		"signature": signature,
+		"client": map[string]string{
+			"type":      "browser",
+			"transport": "local",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal RTC body returned error: %v", err)
+	}
+
+	rtcResp := localWebJSON(t, handler, http.MethodPost, "/api/local/rtc/offer", bodyBytes)
+	if rtcResp["ice_tcp_enabled"] != true {
+		t.Fatalf("expected ICE TCP enabled in RTC response: %#v", rtcResp)
+	}
+	answer, ok := rtcResp["answer"].(map[string]any)
+	if !ok || answer["sdp"] == "" {
+		t.Fatalf("expected RTC answer SDP, got %#v", rtcResp)
+	}
+	raw, _ := json.Marshal(rtcResp)
+	if strings.Contains(strings.ToLower(string(raw)), "turn:") || strings.Contains(strings.ToLower(string(raw)), "turns:") {
+		t.Fatalf("local RTC response must not expose TURN credentials: %s", raw)
+	}
+	if err := offerPC.SetRemoteDescription(webrtc.SessionDescription{
+		Type: webrtc.SDPTypeAnswer,
+		SDP:  answer["sdp"].(string),
+	}); err != nil {
+		t.Fatalf("SetRemoteDescription returned error: %v", err)
+	}
+	select {
+	case <-terminalOpen:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for signed terminal data channel to open")
+	}
+	clientTransport := bridge.NewDataChannelTransport(terminalDC)
+	defer clientTransport.Close()
+	client := protocol.NewClient(clientTransport)
+	defer client.Close()
+	clientCtx, cancelClient := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelClient()
+	if err := client.Hello(clientCtx, protocol.Hello{Version: protocol.Version, Client: "local-rtc-test"}); err != nil {
+		t.Fatalf("Hello over signed local RTC terminal channel returned error: %v", err)
+	}
+	if _, err := client.Snapshot(clientCtx, term.ID, 0, 0); err != nil {
+		t.Fatalf("Snapshot for signed terminal returned error: %v", err)
+	}
+	if _, err := client.Snapshot(clientCtx, otherTerm.ID, 0, 0); err == nil {
+		t.Fatalf("signed local RTC terminal channel for %q must not access other terminal %q", term.ID, otherTerm.ID)
+	}
+	if _, err := client.Events(clientCtx, protocol.EventsParams{SessionID: "main"}); err == nil {
+		t.Fatalf("signed local RTC terminal channel for %q must not subscribe to session-only events", term.ID)
+	}
+
+	replayReq := httptest.NewRequest(http.MethodPost, "/api/local/rtc/offer", bytes.NewReader(bodyBytes))
+	replayRec := httptest.NewRecorder()
+	handler.ServeHTTP(replayRec, replayReq)
+	if replayRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected replayed RTC offer to be rejected, got %d body=%q", replayRec.Code, replayRec.Body.String())
+	}
+}
+
+func TestE2ERemoteLocalWebHandlerRejectsInvalidRTCOfferAuth(t *testing.T) {
+	dataDir := t.TempDir()
+	srv := NewServer(WithRemoteConfig(RemoteConfig{
+		Enabled:    true,
+		DataDir:    dataDir,
+		DeviceName: "local-rtc-auth-machine",
+	}))
+	defer srv.Shutdown(context.Background())
+
+	term, err := srv.Create(context.Background(), CreateOptions{
+		Command: []string{"sh", "-c", "sleep 5"},
+		Name:    "local-rtc-auth-shell",
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("Create returned error: %v", err)
+	}
+	handler := srv.LocalWebHandler(LocalWebOptions{
+		HTTPURL:      "http://127.0.0.1:7342",
+		LocalPairURL: "http://127.0.0.1:7342/api/local/pair",
+	})
+
+	t.Run("nonexistent_terminal", func(t *testing.T) {
+		session, appCert, appPrivate := claimLocalRTCAppCertificate(t, srv, handler, []string{"terminal", "file_manager"})
+		sdp := newLocalOfferSDP(t, "api")
+		body := signedLocalRTCOfferBody(t, appCert, appPrivate, "rtc-missing-terminal", session.MachineID, "missing-terminal", sdp, "nonce-missing-terminal", time.Now().UTC())
+		localWebExpectStatus(t, handler, http.MethodPost, "/api/local/rtc/offer", body, http.StatusBadRequest)
+	})
+
+	t.Run("stale_signature_timestamp", func(t *testing.T) {
+		session, appCert, appPrivate := claimLocalRTCAppCertificate(t, srv, handler, []string{"terminal", "file_manager"})
+		sdp := newLocalOfferSDP(t, "api")
+		body := signedLocalRTCOfferBody(t, appCert, appPrivate, "rtc-stale", session.MachineID, term.ID, sdp, "nonce-stale", time.Now().UTC().Add(-10*time.Minute))
+		localWebExpectStatus(t, handler, http.MethodPost, "/api/local/rtc/offer", body, http.StatusBadRequest)
+	})
+
+	t.Run("terminal_only_certificate", func(t *testing.T) {
+		session, appCert, appPrivate := claimLocalRTCAppCertificate(t, srv, handler, []string{"terminal"})
+		sdp := newLocalOfferSDP(t, "api")
+		body := signedLocalRTCOfferBody(t, appCert, appPrivate, "rtc-terminal-only", session.MachineID, term.ID, sdp, "nonce-terminal-only", time.Now().UTC())
+		localWebExpectStatus(t, handler, http.MethodPost, "/api/local/rtc/offer", body, http.StatusBadRequest)
+	})
+
+	t.Run("wrong_local_machine_id", func(t *testing.T) {
+		appPublic, appPrivate, err := ed25519.GenerateKey(nil)
+		if err != nil {
+			t.Fatalf("GenerateKey returned error: %v", err)
+		}
+		machineKey, err := remoteidentity.LoadOrCreateMachineKey(dataDir)
+		if err != nil {
+			t.Fatalf("LoadOrCreateMachineKey returned error: %v", err)
+		}
+		now := time.Now().UTC()
+		appCert, err := remotecert.SignAppCertificate(remotecert.AppCertificatePayload{
+			Version:      1,
+			CertID:       "cert-wrong-machine",
+			MachineID:    "wrong-local-machine",
+			AppDeviceID:  "app-wrong-machine",
+			AppPublicKey: base64.StdEncoding.EncodeToString(appPublic),
+			AppName:      "Wrong Machine Test",
+			Capabilities: []string{
+				"terminal",
+				"file_manager",
+			},
+			IssuedAt:  now,
+			ExpiresAt: now.Add(time.Hour),
+		}, machineKey)
+		if err != nil {
+			t.Fatalf("SignAppCertificate returned error: %v", err)
+		}
+		sdp := newLocalOfferSDP(t, "api")
+		body := signedLocalRTCOfferBody(t, appCert, appPrivate, "rtc-wrong-machine", "wrong-local-machine", term.ID, sdp, "nonce-wrong-machine", now)
+		localWebExpectStatus(t, handler, http.MethodPost, "/api/local/rtc/offer", body, http.StatusBadRequest)
+	})
+}
+
+func claimLocalRTCAppCertificate(t *testing.T, srv *Server, handler http.Handler, capabilities []string) (protocol.PairStartResult, remotecert.AppCertificateEnvelope, ed25519.PrivateKey) {
+	t.Helper()
+	session, err := srv.RemotePairStart(PairStartOptions{
+		LocalPairURL: "http://127.0.0.1:7342/api/local/pair",
+		TTL:          time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("RemotePairStart returned error: %v", err)
+	}
+	appPublic, appPrivate, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	pairBody, err := json.Marshal(map[string]any{
+		"pair_session_id":        session.PairSessionID,
+		"pair_secret":            session.PairSecret,
+		"app_device_id":          "app-local-rtc",
+		"app_name":               "Local RTC Test",
+		"app_public_key":         base64.StdEncoding.EncodeToString(appPublic),
+		"requested_capabilities": capabilities,
+	})
+	if err != nil {
+		t.Fatalf("Marshal pair body returned error: %v", err)
+	}
+	var pair struct {
+		AppCertificate remotecert.AppCertificateEnvelope `json:"app_certificate"`
+	}
+	localWebDecode(t, handler, http.MethodPost, "/api/local/pair", pairBody, &pair)
+	return session, pair.AppCertificate, appPrivate
+}
+
+func newLocalOfferSDP(t *testing.T, labels ...string) string {
+	t.Helper()
+	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatalf("NewPeerConnection returned error: %v", err)
+	}
+	defer pc.Close()
+	for _, label := range labels {
+		if _, err := pc.CreateDataChannel(label, nil); err != nil {
+			t.Fatalf("CreateDataChannel %q returned error: %v", label, err)
+		}
+	}
+	offer, err := pc.CreateOffer(nil)
+	if err != nil {
+		t.Fatalf("CreateOffer returned error: %v", err)
+	}
+	if err := pc.SetLocalDescription(offer); err != nil {
+		t.Fatalf("SetLocalDescription returned error: %v", err)
+	}
+	waitPeerICE(t, pc, 5*time.Second)
+	return pc.LocalDescription().SDP
+}
+
+func signedLocalRTCOfferBody(
+	t *testing.T,
+	appCert remotecert.AppCertificateEnvelope,
+	appPrivate ed25519.PrivateKey,
+	sessionID string,
+	machineID string,
+	terminalID string,
+	sdp string,
+	nonce string,
+	timestamp time.Time,
+) []byte {
+	t.Helper()
+	fields := remotertc.OfferSignatureFields{
+		MachineID:  machineID,
+		TerminalID: terminalID,
+		SDP:        sdp,
+		Nonce:      nonce,
+		Timestamp:  timestamp,
+	}
+	signature := remotertc.OfferSignature{
+		Algorithm: "ed25519",
+		Nonce:     fields.Nonce,
+		Timestamp: fields.Timestamp.Unix(),
+		Value:     base64.StdEncoding.EncodeToString(ed25519.Sign(appPrivate, remotertc.CanonicalOfferSignatureMessage(fields))),
+	}
+	bodyBytes, err := json.Marshal(map[string]any{
+		"app_certificate": appCert,
+		"offer": map[string]any{
+			"session_id":     sessionID,
+			"machine_id":     machineID,
+			"terminal_id":    terminalID,
+			"sdp":            sdp,
+			"ice_candidates": []string{},
+		},
+		"signature": signature,
+		"client": map[string]string{
+			"type":      "browser",
+			"transport": "local",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal RTC body returned error: %v", err)
+	}
+	return bodyBytes
+}
+
+func localWebExpectStatus(t *testing.T, handler http.Handler, method, path string, body []byte, want int) string {
+	t.Helper()
+	req := httptest.NewRequest(method, path, bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != want {
+		t.Fatalf("%s %s expected status %d, got %d body=%q", method, path, want, rec.Code, rec.Body.String())
+	}
+	return rec.Body.String()
+}
+
 func localWebJSON(t *testing.T, handler http.Handler, method, path string, body []byte) map[string]any {
+	t.Helper()
+	var out map[string]any
+	localWebDecode(t, handler, method, path, body, &out)
+	return out
+}
+
+func localWebDecode(t *testing.T, handler http.Handler, method, path string, body []byte, out any) {
 	t.Helper()
 	req := httptest.NewRequest(method, path, bytes.NewReader(body))
 	rec := httptest.NewRecorder()
@@ -115,9 +493,7 @@ func localWebJSON(t *testing.T, handler http.Handler, method, path string, body 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("%s %s expected 200, got %d body=%q", method, path, rec.Code, rec.Body.String())
 	}
-	var out map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+	if err := json.Unmarshal(rec.Body.Bytes(), out); err != nil {
 		t.Fatalf("decode %s %s response: %v\n%s", method, path, err, rec.Body.String())
 	}
-	return out
 }

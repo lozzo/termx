@@ -42,6 +42,16 @@ func (s *pairClaimerStub) ClaimPairSession(_ context.Context, req pairing.ClaimR
 	return s.out, nil
 }
 
+type rtcAnswererStub struct {
+	got RTCOfferRequest
+	out RTCOfferResponse
+}
+
+func (s *rtcAnswererStub) AnswerLocalRTCOffer(_ context.Context, req RTCOfferRequest) (RTCOfferResponse, error) {
+	s.got = req
+	return s.out, nil
+}
+
 func TestHandlerServesEmbeddedAssetsWithSPAFallback(t *testing.T) {
 	handler := NewHandler(Config{
 		Assets: NewStaticAssets(map[string]string{
@@ -259,5 +269,65 @@ func TestHandlerLocalPairClaimsAppCertificate(t *testing.T) {
 	}
 	if _, ok := body["machine_private_key"]; ok {
 		t.Fatalf("pair response must not expose machine_private_key: %#v", body)
+	}
+}
+
+func TestHandlerLocalRTCOfferAnswersWithLocalContract(t *testing.T) {
+	answerer := &rtcAnswererStub{out: RTCOfferResponse{
+		Answer: RTCSessionAnswer{
+			SessionID:     "rtc_local_1",
+			SDP:           "answer-sdp",
+			ICECandidates: []string{"candidate:host-tcp"},
+		},
+		ICETCPEnabled: true,
+		DataChannels:  []string{"api", "terminal:{terminal_id}", "file:{transfer_id}"},
+	}}
+	handler := NewHandler(Config{RTC: answerer})
+	payload := []byte(`{
+		"app_certificate":{"payload":{},"signature":"signed"},
+		"offer":{
+			"session_id":"rtc_local_1",
+			"machine_id":"mach_local",
+			"terminal_id":"term_1",
+			"sdp":"offer-sdp",
+			"ice_candidates":["candidate:host"]
+		},
+		"signature":{
+			"algorithm":"ed25519",
+			"nonce":"nonce-1",
+			"timestamp":1770000000,
+			"value":"base64-signature"
+		},
+		"client":{"type":"browser","transport":"local"}
+	}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/local/rtc/offer", bytes.NewReader(payload))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%q", rec.Code, rec.Body.String())
+	}
+	if answerer.got.Offer.MachineID != "mach_local" || answerer.got.Offer.TerminalID != "term_1" {
+		t.Fatalf("RTC offer did not pass machine/terminal fields: %#v", answerer.got.Offer)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	answer, ok := body["answer"].(map[string]any)
+	if !ok || answer["sdp"] != "answer-sdp" {
+		t.Fatalf("expected answer SDP, got %#v", body)
+	}
+	if body["ice_tcp_enabled"] != true {
+		t.Fatalf("expected ICE TCP to be enabled, got %#v", body)
+	}
+	raw := strings.ToLower(rec.Body.String())
+	if strings.Contains(raw, "turn:") || strings.Contains(raw, "turns:") {
+		t.Fatalf("local RTC response must not expose TURN credentials: %s", raw)
+	}
+	for _, forbidden := range []string{"workspace", "tab", "pane"} {
+		if strings.Contains(raw, forbidden) {
+			t.Fatalf("local RTC response must not expose %s concepts: %s", forbidden, raw)
+		}
 	}
 }

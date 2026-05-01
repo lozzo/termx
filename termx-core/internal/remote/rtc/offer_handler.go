@@ -20,6 +20,32 @@ func AnswerOffer(
 	sink bridge.TransportSink,
 	fileManager *fileapi.Manager,
 ) (hubv1.SignalingAnswer, error) {
+	return AnswerOfferWithOptions(ctx, offer, iceServers, sink, fileManager, AnswerOptions{})
+}
+
+type SettingEngineApplier interface {
+	Apply(setting *webrtc.SettingEngine)
+}
+
+type AnswerOptions struct {
+	SettingEngine SettingEngineApplier
+	ChannelPolicy ChannelPolicy
+}
+
+type ChannelPolicy struct {
+	TerminalID       string
+	AllowTerminal    bool
+	AllowFileManager bool
+}
+
+func AnswerOfferWithOptions(
+	ctx context.Context,
+	offer hubv1.SignalingOffer,
+	iceServers []hubv1.RTCIceServerConfig,
+	sink bridge.TransportSink,
+	fileManager *fileapi.Manager,
+	opts AnswerOptions,
+) (hubv1.SignalingAnswer, error) {
 	if fileManager == nil {
 		fileManager = fileapi.NewManager()
 	}
@@ -34,7 +60,15 @@ func AnswerOffer(
 		})
 	}
 
-	pc, err := webrtc.NewPeerConnection(config)
+	var pc *webrtc.PeerConnection
+	var err error
+	if opts.SettingEngine != nil {
+		setting := webrtc.SettingEngine{}
+		opts.SettingEngine.Apply(&setting)
+		pc, err = webrtc.NewAPI(webrtc.WithSettingEngine(setting)).NewPeerConnection(config)
+	} else {
+		pc, err = webrtc.NewPeerConnection(config)
+	}
 	if err != nil {
 		return hubv1.SignalingAnswer{}, fmt.Errorf("create peer connection: %w", err)
 	}
@@ -56,6 +90,12 @@ func AnswerOffer(
 		label := dc.Label()
 		switch {
 		case bridge.IsTerminalChannelLabel(label):
+			if !opts.ChannelPolicy.allowTerminal(label) {
+				dc.OnOpen(func() {
+					_ = dc.Close()
+				})
+				return
+			}
 			dc.OnOpen(func() {
 				if sink == nil {
 					_ = dc.Close()
@@ -68,8 +108,20 @@ func AnswerOffer(
 				}()
 			})
 		case label == "api":
+			if !opts.ChannelPolicy.allowFileManager() {
+				dc.OnOpen(func() {
+					_ = dc.Close()
+				})
+				return
+			}
 			handleAPIChannel(dc, fileManager)
 		case strings.HasPrefix(label, "file:"):
+			if !opts.ChannelPolicy.allowFileManager() {
+				dc.OnOpen(func() {
+					_ = dc.Close()
+				})
+				return
+			}
 			fileManager.HandleFileChannel(dc, strings.TrimPrefix(label, "file:"))
 		default:
 			dc.OnOpen(func() {
@@ -113,6 +165,28 @@ func AnswerOffer(
 		SDP:           local.SDP,
 		ICECandidates: nil,
 	}, nil
+}
+
+func (p ChannelPolicy) allowTerminal(label string) bool {
+	if !p.active() {
+		return true
+	}
+	if !p.AllowTerminal {
+		return false
+	}
+	terminalID := strings.TrimSpace(strings.TrimPrefix(label, "terminal:"))
+	return terminalID != "" && terminalID == strings.TrimSpace(p.TerminalID)
+}
+
+func (p ChannelPolicy) allowFileManager() bool {
+	if !p.active() {
+		return true
+	}
+	return p.AllowFileManager
+}
+
+func (p ChannelPolicy) active() bool {
+	return strings.TrimSpace(p.TerminalID) != "" || p.AllowTerminal || p.AllowFileManager
 }
 
 type apiRequest struct {

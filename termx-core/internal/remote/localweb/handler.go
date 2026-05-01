@@ -52,6 +52,45 @@ type PairResponse struct {
 	ExpiresAt                   time.Time                   `json:"expires_at"`
 }
 
+type RTCSessionOffer struct {
+	SessionID     string   `json:"session_id"`
+	MachineID     string   `json:"machine_id"`
+	TerminalID    string   `json:"terminal_id"`
+	SDP           string   `json:"sdp"`
+	ICECandidates []string `json:"ice_candidates"`
+}
+
+type RTCOfferSignature struct {
+	Algorithm string `json:"algorithm"`
+	Nonce     string `json:"nonce"`
+	Timestamp int64  `json:"timestamp"`
+	Value     string `json:"value"`
+}
+
+type RTCOfferClient struct {
+	Type      string `json:"type"`
+	Transport string `json:"transport"`
+}
+
+type RTCOfferRequest struct {
+	AppCertificate cert.AppCertificateEnvelope `json:"app_certificate"`
+	Offer          RTCSessionOffer             `json:"offer"`
+	Signature      RTCOfferSignature           `json:"signature"`
+	Client         RTCOfferClient              `json:"client"`
+}
+
+type RTCSessionAnswer struct {
+	SessionID     string   `json:"session_id"`
+	SDP           string   `json:"sdp"`
+	ICECandidates []string `json:"ice_candidates"`
+}
+
+type RTCOfferResponse struct {
+	Answer        RTCSessionAnswer `json:"answer"`
+	ICETCPEnabled bool             `json:"ice_tcp_enabled"`
+	DataChannels  []string         `json:"data_channels"`
+}
+
 type StatusSource interface {
 	LocalStatus(ctx context.Context) (Status, error)
 }
@@ -64,11 +103,16 @@ type PairClaimer interface {
 	ClaimPairSession(ctx context.Context, req pairing.ClaimRequest) (pairing.ClaimResponse, error)
 }
 
+type RTCOfferAnswerer interface {
+	AnswerLocalRTCOffer(ctx context.Context, req RTCOfferRequest) (RTCOfferResponse, error)
+}
+
 type Config struct {
 	Assets    fs.FS
 	Status    StatusSource
 	Terminals TerminalSource
 	Pairing   PairClaimer
+	RTC       RTCOfferAnswerer
 }
 
 type Handler struct {
@@ -76,6 +120,7 @@ type Handler struct {
 	status    StatusSource
 	terminals TerminalSource
 	pairing   PairClaimer
+	rtc       RTCOfferAnswerer
 }
 
 func NewHandler(cfg Config) http.Handler {
@@ -84,6 +129,7 @@ func NewHandler(cfg Config) http.Handler {
 		status:    cfg.Status,
 		terminals: cfg.Terminals,
 		pairing:   cfg.Pairing,
+		rtc:       cfg.RTC,
 	}
 }
 
@@ -95,6 +141,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleTerminals(w, r)
 	case r.URL.Path == "/api/local/pair":
 		h.handlePair(w, r)
+	case r.URL.Path == "/api/local/rtc/offer":
+		h.handleRTCOffer(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/"):
 		writeError(w, http.StatusNotFound, "not_found", "not found")
 	default:
@@ -163,6 +211,28 @@ func (h *Handler) handlePair(w http.ResponseWriter, r *http.Request) {
 		AppCertificate:              out.AppCertificate,
 		ExpiresAt:                   out.AppCertificate.Payload.ExpiresAt,
 	})
+}
+
+func (h *Handler) handleRTCOffer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
+	if h.rtc == nil {
+		writeError(w, http.StatusServiceUnavailable, "local_rtc_unavailable", "local RTC unavailable")
+		return
+	}
+	var req RTCOfferRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "invalid request")
+		return
+	}
+	out, err := h.rtc.AnswerLocalRTCOffer(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "rtc_offer_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (h *Handler) handleAsset(w http.ResponseWriter, r *http.Request) {

@@ -147,6 +147,9 @@ func (m *Manager) Close() {
 	if cancel != nil {
 		cancel()
 	}
+	if m.files != nil {
+		m.files.Close()
+	}
 }
 
 func (m *Manager) MarkOnline(detail string) {

@@ -21,6 +21,7 @@ type Manager struct {
 	mu        sync.Mutex
 	transfers map[string]*FileTransfer
 	stopCh    chan struct{}
+	stopOnce  sync.Once
 }
 
 type FileTransfer struct {
@@ -66,6 +67,15 @@ func NewManager() *Manager {
 	}
 	go mgr.cleanupLoop()
 	return mgr
+}
+
+func (m *Manager) Close() {
+	if m == nil {
+		return
+	}
+	m.stopOnce.Do(func() {
+		close(m.stopCh)
+	})
 }
 
 func (m *Manager) RouteRequest(method, path string, body []byte) (int32, []byte, string) {

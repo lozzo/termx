@@ -2,21 +2,32 @@ package termx
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"io/fs"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/lozzow/termx/termx-core/internal/remote/cert"
 	remoteconfig "github.com/lozzow/termx/termx-core/internal/remote/config"
+	"github.com/lozzow/termx/termx-core/internal/remote/fileapi"
 	"github.com/lozzow/termx/termx-core/internal/remote/identity"
 	"github.com/lozzow/termx/termx-core/internal/remote/localweb"
 	"github.com/lozzow/termx/termx-core/internal/remote/pairing"
+	remotertc "github.com/lozzow/termx/termx-core/internal/remote/rtc"
+	hubv1 "github.com/lozzow/termx/termx-core/remote/hubv1"
+	"github.com/lozzow/termx/termx-core/transport"
 )
+
+type LocalICETCPMux = remotertc.LocalICETCPMux
 
 type LocalWebOptions struct {
 	HTTPURL       string
 	LocalPairURL  string
 	ICETCPEnabled bool
 	ICETCPPort    int
+	ICETCPMux     *LocalICETCPMux
 	Assets        fs.FS
 }
 
@@ -24,22 +35,35 @@ func NewLocalWebStaticAssets(files map[string]string) fs.FS {
 	return localweb.NewStaticAssets(files)
 }
 
+func StartLocalICETCPMux(ctx context.Context, addr string) (*LocalICETCPMux, error) {
+	return remotertc.StartLocalICETCPMux(ctx, addr)
+}
+
 func (s *Server) LocalWebHandler(opts LocalWebOptions) http.Handler {
 	assets := opts.Assets
 	if assets == nil {
 		assets = localweb.EmbeddedAssets()
 	}
+	iceTCPEnabled := opts.ICETCPEnabled
+	iceTCPPort := opts.ICETCPPort
+	if opts.ICETCPMux != nil {
+		endpoint := opts.ICETCPMux.Endpoint()
+		iceTCPEnabled = endpoint.Enabled
+		iceTCPPort = endpoint.Port
+	}
 	adapter := localWebServerAdapter{
 		server:        s,
 		httpURL:       strings.TrimSpace(opts.HTTPURL),
-		iceTCPEnabled: opts.ICETCPEnabled,
-		iceTCPPort:    opts.ICETCPPort,
+		iceTCPEnabled: iceTCPEnabled,
+		iceTCPPort:    iceTCPPort,
+		iceTCPMux:     opts.ICETCPMux,
 	}
 	return localweb.NewHandler(localweb.Config{
 		Assets:    assets,
 		Status:    adapter,
 		Terminals: adapter,
 		Pairing:   adapter,
+		RTC:       adapter,
 	})
 }
 
@@ -48,6 +72,7 @@ type localWebServerAdapter struct {
 	httpURL       string
 	iceTCPEnabled bool
 	iceTCPPort    int
+	iceTCPMux     *LocalICETCPMux
 }
 
 func (a localWebServerAdapter) LocalStatus(ctx context.Context) (localweb.Status, error) {
@@ -122,6 +147,120 @@ func (a localWebServerAdapter) ClaimPairSession(ctx context.Context, req pairing
 	return a.server.remotePairClaim(req)
 }
 
+func (a localWebServerAdapter) AnswerLocalRTCOffer(ctx context.Context, req localweb.RTCOfferRequest) (localweb.RTCOfferResponse, error) {
+	if a.server == nil {
+		return localweb.RTCOfferResponse{}, nil
+	}
+	return a.server.remoteLocalRTCAnswer(ctx, req, a.iceTCPMux, a.iceTCPEnabled)
+}
+
+func (s *Server) remoteLocalRTCAnswer(
+	ctx context.Context,
+	req localweb.RTCOfferRequest,
+	iceTCPMux *LocalICETCPMux,
+	iceTCPEnabled bool,
+) (localweb.RTCOfferResponse, error) {
+	if s == nil {
+		return localweb.RTCOfferResponse{}, nil
+	}
+	status := s.RemoteStatus()
+	machineID := strings.TrimSpace(status.DeviceID)
+	cfg := s.remoteNormalizedConfig()
+	machineKey, err := identity.LoadOrCreateMachineKey(cfg.DataDir)
+	if err != nil {
+		return localweb.RTCOfferResponse{}, err
+	}
+	if machineID == "" {
+		ident, identErr := identity.LoadOrCreate(cfg.DataDir, cfg.DeviceName)
+		if identErr != nil {
+			return localweb.RTCOfferResponse{}, identErr
+		}
+		machineID = strings.TrimSpace(ident.DeviceID)
+	}
+	if err := cert.VerifyAppCertificate(req.AppCertificate, machineKey.PublicKey, time.Now().UTC()); err != nil {
+		return localweb.RTCOfferResponse{}, err
+	}
+	if strings.TrimSpace(req.AppCertificate.Payload.MachineID) != machineID {
+		return localweb.RTCOfferResponse{}, pairingErr("app certificate machine_id does not match local machine")
+	}
+	if strings.TrimSpace(req.Offer.MachineID) != strings.TrimSpace(req.AppCertificate.Payload.MachineID) {
+		return localweb.RTCOfferResponse{}, pairingErr("offer machine_id does not match app certificate")
+	}
+	if _, err := s.Get(ctx, strings.TrimSpace(req.Offer.TerminalID)); err != nil {
+		return localweb.RTCOfferResponse{}, err
+	}
+	if !hasCapability(req.AppCertificate.Payload.Capabilities, "terminal") || !hasCapability(req.AppCertificate.Payload.Capabilities, "file_manager") {
+		return localweb.RTCOfferResponse{}, pairingErr("app certificate lacks remote RTC capabilities")
+	}
+	appPublicKey, err := base64.StdEncoding.DecodeString(req.AppCertificate.Payload.AppPublicKey)
+	if err != nil {
+		return localweb.RTCOfferResponse{}, err
+	}
+	s.remoteRTCMu.Lock()
+	if s.remoteRTCReplay == nil {
+		s.remoteRTCReplay = cert.NewReplayWindow(5 * time.Minute)
+	}
+	replay := s.remoteRTCReplay
+	s.remoteRTCMu.Unlock()
+	if err := remotertc.VerifyOfferSignature(remotertc.OfferSignature{
+		Algorithm: req.Signature.Algorithm,
+		Nonce:     req.Signature.Nonce,
+		Timestamp: req.Signature.Timestamp,
+		Value:     req.Signature.Value,
+	}, remotertc.OfferSignatureFields{
+		MachineID:  req.Offer.MachineID,
+		TerminalID: req.Offer.TerminalID,
+		SDP:        req.Offer.SDP,
+	}, ed25519.PublicKey(appPublicKey), replay, time.Now().UTC()); err != nil {
+		return localweb.RTCOfferResponse{}, err
+	}
+	s.remoteRTCMu.Lock()
+	if s.remoteRTCFiles == nil {
+		s.remoteRTCFiles = fileapi.NewManager()
+	}
+	files := s.remoteRTCFiles
+	s.remoteRTCMu.Unlock()
+	terminalID := strings.TrimSpace(req.Offer.TerminalID)
+	answer, err := remotertc.AnswerOfferWithOptions(ctx, hubv1.SignalingOffer{
+		SessionID:     strings.TrimSpace(req.Offer.SessionID),
+		DeviceID:      strings.TrimSpace(req.Offer.MachineID),
+		TerminalID:    terminalID,
+		SDP:           req.Offer.SDP,
+		ICECandidates: append([]string(nil), req.Offer.ICECandidates...),
+	}, nil, localRTCTransportSink{server: s, terminalID: terminalID}, files, remotertc.AnswerOptions{
+		SettingEngine: iceTCPMux,
+		ChannelPolicy: remotertc.ChannelPolicy{
+			TerminalID:       terminalID,
+			AllowTerminal:    true,
+			AllowFileManager: true,
+		},
+	})
+	if err != nil {
+		return localweb.RTCOfferResponse{}, err
+	}
+	return localweb.RTCOfferResponse{
+		Answer: localweb.RTCSessionAnswer{
+			SessionID:     answer.SessionID,
+			SDP:           answer.SDP,
+			ICECandidates: append([]string(nil), answer.ICECandidates...),
+		},
+		ICETCPEnabled: iceTCPEnabled,
+		DataChannels:  []string{"api", "terminal:{terminal_id}", "file:{transfer_id}"},
+	}, nil
+}
+
+type localRTCTransportSink struct {
+	server     *Server
+	terminalID string
+}
+
+func (s localRTCTransportSink) ServeRemoteTransport(ctx context.Context, t transport.Transport, remote string) error {
+	if s.server == nil {
+		return nil
+	}
+	return s.server.handleTransportScoped(ctx, t, remote, transportScope{TerminalID: s.terminalID})
+}
+
 func (s *Server) remotePairClaim(req pairing.ClaimRequest) (pairing.ClaimResponse, error) {
 	if s == nil {
 		return pairing.ClaimResponse{}, nil
@@ -162,3 +301,12 @@ type remoteLocalConfig struct {
 type pairingErr string
 
 func (e pairingErr) Error() string { return string(e) }
+
+func hasCapability(capabilities []string, want string) bool {
+	for _, capability := range capabilities {
+		if strings.TrimSpace(capability) == want {
+			return true
+		}
+	}
+	return false
+}
