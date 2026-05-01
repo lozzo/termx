@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-E local embedded web terminal/file wiring
-- Last updated: 2026-05-01T12:26:57+08:00
+- Active todo: P3-E-B browser terminal binary protocol adapter
+- Last updated: 2026-05-01T12:27:58+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -27,7 +27,9 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-D-B | remote-ui | Adapt `Terminal.tsx` from `../tgent` into shared remote UI using `terminal_id` instead of pane/session concepts | completed | `e87d37a` |
 | P3-D-C | remote-ui | Adapt terminal list from `../tgent` `SessionList.tsx` into `TerminalList.tsx` with machine -> terminal semantics only | completed | `c423ba3` |
 | P3-D-D | remote-ui | Adapt `FileManager.tsx` and file hooks from `../tgent` behind TermX file transport interfaces | completed | `138aba3` |
-| P3-E | local/e2e | Wire embedded local web to terminal and file manager over local WebRTC DataChannels and validate in browser before mobile migration | in_progress |  |
+| P3-E-A | local/e2e | Add local embedded web browser API/WebRTC adapter shell around shared TerminalList, Terminal, and FileManager components | completed | `83ad016` |
+| P3-E-B | local/e2e | Implement browser terminal adapter compatible with current Go binary terminal protocol over `terminal:{terminal_id}` | in_progress |  |
+| P3-E-C | local/e2e | Build and embed the shared local web shell into `termx` static assets, then run browser smoke before mobile migration | pending |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | pending |  |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -72,7 +74,15 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Broader tests after implementation and review fixes: `cd remote-ui && npm test` passed 50 tests; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx` passed; `git diff --check` passed.
 - Code review: `Rawls` found P1 issues that `LocalRemoteApp` did not call `transport.connect()`, the first implementation generated the WebRTC offer before data channels existed, and the browser terminal channel still does not implement the current Go binary terminal protocol. It also found missing package exports and local RTC client metadata drift. Fixed in this slice: package exports, documented `client.type=browser` / `transport=local`, pre-offer `terminal:{terminal_id}` and `api` channel creation, and `LocalRemoteApp` connect lifecycle with regression tests. Deferred to P3-E-B: browser terminal client compatibility with the current Go binary terminal protocol.
 - P3-E-A defers actual bundling into `termx-core/internal/remote/localweb/static` until the adapter/app shell contracts compile and pass unit tests. The follow-up P3-E-B slice should add build/embed wiring and browser smoke.
-- Result: ready to commit. Commit: pending.
+- Result: completed. Commit: `83ad016`.
+
+### P3-E-B browser terminal binary protocol adapter
+
+- Active slice: implement browser-side terminal transport compatibility with the current Go binary terminal protocol over `terminal:{terminal_id}`.
+- Tests written before implementation: pending.
+- Expected failing tests: pending; first tests should prove a browser terminal adapter sends and receives TermX protocol frames instead of the placeholder JSON/raw-output shape currently used by the shared `TerminalClient` boundary.
+- Planned scope: keep the public UI model as machine -> terminal, keep browser DataChannel details in adapter modules, and do not introduce workspace/tab/pane/session concepts, TURN relay credentials, or machine private key handling. This slice should decide whether to adapt `TerminalClient` to protocol frames or add a narrow local protocol transport bridge beneath the existing `TerminalTransport` interface.
+- Result: in progress. Commit: pending.
 
 ### P3-D-B shared terminal client and Terminal.tsx boundary
 
@@ -273,6 +283,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Commit P3-E-A browser adapter/app shell contract and record the commit hash.
-2. Start P3-E-B by writing failing tests for a browser terminal adapter compatible with the current Go binary terminal protocol over `terminal:{terminal_id}`.
+1. Write failing P3-E-B tests for a browser terminal adapter compatible with the current Go binary terminal protocol over `terminal:{terminal_id}`.
+2. Implement the smallest protocol bridge beneath the existing `TerminalTransport` interface.
 3. After P3-E-B passes, add build/embed wiring and browser smoke for the local embedded web shell.
