@@ -1,4 +1,5 @@
 import type { TerminalTransport, TerminalTransportEvent } from './terminalClient'
+import { createLocalTerminalProtocolTransport } from './localTerminalProtocolTransport'
 import type {
   BinaryChannel,
   ConnectTarget,
@@ -39,6 +40,7 @@ export interface RTCPeerConnectionLike {
 export interface RTCDataChannelLike extends EventTarget {
   readonly label: string
   readyState: RTCDataChannelState
+  binaryType?: BinaryType
   send(data: string | ArrayBuffer | Blob | ArrayBufferView): void
   close(): void
 }
@@ -52,8 +54,9 @@ class LocalWebRtcPeerTransport implements PeerTransport, TerminalTransport {
   private connectionId = ''
   private apiChannel: RTCDataChannelLike | null = null
   private terminalChannels = new Map<string, RTCDataChannelLike>()
-  private fileChannels = new Map<string, RTCDataChannelLike>()
+  private terminalProtocols = new Map<string, TerminalTransport>()
   private terminalSubscribers = new Map<string, Set<(event: TerminalTransportEvent) => void>>()
+  private fileChannels = new Map<string, RTCDataChannelLike>()
 
   constructor(private readonly options: LocalWebRtcPeerTransportOptions) {}
 
@@ -97,13 +100,13 @@ class LocalWebRtcPeerTransport implements PeerTransport, TerminalTransport {
     this.pc = null
     this.apiChannel = null
     this.terminalChannels.clear()
+    this.terminalProtocols.clear()
     this.fileChannels.clear()
   }
 
   async openTerminal(terminalId: string): Promise<BinaryChannel> {
     this.assertTarget(this.options.machineId, terminalId)
-    const channel = this.ensureTerminalChannel(terminalId)
-    return toBinaryChannel(channel)
+    return this.ensureTerminalProtocol(terminalId).openTerminal(terminalId)
   }
 
   async openApi(): Promise<JsonRpcChannel> {
@@ -127,6 +130,7 @@ class LocalWebRtcPeerTransport implements PeerTransport, TerminalTransport {
   }
 
   subscribeTerminal(terminalId: string, handler: (event: TerminalTransportEvent) => void): () => void {
+    this.assertTarget(this.options.machineId, terminalId)
     let handlers = this.terminalSubscribers.get(terminalId)
     if (!handlers) {
       handlers = new Set()
@@ -139,7 +143,15 @@ class LocalWebRtcPeerTransport implements PeerTransport, TerminalTransport {
   }
 
   closeTerminalChannel(terminalId: string): void {
-    this.terminalChannels.get(terminalId)?.close()
+    this.assertTarget(this.options.machineId, terminalId)
+    const protocol = this.terminalProtocols.get(terminalId)
+    if (protocol) {
+      protocol.closeTerminalChannel(terminalId)
+    } else {
+      this.terminalChannels.get(terminalId)?.close()
+    }
+    this.terminalProtocols.delete(terminalId)
+    this.terminalChannels.delete(terminalId)
   }
 
   private openRTCChannel(label: string): RTCDataChannelLike {
@@ -151,14 +163,43 @@ class LocalWebRtcPeerTransport implements PeerTransport, TerminalTransport {
     const existing = this.terminalChannels.get(terminalId)
     if (existing) return existing
     const channel = this.openRTCChannel(`terminal:${terminalId}`)
+    channel.binaryType = 'arraybuffer'
     this.terminalChannels.set(terminalId, channel)
-    channel.addEventListener('message', (event) => {
-      this.emitTerminal(terminalId, { type: 'output', data: messageBytes((event as MessageEvent).data) })
-    })
     channel.addEventListener('close', () => {
-      this.emitTerminal(terminalId, { type: 'closed' })
+      this.terminalProtocols.delete(terminalId)
+      this.terminalChannels.delete(terminalId)
     })
     return channel
+  }
+
+  private ensureTerminalProtocol(terminalId: string): TerminalTransport {
+    this.assertTarget(this.options.machineId, terminalId)
+    const existing = this.terminalProtocols.get(terminalId)
+    if (existing) return existing
+    const channel = this.ensureTerminalChannel(terminalId)
+    const protocol = createLocalTerminalProtocolTransport({
+      channel: toProtocolBinaryChannel(channel),
+      machineId: this.options.machineId,
+      terminalId,
+      connectionInfo: {
+        mode: this.options.mode ?? 'local',
+        connectionId: this.connectionId || 'local-webrtc',
+        machineId: this.options.machineId,
+        terminalId,
+        relayInUse: false,
+      },
+    })
+    protocol.subscribeTerminal(terminalId, (event) => {
+      this.emitTerminalEvent(terminalId, event)
+    })
+    this.terminalProtocols.set(terminalId, protocol)
+    return protocol
+  }
+
+  private emitTerminalEvent(terminalId: string, event: TerminalTransportEvent): void {
+    for (const handler of this.terminalSubscribers.get(terminalId) ?? []) {
+      handler(event)
+    }
   }
 
   private ensureAPIChannel(): RTCDataChannelLike {
@@ -176,11 +217,6 @@ class LocalWebRtcPeerTransport implements PeerTransport, TerminalTransport {
     }
   }
 
-  private emitTerminal(terminalId: string, event: TerminalTransportEvent): void {
-    for (const handler of this.terminalSubscribers.get(terminalId) ?? []) {
-      handler(event)
-    }
-  }
 }
 
 class LocalApiChannel implements JsonRpcChannel {
@@ -218,7 +254,16 @@ class LocalApiChannel implements JsonRpcChannel {
   }
 
   private handleMessage(data: unknown): void {
-    const frame = parseAPIChunk(messageBytes(data))
+    const bytes = messageBytes(data)
+    if (bytes instanceof Uint8Array) {
+      this.handleMessageBytes(bytes)
+      return
+    }
+    void bytes.then((resolved) => this.handleMessageBytes(resolved))
+  }
+
+  private handleMessageBytes(data: Uint8Array): void {
+    const frame = parseAPIChunk(data)
     const waiter = this.waiters.get(frame.id)
     if (!waiter) return
     waiter.chunks.push(frame.payload)
@@ -285,6 +330,62 @@ function toBinaryChannel(channel: RTCDataChannelLike): BinaryChannel {
   }
 }
 
+function toProtocolBinaryChannel(channel: RTCDataChannelLike): BinaryChannel & {
+  onMessage(handler: (data: Uint8Array) => void): void
+  onClose(handler: () => void): void
+  waitOpen(): Promise<void>
+} {
+  return {
+    label: channel.label,
+    get readyState() {
+      return channel.readyState
+    },
+    send(data: Uint8Array) {
+      channel.send(data)
+    },
+    close() {
+      channel.close()
+    },
+    onMessage(handler: (data: Uint8Array) => void) {
+      channel.addEventListener('message', (event) => {
+        const bytes = messageBytes((event as MessageEvent).data)
+        if (bytes instanceof Uint8Array) {
+          handler(bytes)
+          return
+        }
+        void bytes.then(handler)
+      })
+    },
+    onClose(handler: () => void) {
+      channel.addEventListener('close', () => handler())
+    },
+    waitOpen() {
+      return waitChannelOpen(channel)
+    },
+  }
+}
+
+function waitChannelOpen(channel: RTCDataChannelLike): Promise<void> {
+  if (channel.readyState === 'open') return Promise.resolve()
+  if (channel.readyState === 'closed') return Promise.reject(new Error(`data channel ${channel.label} is closed`))
+  return new Promise((resolve, reject) => {
+    const onOpen = () => {
+      cleanup()
+      resolve()
+    }
+    const onClose = () => {
+      cleanup()
+      reject(new Error(`data channel ${channel.label} closed before opening`))
+    }
+    const cleanup = () => {
+      channel.removeEventListener('open', onOpen)
+      channel.removeEventListener('close', onClose)
+    }
+    channel.addEventListener('open', onOpen)
+    channel.addEventListener('close', onClose)
+  })
+}
+
 function parseAPIChunk(bytes: Uint8Array): { id: string; payload: Uint8Array; last: boolean } {
   if (bytes[0] !== 0xc0) {
     throw new Error('invalid api response chunk')
@@ -311,12 +412,34 @@ function concatChunks(chunks: Uint8Array[]): Uint8Array {
   return out
 }
 
-function messageBytes(data: unknown): Uint8Array {
+function messageBytes(data: unknown): Uint8Array | Promise<Uint8Array> {
   if (data instanceof Uint8Array) return data
   if (data instanceof ArrayBuffer) return new Uint8Array(data)
+  if (typeof Blob !== 'undefined' && data instanceof Blob) {
+    if (typeof data.arrayBuffer === 'function') {
+      return data.arrayBuffer().then((buffer) => new Uint8Array(buffer))
+    }
+    return blobBytesWithFileReader(data)
+  }
   if (typeof data === 'string') return new TextEncoder().encode(data)
   if (ArrayBuffer.isView(data)) {
     return new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
   }
   throw new Error('unsupported data channel message')
+}
+
+function blobBytesWithFileReader(blob: Blob): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error('failed to read data channel Blob'))
+    reader.onload = () => {
+      const result = reader.result
+      if (!(result instanceof ArrayBuffer)) {
+        reject(new Error('failed to read data channel Blob as ArrayBuffer'))
+        return
+      }
+      resolve(new Uint8Array(result))
+    }
+    reader.readAsArrayBuffer(blob)
+  })
 }

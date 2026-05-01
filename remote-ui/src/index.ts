@@ -31,6 +31,18 @@ export type {
   RTCDataChannelLike,
   RTCPeerConnectionLike,
 } from './localWebRtcTransport'
+export { createLocalTerminalProtocolTransport } from './localTerminalProtocolTransport'
+export type { LocalTerminalProtocolTransportOptions } from './localTerminalProtocolTransport'
+export {
+  TERMX_FRAME_TYPES,
+  TERMX_MAX_FRAME_SIZE,
+  TERMX_PROTOCOL_VERSION,
+  decodeTermxFrame,
+  encodeResizePayload,
+  encodeTermxFrame,
+  rowsToText,
+} from './termxProtocol'
+export type { TermxFrame, TermxFrameType } from './termxProtocol'
 export { TerminalClient } from './terminalClient'
 export type {
   TerminalClientCallbacks,

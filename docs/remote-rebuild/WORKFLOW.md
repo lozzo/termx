@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: P3 embedded local web first
 - Active todo: P3-E-B browser terminal binary protocol adapter
-- Last updated: 2026-05-01T12:27:58+08:00
+- Last updated: 2026-05-01T13:24:23+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -79,10 +79,34 @@ Status file for unattended remote rebuild work. Update this file before starting
 ### P3-E-B browser terminal binary protocol adapter
 
 - Active slice: implement browser-side terminal transport compatibility with the current Go binary terminal protocol over `terminal:{terminal_id}`.
-- Tests written before implementation: pending.
-- Expected failing tests: pending; first tests should prove a browser terminal adapter sends and receives TermX protocol frames instead of the placeholder JSON/raw-output shape currently used by the shared `TerminalClient` boundary.
-- Planned scope: keep the public UI model as machine -> terminal, keep browser DataChannel details in adapter modules, and do not introduce workspace/tab/pane/session concepts, TURN relay credentials, or machine private key handling. This slice should decide whether to adapt `TerminalClient` to protocol frames or add a narrow local protocol transport bridge beneath the existing `TerminalTransport` interface.
-- Result: in progress. Commit: pending.
+- Tests written before implementation: `remote-ui/src/termxProtocol.test.ts` and `remote-ui/src/localTerminalProtocolTransport.test.ts`.
+- Expected failing tests: `cd remote-ui && npm test -- --run src/termxProtocol.test.ts src/localTerminalProtocolTransport.test.ts` fails because `./termxProtocol` and `./localTerminalProtocolTransport` do not exist yet. The tests cover Go-compatible binary frame codec, resize payload encoding, hello + attach, TypeOutput events, TypeInput/TypeResize mapping, snapshot text fallback, and terminal identity rejection before writing protocol frames.
+- Actual failing tests before implementation: focused P3-E-B tests failed as expected with missing module resolution errors for `./termxProtocol` and `./localTerminalProtocolTransport`.
+- Planned scope: keep the public UI model as machine -> terminal, keep browser DataChannel details in adapter modules, and do not introduce workspace/tab/pane/session concepts, TURN relay credentials, or machine private key handling. This slice will add a narrow binary protocol bridge beneath the existing `TerminalTransport` interface: encode/decode TermX frames, perform hello + attach, map TypeOutput to terminal output events, map BinaryChannel input/resize messages to TypeInput/TypeResize, and provide a lightweight snapshot text fallback.
+- Implementation notes: added `termxProtocol` for Go-compatible frame encode/decode and resize payloads, plus `localTerminalProtocolTransport` to perform hello + attach over `terminal:{terminal_id}` and map TypeOutput/TypeInput/TypeResize through the existing `TerminalTransport` / `BinaryChannel` boundary. `localWebRtcTransport` now routes terminal channels through this binary protocol bridge instead of raw-output/JSON placeholder behavior. A local self-review caught that request `params` must be JSON objects/raw payloads, not JSON strings, and the implementation/tests were corrected to match `termx-core/protocol.Request`.
+- Focused tests after implementation: `cd remote-ui && npm test -- --run src/termxProtocol.test.ts src/localTerminalProtocolTransport.test.ts src/localWebRtcTransport.test.ts` passed 10 tests; `cd remote-ui && npm run typecheck` passed.
+- Broader tests after implementation before code review: `cd remote-ui && npm test` passed 57 tests; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx` passed; `git diff --check` passed.
+- Code review: `Pauli` found that real `TerminalClient` ordering opens the terminal before subscribing, but late subscribers were not forwarded to an already-created protocol bridge, so output/snapshot/closed events would be dropped. It also found close/reopen would reuse a closed cached terminal channel/protocol instead of creating a new `terminal:{terminal_id}` channel and redoing hello/attach.
+- Review regression tests: added `localWebRtcTransport` coverage for subscribe-after-open ordering and close/reopen creating a fresh terminal data channel/protocol handshake. The focused review tests failed as expected before the fix: late output events were not delivered to the subscriber, and the reopened terminal reused the first closed data channel.
+- Review fix after failing regressions: `localWebRtcTransport` now registers one protocol-bridge dispatcher per terminal and dispatches into the current subscriber set, so subscribers added after `openTerminal()` still receive output/closed/snapshot events. `closeTerminalChannel()` now clears cached terminal protocol/channel state so reopen creates a fresh `terminal:{terminal_id}` channel and repeats hello/attach.
+- Focused tests after review fix: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts src/localTerminalProtocolTransport.test.ts src/termxProtocol.test.ts` passed 12 tests; `cd remote-ui && npm run typecheck` passed.
+- Broader tests after review fix: `cd remote-ui && npm test` passed 59 tests; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx` passed; `git diff --check` passed.
+- Follow-up code review: `Aristotle` found a high issue where stream frames arriving before attach response are dropped, a medium issue where raw RTC data-channel close events are not forwarded as terminal closed events, and a low test gap proving data channels are created before `createOffer()`.
+- Follow-up review regression tests: added pre-attach stream-frame buffering, data-channel close forwarding, and pre-offer channel creation ordering coverage. Focused tests failed as expected before the fix because early stream output was dropped and raw close did not emit a terminal closed event; the pre-offer channel ordering test passed against the current implementation and now guards the intended behavior.
+- Follow-up review fix: `localTerminalProtocolTransport` now buffers stream frames until attach names the stream channel, then flushes matching channel frames; `localWebRtcTransport` now bridges RTC data-channel `close` into a terminal closed event through an adapter-level `onClose` callback without exposing browser primitives to UI components.
+- Focused tests after follow-up review fix: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts src/localTerminalProtocolTransport.test.ts src/termxProtocol.test.ts` passed 14 tests; `cd remote-ui && npm run typecheck` passed.
+- Broader tests after follow-up review fix: `cd remote-ui && npm test` passed 61 tests; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx` passed; `git diff --check` passed.
+- Final follow-up code review: `Ptolemy` found real-browser risks where RTC binary messages can arrive as `Blob` unless `binaryType` is set or Blob is decoded, terminal hello can be sent while the data channel is still `connecting`, and raw channel close emits `closed` without clearing cached terminal channel/protocol state for retry.
+- Final review regression tests: added coverage for browser Blob binary messages, opening terminal while the RTC data channel is still `connecting`, and retry after raw close creating a fresh terminal channel. Focused tests failed as expected before the fix: `binaryType` remained `blob`, hello was sent before channel open, and retry reused the closed channel.
+- Final review fix: local terminal data channels now set `binaryType='arraybuffer'` and still decode Blob messages defensively; the protocol bridge waits for terminal channel `open` before sending hello; raw terminal channel close now clears cached protocol/channel state before forwarding `closed` to subscribers.
+- Focused tests after final review fix: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts src/localTerminalProtocolTransport.test.ts src/termxProtocol.test.ts` passed 17 tests; `cd remote-ui && npm run typecheck` passed.
+- Broader tests after final review fix: `cd remote-ui && npm test` passed 64 tests; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx` passed; `git diff --check` passed.
+- Final post-fix review: `Einstein` found a medium issue where raw terminal-channel close before `openTerminal()` leaves the precreated channel cached, plus stale next-action workflow text.
+- Final post-fix review regression: added coverage for raw terminal-channel close after `connect()` but before `openTerminal()`. The focused test failed as expected before the fix because the first `openTerminal()` reused the closed pre-created data channel.
+- Final post-fix review fix: terminal channels now install raw close cache cleanup immediately when created, before the protocol bridge exists. The protocol bridge still forwards `closed` to subscribers once open, and retries after pre-open close create a fresh `terminal:{terminal_id}` channel.
+- Focused tests after final post-fix review fix: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts src/localTerminalProtocolTransport.test.ts src/termxProtocol.test.ts` passed 18 tests; `cd remote-ui && npm run typecheck` passed.
+- Broader tests after final post-fix review fix: `cd remote-ui && npm test` passed 65 tests; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx` passed; `git diff --check` passed.
+- Result: in progress after code review. Commit: pending.
 
 ### P3-D-B shared terminal client and Terminal.tsx boundary
 
@@ -249,6 +273,10 @@ Status file for unattended remote rebuild work. Update this file before starting
 - `Mencius` (`019de1b6-0a36-7980-87e8-d6ac6ee54388`): P3-D-D final quick code review after terminal scoping fixes. Findings: no remaining code issues; low stale workflow text still described completed terminal scoping work as pending. Result: workflow cleanup in this checkpoint.
 - `Euclid` (`019de1be-2f52-7890-a1b7-d17460a573d4`): P3-E read-only explorer. Findings: local RTC currently accepts `api`, `terminal:{terminal_id}`, and `file:{transfer_id}` only; `events` is documented optional but current Go closes unknown labels; API channel requests are unchunked JSON but responses are `0xC0` chunked binary; current Go/tgent file API uses POST JSON bodies for list/stat despite docs GET draft.
 - `Rawls` (`019de1c5-a582-71b1-b49a-aa07c33a53cc`): P3-E-A code review. Findings: app shell did not call transport connect, WebRTC offer must be generated after data channel creation, terminal channel framing is not yet Go binary protocol compatible, package exports were missing, and local RTC client metadata drifted from docs. Result: fixed all P3-E-A adapter/app-shell findings; binary terminal protocol adapter deferred to the next P3-E slice with explicit tests before browser smoke.
+- `Pauli` (`019de1d4-739c-7611-bd1b-fdaea64cea32`): P3-E-B code review. Findings: late terminal subscribers were not forwarded to an already-created protocol bridge, and close/reopen reused a closed terminal channel/protocol cache. Result: fixed with dispatcher-based subscriber forwarding, close cache cleanup, and regression tests.
+- `Aristotle` (`019de1db-33c2-7db3-a7c4-b08d69ba288e`): P3-E-B follow-up code review after subscriber/reopen fixes. Findings: pre-attach stream frames are dropped, data-channel close is not forwarded as a terminal closed event, workflow text needed refresh, and pre-offer channel creation ordering lacked regression coverage. Result: fixed with early stream-frame buffering, RTC close forwarding, workflow refresh, and pre-offer channel creation tests.
+- `Ptolemy` (`019de1e7-d94a-7d43-8027-5c7a0f6ce4ed`): P3-E-B final quick code review after Aristotle fixes. Findings: browser Blob messages and connecting data-channel open timing were not handled, raw RTC close did not clear retry caches, and workflow subagent text was stale. Result: fixed with `binaryType='arraybuffer'`, Blob fallback decoding, wait-for-open hello gating, raw-close cache cleanup, and workflow refresh.
+- `Einstein` (`019de1f4-37fa-74e0-bf48-cf3953e3f28e`): P3-E-B post-Ptolemy final review. Findings: raw close between `connect()` pre-created terminal channel and `openTerminal()` leaves a closed channel cached, and workflow next action is stale. Result: fixed with pre-protocol raw close cache cleanup, regression coverage, and workflow next-action refresh.
 
 ## Code Review Log
 
@@ -271,7 +299,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Public rendezvous deployment, DNS, TLS certificates, billing/subscription provider, mobile signing, and app store configuration remain deferred by policy.
 - `termx-core/remote_localweb.go` currently maps `last_active_at` from terminal creation time because the existing terminal inventory does not expose a separate last-activity timestamp. This is a narrow placeholder; replace it with real activity metadata when the terminal runtime publishes it.
 - Local HTTP and ICE TCP currently use independent listeners. Same-port cmux remains deferred until browser smoke/local e2e proves that reducing exposed ports is worth the extra listener complexity.
-- P3-E-A local WebRTC transport currently proves browser adapter boundaries, pre-offer channel negotiation, API channel POST translation, and chunk reassembly. It does not yet implement the Go binary terminal protocol over `terminal:{terminal_id}`; P3-E-B must add or adapt a binary protocol browser terminal client before claiming terminal e2e.
+- P3-E-B local terminal bridge now implements the minimum Go binary terminal protocol path over `terminal:{terminal_id}`. Full browser smoke, build/embed wiring, and richer incoming stream-frame rendering such as `TypeScreenUpdate`, `TypeSyncLost`, and `TypeBootstrapDone` remain for P3-E-C or later terminal-rendering polish.
 
 ## Risks
 
@@ -279,10 +307,10 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Existing hub baseline may include relay fields. P3 anonymous paths must explicitly reject or omit TermX TURN relay credentials.
 - New `remote-ui/` package must avoid carrying over tgent pane/session public concepts when copying `Terminal.tsx`, `SessionList.tsx`, and file manager code.
 - Keeping TermX UI close enough to tgent for future synchronization conflicts with replacing tgent's web-like interaction state. The boundary is explicit: copy structure/components/adapters where possible, but normalize messages and lifecycle through TermX reducers/queues.
-- P3-D-D `remote-ui` file API follows the docs draft for `GET /files/list` and `GET /files/stat`, while the existing Go/tgent data-channel file API currently accepts `POST` for those routes. P3-E local embedded web wiring must either add GET compatibility in the daemon adapter or switch the shared client contract with tests before browser smoke.
+- P3-E browser adapter currently translates shared `GET /files/list` and `GET /files/stat` requests to the existing Go/tgent-style `POST` data-channel file API. Browser smoke in P3-E-C must validate that this adapter behavior works against the embedded daemon.
 
 ## Next Exact Action
 
-1. Write failing P3-E-B tests for a browser terminal adapter compatible with the current Go binary terminal protocol over `terminal:{terminal_id}`.
-2. Implement the smallest protocol bridge beneath the existing `TerminalTransport` interface.
-3. After P3-E-B passes, add build/embed wiring and browser smoke for the local embedded web shell.
+1. Commit P3-E-B and record the commit hash.
+2. Update `WORKFLOW.md` to mark P3-E-B completed and set P3-E-C active.
+3. Start P3-E-C build/embed/browser smoke.
