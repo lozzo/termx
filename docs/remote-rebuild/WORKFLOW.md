@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: P3 embedded local web first
 - Active todo: P3-E-C-B-B local pair UI/harness and embedded browser smoke
-- Last updated: 2026-05-01T14:14:14+08:00
+- Last updated: 2026-05-01T14:35:19+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -31,7 +31,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-B | local/e2e | Implement browser terminal adapter compatible with current Go binary terminal protocol over `terminal:{terminal_id}` | completed | `4ef0557` |
 | P3-E-C-A | local/e2e | Build and embed the shared local web shell into `termx` static assets | completed | `f68bf9d` |
 | P3-E-C-B-A | local/e2e | Implement browser-local app identity, certificate storage, and offer signing primitives | completed | `7185c8d` |
-| P3-E-C-B-B | local/e2e | Run local browser smoke against the embedded web shell and terminal/file wiring before mobile migration | in_progress |  |
+| P3-E-C-B-B | local/e2e | Add local pair UI/harness and executable embedded web smoke fallback before mobile migration | in_progress |  |
+| P3-E-C-B-C | local/e2e | Run in-app Browser Use click smoke against embedded local web when the required browser Node REPL `js` tool is available | deferred |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | pending |  |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -147,8 +148,21 @@ Status file for unattended remote rebuild work. Update this file before starting
 ### P3-E-C-B-B browser smoke
 
 - Active slice: local pair UI/harness and embedded browser smoke.
-- Tests written before implementation: pending.
+- Tests written before implementation: `remote-ui/src/LocalPairPanel.test.tsx`.
+- Expected failing tests: `cd remote-ui && npm test -- --run src/LocalPairPanel.test.tsx` fails because `./LocalPairPanel` does not exist yet.
+- Actual failing tests before implementation: `cd remote-ui && npm test -- --run src/LocalPairPanel.test.tsx` failed with missing module resolution for `./LocalPairPanel`.
 - Planned scope: serve the embedded local web through `termx`/localweb, complete local pair claim UI/harness using the B-A primitives, then smoke terminal list, terminal open, and file manager against local WebRTC-over-TCP. If real user pairing UI still needs product input, use a narrow local test harness and record the remaining UX decision here.
+- Implementation notes: added `LocalPairPanel` as a narrow pair harness that accepts pair id/secret, calls `pairLocalApp`, stores the app certificate through the B-A primitives, and avoids old workspace/tab/pane/session UI text by using `Pair ID` rather than pair session wording. `LocalRemoteApp` now accepts optional pair configuration through interfaces and renders the panel without importing concrete browser transport details. `localWebEntry` supplies browser storage/crypto/pair API wiring for the embedded shell.
+- Browser smoke result: Browser Use plugin files are present, but this Codex session does not expose the required Node REPL `js` tool, so in-app click automation could not be run. As an executable local smoke fallback, `termx-cli` `TestStartRemoteLocalWebServesEmbeddedPageAndStatus` now starts local web with ICE TCP, fetches the embedded HTML, fetches the embedded JS module, verifies the shared shell and pair harness markers (`termx-local-web-shell`, `termx-local-pair-panel`, `Pair ID`, `Pair secret`), checks local status/terminals/pair APIs, and verifies the asset/status do not expose machine private key strings or TURN URLs.
+- Focused tests after implementation: `cd remote-ui && npm test -- --run src/LocalPairPanel.test.tsx src/LocalRemoteApp.test.tsx src/localWebEntry.test.tsx` passed 7 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm run build:localweb` passed; `cd termx-cli && go test ./cmd/termx -run TestStartRemoteLocalWebServesEmbeddedPageAndStatus -count=1` passed after smoke assertion tuning.
+- Broader tests after implementation before code review: `cd remote-ui && npm test` passed 75 tests; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
+- Self-review hardening before final review: added `localWebEntry` coverage that the shell still mounts when browser pair crypto is unavailable, then guarded pair option creation so unsupported WebCrypto/IndexedDB conditions do not crash the local shell. Pairing is omitted in that unsupported environment; terminal transport still requires a real app certificate before opening.
+- Code review: `Euler` found a high first-run issue where an embedded page with terminals but no app certificate auto-selected the first terminal, hit the missing-certificate transport error, and rendered only a fatal alert before the pair panel, so the user could not pair. The review found no workspace/tab/pane public model leakage, TURN credential exposure, machine private key exposure, or transport boundary issue.
+- Review regression test: added `LocalRemoteApp` coverage that first-run missing-certificate errors keep `termx-local-pair-panel` reachable and that a successful pair stores the certificate and retries transport creation. This failed as expected before the fix because the app rendered only the fatal alert.
+- Review fix: `LocalRemoteApp` now renders post-machine-load errors inside the machine shell instead of replacing the shell, and `onPaired` clears the error and bumps a transport retry token so the terminal/file wiring can reconnect after the certificate exists.
+- Focused tests after review fix: `cd remote-ui && npm test -- --run src/LocalRemoteApp.test.tsx` passed 5 tests; `cd remote-ui && npm test -- --run src/LocalPairPanel.test.tsx src/LocalRemoteApp.test.tsx src/localWebEntry.test.tsx` passed 9 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm run build:localweb` passed.
+- Broader tests after review fix: `cd remote-ui && npm test` passed 77 tests; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
+- Follow-up code review: `Darwin` found no findings after the first-run pairing fix. It confirmed the certificate error stays non-fatal after machine/terminal load, the pair panel remains visible, pair success clears the error and retries transport creation, tests cover the regression, and the scoped files did not introduce workspace/tab/pane/session UI wording, TURN credentials, machine private key exposure, or app private key boundary drift.
 - Result: in progress. Commit: pending.
 
 ### P3-D-B shared terminal client and Terminal.tsx boundary
@@ -322,6 +336,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 - `Einstein` (`019de1f4-37fa-74e0-bf48-cf3953e3f28e`): P3-E-B post-Ptolemy final review. Findings: raw close between `connect()` pre-created terminal channel and `openTerminal()` leaves a closed channel cached, and workflow next action is stale. Result: fixed with pre-protocol raw close cache cleanup, regression coverage, and workflow next-action refresh.
 - `Feynman` (`019de20d-3153-7ac3-9b4f-fa0e3e2ceb10`): P3-E-C-A code review for local web shell build/embed, generated static assets, forbidden model/credential leakage, transport boundaries, and test coverage. Findings: low deterministic-sync issue where stale root-level generated static files could remain. Result: fixed with full static directory replacement and a script regression test.
 - `Heisenberg` (`019de221-51de-7dd3-ba21-c487cb0d7977`): P3-E-C-B-A code review for browser-local app identity storage, app certificate storage, canonical local WebRTC offer signing, machine-private-key/TURN boundaries, and test coverage. Findings: medium app private key storage issue because the first draft exported and stored a private JWK in localStorage. Result: fixed with non-exportable WebCrypto private keys stored behind IndexedDB and regression tests proving string storage does not hold app/machine private keys.
+- `Euler` (`019de238-47c6-7551-b63d-8f70081db280`): P3-E-C-B-B code review for pair harness reachability, embedded smoke fallback, security boundaries, and old public-model drift. Findings: high first-run missing-certificate error hid the pair panel and blocked pairing when terminals existed. Result: fixed with shell-level error rendering, pair-success transport retry, and regression coverage.
+- `Darwin` (`019de23e-6733-7bf2-b9af-1d5051844a32`): P3-E-C-B-B follow-up code review after Euler fix. Scope: first-run pair reachability, retry after pairing, no workspace/tab/pane/session public UI, no TURN credentials, no machine private key exposure, app private key boundary, interface separation, and test coverage. Result: no findings.
 
 ## Code Review Log
 
@@ -341,6 +357,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - P3-E-B review complete after fixes. The browser terminal adapter now speaks the current Go binary protocol over `terminal:{terminal_id}`, buffers pre-attach frames, forwards late subscribers and close events, waits for RTC channel open, handles browser Blob messages, creates pre-offer terminal/API channels, and recreates terminal channels after close/retry. No workspace/tab/pane public model, TURN relay credentials, machine private key exposure, or UI/business browser transport leakage was introduced. Residual risk: rich `TypeScreenUpdate`/`TypeSyncLost`/`TypeBootstrapDone` rendering and real browser smoke are deferred to P3-E-C and later terminal rendering polish.
 - P3-E-C-A review complete after deterministic sync fix. The embedded shell build path stays aligned with `docs/remote-rebuild`: static assets are generated from shared `remote-ui`, embedded into `termx-core`, public UI remains `machine -> terminal`, local flow receives no TURN credentials, browser code never touches the machine private key, and fetch/WebRTC details remain in adapter/entry wiring. Residual risk: real browser terminal/file smoke is still deferred to P3-E-C-B because browser-local app certificate storage and offer signing are not implemented yet.
 - P3-E-C-B-A review complete after non-exportable app key storage fix. Browser-local app identity now stores only app metadata and app certificates in string storage, keeps app private keys behind an IndexedDB/WebCrypto key-store boundary, signs local offers with the Go-compatible canonical message, does not expose machine private key material, and does not introduce TURN credentials or workspace/tab/pane public concepts. Residual risk: pair UI/harness and real browser terminal/file smoke remain for P3-E-C-B-B.
+- P3-E-C-B-B review complete after first-run reachability fix and follow-up review. The pair harness remains rendered through `LocalAgentApi` and app identity interfaces, missing-certificate errors no longer hide pairing, successful pairing retries the local transport, executable smoke covers embedded shell/pair markers plus no TURN or machine-private-key asset exposure, and no follow-up findings remain.
 
 ## Deferred Human Decisions And Placeholders
 
@@ -348,7 +365,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - `termx-core/remote_localweb.go` currently maps `last_active_at` from terminal creation time because the existing terminal inventory does not expose a separate last-activity timestamp. This is a narrow placeholder; replace it with real activity metadata when the terminal runtime publishes it.
 - Local HTTP and ICE TCP currently use independent listeners. Same-port cmux remains deferred until browser smoke/local e2e proves that reducing exposed ports is worth the extra listener complexity.
 - P3-E-B local terminal bridge now implements the minimum Go binary terminal protocol path over `terminal:{terminal_id}`. Richer incoming stream-frame rendering such as `TypeScreenUpdate`, `TypeSyncLost`, and `TypeBootstrapDone` remain for later terminal-rendering polish.
-- P3-E-C-B-A implements browser-local app identity storage and Ed25519 offer signing primitives. A pair claim UI/harness and real browser terminal/file smoke remain for P3-E-C-B-B; no human security decision is required for the current safe behavior, and the next implementation must keep the app private key behind the non-exportable IndexedDB/WebCrypto boundary.
+- P3-E-C-B-B in-app Browser Use click smoke is deferred by current tool availability: the Browser plugin is installed, but the required Node REPL `js` tool is not exposed in this session. Current fallback smoke is executable HTTP/embedded-asset coverage in `termx-cli`; P3-E-C-B-C should run in-app browser automation when the Node REPL browser tool is available.
 
 ## Risks
 
@@ -357,10 +374,10 @@ Status file for unattended remote rebuild work. Update this file before starting
 - New `remote-ui/` package must avoid carrying over tgent pane/session public concepts when copying `Terminal.tsx`, `SessionList.tsx`, and file manager code.
 - Keeping TermX UI close enough to tgent for future synchronization conflicts with replacing tgent's web-like interaction state. The boundary is explicit: copy structure/components/adapters where possible, but normalize messages and lifecycle through TermX reducers/queues.
 - P3-E browser adapter currently translates shared `GET /files/list` and `GET /files/stat` requests to the existing Go/tgent-style `POST` data-channel file API. Browser smoke in P3-E-C-B must validate that this adapter behavior works against the embedded daemon.
-- P3-E-C-B-A proves browser-local signing primitives but does not yet prove real browser terminal open. P3-E-C-B-B must add pair UI/harness and run the embedded browser smoke against local WebRTC-over-TCP.
+- P3-E-C-B-B proves the local pair harness and executable embedded asset/API smoke fallback, but real in-app browser click automation remains deferred until Browser Use exposes the required Node REPL `js` tool.
 
 ## Next Exact Action
 
-1. Write failing P3-E-C-B-B tests for local pair UI/harness using browser-local app identity primitives.
-2. Implement the smallest local pair claim flow needed to obtain and persist an app certificate in the embedded web.
-3. Run real embedded local web browser smoke against local WebRTC-over-TCP.
+1. Commit P3-E-C-B-B with generated embedded assets.
+2. Record the commit hash in this workflow.
+3. Start P3-F anonymous rendezvous HTTP adapter/service with workflow updated before writing tests.

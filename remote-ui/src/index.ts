@@ -22,6 +22,8 @@ export { FileManager } from './FileManager'
 export type { FileManagerProps } from './FileManager'
 export { LocalRemoteApp } from './LocalRemoteApp'
 export type { LocalRemoteAppProps, LocalRemoteTransportFactory, LocalRemoteTransportInput } from './LocalRemoteApp'
+export { LocalPairPanel } from './LocalPairPanel'
+export type { LocalPairPanelProps } from './LocalPairPanel'
 export { createLocalAgentApi } from './localAgentApi'
 export type { LocalAgentApiOptions } from './localAgentApi'
 export {

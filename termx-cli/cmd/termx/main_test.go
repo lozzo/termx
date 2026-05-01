@@ -351,6 +351,30 @@ func TestStartRemoteLocalWebServesEmbeddedPageAndStatus(t *testing.T) {
 	if !strings.Contains(string(body), "TermX Remote") {
 		t.Fatalf("expected embedded TermX Remote page, got %s", string(body))
 	}
+	assetPath := embeddedModuleAssetPath(t, string(body))
+	resp, err = client.Get(baseURL + assetPath)
+	if err != nil {
+		t.Fatalf("GET embedded module asset: %v", err)
+	}
+	assetBody, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read embedded module asset: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected embedded module status 200, got %d: %s", resp.StatusCode, string(assetBody))
+	}
+	assetText := string(assetBody)
+	for _, want := range []string{"termx-local-web-shell", "termx-local-pair-panel", "Pair ID", "Pair secret"} {
+		if !strings.Contains(assetText, want) {
+			t.Fatalf("expected embedded module asset to contain %q", want)
+		}
+	}
+	for _, forbidden := range []string{"machine_private_key", "machinePrivateKey", "turn:", "turns:"} {
+		if strings.Contains(strings.ToLower(assetText), strings.ToLower(forbidden)) {
+			t.Fatalf("embedded module asset must not expose %q", forbidden)
+		}
+	}
 
 	resp, err = client.Get(baseURL + "/api/local/status")
 	if err != nil {
@@ -441,6 +465,21 @@ func TestStartRemoteLocalWebServesEmbeddedPageAndStatus(t *testing.T) {
 	if pair["app_certificate"] == nil || pair["machine_private_key"] != nil {
 		t.Fatalf("expected app certificate without machine private key, got %#v", pair)
 	}
+}
+
+func embeddedModuleAssetPath(t *testing.T, html string) string {
+	t.Helper()
+	const marker = `type="module" crossorigin src="`
+	start := strings.Index(html, marker)
+	if start < 0 {
+		t.Fatalf("missing module script in embedded html: %q", html)
+	}
+	start += len(marker)
+	end := strings.Index(html[start:], `"`)
+	if end < 0 {
+		t.Fatalf("malformed module script in embedded html: %q", html)
+	}
+	return html[start : start+end]
 }
 
 func TestRootCmdHasRemoteStatusAndPairCommands(t *testing.T) {

@@ -6,6 +6,7 @@ describe('local web entry shell', () => {
     cleanup()
     document.body.innerHTML = ''
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('mounts the shared local remote app with browser local adapters and no forbidden public model text', async () => {
@@ -122,6 +123,38 @@ describe('local web entry shell', () => {
 
     await waitFor(() => expect(screen.getByTestId('termx-local-web-shell')).toBeTruthy())
     await waitFor(() => expect(screen.getByText('No terminals')).toBeTruthy())
+  })
+
+  it('keeps the local shell mounted when pair crypto is unavailable', async () => {
+    const entry = await import('./localWebEntry')
+    document.body.innerHTML = '<div id="root"></div>'
+    vi.stubGlobal('crypto', undefined)
+
+    entry.mountLocalWebApp({
+      api: {
+        async getStatus() {
+          return {
+            machine: {
+              machineId: 'machine-local',
+              name: 'Local Mac',
+              state: 'online',
+              terminalCount: 0,
+            },
+            localWeb: {
+              httpUrl: 'http://127.0.0.1:18888',
+              rtcOfferUrl: 'http://127.0.0.1:18888/api/local/rtc/offer',
+            },
+          }
+        },
+        async listTerminals() {
+          return []
+        },
+      },
+    })
+
+    await waitFor(() => expect(screen.getByTestId('termx-local-web-shell')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('No terminals')).toBeTruthy())
+    expect(screen.queryByTestId('termx-local-pair-panel')).toBeNull()
   })
 })
 

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { FileManager } from './FileManager'
+import { LocalPairPanel } from './LocalPairPanel'
+import type { LocalAppCrypto, LocalAppIdentityStore } from './localAppIdentity'
 import { Terminal } from './Terminal'
 import { TerminalList } from './TerminalList'
 import type { Machine, Terminal as RemoteTerminal } from './model'
@@ -17,14 +19,21 @@ export interface LocalRemoteAppProps {
   api: Pick<LocalAgentApi, 'getStatus' | 'listTerminals'>
   createTransport: LocalRemoteTransportFactory
   className?: string | undefined
+  pair?: {
+    api: Pick<LocalAgentApi, 'pair'>
+    storage: LocalAppIdentityStore
+    crypto: LocalAppCrypto
+    appName: string
+  } | undefined
 }
 
-export function LocalRemoteApp({ api, createTransport, className }: LocalRemoteAppProps) {
+export function LocalRemoteApp({ api, createTransport, className, pair }: LocalRemoteAppProps) {
   const [machine, setMachine] = useState<Machine | null>(null)
   const [terminals, setTerminals] = useState<RemoteTerminal[]>([])
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [connectedTransport, setConnectedTransport] = useState<(PeerTransport & TerminalTransport) | null>(null)
+  const [transportRetryToken, setTransportRetryToken] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -77,7 +86,7 @@ export function LocalRemoteApp({ api, createTransport, className }: LocalRemoteA
       cancelled = true
       void transport.disconnect()
     }
-  }, [activeTerminalId, createTransport, machine])
+  }, [activeTerminalId, createTransport, machine, transportRetryToken])
 
   const openTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (machine && intent.machineId !== machine.machineId) {
@@ -87,7 +96,7 @@ export function LocalRemoteApp({ api, createTransport, className }: LocalRemoteA
     setActiveTerminalId(intent.terminalId)
   }, [machine])
 
-  if (error) {
+  if (error && !machine) {
     return <section className={className}><div role="alert">{error}</div></section>
   }
 
@@ -97,6 +106,8 @@ export function LocalRemoteApp({ api, createTransport, className }: LocalRemoteA
 
   return (
     <main className={className} data-machine-id={machine.machineId}>
+      {error ? <div role="alert">{error}</div> : null}
+
       <TerminalList
         machineId={machine.machineId}
         terminals={terminals}
@@ -118,6 +129,19 @@ export function LocalRemoteApp({ api, createTransport, className }: LocalRemoteA
             initialPath="/"
           />
         </>
+      ) : null}
+
+      {pair ? (
+        <LocalPairPanel
+          api={pair.api}
+          storage={pair.storage}
+          crypto={pair.crypto}
+          appName={pair.appName}
+          onPaired={() => {
+            setError(null)
+            setTransportRetryToken((current) => current + 1)
+          }}
+        />
       ) : null}
     </main>
   )

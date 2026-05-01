@@ -10,6 +10,7 @@ import './localWebEntry.css'
 export interface LocalWebAppOptions {
   root?: HTMLElement | null | undefined
   api?: Pick<LocalAgentApi, 'getStatus' | 'listTerminals'> | undefined
+  pairApi?: Pick<LocalAgentApi, 'pair'> | undefined
   createTransport?: LocalRemoteTransportFactory | undefined
 }
 
@@ -20,6 +21,7 @@ export function mountLocalWebApp(options: LocalWebAppOptions = {}): Root {
   }
   const api = options.api ?? createLocalAgentApi()
   const createTransport = options.createTransport ?? createBrowserLocalTransportFactory()
+  const pair = createBrowserPairOptions(options.pairApi ?? createLocalAgentApi())
   const root = createRoot(rootElement)
   root.render(
     <StrictMode>
@@ -28,11 +30,26 @@ export function mountLocalWebApp(options: LocalWebAppOptions = {}): Root {
           api={api}
           createTransport={createTransport}
           className="termx-local-web-app"
+          {...(pair ? { pair } : {})}
         />
       </section>
     </StrictMode>,
   )
   return root
+}
+
+function createBrowserPairOptions(api: Pick<LocalAgentApi, 'pair'>) {
+  if (!globalThis.localStorage) return undefined
+  try {
+    return {
+      api,
+      storage: createLocalAppIdentityStore(globalThis.localStorage),
+      crypto: createBrowserLocalAppCrypto(),
+      appName: 'TermX Local Web',
+    }
+  } catch {
+    return undefined
+  }
 }
 
 function createBrowserLocalTransportFactory(): LocalRemoteTransportFactory {

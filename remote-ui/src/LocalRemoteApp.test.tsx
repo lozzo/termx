@@ -2,6 +2,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LocalRemoteApp, type LocalRemoteTransportFactory } from './LocalRemoteApp'
+import { createLocalAppIdentityStore, type LocalAppCrypto } from './localAppIdentity'
 import type { LocalAgentApi } from './transport'
 import { createMockFilePeerTransport } from './test/mockFileTransport'
 import type { TerminalTransport, TerminalTransportEvent } from './terminalClient'
@@ -66,6 +67,75 @@ describe('LocalRemoteApp', () => {
 
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('local app certificate is required'))
     expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane/i)
+  })
+
+  it('renders the local pair harness through app-level interfaces', async () => {
+    const createTransport = vi.fn<LocalRemoteTransportFactory>(() => createMockLocalRemoteTransport(
+      {},
+      'machine-local',
+      'terminal-1',
+    ))
+
+    render(
+      <LocalRemoteApp
+        api={createMockLocalAgentApi()}
+        createTransport={createTransport}
+        pair={{
+          api: createMockLocalAgentApi(),
+          storage: createLocalAppIdentityStore(new MemoryStorage()),
+          crypto: createMockAppCrypto(),
+          appName: 'TermX Local Web',
+        }}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('termx-local-pair-panel')).toBeTruthy())
+    expect(screen.getByLabelText('Pair ID')).toBeTruthy()
+    expect(screen.getByLabelText('Pair secret')).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane|session/i)
+  })
+
+  it('keeps pair reachable when first-run terminal connect needs a certificate and retries after pairing', async () => {
+    const storage = createLocalAppIdentityStore(new MemoryStorage())
+    let paired = false
+    const createTransport = vi.fn<LocalRemoteTransportFactory>(() => {
+      if (!paired) throw new Error('local app certificate is required before opening a terminal')
+      return createMockLocalRemoteTransport({}, 'machine-local', 'terminal-1')
+    })
+    const pairApi = createMockLocalAgentApi()
+    pairApi.pair = vi.fn(async () => {
+      paired = true
+      return {
+        machineId: 'machine-local',
+        appCertificate: '{"payload":{"machine_id":"machine-local","app_public_key":"AQIDBA=="},"signature":"machine-sig"}',
+        expiresAt: '2026-05-01T07:00:00Z',
+      }
+    })
+
+    render(
+      <LocalRemoteApp
+        api={createMockLocalAgentApi()}
+        createTransport={createTransport}
+        pair={{
+          api: pairApi,
+          storage,
+          crypto: createMockAppCrypto(),
+          appName: 'TermX Local Web',
+        }}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('local app certificate is required'))
+    expect(screen.getByTestId('termx-local-pair-panel')).toBeTruthy()
+
+    await userEvent.type(screen.getByLabelText('Pair ID'), 'pair-1')
+    await userEvent.type(screen.getByLabelText('Pair secret'), 'secret-1')
+    await userEvent.click(screen.getByRole('button', { name: 'Pair' }))
+
+    await waitFor(() => expect(screen.getByText('Paired with machine-local')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
+    expect(createTransport).toHaveBeenCalledTimes(2)
+    expect(storage.loadCertificate()).toContain('machine-local')
   })
 })
 
@@ -133,6 +203,58 @@ function createMockLocalAgentApi(): LocalAgentApi {
     },
     async createRTCAnswer() {
       throw new Error('createRTCAnswer is not used by LocalRemoteApp tests')
+    },
+  }
+}
+
+class MemoryStorage implements Storage {
+  private readonly values = new Map<string, string>()
+  length = 0
+
+  clear(): void {
+    this.values.clear()
+    this.length = 0
+  }
+
+  getItem(key: string): string | null {
+    return this.values.get(key) ?? null
+  }
+
+  key(index: number): string | null {
+    return Array.from(this.values.keys())[index] ?? null
+  }
+
+  removeItem(key: string): void {
+    this.values.delete(key)
+    this.length = this.values.size
+  }
+
+  setItem(key: string, value: string): void {
+    this.values.set(key, value)
+    this.length = this.values.size
+  }
+}
+
+function createMockAppCrypto(): LocalAppCrypto {
+  return {
+    async generateKeyPair() {
+      return {
+        publicKey: { raw: new Uint8Array([1, 2, 3, 4]) },
+        privateKey: { keyId: 'generated-app-key' },
+      }
+    },
+    async savePrivateKey() {},
+    async loadPrivateKey() {
+      return { keyId: 'generated-app-key' }
+    },
+    async sign() {
+      return new TextEncoder().encode('signed-by-app-key')
+    },
+    async randomBytes(length: number) {
+      return new Uint8Array(length)
+    },
+    async sha256() {
+      return new Uint8Array(32)
     },
   }
 }
