@@ -27,9 +27,9 @@ export function TerminalList({
       data-testid="termx-terminal-list"
     >
       {terminals.length === 0 ? (
-        <p>No terminals</p>
+        <p className="text-sm text-zinc-600">No terminals</p>
       ) : (
-        <ul aria-label="Terminals">
+        <ul aria-label="Terminals" className="grid list-none gap-2 p-0">
           {terminals.map((terminal) => (
             <li
               key={terminal.terminalId}
@@ -37,6 +37,8 @@ export function TerminalList({
               data-active={activeTerminalId === terminal.terminalId ? 'true' : 'false'}
             >
               <button
+                className="grid w-full cursor-pointer gap-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-left text-sm text-zinc-950 hover:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-300 data-[active=true]:border-slate-900 data-[active=true]:bg-slate-900 data-[active=true]:text-white"
+                data-active={activeTerminalId === terminal.terminalId ? 'true' : 'false'}
                 type="button"
                 aria-label={`Open ${terminal.title}`}
                 onClick={() => onOpenTerminal({
@@ -44,10 +46,12 @@ export function TerminalList({
                   terminalId: terminal.terminalId,
                 })}
               >
-                <span>{terminal.title}</span>
-                {terminal.command ? <span>{terminal.command}</span> : null}
-                {terminal.cols && terminal.rows ? <span>{terminal.cols}x{terminal.rows}</span> : null}
-                <span>{terminal.state}</span>
+                <span className="font-medium">{terminal.title}</span>
+                {terminal.command ? <span className="truncate text-xs opacity-75">{terminal.command}</span> : null}
+                {terminal.cols && terminal.rows ? (
+                  <span className="text-xs opacity-75">{terminal.cols}x{terminal.rows}</span>
+                ) : null}
+                <span className="text-xs opacity-75">{terminal.state}</span>
               </button>
             </li>
           ))}

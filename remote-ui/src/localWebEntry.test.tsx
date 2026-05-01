@@ -1,6 +1,12 @@
 import { cleanup, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('./Terminal', () => ({
+  Terminal: ({ machineId, terminalId }: { machineId: string; terminalId: string }) => (
+    <section data-machine-id={machineId} data-terminal-id={terminalId} data-testid="termx-terminal" />
+  ),
+}))
+
 describe('local web entry shell', () => {
   afterEach(() => {
     cleanup()

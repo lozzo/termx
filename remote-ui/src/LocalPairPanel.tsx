@@ -8,9 +8,10 @@ export interface LocalPairPanelProps {
   crypto: LocalAppCrypto
   appName: string
   onPaired?: ((machineId: string) => void) | undefined
+  className?: string | undefined
 }
 
-export function LocalPairPanel({ api, storage, crypto, appName, onPaired }: LocalPairPanelProps) {
+export function LocalPairPanel({ api, storage, crypto, appName, onPaired, className }: LocalPairPanelProps) {
   const [pairSessionId, setPairSessionId] = useState('')
   const [pairSecret, setPairSecret] = useState('')
   const [status, setStatus] = useState<string | null>(null)
@@ -41,33 +42,42 @@ export function LocalPairPanel({ api, storage, crypto, appName, onPaired }: Loca
   }
 
   return (
-    <section data-testid="termx-local-pair-panel">
-      <form onSubmit={(event) => { void submit(event) }}>
-        <label>
+    <section
+      className={className}
+      data-testid="termx-local-pair-panel"
+    >
+      <form className="grid gap-3 md:grid-cols-[1fr_1fr_auto]" onSubmit={(event) => { void submit(event) }}>
+        <label className="grid gap-1 text-sm font-medium text-zinc-700">
           Pair ID
           <input
             autoComplete="off"
+            className="min-h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
             name="pairSessionId"
             value={pairSessionId}
             onChange={(event) => setPairSessionId(event.currentTarget.value)}
           />
         </label>
-        <label>
+        <label className="grid gap-1 text-sm font-medium text-zinc-700">
           Pair secret
           <input
             autoComplete="off"
+            className="min-h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-zinc-950 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
             name="pairSecret"
             type="password"
             value={pairSecret}
             onChange={(event) => setPairSecret(event.currentTarget.value)}
           />
         </label>
-        <button type="submit" disabled={submitting || !pairSessionId.trim() || !pairSecret.trim()}>
+        <button
+          className="min-h-10 self-end rounded-md border border-slate-800 bg-slate-900 px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-500"
+          type="submit"
+          disabled={submitting || !pairSessionId.trim() || !pairSecret.trim()}
+        >
           Pair
         </button>
       </form>
-      {status ? <div role="status">{status}</div> : null}
-      {error ? <div role="alert">{error}</div> : null}
+      {status ? <div className="mt-3 text-sm text-emerald-700" role="status">{status}</div> : null}
+      {error ? <div className="mt-3 text-sm text-red-700" role="alert">{error}</div> : null}
     </section>
   )
 }

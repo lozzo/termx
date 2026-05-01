@@ -7,6 +7,12 @@ import type { LocalAgentApi } from './transport'
 import { createMockFilePeerTransport } from './test/mockFileTransport'
 import type { TerminalTransport, TerminalTransportEvent } from './terminalClient'
 
+vi.mock('./Terminal', () => ({
+  Terminal: ({ machineId, terminalId }: { machineId: string; terminalId: string }) => (
+    <section data-machine-id={machineId} data-terminal-id={terminalId} data-testid="termx-terminal" />
+  ),
+}))
+
 describe('LocalRemoteApp', () => {
   afterEach(() => {
     cleanup()

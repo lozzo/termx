@@ -97,21 +97,35 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
   }, [machine])
 
   if (error && !machine) {
-    return <section className={className}><div role="alert">{error}</div></section>
+    return (
+      <section className={className}>
+        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+          {error}
+        </div>
+      </section>
+    )
   }
 
   if (!machine) {
-    return <section className={className}>Loading</section>
+    return <section className={className}><p className="text-sm text-zinc-600">Loading</p></section>
   }
 
   return (
     <main className={className} data-machine-id={machine.machineId}>
-      {error ? <div role="alert">{error}</div> : null}
+      {error ? (
+        <div
+          className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 md:col-span-2"
+          role="alert"
+        >
+          {error}
+        </div>
+      ) : null}
 
       <TerminalList
         machineId={machine.machineId}
         terminals={terminals}
         onOpenTerminal={openTerminal}
+        className="min-w-0 md:row-span-2"
         {...(activeTerminalId ? { activeTerminalId } : {})}
       />
 
@@ -121,12 +135,14 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
             machineId={machine.machineId}
             terminalId={activeTerminalId}
             transport={connectedTransport}
+            className="min-h-[52vh] min-w-0 overflow-hidden border border-slate-800 bg-[#101418] text-slate-100"
           />
           <FileManager
             machineId={machine.machineId}
             terminalId={activeTerminalId}
             transport={connectedTransport}
             initialPath="/"
+            className="min-w-0"
           />
         </>
       ) : null}
@@ -137,6 +153,7 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
           storage={pair.storage}
           crypto={pair.crypto}
           appName={pair.appName}
+          className="min-w-0 md:col-span-2"
           onPaired={() => {
             setError(null)
             setTransportRetryToken((current) => current + 1)

@@ -25,11 +25,14 @@ export function mountLocalWebApp(options: LocalWebAppOptions = {}): Root {
   const root = createRoot(rootElement)
   root.render(
     <StrictMode>
-      <section className="termx-local-web-shell" data-testid="termx-local-web-shell">
+      <section
+        className="min-h-screen bg-slate-50 text-zinc-950 antialiased"
+        data-testid="termx-local-web-shell"
+      >
         <LocalRemoteApp
           api={api}
           createTransport={createTransport}
-          className="termx-local-web-app"
+          className="grid min-h-screen grid-cols-1 gap-4 p-4 md:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]"
           {...(pair ? { pair } : {})}
         />
       </section>
