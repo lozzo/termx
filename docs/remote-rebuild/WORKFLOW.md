@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: P3 embedded local web first
 - Active todo: P3-D-C shared TerminalList.tsx boundary
-- Last updated: 2026-05-01T11:41:04+08:00
+- Last updated: 2026-05-01T11:48:07+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -36,9 +36,15 @@ Status file for unattended remote rebuild work. Update this file before starting
 ### P3-D-C shared TerminalList.tsx boundary
 
 - Tests written before implementation: pending.
-- Expected failing tests: pending; first tests will target a `TerminalList.tsx` component and terminal inventory hook/store that render `Terminal[]` grouped by machine context only, dispatch terminal-open user intent, and reject tgent session/window/pane records.
+- Tests written before implementation: `remote-ui/src/terminalInventory.test.ts` and `remote-ui/src/TerminalList.test.tsx`.
+- Expected failing tests: `cd remote-ui && npm test -- --run src/terminalInventory.test.ts src/TerminalList.test.tsx` fails because `./terminalInventory` and `./TerminalList` do not exist yet. The tests cover normalizing a machine-scoped terminal list, rejecting tgent session/window/pane-shaped records, dispatching terminal-open user intent, rendering terminal title/command/size, empty state copy without forbidden public concepts, and public props that only expose machine/terminal semantics.
+- Actual failing tests before implementation: focused P3-D-C tests failed as expected with missing module errors for `./terminalInventory` and `./TerminalList`.
 - Planned scope: adapt only the useful list interaction shape from tgent `SessionList.tsx`; do not copy createSession/createWindow/splitPane/movePane/killPane or session/window/pane drag/drop semantics. The public list model remains machine -> terminal.
-- Result: in progress. Commit: pending.
+- Review regression tests: added direct coverage that stray `sessions` fields are rejected by terminal inventory and terminals explicitly belonging to another machine are not silently re-scoped to the parent machine. These failed before the review fixes.
+- Focused tests after implementation and review fixes: `cd remote-ui && npm test` passed 28 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm audit` passed with 0 vulnerabilities.
+- Broader tests after implementation and review fixes: `cd termx-core && go test ./internal/remote/...` passed; `cd termx-cli && go test ./cmd/termx` passed; `git diff --check` passed.
+- Code review: `Meitner` found terminal inventory could silently re-scope terminals from another machine and that the forbidden-session coverage only passed because the sample also contained windows/panes. Fixed with inventory-level session/sessionId rejection and machine ownership validation.
+- Result: ready to commit. Commit: pending.
 
 ### P3-D-B shared terminal client and Terminal.tsx boundary
 
@@ -199,6 +205,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - `Sagan` (`019de189-868e-71c1-8010-25433d7758e6`): P3-D read-only explorer for tgent UI boundaries. Findings: keep `Terminal.tsx`, terminal client, file client, and file manager boundaries close where practical; convert `paneId` to `terminalId`; treat `SessionList.tsx` as structure-only input for `TerminalList.tsx`; move lifecycle, reattach, duplicate event handling, backpressure, and visible error routing to TermX reducer/queue.
 - `Parfit` (`019de18f-90ad-70e2-998b-2ea5182f0390`): P3-D-A code review. Findings: stale workflow text and nested transport implementation leakage could pass the first boundary guard. Result: workflow updated and nested `nativePlugin`/browser transport leakage now fails under `ConnectionEventQueue` tests.
 - `Hypatia` (`019de19b-9371-7c21-8fe9-988106a95441`): P3-D-B code review. Findings: output chunks were dropped, reasoned terminal closes were overwritten to clean closed state, and mode was hardcoded to local. Result: fixed with output text state, transport-derived mode, failed close preservation, and regression tests.
+- `Meitner` (`019de1a3-ebfb-7911-94ea-b61df8f3cab3`): P3-D-C code review. Findings: terminal inventory could silently re-scope terminals from another machine, and forbidden tgent session coverage did not directly prove `sessions` keys were rejected. Result: fixed with machine ownership validation plus direct `session`/`sessions`/`sessionId` inventory rejection tests.
 
 ## Code Review Log
 
@@ -213,6 +220,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - P3-C review complete. No remaining blocker after implemented fixes; no workspace/tab/pane public model, anonymous/free/local TURN relay credentials, app machine-private-key exposure, transport boundary leakage, or separate agent binary was introduced. Residual risk: browser smoke with the embedded web UI is still deferred to P3-E because P3-C only proves local signaling, terminal protocol scoping, file/API channels, and server-side ICE TCP candidate generation.
 - P3-D-A review complete. No remaining blocker after implemented fixes; no workspace/tab/pane/window/session public model was introduced in `remote-ui`, signaling `sessionId` remains limited to local RTC interfaces, no anonymous/free/local TURN relay credentials or machine private key exposure were introduced, and business logic remains behind transport interfaces without direct browser/native implementation imports. Residual risk: React components, browser local adapter, terminal/file UI behavior, and browser smoke remain deferred to later P3-D/P3-E todos.
 - P3-D-B review complete. No remaining blocker after implemented fixes; `Terminal.tsx`, `TerminalClient`, and `useTerminalSession` expose `machineId`/`terminalId` and `terminal:{terminal_id}` only, do not import browser/native transport implementations, do not expose machine private key material, and do not introduce TURN relay credentials. Residual risk: this is a minimal terminal boundary with plain text rendering; full xterm rendering, browser local adapter wiring, and browser smoke remain deferred to later P3-D/P3-E todos.
+- P3-D-C review complete. No remaining blocker after implemented fixes; `TerminalList.tsx` and terminal inventory expose machine/terminal semantics only, reject tgent session/window/pane-shaped records, validate terminal machine ownership, do not import browser/native transport implementations, do not expose machine private key material, and do not introduce TURN relay credentials. Residual risk: list styling/actions are minimal and richer mobile-native interactions remain for later UI polish after local embedded web wiring.
 
 ## Deferred Human Decisions And Placeholders
 
@@ -229,6 +237,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Commit the workflow checkpoint recording P3-D-B commit `e87d37a`.
-2. Write failing tests for `TerminalList.tsx` with machine -> terminal semantics only and no tgent session/window/pane model.
-3. Implement the smallest terminal inventory/list boundary behind existing `remote-ui` interfaces.
+1. Commit P3-D-C with the shared terminal inventory/list boundary and workflow updates.
+2. Record the P3-D-C commit hash in this workflow.
+3. Start P3-D-D by writing failing tests for `FileManager.tsx` and `useFileManager` behind TermX file transport interfaces.
