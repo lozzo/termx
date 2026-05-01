@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-E-B browser terminal binary protocol adapter
-- Last updated: 2026-05-01T13:24:23+08:00
+- Active todo: P3-E-C build and embed shared local web shell, then run browser smoke
+- Last updated: 2026-05-01T13:26:18+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -28,8 +28,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-D-C | remote-ui | Adapt terminal list from `../tgent` `SessionList.tsx` into `TerminalList.tsx` with machine -> terminal semantics only | completed | `c423ba3` |
 | P3-D-D | remote-ui | Adapt `FileManager.tsx` and file hooks from `../tgent` behind TermX file transport interfaces | completed | `138aba3` |
 | P3-E-A | local/e2e | Add local embedded web browser API/WebRTC adapter shell around shared TerminalList, Terminal, and FileManager components | completed | `83ad016` |
-| P3-E-B | local/e2e | Implement browser terminal adapter compatible with current Go binary terminal protocol over `terminal:{terminal_id}` | in_progress |  |
-| P3-E-C | local/e2e | Build and embed the shared local web shell into `termx` static assets, then run browser smoke before mobile migration | pending |  |
+| P3-E-B | local/e2e | Implement browser terminal adapter compatible with current Go binary terminal protocol over `terminal:{terminal_id}` | completed | `4ef0557` |
+| P3-E-C | local/e2e | Build and embed the shared local web shell into `termx` static assets, then run browser smoke before mobile migration | in_progress |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | pending |  |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -106,7 +106,15 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Final post-fix review fix: terminal channels now install raw close cache cleanup immediately when created, before the protocol bridge exists. The protocol bridge still forwards `closed` to subscribers once open, and retries after pre-open close create a fresh `terminal:{terminal_id}` channel.
 - Focused tests after final post-fix review fix: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts src/localTerminalProtocolTransport.test.ts src/termxProtocol.test.ts` passed 18 tests; `cd remote-ui && npm run typecheck` passed.
 - Broader tests after final post-fix review fix: `cd remote-ui && npm test` passed 65 tests; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx` passed; `git diff --check` passed.
-- Result: in progress after code review. Commit: pending.
+- Result: completed. Commit: `4ef0557`.
+
+### P3-E-C build/embed/browser smoke
+
+- Active slice: build and embed the shared local web shell into the `termx` binary static assets, then run browser smoke against the local embedded web path before mobile migration.
+- Tests written before implementation: pending.
+- Expected failing tests: pending; first tests should prove the `remote-ui` local shell can build into a deterministic static asset directory and that `termx` local web serves those assets without losing the `/api/local/*` contracts.
+- Planned scope: add the smallest build/embed path for the local web shell, keep browser-specific implementation details behind adapter modules, verify no workspace/tab/pane public model, no TURN credentials, and no machine private key exposure. Browser smoke should validate terminal list, terminal connect, and file manager shell wiring against local APIs or explicit mocks/placeholders where real terminal interaction is not yet stable.
+- Result: in progress. Commit: pending.
 
 ### P3-D-B shared terminal client and Terminal.tsx boundary
 
@@ -293,6 +301,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - P3-D-B review complete. No remaining blocker after implemented fixes; `Terminal.tsx`, `TerminalClient`, and `useTerminalSession` expose `machineId`/`terminalId` and `terminal:{terminal_id}` only, do not import browser/native transport implementations, do not expose machine private key material, and do not introduce TURN relay credentials. Residual risk: this is a minimal terminal boundary with plain text rendering; full xterm rendering, browser local adapter wiring, and browser smoke remain deferred to later P3-D/P3-E todos.
 - P3-D-C review complete. No remaining blocker after implemented fixes; `TerminalList.tsx` and terminal inventory expose machine/terminal semantics only, reject tgent session/window/pane-shaped records, validate terminal machine ownership, do not import browser/native transport implementations, do not expose machine private key material, and do not introduce TURN relay credentials. Residual risk: list styling/actions are minimal and richer mobile-native interactions remain for later UI polish after local embedded web wiring.
 - P3-D-D review complete after fixes. `FileManager.tsx`, `useFileManager`, and `fileApi` remain behind transport interfaces; `machineId + terminalId` is required and verified before file API use; no workspace/tab/pane/window/session public model, TURN relay credentials, machine private key exposure, or direct browser/native transport implementation was introduced. Residual risk: UI is intentionally minimal until P3-E browser wiring and later mobile-native polish.
+- P3-E-B review complete after fixes. The browser terminal adapter now speaks the current Go binary protocol over `terminal:{terminal_id}`, buffers pre-attach frames, forwards late subscribers and close events, waits for RTC channel open, handles browser Blob messages, creates pre-offer terminal/API channels, and recreates terminal channels after close/retry. No workspace/tab/pane public model, TURN relay credentials, machine private key exposure, or UI/business browser transport leakage was introduced. Residual risk: rich `TypeScreenUpdate`/`TypeSyncLost`/`TypeBootstrapDone` rendering and real browser smoke are deferred to P3-E-C and later terminal rendering polish.
 
 ## Deferred Human Decisions And Placeholders
 
@@ -311,6 +320,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Commit P3-E-B and record the commit hash.
-2. Update `WORKFLOW.md` to mark P3-E-B completed and set P3-E-C active.
-3. Start P3-E-C build/embed/browser smoke.
+1. Write failing P3-E-C tests for static local web shell build/embed behavior.
+2. Implement the smallest `remote-ui` build output and `termx` embedded asset wiring needed to serve it.
+3. Run focused tests, broader relevant tests, and browser smoke.
