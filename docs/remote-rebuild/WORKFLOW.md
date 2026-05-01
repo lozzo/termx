@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: P3 embedded local web first
 - Active todo: P3-D-A shared remote UI logic package
-- Last updated: 2026-05-01T11:25:08+08:00
+- Last updated: 2026-05-01T11:27:48+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -23,7 +23,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-A | rendezvous | Implement anonymous rendezvous interfaces/contracts with payload limit, TTL, channel secret verification, and no TURN credentials | completed | `4012a1b` |
 | P3-B | localweb | Implement embedded local web foundation served from `termx` binary with local status, terminal list, and pair API contracts | completed | `6d9048f` |
 | P3-C | rtc | Implement local WebRTC signaling and ICE TCP mux/over-TCP support for browser-to-daemon local connections | completed | `52d964b` |
-| P3-D-A | remote-ui | Create shared `remote-ui/` TypeScript package with machine/terminal contracts, transport interfaces, connection message reducer, and event queue | in_progress |  |
+| P3-D-A | remote-ui | Create shared `remote-ui/` TypeScript package with machine/terminal contracts, transport interfaces, connection message reducer, and event queue | completed | `fe9025d` |
 | P3-D-B | remote-ui | Adapt `Terminal.tsx` from `../tgent` into shared remote UI using `terminal_id` instead of pane/session concepts | pending |  |
 | P3-D-C | remote-ui | Adapt terminal list from `../tgent` `SessionList.tsx` into `TerminalList.tsx` with machine -> terminal semantics only | pending |  |
 | P3-D-D | remote-ui | Adapt `FileManager.tsx` and file hooks from `../tgent` behind TermX file transport interfaces | pending |  |
@@ -43,7 +43,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Focused tests after implementation: `cd remote-ui && npm test` passed 10 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm audit` passed with 0 vulnerabilities.
 - Broader tests after implementation: `cd termx-core && go test ./internal/remote/...` passed; `cd termx-cli && go test ./cmd/termx` passed; `git diff --check` passed.
 - Code review: `Parfit` found no high/medium issues. Low findings were stale workflow text and a top-level-only transport implementation leakage guard. Fixed by updating this workflow and adding a regression proving nested `nativePlugin` payloads are rejected by `ConnectionEventQueue`/`assertMessageBoundary`.
-- Result: ready to commit. Commit: pending.
+- Result: completed. Commit: `fe9025d`.
 
 ### R0 seed persistent workflow file
 
@@ -208,6 +208,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Commit P3-D-A with the new `remote-ui` pure logic package and workflow updates.
-2. Record the P3-D-A commit hash in this workflow.
-3. Start P3-D-B by writing failing tests for a TermX `Terminal.tsx`/terminal-client adapter that uses `terminalId` and excludes pane/session public semantics.
+1. Start P3-D-B by updating this workflow before writing tests.
+2. Write failing tests for a TermX `Terminal.tsx`/terminal-client adapter that uses `terminalId`, opens `terminal:{terminal_id}`, and excludes pane/session public semantics.
+3. Copy or adapt the smallest tgent terminal rendering/client boundary needed behind the existing `remote-ui` transport interfaces.
