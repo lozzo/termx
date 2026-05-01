@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: choose next slice after P3-E-C-B-G verified local browser smoke
-- Last updated: 2026-05-01T21:30:57+08:00
+- Active todo: P3-E-C-B-H xterm.js interactive terminal surface for embedded local web
+- Last updated: 2026-05-01T22:25:18+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -37,6 +37,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-E | local/e2e | Fix embedded local file manager hang where `Loading files` remains visible instead of files or an error | completed | `80bbeb1` |
 | P3-E-C-B-F | local/e2e | Require the local WebRTC `api` DataChannel to open during connect so FileManager does not mount on a half-ready transport | completed | `9a51792` |
 | P3-E-C-B-G | local/e2e | Fix real-browser local WebRTC `api` DataChannel timeout by waiting for local ICE candidates before signing/sending the offer | completed | `9531237` |
+| P3-E-C-B-H | local/e2e | Replace the readonly terminal placeholder with a tgent-aligned xterm.js terminal surface that writes output, forwards input, and sends resize through TermX terminal interfaces | in_progress |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -226,6 +227,15 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Cleanup regressions: added `TestAnswerOfferSessionContextClosesDataChannel` to prove the server/daemon session context still closes the PeerConnection and browser data channel after a session cancellation, and `TestAnswerOfferDefaultSessionContextFollowsCallerContext` to prove non-local/default callers remain tied to their owning context.
 - Code review: `Wegener` found no findings for the ICE-gathering browser adapter change. It confirmed no workspace/tab/pane public concepts, TURN relay credentials, machine private key handling, or transport-boundary leakage in the scoped changes; residual note was to include the generated asset replacement in the final commit. Follow-up review by `Descartes` found a high issue: default `AnswerOffer` had been accidentally detached from the caller context, so non-local remote sessions could outlive their owning runtime. Fixed by making `SessionContext` optional and defaulting to the caller context, while only local web passes the daemon session context; added `DefaultSessionContextFollowsCallerContext` to guard the default cleanup behavior.
 - Result: completed. Commit: `9531237`.
+
+### P3-E-C-B-H xterm.js interactive terminal surface
+
+- Active slice: move embedded local web terminal UI from readonly `<pre>` output to a tgent-aligned xterm.js surface after the local WebRTC protocol path has been verified.
+- Tests written before implementation: `remote-ui/src/Terminal.test.tsx`.
+- Expected failing tests: `cd remote-ui && npm test -- --run src/Terminal.test.tsx` should fail because the current `Terminal.tsx` renders plain text instead of constructing an xterm.js terminal, does not wire xterm `onData` into TermX terminal input, and does not fit/send terminal resize through the existing `TerminalTransport` interface.
+- Actual failing tests before implementation: `cd remote-ui && npm test -- --run src/Terminal.test.tsx` failed as expected: xterm instance count stayed at 0, streaming output only appeared in the old `<pre>`, xterm input could not be emitted, and no resize was sent through the mock terminal channel.
+- Planned scope: use `../tgent/tgent-app/src/components/Terminal.tsx` as the xterm usage reference for `XTerm`, `FitAddon`, `term.write`, `term.onData`, and fit/resize behavior, but keep the TermX public identity as `machineId + terminalId` only. Browser/WebRTC details must stay inside transport adapters, not UI components. This slice deliberately avoids importing tgent pane/session/window concepts, TermX TURN credentials, or any machine private key behavior.
+- User correction before completion: frontend styling must use TailwindCSS as the default styling system instead of growing handwritten CSS. Root `AGENTS.md` now records this rule. P3-E-C-B-H must first wire Tailwind into `remote-ui` before adding new UI styling; `@xterm/xterm/css/xterm.css` remains allowed as a third-party library CSS import.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 
@@ -470,6 +480,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Generate a fresh unused Pair ID/secret from the verified local daemon for user testing.
-2. Keep P3-E-C-B-C deferred until Browser Use exposes the required in-app browser Node REPL `js` tool.
-3. Choose the next P3/P4 slice after manual local verification remains stable.
+1. Commit the root `AGENTS.md` TailwindCSS styling rule and this workflow correction separately from the unfinished xterm code.
+2. Continue P3-E-C-B-H by wiring Tailwind into `remote-ui`, then adapt `Terminal.tsx` xterm markup/styles through Tailwind utilities plus the required xterm library CSS import.
+3. Re-run focused and broader tests, code review the slice, update this workflow, and commit P3-E-C-B-H.
