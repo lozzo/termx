@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: P3 embedded local web first
 - Active todo: P3-C local WebRTC signaling and ICE TCP mux
-- Last updated: 2026-05-01T10:16:01+08:00
+- Last updated: 2026-05-01T10:18:08+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -21,7 +21,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P2-C | pairing | Implement local pair session creation, TTL, single-use semantics, and app certificate issuance in `termx-core/internal/remote/pairing` | completed | `12067cb` |
 | P2-D | CLI | Keep `termx remote status` working and add a conservative `termx pair` CLI skeleton only after core primitives exist | completed | `4b24258` |
 | P3-A | rendezvous | Implement anonymous rendezvous interfaces/contracts with payload limit, TTL, channel secret verification, and no TURN credentials | completed | `4012a1b` |
-| P3-B | localweb | Implement embedded local web foundation served from `termx` binary with local status, terminal list, and pair API contracts | completed | pending commit |
+| P3-B | localweb | Implement embedded local web foundation served from `termx` binary with local status, terminal list, and pair API contracts | completed | `6d9048f` |
 | P3-C | rtc | Implement local WebRTC signaling and ICE TCP mux/over-TCP support for browser-to-daemon local connections | pending |  |
 | P3-D | remote-ui | Create shared remote UI package and adapt `Terminal.tsx`, `TerminalList.tsx`, and `FileManager.tsx` from `../tgent` for machine/terminal-only semantics | pending |  |
 | P3-E | local/e2e | Wire embedded local web to terminal and file manager over local WebRTC DataChannels and validate in browser before mobile migration | pending |  |
@@ -121,7 +121,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Broader tests: `cd termx-core && go test ./internal/remote/...` passed; `cd termx-core && go test ./...` passed; `cd termx-cli && go test ./...` passed; `git diff --check` passed.
 - Code review: `Avicenna` pre-CLI review found pair response/docs and embedded asset coverage might be incomplete from an earlier snapshot, plus `last_active_at` creation-time semantics. `Bacon` final review found stale workflow state, missing CLI listener-path coverage for terminals/pair, the same `last_active_at` placeholder, and local API error envelope drift.
 - Fixes after review: local pair response/docs include `machine_public_key_fingerprint` and `expires_at`; default assets use `go:embed`; CLI TCP listener test covers `/`, `/api/local/status`, `/api/local/terminals`, and `/api/local/pair`; local API errors now use documented `code/message/request_id`; `last_active_at` remains recorded as a placeholder until runtime activity metadata exists.
-- Result: completed. Commit: pending.
+- Result: completed. Commit: `6d9048f`.
 
 ## Subagents
 
@@ -164,6 +164,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Commit P3-B implementation.
-2. Update this workflow with the P3-B commit hash.
-3. Start P3-C by writing failing tests for local `/api/local/rtc/offer` and ICE TCP mux adapter contracts.
+1. Start P3-C by updating this workflow before writing tests.
+2. Write failing tests for local `/api/local/rtc/offer` and ICE TCP mux adapter contracts.
+3. Implement local WebRTC signaling/TCP mux foundation without adding TURN credentials or workspace/tab/pane concepts.
