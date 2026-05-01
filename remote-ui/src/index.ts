@@ -16,6 +16,10 @@ export { Terminal } from './Terminal'
 export type { TerminalHandle, TerminalProps } from './Terminal'
 export { TerminalList } from './TerminalList'
 export type { OpenTerminalIntent, TerminalListProps } from './TerminalList'
+export { createFileApi } from './fileApi'
+export type { DirListResponse, FileApi, FileEntry, FileEntryType } from './fileApi'
+export { FileManager } from './FileManager'
+export type { FileManagerProps } from './FileManager'
 export { TerminalClient } from './terminalClient'
 export type {
   TerminalClientCallbacks,
@@ -31,4 +35,6 @@ export {
 } from './terminalInventory'
 export type { TerminalInventoryInput, TerminalInventorySnapshot } from './terminalInventory'
 export * from './transport'
+export { useFileManager } from './useFileManager'
+export type { FileManagerVisibleError, UseFileManagerOptions, UseFileManagerResult } from './useFileManager'
 export * from './useTerminalSession'

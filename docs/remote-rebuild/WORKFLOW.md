@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: P3 embedded local web first
 - Active todo: P3-D-D shared FileManager boundary
-- Last updated: 2026-05-01T11:49:21+08:00
+- Last updated: 2026-05-01T12:09:21+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -35,7 +35,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### P3-D-C shared TerminalList.tsx boundary
 
-- Tests written before implementation: pending.
 - Tests written before implementation: `remote-ui/src/terminalInventory.test.ts` and `remote-ui/src/TerminalList.test.tsx`.
 - Expected failing tests: `cd remote-ui && npm test -- --run src/terminalInventory.test.ts src/TerminalList.test.tsx` fails because `./terminalInventory` and `./TerminalList` do not exist yet. The tests cover normalizing a machine-scoped terminal list, rejecting tgent session/window/pane-shaped records, dispatching terminal-open user intent, rendering terminal title/command/size, empty state copy without forbidden public concepts, and public props that only expose machine/terminal semantics.
 - Actual failing tests before implementation: focused P3-D-C tests failed as expected with missing module errors for `./terminalInventory` and `./TerminalList`.
@@ -48,10 +47,18 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### P3-D-D shared FileManager boundary
 
-- Tests written before implementation: pending.
-- Expected failing tests: pending; first tests will target TermX file transport interfaces, `useFileManager`, and `FileManager.tsx` behavior for listing directories, selecting entries, visible errors, and no direct browser/native/WebRTC implementation imports.
+- Tests written before implementation: `remote-ui/src/fileApi.test.ts`, `remote-ui/src/useFileManager.test.tsx`, `remote-ui/src/FileManager.test.tsx`, and `remote-ui/src/test/mockFileTransport.ts`.
+- Expected failing tests: `cd remote-ui && npm test -- --run src/fileApi.test.ts src/useFileManager.test.tsx src/FileManager.test.tsx` fails because `./fileApi`, `./useFileManager`, and `./FileManager` do not exist yet. The tests cover API-channel file list/stat/error behavior, directory navigation through injected transport, visible error state, component rendering, no workspace/tab/window/pane/session copy, and no direct browser/native/WebRTC implementation props.
+- Actual failing tests before implementation: focused P3-D-D tests failed as expected with missing module errors for `./fileApi`, `./useFileManager`, and `./FileManager`.
 - Planned scope: adapt tgent file manager/client structure behind TermX `PeerTransport.openApi()` / file transfer interfaces without copying relay policy leakage into components. File actions should operate on machine/terminal context and stable reducer/message state where practical.
-- Result: in progress. Commit: pending.
+- Review regression tests: added coverage that a file transport connected to another machine is rejected before `openApi()` and that stale initial directory responses cannot overwrite a later navigation result. These failed before the review fixes with missing machine mismatch errors and stale path overwrite.
+- Focused tests after implementation and review fixes: `cd remote-ui && npm test -- --run src/useFileManager.test.tsx src/fileApi.test.ts src/FileManager.test.tsx` passed 12 tests; `cd remote-ui && npm run typecheck` passed.
+- Broader tests after implementation and review fixes: `cd remote-ui && npm test` passed 40 tests; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/...` passed; `cd termx-cli && go test ./cmd/termx` passed; `git diff --check` passed.
+- Code review: `Sartre` found missing machine identity validation before file API use, stale async directory responses overwriting newer navigation, and stale workflow text. Fixed with pre-request `getConnectionInfo()` validation, per-request sequence guards, regression tests, and workflow cleanup. Follow-up review by `Planck` found the file manager still allowed unscoped terminal use because `terminalId` was optional and missing `ConnectionInfo.terminalId` did not fail.
+- Follow-up review regression tests: added coverage requiring `FileManagerProps.terminalId`, and requiring `useFileManager` to reject missing or mismatched transport terminal IDs before `openApi()`. The missing-terminal regression failed before the fix, proving unscoped terminal use was still possible.
+- Follow-up review fix: `FileManagerProps` and `UseFileManagerOptions` now require `terminalId`; `useFileManager` rejects missing or mismatched `ConnectionInfo.terminalId` before opening the file API channel; `remote-ui` typecheck now includes `.tsx` files so component contract tests are enforced.
+- Final follow-up review: `Mencius` found no remaining code findings after terminal scoping fixes. Low finding: workflow text was stale and still described the terminal scoping fix as in progress. This entry is the workflow cleanup for that finding.
+- Result: ready to commit. Commit: pending.
 
 ### P3-D-B shared terminal client and Terminal.tsx boundary
 
@@ -213,6 +220,9 @@ Status file for unattended remote rebuild work. Update this file before starting
 - `Parfit` (`019de18f-90ad-70e2-998b-2ea5182f0390`): P3-D-A code review. Findings: stale workflow text and nested transport implementation leakage could pass the first boundary guard. Result: workflow updated and nested `nativePlugin`/browser transport leakage now fails under `ConnectionEventQueue` tests.
 - `Hypatia` (`019de19b-9371-7c21-8fe9-988106a95441`): P3-D-B code review. Findings: output chunks were dropped, reasoned terminal closes were overwritten to clean closed state, and mode was hardcoded to local. Result: fixed with output text state, transport-derived mode, failed close preservation, and regression tests.
 - `Meitner` (`019de1a3-ebfb-7911-94ea-b61df8f3cab3`): P3-D-C code review. Findings: terminal inventory could silently re-scope terminals from another machine, and forbidden tgent session coverage did not directly prove `sessions` keys were rejected. Result: fixed with machine ownership validation plus direct `session`/`sessions`/`sessionId` inventory rejection tests.
+- `Sartre` (`019de1ac-8634-7f21-934e-7b268a416f9f`): P3-D-D code review. Findings: file manager accepted mismatched machine transports, older directory responses could overwrite newer navigation, and workflow had stale pending text. Result: fixed with transport identity validation, stale-response sequence guards, and workflow cleanup.
+- `Planck` (`019de1b1-9b5d-7d70-8e5c-4459c1362296`): P3-D-D follow-up code review. Findings: file manager boundary still allowed unscoped terminal use because `terminalId` was optional and missing connection terminal identity did not fail; stale workflow text still appeared in the reviewed snapshot. Result: fixed with required terminal IDs, strict `ConnectionInfo.terminalId` validation before file API use, and workflow cleanup.
+- `Mencius` (`019de1b6-0a36-7980-87e8-d6ac6ee54388`): P3-D-D final quick code review after terminal scoping fixes. Findings: no remaining code issues; low stale workflow text still described completed terminal scoping work as pending. Result: workflow cleanup in this checkpoint.
 
 ## Code Review Log
 
@@ -228,6 +238,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - P3-D-A review complete. No remaining blocker after implemented fixes; no workspace/tab/pane/window/session public model was introduced in `remote-ui`, signaling `sessionId` remains limited to local RTC interfaces, no anonymous/free/local TURN relay credentials or machine private key exposure were introduced, and business logic remains behind transport interfaces without direct browser/native implementation imports. Residual risk: React components, browser local adapter, terminal/file UI behavior, and browser smoke remain deferred to later P3-D/P3-E todos.
 - P3-D-B review complete. No remaining blocker after implemented fixes; `Terminal.tsx`, `TerminalClient`, and `useTerminalSession` expose `machineId`/`terminalId` and `terminal:{terminal_id}` only, do not import browser/native transport implementations, do not expose machine private key material, and do not introduce TURN relay credentials. Residual risk: this is a minimal terminal boundary with plain text rendering; full xterm rendering, browser local adapter wiring, and browser smoke remain deferred to later P3-D/P3-E todos.
 - P3-D-C review complete. No remaining blocker after implemented fixes; `TerminalList.tsx` and terminal inventory expose machine/terminal semantics only, reject tgent session/window/pane-shaped records, validate terminal machine ownership, do not import browser/native transport implementations, do not expose machine private key material, and do not introduce TURN relay credentials. Residual risk: list styling/actions are minimal and richer mobile-native interactions remain for later UI polish after local embedded web wiring.
+- P3-D-D review complete after fixes. `FileManager.tsx`, `useFileManager`, and `fileApi` remain behind transport interfaces; `machineId + terminalId` is required and verified before file API use; no workspace/tab/pane/window/session public model, TURN relay credentials, machine private key exposure, or direct browser/native transport implementation was introduced. Residual risk: UI is intentionally minimal until P3-E browser wiring and later mobile-native polish.
 
 ## Deferred Human Decisions And Placeholders
 
@@ -241,9 +252,10 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Existing hub baseline may include relay fields. P3 anonymous paths must explicitly reject or omit TermX TURN relay credentials.
 - New `remote-ui/` package must avoid carrying over tgent pane/session public concepts when copying `Terminal.tsx`, `SessionList.tsx`, and file manager code.
 - Keeping TermX UI close enough to tgent for future synchronization conflicts with replacing tgent's web-like interaction state. The boundary is explicit: copy structure/components/adapters where possible, but normalize messages and lifecycle through TermX reducers/queues.
+- P3-D-D `remote-ui` file API follows the docs draft for `GET /files/list` and `GET /files/stat`, while the existing Go/tgent data-channel file API currently accepts `POST` for those routes. P3-E local embedded web wiring must either add GET compatibility in the daemon adapter or switch the shared client contract with tests before browser smoke.
 
 ## Next Exact Action
 
-1. Commit the workflow checkpoint recording P3-D-C commit `c423ba3`.
-2. Inspect tgent file manager hook/client boundaries and write failing tests for TermX `FileManager.tsx` / `useFileManager`.
-3. Implement the smallest file manager boundary behind existing `remote-ui` transport interfaces.
+1. Rerun final focused and broader P3-D-D tests after workflow cleanup.
+2. Commit P3-D-D and record the commit hash.
+3. Move active workflow state to P3-E local embedded web wiring.
