@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-E-C-B-A browser-local app identity, certificate storage, and offer signing primitives
-- Last updated: 2026-05-01T14:11:51+08:00
+- Active todo: P3-E-C-B-B local pair UI/harness and embedded browser smoke
+- Last updated: 2026-05-01T14:14:14+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -30,8 +30,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-A | local/e2e | Add local embedded web browser API/WebRTC adapter shell around shared TerminalList, Terminal, and FileManager components | completed | `83ad016` |
 | P3-E-B | local/e2e | Implement browser terminal adapter compatible with current Go binary terminal protocol over `terminal:{terminal_id}` | completed | `4ef0557` |
 | P3-E-C-A | local/e2e | Build and embed the shared local web shell into `termx` static assets | completed | `f68bf9d` |
-| P3-E-C-B-A | local/e2e | Implement browser-local app identity, certificate storage, and offer signing primitives | in_progress |  |
-| P3-E-C-B-B | local/e2e | Run local browser smoke against the embedded web shell and terminal/file wiring before mobile migration | pending |  |
+| P3-E-C-B-A | local/e2e | Implement browser-local app identity, certificate storage, and offer signing primitives | completed | `7185c8d` |
+| P3-E-C-B-B | local/e2e | Run local browser smoke against the embedded web shell and terminal/file wiring before mobile migration | in_progress |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | pending |  |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -142,13 +142,14 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Review fix: `LocalAppCrypto` now saves/loads app private keys via an injected key-store boundary; the browser implementation uses IndexedDB object store `app-private-keys` and `crypto.subtle.generateKey({ name: 'Ed25519' }, false, ...)`, while public key raw export remains available for pairing.
 - Final focused tests after review fix: `cd remote-ui && npm test -- --run src/localAppIdentity.test.ts src/localWebEntry.test.tsx src/localWebRtcTransport.test.ts` passed 16 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm run build:localweb` passed; `cd termx-core && go test ./internal/remote/rtc -run 'TestCanonicalOfferSignatureMessageMatchesRemoteUIContract|TestOfferSignature'` passed.
 - Final broader tests after review fix: `cd remote-ui && npm test` passed 73 tests; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
-- Result: in progress. Commit: pending.
+- Result: completed. Commit: `7185c8d`.
 
 ### P3-E-C-B-B browser smoke
 
-- Active slice: pending after P3-E-C-B-A commit.
+- Active slice: local pair UI/harness and embedded browser smoke.
+- Tests written before implementation: pending.
 - Planned scope: serve the embedded local web through `termx`/localweb, complete local pair claim UI/harness using the B-A primitives, then smoke terminal list, terminal open, and file manager against local WebRTC-over-TCP. If real user pairing UI still needs product input, use a narrow local test harness and record the remaining UX decision here.
-- Result: pending. Commit: pending.
+- Result: in progress. Commit: pending.
 
 ### P3-D-B shared terminal client and Terminal.tsx boundary
 
@@ -360,6 +361,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Commit P3-E-C-B-A browser-local app identity and offer signing primitives.
-2. Start P3-E-C-B-B with failing tests for local pair UI/harness using these primitives.
-3. Run real embedded local web browser smoke once pair/signing can be exercised end to end.
+1. Write failing P3-E-C-B-B tests for local pair UI/harness using browser-local app identity primitives.
+2. Implement the smallest local pair claim flow needed to obtain and persist an app certificate in the embedded web.
+3. Run real embedded local web browser smoke against local WebRTC-over-TCP.
