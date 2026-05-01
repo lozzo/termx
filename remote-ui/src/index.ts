@@ -24,6 +24,25 @@ export { LocalRemoteApp } from './LocalRemoteApp'
 export type { LocalRemoteAppProps, LocalRemoteTransportFactory, LocalRemoteTransportInput } from './LocalRemoteApp'
 export { createLocalAgentApi } from './localAgentApi'
 export type { LocalAgentApiOptions } from './localAgentApi'
+export {
+  canonicalLocalOfferMessage,
+  createBrowserLocalAppCrypto,
+  createLocalAppIdentityStore,
+  createLocalOfferSigner,
+  ensureLocalAppIdentity,
+  pairLocalApp,
+} from './localAppIdentity'
+export type {
+  CanonicalLocalOfferInput,
+  EnsureLocalAppIdentityOptions,
+  LocalAppCrypto,
+  LocalAppIdentity,
+  LocalAppIdentityStore,
+  LocalOfferSigner,
+  LocalOfferSignerOptions,
+  LocalOfferSigningInput,
+  PairLocalAppOptions,
+} from './localAppIdentity'
 export { createLocalWebRtcPeerTransport } from './localWebRtcTransport'
 export type {
   LocalOfferSignature,

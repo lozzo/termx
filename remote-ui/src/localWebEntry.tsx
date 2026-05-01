@@ -1,8 +1,9 @@
 import { StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { LocalRemoteApp, type LocalRemoteTransportFactory } from './LocalRemoteApp'
+import { createBrowserLocalAppCrypto, createLocalAppIdentityStore, createLocalOfferSigner } from './localAppIdentity'
 import { createLocalAgentApi } from './localAgentApi'
-import { createLocalWebRtcPeerTransport, type LocalOfferSignature } from './localWebRtcTransport'
+import { createLocalWebRtcPeerTransport } from './localWebRtcTransport'
 import type { LocalAgentApi } from './transport'
 import './localWebEntry.css'
 
@@ -36,27 +37,27 @@ export function mountLocalWebApp(options: LocalWebAppOptions = {}): Root {
 
 function createBrowserLocalTransportFactory(): LocalRemoteTransportFactory {
   const api = createLocalAgentApi()
-  const appCertificate = globalThis.localStorage?.getItem?.('termx.local.appCertificate') ?? null
   return ({ machineId, terminalId }) => {
+    if (!globalThis.localStorage) {
+      throw new Error('local app storage is required before opening a terminal')
+    }
+    const store = createLocalAppIdentityStore(globalThis.localStorage)
+    const appCertificate = store.loadCertificate()
     if (!appCertificate) {
       throw new Error('local app certificate is required before opening a terminal')
     }
+    const signer = createLocalOfferSigner({
+      storage: store,
+      crypto: createBrowserLocalAppCrypto(),
+    })
     return createLocalWebRtcPeerTransport({
       machineId,
       terminalId,
       appCertificate,
       createAnswer: (offer) => api.createRTCAnswer(offer),
-      signOffer: async (input) => signLocalOffer(input),
+      signOffer: (input) => signer.signOffer(input),
     })
   }
-}
-
-async function signLocalOffer(input: { sessionId: string; machineId: string; terminalId: string; sdp: string }): Promise<LocalOfferSignature> {
-  // TODO(remote-ui-local-pairing): replace this placeholder with browser-local app key generation,
-  // certificate storage, and Ed25519 offer signing after the local pairing UI exists.
-  // It intentionally does not read, download, decrypt, or store any machine private key.
-  void input
-  throw new Error('local app offer signing is not configured')
 }
 
 if (typeof document !== 'undefined' && document.getElementById('root')) {

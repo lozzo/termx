@@ -92,6 +92,37 @@ describe('local web entry shell', () => {
     expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane|session/i)
     expect(JSON.stringify(fetch.mock.calls)).not.toMatch(/turn|credential|machine_private_key|privateKey/i)
   })
+
+  it('does not require browser crypto or local storage until a terminal transport is created', async () => {
+    const entry = await import('./localWebEntry')
+    document.body.innerHTML = '<div id="root"></div>'
+    vi.stubGlobal('localStorage', undefined)
+
+    entry.mountLocalWebApp({
+      api: {
+        async getStatus() {
+          return {
+            machine: {
+              machineId: 'machine-local',
+              name: 'Local Mac',
+              state: 'online',
+              terminalCount: 0,
+            },
+            localWeb: {
+              httpUrl: 'http://127.0.0.1:18888',
+              rtcOfferUrl: 'http://127.0.0.1:18888/api/local/rtc/offer',
+            },
+          }
+        },
+        async listTerminals() {
+          return []
+        },
+      },
+    })
+
+    await waitFor(() => expect(screen.getByTestId('termx-local-web-shell')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('No terminals')).toBeTruthy())
+  })
 })
 
 function jsonResponse(body: unknown, status = 200): Response {

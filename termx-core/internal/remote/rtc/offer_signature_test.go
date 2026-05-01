@@ -58,6 +58,30 @@ func TestOfferSignatureVerifiesCanonicalMessageAndRejectsReplay(t *testing.T) {
 	}
 }
 
+func TestCanonicalOfferSignatureMessageMatchesRemoteUIContract(t *testing.T) {
+	now := time.Date(2026, 5, 1, 10, 30, 0, 0, time.UTC)
+	message := string(CanonicalOfferSignatureMessage(OfferSignatureFields{
+		MachineID:  "machine-local",
+		TerminalID: "terminal-1",
+		SDP:        "v=0\r\ns=termx\r\n",
+		Nonce:      "nonce-1",
+		Timestamp:  now,
+	}))
+
+	want := strings.Join([]string{
+		"termx-webrtc-offer-v1:",
+		"ticket_id:",
+		"machine_id:machine-local",
+		"terminal_id:terminal-1",
+		"sha256(sdp):dd33fcfb47f1bcefb7e8f57c03aa4778c5f7e2490f14259f9b892c05d0aa0158",
+		"nonce:nonce-1",
+		"timestamp:1777631400",
+	}, "\n")
+	if message != want {
+		t.Fatalf("canonical offer mismatch\nwant: %q\n got: %q", want, message)
+	}
+}
+
 func TestOfferSignatureRejectsTamperedSDPAndUnsupportedAlgorithm(t *testing.T) {
 	appPublic, appPrivate, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
