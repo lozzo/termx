@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-D-C shared TerminalList.tsx boundary
-- Last updated: 2026-05-01T11:48:07+08:00
+- Active todo: P3-D-D shared FileManager boundary
+- Last updated: 2026-05-01T11:49:21+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -25,8 +25,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-C | rtc | Implement local WebRTC signaling and ICE TCP mux/over-TCP support for browser-to-daemon local connections | completed | `52d964b` |
 | P3-D-A | remote-ui | Create shared `remote-ui/` TypeScript package with machine/terminal contracts, transport interfaces, connection message reducer, and event queue | completed | `fe9025d` |
 | P3-D-B | remote-ui | Adapt `Terminal.tsx` from `../tgent` into shared remote UI using `terminal_id` instead of pane/session concepts | completed | `e87d37a` |
-| P3-D-C | remote-ui | Adapt terminal list from `../tgent` `SessionList.tsx` into `TerminalList.tsx` with machine -> terminal semantics only | in_progress |  |
-| P3-D-D | remote-ui | Adapt `FileManager.tsx` and file hooks from `../tgent` behind TermX file transport interfaces | pending |  |
+| P3-D-C | remote-ui | Adapt terminal list from `../tgent` `SessionList.tsx` into `TerminalList.tsx` with machine -> terminal semantics only | completed | `c423ba3` |
+| P3-D-D | remote-ui | Adapt `FileManager.tsx` and file hooks from `../tgent` behind TermX file transport interfaces | in_progress |  |
 | P3-E | local/e2e | Wire embedded local web to terminal and file manager over local WebRTC DataChannels and validate in browser before mobile migration | pending |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | pending |  |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
@@ -44,7 +44,14 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Focused tests after implementation and review fixes: `cd remote-ui && npm test` passed 28 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm audit` passed with 0 vulnerabilities.
 - Broader tests after implementation and review fixes: `cd termx-core && go test ./internal/remote/...` passed; `cd termx-cli && go test ./cmd/termx` passed; `git diff --check` passed.
 - Code review: `Meitner` found terminal inventory could silently re-scope terminals from another machine and that the forbidden-session coverage only passed because the sample also contained windows/panes. Fixed with inventory-level session/sessionId rejection and machine ownership validation.
-- Result: ready to commit. Commit: pending.
+- Result: completed. Commit: `c423ba3`.
+
+### P3-D-D shared FileManager boundary
+
+- Tests written before implementation: pending.
+- Expected failing tests: pending; first tests will target TermX file transport interfaces, `useFileManager`, and `FileManager.tsx` behavior for listing directories, selecting entries, visible errors, and no direct browser/native/WebRTC implementation imports.
+- Planned scope: adapt tgent file manager/client structure behind TermX `PeerTransport.openApi()` / file transfer interfaces without copying relay policy leakage into components. File actions should operate on machine/terminal context and stable reducer/message state where practical.
+- Result: in progress. Commit: pending.
 
 ### P3-D-B shared terminal client and Terminal.tsx boundary
 
@@ -237,6 +244,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Commit P3-D-C with the shared terminal inventory/list boundary and workflow updates.
-2. Record the P3-D-C commit hash in this workflow.
-3. Start P3-D-D by writing failing tests for `FileManager.tsx` and `useFileManager` behind TermX file transport interfaces.
+1. Commit the workflow checkpoint recording P3-D-C commit `c423ba3`.
+2. Inspect tgent file manager hook/client boundaries and write failing tests for TermX `FileManager.tsx` / `useFileManager`.
+3. Implement the smallest file manager boundary behind existing `remote-ui` transport interfaces.
