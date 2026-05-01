@@ -52,10 +52,17 @@ export function LocalRemoteApp({ api, createTransport, className }: LocalRemoteA
       return
     }
     let cancelled = false
-    const transport = createTransport({
-      machineId: machine.machineId,
-      terminalId: activeTerminalId,
-    })
+    let transport: PeerTransport & TerminalTransport
+    try {
+      transport = createTransport({
+        machineId: machine.machineId,
+        terminalId: activeTerminalId,
+      })
+    } catch (err) {
+      setConnectedTransport(null)
+      setError(err instanceof Error ? err.message : String(err))
+      return
+    }
     setConnectedTransport(null)
     transport.connect({
       machineId: machine.machineId,

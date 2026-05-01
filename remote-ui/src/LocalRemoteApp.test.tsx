@@ -56,6 +56,17 @@ describe('LocalRemoteApp', () => {
     expect(Object.keys(props)).not.toContain('nativePlugin')
     expect(Object.keys(props)).not.toContain('relayCredentials')
   })
+
+  it('renders local transport setup errors instead of crashing the embedded shell', async () => {
+    const createTransport = vi.fn<LocalRemoteTransportFactory>(() => {
+      throw new Error('local app certificate is required before opening a terminal')
+    })
+
+    render(<LocalRemoteApp api={createMockLocalAgentApi()} createTransport={createTransport} />)
+
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('local app certificate is required'))
+    expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane/i)
+  })
 })
 
 function trackTransport<T extends ReturnType<typeof createMockLocalRemoteTransport>>(transports: T[], transport: T): T {

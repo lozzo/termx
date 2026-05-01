@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "vite build",
+    "build:localweb": "npm run build && node scripts/sync-localweb-assets.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

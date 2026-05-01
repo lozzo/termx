@@ -104,6 +104,48 @@ func TestHandlerServesDefaultEmbeddedAssets(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "TermX Remote") {
 		t.Fatalf("expected default embedded page, got %q", rec.Body.String())
 	}
+	if !strings.Contains(rec.Body.String(), "id=\"root\"") {
+		t.Fatalf("expected embedded React root, got %q", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `type="module"`) || !strings.Contains(rec.Body.String(), "/assets/") {
+		t.Fatalf("expected embedded Vite module asset, got %q", rec.Body.String())
+	}
+	if strings.Contains(strings.ToLower(rec.Body.String()), "workspace") ||
+		strings.Contains(strings.ToLower(rec.Body.String()), "pane") ||
+		strings.Contains(strings.ToLower(rec.Body.String()), "turn") ||
+		strings.Contains(strings.ToLower(rec.Body.String()), "credential") ||
+		strings.Contains(strings.ToLower(rec.Body.String()), "machine_private_key") {
+		t.Fatalf("embedded page must not expose forbidden remote concepts or credentials: %q", rec.Body.String())
+	}
+
+	assetPath := embeddedModuleAssetPath(t, rec.Body.String())
+	req = httptest.NewRequest(http.MethodGet, assetPath, nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected embedded module asset 200, got %d body=%q", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Header().Get("Content-Type"), "text/javascript") {
+		t.Fatalf("expected javascript content type, got %q", rec.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(rec.Body.String(), "termx-local-web-shell") {
+		t.Fatalf("expected embedded local web shell marker in module asset")
+	}
+}
+
+func embeddedModuleAssetPath(t *testing.T, html string) string {
+	t.Helper()
+	const marker = `type="module" crossorigin src="`
+	start := strings.Index(html, marker)
+	if start < 0 {
+		t.Fatalf("missing module script in embedded html: %q", html)
+	}
+	start += len(marker)
+	end := strings.Index(html[start:], `"`)
+	if end < 0 {
+		t.Fatalf("malformed module script in embedded html: %q", html)
+	}
+	return html[start : start+end]
 }
 
 func TestHandlerErrorResponseUsesDocumentedEnvelope(t *testing.T) {
