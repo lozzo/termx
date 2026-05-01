@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: P3 embedded local web first
 - Active todo: P3-B embedded local web foundation
-- Last updated: 2026-05-01T09:42:23+08:00
+- Last updated: 2026-05-01T09:42:56+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -15,7 +15,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | --- | --- | --- | --- | --- |
 | R0 | workflow | Create and seed `docs/remote-rebuild/WORKFLOW.md` with full todo plan | completed | `8734d00` |
 | R1 | planning | Revise remote rebuild plan so the early path builds `termx` embedded local web, shared remote UI components, and local WebRTC-over-TCP before migrating the same UI to mobile app | completed | `6a657be` |
-| R2 | planning | Record that remote UI page code, architecture, and component boundaries should stay as synchronized with `../tgent` as practical while TermX message handling should emulate native app behavior where tgent interactions feel too web-like | completed | pending |
+| R2 | planning | Record that remote UI page code, architecture, and component boundaries should stay as synchronized with `../tgent` as practical while TermX message handling should emulate native app behavior where tgent interactions feel too web-like | completed | `0ce0023` |
 | P2-A | identity | Implement Ed25519 machine key generation, load, persistence permissions, and fingerprint helpers in `termx-core/internal/remote/identity` | completed | `5aef5b8` |
 | P2-B | cert | Implement canonical app certificate payload, sign/verify helpers, and nonce/timestamp replay helper in `termx-core/internal/remote/cert` | completed | `62d1f70` |
 | P2-C | pairing | Implement local pair session creation, TTL, single-use semantics, and app certificate issuance in `termx-core/internal/remote/pairing` | completed | `12067cb` |
@@ -52,7 +52,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Expected failing test: not applicable.
 - Focused tests: pending.
 - Broader tests: `git diff --check` passed.
-- Result: completed pending commit. Commit: pending.
+- Result: completed. Commit: `0ce0023`.
 
 ### P2-A machine key generation/load/fingerprint
 
@@ -147,6 +147,5 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Commit R2 planning update.
-2. Start P3-B by updating this workflow before writing tests for local embedded web foundation.
-3. Write failing tests for local embedded web status, terminal list, pair API contracts, and embedded asset serving.
+1. Start P3-B by updating this workflow before writing tests for local embedded web foundation.
+2. Write failing tests for local embedded web status, terminal list, pair API contracts, and embedded asset serving.
