@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: choose next slice after P3-E-C-B-E manual local smoke
-- Last updated: 2026-05-01T18:29:30+08:00
+- Active todo: P3-E-C-B-F local API DataChannel readiness during connect
+- Last updated: 2026-05-01T20:07:21+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -35,6 +35,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-C | local/e2e | Run in-app Browser Use click smoke against embedded local web when the required browser Node REPL `js` tool is available | deferred |  |
 | P3-E-C-B-D | local/e2e | Fix browser local WebRTC API/file DataChannel send-before-open race found during manual embedded web test | completed | `a1edab3` |
 | P3-E-C-B-E | local/e2e | Fix embedded local file manager hang where `Loading files` remains visible instead of files or an error | completed | `80bbeb1` |
+| P3-E-C-B-F | local/e2e | Require the local WebRTC `api` DataChannel to open during connect so FileManager does not mount on a half-ready transport | in_progress |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -193,6 +194,20 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Follow-up code review: `Pascal` found a P1 pre-commit asset tracking issue where `index.html` referenced a generated JS asset that had not yet been added to git, plus a P3 timer cleanup issue where some waiter removal paths left response timers alive until they fired. The asset issue is resolved by staging the regenerated static directory with the commit; the timer issue is fixed by routing waiter resolve/reject through helpers that delete the waiter and clear the stored timer.
 - Focused tests after implementation and review fixes: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` passed 18 tests; `cd remote-ui && npm test` passed 85 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm run build:localweb` passed; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-core && go test . -run 'TestE2E_WebRTCFileAPIAndTransfer|TestE2ERemoteLocalWebHandlerAnswersAuthenticatedRTCOffer' -count=1` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
 - Result: completed. Commit: `80bbeb1`.
+
+### P3-E-C-B-F local API DataChannel readiness during connect
+
+- Active slice: fix manual embedded-web local test feedback `timed out opening data channel api`.
+- Tests written before implementation: `remote-ui/src/localWebRtcTransport.test.ts`.
+- Expected failing tests: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` should fail because `connect()` resolves after setting the remote description even if the pre-created `api` DataChannel is still `connecting`, allowing `LocalRemoteApp` to mount `FileManager` on a half-ready transport.
+- Actual failing tests before implementation: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` failed as expected because `connect()` resolved while the mock `api` DataChannel was still `connecting`.
+- Planned scope: keep readiness handling inside `localWebRtcTransport`. The local app should only expose `connectedTransport` after required pre-offer channels are ready, or fail the transport connect path so the shell shows an actionable error/pair panel. Do not introduce workspace/tab/pane/session public concepts, TURN relay credentials, or machine private key exposure.
+- Implementation notes: `LocalWebRtcPeerTransport.connect()` now waits for the required pre-created `api` DataChannel to open, with a bounded timeout, after applying the local RTC answer. This prevents `LocalRemoteApp` from mounting `FileManager` on a transport where terminal connection setup might proceed but file API is not yet usable. If the daemon rejects/closes `api`, connect fails and the shell can surface the transport error instead of letting `FileManager` independently time out.
+- Focused tests after implementation before code review: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` passed 20 tests; `cd remote-ui && npm test` passed 87 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm run build:localweb` passed; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-core && go test . -run 'TestE2E_WebRTCFileAPIAndTransfer|TestE2ERemoteLocalWebHandlerAnswersAuthenticatedRTCOffer' -count=1` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
+- Code review before completion: `Carson` found that connect-time `api` readiness failures left the partially negotiated PeerConnection/channels alive and that `waitChannelOpen` did not fail promptly on DataChannel `error`. Follow-up scope: add regressions for cleanup after connect readiness failure and for `api` DataChannel `error` during connect, then close/reset transport state before rethrowing.
+- Review failing tests before fix: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` failed as expected because a connect-time API readiness timeout left the mock PeerConnection open, and an `api` DataChannel `error` before opening did not reject connect.
+- Review fix: `connect()` now wraps setup in a failure cleanup path that calls `disconnect()` before rethrowing, and `waitChannelOpen()` now rejects on DataChannel `error` as well as close/timeout. Regression tests prove connect-time API readiness timeout cleans up the PeerConnection and that API DataChannel `error` rejects connect.
+- Final focused tests after review fixes: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` passed 22 tests; `cd remote-ui && npm test` passed 89 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm run build:localweb` passed; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-core && go test . -run 'TestE2E_WebRTCFileAPIAndTransfer|TestE2ERemoteLocalWebHandlerAnswersAuthenticatedRTCOffer' -count=1` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 

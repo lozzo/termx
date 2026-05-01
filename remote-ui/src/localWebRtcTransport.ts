@@ -26,6 +26,7 @@ export interface LocalWebRtcPeerTransportOptions {
   createAnswer(input: LocalRTCOffer): Promise<LocalRTCAnswer>
   signOffer(input: { sessionId: string; machineId: string; terminalId: string; sdp: string }): Promise<LocalOfferSignature>
   sessionIdGenerator?: (() => string) | undefined
+  dataChannelOpenTimeoutMs?: number | undefined
 }
 
 export interface RTCPeerConnectionLike {
@@ -61,35 +62,41 @@ class LocalWebRtcPeerTransport implements PeerTransport, TerminalTransport {
   constructor(private readonly options: LocalWebRtcPeerTransportOptions) {}
 
   async connect(input: ConnectTarget & { mode: ConnectionMode }): Promise<void> {
-    this.assertTarget(input.machineId, input.terminalId)
-    const pc = (this.options.peerConnectionFactory ?? (() => new RTCPeerConnection()))()
-    const sessionId = this.options.sessionIdGenerator?.() ?? crypto.randomUUID()
-    this.pc = pc
-    this.connectionId = sessionId
-    this.ensureTerminalChannel(this.options.terminalId)
-    this.ensureAPIChannel()
+    try {
+      this.assertTarget(input.machineId, input.terminalId)
+      const pc = (this.options.peerConnectionFactory ?? (() => new RTCPeerConnection()))()
+      const sessionId = this.options.sessionIdGenerator?.() ?? crypto.randomUUID()
+      this.pc = pc
+      this.connectionId = sessionId
+      this.ensureTerminalChannel(this.options.terminalId)
+      this.ensureAPIChannel()
 
-    const offer = await pc.createOffer()
-    await pc.setLocalDescription(offer)
-    const sdp = pc.localDescription?.sdp ?? offer.sdp
-    if (!sdp) throw new Error('local WebRTC offer SDP is required')
-    const signed = await this.options.signOffer({
-      sessionId,
-      machineId: this.options.machineId,
-      terminalId: this.options.terminalId,
-      sdp,
-    })
-    const answer = await this.options.createAnswer({
-      sessionId,
-      machineId: this.options.machineId,
-      terminalId: this.options.terminalId,
-      sdp,
-      appCertificate: this.options.appCertificate,
-      appSignature: signed.signature,
-      nonce: signed.nonce,
-      timestamp: signed.timestamp,
-    })
-    await pc.setRemoteDescription(answer.answer)
+      const offer = await pc.createOffer()
+      await pc.setLocalDescription(offer)
+      const sdp = pc.localDescription?.sdp ?? offer.sdp
+      if (!sdp) throw new Error('local WebRTC offer SDP is required')
+      const signed = await this.options.signOffer({
+        sessionId,
+        machineId: this.options.machineId,
+        terminalId: this.options.terminalId,
+        sdp,
+      })
+      const answer = await this.options.createAnswer({
+        sessionId,
+        machineId: this.options.machineId,
+        terminalId: this.options.terminalId,
+        sdp,
+        appCertificate: this.options.appCertificate,
+        appSignature: signed.signature,
+        nonce: signed.nonce,
+        timestamp: signed.timestamp,
+      })
+      await pc.setRemoteDescription(answer.answer)
+      await waitChannelOpenWithTimeout(this.ensureAPIChannel(), this.options.dataChannelOpenTimeoutMs)
+    } catch (err) {
+      await this.disconnect()
+      throw err
+    }
   }
 
   async disconnect(): Promise<void> {
@@ -476,13 +483,27 @@ function waitChannelOpen(channel: RTCDataChannelLike): Promise<void> {
       cleanup()
       reject(new Error(`data channel ${channel.label} closed before opening`))
     }
+    const onError = () => {
+      cleanup()
+      reject(new Error(`data channel ${channel.label} failed before opening`))
+    }
     const cleanup = () => {
       channel.removeEventListener('open', onOpen)
       channel.removeEventListener('close', onClose)
+      channel.removeEventListener('error', onError)
     }
     channel.addEventListener('open', onOpen)
     channel.addEventListener('close', onClose)
+    channel.addEventListener('error', onError)
   })
+}
+
+function waitChannelOpenWithTimeout(channel: RTCDataChannelLike, timeoutMs = 10000): Promise<void> {
+  return withTimeout(
+    waitChannelOpen(channel),
+    timeoutMs,
+    () => new Error(`timed out opening data channel ${channel.label}`),
+  )
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, createError: () => Error): Promise<T> {

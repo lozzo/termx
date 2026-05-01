@@ -233,7 +233,10 @@ describe('createLocalWebRtcPeerTransport', () => {
       appCertificate: '{"payload":{"machine_id":"machine-local"}}',
       signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
     })
-    await transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' })
+    const connectPromise = transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' })
+    await flushMicrotasks()
+    factory.channel('api').open()
+    await connectPromise
     const terminalPromise = transport.openTerminal('terminal-1')
     const terminalChannel = factory.channel('terminal:terminal-1')
 
@@ -263,7 +266,8 @@ describe('createLocalWebRtcPeerTransport', () => {
       appCertificate: '{"payload":{"machine_id":"machine-local"}}',
       signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
     })
-    await transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' })
+    const connectPromise = transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' })
+    await flushMicrotasks()
     const api = await transport.openApi()
     const apiChannel = factory.channel('api')
 
@@ -275,6 +279,7 @@ describe('createLocalWebRtcPeerTransport', () => {
 
     expect(apiChannel.sentText()).toEqual([])
     apiChannel.open()
+    await connectPromise
     const request = JSON.parse(await waitForTextSent(apiChannel, 0))
     expect(request).toEqual({
       id: 'req_1',
@@ -292,6 +297,104 @@ describe('createLocalWebRtcPeerTransport', () => {
       status: 'fulfilled',
       value: { path: '/', parent: '', total: 0, entries: [] },
     })
+  })
+
+  it('waits for the api data channel to open before completing connect', async () => {
+    const factory = createMockPeerConnectionFactory({ initialReadyState: 'connecting' })
+    const transport = createLocalWebRtcPeerTransport({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      mode: 'local',
+      peerConnectionFactory: factory,
+      createAnswer: async (offer) => ({ sessionId: offer.sessionId, answer: { type: 'answer', sdp: 'answer-sdp' } }),
+      sessionIdGenerator: () => 'rtc-local-1',
+      appCertificate: '{"payload":{"machine_id":"machine-local"}}',
+      signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
+    })
+    let connected = false
+    const connectPromise = transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' }).then(() => {
+      connected = true
+    })
+    await flushMicrotasks()
+    const apiChannel = factory.channel('api')
+
+    expect(connected).toBe(false)
+    apiChannel.open()
+    await connectPromise
+
+    expect(connected).toBe(true)
+  })
+
+  it('rejects connect when the required api data channel never opens', async () => {
+    vi.useFakeTimers()
+    try {
+      const factory = createMockPeerConnectionFactory({ initialReadyState: 'connecting' })
+      const transport = createLocalWebRtcPeerTransport({
+        machineId: 'machine-local',
+        terminalId: 'terminal-1',
+        mode: 'local',
+        peerConnectionFactory: factory,
+        createAnswer: async (offer) => ({ sessionId: offer.sessionId, answer: { type: 'answer', sdp: 'answer-sdp' } }),
+        sessionIdGenerator: () => 'rtc-local-1',
+        appCertificate: '{"payload":{"machine_id":"machine-local"}}',
+        signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
+        dataChannelOpenTimeoutMs: 10000,
+      })
+      const connect = expect(transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' }))
+        .rejects.toThrow(/timed out opening data channel api/i)
+      await vi.advanceTimersByTimeAsync(15000)
+
+      await connect
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cleans up the peer connection when required api channel readiness fails', async () => {
+    vi.useFakeTimers()
+    try {
+      const factory = createMockPeerConnectionFactory({ initialReadyState: 'connecting' })
+      const transport = createLocalWebRtcPeerTransport({
+        machineId: 'machine-local',
+        terminalId: 'terminal-1',
+        mode: 'local',
+        peerConnectionFactory: factory,
+        createAnswer: async (offer) => ({ sessionId: offer.sessionId, answer: { type: 'answer', sdp: 'answer-sdp' } }),
+        sessionIdGenerator: () => 'rtc-local-1',
+        appCertificate: '{"payload":{"machine_id":"machine-local"}}',
+        signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
+        dataChannelOpenTimeoutMs: 10000,
+      })
+      const connect = expect(transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' }))
+        .rejects.toThrow(/timed out opening data channel api/i)
+      await vi.advanceTimersByTimeAsync(15000)
+      await connect
+
+      expect(factory.lastConnection()?.closed).toBe(true)
+      await expect(transport.openApi()).rejects.toThrow(/not connected/i)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('rejects connect when the required api data channel errors before opening', async () => {
+    const factory = createMockPeerConnectionFactory({ initialReadyState: 'connecting' })
+    const transport = createLocalWebRtcPeerTransport({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      mode: 'local',
+      peerConnectionFactory: factory,
+      createAnswer: async (offer) => ({ sessionId: offer.sessionId, answer: { type: 'answer', sdp: 'answer-sdp' } }),
+      sessionIdGenerator: () => 'rtc-local-1',
+      appCertificate: '{"payload":{"machine_id":"machine-local"}}',
+      signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
+    })
+    const connect = transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' })
+    await flushMicrotasks()
+    factory.channel('api').fail()
+
+    await expect(connect).rejects.toThrow(/data channel api failed before opening/i)
+    expect(factory.lastConnection()?.closed).toBe(true)
   })
 
   it('rejects pending api requests when the data channel closes without a response', async () => {
@@ -405,17 +508,25 @@ describe('createLocalWebRtcPeerTransport', () => {
         appCertificate: '{"payload":{"machine_id":"machine-local"}}',
         signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
       })
-      await transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' })
+      const connectPromise = transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' }).then(
+        () => ({ status: 'fulfilled' as const }),
+        (error: Error) => ({ status: 'rejected' as const, error }),
+      )
+      await flushMicrotasks()
       const api = await transport.openApi()
       const apiChannel = factory.channel('api')
 
       const request = api.request('POST', { path: '/files/list', params: { path: '/' } })
       await Promise.resolve()
       expect(apiChannel.sent).toEqual([])
-      const rejection = expect(request).rejects.toThrow(/timed out opening data channel api/i)
+      const rejection = expect(request).rejects.toThrow(/timed out opening data channel api|api data channel api closed/i)
       await vi.advanceTimersByTimeAsync(15000)
 
       await rejection
+      await expect(connectPromise).resolves.toEqual({
+        status: 'rejected',
+        error: expect.objectContaining({ message: expect.stringMatching(/timed out opening data channel api/i) }),
+      })
     } finally {
       vi.useRealTimers()
     }
@@ -462,7 +573,10 @@ describe('createLocalWebRtcPeerTransport', () => {
       appCertificate: '{"payload":{"machine_id":"machine-local"}}',
       signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
     })
-    await transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' })
+    const connectPromise = transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' })
+    await flushMicrotasks()
+    factory.channel('api').open()
+    await connectPromise
     let resolved = false
     const fileChannelPromise = transport.openFileTransfer('upload-1').then((channel) => {
       resolved = true
@@ -635,6 +749,10 @@ async function waitForTextSent(channel: MockRTCDataChannel, index: number): Prom
   }
 }
 
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 10; i++) await Promise.resolve()
+}
+
 async function waitForTerminalEvent<TEvent>(events: unknown[], index = 0): Promise<TEvent> {
   const started = Date.now()
   for (;;) {
@@ -661,7 +779,11 @@ function apiResponseChunk(id: string, payload: unknown, options: { last?: boolea
 function createMockPeerConnectionFactory(options: { initialReadyState?: RTCDataChannelState } = {}) {
   const channels = new Map<string, MockRTCDataChannel>()
   const createOfferLabels: string[][] = []
-  const factory = vi.fn(() => new MockRTCPeerConnection(channels, createOfferLabels, options.initialReadyState ?? 'open'))
+  let lastConnection: MockRTCPeerConnection | null = null
+  const factory = vi.fn(() => {
+    lastConnection = new MockRTCPeerConnection(channels, createOfferLabels, options.initialReadyState ?? 'open')
+    return lastConnection
+  })
   return Object.assign(factory, {
     channel(label: string) {
       const channel = channels.get(label)
@@ -674,11 +796,15 @@ function createMockPeerConnectionFactory(options: { initialReadyState?: RTCDataC
     labelsAtCreateOffer() {
       return createOfferLabels.at(-1) ?? []
     },
+    lastConnection() {
+      return lastConnection
+    },
   })
 }
 
 class MockRTCPeerConnection {
   localDescription: RTCSessionDescriptionInit | null = null
+  closed = false
 
   constructor(
     private readonly channels: Map<string, MockRTCDataChannel>,
@@ -703,7 +829,9 @@ class MockRTCPeerConnection {
 
   async setRemoteDescription(): Promise<void> {}
 
-  async close(): Promise<void> {}
+  async close(): Promise<void> {
+    this.closed = true
+  }
 }
 
 class MockRTCDataChannel extends EventTarget {
@@ -729,6 +857,10 @@ class MockRTCDataChannel extends EventTarget {
   open(): void {
     this.readyState = 'open'
     this.dispatchEvent(new Event('open'))
+  }
+
+  fail(): void {
+    this.dispatchEvent(new Event('error'))
   }
 
   emitMessage(data: unknown): void {
