@@ -1,6 +1,6 @@
 # API 草案
 
-状态：第二版草案。已纳入匿名 P2P、公共 STUN 和订阅 relay。字段和路径后续实现前可以调整，但对象模型必须保持 `machine -> terminal`。
+状态：第三版草案。已纳入本地 embedded web 优先、匿名 P2P、公共 STUN 和订阅 relay。字段和路径后续实现前可以调整，但对象模型必须保持 `machine -> terminal`。
 
 ## 公共约定
 
@@ -34,6 +34,128 @@
   }
 }
 ```
+
+## Local Embedded Web API
+
+这些 endpoint 由 `termx daemon` 本地监听地址提供，服务于内嵌本地 Web 和后续 LAN/local adapter。它们不需要 web-control 登录，不发 TermX TURN credentials，也不引入 workspace/tab/pane。
+
+### Local Status
+
+`GET /api/local/status`
+
+Response:
+
+```json
+{
+  "machine_id": "mach_...",
+  "machine_name": "MacBook Pro",
+  "machine_public_key_fingerprint": "sha256:...",
+  "remote_enabled": true,
+  "local_rtc": {
+    "http_url": "http://127.0.0.1:7342",
+    "ice_tcp_enabled": true,
+    "ice_tcp_port": 7342
+  }
+}
+```
+
+### Local Terminal List
+
+`GET /api/local/terminals`
+
+Response:
+
+```json
+{
+  "terminals": [
+    {
+      "terminal_id": "term_...",
+      "name": "zsh",
+      "command": ["zsh"],
+      "cols": 120,
+      "rows": 34,
+      "state": "running",
+      "last_active_at": "2026-05-01T10:00:00Z"
+    }
+  ]
+}
+```
+
+### Local Pair
+
+`POST /api/local/pair`
+
+Request:
+
+```json
+{
+  "pair_secret": "random_192bit_base64url",
+  "app_public_key": "base64...",
+  "requested_capabilities": ["terminal", "file_manager"]
+}
+```
+
+Response:
+
+```json
+{
+  "machine_id": "mach_...",
+  "machine_public_key_fingerprint": "sha256:...",
+  "app_certificate": {
+    "payload": {},
+    "signature": "base64..."
+  },
+  "expires_at": "2026-05-01T10:10:00Z"
+}
+```
+
+### Local RTC Offer
+
+`POST /api/local/rtc/offer`
+
+Request:
+
+```json
+{
+  "app_certificate": {
+    "payload": {},
+    "signature": "base64..."
+  },
+  "offer": {
+    "sdp": "...",
+    "ice_candidates": []
+  },
+  "signature": {
+    "algorithm": "ed25519",
+    "nonce": "...",
+    "timestamp": 1770000000,
+    "value": "base64..."
+  },
+  "client": {
+    "type": "browser",
+    "transport": "local"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "answer": {
+    "sdp": "...",
+    "ice_candidates": []
+  },
+  "ice_tcp_enabled": true,
+  "data_channels": ["api", "terminal:{terminal_id}", "file:{transfer_id}"]
+}
+```
+
+Rules:
+
+- local response must not contain TURN or TURNS URLs.
+- browser adapter should prefer local host/TCP candidates when UDP candidates fail.
+- daemon still verifies app certificate, app signature, nonce, timestamp, and requested terminal/file capability.
 
 ## Web Control API
 
@@ -596,6 +718,13 @@ export interface ControlApi {
   createConnectTicket(machineId: string, terminalId: string): Promise<ConnectTicket>
 }
 
+export interface LocalAgentApi {
+  getStatus(): Promise<LocalStatus>
+  listTerminals(): Promise<Terminal[]>
+  pair(input: LocalPairInput): Promise<LocalPairResult>
+  createRTCAnswer(input: LocalRTCOffer): Promise<LocalRTCAnswer>
+}
+
 export interface RendezvousApi {
   createChannel(input: CreateRendezvousChannelInput): Promise<RendezvousChannel>
   listen(channel: RendezvousChannel): AsyncIterable<RendezvousMessage>
@@ -629,3 +758,4 @@ Rules:
 - React components use `ControlApi` and `PeerTransport`, not `fetch` or `RTCPeerConnection` directly.
 - Native implementation may expose a local bridge, but bridge protocol is private to native adapter.
 - Browser implementation may use WebRTC directly, but only inside adapter package.
+- `remote-ui` components may depend on `LocalAgentApi` for local embedded web metadata, but concrete browser/native implementations stay outside components.

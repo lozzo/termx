@@ -22,12 +22,14 @@ user -> machine -> terminal
 ## 核心结论
 
 1. `termx` 二进制内置远程 agent runtime，随 daemon 一起启动，不再发布独立 agent 程序。
-2. `termx` 二进制内置本地 web 静态文件，允许用户通过本机浏览器访问本地控制/调试页。
-3. 不登录、不订阅也允许扫码配对并尝试匿名 P2P；匿名路径只用公共 STUN 和轻量 rendezvous signaling。
-4. P2P 直连成功时，terminal 和文件管理都可用，因为数据不走 TermX relay。
-5. TermX TURN relay 是订阅能力；P2P 失败时引导用户登录并订阅 Relay。
-6. 公网 web 控制台负责用户、订阅、机器 claim、token、节点、审计和数据存储。
-7. hub/TURN 作为订阅 relay 边缘节点，负责 agent 长连接、managed signaling、ICE/TURN、流量统计和限速。
-8. 手机 app 重做产品壳和代码组织，但复用 tgent 的终端、文件、WebRTC、native bridge 行为经验。
-9. 网络 transport 必须抽象为 interface。Web runtime 和 native runtime 各自实现，不再把 browser fetch/WebRTC 与 Android native WebRTC 混在同一层业务逻辑里。
-10. 远程终端和文件管理直接绑定 `machine_id + terminal_id`，不引入 workspace/tab/pane。
+2. `termx` 二进制内置本地 web 静态文件，允许用户通过本机浏览器访问本地控制/调试页；前期先把本地 embedded web 跑通，再迁移到 mobile app。
+3. 本地 embedded web 和 mobile app 共享同一套远程 UI 组件，至少包括 `Terminal.tsx`、`TerminalList.tsx`、`FileManager.tsx`，可从 `../tgent` 复制后按 machine/terminal 模型改造。
+4. 本地 `termx` remote runtime 必须内嵌 WebRTC server over TCP / ICE TCP mux，避免本地 UDP 不可用时阻断调试。
+5. 不登录、不订阅也允许扫码配对并尝试匿名 P2P；匿名路径只用公共 STUN 和轻量 rendezvous signaling。
+6. P2P 直连成功时，terminal 和文件管理都可用，因为数据不走 TermX relay。
+7. TermX TURN relay 是订阅能力；P2P 失败时引导用户登录并订阅 Relay。
+8. 公网 web 控制台负责用户、订阅、机器 claim、token、节点、审计和数据存储。
+9. hub/TURN 作为订阅 relay 边缘节点，负责 agent 长连接、managed signaling、ICE/TURN、流量统计和限速。
+10. 手机 app 重做产品壳和代码组织，但复用本地 embedded web 已验证的远程 UI、终端、文件、WebRTC、native bridge 行为经验。
+11. 网络 transport 必须抽象为 interface。Web runtime 和 native runtime 各自实现，不再把 browser fetch/WebRTC 与 Android native WebRTC 混在同一层业务逻辑里。
+12. 远程终端和文件管理直接绑定 `machine_id + terminal_id`，不引入 workspace/tab/pane。

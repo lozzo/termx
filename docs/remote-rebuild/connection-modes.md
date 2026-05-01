@@ -31,10 +31,23 @@ TermX 远程能力默认慷慨开放：
 
 | 模式 | 登录 | 服务器参与 | ICE | 数据路径 | Terminal | 文件管理 | 成本 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Local LAN | 不需要 | 不需要 | 可不用或 host-only | app/browser -> daemon | 可用 | 可用 | 用户本地网络 |
+| Local LAN / Embedded Web | 不需要 | 不需要 | host-only + ICE TCP mux / WebRTC-over-TCP fallback | app/browser -> daemon | 可用 | 可用 | 用户本地网络 |
 | Anonymous P2P | 不需要 | 匿名 rendezvous/signaling | 公共 STUN | app -> daemon P2P | 可用 | 可用 | 低，只是 signaling |
 | Free Account P2P | 需要 | 控制面 + signaling | 公共 STUN | app -> daemon P2P | 可用 | 可用 | 低，只是控制面/signaling |
 | Paid Relay | 需要订阅 | 控制面 + hub + TURN | TermX STUN/TURN | app -> TURN -> daemon | 可用 | 可用，按 policy | 高，relay 流量 |
+
+## Local LAN / Embedded Web
+
+本地路径是 P3 的第一优先级：先把 `termx` 二进制内嵌的 web、terminal、file manager、local signaling 和 agent DataChannel bridge 调通，再迁移同一套 UI 到 mobile app。
+
+要求：
+
+- `termx daemon` 本地提供 embedded static web。
+- shared remote UI 先在本地浏览器运行，组件至少包括 `Terminal.tsx`、`TerminalList.tsx`、`FileManager.tsx`。
+- local browser adapter 调用 `/api/local/status`、`/api/local/terminals`、`/api/local/pair`、`/api/local/rtc/offer`。
+- 本地 WebRTC 默认使用 host candidates，并必须支持 ICE TCP mux / WebRTC-over-TCP fallback。
+- 本地路径不使用 public rendezvous，不发 TermX TURN relay credentials。
+- terminal/file 数据面只在 browser/app 与 local daemon 之间传输。
 
 ## Anonymous P2P
 

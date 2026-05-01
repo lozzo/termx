@@ -28,11 +28,12 @@ termx/
   web-control/             # 未来公网控制台，优先迁改 ../tgent/tgent-web
   termx-rendezvous/         # 未来匿名 P2P signaling 服务，不做 relay
   termx-hub/               # 未来 hub/TURN 服务，优先迁改 ../tgent/tgent-go hub，订阅 relay 使用
+  remote-ui/               # 本地 embedded web 与 mobile app 共享的 React 远程 UI、hooks、transport interfaces
   mobile-app/              # 未来手机 app，新建产品壳，参考 ../tgent/tgent-app
   docs/remote-rebuild/     # 本规划
 ```
 
-说明：`web-control/`、`termx-hub/`、`mobile-app/` 后续按批次重新创建。当前阶段先只落文档。
+说明：`remote-ui/` 优先创建，先服务 `termx` 二进制内嵌本地 web；`mobile-app/` 后续复用这里的 terminal、terminal list、file manager 组件并替换 app shell / native adapter。`web-control/`、`termx-hub/`、`mobile-app/` 后续按批次重新创建。
 
 ## 角色
 
@@ -124,6 +125,7 @@ termx/
 - 将 DataChannel 桥接到 TermX 的 terminal protocol
 - 提供 file manager API
 - 提供本地 web 静态文件服务和本地 signaling
+- 提供本地 WebRTC-over-TCP / ICE TCP mux，用于 UDP 不可用时的 local browser 调试路径
 
 必须满足：
 
@@ -149,6 +151,27 @@ termx/
 - terminal rendering、file manager 行为、WebRTC/native bridge 参考 tgent
 - 业务模型只认 machine/terminal，不认 workspace/tab/pane
 - 所有网络能力通过 interface 注入
+- terminal list、terminal session、file manager 优先复用 `remote-ui/` 里已经在本地 embedded web 验证的组件
+
+### Shared Remote UI
+
+职责：
+
+- 承载本地 embedded web 与 mobile app 共享的远程 UI 和业务 hooks。
+- 从 `../tgent` 迁改 terminal rendering、terminal client、file manager、WebRTC browser adapter 的成熟行为。
+- 将 `SessionList.tsx` / pane 语义改造成 `TerminalList.tsx` / terminal 语义。
+- 保持所有网络能力在 `RemoteTransport` / `PeerTransport` interface 后面，组件不直接 import `fetch`、`RTCPeerConnection` 或 native plugin。
+- 本地 embedded web 首先使用 browser local adapter；mobile app 后续使用 native adapter。
+
+首批组件：
+
+- `Terminal.tsx`
+- `TerminalList.tsx`
+- `FileManager.tsx`
+- `useTerminalSession`
+- `useFileManager`
+- browser local transport adapter
+- mock transport for tests
 
 ## 网络通信图
 
@@ -237,11 +260,21 @@ sequenceDiagram
 
   B->>D: GET http://127.0.0.1:{port}/
   D-->>B: embedded static web
+  B->>D: GET /api/local/status
+  B->>D: GET /api/local/terminals
+  B->>D: POST /api/local/pair
   B->>D: POST /api/local/rtc/offer
-  D-->>B: WebRTC answer
+  D-->>B: WebRTC answer with host/TCP candidates
   B<->>D: DataChannel terminal:{terminal_id}
   B<->>D: DataChannel api
+  B<->>D: DataChannel file:{transfer_id}
 ```
+
+说明：
+
+- 本地 HTTP 与 ICE TCP 可以复用同一 TCP port，也可以先用相邻/独立 port；对外 contract 必须让浏览器 adapter 能发现 ICE TCP endpoint。
+- 可参考 `../tgent/tgent-go/internal/server/server.go` 的 cmux/端口复用和 `../tgent/tgent-go/internal/agent/webrtc.go` 的 Pion TCP mux。
+- 这个路径不使用 TermX TURN credentials，也不需要公网 rendezvous。
 
 ## Transport Interface
 

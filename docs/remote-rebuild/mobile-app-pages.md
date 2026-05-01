@@ -1,6 +1,6 @@
 # Mobile App 页面规划
 
-状态：第一版产品信息架构。后续 app 实现按本文拆页面和状态，不复刻 `../tgent` 的 workspace/tab/pane 结构。
+状态：第二版产品信息架构。后续 app 实现按本文拆页面和状态，不复刻 `../tgent` 的 workspace/tab/pane 结构；terminal、terminal list、file manager 先在本地 embedded web 的 `remote-ui/` 中实现和验证，再迁移到 app shell。
 
 ## 产品原则
 
@@ -13,6 +13,7 @@
 7. P2P 成功时 terminal 和文件管理都可用。
 8. TermX Relay 是订阅能力，P2P 失败时引导登录/订阅。
 9. 文件管理作为 terminal 的辅助能力，不做完整网盘产品。
+10. App 不重新实现 terminal/file manager 主组件；它复用 `remote-ui/Terminal.tsx`、`remote-ui/TerminalList.tsx`、`remote-ui/FileManager.tsx`，只替换 navigation、storage、QR、native transport adapter。
 
 ## 导航结构
 

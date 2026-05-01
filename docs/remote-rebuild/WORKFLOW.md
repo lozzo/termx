@@ -4,9 +4,9 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Current State
 
-- Current phase: P3 local + anonymous P2P signaling
-- Active todo: P3-B local pair API or anonymous rendezvous HTTP adapter
-- Last updated: 2026-05-01T03:38:00+08:00
+- Current phase: P3 embedded local web first
+- Active todo: P3-B embedded local web foundation
+- Last updated: 2026-05-01T09:33:28+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -14,12 +14,18 @@ Status file for unattended remote rebuild work. Update this file before starting
 | ID | Phase | Todo | Status | Commit |
 | --- | --- | --- | --- | --- |
 | R0 | workflow | Create and seed `docs/remote-rebuild/WORKFLOW.md` with full todo plan | completed | `8734d00` |
+| R1 | planning | Revise remote rebuild plan so the early path builds `termx` embedded local web, shared remote UI components, and local WebRTC-over-TCP before migrating the same UI to mobile app | completed | pending |
 | P2-A | identity | Implement Ed25519 machine key generation, load, persistence permissions, and fingerprint helpers in `termx-core/internal/remote/identity` | completed | `5aef5b8` |
 | P2-B | cert | Implement canonical app certificate payload, sign/verify helpers, and nonce/timestamp replay helper in `termx-core/internal/remote/cert` | completed | `62d1f70` |
 | P2-C | pairing | Implement local pair session creation, TTL, single-use semantics, and app certificate issuance in `termx-core/internal/remote/pairing` | completed | `12067cb` |
 | P2-D | CLI | Keep `termx remote status` working and add a conservative `termx pair` CLI skeleton only after core primitives exist | completed | `4b24258` |
 | P3-A | rendezvous | Implement anonymous rendezvous interfaces/contracts with payload limit, TTL, channel secret verification, and no TURN credentials | completed | `4012a1b` |
-| P3-B | local/api | Implement next P3 slice: local `/api/local/pair` or anonymous rendezvous HTTP adapter | pending |  |
+| P3-B | localweb | Implement embedded local web foundation served from `termx` binary with local status, terminal list, and pair API contracts | pending |  |
+| P3-C | rtc | Implement local WebRTC signaling and ICE TCP mux/over-TCP support for browser-to-daemon local connections | pending |  |
+| P3-D | remote-ui | Create shared remote UI package and adapt `Terminal.tsx`, `TerminalList.tsx`, and `FileManager.tsx` from `../tgent` for machine/terminal-only semantics | pending |  |
+| P3-E | local/e2e | Wire embedded local web to terminal and file manager over local WebRTC DataChannels and validate in browser before mobile migration | pending |  |
+| P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | pending |  |
+| P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
 ## TDD Log
 
@@ -30,6 +36,14 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Focused tests: not run; documentation/workflow-only todo.
 - Broader tests: not run; documentation/workflow-only todo.
 - Result: completed. Commit: `8734d00`.
+
+### R1 embedded local web first plan revision
+
+- Tests written before implementation: none; documentation/workflow-only todo.
+- Expected failing test: not applicable.
+- Focused tests: not run; documentation/workflow-only todo.
+- Broader tests: `git diff --check` passed.
+- Result: completed pending commit. Commit: pending.
 
 ### P2-A machine key generation/load/fingerprint
 
@@ -97,6 +111,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - `Dirac` (`019ddf7d-2bf6-78d0-89d0-e886099b6d01`): P2-C code review. Findings: arbitrary requested capabilities could be machine-signed, local pair request struct lacked snake_case JSON tags, workflow stale. Result: fixed with capability allowlist, JSON tags, and workflow updates.
 - `Averroes` (`019ddf8c-a240-7063-8d97-e582d128011f`): P2-D code review. Findings: changing pair config replaced the manager and invalidated active sessions, workflow stale. Result: fixed with manager config updates that preserve existing sessions and workflow updates.
 - `Epicurus` (`019ddf9b-6e36-7c32-9433-71c59a027d69`): P3-A code review. Findings: unbounded TTL, arbitrary data under signaling message types, missing app binding after claim, unbounded message retention, workflow stale. Result: fixed with max TTL, structured signaling payload validation, app public key binding, per-channel message limits, and workflow updates.
+- R1: no subagent launched; documentation-only planning adjustment requested by the user and no implementation correctness review was required.
 
 ## Code Review Log
 
@@ -105,18 +120,22 @@ Status file for unattended remote rebuild work. Update this file before starting
 - P2-C review complete. No remaining findings after implemented fixes; no workspace/tab/pane concepts, anonymous/free TURN relay changes, app machine-private-key exposure, or transport boundary drift introduced.
 - P2-D review complete. No remaining findings after implemented fixes; no workspace/tab/pane concepts, anonymous/free TURN relay changes, app machine-private-key exposure, CLI internal-package import, or transport boundary drift introduced.
 - P3-A review complete. No remaining findings after implemented fixes; no workspace/tab/pane concepts, anonymous/free TURN relay credentials, terminal/file data relay, app machine-private-key exposure, or transport boundary drift introduced.
+- R1 planning review: self-checked updated docs for scope drift. Plan now prioritizes embedded local web, shared `remote-ui/` components, and local WebRTC-over-TCP before mobile app migration; no new workspace/tab/pane public model and no anonymous/free TURN relay entitlement were introduced.
 
 ## Deferred Human Decisions And Placeholders
 
 - Public rendezvous deployment, DNS, TLS certificates, billing/subscription provider, mobile signing, and app store configuration remain deferred by policy.
 - No mocks or placeholders added in code yet.
+- Whether local HTTP and ICE TCP share one port via cmux or use adjacent/independent ports is intentionally deferred to P3-C implementation; current contract only requires the browser adapter to discover the ICE TCP endpoint.
 
 ## Risks
 
 - Existing baseline uses `DeviceID` terminology while remote rebuild docs require public `machine -> terminal` object language. The implementation should preserve compatibility where needed but introduce machine-key/certificate concepts without exposing workspace/tab/pane.
 - Existing hub baseline may include relay fields. P3 anonymous paths must explicitly reject or omit TermX TURN relay credentials.
+- New `remote-ui/` package must avoid carrying over tgent pane/session public concepts when copying `Terminal.tsx`, `SessionList.tsx`, and file manager code.
 
 ## Next Exact Action
 
-1. Choose next P3 slice based on implementation-plan order.
-2. Update this workflow before writing tests for the next todo.
+1. Run `git diff --check`.
+2. Commit R1 planning update.
+3. Start P3-B by updating this workflow before writing tests for local embedded web foundation.
