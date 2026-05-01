@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Folder, KeyRound, ListTree, Monitor, TerminalSquare, X } from 'lucide-react'
 import { FileManager } from './FileManager'
 import { LocalPairPanel } from './LocalPairPanel'
 import type { LocalAppCrypto, LocalAppIdentityStore } from './localAppIdentity'
-import { Terminal } from './Terminal'
+import { MobileTerminalKeybar } from './MobileTerminalKeybar'
+import type { TerminalModifierState } from './mobileTerminalInput'
+import { Terminal, type TerminalHandle } from './Terminal'
 import { TerminalList } from './TerminalList'
 import type { Machine, Terminal as RemoteTerminal } from './model'
 import type { LocalAgentApi, PeerTransport } from './transport'
@@ -27,13 +30,22 @@ export interface LocalRemoteAppProps {
   } | undefined
 }
 
+type MobileSheet = 'terminals' | 'pair' | null
+type PanelMode = 'terminal' | 'files'
+
 export function LocalRemoteApp({ api, createTransport, className, pair }: LocalRemoteAppProps) {
   const [machine, setMachine] = useState<Machine | null>(null)
   const [terminals, setTerminals] = useState<RemoteTerminal[]>([])
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pairStatus, setPairStatus] = useState<string | null>(null)
   const [connectedTransport, setConnectedTransport] = useState<(PeerTransport & TerminalTransport) | null>(null)
   const [transportRetryToken, setTransportRetryToken] = useState(0)
+
+  const [panelMode, setPanelMode] = useState<PanelMode>('terminal')
+  const [mobileSheet, setMobileSheet] = useState<MobileSheet>(null)
+  const [modifierState, setModifierState] = useState<TerminalModifierState>({ ctrl: 'off', alt: 'off' })
+  const terminalRef = useRef<TerminalHandle | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -70,6 +82,7 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
     } catch (err) {
       setConnectedTransport(null)
       setError(err instanceof Error ? err.message : String(err))
+      if (pair) setMobileSheet('pair')
       return
     }
     setConnectedTransport(null)
@@ -94,72 +107,293 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
       return
     }
     setActiveTerminalId(intent.terminalId)
+    setPanelMode('terminal')
+    setMobileSheet(null)
   }, [machine])
+
+  const handlePaired = useCallback((machineId: string) => {
+    setError(null)
+    setPairStatus(`Paired with ${machineId}`)
+    setTransportRetryToken((current) => current + 1)
+    setMobileSheet(null)
+    setPanelMode('terminal')
+  }, [])
+
+  const openFiles = useCallback(() => {
+    setPanelMode('files')
+    setMobileSheet(null)
+    window.setTimeout(() => terminalRef.current?.fit(), 0)
+  }, [])
+
+  const openTerminalPanel = useCallback(() => {
+    setPanelMode('terminal')
+    setMobileSheet(null)
+    window.setTimeout(() => {
+      terminalRef.current?.fit()
+      terminalRef.current?.focus()
+    }, 0)
+  }, [])
+
+  const resetKeyboardOffset = useCallback(() => {
+    terminalRef.current?.adjustInputPosition(0)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) {
+      terminalRef.current?.adjustInputPosition(0)
+      return
+    }
+
+    const viewport = window.visualViewport
+    let frame = 0
+    const syncKeyboardOffset = () => {
+      if (frame) return
+      frame = window.requestAnimationFrame(() => {
+        frame = 0
+        const currentViewport = window.visualViewport
+        const bottomOffset = currentViewport
+          ? Math.max(0, Math.round(window.innerHeight - currentViewport.height - currentViewport.offsetTop))
+          : 0
+        terminalRef.current?.adjustInputPosition(panelMode === 'terminal' && bottomOffset > 80 ? bottomOffset : 0)
+      })
+    }
+
+    viewport.addEventListener('resize', syncKeyboardOffset)
+    viewport.addEventListener('scroll', syncKeyboardOffset)
+    syncKeyboardOffset()
+
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame)
+      viewport.removeEventListener('resize', syncKeyboardOffset)
+      viewport.removeEventListener('scroll', syncKeyboardOffset)
+      terminalRef.current?.adjustInputPosition(0)
+    }
+  }, [activeTerminalId, connectedTransport, panelMode])
 
   if (error && !machine) {
     return (
-      <section className={className}>
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
-          {error}
+      <div className={`flex h-screen items-center justify-center bg-zinc-50 p-4 ${className || ''}`}>
+        <div className="w-full max-w-md rounded-lg border border-red-200 bg-white p-4 text-sm text-red-700 shadow-sm" role="alert">
+          <h2 className="mb-2 font-semibold text-red-900">Connection Error</h2>
+          <p>{error}</p>
         </div>
-      </section>
+      </div>
     )
   }
 
   if (!machine) {
-    return <section className={className}><p className="text-sm text-zinc-600">Loading</p></section>
+    return (
+      <div className={`flex h-screen items-center justify-center bg-zinc-50 ${className || ''}`}>
+        <div className="flex items-center gap-2 text-sm text-zinc-500">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600"></div>
+          Connecting to TermX...
+        </div>
+      </div>
+    )
   }
 
   return (
-    <main className={className} data-machine-id={machine.machineId}>
-      {error ? (
-        <div
-          className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 md:col-span-2"
-          role="alert"
-        >
-          {error}
+    <div className={`flex h-screen w-full flex-col overflow-hidden bg-zinc-50 font-sans text-zinc-900 md:flex-row ${className || ''}`} data-machine-id={machine.machineId}>
+      <aside className="hidden w-72 shrink-0 flex-col border-r border-zinc-200 bg-zinc-100 md:flex">
+        <div className="flex h-12 shrink-0 items-center border-b border-zinc-200 px-4">
+          <Monitor className="mr-2 h-4 w-4 text-zinc-500" />
+          <h1 className="text-sm font-semibold text-zinc-800 truncate">{machine.machineId}</h1>
         </div>
-      ) : null}
-
-      <TerminalList
-        machineId={machine.machineId}
-        terminals={terminals}
-        onOpenTerminal={openTerminal}
-        className="min-w-0 md:row-span-2"
-        {...(activeTerminalId ? { activeTerminalId } : {})}
-      />
-
-      {activeTerminalId && connectedTransport ? (
-        <>
-          <Terminal
+        <div className="flex-1 overflow-y-auto p-3">
+          <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">Terminals</h2>
+          <TerminalList
             machineId={machine.machineId}
-            terminalId={activeTerminalId}
-            transport={connectedTransport}
-            className="min-h-[52vh] min-w-0 overflow-hidden border border-slate-800 bg-[#101418] text-slate-100"
+            terminals={terminals}
+            onOpenTerminal={openTerminal}
+            activeTerminalId={activeTerminalId ?? undefined}
           />
-          <FileManager
-            machineId={machine.machineId}
-            terminalId={activeTerminalId}
-            transport={connectedTransport}
-            initialPath="/"
-            className="min-w-0"
-          />
-        </>
-      ) : null}
+        </div>
+        {pair ? (
+          <div className="shrink-0 border-t border-zinc-200 bg-zinc-50 p-3">
+            <button
+              type="button"
+              aria-label="Open pairing"
+              className="flex min-h-10 w-full items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm active:bg-zinc-100"
+              onClick={() => setMobileSheet('pair')}
+            >
+              <KeyRound className="h-4 w-4" />
+              Pair
+            </button>
+          </div>
+        ) : null}
+      </aside>
 
-      {pair ? (
-        <LocalPairPanel
-          api={pair.api}
-          storage={pair.storage}
-          crypto={pair.crypto}
-          appName={pair.appName}
-          className="min-w-0 md:col-span-2"
-          onPaired={() => {
-            setError(null)
-            setTransportRetryToken((current) => current + 1)
-          }}
+      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-4 md:hidden">
+          <div className="flex items-center gap-2 min-w-0">
+            <Monitor className="h-4 w-4 shrink-0 text-zinc-500" />
+            <span className="truncate text-sm font-medium text-zinc-800">{machine.machineId}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              aria-label="Switch terminal"
+              className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 active:bg-zinc-100"
+              onClick={() => setMobileSheet('terminals')}
+            >
+              <ListTree className="h-5 w-5" />
+            </button>
+            {pair ? (
+              <button
+                type="button"
+                aria-label="Pair device"
+                className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 active:bg-zinc-100"
+                onClick={() => setMobileSheet('pair')}
+              >
+                <KeyRound className="h-5 w-5" />
+              </button>
+            ) : null}
+          </div>
+        </header>
+
+        {error ? (
+          <div className="m-3 shrink-0 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 shadow-sm" role="alert">
+            {error}
+          </div>
+        ) : null}
+        {pairStatus ? (
+          <div className="mx-3 mt-3 shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 shadow-sm" role="status">
+            {pairStatus}
+          </div>
+        ) : null}
+
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-white md:bg-zinc-50">
+          <div className={`relative min-h-0 bg-[#0c0c0c] md:m-3 md:rounded-lg md:border md:border-zinc-800 md:shadow-xl md:overflow-hidden ${panelMode === 'terminal' ? 'flex-1' : 'h-0 md:flex-1'}`}>
+            {activeTerminalId && connectedTransport ? (
+              <Terminal
+                ref={terminalRef}
+                machineId={machine.machineId}
+                terminalId={activeTerminalId}
+                transport={connectedTransport}
+                className="absolute inset-0 outline-none"
+                modifierState={modifierState}
+                onModifierStateChange={setModifierState}
+                onCursorMove={resetKeyboardOffset}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+                No active terminal
+              </div>
+            )}
+          </div>
+
+          <div className={`absolute inset-0 z-20 flex flex-col bg-white md:relative md:z-auto md:h-[40%] md:min-h-[250px] md:border-t md:border-zinc-200 ${panelMode === 'files' ? 'flex' : 'hidden md:flex'}`}>
+            {activeTerminalId && connectedTransport ? (
+              <FileManager
+                machineId={machine.machineId}
+                terminalId={activeTerminalId}
+                transport={connectedTransport}
+                initialPath="/"
+                className="flex h-full min-h-0 flex-col relative"
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+                Connect to a terminal to view files
+              </div>
+            )}
+          </div>
+        </div>
+
+        <MobileTerminalKeybar
+          onInput={(data) => terminalRef.current?.sendInput(data)}
+          onFocusKeyboard={() => terminalRef.current?.focus()}
+          onBlurKeyboard={() => terminalRef.current?.blur()}
+          modifierState={modifierState}
+          onModifierStateChange={setModifierState}
+          className={panelMode === 'terminal' ? '' : 'hidden'}
         />
-      ) : null}
-    </main>
+
+        <nav className="flex h-14 shrink-0 border-t border-zinc-200 bg-zinc-100 md:hidden">
+          <button
+            type="button"
+            aria-label="Open terminal"
+            onClick={openTerminalPanel}
+            className={`flex flex-1 flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors ${panelMode === 'terminal' ? 'text-zinc-900' : 'text-zinc-500'}`}
+          >
+            <TerminalSquare className={`h-5 w-5 ${panelMode === 'terminal' ? 'fill-zinc-200' : ''}`} />
+            Console
+          </button>
+          <button
+            type="button"
+            aria-label="Open files"
+            onClick={openFiles}
+            className={`flex flex-1 flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors ${panelMode === 'files' ? 'text-zinc-900' : 'text-zinc-500'}`}
+          >
+            <Folder className={`h-5 w-5 ${panelMode === 'files' ? 'fill-zinc-200' : ''}`} />
+            Files
+          </button>
+          <button
+            type="button"
+            aria-label="Open terminal list"
+            onClick={() => setMobileSheet('terminals')}
+            className="flex flex-1 flex-col items-center justify-center gap-1 text-[10px] font-medium text-zinc-500 transition-colors"
+          >
+            <ListTree className="h-5 w-5" />
+            Terms
+          </button>
+        </nav>
+
+        {mobileSheet === 'terminals' ? (
+          <MobileSheetPanel title="Terminals" testId="termx-terminal-switcher-sheet" onClose={() => setMobileSheet(null)}>
+            <TerminalList
+              machineId={machine.machineId}
+              terminals={terminals}
+              onOpenTerminal={openTerminal}
+              activeTerminalId={activeTerminalId ?? undefined}
+            />
+          </MobileSheetPanel>
+        ) : null}
+
+        {mobileSheet === 'pair' && pair ? (
+          <MobileSheetPanel title="Pair device" testId="termx-pair-sheet" onClose={() => setMobileSheet(null)}>
+            <LocalPairPanel
+              api={pair.api}
+              storage={pair.storage}
+              crypto={pair.crypto}
+              appName={pair.appName}
+              onPaired={handlePaired}
+            />
+          </MobileSheetPanel>
+        ) : null}
+      </main>
+    </div>
+  )
+}
+
+function MobileSheetPanel({
+  children,
+  onClose,
+  testId,
+  title,
+}: {
+  children: ReactNode
+  onClose: () => void
+  testId: string
+  title: string
+}) {
+  return (
+    <div className="absolute inset-0 z-40 flex items-end bg-black/30 md:items-center md:justify-center" data-testid={testId}>
+      <section className="max-h-[78vh] w-full overflow-hidden rounded-t-lg bg-zinc-50 shadow-2xl md:max-w-md md:rounded-lg">
+        <header className="flex h-12 items-center justify-between border-b border-zinc-200 px-4">
+          <h2 className="text-sm font-semibold text-zinc-900">{title}</h2>
+          <button
+            type="button"
+            aria-label={`Close ${title}`}
+            className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-500 active:bg-zinc-200"
+            onClick={onClose}
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </header>
+        <div className="max-h-[calc(78vh-3rem)] overflow-y-auto p-3">
+          {children}
+        </div>
+      </section>
+    </div>
   )
 }

@@ -95,6 +95,9 @@ describe('local web entry shell', () => {
 
     await waitFor(() => expect(screen.getByTestId('termx-local-web-shell')).toBeTruthy())
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list')).toBeTruthy())
+    const appShell = screen.getByTestId('termx-local-web-shell').firstElementChild as HTMLElement
+    expect(appShell.className).toContain('flex')
+    expect(appShell.className).not.toMatch(/\bgrid\b|gap-4|p-4|md:grid-cols/)
     expect(screen.getByTestId('termx-terminal-list').getAttribute('data-machine-id')).toBe('machine-local')
     expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane|session/i)
     expect(JSON.stringify(fetch.mock.calls)).not.toMatch(/turn|credential|machine_private_key|privateKey/i)

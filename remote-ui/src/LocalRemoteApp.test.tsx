@@ -1,16 +1,41 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { forwardRef, useImperativeHandle } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LocalRemoteApp, type LocalRemoteTransportFactory } from './LocalRemoteApp'
 import { createLocalAppIdentityStore, type LocalAppCrypto } from './localAppIdentity'
+import type { TerminalModifierState } from './mobileTerminalInput'
 import type { LocalAgentApi } from './transport'
 import { createMockFilePeerTransport } from './test/mockFileTransport'
+import type { TerminalHandle } from './Terminal'
 import type { TerminalTransport, TerminalTransportEvent } from './terminalClient'
 
 vi.mock('./Terminal', () => ({
-  Terminal: ({ machineId, terminalId }: { machineId: string; terminalId: string }) => (
-    <section data-machine-id={machineId} data-terminal-id={terminalId} data-testid="termx-terminal" />
-  ),
+  Terminal: forwardRef<TerminalHandle, { machineId: string; terminalId: string; modifierState?: TerminalModifierState }>(function MockTerminal(
+    { machineId, terminalId, modifierState },
+    ref,
+  ) {
+    useImperativeHandle(ref, () => ({
+      sendInput: vi.fn(),
+      sendResize: vi.fn(),
+      reattach: vi.fn(),
+      focus: vi.fn(),
+      blur: vi.fn(),
+      fit: vi.fn(),
+      pasteText: vi.fn(),
+      getCursorInfo: vi.fn(() => null),
+      adjustInputPosition: vi.fn(),
+      getBufferType: vi.fn(() => 'normal' as const),
+    }))
+    return (
+      <section
+        data-machine-id={machineId}
+        data-modifier-state={`${modifierState?.ctrl ?? 'off'}:${modifierState?.alt ?? 'off'}`}
+        data-terminal-id={terminalId}
+        data-testid="termx-terminal"
+      />
+    )
+  }),
 }))
 
 describe('LocalRemoteApp', () => {
@@ -48,6 +73,48 @@ describe('LocalRemoteApp', () => {
     expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane|session/i)
   })
 
+  it('uses a terminal-first mobile shell with sheets instead of a Config sidebar', async () => {
+    const api = createMockLocalAgentApi()
+    const transports: ReturnType<typeof createMockLocalRemoteTransport>[] = []
+    const createTransport = vi.fn<LocalRemoteTransportFactory>(({ machineId, terminalId }) =>
+      trackTransport(transports, createMockLocalRemoteTransport({
+        '/files/list': { path: '/', parent: '', total: 0, entries: [] },
+      }, machineId, terminalId)),
+    )
+
+    render(
+      <LocalRemoteApp
+        api={api}
+        createTransport={createTransport}
+        pair={{
+          api: createMockLocalAgentApi(),
+          storage: createLocalAppIdentityStore(new MemoryStorage()),
+          crypto: createMockAppCrypto(),
+          appName: 'TermX Local Web',
+        }}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
+    expect(screen.queryByText('Config')).toBeNull()
+    expect(screen.getByTestId('termx-mobile-keybar')).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ctrl' }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal').getAttribute('data-modifier-state')).toBe('once:off'))
+
+    await userEvent.click(screen.getByRole('button', { name: /open files/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-file-manager')).toBeTruthy())
+    expect(screen.getByTestId('termx-terminal')).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: /switch terminal/i }))
+    expect(screen.getByTestId('termx-terminal-switcher-sheet')).toBeTruthy()
+    expect(screen.getByTestId('termx-terminal-switcher-sheet').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
+
+    await userEvent.click(screen.getByRole('button', { name: /pair device/i }))
+    expect(screen.getByTestId('termx-pair-sheet')).toBeTruthy()
+    expect(screen.getByTestId('termx-pair-sheet').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
+  })
+
   it('keeps the app shell driven by LocalAgentApi and transport interfaces only', () => {
     const createTransport = vi.fn<LocalRemoteTransportFactory>(() => createMockLocalRemoteTransport(
       {},
@@ -75,7 +142,7 @@ describe('LocalRemoteApp', () => {
     expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane/i)
   })
 
-  it('renders the local pair harness through app-level interfaces', async () => {
+  it('keeps the local pair harness reachable through app-level interfaces', async () => {
     const createTransport = vi.fn<LocalRemoteTransportFactory>(() => createMockLocalRemoteTransport(
       {},
       'machine-local',
@@ -95,6 +162,8 @@ describe('LocalRemoteApp', () => {
       />,
     )
 
+    await waitFor(() => expect(screen.getByRole('button', { name: /pair device/i })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /pair device/i }))
     await waitFor(() => expect(screen.getByTestId('termx-local-pair-panel')).toBeTruthy())
     expect(screen.getByLabelText('Pair ID')).toBeTruthy()
     expect(screen.getByLabelText('Pair secret')).toBeTruthy()
@@ -132,6 +201,7 @@ describe('LocalRemoteApp', () => {
     )
 
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('local app certificate is required'))
+    await waitFor(() => expect(screen.getByTestId('termx-pair-sheet')).toBeTruthy())
     expect(screen.getByTestId('termx-local-pair-panel')).toBeTruthy()
 
     await userEvent.type(screen.getByLabelText('Pair ID'), 'pair-1')

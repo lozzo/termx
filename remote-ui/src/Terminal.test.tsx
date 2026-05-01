@@ -12,7 +12,15 @@ const xtermMocks = vi.hoisted(() => {
     cols = 80
     rows = 24
     element: HTMLElement | undefined
+    buffer = {
+      active: {
+        type: 'normal' as const,
+        cursorY: 0,
+      },
+      onBufferChange: vi.fn(() => ({ dispose: vi.fn() })),
+    }
     private readonly dataHandlers = new Set<(data: string) => void>()
+    private readonly cursorHandlers = new Set<() => void>()
 
     constructor(options: Record<string, unknown> = {}) {
       this.options = options
@@ -46,11 +54,24 @@ const xtermMocks = vi.hoisted(() => {
       }
     }
 
+    onCursorMove(handler: () => void): { dispose(): void } {
+      this.cursorHandlers.add(handler)
+      return {
+        dispose: () => this.cursorHandlers.delete(handler),
+      }
+    }
+
     emitData(data: string): void {
       for (const handler of this.dataHandlers) handler(data)
     }
 
+    emitCursorMove(): void {
+      for (const handler of this.cursorHandlers) handler()
+    }
+
     focus(): void {}
+
+    blur(): void {}
 
     resize(cols: number, rows: number): void {
       this.cols = cols
@@ -65,6 +86,20 @@ const xtermMocks = vi.hoisted(() => {
     reset(): void {
       this.clear()
     }
+
+    paste(text: string): void {
+      this.write(text)
+    }
+
+    getSelection(): string {
+      return ''
+    }
+
+    hasSelection(): boolean {
+      return false
+    }
+
+    clearSelection(): void {}
 
     dispose(): void {}
   }
@@ -179,6 +214,71 @@ describe('Terminal', () => {
     await waitFor(() => expect(transport.sentText('terminal-1')).toContain('ls\n'))
   })
 
+  it('applies mobile modifier state to system keyboard input', async () => {
+    const transport = createMockTerminalTransport()
+    const onModifierStateChange = vi.fn()
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        transport={transport}
+        modifierState={{ ctrl: 'once', alt: 'off' }}
+        onModifierStateChange={onModifierStateChange}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    act(() => xtermMocks.FakeXTerm.instances[0]?.emitData('c'))
+
+    await waitFor(() => expect(transport.sentText('terminal-1')).toContain('\x03'))
+    expect(onModifierStateChange).toHaveBeenCalledWith({ ctrl: 'off', alt: 'off' })
+  })
+
+  it('keeps the xterm instance stable when mobile callbacks or modifier props change', async () => {
+    const transport = createMockTerminalTransport()
+    const firstCursorMove = vi.fn()
+    const secondCursorMove = vi.fn()
+    const firstBufferChange = vi.fn()
+    const secondBufferChange = vi.fn()
+
+    const { rerender } = render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        transport={transport}
+        modifierState={{ ctrl: 'off', alt: 'off' }}
+        onCursorMove={firstCursorMove}
+        onBufferChange={firstBufferChange}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    transport.emitTerminalOutput('terminal-1', new TextEncoder().encode('stable output'))
+    await waitFor(() => expect(screen.getByLabelText('Terminal output').textContent).toContain('stable output'))
+
+    rerender(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        transport={transport}
+        modifierState={{ ctrl: 'once', alt: 'off' }}
+        onCursorMove={secondCursorMove}
+        onBufferChange={secondBufferChange}
+      />,
+    )
+
+    expect(xtermMocks.FakeXTerm.instances).toHaveLength(1)
+    expect(screen.getByLabelText('Terminal output').textContent).toContain('stable output')
+
+    act(() => xtermMocks.FakeXTerm.instances[0]?.emitCursorMove())
+    expect(firstCursorMove).not.toHaveBeenCalled()
+    expect(secondCursorMove).toHaveBeenCalled()
+
+    act(() => xtermMocks.FakeXTerm.instances[0]?.emitData('c'))
+    await waitFor(() => expect(transport.sentText('terminal-1')).toContain('\x03'))
+  })
+
   it('fits xterm and sends terminal resize through the TermX transport interface', async () => {
     const transport = createMockTerminalTransport()
 
@@ -229,5 +329,46 @@ describe('Terminal', () => {
     expect(propKeys).not.toContain('paneId')
     expect(propKeys).not.toContain('sessionId')
     expect(propKeys).not.toContain('windowId')
+  })
+
+  it('exposes mobile terminal controls without leaking tgent pane concepts', async () => {
+    const transport = createMockTerminalTransport()
+    const cursorMoves = vi.fn()
+    const ref = { current: null as import('./Terminal').TerminalHandle | null }
+
+    render(
+      <Terminal
+        ref={ref}
+        machineId="machine-local"
+        terminalId="terminal-1"
+        transport={transport}
+        onCursorMove={cursorMoves}
+      />,
+    )
+
+    await waitFor(() => expect(ref.current).not.toBeNull())
+    expect(Object.keys(ref.current!)).toEqual(expect.arrayContaining([
+      'focus',
+      'blur',
+      'fit',
+      'pasteText',
+      'getCursorInfo',
+      'adjustInputPosition',
+      'getBufferType',
+    ]))
+    expect(Object.keys(ref.current!)).not.toContain('paneId')
+    expect(Object.keys(ref.current!)).not.toContain('sessionId')
+
+    act(() => ref.current!.pasteText('echo pasted\n'))
+    await waitFor(() => expect(transport.sentText('terminal-1')).toContain('\x1b[200~echo pasted\n\x1b[201~'))
+
+    act(() => ref.current!.adjustInputPosition(144))
+    await waitFor(() => {
+      const xtermElement = xtermMocks.FakeXTerm.instances[0]?.element
+      expect(xtermElement?.style.getPropertyValue('--termx-keyboard-bottom')).toBe('144px')
+    })
+
+    act(() => xtermMocks.FakeXTerm.instances[0]?.emitCursorMove())
+    expect(cursorMoves).toHaveBeenCalled()
   })
 })

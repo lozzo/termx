@@ -16,6 +16,17 @@ export { Terminal } from './Terminal'
 export type { TerminalHandle, TerminalProps } from './Terminal'
 export { TerminalList } from './TerminalList'
 export type { OpenTerminalIntent, TerminalListProps } from './TerminalList'
+export { MobileTerminalKeybar } from './MobileTerminalKeybar'
+export type { MobileTerminalKeybarProps } from './MobileTerminalKeybar'
+export {
+  applyTerminalModifiers,
+  nextModifierState,
+} from './mobileTerminalInput'
+export type {
+  ModifierState,
+  TerminalModifierResult,
+  TerminalModifierState,
+} from './mobileTerminalInput'
 export { createFileApi } from './fileApi'
 export type { DirListResponse, FileApi, FileEntry, FileEntryType } from './fileApi'
 export { FileManager } from './FileManager'

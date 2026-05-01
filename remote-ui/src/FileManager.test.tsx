@@ -29,6 +29,8 @@ describe('FileManager', () => {
     )
 
     await waitFor(() => expect(screen.getByText('tmp')).toBeTruthy())
+    expect(screen.getByTestId('termx-file-manager').className).toMatch(/\brelative\b/)
+    expect(screen.getByTestId('termx-file-manager').className).toMatch(/\bmin-h-0\b/)
     await userEvent.click(screen.getByRole('button', { name: /open tmp/i }))
     await waitFor(() => expect(screen.getByText('log.txt')).toBeTruthy())
     expect(screen.getByTestId('termx-file-manager').textContent).not.toMatch(/workspace|tab|window|pane|session/i)

@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: choose next slice after P3-E-C-B-H xterm local browser smoke
-- Last updated: 2026-05-01T22:41:28+08:00
+- Active todo: choose next slice after P3-E-C-B-I mobile terminal interaction shell
+- Last updated: 2026-05-02T00:08:00+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -38,6 +38,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-F | local/e2e | Require the local WebRTC `api` DataChannel to open during connect so FileManager does not mount on a half-ready transport | completed | `9a51792` |
 | P3-E-C-B-G | local/e2e | Fix real-browser local WebRTC `api` DataChannel timeout by waiting for local ICE candidates before signing/sending the offer | completed | `9531237` |
 | P3-E-C-B-H | local/e2e | Replace the readonly terminal placeholder with a tgent-aligned xterm.js terminal surface that writes output, forwards input, and sends resize through TermX terminal interfaces | completed | `db9c7065` |
+| P3-E-C-B-I | remote-ui | Refactor embedded local web mobile terminal interaction shell with terminal-first navigation, terminal switcher sheet, pair sheet, virtual keybar, and keyboard-aware xterm handle | completed | `92b8308b` |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -244,6 +245,22 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Code review: `Faraday` found one medium issue that the regenerated embedded assets were referenced by `index.html` but still untracked. Fixed by staging the new `index-D5d9blrT.js` / `index-D4ZdPfWr.css` assets and deleting the old generated files in the implementation commit. Faraday found no workspace/tab/pane/session public model drift, TURN credential exposure, machine private key handling, or UI/business WebRTC primitive leakage. Residual note: input before channel readiness is still covered by existing `TerminalClient` input-dropped behavior, not by a component-level xterm test.
 - Result: completed. Commit: `db9c7065`.
 
+### P3-E-C-B-I mobile terminal interaction shell
+
+- Active slice: refactor the embedded local web mobile interaction shell after user feedback that the current mobile page behaves like a compressed desktop web page instead of a native terminal app. The implementation should use `../tgent/tgent-app/src/pages/TerminalPage.tsx`, `components/Terminal.tsx`, `components/VirtualKeybar.tsx`, `hooks/useTerminalKeyboard.ts`, and `hooks/useTerminalInput.ts` as interaction references while keeping TermX's public model as `machine -> terminal`.
+- Tests written before implementation: `remote-ui/src/mobileTerminalInput.test.ts`, updated `remote-ui/src/Terminal.test.tsx`, and updated `remote-ui/src/LocalRemoteApp.test.tsx`.
+- Expected failing tests: focused `remote-ui` tests should prove the current shell has no stable terminal-first mobile switcher, no mobile virtual keybar, no keyboard-aware terminal handle, and no mobile-safe pair sheet behavior. These failures are expected before implementation.
+- Actual failing tests before implementation: `cd remote-ui && npm test -- --run src/mobileTerminalInput.test.ts src/Terminal.test.tsx src/LocalRemoteApp.test.tsx` failed as expected because `mobileTerminalInput` did not exist, `TerminalHandle` only exposed `sendInput/sendResize/reattach`, the shell still rendered `Config`, no `Pair device` action existed, and the first-run certificate error did not open a `termx-pair-sheet`.
+- Planned scope: keep WebRTC/fetch/native details inside transport adapters; do not introduce workspace/tab/pane/session public concepts; do not issue TURN relay credentials; do not expose machine private key material. Use Tailwind utility classes for new UI styling and only narrow CSS for xterm internal DOM overrides.
+- Implementation notes: refactored `LocalRemoteApp` into a terminal-first shell with persistent xterm surface, mobile terminal switcher sheet, pair sheet, bottom navigation, and file panel overlay. Added `MobileTerminalKeybar` plus pure `mobileTerminalInput` helpers for Ctrl/Alt one-shot/locked behavior, connected keybar modifier state into `Terminal` so system keyboard input can send control characters, and extended `TerminalHandle` with focus/blur/fit/paste/cursor/input-position methods without exposing tgent pane/session concepts. Removed the old embedded-entry grid class that overrode the full-screen shell and kept new styling in Tailwind utilities, with only narrow xterm DOM CSS overrides.
+- Review fixes before completion: fixed the prior review findings by removing the old `grid gap-4 p-4 md:grid-cols[...]` entry class, adding a local entry regression for terminal-first flex layout, wiring keybar modifier state through the shell into `Terminal`, consuming `--termx-keyboard-bottom` in xterm helper textarea/composition CSS, removing the generic `.hide-scrollbar` utility, adding `visualViewport` keyboard-offset handling, and stabilizing the cursor callback path so modifier-state changes do not recreate the xterm instance.
+- Focused tests after implementation and review fixes: `cd remote-ui && npm test -- --run src/localWebEntry.test.tsx src/LocalRemoteApp.test.tsx src/Terminal.test.tsx src/mobileTerminalInput.test.ts` passed 20 tests; `cd remote-ui && npm run typecheck` passed.
+- Code review: `Gibbs` found two issues after the first pass: `Terminal` could recreate/dispose xterm when callback props changed, which could blank the terminal until new output arrived, and `FileManager` depended on callers passing `relative` for its absolute scrolling body. Added failing regressions, then fixed `Terminal` by storing `onCursorMove`/`onBufferChange` in refs outside the xterm construction effect and fixed `FileManager` by making its root `relative min-h-0`. No workspace/tab/pane/session public model drift, anonymous/free TURN credentials, machine private key exposure, or UI/business transport leakage was found. Residual note: ensure generated localweb assets are included in the commit.
+- Final focused tests after code review fixes: `cd remote-ui && npm test -- --run src/Terminal.test.tsx src/FileManager.test.tsx` passed 12 tests; `cd remote-ui && npm test -- --run src/localWebEntry.test.tsx src/LocalRemoteApp.test.tsx src/Terminal.test.tsx src/mobileTerminalInput.test.ts` passed 20 tests; `cd remote-ui && npm run typecheck` passed.
+- Final broader tests after implementation: `cd remote-ui && npm test` passed 101 tests; `cd remote-ui && npm run build:localweb` passed and regenerated `termx-core/internal/remote/localweb/static/assets/index-D4TtbuV4.js` plus `index-DLJaNUDj.css`; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
+- Real local smoke: rebuilt `/tmp/termx-local-test`, restarted tmux session `termx-local-test` with local web `127.0.0.1:18888` and ICE TCP `127.0.0.1:18889`, confirmed `GET /` references `/assets/index-D4TtbuV4.js` and `/assets/index-DLJaNUDj.css`, and confirmed `/api/local/status` reports machine `device-b9702aff8b30c634` with ICE TCP enabled. The daemon remains running for manual inspection.
+- Result: completed. Commit: `92b8308b`.
+
 ### P3-F anonymous rendezvous HTTP adapter/service
 
 - Active slice: HTTP adapter/service for the existing anonymous rendezvous store.
@@ -445,6 +462,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - `Mendel` (`019de247-0019-78c1-be99-3d7f5c5a8003`): P3-F code review for docs alignment, secret/auth handling, no TURN credentials, no terminal/file data relay, and test coverage. Findings: medium missing standalone ICE candidate HTTP endpoint. Result: fixed with `/candidate` endpoint and regression coverage.
 - `Anscombe` (`019de24b-23b1-7a72-b8ed-1db7b6f8294f`): P3-F follow-up code review after candidate/envelope changes. Findings: high plaintext channel secret storage, medium `/answer` did not forward `app_certificate`/`signature`, and low `auth-and-pairing.md` omitted `/candidate`. Result: fixed with hashed channel secret verifier storage, answer envelope forwarding, docs update, and regression tests.
 - `Hilbert` (`019de26c-732d-74a3-93d0-54b7b6bbdcb7`): P3-E-C-B-D code review for local WebRTC DataChannel open gating, regenerated embedded localweb static assets, boundary drift, no TURN credentials, no machine private key exposure, and test coverage. Findings: no issues. Residual risk: no automated in-app browser click smoke was available in this Codex session.
+- `Gibbs` (`019de442-39a1-71e3-8d21-51662e5be368`): P3-E-C-B-I code review for the mobile terminal interaction shell, terminal-first layout, modifier/keybar flow, xterm keyboard offset, Tailwind-only styling boundary, generated localweb assets, and remote rebuild scope drift. Findings: xterm could be recreated by callback prop changes, and shared `FileManager` depended on caller-provided `relative` positioning. Result: fixed with callback refs in `Terminal`, a self-contained `FileManager` root, and regression tests.
 
 ## Code Review Log
 
@@ -468,6 +486,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - P3-F review complete after candidate endpoint, envelope-forwarding, hashed-secret, and relay-candidate rejection fixes. Current HTTP adapter reuses the anonymous rendezvous store, forwards only lightweight signaling/certificate/signature envelopes needed by the daemon, stores only hashed channel-secret verifier material, and does not add TURN credentials, terminal/file payload forwarding, app certificate business authorization, machine private key exposure, or workspace/tab/pane public concepts.
 - P3-E-C-B-D review complete. Local browser API requests and file transfers now wait for their RTC DataChannels to open inside the adapter boundary; UI/business components still only see `PeerTransport`, `JsonRpcChannel`, and `BinaryChannel`; no workspace/tab/pane/session public concepts, TURN relay credentials, or machine private key exposure were introduced. Residual risk: real in-app browser click automation remains deferred until the Browser Use Node REPL `js` tool is available.
 - P3-E-C-B-H review complete after staged asset fix. Embedded local web terminal rendering now uses xterm.js behind `TerminalTransport`, TailwindCSS is wired as the frontend styling system, generated localweb assets are tracked, and real Chrome CDP smoke proved pair -> WebRTC -> xterm input/output -> file list on the rebuilt daemon. No workspace/tab/pane public model, TURN relay credentials, machine private key exposure, or UI/browser transport boundary leak was introduced. Residual risk: richer tgent mobile-native terminal interactions such as custom selection/keyboard composition/search remain future UI polish.
+- P3-E-C-B-I review complete after Gibbs fixes. The embedded local web shell is now terminal-first on mobile, keeps terminal/file/pair interactions behind existing interfaces, persists the xterm instance across modifier/callback state changes, and makes `FileManager` layout self-contained. No workspace/tab/pane public model, TURN relay credentials, machine private key exposure, or UI/business transport boundary leak was introduced. Residual risk: advanced mobile-native terminal gestures such as selection handles, predictive keyboard accessory behavior, search, and alternate-screen-specific controls remain future UI polish before app migration.
 
 ## Deferred Human Decisions And Placeholders
 
@@ -484,10 +503,10 @@ Status file for unattended remote rebuild work. Update this file before starting
 - New `remote-ui/` package must avoid carrying over tgent pane/session public concepts when copying `Terminal.tsx`, `SessionList.tsx`, and file manager code.
 - Keeping TermX UI close enough to tgent for future synchronization conflicts with replacing tgent's web-like interaction state. The boundary is explicit: copy structure/components/adapters where possible, but normalize messages and lifecycle through TermX reducers/queues.
 - P3-E browser adapter currently translates shared `GET /files/list` and `GET /files/stat` requests to the existing Go/tgent-style `POST` data-channel file API. Browser smoke in P3-E-C-B must validate that this adapter behavior works against the embedded daemon.
-- P3-E-C-B-H proves real Chrome CDP browser smoke for local pair, xterm terminal input/output, and file list. Browser Use plugin click automation remains deferred until the Browser Use Node REPL `js` tool is available, but CDP smoke is an executable fallback.
+- P3-E-C-B-I proves the embedded shell serves the rebuilt mobile interaction bundle locally. Browser Use plugin click automation remains deferred until the Browser Use Node REPL `js` tool is available; manual/mobile viewport interaction still needs product polish after this structural refactor.
 
 ## Next Exact Action
 
-1. Commit this workflow checkpoint for P3-E-C-B-H.
+1. Commit this workflow checkpoint for P3-E-C-B-I.
 2. Keep the verified local daemon running at `http://127.0.0.1:18888` for manual inspection if needed.
-3. Choose the next UI slice: likely mobile-native interaction polish on the shared xterm surface, or local embedded web shell ergonomics before migrating the same components into the mobile app.
+3. Choose the next UI slice: likely advanced mobile-native terminal gestures/keyboard polish on the shared xterm surface before migrating the same components into the mobile app.

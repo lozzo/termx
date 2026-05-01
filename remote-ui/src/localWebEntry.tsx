@@ -32,7 +32,6 @@ export function mountLocalWebApp(options: LocalWebAppOptions = {}): Root {
         <LocalRemoteApp
           api={api}
           createTransport={createTransport}
-          className="grid min-h-screen grid-cols-1 gap-4 p-4 md:grid-cols-[minmax(220px,280px)_minmax(0,1fr)]"
           {...(pair ? { pair } : {})}
         />
       </section>

@@ -1,3 +1,16 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+.xterm-wrapper .xterm {
+  height: 100%;
+  width: 100%;
+  padding: 0;
+}
+.xterm-wrapper .xterm-viewport {
+  background-color: transparent !important;
+}
+.xterm-wrapper .termx-keyboard-adjusted .xterm-helper-textarea,
+.xterm-wrapper .termx-keyboard-adjusted .composition-view {
+  bottom: var(--termx-keyboard-bottom, 0px) !important;
+}
