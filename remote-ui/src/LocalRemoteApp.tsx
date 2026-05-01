@@ -172,7 +172,7 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
 
   if (error && !machine) {
     return (
-      <div className={`flex h-screen items-center justify-center bg-zinc-50 p-4 ${className || ''}`}>
+      <div className={`flex h-[100dvh] items-center justify-center bg-zinc-50 p-4 ${className || ''}`}>
         <div className="w-full max-w-md rounded-lg border border-red-200 bg-white p-4 text-sm text-red-700 shadow-sm" role="alert">
           <h2 className="mb-2 font-semibold text-red-900">Connection Error</h2>
           <p>{error}</p>
@@ -183,7 +183,7 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
 
   if (!machine) {
     return (
-      <div className={`flex h-screen items-center justify-center bg-zinc-50 ${className || ''}`}>
+      <div className={`flex h-[100dvh] items-center justify-center bg-zinc-50 ${className || ''}`}>
         <div className="flex items-center gap-2 text-sm text-zinc-500">
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600"></div>
           Connecting to TermX...
@@ -193,7 +193,7 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
   }
 
   return (
-    <div className={`flex h-screen w-full flex-col overflow-hidden bg-zinc-50 font-sans text-zinc-900 md:flex-row ${className || ''}`} data-machine-id={machine.machineId}>
+    <div className={`flex h-[100dvh] w-full flex-col overflow-hidden bg-zinc-50 font-sans text-zinc-900 md:flex-row ${className || ''}`} data-machine-id={machine.machineId}>
       <aside className="hidden w-72 shrink-0 flex-col border-r border-zinc-200 bg-zinc-100 md:flex">
         <div className="flex h-12 shrink-0 items-center border-b border-zinc-200 px-4">
           <Monitor className="mr-2 h-4 w-4 text-zinc-500" />

@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: choose next slice after P3-E-C-B-J remote command completion
-- Last updated: 2026-05-02T01:18:00+08:00
+- Active todo: P3-E-C-B-K terminal resize ownership and size-lock policy for local/mobile remote views
+- Last updated: 2026-05-02T01:56:12+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -40,6 +40,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-H | local/e2e | Replace the readonly terminal placeholder with a tgent-aligned xterm.js terminal surface that writes output, forwards input, and sends resize through TermX terminal interfaces | completed | `db9c7065` |
 | P3-E-C-B-I | remote-ui | Refactor embedded local web mobile terminal interaction shell with terminal-first navigation, terminal switcher sheet, pair sheet, virtual keybar, and keyboard-aware xterm handle | completed | `be748f93` |
 | P3-E-C-B-J | cli/local | Complete `termx remote` commands for implemented local-only remote management: enable/local-only, disable, info/show, pair, and open | completed | `dd5e1502` |
+| P3-E-C-B-K | remote-ui/core | Add terminal resize ownership and size-lock handling so local/mobile remote views can fit locally without stealing daemon PTY size | in_progress |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -277,6 +278,25 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Deferrals: managed remote enablement, public control-plane login/claim, DNS/TLS, billing/subscription, and TermX TURN relay authorization remain deferred by policy. Commands that would imply managed relay return explicit not-yet-implemented guidance instead of silently issuing relay credentials.
 - Result: completed. Commit: `dd5e1502`.
 
+### P3-E-C-B-K terminal resize ownership and size-lock policy
+
+- Active slice: prevent local/mobile remote terminal views from automatically changing the daemon PTY size when the browser/mobile viewport differs from the real terminal size, while preserving explicit resize ownership and existing size-lock semantics.
+- Tests written before implementation:
+  - `termx-core` protocol/server regressions proving attach responses expose resize control, follower attaches cannot send `TypeResize`, owner collaborator attaches can still resize, observers cannot resize, and size-locked terminals report/deny resize.
+  - `remote-ui` terminal/protocol regressions proving xterm can fit locally without sending remote resize when resize control is follower/locked, imperative `fit()` does not steal PTY size, and the local WebRTC terminal protocol requests follower resize policy for embedded/mobile views.
+- Expected failing tests: focused Go/TypeScript tests should fail before implementation because resize control metadata and attach resize policy do not exist yet, and `Terminal.tsx` currently sends resize whenever xterm fits after the channel opens.
+- Actual failing tests before implementation:
+  - `cd termx-core && go test . -run 'TestAttachResizeControlPolicyAndSizeLock|TestResizeRequestRequiresResizeOwnerAttachment' -count=1` failed to build because `protocol.ResizeControl`, resize policy constants, and attachment `canResize` do not exist yet.
+  - `cd remote-ui && npm test -- --run src/Terminal.test.tsx src/localTerminalProtocolTransport.test.ts` failed because the terminal protocol bridge omits `resize_policy`, does not emit resize control, does not suppress follower resize frames, and `Terminal.tsx` has no resize-control state.
+- Planned scope: add an attach-level `resize_policy`/`resize_control` contract behind existing protocol/transport interfaces; keep UI public identity as `machine -> terminal`; do not expose workspace/tab/pane; do not add TURN credentials or machine private key handling.
+- Current assumption: embedded local web/mobile remote views should default to follower resize policy so they render to their own viewport but do not resize the daemon PTY unless a later owner-control action explicitly requests owner. Legacy collaborator attach without an explicit resize policy remains owner-capable for compatibility.
+- Implementation notes: added protocol `resize_policy` / `resize_control` fields, `AttachWithOptions`, server-side resize control calculation, raw `TypeResize` gating, and request-path resize owner enforcement. Embedded local web now requests follower resize policy by default, suppresses follower resize frames in the protocol adapter, and `Terminal.tsx` always fits xterm locally while only sending remote resize when resize control says owner. The existing mobile viewport/keybar touch changes were folded into this todo because regenerated embedded assets must match source and the changes support mobile viewport/key behavior around local fit.
+- Review regression: `Maxwell` found a high issue where unscoped request-path `resize` still succeeded with no owner attachment. Added `TestScopedResizeRequestRequiresAttachmentOwner` and changed `TestHandleRequestGetResizeSetTagsMetadataAndSnapshot` so request-path resize requires an owner attachment; the previously unowned resize path failed before the fix and now returns 403.
+- Focused tests after implementation and review fix: `cd termx-core && go test . -run 'TestHandleRequestGetResizeSetTagsMetadataAndSnapshot|TestScopedResizeRequestRequiresAttachmentOwner|TestResizeRequestRequiresResizeOwnerAttachment|TestFollowerCollaboratorAttachCanInputButCannotResize' -count=1` passed; `cd remote-ui && npm test -- --run src/localTerminalProtocolTransport.test.ts src/Terminal.test.tsx src/localWebRtcTransport.test.ts src/terminalClient.test.ts` passed 46 tests.
+- Broader tests after implementation and review fix: `cd remote-ui && npm test` passed 105 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm run build:localweb` passed and regenerated embedded assets; `cd termx-core && go test ./...` passed; `cd termx-cli && go test ./cmd/termx` passed; `git diff --check` passed.
+- Code review: `Maxwell` confirmed no workspace/tab/pane remote public model drift, no anonymous/free/local TURN credential issuance, no app access to machine private key material, and no WebRTC transport details leaking into UI/business components. Its high finding on unscoped request-path resize bypass was fixed with owner-attachment enforcement and regression coverage.
+- Result: ready to commit. Commit: pending.
+
 ### P3-F anonymous rendezvous HTTP adapter/service
 
 - Active slice: HTTP adapter/service for the existing anonymous rendezvous store.
@@ -479,6 +499,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - `Anscombe` (`019de24b-23b1-7a72-b8ed-1db7b6f8294f`): P3-F follow-up code review after candidate/envelope changes. Findings: high plaintext channel secret storage, medium `/answer` did not forward `app_certificate`/`signature`, and low `auth-and-pairing.md` omitted `/candidate`. Result: fixed with hashed channel secret verifier storage, answer envelope forwarding, docs update, and regression tests.
 - `Hilbert` (`019de26c-732d-74a3-93d0-54b7b6bbdcb7`): P3-E-C-B-D code review for local WebRTC DataChannel open gating, regenerated embedded localweb static assets, boundary drift, no TURN credentials, no machine private key exposure, and test coverage. Findings: no issues. Residual risk: no automated in-app browser click smoke was available in this Codex session.
 - `Gibbs` (`019de442-39a1-71e3-8d21-51662e5be368`): P3-E-C-B-I code review for the mobile terminal interaction shell, terminal-first layout, modifier/keybar flow, xterm keyboard offset, Tailwind-only styling boundary, generated localweb assets, and remote rebuild scope drift. Findings: xterm could be recreated by callback prop changes, and shared `FileManager` depended on caller-provided `relative` positioning. Result: fixed with callback refs in `Terminal`, a self-contained `FileManager` root, and regression tests.
+- `Maxwell` (`019de4a3-d2f7-77d0-9ce6-c84cf4578b52`): P3-E-C-B-K code review for terminal resize ownership, size lock handling, mobile/local follower fit behavior, transport boundaries, and remote rebuild scope drift. Findings: high unscoped request-path `resize` bypassed owner attachment when no matching attachment existed. Result: fixed by requiring request-path resize owner attachment, including scoped no-attachment regression and existing request-path test updates.
 
 ## Code Review Log
 
@@ -503,6 +524,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - P3-E-C-B-D review complete. Local browser API requests and file transfers now wait for their RTC DataChannels to open inside the adapter boundary; UI/business components still only see `PeerTransport`, `JsonRpcChannel`, and `BinaryChannel`; no workspace/tab/pane/session public concepts, TURN relay credentials, or machine private key exposure were introduced. Residual risk: real in-app browser click automation remains deferred until the Browser Use Node REPL `js` tool is available.
 - P3-E-C-B-H review complete after staged asset fix. Embedded local web terminal rendering now uses xterm.js behind `TerminalTransport`, TailwindCSS is wired as the frontend styling system, generated localweb assets are tracked, and real Chrome CDP smoke proved pair -> WebRTC -> xterm input/output -> file list on the rebuilt daemon. No workspace/tab/pane public model, TURN relay credentials, machine private key exposure, or UI/browser transport boundary leak was introduced. Residual risk: richer tgent mobile-native terminal interactions such as custom selection/keyboard composition/search remain future UI polish.
 - P3-E-C-B-I review complete after Gibbs fixes. The embedded local web shell is now terminal-first on mobile, keeps terminal/file/pair interactions behind existing interfaces, persists the xterm instance across modifier/callback state changes, and makes `FileManager` layout self-contained. No workspace/tab/pane public model, TURN relay credentials, machine private key exposure, or UI/business transport boundary leak was introduced. Residual risk: advanced mobile-native terminal gestures such as selection handles, predictive keyboard accessory behavior, search, and alternate-screen-specific controls remain future UI polish before app migration.
+- P3-E-C-B-K review complete after Maxwell fix. Remote attach now carries resize ownership metadata, embedded/mobile local web defaults to follower local-fit behavior, raw and request-path resize require owner control, observers and size-locked terminals cannot resize, and generated localweb assets match the shared UI source. No workspace/tab/pane public model, TURN relay credentials, machine private key exposure, or UI/browser transport boundary leak was introduced. Residual risk: explicit owner-acquire/release UI is still future work; current local/mobile path conservatively defaults to follower.
 
 ## Deferred Human Decisions And Placeholders
 
@@ -520,11 +542,9 @@ Status file for unattended remote rebuild work. Update this file before starting
 - New `remote-ui/` package must avoid carrying over tgent pane/session public concepts when copying `Terminal.tsx`, `SessionList.tsx`, and file manager code.
 - Keeping TermX UI close enough to tgent for future synchronization conflicts with replacing tgent's web-like interaction state. The boundary is explicit: copy structure/components/adapters where possible, but normalize messages and lifecycle through TermX reducers/queues.
 - P3-E browser adapter currently translates shared `GET /files/list` and `GET /files/stat` requests to the existing Go/tgent-style `POST` data-channel file API. Browser smoke in P3-E-C-B must validate that this adapter behavior works against the embedded daemon.
-- P3-E-C-B-I proves the embedded shell serves the rebuilt mobile interaction bundle locally. Browser Use plugin click automation remains deferred until the Browser Use Node REPL `js` tool is available; manual/mobile viewport interaction still needs product polish after this structural refactor.
-- `remote-ui/src/MobileTerminalKeybar.tsx` and `remote-ui/src/Terminal.tsx` have unrelated uncommitted UI touch/viewport changes present during P3-E-C-B-J completion. They are intentionally excluded from the remote command commit to avoid mixing UI work into CLI/runtime lifecycle changes.
+- P3-E-C-B-K keeps local/mobile views from stealing daemon PTY size, but explicit resize owner acquisition/release UI remains a future product slice. Until that exists, embedded local web requests follower resize policy by default.
 
 ## Next Exact Action
 
-1. Decide whether to fold the unrelated `remote-ui/src/MobileTerminalKeybar.tsx` and `remote-ui/src/Terminal.tsx` touch/viewport changes into the next UI todo or revert them.
-2. Keep the verified local daemon running at `http://127.0.0.1:18888` for manual inspection if needed.
-3. Choose the next UI slice: likely advanced mobile-native terminal gestures/keyboard polish on the shared xterm surface before migrating the same components into the mobile app.
+1. Commit P3-E-C-B-K and record the commit hash in this workflow file.
+2. Choose the next UI slice: explicit resize owner acquisition/release controls or advanced mobile-native terminal gestures before migrating shared components into the mobile app.

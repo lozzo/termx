@@ -699,10 +699,11 @@ func defaultSocketPath() string {
 }
 
 type sessionAttachment struct {
-	terminal     *Terminal
-	terminalID   string
-	attachmentID string
-	cleanup      func()
+	terminal      *Terminal
+	terminalID    string
+	attachmentID  string
+	resizeControl protocol.ResizeControl
+	cleanup       func()
 }
 
 type transportScope struct {
@@ -817,7 +818,7 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 				if req.Method == "events" {
 					result, code, err = s.handleEventsRequest(sessionCtx, req, cancel, &eventsCancelMu, &eventsCancel, sendFrame)
 				} else {
-					result, code, err = s.handleRequest(sessionCtx, remote, nil, allocator, attachments, &attachmentsMu, req, sendFrame)
+					result, code, err = s.handleRequest(sessionCtx, remote, nil, allocator, attachments, &attachmentsMu, scope, req, sendFrame)
 				}
 				if err != nil {
 					if err := sendProtocolError(sendFrame, req.ID, 0, code, err.Error()); err != nil {
@@ -849,6 +850,9 @@ func (s *Server) handleTransportScoped(ctx context.Context, t transport.Transpor
 				return err
 			}
 		case protocol.TypeResize:
+			if !attachment.canResize() {
+				continue
+			}
 			if len(payload) != 4 {
 				continue
 			}
@@ -938,6 +942,7 @@ func (s *Server) handleRequest(
 	allocator *protocol.ChannelAllocator,
 	attachments map[uint16]*sessionAttachment,
 	attachmentsMu *sync.RWMutex,
+	scope transportScope,
 	req protocol.Request,
 	sendFrame func(uint16, uint8, []byte) error,
 ) (json.RawMessage, int, error) {
@@ -1111,6 +1116,9 @@ func (s *Server) handleRequest(
 		if err := json.Unmarshal(req.Params, &params); err != nil {
 			return nil, 400, err
 		}
+		if err := requireResizePermission(attachments, attachmentsMu, params.TerminalID, scope); err != nil {
+			return nil, protocolErrorCode(err), err
+		}
 		if err := s.Resize(ctx, params.TerminalID, params.Cols, params.Rows); err != nil {
 			return nil, protocolErrorCode(err), err
 		}
@@ -1160,12 +1168,18 @@ func (s *Server) handleRequest(
 		if err != nil {
 			return nil, 500, err
 		}
+		resizeControl, err := terminalResizeControl(term, AttachMode(params.Mode), params.ResizePolicy)
+		if err != nil {
+			allocator.Free(ch)
+			return nil, 400, err
+		}
 		subCtx, cancel := context.WithCancel(ctx)
 		attachmentID := fmt.Sprintf("%s:%d", remote, ch)
 		attachment := &sessionAttachment{
-			terminal:     term,
-			terminalID:   params.TerminalID,
-			attachmentID: attachmentID,
+			terminal:      term,
+			terminalID:    params.TerminalID,
+			attachmentID:  attachmentID,
+			resizeControl: resizeControl,
 		}
 		var cleanupOnce sync.Once
 		attachment.cleanup = func() {
@@ -1189,7 +1203,7 @@ func (s *Server) handleRequest(
 			pump := newAttachmentStreamPump(subCtx, cancel, params.TerminalID, ch, stream, sendFrame)
 			pump.run()
 		}()
-		result, _ := json.Marshal(protocol.AttachResult{Mode: params.Mode, Channel: ch})
+		result, _ := json.Marshal(protocol.AttachResult{Mode: params.Mode, Channel: ch, ResizeControl: &resizeControl})
 		return result, 0, nil
 	case "detach":
 		var params protocol.DetachParams
@@ -1289,6 +1303,48 @@ func (a *sessionAttachment) mode() AttachMode {
 	return mode
 }
 
+func (a *sessionAttachment) canResize() bool {
+	if a == nil || !a.resizeControl.CanResize {
+		return false
+	}
+	return a.mode() == ModeCollaborator
+}
+
+func terminalResizeControl(term *Terminal, mode AttachMode, policy string) (protocol.ResizeControl, error) {
+	trimmedPolicy := strings.TrimSpace(policy)
+	if trimmedPolicy == "" {
+		trimmedPolicy = protocol.ResizePolicyOwner
+	}
+	switch trimmedPolicy {
+	case protocol.ResizePolicyOwner, protocol.ResizePolicyFollower:
+	default:
+		return protocol.ResizeControl{}, fmt.Errorf("%w: unsupported resize_policy %q", ErrInvalidCommand, policy)
+	}
+	if term != nil && term.SizeLocked() {
+		return protocol.ResizeControl{
+			CanResize:  false,
+			Reason:     protocol.ResizeControlReasonSizeLocked,
+			SizeLocked: true,
+		}, nil
+	}
+	if mode != ModeCollaborator {
+		return protocol.ResizeControl{
+			CanResize: false,
+			Reason:    protocol.ResizeControlReasonObserver,
+		}, nil
+	}
+	if trimmedPolicy == protocol.ResizePolicyFollower {
+		return protocol.ResizeControl{
+			CanResize: false,
+			Reason:    protocol.ResizeControlReasonFollower,
+		}, nil
+	}
+	return protocol.ResizeControl{
+		CanResize: true,
+		Reason:    protocol.ResizeControlReasonOwner,
+	}, nil
+}
+
 func requireControlPermission(attachments map[uint16]*sessionAttachment, attachmentsMu *sync.RWMutex, terminalID string) error {
 	if strings.TrimSpace(terminalID) == "" || attachmentsMu == nil {
 		return nil
@@ -1307,6 +1363,31 @@ func requireControlPermission(attachments map[uint16]*sessionAttachment, attachm
 	}
 	if seen {
 		return fmt.Errorf("%w: observer/readonly attachments cannot kill/remove terminal %q", ErrPermissionDenied, terminalID)
+	}
+	return nil
+}
+
+func requireResizePermission(attachments map[uint16]*sessionAttachment, attachmentsMu *sync.RWMutex, terminalID string, scope transportScope) error {
+	if strings.TrimSpace(terminalID) == "" || attachmentsMu == nil {
+		return nil
+	}
+	attachmentsMu.RLock()
+	defer attachmentsMu.RUnlock()
+	seen := false
+	for _, attachment := range attachments {
+		if attachment == nil || attachment.terminalID != terminalID {
+			continue
+		}
+		seen = true
+		if attachment.canResize() {
+			return nil
+		}
+	}
+	if seen {
+		return fmt.Errorf("%w: attachment does not own resize for terminal %q", ErrPermissionDenied, terminalID)
+	}
+	if strings.TrimSpace(scope.TerminalID) != "" || attachments != nil {
+		return fmt.Errorf("%w: scoped resize requires resize owner attachment for terminal %q", ErrPermissionDenied, terminalID)
 	}
 	return nil
 }

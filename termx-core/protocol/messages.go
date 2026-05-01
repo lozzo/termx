@@ -95,13 +95,33 @@ type SetMetadataParams struct {
 }
 
 type AttachParams struct {
-	TerminalID string `json:"terminal_id"`
-	Mode       string `json:"mode"`
+	TerminalID   string `json:"terminal_id"`
+	Mode         string `json:"mode"`
+	ResizePolicy string `json:"resize_policy,omitempty"`
 }
 
 type AttachResult struct {
-	Mode    string `json:"mode"`
-	Channel uint16 `json:"channel"`
+	Mode          string         `json:"mode"`
+	Channel       uint16         `json:"channel"`
+	ResizeControl *ResizeControl `json:"resize_control,omitempty"`
+}
+
+const (
+	ResizePolicyOwner    = "owner"
+	ResizePolicyFollower = "follower"
+)
+
+const (
+	ResizeControlReasonOwner      = "owner"
+	ResizeControlReasonFollower   = "follower"
+	ResizeControlReasonObserver   = "observer"
+	ResizeControlReasonSizeLocked = "size_locked"
+)
+
+type ResizeControl struct {
+	CanResize  bool   `json:"can_resize"`
+	Reason     string `json:"reason,omitempty"`
+	SizeLocked bool   `json:"size_locked,omitempty"`
 }
 
 type EventType int

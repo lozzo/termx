@@ -1,4 +1,10 @@
-import type { TerminalSnapshotPayload, TerminalTransport, TerminalTransportEvent } from './terminalClient'
+import type {
+  TerminalResizeControl,
+  TerminalResizePolicy,
+  TerminalSnapshotPayload,
+  TerminalTransport,
+  TerminalTransportEvent,
+} from './terminalClient'
 import {
   TERMX_FRAME_TYPES,
   TERMX_PROTOCOL_VERSION,
@@ -19,6 +25,7 @@ export interface LocalTerminalProtocolTransportOptions {
   machineId: string
   terminalId: string
   connectionInfo: ConnectionInfo
+  resizePolicy?: TerminalResizePolicy
 }
 
 interface PendingRequest {
@@ -38,6 +45,7 @@ class LocalTerminalProtocolTransport implements TerminalTransport {
   private readonly pending = new Map<number, PendingRequest>()
   private readonly earlyStreamFrames: TermxFrame[] = []
   private readonly subscribers = new Map<string, Set<(event: TerminalTransportEvent) => void>>()
+  private resizeControl: TerminalResizeControl = { canResize: false, reason: 'unknown' }
   private closed = false
 
   constructor(private readonly options: LocalTerminalProtocolTransportOptions) {
@@ -125,11 +133,14 @@ class LocalTerminalProtocolTransport implements TerminalTransport {
       this.attachDone = this.request('attach', {
         terminal_id: this.options.terminalId,
         mode: 'collaborator',
+        resize_policy: this.options.resizePolicy ?? 'follower',
       }).then((result) => {
         const channel = attachChannel(result)
         if (channel <= 0) {
           throw new Error('attach response channel is required')
         }
+        this.resizeControl = attachResizeControl(result, this.options.resizePolicy ?? 'follower')
+        this.emit(this.options.terminalId, { type: 'resizeControl', control: this.resizeControl })
         this.streamChannel = channel
         this.flushEarlyStreamFrames(channel)
       })
@@ -209,6 +220,7 @@ class LocalTerminalProtocolTransport implements TerminalTransport {
       return
     }
     if (message.type === 'resize') {
+      if (!this.resizeControl.canResize) return
       this.options.channel.send(encodeTermxFrame(this.streamChannel, TERMX_FRAME_TYPES.resize, encodeResizePayload(message.cols, message.rows)))
     }
   }
@@ -265,6 +277,38 @@ function attachChannel(value: unknown): number {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return 0
   const channel = (value as Record<string, unknown>).channel
   return typeof channel === 'number' ? channel : 0
+}
+
+function attachResizeControl(value: unknown, requestedPolicy: TerminalResizePolicy): TerminalResizeControl {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return { canResize: false, reason: 'unknown' }
+  }
+  const result = value as Record<string, unknown>
+  const control = result.resize_control
+  if (typeof control === 'object' && control !== null && !Array.isArray(control)) {
+    const record = control as Record<string, unknown>
+    return {
+      canResize: record.can_resize === true,
+      reason: normalizeResizeReason(record.reason),
+      ...(record.size_locked === true ? { sizeLocked: true } : {}),
+    }
+  }
+  return {
+    canResize: result.mode === 'collaborator' && requestedPolicy === 'owner',
+    reason: result.mode === 'collaborator' && requestedPolicy === 'owner' ? 'owner' : 'follower',
+  }
+}
+
+function normalizeResizeReason(value: unknown): TerminalResizeControl['reason'] {
+  switch (value) {
+    case 'owner':
+    case 'follower':
+    case 'observer':
+    case 'size_locked':
+      return value
+    default:
+      return 'unknown'
+  }
 }
 
 function normalizeSnapshot(value: unknown): TerminalSnapshotPayload {

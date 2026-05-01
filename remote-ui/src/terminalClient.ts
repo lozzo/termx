@@ -10,10 +10,25 @@ export interface TerminalSnapshotPayload {
 
 export type TerminalInfoPayload = Record<string, unknown>
 
+export type TerminalResizePolicy = 'owner' | 'follower'
+export type TerminalResizeControlReason = 'owner' | 'follower' | 'observer' | 'size_locked' | 'unknown'
+
+export interface TerminalResizeControl {
+  canResize: boolean
+  reason: TerminalResizeControlReason
+  sizeLocked?: boolean
+}
+
+export const defaultTerminalResizeControl: TerminalResizeControl = {
+  canResize: false,
+  reason: 'unknown',
+}
+
 export type TerminalTransportEvent =
   | { type: 'output'; data: Uint8Array }
   | { type: 'snapshot'; snapshot: TerminalSnapshotPayload }
   | { type: 'info'; info: TerminalInfoPayload }
+  | { type: 'resizeControl'; control: TerminalResizeControl }
   | { type: 'closed'; reason?: string }
 
 export interface TerminalTransport extends Pick<PeerTransport, 'openTerminal' | 'getConnectionInfo'> {
@@ -25,6 +40,7 @@ export interface TerminalClientCallbacks {
   onOutput: (data: Uint8Array) => void
   onSnapshot: (snapshot: TerminalSnapshotPayload) => void
   onTerminalInfo?: (info: Terminal) => void
+  onResizeControl?: (control: TerminalResizeControl) => void
   onLifecycle?: (message: Extract<ConnectionMessage, { type: 'terminal.channelOpen' | 'terminal.channelClosed' }>) => void
   onError: (message: string) => void
   onClose: () => void
@@ -39,6 +55,7 @@ export class TerminalClient {
   private channel: BinaryChannel | null = null
   private unsubscribe: (() => void) | null = null
   private machineId = ''
+  private resizeControl: TerminalResizeControl = defaultTerminalResizeControl
 
   constructor(callbacks: TerminalClientCallbacks) {
     this.callbacks = callbacks
@@ -72,6 +89,9 @@ export class TerminalClient {
   }
 
   sendResize(cols: number, rows: number): void {
+    if (!this.resizeControl.canResize) {
+      return
+    }
     this.sendMessage({ type: 'resize', cols, rows })
   }
 
@@ -139,6 +159,10 @@ export class TerminalClient {
         } catch (err) {
           this.callbacks.onError(errorMessage(err))
         }
+        return
+      case 'resizeControl':
+        this.resizeControl = event.control
+        this.callbacks.onResizeControl?.(event.control)
         return
       case 'closed':
         this.callbacks.onLifecycle?.({

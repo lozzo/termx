@@ -192,6 +192,12 @@ func (t *Terminal) Info() *TerminalInfo {
 	return &snapshot
 }
 
+func (t *Terminal) SizeLocked() bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return terminalmeta.SizeLocked(t.tags)
+}
+
 func (t *Terminal) Done() <-chan struct{} {
 	return t.done
 }

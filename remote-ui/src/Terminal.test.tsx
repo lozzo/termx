@@ -290,6 +290,10 @@ describe('Terminal', () => {
       />,
     )
 
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    act(() => transport.emitResizeControl('terminal-1', { canResize: true, reason: 'owner' }))
+    act(() => TestResizeObserver.instances[0]?.trigger())
+
     await waitFor(() => expect(transport.sentResize('terminal-1')).toEqual({ cols: 101, rows: 31 }))
 
     xtermMocks.FakeFitAddon.instances[0]!.dimensions = { cols: 120, rows: 40 }
@@ -312,11 +316,55 @@ describe('Terminal', () => {
 
     await waitFor(() => expect(xtermMocks.FakeFitAddon.instances).toHaveLength(1))
     expect(transport.sentResize('terminal-1')).toBeUndefined()
+    act(() => transport.emitResizeControl('terminal-1', { canResize: true, reason: 'owner' }))
 
     xtermMocks.FakeFitAddon.instances[0]!.dimensions = { cols: 88, rows: 28 }
     act(() => TestResizeObserver.instances[0]?.trigger())
 
     await waitFor(() => expect(transport.sentResize('terminal-1')).toEqual({ cols: 88, rows: 28 }))
+  })
+
+  it('fits locally but does not send remote resize without resize ownership', async () => {
+    const transport = createMockTerminalTransport()
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        transport={transport}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances[0]?.cols).toBe(101))
+    expect(xtermMocks.FakeXTerm.instances[0]?.rows).toBe(31)
+    expect(transport.sentResize('terminal-1')).toBeUndefined()
+
+    xtermMocks.FakeFitAddon.instances[0]!.dimensions = { cols: 120, rows: 40 }
+    act(() => TestResizeObserver.instances[0]?.trigger())
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances[0]?.cols).toBe(120))
+    expect(xtermMocks.FakeXTerm.instances[0]?.rows).toBe(40)
+    expect(transport.sentResize('terminal-1')).toBeUndefined()
+  })
+
+  it('allows remote resize only when resize ownership is granted by transport', async () => {
+    const transport = createMockTerminalTransport()
+
+    render(
+      <Terminal
+        machineId="machine-local"
+        terminalId="terminal-1"
+        transport={transport}
+      />,
+    )
+
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
+    expect(transport.sentResize('terminal-1')).toBeUndefined()
+
+    act(() => transport.emitResizeControl('terminal-1', { canResize: true, reason: 'owner' }))
+    act(() => TestResizeObserver.instances[0]?.trigger())
+
+    await waitFor(() => expect(transport.sentResize('terminal-1')).toEqual({ cols: 101, rows: 31 }))
   })
 
   it('does not publish tgent pane/session props on the TermX component boundary', () => {

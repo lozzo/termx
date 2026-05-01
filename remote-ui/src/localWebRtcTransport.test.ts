@@ -112,9 +112,10 @@ describe('createLocalWebRtcPeerTransport', () => {
     terminalChannel.emitMessage(encodeTermxFrame(7, TERMX_FRAME_TYPES.output, new TextEncoder().encode('hello')))
     terminal.send(new TextEncoder().encode(JSON.stringify({ type: 'input', data: 'echo hi\n' })))
 
-    expect(events).toHaveLength(1)
-    expect(events[0]).toMatchObject({ type: 'output' })
-    expect(Array.from((events[0] as { data: Uint8Array }).data)).toEqual(Array.from(new TextEncoder().encode('hello')))
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({ type: 'resizeControl' })
+    expect(events[1]).toMatchObject({ type: 'output' })
+    expect(Array.from((events[1] as { data: Uint8Array }).data)).toEqual(Array.from(new TextEncoder().encode('hello')))
     const inputFrame = decodeBinarySentFrame(terminalChannel, 3)
     expect(inputFrame).toMatchObject({ channel: 7, type: TERMX_FRAME_TYPES.input })
     expect(new TextDecoder().decode(inputFrame.payload)).toBe('echo hi\n')
@@ -149,7 +150,7 @@ describe('createLocalWebRtcPeerTransport', () => {
     await terminalPromise
     terminalChannel.emitMessage(encodeTermxFrame(7, TERMX_FRAME_TYPES.output, new TextEncoder().encode('late-sub')))
 
-    expect(new TextDecoder().decode((events[0] as { data: Uint8Array }).data)).toBe('late-sub')
+    expect(new TextDecoder().decode((events[1] as { data: Uint8Array }).data)).toBe('late-sub')
   })
 
   it('forwards raw RTC terminal channel close as a terminal closed event', async () => {
@@ -216,7 +217,7 @@ describe('createLocalWebRtcPeerTransport', () => {
     terminalChannel.emitMessage(new Blob([
       blobPart(encodeTermxFrame(7, TERMX_FRAME_TYPES.output, new TextEncoder().encode('blob-output'))),
     ]))
-    const output = await waitForTerminalEvent<{ data: Uint8Array }>(events)
+    const output = await waitForTerminalEvent<{ data: Uint8Array }>(events, 1)
 
     expect(new TextDecoder().decode(output.data)).toBe('blob-output')
   })

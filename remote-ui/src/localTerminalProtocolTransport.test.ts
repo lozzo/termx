@@ -27,7 +27,7 @@ describe('createLocalTerminalProtocolTransport', () => {
     expect(attach.type).toBe(TERMX_FRAME_TYPES.request)
     const attachRequest = JSON.parse(new TextDecoder().decode(attach.payload))
     expect(attachRequest.method).toBe('attach')
-    expect(attachRequest.params).toEqual({ terminal_id: 'terminal-1', mode: 'collaborator' })
+    expect(attachRequest.params).toEqual({ terminal_id: 'terminal-1', mode: 'collaborator', resize_policy: 'follower' })
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
       id: attachRequest.id,
       result: JSON.stringify({ mode: 'collaborator', channel: 7 }),
@@ -37,9 +37,10 @@ describe('createLocalTerminalProtocolTransport', () => {
     expect(terminal.label).toBe('terminal:terminal-1')
     channel.emitFrame(encodeTermxFrame(7, TERMX_FRAME_TYPES.output, new TextEncoder().encode('stream-data')))
 
-    expect(events).toHaveLength(1)
-    expect(events[0]).toMatchObject({ type: 'output' })
-    expect(new TextDecoder().decode((events[0] as { data: Uint8Array }).data)).toBe('stream-data')
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({ type: 'resizeControl', control: { canResize: false, reason: 'follower' } })
+    expect(events[1]).toMatchObject({ type: 'output' })
+    expect(new TextDecoder().decode((events[1] as { data: Uint8Array }).data)).toBe('stream-data')
   })
 
   it('maps BinaryChannel JSON input and resize messages to Go TypeInput and TypeResize frames', async () => {
@@ -49,6 +50,7 @@ describe('createLocalTerminalProtocolTransport', () => {
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       connectionInfo: connectionInfo(),
+      resizePolicy: 'owner',
     })
     const terminalPromise = transport.openTerminal('terminal-1')
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
@@ -56,7 +58,11 @@ describe('createLocalTerminalProtocolTransport', () => {
     const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
       id: attachRequest.id,
-      result: JSON.stringify({ mode: 'collaborator', channel: 7 }),
+      result: JSON.stringify({
+        mode: 'collaborator',
+        channel: 7,
+        resize_control: { can_resize: true, reason: 'owner' },
+      }),
     })))
     const terminal = await terminalPromise
 
@@ -74,6 +80,76 @@ describe('createLocalTerminalProtocolTransport', () => {
     expect(resize.channel).toBe(7)
     expect(resize.type).toBe(TERMX_FRAME_TYPES.resize)
     expect(Array.from(resize.payload)).toEqual([0x00, 0x64, 0x00, 0x28])
+  })
+
+  it('suppresses resize frames when attach grants follower resize control', async () => {
+    const channel = new MockBinaryDataChannel('terminal:terminal-1')
+    const transport = createLocalTerminalProtocolTransport({
+      channel,
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      connectionInfo: connectionInfo(),
+    })
+    const events: unknown[] = []
+    transport.subscribeTerminal('terminal-1', (event) => events.push(event))
+    const terminalPromise = transport.openTerminal('terminal-1')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
+    await Promise.resolve()
+    const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: attachRequest.id,
+      result: JSON.stringify({
+        mode: 'collaborator',
+        channel: 7,
+        resize_control: { can_resize: false, reason: 'follower' },
+      }),
+    })))
+    const terminal = await terminalPromise
+
+    terminal.send(new TextEncoder().encode(JSON.stringify({ type: 'resize', cols: 100, rows: 40 })))
+
+    expect(channel.sent).toHaveLength(3)
+    expect(events).toContainEqual({
+      type: 'resizeControl',
+      control: { canResize: false, reason: 'follower' },
+    })
+  })
+
+  it('emits resize control and forwards resize when attach grants owner control', async () => {
+    const channel = new MockBinaryDataChannel('terminal:terminal-1')
+    const transport = createLocalTerminalProtocolTransport({
+      channel,
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      connectionInfo: connectionInfo(),
+      resizePolicy: 'owner',
+    })
+    const events: unknown[] = []
+    transport.subscribeTerminal('terminal-1', (event) => events.push(event))
+    const terminalPromise = transport.openTerminal('terminal-1')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
+    await Promise.resolve()
+    const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
+    expect(attachRequest.params).toMatchObject({ resize_policy: 'owner' })
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.response, encodeJSON({
+      id: attachRequest.id,
+      result: JSON.stringify({
+        mode: 'collaborator',
+        channel: 7,
+        resize_control: { can_resize: true, reason: 'owner' },
+      }),
+    })))
+    const terminal = await terminalPromise
+
+    terminal.send(new TextEncoder().encode(JSON.stringify({ type: 'resize', cols: 100, rows: 40 })))
+
+    const resize = decodeSentFrame(channel, 3)
+    expect(resize.channel).toBe(7)
+    expect(resize.type).toBe(TERMX_FRAME_TYPES.resize)
+    expect(events).toContainEqual({
+      type: 'resizeControl',
+      control: { canResize: true, reason: 'owner' },
+    })
   })
 
   it('buffers stream frames that arrive before the attach response names the stream channel', async () => {
@@ -99,8 +175,9 @@ describe('createLocalTerminalProtocolTransport', () => {
     })))
     await terminalPromise
 
-    expect(events).toHaveLength(1)
-    expect(new TextDecoder().decode((events[0] as { data: Uint8Array }).data)).toBe('early-output')
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({ type: 'resizeControl' })
+    expect(new TextDecoder().decode((events[1] as { data: Uint8Array }).data)).toBe('early-output')
   })
 
   it('requests a snapshot and emits text fallback through the terminal transport interface', async () => {
@@ -142,8 +219,9 @@ describe('createLocalTerminalProtocolTransport', () => {
     })))
     await Promise.resolve()
 
-    expect(events).toHaveLength(1)
-    expect(events[0]).toMatchObject({
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({ type: 'resizeControl' })
+    expect(events[1]).toMatchObject({
       type: 'snapshot',
       snapshot: { text: 'ok\nhi', cols: 80, rows: 24 },
     })

@@ -58,7 +58,7 @@ func BenchmarkServerHandleRequestList(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, _, err := srv.handleRequest(context.Background(), "bench", nil, allocator, attachments, &attachmentsMu, req, sendFrame); err != nil {
+		if _, _, err := srv.handleRequest(context.Background(), "bench", nil, allocator, attachments, &attachmentsMu, transportScope{}, req, sendFrame); err != nil {
 			b.Fatalf("handle request failed: %v", err)
 		}
 	}

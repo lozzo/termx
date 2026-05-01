@@ -74,6 +74,7 @@ describe('TerminalClient', () => {
     client.connect('terminal-1', transport)
     await vi.waitFor(() => expect(callbacks.onLifecycle).toHaveBeenCalledTimes(1))
     client.sendInput('ls\n')
+    transport.emitResizeControl('terminal-1', { canResize: true, reason: 'owner' })
     client.sendResize(100, 30)
 
     expect(transport.sentText('terminal-1')).toContain('ls\n')

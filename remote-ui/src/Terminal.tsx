@@ -52,6 +52,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const lastWrittenTextRef = useRef('')
   const lastSentResizeRef = useRef<{ cols: number; rows: number } | null>(null)
   const isOpenRef = useRef(false)
+  const canSendResizeRef = useRef(false)
   const modifierStateRef = useRef<TerminalModifierState | undefined>(undefined)
   const onModifierStateChangeRef = useRef<((state: TerminalModifierState) => void) | undefined>(undefined)
   const onCursorMoveRef = useRef<(() => void) | undefined>(undefined)
@@ -59,16 +60,18 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
   const isOpen = session.snapshot.terminalChannels[terminalId]?.state === 'open'
 
-  const fitAndSendResize = useCallback(() => {
+  const fitAndMaybeSendResize = useCallback(() => {
     const term = xtermRef.current
     const fitAddon = fitAddonRef.current
-    if (!term || !fitAddon) return
+    const container = containerRef.current
+    if (!term || !fitAddon || !container) return
 
     fitAddon.fit()
     const dimensions = fitAddon.proposeDimensions()
     if (!dimensions) return
     term.resize(dimensions.cols, dimensions.rows)
 
+    if (!canSendResizeRef.current) return
     if (!isOpenRef.current) return
     const last = lastSentResizeRef.current
     if (last?.cols === dimensions.cols && last.rows === dimensions.rows) return
@@ -87,7 +90,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       xtermRef.current?.blur()
       containerRef.current?.querySelector('textarea')?.blur()
     },
-    fit: fitAndSendResize,
+    fit: fitAndMaybeSendResize,
     pasteText: (text: string) => {
       const isMultiline = text.includes('\n') || text.includes('\r')
       session.sendInput(isMultiline ? `\x1b[200~${text}\x1b[201~` : text)
@@ -114,7 +117,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       }
     },
     getBufferType: () => xtermRef.current?.buffer.active.type ?? 'normal',
-  }), [fitAndSendResize, session.reattach, session.sendInput, session.sendResize])
+  }), [fitAndMaybeSendResize, session.reattach, session.sendInput, session.sendResize])
 
   useEffect(() => {
     modifierStateRef.current = modifierState
@@ -131,6 +134,13 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   useEffect(() => {
     onBufferChangeRef.current = onBufferChange
   }, [onBufferChange])
+
+  useEffect(() => {
+    canSendResizeRef.current = session.resizeControl.canResize
+    if (session.resizeControl.canResize) {
+      fitAndMaybeSendResize()
+    }
+  }, [fitAndMaybeSendResize, session.resizeControl.canResize])
 
   useEffect(() => {
     const container = containerRef.current
@@ -189,17 +199,48 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       onBufferChangeRef.current?.(term.buffer.active.type === 'alternate')
     }) ?? { dispose() {} }
 
-    fitAndSendResize()
+    fitAndMaybeSendResize()
 
     let resizeObserver: ResizeObserver | null = null
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(() => {
-        fitAndSendResize()
+        fitAndMaybeSendResize()
       })
       resizeObserver.observe(container)
     }
 
+    const handleVisualViewportResize = () => {
+      if (window.visualViewport && containerRef.current) {
+        // When keyboard appears, visualViewport.height shrinks.
+        // We can limit the container's height to the visual viewport's height relative to its position.
+        const rect = containerRef.current.getBoundingClientRect()
+        // The bottom of the visual viewport relative to the layout viewport
+        const visualViewportBottom = window.visualViewport.offsetTop + window.visualViewport.height
+        const visibleHeight = visualViewportBottom - rect.top
+
+        if (visibleHeight < rect.height && visibleHeight > 0) {
+          // Keyboard is likely showing, or viewport shrunk
+          containerRef.current.style.maxHeight = `${visibleHeight}px`
+        } else {
+          // Reset
+          containerRef.current.style.maxHeight = ''
+        }
+      }
+
+      // Small delay to let browser finish animating keyboard
+      setTimeout(fitAndMaybeSendResize, 100)
+    }
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleVisualViewportResize)
+      window.visualViewport.addEventListener('scroll', handleVisualViewportResize)
+    }
+
     return () => {
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleVisualViewportResize)
+        window.visualViewport.removeEventListener('scroll', handleVisualViewportResize)
+      }
       resizeObserver?.disconnect()
       dataDisposable.dispose()
       cursorDisposable.dispose()
@@ -211,15 +252,15 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       lastSentResizeRef.current = null
       isOpenRef.current = false
     }
-  }, [fitAndSendResize, session.sendInput])
+  }, [fitAndMaybeSendResize, session.sendInput])
 
   useEffect(() => {
     isOpenRef.current = isOpen
     if (!isOpen) return
-    fitAndSendResize()
+    fitAndMaybeSendResize()
     xtermRef.current?.focus()
     onReady?.()
-  }, [fitAndSendResize, isOpen, onReady])
+  }, [fitAndMaybeSendResize, isOpen, onReady])
 
   useEffect(() => {
     const term = xtermRef.current
@@ -250,6 +291,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
         ref={containerRef}
         aria-label="Terminal output"
         className="absolute inset-0 p-2 md:p-3 xterm-wrapper outline-none"
+        style={{ overscrollBehavior: 'none', touchAction: 'pan-y pan-x' }}
         role="application"
         tabIndex={0}
       />

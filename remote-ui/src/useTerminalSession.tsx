@@ -5,7 +5,14 @@ import {
   type ConnectionMessage,
   type ConnectionSnapshot,
 } from './connectionMessageReducer'
-import { TerminalClient, type TerminalClientCallbacks, type TerminalSnapshotPayload, type TerminalTransport } from './terminalClient'
+import {
+  defaultTerminalResizeControl,
+  TerminalClient,
+  type TerminalClientCallbacks,
+  type TerminalResizeControl,
+  type TerminalSnapshotPayload,
+  type TerminalTransport,
+} from './terminalClient'
 import type { Terminal } from './model'
 
 export interface UseTerminalSessionOptions {
@@ -19,6 +26,7 @@ export interface UseTerminalSessionResult {
   terminalSnapshot: TerminalSnapshotPayload | null
   terminalText: string
   terminalInfo: Terminal | null
+  resizeControl: TerminalResizeControl
   sendInput(data: string): void
   sendResize(cols: number, rows: number): void
   handleAppResume(resumeKind: 'quick' | 'cold' | 'frozen'): void
@@ -31,6 +39,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
   const [terminalSnapshot, setTerminalSnapshot] = useState<TerminalSnapshotPayload | null>(null)
   const [terminalText, setTerminalText] = useState('')
   const [terminalInfo, setTerminalInfo] = useState<Terminal | null>(null)
+  const [resizeControl, setResizeControl] = useState<TerminalResizeControl>(defaultTerminalResizeControl)
   const clientRef = useRef<TerminalClient | null>(null)
   const transportRef = useRef(options.transport)
   const connectionIdRef = useRef('terminal-connection')
@@ -44,6 +53,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
       setTerminalText(nextSnapshot.text)
     },
     onTerminalInfo: setTerminalInfo,
+    onResizeControl: setResizeControl,
     onLifecycle: (message) => dispatch(message),
     onError: (message) => dispatch({ type: 'transport.failed', reason: message, recoverable: true, surface: 'banner' }),
     onClose: () => {},
@@ -102,6 +112,7 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     terminalSnapshot,
     terminalText,
     terminalInfo,
+    resizeControl,
     sendInput,
     sendResize,
     handleAppResume,

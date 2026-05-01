@@ -26,7 +26,7 @@ export function mountLocalWebApp(options: LocalWebAppOptions = {}): Root {
   root.render(
     <StrictMode>
       <section
-        className="min-h-screen bg-slate-50 text-zinc-950 antialiased"
+        className="h-[100dvh] w-screen flex flex-col overflow-hidden bg-slate-50 text-zinc-950 antialiased"
         data-testid="termx-local-web-shell"
       >
         <LocalRemoteApp

@@ -1,4 +1,4 @@
-import type { TerminalTransport, TerminalTransportEvent } from './terminalClient'
+import type { TerminalResizePolicy, TerminalTransport, TerminalTransportEvent } from './terminalClient'
 import { createLocalTerminalProtocolTransport } from './localTerminalProtocolTransport'
 import type {
   BinaryChannel,
@@ -28,6 +28,7 @@ export interface LocalWebRtcPeerTransportOptions {
   sessionIdGenerator?: (() => string) | undefined
   iceGatheringTimeoutMs?: number | undefined
   dataChannelOpenTimeoutMs?: number | undefined
+  terminalResizePolicy?: TerminalResizePolicy | undefined
 }
 
 export interface RTCPeerConnectionLike {
@@ -201,6 +202,7 @@ class LocalWebRtcPeerTransport implements PeerTransport, TerminalTransport {
         terminalId,
         relayInUse: false,
       },
+      resizePolicy: this.options.terminalResizePolicy ?? 'follower',
     })
     protocol.subscribeTerminal(terminalId, (event) => {
       this.emitTerminalEvent(terminalId, event)

@@ -335,8 +335,12 @@ func (c *Client) SetMetadata(ctx context.Context, terminalID string, name string
 }
 
 func (c *Client) Attach(ctx context.Context, terminalID string, mode string) (*AttachResult, error) {
+	return c.AttachWithOptions(ctx, AttachParams{TerminalID: terminalID, Mode: mode})
+}
+
+func (c *Client) AttachWithOptions(ctx context.Context, params AttachParams) (*AttachResult, error) {
 	var out AttachResult
-	if err := c.doRequest(ctx, "attach", AttachParams{TerminalID: terminalID, Mode: mode}, &out); err != nil {
+	if err := c.doRequest(ctx, "attach", params, &out); err != nil {
 		return nil, err
 	}
 	c.mu.Lock()
@@ -479,6 +483,14 @@ func (c *Client) Resize(ctx context.Context, channel uint16, cols, rows uint16) 
 		return err
 	}
 	return c.send(frame)
+}
+
+func (c *Client) ResizeRequest(ctx context.Context, terminalID string, cols, rows uint16) error {
+	return c.doRequest(ctx, "resize", ResizeParams{
+		TerminalID: terminalID,
+		Cols:       cols,
+		Rows:       rows,
+	}, nil)
 }
 
 func (c *Client) Stream(channel uint16) (<-chan StreamFrame, func()) {

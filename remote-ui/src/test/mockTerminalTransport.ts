@@ -1,5 +1,10 @@
 import type { BinaryChannel, ConnectionInfo, ConnectionMode, JsonRpcChannel, PeerTransport } from '../transport'
-import type { TerminalInfoPayload, TerminalSnapshotPayload, TerminalTransport } from '../terminalClient'
+import type {
+  TerminalInfoPayload,
+  TerminalResizeControl,
+  TerminalSnapshotPayload,
+  TerminalTransport,
+} from '../terminalClient'
 
 export function createMockTerminalTransport(
   machineId = 'machine-local',
@@ -85,6 +90,10 @@ export class MockTerminalTransport implements TerminalTransport, PeerTransport {
     this.emit(terminalId, { type: 'info', info })
   }
 
+  emitResizeControl(terminalId: string, control: TerminalResizeControl): void {
+    this.emit(terminalId, { type: 'resizeControl', control })
+  }
+
   closeTerminal(terminalId: string, reason?: string): void {
     this.channels.get(terminalId)?.close()
     this.emit(terminalId, { type: 'closed', ...(reason ? { reason } : {}) })
@@ -132,4 +141,5 @@ type TerminalTransportEvent =
   | { type: 'output'; data: Uint8Array }
   | { type: 'snapshot'; snapshot: TerminalSnapshotPayload }
   | { type: 'info'; info: TerminalInfoPayload }
+  | { type: 'resizeControl'; control: TerminalResizeControl }
   | { type: 'closed'; reason?: string }

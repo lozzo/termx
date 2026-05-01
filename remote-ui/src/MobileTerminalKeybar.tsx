@@ -29,6 +29,10 @@ export function MobileTerminalKeybar({
   const setModifierState = onModifierStateChange ?? setInternalModifierState
 
   const send = useCallback((data: string) => {
+    // Light haptic feedback
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(10)
+    }
     const result = applyTerminalModifiers(data, activeModifierState)
     setModifierState({ ctrl: result.ctrl, alt: result.alt })
     onInput(result.data)
@@ -60,8 +64,19 @@ export function MobileTerminalKeybar({
         <button
           type="button"
           aria-label={keyboardLocked ? 'Unlock system keyboard' : 'Lock system keyboard'}
-          className={`min-h-8 rounded px-1 text-center font-mono text-[11px] ${keyboardLocked ? 'bg-red-600 text-white' : 'bg-zinc-800 text-zinc-200 active:bg-zinc-700'}`}
-          onClick={toggleKeyboard}
+          className={`min-h-8 rounded px-1 text-center font-mono text-[11px] select-none touch-manipulation ${keyboardLocked ? 'bg-red-600 text-white' : 'bg-zinc-800 text-zinc-200 active:bg-zinc-700'}`}
+          onPointerDown={(e) => {
+            e.preventDefault()
+            e.currentTarget.dataset.pointerHandled = '1'
+            toggleKeyboard()
+          }}
+          onClick={(e) => {
+            if (e.currentTarget.dataset.pointerHandled === '1') {
+              delete e.currentTarget.dataset.pointerHandled
+              return
+            }
+            toggleKeyboard()
+          }}
         >
           ⌨
         </button>
@@ -93,8 +108,19 @@ function keyButton(label: string, data: string, send: (data: string) => void, ar
       key={`${label}:${data}`}
       type="button"
       aria-label={ariaLabel}
-      className="min-h-8 rounded bg-zinc-800 px-1 text-center font-mono text-[11px] text-zinc-100 active:bg-zinc-700"
-      onClick={() => send(data)}
+      className="min-h-8 rounded bg-zinc-800 px-1 text-center font-mono text-[11px] text-zinc-100 active:bg-zinc-700 select-none touch-manipulation"
+      onPointerDown={(e) => {
+        e.preventDefault()
+        e.currentTarget.dataset.pointerHandled = '1'
+        send(data)
+      }}
+      onClick={(e) => {
+        if (e.currentTarget.dataset.pointerHandled === '1') {
+          delete e.currentTarget.dataset.pointerHandled
+          return
+        }
+        send(data)
+      }}
     >
       {label}
     </button>
@@ -113,8 +139,19 @@ function modifierButton(label: string, state: ModifierState, onClick: () => void
       key={label}
       type="button"
       aria-pressed={state !== 'off'}
-      className={`relative min-h-8 rounded px-1 text-center font-mono text-[11px] ${activeClass}`}
-      onClick={onClick}
+      className={`relative min-h-8 rounded px-1 text-center font-mono text-[11px] select-none touch-manipulation ${activeClass}`}
+      onPointerDown={(e) => {
+        e.preventDefault()
+        e.currentTarget.dataset.pointerHandled = '1'
+        onClick()
+      }}
+      onClick={(e) => {
+        if (e.currentTarget.dataset.pointerHandled === '1') {
+          delete e.currentTarget.dataset.pointerHandled
+          return
+        }
+        onClick()
+      }}
     >
       {label}
       {state === 'locked' ? <span className="absolute bottom-0.5 left-1/2 h-0.5 w-3 -translate-x-1/2 rounded-full bg-white" /> : null}

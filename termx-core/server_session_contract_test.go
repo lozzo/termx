@@ -70,7 +70,7 @@ func TestHandleRequestSessionCreateListGetDelete(t *testing.T) {
 		Params: mustJSONRaw(t, protocol.GetSessionParams{SessionID: "main"}),
 	}, sendFrame)
 
-	if _, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+	if _, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     5,
 		Method: "session.get",
 		Params: mustJSONRaw(t, protocol.GetSessionParams{SessionID: "main"}),
@@ -342,7 +342,7 @@ func TestHandleRequestSessionUnknownMethodReturns400(t *testing.T) {
 	var attachmentsMu sync.RWMutex
 	sendFrame := func(uint16, uint8, []byte) error { return nil }
 
-	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "session.unknown",
 		Params: json.RawMessage(`{}`),
@@ -364,7 +364,7 @@ func TestHandleRequestSessionWithoutWorkbenchReturns500(t *testing.T) {
 	var attachmentsMu sync.RWMutex
 	sendFrame := func(uint16, uint8, []byte) error { return nil }
 
-	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "session.list",
 		Params: json.RawMessage(`{}`),
@@ -388,7 +388,7 @@ func mustHandleSessionRequest(
 	sendFrame func(uint16, uint8, []byte) error,
 ) json.RawMessage {
 	t.Helper()
-	result, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, attachmentsMu, req, sendFrame)
+	result, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, attachmentsMu, transportScope{}, req, sendFrame)
 	if err != nil {
 		t.Fatalf("handleRequest %s failed: code=%d err=%v", req.Method, code, err)
 	}

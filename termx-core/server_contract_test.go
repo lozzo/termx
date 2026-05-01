@@ -709,7 +709,7 @@ func TestHandleRequestDetachReleasesChannelOnce(t *testing.T) {
 		t.Fatalf("unexpected attachments: %#v", attached)
 	}
 
-	if _, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+	if _, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     2,
 		Method: "detach",
 		Params: json.RawMessage(`{"terminal_id":"attach01"}`),
@@ -802,6 +802,81 @@ func TestObserverAttachCannotWriteOrResize(t *testing.T) {
 	}
 }
 
+func TestFollowerCollaboratorAttachCanInputButCannotResize(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewServer(WithDefaultScrollback(128))
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+	defer serverTransport.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.handleTransport(ctx, serverTransport, "memory")
+	}()
+
+	client := protocol.NewClient(clientTransport)
+	defer client.Close()
+
+	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+		t.Fatalf("hello failed: %v", err)
+	}
+
+	created, err := client.Create(ctx, protocol.CreateParams{
+		ID:      "follower-resize-01",
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Size:    protocol.Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create failed: %v", err)
+	}
+
+	attach, err := client.AttachWithOptions(ctx, protocol.AttachParams{
+		TerminalID:   created.TerminalID,
+		Mode:         string(ModeCollaborator),
+		ResizePolicy: protocol.ResizePolicyFollower,
+	})
+	if err != nil {
+		t.Fatalf("attach follower collaborator failed: %v", err)
+	}
+	if attach.ResizeControl == nil || attach.ResizeControl.CanResize || attach.ResizeControl.Reason != protocol.ResizeControlReasonFollower {
+		t.Fatalf("unexpected resize control: %#v", attach.ResizeControl)
+	}
+
+	if err := client.Input(ctx, attach.Channel, []byte("echo follower-input\n")); err != nil {
+		t.Fatalf("input send failed: %v", err)
+	}
+	if err := client.Resize(ctx, attach.Channel, 120, 50); err != nil {
+		t.Fatalf("resize send failed: %v", err)
+	}
+
+	waitFor(t, 5*time.Second, func() bool {
+		snap, err := client.Snapshot(ctx, created.TerminalID, 0, 50)
+		return err == nil && protocolSnapshotContains(snap, "follower-input")
+	})
+	snap, err := client.Snapshot(ctx, created.TerminalID, 0, 50)
+	if err != nil {
+		t.Fatalf("snapshot failed: %v", err)
+	}
+	if snap.Size.Cols != 80 || snap.Size.Rows != 24 {
+		t.Fatalf("follower resize unexpectedly changed size: %#v", snap.Size)
+	}
+
+	if err := client.Close(); err != nil {
+		t.Fatalf("client close failed: %v", err)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for handler exit")
+	}
+}
+
 func TestCollaboratorResizeLockedTerminalIsIgnored(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -871,6 +946,240 @@ func TestCollaboratorResizeLockedTerminalIsIgnored(t *testing.T) {
 	}
 }
 
+func TestAttachResizeControlPolicyAndSizeLock(t *testing.T) {
+	ctx := context.Background()
+	srv := NewServer(WithDefaultKeepAfterExit(10 * time.Second))
+
+	normal, err := srv.Create(ctx, CreateOptions{
+		ID:      "resize-control-normal",
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create normal terminal failed: %v", err)
+	}
+	locked, err := srv.Create(ctx, CreateOptions{
+		ID:      "resize-control-locked",
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Tags:    map[string]string{"termx.size_lock": "lock"},
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		t.Fatalf("create locked terminal failed: %v", err)
+	}
+
+	tests := []struct {
+		name       string
+		terminalID string
+		mode       string
+		policy     string
+		want       protocol.ResizeControl
+	}{
+		{
+			name:       "legacy collaborator defaults to owner resize",
+			terminalID: normal.ID,
+			mode:       string(ModeCollaborator),
+			want:       protocol.ResizeControl{CanResize: true, Reason: protocol.ResizeControlReasonOwner},
+		},
+		{
+			name:       "explicit follower cannot resize",
+			terminalID: normal.ID,
+			mode:       string(ModeCollaborator),
+			policy:     protocol.ResizePolicyFollower,
+			want:       protocol.ResizeControl{CanResize: false, Reason: protocol.ResizeControlReasonFollower},
+		},
+		{
+			name:       "observer cannot resize",
+			terminalID: normal.ID,
+			mode:       string(ModeObserver),
+			policy:     protocol.ResizePolicyOwner,
+			want:       protocol.ResizeControl{CanResize: false, Reason: protocol.ResizeControlReasonObserver},
+		},
+		{
+			name:       "size lock overrides owner",
+			terminalID: locked.ID,
+			mode:       string(ModeCollaborator),
+			policy:     protocol.ResizePolicyOwner,
+			want:       protocol.ResizeControl{CanResize: false, Reason: protocol.ResizeControlReasonSizeLocked, SizeLocked: true},
+		},
+	}
+
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			allocator := protocol.NewChannelAllocator()
+			attachments := make(map[uint16]*sessionAttachment)
+			var attachmentsMu sync.RWMutex
+			result, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
+				ID:     uint64(i + 1),
+				Method: "attach",
+				Params: mustJSON(t, protocol.AttachParams{
+					TerminalID:   tt.terminalID,
+					Mode:         tt.mode,
+					ResizePolicy: tt.policy,
+				}),
+			}, func(uint16, uint8, []byte) error { return nil })
+			if err != nil {
+				t.Fatalf("attach failed: %v", err)
+			}
+			var attach protocol.AttachResult
+			if err := json.Unmarshal(result, &attach); err != nil {
+				t.Fatalf("unmarshal attach result failed: %v", err)
+			}
+			if attach.ResizeControl == nil || *attach.ResizeControl != tt.want {
+				t.Fatalf("unexpected resize control: got %#v want %#v", attach.ResizeControl, tt.want)
+			}
+			attachmentsMu.RLock()
+			sessionAttach := attachments[attach.Channel]
+			attachmentsMu.RUnlock()
+			if got := sessionAttach.canResize(); got != tt.want.CanResize {
+				t.Fatalf("session attachment canResize=%v want %v", got, tt.want.CanResize)
+			}
+		})
+	}
+
+	allocator := protocol.NewChannelAllocator()
+	attachments := make(map[uint16]*sessionAttachment)
+	var attachmentsMu sync.RWMutex
+	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
+		ID:     100,
+		Method: "attach",
+		Params: mustJSON(t, protocol.AttachParams{
+			TerminalID:   normal.ID,
+			Mode:         string(ModeCollaborator),
+			ResizePolicy: "unexpected",
+		}),
+	}, func(uint16, uint8, []byte) error { return nil })
+	if err == nil || code != 400 {
+		t.Fatalf("expected invalid resize policy to fail with 400, got code=%d err=%v", code, err)
+	}
+}
+
+func TestResizeRequestRequiresResizeOwnerAttachment(t *testing.T) {
+	ctx := context.Background()
+	srv := NewServer(WithDefaultKeepAfterExit(10 * time.Second))
+
+	info, err := srv.Create(ctx, CreateOptions{
+		ID:      "resize-owner-request",
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create failed: %v", err)
+	}
+
+	allocator := protocol.NewChannelAllocator()
+	attachments := make(map[uint16]*sessionAttachment)
+	var attachmentsMu sync.RWMutex
+	if _, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
+		ID:     1,
+		Method: "attach",
+		Params: mustJSON(t, protocol.AttachParams{
+			TerminalID:   info.ID,
+			Mode:         string(ModeCollaborator),
+			ResizePolicy: protocol.ResizePolicyFollower,
+		}),
+	}, func(uint16, uint8, []byte) error { return nil }); err != nil {
+		t.Fatalf("follower attach failed: %v", err)
+	}
+
+	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
+		ID:     2,
+		Method: "resize",
+		Params: mustJSON(t, protocol.ResizeParams{TerminalID: info.ID, Cols: 120, Rows: 50}),
+	}, func(uint16, uint8, []byte) error { return nil })
+	if err == nil || code != 403 {
+		t.Fatalf("expected follower resize request to fail with 403, got code=%d err=%v", code, err)
+	}
+	got, err := srv.Get(ctx, info.ID)
+	if err != nil {
+		t.Fatalf("get after follower resize failed: %v", err)
+	}
+	if got.Size != (Size{Cols: 80, Rows: 24}) {
+		t.Fatalf("follower resize unexpectedly changed size: %#v", got.Size)
+	}
+
+	ownerAttachments := make(map[uint16]*sessionAttachment)
+	var ownerAttachmentsMu sync.RWMutex
+	if _, _, err := srv.handleRequest(ctx, "memory", nil, protocol.NewChannelAllocator(), ownerAttachments, &ownerAttachmentsMu, transportScope{}, protocol.Request{
+		ID:     3,
+		Method: "attach",
+		Params: mustJSON(t, protocol.AttachParams{
+			TerminalID:   info.ID,
+			Mode:         string(ModeCollaborator),
+			ResizePolicy: protocol.ResizePolicyOwner,
+		}),
+	}, func(uint16, uint8, []byte) error { return nil }); err != nil {
+		t.Fatalf("owner attach failed: %v", err)
+	}
+	if _, _, err := srv.handleRequest(ctx, "memory", nil, protocol.NewChannelAllocator(), ownerAttachments, &ownerAttachmentsMu, transportScope{}, protocol.Request{
+		ID:     4,
+		Method: "resize",
+		Params: mustJSON(t, protocol.ResizeParams{TerminalID: info.ID, Cols: 100, Rows: 40}),
+	}, func(uint16, uint8, []byte) error { return nil }); err != nil {
+		t.Fatalf("owner resize request failed: %v", err)
+	}
+}
+
+func TestScopedResizeRequestRequiresAttachmentOwner(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv := NewServer(WithDefaultKeepAfterExit(10 * time.Second))
+	if _, err := srv.Create(ctx, CreateOptions{
+		ID:      "scoped-resize-owner",
+		Command: []string{"bash", "--noprofile", "--norc"},
+		Size:    Size{Cols: 80, Rows: 24},
+	}); err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("create failed: %v", err)
+	}
+
+	clientTransport, serverTransport := memory.NewPair()
+	defer clientTransport.Close()
+	defer serverTransport.Close()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.handleTransportScoped(ctx, serverTransport, "memory", transportScope{TerminalID: "scoped-resize-owner"})
+	}()
+
+	client := protocol.NewClient(clientTransport)
+	defer client.Close()
+	if err := client.Hello(ctx, protocol.Hello{Version: protocol.Version, Client: "test"}); err != nil {
+		t.Fatalf("hello failed: %v", err)
+	}
+
+	err := client.ResizeRequest(ctx, "scoped-resize-owner", 120, 50)
+	if err == nil || !strings.Contains(err.Error(), "protocol error 403") {
+		t.Fatalf("expected scoped resize without owner attachment to fail with 403, got %v", err)
+	}
+	snap, err := client.Snapshot(ctx, "scoped-resize-owner", 0, 10)
+	if err != nil {
+		t.Fatalf("snapshot failed: %v", err)
+	}
+	if snap.Size.Cols != 80 || snap.Size.Rows != 24 {
+		t.Fatalf("scoped resize without owner unexpectedly changed size: %#v", snap.Size)
+	}
+
+	if err := client.Close(); err != nil {
+		t.Fatalf("client close failed: %v", err)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for handler exit")
+	}
+}
+
 func TestHandleRequestKillDeniedForObserverAttachment(t *testing.T) {
 	ctx := context.Background()
 	srv := NewServer()
@@ -893,7 +1202,7 @@ func TestHandleRequestKillDeniedForObserverAttachment(t *testing.T) {
 
 	mustAttachChannel(t, srv, ctx, "memory", allocator, attachments, &attachmentsMu, info.ID, string(ModeObserver), sendFrame)
 
-	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "kill",
 		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
@@ -928,7 +1237,7 @@ func TestHandleRequestKillAllowedForCollaboratorAttachment(t *testing.T) {
 
 	mustAttachChannel(t, srv, ctx, "memory", allocator, attachments, &attachmentsMu, info.ID, string(ModeCollaborator), sendFrame)
 
-	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "kill",
 		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
@@ -1128,7 +1437,7 @@ func TestServerRemoveCleansAttachmentsAndClosesTerminal(t *testing.T) {
 		t.Fatal("expected attachment channel")
 	}
 
-	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "remove",
 		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
@@ -1185,7 +1494,7 @@ func TestServerRemovePublishesSingleRemovedEventWithoutExitedPollution(t *testin
 	sendFrame := func(uint16, uint8, []byte) error { return nil }
 	mustAttachChannel(t, srv, ctx, "memory", allocator, attachments, &attachmentsMu, info.ID, string(ModeCollaborator), sendFrame)
 
-	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "remove",
 		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
@@ -1441,7 +1750,7 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 	var attachmentsMu sync.RWMutex
 	sendFrame := func(uint16, uint8, []byte) error { return nil }
 
-	result, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+	result, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "get",
 		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
@@ -1457,15 +1766,25 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 		t.Fatalf("unexpected get result: %#v", got)
 	}
 
-	if _, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+	_, code, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     2,
 		Method: "resize",
 		Params: mustJSON(t, protocol.ResizeParams{TerminalID: info.ID, Cols: 100, Rows: 40}),
-	}, sendFrame); err != nil {
-		t.Fatalf("resize request failed: %v", err)
+	}, sendFrame)
+	if err == nil || code != 403 {
+		t.Fatalf("expected unowned resize request to fail with 403, got code=%d err=%v", code, err)
 	}
 
-	if _, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+	mustAttachChannel(t, srv, ctx, "memory", allocator, attachments, &attachmentsMu, info.ID, string(ModeCollaborator), sendFrame)
+	if _, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
+		ID:     20,
+		Method: "resize",
+		Params: mustJSON(t, protocol.ResizeParams{TerminalID: info.ID, Cols: 100, Rows: 40}),
+	}, sendFrame); err != nil {
+		t.Fatalf("owned resize request failed: %v", err)
+	}
+
+	if _, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     3,
 		Method: "set_tags",
 		Params: mustJSON(t, protocol.SetTagsParams{TerminalID: info.ID, Tags: map[string]string{"status": "idle"}}),
@@ -1473,7 +1792,7 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 		t.Fatalf("set_tags request failed: %v", err)
 	}
 
-	if _, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+	if _, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     4,
 		Method: "set_metadata",
 		Params: mustJSON(t, protocol.SetMetadataParams{TerminalID: info.ID, Name: "dev-shell", Tags: map[string]string{"status": "idle", "team": "infra"}}),
@@ -1481,7 +1800,7 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 		t.Fatalf("set_metadata request failed: %v", err)
 	}
 
-	result, _, err = srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+	result, _, err = srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     30,
 		Method: "get",
 		Params: mustJSON(t, protocol.GetParams{TerminalID: info.ID}),
@@ -1502,7 +1821,7 @@ func TestHandleRequestGetResizeSetTagsMetadataAndSnapshot(t *testing.T) {
 	}
 	waitForSnapshotContains(t, srv, info.ID, "request-path")
 
-	result, _, err = srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+	result, _, err = srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     4,
 		Method: "snapshot",
 		Params: mustJSON(t, protocol.SnapshotParams{TerminalID: info.ID, ScrollbackLimit: 50}),
@@ -1544,7 +1863,7 @@ func TestHandleRequestListCacheInvalidatesOnSetTags(t *testing.T) {
 	var attachmentsMu sync.RWMutex
 	sendFrame := func(uint16, uint8, []byte) error { return nil }
 
-	result, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+	result, _, err := srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "list",
 		Params: mustJSON(t, struct{}{}),
@@ -1565,7 +1884,7 @@ func TestHandleRequestListCacheInvalidatesOnSetTags(t *testing.T) {
 		t.Fatalf("set tags failed: %v", err)
 	}
 
-	result, _, err = srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+	result, _, err = srv.handleRequest(ctx, "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 		ID:     2,
 		Method: "list",
 		Params: mustJSON(t, struct{}{}),
@@ -1627,7 +1946,7 @@ func TestHandleRequestRejectsMalformedParams(t *testing.T) {
 	methods := []string{"create", "get", "kill", "resize", "set_tags", "set_metadata", "snapshot", "attach", "detach"}
 	for _, method := range methods {
 		t.Run(method, func(t *testing.T) {
-			_, code, err := srv.handleRequest(context.Background(), "memory", nil, allocator, attachments, &attachmentsMu, protocol.Request{
+			_, code, err := srv.handleRequest(context.Background(), "memory", nil, allocator, attachments, &attachmentsMu, transportScope{}, protocol.Request{
 				ID:     1,
 				Method: method,
 				Params: json.RawMessage(`{`),
@@ -1863,7 +2182,7 @@ func mustAttachChannel(
 	sendFrame func(uint16, uint8, []byte) error,
 ) uint16 {
 	t.Helper()
-	result, _, err := srv.handleRequest(ctx, remote, nil, allocator, attachments, attachmentsMu, protocol.Request{
+	result, _, err := srv.handleRequest(ctx, remote, nil, allocator, attachments, attachmentsMu, transportScope{}, protocol.Request{
 		ID:     1,
 		Method: "attach",
 		Params: mustJSON(t, protocol.AttachParams{TerminalID: terminalID, Mode: mode}),
