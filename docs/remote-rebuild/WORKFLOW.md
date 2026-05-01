@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-C local WebRTC signaling and ICE TCP mux ready to commit
-- Last updated: 2026-05-01T11:10:32+08:00
+- Active todo: P3-D shared remote UI package
+- Last updated: 2026-05-01T11:12:00+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -22,7 +22,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P2-D | CLI | Keep `termx remote status` working and add a conservative `termx pair` CLI skeleton only after core primitives exist | completed | `4b24258` |
 | P3-A | rendezvous | Implement anonymous rendezvous interfaces/contracts with payload limit, TTL, channel secret verification, and no TURN credentials | completed | `4012a1b` |
 | P3-B | localweb | Implement embedded local web foundation served from `termx` binary with local status, terminal list, and pair API contracts | completed | `6d9048f` |
-| P3-C | rtc | Implement local WebRTC signaling and ICE TCP mux/over-TCP support for browser-to-daemon local connections | ready_to_commit |  |
+| P3-C | rtc | Implement local WebRTC signaling and ICE TCP mux/over-TCP support for browser-to-daemon local connections | completed | `52d964b` |
 | P3-D | remote-ui | Create shared remote UI package and adapt `Terminal.tsx`, `TerminalList.tsx`, and `FileManager.tsx` from `../tgent` for machine/terminal-only semantics | pending |  |
 | P3-E | local/e2e | Wire embedded local web to terminal and file manager over local WebRTC DataChannels and validate in browser before mobile migration | pending |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | pending |  |
@@ -142,7 +142,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Review fix: local ICE TCP mux now enables loopback candidate gathering and filters candidates to the bound listener IP when the listener is bound to a specific address; the answer SDP test now proves a passive loopback TCP host candidate exists.
 - Final focused tests after review fix: `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-core && go test . -run 'TestE2ERemoteLocalWebHandler(AnswersAuthenticatedRTCOffer|RejectsInvalidRTCOfferAuth)|TestE2E_WebRTC'` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
 - Final broader tests after review fix: `cd termx-core && go test ./internal/remote/...` passed; `cd termx-core && go test ./...` passed; `cd termx-cli && go test ./...` passed.
-- Result: ready to commit. Commit: pending.
+- Result: completed. Commit: `52d964b`.
 
 ## Subagents
 
@@ -179,7 +179,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Public rendezvous deployment, DNS, TLS certificates, billing/subscription provider, mobile signing, and app store configuration remain deferred by policy.
 - `termx-core/remote_localweb.go` currently maps `last_active_at` from terminal creation time because the existing terminal inventory does not expose a separate last-activity timestamp. This is a narrow placeholder; replace it with real activity metadata when the terminal runtime publishes it.
-- Whether local HTTP and ICE TCP share one port via cmux or use adjacent/independent ports is intentionally deferred to P3-C implementation; current contract only requires the browser adapter to discover the ICE TCP endpoint.
+- Local HTTP and ICE TCP currently use independent listeners. Same-port cmux remains deferred until browser smoke/local e2e proves that reducing exposed ports is worth the extra listener complexity.
 
 ## Risks
 
@@ -190,6 +190,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Commit P3-C local WebRTC signaling and ICE TCP mux.
-2. Update this workflow with the P3-C commit hash.
-3. Start P3-D shared remote UI package using tgent-aligned component structure without importing workspace/tab/pane as public remote concepts.
+1. Start P3-D by updating this workflow before writing tests.
+2. Inspect `../tgent` UI component boundaries for `Terminal.tsx`, terminal list, and file manager code that can be adapted without workspace/tab/pane as TermX remote public concepts.
+3. Write failing tests for shared remote UI logic/adapters before copying or modifying UI code.
