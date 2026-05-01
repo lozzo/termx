@@ -152,6 +152,7 @@ termx/
 - 业务模型只认 machine/terminal，不认 workspace/tab/pane
 - 所有网络能力通过 interface 注入
 - terminal list、terminal session、file manager 优先复用 `remote-ui/` 里已经在本地 embedded web 验证的组件
+- 消息处理、重连、前后台恢复、网络切换和错误反馈要尽量模拟原生 app 行为；不能把 tgent 中偏 web 页面的临时交互状态直接迁过来。
 
 ### Shared Remote UI
 
@@ -159,9 +160,12 @@ termx/
 
 - 承载本地 embedded web 与 mobile app 共享的远程 UI 和业务 hooks。
 - 从 `../tgent` 迁改 terminal rendering、terminal client、file manager、WebRTC browser adapter 的成熟行为。
+- 页面代码、目录结构、组件边界、核心 props 命名和 adapter 分层要尽量与 `../tgent/tgent-app/src` 保持可对照，方便后续同步 tgent 的 bugfix 和行为改进。
 - 将 `SessionList.tsx` / pane 语义改造成 `TerminalList.tsx` / terminal 语义。
 - 保持所有网络能力在 `RemoteTransport` / `PeerTransport` interface 后面，组件不直接 import `fetch`、`RTCPeerConnection` 或 native plugin。
 - 本地 embedded web 首先使用 browser local adapter；mobile app 后续使用 native adapter。
+- 在 transport 与 UI 之间增加消息处理层，把 WebRTC/native bridge 事件规整成 app-like lifecycle events，例如 `connecting`、`verifying`、`connected`、`recovering`、`reconnecting`、`suspended`、`failed`。
+- 消息处理层负责有序队列、去重、背压、恢复后状态校验、toast/banner/modal 分流和 terminal/file channel lifecycle；React 页面只订阅稳定 snapshot 和发送用户 intent。
 
 首批组件：
 
@@ -170,6 +174,8 @@ termx/
 - `FileManager.tsx`
 - `useTerminalSession`
 - `useFileManager`
+- `connectionMessageReducer`
+- `ConnectionEventQueue`
 - browser local transport adapter
 - mock transport for tests
 

@@ -14,6 +14,8 @@
 8. TermX Relay 是订阅能力，P2P 失败时引导登录/订阅。
 9. 文件管理作为 terminal 的辅助能力，不做完整网盘产品。
 10. App 不重新实现 terminal/file manager 主组件；它复用 `remote-ui/Terminal.tsx`、`remote-ui/TerminalList.tsx`、`remote-ui/FileManager.tsx`，只替换 navigation、storage、QR、native transport adapter。
+11. UI 页面代码、组件拆分和 adapter 边界尽量与 `../tgent/tgent-app/src` 可对照，方便持续同步 tgent 的 terminal/file/WebRTC 修复。
+12. 对 tgent 中偏 Web 的交互，TermX app 要用更接近原生 app 的消息处理：foreground/background、网络切换、重连、恢复校验、错误提示和文件/terminal channel lifecycle 统一走消息队列和 reducer。
 
 ## 导航结构
 
@@ -551,12 +553,23 @@ type ConnectionState =
   | 'signaling'
   | 'opening_channel'
   | 'connected'
+  | 'verifying'
+  | 'recovering'
   | 'reconnecting'
+  | 'suspended'
   | 'failed'
   | 'closed'
 type ConnectionType = 'p2p' | 'relay' | 'unknown'
 type MachineSource = 'local_anonymous' | 'cloud'
 ```
+
+消息处理约束：
+
+- Native/browser transport callbacks 先转换成规范化 `ConnectionEvent`，例如 app resumed、network changed、peer disconnected、channel opened、channel stale、file transfer progress。
+- `ConnectionEventQueue` 负责排序、去重、背压和恢复后校验，避免页面因瞬时 callback 抖动。
+- `connectionMessageReducer` 输出页面 snapshot，页面只消费 snapshot 并发送用户 intent，例如 connect、retry、open terminal、open file manager、cancel transfer。
+- 用户反馈按严重程度分流：短暂网络波动走非阻塞 banner/toast，证书失效或权限失败走 modal，terminal/file channel 可局部重试时不阻塞整页。
+- terminal 输入和文件传输不能被全局 UI rerender 阻塞；背压、buffered amount 和 stale channel cleanup 放在消息处理层。
 
 ## 第一版最小可交付
 

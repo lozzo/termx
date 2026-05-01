@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: P3 embedded local web first
 - Active todo: P3-B embedded local web foundation
-- Last updated: 2026-05-01T09:34:39+08:00
+- Last updated: 2026-05-01T09:42:23+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -15,6 +15,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | --- | --- | --- | --- | --- |
 | R0 | workflow | Create and seed `docs/remote-rebuild/WORKFLOW.md` with full todo plan | completed | `8734d00` |
 | R1 | planning | Revise remote rebuild plan so the early path builds `termx` embedded local web, shared remote UI components, and local WebRTC-over-TCP before migrating the same UI to mobile app | completed | `6a657be` |
+| R2 | planning | Record that remote UI page code, architecture, and component boundaries should stay as synchronized with `../tgent` as practical while TermX message handling should emulate native app behavior where tgent interactions feel too web-like | completed | pending |
 | P2-A | identity | Implement Ed25519 machine key generation, load, persistence permissions, and fingerprint helpers in `termx-core/internal/remote/identity` | completed | `5aef5b8` |
 | P2-B | cert | Implement canonical app certificate payload, sign/verify helpers, and nonce/timestamp replay helper in `termx-core/internal/remote/cert` | completed | `62d1f70` |
 | P2-C | pairing | Implement local pair session creation, TTL, single-use semantics, and app certificate issuance in `termx-core/internal/remote/pairing` | completed | `12067cb` |
@@ -44,6 +45,14 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Focused tests: not run; documentation/workflow-only todo.
 - Broader tests: `git diff --check` passed.
 - Result: completed. Commit: `6a657be`.
+
+### R2 tgent-aligned UI and native-like message handling constraint
+
+- Tests written before implementation: none; documentation/workflow-only todo.
+- Expected failing test: not applicable.
+- Focused tests: pending.
+- Broader tests: `git diff --check` passed.
+- Result: completed pending commit. Commit: pending.
 
 ### P2-A machine key generation/load/fingerprint
 
@@ -121,6 +130,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - P2-D review complete. No remaining findings after implemented fixes; no workspace/tab/pane concepts, anonymous/free TURN relay changes, app machine-private-key exposure, CLI internal-package import, or transport boundary drift introduced.
 - P3-A review complete. No remaining findings after implemented fixes; no workspace/tab/pane concepts, anonymous/free TURN relay credentials, terminal/file data relay, app machine-private-key exposure, or transport boundary drift introduced.
 - R1 planning review: self-checked updated docs for scope drift. Plan now prioritizes embedded local web, shared `remote-ui/` components, and local WebRTC-over-TCP before mobile app migration; no new workspace/tab/pane public model and no anonymous/free TURN relay entitlement were introduced.
+- R2 planning review: self-checked updated docs for scope drift. Plan now requires tgent-aligned page/component structure where practical, plus TermX-owned native-like message reducer/event queue behavior; no new workspace/tab/pane public model and no anonymous/free TURN relay entitlement were introduced.
 
 ## Deferred Human Decisions And Placeholders
 
@@ -133,8 +143,10 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Existing baseline uses `DeviceID` terminology while remote rebuild docs require public `machine -> terminal` object language. The implementation should preserve compatibility where needed but introduce machine-key/certificate concepts without exposing workspace/tab/pane.
 - Existing hub baseline may include relay fields. P3 anonymous paths must explicitly reject or omit TermX TURN relay credentials.
 - New `remote-ui/` package must avoid carrying over tgent pane/session public concepts when copying `Terminal.tsx`, `SessionList.tsx`, and file manager code.
+- Keeping TermX UI close enough to tgent for future synchronization conflicts with replacing tgent's web-like interaction state. The boundary is explicit: copy structure/components/adapters where possible, but normalize messages and lifecycle through TermX reducers/queues.
 
 ## Next Exact Action
 
-1. Start P3-B by updating this workflow before writing tests for local embedded web foundation.
-2. Write failing tests for local embedded web status, terminal list, pair API contracts, and embedded asset serving.
+1. Commit R2 planning update.
+2. Start P3-B by updating this workflow before writing tests for local embedded web foundation.
+3. Write failing tests for local embedded web status, terminal list, pair API contracts, and embedded asset serving.

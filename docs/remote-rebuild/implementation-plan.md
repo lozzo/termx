@@ -9,10 +9,11 @@
 3. 远程公开模型只允许 `machine -> terminal`。
 4. 不把 `tuiv2` 的 workspace/tab/pane 模型带进远程体系。
 5. Web/native 网络实现必须从第一天起走 interface。
-6. 复用 `../tgent` 时只迁行为和成熟模块，不迁混乱状态管理。
+6. 复用 `../tgent` 时优先保持页面代码、目录结构、组件边界和 adapter 分层可同步；只迁成熟行为，不迁 workspace/tab/pane 语义或混乱状态管理。
 7. `termx` daemon 内置 agent，不发布独立 agent 二进制。
 8. 远程 UI 先在本地 embedded web 中跑通，再复用到 mobile app；`Terminal.tsx`、`TerminalList.tsx`、`FileManager.tsx` 必须从同一套共享组件演进。
 9. 本地 WebRTC 必须支持 TCP ICE mux / WebRTC-over-TCP fallback，避免本地网络或容器环境里 UDP 不可用时直接失败。
+10. 对 tgent 中不够移动端原生的交互，TermX 要在消息处理层模拟 native app 行为：生命周期事件、恢复校验、用户 intent、错误提示和队列背压都由状态机统一处理，页面只消费稳定 snapshot。
 
 ## 依赖顺序
 
@@ -169,6 +170,13 @@ P0 文档与边界
 - `../tgent/tgent-app/src/components/SessionList.tsx`，迁改为 `TerminalList.tsx`。
 - `../tgent/tgent-app/src/components/files/FileManager.tsx`
 
+同步策略：
+
+- 首次复制后保留与 tgent 可对照的文件拆分、组件边界和核心 props 命名，除非这些命名泄露 workspace/tab/pane。
+- 必须建立 TermX 命名适配层：`server` -> `machine`，`pane` -> `terminal`，`session/window` 不作为 public model。
+- 行为修复优先在与 tgent 同名/近似文件中落地，避免之后无法继续同步 upstream 变更。
+- 不为同步而保留 tgent 的 web-only 交互状态；这些状态要收敛到 TermX 的 message reducer / event queue。
+
 交付：
 
 - embedded static web 文件系统和 build/embed 流程。
@@ -179,6 +187,8 @@ P0 文档与边界
   - `FileManager.tsx`
   - `useTerminalSession`
   - `useFileManager`
+  - `connectionMessageReducer`
+  - `ConnectionEventQueue`
   - `RemoteTransport` / `PeerTransport` interface
   - browser local adapter
 - local `POST /api/local/rtc/offer`。
@@ -202,6 +212,7 @@ P0 文档与边界
 - local terminal binary protocol roundtrip。
 - local file manager list/download/upload smoke。
 - TS tests for shared remote UI hooks/adapters。
+- message reducer / event queue tests covering reconnect, app resume, duplicate transport events, terminal/file channel lifecycle, and user-visible error routing。
 - Browser smoke: `termx daemon` serves local Web and opens a terminal using local WebRTC.
 - `cd termx-core && go test ./...`
 - `cd termx-cli && go test ./...`
@@ -257,6 +268,7 @@ P0 文档与边界
 - 以 P3 的 `remote-ui/` 为源，迁移同一套 terminal list、terminal session 和 file manager 组件到 mobile app。
 - mobile app 只新增 app shell、navigation、native storage、camera/QR、secure key storage 和 native transport adapter。
 - browser adapter 和 native adapter 分离，React 业务层不直接碰 fetch/WebRTC/native plugin。
+- mobile app 使用 `remote-ui` 的消息处理层，native plugin 只上报规范化事件；页面不直接处理 WebRTC callback、foreground/background callback 或网络切换 callback。
 - app keypair 和 certificate storage 纳入 transport/auth 边界。
 - 第一版必须支持本地配对、anonymous P2P、terminal、file manager。
 - 支持 `local`、`anonymous_p2p`、`managed_p2p`、`paid_relay` 四种连接模式的数据模型，但 managed/relay 可先 stub。
@@ -295,6 +307,7 @@ P0 文档与边界
 - `AppKeyStore`
 - browser implementation 复用 P3，mobile 只接入 native implementation。
 - Android native implementation skeleton。
+- native-like message adapter: app resume/suspend、network change、transport reconnect、connection verify 和 error routing。
 - mock implementation for UI tests。
 - 未登录扫码配对。
 - 本地保存 machine + app certificate。
@@ -312,6 +325,7 @@ P0 文档与边界
 - TS unit tests。
 - app key/cert mock tests。
 - anonymous P2P adapter tests。
+- native-like message handling tests for foreground/background, network switching, retries, stale channel cleanup, and non-blocking user feedback。
 - Android debug build。
 - anonymous P2P smoke。
 - text/layout mobile viewport check。
