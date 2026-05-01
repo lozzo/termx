@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-E-C-A build and embed shared local web shell static assets
-- Last updated: 2026-05-01T13:51:24+08:00
+- Active todo: P3-E-C-B browser-local pairing/signing and embedded web smoke
+- Last updated: 2026-05-01T13:53:25+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -29,8 +29,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-D-D | remote-ui | Adapt `FileManager.tsx` and file hooks from `../tgent` behind TermX file transport interfaces | completed | `138aba3` |
 | P3-E-A | local/e2e | Add local embedded web browser API/WebRTC adapter shell around shared TerminalList, Terminal, and FileManager components | completed | `83ad016` |
 | P3-E-B | local/e2e | Implement browser terminal adapter compatible with current Go binary terminal protocol over `terminal:{terminal_id}` | completed | `4ef0557` |
-| P3-E-C-A | local/e2e | Build and embed the shared local web shell into `termx` static assets | in_progress |  |
-| P3-E-C-B | local/e2e | Run local browser smoke against the embedded web shell and terminal/file wiring before mobile migration | pending |  |
+| P3-E-C-A | local/e2e | Build and embed the shared local web shell into `termx` static assets | completed | `f68bf9d` |
+| P3-E-C-B | local/e2e | Run local browser smoke against the embedded web shell and terminal/file wiring before mobile migration | in_progress |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | pending |  |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -124,13 +124,14 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Review fix: `syncLocalWebAssets` now replaces the whole embedded static directory before copying `dist/`, and the script exposes a tested function while still working as the `npm run build:localweb` entrypoint.
 - Final focused tests after review fix: `cd remote-ui && npm test -- --run scripts/sync-localweb-assets.test.mjs src/LocalRemoteApp.test.tsx src/localWebEntry.test.tsx` passed 5 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm run build:localweb` passed; `cd termx-core && go test ./internal/remote/localweb -run TestHandlerServesDefaultEmbeddedAssets` passed.
 - Final broader tests after review fix: `cd remote-ui && npm test` passed 68 tests; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
-- Result: in progress. Commit: pending.
+- Result: completed. Commit: `f68bf9d`.
 
 ### P3-E-C-B browser smoke
 
-- Active slice: pending after P3-E-C-A commit.
+- Active slice: browser-local pairing/signing and embedded web smoke.
+- Tests written before implementation: pending.
 - Planned scope: serve the embedded local web through `termx`/localweb, complete browser-local app keypair/certificate storage and offer signing, then smoke terminal list, terminal open, and file manager against local WebRTC-over-TCP. If real user pairing UI still needs product input, use a narrow local test harness and record the remaining UX decision here.
-- Result: pending. Commit: pending.
+- Result: in progress. Commit: pending.
 
 ### P3-D-B shared terminal client and Terminal.tsx boundary
 
