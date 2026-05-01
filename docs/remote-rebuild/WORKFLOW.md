@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-E-C-B-H xterm.js interactive terminal surface for embedded local web
-- Last updated: 2026-05-01T22:25:18+08:00
+- Active todo: choose next slice after P3-E-C-B-H xterm local browser smoke
+- Last updated: 2026-05-01T22:41:28+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -37,7 +37,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-E | local/e2e | Fix embedded local file manager hang where `Loading files` remains visible instead of files or an error | completed | `80bbeb1` |
 | P3-E-C-B-F | local/e2e | Require the local WebRTC `api` DataChannel to open during connect so FileManager does not mount on a half-ready transport | completed | `9a51792` |
 | P3-E-C-B-G | local/e2e | Fix real-browser local WebRTC `api` DataChannel timeout by waiting for local ICE candidates before signing/sending the offer | completed | `9531237` |
-| P3-E-C-B-H | local/e2e | Replace the readonly terminal placeholder with a tgent-aligned xterm.js terminal surface that writes output, forwards input, and sends resize through TermX terminal interfaces | in_progress |  |
+| P3-E-C-B-H | local/e2e | Replace the readonly terminal placeholder with a tgent-aligned xterm.js terminal surface that writes output, forwards input, and sends resize through TermX terminal interfaces | completed | `db9c7065` |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -236,6 +236,13 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Actual failing tests before implementation: `cd remote-ui && npm test -- --run src/Terminal.test.tsx` failed as expected: xterm instance count stayed at 0, streaming output only appeared in the old `<pre>`, xterm input could not be emitted, and no resize was sent through the mock terminal channel.
 - Planned scope: use `../tgent/tgent-app/src/components/Terminal.tsx` as the xterm usage reference for `XTerm`, `FitAddon`, `term.write`, `term.onData`, and fit/resize behavior, but keep the TermX public identity as `machineId + terminalId` only. Browser/WebRTC details must stay inside transport adapters, not UI components. This slice deliberately avoids importing tgent pane/session/window concepts, TermX TURN credentials, or any machine private key behavior.
 - User correction before completion: frontend styling must use TailwindCSS as the default styling system instead of growing handwritten CSS. Root `AGENTS.md` now records this rule. P3-E-C-B-H must first wire Tailwind into `remote-ui` before adding new UI styling; `@xterm/xterm/css/xterm.css` remains allowed as a third-party library CSS import.
+- Implementation notes: added TailwindCSS/PostCSS config to `remote-ui`, replaced `localWebEntry.css` handwritten layout with Tailwind directives, moved local shell/list/file/pair layout styling to JSX utility classes, added `@xterm/xterm` and `@xterm/addon-fit`, and replaced the terminal `<pre>` with an xterm surface that writes accumulated terminal text, forwards `onData` through `TerminalTransport.sendInput`, fits via `FitAddon`, and sends deduplicated resize messages only after the terminal channel is open.
+- Review regression tests: added `Terminal.test.tsx` coverage for xterm construction, output writes, input forwarding, open-channel resize sending, and delayed resize when `FitAddon.proposeDimensions()` is initially unavailable. Non-terminal app-shell tests mock `Terminal` so jsdom does not instantiate browser-only xterm internals.
+- Focused tests after implementation: `cd remote-ui && npm test -- --run src/Terminal.test.tsx` passed 6 tests; `cd remote-ui && npm run typecheck` passed.
+- Broader tests after implementation: `cd remote-ui && npm test` passed 94 tests; `cd remote-ui && npm run build:localweb` passed and regenerated `termx-core/internal/remote/localweb/static/assets/index-D5d9blrT.js` plus `index-D4ZdPfWr.css`; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-core && go test ./internal/remote/...` passed; `cd termx-cli && go test ./cmd/termx` passed; `git diff --check` passed.
+- Real browser smoke: rebuilt `/tmp/termx-local-test`, restarted the local daemon at `http://127.0.0.1:18888` with ICE TCP `127.0.0.1:18889`, created terminal `1`, generated fresh pair sessions, drove Chrome headless over CDP to pair the page, opened browser WebRTC, verified `/assets/index-D5d9blrT.js` loaded, verified `.xterm-screen` exists, verified the file manager rendered real root entries instead of `Loading files`, focused the xterm helper textarea, sent `printf 'termx_xterm_smoke_1777646413677\n'`, and observed that text in the terminal surface. The smoke also confirmed the page body did not contain `workspace`, `tab`, `window`, or `pane`.
+- Code review: `Faraday` found one medium issue that the regenerated embedded assets were referenced by `index.html` but still untracked. Fixed by staging the new `index-D5d9blrT.js` / `index-D4ZdPfWr.css` assets and deleting the old generated files in the implementation commit. Faraday found no workspace/tab/pane/session public model drift, TURN credential exposure, machine private key handling, or UI/business WebRTC primitive leakage. Residual note: input before channel readiness is still covered by existing `TerminalClient` input-dropped behavior, not by a component-level xterm test.
+- Result: completed. Commit: `db9c7065`.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 
@@ -460,6 +467,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - P3-E-C-B-B review complete after first-run reachability fix and follow-up review. The pair harness remains rendered through `LocalAgentApi` and app identity interfaces, missing-certificate errors no longer hide pairing, successful pairing retries the local transport, executable smoke covers embedded shell/pair markers plus no TURN or machine-private-key asset exposure, and no follow-up findings remain.
 - P3-F review complete after candidate endpoint, envelope-forwarding, hashed-secret, and relay-candidate rejection fixes. Current HTTP adapter reuses the anonymous rendezvous store, forwards only lightweight signaling/certificate/signature envelopes needed by the daemon, stores only hashed channel-secret verifier material, and does not add TURN credentials, terminal/file payload forwarding, app certificate business authorization, machine private key exposure, or workspace/tab/pane public concepts.
 - P3-E-C-B-D review complete. Local browser API requests and file transfers now wait for their RTC DataChannels to open inside the adapter boundary; UI/business components still only see `PeerTransport`, `JsonRpcChannel`, and `BinaryChannel`; no workspace/tab/pane/session public concepts, TURN relay credentials, or machine private key exposure were introduced. Residual risk: real in-app browser click automation remains deferred until the Browser Use Node REPL `js` tool is available.
+- P3-E-C-B-H review complete after staged asset fix. Embedded local web terminal rendering now uses xterm.js behind `TerminalTransport`, TailwindCSS is wired as the frontend styling system, generated localweb assets are tracked, and real Chrome CDP smoke proved pair -> WebRTC -> xterm input/output -> file list on the rebuilt daemon. No workspace/tab/pane public model, TURN relay credentials, machine private key exposure, or UI/browser transport boundary leak was introduced. Residual risk: richer tgent mobile-native terminal interactions such as custom selection/keyboard composition/search remain future UI polish.
 
 ## Deferred Human Decisions And Placeholders
 
@@ -476,10 +484,10 @@ Status file for unattended remote rebuild work. Update this file before starting
 - New `remote-ui/` package must avoid carrying over tgent pane/session public concepts when copying `Terminal.tsx`, `SessionList.tsx`, and file manager code.
 - Keeping TermX UI close enough to tgent for future synchronization conflicts with replacing tgent's web-like interaction state. The boundary is explicit: copy structure/components/adapters where possible, but normalize messages and lifecycle through TermX reducers/queues.
 - P3-E browser adapter currently translates shared `GET /files/list` and `GET /files/stat` requests to the existing Go/tgent-style `POST` data-channel file API. Browser smoke in P3-E-C-B must validate that this adapter behavior works against the embedded daemon.
-- P3-E-C-B-B proves the local pair harness and executable embedded asset/API smoke fallback, but real in-app browser click automation remains deferred until Browser Use exposes the required Node REPL `js` tool.
+- P3-E-C-B-H proves real Chrome CDP browser smoke for local pair, xterm terminal input/output, and file list. Browser Use plugin click automation remains deferred until the Browser Use Node REPL `js` tool is available, but CDP smoke is an executable fallback.
 
 ## Next Exact Action
 
-1. Commit the root `AGENTS.md` TailwindCSS styling rule and this workflow correction separately from the unfinished xterm code.
-2. Continue P3-E-C-B-H by wiring Tailwind into `remote-ui`, then adapt `Terminal.tsx` xterm markup/styles through Tailwind utilities plus the required xterm library CSS import.
-3. Re-run focused and broader tests, code review the slice, update this workflow, and commit P3-E-C-B-H.
+1. Commit this workflow checkpoint for P3-E-C-B-H.
+2. Keep the verified local daemon running at `http://127.0.0.1:18888` for manual inspection if needed.
+3. Choose the next UI slice: likely mobile-native interaction polish on the shared xterm surface, or local embedded web shell ergonomics before migrating the same components into the mobile app.
