@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: P3 embedded local web first
 - Active todo: P3-E local embedded web terminal/file wiring
-- Last updated: 2026-05-01T12:10:23+08:00
+- Last updated: 2026-05-01T12:26:57+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -59,6 +59,20 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Follow-up review fix: `FileManagerProps` and `UseFileManagerOptions` now require `terminalId`; `useFileManager` rejects missing or mismatched `ConnectionInfo.terminalId` before opening the file API channel; `remote-ui` typecheck now includes `.tsx` files so component contract tests are enforced.
 - Final follow-up review: `Mencius` found no remaining code findings after terminal scoping fixes. Low finding: workflow text was stale and still described the terminal scoping fix as in progress. This entry is the workflow cleanup for that finding.
 - Result: completed. Commit: `138aba3`.
+
+### P3-E local embedded web terminal/file wiring
+
+- Active slice: P3-E-A browser adapter and app shell contract for local embedded web.
+- Tests written before implementation: `remote-ui/src/localAgentApi.test.ts`, `remote-ui/src/localWebRtcTransport.test.ts`, and `remote-ui/src/LocalRemoteApp.test.tsx`.
+- Expected failing tests: `cd remote-ui && npm test -- --run src/localAgentApi.test.ts src/localWebRtcTransport.test.ts src/LocalRemoteApp.test.tsx` fails because `./localAgentApi`, `./localWebRtcTransport`, and `./LocalRemoteApp` do not exist yet. The tests cover local status/terminal normalization, local pair and RTC offer payloads without private key/TURN leakage, browser WebRTC data-channel adapter boundaries, terminal identity scoping, and shared `TerminalList`/`Terminal`/`FileManager` composition.
+- Actual failing tests before implementation: focused P3-E-A tests failed as expected with missing module resolution errors for the three new modules.
+- Planned scope: keep browser WebRTC/fetch details inside adapter modules, expose only the existing `LocalAgentApi` and `PeerTransport` interfaces to components/hooks, require `machineId + terminalId` for terminal and file manager, and preserve native-like message/reducer behavior for visible state.
+- Implementation notes: added `localAgentApi` for local status/terminals/pair/RTC offer normalization, `localWebRtcTransport` for injectable browser WebRTC data-channel transport, and `LocalRemoteApp` as the embedded local web app shell that composes shared `TerminalList`, `Terminal`, and `FileManager`. The adapter intentionally does not open the optional `events` channel because current Go local RTC closes unknown labels; API-channel file reads are translated to the current Go `POST` JSON-body contract while keeping UI components behind semantic interfaces.
+- Focused tests after implementation and review fixes: `cd remote-ui && npm test -- --run src/localAgentApi.test.ts src/localWebRtcTransport.test.ts src/LocalRemoteApp.test.tsx` passed 10 tests; `cd remote-ui && npm run typecheck` passed.
+- Broader tests after implementation and review fixes: `cd remote-ui && npm test` passed 50 tests; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx` passed; `git diff --check` passed.
+- Code review: `Rawls` found P1 issues that `LocalRemoteApp` did not call `transport.connect()`, the first implementation generated the WebRTC offer before data channels existed, and the browser terminal channel still does not implement the current Go binary terminal protocol. It also found missing package exports and local RTC client metadata drift. Fixed in this slice: package exports, documented `client.type=browser` / `transport=local`, pre-offer `terminal:{terminal_id}` and `api` channel creation, and `LocalRemoteApp` connect lifecycle with regression tests. Deferred to P3-E-B: browser terminal client compatibility with the current Go binary terminal protocol.
+- P3-E-A defers actual bundling into `termx-core/internal/remote/localweb/static` until the adapter/app shell contracts compile and pass unit tests. The follow-up P3-E-B slice should add build/embed wiring and browser smoke.
+- Result: ready to commit. Commit: pending.
 
 ### P3-D-B shared terminal client and Terminal.tsx boundary
 
@@ -223,6 +237,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 - `Sartre` (`019de1ac-8634-7f21-934e-7b268a416f9f`): P3-D-D code review. Findings: file manager accepted mismatched machine transports, older directory responses could overwrite newer navigation, and workflow had stale pending text. Result: fixed with transport identity validation, stale-response sequence guards, and workflow cleanup.
 - `Planck` (`019de1b1-9b5d-7d70-8e5c-4459c1362296`): P3-D-D follow-up code review. Findings: file manager boundary still allowed unscoped terminal use because `terminalId` was optional and missing connection terminal identity did not fail; stale workflow text still appeared in the reviewed snapshot. Result: fixed with required terminal IDs, strict `ConnectionInfo.terminalId` validation before file API use, and workflow cleanup.
 - `Mencius` (`019de1b6-0a36-7980-87e8-d6ac6ee54388`): P3-D-D final quick code review after terminal scoping fixes. Findings: no remaining code issues; low stale workflow text still described completed terminal scoping work as pending. Result: workflow cleanup in this checkpoint.
+- `Euclid` (`019de1be-2f52-7890-a1b7-d17460a573d4`): P3-E read-only explorer. Findings: local RTC currently accepts `api`, `terminal:{terminal_id}`, and `file:{transfer_id}` only; `events` is documented optional but current Go closes unknown labels; API channel requests are unchunked JSON but responses are `0xC0` chunked binary; current Go/tgent file API uses POST JSON bodies for list/stat despite docs GET draft.
+- `Rawls` (`019de1c5-a582-71b1-b49a-aa07c33a53cc`): P3-E-A code review. Findings: app shell did not call transport connect, WebRTC offer must be generated after data channel creation, terminal channel framing is not yet Go binary protocol compatible, package exports were missing, and local RTC client metadata drifted from docs. Result: fixed all P3-E-A adapter/app-shell findings; binary terminal protocol adapter deferred to the next P3-E slice with explicit tests before browser smoke.
 
 ## Code Review Log
 
@@ -245,6 +261,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Public rendezvous deployment, DNS, TLS certificates, billing/subscription provider, mobile signing, and app store configuration remain deferred by policy.
 - `termx-core/remote_localweb.go` currently maps `last_active_at` from terminal creation time because the existing terminal inventory does not expose a separate last-activity timestamp. This is a narrow placeholder; replace it with real activity metadata when the terminal runtime publishes it.
 - Local HTTP and ICE TCP currently use independent listeners. Same-port cmux remains deferred until browser smoke/local e2e proves that reducing exposed ports is worth the extra listener complexity.
+- P3-E-A local WebRTC transport currently proves browser adapter boundaries, pre-offer channel negotiation, API channel POST translation, and chunk reassembly. It does not yet implement the Go binary terminal protocol over `terminal:{terminal_id}`; P3-E-B must add or adapt a binary protocol browser terminal client before claiming terminal e2e.
 
 ## Risks
 
@@ -256,6 +273,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Start P3-E by writing failing tests for the embedded local web browser adapter/data-channel wiring.
-2. Resolve the documented `GET /files/list` / existing Go `POST /files/list` contract mismatch before browser smoke.
-3. Wire shared `Terminal.tsx`, `TerminalList.tsx`, and `FileManager.tsx` into the local termx embedded web shell.
+1. Commit P3-E-A browser adapter/app shell contract and record the commit hash.
+2. Start P3-E-B by writing failing tests for a browser terminal adapter compatible with the current Go binary terminal protocol over `terminal:{terminal_id}`.
+3. After P3-E-B passes, add build/embed wiring and browser smoke for the local embedded web shell.

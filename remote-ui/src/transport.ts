@@ -51,6 +51,10 @@ export interface LocalStatus {
 }
 
 export interface LocalPairInput {
+  pairSessionId: string
+  pairSecret: string
+  appDeviceId: string
+  appName: string
   appPublicKey: string
   requestedCapabilities: string[]
 }

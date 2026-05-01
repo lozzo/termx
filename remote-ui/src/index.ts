@@ -20,6 +20,17 @@ export { createFileApi } from './fileApi'
 export type { DirListResponse, FileApi, FileEntry, FileEntryType } from './fileApi'
 export { FileManager } from './FileManager'
 export type { FileManagerProps } from './FileManager'
+export { LocalRemoteApp } from './LocalRemoteApp'
+export type { LocalRemoteAppProps, LocalRemoteTransportFactory, LocalRemoteTransportInput } from './LocalRemoteApp'
+export { createLocalAgentApi } from './localAgentApi'
+export type { LocalAgentApiOptions } from './localAgentApi'
+export { createLocalWebRtcPeerTransport } from './localWebRtcTransport'
+export type {
+  LocalOfferSignature,
+  LocalWebRtcPeerTransportOptions,
+  RTCDataChannelLike,
+  RTCPeerConnectionLike,
+} from './localWebRtcTransport'
 export { TerminalClient } from './terminalClient'
 export type {
   TerminalClientCallbacks,
