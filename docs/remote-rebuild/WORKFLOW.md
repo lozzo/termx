@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-E-C-B-J complete `termx remote` local management commands
-- Last updated: 2026-05-02T01:14:00+08:00
+- Active todo: choose next slice after P3-E-C-B-J remote command completion
+- Last updated: 2026-05-02T01:18:00+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -39,7 +39,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-G | local/e2e | Fix real-browser local WebRTC `api` DataChannel timeout by waiting for local ICE candidates before signing/sending the offer | completed | `9531237` |
 | P3-E-C-B-H | local/e2e | Replace the readonly terminal placeholder with a tgent-aligned xterm.js terminal surface that writes output, forwards input, and sends resize through TermX terminal interfaces | completed | `db9c7065` |
 | P3-E-C-B-I | remote-ui | Refactor embedded local web mobile terminal interaction shell with terminal-first navigation, terminal switcher sheet, pair sheet, virtual keybar, and keyboard-aware xterm handle | completed | `be748f93` |
-| P3-E-C-B-J | cli/local | Complete `termx remote` commands for implemented local-only remote management: enable/local-only, disable, info/show, pair, and open | in_progress |  |
+| P3-E-C-B-J | cli/local | Complete `termx remote` commands for implemented local-only remote management: enable/local-only, disable, info/show, pair, and open | completed | `dd5e1502` |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -275,7 +275,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Broader tests after implementation and review fixes: `cd termx-cli && go test ./cmd/termx` passed; `cd termx-cli && go test ./...` passed; `cd termx-core && go test ./protocol ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-core && go test ./internal/remote/... ./protocol` passed; `cd termx-core && go test ./...` passed; `git diff --check` passed.
 - Real command smoke: with a temporary socket/log/config/state directory, `go run ./termx-cli/cmd/termx remote enable --local-only --addr 127.0.0.1:0 --ice-tcp-addr 127.0.0.1:0 --json`, `remote status`, `remote info --json`, `remote pair --ttl 1m --json`, `remote open --print`, and `remote disable --json` all passed. Output included dynamic local web URL, ICE TCP port, pair session id/secret, open URL, and disabled local status. Temporary smoke daemons were stopped after the run.
 - Deferrals: managed remote enablement, public control-plane login/claim, DNS/TLS, billing/subscription, and TermX TURN relay authorization remain deferred by policy. Commands that would imply managed relay return explicit not-yet-implemented guidance instead of silently issuing relay credentials.
-- Result: implementation complete; commit hash will be recorded immediately after commit.
+- Result: completed. Commit: `dd5e1502`.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 
@@ -525,7 +525,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Commit P3-E-C-B-J implementation and tests.
-2. Record the resulting P3-E-C-B-J commit hash in this workflow file.
-3. Keep the verified local daemon running at `http://127.0.0.1:18888` for manual inspection if needed.
-4. Choose the next UI slice: likely advanced mobile-native terminal gestures/keyboard polish on the shared xterm surface before migrating the same components into the mobile app.
+1. Decide whether to fold the unrelated `remote-ui/src/MobileTerminalKeybar.tsx` and `remote-ui/src/Terminal.tsx` touch/viewport changes into the next UI todo or revert them.
+2. Keep the verified local daemon running at `http://127.0.0.1:18888` for manual inspection if needed.
+3. Choose the next UI slice: likely advanced mobile-native terminal gestures/keyboard polish on the shared xterm surface before migrating the same components into the mobile app.
