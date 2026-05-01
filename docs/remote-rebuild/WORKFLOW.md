@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-E-C-B-D local WebRTC DataChannel open gating
-- Last updated: 2026-05-01T15:26:00+08:00
+- Active todo: choose next slice after P3-E-C-B-D manual local smoke
+- Last updated: 2026-05-01T15:26:33+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -33,7 +33,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-A | local/e2e | Implement browser-local app identity, certificate storage, and offer signing primitives | completed | `7185c8d` |
 | P3-E-C-B-B | local/e2e | Add local pair UI/harness and executable embedded web smoke fallback before mobile migration | completed | `be45093` |
 | P3-E-C-B-C | local/e2e | Run in-app Browser Use click smoke against embedded local web when the required browser Node REPL `js` tool is available | deferred |  |
-| P3-E-C-B-D | local/e2e | Fix browser local WebRTC API/file DataChannel send-before-open race found during manual embedded web test | in_progress |  |
+| P3-E-C-B-D | local/e2e | Fix browser local WebRTC API/file DataChannel send-before-open race found during manual embedded web test | completed | `a1edab3` |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -177,6 +177,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Focused tests after implementation before code review: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` passed 12 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm test` passed 79 tests; `cd remote-ui && npm run build:localweb` passed; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed.
 - Code review: `Hilbert` found no issues. It confirmed the fix stays inside the browser-local WebRTC adapter, preserves `PeerTransport` / `JsonRpcChannel` / `BinaryChannel` boundaries, keeps RTC primitives out of UI/business components, and does not introduce workspace/tab/pane/session concepts, TURN relay credentials, or machine private key exposure. Residual risk: no automated in-app browser click smoke was available in this Codex session.
 - Final focused tests after review: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` passed 12 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm test` passed 79 tests; `cd remote-ui && npm run build:localweb` passed; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
+- Result: completed. Commit: `a1edab3`.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 
@@ -421,6 +422,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Choose the next slice: either anonymous rendezvous client adapters around the shared remote UI, or P4-A mobile app shell migration.
+1. Restart the local test `termx` binary from commit `a1edab3` and run manual embedded-web smoke at `http://127.0.0.1:18888`.
 2. Update this workflow before writing the next todo's failing tests.
 3. Keep P3-E-C-B-C deferred until Browser Use exposes the required in-app browser Node REPL `js` tool.
