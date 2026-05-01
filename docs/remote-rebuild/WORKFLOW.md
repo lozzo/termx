@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-D-B shared terminal client and Terminal.tsx boundary
-- Last updated: 2026-05-01T11:39:59+08:00
+- Active todo: P3-D-C shared TerminalList.tsx boundary
+- Last updated: 2026-05-01T11:41:04+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -24,14 +24,21 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-B | localweb | Implement embedded local web foundation served from `termx` binary with local status, terminal list, and pair API contracts | completed | `6d9048f` |
 | P3-C | rtc | Implement local WebRTC signaling and ICE TCP mux/over-TCP support for browser-to-daemon local connections | completed | `52d964b` |
 | P3-D-A | remote-ui | Create shared `remote-ui/` TypeScript package with machine/terminal contracts, transport interfaces, connection message reducer, and event queue | completed | `fe9025d` |
-| P3-D-B | remote-ui | Adapt `Terminal.tsx` from `../tgent` into shared remote UI using `terminal_id` instead of pane/session concepts | in_progress |  |
-| P3-D-C | remote-ui | Adapt terminal list from `../tgent` `SessionList.tsx` into `TerminalList.tsx` with machine -> terminal semantics only | pending |  |
+| P3-D-B | remote-ui | Adapt `Terminal.tsx` from `../tgent` into shared remote UI using `terminal_id` instead of pane/session concepts | completed | `e87d37a` |
+| P3-D-C | remote-ui | Adapt terminal list from `../tgent` `SessionList.tsx` into `TerminalList.tsx` with machine -> terminal semantics only | in_progress |  |
 | P3-D-D | remote-ui | Adapt `FileManager.tsx` and file hooks from `../tgent` behind TermX file transport interfaces | pending |  |
 | P3-E | local/e2e | Wire embedded local web to terminal and file manager over local WebRTC DataChannels and validate in browser before mobile migration | pending |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | pending |  |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
 ## TDD Log
+
+### P3-D-C shared TerminalList.tsx boundary
+
+- Tests written before implementation: pending.
+- Expected failing tests: pending; first tests will target a `TerminalList.tsx` component and terminal inventory hook/store that render `Terminal[]` grouped by machine context only, dispatch terminal-open user intent, and reject tgent session/window/pane records.
+- Planned scope: adapt only the useful list interaction shape from tgent `SessionList.tsx`; do not copy createSession/createWindow/splitPane/movePane/killPane or session/window/pane drag/drop semantics. The public list model remains machine -> terminal.
+- Result: in progress. Commit: pending.
 
 ### P3-D-B shared terminal client and Terminal.tsx boundary
 
@@ -43,7 +50,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Focused tests after implementation and review fixes: `cd remote-ui && npm test` passed 21 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm audit` passed with 0 vulnerabilities.
 - Broader tests after implementation and review fixes: `cd termx-core && go test ./internal/remote/...` passed; `cd termx-cli && go test ./cmd/termx` passed; `git diff --check` passed.
 - Code review: `Hypatia` found terminal output chunks were dropped before rendering, close reasons were overwritten by clean close handling, and shared terminal session state was hardcoded to local mode. Fixed by storing terminal output text in the hook/component boundary, deriving mode from `transport.getConnectionInfo()`, and letting reasoned close lifecycle messages preserve failed channel state.
-- Result: ready to commit. Commit: pending.
+- Result: completed. Commit: `e87d37a`.
 
 ### P3-D-A shared remote UI logic package
 
@@ -222,6 +229,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Commit P3-D-B with the shared terminal client/hook/component boundary and workflow updates.
-2. Record the P3-D-B commit hash in this workflow.
-3. Start P3-D-C by writing failing tests for `TerminalList.tsx` with machine -> terminal semantics only and no tgent session/window/pane model.
+1. Commit the workflow checkpoint recording P3-D-B commit `e87d37a`.
+2. Write failing tests for `TerminalList.tsx` with machine -> terminal semantics only and no tgent session/window/pane model.
+3. Implement the smallest terminal inventory/list boundary behind existing `remote-ui` interfaces.
