@@ -89,7 +89,10 @@ Request:
 
 ```json
 {
+  "pair_session_id": "pair_...",
   "pair_secret": "random_192bit_base64url",
+  "app_device_id": "appdev_...",
+  "app_name": "TermX Local Web",
   "app_public_key": "base64...",
   "requested_capabilities": ["terminal", "file_manager"]
 }
@@ -100,6 +103,8 @@ Response:
 ```json
 {
   "machine_id": "mach_...",
+  "machine_name": "MacBook Pro",
+  "machine_public_key": "base64...",
   "machine_public_key_fingerprint": "sha256:...",
   "app_certificate": {
     "payload": {},

@@ -3,13 +3,18 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -155,6 +160,23 @@ func daemonCommand(socket *string) *cobra.Command {
 				)
 			}
 			srv := termx.NewServer(opts...)
+			defer func() {
+				_ = srv.Shutdown(context.Background())
+			}()
+			if localWebAddr := remoteLocalWebAddrFromEnv(); localWebAddr != "" {
+				localWebURL, stopLocalWeb, err := startRemoteLocalWeb(ctx, srv, localWebAddr, logger)
+				if err != nil {
+					return err
+				}
+				defer func() {
+					shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					if err := stopLocalWeb(shutdownCtx); err != nil {
+						logger.Warn("remote local web shutdown failed", "error", err)
+					}
+				}()
+				logger.Info("remote local web configured", "url", localWebURL)
+			}
 			err = srv.ListenAndServe(ctx)
 			if err != nil {
 				logger.Error("daemon exited with error", "error", err)
@@ -494,6 +516,79 @@ func remoteConfigFromEnv() termx.RemoteConfig {
 		cfg.Enabled = true
 	}
 	return cfg
+}
+
+func remoteLocalWebAddrFromEnv() string {
+	if addr := strings.TrimSpace(os.Getenv("TERMX_REMOTE_LOCAL_WEB_ADDR")); addr != "" {
+		return addr
+	}
+	if envBool("TERMX_REMOTE_LOCAL_WEB_ENABLE") {
+		return "127.0.0.1:18888"
+	}
+	return ""
+}
+
+func startRemoteLocalWeb(ctx context.Context, srv *termx.Server, addr string, logger *slog.Logger) (string, func(context.Context) error, error) {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return "", nil, fmt.Errorf("remote local web address is required")
+	}
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return "", nil, err
+	}
+
+	baseURL := localWebBaseURL(listener.Addr())
+	httpServer := &http.Server{
+		Handler: srv.LocalWebHandler(termx.LocalWebOptions{
+			HTTPURL:      baseURL,
+			LocalPairURL: baseURL + "/api/local/pair",
+		}),
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) && logger != nil {
+			logger.Error("remote local web serve failed", "addr", listener.Addr().String(), "error", err)
+		}
+	}()
+
+	var once sync.Once
+	var shutdownErr error
+	shutdown := func(shutdownCtx context.Context) error {
+		once.Do(func() {
+			shutdownErr = httpServer.Shutdown(shutdownCtx)
+			if shutdownErr != nil {
+				_ = httpServer.Close()
+			}
+			<-done
+		})
+		return shutdownErr
+	}
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdown(shutdownCtx)
+	}()
+
+	if logger != nil {
+		logger.Info("remote local web listening", "url", baseURL, "addr", listener.Addr().String())
+	}
+	return baseURL, shutdown, nil
+}
+
+func localWebBaseURL(addr net.Addr) string {
+	tcpAddr, ok := addr.(*net.TCPAddr)
+	if !ok {
+		return "http://" + addr.String()
+	}
+	host := tcpAddr.IP.String()
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return "http://" + net.JoinHostPort(host, strconv.Itoa(tcpAddr.Port))
 }
 
 func envBool(key string) bool {

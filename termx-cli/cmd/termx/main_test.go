@@ -3,14 +3,18 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	termx "github.com/lozzow/termx/termx-core"
 	"github.com/lozzow/termx/termx-core/protocol"
 	"github.com/lozzow/termx/tuiv2/shared"
 )
@@ -263,6 +267,144 @@ func TestRemoteConfigFromEnvAutoEnablesWhenRemoteFieldsExist(t *testing.T) {
 	cfg := remoteConfigFromEnv()
 	if !cfg.Enabled {
 		t.Fatal("expected remote config to auto-enable when remote fields exist")
+	}
+}
+
+func TestRemoteLocalWebAddrFromEnv(t *testing.T) {
+	t.Setenv("TERMX_REMOTE_LOCAL_WEB_ENABLE", "")
+	t.Setenv("TERMX_REMOTE_LOCAL_WEB_ADDR", "")
+	if got := remoteLocalWebAddrFromEnv(); got != "" {
+		t.Fatalf("expected local web to be disabled by default, got %q", got)
+	}
+
+	t.Setenv("TERMX_REMOTE_LOCAL_WEB_ENABLE", "true")
+	if got := remoteLocalWebAddrFromEnv(); got != "127.0.0.1:18888" {
+		t.Fatalf("expected default local web addr, got %q", got)
+	}
+
+	t.Setenv("TERMX_REMOTE_LOCAL_WEB_ADDR", "127.0.0.1:19999")
+	if got := remoteLocalWebAddrFromEnv(); got != "127.0.0.1:19999" {
+		t.Fatalf("expected explicit local web addr, got %q", got)
+	}
+}
+
+func TestStartRemoteLocalWebServesEmbeddedPageAndStatus(t *testing.T) {
+	srv := termx.NewServer(termx.WithRemoteConfig(termx.RemoteConfig{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "cli-local-web",
+	}))
+	defer srv.Shutdown(context.Background())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	baseURL, shutdown, err := startRemoteLocalWeb(ctx, srv, "127.0.0.1:0", nil)
+	if err != nil {
+		t.Fatalf("startRemoteLocalWeb returned error: %v", err)
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer shutdownCancel()
+		if err := shutdown(shutdownCtx); err != nil {
+			t.Fatalf("shutdown local web: %v", err)
+		}
+	}()
+
+	client := http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(baseURL + "/")
+	if err != nil {
+		t.Fatalf("GET embedded page: %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read embedded page: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected embedded page status 200, got %d: %s", resp.StatusCode, string(body))
+	}
+	if !strings.Contains(string(body), "TermX Remote") {
+		t.Fatalf("expected embedded TermX Remote page, got %s", string(body))
+	}
+
+	resp, err = client.Get(baseURL + "/api/local/status")
+	if err != nil {
+		t.Fatalf("GET local status: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected local status 200, got %d: %s", resp.StatusCode, string(body))
+	}
+	var status map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		t.Fatalf("decode local status: %v", err)
+	}
+	if machineID, _ := status["machine_id"].(string); machineID == "" {
+		t.Fatalf("expected local status machine_id, got %#v", status)
+	}
+	if _, ok := status["device_id"]; ok {
+		t.Fatalf("local status must not expose legacy device_id: %#v", status)
+	}
+
+	resp, err = client.Get(baseURL + "/api/local/terminals")
+	if err != nil {
+		t.Fatalf("GET local terminals: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected local terminals 200, got %d: %s", resp.StatusCode, string(body))
+	}
+	var terminals map[string][]map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&terminals); err != nil {
+		t.Fatalf("decode local terminals: %v", err)
+	}
+	if len(terminals["terminals"]) != 0 {
+		t.Fatalf("expected no terminals on fresh CLI server, got %#v", terminals)
+	}
+
+	session, err := srv.RemotePairStart(termx.PairStartOptions{
+		LocalPairURL: baseURL + "/api/local/pair",
+		TTL:          time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("RemotePairStart returned error: %v", err)
+	}
+	appPublic, _, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	pairPayload := strings.NewReader(`{
+		"pair_session_id":"` + session.PairSessionID + `",
+		"pair_secret":"` + session.PairSecret + `",
+		"app_device_id":"app-cli-local-web",
+		"app_name":"TermX CLI Local Web Test",
+		"app_public_key":"` + base64.StdEncoding.EncodeToString(appPublic) + `",
+		"requested_capabilities":["terminal","file_manager"]
+	}`)
+	resp, err = client.Post(baseURL+"/api/local/pair", "application/json", pairPayload)
+	if err != nil {
+		t.Fatalf("POST local pair: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected local pair 200, got %d: %s", resp.StatusCode, string(body))
+	}
+	var pair map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&pair); err != nil {
+		t.Fatalf("decode local pair: %v", err)
+	}
+	if pair["machine_id"] != session.MachineID {
+		t.Fatalf("expected pair machine_id %q, got %#v", session.MachineID, pair)
+	}
+	if pair["machine_public_key_fingerprint"] != session.MachinePublicKeyFingerprint {
+		t.Fatalf("expected machine fingerprint %q, got %#v", session.MachinePublicKeyFingerprint, pair)
+	}
+	if pair["app_certificate"] == nil || pair["machine_private_key"] != nil {
+		t.Fatalf("expected app certificate without machine private key, got %#v", pair)
 	}
 }
 

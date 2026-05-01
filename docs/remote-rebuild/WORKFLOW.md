@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-B embedded local web foundation
-- Last updated: 2026-05-01T09:42:56+08:00
+- Active todo: P3-C local WebRTC signaling and ICE TCP mux
+- Last updated: 2026-05-01T10:16:01+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -21,7 +21,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P2-C | pairing | Implement local pair session creation, TTL, single-use semantics, and app certificate issuance in `termx-core/internal/remote/pairing` | completed | `12067cb` |
 | P2-D | CLI | Keep `termx remote status` working and add a conservative `termx pair` CLI skeleton only after core primitives exist | completed | `4b24258` |
 | P3-A | rendezvous | Implement anonymous rendezvous interfaces/contracts with payload limit, TTL, channel secret verification, and no TURN credentials | completed | `4012a1b` |
-| P3-B | localweb | Implement embedded local web foundation served from `termx` binary with local status, terminal list, and pair API contracts | pending |  |
+| P3-B | localweb | Implement embedded local web foundation served from `termx` binary with local status, terminal list, and pair API contracts | completed | pending commit |
 | P3-C | rtc | Implement local WebRTC signaling and ICE TCP mux/over-TCP support for browser-to-daemon local connections | pending |  |
 | P3-D | remote-ui | Create shared remote UI package and adapt `Terminal.tsx`, `TerminalList.tsx`, and `FileManager.tsx` from `../tgent` for machine/terminal-only semantics | pending |  |
 | P3-E | local/e2e | Wire embedded local web to terminal and file manager over local WebRTC DataChannels and validate in browser before mobile migration | pending |  |
@@ -110,6 +110,19 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Broader tests: `cd termx-core && go test ./internal/remote/...` passed; `cd termx-core && go test ./...` passed; `git diff --check` passed.
 - Result: completed. Commit: `4012a1b`.
 
+### P3-B embedded local web foundation
+
+- Tests written before implementation: `termx-core/internal/remote/localweb/handler_test.go`, `termx-core/remote_localweb_test.go`, and `termx-cli/cmd/termx/main_test.go`.
+- Expected failing test: `cd termx-core && go test ./internal/remote/localweb` fails to build because `Status`, `Terminal`, `NewHandler`, `Config`, and `NewStaticAssets` do not exist yet; `cd termx-core && go test . -run TestE2ERemoteLocalWebHandlerStatusTerminalsAndPair` fails to build because `Server.LocalWebHandler`, `LocalWebOptions`, and `NewLocalWebStaticAssets` do not exist yet.
+- Additional expected failing test: `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocalWebAddrFromEnv|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` fails to build because `remoteLocalWebAddrFromEnv` and `startRemoteLocalWeb` do not exist yet.
+- Focused tests: failed as expected before implementation at core handler, core server wrapper, and CLI daemon local web layers.
+- Review regression tests: `cd termx-core && go test ./internal/remote/localweb -run TestHandlerErrorResponseUsesDocumentedEnvelope` failed before local API errors were changed to the documented `error.code`, `error.message`, and `error.request_id` envelope.
+- Final focused tests: `cd termx-core && go test ./internal/remote/localweb` passed; `cd termx-core && go test . -run 'TestE2ERemote(LocalWeb|Pair|Status)'` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemote(LocalWeb|Config)|TestStartRemoteLocalWeb|TestRootCmdHasRemoteStatusAndPairCommands|TestPairCmdEmitsJSONPairSession'` passed.
+- Broader tests: `cd termx-core && go test ./internal/remote/...` passed; `cd termx-core && go test ./...` passed; `cd termx-cli && go test ./...` passed; `git diff --check` passed.
+- Code review: `Avicenna` pre-CLI review found pair response/docs and embedded asset coverage might be incomplete from an earlier snapshot, plus `last_active_at` creation-time semantics. `Bacon` final review found stale workflow state, missing CLI listener-path coverage for terminals/pair, the same `last_active_at` placeholder, and local API error envelope drift.
+- Fixes after review: local pair response/docs include `machine_public_key_fingerprint` and `expires_at`; default assets use `go:embed`; CLI TCP listener test covers `/`, `/api/local/status`, `/api/local/terminals`, and `/api/local/pair`; local API errors now use documented `code/message/request_id`; `last_active_at` remains recorded as a placeholder until runtime activity metadata exists.
+- Result: completed. Commit: pending.
+
 ## Subagents
 
 - `Galileo` (`019ddf61-2c8a-7cf0-8a00-991250f8b294`): explorer for termx-core P2 identity/runtime integration points. Result: preserve existing `DeviceIdentity` status baseline, add machine-named key/cert/pairing primitives, and avoid exposing machine private key.
@@ -121,6 +134,9 @@ Status file for unattended remote rebuild work. Update this file before starting
 - `Averroes` (`019ddf8c-a240-7063-8d97-e582d128011f`): P2-D code review. Findings: changing pair config replaced the manager and invalidated active sessions, workflow stale. Result: fixed with manager config updates that preserve existing sessions and workflow updates.
 - `Epicurus` (`019ddf9b-6e36-7c32-9433-71c59a027d69`): P3-A code review. Findings: unbounded TTL, arbitrary data under signaling message types, missing app binding after claim, unbounded message retention, workflow stale. Result: fixed with max TTL, structured signaling payload validation, app public key binding, per-channel message limits, and workflow updates.
 - R1: no subagent launched; documentation-only planning adjustment requested by the user and no implementation correctness review was required.
+- `Raman` (`019de136-503d-7d10-8738-0d95fcd79bda`): explorer for P3-B core local web/server integration points. Result: use `Server.List`, `Server.RemoteStatus`, and the existing pairing manager through narrow localweb interfaces; avoid importing root `termx` from internal packages; add local status machine-key fingerprint without exposing the machine private key.
+- `Avicenna` (`019de13e-d21e-76c2-98ac-f424e1250e2f`): P3-B code review before CLI daemon wiring. Findings: pair response/docs and embedded asset coverage looked incomplete from the reviewed snapshot, and terminal `last_active_at` currently maps creation time. Result: pair response/docs and embedded default assets are present in local files; CLI daemon serving path and `last_active_at` placeholder documentation remain active work inside P3-B.
+- `Bacon` (`019de14b-634e-7e33-b3e8-231a41bd965a`): final P3-B code review after CLI daemon wiring. Findings: workflow stale, CLI listener test did not cover terminals/pair, `last_active_at` is creation time, and local error responses lacked `code/request_id`. Result: workflow updated, CLI listener coverage expanded, error envelope fixed; `last_active_at` remains a documented placeholder.
 
 ## Code Review Log
 
@@ -131,11 +147,12 @@ Status file for unattended remote rebuild work. Update this file before starting
 - P3-A review complete. No remaining findings after implemented fixes; no workspace/tab/pane concepts, anonymous/free TURN relay credentials, terminal/file data relay, app machine-private-key exposure, or transport boundary drift introduced.
 - R1 planning review: self-checked updated docs for scope drift. Plan now prioritizes embedded local web, shared `remote-ui/` components, and local WebRTC-over-TCP before mobile app migration; no new workspace/tab/pane public model and no anonymous/free TURN relay entitlement were introduced.
 - R2 planning review: self-checked updated docs for scope drift. Plan now requires tgent-aligned page/component structure where practical, plus TermX-owned native-like message reducer/event queue behavior; no new workspace/tab/pane public model and no anonymous/free TURN relay entitlement were introduced.
+- P3-B review complete. No remaining blocker after implemented fixes; no workspace/tab/pane public model, anonymous/free TURN relay credentials, app machine-private-key exposure, or transport boundary leakage introduced. Residual risk is limited to the documented `last_active_at` placeholder and the P3-C absence of local RTC/ICE TCP data plane.
 
 ## Deferred Human Decisions And Placeholders
 
 - Public rendezvous deployment, DNS, TLS certificates, billing/subscription provider, mobile signing, and app store configuration remain deferred by policy.
-- No mocks or placeholders added in code yet.
+- `termx-core/remote_localweb.go` currently maps `last_active_at` from terminal creation time because the existing terminal inventory does not expose a separate last-activity timestamp. This is a narrow placeholder; replace it with real activity metadata when the terminal runtime publishes it.
 - Whether local HTTP and ICE TCP share one port via cmux or use adjacent/independent ports is intentionally deferred to P3-C implementation; current contract only requires the browser adapter to discover the ICE TCP endpoint.
 
 ## Risks
@@ -147,5 +164,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Start P3-B by updating this workflow before writing tests for local embedded web foundation.
-2. Write failing tests for local embedded web status, terminal list, pair API contracts, and embedded asset serving.
+1. Commit P3-B implementation.
+2. Update this workflow with the P3-B commit hash.
+3. Start P3-C by writing failing tests for local `/api/local/rtc/offer` and ICE TCP mux adapter contracts.
