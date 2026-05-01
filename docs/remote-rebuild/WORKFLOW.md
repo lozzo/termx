@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-E-C-B-B local pair UI/harness and embedded browser smoke
-- Last updated: 2026-05-01T14:35:19+08:00
+- Active todo: P3-F anonymous rendezvous HTTP adapter/service
+- Last updated: 2026-05-01T14:36:55+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -31,9 +31,9 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-B | local/e2e | Implement browser terminal adapter compatible with current Go binary terminal protocol over `terminal:{terminal_id}` | completed | `4ef0557` |
 | P3-E-C-A | local/e2e | Build and embed the shared local web shell into `termx` static assets | completed | `f68bf9d` |
 | P3-E-C-B-A | local/e2e | Implement browser-local app identity, certificate storage, and offer signing primitives | completed | `7185c8d` |
-| P3-E-C-B-B | local/e2e | Add local pair UI/harness and executable embedded web smoke fallback before mobile migration | in_progress |  |
+| P3-E-C-B-B | local/e2e | Add local pair UI/harness and executable embedded web smoke fallback before mobile migration | completed | `be45093` |
 | P3-E-C-B-C | local/e2e | Run in-app Browser Use click smoke against embedded local web when the required browser Node REPL `js` tool is available | deferred |  |
-| P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | pending |  |
+| P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | in_progress |  |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
 ## TDD Log
@@ -163,7 +163,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Focused tests after review fix: `cd remote-ui && npm test -- --run src/LocalRemoteApp.test.tsx` passed 5 tests; `cd remote-ui && npm test -- --run src/LocalPairPanel.test.tsx src/LocalRemoteApp.test.tsx src/localWebEntry.test.tsx` passed 9 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm run build:localweb` passed.
 - Broader tests after review fix: `cd remote-ui && npm test` passed 77 tests; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
 - Follow-up code review: `Darwin` found no findings after the first-run pairing fix. It confirmed the certificate error stays non-fatal after machine/terminal load, the pair panel remains visible, pair success clears the error and retries transport creation, tests cover the regression, and the scoped files did not introduce workspace/tab/pane/session UI wording, TURN credentials, machine private key exposure, or app private key boundary drift.
-- Result: in progress. Commit: pending.
+- Result: completed. Commit: `be45093`.
 
 ### P3-D-B shared terminal client and Terminal.tsx boundary
 
@@ -378,6 +378,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Commit P3-E-C-B-B with generated embedded assets.
-2. Record the commit hash in this workflow.
-3. Start P3-F anonymous rendezvous HTTP adapter/service with workflow updated before writing tests.
+1. Read current rendezvous docs/contracts and existing `termx-core/internal/remote/rendezvous` package.
+2. Write failing P3-F HTTP adapter/service tests for anonymous rendezvous payload limits, TTL, channel secret verification, and no TURN credentials.
+3. Implement the smallest HTTP adapter/service behind interfaces.
