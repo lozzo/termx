@@ -446,6 +446,24 @@ Request:
 }
 ```
 
+### Send ICE Candidate
+
+`POST /api/v1/anonymous/channels/{channel_id}/candidate`
+
+Request:
+
+```json
+{
+  "channel_secret": "...",
+  "app_public_key": "base64...",
+  "candidate": {
+    "candidate": "...",
+    "mid": "0",
+    "mline_index": 0
+  }
+}
+```
+
 Limits:
 
 - payload max 64KB。

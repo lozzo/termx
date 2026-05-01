@@ -83,6 +83,32 @@ func TestChannelSecretRequiredForMessages(t *testing.T) {
 	}
 }
 
+func TestChannelSecretIsNotStoredInPlaintext(t *testing.T) {
+	store := NewMemoryStore(Config{Now: fixedNow, MaxPayloadBytes: 64})
+	channel, err := store.CreateChannel(CreateChannelRequest{
+		MachineID:                   "mach_test",
+		MachinePublicKeyFingerprint: "sha256:test",
+		TTLSeconds:                  600,
+	})
+	if err != nil {
+		t.Fatalf("CreateChannel returned error: %v", err)
+	}
+
+	store.mu.Lock()
+	stored := store.channels[channel.ChannelID].secretHash
+	store.mu.Unlock()
+	if stored == "" || stored == channel.ChannelSecret || strings.Contains(stored, channel.ChannelSecret) {
+		t.Fatalf("channel secret must not be stored in plaintext, stored=%q secret=%q", stored, channel.ChannelSecret)
+	}
+	if err := store.PostMessage(channel.ChannelID, channel.ChannelSecret, Message{
+		Type:    MessageOffer,
+		From:    "appdev_test",
+		Payload: []byte(`{"sdp":"offer"}`),
+	}); err != nil {
+		t.Fatalf("hashed channel secret should still authorize messages: %v", err)
+	}
+}
+
 func TestUnsupportedMessageTypeRejected(t *testing.T) {
 	store := NewMemoryStore(Config{Now: fixedNow, MaxPayloadBytes: 64})
 	channel, err := store.CreateChannel(CreateChannelRequest{
@@ -173,6 +199,20 @@ func TestSignalingPayloadMustBeStructured(t *testing.T) {
 		Payload: []byte(`{"terminal_data":"hidden"}`),
 	}); err == nil {
 		t.Fatal("expected offer without sdp to be rejected")
+	}
+	if err := store.PostMessage(channel.ChannelID, channel.ChannelSecret, Message{
+		Type:    MessageCandidate,
+		From:    "appdev_test",
+		Payload: []byte(`{"candidate":"candidate:1 1 udp 1 192.0.2.1 5000 typ relay raddr 0.0.0.0 rport 0"}`),
+	}); err == nil {
+		t.Fatal("expected relay candidate to be rejected in anonymous rendezvous")
+	}
+	if err := store.PostMessage(channel.ChannelID, channel.ChannelSecret, Message{
+		Type:    MessageOffer,
+		From:    "appdev_test",
+		Payload: []byte(`{"sdp":"offer","ice_candidates":["turn:relay.termx.example:3478"]}`),
+	}); err == nil {
+		t.Fatal("expected TURN URL to be rejected in anonymous rendezvous")
 	}
 }
 

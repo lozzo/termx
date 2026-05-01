@@ -2,8 +2,10 @@ package rendezvous
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -136,7 +138,7 @@ func (s *Store) CreateChannel(req CreateChannelRequest) (Channel, error) {
 	defer s.mu.Unlock()
 	s.channels[channel.ChannelID] = &channelState{
 		channel:    channel,
-		secretHash: channel.ChannelSecret,
+		secretHash: hashChannelSecret(channel.ChannelSecret),
 	}
 	return channel, nil
 }
@@ -211,7 +213,7 @@ func (s *Store) authorizedStateLocked(channelID, channelSecret string) (*channel
 		delete(s.channels, channelID)
 		return nil, errors.New("channel expired")
 	}
-	if subtle.ConstantTimeCompare([]byte(state.secretHash), []byte(channelSecret)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(state.secretHash), []byte(hashChannelSecret(channelSecret))) != 1 {
 		return nil, errors.New("invalid channel secret")
 	}
 	return state, nil
@@ -234,10 +236,23 @@ func validateSignalingPayload(msg Message) error {
 	if len(raw) == 0 {
 		return errors.New("signaling payload must not be empty")
 	}
+	if containsAnonymousRelayMaterial(raw) {
+		return errors.New("anonymous rendezvous payload must not include TURN or relay candidates")
+	}
 	switch msg.Type {
 	case MessageOffer, MessageAnswer:
+		if msg.Type == MessageOffer {
+			if _, ok := raw["offer"]; ok {
+				return validateSignalingEnvelope(raw)
+			}
+		}
+		if msg.Type == MessageAnswer {
+			if _, ok := raw["answer"]; ok {
+				return validateSignalingEnvelope(raw)
+			}
+		}
 		if _, ok := raw["sdp"]; !ok {
-			return fmt.Errorf("%s payload requires sdp", msg.Type)
+			return fmt.Errorf("%s payload requires sdp or documented envelope", msg.Type)
 		}
 	case MessageCandidate:
 		if _, ok := raw["candidate"]; !ok {
@@ -246,9 +261,59 @@ func validateSignalingPayload(msg Message) error {
 	}
 	for key := range raw {
 		switch key {
-		case "sdp", "ice_candidates", "candidate", "sdp_type", "mid", "mline_index":
+		case "sdp", "ice_candidates", "candidate", "sdp_type", "mid", "mline_index", "app_certificate", "offer", "answer", "signature":
 		default:
 			return fmt.Errorf("unsupported signaling payload field %q", key)
+		}
+	}
+	return nil
+}
+
+func validateSignalingEnvelope(raw map[string]json.RawMessage) error {
+	for key, value := range raw {
+		switch key {
+		case "app_certificate", "offer", "answer", "signature":
+			if len(value) == 0 || string(value) == "null" {
+				return fmt.Errorf("%s must not be empty", key)
+			}
+			var nested map[string]json.RawMessage
+			if err := json.Unmarshal(value, &nested); err != nil {
+				return fmt.Errorf("%s must be JSON object: %w", key, err)
+			}
+			if err := validateEnvelopeObject(key, nested); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unsupported signaling payload field %q", key)
+		}
+	}
+	return nil
+}
+
+func validateEnvelopeObject(name string, raw map[string]json.RawMessage) error {
+	if len(raw) == 0 {
+		return fmt.Errorf("%s must not be empty", name)
+	}
+	for key := range raw {
+		switch name {
+		case "offer", "answer":
+			switch key {
+			case "sdp", "ice_candidates", "sdp_type":
+			default:
+				return fmt.Errorf("unsupported %s field %q", name, key)
+			}
+		case "signature":
+			switch key {
+			case "algorithm", "nonce", "timestamp", "value":
+			default:
+				return fmt.Errorf("unsupported signature field %q", key)
+			}
+		case "app_certificate":
+			switch key {
+			case "payload", "signature":
+			default:
+				return fmt.Errorf("unsupported app_certificate field %q", key)
+			}
 		}
 	}
 	return nil
@@ -286,4 +351,36 @@ func randomToken(prefix string, byteLen int) (string, error) {
 		return "", fmt.Errorf("generate random token: %w", err)
 	}
 	return prefix + base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func hashChannelSecret(secret string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(secret)))
+	return hex.EncodeToString(sum[:])
+}
+
+func containsAnonymousRelayMaterial(raw map[string]json.RawMessage) bool {
+	for _, value := range raw {
+		low := strings.ToLower(string(value))
+		if strings.Contains(low, "turn:") || strings.Contains(low, "turns:") || strings.Contains(low, `"typ relay`) || strings.Contains(low, " typ relay") {
+			return true
+		}
+		var nested map[string]json.RawMessage
+		if err := json.Unmarshal(value, &nested); err == nil && containsAnonymousRelayMaterial(nested) {
+			return true
+		}
+		var array []json.RawMessage
+		if err := json.Unmarshal(value, &array); err == nil {
+			for _, item := range array {
+				itemLow := strings.ToLower(string(item))
+				if strings.Contains(itemLow, "turn:") || strings.Contains(itemLow, "turns:") || strings.Contains(itemLow, `"typ relay`) || strings.Contains(itemLow, " typ relay") {
+					return true
+				}
+				var nestedItem map[string]json.RawMessage
+				if err := json.Unmarshal(item, &nestedItem); err == nil && containsAnonymousRelayMaterial(nestedItem) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

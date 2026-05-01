@@ -472,6 +472,7 @@ POST /api/v1/anonymous/channels
 GET  /api/v1/anonymous/channels/{channel_id}/events
 POST /api/v1/anonymous/channels/{channel_id}/offer
 POST /api/v1/anonymous/channels/{channel_id}/answer
+POST /api/v1/anonymous/channels/{channel_id}/candidate
 ```
 
 rendezvous 不校验 app certificate 的业务权限。它只校验 channel secret、TTL、payload size 和 rate limit。真正的证书与签名校验在 agent。

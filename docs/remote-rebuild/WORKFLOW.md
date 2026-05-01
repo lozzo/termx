@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: P3 embedded local web first
 - Active todo: P3-F anonymous rendezvous HTTP adapter/service
-- Last updated: 2026-05-01T14:36:55+08:00
+- Last updated: 2026-05-01T14:52:16+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -164,6 +164,30 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Broader tests after review fix: `cd remote-ui && npm test` passed 77 tests; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
 - Follow-up code review: `Darwin` found no findings after the first-run pairing fix. It confirmed the certificate error stays non-fatal after machine/terminal load, the pair panel remains visible, pair success clears the error and retries transport creation, tests cover the regression, and the scoped files did not introduce workspace/tab/pane/session UI wording, TURN credentials, machine private key exposure, or app private key boundary drift.
 - Result: completed. Commit: `be45093`.
+
+### P3-F anonymous rendezvous HTTP adapter/service
+
+- Active slice: HTTP adapter/service for the existing anonymous rendezvous store.
+- Tests written before implementation: `termx-core/internal/remote/rendezvous/http_handler_test.go`.
+- Expected failing tests: `cd termx-core && go test ./internal/remote/rendezvous -run TestHTTP -count=1` should fail because `NewHTTPHandler` and `HTTPConfig` do not exist yet.
+- Actual failing tests before implementation: `cd termx-core && go test ./internal/remote/rendezvous -run TestHTTP -count=1` failed as expected with undefined `NewHTTPHandler` and `HTTPConfig`.
+- Planned scope: implement only the lightweight anonymous signaling HTTP surface from `docs/remote-rebuild/api.md` and `auth-and-pairing.md`: `POST /api/v1/anonymous/channels`, `GET /api/v1/anonymous/channels/{channel_id}/events`, `POST /api/v1/anonymous/channels/{channel_id}/offer`, and `POST /api/v1/anonymous/channels/{channel_id}/answer`. The HTTP layer must reuse the existing store for TTL, payload limit, channel secret verification, app public key binding, message type restrictions, and public STUN validation; it must not issue TermX TURN credentials or carry terminal/file data.
+- Implementation notes: added `NewHTTPHandler` and `HTTPConfig` in `termx-core/internal/remote/rendezvous/http.go`. The handler exposes anonymous channel, events, offer, answer, and candidate endpoints; returns localweb-compatible error envelopes; uses `Authorization: Rendezvous {channel_id}:{channel_secret}` for events; uses body `channel_secret` for POSTs; maps request bodies into store messages; and reuses the store for TTL/payload/message/app-public-key/TURN-STUN validation. It deliberately does not validate app certificate business permissions because the docs require the agent to verify certificate/signature.
+- Self-review regression: added nil-store HTTP coverage after noticing events/offer/answer could otherwise depend on store-level nil errors; `go test ./internal/remote/rendezvous -run TestHTTPHandlerWithoutStoreReturnsEnvelope -count=1` failed before the fix with `400 rendezvous_message_rejected`, then passed after adding a uniform `rendezvous_unavailable` check.
+- Focused tests after implementation: `cd termx-core && go test ./internal/remote/rendezvous -run TestHTTP -count=1` passed; `cd termx-core && go test ./internal/remote/rendezvous -count=1` passed.
+- Self-review regression after implementation: added `TestHTTPOfferForwardsCertificateAndSignatureEnvelope` after noticing the first HTTP adapter only forwarded the nested `offer` SDP payload and would drop `app_certificate`/`signature` needed by the daemon. The test failed before the fix with an events payload missing `app_certificate`.
+- Code review: `Mendel` found a medium docs-alignment issue where the HTTP adapter could not post standalone ICE candidates even though anonymous rendezvous must forward offer/answer/ICE candidates and the store already supports `MessageCandidate`. No workspace/tab/pane public model, TURN credential issuance, machine private key exposure, rendezvous-side certificate business validation, terminal/file data relay, or store limit issue was found.
+- Review regression tests: added `TestHTTPCandidateEndpointForwardsTrickleICE`, which failed before the fix with `404 not_found` for `/candidate`.
+- Review fix: added `/api/v1/anonymous/channels/{channel_id}/candidate`, added offer/answer envelope forwarding for documented `app_certificate`, `offer`/`answer`, and `signature` fields, and tightened nested envelope validation so terminal/file/TURN-style fields remain rejected while daemon-verifiable certificate/signature material can traverse rendezvous.
+- Focused tests after review fix: `cd termx-core && go test ./internal/remote/rendezvous -run 'TestHTTP|TestSignalingPayload|TestChannel|TestUnsupported|TestPerChannel|TestInvalidTURN' -count=1` passed.
+- Follow-up hardening regression tests: added coverage that channel secrets are not stored in plaintext and that anonymous payloads reject TURN URLs and relay ICE candidates. `cd termx-core && go test ./internal/remote/rendezvous -run 'TestChannelSecretIsNotStoredInPlaintext|TestSignalingPayloadMustBeStructured' -count=1` failed before the fix because `secretHash` still contained the raw channel secret.
+- Follow-up hardening fix: channel secrets are now stored as SHA-256 verifier material and compared by hashing submitted secrets; anonymous signaling payload validation now rejects TURN URLs and `typ relay` candidates recursively in nested envelope data.
+- Follow-up code review: `Anscombe` found high plaintext channel secret storage, medium `/answer` missing `app_certificate`/`signature` forwarding, and low `auth-and-pairing.md` missing `/candidate`. The plaintext secret finding was already fixed before the notification was received and was reverified with a non-cached test; answer envelope forwarding and docs drift were then fixed.
+- Follow-up regression tests after Anscombe: added `TestHTTPAnswerForwardsCertificateAndSignatureEnvelope`, which failed before the fix because answer events only carried `{"answer": ...}`. Updated `/answer` to forward `app_certificate`, `answer`, and `signature`, and updated `docs/remote-rebuild/auth-and-pairing.md` to include `/candidate`.
+- Final focused tests after follow-up fixes: `cd termx-core && go test ./internal/remote/rendezvous -run 'TestHTTPAnswerForwardsCertificateAndSignatureEnvelope|TestChannelSecretIsNotStoredInPlaintext|TestHTTP|TestSignalingPayloadMustBeStructured' -count=1` passed; `cd termx-core && go test ./internal/remote/rendezvous -count=1` passed.
+- Final broader tests after follow-up fixes: `cd termx-core && go test ./internal/remote/...` passed; `cd termx-core && go test ./...` passed; `git diff --check` passed.
+- Subagents: `Plato` confirmed placement in `termx-core/internal/remote/rendezvous`, endpoint shapes, localweb error envelope reuse, documented split between header auth for events and body secret for offer/answer, and the candidate endpoint gap. It recommended not adding a standalone `termx-rendezvous/` service shell yet.
+- Result: in progress. Commit: pending.
 
 ### P3-D-B shared terminal client and Terminal.tsx boundary
 
@@ -338,6 +362,9 @@ Status file for unattended remote rebuild work. Update this file before starting
 - `Heisenberg` (`019de221-51de-7dd3-ba21-c487cb0d7977`): P3-E-C-B-A code review for browser-local app identity storage, app certificate storage, canonical local WebRTC offer signing, machine-private-key/TURN boundaries, and test coverage. Findings: medium app private key storage issue because the first draft exported and stored a private JWK in localStorage. Result: fixed with non-exportable WebCrypto private keys stored behind IndexedDB and regression tests proving string storage does not hold app/machine private keys.
 - `Euler` (`019de238-47c6-7551-b63d-8f70081db280`): P3-E-C-B-B code review for pair harness reachability, embedded smoke fallback, security boundaries, and old public-model drift. Findings: high first-run missing-certificate error hid the pair panel and blocked pairing when terminals existed. Result: fixed with shell-level error rendering, pair-success transport retry, and regression coverage.
 - `Darwin` (`019de23e-6733-7bf2-b9af-1d5051844a32`): P3-E-C-B-B follow-up code review after Euler fix. Scope: first-run pair reachability, retry after pairing, no workspace/tab/pane/session public UI, no TURN credentials, no machine private key exposure, app private key boundary, interface separation, and test coverage. Result: no findings.
+- `Plato` (`019de241-ebd8-79a3-8852-385c75a97938`): P3-F read-only explorer for anonymous rendezvous HTTP handler placement, localweb error envelope conventions, endpoint shape, and gotchas around no TURN credentials/channel secret auth. Result: recommended `termx-core/internal/remote/rendezvous/http.go`, localweb-style error envelope, documented endpoints only, events header auth, offer/answer body secret, and deferring candidate endpoint/service shell until adapter needs it.
+- `Mendel` (`019de247-0019-78c1-be99-3d7f5c5a8003`): P3-F code review for docs alignment, secret/auth handling, no TURN credentials, no terminal/file data relay, and test coverage. Findings: medium missing standalone ICE candidate HTTP endpoint. Result: fixed with `/candidate` endpoint and regression coverage.
+- `Anscombe` (`019de24b-23b1-7a72-b8ed-1db7b6f8294f`): P3-F follow-up code review after candidate/envelope changes. Findings: high plaintext channel secret storage, medium `/answer` did not forward `app_certificate`/`signature`, and low `auth-and-pairing.md` omitted `/candidate`. Result: fixed with hashed channel secret verifier storage, answer envelope forwarding, docs update, and regression tests.
 
 ## Code Review Log
 
@@ -358,6 +385,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - P3-E-C-A review complete after deterministic sync fix. The embedded shell build path stays aligned with `docs/remote-rebuild`: static assets are generated from shared `remote-ui`, embedded into `termx-core`, public UI remains `machine -> terminal`, local flow receives no TURN credentials, browser code never touches the machine private key, and fetch/WebRTC details remain in adapter/entry wiring. Residual risk: real browser terminal/file smoke is still deferred to P3-E-C-B because browser-local app certificate storage and offer signing are not implemented yet.
 - P3-E-C-B-A review complete after non-exportable app key storage fix. Browser-local app identity now stores only app metadata and app certificates in string storage, keeps app private keys behind an IndexedDB/WebCrypto key-store boundary, signs local offers with the Go-compatible canonical message, does not expose machine private key material, and does not introduce TURN credentials or workspace/tab/pane public concepts. Residual risk: pair UI/harness and real browser terminal/file smoke remain for P3-E-C-B-B.
 - P3-E-C-B-B review complete after first-run reachability fix and follow-up review. The pair harness remains rendered through `LocalAgentApi` and app identity interfaces, missing-certificate errors no longer hide pairing, successful pairing retries the local transport, executable smoke covers embedded shell/pair markers plus no TURN or machine-private-key asset exposure, and no follow-up findings remain.
+- P3-F review complete after candidate endpoint, envelope-forwarding, hashed-secret, and relay-candidate rejection fixes. Current HTTP adapter reuses the anonymous rendezvous store, forwards only lightweight signaling/certificate/signature envelopes needed by the daemon, stores only hashed channel-secret verifier material, and does not add TURN credentials, terminal/file payload forwarding, app certificate business authorization, machine private key exposure, or workspace/tab/pane public concepts.
 
 ## Deferred Human Decisions And Placeholders
 
@@ -378,6 +406,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Read current rendezvous docs/contracts and existing `termx-core/internal/remote/rendezvous` package.
-2. Write failing P3-F HTTP adapter/service tests for anonymous rendezvous payload limits, TTL, channel secret verification, and no TURN credentials.
-3. Implement the smallest HTTP adapter/service behind interfaces.
+1. Commit P3-F anonymous rendezvous HTTP adapter/service.
+2. Record the P3-F commit hash in this workflow.
+3. Start the next implementation slice after choosing between anonymous rendezvous client adapters and mobile app shell migration.
