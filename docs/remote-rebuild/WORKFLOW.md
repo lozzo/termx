@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-E-C-B-K terminal resize ownership and size-lock policy for local/mobile remote views
-- Last updated: 2026-05-02T01:56:12+08:00
+- Active todo: choose next slice after P3-E-C-B-K terminal resize ownership completion
+- Last updated: 2026-05-02T02:00:00+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -40,7 +40,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-H | local/e2e | Replace the readonly terminal placeholder with a tgent-aligned xterm.js terminal surface that writes output, forwards input, and sends resize through TermX terminal interfaces | completed | `db9c7065` |
 | P3-E-C-B-I | remote-ui | Refactor embedded local web mobile terminal interaction shell with terminal-first navigation, terminal switcher sheet, pair sheet, virtual keybar, and keyboard-aware xterm handle | completed | `be748f93` |
 | P3-E-C-B-J | cli/local | Complete `termx remote` commands for implemented local-only remote management: enable/local-only, disable, info/show, pair, and open | completed | `dd5e1502` |
-| P3-E-C-B-K | remote-ui/core | Add terminal resize ownership and size-lock handling so local/mobile remote views can fit locally without stealing daemon PTY size | in_progress |  |
+| P3-E-C-B-K | remote-ui/core | Add terminal resize ownership and size-lock handling so local/mobile remote views can fit locally without stealing daemon PTY size | completed | `23539e7d` |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -295,7 +295,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Focused tests after implementation and review fix: `cd termx-core && go test . -run 'TestHandleRequestGetResizeSetTagsMetadataAndSnapshot|TestScopedResizeRequestRequiresAttachmentOwner|TestResizeRequestRequiresResizeOwnerAttachment|TestFollowerCollaboratorAttachCanInputButCannotResize' -count=1` passed; `cd remote-ui && npm test -- --run src/localTerminalProtocolTransport.test.ts src/Terminal.test.tsx src/localWebRtcTransport.test.ts src/terminalClient.test.ts` passed 46 tests.
 - Broader tests after implementation and review fix: `cd remote-ui && npm test` passed 105 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm run build:localweb` passed and regenerated embedded assets; `cd termx-core && go test ./...` passed; `cd termx-cli && go test ./cmd/termx` passed; `git diff --check` passed.
 - Code review: `Maxwell` confirmed no workspace/tab/pane remote public model drift, no anonymous/free/local TURN credential issuance, no app access to machine private key material, and no WebRTC transport details leaking into UI/business components. Its high finding on unscoped request-path resize bypass was fixed with owner-attachment enforcement and regression coverage.
-- Result: ready to commit. Commit: pending.
+- Result: completed. Commit: `23539e7d`.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 
@@ -546,5 +546,5 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Commit P3-E-C-B-K and record the commit hash in this workflow file.
-2. Choose the next UI slice: explicit resize owner acquisition/release controls or advanced mobile-native terminal gestures before migrating shared components into the mobile app.
+1. Choose the next UI slice: explicit resize owner acquisition/release controls or advanced mobile-native terminal gestures before migrating shared components into the mobile app.
+2. Keep request-path resize owner enforcement in mind for any future CLI/API resize command surfaces.
