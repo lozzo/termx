@@ -26,16 +26,20 @@ export interface LocalWebRtcPeerTransportOptions {
   createAnswer(input: LocalRTCOffer): Promise<LocalRTCAnswer>
   signOffer(input: { sessionId: string; machineId: string; terminalId: string; sdp: string }): Promise<LocalOfferSignature>
   sessionIdGenerator?: (() => string) | undefined
+  iceGatheringTimeoutMs?: number | undefined
   dataChannelOpenTimeoutMs?: number | undefined
 }
 
 export interface RTCPeerConnectionLike {
   localDescription: RTCSessionDescriptionInit | null
+  readonly iceGatheringState?: RTCIceGatheringState
   createDataChannel(label: string, options?: RTCDataChannelInit): RTCDataChannelLike
   createOffer(): Promise<RTCSessionDescriptionInit>
   setLocalDescription(description: RTCSessionDescriptionInit): Promise<void>
   setRemoteDescription(description: RTCSessionDescriptionInit): Promise<void>
   close(): void | Promise<void>
+  addEventListener?(type: 'icegatheringstatechange', listener: EventListener): void
+  removeEventListener?(type: 'icegatheringstatechange', listener: EventListener): void
 }
 
 export interface RTCDataChannelLike extends EventTarget {
@@ -73,6 +77,7 @@ class LocalWebRtcPeerTransport implements PeerTransport, TerminalTransport {
 
       const offer = await pc.createOffer()
       await pc.setLocalDescription(offer)
+      await waitForICEGatheringComplete(pc, this.options.iceGatheringTimeoutMs)
       const sdp = pc.localDescription?.sdp ?? offer.sdp
       if (!sdp) throw new Error('local WebRTC offer SDP is required')
       const signed = await this.options.signOffer({
@@ -504,6 +509,32 @@ function waitChannelOpenWithTimeout(channel: RTCDataChannelLike, timeoutMs = 100
     timeoutMs,
     () => new Error(`timed out opening data channel ${channel.label}`),
   )
+}
+
+function waitForICEGatheringComplete(pc: RTCPeerConnectionLike, timeoutMs = 10000): Promise<void> {
+  if (pc.iceGatheringState === undefined || pc.iceGatheringState === 'complete') {
+    return Promise.resolve()
+  }
+  if (!pc.addEventListener || !pc.removeEventListener) {
+    return Promise.resolve()
+  }
+  return new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timer)
+      pc.removeEventListener?.('icegatheringstatechange', onStateChange)
+    }
+    const onStateChange = () => {
+      if (pc.iceGatheringState !== 'complete') return
+      cleanup()
+      resolve()
+    }
+    const timer = setTimeout(() => {
+      cleanup()
+      reject(new Error('timed out waiting for local ICE candidates'))
+    }, timeoutMs)
+    pc.addEventListener?.('icegatheringstatechange', onStateChange)
+    onStateChange()
+  })
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, createError: () => Error): Promise<T> {

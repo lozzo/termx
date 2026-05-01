@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: choose next slice after P3-E-C-B-F manual local smoke
-- Last updated: 2026-05-01T20:16:05+08:00
+- Active todo: P3-E-C-B-G browser-local WebRTC offer ICE gathering readiness
+- Last updated: 2026-05-01T21:29:17+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -36,6 +36,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-D | local/e2e | Fix browser local WebRTC API/file DataChannel send-before-open race found during manual embedded web test | completed | `a1edab3` |
 | P3-E-C-B-E | local/e2e | Fix embedded local file manager hang where `Loading files` remains visible instead of files or an error | completed | `80bbeb1` |
 | P3-E-C-B-F | local/e2e | Require the local WebRTC `api` DataChannel to open during connect so FileManager does not mount on a half-ready transport | completed | `9a51792` |
+| P3-E-C-B-G | local/e2e | Fix real-browser local WebRTC `api` DataChannel timeout by waiting for local ICE candidates before signing/sending the offer | in_progress |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -209,6 +210,21 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Review fix: `connect()` now wraps setup in a failure cleanup path that calls `disconnect()` before rethrowing, and `waitChannelOpen()` now rejects on DataChannel `error` as well as close/timeout. Regression tests prove connect-time API readiness timeout cleans up the PeerConnection and that API DataChannel `error` rejects connect.
 - Final focused tests after review fixes: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` passed 22 tests; `cd remote-ui && npm test` passed 89 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm run build:localweb` passed; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-core && go test . -run 'TestE2E_WebRTCFileAPIAndTransfer|TestE2ERemoteLocalWebHandlerAnswersAuthenticatedRTCOffer' -count=1` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
 - Result: completed. Commit: `9a51792`.
+
+### P3-E-C-B-G browser local ICE gathering before offer
+
+- Active slice: fix manual embedded-web local test feedback that the browser still reports `timed out opening data channel api` after the connect-time API readiness gate.
+- Tests written before implementation: `remote-ui/src/localWebRtcTransport.test.ts`.
+- Expected failing tests: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` should fail because the current browser local WebRTC transport signs and sends the offer immediately after `setLocalDescription()`, before browser ICE gathering has completed. The local daemon path is non-trickle, so an offer without local host/TCP candidates can produce an answer but never open the `api` DataChannel.
+- Planned scope: keep the fix inside `remote-ui/src/localWebRtcTransport.ts` by waiting for `iceGatheringState === "complete"` or the `icegatheringstatechange` event before reading `pc.localDescription.sdp`, signing the offer, and calling `/api/local/rtc/offer`. Do not expose browser primitives to UI/business components, and do not introduce workspace/tab/pane public concepts, TURN credentials, or machine private key handling.
+- Actual failing tests before implementation: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` failed as expected because `signOffer` saw `offer-sdp` before mock ICE gathering completed and before `localDescription.sdp` changed to the gathered-candidate SDP.
+- Follow-up server failing test before implementation: `cd termx-core && go test ./internal/remote/rtc -run TestAnswerOfferSurvivesCanceledRequestContext -count=1` failed because the `api` DataChannel never opened after the simulated HTTP request context was canceled. This matched the real browser symptom: `/api/local/rtc/offer` returned an answer, but the daemon-side PeerConnection was tied to the short-lived request context and closed before ICE/SCTP could finish.
+- Implementation notes: browser local WebRTC now waits for ICE gathering completion before signing and sending the non-trickle local offer, and rejects/cleans up on ICE gathering timeout. Server-side `AnswerOfferWithOptions` now separates offer/answer setup from WebRTC session lifetime by accepting an optional session context; the local web path binds sessions to the daemon/server lifecycle instead of the HTTP request context, so the PeerConnection survives after `/api/local/rtc/offer` returns and is still closed on server shutdown or peer connection failure.
+- Focused tests after implementation: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` passed 24 tests; `cd remote-ui && npm run typecheck` passed; `cd termx-core && go test ./internal/remote/rtc -run 'TestAnswerOffer(SurvivesCanceledRequestContext|DefaultSessionContextFollowsCallerContext|SessionContextClosesDataChannel|ChannelPolicyRejectsWrongTerminalChannel)' -count=1` passed; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed.
+- Broader tests after implementation: `cd remote-ui && npm test` passed 91 tests; `cd remote-ui && npm run build:localweb` passed and regenerated `termx-core/internal/remote/localweb/static/assets/index-hkl3rMAj.js`; `cd termx-core && go test . -run 'TestE2E_WebRTCFileAPIAndTransfer|TestE2ERemoteLocalWebHandlerAnswersAuthenticatedRTCOffer' -count=1` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
+- Real browser smoke: built `/tmp/termx-local-test`, restarted one local daemon at `http://127.0.0.1:18888` with ICE TCP `127.0.0.1:18889`, created terminal `1`, launched Chrome headless over CDP, filled the pair panel, completed local pairing, opened browser WebRTC, loaded `assets/index-hkl3rMAj.js`, opened the `api` DataChannel, and verified the `FileManager` rendered real root directory entries instead of `Loading files` or `timed out opening data channel api`.
+- Cleanup regressions: added `TestAnswerOfferSessionContextClosesDataChannel` to prove the server/daemon session context still closes the PeerConnection and browser data channel after a session cancellation, and `TestAnswerOfferDefaultSessionContextFollowsCallerContext` to prove non-local/default callers remain tied to their owning context.
+- Code review: `Wegener` found no findings for the ICE-gathering browser adapter change. It confirmed no workspace/tab/pane public concepts, TURN relay credentials, machine private key handling, or transport-boundary leakage in the scoped changes; residual note was to include the generated asset replacement in the final commit. Follow-up review by `Descartes` found a high issue: default `AnswerOffer` had been accidentally detached from the caller context, so non-local remote sessions could outlive their owning runtime. Fixed by making `SessionContext` optional and defaulting to the caller context, while only local web passes the daemon session context; added `DefaultSessionContextFollowsCallerContext` to guard the default cleanup behavior.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 
@@ -453,6 +469,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Restart the local test `termx` binary from commit `a1edab3` and run manual embedded-web smoke at `http://127.0.0.1:18888`.
-2. Update this workflow before writing the next todo's failing tests.
-3. Keep P3-E-C-B-C deferred until Browser Use exposes the required in-app browser Node REPL `js` tool.
+1. Run final focused/broader tests after workflow update.
+2. Commit P3-E-C-B-G with code, tests, workflow, and generated static asset replacement.
+3. Generate a fresh unused Pair ID/secret from the verified local daemon for user testing.
+4. Keep P3-E-C-B-C deferred until Browser Use exposes the required in-app browser Node REPL `js` tool.

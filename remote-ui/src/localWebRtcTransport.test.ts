@@ -325,6 +325,75 @@ describe('createLocalWebRtcPeerTransport', () => {
     expect(connected).toBe(true)
   })
 
+  it('waits for browser ICE gathering before signing and sending the local offer', async () => {
+    const signedOffers: Array<{ sdp: string }> = []
+    const answeredOffers: Array<{ sdp: string }> = []
+    const factory = createMockPeerConnectionFactory({
+      initialReadyState: 'connecting',
+      initialIceGatheringState: 'gathering',
+      gatheredLocalSDP: 'offer-sdp-with-local-candidates',
+    })
+    const transport = createLocalWebRtcPeerTransport({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      mode: 'local',
+      peerConnectionFactory: factory,
+      createAnswer: async (offer) => {
+        answeredOffers.push({ sdp: offer.sdp })
+        return { sessionId: offer.sessionId, answer: { type: 'answer', sdp: 'answer-sdp' } }
+      },
+      sessionIdGenerator: () => 'rtc-local-1',
+      appCertificate: '{"payload":{"machine_id":"machine-local"}}',
+      signOffer: async (offer) => {
+        signedOffers.push({ sdp: offer.sdp })
+        return { signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }
+      },
+    })
+
+    const connectPromise = transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' })
+    await flushMicrotasks()
+
+    expect(signedOffers).toEqual([])
+    expect(answeredOffers).toEqual([])
+    factory.lastConnection()?.completeIceGathering()
+    await flushMicrotasks()
+    factory.channel('api').open()
+    await connectPromise
+
+    expect(signedOffers).toEqual([{ sdp: 'offer-sdp-with-local-candidates' }])
+    expect(answeredOffers).toEqual([{ sdp: 'offer-sdp-with-local-candidates' }])
+  })
+
+  it('rejects connect and cleans up when browser ICE gathering never completes', async () => {
+    vi.useFakeTimers()
+    try {
+      const factory = createMockPeerConnectionFactory({
+        initialReadyState: 'connecting',
+        initialIceGatheringState: 'gathering',
+      })
+      const transport = createLocalWebRtcPeerTransport({
+        machineId: 'machine-local',
+        terminalId: 'terminal-1',
+        mode: 'local',
+        peerConnectionFactory: factory,
+        createAnswer: async (offer) => ({ sessionId: offer.sessionId, answer: { type: 'answer', sdp: 'answer-sdp' } }),
+        sessionIdGenerator: () => 'rtc-local-1',
+        appCertificate: '{"payload":{"machine_id":"machine-local"}}',
+        signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
+        iceGatheringTimeoutMs: 10000,
+      })
+      const connect = expect(transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' }))
+        .rejects.toThrow(/timed out waiting for local ICE candidates/i)
+      await vi.advanceTimersByTimeAsync(15000)
+      await connect
+
+      expect(factory.lastConnection()?.closed).toBe(true)
+      await expect(transport.openApi()).rejects.toThrow(/not connected/i)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('rejects connect when the required api data channel never opens', async () => {
     vi.useFakeTimers()
     try {
@@ -776,12 +845,22 @@ function apiResponseChunk(id: string, payload: unknown, options: { last?: boolea
   return out
 }
 
-function createMockPeerConnectionFactory(options: { initialReadyState?: RTCDataChannelState } = {}) {
+function createMockPeerConnectionFactory(options: {
+  initialReadyState?: RTCDataChannelState
+  initialIceGatheringState?: RTCIceGatheringState
+  gatheredLocalSDP?: string
+} = {}) {
   const channels = new Map<string, MockRTCDataChannel>()
   const createOfferLabels: string[][] = []
   let lastConnection: MockRTCPeerConnection | null = null
   const factory = vi.fn(() => {
-    lastConnection = new MockRTCPeerConnection(channels, createOfferLabels, options.initialReadyState ?? 'open')
+    lastConnection = new MockRTCPeerConnection({
+      channels,
+      createOfferLabels,
+      initialReadyState: options.initialReadyState ?? 'open',
+      initialIceGatheringState: options.initialIceGatheringState ?? 'complete',
+      gatheredLocalSDP: options.gatheredLocalSDP,
+    })
     return lastConnection
   })
   return Object.assign(factory, {
@@ -802,15 +881,29 @@ function createMockPeerConnectionFactory(options: { initialReadyState?: RTCDataC
   })
 }
 
-class MockRTCPeerConnection {
+class MockRTCPeerConnection extends EventTarget {
   localDescription: RTCSessionDescriptionInit | null = null
+  iceGatheringState: RTCIceGatheringState
   closed = false
+  private readonly channels: Map<string, MockRTCDataChannel>
+  private readonly createOfferLabels: string[][]
+  private readonly initialReadyState: RTCDataChannelState
+  private readonly gatheredLocalSDP: string | undefined
 
-  constructor(
-    private readonly channels: Map<string, MockRTCDataChannel>,
-    private readonly createOfferLabels: string[][],
-    private readonly initialReadyState: RTCDataChannelState,
-  ) {}
+  constructor(options: {
+    channels: Map<string, MockRTCDataChannel>
+    createOfferLabels: string[][]
+    initialReadyState: RTCDataChannelState
+    initialIceGatheringState: RTCIceGatheringState
+    gatheredLocalSDP?: string | undefined
+  }) {
+    super()
+    this.channels = options.channels
+    this.createOfferLabels = options.createOfferLabels
+    this.initialReadyState = options.initialReadyState
+    this.iceGatheringState = options.initialIceGatheringState
+    this.gatheredLocalSDP = options.gatheredLocalSDP
+  }
 
   createDataChannel(label: string): MockRTCDataChannel {
     const channel = new MockRTCDataChannel(label, this.initialReadyState)
@@ -831,6 +924,17 @@ class MockRTCPeerConnection {
 
   async close(): Promise<void> {
     this.closed = true
+  }
+
+  completeIceGathering(): void {
+    this.iceGatheringState = 'complete'
+    if (this.localDescription && this.gatheredLocalSDP) {
+      this.localDescription = {
+        ...this.localDescription,
+        sdp: this.gatheredLocalSDP,
+      }
+    }
+    this.dispatchEvent(new Event('icegatheringstatechange'))
   }
 }
 

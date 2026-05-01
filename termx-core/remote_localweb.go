@@ -234,6 +234,7 @@ func (s *Server) remoteLocalRTCAnswer(
 			AllowTerminal:    true,
 			AllowFileManager: true,
 		},
+		SessionContext: s.remoteRTCCtx,
 	})
 	if err != nil {
 		return localweb.RTCOfferResponse{}, err

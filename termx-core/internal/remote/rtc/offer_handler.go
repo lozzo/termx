@@ -28,8 +28,10 @@ type SettingEngineApplier interface {
 }
 
 type AnswerOptions struct {
-	SettingEngine SettingEngineApplier
-	ChannelPolicy ChannelPolicy
+	SettingEngine  SettingEngineApplier
+	ChannelPolicy  ChannelPolicy
+	SessionContext context.Context
+	OnSessionClose func()
 }
 
 type ChannelPolicy struct {
@@ -73,7 +75,18 @@ func AnswerOfferWithOptions(
 		return hubv1.SignalingAnswer{}, fmt.Errorf("create peer connection: %w", err)
 	}
 
-	sessionCtx, cancel := context.WithCancel(ctx)
+	sessionParent := opts.SessionContext
+	if sessionParent == nil {
+		sessionParent = ctx
+	}
+	sessionCtx, cancel := context.WithCancel(sessionParent)
+	sessionStarted := false
+	defer func() {
+		if !sessionStarted {
+			cancel()
+			_ = pc.Close()
+		}
+	}()
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		switch state {
 		case webrtc.PeerConnectionStateClosed, webrtc.PeerConnectionStateFailed, webrtc.PeerConnectionStateDisconnected:
@@ -84,6 +97,9 @@ func AnswerOfferWithOptions(
 	go func() {
 		<-sessionCtx.Done()
 		_ = pc.Close()
+		if opts.OnSessionClose != nil {
+			opts.OnSessionClose()
+		}
 	}()
 
 	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
@@ -160,6 +176,7 @@ func AnswerOfferWithOptions(
 		return hubv1.SignalingAnswer{}, fmt.Errorf("missing local description")
 	}
 
+	sessionStarted = true
 	return hubv1.SignalingAnswer{
 		SessionID:     offer.SessionID,
 		SDP:           local.SDP,

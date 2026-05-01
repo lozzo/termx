@@ -54,6 +54,8 @@ type Server struct {
 	remoteRTCMu     sync.Mutex
 	remoteRTCReplay *cert.ReplayWindow
 	remoteRTCFiles  *fileapi.Manager
+	remoteRTCCtx    context.Context
+	remoteRTCCancel context.CancelFunc
 	closed          atomic.Bool
 	listeners       []transport.Listener
 
@@ -82,6 +84,7 @@ func NewServer(opts ...ServerOption) *Server {
 	}
 	srv.events = NewEventBus(cfg.logger)
 	srv.sessionHandler = newSessionHandler(srv)
+	srv.remoteRTCCtx, srv.remoteRTCCancel = context.WithCancel(context.Background())
 	srv.remoteManager = remoteruntime.NewManager(remoteconfig.Normalize(remoteconfig.Config{
 		Enabled:     cfg.remoteConfig.Enabled,
 		ControlURL:  cfg.remoteConfig.ControlURL,
@@ -488,6 +491,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 	if s.remoteRTCFiles != nil {
 		s.remoteRTCFiles.Close()
+	}
+	if s.remoteRTCCancel != nil {
+		s.remoteRTCCancel()
 	}
 	return nil
 }
