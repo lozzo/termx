@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-D-A shared remote UI logic package
-- Last updated: 2026-05-01T11:27:48+08:00
+- Active todo: P3-D-B shared terminal client and Terminal.tsx boundary
+- Last updated: 2026-05-01T11:39:59+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -24,7 +24,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-B | localweb | Implement embedded local web foundation served from `termx` binary with local status, terminal list, and pair API contracts | completed | `6d9048f` |
 | P3-C | rtc | Implement local WebRTC signaling and ICE TCP mux/over-TCP support for browser-to-daemon local connections | completed | `52d964b` |
 | P3-D-A | remote-ui | Create shared `remote-ui/` TypeScript package with machine/terminal contracts, transport interfaces, connection message reducer, and event queue | completed | `fe9025d` |
-| P3-D-B | remote-ui | Adapt `Terminal.tsx` from `../tgent` into shared remote UI using `terminal_id` instead of pane/session concepts | pending |  |
+| P3-D-B | remote-ui | Adapt `Terminal.tsx` from `../tgent` into shared remote UI using `terminal_id` instead of pane/session concepts | in_progress |  |
 | P3-D-C | remote-ui | Adapt terminal list from `../tgent` `SessionList.tsx` into `TerminalList.tsx` with machine -> terminal semantics only | pending |  |
 | P3-D-D | remote-ui | Adapt `FileManager.tsx` and file hooks from `../tgent` behind TermX file transport interfaces | pending |  |
 | P3-E | local/e2e | Wire embedded local web to terminal and file manager over local WebRTC DataChannels and validate in browser before mobile migration | pending |  |
@@ -32,6 +32,18 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
 ## TDD Log
+
+### P3-D-B shared terminal client and Terminal.tsx boundary
+
+- Tests written before implementation: `remote-ui/src/terminalClient.test.ts`, `remote-ui/src/useTerminalSession.test.tsx`, `remote-ui/src/Terminal.test.tsx`, and `remote-ui/src/test/mockTerminalTransport.ts`.
+- Expected failing tests: `cd remote-ui && npm test` fails because `./terminalClient`, `./useTerminalSession`, and `./Terminal` do not exist yet. The tests cover `terminalId`-only public identity, `terminal:{terminal_id}` channel labels, terminal output/snapshot/info handling without pane/session/window fields, reattach preserving terminal identity, reducer-backed app resume verification, and a lightweight TermX `Terminal.tsx` component boundary with no tgent pane/session props.
+- Actual failing tests before implementation: `cd remote-ui && npm test` failed as expected with missing module errors for `./terminalClient`, `./useTerminalSession`, and `./Terminal`; existing P3-D-A tests still passed.
+- Planned scope: create the TermX terminal client/hook/component seam in `remote-ui/` by adapting the tgent terminal client/component boundary without copying `paneId`, `PaneInfo`, session/window/pane messages, or direct browser/native transport dependencies. Full xterm rendering polish can follow after the client/message contract is stable.
+- Review regression tests: added tests for streaming terminal output before snapshot, deriving connection mode from injected transport info, and preserving close reasons as failed terminal channel state. These failed before the review fixes.
+- Focused tests after implementation and review fixes: `cd remote-ui && npm test` passed 21 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm audit` passed with 0 vulnerabilities.
+- Broader tests after implementation and review fixes: `cd termx-core && go test ./internal/remote/...` passed; `cd termx-cli && go test ./cmd/termx` passed; `git diff --check` passed.
+- Code review: `Hypatia` found terminal output chunks were dropped before rendering, close reasons were overwritten by clean close handling, and shared terminal session state was hardcoded to local mode. Fixed by storing terminal output text in the hook/component boundary, deriving mode from `transport.getConnectionInfo()`, and letting reasoned close lifecycle messages preserve failed channel state.
+- Result: ready to commit. Commit: pending.
 
 ### P3-D-A shared remote UI logic package
 
@@ -179,6 +191,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - `Cicero` (`019de177-2141-7570-b3c6-30248c4bd521`): P3-C final code review. Findings: ICE TCP could be reported enabled without a usable loopback TCP candidate; workflow stale. Result: fixed with loopback candidate gathering, bound-listener IP filtering, answer SDP regression test, and workflow updates.
 - `Sagan` (`019de189-868e-71c1-8010-25433d7758e6`): P3-D read-only explorer for tgent UI boundaries. Findings: keep `Terminal.tsx`, terminal client, file client, and file manager boundaries close where practical; convert `paneId` to `terminalId`; treat `SessionList.tsx` as structure-only input for `TerminalList.tsx`; move lifecycle, reattach, duplicate event handling, backpressure, and visible error routing to TermX reducer/queue.
 - `Parfit` (`019de18f-90ad-70e2-998b-2ea5182f0390`): P3-D-A code review. Findings: stale workflow text and nested transport implementation leakage could pass the first boundary guard. Result: workflow updated and nested `nativePlugin`/browser transport leakage now fails under `ConnectionEventQueue` tests.
+- `Hypatia` (`019de19b-9371-7c21-8fe9-988106a95441`): P3-D-B code review. Findings: output chunks were dropped, reasoned terminal closes were overwritten to clean closed state, and mode was hardcoded to local. Result: fixed with output text state, transport-derived mode, failed close preservation, and regression tests.
 
 ## Code Review Log
 
@@ -192,6 +205,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - P3-B review complete. No remaining blocker after implemented fixes; no workspace/tab/pane public model, anonymous/free TURN relay credentials, app machine-private-key exposure, or transport boundary leakage introduced. Residual risk is limited to the documented `last_active_at` placeholder and the P3-C absence of local RTC/ICE TCP data plane.
 - P3-C review complete. No remaining blocker after implemented fixes; no workspace/tab/pane public model, anonymous/free/local TURN relay credentials, app machine-private-key exposure, transport boundary leakage, or separate agent binary was introduced. Residual risk: browser smoke with the embedded web UI is still deferred to P3-E because P3-C only proves local signaling, terminal protocol scoping, file/API channels, and server-side ICE TCP candidate generation.
 - P3-D-A review complete. No remaining blocker after implemented fixes; no workspace/tab/pane/window/session public model was introduced in `remote-ui`, signaling `sessionId` remains limited to local RTC interfaces, no anonymous/free/local TURN relay credentials or machine private key exposure were introduced, and business logic remains behind transport interfaces without direct browser/native implementation imports. Residual risk: React components, browser local adapter, terminal/file UI behavior, and browser smoke remain deferred to later P3-D/P3-E todos.
+- P3-D-B review complete. No remaining blocker after implemented fixes; `Terminal.tsx`, `TerminalClient`, and `useTerminalSession` expose `machineId`/`terminalId` and `terminal:{terminal_id}` only, do not import browser/native transport implementations, do not expose machine private key material, and do not introduce TURN relay credentials. Residual risk: this is a minimal terminal boundary with plain text rendering; full xterm rendering, browser local adapter wiring, and browser smoke remain deferred to later P3-D/P3-E todos.
 
 ## Deferred Human Decisions And Placeholders
 
@@ -208,6 +222,6 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ## Next Exact Action
 
-1. Start P3-D-B by updating this workflow before writing tests.
-2. Write failing tests for a TermX `Terminal.tsx`/terminal-client adapter that uses `terminalId`, opens `terminal:{terminal_id}`, and excludes pane/session public semantics.
-3. Copy or adapt the smallest tgent terminal rendering/client boundary needed behind the existing `remote-ui` transport interfaces.
+1. Commit P3-D-B with the shared terminal client/hook/component boundary and workflow updates.
+2. Record the P3-D-B commit hash in this workflow.
+3. Start P3-D-C by writing failing tests for `TerminalList.tsx` with machine -> terminal semantics only and no tgent session/window/pane model.
