@@ -693,6 +693,22 @@ type PairStartResult struct {
 	ExpiresAt                   time.Time `json:"expires_at"`
 }
 
+type RemoteLocalEnableParams struct {
+	LocalWebAddr string `json:"local_web_addr"`
+	ICETCPAddr   string `json:"ice_tcp_addr,omitempty"`
+}
+
+type RemoteLocalStatus struct {
+	Enabled       bool      `json:"enabled"`
+	HTTPURL       string    `json:"http_url,omitempty"`
+	LocalWebAddr  string    `json:"local_web_addr,omitempty"`
+	LocalPairURL  string    `json:"local_pair_url,omitempty"`
+	ICETCPEnabled bool      `json:"ice_tcp_enabled"`
+	ICETCPAddr    string    `json:"ice_tcp_addr,omitempty"`
+	ICETCPPort    int       `json:"ice_tcp_port,omitempty"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
 func EncodeScreenUpdatePayload(update ScreenUpdate) ([]byte, error) {
 	return encodeScreenUpdatePayloadBinary(NormalizeScreenUpdate(update))
 }

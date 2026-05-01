@@ -23,12 +23,13 @@ import (
 type LocalICETCPMux = remotertc.LocalICETCPMux
 
 type LocalWebOptions struct {
-	HTTPURL       string
-	LocalPairURL  string
-	ICETCPEnabled bool
-	ICETCPPort    int
-	ICETCPMux     *LocalICETCPMux
-	Assets        fs.FS
+	HTTPURL                string
+	LocalPairURL           string
+	ICETCPEnabled          bool
+	ICETCPPort             int
+	ICETCPMux              *LocalICETCPMux
+	LocalRTCSessionContext context.Context
+	Assets                 fs.FS
 }
 
 func NewLocalWebStaticAssets(files map[string]string) fs.FS {
@@ -51,12 +52,17 @@ func (s *Server) LocalWebHandler(opts LocalWebOptions) http.Handler {
 		iceTCPEnabled = endpoint.Enabled
 		iceTCPPort = endpoint.Port
 	}
+	rtcSessionCtx := opts.LocalRTCSessionContext
+	if rtcSessionCtx == nil && s != nil {
+		rtcSessionCtx = s.remoteRTCCtx
+	}
 	adapter := localWebServerAdapter{
 		server:        s,
 		httpURL:       strings.TrimSpace(opts.HTTPURL),
 		iceTCPEnabled: iceTCPEnabled,
 		iceTCPPort:    iceTCPPort,
 		iceTCPMux:     opts.ICETCPMux,
+		rtcSessionCtx: rtcSessionCtx,
 	}
 	return localweb.NewHandler(localweb.Config{
 		Assets:    assets,
@@ -73,6 +79,7 @@ type localWebServerAdapter struct {
 	iceTCPEnabled bool
 	iceTCPPort    int
 	iceTCPMux     *LocalICETCPMux
+	rtcSessionCtx context.Context
 }
 
 func (a localWebServerAdapter) LocalStatus(ctx context.Context) (localweb.Status, error) {
@@ -151,7 +158,7 @@ func (a localWebServerAdapter) AnswerLocalRTCOffer(ctx context.Context, req loca
 	if a.server == nil {
 		return localweb.RTCOfferResponse{}, nil
 	}
-	return a.server.remoteLocalRTCAnswer(ctx, req, a.iceTCPMux, a.iceTCPEnabled)
+	return a.server.remoteLocalRTCAnswer(ctx, req, a.iceTCPMux, a.iceTCPEnabled, a.rtcSessionCtx)
 }
 
 func (s *Server) remoteLocalRTCAnswer(
@@ -159,6 +166,7 @@ func (s *Server) remoteLocalRTCAnswer(
 	req localweb.RTCOfferRequest,
 	iceTCPMux *LocalICETCPMux,
 	iceTCPEnabled bool,
+	sessionCtx context.Context,
 ) (localweb.RTCOfferResponse, error) {
 	if s == nil {
 		return localweb.RTCOfferResponse{}, nil
@@ -234,7 +242,7 @@ func (s *Server) remoteLocalRTCAnswer(
 			AllowTerminal:    true,
 			AllowFileManager: true,
 		},
-		SessionContext: s.remoteRTCCtx,
+		SessionContext: sessionCtx,
 	})
 	if err != nil {
 		return localweb.RTCOfferResponse{}, err

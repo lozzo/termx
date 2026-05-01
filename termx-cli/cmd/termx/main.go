@@ -3,18 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
-	"strconv"
+	"runtime"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -49,6 +45,48 @@ var (
 		}
 		defer client.Close()
 		return client.RemotePairStart(ctx, params)
+	}
+	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteStatus, error) {
+		client, err := dialOrStartClient(resolveSocket(socketPath), resolveLogFilePath(logFile), nil)
+		if err != nil {
+			return nil, err
+		}
+		defer client.Close()
+		return client.RemoteStatus(ctx)
+	}
+	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params protocol.RemoteLocalEnableParams) (*protocol.RemoteLocalStatus, error) {
+		client, err := dialOrStartClient(resolveSocket(socketPath), resolveLogFilePath(logFile), nil)
+		if err != nil {
+			return nil, err
+		}
+		defer client.Close()
+		return client.RemoteLocalEnable(ctx, params)
+	}
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
+		client, err := dialOrStartClient(resolveSocket(socketPath), resolveLogFilePath(logFile), nil)
+		if err != nil {
+			return nil, err
+		}
+		defer client.Close()
+		return client.RemoteLocalStatus(ctx)
+	}
+	remoteLocalDisableClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
+		client, err := dialOrStartClient(resolveSocket(socketPath), resolveLogFilePath(logFile), nil)
+		if err != nil {
+			return nil, err
+		}
+		defer client.Close()
+		return client.RemoteLocalDisable(ctx)
+	}
+	openBrowser = func(rawURL string) error {
+		switch runtime.GOOS {
+		case "darwin":
+			return exec.Command("open", rawURL).Start()
+		case "windows":
+			return exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL).Start()
+		default:
+			return exec.Command("xdg-open", rawURL).Start()
+		}
 	}
 )
 
@@ -163,30 +201,17 @@ func daemonCommand(socket *string) *cobra.Command {
 			defer func() {
 				_ = srv.Shutdown(context.Background())
 			}()
-			var iceTCPMux *termx.LocalICETCPMux
-			if iceTCPAddr := remoteLocalICETCPAddrFromEnv(); iceTCPAddr != "" {
-				var err error
-				iceTCPMux, err = termx.StartLocalICETCPMux(ctx, iceTCPAddr)
-				if err != nil {
-					return err
-				}
-				defer iceTCPMux.Close()
-				endpoint := iceTCPMux.Endpoint()
-				logger.Info("remote local ICE TCP listening", "host", endpoint.Host, "port", endpoint.Port)
-			}
 			if localWebAddr := remoteLocalWebAddrFromEnv(); localWebAddr != "" {
-				localWebURL, stopLocalWeb, err := startRemoteLocalWeb(ctx, srv, localWebAddr, iceTCPMux, logger)
+				localStatus, err := srv.RemoteLocalEnable(ctx, termx.RemoteLocalOptions{
+					LocalWebAddr: localWebAddr,
+					ICETCPAddr:   remoteLocalICETCPAddrFromEnv(),
+				})
 				if err != nil {
 					return err
 				}
-				defer func() {
-					shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-					defer cancel()
-					if err := stopLocalWeb(shutdownCtx); err != nil {
-						logger.Warn("remote local web shutdown failed", "error", err)
-					}
-				}()
-				logger.Info("remote local web configured", "url", localWebURL)
+				logger.Info("remote local web configured", "url", localStatus.HTTPURL, "ice_tcp_port", localStatus.ICETCPPort)
+			} else if iceTCPAddr := remoteLocalICETCPAddrFromEnv(); iceTCPAddr != "" {
+				logger.Warn("remote local ICE TCP requested without local web; ignoring standalone ICE TCP listener", "addr", iceTCPAddr)
 			}
 			err = srv.ListenAndServe(ctx)
 			if err != nil {
@@ -321,9 +346,16 @@ func attachCommand(socket *string, logFile *string, configPath *string) *cobra.C
 
 func remoteCommand(socket *string, logFile *string) *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "remote",
+		Use:   "remote",
+		Short: "Manage TermX remote access",
 	}
 	cmd.AddCommand(remoteStatusCommand(socket, logFile))
+	cmd.AddCommand(remoteInfoCommand(socket, logFile))
+	cmd.AddCommand(remoteEnableCommand(socket, logFile))
+	cmd.AddCommand(remoteLocalOnlyCommand(socket, logFile))
+	cmd.AddCommand(remoteDisableCommand(socket, logFile))
+	cmd.AddCommand(remotePairCommand(socket, logFile))
+	cmd.AddCommand(remoteOpenCommand(socket, logFile))
 	return cmd
 }
 
@@ -352,14 +384,7 @@ func pairCommand(socket *string, logFile *string) *cobra.Command {
 				enc.SetIndent("", "  ")
 				return enc.Encode(result)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "type:\t%s\n", result.Type)
-			fmt.Fprintf(cmd.OutOrStdout(), "machine_id:\t%s\n", result.MachineID)
-			fmt.Fprintf(cmd.OutOrStdout(), "machine_name:\t%s\n", result.MachineName)
-			fmt.Fprintf(cmd.OutOrStdout(), "machine_public_key_fingerprint:\t%s\n", result.MachinePublicKeyFingerprint)
-			fmt.Fprintf(cmd.OutOrStdout(), "local_pair_url:\t%s\n", result.LocalPairURL)
-			fmt.Fprintf(cmd.OutOrStdout(), "pair_session_id:\t%s\n", result.PairSessionID)
-			fmt.Fprintf(cmd.OutOrStdout(), "pair_secret:\t%s\n", result.PairSecret)
-			fmt.Fprintf(cmd.OutOrStdout(), "expires_at:\t%s\n", result.ExpiresAt.Format(time.RFC3339))
+			printPairStartResult(cmd.OutOrStdout(), result)
 			return nil
 		},
 	}
@@ -374,19 +399,113 @@ func remoteStatusCommand(socket *string, logFile *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "status",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			logger, closeLogger, _, err := openLogFileLogger(*logFile)
+			status, err := remoteStatusClient(context.Background(), *socket, *logFile)
 			if err != nil {
 				return err
 			}
-			defer closeLogger()
-
-			client, err := dialOrStartClient(resolveSocket(*socket), resolveLogFilePath(*logFile), logger)
+			localStatus, err := remoteLocalStatusClient(context.Background(), *socket, *logFile)
 			if err != nil {
 				return err
 			}
-			defer client.Close()
+			if outputJSON {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(struct {
+					Remote *protocol.RemoteStatus      `json:"remote"`
+					Local  *protocol.RemoteLocalStatus `json:"local"`
+				}{Remote: status, Local: localStatus})
+			}
 
-			status, err := client.RemoteStatus(context.Background())
+			printRemoteStatus(cmd.OutOrStdout(), status)
+			printRemoteLocalStatus(cmd.OutOrStdout(), localStatus)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&outputJSON, "json", false, "emit JSON")
+	return cmd
+}
+
+func remoteInfoCommand(socket *string, logFile *string) *cobra.Command {
+	var outputJSON bool
+	cmd := &cobra.Command{
+		Use:     "info",
+		Aliases: []string{"show"},
+		Short:   "Show remote runtime and local web details",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			remoteStatus, err := remoteStatusClient(context.Background(), *socket, *logFile)
+			if err != nil {
+				return err
+			}
+			localStatus, err := remoteLocalStatusClient(context.Background(), *socket, *logFile)
+			if err != nil {
+				return err
+			}
+			if outputJSON {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(struct {
+					Remote *protocol.RemoteStatus      `json:"remote"`
+					Local  *protocol.RemoteLocalStatus `json:"local"`
+				}{Remote: remoteStatus, Local: localStatus})
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "[remote]")
+			printRemoteStatus(cmd.OutOrStdout(), remoteStatus)
+			fmt.Fprintln(cmd.OutOrStdout(), "[local]")
+			printRemoteLocalStatus(cmd.OutOrStdout(), localStatus)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&outputJSON, "json", false, "emit JSON")
+	return cmd
+}
+
+func remoteEnableCommand(socket *string, logFile *string) *cobra.Command {
+	var localOnly bool
+	var outputJSON bool
+	var addr string
+	var iceTCPAddr string
+	cmd := &cobra.Command{
+		Use:   "enable",
+		Short: "Enable remote access features",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !localOnly {
+				return fmt.Errorf("managed remote enable is not implemented yet; use `termx remote enable --local-only` for local browser/app pairing")
+			}
+			return runRemoteLocalEnable(cmd, socket, logFile, addr, iceTCPAddr, outputJSON)
+		},
+	}
+	cmd.Flags().BoolVar(&localOnly, "local-only", false, "enable only local embedded web and local WebRTC")
+	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:18888", "local web listen address")
+	cmd.Flags().StringVar(&iceTCPAddr, "ice-tcp-addr", "127.0.0.1:18889", "local ICE TCP listen address")
+	cmd.Flags().BoolVar(&outputJSON, "json", false, "emit JSON")
+	return cmd
+}
+
+func remoteLocalOnlyCommand(socket *string, logFile *string) *cobra.Command {
+	var outputJSON bool
+	var addr string
+	var iceTCPAddr string
+	cmd := &cobra.Command{
+		Use:     "local-only",
+		Aliases: []string{"local_only"},
+		Short:   "Enable local-only remote access",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runRemoteLocalEnable(cmd, socket, logFile, addr, iceTCPAddr, outputJSON)
+		},
+	}
+	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:18888", "local web listen address")
+	cmd.Flags().StringVar(&iceTCPAddr, "ice-tcp-addr", "127.0.0.1:18889", "local ICE TCP listen address")
+	cmd.Flags().BoolVar(&outputJSON, "json", false, "emit JSON")
+	return cmd
+}
+
+func remoteDisableCommand(socket *string, logFile *string) *cobra.Command {
+	var outputJSON bool
+	cmd := &cobra.Command{
+		Use:   "disable",
+		Short: "Disable the local remote web/ICE TCP runtime",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			status, err := remoteLocalDisableClient(context.Background(), *socket, *logFile)
 			if err != nil {
 				return err
 			}
@@ -395,23 +514,146 @@ func remoteStatusCommand(socket *string, logFile *string) *cobra.Command {
 				enc.SetIndent("", "  ")
 				return enc.Encode(status)
 			}
-
-			fmt.Fprintf(cmd.OutOrStdout(), "state:\t%s\n", status.State)
-			fmt.Fprintf(cmd.OutOrStdout(), "device_id:\t%s\n", status.DeviceID)
-			fmt.Fprintf(cmd.OutOrStdout(), "device_name:\t%s\n", status.DeviceName)
-			fmt.Fprintf(cmd.OutOrStdout(), "control_url:\t%s\n", status.ControlURL)
-			fmt.Fprintf(cmd.OutOrStdout(), "hub_url:\t%s\n", status.HubURL)
-			fmt.Fprintf(cmd.OutOrStdout(), "data_dir:\t%s\n", status.DataDir)
-			fmt.Fprintf(cmd.OutOrStdout(), "terminal_count:\t%d\n", status.TerminalCount)
-			fmt.Fprintf(cmd.OutOrStdout(), "updated_at:\t%s\n", status.UpdatedAt.Format(time.RFC3339))
-			if status.Detail != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "detail:\t%s\n", status.Detail)
-			}
+			printRemoteLocalStatus(cmd.OutOrStdout(), status)
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&outputJSON, "json", false, "emit JSON")
 	return cmd
+}
+
+func remotePairCommand(socket *string, logFile *string) *cobra.Command {
+	var outputJSON bool
+	var localURL string
+	var ttl time.Duration
+	cmd := &cobra.Command{
+		Use:   "pair",
+		Short: "Create a local pairing session for the running local remote web",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if ttl <= 0 {
+				ttl = 5 * time.Minute
+			}
+			localURL = strings.TrimSpace(localURL)
+			if localURL == "" {
+				localStatus, err := remoteLocalStatusClient(context.Background(), *socket, *logFile)
+				if err != nil {
+					return err
+				}
+				if localStatus == nil || !localStatus.Enabled || strings.TrimSpace(localStatus.LocalPairURL) == "" {
+					return fmt.Errorf("local remote is not enabled; run `termx remote enable --local-only` first or pass --local-url")
+				}
+				localURL = localStatus.LocalPairURL
+			}
+			result, err := pairStartClient(context.Background(), *socket, *logFile, protocol.PairStartParams{
+				LocalPairURL: localURL,
+				TTLSeconds:   int(ttl.Seconds()),
+			})
+			if err != nil {
+				return err
+			}
+			if outputJSON {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(result)
+			}
+			printPairStartResult(cmd.OutOrStdout(), result)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&outputJSON, "json", false, "emit JSON")
+	cmd.Flags().StringVar(&localURL, "local-url", "", "local pair URL; defaults to running local remote")
+	cmd.Flags().DurationVar(&ttl, "ttl", 5*time.Minute, "pair session TTL")
+	return cmd
+}
+
+func remoteOpenCommand(socket *string, logFile *string) *cobra.Command {
+	var printOnly bool
+	cmd := &cobra.Command{
+		Use:   "open",
+		Short: "Open the local remote web UI",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			localStatus, err := remoteLocalStatusClient(context.Background(), *socket, *logFile)
+			if err != nil {
+				return err
+			}
+			if localStatus == nil || !localStatus.Enabled || strings.TrimSpace(localStatus.HTTPURL) == "" {
+				return fmt.Errorf("local remote is not enabled; run `termx remote enable --local-only` first")
+			}
+			if printOnly {
+				fmt.Fprintln(cmd.OutOrStdout(), localStatus.HTTPURL)
+				return nil
+			}
+			if err := openBrowser(localStatus.HTTPURL); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), localStatus.HTTPURL)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&printOnly, "print", false, "print URL without opening a browser")
+	return cmd
+}
+
+func runRemoteLocalEnable(cmd *cobra.Command, socket *string, logFile *string, addr string, iceTCPAddr string, outputJSON bool) error {
+	status, err := remoteLocalEnableClient(context.Background(), *socket, *logFile, protocol.RemoteLocalEnableParams{
+		LocalWebAddr: addr,
+		ICETCPAddr:   iceTCPAddr,
+	})
+	if err != nil {
+		return err
+	}
+	if outputJSON {
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(status)
+	}
+	printRemoteLocalStatus(cmd.OutOrStdout(), status)
+	return nil
+}
+
+func printRemoteStatus(w io.Writer, status *protocol.RemoteStatus) {
+	if status == nil {
+		return
+	}
+	fmt.Fprintf(w, "state:\t%s\n", status.State)
+	fmt.Fprintf(w, "device_id:\t%s\n", status.DeviceID)
+	fmt.Fprintf(w, "device_name:\t%s\n", status.DeviceName)
+	fmt.Fprintf(w, "control_url:\t%s\n", status.ControlURL)
+	fmt.Fprintf(w, "hub_url:\t%s\n", status.HubURL)
+	fmt.Fprintf(w, "data_dir:\t%s\n", status.DataDir)
+	fmt.Fprintf(w, "terminal_count:\t%d\n", status.TerminalCount)
+	fmt.Fprintf(w, "updated_at:\t%s\n", status.UpdatedAt.Format(time.RFC3339))
+	if status.Detail != "" {
+		fmt.Fprintf(w, "detail:\t%s\n", status.Detail)
+	}
+}
+
+func printRemoteLocalStatus(w io.Writer, status *protocol.RemoteLocalStatus) {
+	if status == nil {
+		return
+	}
+	fmt.Fprintf(w, "local_enabled:\t%t\n", status.Enabled)
+	fmt.Fprintf(w, "local_web_url:\t%s\n", status.HTTPURL)
+	fmt.Fprintf(w, "local_web_addr:\t%s\n", status.LocalWebAddr)
+	fmt.Fprintf(w, "local_pair_url:\t%s\n", status.LocalPairURL)
+	fmt.Fprintf(w, "ice_tcp_enabled:\t%t\n", status.ICETCPEnabled)
+	fmt.Fprintf(w, "ice_tcp_addr:\t%s\n", status.ICETCPAddr)
+	fmt.Fprintf(w, "ice_tcp_port:\t%d\n", status.ICETCPPort)
+	fmt.Fprintf(w, "updated_at:\t%s\n", status.UpdatedAt.Format(time.RFC3339))
+}
+
+func printPairStartResult(w io.Writer, result *protocol.PairStartResult) {
+	if result == nil {
+		return
+	}
+	fmt.Fprintf(w, "type:\t%s\n", result.Type)
+	fmt.Fprintf(w, "machine_id:\t%s\n", result.MachineID)
+	fmt.Fprintf(w, "machine_name:\t%s\n", result.MachineName)
+	fmt.Fprintf(w, "machine_public_key_fingerprint:\t%s\n", result.MachinePublicKeyFingerprint)
+	fmt.Fprintf(w, "local_pair_url:\t%s\n", result.LocalPairURL)
+	fmt.Fprintf(w, "pair_session_id:\t%s\n", result.PairSessionID)
+	fmt.Fprintf(w, "pair_secret:\t%s\n", result.PairSecret)
+	fmt.Fprintf(w, "expires_at:\t%s\n", result.ExpiresAt.Format(time.RFC3339))
 }
 
 func dialClient(path string) (*protocol.Client, error) {
@@ -547,70 +789,6 @@ func remoteLocalICETCPAddrFromEnv() string {
 		return "127.0.0.1:18889"
 	}
 	return ""
-}
-
-func startRemoteLocalWeb(ctx context.Context, srv *termx.Server, addr string, iceTCPMux *termx.LocalICETCPMux, logger *slog.Logger) (string, func(context.Context) error, error) {
-	addr = strings.TrimSpace(addr)
-	if addr == "" {
-		return "", nil, fmt.Errorf("remote local web address is required")
-	}
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		return "", nil, err
-	}
-
-	baseURL := localWebBaseURL(listener.Addr())
-	httpServer := &http.Server{
-		Handler: srv.LocalWebHandler(termx.LocalWebOptions{
-			HTTPURL:      baseURL,
-			LocalPairURL: baseURL + "/api/local/pair",
-			ICETCPMux:    iceTCPMux,
-		}),
-	}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) && logger != nil {
-			logger.Error("remote local web serve failed", "addr", listener.Addr().String(), "error", err)
-		}
-	}()
-
-	var once sync.Once
-	var shutdownErr error
-	shutdown := func(shutdownCtx context.Context) error {
-		once.Do(func() {
-			shutdownErr = httpServer.Shutdown(shutdownCtx)
-			if shutdownErr != nil {
-				_ = httpServer.Close()
-			}
-			<-done
-		})
-		return shutdownErr
-	}
-
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = shutdown(shutdownCtx)
-	}()
-
-	if logger != nil {
-		logger.Info("remote local web listening", "url", baseURL, "addr", listener.Addr().String())
-	}
-	return baseURL, shutdown, nil
-}
-
-func localWebBaseURL(addr net.Addr) string {
-	tcpAddr, ok := addr.(*net.TCPAddr)
-	if !ok {
-		return "http://" + addr.String()
-	}
-	host := tcpAddr.IP.String()
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		host = "127.0.0.1"
-	}
-	return "http://" + net.JoinHostPort(host, strconv.Itoa(tcpAddr.Port))
 }
 
 func envBool(key string) bool {

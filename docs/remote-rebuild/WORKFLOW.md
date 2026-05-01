@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: choose next slice after P3-E-C-B-I mobile terminal interaction shell
-- Last updated: 2026-05-02T00:08:00+08:00
+- Active todo: P3-E-C-B-J complete `termx remote` local management commands
+- Last updated: 2026-05-02T01:14:00+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -39,6 +39,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-G | local/e2e | Fix real-browser local WebRTC `api` DataChannel timeout by waiting for local ICE candidates before signing/sending the offer | completed | `9531237` |
 | P3-E-C-B-H | local/e2e | Replace the readonly terminal placeholder with a tgent-aligned xterm.js terminal surface that writes output, forwards input, and sends resize through TermX terminal interfaces | completed | `db9c7065` |
 | P3-E-C-B-I | remote-ui | Refactor embedded local web mobile terminal interaction shell with terminal-first navigation, terminal switcher sheet, pair sheet, virtual keybar, and keyboard-aware xterm handle | completed | `be748f93` |
+| P3-E-C-B-J | cli/local | Complete `termx remote` commands for implemented local-only remote management: enable/local-only, disable, info/show, pair, and open | in_progress |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -260,6 +261,21 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Final broader tests after implementation: `cd remote-ui && npm test` passed 101 tests; `cd remote-ui && npm run build:localweb` passed and regenerated `termx-core/internal/remote/localweb/static/assets/index-D4TtbuV4.js` plus `index-DLJaNUDj.css`; `cd remote-ui && npm audit` passed with 0 vulnerabilities; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
 - Real local smoke: rebuilt `/tmp/termx-local-test`, restarted tmux session `termx-local-test` with local web `127.0.0.1:18888` and ICE TCP `127.0.0.1:18889`, confirmed `GET /` references `/assets/index-D4TtbuV4.js` and `/assets/index-DLJaNUDj.css`, and confirmed `/api/local/status` reports machine `device-b9702aff8b30c634` with ICE TCP enabled. The daemon remains running for manual inspection.
 - Result: completed. Commit: `be748f93`.
+
+### P3-E-C-B-J termx remote local management commands
+
+- Active slice: complete the `termx remote` CLI surface for the local-only capabilities already implemented in P3: dynamic local web serving, local WebRTC over ICE TCP, local pairing, and status/info display. The CLI must make the currently usable product path discoverable without requiring users to memorize daemon environment variables.
+- Tests written before implementation: `termx-core/protocol/client_test.go`, `termx-core/remote_localweb_test.go`, and `termx-cli/cmd/termx/main_test.go`.
+- Expected failing tests: focused Go tests prove there is no protocol method for dynamic local web status/enable/disable yet and no `termx remote enable/local-only/disable/info/show/pair/open` commands under the `remote` command.
+- Actual failing tests before implementation: focused protocol/core/CLI tests failed as expected with missing `RemoteLocalEnableParams`, `RemoteLocalStatus`, `Client.RemoteLocalEnable/Status/Disable`, `Server.RemoteLocalEnable/Status/Disable`, and missing `remote` subcommands.
+- Planned scope: add runtime local web/ICE TCP management behind protocol interfaces; keep `termx pair` working; add `termx remote pair` as the discoverable paired command; keep anonymous/free local flow from exposing TermX TURN credentials; do not implement managed remote account login, billing, DNS, public relay, or TURN subscription behavior in this slice.
+- Implementation notes: added `remote.local.enable`, `remote.local.status`, and `remote.local.disable` protocol/client methods; moved dynamic local web + ICE TCP lifecycle into `termx-core` as `Server.RemoteLocalEnable/Status/Disable`; wired `daemon` env startup through the same runtime; expanded `termx remote` with `status --json`, `info/show`, `enable --local-only`, `local-only`/`local_only`, `disable`, `pair`, and `open`. `remote enable` without `--local-only` returns an explicit managed-remote deferral and never issues TURN credentials.
+- Review fixes: `Leibniz` found that `remote disable` only closed listeners and left existing local RTC sessions alive, and that failed reconfiguration tore down the old working runtime first. Added regressions, then bound local RTC sessions to the local runtime context so disable cancels active data channels, and changed enable to start the replacement runtime before swapping so failed binds preserve the existing runtime. The stale workflow finding is resolved by this entry. `Helmholtz` was launched for a final scoped review after fixes but timed out before completion; the completed `Leibniz` review satisfied the required development review and its findings were fixed.
+- Focused tests after implementation and review fixes: `cd termx-core && go test ./protocol -run 'TestClientRemoteLocalManagement|TestClientRemotePairStart'` passed; `cd termx-core && go test . -run 'TestRemoteLocalEnableFailureKeepsExistingRuntime|TestE2ERemoteLocalDisableClosesActiveRTCSessions|TestE2ERemoteLocalEnableStatusAndDisable' -count=1` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemote(InfoShowEmitsJSON|DisableEmitsJSONLocalStatus|OpenPrintsOrLaunchesRunningLocalURL|OpenRequiresEnabledLocalRuntime|EnableManagedPathIsExplicitlyDeferred|LocalOnlyAliasEnablesRuntime|EnableLocalOnlyEmitsLocalStatus|PairUsesRunningLocalPairURL|StatusIncludesLocalRuntime)' -count=1` passed.
+- Broader tests after implementation and review fixes: `cd termx-cli && go test ./cmd/termx` passed; `cd termx-cli && go test ./...` passed; `cd termx-core && go test ./protocol ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-core && go test ./internal/remote/... ./protocol` passed; `cd termx-core && go test ./...` passed; `git diff --check` passed.
+- Real command smoke: with a temporary socket/log/config/state directory, `go run ./termx-cli/cmd/termx remote enable --local-only --addr 127.0.0.1:0 --ice-tcp-addr 127.0.0.1:0 --json`, `remote status`, `remote info --json`, `remote pair --ttl 1m --json`, `remote open --print`, and `remote disable --json` all passed. Output included dynamic local web URL, ICE TCP port, pair session id/secret, open URL, and disabled local status. Temporary smoke daemons were stopped after the run.
+- Deferrals: managed remote enablement, public control-plane login/claim, DNS/TLS, billing/subscription, and TermX TURN relay authorization remain deferred by policy. Commands that would imply managed relay return explicit not-yet-implemented guidance instead of silently issuing relay credentials.
+- Result: implementation complete; commit hash will be recorded immediately after commit.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 
@@ -495,6 +511,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Local HTTP and ICE TCP currently use independent listeners. Same-port cmux remains deferred until browser smoke/local e2e proves that reducing exposed ports is worth the extra listener complexity.
 - P3-E-B local terminal bridge now implements the minimum Go binary terminal protocol path over `terminal:{terminal_id}`. Richer incoming stream-frame rendering such as `TypeScreenUpdate`, `TypeSyncLost`, and `TypeBootstrapDone` remain for later terminal-rendering polish.
 - P3-E-C-B-B in-app Browser Use click smoke is deferred by current tool availability: the Browser plugin is installed, but the required Node REPL `js` tool is not exposed in this session. Current fallback smoke is executable HTTP/embedded-asset coverage in `termx-cli`; P3-E-C-B-C should run in-app browser automation when the Node REPL browser tool is available.
+- Managed `termx remote enable` remains a narrow placeholder for future authenticated control-plane work. Current command output explicitly points users to `termx remote enable --local-only`; no TURN relay credentials are issued on this path.
 
 ## Risks
 
@@ -504,9 +521,11 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Keeping TermX UI close enough to tgent for future synchronization conflicts with replacing tgent's web-like interaction state. The boundary is explicit: copy structure/components/adapters where possible, but normalize messages and lifecycle through TermX reducers/queues.
 - P3-E browser adapter currently translates shared `GET /files/list` and `GET /files/stat` requests to the existing Go/tgent-style `POST` data-channel file API. Browser smoke in P3-E-C-B must validate that this adapter behavior works against the embedded daemon.
 - P3-E-C-B-I proves the embedded shell serves the rebuilt mobile interaction bundle locally. Browser Use plugin click automation remains deferred until the Browser Use Node REPL `js` tool is available; manual/mobile viewport interaction still needs product polish after this structural refactor.
+- `remote-ui/src/MobileTerminalKeybar.tsx` and `remote-ui/src/Terminal.tsx` have unrelated uncommitted UI touch/viewport changes present during P3-E-C-B-J completion. They are intentionally excluded from the remote command commit to avoid mixing UI work into CLI/runtime lifecycle changes.
 
 ## Next Exact Action
 
-1. Commit this workflow checkpoint for P3-E-C-B-I.
-2. Keep the verified local daemon running at `http://127.0.0.1:18888` for manual inspection if needed.
-3. Choose the next UI slice: likely advanced mobile-native terminal gestures/keyboard polish on the shared xterm surface before migrating the same components into the mobile app.
+1. Commit P3-E-C-B-J implementation and tests.
+2. Record the resulting P3-E-C-B-J commit hash in this workflow file.
+3. Keep the verified local daemon running at `http://127.0.0.1:18888` for manual inspection if needed.
+4. Choose the next UI slice: likely advanced mobile-native terminal gestures/keyboard polish on the shared xterm surface before migrating the same components into the mobile app.

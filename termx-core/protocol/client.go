@@ -283,6 +283,30 @@ func (c *Client) RemotePairStart(ctx context.Context, params PairStartParams) (*
 	return &out, nil
 }
 
+func (c *Client) RemoteLocalEnable(ctx context.Context, params RemoteLocalEnableParams) (*RemoteLocalStatus, error) {
+	var out RemoteLocalStatus
+	if err := c.doRequest(ctx, "remote.local.enable", params, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) RemoteLocalStatus(ctx context.Context) (*RemoteLocalStatus, error) {
+	var out RemoteLocalStatus
+	if err := c.doRequest(ctx, "remote.local.status", map[string]any{}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) RemoteLocalDisable(ctx context.Context) (*RemoteLocalStatus, error) {
+	var out RemoteLocalStatus
+	if err := c.doRequest(ctx, "remote.local.disable", map[string]any{}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *Client) Kill(ctx context.Context, terminalID string) error {
 	return c.doRequest(ctx, "kill", GetParams{TerminalID: terminalID}, nil)
 }

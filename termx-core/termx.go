@@ -56,6 +56,8 @@ type Server struct {
 	remoteRTCFiles  *fileapi.Manager
 	remoteRTCCtx    context.Context
 	remoteRTCCancel context.CancelFunc
+	remoteLocalMu   sync.Mutex
+	remoteLocal     *remoteLocalRuntime
 	closed          atomic.Bool
 	listeners       []transport.Listener
 
@@ -489,6 +491,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.remoteManager != nil {
 		s.remoteManager.Close()
 	}
+	_, _ = s.RemoteLocalDisable(context.Background())
 	if s.remoteRTCFiles != nil {
 		s.remoteRTCFiles.Close()
 	}
@@ -998,6 +1001,39 @@ func (s *Server) handleRequest(
 			return nil, protocolErrorCode(err), err
 		}
 		result, err := json.Marshal(pair)
+		if err != nil {
+			return nil, 500, err
+		}
+		return result, 0, nil
+	case "remote.local.enable":
+		var params protocol.RemoteLocalEnableParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return nil, 400, err
+		}
+		status, err := s.RemoteLocalEnable(ctx, RemoteLocalOptions{
+			LocalWebAddr: params.LocalWebAddr,
+			ICETCPAddr:   params.ICETCPAddr,
+		})
+		if err != nil {
+			return nil, protocolErrorCode(err), err
+		}
+		result, err := json.Marshal(remoteLocalStatusToProtocol(status))
+		if err != nil {
+			return nil, 500, err
+		}
+		return result, 0, nil
+	case "remote.local.status":
+		result, err := json.Marshal(remoteLocalStatusToProtocol(s.RemoteLocalStatus()))
+		if err != nil {
+			return nil, 500, err
+		}
+		return result, 0, nil
+	case "remote.local.disable":
+		status, err := s.RemoteLocalDisable(ctx)
+		if err != nil {
+			return nil, protocolErrorCode(err), err
+		}
+		result, err := json.Marshal(remoteLocalStatusToProtocol(status))
 		if err != nil {
 			return nil, 500, err
 		}

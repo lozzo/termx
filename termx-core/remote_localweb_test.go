@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -110,6 +111,189 @@ func TestE2ERemoteLocalWebHandlerStatusTerminalsAndPair(t *testing.T) {
 	}
 	if pair["app_certificate"] == nil {
 		t.Fatalf("expected app_certificate in pair response: %#v", pair)
+	}
+}
+
+func TestE2ERemoteLocalEnableStatusAndDisable(t *testing.T) {
+	srv := NewServer(WithRemoteConfig(RemoteConfig{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "local-management-test",
+	}))
+	defer srv.Shutdown(context.Background())
+
+	status, err := srv.RemoteLocalEnable(context.Background(), RemoteLocalOptions{
+		LocalWebAddr: "127.0.0.1:0",
+		ICETCPAddr:   "127.0.0.1:0",
+	})
+	if err != nil {
+		t.Fatalf("RemoteLocalEnable returned error: %v", err)
+	}
+	if !status.Enabled || status.HTTPURL == "" || status.LocalPairURL == "" || !status.ICETCPEnabled || status.ICETCPPort == 0 {
+		t.Fatalf("unexpected local enable status: %#v", status)
+	}
+	if strings.Contains(strings.ToLower(status.HTTPURL), "turn") || strings.Contains(strings.ToLower(status.LocalPairURL), "turn") {
+		t.Fatalf("local status must not expose TURN credentials: %#v", status)
+	}
+
+	client := http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(status.HTTPURL + "/api/local/status")
+	if err != nil {
+		t.Fatalf("GET local status: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected local status 200, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	current := srv.RemoteLocalStatus()
+	if current.HTTPURL != status.HTTPURL || current.LocalPairURL != status.LocalPairURL {
+		t.Fatalf("unexpected current local status: %#v", current)
+	}
+	disabled, err := srv.RemoteLocalDisable(context.Background())
+	if err != nil {
+		t.Fatalf("RemoteLocalDisable returned error: %v", err)
+	}
+	if disabled.Enabled || disabled.HTTPURL != "" || disabled.ICETCPEnabled {
+		t.Fatalf("expected disabled local status, got %#v", disabled)
+	}
+	if _, err := client.Get(status.HTTPURL + "/api/local/status"); err == nil {
+		t.Fatal("expected local web to stop after disable")
+	}
+}
+
+func TestRemoteLocalEnableFailureKeepsExistingRuntime(t *testing.T) {
+	srv := NewServer(WithRemoteConfig(RemoteConfig{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "local-management-test",
+	}))
+	defer srv.Shutdown(context.Background())
+
+	status, err := srv.RemoteLocalEnable(context.Background(), RemoteLocalOptions{
+		LocalWebAddr: "127.0.0.1:0",
+		ICETCPAddr:   "127.0.0.1:0",
+	})
+	if err != nil {
+		t.Fatalf("RemoteLocalEnable returned error: %v", err)
+	}
+
+	blocker, err := StartLocalICETCPMux(context.Background(), "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("StartLocalICETCPMux blocker returned error: %v", err)
+	}
+	defer blocker.Close()
+	blockerEndpoint := blocker.Endpoint()
+	blockedAddr := blockerEndpoint.Host + ":" + blockerEndpoint.PortString()
+	if _, err := srv.RemoteLocalEnable(context.Background(), RemoteLocalOptions{
+		LocalWebAddr: "127.0.0.1:0",
+		ICETCPAddr:   blockedAddr,
+	}); err == nil {
+		t.Fatal("expected reconfigure to fail on already-bound ICE TCP address")
+	}
+
+	current := srv.RemoteLocalStatus()
+	if !current.Enabled || current.HTTPURL != status.HTTPURL || current.ICETCPAddr != status.ICETCPAddr {
+		t.Fatalf("failed reconfigure should keep existing runtime, got %#v want %#v", current, status)
+	}
+	client := http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(status.HTTPURL + "/api/local/status")
+	if err != nil {
+		t.Fatalf("existing local web stopped after failed reconfigure: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected existing local web 200 after failed reconfigure, got %d: %s", resp.StatusCode, string(body))
+	}
+}
+
+func TestE2ERemoteLocalDisableClosesActiveRTCSessions(t *testing.T) {
+	srv := NewServer(WithRemoteConfig(RemoteConfig{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "local-disable-rtc-machine",
+	}))
+	defer srv.Shutdown(context.Background())
+
+	term, err := srv.Create(context.Background(), CreateOptions{
+		Command: []string{"sh", "-c", "sleep 5"},
+		Name:    "local-disable-rtc-shell",
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	status, err := srv.RemoteLocalEnable(context.Background(), RemoteLocalOptions{
+		LocalWebAddr: "127.0.0.1:0",
+		ICETCPAddr:   "127.0.0.1:0",
+	})
+	if err != nil {
+		t.Fatalf("RemoteLocalEnable returned error: %v", err)
+	}
+	session, appCert, appPrivate := claimLocalRTCAppCertificateHTTP(t, srv, status.LocalPairURL, []string{"terminal", "file_manager"})
+
+	offerPC, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatalf("NewPeerConnection returned error: %v", err)
+	}
+	defer offerPC.Close()
+	terminalDC, err := offerPC.CreateDataChannel("terminal:"+term.ID, nil)
+	if err != nil {
+		t.Fatalf("CreateDataChannel terminal returned error: %v", err)
+	}
+	terminalOpen := make(chan struct{})
+	terminalClosed := make(chan struct{})
+	terminalDC.OnOpen(func() {
+		select {
+		case <-terminalOpen:
+		default:
+			close(terminalOpen)
+		}
+	})
+	terminalDC.OnClose(func() {
+		select {
+		case <-terminalClosed:
+		default:
+			close(terminalClosed)
+		}
+	})
+	offer, err := offerPC.CreateOffer(nil)
+	if err != nil {
+		t.Fatalf("CreateOffer returned error: %v", err)
+	}
+	if err := offerPC.SetLocalDescription(offer); err != nil {
+		t.Fatalf("SetLocalDescription returned error: %v", err)
+	}
+	waitPeerICE(t, offerPC, 5*time.Second)
+
+	body := signedLocalRTCOfferBody(t, appCert, appPrivate, "rtc-disable", session.MachineID, term.ID, offerPC.LocalDescription().SDP, "nonce-disable", time.Now().UTC())
+	var rtcResp map[string]any
+	localWebHTTPDecode(t, status.HTTPURL+"/api/local/rtc/offer", body, &rtcResp)
+	answer := rtcResp["answer"].(map[string]any)
+	if err := offerPC.SetRemoteDescription(webrtc.SessionDescription{
+		Type: webrtc.SDPTypeAnswer,
+		SDP:  answer["sdp"].(string),
+	}); err != nil {
+		t.Fatalf("SetRemoteDescription returned error: %v", err)
+	}
+	select {
+	case <-terminalOpen:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for local RTC terminal channel to open")
+	}
+	if _, err := srv.RemoteLocalDisable(context.Background()); err != nil {
+		t.Fatalf("RemoteLocalDisable returned error: %v", err)
+	}
+	select {
+	case <-terminalClosed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for local RTC terminal channel to close after disable")
 	}
 }
 
@@ -398,6 +582,37 @@ func claimLocalRTCAppCertificate(t *testing.T, srv *Server, handler http.Handler
 	return session, pair.AppCertificate, appPrivate
 }
 
+func claimLocalRTCAppCertificateHTTP(t *testing.T, srv *Server, localPairURL string, capabilities []string) (protocol.PairStartResult, remotecert.AppCertificateEnvelope, ed25519.PrivateKey) {
+	t.Helper()
+	session, err := srv.RemotePairStart(PairStartOptions{
+		LocalPairURL: localPairURL,
+		TTL:          time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("RemotePairStart returned error: %v", err)
+	}
+	appPublic, appPrivate, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	pairBody, err := json.Marshal(map[string]any{
+		"pair_session_id":        session.PairSessionID,
+		"pair_secret":            session.PairSecret,
+		"app_device_id":          "app-local-rtc",
+		"app_name":               "Local RTC Test",
+		"app_public_key":         base64.StdEncoding.EncodeToString(appPublic),
+		"requested_capabilities": capabilities,
+	})
+	if err != nil {
+		t.Fatalf("Marshal pair body returned error: %v", err)
+	}
+	var pair struct {
+		AppCertificate remotecert.AppCertificateEnvelope `json:"app_certificate"`
+	}
+	localWebHTTPDecode(t, localPairURL, pairBody, &pair)
+	return session, pair.AppCertificate, appPrivate
+}
+
 func newLocalOfferSDP(t *testing.T, labels ...string) string {
 	t.Helper()
 	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
@@ -495,5 +710,25 @@ func localWebDecode(t *testing.T, handler http.Handler, method, path string, bod
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), out); err != nil {
 		t.Fatalf("decode %s %s response: %v\n%s", method, path, err, rec.Body.String())
+	}
+}
+
+func localWebHTTPDecode(t *testing.T, rawURL string, body []byte, out any) {
+	t.Helper()
+	client := http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post(rawURL, "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST %s returned error: %v", rawURL, err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read %s response: %v", rawURL, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST %s expected 200, got %d body=%q", rawURL, resp.StatusCode, string(respBody))
+	}
+	if err := json.Unmarshal(respBody, out); err != nil {
+		t.Fatalf("decode %s response: %v\n%s", rawURL, err, string(respBody))
 	}
 }

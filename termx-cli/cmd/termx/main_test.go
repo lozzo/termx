@@ -314,26 +314,21 @@ func TestStartRemoteLocalWebServesEmbeddedPageAndStatus(t *testing.T) {
 	}))
 	defer srv.Shutdown(context.Background())
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	iceMux, err := termx.StartLocalICETCPMux(ctx, "127.0.0.1:0")
+	localRuntime, err := srv.RemoteLocalEnable(context.Background(), termx.RemoteLocalOptions{
+		LocalWebAddr: "127.0.0.1:0",
+		ICETCPAddr:   "127.0.0.1:0",
+	})
 	if err != nil {
-		t.Fatalf("StartLocalICETCPMux returned error: %v", err)
-	}
-	defer iceMux.Close()
-
-	baseURL, shutdown, err := startRemoteLocalWeb(ctx, srv, "127.0.0.1:0", iceMux, nil)
-	if err != nil {
-		t.Fatalf("startRemoteLocalWeb returned error: %v", err)
+		t.Fatalf("RemoteLocalEnable returned error: %v", err)
 	}
 	defer func() {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer shutdownCancel()
-		if err := shutdown(shutdownCtx); err != nil {
+		if _, err := srv.RemoteLocalDisable(shutdownCtx); err != nil {
 			t.Fatalf("shutdown local web: %v", err)
 		}
 	}()
+	baseURL := localRuntime.HTTPURL
 
 	client := http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(baseURL + "/")
@@ -484,11 +479,343 @@ func embeddedModuleAssetPath(t *testing.T, html string) string {
 
 func TestRootCmdHasRemoteStatusAndPairCommands(t *testing.T) {
 	cmd := newRootCmd()
-	if _, _, err := cmd.Find([]string{"remote", "status"}); err != nil {
-		t.Fatalf("expected remote status command to exist: %v", err)
+	for _, args := range [][]string{
+		{"remote", "status"},
+		{"remote", "info"},
+		{"remote", "show"},
+		{"remote", "enable"},
+		{"remote", "local-only"},
+		{"remote", "local_only"},
+		{"remote", "disable"},
+		{"remote", "pair"},
+		{"remote", "open"},
+	} {
+		if _, _, err := cmd.Find(args); err != nil {
+			t.Fatalf("expected %q command to exist: %v", strings.Join(args, " "), err)
+		}
 	}
 	if _, _, err := cmd.Find([]string{"pair"}); err != nil {
 		t.Fatalf("expected pair command to exist: %v", err)
+	}
+}
+
+func TestRemoteEnableLocalOnlyEmitsLocalStatus(t *testing.T) {
+	oldEnable := remoteLocalEnableClient
+	t.Cleanup(func() {
+		remoteLocalEnableClient = oldEnable
+	})
+
+	var gotParams protocol.RemoteLocalEnableParams
+	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params protocol.RemoteLocalEnableParams) (*protocol.RemoteLocalStatus, error) {
+		gotParams = params
+		return &protocol.RemoteLocalStatus{
+			Enabled:       true,
+			HTTPURL:       "http://127.0.0.1:18888",
+			LocalWebAddr:  params.LocalWebAddr,
+			LocalPairURL:  "http://127.0.0.1:18888/api/local/pair",
+			ICETCPEnabled: true,
+			ICETCPAddr:    params.ICETCPAddr,
+			ICETCPPort:    18889,
+			UpdatedAt:     time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		}, nil
+	}
+
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"remote", "enable", "--local-only", "--addr", "127.0.0.1:18888", "--ice-tcp-addr", "127.0.0.1:18889"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if gotParams.LocalWebAddr != "127.0.0.1:18888" || gotParams.ICETCPAddr != "127.0.0.1:18889" {
+		t.Fatalf("unexpected enable params: %#v", gotParams)
+	}
+	if !strings.Contains(out.String(), "local_web_url:\thttp://127.0.0.1:18888") ||
+		!strings.Contains(out.String(), "local_pair_url:\thttp://127.0.0.1:18888/api/local/pair") {
+		t.Fatalf("unexpected remote enable output:\n%s", out.String())
+	}
+}
+
+func TestRemotePairUsesRunningLocalPairURL(t *testing.T) {
+	oldStatus := remoteLocalStatusClient
+	oldPair := pairStartClient
+	t.Cleanup(func() {
+		remoteLocalStatusClient = oldStatus
+		pairStartClient = oldPair
+	})
+
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
+		return &protocol.RemoteLocalStatus{
+			Enabled:      true,
+			LocalPairURL: "http://127.0.0.1:19999/api/local/pair",
+		}, nil
+	}
+	var gotParams protocol.PairStartParams
+	pairStartClient = func(ctx context.Context, socketPath string, logFile string, params protocol.PairStartParams) (*protocol.PairStartResult, error) {
+		gotParams = params
+		return &protocol.PairStartResult{
+			Type:                        "termx_pair_v1",
+			MachineID:                   "mach_test",
+			MachineName:                 "MacBook Pro",
+			MachinePublicKeyFingerprint: "sha256:test",
+			LocalPairURL:                params.LocalPairURL,
+			PairSessionID:               "pair_test",
+			PairSecret:                  "secret",
+			ExpiresAt:                   time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		}, nil
+	}
+
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"remote", "pair", "--ttl", "2m"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if gotParams.LocalPairURL != "http://127.0.0.1:19999/api/local/pair" || gotParams.TTLSeconds != 120 {
+		t.Fatalf("unexpected pair params: %#v", gotParams)
+	}
+	if !strings.Contains(out.String(), "pair_session_id:\tpair_test") || !strings.Contains(out.String(), "pair_secret:\tsecret") {
+		t.Fatalf("unexpected remote pair output:\n%s", out.String())
+	}
+}
+
+func TestRemoteStatusIncludesLocalRuntime(t *testing.T) {
+	oldRemoteStatus := remoteStatusClient
+	oldStatus := remoteLocalStatusClient
+	t.Cleanup(func() {
+		remoteStatusClient = oldRemoteStatus
+		remoteLocalStatusClient = oldStatus
+	})
+	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteStatus, error) {
+		return &protocol.RemoteStatus{
+			State:      "disabled",
+			DeviceName: "RedmiBook",
+			UpdatedAt:  time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		}, nil
+	}
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
+		return &protocol.RemoteLocalStatus{
+			Enabled:      true,
+			HTTPURL:      "http://127.0.0.1:18888",
+			LocalPairURL: "http://127.0.0.1:18888/api/local/pair",
+			UpdatedAt:    time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		}, nil
+	}
+
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"remote", "status"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !strings.Contains(out.String(), "local_enabled:\ttrue") ||
+		!strings.Contains(out.String(), "local_web_url:\thttp://127.0.0.1:18888") {
+		t.Fatalf("expected local runtime in status output, got:\n%s", out.String())
+	}
+}
+
+func TestRemoteInfoShowEmitsJSON(t *testing.T) {
+	oldRemoteStatus := remoteStatusClient
+	oldStatus := remoteLocalStatusClient
+	t.Cleanup(func() {
+		remoteStatusClient = oldRemoteStatus
+		remoteLocalStatusClient = oldStatus
+	})
+	remoteStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteStatus, error) {
+		return &protocol.RemoteStatus{
+			State:      "disabled",
+			DeviceID:   "mach_json",
+			DeviceName: "JSON Machine",
+			UpdatedAt:  time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		}, nil
+	}
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
+		return &protocol.RemoteLocalStatus{
+			Enabled:      true,
+			HTTPURL:      "http://127.0.0.1:18888",
+			LocalPairURL: "http://127.0.0.1:18888/api/local/pair",
+			UpdatedAt:    time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		}, nil
+	}
+
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"remote", "show", "--json"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	var decoded struct {
+		Remote protocol.RemoteStatus      `json:"remote"`
+		Local  protocol.RemoteLocalStatus `json:"local"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+		t.Fatalf("remote show output is not JSON: %v\n%s", err, out.String())
+	}
+	if decoded.Remote.DeviceID != "mach_json" || decoded.Local.HTTPURL != "http://127.0.0.1:18888" {
+		t.Fatalf("unexpected remote show JSON: %#v", decoded)
+	}
+}
+
+func TestRemoteDisableEmitsJSONLocalStatus(t *testing.T) {
+	oldDisable := remoteLocalDisableClient
+	t.Cleanup(func() {
+		remoteLocalDisableClient = oldDisable
+	})
+	called := false
+	remoteLocalDisableClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
+		called = true
+		return &protocol.RemoteLocalStatus{
+			Enabled:   false,
+			UpdatedAt: time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		}, nil
+	}
+
+	var out bytes.Buffer
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"remote", "disable", "--json"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !called {
+		t.Fatal("expected remote local disable client to be called")
+	}
+	var decoded protocol.RemoteLocalStatus
+	if err := json.Unmarshal(out.Bytes(), &decoded); err != nil {
+		t.Fatalf("remote disable output is not JSON: %v\n%s", err, out.String())
+	}
+	if decoded.Enabled {
+		t.Fatalf("expected disabled local status, got %#v", decoded)
+	}
+}
+
+func TestRemoteOpenPrintsOrLaunchesRunningLocalURL(t *testing.T) {
+	oldStatus := remoteLocalStatusClient
+	oldOpen := openBrowser
+	t.Cleanup(func() {
+		remoteLocalStatusClient = oldStatus
+		openBrowser = oldOpen
+	})
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
+		return &protocol.RemoteLocalStatus{
+			Enabled: true,
+			HTTPURL: "http://127.0.0.1:18888",
+		}, nil
+	}
+	var opened []string
+	openBrowser = func(rawURL string) error {
+		opened = append(opened, rawURL)
+		return nil
+	}
+
+	var printOut bytes.Buffer
+	printCmd := newRootCmd()
+	printCmd.SetArgs([]string{"remote", "open", "--print"})
+	printCmd.SetOut(&printOut)
+	printCmd.SetErr(io.Discard)
+	if err := printCmd.Execute(); err != nil {
+		t.Fatalf("remote open --print returned error: %v", err)
+	}
+	if strings.TrimSpace(printOut.String()) != "http://127.0.0.1:18888" {
+		t.Fatalf("unexpected print output: %q", printOut.String())
+	}
+	if len(opened) != 0 {
+		t.Fatalf("--print must not launch browser, opened=%#v", opened)
+	}
+
+	var openOut bytes.Buffer
+	openCmd := newRootCmd()
+	openCmd.SetArgs([]string{"remote", "open"})
+	openCmd.SetOut(&openOut)
+	openCmd.SetErr(io.Discard)
+	if err := openCmd.Execute(); err != nil {
+		t.Fatalf("remote open returned error: %v", err)
+	}
+	if len(opened) != 1 || opened[0] != "http://127.0.0.1:18888" {
+		t.Fatalf("unexpected browser launches: %#v", opened)
+	}
+	if strings.TrimSpace(openOut.String()) != "http://127.0.0.1:18888" {
+		t.Fatalf("unexpected open output: %q", openOut.String())
+	}
+}
+
+func TestRemoteOpenRequiresEnabledLocalRuntime(t *testing.T) {
+	oldStatus := remoteLocalStatusClient
+	t.Cleanup(func() {
+		remoteLocalStatusClient = oldStatus
+	})
+	remoteLocalStatusClient = func(ctx context.Context, socketPath string, logFile string) (*protocol.RemoteLocalStatus, error) {
+		return &protocol.RemoteLocalStatus{Enabled: false}, nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"remote", "open", "--print"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "local remote is not enabled") {
+		t.Fatalf("expected local remote disabled error, got %v", err)
+	}
+}
+
+func TestRemoteEnableManagedPathIsExplicitlyDeferred(t *testing.T) {
+	oldEnable := remoteLocalEnableClient
+	t.Cleanup(func() {
+		remoteLocalEnableClient = oldEnable
+	})
+	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params protocol.RemoteLocalEnableParams) (*protocol.RemoteLocalStatus, error) {
+		t.Fatal("remote local enable client must not be called for managed enable")
+		return nil, nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"remote", "enable"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "managed remote enable is not implemented yet") {
+		t.Fatalf("expected managed enable deferral error, got %v", err)
+	}
+}
+
+func TestRemoteLocalOnlyAliasEnablesRuntime(t *testing.T) {
+	oldEnable := remoteLocalEnableClient
+	t.Cleanup(func() {
+		remoteLocalEnableClient = oldEnable
+	})
+	var gotParams protocol.RemoteLocalEnableParams
+	remoteLocalEnableClient = func(ctx context.Context, socketPath string, logFile string, params protocol.RemoteLocalEnableParams) (*protocol.RemoteLocalStatus, error) {
+		gotParams = params
+		return &protocol.RemoteLocalStatus{
+			Enabled:      true,
+			HTTPURL:      "http://127.0.0.1:18888",
+			LocalPairURL: "http://127.0.0.1:18888/api/local/pair",
+			UpdatedAt:    time.Date(2026, 5, 1, 0, 5, 0, 0, time.UTC),
+		}, nil
+	}
+
+	cmd := newRootCmd()
+	cmd.SetArgs([]string{"remote", "local_only", "--addr", "127.0.0.1:18888", "--ice-tcp-addr", "127.0.0.1:18889"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if gotParams.LocalWebAddr != "127.0.0.1:18888" || gotParams.ICETCPAddr != "127.0.0.1:18889" {
+		t.Fatalf("unexpected enable params: %#v", gotParams)
 	}
 }
 
