@@ -294,6 +294,162 @@ describe('createLocalWebRtcPeerTransport', () => {
     })
   })
 
+  it('rejects pending api requests when the data channel closes without a response', async () => {
+    const factory = createMockPeerConnectionFactory()
+    const transport = createLocalWebRtcPeerTransport({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      mode: 'local',
+      peerConnectionFactory: factory,
+      createAnswer: async (offer) => ({ sessionId: offer.sessionId, answer: { type: 'answer', sdp: 'answer-sdp' } }),
+      sessionIdGenerator: () => 'rtc-local-1',
+      appCertificate: '{"payload":{"machine_id":"machine-local"}}',
+      signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
+    })
+    await transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' })
+    const api = await transport.openApi()
+    const apiChannel = factory.channel('api')
+
+    const request = api.request('POST', { path: '/files/list', params: { path: '/' } })
+    expect(JSON.parse(apiChannel.sentText()[0] ?? '{}')).toMatchObject({
+      id: 'req_1',
+      method: 'POST',
+      path: '/files/list',
+    })
+    apiChannel.close()
+
+    await expect(request).rejects.toThrow(/api.*closed|closed.*api/i)
+  })
+
+  it('rejects pending api requests when the data channel response is invalid', async () => {
+    const factory = createMockPeerConnectionFactory()
+    const transport = createLocalWebRtcPeerTransport({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      mode: 'local',
+      peerConnectionFactory: factory,
+      createAnswer: async (offer) => ({ sessionId: offer.sessionId, answer: { type: 'answer', sdp: 'answer-sdp' } }),
+      sessionIdGenerator: () => 'rtc-local-1',
+      appCertificate: '{"payload":{"machine_id":"machine-local"}}',
+      signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
+    })
+    await transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' })
+    const api = await transport.openApi()
+    const apiChannel = factory.channel('api')
+
+    const request = api.request('POST', { path: '/files/list', params: { path: '/' } })
+    apiChannel.emitMessage(new Uint8Array([0x01, 0x02, 0x03]))
+
+    await expect(request).rejects.toThrow(/invalid api response chunk/i)
+  })
+
+  it('rejects pending api requests for malformed api chunk headers', async () => {
+    const factory = createMockPeerConnectionFactory()
+    const transport = createLocalWebRtcPeerTransport({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      mode: 'local',
+      peerConnectionFactory: factory,
+      createAnswer: async (offer) => ({ sessionId: offer.sessionId, answer: { type: 'answer', sdp: 'answer-sdp' } }),
+      sessionIdGenerator: () => 'rtc-local-1',
+      appCertificate: '{"payload":{"machine_id":"machine-local"}}',
+      signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
+    })
+    await transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' })
+    const api = await transport.openApi()
+    const apiChannel = factory.channel('api')
+
+    const request = api.request('POST', { path: '/files/list', params: { path: '/' } })
+    apiChannel.emitMessage(new Uint8Array([0xc0, 0x03, 0x08, 0x72, 0x65, 0x71]))
+
+    await expect(request).rejects.toThrow(/invalid api response chunk/i)
+  })
+
+  it('rejects pending api requests when async response conversion fails', async () => {
+    const factory = createMockPeerConnectionFactory()
+    const transport = createLocalWebRtcPeerTransport({
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      mode: 'local',
+      peerConnectionFactory: factory,
+      createAnswer: async (offer) => ({ sessionId: offer.sessionId, answer: { type: 'answer', sdp: 'answer-sdp' } }),
+      sessionIdGenerator: () => 'rtc-local-1',
+      appCertificate: '{"payload":{"machine_id":"machine-local"}}',
+      signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
+    })
+    await transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' })
+    const api = await transport.openApi()
+    const apiChannel = factory.channel('api')
+
+    const request = api.request('POST', { path: '/files/list', params: { path: '/' } })
+    const failingBlob = new Blob([])
+    Object.defineProperty(failingBlob, 'arrayBuffer', {
+      value: () => Promise.reject(new Error('blob read failed')),
+    })
+    apiChannel.emitMessage(failingBlob)
+
+    await expect(request).rejects.toThrow(/blob read failed/)
+  })
+
+  it('rejects api requests when the data channel never opens', async () => {
+    vi.useFakeTimers()
+    try {
+      const factory = createMockPeerConnectionFactory({ initialReadyState: 'connecting' })
+      const transport = createLocalWebRtcPeerTransport({
+        machineId: 'machine-local',
+        terminalId: 'terminal-1',
+        mode: 'local',
+        peerConnectionFactory: factory,
+        createAnswer: async (offer) => ({ sessionId: offer.sessionId, answer: { type: 'answer', sdp: 'answer-sdp' } }),
+        sessionIdGenerator: () => 'rtc-local-1',
+        appCertificate: '{"payload":{"machine_id":"machine-local"}}',
+        signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
+      })
+      await transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' })
+      const api = await transport.openApi()
+      const apiChannel = factory.channel('api')
+
+      const request = api.request('POST', { path: '/files/list', params: { path: '/' } })
+      await Promise.resolve()
+      expect(apiChannel.sent).toEqual([])
+      const rejection = expect(request).rejects.toThrow(/timed out opening data channel api/i)
+      await vi.advanceTimersByTimeAsync(15000)
+
+      await rejection
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('rejects api requests when the response never completes', async () => {
+    vi.useFakeTimers()
+    try {
+      const factory = createMockPeerConnectionFactory()
+      const transport = createLocalWebRtcPeerTransport({
+        machineId: 'machine-local',
+        terminalId: 'terminal-1',
+        mode: 'local',
+        peerConnectionFactory: factory,
+        createAnswer: async (offer) => ({ sessionId: offer.sessionId, answer: { type: 'answer', sdp: 'answer-sdp' } }),
+        sessionIdGenerator: () => 'rtc-local-1',
+        appCertificate: '{"payload":{"machine_id":"machine-local"}}',
+        signOffer: async () => ({ signature: 'signature', nonce: 'nonce-1', timestamp: '1770000000' }),
+      })
+      await transport.connect({ machineId: 'machine-local', terminalId: 'terminal-1', mode: 'local' })
+      const api = await transport.openApi()
+      const apiChannel = factory.channel('api')
+
+      const request = api.request('POST', { path: '/files/list', params: { path: '/' } })
+      apiChannel.emitMessage(apiResponseChunk('req_1', { status: 200, body: { entries: [] } }, { last: false }))
+      const rejection = expect(request).rejects.toThrow(/timed out waiting for api response req_1/i)
+      await vi.advanceTimersByTimeAsync(15000)
+
+      await rejection
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('waits for file transfer data channels to open before resolving them', async () => {
     const factory = createMockPeerConnectionFactory({ initialReadyState: 'connecting' })
     const transport = createLocalWebRtcPeerTransport({
@@ -490,12 +646,12 @@ async function waitForTerminalEvent<TEvent>(events: unknown[], index = 0): Promi
   }
 }
 
-function apiResponseChunk(id: string, payload: unknown): Uint8Array {
+function apiResponseChunk(id: string, payload: unknown, options: { last?: boolean } = {}): Uint8Array {
   const idBytes = new TextEncoder().encode(id)
   const body = new TextEncoder().encode(JSON.stringify(payload))
   const out = new Uint8Array(3 + idBytes.length + body.length)
   out[0] = 0xc0
-  out[1] = 0x01 | 0x02
+  out[1] = 0x01 | (options.last === false ? 0 : 0x02)
   out[2] = idBytes.length
   out.set(idBytes, 3)
   out.set(body, 3 + idBytes.length)
@@ -575,7 +731,7 @@ class MockRTCDataChannel extends EventTarget {
     this.dispatchEvent(new Event('open'))
   }
 
-  emitMessage(data: string | Uint8Array | Blob): void {
+  emitMessage(data: unknown): void {
     this.dispatchEvent(new MessageEvent('message', { data }))
   }
 

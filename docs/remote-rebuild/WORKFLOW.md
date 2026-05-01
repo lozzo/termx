@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: choose next slice after P3-E-C-B-D manual local smoke
-- Last updated: 2026-05-01T15:26:33+08:00
+- Active todo: P3-E-C-B-E local file manager loading hang
+- Last updated: 2026-05-01T18:13:33+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -34,6 +34,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-B | local/e2e | Add local pair UI/harness and executable embedded web smoke fallback before mobile migration | completed | `be45093` |
 | P3-E-C-B-C | local/e2e | Run in-app Browser Use click smoke against embedded local web when the required browser Node REPL `js` tool is available | deferred |  |
 | P3-E-C-B-D | local/e2e | Fix browser local WebRTC API/file DataChannel send-before-open race found during manual embedded web test | completed | `a1edab3` |
+| P3-E-C-B-E | local/e2e | Fix embedded local file manager hang where `Loading files` remains visible instead of files or an error | in_progress |  |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -178,6 +179,19 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Code review: `Hilbert` found no issues. It confirmed the fix stays inside the browser-local WebRTC adapter, preserves `PeerTransport` / `JsonRpcChannel` / `BinaryChannel` boundaries, keeps RTC primitives out of UI/business components, and does not introduce workspace/tab/pane/session concepts, TURN relay credentials, or machine private key exposure. Residual risk: no automated in-app browser click smoke was available in this Codex session.
 - Final focused tests after review: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` passed 12 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm test` passed 79 tests; `cd remote-ui && npm run build:localweb` passed; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
 - Result: completed. Commit: `a1edab3`.
+
+### P3-E-C-B-E local file manager loading hang
+
+- Active slice: fix manual embedded-web local test feedback that the file manager remains on `Loading files` instead of rendering real files.
+- Tests written before implementation: `remote-ui/src/localWebRtcTransport.test.ts` and, if needed, `remote-ui/src/useFileManager.test.tsx`.
+- Expected failing tests: focused tests should fail because pending `LocalApiChannel` requests are not rejected when the `api` RTC DataChannel closes before a chunked response is delivered, allowing `useFileManager` to stay loading indefinitely.
+- Actual failing tests before implementation: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` timed out in the new pending API request close test, proving the request promise stayed unresolved after `api` DataChannel close.
+- Planned scope: keep the fix inside the browser-local transport / file hook boundary. The UI should either render files from a valid response or surface a recoverable error; it must not hang forever. The change must not introduce workspace/tab/pane/session public concepts, TURN relay credentials, or machine private key exposure.
+- Code review before completion: `Fermat` found that malformed `0xc0` API chunks with truncated or impossible headers, non-final chunks that never complete, and async Blob/FileReader conversion failures could still leave file requests pending and keep `Loading files` visible. Follow-up scope: add malformed-header, conversion-failure, open-timeout, and response-timeout regressions before completing this todo.
+- Follow-up failing tests before implementation: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` failed as expected in four added regressions: malformed `0xc0` API chunk headers, async response conversion failure, `api` DataChannel never opening, and non-final API response never completing all left requests pending.
+- Implementation notes: `LocalApiChannel` now rejects pending requests on close/error, invalid or malformed API chunks, async message conversion failures, open timeout, and response timeout. Response timeout starts only after a request is actually sent, so a never-open channel reports an open timeout instead of an unrelated response timeout. This keeps `useFileManager` from staying on `Loading files` forever when the local API channel fails.
+- Follow-up code review: `Pascal` found a P1 pre-commit asset tracking issue where `index.html` referenced a generated JS asset that had not yet been added to git, plus a P3 timer cleanup issue where some waiter removal paths left response timers alive until they fired. The asset issue is resolved by staging the regenerated static directory with the commit; the timer issue is fixed by routing waiter resolve/reject through helpers that delete the waiter and clear the stored timer.
+- Focused tests after implementation and review fixes: `cd remote-ui && npm test -- --run src/localWebRtcTransport.test.ts` passed 18 tests; `cd remote-ui && npm test` passed 85 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm run build:localweb` passed; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-core && go test . -run 'TestE2E_WebRTCFileAPIAndTransfer|TestE2ERemoteLocalWebHandlerAnswersAuthenticatedRTCOffer' -count=1` passed; `cd termx-cli && go test ./cmd/termx -run 'TestRemoteLocal(Web|ICE)|TestStartRemoteLocalWebServesEmbeddedPageAndStatus'` passed; `git diff --check` passed.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 
