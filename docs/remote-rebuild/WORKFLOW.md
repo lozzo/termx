@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `5` Hub skeleton and agent registry.
-- Last updated: 2026-05-03T09:32:00+08:00.
+- Active todo: `6` Managed signaling without TURN.
+- Last updated: 2026-05-03T05:35:55+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -35,7 +35,19 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 4-C | public_p2p-review | Fix Slice 4 subagent review findings for structured payload validation, secret placement, STUN fail-closed behavior, cleanup scheduling, and workflow freshness | completed | `61ed506a` |
 | 4-C-A | public_p2p-follow-up-review | Fix follow-up review findings for strict field types, ICE relay token parsing, documented envelope compatibility, HTTP body limits, and workflow consistency | completed | `61ed506a` |
 | 4-C-B | public_p2p-final-review | Fix final review findings for private-key-shaped certificate payload fields, relay candidates embedded in SDP, and workflow next action freshness | completed | `61ed506a` |
-| 5 | hub | Create Hub skeleton and agent registry with register, heartbeat, poll, answer, and expiry behavior | pending |  |
+| 5 | hub | Create Hub skeleton and agent registry with register, heartbeat, poll, answer, and expiry behavior | completed |  |
+| 5-A | hub-self-review | Harden registry answer assignment and runtime-payload rejection found during local self-review | completed |  |
+| 5-B | hub-review-auth | Fix Slice 5 review finding: enforce agent authority, reject agent rebinds, and validate connect tickets before offer queueing | completed |  |
+| 5-C | hub-review-ttl | Fix Slice 5 review finding: cleanup expired signaling state without dropping valid queued offers for still-online agents | completed |  |
+| 5-D | hub-review-delivery | Fix Slice 5 review finding: make delivery retry and duplicate-answer semantics explicit and tested | completed |  |
+| 5-E | hub-review-clone | Fix Slice 5 review finding: clone returned terminal slices so callers cannot mutate registry-owned state | completed |  |
+| 5-F | hub-review-workflow | Fix Slice 5 review finding: keep workflow review state current and create stable deferred production hub identity todo | completed |  |
+| 5-G | external | Defer production hub identity, control-plane registration secret, and signing/rotation setup | deferred_external |  |
+| 5-H | hub-self-review | Move authority verifier calls outside registry mutex while preserving agent rebind safety | completed |  |
+| 5-I | hub-follow-up-review | Reject expired-agent heartbeats instead of resurrecting registrations without verifier | completed |  |
+| 5-J | hub-follow-up-review | Enforce signaling TTL on Poll, SubmitAnswer, and GetAnswer, not only cleanup | completed |  |
+| 5-K | hub-follow-up-review | Require basic SDP-shaped signaling payloads in addition to runtime marker rejection | completed |  |
+| 5-L | hub-follow-up-review | Refresh workflow state and bottom next action after Slice 5 follow-up review | completed |  |
 | 6 | managed-signaling | Implement managed signaling without TURN relay as HTTP control/signaling only, runtime still WebRTC DataChannel | pending |  |
 | 7 | paid-relay | Implement paid TURN/STUN relay MVP with temporary TURN credentials, relay lease, and no free TURN | pending |  |
 | 8 | quota | Implement relay quota, active relay session limit, heartbeat, TTL cleanup, and throttling | pending |  |
@@ -505,7 +517,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 5 Hub Skeleton And Agent Registry
 
-- 状态：pending
+- 状态：completed
 - 父条目：none
 - 来源：Hub/Signaling/Relay 服务需要 agent registry、heartbeat、poll-answer 基础。
 - 目标：创建 `termx-hub/`，实现 hub service skeleton、agent register/heartbeat/poll/answer、in-memory registry、expiry cleanup。
@@ -513,19 +525,332 @@ Status file for unattended remote rebuild work. Update this file before starting
 - 非目标：不做 TURN、quota、terminal/file HTTP runtime proxy。
 - 外部依赖：无。
 - mock 策略：Control Plane client 用 fake interface；registry 第一版可 in-memory，TTL 行为必须真实。
-- 先写的失败测试：待创建 agent online/offline、heartbeat expiry、poll timeout、answer correlation 测试。
-- 预期失败结果：待记录。
-- 实现摘要：待完成。
-- 重构摘要：待完成。
-- 运行命令：待记录。
-- 测试结果：待记录。
-- subagent review：待发起。
-- review 发现：待记录。
-- review 后修复：待记录。
-- 新增派生条目：暂无。
-- deferred human items：生产 hub identity/registration secret 后置。
-- 剩余风险：Hub 只能做 signaling/control/ICE/TURN，不得成为 HTTP runtime proxy。
-- 下一步：Slice 4 后开始。
+- 先写的失败测试：planned `termx-hub/internal/registry/registry_test.go` for agent register/online status, heartbeat refresh, heartbeat expiry/offline cleanup, poll timeout, offer delivery, answer correlation, and no terminal/file/api/events runtime payload storage.
+- 预期失败结果：focused tests should fail before implementation because `termx-hub` has no Go module or registry package yet.
+- 实际失败结果：`cd termx-hub && GOWORK=off go test ./internal/registry` failed as expected with `no non-test Go files` for `internal/registry`.
+- 实现摘要：created `termx-hub` Go module and `internal/registry` in-memory registry. The registry supports agent register, heartbeat expiry refresh, explicit expired cleanup, offer queueing per machine, long-poll timeout, managed-path offer delivery, answer submission, answer lookup by offer id, wrong-machine answer rejection, verifier-backed registration/ticket checks, runtime-payload rejection, signaling TTL cleanup, unanswered offer redelivery after assigned-agent expiry, duplicate answer rejection, and cloned agent return values.
+- 重构摘要：kept Slice 5 limited to signaling/control state only; no terminal/file/api/events runtime HTTP proxy, TURN credentials, quota, or relay lease behavior was introduced. Added `termx-hub` to `go.work` so workspace validation includes the new module.
+- 运行命令：`cd termx-hub && GOWORK=off go test ./internal/registry`; `cd termx-hub && GOWORK=off go test ./...`; `go test ./termx-hub/...`; `cd termx-hub && GOWORK=off go test -race ./internal/registry`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- docs/remote-rebuild/WORKFLOW.md go.work termx-hub/go.mod termx-hub/internal/registry`.
+- 测试结果：red path confirmed before implementation; after implementation and review fixes, focused registry tests, full hub tests, workspace hub tests, race registry tests, workflow guard, and scoped diff check pass.
+- subagent review：`Noether` (`019dea7f-f95f-77e0-b815-35ed2fcf4de1`) reviewed Slice 5 registry skeleton after broader validation. `Godel` (`019dea92-6760-7100-9084-930841cc8c57`) reviewed follow-up fixes and final confirmation.
+- review 发现：Noether found: High registration/offer submission trusted caller-provided machine/ticket identity (`5-B`); High runtime payload absence test was tautological and registry stored arbitrary SDP (`5-A`); Medium cleanup dropped whole machine queues and never expired offers/answers (`5-C`); Medium polled offers were removed before answer/ack and duplicate answers overwrote earlier answers (`5-D`); Low returned agent terminal slices could share registry-owned backing arrays (`5-E`); Low workflow state/deferred hub identity item was stale (`5-F`, `5-G`). Godel follow-up found: High expired heartbeat could resurrect agents without re-verification (`5-I`); High signaling TTL was only enforced by cleanup (`5-J`); Medium payload validation was marker-based, not protocol-shaped (`5-K`); Low workflow state/bottom next action stale (`5-L`).
+- review 后修复：implemented `5-A` through `5-L`; Godel final confirmation found no remaining Slice 5 blockers.
+- 新增派生条目：`5-A`, `5-B`, `5-C`, `5-D`, `5-E`, `5-F`, `5-G`, `5-H`, `5-I`, `5-J`, `5-K`, `5-L`.
+- deferred human items：生产 hub identity/registration secret 后置 in `5-G`.
+- 剩余风险：current hub registry is an in-memory skeleton; production verifier, hub identity/secret rotation, durable delivery/ack, cleanup scheduler cadence, full SDP/ICE policy, HTTP API wiring, and cross-service ticket/certificate verification remain future slices. Hub still must stay signaling/control only and must not become terminal/file/api/events HTTP runtime proxy.
+- 下一步：commit Slice 5, record hash, then start Slice 6 managed signaling without TURN.
+- commit：待提交。
+
+### 5-H Hub Registry Verifier Lock-Boundary Hardening
+
+- 状态：completed
+- 父条目：5
+- 来源：local self-review while Slice 5 follow-up review is running.
+- 目标：ensure `AuthorityVerifier` calls execute outside the registry mutex while still preventing agent id rebind TOCTOU races before storing an agent.
+- 范围：`termx-hub/internal/registry`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement real production verifier, HTTP API, TURN credentials, relay leases, or runtime transport.
+- 外部依赖：none.
+- mock 策略：blocking fake verifier in tests.
+- 先写的失败测试：planned test where a blocking verifier must not prevent `GetAgent` from returning an existing agent.
+- 预期失败结果：focused registry tests should fail before implementation because `Register` currently calls verifier while holding the registry mutex.
+- 实际失败结果：`cd termx-hub && GOWORK=off go test ./internal/registry` failed as expected before implementation because `GetAgent` timed out while `Register` was blocked inside `VerifyAgentRegistration`.
+- 实现摘要：moved agent registration verifier calls outside the registry mutex, added a post-verifier rebind check before storing the agent, and added regressions for non-blocking reads and rebind races while verifier is blocked.
+- 重构摘要：kept verifier interface unchanged; only lock ownership moved around the verifier call.
+- 运行命令：`cd termx-hub && GOWORK=off go test ./internal/registry`.
+- 测试结果：focused registry tests pass after implementation.
+- subagent review：asked `Godel` follow-up review to include this child item.
+- review 发现：pending follow-up.
+- review 后修复：implemented lock-boundary hardening requested by local self-review and `Godel` interim review.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：must preserve rebind rejection after verifier returns.
+- 下一步：rerun broader validation and include in final follow-up review.
+- commit：待提交。
+
+### 5-I Hub Registry Heartbeat Expiry Verification
+
+- 状态：completed
+- 父条目：5
+- 来源：Slice 5 follow-up review by `Godel`; parent finding High.
+- 目标：reject heartbeat from an expired stored agent so expired registrations cannot be resurrected without a fresh verifier-backed registration.
+- 范围：`termx-hub/internal/registry`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement persistent agent sessions or production control-plane verifier wiring.
+- 外部依赖：none.
+- mock 策略：fake clock and local verifier only.
+- 先写的失败测试：creating heartbeat-after-expiry rejection test.
+- 预期失败结果：focused registry tests should fail before implementation because `Heartbeat` currently refreshes expired stored agents until cleanup runs.
+- 实际失败结果：`cd termx-hub && GOWORK=off go test ./internal/registry` failed as expected before implementation because an expired heartbeat returned nil and refreshed the agent.
+- 实现摘要：`Heartbeat` now treats expired stored agents as not found, requiring fresh verifier-backed registration instead of resurrecting them before cleanup.
+- 重构摘要：kept expiry semantics aligned with `GetAgent`/`Poll`.
+- 运行命令：`cd termx-hub && GOWORK=off go test ./internal/registry`.
+- 测试结果：focused registry tests pass after implementation.
+- subagent review：`Godel` found this issue; follow-up after fixes required before Slice 5 completion.
+- review 发现：expired agents can be resurrected by heartbeat and bypass registration verifier.
+- review 后修复：implemented expired heartbeat rejection.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：fresh registration still depends on verifier implementation, deferred production secret in `5-G`.
+- 下一步：included in Slice 5 follow-up review fixes.
+- commit：待提交。
+
+### 5-J Hub Registry Signaling TTL Runtime Enforcement
+
+- 状态：completed
+- 父条目：5
+- 来源：Slice 5 follow-up review by `Godel`; parent finding High.
+- 目标：enforce signaling TTL during Poll, SubmitAnswer, and GetAnswer so expired offers/answers are not usable before cleanup runs.
+- 范围：`termx-hub/internal/registry`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not introduce durable persistence or global cleanup scheduler.
+- 外部依赖：none.
+- mock 策略：fake clock only.
+- 先写的失败测试：creating expired queued offer poll rejection, expired offer answer rejection, and expired answer get rejection tests before implementation.
+- 预期失败结果：focused registry tests should fail because runtime operations currently rely on explicit cleanup.
+- 实际失败结果：`cd termx-hub && GOWORK=off go test ./internal/registry` failed as expected before implementation because `Poll` delivered an expired queued offer without cleanup.
+- 实现摘要：Poll now skips and expires stale queued offers, SubmitAnswer rejects expired offers before accepting an answer, and GetAnswer removes/rejects expired offers or answers even when cleanup has not run.
+- 重构摘要：centralized offer expiry cleanup in the operation path while keeping explicit cleanup for batch removal.
+- 运行命令：`cd termx-hub && GOWORK=off go test ./internal/registry`.
+- 测试结果：focused registry tests pass after implementation.
+- subagent review：`Godel` found this issue; follow-up after fixes required before Slice 5 completion.
+- review 发现：TTL cleanup is not enforced by runtime operations.
+- review 后修复：implemented runtime TTL enforcement.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：cleanup cadence remains future hub service responsibility.
+- 下一步：included in Slice 5 follow-up review fixes.
+- commit：待提交。
+
+### 5-K Hub Registry SDP Shape Validation
+
+- 状态：completed
+- 父条目：5
+- 来源：Slice 5 follow-up review by `Godel`; parent finding Medium.
+- 目标：require basic SDP-shaped offer/answer payloads in addition to runtime marker rejection so arbitrary text cannot be accepted as signaling.
+- 范围：`termx-hub/internal/registry`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not write a full SDP parser or browser WebRTC adapter in this slice.
+- 外部依赖：none.
+- mock 策略：none.
+- 先写的失败测试：creating arbitrary non-SDP offer/answer rejection and valid minimal SDP acceptance tests.
+- 预期失败结果：focused registry tests should fail because `offer-sdp` currently passes validation.
+- 实际失败结果：`cd termx-hub && GOWORK=off go test ./internal/registry` failed as expected before implementation with undefined `registry.ErrInvalidSDP`.
+- 实现摘要：added `ErrInvalidSDP` and a lightweight SDP shape check requiring `v=`, `o=`, `s=`, `t=`, and `m=` lines; converted success-path registry tests from arbitrary `offer-sdp`/`answer-sdp` strings to minimal SDP fixtures.
+- 重构摘要：kept validation protocol-shaped but intentionally short of a full SDP parser; no browser WebRTC primitive types were introduced.
+- 运行命令：`cd termx-hub && GOWORK=off go test ./internal/registry`.
+- 测试结果：focused registry tests pass after implementation.
+- subagent review：`Godel` found this issue; follow-up after fixes required before Slice 5 completion.
+- review 发现：payload validation is marker-based rather than protocol-shaped.
+- review 后修复：implemented basic SDP shape validation.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：full SDP parsing remains future integration work.
+- 下一步：included in Slice 5 follow-up review fixes.
+- commit：待提交。
+
+### 5-L Hub Workflow Follow-Up Review Freshness
+
+- 状态：completed
+- 父条目：5
+- 来源：Slice 5 follow-up review by `Godel`; parent finding Low.
+- 目标：refresh workflow table/detail state and bottom next action after `5-I` through `5-K`.
+- 范围：`docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：no code behavior change.
+- 外部依赖：none.
+- mock 策略：none.
+- 先写的失败测试：workflow guard and local stale-text search.
+- 预期失败结果：not applicable.
+- 实际失败结果：Godel found `5-H` detail stale and bottom next action stale.
+- 实现摘要：refreshed workflow active todo/table/detail state and bottom next action after follow-up review fixes.
+- 重构摘要：none.
+- 运行命令：`cd termx-hub && GOWORK=off go test ./internal/registry`; `cd termx-hub && GOWORK=off go test ./...`; `go test ./termx-hub/...`; `cd termx-hub && GOWORK=off go test -race ./internal/registry`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check -- docs/remote-rebuild/WORKFLOW.md go.work termx-hub/go.mod termx-hub/internal/registry`.
+- 测试结果：focused registry tests, full hub tests, workspace hub tests, race registry tests, workflow guard, and scoped diff check pass after workflow refresh.
+- subagent review：`Godel` found this issue.
+- review 发现：workflow state and bottom next action are stale.
+- review 后修复：stale `5-H` detail and bottom next action fixed.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：must keep current before commit.
+- 下一步：final follow-up review confirmation, then complete Slice 5 and commit.
+- commit：待提交。
+
+### 5-A Hub Registry Self-Review Hardening
+
+- 状态：completed
+- 父条目：5
+- 来源：local self-review while Slice 5 subagent review is running.
+- 目标：prevent unpolled or different-agent answers from being accepted and reject terminal/file/api/events runtime payload markers in offer SDP instead of proving absence through a tautological helper.
+- 范围：`termx-hub/internal/registry`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not add HTTP API, TURN credentials, relay leases, quota, or terminal/file/api/events runtime transport.
+- 外部依赖：none.
+- mock 策略：in-memory registry and fake clock only.
+- 先写的失败测试：planned regressions for rejecting answers before an offer is delivered by poll, rejecting answers from a different agent for the same machine after another agent polled the offer, and rejecting offer SDP containing terminal/file/api/events runtime markers.
+- 预期失败结果：focused registry tests should fail before implementation because offers are not assigned to polling agents and runtime payload markers are not validated.
+- 实际失败结果：`cd termx-hub && GOWORK=off go test ./internal/registry` failed as expected before implementation with undefined `registry.ErrOfferNotAssigned`, `registry.ErrRuntimePayload`, `registry.ErrPayloadTooLarge`, and `Config.MaxSDPBytes`.
+- 实现摘要：added `ErrOfferNotAssigned`, `ErrRuntimePayload`, `ErrPayloadTooLarge`, max SDP size config, runtime marker validation for offer/answer SDP, and poll-time `AssignedAgentID`/`DeliveredAt` assignment that answer submission must match.
+- 重构摘要：kept validation inside registry signaling control state; no terminal/file/api/events HTTP runtime, no TURN credentials, and no new client path were introduced.
+- 运行命令：`cd termx-hub && GOWORK=off go test ./internal/registry`.
+- 测试结果：focused registry tests pass after implementation.
+- subagent review：`Noether` independently found the same high issue: the previous `ContainsRuntimePayload` test was tautological and registry accepted arbitrary SDP.
+- review 发现：runtime payload validation must be real, and answer correlation must not trust any online agent for the machine.
+- review 后修复：implemented real runtime-payload and assignment checks.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：multi-agent routing remains a local in-memory skeleton until hub ticket verification and persistent state land.
+- 下一步：included in Slice 5 commit after review-finding children finish.
+- commit：待提交。
+
+### 5-B Hub Registry Authority And Ticket Verification
+
+- 状态：completed
+- 父条目：5
+- 来源：Slice 5 subagent review by `Noether`; parent finding High.
+- 目标：prevent agent ID rebinding across machines and require an injected verifier before accepting register/offer correlation boundaries.
+- 范围：`termx-hub/internal/registry`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not call real Control Plane credentials or build public HTTP APIs in this slice.
+- 外部依赖：production hub identity, registration secret, connect-ticket signing key, and control-plane trust bootstrap.
+- mock 策略：define verifier interfaces and use local fake verifiers in tests; keep production wiring deferred to `5-G`/Slice 6.
+- 先写的失败测试：creating duplicate agent rebind rejection, verifier-denied registration rejection, verifier-denied offer ticket rejection, and accepted verifier path tests.
+- 预期失败结果：focused registry tests should fail before implementation because current registry accepts any `MachineID`/`AgentID`/`TicketID`.
+- 实际失败结果：`cd termx-hub && GOWORK=off go test ./internal/registry` failed as expected before implementation with unknown `Config.Verifier`, undefined `registry.AgentRegistration`, and undefined `registry.OfferTicket`.
+- 实现摘要：added `AuthorityVerifier`, `AgentRegistration`, `OfferTicket`, `ErrAgentRebound`, `ErrUnauthorizedTicket`, and `ErrVerifierRequired`. Registration rejects rebinding an agent id across machines and calls the verifier; offer submission calls the ticket verifier before queueing.
+- 重构摘要：kept production hub identity/signing/key rotation out of core registry and deferred in `5-G`; tests use explicit allow/fake verifier implementations.
+- 运行命令：`cd termx-hub && GOWORK=off go test ./internal/registry`.
+- 测试结果：focused registry tests pass after implementation.
+- subagent review：covered by `Noether`; follow-up review after fixes required before Slice 5 completion.
+- review 发现：registration and offer submit trust caller-provided authority.
+- review 后修复：implemented interface boundary and rebind/ticket checks.
+- 新增派生条目：`5-G`.
+- deferred human items：real production hub identity/control-plane secret/signing key in `5-G`.
+- 剩余风险：until Slice 6, ticket verifier is local interface/fake and not wired to real Control Plane.
+- 下一步：included in Slice 5 commit after remaining review-finding children finish.
+- commit：待提交。
+
+### 5-C Hub Registry TTL Cleanup Hardening
+
+- 状态：completed
+- 父条目：5
+- 来源：Slice 5 subagent review by `Noether`; parent finding Medium.
+- 目标：cleanup expired agents, offers, answers, and queues without deleting valid queued offers while another agent for the machine remains online.
+- 范围：`termx-hub/internal/registry`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not introduce SQLite persistence or relay session TTL in this slice.
+- 外部依赖：none.
+- mock 策略：fake clock only.
+- 先写的失败测试：creating multi-agent cleanup preserving queue, expired offer cleanup, and stale answer cleanup tests.
+- 预期失败结果：focused registry tests should fail before implementation because cleanup deletes whole machine queues and leaves offers/answers forever.
+- 实际失败结果：`cd termx-hub && GOWORK=off go test ./internal/registry` failed as expected before implementation with unknown `Config.SignalingTTL`.
+- 实现摘要：added `SignalingTTL`, precise queue pruning, stale offer/answer cleanup, and expired-agent handling that does not drop queued offers when another agent for the same machine remains online.
+- 重构摘要：kept cleanup in the in-memory registry skeleton; durable persistence remains future work.
+- 运行命令：`cd termx-hub && GOWORK=off go test ./internal/registry`.
+- 测试结果：focused registry tests pass after implementation.
+- subagent review：covered by `Noether`; follow-up review after fixes required before Slice 5 completion.
+- review 发现：current cleanup removes all machine queue state when one agent expires and never removes stale offer/answer maps.
+- review 后修复：implemented cleanup behavior for the reviewed TTL risks.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：in-memory TTL is a skeleton; durable hub state remains future work.
+- 下一步：included in Slice 5 commit after remaining review-finding children finish.
+- commit：待提交。
+
+### 5-D Hub Registry Delivery And Answer Semantics
+
+- 状态：completed
+- 父条目：5
+- 来源：Slice 5 subagent review by `Noether`; parent finding Medium.
+- 目标：make offer delivery retry/at-most-once behavior explicit and prevent duplicate answers from overwriting the first correlated answer.
+- 范围：`termx-hub/internal/registry`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement full durable ack protocol or terminal runtime reconnect in this slice.
+- 外部依赖：none.
+- mock 策略：fake clock only.
+- 先写的失败测试：creating unacked offer redelivery-after-dead-agent and duplicate answer rejection tests.
+- 预期失败结果：focused registry tests should fail before implementation because current code pops on poll and overwrites duplicate answers.
+- 实际失败结果：`cd termx-hub && GOWORK=off go test ./internal/registry` failed as expected before implementation with undefined `registry.ErrAnswerAlreadyExists`.
+- 实现摘要：added `ErrAnswerAlreadyExists`, duplicate answer rejection, and cleanup-time redelivery for unanswered offers whose assigned agent expired.
+- 重构摘要：made retry semantics explicit in the registry skeleton without adding durable ack or terminal runtime reconnect.
+- 运行命令：`cd termx-hub && GOWORK=off go test ./internal/registry`.
+- 测试结果：focused registry tests pass after implementation.
+- subagent review：covered by `Noether`; follow-up review after fixes required before Slice 5 completion.
+- review 发现：polled offers are removed before answer/ack and answers overwrite existing correlations.
+- review 后修复：implemented duplicate-answer guard and unanswered redelivery.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：full cross-process delivery durability remains future persistent hub work.
+- 下一步：included in Slice 5 commit after remaining review-finding children finish.
+- commit：待提交。
+
+### 5-E Hub Registry Clone Returned State
+
+- 状态：completed
+- 父条目：5
+- 来源：Slice 5 subagent review by `Noether`; parent finding Low.
+- 目标：ensure returned `Agent.Terminals` slices cannot mutate registry-owned terminal state outside the registry mutex.
+- 范围：`termx-hub/internal/registry`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not change terminal protocol or public model naming.
+- 外部依赖：none.
+- mock 策略：none.
+- 先写的失败测试：creating mutation test for `GetAgent` returned terminals.
+- 预期失败结果：focused registry tests should fail before implementation because current `GetAgent` returns the stored slice backing array.
+- 实际失败结果：`cd termx-hub && GOWORK=off go test ./internal/registry` failed as expected before implementation because mutating the `GetAgent` return changed the next `GetAgent` result from `running` to `mutated`.
+- 实现摘要：`Register` and `GetAgent` now return cloned `Agent` values so `Terminals` slices cannot mutate registry-owned state.
+- 重构摘要：kept cloning localized to registry return boundaries.
+- 运行命令：`cd termx-hub && GOWORK=off go test ./internal/registry`.
+- 测试结果：focused registry tests pass after implementation.
+- subagent review：covered by `Noether`; follow-up review after fixes required before Slice 5 completion.
+- review 发现：returned terminal slice may share backing array with registry state.
+- review 后修复：implemented cloned return boundary.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：none expected after clone.
+- 下一步：included in Slice 5 commit after workflow consistency and follow-up review.
+- commit：待提交。
+
+### 5-F Hub Workflow Review State Freshness
+
+- 状态：completed
+- 父条目：5
+- 来源：Slice 5 subagent review by `Noether`; parent finding Low.
+- 目标：keep the todo table, Slice 5 review fields, and deferred production hub identity item current before Slice 5 completion.
+- 范围：`docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：no code behavior change.
+- 外部依赖：none.
+- mock 策略：none.
+- 先写的失败测试：workflow guard and local workflow self-check.
+- 预期失败结果：not applicable; this is documentation consistency.
+- 实际失败结果：`Noether` review reported stale Slice 5 workflow state and missing stable child todo for the production hub identity/registration secret deferred item.
+- 实现摘要：added stable child todos for review findings, moved completed review-finding children to completed, and recorded deferred production hub identity in `5-G`.
+- 重构摘要：none.
+- 运行命令：`bash docs/remote-rebuild/check_workflow_rules.sh`; scoped `git diff --check`.
+- 测试结果：workflow guard and scoped diff check pass after workflow updates.
+- subagent review：covered by `Noether`; follow-up review after fixes required before Slice 5 completion.
+- review 发现：workflow review state and deferred item were stale.
+- review 后修复：workflow table and Slice 5 detail fields are being kept current.
+- 新增派生条目：`5-G`.
+- deferred human items：none beyond `5-G`.
+- 剩余风险：must keep current after every remaining 5-x fix.
+- 下一步：included in Slice 5 follow-up review and commit.
+- commit：待提交。
+
+### 5-G Production Hub Identity And Registration Secret
+
+- 状态：deferred_external
+- 父条目：5
+- 来源：Slice 5 review finding that production hub/agent/control-plane authority cannot be real without external deployment secrets and signing material.
+- 目标：defer real production hub identity, registration secret distribution, control-plane trust bootstrap, signing-key rotation, and operator credential management without blocking local registry behavior.
+- 范围：documentation only for this slice.
+- 非目标：do not create real production credentials, DNS, TLS, cloud accounts, or human approvals.
+- 外部依赖：human/operator must provide production hub identity policy, signing keys or KMS, secret distribution mechanism, DNS/TLS, deployment account, and rotation/incident process.
+- mock 策略：Slice 5 uses verifier interfaces and local fake verifiers; future production wiring replaces those provider implementations.
+- 先写的失败测试：not applicable for deferred external item.
+- 预期失败结果：not applicable.
+- 实际失败结果：not applicable.
+- 实现摘要：deferred external item recorded; no production credential is generated.
+- 重构摘要：none.
+- 运行命令：not run.
+- 测试结果：not run.
+- subagent review：`Noether` required a stable child todo for this deferred item.
+- review 发现：previous workflow only mentioned production hub identity in parent text.
+- review 后修复：stable `5-G` deferred_external todo created.
+- 新增派生条目：none.
+- deferred human items：production hub identity/registration secret/signing rotation/DNS/TLS/cloud deployment credentials.
+- 剩余风险：until production integration, authority checks use local verifier implementations in tests and development.
+- 下一步：real integration in deployment/security hardening slice after local buildout.
 - commit：待提交。
 
 ### 6 Managed Signaling Without TURN
@@ -1300,5 +1625,5 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Start Slice 5: write failing hub skeleton and agent registry tests for register, heartbeat, expiry, poll timeout, and answer correlation.
-2. Keep HTTP limited to signaling/control and ensure hub does not become terminal/file/api/events runtime transport.
+1. Finish Slice 5 follow-up validation and review closure, then commit only `docs/remote-rebuild/WORKFLOW.md`, `go.work`, and `termx-hub` files.
+2. Start Slice 6 managed signaling without TURN, keeping HTTP limited to signaling/control and runtime data on WebRTC DataChannel.
