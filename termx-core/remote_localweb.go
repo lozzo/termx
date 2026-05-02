@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
+	"encoding/json"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -66,12 +67,12 @@ func (s *Server) LocalWebHandler(opts LocalWebOptions) http.Handler {
 		rtcSessionCtx: rtcSessionCtx,
 	}
 	return localweb.NewHandler(localweb.Config{
-		Assets:          assets,
-		Status:          adapter,
-		Terminals:       adapter,
+		Assets:           assets,
+		Status:           adapter,
+		Terminals:        adapter,
 		TerminalsManager: adapter,
-		Pairing:         adapter,
-		RTC:             adapter,
+		Pairing:          adapter,
+		RTC:              adapter,
 	})
 }
 
@@ -187,6 +188,9 @@ func (a localWebServerAdapter) UpdateLocalTerminal(ctx context.Context, terminal
 		return localweb.Terminal{}, err
 	}
 	tags := copyTags(info.Tags)
+	if tags == nil {
+		tags = map[string]string{}
+	}
 	mergeLocalTerminalTags(tags, req.CWD, req.Environment, req.SizeLockMode)
 	if err := a.server.SetMetadata(ctx, terminalID, strings.TrimSpace(req.Name), tags); err != nil {
 		return localweb.Terminal{}, err
@@ -238,28 +242,47 @@ func (s *Server) remoteLocalRTCAnswer(
 ) (localweb.RTCOfferResponse, error) {
 	terminalID := strings.TrimSpace(req.Offer.TerminalID)
 	if terminalID == "" {
+		if strings.TrimSpace(req.Client.Purpose) != "inventory_events" {
+			if !hasCapability(req.AppCertificate.Payload.Capabilities, "terminal_management") {
+				return localweb.RTCOfferResponse{}, pairingErr("app certificate lacks remote RTC api capability")
+			}
+			return s.remoteLocalRTCAnswerWithScope(
+				ctx, req, iceTCPMux, iceTCPEnabled, sessionCtx,
+				"", false, false, true, false,
+				[]string{"api"},
+			)
+		}
 		if !hasCapability(req.AppCertificate.Payload.Capabilities, "terminal") {
 			return localweb.RTCOfferResponse{}, pairingErr("app certificate lacks machine inventory capability")
 		}
 		return s.remoteLocalRTCAnswerWithScope(
 			ctx, req, iceTCPMux, iceTCPEnabled, sessionCtx,
-			"", false, false, true,
+			"", false, false, false, true,
 			[]string{"events"},
 		)
 	}
-	if !hasCapability(req.AppCertificate.Payload.Capabilities, "terminal") || !hasCapability(req.AppCertificate.Payload.Capabilities, "file_manager") {
+	if !hasCapability(req.AppCertificate.Payload.Capabilities, "terminal") {
 		return localweb.RTCOfferResponse{}, pairingErr("app certificate lacks remote RTC capabilities")
+	}
+	allowFileManager := hasCapability(req.AppCertificate.Payload.Capabilities, "file_manager")
+	allowTerminalManagement := hasCapability(req.AppCertificate.Payload.Capabilities, "terminal_management")
+	if !allowFileManager && !allowTerminalManagement {
+		return localweb.RTCOfferResponse{}, pairingErr("app certificate lacks remote RTC api capability")
+	}
+	dataChannels := []string{"api", "terminal:{terminal_id}"}
+	if allowFileManager {
+		dataChannels = append(dataChannels, "file:{transfer_id}")
 	}
 	return s.remoteLocalRTCAnswerWithScope(
 		ctx, req, iceTCPMux, iceTCPEnabled, sessionCtx,
-		terminalID, true, true, false,
-		[]string{"api", "terminal:{terminal_id}", "file:{transfer_id}"},
+		terminalID, true, allowFileManager, allowTerminalManagement, false,
+		dataChannels,
 	)
 }
 
 type localRTCTransportSink struct {
-	server           *Server
-	terminalID       string
+	server            *Server
+	terminalID        string
 	machineEventsOnly bool
 }
 
@@ -273,6 +296,10 @@ func (s localRTCTransportSink) ServeRemoteTransport(ctx context.Context, t trans
 	})
 }
 
+func (p remoteInventoryProvider) RouteTerminalManagementRequest(ctx context.Context, req remotertc.TerminalManagementRequest) (int32, []byte, string) {
+	return localRTCManagementRouter{adapter: localWebServerAdapter{server: p.server}}.RouteTerminalManagementRequest(ctx, req)
+}
+
 func (s *Server) remoteLocalRTCAnswerWithScope(
 	ctx context.Context,
 	req localweb.RTCOfferRequest,
@@ -282,6 +309,7 @@ func (s *Server) remoteLocalRTCAnswerWithScope(
 	terminalID string,
 	allowTerminal bool,
 	allowFileManager bool,
+	allowTerminalManagement bool,
 	allowEvents bool,
 	dataChannels []string,
 ) (localweb.RTCOfferResponse, error) {
@@ -351,12 +379,14 @@ func (s *Server) remoteLocalRTCAnswerWithScope(
 	}, nil, localRTCTransportSink{server: s, terminalID: terminalID, machineEventsOnly: allowEvents}, files, remotertc.AnswerOptions{
 		SettingEngine: iceTCPMux,
 		ChannelPolicy: remotertc.ChannelPolicy{
-			TerminalID:       terminalID,
-			AllowTerminal:    allowTerminal,
-			AllowFileManager: allowFileManager,
-			AllowEvents:      allowEvents,
+			TerminalID:              terminalID,
+			AllowTerminal:           allowTerminal,
+			AllowFileManager:        allowFileManager,
+			AllowTerminalManagement: allowTerminalManagement,
+			AllowEvents:             allowEvents,
 		},
-		SessionContext: sessionCtx,
+		TerminalManagement: localRTCManagementRouter{adapter: localWebServerAdapter{server: s}},
+		SessionContext:     sessionCtx,
 	})
 	if err != nil {
 		return localweb.RTCOfferResponse{}, err
@@ -369,7 +399,103 @@ func (s *Server) remoteLocalRTCAnswerWithScope(
 		},
 		ICETCPEnabled: iceTCPEnabled,
 		DataChannels:  dataChannels,
+		Capabilities: localweb.RTCCapabilities{
+			TerminalAllowed:           allowTerminal,
+			APIAllowed:                allowFileManager || allowTerminalManagement,
+			EventsAllowed:             allowEvents,
+			FileTransferAllowed:       allowFileManager,
+			TerminalManagementAllowed: allowTerminalManagement,
+			RelayInUse:                false,
+		},
 	}, nil
+}
+
+type localRTCManagementRouter struct {
+	adapter localWebServerAdapter
+}
+
+func (r localRTCManagementRouter) RouteTerminalManagementRequest(ctx context.Context, req remotertc.TerminalManagementRequest) (int32, []byte, string) {
+	switch req.Path {
+	case "create":
+		var body struct {
+			Name    string            `json:"name"`
+			Command []string          `json:"command"`
+			Dir     string            `json:"dir"`
+			Env     []string          `json:"env"`
+			Tags    map[string]string `json:"tags"`
+		}
+		if err := json.Unmarshal(req.Body, &body); err != nil {
+			return http.StatusBadRequest, nil, "invalid create request"
+		}
+		terminal, err := r.adapter.CreateLocalTerminal(ctx, localweb.CreateTerminalRequest{
+			Name:         body.Name,
+			Command:      append([]string(nil), body.Command...),
+			CWD:          body.Dir,
+			Environment:  firstNonEmpty(body.Env),
+			SizeLockMode: body.Tags[terminalmeta.SizeLockTag],
+		})
+		if err != nil {
+			return http.StatusBadRequest, nil, err.Error()
+		}
+		return marshalRuntimeAPIResponse(terminal)
+	case "set_metadata":
+		var body struct {
+			TerminalID string            `json:"terminal_id"`
+			Name       string            `json:"name"`
+			Tags       map[string]string `json:"tags"`
+		}
+		if err := json.Unmarshal(req.Body, &body); err != nil {
+			return http.StatusBadRequest, nil, "invalid set_metadata request"
+		}
+		terminalID := strings.TrimSpace(body.TerminalID)
+		if terminalID == "" {
+			return http.StatusBadRequest, nil, "terminal_id is required"
+		}
+		terminal, err := r.adapter.UpdateLocalTerminal(ctx, terminalID, localweb.UpdateTerminalRequest{
+			Name:         body.Name,
+			CWD:          body.Tags["cwd"],
+			Environment:  body.Tags["environment"],
+			SizeLockMode: body.Tags[terminalmeta.SizeLockTag],
+		})
+		if err != nil {
+			return http.StatusBadRequest, nil, err.Error()
+		}
+		return marshalRuntimeAPIResponse(terminal)
+	case "remove":
+		var body struct {
+			TerminalID string `json:"terminal_id"`
+		}
+		if err := json.Unmarshal(req.Body, &body); err != nil {
+			return http.StatusBadRequest, nil, "invalid remove request"
+		}
+		terminalID := strings.TrimSpace(body.TerminalID)
+		if terminalID == "" {
+			return http.StatusBadRequest, nil, "terminal_id is required"
+		}
+		if err := r.adapter.DeleteLocalTerminal(ctx, terminalID); err != nil {
+			return http.StatusBadRequest, nil, err.Error()
+		}
+		return http.StatusOK, []byte(`{}`), ""
+	default:
+		return http.StatusNotFound, nil, "unknown terminal management route"
+	}
+}
+
+func marshalRuntimeAPIResponse(value any) (int32, []byte, string) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return http.StatusInternalServerError, nil, err.Error()
+	}
+	return http.StatusOK, data, ""
+}
+
+func firstNonEmpty(values []string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func (s *Server) remotePairClaim(req pairing.ClaimRequest) (pairing.ClaimResponse, error) {

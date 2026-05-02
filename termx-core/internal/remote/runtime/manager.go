@@ -397,7 +397,16 @@ func (m *Manager) hubSignalingLoop(ctx context.Context, deviceID, agentSessionID
 			continue
 		}
 
-		answer, err := remotertc.AnswerOffer(ctx, *resp.Offer, iceServers, m.host, m.files)
+		terminalManagement := m.terminalManagementRouter()
+		answer, err := remotertc.AnswerOfferWithOptions(ctx, *resp.Offer, iceServers, m.host, m.files, remotertc.AnswerOptions{
+			ChannelPolicy: remotertc.ChannelPolicy{
+				TerminalID:              strings.TrimSpace(resp.Offer.TerminalID),
+				AllowTerminal:           true,
+				AllowFileManager:        true,
+				AllowTerminalManagement: terminalManagement != nil,
+			},
+			TerminalManagement: terminalManagement,
+		})
 		if err != nil {
 			answer = hubv1.SignalingAnswer{
 				SessionID: resp.Offer.SessionID,
@@ -412,6 +421,19 @@ func (m *Manager) hubSignalingLoop(ctx context.Context, deviceID, agentSessionID
 		})
 		submitCancel()
 	}
+}
+
+func (m *Manager) terminalManagementRouter() remotertc.TerminalManagementRouter {
+	if m == nil {
+		return nil
+	}
+	if router, ok := m.host.(remotertc.TerminalManagementRouter); ok {
+		return router
+	}
+	if router, ok := m.provider.(remotertc.TerminalManagementRouter); ok {
+		return router
+	}
+	return nil
 }
 
 func (m *Manager) resetHubSession() {

@@ -1,28 +1,30 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ChevronLeft, Folder, KeyRound, Monitor, Plus, RefreshCw, SquarePen, Trash2, X } from 'lucide-react'
 import { FileManager } from './FileManager'
+import { evaluateConnectionCapability } from './connectionPolicy'
 import { LocalPairPanel } from './LocalPairPanel'
 import type { LocalAppCrypto, LocalAppIdentityStore } from './localAppIdentity'
 import { MobileTerminalKeybar } from './MobileTerminalKeybar'
 import type { TerminalModifierState } from './mobileTerminalInput'
 import { Terminal, type TerminalHandle } from './Terminal'
 import { TerminalList } from './TerminalList'
+import { createTerminalManagementApi } from './terminalManagementApi'
 import type { Machine, Terminal as RemoteTerminal } from './model'
-import type { LocalAgentApi, LocalCreateTerminalInput, LocalUpdateTerminalInput, PeerTransport, TerminalInventoryEvents } from './transport'
-import type { TerminalTransport } from './terminalClient'
+import type { ConnectionCapabilities, LocalAgentApi, LocalCreateTerminalInput, LocalUpdateTerminalInput, RtcConnector, RtcSession, TerminalInventoryEvents } from './transport'
 
-export interface LocalRemoteTransportInput {
+export interface LocalRemoteSessionInput {
   machineId: string
-  terminalId: string
+  terminalId?: string | undefined
 }
 
-export type LocalRemoteTransportFactory = (input: LocalRemoteTransportInput) => PeerTransport & TerminalTransport
+export type LocalRemoteSessionConnector = RtcConnector<LocalRemoteSessionInput>
 
 export interface LocalRemoteAppProps {
-  api: Pick<LocalAgentApi, 'getStatus' | 'listTerminals'> & Partial<Pick<LocalAgentApi, 'createTerminal' | 'updateTerminal' | 'deleteTerminal'>>
-  createTransport: LocalRemoteTransportFactory
+  api: Pick<LocalAgentApi, 'getStatus' | 'listTerminals'>
+  connector: LocalRemoteSessionConnector
   className?: string | undefined
   inventoryEvents?: TerminalInventoryEvents | undefined
+  managementPolicy?: Partial<Pick<ConnectionCapabilities, 'apiAllowed' | 'terminalManagementAllowed' | 'denialReason'>> | undefined
   pair?: {
     api: Pick<LocalAgentApi, 'pair'>
     storage: LocalAppIdentityStore
@@ -34,7 +36,7 @@ export interface LocalRemoteAppProps {
 type MobileSheet = 'terminals' | 'pair' | 'manage-terminal' | 'edit-terminal' | 'create-terminal' | null
 type AppPage = 'terminal-list' | 'terminal'
 
-export function LocalRemoteApp({ api, createTransport, className, inventoryEvents, pair }: LocalRemoteAppProps) {
+export function LocalRemoteApp({ api, connector, className, inventoryEvents, managementPolicy, pair }: LocalRemoteAppProps) {
   const [machine, setMachine] = useState<Machine | null>(null)
   const [terminals, setTerminals] = useState<RemoteTerminal[]>([])
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null)
@@ -42,12 +44,12 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
   const [pairStatus, setPairStatus] = useState<string | null>(null)
   const [refreshingTerminals, setRefreshingTerminals] = useState(false)
   const [verifiedDevice, setVerifiedDevice] = useState(() => pair ? Boolean(pair.storage.loadCertificate()) : true)
-  const [connectedTransport, setConnectedTransport] = useState<(PeerTransport & TerminalTransport) | null>(null)
-  const [fileTransport, setFileTransport] = useState<(PeerTransport & TerminalTransport) | null>(null)
+  const [connectedSession, setConnectedSession] = useState<RtcSession | null>(null)
+  const [fileSession, setFileSession] = useState<RtcSession | null>(null)
   const [fileTerminalId, setFileTerminalId] = useState<string | null>(null)
-  const [fileTransportReady, setFileTransportReady] = useState(false)
+  const [fileSessionReady, setFileSessionReady] = useState(false)
   const [fileInitialPath, setFileInitialPath] = useState('/')
-  const [transportRetryToken, setTransportRetryToken] = useState(0)
+  const [connectionRetryToken, setConnectionRetryToken] = useState(0)
 
   const [page, setPage] = useState<AppPage>('terminal-list')
   const [filesOpen, setFilesOpen] = useState(false)
@@ -68,7 +70,7 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
   })
   const [modifierState, setModifierState] = useState<TerminalModifierState>({ ctrl: 'off', alt: 'off' })
   const terminalRef = useRef<TerminalHandle | null>(null)
-  const fileTransportConnectSeqRef = useRef(0)
+  const fileSessionConnectSeqRef = useRef(0)
   const listPullStartRef = useRef<number | null>(null)
   const listPullDistanceRef = useRef(0)
   const listContainerRef = useRef<HTMLDivElement | null>(null)
@@ -77,7 +79,32 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
   const managedTerminal = terminals.find((terminal) => terminal.terminalId === managedTerminalId)
   const activeTerminalTitle = activeTerminal?.title || activeTerminal?.command || activeTerminalId || 'Terminal'
   const requireVerification = Boolean(pair && !verifiedDevice)
-  const canManageTerminals = Boolean(api.createTerminal && api.updateTerminal && api.deleteTerminal)
+  const canManageTerminals = evaluateConnectionCapability({
+    path: 'local',
+    connectionId: 'local-management-policy',
+    machineId: machine?.machineId ?? 'pending',
+    relayInUse: false,
+  }, {
+    terminalAllowed: true,
+    apiAllowed: managementPolicy?.apiAllowed ?? true,
+    eventsAllowed: true,
+    fileTransferAllowed: true,
+    terminalManagementAllowed: managementPolicy?.terminalManagementAllowed ?? true,
+    relayInUse: false,
+    ...(managementPolicy?.denialReason ? { denialReason: managementPolicy.denialReason } : {}),
+  }, 'terminal_management').allowed
+
+  const withManagementApi = useCallback(async (terminalId?: string | undefined) => {
+    if (!machine) throw new Error('machine is required before managing terminals')
+    const session = await connector.connect({
+      machineId: machine.machineId,
+      ...(terminalId ? { terminalId } : {}),
+    })
+    return {
+      session,
+      api: createTerminalManagementApi(session, machine.machineId),
+    }
+  }, [connector, machine])
 
   const refreshTerminals = useCallback(async () => {
     setRefreshingTerminals(true)
@@ -121,41 +148,38 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
     return () => {
       subscription.close()
     }
-  }, [inventoryEvents, machine, refreshTerminals, transportRetryToken])
+  }, [inventoryEvents, machine, refreshTerminals, connectionRetryToken])
 
   useEffect(() => {
     if (!machine || !activeTerminalId || page !== 'terminal') {
-      setConnectedTransport(null)
+      setConnectedSession(null)
       return
     }
     let cancelled = false
-    let transport: PeerTransport & TerminalTransport
-    try {
-      transport = createTransport({
-        machineId: machine.machineId,
-        terminalId: activeTerminalId,
-      })
-    } catch (err) {
-      setConnectedTransport(null)
-      setError(err instanceof Error ? err.message : String(err))
-      if (pair) setMobileSheet('pair')
-      return
-    }
-    setConnectedTransport(null)
-    transport.connect({
+    let sessionForCleanup: RtcSession | null = null
+    setConnectedSession(null)
+    connector.connect({
       machineId: machine.machineId,
       terminalId: activeTerminalId,
-      mode: 'local',
-    }).then(() => {
-      if (!cancelled) setConnectedTransport(transport)
+    }).then((session) => {
+      sessionForCleanup = session
+      if (cancelled) {
+        void session.disconnect()
+        return
+      }
+      setConnectedSession(session)
     }).catch((err: unknown) => {
-      if (!cancelled) setError(err instanceof Error ? err.message : String(err))
+      if (!cancelled) {
+        setConnectedSession(null)
+        setError(err instanceof Error ? err.message : String(err))
+        if (pair) setMobileSheet('pair')
+      }
     })
     return () => {
       cancelled = true
-      void transport.disconnect()
+      void sessionForCleanup?.disconnect()
     }
-  }, [activeTerminalId, createTransport, machine, page, transportRetryToken])
+  }, [activeTerminalId, connector, machine, page, pair, connectionRetryToken])
 
   const openTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (requireVerification) {
@@ -175,7 +199,7 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
     setError(null)
     setVerifiedDevice(true)
     setPairStatus(`Paired with ${machineId}`)
-    setTransportRetryToken((current) => current + 1)
+    setConnectionRetryToken((current) => current + 1)
     setMobileSheet(null)
   }, [])
 
@@ -184,7 +208,13 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
     if (pair.storage.loadCertificate()) {
       setVerifiedDevice(true)
     }
-  }, [pair, transportRetryToken])
+  }, [pair, connectionRetryToken])
+
+  useEffect(() => {
+    if (!pairStatus) return
+    const timer = setTimeout(() => setPairStatus(null), 3000)
+    return () => clearTimeout(timer)
+  }, [pairStatus])
 
   const showTerminalListPage = useCallback(() => {
     setPage('terminal-list')
@@ -203,44 +233,36 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
       return
     }
     setFileInitialPath(fileTerminal.cwd || '/')
-    if (!fileTransport || fileTerminalId !== fileTerminal.terminalId) {
-      void fileTransport?.disconnect()
-      try {
-        const connectSeq = fileTransportConnectSeqRef.current + 1
-        fileTransportConnectSeqRef.current = connectSeq
-        const transport = createTransport({
-          machineId: machine.machineId,
-          terminalId: fileTerminal.terminalId,
-        })
-        setFileTransport(transport)
-        setFileTerminalId(fileTerminal.terminalId)
-        setFileTransportReady(false)
-        void transport.connect({
-          machineId: machine.machineId,
-          terminalId: fileTerminal.terminalId,
-          mode: 'local',
-        }).then(() => {
-          if (fileTransportConnectSeqRef.current !== connectSeq) return
-          setFileTransportReady(true)
-        }).catch((err: unknown) => {
-          if (fileTransportConnectSeqRef.current !== connectSeq) return
-          setError(err instanceof Error ? err.message : String(err))
-          setFilesOpen(false)
-          setFileTransport(null)
-          setFileTerminalId(null)
-          setFileTransportReady(false)
-          if (pair) setMobileSheet('pair')
-        })
-      } catch (err) {
+    if (!fileSession || fileTerminalId !== fileTerminal.terminalId) {
+      void fileSession?.disconnect()
+      const connectSeq = fileSessionConnectSeqRef.current + 1
+      fileSessionConnectSeqRef.current = connectSeq
+      setFileSession(null)
+      setFileTerminalId(fileTerminal.terminalId)
+      setFileSessionReady(false)
+      void connector.connect({
+        machineId: machine.machineId,
+        terminalId: fileTerminal.terminalId,
+      }).then((session) => {
+        if (fileSessionConnectSeqRef.current !== connectSeq) {
+          void session.disconnect()
+          return
+        }
+        setFileSession(session)
+        setFileSessionReady(true)
+      }).catch((err: unknown) => {
+        if (fileSessionConnectSeqRef.current !== connectSeq) return
         setError(err instanceof Error ? err.message : String(err))
-        setFileTransportReady(false)
+        setFilesOpen(false)
+        setFileSession(null)
+        setFileTerminalId(null)
+        setFileSessionReady(false)
         if (pair) setMobileSheet('pair')
-        return
-      }
+      })
     }
     setFilesOpen(true)
     setMobileSheet(null)
-  }, [activeTerminal, createTransport, fileTerminalId, fileTransport, machine, pair, requireVerification, terminals])
+  }, [activeTerminal, connector, fileTerminalId, fileSession, machine, pair, requireVerification, terminals])
 
   const openManageTerminal = useCallback((intent: { machineId: string; terminalId: string }) => {
     if (requireVerification) {
@@ -286,7 +308,7 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
   }, [managedTerminal])
 
   const submitCreateTerminal = useCallback(async () => {
-    if (!api.createTerminal) return
+    if (!canManageTerminals) return
     const input: LocalCreateTerminalInput = {
       name: terminalForm.name.trim() || undefined,
       command: terminalForm.command.trim().split(/\s+/).filter(Boolean),
@@ -294,14 +316,19 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
       environment: terminalForm.environment.trim() || undefined,
       sizeLockMode: terminalForm.sizeLockMode,
     }
-    const created = await api.createTerminal(input)
-    await refreshTerminals()
-    setPairStatus(`Created ${created.title}`)
-    setMobileSheet(null)
-  }, [api, refreshTerminals, terminalForm])
+    const management = await withManagementApi()
+    try {
+      const created = await management.api.createTerminal(input)
+      await refreshTerminals()
+      setPairStatus(`Created ${created.terminalId || input.name || 'terminal'}`)
+      setMobileSheet(null)
+    } finally {
+      void management.session.disconnect()
+    }
+  }, [canManageTerminals, refreshTerminals, terminalForm, withManagementApi])
 
   const submitUpdateTerminal = useCallback(async () => {
-    if (!api.updateTerminal || !managedTerminalId) return
+    if (!canManageTerminals || !managedTerminalId) return
     const input: LocalUpdateTerminalInput = {
       terminalId: managedTerminalId,
       name: terminalForm.name.trim() || undefined,
@@ -309,17 +336,27 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
       environment: terminalForm.environment.trim() || undefined,
       sizeLockMode: terminalForm.sizeLockMode,
     }
-    const updated = await api.updateTerminal(input)
-    await refreshTerminals()
-    setPairStatus(`Updated ${updated.title}`)
-    setMobileSheet(null)
-  }, [api, managedTerminalId, refreshTerminals, terminalForm])
+    const management = await withManagementApi(managedTerminalId)
+    try {
+      await management.api.updateTerminal(input)
+      await refreshTerminals()
+      setPairStatus(`Updated ${input.name || managedTerminal?.title || managedTerminalId}`)
+      setMobileSheet(null)
+    } finally {
+      void management.session.disconnect()
+    }
+  }, [canManageTerminals, managedTerminal, managedTerminalId, refreshTerminals, terminalForm, withManagementApi])
 
   const deleteManagedTerminal = useCallback(async () => {
-    if (!api.deleteTerminal || !managedTerminalId) return
+    if (!canManageTerminals || !managedTerminalId) return
     const deletedTerminalId = managedTerminalId
     const deletedTitle = managedTerminal?.title ?? managedTerminalId
-    await api.deleteTerminal(deletedTerminalId)
+    const management = await withManagementApi(deletedTerminalId)
+    try {
+      await management.api.deleteTerminal(deletedTerminalId)
+    } finally {
+      void management.session.disconnect()
+    }
     if (activeTerminalId === deletedTerminalId) {
       setActiveTerminalId(null)
       setPage('terminal-list')
@@ -327,13 +364,13 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
     if (fileTerminalId === deletedTerminalId) {
       setFilesOpen(false)
       setFileTerminalId(null)
-      setFileTransport(null)
-      setFileTransportReady(false)
+      setFileSession(null)
+      setFileSessionReady(false)
     }
     await refreshTerminals()
     setPairStatus(`Deleted ${deletedTitle}`)
     setMobileSheet(null)
-  }, [activeTerminalId, api, fileTerminalId, managedTerminal, managedTerminalId, refreshTerminals])
+  }, [activeTerminalId, canManageTerminals, fileTerminalId, managedTerminal, managedTerminalId, refreshTerminals, withManagementApi])
 
   const openTerminalPanel = useCallback(() => {
     setFilesOpen(false)
@@ -392,11 +429,6 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
         {error ? (
           <div className="m-3 shrink-0 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 shadow-sm" role="alert">
             {error}
-          </div>
-        ) : null}
-        {pairStatus ? (
-          <div className="mx-3 mt-3 shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 shadow-sm" role="status">
-            {pairStatus}
           </div>
         ) : null}
         {requireVerification ? (
@@ -614,11 +646,11 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
       viewport.removeEventListener('scroll', syncKeyboardOffset)
       terminalRef.current?.adjustInputPosition(0)
     }
-  }, [activeTerminalId, connectedTransport])
+  }, [activeTerminalId, connectedSession])
 
   useEffect(() => () => {
-    void fileTransport?.disconnect()
-  }, [fileTransport])
+    void fileSession?.disconnect()
+  }, [fileSession])
 
   if (error && !machine) {
     return (
@@ -714,23 +746,18 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
             {error}
           </div>
         ) : null}
-        {pairStatus ? (
-          <div className="mx-3 mt-3 shrink-0 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-[14px] font-medium text-emerald-200 shadow-sm" role="status">
-            {pairStatus}
-          </div>
-        ) : null}
 
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-black md:bg-zinc-950">
           <div
             className="relative min-h-0 flex-1 bg-black md:m-3 md:rounded-2xl md:border md:border-zinc-800 md:shadow-2xl md:overflow-hidden"
             data-testid="termx-terminal-panel"
           >
-            {activeTerminalId && connectedTransport ? (
+            {activeTerminalId && connectedSession ? (
               <Terminal
                 ref={terminalRef}
                 machineId={machine.machineId}
                 terminalId={activeTerminalId}
-                transport={connectedTransport}
+                session={connectedSession}
                 className="absolute inset-0 outline-none"
                 modifierState={modifierState}
                 onModifierStateChange={setModifierState}
@@ -796,20 +823,26 @@ export function LocalRemoteApp({ api, createTransport, className, inventoryEvent
             <X className="h-5 w-5" />
           </button>
         </div>
-        {fileTerminalId && fileTransport && fileTransportReady ? (
+        {fileTerminalId && fileSession && fileSessionReady ? (
           <FileManager
             key={fileTerminalId}
             machineId={machine.machineId}
             terminalId={fileTerminalId}
-            transport={fileTransport}
+            session={fileSession}
             initialPath={fileInitialPath}
             className="flex h-full min-h-0 flex-col relative"
           />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-            {fileTerminalId && fileTransport ? 'Connecting...' : 'Local file access is not ready'}
+            {fileTerminalId && fileSession ? 'Connecting...' : 'Local file access is not ready'}
           </div>
         )}
+      </div>
+
+      <div className={`pointer-events-none absolute bottom-8 left-1/2 z-50 flex -translate-x-1/2 transform flex-col items-center gap-2 transition-all duration-300 ${pairStatus ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'}`}>
+        <div className="flex items-center gap-2 rounded-full bg-zinc-900/95 px-4 py-2.5 text-sm font-medium text-white shadow-[0_8px_30px_rgb(0,0,0,0.12)] backdrop-blur-md ring-1 ring-white/10" role="status" aria-live="polite">
+          {pairStatus}
+        </div>
       </div>
     </div>
   )

@@ -1,11 +1,11 @@
 import { useFileManager } from './useFileManager'
-import type { PeerTransport } from './transport'
+import type { RtcSession } from './transport'
 import { Folder, File, RefreshCw, ChevronRight, AlertCircle, HardDrive } from 'lucide-react'
 
 export interface FileManagerProps {
   machineId: string
   terminalId: string
-  transport: Pick<PeerTransport, 'openApi' | 'openFileTransfer' | 'getConnectionInfo'>
+  session: Pick<RtcSession, 'openApi' | 'openFileTransfer' | 'getConnectionInfo'>
   initialPath?: string | undefined
   className?: string | undefined
 }
@@ -13,11 +13,11 @@ export interface FileManagerProps {
 export function FileManager({
   machineId,
   terminalId,
-  transport,
+  session,
   initialPath,
   className,
 }: FileManagerProps) {
-  const manager = useFileManager({ machineId, terminalId, transport, initialPath })
+  const manager = useFileManager({ machineId, terminalId, session, initialPath })
 
   const pathSegments = manager.currentPath ? manager.currentPath.split('/').filter(Boolean) : []
 

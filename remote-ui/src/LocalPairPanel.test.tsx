@@ -39,7 +39,7 @@ describe('LocalPairPanel', () => {
       pairSecret: 'secret-1',
       appDeviceId: expect.stringMatching(/^appweb_/),
       appPublicKey: 'AQIDBA==',
-      requestedCapabilities: ['terminal', 'file_manager'],
+      requestedCapabilities: ['terminal', 'file_manager', 'terminal_management'],
     }))
     expect(storage.getItem('termx.local.appCertificate')).toContain('machine-local')
     expect(storage.getItem('termx.local.appPrivateKey')).toBeNull()

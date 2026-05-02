@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ type SettingEngineApplier interface {
 type AnswerOptions struct {
 	SettingEngine  SettingEngineApplier
 	ChannelPolicy  ChannelPolicy
+	TerminalManagement TerminalManagementRouter
 	SessionContext context.Context
 	OnSessionClose func()
 }
@@ -38,7 +40,18 @@ type ChannelPolicy struct {
 	TerminalID       string
 	AllowTerminal    bool
 	AllowFileManager bool
+	AllowTerminalManagement bool
 	AllowEvents      bool
+}
+
+type TerminalManagementRouter interface {
+	RouteTerminalManagementRequest(ctx context.Context, req TerminalManagementRequest) (int32, []byte, string)
+}
+
+type TerminalManagementRequest struct {
+	Method string
+	Path   string
+	Body   json.RawMessage
 }
 
 func AnswerOfferWithOptions(
@@ -125,13 +138,21 @@ func AnswerOfferWithOptions(
 				}()
 			})
 		case label == "api":
-			if !opts.ChannelPolicy.allowFileManager() {
+			var apiFiles *fileapi.Manager
+			if opts.ChannelPolicy.allowFileManager() {
+				apiFiles = fileManager
+			}
+			var apiTerminalManagement TerminalManagementRouter
+			if opts.ChannelPolicy.allowTerminalManagement() {
+				apiTerminalManagement = opts.TerminalManagement
+			}
+			if apiFiles == nil && apiTerminalManagement == nil {
 				dc.OnOpen(func() {
 					_ = dc.Close()
 				})
 				return
 			}
-			handleAPIChannel(dc, fileManager)
+			handleAPIChannel(sessionCtx, dc, apiFiles, apiTerminalManagement)
 		case strings.HasPrefix(label, "file:"):
 			if !opts.ChannelPolicy.allowFileManager() {
 				dc.OnOpen(func() {
@@ -228,8 +249,15 @@ func (p ChannelPolicy) allowEvents() bool {
 	return p.AllowEvents
 }
 
+func (p ChannelPolicy) allowTerminalManagement() bool {
+	if !p.active() {
+		return true
+	}
+	return p.AllowTerminalManagement
+}
+
 func (p ChannelPolicy) active() bool {
-	return strings.TrimSpace(p.TerminalID) != "" || p.AllowTerminal || p.AllowFileManager || p.AllowEvents
+	return strings.TrimSpace(p.TerminalID) != "" || p.AllowTerminal || p.AllowFileManager || p.AllowTerminalManagement || p.AllowEvents
 }
 
 type apiRequest struct {
@@ -252,14 +280,14 @@ const (
 	apiChunkMaxPayload = 200 * 1024
 )
 
-func handleAPIChannel(dc *webrtc.DataChannel, manager *fileapi.Manager) {
+func handleAPIChannel(ctx context.Context, dc *webrtc.DataChannel, manager *fileapi.Manager, terminalManagement TerminalManagementRouter) {
 	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 		var req apiRequest
 		if err := json.Unmarshal(msg.Data, &req); err != nil {
 			return
 		}
 		go func() {
-			statusCode, respBody, errMsg := manager.RouteRequest(req.Method, req.Path, req.Body)
+			statusCode, respBody, errMsg := routeRuntimeAPIRequestWithContext(ctx, manager, terminalManagement, req)
 			var body interface{}
 			if errMsg != "" {
 				body = map[string]string{"error": errMsg}
@@ -276,6 +304,32 @@ func handleAPIChannel(dc *webrtc.DataChannel, manager *fileapi.Manager) {
 			sendAPIResponse(dc, req.ID, payload)
 		}()
 	})
+}
+
+func routeRuntimeAPIRequest(manager *fileapi.Manager, terminalManagement TerminalManagementRouter, req apiRequest) (int32, []byte, string) {
+	return routeRuntimeAPIRequestWithContext(context.Background(), manager, terminalManagement, req)
+}
+
+func routeRuntimeAPIRequestWithContext(ctx context.Context, manager *fileapi.Manager, terminalManagement TerminalManagementRouter, req apiRequest) (int32, []byte, string) {
+	if strings.HasPrefix(req.Path, "/files/") {
+		if manager == nil {
+			return http.StatusForbidden, nil, "file api is not allowed by connection policy"
+		}
+		return manager.RouteRequest(req.Method, req.Path, req.Body)
+	}
+	switch req.Path {
+	case "create", "set_metadata", "remove":
+		if terminalManagement == nil {
+			return http.StatusForbidden, nil, "terminal management is not allowed by connection policy"
+		}
+		return terminalManagement.RouteTerminalManagementRequest(ctx, TerminalManagementRequest{
+			Method: req.Method,
+			Path:   req.Path,
+			Body:   req.Body,
+		})
+	default:
+		return http.StatusNotFound, nil, fmt.Sprintf("unknown api route: %s %s", req.Method, req.Path)
+	}
 }
 
 func sendAPIResponse(dc *webrtc.DataChannel, id string, data []byte) {

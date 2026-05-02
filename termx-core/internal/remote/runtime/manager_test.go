@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	remoteconfig "github.com/lozzow/termx/termx-core/internal/remote/config"
+	remotertc "github.com/lozzow/termx/termx-core/internal/remote/rtc"
 )
 
 type inventoryProviderStub struct {
@@ -190,4 +191,30 @@ func TestManagerReregistersHubWhenHeartbeatUnauthorized(t *testing.T) {
 	if got := registerCount.Load(); got != 2 {
 		t.Fatalf("expected two hub registrations, got %d", got)
 	}
+}
+
+func TestManagerProvidesTerminalManagementRouterForManagedRTC(t *testing.T) {
+	manager := NewManager(remoteconfig.Config{}, managementProviderStub{}, nil)
+	if manager.terminalManagementRouter() == nil {
+		t.Fatal("expected managed runtime to provide terminal management router")
+	}
+	status, _, errMsg := manager.terminalManagementRouter().RouteTerminalManagementRequest(context.Background(), remotertc.TerminalManagementRequest{
+		Method: "create",
+		Path:   "create",
+		Body:   json.RawMessage(`{"command":["/bin/sh"],"name":"managed shell"}`),
+	})
+	if status == http.StatusForbidden || errMsg == "terminal management is not allowed by connection policy" {
+		t.Fatalf("managed terminal management router must not be nil or forbidden, got status=%d err=%q", status, errMsg)
+	}
+}
+
+type managementProviderStub struct {
+	inventoryProviderStub
+}
+
+func (s managementProviderStub) RouteTerminalManagementRequest(_ context.Context, req remotertc.TerminalManagementRequest) (int32, []byte, string) {
+	if req.Path != "create" {
+		return http.StatusNotFound, nil, "unknown terminal management route"
+	}
+	return http.StatusOK, []byte(`{"terminal_id":"managed-terminal-1"}`), ""
 }

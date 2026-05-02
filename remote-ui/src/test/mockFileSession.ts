@@ -1,4 +1,4 @@
-import type { BinaryChannel, ConnectionInfo, JsonRpcChannel, PeerTransport } from '../transport'
+import type { ConnectionInfo, RtcBinaryChannel, RtcEvent, RtcJsonRpcChannel, RtcSession, RtcSubscription } from '../transport'
 
 export type MockFileResponder =
   | unknown
@@ -10,12 +10,12 @@ export interface MockFileError {
   body: { error?: string; message?: string }
 }
 
-export function createMockFilePeerTransport(
+export function createMockFileSession(
   responders: Record<string, MockFileResponder> = {},
   errors: Record<string, MockFileError> = {},
   options: { machineId?: string; terminalId?: string } = {},
-): MockFilePeerTransport {
-  return new MockFilePeerTransport(responders, errors, options.machineId ?? 'machine-local', options.terminalId)
+): MockFileSession {
+  return new MockFileSession(responders, errors, options.machineId ?? 'machine-local', options.terminalId)
 }
 
 export function createDeferredFileResponder(): {
@@ -29,7 +29,7 @@ export function createDeferredFileResponder(): {
   return { promise, resolve }
 }
 
-export class MockFilePeerTransport implements PeerTransport {
+export class MockFileSession implements RtcSession {
   readonly requests: Array<{ method: string; path: string; params?: Record<string, unknown> }> = []
   openApiCount = 0
 
@@ -44,11 +44,11 @@ export class MockFilePeerTransport implements PeerTransport {
 
   async disconnect(): Promise<void> {}
 
-  async openTerminal(): Promise<BinaryChannel> {
+  async openTerminal(): Promise<RtcBinaryChannel> {
     throw new Error('terminal channel is not used by file manager tests')
   }
 
-  async openApi(): Promise<JsonRpcChannel> {
+  async openApi(): Promise<RtcJsonRpcChannel> {
     this.openApiCount += 1
     return {
       request: async <TResponse>(method: string, params?: unknown): Promise<TResponse> => {
@@ -56,7 +56,7 @@ export class MockFilePeerTransport implements PeerTransport {
         this.requests.push(request)
         const error = this.errors[request.path]
         if (error) {
-          throw fileTransportError(error)
+          throw fileSessionError(error)
         }
         const responder = this.responders[request.path]
         if (typeof responder === 'function') {
@@ -71,18 +71,36 @@ export class MockFilePeerTransport implements PeerTransport {
     }
   }
 
-  async openFileTransfer(transferId: string): Promise<BinaryChannel> {
+  async openFileTransfer(transferId: string): Promise<RtcBinaryChannel> {
     return {
       label: `file:${transferId}`,
       readyState: 'open',
       send() {},
       close() {},
+      onMessage() { return { close() {} } },
+      onClose() { return { close() {} } },
+      async waitOpen() {},
+    }
+  }
+
+  subscribeEvents(_handler: (event: RtcEvent) => void): RtcSubscription {
+    return { close() {} }
+  }
+
+  async getCapabilities() {
+    return {
+      terminalAllowed: true,
+      apiAllowed: true,
+      eventsAllowed: true,
+      fileTransferAllowed: true,
+      terminalManagementAllowed: true,
+      relayInUse: false,
     }
   }
 
   async getConnectionInfo(): Promise<ConnectionInfo> {
     const info: ConnectionInfo = {
-      mode: 'local',
+      path: 'local',
       connectionId: 'mock-file-connection',
       machineId: this.machineId,
       relayInUse: false,
@@ -98,7 +116,7 @@ function normalizeRequest(method: string, params: unknown): { method: string; pa
   }
   const record = params as Record<string, unknown>
   if (typeof record.path !== 'string') {
-    throw new Error('file api request path is required')
+    return { method, path: method, params: record }
   }
   const request: { method: string; path: string; params?: Record<string, unknown> } = {
     method,
@@ -110,7 +128,7 @@ function normalizeRequest(method: string, params: unknown): { method: string; pa
   return request
 }
 
-function fileTransportError(error: MockFileError): Error {
+function fileSessionError(error: MockFileError): Error {
   const message = error.body.error ?? error.body.message ?? `file api failed: ${error.status}`
   const err = new Error(message)
   Object.assign(err, { status: error.status, body: error.body })

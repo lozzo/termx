@@ -1,45 +1,115 @@
 import type { Machine, Terminal } from './model'
 
-export type ConnectionMode = 'local' | 'anonymous_p2p' | 'managed_p2p' | 'paid_relay'
+export type ConnectionPath = 'local' | 'public_p2p' | 'managed'
 
-export interface ConnectTarget {
+export const CONNECTION_PATHS = ['local', 'public_p2p', 'managed'] as const satisfies readonly ConnectionPath[]
+
+export interface RtcConnectionTarget {
   machineId: string
-  terminalId?: string
+  terminalId?: string | undefined
 }
 
-export interface ConnectOptions {
-  mode?: ConnectionMode
+export interface RtcSessionDescription {
+  type: 'offer' | 'answer'
+  sdp: string
+}
+
+export interface RtcSessionNegotiationTarget extends RtcConnectionTarget {
+  path: ConnectionPath
+  iceServers?: Array<{
+    urls: string[]
+    username?: string | undefined
+    credential?: string | undefined
+  }> | undefined
+}
+
+export interface RtcSessionNegotiator {
+  createOffer(target: RtcSessionNegotiationTarget, options?: RtcConnectOptions): Promise<{
+    sessionId: string
+    description: RtcSessionDescription
+  }>
+  acceptAnswer(answer: RtcSessionDescription, options?: RtcConnectOptions): Promise<void>
+}
+
+export interface RtcSessionAnswerTarget extends RtcSessionNegotiationTarget {
+  sessionId: string
+  description: RtcSessionDescription
+  relayPolicy?: {
+    allowRelay: boolean
+    allowRelayTransfer: boolean
+  } | undefined
+  relayInUse?: boolean | undefined
+}
+
+export interface RtcSessionAnswerer {
+  acceptOffer(target: RtcSessionAnswerTarget, options?: RtcConnectOptions): Promise<{
+    sessionId: string
+    description: RtcSessionDescription
+  }>
+}
+
+export interface RtcConnectOptions {
   signal?: AbortSignal
 }
 
-export interface ConnectResult {
-  mode: ConnectionMode
-  connectionId: string
+export interface RtcSubscription {
+  close(): void
 }
 
-export interface TransportStatus {
-  phase: 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'failed' | 'released'
-  mode?: ConnectionMode
+export interface RtcEvent {
+  type: string
+  payload?: unknown
 }
 
 export interface ConnectionInfo {
-  mode: ConnectionMode
+  path: ConnectionPath
   connectionId: string
   machineId: string
   terminalId?: string
   relayInUse: boolean
 }
 
-export interface BinaryChannel {
+export interface ConnectionCapabilities {
+  terminalAllowed: boolean
+  apiAllowed: boolean
+  eventsAllowed: boolean
+  fileTransferAllowed: boolean
+  terminalManagementAllowed: boolean
+  relayInUse: boolean
+  denialReason?: string
+}
+
+export interface RtcSessionCapabilityUpdater {
+  updateConnectionCapabilities(capabilities: ConnectionCapabilities): void
+}
+
+export interface RtcBinaryChannel {
   readonly label: string
   readonly readyState: 'connecting' | 'open' | 'closing' | 'closed'
   send(data: Uint8Array): void
   close(): void
+  onMessage(handler: (data: Uint8Array) => void): RtcSubscription
+  onClose(handler: () => void): RtcSubscription
+  waitOpen(): Promise<void>
 }
 
-export interface JsonRpcChannel {
+export interface RtcJsonRpcChannel {
   request<TResponse>(method: string, params?: unknown): Promise<TResponse>
   close(): void
+}
+
+export interface RtcSession {
+  openTerminal(terminalId: string): Promise<RtcBinaryChannel>
+  openApi(): Promise<RtcJsonRpcChannel>
+  openFileTransfer(transferId: string): Promise<RtcBinaryChannel>
+  subscribeEvents(handler: (event: RtcEvent) => void): RtcSubscription
+  getConnectionInfo(): Promise<ConnectionInfo>
+  getCapabilities(): Promise<ConnectionCapabilities>
+  disconnect(): Promise<void>
+}
+
+export interface RtcConnector<TInput extends RtcConnectionTarget = RtcConnectionTarget> {
+  connect(input: TInput, options?: RtcConnectOptions): Promise<RtcSession>
 }
 
 export interface LocalStatus {
@@ -68,7 +138,7 @@ export interface LocalPairResult {
 export interface LocalRTCOffer {
   sessionId: string
   machineId: string
-  terminalId: string
+  terminalId?: string | undefined
   sdp: string
   appCertificate: string
   appSignature: string
@@ -86,6 +156,8 @@ export interface LocalRTCAnswer {
     enabled: boolean
     endpoint?: string
   }
+  dataChannels?: string[]
+  capabilities?: ConnectionCapabilities
 }
 
 export interface TerminalInventorySubscription {
@@ -100,30 +172,11 @@ export interface TerminalInventoryEvents {
   subscribe(machineId: string, handler: (event: TerminalInventoryEvent) => void): TerminalInventorySubscription
 }
 
-export interface RemoteTransport {
-  connect(target: ConnectTarget, options?: ConnectOptions): Promise<ConnectResult>
-  disconnect(): Promise<void>
-  status(): TransportStatus
-  openTerminal(terminalId: string): Promise<BinaryChannel>
-  openApi(): Promise<JsonRpcChannel>
-  openFileTransfer(transferId: string): Promise<BinaryChannel>
-  getConnectionInfo(): Promise<ConnectionInfo>
-}
-
-export interface PeerTransport {
-  connect(input: ConnectTarget & { mode: ConnectionMode }): Promise<void>
-  disconnect(): Promise<void>
-  openTerminal(terminalId: string): Promise<BinaryChannel>
-  openApi(): Promise<JsonRpcChannel>
-  openFileTransfer(transferId: string): Promise<BinaryChannel>
-  getConnectionInfo(): Promise<ConnectionInfo>
-}
-
 export interface LocalAgentApi {
   getStatus(): Promise<LocalStatus>
   listTerminals(): Promise<Terminal[]>
   pair(input: LocalPairInput): Promise<LocalPairResult>
-  createRTCAnswer(input: LocalRTCOffer): Promise<LocalRTCAnswer>
+  createRTCAnswer(input: LocalRTCOffer, options?: RtcConnectOptions): Promise<LocalRTCAnswer>
   createInventoryRTCAnswer(input: LocalInventoryRTCOffer): Promise<LocalInventoryRTCAnswer>
   createTerminal(input: LocalCreateTerminalInput): Promise<Terminal>
   updateTerminal(input: LocalUpdateTerminalInput): Promise<Terminal>

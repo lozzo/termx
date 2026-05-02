@@ -4,12 +4,12 @@ import '@xterm/xterm/css/xterm.css'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react'
 import { applyTerminalModifiers, type TerminalModifierState } from './mobileTerminalInput'
 import { useTerminalSession } from './useTerminalSession'
-import type { TerminalTransport } from './terminalClient'
+import type { RtcSession } from './transport'
 
 export interface TerminalProps {
   machineId: string
   terminalId: string
-  transport: TerminalTransport
+  session: RtcSession
   className?: string
   onReady?: () => void
   onCursorMove?: (() => void) | undefined
@@ -21,7 +21,7 @@ export interface TerminalProps {
 export interface TerminalHandle {
   sendInput(data: string): void
   sendResize(cols: number, rows: number): void
-  reattach(transport: TerminalTransport): void
+  reattach(session: RtcSession): void
   focus(): void
   blur(): void
   fit(): void
@@ -35,7 +35,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   {
     machineId,
     terminalId,
-    transport,
+    session,
     className,
     onReady,
     onCursorMove,
@@ -45,7 +45,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   },
   ref,
 ) {
-  const session = useTerminalSession({ machineId, terminalId, transport })
+  const terminalSession = useTerminalSession({ machineId, terminalId, session })
   const containerRef = useRef<HTMLDivElement | null>(null)
   const xtermRef = useRef<XTerm | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -60,7 +60,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const onCursorMoveRef = useRef<(() => void) | undefined>(undefined)
   const onBufferChangeRef = useRef<((isAlternate: boolean) => void) | undefined>(undefined)
 
-  const isOpen = session.snapshot.terminalChannels[terminalId]?.state === 'open'
+  const isOpen = terminalSession.snapshot.terminalChannels[terminalId]?.state === 'open'
 
   const fitAndMaybeSendResize = useCallback(() => {
     const term = xtermRef.current
@@ -78,8 +78,8 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     const last = lastSentResizeRef.current
     if (last?.cols === dimensions.cols && last.rows === dimensions.rows) return
     lastSentResizeRef.current = dimensions
-    session.sendResize(dimensions.cols, dimensions.rows)
-  }, [session.sendResize])
+    terminalSession.sendResize(dimensions.cols, dimensions.rows)
+  }, [terminalSession.sendResize])
 
   const scheduleFit = useCallback(() => {
     if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
@@ -99,9 +99,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   }, [fitAndMaybeSendResize])
 
   useImperativeHandle(ref, () => ({
-    sendInput: session.sendInput,
-    sendResize: session.sendResize,
-    reattach: session.reattach,
+    sendInput: terminalSession.sendInput,
+    sendResize: terminalSession.sendResize,
+    reattach: terminalSession.reattach,
     focus: () => {
       xtermRef.current?.focus()
     },
@@ -115,7 +115,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     },
     pasteText: (text: string) => {
       const isMultiline = text.includes('\n') || text.includes('\r')
-      session.sendInput(isMultiline ? `\x1b[200~${text}\x1b[201~` : text)
+      terminalSession.sendInput(isMultiline ? `\x1b[200~${text}\x1b[201~` : text)
     },
     getCursorInfo: () => {
       const term = xtermRef.current
@@ -139,7 +139,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       }
     },
     getBufferType: () => xtermRef.current?.buffer.active.type ?? 'normal',
-  }), [fitAndMaybeSendResize, scheduleFit, session.reattach, session.sendInput, session.sendResize])
+  }), [fitAndMaybeSendResize, scheduleFit, terminalSession.reattach, terminalSession.sendInput, terminalSession.sendResize])
 
   useEffect(() => {
     modifierStateRef.current = modifierState
@@ -158,11 +158,11 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   }, [onBufferChange])
 
   useEffect(() => {
-    canSendResizeRef.current = session.resizeControl.canResize
-    if (session.resizeControl.canResize) {
+    canSendResizeRef.current = terminalSession.resizeControl.canResize
+    if (terminalSession.resizeControl.canResize) {
       fitAndMaybeSendResize()
     }
-  }, [fitAndMaybeSendResize, session.resizeControl.canResize])
+  }, [fitAndMaybeSendResize, terminalSession.resizeControl.canResize])
 
   useEffect(() => {
     const container = containerRef.current
@@ -209,10 +209,10 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       if (currentModifiers && (currentModifiers.ctrl !== 'off' || currentModifiers.alt !== 'off')) {
         const result = applyTerminalModifiers(data, currentModifiers)
         onModifierStateChangeRef.current?.({ ctrl: result.ctrl, alt: result.alt })
-        session.sendInput(result.data)
+        terminalSession.sendInput(result.data)
         return
       }
-      session.sendInput(data)
+      terminalSession.sendInput(data)
     })
     const cursorDisposable = term.onCursorMove(() => {
       onCursorMoveRef.current?.()
@@ -287,7 +287,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       lastSentResizeRef.current = null
       isOpenRef.current = false
     }
-  }, [fitAndMaybeSendResize, scheduleFit, session.sendInput])
+  }, [fitAndMaybeSendResize, scheduleFit, terminalSession.sendInput])
 
   useEffect(() => {
     isOpenRef.current = isOpen
@@ -302,7 +302,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     const term = xtermRef.current
     if (!term) return
 
-    const nextText = session.terminalText
+    const nextText = terminalSession.terminalText
     const previousText = lastWrittenTextRef.current
     if (nextText === previousText) return
 
@@ -313,14 +313,14 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       term.write(nextText)
     }
     lastWrittenTextRef.current = nextText
-  }, [session.terminalText])
+  }, [terminalSession.terminalText])
 
   return (
     <section
       className={`relative flex h-full min-h-0 w-full flex-col overflow-hidden ${className || ''}`}
       data-machine-id={machineId}
       data-terminal-id={terminalId}
-      data-phase={session.snapshot.phase}
+      data-phase={terminalSession.snapshot.phase}
       data-testid="termx-terminal"
     >
       <div

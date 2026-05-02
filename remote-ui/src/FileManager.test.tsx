@@ -2,15 +2,15 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { FileManager, type FileManagerProps } from './FileManager'
-import { createMockFilePeerTransport } from './test/mockFileTransport'
+import { createMockFileSession } from './test/mockFileSession'
 
 describe('FileManager', () => {
   afterEach(() => {
     cleanup()
   })
 
-  it('renders directory entries and navigates directories through the injected transport', async () => {
-    const transport = createMockFilePeerTransport({
+  it('renders directory entries and navigates directories through the injected session', async () => {
+    const session = createMockFileSession({
       '/files/list': ({ path }: { path?: string }) => ({
         path,
         parent: path === '/' ? '' : '/',
@@ -23,7 +23,7 @@ describe('FileManager', () => {
       <FileManager
         machineId="machine-local"
         terminalId="terminal-1"
-        transport={transport}
+        session={session}
         initialPath="/"
       />,
     )
@@ -36,11 +36,11 @@ describe('FileManager', () => {
     expect(screen.getByTestId('termx-file-manager').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
   })
 
-  it('keeps props interface-based and free of browser/native transport implementations', () => {
+  it('keeps props interface-based and free of browser/native runtime implementations', () => {
     const propKeys = Object.keys({
       machineId: 'machine-local',
       terminalId: 'terminal-1',
-      transport: createMockFilePeerTransport(),
+      session: createMockFileSession(),
     } satisfies FileManagerProps)
 
     expect(propKeys).not.toContain('webrtcTransport')
@@ -52,7 +52,7 @@ describe('FileManager', () => {
   it('requires terminalId in the public file manager props contract', () => {
     const props = {
       machineId: 'machine-local',
-      transport: createMockFilePeerTransport(),
+      session: createMockFileSession(),
     }
 
     // @ts-expect-error file manager is terminal-scoped and must not be opened for machine-only access.

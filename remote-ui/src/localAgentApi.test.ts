@@ -116,6 +116,14 @@ describe('createLocalAgentApi', () => {
         answer: { session_id: 'rtc-local-1', sdp: 'answer-sdp', ice_candidates: [] },
         ice_tcp_enabled: true,
         data_channels: ['api', 'terminal:{terminal_id}', 'file:{transfer_id}'],
+        capabilities: {
+          terminal_allowed: true,
+          api_allowed: true,
+          events_allowed: false,
+          file_transfer_allowed: true,
+          terminal_management_allowed: true,
+          relay_in_use: false,
+        },
       })
     })
 
@@ -133,6 +141,15 @@ describe('createLocalAgentApi', () => {
       sessionId: 'rtc-local-1',
       answer: { type: 'answer', sdp: 'answer-sdp' },
       iceTCP: { enabled: true },
+      dataChannels: ['api', 'terminal:{terminal_id}', 'file:{transfer_id}'],
+      capabilities: {
+        terminalAllowed: true,
+        apiAllowed: true,
+        eventsAllowed: false,
+        fileTransferAllowed: true,
+        terminalManagementAllowed: true,
+        relayInUse: false,
+      },
     })
 
     const body = JSON.parse(String(calls[0]?.init?.body))
@@ -148,7 +165,7 @@ describe('createLocalAgentApi', () => {
       timestamp: 1770000000,
       value: 'signature',
     })
-    expect(body.client).toEqual({ type: 'browser', transport: 'local' })
+    expect(body.client).toEqual({ type: 'browser', purpose: 'runtime' })
     expect(JSON.stringify(body)).not.toMatch(/turn|credential|machine_private_key|privateKey/i)
   })
 
@@ -183,6 +200,7 @@ describe('createLocalAgentApi', () => {
       terminal_id: '',
       sdp: 'offer-sdp',
     })
+    expect(body.client).toEqual({ type: 'browser', purpose: 'inventory_events' })
     expect(JSON.stringify(body)).not.toMatch(/turn|credential|machine_private_key|privateKey/i)
   })
 

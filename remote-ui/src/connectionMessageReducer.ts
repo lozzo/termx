@@ -1,5 +1,5 @@
 import { assertRemoteModelShape } from './model'
-import type { ConnectionMode } from './transport'
+import type { ConnectionPath } from './transport'
 
 export type ConnectionPhase =
   | 'idle'
@@ -30,7 +30,7 @@ export interface VisibleError {
 
 export interface ConnectionSnapshot {
   phase: ConnectionPhase
-  mode: ConnectionMode | null
+  path: ConnectionPath | null
   connectionId?: string | undefined
   machineId?: string | undefined
   activeTerminalId?: string | undefined
@@ -48,11 +48,11 @@ export type ConnectionMessage =
   | { type: 'user.openFileManager'; machineId: string; terminalId: string }
   | { type: 'user.retry' }
   | { type: 'user.release' }
-  | { type: 'transport.connecting'; mode: ConnectionMode }
-  | { type: 'transport.connected'; mode: ConnectionMode; connectionId: string }
-  | { type: 'transport.disconnected'; reason?: string }
-  | { type: 'transport.failed'; reason: string; recoverable: boolean; surface: 'toast' | 'banner' | 'modal' }
-  | { type: 'transport.verified'; connectionId: string }
+  | { type: 'connection.connecting'; path: ConnectionPath }
+  | { type: 'connection.connected'; path: ConnectionPath; connectionId: string }
+  | { type: 'connection.disconnected'; reason?: string }
+  | { type: 'connection.failed'; reason: string; recoverable: boolean; surface: 'toast' | 'banner' | 'modal' }
+  | { type: 'connection.verified'; connectionId: string }
   | { type: 'network.offline' }
   | { type: 'network.online' }
   | { type: 'app.resume'; resumeKind: 'quick' | 'cold' | 'frozen' }
@@ -64,7 +64,7 @@ export type ConnectionMessage =
 export function initialConnectionSnapshot(): ConnectionSnapshot {
   return {
     phase: 'idle',
-    mode: null,
+    path: null,
     reconnectAttempt: 0,
     resumeVerificationRequired: false,
     terminalChannels: {},
@@ -87,17 +87,17 @@ export function reduceConnectionMessage(
         userIntent: { kind: 'connectMachine', machineId: message.machineId },
         visibleError: undefined,
       })
-    case 'transport.connecting':
+    case 'connection.connecting':
       return {
         ...snapshot,
         phase: 'connecting',
-        mode: message.mode,
+        path: message.path,
       }
-    case 'transport.connected':
+    case 'connection.connected':
       return cleanSnapshot({
         ...snapshot,
         phase: 'connected',
-        mode: message.mode,
+        path: message.path,
         connectionId: message.connectionId,
         reconnectAttempt: 0,
         resumeVerificationRequired: false,
@@ -183,7 +183,7 @@ export function reduceConnectionMessage(
         terminalChannels: markOpenChannelsVerifying(snapshot.terminalChannels),
         fileManagers: markOpenChannelsVerifying(snapshot.fileManagers),
       }
-    case 'transport.verified':
+    case 'connection.verified':
       return {
         ...snapshot,
         phase: 'connected',
@@ -207,13 +207,13 @@ export function reduceConnectionMessage(
         reconnectAttempt: snapshot.reconnectAttempt + 1,
         visibleError: undefined,
       })
-    case 'transport.disconnected':
+    case 'connection.disconnected':
       return {
         ...snapshot,
         phase: 'reconnecting',
         reconnectAttempt: snapshot.reconnectAttempt + 1,
       }
-    case 'transport.failed':
+    case 'connection.failed':
       return {
         ...snapshot,
         phase: 'failed',

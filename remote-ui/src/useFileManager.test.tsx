@@ -1,11 +1,11 @@
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { useFileManager } from './useFileManager'
-import { createDeferredFileResponder, createMockFilePeerTransport } from './test/mockFileTransport'
+import { createDeferredFileResponder, createMockFileSession } from './test/mockFileSession'
 
 describe('useFileManager', () => {
-  it('loads the current directory and navigates through file transport interfaces', async () => {
-    const transport = createMockFilePeerTransport({
+  it('loads the current directory and navigates through file session interfaces', async () => {
+    const session = createMockFileSession({
       '/files/list': ({ path }: { path?: string }) => ({
         path,
         parent: path === '/' ? '' : '/',
@@ -17,7 +17,7 @@ describe('useFileManager', () => {
     const { result } = renderHook(() => useFileManager({
       machineId: 'machine-local',
       terminalId: 'terminal-1',
-      transport,
+      session,
       initialPath: '/',
     }))
 
@@ -31,18 +31,18 @@ describe('useFileManager', () => {
 
     expect(result.current.currentPath).toBe('/tmp')
     expect(result.current.entries[0]?.name).toBe('log.txt')
-    expect(transport.openApiCount).toBeGreaterThan(0)
+    expect(session.openApiCount).toBeGreaterThan(0)
   })
 
   it('keeps file errors as visible state without throwing through the component tree', async () => {
-    const transport = createMockFilePeerTransport({}, {
+    const session = createMockFileSession({}, {
       '/files/list': { status: 500, body: { error: 'disk unavailable' } },
     }, { terminalId: 'terminal-1' })
 
     const { result } = renderHook(() => useFileManager({
       machineId: 'machine-local',
       terminalId: 'terminal-1',
-      transport,
+      session,
       initialPath: '/',
     }))
 
@@ -54,27 +54,27 @@ describe('useFileManager', () => {
     })
   })
 
-  it('rejects a transport connected to a different machine before issuing file requests', async () => {
-    const transport = createMockFilePeerTransport({
+  it('rejects a session connected to a different machine before issuing file requests', async () => {
+    const session = createMockFileSession({
       '/files/list': { path: '/', parent: '', total: 0, entries: [] },
     }, {}, { machineId: 'machine-b', terminalId: 'terminal-1' })
 
     const { result } = renderHook(() => useFileManager({
       machineId: 'machine-a',
       terminalId: 'terminal-1',
-      transport,
+      session,
       initialPath: '/',
     }))
 
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.error?.message).toMatch(/machine-b.*machine-a/)
-    expect(transport.openApiCount).toBe(0)
-    expect(transport.requests).toEqual([])
+    expect(session.openApiCount).toBe(0)
+    expect(session.requests).toEqual([])
   })
 
   it('ignores stale directory responses when navigation races with initial load', async () => {
     const rootLoad = createDeferredFileResponder()
-    const transport = createMockFilePeerTransport({
+    const session = createMockFileSession({
       '/files/list': ({ path }: { path?: string }) => {
         if (path === '/') return rootLoad.promise
         return {
@@ -89,11 +89,11 @@ describe('useFileManager', () => {
     const { result } = renderHook(() => useFileManager({
       machineId: 'machine-local',
       terminalId: 'terminal-1',
-      transport,
+      session,
       initialPath: '/',
     }))
 
-    await waitFor(() => expect(transport.requests.length).toBeGreaterThan(0))
+    await waitFor(() => expect(session.requests.length).toBeGreaterThan(0))
     await act(async () => {
       await result.current.navigate('/tmp')
     })
@@ -114,38 +114,38 @@ describe('useFileManager', () => {
   })
 
   it('rejects transports that do not report the requested terminal before issuing file requests', async () => {
-    const transport = createMockFilePeerTransport({
+    const session = createMockFileSession({
       '/files/list': { path: '/', parent: '', total: 0, entries: [] },
     })
 
     const { result } = renderHook(() => useFileManager({
       machineId: 'machine-local',
       terminalId: 'terminal-1',
-      transport,
+      session,
       initialPath: '/',
     }))
 
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.error?.message).toMatch(/terminal.*missing.*terminal-1/i)
-    expect(transport.openApiCount).toBe(0)
-    expect(transport.requests).toEqual([])
+    expect(session.openApiCount).toBe(0)
+    expect(session.requests).toEqual([])
   })
 
   it('rejects transports connected to another terminal before issuing file requests', async () => {
-    const transport = createMockFilePeerTransport({
+    const session = createMockFileSession({
       '/files/list': { path: '/', parent: '', total: 0, entries: [] },
     }, {}, { terminalId: 'terminal-2' })
 
     const { result } = renderHook(() => useFileManager({
       machineId: 'machine-local',
       terminalId: 'terminal-1',
-      transport,
+      session,
       initialPath: '/',
     }))
 
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.error?.message).toMatch(/terminal-2.*terminal-1/)
-    expect(transport.openApiCount).toBe(0)
-    expect(transport.requests).toEqual([])
+    expect(session.openApiCount).toBe(0)
+    expect(session.requests).toEqual([])
   })
 })

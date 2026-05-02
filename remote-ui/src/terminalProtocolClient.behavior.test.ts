@@ -1,21 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { createLocalTerminalProtocolTransport } from './localTerminalProtocolTransport'
+import { createTerminalProtocolClient } from './terminalProtocolClient'
 import { TERMX_FRAME_TYPES, decodeTermxFrame, encodeTermxFrame } from './termxProtocol'
-import type { BinaryChannel, ConnectionInfo } from './transport'
+import type { ConnectionInfo, RtcBinaryChannel } from './transport'
+import type { TerminalProtocolEvent } from './terminalClient'
 
-describe('createLocalTerminalProtocolTransport', () => {
+describe('TerminalProtocolClient', () => {
   it('performs hello and attach over the Go binary protocol before exposing terminal output', async () => {
     const channel = new MockBinaryDataChannel('terminal:terminal-1')
-    const transport = createLocalTerminalProtocolTransport({
+    const client = createTerminalProtocolClient({
       channel,
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       connectionInfo: connectionInfo(),
     })
     const events: unknown[] = []
-    transport.subscribeTerminal('terminal-1', (event) => events.push(event))
+    client.subscribeTerminal('terminal-1', (event: TerminalProtocolEvent) => events.push(event))
 
-    const opened = transport.openTerminal('terminal-1')
+    const opened = client.openTerminal('terminal-1')
     const hello = decodeSentFrame(channel, 0)
     expect(hello.channel).toBe(0)
     expect(hello.type).toBe(TERMX_FRAME_TYPES.hello)
@@ -45,14 +46,14 @@ describe('createLocalTerminalProtocolTransport', () => {
 
   it('maps BinaryChannel JSON input and resize messages to Go TypeInput and TypeResize frames', async () => {
     const channel = new MockBinaryDataChannel('terminal:terminal-1')
-    const transport = createLocalTerminalProtocolTransport({
+    const client = createTerminalProtocolClient({
       channel,
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       connectionInfo: connectionInfo(),
       resizePolicy: 'owner',
     })
-    const terminalPromise = transport.openTerminal('terminal-1')
+    const terminalPromise = client.openTerminal('terminal-1')
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
@@ -84,15 +85,15 @@ describe('createLocalTerminalProtocolTransport', () => {
 
   it('suppresses resize frames when attach grants follower resize control', async () => {
     const channel = new MockBinaryDataChannel('terminal:terminal-1')
-    const transport = createLocalTerminalProtocolTransport({
+    const client = createTerminalProtocolClient({
       channel,
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       connectionInfo: connectionInfo(),
     })
     const events: unknown[] = []
-    transport.subscribeTerminal('terminal-1', (event) => events.push(event))
-    const terminalPromise = transport.openTerminal('terminal-1')
+    client.subscribeTerminal('terminal-1', (event: TerminalProtocolEvent) => events.push(event))
+    const terminalPromise = client.openTerminal('terminal-1')
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
@@ -117,7 +118,7 @@ describe('createLocalTerminalProtocolTransport', () => {
 
   it('emits resize control and forwards resize when attach grants owner control', async () => {
     const channel = new MockBinaryDataChannel('terminal:terminal-1')
-    const transport = createLocalTerminalProtocolTransport({
+    const client = createTerminalProtocolClient({
       channel,
       machineId: 'machine-local',
       terminalId: 'terminal-1',
@@ -125,8 +126,8 @@ describe('createLocalTerminalProtocolTransport', () => {
       resizePolicy: 'owner',
     })
     const events: unknown[] = []
-    transport.subscribeTerminal('terminal-1', (event) => events.push(event))
-    const terminalPromise = transport.openTerminal('terminal-1')
+    client.subscribeTerminal('terminal-1', (event: TerminalProtocolEvent) => events.push(event))
+    const terminalPromise = client.openTerminal('terminal-1')
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
@@ -154,15 +155,15 @@ describe('createLocalTerminalProtocolTransport', () => {
 
   it('buffers stream frames that arrive before the attach response names the stream channel', async () => {
     const channel = new MockBinaryDataChannel('terminal:terminal-1')
-    const transport = createLocalTerminalProtocolTransport({
+    const client = createTerminalProtocolClient({
       channel,
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       connectionInfo: connectionInfo(),
     })
     const events: unknown[] = []
-    transport.subscribeTerminal('terminal-1', (event) => events.push(event))
-    const terminalPromise = transport.openTerminal('terminal-1')
+    client.subscribeTerminal('terminal-1', (event: TerminalProtocolEvent) => events.push(event))
+    const terminalPromise = client.openTerminal('terminal-1')
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
@@ -180,17 +181,17 @@ describe('createLocalTerminalProtocolTransport', () => {
     expect(new TextDecoder().decode((events[1] as { data: Uint8Array }).data)).toBe('early-output')
   })
 
-  it('requests a snapshot and emits replayable snapshot content through the terminal transport interface', async () => {
+  it('requests a snapshot and emits replayable snapshot content through the terminal protocol interface', async () => {
     const channel = new MockBinaryDataChannel('terminal:terminal-1')
-    const transport = createLocalTerminalProtocolTransport({
+    const client = createTerminalProtocolClient({
       channel,
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       connectionInfo: connectionInfo(),
     })
     const events: unknown[] = []
-    transport.subscribeTerminal('terminal-1', (event) => events.push(event))
-    const terminalPromise = transport.openTerminal('terminal-1')
+    client.subscribeTerminal('terminal-1', (event: TerminalProtocolEvent) => events.push(event))
+    const terminalPromise = client.openTerminal('terminal-1')
     channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
     await Promise.resolve()
     const attachRequest = JSON.parse(new TextDecoder().decode(decodeSentFrame(channel, 1).payload))
@@ -231,21 +232,39 @@ describe('createLocalTerminalProtocolTransport', () => {
 
   it('rejects machine or terminal mismatch before writing protocol frames', async () => {
     const channel = new MockBinaryDataChannel('terminal:terminal-1')
-    const transport = createLocalTerminalProtocolTransport({
+    const client = createTerminalProtocolClient({
       channel,
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       connectionInfo: connectionInfo(),
     })
 
-    await expect(transport.openTerminal('terminal-2')).rejects.toThrow(/terminal-2.*terminal-1/)
+    await expect(client.openTerminal('terminal-2')).rejects.toThrow(/terminal-2.*terminal-1/)
     expect(channel.sent).toEqual([])
+  })
+
+  it('rejects pending handshake requests when the channel closes before attach completes', async () => {
+    const channel = new MockBinaryDataChannel('terminal:terminal-1')
+    const client = createTerminalProtocolClient({
+      channel,
+      machineId: 'machine-local',
+      terminalId: 'terminal-1',
+      connectionInfo: connectionInfo(),
+    })
+
+    const opened = client.openTerminal('terminal-1')
+    channel.emitFrame(encodeTermxFrame(0, TERMX_FRAME_TYPES.hello, encodeJSON({ version: 1, server: 'termx' })))
+    await Promise.resolve()
+    expect(decodeSentFrame(channel, 1).type).toBe(TERMX_FRAME_TYPES.request)
+    channel.close()
+
+    await expect(opened).rejects.toThrow(/closed/i)
   })
 })
 
 function connectionInfo(): ConnectionInfo {
   return {
-    mode: 'local',
+    path: 'local',
     connectionId: 'rtc-local-1',
     machineId: 'machine-local',
     terminalId: 'terminal-1',
@@ -263,10 +282,11 @@ function decodeSentFrame(channel: MockBinaryDataChannel, index: number) {
   return decodeTermxFrame(sent)
 }
 
-class MockBinaryDataChannel implements BinaryChannel {
-  readyState: BinaryChannel['readyState'] = 'open'
+class MockBinaryDataChannel implements RtcBinaryChannel {
+  readyState: RtcBinaryChannel['readyState'] = 'open'
   readonly sent: Uint8Array[] = []
   private messageHandler: ((data: Uint8Array) => void) | null = null
+  private closeHandler: (() => void) | null = null
 
   constructor(readonly label: string) {}
 
@@ -276,10 +296,21 @@ class MockBinaryDataChannel implements BinaryChannel {
 
   close(): void {
     this.readyState = 'closed'
+    this.closeHandler?.()
   }
 
-  onMessage(handler: (data: Uint8Array) => void): void {
+  onMessage(handler: (data: Uint8Array) => void) {
     this.messageHandler = handler
+    return { close: () => { this.messageHandler = null } }
+  }
+
+  onClose(handler: () => void) {
+    this.closeHandler = handler
+    return { close: () => { this.closeHandler = null } }
+  }
+
+  waitOpen(): Promise<void> {
+    return Promise.resolve()
   }
 
   emitFrame(data: Uint8Array): void {

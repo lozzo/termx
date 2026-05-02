@@ -1,5 +1,5 @@
 import { normalizeTerminal, type Terminal } from './model'
-import type { BinaryChannel, ConnectionInfo, PeerTransport } from './transport'
+import type { ConnectionInfo } from './transport'
 import type { ConnectionMessage } from './connectionMessageReducer'
 
 export interface TerminalSnapshotPayload {
@@ -25,15 +25,24 @@ export const defaultTerminalResizeControl: TerminalResizeControl = {
   reason: 'unknown',
 }
 
-export type TerminalTransportEvent =
+export type TerminalProtocolEvent =
   | { type: 'output'; data: Uint8Array }
   | { type: 'snapshot'; snapshot: TerminalSnapshotPayload }
   | { type: 'info'; info: TerminalInfoPayload }
   | { type: 'resizeControl'; control: TerminalResizeControl }
   | { type: 'closed'; reason?: string }
 
-export interface TerminalTransport extends Pick<PeerTransport, 'openTerminal' | 'getConnectionInfo'> {
-  subscribeTerminal(terminalId: string, handler: (event: TerminalTransportEvent) => void): () => void
+export interface TerminalProtocolChannel {
+  readonly label: string
+  readonly readyState: 'connecting' | 'open' | 'closing' | 'closed'
+  send(data: Uint8Array): void
+  close(): void
+}
+
+export interface TerminalProtocolSession {
+  openTerminal(terminalId: string): Promise<TerminalProtocolChannel>
+  getConnectionInfo(): Promise<ConnectionInfo>
+  subscribeTerminal(terminalId: string, handler: (event: TerminalProtocolEvent) => void): () => void
   closeTerminalChannel(terminalId: string): void
 }
 
@@ -51,9 +60,9 @@ export interface TerminalClientCallbacks {
 
 export class TerminalClient {
   private callbacks: TerminalClientCallbacks
-  private transport: TerminalTransport | null = null
+  private session: TerminalProtocolSession | null = null
   private terminalId = ''
-  private channel: BinaryChannel | null = null
+  private channel: TerminalProtocolChannel | null = null
   private unsubscribe: (() => void) | null = null
   private machineId = ''
   private resizeControl: TerminalResizeControl = defaultTerminalResizeControl
@@ -62,26 +71,26 @@ export class TerminalClient {
     this.callbacks = callbacks
   }
 
-  connect(terminalId: string, transport: TerminalTransport): void {
-    this.bind(terminalId, transport, { closePrevious: true })
+  connect(terminalId: string, session: TerminalProtocolSession): void {
+    this.bind(terminalId, session, { closePrevious: true })
   }
 
-  reattach(transport: TerminalTransport): void {
+  reattach(session: TerminalProtocolSession): void {
     if (!this.terminalId) {
       this.callbacks.onError('terminal client is not connected')
       return
     }
-    this.bind(this.terminalId, transport, { closePrevious: false })
+    this.bind(this.terminalId, session, { closePrevious: false })
   }
 
   disconnect(): void {
     const terminalId = this.terminalId
     this.cleanupSubscription()
-    if (this.transport && terminalId) {
-      this.transport.closeTerminalChannel(terminalId)
+    if (this.session && terminalId) {
+      this.session.closeTerminalChannel(terminalId)
     }
     this.channel = null
-    this.transport = null
+    this.session = null
     this.terminalId = ''
   }
 
@@ -98,7 +107,7 @@ export class TerminalClient {
 
   private bind(
     terminalId: string,
-    transport: TerminalTransport,
+    session: TerminalProtocolSession,
     options: { closePrevious: boolean },
   ): void {
     if (!terminalId) {
@@ -107,21 +116,21 @@ export class TerminalClient {
 
     if (options.closePrevious) {
       this.cleanupSubscription()
-      if (this.transport && this.terminalId) {
-        this.transport.closeTerminalChannel(this.terminalId)
+      if (this.session && this.terminalId) {
+        this.session.closeTerminalChannel(this.terminalId)
       }
     } else {
       this.cleanupSubscription()
     }
 
-    this.transport = transport
+    this.session = session
     this.terminalId = terminalId
 
     Promise.all([
-      this.resolveMachineId(transport),
-      transport.openTerminal(terminalId),
+      this.resolveMachineId(session),
+      session.openTerminal(terminalId),
     ]).then(([machineId, channel]) => {
-      if (this.transport !== transport || this.terminalId !== terminalId) {
+      if (this.session !== session || this.terminalId !== terminalId) {
         channel.close()
         return
       }
@@ -143,10 +152,10 @@ export class TerminalClient {
       this.callbacks.onClose()
     })
 
-    this.unsubscribe = transport.subscribeTerminal(terminalId, (event) => this.handleTransportEvent(event))
+    this.unsubscribe = session.subscribeTerminal(terminalId, (event) => this.handleProtocolEvent(event))
   }
 
-  private handleTransportEvent(event: TerminalTransportEvent): void {
+  private handleProtocolEvent(event: TerminalProtocolEvent): void {
     switch (event.type) {
       case 'output':
         this.callbacks.onOutput(event.data)
@@ -196,8 +205,8 @@ export class TerminalClient {
     this.unsubscribe = null
   }
 
-  private async resolveMachineId(transport: TerminalTransport): Promise<string> {
-    const info: ConnectionInfo = await transport.getConnectionInfo()
+  private async resolveMachineId(session: TerminalProtocolSession): Promise<string> {
+    const info: ConnectionInfo = await session.getConnectionInfo()
     return info.machineId
   }
 }

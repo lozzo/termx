@@ -2,6 +2,8 @@ package rtc
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
 	"testing"
 	"time"
 
@@ -9,6 +11,42 @@ import (
 	hubv1 "github.com/lozzow/termx/termx-core/remote/hubv1"
 	"github.com/pion/webrtc/v4"
 )
+
+func TestRuntimeAPIChannelRouterHandlesTerminalManagement(t *testing.T) {
+	manager := &terminalAPIRouterStub{}
+	status, body, errMsg := routeRuntimeAPIRequest(fileapi.NewManager(), manager, apiRequest{
+		ID:     "req_1",
+		Method: "create",
+		Path:   "create",
+		Body:   json.RawMessage(`{"command":["/bin/zsh","-l"],"name":"ops shell"}`),
+	})
+	if errMsg != "" {
+		t.Fatalf("expected terminal management request to succeed, got %q", errMsg)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", status)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	if payload["terminal_id"] != "terminal-3" {
+		t.Fatalf("expected created terminal id, got %#v", payload)
+	}
+	if manager.createName != "ops shell" {
+		t.Fatalf("expected create routed to terminal manager, got %#v", manager)
+	}
+
+	fileStatus, _, fileErr := routeRuntimeAPIRequest(fileapi.NewManager(), manager, apiRequest{
+		ID:     "req_2",
+		Method: "POST",
+		Path:   "/files/stat",
+		Body:   json.RawMessage(`{"path":"/definitely-missing-termx-file"}`),
+	})
+	if fileStatus == http.StatusNotFound && fileErr == "unknown file route: POST /files/stat" {
+		t.Fatalf("file routes must still be routed through file manager")
+	}
+}
 
 func TestAnswerOfferChannelPolicyRejectsWrongTerminalChannel(t *testing.T) {
 	offerPC, err := webrtc.NewPeerConnection(webrtc.Configuration{})
@@ -276,5 +314,23 @@ func waitTestPeerICE(t *testing.T, pc *webrtc.PeerConnection, timeout time.Durat
 	select {
 	case <-done:
 	case <-time.After(timeout):
+	}
+}
+
+type terminalAPIRouterStub struct {
+	createName string
+}
+
+func (s *terminalAPIRouterStub) RouteTerminalManagementRequest(_ context.Context, req TerminalManagementRequest) (int32, []byte, string) {
+	switch req.Method {
+	case "create":
+		var body struct {
+			Name string `json:"name"`
+		}
+		_ = json.Unmarshal(req.Body, &body)
+		s.createName = body.Name
+		return http.StatusOK, []byte(`{"terminal_id":"terminal-3"}`), ""
+	default:
+		return http.StatusNotFound, nil, "unknown terminal management route"
 	}
 }

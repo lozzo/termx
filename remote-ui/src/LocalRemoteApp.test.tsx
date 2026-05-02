@@ -2,14 +2,12 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event'
 import { forwardRef, useImperativeHandle } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { LocalRemoteApp, type LocalRemoteTransportFactory } from './LocalRemoteApp'
+import { LocalRemoteApp, type LocalRemoteSessionConnector } from './LocalRemoteApp'
 import { createLocalAppIdentityStore, type LocalAppCrypto } from './localAppIdentity'
 import type { TerminalModifierState } from './mobileTerminalInput'
-import type { LocalAgentApi } from './transport'
-import type { TerminalInventoryEvents } from './transport'
-import { createMockFilePeerTransport } from './test/mockFileTransport'
+import type { LocalAgentApi, RtcSession, TerminalInventoryEvents } from './transport'
+import { createMockFileSession } from './test/mockFileSession'
 import type { TerminalHandle } from './Terminal'
-import type { TerminalTransport, TerminalTransportEvent } from './terminalClient'
 
 vi.mock('./Terminal', () => ({
   Terminal: forwardRef<TerminalHandle, { machineId: string; terminalId: string; modifierState?: TerminalModifierState }>(function MockTerminal(
@@ -66,18 +64,19 @@ describe('LocalRemoteApp', () => {
 
   it('loads local machine terminals and composes shared terminal/file manager components', async () => {
     const api = createMockLocalAgentApi()
-    const transports: ReturnType<typeof createMockLocalRemoteTransport>[] = []
-    const createTransport = vi.fn<LocalRemoteTransportFactory>(({ machineId, terminalId }) =>
-      trackTransport(transports, createMockLocalRemoteTransport({
+    const sessions: ReturnType<typeof createMockLocalRemoteSession>[] = []
+    const connect = vi.fn(({ machineId, terminalId }: { machineId: string; terminalId: string }) =>
+      Promise.resolve(trackSession(sessions, createMockLocalRemoteSession({
           '/files/list': { path: '/', parent: '', total: 0, entries: [] },
-        }, machineId, terminalId)),
+        }, machineId, terminalId))),
     )
+    const connector = { connect } satisfies LocalRemoteSessionConnector
 
-    render(<LocalRemoteApp api={api} createTransport={createTransport} />)
+    render(<LocalRemoteApp api={api} connector={connector} />)
 
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
     expect(screen.queryByTestId('termx-terminal')).toBeNull()
-    expect(createTransport).not.toHaveBeenCalled()
+    expect(connect).not.toHaveBeenCalled()
     expect(screen.getByText('120 × 36')).toBeTruthy()
     expect(screen.getByTestId('termx-terminal-list').textContent).toMatch(/120 × 36/)
     expect(screen.getByText('/Users/lozzow/project')).toBeTruthy()
@@ -88,7 +87,7 @@ describe('LocalRemoteApp', () => {
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-terminal-id')).toBe('terminal-1')
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-initial-path')).toBe('/Users/lozzow/project')
     expect(screen.queryByTestId('termx-terminal')).toBeNull()
-    await waitFor(() => expect(createTransport).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(1))
     await userEvent.click(screen.getByRole('button', { name: 'Open tmp' }))
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/tmp')
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
@@ -106,15 +105,11 @@ describe('LocalRemoteApp', () => {
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-terminal-id')).toBe('terminal-1')
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-initial-path')).toBe('/Users/lozzow/project')
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/tmp')
-    expect(createTransport).toHaveBeenCalledWith(expect.objectContaining({
+    expect(connect).toHaveBeenCalledWith(expect.objectContaining({
       machineId: 'machine-local',
       terminalId: 'terminal-1',
     }))
-    await waitFor(() => expect(transports[1]?.connectCalls).toEqual([{
-      machineId: 'machine-local',
-      terminalId: 'terminal-1',
-      mode: 'local',
-    }]))
+    expect(sessions[1]).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
     await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').className).toMatch(/invisible/))
     expect(screen.getByTestId('termx-terminal')).toBeTruthy()
@@ -123,14 +118,15 @@ describe('LocalRemoteApp', () => {
 
   it('preserves file state for the same terminal but resets when the file context terminal changes', async () => {
     const api = createMockLocalAgentApi()
-    const transports: ReturnType<typeof createMockLocalRemoteTransport>[] = []
-    const createTransport = vi.fn<LocalRemoteTransportFactory>(({ machineId, terminalId }) =>
-      trackTransport(transports, createMockLocalRemoteTransport({
+    const sessions: ReturnType<typeof createMockLocalRemoteSession>[] = []
+    const connect = vi.fn(({ machineId, terminalId }: { machineId: string; terminalId: string }) =>
+      Promise.resolve(trackSession(sessions, createMockLocalRemoteSession({
         '/files/list': { path: '/', parent: '', total: 0, entries: [] },
-      }, machineId, terminalId)),
+      }, machineId, terminalId))),
     )
+    const connector = { connect } satisfies LocalRemoteSessionConnector
 
-    render(<LocalRemoteApp api={api} createTransport={createTransport} />)
+    render(<LocalRemoteApp api={api} connector={connector} />)
 
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
     await userEvent.click(screen.getByRole('button', { name: /open files/i }))
@@ -156,12 +152,13 @@ describe('LocalRemoteApp', () => {
 
   it('uses a terminal-first mobile shell with sheets instead of a Config sidebar', async () => {
     const api = createMockLocalAgentApi()
-    const transports: ReturnType<typeof createMockLocalRemoteTransport>[] = []
-    const createTransport = vi.fn<LocalRemoteTransportFactory>(({ machineId, terminalId }) =>
-      trackTransport(transports, createMockLocalRemoteTransport({
+    const sessions: ReturnType<typeof createMockLocalRemoteSession>[] = []
+    const connect = vi.fn(({ machineId, terminalId }: { machineId: string; terminalId: string }) =>
+      Promise.resolve(trackSession(sessions, createMockLocalRemoteSession({
         '/files/list': { path: '/', parent: '', total: 0, entries: [] },
-      }, machineId, terminalId)),
+      }, machineId, terminalId))),
     )
+    const connector = { connect } satisfies LocalRemoteSessionConnector
     const pairApi = createMockLocalAgentApi()
     pairApi.pair = vi.fn(async () => ({
       machineId: 'machine-local',
@@ -172,7 +169,7 @@ describe('LocalRemoteApp', () => {
     render(
       <LocalRemoteApp
         api={api}
-        createTransport={createTransport}
+        connector={connector}
         pair={{
           api: pairApi,
           storage: createLocalAppIdentityStore(new MemoryStorage()),
@@ -187,7 +184,7 @@ describe('LocalRemoteApp', () => {
     expect(screen.getByText('Local Mac')).toBeTruthy()
     expect(screen.getByTestId('termx-verification-gate')).toBeTruthy()
     expect(screen.queryByTestId('termx-mobile-keybar')).toBeNull()
-    expect(createTransport).not.toHaveBeenCalled()
+    expect(connect).not.toHaveBeenCalled()
 
     await userEvent.click(screen.getByRole('button', { name: /verify device/i }))
     await waitFor(() => expect(screen.getByTestId('termx-pair-sheet')).toBeTruthy())
@@ -225,9 +222,9 @@ describe('LocalRemoteApp', () => {
     await userEvent.click(screen.getByRole('button', { name: /show terminal list/i }))
     expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy()
     expect(screen.getByTestId('termx-terminal-list-page').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
-    await waitFor(() => expect(transports[0]?.disconnectCalls).toBe(1))
+    await waitFor(() => expect(sessions[0]?.disconnectCalls).toBe(1))
 
-    expect(createTransport).toHaveBeenCalledTimes(2)
+    expect(connect).toHaveBeenCalledTimes(2)
   })
 
   it('refreshes the terminal list when a machine-level inventory event arrives', async () => {
@@ -272,7 +269,7 @@ describe('LocalRemoteApp', () => {
       },
     }
 
-    render(<LocalRemoteApp api={api} createTransport={vi.fn()} inventoryEvents={inventoryEvents} />)
+    render(<LocalRemoteApp api={api} connector={{ connect: vi.fn(async () => { throw new Error('unexpected connect') }) }} inventoryEvents={inventoryEvents} />)
 
     await waitFor(() => expect(screen.getByText('zsh')).toBeTruthy())
     await waitFor(() => expect(handler).toBeTruthy())
@@ -307,19 +304,9 @@ describe('LocalRemoteApp', () => {
 
   it('opens a terminal management sheet from a long-press style terminal-list gesture and can edit metadata', async () => {
     const api = createMockLocalAgentApi()
-    const updateTerminal = vi.fn(async (input) => ({
-      machineId: 'machine-local',
-      terminalId: input.terminalId,
-      title: input.name ?? 'renamed shell',
-      state: 'running' as const,
-      command: '/bin/zsh',
-      cols: 120,
-      rows: 36,
-      cwd: input.cwd ?? '/srv/app-next',
-      sizeLockMode: (input.sizeLockMode ?? 'off') as 'off' | 'warn' | 'lock',
-      environment: input.environment ?? 'staging',
-    }))
-    api.updateTerminal = updateTerminal
+    api.updateTerminal = vi.fn(async () => {
+      throw new Error('runtime terminal management must use RtcSession.openApi')
+    })
     const listTerminals = vi.fn(async () => [{
       machineId: 'machine-local',
       terminalId: 'terminal-1',
@@ -334,8 +321,12 @@ describe('LocalRemoteApp', () => {
       environment: 'dev',
     }])
     api.listTerminals = listTerminals
+    const managementSession = createMockLocalRemoteSession({
+      set_metadata: {},
+    }, 'machine-local', 'terminal-1')
+    const connect = vi.fn(async () => managementSession)
 
-    render(<LocalRemoteApp api={api} createTransport={vi.fn()} />)
+    render(<LocalRemoteApp api={api} connector={{ connect }} />)
 
     await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
     fireEvent.contextMenu(screen.getByRole('button', { name: /open zsh/i }))
@@ -355,34 +346,37 @@ describe('LocalRemoteApp', () => {
     await userEvent.type(environmentInput, 'staging')
     await userEvent.click(within(editor).getByRole('button', { name: /save changes/i }))
 
-    await waitFor(() => expect(updateTerminal).toHaveBeenCalledWith({
-      terminalId: 'terminal-1',
-      name: 'renamed shell',
-      cwd: '/srv/app-next',
-      environment: 'staging',
-      sizeLockMode: 'lock',
+    await waitFor(() => expect(managementSession.requests).toContainEqual({
+      method: 'set_metadata',
+      path: 'set_metadata',
+      params: {
+        terminal_id: 'terminal-1',
+        name: 'renamed shell',
+        tags: {
+          'termx.size_lock': 'lock',
+          cwd: '/srv/app-next',
+          environment: 'staging',
+        },
+      },
     }))
+    expect(api.updateTerminal).not.toHaveBeenCalled()
   })
 
   it('creates and deletes terminals from the list page management controls', async () => {
     const api = createMockLocalAgentApi()
-    const createTerminal = vi.fn(async () => ({
-      machineId: 'machine-local',
-      terminalId: 'terminal-3',
-      title: 'ops shell',
-      state: 'running' as const,
-      command: '/bin/zsh -l',
-      cols: 120,
-      rows: 36,
-      cwd: '/srv/app',
-      sizeLockMode: 'off' as const,
-      environment: 'prod',
-    }))
-    api.createTerminal = createTerminal
-    const deleteTerminal = vi.fn(async () => {})
-    api.deleteTerminal = deleteTerminal
+    api.createTerminal = vi.fn(async () => {
+      throw new Error('runtime terminal management must use RtcSession.openApi')
+    })
+    api.deleteTerminal = vi.fn(async () => {
+      throw new Error('runtime terminal management must use RtcSession.openApi')
+    })
+    const managementSession = createMockLocalRemoteSession({
+      create: { terminal_id: 'terminal-3', state: 'running' },
+      remove: {},
+    }, 'machine-local', 'terminal-1')
+    const connect = vi.fn(async () => managementSession)
 
-    render(<LocalRemoteApp api={api} createTransport={vi.fn()} />)
+    render(<LocalRemoteApp api={api} connector={{ connect }} />)
 
     await waitFor(() => expect(screen.getByRole('button', { name: /create terminal/i })).toBeTruthy())
     await userEvent.click(screen.getByRole('button', { name: /create terminal/i }))
@@ -399,18 +393,100 @@ describe('LocalRemoteApp', () => {
     await userEvent.type(within(editor).getByLabelText('Environment'), 'prod')
     await userEvent.click(within(editor).getByRole('button', { name: /create terminal/i }))
 
-    await waitFor(() => expect(createTerminal).toHaveBeenCalledWith({
-      name: 'ops shell',
-      command: ['/bin/zsh', '-l'],
-      cwd: '/srv/app',
-      environment: 'prod',
-      sizeLockMode: 'off',
+    await waitFor(() => expect(managementSession.requests).toContainEqual({
+      method: 'create',
+      path: 'create',
+      params: {
+        command: ['/bin/zsh', '-l'],
+        name: 'ops shell',
+        dir: '/srv/app',
+        env: ['prod'],
+        tags: {
+          cwd: '/srv/app',
+          environment: 'prod',
+        },
+      },
     }))
+    expect(api.createTerminal).not.toHaveBeenCalled()
 
     fireEvent.contextMenu(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal-actions-sheet')).toBeTruthy())
     await userEvent.click(within(screen.getByTestId('termx-terminal-actions-sheet')).getByRole('button', { name: /delete terminal/i }))
-    await waitFor(() => expect(deleteTerminal).toHaveBeenCalledWith('terminal-1'))
+    await waitFor(() => expect(managementSession.requests).toContainEqual({
+      method: 'remove',
+      path: 'remove',
+      params: { terminal_id: 'terminal-1' },
+    }))
+    expect(api.deleteTerminal).not.toHaveBeenCalled()
+  })
+
+  it('creates the first terminal through a machine-scoped runtime api session', async () => {
+    const api = createMockLocalAgentApi()
+    api.createTerminal = vi.fn(async () => {
+      throw new Error('runtime terminal management must use RtcSession.openApi')
+    })
+    api.listTerminals = vi.fn(async () => [])
+    const managementSession = createMockLocalRemoteSession({
+      create: { terminal_id: 'terminal-1', state: 'running' },
+    }, 'machine-local')
+    const connect = vi.fn(async () => managementSession)
+
+    render(<LocalRemoteApp api={api} connector={{ connect }} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /create terminal/i })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /create terminal/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-editor-sheet')).toBeTruthy())
+    await userEvent.click(within(screen.getByTestId('termx-terminal-editor-sheet')).getByRole('button', { name: /create terminal/i }))
+
+    await waitFor(() => expect(managementSession.requests).toContainEqual({
+      method: 'create',
+      path: 'create',
+      params: {
+        command: ['/bin/zsh', '-l'],
+        tags: {},
+      },
+    }))
+    expect(connect).toHaveBeenCalledWith({ machineId: 'machine-local' })
+    expect(api.createTerminal).not.toHaveBeenCalled()
+  })
+
+  it('uses policy rather than local HTTP management methods to expose terminal management controls', async () => {
+    const baseApi = createMockLocalAgentApi()
+    const api = {
+      getStatus: baseApi.getStatus,
+      listTerminals: baseApi.listTerminals,
+    }
+    const managementSession = createMockLocalRemoteSession({
+      create: { terminal_id: 'terminal-3', state: 'running' },
+    }, 'machine-local', 'terminal-1')
+    const connect = vi.fn(async () => managementSession)
+
+    render(<LocalRemoteApp api={api} connector={{ connect }} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /create terminal/i })).toBeTruthy())
+    fireEvent.contextMenu(screen.getByRole('button', { name: /open zsh/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-actions-sheet')).toBeTruthy())
+  })
+
+  it('hides terminal management controls when policy denies them', async () => {
+    const baseApi = createMockLocalAgentApi()
+    const api = {
+      getStatus: baseApi.getStatus,
+      listTerminals: baseApi.listTerminals,
+    }
+
+    render(
+      <LocalRemoteApp
+        api={api}
+        connector={{ connect: vi.fn(async () => { throw new Error('unexpected connect') }) }}
+        managementPolicy={{ terminalManagementAllowed: false, denialReason: 'upgrade required' }}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /open zsh/i })).toBeTruthy())
+    expect(screen.queryByRole('button', { name: /create terminal/i })).toBeNull()
+    fireEvent.contextMenu(screen.getByRole('button', { name: /open zsh/i }))
+    expect(screen.queryByTestId('termx-terminal-actions-sheet')).toBeNull()
   })
 
   it('refreshes terminals from the list header action', async () => {
@@ -420,7 +496,7 @@ describe('LocalRemoteApp', () => {
     api.getStatus = getStatus
     api.listTerminals = listTerminals
 
-    render(<LocalRemoteApp api={api} createTransport={vi.fn()} />)
+    render(<LocalRemoteApp api={api} connector={{ connect: vi.fn(async () => { throw new Error('unexpected connect') }) }} />)
 
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
     const initialListCalls = listTerminals.mock.calls.length
@@ -428,15 +504,16 @@ describe('LocalRemoteApp', () => {
     await waitFor(() => expect(listTerminals.mock.calls.length).toBeGreaterThan(initialListCalls))
   })
 
-  it('keeps the app shell driven by LocalAgentApi and transport interfaces only', () => {
-    const createTransport = vi.fn<LocalRemoteTransportFactory>(() => createMockLocalRemoteTransport(
+  it('keeps the app shell driven by LocalAgentApi and session interfaces only', () => {
+    const connect = vi.fn(() => Promise.resolve(createMockLocalRemoteSession(
       {},
       'machine-local',
       'terminal-1',
-    ))
+    )))
+    const connector = { connect } satisfies LocalRemoteSessionConnector
     const props = {
       api: createMockLocalAgentApi(),
-      createTransport,
+      connector,
     }
 
     expect(Object.keys(props)).not.toContain('rtcPeerConnection')
@@ -444,32 +521,32 @@ describe('LocalRemoteApp', () => {
     expect(Object.keys(props)).not.toContain('relayCredentials')
   })
 
-  it('renders local transport setup errors instead of crashing the embedded shell', async () => {
-    const createTransport = vi.fn<LocalRemoteTransportFactory>(() => {
-      throw new Error('local app certificate is required before opening a terminal')
-    })
+  it('renders local session setup errors instead of crashing the embedded shell', async () => {
+    const connect = vi.fn(() => Promise.reject(new Error('local app certificate is required before opening a terminal')))
+    const connector = { connect } satisfies LocalRemoteSessionConnector
 
-    render(<LocalRemoteApp api={createMockLocalAgentApi()} createTransport={createTransport} />)
+    render(<LocalRemoteApp api={createMockLocalAgentApi()} connector={connector} />)
 
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
-    expect(createTransport).not.toHaveBeenCalled()
+    expect(connect).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('local app certificate is required'))
-    expect(createTransport).toHaveBeenCalledTimes(1)
+    expect(connect).toHaveBeenCalledTimes(1)
     expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane/i)
   })
 
   it('keeps the local pair harness reachable through app-level interfaces', async () => {
-    const createTransport = vi.fn<LocalRemoteTransportFactory>(() => createMockLocalRemoteTransport(
+    const connect = vi.fn(() => Promise.resolve(createMockLocalRemoteSession(
       {},
       'machine-local',
       'terminal-1',
-    ))
+    )))
+    const connector = { connect } satisfies LocalRemoteSessionConnector
 
     render(
       <LocalRemoteApp
         api={createMockLocalAgentApi()}
-        createTransport={createTransport}
+        connector={connector}
         pair={{
           api: createMockLocalAgentApi(),
           storage: createLocalAppIdentityStore(new MemoryStorage()),
@@ -491,10 +568,11 @@ describe('LocalRemoteApp', () => {
   it('keeps pair reachable when first-run terminal connect needs a certificate and retries after pairing', async () => {
     const storage = createLocalAppIdentityStore(new MemoryStorage())
     let paired = false
-    const createTransport = vi.fn<LocalRemoteTransportFactory>(() => {
-      if (!paired) throw new Error('local app certificate is required before opening a terminal')
-      return createMockLocalRemoteTransport({}, 'machine-local', 'terminal-1')
+    const connect = vi.fn(() => {
+      if (!paired) return Promise.reject(new Error('local app certificate is required before opening a terminal'))
+      return Promise.resolve(createMockLocalRemoteSession({}, 'machine-local', 'terminal-1'))
     })
+    const connector = { connect } satisfies LocalRemoteSessionConnector
     const pairApi = createMockLocalAgentApi()
     pairApi.pair = vi.fn(async () => {
       paired = true
@@ -508,7 +586,7 @@ describe('LocalRemoteApp', () => {
     render(
       <LocalRemoteApp
         api={createMockLocalAgentApi()}
-        createTransport={createTransport}
+        connector={connector}
         pair={{
           api: pairApi,
           storage,
@@ -519,7 +597,7 @@ describe('LocalRemoteApp', () => {
     )
 
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
-    expect(createTransport).not.toHaveBeenCalled()
+    expect(connect).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-pair-sheet')).toBeTruthy())
     expect(screen.getByTestId('termx-local-pair-panel')).toBeTruthy()
@@ -531,31 +609,30 @@ describe('LocalRemoteApp', () => {
     await waitFor(() => expect(screen.getByText('Paired with machine-local')).toBeTruthy())
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
-    expect(createTransport).toHaveBeenCalledTimes(1)
+    expect(connect).toHaveBeenCalledTimes(1)
     expect(storage.loadCertificate()).toContain('machine-local')
   })
 })
 
-function trackTransport<T extends ReturnType<typeof createMockLocalRemoteTransport>>(transports: T[], transport: T): T {
-  transports.push(transport)
-  return transport
+function trackSession<T extends ReturnType<typeof createMockLocalRemoteSession>>(sessions: T[], session: T): T {
+  sessions.push(session)
+  return session
 }
 
-function createMockLocalRemoteTransport(
-  responders: Parameters<typeof createMockFilePeerTransport>[0],
+function createMockLocalRemoteSession(
+  responders: Parameters<typeof createMockFileSession>[0],
   machineId: string,
-  terminalId: string,
-): ReturnType<typeof createMockFilePeerTransport> & TerminalTransport & {
-  connectCalls: Array<{ machineId: string; terminalId?: string; mode: string }>
+  terminalId?: string,
+): ReturnType<typeof createMockFileSession> & RtcSession & {
   disconnectCalls: number
 } {
-  const transport = createMockFilePeerTransport(responders, {}, { machineId, terminalId })
-  return Object.assign(transport, {
-    connectCalls: [] as Array<{ machineId: string; terminalId?: string; mode: string }>,
+  const session = createMockFileSession(
+    responders,
+    {},
+    terminalId === undefined ? { machineId } : { machineId, terminalId },
+  )
+  return Object.assign(session, {
     disconnectCalls: 0,
-    async connect(input: { machineId: string; terminalId?: string; mode: string }) {
-      this.connectCalls.push(input)
-    },
     async disconnect() {
       this.disconnectCalls += 1
     },
@@ -565,12 +642,11 @@ function createMockLocalRemoteTransport(
         readyState: 'open' as const,
         send() {},
         close() {},
+        onMessage() { return { close() {} } },
+        onClose() { return { close() {} } },
+        async waitOpen() {},
       }
     },
-    subscribeTerminal(_id: string, _handler: (event: TerminalTransportEvent) => void) {
-      return () => {}
-    },
-    closeTerminalChannel() {},
   })
 }
 

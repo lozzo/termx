@@ -48,49 +48,68 @@ describe('local web entry shell', () => {
       return jsonResponse({ error: { message: 'not found' } }, 404)
     })
     vi.stubGlobal('fetch', fetch)
+    const session = {
+      async disconnect() {},
+      async openTerminal() {
+        return {
+          label: 'terminal:terminal-1',
+          readyState: 'open' as const,
+          send() {},
+          close() {},
+          onMessage() { return { close() {} } },
+          onClose() { return { close() {} } },
+          async waitOpen() {},
+        }
+      },
+      async openApi() {
+        return {
+          async request<TResponse>() {
+            return { path: '/', parent: '', total: 0, entries: [] } as TResponse
+          },
+          close() {},
+        }
+      },
+      async openFileTransfer() {
+        return {
+          label: 'file:test',
+          readyState: 'open' as const,
+          send() {},
+          close() {},
+          onMessage() { return { close() {} } },
+          onClose() { return { close() {} } },
+          async waitOpen() {},
+        }
+      },
+      async getConnectionInfo() {
+        return {
+          path: 'local' as const,
+          connectionId: 'local-test',
+          machineId: 'machine-local',
+          terminalId: 'terminal-1',
+          relayInUse: false,
+        }
+      },
+      async getCapabilities() {
+        return {
+          terminalAllowed: true,
+          apiAllowed: true,
+          eventsAllowed: true,
+          fileTransferAllowed: true,
+          terminalManagementAllowed: true,
+          relayInUse: false,
+        }
+      },
+      subscribeEvents() {
+        return { close() {} }
+      },
+    }
 
     entry.mountLocalWebApp({
-      createTransport: () => ({
-        async connect() {},
-        async disconnect() {},
-        async openTerminal() {
-          return {
-            label: 'terminal:terminal-1',
-            readyState: 'open' as const,
-            send() {},
-            close() {},
-          }
+      connector: {
+        async connect() {
+          return session
         },
-        async openApi() {
-          return {
-            async request<TResponse>() {
-              return { path: '/', parent: '', total: 0, entries: [] } as TResponse
-            },
-            close() {},
-          }
-        },
-        async openFileTransfer() {
-          return {
-            label: 'file:test',
-            readyState: 'open' as const,
-            send() {},
-            close() {},
-          }
-        },
-        async getConnectionInfo() {
-          return {
-            mode: 'local' as const,
-            connectionId: 'local-test',
-            machineId: 'machine-local',
-            terminalId: 'terminal-1',
-            relayInUse: false,
-          }
-        },
-        subscribeTerminal() {
-          return () => {}
-        },
-        closeTerminalChannel() {},
-      }),
+      },
     })
 
     await waitFor(() => expect(screen.getByTestId('termx-local-web-shell')).toBeTruthy())
@@ -103,7 +122,7 @@ describe('local web entry shell', () => {
     expect(JSON.stringify(fetch.mock.calls)).not.toMatch(/turn|credential|machine_private_key|privateKey/i)
   })
 
-  it('does not require browser crypto or local storage until a terminal transport is created', async () => {
+  it('does not require browser crypto or local storage until a terminal session is created', async () => {
     const entry = await import('./localWebEntry')
     document.body.innerHTML = '<div id="root"></div>'
     vi.stubGlobal('localStorage', undefined)

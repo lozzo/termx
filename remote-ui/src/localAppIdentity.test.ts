@@ -129,7 +129,7 @@ describe('local app identity', () => {
       appDeviceId: expect.stringMatching(/^appweb_/),
       appName: 'TermX Local Web',
       appPublicKey: 'AQIDBA==',
-      requestedCapabilities: ['terminal', 'file_manager'],
+      requestedCapabilities: ['terminal', 'file_manager', 'terminal_management'],
     }))
     expect(storage.getItem('termx.local.appCertificate')).toContain('machine-local')
     expect(storage.getItem('termx.local.machinePrivateKey')).toBeNull()

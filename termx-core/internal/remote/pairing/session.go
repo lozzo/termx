@@ -20,8 +20,9 @@ const (
 )
 
 var allowedCapabilities = map[string]struct{}{
-	"terminal":     {},
-	"file_manager": {},
+	"terminal":            {},
+	"file_manager":        {},
+	"terminal_management": {},
 }
 
 type Config struct {

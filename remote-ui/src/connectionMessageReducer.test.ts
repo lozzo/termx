@@ -13,11 +13,11 @@ function reduceAll(events: Parameters<typeof reduceConnectionMessage>[1][]): Con
 }
 
 describe('connectionMessageReducer', () => {
-  it('turns user intent and transport events into a stable machine/terminal snapshot', () => {
+  it('turns user intent and connection events into a stable machine/terminal snapshot', () => {
     const snapshot = reduceAll([
       { type: 'user.connectMachine', machineId: 'machine-local' },
-      { type: 'transport.connecting', mode: 'local' },
-      { type: 'transport.connected', mode: 'local', connectionId: 'conn-1' },
+      { type: 'connection.connecting', path: 'local' },
+      { type: 'connection.connected', path: 'local', connectionId: 'conn-1' },
       { type: 'user.openTerminal', machineId: 'machine-local', terminalId: 'term-1' },
       { type: 'terminal.channelOpen', machineId: 'machine-local', terminalId: 'term-1' },
       { type: 'user.openFileManager', machineId: 'machine-local', terminalId: 'term-1' },
@@ -25,7 +25,7 @@ describe('connectionMessageReducer', () => {
     ])
 
     expect(snapshot.phase).toBe('connected')
-    expect(snapshot.mode).toBe('local')
+    expect(snapshot.path).toBe('local')
     expect(snapshot.machineId).toBe('machine-local')
     expect(snapshot.activeTerminalId).toBe('term-1')
     expect(snapshot.terminalChannels['term-1']?.state).toBe('open')
@@ -36,7 +36,7 @@ describe('connectionMessageReducer', () => {
   it('models native-like app resume as verification before returning to connected', () => {
     const connected = reduceAll([
       { type: 'user.connectMachine', machineId: 'machine-local' },
-      { type: 'transport.connected', mode: 'local', connectionId: 'conn-1' },
+      { type: 'connection.connected', path: 'local', connectionId: 'conn-1' },
       { type: 'user.openTerminal', machineId: 'machine-local', terminalId: 'term-1' },
       { type: 'terminal.channelOpen', machineId: 'machine-local', terminalId: 'term-1' },
     ])
@@ -55,7 +55,7 @@ describe('connectionMessageReducer', () => {
     expect(verifying.terminalChannels['term-1']?.state).toBe('verifying')
 
     const recovered = reduceConnectionMessage(verifying, {
-      type: 'transport.verified',
+      type: 'connection.verified',
       connectionId: 'conn-1',
     })
     expect(recovered.phase).toBe('connected')
@@ -66,7 +66,7 @@ describe('connectionMessageReducer', () => {
   it('preserves user intent through offline/online reconnect and routes errors to visible surfaces', () => {
     const connected = reduceAll([
       { type: 'user.connectMachine', machineId: 'machine-local' },
-      { type: 'transport.connected', mode: 'local', connectionId: 'conn-1' },
+      { type: 'connection.connected', path: 'local', connectionId: 'conn-1' },
       { type: 'user.openFileManager', machineId: 'machine-local', terminalId: 'term-1' },
     ])
 
@@ -83,7 +83,7 @@ describe('connectionMessageReducer', () => {
     expect(reconnecting.reconnectAttempt).toBe(1)
 
     const failed = reduceConnectionMessage(reconnecting, {
-      type: 'transport.failed',
+      type: 'connection.failed',
       reason: 'ice-timeout',
       recoverable: true,
       surface: 'banner',

@@ -2,12 +2,11 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { forwardRef, useImperativeHandle } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { LocalRemoteApp, type LocalRemoteTransportFactory } from './LocalRemoteApp'
+import { LocalRemoteApp, type LocalRemoteSessionConnector } from './LocalRemoteApp'
 import type { TerminalModifierState } from './mobileTerminalInput'
-import type { LocalAgentApi } from './transport'
-import { createMockFilePeerTransport } from './test/mockFileTransport'
+import type { LocalAgentApi, RtcSession } from './transport'
+import { createMockFileSession } from './test/mockFileSession'
 import type { TerminalHandle } from './Terminal'
-import type { TerminalTransport, TerminalTransportEvent } from './terminalClient'
 
 vi.mock('./Terminal', () => ({
   Terminal: forwardRef<TerminalHandle, { machineId: string; terminalId: string; modifierState?: TerminalModifierState }>(function MockTerminal(
@@ -44,12 +43,13 @@ describe('LocalRemoteApp real file manager flow', () => {
 
   it('preserves file navigation across list and terminal pages for the same terminal, then resets for a new terminal context', async () => {
     const api = createMockLocalAgentApi()
-    const transports: Array<ReturnType<typeof createMockLocalRemoteTransport>> = []
-    const createTransport = vi.fn<LocalRemoteTransportFactory>(({ machineId, terminalId }) =>
-      trackTransport(transports, createMockLocalRemoteTransport(machineId, terminalId)),
+    const sessions: Array<ReturnType<typeof createMockLocalRemoteSession>> = []
+    const connect = vi.fn(({ machineId, terminalId }: { machineId: string; terminalId: string }) =>
+      Promise.resolve(trackSession(sessions, createMockLocalRemoteSession(machineId, terminalId))),
     )
+    const connector = { connect } satisfies LocalRemoteSessionConnector
 
-    render(<LocalRemoteApp api={api} createTransport={createTransport} />)
+    render(<LocalRemoteApp api={api} connector={connector} />)
 
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
 
@@ -73,21 +73,20 @@ describe('LocalRemoteApp real file manager flow', () => {
     await userEvent.click(screen.getByRole('button', { name: /open files/i }))
     await waitFor(() => expect(screen.getByText('cache')).toBeTruthy())
     expect(screen.queryByText('log.txt')).toBeNull()
-    expect(createTransport).toHaveBeenCalledWith(expect.objectContaining({
+    expect(connect).toHaveBeenCalledWith(expect.objectContaining({
       machineId: 'machine-local',
       terminalId: 'terminal-2',
     }))
   })
 })
 
-function createMockLocalRemoteTransport(
+function createMockLocalRemoteSession(
   machineId: string,
   terminalId: string,
-): ReturnType<typeof createMockFilePeerTransport> & TerminalTransport & {
-  connectCalls: Array<{ machineId: string; terminalId?: string; mode: string }>
+): ReturnType<typeof createMockFileSession> & RtcSession & {
   disconnectCalls: number
 } {
-  const transport = createMockFilePeerTransport({
+  const session = createMockFileSession({
     '/files/list': ({ path }: { path?: string }) => {
       if (terminalId === 'terminal-2') {
         if (path === '/srv/worker/tmp') {
@@ -122,12 +121,8 @@ function createMockLocalRemoteTransport(
     },
   }, {}, { machineId, terminalId })
 
-  return Object.assign(transport, {
-    connectCalls: [] as Array<{ machineId: string; terminalId?: string; mode: string }>,
+  return Object.assign(session, {
     disconnectCalls: 0,
-    async connect(input: { machineId: string; terminalId?: string; mode: string }) {
-      this.connectCalls.push(input)
-    },
     async disconnect() {
       this.disconnectCalls += 1
     },
@@ -137,18 +132,17 @@ function createMockLocalRemoteTransport(
         readyState: 'open' as const,
         send() {},
         close() {},
+        onMessage() { return { close() {} } },
+        onClose() { return { close() {} } },
+        async waitOpen() {},
       }
     },
-    subscribeTerminal(_id: string, _handler: (event: TerminalTransportEvent) => void) {
-      return () => {}
-    },
-    closeTerminalChannel() {},
   })
 }
 
-function trackTransport<T extends ReturnType<typeof createMockLocalRemoteTransport>>(transports: T[], transport: T): T {
-  transports.push(transport)
-  return transport
+function trackSession<T extends ReturnType<typeof createMockLocalRemoteSession>>(sessions: T[], session: T): T {
+  sessions.push(session)
+  return session
 }
 
 function createMockLocalAgentApi(): LocalAgentApi {

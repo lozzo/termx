@@ -1,7 +1,7 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Terminal, type TerminalProps } from './Terminal'
-import { createMockTerminalTransport } from './test/mockTerminalTransport'
+import { createMockRtcTerminalSession } from './test/mockRtcTerminalSession'
 
 const xtermMocks = vi.hoisted(() => {
   class FakeXTerm {
@@ -176,20 +176,20 @@ describe('Terminal', () => {
   })
 
   it('uses terminalId as the public component identity and renders an xterm surface', async () => {
-    const transport = createMockTerminalTransport()
+    const session = createMockRtcTerminalSession()
 
     render(
       <Terminal
         machineId="machine-local"
         terminalId="terminal-1"
-        transport={transport}
+        session={session}
       />,
     )
 
     expect(screen.getByTestId('termx-terminal').getAttribute('data-terminal-id')).toBe('terminal-1')
     expect(screen.getByTestId('termx-terminal').className).toContain('h-full')
     expect(screen.getByTestId('termx-terminal').className).toContain('min-h-0')
-    await waitFor(() => expect(transport.openedLabels).toEqual(['terminal:terminal-1']))
+    await waitFor(() => expect(session.openedLabels).toEqual(['terminal:terminal-1']))
     await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
     const terminalOutput = screen.getByLabelText('Terminal output')
     expect(terminalOutput.className).toContain('overflow-hidden')
@@ -197,72 +197,74 @@ describe('Terminal', () => {
   })
 
   it('writes streaming terminal output chunks into xterm before a snapshot arrives', async () => {
-    const transport = createMockTerminalTransport()
+    const session = createMockRtcTerminalSession()
 
     render(
       <Terminal
         machineId="machine-local"
         terminalId="terminal-1"
-        transport={transport}
+        session={session}
       />,
     )
 
-    await waitFor(() => expect(transport.openedLabels).toEqual(['terminal:terminal-1']))
-    transport.emitTerminalOutput('terminal-1', new TextEncoder().encode('streamed output'))
+    await waitFor(() => expect(session.openedLabels).toEqual(['terminal:terminal-1']))
+    session.emitTerminalOutput('terminal-1', new TextEncoder().encode('streamed output'))
 
     await waitFor(() => expect(xtermMocks.FakeXTerm.instances[0]?.writes.join('')).toContain('streamed output'))
     await waitFor(() => expect(screen.getByLabelText('Terminal output').textContent).toContain('streamed output'))
   })
 
   it('replays structured snapshot output into xterm instead of flattening it to plain text', async () => {
-    const transport = createMockTerminalTransport()
+    const session = createMockRtcTerminalSession()
+    session.emitTerminalSnapshot('terminal-1', {
+      text: 'old\ncurrent',
+      cols: 80,
+      rows: 24,
+    })
 
     render(
       <Terminal
         machineId="machine-local"
         terminalId="terminal-1"
-        transport={transport}
+        session={session}
       />,
     )
 
-    await waitFor(() => expect(transport.openedLabels).toEqual(['terminal:terminal-1']))
-    transport.emitTerminalSnapshot('terminal-1', {
-      text: 'ok\nhi',
-      cols: 80,
-      rows: 24,
-      replay: '\x1b[H\x1b[2J\x1b[1;1H\x1b[0;31mold\x1b[0m\x1b[2;1Hcurrent\x1b[2;8H\x1b[?25h',
-    })
+    await waitFor(() => expect(session.openedLabels).toEqual(['terminal:terminal-1']))
 
-    await waitFor(() => expect(xtermMocks.FakeXTerm.instances[0]?.writes).toContain('\x1b[H\x1b[2J\x1b[1;1H\x1b[0;31mold\x1b[0m\x1b[2;1Hcurrent\x1b[2;8H\x1b[?25h'))
-    expect(xtermMocks.FakeXTerm.instances[0]?.writes).not.toContain('ok\nhi')
+    await waitFor(() => expect(xtermMocks.FakeXTerm.instances[0]?.writes.join('')).toContain('\x1b[H\x1b[2J\x1b[H'))
+    const replay = xtermMocks.FakeXTerm.instances[0]?.writes.join('') ?? ''
+    expect(replay).toMatch(/o[\s\S]*l[\s\S]*d/)
+    expect(replay).toMatch(/c[\s\S]*u[\s\S]*r[\s\S]*r[\s\S]*e[\s\S]*n[\s\S]*t/)
+    expect(xtermMocks.FakeXTerm.instances[0]?.writes).not.toContain('old\ncurrent')
   })
 
-  it('forwards xterm input through the terminal transport interface', async () => {
-    const transport = createMockTerminalTransport()
+  it('forwards xterm input through the terminal protocol interface', async () => {
+    const session = createMockRtcTerminalSession()
 
     render(
       <Terminal
         machineId="machine-local"
         terminalId="terminal-1"
-        transport={transport}
+        session={session}
       />,
     )
 
     await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
     act(() => xtermMocks.FakeXTerm.instances[0]?.emitData('ls\n'))
 
-    await waitFor(() => expect(transport.sentText('terminal-1')).toContain('ls\n'))
+    await waitFor(() => expect(session.sentText('terminal-1')).toContain('ls\n'))
   })
 
   it('applies mobile modifier state to system keyboard input', async () => {
-    const transport = createMockTerminalTransport()
+    const session = createMockRtcTerminalSession()
     const onModifierStateChange = vi.fn()
 
     render(
       <Terminal
         machineId="machine-local"
         terminalId="terminal-1"
-        transport={transport}
+        session={session}
         modifierState={{ ctrl: 'once', alt: 'off' }}
         onModifierStateChange={onModifierStateChange}
       />,
@@ -271,12 +273,12 @@ describe('Terminal', () => {
     await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
     act(() => xtermMocks.FakeXTerm.instances[0]?.emitData('c'))
 
-    await waitFor(() => expect(transport.sentText('terminal-1')).toContain('\x03'))
+    await waitFor(() => expect(session.sentText('terminal-1')).toContain('\x03'))
     expect(onModifierStateChange).toHaveBeenCalledWith({ ctrl: 'off', alt: 'off' })
   })
 
   it('keeps the xterm instance stable when mobile callbacks or modifier props change', async () => {
-    const transport = createMockTerminalTransport()
+    const session = createMockRtcTerminalSession()
     const firstCursorMove = vi.fn()
     const secondCursorMove = vi.fn()
     const firstBufferChange = vi.fn()
@@ -286,7 +288,7 @@ describe('Terminal', () => {
       <Terminal
         machineId="machine-local"
         terminalId="terminal-1"
-        transport={transport}
+        session={session}
         modifierState={{ ctrl: 'off', alt: 'off' }}
         onCursorMove={firstCursorMove}
         onBufferChange={firstBufferChange}
@@ -294,14 +296,14 @@ describe('Terminal', () => {
     )
 
     await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
-    transport.emitTerminalOutput('terminal-1', new TextEncoder().encode('stable output'))
+    session.emitTerminalOutput('terminal-1', new TextEncoder().encode('stable output'))
     await waitFor(() => expect(screen.getByLabelText('Terminal output').textContent).toContain('stable output'))
 
     rerender(
       <Terminal
         machineId="machine-local"
         terminalId="terminal-1"
-        transport={transport}
+        session={session}
         modifierState={{ ctrl: 'once', alt: 'off' }}
         onCursorMove={secondCursorMove}
         onBufferChange={secondBufferChange}
@@ -316,79 +318,79 @@ describe('Terminal', () => {
     expect(secondCursorMove).toHaveBeenCalled()
 
     act(() => xtermMocks.FakeXTerm.instances[0]?.emitData('c'))
-    await waitFor(() => expect(transport.sentText('terminal-1')).toContain('\x03'))
+    await waitFor(() => expect(session.sentText('terminal-1')).toContain('\x03'))
   })
 
-  it('fits xterm and sends terminal resize through the TermX transport interface', async () => {
-    const transport = createMockTerminalTransport()
+  it('fits xterm and sends terminal resize through the TermX terminal protocol interface', async () => {
+    const session = createMockRtcTerminalSession()
+    session.emitResizeControl('terminal-1', { canResize: true, reason: 'owner' })
 
     render(
       <Terminal
         machineId="machine-local"
         terminalId="terminal-1"
-        transport={transport}
+        session={session}
       />,
     )
 
     await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
-    act(() => transport.emitResizeControl('terminal-1', { canResize: true, reason: 'owner' }))
     act(() => TestResizeObserver.instances[0]?.trigger())
 
-    await waitFor(() => expect(transport.sentResize('terminal-1')).toEqual({ cols: 101, rows: 31 }))
+    await waitFor(() => expect(session.sentResize('terminal-1')).toEqual({ cols: 101, rows: 31 }))
 
     xtermMocks.FakeFitAddon.instances[0]!.dimensions = { cols: 120, rows: 40 }
     act(() => TestResizeObserver.instances[0]?.trigger())
 
-    await waitFor(() => expect(transport.sentResize('terminal-1')).toEqual({ cols: 120, rows: 40 }))
+    await waitFor(() => expect(session.sentResize('terminal-1')).toEqual({ cols: 120, rows: 40 }))
   })
 
   it('sends resize later if xterm dimensions are unavailable during initial fit', async () => {
-    const transport = createMockTerminalTransport()
+    const session = createMockRtcTerminalSession()
+    session.emitResizeControl('terminal-1', { canResize: true, reason: 'owner' })
     xtermMocks.FakeFitAddon.nextDimensions = undefined
 
     render(
       <Terminal
         machineId="machine-local"
         terminalId="terminal-1"
-        transport={transport}
+        session={session}
       />,
     )
 
     await waitFor(() => expect(xtermMocks.FakeFitAddon.instances).toHaveLength(1))
-    expect(transport.sentResize('terminal-1')).toBeUndefined()
-    act(() => transport.emitResizeControl('terminal-1', { canResize: true, reason: 'owner' }))
+    expect(session.sentResize('terminal-1')).toBeUndefined()
 
     xtermMocks.FakeFitAddon.instances[0]!.dimensions = { cols: 88, rows: 28 }
     act(() => TestResizeObserver.instances[0]?.trigger())
 
-    await waitFor(() => expect(transport.sentResize('terminal-1')).toEqual({ cols: 88, rows: 28 }))
+    await waitFor(() => expect(session.sentResize('terminal-1')).toEqual({ cols: 88, rows: 28 }))
   })
 
   it('fits locally but does not send remote resize without resize ownership', async () => {
-    const transport = createMockTerminalTransport()
+    const session = createMockRtcTerminalSession()
 
     render(
       <Terminal
         machineId="machine-local"
         terminalId="terminal-1"
-        transport={transport}
+        session={session}
       />,
     )
 
     await waitFor(() => expect(xtermMocks.FakeXTerm.instances[0]?.cols).toBe(101))
     expect(xtermMocks.FakeXTerm.instances[0]?.rows).toBe(31)
-    expect(transport.sentResize('terminal-1')).toBeUndefined()
+    expect(session.sentResize('terminal-1')).toBeUndefined()
 
     xtermMocks.FakeFitAddon.instances[0]!.dimensions = { cols: 120, rows: 40 }
     act(() => TestResizeObserver.instances[0]?.trigger())
 
     await waitFor(() => expect(xtermMocks.FakeXTerm.instances[0]?.cols).toBe(120))
     expect(xtermMocks.FakeXTerm.instances[0]?.rows).toBe(40)
-    expect(transport.sentResize('terminal-1')).toBeUndefined()
+    expect(session.sentResize('terminal-1')).toBeUndefined()
   })
 
   it('re-fits after xterm opens so an early one-row measurement does not persist', async () => {
-    const transport = createMockTerminalTransport()
+    const session = createMockRtcTerminalSession()
     xtermMocks.FakeFitAddon.nextDimensionsSequence = [
       { cols: 80, rows: 1 },
       { cols: 80, rows: 1 },
@@ -399,40 +401,39 @@ describe('Terminal', () => {
       <Terminal
         machineId="machine-local"
         terminalId="terminal-1"
-        transport={transport}
+        session={session}
       />,
     )
 
     await waitFor(() => expect(xtermMocks.FakeXTerm.instances[0]?.rows).toBe(31))
     expect(xtermMocks.FakeFitAddon.instances[0]?.fitCalls).toBeGreaterThanOrEqual(3)
-    expect(transport.sentResize('terminal-1')).toBeUndefined()
+    expect(session.sentResize('terminal-1')).toBeUndefined()
   })
 
-  it('allows remote resize only when resize ownership is granted by transport', async () => {
-    const transport = createMockTerminalTransport()
+  it('allows remote resize only when resize ownership is granted by terminal protocol', async () => {
+    const session = createMockRtcTerminalSession()
+    session.emitResizeControl('terminal-1', { canResize: true, reason: 'owner' })
 
     render(
       <Terminal
         machineId="machine-local"
         terminalId="terminal-1"
-        transport={transport}
+        session={session}
       />,
     )
 
     await waitFor(() => expect(xtermMocks.FakeXTerm.instances).toHaveLength(1))
-    expect(transport.sentResize('terminal-1')).toBeUndefined()
 
-    act(() => transport.emitResizeControl('terminal-1', { canResize: true, reason: 'owner' }))
     act(() => TestResizeObserver.instances[0]?.trigger())
 
-    await waitFor(() => expect(transport.sentResize('terminal-1')).toEqual({ cols: 101, rows: 31 }))
+    await waitFor(() => expect(session.sentResize('terminal-1')).toEqual({ cols: 101, rows: 31 }))
   })
 
   it('does not publish tgent pane/session props on the TermX component boundary', () => {
     const propKeys = Object.keys({
       machineId: 'machine-local',
       terminalId: 'terminal-1',
-      transport: createMockTerminalTransport(),
+      session: createMockRtcTerminalSession(),
     } satisfies TerminalProps)
 
     expect(propKeys).not.toContain('paneId')
@@ -441,7 +442,7 @@ describe('Terminal', () => {
   })
 
   it('exposes mobile terminal controls without leaking tgent pane concepts', async () => {
-    const transport = createMockTerminalTransport()
+    const session = createMockRtcTerminalSession()
     const cursorMoves = vi.fn()
     const ref = { current: null as import('./Terminal').TerminalHandle | null }
 
@@ -450,7 +451,7 @@ describe('Terminal', () => {
         ref={ref}
         machineId="machine-local"
         terminalId="terminal-1"
-        transport={transport}
+        session={session}
         onCursorMove={cursorMoves}
       />,
     )
@@ -469,7 +470,7 @@ describe('Terminal', () => {
     expect(Object.keys(ref.current!)).not.toContain('sessionId')
 
     act(() => ref.current!.pasteText('echo pasted\n'))
-    await waitFor(() => expect(transport.sentText('terminal-1')).toContain('\x1b[200~echo pasted\n\x1b[201~'))
+    await waitFor(() => expect(session.sentText('terminal-1')).toContain('\x1b[200~echo pasted\n\x1b[201~'))
 
     act(() => ref.current!.adjustInputPosition(144))
     await waitFor(() => {

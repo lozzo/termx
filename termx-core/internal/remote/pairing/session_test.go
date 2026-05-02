@@ -108,6 +108,35 @@ func TestClaimSessionIssuesCertificateAndConsumesSecret(t *testing.T) {
 	}
 }
 
+func TestClaimSessionAllowsTerminalManagementCapabilitySeparatelyFromFileManager(t *testing.T) {
+	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	manager, machineKey := testManager(t, &now)
+	session, err := manager.CreateSession(5 * time.Minute)
+	if err != nil {
+		t.Fatalf("CreateSession returned error: %v", err)
+	}
+
+	resp, err := manager.ClaimSession(ClaimRequest{
+		PairSessionID:          session.PairSessionID,
+		PairSecret:             session.PairSecret,
+		AppDeviceID:            "appdev_management",
+		AppName:                "Management App",
+		AppPublicKey:           testAppPublicKey(t),
+		RequestedCapabilities:  []string{"terminal", "file_manager", "terminal_management"},
+		CertificateTTL:         time.Hour,
+		CertificateIDGenerator: func() string { return "cert_management" },
+	})
+	if err != nil {
+		t.Fatalf("ClaimSession returned error: %v", err)
+	}
+	if err := cert.VerifyAppCertificate(resp.AppCertificate, machineKey.PublicKey, now.Add(time.Minute)); err != nil {
+		t.Fatalf("issued certificate did not verify: %v", err)
+	}
+	if got := strings.Join(resp.AppCertificate.Payload.Capabilities, ","); !strings.Contains(got, "terminal") || !strings.Contains(got, "file_manager") || !strings.Contains(got, "terminal_management") {
+		t.Fatalf("expected independent management capability, got %q", got)
+	}
+}
+
 func TestClaimSessionRejectsExpiredOrWrongSecret(t *testing.T) {
 	now := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	manager, _ := testManager(t, &now)

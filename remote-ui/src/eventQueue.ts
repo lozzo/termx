@@ -62,13 +62,13 @@ export class ConnectionEventQueue {
   }
 
   private findDropCandidateIndex(): number {
-    const transportChatterIndex = this.events.findIndex((event) =>
-      event.message.type === 'transport.disconnected' ||
-      event.message.type === 'transport.failed' ||
+    const connectionChatterIndex = this.events.findIndex((event) =>
+      event.message.type === 'connection.disconnected' ||
+      event.message.type === 'connection.failed' ||
       event.message.type === 'terminal.channelClosed' ||
       event.message.type === 'file.channelClosed',
     )
-    if (transportChatterIndex >= 0) return transportChatterIndex
+    if (connectionChatterIndex >= 0) return connectionChatterIndex
 
     const nonIntentIndex = this.events.findIndex((event) => !isUserIntentOrLifecycle(event.message))
     if (nonIntentIndex >= 0) return nonIntentIndex

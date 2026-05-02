@@ -1,9 +1,10 @@
 import { StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { LocalRemoteApp, type LocalRemoteTransportFactory } from './LocalRemoteApp'
+import { LocalRemoteApp, type LocalRemoteSessionConnector } from './LocalRemoteApp'
 import { createBrowserLocalAppCrypto, createLocalAppIdentityStore, createLocalOfferSigner } from './localAppIdentity'
 import { createLocalAgentApi } from './localAgentApi'
-import { createLocalWebRtcInventoryEvents, createLocalWebRtcPeerTransport } from './localWebRtcTransport'
+import { createBrowserRtcInventoryEvents, createBrowserRtcSession } from './browserRtcSession'
+import { createLocalRtcConnector } from './localRtcConnector'
 import type { LocalAgentApi, TerminalInventoryEvents } from './transport'
 import './localWebEntry.css'
 
@@ -11,7 +12,7 @@ export interface LocalWebAppOptions {
   root?: HTMLElement | null | undefined
   api?: Pick<LocalAgentApi, 'getStatus' | 'listTerminals'> & Partial<Pick<LocalAgentApi, 'createInventoryRTCAnswer'>> | undefined
   pairApi?: Pick<LocalAgentApi, 'pair'> | undefined
-  createTransport?: LocalRemoteTransportFactory | undefined
+  connector?: LocalRemoteSessionConnector | undefined
   inventoryEvents?: TerminalInventoryEvents | undefined
 }
 
@@ -21,7 +22,7 @@ export function mountLocalWebApp(options: LocalWebAppOptions = {}): Root {
     throw new Error('local web root element is required')
   }
   const api = options.api ?? createLocalAgentApi()
-  const createTransport = options.createTransport ?? createBrowserLocalTransportFactory()
+  const connector = options.connector ?? createBrowserLocalConnector()
   const inventoryEvents = options.inventoryEvents ?? createBrowserInventoryEvents(api)
   const pair = createBrowserPairOptions(options.pairApi ?? createLocalAgentApi())
   const root = createRoot(rootElement)
@@ -33,7 +34,7 @@ export function mountLocalWebApp(options: LocalWebAppOptions = {}): Root {
       >
         <LocalRemoteApp
           api={api}
-          createTransport={createTransport}
+          connector={connector}
           inventoryEvents={inventoryEvents}
           {...(pair ? { pair } : {})}
         />
@@ -74,7 +75,7 @@ function createBrowserInventoryEvents(api: Partial<Pick<LocalAgentApi, 'createIn
           storage: store,
           crypto,
         })
-        const connection = createLocalWebRtcInventoryEvents({
+        const connection = createBrowserRtcInventoryEvents({
           machineId,
           appCertificate,
           createAnswer: (offer) => api.createInventoryRTCAnswer!(offer),
@@ -88,30 +89,39 @@ function createBrowserInventoryEvents(api: Partial<Pick<LocalAgentApi, 'createIn
   }
 }
 
-function createBrowserLocalTransportFactory(): LocalRemoteTransportFactory {
+function createBrowserLocalConnector(): LocalRemoteSessionConnector {
   const api = createLocalAgentApi()
-  return ({ machineId, terminalId }) => {
-    const storage = browserStorage()
-    if (!storage) {
-      throw new Error('local app storage is required before opening a terminal')
-    }
-    const store = createLocalAppIdentityStore(storage)
-    const appCertificate = store.loadCertificate()
-    if (!appCertificate) {
-      throw new Error('local app certificate is required before opening a terminal')
-    }
-    const signer = createLocalOfferSigner({
-      storage: store,
-      crypto: createBrowserLocalAppCrypto(),
-    })
-    return createLocalWebRtcPeerTransport({
+  return createLocalRtcConnector({
+    api,
+    createSession: ({ machineId, terminalId }) => createBrowserRtcSession({
       machineId,
-      terminalId,
-      appCertificate,
-      createAnswer: (offer) => api.createRTCAnswer(offer),
-      signOffer: (input) => signer.signOffer(input),
-    })
-  }
+      ...(terminalId ? { terminalId } : {}),
+    }),
+    getAppCertificate() {
+      const storage = browserStorage()
+      if (!storage) {
+        throw new Error('local app storage is required before opening a terminal')
+      }
+      const store = createLocalAppIdentityStore(storage)
+      const appCertificate = store.loadCertificate()
+      if (!appCertificate) {
+        throw new Error('local app certificate is required before opening a terminal')
+      }
+      return appCertificate
+    },
+    signOffer(input) {
+      const storage = browserStorage()
+      if (!storage) {
+        throw new Error('local app storage is required before opening a terminal')
+      }
+      const store = createLocalAppIdentityStore(storage)
+      const signer = createLocalOfferSigner({
+        storage: store,
+        crypto: createBrowserLocalAppCrypto(),
+      })
+      return signer.signOffer(input)
+    },
+  })
 }
 
 function browserStorage(): Pick<Storage, 'getItem' | 'setItem'> | undefined {

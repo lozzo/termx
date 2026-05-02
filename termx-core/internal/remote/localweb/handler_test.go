@@ -375,7 +375,7 @@ func TestHandlerLocalRTCOfferAnswersWithLocalContract(t *testing.T) {
 			"timestamp":1770000000,
 			"value":"base64-signature"
 		},
-		"client":{"type":"browser","transport":"local"}
+		"client":{"type":"browser","purpose":"runtime"}
 	}`)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/local/rtc/offer", bytes.NewReader(payload))

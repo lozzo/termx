@@ -2,8 +2,9 @@ import type {
   TerminalResizeControl,
   TerminalResizePolicy,
   TerminalSnapshotPayload,
-  TerminalTransport,
-  TerminalTransportEvent,
+  TerminalProtocolEvent,
+  TerminalProtocolChannel,
+  TerminalProtocolSession,
 } from './terminalClient'
 import {
   TERMX_FRAME_TYPES,
@@ -15,14 +16,10 @@ import {
   snapshotToReplay,
   type TermxFrame,
 } from './termxProtocol'
-import type { BinaryChannel, ConnectionInfo } from './transport'
+import type { ConnectionInfo, RtcBinaryChannel } from './transport'
 
-export interface LocalTerminalProtocolTransportOptions {
-  channel: BinaryChannel & {
-    onMessage?: (handler: (data: Uint8Array) => void) => void
-    onClose?: (handler: () => void) => void
-    waitOpen?: () => Promise<void>
-  }
+export interface TerminalProtocolClientOptions {
+  channel: RtcBinaryChannel
   machineId: string
   terminalId: string
   connectionInfo: ConnectionInfo
@@ -34,27 +31,29 @@ interface PendingRequest {
   reject: (err: Error) => void
 }
 
-export function createLocalTerminalProtocolTransport(options: LocalTerminalProtocolTransportOptions): TerminalTransport {
-  return new LocalTerminalProtocolTransport(options)
+export function createTerminalProtocolClient(options: TerminalProtocolClientOptions): TerminalProtocolSession {
+  return new TerminalProtocolClient(options)
 }
 
-class LocalTerminalProtocolTransport implements TerminalTransport {
+class TerminalProtocolClient implements TerminalProtocolSession {
   private nextRequestID = 1
   private streamChannel = 0
   private helloDone: Promise<void> | null = null
   private attachDone: Promise<void> | null = null
   private readonly pending = new Map<number, PendingRequest>()
   private readonly earlyStreamFrames: TermxFrame[] = []
-  private readonly subscribers = new Map<string, Set<(event: TerminalTransportEvent) => void>>()
+  private readonly subscribers = new Map<string, Set<(event: TerminalProtocolEvent) => void>>()
+  private readonly messageSubscription: { close(): void }
+  private readonly closeSubscription: { close(): void }
   private resizeControl: TerminalResizeControl = { canResize: false, reason: 'unknown' }
   private closed = false
 
-  constructor(private readonly options: LocalTerminalProtocolTransportOptions) {
-    options.channel.onMessage?.((data) => this.handleFrame(data))
-    options.channel.onClose?.(() => this.emitClosed())
+  constructor(private readonly options: TerminalProtocolClientOptions) {
+    this.messageSubscription = options.channel.onMessage((data) => this.handleFrame(data))
+    this.closeSubscription = options.channel.onClose(() => this.handleChannelClosed())
   }
 
-  async openTerminal(terminalId: string): Promise<BinaryChannel> {
+  async openTerminal(terminalId: string): Promise<TerminalProtocolChannel> {
     this.assertTerminal(terminalId)
     if (this.options.channel.readyState !== 'open') {
       await this.waitOpen()
@@ -86,7 +85,7 @@ class LocalTerminalProtocolTransport implements TerminalTransport {
     return this.options.connectionInfo
   }
 
-  subscribeTerminal(terminalId: string, handler: (event: TerminalTransportEvent) => void): () => void {
+  subscribeTerminal(terminalId: string, handler: (event: TerminalProtocolEvent) => void): () => void {
     this.assertTerminal(terminalId)
     let handlers = this.subscribers.get(terminalId)
     if (!handlers) {
@@ -101,6 +100,9 @@ class LocalTerminalProtocolTransport implements TerminalTransport {
 
   closeTerminalChannel(terminalId: string): void {
     this.assertTerminal(terminalId)
+    this.messageSubscription.close()
+    this.closeSubscription.close()
+    this.rejectPending(new Error(`terminal data channel ${this.options.channel.label} closed`))
     this.options.channel.close()
   }
 
@@ -123,9 +125,6 @@ class LocalTerminalProtocolTransport implements TerminalTransport {
 
   private async waitOpen(): Promise<void> {
     if (this.options.channel.readyState === 'open') return
-    if (!this.options.channel.waitOpen) {
-      throw new Error('terminal protocol channel is not open')
-    }
     await this.options.channel.waitOpen()
   }
 
@@ -181,7 +180,7 @@ class LocalTerminalProtocolTransport implements TerminalTransport {
         this.emit(this.options.terminalId, { type: 'output', data: frame.payload })
         return
       case TERMX_FRAME_TYPES.closed:
-        this.emitClosed()
+        this.emitClosed(closedReason(frame.payload))
         return
     }
   }
@@ -233,7 +232,7 @@ class LocalTerminalProtocolTransport implements TerminalTransport {
     this.options.channel.send(encodeTermxFrame(channel, type, bytes))
   }
 
-  private emit(terminalId: string, event: TerminalTransportEvent): void {
+  private emit(terminalId: string, event: TerminalProtocolEvent): void {
     for (const handler of this.subscribers.get(terminalId) ?? []) {
       handler(event)
     }
@@ -250,10 +249,22 @@ class LocalTerminalProtocolTransport implements TerminalTransport {
     }
   }
 
-  private emitClosed(): void {
+  private emitClosed(reason?: string): void {
     if (this.closed) return
     this.closed = true
-    this.emit(this.options.terminalId, { type: 'closed' })
+    this.emit(this.options.terminalId, { type: 'closed', ...(reason ? { reason } : {}) })
+  }
+
+  private handleChannelClosed(reason?: string): void {
+    this.rejectPending(new Error(reason ?? `terminal data channel ${this.options.channel.label} closed`))
+    this.emitClosed(reason)
+  }
+
+  private rejectPending(err: Error): void {
+    for (const [id, pending] of Array.from(this.pending.entries())) {
+      this.pending.delete(id)
+      pending.reject(err)
+    }
   }
 
   private assertTerminal(terminalId: string): void {
@@ -325,4 +336,10 @@ function normalizeSnapshot(value: unknown): TerminalSnapshotPayload {
     rows: typeof size?.rows === 'number' ? size.rows : 0,
     ...(replay ? { replay } : {}),
   }
+}
+
+function closedReason(payload: Uint8Array): string | undefined {
+  if (payload.length === 0) return undefined
+  const text = new TextDecoder().decode(payload).trim()
+  return text || undefined
 }

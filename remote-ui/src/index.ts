@@ -32,7 +32,7 @@ export type { DirListResponse, FileApi, FileEntry, FileEntryType } from './fileA
 export { FileManager } from './FileManager'
 export type { FileManagerProps } from './FileManager'
 export { LocalRemoteApp } from './LocalRemoteApp'
-export type { LocalRemoteAppProps, LocalRemoteTransportFactory, LocalRemoteTransportInput } from './LocalRemoteApp'
+export type { LocalRemoteAppProps, LocalRemoteSessionConnector, LocalRemoteSessionInput } from './LocalRemoteApp'
 export { LocalPairPanel } from './LocalPairPanel'
 export type { LocalPairPanelProps } from './LocalPairPanel'
 export { createLocalAgentApi } from './localAgentApi'
@@ -51,20 +51,14 @@ export type {
   LocalAppCrypto,
   LocalAppIdentity,
   LocalAppIdentityStore,
+  LocalOfferSignature,
   LocalOfferSigner,
   LocalOfferSignerOptions,
   LocalOfferSigningInput,
   PairLocalAppOptions,
 } from './localAppIdentity'
-export { createLocalWebRtcPeerTransport } from './localWebRtcTransport'
-export type {
-  LocalOfferSignature,
-  LocalWebRtcPeerTransportOptions,
-  RTCDataChannelLike,
-  RTCPeerConnectionLike,
-} from './localWebRtcTransport'
-export { createLocalTerminalProtocolTransport } from './localTerminalProtocolTransport'
-export type { LocalTerminalProtocolTransportOptions } from './localTerminalProtocolTransport'
+export { createTerminalProtocolClient } from './terminalProtocolClient'
+export type { TerminalProtocolClientOptions } from './terminalProtocolClient'
 export {
   TERMX_FRAME_TYPES,
   TERMX_MAX_FRAME_SIZE,
@@ -80,9 +74,9 @@ export { TerminalClient } from './terminalClient'
 export type {
   TerminalClientCallbacks,
   TerminalInfoPayload,
+  TerminalProtocolEvent,
+  TerminalProtocolSession,
   TerminalSnapshotPayload,
-  TerminalTransport,
-  TerminalTransportEvent,
 } from './terminalClient'
 export {
   createTerminalInventorySnapshot,

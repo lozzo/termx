@@ -1,5 +1,5 @@
 import { normalizeMachine, normalizeTerminal, type Machine, type Terminal } from './model'
-import type { LocalAgentApi, LocalCreateTerminalInput, LocalInventoryRTCAnswer, LocalInventoryRTCOffer, LocalPairInput, LocalPairResult, LocalRTCAnswer, LocalRTCOffer, LocalStatus, LocalUpdateTerminalInput } from './transport'
+import type { ConnectionCapabilities, LocalAgentApi, LocalCreateTerminalInput, LocalInventoryRTCAnswer, LocalInventoryRTCOffer, LocalPairInput, LocalPairResult, LocalRTCAnswer, LocalRTCOffer, LocalStatus, LocalUpdateTerminalInput } from './transport'
 
 export interface LocalAgentApiOptions {
   baseUrl?: string | undefined
@@ -71,9 +71,10 @@ export function createLocalAgentApi(options: LocalAgentApiOptions = {}): LocalAg
         expiresAt: requiredString(raw, 'expires_at'),
       }
     },
-    async createRTCAnswer(input: LocalRTCOffer): Promise<LocalRTCAnswer> {
+    async createRTCAnswer(input: LocalRTCOffer, options?: { signal?: AbortSignal }): Promise<LocalRTCAnswer> {
       const raw = await requestJSON<Record<string, unknown>>('/api/local/rtc/offer', {
         method: 'POST',
+        ...(options?.signal ? { signal: options.signal } : {}),
         body: JSON.stringify({
           app_certificate: parseCertificate(input.appCertificate),
           offer: {
@@ -91,7 +92,7 @@ export function createLocalAgentApi(options: LocalAgentApiOptions = {}): LocalAg
           },
           client: {
             type: 'browser',
-            transport: 'local',
+            purpose: 'runtime',
           },
         }),
       })
@@ -117,7 +118,7 @@ export function createLocalAgentApi(options: LocalAgentApiOptions = {}): LocalAg
           },
           client: {
             type: 'browser',
-            transport: 'local',
+            purpose: 'inventory_events',
           },
         }),
       })
@@ -260,6 +261,14 @@ function normalizeRTCAnswer(raw: Record<string, unknown>): LocalRTCAnswer {
   if (typeof raw.ice_tcp_enabled === 'boolean') {
     out.iceTCP = { enabled: raw.ice_tcp_enabled }
   }
+  const dataChannels = optionalStringArray(raw, 'data_channels')
+  if (dataChannels !== undefined) {
+    out.dataChannels = dataChannels
+  }
+  const capabilities = normalizeConnectionCapabilities(raw.capabilities)
+  if (capabilities !== undefined) {
+    out.capabilities = capabilities
+  }
   return out
 }
 
@@ -349,6 +358,40 @@ function optionalString(record: Record<string, unknown>, key: string): string | 
 function optionalBoolean(record: Record<string, unknown>, key: string): boolean | undefined {
   const value = record[key]
   if (value === undefined || value === null) return undefined
+  if (typeof value !== 'boolean') throw new Error(`${key} must be a boolean`)
+  return value
+}
+
+function optionalStringArray(record: Record<string, unknown>, key: string): string[] | undefined {
+  const value = record[key]
+  if (value === undefined || value === null) return undefined
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+    throw new Error(`${key} must be a string array`)
+  }
+  return value
+}
+
+function normalizeConnectionCapabilities(value: unknown): ConnectionCapabilities | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('capabilities must be an object')
+  }
+  const record = value as Record<string, unknown>
+  const out: ConnectionCapabilities = {
+    terminalAllowed: requiredBoolean(record, 'terminal_allowed'),
+    apiAllowed: requiredBoolean(record, 'api_allowed'),
+    eventsAllowed: requiredBoolean(record, 'events_allowed'),
+    fileTransferAllowed: requiredBoolean(record, 'file_transfer_allowed'),
+    terminalManagementAllowed: requiredBoolean(record, 'terminal_management_allowed'),
+    relayInUse: requiredBoolean(record, 'relay_in_use'),
+  }
+  const denialReason = optionalString(record, 'denial_reason')
+  if (denialReason) out.denialReason = denialReason
+  return out
+}
+
+function requiredBoolean(record: Record<string, unknown>, key: string): boolean {
+  const value = record[key]
   if (typeof value !== 'boolean') throw new Error(`${key} must be a boolean`)
   return value
 }

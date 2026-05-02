@@ -1,5 +1,4 @@
 import type { LocalAgentApi, LocalPairResult } from './transport'
-import type { LocalOfferSignature } from './localWebRtcTransport'
 
 const storageKeys = {
   appDeviceId: 'termx.local.appDeviceId',
@@ -44,6 +43,12 @@ export interface LocalOfferSigningInput {
   machineId: string
   terminalId: string
   sdp: string
+}
+
+export interface LocalOfferSignature {
+  signature: string
+  nonce: string
+  timestamp: string
 }
 
 export interface CanonicalLocalOfferInput extends LocalOfferSigningInput {
@@ -175,7 +180,7 @@ export async function pairLocalApp(options: PairLocalAppOptions): Promise<LocalP
     appDeviceId: identity.appDeviceId,
     appName: identity.appName,
     appPublicKey: identity.appPublicKey,
-    requestedCapabilities: ['terminal', 'file_manager'],
+    requestedCapabilities: ['terminal', 'file_manager', 'terminal_management'],
   })
   options.storage.saveCertificate(result.appCertificate)
   return result

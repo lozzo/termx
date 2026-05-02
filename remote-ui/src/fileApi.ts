@@ -1,4 +1,4 @@
-import type { JsonRpcChannel, PeerTransport } from './transport'
+import type { RtcJsonRpcChannel, RtcSession } from './transport'
 
 export type FileEntryType = 'file' | 'dir' | 'symlink' | 'symlink-dir'
 
@@ -26,10 +26,10 @@ export interface FileApi {
   rename(path: string, newPath: string): Promise<{ path: string }>
 }
 
-export function createFileApi(transport: Pick<PeerTransport, 'openApi'>): FileApi {
-  let apiChannelPromise: Promise<JsonRpcChannel> | null = null
+export function createFileApi(session: Pick<RtcSession, 'openApi'>): FileApi {
+  let apiChannelPromise: Promise<RtcJsonRpcChannel> | null = null
   const apiChannel = () => {
-    apiChannelPromise ??= transport.openApi()
+    apiChannelPromise ??= session.openApi()
     return apiChannelPromise
   }
 

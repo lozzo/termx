@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createFileApi, type DirListResponse, type FileApi, type FileEntry } from './fileApi'
-import type { ConnectionInfo, PeerTransport } from './transport'
+import type { ConnectionInfo, RtcSession } from './transport'
 
 export interface FileManagerVisibleError {
   message: string
@@ -11,7 +11,7 @@ export interface FileManagerVisibleError {
 export interface UseFileManagerOptions {
   machineId: string
   terminalId: string
-  transport: Pick<PeerTransport, 'openApi' | 'openFileTransfer' | 'getConnectionInfo'>
+  session: Pick<RtcSession, 'openApi' | 'openFileTransfer' | 'getConnectionInfo'>
   initialPath?: string | undefined
 }
 
@@ -37,16 +37,16 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
   const currentPathRef = useRef(options.initialPath ?? '')
   const requestSeqRef = useRef(0)
 
-  const fileApi = useMemo(() => createFileApi(options.transport), [options.transport])
+  const fileApi = useMemo(() => createFileApi(options.session), [options.session])
 
   const loadPath = useCallback(async (path: string) => {
     const seq = ++requestSeqRef.current
     setLoading(true)
     setError(null)
     try {
-      const info = await options.transport.getConnectionInfo()
+      const info = await options.session.getConnectionInfo()
       if (seq !== requestSeqRef.current) return
-      assertTransportTarget(info, options.machineId, options.terminalId)
+      assertSessionTarget(info, options.machineId, options.terminalId)
       const response: DirListResponse = await fileApi.listDir(path)
       if (seq !== requestSeqRef.current) return
       setCurrentPath(response.path)
@@ -63,7 +63,7 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
     } finally {
       if (seq === requestSeqRef.current) setLoading(false)
     }
-  }, [fileApi, options.machineId, options.terminalId, options.transport])
+  }, [fileApi, options.machineId, options.terminalId, options.session])
 
   useEffect(() => {
     void loadPath(currentPathRef.current)
@@ -94,14 +94,14 @@ export function useFileManager(options: UseFileManagerOptions): UseFileManagerRe
   }
 }
 
-function assertTransportTarget(info: ConnectionInfo, machineId: string, terminalId?: string): void {
+function assertSessionTarget(info: ConnectionInfo, machineId: string, terminalId?: string): void {
   if (info.machineId !== machineId) {
-    throw new Error(`file transport machine mismatch: connected to ${info.machineId}, expected ${machineId}`)
+    throw new Error(`file session machine mismatch: connected to ${info.machineId}, expected ${machineId}`)
   }
   if (info.terminalId === undefined) {
-    throw new Error(`file transport terminal missing: expected ${terminalId}`)
+    throw new Error(`file session terminal missing: expected ${terminalId}`)
   }
   if (info.terminalId !== terminalId) {
-    throw new Error(`file transport terminal mismatch: connected to ${info.terminalId}, expected ${terminalId}`)
+    throw new Error(`file session terminal mismatch: connected to ${info.terminalId}, expected ${terminalId}`)
   }
 }

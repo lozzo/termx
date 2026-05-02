@@ -1,26 +1,71 @@
-import { describe, expectTypeOf, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
+import { CONNECTION_PATHS } from './transport'
 import type {
-  BinaryChannel,
+  ConnectionCapabilities,
   ConnectionInfo,
+  ConnectionPath,
   LocalAgentApi,
-  PeerTransport,
-  RemoteTransport,
+  RtcBinaryChannel,
+  RtcConnector,
+  RtcJsonRpcChannel,
+  RtcSession,
   TerminalInventoryEvents,
 } from './transport'
+import transportSource from './transport.ts?raw'
 
-describe('transport interfaces', () => {
-  it('keeps business code behind machine/terminal transport interfaces', () => {
-    expectTypeOf<RemoteTransport>().toMatchTypeOf<{
-      connect(target: { machineId: string }, options?: unknown): Promise<unknown>
-      disconnect(): Promise<void>
-      status(): unknown
-      openTerminal(terminalId: string): Promise<BinaryChannel>
-      openApi(): Promise<unknown>
-      openFileTransfer(transferId: string): Promise<BinaryChannel>
+describe('RtcSession public interfaces', () => {
+  it('keeps exactly three client-visible connection paths', () => {
+    expect(CONNECTION_PATHS).toEqual(['local', 'public_p2p', 'managed'])
+    expectTypeOf<(typeof CONNECTION_PATHS)[number]>().toEqualTypeOf<ConnectionPath>()
+    expect(transportSource).not.toMatch(/anonymous_p2p|managed_p2p|paid_relay/)
+  })
+
+  it('exposes one platform-neutral runtime session surface', () => {
+    expectTypeOf<keyof RtcSession>().toEqualTypeOf<
+      | 'openTerminal'
+      | 'openApi'
+      | 'openFileTransfer'
+      | 'subscribeEvents'
+      | 'getConnectionInfo'
+      | 'getCapabilities'
+      | 'disconnect'
+    >()
+    expectTypeOf<RtcSession>().toMatchTypeOf<{
+      openTerminal(terminalId: string): Promise<RtcBinaryChannel>
+      openApi(): Promise<RtcJsonRpcChannel>
+      openFileTransfer(transferId: string): Promise<RtcBinaryChannel>
+      subscribeEvents(handler: (event: unknown) => void): { close(): void }
       getConnectionInfo(): Promise<ConnectionInfo>
+      getCapabilities(): Promise<ConnectionCapabilities>
+      disconnect(): Promise<void>
     }>()
+    expectTypeOf<keyof ConnectionInfo>().toEqualTypeOf<
+      'path' | 'connectionId' | 'machineId' | 'terminalId' | 'relayInUse'
+    >()
+    expectTypeOf<keyof ConnectionCapabilities>().toEqualTypeOf<
+      | 'terminalAllowed'
+      | 'apiAllowed'
+      | 'eventsAllowed'
+      | 'fileTransferAllowed'
+      | 'terminalManagementAllowed'
+      | 'relayInUse'
+      | 'denialReason'
+    >()
+    expectTypeOf<RtcConnector<{ machineId: string }>>().toMatchTypeOf<{
+      connect(input: { machineId: string }, options?: unknown): Promise<RtcSession>
+    }>()
+    expectTypeOf<RtcBinaryChannel>().toMatchTypeOf<{
+      onMessage(handler: (data: Uint8Array) => void): { close(): void }
+      onClose(handler: () => void): { close(): void }
+    }>()
+  })
 
-    expectTypeOf<PeerTransport>().toHaveProperty('openTerminal')
+  it('does not expose old transport boundaries or browser/native implementation details', () => {
+    expect(transportSource).not.toMatch(/\bRemoteTransport\b|\bPeerTransport\b|\bTerminalTransport\b/)
+    expect(transportSource).not.toMatch(/RTCPeerConnection|RTCDataChannel|nativePlugin|turnCredential|relayTransport/i)
+  })
+
+  it('keeps local signaling api and inventory events outside runtime transport taxonomy', () => {
     expectTypeOf<LocalAgentApi>().toHaveProperty('createRTCAnswer')
     expectTypeOf<TerminalInventoryEvents>().toMatchTypeOf<{
       subscribe(machineId: string, handler: (event: { type: 'inventory_changed' }) => void): { close(): void }

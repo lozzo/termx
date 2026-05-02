@@ -114,6 +114,116 @@ func TestE2ERemoteLocalWebHandlerStatusTerminalsAndPair(t *testing.T) {
 	}
 }
 
+func TestLocalRTCAnswerSeparatesTerminalManagementCapabilityFromFileManager(t *testing.T) {
+	srv := NewServer(WithRemoteConfig(RemoteConfig{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "local-web-policy-machine",
+	}))
+	defer srv.Shutdown(context.Background())
+
+	status, err := srv.RemoteLocalEnable(context.Background(), RemoteLocalOptions{
+		LocalWebAddr: "127.0.0.1:0",
+		ICETCPAddr:   "127.0.0.1:0",
+	})
+	if err != nil {
+		t.Fatalf("RemoteLocalEnable returned error: %v", err)
+	}
+	defer func() { _, _ = srv.RemoteLocalDisable(context.Background()) }()
+
+	session, appCert, appPrivate := claimLocalRTCAppCertificateHTTP(t, srv, status.LocalPairURL, []string{"terminal_management"})
+	offerSDP := newLocalOfferSDP(t, "api")
+	offer := signedLocalRTCOfferBody(t, appCert, appPrivate, "rtc-management-only", session.MachineID, "", offerSDP, "nonce-management-only", time.Now().UTC())
+	resp, err := http.Post(status.HTTPURL+"/api/local/rtc/offer", "application/json", bytes.NewReader(offer))
+	if err != nil {
+		t.Fatalf("POST local rtc offer: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected terminal management only certificate to create machine api session, got %d: %s", resp.StatusCode, body)
+	}
+	var rtcResp map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&rtcResp); err != nil {
+		t.Fatalf("decode rtc response: %v", err)
+	}
+	if got := rtcResp["data_channels"].([]any); len(got) != 1 || got[0] != "api" {
+		t.Fatalf("expected api-only data channels for management-only session, got %#v", rtcResp["data_channels"])
+	}
+
+	fileOnlySession, fileOnlyCert, fileOnlyPrivate := claimLocalRTCAppCertificateHTTP(t, srv, status.LocalPairURL, []string{"file_manager"})
+	fileOnlySDP := newLocalOfferSDP(t, "api")
+	fileOnlyOffer := signedLocalRTCOfferBody(t, fileOnlyCert, fileOnlyPrivate, "rtc-file-only", fileOnlySession.MachineID, "", fileOnlySDP, "nonce-file-only", time.Now().UTC())
+	resp, err = http.Post(status.HTTPURL+"/api/local/rtc/offer", "application/json", bytes.NewReader(fileOnlyOffer))
+	if err != nil {
+		t.Fatalf("POST file-only local rtc offer: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		t.Fatal("file_manager-only certificate must not authorize machine terminal management api session")
+	}
+}
+
+func TestE2ERemoteLocalWebHandlerUpdatesTerminalWithoutExistingTags(t *testing.T) {
+	srv := NewServer(WithRemoteConfig(RemoteConfig{
+		Enabled:    true,
+		DataDir:    t.TempDir(),
+		DeviceName: "local-web-update-machine",
+	}))
+	defer srv.Shutdown(context.Background())
+
+	term, err := srv.Create(context.Background(), CreateOptions{
+		Command: []string{"sh", "-c", "sleep 5"},
+		Name:    "local-web-update-shell",
+		Size:    Size{Cols: 80, Rows: 24},
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("pty not permitted in this environment: %v", err)
+		}
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	handler := srv.LocalWebHandler(LocalWebOptions{
+		HTTPURL:      "http://127.0.0.1:7342",
+		LocalPairURL: "http://127.0.0.1:7342/api/local/pair",
+		Assets: NewLocalWebStaticAssets(map[string]string{
+			"index.html": "<!doctype html><title>TermX Local</title>",
+		}),
+	})
+
+	body := []byte(`{
+		"name":"renamed-shell",
+		"cwd":"/tmp",
+		"environment":"dev",
+		"size_lock_mode":"off"
+	}`)
+	updated := localWebJSON(t, handler, http.MethodPatch, "/api/local/terminals/"+term.ID, body)
+	if updated["name"] != "renamed-shell" {
+		t.Fatalf("expected renamed terminal, got %#v", updated)
+	}
+	if updated["cwd"] != "/tmp" {
+		t.Fatalf("expected cwd /tmp, got %#v", updated)
+	}
+	if updated["environment"] != "dev" {
+		t.Fatalf("expected environment dev, got %#v", updated)
+	}
+
+	info, err := srv.Get(context.Background(), term.ID)
+	if err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+	if info.Name != "renamed-shell" {
+		t.Fatalf("expected persisted name renamed-shell, got %#v", info)
+	}
+	if info.Tags["termx.cwd"] != "/tmp" {
+		t.Fatalf("expected persisted cwd tag, got %#v", info.Tags)
+	}
+	if info.Tags["termx.environment"] != "dev" {
+		t.Fatalf("expected persisted environment tag, got %#v", info.Tags)
+	}
+}
+
 func TestE2ERemoteLocalEnableStatusAndDisable(t *testing.T) {
 	srv := NewServer(WithRemoteConfig(RemoteConfig{
 		Enabled:    true,
@@ -414,8 +524,8 @@ func TestE2ERemoteLocalWebHandlerAnswersAuthenticatedRTCOffer(t *testing.T) {
 		},
 		"signature": signature,
 		"client": map[string]string{
-			"type":      "browser",
-			"transport": "local",
+			"type":    "browser",
+			"purpose": "runtime",
 		},
 	})
 	if err != nil {
@@ -516,7 +626,7 @@ func TestE2ERemoteLocalWebHandlerAnswersMachineInventoryEventsOffer(t *testing.T
 	}
 	waitPeerICE(t, offerPC, 5*time.Second)
 
-	body := signedLocalRTCOfferBody(t, appCert, appPrivate, "rtc-events", session.MachineID, "", offerPC.LocalDescription().SDP, "nonce-events", time.Now().UTC())
+	body := signedLocalRTCOfferBodyWithPurpose(t, appCert, appPrivate, "rtc-events", session.MachineID, "", offerPC.LocalDescription().SDP, "nonce-events", time.Now().UTC(), "inventory_events")
 	var rtcResp map[string]any
 	localWebHTTPDecode(t, status.HTTPURL+"/api/local/rtc/offer", body, &rtcResp)
 	if got := rtcResp["data_channels"].([]any); len(got) != 1 || got[0] != "events" {
@@ -629,7 +739,7 @@ func TestE2ERemoteLocalWebHandlerPushesMetadataChangeOverMachineInventoryEvents(
 	}
 	waitPeerICE(t, offerPC, 5*time.Second)
 
-	body := signedLocalRTCOfferBody(t, appCert, appPrivate, "rtc-events-metadata", session.MachineID, "", offerPC.LocalDescription().SDP, "nonce-events-metadata", time.Now().UTC())
+	body := signedLocalRTCOfferBodyWithPurpose(t, appCert, appPrivate, "rtc-events-metadata", session.MachineID, "", offerPC.LocalDescription().SDP, "nonce-events-metadata", time.Now().UTC(), "inventory_events")
 	var rtcResp map[string]any
 	localWebHTTPDecode(t, status.HTTPURL+"/api/local/rtc/offer", body, &rtcResp)
 	answer := rtcResp["answer"].(map[string]any)
@@ -862,6 +972,21 @@ func signedLocalRTCOfferBody(
 	nonce string,
 	timestamp time.Time,
 ) []byte {
+	return signedLocalRTCOfferBodyWithPurpose(t, appCert, appPrivate, sessionID, machineID, terminalID, sdp, nonce, timestamp, "runtime")
+}
+
+func signedLocalRTCOfferBodyWithPurpose(
+	t *testing.T,
+	appCert remotecert.AppCertificateEnvelope,
+	appPrivate ed25519.PrivateKey,
+	sessionID string,
+	machineID string,
+	terminalID string,
+	sdp string,
+	nonce string,
+	timestamp time.Time,
+	purpose string,
+) []byte {
 	t.Helper()
 	fields := remotertc.OfferSignatureFields{
 		MachineID:  machineID,
@@ -887,8 +1012,8 @@ func signedLocalRTCOfferBody(
 		},
 		"signature": signature,
 		"client": map[string]string{
-			"type":      "browser",
-			"transport": "local",
+			"type":    "browser",
+			"purpose": purpose,
 		},
 	})
 	if err != nil {

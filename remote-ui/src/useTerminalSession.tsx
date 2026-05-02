@@ -9,16 +9,18 @@ import {
   defaultTerminalResizeControl,
   TerminalClient,
   type TerminalClientCallbacks,
+  type TerminalProtocolSession,
   type TerminalResizeControl,
   type TerminalSnapshotPayload,
-  type TerminalTransport,
 } from './terminalClient'
+import { createTerminalProtocolClient } from './terminalProtocolClient'
 import type { Terminal } from './model'
+import type { RtcSession } from './transport'
 
 export interface UseTerminalSessionOptions {
   machineId: string
   terminalId: string
-  transport: TerminalTransport
+  session: RtcSession
 }
 
 export interface UseTerminalSessionResult {
@@ -30,7 +32,7 @@ export interface UseTerminalSessionResult {
   sendInput(data: string): void
   sendResize(cols: number, rows: number): void
   handleAppResume(resumeKind: 'quick' | 'cold' | 'frozen'): void
-  reattach(transport: TerminalTransport): void
+  reattach(session: RtcSession): void
   client: TerminalClient | null
 }
 
@@ -41,8 +43,9 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
   const [terminalInfo, setTerminalInfo] = useState<Terminal | null>(null)
   const [resizeControl, setResizeControl] = useState<TerminalResizeControl>(defaultTerminalResizeControl)
   const clientRef = useRef<TerminalClient | null>(null)
-  const transportRef = useRef(options.transport)
+  const sessionRef = useRef(options.session)
   const connectionIdRef = useRef('terminal-connection')
+  const protocolSessionRef = useRef<TerminalProtocolSession | null>(null)
 
   const callbacks = useMemo<TerminalClientCallbacks>(() => ({
     onOutput: (data) => {
@@ -55,39 +58,44 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     onTerminalInfo: setTerminalInfo,
     onResizeControl: setResizeControl,
     onLifecycle: (message) => dispatch(message),
-    onError: (message) => dispatch({ type: 'transport.failed', reason: message, recoverable: true, surface: 'banner' }),
+    onError: (message) => dispatch({ type: 'connection.failed', reason: message, recoverable: true, surface: 'banner' }),
     onClose: () => {},
     onOpen: () => {},
-    onInputDropped: () => dispatch({ type: 'transport.failed', reason: 'terminal input dropped', recoverable: true, surface: 'toast' }),
+    onInputDropped: () => dispatch({ type: 'connection.failed', reason: 'terminal input dropped', recoverable: true, surface: 'toast' }),
   }), [options.machineId, options.terminalId])
 
   useEffect(() => {
-    transportRef.current = options.transport
+    sessionRef.current = options.session
     const client = new TerminalClient(callbacks)
     clientRef.current = client
 
     let cancelled = false
     dispatch({ type: 'user.connectMachine', machineId: options.machineId })
 
-    options.transport.getConnectionInfo().then((info) => {
+    options.session.getConnectionInfo().then((info) => {
       if (cancelled) return
       connectionIdRef.current = info.connectionId
-      dispatch({ type: 'transport.connected', mode: info.mode, connectionId: info.connectionId })
+      dispatch({ type: 'connection.connected', path: info.path, connectionId: info.connectionId })
       dispatch({ type: 'user.openTerminal', machineId: options.machineId, terminalId: options.terminalId })
-      client.connect(options.terminalId, options.transport)
+      return createProtocolSession(options.session, options.machineId, options.terminalId, info)
+    }).then((protocolSession) => {
+      if (cancelled || !protocolSession) return
+      protocolSessionRef.current = protocolSession
+      client.connect(options.terminalId, protocolSession)
     }).catch((err: unknown) => {
       if (cancelled) return
       const reason = err instanceof Error ? err.message : String(err)
-      dispatch({ type: 'transport.failed', reason, recoverable: true, surface: 'banner' })
+      dispatch({ type: 'connection.failed', reason, recoverable: true, surface: 'banner' })
     })
 
     return () => {
       cancelled = true
       client.disconnect()
+      protocolSessionRef.current = null
       clientRef.current = null
       dispatch({ type: 'user.release' })
     }
-  }, [callbacks, options.machineId, options.terminalId, options.transport])
+  }, [callbacks, options.machineId, options.terminalId, options.session])
 
   const sendInput = useCallback((data: string) => {
     clientRef.current?.sendInput(data)
@@ -101,10 +109,17 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
     dispatch({ type: 'app.resume', resumeKind })
   }, [])
 
-  const reattach = useCallback((transport: TerminalTransport) => {
-    transportRef.current = transport
-    clientRef.current?.reattach(transport)
-    dispatch({ type: 'transport.verified', connectionId: connectionIdRef.current })
+  const reattach = useCallback((session: RtcSession) => {
+    sessionRef.current = session
+    session.getConnectionInfo().then((info) => {
+      connectionIdRef.current = info.connectionId
+      const protocolSession = createProtocolSession(session, options.machineId, options.terminalId, info)
+      protocolSessionRef.current = protocolSession
+      clientRef.current?.reattach(protocolSession)
+      dispatch({ type: 'connection.verified', connectionId: info.connectionId })
+    }).catch((err: unknown) => {
+      dispatch({ type: 'connection.failed', reason: err instanceof Error ? err.message : String(err), recoverable: true, surface: 'banner' })
+    })
   }, [])
 
   return {
@@ -122,3 +137,86 @@ export function useTerminalSession(options: UseTerminalSessionOptions): UseTermi
 }
 
 export type TerminalSessionMessage = ConnectionMessage
+
+function createProtocolSession(
+  session: RtcSession,
+  machineId: string,
+  terminalId: string,
+  connectionInfo: Awaited<ReturnType<RtcSession['getConnectionInfo']>>,
+): TerminalProtocolSession {
+  let protocol: TerminalProtocolSession | null = null
+  let protocolPromise: Promise<TerminalProtocolSession> | null = null
+  const pendingSubscribers = new Map<string, Set<Parameters<TerminalProtocolSession['subscribeTerminal']>[1]>>()
+  let closed = false
+  let pendingChannel: Awaited<ReturnType<RtcSession['openTerminal']>> | null = null
+  const ensureProtocol = async (id: string): Promise<TerminalProtocolSession> => {
+    if (protocol) return protocol
+    if (closed) throw new Error(`terminal protocol session ${terminalId} is closed`)
+    if (!protocolPromise) {
+      protocolPromise = session.openTerminal(id).then((channel) => {
+        if (closed) {
+          channel.close()
+          return createClosedProtocolSession(connectionInfo, `terminal protocol session ${terminalId} is closed`)
+        }
+        pendingChannel = channel
+        protocol = createTerminalProtocolClient({
+          channel,
+          machineId,
+          terminalId,
+          connectionInfo,
+        })
+        for (const [pendingTerminalId, handlers] of pendingSubscribers) {
+          for (const handler of handlers) {
+            protocol.subscribeTerminal(pendingTerminalId, handler)
+          }
+        }
+        return protocol
+      }).catch((err: unknown) => {
+        if (!closed) throw err
+        return createClosedProtocolSession(connectionInfo, err instanceof Error ? err.message : String(err))
+      })
+    }
+    return protocolPromise
+  }
+  return {
+    async openTerminal(id) {
+      const current = await ensureProtocol(id)
+      return current.openTerminal(id)
+    },
+    getConnectionInfo: () => Promise.resolve(connectionInfo),
+    subscribeTerminal(id, handler) {
+      if (protocol) return protocol.subscribeTerminal(id, handler)
+      let handlers = pendingSubscribers.get(id)
+      if (!handlers) {
+        handlers = new Set()
+        pendingSubscribers.set(id, handlers)
+      }
+      handlers.add(handler)
+      void ensureProtocol(id)
+      return () => {
+        handlers?.delete(handler)
+      }
+    },
+    closeTerminalChannel(id) {
+      closed = true
+      protocol?.closeTerminalChannel(id)
+      pendingChannel?.close()
+    },
+  }
+}
+
+function createClosedProtocolSession(
+  connectionInfo: Awaited<ReturnType<RtcSession['getConnectionInfo']>>,
+  reason: string,
+): TerminalProtocolSession {
+  return {
+    async openTerminal() {
+      throw new Error(reason)
+    },
+    getConnectionInfo: () => Promise.resolve(connectionInfo),
+    subscribeTerminal() {
+      return () => {}
+    },
+    closeTerminalChannel() {},
+  }
+}

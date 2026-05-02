@@ -72,8 +72,8 @@ type RTCOfferSignature struct {
 }
 
 type RTCOfferClient struct {
-	Type      string `json:"type"`
-	Transport string `json:"transport"`
+	Type    string `json:"type"`
+	Purpose string `json:"purpose"`
 }
 
 type RTCOfferRequest struct {
@@ -93,6 +93,17 @@ type RTCOfferResponse struct {
 	Answer        RTCSessionAnswer `json:"answer"`
 	ICETCPEnabled bool             `json:"ice_tcp_enabled"`
 	DataChannels  []string         `json:"data_channels"`
+	Capabilities  RTCCapabilities  `json:"capabilities"`
+}
+
+type RTCCapabilities struct {
+	TerminalAllowed           bool   `json:"terminal_allowed"`
+	APIAllowed                bool   `json:"api_allowed"`
+	EventsAllowed             bool   `json:"events_allowed"`
+	FileTransferAllowed       bool   `json:"file_transfer_allowed"`
+	TerminalManagementAllowed bool   `json:"terminal_management_allowed"`
+	RelayInUse                bool   `json:"relay_in_use"`
+	DenialReason              string `json:"denial_reason,omitempty"`
 }
 
 type StatusSource interface {
@@ -118,31 +129,31 @@ type RTCOfferAnswerer interface {
 }
 
 type Config struct {
-	Assets    fs.FS
-	Status    StatusSource
-	Terminals TerminalSource
+	Assets           fs.FS
+	Status           StatusSource
+	Terminals        TerminalSource
 	TerminalsManager TerminalManager
-	Pairing   PairClaimer
-	RTC       RTCOfferAnswerer
+	Pairing          PairClaimer
+	RTC              RTCOfferAnswerer
 }
 
 type Handler struct {
-	assets    fs.FS
-	status    StatusSource
-	terminals TerminalSource
+	assets           fs.FS
+	status           StatusSource
+	terminals        TerminalSource
 	terminalsManager TerminalManager
-	pairing   PairClaimer
-	rtc       RTCOfferAnswerer
+	pairing          PairClaimer
+	rtc              RTCOfferAnswerer
 }
 
 func NewHandler(cfg Config) http.Handler {
 	return &Handler{
-		assets:    cfg.Assets,
-		status:    cfg.Status,
-		terminals: cfg.Terminals,
+		assets:           cfg.Assets,
+		status:           cfg.Status,
+		terminals:        cfg.Terminals,
 		terminalsManager: cfg.TerminalsManager,
-		pairing:   cfg.Pairing,
-		rtc:       cfg.RTC,
+		pairing:          cfg.Pairing,
+		rtc:              cfg.RTC,
 	}
 }
 
