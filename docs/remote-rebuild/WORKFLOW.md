@@ -42,7 +42,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-J | cli/local | Complete `termx remote` commands for implemented local-only remote management: enable/local-only, disable, info/show, pair, and open | completed | `dd5e1502` |
 | P3-E-C-B-K | remote-ui/core | Add terminal resize ownership and size-lock handling so local/mobile remote views can fit locally without stealing daemon PTY size | completed | `23539e7d` |
 | P3-E-C-B-L | remote-ui | Fix embedded local xterm viewport sizing so the terminal does not stay at a single visible row after mobile/local layout settles | completed | `134c35f7` |
-| P3-E-C-B-M | localweb | Re-embed current `remote-ui` local web frontend assets into the `termx` binary static bundle | completed | pending commit |
+| P3-E-C-B-M | localweb | Re-embed current `remote-ui` local web frontend assets into the `termx` binary static bundle | completed | `fc5e92aa` |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -324,7 +324,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Focused tests after fix: `cd remote-ui && npm test -- --run src/LocalRemoteApp.test.tsx` passed 6 tests; `cd remote-ui && npm run typecheck` passed; `cd remote-ui && npm run build:localweb` passed with only the existing Vite large chunk warning.
 - Broader tests after embed: `cd remote-ui && npm test` passed 106 tests; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestStartRemoteLocalWebServesEmbeddedPageAndStatus|TestRemoteLocal'` passed; `git diff --check` passed.
 - Code review: `Pasteur` found no issues. It confirmed no workspace/tab/pane/session public model drift, no TURN credential or machine private key exposure, no WebRTC/fetch/native transport leakage into `LocalRemoteApp`, embedded assets match `remote-ui/dist` by SHA-256, and current accessible command names are covered.
-- Result: completed. Commit: pending.
+- Result: completed. Commit: `fc5e92aa`.
 
 ### P3-F anonymous rendezvous HTTP adapter/service
 
