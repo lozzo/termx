@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
+	"time"
 )
 
 func TestOpenStoreFromEnvMigratesSQLite(t *testing.T) {
@@ -26,4 +28,69 @@ func assertTableExists(t *testing.T, db *sql.DB, table string) {
 	if err != nil {
 		t.Fatalf("table %s not found: %v", table, err)
 	}
+}
+
+func TestRunRendezvousCleanupLoopInvokesCleanup(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	cleaner := &fakeRendezvousCleaner{}
+	ticks := make(chan time.Time, 1)
+	done := make(chan struct{})
+
+	go func() {
+		runRendezvousCleanupLoop(ctx, cleaner, ticks)
+		close(done)
+	}()
+	ticks <- time.Date(2026, 5, 3, 7, 59, 0, 0, time.UTC)
+	eventually(t, func() bool { return cleaner.calls == 1 })
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("cleanup loop did not stop after context cancellation")
+	}
+}
+
+func TestRunRendezvousCleanupLoopKeepsRunningAfterError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	cleaner := &fakeRendezvousCleaner{err: errors.New("cleanup failed")}
+	ticks := make(chan time.Time, 2)
+	done := make(chan struct{})
+
+	go func() {
+		runRendezvousCleanupLoop(ctx, cleaner, ticks)
+		close(done)
+	}()
+	ticks <- time.Date(2026, 5, 3, 8, 0, 0, 0, time.UTC)
+	ticks <- time.Date(2026, 5, 3, 8, 1, 0, 0, time.UTC)
+	eventually(t, func() bool { return cleaner.calls == 2 })
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("cleanup loop did not stop after context cancellation")
+	}
+}
+
+type fakeRendezvousCleaner struct {
+	calls int
+	err   error
+}
+
+func (c *fakeRendezvousCleaner) CleanupExpired(context.Context) (int64, error) {
+	c.calls++
+	return int64(c.calls), c.err
+}
+
+func eventually(t *testing.T, fn func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if fn() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("condition not met")
 }

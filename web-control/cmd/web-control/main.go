@@ -7,10 +7,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/lozzow/termx/web-control/internal/account"
 	"github.com/lozzow/termx/web-control/internal/httpapi"
 	"github.com/lozzow/termx/web-control/internal/machines"
+	"github.com/lozzow/termx/web-control/internal/rendezvous"
 	"github.com/lozzow/termx/web-control/internal/store"
 )
 
@@ -37,7 +40,13 @@ func main() {
 		log.Fatal(err)
 	}
 	machineService := machines.NewService(machines.Config{DB: db})
-	if err := http.ListenAndServe(addr, httpapi.NewRouter(httpapi.Config{Accounts: accounts, Machines: machineService})); err != nil {
+	rendezvousService := rendezvous.NewService(rendezvous.Config{DB: db, STUNServers: commaListEnv("TERMX_WEB_CONTROL_STUN_SERVERS")})
+	cleanupCtx, stopCleanup := context.WithCancel(ctx)
+	defer stopCleanup()
+	cleanupTicker := time.NewTicker(5 * time.Minute)
+	defer cleanupTicker.Stop()
+	go runRendezvousCleanupLoop(cleanupCtx, rendezvousService, cleanupTicker.C)
+	if err := http.ListenAndServe(addr, httpapi.NewRouter(httpapi.Config{Accounts: accounts, Machines: machineService, Rendezvous: rendezvousService})); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -68,4 +77,35 @@ func newAccountServiceFromEnv(ctx context.Context, db *sql.DB) (*account.Service
 		DB:     db,
 		Tokens: account.NewHMACTokenIssuer([]byte(secret)),
 	}), nil
+}
+
+func commaListEnv(name string) []string {
+	var values []string
+	for _, value := range strings.Split(os.Getenv(name), ",") {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
+}
+
+type rendezvousCleaner interface {
+	CleanupExpired(context.Context) (int64, error)
+}
+
+func runRendezvousCleanupLoop(ctx context.Context, cleaner rendezvousCleaner, ticks <-chan time.Time) {
+	if cleaner == nil {
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticks:
+			if _, err := cleaner.CleanupExpired(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("cleanup expired rendezvous channels: %v", err)
+			}
+		}
+	}
 }

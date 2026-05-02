@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `3` Machine, app certificate, and control model committed; next todo `4`.
-- Last updated: 2026-05-03T06:42:00+08:00.
+- Active todo: `4` Registered public_p2p rendezvous.
+- Last updated: 2026-05-03T09:25:00+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -29,7 +29,12 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 3-B | web-control/machines-review | Fix Slice 3 review findings for strict certificate metadata, certificate signature verification, claim proof, and conditional bootstrap writes | completed | `732689ba` |
 | 3-B-A | web-control/machines-deferred | Preserve signed certificate bytes for future cross-service verification before hub/agent certificate envelope use | deferred | `732689ba` |
 | 3-B-B | web-control/machines-deferred | Add claim token TTL/rotation policy with daemon pairing UX | deferred | `732689ba` |
-| 4 | public_p2p | Implement registered public P2P rendezvous with authenticated channel, offer/answer/candidate forwarding, TTL, rate limits, and STUN-only policy | pending |  |
+| 4 | public_p2p | Implement registered public P2P rendezvous with authenticated channel, offer/answer/candidate forwarding, TTL, rate limits, and STUN-only policy | completed |  |
+| 4-A | external | Defer production DNS/TLS/public STUN/rendezvous deployment and abuse provider setup | deferred_external |  |
+| 4-B | public_p2p-self-review | Harden public_p2p rendezvous for strict STUN URL whitelist, real ICE candidate payloads, TTL cap, and expired-channel cleanup | completed |  |
+| 4-C | public_p2p-review | Fix Slice 4 subagent review findings for structured payload validation, secret placement, STUN fail-closed behavior, cleanup scheduling, and workflow freshness | completed |  |
+| 4-C-A | public_p2p-follow-up-review | Fix follow-up review findings for strict field types, ICE relay token parsing, documented envelope compatibility, HTTP body limits, and workflow consistency | completed |  |
+| 4-C-B | public_p2p-final-review | Fix final review findings for private-key-shaped certificate payload fields, relay candidates embedded in SDP, and workflow next action freshness | completed |  |
 | 5 | hub | Create Hub skeleton and agent registry with register, heartbeat, poll, answer, and expiry behavior | pending |  |
 | 6 | managed-signaling | Implement managed signaling without TURN relay as HTTP control/signaling only, runtime still WebRTC DataChannel | pending |  |
 | 7 | paid-relay | Implement paid TURN/STUN relay MVP with temporary TURN credentials, relay lease, and no free TURN | pending |  |
@@ -345,27 +350,157 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 4 Registered Public P2P Rendezvous
 
-- 状态：pending
+- 状态：completed
 - 父条目：none
 - 来源：注册免费用户允许 TermX rendezvous/signaling + STUN 做 `public_p2p`，免费用户不得拿 TURN。
 - 目标：实现 authenticated public P2P channel create、offer/answer/candidate forwarding、TTL、payload limit、rate limit、STUN-only response、unauthenticated reject。
 - 范围：可先在 `web-control/` 或独立 `termx-rendezvous/` 落地，需与 `remote-ui` public_p2p adapter 合同一致。
 - 非目标：不承载 terminal/file/api/events 数据面；不发 TURN；不实现 paid relay。
-- 外部依赖：公网 DNS/TLS/真实 STUN 部署 deferred。
-- mock 策略：本地 fake clock、in-memory/SQLite channel store、local STUN config。
-- 先写的失败测试：待创建 TTL、payload limit、rate limit、no TURN、unauthenticated reject、free public_p2p 不含 TURN 测试。
-- 预期失败结果：待记录。
-- 实现摘要：待完成。
-- 重构摘要：待完成。
-- 运行命令：待记录。
-- 测试结果：待记录。
-- subagent review：待发起。
-- review 发现：待记录。
-- review 后修复：待记录。
-- 新增派生条目：预计创建 deferred external DNS/TLS/public STUN deploy。
+- 外部依赖：公网 DNS/TLS/真实 STUN 部署 deferred and tracked by `4-A`.
+- mock 策略：本地 fake clock、SQLite channel/message store、local STUN config。
+- 先写的失败测试：planned `web-control/internal/rendezvous/rendezvous_test.go` for authenticated channel create, STUN-only ICE config, no TURN for registered free users, TTL expiry, channel secret verification, payload limit, per-channel rate limit, offer/answer/candidate forwarding, and no terminal/file runtime payload endpoints; planned `web-control/internal/httpapi/rendezvous_test.go` for unauthenticated reject and authenticated HTTP flow.
+- 预期失败结果：focused tests should fail before implementation because `internal/rendezvous`, rendezvous HTTP handlers, SQLite message storage, and STUN-only ICE config do not exist yet.
+- 实际失败结果：`cd web-control && GOWORK=off go test ./internal/rendezvous ./internal/httpapi` failed as expected because `internal/rendezvous` had no non-test Go files and HTTP rendezvous config/routes were absent.
+- 实现摘要：added SQLite-backed `internal/rendezvous` service for authenticated `public_p2p` channel creation, machine ownership checks, hashed channel secrets, TTL validation, STUN-only ICE config, offer/answer/candidate forwarding, JSON payload validation, runtime-data/TURN payload rejection, per-channel message limits, and ordered message listing. Added HTTP endpoints under `/api/v1/public-p2p/channels` for authenticated channel creation and unauthenticated secret-protected signaling message send/list.
+- 重构摘要：kept signaling/control APIs separate from terminal/file/api/events runtime transport; relay remains absent from client paths and appears nowhere as a fourth path. Added `rendezvous_messages` SQLite table and index for persistent message forwarding.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/rendezvous ./internal/httpapi`; `cd web-control && GOWORK=off go test ./internal/rendezvous ./internal/httpapi ./internal/store`; `cd web-control && GOWORK=off go test ./...`; `go test ./web-control/...`; `cd web-control/frontend && npm test`; `cd web-control/frontend && npm run typecheck`; `cd web-control/frontend && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check`。
+- 测试结果：red path confirmed before implementation with missing rendezvous package and HTTP route wiring. First implementation run exposed ordering bug where same-timestamp offer/answer messages sorted by random ID; fixed listing to order by SQLite insertion order. Focused Slice 4 tests now pass for `internal/rendezvous`, `internal/httpapi`, and `internal/store`. Broader web-control module tests, workspace web-control tests, frontend test/typecheck/build, workflow check, and `git diff --check` all pass before code review.
+- subagent review：`Jason` (`019dea58-e8e7-7212-8eba-6b28e174a130`) reviewed Slice 4 and `4-B`.
+- review 发现：high raw JSON/string blacklist could permit non-signaling payloads/private material and escaped relay candidates; medium channel secret in events query string leaks into logs/history; medium empty STUN config still creates unusable `public_p2p` channels; medium cleanup exists but is not scheduled/wired in runtime; low workflow `4-B` freshness risk.
+- review 后修复：implemented `4-C`, `4-C-A`, and `4-C-B` review fixes; validation passed after each fix round.
+- 新增派生条目：`4-A` deferred external DNS/TLS/public STUN/rendezvous deployment and abuse provider setup; `4-B` local self-review hardening for STUN whitelist, ICE candidate payload compatibility, TTL cap, and cleanup; `4-C` subagent review fixes.
 - deferred human items：生产域名、TLS 证书、公网部署账号、abuse/captcha provider。
 - 剩余风险：旧 anonymous 命名必须隔离或迁移，不能恢复匿名云端免费 rendezvous 产品结论。
-- 下一步：Slice 3 完成后开始。
+- 下一步：complete Slice 4 after final validation and commit.
+- commit：待提交。
+
+### 4-A Deferred Public Rendezvous Deployment Dependencies
+
+- 状态：deferred_external
+- 父条目：4
+- 来源：Slice 4 can implement local/test rendezvous semantics, but production public rendezvous/STUN requires external deployment inputs.
+- 目标：record external deployment requirements without blocking the local implementation.
+- 范围：future production DNS/TLS, public rendezvous host, STUN server config, abuse/rate-limit provider, monitoring.
+- 非目标：do not configure real DNS/TLS/cloud/firewall or call external providers in Slice 4.
+- 外部依赖：DNS, TLS certificates, public server/cloud account, public STUN/rendezvous hostnames, abuse/captcha/risk/analytics provider if required.
+- mock 策略：local STUN URLs and SQLite rate limits cover behavior for tests/dev.
+- 先写的失败测试：not applicable for deferred external item.
+- 预期失败结果：not applicable.
+- 实现摘要：deferred.
+- 重构摘要：deferred.
+- 运行命令：not run.
+- 测试结果：not run.
+- subagent review：will be included in Slice 4 review scope.
+- review 发现：pending.
+- review 后修复：not applicable.
+- 新增派生条目：none.
+- deferred human items：provide production DNS/TLS/cloud host, STUN/rendezvous public endpoints, abuse/rate-limit provider details.
+- 剩余风险：local tests prove policy and API behavior, not公网 reachability.
+- 下一步：resume when production deployment inputs are available.
+- commit：will be included in Slice 4 workflow.
+
+### 4-B Slice 4 Self-Review Hardening
+
+- 状态：completed
+- 父条目：4
+- 来源：local self-review after broader Slice 4 validation found that TURN filtering was too string-based for legitimate ICE candidate fields and STUN config accepted arbitrary non-TURN URLs.
+- 目标：allow real browser ICE candidate payloads such as `usernameFragment` while still rejecting TURN/relay candidates, whitelist returned ICE URLs to `stun:`/`stuns:` only, cap excessive rendezvous TTL, and provide persistent expired-channel cleanup backed by SQLite cascade.
+- 范围：`web-control/internal/rendezvous`, `web-control/internal/store`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement TURN credentials, paid relay, hub signaling, terminal/file/api/events runtime transport, or production scheduler wiring.
+- 外部依赖：none.
+- mock 策略：use fake clock and SQLite in-memory store; no external STUN/TURN service is called.
+- 先写的失败测试：planned regression tests for rejecting non-STUN configured ICE URLs, allowing host candidate payloads with `usernameFragment`, rejecting relay/TURN candidate payloads, rejecting excessive TTL, and cleaning expired channels/messages with SQLite cascade.
+- 预期失败结果：focused rendezvous tests should fail before implementation because current service accepts arbitrary non-TURN ICE URLs, rejects `usernameFragment`, has no TTL cap, and has no cleanup method.
+- 实际失败结果：`cd web-control && GOWORK=off go test ./internal/rendezvous` failed before implementation with `svc.CleanupExpired undefined`; the same test set also covers the STUN whitelist, `usernameFragment`, relay candidate rejection, and TTL cap once the build compiles.
+- 实现摘要：added `CleanupExpired`, capped public rendezvous TTL at 15 minutes, changed ICE config filtering to a strict `stun:`/`stuns:` whitelist, and narrowed payload relay filtering so legitimate ICE fields such as `usernameFragment` pass while TURN URLs and relay candidates remain rejected.
+- 重构摘要：kept cleanup as an explicit service method for future scheduler wiring; message cleanup relies on SQLite `ON DELETE CASCADE` instead of in-memory test state.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/rendezvous`。
+- 测试结果：red path confirmed with missing `CleanupExpired`; after implementation, focused rendezvous tests pass. A first regression fixture exceeded the test-specific 128-byte payload limit and was shortened so payload-size and ICE-compatibility checks remain distinct. Broader post-`4-B` validation passed: focused rendezvous/httpapi/store tests, `GOWORK=off go test ./...`, workspace `go test ./web-control/...`, frontend test/typecheck/build, workflow check, and `git diff --check`.
+- subagent review：will be included in Slice 4 review/follow-up scope.
+- review 发现：pending.
+- review 后修复：`4-C` wired runtime cleanup scheduling; final validation passed.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：cleanup requires future production scheduler/hub cadence; this slice only provides callable cleanup behavior.
+- 下一步：rerun broader Slice 4 validation and include `4-B` in subagent review follow-up scope.
+- commit：待提交。
+
+### 4-C Slice 4 Subagent Review Fixes
+
+- 状态：completed
+- 父条目：4
+- 来源：Slice 4 subagent review by `Jason`.
+- 目标：fix high/medium review findings with regression tests: structured recursive signaling payload validation, no channel secret in query strings, fail closed when STUN config is empty/invalid, runtime cleanup scheduling, and workflow freshness.
+- 范围：`web-control/internal/rendezvous`, `web-control/internal/httpapi`, `web-control/cmd/web-control`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement paid TURN relay, managed signaling, hub runtime, terminal/file/api/events HTTP runtime, production DNS/TLS, or external abuse provider integration.
+- 外部依赖：none for code fixes; production deployment remains in `4-A`.
+- mock 策略：fake clock and in-memory SQLite for service tests; no real STUN/TURN calls.
+- 先写的失败测试：planned regressions for escaped relay candidates, private key field rejection, malformed/missing offer/candidate fields, event listing with secret header instead of query, empty STUN config rejection, and scheduled cleanup ticker invoking `CleanupExpired`.
+- 预期失败结果：focused tests should fail before implementation because current code uses raw text validation, accepts query-string event secrets, allows empty STUN configs, and has no cleanup scheduler.
+- 实际失败结果：`cd web-control && GOWORK=off go test ./internal/rendezvous ./internal/httpapi ./cmd/web-control` failed before fixes: service accepted missing-SDP offer, private-key field, escaped relay candidate, and empty STUN config; HTTP events accepted `channel_secret` query string; `cmd/web-control` lacked `runRendezvousCleanupLoop`.
+- 实现摘要：implemented structured per-message signaling payload validation; `offer`/`answer` now require `sdp` and allow only SDP/type fields, `candidate` requires `candidate` and allows only candidate/sdpMid/sdpMLineIndex/usernameFragment fields, with recursive private-key/runtime/TURN/relay string rejection after JSON unescaping. Events listing now requires `X-TermX-Rendezvous-Secret` instead of query string. Public channel creation fails closed when no valid STUN server remains after whitelist filtering. `cmd/web-control` now runs a cleanup ticker that calls `CleanupExpired`.
+- 重构摘要：moved payload checks from raw string blacklist to typed JSON object validation; kept cleanup scheduling inside runnable command wiring without exposing terminal/file/api/events runtime transport.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/rendezvous ./internal/httpapi ./cmd/web-control`; `cd web-control && GOWORK=off go test ./...`; `go test ./web-control/...`; `cd web-control/frontend && npm test`; `cd web-control/frontend && npm run typecheck`; `cd web-control/frontend && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check`。
+- 测试结果：red path confirmed with review findings; after implementation, focused rendezvous/httpapi/cmd tests pass. Broader post-`4-C` module/workspace/backend/frontend/workflow/diff validation all pass.
+- subagent review：follow-up review requested from `Epicurus` (`019dea62-8e5f-71c2-bbde-a065dbb57f57`) after fixes and broader validation.
+- review 发现：follow-up review by `Epicurus` found high structured validation still accepted non-string `sdp`/`candidate` and missed whitespace variants of `typ relay`; medium HTTP contract diverged from documented rendezvous envelopes and `Authorization: Rendezvous` events; medium HTTP body limits were enforced only after JSON decode; low `WORKFLOW.md` table/detail status inconsistency.
+- review 后修复：implemented `4-C-A` and `4-C-B`; final focused review findings were fixed and validation passed.
+- 新增派生条目：`4-C-A` follow-up review fixes.
+- deferred human items：none.
+- 剩余风险：production abuse/rate-limit provider and public deployment remain deferred in `4-A`.
+- 下一步：complete `4-C-A` regressions and implementation, rerun validation, then request final follow-up review.
+- commit：待提交。
+
+### 4-C-A Slice 4 Follow-Up Review Fixes
+
+- 状态：completed
+- 父条目：4-C
+- 来源：Slice 4 follow-up review by `Epicurus`.
+- 目标：strictly type-check signaling fields, parse/normalize ICE candidate tokens for relay detection, support documented rendezvous envelopes without turning HTTP into runtime transport, enforce public-p2p HTTP body limits before full decode, and fix workflow status consistency.
+- 范围：`web-control/internal/rendezvous`, `web-control/internal/httpapi`, focused tests, `docs/remote-rebuild/WORKFLOW.md`; read-only reference to `docs/remote-rebuild/api.md`.
+- 非目标：do not implement real app certificate business validation, paid TURN relay, managed signaling, hub runtime, terminal/file/api/events HTTP runtime, or production DNS/TLS.
+- 外部依赖：none.
+- mock 策略：local JSON fixtures and in-memory SQLite; certificate/signature fields are forwarded as signaling auth material but not verified until agent/hub slices.
+- 先写的失败测试：planned regressions for non-string `sdp`/`candidate`, `typ\\trelay` and multi-space relay candidates, documented `{app_certificate, signature, offer/answer/candidate}` envelopes, `Authorization: Rendezvous {id}:{secret}` event polling, and HTTP body rejection before service decode for both channel create and signaling message submits.
+- 预期失败结果：focused tests should fail before implementation because current validation accepts non-string allowed fields and misses tabbed relay candidates, HTTP routes reject documented envelopes/Authorization header, and body limits are not enforced before decode.
+- 实际失败结果：`cd web-control && GOWORK=off go test ./internal/rendezvous ./internal/httpapi` failed before fixes: rendezvous service accepted object `sdp`, object `candidate`, string `sdpMLineIndex`, and tab/multi-space relay candidates; HTTP test failed to compile because `MaxPublicP2PBodyBytes` config and documented envelope/header support were absent.
+- 实现摘要：strictly type-checks offer/answer/candidate fields, rejects non-string SDP/candidate values, rejects tabbed or multi-space `typ relay` candidates using token parsing, accepts the documented public_p2p envelopes with forwarded `app_certificate`, `signature`, and `app_public_key` metadata, supports `Authorization: Rendezvous {channel_id}:{channel_secret}` for event listing, keeps `X-TermX-Rendezvous-Secret` as a non-URL compatibility header, and enforces `MaxPublicP2PBodyBytes` before JSON decode on public-p2p POST handlers.
+- 重构摘要：kept certificate/signature material as bounded signaling auth envelope data for future agent/hub verification; did not add business certificate validation or any terminal/file/api/events HTTP runtime.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/rendezvous ./internal/httpapi`; `cd web-control && GOWORK=off go test ./internal/rendezvous ./internal/httpapi ./cmd/web-control`; `cd web-control && GOWORK=off go test ./...`; `go test ./web-control/...`; `cd web-control/frontend && npm test`; `cd web-control/frontend && npm run typecheck`; `cd web-control/frontend && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check`。
+- 测试结果：red path confirmed with follow-up findings; after implementation, focused rendezvous/httpapi tests pass. A local self-review added oversized channel-create body coverage; it failed first with 400 then passed after mapping `MaxBytesReader` errors to 413 in the create handler. Broader validation after `4-C-A` passed across backend module/workspace, frontend test/typecheck/build, workflow check, and diff check.
+- subagent review：final follow-up review requested after fixes and broader validation.
+- review 发现：final follow-up review by `Boyle` found high private-key-shaped JWK fields can pass through `app_certificate.payload`; medium relay ICE candidates embedded in SDP are not token-parsed; low workflow status/next-action text was stale.
+- review 后修复：implemented `4-C-B`; final focused review findings were fixed and validation passed.
+- 新增派生条目：`4-C-B` final review fixes.
+- deferred human items：none.
+- 剩余风险：future agent/hub slices must verify certificate/signature contents; this slice only forwards bounded signaling auth envelopes.
+- 下一步：complete `4-C-B`, rerun validation, and request no further review unless new findings appear.
+- commit：待提交。
+
+### 4-C-B Slice 4 Final Review Fixes
+
+- 状态：completed
+- 父条目：4-C-A
+- 来源：Slice 4 final follow-up review by `Boyle`.
+- 目标：reject private-key-shaped JWK fields in forwarded app certificate payloads, token-parse relay ICE candidates embedded in SDP, and fix workflow status/next-action freshness.
+- 范围：`web-control/internal/rendezvous`, focused tests, `docs/remote-rebuild/WORKFLOW.md`.
+- 非目标：do not implement real certificate signature verification in web-control, paid TURN, managed signaling, terminal/file/api/events HTTP runtime, or production external integrations.
+- 外部依赖：none.
+- mock 策略：local JSON fixtures and in-memory SQLite; app certificate envelope remains forwarded for future agent/hub verification but is bounded and scrubbed of private-key-shaped fields.
+- 先写的失败测试：planned regressions for `app_certificate.payload` containing JWK private fields (`d`, `p`, `q`, `dp`, `dq`, `qi`) and SDP text containing `typ\\trelay` / multi-space relay candidate lines.
+- 预期失败结果：focused rendezvous tests should fail before implementation because current certificate payload scan misses private JWK field names and SDP validation does not parse candidate tokens.
+- 实际失败结果：`cd web-control && GOWORK=off go test ./internal/rendezvous -run TestStructuredPayloadValidationRejectsNonSignalingData` failed before fixes because SDP with `typ\\trelay` and `app_certificate.payload` containing JWK private field `d` were accepted.
+- 实现摘要：app certificate payload scanning now rejects private-key-shaped field names including JWK private fields (`d`, `p`, `q`, `dp`, `dq`, `qi`, `oth`), and SDP validation now token-parses `a=candidate` lines so relay candidates embedded in SDP with tabs or extra spaces are rejected.
+- 重构摘要：kept app certificate envelope forwarding bounded to signaling auth material; no web-control business verification of certificate signatures was added in this slice.
+- 运行命令：`cd web-control && GOWORK=off go test ./internal/rendezvous -run TestStructuredPayloadValidationRejectsNonSignalingData`; `cd web-control && GOWORK=off go test ./internal/rendezvous ./internal/httpapi ./cmd/web-control`; `cd web-control && GOWORK=off go test ./...`; `go test ./web-control/...`; `cd web-control/frontend && npm test`; `cd web-control/frontend && npm run typecheck`; `cd web-control/frontend && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `git diff --check`。
+- 测试结果：red path confirmed for `app_certificate.payload` JWK private field and SDP `typ\\trelay`; after implementation, focused and broader validation passed.
+- subagent review：covered by final review; request another review only if fixes are non-trivial or validation reveals new risk.
+- review 发现：see `4-C-A` final review findings.
+- review 后修复：implemented all final review findings; no further subagent review requested because fixes are narrow regressions for the final review findings and full validation passed.
+- 新增派生条目：none.
+- deferred human items：none.
+- 剩余风险：real app certificate signature/canonical verification remains deferred to hub/agent certificate-verification slices.
+- 下一步：complete parent Slice 4 and commit.
 - commit：待提交。
 
 ### 5 Hub Skeleton And Agent Registry
@@ -1165,5 +1300,5 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Commit the Slice 3 workflow hash update.
-2. Start Slice 4: write failing registered `public_p2p` rendezvous tests for auth, TTL, payload limit, rate limit, STUN-only ICE config, no TURN for free users, and unauthenticated reject.
+1. Commit completed Slice 4 files only, excluding pre-existing unrelated dirty docs and `go.work.sum`.
+2. Record the Slice 4 commit hash in `WORKFLOW.md`, then start Slice 5 hub skeleton TDD.

@@ -39,6 +39,7 @@ func TestOpenAndMigrateSQLiteCreatesCoreTables(t *testing.T) {
 		"hubs",
 		"connect_tickets",
 		"rendezvous_channels",
+		"rendezvous_messages",
 		"relay_sessions",
 		"relay_usage_monthly",
 	} {

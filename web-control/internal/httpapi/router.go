@@ -9,15 +9,18 @@ import (
 
 	"github.com/lozzow/termx/web-control/internal/account"
 	"github.com/lozzow/termx/web-control/internal/machines"
+	"github.com/lozzow/termx/web-control/internal/rendezvous"
 )
 
 const defaultServiceName = "termx-web-control"
 
 type Config struct {
-	ServiceName string
-	Version     string
-	Accounts    *account.Service
-	Machines    *machines.Service
+	ServiceName           string
+	Version               string
+	Accounts              *account.Service
+	Machines              *machines.Service
+	Rendezvous            *rendezvous.Service
+	MaxPublicP2PBodyBytes int64
 }
 
 type HealthResponse struct {
@@ -34,6 +37,9 @@ func NewRouter(cfg Config) http.Handler {
 	}
 	if cfg.Version == "" {
 		cfg.Version = "dev"
+	}
+	if cfg.MaxPublicP2PBodyBytes <= 0 {
+		cfg.MaxPublicP2PBodyBytes = 64 * 1024
 	}
 
 	mux := http.NewServeMux()
@@ -282,7 +288,200 @@ func NewRouter(cfg Config) http.Handler {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+	mux.HandleFunc("POST /api/v1/public-p2p/channels", func(w http.ResponseWriter, r *http.Request) {
+		user, ok := authenticatedUser(w, r, cfg.Accounts)
+		if !ok {
+			return
+		}
+		if cfg.Rendezvous == nil {
+			writeError(w, http.StatusServiceUnavailable, "rendezvous_service_unavailable", "rendezvous service is not configured")
+			return
+		}
+		var req struct {
+			MachineID  string `json:"machine_id"`
+			TerminalID string `json:"terminal_id"`
+			TTLSeconds int64  `json:"ttl_seconds"`
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, cfg.MaxPublicP2PBodyBytes)
+		if err := decodeJSON(r, &req); err != nil {
+			if requestBodyTooLarge(err) {
+				writeError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body is too large")
+				return
+			}
+			writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON request body")
+			return
+		}
+		result, err := cfg.Rendezvous.CreateChannel(r.Context(), rendezvous.CreateChannelInput{
+			UserID:     user.User.ID,
+			MachineID:  req.MachineID,
+			TerminalID: req.TerminalID,
+			TTL:        time.Duration(req.TTLSeconds) * time.Second,
+		})
+		if err != nil {
+			writeError(w, http.StatusForbidden, "create_rendezvous_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusCreated, publicP2PChannelResponse(result))
+	})
+	mux.HandleFunc("POST /api/v1/public-p2p/channels/{channel_id}/offer", func(w http.ResponseWriter, r *http.Request) {
+		handleRendezvousMessage(w, r, cfg.Rendezvous, cfg.MaxPublicP2PBodyBytes, rendezvous.MessageOffer)
+	})
+	mux.HandleFunc("POST /api/v1/public-p2p/channels/{channel_id}/answer", func(w http.ResponseWriter, r *http.Request) {
+		handleRendezvousMessage(w, r, cfg.Rendezvous, cfg.MaxPublicP2PBodyBytes, rendezvous.MessageAnswer)
+	})
+	mux.HandleFunc("POST /api/v1/public-p2p/channels/{channel_id}/candidate", func(w http.ResponseWriter, r *http.Request) {
+		handleRendezvousMessage(w, r, cfg.Rendezvous, cfg.MaxPublicP2PBodyBytes, rendezvous.MessageCandidate)
+	})
+	mux.HandleFunc("GET /api/v1/public-p2p/channels/{channel_id}/events", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.Rendezvous == nil {
+			writeError(w, http.StatusServiceUnavailable, "rendezvous_service_unavailable", "rendezvous service is not configured")
+			return
+		}
+		secret, ok := rendezvousSecretFromRequest(r, r.PathValue("channel_id"))
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "missing_rendezvous_secret", "rendezvous channel secret header is required")
+			return
+		}
+		messages, err := cfg.Rendezvous.ListMessages(r.Context(), rendezvous.ListMessagesInput{
+			ChannelID: r.PathValue("channel_id"),
+			Secret:    secret,
+		})
+		if err != nil {
+			writeError(w, http.StatusForbidden, "list_rendezvous_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"messages": rendezvousMessageResponses(messages)})
+	})
 	return mux
+}
+
+func handleRendezvousMessage(w http.ResponseWriter, r *http.Request, service *rendezvous.Service, maxBodyBytes int64, messageType string) {
+	if service == nil {
+		writeError(w, http.StatusServiceUnavailable, "rendezvous_service_unavailable", "rendezvous service is not configured")
+		return
+	}
+	var req struct {
+		ChannelSecret  string          `json:"channel_secret"`
+		Payload        json.RawMessage `json:"payload"`
+		Offer          json.RawMessage `json:"offer"`
+		Answer         json.RawMessage `json:"answer"`
+		Candidate      json.RawMessage `json:"candidate"`
+		AppCertificate json.RawMessage `json:"app_certificate"`
+		AppPublicKey   string          `json:"app_public_key"`
+		Signature      json.RawMessage `json:"signature"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	if err := decodeJSON(r, &req); err != nil {
+		if requestBodyTooLarge(err) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request_too_large", "request body is too large")
+			return
+		}
+		writeError(w, http.StatusBadRequest, "invalid_json", "invalid JSON request body")
+		return
+	}
+	payload := req.Payload
+	if len(payload) == 0 {
+		switch messageType {
+		case rendezvous.MessageOffer:
+			payload = envelopePayload(messageType, req.Offer, req.AppCertificate, "", req.Signature)
+		case rendezvous.MessageAnswer:
+			payload = envelopePayload(messageType, req.Answer, nil, "", nil)
+		case rendezvous.MessageCandidate:
+			payload = envelopePayload(messageType, req.Candidate, nil, req.AppPublicKey, nil)
+		}
+	}
+	if len(payload) == 0 {
+		writeError(w, http.StatusBadRequest, "missing_payload", "payload is required")
+		return
+	}
+	if err := service.Send(r.Context(), rendezvous.SendMessageInput{
+		ChannelID: r.PathValue("channel_id"),
+		Secret:    req.ChannelSecret,
+		Type:      messageType,
+		Payload:   string(payload),
+	}); err != nil {
+		writeError(w, http.StatusForbidden, "send_rendezvous_failed", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func envelopePayload(messageType string, nested json.RawMessage, appCertificate json.RawMessage, appPublicKey string, signature json.RawMessage) json.RawMessage {
+	if len(nested) == 0 {
+		return nil
+	}
+	key := messageType
+	data := map[string]json.RawMessage{key: nested}
+	if len(appCertificate) > 0 {
+		data["app_certificate"] = appCertificate
+	}
+	if strings.TrimSpace(appPublicKey) != "" {
+		encodedKey, err := json.Marshal(strings.TrimSpace(appPublicKey))
+		if err != nil {
+			return nil
+		}
+		data["app_public_key"] = encodedKey
+	}
+	if len(signature) > 0 {
+		data["signature"] = signature
+	}
+	encoded, err := json.Marshal(data)
+	if err != nil {
+		return nil
+	}
+	return encoded
+}
+
+func publicP2PChannelResponse(channel rendezvous.Channel) map[string]any {
+	return map[string]any{
+		"id":                  channel.ID,
+		"secret":              channel.Secret,
+		"path":                channel.Path,
+		"machine_id":          channel.MachineID,
+		"terminal_id":         channel.TerminalID,
+		"expires_at":          channel.ExpiresAt,
+		"ice_servers":         channel.ICEServers,
+		"channel_id":          channel.ID,
+		"channel_secret":      channel.Secret,
+		"public_stun_servers": publicSTUNServers(channel.ICEServers),
+	}
+}
+
+func publicSTUNServers(servers []rendezvous.ICEServer) []string {
+	result := make([]string, 0, len(servers))
+	for _, server := range servers {
+		result = append(result, server.URL)
+	}
+	return result
+}
+
+func rendezvousSecretFromRequest(r *http.Request, channelID string) (string, bool) {
+	if secret := strings.TrimSpace(r.Header.Get("X-TermX-Rendezvous-Secret")); secret != "" {
+		return secret, true
+	}
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	value, ok := strings.CutPrefix(auth, "Rendezvous ")
+	if !ok {
+		return "", false
+	}
+	id, secret, ok := strings.Cut(value, ":")
+	if !ok || strings.TrimSpace(id) != channelID || strings.TrimSpace(secret) == "" {
+		return "", false
+	}
+	return strings.TrimSpace(secret), true
+}
+
+func rendezvousMessageResponses(messages []rendezvous.Message) []map[string]any {
+	result := make([]map[string]any, 0, len(messages))
+	for _, msg := range messages {
+		result = append(result, map[string]any{
+			"id":         msg.ID,
+			"type":       msg.Type,
+			"payload":    json.RawMessage(msg.Payload),
+			"created_at": msg.CreatedAt,
+		})
+	}
+	return result
 }
 
 func authenticatedUser(w http.ResponseWriter, r *http.Request, accounts *account.Service) (account.AuthResult, bool) {
@@ -336,4 +535,8 @@ func bearerToken(r *http.Request) (string, error) {
 		return "", errors.New("invalid authorization")
 	}
 	return strings.TrimSpace(token), nil
+}
+
+func requestBodyTooLarge(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "http: request body too large")
 }

@@ -169,6 +169,15 @@ var migrationStatements = []string{
 		expires_at TEXT NOT NULL,
 		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 	)`,
+	`CREATE TABLE IF NOT EXISTS rendezvous_messages (
+		id TEXT PRIMARY KEY,
+		channel_id TEXT NOT NULL REFERENCES rendezvous_channels(id) ON DELETE CASCADE,
+		type TEXT NOT NULL CHECK (type IN ('offer', 'answer', 'candidate')),
+		payload TEXT NOT NULL,
+		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+	)`,
+	`CREATE INDEX IF NOT EXISTS rendezvous_messages_channel_created_idx
+		ON rendezvous_messages(channel_id, created_at, id)`,
 	`CREATE TABLE IF NOT EXISTS relay_sessions (
 		id TEXT PRIMARY KEY,
 		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
