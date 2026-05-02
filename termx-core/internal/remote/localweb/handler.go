@@ -41,6 +41,10 @@ type Terminal struct {
 	Rows         int       `json:"rows"`
 	State        string    `json:"state"`
 	LastActiveAt time.Time `json:"last_active_at,omitempty"`
+	SizeLocked   bool      `json:"size_locked"`
+	SizeLockMode string    `json:"size_lock_mode,omitempty"`
+	CWD          string    `json:"cwd,omitempty"`
+	Environment  string    `json:"environment,omitempty"`
 }
 
 type PairResponse struct {

@@ -36,6 +36,51 @@ describe('TerminalList', () => {
     })
   })
 
+  it('renders terminal metadata needed for choosing a local environment', () => {
+    render(
+      <TerminalList
+        machineId="machine-local"
+        terminals={[
+          terminal({
+            terminalId: 'terminal-1',
+            title: 'dev shell',
+            command: '/bin/zsh -l',
+            cols: 132,
+            rows: 43,
+            cwd: '/Users/lozzow/project',
+            state: 'running',
+            sizeLocked: true,
+            sizeLockMode: 'lock',
+            environment: 'prod',
+            lastActiveAt: '2026-05-02T07:01:02Z',
+          }),
+          terminal({
+            terminalId: 'terminal-2',
+            title: 'stopped worker',
+            state: 'exited',
+            cols: 80,
+            rows: 24,
+            sizeLocked: false,
+            sizeLockMode: 'off',
+          }),
+        ]}
+        onOpenTerminal={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('dev shell')).toBeTruthy()
+    expect(screen.getByText('/Users/lozzow/project')).toBeTruthy()
+    expect(screen.getByText('prod')).toBeTruthy()
+    expect(screen.getByText('132x43')).toBeTruthy()
+    expect(screen.getByText('Locked')).toBeTruthy()
+    expect(screen.getByText('Running')).toBeTruthy()
+    expect(screen.getByText(/Created/)).toBeTruthy()
+    expect(screen.getByText('stopped worker')).toBeTruthy()
+    expect(screen.getByText('Exited')).toBeTruthy()
+    expect(screen.getByText('Resizable')).toBeTruthy()
+    expect(screen.getByTestId('termx-terminal-list').textContent).not.toMatch(/workspace|tab|window|pane|session/i)
+  })
+
   it('shows an empty state without mentioning sessions, windows, panes, tabs, or workspaces', () => {
     render(
       <TerminalList
@@ -74,5 +119,10 @@ function terminal(overrides: Partial<Terminal>): Terminal {
     command: overrides.command,
     cols: overrides.cols,
     rows: overrides.rows,
+    cwd: overrides.cwd,
+    lastActiveAt: overrides.lastActiveAt,
+    sizeLocked: overrides.sizeLocked,
+    sizeLockMode: overrides.sizeLockMode,
+    environment: overrides.environment,
   }
 }

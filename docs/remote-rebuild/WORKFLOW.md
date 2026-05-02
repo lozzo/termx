@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: P3 embedded local web first
-- Active todo: P3-E-C-B-O add local embedded terminal list page before terminal page
-- Last updated: 2026-05-02T16:00:00+08:00
+- Active todo: P4-A recreate the mobile app shell around shared remote UI components
+- Last updated: 2026-05-02T16:44:11+08:00
 - Worktree goal before final response: clean after each completed todo commit
 
 ## Ordered Todos
@@ -45,6 +45,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | P3-E-C-B-M | localweb | Re-embed current `remote-ui` local web frontend assets into the `termx` binary static bundle | completed | `fc5e92aa` |
 | P3-E-C-B-N | remote-ui | Rework mobile local web terminal chrome so terminal height is maximized, terminal list has a clear back button, and files/pair actions move into compact header actions | completed | `0be902f9` |
 | P3-E-C-B-O | remote-ui | Add a true local embedded terminal list page so local web opens to terminals first and only enters the terminal page after selecting an item | completed | `b7f07517` |
+| P3-E-C-B-P | remote-ui | Enrich terminal list metadata and move Files to a machine-level overlay whose open/close state is independent from terminal/list navigation | completed | `pending` |
 | P3-F | rendezvous | Implement anonymous rendezvous HTTP adapter/service after local embedded web path is stable | completed | `a4ab3b2` |
 | P4-A | mobile | Recreate mobile app shell around the shared remote UI components and replace browser adapters with native/mobile adapters | pending |  |
 
@@ -357,6 +358,22 @@ Status file for unattended remote rebuild work. Update this file before starting
 - Final broader tests after review fix: `cd remote-ui && npm test` passed 106 tests; `cd remote-ui && npm run build:localweb` passed with only the existing Vite large chunk warning and regenerated `termx-core/internal/remote/localweb/static/assets/index-DjSTbu7Y.js`; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestStartRemoteLocalWebServesEmbeddedPageAndStatus|TestRemoteLocal'` passed; `git diff --check` passed. `remote-ui/dist` and `termx-core/internal/remote/localweb/static` were verified byte-identical for `index.html`, `index-BwdcQlsw.css`, and `index-DjSTbu7Y.js`.
 - Result: completed. Commit: `b7f07517`.
 
+### P3-E-C-B-P terminal list metadata and machine-level files overlay
+
+- Active slice: respond to user feedback that the terminal list should show useful terminal metadata such as name, command/environment intent, size, size-lock state, liveness, cwd, and currently available lifecycle metadata; and that Files should be a machine-level popup whose open/close state does not mutate terminal-list or terminal-page state.
+- Tests written before implementation: planned `remote-ui/src/TerminalList.test.tsx`, `remote-ui/src/LocalRemoteApp.test.tsx`, and local terminal normalization tests proving terminal metadata rendering, size-lock normalization/display, list-page Files open/close without connecting a terminal, terminal-page Files open/close without changing the mounted terminal state, and file path state persists when closing/reopening from list and terminal pages.
+- Expected failing tests: focused remote-ui tests should fail before implementation because `TerminalList` only renders title/command/size/state dot, the local terminal model does not normalize `size_locked`/tags/cwd/environment labels, and `LocalRemoteApp` still models Files as `panelMode === "files"` inside the terminal page using the active terminal connection.
+- Planned scope: keep UI/business components behind `LocalAgentApi`, `LocalRemoteTransportFactory`, `PeerTransport`, and `FileManager` interfaces; do not introduce workspace/tab/pane/session public concepts; do not change TURN, pairing, app key, or machine private key behavior. UI will treat Files as machine-level state, but current core local file API still requires a terminal-scoped WebRTC transport, so this slice may use a hidden internal file context until a future machine-scoped file transport exists.
+- Actual failing tests before implementation: `cd remote-ui && npm test -- --run src/TerminalList.test.tsx src/LocalRemoteApp.test.tsx src/localAgentApi.test.ts` failed as expected because the terminal list did not render cwd/environment/size-lock metadata and the Files flow still unmounted with terminal-page-local state. The first implementation pass then exposed a test-stack issue where hidden-overlay assertions used unsupported `toHaveAttribute`; those assertions were corrected to plain DOM property checks before final verification.
+- Implementation notes: `termx-core/internal/remote/localweb/handler.go` and `termx-core/remote_localweb.go` now expose local terminal metadata for `size_locked`, `size_lock_mode`, `cwd`, and `environment` using the existing terminal tag inventory without introducing any workspace/tab/pane concepts. `remote-ui/src/model.ts` and `remote-ui/src/localAgentApi.ts` normalize that metadata into the shared machine->terminal model. `remote-ui/src/TerminalList.tsx` now renders terminal title, environment badge, command, cwd, liveness, size, size-lock state, and last-active metadata. `remote-ui/src/LocalRemoteApp.tsx` now treats Files as machine-level state with a dedicated overlay transport, keeps the overlay instance mounted but hidden when closed so file browsing state survives list/terminal navigation, and keeps terminal page/list page state independent from file open/close actions.
+- Focused tests after implementation: `cd remote-ui && npm test -- --run src/TerminalList.test.tsx src/LocalRemoteApp.test.tsx src/localAgentApi.test.ts` passed 15 tests; `cd remote-ui && npm run typecheck` passed; `cd termx-core && go test ./internal/remote/localweb -run TestHandlerLocalTerminalsUsesTerminalModelOnly -count=1` passed.
+- Review fixes: `Noether` found that the UI label `Last active` was misleading because current local terminal inventory only exposes creation time (`CreatedAt`), and that Files persistence was only proven with a mocked `FileManager`. This slice now renders the truthful label `Created`, adds a real `LocalRemoteApp.files.test.tsx` flow using the actual `FileManager`/`useFileManager` stack, and proves the intended rule: same terminal preserves file path state across list/terminal navigation while switching the file context terminal resets to that terminal’s own cwd.
+- Final focused tests after review fixes: `cd remote-ui && npm test -- --run src/TerminalList.test.tsx src/LocalRemoteApp.test.tsx src/LocalRemoteApp.files.test.tsx src/localAgentApi.test.ts` passed 17 tests; `cd remote-ui && npm run typecheck` passed.
+- Final broader tests after review fixes: `cd remote-ui && npm test` passed 109 tests; `cd remote-ui && npm run build:localweb` passed with only the existing Vite large chunk warning and regenerated `termx-core/internal/remote/localweb/static/assets/index-CN9mAXzL.js` plus `index-CmvYIe2j.css`; `cd termx-core && go test ./internal/remote/localweb ./internal/remote/rtc ./internal/remote/fileapi` passed; `cd termx-cli && go test ./cmd/termx -run 'TestStartRemoteLocalWebServesEmbeddedPageAndStatus|TestRemoteLocal'` passed; `git diff --check` passed.
+- Deferred implementation detail: the UI now behaves as machine-level Files, but the current local file API still binds over a terminal-scoped WebRTC transport. This slice reuses a hidden terminal-scoped file context internally and preserves file-manager state across navigation without exposing terminal-scoped semantics in the UI. A future core slice can replace that hidden transport with a true machine-scoped file channel when available.
+- Subagent launched: `Noether` (`019de7d3-ed2e-7303-a06f-100ba2dc937f`) for P3-E-C-B-P code review focused on docs alignment, forbidden remote public concepts, transport boundaries, no TURN/private-key leakage, and test coverage. Result: one medium correctness issue on misleading activity wording and one low test-gap issue on mock-only Files persistence; both fixed. No workspace/tab/pane public model drift, TURN credential exposure, machine private key exposure, or transport-boundary leakage found.
+- Result: completed. Commit: `pending`.
+
 ### P3-F anonymous rendezvous HTTP adapter/service
 
 - Active slice: HTTP adapter/service for the existing anonymous rendezvous store.
@@ -594,7 +611,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Deferred Human Decisions And Placeholders
 
 - Public rendezvous deployment, DNS, TLS certificates, billing/subscription provider, mobile signing, and app store configuration remain deferred by policy.
-- `termx-core/remote_localweb.go` currently maps `last_active_at` from terminal creation time because the existing terminal inventory does not expose a separate last-activity timestamp. This is a narrow placeholder; replace it with real activity metadata when the terminal runtime publishes it.
+- `termx-core/remote_localweb.go` currently maps `last_active_at` from terminal creation time because the existing terminal inventory does not expose a separate last-activity timestamp. The UI now labels that field as `Created` instead of implying activity; replace it with real activity metadata when the terminal runtime publishes it.
 - Local HTTP and ICE TCP currently use independent listeners. Same-port cmux remains deferred until browser smoke/local e2e proves that reducing exposed ports is worth the extra listener complexity.
 - P3-E-B local terminal bridge now implements the minimum Go binary terminal protocol path over `terminal:{terminal_id}`. Richer incoming stream-frame rendering such as `TypeScreenUpdate`, `TypeSyncLost`, and `TypeBootstrapDone` remain for later terminal-rendering polish.
 - P3-E-C-B-B in-app Browser Use click smoke is deferred by current tool availability: the Browser plugin is installed, but the required Node REPL `js` tool is not exposed in this session. Current fallback smoke is executable HTTP/embedded-asset coverage in `termx-cli`; P3-E-C-B-C should run in-app browser automation when the Node REPL browser tool is available.
@@ -609,8 +626,9 @@ Status file for unattended remote rebuild work. Update this file before starting
 - P3-E browser adapter currently translates shared `GET /files/list` and `GET /files/stat` requests to the existing Go/tgent-style `POST` data-channel file API. Browser smoke in P3-E-C-B must validate that this adapter behavior works against the embedded daemon.
 - P3-E-C-B-K keeps local/mobile views from stealing daemon PTY size, but explicit resize owner acquisition/release UI remains a future product slice. Until that exists, embedded local web requests follower resize policy by default.
 - P3-E-C-B-O covers local embedded web list-first navigation with unit tests and embedded asset tests, but not a live browser viewport smoke for desktop/mobile Tailwind media visibility.
+- P3-E-C-B-P now proves machine-level Files persistence with both mock and real FileManager flows, but still relies on a hidden terminal-scoped transport internally until a future machine-scoped file channel exists.
 
 ## Next Exact Action
 
-1. Commit P3-E-C-B-O and then update this workflow entry with the commit hash.
-2. Choose the next UI slice: explicit resize owner acquisition/release controls or advanced mobile-native terminal gestures before migrating shared components into the mobile app.
+1. Commit P3-E-C-B-P and then update this workflow entry with the commit hash.
+2. Start P4-A by migrating the stabilized local embedded machine/terminal/files shell into the mobile app host while keeping adapter boundaries interface-based.

@@ -38,6 +38,26 @@ vi.mock('./Terminal', () => ({
   }),
 }))
 
+vi.mock('./FileManager', async () => {
+  const React = await import('react')
+  return {
+    FileManager: ({ machineId, terminalId, initialPath }: { machineId: string; terminalId: string; initialPath?: string }) => {
+      const [currentPath, setCurrentPath] = React.useState(initialPath ?? '')
+      return (
+        <section
+          data-current-path={currentPath}
+          data-initial-path={initialPath ?? ''}
+          data-machine-id={machineId}
+          data-terminal-id={terminalId}
+          data-testid="termx-file-manager"
+        >
+          <button type="button" onClick={() => setCurrentPath('/tmp')}>Open tmp</button>
+        </section>
+      )
+    },
+  }
+})
+
 describe('LocalRemoteApp', () => {
   afterEach(() => {
     cleanup()
@@ -57,26 +77,80 @@ describe('LocalRemoteApp', () => {
     await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
     expect(screen.queryByTestId('termx-terminal')).toBeNull()
     expect(createTransport).not.toHaveBeenCalled()
+    expect(screen.getByText('120x36')).toBeTruthy()
+    expect(screen.getByText('Locked')).toBeTruthy()
+    expect(screen.getByText('/Users/lozzow/project')).toBeTruthy()
+    expect(screen.getByText('dev')).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: /open files/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay')).toBeTruthy())
+    expect(screen.getByTestId('termx-file-manager').getAttribute('data-terminal-id')).toBe('terminal-1')
+    expect(screen.getByTestId('termx-file-manager').getAttribute('data-initial-path')).toBe('/Users/lozzow/project')
+    expect(screen.queryByTestId('termx-terminal')).toBeNull()
+    await waitFor(() => expect(createTransport).toHaveBeenCalledTimes(1))
+    await userEvent.click(screen.getByRole('button', { name: 'Open tmp' }))
+    expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/tmp')
+    await userEvent.click(screen.getByRole('button', { name: /close files/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').hasAttribute('hidden')).toBe(true))
+    expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy()
+
     await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
 
     await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
     expect(screen.queryByTestId('termx-terminal-list-page')).toBeNull()
     expect(screen.getByTestId('termx-terminal-list').getAttribute('data-machine-id')).toBe('machine-local')
     expect(screen.getByTestId('termx-terminal').getAttribute('data-terminal-id')).toBe('terminal-1')
-    expect(screen.queryByTestId('termx-file-manager')).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: /open files/i }))
     await waitFor(() => expect(screen.getByTestId('termx-file-manager')).toBeTruthy())
     expect(screen.getByTestId('termx-file-manager').getAttribute('data-terminal-id')).toBe('terminal-1')
+    expect(screen.getByTestId('termx-file-manager').getAttribute('data-initial-path')).toBe('/Users/lozzow/project')
+    expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/tmp')
     expect(createTransport).toHaveBeenCalledWith(expect.objectContaining({
       machineId: 'machine-local',
       terminalId: 'terminal-1',
     }))
-    await waitFor(() => expect(transports[0]?.connectCalls).toEqual([{
+    await waitFor(() => expect(transports[1]?.connectCalls).toEqual([{
       machineId: 'machine-local',
       terminalId: 'terminal-1',
       mode: 'local',
     }]))
+    await userEvent.click(screen.getByRole('button', { name: /close files/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').hasAttribute('hidden')).toBe(true))
+    expect(screen.getByTestId('termx-terminal')).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/workspace|tab|window|pane|session/i)
+  })
+
+  it('preserves file state for the same terminal but resets when the file context terminal changes', async () => {
+    const api = createMockLocalAgentApi()
+    const transports: ReturnType<typeof createMockLocalRemoteTransport>[] = []
+    const createTransport = vi.fn<LocalRemoteTransportFactory>(({ machineId, terminalId }) =>
+      trackTransport(transports, createMockLocalRemoteTransport({
+        '/files/list': { path: '/', parent: '', total: 0, entries: [] },
+      }, machineId, terminalId)),
+    )
+
+    render(<LocalRemoteApp api={api} createTransport={createTransport} />)
+
+    await waitFor(() => expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open files/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-file-manager')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: 'Open tmp' }))
+    expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/tmp')
+
+    await userEvent.click(screen.getByRole('button', { name: /close files/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').hasAttribute('hidden')).toBe(true))
+    await userEvent.click(screen.getByRole('button', { name: /open zsh/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-terminal')).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: /open files/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/tmp'))
+
+    await userEvent.click(screen.getByRole('button', { name: /close files/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').hasAttribute('hidden')).toBe(true))
+    await userEvent.click(screen.getByRole('button', { name: /open worker/i }))
+    await userEvent.click(screen.getByRole('button', { name: /open files/i }))
+    await waitFor(() => expect(screen.getByTestId('termx-file-manager').getAttribute('data-terminal-id')).toBe('terminal-2'))
+    expect(screen.getByTestId('termx-file-manager').getAttribute('data-initial-path')).toBe('/srv/worker')
+    expect(screen.getByTestId('termx-file-manager').getAttribute('data-current-path')).toBe('/srv/worker')
   })
 
   it('uses a terminal-first mobile shell with sheets instead of a Config sidebar', async () => {
@@ -128,14 +202,16 @@ describe('LocalRemoteApp', () => {
     expect(screen.queryByRole('button', { name: /^console$/i })).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: /open files/i }))
-    await waitFor(() => expect(screen.getByTestId('termx-file-manager')).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay')).toBeTruthy())
+    expect(screen.getByTestId('termx-file-manager')).toBeTruthy()
     expect(screen.getByTestId('termx-terminal')).toBeTruthy()
     expect(screen.getByTestId('termx-terminal-panel').className).toContain('flex-1')
-    expect(screen.getByTestId('termx-file-overlay').className).toContain('absolute')
-    expect(screen.getByTestId('termx-mobile-keybar').className.split(/\s+/)).toContain('hidden')
+    expect(screen.getByTestId('termx-machine-files-overlay').className).toContain('absolute')
+    expect(screen.getByTestId('termx-mobile-keybar').className.split(/\s+/)).not.toContain('hidden')
 
     await userEvent.click(screen.getByRole('button', { name: /close files/i }))
-    await waitFor(() => expect(screen.queryByTestId('termx-file-overlay')).toBeNull())
+    await waitFor(() => expect(screen.getByTestId('termx-machine-files-overlay').hasAttribute('hidden')).toBe(true))
+    expect(screen.getByTestId('termx-terminal')).toBeTruthy()
     expect(screen.getByTestId('termx-mobile-keybar').className.split(/\s+/)).not.toContain('hidden')
 
     await userEvent.click(screen.getByRole('button', { name: /show terminal list/i }))
@@ -153,7 +229,7 @@ describe('LocalRemoteApp', () => {
     await waitFor(() => expect(screen.getByText('Paired with machine-local')).toBeTruthy())
     expect(screen.getByTestId('termx-terminal-list-page')).toBeTruthy()
     expect(screen.queryByTestId('termx-terminal')).toBeNull()
-    expect(createTransport).toHaveBeenCalledTimes(1)
+    expect(createTransport).toHaveBeenCalledTimes(2)
   })
 
   it('keeps the app shell driven by LocalAgentApi and transport interfaces only', () => {
@@ -329,6 +405,22 @@ function createMockLocalAgentApi(): LocalAgentApi {
         command: '/bin/zsh',
         cols: 120,
         rows: 36,
+        cwd: '/Users/lozzow/project',
+        sizeLocked: true,
+        sizeLockMode: 'lock',
+        environment: 'dev',
+      }, {
+        machineId: 'machine-local',
+        terminalId: 'terminal-2',
+        title: 'worker',
+        state: 'running',
+        command: '/usr/bin/env bash',
+        cols: 90,
+        rows: 28,
+        cwd: '/srv/worker',
+        sizeLocked: false,
+        sizeLockMode: 'off',
+        environment: 'prod',
       }]
     },
     async pair() {

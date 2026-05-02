@@ -25,6 +25,9 @@ export interface Terminal {
   rows?: number | undefined
   cwd?: string | undefined
   lastActiveAt?: string | undefined
+  sizeLocked?: boolean | undefined
+  sizeLockMode?: 'off' | 'warn' | 'lock' | undefined
+  environment?: string | undefined
 }
 
 const blockedPublicModelKeys = [
@@ -99,6 +102,9 @@ export function normalizeTerminal(input: Record<string, unknown>): Terminal {
     rows: getOptionalNumber(input, 'rows'),
     cwd: getOptionalString(input, 'cwd'),
     lastActiveAt: getOptionalString(input, 'last_active_at', 'lastActiveAt'),
+    sizeLocked: getOptionalBoolean(input, 'size_locked', 'sizeLocked'),
+    sizeLockMode: normalizeSizeLockMode(getOptionalString(input, 'size_lock_mode', 'sizeLockMode')),
+    environment: getOptionalString(input, 'environment', 'env'),
   })
 }
 
@@ -123,6 +129,11 @@ function normalizeMachineState(value: string | undefined): MachineState {
 function normalizeTerminalState(value: string | undefined): TerminalState {
   if (value === 'running' || value === 'exited' || value === 'unknown') return value
   return 'unknown'
+}
+
+function normalizeSizeLockMode(value: string | undefined): Terminal['sizeLockMode'] {
+  if (value === 'off' || value === 'warn' || value === 'lock') return value
+  return undefined
 }
 
 function getRequiredString(record: Record<string, unknown>, ...keys: string[]): string {
@@ -151,6 +162,18 @@ function getOptionalNumber(record: Record<string, unknown>, ...keys: string[]): 
     if (value === undefined || value === null) continue
     if (typeof value !== 'number' || !Number.isFinite(value)) {
       throw new Error(`${key} must be a finite number`)
+    }
+    return value
+  }
+  return undefined
+}
+
+function getOptionalBoolean(record: Record<string, unknown>, ...keys: string[]): boolean | undefined {
+  for (const key of keys) {
+    const value = record[key]
+    if (value === undefined || value === null) continue
+    if (typeof value !== 'boolean') {
+      throw new Error(`${key} must be a boolean`)
     }
     return value
   }

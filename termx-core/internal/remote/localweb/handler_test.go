@@ -221,6 +221,10 @@ func TestHandlerLocalTerminalsUsesTerminalModelOnly(t *testing.T) {
 			Rows:         34,
 			State:        "running",
 			LastActiveAt: time.Date(2026, 5, 1, 2, 3, 4, 0, time.UTC),
+			SizeLocked:   true,
+			SizeLockMode: "lock",
+			CWD:          "/Users/lozzow/project",
+			Environment:  "dev",
 		}}},
 	})
 
@@ -240,6 +244,12 @@ func TestHandlerLocalTerminalsUsesTerminalModelOnly(t *testing.T) {
 	terminal := body["terminals"][0]
 	if terminal["terminal_id"] != "term_1" {
 		t.Fatalf("expected terminal_id term_1, got %#v", terminal)
+	}
+	if terminal["size_locked"] != true || terminal["size_lock_mode"] != "lock" {
+		t.Fatalf("expected size lock metadata, got %#v", terminal)
+	}
+	if terminal["cwd"] != "/Users/lozzow/project" || terminal["environment"] != "dev" {
+		t.Fatalf("expected cwd/environment metadata, got %#v", terminal)
 	}
 	for _, forbidden := range []string{"workspace_id", "tab_id", "pane_id"} {
 		if _, ok := terminal[forbidden]; ok {

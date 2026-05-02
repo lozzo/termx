@@ -24,6 +24,10 @@ describe('createLocalAgentApi', () => {
           rows: 36,
           state: 'running',
           last_active_at: '2026-05-01T04:01:00Z',
+          size_locked: true,
+          size_lock_mode: 'lock',
+          cwd: '/Users/lozzow/project',
+          environment: 'dev',
         }],
       },
     }))
@@ -52,6 +56,10 @@ describe('createLocalAgentApi', () => {
         command: '/bin/zsh -l',
         cols: 120,
         rows: 36,
+        sizeLocked: true,
+        sizeLockMode: 'lock',
+        cwd: '/Users/lozzow/project',
+        environment: 'dev',
       }),
     ])
   })

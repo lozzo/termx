@@ -143,6 +143,10 @@ function normalizeLocalTerminals(raw: Record<string, unknown>, machineId: string
       title: optionalString(record, 'title') ?? optionalString(record, 'name'),
       command: commandToString(record.command),
       last_active_at: optionalString(record, 'last_active_at'),
+      size_locked: optionalBoolean(record, 'size_locked'),
+      size_lock_mode: optionalString(record, 'size_lock_mode'),
+      cwd: optionalString(record, 'cwd'),
+      environment: optionalString(record, 'environment'),
     })
   })
 }
@@ -231,6 +235,13 @@ function optionalString(record: Record<string, unknown>, key: string): string | 
   const value = record[key]
   if (value === undefined || value === null) return undefined
   if (typeof value !== 'string') throw new Error(`${key} must be a string`)
+  return value
+}
+
+function optionalBoolean(record: Record<string, unknown>, key: string): boolean | undefined {
+  const value = record[key]
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'boolean') throw new Error(`${key} must be a boolean`)
   return value
 }
 

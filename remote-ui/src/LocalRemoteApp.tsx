@@ -31,7 +31,6 @@ export interface LocalRemoteAppProps {
 }
 
 type MobileSheet = 'terminals' | 'pair' | null
-type PanelMode = 'terminal' | 'files'
 type AppPage = 'terminal-list' | 'terminal'
 
 export function LocalRemoteApp({ api, createTransport, className, pair }: LocalRemoteAppProps) {
@@ -41,13 +40,20 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
   const [error, setError] = useState<string | null>(null)
   const [pairStatus, setPairStatus] = useState<string | null>(null)
   const [connectedTransport, setConnectedTransport] = useState<(PeerTransport & TerminalTransport) | null>(null)
+  const [fileTransport, setFileTransport] = useState<(PeerTransport & TerminalTransport) | null>(null)
+  const [fileTerminalId, setFileTerminalId] = useState<string | null>(null)
+  const [fileTransportReady, setFileTransportReady] = useState(false)
+  const [fileInitialPath, setFileInitialPath] = useState('/')
   const [transportRetryToken, setTransportRetryToken] = useState(0)
 
   const [page, setPage] = useState<AppPage>('terminal-list')
-  const [panelMode, setPanelMode] = useState<PanelMode>('terminal')
+  const [filesOpen, setFilesOpen] = useState(false)
   const [mobileSheet, setMobileSheet] = useState<MobileSheet>(null)
   const [modifierState, setModifierState] = useState<TerminalModifierState>({ ctrl: 'off', alt: 'off' })
   const terminalRef = useRef<TerminalHandle | null>(null)
+  const fileTransportConnectSeqRef = useRef(0)
+  const activeTerminal = terminals.find((terminal) => terminal.terminalId === activeTerminalId)
+  const activeTerminalTitle = activeTerminal?.title || activeTerminal?.command || activeTerminalId || 'Terminal'
 
   useEffect(() => {
     let cancelled = false
@@ -109,7 +115,6 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
     }
     setActiveTerminalId(intent.terminalId)
     setPage('terminal')
-    setPanelMode('terminal')
     setMobileSheet(null)
   }, [machine])
 
@@ -118,25 +123,62 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
     setPairStatus(`Paired with ${machineId}`)
     setTransportRetryToken((current) => current + 1)
     setMobileSheet(null)
-    setPanelMode('terminal')
   }, [])
 
   const showTerminalListPage = useCallback(() => {
     setPage('terminal-list')
-    setPanelMode('terminal')
     setMobileSheet(null)
     terminalRef.current?.adjustInputPosition(0)
   }, [])
 
   const openFiles = useCallback(() => {
-    setPanelMode('files')
+    const fileTerminal = activeTerminal ?? terminals[0]
+    if (!machine || !fileTerminal) {
+      setError('No terminal is available for local file access')
+      return
+    }
+    setFileInitialPath(fileTerminal.cwd || '/')
+    if (!fileTransport || fileTerminalId !== fileTerminal.terminalId) {
+      void fileTransport?.disconnect()
+      try {
+        const connectSeq = fileTransportConnectSeqRef.current + 1
+        fileTransportConnectSeqRef.current = connectSeq
+        const transport = createTransport({
+          machineId: machine.machineId,
+          terminalId: fileTerminal.terminalId,
+        })
+        setFileTransport(transport)
+        setFileTerminalId(fileTerminal.terminalId)
+        setFileTransportReady(false)
+        void transport.connect({
+          machineId: machine.machineId,
+          terminalId: fileTerminal.terminalId,
+          mode: 'local',
+        }).then(() => {
+          if (fileTransportConnectSeqRef.current !== connectSeq) return
+          setFileTransportReady(true)
+        }).catch((err: unknown) => {
+          if (fileTransportConnectSeqRef.current !== connectSeq) return
+          setError(err instanceof Error ? err.message : String(err))
+          setFilesOpen(false)
+          setFileTransport(null)
+          setFileTerminalId(null)
+          setFileTransportReady(false)
+          if (pair) setMobileSheet('pair')
+        })
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+        setFileTransportReady(false)
+        if (pair) setMobileSheet('pair')
+        return
+      }
+    }
+    setFilesOpen(true)
     setMobileSheet(null)
-    window.setTimeout(() => terminalRef.current?.fit(), 0)
-  }, [])
+  }, [activeTerminal, createTransport, fileTerminalId, fileTransport, machine, pair, terminals])
 
   const openTerminalPanel = useCallback(() => {
-    setPanelMode('terminal')
-    setMobileSheet(null)
+    setFilesOpen(false)
     window.setTimeout(() => {
       terminalRef.current?.fit()
       terminalRef.current?.focus()
@@ -146,9 +188,6 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
   const resetKeyboardOffset = useCallback(() => {
     terminalRef.current?.adjustInputPosition(0)
   }, [])
-
-  const activeTerminal = terminals.find((terminal) => terminal.terminalId === activeTerminalId)
-  const activeTerminalTitle = activeTerminal?.title || activeTerminal?.command || activeTerminalId || 'Terminal'
 
   const renderTerminalListPage = () => {
     if (!machine) return null
@@ -163,6 +202,15 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
               <p className="truncate text-[11px] text-zinc-500">{machine.machineId}</p>
             </div>
           </div>
+          <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            aria-label="Open files"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-zinc-600 active:bg-zinc-100"
+            onClick={openFiles}
+          >
+            <Folder className="h-5 w-5" />
+          </button>
           {pair ? (
             <button
               type="button"
@@ -173,6 +221,7 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
               <KeyRound className="h-5 w-5" />
             </button>
           ) : null}
+          </div>
         </header>
         {error ? (
           <div className="m-3 shrink-0 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 shadow-sm" role="alert">
@@ -225,7 +274,7 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
         const bottomOffset = currentViewport
           ? Math.max(0, Math.round(window.innerHeight - currentViewport.height - currentViewport.offsetTop))
           : 0
-        terminalRef.current?.adjustInputPosition(panelMode === 'terminal' && bottomOffset > 80 ? bottomOffset : 0)
+        terminalRef.current?.adjustInputPosition(bottomOffset > 80 ? bottomOffset : 0)
       })
     }
 
@@ -239,7 +288,11 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
       viewport.removeEventListener('scroll', syncKeyboardOffset)
       terminalRef.current?.adjustInputPosition(0)
     }
-  }, [activeTerminalId, connectedTransport, panelMode])
+  }, [activeTerminalId, connectedTransport])
+
+  useEffect(() => () => {
+    void fileTransport?.disconnect()
+  }, [fileTransport])
 
   if (error && !machine) {
     return (
@@ -264,7 +317,7 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
   }
 
   return (
-    <div className={`flex h-[100dvh] w-full flex-col overflow-hidden bg-zinc-50 font-sans text-zinc-900 md:flex-row ${className || ''}`} data-machine-id={machine.machineId}>
+    <div className={`relative flex h-[100dvh] w-full flex-col overflow-hidden bg-zinc-50 font-sans text-zinc-900 md:flex-row ${className || ''}`} data-machine-id={machine.machineId}>
       {page === 'terminal' ? (
       <aside className="hidden w-72 shrink-0 flex-col border-r border-zinc-200 bg-zinc-100 md:flex">
         <div className="flex h-12 shrink-0 items-center border-b border-zinc-200 px-4">
@@ -335,7 +388,7 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
               type="button"
               aria-label="Open files"
               onClick={openFiles}
-              className={`flex h-9 w-9 items-center justify-center rounded-md active:bg-zinc-100 ${panelMode === 'files' ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-600'}`}
+              className={`flex h-9 w-9 items-center justify-center rounded-md active:bg-zinc-100 ${filesOpen ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-600'}`}
             >
               <Folder className="h-5 w-5" />
             </button>
@@ -386,34 +439,6 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
             )}
           </div>
 
-          {panelMode === 'files' ? (
-            <div className="absolute inset-0 z-20 flex flex-col bg-white shadow-2xl md:inset-y-auto md:relative md:z-auto md:h-[40%] md:min-h-[250px] md:border-t md:border-zinc-200" data-testid="termx-file-overlay">
-              <div className="flex h-11 shrink-0 items-center justify-between border-b border-zinc-200 bg-zinc-50 px-3 md:hidden">
-                <span className="text-sm font-semibold text-zinc-900">Files</span>
-                <button
-                  type="button"
-                  aria-label="Close files"
-                  className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 active:bg-zinc-200"
-                  onClick={openTerminalPanel}
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-              {activeTerminalId && connectedTransport ? (
-                <FileManager
-                  machineId={machine.machineId}
-                  terminalId={activeTerminalId}
-                  transport={connectedTransport}
-                  initialPath="/"
-                  className="flex h-full min-h-0 flex-col relative"
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-                  Connect to a terminal to view files
-                </div>
-              )}
-            </div>
-          ) : null}
         </div>
 
         <MobileTerminalKeybar
@@ -422,7 +447,6 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
           onBlurKeyboard={() => terminalRef.current?.blur()}
           modifierState={modifierState}
           onModifierStateChange={setModifierState}
-          className={panelMode === 'terminal' ? '' : 'hidden'}
         />
 
         {mobileSheet === 'terminals' ? (
@@ -449,6 +473,40 @@ export function LocalRemoteApp({ api, createTransport, className, pair }: LocalR
         ) : null}
       </main>
       )}
+
+      {fileTerminalId && fileTransport ? (
+        <div
+          className={`absolute inset-0 z-30 flex flex-col bg-white shadow-2xl md:m-6 md:rounded-lg md:border md:border-zinc-200 ${filesOpen ? '' : 'hidden'}`}
+          data-testid="termx-machine-files-overlay"
+          hidden={!filesOpen}
+        >
+          <div className="flex h-11 shrink-0 items-center justify-between border-b border-zinc-200 bg-zinc-50 px-3">
+            <span className="text-sm font-semibold text-zinc-900">Files</span>
+            <button
+              type="button"
+              aria-label="Close files"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 active:bg-zinc-200"
+              onClick={openTerminalPanel}
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          {fileTransportReady ? (
+            <FileManager
+              key={fileTerminalId}
+              machineId={machine.machineId}
+              terminalId={fileTerminalId}
+              transport={fileTransport}
+              initialPath={fileInitialPath}
+              className="flex h-full min-h-0 flex-col relative"
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+              Local file access is not ready
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   )
 }

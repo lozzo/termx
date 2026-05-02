@@ -17,6 +17,7 @@ import (
 	"github.com/lozzow/termx/termx-core/internal/remote/pairing"
 	remotertc "github.com/lozzow/termx/termx-core/internal/remote/rtc"
 	hubv1 "github.com/lozzow/termx/termx-core/remote/hubv1"
+	"github.com/lozzow/termx/termx-core/terminalmeta"
 	"github.com/lozzow/termx/termx-core/transport"
 )
 
@@ -133,6 +134,7 @@ func (a localWebServerAdapter) ListTerminals(ctx context.Context) ([]localweb.Te
 	}
 	out := make([]localweb.Terminal, 0, len(list))
 	for _, item := range list {
+		sizeLockMode := terminalmeta.SizeLockMode(item.Tags)
 		out = append(out, localweb.Terminal{
 			TerminalID:   item.ID,
 			Name:         item.Name,
@@ -141,6 +143,10 @@ func (a localWebServerAdapter) ListTerminals(ctx context.Context) ([]localweb.Te
 			Rows:         int(item.Size.Rows),
 			State:        string(item.State),
 			LastActiveAt: item.CreatedAt,
+			SizeLocked:   sizeLockMode == terminalmeta.SizeLockLock,
+			SizeLockMode: sizeLockMode,
+			CWD:          item.Tags["termx.cwd"],
+			Environment:  item.Tags["termx.environment"],
 		})
 	}
 	return out, nil
