@@ -6,7 +6,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 - Current phase: Remote Web / Hub / Agent Buildout.
 - Active todo: `7` TURN/STUN paid relay MVP.
-- Last updated: 2026-05-03T06:24:33+08:00.
+- Last updated: 2026-05-03T06:25:29+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -48,16 +48,16 @@ Status file for unattended remote rebuild work. Update this file before starting
 | 5-J | hub-follow-up-review | Enforce signaling TTL on Poll, SubmitAnswer, and GetAnswer, not only cleanup | completed | `aa81dda7` |
 | 5-K | hub-follow-up-review | Require basic SDP-shaped signaling payloads in addition to runtime marker rejection | completed | `aa81dda7` |
 | 5-L | hub-follow-up-review | Refresh workflow state and bottom next action after Slice 5 follow-up review | completed | `aa81dda7` |
-| 6 | managed-signaling | Implement managed signaling without TURN relay as HTTP control/signaling only, runtime still WebRTC DataChannel | completed |  |
-| 6-A | managed-signaling-self-review | Mark managed connect tickets used atomically so tickets cannot create multiple hub offers | completed |  |
-| 6-B | managed-signaling-review | Authorize answer retrieval by ticket/session and machine, not offer ID alone | completed |  |
-| 6-C | managed-signaling-review | Cap managed ticket TTL and guard HTTP ttl_seconds overflow/long-lived free tickets | completed |  |
-| 6-D | managed-signaling-review | Make ownership check and ticket insert transactional/owner-conditioned | completed |  |
-| 6-E | managed-signaling-review | Strengthen hub managed tests for terminal correlation through verifier and registry | completed |  |
-| 6-F | managed-signaling-deferred | Record managed connect ticket cleanup/session binding residual risk | deferred |  |
-| 6-G | managed-signaling-self-review | Prevent Slice 6 hub managed signaling from surfacing relay capability before TURN policy exists | completed |  |
-| 6-H | managed-signaling-follow-up-review | Preflight managed offers so malformed/offline submissions do not consume tickets | completed |  |
-| 6-I | managed-signaling-follow-up-review | Remove exported registry verifier bypass and prove managed signaling still uses registry verifier boundary | completed |  |
+| 6 | managed-signaling | Implement managed signaling without TURN relay as HTTP control/signaling only, runtime still WebRTC DataChannel | completed | `2b35d6a1` |
+| 6-A | managed-signaling-self-review | Mark managed connect tickets used atomically so tickets cannot create multiple hub offers | completed | `2b35d6a1` |
+| 6-B | managed-signaling-review | Authorize answer retrieval by ticket/session and machine, not offer ID alone | completed | `2b35d6a1` |
+| 6-C | managed-signaling-review | Cap managed ticket TTL and guard HTTP ttl_seconds overflow/long-lived free tickets | completed | `2b35d6a1` |
+| 6-D | managed-signaling-review | Make ownership check and ticket insert transactional/owner-conditioned | completed | `2b35d6a1` |
+| 6-E | managed-signaling-review | Strengthen hub managed tests for terminal correlation through verifier and registry | completed | `2b35d6a1` |
+| 6-F | managed-signaling-deferred | Record managed connect ticket cleanup/session binding residual risk | deferred | `2b35d6a1` |
+| 6-G | managed-signaling-self-review | Prevent Slice 6 hub managed signaling from surfacing relay capability before TURN policy exists | completed | `2b35d6a1` |
+| 6-H | managed-signaling-follow-up-review | Preflight managed offers so malformed/offline submissions do not consume tickets | completed | `2b35d6a1` |
+| 6-I | managed-signaling-follow-up-review | Remove exported registry verifier bypass and prove managed signaling still uses registry verifier boundary | completed | `2b35d6a1` |
 | 7 | paid-relay | Implement paid TURN/STUN relay MVP with temporary TURN credentials, relay lease, and no free TURN | pending |  |
 | 8 | quota | Implement relay quota, active relay session limit, heartbeat, TTL cleanup, and throttling | pending |  |
 | 9 | daemon-agent | Integrate `termx daemon` cloud bootstrap, hub heartbeat/poll/answer, and WebRTC offer handling | pending |  |
@@ -886,7 +886,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：生产 ticket signing key rotation 后置。
 - 剩余风险：HTTP long-poll 只能是建链前职责. There remains a small race where agent/verifier state can change between managed preflight, ticket consume, and final queueing; durable managed session lifecycle and retry semantics are deferred to Slice 8/session-limit work.
 - 下一步：commit Slice 6, record commit hash, then start Slice 7 paid TURN/STUN relay MVP.
-- commit：待提交。
+- commit：`2b35d6a1`
 
 ### 6-A Managed Ticket Single-Use Verification
 
@@ -912,7 +912,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：future Slice 8 may bind tickets to durable session IDs; current slice uses one-shot signaling tickets.
 - 下一步：included in Slice 6 follow-up review fixes.
-- commit：待提交。
+- commit：`2b35d6a1`
 
 ### 6-B Managed Answer Retrieval Authorization
 
@@ -938,7 +938,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：future durable managed sessions should bind this more strongly.
 - 下一步：included in Slice 6 follow-up review fixes.
-- commit：待提交。
+- commit：`2b35d6a1`
 
 ### 6-C Managed Ticket TTL Cap
 
@@ -964,7 +964,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：future policy may tune max TTL by plan/region.
 - 下一步：included in Slice 6 follow-up review fixes.
-- commit：待提交。
+- commit：`2b35d6a1`
 
 ### 6-D Managed Ticket Ownership Transaction
 
@@ -990,7 +990,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：concurrent ownership transfer policies are future product work.
 - 下一步：included in Slice 6 follow-up review fixes.
-- commit：待提交。
+- commit：`2b35d6a1`
 
 ### 6-E Hub Managed Terminal Correlation Tests
 
@@ -1016,7 +1016,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：terminal ownership and existence checks move to daemon/agent slices.
 - 下一步：included in Slice 6 follow-up review fixes.
-- commit：待提交。
+- commit：`2b35d6a1`
 
 ### 6-F Managed Ticket Cleanup Deferred
 
@@ -1042,7 +1042,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：expired/used ticket rows remain in SQLite until a future cleanup job; durable session binding and managed session lifecycle belong to Slice 8/session-limit work.
 - 下一步：rerun broader Slice 6 validation and request follow-up review.
-- commit：待提交。
+- commit：`2b35d6a1`
 
 ### 6-G Managed Signaling No-Relay Guard
 
@@ -1068,7 +1068,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：paid relay policy will be introduced in Slice 7 and must deliberately re-open this behavior behind quota/session-limit checks.
 - 下一步：included in Slice 6 follow-up review fixes.
-- commit：待提交。
+- commit：`2b35d6a1`
 
 ### 6-H Managed Offer Preflight Before Ticket Consumption
 
@@ -1094,7 +1094,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：durable session lifecycle remains future Slice 8 work.
 - 下一步：included in final Slice 6 follow-up review.
-- commit：待提交。
+- commit：`2b35d6a1`
 
 ### 6-I Registry Verified-Offer Boundary
 
@@ -1120,7 +1120,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 - deferred human items：none.
 - 剩余风险：registry verifier semantics must stay non-consuming; managed service remains the consumer of single-use connect tickets.
 - 下一步：included in final Slice 6 follow-up review.
-- commit：待提交。
+- commit：`2b35d6a1`
 
 ### 7 TURN/STUN Paid Relay MVP
 
