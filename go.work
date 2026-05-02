@@ -1,6 +1,7 @@
 go 1.26.0
 
 use (
+	./web-control
 	./termx-core
 	./termx-cli
 	./tuiv2

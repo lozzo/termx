@@ -5,8 +5,8 @@ Status file for unattended remote rebuild work. Update this file before starting
 ## Current State
 
 - Current phase: Remote Web / Hub / Agent Buildout.
-- Active todo: `0` documentation, AGENTS hardening, and workflow reset for the new web/control-plane + hub + daemon-agent mainline.
-- Last updated: 2026-05-03T02:38:46+08:00.
+- Active todo: `1` Web Control Plane skeleton, ready to commit.
+- Last updated: 2026-05-03T03:05:58+08:00.
 - Worktree note: repository was already dirty at task start. Existing dirty files include root and package AGENTS files, remote rebuild docs, `go.work.sum`, and untracked `docs/remote-rebuild/hub-web-implementation-plan.md` plus `remote-ui/docs/relay-plan-product-policy.md`. Do not revert or overwrite those user-provided changes.
 - Current product conclusion: unauthenticated/offline free users may use only `local` / LAN / self-hosted FRP or public ports; registered free users may use TermX rendezvous/signaling plus STUN for `public_p2p`; registered free users must not receive TermX TURN credentials; paid users may use `managed` relay subject to quota, session limit, and throttling.
 - Client-visible paths are only `local / public_p2p / managed`. Relay is not a fourth client transport and may appear only as connection info, capability, policy, quota, or telemetry.
@@ -18,7 +18,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 | ID | Phase | Todo | Status | Commit |
 | --- | --- | --- | --- | --- |
 | 0 | docs/workflow | Harden AGENTS and reset `WORKFLOW.md` for the web/control-plane + hub + daemon-agent buildout | completed | `41671b21` |
-| 1 | web-control | Create Web Control Plane skeleton with Go backend, SQLite migration/test helper, health API, and Vite React shell | pending |  |
+| 1 | web-control | Create Web Control Plane skeleton with Go backend, SQLite migration/test helper, health API, and Vite React shell | completed |  |
 | 2 | web-control/auth | Implement web auth/account/plan/subscription foundations with provider interfaces and mock payment | pending |  |
 | 3 | web-control/machines | Implement machine, app device, app certificate, revocation, bootstrap, and claim control model | pending |  |
 | 4 | public_p2p | Implement registered public P2P rendezvous with authenticated channel, offer/answer/candidate forwarding, TTL, rate limits, and STUN-only policy | pending |  |
@@ -59,7 +59,7 @@ Status file for unattended remote rebuild work. Update this file before starting
 
 ### 1 Web Control Plane Skeleton
 
-- 状态：pending
+- 状态：completed
 - 父条目：none
 - 来源：整体目标架构要求 Web Control Plane 使用 Go 后端 + Vite React 前端 + SQLite 测试/开发数据库。
 - 目标：创建 `web-control/`，提供 Go HTTP backend skeleton、SQLite migration/test helper、health API、Vite React shell、Tailwind 构建接入。
@@ -69,17 +69,18 @@ Status file for unattended remote rebuild work. Update this file before starting
 - mock 策略：数据库使用 SQLite 临时文件或内存测试库；外部 provider 暂不接入。
 - 先写的失败测试：计划创建 `web-control/internal/httpapi/health_test.go` 覆盖 `GET /api/health`，`web-control/internal/store/migrations_test.go` 覆盖 SQLite open/migrate/idempotency，`web-control/frontend/src/App.test.tsx` 覆盖 Vite React shell health/status rendering，另用 `npm run build` 做 frontend build smoke。
 - 预期失败结果：新测试在实现前应因 `httpapi`/`store`/frontend app skeleton 缺失而 fail/build fail。
-- 实现摘要：待完成。
-- 重构摘要：待完成。
-- 运行命令：待记录。
-- 测试结果：待记录。
-- subagent review：待发起。
-- review 发现：待记录。
-- review 后修复：待记录。
+- 实际失败结果：`cd web-control && go test ./...` failed because `web-control` was not yet listed in `go.work`; `cd web-control/frontend && npm test` failed with missing `./App`; `cd web-control/frontend && npm run build` failed with missing `tsconfig.json`.
+- 实现摘要：created independent `web-control` Go module and added it to `go.work`; added `internal/httpapi` health router with `/api/health`; added `internal/store` SQLite open/migrate helper with idempotent schema for core future control-plane tables; added `cmd/web-control` minimal server; added Vite React frontend shell with TailwindCSS, connection-path status, and build/test/typecheck setup.
+- 重构摘要：kept Slice 1 limited to skeleton behavior only; no auth/subscription/machine/hub/relay business logic implemented yet. After review, tightened SQLite dev opener to one physical connection until a pooled connector/hook is introduced, added startup DB migration wiring, and added negative FK enforcement coverage.
+- 运行命令：`cd web-control && go test ./...`; `cd web-control && GOWORK=off go test ./...`; `cd web-control/frontend && npm install`; `cd web-control/frontend && npm test`; `cd web-control/frontend && npm run typecheck`; `cd web-control/frontend && npm run build`; `bash docs/remote-rebuild/check_workflow_rules.sh`; `go test ./web-control/...`; `git diff --check`。
+- 测试结果：expected failures recorded first. After implementation, `cd web-control && go test ./...` passed; frontend `npm test`, `npm run typecheck`, and `npm run build` passed; workflow check passed; `go test ./web-control/...` passed; `git diff --check` passed. After review fixes, `cd web-control && GOWORK=off go test ./...`, `go test ./web-control/...`, frontend `npm run build`, workflow check, and `git diff --check` passed.
+- subagent review：`Mencius` (`019dea0d-a4a6-79a2-aee4-73ed8c8b9609`) reviewed Slice 1.
+- review 发现：high stale `Next Exact Action` and Slice 1 `下一步` still described old work; medium SQLite foreign key PRAGMA was not proven across real usage; medium runnable backend reported health without opening/migrating SQLite.
+- review 后修复：updated next-action text; added FK negative insert test; constrained SQLite opener to one physical connection for the skeleton; added `openStoreFromEnv` startup migration and test proving the runnable backend opens/migrates SQLite.
 - 新增派生条目：暂无。
 - deferred human items：暂无。
 - 剩余风险：需要避免把 web-control 放入 `termx-core`，并避免引入非 Tailwind 全局 CSS 系统。
-- 下一步：Slice 0 完成并提交后开始。
+- 下一步：rerun review-fix checks, commit Slice 1, record commit hash, then start Slice 2 auth/account/plan with provider-interface mocks.
 - commit：待提交。
 
 ### 2 Web Auth, Account, Plan, Subscription
@@ -954,5 +955,5 @@ The entries below predate the current Remote Web / Hub / Agent Buildout. They ar
 
 ## Next Exact Action
 
-1. Finish Slice 0 by rerunning `bash docs/remote-rebuild/check_workflow_rules.sh`, committing only the AGENTS/WORKFLOW/check-script changes that belong to this slice, and recording the commit hash above.
-2. Continue Slice 1: create `web-control/` as an independent Go + Vite React + Tailwind project, write failing health/migration/frontend smoke tests first, then implement the minimal skeleton.
+1. Finish Slice 1 by rerunning review-fix checks, committing only `web-control/`, `go.work`, and the Slice 1 `WORKFLOW.md` updates, then recording the commit hash above.
+2. Start Slice 2: write failing auth/account/plan tests first, introduce provider interfaces for payment/email/OAuth-style external dependencies, and implement only local/mock providers behind those interfaces.
